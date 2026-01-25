@@ -1,18 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 기존 노트를 선택하여 현재 pane에 연결
-# Phase 3: 헬퍼 스크립트로 개선된 UX
+# 통합 검색 스크립트
+# - fzf 모드: 제목/태그 퍼지 필터링
+# - rg 모드: ripgrep 내용 검색
+# - Ctrl-/: 모드 전환
+# - Enter: 노트 연결 (pane-link 동작)
+# - Ctrl-O: 열기만 (pane-peek 동작)
 
 NOTES_DIR="${HOME}/.tmux/pane-notes"
-HELPERS="$HOME/.tmux/scripts/pane-link-helpers.sh"
+HELPERS="$HOME/.tmux/scripts/pane-helpers.sh"
 [ -d "$NOTES_DIR" ] || mkdir -p "$NOTES_DIR"
 
-# 현재 pane id 저장 (이 pane에 링크를 심어야 함)
+# 필수 도구 체크
+command -v fzf >/dev/null 2>&1 || { echo "fzf가 필요합니다."; read -rp "Press Enter..."; exit 1; }
+command -v rg >/dev/null 2>&1 || { echo "ripgrep(rg)이 필요합니다."; read -rp "Press Enter..."; exit 1; }
+[ -x "$HELPERS" ] || { echo "헬퍼 스크립트가 없습니다: $HELPERS"; read -rp "Press Enter..."; exit 1; }
+
+# 현재 pane id 저장
 PANE="$(tmux display-message -p '#{pane_id}')"
 
 # 현재 프로젝트 감지
-CURRENT_REPO=$(cd "$(tmux display-message -p '#{pane_current_path}')" && \
+REPO=$(cd "$(tmux display-message -p '#{pane_current_path}')" && \
   basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 
 # 노트 개수 확인
@@ -23,56 +32,70 @@ if [ "$note_count" -eq 0 ]; then
   exit 0
 fi
 
-use_fzf() { command -v fzf >/dev/null 2>&1 && fzf --version >/dev/null 2>&1; }
+# 상태 관리용 임시 파일
+MODE_FILE=$(mktemp)
+QUERY_FILE=$(mktemp)
+SORT_FILE=$(mktemp)
+echo "fzf" > "$MODE_FILE"
+echo "created" > "$SORT_FILE"
+trap 'rm -f "$MODE_FILE" "$QUERY_FILE" "$SORT_FILE"' EXIT
 
-if use_fzf; then
-  # 헬퍼 스크립트 존재 확인
-  if [ ! -x "$HELPERS" ]; then
-    echo "헬퍼 스크립트가 없습니다: $HELPERS"
-    read -rp "Press Enter to close..."
-    exit 1
-  fi
+# 헤더
+HEADER="Ctrl-/: 모드전환 | Ctrl-O: 열기만 | Ctrl-P: 프로젝트 | Ctrl-A: 전체
+Ctrl-S: 정렬 | Ctrl-D: 휴지통 | Ctrl-X: 아카이브 | Tab: 미리보기"
 
-  # fzf 실행 (개선된 UX)
-  set +e
-  selected=$("$HELPERS" list-all | fzf --ansi --prompt="Link note> " \
-      --with-nth=1 --delimiter=$'\t' \
-      --header=$'Tab: 미리보기 아래로 스크롤 | S-Tab: 미리보기 위로 스크롤\nctrl-p: 현재 프로젝트 노트로 필터링 | ctrl-a: 모든 노트 보기\nctrl-d: 휴지통으로 보내기(_trash) | ctrl-x: 아카이브로 보내기(_archive)' \
-      --preview 'file=$(echo {} | cut -f2); bat --color=always --style=plain "$file" 2>/dev/null || cat "$file"' \
-      --preview-window=up:60% \
-      --bind "tab:preview-down,shift-tab:preview-up" \
-      --bind "ctrl-p:reload($HELPERS list-current '$CURRENT_REPO')" \
-      --bind "ctrl-a:reload($HELPERS list-all)" \
-      --bind "ctrl-d:execute-silent(file=\$(echo {} | cut -f2); $HELPERS move-trash \"\$file\")+reload($HELPERS list-all)" \
-      --bind "ctrl-x:execute-silent(file=\$(echo {} | cut -f2); $HELPERS move-archive \"\$file\")+reload($HELPERS list-all)")
-  set -e
+# fzf 실행
+set +e
+selected=$("$HELPERS" list-all | fzf --ansi \
+    --prompt='Link note [fzf/created]> ' \
+    --with-nth=1 --delimiter=$'\t' \
+    --header="$HEADER" \
+    --preview "$HELPERS preview \$(echo {} | cut -f2) @$QUERY_FILE @$MODE_FILE" \
+    --preview-window=up:60% \
+    --bind "tab:preview-down,shift-tab:preview-up" \
+    --bind "ctrl-/:transform:$HELPERS toggle-mode '$MODE_FILE' '$QUERY_FILE' '$SORT_FILE' {q}" \
+    --bind "change:transform:$HELPERS handle-change '$MODE_FILE' '$QUERY_FILE' '$SORT_FILE' {q}" \
+    --bind "ctrl-s:transform:$HELPERS toggle-sort '$MODE_FILE' '$SORT_FILE'" \
+    --bind "ctrl-a:transform:$HELPERS handle-ctrl-a '$MODE_FILE' '$SORT_FILE'" \
+    --bind "ctrl-p:reload($HELPERS list-current '$REPO')+change-prompt(Link note [$REPO]> )" \
+    --bind "ctrl-d:execute-silent($HELPERS move-trash \$(echo {} | cut -f2))+reload($HELPERS list-all \$(cat '$SORT_FILE'))" \
+    --bind "ctrl-x:execute-silent($HELPERS move-archive \$(echo {} | cut -f2))+reload($HELPERS list-all \$(cat '$SORT_FILE'))" \
+    --bind "ctrl-o:execute(
+      file=\$(echo {} | cut -f2)
+      mode=\$(cat '$MODE_FILE')
+      if [ \"\$mode\" = 'rg' ]; then
+        line=\$($HELPERS first-line \"\$file\" @$QUERY_FILE)
+        \${EDITOR:-vim} +\$line \"\$file\"
+      else
+        \${EDITOR:-vim} \"\$file\"
+      fi
+    )+abort" \
+    --expect=enter)
+fzf_exit=$?
+set -e
 
-  # ESC로 취소하거나 빈 선택
-  [ -z "${selected:-}" ] && exit 0
+# ESC로 취소 (exit code 130)
+[ $fzf_exit -eq 130 ] && exit 0
+[ -z "${selected:-}" ] && exit 0
 
-  # 선택된 노트 연결
-  file=$(echo "$selected" | cut -f2)
+# expect로 인해 첫 줄은 눌린 키, 둘째 줄은 선택 항목
+key=$(echo "$selected" | head -1)
+selection=$(echo "$selected" | tail -n +2)
+
+[ -z "$selection" ] && exit 0
+
+file=$(echo "$selection" | cut -f2)
+mode=$(cat "$MODE_FILE")
+
+# Enter 시 노트 연결
+if [ "$key" = "enter" ]; then
   tmux set -pt "$PANE" @pane_note_path "$file"
-  tmux display-message "Linked: $(basename "$file")"
-  exit 0
+
+  # rg 모드면 라인 점프
+  if [ "$mode" = "rg" ]; then
+    line=$("$HELPERS" first-line "$file" "@$QUERY_FILE")
+    "${EDITOR:-vim}" "+$line" "$file"
+  else
+    tmux display-message "Linked: $(basename "$file")"
+  fi
 fi
-
-# fzf 없으면 display-menu fallback (상위 20개)
-# yq로 메타데이터 추출
-MENU=(display-menu -T "Link Note" -x C -y C)
-i=1
-while IFS= read -r -d '' f; do
-  [ -z "$f" ] && continue
-  repo=$(basename "$(dirname "$f")")
-  title=$(yq -r '.title // ""' "$f" 2>/dev/null || echo "")
-  [ -z "$title" ] && title=$(basename "$f" .md)
-  disp="[$repo] $title"
-  disp_short="${disp:0:50}"
-  [ "${#disp}" -gt 50 ] && disp_short="${disp_short}..."
-  esc="$(printf "%s" "$f" | sed "s/'/'\\\\''/g")"
-  MENU+=( "$i. $disp_short" "" "run-shell \"tmux set -pt '$PANE' @pane_note_path '$esc'; tmux display-message 'Linked: $(basename "$f")'\"" )
-  i=$((i+1))
-  [ "$i" -gt 20 ] && break
-done < <(find "$NOTES_DIR" -mindepth 2 -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" -print0 2>/dev/null)
-
-tmux "${MENU[@]}" >/dev/null 2>&1 || true

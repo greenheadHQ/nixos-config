@@ -60,17 +60,17 @@ echo ""
 
 # 3. YAML frontmatter 파싱 테스트
 echo "[YAML 파싱]"
-tags=$(yq '.tags[0]' "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md")
+tags=$(yq --front-matter=extract '.tags[0]' "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md")
 [ "$tags" = "테스트" ] || { echo "FAIL: 태그 파싱 실패 (got: $tags)"; exit 1; }
 echo "  OK: 태그 파싱"
 
 # yq // 연산자 테스트 (호환성 확인)
-title=$(yq -r '.title // ""' "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md" 2>/dev/null || echo "")
+title=$(yq --front-matter=extract -r '.title // ""' "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md" 2>/dev/null || echo "")
 [ "$title" = "Smoke Test Note" ] || { echo "FAIL: yq // 연산자 (got: $title)"; exit 1; }
 echo "  OK: yq // 연산자 호환성"
 
 # tags join 테스트
-tags_joined=$(yq -r '.tags // [] | join(" #")' "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md" 2>/dev/null || echo "")
+tags_joined=$(yq --front-matter=extract -r '.tags // [] | join(" #")' "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md" 2>/dev/null || echo "")
 [ "$tags_joined" = "테스트 #자동화" ] || { echo "FAIL: tags join (got: $tags_joined)"; exit 1; }
 echo "  OK: tags join"
 echo ""
@@ -88,9 +88,9 @@ rm "$NOTES_DIR/_trash/$TEST_TITLE.md"
 echo "  OK: 삭제 (trash)"
 echo ""
 
-# 6. 헬퍼 스크립트 테스트
+# 6. 통합 헬퍼 스크립트 테스트
 echo "[헬퍼 스크립트]"
-HELPERS="$HOME/.tmux/scripts/pane-link-helpers.sh"
+HELPERS="$HOME/.tmux/scripts/pane-helpers.sh"
 if [ -x "$HELPERS" ]; then
   # list-all 명령 테스트 (빈 결과도 OK)
   set +e
@@ -120,41 +120,29 @@ repo: $TEST_REPO
 # Format Test
 EOF
   format_result=$("$HELPERS" format "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md" 2>/dev/null || echo "")
-  if [[ "$format_result" == *"01-15"* ]] && [[ "$format_result" == *"[$TEST_REPO]"* ]]; then
+  if [[ "$format_result" == *"2024-01-15"* ]] && [[ "$format_result" == *"[$TEST_REPO]"* ]]; then
     echo "  OK: format (날짜/repo 추출)"
   else
     echo "FAIL: format 결과 이상 (got: $format_result)"
     exit 1
   fi
-  rm "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md"
-else
-  echo "  SKIP: pane-link-helpers.sh 미설치"
-fi
-
-# pane-search-helpers.sh 테스트
-SEARCH_HELPERS="$HOME/.tmux/scripts/pane-search-helpers.sh"
-if [ -x "$SEARCH_HELPERS" ]; then
-  # list-all 명령 테스트
-  set +e
-  result=$("$SEARCH_HELPERS" list-all 2>/dev/null | head -1)
-  exit_code=$?
-  set -e
-  [ $exit_code -eq 0 ] && echo "  OK: pane-search-helpers list-all" || { echo "FAIL: list-all"; exit 1; }
 
   # search 명령 테스트 (@파일 방식)
   echo "test" > /tmp/smoke-test-query
   set +e
-  result=$("$SEARCH_HELPERS" search "@/tmp/smoke-test-query" 2>/dev/null | head -1)
+  result=$("$HELPERS" search "@/tmp/smoke-test-query" 2>/dev/null | head -1)
   exit_code=$?
   set -e
   rm -f /tmp/smoke-test-query
-  [ $exit_code -eq 0 ] && echo "  OK: pane-search-helpers search" || { echo "FAIL: search"; exit 1; }
+  [ $exit_code -eq 0 ] && echo "  OK: search" || { echo "FAIL: search"; exit 1; }
 
   # first-line 명령 테스트 (파일 없을 때 1 반환)
-  result=$("$SEARCH_HELPERS" first-line "/nonexistent" "" 2>/dev/null)
-  [ "$result" = "1" ] && echo "  OK: pane-search-helpers first-line" || { echo "FAIL: first-line"; exit 1; }
+  result=$("$HELPERS" first-line "/nonexistent" "" 2>/dev/null)
+  [ "$result" = "1" ] && echo "  OK: first-line" || { echo "FAIL: first-line"; exit 1; }
+
+  rm "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md"
 else
-  echo "  SKIP: pane-search-helpers.sh 미설치"
+  echo "  SKIP: pane-helpers.sh 미설치"
 fi
 echo ""
 
@@ -163,11 +151,9 @@ echo "[스크립트 설치]"
 scripts=(
   "pane-note.sh"
   "pane-link.sh"
-  "pane-peek.sh"
+  "pane-helpers.sh"
   "pane-tag.sh"
-  "pane-search.sh"
-  "pane-link-helpers.sh"
-  "pane-search-helpers.sh"
+  "pane-restore.sh"
   "prefix-help.sh"
 )
 for script in "${scripts[@]}"; do

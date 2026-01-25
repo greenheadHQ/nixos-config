@@ -22,12 +22,10 @@ description: |
 | 스크립트 | 용도 |
 |----------|------|
 | `pane-note.sh` | 노트 생성/편집/관리 |
-| `pane-link.sh` | 기존 노트 연결 (fzf) |
-| `pane-peek.sh` | 노트 미리보기 |
-| `pane-tag.sh` | 태그 수정 |
-| `pane-search.sh` | 노트 내용 검색 (ripgrep + fzf) |
-| `pane-link-helpers.sh` | pane-link.sh 헬퍼 |
-| `pane-search-helpers.sh` | pane-search.sh 헬퍼 |
+| `pane-link.sh` | 통합 검색 (fzf/rg 모드 전환, 노트 연결/열기) |
+| `pane-helpers.sh` | 통합 헬퍼 (목록, 검색, 포맷팅, fzf transform) |
+| `pane-tag.sh` | 태그 수정 (두 단계 UI) |
+| `pane-restore.sh` | 휴지통/아카이브에서 노트 복원 |
 | `save-pane-vars.sh` | tmux-resurrect용 pane 변수 저장 |
 | `restore-pane-vars.sh` | tmux-resurrect용 pane 변수 복원 |
 | `smoke-test.sh` | 기능 검증 테스트 |

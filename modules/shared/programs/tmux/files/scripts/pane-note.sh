@@ -162,13 +162,13 @@ create_note(){
     # 유효한 태그만 필터링: 30자 이내, 경로/URL 아님, 빈 값 아님
     local EXISTING_TAGS
     EXISTING_TAGS=$(find "$NOTES_DIR" -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" \
-      -exec yq -r 'select(.tags) | .tags[]' {} \; 2>/dev/null \
+      -exec yq --front-matter=extract -r 'select(.tags) | .tags[]' {} \; 2>/dev/null \
       | grep -vE '^(/|https?://|[[:space:]]*$)' \
       | awk 'length <= 30' \
-      | sort -u || true)
+      | LC_ALL=C sort -u || true)
     # 합집합
     local ALL_TAGS
-    ALL_TAGS=$(printf '%s\n' $DEFAULT_TAGS $EXISTING_TAGS | sort -u | grep -v '^$' || true)
+    ALL_TAGS=$(printf '%s\n' $DEFAULT_TAGS $EXISTING_TAGS | LC_ALL=C sort -u | grep -v '^$' || true)
 
     # tmux popup 내에서 fzf 태그 선택
     # ESC로 취소해도 빈 문자열로 진행 (tags: [])
@@ -188,7 +188,7 @@ create_note(){
       query_tags=$(echo "$query" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
     fi
     # 쿼리 태그와 선택 항목 합치기 (빈 값 제외, 중복 제거)
-    selected_tags=$(printf '%s\n%s' "$query_tags" "$selected_items" | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//')
+    selected_tags=$(printf '%s\n%s' "$query_tags" "$selected_items" | grep -v '^$' | LC_ALL=C sort -u | tr '\n' ',' | sed 's/,$//')
     rm -f "$tmp_file"
   fi
 

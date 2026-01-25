@@ -3,10 +3,12 @@
 ## 목차
 
 - [tmux-resurrect 복원 시 pane 변수가 복원되지 않음](#tmux-resurrect-복원-시-pane-변수가-복원되지-않음)
-- [pane-peek.sh에서 선택한 노트가 빈 문서로 열림](#pane-peeksh에서-선택한-노트가-빈-문서로-열림)
 - [태그 선택 시 잘못된 값 표시 (경로, URL 등)](#태그-선택-시-잘못된-값-표시-경로-url-등)
 - [노트 생성 시 태그 선택이 저장되지 않음](#노트-생성-시-태그-선택이-저장되지-않음)
-- [pane-search.sh에서 Preview 실패 및 빈 파일 열림](#pane-searchsh에서-preview-실패-및-빈-파일-열림)
+- [yq가 마크다운 frontmatter를 제대로 파싱하지 못함](#yq가-마크다운-frontmatter를-제대로-파싱하지-못함)
+- [빈 tags 배열일 때 날짜/태그 파싱 오류](#빈-tags-배열일-때-날짜태그-파싱-오류)
+- [yq -i로 frontmatter 수정 시 파일 구조 손상](#yq--i로-frontmatter-수정-시-파일-구조-손상)
+- [한글 태그 sort 시 에러 발생](#한글-태그-sort-시-에러-발생)
 
 ---
 
@@ -46,33 +48,6 @@
 
 ---
 
-## pane-peek.sh에서 선택한 노트가 빈 문서로 열림
-
-### 증상
-
-`prefix + V`로 노트 선택 후 에디터에서 빈 파일이 열림.
-
-### 원인
-
-`fzf-tmux`가 별도 프로세스로 실행되어 `cd "$NOTES_DIR"` 컨텍스트가 유지되지 않음.
-
-### 해결
-
-`fzf-tmux` 대신 `tmux display-popup` + `fzf` 조합 사용:
-
-```bash
-tmux display-popup -E -w 80% -h 80% \
-  "cd \"$NOTES_DIR\" 2>/dev/null || exit 0;
-   sel=\$(ls -1t *.md | fzf --prompt='Peek note> ' ...) || exit 0;
-   \"\${EDITOR:-vim}\" \"$NOTES_DIR/\$sel\""
-```
-
-### 관련 파일
-
-- `modules/shared/programs/tmux/files/scripts/pane-peek.sh`
-
----
-
 ## 태그 선택 시 잘못된 값 표시 (경로, URL 등)
 
 ### 증상
@@ -89,13 +64,14 @@ YAML frontmatter가 없는 기존 flat 구조 노트(`~/.tmux/pane-notes/*.md`)�
 
 ```bash
 find "$NOTES_DIR" -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" \
-  -exec yq -r 'select(.tags) | .tags[]' {} \; 2>/dev/null \
+  -exec yq --front-matter=extract -r 'select(.tags) | .tags[]' {} \; 2>/dev/null \
   | grep -vE '^(/|https?://|[[:space:]]*$)' \
   | awk 'length <= 30' \
-  | sort -u
+  | LC_ALL=C sort -u
 ```
 
 필터링 기준:
+- `--front-matter=extract`: 마크다운 frontmatter만 추출
 - `select(.tags)`: tags 필드가 있는 파일만 처리
 - 경로(`/`로 시작) 제외
 - URL(`http://`, `https://`) 제외
@@ -137,71 +113,175 @@ rm -f "$tmp_file"
 
 ---
 
-## pane-search.sh에서 Preview 실패 및 빈 파일 열림
+## yq가 마크다운 frontmatter를 제대로 파싱하지 못함
 
 ### 증상
 
-`prefix + S`로 노트 검색 시:
-- Preview 창에 "No such file or directory" 에러 표시
-- Enter 후 vim이 빈 파일을 생성
-- 파일별이 아닌 모든 매칭 라인이 개별 항목으로 표시 (예: 293개)
+노트 목록에서 날짜/태그가 표시되지 않거나, 태그 수집이 안 됨.
 
 ### 원인
 
-ripgrep `--color=always` 옵션이 ANSI 코드를 출력 앞에 붙임:
-
-```
-# ripgrep 출력
-[0m[35m./PROJ-12450.md:16:PROJ-12450...
-
-# sed 패턴
-sed "s|^\\./|$NOTES_DIR/|"
-
-# 결과: ANSI 코드 때문에 ./가 라인 시작이 아니므로 매칭 실패
-```
-
-→ sed 변환 실패로 상대경로가 그대로 남아 preview와 에디터가 파일을 찾지 못함.
+yq가 마크다운 파일을 직접 읽을 때 frontmatter 이후의 본문도 YAML로 파싱하려고 시도함.
+첫 번째 문서(frontmatter)는 잘 파싱되지만 두 번째 문서(마크다운 본문)에서 에러 발생.
+에러로 인해 exit code가 1이 되어 조건문이 실패하거나 결과가 비어있음.
 
 ### 해결
 
-**구조적 변경**: 헬퍼 스크립트 분리 + 절대경로 사용
+**읽기 전용 작업**: `--front-matter=extract` 사용
 
-1. **pane-search-helpers.sh 신규 생성**:
-   - `list-all`: 전체 노트 목록 (초기 화면)
-   - `search <query>`: 파일별 그룹화된 검색 결과
-   - `preview <file> <query>`: 첫 매칭 라인 하이라이트
-   - `first-line <file> <query>`: 에디터 점프용 라인 번호
+```bash
+# 문제가 되는 코드
+yq -r '.title' "$file"  # exit code: 1 (본문 파싱 에러)
 
-2. **절대경로로 직접 검색**:
-   ```bash
-   # 변경 전 (상대경로 + sed 변환)
-   cd '$NOTES_DIR' && rg ... . | sed "s|^\\./|$NOTES_DIR/|"
+# 해결된 코드
+yq --front-matter=extract -r '.title' "$file"  # exit code: 0
+```
 
-   # 변경 후 (절대경로 직접 사용)
-   rg --count ... "$NOTES_DIR"
-   ```
+**수정 작업**: `--front-matter=process` 사용
 
-3. **@파일 방식으로 쿼리 전달** (쉘 이스케이프 회피):
-   ```bash
-   # fzf에서 쿼리를 파일에 저장
-   printf '%s' {q} > '$QUERY_FILE'
+```bash
+# 문제가 되는 코드
+yq -i '.tags = ["new"]' "$file"  # 파일 구조 손상
 
-   # 헬퍼가 파일에서 읽음
-   if [[ "$input" == @* ]]; then
-     query=$(cat "${input:1}")
-   fi
-   ```
+# 해결된 코드
+yq --front-matter=process -i '.tags = ["new"]' "$file"  # frontmatter만 수정, 본문 유지
+```
 
-4. **파일별 그룹화** (`rg --count`):
-   ```bash
-   # 변경 전: 라인별 출력
-   rg --line-number ... → file:line:content
+### 적용해야 하는 스크립트
 
-   # 변경 후: 파일별 매칭 수
-   rg --count ... → file:count
-   ```
+모든 yq 호출에 적절한 `--front-matter` 옵션 필요:
+
+| 스크립트 | 작업 | 옵션 |
+|---------|------|------|
+| `pane-helpers.sh` | 읽기 | `--front-matter=extract` |
+| `pane-note.sh` | 읽기 | `--front-matter=extract` |
+| `pane-tag.sh` | 읽기 | `--front-matter=extract` |
+| `pane-tag.sh` | 수정 | `--front-matter=process` |
+| `pane-restore.sh` | 읽기 | `--front-matter=extract` |
+| `smoke-test.sh` | 읽기 | `--front-matter=extract` |
 
 ### 관련 파일
 
-- `modules/shared/programs/tmux/files/scripts/pane-search.sh`
-- `modules/shared/programs/tmux/files/scripts/pane-search-helpers.sh`
+- `modules/shared/programs/tmux/files/scripts/pane-helpers.sh`
+- `modules/shared/programs/tmux/files/scripts/pane-note.sh`
+- `modules/shared/programs/tmux/files/scripts/pane-tag.sh`
+- `modules/shared/programs/tmux/files/scripts/pane-restore.sh`
+- `modules/shared/programs/tmux/files/scripts/smoke-test.sh`
+
+---
+
+## 빈 tags 배열일 때 날짜/태그 파싱 오류
+
+### 증상
+
+`tags: []`인 노트에서:
+- 날짜가 `----/--/--`로 표시됨
+- 태그 위치에 날짜(`#2026-01-25`)가 표시됨
+
+### 원인
+
+bash의 `read` 명령어가 연속된 탭(빈 필드)을 건너뛰는 문제.
+
+yq 출력: `title<TAB><TAB>created` (tags가 빈 문자열)
+
+```bash
+# 문제가 되는 코드
+IFS=$'\t' read -r title tags created <<< "$metadata"
+# 결과: title=값, tags=created값, created=빈문자열
+
+# 해결된 코드
+title=$(printf '%s' "$metadata" | cut -f1)
+tags=$(printf '%s' "$metadata" | cut -f2)
+created=$(printf '%s' "$metadata" | cut -f3)
+```
+
+### 해결
+
+`cut` 명령어로 각 필드를 명시적으로 추출:
+
+```bash
+if metadata=$(yq --front-matter=extract -r '[.title // "", (.tags // [] | join(" #")), .created // ""] | @tsv' "$file" 2>/dev/null); then
+  title=$(printf '%s' "$metadata" | cut -f1)
+  tags=$(printf '%s' "$metadata" | cut -f2)
+  created=$(printf '%s' "$metadata" | cut -f3)
+fi
+```
+
+### 관련 파일
+
+- `modules/shared/programs/tmux/files/scripts/pane-helpers.sh`
+
+---
+
+## yq -i로 frontmatter 수정 시 파일 구조 손상
+
+### 증상
+
+`pane-tag.sh`로 태그 수정 후 노트 파일 구조가 손상됨:
+- frontmatter의 `---` 닫는 구분자 사라짐
+- 마크다운 본문이 YAML과 섞임
+
+### 원인
+
+`yq -i`가 `--front-matter` 옵션 없이 마크다운 파일을 수정하면 파일 전체를 YAML로 재작성함.
+
+### 해결
+
+**수정 작업에는 `--front-matter=process` 사용**:
+
+```bash
+# 문제가 되는 코드
+yq -i '.tags = ["new"]' "$file"
+
+# 해결된 코드
+yq --front-matter=process -i '.tags = ["new"]' "$file"
+```
+
+**추가 주의**: yq의 `split("\n")`이 줄바꿈을 제대로 처리하지 못할 수 있음. 쉼표 구분자 사용 권장:
+
+```bash
+# 줄바꿈을 쉼표로 변환
+tags_csv=$(echo "$tags" | tr '\n' ',' | sed 's/,$//')
+export FINAL_TAGS="$tags_csv"
+yq --front-matter=process -i '.tags = (env(FINAL_TAGS) | split(",") | map(select(. != "")))' "$file"
+```
+
+### 관련 파일
+
+- `modules/shared/programs/tmux/files/scripts/pane-tag.sh`
+
+---
+
+## 한글 태그 sort 시 에러 발생
+
+### 증상
+
+태그 수집 시 `sort -u`에서 에러 메시지:
+```
+sort: string comparison failed: Invalid argument
+sort: Set LC_ALL='C' to work around the problem.
+sort: The strings compared were '기능' and '문서'.
+```
+
+결과적으로 태그 목록이 비어있거나 일부만 표시됨.
+
+### 원인
+
+macOS/일부 Linux 환경에서 UTF-8 한글 문자열의 정렬 시 locale 설정 충돌.
+
+### 해결
+
+`sort` 명령어에 `LC_ALL=C` 환경변수 추가:
+
+```bash
+# 문제가 되는 코드
+... | sort -u
+
+# 해결된 코드
+... | LC_ALL=C sort -u
+```
+
+### 관련 파일
+
+- `modules/shared/programs/tmux/files/scripts/pane-note.sh`
+- `modules/shared/programs/tmux/files/scripts/pane-tag.sh`

@@ -45,8 +45,12 @@ in
       source = "${tmuxDir}/scripts/pane-link.sh";
       executable = true;
     };
-    ".tmux/scripts/pane-peek.sh" = {
-      source = "${tmuxDir}/scripts/pane-peek.sh";
+    ".tmux/scripts/pane-helpers.sh" = {
+      source = "${tmuxDir}/scripts/pane-helpers.sh";
+      executable = true;
+    };
+    ".tmux/scripts/pane-restore.sh" = {
+      source = "${tmuxDir}/scripts/pane-restore.sh";
       executable = true;
     };
     ".tmux/scripts/prefix-help.sh" = {
@@ -55,18 +59,6 @@ in
     };
     ".tmux/scripts/pane-tag.sh" = {
       source = "${tmuxDir}/scripts/pane-tag.sh";
-      executable = true;
-    };
-    ".tmux/scripts/pane-link-helpers.sh" = {
-      source = "${tmuxDir}/scripts/pane-link-helpers.sh";
-      executable = true;
-    };
-    ".tmux/scripts/pane-search-helpers.sh" = {
-      source = "${tmuxDir}/scripts/pane-search-helpers.sh";
-      executable = true;
-    };
-    ".tmux/scripts/pane-search.sh" = {
-      source = "${tmuxDir}/scripts/pane-search.sh";
       executable = true;
     };
     ".tmux/scripts/find-unused-prefixes.sh" = {
