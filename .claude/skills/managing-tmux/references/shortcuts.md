@@ -5,6 +5,7 @@ tmux 터미널 멀티플렉서의 단축키와 기능을 정리합니다.
 ## 목차
 
 - [기본 단축키](#기본-단축키)
+- [세션 저장/복원 (tmux-resurrect)](#세션-저장복원-tmux-resurrect)
 - [Pane Notepad 기능](#pane-notepad-기능)
 - [Pane 상태 표시](#pane-상태-표시)
 - [세션 관리](#세션-관리)
@@ -25,6 +26,20 @@ tmux 터미널 멀티플렉서의 단축키와 기능을 정리합니다.
 | `prefix + ,` | 창 이름 변경                     |
 | `prefix + $` | 세션 이름 변경                   |
 | `prefix + P` | Pane 제목 설정                   |
+
+---
+
+## 세션 저장/복원 (tmux-resurrect)
+
+tmux-resurrect 플러그인으로 세션을 저장하고 복원할 수 있습니다.
+Pane 변수(`@pane_note_path`, `@custom_pane_title`)도 함께 저장/복원됩니다.
+
+| 단축키             | 기능                        |
+| ------------------ | --------------------------- |
+| `prefix + Ctrl-s`  | 세션 저장 (pane 변수 포함)  |
+| `prefix + Ctrl-r`  | 세션 복원                   |
+
+**저장 위치**: `~/.local/share/tmux/resurrect/`
 
 ---
 

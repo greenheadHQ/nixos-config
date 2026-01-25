@@ -32,7 +32,7 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | 경로 | 설명 |
 |------|------|
 | `flake.nix` | Nix flake 진입점 |
-| `secrets/` | agenix 암호화 secrets (pushover credentials 등) |
+| `secrets/` | agenix 암호화 secrets (pushover credentials, pane-note links 등) |
 | `modules/shared/` | 공유 설정 (CLI 도구, git, tmux, claude) |
 | `modules/shared/scripts/` | 공용 스크립트 (git-cleanup, validate-skills) |
 | `modules/darwin/` | macOS 전용 (Homebrew, Hammerspoon, Cursor) |
@@ -63,7 +63,7 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | Podman/Docker, immich, container OOM | `running-containers` |
 | Git config, delta, rerere, gitconfig conflicts | `configuring-git` |
 | mise, runtime versions, .nvmrc | `managing-mise` |
-| tmux config, keybindings, pane notepad | `managing-tmux` |
+| tmux config, keybindings, pane notepad, tmux-resurrect | `managing-tmux` |
 | SSH keys, Tailscale VPN, sudo auth failure | `managing-ssh` |
 | Cursor extensions, extensions.json | `managing-cursor` |
 
