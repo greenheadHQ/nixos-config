@@ -27,10 +27,13 @@ format_entry() {
   local date_part="${created:5:5}"  # YYYY-MM-DD에서 MM-DD 추출
   [ -z "$date_part" ] && date_part="--/--"
 
-  # 태그 형식화
-  [ -n "$tags" ] && tags=" #$tags"
+  # 태그 형식화 (밝은 주황색으로 표시)
+  if [ -n "$tags" ]; then
+    # 각 태그에 ANSI 색상 코드 추가 (bright orange: \033[38;5;214m, reset: \033[0m)
+    tags=$(echo " #$tags" | sed 's/#\([^ ]*\)/\\033[38;5;214m#\1\\033[0m/g')
+  fi
 
-  printf "%s | [%s] %s%s\t%s\n" "$date_part" "$repo" "$title" "$tags" "$file"
+  printf "%s | [%s] %s%b\t%s\n" "$date_part" "$repo" "$title" "$tags" "$file"
 }
 
 # 모든 노트 목록 (최신순)
