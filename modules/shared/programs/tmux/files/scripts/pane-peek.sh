@@ -3,37 +3,72 @@ set -euo pipefail
 
 # 기존 노트를 연결 없이 편집기로 열기
 # pane-link.sh와 다르게 @pane_note_path를 설정하지 않음
+# Phase 3: 헬퍼 스크립트로 개선된 UX
 
 NOTES_DIR="${HOME}/.tmux/pane-notes"
+HELPERS="$HOME/.tmux/scripts/pane-link-helpers.sh"
 [ -d "$NOTES_DIR" ] || mkdir -p "$NOTES_DIR"
 
-list_files(){ local n="${1:-30}"; (cd "$NOTES_DIR" && ls -1t *.md 2>/dev/null | head -n "$n" || true); }
+# 현재 프로젝트 감지
+CURRENT_REPO=$(cd "$(tmux display-message -p '#{pane_current_path}')" && \
+  basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 
-use_fzf(){ command -v fzf >/dev/null 2>&1 && fzf --version >/dev/null 2>&1; }
-
-if use_fzf; then
-  # fzf로 선택 후 에디터로 열기 (pane-link.sh와 동일한 패턴)
-  tmux display-popup -E -w 80% -h 80% \
-    "cd \"$NOTES_DIR\" 2>/dev/null || exit 0;
-     sel=\$(ls -1t *.md 2>/dev/null | fzf --prompt='Peek note> ' --height=100% --reverse --preview 'bat --color=always --style=plain {} 2>/dev/null || cat {}') || exit 0;
-     \"\${EDITOR:-vim}\" \"$NOTES_DIR/\$sel\"" \
-    >/dev/null 2>&1 || true
+# 노트 개수 확인
+note_count=$(find "$NOTES_DIR" -mindepth 2 -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$note_count" -eq 0 ]; then
+  echo "노트가 없습니다. prefix+N으로 새 노트를 생성하세요."
+  read -rp "Press Enter to close..."
   exit 0
 fi
 
-# fzf 없으면 display-menu로 상위 30개
-files="$(list_files 30)"
-[ -z "${files:-}" ] && { tmux display-message "노트가 없습니다."; exit 0; }
+use_fzf() { command -v fzf >/dev/null 2>&1 && fzf --version >/dev/null 2>&1; }
 
+if use_fzf; then
+  # 헬퍼 스크립트 존재 확인
+  if [ ! -x "$HELPERS" ]; then
+    echo "헬퍼 스크립트가 없습니다: $HELPERS"
+    read -rp "Press Enter to close..."
+    exit 1
+  fi
+
+  # fzf 실행 (개선된 UX)
+  set +e
+  selected=$("$HELPERS" list-all | fzf --ansi --prompt="Peek note> " \
+      --with-nth=1 --delimiter=$'\t' \
+      --header="ctrl-p: 현재 프로젝트 | ctrl-a: 전체 | ctrl-d: 삭제 | ctrl-x: 아카이브" \
+      --preview 'file=$(echo {} | cut -f2); bat --color=always --style=plain "$file" 2>/dev/null || cat "$file"' \
+      --bind "ctrl-p:reload($HELPERS list-current '$CURRENT_REPO')" \
+      --bind "ctrl-a:reload($HELPERS list-all)" \
+      --bind "ctrl-d:execute-silent(file=\$(echo {} | cut -f2); $HELPERS move-trash \"\$file\")+reload($HELPERS list-all)" \
+      --bind "ctrl-x:execute-silent(file=\$(echo {} | cut -f2); $HELPERS move-archive \"\$file\")+reload($HELPERS list-all)")
+  set -e
+
+  # ESC로 취소하거나 빈 선택
+  [ -z "${selected:-}" ] && exit 0
+
+  # ★ 연결 없이 에디터로 열기만
+  file=$(echo "$selected" | cut -f2)
+  "${EDITOR:-vim}" "$file"
+  exit 0
+fi
+
+# fzf 없으면 display-menu fallback (상위 20개)
+# yq로 메타데이터 추출
 MENU=(display-menu -T "Peek Note" -x C -y C)
 i=1
-while IFS= read -r f; do
+while IFS= read -r -d '' f; do
   [ -z "$f" ] && continue
-  disp="$(printf "%s" "$f" | cut -c1-60)"; [ "${#f}" -gt 60 ] && disp="${disp}…"
-  esc="$(printf "%s" "$NOTES_DIR/$f" | sed "s/'/'\\\\''/g")"
+  repo=$(basename "$(dirname "$f")")
+  title=$(yq -r '.title // ""' "$f" 2>/dev/null || echo "")
+  [ -z "$title" ] && title=$(basename "$f" .md)
+  disp="[$repo] $title"
+  disp_short="${disp:0:50}"
+  [ "${#disp}" -gt 50 ] && disp_short="${disp_short}..."
+  esc="$(printf "%s" "$f" | sed "s/'/'\\\\''/g")"
   # 에디터로 열기 ($EDITOR 또는 vim)
-  MENU+=( "$i. $disp" "" "run-shell \"\\\"\\\${EDITOR:-vim}\\\" '$esc'\"" )
+  MENU+=( "$i. $disp_short" "" "run-shell \"\\\"\\\${EDITOR:-vim}\\\" '$esc'\"" )
   i=$((i+1))
-done <<< "$files"
+  [ "$i" -gt 20 ] && break
+done < <(find "$NOTES_DIR" -mindepth 2 -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" -print0 2>/dev/null)
 
 tmux "${MENU[@]}" >/dev/null 2>&1 || true

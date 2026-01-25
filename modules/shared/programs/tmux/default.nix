@@ -53,6 +53,18 @@ in
       source = "${tmuxDir}/scripts/prefix-help.sh";
       executable = true;
     };
+    ".tmux/scripts/pane-tag.sh" = {
+      source = "${tmuxDir}/scripts/pane-tag.sh";
+      executable = true;
+    };
+    ".tmux/scripts/pane-link-helpers.sh" = {
+      source = "${tmuxDir}/scripts/pane-link-helpers.sh";
+      executable = true;
+    };
+    ".tmux/scripts/pane-search.sh" = {
+      source = "${tmuxDir}/scripts/pane-search.sh";
+      executable = true;
+    };
     ".tmux/scripts/find-unused-prefixes.sh" = {
       source = "${tmuxDir}/scripts/find-unused-prefixes.sh";
       executable = true;
@@ -70,9 +82,16 @@ in
     # XDG 경로(~/.config/tmux/tmux.conf)가 우선 로드됨
   };
 
+  # yq 의존성 (YAML frontmatter 파싱용)
+  home.packages = with pkgs; [
+    yq-go # mikefarah/yq
+  ];
+
   # pane-notes 및 resurrect 디렉토리 생성
   home.activation.createTmuxDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     mkdir -p $HOME/.tmux/pane-notes
+    mkdir -p $HOME/.tmux/pane-notes/_archive
+    mkdir -p $HOME/.tmux/pane-notes/_trash
     mkdir -p $HOME/.local/share/tmux/resurrect
   '';
 }

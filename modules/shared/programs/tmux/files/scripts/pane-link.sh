@@ -1,78 +1,76 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 기존 노트를 선택하여 현재 pane에 연결
+# Phase 3: 헬퍼 스크립트로 개선된 UX
+
 NOTES_DIR="${HOME}/.tmux/pane-notes"
+HELPERS="$HOME/.tmux/scripts/pane-link-helpers.sh"
 [ -d "$NOTES_DIR" ] || mkdir -p "$NOTES_DIR"
 
-# ★ 현재 pane id 저장(이 pane에 링크를 심어야 함)
+# 현재 pane id 저장 (이 pane에 링크를 심어야 함)
 PANE="$(tmux display-message -p '#{pane_id}')"
 
-list_files(){ local n="${1:-30}"; (cd "$NOTES_DIR" && ls -1t *.md 2>/dev/null | head -n "$n" || true); }
+# 현재 프로젝트 감지
+CURRENT_REPO=$(cd "$(tmux display-message -p '#{pane_current_path}')" && \
+  basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 
-use_fzf(){ command -v fzf >/dev/null 2>&1 && fzf --version >/dev/null 2>&1; }
-
-if use_fzf; then
-  tmux display-popup -E -w 80% -h 80% \
-    "cd \"$NOTES_DIR\" 2>/dev/null || exit 0;
-     sel=\$(ls -1t *.md 2>/dev/null | fzf --prompt='Link note> ' --height=100% --reverse --preview 'bat --color=always --style=plain {} 2>/dev/null || cat {}') || exit 0;
-     # ★ 원래 pane(-t \"$PANE\")에 옵션 설정
-     tmux set -pt \"$PANE\" @pane_note_path \"$NOTES_DIR/\$sel\";
-     tmux display-message \"🔗 Linked: \$sel\"" \
-    >/dev/null 2>&1 || true
+# 노트 개수 확인
+note_count=$(find "$NOTES_DIR" -mindepth 2 -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$note_count" -eq 0 ]; then
+  echo "노트가 없습니다. prefix+N으로 새 노트를 생성하세요."
+  read -rp "Press Enter to close..."
   exit 0
 fi
 
-files="$(list_files 30)"
-[ -z "${files:-}" ] && { tmux display-message "노트가 없습니다."; exit 0; }
+use_fzf() { command -v fzf >/dev/null 2>&1 && fzf --version >/dev/null 2>&1; }
 
+if use_fzf; then
+  # 헬퍼 스크립트 존재 확인
+  if [ ! -x "$HELPERS" ]; then
+    echo "헬퍼 스크립트가 없습니다: $HELPERS"
+    read -rp "Press Enter to close..."
+    exit 1
+  fi
+
+  # fzf 실행 (개선된 UX)
+  set +e
+  selected=$("$HELPERS" list-all | fzf --ansi --prompt="Link note> " \
+      --with-nth=1 --delimiter=$'\t' \
+      --header="ctrl-p: 현재 프로젝트 | ctrl-a: 전체 | ctrl-d: 삭제 | ctrl-x: 아카이브" \
+      --preview 'file=$(echo {} | cut -f2); bat --color=always --style=plain "$file" 2>/dev/null || cat "$file"' \
+      --bind "ctrl-p:reload($HELPERS list-current '$CURRENT_REPO')" \
+      --bind "ctrl-a:reload($HELPERS list-all)" \
+      --bind "ctrl-d:execute-silent(file=\$(echo {} | cut -f2); $HELPERS move-trash \"\$file\")+reload($HELPERS list-all)" \
+      --bind "ctrl-x:execute-silent(file=\$(echo {} | cut -f2); $HELPERS move-archive \"\$file\")+reload($HELPERS list-all)")
+  set -e
+
+  # ESC로 취소하거나 빈 선택
+  [ -z "${selected:-}" ] && exit 0
+
+  # 선택된 노트 연결
+  file=$(echo "$selected" | cut -f2)
+  tmux set -pt "$PANE" @pane_note_path "$file"
+  tmux display-message "Linked: $(basename "$file")"
+  exit 0
+fi
+
+# fzf 없으면 display-menu fallback (상위 20개)
+# yq로 메타데이터 추출
 MENU=(display-menu -T "Link Note" -x C -y C)
 i=1
-printf "%s\n" "$files" | while IFS= read -r f; do
+while IFS= read -r -d '' f; do
   [ -z "$f" ] && continue
-  disp="$(printf "%s" "$f" | cut -c1-60)"; [ "${#f}" -gt 60 ] && disp="${disp}…"
-  esc="$(printf "%s" "$NOTES_DIR/$f" | sed "s/'/'\\\\''/g")"
-  # ★ 여기서도 -t "$PANE" 로 원래 pane에 지정
-  MENU+=( "$i. $disp" "" "run-shell \"tmux set -pt '$PANE' @pane_note_path '$esc'; tmux display-message '🔗 Linked: $f'\"" )
+  repo=$(basename "$(dirname "$f")")
+  title=$(yq -r '.title // ""' "$f" 2>/dev/null || echo "")
+  [ -z "$title" ] && title=$(basename "$f" .md)
+  disp="[$repo] $title"
+  disp_short="${disp:0:50}"
+  [ "${#disp}" -gt 50 ] && disp_short="${disp_short}..."
+  esc="$(printf "%s" "$f" | sed "s/'/'\\\\''/g")"
+  MENU+=( "$i. $disp_short" "" "run-shell \"tmux set -pt '$PANE' @pane_note_path '$esc'; tmux display-message 'Linked: $(basename "$f")'\"" )
   i=$((i+1))
-done
+  [ "$i" -gt 20 ] && break
+done < <(find "$NOTES_DIR" -mindepth 2 -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" -print0 2>/dev/null)
 
 tmux "${MENU[@]}" >/dev/null 2>&1 || true
-
-# #!/usr/bin/env bash
-# set -euo pipefail
-
-# NOTES_DIR="${HOME}/.tmux/pane-notes"
-# mkdir -p "$NOTES_DIR"
-
-# # 최근 수정순 목록(상위 N)
-# list_files(){
-#   local limit="${1:-30}"
-#   # 공백/특수문자 안전: find -print0 | xargs -0 stat … 는 BSD/gnu 차이가 있어 간단히 ls 활용
-#   # macOS 기본 ls는 -t(시간순), -1(한 줄) 지원
-#   (cd "$NOTES_DIR" && ls -1t *.md 2>/dev/null | head -n "$limit")
-# }
-
-# # 1) fzf가 있으면 fzf로 선택
-# if command -v fzf >/dev/null 2>&1; then
-#   # 팝업에서 fzf 실행
-#   tmux display-popup -E -w 80% -h 80% \
-#     "cd \"$NOTES_DIR\" || exit 0; sel=\$(ls -1t *.md 2>/dev/null | fzf --prompt='Link note> ' --height=100% --reverse) || exit 0; tmux set -p @pane_note_path \"$NOTES_DIR/\$sel\"; tmux display-message \"🔗 Linked: \$sel\""
-#   exit 0
-# fi
-
-# # 2) fzf 없으면 display-menu로 상위 30개
-# files="$(list_files 30)"
-# [ -z "$files" ] && { tmux display-message "노트가 없습니다."; exit 0; }
-
-# MENU=(display-menu -T "Link Note" -x C -y C)
-# i=1
-# # Bash 3.x: while-read
-# echo "$files" | while IFS= read -r f; do
-#   [ -z "$f" ] && continue
-#   disp="$(printf "%s" "$f" | cut -c1-60)"; [ "${#f}" -gt 60 ] && disp="${disp}…"
-#   esc_path="$(printf "%s" "$NOTES_DIR/$f" | sed "s/'/'\\\\''/g")"
-#   MENU+=( "$i. $disp" "" "run-shell \"tmux set -p @pane_note_path '$esc_path'; tmux display-message '🔗 Linked: $f'\"" )
-#   i=$((i+1))
-# done
-
-# tmux "${MENU[@]}" >/dev/null 2>&1 || true

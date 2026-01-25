@@ -125,41 +125,63 @@ create_note(){
     exit 2
   fi
 
-  # 파일명은 사용자 제목 기반으로 다시 구성
+  # ★ 새 폴더 구조: {NOTES_DIR}/{repo}/{title}.md
   local user_slug; user_slug="$(slug "$user_title")"
-  local key
-  if [ "$sticky" = "1" ]; then
-    key="${repo_slug}_${user_slug}"
-  else
-    # 원래: key="${repo_slug}_${user_slug}_${pane_id#%}"
-    # 변경: paneid 제거
-    key="${repo_slug}_${user_slug}"
-  fi
-  note="${NOTES_DIR}/${key}.md"
+  mkdir -p "${NOTES_DIR}/${repo_slug}"
+  note="${NOTES_DIR}/${repo_slug}/${user_slug}.md"
 
   # pane 변수에도 새로운 경로를 저장
   tmux set -p @pane_note_path "$note"
 
   # 파일이 이미 있으면 덮어쓰지 말고 열기만
-  if [ ! -f "$note" ]; then
-    {
-      echo "# Notes for ${repo} — ${user_title}"
-      echo "- Created: $(date '+%Y-%m-%d %H:%M')"
-      echo "- Path: $pane_path"
-      echo
-      echo "## TMI"
-      echo "- "
-      echo
-      echo "## Links"
-      # 외부 설정 파일이 있으면 포함 (hostType별로 다른 내용)
-      local links_file="${HOME}/.config/pane-note/links.txt"
-      if [ -f "$links_file" ]; then
-        cat "$links_file"
-      else
-        echo "- "
-      fi
-    } >"$note"
+  if [ -f "$note" ]; then
+    open_popup_edit
+    return
   fi
+
+  # ★ 태그 팔레트 연동 (fzf multi-select)
+  local selected_tags=""
+  if command -v fzf >/dev/null 2>&1; then
+    # 기본 태그
+    local DEFAULT_TAGS="버그 기능 리팩토링 테스트 문서"
+    # 기존 노트에서 태그 수집
+    local EXISTING_TAGS
+    EXISTING_TAGS=$(find "$NOTES_DIR" -path "*/_archive/*" -prune -o -path "*/_trash/*" -prune -o -name "*.md" -print \
+      -exec yq -r '.tags[]' {} \; 2>/dev/null | sort -u || true)
+    # 합집합
+    local ALL_TAGS
+    ALL_TAGS=$(printf '%s\n' $DEFAULT_TAGS $EXISTING_TAGS | sort -u | grep -v '^$' || true)
+
+    # tmux popup 내에서 fzf 태그 선택
+    # ESC로 취소해도 빈 문자열로 진행 (tags: [])
+    selected_tags=$(tmux display-popup -E -w 60% -h 50% \
+      "echo '$ALL_TAGS' | fzf --multi --prompt='Tags (Tab으로 선택, ESC=건너뛰기)> ' | tr '\n' ',' | sed 's/,\$//'" 2>/dev/null || true)
+  fi
+
+  # ★ YAML frontmatter 생성
+  {
+    echo "---"
+    echo "title: $user_title"
+    if [ -n "$selected_tags" ]; then
+      echo "tags: [$(echo "$selected_tags" | sed 's/,/, /g')]"
+    else
+      echo "tags: []"
+    fi
+    echo "created: $(date '+%Y-%m-%d')"
+    echo "repo: $repo"
+    echo "---"
+    echo "# $user_title"
+    echo ""
+    echo "## TMI"
+    echo "- "
+    # 외부 설정 파일이 있으면 포함 (hostType별로 다른 내용)
+    local links_file="${HOME}/.config/pane-note/links.txt"
+    if [ -f "$links_file" ]; then
+      echo ""
+      echo "## Links"
+      cat "$links_file"
+    fi
+  } >"$note"
 
   # (선택) pane 제목이 비어있으면 사용자 제목으로 채워주기
   if [ -z "${title:-}" ]; then
