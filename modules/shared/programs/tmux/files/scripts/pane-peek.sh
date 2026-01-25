@@ -35,7 +35,7 @@ if use_fzf; then
   set +e
   selected=$("$HELPERS" list-all | fzf --ansi --prompt="Peek note> " \
       --with-nth=1 --delimiter=$'\t' \
-      --header=$'Tab/S-Tab: 미리보기 스크롤 | ctrl-p: 현재 프로젝트 | ctrl-a: 전체\nctrl-d: 삭제 | ctrl-x: 아카이브' \
+      --header=$'Tab: 미리보기 아래로 스크롤 | S-Tab: 미리보기 위로 스크롤\nctrl-p: 현재 프로젝트 노트로 필터링 | ctrl-a: 모든 노트 보기\nctrl-d: 휴지통으로 보내기(_trash) | ctrl-x: 아카이브로 보내기(_archive)' \
       --preview 'file=$(echo {} | cut -f2); bat --color=always --style=plain "$file" 2>/dev/null || cat "$file"' \
       --preview-window=up:60% \
       --bind "tab:preview-down,shift-tab:preview-up" \

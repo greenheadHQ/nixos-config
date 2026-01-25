@@ -172,8 +172,13 @@ create_note(){
 
     # tmux popup 내에서 fzf 태그 선택
     # ESC로 취소해도 빈 문자열로 진행 (tags: [])
-    selected_tags=$(tmux display-popup -E -w 60% -h 50% \
-      "echo '$ALL_TAGS' | fzf --multi --prompt='Tags (Tab으로 선택, ESC=건너뛰기)> ' | tr '\n' ',' | sed 's/,\$//'" 2>/dev/null || true)
+    # NOTE: display-popup은 stdout을 캡처하지 않으므로 임시 파일 사용
+    local tmp_file
+    tmp_file=$(mktemp)
+    tmux display-popup -E -w 60% -h 50% \
+      "echo '$ALL_TAGS' | fzf --multi --prompt='Tags (Tab으로 선택, ESC=건너뛰기)> ' > '$tmp_file'" 2>/dev/null || true
+    selected_tags=$(tr '\n' ',' < "$tmp_file" | sed 's/,$//')
+    rm -f "$tmp_file"
   fi
 
   # ★ YAML frontmatter 생성
