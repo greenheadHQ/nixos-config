@@ -198,7 +198,7 @@
             echo ""
             echo "선택:"
             echo "  [c] 기존 브랜치로 워크트리 생성"
-            echo "  [n] 새 브랜치로 생성 (현재 HEAD 기준)"
+            echo "  [n] 기존 브랜치 삭제 후 새로 생성 (현재 HEAD 기준)"
             echo "  [q] 취소"
             echo ""
             echo -n "선택: "
@@ -220,25 +220,18 @@
                 fi
                 ;;
               n|N)
-                # 새 브랜치명 생성 (충돌 회피)
-                local new_branch="$branch_name"
-                local branch_suffix=2
-                while git show-ref --verify --quiet "refs/heads/$new_branch" 2>/dev/null; do
-                  new_branch="''${branch_name}-''${branch_suffix}"
-                  ((branch_suffix++))
-                  if [[ $branch_suffix -gt 99 ]]; then
-                    echo "❌ 브랜치명 충돌 해결 실패"
+                # 기존 로컬 브랜치 삭제 후 같은 이름으로 새로 생성
+                if [[ "$local_exists" == true ]]; then
+                  git branch -D "$branch_name" || {
+                    echo "❌ 기존 브랜치 삭제 실패"
                     return 1
-                  fi
-                done
-                # 디렉토리명도 새 브랜치에 맞게 조정
-                dir_name="''${new_branch//\//_}"
-                worktree_dir="$git_root/.wt/$dir_name"
-                git worktree add -b "$new_branch" "$worktree_dir" || {
+                  }
+                  echo "🗑️  기존 브랜치 '$branch_name' 삭제됨"
+                fi
+                git worktree add -b "$branch_name" "$worktree_dir" || {
                   echo "❌ 워크트리 생성 실패"
                   return 1
                 }
-                echo "📌 새 브랜치 생성: $new_branch"
                 ;;
               q|Q|*)
                 echo "취소되었습니다."
