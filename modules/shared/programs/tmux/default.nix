@@ -77,6 +77,10 @@ in
       source = "${tmuxDir}/scripts/restore-pane-vars.sh";
       executable = true;
     };
+    ".tmux/scripts/smoke-test.sh" = {
+      source = "${tmuxDir}/scripts/smoke-test.sh";
+      executable = true;
+    };
     # NOTE: ~/.tmux.conf는 더 이상 필요없음
     # programs.tmux.extraConfig에서 ~/.tmux/tmux.conf를 source하므로
     # XDG 경로(~/.config/tmux/tmux.conf)가 우선 로드됨

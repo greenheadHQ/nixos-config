@@ -20,9 +20,13 @@ echo ""
 # 기본 태그 (하드코딩)
 DEFAULT_TAGS="버그 기능 리팩토링 테스트 문서"
 
-# 기존 노트에서 태그 수집 (동적) - yq 올바른 문법
-EXISTING_TAGS=$(find "$NOTES_DIR" -path "*/_archive/*" -prune -o -path "*/_trash/*" -prune -o -name "*.md" -print \
-  -exec yq -r '.tags[]' {} \; 2>/dev/null | sort -u || true)
+# 기존 노트에서 태그 수집
+# 유효한 태그만 필터링: 30자 이내, 경로/URL 아님, 빈 값 아님
+EXISTING_TAGS=$(find "$NOTES_DIR" -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" \
+  -exec yq -r 'select(.tags) | .tags[]' {} \; 2>/dev/null \
+  | grep -vE '^(/|https?://|[[:space:]]*$)' \
+  | awk 'length <= 30' \
+  | sort -u || true)
 
 # 합집합
 ALL_TAGS=$(printf '%s\n' $DEFAULT_TAGS $EXISTING_TAGS | sort -u | grep -v '^$' || true)
