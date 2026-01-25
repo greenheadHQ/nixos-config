@@ -37,8 +37,10 @@ if use_fzf; then
   set +e
   selected=$("$HELPERS" list-all | fzf --ansi --prompt="Link note> " \
       --with-nth=1 --delimiter=$'\t' \
-      --header="ctrl-p: 현재 프로젝트 | ctrl-a: 전체 | ctrl-d: 삭제 | ctrl-x: 아카이브" \
+      --header=$'Tab/S-Tab: 미리보기 스크롤 | ctrl-p: 현재 프로젝트 | ctrl-a: 전체\nctrl-d: 삭제 | ctrl-x: 아카이브' \
       --preview 'file=$(echo {} | cut -f2); bat --color=always --style=plain "$file" 2>/dev/null || cat "$file"' \
+      --preview-window=up:60% \
+      --bind "tab:preview-down,shift-tab:preview-up" \
       --bind "ctrl-p:reload($HELPERS list-current '$CURRENT_REPO')" \
       --bind "ctrl-a:reload($HELPERS list-all)" \
       --bind "ctrl-d:execute-silent(file=\$(echo {} | cut -f2); $HELPERS move-trash \"\$file\")+reload($HELPERS list-all)" \
