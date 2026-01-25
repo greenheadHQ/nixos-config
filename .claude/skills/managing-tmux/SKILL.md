@@ -33,3 +33,4 @@ description: |
 ## 레퍼런스
 
 - 단축키 가이드: [references/shortcuts.md](references/shortcuts.md)
+- 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)

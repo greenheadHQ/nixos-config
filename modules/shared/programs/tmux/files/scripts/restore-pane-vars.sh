@@ -32,4 +32,7 @@ while IFS='|' read -r var_type line_num value; do
   esac
 done < "$VARS_FILE"
 
+# 상태 표시줄 강제 갱신 (border-format 반영)
+tmux refresh-client -S 2>/dev/null || true
+
 tmux display-message "Pane variables restored ($restored vars)"

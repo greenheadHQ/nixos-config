@@ -55,8 +55,8 @@ slug() {
 
 pane_id="$(fmt '#{pane_id}')"
 pane_path="$(fmt '#{pane_current_path}')"
-# 값만, 조용히: -g(글로벌) -v(value) -q(quiet)
-title="$(tmux show-option -gvq '@custom_pane_title' || true)"
+# pane 옵션 읽기 (display-message로 현재 pane의 값 조회)
+title="$(tmux display-message -p '#{@custom_pane_title}')"
 
 # 리포/디렉토리명
 if git -C "$pane_path" rev-parse --show-toplevel >/dev/null 2>&1; then
@@ -92,7 +92,12 @@ else
   note="${NOTES_DIR}/$(default_key).md"
 fi
 
-ensure_var(){ tmux set -p @pane_note_path "$note"; }
+# 기존 값이 없을 때만 설정 (복원된 값 보호)
+ensure_var(){
+  local current
+  current="$(tmux display-message -p '#{@pane_note_path}')"
+  [ -z "$current" ] && tmux set -p @pane_note_path "$note"
+}
 
 ensure_exist_or_msg(){
   [ -f "$note" ] && return 0

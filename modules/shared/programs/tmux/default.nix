@@ -20,9 +20,9 @@ in
           set -g @resurrect-dir '~/.local/share/tmux/resurrect'
           set -g @resurrect-capture-pane-contents 'on'
 
-          # Pane 변수 저장/복원 hook
-          set -g @resurrect-hook-pre-save-all 'run-shell "$HOME/.tmux/scripts/save-pane-vars.sh"'
-          set -g @resurrect-hook-post-restore-all 'run-shell "$HOME/.tmux/scripts/restore-pane-vars.sh"'
+          # Pane 변수 저장/복원 hook (eval로 실행되므로 run-shell 불필요)
+          set -g @resurrect-hook-post-save-all '$HOME/.tmux/scripts/save-pane-vars.sh'
+          set -g @resurrect-hook-post-restore-all '$HOME/.tmux/scripts/restore-pane-vars.sh'
         '';
       }
     ];
