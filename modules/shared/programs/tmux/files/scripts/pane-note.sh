@@ -173,11 +173,22 @@ create_note(){
     # tmux popup 내에서 fzf 태그 선택
     # ESC로 취소해도 빈 문자열로 진행 (tags: [])
     # NOTE: display-popup은 stdout을 캡처하지 않으므로 임시 파일 사용
+    # --print-query: 프롬프트에 입력한 custom tag도 첫 줄에 출력됨
     local tmp_file
     tmp_file=$(mktemp)
-    tmux display-popup -E -w 60% -h 50% \
-      "echo '$ALL_TAGS' | fzf --multi --prompt='Tags (Tab으로 선택, ESC=건너뛰기)> ' > '$tmp_file'" 2>/dev/null || true
-    selected_tags=$(tr '\n' ',' < "$tmp_file" | sed 's/,$//')
+    tmux display-popup -E -w 90% -h 50% \
+      "echo '$ALL_TAGS' | fzf --multi --print-query --prompt='Tags> ' --header=$'Tab: 기존 태그 선택/해제 | Enter: 완료 | ESC: 건너뛰기\n새 태그 입력: 프롬프트에 직접 입력 (쉼표로 여러 개 가능, 예: 긴급,중요)' > '$tmp_file'" 2>/dev/null || true
+    # 첫 줄: custom tag (쿼리), 나머지: 선택된 기존 태그
+    local query selected_items
+    query=$(head -1 "$tmp_file")
+    selected_items=$(tail -n +2 "$tmp_file")
+    # 쿼리는 쉼표로 분리하여 여러 태그로 처리
+    local query_tags=""
+    if [ -n "$query" ]; then
+      query_tags=$(echo "$query" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+    fi
+    # 쿼리 태그와 선택 항목 합치기 (빈 값 제외, 중복 제거)
+    selected_tags=$(printf '%s\n%s' "$query_tags" "$selected_items" | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//')
     rm -f "$tmp_file"
   fi
 
