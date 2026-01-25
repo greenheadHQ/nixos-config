@@ -17,6 +17,21 @@ description: |
 | `modules/shared/programs/tmux/files/tmux.conf` | tmux 설정 파일 |
 | `modules/shared/programs/tmux/files/scripts/` | Pane Notepad 스크립트들 |
 
+### 스크립트 목록
+
+| 스크립트 | 용도 |
+|----------|------|
+| `pane-note.sh` | 노트 생성/편집/관리 |
+| `pane-link.sh` | 기존 노트 연결 (fzf) |
+| `pane-peek.sh` | 노트 미리보기 |
+| `pane-tag.sh` | 태그 수정 |
+| `pane-search.sh` | 노트 내용 검색 (ripgrep + fzf) |
+| `pane-link-helpers.sh` | pane-link.sh 헬퍼 |
+| `pane-search-helpers.sh` | pane-search.sh 헬퍼 |
+| `save-pane-vars.sh` | tmux-resurrect용 pane 변수 저장 |
+| `restore-pane-vars.sh` | tmux-resurrect용 pane 변수 복원 |
+| `smoke-test.sh` | 기능 검증 테스트 |
+
 ## 플러그인
 
 | 플러그인 | 용도 |

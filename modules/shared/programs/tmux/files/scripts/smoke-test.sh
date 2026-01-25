@@ -128,7 +128,33 @@ EOF
   fi
   rm "$NOTES_DIR/$TEST_REPO/$TEST_TITLE.md"
 else
-  echo "  SKIP: 헬퍼 스크립트 미설치"
+  echo "  SKIP: pane-link-helpers.sh 미설치"
+fi
+
+# pane-search-helpers.sh 테스트
+SEARCH_HELPERS="$HOME/.tmux/scripts/pane-search-helpers.sh"
+if [ -x "$SEARCH_HELPERS" ]; then
+  # list-all 명령 테스트
+  set +e
+  result=$("$SEARCH_HELPERS" list-all 2>/dev/null | head -1)
+  exit_code=$?
+  set -e
+  [ $exit_code -eq 0 ] && echo "  OK: pane-search-helpers list-all" || { echo "FAIL: list-all"; exit 1; }
+
+  # search 명령 테스트 (@파일 방식)
+  echo "test" > /tmp/smoke-test-query
+  set +e
+  result=$("$SEARCH_HELPERS" search "@/tmp/smoke-test-query" 2>/dev/null | head -1)
+  exit_code=$?
+  set -e
+  rm -f /tmp/smoke-test-query
+  [ $exit_code -eq 0 ] && echo "  OK: pane-search-helpers search" || { echo "FAIL: search"; exit 1; }
+
+  # first-line 명령 테스트 (파일 없을 때 1 반환)
+  result=$("$SEARCH_HELPERS" first-line "/nonexistent" "" 2>/dev/null)
+  [ "$result" = "1" ] && echo "  OK: pane-search-helpers first-line" || { echo "FAIL: first-line"; exit 1; }
+else
+  echo "  SKIP: pane-search-helpers.sh 미설치"
 fi
 echo ""
 
@@ -141,6 +167,7 @@ scripts=(
   "pane-tag.sh"
   "pane-search.sh"
   "pane-link-helpers.sh"
+  "pane-search-helpers.sh"
   "prefix-help.sh"
 )
 for script in "${scripts[@]}"; do

@@ -61,6 +61,10 @@ in
       source = "${tmuxDir}/scripts/pane-link-helpers.sh";
       executable = true;
     };
+    ".tmux/scripts/pane-search-helpers.sh" = {
+      source = "${tmuxDir}/scripts/pane-search-helpers.sh";
+      executable = true;
+    };
     ".tmux/scripts/pane-search.sh" = {
       source = "${tmuxDir}/scripts/pane-search.sh";
       executable = true;
