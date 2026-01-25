@@ -130,14 +130,28 @@ create_note(){
   mkdir -p "${NOTES_DIR}/${repo_slug}"
   note="${NOTES_DIR}/${repo_slug}/${user_slug}.md"
 
-  # pane 변수에도 새로운 경로를 저장
-  tmux set -p @pane_note_path "$note"
-
-  # 파일이 이미 있으면 덮어쓰지 말고 열기만
+  # 파일이 이미 있으면 사용자에게 확인
   if [ -f "$note" ]; then
-    open_popup_edit
+    local choice=""
+    if command -v fzf >/dev/null 2>&1; then
+      choice=$(tmux display-popup -E -w 50% -h 30% \
+        "printf '%s\n' '기존 노트에 연결하기' '노트 생성 취소' | fzf --disabled --prompt='' --header='동일한 이름의 노트가 존재합니다: $(basename "$note")'" 2>/dev/null || true)
+    else
+      # fzf 없으면 그냥 열기
+      choice="기존 노트에 연결하기"
+    fi
+
+    if [ "$choice" = "기존 노트에 연결하기" ]; then
+      tmux set -p @pane_note_path "$note"
+      open_popup_edit
+    else
+      tmux display-message "노트 생성 취소됨"
+    fi
     return
   fi
+
+  # pane 변수에 새로운 경로 저장
+  tmux set -p @pane_note_path "$note"
 
   # ★ 태그 팔레트 연동 (fzf multi-select)
   local selected_tags=""
