@@ -1,5 +1,10 @@
 # tmux 설정
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 let
   tmuxDir = ./files;
@@ -7,6 +12,21 @@ in
 {
   programs.tmux = {
     enable = true;
+
+    plugins = with pkgs.tmuxPlugins; [
+      {
+        plugin = resurrect;
+        extraConfig = ''
+          set -g @resurrect-dir '~/.local/share/tmux/resurrect'
+          set -g @resurrect-capture-pane-contents 'on'
+
+          # Pane 변수 저장/복원 hook
+          set -g @resurrect-hook-pre-save-all 'run-shell "$HOME/.tmux/scripts/save-pane-vars.sh"'
+          set -g @resurrect-hook-post-restore-all 'run-shell "$HOME/.tmux/scripts/restore-pane-vars.sh"'
+        '';
+      }
+    ];
+
     # Home Manager가 생성하는 ~/.config/tmux/tmux.conf가 먼저 로드되므로,
     # 사용자 설정을 여기서 source해야 함
     extraConfig = ''
@@ -37,13 +57,22 @@ in
       source = "${tmuxDir}/scripts/find-unused-prefixes.sh";
       executable = true;
     };
+    ".tmux/scripts/save-pane-vars.sh" = {
+      source = "${tmuxDir}/scripts/save-pane-vars.sh";
+      executable = true;
+    };
+    ".tmux/scripts/restore-pane-vars.sh" = {
+      source = "${tmuxDir}/scripts/restore-pane-vars.sh";
+      executable = true;
+    };
     # NOTE: ~/.tmux.conf는 더 이상 필요없음
     # programs.tmux.extraConfig에서 ~/.tmux/tmux.conf를 source하므로
     # XDG 경로(~/.config/tmux/tmux.conf)가 우선 로드됨
   };
 
-  # pane-notes 디렉토리 생성 (동적 생성용)
-  home.activation.createTmuxPaneNotes = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  # pane-notes 및 resurrect 디렉토리 생성
+  home.activation.createTmuxDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     mkdir -p $HOME/.tmux/pane-notes
+    mkdir -p $HOME/.local/share/tmux/resurrect
   '';
 }

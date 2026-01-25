@@ -2,7 +2,7 @@
 set -euo pipefail
 
 NOTES_DIR="${HOME}/.tmux/pane-notes"
-mkdir -p "$NOTES_DIR"
+[ -d "$NOTES_DIR" ] || mkdir -p "$NOTES_DIR"
 
 fmt(){ tmux display-message -p "$1"; }
 

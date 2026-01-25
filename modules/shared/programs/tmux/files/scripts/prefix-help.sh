@@ -21,7 +21,7 @@ cat >"$TMP" <<EOF
 [노트 관련]
   N : 새 노트 생성(제목 입력) → 생성 후 팝업으로 열기
   K : 기존 노트 연결(선택) → 현재 pane에 링크만 설정
-  V : 기존 노트 열기(선택) → 연결 없이 cursor 편집기로 열기
+  V : 기존 노트 열기(선택) → 연결 없이 에디터(\$EDITOR)로 열기
   n : 노트 편집(팝업) — 링크 없으면 안내
   v : 노트 읽기(읽기 전용 팝업)
   y : 클립보드 한 줄을 노트에 추가
@@ -35,6 +35,10 @@ cat >"$TMP" <<EOF
 
 [설정]
   r : tmux 설정 리로드 (source-file "\$HOME/.tmux/tmux.conf")
+
+[세션 저장/복원 (tmux-resurrect)]
+  Ctrl-s : 세션 저장 (pane 변수 포함)
+  Ctrl-r : 세션 복원
 
 Tip
 - prefix + :  → tmux 명령 프롬프트

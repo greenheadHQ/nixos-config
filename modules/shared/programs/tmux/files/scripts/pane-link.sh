@@ -2,7 +2,7 @@
 set -euo pipefail
 
 NOTES_DIR="${HOME}/.tmux/pane-notes"
-mkdir -p "$NOTES_DIR"
+[ -d "$NOTES_DIR" ] || mkdir -p "$NOTES_DIR"
 
 # ★ 현재 pane id 저장(이 pane에 링크를 심어야 함)
 PANE="$(tmux display-message -p '#{pane_id}')"

@@ -22,4 +22,5 @@ let
 in
 {
   "pushover-credentials.age".publicKeys = allHosts;
+  "pane-note-links.age".publicKeys = allHosts;
 }
