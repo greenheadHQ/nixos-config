@@ -47,6 +47,9 @@ let
       # 테마/UI
       k--kato.intellij-idea-keybindings
 
+      # Terraform
+      hashicorp.terraform
+
       # Claude Code
       anthropic.claude-code
     ])
