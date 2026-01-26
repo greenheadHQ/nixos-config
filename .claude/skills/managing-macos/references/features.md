@@ -5,6 +5,7 @@ macOS 관련 시스템 설정 및 Homebrew 관리입니다.
 ## 목차
 
 - [원격 접속 (SSH/mosh)](#원격-접속-sshmosh)
+  - [SSH 세션 로케일 설정](#ssh-세션-로케일-설정)
 - [보안](#보안)
 - [Dock](#dock)
 - [Finder](#finder)
@@ -80,6 +81,40 @@ mosh green@100.65.50.98
 ```
 
 > **참고**: macOS의 launchd가 SSH 소켓을 직접 관리하므로 `sshd_config`의 `ListenAddress` 설정은 적용되지 않습니다. LAN 접근 제한이 필요한 경우 pf 방화벽을 사용해야 합니다.
+
+### SSH 세션 로케일 설정
+
+`modules/shared/programs/shell/darwin.nix`에서 관리됩니다.
+
+SSH로 맥북에 접속할 때 로케일이 `C`로 폴백되는 문제를 방지합니다.
+
+**문제 원인:**
+
+| 시스템 | 로케일 설정 방식 | SSH 세션 적용 |
+|--------|------------------|---------------|
+| NixOS | `/etc/locale.conf` (시스템 전역) | 자동 적용 |
+| macOS | GUI 앱이 시스템 설정 상속 | 별도 설정 필요 |
+
+macOS는 NixOS의 `/etc/locale.conf`처럼 시스템 전역 로케일 파일이 없습니다. 터미널 앱(Terminal.app, Ghostty 등)은 시스템 설정을 읽어서 `LANG`을 설정하지만, SSH 세션은 이 혜택을 받지 못합니다.
+
+**해결:**
+
+`home.sessionVariables`에 `LANG` 환경변수를 명시적으로 설정합니다. Home Manager가 `~/.zshenv`에서 로드하는 `hm-session-vars.sh`에 `export LANG=...`를 추가하므로, 모든 zsh 세션(로컬, SSH 포함)에서 로케일이 설정됩니다.
+
+```nix
+# modules/shared/programs/shell/darwin.nix
+home.sessionVariables = {
+  LANG = "en_US.UTF-8";
+};
+```
+
+**검증:**
+
+```bash
+# SSH 접속 후
+locale          # LANG=en_US.UTF-8 확인
+locale charmap  # UTF-8 확인
+```
 
 ## 보안
 
