@@ -37,6 +37,9 @@ in
   home.sessionVariables = {
     ICLOUD = "$HOME/Library/Mobile Documents/com~apple~CloudDocs";
     BUN_INSTALL = "$HOME/.bun";
+    # SSH 세션에서 로케일이 C로 폴백되는 문제 방지
+    # (macOS는 /etc/locale.conf가 없어서 SSH 세션에 로케일이 자동 적용되지 않음)
+    LANG = "en_US.UTF-8";
   };
 
   # macOS 전용 PATH
