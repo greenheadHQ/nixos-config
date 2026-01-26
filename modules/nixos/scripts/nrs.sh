@@ -199,20 +199,6 @@ preview_changes() {
 }
 
 #───────────────────────────────────────────────────────────────────────────────
-# 사용자 확인
-#───────────────────────────────────────────────────────────────────────────────
-confirm_apply() {
-    echo -en "${YELLOW}Apply these changes? [Y/n] ${NC}"
-    read -r response
-    case "$response" in
-        [nN]|[nN][oO])
-            log_warn "❌ Cancelled by user"
-            exit 0
-            ;;
-    esac
-}
-
-#───────────────────────────────────────────────────────────────────────────────
 # nixos-rebuild switch 실행
 #───────────────────────────────────────────────────────────────────────────────
 run_nixos_rebuild() {
@@ -262,7 +248,6 @@ main() {
 
     # 2. 빌드 및 적용
     preview_changes
-    confirm_apply
     run_nixos_rebuild
     cleanup_build_artifacts
 

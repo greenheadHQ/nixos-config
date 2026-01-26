@@ -45,7 +45,7 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 
 | 명령어 | 플랫폼 | 설명 |
 |--------|--------|------|
-| `nrs` | macOS/NixOS | 설정 적용 (미리보기 + 확인 + 적용) |
+| `nrs` | macOS/NixOS | 설정 적용 (미리보기 + 적용) |
 | `nrs --update` | macOS/NixOS | nixos-config-secret flake input 업데이트 후 rebuild |
 
 ## 스킬 라우팅
@@ -66,28 +66,3 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | tmux config, keybindings, pane notepad, tmux-resurrect | `managing-tmux` |
 | SSH keys, Tailscale VPN, sudo auth failure | `managing-ssh` |
 | Cursor extensions, extensions.json | `managing-cursor` |
-
-## nrs 스크립트 테스트 (LLM용)
-
-nrs 스크립트는 대화형 프롬프트(`Apply these changes? [Y/n]`)가 있어서 Bash 도구로 직접 실행하면 멈춥니다.
-
-테스트 방법:
-
-```bash
-# macOS
-echo "Y" | bash modules/darwin/scripts/nrs.sh  # 수락 테스트
-echo "n" | bash modules/darwin/scripts/nrs.sh  # 취소 테스트
-
-# NixOS
-echo "Y" | bash modules/nixos/scripts/nrs.sh
-```
-
-부분 테스트 (빌드 없이):
-
-```bash
-# macOS
-bash -c 'source modules/darwin/scripts/nrs.sh; check_secret_repo_sync'
-
-# NixOS
-bash -c 'source modules/nixos/scripts/nrs.sh; check_secret_repo_sync'
-```

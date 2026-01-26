@@ -16,7 +16,7 @@ nix-darwin 및 macOS 시스템 설정 가이드입니다.
 ### Rebuild 명령어
 
 ```bash
-# 설정 적용 (미리보기 + 확인 + 적용)
+# 설정 적용 (미리보기 + 적용)
 nrs
 
 # nixos-config-secret 업데이트 후 rebuild

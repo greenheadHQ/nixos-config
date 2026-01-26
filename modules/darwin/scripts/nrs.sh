@@ -190,24 +190,7 @@ preview_changes() {
 }
 
 #───────────────────────────────────────────────────────────────────────────────
-# 3단계: 사용자 확인
-#───────────────────────────────────────────────────────────────────────────────
-confirm_apply() {
-    echo -en "${YELLOW}Apply these changes? [Y/n] ${NC}"
-    read -r response
-    case "$response" in
-        [nN]|[nN][oO])
-            log_warn "❌ Cancelled by user"
-            exit 0
-            ;;
-        *)
-            # Y 또는 Enter는 계속 진행
-            ;;
-    esac
-}
-
-#───────────────────────────────────────────────────────────────────────────────
-# 4단계: darwin-rebuild switch 실행
+# 3단계: darwin-rebuild switch 실행
 #───────────────────────────────────────────────────────────────────────────────
 run_darwin_rebuild() {
     if [[ -n "$OFFLINE_FLAG" ]]; then
@@ -265,7 +248,6 @@ main() {
     update_flake_inputs
     cleanup_launchd_agents
     preview_changes
-    confirm_apply
     run_darwin_rebuild
     restart_hammerspoon
     cleanup_build_artifacts

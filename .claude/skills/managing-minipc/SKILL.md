@@ -16,7 +16,7 @@ NixOS MiniPC 설치, 설정, 유지보수 가이드입니다. (NixOS 전용)
 ### Rebuild 명령어
 
 ```bash
-# 설정 적용 (미리보기 + 확인 + 적용)
+# 설정 적용 (미리보기 + 적용)
 nrs
 
 # nixos-config-secret 업데이트 후 rebuild
