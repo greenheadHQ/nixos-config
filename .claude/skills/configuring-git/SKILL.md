@@ -20,8 +20,8 @@ Git, delta diff, rerere 등 Git 관련 설정 가이드입니다.
 | rerere | 충돌 해결 패턴 기록/재사용 |
 | rebase 역순 | Interactive rebase에서 최신 커밋이 위로 |
 | git-cleanup | 오래된/삭제된 브랜치 정리 |
-| wt | Git worktree 생성 및 관리 |
-| wt-cleanup | 워크트리 정리 (PR 상태 확인) |
+| wt | Git worktree 생성 및 관리 (삭제 시 커밋 체크) |
+| wt-cleanup | 워크트리 정리 (PR 상태 + 커밋 체크) |
 
 ### delta 설정 확인
 

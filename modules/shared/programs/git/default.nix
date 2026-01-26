@@ -143,8 +143,9 @@ in
       "mise.local.toml"
       ".mise.local.toml"
 
-      # wt worktree 디렉토리
+      # wt worktree 디렉토리 및 메타데이터
       ".wt/"
+      ".wt-parent"
     ];
   };
 

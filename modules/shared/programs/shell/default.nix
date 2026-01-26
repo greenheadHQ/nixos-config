@@ -97,6 +97,10 @@
             esac
           done
 
+          # 부모 브랜치 미리 캡처 (worktree 생성 전에 해야 함)
+          local parent_branch_for_wt
+          parent_branch_for_wt=$(git branch --show-current 2>/dev/null)
+
           if [[ -z "$branch_name" ]]; then
             echo "사용법: wt [-s|--stay] <브랜치명>"
             echo ""
@@ -132,7 +136,7 @@
           worktree_info=$(git worktree list --porcelain | awk -v branch="$branch_name" '
             /^worktree / { path = substr($0, 10) }
             /^branch refs\/heads\// {
-              b = substr($0, 20)
+              b = substr($0, 19)
               if (b == branch) print path
             }
           ')
@@ -141,16 +145,97 @@
             echo "⚠️  브랜치 '$branch_name'은 이미 워크트리에서 사용 중입니다:"
             echo "    $worktree_info"
             echo ""
-            echo -n "해당 워크트리를 열까요? [Y/n]: "
-            read -r open_choice
-            if [[ "$open_choice" =~ ^[Nn]$ ]]; then
-              return 1
-            fi
-            if [[ "$stay" == false ]]; then
-              cd "$worktree_info" || echo "⚠️  디렉토리 이동 실패"
-            fi
-            _wt_open_editor "$worktree_info"
-            return 0
+            echo "선택:"
+            echo "  [o] 기존 워크트리 열기"
+            echo "  [n] 기존 워크트리 삭제 후 새로 생성"
+            echo "  [q] 취소"
+            echo ""
+            echo -n "선택: "
+            read -r wt_choice
+
+            case "$wt_choice" in
+              o|O|"")
+                if [[ "$stay" == false ]]; then
+                  cd "$worktree_info" || echo "⚠️  디렉토리 이동 실패"
+                fi
+                _wt_open_editor "$worktree_info"
+                return 0
+                ;;
+              n|N)
+                local has_warning=false
+
+                # 1. 커밋 체크 (.wt-parent 또는 upstream 기반)
+                local parent_branch
+                parent_branch=$(cat "$worktree_info/.wt-parent" 2>/dev/null)
+                if [[ -n "$parent_branch" ]]; then
+                  # Case A: .wt-parent 존재
+                  local commit_count
+                  commit_count=$(git -C "$worktree_info" rev-list --count "$parent_branch".."$branch_name" 2>/dev/null || echo "0")
+                  if [[ "$commit_count" -gt 0 ]]; then
+                    has_warning=true
+                    echo "⚠️  '$parent_branch' 이후 ''${commit_count}개의 커밋이 있습니다:"
+                    echo ""
+                    git -C "$worktree_info" log --oneline "$parent_branch".."$branch_name"
+                    echo ""
+                  fi
+                else
+                  # Case B: .wt-parent 없음 → upstream 비교
+                  local upstream
+                  upstream=$(git -C "$worktree_info" rev-parse --abbrev-ref "$branch_name@{upstream}" 2>/dev/null)
+                  if [[ -n "$upstream" ]]; then
+                    local commit_count
+                    commit_count=$(git -C "$worktree_info" rev-list --count "$upstream".."$branch_name" 2>/dev/null || echo "0")
+                    if [[ "$commit_count" -gt 0 ]]; then
+                      has_warning=true
+                      echo "⚠️  '$upstream' 이후 push되지 않은 ''${commit_count}개의 커밋이 있습니다:"
+                      echo ""
+                      git -C "$worktree_info" log --oneline "$upstream".."$branch_name"
+                      echo ""
+                    fi
+                  fi
+                fi
+
+                # 2. Dirty 체크
+                if [[ -n $(git -C "$worktree_info" status --porcelain 2>/dev/null | grep -v '^.. \.wt-parent$') ]]; then
+                  has_warning=true
+                  echo "⚠️  커밋되지 않은 변경사항이 있습니다:"
+                  echo ""
+                  git -C "$worktree_info" status --short
+                  echo ""
+                  git -C "$worktree_info" diff --stat
+                  echo ""
+                fi
+
+                # 3. 확인 프롬프트 (둘 중 하나라도 있으면)
+                if [[ "$has_warning" == true ]]; then
+                  echo -n "정말 삭제하시겠습니까? [y/N]: "
+                  read -r confirm
+                  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                    echo "취소되었습니다."
+                    return 1
+                  fi
+                fi
+
+                # Worktree 삭제
+                git worktree remove "$worktree_info" --force || {
+                  echo "❌ 기존 워크트리 삭제 실패"
+                  return 1
+                }
+                echo "🗑️  기존 워크트리 삭제됨: $worktree_info"
+
+                # 브랜치 삭제
+                git branch -D "$branch_name" || {
+                  echo "❌ 기존 브랜치 삭제 실패"
+                  return 1
+                }
+                echo "🗑️  기존 브랜치 '$branch_name' 삭제됨"
+                # 아래 로직에서 새 워크트리 생성 진행
+                ;;
+              q|Q|*)
+                echo "취소되었습니다."
+                return 1
+                ;;
+            esac
           fi
 
           # 4. 디렉토리명 생성 (슬래시 → 언더스코어)
@@ -218,8 +303,88 @@
                     return 1
                   }
                 fi
+                # 부모 브랜치 기록
+                if [[ -n "$parent_branch_for_wt" ]]; then
+                  echo "$parent_branch_for_wt" > "$worktree_dir/.wt-parent"
+                fi
                 ;;
               n|N)
+                # 1. 해당 브랜치를 사용하는 기존 worktree 확인
+                local existing_worktree
+                existing_worktree=$(git worktree list --porcelain | awk -v branch="$branch_name" '
+                  /^worktree / { path = substr($0, 10) }
+                  /^branch refs\/heads\// {
+                    b = substr($0, 19)
+                    if (b == branch) print path
+                  }
+                ')
+
+                local has_warning=false
+
+                if [[ -n "$existing_worktree" ]]; then
+                  # Case A: worktree 존재 → .wt-parent 기반 커밋 체크
+
+                  # 커밋 체크
+                  local parent_branch
+                  parent_branch=$(cat "$existing_worktree/.wt-parent" 2>/dev/null)
+                  if [[ -n "$parent_branch" ]]; then
+                    local commit_count
+                    commit_count=$(git -C "$existing_worktree" rev-list --count "$parent_branch".."$branch_name" 2>/dev/null || echo "0")
+                    if [[ "$commit_count" -gt 0 ]]; then
+                      has_warning=true
+                      echo "⚠️  '$parent_branch' 이후 ''${commit_count}개의 커밋이 있습니다:"
+                      echo ""
+                      git -C "$existing_worktree" log --oneline "$parent_branch".."$branch_name"
+                      echo ""
+                    fi
+                  fi
+
+                  # Dirty 체크
+                  if [[ -n $(git -C "$existing_worktree" status --porcelain 2>/dev/null | grep -v '^.. \.wt-parent$') ]]; then
+                    has_warning=true
+                    echo "⚠️  커밋되지 않은 변경사항이 있습니다:"
+                    echo ""
+                    git -C "$existing_worktree" status --short
+                    echo ""
+                    git -C "$existing_worktree" diff --stat
+                    echo ""
+                  fi
+                else
+                  # Case B: worktree 없이 브랜치만 존재 → upstream 비교
+                  local upstream
+                  upstream=$(git rev-parse --abbrev-ref "$branch_name@{upstream}" 2>/dev/null)
+                  if [[ -n "$upstream" ]]; then
+                    local commit_count
+                    commit_count=$(git rev-list --count "$upstream".."$branch_name" 2>/dev/null || echo "0")
+                    if [[ "$commit_count" -gt 0 ]]; then
+                      has_warning=true
+                      echo "⚠️  '$upstream' 이후 push되지 않은 ''${commit_count}개의 커밋이 있습니다:"
+                      echo ""
+                      git log --oneline "$upstream".."$branch_name"
+                      echo ""
+                    fi
+                  fi
+                fi
+
+                # 확인 프롬프트
+                if [[ "$has_warning" == true ]]; then
+                  echo -n "정말 삭제하시겠습니까? [y/N]: "
+                  read -r confirm
+                  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                    echo "취소되었습니다."
+                    return 1
+                  fi
+                fi
+
+                # worktree 삭제 (있는 경우만)
+                if [[ -n "$existing_worktree" ]]; then
+                  git worktree remove "$existing_worktree" --force || {
+                    echo "❌ 기존 워크트리 삭제 실패"
+                    return 1
+                  }
+                  echo "🗑️  기존 워크트리 삭제됨: $existing_worktree"
+                fi
+
                 # 기존 로컬 브랜치 삭제 후 같은 이름으로 새로 생성
                 if [[ "$local_exists" == true ]]; then
                   git branch -D "$branch_name" || {
@@ -232,6 +397,10 @@
                   echo "❌ 워크트리 생성 실패"
                   return 1
                 }
+                # 부모 브랜치 기록
+                if [[ -n "$parent_branch_for_wt" ]]; then
+                  echo "$parent_branch_for_wt" > "$worktree_dir/.wt-parent"
+                fi
                 ;;
               q|Q|*)
                 echo "취소되었습니다."
@@ -244,6 +413,10 @@
               echo "❌ 워크트리 생성 실패"
               return 1
             }
+            # 부모 브랜치 기록
+            if [[ -n "$parent_branch_for_wt" ]]; then
+              echo "$parent_branch_for_wt" > "$worktree_dir/.wt-parent"
+            fi
           fi
 
           echo "✅ 워크트리 생성 완료: $worktree_dir"
@@ -358,7 +531,7 @@
               local branch="''${worktree_branches[$i]}"
 
               # Dirty 체크
-              if [[ -n $(git -C "$wt_path" status --porcelain 2>/dev/null) ]]; then
+              if [[ -n $(git -C "$wt_path" status --porcelain 2>/dev/null | grep -v '^.. \.wt-parent$') ]]; then
                 dirty_status[$i]="DIRTY"
               else
                 dirty_status[$i]=""
@@ -470,12 +643,50 @@
             local branch=$(echo "$item" | cut -d'|' -f3)
             local wt_name=$(basename "$wt_path")
 
+            local has_warning=false
+
+            # 커밋 체크 (.wt-parent 또는 upstream 기반)
+            local parent_branch
+            parent_branch=$(cat "$wt_path/.wt-parent" 2>/dev/null)
+            if [[ -n "$parent_branch" ]]; then
+              # Case A: .wt-parent 존재
+              local commit_count
+              commit_count=$(git -C "$wt_path" rev-list --count "$parent_branch".."$branch" 2>/dev/null || echo "0")
+              if [[ "$commit_count" -gt 0 ]]; then
+                has_warning=true
+                echo ""
+                echo "⚠️  '$wt_name' ($branch): '$parent_branch' 이후 ''${commit_count}개의 커밋이 있습니다:"
+                echo ""
+                git -C "$wt_path" log --oneline "$parent_branch".."$branch"
+              fi
+            else
+              # Case B: .wt-parent 없음 → upstream 비교
+              local upstream
+              upstream=$(git -C "$wt_path" rev-parse --abbrev-ref "$branch@{upstream}" 2>/dev/null)
+              if [[ -n "$upstream" ]]; then
+                local commit_count
+                commit_count=$(git -C "$wt_path" rev-list --count "$upstream".."$branch" 2>/dev/null || echo "0")
+                if [[ "$commit_count" -gt 0 ]]; then
+                  has_warning=true
+                  echo ""
+                  echo "⚠️  '$wt_name' ($branch): '$upstream' 이후 push되지 않은 ''${commit_count}개의 커밋이 있습니다:"
+                  echo ""
+                  git -C "$wt_path" log --oneline "$upstream".."$branch"
+                fi
+              fi
+            fi
+
             # Dirty 체크
-            if [[ -n $(git -C "$wt_path" status --porcelain 2>/dev/null) ]]; then
+            if [[ -n $(git -C "$wt_path" status --porcelain 2>/dev/null | grep -v '^.. \.wt-parent$') ]]; then
+              has_warning=true
               echo ""
               echo "⚠️  '$wt_name' ($branch)에 커밋되지 않은 변경사항이 있습니다:"
               echo ""
               git -C "$wt_path" diff --stat 2>/dev/null
+            fi
+
+            # 확인 프롬프트
+            if [[ "$has_warning" == true ]]; then
               echo ""
               echo -n "삭제할까요? [y/N]: "
               read -r confirm
