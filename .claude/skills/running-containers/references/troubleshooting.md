@@ -108,6 +108,7 @@ systemd.services.create-immich-network = {
   wants = [
     "podman.socket"
     "tailscaled.service"
+    "network-online.target"
   ];
   serviceConfig = {
     Type = "oneshot";

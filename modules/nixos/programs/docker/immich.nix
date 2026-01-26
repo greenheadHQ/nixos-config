@@ -29,6 +29,7 @@ in
     wants = [
       "podman.socket"
       "tailscaled.service"
+      "network-online.target"
     ];
     wantedBy = [ "multi-user.target" ];
     before = [
