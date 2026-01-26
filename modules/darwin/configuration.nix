@@ -24,9 +24,12 @@
   users.users.${username} = {
     shell = pkgs.zsh;
     home = "/Users/${username}";
-    # SSH 원격 접속 허용 키 (Termius 등에서 접속 시 사용)
+    # SSH 원격 접속 허용 키
     openssh.authorizedKeys.keys = [
+      # Termius 등 외부 기기에서 접속 시 사용
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDN048Qg9ABnM26jU0X0w2mG9pqcrwuVrcihvDbkRVX8 greenhead-home-mac-2025-10"
+      # MiniPC에서 접속 시 사용
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN64oEThAvKkI806sMRcIXOJxiaT2A8BbqcO4DfWlirO greenhead@minipc"
     ];
   };
 

@@ -107,4 +107,26 @@ MiniPC에서 사용하는 rebuild 관련 alias입니다.
 | `nrp` | `~/.local/bin/nrp.sh` | 미리보기만 |
 | `nrh` | `sudo nix-env --list-generations ...` | 세대 히스토리 |
 
+## macOS SSH 접속
+
+`modules/nixos/programs/ssh-client/`에서 관리됩니다.
+
+MiniPC에서 macOS로 Tailscale VPN을 통해 SSH 접속할 수 있습니다.
+
+**사용법:**
+
+```bash
+ssh mac              # 호스트명으로 접속
+ssh green@100.65.50.98  # IP로 직접 접속
+```
+
+**SSH config 설정:**
+
+```
+Host mac
+  HostName 100.65.50.98
+  User green
+  IdentityFile ~/.ssh/id_ed25519
+```
+
 > **참고**: MiniPC 설정 및 설치 상세 내용은 [MINIPC_PLAN_V3.md](../../../../../../../nixos-config/docs/MINIPC_PLAN_V3.md)를 참고하세요.

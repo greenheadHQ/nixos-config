@@ -63,6 +63,13 @@ sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist
 # 시스템 설정 → 일반 → 공유 → 원격 로그인 → 켜기
 ```
 
+**허용된 SSH 키:**
+
+| 키 | 용도 |
+|---|---|
+| `greenhead-home-mac-2025-10` | Termius 등 외부 기기 접속 |
+| `greenhead@minipc` | MiniPC에서 접속 |
+
 **Termius 연결 정보:**
 
 | 항목 | 값 |

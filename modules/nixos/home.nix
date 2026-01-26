@@ -34,6 +34,9 @@
     ../shared/programs/shell/nixos.nix # Linux 전용 추가
     ../shared/programs/tmux
     ../shared/programs/vim
+
+    # NixOS 전용
+    ./programs/ssh-client # macOS SSH 접속 설정
   ];
 
   # 패키지 (모바일 개발 최적화)

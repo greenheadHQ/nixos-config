@@ -114,7 +114,14 @@ networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ 3000 3001 5173 8
 
 ```bash
 # Mac에서 MiniPC로 SSH 접속
+ssh minipc
+# 또는
 ssh greenhead@100.79.80.95
+
+# MiniPC에서 Mac으로 SSH 접속
+ssh mac
+# 또는
+ssh green@100.65.50.98
 
 # Mac에서 MiniPC의 개발 서버 접근
 curl http://100.79.80.95:3000
@@ -122,3 +129,10 @@ curl http://100.79.80.95:3000
 # mosh 연결 (불안정한 네트워크 대응)
 mosh greenhead@100.79.80.95 -- tmux attach -t main
 ```
+
+**양방향 SSH 요약:**
+
+| 방향 | 명령어 | 설정 파일 |
+|------|--------|----------|
+| macOS → MiniPC | `ssh minipc` | `modules/darwin/programs/ssh/default.nix` |
+| MiniPC → macOS | `ssh mac` | `modules/nixos/programs/ssh-client/default.nix` |
