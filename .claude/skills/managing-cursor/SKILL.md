@@ -1,14 +1,16 @@
 ---
 name: managing-cursor
 description: |
-  This skill should be used when the user installs Cursor extensions,
-  or encounters "Extensions have been modified on disk" warning,
-  extension loading issues. Covers extensions.json Nix management.
+  This skill should be used when the user asks to "add Cursor extension",
+  "install extension via Nix", "manage Cursor settings", or encounters
+  "Extensions have been modified on disk" warning, "확장 0개 표시" issue,
+  extension loading problems. Covers Nix-based extensions.json management,
+  settings.json configuration, and duti file associations.
 ---
 
 # Cursor 확장 관리
 
-Cursor IDE 확장 프로그램 관리 가이드입니다.
+Cursor IDE 확장 프로그램 관리 가이드.
 
 ## Known Issues
 
@@ -39,33 +41,9 @@ Cursor IDE 확장 프로그램 관리 가이드입니다.
 - Nix store 대신 실제 파일 경로로 심볼릭 링크
 - 양방향 수정 가능
 
-### 확장 추가 방법
+### 확장 추가하기
 
-1. VSCode Marketplace에서 확장 ID 찾기
-2. `modules/darwin/programs/cursor/default.nix`에 추가:
-
-```nix
-extensions = {
-  # open-vsx.org에서 설치
-  vscode-open-vsx = [
-    "dbaeumer.vscode-eslint"
-    "esbenp.prettier-vscode"
-  ];
-  # marketplace.visualstudio.com에서 설치
-  vscode-marketplace = [
-    "ms-vscode.vscode-typescript-next"
-  ];
-};
-```
-
-3. `nrs` 실행
-
-### 확장 소스
-
-| 소스 | 용도 | 예시 |
-|------|------|------|
-| `vscode-open-vsx` | 오픈소스 확장 | ESLint, Prettier |
-| `vscode-marketplace` | MS 전용 확장 | TypeScript, C# |
+확장 추가/제거/업데이트는 [references/extensions.md](references/extensions.md) 참조.
 
 ## 자주 발생하는 문제
 
@@ -75,5 +53,6 @@ extensions = {
 
 ## 레퍼런스
 
+- 확장 관리: [references/extensions.md](references/extensions.md)
+- Cursor 설정: [references/settings.md](references/settings.md)
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)
-- 확장 목록: [references/extensions.md](references/extensions.md)

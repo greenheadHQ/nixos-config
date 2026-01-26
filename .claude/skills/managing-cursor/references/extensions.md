@@ -1,88 +1,139 @@
-# Cursor 설정
+# Cursor 확장 관리
 
-Cursor AI 코드 에디터 관련 설정입니다.
+Nix로 Cursor 확장을 선언적으로 관리하는 가이드.
 
-## 목차
+## 설치된 확장 목록
 
-- [Tab 자동완성 우선순위](#tab-자동완성-우선순위)
-- [에디터 탭 라벨 커스터마이징](#에디터-탭-라벨-커스터마이징)
-- [기본 앱 설정 (duti)](#기본-앱-설정-duti)
+### Open-VSX (오픈소스)
 
----
+| 확장 ID | 설명 |
+|---------|------|
+| dbaeumer.vscode-eslint | ESLint 통합 |
+| esbenp.prettier-vscode | Prettier 코드 포맷터 |
+| usernamehw.errorlens | 인라인 에러 표시 |
+| streetsidesoftware.code-spell-checker | 맞춤법 검사 |
+| aaron-bond.better-comments | 주석 하이라이팅 |
+| eamodio.gitlens | Git 기록/blame |
+| github.vscode-pull-request-github | GitHub PR 통합 |
+| bbenoist.nix | Nix 언어 지원 |
+| buenon.scratchpads | 스크래치패드 |
+| kisstkondoros.vscode-gutter-preview | 이미지 미리보기 |
+| k--kato.intellij-idea-keybindings | IntelliJ 키바인딩 |
+| anthropic.claude-code | Claude Code |
 
-`modules/darwin/programs/cursor/`에서 관리됩니다.
+### VS Code Marketplace
 
-## Tab 자동완성 우선순위
+| 확장 ID | 설명 |
+|---------|------|
+| fuzionix.code-case-converter | 케이스 변환 |
+| wix.vscode-import-cost | import 크기 표시 |
+| imekachi.webstorm-darcula | Darcula 테마 |
+| atommaterial.a-file-icon-vscode | 파일 아이콘 |
 
-> **참고**: Cursor 2.3.35 기준
+## 확장 추가/제거 방법
 
-Cursor의 Tab 자동완성(AI 기반)과 VS Code IntelliSense(언어 서버 기반)가 동시에 표시될 때, **Tab 키는 Cursor 자동완성을 우선 처리**합니다. IntelliSense 제안은 무시됩니다.
+### 1. 설정 파일 수정
 
-- **Tab**: Cursor AI 자동완성 수락
-- **방향키(위/아래)**: IntelliSense 제안 탐색
-- **Enter**: IntelliSense 제안 수락
+`modules/darwin/programs/cursor/default.nix`에서 `cursorExtensions` 수정:
 
-## 에디터 탭 라벨 커스터마이징
-
-`settings.json`의 `workbench.editor.customLabels.patterns`를 사용하여 Next.js 프로젝트의 탭 가독성을 개선합니다.
-
-**문제 상황**: Next.js App Router 사용 시 `page.tsx`, `layout.tsx` 등 동일한 파일명이 여러 탭에 열리면 구분이 어려움.
-
-**해결**: 폴더명을 함께 표시하여 어느 라우트의 파일인지 즉시 파악 가능.
-
-| 파일 경로                | Before         | After                |
-| ------------------------ | -------------- | -------------------- |
-| `app/dashboard/page.tsx` | `page.tsx`     | `dashboard/page.tsx` |
-| `app/auth/loading.tsx`   | `loading.tsx`  | `auth/loading.tsx`   |
-| `pages/api/index.ts`     | `index.ts`     | `api/index.ts`       |
-| `features/cart/hooks.ts` | `hooks.ts`     | `cart/hooks.ts`      |
-| `lib/api/constants.ts`   | `constants.ts` | `api/constants.ts`   |
-
-**지원 패턴:**
-
-| 패턴         | 대상 파일                                                                | 표시 형식          |
-| ------------ | ------------------------------------------------------------------------ | ------------------ |
-| App Router   | `page`, `layout`, `loading`, `error`, `not-found`, `template`, `default` | `dirname/filename` |
-| Pages Router | `index`, `_app`, `_document`, `_error`                                   | `dirname/filename` |
-| 공통 index   | `index.ts(x)`                                                            | `dirname/index`    |
-| 유틸리티     | `hook(s)`, `constant(s)`, `util(s)`, `state(s)`, `type(s)`, `style(s)`   | `dirname/filename` |
-
-## 기본 앱 설정 (duti)
-
-텍스트/코드 파일을 더블클릭 시 Xcode 대신 Cursor로 열리도록 `duti`를 사용하여 파일 연결을 설정합니다.
-
-**설정 대상 확장자:**
-
-```
-txt, text, md, mdx, js, jsx, ts, tsx, mjs, cjs,
-json, yaml, yml, toml, css, scss, sass, less, nix,
-sh, bash, zsh, py, rb, go, rs, lua, sql, graphql, gql,
-xml, svg, conf, ini, cfg, env, gitignore, editorconfig, prettierrc, eslintrc
+```nix
+cursorExtensions =
+  (with pkgs.open-vsx; [
+    # 여기에 open-vsx 확장 추가
+    dbaeumer.vscode-eslint
+  ])
+  ++ (with pkgs.vscode-marketplace; [
+    # 여기에 marketplace 확장 추가
+    ms-vscode.vscode-typescript-next
+  ]);
 ```
 
-**설정 대상 UTI:**
-
-| UTI                  | 설명             |
-| -------------------- | ---------------- |
-| `public.plain-text`  | 일반 텍스트 파일 |
-| `public.source-code` | 소스 코드 파일   |
-| `public.data`        | 범용 데이터 파일 |
-
-**동작 방식:**
-
-- Home Manager의 `home.activation`을 사용하여 `darwin-rebuild switch` 시 자동 적용
-- `duti -s <bundle-id> .<ext> all` 명령으로 각 확장자 설정
-- Xcode 업데이트 시에도 `darwin-rebuild switch` 재실행으로 복구 가능
-
-**확인 방법:**
+### 2. 빌드 적용
 
 ```bash
-# 특정 확장자의 기본 앱 확인
-duti -x txt
-# 예상 출력: Cursor.app
-
-# Bundle ID 확인 (Cursor 업데이트 시)
-mdls -name kMDItemCFBundleIdentifier /Applications/Cursor.app
+nrs
 ```
 
-> **참고**: `.html`, `.htm` 확장자는 Safari가 시스템 수준에서 보호하므로 설정 불가.
+### 3. Cursor 재시작
+
+확장이 적용되려면 Cursor 재시작 필요.
+
+## 확장 소스 선택 기준
+
+| 소스 | 용도 | 예시 |
+|------|------|------|
+| `open-vsx` | 오픈소스 확장 (대부분) | ESLint, Prettier, GitLens |
+| `vscode-marketplace` | MS 전용/open-vsx에 없는 확장 | TypeScript, C# |
+
+**선택 방법:**
+1. 먼저 https://open-vsx.org 에서 검색
+2. 없으면 https://marketplace.visualstudio.com 사용
+
+## 확장 ID 찾는 방법
+
+1. VSCode Marketplace 또는 Open-VSX에서 확장 검색
+2. URL에서 ID 확인: `marketplace.visualstudio.com/items?itemName=<publisher>.<name>`
+3. 예: `dbaeumer.vscode-eslint`
+
+## 확장 버전 업데이트
+
+이 프로젝트는 `nix-community/nix-vscode-extensions` flake를 통해 확장을 가져옵니다.
+`nrs`는 `flake.lock`에 고정된 버전을 사용하므로, 확장 버전을 업데이트하려면 flake input을 업데이트해야 합니다.
+
+### 방법 1: nix-vscode-extensions만 업데이트
+
+```bash
+# 확장 소스만 업데이트
+nix flake update nix-vscode-extensions
+
+# 빌드 및 적용
+nrs
+```
+
+### 방법 2: 모든 flake inputs 업데이트
+
+```bash
+# nixpkgs, home-manager, nix-darwin 등 모두 업데이트
+nix flake update
+
+# 빌드 및 적용
+nrs
+```
+
+### 현재 고정 버전
+
+`flake.lock` 기준:
+- **날짜**: 2026-01-18
+- **rev**: `45f1a82aa6940da7134e6b48d5870f8dc7a554d9`
+
+### 동작 원리
+
+```
+flake.lock (버전 고정)
+    ↓
+nix-vscode-extensions flake
+    ↓
+pkgs.open-vsx / pkgs.vscode-marketplace (overlay)
+    ↓
+modules/darwin/programs/cursor/default.nix
+    ↓
+~/.cursor/extensions/
+```
+
+### 권장 워크플로우
+
+```bash
+# 1. 업데이트 전 현재 확장 버전 확인 (선택)
+ls -la ~/.cursor/extensions/
+
+# 2. flake input 업데이트
+nix flake update nix-vscode-extensions
+
+# 3. 변경사항 확인
+git diff flake.lock
+
+# 4. 빌드 및 적용
+nrs
+
+# 5. Cursor 재시작 (확장 변경 감지 경고 → 정상)
+```
