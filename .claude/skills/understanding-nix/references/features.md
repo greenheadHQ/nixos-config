@@ -177,24 +177,19 @@ regexes = [
 **`nrs` / `nrs-offline` 동작 흐름:**
 
 ```
-0. SSH 키 로드 확인 (private repo fetch 보장)
-   └── ssh-add -l로 확인 → 없으면 ssh-add 실행
-
 1. launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
    └── com.green.* 에이전트 동적 탐색 → bootout + plist 삭제
 
 2. darwin-rebuild build + nvd diff (미리보기)
    └── 빌드 실패 시 즉시 종료 (에러 처리)
 
-3. 사용자 확인 ("Apply these changes? [Y/n]")
-
-4. darwin-rebuild switch 실행
+3. darwin-rebuild switch 실행
    └── --offline 플래그 (nrs-offline만)
 
-5. Hammerspoon 완전 재시작 (HOME 오염 방지)
+4. Hammerspoon 완전 재시작 (HOME 오염 방지)
    └── killall → sleep 1 → open -a Hammerspoon
 
-6. 빌드 아티팩트 정리
+5. 빌드 아티팩트 정리
    └── ./result* 심볼릭 링크 삭제
 ```
 
@@ -231,21 +226,6 @@ nrs          # 일반 모드 (다운로드 필요)
 | 소스 위치 | `flake.lock`에 기록된 remote Git URL (SSH) |
 | 로컬 경로 | 사용하지 않음 (`path:...` 형태 아님) |
 | `--offline` 역할 | 다운로드 스킵 + Nix store 캐시 사용 (로컬 경로 전환이 **아님**) |
-
-예를 들어 `nixos-config-secret`은 다음과 같이 정의되어 있습니다:
-
-```nix
-# flake.nix
-nixos-config-secret = {
-  url = "git+ssh://git@github.com/shren207/nixos-config-secret?ref=main&shallow=1";
-  # ...
-};
-```
-
-- `nrs` 실행 시: SSH로 GitHub에서 해당 커밋을 fetch
-- `nrs-offline` 실행 시: 이미 캐시된 버전 사용 (fetch 스킵)
-- 로컬에서 `nixos-config-secret` 디렉토리를 수정해도 **빌드에 반영되지 않음**
-- 변경사항 반영 순서: `git push` → `nix flake update nixos-config-secret` → `nrs`
 
 **자동 예방 조치:**
 

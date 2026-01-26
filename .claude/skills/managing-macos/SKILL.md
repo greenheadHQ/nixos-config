@@ -19,9 +19,6 @@ nix-darwin 및 macOS 시스템 설정 가이드입니다.
 # 설정 적용 (미리보기 + 적용)
 nrs
 
-# nixos-config-secret 업데이트 후 rebuild
-nrs --update
-
 # 오프라인 rebuild (캐시만 사용, 빠름)
 nrs --offline
 
@@ -30,8 +27,6 @@ nrp
 ```
 
 **nrs 안전 기능:**
-- SSH 키 자동 로드
-- nixos-config-secret 로컬 변경 감지 및 경고
 - launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
 - Hammerspoon 재시작 (HOME 오염 방지)
 

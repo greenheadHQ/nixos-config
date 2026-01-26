@@ -69,7 +69,7 @@ users.users.<username>.openssh.authorizedKeys.keys = [
 ## 자주 발생하는 문제
 
 1. **SSH 키 invalid format**: 키 파일 끝에 개행 문자 필요
-2. **Private 저장소 접근 실패**: `ssh-add -l`로 키 로드 확인
+2. **GitHub SSH 접근 실패**: `ssh-add -l`로 키 로드 확인
 3. **Tailscale 만료**: `tailscale up`으로 재인증
 4. **sudo 인증 실패**: `sudo -E` 또는 SSH_AUTH_SOCK 유지
 

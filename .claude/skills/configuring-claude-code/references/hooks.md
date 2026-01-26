@@ -8,7 +8,6 @@ Claude Code CLI 도구의 설정을 Nix로 선언적으로 관리하면서, 런�
 - [양방향 수정](#양방향-수정)
 - [플러그인 관리](#플러그인-관리)
 - [플러그인 주의사항](#플러그인-주의사항)
-- [Private 플러그인](#private-플러그인)
 - [PreToolUse 훅 (nix develop 환경)](#pretooluse-훅-nix-develop-환경)
 
 ---
@@ -134,28 +133,6 @@ claude plugin uninstall plugin-name@marketplace --scope user
 | ---------------------------------- | ----------- |
 | `anthropics/claude-code`           | 유지보수 X  |
 | `anthropics/claude-plugins-official` | 유지보수 O |
-
-## Private 플러그인
-
-프로젝트 전용 commands/skills는 Private 저장소(`nixos-config-secret`)에서 별도 플러그인으로 관리합니다.
-
-**특징:**
-
-| 항목      | 설명                                          |
-| --------- | --------------------------------------------- |
-| 위치      | `nixos-config-secret/plugins/`                |
-| 설치 방식 | Home Manager activation으로 symlink 자동 생성 |
-| 수정 반영 | 즉시 (darwin-rebuild 불필요)                  |
-| 동기화    | git pull → nix flake update → darwin-rebuild  |
-
-**장점:**
-
-- **대외비 분리**: Public 저장소에 노출되지 않음
-- **즉시 반영**: symlink이므로 파일 수정 시 바로 적용
-- **선언적 관리**: Nix로 자동 설치, 멀티머신 동기화
-- **프로젝트별 적용**: 특정 프로젝트에서만 플러그인 활성화
-
-> **참고**: Private 플러그인 상세 내용 및 추가 방법은 `nixos-config-secret/README.md`를 참고하세요.
 
 ## PreToolUse 훅 (nix develop 환경)
 

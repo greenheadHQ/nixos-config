@@ -19,21 +19,12 @@ NixOS MiniPC 설치, 설정, 유지보수 가이드입니다. (NixOS 전용)
 # 설정 적용 (미리보기 + 적용)
 nrs
 
-# nixos-config-secret 업데이트 후 rebuild
-nrs --update
-
 # 오프라인 rebuild (캐시만 사용)
 nrs --offline
 
 # 미리보기만
 nrp
 ```
-
-**nrs 안전 기능:**
-- SSH 키 자동 로드
-- nixos-config-secret 로컬 변경 감지 및 경고
-- sudo SSH_AUTH_SOCK 자동 전달 (Private 저장소 접근)
-- GitHub/nixos-config-secret 접근 테스트
 
 ### MiniPC 접속
 

@@ -107,28 +107,6 @@
         "type": "github"
       }
     },
-    "nixos-config-secret": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1769400004,
-        "narHash": "sha256-9hdYQd/Qg2w5ammK+aASj6qJ+3WDwV2Qs2a4UWflrh8=",
-        "ref": "main",
-        "rev": "0e0f110cf6122e9975f79d60c2e5e7930660df61",
-        "shallow": true,
-        "type": "git",
-        "url": "ssh://git@github.com/shren207/nixos-config-secret"
-      },
-      "original": {
-        "ref": "main",
-        "shallow": true,
-        "type": "git",
-        "url": "ssh://git@github.com/shren207/nixos-config-secret"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1769343416,
@@ -152,7 +130,6 @@
         "home-manager": "home-manager",
         "nix-darwin": "nix-darwin",
         "nix-vscode-extensions": "nix-vscode-extensions",
-        "nixos-config-secret": "nixos-config-secret",
         "nixpkgs": "nixpkgs"
       }
     },

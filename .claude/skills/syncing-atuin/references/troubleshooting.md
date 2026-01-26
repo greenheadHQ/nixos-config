@@ -211,7 +211,7 @@ rm -rf ~/.local/share/atuin
 atuin register -u <username> -e <email>
 ```
 
-**예방**: key 파일을 안전하게 백업하거나, nixos-config-secret으로 관리
+**예방**: key 파일을 안전한 백업 위치에 보관
 
 ```bash
 # key 백업

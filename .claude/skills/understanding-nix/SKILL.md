@@ -47,22 +47,9 @@ experimental-features = nix-command flakes
 git add .
 nrs
 
-# 원인 2: nixos-config-secret 업데이트 후 flake.lock 미갱신
-# 해결: nrs --update 사용
-nrs --update  # flake.lock 자동 업데이트 후 rebuild
-```
-
-### flake.lock과 캐시
-
-```bash
-# flake.lock에 특정 commit이 잠김
-# nixos-config-secret을 수정해도 flake.lock 업데이트 전까지 반영 안 됨
-
-# nrs 실행 시 자동 감지 및 경고:
-# ⚠️  nixos-config-secret이 업데이트되었지만 flake.lock에 반영되지 않았습니다
-#    locked: 10ece02
-#    remote: abc1234
-#    💡 'nrs --update' 또는 'nix flake update nixos-config-secret' 실행 필요
+# 원인 2: 외부 flake input 업데이트 후 flake.lock 미갱신
+nix flake update <input-name>
+nrs
 ```
 
 ### 빌드 속도 최적화

@@ -14,7 +14,7 @@ SSH 키 자동 로드 및 Tailscale VPN 설정입니다.
 
 ## SSH 키 자동 로드
 
-Private 저장소(`nixos-config-secret`)를 SSH로 fetch하기 위해 SSH 키가 `ssh-agent`에 로드되어 있어야 합니다. 이 설정은 재부팅 후에도 자동으로 키를 로드합니다.
+GitHub SSH 작업을 위해 SSH 키가 `ssh-agent`에 로드되어 있어야 합니다. 이 설정은 재부팅 후에도 자동으로 키를 로드합니다.
 
 **아키텍처:**
 

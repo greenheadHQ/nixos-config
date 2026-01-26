@@ -7,10 +7,10 @@
 > **발생 시점**: 2026-01-15
 > **해결**: launchd agent + nrs.sh 자동 로드
 
-**증상**: 재부팅 후 `nrs` 또는 `darwin-rebuild switch` 실행 시 private repo fetch 실패.
+**증상**: 재부팅 후 `nrs` 또는 `darwin-rebuild switch` 실행 시 GitHub SSH fetch 실패.
 
 ```
-error: Failed to fetch git repository ssh://git@github.com/shren207/nixos-config-secret : git@github.com: Permission denied (publickey).
+error: Failed to fetch git repository ssh://git@github.com/... : git@github.com: Permission denied (publickey).
 ```
 
 **원인**: macOS의 `ssh-agent`는 재부팅 시 SSH 키를 자동으로 로드하지 않습니다.
@@ -60,40 +60,21 @@ launchctl list | grep ssh-add
 cat ~/Library/Logs/ssh-add-keys.log
 ```
 
-**왜 이전에는 문제가 없었나?**
+macOS의 `AddKeysToAgent yes` 설정은 SSH를 **처음 사용할 때** 키를 agent에 로드합니다. 재부팅 후 바로 SSH 작업을 하면 키가 로드되지 않은 상태일 수 있습니다.
 
-이 문제는 2026-01-15에 처음 발견되었지만, `nixos-config-secret` (private repo)은 2025-12-21 initial commit부터 사용 중이었습니다. 이전에 문제가 없었던 이유로 추정되는 시나리오:
-
-| 가능성 | 설명 |
-|--------|------|
-| 캐시된 버전 사용 | `flake.lock`에 저장된 버전으로 빌드, fresh fetch 불필요 |
-| 이미 키가 로드된 상태 | 다른 SSH 작업(git push 등) 후 nrs 실행 |
-| 첫 재부팅 직후 테스트 | 이번이 처음으로 "재부팅 → 즉시 nrs" 시나리오 |
-| `--offline` 주로 사용 | fetch 없이 로컬 캐시만 사용 |
-
-macOS의 `AddKeysToAgent yes` 설정은 SSH를 **처음 사용할 때** 키를 agent에 로드합니다. 이전에는 nrs 전에 우연히 SSH를 사용하는 작업을 했을 가능성이 높습니다:
-
-```
-이전: 재부팅 → (git fetch 등) → SSH 키 자동 로드 → nrs 실행 ✅
-이번: 재부팅 → 바로 nrs 실행 → SSH 키 없음 ❌
-```
-
-**결론**: 원인 진단은 정확하며, 문제는 "우연히 회피"되었을 가능성이 높습니다. 현재 해결책(launchd agent + nrs.sh)은 이러한 우연에 의존하지 않고 명시적으로 키 로드를 보장합니다.
-
-> **참고**: SSH 키 자동 로드는 `nrs.sh` 스크립트와 launchd agent에서 처리됩니다.
+> **참고**: SSH 키 자동 로드는 launchd agent에서 처리됩니다.
 
 ---
 
-### sudo 사용 시 Private 저장소 접근 실패
+### sudo 사용 시 SSH 인증 실패
 
 **에러 메시지**:
 ```
 warning: $HOME ('/Users/glen') is not owned by you, falling back to the one defined in the 'passwd' file ('/var/root')
 git@github.com: Permission denied (publickey).
-error: Failed to fetch git repository 'ssh://git@github.com/shren207/nixos-config-secret'
 ```
 
-**원인**: `sudo`로 실행하면 root 사용자로 전환되어 현재 사용자의 SSH 키(`~/.ssh/id_ed25519`)에 접근할 수 없습니다. Private 저장소 fetch 시 SSH 인증이 실패합니다.
+**원인**: `sudo`로 실행하면 root 사용자로 전환되어 현재 사용자의 SSH 키(`~/.ssh/id_ed25519`)에 접근할 수 없습니다.
 
 **해결**: SSH agent를 사용하여 키를 메모리에 로드하고, `sudo` 실행 시 `SSH_AUTH_SOCK` 환경변수를 유지합니다:
 
@@ -102,15 +83,15 @@ error: Failed to fetch git repository 'ssh://git@github.com/shren207/nixos-confi
 ssh-add ~/.ssh/id_ed25519
 
 # 2. SSH_AUTH_SOCK 환경변수를 유지하면서 sudo 실행
-sudo --preserve-env=SSH_AUTH_SOCK nix --extra-experimental-features "nix-command flakes" run nix-darwin -- switch --flake .
+sudo --preserve-env=SSH_AUTH_SOCK <command>
 ```
 
 **왜 sudo가 필요한가?**
 
-nix-darwin은 시스템 설정을 변경하기 때문에 root 권한이 필요합니다:
+nix-darwin/NixOS는 시스템 설정을 변경하기 때문에 root 권한이 필요합니다:
 - `/run/current-system` 심볼릭 링크 생성
 - `/etc/nix/nix.conf` 수정
-- launchd 서비스 등록
+- launchd/systemd 서비스 등록
 
 ### SSH 키 invalid format
 
@@ -250,14 +231,13 @@ greenhead@greenhead-minipc:~$  # 성공!
 
 > **발생 시점**: 2026-01-18 (MiniPC NixOS 설정)
 
-**증상**: SSH 키가 ssh-agent에 로드되어 있고 `ssh -T git@github.com`은 성공하지만, `sudo nixos-rebuild`에서 private 저장소 접근 실패.
+**증상**: SSH 키가 ssh-agent에 로드되어 있고 `ssh -T git@github.com`은 성공하지만, `sudo` 명령에서 SSH 인증 실패.
 
 ```bash
 $ ssh -T git@github.com
 Hi shren207! You've successfully authenticated...
 
-$ sudo nixos-rebuild switch --flake .#greenhead-minipc
-error: Failed to fetch git repository ssh://git@github.com/user/private-repo
+$ sudo git clone git@github.com:user/repo
 git@github.com: Permission denied (publickey).
 ```
 
@@ -272,7 +252,7 @@ git@github.com: Permission denied (publickey).
 **해결**: `SSH_AUTH_SOCK` 환경변수를 sudo에 전달
 
 ```bash
-sudo SSH_AUTH_SOCK=$SSH_AUTH_SOCK nixos-rebuild switch --flake .#greenhead-minipc
+sudo SSH_AUTH_SOCK=$SSH_AUTH_SOCK <command>
 ```
 
 **대안**: sudoers에서 환경변수 유지 설정 (NixOS)
@@ -283,8 +263,6 @@ security.sudo.extraConfig = ''
   Defaults env_keep += "SSH_AUTH_SOCK"
 '';
 ```
-
-**참고**: 이 문제는 private 저장소를 flake input으로 사용할 때만 발생합니다. public 저장소만 사용하면 SSH 인증이 필요 없습니다.
 
 ---
 

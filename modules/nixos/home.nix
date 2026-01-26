@@ -18,9 +18,6 @@
   };
 
   imports = [
-    # Private 설정
-    inputs.nixos-config-secret.homeManagerModules.default
-
     # Secrets 관리 (agenix)
     inputs.agenix.homeManagerModules.default
     ../shared/programs/secrets
@@ -93,7 +90,7 @@
 
   programs.home-manager.enable = true;
 
-  # SSH 에이전트 자동 시작 (nrs에서 GitHub private 저장소 접근용)
+  # SSH 에이전트 자동 시작 (GitHub SSH 작업용)
   services.ssh-agent.enable = true;
 
   # SSH 키 자동 로드 (로그인 시 keychain이 ssh-agent에 키 추가)

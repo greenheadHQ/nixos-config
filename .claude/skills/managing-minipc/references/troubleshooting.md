@@ -5,7 +5,6 @@ NixOS MiniPC 관련 문제와 해결 방법을 정리합니다.
 ## 목차
 
 - [nixos-install 시 GitHub flake 캐시 문제](#nixos-install-시-github-flake-캐시-문제)
-- [설치 환경에서 Private 저장소 접근 실패](#설치-환경에서-private-저장소-접근-실패)
 - [disko.nix와 hardware-configuration.nix fileSystems 충돌](#diskonix와-hardware-configurationnix-filesystems-충돌)
 - [첫 로그인 시 zsh-newuser-install 화면](#첫-로그인-시-zsh-newuser-install-화면)
 - [한글이 ■로 표시됨 (locale 미설정)](#한글이-로-표시됨-locale-미설정)
@@ -42,60 +41,6 @@ nixos-install --flake /tmp/nixos-config#hostname
 | `/tmp/nixos-config` | 없음 (로컬) | 최신 상태 보장 |
 
 > **참고**: `nix build`나 `nix develop`에서는 `--refresh` 옵션으로 캐시를 무시할 수 있지만, `nixos-install`은 이 옵션을 지원하지 않습니다.
-
----
-
-## 설치 환경에서 Private 저장소 접근 실패
-
-> **발생 시점**: 2026-01-17 (MiniPC NixOS 설치)
-
-**증상**: `nixos-install` 실행 시 private 저장소 fetch 실패.
-
-```
-error: Failed to fetch git repository ssh://git@github.com/user/private-repo
-git@github.com: Permission denied (publickey).
-fatal: Could not read from remote repository.
-```
-
-**원인**: NixOS 설치 환경(live USB)에는 SSH 키가 없어서 private 저장소에 접근할 수 없습니다.
-
-**해결**: 설치 시에는 private 저장소 의존성을 임시로 제거
-
-**1. flake.nix에서 private input 주석 처리**
-
-```nix
-# 변경 전
-private-repo = {
-  url = "git+ssh://git@github.com/user/private-repo";
-};
-
-# 변경 후 (설치용)
-# private-repo = {
-#   url = "git+ssh://git@github.com/user/private-repo";
-# };
-```
-
-**2. home.nix에서 해당 import 주석 처리**
-
-```nix
-imports = [
-  # inputs.private-repo.homeManagerModules.default  # 설치 후 활성화
-];
-```
-
-**3. 설치 완료 후 SSH 키 설정하고 다시 활성화**
-
-```bash
-# MiniPC에서 SSH 키 생성
-ssh-keygen -t ed25519 -C "user@minipc"
-cat ~/.ssh/id_ed25519.pub
-# → GitHub에 등록
-
-# 주석 해제 후 rebuild
-sudo nixos-rebuild switch --flake .#hostname
-```
-
-**예방**: 설치 환경에서도 접근 가능한 public 저장소와 private 저장소를 분리하여 관리합니다.
 
 ---
 
@@ -228,7 +173,7 @@ i18n.defaultLocale = "ko_KR.UTF-8";
 
 **날짜**: 2026-01-21
 
-**증상**: `nixos-rebuild switch --flake .#greenhead-minipc` 실행 후 Tailscale, SSH, podman 등 모든 서비스가 사라짐
+**증상**: `nixos-rebuild switch` 실행 후 서비스가 사라짐
 
 ```bash
 # 재부팅 후 서비스가 존재하지 않음
@@ -236,16 +181,7 @@ Failed to restart tailscaled.service: Unit tailscaled.service not found.
 Failed to stop podman-immich-server.service: Unit podman-immich-server.service not loaded.
 ```
 
-**원인**:
-
-nixos-rebuild 과정에서 **Git SSH 인증 실패**로 `nixos-config-secret` 프라이빗 레포를 가져오지 못함:
-
-```
-error: Failed to fetch git repository ssh://git@github.com/shren207/nixos-config-secret
-git@github.com: Permission denied (publickey).
-```
-
-이로 인해 불완전한 시스템 설정(세대 30)이 생성되었고, 이 세대로 부팅하면 대부분의 서비스가 없는 상태가 됨.
+**원인**: nixos-rebuild 과정에서 빌드 실패로 불완전한 시스템 설정이 생성되었고, 이 세대로 부팅하면 대부분의 서비스가 없는 상태가 됨.
 
 **해결**:
 
@@ -263,15 +199,5 @@ sudo /nix/var/nix/profiles/system-29-link/bin/switch-to-configuration switch
 
 **교훈**:
 
-- nixos-rebuild 전 Git SSH 인증 상태 확인 필수:
-```bash
-ssh-add -l              # SSH agent에 키 로드 확인
-ssh -T git@github.com   # GitHub 접근 테스트
-```
-
-- sudo 사용 시 SSH_AUTH_SOCK 전달:
-```bash
-sudo SSH_AUTH_SOCK=$SSH_AUTH_SOCK nixos-rebuild switch --flake .#greenhead-minipc
-```
-
+- 빌드 실패 시 switch를 진행하지 않도록 주의
 - 불완전한 세대가 생성되면 롤백으로 복구 가능 (NixOS의 장점)

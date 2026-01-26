@@ -32,9 +32,6 @@
 
       # 프로그램별 모듈 임포트
       imports = [
-        # Private 설정
-        inputs.nixos-config-secret.homeManagerModules.default
-
         # Secrets 관리 (agenix)
         inputs.agenix.homeManagerModules.default
         ../shared/programs/secrets

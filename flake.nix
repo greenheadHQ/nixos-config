@@ -22,12 +22,6 @@
       inputs.home-manager.follows = "home-manager";
     };
 
-    # Private secrets 저장소
-    nixos-config-secret = {
-      url = "git+ssh://git@github.com/shren207/nixos-config-secret?ref=main&shallow=1";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # VSCode/Cursor 확장 프로그램 관리
     nix-vscode-extensions = {
       url = "github:nix-community/nix-vscode-extensions";
