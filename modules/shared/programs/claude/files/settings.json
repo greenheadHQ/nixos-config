@@ -1,5 +1,4 @@
 {
-  "plansDirectory": "./.claude/plans",
   "cleanupPeriodDays": 7,
   "env": {
     "IS_DEMO": "true",
@@ -15,11 +14,7 @@
       "Bash(rm -rf ~/*)",
       "Bash(rm -rf /*)"
     ],
-    "additionalDirectories": [
-      "~/Downloads",
-      "~/Documents",
-      "~/IdeaProjects"
-    ]
+    "additionalDirectories": ["~/Downloads", "~/Documents", "~/IdeaProjects"]
   },
   "hooks": {
     "Stop": [
@@ -35,10 +30,12 @@
     ]
   },
   "enabledPlugins": {
-    "plugin-dev@claude-plugins-official": true
+    "plugin-dev@claude-plugins-official": true,
+    "example-front@example-plugins": true
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
   "autoUpdatesChannel": "latest",
-  "minimumVersion": "2.1.4"
+  "minimumVersion": "2.1.4",
+  "plansDirectory": "./.claude/plans"
 }
