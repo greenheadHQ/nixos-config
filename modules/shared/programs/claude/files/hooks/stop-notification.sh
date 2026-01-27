@@ -34,7 +34,7 @@ fi
 curl -s \
   --form-string "token=$PUSHOVER_TOKEN" \
   --form-string "user=$PUSHOVER_USER" \
-  --form-string "title=Claude Code [✅작업완료]" \
+  --form-string "title=Claude Code [✅작업 완료]" \
   -F "sound=jobs_done" \
   --form-string "message=$MESSAGE" \
   https://api.pushover.net/1/messages.json > /dev/null

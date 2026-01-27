@@ -61,7 +61,7 @@ $QUESTION_LINE"
 curl -s \
   --form-string "token=$PUSHOVER_TOKEN" \
   --form-string "user=$PUSHOVER_USER" \
-  --form-string "title=Claude Code [📝질문대기]" \
+  --form-string "title=Claude Code [📝질문 대기]" \
   -F "priority=0" \
   -F "sound=falling" \
   --form-string "message=$MESSAGE" \
