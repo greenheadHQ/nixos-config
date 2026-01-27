@@ -36,6 +36,11 @@ in
     executable = true;
   };
 
+  # NixOS 전용 패키지 (macOS는 Homebrew python3 사용)
+  home.packages = [
+    pkgs.python3
+  ];
+
   # NixOS 전용 aliases
   home.shellAliases = {
     # Nix 시스템 관리 (nixos-rebuild)

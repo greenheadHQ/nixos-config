@@ -22,10 +22,20 @@ Atuin 쉘 히스토리 동기화 및 모니터링 가이드입니다.
 
 **`atuin history delete` 서브커맨드 미존재 (v18.11.0)**
 - `atuin history` 하위에 `delete` 명령어가 없음
-- 개별 히스토리 삭제 시 SQLite DB 직접 수정 필요
+- 한글 포함 항목 일괄 삭제: `atuin-clean-kr` 스크립트 사용
 - DB 경로: `~/.local/share/atuin/history.db`
 
 ## 빠른 참조
+
+### 히스토리 정리
+
+```bash
+# 한글 포함 항목 미리보기
+atuin-clean-kr --dry-run
+
+# 한글 포함 항목 일괄 삭제 (백업 후 삭제)
+atuin-clean-kr
+```
 
 ### 상태 확인
 

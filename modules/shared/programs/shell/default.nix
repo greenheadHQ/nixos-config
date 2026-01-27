@@ -6,7 +6,14 @@
   ...
 }:
 
+let
+  sharedScriptsDir = ../../scripts;
+in
 {
+  home.file.".local/bin/atuin-clean-kr" = {
+    source = "${sharedScriptsDir}/atuin-clean-kr.py";
+    executable = true;
+  };
   # PATH 추가 (공통)
   home.sessionPath = [
     "$HOME/.local/bin"
