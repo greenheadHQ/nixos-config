@@ -3,8 +3,10 @@ name: syncing-atuin
 description: |
   This skill should be used when the user encounters Atuin sync issues,
   "atuin status" 4XX errors, encryption key mismatch, daemon problems,
-  or asks about shell history backup. Covers zsh-autosuggestion conflicts
-  and last_sync_time troubleshooting.
+  "atuin history delete" errors, or asks about shell history backup or
+  cleanup. Covers zsh-autosuggestion TUI rendering conflicts, Korean
+  history bulk deletion, last_sync_time troubleshooting, and history
+  database maintenance.
 ---
 
 # Atuin 히스토리 동기화
@@ -17,6 +19,11 @@ Atuin 쉘 히스토리 동기화 및 모니터링 가이드입니다.
 - `atuin status` 명령어가 4XX 에러 반환 가능
 - v2 API 사용 중, `last_sync_time` 파일이 CLI sync에서 자동 업데이트되지 않음
 - 동기화 자체는 정상 작동
+
+**`atuin history delete` 서브커맨드 미존재 (v18.11.0)**
+- `atuin history` 하위에 `delete` 명령어가 없음
+- 개별 히스토리 삭제 시 SQLite DB 직접 수정 필요
+- DB 경로: `~/.local/share/atuin/history.db`
 
 ## 빠른 참조
 
@@ -52,7 +59,8 @@ Hammerspoon 메뉴바에서 Atuin 동기화 상태 모니터링 가능:
 
 1. **atuin status 4XX**: v1 API deprecated, 동기화는 정상
 2. **encryption key 불일치**: 계정별 고유 키, 마이그레이션 불가
-3. **zsh 한글 레이아웃 깨짐**: zsh-autosuggestion + 한글 경로 조합 문제
+3. **zsh 한글 레이아웃 깨짐**: zsh-autosuggestion + 한글 경로 조합 문제 (근본 원인: zsh-autosuggestion)
+4. **한글 포함 히스토리 TUI 렌더링 깨짐**: zsh-autosuggestion이 한글 포함 명령어를 제안할 때 발생, SQLite 직접 삭제로 해결
 
 ## 레퍼런스
 

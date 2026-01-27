@@ -5,6 +5,7 @@ Atuin 및 Zsh 관련 문제와 해결 방법을 정리합니다.
 ## 목차
 
 - [zsh-autosuggestion에서 한글/일본어 경로 레이아웃 깨짐](#zsh-autosuggestion에서-한글일본어-경로-레이아웃-깨짐)
+- [한글 포함 히스토리 일괄 삭제](#한글-포함-히스토리-일괄-삭제)
 - [atuin status가 404 오류 반환](#atuin-status가-404-오류-반환)
 - [Encryption key 불일치로 동기화 실패](#encryption-key-불일치로-동기화-실패)
 - [Atuin daemon 불안정 (deprecated)](#atuin-daemon-불안정-deprecated)
@@ -119,6 +120,90 @@ echo "テスト 한글"  # 정상 출력되는지 확인
 - [Home Manager - zsh.autosuggestion 옵션](https://mynixos.com/home-manager/options/programs.zsh.autosuggestion)
 - [Oh My Zsh - macOS NFD issue #12380](https://github.com/ohmyzsh/ohmyzsh/issues/12380)
 - [Ratatui - Korean rendering #1396](https://github.com/ratatui/ratatui/issues/1396)
+
+---
+
+## 한글 포함 히스토리 일괄 삭제
+
+> **발생 시점**: 2026-01-27
+> **환경**: atuin 18.11.0, zsh-autosuggestions 0.7.1 (nixpkgs)
+> **상태**: 해결 (SQLite 직접 삭제)
+
+**증상**: zsh-autosuggestion이 한글이 포함된 명령어(예: git commit 한글 메시지)를 제안할 때 터미널 TUI 렌더링이 깨짐.
+
+```
+# 이런 히스토리가 autosuggestion으로 제안되면 TUI가 깨짐
+git commit -m 'fix(qa): [날씨] 날씨 페이지에서 하단 버튼 클릭...'
+```
+
+**근본 원인**: **zsh-autosuggestions** 플러그인이 한글(멀티바이트 유니코드) 문자의 너비를 잘못 계산하여 TUI 렌더링이 깨짐. Atuin 자체의 문제가 아님에 주의.
+
+**해결 방법**: Atuin 히스토리 DB에서 한글 포함 항목을 일괄 삭제.
+
+### 사전 확인
+
+```bash
+# 삭제 대상 미리보기 (기본 출력에서 한글 항목 필터링)
+atuin history list 2>/dev/null | \
+  perl -C -ne 'print if /[\x{AC00}-\x{D7AF}\x{3130}-\x{318F}\x{1100}-\x{11FF}]/' | wc -l
+```
+
+### `atuin history delete` 서브커맨드 부재 (v18.11.0)
+
+atuin 18.11.0에는 `atuin history delete` 서브커맨드가 존재하지 않음.
+
+```bash
+$ atuin history --help
+# 사용 가능한 커맨드: start, end, list, last, init-store, prune, dedup
+# "delete"는 없음
+```
+
+`atuin search --delete "<쿼리>"` 명령이 존재하지만, 정규식을 지원하지 않아 "한글이 포함된 모든 항목"을 한 번에 매칭할 수 없음. 따라서 SQLite DB 직접 수정이 필요.
+
+### SQLite 직접 삭제 (권장)
+
+```bash
+# 1. 반드시 백업 먼저
+cp ~/.local/share/atuin/history.db ~/.local/share/atuin/history.db.bak
+
+# 2. Python 스크립트로 한글 포함 항목 삭제
+python3 -c "
+import sqlite3, re, os
+conn = sqlite3.connect(os.path.expanduser('~/.local/share/atuin/history.db'))
+cur = conn.cursor()
+cur.execute('SELECT id, command FROM history')
+p = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]')
+ids = [r[0] for r in cur.fetchall() if p.search(r[1] or '')]
+print(f'삭제 대상: {len(ids)}개')
+for i in ids:
+    cur.execute('DELETE FROM history WHERE id = ?', (i,))
+conn.commit()
+conn.close()
+print('완료')
+"
+```
+
+**정규식 매칭 범위**:
+
+| 유니코드 범위 | 설명 |
+|---------------|------|
+| `\uAC00-\uD7AF` | 한글 음절 (가~힣) |
+| `\u1100-\u11FF` | 한글 자모 (초성·중성·종성) |
+| `\u3130-\u318F` | 한글 호환 자모 (ㄱ~ㅎ, ㅏ~ㅣ) |
+
+### 주의사항
+
+- **백업 필수**: SQLite DB를 직접 수정하므로, 반드시 `.bak` 파일로 백업 후 진행
+- **Sync 서버 미반영**: SQLite 직접 삭제는 로컬 DB만 수정. sync 서버에는 반영되지 않을 수 있음. 삭제 후 `atuin sync` 실행 권장
+- **재발 방지**: 한글이 포함된 명령어(예: git commit 한글 메시지)를 계속 사용하면 다시 쌓임. 근본적 해결은 zsh-autosuggestions 업스트림 패치 필요
+
+### 실행 결과 (2026-01-27)
+
+| 항목 | 값 |
+|------|-----|
+| 삭제 전 히스토리 | 55,172개 |
+| 삭제 대상 | 1,963개 |
+| 삭제 후 히스토리 | 53,210개 |
 
 ---
 
