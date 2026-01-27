@@ -9,7 +9,7 @@
 # jq 미설치 시 조용히 종료 (방어적 가드)
 command -v jq >/dev/null 2>&1 || exit 0
 
-CREDENTIALS_FILE="$HOME/.config/pushover/claude-ask"
+CREDENTIALS_FILE="$HOME/.config/pushover/claude-code"
 
 if [ -f "$CREDENTIALS_FILE" ]; then
   # shellcheck source=/dev/null
@@ -61,7 +61,7 @@ $QUESTION_LINE"
 curl -s \
   --form-string "token=$PUSHOVER_TOKEN" \
   --form-string "user=$PUSHOVER_USER" \
-  --form-string "title=Claude 질문 대기" \
+  --form-string "title=Claude Code [📝질문대기]" \
   -F "priority=0" \
   -F "sound=falling" \
   --form-string "message=$MESSAGE" \

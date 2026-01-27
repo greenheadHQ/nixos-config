@@ -13,14 +13,9 @@
     identityPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
 
     # 서비스별 Pushover credentials (독립적 토큰 revocation + API rate limit 분리)
-    secrets.pushover-claude-stop = {
-      file = ../../../../secrets/pushover-claude-stop.age;
-      path = "${config.xdg.configHome}/pushover/claude-stop";
-      mode = "0400";
-    };
-    secrets.pushover-claude-ask = {
-      file = ../../../../secrets/pushover-claude-ask.age;
-      path = "${config.xdg.configHome}/pushover/claude-ask";
+    secrets.pushover-claude-code = {
+      file = ../../../../secrets/pushover-claude-code.age;
+      path = "${config.xdg.configHome}/pushover/claude-code";
       mode = "0400";
     };
     secrets.pushover-atuin = {

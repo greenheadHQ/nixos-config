@@ -2,7 +2,7 @@
 # Claude Code Stop Hook - Pushover 알림 전송
 
 # agenix로 관리되는 credentials 로드
-CREDENTIALS_FILE="$HOME/.config/pushover/claude-stop"
+CREDENTIALS_FILE="$HOME/.config/pushover/claude-code"
 
 if [ -f "$CREDENTIALS_FILE" ]; then
   # shellcheck source=/dev/null
@@ -34,6 +34,7 @@ fi
 curl -s \
   --form-string "token=$PUSHOVER_TOKEN" \
   --form-string "user=$PUSHOVER_USER" \
+  --form-string "title=Claude Code [✅작업완료]" \
   -F "sound=jobs_done" \
   --form-string "message=$MESSAGE" \
   https://api.pushover.net/1/messages.json > /dev/null
