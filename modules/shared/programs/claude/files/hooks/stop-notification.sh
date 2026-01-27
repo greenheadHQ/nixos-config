@@ -2,7 +2,7 @@
 # Claude Code Stop Hook - Pushover 알림 전송
 
 # agenix로 관리되는 credentials 로드
-CREDENTIALS_FILE="$HOME/.config/pushover/credentials"
+CREDENTIALS_FILE="$HOME/.config/pushover/claude-stop"
 
 if [ -f "$CREDENTIALS_FILE" ]; then
   # shellcheck source=/dev/null

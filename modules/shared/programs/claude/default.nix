@@ -39,5 +39,9 @@ in
       source = "${claudeDir}/hooks/stop-notification.sh";
       executable = true;
     };
+    ".claude/hooks/ask-notification.sh" = {
+      source = "${claudeDir}/hooks/ask-notification.sh";
+      executable = true;
+    };
   };
 }

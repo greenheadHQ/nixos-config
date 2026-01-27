@@ -17,6 +17,17 @@
     "additionalDirectories": ["~/Downloads", "~/Documents", "~/IdeaProjects"]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/ask-notification.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",

@@ -10,7 +10,7 @@ let
   # 사용자 홈 디렉토리의 credentials 파일 (agenix로 관리됨)
   # 형식: PUSHOVER_TOKEN=xxx / PUSHOVER_USER=yyy (shell 변수 형식)
   # 주의: fail2ban은 root로 실행되므로 $HOME 대신 절대 경로 사용 필수
-  credentialsFile = "/home/${username}/.config/pushover/credentials";
+  credentialsFile = "/home/${username}/.config/pushover/fail2ban";
 
   # Pushover 알림 스크립트
   pushoverNotifyScript = pkgs.writeShellScript "fail2ban-pushover-notify" ''

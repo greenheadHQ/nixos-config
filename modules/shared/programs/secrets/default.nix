@@ -12,11 +12,25 @@
     # SSH 키로 복호화
     identityPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
 
-    # Pushover API credentials
-    # 사용처: atuin-watchdog.sh, fail2ban.nix, stop-notification.sh
-    secrets.pushover-credentials = {
-      file = ../../../../secrets/pushover-credentials.age;
-      path = "${config.xdg.configHome}/pushover/credentials";
+    # 서비스별 Pushover credentials (독립적 토큰 revocation + API rate limit 분리)
+    secrets.pushover-claude-stop = {
+      file = ../../../../secrets/pushover-claude-stop.age;
+      path = "${config.xdg.configHome}/pushover/claude-stop";
+      mode = "0400";
+    };
+    secrets.pushover-claude-ask = {
+      file = ../../../../secrets/pushover-claude-ask.age;
+      path = "${config.xdg.configHome}/pushover/claude-ask";
+      mode = "0400";
+    };
+    secrets.pushover-atuin = {
+      file = ../../../../secrets/pushover-atuin.age;
+      path = "${config.xdg.configHome}/pushover/atuin";
+      mode = "0400";
+    };
+    secrets.pushover-fail2ban = {
+      file = ../../../../secrets/pushover-fail2ban.age;
+      path = "${config.xdg.configHome}/pushover/fail2ban";
       mode = "0400";
     };
 

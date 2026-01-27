@@ -11,7 +11,7 @@ export PATH="/etc/profiles/per-user/$USER/bin:/run/current-system/sw/bin:$HOME/.
 # 환경변수에서 설정 읽기 (default.nix에서 주입)
 THRESHOLD_MINUTES="${ATUIN_SYNC_THRESHOLD_MINUTES:-5}"
 
-CREDENTIALS_FILE="$HOME/.config/pushover/credentials"
+CREDENTIALS_FILE="$HOME/.config/pushover/atuin"
 HOSTNAME=$(scutil --get LocalHostName 2>/dev/null || hostname -s)
 LOG_FILE="${HOME}/.local/share/atuin/watchdog.log"
 
