@@ -146,7 +146,6 @@
           default = pkgs.mkShell {
             buildInputs = with pkgs; [
               nixfmt
-              rage
               lefthook
               gitleaks
               shellcheck

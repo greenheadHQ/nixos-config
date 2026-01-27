@@ -44,4 +44,5 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | mise, runtime versions, .nvmrc | `managing-mise` |
 | tmux config, keybindings, pane notepad, tmux-resurrect | `managing-tmux` |
 | SSH keys, Tailscale VPN, sudo auth failure | `managing-ssh` |
+| agenix, age, secret, .age 파일, 재암호화 | `managing-secrets` |
 | Cursor extensions, extensions.json | `managing-cursor` |
