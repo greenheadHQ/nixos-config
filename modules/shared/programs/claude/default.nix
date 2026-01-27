@@ -43,5 +43,9 @@ in
       source = "${claudeDir}/hooks/ask-notification.sh";
       executable = true;
     };
+    ".claude/hooks/plan-notification.sh" = {
+      source = "${claudeDir}/hooks/plan-notification.sh";
+      executable = true;
+    };
   };
 }

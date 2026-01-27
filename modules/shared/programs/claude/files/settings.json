@@ -26,6 +26,15 @@
             "command": "~/.claude/hooks/ask-notification.sh"
           }
         ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/plan-notification.sh"
+          }
+        ]
       }
     ],
     "Stop": [

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Claude Code PreToolUse Hook - ExitPlanMode Pushover 알림
+# 계획 승인을 요청할 때 Pushover 알림을 보냅니다.
+#
+# [중요] PreToolUse hook의 stdout은 tool call을 수정/차단할 수 있으므로,
+# 모든 외부 명령 출력을 반드시 /dev/null로 리다이렉트해야 합니다.
+
+CREDENTIALS_FILE="$HOME/.config/pushover/claude-code"
+
+if [ -f "$CREDENTIALS_FILE" ]; then
+  # shellcheck source=/dev/null
+  source "$CREDENTIALS_FILE"
+else
+  exit 0
+fi
+
+# 정보 수집
+HOST=$(hostname -s 2>/dev/null || echo "?")
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+
+if [ -n "$GIT_ROOT" ]; then
+  REPO=$(basename "$GIT_ROOT")
+  BRANCH=$(git branch --show-current 2>/dev/null)
+  if [ -z "$BRANCH" ]; then
+    BRANCH=$(git rev-parse --short HEAD 2>/dev/null || echo "?")
+  fi
+  CONTEXT="📁 $REPO · 🌿 $BRANCH"
+else
+  DIR=$(basename "$PWD")
+  CONTEXT="📁 $DIR"
+fi
+
+MESSAGE="🖥️ $HOST
+$CONTEXT"
+
+curl -s \
+  --form-string "token=$PUSHOVER_TOKEN" \
+  --form-string "user=$PUSHOVER_USER" \
+  --form-string "title=Claude Code [🙏계획 승인 요청]" \
+  -F "priority=0" \
+  -F "sound=falling" \
+  --form-string "message=$MESSAGE" \
+  https://api.pushover.net/1/messages.json > /dev/null
+
+exit 0
