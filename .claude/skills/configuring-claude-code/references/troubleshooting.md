@@ -7,6 +7,7 @@ Claude Code 관련 문제와 해결 방법을 정리합니다.
 - [플러그인 설치/삭제가 안 됨 (settings.json 읽기 전용)](#플러그인-설치삭제가-안-됨-settingsjson-읽기-전용)
 - [PreToolUse 훅 JSON validation 에러](#pretooluse-훅-json-validation-에러)
 - [Claude Code 설치 실패 (curl 미설치)](#claude-code-설치-실패-curl-미설치)
+- [Pushover 알림 인코딩 깨짐 (이모지/한글이 ?로 표시)](#pushover-알림-인코딩-깨짐-이모지한글이-로-표시)
 
 ---
 
@@ -286,3 +287,62 @@ home.packages = with pkgs; [
 ```
 
 **참고**: activation 스크립트에서 사용하는 패키지는 명시적으로 의존성에 포함되어야 합니다.
+
+---
+
+## Pushover 알림 인코딩 깨짐 (이모지/한글이 ?로 표시)
+
+**증상**: Claude Code hook에서 Pushover 알림 전송 시 간헐적으로 이모지/한글이 `?`로 표시됨.
+
+- title (하드코딩): `Claude Code [📝질문 대기]` → 항상 정상
+- message (동적 생성): `🖥️ hostname`, `📁 repo`, `❓ question` → 간헐적 깨짐
+
+특히 `ask-notification.sh`에서 발생 (stdin에서 JSON 읽는 hook).
+
+**원인**: Claude Code가 hook 실행 시 `LANG`/`LC_ALL` 환경변수가 미설정 또는 `C`/`POSIX`로 설정될 수 있음.
+
+하드코딩된 문자열은 이미 UTF-8 바이트로 스크립트에 저장되어 있어 영향 없지만, 동적 변수 확장(`$MESSAGE`) 시 UTF-8 바이트가 손상됨.
+
+**해결**: hook 스크립트 시작 부분에 locale 강제 설정
+
+```bash
+#!/usr/bin/env bash
+# ... 주석 ...
+
+# UTF-8 인코딩 강제 설정 (Claude Code 환경에서 LANG이 미설정될 수 있음)
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# ... 나머지 코드 ...
+```
+
+**추가 안정화** (stdin 읽는 hook의 경우):
+
+`echo` 대신 `printf '%s'` 사용:
+
+```bash
+# 변경 전
+FIRST_QUESTION=$(echo "$INPUT" | jq -r '.tool_input.questions[0].question // empty')
+
+# 변경 후
+FIRST_QUESTION=$(printf '%s' "$INPUT" | jq -r '.tool_input.questions[0].question // empty')
+```
+
+`echo`는 플랫폼/셸에 따라 escape sequence 처리가 다르지만, `printf '%s'`는 입력을 그대로 전달.
+
+**적용 파일**:
+
+| 파일 | 수정 내용 |
+|------|----------|
+| `~/.claude/hooks/ask-notification.sh` | locale 설정 + printf 변경 |
+| `~/.claude/hooks/stop-notification.sh` | locale 설정 |
+| `~/.claude/hooks/plan-notification.sh` | locale 설정 |
+
+**검증**:
+
+```bash
+# AskUserQuestion 트리거하여 iOS Pushover 알림 확인
+# 다양한 문자 테스트: CJK, Thai, Arabic, Emoji, ZWJ sequences 등
+```
+
+> **참고**: hook 파일은 `modules/shared/programs/claude/files/hooks/`에서 관리됩니다.
