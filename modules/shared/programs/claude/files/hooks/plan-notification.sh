@@ -5,6 +5,10 @@
 # [중요] PreToolUse hook의 stdout은 tool call을 수정/차단할 수 있으므로,
 # 모든 외부 명령 출력을 반드시 /dev/null로 리다이렉트해야 합니다.
 
+# UTF-8 인코딩 강제 설정 (Claude Code 환경에서 LANG이 미설정될 수 있음)
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
 CREDENTIALS_FILE="$HOME/.config/pushover/claude-code"
 
 if [ -f "$CREDENTIALS_FILE" ]; then

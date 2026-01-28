@@ -6,6 +6,10 @@
 # 모든 외부 명령 출력을 반드시 /dev/null로 리다이렉트해야 합니다.
 # Stop hook과 달리 stdout 오염이 Claude 동작에 직접 영향을 줍니다.
 
+# UTF-8 인코딩 강제 설정 (Claude Code 환경에서 LANG이 미설정될 수 있음)
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
 # jq 미설치 시 조용히 종료 (방어적 가드)
 command -v jq >/dev/null 2>&1 || exit 0
 
@@ -23,9 +27,9 @@ fi
 # stdin에서 JSON 입력 읽기
 INPUT=$(cat)
 
-# 질문 추출 (최대 4개 가능)
-QUESTION_COUNT=$(echo "$INPUT" | jq -r '.tool_input.questions | length' 2>/dev/null)
-FIRST_QUESTION=$(echo "$INPUT" | jq -r '.tool_input.questions[0].question // empty' 2>/dev/null)
+# 질문 추출 (최대 4개 가능, printf로 안정적 UTF-8 전달)
+QUESTION_COUNT=$(printf '%s' "$INPUT" | jq -r '.tool_input.questions | length' 2>/dev/null)
+FIRST_QUESTION=$(printf '%s' "$INPUT" | jq -r '.tool_input.questions[0].question // empty' 2>/dev/null)
 
 if [ -z "$FIRST_QUESTION" ]; then
   exit 0

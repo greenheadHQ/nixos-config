@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Claude Code Stop Hook - Pushover 알림 전송
 
+# UTF-8 인코딩 강제 설정 (Claude Code 환경에서 LANG이 미설정될 수 있음)
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
 # agenix로 관리되는 credentials 로드
 CREDENTIALS_FILE="$HOME/.config/pushover/claude-code"
 
