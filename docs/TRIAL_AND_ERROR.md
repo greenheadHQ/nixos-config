@@ -4,6 +4,7 @@
 
 ## 목차
 
+- [2026-01-28: OSC 52 클립보드 - Termius iOS 미지원](#2026-01-28-osc-52-클립보드---termius-ios-미지원)
 - [2026-01-18: Termius 한국어 입력 시 터미널 UI 깨짐 문제](#2026-01-18-termius-한국어-입력-시-터미널-ui-깨짐-문제)
 - [2026-01-17: rip (프로세스 종료 CLI) Flake input 추가 실패](#2026-01-17-rip-프로세스-종료-cli-flake-input-추가-실패)
   - [후속 문제: nix flake update로 의도치 않은 전체 업데이트](#후속-문제-nix-flake-update로-의도치-않은-전체-업데이트)
@@ -23,6 +24,59 @@
   - [교훈](#교훈)
   - [대상 애드온 목록 (참고용)](#대상-애드온-목록-참고용)
   - [결론](#결론)
+
+---
+
+## 2026-01-28: OSC 52 클립보드 - Termius iOS 미지원
+
+> **환경**:
+> - **miniPC OS**: NixOS 26.05 (nixos-unstable)
+> - **클라이언트**: iPhone (Termius), MacBook Pro (Ghostty)
+> - **목표**: SSH 세션에서 `pbcopy`/`xclip` 명령으로 로컬 클립보드에 복사
+
+### 배경
+
+미니PC는 headless NixOS 서버라서 X11/Wayland가 없어 실제 xclip/wl-copy가 작동하지 않음.
+SSH 세션에서 클립보드를 사용하려면 **OSC 52 escape sequence**가 유일한 방법.
+
+### 시도한 것
+
+1. **zsh 함수로 pbcopy/xclip/wl-copy 오버라이드**
+   - SSH 세션에서만 활성화되도록 `$SSH_TTY` 체크
+   - tmux 내부에서는 DCS passthrough 사용
+   - tmux.conf에 `allow-passthrough on` 추가
+
+2. **실제 스크립트 파일로 변경**
+   - Claude Code `/copy` 명령이 zsh 함수를 인식 못함
+   - `~/.local/bin/pbcopy`, `xclip`, `wl-copy`로 스크립트 설치
+   - 이후 `/copy` 명령은 작동함
+
+### 결과
+
+- **Mac Ghostty**: OSC 52 지원 → **성공**
+- **iPhone Termius**: OSC 52 미지원 → **실패**
+
+### 교훈
+
+1. **터미널 앱의 OSC 52 지원 여부 먼저 확인**
+   - Ghostty, iTerm2, Kitty: 지원
+   - Termius: **미지원**
+   - Blink Shell: 지원 (유료)
+
+2. **Termius의 한계**
+   - 이미 한국어 입력 문제도 있었음 (2026-01-18 기록 참조)
+   - OSC 52 미지원으로 클립보드 연동도 불가
+   - iOS에서 SSH 클라이언트로 Termius 대신 **Blink Shell** 고려 필요
+
+3. **headless 서버 클립보드의 근본적 한계**
+   - 서버 측에서 할 수 있는 건 OSC 52 전송뿐
+   - 클라이언트(터미널 앱)가 지원하지 않으면 방법 없음
+
+### 대안
+
+- **Blink Shell** (iOS, $19.99) - OSC 52 지원 확인됨
+- **Secure ShellFish** (iOS) - 지원 여부 미확인
+- 당분간 iPhone에서는 수동 복사 (텍스트 선택 → 복사)
 
 ---
 
