@@ -14,6 +14,7 @@
     pkgs.zoxide # cd 대체 (디렉토리 점프)
 
     # 개발 도구
+    pkgs.neovim # 텍스트 에디터
     pkgs.tmux # 터미널 멀티플렉서
     pkgs.lazygit # Git TUI
     pkgs.gh # GitHub CLI
