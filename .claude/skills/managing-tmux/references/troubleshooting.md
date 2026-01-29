@@ -20,25 +20,35 @@
 - 노트 연결(`@pane_note_path`)이 복원되지 않음 (노트 아이콘 🗒️ 안 보임)
 - 두 번째 `prefix + Ctrl-r`을 누르면 복원됨
 
-### 원인
+### 원인 (과거)
 
-`pane-focus-in` hook이 `post-restore-all` hook보다 먼저 실행됨:
+`pane-focus-in` hook이 `post-restore-all` hook보다 먼저 실행되어 복원된 값을 덮어씀.
 
-1. tmux-resurrect가 pane 복원
-2. `pane-focus-in` hook 실행 → `@pane_note_path`를 기본값으로 설정
-3. `post-restore-all` hook 실행 → 올바른 값으로 복원 시도
-4. 하지만 2번에서 이미 값이 설정되어 있어 무시됨
+### 해결 (2단계)
 
-### 해결
-
-`pane-focus-in` hook 제거 (tmux.conf):
+**1차**: `pane-focus-in` hook 제거
 
 ```bash
 # 제거됨 (복원 방해)
 # set-hook -g pane-focus-in 'run-shell "$HOME/.tmux/scripts/pane-note.sh ensure-var"'
 ```
 
-`@pane_note_path`는 노트 명령어(`prefix + n`, `prefix + N` 등) 사용 시 자동 설정됨.
+**2차**: 순서 기반(line_num) → 식별자 기반(`session:window.pane`) 매핑으로 전환
+
+구 형식: `var_type|line_num|value` — pane 순서가 바뀌면 잘못된 pane에 복원됨
+신 형식: `var_type|session:window.pane|value` — 순서 무관하게 정확한 pane에 복원
+
+```bash
+# save: 식별자로 저장
+ident="$(tmux display-message -t "$pane_id" -p '#{session_name}:#{window_index}.#{pane_index}')"
+echo "note_path|$ident|$note_path" >> "$VARS_FILE"
+
+# restore: pane_map을 한 번만 구성하여 O(N) 매칭
+pane_map=$(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{pane_id}')
+target_pane=$(printf '%s\n' "$pane_map" | awk -v id="$ident" '$1 == id { print $2 }')
+```
+
+**한계**: tmux-resurrect가 동명 세션 충돌 시 이름을 변경(`main` → `main_0`)하면 해당 pane의 변수 복원이 건너뛰어질 수 있음.
 
 ### 관련 파일
 
@@ -60,11 +70,11 @@ YAML frontmatter가 없는 기존 flat 구조 노트(`~/.tmux/pane-notes/*.md`)�
 
 ### 해결
 
-태그 값 자체를 검증하여 필터링:
+태그 값 자체를 검증하여 필터링 (`{} +`로 배치 실행):
 
 ```bash
 find "$NOTES_DIR" -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" \
-  -exec yq --front-matter=extract -r 'select(.tags) | .tags[]' {} \; 2>/dev/null \
+  -exec yq --front-matter=extract -r 'select(.tags) | .tags[]' {} + 2>/dev/null \
   | grep -vE '^(/|https?://|[[:space:]]*$)' \
   | awk 'length <= 30' \
   | LC_ALL=C sort -u

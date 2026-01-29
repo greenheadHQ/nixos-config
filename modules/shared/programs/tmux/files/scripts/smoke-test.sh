@@ -166,6 +166,43 @@ for script in "${scripts[@]}"; do
 done
 echo ""
 
+# 8. 플러그인 확인
+echo "[플러그인 확인]"
+if [ -n "${TMUX:-}" ]; then
+  tmux show-option -gv @continuum-save-interval >/dev/null 2>&1 \
+    && echo "  OK: continuum" || echo "  WARN: continuum 미설정"
+
+  mode_keys=$(tmux show-option -gv mode-keys 2>/dev/null || echo "")
+  [ "$mode_keys" = "vi" ] && echo "  OK: mode-keys vi" \
+    || echo "  WARN: mode-keys가 vi가 아님 (got: $mode_keys)"
+else
+  echo "  SKIP: tmux 세션 외부에서 실행 (플러그인 확인 불가)"
+fi
+echo ""
+
+# 9. pane_vars.txt 형식 확인
+echo "[pane_vars 형식]"
+VARS_FILE="${HOME}/.local/share/tmux/resurrect/pane_vars.txt"
+if [ -f "$VARS_FILE" ] && [ -s "$VARS_FILE" ]; then
+  if head -1 "$VARS_FILE" | grep -qE '^[a-z_]+\|[^|]+:[0-9]+\.[0-9]+\|'; then
+    echo "  OK: pane_vars.txt 식별자 형식"
+  else
+    echo "  WARN: pane_vars.txt 형식이 구 형식(line_num 기반)일 수 있음"
+  fi
+else
+  echo "  SKIP: pane_vars.txt 없음 (세션 저장 후 확인)"
+fi
+echo ""
+
+# 10. 디버그 메커니즘
+echo "[디버그 메커니즘]"
+if grep -q 'debug()' "$HOME/.tmux/scripts/pane-note.sh" 2>/dev/null; then
+  echo "  OK: debug 함수 존재 (pane-note.sh)"
+else
+  echo "  WARN: debug 함수 미설치 (pane-note.sh)"
+fi
+echo ""
+
 echo "==========================================="
 echo "  All tests passed!"
 echo "==========================================="

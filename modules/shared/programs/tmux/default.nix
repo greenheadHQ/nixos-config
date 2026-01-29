@@ -8,10 +8,38 @@
 
 let
   tmuxDir = ./files;
+
+  # home.file DRY 리팩토링: 스크립트 목록에서 자동 생성
+  scriptNames = [
+    "pane-note"
+    "pane-link"
+    "pane-helpers"
+    "pane-restore"
+    "prefix-help"
+    "pane-tag"
+    "find-unused-prefixes"
+    "save-pane-vars"
+    "restore-pane-vars"
+    "smoke-test"
+  ];
+  mkScript = name: {
+    name = ".tmux/scripts/${name}.sh";
+    value = {
+      source = "${tmuxDir}/scripts/${name}.sh";
+      executable = true;
+    };
+  };
 in
 {
   programs.tmux = {
     enable = true;
+    terminal = "tmux-256color";
+    mouse = true;
+    historyLimit = 50000;
+    escapeTime = 10;
+    baseIndex = 1;
+    keyMode = "vi";
+    focusEvents = true;
 
     plugins = with pkgs.tmuxPlugins; [
       {
@@ -19,12 +47,18 @@ in
         extraConfig = ''
           set -g @resurrect-dir '~/.local/share/tmux/resurrect'
           set -g @resurrect-capture-pane-contents 'on'
-
-          # Pane 변수 저장/복원 hook (eval로 실행되므로 run-shell 불필요)
           set -g @resurrect-hook-post-save-all '$HOME/.tmux/scripts/save-pane-vars.sh'
           set -g @resurrect-hook-post-restore-all '$HOME/.tmux/scripts/restore-pane-vars.sh'
         '';
       }
+      {
+        plugin = continuum;
+        extraConfig = ''
+          set -g @continuum-save-interval '15'
+          set -g @continuum-restore 'on'
+        '';
+      }
+      yank
     ];
 
     # Home Manager가 생성하는 ~/.config/tmux/tmux.conf가 먼저 로드되므로,
@@ -37,50 +71,8 @@ in
   # ~/.tmux/ 디렉토리 전체를 심볼릭 링크로 관리
   home.file = {
     ".tmux/tmux.conf".source = "${tmuxDir}/tmux.conf";
-    ".tmux/scripts/pane-note.sh" = {
-      source = "${tmuxDir}/scripts/pane-note.sh";
-      executable = true;
-    };
-    ".tmux/scripts/pane-link.sh" = {
-      source = "${tmuxDir}/scripts/pane-link.sh";
-      executable = true;
-    };
-    ".tmux/scripts/pane-helpers.sh" = {
-      source = "${tmuxDir}/scripts/pane-helpers.sh";
-      executable = true;
-    };
-    ".tmux/scripts/pane-restore.sh" = {
-      source = "${tmuxDir}/scripts/pane-restore.sh";
-      executable = true;
-    };
-    ".tmux/scripts/prefix-help.sh" = {
-      source = "${tmuxDir}/scripts/prefix-help.sh";
-      executable = true;
-    };
-    ".tmux/scripts/pane-tag.sh" = {
-      source = "${tmuxDir}/scripts/pane-tag.sh";
-      executable = true;
-    };
-    ".tmux/scripts/find-unused-prefixes.sh" = {
-      source = "${tmuxDir}/scripts/find-unused-prefixes.sh";
-      executable = true;
-    };
-    ".tmux/scripts/save-pane-vars.sh" = {
-      source = "${tmuxDir}/scripts/save-pane-vars.sh";
-      executable = true;
-    };
-    ".tmux/scripts/restore-pane-vars.sh" = {
-      source = "${tmuxDir}/scripts/restore-pane-vars.sh";
-      executable = true;
-    };
-    ".tmux/scripts/smoke-test.sh" = {
-      source = "${tmuxDir}/scripts/smoke-test.sh";
-      executable = true;
-    };
-    # NOTE: ~/.tmux.conf는 더 이상 필요없음
-    # programs.tmux.extraConfig에서 ~/.tmux/tmux.conf를 source하므로
-    # XDG 경로(~/.config/tmux/tmux.conf)가 우선 로드됨
-  };
+  }
+  // builtins.listToAttrs (map mkScript scriptNames);
 
   # yq 의존성 (YAML frontmatter 파싱용)
   home.packages = with pkgs; [

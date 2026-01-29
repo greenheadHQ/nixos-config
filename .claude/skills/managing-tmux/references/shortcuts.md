@@ -20,7 +20,7 @@ tmux 터미널 멀티플렉서의 단축키와 기능을 정리합니다.
 
 | 단축키       | 기능                             |
 | ------------ | -------------------------------- |
-| `prefix + r` | 설정 리로드                      |
+| `prefix + r` | 설정 리로드 (`~/.config/tmux/tmux.conf`) |
 | `prefix + a` | 도움말 (사용 가능한 단축키 표시) |
 | `prefix + s` | 세션 선택                        |
 | `prefix + ,` | 창 이름 변경                     |
@@ -29,10 +29,12 @@ tmux 터미널 멀티플렉서의 단축키와 기능을 정리합니다.
 
 ---
 
-## 세션 저장/복원 (tmux-resurrect)
+## 세션 저장/복원 (tmux-resurrect + tmux-continuum)
 
 tmux-resurrect 플러그인으로 세션을 저장하고 복원할 수 있습니다.
-Pane 변수(`@pane_note_path`, `@custom_pane_title`)도 함께 저장/복원됩니다.
+Pane 변수(`@pane_note_path`, `@custom_pane_title`)도 식별자 기반(`session:window.pane`)으로 저장/복원됩니다.
+
+tmux-continuum이 15분 간격으로 자동 저장하며, tmux 서버 시작 시 마지막 세션을 자동 복원합니다.
 
 | 단축키             | 기능                        |
 | ------------------ | --------------------------- |
@@ -40,6 +42,7 @@ Pane 변수(`@pane_note_path`, `@custom_pane_title`)도 함께 저장/복원됩�
 | `prefix + Ctrl-r`  | 세션 복원                   |
 
 **저장 위치**: `~/.local/share/tmux/resurrect/`
+**Pane 변수 파일**: `~/.local/share/tmux/resurrect/pane_vars.txt` (형식: `var_type|session:window.pane|value`)
 
 ---
 
@@ -145,6 +148,19 @@ YYYY-MM-DD | [repo] 제목 (3 matches)     # rg 모드에서 매칭 수 표시
 - Git 브랜치 표시 (`main`)
 - 커스텀 pane 제목 (`my-task`)
 - 노트 아이콘 - 노트에 내용이 있을 때 표시
+
+---
+
+## Copy-mode (vi 키바인딩)
+
+`keyMode = "vi"`가 설정되어 있어 copy-mode에서 vi 스타일 키바인딩을 사용합니다.
+tmux-yank 플러그인이 시스템 클립보드와 연동합니다.
+
+| 단축키 | 기능 |
+| ------ | ---- |
+| `v` | 선택 시작 |
+| `y` | 선택 영역 복사 (클립보드) |
+| `q` | copy-mode 종료 |
 
 ---
 

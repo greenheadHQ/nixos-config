@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+debug() {
+  if [ "${TMUX_NOTE_DEBUG:-0}" = "1" ]; then
+    printf "[DEBUG %s] %s\n" "$(basename "$0")" "$*" >&2
+  fi
+}
+
 NOTES_DIR="${HOME}/.tmux/pane-notes"
 [ -d "$NOTES_DIR" ] || mkdir -p "$NOTES_DIR"
 
@@ -33,6 +39,7 @@ slug() {
   s="${s//]/-}"
   s="${s//\{/-}"
   s="${s//\}/-}"
+  s="${s//\\/-}"
   # 괄호를 살리고 싶다면 아래 두 줄은 주석 처리하세요
   # s="${s//\(/-}"
   # s="${s//\)/-}"
@@ -134,8 +141,12 @@ create_note(){
   if [ -f "$note" ]; then
     local choice=""
     if command -v fzf >/dev/null 2>&1; then
+      local note_basename
+      note_basename=$(basename "$note")
+      note_basename="${note_basename//\'/}"
+      note_basename="${note_basename//\"/}"
       choice=$(tmux display-popup -E -w 50% -h 30% \
-        "printf '%s\n' '기존 노트에 연결하기' '노트 생성 취소' | fzf --disabled --prompt='' --header='동일한 이름의 노트가 존재합니다: $(basename "$note")'" 2>/dev/null || true)
+        "printf '%s\n' '기존 노트에 연결하기' '노트 생성 취소' | fzf --disabled --prompt='' --header='동일한 이름의 노트가 존재합니다: ${note_basename}'" 2>/dev/null || true)
     else
       # fzf 없으면 그냥 열기
       choice="기존 노트에 연결하기"
@@ -162,7 +173,7 @@ create_note(){
     # 유효한 태그만 필터링: 30자 이내, 경로/URL 아님, 빈 값 아님
     local EXISTING_TAGS
     EXISTING_TAGS=$(find "$NOTES_DIR" -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" \
-      -exec yq --front-matter=extract -r 'select(.tags) | .tags[]' {} \; 2>/dev/null \
+      -exec yq --front-matter=extract -r 'select(.tags) | .tags[]' {} + 2>/dev/null \
       | grep -vE '^(/|https?://|[[:space:]]*$)' \
       | awk 'length <= 30' \
       | LC_ALL=C sort -u || true)
@@ -176,8 +187,12 @@ create_note(){
     # --print-query: 프롬프트에 입력한 custom tag도 첫 줄에 출력됨
     local tmp_file
     tmp_file=$(mktemp)
+    local tags_file
+    tags_file=$(mktemp)
+    echo "$ALL_TAGS" > "$tags_file"
     tmux display-popup -E -w 90% -h 50% \
-      "echo '$ALL_TAGS' | fzf --multi --print-query --prompt='Tags> ' --header=$'Tab: 기존 태그 선택/해제 | Enter: 완료 | ESC: 건너뛰기\n새 태그 입력: 프롬프트에 직접 입력 (쉼표로 여러 개 가능, 예: 긴급,중요)' > '$tmp_file'" 2>/dev/null || true
+      "cat '$tags_file' | fzf --multi --print-query --prompt='Tags> ' --header=\$'Tab: 기존 태그 선택/해제 | Enter: 완료 | ESC: 건너뛰기\n새 태그 입력: 프롬프트에 직접 입력 (쉼표로 여러 개 가능, 예: 긴급,중요)' > '$tmp_file'" 2>/dev/null || true
+    rm -f "$tags_file"
     # 첫 줄: custom tag (쿼리), 나머지: 선택된 기존 태그
     local query selected_items
     query=$(head -1 "$tmp_file")
@@ -195,14 +210,14 @@ create_note(){
   # ★ YAML frontmatter 생성
   {
     echo "---"
-    echo "title: $user_title"
+    printf "title: %s\n" "$user_title"
     if [ -n "$selected_tags" ]; then
-      echo "tags: [$(echo "$selected_tags" | sed 's/,/, /g')]"
+      printf "tags: [%s]\n" "$(printf '%s' "$selected_tags" | sed 's/,/, /g')"
     else
       echo "tags: []"
     fi
-    echo "created: $(date '+%Y-%m-%d')"
-    echo "repo: $repo"
+    printf "created: %s\n" "$(date '+%Y-%m-%d')"
+    printf "repo: %s\n" "$repo"
     echo "---"
     echo "# $user_title"
     echo ""
@@ -251,6 +266,8 @@ case "${1:-}" in
     ensure_exist_or_msg
     if command -v pbpaste >/dev/null; then
       clip="$(pbpaste)"
+    elif command -v wl-paste >/dev/null 2>&1; then
+      clip="$(wl-paste --no-newline 2>/dev/null || true)"
     elif command -v xclip >/dev/null 2>&1; then
       clip="$(xclip -o -selection clipboard || true)"
     else
@@ -279,10 +296,8 @@ case "${1:-}" in
           *notion.so*|*notion.site*)       lbl="노션" ;;
           *)                               lbl="$host" ;;
         esac
-        labeled="${labeled}${lbl}\t${u}\n"
-      done <<EOF
-$urls
-EOF
+        labeled="${labeled}${lbl}"$'\t'"${u}"$'\n'
+      done < <(printf '%s\n' "$urls")
     fi
 
     MENU=(display-menu -T "Open URL" -x C -y C)
@@ -295,9 +310,7 @@ EOF
       esc="$(printf "%s" "$url" | sed "s/'/'\\\\''/g")"
       MENU+=( "$i. $disp" "" "run-shell \"if command -v open >/dev/null 2>&1; then open '$esc' >/dev/null 2>&1 & else (xdg-open '$esc' >/dev/null 2>&1 || true) & fi; tmux display-message '🌐 Opened: $esc'\"" )
       i=$((i+1))
-    done <<EOF
-$labeled
-EOF
+    done < <(printf '%s' "$labeled")
     tmux "${MENU[@]}" >/dev/null 2>&1 || true
     ;;
   *)

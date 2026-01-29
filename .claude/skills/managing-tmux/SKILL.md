@@ -30,11 +30,27 @@ description: |
 | `restore-pane-vars.sh` | tmux-resurrect용 pane 변수 복원 |
 | `smoke-test.sh` | 기능 검증 테스트 |
 
+## 주요 Nix 옵션 (`programs.tmux`)
+
+`default.nix`에서 Home Manager 내장 옵션을 활용하여 기본 설정을 선언적으로 관리합니다:
+
+| 옵션 | 값 | 설명 |
+|------|-----|------|
+| `terminal` | `"tmux-256color"` | 기본 터미널 타입 |
+| `mouse` | `true` | 마우스 지원 |
+| `historyLimit` | `50000` | 스크롤백 히스토리 |
+| `escapeTime` | `10` | Escape 키 지연 (ms) |
+| `baseIndex` | `1` | 창 번호 시작 |
+| `keyMode` | `"vi"` | copy-mode에서 vi 키바인딩 |
+| `focusEvents` | `true` | Neovim autoread 지원 |
+
 ## 플러그인
 
 | 플러그인 | 용도 |
 |----------|------|
 | tmux-resurrect | 세션 저장/복원 (pane 변수 포함) |
+| tmux-continuum | 15분 간격 자동 저장 + 서버 시작 시 자동 복원 |
+| tmux-yank | 시스템 클립보드 연동 (copy-mode) |
 
 ## Pane Notepad 구조
 
@@ -74,6 +90,14 @@ repo: nixos-config
 - 암호화 파일: `secrets/pane-note-links.age`
 - 복호화 위치: `~/.config/pane-note/links.txt`
 - 설정: `modules/shared/programs/secrets/default.nix`
+
+### 디버그
+
+모든 스크립트에 `debug()` 함수가 내장되어 있습니다. `TMUX_NOTE_DEBUG=1` 환경변수로 활성화:
+
+```bash
+TMUX_NOTE_DEBUG=1 ~/.tmux/scripts/pane-note.sh edit
+```
 
 ### 테스트
 

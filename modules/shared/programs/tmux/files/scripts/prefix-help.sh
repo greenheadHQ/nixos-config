@@ -21,9 +21,7 @@ cat >"$TMP" <<EOF
 [노트 관련]
   N : 새 노트 생성 (제목 → 태그 선택)
   K : 기존 노트 연결 (fzf)
-  V : 노트 미리보기 (연결 없이 열기)
   T : 태그 수정 (현재 노트)
-  S : 내용 검색 (rg + fzf 실시간)
   n : 노트 편집 (팝업) — 링크 없으면 안내
   v : 노트 읽기 (읽기 전용 팝업)
   y : 클립보드 한 줄을 노트에 추가
@@ -42,7 +40,7 @@ cat >"$TMP" <<EOF
   s : 세션 선택 메뉴
 
 [설정]
-  r : tmux 설정 리로드 (source-file "\$HOME/.tmux/tmux.conf")
+  r : tmux 설정 리로드 (source-file ~/.config/tmux/tmux.conf)
 
 [세션 저장/복원 (tmux-resurrect)]
   Ctrl-s : 세션 저장 (pane 변수 포함)

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+debug() {
+  if [ "${TMUX_NOTE_DEBUG:-0}" = "1" ]; then
+    printf "[DEBUG %s] %s\n" "$(basename "$0")" "$*" >&2
+  fi
+}
+
 # 현재 pane에 연결된 노트의 태그 수정
 # 두 단계 UI: 1) 제거할 태그 선택 2) 추가할 태그 선택
 # 현재 태그가 기본 유지됨 (명시적으로 제거해야 삭제)
@@ -28,7 +34,7 @@ fi
 # 기본 태그 + 기존 노트에서 수집한 태그
 DEFAULT_TAGS="버그 기능 리팩토링 테스트 문서"
 EXISTING_TAGS=$(find "$NOTES_DIR" -name "*.md" ! -path "*/_archive/*" ! -path "*/_trash/*" \
-  -exec yq --front-matter=extract -r 'select(.tags) | .tags[]' {} \; 2>/dev/null \
+  -exec yq --front-matter=extract -r 'select(.tags) | .tags[]' {} + 2>/dev/null \
   | grep -vE '^(/|https?://|[[:space:]]*$)' \
   | awk 'length <= 30' \
   | LC_ALL=C sort -u || true)

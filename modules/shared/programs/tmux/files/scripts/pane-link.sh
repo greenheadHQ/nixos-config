@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+debug() {
+  if [ "${TMUX_NOTE_DEBUG:-0}" = "1" ]; then
+    printf "[DEBUG %s] %s\n" "$(basename "$0")" "$*" >&2
+  fi
+}
+
 # 통합 검색 스크립트
 # - fzf 모드: 제목/태그 퍼지 필터링
 # - rg 모드: ripgrep 내용 검색

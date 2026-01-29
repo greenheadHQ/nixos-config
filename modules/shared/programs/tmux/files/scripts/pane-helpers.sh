@@ -3,6 +3,12 @@
 # fzf에서 직접 호출 가능한 함수들
 set -euo pipefail
 
+debug() {
+  if [ "${TMUX_NOTE_DEBUG:-0}" = "1" ]; then
+    printf "[DEBUG %s] %s\n" "$(basename "$0")" "$*" >&2
+  fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HELPERS="$SCRIPT_DIR/pane-helpers.sh"
 NOTES_DIR="${HOME}/.tmux/pane-notes"
@@ -78,9 +84,28 @@ list_all() {
       ! -path "*/_archive/*" ! -path "*/_trash/*" -print0 2>/dev/null) \
       | sort -t$'\t' -k1,1nr | cut -f2-
   else
-    # 생성일 기준 정렬 (기존 방식)
+    # 생성일 기준 정렬 (인라인 처리: 서브셸 오버헤드 제거)
     while IFS= read -r -d '' f; do
-      format_entry "$f"
+      local repo metadata title tags created date_part tags_formatted
+      repo=$(basename "$(dirname "$f")")
+
+      if metadata=$(yq --front-matter=extract -r \
+        '[.title // "", (.tags // [] | join(" #")), .created // ""] | @tsv' \
+        "$f" 2>/dev/null); then
+        title=$(printf '%s' "$metadata" | cut -f1)
+        tags=$(printf '%s' "$metadata" | cut -f2)
+        created=$(printf '%s' "$metadata" | cut -f3)
+      else
+        title="" tags="" created=""
+      fi
+
+      [ -z "$title" ] && title=$(basename "$f" .md)
+      date_part="${created:-"----/--/--"}"
+      tags_formatted=""
+      if [ -n "$tags" ]; then
+        tags_formatted=$(printf '%s' " #$tags" | sed 's/#\([^ ]*\)/\\033[38;5;214m#\1\\033[0m/g')
+      fi
+      printf "%s | [%s] %s%b\t%s\n" "$date_part" "$repo" "$title" "$tags_formatted" "$f"
     done < <(find "$NOTES_DIR" -mindepth 2 -name "*.md" \
       ! -path "*/_archive/*" ! -path "*/_trash/*" -print0 2>/dev/null) | sort -r
   fi

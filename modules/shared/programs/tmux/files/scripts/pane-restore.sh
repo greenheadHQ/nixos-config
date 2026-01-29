@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+debug() {
+  if [ "${TMUX_NOTE_DEBUG:-0}" = "1" ]; then
+    printf "[DEBUG %s] %s\n" "$(basename "$0")" "$*" >&2
+  fi
+}
+
 # 휴지통/아카이브에서 노트 복원
 # 1. 소스 선택 (휴지통 vs 아카이브)
 # 2. 파일 선택
