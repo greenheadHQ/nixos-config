@@ -9,6 +9,7 @@
 - [빈 tags 배열일 때 날짜/태그 파싱 오류](#빈-tags-배열일-때-날짜태그-파싱-오류)
 - [yq -i로 frontmatter 수정 시 파일 구조 손상](#yq--i로-frontmatter-수정-시-파일-구조-손상)
 - [한글 태그 sort 시 에러 발생](#한글-태그-sort-시-에러-발생)
+- [display-popup에서 에디터/뷰어 command not found](#display-popup에서-에디터뷰어-command-not-found)
 
 ---
 
@@ -295,3 +296,63 @@ macOS/일부 Linux 환경에서 UTF-8 한글 문자열의 정렬 시 locale 설�
 
 - `modules/shared/programs/tmux/files/scripts/pane-note.sh`
 - `modules/shared/programs/tmux/files/scripts/pane-tag.sh`
+
+---
+
+## display-popup에서 에디터/뷰어 command not found
+
+### 증상
+
+- `prefix + e`(노트 편집) 또는 `prefix + v`(노트 보기) 시 popup에서 `nvim: command not found`, `bat: command not found` 에러 발생
+- 일반 tmux pane에서는 `nvim`, `bat` 모두 정상 동작하지만, `display-popup`에서만 실패
+
+### 원인
+
+`tmux display-popup -E`는 새로운 셸(`/bin/sh` 또는 기본 셸)을 시작하는데, 이 셸은 Nix 프로필(`/nix/var/nix/profiles/...`)이 PATH에 포함되지 않은 상태로 시작됨. 따라서 Nix로 설치된 `nvim`, `bat` 등의 바이너리를 찾지 못함.
+
+기존 코드는 popup 셸 내부에서 `$EDITOR`나 `command -v`로 에디터를 찾으려 했으나, popup 셸의 불완전한 PATH 때문에 resolve에 실패함.
+
+```bash
+# 문제가 되는 코드: popup 셸의 PATH로 resolve 시도
+tmux display-popup -E -w 90% -h 85% \
+  "NOTE=\"$note\"; :${EDITOR:=nvim}; exec \"${EDITOR}\" \"$NOTE\""
+
+tmux display-popup -E -w 80% -h 80% \
+  "NOTE=\"$note\"; if command -v bat >/dev/null 2>&1; then bat ...; else less ...; fi"
+```
+
+### 해결
+
+**호출 측(현재 셸)에서 절대 경로로 미리 resolve**한 뒤, popup에 절대 경로를 전달:
+
+```bash
+# 에디터: 현재 셸에서 절대 경로 resolve
+open_popup_edit(){
+  local editor_cmd
+  editor_cmd="$(command -v "${EDITOR:-nvim}" 2>/dev/null \
+    || command -v nvim 2>/dev/null \
+    || command -v vim 2>/dev/null \
+    || echo vi)"
+  tmux display-popup -E -w 90% -h 85% \
+    "exec '$editor_cmd' '$note'"
+}
+
+# 뷰어: 현재 셸에서 절대 경로 resolve
+open_popup_view(){
+  local viewer_cmd
+  viewer_cmd="$(command -v bat 2>/dev/null || true)"
+  if [ -n "$viewer_cmd" ]; then
+    tmux display-popup -E -w 80% -h 80% \
+      "'$viewer_cmd' -pp --paging=always '$note'"
+  else
+    tmux display-popup -E -w 80% -h 80% \
+      "LESS= less -+F -+X -R '$note'"
+  fi
+}
+```
+
+핵심 원칙: **`display-popup` 셸의 PATH에 의존하지 말고, 호출 시점에 절대 경로를 확정**할 것.
+
+### 관련 파일
+
+- `modules/shared/programs/tmux/files/scripts/pane-note.sh`

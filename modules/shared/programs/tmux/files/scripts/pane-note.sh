@@ -113,13 +113,24 @@ ensure_exist_or_msg(){
 }
 
 open_popup_edit(){
+  # 절대 경로로 resolve: display-popup 셸의 PATH 불완전 방지
+  local editor_cmd
+  editor_cmd="$(command -v "${EDITOR:-nvim}" 2>/dev/null || command -v nvim 2>/dev/null || command -v vim 2>/dev/null || echo vi)"
   tmux display-popup -E -w 90% -h 85% \
-    "NOTE=\"$note\"; :\${EDITOR:=nvim}; exec \"\${EDITOR}\" \"\$NOTE\""
+    "exec '$editor_cmd' '$note'"
 }
 
 open_popup_view(){
-  tmux display-popup -E -w 80% -h 80% \
-    "NOTE=\"$note\"; if command -v bat >/dev/null 2>&1; then bat -pp --paging=always \"\$NOTE\"; else LESS= less -+F -+X -R \"\$NOTE\"; fi"
+  # 절대 경로로 resolve: display-popup 셸의 PATH 불완전 방지
+  local viewer_cmd
+  viewer_cmd="$(command -v bat 2>/dev/null || true)"
+  if [ -n "$viewer_cmd" ]; then
+    tmux display-popup -E -w 80% -h 80% \
+      "'$viewer_cmd' -pp --paging=always '$note'"
+  else
+    tmux display-popup -E -w 80% -h 80% \
+      "LESS= less -+F -+X -R '$note'"
+  fi
 }
 
 create_note(){
