@@ -24,12 +24,23 @@ agenix를 사용한 `.age` 파일 기반 secret 암호화/배포 가이드.
 
 | 파일 | 역할 |
 |------|------|
-| `secrets/secrets.nix` | secret 선언 + 암호화 대상 공개키 지정 |
+| `secrets/secrets.nix` | secret 선언 + 암호화 대상 공개키 (constants.nix import) |
 | `secrets/<name>.age` | 암호화된 secret 파일 (Git 추적) |
-| `modules/shared/programs/secrets/default.nix` | 배포 경로 + 권한 설정 (Home Manager) |
+| `libraries/constants.nix` | SSH 공개키 단일 소스 (secrets.nix에서 참조) |
+| `modules/shared/programs/secrets/default.nix` | 배포 경로 + 권한 설정 (Home Manager 레벨) |
+| `modules/nixos/programs/docker/immich.nix` | 시스템 레벨 시크릿 (NixOS agenix) |
+
+### agenix 레벨 구분
+
+| 레벨 | 설정 위치 | 용도 |
+|------|----------|------|
+| Home Manager | `modules/shared/programs/secrets/default.nix` | Pushover, pane-note 등 사용자 레벨 |
+| NixOS 시스템 | `modules/nixos/programs/docker/immich.nix` | immich-db-password 등 시스템 서비스 |
+
+두 레벨이 공존하며, NixOS 시스템 레벨은 `flake.nix`에서 `inputs.agenix.nixosModules.default`로 활성화.
 
 Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로드한다.
-배포 권한은 `0400` mode이며, Home Manager agenix 서비스가 복호화하여 지정 경로에 배치한다.
+배포 권한은 `0400` mode이며, agenix가 복호화하여 지정 경로에 배치한다.
 
 현재 등록된 secret 목록은 `secrets/secrets.nix`에서 확인.
 

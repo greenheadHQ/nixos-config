@@ -1,24 +1,18 @@
-# modules/nixos/programs/docker/default.nix
-# Podman 런타임 + 공통 설정
+# modules/nixos/programs/docker/runtime.nix
+# Podman 런타임 공통 설정 (서비스 모듈은 homeserver.nix에서 import)
 {
   config,
   pkgs,
   lib,
   username,
+  constants,
   ...
 }:
 
 let
-  dockerDataPath = "/var/lib/docker-data";
-  mediaDataPath = "/mnt/data";
+  inherit (constants.paths) dockerData mediaData;
 in
 {
-  imports = [
-    ./uptime-kuma.nix
-    ./immich.nix
-    # ./plex.nix      # Phase 3에서 활성화
-  ];
-
   # ═══════════════════════════════════════════════════════════════
   # Podman 런타임 (Critical: backend 명시 필수!)
   # ═══════════════════════════════════════════════════════════════
@@ -33,16 +27,16 @@ in
     };
   };
 
-  # ⚠️ Critical: OCI 백엔드 반드시 지정!
+  # Critical: OCI 백엔드 반드시 지정!
   virtualisation.oci-containers.backend = "podman";
 
-  # ⚠️ 기존 extraGroups와 머지되도록 mkAfter 사용
+  # 기존 extraGroups와 머지되도록 mkAfter 사용
   users.users.${username}.extraGroups = lib.mkAfter [ "podman" ];
 
   # 공통 데이터 디렉토리 (서비스별 디렉토리는 각 모듈에서 정의)
   systemd.tmpfiles.rules = [
-    "d ${dockerDataPath} 0755 root root -"
-    "d ${mediaDataPath}/plex/media 0755 ${username} users -"
+    "d ${dockerData} 0755 root root -"
+    "d ${mediaData}/plex/media 0755 ${username} users -"
   ];
 
   # 시스템 패키지

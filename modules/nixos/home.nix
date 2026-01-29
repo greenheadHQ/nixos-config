@@ -10,6 +10,9 @@
   ...
 }:
 
+let
+  packages = import ../../libraries/packages.nix { inherit pkgs; };
+in
 {
   home = {
     inherit username;
@@ -36,40 +39,8 @@
     ./programs/ssh-client # macOS SSH 접속 설정
   ];
 
-  # 패키지 (모바일 개발 최적화)
-  home.packages = with pkgs; [
-    # Terminfo (Ghostty SSH 접속 지원)
-    ghostty
-
-    # CLI 도구
-    bat
-    curl
-    eza
-    fd
-    fzf
-    ripgrep
-    zoxide
-    jq
-    htop
-    nvd
-
-    # 개발 도구
-    tmux
-    lazygit
-    gh
-    git
-    shellcheck
-
-    # 쉘 도구
-    starship
-    atuin
-
-    # 런타임 관리
-    mise
-
-    # mosh (불안정한 네트워크 대비)
-    mosh
-  ];
+  # 패키지 (libraries/packages.nix에서 공통 관리)
+  home.packages = packages.shared ++ packages.nixosOnly;
 
   # Claude 세션 관리 스크립트
   home.file.".local/bin/claude-session" = {

@@ -46,6 +46,7 @@
     }@inputs:
     let
       # 공유 라이브러리
+      constants = import ./libraries/constants.nix;
       home-manager-shared = ./libraries/home-manager;
       nixpkgs-shared = ./libraries/nixpkgs;
 
@@ -94,7 +95,7 @@
             ./modules/darwin/home.nix
           ];
           specialArgs = {
-            inherit inputs hostname;
+            inherit inputs hostname constants;
             inherit (hostConfig) username hostType nixosConfigPath;
           };
         };
@@ -105,6 +106,7 @@
         nixpkgs.lib.nixosSystem {
           system = systems.linux;
           modules = [
+            inputs.agenix.nixosModules.default
             disko.nixosModules.disko
             home-manager.nixosModules.home-manager
             ./hosts/${hostname}
@@ -115,7 +117,7 @@
                 useUserPackages = true;
                 backupFileExtension = "backup";
                 extraSpecialArgs = {
-                  inherit inputs hostname;
+                  inherit inputs hostname constants;
                   inherit (hostConfig) username hostType nixosConfigPath;
                 };
                 users.${hostConfig.username} = import ./modules/nixos/home.nix;
@@ -123,7 +125,7 @@
             }
           ];
           specialArgs = {
-            inherit inputs hostname;
+            inherit inputs hostname constants;
             inherit (hostConfig) username hostType nixosConfigPath;
           };
         };

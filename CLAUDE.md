@@ -7,7 +7,6 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | 명령어 | 설명 |
 |--------|------|
 | `nrs` | 설정 적용 (미리보기 + 적용) |
-| `nrs --offline` | 오프라인 rebuild (캐시만 사용, 빠름) |
 | `ssh minipc` | MiniPC SSH 접속 (Tailscale VPN) |
 | `ssh mac` | macOS SSH 접속 (Tailscale VPN) |
 
@@ -23,9 +22,36 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 
 | 경로 | 설명 |
 |------|------|
+| `libraries/constants.nix` | 전역 상수 (IP, 경로, SSH 키, UID 등) - 단일 소스 |
+| `libraries/packages.nix` | 공통 패키지 (shared/darwinOnly/nixosOnly) |
 | `modules/darwin/` | macOS 전용 설정 |
 | `modules/nixos/` | NixOS 전용 설정 |
+| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, uptime-kuma, plex) |
 | `modules/shared/` | 공유 설정 |
+| `scripts/` | 자동화 스크립트 (add-host, pre-rebuild-check, update-input) |
+
+## 상수 참조
+
+하드코딩된 IP, 경로, SSH 키, UID 등을 추가/변경할 때는 반드시 `libraries/constants.nix`를 수정하세요.
+
+- `constants.network.minipcTailscaleIP` - MiniPC IP
+- `constants.paths.dockerData` / `mediaData` - 데이터 경로
+- `constants.sshKeys.macbook` / `minipc` - SSH 공개키
+- `constants.containers.*` - 컨테이너 리소스 제한
+- `constants.ids.*` - UID/GID (postgres, user, render 등)
+
+상수는 `flake.nix`에서 `specialArgs`/`extraSpecialArgs`로 모든 모듈에 전달됩니다.
+
+## 홈서버 서비스
+
+NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 활성화합니다:
+
+```nix
+# modules/nixos/configuration.nix
+homeserver.immich.enable = true;
+homeserver.uptimeKuma.enable = true;
+homeserver.plex.enable = false;
+```
 
 ## 스킬 라우팅
 
@@ -39,7 +65,7 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | Atuin sync, shell history, `atuin status` | `syncing-atuin` |
 | Claude Code hooks, plugins | `configuring-claude-code` |
 | Hammerspoon hotkeys, launchd stuck, Ghostty | `automating-hammerspoon` |
-| Podman/Docker, immich, container OOM | `running-containers` |
+| Podman/Docker, immich, container OOM, homeserver.* | `running-containers` |
 | Git config, delta, rerere, gitconfig conflicts | `configuring-git` |
 | mise, runtime versions, .nvmrc | `managing-mise` |
 | tmux config, keybindings, pane notepad, tmux-resurrect | `managing-tmux` |

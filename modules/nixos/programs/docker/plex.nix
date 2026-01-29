@@ -3,53 +3,58 @@
 {
   config,
   pkgs,
+  lib,
   username,
+  constants,
   ...
 }:
 
 let
-  # ⚠️ IP 변경 시 docker/*.nix 모든 파일 수정 필요
-  tailscaleIP = "100.79.80.95";
-  dockerDataPath = "/var/lib/docker-data";
-  mediaDataPath = "/mnt/data";
+  cfg = config.homeserver.plex;
+  inherit (constants.network) minipcTailscaleIP;
+  inherit (constants.paths) dockerData mediaData;
+  inherit (constants.ids) user users;
+  inherit (constants.containers) plex;
 in
 {
-  # 데이터 디렉토리
-  systemd.tmpfiles.rules = [
-    "d ${dockerDataPath}/plex/config 0755 ${username} users -"
-    "d ${mediaDataPath}/plex/media/movies 0755 ${username} users -"
-    "d ${mediaDataPath}/plex/media/tv 0755 ${username} users -"
-  ];
-
-  # Plex 컨테이너
-  virtualisation.oci-containers.containers.plex = {
-    image = "plexinc/pms-docker:latest";
-    autoStart = true;
-    ports = [ "${tailscaleIP}:32400:32400/tcp" ];
-    volumes = [
-      "${dockerDataPath}/plex/config:/config"
-      "${mediaDataPath}/plex/media:/data"
-      "${mediaDataPath}/homeserver-data/media:/legacy-media:ro"
-      "/tmp/plex-transcode:/transcode"
+  config = lib.mkIf cfg.enable {
+    # 데이터 디렉토리
+    systemd.tmpfiles.rules = [
+      "d ${dockerData}/plex/config 0755 ${username} users -"
+      "d ${mediaData}/plex/media/movies 0755 ${username} users -"
+      "d ${mediaData}/plex/media/tv 0755 ${username} users -"
     ];
-    environment = {
-      TZ = "Asia/Seoul";
-      PLEX_UID = "1000";
-      PLEX_GID = "100";
+
+    # Plex 컨테이너
+    virtualisation.oci-containers.containers.plex = {
+      image = "plexinc/pms-docker:latest";
+      autoStart = true;
+      ports = [ "${minipcTailscaleIP}:${toString cfg.port}:32400/tcp" ];
+      volumes = [
+        "${dockerData}/plex/config:/config"
+        "${mediaData}/plex/media:/data"
+        "${mediaData}/homeserver-data/media:/legacy-media:ro"
+        "/tmp/plex-transcode:/transcode"
+      ];
+      environment = {
+        TZ = "Asia/Seoul";
+        PLEX_UID = toString user;
+        PLEX_GID = toString users;
+      };
+      extraOptions = [
+        "--memory=${plex.memory}"
+        "--cpus=${plex.cpus}"
+      ];
     };
-    extraOptions = [
-      "--memory=4g"
-      "--cpus=2"
-    ];
-  };
 
-  # Tailscale IP 바인딩을 위한 서비스 의존성
-  systemd.services.podman-plex = {
-    after = [ "tailscaled.service" ];
-    wants = [ "tailscaled.service" ];
-    serviceConfig.ExecStartPre = "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 60); do ${pkgs.tailscale}/bin/tailscale ip -4 2>/dev/null | grep -q \"^100\\.\" && exit 0; sleep 1; done; echo \"Tailscale IP not ready\" >&2; exit 1'";
-  };
+    # Tailscale IP 바인딩을 위한 서비스 의존성
+    systemd.services.podman-plex = {
+      after = [ "tailscaled.service" ];
+      wants = [ "tailscaled.service" ];
+      serviceConfig.ExecStartPre = import ../../lib/tailscale-wait.nix { inherit pkgs; };
+    };
 
-  # 방화벽
-  networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ 32400 ];
+    # 방화벽
+    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.port ];
+  };
 }

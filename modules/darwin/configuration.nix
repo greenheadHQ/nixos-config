@@ -3,6 +3,7 @@
   config,
   pkgs,
   username,
+  constants,
   ...
 }:
 
@@ -26,10 +27,8 @@
     home = "/Users/${username}";
     # SSH 원격 접속 허용 키
     openssh.authorizedKeys.keys = [
-      # Termius 등 외부 기기에서 접속 시 사용
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDN048Qg9ABnM26jU0X0w2mG9pqcrwuVrcihvDbkRVX8 greenhead-home-mac-2025-10"
-      # MiniPC에서 접속 시 사용
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN64oEThAvKkI806sMRcIXOJxiaT2A8BbqcO4DfWlirO greenhead@minipc"
+      constants.sshKeys.macbook # Termius 등 외부 기기에서 접속
+      constants.sshKeys.minipc # MiniPC에서 접속
     ];
   };
 
@@ -47,7 +46,7 @@
     dock = {
       autohide = true;
       show-recents = false;
-      tilesize = 36;
+      tilesize = constants.macos.dock.tileSize;
       mru-spaces = false;
       mineffect = "suck";
     };
@@ -65,8 +64,8 @@
       AppleShowAllExtensions = true;
 
       # 키보드: 키 반복 속도 가장 빠르게, 반복 지연 시간 제일 짧게
-      InitialKeyRepeat = 15; # 반복 지연 시간 (최소값: 15)
-      KeyRepeat = 1; # 키 반복 속도 (최소값: 1, 가장 빠름) [GUI에서는 2 이하로 내릴 수 없음]
+      InitialKeyRepeat = constants.macos.keyboard.initialKeyRepeat; # 반복 지연 시간 (최소값: 15)
+      KeyRepeat = constants.macos.keyboard.keyRepeat; # 키 반복 속도 (최소값: 1, 가장 빠름) [GUI에서는 2 이하로 내릴 수 없음]
 
       # 마우스: 자연스러운 스크롤 비활성화
       "com.apple.swipescrolldirection" = false;

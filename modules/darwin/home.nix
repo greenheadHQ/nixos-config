@@ -7,6 +7,7 @@
   username,
   nixosConfigPath,
   hostType,
+  constants,
   ...
 }:
 
@@ -15,8 +16,8 @@
   home-manager.useUserPackages = true;
   home-manager.backupFileExtension = "backup";
 
-  # Home Manager 모듈에 nixosConfigPath, hostType 전달
-  home-manager.extraSpecialArgs = { inherit nixosConfigPath hostType; };
+  # Home Manager 모듈에 nixosConfigPath, hostType, constants 전달
+  home-manager.extraSpecialArgs = { inherit nixosConfigPath hostType constants; };
 
   home-manager.users.${username} =
     {
@@ -25,6 +26,9 @@
       lib,
       ...
     }:
+    let
+      packages = import ../../libraries/packages.nix { inherit pkgs; };
+    in
     {
       home.username = username;
       # mkForce: nix-darwin에서 users.users.${name}.home이 null이므로 강제 설정 필요
@@ -56,42 +60,8 @@
         ./programs/ssh
       ];
 
-      # CLI 도구 패키지
-      home.packages = with pkgs; [
-        # 파일/검색 도구
-        bat
-        broot
-        eza
-        fd
-        fzf
-        ripgrep
-        zoxide
-
-        # 개발 도구
-        tmux
-        lazygit
-        gh
-        git
-        shellcheck
-
-        # 쉘 도구
-        starship
-        atuin
-
-        # 미디어 처리
-        ffmpeg
-        imagemagick
-        rar
-
-        # 기타 유틸리티
-        curl
-        unzip
-        jq
-        htop
-
-        # Nix 도구
-        nvd # 시스템 변경사항 미리보기: nrp (preview), nrh (history)
-      ];
+      # CLI 도구 패키지 (libraries/packages.nix에서 공통 관리)
+      home.packages = packages.shared ++ packages.darwinOnly;
 
       home.stateVersion = "25.05";
     };

@@ -7,9 +7,13 @@
   config,
   lib,
   pkgs,
+  constants,
   ...
 }:
 
+let
+  inherit (constants.ssh) clientAliveInterval clientAliveCountMax;
+in
 {
   environment.etc."ssh/sshd_config.d/200-security.conf".text = ''
     # 공개키 인증만 허용
@@ -23,7 +27,7 @@
     X11Forwarding no
 
     # 세션 타임아웃
-    ClientAliveInterval 60
-    ClientAliveCountMax 3
+    ClientAliveInterval ${toString clientAliveInterval}
+    ClientAliveCountMax ${toString clientAliveCountMax}
   '';
 }

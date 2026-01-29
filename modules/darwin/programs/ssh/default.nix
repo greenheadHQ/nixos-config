@@ -1,4 +1,9 @@
-{ config, pkgs, ... }:
+{
+  config,
+  pkgs,
+  constants,
+  ...
+}:
 let
   homeDir = config.home.homeDirectory;
 
@@ -27,7 +32,7 @@ in
         };
       };
       "minipc" = {
-        hostname = "100.79.80.95";
+        hostname = constants.network.minipcTailscaleIP;
         user = "greenhead";
         identityFile = sshKeyPath;
       };

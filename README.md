@@ -20,6 +20,65 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 
 ---
 
+## 아키텍처
+
+```
+flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
+├── libraries/
+│   ├── constants.nix              # 전역 상수 (IP, 경로, SSH 키, UID 등)
+│   ├── packages.nix               # 공통 패키지 (shared/darwinOnly/nixosOnly)
+│   ├── nixpkgs/default.nix        # overlay 설정
+│   └── home-manager/default.nix   # HM 공유 모듈
+├── modules/
+│   ├── shared/                    # Darwin + NixOS 공통
+│   │   ├── configuration.nix      # Nix GC, substitution
+│   │   └── programs/              # git, tmux, vim, shell, claude, secrets
+│   ├── darwin/                    # macOS 전용
+│   │   ├── configuration.nix      # Dock, Finder, 키보드
+│   │   ├── home.nix               # HM 패키지 + 모듈 import
+│   │   └── programs/              # hammerspoon, cursor, sshd, ssh
+│   └── nixos/                     # NixOS 전용
+│       ├── configuration.nix      # systemd-boot, 로케일, 서비스 활성화
+│       ├── home.nix               # HM 패키지 + 모듈 import
+│       ├── options/
+│       │   └── homeserver.nix     # mkOption 서비스 정의 (immich, uptime-kuma, plex)
+│       ├── lib/
+│       │   └── tailscale-wait.nix # Tailscale IP 대기 유틸리티
+│       └── programs/
+│           ├── docker/            # 컨테이너 서비스 (runtime, immich, uptime-kuma, plex)
+│           ├── ssh.nix            # OpenSSH 서버
+│           ├── tailscale.nix      # VPN
+│           └── fail2ban.nix       # SSH 방어
+├── hosts/greenhead-minipc/        # 호스트별 하드웨어 설정
+├── secrets/                       # agenix 암호화 시크릿
+└── scripts/                       # 자동화 스크립트
+    ├── add-host.sh                # 호스트 추가 마법사
+    ├── pre-rebuild-check.sh       # 빌드 전 검증
+    └── update-input.sh            # Flake input 업데이트
+```
+
+### 상수 관리
+
+모든 공유 상수는 `libraries/constants.nix`에서 단일 소스로 관리됩니다:
+- 네트워크: Tailscale IP, 서비스 포트
+- 경로: Docker 데이터, 미디어 데이터
+- SSH 공개키: `secrets/secrets.nix`에서도 import
+- 컨테이너 리소스 제한
+- UID/GID, macOS 설정, SSH 타임아웃
+
+### 홈서버 서비스 (mkOption)
+
+NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적 활성화:
+
+```nix
+# modules/nixos/configuration.nix
+homeserver.immich.enable = true;
+homeserver.uptimeKuma.enable = true;
+homeserver.plex.enable = false;
+```
+
+---
+
 ## Getting Started
 
 ### 새 Mac 설정
@@ -53,6 +112,14 @@ sudo --preserve-env=SSH_AUTH_SOCK nix run nix-darwin -- switch --flake .
 nrs
 ```
 
+### 새 호스트 추가
+
+```bash
+bash scripts/add-host.sh
+```
+
+마법사가 안내하는 대로 `flake.nix`, `constants.nix` 수정 후 시크릿 재암호화를 수행합니다.
+
 ### MiniPC 접속
 
 ```bash
@@ -75,5 +142,7 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | NixOS/MiniPC | `managing-minipc` |
 | Nix/flake | `understanding-nix` |
 | SSH/Tailscale | `managing-ssh` |
+| 시크릿 관리 | `managing-secrets` |
+| 컨테이너 서비스 | `running-containers` |
 
 전체 스킬 목록은 `CLAUDE.md`를 참고하세요.

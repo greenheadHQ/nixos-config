@@ -83,6 +83,11 @@
     ./programs/ssh.nix
     ./programs/mosh.nix
     ./programs/fail2ban.nix
-    ./programs/docker # Docker/Podman 기반 홈서버 서비스
+    ./options/homeserver.nix # Docker/Podman 기반 홈서버 서비스 (mkOption)
   ];
+
+  # 홈서버 서비스 활성화 (mkEnableOption 기본값 false)
+  homeserver.immich.enable = true;
+  homeserver.uptimeKuma.enable = true;
+  homeserver.plex.enable = false;
 }

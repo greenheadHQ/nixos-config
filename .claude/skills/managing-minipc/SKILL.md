@@ -43,8 +43,12 @@ ssh green@100.x.x.x
 | `hosts/greenhead-minipc/default.nix` | MiniPC 호스트 설정 |
 | `hosts/greenhead-minipc/disko.nix` | 디스크 파티셔닝 |
 | `hosts/greenhead-minipc/hardware-configuration.nix` | 하드웨어 설정 (자동 생성) |
-| `modules/nixos/configuration.nix` | NixOS 공통 설정 |
+| `modules/nixos/configuration.nix` | NixOS 공통 설정 + 홈서버 서비스 활성화 |
+| `modules/nixos/options/homeserver.nix` | mkOption 기반 서비스 정의 |
+| `modules/nixos/programs/docker/runtime.nix` | Podman 런타임 공통 설정 |
+| `modules/nixos/programs/docker/immich.nix` | Immich 서비스 (mkIf 래핑) |
 | `modules/nixos/home.nix` | Home Manager (NixOS) |
+| `libraries/constants.nix` | 전역 상수 (IP, 경로, SSH 키 등) |
 
 ## 시스템 복구
 
