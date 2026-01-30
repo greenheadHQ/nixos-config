@@ -35,10 +35,11 @@ else
 📁 $DIR"
 fi
 
-curl -s \
-  --form-string "token=$PUSHOVER_TOKEN" \
-  --form-string "user=$PUSHOVER_USER" \
-  --form-string "title=Claude Code [✅작업 완료]" \
-  -F "sound=jobs_done" \
-  --form-string "message=$MESSAGE" \
+curl -s -X POST \
+  -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+  --data-urlencode "token=$PUSHOVER_TOKEN" \
+  --data-urlencode "user=$PUSHOVER_USER" \
+  --data-urlencode "title=Claude Code [✅작업 완료]" \
+  --data-urlencode "sound=jobs_done" \
+  --data-urlencode "message=$MESSAGE" \
   https://api.pushover.net/1/messages.json > /dev/null

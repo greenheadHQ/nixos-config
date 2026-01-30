@@ -62,13 +62,14 @@ MESSAGE="🖥️ $HOST
 $CONTEXT
 $QUESTION_LINE"
 
-curl -s \
-  --form-string "token=$PUSHOVER_TOKEN" \
-  --form-string "user=$PUSHOVER_USER" \
-  --form-string "title=Claude Code [📝질문 대기]" \
-  -F "priority=0" \
-  -F "sound=falling" \
-  --form-string "message=$MESSAGE" \
+curl -s -X POST \
+  -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+  --data-urlencode "token=$PUSHOVER_TOKEN" \
+  --data-urlencode "user=$PUSHOVER_USER" \
+  --data-urlencode "title=Claude Code [📝질문 대기]" \
+  --data-urlencode "priority=0" \
+  --data-urlencode "sound=falling" \
+  --data-urlencode "message=$MESSAGE" \
   https://api.pushover.net/1/messages.json > /dev/null
 
 exit 0
