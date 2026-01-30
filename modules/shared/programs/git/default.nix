@@ -78,6 +78,8 @@ in
     options = {
       navigate = true;
       dark = true;
+      line-numbers = true;
+      side-by-side = true;
     };
   };
 
