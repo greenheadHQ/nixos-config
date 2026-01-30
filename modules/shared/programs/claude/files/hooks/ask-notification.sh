@@ -5,6 +5,11 @@
 # [중요] PreToolUse hook의 stdout은 tool call을 수정/차단할 수 있으므로,
 # 모든 외부 명령 출력을 반드시 /dev/null로 리다이렉트해야 합니다.
 # Stop hook과 달리 stdout 오염이 Claude 동작에 직접 영향을 줍니다.
+#
+# [iOS 푸시 알림 표시 한계] (iPhone 14 Pro Max, iOS 26.3 기준)
+# - Lock screen: ~115자 (헤더 2줄 + 본문 약 1줄)
+# - Long press (확장): ~253자 (헤더 2줄 + 본문 약 4~5줄)
+# Pushover API 자체 제한(1024자)과 별개로 iOS가 표시 영역을 자름.
 
 # UTF-8 인코딩 강제 설정 (Claude Code 환경에서 LANG이 미설정될 수 있음)
 export LANG=en_US.UTF-8
@@ -35,13 +40,6 @@ if [ -z "$FIRST_QUESTION" ]; then
   exit 0
 fi
 
-# 다중 질문 표시
-if [ "$QUESTION_COUNT" -gt 1 ] 2>/dev/null; then
-  QUESTION_LINE="❓ [$QUESTION_COUNT개 질문] $FIRST_QUESTION"
-else
-  QUESTION_LINE="❓ $FIRST_QUESTION"
-fi
-
 # 정보 수집
 HOST=$(hostname -s 2>/dev/null || echo "?")
 GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -56,6 +54,21 @@ if [ -n "$GIT_ROOT" ]; then
 else
   DIR=$(basename "$PWD")
   CONTEXT="📁 $DIR"
+fi
+
+# 다중 질문 표시
+if [ "$QUESTION_COUNT" -gt 1 ] 2>/dev/null; then
+  QUESTION_LINE=""
+  for i in $(seq 0 $((QUESTION_COUNT - 1))); do
+    Q=$(printf '%s' "$INPUT" | jq -r ".tool_input.questions[$i].question // empty" 2>/dev/null)
+    if [ -n "$QUESTION_LINE" ]; then
+      QUESTION_LINE="$QUESTION_LINE
+"
+    fi
+    QUESTION_LINE="${QUESTION_LINE}Q$((i + 1)). $Q"
+  done
+else
+  QUESTION_LINE="$FIRST_QUESTION"
 fi
 
 MESSAGE="🖥️ $HOST
