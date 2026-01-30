@@ -299,21 +299,46 @@ home.packages = with pkgs; [
 
 특히 `ask-notification.sh`에서 발생 (stdin에서 JSON 읽는 hook).
 
-**원인**: Claude Code가 hook 실행 시 `LANG`/`LC_ALL` 환경변수가 미설정 또는 `C`/`POSIX`로 설정될 수 있음.
+**원인**: 두 가지 원인이 복합적으로 작용.
 
-하드코딩된 문자열은 이미 UTF-8 바이트로 스크립트에 저장되어 있어 영향 없지만, 동적 변수 확장(`$MESSAGE`) 시 UTF-8 바이트가 손상됨.
+1. **locale 미설정**: Claude Code가 hook 실행 시 `LANG`/`LC_ALL` 환경변수가 미설정 또는 `C`/`POSIX`로 설정될 수 있음. 동적 변수 확장(`$MESSAGE`) 시 UTF-8 바이트가 손상됨.
 
-**해결**: hook 스크립트 시작 부분에 locale 강제 설정
+2. **curl 옵션 혼용**: `--form-string`과 `-F`를 혼용하면 `-F`는 `multipart/form-data`를 강제하고 `--form-string`과 의미가 달라 인코딩이 불안정해짐.
+
+**해결 (2단계)**:
+
+**1차 (locale 강제 설정)**:
 
 ```bash
 #!/usr/bin/env bash
-# ... 주석 ...
-
 # UTF-8 인코딩 강제 설정 (Claude Code 환경에서 LANG이 미설정될 수 있음)
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
+```
 
-# ... 나머지 코드 ...
+**2차 (curl 인코딩 방식 통일)**:
+
+`--form-string`/`-F` 혼용을 `--data-urlencode`(`application/x-www-form-urlencoded`)로 통일:
+
+```bash
+# 변경 전: --form-string과 -F 혼용 (multipart/form-data 강제)
+curl -s \
+  --form-string "token=$PUSHOVER_TOKEN" \
+  --form-string "user=$PUSHOVER_USER" \
+  --form-string "title=Claude Code [✅작업 완료]" \
+  -F "sound=jobs_done" \
+  --form-string "message=$MESSAGE" \
+  https://api.pushover.net/1/messages.json > /dev/null
+
+# 변경 후: --data-urlencode로 통일 (application/x-www-form-urlencoded)
+curl -s -X POST \
+  -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+  --data-urlencode "token=$PUSHOVER_TOKEN" \
+  --data-urlencode "user=$PUSHOVER_USER" \
+  --data-urlencode "title=Claude Code [✅작업 완료]" \
+  --data-urlencode "sound=jobs_done" \
+  --data-urlencode "message=$MESSAGE" \
+  https://api.pushover.net/1/messages.json > /dev/null
 ```
 
 **추가 안정화** (stdin 읽는 hook의 경우):
@@ -334,9 +359,9 @@ FIRST_QUESTION=$(printf '%s' "$INPUT" | jq -r '.tool_input.questions[0].question
 
 | 파일 | 수정 내용 |
 |------|----------|
-| `~/.claude/hooks/ask-notification.sh` | locale 설정 + printf 변경 |
-| `~/.claude/hooks/stop-notification.sh` | locale 설정 |
-| `~/.claude/hooks/plan-notification.sh` | locale 설정 |
+| `stop-notification.sh` | locale 설정 + curl `--data-urlencode` 통일 |
+| `ask-notification.sh` | locale 설정 + printf 변경 + curl `--data-urlencode` 통일 |
+| `plan-notification.sh` | locale 설정 + curl `--data-urlencode` 통일 |
 
 **검증**:
 

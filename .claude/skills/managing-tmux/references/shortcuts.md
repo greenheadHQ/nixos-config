@@ -4,13 +4,27 @@ tmux 터미널 멀티플렉서의 단축키와 기능을 정리합니다.
 
 ## 목차
 
+- [처음 시작 (필수 5가지)](#처음-시작-필수-5가지)
 - [기본 단축키](#기본-단축키)
 - [세션 저장/복원 (tmux-resurrect)](#세션-저장복원-tmux-resurrect)
+- [텍스트 복사 (tmux-thumbs)](#텍스트-복사-tmux-thumbs)
 - [Pane Notepad 기능](#pane-notepad-기능)
 - [Pane 상태 표시](#pane-상태-표시)
 - [세션 관리](#세션-관리)
 
 ---
+
+## 처음 시작 (필수 5가지)
+
+SSH 접속 시 tmux `main` 세션에 자동 연결됩니다 (NixOS 서버). 아래 5가지만 알면 기본 사용이 가능합니다.
+
+| 단축키             | 기능                                           |
+| ------------------ | ---------------------------------------------- |
+| `prefix + c`       | 새 창 만들기                                   |
+| `prefix + 1-9`     | 해당 번호 창으로 이동                          |
+| `prefix + d`       | tmux에서 나가기 (세션 유지, SSH 재접속 시 자동 복귀) |
+| `prefix + Ctrl-s`  | 세션 저장                                      |
+| `prefix + Ctrl-r`  | 세션 복원                                      |
 
 ## 기본 단축키
 
@@ -148,6 +162,21 @@ YYYY-MM-DD | [repo] 제목 (3 matches)     # rg 모드에서 매칭 수 표시
 - Git 브랜치 표시 (`main`)
 - 커스텀 pane 제목 (`my-task`)
 - 노트 아이콘 - 노트에 내용이 있을 때 표시
+
+---
+
+## 텍스트 복사 (tmux-thumbs)
+
+`prefix + F`로 화면의 URL, 파일 경로, git hash, IP 등을 자동 인식하여 힌트로 표시합니다. 힌트 키를 누르면 tmux buffer에 복사됩니다. OSC 52 미지원 터미널(Termius 등)에서 특히 유용합니다.
+
+| 단축키       | 기능                                       |
+| ------------ | ------------------------------------------ |
+| `prefix + F` | 화면에서 패턴 인식 → 힌트 표시             |
+| 소문자 힌트  | 선택한 텍스트를 tmux buffer에 복사          |
+| 대문자 힌트  | 선택한 텍스트를 tmux buffer에 복사 (upcase) |
+| `prefix + ]` | tmux buffer 붙여넣기                        |
+
+**설정**: `modules/shared/programs/tmux/default.nix`의 `tmux-thumbs` 플러그인
 
 ---
 

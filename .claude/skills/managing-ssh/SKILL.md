@@ -66,6 +66,17 @@ users.users.<username>.openssh.authorizedKeys.keys = [
 ];
 ```
 
+## SSH 접속 시 tmux 자동 연결
+
+NixOS 서버(MiniPC)에 SSH 접속하면 자동으로 tmux `main` 세션에 연결됩니다.
+
+- **설정 파일**: `modules/shared/programs/shell/nixos.nix`의 `programs.zsh.initContent`
+- **조건**: SSH 세션 + 대화형 + tmux 외부 + mosh 외부
+- 기존 세션이 있으면 세션 목록을 출력한 후 attach
+- 없으면 `main` 세션을 새로 생성
+- `ssh minipc 'command'` 같은 비대화형 명령은 영향 없음
+- mosh 세션은 자체 재연결이 있으므로 제외
+
 ## 자주 발생하는 문제
 
 1. **SSH 키 invalid format**: 키 파일 끝에 개행 문자 필요

@@ -51,6 +51,7 @@ description: |
 | tmux-resurrect | 세션 저장/복원 (pane 변수 포함) |
 | tmux-continuum | 15분 간격 자동 저장 + 서버 시작 시 자동 복원 |
 | tmux-yank | 시스템 클립보드 연동 (copy-mode) |
+| tmux-thumbs | 화면에서 URL/경로/해시 등을 힌트로 선택하여 tmux buffer에 복사 |
 
 ## Pane Notepad 구조
 

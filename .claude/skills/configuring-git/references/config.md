@@ -20,9 +20,22 @@ Git 관련 설정 및 도구 구성입니다.
 | 도구      | 설명                                      |
 | --------- | ----------------------------------------- |
 | `git`     | 버전 관리                                 |
-| `delta`   | Git diff 시각화 (구문 강조, side-by-side) |
+| `delta`   | Git diff 시각화 (구문 강조, line-numbers, side-by-side) |
 | `lazygit` | Git TUI                                   |
 | `gh`      | GitHub CLI                                |
+
+### delta 옵션
+
+`modules/shared/programs/git/default.nix`의 `programs.delta.options`에서 관리됩니다.
+
+| 옵션 | 값 | 설명 |
+|------|-----|------|
+| `navigate` | `true` | `n`/`N`으로 diff 청크 간 이동 |
+| `dark` | `true` | 다크 테마 |
+| `line-numbers` | `true` | diff에 줄 번호 표시 |
+| `side-by-side` | `true` | 좌우 분할 diff (터미널이 좁으면 자동으로 inline fallback) |
+
+> **모바일 참고**: Termius 등 좁은 터미널에서는 delta가 자동으로 inline 모드로 전환됩니다.
 
 ## Git 설정
 
