@@ -49,7 +49,7 @@
         ../shared/programs/shell # 공통 shell 설정
         ../shared/programs/shell/darwin.nix # macOS 전용 shell 추가
         ../shared/programs/tmux
-        ../shared/programs/vim
+        ../shared/programs/neovim
 
         # macOS 전용
         ./programs/atuin

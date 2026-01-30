@@ -40,6 +40,7 @@ Git 관련 설정 및 도구 구성입니다.
 - 편집 전: 커밋 라인을 역순 정렬하여 표시
 - 편집 후: 원래 순서로 복원 (rebase 동작 정상 유지)
 - `pkgs.writeShellScript`로 Nix store에서 스크립트 관리
+- 에디터: `${EDITOR}` 환경변수 사용, fallback은 neovim (`${pkgs.neovim}/bin/nvim`)
 
 **주의사항:**
 

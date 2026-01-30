@@ -71,9 +71,9 @@ selected=$("$HELPERS" list-all | fzf --ansi \
       mode=\$(cat '$MODE_FILE')
       if [ \"\$mode\" = 'rg' ]; then
         line=\$($HELPERS first-line \"\$file\" @$QUERY_FILE)
-        \${EDITOR:-vim} +\$line \"\$file\"
+        \${EDITOR:-nvim} +\$line \"\$file\"
       else
-        \${EDITOR:-vim} \"\$file\"
+        \${EDITOR:-nvim} \"\$file\"
       fi
     )+abort" \
     --expect=enter)
@@ -100,7 +100,7 @@ if [ "$key" = "enter" ]; then
   # rg 모드면 라인 점프
   if [ "$mode" = "rg" ]; then
     line=$("$HELPERS" first-line "$file" "@$QUERY_FILE")
-    "${EDITOR:-vim}" "+$line" "$file"
+    "${EDITOR:-nvim}" "+$line" "$file"
   else
     tmux display-message "Linked: $(basename "$file")"
   fi

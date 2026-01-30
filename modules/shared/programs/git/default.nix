@@ -37,7 +37,7 @@ let
     } > "$TODO_FILE"
 
     # 에디터 실행
-    "''${EDITOR:-${pkgs.vim}/bin/vim}" "$TODO_FILE"
+    "''${EDITOR:-${pkgs.neovim}/bin/nvim}" "$TODO_FILE"
     EDITOR_EXIT=$?
 
     # 에디터가 실패하면 즉시 종료 (rebase 취소)

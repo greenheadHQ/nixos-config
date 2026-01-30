@@ -33,7 +33,7 @@ in
     ../shared/programs/shell # 공통 shell 설정
     ../shared/programs/shell/nixos.nix # Linux 전용 추가
     ../shared/programs/tmux
-    ../shared/programs/vim
+    ../shared/programs/neovim
 
     # NixOS 전용
     ./programs/ssh-client # macOS SSH 접속 설정
