@@ -101,7 +101,7 @@ in
       branch.sort = "committerdate";
       init.defaultBranch = "main";
       push.autoSetupRemote = true;
-      pull.rebase = false;
+      pull.rebase = true;
       merge.conflictStyle = "zdiff3";
 
       # Rerere (REuse REcorded REsolution)
