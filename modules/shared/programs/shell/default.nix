@@ -31,6 +31,10 @@ in
 
     # Claude Code (권한 스킵 + MCP 설정 자동 로드)
     claude = "command claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
+
+    # 디렉토리 이동 단축
+    ".." = "cd ..";
+    "..." = "cd ../..";
   };
 
   # Zsh 설정 (공통)
