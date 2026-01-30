@@ -59,6 +59,14 @@ in
         '';
       }
       yank
+      {
+        plugin = tmux-thumbs;
+        extraConfig = ''
+          set -g @thumbs-key F
+          set -g @thumbs-command 'echo -n {} | tmux load-buffer - && tmux display-message "Copied: {}"'
+          set -g @thumbs-upcase-command 'echo -n {} | tmux load-buffer - && tmux display-message "Copied (upper): {}"'
+        '';
+      }
     ];
 
     # Home Manager가 생성하는 ~/.config/tmux/tmux.conf가 먼저 로드되므로,
