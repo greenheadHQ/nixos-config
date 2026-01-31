@@ -16,6 +16,7 @@
   - [버퍼 (탭)](#버퍼-탭)
   - [Git](#git)
   - [커스텀 키맵](#커스텀-키맵)
+- [Surround 치트시트](#surround-치트시트)
 - [플러그인 관리](#플러그인-관리)
 - [자주 묻는 질문](#자주-묻는-질문)
 
@@ -102,6 +103,111 @@ Vim은 **모달 에디터** — 같은 키가 모드에 따라 다르게 동작�
 
 `i` = inner (안쪽만), `a` = around (감싸는 것 포함)
 
+### 실전 콤보 레시피
+
+개별 키를 외우는 대신, **통째로 외워서 쓰는 콤보**. 각 콤보가 하나의 동작이라고 생각하면 된다.
+
+#### 줄 이동/복제
+
+```
+ddp       줄을 한 칸 아래로 이동     (dd 잘라내기 → p 아래에 붙여넣기)
+ddkP      줄을 한 칸 위로 이동       (dd 잘라내기 → k 위로 → P 위에 붙여넣기)
+yyp       줄 복제 (아래)             (yy 복사 → p 붙여넣기)
+yyP       줄 복제 (위)
+```
+
+> LazyVim에서는 `Alt+j`/`Alt+k`로도 줄 이동 가능 (Visual 모드 선택 후 여러 줄도 됨).
+
+#### 단어 통째로 바꾸기
+
+```
+ciw       단어를 지우고 새로 입력     커서가 단어 어디에 있든 동작 ("change inner word")
+caw       단어+앞뒤 공백 지우고 입력  단어를 깔끔하게 교체할 때
+diw       단어만 삭제 (Insert 안 들어감)
+daw       단어+공백 삭제              이어 붙일 때 공백까지 지워야 자연스러움
+```
+
+> **`ciw` vs `cw`**: `cw`는 커서 위치~단어 끝만 바꿈. `ciw`는 커서가 단어 중간에 있어도 **단어 전체**를 바꿈. `ciw`가 거의 항상 원하는 동작.
+
+#### 따옴표/괄호 안 내용 조작
+
+```
+ci"       "" 안 내용을 지우고 새로 입력    const name = "여기를 바꿈"
+ci'       '' 안 내용 변경
+ci`       `` 안 내용 변경                  JS 템플릿 리터럴
+ci(       () 안 내용 변경                  함수 인자 교체
+ci{       {} 안 내용 변경                  객체/블록 내용 교체
+ci[       [] 안 내용 변경                  배열 내용 교체
+
+di"       "" 안 내용 삭제 (따옴표는 유지)
+da"       "" 안 내용 + 따옴표까지 삭제
+yi"       "" 안 내용 복사
+vi"       "" 안 내용 선택 (Visual)
+```
+
+> **커서 위치 무관**: `ci"`는 커서가 따옴표 밖에 있어도 **같은 줄의 가장 가까운 따옴표 쌍**을 찾아서 동작한다.
+
+#### HTML/JSX 태그 작업
+
+```
+cit       태그 안 내용 변경     <div>여기를 바꿈</div>
+dit       태그 안 내용 삭제     <div></div>
+dat       태그 전체 삭제         태그 포함해서 통째로 제거
+vit       태그 안 내용 선택     Visual 모드로 범위 확인
+vat       태그 전체 선택         여는 태그 ~ 닫는 태그
+```
+
+#### 줄 끝/처음까지 조작
+
+```
+C         커서~줄 끝 변경       (= c$)  줄 뒷부분만 새로 쓸 때
+D         커서~줄 끝 삭제       (= d$)
+Y         줄 전체 복사          (= yy)
+S         줄 전체 변경          (= cc)  줄을 통째로 새로 쓸 때
+```
+
+#### 선택 → 일괄 처리
+
+```
+ggVG      파일 전체 선택         (gg 맨위 → V 줄선택 → G 맨아래)
+ggyG      파일 전체 복사
+ggdG      파일 전체 삭제
+vip       문단(paragraph) 선택  빈 줄로 구분된 블록
+vap       문단 + 빈줄 포함 선택
+>ip       문단 들여쓰기          블록 전체 한 단계 인덴트
+<ip       문단 내어쓰기
+```
+
+#### 대소문자 전환
+
+```
+gUiw      단어를 대문자로         hello → HELLO
+guiw      단어를 소문자로         HELLO → hello
+g~iw      단어 대소문자 반전      Hello → hELLO
+gUU       줄 전체 대문자
+guu       줄 전체 소문자
+```
+
+#### 검색 + 반복 편집 (세미 수동 치환)
+
+```
+*         커서 위 단어를 검색       → 모든 매칭에 하이라이트
+ciw       단어를 새 단어로 변경
+n         다음 매칭으로 이동
+.         같은 변경 반복             → 바꾸고 싶은 곳에서만 . 누르기
+```
+
+> `:%s/old/new/g` (전체 치환)보다 **선택적으로 바꿀 때** 유용. `n`으로 이동하면서 바꿀 곳에서만 `.`을 누르면 된다.
+
+#### 그 외 자주 쓰는 콤보
+
+```
+xp        두 글자 순서 바꾸기    ab → ba (x 삭제 → p 뒤에 붙이기)
+ea        단어 끝에 추가 입력    단어 뒤에 뭔가 붙일 때 (e 끝으로 → a 뒤에 삽입)
+bi        단어 앞에 추가 입력    단어 앞에 뭔가 붙일 때 (b 앞으로 → i 앞에 삽입)
+J         현재 줄과 다음 줄 합치기   두 줄을 한 줄로 연결
+```
+
 ---
 
 ## LazyVim 핵심 키맵 (외워두면 좋은 것들)
@@ -136,9 +242,10 @@ Vim은 **모달 에디터** — 같은 키가 모드에 따라 다르게 동작�
 
 | 키 | 동작 | 설명 |
 |----|------|------|
-| `ysiw"` | 단어를 `""`로 감싸기 | nvim-surround |
-| `cs"'` | `"` → `'` 변경 | nvim-surround |
-| `ds"` | `""` 제거 | nvim-surround |
+| `ys{모션}{문자}` | 텍스트를 감싸기 | nvim-surround ([상세](#surround-치트시트)) |
+| `cs{기존}{새것}` | 감싸는 문자 변경 | nvim-surround |
+| `ds{문자}` | 감싸는 문자 삭제 | nvim-surround |
+| `S{문자}` (Visual) | 선택 영역 감싸기 | nvim-surround |
 | `gcc` | 줄 주석 토글 | Comment |
 | `gc` (Visual) | 선택 영역 주석 토글 | Comment |
 
@@ -165,6 +272,131 @@ Vim은 **모달 에디터** — 같은 키가 모드에 따라 다르게 동작�
 |----|------|------|
 | `jk` | Esc (Insert 모드) | iPad 소프트웨어 키보드 UX |
 | `Ctrl+\` | 터미널 Normal 모드 | `:terminal`에서 탈출 |
+
+---
+
+## Surround 치트시트
+
+> 플러그인: [nvim-surround](https://github.com/kylechui/nvim-surround) (`editor.lua`). LazyVim 기본 mini.surround 대신 사용 — `ys`/`cs`/`ds` 키맵이 전통적 vim-surround와 동일.
+
+### 3가지 핵심 동작
+
+| 동작 | 키 패턴 | 읽는 법 |
+|------|---------|---------|
+| **추가** (add) | `ys{모션}{문자}` | **y**ou **s**urround {모션} with {문자} |
+| **변경** (change) | `cs{기존}{새것}` | **c**hange **s**urround {기존} to {새것} |
+| **삭제** (delete) | `ds{문자}` | **d**elete **s**urround {문자} |
+
+### 감싸기 (ys) — 가장 자주 사용
+
+`ys` 뒤에 **모션**(범위)과 **감쌀 문자**를 입력한다.
+
+```
+커서: hello wo|rld       (| = 커서 위치)
+
+ysiw"    →  hello "world"         단어를 "" 로 감싸기 (inner word)
+ysiw'    →  hello 'world'         단어를 '' 로 감싸기
+ysiw`    →  hello `world`         단어를 `` 로 감싸기
+ysiw)    →  hello (world)         단어를 () 로 감싸기 (공백 없음)
+ysiw(    →  hello ( world )       단어를 () 로 감싸기 (공백 있음)
+ysiw}    →  hello {world}         단어를 {} 로 감싸기 (공백 없음)
+ysiw{    →  hello { world }       단어를 {} 로 감싸기 (공백 있음)
+ysiw]    →  hello [world]         단어를 [] 로 감싸기 (공백 없음)
+ysiwt    →  (태그명 입력 대기) → 입력: div → hello <div>world</div>
+```
+
+> **괄호 규칙**: 닫는 괄호 `)]}` = 공백 없음, 여는 괄호 `([{` = 안쪽에 공백 추가.
+
+**다양한 모션 조합:**
+
+```
+커서: const msg| = "hello world"
+
+ysiw"    →  "msg"를 감쌈              단어 (inner word)
+ysi""    →  기존 "" 바깥을 다시 감쌈    " 안쪽 (inner ")
+ys$"     →  커서~줄 끝 감쌈            줄 끝까지
+yss"     →  줄 전체를 감쌈             entire line
+ys2w"    →  2단어를 감쌈              2 words
+```
+
+### Visual 모드 감싸기 (S)
+
+텍스트를 먼저 선택한 뒤 `S{문자}`로 감싼다. 범위를 눈으로 확인하고 싶을 때 유용.
+
+```
+1. v   로 Visual 모드 진입
+2. 모션으로 범위 선택 (e, w, $, etc.)
+3. S"  → 선택 영역이 ""로 감싸짐
+
+예시:
+  viw → 단어 선택 → S" → "단어"
+  V   → 줄 전체 선택 → S{ → { 줄 전체 }
+  vi( → 괄호 안 선택 → S" → 괄호 안을 ""로 감쌈
+```
+
+### 변경 (cs) — 감싸는 문자 교체
+
+```
+커서: "hello |world"
+
+cs"'     →  'hello world'         " → '
+cs"(     →  ( hello world )       " → () 공백 포함
+cs")     →  (hello world)         " → () 공백 없음
+cs"{     →  { hello world }       " → {} 공백 포함
+cs"<div> →  <div>hello world</div>  " → HTML 태그
+```
+
+**태그 변경:**
+
+```
+커서: <div>hello |world</div>
+
+cst"     →  "hello world"         태그 → "  (t = tag)
+cst<span>→  <span>hello world</span>  태그 → 다른 태그
+```
+
+### 삭제 (ds) — 감싸는 문자 제거
+
+```
+커서: "hello |world"
+
+ds"      →  hello world           "" 제거
+ds(      →  hello world           () 제거
+ds{      →  hello world           {} 제거
+dst      →  hello world           HTML 태그 제거
+```
+
+### 실전 패턴 (웹 개발)
+
+```
+문자열 따옴표 전환:
+  "hello"  →  cs"'  →  'hello'       더블 → 싱글
+  'hello'  →  cs'`  →  `hello`       싱글 → 백틱 (JS 템플릿 리터럴)
+  `hello`  →  cs`"  →  "hello"       백틱 → 더블
+
+JSX 작업:
+  hello    →  ysiwt → div입력 → <div>hello</div>     태그 추가
+  <div>hello</div> → cst → span입력 → <span>hello</span>  태그 변경
+  <div>hello</div> → dst → hello                      태그 삭제
+
+괄호 추가/변경:
+  result   →  ysiw) → (result)       함수 인자로 감싸기
+  (result) →  cs)]  → [result]       () → []
+  {result} →  ds{   → result          {} 제거
+
+중첩 감싸기:
+  word     →  ysiw" → "word"  →  ysa"} → {"word"}    중첩 감싸기
+```
+
+### `.` (dot repeat)
+
+nvim-surround의 모든 동작은 `.`으로 **반복 가능**하다.
+
+```
+ysiw"     →  단어를 ""로 감쌈
+w         →  다음 단어로 이동
+.         →  같은 동작 반복 (다음 단어도 ""로 감쌈)
+```
 
 ---
 
