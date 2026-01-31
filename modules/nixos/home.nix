@@ -42,23 +42,6 @@ in
   # 패키지 (libraries/packages.nix에서 공통 관리)
   home.packages = packages.shared ++ packages.nixosOnly;
 
-  # Claude 세션 관리 스크립트
-  home.file.".local/bin/claude-session" = {
-    executable = true;
-    text = ''
-      #!/bin/bash
-      SESSION_NAME="claude"
-
-      # 기존 세션이 있으면 연결, 없으면 생성
-      tmux has-session -t $SESSION_NAME 2>/dev/null
-      if [ $? != 0 ]; then
-          tmux new-session -d -s $SESSION_NAME -c ~/projects
-          tmux send-keys -t $SESSION_NAME "claude" Enter
-      fi
-      tmux attach-session -t $SESSION_NAME
-    '';
-  };
-
   programs.home-manager.enable = true;
 
   # SSH 에이전트 자동 시작 (GitHub SSH 작업용)

@@ -16,18 +16,6 @@ in
     (lib.mkBefore ''
       # 유니코드 결합 문자 처리 (wide character 지원)
       setopt COMBINING_CHARS
-
-      # SSH 접속 시 tmux 자동 연결 (NixOS 서버 전용)
-      # 조건: SSH 세션 + 대화형 + tmux 외부 + mosh 외부
-      if [[ -n "$SSH_CONNECTION" && $- == *i* && -z "$TMUX" && -z "$MOSH" ]]; then
-        if tmux has-session 2>/dev/null; then
-          echo "━━━ tmux sessions ━━━"
-          tmux list-sessions -F "  #{?session_attached,▶,○} #S: #{session_windows}w (#{session_created_string})" 2>/dev/null
-          echo "━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
-        fi
-        tmux new-session -A -s main
-      fi
     '')
   ];
 
