@@ -219,10 +219,12 @@ J         현재 줄과 다음 줄 합치기   두 줄을 한 줄로 연결
 | 키 | 동작 | VS Code 대응 |
 |----|------|-------------|
 | `<leader>ff` | 파일 이름으로 검색 | `Cmd+P` |
-| `<leader>fg` | 파일 내용(텍스트)으로 검색 | `Cmd+Shift+F` |
+| `<leader>fg` | Git 파일 찾기 (버전 관리 중인 파일만) | - |
+| `<leader>/` | 텍스트 검색 (grep) | `Cmd+Shift+F` |
+| `<leader>sg` | 텍스트 검색 (grep) | `Cmd+Shift+F` |
 | `<leader>fb` | 열린 버퍼 목록에서 검색 | 탭 전환 |
 | `<leader>fr` | 최근 파일 목록 | Recent Files |
-| `<leader>e` | 파일 탐색기 토글 (neo-tree) | Explorer 패널 |
+| `<leader>e` | 파일 탐색기 토글 (snacks.explorer) | Explorer 패널 |
 | `<leader><leader>` | 프로젝트 내 파일 찾기 | `Cmd+P` |
 
 ### 코드 탐색 (LSP)
@@ -457,9 +459,9 @@ echo -e "\033[38;2;255;100;0mTRUECOLOR\033[0m"
 
 **A:** `jk` → Esc 매핑 때문. "j" 입력 후 "k"를 기다리는 시간(기본 300ms) 동안 멈춤이 발생한다. "jk"를 사용하지 않으려면 `keymaps.lua`에서 해당 줄을 삭제하면 된다.
 
-### Q: neo-tree에서 숨김 파일이 안 보인다
+### Q: 파일 탐색기에서 숨김 파일이 안 보인다
 
-**A:** 현재 설정은 dotfile과 gitignored 파일을 모두 표시한다. 안 보인다면 `H`를 눌러 숨김 파일 토글을 확인.
+**A:** 기본 설정에서 dotfile과 gitignored 파일을 표시한다. 안 보인다면 탐색기에서 `H`를 눌러 숨김 파일 토글을 확인.
 
 ### Q: nvim을 처음 열면 에러가 뜬다
 
@@ -470,6 +472,10 @@ echo -e "\033[38;2;255;100;0mTRUECOLOR\033[0m"
 rm -rf ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim
 nvim
 ```
+
+### Q: 모든 버퍼를 닫았더니 H/L이 안 된다
+
+**A:** 버퍼가 없으면 H/L 전환이 불가능하다. `<leader>ff`로 파일을 찾거나, `<leader>e`로 탐색기를 열거나, `<leader>qs`로 이전 세션을 복원하면 된다.
 
 ### Q: 이 설정을 수정하고 싶다
 

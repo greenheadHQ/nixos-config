@@ -12,14 +12,14 @@
       cleanup = "zap";
     };
 
+    # Homebrew Tap (서드파티 저장소)
+    taps = [
+      "laishulu/homebrew" # macism (macOS 입력 소스 전환 CLI)
+    ];
+
     # Homebrew Formula (CLI 도구)
-    # Claude Code는 binary 버전을 사용 (Node.js 버전 의존성 없음)
-    # 설치: curl -fsSL https://claude.ai/install.sh | bash
     brews = [
-      # Nix로 관리하기 어려운 것들
-      # "llvm@18"
-      # "mysql@8.0"
-      # "redis"
+      "macism" # macOS Input Source Manager (Neovim 한영 전환 자동화)
     ];
 
     # Homebrew Cask (GUI 앱)

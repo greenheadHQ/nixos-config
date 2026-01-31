@@ -19,39 +19,18 @@ return {
     opts = {},
   },
 
-  -- ── neo-tree: 왼쪽 파일 탐색기 (VS Code의 Explorer 패널과 유사) ──
-  -- <leader>e 로 열기/닫기. 파일 생성(a), 삭제(d), 이름 변경(r) 등 지원
-  {
-    "nvim-neo-tree/neo-tree.nvim",
-    opts = {
-      window = {
-        -- width: 파일 탐색기의 가로 너비 (칸 수)
-        -- 함수로 지정하면 화면 크기에 따라 동적으로 계산됨
-        -- 화면의 25%를 차지하되, 최소 30칸은 보장 (파일명이 잘리지 않도록)
-        width = function()
-          return math.max(30, math.floor(vim.o.columns * 0.25))
-        end,
-      },
-      filesystem = {
-        filtered_items = {
-          -- visible = true: 숨김 파일도 목록에 표시 (흐릿하게)
-          -- false면 .으로 시작하는 파일이 완전히 숨겨짐
-          visible = true,
-          -- .gitignore, .env, .config 등 dotfile을 숨기지 않음
-          hide_dotfiles = false,
-          -- .gitignore에 등록된 파일(node_modules 등)도 숨기지 않음
-          hide_gitignored = false,
-        },
-      },
-    },
-  },
-
-  -- ── snacks.picker: 퍼지 검색 (VS Code의 Cmd+P / Cmd+Shift+F와 유사) ──
-  -- LazyVim v14+에서 telescope를 대체하는 기본 picker
-  -- <leader>ff = 파일 이름으로 검색, <leader>fg = 텍스트 검색, <leader>fb = 버퍼 검색
+  -- ── snacks.nvim: 파일 탐색기 + 퍼지 검색 ──
+  -- explorer: <leader>e 로 열기/닫기 (snacks.explorer, LazyVim v14+ 기본)
+  -- picker: <leader>ff = 파일 이름으로 검색, <leader>fg = Git 파일 찾기, <leader>/ = 텍스트 검색
   {
     "folke/snacks.nvim",
     opts = {
+      explorer = {
+        -- .env, .config 등 dotfile 표시 (기존 neo-tree hide_dotfiles=false와 동일)
+        hidden = true,
+        -- node_modules 등 .gitignore 파일도 표시 (기존 neo-tree hide_gitignored=false와 동일)
+        ignored = true,
+      },
       picker = {
         -- 화면 크기에 따라 레이아웃 자동 전환
         -- 100칸 미만 (iPad 등 좁은 화면) → 세로 배치 (기존 telescope flex와 동일 기준)
@@ -61,6 +40,29 @@ return {
           end,
         },
       },
+    },
+  },
+
+  -- ── im-select.nvim: 한영 입력 소스 자동 전환 (macOS) ──
+  -- InsertLeave / CmdlineLeave → 영문(ABC)으로 전환 (Vim 키맵 정상 동작)
+  -- InsertEnter → 이전 입력 소스 복원 (한글 입력 중이었으면 한글로 복원)
+  -- macism이 없는 환경(NixOS, SSH)에서는 조용히 무시됨
+  {
+    "keaising/im-select.nvim",
+    event = "VeryLazy",
+    opts = {
+      -- macOS 기본 영문 입력 소스
+      default_im_select = "com.apple.keylayout.ABC",
+      -- macism: macOS 입력 소스 전환 CLI (brew install macism)
+      default_command = "macism",
+      -- Insert/Command 모드를 벗어날 때 영문으로 전환
+      set_default_events = { "InsertLeave", "CmdlineLeave" },
+      -- Insert 모드 진입 시 이전 입력 소스 복원
+      set_previous_events = { "InsertEnter" },
+      -- macism이 없는 환경(NixOS, SSH)에서 에러 알림 억제
+      keep_quiet_on_no_binary = true,
+      -- 비동기 전환 (UI 블로킹 방지)
+      async_switch_im = true,
     },
   },
 }

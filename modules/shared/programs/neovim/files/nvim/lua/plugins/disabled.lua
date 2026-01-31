@@ -27,4 +27,8 @@ return {
 
   -- indent-blankline: snacks.indent로 대체됨 (LazyVim v14+)
   { "lukas-reineke/indent-blankline.nvim", enabled = false },
+
+  -- neo-tree: snacks.explorer로 대체됨 (LazyVim v14+)
+  -- hijack_netrw_behavior가 `nvim .` 시 메인 영역에 트리를 표시하므로 비활성화
+  { "nvim-neo-tree/neo-tree.nvim", enabled = false },
 }

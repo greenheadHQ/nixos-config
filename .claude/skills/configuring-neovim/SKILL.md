@@ -108,7 +108,7 @@ mini.nvim 0.17.0 (2025-12)에서 `echasnovski` → `nvim-mini` 조직으로 이�
 ## 주요 키맵
 
 LazyVim 기본 키맵 (which-key로 탐색):
-- `<leader>ff` 파일 찾기 | `<leader>fg` 텍스트 검색 | `<leader>e` neo-tree
+- `<leader>ff` 파일 찾기 | `<leader>fg` Git 파일 찾기 | `<leader>/` 텍스트 검색 | `<leader>e` snacks.explorer
 - `<leader>gg` lazygit | `<leader>cf` 포맷 | `K` hover
 - `gd` 정의 | `gr` 참조 | `H`/`L` 이전/다음 버퍼
 

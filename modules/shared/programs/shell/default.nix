@@ -734,6 +734,39 @@ in
           echo "✅ ''${deleted}개의 워크트리가 삭제되었습니다."
         }
       ''
+
+      #─────────────────────────────────────────────────────────────────────────
+      # Git Diff → fzf → Neovim
+      #─────────────────────────────────────────────────────────────────────────
+      ''
+        # ved: git diff 파일을 fzf로 선택하여 nvim으로 열기
+        # 사용법: ved [git diff 옵션]
+        #   ved              # 워킹 트리 변경 파일
+        #   ved --cached     # 스테이징된 파일
+        #   ved HEAD~3       # 최근 3커밋 변경 파일
+        ved() {
+          if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+            echo "Git 저장소가 아닙니다" >&2
+            return 1
+          fi
+
+          local files
+          files=$(git diff --name-only "$@" 2>/dev/null)
+
+          if [[ -z "$files" ]]; then
+            echo "변경된 파일이 없습니다"
+            return 0
+          fi
+
+          local selected
+          selected=$(echo "$files" | fzf --multi \
+            --preview "git diff $* -- {} 2>/dev/null | head -200" \
+            --preview-window=right:60% \
+            --header="TAB: 다중 선택 / Enter: nvim으로 열기")
+
+          [[ -n "$selected" ]] && echo "$selected" | xargs nvim
+        }
+      ''
     ];
   };
 

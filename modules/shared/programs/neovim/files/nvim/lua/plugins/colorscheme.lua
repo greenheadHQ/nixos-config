@@ -33,10 +33,6 @@ return {
         -- 초록(추가), 파랑(수정), 빨강(삭제) 등의 색상이 테마와 조화됨
         gitsigns = true,
 
-        -- neotree (neo-tree): 왼쪽 파일 탐색기에 Catppuccin 색상 적용
-        -- 폴더 아이콘, 파일명, 선택 하이라이트 등
-        neotree = true,
-
         -- treesitter: 코드 구문 강조(syntax highlighting)에 Catppuccin 색상 적용
         -- 함수명, 변수명, 키워드, 문자열 등의 색상
         treesitter = true,
