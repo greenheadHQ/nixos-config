@@ -44,6 +44,9 @@ return {
   -- 예: if 블록, 함수 블록의 시작과 끝을 세로선으로 연결
   {
     "lukas-reineke/indent-blankline.nvim",
+    -- main = "ibl": v3에서 모듈 이름이 "indent_blankline" → "ibl"로 변경됨
+    -- 이 값이 없으면 lazy.nvim이 플러그인명에서 모듈명을 추론 → setup() 호출 실패
+    main = "ibl",
     opts = {
       scope = {
         -- show_start = false: 현재 스코프(블록)의 시작 줄에 밑줄 표시하지 않음

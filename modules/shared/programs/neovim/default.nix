@@ -43,6 +43,7 @@ in
         statix # Nix
 
         # ── 빌드 도구 ──
+        tree-sitter # nvim-treesitter 파서 컴파일 CLI (>= 0.25)
         nodejs # 일부 LSP 런타임 의존성
       ]
       # ── Linux 전용 ──

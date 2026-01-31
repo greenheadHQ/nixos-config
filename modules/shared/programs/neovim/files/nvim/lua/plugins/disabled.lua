@@ -19,5 +19,6 @@ return {
 
   -- mini.surround: LazyVim 기본 surround 플러그인 (키맵: gza, gzd, gzr)
   -- nvim-surround (editor.lua)을 대신 사용하므로 비활성화 (키맵: ys, ds, cs — 더 표준적)
-  { "echasnovski/mini.surround", enabled = false },
+  -- NOTE: mini.nvim 0.17.0 (2025-12)에서 echasnovski → nvim-mini 조직으로 이전됨
+  { "nvim-mini/mini.surround", enabled = false },
 }

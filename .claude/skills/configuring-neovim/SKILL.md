@@ -25,7 +25,7 @@ modules/shared/programs/neovim/
         │   ├── keymaps.lua          # 커스텀 키맵 (jk→Esc)
         │   └── autocmds.lua         # 모바일 화면 감지
         └── plugins/
-            ├── disabled.lua         # Mason 비활성화 (mason-org/)
+            ├── disabled.lua         # Mason 비활성화 (mason-org/), mini.surround 비활성화 (nvim-mini/)
             ├── colorscheme.lua      # Catppuccin Mocha
             ├── lsp.lua              # 추가 LSP (cssls, html)
             ├── treesitter.lua       # 파서 목록
@@ -48,6 +48,7 @@ modules/shared/programs/neovim/
 | 포매터 | `stylua` | Lua |
 | 포매터 | `nixfmt-rfc-style` | Nix |
 | 린터 | `statix` | Nix |
+| 빌드 | `tree-sitter` | nvim-treesitter 파서 컴파일 CLI |
 | 빌드 | `gcc` | tree-sitter 파서 컴파일 **(Linux 전용)** |
 | 빌드 | `nodejs` | LSP 런타임 의존성 |
 
@@ -66,6 +67,17 @@ Mason 프로젝트가 `williamboman`에서 `mason-org`로 마이그레이션됨:
 
 -- 잘못된 방법 (매칭 실패)
 { "williamboman/mason.nvim", enabled = false }
+```
+
+## mini.nvim 조직 이전 주의사항
+
+mini.nvim 0.17.0 (2025-12)에서 `echasnovski` → `nvim-mini` 조직으로 이전됨:
+```lua
+-- 올바른 방법 (nvim-mini/)
+{ "nvim-mini/mini.surround", enabled = false }
+
+-- 잘못된 방법 (매칭 실패 → 경고 발생)
+{ "echasnovski/mini.surround", enabled = false }
 ```
 
 ## LazyVim extras

@@ -14,6 +14,9 @@
 - [ESLint 진단 중복](#eslint-진단-중복)
 - [macOS에서 nrs 빌드가 수십 분 멈춤 (LLVM 소스 빌드)](#macos에서-nrs-빌드가-수십-분-멈춤-llvm-소스-빌드)
 - [marksman이 Swift 소스 빌드를 트리거 (빌드 실패)](#marksman이-swift-소스-빌드를-트리거-빌드-실패)
+- [indent-blankline setup 함수 호출 실패](#indent-blankline-setup-함수-호출-실패)
+- [tree-sitter CLI 누락 (파서 컴파일 불가)](#tree-sitter-cli-누락-파서-컴파일-불가)
+- [mini.surround 조직 이름 변경 경고](#minisurround-조직-이름-변경-경고)
 
 ## LSP 서버가 시작되지 않음
 
@@ -162,3 +165,68 @@ marksman = { enabled = false },
 ```
 
 **교훈**: extraPackages 추가 시 `nix path-info -r nixpkgs#패키지명 | grep -ci swift` 등으로 무거운 의존성 체인이 없는지 사전 확인할 것.
+
+## indent-blankline setup 함수 호출 실패
+
+```
+Error: You are trying to call the setup function of indent-blankline...
+Take a look at the GitHub wiki for instructions on how to migrate.
+```
+
+**원인**: indent-blankline v3에서 모듈 이름이 `indent_blankline` → `ibl`로 변경됨. lazy.nvim이 플러그인명에서 모듈명을 추론하면 `indent-blankline`을 호출 → v2 호환 에러 발생.
+
+**해결**: ui.lua의 플러그인 spec에 `main = "ibl"` 명시.
+
+```lua
+{
+  "lukas-reineke/indent-blankline.nvim",
+  main = "ibl",  -- v3 필수: 모듈명 명시
+  opts = { ... },
+}
+```
+
+**참고**: LazyVim 코어가 `main = "ibl"`을 설정하더라도, 커스텀 spec에서 명시적으로 지정하는 것이 안전함.
+
+## tree-sitter CLI 누락 (파서 컴파일 불가)
+
+```
+Unmet requirements for nvim-treesitter main:
+- ✅ C compiler
+- ✅ curl
+- ✅ tar
+- ❌ tree-sitter (CLI)
+```
+
+**원인**: nvim-treesitter main 브랜치가 `tree-sitter` CLI를 필수 의존성으로 요구. `extraPackages`에 미포함 시 파서 설치 시 무한 행이 발생하거나 컴파일 실패.
+
+**해결**: `default.nix`의 `extraPackages`에 `tree-sitter` 추가.
+
+```nix
+extraPackages = with pkgs; [
+  tree-sitter  # nvim-treesitter 파서 컴파일 CLI
+  # ...
+];
+```
+
+**참고**: nixpkgs의 tree-sitter 버전이 nvim-treesitter 요구 버전(>= 0.26.1)보다 낮을 수 있음. `:checkhealth nvim-treesitter`로 버전 호환성 확인 필요.
+
+## mini.surround 조직 이름 변경 경고
+
+```
+Plugin echasnovski/mini.surround was renamed to nvim-mini/mini.surround
+Please update your config for LazyVim
+```
+
+**원인**: mini.nvim 0.17.0 (2025-12)에서 `echasnovski` 개인 계정 → `nvim-mini` 조직으로 이전. lazy.nvim은 `owner/repo` 문자열로 매칭하므로 옛 이름이면 경고 발생.
+
+**해결**: `disabled.lua`에서 조직명 변경.
+
+```lua
+-- 올바른 방법
+{ "nvim-mini/mini.surround", enabled = false }
+
+-- 잘못된 방법 (경고 발생)
+{ "echasnovski/mini.surround", enabled = false }
+```
+
+**교훈**: LazyVim 업데이트 후 플러그인 조직 이전 경고가 나타나면 `disabled.lua`의 `owner/repo`를 확인할 것.
