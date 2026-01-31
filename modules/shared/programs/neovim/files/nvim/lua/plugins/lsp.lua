@@ -7,7 +7,7 @@
 --
 -- LazyVim extras가 이미 설정하는 LSP 서버:
 --   typescript → vtsls, nix → nil, json → jsonls, yaml → yamlls,
---   markdown → marksman, tailwind → tailwindcss-language-server,
+--   markdown → marksman(비활성화→markdown-oxide로 대체), tailwind → tailwindcss-language-server,
 --   eslint → vscode-eslint-language-server
 --
 -- 여기서는 extras가 관리하지 않는 LSP 서버만 추가.
@@ -24,6 +24,8 @@ return {
       servers = {
         cssls = {}, -- CSS LSP: 자동완성, 색상 미리보기, 선택자 검증
         html = {}, -- HTML LSP: 태그 자동완성, 닫는 태그, 속성 제안
+        markdown_oxide = {}, -- Markdown LSP (marksman 대체 — Rust, dotnet/Swift 의존성 없음)
+        marksman = { enabled = false }, -- lang.markdown extra가 설정하지만 비활성화 (dotnet→Swift 빌드 실패)
       },
     },
   },

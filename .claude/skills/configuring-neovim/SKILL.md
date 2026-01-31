@@ -43,15 +43,19 @@ modules/shared/programs/neovim/
 | LSP | `tailwindcss-language-server` | Tailwind CSS |
 | LSP | `yaml-language-server` | YAML |
 | LSP | `vscode-langservers-extracted` | JSON, HTML, CSS, ESLint |
-| LSP | `marksman` | Markdown |
+| LSP | `markdown-oxide` | Markdown (Rust — marksman은 dotnet→Swift 의존성으로 macOS 빌드 실패) |
 | 포매터 | `prettier` | JS/TS/CSS/JSON/YAML/MD |
 | 포매터 | `stylua` | Lua |
 | 포매터 | `nixfmt-rfc-style` | Nix |
 | 린터 | `statix` | Nix |
-| 빌드 | `gcc` | tree-sitter 파서 컴파일 |
+| 빌드 | `gcc` | tree-sitter 파서 컴파일 **(Linux 전용)** |
 | 빌드 | `nodejs` | LSP 런타임 의존성 |
 
 > `ripgrep`, `fd`, `fzf`, `lazygit`은 `libraries/packages.nix`에서 이미 설치됨 — 중복 추가 금지
+
+### extraPackages 플랫폼 주의사항
+
+`gcc`는 `lib.optionals pkgs.stdenv.isLinux`로 Linux 전용 추가. macOS에서 `gcc`를 무조건 추가하면 **LLVM 전체 소스 빌드가 트리거되어 빌드가 수십 분 멈춤**. macOS는 clang이 이미 있어 tree-sitter 파서 컴파일 가능.
 
 ## Mason 비활성화 주의사항
 
@@ -71,7 +75,7 @@ Mason 프로젝트가 `williamboman`에서 `mason-org`로 마이그레이션됨:
 - `lang.nix` — nil_ls + nixfmt + statix
 - `lang.json` — jsonls
 - `lang.yaml` — yamlls
-- `lang.markdown` — marksman
+- `lang.markdown` — marksman 비활성화, `markdown_oxide`로 대체 (lsp.lua)
 - `lang.tailwind` — tailwindcss LSP
 - `linting.eslint` — ESLint LSP
 - `formatting.prettier` — prettier 통합
@@ -105,3 +109,5 @@ LazyVim 기본 키맵 (which-key로 탐색):
 - `programs.neovim`에 `plugins`/`initLua`/`extraConfig` 추가 금지 (심볼릭 링크 충돌)
 - DAP 디버깅 미지원 (Mason 비활성화로 js-debug-adapter 미설치)
 - `default.nix` 함수 시그니처에 `nixosConfigPath` 명시 필수
+- **extraPackages에 C 컴파일러(gcc 등) 추가 시 반드시 `lib.optionals pkgs.stdenv.isLinux` 사용** — macOS에서 LLVM 소스 빌드 방지
+- **marksman 사용 금지** → `markdown-oxide` 사용. marksman은 dotnet→Swift 의존성 체인으로 macOS에서 Swift 소스 빌드 실패

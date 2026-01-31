@@ -12,6 +12,8 @@
 - [플러그인 업데이트](#플러그인-업데이트)
 - [Nix 빌드 실패 (extraPackages)](#nix-빌드-실패-extrapackages)
 - [ESLint 진단 중복](#eslint-진단-중복)
+- [macOS에서 nrs 빌드가 수십 분 멈춤 (LLVM 소스 빌드)](#macos에서-nrs-빌드가-수십-분-멈춤-llvm-소스-빌드)
+- [marksman이 Swift 소스 빌드를 트리거 (빌드 실패)](#marksman이-swift-소스-빌드를-트리거-빌드-실패)
 
 ## LSP 서버가 시작되지 않음
 
@@ -118,3 +120,45 @@ nix build nixpkgs#vtsls
 
 **원인**: eslint extra + nvim-lint에서 eslint_d를 별도 설정.
 **해결**: LazyVim eslint extra만 사용. `eslint_d` 별도 설정 제거.
+
+## macOS에서 nrs 빌드가 수십 분 멈춤 (LLVM 소스 빌드)
+
+```
+[1/13/58 built, 203 copied ...] building
+# ps aux로 확인하면 clang++이 llvm-project를 컴파일 중
+```
+
+**원인**: `extraPackages`에 `gcc`를 무조건 추가하면, macOS에서 GCC의 의존성인 **LLVM 전체를 소스에서 빌드**한다. nixpkgs 바이너리 캐시에 macOS용 GCC가 없기 때문.
+
+**해결**: `gcc`를 Linux 전용으로 변경. macOS는 clang이 이미 있어 tree-sitter 파서 컴파일이 가능하다.
+
+```nix
+extraPackages = with pkgs; [ ... ]
+++ lib.optionals pkgs.stdenv.isLinux [
+  gcc  # NixOS 전용
+];
+```
+
+**예방**: extraPackages에 C/C++ 컴파일러나 대형 빌드 도구를 추가할 때는 반드시 플랫폼 조건을 확인할 것. `pkgs.stdenv.isLinux` / `pkgs.stdenv.isDarwin`으로 분기.
+
+## marksman이 Swift 소스 빌드를 트리거 (빌드 실패)
+
+```
+error: Cannot build swift-5.10.1.drv
+  → swift-wrapper-5.10.1 → dotnet-vmr-9.0.12 → dotnet-runtime → marksman
+```
+
+**원인**: `marksman`(Markdown LSP)은 .NET 앱. macOS에서 dotnet-runtime이 Swift를 빌드 의존성으로 요구하는데, nixpkgs 바이너리 캐시에 없어 소스 빌드 → clang 호환성 문제로 실패.
+
+**해결**: `marksman` → `markdown-oxide`(Rust)로 교체. dotnet/Swift 의존성 없이 동일 기능 제공.
+
+```nix
+# default.nix
+markdown-oxide  # marksman 대신 사용
+
+# lsp.lua
+markdown_oxide = {},
+marksman = { enabled = false },
+```
+
+**교훈**: extraPackages 추가 시 `nix path-info -r nixpkgs#패키지명 | grep -ci swift` 등으로 무거운 의존성 체인이 없는지 사전 확인할 것.
