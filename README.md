@@ -11,7 +11,7 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 
 **공유 설정** (`modules/shared/`):
 - 쉘 환경 (zsh, starship, atuin, fzf, zoxide)
-- 개발 도구 (git, tmux, vim, lazygit)
+- 개발 도구 (git, tmux, neovim (LazyVim), lazygit)
 - Claude Code 설정
 
 **플랫폼별 설정**:
@@ -32,7 +32,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 ├── modules/
 │   ├── shared/                    # Darwin + NixOS 공통
 │   │   ├── configuration.nix      # Nix GC, substitution
-│   │   └── programs/              # git, tmux, vim, shell, claude, secrets
+│   │   └── programs/              # git, tmux, neovim, shell, claude, secrets
 │   ├── darwin/                    # macOS 전용
 │   │   ├── configuration.nix      # Dock, Finder, 키보드
 │   │   ├── home.nix               # HM 패키지 + 모듈 import

@@ -1,0 +1,107 @@
+# Neovim (LazyVim) 설정
+
+## 아키텍처
+
+**Hybrid 방식**: Nix가 바이너리/외부 도구 관리, lazy.nvim이 플러그인 관리.
+
+- **Mason 비활성화**: LSP/포매터/린터는 `extraPackages`로 Nix가 설치
+- **lazy.nvim**: 런타임에 플러그인 다운로드 및 관리
+- **mkOutOfStoreSymlink**: `~/.config/nvim` → repo의 `files/nvim/` 심볼릭 링크 (양방향 수정 가능)
+
+## 파일 구조
+
+```
+modules/shared/programs/neovim/
+├── default.nix                      # Nix 설정 (extraPackages, 심볼릭 링크)
+└── files/nvim/                      # → ~/.config/nvim
+    ├── init.lua                     # 진입점 (require("config.lazy"))
+    ├── stylua.toml                  # Lua 포매터 (2-space indent)
+    ├── lazy-lock.json               # 플러그인 버전 잠금 (자동 생성, 커밋 대상)
+    ├── lazyvim.json                 # LazyVim extras 추적 (자동 관리)
+    └── lua/
+        ├── config/
+        │   ├── lazy.lua             # lazy.nvim 부트스트랩 + extras 목록
+        │   ├── options.lua          # Vim 옵션
+        │   ├── keymaps.lua          # 커스텀 키맵 (jk→Esc)
+        │   └── autocmds.lua         # 모바일 화면 감지
+        └── plugins/
+            ├── disabled.lua         # Mason 비활성화 (mason-org/)
+            ├── colorscheme.lua      # Catppuccin Mocha
+            ├── lsp.lua              # 추가 LSP (cssls, html)
+            ├── treesitter.lua       # 파서 목록
+            ├── editor.lua           # surround, neo-tree, telescope
+            └── ui.lua               # bufferline, lualine, noice
+```
+
+## extraPackages (Nix가 관리하는 도구)
+
+| 카테고리 | 패키지 | 용도 |
+|----------|--------|------|
+| LSP | `lua-language-server` | Lua |
+| LSP | `nil` | Nix |
+| LSP | `vtsls` | TypeScript/JS |
+| LSP | `tailwindcss-language-server` | Tailwind CSS |
+| LSP | `yaml-language-server` | YAML |
+| LSP | `vscode-langservers-extracted` | JSON, HTML, CSS, ESLint |
+| LSP | `marksman` | Markdown |
+| 포매터 | `prettier` | JS/TS/CSS/JSON/YAML/MD |
+| 포매터 | `stylua` | Lua |
+| 포매터 | `nixfmt-rfc-style` | Nix |
+| 린터 | `statix` | Nix |
+| 빌드 | `gcc` | tree-sitter 파서 컴파일 |
+| 빌드 | `nodejs` | LSP 런타임 의존성 |
+
+> `ripgrep`, `fd`, `fzf`, `lazygit`은 `libraries/packages.nix`에서 이미 설치됨 — 중복 추가 금지
+
+## Mason 비활성화 주의사항
+
+Mason 프로젝트가 `williamboman`에서 `mason-org`로 마이그레이션됨:
+```lua
+-- 올바른 방법 (mason-org/)
+{ "mason-org/mason.nvim", enabled = false }
+
+-- 잘못된 방법 (매칭 실패)
+{ "williamboman/mason.nvim", enabled = false }
+```
+
+## LazyVim extras
+
+활성화된 extras:
+- `lang.typescript` — vtsls + TS 도구
+- `lang.nix` — nil_ls + nixfmt + statix
+- `lang.json` — jsonls
+- `lang.yaml` — yamlls
+- `lang.markdown` — marksman
+- `lang.tailwind` — tailwindcss LSP
+- `linting.eslint` — ESLint LSP
+- `formatting.prettier` — prettier 통합
+
+## 모바일 최적화 (iPad Termius)
+
+- `jk` → Esc (Insert 모드) — 소프트웨어 키보드 UX
+- 100컬럼 미만: `relativenumber=false`, `wrap=true`, 좁은 neo-tree
+- telescope `flex` 레이아웃: 좁은 화면에서 수직 전환
+
+## 클립보드 전략
+
+`clipboard = "unnamedplus"` 설정:
+- **macOS 로컬**: 시스템 클립보드 직접 연동
+- **SSH + tmux**: tmux-yank + OSC 52 (터미널 앱이 지원하는 경우)
+- **Termius**: OSC 52 미지원 → tmux-thumbs (`prefix+F`)로 보완
+
+## 주요 키맵
+
+LazyVim 기본 키맵 (which-key로 탐색):
+- `<leader>ff` 파일 찾기 | `<leader>fg` 텍스트 검색 | `<leader>e` neo-tree
+- `<leader>gg` lazygit | `<leader>cf` 포맷 | `K` hover
+- `gd` 정의 | `gr` 참조 | `H`/`L` 이전/다음 버퍼
+
+커스텀 키맵:
+- `jk` → Esc (Insert 모드)
+- `<C-\>` → 터미널 Normal 모드
+
+## 제약사항
+
+- `programs.neovim`에 `plugins`/`initLua`/`extraConfig` 추가 금지 (심볼릭 링크 충돌)
+- DAP 디버깅 미지원 (Mason 비활성화로 js-debug-adapter 미설치)
+- `default.nix` 함수 시그니처에 `nixosConfigPath` 명시 필수
