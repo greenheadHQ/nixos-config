@@ -39,25 +39,6 @@ return {
     end,
   },
 
-  -- ── indent-blankline: 들여쓰기 가이드 라인 ──
-  -- 코드 블록의 깊이를 세로 점선으로 시각적으로 표시
-  -- 예: if 블록, 함수 블록의 시작과 끝을 세로선으로 연결
-  {
-    "lukas-reineke/indent-blankline.nvim",
-    -- main = "ibl": v3에서 모듈 이름이 "indent_blankline" → "ibl"로 변경됨
-    -- 이 값이 없으면 lazy.nvim이 플러그인명에서 모듈명을 추론 → setup() 호출 실패
-    main = "ibl",
-    opts = {
-      scope = {
-        -- show_start = false: 현재 스코프(블록)의 시작 줄에 밑줄 표시하지 않음
-        -- true면 현재 커서가 있는 블록의 첫 줄에 밑줄이 그어짐
-        show_start = false,
-        -- show_end = false: 현재 스코프의 마지막 줄에 밑줄 표시하지 않음
-        show_end = false,
-      },
-    },
-  },
-
   -- ── noice: 명령줄, 메시지, 알림 UI 개선 ──
   -- Neovim의 기본 명령줄(:)과 메시지 표시를 모던한 팝업으로 대체
   -- SSH 환경에서도 안정적으로 동작하도록 보수적으로 설정

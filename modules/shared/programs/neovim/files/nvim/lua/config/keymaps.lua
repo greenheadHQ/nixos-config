@@ -8,7 +8,7 @@
 --   desc: which-key 팝업에 표시되는 설명
 --
 -- LazyVim 기본 키맵 (which-key로 Space 누르면 전체 목록 확인 가능):
---   <leader>ff → 파일 찾기 (telescope)
+--   <leader>ff → 파일 찾기 (snacks.picker)
 --   <leader>fg → 텍스트 검색 (grep)
 --   <leader>e  → 파일 탐색기 (neo-tree) 토글
 --   <leader>gg → lazygit 열기

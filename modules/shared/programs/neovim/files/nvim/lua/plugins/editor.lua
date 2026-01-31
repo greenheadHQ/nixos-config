@@ -46,33 +46,19 @@ return {
     },
   },
 
-  -- ── telescope: 퍼지 검색 (VS Code의 Cmd+P / Cmd+Shift+F와 유사) ──
-  -- <leader>ff = 파일 이름으로 검색
-  -- <leader>fg = 파일 내용(텍스트)으로 검색 (ripgrep 사용)
-  -- <leader>fb = 열린 버퍼 목록에서 검색
+  -- ── snacks.picker: 퍼지 검색 (VS Code의 Cmd+P / Cmd+Shift+F와 유사) ──
+  -- LazyVim v14+에서 telescope를 대체하는 기본 picker
+  -- <leader>ff = 파일 이름으로 검색, <leader>fg = 텍스트 검색, <leader>fb = 버퍼 검색
   {
-    "nvim-telescope/telescope.nvim",
+    "folke/snacks.nvim",
     opts = {
-      defaults = {
-        -- layout_strategy = "flex": 화면 크기에 따라 자동으로 레이아웃 전환
-        -- 넓은 화면 → 가로 배치 (왼쪽: 검색 결과, 오른쪽: 미리보기)
-        -- 좁은 화면 → 세로 배치 (위: 검색 결과, 아래: 미리보기)
-        layout_strategy = "flex",
-        layout_config = {
-          flex = {
-            -- flip_columns: 이 칸 수 미만이면 세로 레이아웃으로 전환
-            -- 100 미만 (iPad 등) → 세로 배치
-            flip_columns = 100,
-          },
-          horizontal = {
-            -- preview_cutoff: 이 칸 수 미만이면 미리보기 패널 숨김
-            -- 좁은 화면에서 미리보기가 검색 결과를 가리지 않도록
-            preview_cutoff = 100,
-          },
-          vertical = {
-            -- 세로 레이아웃에서의 미리보기 최소 높이 기준
-            preview_cutoff = 20,
-          },
+      picker = {
+        -- 화면 크기에 따라 레이아웃 자동 전환
+        -- 100칸 미만 (iPad 등 좁은 화면) → 세로 배치 (기존 telescope flex와 동일 기준)
+        layout = {
+          preset = function()
+            return vim.o.columns >= 100 and "default" or "vertical"
+          end,
         },
       },
     },

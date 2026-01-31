@@ -29,7 +29,7 @@ vim.opt.rtp:prepend(lazypath)
 require("lazy").setup({
   -- ── spec: 어떤 플러그인을 설치할지 정의 ──
   spec = {
-    -- LazyVim 코어: 기본 플러그인 세트 (telescope, treesitter, lsp, cmp 등)를 한번에 가져옴
+    -- LazyVim 코어: 기본 플러그인 세트 (snacks.picker, treesitter, lsp, blink.cmp 등)를 한번에 가져옴
     -- colorscheme: LazyVim에게 catppuccin을 테마로 사용하라고 지정 (기본값은 tokyonight)
     -- 이 설정이 없으면 colorscheme.lua에서 catppuccin을 설치해도 tokyonight가 적용됨
     { "LazyVim/LazyVim", import = "lazyvim.plugins", opts = { colorscheme = "catppuccin" } },
@@ -40,7 +40,7 @@ require("lazy").setup({
     { import = "lazyvim.plugins.extras.lang.nix" }, -- nil (Nix LSP) + nixfmt + statix
     { import = "lazyvim.plugins.extras.lang.json" }, -- jsonls (JSON LSP) + schemastore
     { import = "lazyvim.plugins.extras.lang.yaml" }, -- yamlls (YAML LSP) + schemastore
-    { import = "lazyvim.plugins.extras.lang.markdown" }, -- marksman (Markdown LSP) + 미리보기
+    { import = "lazyvim.plugins.extras.lang.markdown" }, -- Markdown LSP + 미리보기 (marksman → markdown-oxide로 대체, lsp.lua 참고)
     { import = "lazyvim.plugins.extras.lang.tailwind" }, -- tailwindcss LSP + 색상 미리보기
     { import = "lazyvim.plugins.extras.linting.eslint" }, -- ESLint를 LSP로 동작시킴
     { import = "lazyvim.plugins.extras.formatting.prettier" }, -- prettier 저장 시 자동 포맷
@@ -51,8 +51,8 @@ require("lazy").setup({
 
   -- ── defaults: 플러그인 기본 동작 설정 ──
   defaults = {
-    -- lazy = false → 모든 플러그인을 nvim 시작 시 즉시 로드 (true면 필요할 때만 로드)
-    lazy = false,
+    -- lazy = true → 플러그인을 필요할 때만 로드 (LazyVim이 각 플러그인의 로드 트리거를 관리)
+    lazy = true,
     -- version = false → 항상 최신 커밋 사용 (true면 안정 릴리스 태그만 사용)
     version = false,
   },

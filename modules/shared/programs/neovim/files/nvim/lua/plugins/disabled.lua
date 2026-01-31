@@ -21,4 +21,10 @@ return {
   -- nvim-surround (editor.lua)을 대신 사용하므로 비활성화 (키맵: ys, ds, cs — 더 표준적)
   -- NOTE: mini.nvim 0.17.0 (2025-12)에서 echasnovski → nvim-mini 조직으로 이전됨
   { "nvim-mini/mini.surround", enabled = false },
+
+  -- tokyonight: LazyVim 기본 테마이지만, catppuccin을 사용하므로 불필요
+  { "folke/tokyonight.nvim", enabled = false },
+
+  -- indent-blankline: snacks.indent로 대체됨 (LazyVim v14+)
+  { "lukas-reineke/indent-blankline.nvim", enabled = false },
 }

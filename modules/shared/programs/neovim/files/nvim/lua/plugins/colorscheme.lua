@@ -29,10 +29,6 @@ return {
       -- true로 설정하면 해당 플러그인의 UI 요소에 Catppuccin 색상이 적용됨
       -- false면 해당 플러그인은 자체 기본 색상을 사용
       integrations = {
-        -- cmp (nvim-cmp): 자동완성 팝업 메뉴에 Catppuccin 색상 적용
-        -- 코드 작성 중 나타나는 제안 목록의 배경, 텍스트, 아이콘 색상
-        cmp = true,
-
         -- gitsigns: 줄번호 왼쪽에 표시되는 git 변경 표시에 Catppuccin 색상 적용
         -- 초록(추가), 파랑(수정), 빨강(삭제) 등의 색상이 테마와 조화됨
         gitsigns = true,
@@ -43,19 +39,14 @@ return {
 
         -- treesitter: 코드 구문 강조(syntax highlighting)에 Catppuccin 색상 적용
         -- 함수명, 변수명, 키워드, 문자열 등의 색상
-        -- treesitter = 코드를 파싱해서 의미 단위로 색칠하는 도구 (정규식 기반보다 정확)
         treesitter = true,
 
-        -- telescope: 파일/텍스트 검색 팝업(fuzzy finder)에 Catppuccin 색상 적용
-        -- <leader>ff 등으로 열리는 검색 창의 배경, 테두리, 선택 하이라이트
-        telescope = { enabled = true },
+        -- snacks: snacks.nvim UI (picker, indent, notifier 등)에 Catppuccin 색상 적용
+        -- catppuccin 기본값이 false이므로 명시적으로 활성화 필요
+        snacks = { enabled = true },
 
         -- which-key: Space 키 누르면 나타나는 키맵 도움말 팝업에 Catppuccin 색상 적용
         which_key = true,
-
-        -- indent-blankline: 들여쓰기 가이드 라인(세로 점선)에 Catppuccin 색상 적용
-        -- 코드 블록의 깊이를 시각적으로 구분하는 세로선
-        indent_blankline = { enabled = true },
 
         -- native_lsp: Neovim 내장 LSP 클라이언트의 진단 표시에 Catppuccin 색상 적용
         -- LSP = Language Server Protocol (VS Code가 IntelliSense를 제공하는 것과 같은 기술)
