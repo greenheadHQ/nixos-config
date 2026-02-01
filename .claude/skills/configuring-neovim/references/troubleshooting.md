@@ -102,15 +102,11 @@ nrs                     # Home Manager가 심볼릭 링크 재생성
 
 | 레이어 | 도구 | 파일 | 역할 |
 |--------|------|------|------|
-| 1차 | FocusGained autocmd | `autocmds.lua` | 외부 앱 복귀 시 영문 전환 → 내장 명령(dd, yy 등) 정상 동작 |
-| 2차 | langmapper.nvim | `korean.lua` | 플러그인 키맵(`<leader>ff` 등)의 한글 등가 자동 등록 |
-| 3차 | im-select.nvim | `editor.lua` | Insert↔Normal 전환 시 IM 자동 전환 |
+| 1차 | FocusGained autocmd | `autocmds.lua` | 외부 앱 복귀 시 영문 전환 → 내장/플러그인 명령 정상 동작 |
+| 2차 | im-select.nvim | `editor.lua` | Insert↔Normal 전환 시 IM 자동 전환 |
 
 **진단**:
 ```vim
-" langmapper 로드 확인
-:Lazy check langmapper.nvim
-
 " FocusGained autocmd 확인
 :autocmd FocusGained
 
@@ -118,11 +114,9 @@ nrs                     # Home Manager가 심볼릭 링크 재생성
 macism    " 현재 입력소스 ID 출력
 ```
 
-**langmap을 사용하지 않는 이유**: Neovim issue #27776 (멀티바이트 불안정), f/t 인자 충돌, IME 조합(자음+모음→음절) 문제.
+**langmap/langmapper를 사용하지 않는 이유**: 한글 IME는 자음 입력 시 조합(pre-edit) 상태로 대기하여 Neovim에 즉시 전달되지 않음. 이로 인해 `<leader>ff` 같은 키맵에서 extra keystroke가 필요해짐. 러시아어(키릴)와 달리 1:1 매핑이 불가능한 한글 IME의 근본 제약.
 
-**which-key 팝업에서 한글 미인식 시**: langmapper의 which-key v3 래퍼 추가 필요 (후속 작업).
-
-**NixOS/SSH**: `cond = vim.fn.executable("macism") == 1`로 자동 비활성화. 성능 영향 없음.
+**NixOS/SSH**: `vim.fn.executable("macism") == 1`로 자동 비활성화. 성능 영향 없음.
 
 ## 플러그인 업데이트
 

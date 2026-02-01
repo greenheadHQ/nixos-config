@@ -71,5 +71,5 @@ homeserver.plex.enable = false;
 | tmux config, keybindings, pane notepad, tmux-resurrect | `managing-tmux` |
 | SSH keys, Tailscale VPN, sudo auth failure | `managing-ssh` |
 | agenix, age, secret, .age 파일, 재암호화 | `managing-secrets` |
-| Neovim, LazyVim, LSP, nvim 플러그인, lazy.nvim, 한글 입력, langmapper, im-select | `configuring-neovim` |
+| Neovim, LazyVim, LSP, nvim 플러그인, lazy.nvim, 한글 입력, im-select | `configuring-neovim` |
 | Cursor extensions, extensions.json | `managing-cursor` |

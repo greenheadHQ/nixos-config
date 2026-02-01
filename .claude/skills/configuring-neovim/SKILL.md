@@ -27,7 +27,6 @@ modules/shared/programs/neovim/
         └── plugins/
             ├── disabled.lua         # Mason 비활성화 (mason-org/), mini.surround 비활성화 (nvim-mini/)
             ├── colorscheme.lua      # Catppuccin Mocha
-            ├── korean.lua           # 한글 입력 지원 (langmapper.nvim, macOS 전용)
             ├── lsp.lua              # 추가 LSP (cssls, html)
             ├── treesitter.lua       # 파서 목록
             ├── editor.lua           # surround, im-select, neo-tree
@@ -119,25 +118,20 @@ LazyVim 기본 키맵 (which-key로 탐색):
 
 ## 한국어 입력 지원 (macOS)
 
-외부 앱에서 한글을 쓰다가 Neovim으로 돌아왔을 때 Normal 모드에서 키맵이 동작하지 않는 문제를 3계층으로 방어:
+외부 앱에서 한글을 쓰다가 Neovim으로 돌아왔을 때 Normal 모드에서 키맵이 동작하지 않는 문제를 2계층으로 방어:
 
 | 레이어 | 도구 | 파일 | 담당 |
 |--------|------|------|------|
-| 1차 | FocusGained autocmd | `autocmds.lua` | 외부 앱 복귀 시 영문 IM 전환 → 내장 명령(dd, yy, w 등) 정상 동작 |
-| 2차 | langmapper.nvim `hack_keymap` | `korean.lua` | 플러그인 키맵(`<leader>ff` 등)의 한글 등가 자동 등록 |
-| 3차 | im-select.nvim | `editor.lua` | Insert↔Normal 전환 시 영문/한글 자동 전환 |
+| 1차 | FocusGained autocmd | `autocmds.lua` | 외부 앱 복귀 시 영문 IM 전환 → 내장/플러그인 명령 정상 동작 |
+| 2차 | im-select.nvim | `editor.lua` | Insert↔Normal 전환 시 영문/한글 자동 전환 |
 
-- **macOS 전용**: `cond = vim.fn.executable("macism") == 1`로 NixOS/SSH 환경에서 자동 비활성화
-- **langmap 미사용**: Neovim issue #27776 (멀티바이트 불안정), f/t 인자 충돌, IME 조합 문제로 제외
-- **langmapper priority=10000**: LazyVim 코어(50)보다 먼저 로드하여 모든 플러그인 키맵을 래핑
-- **한글 2벌식 레이아웃**: 69자 QWERTY↔한글 1:1 매핑 (`korean.lua`의 `layouts.ko.layout`)
+- **macOS 전용**: `vim.fn.executable("macism") == 1`로 NixOS/SSH 환경에서 자동 비활성화
+- **langmap/langmapper 미사용**: 한글 IME 조합(자음+모음→음절) 특성상 extra keystroke 문제 발생. 러시아어(키릴)처럼 1:1 매핑이 되지 않아 실용성 없음
 
 ### 알려진 제한
 
-- Visual 모드 내장 명령(d, y, c)의 한글 등가는 langmapper가 커버하지 못함 → FocusGained가 보완
-- IME 조합(자음+모음→음절)이 발생하면 단일키 번역 무력화 → FocusGained가 보완
-- which-key 팝업에서 한글 키 미인식 가능 → 필요시 langmapper의 which-key v3 래퍼 추가
-- f/t 한글 검색 미지원 (flash.nvim과 vim-f-hangul 충돌) → 필요시 후속 작업
+- Neovim 내부에서 한글로 전환 후 Normal 모드 명령 사용 시, FocusGained가 발동하지 않아 수동으로 영문 전환 필요
+- 한글 IME 조합 지연은 macOS/터미널 레이어 문제로 Neovim 플러그인에서 해결 불가 (터미널 IME escape sequence 미지원)
 
 ## 제약사항
 
