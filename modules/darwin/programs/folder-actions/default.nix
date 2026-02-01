@@ -1,6 +1,12 @@
 # Folder Actions - launchd WatchPaths 기반 폴더 감시
-# 감시 폴더: ~/FolderActions/{compress-rar, compress-video, rename-asset, convert-video-to-gif}/
-{ config, pkgs, lib, ... }:
+# 감시 폴더: ~/FolderActions/{compress-rar, compress-video, rename-asset, convert-video-to-gif, upload-immich}/
+{
+  config,
+  pkgs,
+  lib,
+  constants,
+  ...
+}:
 
 let
   scriptsDir = ./files/scripts;
@@ -27,6 +33,10 @@ in
       source = "${scriptsDir}/convert-video-to-gif.sh";
       executable = true;
     };
+    ".local/bin/upload-immich.sh" = {
+      source = "${scriptsDir}/upload-immich.sh";
+      executable = true;
+    };
   };
 
   # 감시 폴더 생성
@@ -35,6 +45,7 @@ in
     mkdir -p "${folderActionsDir}/compress-video"
     mkdir -p "${folderActionsDir}/rename-asset"
     mkdir -p "${folderActionsDir}/convert-video-to-gif"
+    mkdir -p "${folderActionsDir}/upload-immich"
     mkdir -p "${logsDir}"
   '';
 
@@ -93,6 +104,24 @@ in
         StandardErrorPath = "${logsDir}/convert-video-to-gif.error.log";
         EnvironmentVariables = {
           PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
+        };
+      };
+    };
+
+    # Immich 자동 업로드 폴더 감시
+    folder-action-upload-immich = {
+      enable = true;
+      config = {
+        Label = "com.green.folder-action.upload-immich";
+        ProgramArguments = [ "${homeDir}/.local/bin/upload-immich.sh" ];
+        WatchPaths = [ "${folderActionsDir}/upload-immich" ];
+        StandardOutPath = "${logsDir}/upload-immich.log";
+        StandardErrorPath = "${logsDir}/upload-immich.error.log";
+        TimeOut = 1800; # 30분 전체 타임아웃 (대용량 업로드 무한 대기 방지)
+        EnvironmentVariables = {
+          PATH = "${homeDir}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
+          HOME = homeDir;
+          IMMICH_INSTANCE_URL = "http://${constants.network.minipcTailscaleIP}:${toString constants.network.ports.immich}";
         };
       };
     };

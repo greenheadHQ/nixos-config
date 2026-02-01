@@ -36,5 +36,17 @@
       path = "${config.xdg.configHome}/pane-note/links.txt";
       mode = "0400";
     };
+
+    # Immich CLI 업로드 (FolderAction)
+    secrets.immich-api-key = {
+      file = ../../../../secrets/immich-api-key.age;
+      path = "${config.xdg.configHome}/immich/api-key";
+      mode = "0400";
+    };
+    secrets.pushover-immich = {
+      file = ../../../../secrets/pushover-immich.age;
+      path = "${config.xdg.configHome}/pushover/immich";
+      mode = "0400";
+    };
   };
 }

@@ -42,7 +42,19 @@ agenix를 사용한 `.age` 파일 기반 secret 암호화/배포 가이드.
 Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로드한다.
 배포 권한은 `0400` mode이며, agenix가 복호화하여 지정 경로에 배치한다.
 
-현재 등록된 secret 목록은 `secrets/secrets.nix`에서 확인.
+### 현재 등록된 Secret 목록
+
+| Secret | 배포 경로 | 용도 |
+|--------|----------|------|
+| `pushover-claude-code.age` | `~/.config/pushover/claude-code` | Claude Code 알림 |
+| `pushover-atuin.age` | `~/.config/pushover/atuin` | Atuin 동기화 알림 |
+| `pushover-fail2ban.age` | `~/.config/pushover/fail2ban` | Fail2ban 알림 |
+| `pushover-immich.age` | `~/.config/pushover/immich` | Immich FolderAction 업로드 알림 |
+| `pane-note-links.age` | `~/.config/pane-note/links.txt` | Pane Notepad 링크 |
+| `immich-api-key.age` | `~/.config/immich/api-key` | Immich CLI 업로드 인증 |
+| `immich-db-password.age` | (NixOS 시스템 레벨) | Immich PostgreSQL 비밀번호 |
+
+상세는 `secrets/secrets.nix` 참조.
 
 ### Secret 추가/수정
 
@@ -73,9 +85,10 @@ nix run github:ryantm/agenix -- -e secrets/<name>.age
 ```bash
 # 1. secrets/secrets.nix에서 공개키 확인
 # 2. 모든 recipient에 대해 -r 플래그 지정
-printf 'KEY=value\n' | \
-  nix-shell -p age --run \
-  'age -r "ssh-ed25519 <key1>" -r "ssh-ed25519 <key2>" -o secrets/<name>.age'
+nix shell nixpkgs#age -c sh -c 'printf "KEY=value\n" | age \
+  -r "ssh-ed25519 <key1>" \
+  -r "ssh-ed25519 <key2>" \
+  -o secrets/<name>.age'
 ```
 
 `secrets/secrets.nix`의 `allHosts` 목록에 있는 모든 공개키를 `-r` 플래그로 지정해야 양쪽 호스트에서 복호화 가능.
@@ -83,7 +96,7 @@ printf 'KEY=value\n' | \
 #### 기존 secret 내용 확인 (복호화)
 
 ```bash
-nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age'
+nix shell nixpkgs#age -c age -d -i ~/.ssh/id_ed25519 secrets/<name>.age
 ```
 
 ### 호스트 추가

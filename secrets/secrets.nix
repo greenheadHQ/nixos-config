@@ -23,4 +23,8 @@ in
 
   # Immich PostgreSQL 비밀번호
   "immich-db-password.age".publicKeys = allHosts;
+
+  # Immich CLI 업로드 (FolderAction)
+  "immich-api-key.age".publicKeys = allHosts;
+  "pushover-immich.age".publicKeys = allHosts;
 }
