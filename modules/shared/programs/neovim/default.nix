@@ -37,7 +37,7 @@ in
         # ── 포매터 ──
         prettier # JS/TS/CSS/JSON/YAML/MD
         stylua # Lua
-        nixfmt-rfc-style # Nix (바이너리명: nixfmt)
+        nixfmt # Nix
 
         # ── 린터 ──
         statix # Nix

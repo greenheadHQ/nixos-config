@@ -46,7 +46,7 @@ modules/shared/programs/neovim/
 | LSP | `markdown-oxide` | Markdown (Rust — marksman은 dotnet→Swift 의존성으로 macOS 빌드 실패) |
 | 포매터 | `prettier` | JS/TS/CSS/JSON/YAML/MD |
 | 포매터 | `stylua` | Lua |
-| 포매터 | `nixfmt-rfc-style` | Nix |
+| 포매터 | `nixfmt` | Nix |
 | 린터 | `statix` | Nix |
 | 빌드 | `tree-sitter` | nvim-treesitter 파서 컴파일 CLI |
 | 빌드 | `gcc` | tree-sitter 파서 컴파일 **(Linux 전용)** |
