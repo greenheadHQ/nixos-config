@@ -7,6 +7,8 @@ in
 {
   programs.ssh = {
     enable = true;
+    # home-manager의 기본 SSH 설정 비활성화 (deprecated 경고 방지)
+    enableDefaultConfig = false;
     matchBlocks = {
       "*" = {
         identityFile = sshKeyPath;
