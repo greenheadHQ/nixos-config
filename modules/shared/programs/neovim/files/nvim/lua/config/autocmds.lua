@@ -55,3 +55,23 @@ vim.api.nvim_create_autocmd(
 
 -- 이 파일이 로드되는 시점(VeryLazy)에 즉시 한 번 실행하여 초기 레이아웃 설정
 adjust_for_width()
+
+-- ── FocusGained: 외부 앱에서 돌아올 때 영문 IM 전환 (macOS) ──
+-- Vim 내장 명령(dd, yy, w, gj 등)은 한글 키맵 등가를 만들 수 없으므로
+-- 포커스 복귀 시 영문으로 전환하여 내장 명령이 정상 동작하게 함
+-- 플러그인 키맵(<leader>ff 등)은 langmapper.nvim이 별도 처리 (plugins/korean.lua)
+-- macism이 없는 환경(NixOS, SSH)에서는 자동으로 건너뜀
+if vim.fn.executable("macism") == 1 then
+  vim.api.nvim_create_autocmd("FocusGained", {
+    group = vim.api.nvim_create_augroup("korean_im_focus", { clear = true }),
+    callback = function()
+      -- Normal 계열(Normal, Operator-pending, Insert-Normal, Terminal-Normal)과
+      -- Visual 계열(Visual, Visual Line, Visual Block) 모드일 때만 전환
+      -- Insert, Command-line, Terminal 모드에서는 사용자의 한글 입력 의도를 존중
+      local mode = vim.api.nvim_get_mode().mode
+      if mode:find("^n") or mode == "v" or mode == "V" or mode:find("^\22") then
+        vim.fn.jobstart({ "macism", "com.apple.keylayout.ABC" })
+      end
+    end,
+  })
+end

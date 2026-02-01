@@ -96,8 +96,33 @@ nrs                     # Home Manager가 심볼릭 링크 재생성
 
 ## 한국어 IME 전환
 
-macOS 로컬에서만 동작 (SSH에서는 효과 없음):
-- `InsertLeave` 시 `im-select`로 영문 입력 소스 전환 (best-effort)
+외부 앱에서 한글을 쓰다가 Neovim으로 돌아왔을 때 Normal 모드에서 키맵이 동작하지 않는 문제.
+
+**현재 구조** (macOS 전용, `macism` 필수):
+
+| 레이어 | 도구 | 파일 | 역할 |
+|--------|------|------|------|
+| 1차 | FocusGained autocmd | `autocmds.lua` | 외부 앱 복귀 시 영문 전환 → 내장 명령(dd, yy 등) 정상 동작 |
+| 2차 | langmapper.nvim | `korean.lua` | 플러그인 키맵(`<leader>ff` 등)의 한글 등가 자동 등록 |
+| 3차 | im-select.nvim | `editor.lua` | Insert↔Normal 전환 시 IM 자동 전환 |
+
+**진단**:
+```vim
+" langmapper 로드 확인
+:Lazy check langmapper.nvim
+
+" FocusGained autocmd 확인
+:autocmd FocusGained
+
+" macism 동작 확인 (터미널에서)
+macism    " 현재 입력소스 ID 출력
+```
+
+**langmap을 사용하지 않는 이유**: Neovim issue #27776 (멀티바이트 불안정), f/t 인자 충돌, IME 조합(자음+모음→음절) 문제.
+
+**which-key 팝업에서 한글 미인식 시**: langmapper의 which-key v3 래퍼 추가 필요 (후속 작업).
+
+**NixOS/SSH**: `cond = vim.fn.executable("macism") == 1`로 자동 비활성화. 성능 영향 없음.
 
 ## 플러그인 업데이트
 
