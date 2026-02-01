@@ -14,7 +14,11 @@
       "Bash(rm -rf ~/*)",
       "Bash(rm -rf /*)"
     ],
-    "additionalDirectories": ["~/Downloads", "~/Documents", "~/IdeaProjects"]
+    "additionalDirectories": [
+      "~/Downloads",
+      "~/Documents",
+      "~/IdeaProjects"
+    ]
   },
   "hooks": {
     "PreToolUse": [
@@ -50,8 +54,7 @@
     ]
   },
   "enabledPlugins": {
-    "plugin-dev@claude-plugins-official": true,
-    "example-front@example-plugins": true
+    "plugin-dev@claude-plugins-official": true
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
