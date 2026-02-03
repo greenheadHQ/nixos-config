@@ -36,6 +36,20 @@
         description = "Port for Plex web interface";
       };
     };
+
+    immichCleanup = {
+      enable = lib.mkEnableOption "Immich temp album cleanup (Claude Code Temp)";
+      albumName = lib.mkOption {
+        type = lib.types.str;
+        default = "Claude Code Temp";
+        description = "Name of the album to cleanup";
+      };
+      retentionDays = lib.mkOption {
+        type = lib.types.int;
+        default = 7;
+        description = "Days to retain images before deletion";
+      };
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -45,5 +59,6 @@
     ../programs/docker/immich.nix
     ../programs/docker/uptime-kuma.nix
     ../programs/docker/plex.nix
+    ../programs/immich-cleanup # Immich 임시 앨범 자동 삭제
   ];
 }

@@ -131,7 +131,53 @@ launchctl list | grep upload-immich
 3. **IP 바인딩 실패**: `tailscale-wait.nix`가 올바르게 import 되었는지 확인
 4. **DB 비밀번호 오류**: `secrets/immich-db-password.age` 존재 확인, `agenix -r` 재암호화
 
+## 모바일 SSH에서 Claude Code로 이미지 전달
+
+모바일 SSH 환경(Termius 등)에서 클립보드 이미지 붙여넣기가 불가능할 때 Immich를 활용하여 이미지를 전달하는 방법입니다.
+
+### 핵심 원리
+
+| 도구 | 실행 위치 | Tailscale IP 접근 |
+|------|-----------|-------------------|
+| WebFetch | Anthropic 서버 | ❌ 불가 |
+| Read | MiniPC 로컬 | ✅ 파일 경로로 가능 |
+
+WebFetch는 Anthropic 서버에서 실행되어 Tailscale 내부 IP에 접근 불가하지만, Read는 로컬에서 실행되어 **파일 경로**로 이미지를 읽을 수 있습니다.
+
+### 워크플로우
+
+```
+[iPhone]
+사진 공유 → Scriptable "Upload to Claude Code" → 경로 클립보드 복사
+
+[MiniPC SSH]
+경로 붙여넣기 → Claude Code Read 도구로 이미지 확인
+
+[자동화]
+7일 후 "Claude Code Temp" 앨범 자동 삭제
+```
+
+### 경로 변환 (중요)
+
+Immich API가 반환하는 `originalPath`:
+```
+/usr/src/app/upload/upload/UUID/xx/xx/file.png
+```
+
+호스트에서 접근 가능한 경로:
+```
+/var/lib/docker-data/immich/upload-cache/UUID/xx/xx/file.png
+```
+
+**변환 규칙**: `/usr/src/app/upload/upload/` → `/var/lib/docker-data/immich/upload-cache/`
+
+### 상세 설정
+
+- Scriptable 스크립트: [references/scriptable-immich-upload.md](references/scriptable-immich-upload.md)
+- 자동 삭제 설정: `homeserver.immichCleanup.enable = true`
+
 ## 레퍼런스
 
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)
 - immich 설정: [references/immich-setup.md](references/immich-setup.md)
+- Scriptable 업로드: [references/scriptable-immich-upload.md](references/scriptable-immich-upload.md)

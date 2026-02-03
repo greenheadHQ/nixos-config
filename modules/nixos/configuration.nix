@@ -90,4 +90,5 @@
   homeserver.immich.enable = true;
   homeserver.uptimeKuma.enable = true;
   homeserver.plex.enable = false;
+  homeserver.immichCleanup.enable = true; # Claude Code Temp 앨범 7일 후 자동 삭제
 }
