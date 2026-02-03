@@ -772,16 +772,18 @@ in
       # QR 코드 생성 (MiniPC -> iPhone 텍스트 공유)
       #─────────────────────────────────────────────────────────────────────────
       ''
-        # qr: 텍스트를 QR 코드로 출력
-        # 사용법: qr <텍스트> 또는 tmux buffer에서 읽기
+        # qr: 텍스트를 QR 코드로 출력 (Unix-like)
+        # 사용법: qr <텍스트> | echo "text" | qr | tmux buffer
         qr() {
           local text
           if [ $# -gt 0 ]; then
             text="$*"
+          elif [ ! -t 0 ]; then
+            text=$(cat)
           elif [ -n "$TMUX" ]; then
             text=$(tmux save-buffer - 2>/dev/null)
           fi
-          [ -z "$text" ] && { echo "Usage: qr <text> or copy to tmux buffer first"; return 1; }
+          [ -z "$text" ] && { echo "Usage: qr <text> or pipe input"; return 1; }
           echo "QR (''${#text} chars):"
           echo "$text" | qrencode -t UTF8
         }

@@ -12,12 +12,17 @@ MiniPC(NixOS) 터미널에서 iPhone/모바일 기기로 텍스트를 공유하�
 
 ## 핵심 명령어
 
-터미널에서 `qr` 함수를 사용하여 텍스트를 QR 코드로 출력합니다.
+터미널에서 `qr` 함수를 사용하여 텍스트를 QR 코드로 출력합니다. Unix-like 파이프 지원.
 
 ```bash
 # 직접 텍스트 입력
 qr "복사할 텍스트"
 qr "https://github.com/user/repo"
+
+# 파이프 입력 (Unix-like)
+echo "hello" | qr
+cat file.txt | qr
+hostname -I | awk '{print $1}' | qr
 
 # tmux buffer에서 읽기 (인자 없이 실행)
 qr
@@ -87,15 +92,19 @@ qr "공유할 텍스트"
 qr() {
   local text
   if [ $# -gt 0 ]; then
-    text="$*"                              # 인자가 있으면 사용
+    text="$*"                              # 1순위: 인자
+  elif [ ! -t 0 ]; then
+    text=$(cat)                            # 2순위: 파이프 (stdin)
   elif [ -n "$TMUX" ]; then
-    text=$(tmux save-buffer - 2>/dev/null) # tmux buffer에서 읽기
+    text=$(tmux save-buffer - 2>/dev/null) # 3순위: tmux buffer
   fi
-  [ -z "$text" ] && { echo "Usage: qr <text> or copy to tmux buffer first"; return 1; }
+  [ -z "$text" ] && { echo "Usage: qr <text> or pipe input"; return 1; }
   echo "QR (${#text} chars):"
   echo "$text" | qrencode -t UTF8
 }
 ```
+
+**우선순위**: 인자 > 파이프 > tmux buffer
 
 ## 자주 묻는 질문
 
