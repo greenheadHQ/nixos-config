@@ -44,11 +44,6 @@
         default = "Claude Code Temp";
         description = "Name of the album to cleanup";
       };
-      retentionDays = lib.mkOption {
-        type = lib.types.int;
-        default = 7;
-        description = "Days to retain images before deletion";
-      };
     };
   };
 

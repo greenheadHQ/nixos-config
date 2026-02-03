@@ -65,7 +65,8 @@ volumes = [
 homeserver.immichCleanup.enable = true;
 ```
 
-- "Claude Code Temp" 앨범의 이미지를 7일 후 자동 삭제
-- systemd timer로 매일 03:00 실행
+- "Claude Code Temp" 앨범의 모든 이미지를 매일 삭제
+- systemd timer로 매일 07:00 KST 실행
+- Pushover 알림 전송
 
 상세 설정: [scriptable-immich-upload.md](scriptable-immich-upload.md)

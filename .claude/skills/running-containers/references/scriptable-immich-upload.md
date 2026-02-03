@@ -156,7 +156,7 @@ volumes = [
 
 ## 자동 삭제 설정
 
-NixOS에서 7일 후 "Claude Code Temp" 앨범의 이미지를 자동 삭제합니다.
+NixOS에서 "Claude Code Temp" 앨범의 모든 이미지를 매일 삭제합니다.
 
 ### 활성화
 
@@ -164,7 +164,6 @@ NixOS에서 7일 후 "Claude Code Temp" 앨범의 이미지를 자동 삭제합�
 # modules/nixos/configuration.nix
 homeserver.immichCleanup.enable = true;
 homeserver.immichCleanup.albumName = "Claude Code Temp";  # 기본값
-homeserver.immichCleanup.retentionDays = 7;               # 기본값
 ```
 
 ### 관련 파일
@@ -174,13 +173,15 @@ homeserver.immichCleanup.retentionDays = 7;               # 기본값
 | `modules/nixos/options/homeserver.nix` | mkOption 정의 |
 | `modules/nixos/programs/immich-cleanup/default.nix` | systemd service + timer |
 | `modules/nixos/programs/immich-cleanup/files/cleanup-script.sh` | 삭제 스크립트 |
-| `secrets/immich-api-key.age` | API 키 (agenix) |
+| `secrets/immich-api-key.age` | Immich API 키 (agenix) |
+| `secrets/pushover-immich.age` | Pushover 알림 (agenix) |
 
 ### 동작 방식
 
-- **스케줄**: 매일 03:00 (systemd timer)
-- **대상**: `albumName` 앨범에서 `retentionDays` 이상 경과한 이미지
+- **스케줄**: 매일 07:00 KST (systemd timer)
+- **대상**: `albumName` 앨범의 **모든 이미지**
 - **삭제 방식**: Immich API `force=true` (휴지통 우회)
+- **알림**: Pushover로 삭제 결과 전송
 
 ### 수동 실행
 

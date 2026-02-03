@@ -1,6 +1,6 @@
 # modules/nixos/programs/immich-cleanup/default.nix
 # Immich 임시 앨범 자동 정리 (Claude Code Temp)
-# 모바일 SSH에서 Claude Code로 전달한 이미지를 일정 기간 후 자동 삭제
+# 모바일 SSH에서 Claude Code로 전달한 임시 이미지를 매일 전체 삭제
 {
   config,
   pkgs,
@@ -16,6 +16,7 @@ let
 
   immichUrl = "http://${minipcTailscaleIP}:${toString immichCfg.port}";
   apiKeyPath = config.age.secrets.immich-api-key.path;
+  pushoverCredPath = config.age.secrets.pushover-immich.path;
 
   cleanupScript = pkgs.writeShellApplication {
     name = "immich-cleanup";
@@ -37,6 +38,11 @@ in
       mode = "0400";
       owner = "root";
     };
+    age.secrets.pushover-immich = {
+      file = ../../../../secrets/pushover-immich.age;
+      mode = "0400";
+      owner = "root";
+    };
 
     # ═══════════════════════════════════════════════════════════════
     # systemd 서비스
@@ -53,27 +59,30 @@ in
         Type = "oneshot";
         ExecStartPre = import ../../lib/tailscale-wait.nix { inherit pkgs; };
         ExecStart = "${cleanupScript}/bin/immich-cleanup";
-        ConditionPathExists = apiKeyPath;
+        ConditionPathExists = [
+          apiKeyPath
+          pushoverCredPath
+        ];
 
         # 환경변수
         Environment = [
           "IMMICH_URL=${immichUrl}"
           "API_KEY_FILE=${apiKeyPath}"
           "ALBUM_NAME=${cfg.albumName}"
-          "RETENTION_DAYS=${toString cfg.retentionDays}"
+          "PUSHOVER_CRED_FILE=${pushoverCredPath}"
         ];
       };
     };
 
     # ═══════════════════════════════════════════════════════════════
-    # systemd 타이머 (매일 03:00 실행)
+    # systemd 타이머 (매일 07:00 KST 실행)
     # ═══════════════════════════════════════════════════════════════
     systemd.timers.immich-cleanup = {
       description = "Daily Immich temp album cleanup";
       wantedBy = [ "timers.target" ];
 
       timerConfig = {
-        OnCalendar = "*-*-* 03:00:00";
+        OnCalendar = "*-*-* 07:00:00";
         Persistent = true; # 부팅 시 놓친 실행 보완
         RandomizedDelaySec = "5m"; # 정확히 같은 시간에 실행 방지
       };

@@ -154,7 +154,7 @@ WebFetch는 Anthropic 서버에서 실행되어 Tailscale 내부 IP에 접근 �
 경로 붙여넣기 → Claude Code Read 도구로 이미지 확인
 
 [자동화]
-7일 후 "Claude Code Temp" 앨범 자동 삭제
+매일 07:00 KST "Claude Code Temp" 앨범 전체 삭제 + Pushover 알림
 ```
 
 ### 경로 변환 (중요)
