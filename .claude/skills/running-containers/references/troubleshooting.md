@@ -291,3 +291,136 @@ sudo podman exec immich-redis redis-cli SET test "hello"
 - 공식 설정을 참고하여 불필요한 영속성 설정 제거 검토
 - 주석이 실제 동작과 일치하는지 검증 필요
 - `stop-writes-on-bgsave-error` 옵션으로 인해 RDB 실패가 전체 쓰기 차단으로 이어질 수 있음
+
+---
+
+## NixOS systemd 설정
+
+### ConditionPathExists가 무시되는 문제
+
+**날짜**: 2026-02-04
+
+**증상**: systemd 로그에서 경고 메시지:
+
+```
+Unknown key 'ConditionPathExists' in section [Service], ignoring.
+```
+
+**원인**:
+
+`ConditionPathExists`를 `serviceConfig`에 넣었으나, 이 옵션은 `[Unit]` 섹션에 속함.
+
+```nix
+# 잘못된 설정
+serviceConfig = {
+  ConditionPathExists = [ ... ];  # ❌ [Service] 섹션으로 생성됨
+};
+```
+
+**해결**:
+
+`unitConfig`에 설정:
+
+```nix
+# 올바른 설정
+unitConfig = {
+  ConditionPathExists = [
+    "/run/agenix/immich-api-key"
+    "/run/agenix/pushover-immich"
+  ];
+};
+```
+
+**교훈**:
+
+| NixOS 어트리뷰트 | systemd 섹션 | 용도 |
+|-----------------|-------------|------|
+| `unitConfig` | `[Unit]` | 조건, 의존성 등 |
+| `serviceConfig` | `[Service]` | 실행 설정, 환경변수 등 |
+
+---
+
+### 환경변수에 공백이 있으면 분리되는 문제
+
+**날짜**: 2026-02-04
+
+**증상**: systemd 로그에서 경고 메시지:
+
+```
+Invalid environment assignment, ignoring: Code
+Invalid environment assignment, ignoring: Temp
+```
+
+환경변수 `ALBUM_NAME="Claude Code Temp"`가 "Claude", "Code", "Temp"로 분리됨.
+
+**원인**:
+
+`serviceConfig.Environment` 리스트 사용 시 공백 처리 문제:
+
+```nix
+# 잘못된 설정
+serviceConfig.Environment = [
+  "ALBUM_NAME=${cfg.albumName}"  # ❌ 공백이 분리됨
+];
+```
+
+**해결**:
+
+`environment` 어트리뷰트 셋 사용:
+
+```nix
+# 올바른 설정
+environment = {
+  ALBUM_NAME = cfg.albumName;  # ✅ NixOS가 자동으로 처리
+};
+```
+
+**교훈**:
+
+| 방식 | 공백 처리 | 권장 |
+|------|----------|------|
+| `serviceConfig.Environment` | 수동 이스케이프 필요 | ❌ |
+| `environment` | 자동 처리 | ✅ |
+
+---
+
+### agenix 시크릿 파일 형식 주의
+
+**날짜**: 2026-02-04
+
+**증상**: API 호출 시 401 Unauthorized:
+
+```
+{"message":"Invalid API key","error":"Unauthorized","statusCode":401}
+```
+
+**원인**:
+
+시크릿 파일이 `KEY=value` 형식으로 저장되어 있는데, `cat`으로 읽으면 전체 문자열이 됨:
+
+```bash
+# 파일 내용
+IMMICH_API_KEY=<YOUR_KEY>...
+
+# cat으로 읽으면
+API_KEY="IMMICH_API_KEY=<YOUR_KEY>..."  # ❌ 전체가 API 키가 됨
+```
+
+**해결**:
+
+`source`로 로드 후 변수 사용:
+
+```bash
+# 올바른 방식
+source "$API_KEY_FILE"
+API_KEY="$IMMICH_API_KEY"  # ✅ 실제 값만 사용
+```
+
+**교훈**:
+
+| 파일 형식 | 읽기 방식 |
+|----------|----------|
+| 순수 값 (`<YOUR_KEY>`) | `cat "$FILE"` |
+| 변수 할당 (`KEY=value`) | `source "$FILE"` 후 `$KEY` |
+
+시크릿 파일 생성 시 형식을 문서화하고 일관성 유지가 중요함.
