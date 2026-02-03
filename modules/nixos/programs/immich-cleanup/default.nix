@@ -55,22 +55,25 @@ in
       ];
       wants = [ "network-online.target" ];
 
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStartPre = import ../../lib/tailscale-wait.nix { inherit pkgs; };
-        ExecStart = "${cleanupScript}/bin/immich-cleanup";
+      unitConfig = {
         ConditionPathExists = [
           apiKeyPath
           pushoverCredPath
         ];
+      };
 
-        # 환경변수
-        Environment = [
-          "IMMICH_URL=${immichUrl}"
-          "API_KEY_FILE=${apiKeyPath}"
-          "ALBUM_NAME=${cfg.albumName}"
-          "PUSHOVER_CRED_FILE=${pushoverCredPath}"
-        ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStartPre = import ../../lib/tailscale-wait.nix { inherit pkgs; };
+        ExecStart = "${cleanupScript}/bin/immich-cleanup";
+      };
+
+      # 환경변수 (공백 포함 값은 따옴표 필요)
+      environment = {
+        IMMICH_URL = immichUrl;
+        API_KEY_FILE = apiKeyPath;
+        ALBUM_NAME = cfg.albumName;
+        PUSHOVER_CRED_FILE = pushoverCredPath;
       };
     };
 

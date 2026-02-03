@@ -9,8 +9,10 @@ set -euo pipefail
 : "${ALBUM_NAME:?ALBUM_NAME is required}"
 : "${PUSHOVER_CRED_FILE:?PUSHOVER_CRED_FILE is required}"
 
-# API 키 로드
-API_KEY=$(cat "$API_KEY_FILE")
+# API 키 로드 (IMMICH_API_KEY=... 형식)
+# shellcheck disable=SC1090
+source "$API_KEY_FILE"
+API_KEY="$IMMICH_API_KEY"
 
 # Pushover credentials 로드
 # shellcheck disable=SC1090
