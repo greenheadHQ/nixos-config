@@ -56,6 +56,19 @@ vim.api.nvim_create_autocmd(
 -- 이 파일이 로드되는 시점(VeryLazy)에 즉시 한 번 실행하여 초기 레이아웃 설정
 adjust_for_width()
 
+-- ── Markdown: 맞춤법 검사 비활성화 ──
+-- LazyVim lang.markdown extra가 spell을 활성화하지만, 한글에서는 노이즈만 발생
+-- vim.schedule: LazyVim autocmd보다 나중에 실행되도록 지연
+vim.api.nvim_create_autocmd("FileType", {
+  group = vim.api.nvim_create_augroup("markdown_spell_off", { clear = true }),
+  pattern = { "markdown", "markdown.mdx" },
+  callback = function()
+    vim.schedule(function()
+      vim.opt_local.spell = false
+    end)
+  end,
+})
+
 -- ── FocusGained: 외부 앱에서 돌아올 때 영문 IM 전환 (macOS) ──
 -- Vim 내장 명령(dd, yy, w, gj 등)은 한글 키맵 등가를 만들 수 없으므로
 -- 포커스 복귀 시 영문으로 전환하여 내장 명령이 정상 동작하게 함

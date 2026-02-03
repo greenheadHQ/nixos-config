@@ -23,3 +23,6 @@ opt.copyindent = true
 -- 예: 커서가 화면 맨 아래에서 8줄 위에 도달하면 자동으로 스크롤됨
 -- (LazyVim 기본값은 4줄, 8줄로 늘려서 더 넓은 맥락 유지)
 opt.scrolloff = 8
+
+-- 맞춤법 검사 비활성화 (LazyVim lang.markdown이 활성화하지만 한글에서 노이즈만 발생)
+opt.spell = false

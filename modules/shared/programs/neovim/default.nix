@@ -41,6 +41,7 @@ in
 
         # ── 린터 ──
         statix # Nix
+        markdownlint-cli2 # Markdown (LazyVim lang.markdown extra 의존)
 
         # ── 빌드 도구 ──
         tree-sitter # nvim-treesitter 파서 컴파일 CLI (>= 0.25)
