@@ -73,13 +73,26 @@ qr "공유할 텍스트"
 [iPhone] 카메라로 스캔 → 복사 (2-3탭, 약 5초)
 ```
 
+## 긴 텍스트 처리
+
+600바이트 초과 시 자동으로 Pushover로 전송됩니다.
+
+```
+[600 bytes 이하] → 터미널에 QR 코드 출력
+[600 bytes 초과] → Pushover 알림으로 iPhone에 전송
+```
+
+**참고**: 한글은 글자당 3바이트 (UTF-8). 영문 600자 vs 한글 ~200자.
+
 ## 제한사항
 
 | 제한 | 설명 |
 |------|------|
-| 길이 제한 | ~2,000자 (더 길면 스캔 어려움) |
+| QR 바이트 제한 | 600 bytes (iPhone Termius 화면 너비 제한) |
+| Pushover 제한 | 1,024자 (긴 메시지는 잘림) |
 | 출력 환경 | UTF8 지원 터미널 필요 |
 | 한글 | UTF8 인코딩으로 정상 지원 |
+| iPhone Termius 폰트 | **JetBrains Mono 권장** (Fira Code는 블록 문자 깨짐) |
 
 ## 구현 위치
 
@@ -98,9 +111,15 @@ qr() {
   elif [ -n "$TMUX" ]; then
     text=$(tmux save-buffer - 2>/dev/null) # 3순위: tmux buffer
   fi
-  [ -z "$text" ] && { echo "Usage: qr <text> or pipe input"; return 1; }
-  echo "QR (${#text} chars):"
-  echo "$text" | qrencode -t UTF8
+  [ -z "$text" ] && return 1
+
+  if [ ${#text} -gt 500 ]; then
+    # Pushover로 전송
+    source "$HOME/.config/pushover/claude-code"
+    curl -s --data-urlencode "message=$text" ...
+  else
+    echo "$text" | qrencode -t UTF8
+  fi
 }
 ```
 
@@ -110,13 +129,19 @@ qr() {
 
 ### Q: 긴 텍스트는 어떻게 공유하나요?
 
-A: QR 코드는 ~2,000자 제한이 있습니다. 긴 텍스트는:
-- 파일로 저장 후 immich 모바일 SSH로 전송
-- 여러 개의 QR 코드로 분할
+A: 500자 이상은 자동으로 Pushover로 iPhone에 전송됩니다. 별도 조치 필요 없음.
 
 ### Q: iPhone에서 스캔이 안 됩니다
 
 A: 터미널 글꼴 크기를 키우거나, 터미널 창을 확대하여 QR 코드가 더 크게 표시되도록 합니다.
+
+### Q: QR 코드가 깨져 보입니다 (??????)
+
+A: Termius 폰트 문제입니다. **JetBrains Mono**로 변경하세요. Fira Code는 유니코드 블록 문자(▀, ▄, █)를 제대로 렌더링하지 못합니다.
+
+### Q: ASCII 모드(`-t ASCII`)는 안 되나요?
+
+A: ASCII 모드는 iPhone 카메라에서 인식되지 않습니다. UTF8 모드만 사용하세요.
 
 ### Q: macOS에서도 사용 가능한가요?
 
