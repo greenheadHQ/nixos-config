@@ -73,4 +73,4 @@ homeserver.plex.enable = false;
 | agenix, age, secret, .age 파일, 재암호화 | `managing-secrets` |
 | Neovim, LazyVim, LSP, nvim 플러그인, lazy.nvim, 한글 입력, im-select | `configuring-neovim` |
 | Cursor extensions, extensions.json | `managing-cursor` |
-| QR 코드, 텍스트 공유, MiniPC→iPhone, qrencode | `sharing-qr` |
+| Pushover, 텍스트 공유, MiniPC→iPhone, push 함수 | `sharing-text` |

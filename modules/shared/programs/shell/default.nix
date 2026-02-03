@@ -769,13 +769,12 @@ in
       ''
 
       #─────────────────────────────────────────────────────────────────────────
-      # QR 코드 생성 (MiniPC -> iPhone 텍스트 공유)
+      # Pushover 텍스트 공유 (MiniPC -> iPhone)
       #─────────────────────────────────────────────────────────────────────────
       ''
-        # qr: 텍스트를 QR 코드로 출력 (Unix-like)
-        # 사용법: qr <텍스트> | echo "text" | qr | tmux buffer
-        # 600바이트 초과 시 Pushover로 전송 (iPhone Termius 화면 제한)
-        qr() {
+        # push: 텍스트를 Pushover로 iPhone에 전송 (Unix-like)
+        # 사용법: push <텍스트> | echo "text" | push | tmux buffer
+        push() {
           local text
           if [ $# -gt 0 ]; then
             text="$*"
@@ -784,28 +783,22 @@ in
           elif [ -n "$TMUX" ]; then
             text=$(tmux save-buffer - 2>/dev/null)
           fi
-          [ -z "$text" ] && { echo "Usage: qr <text> or pipe input"; return 1; }
+          [ -z "$text" ] && { echo "Usage: push <text> or pipe input"; return 1; }
 
-          local bytes=$(echo -n "$text" | wc -c)
-          if [ "$bytes" -gt 600 ]; then
-            local cred="$HOME/.config/pushover/claude-code"
-            if [ ! -f "$cred" ]; then
-              echo "Error: Pushover credentials not found" >&2
-              return 1
-            fi
-            source "$cred"
-            curl -s -X POST \
-              -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
-              --data-urlencode "token=$PUSHOVER_TOKEN" \
-              --data-urlencode "user=$PUSHOVER_USER" \
-              --data-urlencode "title=📋 텍스트 공유 (''${#text}자)" \
-              --data-urlencode "message=$text" \
-              https://api.pushover.net/1/messages.json > /dev/null
-            echo "Pushover 전송 완료 (''${#text}자, $bytes bytes)"
-          else
-            echo "QR (''${#text}자, $bytes bytes):"
-            echo "$text" | qrencode -t UTF8
+          local cred="$HOME/.config/pushover/claude-code"
+          if [ ! -f "$cred" ]; then
+            echo "Error: Pushover credentials not found" >&2
+            return 1
           fi
+          source "$cred"
+          curl -s -X POST \
+            -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+            --data-urlencode "token=$PUSHOVER_TOKEN" \
+            --data-urlencode "user=$PUSHOVER_USER" \
+            --data-urlencode "title=📋 텍스트 공유 (''${#text}자)" \
+            --data-urlencode "message=$text" \
+            https://api.pushover.net/1/messages.json > /dev/null
+          echo "✓ Pushover 전송 (''${#text}자)"
         }
       ''
     ];
