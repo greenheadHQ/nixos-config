@@ -767,6 +767,25 @@ in
           [[ -n "$selected" ]] && echo "$selected" | xargs nvim
         }
       ''
+
+      #─────────────────────────────────────────────────────────────────────────
+      # QR 코드 생성 (MiniPC -> iPhone 텍스트 공유)
+      #─────────────────────────────────────────────────────────────────────────
+      ''
+        # qr: 텍스트를 QR 코드로 출력
+        # 사용법: qr <텍스트> 또는 tmux buffer에서 읽기
+        qr() {
+          local text
+          if [ $# -gt 0 ]; then
+            text="$*"
+          elif [ -n "$TMUX" ]; then
+            text=$(tmux save-buffer - 2>/dev/null)
+          fi
+          [ -z "$text" ] && { echo "Usage: qr <text> or copy to tmux buffer first"; return 1; }
+          echo "QR (''${#text} chars):"
+          echo "$text" | qrencode -t UTF8
+        }
+      ''
     ];
   };
 
