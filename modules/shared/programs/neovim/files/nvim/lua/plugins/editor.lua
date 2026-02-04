@@ -44,6 +44,18 @@ return {
     },
   },
 
+  -- ── nvim-treesitter-context: 코드 컨텍스트 상단 고정 ──
+  -- 현재 커서가 있는 함수/클래스/조건문의 시작 줄을 상단에 고정 표시
+  -- VSCode/Cursor의 sticky scroll과 동일한 기능
+  -- <leader>ut 로 토글 가능
+  {
+    "nvim-treesitter/nvim-treesitter-context",
+    event = "VeryLazy",
+    opts = {
+      max_lines = 3, -- 상단에 표시할 최대 줄 수
+    },
+  },
+
   -- ── flash.nvim: 점프/선택 레이블 가독성 개선 ──
   -- backdrop = true: 배경을 어둡게 해서 레이블이 눈에 띄게
   {
