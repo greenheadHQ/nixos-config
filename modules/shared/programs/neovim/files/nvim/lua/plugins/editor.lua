@@ -44,6 +44,17 @@ return {
     },
   },
 
+  -- ── flash.nvim: 점프/선택 레이블 가독성 개선 ──
+  -- backdrop = true: 배경을 어둡게 해서 레이블이 눈에 띄게
+  {
+    "folke/flash.nvim",
+    opts = {
+      highlight = {
+        backdrop = true,
+      },
+    },
+  },
+
   -- ── vim-abolish: case 전환 + 약어 ──
   -- 커서가 단어 위에 있을 때 cr{문자}로 case 전환:
   --   crs → snake_case    (fooBar → foo_bar)
