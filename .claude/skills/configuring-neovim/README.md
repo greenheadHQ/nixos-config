@@ -30,6 +30,7 @@ dit       태그 안 내용 삭제     <div></div>
 dat       태그 전체 삭제        태그 포함해서 통째로 제거
 vit       태그 안 내용 선택     Visual 모드로 범위 확인
 vat       태그 전체 선택        여는 태그 ~ 닫는 태그
+dst       태그만 삭제 (내용 유지)  <div>hello</div> → hello  (nvim-surround)
 ```
 
 ### 검색 + 반복 편집 (세미 수동 치환)
