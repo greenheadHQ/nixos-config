@@ -196,10 +196,10 @@ nvim-surround의 모든 동작은 `.`으로 **반복 가능**하다.
 | 키 | 변환 | 예시 |
 |----|------|------|
 | `crs` | snake_case | `fooBar` → `foo_bar` |
-| `crm` | MixedCase (PascalCase) | `foo_bar` → `FooBar` |
+| `crm` | PascalCase | `foo_bar` → `FooBar` |
 | `crc` | camelCase | `foo_bar` → `fooBar` |
 | `cru` | UPPER_CASE | `fooBar` → `FOO_BAR` |
-| `cr-` | dash-case (kebab-case) | `fooBar` → `foo-bar` |
+| `cr-` | kebab-case | `fooBar` → `foo-bar` |
 | `cr.` | dot.case | `fooBar` → `foo.bar` |
 | `cr<space>` | space case | `fooBar` → `foo bar` |
 | `crt` | Title Case | `fooBar` → `Foo Bar` |
