@@ -52,6 +52,20 @@ return {
       highlight = {
         backdrop = true,
       },
+      modes = {
+        -- Ctrl+Space treesitter selection 모드
+        treesitter = {
+          highlight = {
+            backdrop = true,
+          },
+        },
+        -- treesitter_search 모드 (R in o-pending)
+        treesitter_search = {
+          highlight = {
+            backdrop = true,
+          },
+        },
+      },
     },
   },
 
