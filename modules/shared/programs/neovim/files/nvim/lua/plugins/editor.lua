@@ -19,6 +19,31 @@ return {
     opts = {},
   },
 
+  -- ── auto-save.nvim: 자동 저장 ──
+  -- 변경 후 일정 시간(debounce) 경과 시 자동 저장
+  -- lazygit, fork 등 외부 도구에서 실시간 diff 확인 가능
+  {
+    "okuuva/auto-save.nvim",
+    event = { "InsertLeave", "TextChanged" },
+    opts = {
+      -- 저장 전 debounce 시간 (ms)
+      debounce_delay = 1000,
+      -- 저장 조건: 일반 파일 버퍼만
+      condition = function(buf)
+        local buftype = vim.bo[buf].buftype
+        local filetype = vim.bo[buf].filetype
+        -- 특수 버퍼 제외
+        if buftype ~= "" then return false end
+        -- 민감한 파일 제외
+        if filetype == "gitcommit" then return false end
+        return true
+      end,
+      -- 저장 메시지 비활성화 (조용히 저장)
+      noautocmd = false,
+      execution_message = { enabled = false },
+    },
+  },
+
   -- ── vim-abolish: case 전환 + 약어 ──
   -- 커서가 단어 위에 있을 때 cr{문자}로 case 전환:
   --   crs → snake_case    (fooBar → foo_bar)
