@@ -201,9 +201,6 @@ nvim-surround의 모든 동작은 `.`으로 **반복 가능**하다.
 | `crc` | camelCase | `foo_bar` → `fooBar` |
 | `cru` | UPPER_CASE | `fooBar` → `FOO_BAR` |
 | `cr-` | kebab-case | `fooBar` → `foo-bar` |
-| `cr.` | dot.case | `fooBar` → `foo.bar` |
-| `cr<space>` | space case | `fooBar` → `foo bar` |
-| `crt` | Title Case | `fooBar` → `Foo Bar` |
 
 > **실전**: React 컴포넌트명(PascalCase) ↔ 파일명(kebab-case), Python(snake_case) ↔ JS(camelCase) 전환.
 

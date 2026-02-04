@@ -48,10 +48,9 @@ return {
   -- 커서가 단어 위에 있을 때 cr{문자}로 case 전환:
   --   crs → snake_case    (fooBar → foo_bar)
   --   crc → camelCase     (foo_bar → fooBar)
-  --   crm → MixedCase     (foo_bar → FooBar)
+  --   crm → PascalCase    (foo_bar → FooBar)
   --   cru → UPPER_CASE    (fooBar → FOO_BAR)
-  --   cr- → dash-case     (fooBar → foo-bar)
-  --   cr. → dot.case      (fooBar → foo.bar)
+  --   cr- → kebab-case    (fooBar → foo-bar)
   {
     "tpope/vim-abolish",
     event = "VeryLazy",
