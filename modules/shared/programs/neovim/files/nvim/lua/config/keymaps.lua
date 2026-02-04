@@ -32,6 +32,26 @@ vim.keymap.set("i", "jk", "<Esc>", { desc = "Esc (모바일 UX)" })
 vim.keymap.set("t", "<C-\\>", "<C-\\><C-n>", { desc = "터미널 Normal 모드" })
 
 -- ============================================================================
+-- 파일 경로 복사 (클립보드)
+-- ============================================================================
+-- 현재 파일의 경로를 시스템 클립보드에 복사
+-- 다른 도구(터미널, Slack, GitHub 등)에 경로를 붙여넣을 때 유용
+
+-- 상대 경로 복사 (프로젝트 루트 기준)
+vim.keymap.set("n", "<leader>yp", function()
+  local path = vim.fn.expand("%")
+  vim.fn.setreg("+", path)
+  vim.notify("Copied: " .. path, vim.log.levels.INFO)
+end, { desc = "Copy relative path" })
+
+-- 절대 경로 복사
+vim.keymap.set("n", "<leader>yP", function()
+  local path = vim.fn.expand("%:p")
+  vim.fn.setreg("+", path)
+  vim.notify("Copied: " .. path, vim.log.levels.INFO)
+end, { desc = "Copy absolute path" })
+
+-- ============================================================================
 -- 버퍼가 모두 닫힌 상태에서 파일 열기
 -- ============================================================================
 -- <leader>bd 등으로 모든 버퍼를 닫으면 H/L (버퍼 전환)이 동작하지 않는다.
