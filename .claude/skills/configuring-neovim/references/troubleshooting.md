@@ -17,6 +17,15 @@
 - [indent-blankline setup 함수 호출 실패](#indent-blankline-setup-함수-호출-실패)
 - [tree-sitter CLI 누락 (파서 컴파일 불가)](#tree-sitter-cli-누락-파서-컴파일-불가)
 - [mini.surround 조직 이름 변경 경고](#minisurround-조직-이름-변경-경고)
+- [which-key 사용법](#which-key-사용법)
+- [파일 저장](#파일-저장)
+- [터미널 true color](#터미널-true-color)
+- [자동 포맷 미동작](#자동-포맷-미동작)
+- [jk 매핑 딜레이](#jk-매핑-딜레이)
+- [숨김 파일 표시](#숨김-파일-표시)
+- [버퍼 탐색 불가](#버퍼-탐색-불가)
+- [첫 실행 시 에러](#첫-실행-시-에러)
+- [설정 파일 위치](#설정-파일-위치)
 
 ## LSP 서버가 시작되지 않음
 
@@ -249,3 +258,75 @@ Please update your config for LazyVim
 ```
 
 **교훈**: LazyVim 업데이트 후 플러그인 조직 이전 경고가 나타나면 `disabled.lua`의 `owner/repo`를 확인할 것.
+
+## which-key 사용법
+
+**증상**: 키를 뭘 눌러야 할지 모르겠다.
+
+**해결**: Normal 모드에서 **Space**를 누르고 기다리면 which-key 팝업이 뜬다. 카테고리별로 가능한 키가 전부 나열된다.
+
+## 파일 저장
+
+`:w` 입력 후 Enter. LazyVim은 Insert 모드를 벗어나면 자동 저장하므로, 보통은 직접 저장할 필요 없다.
+
+## 터미널 true color
+
+**증상**: 터미널 색상이 이상하다.
+
+**원인**: 터미널이 true color를 미지원.
+
+**해결**: Ghostty, iTerm2, Kitty 등 사용. Termius는 제한적.
+
+```bash
+# true color 테스트
+echo -e "\033[38;2;255;100;0mTRUECOLOR\033[0m"
+```
+
+## 자동 포맷 미동작
+
+**증상**: 저장 시 자동 포맷이 안 된다.
+
+**진단**:
+1. `<leader>cf`로 수동 포맷 테스트
+2. 동작하면 autoformat 설정 문제, 안 되면 포매터 바이너리 문제
+
+```vim
+:LazyFormatInfo      " 현재 파일의 포매터 설정 확인
+```
+
+## jk 매핑 딜레이
+
+**증상**: Insert 모드에서 "j"를 누르면 잠깐 멈춘다.
+
+**원인**: `jk` → Esc 매핑 때문. "j" 입력 후 "k"를 기다리는 시간(기본 300ms) 동안 멈춤이 발생한다.
+
+**해결**: "jk"를 사용하지 않으려면 `keymaps.lua`에서 해당 줄을 삭제하면 된다.
+
+## 숨김 파일 표시
+
+**증상**: 파일 탐색기에서 숨김 파일이 안 보인다.
+
+**해결**: 기본 설정에서 dotfile과 gitignored 파일을 표시한다. 안 보인다면 탐색기에서 `H`를 눌러 숨김 파일 토글을 확인.
+
+## 버퍼 탐색 불가
+
+**증상**: 모든 버퍼를 닫았더니 H/L이 안 된다.
+
+**해결**: 버퍼가 없으면 H/L 전환이 불가능하다. `<leader>ff`로 파일을 찾거나, `<leader>e`로 탐색기를 열거나, `<leader>qs`로 이전 세션을 복원하면 된다.
+
+## 첫 실행 시 에러
+
+**증상**: nvim을 처음 열면 에러가 뜬다.
+
+**원인**: 첫 실행 시 lazy.nvim이 플러그인을 다운로드하고 tree-sitter 파서를 컴파일한다. 네트워크가 필요하며, 완료까지 잠깐 기다려야 한다.
+
+**해결**: 에러가 지속되면 클린 재설치:
+
+```bash
+rm -rf ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim
+nvim
+```
+
+## 설정 파일 위치
+
+`~/.config/nvim`이 이 repo의 `modules/shared/programs/neovim/files/nvim/`으로 심볼릭 링크되어 있다. 해당 디렉토리의 Lua 파일을 직접 수정하면 nvim 재시작 시 반영된다. `nrs` 빌드가 필요 없다.

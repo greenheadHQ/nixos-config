@@ -19,6 +19,19 @@ return {
     opts = {},
   },
 
+  -- ── vim-abolish: case 전환 + 약어 ──
+  -- 커서가 단어 위에 있을 때 cr{문자}로 case 전환:
+  --   crs → snake_case    (fooBar → foo_bar)
+  --   crc → camelCase     (foo_bar → fooBar)
+  --   crm → MixedCase     (foo_bar → FooBar)
+  --   cru → UPPER_CASE    (fooBar → FOO_BAR)
+  --   cr- → dash-case     (fooBar → foo-bar)
+  --   cr. → dot.case      (fooBar → foo.bar)
+  {
+    "tpope/vim-abolish",
+    event = "VeryLazy",
+  },
+
   -- ── snacks.nvim: 파일 탐색기 + 퍼지 검색 ──
   -- explorer: <leader>e 로 열기/닫기 (snacks.explorer, LazyVim v14+ 기본)
   -- picker: <leader>ff = 파일 이름으로 검색, <leader>fg = Git 파일 찾기, <leader>/ = 텍스트 검색
