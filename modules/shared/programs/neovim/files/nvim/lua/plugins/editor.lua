@@ -38,9 +38,7 @@ return {
         if filetype == "gitcommit" then return false end
         return true
       end,
-      -- 저장 메시지 비활성화 (조용히 저장)
       noautocmd = false,
-      execution_message = { enabled = false },
     },
   },
 
