@@ -26,6 +26,7 @@
 - [버퍼 탐색 불가](#버퍼-탐색-불가)
 - [첫 실행 시 에러](#첫-실행-시-에러)
 - [설정 파일 위치](#설정-파일-위치)
+- [markdownlint 규칙이 적용되지 않음](#markdownlint-규칙이-적용되지-않음)
 
 ## LSP 서버가 시작되지 않음
 
@@ -330,3 +331,32 @@ nvim
 ## 설정 파일 위치
 
 `~/.config/nvim`이 이 repo의 `modules/shared/programs/neovim/files/nvim/`으로 심볼릭 링크되어 있다. 해당 디렉토리의 Lua 파일을 직접 수정하면 nvim 재시작 시 반영된다. `nrs` 빌드가 필요 없다.
+
+## markdownlint 규칙이 적용되지 않음
+
+**증상**: `~/.markdownlint.jsonc`에서 규칙을 비활성화했는데 nvim에서 여전히 경고 표시.
+
+**원인**: markdownlint-cli2는 홈 디렉토리 설정을 자동 검색하지 않음. 프로젝트 디렉토리에서 상위로만 검색.
+
+**해결**: `lua/plugins/lint.lua`에서 nvim-lint의 markdownlint-cli2에 `--config` 옵션 추가.
+
+```lua
+return {
+  {
+    "mfussenegger/nvim-lint",
+    opts = {
+      linters = {
+        ["markdownlint-cli2"] = {
+          prepend_args = { "--config", vim.fn.expand("~/.markdownlint.jsonc") },
+        },
+      },
+    },
+  },
+}
+```
+
+**진단**:
+```vim
+:lua print(vim.inspect(require("lint").linters["markdownlint-cli2"].args))
+" 결과에 --config와 경로가 포함되어야 함
+```
