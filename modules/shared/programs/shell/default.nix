@@ -29,8 +29,10 @@ in
     # broot: tree 스타일 출력
     bt = "br -c :pt";
 
-    # Claude Code (권한 스킵 + MCP 설정 자동 로드)
-    claude = "command claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
+    # Claude Code (macOS에서만 Claude in Chrome 활성화 + 권한 스킵 + MCP 설정 자동 로드)
+    claude = "command claude${
+      if pkgs.stdenv.isDarwin then " --chrome" else ""
+    } --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 
     # 디렉토리 이동 단축
     ".." = "cd ..";

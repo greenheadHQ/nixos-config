@@ -2,9 +2,9 @@
 name: configuring-claude-code
 description: |
   This skill should be used when the user asks "how to create a hook",
-  "add a plugin", or encounters Claude Code configuration issues,
-  settings.json read-only problems, ghost plugin issues. Covers
-  PreToolUse/PostToolUse/Stop hooks and plugin installation.
+  "add a plugin", "claude alias", "--chrome flag", or encounters Claude Code
+  configuration issues, settings.json read-only problems, ghost plugin issues.
+  Covers PreToolUse/PostToolUse/Stop hooks, plugin installation, and shell alias.
 ---
 
 # Claude Code 설정
@@ -69,6 +69,27 @@ claude plugins list
   }
 }
 ```
+
+## Shell Alias 설정
+
+**파일 위치**: `modules/shared/programs/shell/default.nix`
+
+### claude alias
+
+플랫폼별 동적 플래그 적용:
+
+```nix
+claude = "command claude${if pkgs.stdenv.isDarwin then " --chrome" else ""} --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
+```
+
+| 플랫폼 | 결과 |
+|--------|------|
+| macOS | `command claude --chrome --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json` |
+| NixOS | `command claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json` |
+
+- `--chrome`: Claude in Chrome 브라우저 자동화 활성화 (GUI 필요, headless NixOS에서 비활성화)
+- `--dangerously-skip-permissions`: 권한 확인 스킵
+- `--mcp-config`: MCP 서버 설정 자동 로드
 
 ## 자주 발생하는 문제
 
