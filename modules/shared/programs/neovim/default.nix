@@ -57,4 +57,20 @@ in
 
   # NOTE: programs.neovim 외부에 배치 (home.file은 HM 최상위 속성)
   home.file.".config/nvim".source = config.lib.file.mkOutOfStoreSymlink nvimConfigPath;
+
+  # markdownlint 전역 설정 (nvim-lint용)
+  # LazyVim lang.markdown extra가 markdownlint-cli2를 활성화하지만,
+  # 일부 규칙이 실무에서 노이즈를 발생시켜 비활성화
+  home.file.".markdownlint.jsonc".text = ''
+    {
+      // MD013: Line length (기본 80자) - 긴 URL, 테이블에서 노이즈
+      "MD013": false,
+      // MD033: Inline HTML - <details>, <kbd>, <br> 등 실무에서 자주 사용
+      "MD033": false,
+      // MD034: Bare URLs - 현대 렌더러는 자동 링크 지원
+      "MD034": false,
+      // MD041: First line heading - YAML frontmatter에서 false positive
+      "MD041": false
+    }
+  '';
 }
