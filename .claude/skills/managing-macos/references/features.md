@@ -293,6 +293,18 @@ nix search nixpkgs nerd-fonts
 
 `modules/darwin/programs/homebrew.nix`에서 관리됩니다.
 
+### 서드파티 Tap Formula 주의사항
+
+서드파티 tap의 formula는 **전체 경로**로 지정해야 자동 설치됩니다:
+
+```nix
+taps = [ "laishulu/homebrew" ];
+brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
+# brews = [ "macism" ];  # ❌ homebrew/core에서 찾으려고 함 → 설치 안 됨
+```
+
+### Cask 목록
+
 | 앱             | 용도                       |
 | -------------- | -------------------------- |
 | Cursor         | AI 코드 에디터             |

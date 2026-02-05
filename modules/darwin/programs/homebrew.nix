@@ -19,7 +19,7 @@
 
     # Homebrew Formula (CLI 도구)
     brews = [
-      "macism" # macOS Input Source Manager (Neovim 한영 전환 자동화)
+      "laishulu/homebrew/macism" # macOS 입력 소스 전환 (Neovim 한영 전환 자동화)
     ];
 
     # Homebrew Cask (GUI 앱)

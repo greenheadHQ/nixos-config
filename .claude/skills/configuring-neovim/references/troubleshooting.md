@@ -108,6 +108,18 @@ nrs                     # Home Manager가 심볼릭 링크 재생성
 
 외부 앱에서 한글을 쓰다가 Neovim으로 돌아왔을 때 Normal 모드에서 키맵이 동작하지 않는 문제.
 
+**macism 설치** (Homebrew 필수 - nixpkgs는 Swift 빌드 실패):
+```bash
+# 수동 설치
+brew tap laishulu/homebrew
+brew install laishulu/homebrew/macism
+
+# nix-darwin 자동 설치 (homebrew.nix)
+# 서드파티 tap formula는 전체 경로 필수
+taps = [ "laishulu/homebrew" ];
+brews = [ "laishulu/homebrew/macism" ];  # "macism"만 쓰면 설치 안 됨
+```
+
 **현재 구조** (macOS 전용, `macism` 필수):
 
 | 레이어 | 도구 | 파일 | 역할 |
