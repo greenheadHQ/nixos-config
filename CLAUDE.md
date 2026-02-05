@@ -66,6 +66,7 @@ homeserver.plex.enable = false;
 | Claude Code hooks, plugins | `configuring-claude-code` |
 | Hammerspoon hotkeys, launchd stuck, Ghostty | `automating-hammerspoon` |
 | Podman/Docker, immich, container OOM, homeserver.* | `running-containers` |
+| immich 사진 경로, immich 파일 보여줘, 이미치 사진 | `viewing-immich-photo` |
 | Git config, delta, rerere, gitconfig conflicts | `configuring-git` |
 | mise, runtime versions, .nvmrc | `managing-mise` |
 | tmux config, keybindings, pane notepad, tmux-resurrect | `managing-tmux` |

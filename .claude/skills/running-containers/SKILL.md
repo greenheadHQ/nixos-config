@@ -189,6 +189,11 @@ Immich API가 반환하는 `originalPath`:
 - Scriptable 스크립트: [references/scriptable-immich-upload.md](references/scriptable-immich-upload.md)
 - 자동 삭제 설정: `homeserver.immichCleanup.enable = true`
 
+### macOS에서 immich 사진 확인
+
+macOS 환경에서 immich 사진 경로를 받았을 때는 `viewing-immich-photo` 스킬 참조.
+SSH로 MiniPC에서 파일을 가져와 로컬에서 Read 도구로 확인합니다.
+
 ## 레퍼런스
 
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)

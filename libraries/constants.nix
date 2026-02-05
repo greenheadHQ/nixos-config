@@ -25,6 +25,7 @@
   paths = {
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
+    immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
   };
 
   # ═══════════════════════════════════════════════════════════════
