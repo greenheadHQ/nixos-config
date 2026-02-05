@@ -65,12 +65,16 @@ in
     {
       // MD013: Line length (기본 80자) - 긴 URL, 테이블에서 노이즈
       "MD013": false,
+      // MD032: Blanks around lists - 콜론 뒤 리스트 패턴에서 false positive
+      "MD032": false,
       // MD033: Inline HTML - <details>, <kbd>, <br> 등 실무에서 자주 사용
       "MD033": false,
       // MD034: Bare URLs - 현대 렌더러는 자동 링크 지원
       "MD034": false,
       // MD041: First line heading - YAML frontmatter에서 false positive
-      "MD041": false
+      "MD041": false,
+      // MD060: Table column style - 올바른 테이블에서 false positive 발생
+      "MD060": false
     }
   '';
 }
