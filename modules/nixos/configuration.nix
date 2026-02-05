@@ -24,8 +24,8 @@
   # 시간대
   time.timeZone = "Asia/Seoul";
 
-  # 로케일 (한국어)
-  i18n.defaultLocale = "ko_KR.UTF-8";
+  # 로케일 (영어)
+  i18n.defaultLocale = "en_US.UTF-8";
 
   # Nix 설정
   nix = {
