@@ -130,7 +130,7 @@ in
       autoStart = true;
       volumes = [ "${dockerData}/immich/ml-cache:/cache" ];
       environment = {
-        TZ = "Asia/Seoul";
+        TZ = config.time.timeZone;
       };
       extraOptions = [
         "--network=immich-network"
@@ -156,7 +156,7 @@ in
         "${dbPasswordPath}:/run/secrets/db-password:ro"
       ];
       environment = {
-        TZ = "Asia/Seoul";
+        TZ = config.time.timeZone;
         DB_HOSTNAME = "immich-postgres";
         DB_USERNAME = "immich";
         DB_PASSWORD_FILE = "/run/secrets/db-password";

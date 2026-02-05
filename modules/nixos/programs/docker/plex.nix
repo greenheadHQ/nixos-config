@@ -37,7 +37,7 @@ in
         "/tmp/plex-transcode:/transcode"
       ];
       environment = {
-        TZ = "Asia/Seoul";
+        TZ = config.time.timeZone;
         PLEX_UID = toString user;
         PLEX_GID = toString users;
       };

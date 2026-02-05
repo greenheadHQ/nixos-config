@@ -28,7 +28,7 @@ in
       ports = [ "${minipcTailscaleIP}:${toString cfg.port}:3001" ];
       volumes = [ "${dockerData}/uptime-kuma/data:/app/data" ];
       environment = {
-        TZ = "Asia/Seoul";
+        TZ = config.time.timeZone;
       };
       extraOptions = [
         "--memory=${uptimeKuma.memory}"

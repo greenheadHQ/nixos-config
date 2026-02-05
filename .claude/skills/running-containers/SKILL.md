@@ -41,6 +41,19 @@ Docker 서비스에서 사용하는 상수 (`libraries/constants.nix`):
 - `constants.containers.immich.*` - Immich 리소스 제한
 - `constants.ids.render` - render 그룹 GID (하드웨어 가속)
 
+### 타임존 설정
+
+모든 컨테이너는 시스템 타임존을 참조합니다:
+
+```nix
+# modules/nixos/programs/docker/immich.nix (예시)
+environment = {
+  TZ = config.time.timeZone;  # configuration.nix의 time.timeZone 참조
+};
+```
+
+타임존 변경 시 `modules/nixos/configuration.nix`의 `time.timeZone`만 수정하면 모든 컨테이너에 자동 적용됩니다.
+
 ## Known Issues
 
 **OCI 백엔드 명시 필수**
