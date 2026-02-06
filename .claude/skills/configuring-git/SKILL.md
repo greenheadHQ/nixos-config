@@ -17,7 +17,7 @@ Git, delta diff, lazygit, rerere 등 Git 관련 설정 가이드입니다.
 | 기능 | 설명 |
 |------|------|
 | delta | Git diff를 구문 강조로 표시 |
-| lazygit | Git TUI (delta pager 통합) |
+| lazygit (`lg`) | Git TUI (delta pager 통합) |
 | rerere | 충돌 해결 패턴 기록/재사용 |
 | rebase 역순 | Interactive rebase에서 최신 커밋이 위로 |
 | git-cleanup | 오래된/삭제된 브랜치 정리 |

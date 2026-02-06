@@ -34,6 +34,9 @@ in
       if pkgs.stdenv.isDarwin then " --chrome" else ""
     } --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 
+    # lazygit 단축
+    lg = "lazygit";
+
     # 디렉토리 이동 단축
     ".." = "cd ..";
     "..." = "cd ../..";
