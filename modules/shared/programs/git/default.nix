@@ -78,6 +78,8 @@ in
     options = {
       dark = true;
       line-numbers = true;
+      # --mouse: 마우스 휠/터치 스크롤 활성화 (trade-off: less 내 텍스트 선택 불가)
+      pager = "less --mouse";
       # navigate와 side-by-side는 interactive feature로 분리
       # (lazygit에서 비활성화하기 위해 — lazygit diff 패널이 좁아서 side-by-side 부적합)
       features = "interactive";
