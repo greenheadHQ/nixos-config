@@ -343,3 +343,30 @@ macOS launchd의 WatchPaths를 사용하여 특정 폴더를 감시하고, 파�
 ```bash
 cat ~/Library/Logs/folder-actions/*.log
 ```
+
+## Nix CLI 패키지 (darwin-only)
+
+`libraries/packages.nix`의 `darwinOnly` 리스트에서 관리됩니다.
+
+Homebrew가 GUI 앱(Cask)을 담당하는 반면, CLI 도구는 Nix로 선언적 관리합니다.
+
+| 패키지 | 용도 |
+|--------|------|
+| `broot` | 파일 탐색기 TUI |
+| `ffmpeg` | 미디어 처리 |
+| `imagemagick` | 이미지 처리 |
+| `rar` | 압축 |
+| `ttyper` | 타이핑 연습 CLI |
+| `unzip` | 압축 해제 |
+
+**추가 방법:**
+
+```nix
+# libraries/packages.nix
+darwinOnly = [
+  ...
+  pkgs.새패키지
+];
+```
+
+`nrs`로 적용. 새 패키지 추가 시 `nrs-offline`은 사용 불가 (다운로드 필요).

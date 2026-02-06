@@ -38,6 +38,17 @@ nrp
 | `modules/darwin/home.nix` | Home Manager (macOS) |
 | `modules/darwin/programs/` | macOS 전용 프로그램 |
 
+### Nix CLI 패키지 (darwin-only)
+
+`libraries/packages.nix`의 `darwinOnly` 리스트에서 관리:
+
+```nix
+# 패키지 추가
+darwinOnly = [ ... pkgs.패키지명 ];
+```
+
+자세한 내용: [references/features.md](references/features.md#nix-cli-패키지-darwin-only)
+
 ### macOS 시스템 설정
 
 | 설정 | 파일 | 설명 |

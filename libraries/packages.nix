@@ -38,6 +38,7 @@
     pkgs.ffmpeg # 미디어 처리
     pkgs.imagemagick # 이미지 처리
     pkgs.rar # 압축
+    pkgs.ttyper # 타이핑 연습 CLI
     pkgs.unzip # 압축 해제
   ];
 
