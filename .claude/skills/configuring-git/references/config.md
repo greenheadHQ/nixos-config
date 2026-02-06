@@ -34,6 +34,7 @@ delta 옵션은 **기본 섹션**과 **feature**로 분리하여 도구별 오�
 |------|-----|------|
 | `dark` | `true` | 다크 테마 |
 | `line-numbers` | `true` | diff에 줄 번호 표시 |
+| `pager` | `"less -e --mouse"` | 마우스 스크롤 + 끝 도달 시 자동 종료 |
 | `features` | `"interactive"` | 기본 적용 feature |
 
 **`[delta "interactive"]` feature** (`programs.git.settings`):
@@ -46,6 +47,8 @@ delta 옵션은 **기본 섹션**과 **feature**로 분리하여 도구별 오�
 > **설계 이유**: `navigate`와 `side-by-side`를 feature로 분리한 이유는 lazygit 등 외부 도구에서 비활성화하기 위함. delta의 `[delta]` 기본 섹션 설정은 feature/CLI/환경변수보다 우선순위가 높아서 기본 섹션에 직접 넣으면 오버라이드 불가.
 
 > **동적 side-by-side 제어**: `.zshenv`에서 `DELTA_FEATURES=""`를 기본 설정하여 비대화형 셸(SSH 단일 명령, Claude Code 등)에서는 side-by-side를 비활성화합니다. 대화형 셸에서는 `.zshrc`의 precmd 훅이 터미널 너비(>= 120 컬럼)에 따라 동적으로 전환합니다. 설정 파일: `modules/shared/programs/shell/default.nix`.
+
+> **pager 마우스 스크롤 제약**: `less --mouse`는 터미널이 마우스 이벤트를 전달하는 경우에만 동작합니다. 데스크톱 터미널의 마우스 휠은 지원되지만, iOS SSH 앱(Termius 등)의 터치 스크롤은 앱 레벨에서 처리되어 less에 전달되지 않습니다. 모바일에서는 `j`/`k`(한 줄), `Space`/`b`(한 페이지), `G`(맨 끝)로 이동합니다.
 
 ### lazygit delta 통합
 

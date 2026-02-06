@@ -66,6 +66,17 @@ git config --get core.pager
 | 대화형 + 좁은 터미널 (< 120 컬럼) | `""` (precmd) | OFF |
 | lazygit | `""` (pager 설정) | OFF |
 
+### delta pager 설정
+
+`less -e --mouse`로 마우스 스크롤과 끝 도달 시 자동 종료를 지원합니다.
+
+| 플래그 | 동작 |
+|--------|------|
+| `--mouse` | 마우스 휠 스크롤 활성화 (trade-off: less 내 텍스트 선택 불가) |
+| `-e` | 끝까지 스크롤 후 한 번 더 스크롤하면 자동 종료 (q 불필요) |
+
+> **모바일 제약**: `--mouse`는 데스크톱 마우스 휠 전용. iOS SSH 앱(Termius 등)의 터치 스크롤은 앱 레벨에서 처리되어 less에 전달되지 않음. 모바일에서는 `j`/`k`(한 줄), `Space`/`b`(한 페이지), `G`(맨 끝)로 이동.
+
 ### lazygit delta 통합
 
 lazygit에서 delta를 pager로 사용합니다. `modules/shared/programs/lazygit/default.nix`에서 관리됩니다.

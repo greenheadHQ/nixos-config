@@ -6,6 +6,7 @@ Git 관련 문제와 해결 방법을 정리합니다.
 
 - [lazygit에서 delta side-by-side 오버라이드가 안 됨](#lazygit에서-delta-side-by-side-오버라이드가-안-됨)
 - [비대화형 SSH에서 side-by-side가 비활성화되지 않음](#비대화형-ssh에서-side-by-side가-비활성화되지-않음)
+- [iOS SSH 앱에서 delta 마우스 스크롤이 안 됨](#ios-ssh-앱에서-delta-마우스-스크롤이-안-됨)
 - [lazygit config.yml permission denied](#lazygit-configyml-permission-denied)
 - [delta가 적용되지 않음](#delta가-적용되지-않음)
 - [~/.gitconfig과 Home Manager 설정이 충돌함](#gitconfig과-home-manager-설정이-충돌함)
@@ -81,6 +82,31 @@ export DELTA_FEATURES=""
 ```
 
 `.zshenv`는 모든 zsh 호출(대화형/비대화형)에서 소싱되므로, 비대화형 셸에서도 side-by-side가 비활성화됩니다. 대화형 셸에서는 `.zshrc`의 precmd 훅이 터미널 너비에 따라 동적으로 오버라이드합니다.
+
+---
+
+## iOS SSH 앱에서 delta 마우스 스크롤이 안 됨
+
+**증상**: delta pager에 `--mouse` 플래그를 설정했는데, Termius 등 iOS SSH 앱에서 터치 스크롤로 diff를 탐색할 수 없음. 화면 하단에 `:` 프롬프트가 표시되고 `q`로만 종료 가능.
+
+**원인**: `less --mouse`는 터미널이 **마우스 이벤트 이스케이프 시퀀스**를 전달해야 동작합니다. iOS SSH 앱의 터치 스크롤은 앱 레벨에서 처리되어(터미널 스크롤백 버퍼 이동) less에 마우스 이벤트로 전달되지 않습니다.
+
+```
+[터치 스크롤] → iOS 앱이 가로챔 (스크롤백 버퍼) → less에 미전달
+[마우스 휠]   → 터미널이 이스케이프 시퀀스 전송 → less가 수신 → 스크롤
+```
+
+**대안**: 모바일에서는 키보드 단축키로 탐색
+
+| 키 | 동작 |
+|----|------|
+| `j` / `k` | 한 줄 아래 / 위 |
+| `Space` / `b` | 한 페이지 아래 / 위 |
+| `d` / `u` | 반 페이지 아래 / 위 |
+| `G` | 맨 끝 (`-e` 플래그: 한 번 더 누르면 자동 종료) |
+| `q` | 즉시 종료 |
+
+> **참고**: `--mouse`는 데스크톱 터미널(MacBook Ghostty, iTerm2 등)의 마우스 휠에서는 정상 동작합니다. 모바일 전용 제약사항입니다.
 
 ---
 
