@@ -79,11 +79,17 @@ in
           alias clear='clear && tmux clear-history'
         fi
 
-        # 좁은 터미널(< 120컬럼): delta side-by-side 비활성화
-        # (Termius 등 모바일 SSH 접속 시 가독성 확보)
-        if [[ ''${COLUMNS:-80} -lt 120 ]]; then
-          export DELTA_FEATURES=""
-        fi
+        # 동적 delta side-by-side 제어 (터미널 너비 기반)
+        # 좁은 터미널(< 120컬럼)에서 side-by-side 자동 비활성화
+        # precmd: 매 프롬프트 전 실행 → 터미널 리사이즈 즉시 반영
+        _update_delta_features() {
+          if [[ ''${COLUMNS:-80} -lt 120 ]]; then
+            export DELTA_FEATURES=""
+          else
+            unset DELTA_FEATURES
+          fi
+        }
+        precmd_functions+=(_update_delta_features)
       '')
 
       #─────────────────────────────────────────────────────────────────────────
