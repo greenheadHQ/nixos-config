@@ -4,7 +4,7 @@
     "IS_DEMO": "true",
     "MAX_THINKING_TOKENS": "63999",
     "CLAUDE_CODE_ENABLE_UNIFIED_READ_TOOL": "true",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "true"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "includeCoAuthoredBy": false,
   "permissions": {
@@ -14,11 +14,7 @@
       "Bash(rm -rf ~/*)",
       "Bash(rm -rf /*)"
     ],
-    "additionalDirectories": [
-      "~/Downloads",
-      "~/Documents",
-      "~/IdeaProjects"
-    ]
+    "additionalDirectories": ["~/Downloads", "~/Documents", "~/IdeaProjects"]
   },
   "hooks": {
     "PreToolUse": [
@@ -59,6 +55,6 @@
   "language": "Korean",
   "alwaysThinkingEnabled": true,
   "autoUpdatesChannel": "latest",
-  "minimumVersion": "2.1.4",
-  "plansDirectory": "./.claude/plans"
+  "plansDirectory": "./.claude/plans",
+  "model": "claude-opus-4-6[1m]"
 }
