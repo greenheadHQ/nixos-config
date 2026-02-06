@@ -78,6 +78,12 @@ in
         if [ -n "$TMUX" ]; then
           alias clear='clear && tmux clear-history'
         fi
+
+        # 좁은 터미널(< 120컬럼): delta side-by-side 비활성화
+        # (Termius 등 모바일 SSH 접속 시 가독성 확보)
+        if [[ ''${COLUMNS:-80} -lt 120 ]]; then
+          export DELTA_FEATURES=""
+        fi
       '')
 
       #─────────────────────────────────────────────────────────────────────────
