@@ -74,12 +74,12 @@ claude plugins list
 
 **파일 위치**: `modules/shared/programs/shell/default.nix`
 
-### claude alias
+### c alias (Claude Code)
 
 플랫폼별 동적 플래그 적용:
 
 ```nix
-claude = "command claude${if pkgs.stdenv.isDarwin then " --chrome" else ""} --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
+c = "command claude${if pkgs.stdenv.isDarwin then " --chrome" else ""} --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 ```
 
 | 플랫폼 | 결과 |

@@ -30,7 +30,7 @@ in
     bt = "br -c :pt";
 
     # Claude Code (macOS에서만 Claude in Chrome 활성화 + 권한 스킵 + MCP 설정 자동 로드)
-    claude = "command claude${
+    c = "command claude${
       if pkgs.stdenv.isDarwin then " --chrome" else ""
     } --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 
