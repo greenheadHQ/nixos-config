@@ -24,8 +24,10 @@
 ### 상태 관리
 
 - `/var/lib/immich-update/last-notified-version`: 마지막 알림 버전 기록
+- `/var/lib/immich-update/last-success`: 마지막 성공 시각 (Unix timestamp) — 워치독용
 - 초기 실행 시: 현재 버전을 기록하고 종료 (불필요한 알림 방지)
 - 이미 알린 버전은 재알림하지 않음
+- 3일 이상 성공 없으면 Pushover 경고 알림 (장기 실패 워치독)
 
 ### 에러 처리
 
@@ -36,17 +38,21 @@
 ## 업데이트 스크립트 플로우
 
 ```
+[동시 실행 방지] flock으로 lockfile 확보
+    ↓
 [상태 확인] postgres 컨테이너 running 여부
     ↓
 [DB 백업] pg_dump | gzip → /var/lib/immich-update/backups/
     ↓
-[무결성 검증] gzip -t + 파일 크기 확인
+[무결성 검증] gzip -t + 최소 크기(1KB) 확인
     ↓
 [이미지 Pull] immich-server:release + immich-ml:release
     ↓
 [재시작] stop server → stop ml → start ml → start server
     ↓
 [헬스체크] /api/server/version (60회, 10초 간격 = 최대 10분)
+    ↓
+[ML 상태 확인] immich-ml 컨테이너 running 여부 (경고 알림)
     ↓
 [알림] 성공/실패 Pushover 전송
     ↓
@@ -136,6 +142,34 @@ ls -la /run/agenix/immich-api-key /run/agenix/pushover-immich
 ```bash
 cat /var/lib/immich-update/last-notified-version
 ```
+
+### 워치독 경고 수신
+
+**증상**: "버전 체크가 N일간 성공하지 못했습니다" Pushover 알림
+
+**원인**:
+- Immich 서비스가 장기간 다운
+- GitHub API가 지속적으로 실패
+- 네트워크 문제
+
+**확인**:
+```bash
+# 마지막 성공 시각 확인
+sudo cat /var/lib/immich-update/last-success
+# → Unix timestamp (예: 1770373041)
+
+# 수동 실행하여 원인 확인
+sudo systemctl start immich-version-check
+journalctl -u immich-version-check --no-pager
+```
+
+### 동시 실행 차단
+
+**증상**: "Another immich-update is already running"
+
+**원인**: `sudo immich-update`가 이미 다른 터미널에서 실행 중
+
+**해결**: 기존 프로세스 완료 대기 또는 `ps aux | grep immich-update`로 확인
 
 ### 타이머 미동작
 

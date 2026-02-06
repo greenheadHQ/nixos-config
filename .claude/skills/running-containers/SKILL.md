@@ -122,12 +122,13 @@ homeserver.immichUpdate.enable = true;
 
 ### 업데이트 프로세스
 
-1. postgres 컨테이너 상태 확인
-2. DB 백업 (pg_dump + gzip + 무결성 검증)
-3. 이미지 pull (server + ML)
-4. 컨테이너 재시작 (stop all → start ML → start Server)
-5. 헬스체크 (60회 재시도, 10분)
-6. 결과 알림
+1. flock으로 동시 실행 방지
+2. postgres 컨테이너 상태 확인
+3. DB 백업 (pg_dump + gzip + 무결성/최소크기 검증)
+4. 이미지 pull (server + ML)
+5. 컨테이너 재시작 (stop all → start ML → start Server)
+6. 헬스체크 (60회 재시도, 10분) + ML 컨테이너 상태 확인
+7. 결과 알림
 
 ### 명령어
 
