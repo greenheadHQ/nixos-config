@@ -24,7 +24,7 @@ send_notification() {
   local message="$2"
   local priority="${3:-"-1"}"
 
-  curl -sf --max-time 10 \
+  curl -sf --proto =https --max-time 10 \
     --form-string "token=${PUSHOVER_TOKEN}" \
     --form-string "user=${PUSHOVER_USER}" \
     --form-string "title=${title}" \

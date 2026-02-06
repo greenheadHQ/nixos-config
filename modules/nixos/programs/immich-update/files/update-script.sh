@@ -3,6 +3,10 @@
 # DB 백업 → 이미지 pull → 컨테이너 재시작 → 헬스체크 → 결과 알림
 set -euo pipefail
 
+# 동시 실행 방지 (flock)
+exec 200>/var/lib/immich-update/.lock
+flock -n 200 || { echo "ERROR: Another immich-update is already running"; exit 1; }
+
 # 환경변수 (systemd 또는 환경변수 파일에서 주입)
 : "${IMMICH_URL:?IMMICH_URL is required}"
 : "${API_KEY_FILE:?API_KEY_FILE is required}"
@@ -105,8 +109,8 @@ if ! gzip -t "$BACKUP_FILE" 2>/dev/null; then
 fi
 
 BACKUP_SIZE=$(stat -c%s "$BACKUP_FILE")
-if [ "$BACKUP_SIZE" -eq 0 ]; then
-  echo "ERROR: Backup file is empty"
+if [ "$BACKUP_SIZE" -lt 1024 ]; then
+  echo "ERROR: Backup file is too small (${BACKUP_SIZE} bytes)"
   send_notification "Immich Update" "업데이트 중단: DB 백업이 비어있음" 1
   exit 1
 fi
@@ -157,6 +161,11 @@ done
 # ─── 6. 결과 알림 ───────────────────────────────────────────────
 echo ""
 if $HEALTHY; then
+  # ML 컨테이너 상태 확인
+  if ! podman container inspect immich-ml --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
+    echo "WARNING: immich-ml is not running (OOM or compatibility issue)"
+    send_notification "Immich Update" "업데이트 완료 (v${CURRENT_VERSION} → v${NEW_VERSION}) 단, ML 컨테이너 미실행. 로그 확인: podman logs immich-ml" 0
+  fi
   echo "=== Update completed successfully ==="
   echo "Version: v$CURRENT_VERSION → v$NEW_VERSION"
   send_notification "Immich Update" "업데이트 완료: v${CURRENT_VERSION} → v${NEW_VERSION}" 0

@@ -37,6 +37,17 @@ send_notification() {
 trap 'send_notification "Immich Version Check" "오류 발생: 스크립트 실패" 0' ERR
 
 LAST_NOTIFIED_FILE="$STATE_DIR/last-notified-version"
+LAST_SUCCESS_FILE="$STATE_DIR/last-success"
+
+# ─── 0. 워치독: 장기 실패 감지 ───────────────────────────────────
+if [ -f "$LAST_SUCCESS_FILE" ]; then
+  LAST_SUCCESS=$(cat "$LAST_SUCCESS_FILE")
+  NOW=$(date +%s)
+  DAYS_SINCE=$(( (NOW - LAST_SUCCESS) / 86400 ))
+  if [ "$DAYS_SINCE" -ge 3 ]; then
+    send_notification "Immich Version Check" "버전 체크가 ${DAYS_SINCE}일간 성공하지 못했습니다. 서비스 상태를 확인하세요." 0
+  fi
+fi
 
 # ─── 1. 현재 버전 조회 (Immich API) ─────────────────────────────
 echo "Checking current Immich version..."
@@ -83,11 +94,13 @@ LAST_NOTIFIED=$(cat "$LAST_NOTIFIED_FILE")
 
 if [ "$CURRENT" = "$LATEST" ]; then
   echo "Already on latest version ($CURRENT)"
+  date +%s > "$LAST_SUCCESS_FILE"
   exit 0
 fi
 
 if [ "$LATEST" = "$LAST_NOTIFIED" ]; then
   echo "Already notified about version $LATEST"
+  date +%s > "$LAST_SUCCESS_FILE"
   exit 0
 fi
 
@@ -110,4 +123,5 @@ send_notification "Immich 업데이트 알림" "$MESSAGE" 0
 
 # 알림 완료 기록
 echo "$LATEST" > "$LAST_NOTIFIED_FILE"
+date +%s > "$LAST_SUCCESS_FILE"
 echo "Notification sent and version recorded"
