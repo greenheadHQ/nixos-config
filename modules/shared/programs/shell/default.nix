@@ -67,6 +67,10 @@ in
       if command -v mise >/dev/null 2>&1 && [[ -z "$MISE_SHELL" ]]; then
         eval "$(mise activate zsh --shims)"
       fi
+
+      # 비대화형 셸 기본값: side-by-side 비활성화
+      # (대화형 셸에서는 .zshrc의 precmd 훅이 터미널 너비에 따라 동적 제어)
+      export DELTA_FEATURES=""
     '';
 
     # 공통 초기화 스크립트 (.zshrc)

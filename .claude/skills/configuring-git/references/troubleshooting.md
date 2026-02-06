@@ -5,6 +5,7 @@ Git 관련 문제와 해결 방법을 정리합니다.
 ## 목차
 
 - [lazygit에서 delta side-by-side 오버라이드가 안 됨](#lazygit에서-delta-side-by-side-오버라이드가-안-됨)
+- [비대화형 SSH에서 side-by-side가 비활성화되지 않음](#비대화형-ssh에서-side-by-side가-비활성화되지-않음)
 - [lazygit config.yml permission denied](#lazygit-configyml-permission-denied)
 - [delta가 적용되지 않음](#delta가-적용되지-않음)
 - [~/.gitconfig과 Home Manager 설정이 충돌함](#gitconfig과-home-manager-설정이-충돌함)
@@ -55,6 +56,31 @@ pager = "env DELTA_FEATURES= delta --paging=never";
 `DELTA_FEATURES=` (빈 문자열)은 gitconfig의 `features = interactive` 설정을 오버라이드하여 빈 feature 리스트로 대체합니다.
 
 > **주의**: `DELTA_FEATURES=+` (플러스)는 동작하지 않음. 빈 문자열(`""`)만 feature를 리셋함.
+
+---
+
+## 비대화형 SSH에서 side-by-side가 비활성화되지 않음
+
+**증상**: iPhone SSH 등 좁은 터미널에서 `git show`/`git diff` 실행 시 side-by-side가 활성화됨
+
+**원인**: 동적 side-by-side 제어(`_update_delta_features`)가 `.zshrc`의 `precmd` 훅으로 구현되어 있어, 비대화형 셸(`.zshrc` 미소싱)에서는 `DELTA_FEATURES`가 설정되지 않음. delta가 gitconfig의 `features = interactive` → `side-by-side = true`를 그대로 사용.
+
+**진단**:
+
+```bash
+echo $-                          # 'i' 없으면 비대화형
+echo $COLUMNS                    # 0이면 터미널 너비 미감지
+echo ${DELTA_FEATURES+SET}       # 출력 없으면 DELTA_FEATURES 미설정
+```
+
+**해결**: `.zshenv`에서 `DELTA_FEATURES=""` 기본값 설정
+
+```nix
+# modules/shared/programs/shell/default.nix — envExtra (.zshenv)
+export DELTA_FEATURES=""
+```
+
+`.zshenv`는 모든 zsh 호출(대화형/비대화형)에서 소싱되므로, 비대화형 셸에서도 side-by-side가 비활성화됩니다. 대화형 셸에서는 `.zshrc`의 precmd 훅이 터미널 너비에 따라 동적으로 오버라이드합니다.
 
 ---
 

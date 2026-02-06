@@ -55,6 +55,17 @@ git config --get core.pager
 
 > **설계 이유**: `navigate`와 `side-by-side`를 feature로 분리한 이유는 lazygit에서 비활성화하기 위함입니다. delta의 `[delta]` 기본 섹션 설정은 feature보다 우선순위가 높아서, 기본 섹션에 직접 설정하면 도구별 오버라이드가 불가능합니다.
 
+### 동적 side-by-side 제어
+
+`.zshenv`와 `.zshrc` precmd 훅으로 터미널 환경에 따라 side-by-side를 자동 제어합니다.
+
+| 환경 | DELTA_FEATURES | side-by-side |
+|------|:--------------:|:------------:|
+| 비대화형 셸 (SSH 단일 명령, Claude Code 등) | `""` (.zshenv 기본값) | OFF |
+| 대화형 + 넓은 터미널 (>= 120 컬럼) | unset (precmd) | ON |
+| 대화형 + 좁은 터미널 (< 120 컬럼) | `""` (precmd) | OFF |
+| lazygit | `""` (pager 설정) | OFF |
+
 ### lazygit delta 통합
 
 lazygit에서 delta를 pager로 사용합니다. `modules/shared/programs/lazygit/default.nix`에서 관리됩니다.
@@ -85,6 +96,7 @@ rm -rf .git/rr-cache
 | 파일 | 용도 |
 |------|------|
 | `modules/shared/programs/git/default.nix` | Git + delta 설정 |
+| `modules/shared/programs/shell/default.nix` | 동적 side-by-side 제어 (.zshenv + precmd) |
 | `modules/shared/programs/lazygit/default.nix` | lazygit 설정 (delta pager 통합) |
 | `~/.gitconfig` | 생성된 Git/delta 설정 (Nix 관리) |
 | `~/Library/Application Support/lazygit/config.yml` | 생성된 lazygit 설정 (Nix 관리, macOS) |
