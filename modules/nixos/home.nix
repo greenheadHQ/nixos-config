@@ -30,6 +30,7 @@ in
     ../shared/programs/claude # Claude Code 설정
     ../shared/programs/direnv # 디렉토리별 개발 환경 자동 활성화
     ../shared/programs/git
+    ../shared/programs/lazygit
     ../shared/programs/shell # 공통 shell 설정
     ../shared/programs/shell/nixos.nix # Linux 전용 추가
     ../shared/programs/tmux

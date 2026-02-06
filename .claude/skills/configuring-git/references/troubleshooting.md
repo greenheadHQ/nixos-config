@@ -4,9 +4,81 @@ Git 관련 문제와 해결 방법을 정리합니다.
 
 ## 목차
 
+- [lazygit에서 delta side-by-side 오버라이드가 안 됨](#lazygit에서-delta-side-by-side-오버라이드가-안-됨)
+- [lazygit config.yml permission denied](#lazygit-configyml-permission-denied)
 - [delta가 적용되지 않음](#delta가-적용되지-않음)
 - [~/.gitconfig과 Home Manager 설정이 충돌함](#gitconfig과-home-manager-설정이-충돌함)
 - [git commit 시 Author identity unknown](#git-commit-시-author-identity-unknown)
+
+---
+
+## lazygit에서 delta side-by-side 오버라이드가 안 됨
+
+**증상**: lazygit에서 delta를 pager로 설정했는데, `[delta "lazygit"]` feature로 `side-by-side = false`를 지정해도 side-by-side가 계속 활성화됨
+
+**원인**: delta의 우선순위 구조 때문.
+
+```
+우선순위 (높→낮):
+1. [delta] 기본 섹션 (gitconfig)
+2. 환경변수 (DELTA_FEATURES)
+3. CLI 플래그
+4. feature 섹션 ([delta "feature-name"])
+```
+
+`[delta]` 기본 섹션에 `side-by-side = true`가 있으면 **어떤 방법으로도 오버라이드 불가**:
+- `--side-by-side=false` → boolean 플래그라 `=false` 문법 미지원
+- `--features lazygit` → feature가 기본 섹션보다 우선순위 낮음
+- `DELTA_FEATURES=+` → 기본 섹션 설정은 영향받지 않음
+
+**해결**: `side-by-side`와 `navigate`를 `[delta]`에서 feature로 분리
+
+```nix
+# git/default.nix — 기본 섹션에서 제거하고 feature로 이동
+programs.delta.options = {
+  dark = true;
+  line-numbers = true;
+  features = "interactive";  # side-by-side, navigate를 feature에 위임
+};
+
+programs.git.settings."delta \"interactive\"" = {
+  side-by-side = true;
+  navigate = true;
+};
+```
+
+```nix
+# lazygit/default.nix — DELTA_FEATURES=""로 feature 리셋
+pager = "env DELTA_FEATURES= delta --paging=never";
+```
+
+`DELTA_FEATURES=` (빈 문자열)은 gitconfig의 `features = interactive` 설정을 오버라이드하여 빈 feature 리스트로 대체합니다.
+
+> **주의**: `DELTA_FEATURES=+` (플러스)는 동작하지 않음. 빈 문자열(`""`)만 feature를 리셋함.
+
+---
+
+## lazygit config.yml permission denied
+
+**증상**: lazygit 실행 시 `permission denied` 에러
+
+```
+While attempting to write back migrated user config to
+.../lazygit/config.yml, an error occurred:
+open .../lazygit/config.yml: permission denied
+```
+
+**원인**: Home Manager가 config.yml을 Nix store 심링크로 관리하므로 읽기 전용. lazygit이 `git.paging`을 `git.pagers` 배열로 자동 마이그레이션하려 할 때 쓰기 실패.
+
+**해결**: 처음부터 새 형식(`git.pagers` 배열)을 사용
+
+```nix
+# 구 형식 (마이그레이션 시도 발생)
+git.paging = { colorArg = "always"; pager = "delta ..."; };
+
+# 신 형식 (lazygit 0.56.0+, 마이그레이션 불필요)
+git.pagers = [{ colorArg = "always"; pager = "delta ..."; }];
+```
 
 ---
 
@@ -35,8 +107,9 @@ programs.delta = {
   enable = true;
   enableGitIntegration = true;  # 이 줄이 필수!
   options = {
-    navigate = true;
     dark = true;
+    line-numbers = true;
+    features = "interactive";
   };
 };
 ```

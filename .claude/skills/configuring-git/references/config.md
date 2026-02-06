@@ -5,6 +5,8 @@ Git 관련 설정 및 도구 구성입니다.
 ## 목차
 
 - [개발 도구](#개발-도구)
+- [delta 설정 (feature 구조)](#delta-설정-feature-구조)
+- [lazygit delta 통합](#lazygit-delta-통합)
 - [Git 설정](#git-설정)
 - [Interactive Rebase 역순 표시](#interactive-rebase-역순-표시)
 - [git-cleanup](#git-cleanup)
@@ -13,29 +15,65 @@ Git 관련 설정 및 도구 구성입니다.
 
 ---
 
-`modules/shared/programs/git/default.nix`에서 관리됩니다.
-
 ## 개발 도구
 
-| 도구      | 설명                                      |
-| --------- | ----------------------------------------- |
-| `git`     | 버전 관리                                 |
-| `delta`   | Git diff 시각화 (구문 강조, line-numbers, side-by-side) |
-| `lazygit` | Git TUI                                   |
-| `gh`      | GitHub CLI                                |
+| 도구      | 설명                                      | 설정 파일 |
+| --------- | ----------------------------------------- | --------- |
+| `git`     | 버전 관리                                 | `modules/shared/programs/git/default.nix` |
+| `delta`   | Git diff 시각화 (구문 강조, line-numbers) | `modules/shared/programs/git/default.nix` |
+| `lazygit` | Git TUI (delta pager 통합)                | `modules/shared/programs/lazygit/default.nix` |
+| `gh`      | GitHub CLI                                | `modules/shared/programs/git/default.nix` |
 
-### delta 옵션
+### delta 설정 (feature 구조)
 
-`modules/shared/programs/git/default.nix`의 `programs.delta.options`에서 관리됩니다.
+delta 옵션은 **기본 섹션**과 **feature**로 분리하여 도구별 오버라이드를 지원합니다.
+
+**기본 `[delta]` 섹션** (`programs.delta.options`):
+
+| 옵션 | 값 | 설명 |
+|------|-----|------|
+| `dark` | `true` | 다크 테마 |
+| `line-numbers` | `true` | diff에 줄 번호 표시 |
+| `features` | `"interactive"` | 기본 적용 feature |
+
+**`[delta "interactive"]` feature** (`programs.git.settings`):
 
 | 옵션 | 값 | 설명 |
 |------|-----|------|
 | `navigate` | `true` | `n`/`N`으로 diff 청크 간 이동 |
-| `dark` | `true` | 다크 테마 |
-| `line-numbers` | `true` | diff에 줄 번호 표시 |
-| `side-by-side` | `true` | 좌우 분할 diff (터미널이 좁으면 자동으로 inline fallback) |
+| `side-by-side` | `true` | 좌우 분할 diff |
+
+> **설계 이유**: `navigate`와 `side-by-side`를 feature로 분리한 이유는 lazygit 등 외부 도구에서 비활성화하기 위함. delta의 `[delta]` 기본 섹션 설정은 feature/CLI/환경변수보다 우선순위가 높아서 기본 섹션에 직접 넣으면 오버라이드 불가.
 
 > **모바일 참고**: Termius 등 좁은 터미널에서는 delta가 자동으로 inline 모드로 전환됩니다.
+
+### lazygit delta 통합
+
+`modules/shared/programs/lazygit/default.nix`에서 `programs.lazygit`으로 관리됩니다.
+
+**pager 설정:**
+
+```yaml
+# 생성되는 config.yml
+git:
+  pagers:
+  - colorArg: always
+    pager: env DELTA_FEATURES= delta --paging=never
+```
+
+| 설정 | 설명 |
+|------|------|
+| `colorArg: always` | git이 컬러 출력을 delta에 전달 |
+| `DELTA_FEATURES=` | interactive feature 리셋 (side-by-side, navigate 비활성화) |
+| `--paging=never` | lazygit이 자체 스크롤 처리하므로 delta의 less pager 비활성화 |
+
+**lazygit 제한사항:**
+
+| 제한 | 설명 |
+|------|------|
+| staging 뷰 pager 미적용 | line-by-line staging에서 delta 미사용 (lazygit issue #2117) |
+| `--navigate` 미지원 | lazygit 키바인딩과 충돌 |
+| 터미널 리사이즈 | diff pager가 리사이즈에 재실행되지 않음 (issue #4415) |
 
 ## Git 설정
 

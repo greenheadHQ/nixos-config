@@ -15,7 +15,6 @@
 
     # 개발 도구
     pkgs.tmux # 터미널 멀티플렉서
-    pkgs.lazygit # Git TUI
     pkgs.gh # GitHub CLI
     pkgs.git # 버전 관리
     pkgs.shellcheck # 쉘 스크립트 린터

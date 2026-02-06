@@ -46,6 +46,7 @@
         ../shared/programs/direnv # 디렉토리별 개발 환경 자동 활성화
         ../shared/programs/ghostty
         ../shared/programs/git
+        ../shared/programs/lazygit
         ../shared/programs/shell # 공통 shell 설정
         ../shared/programs/shell/darwin.nix # macOS 전용 shell 추가
         ../shared/programs/tmux

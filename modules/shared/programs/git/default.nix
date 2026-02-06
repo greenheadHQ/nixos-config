@@ -76,11 +76,18 @@ in
     enable = true;
     enableGitIntegration = true;
     options = {
-      navigate = true;
       dark = true;
       line-numbers = true;
-      side-by-side = true;
+      # navigate와 side-by-side는 interactive feature로 분리
+      # (lazygit에서 비활성화하기 위해 — lazygit diff 패널이 좁아서 side-by-side 부적합)
+      features = "interactive";
     };
+  };
+
+  # 터미널 git diff 전용: side-by-side와 navigate 활성화
+  programs.git.settings."delta \"interactive\"" = {
+    side-by-side = true;
+    navigate = true;
   };
 
   programs.git = {
