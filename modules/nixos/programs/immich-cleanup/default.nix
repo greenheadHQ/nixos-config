@@ -31,21 +31,8 @@ in
 {
   config = lib.mkIf (cfg.enable && immichCfg.enable) {
     # ═══════════════════════════════════════════════════════════════
-    # agenix 시크릿
-    # ═══════════════════════════════════════════════════════════════
-    age.secrets.immich-api-key = {
-      file = ../../../../secrets/immich-api-key.age;
-      mode = "0400";
-      owner = "root";
-    };
-    age.secrets.pushover-immich = {
-      file = ../../../../secrets/pushover-immich.age;
-      mode = "0400";
-      owner = "root";
-    };
-
-    # ═══════════════════════════════════════════════════════════════
     # systemd 서비스
+    # 시크릿(immich-api-key, pushover-immich)은 immich.nix에서 정의
     # ═══════════════════════════════════════════════════════════════
     systemd.services.immich-cleanup = {
       description = "Immich temp album cleanup (${cfg.albumName})";

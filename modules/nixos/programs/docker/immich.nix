@@ -32,6 +32,16 @@ in
       mode = "0400";
       owner = "root";
     };
+    age.secrets.immich-api-key = {
+      file = ../../../../secrets/immich-api-key.age;
+      mode = "0400";
+      owner = "root";
+    };
+    age.secrets.pushover-immich = {
+      file = ../../../../secrets/pushover-immich.age;
+      mode = "0400";
+      owner = "root";
+    };
 
     # 시크릿 파일 존재 확인 (agenix activation 이후 존재)
     systemd.services.podman-immich-postgres.serviceConfig = {

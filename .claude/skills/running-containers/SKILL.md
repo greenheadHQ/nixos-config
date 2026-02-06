@@ -3,7 +3,9 @@ name: running-containers
 description: |
   This skill should be used when the user asks about Podman, Docker, immich,
   or encounters container OOM, "Tailscale IP binding" timing issues,
-  OCI backend configuration. Covers photo backup services on NixOS.
+  OCI backend configuration. Covers photo backup services on NixOS,
+  including "update immich", "immich 업데이트", "immich-update",
+  "check immich version", "immich 버전 확인", and upgrading Immich server.
 ---
 
 # 컨테이너 관리 (Podman/홈서버)
@@ -98,6 +100,54 @@ systemctl status podman-<container-name>
 homeserver.plex.enable = true;   # 활성화
 homeserver.plex.port = 32400;    # 포트 커스터마이징 (기본값은 constants.nix)
 ```
+
+## Immich 버전 업데이트
+
+새 버전 자동 알림 및 수동 업데이트를 지원합니다.
+
+### 활성화
+
+```nix
+homeserver.immichUpdate.enable = true;
+```
+
+### 동작 방식
+
+| 기능 | 설명 |
+|------|------|
+| 자동 버전 체크 | 매일 03:00 GitHub Releases API 확인 |
+| Pushover 알림 | 새 버전 발견 시 버전 + 릴리즈노트 요약 전송 |
+| 수동 업데이트 | `sudo immich-update` 명령으로 실행 |
+| Dry Run | `sudo immich-update --dry-run`으로 사전 확인 |
+
+### 업데이트 프로세스
+
+1. postgres 컨테이너 상태 확인
+2. DB 백업 (pg_dump + gzip + 무결성 검증)
+3. 이미지 pull (server + ML)
+4. 컨테이너 재시작 (stop all → start ML → start Server)
+5. 헬스체크 (60회 재시도, 10분)
+6. 결과 알림
+
+### 명령어
+
+```bash
+sudo systemctl start immich-version-check  # 버전 체크 수동 실행
+sudo immich-update                          # 업데이트 실행
+sudo immich-update --dry-run                # 상태만 확인
+journalctl -u immich-version-check -f       # 로그 확인
+systemctl list-timers | grep immich         # 타이머 확인
+```
+
+### 파일 구조
+
+| 파일 | 역할 |
+|------|------|
+| `modules/nixos/programs/immich-update/default.nix` | systemd 서비스/타이머 + 스크립트 정의 |
+| `modules/nixos/programs/immich-update/files/version-check.sh` | 자동 버전 체크 스크립트 |
+| `modules/nixos/programs/immich-update/files/update-script.sh` | 수동 업데이트 스크립트 |
+
+상세 가이드: [references/immich-update.md](references/immich-update.md)
 
 ## Immich FolderAction 자동 업로드 (macOS)
 
@@ -199,3 +249,4 @@ SSH로 MiniPC에서 파일을 가져와 로컬에서 Read 도구로 확인합니
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)
 - immich 설정: [references/immich-setup.md](references/immich-setup.md)
 - Scriptable 업로드: [references/scriptable-immich-upload.md](references/scriptable-immich-upload.md)
+- Immich 업데이트: [references/immich-update.md](references/immich-update.md)

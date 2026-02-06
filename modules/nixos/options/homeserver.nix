@@ -45,6 +45,15 @@
         description = "Name of the album to cleanup";
       };
     };
+
+    immichUpdate = {
+      enable = lib.mkEnableOption "Immich version check and update notifications";
+      checkTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 03:00:00";
+        description = "OnCalendar time for version check";
+      };
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -55,5 +64,6 @@
     ../programs/docker/uptime-kuma.nix
     ../programs/docker/plex.nix
     ../programs/immich-cleanup # Immich 임시 앨범 자동 삭제
+    ../programs/immich-update # Immich 버전 체크 및 업데이트
   ];
 }

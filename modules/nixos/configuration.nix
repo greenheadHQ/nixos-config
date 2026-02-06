@@ -91,4 +91,5 @@
   homeserver.uptimeKuma.enable = true;
   homeserver.plex.enable = false;
   homeserver.immichCleanup.enable = true; # Claude Code Temp 앨범 매일 전체 삭제
+  homeserver.immichUpdate.enable = true; # Immich 버전 체크 + 업데이트 알림
 }
