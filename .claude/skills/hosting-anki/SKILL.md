@@ -88,7 +88,8 @@ homeserver.ankiSync.port = 27701;    # 포트 (기본값은 constants.nix)
 
 **openFirewall 비활성**
 - 네이티브 모듈의 `openFirewall`은 모든 인터페이스에 포트 개방
-- `tailscale0` 인터페이스만 열어야 하므로 직접 방화벽 관리
+- `trustedInterfaces = [ "tailscale0" ]`가 Tailscale 전체 트래픽 허용하므로 별도 방화벽 룰 불필요
+- 보안은 Tailscale IP 바인딩(`address = minipcTailscaleIP`)에 의존
 
 **데이터 디렉토리**
 - 네이티브 모듈이 `StateDirectory`로 `/var/lib/anki-sync-server/` 자동 관리

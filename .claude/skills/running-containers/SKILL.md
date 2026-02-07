@@ -100,6 +100,12 @@ environment = {
 - Tailscale IP에만 바인딩 (외부 노출 안 됨)
 - `caddy-env` oneshot 서비스가 시작 전 Cloudflare API 토큰 환경변수 생성
 - agenix secret: `secrets/cloudflare-dns-api-token.age`
+- 인증서 만료 감지: Uptime Kuma HTTPS 모니터 (`https://immich.greenhead.dev`)로 모니터링
+
+**방화벽 보안 모델**
+- `trustedInterfaces = [ "tailscale0" ]`가 Tailscale 네트워크 전체 트래픽 허용
+- 따라서 per-interface 방화벽 룰은 불필요 (no-op) — 서비스별 방화벽 룰 없음
+- 보안은 **서비스 바인딩 주소**에 의존: localhost 서비스는 Caddy만 접근, Tailscale IP 서비스는 VPN 내부만 접근
 
 **Immich DB 비밀번호**
 - agenix로 관리 (`secrets/immich-db-password.age`)
