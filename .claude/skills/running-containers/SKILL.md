@@ -11,6 +11,7 @@ description: |
 # 컨테이너 관리 (Podman/홈서버)
 
 Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty) 가이드입니다.
+Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접근합니다.
 
 ## 모듈 구조 (mkOption 기반)
 
@@ -18,9 +19,10 @@ Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty) 가
 
 ```nix
 # modules/nixos/configuration.nix
-homeserver.immich.enable = true;      # 사진 백업
-homeserver.uptimeKuma.enable = true;  # 모니터링
-homeserver.copyparty.enable = true;  # 파일 서버
+homeserver.immich.enable = true;        # 사진 백업
+homeserver.uptimeKuma.enable = true;    # 모니터링
+homeserver.copyparty.enable = true;     # 파일 서버
+homeserver.reverseProxy.enable = true;  # Caddy HTTPS 리버스 프록시
 ```
 
 ### 파일 구조
@@ -32,9 +34,10 @@ homeserver.copyparty.enable = true;  # 파일 서버
 | `modules/nixos/programs/docker/immich.nix` | Immich (mkIf cfg.enable 래핑) |
 | `modules/nixos/programs/docker/uptime-kuma.nix` | Uptime Kuma (mkIf 래핑) |
 | `modules/nixos/programs/docker/copyparty.nix` | Copyparty 파일 서버 (mkIf 래핑) |
+| `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 (mkIf 래핑) |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
 | `modules/nixos/programs/anki-sync-server/` | Anki sync (NixOS 네이티브 모듈, 비컨테이너) |
-| `libraries/constants.nix` | IP, 경로, 리소스 제한, UID 상수 |
+| `libraries/constants.nix` | IP, 경로, 도메인, 리소스 제한, UID 상수 |
 
 ### 상수 참조
 
@@ -43,6 +46,19 @@ Docker 서비스에서 사용하는 상수 (`libraries/constants.nix`):
 - `constants.paths.dockerData` / `mediaData` - 데이터 경로
 - `constants.containers.immich.*` - Immich 리소스 제한
 - `constants.ids.render` - render 그룹 GID (하드웨어 가속)
+- `constants.domain.base` / `subdomains` - 커스텀 도메인 (`greenhead.dev`)
+
+### HTTPS 접근 (Caddy 리버스 프록시)
+
+| 서비스 | 도메인 | localhost |
+|--------|--------|-----------|
+| Immich | `https://immich.greenhead.dev` | `127.0.0.1:2283` |
+| Uptime Kuma | `https://uptime-kuma.greenhead.dev` | `127.0.0.1:3002` |
+| Copyparty | `https://copyparty.greenhead.dev` | `127.0.0.1:3923` |
+| Anki Sync | (Caddy 미경유) | `100.79.80.95:27701` |
+
+Caddy가 Cloudflare DNS-01 ACME로 Let's Encrypt 인증서를 자동 발급합니다.
+Tailscale IP (`100.79.80.95:443`)에만 바인딩되어 VPN 내부 전용입니다.
 
 ### 타임존 설정
 
@@ -70,6 +86,20 @@ environment = {
 **Tailscale IP 바인딩 타이밍**
 - 부팅 시 Tailscale IP 할당 전에 서비스 시작하면 바인딩 실패
 - 해결: `tailscale-wait.nix` 공통 모듈로 60초 대기
+- 예외: Immich/Copyparty/Uptime Kuma는 `127.0.0.1` 바인딩 (Caddy가 프록시)
+
+**Uptime Kuma `--network=host` 모드**
+- localhost 서비스 (Immich, Copyparty 등) 모니터링을 위해 호스트 네트워크 사용
+- 기본 Podman 브릿지에서는 `127.0.0.1` 바인딩된 서비스에 접근 불가
+- `UPTIME_KUMA_HOST=127.0.0.1` + `UPTIME_KUMA_PORT`로 리스닝 주소 지정
+- `ports` 옵션 불필요 (`--network=host`가 직접 호스트 포트 사용)
+
+**Caddy HTTPS 리버스 프록시**
+- `modules/nixos/programs/caddy.nix`에서 Cloudflare DNS-01 ACME 사용
+- `caddy.withPlugins`로 Cloudflare 플러그인 빌드 (SRI 해시 필요)
+- Tailscale IP에만 바인딩 (외부 노출 안 됨)
+- `caddy-env` oneshot 서비스가 시작 전 Cloudflare API 토큰 환경변수 생성
+- agenix secret: `secrets/cloudflare-dns-api-token.age`
 
 **Immich DB 비밀번호**
 - agenix로 관리 (`secrets/immich-db-password.age`)
@@ -111,6 +141,8 @@ macOS에서 `~/FolderActions/upload-immich/`에 파일을 넣으면 Immich에 �
 2. **ML OOM**: CPU 버전 이미지로 변경
 3. **IP 바인딩 실패**: `tailscale-wait.nix`가 올바르게 import 되었는지 확인
 4. **DB 비밀번호 오류**: `secrets/immich-db-password.age` 존재 확인, `agenix -r` 재암호화
+5. **Uptime Kuma에서 localhost 서비스 모니터링 불가**: `--network=host` 필수 (기본 브릿지에서는 `127.0.0.1` 접근 불가)
+6. **Caddy HTTPS 인증서 발급 실패**: Cloudflare API 토큰 확인 (`sudo cat /run/caddy/env`), `systemctl status caddy-env`
 
 ## 레퍼런스
 

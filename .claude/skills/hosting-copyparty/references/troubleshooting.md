@@ -32,22 +32,22 @@ sudo cat /run/agenix/copyparty-password | xxd         # 바이트 레벨 확인 
 - 비밀번호에 이스케이프 문자(`\`)가 포함되면 `agenix -e secrets/copyparty-password.age`로 재입력
 - 설정 파일 재생성: `sudo systemctl restart copyparty-config && sudo systemctl restart podman-copyparty`
 
-## 3. IP 바인딩 실패
+## 3. HTTPS 접근 실패 (CORS 403)
 
-**증상**: `curl http://100.79.80.95:3923` 연결 거부
+**증상**: `https://copyparty.greenhead.dev` 접근 시 `rejected by cors-check` 에러
 
 **진단**:
 ```bash
-tailscale ip -4                             # Tailscale IP 할당 확인
-ss -tlnp | grep 3923                        # 포트 리스닝 확인
-podman logs copyparty 2>&1 | tail -20       # 컨테이너 로그
-journalctl -u podman-copyparty | grep -i bind  # 바인딩 에러
+sudo podman logs --tail 20 copyparty         # CORS 에러 로그 확인
+sudo podman exec copyparty cat /cfg/config.conf  # 설정 확인
+curl -I http://127.0.0.1:3923                # localhost 직접 확인
+curl -sI -H 'Origin: https://copyparty.greenhead.dev' https://copyparty.greenhead.dev/  # CORS 헤더 확인
 ```
 
 **해결**:
-- Tailscale VPN 연결 확인 (클라이언트 측)
-- 방화벽 확인: `sudo iptables -L -n | grep 3923`
-- 서비스 재시작: `sudo systemctl restart podman-copyparty`
+- `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` 확인
+- `rproxy: 1`만으로는 부족 — Podman 브릿지 네트워크 게이트웨이를 `xff-src`로 신뢰해야 함
+- 설정 변경 후 컨테이너 재시작 필수: `sudo systemctl restart podman-copyparty`
 
 ## 4. 비밀번호 변경
 
@@ -83,6 +83,8 @@ sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
   hist: /cfg/hists
   th-maxage: 7776000
   no-crt
+  rproxy: 1
+  xff-src: 10.88.0.0/16
 
 [accounts]
   greenhead: <PASSWORD>

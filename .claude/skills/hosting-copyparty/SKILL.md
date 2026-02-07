@@ -12,7 +12,7 @@ description: |
 # Copyparty 파일 서버 관리
 
 HDD(`/mnt/data`) 전체를 웹 브라우저로 탐색/업로드/다운로드하는 셀프호스팅 파일 서버입니다.
-Podman 컨테이너로 실행되며, Tailscale VPN 내에서만 접근 가능합니다.
+Podman 컨테이너로 실행되며, Caddy HTTPS 리버스 프록시(`https://copyparty.greenhead.dev`)를 통해 Tailscale VPN 내에서 접근합니다.
 
 ## 모듈 구조
 
@@ -20,7 +20,7 @@ Podman 컨테이너로 실행되며, Tailscale VPN 내에서만 접근 가능합
 |------|------|
 | `modules/nixos/options/homeserver.nix` | `copyparty` mkOption 정의 |
 | `modules/nixos/programs/docker/copyparty.nix` | Podman 컨테이너 + 설정 생성 서비스 |
-| `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
+| `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 (Copyparty 포함) |
 | `secrets/copyparty-password.age` | agenix 암호화 비밀번호 |
 | `libraries/constants.nix` | 포트 (`copyparty = 3923`), 리소스 제한 |
 
@@ -30,8 +30,9 @@ Podman 컨테이너로 실행되며, Tailscale VPN 내에서만 접근 가능합
 
 | 방식 | URL |
 |------|-----|
-| 웹 UI | `http://100.79.80.95:3923` |
-| WebDAV (Mac Finder) | 서버에 연결 > `http://100.79.80.95:3923` |
+| 웹 UI | `https://copyparty.greenhead.dev` |
+| WebDAV (Mac Finder) | 서버에 연결 > `https://copyparty.greenhead.dev` |
+| 내부 (localhost) | `http://127.0.0.1:3923` (Caddy → localhost) |
 
 로그인: `greenhead` / 비밀번호: agenix secret
 
@@ -43,7 +44,8 @@ podman logs copyparty                         # 로그 확인
 systemctl status podman-copyparty             # systemd 서비스 상태
 systemctl status copyparty-config             # 설정 생성 서비스 상태
 journalctl -u podman-copyparty -f             # 로그 실시간
-curl -I http://100.79.80.95:3923              # HTTP 응답 확인
+curl -I https://copyparty.greenhead.dev        # HTTPS 응답 확인
+curl -I http://127.0.0.1:3923                 # localhost 직접 확인
 ```
 
 ### 서비스 활성화/비활성화
@@ -106,9 +108,15 @@ homeserver.copyparty.port = 3923;     # 포트 (기본값은 constants.nix)
 - 설정 파일이 없으면 컨테이너 시작 방지
 - Podman이 존재하지 않는 파일을 마운트 시 디렉토리로 생성하는 문제 예방
 
-**Tailscale IP 바인딩 타이밍**
-- 부팅 시 Tailscale IP 할당 전에 컨테이너 시작하면 바인딩 실패
-- 해결: `tailscale-wait.nix`로 60초 대기
+**리버스 프록시 (Caddy) 뒤에서 CORS 403**
+- Caddy 리버스 프록시를 통해 접근 시 `rejected by cors-check` 에러 발생
+- 해결: `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` (Podman 브릿지 네트워크) 추가
+- `rproxy: 1`만으로는 부족 — X-Forwarded-For 헤더 소스(Podman gateway)를 `xff-src`로 신뢰해야 함
+- 설정 변경 후 컨테이너 재시작 필수 (`sudo systemctl restart podman-copyparty`)
+
+**localhost 바인딩 (Caddy 연동)**
+- 포트가 `127.0.0.1:3923`에 바인딩 (Caddy가 유일한 외부 진입점)
+- Tailscale IP 바인딩/tailscale-wait.nix 불필요 (localhost는 항상 사용 가능)
 
 **썸네일 캐시**
 - `th-maxage: 7776000` (90일) 설정
@@ -123,7 +131,7 @@ homeserver.copyparty.port = 3923;     # 포트 (기본값은 constants.nix)
 
 1. **컨테이너 시작 실패**: `journalctl -u podman-copyparty`에서 "multiple filesystem-paths" 또는 initcfg 충돌 확인. 상세: troubleshooting 항목 6, 7
 2. **로그인 실패**: agenix secret 복호화 확인 (`sudo cat /run/agenix/copyparty-password`)
-3. **IP 바인딩 실패**: Tailscale VPN 연결 확인, `tailscale-wait.nix` import 확인
+3. **CORS 403 (리버스 프록시)**: `rproxy: 1` + `xff-src: 10.88.0.0/16` 설정 확인, 컨테이너 재시작
 4. **비밀번호 변경**: `agenix -e secrets/copyparty-password.age` 후 `nrs` 재적용
 
 ## 레퍼런스

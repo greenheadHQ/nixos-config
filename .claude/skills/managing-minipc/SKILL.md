@@ -47,6 +47,7 @@ ssh green@100.x.x.x
 | `modules/nixos/options/homeserver.nix` | mkOption 기반 서비스 정의 |
 | `modules/nixos/programs/docker/runtime.nix` | Podman 런타임 공통 설정 |
 | `modules/nixos/programs/docker/immich.nix` | Immich 서비스 (mkIf 래핑) |
+| `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 |
 | `modules/nixos/home.nix` | Home Manager (NixOS) |
 | `libraries/constants.nix` | 전역 상수 (IP, 경로, SSH 키 등) |
 
