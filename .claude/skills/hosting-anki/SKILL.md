@@ -68,6 +68,15 @@ homeserver.ankiSync.port = 27701;    # 포트 (기본값은 constants.nix)
 
 ## Known Issues
 
+**로그인 UI에 "AnkiWeb" 표시**
+- 커스텀 sync 서버를 설정해도 로그인 다이얼로그에 "AnkiWeb 아이디"라고 표시됨
+- 정상 동작: 실제로는 커스텀 서버로 연결되므로 셀프호스팅 자격증명 입력
+
+**age 암호화 시 특수문자 이스케이프**
+- `nix-shell --run` 파이프로 비밀번호 전달 시 `!` 등 특수문자에 `\` 추가됨
+- 해결: 임시 파일 경유로 암호화 (`printf 'pw' > /tmp/pw && age ... /tmp/pw`)
+- 진단: `sudo cat /run/agenix/anki-sync-password | xxd`로 바이트 확인
+
 **DynamicUser + Tailscale 소켓 접근**
 - upstream 모듈이 `DynamicUser = true` 사용
 - `ExecStartPre`에서 tailscale-wait 스크립트 실행 시 소켓 접근 불가

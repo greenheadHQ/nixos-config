@@ -23,13 +23,17 @@ pushover-claude-stop.age wasn't created.
 | `agenix -e` | O | X (`/dev/stdin` 없음) |
 | `age` CLI (pipe) | O | O |
 
-**해결**: `age` CLI를 직접 호출하여 pipe 기반으로 암호화.
+**해결**: `age` CLI를 직접 호출하되, **임시 파일 경유**로 암호화. stdin 파이프는 `nix-shell --run` 내부 셸에서 특수문자(`!`, `$`, `` ` `` 등)가 이스케이프되어 `\!`처럼 백슬래시가 추가될 수 있다.
 
 ```bash
-# secrets/secrets.nix에서 공개키 확인 후 모든 recipient 지정
-printf 'KEY=value\n' | \
-  nix-shell -p age --run \
-  'age -r "ssh-ed25519 <key1>" -r "ssh-ed25519 <key2>" -o secrets/<name>.age'
+# 임시 파일 경유 (특수문자 안전)
+printf 'KEY=value\n' > /tmp/secret
+nix-shell -p age --run \
+  'age -r "ssh-ed25519 <key1>" -r "ssh-ed25519 <key2>" -o secrets/<name>.age /tmp/secret'
+rm /tmp/secret
+
+# 암호화 결과 검증 (xxd로 바이트 단위 확인)
+# 배포 후: sudo cat /run/agenix/<name> | xxd
 ```
 
 ---

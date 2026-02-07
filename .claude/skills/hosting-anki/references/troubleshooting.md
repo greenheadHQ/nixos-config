@@ -25,7 +25,57 @@ sudo iptables -L -n | grep 27701
 - 서비스 재시작: `sudo systemctl restart anki-sync-server`
 - IP 바인딩 실패 시: `journalctl -u anki-sync-server.service`에서 에러 확인
 
-## 인증 실패
+## "AnkiWeb 아이디나 비밀번호가 틀렸습니다" (로그인 UI 혼동)
+
+### 증상
+커스텀 sync 서버를 설정했는데 로그인 다이얼로그에 "AnkiWeb 아이디"라고 표시됨.
+셀프호스팅 서버 로그인인지 AnkiWeb 로그인인지 혼동.
+
+### 원인
+Anki는 커스텀 sync 서버를 설정해도 로그인 UI 텍스트가 "AnkiWeb"으로 고정되어 있음.
+실제로는 설정한 커스텀 서버로 연결되므로, 셀프호스팅 서버 자격증명을 입력하면 됨.
+
+### 해결
+- 아이디: `greenhead` (셀프호스팅 서버에 등록한 사용자명)
+- 비밀번호: agenix에 저장한 비밀번호
+- "AnkiWeb" 표시는 무시 — 커스텀 서버로 정상 연결됨
+
+## 인증 실패 (비밀번호 이스케이프 문제)
+
+### 증상
+올바른 비밀번호를 입력해도 "AnkiWeb 아이디나 비밀번호가 틀렸습니다" 발생.
+서버 로그에 `invalid user/pass in get_host_key` 403 에러.
+
+### 진단
+```bash
+# 복호화된 비밀번호의 실제 바이트 확인
+sudo cat /run/agenix/anki-sync-password | xxd
+
+# 예: \! (5c 21)이 보이면 이스케이프 문제
+# 00000000: 7061 7373 5c21          pass\!    ← 잘못됨
+# 00000000: 7061 7373 21            pass!     ← 정상
+```
+
+### 원인
+`age` 암호화 시 stdin 파이프로 비밀번호를 전달하면 `nix-shell --run` 내부 셸이
+특수문자(`!`, `$`, `` ` `` 등)를 이스케이프하여 `\!`처럼 백슬래시가 추가됨.
+
+### 해결
+파이프 대신 **임시 파일 경유**로 암호화:
+
+```bash
+printf '비밀번호' > /tmp/pw
+nix-shell -p age --run 'age -r "ssh-ed25519 ..." -o secrets/anki-sync-password.age /tmp/pw'
+rm /tmp/pw
+```
+
+암호화 후 MiniPC에서 `nrs` 재배포 + 서비스 재시작:
+
+```bash
+sudo systemctl restart anki-sync-server.service
+```
+
+## 인증 실패 (일반)
 
 ### 증상
 "Authentication failed" 또는 "Invalid credentials"
@@ -39,7 +89,7 @@ sudo cat /run/agenix/anki-sync-password
 
 ### 해결
 - 비밀번호 파일이 없으면: `nrs` 재실행
-- 비밀번호 변경: `nix run github:ryantm/agenix -- -e secrets/anki-sync-password.age`
+- 비밀번호 변경 시 임시 파일 경유 패턴 사용 (위 "비밀번호 이스케이프 문제" 참조)
 
 ## 서비스 시작 실패
 
