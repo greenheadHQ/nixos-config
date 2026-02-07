@@ -33,6 +33,7 @@ homeserver.plex.enable = false;       # 미디어 스트리밍 (비활성)
 | `modules/nixos/programs/docker/uptime-kuma.nix` | Uptime Kuma (mkIf 래핑) |
 | `modules/nixos/programs/docker/plex.nix` | Plex (mkIf 래핑) |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
+| `modules/nixos/programs/anki-sync-server/` | Anki sync (NixOS 네이티브 모듈, 비컨테이너) |
 | `libraries/constants.nix` | IP, 경로, 리소스 제한, UID 상수 |
 
 ### 상수 참조

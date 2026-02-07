@@ -54,6 +54,15 @@
         description = "OnCalendar time for version check";
       };
     };
+
+    ankiSync = {
+      enable = lib.mkEnableOption "Anki self-hosted sync server";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = constants.network.ports.ankiSync;
+        description = "Port for Anki sync server";
+      };
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -65,5 +74,6 @@
     ../programs/docker/plex.nix
     ../programs/immich-cleanup # Immich 임시 앨범 자동 삭제
     ../programs/immich-update # Immich 버전 체크 및 업데이트
+    ../programs/anki-sync-server # Anki 자체 호스팅 동기화 서버
   ];
 }

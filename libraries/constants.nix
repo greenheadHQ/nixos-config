@@ -16,6 +16,7 @@
       immichMl = 3003;
       uptimeKuma = 3002;
       plex = 32400;
+      ankiSync = 27701;
     };
   };
 

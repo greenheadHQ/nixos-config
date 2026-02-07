@@ -27,4 +27,7 @@ in
   # Immich CLI 업로드 (FolderAction)
   "immich-api-key.age".publicKeys = allHosts;
   "pushover-immich.age".publicKeys = allHosts;
+
+  # Anki Sync Server 비밀번호
+  "anki-sync-password.age".publicKeys = allHosts;
 }
