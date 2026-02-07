@@ -63,6 +63,10 @@
         description = "Port for Copyparty web interface";
       };
     };
+
+    reverseProxy = {
+      enable = lib.mkEnableOption "Caddy reverse proxy with HTTPS for homeserver services";
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -75,5 +79,6 @@
     ../programs/immich-update # Immich 버전 체크 및 업데이트
     ../programs/anki-sync-server # Anki 자체 호스팅 동기화 서버
     ../programs/docker/copyparty.nix # Copyparty 파일 서버
+    ../programs/caddy.nix # HTTPS 리버스 프록시
   ];
 }

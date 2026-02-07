@@ -2,7 +2,6 @@
 # 모니터링 서비스
 {
   config,
-  pkgs,
   lib,
   constants,
   ...
@@ -10,7 +9,6 @@
 
 let
   cfg = config.homeserver.uptimeKuma;
-  inherit (constants.network) minipcTailscaleIP;
   inherit (constants.paths) dockerData;
   inherit (constants.containers) uptimeKuma;
 in
@@ -25,7 +23,7 @@ in
     virtualisation.oci-containers.containers.uptime-kuma = {
       image = "louislam/uptime-kuma:1";
       autoStart = true;
-      ports = [ "${minipcTailscaleIP}:${toString cfg.port}:3001" ];
+      ports = [ "127.0.0.1:${toString cfg.port}:3001" ];
       volumes = [ "${dockerData}/uptime-kuma/data:/app/data" ];
       environment = {
         TZ = config.time.timeZone;
@@ -36,14 +34,5 @@ in
       ];
     };
 
-    # Tailscale IP 바인딩을 위한 서비스 의존성
-    systemd.services.podman-uptime-kuma = {
-      after = [ "tailscaled.service" ];
-      wants = [ "tailscaled.service" ];
-      serviceConfig.ExecStartPre = import ../../lib/tailscale-wait.nix { inherit pkgs; };
-    };
-
-    # 방화벽
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.port ];
   };
 }

@@ -10,7 +10,6 @@
 
 let
   cfg = config.homeserver.immich;
-  inherit (constants.network) minipcTailscaleIP;
   inherit (constants.paths) dockerData mediaData;
   inherit (constants.ids) postgres user render;
   inherit (constants.containers.immich) redis ml server;
@@ -70,11 +69,9 @@ in
       after = [
         "podman.socket"
         "network-online.target"
-        "tailscaled.service"
       ];
       wants = [
         "podman.socket"
-        "tailscaled.service"
         "network-online.target"
       ];
       wantedBy = [ "multi-user.target" ];
@@ -87,7 +84,6 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStartPre = import ../../lib/tailscale-wait.nix { inherit pkgs; };
         ExecStart = "${pkgs.podman}/bin/podman network create immich-network --ignore";
       };
     };
@@ -158,7 +154,7 @@ in
     virtualisation.oci-containers.containers.immich-server = {
       image = "ghcr.io/immich-app/immich-server:release";
       autoStart = true;
-      ports = [ "${minipcTailscaleIP}:${toString cfg.port}:2283" ];
+      ports = [ "127.0.0.1:${toString cfg.port}:2283" ];
       volumes = [
         "${mediaData}/immich/photos:/usr/src/app/upload"
         "${dockerData}/immich/upload-cache:/usr/src/app/upload/upload"
@@ -189,7 +185,5 @@ in
       ];
     };
 
-    # 방화벽
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.port ];
   };
 }

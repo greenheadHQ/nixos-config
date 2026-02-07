@@ -17,6 +17,20 @@
       uptimeKuma = 3002;
       ankiSync = 27701;
       copyparty = 3923;
+      caddy = 443;
+      caddyHttp = 80;
+    };
+  };
+
+  # ═══════════════════════════════════════════════════════════════
+  # 도메인 및 리버스 프록시
+  # ═══════════════════════════════════════════════════════════════
+  domain = {
+    base = "greenhead.dev";
+    subdomains = {
+      immich = "immich";
+      uptimeKuma = "uptime-kuma";
+      copyparty = "copyparty";
     };
   };
 

@@ -10,7 +10,6 @@
 
 let
   cfg = config.homeserver.copyparty;
-  inherit (constants.network) minipcTailscaleIP;
   inherit (constants.paths) dockerData mediaData;
   inherit (constants.containers) copyparty;
 
@@ -79,7 +78,7 @@ in
         "-c"
         "/cfg/config.conf"
       ];
-      ports = [ "${minipcTailscaleIP}:${toString cfg.port}:3923" ];
+      ports = [ "127.0.0.1:${toString cfg.port}:3923" ];
       volumes = [
         "${configPath}:/cfg/config.conf:ro"
         "${dockerData}/copyparty/hists:/cfg/hists"
@@ -96,17 +95,11 @@ in
       ];
     };
 
-    # Tailscale IP 바인딩 대기 + 설정 파일 존재 확인
+    # 설정 파일 존재 확인
     systemd.services.podman-copyparty = {
-      after = [ "tailscaled.service" ];
-      wants = [ "tailscaled.service" ];
       serviceConfig = {
-        ExecStartPre = import ../../lib/tailscale-wait.nix { inherit pkgs; };
         ConditionPathExists = configPath;
       };
     };
-
-    # 방화벽
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.port ];
   };
 }
