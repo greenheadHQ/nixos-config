@@ -25,6 +25,7 @@ let
       hist: /cfg/hists
       th-maxage: 7776000
       no-crt
+      rproxy: 1
 
     [accounts]
     CONF
