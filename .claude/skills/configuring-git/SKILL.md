@@ -21,6 +21,7 @@ Git, delta diff, lazygit, rerere 등 Git 관련 설정 가이드입니다.
 | rerere | 충돌 해결 패턴 기록/재사용 |
 | rebase 역순 | Interactive rebase에서 최신 커밋이 위로 |
 | git-cleanup | 오래된/삭제된 브랜치 정리 |
+| gdf | git diff 파일을 fzf로 선택하여 nvim으로 열기 (delta preview) |
 | wt | Git worktree 생성 및 관리 (삭제 시 커밋 체크) |
 | wt-cleanup | 워크트리 정리 (PR 상태 + 커밋 체크) |
 
@@ -67,5 +68,5 @@ rm -rf .git/rr-cache
 ## 레퍼런스
 
 - delta/lazygit/rebase 설정 상세: [references/config.md](references/config.md)
-- git-cleanup/wt/wt-cleanup 사용법: [references/commands.md](references/commands.md)
+- gdf/git-cleanup/wt/wt-cleanup 사용법: [references/commands.md](references/commands.md)
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)

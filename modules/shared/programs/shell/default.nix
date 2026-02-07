@@ -760,12 +760,12 @@ in
       # Git Diff → fzf → Neovim
       #─────────────────────────────────────────────────────────────────────────
       ''
-        # ved: git diff 파일을 fzf로 선택하여 nvim으로 열기
-        # 사용법: ved [git diff 옵션]
-        #   ved              # 워킹 트리 변경 파일
-        #   ved --cached     # 스테이징된 파일
-        #   ved HEAD~3       # 최근 3커밋 변경 파일
-        ved() {
+        # gdf: git diff 파일을 fzf로 선택하여 nvim으로 열기
+        # 사용법: gdf [git diff 옵션]
+        #   gdf              # 워킹 트리 변경 파일
+        #   gdf --cached     # 스테이징된 파일
+        #   gdf HEAD~3       # 최근 3커밋 변경 파일
+        gdf() {
           if ! git rev-parse --is-inside-work-tree &>/dev/null; then
             echo "Git 저장소가 아닙니다" >&2
             return 1
@@ -780,8 +780,8 @@ in
           fi
 
           local selected
-          selected=$(echo "$files" | fzf --multi \
-            --preview "git diff $* -- {} 2>/dev/null | head -200" \
+          selected=$(echo "$files" | fzf --multi --ansi \
+            --preview "git diff $* -- {} 2>/dev/null | delta --paging=never --width=\$FZF_PREVIEW_COLUMNS" \
             --preview-window=right:60% \
             --header="TAB: 다중 선택 / Enter: nvim으로 열기")
 
