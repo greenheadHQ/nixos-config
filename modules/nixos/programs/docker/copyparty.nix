@@ -26,6 +26,7 @@ let
       th-maxage: 7776000
       no-crt
       rproxy: 1
+      xff-src: 10.88.0.0/16
 
     [accounts]
     CONF
