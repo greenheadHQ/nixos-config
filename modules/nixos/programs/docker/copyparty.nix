@@ -25,6 +25,7 @@ let
     [global]
       hist: /cfg/hists
       th-maxage: 7776000
+      no-crt
 
     [accounts]
     CONF
@@ -67,12 +68,14 @@ in
     };
 
     # Copyparty 컨테이너
-    # copyparty/ac 이미지의 ENTRYPOINT에 이미 `-c /z/initcfg`가 포함됨
-    # -c는 반복 가능하며, 나중 설정이 이전을 오버라이드
+    # 이미지 ENTRYPOINT가 `-c /z/initcfg`를 로드하여 루트 볼륨 충돌 발생
+    # --entrypoint로 오버라이드하여 우리 설정만 사용
     virtualisation.oci-containers.containers.copyparty = {
       image = "copyparty/ac:latest";
       autoStart = true;
       cmd = [
+        "-m"
+        "copyparty"
         "-c"
         "/cfg/config.conf"
       ];
@@ -86,6 +89,7 @@ in
         TZ = config.time.timeZone;
       };
       extraOptions = [
+        "--entrypoint=python3"
         "--memory=${copyparty.memory}"
         "--memory-swap=${copyparty.memorySwap}"
         "--cpus=${copyparty.cpus}"
