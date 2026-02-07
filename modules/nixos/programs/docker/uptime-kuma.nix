@@ -19,16 +19,19 @@ in
       "d ${dockerData}/uptime-kuma/data 0755 root root -"
     ];
 
-    # Uptime Kuma 컨테이너 (포트 3002 - 기존 3001 충돌 방지)
+    # Uptime Kuma 컨테이너
+    # --network=host: localhost 서비스 모니터링을 위해 호스트 네트워크 사용
     virtualisation.oci-containers.containers.uptime-kuma = {
       image = "louislam/uptime-kuma:1";
       autoStart = true;
-      ports = [ "127.0.0.1:${toString cfg.port}:3001" ];
       volumes = [ "${dockerData}/uptime-kuma/data:/app/data" ];
       environment = {
         TZ = config.time.timeZone;
+        UPTIME_KUMA_HOST = "127.0.0.1";
+        UPTIME_KUMA_PORT = toString cfg.port;
       };
       extraOptions = [
+        "--network=host"
         "--memory=${uptimeKuma.memory}"
         "--cpus=${uptimeKuma.cpus}"
       ];
