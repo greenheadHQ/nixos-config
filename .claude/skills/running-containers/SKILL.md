@@ -10,7 +10,7 @@ description: |
 
 # 컨테이너 관리 (Podman/홈서버)
 
-Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, plex) 가이드입니다.
+Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma) 가이드입니다.
 
 ## 모듈 구조 (mkOption 기반)
 
@@ -20,7 +20,6 @@ Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, plex) 가이�
 # modules/nixos/configuration.nix
 homeserver.immich.enable = true;      # 사진 백업
 homeserver.uptimeKuma.enable = true;  # 모니터링
-homeserver.plex.enable = false;       # 미디어 스트리밍 (비활성)
 ```
 
 ### 파일 구조
@@ -31,7 +30,6 @@ homeserver.plex.enable = false;       # 미디어 스트리밍 (비활성)
 | `modules/nixos/programs/docker/runtime.nix` | Podman 런타임 공통 설정 |
 | `modules/nixos/programs/docker/immich.nix` | Immich (mkIf cfg.enable 래핑) |
 | `modules/nixos/programs/docker/uptime-kuma.nix` | Uptime Kuma (mkIf 래핑) |
-| `modules/nixos/programs/docker/plex.nix` | Plex (mkIf 래핑) |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
 | `modules/nixos/programs/anki-sync-server/` | Anki sync (NixOS 네이티브 모듈, 비컨테이너) |
 | `libraries/constants.nix` | IP, 경로, 리소스 제한, UID 상수 |
@@ -91,8 +89,6 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 ```nix
 # modules/nixos/configuration.nix에서 변경 후 nrs 실행
-homeserver.plex.enable = true;   # 활성화
-homeserver.plex.port = 32400;    # 포트 커스터마이징 (기본값은 constants.nix)
 ```
 
 ### Immich 업데이트

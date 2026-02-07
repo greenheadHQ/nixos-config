@@ -41,12 +41,12 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │       ├── configuration.nix      # systemd-boot, 로케일, 서비스 활성화
 │       ├── home.nix               # HM 패키지 + 모듈 import
 │       ├── options/
-│       │   └── homeserver.nix     # mkOption 서비스 정의 (immich, uptime-kuma, plex, anki-sync)
+│       │   └── homeserver.nix     # mkOption 서비스 정의 (immich, uptime-kuma, anki-sync)
 │       ├── lib/
 │       │   └── tailscale-wait.nix # Tailscale IP 대기 유틸리티
 │       └── programs/
 │           ├── anki-sync-server/  # Anki sync 서버 (NixOS 네이티브 모듈)
-│           ├── docker/            # 컨테이너 서비스 (runtime, immich, uptime-kuma, plex)
+│           ├── docker/            # 컨테이너 서비스 (runtime, immich, uptime-kuma)
 │           ├── ssh.nix            # OpenSSH 서버
 │           ├── tailscale.nix      # VPN
 │           └── fail2ban.nix       # SSH 방어
@@ -75,7 +75,6 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적 활성화:
 # modules/nixos/configuration.nix
 homeserver.immich.enable = true;
 homeserver.uptimeKuma.enable = true;
-homeserver.plex.enable = false;
 homeserver.ankiSync.enable = true;
 ```
 

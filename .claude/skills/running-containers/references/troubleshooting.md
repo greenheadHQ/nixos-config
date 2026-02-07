@@ -123,8 +123,6 @@ systemd.services.create-immich-network = {
 **적용 대상**:
 - `immich.nix`: create-immich-network 서비스
 - `uptime-kuma.nix`: podman-uptime-kuma 서비스
-- `plex.nix`: podman-plex 서비스 (현재 비활성)
-
 **검증**:
 
 ```bash
@@ -151,7 +149,7 @@ curl -I http://100.79.80.95:3002  # uptime-kuma
 
 | 항목 | 현재 상태 | 개선 방향 |
 |------|----------|----------|
-| tailscaleIP 하드코딩 | 4개 파일에 중복 정의 (`immich.nix`, `uptime-kuma.nix`, `plex.nix`, `default.nix`) | 단일 소스로 추출 (let 바인딩 또는 별도 모듈) |
+| tailscaleIP 하드코딩 | 3개 파일에 중복 정의 (`immich.nix`, `uptime-kuma.nix`, `default.nix`) | 단일 소스로 추출 (let 바인딩 또는 별도 모듈) |
 | Tailscale 대기 로직 중복 | 3개 파일에 동일한 bash 스크립트 | 공통 스크립트 또는 함수로 추출 |
 | immich DB 비밀번호 | `immich.nix:51`에 평문 하드코딩 | sops-nix 등 secrets 관리로 이동 |
 

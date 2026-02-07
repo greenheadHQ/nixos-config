@@ -26,7 +26,7 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | `libraries/packages.nix` | 공통 패키지 (shared/darwinOnly/nixosOnly) |
 | `modules/darwin/` | macOS 전용 설정 |
 | `modules/nixos/` | NixOS 전용 설정 |
-| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, uptime-kuma, plex, anki-sync) |
+| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, uptime-kuma, anki-sync) |
 | `modules/shared/` | 공유 설정 |
 | `scripts/` | 자동화 스크립트 (add-host, pre-rebuild-check, update-input) |
 
@@ -50,7 +50,6 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 활성화합니다:
 # modules/nixos/configuration.nix
 homeserver.immich.enable = true;
 homeserver.uptimeKuma.enable = true;
-homeserver.plex.enable = false;
 homeserver.ankiSync.enable = true;
 ```
 

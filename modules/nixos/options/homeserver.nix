@@ -28,15 +28,6 @@
       };
     };
 
-    plex = {
-      enable = lib.mkEnableOption "Plex media server";
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = constants.network.ports.plex;
-        description = "Port for Plex web interface";
-      };
-    };
-
     immichCleanup = {
       enable = lib.mkEnableOption "Immich temp album cleanup (Claude Code Temp)";
       albumName = lib.mkOption {
@@ -71,7 +62,6 @@
     ../programs/docker/runtime.nix # Podman 런타임 공통 설정
     ../programs/docker/immich.nix
     ../programs/docker/uptime-kuma.nix
-    ../programs/docker/plex.nix
     ../programs/immich-cleanup # Immich 임시 앨범 자동 삭제
     ../programs/immich-update # Immich 버전 체크 및 업데이트
     ../programs/anki-sync-server # Anki 자체 호스팅 동기화 서버

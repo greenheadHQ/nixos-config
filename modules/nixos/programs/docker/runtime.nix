@@ -36,7 +36,6 @@ in
   # 공통 데이터 디렉토리 (서비스별 디렉토리는 각 모듈에서 정의)
   systemd.tmpfiles.rules = [
     "d ${dockerData} 0755 root root -"
-    "d ${mediaData}/plex/media 0755 ${username} users -"
   ];
 
   # 시스템 패키지
