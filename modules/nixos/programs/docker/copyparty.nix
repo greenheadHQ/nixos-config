@@ -30,16 +30,6 @@ let
     CONF
     printf '  greenhead: %s\n\n' "$PASSWORD" >> ${configPath}
     cat >> ${configPath} <<'CONF'
-    [/immich]
-      /data/immich
-      accs:
-        r: greenhead
-
-    [/backups]
-      /data/backups
-      accs:
-        r: greenhead
-
     [/]
       /data
       accs:
