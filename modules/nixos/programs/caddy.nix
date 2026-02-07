@@ -16,7 +16,7 @@ let
 
   caddyWithPlugins = pkgs.caddy.withPlugins {
     plugins = [ "github.com/caddy-dns/cloudflare@v0.2.2" ];
-    hash = ""; # 첫 빌드 시 에러에서 실제 해시 복사
+    hash = "sha256-dnhEjopeA0UiI+XVYHYpsjcEI6Y1Hacbi28hVKYQURg=";
   };
 
   envFilePath = "/run/caddy/env";
