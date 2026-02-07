@@ -15,7 +15,7 @@ let
   inherit (constants.domain) base subdomains;
 
   caddyWithPlugins = pkgs.caddy.withPlugins {
-    plugins = [ "github.com/caddy-dns/cloudflare" ];
+    plugins = [ "github.com/caddy-dns/cloudflare@v0.2.2" ];
     hash = ""; # 첫 빌드 시 에러에서 실제 해시 복사
   };
 
