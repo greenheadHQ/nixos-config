@@ -29,6 +29,7 @@
     pkgs.htop # 시스템 모니터링
     pkgs.nvd # Nix 변경사항 비교
     pkgs.qrencode # QR 코드 생성 (MiniPC -> iPhone 텍스트 공유)
+    pkgs.uv # Python 패키지 관리자 (Astral ty LSP의 uvx 의존성)
   ];
 
   # macOS 전용 패키지

@@ -131,6 +131,9 @@ in
     # MCP 설정 - 양방향 수정 가능
     ".claude/mcp.json".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/mcp.json";
 
+    # User-scope 지침 - 양방향 수정 가능 (Astral 플러그인 등 전역 설정)
+    ".claude/CLAUDE.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
+
     # Hooks (외부 스크립트로 분리)
     ".claude/hooks/stop-notification.sh" = {
       source = "${claudeDir}/hooks/stop-notification.sh";

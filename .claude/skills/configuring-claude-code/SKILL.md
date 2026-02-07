@@ -13,11 +13,6 @@ Claude Code 플러그인 및 훅 설정 가이드입니다.
 
 ## Known Issues
 
-**settings.json 읽기 전용**
-- Nix로 관리되는 settings.json은 읽기 전용
-- 플러그인 설치/삭제는 CLI 명령어로만 가능
-- GUI에서 수정 시도 시 에러 발생
-
 **유령 플러그인**
 - GUI에서 "설치됨"으로 표시되지만 활성화/비활성화 불가
 - 해결: `~/.claude/settings.json`에서 수동 제거 후 CLI로 재설치
@@ -28,26 +23,50 @@ Claude Code 플러그인 및 훅 설정 가이드입니다.
 
 ```
 ~/.claude/
-├── settings.json          # 메인 설정 (Nix 관리, 읽기 전용)
+├── settings.json          # 메인 설정 (Nix mkOutOfStoreSymlink, 양방향 수정 가능)
+├── CLAUDE.md              # User-scope 지침 (Nix mkOutOfStoreSymlink, 양방향 수정 가능)
+├── mcp.json               # MCP 서버 설정 (Nix mkOutOfStoreSymlink, 양방향 수정 가능)
 ├── settings.local.json    # 로컬 오버라이드 (수동 수정 가능)
 └── plugins/               # 플러그인 디렉토리
 ```
 
 **mkOutOfStoreSymlink 패턴**
-- `settings.json`은 Nix store가 아닌 실제 파일로 심볼릭 링크
-- 양방향 수정 가능하도록 설계
+- `settings.json`, `CLAUDE.md`, `mcp.json`은 Nix store가 아닌 실제 파일로 심볼릭 링크
+- 양방향 수정 가능: Claude Code에서 변경하면 nixos-config repo에 바로 반영
+- 소스 위치: `modules/shared/programs/claude/files/`
 
 ### 플러그인 관리
 
+**선언적 관리 (settings.json)**
+
+`extraKnownMarketplaces`와 `enabledPlugins`로 마켓플레이스 등록 및 플러그인 활성화:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "astral-sh": {
+      "source": { "source": "github", "repo": "astral-sh/claude-code-plugins" }
+    }
+  },
+  "enabledPlugins": {
+    "plugin-dev@claude-plugins-official": true,
+    "astral@astral-sh": true
+  }
+}
+```
+
+Claude Code 시작 시 자동으로 마켓플레이스 클론 + 플러그인 설치 진행.
+
+**CLI 관리**
+
 ```bash
-# 플러그인 설치
-claude plugins install <plugin-path>
+# 마켓플레이스 추가
+/plugin marketplace add owner/repo
 
-# 플러그인 제거
-claude plugins uninstall <plugin-name>
-
-# 설치된 플러그인 목록
-claude plugins list
+# 플러그인 설치/제거/목록
+/plugin install <name>@<marketplace>
+/plugin uninstall <name>
+/plugin  # 대화형 UI
 ```
 
 ### PreToolUse 훅 예시

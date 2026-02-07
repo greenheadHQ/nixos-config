@@ -49,8 +49,17 @@
       }
     ]
   },
+  "extraKnownMarketplaces": {
+    "astral-sh": {
+      "source": {
+        "source": "github",
+        "repo": "astral-sh/claude-code-plugins"
+      }
+    }
+  },
   "enabledPlugins": {
-    "plugin-dev@claude-plugins-official": true
+    "plugin-dev@claude-plugins-official": true,
+    "astral@astral-sh": true
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
