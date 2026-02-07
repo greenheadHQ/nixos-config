@@ -28,7 +28,7 @@ in
       enable = true;
       address = minipcTailscaleIP;
       port = cfg.port;
-      openFirewall = false; # tailscale0 인터페이스에만 직접 관리
+      openFirewall = false; # trustedInterfaces로 tailscale0 전체 허용
 
       users = [
         {
@@ -50,7 +50,5 @@ in
       };
     };
 
-    # 방화벽 (Tailscale 네트워크만)
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.port ];
   };
 }

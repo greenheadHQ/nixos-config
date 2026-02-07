@@ -18,7 +18,6 @@
       ankiSync = 27701;
       copyparty = 3923;
       caddy = 443;
-      caddyHttp = 80;
     };
   };
 

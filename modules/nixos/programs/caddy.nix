@@ -106,13 +106,5 @@ in
         EnvironmentFile = envFilePath;
       };
     };
-
-    # ═══════════════════════════════════════════════════════════════
-    # 방화벽 (Tailscale 전용)
-    # ═══════════════════════════════════════════════════════════════
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
-      constants.network.ports.caddy
-      constants.network.ports.caddyHttp
-    ];
   };
 }
