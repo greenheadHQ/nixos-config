@@ -40,6 +40,15 @@ gdf HEAD~3       # 최근 3커밋 변경 파일
 | `--width=$FZF_PREVIEW_COLUMNS` | preview 너비에 맞춤 |
 | side-by-side 미적용 | preview 창이 좁아서 부적합 |
 
+### gdl (Git Diff Last)
+
+`gdf`를 래핑하여 직전 커밋 파일을 빠르게 선택합니다.
+
+```bash
+gdl        # 직전 1커밋 변경 파일
+gdl 3      # 최근 3커밋 변경 파일
+```
+
 ---
 
 ## git-cleanup
