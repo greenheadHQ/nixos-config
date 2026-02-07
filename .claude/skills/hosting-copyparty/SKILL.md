@@ -56,11 +56,18 @@ homeserver.copyparty.port = 3923;     # 포트 (기본값은 constants.nix)
 
 ### ACL 구조
 
+현재 단일 루트 볼륨으로 HDD 전체를 rwda(읽기/쓰기/삭제/관리) 권한으로 제공합니다.
+
 | Copyparty 경로 | 호스트 경로 | 권한 |
 |----------------|------------|------|
-| `/immich` | `/mnt/data/immich` | **읽기 전용** (Immich DB 불일치 방지) |
-| `/backups` | `/mnt/data/backups` | **읽기 전용** (백업 보호) |
 | `/` | `/mnt/data` | 읽기/쓰기/삭제/관리 |
+
+> **주의**: Immich 사진(`/immich/`)이나 Anki 백업(`/backups/`)을 Copyparty에서 삭제하지 않도록 주의.
+> Copyparty에서 Immich 파일 삭제 시 Immich DB와 불일치 발생.
+
+**경로별 읽기 전용 ACL 불가 이유**: Copyparty는 루트 `/` -> `/data` 마운트 시 하위 경로(`/data/immich`)를
+자동으로 `/immich`에 서빙하므로, `[/immich]` 섹션으로 별도 마운트하면 "multiple filesystem-paths" 충돌 발생.
+상세: [references/troubleshooting.md](references/troubleshooting.md) 항목 6 참조.
 
 ### 설정 파일 구조
 
@@ -77,6 +84,19 @@ homeserver.copyparty.port = 3923;     # 포트 (기본값은 constants.nix)
 
 ## Known Issues
 
+**ENTRYPOINT 오버라이드 필수**
+- `copyparty/ac` 이미지의 ENTRYPOINT가 `-c /z/initcfg`로 내장 설정을 로드
+- initcfg의 `% /cfg` 라인이 루트 `/`에 볼륨 마운트 → 우리 `[/]` 설정과 충돌
+- 해결: `--entrypoint=python3`로 오버라이드하여 initcfg 건너뛰기
+- `cmd`에 `-m copyparty -c /cfg/config.conf` 전달
+- initcfg의 `no-crt` 설정을 우리 config의 `[global]`에 직접 포함 필요
+
+**경로별 읽기 전용 ACL 불가**
+- Copyparty는 루트 볼륨 `[/]` -> `/data`가 이미 `/data/immich`을 `/immich`으로 서빙
+- `[/immich]` -> `/data/immich` 별도 선언 시 "multiple filesystem-paths mounted at [/immich]" 에러
+- 동일 가상 경로에 두 개의 파일시스템 경로 매핑 불가
+- 결론: 단일 루트 볼륨만 사용, 하위 경로 보호는 사용자 주의에 의존
+
 **비밀번호 주입 방식**
 - Copyparty는 `PASSWORD_FILE` 환경변수 미지원
 - `copyparty-config` oneshot 서비스가 quoted heredoc + `printf '%s'`로 안전 주입
@@ -90,11 +110,6 @@ homeserver.copyparty.port = 3923;     # 포트 (기본값은 constants.nix)
 - 부팅 시 Tailscale IP 할당 전에 컨테이너 시작하면 바인딩 실패
 - 해결: `tailscale-wait.nix`로 60초 대기
 
-**Immich/백업 경로 보호**
-- `/immich`, `/backups` 경로는 읽기 전용 ACL로 보호
-- Copyparty에서 이 경로의 파일 삭제/수정 불가
-- 이유: Copyparty에서 Immich 파일 삭제 시 DB 불일치 발생
-
 **썸네일 캐시**
 - `th-maxage: 7776000` (90일) 설정
 - 캐시 위치: SSD (`/var/lib/docker-data/copyparty/hists`)
@@ -106,11 +121,10 @@ homeserver.copyparty.port = 3923;     # 포트 (기본값은 constants.nix)
 
 ## 자주 발생하는 문제
 
-1. **컨테이너 시작 실패**: `systemctl status copyparty-config`로 설정 생성 확인, `ConditionPathExists` 실패 시 설정 서비스 먼저 확인
+1. **컨테이너 시작 실패**: `journalctl -u podman-copyparty`에서 "multiple filesystem-paths" 또는 initcfg 충돌 확인. 상세: troubleshooting 항목 6, 7
 2. **로그인 실패**: agenix secret 복호화 확인 (`sudo cat /run/agenix/copyparty-password`)
-3. **파일 삭제 불가**: ACL 확인 - `/immich`, `/backups`는 의도적으로 읽기 전용
-4. **IP 바인딩 실패**: Tailscale VPN 연결 확인, `tailscale-wait.nix` import 확인
-5. **비밀번호 변경**: `agenix -e secrets/copyparty-password.age` 후 `nrs` 재적용
+3. **IP 바인딩 실패**: Tailscale VPN 연결 확인, `tailscale-wait.nix` import 확인
+4. **비밀번호 변경**: `agenix -e secrets/copyparty-password.age` 후 `nrs` 재적용
 
 ## 레퍼런스
 
