@@ -5,16 +5,14 @@
   config,
   pkgs,
   lib,
-  constants,
+
   ...
 }:
 
 let
   cfg = config.homeserver.immichCleanup;
   immichCfg = config.homeserver.immich;
-  inherit (constants.network) minipcTailscaleIP;
-
-  immichUrl = "http://${minipcTailscaleIP}:${toString immichCfg.port}";
+  immichUrl = "http://127.0.0.1:${toString immichCfg.port}";
   apiKeyPath = config.age.secrets.immich-api-key.path;
   pushoverCredPath = config.age.secrets.pushover-immich.path;
 

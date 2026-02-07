@@ -25,7 +25,7 @@
 ```javascript
 // Upload to Claude Code.js
 const CONFIG = {
-  immichUrl: "http://100.79.80.95:2283",
+  immichUrl: "https://immich.greenhead.dev",
   apiKey: "YOUR_API_KEY",  // Immich API 키 입력
   albumName: "Claude Code Temp",
   containerPrefix: "/usr/src/app/upload/upload/",
@@ -115,7 +115,7 @@ Script.complete()
 
 ```bash
 API_KEY="your-api-key"
-curl -X POST "http://100.79.80.95:2283/api/albums" \
+curl -X POST "https://immich.greenhead.dev/api/albums" \
   -H "x-api-key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"albumName": "Claude Code Temp"}'

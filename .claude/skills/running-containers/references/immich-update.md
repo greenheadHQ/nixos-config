@@ -14,12 +14,18 @@
 | `modules/nixos/programs/immich-update/files/version-check.sh` | 자동 버전 체크 |
 | `modules/nixos/programs/immich-update/files/update-script.sh` | 수동 업데이트 |
 
+## API 접근 URL
+
+버전 체크 및 업데이트 스크립트는 `http://127.0.0.1:2283`으로 Immich API에 접근합니다.
+Immich 서버가 `127.0.0.1`에만 바인딩되어 있으므로, Tailscale IP로는 직접 접근할 수 없습니다.
+외부(macOS 등)에서 접근할 때는 Caddy 리버스 프록시(`https://immich.greenhead.dev`)를 사용합니다.
+
 ## 버전 체크 스크립트 동작
 
 ### API 호출
 
-1. **현재 버전**: Immich API `/api/server/version` → `{"major":2,"minor":5,"patch":3}` → `"2.5.3"` 변환
-2. **최신 버전**: GitHub `repos/immich-app/immich/releases/latest` → `"tag_name": "v2.5.3"` → `"2.5.3"` 변환
+1. **현재 버전**: Immich API `/api/server/version` → `{"major":2,"minor":5,"patch":5}` → `"2.5.5"` 변환
+2. **최신 버전**: GitHub `repos/immich-app/immich/releases/latest` → `"tag_name": "v2.5.5"` → `"2.5.5"` 변환
 
 ### 상태 관리
 

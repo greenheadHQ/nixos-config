@@ -121,7 +121,7 @@ in
         EnvironmentVariables = {
           PATH = "${homeDir}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
           HOME = homeDir;
-          IMMICH_INSTANCE_URL = "http://${constants.network.minipcTailscaleIP}:${toString constants.network.ports.immich}";
+          IMMICH_INSTANCE_URL = "https://${constants.domain.subdomains.immich}.${constants.domain.base}";
         };
       };
     };

@@ -134,9 +134,9 @@ systemctl status podman-uptime-kuma
 # 부팅 순서 로그 확인
 journalctl -b -u tailscaled -u create-immich-network -u podman-immich-server --no-pager | head -50
 
-# 포트 바인딩 확인
-curl -I http://100.79.80.95:2283  # immich
-curl -I http://100.79.80.95:3002  # uptime-kuma
+# 포트 바인딩 확인 (localhost — Caddy가 프록시)
+curl -I http://127.0.0.1:2283  # immich
+curl -I http://127.0.0.1:3002  # uptime-kuma
 ```
 
 **적용 상태**: 완료 (커밋: `4153e1d`, 2026-01-21)
@@ -145,13 +145,13 @@ curl -I http://100.79.80.95:3002  # uptime-kuma
 - `after = [ "xxx.service" ]`는 서비스 시작만 보장, 완전히 준비됨을 보장하지 않음
 - Tailscale처럼 네트워크 의존 서비스는 실제 리소스 가용성을 확인하는 로직 필요
 
-**향후 개선 사항** (기술 부채):
+**해결된 기술 부채**:
 
-| 항목 | 현재 상태 | 개선 방향 |
-|------|----------|----------|
-| tailscaleIP 하드코딩 | 3개 파일에 중복 정의 (`immich.nix`, `uptime-kuma.nix`, `default.nix`) | 단일 소스로 추출 (let 바인딩 또는 별도 모듈) |
-| Tailscale 대기 로직 중복 | 3개 파일에 동일한 bash 스크립트 | 공통 스크립트 또는 함수로 추출 |
-| immich DB 비밀번호 | `immich.nix:51`에 평문 하드코딩 | sops-nix 등 secrets 관리로 이동 |
+| 항목 | 해결 방법 |
+|------|----------|
+| tailscaleIP 하드코딩 | `constants.nix` 단일 소스 + 서비스는 `127.0.0.1` 바인딩 (Caddy 프록시) |
+| Tailscale 대기 로직 중복 | `modules/nixos/lib/tailscale-wait.nix` 공통 모듈로 추출 |
+| immich DB 비밀번호 | agenix (`secrets/immich-db-password.age`)로 이동 |
 
 ### Scriptable 공유 시트에서 스크립트 실행 시 무반응
 
