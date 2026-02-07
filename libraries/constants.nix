@@ -16,6 +16,7 @@
       immichMl = 3003;
       uptimeKuma = 3002;
       ankiSync = 27701;
+      copyparty = 3923;
     };
   };
 
@@ -63,6 +64,11 @@
     uptimeKuma = {
       memory = "512m";
       cpus = "0.5";
+    };
+    copyparty = {
+      memory = "1g";
+      memorySwap = "1g";
+      cpus = "1";
     };
   };
 

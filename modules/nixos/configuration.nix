@@ -92,4 +92,5 @@
   homeserver.immichCleanup.enable = true; # Claude Code Temp 앨범 매일 전체 삭제
   homeserver.immichUpdate.enable = true; # Immich 버전 체크 + 업데이트 알림
   homeserver.ankiSync.enable = true; # Anki 자체 호스팅 동기화 서버
+  homeserver.copyparty.enable = true; # 셀프호스팅 파일 서버
 }

@@ -10,7 +10,7 @@ description: |
 
 # 컨테이너 관리 (Podman/홈서버)
 
-Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma) 가이드입니다.
+Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty) 가이드입니다.
 
 ## 모듈 구조 (mkOption 기반)
 
@@ -20,6 +20,7 @@ Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma) 가이드입�
 # modules/nixos/configuration.nix
 homeserver.immich.enable = true;      # 사진 백업
 homeserver.uptimeKuma.enable = true;  # 모니터링
+homeserver.copyparty.enable = true;  # 파일 서버
 ```
 
 ### 파일 구조
@@ -30,6 +31,7 @@ homeserver.uptimeKuma.enable = true;  # 모니터링
 | `modules/nixos/programs/docker/runtime.nix` | Podman 런타임 공통 설정 |
 | `modules/nixos/programs/docker/immich.nix` | Immich (mkIf cfg.enable 래핑) |
 | `modules/nixos/programs/docker/uptime-kuma.nix` | Uptime Kuma (mkIf 래핑) |
+| `modules/nixos/programs/docker/copyparty.nix` | Copyparty 파일 서버 (mkIf 래핑) |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
 | `modules/nixos/programs/anki-sync-server/` | Anki sync (NixOS 네이티브 모듈, 비컨테이너) |
 | `libraries/constants.nix` | IP, 경로, 리소스 제한, UID 상수 |
