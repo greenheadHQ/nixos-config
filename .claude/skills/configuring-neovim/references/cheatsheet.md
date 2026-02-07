@@ -9,7 +9,7 @@
 - [Surround 치트시트](#surround-치트시트)
 - [Case 전환 (vim-abolish)](#case-전환-vim-abolish)
 - [플러그인 관리](#플러그인-관리)
-- [트러블슈팅](references/troubleshooting.md)
+- [트러블슈팅](troubleshooting.md)
 
 ---
 
@@ -230,4 +230,4 @@ nvim-surround의 모든 동작은 `.`으로 **반복 가능**하다.
 
 ## 트러블슈팅
 
-[references/troubleshooting.md](references/troubleshooting.md) 참고.
+[troubleshooting.md](troubleshooting.md) 참고.

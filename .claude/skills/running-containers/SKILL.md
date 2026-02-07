@@ -80,17 +80,10 @@ environment = {
 ### Podman 명령어
 
 ```bash
-# 컨테이너 목록
-podman ps -a
-
-# 로그 확인
-podman logs <container-name>
-
-# 컨테이너 재시작
-podman restart <container-name>
-
-# systemd 서비스로 관리
-systemctl status podman-<container-name>
+podman ps -a                              # 컨테이너 목록
+podman logs <container-name>              # 로그 확인
+podman restart <container-name>           # 컨테이너 재시작
+systemctl status podman-<container-name>  # systemd 서비스 상태
 ```
 
 ### 서비스 활성화/비활성화
@@ -101,92 +94,17 @@ homeserver.plex.enable = true;   # 활성화
 homeserver.plex.port = 32400;    # 포트 커스터마이징 (기본값은 constants.nix)
 ```
 
-## Immich 버전 업데이트
+### Immich 업데이트
 
-새 버전 자동 알림 및 수동 업데이트를 지원합니다.
+`homeserver.immichUpdate.enable = true`로 활성화. `sudo immich-update` 명령으로 수동 업데이트. 상세: [references/immich-update.md](references/immich-update.md)
 
-### 활성화
+### FolderAction 자동 업로드
 
-```nix
-homeserver.immichUpdate.enable = true;
-```
+macOS에서 `~/FolderActions/upload-immich/`에 파일을 넣으면 Immich에 자동 업로드. 상세: [references/folder-action.md](references/folder-action.md)
 
-### 동작 방식
+### 모바일 SSH 이미지 전달
 
-| 기능 | 설명 |
-|------|------|
-| 자동 버전 체크 | 매일 03:00 GitHub Releases API 확인 |
-| Pushover 알림 | 새 버전 발견 시 버전 + 릴리즈노트 요약 전송 |
-| 수동 업데이트 | `sudo immich-update` 명령으로 실행 |
-| Dry Run | `sudo immich-update --dry-run`으로 사전 확인 |
-
-### 업데이트 프로세스
-
-1. flock으로 동시 실행 방지
-2. postgres 컨테이너 상태 확인
-3. DB 백업 (pg_dump + gzip + 무결성/최소크기 검증)
-4. 이미지 pull (server + ML)
-5. 컨테이너 재시작 (stop all → start ML → start Server)
-6. 헬스체크 (60회 재시도, 10분) + ML 컨테이너 상태 확인
-7. 결과 알림
-
-### 명령어
-
-```bash
-sudo systemctl start immich-version-check  # 버전 체크 수동 실행
-sudo immich-update                          # 업데이트 실행
-sudo immich-update --dry-run                # 상태만 확인
-journalctl -u immich-version-check -f       # 로그 확인
-systemctl list-timers | grep immich         # 타이머 확인
-```
-
-### 파일 구조
-
-| 파일 | 역할 |
-|------|------|
-| `modules/nixos/programs/immich-update/default.nix` | systemd 서비스/타이머 + 스크립트 정의 |
-| `modules/nixos/programs/immich-update/files/version-check.sh` | 자동 버전 체크 스크립트 |
-| `modules/nixos/programs/immich-update/files/update-script.sh` | 수동 업데이트 스크립트 |
-
-상세 가이드: [references/immich-update.md](references/immich-update.md)
-
-## Immich FolderAction 자동 업로드 (macOS)
-
-`~/FolderActions/upload-immich/`에 미디어 파일을 넣으면 Immich 서버에 자동 업로드.
-
-### 파일 구조
-
-| 파일 | 역할 |
-|------|------|
-| `modules/darwin/programs/folder-actions/default.nix` | launchd agent + script 배포 |
-| `modules/darwin/programs/folder-actions/files/scripts/upload-immich.sh` | 업로드 스크립트 |
-| `secrets/immich-api-key.age` | Immich API 키 (agenix) |
-| `secrets/pushover-immich.age` | Pushover 자격증명 (agenix) |
-
-### 동작 플로우
-
-파일 감지 → 안정화 대기 (5분 타임아웃) → 서버 ping → `bunx @immich/cli upload` → Pushover 알림 → 원본 삭제
-
-### 핵심 설계
-
-- **`--delete` 버그 대응**: CLI는 중복 파일을 삭제하지 않음. 사전 기록한 미디어 목록 기반으로 수동 삭제
-- **데이터 손실 방지**: 업로드 전에 파일 목록을 배열에 기록, 완료 후 해당 파일만 삭제
-- **launchd TimeOut 1800초**: `bunx` 업로드 무한 대기 방지. PID 기반 stale lock으로 강제 종료 후 자동 복구
-- **`IMMICH_INSTANCE_URL`**: `constants.nix`에서 IP/포트 자동 구성 (launchd EnvironmentVariables)
-- **비미디어 파일**: 미디어 없이 비미디어만 있으면 무시 (알림 스팸 방지)
-
-### 디버깅
-
-```bash
-# 로그 확인
-tail -f ~/Library/Logs/folder-actions/upload-immich.log
-
-# agent 상태
-launchctl list | grep upload-immich
-
-# 수동 실행 테스트
-~/.local/bin/upload-immich.sh
-```
+모바일 SSH 환경에서 Immich를 활용하여 Claude Code에 이미지 전달. 상세: [references/mobile-ssh-image.md](references/mobile-ssh-image.md)
 
 ## 자주 발생하는 문제
 
@@ -195,59 +113,11 @@ launchctl list | grep upload-immich
 3. **IP 바인딩 실패**: `tailscale-wait.nix`가 올바르게 import 되었는지 확인
 4. **DB 비밀번호 오류**: `secrets/immich-db-password.age` 존재 확인, `agenix -r` 재암호화
 
-## 모바일 SSH에서 Claude Code로 이미지 전달
-
-모바일 SSH 환경(Termius 등)에서 클립보드 이미지 붙여넣기가 불가능할 때 Immich를 활용하여 이미지를 전달하는 방법입니다.
-
-### 핵심 원리
-
-| 도구 | 실행 위치 | Tailscale IP 접근 |
-|------|-----------|-------------------|
-| WebFetch | Anthropic 서버 | ❌ 불가 |
-| Read | MiniPC 로컬 | ✅ 파일 경로로 가능 |
-
-WebFetch는 Anthropic 서버에서 실행되어 Tailscale 내부 IP에 접근 불가하지만, Read는 로컬에서 실행되어 **파일 경로**로 이미지를 읽을 수 있습니다.
-
-### 워크플로우
-
-```
-[iPhone]
-사진 공유 → Scriptable "Upload to Claude Code" → 경로 클립보드 복사
-
-[MiniPC SSH]
-경로 붙여넣기 → Claude Code Read 도구로 이미지 확인
-
-[자동화]
-매일 07:00 KST "Claude Code Temp" 앨범 전체 삭제 + Pushover 알림
-```
-
-### 경로 변환 (중요)
-
-Immich API가 반환하는 `originalPath`:
-```
-/usr/src/app/upload/upload/UUID/xx/xx/file.png
-```
-
-호스트에서 접근 가능한 경로:
-```
-/var/lib/docker-data/immich/upload-cache/UUID/xx/xx/file.png
-```
-
-**변환 규칙**: `/usr/src/app/upload/upload/` → `/var/lib/docker-data/immich/upload-cache/`
-
-### 상세 설정
-
-- Scriptable 스크립트: [references/scriptable-immich-upload.md](references/scriptable-immich-upload.md)
-- 자동 삭제 설정: `homeserver.immichCleanup.enable = true`
-
-### macOS에서 immich 사진 확인
-
-macOS 환경에서 immich 사진 경로를 받았을 때는 `viewing-immich-photo` 스킬 참조.
-SSH로 MiniPC에서 파일을 가져와 로컬에서 Read 도구로 확인합니다.
-
 ## 레퍼런스
 
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)
-- immich 설정: [references/immich-setup.md](references/immich-setup.md)
+- Immich 설정: [references/immich-setup.md](references/immich-setup.md)
 - Scriptable 업로드: [references/scriptable-immich-upload.md](references/scriptable-immich-upload.md)
 - Immich 업데이트: [references/immich-update.md](references/immich-update.md)
+- FolderAction 자동 업로드: [references/folder-action.md](references/folder-action.md)
+- 모바일 SSH 이미지 전달: [references/mobile-ssh-image.md](references/mobile-ssh-image.md)

@@ -6,12 +6,10 @@ Git 관련 설정 및 도구 구성입니다.
 
 - [개발 도구](#개발-도구)
 - [delta 설정 (feature 구조)](#delta-설정-feature-구조)
+- [동적 side-by-side 제어](#동적-side-by-side-제어)
+- [delta pager 설정](#delta-pager-설정)
 - [lazygit delta 통합](#lazygit-delta-통합)
-- [Git 설정](#git-설정)
 - [Interactive Rebase 역순 표시](#interactive-rebase-역순-표시)
-- [git-cleanup](#git-cleanup)
-- [wt (Git Worktree 관리)](#wt-git-worktree-관리)
-- [wt-cleanup (워크트리 정리)](#wt-cleanup-워크트리-정리)
 
 ---
 
@@ -46,9 +44,27 @@ delta 옵션은 **기본 섹션**과 **feature**로 분리하여 도구별 오�
 
 > **설계 이유**: `navigate`와 `side-by-side`를 feature로 분리한 이유는 lazygit 등 외부 도구에서 비활성화하기 위함. delta의 `[delta]` 기본 섹션 설정은 feature/CLI/환경변수보다 우선순위가 높아서 기본 섹션에 직접 넣으면 오버라이드 불가.
 
-> **동적 side-by-side 제어**: `.zshenv`에서 `DELTA_FEATURES=""`를 기본 설정하여 비대화형 셸(SSH 단일 명령, Claude Code 등)에서는 side-by-side를 비활성화합니다. 대화형 셸에서는 `.zshrc`의 precmd 훅이 터미널 너비(>= 120 컬럼)에 따라 동적으로 전환합니다. 설정 파일: `modules/shared/programs/shell/default.nix`.
+### 동적 side-by-side 제어
 
-> **pager 마우스 스크롤 제약**: `less --mouse`는 터미널이 마우스 이벤트를 전달하는 경우에만 동작합니다. 데스크톱 터미널의 마우스 휠은 지원되지만, iOS SSH 앱(Termius 등)의 터치 스크롤은 앱 레벨에서 처리되어 less에 전달되지 않습니다. 모바일에서는 `j`/`k`(한 줄), `Space`/`b`(한 페이지), `G`(맨 끝)로 이동합니다.
+`.zshenv`와 `.zshrc` precmd 훅으로 터미널 환경에 따라 side-by-side를 자동 제어합니다. 설정 파일: `modules/shared/programs/shell/default.nix`.
+
+| 환경 | DELTA_FEATURES | side-by-side |
+|------|:--------------:|:------------:|
+| 비대화형 셸 (SSH 단일 명령, Claude Code 등) | `""` (.zshenv 기본값) | OFF |
+| 대화형 + 넓은 터미널 (>= 120 컬럼) | unset (precmd) | ON |
+| 대화형 + 좁은 터미널 (< 120 컬럼) | `""` (precmd) | OFF |
+| lazygit | `""` (pager 설정) | OFF |
+
+### delta pager 설정
+
+`less -e --mouse`로 마우스 스크롤과 끝 도달 시 자동 종료를 지원합니다.
+
+| 플래그 | 동작 |
+|--------|------|
+| `--mouse` | 마우스 휠 스크롤 활성화 (trade-off: less 내 텍스트 선택 불가) |
+| `-e` | 끝까지 스크롤 후 한 번 더 스크롤하면 자동 종료 (q 불필요) |
+
+> **모바일 제약**: `--mouse`는 데스크톱 마우스 휠 전용. iOS SSH 앱(Termius 등)의 터치 스크롤은 앱 레벨에서 처리되어 less에 전달되지 않음. 모바일에서는 `j`/`k`(한 줄), `Space`/`b`(한 페이지), `G`(맨 끝)로 이동.
 
 ### lazygit delta 통합
 
@@ -78,9 +94,7 @@ git:
 | `--navigate` 미지원 | lazygit 키바인딩과 충돌 |
 | 터미널 리사이즈 | diff pager가 리사이즈에 재실행되지 않음 (issue #4415) |
 
-## Git 설정
-
-### Interactive Rebase 역순 표시
+## Interactive Rebase 역순 표시
 
 `git rebase -i` 실행 시 Fork GUI처럼 **최신 커밋이 위**, 오래된 커밋이 아래에 표시됩니다.
 
@@ -100,191 +114,3 @@ git:
 
 - squash/fixup은 **아래쪽 커밋**이 **위쪽 커밋**으로 합쳐집니다 (Fork GUI와 동일)
 - `git rebase --edit-todo`에서도 역순 표시가 적용됩니다
-
-## git-cleanup
-
-`scripts/git-cleanup.sh`에서 관리됩니다.
-
-더 이상 사용되지 않는 로컬 브랜치를 식별하고 정리하는 스크립트입니다. `git cleanup` 또는 `git-cleanup` 명령어로 실행합니다.
-
-**삭제 기준:**
-
-| 상태 | 아이콘 | 설명 | 삭제 방식 |
-|------|--------|------|----------|
-| gone | O | 원격에서 삭제된 브랜치 (PR 머지 후 삭제됨) | `-D` (강제) |
-| stale | 경고 | 30일 이상 된 로컬 전용 브랜치 | `-D` (강제) |
-| protected | 잠금 | 보호 브랜치 (main, master, develop, stage) | 삭제 불가 |
-| current | 현재 | 현재 체크아웃된 브랜치 | 삭제 불가 |
-
-**사용법:**
-
-```bash
-# 삭제 대상 미리보기 (권장)
-git cleanup --dry-run
-
-# 실제 정리
-git cleanup
-
-# 도움말
-git cleanup --help
-```
-
-**메뉴 옵션:**
-
-| 옵션 | 설명 |
-|------|------|
-| `[a]` | gone 상태 전체 삭제 |
-| `[b]` | stale 상태 전체 삭제 |
-| `[s]` | 하나씩 선택하여 삭제 (Y/n/q) |
-| `[q]` | 취소 |
-
-**출력 예시:**
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Git Branch Cleanup
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-── gone (3개) ──
-  O [gone] feat/login (origin/feat/login)
-  O [gone] fix/bug-123 (origin/fix/bug-123)
-  O [gone] JIRA-456 (origin/JIRA-456)
-
-── stale (2개) ──
-  경고 [stale] experiment/test (45일 경과)
-  경고 [stale] old-feature (120일 경과)
-
-── 보호됨 ──
-  잠금 main
-  현재 develop (현재)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-**동작 흐름:**
-
-1. `git fetch --prune` 자동 실행 (원격 정보 동기화)
-2. 브랜치 목록 수집 및 분류
-3. 삭제 대상 표시
-4. 사용자 선택에 따라 삭제 진행
-
-> **참고**: 네트워크 오류 시에도 로컬 정보로 계속 진행합니다.
-
-## wt (Git Worktree 관리)
-
-`modules/shared/programs/shell/default.nix`에서 관리됩니다.
-
-Git worktree를 `.wt/` 디렉토리에 생성하고 관리하는 함수입니다.
-
-**사용법:**
-
-```bash
-wt <브랜치명>           # 워크트리 생성 + cd 이동 + 에디터 열기
-wt -s <브랜치명>        # 워크트리 생성만 (현재 위치에 stay)
-wt --stay <브랜치명>    # 동일 (긴 형식)
-```
-
-**옵션:**
-
-| 옵션 | 설명 |
-|------|------|
-| `-s`, `--stay` | 워크트리 생성 후 현재 디렉토리에 머무름 |
-
-**동작 흐름:**
-
-1. Git 저장소 확인
-2. 브랜치가 이미 워크트리에서 사용 중인지 확인
-3. 디렉토리명 생성 (슬래시 → 언더스코어: `feature/login` → `feature_login`)
-4. 브랜치 존재 여부 확인 (로컬/원격)
-5. 워크트리 생성
-6. `.wt-parent` 파일 생성 (부모 브랜치 기록)
-7. 해당 디렉토리로 cd 이동 (`--stay` 미지정 시)
-8. 에디터 열기 (macOS: cursor, NixOS: 경로 출력)
-
-**브랜치 충돌 처리:**
-
-- 브랜치가 이미 존재하면 선택 프롬프트 표시:
-  - `[c]` 기존 브랜치로 워크트리 생성
-  - `[n]` 기존 브랜치 삭제 후 새로 생성 (현재 HEAD 기준)
-  - `[q]` 취소
-
-**삭제 시 안전 체크:**
-
-`[n]` 선택 시 작업 손실을 방지하기 위해 다음을 체크합니다:
-
-| 체크 항목 | 비교 기준 | 메시지 |
-|-----------|----------|--------|
-| 커밋 체크 | `.wt-parent` (부모 브랜치) | `'sprint/glen' 이후 2개의 커밋이 있습니다` |
-| 커밋 체크 (fallback) | upstream | `'origin/PROJ-123' 이후 push되지 않은 2개의 커밋이 있습니다` |
-| dirty 체크 | - | `커밋되지 않은 변경사항이 있습니다` |
-
-경고가 표시되면 `정말 삭제하시겠습니까? [y/N]` 확인 프롬프트가 나타납니다.
-
-**.wt-parent 파일:**
-
-worktree 생성 시 현재 브랜치를 `.wt-parent` 파일에 기록합니다.
-
-```bash
-# 예: sprint/glen에서 wt PROJ-12345 실행
-cat .wt/PROJ-12345/.wt-parent
-# 출력: sprint/glen
-```
-
-이 파일은 global gitignore에 등록되어 있어 `git status`에 표시되지 않습니다.
-
-**플랫폼별 동작:**
-
-| 플랫폼 | 에디터 | 환경변수 |
-|--------|--------|----------|
-| macOS | cursor (기본) | `WT_EDITOR`로 변경 가능 |
-| NixOS | 경로만 출력 | - |
-
-## wt-cleanup (워크트리 정리)
-
-`.wt/` 디렉토리 내의 워크트리를 정리하는 함수입니다.
-
-**사용법:**
-
-```bash
-wt-cleanup
-```
-
-**PR 상태 아이콘:**
-
-| 아이콘 | 상태 | 설명 |
-|--------|------|------|
-| ✅ | MERGED | 삭제 권장 |
-| 🔵 | OPEN | PR 진행 중 |
-| 🚫 | CLOSED | 머지 없이 닫힘 |
-| 📵 | OFFLINE | 네트워크 불가 |
-| ⚪ | NONE | PR 없음 |
-| 💾 | DIRTY | 커밋 안 된 변경사항 있음 |
-
-**동작 흐름:**
-
-1. `.wt/` 디렉토리 내 워크트리 목록 수집
-2. 각 워크트리의 dirty 상태 확인
-3. gh CLI로 PR 상태 병렬 조회
-4. fzf 다중 선택 UI 표시 (없으면 번호 입력)
-5. 선택된 워크트리 삭제 (`git worktree remove --force`)
-6. 로컬 브랜치 삭제 (`git branch -D`)
-
-**삭제 시 안전 체크:**
-
-wt와 동일하게 커밋 체크 + dirty 체크를 수행합니다:
-
-| 체크 항목 | 비교 기준 | 메시지 |
-|-----------|----------|--------|
-| 커밋 체크 | `.wt-parent` (부모 브랜치) | `'PROJ-123' (branch): 'sprint/glen' 이후 2개의 커밋이 있습니다` |
-| 커밋 체크 (fallback) | upstream | `'PROJ-123' (branch): 'origin/PROJ-123' 이후 push되지 않은 2개의 커밋이 있습니다` |
-| dirty 체크 | - | `'PROJ-123' (branch)에 커밋되지 않은 변경사항이 있습니다` |
-
-경고가 표시되면 `삭제할까요? [y/N]` 확인 프롬프트가 나타납니다.
-
-**삭제 범위:**
-
-| 대상 | 삭제 여부 |
-|------|----------|
-| 워크트리 | ✅ 삭제 |
-| 로컬 브랜치 | ✅ 삭제 |
-| 원격 브랜치 | ❌ 유지 |
