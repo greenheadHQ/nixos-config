@@ -36,4 +36,8 @@ in
 
   # Caddy HTTPS 인증서 발급용 Cloudflare DNS API 토큰
   "cloudflare-dns-api-token.age".publicKeys = allHosts;
+
+  # 서비스 업데이트 알림용 Pushover credentials
+  "pushover-uptime-kuma.age".publicKeys = allHosts;
+  "pushover-copyparty.age".publicKeys = allHosts;
 }

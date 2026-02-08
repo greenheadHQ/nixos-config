@@ -8,6 +8,11 @@ set -euo pipefail
 : "${API_KEY_FILE:?API_KEY_FILE is required}"
 : "${PUSHOVER_CRED_FILE:?PUSHOVER_CRED_FILE is required}"
 : "${STATE_DIR:?STATE_DIR is required}"
+: "${SERVICE_LIB:?SERVICE_LIB is required}"
+
+# 공통 라이브러리 로드
+# shellcheck disable=SC1090
+source "$SERVICE_LIB"
 
 # API 키 로드 (IMMICH_API_KEY=... 형식)
 # shellcheck disable=SC1090
@@ -18,36 +23,13 @@ API_KEY="$IMMICH_API_KEY"
 # shellcheck disable=SC1090
 source "$PUSHOVER_CRED_FILE"
 
-# Pushover 알림 전송 함수
-send_notification() {
-  local title="$1"
-  local message="$2"
-  local priority="${3:-"-1"}"
-
-  curl -sf --proto =https --max-time 10 \
-    --form-string "token=${PUSHOVER_TOKEN}" \
-    --form-string "user=${PUSHOVER_USER}" \
-    --form-string "title=${title}" \
-    --form-string "message=${message}" \
-    --form-string "priority=${priority}" \
-    https://api.pushover.net/1/messages.json > /dev/null 2>&1 || true
-}
-
 # 에러 발생 시 알림 전송
 trap 'send_notification "Immich Version Check" "오류 발생: 스크립트 실패" 0' ERR
 
 LAST_NOTIFIED_FILE="$STATE_DIR/last-notified-version"
-LAST_SUCCESS_FILE="$STATE_DIR/last-success"
 
 # ─── 0. 워치독: 장기 실패 감지 ───────────────────────────────────
-if [ -f "$LAST_SUCCESS_FILE" ]; then
-  LAST_SUCCESS=$(cat "$LAST_SUCCESS_FILE")
-  NOW=$(date +%s)
-  DAYS_SINCE=$(( (NOW - LAST_SUCCESS) / 86400 ))
-  if [ "$DAYS_SINCE" -ge 3 ]; then
-    send_notification "Immich Version Check" "버전 체크가 ${DAYS_SINCE}일간 성공하지 못했습니다. 서비스 상태를 확인하세요." 0
-  fi
-fi
+check_watchdog "$STATE_DIR" "Immich"
 
 # ─── 1. 현재 버전 조회 (Immich API) ─────────────────────────────
 echo "Checking current Immich version..."
@@ -67,25 +49,16 @@ echo "Current version: $CURRENT"
 
 # ─── 2. 최신 버전 조회 (GitHub Releases API) ────────────────────
 echo "Checking latest version from GitHub..."
-GITHUB_RESPONSE=$(curl -sf --proto =https --max-time 30 \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/immich-app/immich/releases/latest" 2>&1) || {
-  HTTP_CODE=$?
-  echo "GitHub API request failed (exit code: $HTTP_CODE)"
-  exit 0  # rate limit 또는 타임아웃 → 다음 실행 때 재시도
-}
-
-LATEST=$(echo "$GITHUB_RESPONSE" | jq -r '.tag_name | ltrimstr("v")')
-if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
-  echo "Failed to parse latest version from GitHub"
+fetch_github_release "immich-app/immich"
+if [ -z "$GITHUB_LATEST_VERSION" ]; then
+  echo "Failed to get latest version from GitHub"
   exit 0
 fi
+LATEST="$GITHUB_LATEST_VERSION"
 echo "Latest version: $LATEST"
 
 # ─── 3. 초기 실행 처리 ──────────────────────────────────────────
-if [ ! -f "$LAST_NOTIFIED_FILE" ]; then
-  echo "First run: recording current version $CURRENT"
-  echo "$CURRENT" > "$LAST_NOTIFIED_FILE"
+if check_initial_run "$STATE_DIR" "$CURRENT"; then
   exit 0
 fi
 
@@ -94,13 +67,13 @@ LAST_NOTIFIED=$(cat "$LAST_NOTIFIED_FILE")
 
 if [ "$CURRENT" = "$LATEST" ]; then
   echo "Already on latest version ($CURRENT)"
-  date +%s > "$LAST_SUCCESS_FILE"
+  record_success "$STATE_DIR"
   exit 0
 fi
 
 if [ "$LATEST" = "$LAST_NOTIFIED" ]; then
   echo "Already notified about version $LATEST"
-  date +%s > "$LAST_SUCCESS_FILE"
+  record_success "$STATE_DIR"
   exit 0
 fi
 
@@ -123,5 +96,5 @@ send_notification "Immich 업데이트 알림" "$MESSAGE" 0
 
 # 알림 완료 기록
 echo "$LATEST" > "$LAST_NOTIFIED_FILE"
-date +%s > "$LAST_SUCCESS_FILE"
+record_success "$STATE_DIR"
 echo "Notification sent and version recorded"

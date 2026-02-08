@@ -8,6 +8,11 @@ set -euo pipefail
 : "${API_KEY_FILE:?API_KEY_FILE is required}"
 : "${ALBUM_NAME:?ALBUM_NAME is required}"
 : "${PUSHOVER_CRED_FILE:?PUSHOVER_CRED_FILE is required}"
+: "${SERVICE_LIB:?SERVICE_LIB is required}"
+
+# 공통 라이브러리 로드
+# shellcheck disable=SC1090
+source "$SERVICE_LIB"
 
 # API 키 로드 (IMMICH_API_KEY=... 형식)
 # shellcheck disable=SC1090
@@ -17,21 +22,6 @@ API_KEY="$IMMICH_API_KEY"
 # Pushover credentials 로드
 # shellcheck disable=SC1090
 source "$PUSHOVER_CRED_FILE"
-
-# Pushover 알림 전송 함수
-send_notification() {
-  local title="$1"
-  local message="$2"
-  local priority="${3:-"-1"}"
-
-  curl -sf --proto =https --max-time 10 \
-    --form-string "token=${PUSHOVER_TOKEN}" \
-    --form-string "user=${PUSHOVER_USER}" \
-    --form-string "title=${title}" \
-    --form-string "message=${message}" \
-    --form-string "priority=${priority}" \
-    https://api.pushover.net/1/messages.json > /dev/null 2>&1 || true
-}
 
 # 에러 발생 시 알림 전송
 trap 'send_notification "Immich Cleanup" "오류 발생: 스크립트 실패" 0' ERR

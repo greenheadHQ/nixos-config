@@ -46,6 +46,24 @@
       };
     };
 
+    uptimeKumaUpdate = {
+      enable = lib.mkEnableOption "Uptime Kuma version check and update notifications";
+      checkTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 03:30:00";
+        description = "OnCalendar time for version check";
+      };
+    };
+
+    copypartyUpdate = {
+      enable = lib.mkEnableOption "Copyparty version check and update notifications";
+      checkTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 04:00:00";
+        description = "OnCalendar time for version check";
+      };
+    };
+
     ankiSync = {
       enable = lib.mkEnableOption "Anki self-hosted sync server";
       port = lib.mkOption {
@@ -77,6 +95,8 @@
     ../programs/docker/uptime-kuma.nix
     ../programs/immich-cleanup # Immich 임시 앨범 자동 삭제
     ../programs/immich-update # Immich 버전 체크 및 업데이트
+    ../programs/uptime-kuma-update # Uptime Kuma 버전 체크 및 업데이트
+    ../programs/copyparty-update # Copyparty 버전 체크 및 업데이트
     ../programs/anki-sync-server # Anki 자체 호스팅 동기화 서버
     ../programs/docker/copyparty.nix # Copyparty 파일 서버
     ../programs/caddy.nix # HTTPS 리버스 프록시

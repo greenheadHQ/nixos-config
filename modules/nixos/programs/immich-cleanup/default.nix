@@ -15,6 +15,7 @@ let
   immichUrl = "http://127.0.0.1:${toString immichCfg.port}";
   apiKeyPath = config.age.secrets.immich-api-key.path;
   pushoverCredPath = config.age.secrets.pushover-immich.path;
+  serviceLib = import ../../lib/service-lib.nix { inherit pkgs; };
 
   cleanupScript = pkgs.writeShellApplication {
     name = "immich-cleanup";
@@ -59,6 +60,7 @@ in
         API_KEY_FILE = apiKeyPath;
         ALBUM_NAME = cfg.albumName;
         PUSHOVER_CRED_FILE = pushoverCredPath;
+        SERVICE_LIB = "${serviceLib}";
       };
     };
 
