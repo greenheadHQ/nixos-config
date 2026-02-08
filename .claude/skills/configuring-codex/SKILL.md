@@ -31,11 +31,27 @@ Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬
 
 ## 핵심 파일
 
-- `modules/shared/programs/codex/default.nix`
-- `modules/shared/programs/codex/files/config.toml`
-- `scripts/ai/verify-ai-compat.sh`
+- `libraries/packages/codex-cli.nix` — Nix 패키지 (pre-built 바이너리)
+- `modules/shared/programs/codex/default.nix` — 설정 및 스킬 투영
+- `modules/shared/programs/codex/files/config.toml` — trust/모델 설정
+- `scripts/update-codex-cli.sh` — 버전 자동 업데이트
+- `scripts/ai/verify-ai-compat.sh` — 구조 검증
 - `.claude/skills/*` (원본)
 - `.agents/skills/*` (Codex 발견용 투영)
+
+## 패키지 설치
+
+Codex CLI는 Nix derivation으로 관리된다 (`libraries/packages/codex-cli.nix`).
+GitHub releases에서 플랫폼별 pre-built 바이너리를 가져온다.
+
+- macOS: `aarch64-darwin`
+- NixOS: `x86_64-linux` (musl 정적 링크)
+
+버전 업데이트:
+
+```bash
+./scripts/update-codex-cli.sh
+```
 
 ## Trust 규칙
 
