@@ -18,10 +18,12 @@ Podman 컨테이너로 실행되며, Caddy HTTPS 리버스 프록시(`https://co
 
 | 파일 | 역할 |
 |------|------|
-| `modules/nixos/options/homeserver.nix` | `copyparty` mkOption 정의 |
+| `modules/nixos/options/homeserver.nix` | `copyparty` + `copypartyUpdate` mkOption 정의 |
 | `modules/nixos/programs/docker/copyparty.nix` | Podman 컨테이너 + 설정 생성 서비스 |
+| `modules/nixos/programs/copyparty-update/` | 버전 체크 + 수동 업데이트 자동화 |
 | `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 (Copyparty 포함) |
 | `secrets/copyparty-password.age` | agenix 암호화 비밀번호 |
+| `secrets/pushover-copyparty.age` | 업데이트 알림용 Pushover credentials |
 | `libraries/constants.nix` | 포트 (`copyparty = 3923`), 리소스 제한 |
 
 ## 빠른 참조
@@ -52,9 +54,24 @@ curl -I http://127.0.0.1:3923                 # localhost 직접 확인
 
 ```nix
 # modules/nixos/configuration.nix
-homeserver.copyparty.enable = true;   # 활성화
-homeserver.copyparty.port = 3923;     # 포트 (기본값은 constants.nix)
+homeserver.copyparty.enable = true;          # 컨테이너 활성화
+homeserver.copyparty.port = 3923;            # 포트 (기본값은 constants.nix)
+homeserver.copypartyUpdate.enable = true;    # 버전 체크 + 업데이트 알림 (04:00)
 ```
+
+### Copyparty 업데이트
+
+`homeserver.copypartyUpdate.enable = true`로 활성화. 매일 04:00에 GitHub Releases API로 최신 버전 확인 후 Pushover 알림.
+
+```bash
+sudo copyparty-update --dry-run   # 수행 예정 작업 확인
+sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 → 재시작 → 헬스체크)
+```
+
+- 이미지에 버전 레이블이 없으므로 GitHub latest 추적 + 이미지 digest 비교 방식
+- 백업 불필요 (설정은 Nix 관리, 데이터는 HDD 볼륨)
+- ERR trap에서 컨테이너 자동 복구
+- 통합 업데이트 시스템 상세: `running-containers` 스킬의 [service-update-system.md] 참조
 
 ### ACL 구조
 

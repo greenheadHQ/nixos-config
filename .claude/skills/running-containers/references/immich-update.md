@@ -13,6 +13,12 @@
 | `modules/nixos/programs/immich-update/default.nix` | NixOS 모듈 (systemd 서비스/타이머) |
 | `modules/nixos/programs/immich-update/files/version-check.sh` | 자동 버전 체크 |
 | `modules/nixos/programs/immich-update/files/update-script.sh` | 수동 업데이트 |
+| `modules/nixos/lib/service-lib.sh` | 공통 함수 (send_notification, fetch_github_release 등) |
+| `modules/nixos/lib/service-lib.nix` | service-lib.sh Nix wrapper |
+
+> Immich 스크립트는 `service-lib.sh` 공통 라이브러리를 `source "$SERVICE_LIB"`로 로드합니다.
+> uptime-kuma-update, copyparty-update과 동일한 함수를 공유합니다.
+> 통합 시스템 상세: [service-update-system.md](service-update-system.md)
 
 ## API 접근 URL
 

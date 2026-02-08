@@ -5,7 +5,9 @@ description: |
   or encounters container OOM, "Tailscale IP binding" timing issues,
   OCI backend configuration. Covers photo backup services on NixOS,
   including "update immich", "immich 업데이트", "immich-update",
-  "check immich version", "immich 버전 확인", and upgrading Immich server.
+  "check immich version", "immich 버전 확인", upgrading Immich server,
+  "uptime-kuma-update", "copyparty-update", "서비스 업데이트",
+  "service-lib", "version-check", and unified service update system.
 ---
 
 # 컨테이너 관리 (Podman/홈서버)
@@ -19,10 +21,13 @@ Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접�
 
 ```nix
 # modules/nixos/configuration.nix
-homeserver.immich.enable = true;        # 사진 백업
-homeserver.uptimeKuma.enable = true;    # 모니터링
-homeserver.copyparty.enable = true;     # 파일 서버
-homeserver.reverseProxy.enable = true;  # Caddy HTTPS 리버스 프록시
+homeserver.immich.enable = true;              # 사진 백업
+homeserver.uptimeKuma.enable = true;          # 모니터링
+homeserver.copyparty.enable = true;           # 파일 서버
+homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
+homeserver.immichUpdate.enable = true;        # Immich 버전 체크 + 업데이트 (03:00)
+homeserver.uptimeKumaUpdate.enable = true;    # Uptime Kuma 버전 체크 + 업데이트 (03:30)
+homeserver.copypartyUpdate.enable = true;     # Copyparty 버전 체크 + 업데이트 (04:00)
 ```
 
 ### 파일 구조
@@ -36,6 +41,11 @@ homeserver.reverseProxy.enable = true;  # Caddy HTTPS 리버스 프록시
 | `modules/nixos/programs/docker/copyparty.nix` | Copyparty 파일 서버 (mkIf 래핑) |
 | `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 (mkIf 래핑) |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
+| `modules/nixos/lib/service-lib.sh` | 공통 셸 라이브러리 (send_notification, fetch_github_release 등) |
+| `modules/nixos/lib/service-lib.nix` | service-lib.sh Nix wrapper |
+| `modules/nixos/programs/immich-update/` | Immich 버전 체크 + 업데이트 |
+| `modules/nixos/programs/uptime-kuma-update/` | Uptime Kuma 버전 체크 + 업데이트 |
+| `modules/nixos/programs/copyparty-update/` | Copyparty 버전 체크 + 업데이트 |
 | `modules/nixos/programs/anki-sync-server/` | Anki sync (NixOS 네이티브 모듈, 비컨테이너) |
 | `libraries/constants.nix` | IP, 경로, 도메인, 리소스 제한, UID 상수 |
 
@@ -129,9 +139,23 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 # modules/nixos/configuration.nix에서 변경 후 nrs 실행
 ```
 
-### Immich 업데이트
+### 통합 서비스 업데이트 시스템
 
-`homeserver.immichUpdate.enable = true`로 활성화. `sudo immich-update` 명령으로 수동 업데이트. 상세: [references/immich-update.md](references/immich-update.md)
+3개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라:
+
+| 서비스 | 버전 체크 (자동) | 수동 업데이트 | 타이머 |
+|--------|-----------------|--------------|--------|
+| Immich | `immich-version-check` | `sudo immich-update` | 03:00 |
+| Uptime Kuma | `uptime-kuma-version-check` | `sudo uptime-kuma-update` | 03:30 |
+| Copyparty | `copyparty-version-check` | `sudo copyparty-update` | 04:00 |
+
+공통 라이브러리 함수: `send_notification`, `fetch_github_release`, `get_image_digest`, `check_watchdog`, `check_initial_run`, `record_success`, `http_health_check`
+
+서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`).
+
+**Immich**: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. DB 백업(pg_dump) 포함. 상세: [references/immich-update.md](references/immich-update.md)
+
+**Uptime Kuma/Copyparty**: 이미지에 버전 레이블 없음 → GitHub latest 추적 + 이미지 digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
 
 ### FolderAction 자동 업로드
 
@@ -156,5 +180,6 @@ macOS에서 `~/FolderActions/upload-immich/`에 파일을 넣으면 Immich에 �
 - Immich 설정: [references/immich-setup.md](references/immich-setup.md)
 - Scriptable 업로드: [references/scriptable-immich-upload.md](references/scriptable-immich-upload.md)
 - Immich 업데이트: [references/immich-update.md](references/immich-update.md)
+- 통합 서비스 업데이트: [references/service-update-system.md](references/service-update-system.md)
 - FolderAction 자동 업로드: [references/folder-action.md](references/folder-action.md)
 - 모바일 SSH 이미지 전달: [references/mobile-ssh-image.md](references/mobile-ssh-image.md)
