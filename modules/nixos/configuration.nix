@@ -76,6 +76,42 @@
 
   # 동적 링크 바이너리 지원 (Claude Code 등)
   programs.nix-ld.enable = true;
+  # Playwright Chromium 런타임 의존성 (agent-browser)
+  # install.rs의 apt 패키지 목록에서 매핑
+  programs.nix-ld.libraries = with pkgs; [
+    # 핵심 라이브러리
+    nss
+    nspr
+    atk
+    cups
+    dbus
+    libdrm
+    mesa
+    pango
+    cairo
+    expat
+    at-spi2-core
+    alsa-lib
+    glib
+    gtk3
+    gdk-pixbuf
+    freetype
+    fontconfig
+    # X11 라이브러리
+    xorg.libX11
+    xorg.libXcomposite
+    xorg.libXdamage
+    xorg.libXext
+    xorg.libXfixes
+    xorg.libXrandr
+    xorg.libXcursor
+    xorg.libXi
+    xorg.libXrender
+    xorg.libxcb
+    xorg.libxshmfence
+    # 기타
+    libxkbcommon
+  ];
 
   # 프로그램 모듈 임포트
   imports = [

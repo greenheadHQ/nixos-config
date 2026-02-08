@@ -27,6 +27,7 @@ in
 
     # 공유 프로그램 (공통)
     ../shared/programs/broot
+    ../shared/programs/agent-browser
     ../shared/programs/claude # Claude Code 설정
     ../shared/programs/direnv # 디렉토리별 개발 환경 자동 활성화
     ../shared/programs/git
