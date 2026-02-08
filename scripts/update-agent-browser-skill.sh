@@ -4,7 +4,7 @@
 set -euo pipefail
 
 BASE_URL="https://raw.githubusercontent.com/vercel-labs/agent-browser/main/skills/agent-browser"
-SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)/.claude/skills/agent-browser"
+SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)/modules/shared/programs/claude/files/skills/agent-browser"
 
 mkdir -p "$SKILL_DIR/references" "$SKILL_DIR/templates"
 

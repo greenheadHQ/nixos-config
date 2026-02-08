@@ -18,7 +18,7 @@ exec zsh
 ls -la $HOME/.npm-global/bin/agent-browser
 ```
 
-설정 위치: `modules/shared/programs/agent-browser/default.nix`의 `home.sessionPath`
+설정 위치: `~/IdeaProjects/nixos-config/modules/shared/programs/agent-browser/default.nix`의 `home.sessionPath`
 
 ## Chromium 실행 실패 (NixOS)
 
@@ -30,12 +30,12 @@ error while loading shared libraries: libnss3.so: cannot open shared object file
 
 **원인**: Playwright의 Chromium은 동적 링크 바이너리로 FHS 라이브러리 경로를 기대하지만, NixOS는 FHS를 따르지 않음
 
-**해결**: `modules/nixos/configuration.nix`에서 `programs.nix-ld.libraries` 확인
+**해결**: `~/IdeaProjects/nixos-config/modules/nixos/configuration.nix`에서 `programs.nix-ld.libraries` 확인
 
 ```nix
 programs.nix-ld.enable = true;
 programs.nix-ld.libraries = with pkgs; [
-  nss nspr atk cups dbus libdrm mesa
+  nss nspr atk cups dbus libdrm libgbm mesa
   pango cairo expat at-spi2-core alsa-lib glib gtk3
   gdk-pixbuf freetype fontconfig
   xorg.libX11 xorg.libXcomposite xorg.libXdamage
@@ -58,7 +58,7 @@ programs.nix-ld.libraries = with pkgs; [
 | `libcups.so` | `cups` |
 | `libdbus-1.so` | `dbus` |
 | `libdrm.so` | `libdrm` |
-| `libgbm.so` | `mesa` |
+| `libgbm.so` | `libgbm` |
 | `libpango-1.0.so` | `pango` |
 | `libcairo.so` | `cairo` |
 | `libX11.so` | `xorg.libX11` |
@@ -123,8 +123,8 @@ macOS의 경우 캐시 경로: `~/Library/Caches/ms-playwright/`
 
 | 파일 | 역할 |
 |------|------|
-| `modules/shared/programs/agent-browser/default.nix` | 설치 + PATH |
-| `modules/nixos/configuration.nix` | nix-ld.libraries |
+| `~/IdeaProjects/nixos-config/modules/shared/programs/agent-browser/default.nix` | 설치 + PATH |
+| `~/IdeaProjects/nixos-config/modules/nixos/configuration.nix` | nix-ld.libraries |
 | `~/.npm-global/bin/agent-browser` | 설치된 바이너리 |
 | `~/.cache/ms-playwright/` | Chromium 캐시 (Linux) |
 | `~/Library/Caches/ms-playwright/` | Chromium 캐시 (macOS) |

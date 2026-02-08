@@ -147,5 +147,9 @@ in
       source = "${claudeDir}/hooks/plan-notification.sh";
       executable = true;
     };
+
+    # agent-browser 스킬 (user-scope)
+    ".claude/skills/agent-browser".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/agent-browser";
   };
 }
