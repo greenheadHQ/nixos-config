@@ -4,7 +4,7 @@ description: |
   This skill should be used when the user asks "codex config",
   "codex setup", "codex trust", "AGENTS.md", ".agents/skills",
   "project-scope skill", or encounters Codex CLI skill discovery failures,
-  trust misconfiguration, Claude/Codex compatibility issues, or Codex runtime
+  approval/sandbox policy issues, Claude/Codex compatibility issues, or Codex runtime
   behavior differences in nixos-config.
 ---
 
@@ -14,8 +14,9 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 ## 범위
 
-- `~/.codex/config.toml` trust 설정
+- `~/.codex/config.toml` 실행 정책(`approval_policy`, `sandbox_mode`) 및 모델 설정
 - `AGENTS.md`/`.agents/skills` 투영 구조
+- `.agents/skills/*/SKILL.md` 복사본/심링크 판별
 - `nrs`(또는 동등 activation) 이후 결과 검증
 - Claude Code와 Codex CLI 동작 차이 정리
 
@@ -23,17 +24,17 @@ Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬
 
 ## 빠른 진단 체크리스트
 
-1. `~/.codex/config.toml`에 대상 프로젝트 `trust_level = "trusted"`가 있는지 확인
+1. `.agents/skills/*/SKILL.md`가 심링크가 아닌 일반 파일인지 먼저 확인
 2. 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크 확인
-3. `.agents/skills/*/SKILL.md`가 심링크가 아닌 일반 파일인지 확인
-4. `./scripts/ai/verify-ai-compat.sh` 실행
-5. `codex exec`로 런타임에서 스킬 이름이 보이는지 확인
+3. `./scripts/ai/verify-ai-compat.sh` 실행
+4. `codex exec`로 런타임에서 스킬 이름이 보이는지 확인
+5. 권한 프롬프트 이슈는 `approval_policy`, `sandbox_mode` 설정으로 분리 진단
 
 ## 핵심 파일
 
 - `libraries/packages/codex-cli.nix` — Nix 패키지 (pre-built 바이너리)
 - `modules/shared/programs/codex/default.nix` — 설정 및 스킬 투영
-- `modules/shared/programs/codex/files/config.toml` — trust/모델 설정
+- `modules/shared/programs/codex/files/config.toml` — 실행 정책/모델 설정
 - `scripts/update-codex-cli.sh` — 버전 자동 업데이트
 - `scripts/ai/verify-ai-compat.sh` — 구조 검증
 - `.claude/skills/*` (원본)
@@ -53,17 +54,22 @@ GitHub releases에서 플랫폼별 pre-built 바이너리를 가져온다.
 ./scripts/update-codex-cli.sh
 ```
 
-## Trust 규칙
+## 진단 우선순위 (중요)
+
+Skills 누락 이슈의 1차 원인은 `trust`보다 `SKILL.md` 투영 방식이다.  
+실제 회귀 기록(2026-02-08) 기준으로, `.agents/skills/*/SKILL.md`가 심링크일 때 누락이 재현되었고, **실파일 복사**로 바꾸면 해결됐다.
+
+## 실행 정책 / Trust 메모
 
 `codex-cli 0.98.0` 기준으로 `codex trust` 독립 서브커맨드는 확인되지 않았다.  
-실제 신뢰 상태는 `config.toml`의 프로젝트 섹션으로 관리한다.
+권한 프롬프트 동작은 전역 실행 정책으로 제어한다.
 
 ```toml
-[projects."/Users/green/IdeaProjects/nixos-config"]
-trust_level = "trusted"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
 ```
 
-이 설정이 없으면 `.agents/skills/`가 존재해도 project-scope 스킬이 무시될 수 있다.
+`trust_level` 프로젝트 엔트리는 경로별 세부 제어가 필요할 때만 추가한다.
 
 ## 투영 아키텍처
 

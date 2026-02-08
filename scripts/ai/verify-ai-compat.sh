@@ -14,14 +14,26 @@ pass() { echo "  [OK] $1"; }
 fail() { echo "  [FAIL] $1" >&2; errors=$((errors + 1)); }
 warn() { echo "  [WARN] $1" >&2; warnings=$((warnings + 1)); }
 
-echo "=== Trust 설정 확인 ==="
+echo "=== Codex 실행 정책 확인 ==="
 
 CODEX_CONFIG="$HOME/.codex/config.toml"
 if [ -f "$CODEX_CONFIG" ]; then
-  if grep -q 'nixos-config' "$CODEX_CONFIG"; then
-    pass "nixos-config 프로젝트 trust 설정됨"
+  if grep -Eq '^[[:space:]]*approval_policy[[:space:]]*=[[:space:]]*"never"' "$CODEX_CONFIG"; then
+    pass "approval_policy = \"never\""
   else
-    fail "nixos-config 프로젝트 trust 미설정 — .agents/skills/ 발견 불가"
+    fail "approval_policy = \"never\" 미설정"
+  fi
+
+  if grep -Eq '^[[:space:]]*sandbox_mode[[:space:]]*=[[:space:]]*"danger-full-access"' "$CODEX_CONFIG"; then
+    pass "sandbox_mode = \"danger-full-access\""
+  else
+    fail "sandbox_mode = \"danger-full-access\" 미설정"
+  fi
+
+  if grep -q 'nixos-config' "$CODEX_CONFIG"; then
+    pass "프로젝트 trust 항목 존재 (선택)"
+  else
+    pass "프로젝트 trust 항목 없음 (선택)"
   fi
 else
   fail "$HOME/.codex/config.toml 없음"

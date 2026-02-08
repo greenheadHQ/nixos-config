@@ -10,25 +10,24 @@
 
 1. Codex에서 `.agents/skills/<name>/SKILL.md` 기반 스킬이 일부/전부 누락됨
 2. `verify-ai-compat.sh` 기준으로는 구조가 있어 보이는데 런타임 인식이 불안정함
-3. trust 설정이 누락되면 `.agents/skills` 전체가 무시됨
+3. 별개로, 권한 승인 프롬프트가 반복적으로 나타남 (정책 기본값 영향)
 
 ## 재현 조건
 
-- 프로젝트 trust가 `trusted`가 아님
-- 또는 `.agents/skills/*/SKILL.md`가 심링크일 때 환경에 따라 project-scope 스캔이 누락됨
+- `.agents/skills/*/SKILL.md`가 심링크일 때 환경에 따라 project-scope 스캔이 누락됨
 
 ## 원인 분석
 
-1. **Trust 전제조건**
-- Codex는 프로젝트 신뢰 상태가 충족되어야 project-scope 컨텍스트를 정상적으로 반영한다.
-- 관리 지점: `~/.codex/config.toml`의 `[projects."<path>"]`.
-
-2. **SKILL.md 투영 방식**
+1. **SKILL.md 투영 방식 (근본 원인)**
 - 기존 투영은 `.claude/skills/<name>/SKILL.md`를 `.agents/skills/<name>/SKILL.md`로 심링크했다.
 - 일부 Codex 환경에서 symlinked `SKILL.md`가 project-scope 발견 과정에서 누락될 수 있었다.
 
-3. **검증 기준 불일치**
+2. **검증 기준 불일치**
 - 기존 검증 스크립트가 "심링크여야 정상" 기준으로 작성되어 실제 호환 수정 이후 기준과 충돌했다.
+
+3. **정책/발견 이슈 혼재**
+- 승인 프롬프트 문제(`approval_policy`, `sandbox_mode`)와 Skills 발견 문제를 한 원인으로 혼동하기 쉬웠다.
+- 실제로 Skills 누락의 근본 원인은 `trust`가 아니라 `SKILL.md` 심링크였다.
 
 ## 해결 내용
 
@@ -46,15 +45,20 @@
   - 심링크면 실패 처리
   - 원본과 `cmp`로 내용 일치 확인
 
-### 3) trust 설정 점검
+### 3) 실행 정책 기본값 반영 (권한 프롬프트 대응)
 
 - 파일: `modules/shared/programs/codex/files/config.toml`
-- 필수 상태:
+- 반영 상태:
 
 ```toml
-[projects."/Users/green/IdeaProjects/nixos-config"]
-trust_level = "trusted"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
 ```
+
+### 4) trust 항목 정리
+
+- 프로젝트별 절대경로 trust 항목은 환경 이식성(`$HOME`/OS 차이) 문제를 만들 수 있어 기본 구성에서 제거했다.
+- 필요 시 호스트별/로컬 오버라이드로만 추가한다.
 
 ## 검증 절차
 
@@ -78,11 +82,13 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 - `codex exec` 런타임 질의:
   - `managing-secrets` 가용성: `YES`
   - project 스킬 목록이 응답에 포함됨
+- 새 Git 프로젝트에서도 승인 선택지 미노출(`approval_policy = "never"`, `sandbox_mode = "danger-full-access"` 적용 후)
 
 ## codex trust 관련 메모
 
 - `codex-cli 0.98.0` 기준 `codex trust` 독립 서브커맨드는 확인되지 않았다.
-- trust 관리는 CLI 서브커맨드가 아니라 `config.toml`의 프로젝트 trust 설정으로 본다.
+- trust 관리는 CLI 서브커맨드가 아니라 `config.toml` 프로젝트 엔트리로만 가능하다.
+- 본 케이스에서 Skills 누락의 근본 원인으로는 확인되지 않았다(심링크 이슈가 근본 원인).
 
 ## 회귀 방지 체크리스트
 
@@ -101,3 +107,5 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 - https://developers.openai.com/codex/config-basic
 - https://developers.openai.com/codex/config-advanced
 - https://developers.openai.com/codex/config-reference
+- https://developers.openai.com/codex/security/
+- https://github.com/openai/codex/issues/4392
