@@ -2,6 +2,9 @@
 
 Claude Code 관련 문제와 해결 방법을 정리합니다.
 
+> Codex CLI trust/.agents/skills/project-scope 이슈는 `configuring-codex` 스킬의
+> `references/runbook-codex-compat-2026-02-08.md`를 우선 참고하세요.
+
 ## 목차
 
 - [플러그인 설치/삭제가 안 됨 (settings.json 읽기 전용)](#플러그인-설치삭제가-안-됨-settingsjson-읽기-전용)

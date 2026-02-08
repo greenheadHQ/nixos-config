@@ -12,5 +12,8 @@ trust_level = "trusted"
 [projects."/Users/green/IdeaProjects/nixos-config"]
 trust_level = "trusted"
 
+[notice]
+hide_full_access_warning = true
+
 [notice.model_migrations]
 "gpt-5.2" = "gpt-5.2-codex"

@@ -1,6 +1,8 @@
 pre-commit:
   parallel: true
   commands:
+    ai-skills-consistency:
+      run: bash ./scripts/ai/warn-skill-consistency.sh
     gitleaks:
       run: gitleaks protect --staged --no-banner --redact
     nixfmt:

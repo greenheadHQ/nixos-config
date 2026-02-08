@@ -71,23 +71,17 @@ else
       continue
     fi
 
-    # SKILL.md 심링크 확인
-    skill_link="$projected_dir/SKILL.md"
-    expected="../../../.claude/skills/$skill_name/SKILL.md"
-    if [ -L "$skill_link" ]; then
-      actual="$(readlink "$skill_link")"
-      if [ "$actual" = "$expected" ]; then
-        pass "SKILL.md 심링크: $skill_name"
-      else
-        fail "SKILL.md 잘못된 대상: $skill_name → $actual"
-      fi
+    # SKILL.md 실파일 확인 (symlink가 아닌 복사본)
+    projected_skill="$projected_dir/SKILL.md"
+    source_skill="$skill_dir/SKILL.md"
+    if [ ! -f "$projected_skill" ]; then
+      fail "SKILL.md 파일 누락: $skill_name"
+    elif [ -L "$projected_skill" ]; then
+      fail "SKILL.md가 심링크임: $skill_name (project-scope 누락 가능성)"
+    elif cmp -s "$source_skill" "$projected_skill"; then
+      pass "SKILL.md 복사본 일치: $skill_name"
     else
-      fail "SKILL.md 심링크 없음: $skill_name"
-    fi
-
-    # 심링크 해석 가능 여부 (실제 파일 접근)
-    if [ -L "$skill_link" ] && [ ! -e "$skill_link" ]; then
-      fail "깨진 심링크: .agents/skills/$skill_name/SKILL.md"
+      fail "SKILL.md 내용 불일치: $skill_name"
     fi
 
     # openai.yaml 존재 확인

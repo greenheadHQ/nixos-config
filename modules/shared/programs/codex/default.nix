@@ -63,10 +63,13 @@ in
 
               $DRY_RUN_CMD mkdir -p "$target_skill_dir"
 
-              # SKILL.md 심링크
-              expected_link="../../../.claude/skills/$skill_name/SKILL.md"
-              if [ ! -L "$target_skill_dir/SKILL.md" ] || [ "$(readlink "$target_skill_dir/SKILL.md")" != "$expected_link" ]; then
-                $DRY_RUN_CMD ln -sf "$expected_link" "$target_skill_dir/SKILL.md"
+              # SKILL.md는 "실파일 복사"로 투영
+              # 일부 Codex 환경에서 symlinked SKILL.md가 project-scope 스캔에서 누락될 수 있음
+              skill_target="$target_skill_dir/SKILL.md"
+              skill_source="$source_skill_dir/SKILL.md"
+              if [ -L "$skill_target" ] || [ ! -f "$skill_target" ] || ! cmp -s "$skill_source" "$skill_target"; then
+                $DRY_RUN_CMD rm -f "$skill_target"
+                $DRY_RUN_CMD cp "$skill_source" "$skill_target"
               fi
 
               # references, scripts, assets 심링크 (존재 시)

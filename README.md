@@ -147,3 +147,7 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | 컨테이너 서비스 | `running-containers` |
 
 전체 스킬 목록은 `CLAUDE.md`를 참고하세요.
+
+> pre-commit `ai-skills-consistency` 훅이 `.claude/skills`, `.agents/skills`, `modules/shared/programs/codex` 관련 staged 변경에서 구조 불일치를 감지하면 커밋을 차단합니다.
+> 불일치 해결 후 `nrs`와 `./scripts/ai/verify-ai-compat.sh`로 재검증하세요.
+> 긴급 우회: `SKIP_AI_SKILL_CHECK=1 git commit ...`
