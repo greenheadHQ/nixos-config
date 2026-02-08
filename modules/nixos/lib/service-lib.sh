@@ -41,7 +41,10 @@ fetch_github_release() {
   }
   GITHUB_LATEST_VERSION=$(echo "$GITHUB_RESPONSE" | jq -r '.tag_name | ltrimstr("v")')
   # jq -r은 JSON null을 문자열 "null"로 반환 → 빈 문자열로 정규화
-  [ "$GITHUB_LATEST_VERSION" = "null" ] && GITHUB_LATEST_VERSION=""
+  # if문 사용 필수: [ ] && 패턴은 set -e에서 비매칭 시 exit 1 유발
+  if [ "$GITHUB_LATEST_VERSION" = "null" ]; then
+    GITHUB_LATEST_VERSION=""
+  fi
 }
 
 # ═══════════════════════════════════════════════════════════════
