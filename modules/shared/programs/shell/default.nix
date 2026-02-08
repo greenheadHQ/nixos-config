@@ -34,6 +34,9 @@ in
       if pkgs.stdenv.isDarwin then " --chrome" else ""
     } --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 
+    # Codex CLI 위험 모드 단축 (사용자 요청)
+    codex = "command codex --dangerously-bypass-approvals-and-sandbox";
+
     # lazygit 단축
     lg = "lazygit";
 
