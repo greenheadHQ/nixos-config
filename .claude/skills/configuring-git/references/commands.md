@@ -13,7 +13,8 @@ gdf, git-cleanup, wt, wt-cleanup 등 커스텀 명령어 사용법입니다.
 
 ## gdf (Git Diff → fzf → Neovim)
 
-`modules/shared/programs/shell/default.nix`에서 관리됩니다.
+`modules/shared/scripts/git-diff-fzf-functions.sh`에서 관리됩니다.
+(`shell/default.nix`에서 `~/.local/lib/git-diff-fzf-functions.sh`로 source하여 로딩)
 
 git diff 변경 파일을 fzf로 선택하여 nvim으로 여는 함수입니다. preview에 delta 렌더링이 적용됩니다.
 
@@ -122,7 +123,8 @@ Git Branch Cleanup
 
 ## wt (Git Worktree 관리)
 
-`modules/shared/programs/shell/default.nix`에서 관리됩니다.
+`modules/shared/scripts/git-worktree-functions.sh`에서 관리됩니다.
+(`shell/default.nix`에서 `~/.local/lib/git-worktree-functions.sh`로 source하여 로딩)
 
 Git worktree를 `.wt/` 디렉토리에 생성하고 관리하는 함수입니다.
 

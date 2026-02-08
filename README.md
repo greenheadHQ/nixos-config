@@ -27,8 +27,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 ├── libraries/
 │   ├── constants.nix              # 전역 상수 (IP, 경로, SSH 키, UID 등)
 │   ├── packages.nix               # 공통 패키지 (shared/darwinOnly/nixosOnly)
-│   ├── nixpkgs/default.nix        # overlay 설정
-│   └── home-manager/default.nix   # HM 공유 모듈
+│   └── nixpkgs/default.nix        # overlay 설정
 ├── modules/
 │   ├── shared/                    # Darwin + NixOS 공통
 │   │   ├── configuration.nix      # Nix GC, substitution
@@ -43,7 +42,9 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │       ├── options/
 │       │   └── homeserver.nix     # mkOption 서비스 정의 (immich, uptime-kuma, anki-sync)
 │       ├── lib/
-│       │   └── tailscale-wait.nix # Tailscale IP 대기 유틸리티
+│       │   ├── tailscale-wait.nix # Tailscale IP 대기 유틸리티
+│       │   ├── mk-update-module.nix # 서비스 업데이트 모듈 생성 헬퍼
+│       │   └── service-lib.sh     # 공통 셸 라이브러리
 │       └── programs/
 │           ├── anki-sync-server/  # Anki sync 서버 (NixOS 네이티브 모듈)
 │           ├── docker/            # 컨테이너 서비스 (runtime, immich, uptime-kuma)

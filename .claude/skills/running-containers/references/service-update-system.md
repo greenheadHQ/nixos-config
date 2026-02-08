@@ -11,18 +11,32 @@ Immich, Uptime Kuma, Copyparty 3개 컨테이너 서비스가 `service-lib.sh` �
 
 ```
 modules/nixos/lib/
-├── service-lib.sh      ← 공통 셸 라이브러리
-└── service-lib.nix     ← Nix wrapper (writeText)
+├── service-lib.sh            ← 공통 셸 라이브러리
+├── service-lib.nix           ← Nix wrapper (writeText)
+├── mk-update-module.nix      ← 업데이트 모듈 생성 헬퍼
+└── generic-version-check.sh  ← 공통 버전 체크 스크립트
 
 modules/nixos/programs/
 ├── immich-update/
-│   ├── default.nix         ← NixOS 모듈 (systemd 서비스/타이머)
+│   ├── default.nix           ← NixOS 모듈 (독자 구현, Immich API 사용)
 │   └── files/
-│       ├── version-check.sh  ← 자동 버전 체크
+│       ├── version-check.sh  ← Immich 전용 버전 체크
 │       └── update-script.sh  ← 수동 업데이트
-├── uptime-kuma-update/     ← 동일 구조
-└── copyparty-update/       ← 동일 구조
+├── uptime-kuma-update/
+│   ├── default.nix           ← mk-update-module.nix 사용
+│   └── files/
+│       └── update-script.sh  ← 수동 업데이트 (SQLite 백업 포함)
+└── copyparty-update/
+    ├── default.nix           ← mk-update-module.nix 사용
+    └── files/
+        └── update-script.sh  ← 수동 업데이트
 ```
+
+### mk-update-module.nix
+
+Copyparty, Uptime Kuma 등 GitHub Releases 기반 서비스의 공통 패턴을 추출한 헬퍼. 서비스명, GitHub 레포, 시크릿 등을 파라미터로 전달하면 systemd service/timer, tmpfiles, agenix 시크릿, update 래퍼를 자동 생성.
+
+Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 독자 구현 유지.
 
 ## 공통 라이브러리 (service-lib.sh)
 
@@ -123,7 +137,9 @@ GitHub에 새 릴리즈가 있더라도 이미지 빌드에 시간 소요.
 
 ### 새 서비스 추가 시
 
-1. `modules/nixos/programs/<서비스>-update/` 디렉토리 생성 (기존 패턴 복사)
-2. `secrets/pushover-<서비스>.age` 시크릿 생성 + `secrets/secrets.nix` 추가
-3. `homeserver.nix`에 옵션 + import 추가
-4. `configuration.nix`에 enable 추가
+1. `modules/nixos/programs/<서비스>-update/` 디렉토리 생성
+2. `default.nix`에서 `import ../../lib/mk-update-module.nix { ... }` 사용 (copyparty-update 참고)
+3. `files/update-script.sh` 작성 (서비스별 업데이트 로직)
+4. `secrets/pushover-<서비스>.age` 시크릿 생성 + `secrets/secrets.nix` 추가
+5. `homeserver.nix`에 옵션 + import 추가
+6. `configuration.nix`에 enable 추가
