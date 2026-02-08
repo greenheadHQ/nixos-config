@@ -2,9 +2,12 @@
 name: configuring-claude-code
 description: |
   This skill should be used when the user asks "how to create a hook",
-  "add a plugin", "claude alias", "--chrome flag", or encounters Claude Code
-  configuration issues, settings.json read-only problems, ghost plugin issues.
-  Covers PreToolUse/PostToolUse/Stop hooks, plugin installation, and shell alias.
+  "add a plugin", "claude alias", "--chrome flag", "codex config",
+  "codex setup", "agents.md", ".agents/skills sync", or encounters Claude Code
+  / Codex CLI configuration issues, settings.json read-only problems, ghost
+  plugin issues, Codex skill discovery failures, trust settings.
+  Covers PreToolUse/PostToolUse/Stop hooks, plugin installation, shell alias,
+  and Codex CLI compatibility layer.
 ---
 
 # Claude Code 설정
@@ -115,6 +118,62 @@ c = "command claude${if pkgs.stdenv.isDarwin then " --chrome" else ""} --dangero
 1. **플러그인 설치 안 됨**: settings.json 권한 확인, CLI 사용
 2. **JSON validation 에러**: 훅 스크립트 출력 형식 확인
 3. **nix develop 필요**: git 명령어가 nix develop 환경 필요 시 래핑
+
+## Codex CLI 호환 구조
+
+Codex CLI에서도 동일한 스킬을 사용할 수 있도록 호환 레이어가 구축되어 있다.
+
+### 아키텍처 (원본 → 파생)
+
+```
+.claude/skills/<name>/SKILL.md  ← 단일 원본 (수동 관리)
+       ↓ 심링크 (nrs 시 자동)
+.agents/skills/<name>/SKILL.md  ← Codex 발견용 투영
+.agents/skills/<name>/agents/openai.yaml  ← Codex UI 메타데이터 (자동 생성)
+
+CLAUDE.md  ← 프로젝트 지침 (수동 관리)
+       ↓ 심링크
+AGENTS.md  ← Codex용 (자동 생성)
+
+AGENTS.override.md  ← Codex 전용 보충 규칙 (수동 관리, Git 추적)
+```
+
+### 핵심: Trust 설정
+
+`~/.codex/config.toml`에 프로젝트 trust가 없으면 `.agents/skills/` 전체가 무시됨:
+
+```toml
+[projects."/Users/green/IdeaProjects/nixos-config"]
+trust_level = "trusted"
+```
+
+### Nix 모듈
+
+- 소스: `modules/shared/programs/codex/default.nix`
+- `nrs` 실행 시 자동으로 `.agents/skills/` 심링크 + openai.yaml 생성
+- 글로벌 설정(`~/.codex/config.toml`, `~/.codex/AGENTS.md`)도 Nix 관리
+
+### Claude 전용 / Codex 비대응 기능
+
+| 기능 | Claude Code | Codex CLI |
+|------|-------------|-----------|
+| PreToolUse 훅 | 지원 (git wrapper 등) | 미지원 |
+| Pushover 알림 | Stop/Ask/Plan 훅 | `notify` 설정 (별도 구현) |
+| 플러그인 마켓플레이스 | 지원 | 미지원 |
+| MCP UI (claude mcp add) | JSON (.mcp.json) | TOML (config.toml [mcp_servers]) |
+
+### 검증 및 장애 대응
+
+```bash
+# 호환 구조 검증
+./scripts/ai/verify-ai-compat.sh
+
+# 깨진 심링크 복구
+nrs  # Nix 재빌드로 자동 복구
+
+# 스킬 추가/삭제 후
+nrs  # activation script가 .agents/skills/ 자동 동기화
+```
 
 ## 레퍼런스
 

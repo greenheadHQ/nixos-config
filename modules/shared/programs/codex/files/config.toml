@@ -1,0 +1,16 @@
+personality = "pragmatic"
+model = "gpt-5.3-codex"
+model_reasoning_effort = "xhigh"
+
+# Trust 설정 — 없으면 .agents/skills/ 전체가 무시됨
+[projects."/Users/green"]
+trust_level = "trusted"
+
+[projects."/Users/green/IdeaProjects/awesome-anki"]
+trust_level = "trusted"
+
+[projects."/Users/green/IdeaProjects/nixos-config"]
+trust_level = "trusted"
+
+[notice.model_migrations]
+"gpt-5.2" = "gpt-5.2-codex"
