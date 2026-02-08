@@ -54,7 +54,7 @@ darwinOnly = [ ... pkgs.패키지명 ];
 | 설정 | 파일 | 설명 |
 |------|------|------|
 | Dock | `configuration.nix` | 자동 숨김, 크기, 최근 앱 |
-| Finder | `configuration.nix` | 숨김 파일, 확장자 표시 |
+| Finder | `configuration.nix` | 숨김 파일, 확장자, 네트워크 .DS_Store 방지 |
 | 키보드 | `configuration.nix` | 키 반복 속도 |
 | 트랙패드 | `configuration.nix` | 탭 클릭, 자연스러운 스크롤 |
 

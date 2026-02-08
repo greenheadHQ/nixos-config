@@ -139,6 +139,9 @@ locale charmap  # UTF-8 확인
 
 - 숨김 파일 표시
 - 모든 확장자 표시
+- **네트워크 볼륨 `.DS_Store` 생성 방지**: `DSDontWriteNetworkStores = true`
+  - NAS/SMB/WebDAV 등 네트워크 볼륨에만 적용 (로컬 디스크 무관)
+  - 네트워크 폴더별 Finder 보기 설정(아이콘 크기, 정렬)이 저장되지 않는 트레이드오프 있음
 
 ## 키보드
 

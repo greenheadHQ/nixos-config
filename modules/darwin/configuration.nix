@@ -81,6 +81,11 @@
       "com.apple.keyboard.fnState" = true;
     };
 
+    # 네트워크 볼륨에 .DS_Store 생성 방지
+    CustomUserPreferences."com.apple.desktopservices" = {
+      DSDontWriteNetworkStores = true;
+    };
+
     # App Switcher를 모든 모니터에 표시
     CustomUserPreferences."com.apple.Dock" = {
       appswitcher-all-displays = true;
