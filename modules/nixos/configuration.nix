@@ -86,6 +86,7 @@
     cups
     dbus
     libdrm
+    libgbm
     mesa
     pango
     cairo
