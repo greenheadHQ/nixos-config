@@ -1,7 +1,10 @@
 #!/bin/bash
-# Uptime Kuma 버전 체크 및 Pushover 알림
+# 서비스 버전 체크 및 Pushover 알림 (공통)
 # 매일 GitHub Releases API로 최신 버전을 확인하고, 새 버전 발견 시 알림 전송
 # 이미지에 버전 레이블이 없으므로 GitHub latest 추적 방식 사용
+#
+# 환경변수:
+#   DETECT_MAJOR_MISMATCH=true  - 이미지 태그 메이저 버전 불일치 감지 (선택적)
 set -euo pipefail
 
 # 환경변수 (systemd에서 주입)
@@ -39,16 +42,17 @@ fi
 LATEST="$GITHUB_LATEST_VERSION"
 echo "Latest version: $LATEST"
 
-# ─── 2. 메이저 버전 불일치 감지 ──────────────────────────────────
-# 이미지 태그 :1은 1.x만 제공하지만 GitHub latest가 2.x일 수 있음
-IMAGE_TAG="${CONTAINER_IMAGE##*:}"
-IMAGE_MAJOR="${IMAGE_TAG%%.*}"
-LATEST_MAJOR="${LATEST%%.*}"
+# ─── 2. 메이저 버전 불일치 감지 (선택적) ──────────────────────────
 MAJOR_MISMATCH=false
+if [ "${DETECT_MAJOR_MISMATCH:-false}" = "true" ]; then
+  IMAGE_TAG="${CONTAINER_IMAGE##*:}"
+  IMAGE_MAJOR="${IMAGE_TAG%%.*}"
+  LATEST_MAJOR="${LATEST%%.*}"
 
-if [ "$IMAGE_MAJOR" != "$LATEST_MAJOR" ] 2>/dev/null; then
-  MAJOR_MISMATCH=true
-  echo "NOTE: Major version mismatch - image tag :${IMAGE_TAG} (${IMAGE_MAJOR}.x) vs GitHub latest v${LATEST} (${LATEST_MAJOR}.x)"
+  if [ "$IMAGE_MAJOR" != "$LATEST_MAJOR" ] 2>/dev/null; then
+    MAJOR_MISMATCH=true
+    echo "NOTE: Major version mismatch - image tag :${IMAGE_TAG} (${IMAGE_MAJOR}.x) vs GitHub latest v${LATEST} (${LATEST_MAJOR}.x)"
+  fi
 fi
 
 # ─── 3. 초기 실행 처리 ──────────────────────────────────────────
@@ -72,19 +76,24 @@ echo "New version available: v$LATEST"
 RELEASE_BODY=$(echo "$GITHUB_RESPONSE" | jq -r '.body // "릴리즈 노트 없음"' | head -20)
 RELEASE_BODY="${RELEASE_BODY:0:1024}"
 
+# 업데이트 명령 (서비스명 기반)
+UPDATE_CMD="sudo ${CONTAINER_NAME}-update"
+
 # 메이저 버전 불일치 시 추가 안내
 if $MAJOR_MISMATCH; then
+  IMAGE_TAG="${CONTAINER_IMAGE##*:}"
+  IMAGE_MAJOR="${IMAGE_TAG%%.*}"
   MESSAGE="v${LATEST} 출시됨 (현재 이미지 태그 :${IMAGE_TAG}은 ${IMAGE_MAJOR}.x만 지원)
 
 ${RELEASE_BODY}
 
-이미지 태그 변경 후: sudo uptime-kuma-update"
+이미지 태그 변경 후: ${UPDATE_CMD}"
 else
   MESSAGE="v${LATEST} 출시됨
 
 ${RELEASE_BODY}
 
-업데이트: sudo uptime-kuma-update"
+업데이트: ${UPDATE_CMD}"
 fi
 
 send_notification "$SERVICE_DISPLAY_NAME 업데이트 알림" "$MESSAGE" 0

@@ -47,7 +47,6 @@
     let
       # 공유 라이브러리
       constants = import ./libraries/constants.nix;
-      home-manager-shared = ./libraries/home-manager;
       nixpkgs-shared = ./libraries/nixpkgs;
 
       # 다중 시스템 지원
@@ -87,7 +86,6 @@
         nix-darwin.lib.darwinSystem {
           system = systems.darwin;
           modules = [
-            home-manager-shared
             nixpkgs-shared
             home-manager.darwinModules.home-manager
             ./modules/shared/configuration.nix
