@@ -206,12 +206,13 @@ init_agents_dir() {
 }
 
 # ─── gitignore-check: check entries ───
-# .agents/ and .codex/ are expected in global gitignore (see git/default.nix)
-# Only AGENTS.md and AGENTS.override.md need project-level .gitignore
+# All Codex projection artifacts (.agents/, .codex/, AGENTS.md, AGENTS.override.md)
+# are expected in global gitignore (see git/default.nix).
+# This function verifies they are actually ignored (via global or project gitignore).
 gitignore_check() {
   local project_root="$1"
   local missing=()
-  local entries=("AGENTS.md" "AGENTS.override.md")
+  local entries=(".agents/" ".codex/" "AGENTS.md" "AGENTS.override.md")
 
   if git -C "$project_root" rev-parse --git-dir >/dev/null 2>&1; then
     for entry in "${entries[@]}"; do

@@ -159,6 +159,8 @@ in
       # Codex CLI (syncing-codex-harness 프로젝션 산출물)
       ".agents/"
       ".codex/"
+      "AGENTS.md"
+      "AGENTS.override.md"
 
       # Python
       "__pycache__/"
