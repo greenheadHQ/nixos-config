@@ -13,6 +13,7 @@ When working with Python, invoke the relevant /astral:<skill> for uv, ty, and ru
 | 키워드 | 스킬 |
 |--------|------|
 | agent-browser, 웹 자동화, 헤드리스 브라우저, 스크래핑, 폼 자동화 | `agent-browser` |
+| codex sync, codex harness, codex 동기화, codex 투영 | `syncing-codex-harness` |
 
 - **NixOS (Platform: linux)**: 항상 `agent-browser` 사용. Claude in Chrome 미지원 환경.
 - **macOS (Platform: darwin)**: AskUserQuestion으로 사용자에게 도구 선택을 물어보세요.

@@ -78,3 +78,4 @@ homeserver.copyparty.enable = true;
 | Neovim, LazyVim, LSP, nvim 플러그인, lazy.nvim, 한글 입력, im-select | `configuring-neovim` |
 | Cursor extensions, extensions.json | `managing-cursor` |
 | Pushover, 텍스트 공유, MiniPC→iPhone, push 함수 | `sharing-text` |
+| Codex sync, codex harness, codex 동기화, codex 투영 | `syncing-codex-harness` |
