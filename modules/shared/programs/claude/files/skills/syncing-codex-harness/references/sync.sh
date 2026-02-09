@@ -8,6 +8,7 @@
 #   sync.sh agents-md         <project-root> [plugin-claude-md-path]
 #   sync.sh agents-override   <project-root> [--plugin-install-path=PATH:NAME]...
 #   sync.sh mcp-config        <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]...
+#   sync.sh trust-project     <project-root>
 #   sync.sh gitignore-check   <project-root>
 #   sync.sh all               <project-root> [--local-skills-dir=DIR] [--plugin-install-path=PATH:NAME]... [--plugin-claude-md=PATH]
 
@@ -375,7 +376,6 @@ mcp_config() {
     idx=$((idx + 1))
   done
 
-  # Re-run with env vars set
   mcp_toml="$(env "${env_args[@]}" python3 << 'PYEOF'
 import json, os, re, sys
 
@@ -392,39 +392,44 @@ def toml_key(name):
         return '"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
     return name
 
-def convert_mcp(path, install_path=None, prefix=''):
+def load_mcp(path, install_path=None):
     with open(path) as f:
         servers = json.load(f)
-    lines = []
+    result = {}
     for name, cfg in servers.items():
         cfg_str = json.dumps(cfg)
         if install_path:
             cfg_str = cfg_str.replace('${CLAUDE_PLUGIN_ROOT}', install_path)
-        cfg = json.loads(cfg_str)
-        final_name = (prefix + '--' + name) if prefix else name
-        key = toml_key(final_name)
-        lines.append(f'\n[mcp_servers.{key}]')
-        if cfg.get('type') == 'http' and 'url' in cfg:
-            lines.append(f'url = "{toml_escape_value(cfg["url"])}"')
-        elif 'command' in cfg:
-            lines.append(f'command = "{toml_escape_value(cfg["command"])}"')
-            if 'args' in cfg:
-                args_str = ', '.join(f'"{toml_escape_value(a)}"' for a in cfg['args'])
-                lines.append(f'args = [{args_str}]')
-        if 'env' in cfg:
-            lines.append(f'\n[mcp_servers.{key}.env]')
-            for k, v in cfg['env'].items():
-                lines.append(f'{k} = "{toml_escape_value(str(v))}"')
+        result[name] = json.loads(cfg_str)
+    return result
+
+def server_to_toml(name, cfg):
+    key = toml_key(name)
+    lines = [f'\n[mcp_servers.{key}]']
+    if cfg.get('type') == 'http' and 'url' in cfg:
+        lines.append(f'url = "{toml_escape_value(cfg["url"])}"')
+    elif 'command' in cfg:
+        lines.append(f'command = "{toml_escape_value(cfg["command"])}"')
+        if 'args' in cfg:
+            args_str = ', '.join(f'"{toml_escape_value(a)}"' for a in cfg['args'])
+            lines.append(f'args = [{args_str}]')
+    if 'env' in cfg:
+        lines.append(f'\n[mcp_servers.{key}.env]')
+        for k, v in cfg['env'].items():
+            lines.append(f'{k} = "{toml_escape_value(str(v))}"')
     return '\n'.join(lines)
 
 def replace_mcp_sections(existing_toml, new_mcp_toml):
     cleaned = re.sub(r'\n?\[mcp_servers[^\]]*\][^\[]*', '', existing_toml)
     return cleaned.rstrip() + '\n' + new_mcp_toml + '\n'
 
-sections = []
+# Collect all servers: (name, cfg, prefix)
+all_servers = []
+
 project_mcp = os.environ.get('PROJECT_MCP', '')
 if project_mcp and os.path.isfile(project_mcp):
-    sections.append(convert_mcp(project_mcp))
+    for name, cfg in load_mcp(project_mcp).items():
+        all_servers.append((name, cfg, ''))
 
 i = 0
 while True:
@@ -435,10 +440,21 @@ while True:
     if len(parts) == 3:
         mcp_path, ipath, pname = parts
         if os.path.isfile(mcp_path):
-            sections.append(convert_mcp(mcp_path, ipath, pname))
+            for name, cfg in load_mcp(mcp_path, ipath).items():
+                all_servers.append((name, cfg, pname))
     i += 1
 
-new_mcp = '\n'.join(sections)
+# Collision-based prefixing: only prefix when names collide
+name_counts = {}
+for name, _, _ in all_servers:
+    name_counts[name] = name_counts.get(name, 0) + 1
+
+toml_parts = []
+for name, cfg, prefix in all_servers:
+    final_name = (prefix + '--' + name) if (name_counts[name] > 1 and prefix) else name
+    toml_parts.append(server_to_toml(final_name, cfg))
+
+new_mcp = '\n'.join(toml_parts)
 
 config_path = os.environ.get('CONFIG_FILE', '')
 if config_path and os.path.isfile(config_path):
@@ -451,6 +467,34 @@ PYEOF
   )"
 
   printf '%s\n' "$mcp_toml" > "$config_file"
+}
+
+# ─── trust-project: ensure project is trusted in global config.toml ───
+ensure_project_trusted() {
+  local project_root="$1"
+  local codex_home="${CODEX_HOME:-$HOME/.codex}"
+  local global_config="$codex_home/config.toml"
+  mkdir -p "$codex_home"
+
+  PROJECT_ROOT="$project_root" GLOBAL_CONFIG="$global_config" python3 << 'PYEOF'
+import os, sys
+
+project_path = os.environ["PROJECT_ROOT"].rstrip("/")
+config_path = os.environ["GLOBAL_CONFIG"]
+
+content = ""
+if os.path.isfile(config_path):
+    with open(config_path) as f:
+        content = f.read()
+
+if f'[projects."{project_path}"]' in content:
+    print("already-trusted")
+    sys.exit(0)
+
+with open(config_path, "a") as f:
+    f.write(f'\n[projects."{project_path}"]\ntrust_level = "trusted"\n')
+print("trusted")
+PYEOF
 }
 
 # ─── all: full sync pipeline ───
@@ -473,19 +517,19 @@ sync_all() {
 
   # 1. Init
   init_agents_dir "$project_root"
-  echo "[1/7] Initialized .agents/ and .codex/" >&2
+  echo "[1/8] Initialized .agents/ and .codex/" >&2
 
   # 2. AGENTS.md
   local md_result
   md_result="$(agents_md "$project_root" "$plugin_claude_md")"
-  echo "[2/7] AGENTS.md: $md_result" >&2
+  echo "[2/8] AGENTS.md: $md_result" >&2
 
   # 3. Local skills
   local local_count=0
   if [ -n "$local_skills_dir" ] && [ -d "$project_root/$local_skills_dir" ]; then
     local_count=$(project_skills "$project_root/$local_skills_dir" "$project_root/.agents/skills")
   fi
-  echo "[3/7] Local skills: $local_count" >&2
+  echo "[3/8] Local skills: $local_count" >&2
 
   # 4. Plugin skills + agents
   local plugin_skill_count=0
@@ -517,12 +561,12 @@ sync_all() {
       mcp_args+=("--plugin-mcp=$ipath/.mcp.json:$ipath:$pname")
     fi
   done
-  echo "[4/7] Plugin skills: $plugin_skill_count, Agents: $agent_count" >&2
+  echo "[4/8] Plugin skills: $plugin_skill_count, Agents: $agent_count" >&2
 
   # 5. AGENTS.override.md
   local rule_count
   rule_count=$(agents_override "$project_root" "${override_args[@]}")
-  echo "[5/7] Rules -> AGENTS.override.md: $rule_count" >&2
+  echo "[5/8] Rules -> AGENTS.override.md: $rule_count" >&2
 
   # 6. MCP config
   local project_mcp_arg=""
@@ -531,19 +575,24 @@ sync_all() {
   fi
   if [ -n "$project_mcp_arg" ] || [ ${#mcp_args[@]} -gt 0 ]; then
     mcp_config "$project_root" $project_mcp_arg "${mcp_args[@]}"
-    echo "[6/7] MCP config updated" >&2
+    echo "[6/8] MCP config updated" >&2
   else
-    echo "[6/7] MCP config: no sources found" >&2
+    echo "[6/8] MCP config: no sources found" >&2
   fi
 
-  # 7. Gitignore check
+  # 7. Trust project in global config
+  local trust_result
+  trust_result="$(ensure_project_trusted "$project_root")"
+  echo "[7/8] Trust: $trust_result" >&2
+
+  # 8. Gitignore check
   local missing
   missing="$(gitignore_check "$project_root")"
   if [ -n "$missing" ]; then
-    echo "[7/7] Missing .gitignore entries:" >&2
+    echo "[8/8] Missing .gitignore entries:" >&2
     echo "$missing" >&2
   else
-    echo "[7/7] .gitignore OK" >&2
+    echo "[8/8] .gitignore OK" >&2
   fi
 
   echo "=== Sync complete ===" >&2
@@ -582,11 +631,14 @@ case "${1:-}" in
   mcp-config)
     mcp_config "$2" "${@:3}"
     ;;
+  trust-project)
+    ensure_project_trusted "$2"
+    ;;
   all)
     sync_all "$2" "${@:3}"
     ;;
   *)
-    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|init|gitignore-check|all} ..." >&2
+    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|init|gitignore-check|all} ..." >&2
     exit 1
     ;;
 esac
