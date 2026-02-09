@@ -47,7 +47,7 @@ The `sync.sh` script contains AWK code ported from `modules/shared/programs/code
 - Handles both inline (`description: text`) and block (`description: |`) formats
 - Also handles folded block scalar (`description: >-`)
 - For block format: concatenates lines until next key or end of frontmatter
-- Truncates to 64 characters
+- Truncates to 64 characters (character-based via `${var:0:64}`, not byte-based `printf '%.64s'` — important for CJK/multibyte text)
 
 ### Title Case conversion
 - Splits on `-`, capitalizes first letter of each word

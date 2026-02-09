@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # sync.sh — Claude Code → Codex CLI harness projection
 # Usage:
-#   sync.sh project-skills <source-skills-dir> <target-skills-dir>
-#   sync.sh plugin-skills  <source-skills-dir> <target-skills-dir> [--plugin-name=NAME]
-#   sync.sh agents         <source-agents-dir> <target-agents-dir>
-#   sync.sh init           <project-root>
-#   sync.sh gitignore-check <project-root>
+#   sync.sh init              <project-root>
+#   sync.sh project-skills    <source-skills-dir> <target-skills-dir>
+#   sync.sh plugin-skills     <source-skills-dir> <target-skills-dir> [--plugin-name=NAME]
+#   sync.sh agents            <source-agents-dir> <target-agents-dir>
+#   sync.sh agents-md         <project-root> [plugin-claude-md-path]
+#   sync.sh agents-override   <project-root> [--plugin-install-path=PATH:NAME]...
+#   sync.sh mcp-config        <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]...
+#   sync.sh gitignore-check   <project-root>
+#   sync.sh all               <project-root> [--local-skills-dir=DIR] [--plugin-install-path=PATH:NAME]... [--plugin-claude-md=PATH]
 
 set -euo pipefail
+
+# Requires UTF-8 locale for correct multibyte handling (${var:0:N})
 
 # ─── openai.yaml generation ───
 # Ported from modules/shared/programs/codex/default.nix:86-139
@@ -51,7 +57,7 @@ generate_openai_yaml() {
     }
     END { if (mode == "block" && desc != "") print desc }
   ' "$skill_md")"
-  short_desc="$(printf '%.64s' "$short_desc")"
+  short_desc="${short_desc:0:64}"
   [ -z "$short_desc" ] && short_desc="Codex skill projected from Claude Code"
 
   # display_name: kebab-case -> Title Case
@@ -63,8 +69,8 @@ generate_openai_yaml() {
 
   # Escape YAML special chars
   local escaped_display escaped_desc
-  escaped_display="$(echo "$display_name" | sed 's/"/\\"/g')"
-  escaped_desc="$(echo "$short_desc" | sed 's/"/\\"/g')"
+  escaped_display="$(echo "$display_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  escaped_desc="$(echo "$short_desc" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
   mkdir -p "$(dirname "$yaml_file")"
   cat > "$yaml_file" <<YAML
@@ -121,6 +127,12 @@ plugin_skills() {
   local target_dir="$2"
   local plugin_name="${3:-}"
 
+  if [ ! -d "$source_dir" ]; then
+    echo "Warning: Plugin skills directory not found: $source_dir" >&2
+    echo "0"
+    return
+  fi
+
   local count=0
 
   for source_skill_dir in "$source_dir"/*/; do
@@ -168,6 +180,12 @@ copy_agents() {
   local target_dir="$2"
   local count=0
 
+  if [ ! -d "$source_dir" ]; then
+    echo "Warning: Agents directory not found: $source_dir" >&2
+    echo "0"
+    return
+  fi
+
   for agent_file in "$source_dir"/*.md; do
     [ -f "$agent_file" ] || continue
     local fname
@@ -184,30 +202,350 @@ init_agents_dir() {
   local project_root="$1"
   rm -rf "$project_root/.agents/"
   mkdir -p "$project_root/.agents/skills"
+  mkdir -p "$project_root/.codex"
 }
 
 # ─── gitignore-check: check entries ───
+# .agents/ and .codex/ are expected in global gitignore (see git/default.nix)
+# Only AGENTS.md and AGENTS.override.md need project-level .gitignore
 gitignore_check() {
   local project_root="$1"
-  local gitignore="$project_root/.gitignore"
   local missing=()
+  local entries=("AGENTS.md" "AGENTS.override.md")
 
-  local entries=(".agents/" ".codex/" "AGENTS.md" "AGENTS.override.md")
-
-  if [ ! -f "$gitignore" ]; then
-    printf '%s\n' "${entries[@]}"
-    return
-  fi
-
-  for entry in "${entries[@]}"; do
-    if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
-      missing+=("$entry")
+  if git -C "$project_root" rev-parse --git-dir >/dev/null 2>&1; then
+    for entry in "${entries[@]}"; do
+      if ! git -C "$project_root" check-ignore -q "$entry" 2>/dev/null; then
+        missing+=("$entry")
+      fi
+    done
+  else
+    # Fallback for non-git directories
+    local gitignore="$project_root/.gitignore"
+    if [ ! -f "$gitignore" ]; then
+      printf '%s\n' "${entries[@]}"
+      return
     fi
-  done
+    for entry in "${entries[@]}"; do
+      if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
+        missing+=("$entry")
+      fi
+    done
+  fi
 
   if [ ${#missing[@]} -gt 0 ]; then
     printf '%s\n' "${missing[@]}"
   fi
+}
+
+# ─── agents-md: create AGENTS.md ───
+agents_md() {
+  local project_root="$1"
+  local plugin_claude_md="${2:-}"
+
+  if [ -e "$project_root/CLAUDE.md" ]; then
+    # Project has CLAUDE.md (or valid symlink) -> symlink
+    ln -sfn "CLAUDE.md" "$project_root/AGENTS.md"
+    echo "symlinked"
+  elif [ -n "$plugin_claude_md" ] && [ -f "$plugin_claude_md" ]; then
+    # Plugin provides CLAUDE.md -> copy
+    cp "$plugin_claude_md" "$project_root/AGENTS.md"
+    echo "copied"
+  else
+    echo "Warning: No CLAUDE.md found. AGENTS.md not created." >&2
+    echo "skipped"
+  fi
+}
+
+# ─── agents-override: generate AGENTS.override.md ───
+agents_override() {
+  local project_root="$1"
+  shift
+  local override_file="$project_root/AGENTS.override.md"
+
+  # Parse --plugin-install-path=PATH:NAME arguments
+  local plugin_paths=()
+  local plugin_names=()
+  for arg in "$@"; do
+    case "$arg" in
+      --plugin-install-path=*)
+        local val="${arg#--plugin-install-path=}"
+        plugin_paths+=("${val%%:*}")
+        plugin_names+=("${val#*:}")
+        ;;
+    esac
+  done
+
+  # Build auto-generated content
+  local auto_content=""
+  local rule_count=0
+
+  for i in "${!plugin_paths[@]}"; do
+    local ipath="${plugin_paths[$i]}"
+
+    # Rules from plugin
+    if [ -d "$ipath/rules" ]; then
+      for rule_file in "$ipath/rules/"*.md; do
+        [ -f "$rule_file" ] || continue
+        local rule_name
+        rule_name="$(basename "$rule_file" .md)"
+        # Strip YAML frontmatter
+        local body
+        body="$(awk '
+          BEGIN { in_fm=0; past_fm=0 }
+          /^---[[:space:]]*$/ {
+            if (!past_fm && in_fm==0) { in_fm=1; next }
+            if (in_fm==1) { past_fm=1; next }
+          }
+          past_fm || !in_fm { print }
+        ' "$rule_file")"
+        auto_content+="## Rule: ${rule_name}"$'\n\n'"${body}"$'\n'
+        rule_count=$((rule_count + 1))
+      done
+    fi
+  done
+
+  # Codex common supplement
+  auto_content+=$'\n'"## 스킬 사용"$'\n\n'
+  auto_content+="- \`.agents/skills/\`에서 스킬이 자동 발견된다"$'\n'
+  auto_content+="- \`/skill-name\`은 Codex에서 \`\$skill-name\`에 대응"$'\n'
+  auto_content+="- Claude Code 전용 기능(hooks, plugins, MCP UI)은 Codex에서 미지원"$'\n'
+  auto_content+="- SKILL.md의 \`allowed-tools\` frontmatter는 Codex에서 무시됨"$'\n'
+
+  local start_marker="<!-- AUTO-GENERATED BY syncing-codex-harness -->"
+  local end_marker="<!-- END AUTO-GENERATED BY syncing-codex-harness -->"
+
+  if [ -f "$override_file" ]; then
+    # Replace between markers, preserve content outside
+    local new_content
+    new_content="$(awk -v start="$start_marker" -v end="$end_marker" \
+      -v replacement="$auto_content" '
+      $0 == start { print; printf "%s", replacement; skip=1; next }
+      $0 == end   { skip=0; print; next }
+      !skip { print }
+    ' "$override_file")"
+    printf '%s\n' "$new_content" > "$override_file"
+  else
+    # Create new from template
+    cat > "$override_file" <<OVERRIDE
+# Codex CLI 보충 규칙
+
+## 이 파일의 역할
+
+AGENTS.md의 프로젝트 규칙을 모두 따르되, 아래는 Codex 전용 보충이다.
+
+${start_marker}
+${auto_content}${end_marker}
+
+## 사용자 커스텀
+
+(여기에 Codex 전용 사용자 규칙을 추가할 수 있습니다 — 동기화 시 보존됩니다)
+OVERRIDE
+  fi
+
+  echo "$rule_count"
+}
+
+# ─── mcp-config: generate .codex/config.toml MCP sections ───
+mcp_config() {
+  local project_root="$1"
+  shift
+  local config_file="$project_root/.codex/config.toml"
+
+  # Collect MCP source args
+  local project_mcp=""
+  local plugin_mcps=()
+  for arg in "$@"; do
+    case "$arg" in
+      --project-mcp=*) project_mcp="${arg#--project-mcp=}" ;;
+      --plugin-mcp=*)  plugin_mcps+=("${arg#--plugin-mcp=}") ;;
+    esac
+  done
+
+  mkdir -p "$(dirname "$config_file")"
+
+  # Pass args via environment
+  local env_args=()
+  env_args+=("CONFIG_FILE=$config_file")
+  [ -n "$project_mcp" ] && env_args+=("PROJECT_MCP=$project_mcp")
+  local idx=0
+  for pm in "${plugin_mcps[@]}"; do
+    env_args+=("PLUGIN_MCP_${idx}=$pm")
+    idx=$((idx + 1))
+  done
+
+  # Re-run with env vars set
+  mcp_toml="$(env "${env_args[@]}" python3 << 'PYEOF'
+import json, os, re, sys
+
+def toml_escape_value(s):
+    s = s.replace('\\', '\\\\')
+    s = s.replace('"', '\\"')
+    s = s.replace('\n', '\\n')
+    s = s.replace('\r', '\\r')
+    s = s.replace('\t', '\\t')
+    return s
+
+def toml_key(name):
+    if '.' in name or '"' in name or ' ' in name:
+        return '"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return name
+
+def convert_mcp(path, install_path=None, prefix=''):
+    with open(path) as f:
+        servers = json.load(f)
+    lines = []
+    for name, cfg in servers.items():
+        cfg_str = json.dumps(cfg)
+        if install_path:
+            cfg_str = cfg_str.replace('${CLAUDE_PLUGIN_ROOT}', install_path)
+        cfg = json.loads(cfg_str)
+        final_name = (prefix + '--' + name) if prefix else name
+        key = toml_key(final_name)
+        lines.append(f'\n[mcp_servers.{key}]')
+        if cfg.get('type') == 'http' and 'url' in cfg:
+            lines.append(f'url = "{toml_escape_value(cfg["url"])}"')
+        elif 'command' in cfg:
+            lines.append(f'command = "{toml_escape_value(cfg["command"])}"')
+            if 'args' in cfg:
+                args_str = ', '.join(f'"{toml_escape_value(a)}"' for a in cfg['args'])
+                lines.append(f'args = [{args_str}]')
+        if 'env' in cfg:
+            lines.append(f'\n[mcp_servers.{key}.env]')
+            for k, v in cfg['env'].items():
+                lines.append(f'{k} = "{toml_escape_value(str(v))}"')
+    return '\n'.join(lines)
+
+def replace_mcp_sections(existing_toml, new_mcp_toml):
+    cleaned = re.sub(r'\n?\[mcp_servers[^\]]*\][^\[]*', '', existing_toml)
+    return cleaned.rstrip() + '\n' + new_mcp_toml + '\n'
+
+sections = []
+project_mcp = os.environ.get('PROJECT_MCP', '')
+if project_mcp and os.path.isfile(project_mcp):
+    sections.append(convert_mcp(project_mcp))
+
+i = 0
+while True:
+    pm = os.environ.get(f'PLUGIN_MCP_{i}', '')
+    if not pm:
+        break
+    parts = pm.split(':', 2)
+    if len(parts) == 3:
+        mcp_path, ipath, pname = parts
+        if os.path.isfile(mcp_path):
+            sections.append(convert_mcp(mcp_path, ipath, pname))
+    i += 1
+
+new_mcp = '\n'.join(sections)
+
+config_path = os.environ.get('CONFIG_FILE', '')
+if config_path and os.path.isfile(config_path):
+    with open(config_path) as f:
+        existing = f.read()
+    print(replace_mcp_sections(existing, new_mcp))
+else:
+    print(new_mcp)
+PYEOF
+  )"
+
+  printf '%s\n' "$mcp_toml" > "$config_file"
+}
+
+# ─── all: full sync pipeline ───
+sync_all() {
+  local project_root="$1"
+  shift
+
+  local local_skills_dir=""
+  local plugin_args=()
+  local plugin_claude_md=""
+  for arg in "$@"; do
+    case "$arg" in
+      --local-skills-dir=*)    local_skills_dir="${arg#--local-skills-dir=}" ;;
+      --plugin-install-path=*) plugin_args+=("$arg") ;;
+      --plugin-claude-md=*)    plugin_claude_md="${arg#--plugin-claude-md=}" ;;
+    esac
+  done
+
+  echo "=== syncing-codex-harness: Full Sync ===" >&2
+
+  # 1. Init
+  init_agents_dir "$project_root"
+  echo "[1/7] Initialized .agents/ and .codex/" >&2
+
+  # 2. AGENTS.md
+  local md_result
+  md_result="$(agents_md "$project_root" "$plugin_claude_md")"
+  echo "[2/7] AGENTS.md: $md_result" >&2
+
+  # 3. Local skills
+  local local_count=0
+  if [ -n "$local_skills_dir" ] && [ -d "$project_root/$local_skills_dir" ]; then
+    local_count=$(project_skills "$project_root/$local_skills_dir" "$project_root/.agents/skills")
+  fi
+  echo "[3/7] Local skills: $local_count" >&2
+
+  # 4. Plugin skills + agents
+  local plugin_skill_count=0
+  local agent_count=0
+  local mcp_args=()
+  local override_args=()
+  for parg in "${plugin_args[@]}"; do
+    local val="${parg#--plugin-install-path=}"
+    local ipath="${val%%:*}"
+    local pname="${val#*:}"
+
+    if [ ! -d "$ipath" ]; then
+      echo "  Warning: Plugin path not found: $ipath" >&2
+      continue
+    fi
+
+    if [ -d "$ipath/skills" ]; then
+      local c
+      c=$(plugin_skills "$ipath/skills" "$project_root/.agents/skills" "$pname")
+      plugin_skill_count=$((plugin_skill_count + c))
+    fi
+    if [ -d "$ipath/agents" ]; then
+      local a
+      a=$(copy_agents "$ipath/agents" "$project_root/.agents")
+      agent_count=$((agent_count + a))
+    fi
+    override_args+=("--plugin-install-path=$val")
+    if [ -f "$ipath/.mcp.json" ]; then
+      mcp_args+=("--plugin-mcp=$ipath/.mcp.json:$ipath:$pname")
+    fi
+  done
+  echo "[4/7] Plugin skills: $plugin_skill_count, Agents: $agent_count" >&2
+
+  # 5. AGENTS.override.md
+  local rule_count
+  rule_count=$(agents_override "$project_root" "${override_args[@]}")
+  echo "[5/7] Rules -> AGENTS.override.md: $rule_count" >&2
+
+  # 6. MCP config
+  local project_mcp_arg=""
+  if [ -f "$project_root/.mcp.json" ]; then
+    project_mcp_arg="--project-mcp=$project_root/.mcp.json"
+  fi
+  if [ -n "$project_mcp_arg" ] || [ ${#mcp_args[@]} -gt 0 ]; then
+    mcp_config "$project_root" $project_mcp_arg "${mcp_args[@]}"
+    echo "[6/7] MCP config updated" >&2
+  else
+    echo "[6/7] MCP config: no sources found" >&2
+  fi
+
+  # 7. Gitignore check
+  local missing
+  missing="$(gitignore_check "$project_root")"
+  if [ -n "$missing" ]; then
+    echo "[7/7] Missing .gitignore entries:" >&2
+    echo "$missing" >&2
+  else
+    echo "[7/7] .gitignore OK" >&2
+  fi
+
+  echo "=== Sync complete ===" >&2
 }
 
 # ─── Main dispatch ───
@@ -234,8 +572,20 @@ case "${1:-}" in
   gitignore-check)
     gitignore_check "$2"
     ;;
+  agents-md)
+    agents_md "$2" "${3:-}"
+    ;;
+  agents-override)
+    agents_override "$2" "${@:3}"
+    ;;
+  mcp-config)
+    mcp_config "$2" "${@:3}"
+    ;;
+  all)
+    sync_all "$2" "${@:3}"
+    ;;
   *)
-    echo "Usage: sync.sh {project-skills|plugin-skills|agents|init|gitignore-check} ..." >&2
+    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|init|gitignore-check|all} ..." >&2
     exit 1
     ;;
 esac

@@ -96,6 +96,42 @@ Write to `.codex/config.toml`:
 - If file exists: replace only `[mcp_servers.*]` sections, preserve other settings
 - If file doesn't exist: create with MCP sections only
 
+## TOML Encoding
+
+Values must be properly escaped for TOML basic strings (double-quoted):
+
+```python
+def toml_escape_value(s):
+    """Escape a string value for TOML basic string (double-quoted)."""
+    s = s.replace('\\', '\\\\')   # backslash first
+    s = s.replace('"', '\\"')
+    s = s.replace('\n', '\\n')
+    s = s.replace('\r', '\\r')
+    s = s.replace('\t', '\\t')
+    return s
+
+def toml_key(name):
+    """Quote a TOML key if it contains dots or special chars."""
+    if '.' in name or '"' in name or ' ' in name:
+        return '"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return name
+```
+
+Apply `toml_escape_value()` to all string values: `command`, `url`, each `args` element, each `env` value.
+Apply `toml_key()` to server names in section headers (e.g., `[mcp_servers.{toml_key(name)}]`).
+
+## Existing config.toml Preservation
+
+When `.codex/config.toml` already exists with non-MCP settings, only the `[mcp_servers.*]` sections should be replaced. Use Python regex to strip existing MCP sections, then append new ones:
+
+```python
+import re
+
+def replace_mcp_sections(existing_toml: str, new_mcp_toml: str) -> str:
+    cleaned = re.sub(r'\n?\[mcp_servers[^\]]*\][^\[]*', '', existing_toml)
+    return cleaned.rstrip() + '\n' + new_mcp_toml + '\n'
+```
+
 ## Merging Multiple Sources
 
 When both project and plugin MCP configs exist, merge all servers into a single `.codex/config.toml`.

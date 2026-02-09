@@ -18,7 +18,7 @@ project-root/
 │   └── <agent-name>.md          # Agent files (real copies)
 ├── .codex/
 │   └── config.toml              # MCP server config (TOML format)
-└── .gitignore                   # Should include .agents/, .codex/, AGENTS.md, AGENTS.override.md
+└── .gitignore                   # Should include AGENTS.md, AGENTS.override.md (.agents/, .codex/ are in global gitignore)
 ```
 
 ## Key Differences from Claude Code
@@ -48,6 +48,12 @@ interface:
   short_description: "Brief description (max 64 chars)"
   default_prompt: "Use $skill-name to help with this task."
 ```
+
+## Known Limitations
+
+- `allowed-tools` frontmatter from SKILL.md has no Codex equivalent. This metadata is present in projected SKILL.md files but silently ignored by Codex CLI.
+- Claude Code rules with `alwaysApply: false` are included in AGENTS.override.md but will always be applied (Codex has no conditional rule application). Rules with `alwaysApply: true` behave identically.
+- Hooks (`hooks.json`) and plugins are Claude Code-only features with no Codex equivalent.
 
 ## Global vs Project Scope
 

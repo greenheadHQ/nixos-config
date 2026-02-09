@@ -156,6 +156,10 @@ in
       "mise.local.toml"
       ".mise.local.toml"
 
+      # Codex CLI (syncing-codex-harness 프로젝션 산출물)
+      ".agents/"
+      ".codex/"
+
       # Python
       "__pycache__/"
 

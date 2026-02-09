@@ -49,3 +49,13 @@ When `AGENTS.override.md` already exists:
 
 When `AGENTS.override.md` doesn't exist:
 - Create new file with auto-generated section + default user section template
+
+## Automated Generation
+
+The `sync.sh agents-override` subcommand automates this process:
+```bash
+sync.sh agents-override <project-root> --plugin-install-path=PATH:NAME
+```
+
+It handles frontmatter stripping, marker-based replacement, and template creation automatically.
+When used via `sync.sh all`, this step is included in the pipeline.

@@ -104,6 +104,7 @@ in
                 /^---[[:space:]]*$/ { if (in_fm == 0) { in_fm = 1; next } else { exit } }
                 in_fm != 1 { next }
                 mode == "" && /^description:[[:space:]]*\|[[:space:]]*$/ { mode = "block"; next }
+                mode == "" && /^description:[[:space:]]*>[[:space:]]*-?[[:space:]]*$/ { mode = "block"; next }
                 mode == "" && /^description:[[:space:]]*/ {
                   line = $0; sub(/^description:[[:space:]]*/, "", line);
                   gsub(/^[[:space:]]+|[[:space:]]+$/, "", line);
@@ -118,7 +119,7 @@ in
                 }
                 END { if (mode == "block" && desc != "") print desc }
               ' "$source_skill_dir/SKILL.md")"
-              short_desc="$(printf '%.64s' "$short_desc")"
+              short_desc="''${short_desc:0:64}"
               [ -z "$short_desc" ] && short_desc="Project skill for nixos-config workflows"
 
               # display_name: kebab-case → Title Case
@@ -128,8 +129,8 @@ in
               }')"
 
               # yaml 파일 작성 (YAML 특수문자 이스케이프)
-              escaped_display="$(echo "$display_name" | sed 's/"/\\"/g')"
-              escaped_desc="$(echo "$short_desc" | sed 's/"/\\"/g')"
+              escaped_display="$(echo "$display_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+              escaped_desc="$(echo "$short_desc" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
               cat > "$yaml_file" <<YAML
         interface:
