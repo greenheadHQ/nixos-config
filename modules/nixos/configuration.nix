@@ -99,17 +99,17 @@
     freetype
     fontconfig
     # X11 라이브러리
-    xorg.libX11
-    xorg.libXcomposite
-    xorg.libXdamage
-    xorg.libXext
-    xorg.libXfixes
-    xorg.libXrandr
-    xorg.libXcursor
-    xorg.libXi
-    xorg.libXrender
-    xorg.libxcb
-    xorg.libxshmfence
+    libx11
+    libxcomposite
+    libxdamage
+    libxext
+    libxfixes
+    libxrandr
+    libxcursor
+    libxi
+    libxrender
+    libxcb
+    libxshmfence
     # 기타
     libxkbcommon
   ];
