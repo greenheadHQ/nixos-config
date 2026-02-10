@@ -56,20 +56,32 @@ else
   CONTEXT="📁 $DIR"
 fi
 
-# 다중 질문 표시
-if [ "$QUESTION_COUNT" -gt 1 ] 2>/dev/null; then
-  QUESTION_LINE=""
-  for i in $(seq 0 $((QUESTION_COUNT - 1))); do
-    Q=$(printf '%s' "$INPUT" | jq -r ".tool_input.questions[$i].question // empty" 2>/dev/null)
-    if [ -n "$QUESTION_LINE" ]; then
-      QUESTION_LINE="$QUESTION_LINE
+# 질문 + 선택지 포맷
+QUESTION_LINE=""
+for i in $(seq 0 $((QUESTION_COUNT - 1))); do
+  Q=$(printf '%s' "$INPUT" | jq -r ".tool_input.questions[$i].question // empty" 2>/dev/null)
+
+  # 다중 질문이면 Q1. Q2. 접두사 추가
+  if [ "$QUESTION_COUNT" -gt 1 ] 2>/dev/null; then
+    Q="Q$((i + 1)). $Q"
+  fi
+
+  # 선택지 레이블 추출
+  OPTION_LABELS=$(printf '%s' "$INPUT" | jq -r ".tool_input.questions[$i].options[]?.label // empty" 2>/dev/null)
+  if [ -n "$OPTION_LABELS" ]; then
+    # printf '%s\n'으로 마지막 줄에도 개행 보장 (read가 모든 항목을 처리하도록)
+    while IFS= read -r opt || [ -n "$opt" ]; do
+      Q="$Q
+· $opt"
+    done <<< "$OPTION_LABELS"
+  fi
+
+  if [ -n "$QUESTION_LINE" ]; then
+    QUESTION_LINE="$QUESTION_LINE
 "
-    fi
-    QUESTION_LINE="${QUESTION_LINE}Q$((i + 1)). $Q"
-  done
-else
-  QUESTION_LINE="$FIRST_QUESTION"
-fi
+  fi
+  QUESTION_LINE="${QUESTION_LINE}${Q}"
+done
 
 MESSAGE="🖥️ $HOST
 $CONTEXT
