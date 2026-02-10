@@ -8,6 +8,24 @@ export LC_ALL=en_US.UTF-8
 # Pushover 메시지 최대 길이
 MAX_MESSAGE_CHARS=1024
 
+# Transcript 파일이 완전히 기록될 때까지 대기
+# Race condition 방어: Stop hook이 transcript flush보다 먼저 실행되는 경우
+# 0.3초 간격으로 파일 크기 확인, 연속 2회 동일하면 안정화된 것으로 판단 (최대 3초)
+wait_for_stable_transcript() {
+  local file="$1"
+  local prev_size=-1
+  local curr_size
+
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    curr_size=$(wc -c < "$file" 2>/dev/null || echo 0)
+    if [ "$curr_size" = "$prev_size" ] && [ "$curr_size" -gt 0 ]; then
+      return 0
+    fi
+    prev_size=$curr_size
+    sleep 0.3
+  done
+}
+
 # agenix로 관리되는 credentials 로드
 CREDENTIALS_FILE="${PUSHOVER_CREDENTIALS_FILE:-$HOME/.config/pushover/claude-code}"
 PUSHOVER_API_URL="${PUSHOVER_API_URL:-https://api.pushover.net/1/messages.json}"
@@ -120,6 +138,15 @@ if [ -n "$INPUT" ] && command -v jq >/dev/null 2>&1; then
   TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 fi
 
+# Transcript flush 대기 (race condition 방어)
+TRANSCRIPT_SIZE_BEFORE=""
+TRANSCRIPT_SIZE_AFTER=""
+if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+  TRANSCRIPT_SIZE_BEFORE=$(wc -c < "$TRANSCRIPT_PATH" 2>/dev/null || echo 0)
+  wait_for_stable_transcript "$TRANSCRIPT_PATH"
+  TRANSCRIPT_SIZE_AFTER=$(wc -c < "$TRANSCRIPT_PATH" 2>/dev/null || echo 0)
+fi
+
 LAST_REPLY="$(extract_last_assistant_text "$TRANSCRIPT_PATH")"
 LAST_REPLY="$(normalize_reply "$LAST_REPLY")"
 
@@ -144,17 +171,14 @@ fi
 # 최종 안전망: 전체 메시지 1024자 상한 보장
 MESSAGE="$(clip_tail_chars "$MESSAGE" "$MAX_MESSAGE_CHARS")"
 
-# 디버그 로그 (원인 특정 후 삭제)
+# 디버그 로그 (race condition 수정 검증 후 삭제)
 DEBUG_LOG="/tmp/claude-stop-hook-debug.log"
 {
   echo "=== $(date -Iseconds) ==="
-  echo "PATH=$PATH"
-  echo "jq_path=$(command -v jq 2>&1 || echo 'NOT_FOUND')"
-  echo "input_len=${#INPUT}"
   echo "transcript_path=$TRANSCRIPT_PATH"
-  if [ -n "$TRANSCRIPT_PATH" ]; then
-    echo "transcript_exists=$([ -f "$TRANSCRIPT_PATH" ] && echo "yes ($(du -h "$TRANSCRIPT_PATH" 2>/dev/null | cut -f1))" || echo "no")"
-  fi
+  echo "size_before_wait=$TRANSCRIPT_SIZE_BEFORE"
+  echo "size_after_wait=$TRANSCRIPT_SIZE_AFTER"
+  echo "size_grew=$([ "$TRANSCRIPT_SIZE_BEFORE" != "$TRANSCRIPT_SIZE_AFTER" ] && echo "YES (race condition caught)" || echo "no")"
   echo "last_reply_len=${#LAST_REPLY}"
   echo "message_len=${#MESSAGE}"
   echo "message_first_200=${MESSAGE:0:200}"
