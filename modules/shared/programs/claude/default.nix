@@ -134,19 +134,13 @@ in
     # User-scope 지침 - 양방향 수정 가능 (Astral 플러그인 등 전역 설정)
     ".claude/CLAUDE.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
 
-    # Hooks (외부 스크립트로 분리)
-    ".claude/hooks/stop-notification.sh" = {
-      source = "${claudeDir}/hooks/stop-notification.sh";
-      executable = true;
-    };
-    ".claude/hooks/ask-notification.sh" = {
-      source = "${claudeDir}/hooks/ask-notification.sh";
-      executable = true;
-    };
-    ".claude/hooks/plan-notification.sh" = {
-      source = "${claudeDir}/hooks/plan-notification.sh";
-      executable = true;
-    };
+    # Hooks - mkOutOfStoreSymlink로 nrs 없이 즉시 반영 (소스 파일에 chmod +x 필수)
+    ".claude/hooks/stop-notification.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/stop-notification.sh";
+    ".claude/hooks/ask-notification.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/ask-notification.sh";
+    ".claude/hooks/plan-notification.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/plan-notification.sh";
 
     # agent-browser 스킬 (user-scope)
     ".claude/skills/agent-browser".source =
