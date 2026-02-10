@@ -6,6 +6,10 @@
 #   import ../../lib/mk-update-module.nix {
 #     serviceName = "copyparty";
 #     ...
+#     # constants가 필요한 경우 (specialArgs로 전달받은 constants를 curried parameter로 수신):
+#     extraUpdateEnv = _config: constants: {
+#       DATA_DIR = "${constants.paths.dockerData}/my-service/data";
+#     };
 #   }
 {
   # 필수 파라미터

@@ -65,7 +65,7 @@ INI 스타일, 섹션별 구성:
   th-maxage: 7776000      # 썸네일 캐시 90일 (초 단위)
   no-crt                  # 자체 TLS 비활성 (Caddy가 HTTPS 처리)
   rproxy: 1               # 리버스 프록시 뒤에서 실행 (X-Forwarded 헤더 신뢰)
-  xff-src: 10.88.0.0/16   # Podman 브릿지 네트워크를 프록시 소스로 신뢰
+  xff-src: 10.88.0.0/16   # Podman 브릿지 네트워크를 프록시 소스로 신뢰 (constants.network.podmanSubnet)
 
 [accounts]
   greenhead: PASSWORD     # 계정: 비밀번호

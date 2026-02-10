@@ -45,7 +45,7 @@ curl -sI -H 'Origin: https://copyparty.greenhead.dev' https://copyparty.greenhea
 ```
 
 **해결**:
-- `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` 확인
+- `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 확인
 - `rproxy: 1`만으로는 부족 — Podman 브릿지 네트워크 게이트웨이를 `xff-src`로 신뢰해야 함
 - 설정 변경 후 컨테이너 재시작 필수: `sudo systemctl restart podman-copyparty`
 
@@ -84,7 +84,7 @@ sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
   th-maxage: 7776000
   no-crt
   rproxy: 1
-  xff-src: 10.88.0.0/16
+  xff-src: 10.88.0.0/16  # constants.network.podmanSubnet
 
 [accounts]
   greenhead: <PASSWORD>
