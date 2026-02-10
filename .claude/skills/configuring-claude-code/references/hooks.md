@@ -16,12 +16,12 @@ Claude Code CLI 도구의 설정을 Nix로 선언적으로 관리하면서, 런�
 
 ## 관리 구조
 
-| 항목            | 관리 방식             | 설명                   |
-| --------------- | --------------------- | ---------------------- |
-| 앱 설치         | `home.activation`     | 설치 스크립트 실행     |
-| `settings.json` | `mkOutOfStoreSymlink` | 양방향 수정 가능       |
-| `mcp.json`      | `mkOutOfStoreSymlink` | 양방향 수정 가능       |
-| hooks           | `home.file`           | Nix store 심볼릭 링크  |
+| 항목            | 관리 방식             | 설명                                        |
+| --------------- | --------------------- | ------------------------------------------- |
+| 앱 설치         | `home.activation`     | 설치 스크립트 실행                           |
+| `settings.json` | `mkOutOfStoreSymlink` | 양방향 수정 가능                             |
+| `mcp.json`      | `mkOutOfStoreSymlink` | 양방향 수정 가능                             |
+| hooks           | `mkOutOfStoreSymlink` | 양방향 수정 가능 (소스 파일에 chmod +x 필수) |
 
 ## 양방향 수정
 
