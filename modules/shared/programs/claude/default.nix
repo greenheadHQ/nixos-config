@@ -4,6 +4,7 @@
   config,
   pkgs,
   lib,
+  constants,
   nixosConfigPath,
   ...
 }:
@@ -12,9 +13,6 @@ let
   claudeDir = ./files;
   # mkOutOfStoreSymlink용 절대 경로 (양방향 수정 가능)
   claudeFilesPath = "${nixosConfigPath}/modules/shared/programs/claude/files";
-
-  # 경로 상수 참조
-  constants = import ../../../../libraries/constants.nix;
 
   # viewing-immich-photo 스킬 (constants 참조로 경로 중앙 관리)
   viewingImmichPhotoSkill = pkgs.writeTextFile {

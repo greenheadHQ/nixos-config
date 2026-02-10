@@ -46,10 +46,10 @@
   ),
 
   # 업데이트 스크립트 래퍼에 전달할 추가 환경변수
-  extraUpdateEnv ? (_config: { }),
+  extraUpdateEnv ? (_config: _constants: { }),
 
   # version-check 서비스에 전달할 추가 환경변수
-  extraCheckEnv ? (_config: { }),
+  extraCheckEnv ? (_config: _constants: { }),
 
   # 추가 tmpfiles.rules (백업 디렉토리 등)
   extraTmpfilesRules ? [ ],
@@ -61,6 +61,7 @@
   config,
   pkgs,
   lib,
+  constants,
   ...
 }:
 
@@ -102,7 +103,7 @@ let
     SERVICE_DISPLAY_NAME = serviceDisplayName;
   };
 
-  mergedUpdateEnv = baseUpdateEnv // (extraUpdateEnv config);
+  mergedUpdateEnv = baseUpdateEnv // (extraUpdateEnv config constants);
 
   updateScript = pkgs.writeShellScriptBin "${serviceName}-update" (
     lib.concatStringsSep "\n" (
@@ -122,7 +123,7 @@ let
   }
   // lib.optionalAttrs detectMajorMismatch { DETECT_MAJOR_MISMATCH = "true"; };
 
-  mergedCheckEnv = baseCheckEnv // (extraCheckEnv config);
+  mergedCheckEnv = baseCheckEnv // (extraCheckEnv config constants);
 in
 {
   config = lib.mkIf (updateCfg.enable && parentCfg.enable) {

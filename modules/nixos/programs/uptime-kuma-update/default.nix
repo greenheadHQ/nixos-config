@@ -2,9 +2,6 @@
 # Uptime Kuma 버전 체크 (자동) 및 업데이트 (수동) 자동화
 # - 매일 GitHub Releases API로 최신 버전 확인 → Pushover 알림
 # - sudo uptime-kuma-update 명령으로 안전한 업데이트 (backup → pull → 재시작 → 헬스체크)
-let
-  constants = import ../../../../libraries/constants.nix;
-in
 import ../../lib/mk-update-module.nix {
   serviceName = "uptime-kuma";
   serviceDisplayName = "Uptime Kuma";
@@ -29,7 +26,7 @@ import ../../lib/mk-update-module.nix {
       findutils
     ];
 
-  extraUpdateEnv = _config: {
+  extraUpdateEnv = _config: constants: {
     BACKUP_DIR = "/var/lib/uptime-kuma-update/backups";
     DATA_DIR = "${constants.paths.dockerData}/uptime-kuma/data";
   };

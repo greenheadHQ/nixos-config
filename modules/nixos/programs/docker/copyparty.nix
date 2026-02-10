@@ -12,6 +12,7 @@ let
   cfg = config.homeserver.copyparty;
   inherit (constants.paths) dockerData mediaData;
   inherit (constants.containers) copyparty;
+  inherit (constants.network) podmanSubnet;
 
   configPath = "${dockerData}/copyparty/config/copyparty.conf";
   passwordPath = config.age.secrets.copyparty-password.path;
@@ -26,7 +27,7 @@ let
       th-maxage: 7776000
       no-crt
       rproxy: 1
-      xff-src: 10.88.0.0/16
+      xff-src: ${podmanSubnet}
 
     [accounts]
     CONF
