@@ -2,12 +2,8 @@
 { config, ... }:
 
 {
-  programs.mosh.enable = true;
-
-  networking.firewall.allowedUDPPortRanges = [
-    {
-      from = 60000;
-      to = 61000;
-    }
-  ];
+  programs.mosh = {
+    enable = true;
+    openFirewall = false; # trustedInterfaces(tailscale0)에서 이미 허용됨. LAN 노출 방지
+  };
 }

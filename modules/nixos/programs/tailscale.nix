@@ -4,7 +4,7 @@
 {
   services.tailscale = {
     enable = true;
-    useRoutingFeatures = "both"; # Funnel/Serve 지원
+    useRoutingFeatures = "server"; # subnet router만 허용 (exit node 비활성화)
   };
 
   networking.firewall = {

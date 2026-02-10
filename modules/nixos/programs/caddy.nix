@@ -21,6 +21,18 @@ let
 
   envFilePath = "/run/caddy/env";
 
+  # 보안 헤더 (모든 virtualHost에 공통 적용)
+  securityHeaders = ''
+    header {
+      Strict-Transport-Security "max-age=31536000; includeSubDomains"
+      X-Content-Type-Options "nosniff"
+      X-Frame-Options "SAMEORIGIN"
+      Referrer-Policy "strict-origin-when-cross-origin"
+      -X-Powered-By
+      -Server
+    }
+  '';
+
   # agenix 시크릿에서 환경변수 파일 생성 (copyparty-config 패턴)
   envScript = pkgs.writeShellScript "caddy-env-gen" ''
     mkdir -p /run/caddy
@@ -70,6 +82,7 @@ in
       virtualHosts."${subdomains.immich}.${base}" = {
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
+          ${securityHeaders}
           reverse_proxy localhost:${toString constants.network.ports.immich}
         '';
       };
@@ -77,6 +90,7 @@ in
       virtualHosts."${subdomains.uptimeKuma}.${base}" = {
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
+          ${securityHeaders}
           reverse_proxy localhost:${toString constants.network.ports.uptimeKuma}
         '';
       };
@@ -84,6 +98,7 @@ in
       virtualHosts."${subdomains.copyparty}.${base}" = {
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
+          ${securityHeaders}
           reverse_proxy localhost:${toString constants.network.ports.copyparty}
         '';
       };
