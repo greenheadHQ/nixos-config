@@ -144,6 +144,23 @@ fi
 # 최종 안전망: 전체 메시지 1024자 상한 보장
 MESSAGE="$(clip_tail_chars "$MESSAGE" "$MAX_MESSAGE_CHARS")"
 
+# 디버그 로그 (원인 특정 후 삭제)
+DEBUG_LOG="/tmp/claude-stop-hook-debug.log"
+{
+  echo "=== $(date -Iseconds) ==="
+  echo "PATH=$PATH"
+  echo "jq_path=$(command -v jq 2>&1 || echo 'NOT_FOUND')"
+  echo "input_len=${#INPUT}"
+  echo "transcript_path=$TRANSCRIPT_PATH"
+  if [ -n "$TRANSCRIPT_PATH" ]; then
+    echo "transcript_exists=$([ -f "$TRANSCRIPT_PATH" ] && echo "yes ($(du -h "$TRANSCRIPT_PATH" 2>/dev/null | cut -f1))" || echo "no")"
+  fi
+  echo "last_reply_len=${#LAST_REPLY}"
+  echo "message_len=${#MESSAGE}"
+  echo "message_first_200=${MESSAGE:0:200}"
+  echo "---"
+} >> "$DEBUG_LOG" 2>/dev/null
+
 curl -s -X POST \
   -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
   --data-urlencode "token=$PUSHOVER_TOKEN" \
