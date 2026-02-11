@@ -82,6 +82,15 @@
       };
     };
 
+    vaultwarden = {
+      enable = lib.mkEnableOption "Vaultwarden password manager (Bitwarden-compatible)";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = constants.network.ports.vaultwarden;
+        description = "Port for Vaultwarden web interface";
+      };
+    };
+
     reverseProxy = {
       enable = lib.mkEnableOption "Caddy reverse proxy with HTTPS for homeserver services";
     };
@@ -99,6 +108,8 @@
     ../programs/copyparty-update # Copyparty 버전 체크 및 업데이트
     ../programs/anki-sync-server # Anki 자체 호스팅 동기화 서버
     ../programs/docker/copyparty.nix # Copyparty 파일 서버
+    ../programs/docker/vaultwarden.nix # Vaultwarden 비밀번호 관리자
+    ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)
     ../programs/caddy.nix # HTTPS 리버스 프록시
   ];
 }

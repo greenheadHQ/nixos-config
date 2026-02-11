@@ -34,6 +34,9 @@ in
   # Copyparty 파일 서버 비밀번호
   "copyparty-password.age".publicKeys = allHosts;
 
+  # Vaultwarden 관리자 패널 토큰
+  "vaultwarden-admin-token.age".publicKeys = allHosts;
+
   # Caddy HTTPS 인증서 발급용 Cloudflare DNS API 토큰
   "cloudflare-dns-api-token.age".publicKeys = allHosts;
 

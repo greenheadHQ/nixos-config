@@ -17,6 +17,7 @@
       uptimeKuma = 3002;
       ankiSync = 27701;
       copyparty = 3923;
+      vaultwarden = 8222;
       caddy = 443;
     };
 
@@ -33,6 +34,7 @@
       immich = "immich";
       uptimeKuma = "uptime-kuma";
       copyparty = "copyparty";
+      vaultwarden = "vaultwarden";
     };
   };
 
@@ -85,6 +87,10 @@
       memory = "1g";
       memorySwap = "1g";
       cpus = "1";
+    };
+    vaultwarden = {
+      memory = "256m";
+      cpus = "0.5";
     };
   };
 

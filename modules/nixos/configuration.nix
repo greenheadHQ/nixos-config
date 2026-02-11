@@ -132,5 +132,6 @@
   homeserver.copypartyUpdate.enable = true; # Copyparty 버전 체크 + 업데이트 알림
   homeserver.ankiSync.enable = true; # Anki 자체 호스팅 동기화 서버
   homeserver.copyparty.enable = true; # 셀프호스팅 파일 서버
+  homeserver.vaultwarden.enable = true; # Vaultwarden 비밀번호 관리자
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
 }
