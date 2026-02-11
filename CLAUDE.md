@@ -26,7 +26,7 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | `libraries/packages.nix` | 공통 패키지 (shared/darwinOnly/nixosOnly) |
 | `modules/darwin/` | macOS 전용 설정 |
 | `modules/nixos/` | NixOS 전용 설정 |
-| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, uptime-kuma, anki-sync, copyparty) |
+| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, uptime-kuma, anki-sync, copyparty, vaultwarden) |
 | `modules/shared/` | 공유 설정 |
 | `scripts/` | 자동화 스크립트 (add-host, pre-rebuild-check, update-input) |
 
@@ -52,6 +52,7 @@ homeserver.immich.enable = true;
 homeserver.uptimeKuma.enable = true;
 homeserver.ankiSync.enable = true;
 homeserver.copyparty.enable = true;
+homeserver.vaultwarden.enable = true;
 ```
 
 ## 스킬 라우팅
@@ -69,6 +70,7 @@ homeserver.copyparty.enable = true;
 | Podman/Docker, immich, container OOM, homeserver.*, immich update | `running-containers` |
 | Anki sync server, anki 동기화, anki 서버, anki 백업 | `hosting-anki` |
 | Copyparty, 파일 서버, 파일 공유, WebDAV, Google Drive 대체 | `hosting-copyparty` |
+| Vaultwarden, Bitwarden, 비밀번호 관리자, 볼트워든, admin token | `hosting-vaultwarden` |
 | immich 사진 경로, immich 파일 보여줘, 이미치 사진 | `viewing-immich-photo` |
 | Git config, delta, rerere, lazygit, gitconfig conflicts | `configuring-git` |
 | mise, runtime versions, .nvmrc | `managing-mise` |

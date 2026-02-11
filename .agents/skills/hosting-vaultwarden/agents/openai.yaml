@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hosting Vaultwarden"
+  short_description: "This skill should be used when the user asks about Vaultwarden, "
+  default_prompt: "Use $hosting-vaultwarden to help with this task."
