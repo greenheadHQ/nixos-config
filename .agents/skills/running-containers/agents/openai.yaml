@@ -1,0 +1,4 @@
+interface:
+  display_name: "Running Containers"
+  short_description: "Podman/Docker containers: immich, uptime-kuma, OOM, updates. Triggers: \"update immich\", \"immich 업데이트\", \"immich-update\", \"check i"
+  default_prompt: "Use $running-containers to help with this task in nixos-config."

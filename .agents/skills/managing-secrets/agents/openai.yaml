@@ -1,0 +1,4 @@
+interface:
+  display_name: "Managing Secrets"
+  short_description: "agenix secrets: .age encryption, decryption, re-encrypt, keys. Triggers: \"add a secret\", \"create .age file\", \"encrypt with ageni"
+  default_prompt: "Use $managing-secrets to help with this task in nixos-config."

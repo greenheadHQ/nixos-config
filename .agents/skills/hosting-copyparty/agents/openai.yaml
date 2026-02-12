@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hosting Copyparty"
+  short_description: "Copyparty file server: WebDAV, HDD web access, file sharing. Triggers: \"파일 서버\", \"copyparty\", \"파일 공유\", \"HDD 웹 접근\", \"WebDAV\", \"Goo"
+  default_prompt: "Use $hosting-copyparty to help with this task in nixos-config."

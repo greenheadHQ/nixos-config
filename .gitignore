@@ -7,8 +7,10 @@
 # Nix로 생성되는 Claude Code 스킬 (symlink → /nix/store/)
 .claude/skills/viewing-immich-photo/
 
-# Codex CLI (Nix activation으로 생성되는 심볼릭 링크/파생 파일)
-# AGENTS.override.md는 Git 추적 대상 (Codex 전용 보충 규칙)
+# Codex CLI
+# 글로벌 gitignore(~/.config/git/ignore)에서 .agents/, AGENTS.override.md 등을
+# 무시하므로, 이 프로젝트에서 필요한 항목을 negation으로 재허용
 AGENTS.md
-.agents/
+!AGENTS.override.md
+!.agents/
 .codex/

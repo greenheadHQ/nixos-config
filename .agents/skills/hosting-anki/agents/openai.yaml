@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hosting Anki"
+  short_description: "Anki sync server: self-hosted sync, backup, client config. Triggers: \"anki 동기화\", \"anki-sync-server\", \"anki 서버\", \"anki 백업\", sync "
+  default_prompt: "Use $hosting-anki to help with this task in nixos-config."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Configuring Git"
+  short_description: "Git config via Home Manager: delta, rerere, lazygit, aliases. Triggers: gitconfig conflicts, git-cleanup scripts, rebase reverse"
+  default_prompt: "Use $configuring-git to help with this task in nixos-config."

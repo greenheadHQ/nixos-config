@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hosting Vaultwarden"
+  short_description: "Vaultwarden/Bitwarden: password manager, admin panel, backup. Triggers: \"비밀번호 관리자\", \"볼트워든\", \"vaultwarden 설정\", \"vaultwarden 백업\", "
+  default_prompt: "Use $hosting-vaultwarden to help with this task in nixos-config."
