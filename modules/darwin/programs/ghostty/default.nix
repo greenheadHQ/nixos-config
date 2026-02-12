@@ -1,5 +1,5 @@
-# Ghostty 터미널 설정
-{ config, pkgs, lib, ... }:
+# Ghostty 터미널 설정 (macOS 전용)
+{ ... }:
 
 {
   xdg.configFile."ghostty/config".text = ''

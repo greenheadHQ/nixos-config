@@ -107,6 +107,7 @@
             inputs.agenix.nixosModules.default
             disko.nixosModules.disko
             home-manager.nixosModules.home-manager
+            ./modules/shared/configuration.nix
             ./hosts/${hostname}
             ./modules/nixos/configuration.nix
             {

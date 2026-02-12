@@ -29,23 +29,13 @@
 
   # Nix 설정
   nix = {
-    settings = {
-      experimental-features = [
-        "nix-command"
-        "flakes"
-      ];
-      trusted-users = [
-        "root"
-        username
-      ];
-    };
-    # 스토어 최적화 (하드링크로 중복 파일 제거)
-    optimise.automatic = true;
-    gc = {
-      automatic = true;
-      dates = "weekly";
-      options = "--delete-older-than 30d";
-    };
+    # 공통 설정(experimental-features, warn-dirty, optimise, gc options)은
+    # modules/shared/configuration.nix에서 주입
+    settings.trusted-users = [
+      "root"
+      username
+    ];
+    gc.dates = "weekly";
   };
 
   # agenix 시스템 레벨 복호화 키 (서비스 모듈 enable 여부와 무관하게 유지)

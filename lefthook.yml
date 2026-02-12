@@ -11,3 +11,8 @@ pre-commit:
     shellcheck:
       glob: "*.sh"
       run: shellcheck -S warning {staged_files}
+
+pre-push:
+  commands:
+    flake-check:
+      run: nix flake check --no-build --all-systems
