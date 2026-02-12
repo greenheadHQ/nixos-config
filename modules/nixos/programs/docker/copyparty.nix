@@ -100,10 +100,10 @@ in
       ];
     };
 
-    # 설정 파일 존재 확인
+    # 시크릿 존재 확인 (런타임 생성 config 파일보다 안정적)
     systemd.services.podman-copyparty = {
-      serviceConfig = {
-        ConditionPathExists = configPath;
+      unitConfig = {
+        ConditionPathExists = passwordPath;
       };
     };
   };

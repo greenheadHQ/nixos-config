@@ -37,10 +37,10 @@ in
     };
 
     # 시크릿 파일 존재 확인 (agenix activation 이후 존재)
-    systemd.services.podman-immich-postgres.serviceConfig = {
+    systemd.services.podman-immich-postgres.unitConfig = {
       ConditionPathExists = dbPasswordPath;
     };
-    systemd.services.podman-immich-server.serviceConfig = {
+    systemd.services.podman-immich-server.unitConfig = {
       ConditionPathExists = dbPasswordPath;
     };
 

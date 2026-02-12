@@ -16,11 +16,12 @@ let
   inherit (constants.domain) base subdomains;
 
   adminTokenPath = config.age.secrets.vaultwarden-admin-token.path;
-  envFilePath = "/run/vaultwarden/env";
+  # podman-vaultwarden의 RuntimeDirectory(/run/vaultwarden)와 분리해
+  # 서비스 재시작 시 파일이 지워지지 않도록 별도 경로 사용
+  envFilePath = "/run/vaultwarden-env";
 
   # agenix 시크릿에서 환경변수 파일 생성 (caddy-env 패턴)
   envScript = pkgs.writeShellScript "vaultwarden-env-gen" ''
-    mkdir -p /run/vaultwarden
     ADMIN_TOKEN=$(cat ${adminTokenPath})
     printf 'ADMIN_TOKEN=%s\n' "$ADMIN_TOKEN" > ${envFilePath}
     chmod 0400 ${envFilePath}
@@ -91,10 +92,10 @@ in
       ];
     };
 
-    # 환경변수 파일 존재 확인
+    # 시크릿 존재 확인 (런타임 생성 env 파일보다 안정적)
     systemd.services.podman-vaultwarden = {
-      serviceConfig = {
-        ConditionPathExists = envFilePath;
+      unitConfig = {
+        ConditionPathExists = adminTokenPath;
       };
     };
   };
