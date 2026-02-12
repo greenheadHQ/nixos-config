@@ -4,7 +4,6 @@
 {
   nixpkgs.config = {
     allowUnfree = true;
-    allowUnfreePredicate = _: true;
   };
 
   # 커스텀 패키지 overlay

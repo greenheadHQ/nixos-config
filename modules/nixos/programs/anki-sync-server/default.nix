@@ -5,6 +5,7 @@
   pkgs,
   lib,
   constants,
+  username,
   ...
 }:
 
@@ -32,7 +33,7 @@ in
 
       users = [
         {
-          username = "greenhead";
+          username = username;
           passwordFile = config.age.secrets.anki-sync-password.path;
         }
       ];

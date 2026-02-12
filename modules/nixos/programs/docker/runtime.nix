@@ -10,7 +10,7 @@
 }:
 
 let
-  inherit (constants.paths) dockerData mediaData;
+  inherit (constants.paths) dockerData;
 in
 {
   # ═══════════════════════════════════════════════════════════════

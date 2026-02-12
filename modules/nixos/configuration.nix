@@ -48,6 +48,9 @@
     };
   };
 
+  # agenix 시스템 레벨 복호화 키 (서비스 모듈 enable 여부와 무관하게 유지)
+  age.identityPaths = [ "/home/${username}/.ssh/id_ed25519" ];
+
   # 사용자
   users.users.${username} = {
     isNormalUser = true;

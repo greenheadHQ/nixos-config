@@ -20,13 +20,6 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
-    # ═══════════════════════════════════════════════════════════════
-    # agenix 시크릿 (NixOS 시스템 레벨)
-    # ═══════════════════════════════════════════════════════════════
-    # secrets/secrets.nix는 사용자 SSH 키로 암호화되어 있으므로
-    # 사용자 SSH 비밀키 경로를 명시해야 복호화 가능
-    age.identityPaths = [ "/home/${username}/.ssh/id_ed25519" ];
-
     age.secrets.immich-db-password = {
       file = ../../../../secrets/immich-db-password.age;
       mode = "0400";

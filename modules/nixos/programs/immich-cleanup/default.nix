@@ -52,6 +52,14 @@ in
         Type = "oneshot";
         ExecStartPre = import ../../lib/tailscale-wait.nix { inherit pkgs; };
         ExecStart = "${cleanupScript}/bin/immich-cleanup";
+
+        # systemd hardening (version-check 모듈과 동일 기준)
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ProtectKernelTunables = true;
+        ProtectControlGroups = true;
       };
 
       # 환경변수 (공백 포함 값은 따옴표 필요)

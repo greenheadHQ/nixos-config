@@ -14,6 +14,10 @@ in
     source = "${sharedScriptsDir}/atuin-clean-kr.py";
     executable = true;
   };
+  home.file.".local/bin/git-cleanup" = {
+    source = "${sharedScriptsDir}/git-cleanup.sh";
+    executable = true;
+  };
 
   # Shell 함수 라이브러리 (source로 로딩)
   home.file.".local/lib/git-worktree-functions.sh" = {

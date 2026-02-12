@@ -6,6 +6,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_FILE="$SCRIPT_DIR/../libraries/packages/codex-cli.nix"
 
+sed_inplace() {
+  local expr="$1"
+  local file="$2"
+
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$expr" "$file"
+  else
+    sed -i '' "$expr" "$file"
+  fi
+}
+
 # 현재 버전 확인
 current="$(grep 'version = ' "$PKG_FILE" | head -1 | sed 's/.*"\(.*\)".*/\1/')"
 echo "현재 버전: $current"
@@ -43,15 +54,15 @@ hash_linux="$(nix-prefetch-url \
 sri_linux="$(nix hash convert --hash-algo sha256 --to sri "$hash_linux")"
 
 # codex-cli.nix 업데이트
-sed -i '' "s|version = \"$current\"|version = \"$latest\"|" "$PKG_FILE"
+sed_inplace "s|version = \"$current\"|version = \"$latest\"|" "$PKG_FILE"
 
 # aarch64-darwin 해시 교체 (해당 블록 내 hash 라인)
 old_darwin="$(grep -A3 'aarch64-darwin' "$PKG_FILE" | grep 'hash =' | sed 's/.*"\(.*\)".*/\1/')"
-sed -i '' "s|$old_darwin|$sri_darwin|" "$PKG_FILE"
+sed_inplace "s|$old_darwin|$sri_darwin|" "$PKG_FILE"
 
 # x86_64-linux 해시 교체
 old_linux="$(grep -A3 'x86_64-linux' "$PKG_FILE" | grep 'hash =' | sed 's/.*"\(.*\)".*/\1/')"
-sed -i '' "s|$old_linux|$sri_linux|" "$PKG_FILE"
+sed_inplace "s|$old_linux|$sri_linux|" "$PKG_FILE"
 
 echo ""
 echo "✅ 업데이트 완료: $current → $latest"

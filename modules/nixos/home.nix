@@ -17,7 +17,7 @@ in
   home = {
     inherit username;
     homeDirectory = "/home/${username}";
-    stateVersion = "24.11";
+    stateVersion = "24.11"; # 최초 설치 시점 기준, 특별한 마이그레이션 없으면 변경 금지
   };
 
   imports = [

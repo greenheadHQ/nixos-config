@@ -149,6 +149,7 @@
               lefthook
               gitleaks
               shellcheck
+              inputs.agenix.packages.${system}.default
             ];
             shellHook = ''
               lefthook install 2>/dev/null || true

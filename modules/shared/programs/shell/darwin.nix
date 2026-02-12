@@ -8,7 +8,6 @@
 
 let
   darwinScriptsDir = ../../../darwin/scripts;
-  sharedScriptsDir = ../../scripts;
 in
 {
   # macOS용 스크립트 설치
@@ -27,12 +26,6 @@ in
     executable = true;
   };
 
-  # 공용 스크립트 설치
-  home.file.".local/bin/git-cleanup" = {
-    source = "${sharedScriptsDir}/git-cleanup.sh";
-    executable = true;
-  };
-
   # macOS 전용 환경 변수
   home.sessionVariables = {
     ICLOUD = "$HOME/Library/Mobile Documents/com~apple~CloudDocs";
@@ -45,7 +38,6 @@ in
   # macOS 전용 PATH
   home.sessionPath = [
     "$HOME/.bun/bin"
-    "$HOME/.npm-global/bin"
   ];
 
   # macOS 전용 aliases
