@@ -31,7 +31,7 @@ agenix 복호화 (/run/agenix/vaultwarden-admin-token)
   ↓
 vaultwarden-env oneshot 서비스 (시작 전)
   ↓
-/run/vaultwarden/env (tmpfs, 0400)
+/run/vaultwarden-env (tmpfs, 0400)
   ↓
 podman --env-file (environmentFiles)
   ↓

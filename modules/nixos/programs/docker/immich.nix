@@ -118,6 +118,7 @@ in
         "--network=immich-network"
         "--health-cmd=redis-cli ping"
         "--health-interval=30s"
+        "--health-start-period=30s"
         "--memory=${redis.memory}"
       ];
     };

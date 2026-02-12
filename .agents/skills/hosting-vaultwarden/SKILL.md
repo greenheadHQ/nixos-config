@@ -101,14 +101,14 @@ homeserver.vaultwarden.port = 8222;       # 포트 (기본값은 constants.nix)
 | 관리자 제한 | `ADMIN_RATELIMIT=3/60` | 60초당 3회 |
 | 포트 바인딩 | `127.0.0.1:8222` | localhost 전용 |
 | 데이터 권한 | `0700` | root만 접근 |
-| 시크릿 | tmpfs (`/run/vaultwarden/env`) | 재부팅 시 자동 소멸 |
+| 시크릿 | tmpfs (`/run/vaultwarden-env`) | 재부팅 시 자동 소멸 |
 
 ## 스토리지 구조
 
 | 경로 | 디스크 | 용도 |
 |------|--------|------|
 | `/var/lib/docker-data/vaultwarden/data` | SSD | SQLite DB + 첨부파일 + RSA 키 (0700) |
-| `/run/vaultwarden/env` | tmpfs | ADMIN_TOKEN 환경변수 파일 (0400) |
+| `/run/vaultwarden-env` | tmpfs | ADMIN_TOKEN 환경변수 파일 (0400) |
 | `/mnt/data/backups/vaultwarden` | HDD | 일별 백업 (30일 보존, 0700) |
 
 ## Known Issues
@@ -135,9 +135,10 @@ homeserver.vaultwarden.port = 8222;       # 포트 (기본값은 constants.nix)
 - Caddy `reverse_proxy`가 WebSocket 업그레이드를 자동 처리
 - 별도 설정 불필요 (별도 WebSocket 포트/경로 프록시 불필요)
 
-**헬스체크 시작 시 일시 실패**
-- `nrs` 적용 직후 헬스체크 타이머가 start-period(30초) 내에 실행되면 exit code 4 발생
-- 정상 동작: 30초 후 `healthy` 상태로 전환
+**헬스체크 시작 시 일시 실패 (exit code 4)**
+- `nrs` 적용 시 컨테이너 재시작 직후 헬스체크 transient 서비스가 start-period(30초) 내에 실행되면 exit code 4 발생 가능
+- `nrs.sh`가 exit code 4를 경고로 처리하므로 빌드 결과물 정리 등 후속 작업은 정상 진행
+- 30초 후 자동으로 `healthy` 상태로 전환
 - 확인: `sudo podman inspect vaultwarden | jq '.[0].State.Health.Status'`
 
 **이미지 버전 고정 (자동 업데이트 미구현)**
@@ -154,7 +155,7 @@ homeserver.vaultwarden.port = 8222;       # 포트 (기본값은 constants.nix)
 ## 자주 발생하는 문제
 
 1. **Bitwarden 클라이언트 로그인 실패**: Region → Self-hosted → Server URL 설정 확인
-2. **관리자 패널 접근 불가**: `cat /run/vaultwarden/env`로 토큰 확인, `systemctl status vaultwarden-env`
+2. **관리자 패널 접근 불가**: `cat /run/vaultwarden-env`로 토큰 확인, `systemctl status vaultwarden-env`
 3. **컨테이너 시작 실패**: `journalctl -u podman-vaultwarden`에서 원인 확인
 4. **백업 실패**: 소스 디렉토리 비어있으면 안전하게 중단 (의도적 동작)
 5. **동기화 안 됨**: Tailscale VPN 연결 확인, `curl -sf http://localhost:8222/alive`

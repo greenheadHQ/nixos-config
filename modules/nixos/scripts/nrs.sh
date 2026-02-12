@@ -77,8 +77,19 @@ run_nixos_rebuild() {
         log_info "🔨 Applying changes..."
     fi
 
+    local rc=0
     # shellcheck disable=SC2086
-    sudo nixos-rebuild switch --flake "$FLAKE_PATH" $OFFLINE_FLAG
+    sudo nixos-rebuild switch --flake "$FLAKE_PATH" $OFFLINE_FLAG || rc=$?
+
+    if [[ "$rc" -eq 0 ]]; then
+        return 0
+    elif [[ "$rc" -eq 4 ]]; then
+        log_warn "⚠️  switch-to-configuration exited with status 4 (transient unit failures, e.g. health check start period)"
+        log_warn "   Services are likely healthy. Verify: sudo podman ps"
+    else
+        log_error "❌ nixos-rebuild switch failed (exit code: $rc)"
+        exit "$rc"
+    fi
 }
 
 #───────────────────────────────────────────────────────────────────────────────

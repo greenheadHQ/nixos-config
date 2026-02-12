@@ -18,10 +18,10 @@
 **진단**:
 ```bash
 # 환경변수 파일 존재 확인
-ls -la /run/vaultwarden/env
+ls -la /run/vaultwarden-env
 
 # 토큰 값 확인
-sudo cat /run/vaultwarden/env
+sudo cat /run/vaultwarden-env
 
 # 환경변수 생성 서비스 상태
 systemctl status vaultwarden-env
@@ -78,16 +78,22 @@ curl -I https://vaultwarden.greenhead.dev
 
 ## 6. nrs 후 exit code 4
 
-**증상**: `nrs` 적용 시 헬스체크 관련 unit 실패 메시지
+**증상**: `nrs` 적용 시 `switch-to-configuration exited with status 4` 경고 표시
 
-**원인**: 헬스체크 타이머가 start-period(30초) 내에 실행됨
+**원인**: 컨테이너 재시작 직후 Podman 헬스체크 transient 서비스가 start-period(30초) 내에 실행되어 실패
 
-**해결**: 정상 동작. 30초 후 자동으로 healthy 전환.
+**현재 동작**: `nrs.sh`가 exit code 4를 경고로 자동 처리하므로 빌드 결과물 정리 등 후속 작업 정상 진행
 ```bash
+# 경고 메시지 예시:
+# ⚠️  switch-to-configuration exited with status 4 (transient unit failures, e.g. health check start period)
+#    Services are likely healthy. Verify: sudo podman ps
+
 # 30초 후 확인
 sudo podman inspect vaultwarden | jq '.[0].State.Health.Status'
 # Expected: "healthy"
 ```
+
+**수동 restart 직후에도 동일 현상 가능**: `sudo systemctl restart podman-vaultwarden` 후 30초 이내 헬스체크 실패는 정상. start-period 이후 자동 healthy 전환.
 
 ## 7. admin token 변경
 
