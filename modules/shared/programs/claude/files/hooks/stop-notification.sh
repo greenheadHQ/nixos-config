@@ -155,13 +155,19 @@ if [ -n "$LAST_REPLY" ]; then
   PREFIX="$BASE_MESSAGE
 📝 "
   PREFIX_LEN=$(str_len "$PREFIX")
-  BUDGET=$((MAX_MESSAGE_CHARS - PREFIX_LEN))
+  ELLIPSIS="…"
+  ELLIPSIS_LEN=1  # U+2026, 1 codepoint
+  BUDGET=$((MAX_MESSAGE_CHARS - PREFIX_LEN - ELLIPSIS_LEN))
   if [ "$BUDGET" -lt 0 ]; then
     BUDGET=0
   fi
+  REPLY_LEN=$(str_len "$LAST_REPLY")
   CLIPPED_REPLY="$(clip_tail_chars "$LAST_REPLY" "$BUDGET")"
   if [ -z "$CLIPPED_REPLY" ]; then
     CLIPPED_REPLY="(응답 텍스트를 찾지 못했습니다)"
+  elif [ "$REPLY_LEN" -gt "$BUDGET" ]; then
+    # 뒤에서 잘랐으므로 앞부분이 생략되었음을 표시
+    CLIPPED_REPLY="${ELLIPSIS}${CLIPPED_REPLY}"
   fi
   MESSAGE="${PREFIX}${CLIPPED_REPLY}"
 else
@@ -185,7 +191,7 @@ DEBUG_LOG="/tmp/claude-stop-hook-debug.log"
   echo "---"
 } >> "$DEBUG_LOG" 2>/dev/null
 
-curl -s -X POST \
+curl -s --max-time 4 -X POST \
   -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
   --data-urlencode "token=$PUSHOVER_TOKEN" \
   --data-urlencode "user=$PUSHOVER_USER" \

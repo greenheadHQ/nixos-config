@@ -362,9 +362,9 @@ FIRST_QUESTION=$(printf '%s' "$INPUT" | jq -r '.tool_input.questions[0].question
 
 | 파일 | 수정 내용 |
 |------|----------|
-| `stop-notification.sh` | locale 설정 + curl `--data-urlencode` 통일 |
+| `stop-notification.sh` | locale 설정 + curl `--data-urlencode` 통일 + `--max-time 4` + 말줄임표(…) |
 | `ask-notification.sh` | locale 설정 + printf 변경 + curl `--data-urlencode` 통일 |
-| `plan-notification.sh` | locale 설정 + curl `--data-urlencode` 통일 |
+| `plan-notification.sh` | locale 설정 + curl `--data-urlencode` 통일 + `--max-time 4` + plan 파일 읽기 + 말줄임표(…) |
 
 **검증**:
 
