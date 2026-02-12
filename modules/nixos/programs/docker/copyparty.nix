@@ -73,6 +73,8 @@ in
     # 이미지 ENTRYPOINT가 `-c /z/initcfg`를 로드하여 루트 볼륨 충돌 발생
     # --entrypoint로 오버라이드하여 우리 설정만 사용
     virtualisation.oci-containers.containers.copyparty = {
+      # Rolling tag: copyparty-update 스크립트가 이미지 digest로 버전 관리.
+      # 새 환경 구성 시 현재 운영 버전과 다를 수 있음 (재현성 trade-off)
       image = "copyparty/ac:latest";
       autoStart = true;
       cmd = [

@@ -139,12 +139,8 @@ if [ -n "$INPUT" ] && command -v jq >/dev/null 2>&1; then
 fi
 
 # Transcript flush 대기 (race condition 방어)
-TRANSCRIPT_SIZE_BEFORE=""
-TRANSCRIPT_SIZE_AFTER=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-  TRANSCRIPT_SIZE_BEFORE=$(wc -c < "$TRANSCRIPT_PATH" 2>/dev/null || echo 0)
   wait_for_stable_transcript "$TRANSCRIPT_PATH"
-  TRANSCRIPT_SIZE_AFTER=$(wc -c < "$TRANSCRIPT_PATH" 2>/dev/null || echo 0)
 fi
 
 LAST_REPLY="$(extract_last_assistant_text "$TRANSCRIPT_PATH")"
@@ -176,20 +172,6 @@ fi
 
 # 최종 안전망: 전체 메시지 1024자 상한 보장
 MESSAGE="$(clip_tail_chars "$MESSAGE" "$MAX_MESSAGE_CHARS")"
-
-# 디버그 로그 (race condition 수정 검증 후 삭제)
-DEBUG_LOG="/tmp/claude-stop-hook-debug.log"
-{
-  echo "=== $(date -Iseconds) ==="
-  echo "transcript_path=$TRANSCRIPT_PATH"
-  echo "size_before_wait=$TRANSCRIPT_SIZE_BEFORE"
-  echo "size_after_wait=$TRANSCRIPT_SIZE_AFTER"
-  echo "size_grew=$([ "$TRANSCRIPT_SIZE_BEFORE" != "$TRANSCRIPT_SIZE_AFTER" ] && echo "YES (race condition caught)" || echo "no")"
-  echo "last_reply_len=${#LAST_REPLY}"
-  echo "message_len=${#MESSAGE}"
-  echo "message_first_200=${MESSAGE:0:200}"
-  echo "---"
-} >> "$DEBUG_LOG" 2>/dev/null
 
 curl -s --max-time 4 -X POST \
   -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \

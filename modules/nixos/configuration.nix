@@ -34,7 +34,7 @@
         "nix-command"
         "flakes"
       ];
-      auto-optimise-store = true;
+      # 스토어 최적화는 shared/configuration.nix에서 nix.optimise.automatic으로 관리
       trusted-users = [
         "root"
         username
@@ -70,6 +70,12 @@
 
   # Zsh 활성화
   programs.zsh.enable = true;
+
+  # 로그 용량 제한 (컨테이너 포함 전체 시스템 로그)
+  services.journald.extraConfig = ''
+    SystemMaxUse=2G
+    MaxRetentionSec=30day
+  '';
 
   # wheel 그룹 sudo 비밀번호 생략 (SSH 키 인증 + Tailscale 보안)
   security.sudo.wheelNeedsPassword = false;
