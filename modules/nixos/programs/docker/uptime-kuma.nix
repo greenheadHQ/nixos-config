@@ -22,6 +22,8 @@ in
     # Uptime Kuma 컨테이너
     # --network=host: localhost 서비스 모니터링을 위해 호스트 네트워크 사용
     virtualisation.oci-containers.containers.uptime-kuma = {
+      # Rolling tag: uptime-kuma-update 스크립트가 이미지 digest로 버전 관리.
+      # 새 환경 구성 시 현재 운영 버전과 다를 수 있음 (재현성 trade-off)
       image = "louislam/uptime-kuma:1";
       autoStart = true;
       volumes = [ "${dockerData}/uptime-kuma/data:/app/data" ];

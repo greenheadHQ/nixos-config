@@ -34,12 +34,13 @@
         "nix-command"
         "flakes"
       ];
-      # 스토어 최적화는 shared/configuration.nix에서 nix.optimise.automatic으로 관리
       trusted-users = [
         "root"
         username
       ];
     };
+    # 스토어 최적화 (하드링크로 중복 파일 제거)
+    optimise.automatic = true;
     gc = {
       automatic = true;
       dates = "weekly";
