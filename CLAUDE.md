@@ -60,24 +60,24 @@ homeserver.vaultwarden.enable = true;
 | 상황 | 스킬 |
 |------|------|
 | 플랫폼별 | |
-| NixOS, MiniPC(미니PC), nixos-rebuild, disko | `managing-minipc` |
-| nix-darwin, macOS settings, Homebrew | `managing-macos` |
-| flake, nix-command, slow build, experimental features | `understanding-nix` |
+| NixOS, MiniPC(미니PC), nixos-rebuild, disko, rollback | `managing-minipc` |
+| nix-darwin, macOS settings, Homebrew Cask, darwin-rebuild | `managing-macos` |
+| flake, derivation, substituter, slow build, direnv, devShell | `understanding-nix` |
 | 도구별 | |
-| Atuin sync, shell history, `atuin status` | `syncing-atuin` |
-| Claude Code hooks, plugins | `configuring-claude-code` |
-| Hammerspoon hotkeys, launchd stuck, Ghostty | `automating-hammerspoon` |
-| Podman/Docker, immich, container OOM, homeserver.*, immich update | `running-containers` |
+| Atuin sync, shell history, `atuin status`, encryption key | `syncing-atuin` |
+| Claude Code hooks, plugins, MCP, settings.json | `configuring-claude-code` |
+| Hammerspoon hotkeys, launchd agents, Ghostty terminal | `automating-hammerspoon` |
+| Podman/Docker, immich, container OOM, service-lib, 서비스 업데이트 | `running-containers` |
 | Anki sync server, anki 동기화, anki 서버, anki 백업 | `hosting-anki` |
-| Copyparty, 파일 서버, 파일 공유, WebDAV, Google Drive 대체 | `hosting-copyparty` |
+| Copyparty, 파일 서버, WebDAV, Google Drive 대체, 파일 공유 | `hosting-copyparty` |
 | Vaultwarden, Bitwarden, 비밀번호 관리자, 볼트워든, admin token | `hosting-vaultwarden` |
 | immich 사진 경로, immich 파일 보여줘, 이미치 사진 | `viewing-immich-photo` |
 | Git config, delta, rerere, lazygit, gitconfig conflicts | `configuring-git` |
-| mise, runtime versions, .nvmrc | `managing-mise` |
-| tmux config, keybindings, pane notepad, tmux-resurrect | `managing-tmux` |
-| SSH keys, Tailscale VPN, sudo auth failure | `managing-ssh` |
-| agenix, age, secret, .age 파일, 재암호화 | `managing-secrets` |
-| Neovim, LazyVim, LSP, nvim 플러그인, lazy.nvim, 한글 입력, im-select | `configuring-neovim` |
-| Cursor extensions, extensions.json | `managing-cursor` |
-| Pushover, 텍스트 공유, MiniPC→iPhone, push 함수 | `sharing-text` |
+| mise, Node.js, pnpm, shims, .nvmrc | `managing-mise` |
+| tmux config, keybindings, prefix, resurrect, pane notepad | `managing-tmux` |
+| SSH keys, ssh-agent, Tailscale VPN, mosh, sudo auth | `managing-ssh` |
+| agenix, .age encryption, secrets.nix, re-encrypt, age key | `managing-secrets` |
+| Neovim, LazyVim, LSP, nvim 플러그인, lazy.nvim, im-select | `configuring-neovim` |
+| Cursor IDE, Nix extensions.json, duti, 확장 0개 표시 | `managing-cursor` |
+| Pushover, 텍스트 공유, MiniPC→iPhone, share text | `sharing-text` |
 | Codex sync, codex harness, codex 동기화, codex 투영 | `syncing-codex-harness` |

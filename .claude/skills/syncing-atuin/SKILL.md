@@ -1,12 +1,11 @@
 ---
 name: syncing-atuin
 description: |
-  This skill should be used when the user encounters Atuin sync issues,
-  "atuin status" 4XX errors, encryption key mismatch, daemon problems,
-  "atuin history delete" errors, or asks about shell history backup or
-  cleanup. Covers zsh-autosuggestion TUI rendering conflicts, Korean
-  history bulk deletion, last_sync_time troubleshooting, and history
-  database maintenance.
+  Atuin shell history: sync errors, encryption, daemon, cleanup.
+  Triggers: "atuin status" 4XX errors, encryption key mismatch,
+  daemon problems, "atuin history delete", shell history backup,
+  zsh-autosuggestion TUI conflicts, Korean history bulk deletion,
+  last_sync_time troubleshooting, history database maintenance.
 ---
 
 # Atuin 히스토리 동기화

@@ -1,8 +1,8 @@
 ---
 name: automating-hammerspoon
 description: |
-  This skill should be used when the user creates Hammerspoon hotkeys,
-  asks "open terminal from Finder", or encounters "setupLaunchAgents stuck",
+  Hammerspoon hotkeys, launchd agents, Ghostty terminal on macOS.
+  Triggers: "open terminal from Finder", "setupLaunchAgents stuck",
   "HOME is /var/root" in launchd, Ghostty terminal issues.
 ---
 

@@ -1,10 +1,9 @@
 ---
 name: hosting-anki
 description: |
-  This skill should be used when the user asks about Anki sync server,
-  "anki 동기화", "anki-sync-server", "anki 서버", "anki 백업",
-  or encounters sync server connection issues, backup failures,
-  client configuration problems with Anki Desktop or AnkiMobile.
+  Anki sync server: self-hosted sync, backup, client config.
+  Triggers: "anki 동기화", "anki-sync-server", "anki 서버", "anki 백업",
+  sync connection issues, backup failures, AnkiMobile configuration.
 ---
 
 # Anki Sync Server 관리

@@ -98,7 +98,7 @@ in
               ' "$source_skill_dir/SKILL.md")"
               [ -z "$declared_name" ] && declared_name="$skill_name"
 
-              # description 첫 줄 추출 (64자 제한)
+              # description 추출 (128자 제한, Codex CLI에 공식 제한 없음 — UI 안전 마진)
               short_desc="$(${pkgs.gawk}/bin/awk '
                 BEGIN { in_fm = 0; mode = ""; desc = "" }
                 /^---[[:space:]]*$/ { if (in_fm == 0) { in_fm = 1; next } else { exit } }
@@ -119,7 +119,8 @@ in
                 }
                 END { if (mode == "block" && desc != "") print desc }
               ' "$source_skill_dir/SKILL.md")"
-              short_desc="''${short_desc:0:64}"
+              # KEEP IN SYNC: syncing-codex-harness/references/sync.sh
+              short_desc="''${short_desc:0:128}"
               [ -z "$short_desc" ] && short_desc="Project skill for nixos-config workflows"
 
               # display_name: kebab-case → Title Case
@@ -127,6 +128,9 @@ in
                 for (i = 1; i <= NF; i++) $i = toupper(substr($i, 1, 1)) substr($i, 2)
                 print
               }')"
+
+              # 알려진 약어 보정 (KEEP IN SYNC: syncing-codex-harness/references/sync.sh)
+              display_name="$(echo "$display_name" | sed 's/\bSsh\b/SSH/g; s/\bMacos\b/macOS/g; s/\bMinipc\b/MiniPC/g')"
 
               # yaml 파일 작성 (YAML 특수문자 이스케이프)
               escaped_display="$(echo "$display_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"

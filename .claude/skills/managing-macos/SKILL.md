@@ -1,10 +1,9 @@
 ---
 name: managing-macos
 description: |
-  This skill should be used when the user runs "darwin-rebuild", asks about
-  Dock/Finder settings, Touch ID sudo, Homebrew Cask,
-  or encounters "/etc/bashrc conflict", "/etc/zshrc conflict",
-  "killall cfprefsd", "primary user does not exist" errors.
+  macOS/nix-darwin: Dock, Finder, Touch ID sudo, Homebrew Cask.
+  Triggers: "darwin-rebuild", Dock/Finder settings, "/etc/bashrc conflict",
+  "/etc/zshrc conflict", "killall cfprefsd", "primary user does not exist".
 ---
 
 # macOS 관리 (nix-darwin)

@@ -96,9 +96,38 @@ else
       fail "SKILL.md 내용 불일치: $skill_name"
     fi
 
-    # openai.yaml 존재 확인
+    # openai.yaml 존재 + 내용 검증
     if [ -f "$projected_dir/agents/openai.yaml" ]; then
-      pass "openai.yaml: $skill_name"
+      pass "openai.yaml 존재: $skill_name"
+      yaml_content="$(cat "$projected_dir/agents/openai.yaml")"
+
+      # 필수 필드 존재 확인
+      for field in display_name short_description default_prompt; do
+        if ! echo "$yaml_content" | grep -q "$field"; then
+          fail "openai.yaml $field 필드 누락: $skill_name"
+        fi
+      done
+
+      # short_description 내용 검증
+      short_desc="$(echo "$yaml_content" | grep 'short_description' | sed 's/.*: "//;s/"$//')"
+      if [ -z "$short_desc" ]; then
+        fail "short_description 비어있음: $skill_name"
+      else
+        # raw 128자 truncate 후 escape 확장 → 최대 ~150자 허용
+        desc_len="${#short_desc}"
+        if [ "$desc_len" -gt 150 ]; then
+          warn "short_description 150자 초과: $skill_name (${desc_len}자)"
+        fi
+        # 회귀 방지: 구 패턴 prefix 잔존 감지
+        if echo "$short_desc" | grep -q '^This skill should be used when'; then
+          warn "구 패턴 prefix 잔존: $skill_name"
+        fi
+      fi
+
+      # display_name 비어있지 않은지
+      if ! echo "$yaml_content" | grep -q 'display_name: "..*"'; then
+        fail "display_name 비어있음: $skill_name"
+      fi
     else
       warn "openai.yaml 누락: $skill_name"
     fi

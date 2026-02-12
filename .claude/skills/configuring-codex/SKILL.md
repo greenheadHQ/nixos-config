@@ -1,11 +1,10 @@
 ---
 name: configuring-codex
 description: |
-  This skill should be used when the user asks "codex config",
-  "codex setup", "codex trust", "AGENTS.md", ".agents/skills",
-  "project-scope skill", or encounters Codex CLI skill discovery failures,
-  approval/sandbox policy issues, Claude/Codex compatibility issues, or Codex runtime
-  behavior differences in nixos-config.
+  Codex CLI config, skill projection, AGENTS.md, trust/sandbox.
+  Triggers: "codex config", "codex setup", "codex trust", "AGENTS.md",
+  ".agents/skills", "project-scope skill", Codex skill discovery
+  failures, approval/sandbox policy, Claude/Codex compatibility.
 ---
 
 # Codex CLI 설정
@@ -105,6 +104,10 @@ find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type f | wc -l
 # 런타임 인식 검증
 codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex' available in this workspace?"
 ```
+
+## 관련 스킬
+
+- `syncing-codex-harness`: 다른 프로젝트에서 Codex 하네스 동기화 시 사용
 
 ## 레퍼런스
 

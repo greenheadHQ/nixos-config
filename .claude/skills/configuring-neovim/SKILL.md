@@ -1,9 +1,9 @@
 ---
 name: configuring-neovim
 description: |
-  This skill should be used when the user asks about Neovim, LazyVim, LSP,
-  "nvim 플러그인", "lazy.nvim", "한글 입력", "im-select", "extraPackages",
-  or encounters Neovim plugin issues, Mason migration, tree-sitter build errors.
+  Neovim/LazyVim setup: LSP, plugins, im-select, extraPackages.
+  Triggers: "nvim 플러그인", "lazy.nvim", "한글 입력", "im-select",
+  "extraPackages", Mason migration, tree-sitter build errors.
 ---
 
 # Neovim (LazyVim) 설정

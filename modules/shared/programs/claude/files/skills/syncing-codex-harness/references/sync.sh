@@ -36,7 +36,7 @@ generate_openai_yaml() {
   ' "$skill_md")"
   [ -z "$declared_name" ] && declared_name="$skill_name"
 
-  # Extract description first line (64 char limit)
+  # Extract description (128 char limit — KEEP IN SYNC: codex/default.nix)
   local short_desc
   short_desc="$(awk '
     BEGIN { in_fm = 0; mode = ""; desc = "" }
@@ -58,7 +58,7 @@ generate_openai_yaml() {
     }
     END { if (mode == "block" && desc != "") print desc }
   ' "$skill_md")"
-  short_desc="${short_desc:0:64}"
+  short_desc="${short_desc:0:128}"
   [ -z "$short_desc" ] && short_desc="Codex skill projected from Claude Code"
 
   # display_name: kebab-case -> Title Case
@@ -67,6 +67,9 @@ generate_openai_yaml() {
     for (i = 1; i <= NF; i++) $i = toupper(substr($i, 1, 1)) substr($i, 2)
     print
   }')"
+
+  # 알려진 약어 보정 (KEEP IN SYNC: codex/default.nix display_name 약어 보정)
+  display_name="$(echo "$display_name" | sed 's/\bSsh\b/SSH/g; s/\bMacos\b/macOS/g; s/\bMinipc\b/MiniPC/g')"
 
   # Escape YAML special chars
   local escaped_display escaped_desc

@@ -1,13 +1,12 @@
 ---
 name: running-containers
 description: |
-  This skill should be used when the user asks about Podman, Docker, immich,
-  or encounters container OOM, "Tailscale IP binding" timing issues,
-  OCI backend configuration. Covers photo backup services on NixOS,
-  including "update immich", "immich 업데이트", "immich-update",
+  Podman/Docker containers: immich, uptime-kuma, OOM, updates.
+  Triggers: "update immich", "immich 업데이트", "immich-update",
   "check immich version", "immich 버전 확인", upgrading Immich server,
   "uptime-kuma-update", "copyparty-update", "서비스 업데이트",
-  "service-lib", "version-check", and unified service update system.
+  "service-lib", "version-check", unified service update system,
+  container OOM, "Tailscale IP binding" timing, OCI backend config.
 ---
 
 # 컨테이너 관리 (Podman/홈서버)

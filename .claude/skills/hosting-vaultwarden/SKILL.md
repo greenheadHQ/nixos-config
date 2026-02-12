@@ -1,13 +1,12 @@
 ---
 name: hosting-vaultwarden
 description: |
-  This skill should be used when the user asks about Vaultwarden, Bitwarden,
-  "비밀번호 관리자", "볼트워든", "vaultwarden 설정", "vaultwarden 백업",
-  "비밀번호 서버", "비밀번호 동기화", "master password",
-  "admin token", "admin 패널", "vaultwarden 업데이트",
-  "vaultwarden 복원", "backup restore", "비밀번호 복구",
-  or encounters Bitwarden client connection issues, vault sync problems,
-  admin panel access issues, backup failures with Vaultwarden.
+  Vaultwarden/Bitwarden: password manager, admin panel, backup.
+  Triggers: "비밀번호 관리자", "볼트워든", "vaultwarden 설정",
+  "vaultwarden 백업", "비밀번호 서버", "비밀번호 동기화",
+  "master password", "admin token", "admin 패널",
+  "vaultwarden 업데이트", "vaultwarden 복원", "backup restore",
+  Bitwarden client connection issues, vault sync problems.
 ---
 
 # Vaultwarden 비밀번호 관리자 관리

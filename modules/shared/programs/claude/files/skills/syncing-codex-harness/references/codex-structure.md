@@ -45,7 +45,7 @@ See: `runbook-codex-compat-2026-02-08.md`
 ```yaml
 interface:
   display_name: "Skill Display Name"
-  short_description: "Brief description (max 64 chars)"
+  short_description: "Brief description (max 128 chars)"
   default_prompt: "Use $skill-name to help with this task."
 ```
 

@@ -1,10 +1,10 @@
 ---
 name: managing-secrets
 description: |
-  This skill should be used when the user asks to "add a secret",
-  "create .age file", "encrypt with agenix", "decrypt secret",
-  or encounters "agenix -e", "/dev/stdin" errors, "age encryption",
-  "secrets.nix", "re-encrypt", "age key", "identity path" issues.
+  agenix secrets: .age encryption, decryption, re-encrypt, keys.
+  Triggers: "add a secret", "create .age file", "encrypt with agenix",
+  "decrypt secret", "agenix -e", "/dev/stdin" errors, "secrets.nix",
+  "re-encrypt", "age key", "identity path" issues.
 ---
 
 # Secret 관리 (agenix)

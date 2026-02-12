@@ -1,9 +1,9 @@
 ---
 name: configuring-git
 description: |
-  This skill should be used when the user configures Git with Home Manager,
-  sets up delta, rerere, lazygit delta pager, or encounters gitconfig conflicts.
-  Covers custom aliases, git-cleanup scripts, rebase reverse display, lazygit config.
+  Git config via Home Manager: delta, rerere, lazygit, aliases.
+  Triggers: gitconfig conflicts, git-cleanup scripts,
+  rebase reverse display, lazygit delta pager config.
 ---
 
 # Git 설정

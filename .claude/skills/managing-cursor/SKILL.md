@@ -1,11 +1,10 @@
 ---
 name: managing-cursor
 description: |
-  This skill should be used when the user asks to "add Cursor extension",
-  "install extension via Nix", "manage Cursor settings", or encounters
-  "Extensions have been modified on disk" warning, "확장 0개 표시" issue,
-  extension loading problems. Covers Nix-based extensions.json management,
-  settings.json configuration, and duti file associations.
+  Cursor IDE: Nix extensions.json, settings, file associations.
+  Triggers: "add Cursor extension", "install extension via Nix",
+  "manage Cursor settings", "Extensions have been modified on disk",
+  "확장 0개 표시", extension loading, duti file associations.
 ---
 
 # Cursor 확장 관리

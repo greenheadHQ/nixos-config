@@ -31,7 +31,7 @@ interface:
 | Source (SKILL.md) | Target (openai.yaml) | Transform |
 |---|---|---|
 | `name` | `display_name` | kebab-case -> Title Case (`tr '-' ' '` + capitalize) |
-| `description` | `short_description` | First 64 characters of description text |
+| `description` | `short_description` | First 128 characters of description text |
 | `name` | `default_prompt` | `"Use $<name> to help with this task."` |
 
 ## AWK Extraction Logic
@@ -47,7 +47,7 @@ The `sync.sh` script contains AWK code ported from `modules/shared/programs/code
 - Handles both inline (`description: text`) and block (`description: |`) formats
 - Also handles folded block scalar (`description: >-`)
 - For block format: concatenates lines until next key or end of frontmatter
-- Truncates to 64 characters (character-based via `${var:0:64}`, not byte-based `printf '%.64s'` — important for CJK/multibyte text)
+- Truncates to 128 characters (character-based via `${var:0:128}`, not byte-based `printf '%.128s'` — important for CJK/multibyte text)
 
 ### Title Case conversion
 - Splits on `-`, capitalizes first letter of each word

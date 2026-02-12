@@ -1,9 +1,9 @@
 ---
 name: sharing-text
 description: |
-  This skill should be used when the user asks to "share text", "push text",
-  "MiniPC to iPhone", "텍스트 공유", "Pushover로 보내", "텍스트를 아이폰으로",
-  or wants to transfer text from MiniPC/NixOS terminal to mobile device.
+  Pushover text sharing: MiniPC/NixOS terminal to iPhone push.
+  Triggers: "share text", "push text", "MiniPC to iPhone",
+  "텍스트 공유", "Pushover로 보내", "텍스트를 아이폰으로".
 ---
 
 # Pushover로 텍스트 공유

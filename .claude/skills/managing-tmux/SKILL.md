@@ -1,9 +1,10 @@
 ---
 name: managing-tmux
 description: |
-  This skill should be used when the user customizes tmux keybindings,
-  prefix key, session management, or asks about pane notepad, tmux plugins,
-  tmux-resurrect, session save/restore, tmux.conf configuration.
+  tmux config: keybindings, prefix, plugins, resurrect, notepad.
+  Triggers: pane notepad, tmux plugins, tmux-resurrect,
+  session save/restore, tmux.conf configuration,
+  prefix key, session management.
 ---
 # tmux 설정
 

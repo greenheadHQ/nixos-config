@@ -1,9 +1,9 @@
 ---
 name: managing-ssh
 description: |
-  This skill should be used when the user encounters "SSH key invalid format",
-  authentication failures, Tailscale VPN issues, "sudo SSH_AUTH_SOCK" problems,
-  or asks about ssh-agent, authorized keys, mosh setup.
+  SSH keys, ssh-agent, Tailscale VPN, mosh, sudo auth issues.
+  Triggers: "SSH key invalid format", authentication failures,
+  Tailscale VPN issues, "sudo SSH_AUTH_SOCK", authorized keys, mosh setup.
 ---
 
 # SSH 및 Tailscale 관리

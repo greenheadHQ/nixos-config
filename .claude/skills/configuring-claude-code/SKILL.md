@@ -1,12 +1,10 @@
 ---
 name: configuring-claude-code
 description: |
-  This skill should be used when the user asks "how to create a hook",
-  "add a plugin", "claude alias", "--chrome flag", "claude settings",
-  "mcp.json", or encounters Claude Code plugin/hook issues, settings.json
-  read-only problems, or ghost plugin issues.
-  Covers PreToolUse/PostToolUse/Stop hooks, plugin installation, and shell
-  alias setup for Claude Code.
+  Claude Code hooks, plugins, aliases, MCP, and settings.json.
+  Triggers: "how to create a hook", "add a plugin", "claude alias",
+  "--chrome flag", "claude settings", "mcp.json", PreToolUse/PostToolUse/Stop
+  hooks, plugin installation, ghost plugin issues, settings read-only.
 ---
 
 # Claude Code 설정

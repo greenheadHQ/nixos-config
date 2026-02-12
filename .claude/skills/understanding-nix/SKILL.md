@@ -1,10 +1,10 @@
 ---
 name: understanding-nix
 description: |
-  This skill should be used when the user asks about "nix flake update",
-  "flake change detection", "slow build", "substituter", "derivation",
-  "direnv", "devShell", "experimental features", or encounters Nix
-  build issues common to NixOS and nix-darwin.
+  Nix fundamentals: flakes, derivations, substituters, devShell.
+  Triggers: "nix flake update", "flake change detection", "slow build",
+  "substituter", "derivation", "direnv", "devShell",
+  "experimental features", Nix build issues common to NixOS/darwin.
 ---
 
 # Nix 공통 이슈

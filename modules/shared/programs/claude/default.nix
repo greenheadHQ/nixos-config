@@ -21,11 +21,10 @@ let
       ---
       name: viewing-immich-photo
       description: |
-        This skill should be used when the user provides an immich photo path
-        containing "${constants.paths.immichUploadCache}" or "${constants.paths.dockerData}/immich",
-        asks to "view immich photo", "이미치 사진 확인", "immich 파일 보여줘",
-        "immich 사진 보여줘", or mentions a path like
-        "${constants.paths.immichUploadCache}/UUID/xx/xx/file.jpg".
+        Immich photo viewer: resolve photo paths, display images.
+        Triggers: "view immich photo", "이미치 사진 확인", "immich 파일 보여줘",
+        "immich 사진 보여줘", paths containing "${constants.paths.immichUploadCache}"
+        or "${constants.paths.dockerData}/immich".
       ---
 
       # Immich 사진 확인

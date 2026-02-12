@@ -1,10 +1,10 @@
 ---
 name: managing-minipc
 description: |
-  This skill should be used when the user asks about NixOS installation,
-  "nixos-rebuild", "disko", "hardware-configuration.nix", "generation rollback",
-  or encounters NixOS errors. For nix-darwin, use managing-macos.
-  For flake issues, use understanding-nix.
+  NixOS MiniPC: installation, nixos-rebuild, disko, rollback.
+  Triggers: "nixos-rebuild", "disko", "hardware-configuration.nix",
+  "generation rollback", NixOS errors. For nix-darwin use managing-macos.
+  For flake issues use understanding-nix.
 ---
 
 # NixOS MiniPC 관리
