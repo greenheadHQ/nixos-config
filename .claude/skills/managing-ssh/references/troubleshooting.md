@@ -311,6 +311,79 @@ sudo 실행
 
 ---
 
+### Tailscale MagicDNS에서 외부 도메인 해석 실패 (SERVFAIL)
+
+> **발생 시점**: 2026-02-13
+> **원인**: Tailscale 1.94.0→1.94.1 업데이트 후 시스템 DNS fallback 경로 변경
+
+**증상**: MiniPC에서 Claude Code 등 인터넷 연결이 필요한 도구가 작동하지 않음. `ping 1.1.1.1`은 성공하지만 도메인 해석 실패.
+
+```bash
+$ ping google.com
+ping: google.com: Name or service not known
+
+$ host google.com 100.100.100.100
+Host google.com not found: 2(SERVFAIL)
+```
+
+**진단**:
+
+```bash
+# DNS만 실패하는지 확인
+$ ping -c 1 1.1.1.1        # 성공 → 인터넷 연결 자체는 정상
+$ ping -c 1 google.com      # 실패 → DNS 문제
+
+# resolv.conf 확인
+$ cat /etc/resolv.conf
+nameserver 100.100.100.100   # ← Tailscale MagicDNS만 설정됨
+
+# Tailscale DNS 상태 확인
+$ tailscale dns status
+# Resolvers: (no resolvers configured)
+# System DNS: (failed to read system DNS configuration: Access denied)
+
+# tailscaled 로그에서 SERVFAIL 확인
+$ journalctl -u tailscaled | grep 'no upstream resolvers'
+```
+
+**원인 분석**:
+
+| 항목 | 설명 |
+|------|------|
+| `DefaultResolvers:[]` | Tailscale admin console에 global nameserver 미설정 (원래부터) |
+| 이전에 작동한 이유 | Tailscale이 시스템 DNS(DHCP 등)로 fallback |
+| 현재 실패 이유 | 1.94.1에서 `dns-osconfig dump access denied` → 시스템 DNS 읽기 불가 |
+
+Tailscale 버전 업데이트(1.94.0→1.94.1)로 NixOS 환경에서 시스템 DNS fallback 메커니즘이 변경되어, 원래 잠재되어 있던 미설정 문제가 표면화됨.
+
+**해결**: Tailscale admin console (https://login.tailscale.com/admin/dns)에서:
+
+1. **Global nameservers**에 공용 DNS 추가:
+   - Google Public DNS: `8.8.8.8` (+ `8.8.4.4`, IPv6)
+   - Cloudflare Public DNS: `1.1.1.1` (+ `1.0.0.1`, IPv6)
+2. **Override DNS servers** 활성화
+
+**보안 참고**: "Override DNS servers"는 Tailscale이 admin에서 설정한 DNS를 로컬 네트워크 DNS보다 우선 사용하는 설정. 오히려 악의적 로컬 DNS 하이재킹을 방지하므로 보안상 유리.
+
+**적용 확인**:
+
+```bash
+# DNS 즉시 복구 확인 (tailscaled 재시작 불필요)
+$ host google.com
+google.com has address 142.250.194.14
+
+# tailscaled 로그에서 resolver 반영 확인
+$ journalctl -u tailscaled --since '5 min ago' | grep DefaultResolvers
+# DefaultResolvers:[8.8.8.8 8.8.4.4 ... 1.1.1.1 1.0.0.1 ...]
+
+# Claude Code 동작 확인
+$ claude -p 'say hello'
+```
+
+**교훈**: Tailscale MagicDNS를 사용할 때는 반드시 admin console에서 global nameserver를 명시적으로 설정할 것. 시스템 DNS fallback에 의존하면 Tailscale 버전 업데이트 시 예고 없이 깨질 수 있음.
+
+---
+
 ### Ghostty SSH 접속 시 unknown terminal type
 
 > **발생 시점**: 2026-01-18 (MiniPC NixOS 설정)
