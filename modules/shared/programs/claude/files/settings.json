@@ -14,7 +14,11 @@
       "Bash(rm -rf ~/*)",
       "Bash(rm -rf /*)"
     ],
-    "additionalDirectories": ["~/Downloads", "~/Documents", "~/IdeaProjects"]
+    "additionalDirectories": [
+      "~/Downloads",
+      "~/Documents",
+      "~/IdeaProjects"
+    ]
   },
   "hooks": {
     "PreToolUse": [
@@ -49,6 +53,10 @@
       }
     ]
   },
+  "enabledPlugins": {
+    "plugin-dev@claude-plugins-official": true,
+    "astral@astral-sh": true
+  },
   "extraKnownMarketplaces": {
     "astral-sh": {
       "source": {
@@ -57,12 +65,9 @@
       }
     }
   },
-  "enabledPlugins": {
-    "plugin-dev@claude-plugins-official": true,
-    "astral@astral-sh": true
-  },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
   "autoUpdatesChannel": "latest",
-  "plansDirectory": "./.claude/plans"
+  "plansDirectory": "./.claude/plans",
+  "skipDangerousModePermissionPrompt": true
 }
