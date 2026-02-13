@@ -21,11 +21,11 @@
   boot.kernel.sysctl."kernel.panic" = 10;
 
   # systemd watchdog — 시스템 hang 감지 시 자동 재부팅
-  # runtimeTime: systemd가 이 간격 내에 하드웨어 watchdog을 ping해야 함 (못하면 hang 판정)
-  # rebootTime: hang 판정 후 강제 재부팅까지 대기 시간
-  systemd.watchdog = {
-    runtimeTime = "30s";
-    rebootTime = "10min";
+  # RuntimeWatchdogSec: systemd가 이 간격 내에 하드웨어 watchdog을 ping해야 함 (못하면 hang 판정)
+  # RebootWatchdogSec: hang 판정 후 강제 재부팅까지 대기 시간
+  systemd.settings.Manager = {
+    RuntimeWatchdogSec = "30s";
+    RebootWatchdogSec = "10min";
   };
 
   # 호스트명
