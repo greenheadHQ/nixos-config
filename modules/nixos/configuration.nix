@@ -17,9 +17,24 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
+  # 커널 패닉 시 자동 재부팅 (10초 후)
+  boot.kernel.sysctl."kernel.panic" = 10;
+
+  # systemd watchdog — 시스템 hang 감지 시 자동 재부팅
+  # runtimeTime: systemd가 이 간격 내에 하드웨어 watchdog을 ping해야 함 (못하면 hang 판정)
+  # rebootTime: hang 판정 후 강제 재부팅까지 대기 시간
+  systemd.watchdog = {
+    runtimeTime = "30s";
+    rebootTime = "10min";
+  };
+
   # 호스트명
   networking.hostName = hostname;
   networking.networkmanager.enable = true;
+
+  # Wake-on-LAN (여행 중 원격 전원 인가용)
+  # ipTIME 공유기에서 magic packet 전송 → MiniPC 부팅
+  networking.interfaces.enp2s0.wakeOnLan.enable = true;
 
   # 시간대
   time.timeZone = "Asia/Seoul";
