@@ -35,8 +35,8 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 | 설정 | 값 | 동작 |
 |------|-----|------|
 | `boot.kernel.sysctl."kernel.panic"` | `10` | 커널 패닉 시 10초 후 자동 재부팅 |
-| `systemd.watchdog.runtimeTime` | `"30s"` | systemd가 30초 내 ping 실패 시 hang 판정 |
-| `systemd.watchdog.rebootTime` | `"10min"` | hang 판정 후 10분 내 강제 재부팅 |
+| `systemd.settings.Manager.RuntimeWatchdogSec` | `"30s"` | systemd가 30초 내 ping 실패 시 hang 판정 |
+| `systemd.settings.Manager.RebootWatchdogSec` | `"10min"` | hang 판정 후 10분 내 강제 재부팅 |
 
 이 설정들은 하드웨어와 무관한 범용 설정이므로 `modules/nixos/configuration.nix`에 배치.
 
@@ -47,22 +47,20 @@ networking.interfaces.enp2s0.wakeOnLan.enable = true;
 ```
 
 - NIC: Intel igc (PCI 0000:02:00.0), MAC: 84:47:09:5a:43:31
-- systemd .link 파일(`/etc/systemd/network/40-enp2s0.link`)로 매 부팅 시 `WakeOnLan=magic` 적용
-- ethtool 불필요 (systemd-networkd 네이티브 처리)
-- `enp2s0`은 이 MiniPC의 PCI 토폴로지에 종속된 이름이므로 호스트별 설정에 배치
+- systemd .link 파일로 매 부팅 시 `WakeOnLan=magic` 적용 (ethtool 불필요)
+- `enp2s0`은 이 MiniPC PCI 토폴로지에 종속 → 호스트별 설정에 배치
 
-**WoL 동작 원리:**
-- OS가 꺼진 상태에서 NIC 하드웨어가 Layer 2에서 magic packet 감시
-- iptables/Tailscale/방화벽과 완전히 독립적
-- ipTIME 공유기 내장 WoL 또는 ipTIME 모바일 앱으로 magic packet 전송
+**제한사항:**
+- Layer 2 브로드캐스트라 **같은 LAN에서만 동작** (원격 불가)
+- 원격 전원 투입이 필요하면 스마트 플러그 + BIOS "Restore on AC Power Loss" 사용
 
 **확인 명령어:**
 
 ```bash
 nix-shell -p ethtool --run "sudo ethtool enp2s0 | grep Wake"
-# Supports Wake-on: pumbg  ← NIC가 지원하는 WoL 모드
-# Wake-on: g               ← 현재 활성화된 모드 (g = magic packet)
+# Wake-on: g  ← magic packet 활성화 확인
 ```
+
 
 ## 네트워크/보안 설정
 

@@ -85,7 +85,7 @@ ssh minipc      # ~/.ssh/config에 정의됨 (macOS에서)
 
 ## 원격 복원력
 
-커널 패닉 자동 재부팅(10초), systemd watchdog(30초 hang 감지 → 10분 후 강제 재부팅), WoL 지원.
+커널 패닉 자동 재부팅(10초), systemd watchdog(30초 hang 감지 → 10분 후 강제 재부팅), WoL(같은 LAN 전용).
 상세 내용: [references/features.md](references/features.md)
 
 ## 자주 발생하는 문제

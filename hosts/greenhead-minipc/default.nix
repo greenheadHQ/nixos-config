@@ -20,8 +20,10 @@
     constants.sshKeys.macbook
   ];
 
-  # Wake-on-LAN (원격 전원 인가)
+  # Wake-on-LAN (같은 LAN 전용)
   # NIC: Intel igc (enp2s0), magic packet으로 부팅
+  # 제한: Layer 2 브로드캐스트라 같은 LAN에서만 동작
+  # 원격(여행 중) 전원 투입 → 스마트 플러그 + BIOS "Restore on AC Power Loss" 사용
   networking.interfaces.enp2s0.wakeOnLan.enable = true;
 
   # HDD 마운트 (기존 데이터 유지)
