@@ -1,4 +1,4 @@
 interface:
   display_name: "Managing MiniPC"
-  short_description: "NixOS MiniPC: installation, nixos-rebuild, disko, rollback. Triggers: \"nixos-rebuild\", \"disko\", \"hardware-configuration.nix\", \"g"
-  default_prompt: "Use $managing-minipc to help with this task in nixos-config."
+  short_description: "This skill should be used when the user asks about NixOS MiniPC management, nixos-rebuild, disko, hardware-configuration.nix, ge"
+  default_prompt: "Use $managing-minipc to help with this task."

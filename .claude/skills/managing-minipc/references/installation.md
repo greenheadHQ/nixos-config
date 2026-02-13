@@ -76,7 +76,7 @@ cd nixos-config && nrs
 
 ### 부팅 실패 시
 
-1. GRUB 메뉴에서 이전 세대 선택
+1. systemd-boot 메뉴에서 이전 세대 선택
 2. 또는 Live USB로 부팅 후:
 
 ```bash

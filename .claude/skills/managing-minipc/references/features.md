@@ -5,6 +5,7 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 ## 목차
 
 - [시스템 설정](#시스템-설정)
+- [원격 복원력](#원격-복원력)
 - [네트워크/보안 설정](#네트워크보안-설정)
 - [SSH 서버 설정](#ssh-서버-설정)
 - [mosh 설정](#mosh-설정)
@@ -22,21 +23,73 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 |------|------|------|
 | sudo NOPASSWD | `configuration.nix` | wheel 그룹에 비밀번호 없이 sudo 허용 |
 | nix-ld | `configuration.nix` | 동적 링크 바이너리 지원 (Claude Code 등) |
-| Ghostty terminfo | `configuration.nix` | Ghostty 터미널 호환성 |
+| Ghostty terminfo | `packages.nix` (nixosOnly) | Ghostty 터미널 호환성 |
+| journald 용량 제한 | `configuration.nix` | SystemMaxUse=2G, 30일 보존 |
+
+## 원격 복원력
+
+여행 등 물리 접근 불가 시 시스템 가용성을 보장하는 설정입니다.
+
+### 자동 복구 (modules/nixos/configuration.nix — 범용)
+
+| 설정 | 값 | 동작 |
+|------|-----|------|
+| `boot.kernel.sysctl."kernel.panic"` | `10` | 커널 패닉 시 10초 후 자동 재부팅 |
+| `systemd.watchdog.runtimeTime` | `"30s"` | systemd가 30초 내 ping 실패 시 hang 판정 |
+| `systemd.watchdog.rebootTime` | `"10min"` | hang 판정 후 10분 내 강제 재부팅 |
+
+이 설정들은 하드웨어와 무관한 범용 설정이므로 `modules/nixos/configuration.nix`에 배치.
+
+### Wake-on-LAN (hosts/greenhead-minipc/default.nix — 하드웨어 종속)
+
+```nix
+networking.interfaces.enp2s0.wakeOnLan.enable = true;
+```
+
+- NIC: Intel igc (PCI 0000:02:00.0), MAC: 84:47:09:5a:43:31
+- systemd .link 파일(`/etc/systemd/network/40-enp2s0.link`)로 매 부팅 시 `WakeOnLan=magic` 적용
+- ethtool 불필요 (systemd-networkd 네이티브 처리)
+- `enp2s0`은 이 MiniPC의 PCI 토폴로지에 종속된 이름이므로 호스트별 설정에 배치
+
+**WoL 동작 원리:**
+- OS가 꺼진 상태에서 NIC 하드웨어가 Layer 2에서 magic packet 감시
+- iptables/Tailscale/방화벽과 완전히 독립적
+- ipTIME 공유기 내장 WoL 또는 ipTIME 모바일 앱으로 magic packet 전송
+
+**확인 명령어:**
+
+```bash
+nix-shell -p ethtool --run "sudo ethtool enp2s0 | grep Wake"
+# Supports Wake-on: pumbg  ← NIC가 지원하는 WoL 모드
+# Wake-on: g               ← 현재 활성화된 모드 (g = magic packet)
+```
 
 ## 네트워크/보안 설정
 
 | 모듈 | 파일 | 설명 |
 |------|------|------|
-| SSH 서버 | `programs/ssh.nix` | 공개키 인증, 비밀번호 비활성화 |
-| mosh | `programs/mosh.nix` | UDP 60000-61000 포트 오픈 |
-| Tailscale | `programs/tailscale.nix` | VPN 접속 (100.79.80.95) |
+| SSH 서버 | `programs/ssh.nix` | 공개키 인증, 비밀번호 비활성화, LAN 포트 미개방 |
+| mosh | `programs/mosh.nix` | 모바일 쉘, LAN 포트 미개방 |
+| Tailscale | `programs/tailscale.nix` | VPN (100.79.80.95), 유일한 접근 경로 |
+
+**방화벽 정책 (tailscale.nix):**
+
+```nix
+networking.firewall = {
+  enable = true;
+  trustedInterfaces = [ "tailscale0" ];  # VPN 전체 허용
+  allowedUDPPorts = [ config.services.tailscale.port ];  # 41641 (WireGuard)
+};
+```
+
+LAN(enp2s0)에서의 SSH/HTTP 접근은 차단됨. Tailscale VPN만 허용.
 
 ## SSH 서버 설정
 
 ```nix
 services.openssh = {
   enable = true;
+  openFirewall = false;  # trustedInterfaces(tailscale0)에서 이미 허용. LAN 노출 방지
   settings = {
     PermitRootLogin = "no";
     PasswordAuthentication = false;
@@ -64,31 +117,26 @@ mosh greenhead@100.79.80.95 -- tmux attach -t main
 ```nix
 services.tailscale = {
   enable = true;
-  useRoutingFeatures = "both";  # Funnel/Serve 지원
+  useRoutingFeatures = "server";  # subnet router만 허용 (exit node 비활성화)
 };
-
-# 개발 서버 포트 (Tailscale 네트워크 내에서만)
-networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ 3000 3001 5173 8080 ];
 ```
 
 ## 호스트 설정
 
-`hosts/greenhead-minipc/`에서 관리됩니다.
+`hosts/greenhead-minipc/`에서 관리됩니다. 하드웨어 종속 설정만 포함.
 
 | 파일 | 내용 |
 |------|------|
-| `default.nix` | 호스트 진입점, SSH 키, HDD 마운트 |
-| `disko.nix` | NVMe 디스크 파티션 설정 |
-| `hardware-configuration.nix` | 하드웨어 자동 감지 설정 |
+| `default.nix` | SSH 키, WoL(enp2s0), HDD 마운트(UUID) |
+| `disko.nix` | NVMe 파티션 설정 (ESP 512M + swap 8G + root) |
+| `hardware-configuration.nix` | 하드웨어 자동 감지 (커널 모듈, CPU 마이크로코드) |
 
 ## NixOS Alias
-
-MiniPC에서 사용하는 rebuild 관련 alias입니다.
 
 | Alias | 명령어 | 설명 |
 |-------|--------|------|
 | `nrs` | `~/.local/bin/nrs.sh` | rebuild (미리보기 + 확인 + 적용) |
-| `nrs-offline` | `nrs.sh --offline` | 오프라인 rebuild |
+| `nrs --offline` | `nrs.sh --offline` | 오프라인 rebuild |
 | `nrp` | `~/.local/bin/nrp.sh` | 미리보기만 |
 | `nrh` | `sudo nix-env --list-generations ...` | 세대 히스토리 |
 
@@ -96,22 +144,7 @@ MiniPC에서 사용하는 rebuild 관련 alias입니다.
 
 `modules/nixos/programs/ssh-client/`에서 관리됩니다.
 
-MiniPC에서 macOS로 Tailscale VPN을 통해 SSH 접속할 수 있습니다.
-
-**사용법:**
-
 ```bash
 ssh mac              # 호스트명으로 접속
 ssh green@100.65.50.98  # IP로 직접 접속
 ```
-
-**SSH config 설정:**
-
-```
-Host mac
-  HostName 100.65.50.98
-  User green
-  IdentityFile ~/.ssh/id_ed25519
-```
-
-> **참고**: MiniPC 설정 및 설치 상세 내용은 [MINIPC_PLAN_V3.md](../../../../../../../nixos-config/docs/MINIPC_PLAN_V3.md)를 참고하세요.

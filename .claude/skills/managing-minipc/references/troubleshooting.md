@@ -152,8 +152,7 @@ Home Manager가 나중에 `.zshrc`를 관리하므로, 지금은 빈 파일로 �
 ```bash
 # locale 설정 확인
 $ locale
-LANG=ko_KR.UTF-8
-LC_TIME=ko_KR.UTF-8
+LANG=en_US.UTF-8
 
 # SSH로 접속하면 정상
 $ ssh user@minipc
@@ -161,10 +160,11 @@ $ ssh user@minipc
 ```
 
 **참고**: NixOS configuration에서 locale이 올바르게 설정되어 있다면 문제없습니다.
+(설치 직후 `ko_KR.UTF-8`에서 `en_US.UTF-8`로 변경됨)
 
 ```nix
 # modules/nixos/configuration.nix
-i18n.defaultLocale = "ko_KR.UTF-8";
+i18n.defaultLocale = "en_US.UTF-8";
 ```
 
 ---
@@ -195,7 +195,7 @@ sudo nix-env --list-generations --profile /nix/var/nix/profiles/system
 sudo /nix/var/nix/profiles/system-29-link/bin/switch-to-configuration switch
 ```
 
-2. 또는 재부팅 시 GRUB 메뉴에서 이전 세대 선택
+2. 또는 재부팅 시 systemd-boot 메뉴에서 이전 세대 선택
 
 **교훈**:
 

@@ -32,10 +32,6 @@
   networking.hostName = hostname;
   networking.networkmanager.enable = true;
 
-  # Wake-on-LAN (여행 중 원격 전원 인가용)
-  # ipTIME 공유기에서 magic packet 전송 → MiniPC 부팅
-  networking.interfaces.enp2s0.wakeOnLan.enable = true;
-
   # 시간대
   time.timeZone = "Asia/Seoul";
 

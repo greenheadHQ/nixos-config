@@ -20,6 +20,10 @@
     constants.sshKeys.macbook
   ];
 
+  # Wake-on-LAN (원격 전원 인가)
+  # NIC: Intel igc (enp2s0), magic packet으로 부팅
+  networking.interfaces.enp2s0.wakeOnLan.enable = true;
+
   # HDD 마운트 (기존 데이터 유지)
   # 중요: 이 HDD는 NixOS 설치 시 포맷하지 않음!
   fileSystems."/mnt/data" = {

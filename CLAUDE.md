@@ -60,7 +60,7 @@ homeserver.vaultwarden.enable = true;
 | 상황 | 스킬 |
 |------|------|
 | 플랫폼별 | |
-| NixOS, MiniPC(미니PC), nixos-rebuild, disko, rollback | `managing-minipc` |
+| NixOS, MiniPC(미니PC), nixos-rebuild, disko, rollback, 설정 배치, 하드웨어 설정, WoL | `managing-minipc` |
 | nix-darwin, macOS settings, Homebrew Cask, darwin-rebuild | `managing-macos` |
 | flake, derivation, substituter, slow build, direnv, devShell | `understanding-nix` |
 | 도구별 | |
