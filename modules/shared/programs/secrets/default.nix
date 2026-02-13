@@ -34,14 +34,6 @@
         mode = "0400";
       };
     }
-    # fail2ban 알림은 NixOS에서만 사용
-    // lib.optionalAttrs pkgs.stdenv.isLinux {
-      pushover-fail2ban = {
-        file = ../../../../secrets/pushover-fail2ban.age;
-        path = "${config.xdg.configHome}/pushover/fail2ban";
-        mode = "0400";
-      };
-    }
     # Immich CLI 업로드 시크릿은 macOS FolderAction에서 사용
     // lib.optionalAttrs pkgs.stdenv.isDarwin {
       immich-api-key = {

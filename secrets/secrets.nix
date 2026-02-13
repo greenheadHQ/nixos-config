@@ -20,8 +20,6 @@ in
   # 서비스별 Pushover credentials (독립적 토큰 revocation + API rate limit 분리)
   "pushover-claude-code.age".publicKeys = allHosts;
   "pushover-atuin.age".publicKeys = allHosts;
-  "pushover-fail2ban.age".publicKeys = minipcOnly;
-
   "pane-note-links.age".publicKeys = allHosts;
 
   # Immich PostgreSQL 비밀번호

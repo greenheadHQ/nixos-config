@@ -9,7 +9,6 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 - [SSH 서버 설정](#ssh-서버-설정)
 - [mosh 설정](#mosh-설정)
 - [Tailscale 설정](#tailscale-설정)
-- [fail2ban 설정](#fail2ban-설정)
 - [호스트 설정](#호스트-설정)
 - [NixOS Alias](#nixos-alias)
 
@@ -32,7 +31,6 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 | SSH 서버 | `programs/ssh.nix` | 공개키 인증, 비밀번호 비활성화 |
 | mosh | `programs/mosh.nix` | UDP 60000-61000 포트 오픈 |
 | Tailscale | `programs/tailscale.nix` | VPN 접속 (100.79.80.95) |
-| fail2ban | `programs/fail2ban.nix` | SSH 무차별 대입 방지 (3회 실패 시 24시간 차단) |
 
 ## SSH 서버 설정
 
@@ -71,19 +69,6 @@ services.tailscale = {
 
 # 개발 서버 포트 (Tailscale 네트워크 내에서만)
 networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ 3000 3001 5173 8080 ];
-```
-
-## fail2ban 설정
-
-SSH 무차별 대입 공격 방지:
-
-```nix
-services.fail2ban.jails.sshd.settings = {
-  enabled = true;
-  maxretry = 3;      # 3회 실패 시
-  findtime = "10m";  # 10분 내
-  bantime = "24h";   # 24시간 차단
-};
 ```
 
 ## 호스트 설정

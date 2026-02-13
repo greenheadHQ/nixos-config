@@ -16,7 +16,7 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 
 **플랫폼별 설정**:
 - macOS: Homebrew GUI 앱, Hammerspoon, Cursor, 폴더 액션
-- NixOS: SSH 서버, mosh, Tailscale VPN, fail2ban
+- NixOS: SSH 서버, mosh, Tailscale VPN
 
 ---
 
@@ -49,8 +49,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │           ├── anki-sync-server/  # Anki sync 서버 (NixOS 네이티브 모듈)
 │           ├── docker/            # 컨테이너 서비스 (runtime, immich, uptime-kuma)
 │           ├── ssh.nix            # OpenSSH 서버
-│           ├── tailscale.nix      # VPN
-│           └── fail2ban.nix       # SSH 방어
+│           └── tailscale.nix      # VPN
 ├── hosts/greenhead-minipc/        # 호스트별 하드웨어 설정
 ├── secrets/                       # agenix 암호화 시크릿
 └── scripts/                       # 자동화 스크립트

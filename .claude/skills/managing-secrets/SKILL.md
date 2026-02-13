@@ -48,7 +48,6 @@ Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로�
 |--------|----------|------|
 | `pushover-claude-code.age` | `~/.config/pushover/claude-code` | Claude Code 알림 |
 | `pushover-atuin.age` | `~/.config/pushover/atuin` | Atuin 동기화 알림 |
-| `pushover-fail2ban.age` | `~/.config/pushover/fail2ban` | Fail2ban 알림 |
 | `pushover-immich.age` | `~/.config/pushover/immich` | Immich FolderAction 업로드 알림 |
 | `pane-note-links.age` | `~/.config/pane-note/links.txt` | Pane Notepad 링크 |
 | `immich-api-key.age` | `~/.config/immich/api-key` | Immich CLI 업로드 인증 |

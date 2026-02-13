@@ -119,7 +119,6 @@
     ./programs/tailscale.nix
     ./programs/ssh.nix
     ./programs/mosh.nix
-    ./programs/fail2ban.nix
     ./options/homeserver.nix # Docker/Podman 기반 홈서버 서비스 (mkOption)
   ];
 
