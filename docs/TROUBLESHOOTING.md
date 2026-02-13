@@ -8,6 +8,28 @@
 
 ---
 
+## Termius에서 Codex 스크롤 히스토리 소실
+
+### 증상
+Termius(iOS)에서 SSH로 Codex CLI를 실행하면 응답 완료 후에도 위로 스크롤이 잘 되지 않거나, 히스토리가 사라진 것처럼 보임.
+
+### 빠른 결론
+이번 저장소 기준 재현 결과:
+1. `--no-alt-screen` 적용 후에도 증상 지속
+2. `codex-cli 0.96.0` 회귀 테스트에서도 동일 증상
+3. Mosh 미사용(SSH-only) 환경에서도 발생
+
+즉, 설정 실수보다는 **Termius + Codex TUI 호환성 이슈** 가능성이 높음.
+
+### 임시 우회
+1. 긴 출력 확인은 `codex exec` 우선
+2. TUI에서 출력 누락/스크롤 불가 시 `/resume`으로 재표시 시도
+
+### 상세 기록
+- `docs/TRIAL_AND_ERROR.md`의 `2026-02-13: Codex CLI + Termius 스크롤 히스토리 소실 (SSH)`
+
+---
+
 ## ripgrep glob 패턴이 작동하지 않음
 
 ### 증상

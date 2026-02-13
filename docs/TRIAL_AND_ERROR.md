@@ -4,6 +4,7 @@
 
 ## 목차
 
+- [2026-02-13: Codex CLI + Termius 스크롤 히스토리 소실 (SSH)](#2026-02-13-codex-cli--termius-스크롤-히스토리-소실-ssh)
 - [2026-01-28: OSC 52 클립보드 - Termius iOS 미지원](#2026-01-28-osc-52-클립보드---termius-ios-미지원)
 - [2026-01-18: Termius 한국어 입력 시 터미널 UI 깨짐 문제](#2026-01-18-termius-한국어-입력-시-터미널-ui-깨짐-문제)
 - [2026-01-17: rip (프로세스 종료 CLI) Flake input 추가 실패](#2026-01-17-rip-프로세스-종료-cli-flake-input-추가-실패)
@@ -24,6 +25,72 @@
   - [교훈](#교훈)
   - [대상 애드온 목록 (참고용)](#대상-애드온-목록-참고용)
   - [결론](#결론)
+
+---
+
+## 2026-02-13: Codex CLI + Termius 스크롤 히스토리 소실 (SSH)
+
+> **환경**:
+> - **서버**: NixOS miniPC
+> - **클라이언트**: Termius (iOS)
+> - **연결 방식**: SSH 전용 (Mosh 미사용)
+> - **비교 대상**: Claude Code vs Codex CLI
+> - **테스트 버전**: codex-cli 0.101.0, 0.96.0
+
+### 문제 현상
+
+Termius에서 Codex CLI 사용 시:
+1. 응답이 끝난 뒤에도 이전 출력으로 스크롤이 올라가지 않음
+2. 스크롤 히스토리가 사라진 것처럼 보임 (현재 viewport 중심으로만 보임)
+3. 동일 SSH 환경에서 Claude Code는 출력 완료 후 스크롤 복구되는 경우가 있음
+
+### 시도한 방법들
+
+#### 1. `--no-alt-screen` 강제 적용
+
+**변경 내용** (`modules/shared/programs/shell/default.nix`):
+```nix
+codex = "command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen";
+```
+
+**적용**: `./modules/nixos/scripts/nrs.sh` build + switch 성공  
+**검증**: `zsh -ic 'alias codex'`에서 옵션 반영 확인  
+**결과**: ❌ Termius에서 스크롤 문제 지속
+
+#### 2. Codex 구버전 회귀 테스트 (0.96.0)
+
+**방법**:
+1. `~/.local/bin/codex-0.96.0`로 임시 바이너리 설치
+2. `codex-0.96.0 -V` 확인 후 동일 시나리오 테스트
+3. 테스트 종료 후 바이너리 삭제
+
+**결과**: ❌ 0.96.0에서도 동일 증상 재현
+
+### 결론
+
+1. **이 문제는 Mosh 때문이 아님** (SSH-only에서도 재현)
+2. **`--no-alt-screen`만으로 해결되지 않음**
+3. **해당 환경에서는 버전 다운그레이드(0.96.0)도 효과 없음**
+4. 실질적으로는 **Termius + Codex TUI 렌더링/스크롤 처리 호환성 이슈**로 보는 것이 타당
+
+### 재시도 금지 항목 (같은 삽질 방지)
+
+다음 항목은 이번 케이스에서 효과 없었으므로 동일 증상 재발 시 우선순위에서 제외:
+1. Codex 버전만 낮춰서 해결 기대
+2. `--no-alt-screen`만 넣으면 자동 해결될 것이라는 가정
+3. Mosh/locale/zsh 플러그인 문제로 다시 역추적
+
+### 임시 우회
+
+1. 긴 출력 확인이 중요할 때는 `codex exec` 우선 사용
+2. TUI 사용 중 출력 누락/스크롤 불가 시 `/resume`으로 재표시 시도
+3. 가능하면 데스크톱 터미널에서 동일 세션 확인
+
+### 관련 이슈/참고 자료
+
+- [Codex Issue #11014: iOS SSH client에서 스크롤 깨짐](https://github.com/openai/codex/issues/11014)
+- [Codex Issue #10726: 0.97+ 스크롤 회귀](https://github.com/openai/codex/issues/10726)
+- [Codex Issue #10901: TUI 출력 앞부분 소실/잘림](https://github.com/openai/codex/issues/10901)
 
 ---
 

@@ -48,7 +48,7 @@ in
     } --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 
     # Codex CLI 위험 모드 단축 (사용자 요청)
-    codex = "command codex --dangerously-bypass-approvals-and-sandbox";
+    codex = "command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen";
 
     # lazygit 단축
     lg = "lazygit";
