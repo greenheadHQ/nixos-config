@@ -39,7 +39,7 @@ Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬
 - `.claude/skills/*` (원본)
 - `.agents/skills/*` (Codex 발견용 투영)
 
-## 패키지 설치
+## 패키지 설치 및 업데이트
 
 Codex CLI는 Nix derivation으로 관리된다 (`libraries/packages/codex-cli.nix`).
 GitHub releases에서 플랫폼별 pre-built 바이너리를 가져온다.
@@ -47,7 +47,33 @@ GitHub releases에서 플랫폼별 pre-built 바이너리를 가져온다.
 - macOS: `aarch64-darwin`
 - NixOS: `x86_64-linux` (musl 정적 링크)
 
-버전 업데이트:
+### 자동 업데이트 (nrs 통합)
+
+`nrs` 실행 시 빌드 전에 `scripts/update-codex-cli.sh`가 자동으로 실행된다.
+
+```
+nrs 흐름:
+  update_external_packages   ← GitHub latest 확인 → codex-cli.nix 갱신
+    ↓
+  (launchd 정리, macOS만)
+    ↓
+  preview_changes            ← 갱신된 버전으로 빌드
+    ↓
+  rebuild switch
+```
+
+동작 방식:
+- 버전 동일: curl HEAD 1회로 종료 (~1초 이내, 빌드 시간 영향 거의 없음)
+- 새 버전: `nix-prefetch-url`로 tarball 2개 다운로드 후 해시 계산 → nix 파일 갱신 (30-90초 소요)
+- `nrs --offline`: 업데이트 단계 건너뜀
+- 네트워크 오류: 경고 출력 후 기존 버전으로 빌드 계속 (non-fatal)
+- 태그 형식 변경(`rust-v*` 외): semver 검증 실패로 중단, 기존 버전으로 빌드 계속
+
+안전장치:
+- curl `--connect-timeout 5 --max-time 10` (무한 대기 방지)
+- 파일 수정 전 `.bak` 백업, EXIT trap으로 실패/중단 시 자동 복원
+
+### 수동 업데이트
 
 ```bash
 ./scripts/update-codex-cli.sh
@@ -60,7 +86,7 @@ Skills 누락 이슈의 1차 원인은 `trust`보다 `SKILL.md` 투영 방식이
 
 ## 실행 정책 / Trust 메모
 
-`codex-cli 0.98.0` 기준으로 `codex trust` 독립 서브커맨드는 확인되지 않았다.  
+`codex-cli 0.101.0` 기준으로 `codex trust` 독립 서브커맨드는 확인되지 않았다.  
 권한 프롬프트 동작은 전역 실행 정책으로 제어한다.
 
 ```toml

@@ -7,6 +7,9 @@
 # Nix로 생성되는 Claude Code 스킬 (symlink → /nix/store/)
 .claude/skills/viewing-immich-photo/
 
+# 업데이트 스크립트 백업 파일 (중단 시 잔류 가능)
+*.bak
+
 # Codex CLI
 # 글로벌 gitignore(~/.config/git/ignore)에서 .agents/, AGENTS.override.md 등을
 # 무시하므로, 이 프로젝트에서 필요한 항목을 negation으로 재허용

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # scripts/update-codex-cli.sh
 # Codex CLI 패키지 자동 업데이트 (최신 GitHub 릴리스 → Nix derivation)
+#
+# 안전장치:
+# - curl/nix-prefetch-url 타임아웃으로 네트워크 지연 시 무한 대기 방지
+# - 파일 수정 전 백업, 실패/중단 시 자동 복원 (원자적 업데이트)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,8 +25,9 @@ sed_inplace() {
 current="$(grep 'version = ' "$PKG_FILE" | head -1 | sed 's/.*"\(.*\)".*/\1/')"
 echo "현재 버전: $current"
 
-# GitHub latest 릴리스 태그 가져오기
-tag="$(curl -sI "https://github.com/openai/codex/releases/latest" \
+# GitHub latest 릴리스 태그 가져오기 (타임아웃: 접속 5초, 전체 10초)
+tag="$(curl -sI --connect-timeout 5 --max-time 10 \
+  "https://github.com/openai/codex/releases/latest" \
   | grep -i '^location:' | sed 's|.*/tag/||; s/\r//')"
 
 if [ -z "$tag" ]; then
@@ -31,6 +36,13 @@ if [ -z "$tag" ]; then
 fi
 
 latest="${tag#rust-v}"
+
+# 태그 컨벤션 변경 감지 (semver 형식이 아니면 중단)
+if ! [[ "$latest" =~ ^[0-9]+\.[0-9]+ ]]; then
+  echo "❌ 예상치 못한 버전 형식: '$latest' (태그: $tag)"
+  exit 1
+fi
+
 echo "최신 버전: $latest"
 
 if [ "$current" = "$latest" ]; then
@@ -40,7 +52,7 @@ fi
 
 echo "⬆️  $current → $latest 업데이트 중..."
 
-# 해시 계산 (두 플랫폼 병렬)
+# 해시 계산 (파일 수정 전에 완료)
 echo "해시 계산 중 (aarch64-darwin)..."
 hash_darwin="$(nix-prefetch-url \
   "https://github.com/openai/codex/releases/download/rust-v${latest}/codex-aarch64-apple-darwin.tar.gz" \
@@ -53,16 +65,29 @@ hash_linux="$(nix-prefetch-url \
   2>/dev/null)"
 sri_linux="$(nix hash convert --hash-algo sha256 --to sri "$hash_linux")"
 
-# codex-cli.nix 업데이트
+# 원자적 파일 업데이트: 백업 생성 → 수정 → 성공 시 백업 삭제
+# 실패/중단(Ctrl+C) 시 EXIT trap이 백업에서 자동 복원
+cp "$PKG_FILE" "$PKG_FILE.bak"
+cleanup() {
+  if [[ -f "$PKG_FILE.bak" ]]; then
+    mv "$PKG_FILE.bak" "$PKG_FILE"
+    echo "❌ 업데이트 중단, 원본 복원됨"
+  fi
+}
+trap cleanup EXIT
+
+# codex-cli.nix 업데이트 (version → darwin hash → linux hash)
 sed_inplace "s|version = \"$current\"|version = \"$latest\"|" "$PKG_FILE"
 
-# aarch64-darwin 해시 교체 (해당 블록 내 hash 라인)
 old_darwin="$(grep -A3 'aarch64-darwin' "$PKG_FILE" | grep 'hash =' | sed 's/.*"\(.*\)".*/\1/')"
 sed_inplace "s|$old_darwin|$sri_darwin|" "$PKG_FILE"
 
-# x86_64-linux 해시 교체
 old_linux="$(grep -A3 'x86_64-linux' "$PKG_FILE" | grep 'hash =' | sed 's/.*"\(.*\)".*/\1/')"
 sed_inplace "s|$old_linux|$sri_linux|" "$PKG_FILE"
+
+# 모든 수정 성공 — 백업 삭제 (trap이 복원하지 않도록)
+rm -f "$PKG_FILE.bak"
+trap - EXIT
 
 echo ""
 echo "✅ 업데이트 완료: $current → $latest"
