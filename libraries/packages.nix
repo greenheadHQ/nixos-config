@@ -49,6 +49,7 @@ in
   # NixOS 전용 패키지
   nixosOnly = [
     pkgs.ghostty # Terminfo (SSH 접속 시 필요)
+    pkgs.lm_sensors # 하드웨어 온도 모니터링 (sensors 명령어)
     pkgs.mise # 런타임 버전 관리
     pkgs.mosh # 모바일 쉘 (불안정한 네트워크용)
   ];

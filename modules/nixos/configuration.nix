@@ -82,6 +82,10 @@
     MaxRetentionSec=30day
   '';
 
+  # TODO: lm-sensors 온도 모니터링 + Pushover 알림 (향후 구현)
+  # 현재: lm_sensors 패키지만 설치. 수동 확인: `sensors`
+  # 계획: systemd timer 온도 체크 + 임계값 초과 시 Pushover (pushover-system-monitor 재사용)
+
   # wheel 그룹 sudo 비밀번호 생략 (SSH 키 인증 + Tailscale 보안)
   security.sudo.wheelNeedsPassword = false;
 
