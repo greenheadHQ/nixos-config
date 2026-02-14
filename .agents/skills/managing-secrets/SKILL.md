@@ -1,10 +1,12 @@
 ---
 name: managing-secrets
 description: |
-  agenix secrets: .age encryption, decryption, re-encrypt, keys.
+  This skill should be used when the user asks about agenix secrets,
+  .age file encryption/decryption, re-encryption, or secret key management.
   Triggers: "add a secret", "create .age file", "encrypt with agenix",
   "decrypt secret", "agenix -e", "/dev/stdin" errors, "secrets.nix",
-  "re-encrypt", "age key", "identity path" issues.
+  "re-encrypt", "age key", "identity path" issues, "시크릿", "암호화".
+  For service-specific secret usage, see the respective service skill.
 ---
 
 # Secret 관리 (agenix)
@@ -35,7 +37,7 @@ agenix를 사용한 `.age` 파일 기반 secret 암호화/배포 가이드.
 | 레벨 | 설정 위치 | 용도 |
 |------|----------|------|
 | Home Manager | `modules/shared/programs/secrets/default.nix` | Pushover, pane-note 등 사용자 레벨 |
-| NixOS 시스템 | `modules/nixos/programs/docker/immich.nix` | immich-db-password 등 시스템 서비스 |
+| NixOS 시스템 | 각 서비스 모듈 (`immich.nix`, `smartd.nix` 등) | immich-db-password, pushover-system-monitor 등 시스템 서비스 |
 
 두 레벨이 공존하며, NixOS 시스템 레벨은 `flake.nix`에서 `inputs.agenix.nixosModules.default`로 활성화.
 
@@ -52,6 +54,13 @@ Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로�
 | `pane-note-links.age` | `~/.config/pane-note/links.txt` | Pane Notepad 링크 |
 | `immich-api-key.age` | `~/.config/immich/api-key` | Immich CLI 업로드 인증 |
 | `immich-db-password.age` | (NixOS 시스템 레벨) | Immich PostgreSQL 비밀번호 |
+| `pushover-system-monitor.age` | (NixOS 시스템 레벨) | 시스템 하드웨어 모니터링 Pushover (smartd, 향후 온도 경고) |
+| `pushover-uptime-kuma.age` | (NixOS 시스템 레벨) | Uptime Kuma 업데이트 알림 |
+| `pushover-copyparty.age` | (NixOS 시스템 레벨) | Copyparty 업데이트 알림 |
+| `anki-sync-password.age` | (NixOS 시스템 레벨) | Anki Sync Server 비밀번호 |
+| `copyparty-password.age` | (NixOS 시스템 레벨) | Copyparty 파일 서버 비밀번호 |
+| `vaultwarden-admin-token.age` | (NixOS 시스템 레벨) | Vaultwarden 관리자 패널 토큰 |
+| `cloudflare-dns-api-token.age` | (NixOS 시스템 레벨) | Caddy HTTPS 인증서 발급용 |
 
 상세는 `secrets/secrets.nix` 참조.
 

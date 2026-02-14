@@ -7,7 +7,8 @@ description: |
   or NixOS boot/rebuild errors.
   Triggers: "MiniPC", "미니PC", "nixos-rebuild", "disko",
   "hardware-configuration.nix", "rollback", "WoL", "Wake-on-LAN", "watchdog",
-  "호스트 설정", "하드웨어 설정", "설정 배치", "어디에 넣어야", "boot failure".
+  "호스트 설정", "하드웨어 설정", "설정 배치", "어디에 넣어야", "boot failure",
+  "smartd", "SMART", "디스크 건강", "lm-sensors", "sensors", "온도 모니터링".
   For nix-darwin use managing-macos. For flake issues use understanding-nix.
 ---
 
@@ -75,6 +76,7 @@ ssh minipc      # ~/.ssh/config에 정의됨 (macOS에서)
 | `modules/nixos/configuration.nix` | NixOS 공통 설정 + 홈서버 서비스 활성화 |
 | `modules/nixos/options/homeserver.nix` | mkOption 기반 서비스 정의 |
 | `modules/nixos/programs/` | 공통 서비스 모듈 (Tailscale, SSH, Caddy 등) |
+| `modules/nixos/programs/smartd.nix` | S.M.A.R.T. 디스크 건강 모니터링 + Pushover 알림 |
 | `modules/nixos/home.nix` | Home Manager (NixOS) |
 | `libraries/constants.nix` | 전역 상수 (IP, 경로, SSH 키 등) |
 
@@ -87,6 +89,33 @@ ssh minipc      # ~/.ssh/config에 정의됨 (macOS에서)
 
 커널 패닉 자동 재부팅(10초), systemd watchdog(30초 hang 감지 → 10분 후 강제 재부팅), WoL(같은 LAN 전용).
 상세 내용: [references/features.md](references/features.md)
+
+## 하드웨어 모니터링
+
+### S.M.A.R.T. 디스크 건강 모니터링 (smartd)
+
+`modules/nixos/programs/smartd.nix`에서 NixOS `services.smartd` 모듈 활용.
+NVMe + HDD 자동 감지, 디스크 장애 사전 감지 시 Pushover 알림 전송.
+
+- **온도 임계값**: 5도 변화 로그 / 50도 경고 / 60도 위험 (`-W 5,50,60`)
+- **알림 우선순위**: PreFailure/CurrentPendingSector/OfflineUncorrectable → 긴급(1), 기타 → 일반(0)
+- **시크릿**: `pushover-system-monitor.age` (smartd 전용)
+
+```bash
+systemctl status smartd            # 서비스 상태
+sudo smartctl -a /dev/nvme0n1      # NVMe SMART 데이터
+sudo smartctl -a /dev/sda          # HDD SMART 데이터
+```
+
+### 온도 모니터링 (lm-sensors)
+
+`lm_sensors` 패키지 설치됨. 수동 확인용.
+
+```bash
+sensors                            # CPU/디스크/보드 온도 확인
+```
+
+자동 알림이 필요하면 pushover-system-monitor 시크릿을 재사용하여 systemd timer 구성 가능.
 
 ## 자주 발생하는 문제
 

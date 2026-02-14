@@ -26,7 +26,7 @@ macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관
 | `libraries/packages.nix` | 공통 패키지 (shared/darwinOnly/nixosOnly) |
 | `modules/darwin/` | macOS 전용 설정 |
 | `modules/nixos/` | NixOS 전용 설정 |
-| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, uptime-kuma, anki-sync, copyparty, vaultwarden) |
+| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, immichBackup, uptime-kuma, anki-sync, copyparty, vaultwarden) |
 | `modules/shared/` | 공유 설정 |
 | `scripts/` | 자동화 스크립트 (add-host, pre-rebuild-check, update-input) |
 
@@ -53,6 +53,7 @@ homeserver.uptimeKuma.enable = true;
 homeserver.ankiSync.enable = true;
 homeserver.copyparty.enable = true;
 homeserver.vaultwarden.enable = true;
+homeserver.immichBackup.enable = true;
 ```
 
 ## 스킬 라우팅
@@ -60,14 +61,14 @@ homeserver.vaultwarden.enable = true;
 | 상황 | 스킬 |
 |------|------|
 | 플랫폼별 | |
-| NixOS, MiniPC(미니PC), nixos-rebuild, disko, rollback, 설정 배치, 하드웨어 설정, WoL | `managing-minipc` |
+| NixOS, MiniPC(미니PC), nixos-rebuild, disko, rollback, 설정 배치, 하드웨어 설정, WoL, smartd, lm-sensors | `managing-minipc` |
 | nix-darwin, macOS settings, Homebrew Cask, darwin-rebuild | `managing-macos` |
 | flake, derivation, substituter, slow build, direnv, devShell | `understanding-nix` |
 | 도구별 | |
 | Atuin sync, shell history, `atuin status`, encryption key | `syncing-atuin` |
 | Claude Code hooks, plugins, MCP, settings.json | `configuring-claude-code` |
 | Hammerspoon hotkeys, launchd agents, Ghostty terminal | `automating-hammerspoon` |
-| Podman/Docker, immich, container OOM, service-lib, 서비스 업데이트 | `running-containers` |
+| Podman/Docker, immich, container OOM, service-lib, 서비스 업데이트, immich-db-backup | `running-containers` |
 | Anki sync server, anki 동기화, anki 서버, anki 백업 | `hosting-anki` |
 | Copyparty, 파일 서버, WebDAV, Google Drive 대체, 파일 공유 | `hosting-copyparty` |
 | Vaultwarden, Bitwarden, 비밀번호 관리자, 볼트워든, admin token | `hosting-vaultwarden` |

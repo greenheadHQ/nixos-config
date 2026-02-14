@@ -1,12 +1,17 @@
 ---
 name: running-containers
 description: |
-  Podman/Docker containers: immich, uptime-kuma, OOM, updates.
+  This skill should be used when the user asks about Podman/Docker containers,
+  homeserver services (immich, uptime-kuma, copyparty, vaultwarden), container OOM,
+  service updates, or database backups.
   Triggers: "update immich", "immich 업데이트", "immich-update",
   "check immich version", "immich 버전 확인", upgrading Immich server,
   "uptime-kuma-update", "copyparty-update", "서비스 업데이트",
   "service-lib", "version-check", unified service update system,
-  container OOM, "Tailscale IP binding" timing, OCI backend config.
+  container OOM, "Tailscale IP binding" timing, OCI backend config,
+  "immich-db-backup", "DB 백업", "vaultwarden-backup", "백업 타이머",
+  "컨테이너", Caddy reverse proxy.
+  For Anki sync details use hosting-anki. For Vaultwarden details use hosting-vaultwarden.
 ---
 
 # 컨테이너 관리 (Podman/홈서버)
@@ -28,6 +33,7 @@ homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 homeserver.immichUpdate.enable = true;        # Immich 버전 체크 + 업데이트 (03:00)
 homeserver.uptimeKumaUpdate.enable = true;    # Uptime Kuma 버전 체크 + 업데이트 (03:30)
 homeserver.copypartyUpdate.enable = true;     # Copyparty 버전 체크 + 업데이트 (04:00)
+homeserver.immichBackup.enable = true;        # Immich PostgreSQL 매일 백업 (05:30)
 ```
 
 ### 파일 구조
@@ -41,6 +47,7 @@ homeserver.copypartyUpdate.enable = true;     # Copyparty 버전 체크 + 업데
 | `modules/nixos/programs/docker/copyparty.nix` | Copyparty 파일 서버 (mkIf 래핑) |
 | `modules/nixos/programs/docker/vaultwarden.nix` | Vaultwarden 비밀번호 관리자 (mkIf 래핑) |
 | `modules/nixos/programs/docker/vaultwarden-backup.nix` | Vaultwarden SQLite 백업 (mkIf 래핑) |
+| `modules/nixos/programs/docker/immich-backup.nix` | Immich PostgreSQL 매일 백업 (mkIf 래핑) |
 | `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 (mkIf 래핑) |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
 | `modules/nixos/lib/service-lib.sh` | 공통 셸 라이브러리 (send_notification, fetch_github_release 등) |
@@ -152,11 +159,21 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 | Uptime Kuma | `uptime-kuma-version-check` | `sudo uptime-kuma-update` | 03:30 |
 | Copyparty | `copyparty-version-check` | `sudo copyparty-update` | 04:00 |
 
+**백업 타이머**:
+
+| 서비스 | systemd 서비스 | 타이머 | 백업 위치 |
+|--------|---------------|--------|-----------|
+| Anki Sync | `anki-sync-backup` | 04:00 | HDD |
+| Vaultwarden | `vaultwarden-backup` | 04:30 | HDD (`/mnt/data/backups/vaultwarden`) |
+| Immich DB | `immich-db-backup` | 05:30 | HDD (`/mnt/data/backups/immich`) |
+
 공통 라이브러리 함수: `send_notification`, `fetch_github_release`, `get_image_digest`, `check_watchdog`, `check_initial_run`, `record_success`, `http_health_check`
 
 서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`).
 
-**Immich**: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. DB 백업(pg_dump) 포함. 상세: [references/immich-update.md](references/immich-update.md)
+**Immich**: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. 상세: [references/immich-update.md](references/immich-update.md)
+
+**Immich DB 백업**: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행.
 
 **Uptime Kuma/Copyparty**: 이미지에 버전 레이블 없음 → GitHub latest 추적 + 이미지 digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
 
