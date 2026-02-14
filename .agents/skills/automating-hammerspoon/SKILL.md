@@ -21,8 +21,8 @@ Hammerspoon 단축키, launchd 서비스, Ghostty 연동 가이드입니다.
 - Hammerspoon에서 eventtap으로 강제 처리
 
 **Ghostty 새 인스턴스 문제**
-- `open -a Ghostty` 시 새 인스턴스로 열림 (Dock에 여러 아이콘)
-- Hammerspoon에서 `hs.application.find`로 기존 인스턴스 활용
+- Ghostty 바이너리를 직접 실행하면 새 인스턴스로 열릴 수 있음 (Dock에 여러 아이콘)
+- 해결: 실행 중이면 `hs.application.get("Ghostty")` + `Cmd+N`, 미실행이면 `open -a Ghostty`
 
 ## 빠른 참조
 
@@ -30,15 +30,20 @@ Hammerspoon 단축키, launchd 서비스, Ghostty 연동 가이드입니다.
 
 | 단축키 | 동작 |
 |--------|------|
-| `Cmd+Shift+T` | Finder에서 현재 폴더로 Ghostty 열기 |
-| `Ctrl+H/J/K/L` | Vim 스타일 방향키 (한글 IME 포함) |
-| `Opt+H/L` | 단어 단위 이동 |
+| `Ctrl+Option+Cmd+T` | Finder에서 현재 폴더로 Ghostty 열기 |
+| `Ctrl+;` | 영어 입력으로 전환 |
+| `Cmd+Shift+Space` | 영어 전환 후 Homerow 실행 |
+| `Ctrl+B` | 영어 전환 후 tmux prefix 전달 |
+| `Ctrl+C/U/K/W/A/E/L/F` | Ghostty 전용 Ctrl 단축키 (CSI u 우회) |
+| `Opt+B/F` | 터미널 앱에서 단어 단위 이동 |
 
 ### 설정 파일 위치
 
 | 파일 | 용도 |
 |------|------|
 | `~/.hammerspoon/init.lua` | Hammerspoon 메인 설정 |
+| `~/.hammerspoon/foundation_remapping.lua` | Caps Lock → F18 리매핑 |
+| `~/.hammerspoon/atuin_menubar.lua` | Atuin 메뉴바 상태 표시 |
 | `~/Library/LaunchAgents/` | launchd 사용자 에이전트 |
 
 ### launchd 디버깅

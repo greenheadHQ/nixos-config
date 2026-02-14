@@ -1,4 +1,4 @@
 interface:
   display_name: "Configuring Claude Code"
   short_description: "Claude Code hooks, plugins, aliases, MCP, and settings.json. Triggers: \"how to create a hook\", \"add a plugin\", \"claude alias\", \""
-  default_prompt: "Use $configuring-claude-code to help with this task in nixos-config."
+  default_prompt: "Use $configuring-claude-code to help with this task."

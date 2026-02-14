@@ -5,6 +5,7 @@ Git 관련 설정 및 도구 구성입니다.
 ## 목차
 
 - [개발 도구](#개발-도구)
+- [Git 기본값과 Alias](#git-기본값과-alias)
 - [delta 설정 (feature 구조)](#delta-설정-feature-구조)
 - [동적 side-by-side 제어](#동적-side-by-side-제어)
 - [delta pager 설정](#delta-pager-설정)
@@ -21,6 +22,20 @@ Git 관련 설정 및 도구 구성입니다.
 | `delta`   | Git diff 시각화 (구문 강조, line-numbers) | `modules/shared/programs/git/default.nix` |
 | `lazygit` | Git TUI (delta pager 통합)                | `modules/shared/programs/lazygit/default.nix` |
 | `gh`      | GitHub CLI                                | `modules/shared/programs/git/default.nix` |
+
+## Git 기본값과 Alias
+
+`modules/shared/programs/git/default.nix`의 `programs.git.settings`에서 관리됩니다.
+
+| 키 | 값 | 설명 |
+|----|----|------|
+| `alias.s` | `status -s` | 짧은 상태 출력 |
+| `alias.l` | graph 로그 포맷 | 컬러 그래프 로그 |
+| `push.autoSetupRemote` | `true` | 첫 push 시 upstream 자동 설정 |
+| `pull.rebase` | `true` | pull 기본 동작을 rebase로 통일 |
+| `merge.conflictStyle` | `zdiff3` | base 문맥 포함 충돌 표시 |
+| `branch.sort` | `committerdate` | 최근 커밋 브랜치 우선 정렬 |
+| `init.defaultBranch` | `main` | 기본 브랜치명 |
 
 ### delta 설정 (feature 구조)
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Configuring Codex"
   short_description: "Codex CLI config, skill projection, AGENTS.md, trust/sandbox. Triggers: \"codex config\", \"codex setup\", \"codex trust\", \"AGENTS.md"
-  default_prompt: "Use $configuring-codex to help with this task in nixos-config."
+  default_prompt: "Use $configuring-codex to help with this task."

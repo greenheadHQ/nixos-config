@@ -234,8 +234,15 @@ echo "$encoded" | base64 -d
 문제 발생 시 훅을 일시 비활성화할 수 있습니다:
 
 ```bash
-# 훅 비활성화
-mv .claude/settings.local.json .claude/settings.local.json.bak
+# Bash PreToolUse 훅 비활성화 (백업 생성 후 settings.json 수정)
+cp modules/shared/programs/claude/files/settings.json \
+  modules/shared/programs/claude/files/settings.json.bak
+jq 'if .hooks and .hooks.PreToolUse
+    then .hooks.PreToolUse |= map(select(.matcher != "Bash"))
+    else .
+    end' \
+  modules/shared/programs/claude/files/settings.json \
+  > /tmp/claude-settings.json && mv /tmp/claude-settings.json modules/shared/programs/claude/files/settings.json
 
 # 또는 원본 스크립트 복구
 git checkout .claude/scripts/wrap-git-with-nix-develop.sh

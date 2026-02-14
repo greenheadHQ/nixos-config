@@ -228,7 +228,7 @@ bash에서 `((expression))`의 exit code는 표현식의 **평가 결과**에 �
 
 ```bash
 # 디버그 모드로 실행하여 어디서 멈추는지 확인
-bash -x ~/IdeaProjects/nixos-config/scripts/nrs.sh
+bash -x ~/IdeaProjects/nixos-config/modules/darwin/scripts/nrs.sh
 
 # 출력 예시 (문제 발생 시):
 # + ((cleaned++))
@@ -349,7 +349,7 @@ killall Hammerspoon && open -a Hammerspoon
 **예방**: `nrs` alias 사용 시 darwin-rebuild 완료 후 자동으로 Hammerspoon을 재시작합니다.
 
 ```bash
-# scripts/nrs.sh (일부)
+# modules/darwin/scripts/nrs.sh (일부)
 restart_hammerspoon() {
     if pgrep -x "Hammerspoon" > /dev/null; then
         killall Hammerspoon 2>/dev/null || true

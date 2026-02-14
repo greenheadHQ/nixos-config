@@ -6,7 +6,8 @@ macOS와 NixOS에서 공통으로 사용되는 Nix 관련 기능입니다.
 
 - [direnv + nix-direnv](#direnv--nix-direnv)
 - [Pre-commit Hooks](#pre-commit-hooks)
-- [darwin-rebuild Alias](#darwin-rebuild-alias)
+- [Flake/Nix 기본값](#flakenix-기본값)
+- [rebuild Alias (nrs)](#rebuild-alias-nrs)
 - [패키지 변경사항 미리보기 (nvd)](#패키지-변경사항-미리보기-nvd)
 - [병렬 다운로드 최적화](#병렬-다운로드-최적화)
 
@@ -93,11 +94,13 @@ lefthook을 사용하여 커밋 전 자동 검사를 수행합니다. 민감 정
 
 **구성 요소:**
 
-| Hook | 도구 | 기능 |
-|------|------|------|
-| gitleaks | `gitleaks protect --staged` | 민감 정보(API 키, 비밀번호 등) 커밋 차단 |
-| nixfmt | `nixfmt --check` | Nix 파일 포맷 검사 |
-| shellcheck | `shellcheck -S warning` | Shell 스크립트 린팅 (warning 이상) |
+| Stage | Hook | 도구 | 기능 |
+|-------|------|------|------|
+| pre-commit | ai-skills-consistency | `bash ./scripts/ai/warn-skill-consistency.sh` | AI 스킬 문서 일관성 검사 |
+| pre-commit | gitleaks | `gitleaks protect --staged --no-banner --redact` | 민감 정보(API 키, 비밀번호 등) 커밋 차단 |
+| pre-commit | nixfmt | `nixfmt --check` | Nix 파일 포맷 검사 |
+| pre-commit | shellcheck | `shellcheck -S warning` | Shell 스크립트 린팅 (warning 이상) |
+| pre-push | flake-check | `nix flake check --no-build --all-systems` | Flake 평가 오류 검사 |
 
 **사용법:**
 
@@ -157,9 +160,32 @@ regexes = [
   - 해결: `direnv allow` 실행 또는 `nix develop` 진입
 - 새 스크립트 추가 시 `shellcheck -S warning`으로 사전 검사 권장
 
-## darwin-rebuild Alias
+## Flake/Nix 기본값
+
+**flake input 채널:**
+
+```nix
+# flake.nix
+inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable-small";
+```
+
+**공통 Nix 설정** (`modules/shared/configuration.nix`):
+
+| 설정 | 값 | 목적 |
+|------|----|------|
+| `experimental-features` | `nix-command flakes` | Flake/Nix CLI 활성화 |
+| `warn-dirty` | `false` | dirty tree 경고 숨김 |
+| `optimise.automatic` | `true` | 스토어 중복 데이터 자동 정리 |
+| `gc.automatic` | `true` | 자동 가비지 컬렉션 |
+| `gc.options` | `--delete-older-than 30d` | 30일 지난 세대 정리 |
+
+NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "weekly";`를 설정합니다.
+
+## rebuild Alias (nrs)
 
 시스템 설정 적용을 위한 편리한 alias입니다.
+
+**공통 alias:**
 
 | Alias         | 용도                                        |
 | ------------- | ------------------------------------------- |
@@ -167,39 +193,71 @@ regexes = [
 | `nrs-offline` | 오프라인 rebuild (빠름, 동일한 안전 조치 포함) |
 | `nrp`         | 미리보기만 (적용 안 함) |
 | `nrp-offline` | 오프라인 미리보기 |
-| `nrh`         | 최근 10개 세대 히스토리 (빠름) |
-| `nrh -n 20`   | 최근 20개 세대 히스토리 |
-| `nrh -a`      | 전체 세대 히스토리 (느림) |
+
+**macOS 전용 alias:**
+
+| Alias         | 용도                                        |
+| ------------- | ------------------------------------------- |
+| `nrh`         | 최근 10개 세대 히스토리 (스크립트) |
+| `nrh-all`     | 전체 세대 히스토리 (스크립트) |
 | `hs`          | Hammerspoon CLI                             |
 | `hsr`         | Hammerspoon 설정 리로드 (완료 시 알림 표시) |
 | `reset-term`  | 터미널 CSI u 모드 리셋 (문제 발생 시 복구)  |
 
-**`nrs` / `nrs-offline` 동작 흐름:**
+**NixOS 전용 alias:**
+
+| Alias         | 용도                                        |
+| ------------- | ------------------------------------------- |
+| `nrh`         | 최근 10개 세대 히스토리 (`nix-env` alias) |
+| `nrh-all`     | 전체 세대 히스토리 (`nix-env` alias) |
+
+**`nrs` / `nrs-offline` 동작 흐름 (macOS 전용):**
 
 ```
-1. launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
+1. 외부 패키지 버전 갱신 (update_external_packages)
+   └── fetchurl 기반 패키지 업데이트 (--offline 시 스킵)
+
+2. launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
    └── com.green.* 에이전트 동적 탐색 → bootout + plist 삭제
 
-2. darwin-rebuild build + nvd diff (미리보기)
+3. darwin-rebuild build + nvd diff (미리보기)
    └── 빌드 실패 시 즉시 종료 (에러 처리)
 
-3. darwin-rebuild switch 실행
+4. darwin-rebuild switch 실행
    └── --offline 플래그 (nrs-offline만)
 
-4. Hammerspoon 완전 재시작 (HOME 오염 방지)
+5. Hammerspoon 완전 재시작 (HOME 오염 방지)
    └── killall → sleep 1 → open -a Hammerspoon
 
-5. 빌드 아티팩트 정리
+6. 빌드 아티팩트 정리
+   └── ./result* 심볼릭 링크 삭제
+```
+
+**`nrs` / `nrs-offline` 동작 흐름 (NixOS 전용):**
+
+```
+1. 외부 패키지 버전 갱신 (update_external_packages)
+   └── fetchurl 기반 패키지 업데이트 (--offline 시 스킵)
+
+2. nixos-rebuild build + nvd diff (미리보기)
+   └── 빌드 실패 시 즉시 종료 (에러 처리)
+
+3. nixos-rebuild switch 실행
+   └── --offline 플래그 (nrs-offline만)
+   └── exit code 4 (일시적 unit 실패)는 경고만 출력 후 계속
+
+4. 빌드 아티팩트 정리
    └── ./result* 심볼릭 링크 삭제
 ```
 
 **구현:**
 
-- 스크립트: `scripts/nrs.sh`, `scripts/nrp.sh`, `scripts/nrh.sh`
-- 설치 위치: `~/.local/bin/nrs.sh`, `~/.local/bin/nrp.sh`, `~/.local/bin/nrh.sh`
+- macOS 스크립트: `modules/darwin/scripts/nrs.sh`, `modules/darwin/scripts/nrp.sh`, `modules/darwin/scripts/nrh.sh`
+- NixOS 스크립트: `modules/nixos/scripts/nrs.sh`, `modules/nixos/scripts/nrp.sh`
+- 설치 위치: `~/.local/bin/nrs.sh`, `~/.local/bin/nrp.sh` (macOS는 `~/.local/bin/nrh.sh` 추가)
 - alias: `nrs` → `~/.local/bin/nrs.sh`, `nrs-offline` → `~/.local/bin/nrs.sh --offline`
 
-에이전트 목록은 하드코딩하지 않고 `launchctl list | grep com.green`으로 동적 탐색합니다.
+macOS에서는 에이전트 목록을 하드코딩하지 않고 `launchctl list | grep com.green`으로 동적 탐색합니다.
 
 **사용 시나리오:**
 
@@ -248,16 +306,15 @@ nrs          # 일반 모드 (다운로드 필요)
 |--------|------|
 | `nrp` | 빌드 후 변경사항 미리보기 (적용 안 함) |
 | `nrp-offline` | 오프라인 미리보기 |
-| `nrh` | 최근 10개 세대 히스토리 (기본) |
-| `nrh -n 5` | 최근 5개 세대 히스토리 |
-| `nrh -a` | 전체 세대 히스토리 (느림) |
+| `nrh` (macOS) | 최근 10개 세대 히스토리 (`nrh.sh`) |
+| `nrh-all` (macOS) | 전체 세대 히스토리 (`nrh.sh --all`) |
+| `nrh` (NixOS) | 최근 10개 세대 (`nix-env --list-generations ...` 후 tail 10) |
+| `nrh-all` (NixOS) | 전체 세대 (`nix-env ...`) |
 
-> **참고**: `nrs` 실행 시에도 빌드 후 변경사항을 보여주고 확인을 요청합니다.
+> **참고**: `nrs` 실행 시에도 빌드 후 `nvd diff`를 출력합니다.
 
-**`nrh` 옵션:**
-- `-n, --limit N`: 최근 N개 세대만 조회 (기본: 10)
-- `-a, --all`: 전체 세대 조회 (세대가 많으면 느림)
-- `-h, --help`: 도움말
+`nrh`의 `-n`/`-a` 옵션은 macOS 스크립트(`~/.local/bin/nrh.sh`)에서만 지원합니다.
+NixOS는 alias 기반이라 `nrh`/`nrh-all` 두 명령으로 구분합니다.
 
 **출력 예시:**
 

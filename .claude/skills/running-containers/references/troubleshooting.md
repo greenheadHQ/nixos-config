@@ -67,91 +67,48 @@ virtualisation.oci-containers.containers.immich-ml = {
 sudo podman stats --no-stream
 ```
 
-### Tailscale IP 바인딩 서비스 부팅 순서 문제
+### Tailscale IP 바인딩 부팅 순서 이슈 (히스토리)
 
 **날짜**: 2026-01-21
 
-**증상**: 부팅 후 immich, uptime-kuma 등 Tailscale IP에 바인딩하는 서비스가 실패:
+**과거 증상**: 컨테이너가 Tailscale IP(`100.x.x.x`)에 직접 바인딩되던 시점에, 부팅 직후 IP 할당 타이밍 문제로 서비스가 실패:
 
 ```
-Error: failed to expose ports via rootlessport: cannot expose privileged port 2283,
-you can add 'net.ipv4.ip_unprivileged_port_start=2283' to /etc/sysctl.conf
-(currently snip), or choose a larger port number (>= 1024): listen tcp 100.79.80.95:2283:
 bind: cannot assign requested address
 ```
 
 **원인**:
 
-`tailscaled.service`가 시작되었다고 해서 Tailscale IP가 바로 사용 가능한 것은 아님:
+`tailscaled.service`가 started 상태여도 Tailscale IP가 실제 인터페이스에 준비되기 전일 수 있습니다.
+그래서 단순 `after = [ "tailscaled.service" ]`만으로는 충분하지 않았습니다.
 
-| 단계 | 설명 |
+**현재 상태 (2026-02 기준)**:
+
+- Immich/Uptime Kuma/Copyparty/Vaultwarden은 `127.0.0.1` 바인딩으로 전환됨
+- 외부 접근은 Caddy가 Tailscale IP(`443`)에서 reverse proxy
+- 따라서 위 컨테이너들은 더 이상 Tailscale IP 직접 바인딩 실패를 겪지 않음
+
+**여전히 Tailscale 대기가 필요한 곳**:
+
+| 서비스 | 이유 |
 |------|------|
-| 1. tailscaled 시작 | 데몬 프로세스 실행 |
-| 2. 네트워크 인증 | Tailscale 서버와 통신 |
-| 3. IP 할당 | 100.x.x.x IP 주소 할당 (수 초~수십 초) |
-| 4. 인터페이스 준비 | tailscale0 인터페이스에서 IP 사용 가능 |
+| `caddy.service` | Tailscale IP에 직접 bind |
+| `anki-sync-server.service` | Tailscale IP에 직접 bind |
+| `immich-cleanup`/`immich-version-check` 등 | 외부 네트워크 의존 작업 전 준비 대기 |
 
-`after = [ "tailscaled.service" ]`만으로는 1단계만 기다리고 4단계를 기다리지 않음.
+공통 대기 로직은 `modules/nixos/lib/tailscale-wait.nix`를 사용합니다.
 
-**해결**:
-
-`ExecStartPre`로 Tailscale IP 할당 완료까지 대기하는 로직 추가:
-
-```nix
-# 예시: create-immich-network 서비스
-systemd.services.create-immich-network = {
-  after = [
-    "podman.socket"
-    "network-online.target"
-    "tailscaled.service"
-  ];
-  wants = [
-    "podman.socket"
-    "tailscaled.service"
-    "network-online.target"
-  ];
-  serviceConfig = {
-    Type = "oneshot";
-    RemainAfterExit = true;
-    # Tailscale IP 할당 완료까지 대기 (최대 60초)
-    ExecStartPre = "${pkgs.bash}/bin/bash -c 'for i in $(seq 1 60); do ${pkgs.tailscale}/bin/tailscale ip -4 2>/dev/null | grep -q \"^100\\.\" && exit 0; sleep 1; done; echo \"Tailscale IP not ready after 60s\" >&2; exit 1'";
-    ExecStart = "${pkgs.podman}/bin/podman network create immich-network --ignore";
-  };
-};
-```
-
-**적용 대상**:
-- `immich.nix`: create-immich-network 서비스
-- `uptime-kuma.nix`: podman-uptime-kuma 서비스
 **검증**:
 
 ```bash
-# 재부팅 후 서비스 상태 확인
-systemctl status create-immich-network
-systemctl status podman-immich-server
-systemctl status podman-uptime-kuma
-
-# 부팅 순서 로그 확인
-journalctl -b -u tailscaled -u create-immich-network -u podman-immich-server --no-pager | head -50
-
-# 포트 바인딩 확인 (localhost — Caddy가 프록시)
+# 컨테이너는 localhost 포트에 열려 있어야 함
 curl -I http://127.0.0.1:2283  # immich
 curl -I http://127.0.0.1:3002  # uptime-kuma
+
+# Tailscale IP bind 서비스 상태
+systemctl status caddy
+systemctl status anki-sync-server
 ```
-
-**적용 상태**: 완료 (커밋: `4153e1d`, 2026-01-21)
-
-**교훈**:
-- `after = [ "xxx.service" ]`는 서비스 시작만 보장, 완전히 준비됨을 보장하지 않음
-- Tailscale처럼 네트워크 의존 서비스는 실제 리소스 가용성을 확인하는 로직 필요
-
-**해결된 기술 부채**:
-
-| 항목 | 해결 방법 |
-|------|----------|
-| tailscaleIP 하드코딩 | `constants.nix` 단일 소스 + 서비스는 `127.0.0.1` 바인딩 (Caddy 프록시) |
-| Tailscale 대기 로직 중복 | `modules/nixos/lib/tailscale-wait.nix` 공통 모듈로 추출 |
-| immich DB 비밀번호 | agenix (`secrets/immich-db-password.age`)로 이동 |
 
 ### Scriptable 공유 시트에서 스크립트 실행 시 무반응
 

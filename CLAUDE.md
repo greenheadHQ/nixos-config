@@ -84,6 +84,7 @@ homeserver.immichBackup.enable = true;
 | 도구별 | |
 | Atuin sync, shell history, `atuin status`, encryption key | `syncing-atuin` |
 | Claude Code hooks, plugins, MCP, settings.json | `configuring-claude-code` |
+| Codex config, AGENTS.md, .agents/skills, trust/sandbox | `configuring-codex` |
 | Hammerspoon hotkeys, launchd agents, Ghostty terminal | `automating-hammerspoon` |
 | Podman/Docker, immich, container OOM, service-lib, 서비스 업데이트, immich-db-backup | `running-containers` |
 | Anki sync server, anki 동기화, anki 서버, anki 백업 | `hosting-anki` |

@@ -29,7 +29,6 @@ Codex 전용 설정과 장애 대응은 `configuring-codex` 스킬을 사용합�
 ├── settings.json          # 메인 설정 (mkOutOfStoreSymlink)
 ├── CLAUDE.md              # User-scope 지침 (mkOutOfStoreSymlink)
 ├── mcp.json               # MCP 서버 설정 (mkOutOfStoreSymlink)
-├── settings.local.json    # 로컬 오버라이드
 ├── hooks/                 # Pushover 알림 훅 (mkOutOfStoreSymlink, chmod +x 필수)
 │   ├── stop-notification.sh   # Stop: 작업 완료 + 응답 텍스트 (뒤에서 자름, …앞)
 │   ├── ask-notification.sh    # PreToolUse: 질문/선택지 텍스트
@@ -47,7 +46,7 @@ Codex 전용 설정과 장애 대응은 `configuring-codex` 스킬을 사용합�
 | `ask-notification.sh` | PreToolUse(AskUserQuestion) | stdin JSON 질문/선택지 | 미적용 | 미적용 |
 | `plan-notification.sh` | PreToolUse(ExitPlanMode) | `.claude/plans/*.md` 최신 파일 | 앞에서 (처음 N자 유지) | 뒤에… |
 
-공통: `--max-time 4` curl 타임아웃, `--data-urlencode` UTF-8 안전 인코딩, Pushover 1024자 상한.
+공통: `--data-urlencode` UTF-8 안전 인코딩, Pushover 1024자 상한. (`--max-time 4`는 `stop`/`plan` 훅에 적용)
 
 ### 플러그인 관리
 

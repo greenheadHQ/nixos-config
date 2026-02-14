@@ -19,6 +19,8 @@ Git, delta diff, lazygit, rerere 등 Git 관련 설정 가이드입니다.
 | delta | Git diff를 구문 강조로 표시 |
 | lazygit (`lg`) | Git TUI (delta pager 통합) |
 | rerere | 충돌 해결 패턴 기록/재사용 |
+| git aliases (`s`, `l`) | 짧은 상태/로그 조회 단축 |
+| 기본 정책 | `push.autoSetupRemote=true`, `merge.conflictStyle=zdiff3` |
 | rebase 역순 | Interactive rebase에서 최신 커밋이 위로 |
 | git-cleanup | 오래된/삭제된 브랜치 정리 |
 | gdf | git diff 파일을 fzf로 선택하여 nvim으로 열기 (delta preview) |
@@ -34,6 +36,12 @@ which delta
 
 # Git에서 delta 사용 중인지 확인
 git config --get core.pager
+
+# 핵심 git 설정 확인
+git config --get alias.s
+git config --get alias.l
+git config --get push.autoSetupRemote
+git config --get merge.conflictStyle
 ```
 
 ### rerere 사용법

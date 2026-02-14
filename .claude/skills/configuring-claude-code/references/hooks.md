@@ -194,7 +194,7 @@ echo Z2l0IGFkZC... | base64 -d | nix develop -c bash
 **설정 파일:**
 
 ```json
-// .claude/settings.local.json (프로젝트별 훅 설정)
+// .claude/settings.json (현재 저장소에서 훅을 관리하는 파일)
 {
   "hooks": {
     "PreToolUse": [

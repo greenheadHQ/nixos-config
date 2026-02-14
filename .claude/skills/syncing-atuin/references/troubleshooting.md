@@ -273,7 +273,7 @@ atuin doctor 2>&1 | grep -o '"last_sync": "[^"]*"'
 awd
 ```
 
-> **주의**: atuin CLI sync (v2)는 `last_sync_time` 파일을 업데이트하지 않는 버그가 있습니다. 현재 설정에서는 launchd의 `com.green.atuin-sync` 에이전트가 sync 성공 후 직접 파일을 업데이트합니다. 자세한 내용은 [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)를 참고하세요.
+> **주의**: atuin CLI sync (v2)는 `last_sync_time` 파일을 업데이트하지 않는 버그가 있습니다. 현재 설정에서는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당하고, `com.green.atuin-watchdog`이 상태를 모니터링합니다. 자세한 내용은 [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)를 참고하세요.
 
 ---
 
@@ -317,7 +317,7 @@ atuin register -u <username> -e <email>
 cp ~/.local/share/atuin/key ~/.local/share/atuin/key.backup-$(date +%Y%m%d)
 ```
 
-> **참고**: Atuin 모니터링 시스템은 `modules/darwin/programs/atuin/` 및 `modules/darwin/programs/hammerspoon/files/atuin-menubar.lua`에서 구현됩니다.
+> **참고**: Atuin 모니터링 시스템은 `modules/darwin/programs/atuin/` 및 `modules/darwin/programs/hammerspoon/files/atuin_menubar.lua`에서 구현됩니다.
 
 ---
 
@@ -341,20 +341,18 @@ launchctl print gui/$(id -u)/com.green.atuin-daemon
 - 시스템 슬립/웨이크 후 복구 실패
 - CLI sync (v2)와 달리 save_sync_time() 호출 로직이 있으나 실제로 동작하지 않는 경우 있음
 
-**해결**: daemon 대신 launchd로 주기적 sync 실행
+**해결**: daemon 대신 atuin 내장 `auto_sync` + launchd watchdog으로 대체
 
 ```nix
 # modules/darwin/programs/atuin/default.nix
-launchd.agents.atuin-sync = {
+# sync는 atuin 내장 auto_sync가 담당 (sync_frequency = 1m)
+# watchdog은 동기화 상태 모니터링만 수행
+launchd.agents.atuin-watchdog = {
   enable = true;
   config = {
-    Label = "com.green.atuin-sync";
-    ProgramArguments = [
-      "/bin/bash" "-c"
-      "atuin sync && printf '%s' \"$(date -u +'%Y-%m-%dT%H:%M:%S.000000Z')\" > ~/.local/share/atuin/last_sync_time"
-    ];
-    RunAtLoad = true;
-    StartInterval = 120;  # 2분마다
+    Label = "com.green.atuin-watchdog";
+    ProgramArguments = [ "${homeDir}/.local/bin/atuin-watchdog.sh" ];
+    StartInterval = syncCheckInterval;  # 10분마다
   };
 };
 ```
@@ -364,7 +362,7 @@ launchd.agents.atuin-sync = {
 | 에이전트 | 상태 | 역할 |
 | -------- | ---- | ---- |
 | `com.green.atuin-daemon` | 삭제됨 | - |
-| `com.green.atuin-sync` | 활성화 | 2분마다 sync |
+| `com.green.atuin-sync` | 삭제됨 (내장 auto_sync로 대체) | - |
 | `com.green.atuin-watchdog` | 활성화 | 10분마다 상태 체크 |
 
 ---
@@ -404,7 +402,11 @@ pub async fn run(...) -> Result<()> {
 }
 ```
 
-**해결**: launchd에서 sync 성공 후 직접 파일 업데이트
+**해결**: 현재는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당합니다. `com.green.atuin-sync` launchd 에이전트는 삭제되었으며, `com.green.atuin-watchdog`이 동기화 상태만 모니터링합니다.
+
+> **참고**: `last_sync_time` 파일이 업데이트되지 않더라도, watchdog은 `atuin doctor` 출력을 통해 실제 동기화 상태를 확인합니다.
+
+**수동으로 last_sync_time 갱신이 필요한 경우**:
 
 ```bash
 atuin sync && printf '%s' "$(date -u +'%Y-%m-%dT%H:%M:%S.000000Z')" > ~/.local/share/atuin/last_sync_time

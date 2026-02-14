@@ -43,7 +43,7 @@ MISE_NODE_COMPILE=0 mise use -g node@lts
 | 파일 | 용도 |
 |------|------|
 | `modules/shared/programs/shell/default.nix` | zsh mise 활성화 |
-| `modules/shared/programs/mise/` | mise 패키지 설정 |
+| `libraries/packages.nix` | `pkgs.mise` 패키지 설치 (nixosOnly) |
 
 ## 자주 발생하는 문제
 

@@ -25,7 +25,7 @@
 
 ```
 NVMe (476.9GB) - /dev/nvme0n1
-├── nvme0n1p1: 512MB  vfat  /boot/efi
+├── nvme0n1p1: 512MB  vfat  /boot
 ├── nvme0n1p2: 467GB  ext4  /
 └── nvme0n1p3: 8GB    swap  [SWAP]
 

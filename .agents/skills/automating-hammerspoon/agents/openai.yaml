@@ -1,4 +1,4 @@
 interface:
   display_name: "Automating Hammerspoon"
   short_description: "Hammerspoon hotkeys, launchd agents, Ghostty terminal on macOS. Triggers: \"open terminal from Finder\", \"setupLaunchAgents stuck\""
-  default_prompt: "Use $automating-hammerspoon to help with this task in nixos-config."
+  default_prompt: "Use $automating-hammerspoon to help with this task."

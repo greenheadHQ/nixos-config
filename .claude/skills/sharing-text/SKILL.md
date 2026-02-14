@@ -1,14 +1,14 @@
 ---
 name: sharing-text
 description: |
-  Pushover text sharing: MiniPC/NixOS terminal to iPhone push.
-  Triggers: "share text", "push text", "MiniPC to iPhone",
+  Pushover text sharing: macOS/NixOS terminal to iPhone push.
+  Triggers: "share text", "push text", "terminal to iPhone",
   "텍스트 공유", "Pushover로 보내", "텍스트를 아이폰으로".
 ---
 
 # Pushover로 텍스트 공유
 
-MiniPC(NixOS) 터미널에서 iPhone으로 텍스트를 공유하는 방법입니다.
+macOS/NixOS 터미널에서 iPhone으로 텍스트를 공유하는 방법입니다.
 
 ## 핵심 명령어
 
@@ -31,7 +31,7 @@ push
 ## 워크플로우
 
 ```
-[MiniPC] push "텍스트" → Pushover 전송
+[macOS/NixOS] push "텍스트" → Pushover 전송
     ↓
 [iPhone] 알림 수신 → 복사 버튼 탭 (1탭, 약 1초)
 ```
@@ -99,19 +99,29 @@ push "공유할 텍스트"
 push() {
   local text
   if [ $# -gt 0 ]; then
-    text="$*"                              # 1순위: 인자
+    text="$*"
   elif [ ! -t 0 ]; then
-    text=$(cat)                            # 2순위: 파이프 (stdin)
+    text=$(cat)
   elif [ -n "$TMUX" ]; then
-    text=$(tmux save-buffer - 2>/dev/null) # 3순위: tmux buffer
+    text=$(tmux save-buffer - 2>/dev/null)
   fi
-  [ -z "$text" ] && return 1
+  [ -z "$text" ] && { echo "Usage: push <text> or pipe input"; return 1; }
 
-  source "$HOME/.config/pushover/claude-code"
-  curl -s --data-urlencode "message=$text" \
+  local cred="$HOME/.config/pushover/claude-code"
+  if [ ! -f "$cred" ]; then
+    echo "Error: Pushover credentials not found" >&2
+    return 1
+  fi
+
+  source "$cred"
+  curl -s -X POST \
+    -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
     --data-urlencode "token=$PUSHOVER_TOKEN" \
     --data-urlencode "user=$PUSHOVER_USER" \
-    https://api.pushover.net/1/messages.json
+    --data-urlencode "title=📋 텍스트 공유 (${#text}자)" \
+    --data-urlencode "message=$text" \
+    https://api.pushover.net/1/messages.json > /dev/null
+  echo "✓ Pushover 전송 (${#text}자)"
 }
 ```
 

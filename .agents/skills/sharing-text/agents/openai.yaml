@@ -1,4 +1,4 @@
 interface:
   display_name: "Sharing Text"
-  short_description: "Pushover text sharing: MiniPC/NixOS terminal to iPhone push. Triggers: \"share text\", \"push text\", \"MiniPC to iPhone\", \"텍스트 공유\", "
-  default_prompt: "Use $sharing-text to help with this task in nixos-config."
+  short_description: "Pushover text sharing: macOS/NixOS terminal to iPhone push. Triggers: \"share text\", \"push text\", \"terminal to iPhone\", \"텍스트 공유\","
+  default_prompt: "Use $sharing-text to help with this task."

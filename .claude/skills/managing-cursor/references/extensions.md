@@ -58,6 +58,11 @@ nrs
 
 확장이 적용되려면 Cursor 재시작 필요.
 
+### extensions.json 경로
+
+Cursor는 확장 메타데이터 파일을 `~/.cursor/extensions/extensions.json`에서 읽습니다.
+(`~/.cursor/extensions.json` 경로는 현재 구조에서 사용하지 않음)
+
 ## 확장 소스 선택 기준
 
 | 소스 | 용도 | 예시 |
@@ -103,8 +108,8 @@ nrs
 ### 현재 고정 버전
 
 `flake.lock` 기준:
-- **날짜**: 2026-01-18
-- **rev**: `45f1a82aa6940da7134e6b48d5870f8dc7a554d9`
+- **날짜**: 2026-02-10
+- **rev**: `07f2af64427334c4098770884746ecf2471a574f`
 
 ### 동작 원리
 

@@ -1,7 +1,7 @@
 ---
 name: managing-secrets
 description: |
-  This skill should be used when the user asks about agenix secrets,
+  Use this skill when the user asks about agenix secrets,
   .age file encryption/decryption, re-encryption, or secret key management.
   Triggers: "add a secret", "create .age file", "encrypt with agenix",
   "decrypt secret", "agenix -e", "/dev/stdin" errors, "secrets.nix",
@@ -34,12 +34,13 @@ agenix를 사용한 `.age` 파일 기반 secret 암호화/배포 가이드.
 
 ### agenix 레벨 구분
 
-| 레벨 | 설정 위치 | 용도 |
-|------|----------|------|
-| Home Manager | `modules/shared/programs/secrets/default.nix` | Pushover, pane-note 등 사용자 레벨 |
-| NixOS 시스템 | 각 서비스 모듈 (`immich.nix`, `smartd.nix` 등) | immich-db-password, pushover-system-monitor 등 시스템 서비스 |
+| 레벨 | 설정 위치 | 기본 배포 경로 | 용도 |
+|------|----------|---------------|------|
+| Home Manager | `modules/shared/programs/secrets/default.nix` | 사용자 지정 경로 (`~/.config/...`) | Pushover, pane-note 등 사용자 레벨 |
+| NixOS 시스템 | 각 서비스 모듈 (`immich.nix`, `smartd.nix` 등) | `/run/agenix/<secret-name>` | immich-db-password, pushover-system-monitor 등 시스템 서비스 |
 
 두 레벨이 공존하며, NixOS 시스템 레벨은 `flake.nix`에서 `inputs.agenix.nixosModules.default`로 활성화.
+서비스 모듈에서는 하드코딩 대신 `config.age.secrets.<name>.path`를 참조해 실제 경로를 사용한다.
 
 Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로드한다.
 배포 권한은 `0400` mode이며, agenix가 복호화하여 지정 경로에 배치한다.
@@ -53,14 +54,14 @@ Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로�
 | `pushover-immich.age` | `~/.config/pushover/immich` | Immich FolderAction 업로드 알림 |
 | `pane-note-links.age` | `~/.config/pane-note/links.txt` | Pane Notepad 링크 |
 | `immich-api-key.age` | `~/.config/immich/api-key` | Immich CLI 업로드 인증 |
-| `immich-db-password.age` | (NixOS 시스템 레벨) | Immich PostgreSQL 비밀번호 |
-| `pushover-system-monitor.age` | (NixOS 시스템 레벨) | 시스템 하드웨어 모니터링 Pushover (smartd, 향후 온도 경고) |
-| `pushover-uptime-kuma.age` | (NixOS 시스템 레벨) | Uptime Kuma 업데이트 알림 |
-| `pushover-copyparty.age` | (NixOS 시스템 레벨) | Copyparty 업데이트 알림 |
-| `anki-sync-password.age` | (NixOS 시스템 레벨) | Anki Sync Server 비밀번호 |
-| `copyparty-password.age` | (NixOS 시스템 레벨) | Copyparty 파일 서버 비밀번호 |
-| `vaultwarden-admin-token.age` | (NixOS 시스템 레벨) | Vaultwarden 관리자 패널 토큰 |
-| `cloudflare-dns-api-token.age` | (NixOS 시스템 레벨) | Caddy HTTPS 인증서 발급용 |
+| `immich-db-password.age` | `/run/agenix/immich-db-password` | Immich PostgreSQL 비밀번호 |
+| `pushover-system-monitor.age` | `/run/agenix/pushover-system-monitor` | 시스템 하드웨어 모니터링 Pushover (smartd, 향후 온도 경고) |
+| `pushover-uptime-kuma.age` | `/run/agenix/pushover-uptime-kuma` | Uptime Kuma 업데이트 알림 |
+| `pushover-copyparty.age` | `/run/agenix/pushover-copyparty` | Copyparty 업데이트 알림 |
+| `anki-sync-password.age` | `/run/agenix/anki-sync-password` | Anki Sync Server 비밀번호 |
+| `copyparty-password.age` | `/run/agenix/copyparty-password` | Copyparty 파일 서버 비밀번호 |
+| `vaultwarden-admin-token.age` | `/run/agenix/vaultwarden-admin-token` | Vaultwarden 관리자 패널 토큰 |
+| `cloudflare-dns-api-token.age` | `/run/agenix/cloudflare-dns-api-token` | Caddy HTTPS 인증서 발급용 |
 
 상세는 `secrets/secrets.nix` 참조.
 

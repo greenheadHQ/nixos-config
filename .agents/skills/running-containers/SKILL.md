@@ -1,7 +1,7 @@
 ---
 name: running-containers
 description: |
-  This skill should be used when the user asks about Podman/Docker containers,
+  Use this skill when the user asks about Podman/Docker containers,
   homeserver services (immich, uptime-kuma, copyparty, vaultwarden), container OOM,
   service updates, or database backups.
   Triggers: "update immich", "immich 업데이트", "immich-update",
@@ -27,13 +27,15 @@ Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접�
 # modules/nixos/configuration.nix
 homeserver.immich.enable = true;              # 사진 백업
 homeserver.uptimeKuma.enable = true;          # 모니터링
-homeserver.copyparty.enable = true;           # 파일 서버
-homeserver.vaultwarden.enable = true;         # 비밀번호 관리자
-homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
+homeserver.immichCleanup.enable = true;       # Claude Code Temp 앨범 매일 삭제
 homeserver.immichUpdate.enable = true;        # Immich 버전 체크 + 업데이트 (03:00)
 homeserver.uptimeKumaUpdate.enable = true;    # Uptime Kuma 버전 체크 + 업데이트 (03:30)
 homeserver.copypartyUpdate.enable = true;     # Copyparty 버전 체크 + 업데이트 (04:00)
+homeserver.ankiSync.enable = true;            # Anki 자체 호스팅 동기화 서버
+homeserver.copyparty.enable = true;           # 파일 서버
+homeserver.vaultwarden.enable = true;         # 비밀번호 관리자
 homeserver.immichBackup.enable = true;        # Immich PostgreSQL 매일 백업 (05:30)
+homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 ```
 
 ### 파일 구조

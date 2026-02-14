@@ -5,6 +5,7 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 ## 목차
 
 - [시스템 설정](#시스템-설정)
+- [홈서버 서비스 활성화](#홈서버-서비스-활성화)
 - [원격 복원력](#원격-복원력)
 - [네트워크/보안 설정](#네트워크보안-설정)
 - [SSH 서버 설정](#ssh-서버-설정)
@@ -25,6 +26,26 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 | nix-ld | `configuration.nix` | 동적 링크 바이너리 지원 (Claude Code 등) |
 | Ghostty terminfo | `packages.nix` (nixosOnly) | Ghostty 터미널 호환성 |
 | journald 용량 제한 | `configuration.nix` | SystemMaxUse=2G, 30일 보존 |
+
+## 홈서버 서비스 활성화
+
+`modules/nixos/configuration.nix`에서 `homeserver.*` 옵션으로 관리됩니다.
+
+```nix
+homeserver.immich.enable = true;
+homeserver.uptimeKuma.enable = true;
+homeserver.immichCleanup.enable = true;
+homeserver.immichUpdate.enable = true;
+homeserver.uptimeKumaUpdate.enable = true;
+homeserver.copypartyUpdate.enable = true;
+homeserver.ankiSync.enable = true;
+homeserver.copyparty.enable = true;
+homeserver.vaultwarden.enable = true;
+homeserver.immichBackup.enable = true;
+homeserver.reverseProxy.enable = true;
+```
+
+모든 옵션 정의와 모듈 import는 `modules/nixos/options/homeserver.nix`에 있습니다.
 
 ## 원격 복원력
 
@@ -134,9 +155,11 @@ services.tailscale = {
 | Alias | 명령어 | 설명 |
 |-------|--------|------|
 | `nrs` | `~/.local/bin/nrs.sh` | rebuild (미리보기 + 확인 + 적용) |
-| `nrs --offline` | `nrs.sh --offline` | 오프라인 rebuild |
+| `nrs-offline` | `~/.local/bin/nrs.sh --offline` | 오프라인 rebuild |
 | `nrp` | `~/.local/bin/nrp.sh` | 미리보기만 |
-| `nrh` | `sudo nix-env --list-generations ...` | 세대 히스토리 |
+| `nrp-offline` | `~/.local/bin/nrp.sh --offline` | 오프라인 미리보기 |
+| `nrh` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system` (tail 10) | 최근 10개 세대 |
+| `nrh-all` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system` | 전체 세대 |
 
 ## macOS SSH 접속
 

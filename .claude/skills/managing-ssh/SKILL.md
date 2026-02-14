@@ -20,6 +20,10 @@ SSH 키, ssh-agent, Tailscale VPN 관련 가이드입니다.
 - launchd agent로 자동 로드 설정되어 있지만 실패할 수 있음
 - 수동 로드: `ssh-add ~/.ssh/id_ed25519`
 
+**NixOS에서 SSH 키 자동 로드 방식 혼동**
+- NixOS는 launchd가 아니라 `services.ssh-agent` + `programs.keychain`으로 키 로드
+- 수동 로드: `ssh-add ~/.ssh/id_ed25519`
+
 ## 빠른 참조
 
 ### SSH 키 상태 확인
@@ -56,6 +60,9 @@ tailscale ip -4
 | `~/.ssh/id_ed25519` | 개인 키 |
 | `~/.ssh/id_ed25519.pub` | 공개 키 |
 | `~/.ssh/authorized_keys` | 인증된 키 (서버) |
+| `modules/darwin/programs/ssh/default.nix` | macOS SSH/launchd 설정 |
+| `modules/nixos/programs/ssh-client/default.nix` | NixOS SSH 클라이언트 설정 |
+| `modules/nixos/home.nix` | NixOS `services.ssh-agent`/`programs.keychain` 설정 |
 
 ### authorizedKeys 추가 (NixOS)
 
@@ -65,17 +72,6 @@ users.users.<username>.openssh.authorizedKeys.keys = [
   "ssh-ed25519 AAAA... user@host"
 ];
 ```
-
-## SSH 접속 시 tmux 자동 연결
-
-NixOS 서버(MiniPC)에 SSH 접속하면 자동으로 tmux `main` 세션에 연결됩니다.
-
-- **설정 파일**: `modules/shared/programs/shell/nixos.nix`의 `programs.zsh.initContent`
-- **조건**: SSH 세션 + 대화형 + tmux 외부 + mosh 외부
-- 기존 세션이 있으면 세션 목록을 출력한 후 attach
-- 없으면 `main` 세션을 새로 생성
-- `ssh minipc 'command'` 같은 비대화형 명령은 영향 없음
-- mosh 세션은 자체 재연결이 있으므로 제외
 
 ## 자주 발생하는 문제
 

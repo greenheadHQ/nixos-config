@@ -6,6 +6,7 @@ macOS 관련 시스템 설정 및 Homebrew 관리입니다.
 
 - [원격 접속 (SSH/mosh)](#원격-접속-sshmosh)
   - [SSH 세션 로케일 설정](#ssh-세션-로케일-설정)
+- [Shell Alias](#shell-alias)
 - [보안](#보안)
 - [Dock](#dock)
 - [Finder](#finder)
@@ -122,6 +123,19 @@ home.sessionVariables = {
 locale          # LANG=en_US.UTF-8 확인
 locale charmap  # UTF-8 확인
 ```
+
+## Shell Alias
+
+`modules/shared/programs/shell/darwin.nix`에서 관리됩니다.
+
+| Alias | 명령어 | 설명 |
+|------|--------|------|
+| `nrs` | `~/.local/bin/nrs.sh` | rebuild (미리보기 + 적용) |
+| `nrs-offline` | `~/.local/bin/nrs.sh --offline` | 오프라인 rebuild |
+| `nrp` | `~/.local/bin/nrp.sh` | 미리보기 전용 |
+| `nrp-offline` | `~/.local/bin/nrp.sh --offline` | 오프라인 미리보기 |
+| `nrh` | `~/.local/bin/nrh.sh` | 최근 10개 세대 |
+| `nrh-all` | `~/.local/bin/nrh.sh --all` | 전체 세대 |
 
 ## 보안
 
@@ -334,6 +348,7 @@ macOS launchd의 WatchPaths를 사용하여 특정 폴더를 감시하고, 파�
 | `~/FolderActions/compress-video/`       | H.265 (HEVC) 비디오 압축              |
 | `~/FolderActions/rename-asset/`         | 타임스탬프 기반 파일명 변경           |
 | `~/FolderActions/convert-video-to-gif/` | GIF 변환 (15fps, 480px)               |
+| `~/FolderActions/upload-immich/`        | Immich 자동 업로드 + Pushover 알림    |
 
 ### 사용 방법
 

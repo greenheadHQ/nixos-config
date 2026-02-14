@@ -16,7 +16,16 @@ description: |
 |------|------|
 | `modules/shared/programs/tmux/default.nix` | Home Manager tmux 모듈 (플러그인 포함) |
 | `modules/shared/programs/tmux/files/tmux.conf` | tmux 설정 파일 |
-| `modules/shared/programs/tmux/files/scripts/` | Pane Notepad 스크립트들 |
+| `modules/shared/programs/tmux/files/scripts/` | Pane Notepad + 보조 스크립트 |
+
+### 주요 스크립트
+
+| 스크립트 | 용도 |
+|------|------|
+| `prefix-help.sh` | `prefix + a` 도움말 팝업 |
+| `find-unused-prefixes.sh` | tmux prefix 키 중 미사용 조합 탐지 |
+| `pane-note.sh` | 노트 생성/편집 |
+| `pane-link.sh` | 노트 검색/연결 |
 
 ## 주요 Nix 옵션 (`programs.tmux`)
 

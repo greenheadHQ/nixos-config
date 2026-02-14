@@ -32,13 +32,22 @@ Cursor IDE 확장 프로그램 관리 가이드.
 ```
 ~/.cursor/
 ├── extensions/           # 확장 파일 (Nix buildEnv)
-├── extensions.json       # 확장 목록 (mkOutOfStoreSymlink)
-└── settings.json         # 설정 (mkOutOfStoreSymlink)
+│   └── extensions.json   # 확장 목록 (Nix에서 자동 생성)
+└── (확장 메타데이터/캐시)
+
+~/Library/Application Support/Cursor/User/
+├── settings.json         # mkOutOfStoreSymlink (양방향 수정)
+├── keybindings.json      # mkOutOfStoreSymlink (양방향 수정)
+└── snippets/*.json       # Nix 관리 스니펫
 ```
 
 **mkOutOfStoreSymlink 패턴**
 - Nix store 대신 실제 파일 경로로 심볼릭 링크
 - 양방향 수정 가능
+
+**Shell wrapper**
+- `modules/shared/programs/shell/darwin.nix`에서 `cursor()` 함수를 제공
+- 인수 없이 `cursor` 실행 시 현재 디렉터리를 자동으로 여는 `cursor .` 래퍼를 사용
 
 ### 확장 추가하기
 

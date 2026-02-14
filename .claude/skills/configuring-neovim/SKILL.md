@@ -33,11 +33,12 @@ modules/shared/programs/neovim/
         │   ├── keymaps.lua          # 커스텀 키맵 (jk→Esc)
         │   └── autocmds.lua         # 모바일 화면 감지, FocusGained 한글 IM 전환
         └── plugins/
-            ├── disabled.lua         # Mason 비활성화 (mason-org/), mini.surround 비활성화 (nvim-mini/)
+            ├── disabled.lua         # Mason (mason-org/), mini.surround (nvim-mini/), tokyonight.nvim, indent-blankline.nvim, neo-tree.nvim 비활성화
             ├── colorscheme.lua      # Catppuccin Mocha
             ├── lsp.lua              # 추가 LSP (cssls, html)
             ├── treesitter.lua       # 파서 목록
-            ├── editor.lua           # surround, im-select, neo-tree
+            ├── editor.lua           # nvim-surround, auto-save, treesitter-context, flash.nvim, vim-abolish, snacks.nvim, im-select
+            ├── lint.lua             # markdownlint-cli2 설정
             └── ui.lua               # bufferline, lualine, noice
 ```
 
@@ -50,7 +51,7 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 - **린터**: statix
 - **빌드**: tree-sitter, gcc (Linux 전용), nodejs
 
-> `ripgrep`, `fd`, `fzf`, `lazygit`은 `libraries/packages.nix`에서 설치됨 — 중복 추가 금지
+> `ripgrep`, `fd`, `fzf`는 `libraries/packages.nix`에서, `lazygit`은 Home Manager (`programs.lazygit.enable = true`)로 설치됨 — 중복 추가 금지
 
 ## 제약사항
 
