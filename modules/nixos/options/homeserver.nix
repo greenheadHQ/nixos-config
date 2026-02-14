@@ -19,6 +19,20 @@
       };
     };
 
+    immichBackup = {
+      enable = lib.mkEnableOption "Immich PostgreSQL daily backup to HDD";
+      backupTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 05:30:00";
+        description = "OnCalendar time for daily backup";
+      };
+      retentionDays = lib.mkOption {
+        type = lib.types.int;
+        default = 30;
+        description = "Number of days to retain backups";
+      };
+    };
+
     uptimeKuma = {
       enable = lib.mkEnableOption "Uptime Kuma monitoring service";
       port = lib.mkOption {
@@ -110,6 +124,7 @@
     ../programs/docker/copyparty.nix # Copyparty 파일 서버
     ../programs/docker/vaultwarden.nix # Vaultwarden 비밀번호 관리자
     ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)
+    ../programs/docker/immich-backup.nix # Immich PostgreSQL 매일 백업
     ../programs/caddy.nix # HTTPS 리버스 프록시
   ];
 }
