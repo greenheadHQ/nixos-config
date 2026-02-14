@@ -43,7 +43,7 @@ Environment 섹션의 `Platform` 값으로 현재 실행 환경을 판별하세�
 | `libraries/packages.nix` | 공통 패키지 (shared/darwinOnly/nixosOnly) |
 | `modules/darwin/` | macOS 전용 설정 |
 | `modules/nixos/` | NixOS 전용 설정 |
-| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, immichBackup, uptime-kuma, anki-sync, copyparty, vaultwarden) |
+| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, immichBackup, uptime-kuma, anki-sync, copyparty, vaultwarden, devProxy) |
 | `modules/shared/` | 공유 설정 |
 | `scripts/` | 자동화 스크립트 (add-host, pre-rebuild-check, update-input) |
 
@@ -71,6 +71,7 @@ homeserver.ankiSync.enable = true;
 homeserver.copyparty.enable = true;
 homeserver.vaultwarden.enable = true;
 homeserver.immichBackup.enable = true;
+homeserver.devProxy.enable = true;
 ```
 
 ## 스킬 라우팅
@@ -99,4 +100,5 @@ homeserver.immichBackup.enable = true;
 | Neovim, LazyVim, LSP, nvim 플러그인, lazy.nvim, im-select | `configuring-neovim` |
 | Cursor IDE, Nix extensions.json, duti, 확장 0개 표시 | `managing-cursor` |
 | Pushover, 텍스트 공유, MiniPC→iPhone, share text | `sharing-text` |
+| dev-proxy, dev server, 개발 서버 프록시, dev.greenhead.dev, HMR, 모바일 미리보기 | `proxying-dev-server` |
 | Codex sync, codex harness, codex 동기화, codex 투영 | `syncing-codex-harness` |

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Proxying Dev Server"
+  short_description: "Dev server reverse proxy via Caddy HTTPS to dev.greenhead.dev. Triggers: \"dev-proxy\", \"dev server\", \"dev.greenhead.dev\", \"개발 서버\""
+  default_prompt: "Use $proxying-dev-server to help with this task."

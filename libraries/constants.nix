@@ -35,6 +35,7 @@
       uptimeKuma = "uptime-kuma";
       copyparty = "copyparty";
       vaultwarden = "vaultwarden";
+      dev = "dev";
     };
   };
 

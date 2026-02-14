@@ -108,6 +108,10 @@
     reverseProxy = {
       enable = lib.mkEnableOption "Caddy reverse proxy with HTTPS for homeserver services";
     };
+
+    devProxy = {
+      enable = lib.mkEnableOption "Dev server reverse proxy (dev.greenhead.dev)";
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -126,5 +130,6 @@
     ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)
     ../programs/docker/immich-backup.nix # Immich PostgreSQL 매일 백업
     ../programs/caddy.nix # HTTPS 리버스 프록시
+    ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)
   ];
 }

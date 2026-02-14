@@ -150,4 +150,5 @@
   homeserver.vaultwarden.enable = true; # Vaultwarden 비밀번호 관리자
   homeserver.immichBackup.enable = true; # Immich PostgreSQL 매일 백업 (HDD)
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
+  homeserver.devProxy.enable = true; # Dev server → dev.greenhead.dev 프록시
 }

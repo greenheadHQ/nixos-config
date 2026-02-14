@@ -45,5 +45,8 @@ in
     # NixOS 세대 히스토리
     nrh = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system | tail -10";
     nrh-all = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system";
+
+    # Dev server proxy
+    dp = "dev-proxy";
   };
 }
