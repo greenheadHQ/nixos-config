@@ -2,13 +2,30 @@
 
 macOS와 NixOS 개발 환경을 nix-darwin/NixOS + Home Manager로 선언적 관리하는 프로젝트
 
+## 실행 환경 인식
+
+이 프로젝트는 macOS(Mac)와 NixOS(MiniPC) 두 머신에서 사용됩니다.
+Environment 섹션의 `Platform` 값으로 현재 실행 환경을 판별하세요:
+
+| Platform | 현재 환경 | MiniPC 작업 | Mac 작업 |
+|----------|----------|------------|---------|
+| `linux` | **MiniPC** (NixOS) | 로컬 명령어 직접 실행 | `ssh mac` |
+| `darwin` | **Mac** (macOS) | `ssh minipc` | 로컬 명령어 직접 실행 |
+
+**금지**: 현재 환경의 머신에 SSH 접속 금지.
+`Platform: linux`이면 이미 MiniPC — `ssh minipc` 절대 실행하지 말 것.
+`Platform: darwin`이면 이미 Mac — `ssh mac` 절대 실행하지 말 것.
+
+> 현재 NixOS 호스트는 MiniPC 1대뿐이므로 `Platform: linux` = MiniPC로 판별합니다.
+> 호스트가 추가되면 `hostname` 명령으로 구분하세요.
+
 ## 핵심 명령어
 
 | 명령어 | 설명 |
 |--------|------|
 | `nrs` | 설정 적용 (미리보기 + 적용) |
-| `ssh minipc` | MiniPC SSH 접속 (Tailscale VPN) |
-| `ssh mac` | macOS SSH 접속 (Tailscale VPN) |
+| `ssh minipc` | MiniPC SSH 접속 — **Mac에서만** (Platform: darwin) |
+| `ssh mac` | macOS SSH 접속 — **MiniPC에서만** (Platform: linux) |
 
 ## 빌드 시 주의사항
 

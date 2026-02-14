@@ -52,6 +52,10 @@ fileSystems."/mnt/data" = { device = "by-uuid/..."; };          # HDD UUID 종�
 
 ## 빠른 참조
 
+> **환경 확인**: Environment 섹션의 `Platform` 값을 확인할 것.
+> - `linux` → 현재 MiniPC. 모든 명령어를 로컬에서 직접 실행. SSH 불필요.
+> - `darwin` → Mac에서 실행 중. MiniPC 명령은 `ssh minipc`로 접속 후 실행.
+
 ### Rebuild 명령어
 
 ```bash
@@ -60,11 +64,13 @@ nrs --offline   # 오프라인 rebuild (캐시만 사용)
 nrp             # 미리보기만
 ```
 
-### MiniPC 접속
+### MiniPC 접속 (Mac에서만 필요)
 
+Platform이 `darwin`(Mac)일 때만 SSH 접속 필요:
 ```bash
-ssh minipc      # ~/.ssh/config에 정의됨 (macOS에서)
+ssh minipc      # ~/.ssh/config에 정의됨 (macOS 전용)
 ```
+Platform이 `linux`이면 이미 MiniPC — SSH 금지. 명령어를 직접 실행할 것.
 
 ### 주요 파일 위치
 
