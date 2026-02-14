@@ -134,6 +134,7 @@
     ./programs/tailscale.nix
     ./programs/ssh.nix
     ./programs/mosh.nix
+    ./programs/smartd.nix # S.M.A.R.T. 디스크 건강 모니터링 (Pushover 알림)
     ./options/homeserver.nix # Docker/Podman 기반 홈서버 서비스 (mkOption)
   ];
 

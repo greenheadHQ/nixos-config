@@ -44,4 +44,7 @@ in
   # 서비스 업데이트 알림용 Pushover credentials
   "pushover-uptime-kuma.age".publicKeys = minipcOnly;
   "pushover-copyparty.age".publicKeys = minipcOnly;
+
+  # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
+  "pushover-system-monitor.age".publicKeys = minipcOnly;
 }
