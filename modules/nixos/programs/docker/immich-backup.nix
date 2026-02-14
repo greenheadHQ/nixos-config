@@ -33,8 +33,7 @@ let
       # shellcheck source=/dev/null
       source "$SERVICE_LIB"
 
-      BACKUP_DIR="''${BACKUP_DIR}"
-      RETENTION_DAYS="''${RETENTION_DAYS}"
+      # BACKUP_DIR, RETENTION_DAYS는 systemd environment에서 주입됨
       TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
       BACKUP_FILE="$BACKUP_DIR/immich-db-$TIMESTAMP.dump"
       TMP_FILE="$BACKUP_FILE.tmp"
@@ -119,7 +118,9 @@ in
         Type = "oneshot";
         ExecStart = "${backupScript}/bin/immich-db-backup";
         TimeoutSec = "1h";
-        ProtectSystem = "strict";
+        # ProtectSystem=strict 불가 — podman exec가 /run/containers/, /var/lib/containers/,
+        # /run/podman/ 등 다수의 시스템 경로에 접근 필요. vaultwarden-backup은 sqlite3만
+        # 사용하므로 strict 가능하지만, podman exec는 컨테이너 런타임 전체 접근 필요.
         ReadWritePaths = [ backupDir ];
         PrivateTmp = true;
         NoNewPrivileges = true;
