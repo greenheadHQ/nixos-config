@@ -53,7 +53,7 @@ area 라벨은 **필수**이다. 다음 순서로 판단한다:
 2. 템플릿의 모든 섹션을 빠짐없이 채움 (해당 없는 섹션은 "N/A" 기재)
 3. title에 conventional prefix 적용
 4. 적절한 label 조합 선택 (priority 필수 + area 필수 + 기본 라벨)
-5. **생성 전 검증**: `references/issue-template.md`의 6개 필수 섹션과 포맷 규칙(테이블, 체크박스) 준수 여부 확인.
+5. **생성 전 검증**: `references/issue-template.md`의 7개 필수 섹션과 포맷 규칙(테이블, 체크박스) 준수 여부 확인.
 6. `gh issue create`로 등록
 
 ### Title Conventions

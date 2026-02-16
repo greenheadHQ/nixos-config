@@ -17,6 +17,13 @@
 - 왜 이 변경이 필요한지
 - 어떤 문제/한계가 있는지
 
+## Related Commits
+
+- `해시7자리` — 커밋 메시지 한줄 요약
+- `해시7자리` — 커밋 메시지 한줄 요약
+
+[관련 커밋이 없으면 "N/A"]
+
 ## Affected Files
 
 | File | Role | Required Change |
@@ -52,6 +59,12 @@
 - 현 상태 → 문제점 → 필요성 순으로 서술
 - 관련 커밋이나 이전 결정이 있으면 참조
 - LLM이 이 섹션만 읽고 작업 배경을 이해할 수 있어야 함
+
+### Related Commits
+- 이 이슈가 생성된 배경/맥락이 되는 **기존 커밋** 기재 (LLM에 풍부한 컨텍스트 제공 목적)
+- 포맷: `- \`해시7자리\` — 커밋 메시지 한줄 요약`
+- 이슈 해결 과정에서 발생하는 커밋은 여기에 포함하지 않음 (배경 커밋만)
+- 관련 커밋이 없으면 "N/A" 기재
 
 ### Affected Files
 - **반드시 테이블 형식** 사용 (LLM 파싱 용이)
@@ -91,6 +104,11 @@ Darwin(macOS) 설정에 대한 eval-test를 추가하여 macOS 설정 회귀를 
 - Darwin은 `lefthook.yml`의 pre-push `nix flake check --all-systems`에만 의존
 - `nix flake check`는 "평가 가능한가"만 확인, "의도대로 설정되었는가"는 검증 불가
 - Dock 설정, 키보드 단축키, Touch ID sudo 등 회귀 가치 있는 설정이 존재
+
+## Related Commits
+
+- `bfa4054` — feat(tests): pre-commit E2E eval 테스트 도입 — 네트워크 노출 경계 보안 검증
+- `e2e5a73` — fix(tests): Opus 4.6 DA 피드백 루프 완료 — 36→29개 테스트, A 등급 달성
 
 ## Affected Files
 
