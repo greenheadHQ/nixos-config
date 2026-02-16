@@ -29,14 +29,20 @@ description: |
 
 ## Label Taxonomy
 
-모든 이슈에 **1개 priority + area(해당 시) + 선택적 기본 라벨** 조합을 부착한다.
+모든 이슈에 **1개 priority + 1개 area + 선택적 기본 라벨** 조합을 부착한다.
 
 - **Priority** (필수): `priority:high` / `priority:medium` / `priority:low`
-- **Area** (해당 시): `area:scalability` / `area:testing` / `area:security`
+- **Area** (필수): `area:scalability` / `area:testing` / `area:security` / `area:infrastructure`
 - **Default**: GitHub 기본 라벨 (`enhancement`, `bug`, `documentation` 등) 병용
 
-area 라벨이 이슈 도메인과 맞지 않으면 생략 가능.
-동일 도메인 이슈가 2개 이상 반복되면 새 area 라벨 추가를 검토한다.
+### Area 라벨 선택 절차
+
+area 라벨은 **필수**이다. 다음 순서로 판단한다:
+
+1. 기존 area 중 해당하는 것이 있으면 부착
+2. 해당하는 area가 없으면, `references/label-taxonomy.md`의 체크리스트를 따라 **새 area를 생성**한 뒤 부착
+3. area 없이 등록하는 것은 금지 — 어떤 이슈든 반드시 하나의 도메인에 속한다
+
 상세 색상 코드, 판단 기준, 추가/삭제 절차는 `references/label-taxonomy.md` 참조.
 
 ## Issue Creation
@@ -46,7 +52,7 @@ area 라벨이 이슈 도메인과 맞지 않으면 생략 가능.
 1. `references/issue-template.md`에서 고정 템플릿 확인
 2. 템플릿의 모든 섹션을 빠짐없이 채움 (해당 없는 섹션은 "N/A" 기재)
 3. title에 conventional prefix 적용
-4. 적절한 label 조합 선택 (priority 필수 + area 해당 시 + 기본 라벨)
+4. 적절한 label 조합 선택 (priority 필수 + area 필수 + 기본 라벨)
 5. **생성 전 검증**: `references/issue-template.md`의 6개 필수 섹션과 포맷 규칙(테이블, 체크박스) 준수 여부 확인.
 6. `gh issue create`로 등록
 

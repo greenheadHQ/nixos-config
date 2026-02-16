@@ -4,8 +4,8 @@
 
 ## 설계 원칙
 
-- 모든 이슈에 **1개 priority(필수) + area(해당 시) + 선택적 기본 라벨** 조합 부착
-- area가 이슈 도메인과 맞지 않으면 생략 가능. 동일 도메인 이슈가 2개 이상 반복되면 새 area 추가 검토
+- 모든 이슈에 **1개 priority(필수) + 1개 area(필수) + 선택적 기본 라벨** 조합 부착
+- area 라벨 없는 이슈 등록은 금지. 기존 area가 맞지 않으면 새 area를 생성한 뒤 부착
 - `area:` 접두사로 도메인 라벨을 GitHub 기본 라벨과 구분
 - `priority:` 접두사로 우선순위를 명시적으로 표현
 
@@ -24,6 +24,7 @@
 | `area:scalability` | `#c5def5` (light blue) | 호스트 확장성, 구조적 확장 | constants.nix, flake.nix, eval-tests.nix |
 | `area:testing` | `#bfd4f2` (blue) | 테스트, CI/CD, 품질 보증 | tests/, lefthook.yml |
 | `area:security` | `#d4c5f9` (purple) | 보안, 인증, 암호화, 시크릿 | secrets/, agenix, 방화벽 설정 |
+| `area:infrastructure` | `#f9d0c4` (peach) | DNS, Cloudflare, Caddy, 네트워킹, 외부 인프라 | Cloudflare DNS, Caddy config, 도메인 설정 |
 
 ## 라벨 관리 명령어
 
