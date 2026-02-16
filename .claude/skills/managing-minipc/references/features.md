@@ -114,14 +114,14 @@ nix eval --impure --file tests/eval-tests.nix
 # lefthook pre-commit으로 자동 실행
 ```
 
-주요 검증 항목 (29개 테스트):
-- **Test 0**: Tailscale CGNAT IP 범위 독립 검증 (constants.nix oracle 무결성)
-- **Test 1**: 포트 충돌 없음 (homeserver 서비스 간)
-- **Test 2a-2e**: 컨테이너 포트 127.0.0.1 바인딩 강제, extraOptions publish 우회 방지, --network=host allowlist (현재: uptime-kuma만), host network 컨테이너 listen address 127.0.0.1 강제
-- **Test 3a-3b**: Caddy virtualHost Tailscale IP 전용 바인딩 (vacuous truth 방지 포함)
-- **Test 4a-4b**: Caddy globalConfig default_bind 존재 + 중복 방지 (builtins.split 기반, newline-safe)
-- **Test 5a-5g**: 서비스 보안 — anki-sync address/openFirewall, openssh/mosh openFirewall, SSH 경화 (PermitRootLogin, PasswordAuthentication), vaultwarden SIGNUPS_ALLOWED
-- **Test 6a-6j**: 방화벽 정책 — firewall.enable, allowedTCPPorts=[], 포트 범위 없음, trustedInterfaces=[tailscale0], UDP는 Tailscale 포트만, 인터페이스별 포트 없음, 수동 nftables 규칙 없음, NAT enable/forwardPorts 방지
+주요 검증 카테고리 (상세: `tests/eval-tests.nix` 참조):
+- **Tailscale CGNAT**: IP 범위 독립 검증 (constants.nix oracle 무결성)
+- **포트 충돌**: homeserver 서비스 간 포트 중복 방지
+- **컨테이너 격리**: 127.0.0.1 바인딩 강제, publish 우회 방지, --network=host allowlist, host network listen address
+- **Caddy 바인딩**: virtualHost Tailscale IP 전용, extraConfig/bind 디렉티브 우회 방지, default_bind 다중 주소/중복 방지
+- **서비스 보안**: anki-sync 바인딩, openssh openFirewall/경화, vaultwarden 계정 생성 차단
+- **방화벽 정책**: firewall.enable, TCP/UDP 포트, trustedInterfaces, 인터페이스별 포트, 수동 규칙 인젝션 방지
+- **Tailscale 설정**: useRoutingFeatures 제한
 
 새 서비스 추가 시: 컨테이너가 `127.0.0.1:` 접두사로 포트 매핑하면 자동으로 검증됨. --network=host가 필요하면 `tests/eval-tests.nix`의 `hostNetworkAllowlist`에 추가 필요.
 

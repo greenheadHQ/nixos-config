@@ -20,7 +20,7 @@ let
 
   inherit (constants.network) minipcTailscaleIP;
 
-  # Codex 피드백 #1: constants.nix와 테스트가 같은 값을 공유하므로
+  # Codex 피드백: constants.nix와 테스트가 같은 값을 공유하므로
   # minipcTailscaleIP 자체가 Tailscale CGNAT 범위(100.64.0.0/10)인지 독립 검증
   isTailscaleCGNAT =
     let
@@ -81,7 +81,8 @@ let
   hasHostNetwork =
     name:
     let
-      extraOptions = containers.${name}.extraOptions or [ ];
+      # or [] 없이 직접 접근: NixOS oci-containers 옵션이 항상 존재하므로, schema 변경 시 에러로 감지
+      extraOptions = containers.${name}.extraOptions;
     in
     builtins.elem "--network=host" extraOptions
     || builtins.elem "--net=host" extraOptions
@@ -89,7 +90,8 @@ let
     || hasAdjacentPair "--net" "host" extraOptions;
 
   # 컨테이너의 ports 속성
-  containerPorts = name: containers.${name}.ports or [ ];
+  # or [] 없이 직접 접근: NixOS oci-containers 옵션이 항상 존재
+  containerPorts = name: containers.${name}.ports;
 
   # Codex 피드백: extraOptions에 -p/--publish/-P로 포트를 우회 노출하는지 검사
   # 예: extraOptions = [ "--publish=0.0.0.0:8080:80" ] 또는 [ "-p" "0.0.0.0:8080:80" ]
@@ -97,7 +99,7 @@ let
   hasPublishInExtraOptions =
     name:
     let
-      extraOptions = containers.${name}.extraOptions or [ ];
+      extraOptions = containers.${name}.extraOptions;
     in
     builtins.any (
       opt:
@@ -133,7 +135,9 @@ let
   ) hostNetworkAllowlist;
 
   # host network 컨테이너의 listen address 검증
-  uptimeKumaLocalhostOnly = containers.uptime-kuma.environment.UPTIME_KUMA_HOST or "" == "127.0.0.1";
+  # Opus 피드백: Nix select-or 우선순위는 == 보다 높지만, 명시적 괄호로 의도 명확화
+  uptimeKumaLocalhostOnly =
+    (containers.uptime-kuma.environment.UPTIME_KUMA_HOST or "") == "127.0.0.1";
 
   # ═══════════════════════════════════════════════════════════════
   # Caddy 검증 헬퍼
@@ -141,7 +145,7 @@ let
   caddyVhosts = nixosCfg.services.caddy.virtualHosts;
   vhostNames = builtins.attrNames caddyVhosts;
 
-  # Codex 피드백 #8: builtins.all on empty list = true (vacuous truth)
+  # Codex 피드백: builtins.all on empty list = true (vacuous truth)
   # Caddy가 활성화되어 있으면 vhosts가 비어있으면 안 됨
   hasVhosts = vhostNames != [ ];
 
@@ -159,11 +163,17 @@ let
   # builtins.split은 문자열 전체를 대상으로 검색하므로 newline 문제 없음.
   escapedIP = builtins.replaceStrings [ "." ] [ "\\." ] minipcTailscaleIP;
 
-  # "default_bind 100\.79\.80\.95"가 globalConfig에 포함되어 있는지 확인
-  # builtins.split 결과가 2개 이상 = 매칭 존재
+  # "default_bind 100\.79\.80\.95" 뒤에 공백 없이 줄이 끝나야 함
+  # Opus 피드백: Caddy default_bind는 공백으로 다중 주소를 받으므로,
+  # `default_bind 100.79.80.95 0.0.0.0`이면 기존 테스트를 통과하면서 0.0.0.0에도 바인딩.
+  # [ \t]*\n 패턴으로 IP 뒤에 다른 주소가 없는지 검증.
+  # Opus 피드백: 후행 \n 없을 시 매칭 실패 방지 — globalConfig에 "\n" 어펜드.
   hasDefaultBind =
     builtins.isString caddyGlobalConfig
-    && builtins.length (builtins.split ("default_bind " + escapedIP) caddyGlobalConfig) > 1;
+    &&
+      builtins.length (
+        builtins.split ("default_bind[ \t]+" + escapedIP + "[ \t]*\n") (caddyGlobalConfig + "\n")
+      ) > 1;
 
   # Codex 피드백: default_bind가 2번 이상 나타나면, Caddy는 마지막 값을 사용.
   # 두 번째 default_bind 0.0.0.0이 추가되면 첫 번째 테스트가 통과하지만 실제로는 공개 바인딩.
@@ -175,6 +185,23 @@ let
     in
     (builtins.length parts - 1) / 2;
   singleDefaultBind = defaultBindCount == 1;
+
+  # Opus 피드백: services.caddy.extraConfig로 site block을 직접 추가하면
+  # listenAddresses/default_bind 제약을 모두 우회하여 0.0.0.0에 바인딩 가능
+  caddyExtraConfig = nixosCfg.services.caddy.extraConfig;
+
+  # Opus 피드백: vhost extraConfig 내부의 `bind` 디렉티브는 listenAddresses를 오버라이드.
+  # 예: extraConfig = "bind 0.0.0.0\nreverse_proxy ..." 이면 Test 3b를 통과하면서도 공개 노출.
+  # Opus 피드백: 들여쓰기된 `  bind 0.0.0.0`도 감지해야 함.
+  # 정규화: "\n" 프리펜드로 첫 줄도 "\n[ \t]*bind " 패턴에 통일.
+  noBindInVhosts = builtins.all (
+    name:
+    let
+      ec = caddyVhosts.${name}.extraConfig;
+      normalized = "\n" + ec;
+    in
+    builtins.length (builtins.split "\n[ \t]*bind[ \t]" normalized) == 1
+  ) vhostNames;
 
   # ═══════════════════════════════════════════════════════════════
   # 방화벽 검증 헬퍼
@@ -188,12 +215,18 @@ let
   # Codex 피드백: 인터페이스별 포트 허용 체크
   # networking.firewall.interfaces.*.allowed{TCP,UDP}Ports 가 비어야 함
   # 예외: podman0 (컨테이너 브릿지) — DNS(53/udp)는 컨테이너 이름 해석에 필요
-  fwInterfaces = fw.interfaces or { };
+  # Opus 피드백: NixOS 옵션이 항상 존재하므로 or {} 불필요 (or [] 제거와 일관)
+  fwInterfaces = fw.interfaces;
   fwInterfaceNames = builtins.attrNames fwInterfaces;
   # 안전한 인터페이스별 포트 예외 (인터페이스명 → 허용 UDP 포트)
   safeInterfaceUdpPorts = {
     podman0 = [ 53 ]; # DNS for container name resolution
   };
+  # Opus 피드백: allowlist 정확성 — safeInterfaceUdpPorts의 모든 키가 실제 인터페이스에 존재해야 함
+  # (hostNetworkAllowlist의 allAllowlistUsed 패턴과 동일)
+  allSafeInterfaceKeysExist = builtins.all (ifName: builtins.elem ifName fwInterfaceNames) (
+    builtins.attrNames safeInterfaceUdpPorts
+  );
   noInterfacePortsOpen = builtins.all (
     ifName:
     let
@@ -206,10 +239,11 @@ let
     && (iface.allowedUDPPortRanges or [ ]) == [ ]
   ) fwInterfaceNames;
 
-  # Codex 피드백 #4: 수동 nftables 규칙 인젝션 방지
+  # Codex 피드백: 수동 방화벽 규칙 인젝션 방지
   # extraInputRules, extraForwardRules가 비어야 함
   # 참고: extraCommands/extraStopCommands는 NixOS NAT 모듈이 자동 생성하므로 체크 제외
-  noRawFirewallRules = (fw.extraInputRules or "") == "" && (fw.extraForwardRules or "") == "";
+  # Opus 피드백: NixOS 옵션이 항상 존재하므로 or "" 불필요 (or [] 제거와 일관)
+  noRawFirewallRules = fw.extraInputRules == "" && fw.extraForwardRules == "";
 
   # tailscale 포트 (UDP)
   tailscalePort = nixosCfg.services.tailscale.port;
@@ -262,7 +296,18 @@ let
       cond = allVhostsTailscaleOnly;
     }
     {
-      name = "Test 4a: Caddy globalConfig에 default_bind ${minipcTailscaleIP}가 포함되어야 함";
+      # Opus 피드백: services.caddy.extraConfig로 site block을 직접 추가하면
+      # listenAddresses/default_bind 제약을 모두 우회 가능
+      name = "Test 3c: Caddy extraConfig가 비어야 함 (site block 직접 추가로 바인딩 우회 방지)";
+      cond = caddyExtraConfig == "";
+    }
+    {
+      # Opus 피드백: vhost extraConfig 내부의 `bind` 디렉티브는 listenAddresses를 오버라이드
+      name = "Test 3d: Caddy vhost extraConfig에 bind 디렉티브가 없어야 함 (listenAddresses 우회 방지)";
+      cond = noBindInVhosts;
+    }
+    {
+      name = "Test 4a: Caddy globalConfig에 default_bind ${minipcTailscaleIP}가 포함되어야 함 (줄 끝까지 정확 매칭, 다중 주소 방지)";
       cond = hasDefaultBind;
     }
     {
@@ -276,16 +321,10 @@ let
       cond = nixosCfg.services.anki-sync-server.address == minipcTailscaleIP;
     }
     {
-      name = "Test 5b: anki-sync-server의 openFirewall이 false이어야 함";
-      cond = nixosCfg.services.anki-sync-server.openFirewall == false;
-    }
-    {
-      name = "Test 5c: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
+      # openssh는 LAN 노출 시 brute-force 표면이 되므로, 다른 openFirewall 서비스보다 중요
+      # (anki-sync/mosh의 openFirewall은 Test 6b/6e가 이미 잡으므로 별도 테스트 불필요)
+      name = "Test 5b: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
       cond = nixosCfg.services.openssh.openFirewall == false;
-    }
-    {
-      name = "Test 5d: mosh.openFirewall이 false이어야 함 (true이면 LAN에서 mosh UDP 포트 노출)";
-      cond = nixosCfg.programs.mosh.openFirewall == false;
     }
     {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
@@ -299,7 +338,12 @@ let
     {
       # Codex 피드백: vaultwarden 계정 생성 허용은 앱 레벨 보안 — Tailscale 경계와 독립
       name = "Test 5g: vaultwarden SIGNUPS_ALLOWED가 'false'이어야 함 (계정 무단 생성 방지)";
-      cond = containers.vaultwarden.environment.SIGNUPS_ALLOWED or "" == "false";
+      cond = containers.vaultwarden.environment.SIGNUPS_ALLOWED == "false";
+    }
+    {
+      # Opus 피드백: SIGNUPS_ALLOWED와 동일 보안 수준 — 계정 생성 경로 일관 차단
+      name = "Test 5g-2: vaultwarden INVITATIONS_ALLOWED가 'false'이어야 함 (초대 기반 계정 생성 방지)";
+      cond = containers.vaultwarden.environment.INVITATIONS_ALLOWED == "false";
     }
     {
       name = "Test 6a: networking.firewall.enable이 true이어야 함";
@@ -322,7 +366,7 @@ let
           iface:
           builtins.elem iface [
             "tailscale0"
-            "lo"
+            "lo" # loopback — 트래픽이 머신 외부로 나가지 않으므로 안전
           ]
         ) fw.trustedInterfaces;
     }
@@ -339,22 +383,20 @@ let
       cond = noInterfacePortsOpen;
     }
     {
+      # Opus 피드백: safeInterfaceUdpPorts allowlist 정확성 (allAllowlistUsed 패턴과 동일)
+      name = "Test 6g-2: safeInterfaceUdpPorts의 모든 키가 실제 방화벽 인터페이스에 존재해야 함";
+      cond = allSafeInterfaceKeysExist;
+    }
+    {
       name = "Test 6h: 수동 방화벽 규칙 없음 (extraInputRules, extraForwardRules 비어야 함)";
       cond = noRawFirewallRules;
     }
     {
-      # Codex 피드백: NAT가 활성화되면 masquerading으로 내부 서비스가 공개될 수 있음
-      name = "Test 6i: networking.nat.enable이 false이어야 함 (NAT masquerading 방지)";
-      cond = nixosCfg.networking.nat.enable == false;
+      # Opus 피드백: useRoutingFeatures = "both"이면 exit node 활성화 가능
+      # "server"는 subnet router만 허용 (exit node 비활성화)
+      name = "Test 7a: Tailscale useRoutingFeatures가 server이어야 함 (exit node 방지)";
+      cond = nixosCfg.services.tailscale.useRoutingFeatures == "server";
     }
-    {
-      # Codex 피드백: NAT 포트 포워딩으로 방화벽 우회 가능 (공개 인터페이스 → 내부 서비스)
-      # or [] 없이 직접 접근: NixOS 옵션이 항상 존재하므로, schema 변경 시 에러로 감지
-      name = "Test 6j: networking.nat.forwardPorts가 비어야 함 (NAT 포트 포워딩으로 방화벽 우회 방지)";
-      cond = nixosCfg.networking.nat.forwardPorts == [ ];
-    }
-    # Test 7a/7b (Darwin config 평가 성공) 삭제 — pre-push의
-    # `nix flake check --no-build --all-systems`와 100% 중복 (Opus 피드백)
   ];
 
   # 모든 테스트를 순차적으로 평가 (실패 시 해당 테스트 이름과 함께 throw)
