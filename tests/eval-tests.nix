@@ -68,13 +68,25 @@ let
   hostNetworkAllowlist = [ "uptime-kuma" ];
 
   # 컨테이너가 --network=host를 사용하는지 확인
-  # Codex 피드백: --net=host 변형도 감지 (--network=host, --net=host 두 형태)
+  # --network=host, --net=host (결합형) + --network host, --net host (공백 분리형) 모두 감지
+  # Codex 피드백: 공백 분리형 [ "--network" "host" ] 도 podman이 수용하므로 감지 필요
+  hasAdjacentPair =
+    flag: value: list:
+    let
+      len = builtins.length list;
+      indices = builtins.genList (i: i) (if len > 0 then len - 1 else 0);
+    in
+    builtins.any (i: builtins.elemAt list i == flag && builtins.elemAt list (i + 1) == value) indices;
+
   hasHostNetwork =
     name:
     let
       extraOptions = containers.${name}.extraOptions or [ ];
     in
-    builtins.elem "--network=host" extraOptions || builtins.elem "--net=host" extraOptions;
+    builtins.elem "--network=host" extraOptions
+    || builtins.elem "--net=host" extraOptions
+    || hasAdjacentPair "--network" "host" extraOptions
+    || hasAdjacentPair "--net" "host" extraOptions;
 
   # 컨테이너의 ports 속성
   containerPorts = name: containers.${name}.ports or [ ];
@@ -89,10 +101,8 @@ let
     in
     builtins.any (
       opt:
-      builtins.match "--publish.*" opt != null
-      || builtins.match "-p.*" opt != null
-      || opt == "-p"
-      || opt == "--publish"
+      builtins.match "--publish(=.+)?" opt != null
+      || builtins.match "-p(=.+)?" opt != null
       || opt == "-P"
       || opt == "--publish-all"
     ) extraOptions;
@@ -143,10 +153,28 @@ let
   # Codex 피드백: IP의 .을 리터럴로 이스케이프, 줄 시작 기준 매칭
   # NixOS caddy 모듈은 globalConfig를 프로그래밍적으로 생성하므로 주석 우회 위험은 낮지만,
   # 방어적으로 비주석 줄만 매칭
+  # default_bind 검증: builtins.split 기반
+  # 이유: builtins.match의 `.`는 newline을 매칭하지 않으므로 (POSIX ERE),
+  # globalConfig가 3줄 이상이면 `.*`가 첫 줄까지만 매칭하여 regex가 실패.
+  # builtins.split은 문자열 전체를 대상으로 검색하므로 newline 문제 없음.
   escapedIP = builtins.replaceStrings [ "." ] [ "\\." ] minipcTailscaleIP;
+
+  # "default_bind 100\.79\.80\.95"가 globalConfig에 포함되어 있는지 확인
+  # builtins.split 결과가 2개 이상 = 매칭 존재
   hasDefaultBind =
     builtins.isString caddyGlobalConfig
-    && builtins.match ".*\n? *default_bind ${escapedIP}(\n|$).*" caddyGlobalConfig != null;
+    && builtins.length (builtins.split ("default_bind " + escapedIP) caddyGlobalConfig) > 1;
+
+  # Codex 피드백: default_bind가 2번 이상 나타나면, Caddy는 마지막 값을 사용.
+  # 두 번째 default_bind 0.0.0.0이 추가되면 첫 번째 테스트가 통과하지만 실제로는 공개 바인딩.
+  # builtins.split으로 occurrences 카운트: split 결과 = [비매칭, [매칭], 비매칭, ...]
+  # 매칭 횟수 = (length - 1) / 2
+  defaultBindCount =
+    let
+      parts = builtins.split "default_bind" caddyGlobalConfig;
+    in
+    (builtins.length parts - 1) / 2;
+  singleDefaultBind = defaultBindCount == 1;
 
   # ═══════════════════════════════════════════════════════════════
   # 방화벽 검증 헬퍼
@@ -234,8 +262,14 @@ let
       cond = allVhostsTailscaleOnly;
     }
     {
-      name = "Test 4: Caddy globalConfig에 default_bind ${minipcTailscaleIP}가 포함되어야 함";
+      name = "Test 4a: Caddy globalConfig에 default_bind ${minipcTailscaleIP}가 포함되어야 함";
       cond = hasDefaultBind;
+    }
+    {
+      # Codex 피드백: default_bind가 중복되면 Caddy는 마지막 값을 사용하므로,
+      # 다른 모듈이 default_bind 0.0.0.0을 추가해도 기존 테스트가 통과할 수 있음
+      name = "Test 4b: Caddy globalConfig에 default_bind가 정확히 1번만 나타나야 함 (중복 시 마지막 값으로 바인딩 우회 가능)";
+      cond = singleDefaultBind;
     }
     {
       name = "Test 5a: anki-sync-server의 address가 ${minipcTailscaleIP}이어야 함 (현재: ${nixosCfg.services.anki-sync-server.address})";
@@ -244,6 +278,28 @@ let
     {
       name = "Test 5b: anki-sync-server의 openFirewall이 false이어야 함";
       cond = nixosCfg.services.anki-sync-server.openFirewall == false;
+    }
+    {
+      name = "Test 5c: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
+      cond = nixosCfg.services.openssh.openFirewall == false;
+    }
+    {
+      name = "Test 5d: mosh.openFirewall이 false이어야 함 (true이면 LAN에서 mosh UDP 포트 노출)";
+      cond = nixosCfg.programs.mosh.openFirewall == false;
+    }
+    {
+      # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
+      name = "Test 5e: openssh PermitRootLogin이 'no'이어야 함";
+      cond = nixosCfg.services.openssh.settings.PermitRootLogin == "no";
+    }
+    {
+      name = "Test 5f: openssh PasswordAuthentication이 false이어야 함 (공개키만 허용)";
+      cond = nixosCfg.services.openssh.settings.PasswordAuthentication == false;
+    }
+    {
+      # Codex 피드백: vaultwarden 계정 생성 허용은 앱 레벨 보안 — Tailscale 경계와 독립
+      name = "Test 5g: vaultwarden SIGNUPS_ALLOWED가 'false'이어야 함 (계정 무단 생성 방지)";
+      cond = containers.vaultwarden.environment.SIGNUPS_ALLOWED or "" == "false";
     }
     {
       name = "Test 6a: networking.firewall.enable이 true이어야 함";
@@ -285,6 +341,17 @@ let
     {
       name = "Test 6h: 수동 방화벽 규칙 없음 (extraInputRules, extraForwardRules 비어야 함)";
       cond = noRawFirewallRules;
+    }
+    {
+      # Codex 피드백: NAT가 활성화되면 masquerading으로 내부 서비스가 공개될 수 있음
+      name = "Test 6i: networking.nat.enable이 false이어야 함 (NAT masquerading 방지)";
+      cond = nixosCfg.networking.nat.enable == false;
+    }
+    {
+      # Codex 피드백: NAT 포트 포워딩으로 방화벽 우회 가능 (공개 인터페이스 → 내부 서비스)
+      # or [] 없이 직접 접근: NixOS 옵션이 항상 존재하므로, schema 변경 시 에러로 감지
+      name = "Test 6j: networking.nat.forwardPorts가 비어야 함 (NAT 포트 포워딩으로 방화벽 우회 방지)";
+      cond = nixosCfg.networking.nat.forwardPorts == [ ];
     }
     # Test 7a/7b (Darwin config 평가 성공) 삭제 — pre-push의
     # `nix flake check --no-build --all-systems`와 100% 중복 (Opus 피드백)
