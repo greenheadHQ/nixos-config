@@ -1,14 +1,14 @@
 ---
 name: proxying-dev-server
 description: |
-  Dev server reverse proxy via Caddy HTTPS to dev.greenhead.dev.
-  Triggers: "dev-proxy", "dev server", "dev.greenhead.dev",
-  "개발 서버", "개발 프록시", "HMR proxy", "Hot Reload",
-  "pnpm run dev", "bun run dev", "npm run dev",
-  "vite dev", "next dev", "nuxt dev", "localhost 프록시",
-  "iPhone dev preview", "모바일 미리보기", "iPad 미리보기",
-  "dev 서버 프록시", "웹개발 프리뷰", "개발 서버 호스팅",
-  "WebSocket proxy", "wss".
+  This skill should be used when setting up or troubleshooting the dev server
+  reverse proxy on NixOS MiniPC. It covers the dev-proxy CLI tool that proxies
+  local dev servers (pnpm run dev, vite dev, next dev, nuxt dev, bun run dev)
+  to https://dev.greenhead.dev via Caddy HTTPS.
+  Common scenarios: "dev-proxy 설정", "dev server 프록시", "HMR이 안 됨",
+  "Hot Reload proxy", "모바일 미리보기", "iPhone/iPad dev preview",
+  "WebSocket proxy", "wss", "dev.greenhead.dev 503 에러",
+  "개발 서버 호스팅", "localhost 프록시", "dev-proxy off --hard".
 ---
 
 # Dev Server Reverse Proxy (dev.greenhead.dev)
@@ -94,15 +94,16 @@ nuxt dev --host 0.0.0.0
 
 - **원자적 쓰기**: `mktemp` + `mv` + `trap EXIT` (부분 쓰기/중단 시 임시파일 정리)
 - **포트 검증**: 숫자 + 범위(1-65535) — Caddy 디렉티브 인젝션 방지
+- **프로세스 종료**: `off --hard`에서 `fuser -k -TERM PORT/tcp`으로 SIGTERM 전송 (graceful shutdown 기회 제공)
 - **시스템 포트 보호**: `off --hard`에서 22(ssh), 443(caddy), 2283(immich) 등 시스템 서비스 포트는 kill 거부
-- **Reload 실패 복원**: Caddy reload 실패 시 이전 상태 자동 복원 + 에러 메시지 표시
+- **Reload 실패 복원**: Caddy reload 실패 시 이전 상태 자동 복원. 이전 상태가 비어 있으면 503 기본 응답으로 fallback
 - **부팅 초기화**: `activationScripts` + `caddy-dev-init` oneshot으로 파일 보장
 - **모듈 의존성**: `homeserver.reverseProxy.enable` 필수 — assertion으로 빌드 시 검증
 
 ## 개발 서버 프로세스 관리 팁
 
-`off --hard`는 먼저 503으로 전환 + Caddy reload 후 프로세스를 kill합니다.
-(502 Bad Gateway 노출 없이 바로 503 → 프로세스 정리 순서)
+`off --hard`는 먼저 503으로 전환 + Caddy reload 후 `fuser -k -TERM`으로 SIGTERM을 전송합니다.
+(502 Bad Gateway 노출 없이 바로 503 → graceful 프로세스 정리 순서)
 
 ```bash
 # 현재 리스닝 포트 확인
@@ -142,7 +143,7 @@ dev-proxy off --hard  # 프록시 해제 + pnpm dev 프로세스 종료
 dev-proxy 스크립트가 이전 상태를 자동 복원하므로 기존 서비스에는 영향 없음.
 
 **`/run/caddy/dev-upstream` 파일 없음**
-→ `dev-proxy status`가 친절한 에러 메시지 표시. 수동 복구: `sudo systemctl start caddy-dev-init`.
+→ `dev-proxy status`가 친절한 에러 메시지 표시. 수동 복구: `sudo systemctl restart caddy-dev-init`.
 정상 상태에서는 `activationScripts` + oneshot이 자동 생성.
 
 **`off --hard`에서 "Refusing to kill" 메시지**
@@ -170,4 +171,5 @@ dev-proxy 스크립트가 이전 상태를 자동 복원하므로 기존 서비�
 - MiniPC에서 `pnpm run dev` 등 실행 시 `dev-proxy PORT` 사용을 안내
 - Vite 프로젝트면 `server.hmr.clientPort: 443` 설정을 반드시 포함
 - `--host 0.0.0.0`은 권장 (HMR 클라이언트 이슈 예방)
+- `off --hard`는 SIGTERM 전송 — 시스템 포트(22, 443, 2283 등)는 거부됨을 안내
 - 접속 URL: `https://dev.greenhead.dev` (Tailscale 필수)

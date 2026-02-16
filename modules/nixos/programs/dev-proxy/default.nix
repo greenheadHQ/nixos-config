@@ -117,7 +117,7 @@ let
             cat "$UPSTREAM_FILE"
           else
             echo "No upstream file found (caddy-dev-init may not have run yet)" >&2
-            echo "Try: sudo systemctl start caddy-dev-init" >&2
+            echo "Try: sudo systemctl restart caddy-dev-init" >&2
             exit 1
           fi
           exit 0
@@ -154,7 +154,9 @@ let
       esac
 
       # 이전 상태 백업 — Caddy reload 실패 시 이 내용으로 복원
+      # 파일 미존재 시 빈 문자열이 되므로 defaultContent로 대체 (빈 내용 복원 방지)
       BACKUP=$(cat "$UPSTREAM_FILE" 2>/dev/null || true)
+      [ -n "$BACKUP" ] || BACKUP='${defaultContent}'
 
       # 원자적 파일 쓰기: sudo mktemp으로 같은 파일시스템에 임시 파일 생성 후
       # sudo mv(rename syscall)로 원자적 교체. 부분 쓰기/전원 차단 시에도 안전.
@@ -204,7 +206,7 @@ let
               # fuser -k: 해당 포트의 TCP 리스너에 SIGTERM 전송
               # sudo 필요: 다른 사용자 프로세스일 수 있음
               # || true: 이미 종료된 경우 에러 무시
-              sudo fuser -k "$CURRENT_PORT/tcp" 2>/dev/null || true
+              sudo fuser -k -TERM "$CURRENT_PORT/tcp" 2>/dev/null || true
               ;;
           esac
         else
