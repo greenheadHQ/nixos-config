@@ -258,14 +258,17 @@ let
       cond = fw.allowedTCPPortRanges == [ ];
     }
     {
-      name = "Test 6d: trustedInterfaces에 안전한 인터페이스(tailscale0, lo)만 허용 (현재: [${builtins.concatStringsSep ", " fw.trustedInterfaces}])";
-      cond = builtins.all (
-        iface:
-        builtins.elem iface [
-          "tailscale0"
-          "lo"
-        ]
-      ) fw.trustedInterfaces;
+      # Codex 피드백: tailscale0 존재도 강제 (빈 리스트나 lo만 있으면 VPN 접근 불가)
+      name = "Test 6d: trustedInterfaces에 tailscale0 필수 + 안전한 인터페이스만 허용 (현재: [${builtins.concatStringsSep ", " fw.trustedInterfaces}])";
+      cond =
+        builtins.elem "tailscale0" fw.trustedInterfaces
+        && builtins.all (
+          iface:
+          builtins.elem iface [
+            "tailscale0"
+            "lo"
+          ]
+        ) fw.trustedInterfaces;
     }
     {
       name = "Test 6e: allowedUDPPorts에 Tailscale 포트(${toString tailscalePort})만 허용";
