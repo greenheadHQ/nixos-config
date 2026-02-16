@@ -102,3 +102,4 @@ homeserver.devProxy.enable = true;
 | Pushover, 텍스트 공유, MiniPC→iPhone, share text | `sharing-text` |
 | dev-proxy, dev server, 개발 서버 프록시, dev.greenhead.dev, HMR, 모바일 미리보기 | `proxying-dev-server` |
 | Codex sync, codex harness, codex 동기화, codex 투영 | `syncing-codex-harness` |
+| GitHub Issues, 이슈, todo, 라벨, backlog, 우선순위 | `managing-github-issues` |

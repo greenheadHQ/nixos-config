@@ -1,0 +1,4 @@
+interface:
+  display_name: "Managing GitHub Issues"
+  short_description: "Use this skill when the user asks to create, query, close, edit, audit GitHub Issues or manage labels in shren207/nixos-config."
+  default_prompt: "Use $managing-github-issues to help with this task."
