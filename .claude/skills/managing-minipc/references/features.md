@@ -103,6 +103,27 @@ networking.firewall = {
 
 LAN(enp2s0)에서의 SSH/HTTP 접근은 차단됨. Tailscale VPN만 허용.
 
+**Pre-commit 보안 검증 (eval-tests):**
+
+`tests/eval-tests.nix`에서 매 커밋 시 네트워크 노출 경계를 자동 검증합니다:
+
+```bash
+# 직접 실행 (~1.2초)
+nix eval --impure --file tests/eval-tests.nix
+
+# lefthook pre-commit으로 자동 실행
+```
+
+주요 검증 항목:
+- Tailscale CGNAT IP 범위 독립 검증 (constants.nix oracle 무결성)
+- 컨테이너 포트 127.0.0.1 바인딩 강제 + extraOptions publish 우회 방지
+- --network=host allowlist (현재: uptime-kuma만)
+- Caddy virtualHost/globalConfig Tailscale IP 전용 바인딩
+- anki-sync-server address/openFirewall 검증
+- 방화벽 정책 (allowedTCPPorts=[], trustedInterfaces, 인터페이스별 포트, 수동 nftables 규칙 없음)
+
+새 서비스 추가 시: 컨테이너가 `127.0.0.1:` 접두사로 포트 매핑하면 자동으로 검증됨. --network=host가 필요하면 `tests/eval-tests.nix`의 `hostNetworkAllowlist`에 추가 필요.
+
 ## SSH 서버 설정
 
 ```nix

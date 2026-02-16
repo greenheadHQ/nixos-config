@@ -11,6 +11,8 @@ pre-commit:
     shellcheck:
       glob: "*.sh"
       run: shellcheck -S warning {staged_files}
+    eval-tests:
+      run: bash ./tests/run-eval-tests.sh
 
 pre-push:
   commands:

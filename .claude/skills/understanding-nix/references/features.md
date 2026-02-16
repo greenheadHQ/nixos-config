@@ -100,6 +100,7 @@ lefthook을 사용하여 커밋 전 자동 검사를 수행합니다. 민감 정
 | pre-commit | gitleaks | `gitleaks protect --staged --no-banner --redact` | 민감 정보(API 키, 비밀번호 등) 커밋 차단 |
 | pre-commit | nixfmt | `nixfmt --check` | Nix 파일 포맷 검사 |
 | pre-commit | shellcheck | `shellcheck -S warning` | Shell 스크립트 린팅 (warning 이상) |
+| pre-commit | eval-tests | `bash ./tests/run-eval-tests.sh` | NixOS 설정 E2E 보안 검증 (~1.2s) |
 | pre-push | flake-check | `nix flake check --no-build --all-systems` | Flake 평가 오류 검사 |
 
 **사용법:**
@@ -154,11 +155,37 @@ regexes = [
 
 > **주의**: 실제 키를 `...EXAMPLE` 형태로 위장하면 탐지를 우회할 수 있으므로, PR 리뷰 시 주의가 필요합니다.
 
+**eval-tests (E2E 보안 검증):**
+
+`nix eval --impure --file tests/eval-tests.nix`로 최종 NixOS config 속성을 직접 검사합니다. Nix lazy evaluation 덕분에 ~1.2초에 완료됩니다.
+
+검증 항목 (20개):
+- 포트 충돌 없음 (homeserver.*.port 고유성)
+- 컨테이너 포트 localhost-only (127.0.0.1: 접두사 강제)
+- extraOptions에 -p/--publish/-P 우회 노출 금지
+- --network=host allowlist 강제 (현재: uptime-kuma만)
+- host network 컨테이너의 listen address 검증 (UPTIME_KUMA_HOST=127.0.0.1)
+- Caddy virtualHost listenAddresses = Tailscale IP 전용
+- Caddy globalConfig default_bind = Tailscale IP
+- anki-sync-server address/openFirewall 검증
+- 방화벽 정책 (allowedTCPPorts=[], trustedInterfaces allowlist, 인터페이스별 포트 없음 등)
+- Tailscale CGNAT IP 범위 독립 검증 (100.64.0.0/10)
+- 수동 nftables 규칙(extraInputRules/extraForwardRules) 없음
+
+```bash
+# 직접 실행
+nix eval --impure --file tests/eval-tests.nix
+
+# lefthook 통해 실행
+lefthook run pre-commit
+```
+
 **주의사항:**
 
 - direnv 환경이 활성화되지 않은 상태에서 커밋 시 hook이 실패함
   - 해결: `direnv allow` 실행 또는 `nix develop` 진입
 - 새 스크립트 추가 시 `shellcheck -S warning`으로 사전 검사 권장
+- eval-tests는 working tree 전체를 평가 (staged 파일만이 아님)
 
 ## Flake/Nix 기본값
 
