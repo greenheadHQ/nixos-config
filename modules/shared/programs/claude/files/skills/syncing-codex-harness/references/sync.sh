@@ -78,14 +78,21 @@ generate_openai_yaml() {
   escaped_desc="$(echo "$short_desc" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
   local prompt_suffix=""
-  [ -n "$project_name" ] && prompt_suffix=" in $project_name"
+  if [ -n "$project_name" ]; then
+    local escaped_project
+    escaped_project="$(echo "$project_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    prompt_suffix=" in $escaped_project"
+  fi
+
+  local escaped_name
+  escaped_name="$(echo "$declared_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
   mkdir -p "$(dirname "$yaml_file")"
   cat > "$yaml_file" <<YAML
 interface:
   display_name: "$escaped_display"
   short_description: "$escaped_desc"
-  default_prompt: "Use \$$declared_name to help with this task${prompt_suffix}."
+  default_prompt: "Use \$$escaped_name to help with this task${prompt_suffix}."
 YAML
 }
 
@@ -625,7 +632,7 @@ regen_yaml() {
   local project_name
   project_name="$(basename "$(cd "$project_root" && pwd)")"
 
-  [ -d "$source_skills" ] || { echo "No .claude/skills/ found" >&2; exit 1; }
+  [ -d "$source_skills" ] || { echo "No .claude/skills/ found (plugin-only project?), skipping" >&2; exit 0; }
   [ -d "$target_skills" ] || { echo "No .agents/skills/ found (run nrs first)" >&2; exit 0; }
 
   local count=0
