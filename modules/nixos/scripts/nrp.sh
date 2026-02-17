@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-FLAKE_PATH="$HOME/nixos-config"
+FLAKE_PATH="$HOME/IdeaProjects/nixos-config"
 OFFLINE_FLAG=""
 
 if [[ "${1:-}" == "--offline" ]]; then
