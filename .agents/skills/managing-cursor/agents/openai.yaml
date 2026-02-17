@@ -1,4 +1,4 @@
 interface:
   display_name: "Managing Cursor"
   short_description: "Cursor IDE: Nix extensions.json, settings, file associations. Triggers: \"add Cursor extension\", \"install extension via Nix\", \"ma"
-  default_prompt: "Use $managing-cursor to help with this task."
+  default_prompt: "Use $managing-cursor to help with this task in nixos-config."

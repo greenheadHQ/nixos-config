@@ -1,4 +1,4 @@
 interface:
   display_name: "Managing Tmux"
   short_description: "tmux config: keybindings, prefix, plugins, resurrect, notepad. Triggers: pane notepad, tmux plugins, tmux-resurrect, session sav"
-  default_prompt: "Use $managing-tmux to help with this task."
+  default_prompt: "Use $managing-tmux to help with this task in nixos-config."

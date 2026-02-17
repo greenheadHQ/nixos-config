@@ -1,4 +1,4 @@
 interface:
   display_name: "Managing Mise"
   short_description: "mise runtime versions: Node.js, pnpm, shims, .nvmrc, activate. Triggers: \"pnpm not found\", \"node version mismatch\", \".nvmrc\", \"m"
-  default_prompt: "Use $managing-mise to help with this task."
+  default_prompt: "Use $managing-mise to help with this task in nixos-config."

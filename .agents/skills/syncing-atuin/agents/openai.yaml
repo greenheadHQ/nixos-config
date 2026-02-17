@@ -1,4 +1,4 @@
 interface:
   display_name: "Syncing Atuin"
   short_description: "Atuin shell history: sync errors, encryption, daemon, cleanup. Triggers: \"atuin status\" 4XX errors, encryption key mismatch, dae"
-  default_prompt: "Use $syncing-atuin to help with this task."
+  default_prompt: "Use $syncing-atuin to help with this task in nixos-config."

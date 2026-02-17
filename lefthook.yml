@@ -1,6 +1,8 @@
 pre-commit:
   parallel: true
   commands:
+    regen-openai-yaml:
+      run: bash ./scripts/ai/regen-and-stage-openai-yaml.sh
     ai-skills-consistency:
       run: bash ./scripts/ai/warn-skill-consistency.sh
     gitleaks:
