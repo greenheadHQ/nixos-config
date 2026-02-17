@@ -22,7 +22,6 @@ generate_openai_yaml() {
   local skill_md="$1"
   local yaml_file="$2"
   local skill_name="$3"
-  local project_name="${4:-}"
 
   # Extract 'name' from frontmatter
   local declared_name
@@ -77,22 +76,12 @@ generate_openai_yaml() {
   escaped_display="$(echo "$display_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
   escaped_desc="$(echo "$short_desc" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
-  local prompt_suffix=""
-  if [ -n "$project_name" ]; then
-    local escaped_project
-    escaped_project="$(echo "$project_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-    prompt_suffix=" in $escaped_project"
-  fi
-
-  local escaped_name
-  escaped_name="$(echo "$declared_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-
   mkdir -p "$(dirname "$yaml_file")"
   cat > "$yaml_file" <<YAML
 interface:
   display_name: "$escaped_display"
   short_description: "$escaped_desc"
-  default_prompt: "Use \$$escaped_name to help with this task${prompt_suffix}."
+  default_prompt: "Use \$$declared_name to help with this task in nixos-config."
 YAML
 }
 
@@ -101,12 +90,6 @@ project_skills() {
   local source_dir="$1"
   local target_dir="$2"
   local count=0
-
-  # Derive project name from target path: .agents/skills -> project root
-  local project_name=""
-  local project_root
-  project_root="$(cd "$target_dir/../.." 2>/dev/null && pwd)" || true
-  [ -n "$project_root" ] && project_name="$(basename "$project_root")"
 
   for source_skill_dir in "$source_dir"/*/; do
     [ -d "$source_skill_dir" ] || continue
@@ -134,7 +117,7 @@ project_skills() {
     done
 
     # agents/openai.yaml
-    generate_openai_yaml "$source_skill_dir/SKILL.md" "$target_skill_dir/agents/openai.yaml" "$skill_name" "$project_name"
+    generate_openai_yaml "$source_skill_dir/SKILL.md" "$target_skill_dir/agents/openai.yaml" "$skill_name"
 
     count=$((count + 1))
   done
@@ -147,12 +130,6 @@ plugin_skills() {
   local source_dir="$1"
   local target_dir="$2"
   local plugin_name="${3:-}"
-
-  # Derive project name from target path: .agents/skills -> project root
-  local project_name=""
-  local project_root
-  project_root="$(cd "$target_dir/../.." 2>/dev/null && pwd)" || true
-  [ -n "$project_root" ] && project_name="$(basename "$project_root")"
 
   if [ ! -d "$source_dir" ]; then
     echo "Warning: Plugin skills directory not found: $source_dir" >&2
@@ -193,7 +170,7 @@ plugin_skills() {
     done
 
     # agents/openai.yaml
-    generate_openai_yaml "$source_skill_dir/SKILL.md" "$target_skill_dir/agents/openai.yaml" "$final_name" "$project_name"
+    generate_openai_yaml "$source_skill_dir/SKILL.md" "$target_skill_dir/agents/openai.yaml" "$final_name"
 
     count=$((count + 1))
   done
@@ -624,35 +601,6 @@ sync_all() {
   echo "=== Sync complete ===" >&2
 }
 
-# ─── regen-yaml: regenerate only openai.yaml files (for pre-commit) ───
-regen_yaml() {
-  local project_root="$1"
-  local source_skills="$project_root/.claude/skills"
-  local target_skills="$project_root/.agents/skills"
-  local project_name
-  project_name="$(basename "$(cd "$project_root" && pwd)")"
-
-  [ -d "$source_skills" ] || { echo "No .claude/skills/ found (plugin-only project?), skipping" >&2; exit 0; }
-  [ -d "$target_skills" ] || { echo "No .agents/skills/ found (run nrs first)" >&2; exit 0; }
-
-  local count=0
-  for source_skill_dir in "$source_skills"/*/; do
-    [ -d "$source_skill_dir" ] || continue
-    [ -f "$source_skill_dir/SKILL.md" ] || continue
-
-    local skill_name
-    skill_name="$(basename "$source_skill_dir")"
-
-    # Only regenerate if target directory already exists (already projected by nrs)
-    [ -d "$target_skills/$skill_name" ] || continue
-
-    generate_openai_yaml "$source_skill_dir/SKILL.md" "$target_skills/$skill_name/agents/openai.yaml" "$skill_name" "$project_name"
-    count=$((count + 1))
-  done
-
-  echo "$count"
-}
-
 # ─── Main dispatch ───
 case "${1:-}" in
   project-skills)
@@ -689,14 +637,11 @@ case "${1:-}" in
   trust-project)
     ensure_project_trusted "$2"
     ;;
-  regen-yaml)
-    regen_yaml "$2"
-    ;;
   all)
     sync_all "$2" "${@:3}"
     ;;
   *)
-    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|init|gitignore-check|regen-yaml|all} ..." >&2
+    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|init|gitignore-check|all} ..." >&2
     exit 1
     ;;
 esac

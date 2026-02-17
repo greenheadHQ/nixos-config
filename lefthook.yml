@@ -1,26 +1,18 @@
 pre-commit:
-  piped: true
+  parallel: true
   commands:
-    regen-openai-yaml:
-      run: bash ./scripts/ai/regen-and-stage-openai-yaml.sh
-      priority: 1
     ai-skills-consistency:
       run: bash ./scripts/ai/warn-skill-consistency.sh
-      priority: 2
     gitleaks:
       run: gitleaks protect --staged --no-banner --redact
-      priority: 2
     nixfmt:
       glob: "*.nix"
       run: nixfmt --check {staged_files}
-      priority: 2
     shellcheck:
       glob: "*.sh"
       run: shellcheck -S warning {staged_files}
-      priority: 2
     eval-tests:
       run: bash ./tests/run-eval-tests.sh
-      priority: 2
 
 pre-push:
   commands:
