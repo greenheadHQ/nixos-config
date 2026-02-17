@@ -20,6 +20,9 @@ in
   };
 
   # Shell 함수 라이브러리 (source로 로딩)
+  home.file.".local/lib/rebuild-common.sh" = {
+    source = "${sharedScriptsDir}/rebuild-common.sh";
+  };
   home.file.".local/lib/git-worktree-functions.sh" = {
     source = "${sharedScriptsDir}/git-worktree-functions.sh";
   };

@@ -64,6 +64,9 @@ nrs --offline   # 오프라인 rebuild (캐시만 사용)
 nrp             # 미리보기만
 ```
 
+> nrs/nrp 스크립트는 `~/.local/lib/rebuild-common.sh`를 source하여 공통 함수(로깅, 인수 파싱, 외부 패키지 갱신, 빌드 미리보기, 아티팩트 정리)를 사용합니다.
+> 소스: `modules/shared/scripts/rebuild-common.sh`, 플랫폼별: `modules/nixos/scripts/{nrs,nrp}.sh`
+
 ### MiniPC 접속 (Mac에서만 필요)
 
 Platform이 `darwin`(Mac)일 때만 SSH 접속 필요:
@@ -84,6 +87,7 @@ Platform이 `linux`이면 이미 MiniPC — SSH 금지. 명령어를 직접 실�
 | `modules/nixos/programs/` | 공통 서비스 모듈 (Tailscale, SSH, Caddy 등) |
 | `modules/nixos/programs/smartd.nix` | S.M.A.R.T. 디스크 건강 모니터링 + Pushover 알림 |
 | `modules/nixos/home.nix` | Home Manager (NixOS) |
+| `modules/shared/scripts/rebuild-common.sh` | nrs/nrp 공통 함수 라이브러리 → `~/.local/lib/` |
 | `libraries/constants.nix` | 전역 상수 (IP, 경로, SSH 키 등) |
 
 ## 시스템 복구

@@ -7,49 +7,19 @@
 
 set -euo pipefail
 
-FLAKE_PATH="$HOME/IdeaProjects/nixos-config"
-OFFLINE_FLAG=""
+# shellcheck disable=SC2034  # REBUILD_CMD는 source된 rebuild-common.sh에서 사용
+REBUILD_CMD="nixos-rebuild"
+# shellcheck source=/dev/null  # 런타임에 ~/.local/lib/rebuild-common.sh 로딩
+source "$HOME/.local/lib/rebuild-common.sh"
+parse_args "$@"
 
-if [[ "${1:-}" == "--offline" ]]; then
-    OFFLINE_FLAG="--offline"
-fi
-
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-log_info() { echo -e "${GREEN}$1${NC}"; }
-log_warn() { echo -e "${YELLOW}$1${NC}"; }
-log_error() { echo -e "${RED}$1${NC}"; }
-
+#───────────────────────────────────────────────────────────────────────────────
+# 메인
+#───────────────────────────────────────────────────────────────────────────────
 main() {
     cd "$FLAKE_PATH" || exit 1
-
-    if [[ -n "$OFFLINE_FLAG" ]]; then
-        log_info "🔨 Building (offline, preview only)..."
-    else
-        log_info "🔨 Building (preview only)..."
-    fi
-
-    # shellcheck disable=SC2086
-    if ! sudo nixos-rebuild build --flake "$FLAKE_PATH" $OFFLINE_FLAG; then
-        log_error "❌ Build failed!"
-        exit 1
-    fi
-
-    echo ""
-    log_info "📋 Changes (preview only, not applied):"
-    # nvd diff 출력 안내:
-    # - <none> 버전: home-manager 관리 파일(files, hm_*)은 버전 접미사가 없어 정상적으로 <none> 표시
-    # - nvd diff는 동일 결과 시 non-zero 반환 가능
-    if ! nvd diff /run/current-system ./result; then
-        log_warn "⚠️  nvd diff returned non-zero (possibly identical results)"
-    fi
-
-    # 정리
-    sudo rm -f "$FLAKE_PATH"/result*
-
+    preview_changes "preview only" "Changes (preview only, not applied):"
+    cleanup_build_artifacts
     echo ""
     log_info "✅ Preview complete (no changes applied)"
 }

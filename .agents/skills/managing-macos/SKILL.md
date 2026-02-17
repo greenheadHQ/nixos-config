@@ -29,6 +29,9 @@ nrp
 - launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
 - Hammerspoon 재시작 (HOME 오염 방지)
 
+> nrs/nrp 스크립트는 `~/.local/lib/rebuild-common.sh`를 source하여 공통 함수(로깅, 인수 파싱, 외부 패키지 갱신, 빌드 미리보기, 아티팩트 정리)를 사용합니다.
+> 소스: `modules/shared/scripts/rebuild-common.sh`, 플랫폼별: `modules/darwin/scripts/{nrs,nrp}.sh`
+
 ### 주요 설정 파일
 
 | 파일 | 용도 |

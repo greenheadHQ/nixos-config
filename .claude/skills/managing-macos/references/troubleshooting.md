@@ -191,13 +191,12 @@ defaults write -g com.apple.swipescrolldirection -bool false
 
 > **발생 시점**: 2026-01-15
 
-**증상**: `nrs` 명령 실행 시 SSH 키 로딩과 launchd 에이전트 정리 메시지만 출력되고, `darwin-rebuild`가 실행되지 않고 즉시 종료됨.
+**증상**: `nrs` 명령 실행 시 launchd 에이전트 정리 메시지만 출력되고, `darwin-rebuild`가 실행되지 않고 즉시 종료됨.
 
 ```
 ❯ nrs
 
-🔑 Loading SSH key...
-Identity added: /Users/glen/.ssh/id_ed25519 (greenhead-home-mac-2025-10)
+📦 Checking for external package updates...
 🧹 Cleaning up launchd agents...
 
 ❯   ← 빌드 없이 즉시 프롬프트 복귀
@@ -351,11 +350,13 @@ killall Hammerspoon && open -a Hammerspoon
 ```bash
 # modules/darwin/scripts/nrs.sh (일부)
 restart_hammerspoon() {
+    log_info "🔄 Restarting Hammerspoon..."
     if pgrep -x "Hammerspoon" > /dev/null; then
         killall Hammerspoon 2>/dev/null || true
         sleep 1
     fi
     open -a Hammerspoon
+    log_info "  ✓ Hammerspoon restarted"
 }
 ```
 

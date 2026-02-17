@@ -137,6 +137,17 @@ locale charmap  # UTF-8 확인
 | `nrh` | `~/.local/bin/nrh.sh` | 최근 10개 세대 |
 | `nrh-all` | `~/.local/bin/nrh.sh --all` | 전체 세대 |
 
+**Rebuild 스크립트 아키텍처:**
+
+nrs/nrp 스크립트는 공통 함수를 `~/.local/lib/rebuild-common.sh`에서 source합니다.
+각 스크립트는 `REBUILD_CMD` 변수를 설정한 후 공통 라이브러리를 로드합니다.
+
+| 파일 | 역할 |
+|------|------|
+| `modules/shared/scripts/rebuild-common.sh` | 공통 라이브러리 (로깅, 인수 파싱, 외부 패키지 갱신, 빌드 미리보기, 아티팩트 정리) |
+| `modules/darwin/scripts/nrs.sh` | darwin switch (launchd 정리, Hammerspoon 재시작) |
+| `modules/darwin/scripts/nrp.sh` | darwin 미리보기 전용 |
+
 ## 보안
 
 - **Touch ID sudo 인증**: 터미널에서 sudo 실행 시 Touch ID 사용

@@ -180,8 +180,19 @@ services.tailscale = {
 | `nrs-offline` | `~/.local/bin/nrs.sh --offline` | 오프라인 rebuild |
 | `nrp` | `~/.local/bin/nrp.sh` | 미리보기만 |
 | `nrp-offline` | `~/.local/bin/nrp.sh --offline` | 오프라인 미리보기 |
-| `nrh` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system` (tail 10) | 최근 10개 세대 |
+| `nrh` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system \| tail -10` | 최근 10개 세대 |
 | `nrh-all` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system` | 전체 세대 |
+
+**Rebuild 스크립트 아키텍처:**
+
+nrs/nrp 스크립트는 공통 함수를 `~/.local/lib/rebuild-common.sh`에서 source합니다.
+각 스크립트는 `REBUILD_CMD` 변수를 설정한 후 공통 라이브러리를 로드합니다.
+
+| 파일 | 역할 |
+|------|------|
+| `modules/shared/scripts/rebuild-common.sh` | 공통 라이브러리 (로깅, 인수 파싱, 외부 패키지 갱신, 빌드 미리보기, 아티팩트 정리) |
+| `modules/nixos/scripts/nrs.sh` | NixOS switch (exit code 4 핸들링) |
+| `modules/nixos/scripts/nrp.sh` | NixOS 미리보기 전용 |
 
 ## macOS SSH 접속
 
