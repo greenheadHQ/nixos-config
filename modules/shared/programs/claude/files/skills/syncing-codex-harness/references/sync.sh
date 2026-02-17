@@ -17,7 +17,7 @@ set -euo pipefail
 # Requires UTF-8 locale for correct multibyte handling (${var:0:N})
 
 # ─── openai.yaml generation ───
-# Ported from modules/shared/programs/codex/default.nix:86-139
+# 단일 소스: default.nix의 activation script에서도 이 함수를 호출함
 generate_openai_yaml() {
   local skill_md="$1"
   local yaml_file="$2"
@@ -36,7 +36,7 @@ generate_openai_yaml() {
   ' "$skill_md")"
   [ -z "$declared_name" ] && declared_name="$skill_name"
 
-  # Extract description (128 char limit — KEEP IN SYNC: codex/default.nix)
+  # Extract description (128 char limit)
   local short_desc
   short_desc="$(awk '
     BEGIN { in_fm = 0; mode = ""; desc = "" }
@@ -68,7 +68,7 @@ generate_openai_yaml() {
     print
   }')"
 
-  # 알려진 약어 보정 (KEEP IN SYNC: codex/default.nix display_name 약어 보정)
+  # 알려진 약어 보정
   display_name="$(echo "$display_name" | sed 's/\bSsh\b/SSH/g; s/\bMacos\b/macOS/g; s/\bMinipc\b/MiniPC/g; s/\bGithub\b/GitHub/g')"
 
   # Escape YAML special chars
@@ -637,11 +637,14 @@ case "${1:-}" in
   trust-project)
     ensure_project_trusted "$2"
     ;;
+  generate-openai-yaml)
+    generate_openai_yaml "$2" "$3" "$4"
+    ;;
   all)
     sync_all "$2" "${@:3}"
     ;;
   *)
-    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|init|gitignore-check|all} ..." >&2
+    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|generate-openai-yaml|init|gitignore-check|all} ..." >&2
     exit 1
     ;;
 esac
