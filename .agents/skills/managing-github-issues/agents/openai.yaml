@@ -1,4 +1,4 @@
 interface:
-  display_name: "Managing Github Issues"
+  display_name: "Managing GitHub Issues"
   short_description: "This skill should be used when the user asks to \"create an issue\", \"이슈 등록\", \"이슈 만들어\", \"todo 만들어\", \"이슈 조회\", \"list issues\", \"todo "
   default_prompt: "Use $managing-github-issues to help with this task in nixos-config."

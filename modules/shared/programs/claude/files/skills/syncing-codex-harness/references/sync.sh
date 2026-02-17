@@ -69,7 +69,7 @@ generate_openai_yaml() {
   }')"
 
   # 알려진 약어 보정 (KEEP IN SYNC: codex/default.nix display_name 약어 보정)
-  display_name="$(echo "$display_name" | sed 's/\bSsh\b/SSH/g; s/\bMacos\b/macOS/g; s/\bMinipc\b/MiniPC/g')"
+  display_name="$(echo "$display_name" | sed 's/\bSsh\b/SSH/g; s/\bMacos\b/macOS/g; s/\bMinipc\b/MiniPC/g; s/\bGithub\b/GitHub/g')"
 
   # Escape YAML special chars
   local escaped_display escaped_desc

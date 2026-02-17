@@ -130,7 +130,7 @@ in
               }')"
 
               # 알려진 약어 보정 (KEEP IN SYNC: syncing-codex-harness/references/sync.sh)
-              display_name="$(echo "$display_name" | sed 's/\bSsh\b/SSH/g; s/\bMacos\b/macOS/g; s/\bMinipc\b/MiniPC/g')"
+              display_name="$(echo "$display_name" | sed 's/\bSsh\b/SSH/g; s/\bMacos\b/macOS/g; s/\bMinipc\b/MiniPC/g; s/\bGithub\b/GitHub/g')"
 
               # yaml 파일 작성 (YAML 특수문자 이스케이프)
               escaped_display="$(echo "$display_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
