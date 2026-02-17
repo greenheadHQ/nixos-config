@@ -59,7 +59,7 @@ generate_openai_yaml() {
     END { if (mode == "block" && desc != "") print desc }
   ' "$skill_md")"
   short_desc="${short_desc:0:128}"
-  [ -z "$short_desc" ] && short_desc="Codex skill projected from Claude Code"
+  [ -z "$short_desc" ] && short_desc="Project skill for nixos-config workflows"
 
   # display_name: kebab-case -> Title Case
   local display_name

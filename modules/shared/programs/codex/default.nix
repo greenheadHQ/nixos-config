@@ -54,6 +54,7 @@ in
         $DRY_RUN_CMD mkdir -p "$TARGET_SKILLS"
 
         # ── 스킬 투영 (심링크 + openai.yaml 생성) ──
+        SYNC_SH="${nixosConfigPath}/modules/shared/programs/claude/files/skills/syncing-codex-harness/references/sync.sh"
         for source_skill_dir in "$SOURCE_SKILLS"/*/; do
           [ -d "$source_skill_dir" ] || continue
           [ -f "$source_skill_dir/SKILL.md" ] || continue
@@ -85,7 +86,6 @@ in
           # agents/openai.yaml 생성 (sync.sh 단일 소스)
           $DRY_RUN_CMD mkdir -p "$target_skill_dir/agents"
           yaml_file="$target_skill_dir/agents/openai.yaml"
-          SYNC_SH="${nixosConfigPath}/modules/shared/programs/claude/files/skills/syncing-codex-harness/references/sync.sh"
           PATH="${pkgs.gawk}/bin:$PATH" bash "$SYNC_SH" generate-openai-yaml \
             "$source_skill_dir/SKILL.md" "$yaml_file" "$skill_name"
         done
