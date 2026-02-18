@@ -49,7 +49,7 @@ echo "use flake" > .envrc
 direnv allow
 
 # 3. 이후 디렉토리 진입 시 자동 활성화
-cd ~/IdeaProjects/nixos-config
+cd ~/Workspace/nixos-config
 # direnv: loading .envrc
 # direnv: using flake
 # direnv: nix-direnv: Using cached dev shell

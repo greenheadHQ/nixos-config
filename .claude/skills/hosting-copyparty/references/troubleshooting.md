@@ -163,7 +163,7 @@ Copyparty Docker 이미지의 `-c` 플래그는 설정값(global, accounts)은 �
 
 **MiniPC에 배포하려면**:
 1. 로컬에서 코드 변경 → git commit → git push
-2. `ssh minipc` → `cd ~/IdeaProjects/nixos-config && git pull`
+2. `ssh minipc` → `cd ~/Workspace/nixos-config && git pull`
 3. `nrs` (MiniPC의 nrs.sh = `sudo nixos-rebuild switch --flake .`)
 
 **흔한 실수**:

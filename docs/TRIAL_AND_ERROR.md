@@ -831,7 +831,7 @@ curl -sLO https://github.com/atuinsh/atuin/releases/download/v18.11.0/atuin-aarc
 #### 5단계: 소스 코드 분석
 
 ```bash
-git clone https://github.com/atuinsh/atuin.git ~/IdeaProjects/atuin-source
+git clone https://github.com/atuinsh/atuin.git ~/Workspace/atuin-source
 ```
 
 **발견** (`crates/atuin-server/src/router.rs`):

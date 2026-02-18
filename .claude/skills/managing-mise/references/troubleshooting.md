@@ -17,7 +17,7 @@ mise 런타임 버전 관리자 관련 문제와 해결 방법을 정리합니�
 **증상**: Mac에서 SSH로 MiniPC 접속 후 pnpm 명령 실행 시 찾을 수 없음.
 
 ```bash
-$ ssh minipc 'cd /home/greenhead/IdeaProjects/my-project && pnpm install'
+$ ssh minipc 'cd /home/greenhead/Workspace/my-project && pnpm install'
 pnpm not found
 ```
 
@@ -74,7 +74,7 @@ programs.zsh = {
 **확인**:
 
 ```bash
-$ ssh minipc 'cd /home/greenhead/IdeaProjects/my-project && pnpm --version'
+$ ssh minipc 'cd /home/greenhead/Workspace/my-project && pnpm --version'
 9.15.4
 ```
 

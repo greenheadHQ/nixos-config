@@ -102,7 +102,7 @@ sudo podman inspect vaultwarden | jq '.[0].State.Health.Status'
 openssl rand -hex 32
 
 # 2. agenix secret 수정
-cd ~/IdeaProjects/nixos-config
+cd ~/Workspace/nixos-config
 nix run github:ryantm/agenix -- -e secrets/vaultwarden-admin-token.age
 
 # 3. 적용

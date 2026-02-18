@@ -3,7 +3,7 @@
 ## 개요
 
 - 발생 일자: 2026년 2월 8일 (Sunday)
-- 대상 프로젝트: `/Users/green/IdeaProjects/nixos-config`
+- 대상 프로젝트: `/Users/green/Workspace/nixos-config`
 - 문제 유형: Codex CLI가 global(user) 스코프 스킬은 인식하지만 project 스코프(`.agents/skills`) 스킬을 안정적으로 인식하지 못함
 
 ## 증상

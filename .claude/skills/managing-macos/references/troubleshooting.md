@@ -227,7 +227,7 @@ bash에서 `((expression))`의 exit code는 표현식의 **평가 결과**에 �
 
 ```bash
 # 디버그 모드로 실행하여 어디서 멈추는지 확인
-bash -x ~/IdeaProjects/nixos-config/modules/darwin/scripts/nrs.sh
+bash -x ~/Workspace/nixos-config/modules/darwin/scripts/nrs.sh
 
 # 출력 예시 (문제 발생 시):
 # + ((cleaned++))
@@ -302,7 +302,7 @@ rm -f ~/Library/LaunchAgents/com.green.*.plist
 
 # 4. 2-3초 대기 후 재시도
 sleep 3
-sudo darwin-rebuild switch --flake ~/IdeaProjects/nixos-config
+sudo darwin-rebuild switch --flake ~/Workspace/nixos-config
 ```
 
 **예방**: `nrs` alias 사용 시 자동으로 에이전트를 정리합니다.

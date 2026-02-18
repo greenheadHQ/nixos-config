@@ -10,7 +10,7 @@ hide_full_access_warning = true
 [notice.model_migrations]
 "gpt-5.2" = "gpt-5.2-codex"
 
-[projects."/home/greenhead/IdeaProjects/example-front"]
+[projects."/home/greenhead/Workspace/example-front"]
 trust_level = "trusted"
 
 [features]

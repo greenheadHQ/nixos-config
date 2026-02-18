@@ -15,7 +15,7 @@ if [[ -z "${REBUILD_CMD:-}" ]]; then
     exit 1
 fi
 
-FLAKE_PATH="$HOME/IdeaProjects/nixos-config"
+FLAKE_PATH="$HOME/Workspace/nixos-config"
 
 # 색상 정의
 GREEN='\033[0;32m'

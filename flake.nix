@@ -55,12 +55,16 @@
         linux = "x86_64-linux";
       };
 
+      # 워크스페이스 디렉토리명 (~/Workspace/nixos-config)
+      # 변경 시 rebuild-common.sh의 FLAKE_PATH도 함께 수정 필요
+      workspaceDir = "Workspace";
+
       # macOS 호스트 설정 (확인: scutil --get LocalHostName)
       darwinHosts =
         let
           mkDarwinHost = username: hostType: {
             inherit username hostType;
-            nixosConfigPath = "/Users/${username}/IdeaProjects/nixos-config";
+            nixosConfigPath = "/Users/${username}/${workspaceDir}/nixos-config";
           };
         in
         {
@@ -73,7 +77,7 @@
         let
           mkNixosHost = username: hostType: {
             inherit username hostType;
-            nixosConfigPath = "/home/${username}/IdeaProjects/nixos-config";
+            nixosConfigPath = "/home/${username}/${workspaceDir}/nixos-config";
           };
         in
         {

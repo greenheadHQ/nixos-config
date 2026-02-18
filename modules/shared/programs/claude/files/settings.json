@@ -16,7 +16,7 @@
       "Bash(rm -rf ~/*)",
       "Bash(rm -rf /*)"
     ],
-    "additionalDirectories": ["~/Downloads", "~/Documents", "~/IdeaProjects"]
+    "additionalDirectories": ["~/Downloads", "~/Documents", "~/Workspace"]
   },
   "hooks": {
     "PreToolUse": [

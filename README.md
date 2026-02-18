@@ -90,7 +90,7 @@ curl -L https://nixos.org/nix/install | sh
 # 설치 후 터미널 재시작
 
 # 2. 저장소 클론
-mkdir -p ~/IdeaProjects && cd ~/IdeaProjects
+mkdir -p ~/Workspace && cd ~/Workspace
 git clone https://github.com/shren207/nixos-config.git
 cd nixos-config
 

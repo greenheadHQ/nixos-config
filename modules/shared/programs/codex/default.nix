@@ -44,7 +44,7 @@ in
           BINARY="codex-x86_64-unknown-linux-musl"
           URL="https://github.com/openai/codex/releases/download/''${TAG}/''${BINARY}.tar.gz"
           mkdir -p "$HOME/.local/bin"
-          ${pkgs.curl}/bin/curl -fsSL "$URL" | tar xz -C /tmp
+          ${pkgs.curl}/bin/curl -fsSL "$URL" | ${pkgs.gnutar}/bin/tar --use-compress-program=${pkgs.gzip}/bin/gzip -x -C /tmp
           mv "/tmp/''${BINARY}" "$HOME/.local/bin/codex"
           chmod +x "$HOME/.local/bin/codex"
           echo "Codex CLI ''${TAG#rust-v} installed to ~/.local/bin/codex"

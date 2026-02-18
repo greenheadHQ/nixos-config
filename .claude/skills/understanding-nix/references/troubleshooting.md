@@ -37,7 +37,7 @@ lefthook: command not found
 
 ```bash
 # 1. 프로젝트 디렉토리에서 direnv 허용
-cd ~/IdeaProjects/nixos-config
+cd ~/Workspace/nixos-config
 direnv allow
 
 # 2. 환경 활성화 확인
