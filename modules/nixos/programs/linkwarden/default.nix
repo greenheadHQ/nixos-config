@@ -14,7 +14,8 @@ let
   inherit (constants.domain) base subdomains;
   inherit (constants.network) ports;
 
-  archiveDir = "${mediaData}/linkwarden/archives";
+  # storageLocation의 루트 디렉토리 — Linkwarden이 내부적으로 archives/ 하위 구조 생성
+  storageDir = "${mediaData}/linkwarden";
 in
 {
   config = lib.mkIf cfg.enable {
@@ -37,7 +38,7 @@ in
     # 아카이브 디렉토리 (HDD)
     # ═══════════════════════════════════════════════════════════════
     systemd.tmpfiles.rules = [
-      "d ${archiveDir} 0750 linkwarden linkwarden -"
+      "d ${storageDir} 0750 linkwarden linkwarden -"
     ];
 
     # ═══════════════════════════════════════════════════════════════
@@ -61,7 +62,7 @@ in
       openFirewall = false;
 
       # Archive 파일 → HDD (스크린샷, PDF, HTML 등)
-      storageLocation = archiveDir;
+      storageLocation = storageDir;
 
       enableRegistration = false;
 
