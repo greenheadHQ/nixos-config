@@ -128,6 +128,44 @@
       };
     };
 
+    archiveBoxUpdate = {
+      enable = lib.mkEnableOption "ArchiveBox version check and update notifications";
+      checkTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 06:00:00";
+        description = "OnCalendar time for version check";
+      };
+    };
+
+    archiveBoxNotify = {
+      enable = lib.mkEnableOption "ArchiveBox runtime event notifications (server error, archive success/failure)";
+      pollIntervalSec = lib.mkOption {
+        type = lib.types.int;
+        default = 60;
+        description = "Polling interval in seconds for ArchiveBox event resolver";
+      };
+      successEnabled = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to send archive success notifications";
+      };
+      includeFullUrl = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Whether to include full URL in notification body (false = sanitized domain only)";
+      };
+      silenceSuccessNight = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Suppress success notifications during night hours";
+      };
+      nightHours = lib.mkOption {
+        type = lib.types.str;
+        default = "00:00-07:00";
+        description = "Night quiet-hours range for success notifications (HH:MM-HH:MM)";
+      };
+    };
+
     reverseProxy = {
       enable = lib.mkEnableOption "Caddy reverse proxy with HTTPS for homeserver services";
     };
@@ -154,6 +192,8 @@
     ../programs/docker/immich-backup.nix # Immich PostgreSQL 매일 백업
     ../programs/docker/archivebox.nix # ArchiveBox 웹 아카이버
     ../programs/docker/archivebox-backup.nix # ArchiveBox SQLite 매일 백업
+    ../programs/docker/archivebox-notify.nix # ArchiveBox 런타임 이벤트 알림 (Pushover)
+    ../programs/archivebox-update # ArchiveBox 버전 체크 + 업데이트 알림
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)
   ];

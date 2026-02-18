@@ -24,6 +24,16 @@ let
     printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD" > ${envFilePath}
     chmod 0400 ${envFilePath}
   '';
+
+  syncAdminPasswordScript = pkgs.writeShellApplication {
+    name = "archivebox-sync-admin-password";
+    runtimeInputs = with pkgs; [
+      coreutils
+      podman
+      ripgrep
+    ];
+    text = builtins.readFile ./archivebox/files/sync-admin-password.sh;
+  };
 in
 {
   config = lib.mkIf cfg.enable {
@@ -60,6 +70,43 @@ in
         UMask = "0077";
       };
     };
+
+    # ═══════════════════════════════════════════════════════════════
+    # admin 비밀번호 동기화 (컨테이너 시작 직후, drift 방지)
+    # ═══════════════════════════════════════════════════════════════
+    systemd.services.archivebox-admin-password-sync = {
+      description = "Sync ArchiveBox admin password from agenix secret";
+      wantedBy = [ "podman-archivebox.service" ];
+      wants = [ "podman-archivebox.service" ];
+      after = [ "podman-archivebox.service" ];
+      partOf = [ "podman-archivebox.service" ];
+
+      unitConfig = {
+        ConditionPathExists = adminPasswordPath;
+      };
+
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${syncAdminPasswordScript}/bin/archivebox-sync-admin-password";
+        UMask = "0077";
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+      };
+
+      environment = {
+        CONTAINER_NAME = "archivebox";
+        ADMIN_USERNAME = "admin";
+        ADMIN_PASSWORD_FILE = adminPasswordPath;
+        STARTUP_TIMEOUT_SEC = "60";
+      };
+    };
+
+    # nrs/switch 시에도 실행 중 컨테이너 비밀번호를 즉시 동기화
+    system.activationScripts.archivebox-admin-password-sync = lib.stringAfter [ "etc" ] ''
+      if ${pkgs.systemd}/bin/systemctl is-active --quiet podman-archivebox.service; then
+        ${pkgs.systemd}/bin/systemctl start archivebox-admin-password-sync.service || true
+      fi
+    '';
 
     # ═══════════════════════════════════════════════════════════════
     # ArchiveBox 컨테이너

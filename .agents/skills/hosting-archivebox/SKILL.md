@@ -5,7 +5,8 @@ description: |
   webpage archiving, bookmark archiving, or archive.greenhead.dev.
   Triggers: "ArchiveBox", "아카이브박스", "웹 아카이브", "web archive",
   "archive.greenhead.dev", "아카이빙", "SingleFile", "singlefile",
-  "archivebox-backup", "아카이브 백업".
+  "archivebox-backup", "archivebox-update", "archivebox-notify",
+  "아카이브 백업", "아카이브 업데이트", "푸시오버 알림".
   For container management see running-containers.
   For Caddy HTTPS see running-containers.
 ---
@@ -34,10 +35,12 @@ archive.greenhead.dev (Caddy HTTPS)
 |------|------|
 | `modules/nixos/programs/docker/archivebox.nix` | 컨테이너 정의 |
 | `modules/nixos/programs/docker/archivebox-backup.nix` | SQLite 매일 백업 |
+| `modules/nixos/programs/docker/archivebox-notify.nix` | 런타임 이벤트 알림 (서버 오류/아카이빙 결과) |
+| `modules/nixos/programs/archivebox-update/` | 버전 체크 + 수동 업데이트 |
 | `modules/nixos/options/homeserver.nix` | mkOption 정의 |
 | `libraries/constants.nix` | 포트(8000), 리소스 제한, 서브도메인 |
 | `secrets/archivebox-admin-password.age` | 관리자 비밀번호 |
-| `secrets/pushover-archivebox.age` | 백업 실패 Pushover 알림 |
+| `secrets/pushover-archivebox.age` | ArchiveBox 알림(런타임 이벤트 + 백업 실패) |
 
 ## 스토리지 레이아웃
 
@@ -70,6 +73,24 @@ podman logs archivebox
 # 수동 백업
 sudo systemctl start archivebox-backup
 
+# 버전 체크 수동 실행
+sudo systemctl start archivebox-version-check
+
+# 컨테이너 업데이트 (dry-run 지원)
+sudo archivebox-update --dry-run
+sudo archivebox-update
+
+# 이벤트 poller 상태/수동 실행
+systemctl status archivebox-event-poller.timer
+sudo systemctl start archivebox-event-poller
+
+# 최근 알림 상태 파일
+sudo ls -la /var/lib/archivebox-notify/state/
+
+# admin 비밀번호 동기화 서비스 (컨테이너 시작 후 자동 실행)
+systemctl status archivebox-admin-password-sync
+sudo systemctl start archivebox-admin-password-sync
+
 # URL 아카이빙 (CLI)
 podman exec -it archivebox archivebox add 'https://example.com'
 
@@ -79,7 +100,8 @@ podman exec -it archivebox archivebox add 'https://example.com'
 
 ## 자주 발생하는 문제
 
-1. **첫 배포 후 로그인 안 됨**: `ADMIN_USERNAME`/`ADMIN_PASSWORD` 환경변수로 자동 생성. 컨테이너 로그에서 superuser 생성 확인
+1. **로그인 비밀번호 불일치**: `archivebox-admin-password-sync`가 컨테이너 시작 직후 `secrets/archivebox-admin-password.age` 값을 DB에 강제 동기화. 수동 실행: `sudo systemctl start archivebox-admin-password-sync`
 2. **아카이브 품질 낮음**: SingleFile가 JS 실행 후 캡처하므로 대부분 해결됨. 특수 SPA는 `--timeout` 조정
 3. **디스크 공간 부족**: archive/ 디렉토리(HDD) 확인. `df -h /mnt/data`
 4. **컨테이너 OOM**: constants.nix의 `archiveBox.memory` (기본 3g) 조정
+5. **알림 안 옴**: `journalctl -u archivebox-event-poller -n 60 --no-pager`, `/var/lib/archivebox-notify/state/pending.json` 확인

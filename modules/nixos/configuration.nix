@@ -147,6 +147,8 @@
   homeserver.vaultwarden.enable = true; # Vaultwarden 비밀번호 관리자
   homeserver.archiveBox.enable = true; # ArchiveBox 웹 아카이버 (headless Chromium + SingleFile)
   homeserver.archiveBoxBackup.enable = true; # ArchiveBox SQLite 매일 백업 (HDD)
+  homeserver.archiveBoxNotify.enable = true; # ArchiveBox 런타임 이벤트 알림 (서버 오류/아카이빙 결과)
+  homeserver.archiveBoxUpdate.enable = true; # ArchiveBox 버전 체크 + 업데이트 알림
   homeserver.immichBackup.enable = true; # Immich PostgreSQL 매일 백업 (HDD)
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
   homeserver.devProxy.enable = true; # Dev server → dev.greenhead.dev 프록시

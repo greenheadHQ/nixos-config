@@ -2,11 +2,11 @@
 name: running-containers
 description: |
   Use this skill when the user asks about Podman/Docker containers,
-  homeserver services (immich, uptime-kuma, copyparty, vaultwarden), container OOM,
+  homeserver services (immich, uptime-kuma, copyparty, vaultwarden, archivebox), container OOM,
   service updates, or database backups.
   Triggers: "update immich", "immich 업데이트", "immich-update",
   "check immich version", "immich 버전 확인", upgrading Immich server,
-  "uptime-kuma-update", "copyparty-update", "서비스 업데이트",
+  "uptime-kuma-update", "copyparty-update", "archivebox-update", "서비스 업데이트",
   "service-lib", "version-check", unified service update system,
   container OOM, "Tailscale IP binding" timing, OCI backend config,
   "immich-db-backup", "DB 백업", "vaultwarden-backup", "백업 타이머",
@@ -16,7 +16,7 @@ description: |
 
 # 컨테이너 관리 (Podman/홈서버)
 
-Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty, vaultwarden) 가이드입니다.
+Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty, vaultwarden, archivebox) 가이드입니다.
 Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접근합니다.
 
 ## 모듈 구조 (mkOption 기반)
@@ -36,6 +36,8 @@ homeserver.copyparty.enable = true;           # 파일 서버
 homeserver.vaultwarden.enable = true;         # 비밀번호 관리자
 homeserver.archiveBox.enable = true;          # ArchiveBox 웹 아카이버 (headless Chromium + SingleFile)
 homeserver.archiveBoxBackup.enable = true;    # ArchiveBox SQLite 매일 백업 (05:00)
+homeserver.archiveBoxNotify.enable = true;    # ArchiveBox 이벤트 알림 (실패/성공/서버오류)
+homeserver.archiveBoxUpdate.enable = true;    # ArchiveBox 버전 체크 + 업데이트 (06:00)
 homeserver.immichBackup.enable = true;        # Immich PostgreSQL 매일 백업 (05:30)
 homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 ```
@@ -59,6 +61,8 @@ homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 | `modules/nixos/programs/immich-update/` | Immich 버전 체크 + 업데이트 |
 | `modules/nixos/programs/uptime-kuma-update/` | Uptime Kuma 버전 체크 + 업데이트 |
 | `modules/nixos/programs/copyparty-update/` | Copyparty 버전 체크 + 업데이트 |
+| `modules/nixos/programs/archivebox-update/` | ArchiveBox 버전 체크 + 업데이트 |
+| `modules/nixos/programs/docker/archivebox-notify.nix` | ArchiveBox 이벤트 알림 (hook + poller) |
 | `modules/nixos/programs/anki-sync-server/` | Anki sync (NixOS 네이티브 모듈, 비컨테이너) |
 | `modules/nixos/programs/docker/archivebox.nix` | ArchiveBox 웹 아카이버 (Podman 컨테이너) |
 | `modules/nixos/programs/docker/archivebox-backup.nix` | ArchiveBox SQLite 매일 백업 |
@@ -158,13 +162,14 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 ### 통합 서비스 업데이트 시스템
 
-3개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라:
+4개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라:
 
 | 서비스 | 버전 체크 (자동) | 수동 업데이트 | 타이머 |
 |--------|-----------------|--------------|--------|
 | Immich | `immich-version-check` | `sudo immich-update` | 03:00 |
 | Uptime Kuma | `uptime-kuma-version-check` | `sudo uptime-kuma-update` | 03:30 |
 | Copyparty | `copyparty-version-check` | `sudo copyparty-update` | 04:00 |
+| ArchiveBox | `archivebox-version-check` | `sudo archivebox-update` | 06:00 |
 
 **백업 타이머**:
 
@@ -177,13 +182,15 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 공통 라이브러리 함수: `send_notification`, `fetch_github_release`, `get_image_digest`, `check_watchdog`, `check_initial_run`, `record_success`, `http_health_check`
 
-서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`).
+서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`, `pushover-archivebox`).
 
 **Immich**: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. 상세: [references/immich-update.md](references/immich-update.md)
 
 **Immich DB 백업**: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행.
 
-**Uptime Kuma/Copyparty**: 이미지에 버전 레이블 없음 → GitHub latest 추적 + 이미지 digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
+**Uptime Kuma/Copyparty/ArchiveBox**: 이미지에 버전 레이블 없음 → GitHub latest 추적 + 이미지 digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
+
+**ArchiveBox 이벤트 알림**: `archivebox-event-poller`가 hook 큐(`.../data/notify/events.jsonl`)를 읽고 SQLite 상태를 판정해 성공/실패 알림을 보냅니다. `podman-archivebox` 실패 시 `archivebox-server-error-notify`가 긴급 알림을 전송합니다.
 
 ### FolderAction 자동 업로드
 

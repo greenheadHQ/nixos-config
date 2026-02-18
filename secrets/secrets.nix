@@ -48,7 +48,7 @@ in
   # ArchiveBox 관리자 비밀번호
   "archivebox-admin-password.age".publicKeys = minipcOnly;
 
-  # ArchiveBox Pushover 알림 (백업 실패 알림)
+  # ArchiveBox Pushover 알림 (런타임 이벤트 + 백업 실패)
   "pushover-archivebox.age".publicKeys = minipcOnly;
 
   # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
