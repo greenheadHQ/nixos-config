@@ -315,13 +315,13 @@ classify_snapshot() {
   local snapshot_id="$1"
 
   local rows
-  rows=$(sqlite3 -json "$DB_SQLITE_TARGET" "SELECT rowid, status, ${ARCHIVERESULT_OUTPUT_EXPR} AS output_str FROM core_archiveresult WHERE snapshot_id='${snapshot_id}' ORDER BY rowid DESC;" 2>/dev/null || true)
+  rows=$(sqlite3 -json "$DB_SQLITE_TARGET" "SELECT rowid AS result_rowid, status, ${ARCHIVERESULT_OUTPUT_EXPR} AS output_str FROM core_archiveresult WHERE snapshot_id='${snapshot_id}' ORDER BY rowid DESC;" 2>/dev/null || true)
   if [ -z "$rows" ] || ! echo "$rows" | jq -e 'type == "array"' > /dev/null 2>&1; then
     rows="[]"
   fi
 
   local latest_rowid
-  latest_rowid=$(echo "$rows" | jq '([.[].rowid] | max // 0)')
+  latest_rowid=$(echo "$rows" | jq '([.[].result_rowid] | max // 0)')
   if ! echo "$latest_rowid" | rg -q '^[0-9]+$'; then
     latest_rowid="0"
   fi
@@ -476,14 +476,14 @@ if ! echo "$LAST_RESULT_ROWID" | rg -q '^[0-9]+$'; then
   LAST_RESULT_ROWID="0"
 fi
 
-NEW_RESULTS=$(sqlite3 -json "$DB_SQLITE_TARGET" "SELECT r.rowid, r.snapshot_id, COALESCE(s.url, '') AS url FROM core_archiveresult r LEFT JOIN core_snapshot s ON s.id = r.snapshot_id WHERE r.rowid > ${LAST_RESULT_ROWID} ORDER BY r.rowid ASC LIMIT ${MAX_LOOKUPS_PER_CYCLE};" 2>/dev/null || true)
+NEW_RESULTS=$(sqlite3 -json "$DB_SQLITE_TARGET" "SELECT r.rowid AS result_rowid, r.snapshot_id, COALESCE(s.url, '') AS url FROM core_archiveresult r LEFT JOIN core_snapshot s ON s.id = r.snapshot_id WHERE r.rowid > ${LAST_RESULT_ROWID} ORDER BY r.rowid ASC LIMIT ${MAX_LOOKUPS_PER_CYCLE};" 2>/dev/null || true)
 if [ -z "$NEW_RESULTS" ] || ! echo "$NEW_RESULTS" | jq -e 'type == "array"' > /dev/null 2>&1; then
   NEW_RESULTS="[]"
 fi
 
 MAX_SEEN_ROWID="$LAST_RESULT_ROWID"
 while IFS= read -r row; do
-  rowid=$(echo "$row" | jq -r '.rowid // 0')
+  rowid=$(echo "$row" | jq -r '.result_rowid // 0')
   snapshot_id=$(echo "$row" | jq -r '.snapshot_id // empty')
   url=$(echo "$row" | jq -r '.url // ""')
 
