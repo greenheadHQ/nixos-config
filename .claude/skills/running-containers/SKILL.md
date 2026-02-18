@@ -190,7 +190,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 **Uptime Kuma/Copyparty/ArchiveBox**: 이미지에 버전 레이블 없음 → GitHub latest 추적 + 이미지 digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
 
-**ArchiveBox 이벤트 알림**: `archivebox-event-poller`가 hook 큐(`.../data/notify/events.jsonl`)를 읽고 SQLite 상태를 판정해 성공/실패 알림을 보냅니다. `podman-archivebox` 실패 시 `archivebox-server-error-notify`가 긴급 알림을 전송합니다.
+**ArchiveBox 이벤트 알림**: `archivebox-event-poller`가 hook 큐(`.../data/notify/events.jsonl`)를 읽고 SQLite 상태를 판정해 성공/실패 알림을 보냅니다. 큐 누락 시에도 `core_archiveresult`의 `result_rowid` 증가분을 증분 스캔해 재아카이빙(기존 URL 재실행) 이벤트를 감지합니다. `podman-archivebox` 실패 시 `archivebox-server-error-notify`가 긴급 알림을 전송합니다.
 
 ### FolderAction 자동 업로드
 

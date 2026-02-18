@@ -86,6 +86,8 @@ sudo systemctl start archivebox-event-poller
 
 # 최근 알림 상태 파일
 sudo ls -la /var/lib/archivebox-notify/state/
+sudo cat /var/lib/archivebox-notify/state/last-result-rowid
+sudo tail -n 30 /var/lib/archivebox-notify/metrics/poller-ms.log
 
 # admin 비밀번호 동기화 서비스 (컨테이너 시작 후 자동 실행)
 systemctl status archivebox-admin-password-sync
@@ -104,4 +106,6 @@ podman exec -it archivebox archivebox add 'https://example.com'
 2. **아카이브 품질 낮음**: SingleFile가 JS 실행 후 캡처하므로 대부분 해결됨. 특수 SPA는 `--timeout` 조정
 3. **디스크 공간 부족**: archive/ 디렉토리(HDD) 확인. `df -h /mnt/data`
 4. **컨테이너 OOM**: constants.nix의 `archiveBox.memory` (기본 3g) 조정
-5. **알림 안 옴**: `journalctl -u archivebox-event-poller -n 60 --no-pager`, `/var/lib/archivebox-notify/state/pending.json` 확인
+5. **알림 안 옴**: `journalctl -u archivebox-event-poller -n 120 --no-pager`, `/var/lib/archivebox-notify/state/pending.json`, `/var/lib/archivebox-notify/state/last-result-rowid` 확인
+6. **같은 URL 재아카이빙인데 알림이 누락됨**: 현재 poller는 `core_snapshot` 신규 row가 아니라 `core_archiveresult`의 `result_rowid` 증가분을 기준으로 감지하므로, 이 케이스도 감지되어야 정상. 누락 시 `journalctl -u archivebox-event-poller -n 120 --no-pager`와 `notified.json`의 `result_rowid` 값을 함께 확인
+7. **알림이 1~2분 늦게 옴**: 정상 범위. 기본 타이머 주기(`pollIntervalSec=60`) + `RandomizedDelaySec=10s` + 아카이빙 완료 시점 차이로 지연될 수 있음
