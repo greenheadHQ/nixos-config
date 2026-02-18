@@ -56,7 +56,7 @@
       };
 
       # 워크스페이스 디렉토리명 (~/Workspace/nixos-config)
-      # 변경 시 rebuild-common.sh의 FLAKE_PATH도 함께 수정 필요
+      # 단일 관리 포인트: 여기만 변경하면 nixosConfigPath + rebuild-common.sh FLAKE_PATH 자동 반영
       workspaceDir = "Workspace";
 
       # macOS 호스트 설정 (확인: scutil --get LocalHostName)
