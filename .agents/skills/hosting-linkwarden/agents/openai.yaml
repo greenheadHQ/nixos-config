@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hosting Linkwarden"
+  short_description: "Linkwarden: bookmark manager, web archiver, Meilisearch, backup. Triggers: \"linkwarden\", \"북마크\", \"bookmark\", \"웹 아카이브\", \"web archive\", \"arc"
+  default_prompt: "Use $hosting-linkwarden to help with this task in nixos-config."

@@ -105,6 +105,47 @@
       };
     };
 
+    linkwarden = {
+      enable = lib.mkEnableOption "Linkwarden bookmark manager and web archiver";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = constants.network.ports.linkwarden;
+        description = "Port for Linkwarden web interface";
+      };
+    };
+
+    meilisearch = {
+      enable = lib.mkEnableOption "Meilisearch full-text search engine for Linkwarden";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = constants.network.ports.meilisearch;
+        description = "Port for Meilisearch API";
+      };
+    };
+
+    linkwardenBackup = {
+      enable = lib.mkEnableOption "Linkwarden PostgreSQL daily backup to HDD";
+      backupTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 05:00:00";
+        description = "OnCalendar time for daily backup";
+      };
+      retentionDays = lib.mkOption {
+        type = lib.types.int;
+        default = 30;
+        description = "Number of days to retain backups";
+      };
+    };
+
+    linkwardenUpdate = {
+      enable = lib.mkEnableOption "Linkwarden version check and update notifications";
+      checkTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 06:00:00";
+        description = "OnCalendar time for version check";
+      };
+    };
+
     reverseProxy = {
       enable = lib.mkEnableOption "Caddy reverse proxy with HTTPS for homeserver services";
     };
@@ -129,6 +170,9 @@
     ../programs/docker/vaultwarden.nix # Vaultwarden 비밀번호 관리자
     ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)
     ../programs/docker/immich-backup.nix # Immich PostgreSQL 매일 백업
+    ../programs/linkwarden # Linkwarden 북마크 매니저 + 웹 아카이버
+    ../programs/linkwarden-backup # Linkwarden PostgreSQL 매일 백업
+    ../programs/linkwarden-update # Linkwarden 버전 체크 + 업데이트 알림
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)
   ];

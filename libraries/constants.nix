@@ -18,6 +18,8 @@
       ankiSync = 27701;
       copyparty = 3923;
       vaultwarden = 8222;
+      linkwarden = 3000;
+      meilisearch = 7700;
       caddy = 443;
     };
 
@@ -35,6 +37,7 @@
       uptimeKuma = "uptime-kuma";
       copyparty = "copyparty";
       vaultwarden = "vaultwarden";
+      linkwarden = "archive";
       dev = "dev";
     };
   };

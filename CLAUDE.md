@@ -43,7 +43,7 @@ Environment 섹션의 `Platform` 값으로 현재 실행 환경을 판별하세�
 | `libraries/packages.nix` | 공통 패키지 (shared/darwinOnly/nixosOnly) |
 | `modules/darwin/` | macOS 전용 설정 |
 | `modules/nixos/` | NixOS 전용 설정 |
-| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, immichBackup, uptime-kuma, anki-sync, copyparty, vaultwarden, devProxy) |
+| `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, immichBackup, uptime-kuma, anki-sync, copyparty, vaultwarden, linkwarden, devProxy) |
 | `modules/shared/` | 공유 설정 |
 | `scripts/` | 자동화 스크립트 (add-host, pre-rebuild-check, update-input) |
 
@@ -70,6 +70,8 @@ homeserver.uptimeKuma.enable = true;
 homeserver.ankiSync.enable = true;
 homeserver.copyparty.enable = true;
 homeserver.vaultwarden.enable = true;
+homeserver.linkwarden.enable = true;
+homeserver.meilisearch.enable = true;
 homeserver.immichBackup.enable = true;
 homeserver.devProxy.enable = true;
 ```
@@ -92,6 +94,7 @@ homeserver.devProxy.enable = true;
 | Copyparty, 파일 서버, WebDAV, Google Drive 대체, 파일 공유 | `hosting-copyparty` |
 | Vaultwarden, Bitwarden, 비밀번호 관리자, 볼트워든, admin token | `hosting-vaultwarden` |
 | immich 사진 경로, immich 파일 보여줘, 이미치 사진 | `viewing-immich-photo` |
+| Linkwarden, 북마크, bookmark, 웹 아카이브, web archive, meilisearch, archive.greenhead.dev | `hosting-linkwarden` |
 | Git config, delta, rerere, lazygit, gitconfig conflicts | `configuring-git` |
 | mise, Node.js, pnpm, shims, .nvmrc | `managing-mise` |
 | tmux config, keybindings, prefix, resurrect, pane notepad | `managing-tmux` |

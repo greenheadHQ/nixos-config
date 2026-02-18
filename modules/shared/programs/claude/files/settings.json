@@ -6,8 +6,7 @@
     "CLAUDE_CODE_ENABLE_UNIFIED_READ_TOOL": "true",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6[1m]",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6[1m]",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6[1m]"
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6[1m]"
   },
   "includeCoAuthoredBy": false,
   "permissions": {
@@ -17,11 +16,7 @@
       "Bash(rm -rf ~/*)",
       "Bash(rm -rf /*)"
     ],
-    "additionalDirectories": [
-      "~/Downloads",
-      "~/Documents",
-      "~/IdeaProjects"
-    ]
+    "additionalDirectories": ["~/Downloads", "~/Documents", "~/IdeaProjects"]
   },
   "hooks": {
     "PreToolUse": [

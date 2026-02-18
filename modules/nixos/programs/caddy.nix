@@ -101,6 +101,14 @@ in
           reverse_proxy localhost:${toString constants.network.ports.vaultwarden}
         '';
       };
+
+      virtualHosts."${subdomains.linkwarden}.${base}" = {
+        listenAddresses = [ minipcTailscaleIP ];
+        extraConfig = ''
+          ${securityHeaders}
+          reverse_proxy localhost:${toString constants.network.ports.linkwarden}
+        '';
+      };
     };
 
     # ═══════════════════════════════════════════════════════════════
