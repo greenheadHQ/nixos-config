@@ -1,4 +1,4 @@
 interface:
   display_name: "Hosting Vaultwarden"
-  short_description: "Vaultwarden/Bitwarden 운영 스킬: 서버 설정, 백업/복구, admin token, 클라이언트 연결 트러블슈팅."
+  short_description: "Vaultwarden/Bitwarden: password manager, admin panel, backup. Triggers: \"비밀번호 관리자\", \"볼트워든\", \"vaultwarden 설정\", \"vaultwarden 백업\", "
   default_prompt: "Use $hosting-vaultwarden to help with this task in nixos-config."

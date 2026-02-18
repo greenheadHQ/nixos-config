@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hosting Archivebox"
+  short_description: "Use this skill when the user asks about ArchiveBox web archiver, webpage archiving, bookmark archiving, or archive.greenhead.dev"
+  default_prompt: "Use $hosting-archivebox to help with this task in nixos-config."
