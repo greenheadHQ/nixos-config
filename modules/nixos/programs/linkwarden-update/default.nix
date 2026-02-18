@@ -49,7 +49,7 @@ in
       wants = [ "network-online.target" ];
 
       unitConfig = {
-        ConditionPathExists = [ pushoverCredPath ];
+        ConditionPathExists = pushoverCredPath;
       };
 
       serviceConfig = {

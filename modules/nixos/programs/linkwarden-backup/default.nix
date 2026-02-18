@@ -24,8 +24,7 @@ let
       postgresql
       coreutils
       findutils
-      curl
-      jq
+      curl # send_notification (service-lib) 용
     ];
     text = ''
       # shellcheck source=/dev/null
@@ -121,9 +120,14 @@ in
         Type = "oneshot";
         ExecStart = "${backupScript}/bin/linkwarden-db-backup";
         TimeoutSec = "30m";
+        # ProtectSystem=strict 불가 — sudo -u postgres pg_dump가
+        # /run/postgresql/, /var/lib/postgresql/ 등 시스템 경로 접근 필요
         ReadWritePaths = [ backupDir ];
         PrivateTmp = true;
         NoNewPrivileges = true;
+        ProtectHome = true;
+        ProtectKernelTunables = true;
+        ProtectControlGroups = true;
       };
 
       environment = {

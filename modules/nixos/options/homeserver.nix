@@ -114,15 +114,6 @@
       };
     };
 
-    meilisearch = {
-      enable = lib.mkEnableOption "Meilisearch full-text search engine for Linkwarden";
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = constants.network.ports.meilisearch;
-        description = "Port for Meilisearch API";
-      };
-    };
-
     linkwardenBackup = {
       enable = lib.mkEnableOption "Linkwarden PostgreSQL daily backup to HDD";
       backupTime = lib.mkOption {

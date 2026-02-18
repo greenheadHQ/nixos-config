@@ -10,9 +10,9 @@
 
 let
   cfg = config.homeserver.linkwarden;
-  meilisearchCfg = config.homeserver.meilisearch;
   inherit (constants.paths) mediaData;
   inherit (constants.domain) base subdomains;
+  inherit (constants.network) ports;
 
   archiveDir = "${mediaData}/linkwarden/archives";
 in
@@ -27,7 +27,7 @@ in
       mode = "0400";
     };
 
-    age.secrets.meilisearch-master-key = lib.mkIf meilisearchCfg.enable {
+    age.secrets.meilisearch-master-key = {
       file = ../../../../secrets/meilisearch-master-key.age;
       owner = "root";
       mode = "0400";
@@ -41,12 +41,12 @@ in
     ];
 
     # ═══════════════════════════════════════════════════════════════
-    # Meilisearch (풀텍스트 검색 엔진)
+    # Meilisearch (풀텍스트 검색 엔진, Linkwarden 전용)
     # ═══════════════════════════════════════════════════════════════
-    services.meilisearch = lib.mkIf meilisearchCfg.enable {
+    services.meilisearch = {
       enable = true;
       listenAddress = "127.0.0.1";
-      listenPort = meilisearchCfg.port;
+      listenPort = ports.meilisearch;
       settings.no_analytics = true;
       masterKeyFile = config.age.secrets.meilisearch-master-key.path;
     };
@@ -71,16 +71,12 @@ in
       # 시크릿: LoadCredential로 안전하게 전달
       secretFiles = {
         NEXTAUTH_SECRET = config.age.secrets.linkwarden-nextauth-secret.path;
-      }
-      // lib.optionalAttrs meilisearchCfg.enable {
         MEILI_MASTER_KEY = config.age.secrets.meilisearch-master-key.path;
       };
 
       environment = {
         NEXTAUTH_URL = "https://${subdomains.linkwarden}.${base}/api/v1/auth";
-      }
-      // lib.optionalAttrs meilisearchCfg.enable {
-        MEILI_HOST = "http://127.0.0.1:${toString meilisearchCfg.port}";
+        MEILI_HOST = "http://127.0.0.1:${toString ports.meilisearch}";
       };
     };
 
@@ -89,8 +85,6 @@ in
     # ═══════════════════════════════════════════════════════════════
     systemd.services.linkwarden = {
       unitConfig.RequiresMountsFor = mediaData;
-    }
-    // lib.optionalAttrs meilisearchCfg.enable {
       after = [ "meilisearch.service" ];
       wants = [ "meilisearch.service" ];
     };

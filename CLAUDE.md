@@ -71,7 +71,6 @@ homeserver.ankiSync.enable = true;
 homeserver.copyparty.enable = true;
 homeserver.vaultwarden.enable = true;
 homeserver.linkwarden.enable = true;
-homeserver.meilisearch.enable = true;
 homeserver.immichBackup.enable = true;
 homeserver.devProxy.enable = true;
 ```

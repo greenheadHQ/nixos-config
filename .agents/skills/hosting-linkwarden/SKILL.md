@@ -20,7 +20,7 @@ Meilisearch로 풀텍스트 검색을 지원하며, PostgreSQL DB는 NixOS가 �
 
 | 파일 | 역할 |
 |------|------|
-| `modules/nixos/options/homeserver.nix` | `linkwarden`, `meilisearch`, `linkwardenBackup`, `linkwardenUpdate` mkOption 정의 |
+| `modules/nixos/options/homeserver.nix` | `linkwarden`, `linkwardenBackup`, `linkwardenUpdate` mkOption 정의 |
 | `modules/nixos/programs/linkwarden/default.nix` | 서비스 설정 (NixOS 네이티브 모듈 래핑) |
 | `modules/nixos/programs/linkwarden-backup/default.nix` | 매일 PostgreSQL 백업 (pg_dump → HDD) |
 | `modules/nixos/programs/linkwarden-update/default.nix` | 버전 체크 + Pushover 알림 |
@@ -94,8 +94,7 @@ journalctl -u linkwarden-version-check.service         # 체크 로그
 
 ```nix
 # modules/nixos/configuration.nix
-homeserver.linkwarden.enable = true;
-homeserver.meilisearch.enable = true;
+homeserver.linkwarden.enable = true;     # Meilisearch 자동 포함
 homeserver.linkwardenBackup.enable = true;
 homeserver.linkwardenUpdate.enable = true;
 ```
