@@ -49,6 +49,13 @@ in
     /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_scrolling -string '{"carbonModifiers":768,"carbonKeyCode":19}'     # ⇧⌘2
     /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_ocr -string '{"carbonModifiers":6400,"carbonKeyCode":31}'          # ⌃⌥⌘O
 
+    # Manual Scrolling Capture 활성화
+    # Auto Scroll Capture는 Terminal, VS Code 등 비표준 스크롤 앱에서 화면이 짤림.
+    # Manual 모드는 사용자가 직접 스크롤하며 캡처하므로 이런 앱에서도 정상 동작.
+    # ref: https://shottr.cc/kb/faq
+    # ref: https://hurricane-flower-fdf.notion.site/Manual-Scrolling-Capture-120d943b739b80bf868dd1009eeadc17
+    /usr/bin/defaults write "${shottrDomain}" scrollingManualEnabled -bool true
+
     /usr/bin/killall cfprefsd 2>/dev/null || true
   '';
 
@@ -85,6 +92,9 @@ in
   # 설정 반영을 위해 Shottr 항상 (재)시작
   home.activation.restartShottr = lib.hm.dag.entryAfter [ "applyShottrLicenseFromSecret" ] ''
     /usr/bin/killall Shottr 2>/dev/null || true
+    # killall 직후 open -a 하면 Launch Services가 아직 프로세스 종료를 인식하지 못해
+    # error -600 (procNotFound)으로 실패한다. 1초 대기로 회피.
+    sleep 1
     /usr/bin/open -a Shottr
   '';
 }
