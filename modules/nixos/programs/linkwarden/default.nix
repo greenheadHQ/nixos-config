@@ -63,7 +63,16 @@ in
       # Archive 파일 → HDD (스크린샷, PDF, HTML 등)
       storageLocation = archiveDir;
 
-      enableRegistration = false;
+      # ⚠️ 회원가입 일시 활성화 중 — 반드시 첫 사용자 등록 후 false로 되돌릴 것!
+      #
+      # 배경: Linkwarden은 enableRegistration = false이면 /register 페이지 자체를 숨김.
+      #       첫 번째 사용자조차 등록할 수 없으므로, 초기 셋업 시에만 true로 설정.
+      #
+      # 절차: 1) true로 배포 → 2) https://archive.greenhead.dev 접속하여 첫 계정 생성
+      #       → 3) 아래 값을 false로 변경 → 4) nrs 재배포
+      #
+      # false로 변경해도 기존 계정은 영향 없음. 신규 가입만 차단됨.
+      enableRegistration = true;
 
       database.createLocally = true;
       database.name = "linkwarden";
