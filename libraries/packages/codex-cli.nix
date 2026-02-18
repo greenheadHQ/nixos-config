@@ -8,17 +8,17 @@
 }:
 
 let
-  version = "0.101.0";
+  version = "0.103.0";
 
   sources = {
     aarch64-darwin = {
       url = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-aarch64-apple-darwin.tar.gz";
-      hash = "sha256-/Ah+kAK+DhcL/qonZZ43eCHhWrl4tKSQde+V21+CB/g=";
+      hash = "sha256-cmQqNaKUubGk8ng2jVx5dJtm4NpnEggtaxMLnLoZkOo=";
       binary = "codex-aarch64-apple-darwin";
     };
     x86_64-linux = {
       url = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-x86_64-unknown-linux-musl.tar.gz";
-      hash = "sha256-/zY/hZfb8Dg8F2WefJJzW6qZG+irmflnxcw8aLMpJ3w=";
+      hash = "sha256-jV9nluiewUVID6qmT1wuiT/TzYaaJ5aa0bRMXnZdQfY=";
       binary = "codex-x86_64-unknown-linux-musl";
     };
   };
