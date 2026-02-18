@@ -12,10 +12,10 @@
     ./programs/sshd # SSH 서버 보안 설정
     ./programs/mosh # mosh 서버 (Termius 등에서 사용)
   ];
-  # Nerd Fonts 설치 (nix-darwin이 /Library/Fonts/Nix Fonts에 자동 링크)
-  fonts.packages = with pkgs.nerd-fonts; [
-    fira-code
-    jetbrains-mono
+  # 폰트 설치 (nix-darwin이 /Library/Fonts/Nix Fonts에 자동 링크)
+  fonts.packages = [
+    (pkgs.callPackage ../../libraries/packages/sarasa-mono-k-nerd-font.nix { })
+    pkgs.nerd-fonts.jetbrains-mono # fallback (Sarasa에 없는 글리프 대비)
   ];
 
   # Touch ID for sudo

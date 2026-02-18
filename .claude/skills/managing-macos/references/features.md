@@ -15,7 +15,7 @@ macOS 관련 시스템 설정 및 Homebrew 관리입니다.
 - [자동 수정 비활성화](#자동-수정-비활성화)
 - [키보드 단축키 (Symbolic Hotkeys)](#키보드-단축키-symbolic-hotkeys)
 - [키 바인딩 (백틱/원화)](#키-바인딩-백틱원화)
-- [폰트 관리 (Nerd Fonts)](#폰트-관리-nerd-fonts)
+- [폰트 관리](#폰트-관리)
 - [GUI 앱 (Homebrew Casks)](#gui-앱-homebrew-casks)
 - [폴더 액션 (launchd)](#폴더-액션-launchd)
 
@@ -267,35 +267,27 @@ defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys | grep -A 5 '"61"'
 - 적용 후 앱 재시작 필요 (일부 앱은 로그아웃/재로그인 필요)
 - 참고 자료: [ttscoff/KeyBindings](https://github.com/ttscoff/KeyBindings)
 
-## 폰트 관리 (Nerd Fonts)
+## 폰트 관리
 
 `modules/darwin/configuration.nix`에서 관리됩니다.
 
-nix-darwin의 `fonts.packages` 옵션을 사용하여 Nerd Fonts를 선언적으로 관리합니다. 폰트는 `/Library/Fonts/Nix Fonts/`에 자동 설치됩니다.
+nix-darwin의 `fonts.packages` 옵션을 사용하여 폰트를 선언적으로 관리합니다. 폰트는 `/Library/Fonts/Nix Fonts/`에 자동 설치됩니다.
 
 **현재 설치된 폰트:**
 
-| 폰트                     | 패키지명                    | 용도                            |
-| ------------------------ | --------------------------- | ------------------------------- |
-| FiraCode Nerd Font       | `nerd-fonts.fira-code`      | 터미널/에디터용 프로그래밍 폰트 |
-| JetBrains Mono Nerd Font | `nerd-fonts.jetbrains-mono` | 터미널/에디터용 프로그래밍 폰트 |
+| 폰트                       | 패키지                                              | 역할     | 용도                                      |
+| -------------------------- | --------------------------------------------------- | -------- | ----------------------------------------- |
+| Sarasa Mono K Nerd Font    | 커스텀 derivation (`libraries/packages/sarasa-mono-k-nerd-font.nix`) | 주 폰트  | CJK 2:1 정확한 너비 + Nerd Font 글리프    |
+| JetBrains Mono Nerd Font   | `nerd-fonts.jetbrains-mono`                         | fallback | Sarasa에 없는 글리프 대비                 |
 
-**Nerd Fonts vs 일반 폰트:**
+**폰트 사용처:**
 
-| 항목               | 일반 프로그래밍 폰트 | Nerd Font 버전                                    |
-| ------------------ | -------------------- | ------------------------------------------------- |
-| 기본 문자          | O                    | O                                                 |
-| 리가처 (ligatures) | 폰트에 따라 다름     | 원본 폰트와 동일                                  |
-| 아이콘 글리프      | X                    | O (Devicons, Font Awesome, Powerline 등 9,000+개) |
-| 용도               | 일반 코딩            | 터미널/에디터에서 아이콘 표시 필요 시             |
+| 앱       | 설정 파일                                          | 폰트 이름                   |
+| -------- | -------------------------------------------------- | --------------------------- |
+| Ghostty  | `modules/darwin/programs/ghostty/default.nix`      | Sarasa Mono K Nerd Font (주) + JetBrainsMono Nerd Font (fallback) |
+| Cursor   | `modules/darwin/programs/cursor/files/settings.json`| Sarasa Mono K Nerd Font (주) + JetBrainsMono Nerd Font (fallback) |
 
-> Nerd Fonts는 기존 프로그래밍 폰트(FiraCode, JetBrains Mono, Hack 등)에 아이콘 글리프를 패치한 버전입니다.
-
-**Nerd Fonts가 필요한 경우:**
-
-- 터미널 프롬프트(Starship)에서 Git 브랜치 아이콘, 폴더 아이콘 등 표시
-- 파일 탐색기(eza, broot)에서 파일 타입별 아이콘 표시
-- Neovim/VS Code 플러그인에서 아이콘 사용 시
+> Sarasa Gothic은 Iosevka(라틴 모노스페이스) + Source Han Sans(CJK)를 합성한 폰트입니다. CJK 문자가 ASCII의 정확히 2배 너비여서 한글+영문 코드 블록이 완벽히 정렬됩니다. jonz94/Sarasa-Gothic-Nerd-Fonts에서 Nerd Font 글리프가 패치된 버전을 사용합니다.
 
 **설치 경로:** `/Library/Fonts/Nix Fonts/`
 
@@ -306,16 +298,8 @@ nix-darwin의 `fonts.packages` 옵션을 사용하여 Nerd Fonts를 선언적으
 ls "/Library/Fonts/Nix Fonts/"
 
 # 폰트 목록에서 확인
-fc-list | grep -i "FiraCode\|JetBrains"
+fc-list | grep -i "Sarasa\|JetBrains"
 ```
-
-**사용 가능한 Nerd Fonts 목록:**
-
-```bash
-nix search nixpkgs nerd-fonts
-```
-
-> **참고**: NixOS 25.05+에서는 `nerd-fonts.fira-code` 형식의 개별 패키지를 사용합니다. 구 문법 `(nerdfonts.override { fonts = [...]; })`은 더 이상 사용되지 않습니다.
 
 ## GUI 앱 (Homebrew Casks)
 
