@@ -36,13 +36,18 @@ in
   '';
 
   # 핵심 설정 선언 적용
+  #
+  # Carbon modifier flags:
+  #   cmdKey=256(0x100) shiftKey=512(0x200) optionKey=2048(0x800) controlKey=4096(0x1000)
+  # Carbon key codes:
+  #   1=18(0x12) 2=19(0x13) 3=20(0x14) O=31(0x1F)
   home.activation.applyShottrCoreSettings = lib.hm.dag.entryAfter [ "checkShottrFolderAndWarn" ] ''
     /usr/bin/defaults write "${shottrDomain}" defaultFolder "${shottrDefaultFolder}"
     /usr/bin/defaults write "${shottrDomain}" saveFormat "Auto"
-    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_fullscreen -string '{"carbonModifiers":768,"carbonKeyCode":18}'
-    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_area -string '{"carbonKeyCode":20,"carbonModifiers":768}'
-    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_scrolling -string '{"carbonModifiers":768,"carbonKeyCode":19}'
-    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_ocr -string '{"carbonModifiers":6400,"carbonKeyCode":31}'
+    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_fullscreen -string '{"carbonModifiers":768,"carbonKeyCode":18}'   # ⇧⌘1
+    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_area -string '{"carbonKeyCode":20,"carbonModifiers":768}'          # ⇧⌘3
+    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_scrolling -string '{"carbonModifiers":768,"carbonKeyCode":19}'     # ⇧⌘2
+    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_ocr -string '{"carbonModifiers":6400,"carbonKeyCode":31}'          # ⌃⌥⌘O
 
     /usr/bin/killall cfprefsd 2>/dev/null || true
   '';
