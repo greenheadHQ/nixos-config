@@ -1,4 +1,4 @@
 interface:
   display_name: "Managing Secrets"
-  short_description: "Use this skill when the user asks about agenix secrets, .age file encryption/decryption, re-encryption, or secret key management"
+  short_description: "agenix secret(.age) 암복호화/재암호화/배포 관리. Shottr 라이센스 pre-fill용 shottr-license.age 포함."
   default_prompt: "Use $managing-secrets to help with this task in nixos-config."

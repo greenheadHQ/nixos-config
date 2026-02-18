@@ -59,6 +59,7 @@
         ./programs/cursor
         ./programs/folder-actions
         ./programs/ghostty
+        ./programs/shottr
         ./programs/keybindings
         ./programs/ssh
       ];

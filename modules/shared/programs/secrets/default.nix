@@ -46,6 +46,11 @@
         path = "${config.xdg.configHome}/pushover/immich";
         mode = "0400";
       };
+      shottr-license = {
+        file = ../../../../secrets/shottr-license.age;
+        path = "${config.xdg.configHome}/shottr/license";
+        mode = "0400";
+      };
     };
   };
 }

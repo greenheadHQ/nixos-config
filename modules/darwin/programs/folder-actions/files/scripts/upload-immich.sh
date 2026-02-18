@@ -1,10 +1,10 @@
 #!/bin/bash
 # Folder Action: Immich 자동 업로드
-# 감시 폴더: ~/FolderActions/upload-immich/
+# 감시 폴더: $WATCH_DIR (기본값: ~/FolderActions/upload-immich/)
 # 미디어 파일 → Immich 서버 업로드 → Pushover 알림 → 원본 삭제
 # shellcheck disable=SC1090
 
-WATCH_DIR="$HOME/FolderActions/upload-immich"
+WATCH_DIR="${WATCH_DIR:-$HOME/FolderActions/upload-immich}"
 LOCK_FILE="/tmp/upload-immich.lock"
 IMMICH_CREDENTIALS="$HOME/.config/immich/api-key"
 PUSHOVER_CREDENTIALS="$HOME/.config/pushover/immich"

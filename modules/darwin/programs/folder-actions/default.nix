@@ -12,6 +12,7 @@ let
   scriptsDir = ./files/scripts;
   homeDir = config.home.homeDirectory;
   folderActionsDir = "${homeDir}/FolderActions";
+  shottrDefaultDir = "${homeDir}/${constants.macos.paths.shottrDefaultFolderRelative}";
   logsDir = "${homeDir}/Library/Logs/folder-actions";
 in
 {
@@ -45,7 +46,7 @@ in
     mkdir -p "${folderActionsDir}/compress-video"
     mkdir -p "${folderActionsDir}/rename-asset"
     mkdir -p "${folderActionsDir}/convert-video-to-gif"
-    mkdir -p "${folderActionsDir}/upload-immich"
+    mkdir -p "${shottrDefaultDir}"
     mkdir -p "${logsDir}"
   '';
 
@@ -114,7 +115,7 @@ in
       config = {
         Label = "com.green.folder-action.upload-immich";
         ProgramArguments = [ "${homeDir}/.local/bin/upload-immich.sh" ];
-        WatchPaths = [ "${folderActionsDir}/upload-immich" ];
+        WatchPaths = [ shottrDefaultDir ];
         StandardOutPath = "${logsDir}/upload-immich.log";
         StandardErrorPath = "${logsDir}/upload-immich.error.log";
         TimeOut = 1800; # 30분 전체 타임아웃 (대용량 업로드 무한 대기 방지)
@@ -122,6 +123,7 @@ in
           PATH = "${homeDir}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
           HOME = homeDir;
           IMMICH_INSTANCE_URL = "https://${constants.domain.subdomains.immich}.${constants.domain.base}";
+          WATCH_DIR = shottrDefaultDir;
         };
       };
     };

@@ -121,6 +121,10 @@
       initialKeyRepeat = 15; # 키 반복 지연 (15 = 225ms, 최소값)
       keyRepeat = 1; # 키 반복 속도 (1 = 15ms, 최소=가장 빠름)
     };
+    paths = {
+      # Shottr/FolderActions 공통 저장 경로 (HOME 상대경로)
+      shottrDefaultFolderRelative = "FolderActions/upload-immich";
+    };
   };
 
   # ═══════════════════════════════════════════════════════════════

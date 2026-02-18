@@ -1,4 +1,4 @@
 interface:
   display_name: "Managing macOS"
-  short_description: "macOS/nix-darwin: Dock, Finder, Touch ID sudo, Homebrew Cask. Triggers: \"darwin-rebuild\", Dock/Finder settings, \"/etc/bashrc con"
+  short_description: "macOS/nix-darwin 설정 관리. Dock/Finder, Homebrew Cask, darwin-rebuild, Shottr 설정(라이센스 pre-fill 포함) 관련 작업에 사용."
   default_prompt: "Use $managing-macos to help with this task in nixos-config."
