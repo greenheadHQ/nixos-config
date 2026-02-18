@@ -24,6 +24,25 @@ send_notification() {
 }
 
 # ═══════════════════════════════════════════════════════════════
+# Pushover 알림 전송 (반환값 전파)
+# send_notification과 동일하되 || true 없음
+# 호출측에서 성공/실패를 확인해야 할 때 사용 (온도 알림 등)
+# ═══════════════════════════════════════════════════════════════
+send_notification_strict() {
+  local title="$1"
+  local message="$2"
+  local priority="${3:-"-1"}"
+
+  curl -sf --proto =https --max-time 10 \
+    --form-string "token=${PUSHOVER_TOKEN}" \
+    --form-string "user=${PUSHOVER_USER}" \
+    --form-string "title=${title}" \
+    --form-string "message=${message}" \
+    --form-string "priority=${priority}" \
+    https://api.pushover.net/1/messages.json > /dev/null 2>&1
+}
+
+# ═══════════════════════════════════════════════════════════════
 # GitHub Releases API로 최신 버전 조회
 # 결과: 전역변수 GITHUB_LATEST_VERSION, GITHUB_RESPONSE 설정
 # 실패 시 빈 문자열 설정 + return 0 (set -e 안전)

@@ -123,4 +123,24 @@
     clientAliveInterval = 60; # 초 단위
     clientAliveCountMax = 3; # 최대 재시도 횟수
   };
+
+  # ═══════════════════════════════════════════════════════════════
+  # 온도 모니터링 임계값
+  # 하드웨어 기준: CPU crit=105°C, NVMe crit=94.8°C
+  # 소프트웨어 임계값은 하드웨어 대비 ~10°C 마진으로 조기 대응
+  # ═══════════════════════════════════════════════════════════════
+  tempMonitor = {
+    cpu = {
+      warning = 80; # °C — Pushover priority 0 (일반)
+      critical = 95; # °C — Pushover priority 1 (긴급)
+    };
+    nvme = {
+      warning = 70;
+      critical = 85;
+    };
+    cooldown = {
+      warning = 900; # 15분 (초)
+      critical = 300; # 5분 (초)
+    };
+  };
 }

@@ -82,8 +82,6 @@
     MaxRetentionSec=30day
   '';
 
-  # lm_sensors: 수동 확인만 가능 (sensors). 자동화는 별도 이슈 참조.
-
   # wheel 그룹 sudo 비밀번호 생략 (SSH 키 인증 + Tailscale 보안)
   security.sudo.wheelNeedsPassword = false;
 
@@ -133,6 +131,7 @@
     ./programs/ssh.nix
     ./programs/mosh.nix
     ./programs/smartd.nix # S.M.A.R.T. 디스크 건강 모니터링 (Pushover 알림)
+    ./programs/temp-monitor # lm-sensors 온도 모니터링 (5분마다, Pushover 알림)
     ./options/homeserver.nix # Docker/Podman 기반 홈서버 서비스 (mkOption)
   ];
 
