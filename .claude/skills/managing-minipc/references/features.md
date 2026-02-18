@@ -7,6 +7,7 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 - [시스템 설정](#시스템-설정)
 - [홈서버 서비스 활성화](#홈서버-서비스-활성화)
 - [원격 복원력](#원격-복원력)
+- [하드웨어 모니터링](#하드웨어-모니터링)
 - [네트워크/보안 설정](#네트워크보안-설정)
 - [SSH 서버 설정](#ssh-서버-설정)
 - [mosh 설정](#mosh-설정)
@@ -82,6 +83,27 @@ nix-shell -p ethtool --run "sudo ethtool enp2s0 | grep Wake"
 # Wake-on: g  ← magic packet 활성화 확인
 ```
 
+
+## 하드웨어 모니터링
+
+### S.M.A.R.T. 디스크 건강 (smartd)
+
+`modules/nixos/programs/smartd.nix` — NVMe + HDD 자동 감지, 디스크 장애 사전 감지 시 Pushover 알림.
+
+### 온도 모니터링 (temp-monitor)
+
+`modules/nixos/programs/temp-monitor/` — systemd timer (5분 주기)로 CPU/NVMe 온도 체크.
+
+| 구성 요소 | 파일 |
+|-----------|------|
+| Nix 모듈 (서비스/타이머) | `temp-monitor/default.nix` |
+| 체크 스크립트 | `temp-monitor/files/check-temp.sh` |
+| 임계값 상수 | `libraries/constants.nix` → `tempMonitor` |
+| Pushover 전송 | `modules/nixos/lib/service-lib.sh` → `send_notification_strict` |
+
+**임계값**: CPU 경고 80°C / 위험 95°C, NVMe 경고 70°C / 위험 85°C
+**쿨다운**: 경고 15분, 위험 5분 (단계별 차등)
+**시크릿**: `pushover-system-monitor.age` (smartd와 공유, NixOS 모듈 시스템이 merge)
 
 ## 네트워크/보안 설정
 

@@ -86,6 +86,7 @@ Platform이 `linux`이면 이미 MiniPC — SSH 금지. 명령어를 직접 실�
 | `modules/nixos/options/homeserver.nix` | mkOption 기반 서비스 정의 |
 | `modules/nixos/programs/` | 공통 서비스 모듈 (Tailscale, SSH, Caddy 등) |
 | `modules/nixos/programs/smartd.nix` | S.M.A.R.T. 디스크 건강 모니터링 + Pushover 알림 |
+| `modules/nixos/programs/temp-monitor/` | lm-sensors 온도 모니터링 + Pushover 알림 (5분 주기) |
 | `modules/nixos/home.nix` | Home Manager (NixOS) |
 | `modules/shared/scripts/rebuild-common.sh` | nrs/nrp 공통 함수 라이브러리 → `~/.local/lib/` |
 | `libraries/constants.nix` | 전역 상수 (IP, 경로, SSH 키 등) |
@@ -109,7 +110,7 @@ NVMe + HDD 자동 감지, 디스크 장애 사전 감지 시 Pushover 알림 전
 
 - **온도 임계값**: 5도 변화 로그 / 50도 경고 / 60도 위험 (`-W 5,50,60`)
 - **알림 우선순위**: PreFailure/CurrentPendingSector/OfflineUncorrectable → 긴급(1), 기타 → 일반(0)
-- **시크릿**: `pushover-system-monitor.age` (smartd 전용)
+- **시크릿**: `pushover-system-monitor.age` (smartd + temp-monitor 공유, NixOS 모듈 시스템이 merge)
 
 ```bash
 systemctl status smartd            # 서비스 상태
@@ -117,15 +118,28 @@ sudo smartctl -a /dev/nvme0n1      # NVMe SMART 데이터
 sudo smartctl -a /dev/sda          # HDD SMART 데이터
 ```
 
-### 온도 모니터링 (lm-sensors)
+### 온도 모니터링 (temp-monitor)
 
-`lm_sensors` 패키지 설치됨. 수동 확인용.
+`modules/nixos/programs/temp-monitor/`에서 systemd timer로 5분마다 CPU/NVMe 온도를 체크.
+임계값 초과 시 단계별(경고/위험) Pushover 알림 발송. 임계값은 `libraries/constants.nix`의 `tempMonitor`에서 관리.
+
+| 센서 | 경고 (priority 0) | 위험 (priority 1) | 하드웨어 crit |
+|------|-------------------|-------------------|--------------|
+| CPU Package | 80°C | 95°C | 105°C |
+| NVMe Composite | 70°C | 85°C | 94.8°C |
+
+- **쿨다운**: 경고 15분, 위험 5분 (단계별 차등)
+- **시크릿**: `pushover-system-monitor.age` (smartd와 공유)
+- **센서 식별**: 칩 타입 접두사(`coretemp-`/`nvme-`)로 동적 탐색
 
 ```bash
-sensors                            # CPU/디스크/보드 온도 확인
+sensors                                        # 수동 온도 확인
+sensors -j                                     # JSON 출력 (스크립트가 사용하는 형식)
+systemctl status temp-monitor.service          # 서비스 상태
+systemctl list-timers | grep temp-monitor      # 타이머 확인
+journalctl -u temp-monitor.service -n 20       # 최근 로그
+ls -la /var/lib/temp-monitor/                  # 상태 파일 (쿨다운 기록)
 ```
-
-자동 알림이 필요하면 pushover-system-monitor 시크릿을 재사용하여 systemd timer 구성 가능.
 
 ## 자주 발생하는 문제
 

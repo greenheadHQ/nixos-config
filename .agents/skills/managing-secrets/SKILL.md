@@ -37,7 +37,7 @@ agenix를 사용한 `.age` 파일 기반 secret 암호화/배포 가이드.
 | 레벨 | 설정 위치 | 기본 배포 경로 | 용도 |
 |------|----------|---------------|------|
 | Home Manager | `modules/shared/programs/secrets/default.nix` | 사용자 지정 경로 (`~/.config/...`) | Pushover, pane-note 등 사용자 레벨 |
-| NixOS 시스템 | 각 서비스 모듈 (`immich.nix`, `smartd.nix` 등) | `/run/agenix/<secret-name>` | immich-db-password, pushover-system-monitor 등 시스템 서비스 |
+| NixOS 시스템 | 각 서비스 모듈 (`immich.nix`, `smartd.nix`, `temp-monitor/` 등) | `/run/agenix/<secret-name>` | immich-db-password, pushover-system-monitor 등 시스템 서비스 |
 
 두 레벨이 공존하며, NixOS 시스템 레벨은 `flake.nix`에서 `inputs.agenix.nixosModules.default`로 활성화.
 서비스 모듈에서는 하드코딩 대신 `config.age.secrets.<name>.path`를 참조해 실제 경로를 사용한다.
@@ -55,7 +55,7 @@ Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로�
 | `pane-note-links.age` | `~/.config/pane-note/links.txt` | Pane Notepad 링크 |
 | `immich-api-key.age` | `~/.config/immich/api-key` | Immich CLI 업로드 인증 |
 | `immich-db-password.age` | `/run/agenix/immich-db-password` | Immich PostgreSQL 비밀번호 |
-| `pushover-system-monitor.age` | `/run/agenix/pushover-system-monitor` | 시스템 하드웨어 모니터링 Pushover (smartd, 향후 온도 경고) |
+| `pushover-system-monitor.age` | `/run/agenix/pushover-system-monitor` | 시스템 하드웨어 모니터링 Pushover (smartd + temp-monitor) |
 | `pushover-uptime-kuma.age` | `/run/agenix/pushover-uptime-kuma` | Uptime Kuma 업데이트 알림 |
 | `pushover-copyparty.age` | `/run/agenix/pushover-copyparty` | Copyparty 업데이트 알림 |
 | `anki-sync-password.age` | `/run/agenix/anki-sync-password` | Anki Sync Server 비밀번호 |
