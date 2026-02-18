@@ -35,7 +35,7 @@ flock -n 200 || {
 PENDING_FILE="$STATE_DIR/state/pending.json"
 NOTIFIED_FILE="$STATE_DIR/state/notified.json"
 LAST_LINE_FILE="$STATE_DIR/state/queue-last-line"
-LAST_SNAPSHOT_ROWID_FILE="$STATE_DIR/state/last-snapshot-rowid"
+LAST_RESULT_ROWID_FILE="$STATE_DIR/state/last-result-rowid"
 DEGRADED_FILE="$STATE_DIR/state/degraded-mode"
 LAST_FULL_RUN_FILE="$STATE_DIR/state/last-full-run"
 RECOVER_STREAK_FILE="$STATE_DIR/state/recover-streak"
@@ -187,13 +187,15 @@ mark_notified() {
   local snapshot_id="$1"
   local status="$2"
   local now="$3"
+  local result_rowid="$4"
 
   # shellcheck disable=SC2016
   json_update "$NOTIFIED_FILE" \
     --arg id "$snapshot_id" \
     --arg status "$status" \
     --argjson now "$now" \
-    '.[$id] = {"status": $status, "notified_at": $now}'
+    --argjson result_rowid "$result_rowid" \
+    '.[$id] = {"status": $status, "notified_at": $now, "result_rowid": $result_rowid}'
 }
 
 remove_pending() {
@@ -202,9 +204,9 @@ remove_pending() {
   json_update "$PENDING_FILE" --arg id "$snapshot_id" 'del(.[$id])'
 }
 
-is_notified() {
+notified_result_rowid() {
   local snapshot_id="$1"
-  jq -e --arg id "$snapshot_id" 'has($id)' "$NOTIFIED_FILE" > /dev/null 2>&1
+  jq -r --arg id "$snapshot_id" '(.[$id].result_rowid // 0) | tonumber? // 0' "$NOTIFIED_FILE"
 }
 
 upsert_pending() {
@@ -212,6 +214,7 @@ upsert_pending() {
   local url="$2"
   local domain="$3"
   local now="$4"
+  local result_rowid="$5"
 
   # shellcheck disable=SC2016
   json_update "$PENDING_FILE" \
@@ -219,7 +222,28 @@ upsert_pending() {
     --arg url "$url" \
     --arg domain "$domain" \
     --argjson now "$now" \
-    '.[$id] = ((.[$id] // {"url": $url, "domain": $domain, "first_seen": $now}) + {"url": $url, "domain": $domain, "last_seen": $now})'
+    --argjson result_rowid "$result_rowid" \
+    '.[$id] = (
+      .[$id] as $prev
+      | ($prev // {"url": $url, "domain": $domain, "first_seen": $now, "last_result_rowid": 0})
+      + {
+        "url": $url,
+        "domain": $domain,
+        "last_seen": $now,
+        "last_result_rowid": ([($prev.last_result_rowid // 0), $result_rowid] | max)
+      }
+    )'
+}
+
+is_notified_for_rowid() {
+  local snapshot_id="$1"
+  local rowid="$2"
+
+  jq -e \
+    --arg id "$snapshot_id" \
+    --argjson rowid "$rowid" \
+    '((.[$id].result_rowid // 0) | tonumber? // 0) >= $rowid' \
+    "$NOTIFIED_FILE" > /dev/null 2>&1
 }
 
 failure_priority() {
@@ -291,41 +315,53 @@ classify_snapshot() {
   local snapshot_id="$1"
 
   local rows
-  rows=$(sqlite3 -json "$DB_SQLITE_TARGET" "SELECT status, ${ARCHIVERESULT_OUTPUT_EXPR} AS output_str FROM core_archiveresult WHERE snapshot_id='${snapshot_id}' ORDER BY rowid DESC;" 2>/dev/null || true)
+  rows=$(sqlite3 -json "$DB_SQLITE_TARGET" "SELECT rowid, status, ${ARCHIVERESULT_OUTPUT_EXPR} AS output_str FROM core_archiveresult WHERE snapshot_id='${snapshot_id}' ORDER BY rowid DESC;" 2>/dev/null || true)
   if [ -z "$rows" ] || ! echo "$rows" | jq -e 'type == "array"' > /dev/null 2>&1; then
     rows="[]"
+  fi
+
+  local latest_rowid
+  latest_rowid=$(echo "$rows" | jq '([.[].rowid] | max // 0)')
+  if ! echo "$latest_rowid" | rg -q '^[0-9]+$'; then
+    latest_rowid="0"
   fi
 
   local count
   count=$(echo "$rows" | jq 'length')
   if [ "$count" -eq 0 ]; then
-    echo "pending|"
+    jq -nc --arg state "pending" --arg reason "" --argjson result_rowid "$latest_rowid" \
+      '{state: $state, reason: $reason, result_rowid: $result_rowid}'
     return
   fi
 
   if echo "$rows" | jq -e 'any(.[]; .status == "queued" or .status == "started" or .status == "backoff")' > /dev/null; then
-    echo "pending|"
+    jq -nc --arg state "pending" --arg reason "" --argjson result_rowid "$latest_rowid" \
+      '{state: $state, reason: $reason, result_rowid: $result_rowid}'
     return
   fi
 
   if echo "$rows" | jq -e 'any(.[]; .status == "failed")' > /dev/null; then
     local reason
     reason=$(echo "$rows" | jq -r '([.[] | select(.status == "failed")][0].output_str // "archive result failed")')
-    echo "failure|$reason"
+    jq -nc --arg state "failure" --arg reason "$reason" --argjson result_rowid "$latest_rowid" \
+      '{state: $state, reason: $reason, result_rowid: $result_rowid}'
     return
   fi
 
   if echo "$rows" | jq -e 'any(.[]; .status == "succeeded")' > /dev/null; then
-    echo "success|"
+    jq -nc --arg state "success" --arg reason "" --argjson result_rowid "$latest_rowid" \
+      '{state: $state, reason: $reason, result_rowid: $result_rowid}'
     return
   fi
 
   if echo "$rows" | jq -e 'all(.[]; .status == "skipped")' > /dev/null; then
-    echo "failure|all hooks skipped"
+    jq -nc --arg state "failure" --arg reason "all hooks skipped" --argjson result_rowid "$latest_rowid" \
+      '{state: $state, reason: $reason, result_rowid: $result_rowid}'
     return
   fi
 
-  echo "pending|"
+  jq -nc --arg state "pending" --arg reason "" --argjson result_rowid "$latest_rowid" \
+    '{state: $state, reason: $reason, result_rowid: $result_rowid}'
 }
 
 record_runtime_and_exit() {
@@ -394,16 +430,13 @@ if [ -n "$ARCHIVERESULT_COLS" ] && echo "$ARCHIVERESULT_COLS" | jq -e 'type == "
   fi
 fi
 
-# bootstrap snapshot cursor on first run to avoid historic backlog flood
-if [ ! -f "$LAST_SNAPSHOT_ROWID_FILE" ]; then
-  BOOTSTRAP_ROWID=$(sqlite3 "$DB_SQLITE_TARGET" "SELECT COALESCE(MAX(rowid), 0) FROM core_snapshot;" 2>/dev/null || echo "0")
+# bootstrap result cursor on first run to avoid historic backlog flood
+if [ ! -f "$LAST_RESULT_ROWID_FILE" ]; then
+  BOOTSTRAP_ROWID=$(sqlite3 "$DB_SQLITE_TARGET" "SELECT COALESCE(MAX(rowid), 0) FROM core_archiveresult;" 2>/dev/null || echo "0")
   if ! echo "$BOOTSTRAP_ROWID" | rg -q '^[0-9]+$'; then
     BOOTSTRAP_ROWID="0"
   fi
-  if [ "$BOOTSTRAP_ROWID" -gt 0 ]; then
-    BOOTSTRAP_ROWID=$((BOOTSTRAP_ROWID - 1))
-  fi
-  save_int_file "$LAST_SNAPSHOT_ROWID_FILE" "$BOOTSTRAP_ROWID"
+  save_int_file "$LAST_RESULT_ROWID_FILE" "$BOOTSTRAP_ROWID"
 fi
 
 # ingest new queue events
@@ -427,28 +460,28 @@ if [ "$TOTAL_LINES" -gt "$LAST_LINE" ]; then
       continue
     fi
 
-    if is_notified "$snapshot_id"; then
-      continue
-    fi
-
     if [ -z "$domain" ] || [ "$domain" = "null" ]; then
       domain=$(sanitize_domain "$url")
     fi
 
-    upsert_pending "$snapshot_id" "$url" "$domain" "$NOW"
+    upsert_pending "$snapshot_id" "$url" "$domain" "$NOW" 0
   done
 fi
 
 save_int_file "$LAST_LINE_FILE" "$TOTAL_LINES"
 
-# fallback ingest path: scan newly added snapshots directly from DB
-LAST_SNAPSHOT_ROWID=$(load_int_file "$LAST_SNAPSHOT_ROWID_FILE" 0)
-NEW_SNAPSHOTS=$(sqlite3 -json "$DB_SQLITE_TARGET" "SELECT rowid, id AS snapshot_id, COALESCE(url, '') AS url FROM core_snapshot WHERE rowid > ${LAST_SNAPSHOT_ROWID} ORDER BY rowid ASC LIMIT ${MAX_LOOKUPS_PER_CYCLE};" 2>/dev/null || true)
-if [ -z "$NEW_SNAPSHOTS" ] || ! echo "$NEW_SNAPSHOTS" | jq -e 'type == "array"' > /dev/null 2>&1; then
-  NEW_SNAPSHOTS="[]"
+# fallback ingest path: scan newly added archiveresults directly from DB
+LAST_RESULT_ROWID=$(load_int_file "$LAST_RESULT_ROWID_FILE" 0)
+if ! echo "$LAST_RESULT_ROWID" | rg -q '^[0-9]+$'; then
+  LAST_RESULT_ROWID="0"
 fi
 
-MAX_SEEN_ROWID="$LAST_SNAPSHOT_ROWID"
+NEW_RESULTS=$(sqlite3 -json "$DB_SQLITE_TARGET" "SELECT r.rowid, r.snapshot_id, COALESCE(s.url, '') AS url FROM core_archiveresult r LEFT JOIN core_snapshot s ON s.id = r.snapshot_id WHERE r.rowid > ${LAST_RESULT_ROWID} ORDER BY r.rowid ASC LIMIT ${MAX_LOOKUPS_PER_CYCLE};" 2>/dev/null || true)
+if [ -z "$NEW_RESULTS" ] || ! echo "$NEW_RESULTS" | jq -e 'type == "array"' > /dev/null 2>&1; then
+  NEW_RESULTS="[]"
+fi
+
+MAX_SEEN_ROWID="$LAST_RESULT_ROWID"
 while IFS= read -r row; do
   rowid=$(echo "$row" | jq -r '.rowid // 0')
   snapshot_id=$(echo "$row" | jq -r '.snapshot_id // empty')
@@ -458,22 +491,29 @@ while IFS= read -r row; do
     continue
   fi
 
-  if is_notified "$snapshot_id"; then
+  if ! echo "$rowid" | rg -q '^[0-9]+$'; then
+    rowid="0"
+  fi
+
+  if is_notified_for_rowid "$snapshot_id" "$rowid"; then
+    if [ "$rowid" -gt "$MAX_SEEN_ROWID" ]; then
+      MAX_SEEN_ROWID="$rowid"
+    fi
     continue
   fi
 
   domain=$(sanitize_domain "$url")
-  upsert_pending "$snapshot_id" "$url" "$domain" "$NOW"
+  upsert_pending "$snapshot_id" "$url" "$domain" "$NOW" "$rowid"
 
   if [ "$rowid" -gt "$MAX_SEEN_ROWID" ]; then
     MAX_SEEN_ROWID="$rowid"
   fi
 done <<EOF
-$(echo "$NEW_SNAPSHOTS" | jq -c '.[]')
+$(echo "$NEW_RESULTS" | jq -c '.[]')
 EOF
 
-if [ "$MAX_SEEN_ROWID" -gt "$LAST_SNAPSHOT_ROWID" ]; then
-  save_int_file "$LAST_SNAPSHOT_ROWID_FILE" "$MAX_SEEN_ROWID"
+if [ "$MAX_SEEN_ROWID" -gt "$LAST_RESULT_ROWID" ]; then
+  save_int_file "$LAST_RESULT_ROWID_FILE" "$MAX_SEEN_ROWID"
 fi
 
 # resolve pending snapshots (bounded work per cycle)
@@ -482,24 +522,41 @@ while IFS= read -r snapshot_id; do
     continue
   fi
 
-  if is_notified "$snapshot_id"; then
-    remove_pending "$snapshot_id"
-    continue
-  fi
-
   entry=$(jq -c --arg id "$snapshot_id" '.[$id]' "$PENDING_FILE")
   url=$(echo "$entry" | jq -r '.url // ""')
   domain=$(echo "$entry" | jq -r '.domain // "unknown"')
   first_seen=$(echo "$entry" | jq -r '.first_seen // 0')
+  pending_result_rowid=$(echo "$entry" | jq -r '.last_result_rowid // 0')
 
   result=$(classify_snapshot "$snapshot_id")
-  state="${result%%|*}"
-  reason="${result#*|}"
+  state=$(echo "$result" | jq -r '.state // "pending"')
+  reason=$(echo "$result" | jq -r '.reason // ""')
+  latest_result_rowid=$(echo "$result" | jq -r '.result_rowid // 0')
+
+  if ! echo "$pending_result_rowid" | rg -q '^[0-9]+$'; then
+    pending_result_rowid="0"
+  fi
+  if ! echo "$latest_result_rowid" | rg -q '^[0-9]+$'; then
+    latest_result_rowid="0"
+  fi
+  if [ "$pending_result_rowid" -gt "$latest_result_rowid" ]; then
+    latest_result_rowid="$pending_result_rowid"
+  fi
+
+  notified_rowid=$(notified_result_rowid "$snapshot_id")
+  if ! echo "$notified_rowid" | rg -q '^[0-9]+$'; then
+    notified_rowid="0"
+  fi
+
+  if [ "$latest_result_rowid" -gt 0 ] && [ "$notified_rowid" -ge "$latest_result_rowid" ]; then
+    remove_pending "$snapshot_id"
+    continue
+  fi
 
   if [ "$state" = "pending" ]; then
     if [ $((NOW - first_seen)) -ge "$PENDING_TIMEOUT_SEC" ]; then
       if send_failure "$snapshot_id" "$url" "$domain" "timeout after ${PENDING_TIMEOUT_SEC}s"; then
-        mark_notified "$snapshot_id" "failure" "$NOW"
+        mark_notified "$snapshot_id" "failure" "$NOW" "$latest_result_rowid"
         remove_pending "$snapshot_id"
       fi
     fi
@@ -508,7 +565,7 @@ while IFS= read -r snapshot_id; do
 
   if [ "$state" = "success" ]; then
     if send_success "$snapshot_id" "$url" "$domain"; then
-      mark_notified "$snapshot_id" "success" "$NOW"
+      mark_notified "$snapshot_id" "success" "$NOW" "$latest_result_rowid"
       remove_pending "$snapshot_id"
     fi
     continue
@@ -516,7 +573,7 @@ while IFS= read -r snapshot_id; do
 
   if [ "$state" = "failure" ]; then
     if send_failure "$snapshot_id" "$url" "$domain" "$reason"; then
-      mark_notified "$snapshot_id" "failure" "$NOW"
+      mark_notified "$snapshot_id" "failure" "$NOW" "$latest_result_rowid"
       remove_pending "$snapshot_id"
     fi
     continue
