@@ -1,4 +1,9 @@
 # Shottr 설정 (macOS)
+#
+# NOTE: home.activation 스크립트에서 /usr/bin/defaults, /usr/bin/killall 등 절대 경로를 사용하는 이유:
+# Home Manager activation은 최소한의 PATH로 실행되어 /usr/bin이 포함되지 않는다.
+# 반면 system.activationScripts (nix-darwin 시스템 레벨)는 일반 PATH를 가지므로
+# defaults를 그대로 쓸 수 있다. home.activation에서는 반드시 절대 경로 필수.
 {
   config,
   lib,
