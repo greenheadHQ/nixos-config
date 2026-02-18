@@ -24,6 +24,7 @@
 
     # Homebrew Cask (GUI 앱)
     casks = [
+      "codex"
       "cursor"
       "shottr"
       "ghostty"

@@ -45,7 +45,6 @@ main() {
     cd "$FLAKE_PATH" || exit 1
 
     echo ""
-    update_external_packages
     preview_changes "preview" "Changes to be applied:"
     run_nixos_rebuild
     cleanup_build_artifacts

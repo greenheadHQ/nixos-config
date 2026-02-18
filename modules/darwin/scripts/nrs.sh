@@ -104,7 +104,6 @@ main() {
     cd "$FLAKE_PATH" || exit 1
 
     echo ""
-    update_external_packages
     cleanup_launchd_agents
     preview_changes "preview" "Changes to be applied:"
     run_darwin_rebuild

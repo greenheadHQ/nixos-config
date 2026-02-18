@@ -1,4 +1,5 @@
 # Codex CLI 설정 (공통)
+# 바이너리: macOS=brew cask, NixOS=GitHub releases 직접 다운로드
 # Claude Code 스킬을 Codex에서도 사용할 수 있도록 심볼릭 링크 관리
 # 이전 시도(5ef4e67)에서 trust 미설정으로 실패 → config.toml에 trust 필수
 {
@@ -29,6 +30,32 @@ in
     ".codex/skills/agent-browser".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/agent-browser";
   };
+
+  # ─── NixOS: Codex CLI 바이너리 설치 (GitHub releases) ───
+  # macOS는 brew cask로 관리 (modules/darwin/programs/homebrew.nix)
+  home.activation.installCodexCli = lib.mkIf pkgs.stdenv.isLinux (
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      if ! command -v codex >/dev/null 2>&1; then
+        echo "Installing Codex CLI from GitHub releases..."
+        TAG="$(${pkgs.curl}/bin/curl -sI --connect-timeout 5 --max-time 10 \
+          "https://github.com/openai/codex/releases/latest" \
+          | ${pkgs.gnugrep}/bin/grep -i '^location:' | ${pkgs.gnused}/bin/sed 's|.*/tag/||; s/\r//')"
+        if [ -n "$TAG" ]; then
+          BINARY="codex-x86_64-unknown-linux-musl"
+          URL="https://github.com/openai/codex/releases/download/''${TAG}/''${BINARY}.tar.gz"
+          mkdir -p "$HOME/.local/bin"
+          ${pkgs.curl}/bin/curl -fsSL "$URL" | tar xz -C /tmp
+          mv "/tmp/''${BINARY}" "$HOME/.local/bin/codex"
+          chmod +x "$HOME/.local/bin/codex"
+          echo "Codex CLI ''${TAG#rust-v} installed to ~/.local/bin/codex"
+        else
+          echo "Warning: Could not fetch Codex CLI release tag (skipping install)"
+        fi
+      else
+        echo "Codex CLI already installed at $(command -v codex)"
+      fi
+    ''
+  );
 
   # ─── 프로젝트 심볼릭 링크 (activation script) ───
   # 이전 시도(5ef4e67)의 sync-codex-from-claude.sh 로직을 Nix activation으로 이식

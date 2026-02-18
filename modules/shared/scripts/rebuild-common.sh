@@ -7,7 +7,7 @@
 #
 # 제공 함수:
 #   parse_args, log_info, log_warn, log_error,
-#   update_external_packages, preview_changes, cleanup_build_artifacts
+#   preview_changes, cleanup_build_artifacts
 
 # fail-fast: REBUILD_CMD 미설정 시 즉시 실패
 if [[ -z "${REBUILD_CMD:-}" ]]; then
@@ -43,24 +43,6 @@ parse_args() {
                 ;;
         esac
     done
-}
-
-#───────────────────────────────────────────────────────────────────────────────
-# 외부 패키지 버전 갱신 (fetchurl 기반)
-#───────────────────────────────────────────────────────────────────────────────
-update_external_packages() {
-    if [[ -n "$OFFLINE_FLAG" ]]; then
-        log_warn "⏭️  Skipping package updates (offline mode)"
-        return
-    fi
-
-    log_info "📦 Checking for external package updates..."
-
-    if "$FLAKE_PATH/scripts/update-codex-cli.sh"; then
-        :
-    else
-        log_warn "  ⚠️  Codex CLI update check failed (continuing anyway)"
-    fi
 }
 
 #───────────────────────────────────────────────────────────────────────────────

@@ -2,9 +2,6 @@
 # 공통 패키지 정의 (lib 스타일 - 명시적 pkgs.* 참조로 출처 추적 용이)
 { pkgs }:
 
-let
-  codex-cli = pkgs.callPackage ./packages/codex-cli.nix { };
-in
 {
   # Darwin + NixOS 공통 CLI 도구
   shared = [
@@ -33,7 +30,6 @@ in
     pkgs.nvd # Nix 변경사항 비교
     pkgs.qrencode # QR 코드 생성 (MiniPC -> iPhone 텍스트 공유)
     pkgs.uv # Python 패키지 관리자 (Astral ty LSP의 uvx 의존성)
-    codex-cli # OpenAI Codex CLI
   ];
 
   # macOS 전용 패키지
