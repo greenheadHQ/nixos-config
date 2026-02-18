@@ -4,7 +4,10 @@
     "IS_DEMO": "true",
     "MAX_THINKING_TOKENS": "63999",
     "CLAUDE_CODE_ENABLE_UNIFIED_READ_TOOL": "true",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-6[1m]"
   },
   "includeCoAuthoredBy": false,
   "permissions": {
