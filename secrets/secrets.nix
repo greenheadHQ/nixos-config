@@ -45,14 +45,11 @@ in
   "pushover-uptime-kuma.age".publicKeys = minipcOnly;
   "pushover-copyparty.age".publicKeys = minipcOnly;
 
-  # Linkwarden NEXTAUTH_SECRET (세션 암호화)
-  "linkwarden-nextauth-secret.age".publicKeys = minipcOnly;
+  # ArchiveBox 관리자 비밀번호
+  "archivebox-admin-password.age".publicKeys = minipcOnly;
 
-  # Meilisearch Master Key (검색 엔진 인증)
-  "meilisearch-master-key.age".publicKeys = minipcOnly;
-
-  # Linkwarden Pushover 알림 (버전 체크 + 백업)
-  "pushover-linkwarden.age".publicKeys = minipcOnly;
+  # ArchiveBox Pushover 알림 (백업 실패 알림)
+  "pushover-archivebox.age".publicKeys = minipcOnly;
 
   # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
   "pushover-system-monitor.age".publicKeys = minipcOnly;

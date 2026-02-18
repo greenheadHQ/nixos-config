@@ -34,9 +34,8 @@ homeserver.copypartyUpdate.enable = true;     # Copyparty 버전 체크 + 업데
 homeserver.ankiSync.enable = true;            # Anki 자체 호스팅 동기화 서버
 homeserver.copyparty.enable = true;           # 파일 서버
 homeserver.vaultwarden.enable = true;         # 비밀번호 관리자
-homeserver.linkwarden.enable = true;          # Linkwarden 북마크 + 웹 아카이버 (Meilisearch 포함, NixOS 네이티브)
-homeserver.linkwardenBackup.enable = true;    # Linkwarden PostgreSQL 매일 백업 (05:00)
-homeserver.linkwardenUpdate.enable = true;    # Linkwarden 버전 체크 + 업데이트 알림
+homeserver.archiveBox.enable = true;          # ArchiveBox 웹 아카이버 (headless Chromium + SingleFile)
+homeserver.archiveBoxBackup.enable = true;    # ArchiveBox SQLite 매일 백업 (05:00)
 homeserver.immichBackup.enable = true;        # Immich PostgreSQL 매일 백업 (05:30)
 homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 ```
@@ -61,9 +60,8 @@ homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 | `modules/nixos/programs/uptime-kuma-update/` | Uptime Kuma 버전 체크 + 업데이트 |
 | `modules/nixos/programs/copyparty-update/` | Copyparty 버전 체크 + 업데이트 |
 | `modules/nixos/programs/anki-sync-server/` | Anki sync (NixOS 네이티브 모듈, 비컨테이너) |
-| `modules/nixos/programs/linkwarden/` | Linkwarden 북마크 + 웹 아카이버 (NixOS 네이티브) |
-| `modules/nixos/programs/linkwarden-backup/` | Linkwarden PostgreSQL 매일 백업 |
-| `modules/nixos/programs/linkwarden-update/` | Linkwarden 버전 체크 + 알림 |
+| `modules/nixos/programs/docker/archivebox.nix` | ArchiveBox 웹 아카이버 (Podman 컨테이너) |
+| `modules/nixos/programs/docker/archivebox-backup.nix` | ArchiveBox SQLite 매일 백업 |
 | `libraries/constants.nix` | IP, 경로, 도메인, 리소스 제한, UID 상수 |
 
 ### 상수 참조
@@ -83,7 +81,7 @@ Docker 서비스에서 사용하는 상수 (`libraries/constants.nix`):
 | Uptime Kuma | `https://uptime-kuma.greenhead.dev` | `127.0.0.1:3002` |
 | Copyparty | `https://copyparty.greenhead.dev` | `127.0.0.1:3923` |
 | Vaultwarden | `https://vaultwarden.greenhead.dev` | `127.0.0.1:8222` |
-| Linkwarden | `https://archive.greenhead.dev` | `127.0.0.1:3000` |
+| ArchiveBox | `https://archive.greenhead.dev` | `127.0.0.1:8000` |
 | Anki Sync | (Caddy 미경유) | `100.79.80.95:27701` |
 
 Caddy가 Cloudflare DNS-01 ACME로 Let's Encrypt 인증서를 자동 발급합니다.
@@ -167,7 +165,6 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 | Immich | `immich-version-check` | `sudo immich-update` | 03:00 |
 | Uptime Kuma | `uptime-kuma-version-check` | `sudo uptime-kuma-update` | 03:30 |
 | Copyparty | `copyparty-version-check` | `sudo copyparty-update` | 04:00 |
-| Linkwarden | `linkwarden-version-check` | `nix flake update` + `nrs` | 06:00 |
 
 **백업 타이머**:
 
@@ -175,7 +172,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 |--------|---------------|--------|-----------|
 | Anki Sync | `anki-sync-backup` | 04:00 | HDD |
 | Vaultwarden | `vaultwarden-backup` | 04:30 | HDD (`/mnt/data/backups/vaultwarden`) |
-| Linkwarden DB | `linkwarden-db-backup` | 05:00 | HDD (`/mnt/data/backups/linkwarden`) |
+| ArchiveBox | `archivebox-backup` | 05:00 | HDD (`/mnt/data/backups/archivebox`) |
 | Immich DB | `immich-db-backup` | 05:30 | HDD (`/mnt/data/backups/immich`) |
 
 공통 라이브러리 함수: `send_notification`, `fetch_github_release`, `get_image_digest`, `check_watchdog`, `check_initial_run`, `record_success`, `http_health_check`

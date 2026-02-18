@@ -105,17 +105,17 @@
       };
     };
 
-    linkwarden = {
-      enable = lib.mkEnableOption "Linkwarden bookmark manager and web archiver";
+    archiveBox = {
+      enable = lib.mkEnableOption "ArchiveBox web archiver (headless Chromium + SingleFile)";
       port = lib.mkOption {
         type = lib.types.port;
-        default = constants.network.ports.linkwarden;
-        description = "Port for Linkwarden web interface";
+        default = constants.network.ports.archiveBox;
+        description = "Port for ArchiveBox web interface";
       };
     };
 
-    linkwardenBackup = {
-      enable = lib.mkEnableOption "Linkwarden PostgreSQL daily backup to HDD";
+    archiveBoxBackup = {
+      enable = lib.mkEnableOption "ArchiveBox SQLite daily backup to HDD";
       backupTime = lib.mkOption {
         type = lib.types.str;
         default = "*-*-* 05:00:00";
@@ -125,15 +125,6 @@
         type = lib.types.int;
         default = 30;
         description = "Number of days to retain backups";
-      };
-    };
-
-    linkwardenUpdate = {
-      enable = lib.mkEnableOption "Linkwarden version check and update notifications";
-      checkTime = lib.mkOption {
-        type = lib.types.str;
-        default = "*-*-* 06:00:00";
-        description = "OnCalendar time for version check";
       };
     };
 
@@ -161,9 +152,8 @@
     ../programs/docker/vaultwarden.nix # Vaultwarden 비밀번호 관리자
     ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)
     ../programs/docker/immich-backup.nix # Immich PostgreSQL 매일 백업
-    ../programs/linkwarden # Linkwarden 북마크 매니저 + 웹 아카이버
-    ../programs/linkwarden-backup # Linkwarden PostgreSQL 매일 백업
-    ../programs/linkwarden-update # Linkwarden 버전 체크 + 업데이트 알림
+    ../programs/docker/archivebox.nix # ArchiveBox 웹 아카이버
+    ../programs/docker/archivebox-backup.nix # ArchiveBox SQLite 매일 백업
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)
   ];

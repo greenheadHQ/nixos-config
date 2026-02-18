@@ -145,9 +145,8 @@
   homeserver.ankiSync.enable = true; # Anki 자체 호스팅 동기화 서버
   homeserver.copyparty.enable = true; # 셀프호스팅 파일 서버
   homeserver.vaultwarden.enable = true; # Vaultwarden 비밀번호 관리자
-  homeserver.linkwarden.enable = true; # Linkwarden 북마크 매니저 + 웹 아카이버 (Meilisearch 포함)
-  homeserver.linkwardenBackup.enable = true; # Linkwarden PostgreSQL 매일 백업 (HDD)
-  homeserver.linkwardenUpdate.enable = true; # Linkwarden 버전 체크 + 업데이트 알림
+  homeserver.archiveBox.enable = true; # ArchiveBox 웹 아카이버 (headless Chromium + SingleFile)
+  homeserver.archiveBoxBackup.enable = true; # ArchiveBox SQLite 매일 백업 (HDD)
   homeserver.immichBackup.enable = true; # Immich PostgreSQL 매일 백업 (HDD)
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
   homeserver.devProxy.enable = true; # Dev server → dev.greenhead.dev 프록시

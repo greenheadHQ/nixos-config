@@ -102,11 +102,11 @@ in
         '';
       };
 
-      virtualHosts."${subdomains.linkwarden}.${base}" = {
+      virtualHosts."${subdomains.archiveBox}.${base}" = {
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
           ${securityHeaders}
-          reverse_proxy localhost:${toString constants.network.ports.linkwarden}
+          reverse_proxy localhost:${toString constants.network.ports.archiveBox}
         '';
       };
     };

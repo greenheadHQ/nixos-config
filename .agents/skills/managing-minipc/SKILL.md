@@ -85,7 +85,7 @@ Platform이 `linux`이면 이미 MiniPC — SSH 금지. 명령어를 직접 실�
 | `modules/nixos/configuration.nix` | NixOS 공통 설정 + 홈서버 서비스 활성화 |
 | `modules/nixos/options/homeserver.nix` | mkOption 기반 서비스 정의 |
 | `modules/nixos/programs/` | 공통 서비스 모듈 (Tailscale, SSH, Caddy 등) |
-| `modules/nixos/programs/linkwarden/` | Linkwarden 북마크 + 웹 아카이버 (NixOS 네이티브) |
+| `modules/nixos/programs/docker/archivebox.nix` | ArchiveBox 웹 아카이버 (Podman 컨테이너) |
 | `modules/nixos/programs/smartd.nix` | S.M.A.R.T. 디스크 건강 모니터링 + Pushover 알림 |
 | `modules/nixos/programs/temp-monitor/` | lm-sensors 온도 모니터링 + Pushover 알림 (5분 주기) |
 | `modules/nixos/home.nix` | Home Manager (NixOS) |

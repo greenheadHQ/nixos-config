@@ -18,8 +18,7 @@
       ankiSync = 27701;
       copyparty = 3923;
       vaultwarden = 8222;
-      linkwarden = 3000;
-      meilisearch = 7700;
+      archiveBox = 8000;
       caddy = 443;
     };
 
@@ -37,7 +36,7 @@
       uptimeKuma = "uptime-kuma";
       copyparty = "copyparty";
       vaultwarden = "vaultwarden";
-      linkwarden = "archive";
+      archiveBox = "archive";
       dev = "dev";
     };
   };
@@ -95,6 +94,11 @@
     vaultwarden = {
       memory = "256m";
       cpus = "0.5";
+    };
+    archiveBox = {
+      memory = "3g";
+      memorySwap = "4g";
+      cpus = "2";
     };
   };
 
