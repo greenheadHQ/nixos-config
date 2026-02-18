@@ -68,7 +68,7 @@ let
 
       # 3. pg_dump -Fc (NixOS native PostgreSQL, peer auth)
       echo "Running pg_dump..."
-      sudo -u postgres pg_dump -Fc linkwarden > "$TMP_FILE"
+      sudo -u postgres pg_dump -Fc -f "$TMP_FILE" linkwarden
       echo "pg_dump completed: $(stat -c%s "$TMP_FILE") bytes"
 
       # 4. 무결성 검증
