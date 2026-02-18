@@ -115,3 +115,68 @@ ls -la secrets/*.age
 1. `modules/shared/programs/secrets/default.nix`에 배포 설정 추가
 2. `nrs`로 재빌드
 3. 배포 경로에서 파일 존재 확인
+
+---
+
+## macOS agenix launchd agent crash loop (.tmp 파일 잔류)
+
+> **발생 시점**: 2026-02-18
+> **해결**: stale generation 정리 + 예방 코드 추가
+
+**증상**: `nrs` 후 일부 시크릿이 복호화되지 않음. `~/Library/Logs/agenix/stderr`에 아래 에러 반복:
+
+```
+age: error: open /var/folders/.../agenix.d/<N>/<secret>.tmp: permission denied
+```
+
+**원인**: `nrs.sh`의 launchd cleanup이 복호화 중인 agenix agent를 kill → 0400 권한의 `.tmp` 파일이 다음 generation 디렉토리에 남음 → agent 재시작 시 해당 `.tmp`를 덮어쓸 수 없어 crash loop.
+
+**진단**:
+
+```bash
+# agenix generation 디렉토리 확인
+ls -la "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/"
+
+# 깨진 generation에 .tmp 파일 확인
+find "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/" -name '*.tmp'
+
+# agenix 에러 로그 확인
+tail -20 ~/Library/Logs/agenix/stderr
+```
+
+**수동 해결**:
+
+```bash
+# 깨진 generation 삭제
+rm -rf "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/<broken-gen-number>"
+
+# agenix agent 재시작
+launchctl kickstart -k "gui/$(id -u)/com.green.activate-agenix"
+```
+
+**예방 코드**: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다.
+
+---
+
+## macOS agenix 시크릿이 home.activation 시점에 없음
+
+> **발생 시점**: 2026-02-18
+
+**증상**: `home.activation` 스크립트에서 agenix 시크릿 파일을 참조하면 "not found".
+
+**원인**: macOS에서 agenix는 `home.activation`이 아닌 `launchd.agents.activate-agenix` (RunAtLoad)로 시크릿을 복호화한다. `setupLaunchAgents`가 agent를 로드해야 복호화가 시작되므로, 그 이전 activation 단계에서는 시크릿이 없다.
+
+**해결**: 시크릿을 참조하는 activation 단계를 `setupLaunchAgents` 이후로 배치 + 짧은 polling.
+
+```nix
+home.activation.myStep =
+  lib.hm.dag.entryAfter [ "setupLaunchAgents" ]
+    ''
+      _waited=0
+      while [ ! -f "/path/to/secret" ] && [ "$_waited" -lt 5 ]; do
+        sleep 1
+        _waited=$(( _waited + 1 ))
+      done
+      # ... 시크릿 사용
+    '';
+```

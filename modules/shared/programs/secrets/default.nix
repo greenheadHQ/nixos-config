@@ -8,6 +8,26 @@
 }:
 
 {
+  # agenix crash loop 방지: stale .tmp 파일 정리
+  #
+  # nrs.sh의 launchd cleanup이 복호화 중인 agenix agent를 kill하면
+  # 0400 권한의 .tmp 파일이 다음 generation 디렉토리에 남는다.
+  # 이후 agent 재시작 시 해당 .tmp를 덮어쓸 수 없어 crash loop 발생.
+  # setupLaunchAgents 전에 깨진 generation을 정리한다.
+  home.activation.cleanupAgenixStaleGenerations = lib.mkIf pkgs.stdenv.isDarwin (
+    lib.hm.dag.entryBefore [ "setupLaunchAgents" ] ''
+      _agenix_mount="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)/agenix.d"
+      if [ -d "$_agenix_mount" ]; then
+        for _gen_dir in "$_agenix_mount"/*/; do
+          if /usr/bin/find "$_gen_dir" -name '*.tmp' -maxdepth 1 2>/dev/null | /usr/bin/grep -q .; then
+            echo "[agenix] Removing stale generation with .tmp files: $_gen_dir"
+            rm -rf "$_gen_dir"
+          fi
+        done
+      fi
+    ''
+  );
+
   age = {
     # SSH 키로 복호화
     identityPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];

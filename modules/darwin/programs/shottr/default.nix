@@ -54,11 +54,21 @@ in
 
   # 라이센스 pre-fill (agenix secret → defaults write)
   # Keychain 없는 새 맥북에서 Activate 버튼 1회 클릭만으로 활성화 가능
+  #
+  # macOS에서 agenix는 launchd agent(activate-agenix, RunAtLoad)로 시크릿을 복호화한다.
+  # setupLaunchAgents가 agenix agent를 로드한 뒤 짧은 대기로 복호화 완료를 기다린다.
+  # 라이센스는 defaults DB에 한번 기록되면 영구 보존되므로 실패해도 큰 문제 없음.
   home.activation.applyShottrLicenseFromSecret =
-    lib.hm.dag.entryAfter [ "applyShottrCoreSettings" ]
+    lib.hm.dag.entryAfter [ "applyShottrCoreSettings" "setupLaunchAgents" ]
       ''
+        _waited=0
+        while [ ! -f "${shottrLicensePath}" ] && [ "$_waited" -lt 5 ]; do
+          sleep 1
+          _waited=$(( _waited + 1 ))
+        done
+
         if [ ! -f "${shottrLicensePath}" ]; then
-          echo "Note: Shottr license secret not found. License pre-fill skipped."
+          echo "Note: Shottr license secret not yet available. License pre-fill skipped."
         else
           kc_license="$(sed -n 's/^KC_LICENSE=//p' "${shottrLicensePath}" | tail -n 1 | tr -d '\r')"
           kc_vault="$(sed -n 's/^KC_VAULT=//p' "${shottrLicensePath}" | tail -n 1 | tr -d '\r')"
@@ -71,4 +81,10 @@ in
           fi
         fi
       '';
+
+  # 설정 반영을 위해 Shottr 항상 (재)시작
+  home.activation.restartShottr = lib.hm.dag.entryAfter [ "applyShottrLicenseFromSecret" ] ''
+    /usr/bin/killall Shottr 2>/dev/null || true
+    /usr/bin/open -a Shottr
+  '';
 }

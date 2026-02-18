@@ -114,6 +114,8 @@ HM activation이 `~/.config/shottr/license`에서 값을 읽어 `defaults write 
 2. **복호화 실패**: SSH 키 불일치 또는 identity path 오류
 3. **재암호화 누락**: `secrets.nix`의 publicKeys 변경 후 `agenix -r` 미실행
 4. **배포 후 파일 미생성**: Home Manager agenix 서비스 상태 확인, `nrs` 재실행
+5. **macOS agenix crash loop (.tmp 잔류)**: `nrs`가 복호화 중인 agent를 kill → stale `.tmp` 파일이 다음 generation을 block. 예방 코드(`cleanupAgenixStaleGenerations`)가 `setupLaunchAgents` 전에 자동 정리
+6. **macOS activation에서 시크릿 미발견**: agenix는 `launchd.agents`로 복호화 → `setupLaunchAgents` 이후 + polling 필요
 
 상세는 [references/troubleshooting.md](references/troubleshooting.md) 참조.
 
