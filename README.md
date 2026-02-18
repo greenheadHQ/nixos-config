@@ -7,16 +7,17 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 | 호스트 | OS | 용도 | 접속 방법 |
 |--------|-----|------|----------|
 | MacBook Pro | macOS (nix-darwin) | 메인 개발 환경 | 로컬 |
-| greenhead-minipc | NixOS | 24시간 원격 개발 서버 | `ssh minipc` |
+| greenhead-minipc | NixOS | 홈서버 + 원격 개발 서버 | `ssh minipc` |
 
 **공유 설정** (`modules/shared/`):
 - 쉘 환경 (zsh, starship, atuin, fzf, zoxide)
-- 개발 도구 (git, tmux, neovim (LazyVim), lazygit)
-- Claude Code 설정
+- 개발 도구 (git, tmux, neovim (LazyVim), lazygit, direnv)
+- AI 도구 (Claude Code, Codex CLI, agent-browser)
+- 시크릿 관리 (agenix)
 
 **플랫폼별 설정**:
-- macOS: Homebrew GUI 앱, Hammerspoon, Cursor, 폴더 액션
-- NixOS: SSH 서버, mosh, Tailscale VPN
+- macOS: Homebrew GUI 앱, Hammerspoon, Cursor, Ghostty, Shottr, 폴더 액션
+- NixOS: 홈서버 14개 서비스, Tailscale VPN, SSH/mosh, 하드웨어 모니터링
 
 ---
 
@@ -25,58 +26,118 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 ```
 flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 ├── libraries/
-│   ├── constants.nix              # 전역 상수 (IP, 경로, SSH 키, UID 등)
+│   ├── constants.nix              # 전역 상수 (IP, 포트, 경로, SSH 키, UID 등)
 │   ├── packages.nix               # 공통 패키지 (shared/darwinOnly/nixosOnly)
-│   └── nixpkgs/default.nix        # overlay 설정
+│   ├── nixpkgs/default.nix        # overlay 설정
+│   └── packages/
+│       └── sarasa-mono-k-nerd-font.nix  # 커스텀 폰트 패키지
 ├── modules/
 │   ├── shared/                    # Darwin + NixOS 공통
-│   │   ├── configuration.nix      # Nix GC, substitution
-│   │   └── programs/              # git, tmux, neovim, shell, claude, secrets
+│   │   ├── configuration.nix      # Nix GC, 병렬 다운로드, flakes
+│   │   └── programs/              # git, tmux, neovim, shell, claude, codex,
+│   │                              # lazygit, direnv, broot, agent-browser, secrets
 │   ├── darwin/                    # macOS 전용
-│   │   ├── configuration.nix      # Dock, Finder, 키보드
+│   │   ├── configuration.nix      # Dock, Finder, 키보드, 단축키, Touch ID sudo
 │   │   ├── home.nix               # HM 패키지 + 모듈 import
-│   │   └── programs/              # hammerspoon, cursor, sshd, ssh
+│   │   └── programs/              # hammerspoon, cursor, ghostty, shottr,
+│   │                              # folder-actions, keybindings, atuin, sshd, ssh, mosh
 │   └── nixos/                     # NixOS 전용
-│       ├── configuration.nix      # systemd-boot, 로케일, 서비스 활성화
+│       ├── configuration.nix      # systemd-boot, watchdog, nix-ld, 서비스 활성화
 │       ├── home.nix               # HM 패키지 + 모듈 import
 │       ├── options/
-│       │   └── homeserver.nix     # mkOption 서비스 정의 (immich, uptime-kuma, anki-sync)
+│       │   └── homeserver.nix     # mkOption 서비스 정의 (14개)
 │       ├── lib/
-│       │   ├── tailscale-wait.nix # Tailscale IP 대기 유틸리티
+│       │   ├── service-lib.nix    # 공통 셸 라이브러리 (Nix store 배치)
 │       │   ├── mk-update-module.nix # 서비스 업데이트 모듈 생성 헬퍼
-│       │   └── service-lib.sh     # 공통 셸 라이브러리
+│       │   ├── caddy-security-headers.nix
+│       │   └── tailscale-wait.nix # Tailscale IP 대기 유틸리티
 │       └── programs/
-│           ├── anki-sync-server/  # Anki sync 서버 (NixOS 네이티브 모듈)
-│           ├── docker/            # 컨테이너 서비스 (runtime, immich, uptime-kuma)
+│           ├── docker/            # 컨테이너 서비스 (Podman 기반)
+│           │   ├── runtime.nix    # Podman 공통 설정
+│           │   ├── immich.nix     # 사진 백업 (PostgreSQL + Redis + ML)
+│           │   ├── immich-backup.nix
+│           │   ├── uptime-kuma.nix
+│           │   ├── copyparty.nix  # 파일 서버 (Google Drive 대체)
+│           │   ├── vaultwarden.nix # 비밀번호 관리자
+│           │   ├── vaultwarden-backup.nix
+│           │   ├── archivebox.nix # 웹 아카이버
+│           │   ├── archivebox-backup.nix
+│           │   └── archivebox-notify.nix
+│           ├── anki-sync-server/  # Anki 동기화 서버 (네이티브 모듈)
+│           ├── caddy.nix          # HTTPS 리버스 프록시 (Cloudflare DNS)
+│           ├── dev-proxy/         # dev.greenhead.dev 개발 서버 프록시
+│           ├── immich-cleanup/    # 임시 앨범 자동 삭제
+│           ├── immich-update/     # 버전 체크 + Pushover 알림
+│           ├── uptime-kuma-update/
+│           ├── copyparty-update/
+│           ├── archivebox-update/
+│           ├── temp-monitor/      # CPU/NVMe 온도 모니터링 (Pushover)
+│           ├── smartd.nix         # S.M.A.R.T. 디스크 건강 모니터링
+│           ├── tailscale.nix      # VPN
 │           ├── ssh.nix            # OpenSSH 서버
-│           └── tailscale.nix      # VPN
-├── hosts/greenhead-minipc/        # 호스트별 하드웨어 설정
-├── secrets/                       # agenix 암호화 시크릿
-└── scripts/                       # 자동화 스크립트
-    ├── add-host.sh                # 호스트 추가 마법사
-    ├── pre-rebuild-check.sh       # 빌드 전 검증
-    └── update-input.sh            # Flake input 업데이트
+│           ├── mosh.nix           # 모바일 쉘
+│           └── ssh-client/        # macOS SSH 접속 설정
+├── hosts/greenhead-minipc/        # 호스트별 하드웨어 설정 (disko, WoL, HDD)
+├── secrets/                       # agenix 암호화 시크릿 (16개 .age 파일)
+├── scripts/                       # 자동화 스크립트
+│   ├── add-host.sh                # 호스트 추가 마법사
+│   ├── pre-rebuild-check.sh       # 빌드 전 검증
+│   └── update-input.sh            # Flake input 업데이트
+└── tests/
+    └── eval-tests.nix             # Nix 평가 테스트
 ```
 
 ### 상수 관리
 
 모든 공유 상수는 `libraries/constants.nix`에서 단일 소스로 관리됩니다:
-- 네트워크: Tailscale IP, 서비스 포트
-- 경로: Docker 데이터, 미디어 데이터
-- SSH 공개키: `secrets/secrets.nix`에서도 import
-- 컨테이너 리소스 제한
-- UID/GID, macOS 설정, SSH 타임아웃
 
-### 홈서버 서비스 (mkOption)
+| 카테고리 | 내용 |
+|----------|------|
+| `network` | Tailscale IP, 서비스 포트 7개, Podman 서브넷 |
+| `domain` | `greenhead.dev` + 서브도메인 6개 |
+| `paths` | Docker 데이터(SSD), 미디어 데이터(HDD) |
+| `sshKeys` | MacBook/MiniPC SSH 공개키 (`secrets/secrets.nix`에서도 import) |
+| `containers` | 서비스별 리소스 제한 (메모리, CPU) |
+| `ids` | UID/GID (postgres, user, render) |
+| `macos` | Dock, 키보드, Shottr 경로 |
+| `ssh` | 타임아웃 설정 (Darwin sshd + NixOS openssh 공통) |
+| `tempMonitor` | CPU/NVMe 온도 경고/긴급 임계값 |
+
+### 홈서버 서비스
 
 NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적 활성화:
 
 ```nix
 # modules/nixos/configuration.nix
-homeserver.immich.enable = true;
-homeserver.uptimeKuma.enable = true;
-homeserver.ankiSync.enable = true;
+homeserver.immich.enable = true;           # 사진 백업
+homeserver.immichBackup.enable = true;     # PostgreSQL 매일 백업 (HDD)
+homeserver.immichCleanup.enable = true;    # 임시 앨범 자동 삭제
+homeserver.immichUpdate.enable = true;     # 버전 체크 + Pushover 알림
+homeserver.uptimeKuma.enable = true;       # 서비스 모니터링
+homeserver.uptimeKumaUpdate.enable = true;
+homeserver.ankiSync.enable = true;         # Anki 동기화 서버
+homeserver.copyparty.enable = true;        # 파일 서버 (Google Drive 대체)
+homeserver.copypartyUpdate.enable = true;
+homeserver.vaultwarden.enable = true;      # 비밀번호 관리자
+homeserver.archiveBox.enable = true;       # 웹 아카이버 (SingleFile)
+homeserver.archiveBoxBackup.enable = true; # SQLite 매일 백업 (HDD)
+homeserver.archiveBoxNotify.enable = true; # 런타임 이벤트 알림
+homeserver.archiveBoxUpdate.enable = true;
+homeserver.reverseProxy.enable = true;     # Caddy HTTPS (*.greenhead.dev)
+homeserver.devProxy.enable = true;         # dev.greenhead.dev
 ```
+
+### 개발 도구 체인
+
+| 도구 | 용도 |
+|------|------|
+| lefthook | Git 훅 관리 (pre-commit, pre-push) |
+| nixfmt | Nix 코드 포매팅 |
+| shellcheck | 셸 스크립트 린팅 |
+| gitleaks | 시크릿 유출 방지 |
+| eval-tests | Nix 평가 테스트 (`tests/eval-tests.nix`) |
+
+pre-push 시 `nix flake check --no-build --all-systems` 자동 실행.
 
 ---
 
@@ -145,6 +206,12 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | SSH/Tailscale | `managing-ssh` |
 | 시크릿 관리 | `managing-secrets` |
 | 컨테이너 서비스 | `running-containers` |
+| Vaultwarden | `hosting-vaultwarden` |
+| ArchiveBox | `hosting-archivebox` |
+| Copyparty | `hosting-copyparty` |
+| Anki 동기화 | `hosting-anki` |
+| dev-proxy | `proxying-dev-server` |
+| Claude Code | `configuring-claude-code` |
 
 전체 스킬 목록은 `CLAUDE.md`를 참고하세요.
 
