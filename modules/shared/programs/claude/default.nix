@@ -146,5 +146,11 @@ in
     # syncing-codex-harness 스킬 (user-scope)
     ".claude/skills/syncing-codex-harness".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";
+
+    # karpathy-guidelines 스킬 (user-scope)
+    # 출처: https://github.com/forrestchang/andrej-karpathy-skills (MIT)
+    # Andrej Karpathy의 LLM 코딩 행동 가이드라인 — 매 세션 CLAUDE.md에서 핵심 원칙 로드
+    ".claude/skills/karpathy-guidelines".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/karpathy-guidelines";
   };
 }
