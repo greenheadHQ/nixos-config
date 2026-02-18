@@ -69,7 +69,8 @@ let
 
       # 3. pg_dump -Fc (NixOS native PostgreSQL, peer auth)
       echo "Running pg_dump..."
-      runuser -u postgres -- pg_dump -Fc -f "$TMP_FILE" linkwarden
+      # shellcheck disable=SC2024  # 의도적: redirect는 root로 실행 (백업 디렉토리 root:0700)
+      runuser -u postgres -- pg_dump -Fc linkwarden > "$TMP_FILE"
       echo "pg_dump completed: $(stat -c%s "$TMP_FILE") bytes"
 
       # 4. 무결성 검증
