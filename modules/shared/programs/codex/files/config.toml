@@ -12,3 +12,8 @@ hide_full_access_warning = true
 
 [projects."/home/greenhead/IdeaProjects/example-front"]
 trust_level = "trusted"
+
+[features]
+multi_agent = true
+apps = true
+prevent_idle_sleep = true
