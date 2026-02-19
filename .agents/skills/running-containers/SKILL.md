@@ -192,6 +192,25 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 **Karakeep 이벤트 알림**: `karakeep-notify`가 웹훅→Pushover 브리지(socat)로 아카이빙 성공/실패 알림을 전송합니다.
 
+### Uptime Kuma 알림 발송 조건
+
+Uptime Kuma는 매 체크마다 알림을 보내지 않고, **상태 전환 이벤트** 기준으로 알림을 보냅니다.
+
+- **DOWN 알림**: 실패 누적 후 상태가 `PENDING -> DOWN`으로 바뀌는 순간 발송
+  - `maxretries = 0`이면 첫 실패에서 즉시 DOWN
+- **복구 알림**: 상태가 `DOWN -> UP`으로 바뀌는 순간 발송
+- **DOWN 재알림**: DOWN 상태가 지속될 때 `resendInterval` 설정 주기로 재발송
+- **최초 체크**: 첫 결과가 DOWN이면 DOWN 알림이 갈 수 있고, 첫 결과가 UP이면 일반적으로 알림 없음
+- **Maintenance(점검 모드)**: 점검 기간에는 알림 억제
+- **HTTPS 인증서 만료 알림**: HTTPS 모니터에서 만료 알림 옵션을 켠 경우 별도 발송
+
+실무 권장값(홈서버 내부 서비스 모니터 기준):
+
+- `interval`: 60s
+- `maxretries`: 3
+- `retryInterval`: 20s
+- `resendInterval`: 10m (지속 장애 재알림이 필요할 때만)
+
 ### FolderAction 자동 업로드
 
 macOS에서 `~/FolderActions/upload-immich/`에 파일을 넣으면 Immich에 자동 업로드. 상세: [references/folder-action.md](references/folder-action.md)
