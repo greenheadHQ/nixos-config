@@ -1,4 +1,0 @@
-interface:
-  display_name: "Configuring Neovim"
-  short_description: "Neovim/LazyVim setup: LSP, plugins, im-select, extraPackages. Triggers: \"nvim 플러그인\", \"lazy.nvim\", \"한글 입력\", \"im-select\", \"extraPa"
-  default_prompt: "Use $configuring-neovim to help with this task in nixos-config."

@@ -93,11 +93,42 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 ## 회귀 방지 체크리스트
 
 1. 새 스킬 추가/수정 후 `nrs`(또는 동등 activation) 실행
-2. `.agents/skills/*/SKILL.md`가 일반 파일인지 확인
+2. `.agents/skills/*`이 디렉토리 심링크인지 확인 (`ls -la .agents/skills/`)
 3. `./scripts/ai/verify-ai-compat.sh` 통과 확인
 4. `codex exec`로 project-scope 스킬 1개 이상 런타임 확인
 5. `configuring-codex` 스킬 문서와 실제 구현(`default.nix`, verify script) 간 불일치 여부 점검
 6. pre-commit `ai-skills-consistency` 훅 확인 (관련 staged 변경 시 fail, 긴급 우회: `SKIP_AI_SKILL_CHECK=1`)
+
+## 2026-02-19 재검증: 디렉토리 심링크 전환
+
+### 배경
+
+2026-02-08 런북에서 "SKILL.md 심링크 불가 → 실파일 복사" 정책을 수립했으나,
+이는 **파일 심링크**에 대한 결론이었다. 커뮤니티 리서치와 소스코드 분석을 통해
+Codex CLI가 **디렉토리 심링크**는 공식 지원함을 확인했다.
+
+### 핵심 발견
+
+| 항목 | 기존 (2026-02-08) | 변경 (2026-02-19) |
+|------|-------------------|-------------------|
+| SKILL.md 투영 | 실파일 복사 | 디렉토리 심링크 |
+| references/scripts/assets | 개별 파일 심링크 | 디렉토리 심링크에 포함 |
+| openai.yaml | 자동 생성 | 생략 (선택 사항) |
+| sync drift | 복사 시점 차이로 발생 가능 | 원천 제거 (단일 소스) |
+
+### 근거
+
+- **Codex CLI 소스코드** (`codex-rs/core/src/skills/loader.rs`):
+  디렉토리 심링크는 `follow_links(true)`로 순회, 파일 심링크는 `continue`로 무시
+- **PR #8801** (2026-01-07 merged): 디렉토리 심링크 지원 추가
+- **OpenAI 공식 답변** (Issue #9365): "We support symlinks to a skill directory, not the SKILL.md file itself"
+- **로컬 검증**: 22개 스킬 디렉토리 심링크 전환 후 `codex exec` 런타임 정상 인식 확인
+
+### 최종 정책
+
+- `.agents/skills/<name>` → `../../.claude/skills/<name>` 디렉토리 심링크
+- openai.yaml 자동 생성 중단
+- `verify-ai-compat.sh`, `warn-skill-consistency.sh`에서 디렉토리 심링크 기준 검증
 
 ## 참고 문서
 
@@ -109,3 +140,6 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 - https://developers.openai.com/codex/config-reference
 - https://developers.openai.com/codex/security/
 - https://github.com/openai/codex/issues/4392
+- https://github.com/openai/codex/pull/8801
+- https://github.com/openai/codex/pull/9384
+- https://github.com/openai/codex/issues/9365

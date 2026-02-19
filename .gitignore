@@ -11,9 +11,9 @@
 *.bak
 
 # Codex CLI
-# 글로벌 gitignore(~/.config/git/ignore)에서 .agents/, AGENTS.override.md 등을
+# 글로벌 gitignore(~/.config/git/ignore)에서 .agents/, AGENTS.md, AGENTS.override.md 등을
 # 무시하므로, 이 프로젝트에서 필요한 항목을 negation으로 재허용
-AGENTS.md
+!AGENTS.md
 !AGENTS.override.md
 !.agents/
 .codex/

@@ -61,72 +61,50 @@ in
   # 이전 시도(5ef4e67)의 sync-codex-from-claude.sh 로직을 Nix activation으로 이식
   # nrs 실행 시 자동으로 .agents/skills/ 동기화
 
-  home.activation.createCodexProjectSymlinks =
-    lib.hm.dag.entryAfter
-      [
-        "writeBoundary"
-        "createImmichPhotoSkill" # viewing-immich-photo 스킬이 먼저 생성되어야 함
-      ]
-      ''
-        PROJECT_DIR="${nixosConfigPath}"
-        SOURCE_SKILLS="$PROJECT_DIR/.claude/skills"
-        TARGET_SKILLS="$PROJECT_DIR/.agents/skills"
+  home.activation.createCodexProjectSymlinks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    PROJECT_DIR="${nixosConfigPath}"
+    SOURCE_SKILLS="$PROJECT_DIR/.claude/skills"
+    TARGET_SKILLS="$PROJECT_DIR/.agents/skills"
 
-        # ── AGENTS.md → CLAUDE.md 심링크 ──
-        if [ ! -L "$PROJECT_DIR/AGENTS.md" ] || [ "$(readlink "$PROJECT_DIR/AGENTS.md")" != "CLAUDE.md" ]; then
-          $DRY_RUN_CMD ln -sfn "CLAUDE.md" "$PROJECT_DIR/AGENTS.md"
+    # ── AGENTS.md → CLAUDE.md 심링크 ──
+    if [ ! -L "$PROJECT_DIR/AGENTS.md" ] || [ "$(readlink "$PROJECT_DIR/AGENTS.md")" != "CLAUDE.md" ]; then
+      $DRY_RUN_CMD ln -sfn "CLAUDE.md" "$PROJECT_DIR/AGENTS.md"
+    fi
+
+    # ── .agents/skills/ 디렉토리 생성 ──
+    $DRY_RUN_CMD mkdir -p "$TARGET_SKILLS"
+
+    # ── 스킬 투영 (디렉토리 심링크) ──
+    # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
+    # 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
+    for source_skill_dir in "$SOURCE_SKILLS"/*/; do
+      [ -d "$source_skill_dir" ] || continue
+      [ -f "$source_skill_dir/SKILL.md" ] || continue
+
+      skill_name="$(basename "$source_skill_dir")"
+      target_link="$TARGET_SKILLS/$skill_name"
+      expected="../../.claude/skills/$skill_name"
+
+      # 이미 올바른 심링크면 스킵
+      if [ -L "$target_link" ] && [ "$(readlink "$target_link")" = "$expected" ]; then
+        continue
+      fi
+
+      # 레거시 실디렉토리 또는 잘못된 심링크 제거 후 생성
+      $DRY_RUN_CMD rm -rf "$target_link"
+      $DRY_RUN_CMD ln -sfn "$expected" "$target_link"
+    done
+
+    # ── 고아 심링크 정리 ──
+    if [ -d "$TARGET_SKILLS" ]; then
+      for entry in "$TARGET_SKILLS"/*; do
+        [ -L "$entry" ] || [ -d "$entry" ] || continue
+        skill_name="$(basename "$entry")"
+        if [ ! -d "$SOURCE_SKILLS/$skill_name" ]; then
+          echo "Removing orphan projected skill: .agents/skills/$skill_name"
+          $DRY_RUN_CMD rm -rf "$entry"
         fi
-
-        # ── .agents/skills/ 디렉토리 생성 ──
-        $DRY_RUN_CMD mkdir -p "$TARGET_SKILLS"
-
-        # ── 스킬 투영 (심링크 + openai.yaml 생성) ──
-        SYNC_SH="${nixosConfigPath}/modules/shared/programs/claude/files/skills/syncing-codex-harness/references/sync.sh"
-        for source_skill_dir in "$SOURCE_SKILLS"/*/; do
-          [ -d "$source_skill_dir" ] || continue
-          [ -f "$source_skill_dir/SKILL.md" ] || continue
-
-          skill_name="$(basename "$source_skill_dir")"
-          target_skill_dir="$TARGET_SKILLS/$skill_name"
-
-          $DRY_RUN_CMD mkdir -p "$target_skill_dir"
-
-          # SKILL.md는 "실파일 복사"로 투영
-          # 일부 Codex 환경에서 symlinked SKILL.md가 project-scope 스캔에서 누락될 수 있음
-          skill_target="$target_skill_dir/SKILL.md"
-          skill_source="$source_skill_dir/SKILL.md"
-          if [ -L "$skill_target" ] || [ ! -f "$skill_target" ] || ! cmp -s "$skill_source" "$skill_target"; then
-            $DRY_RUN_CMD rm -f "$skill_target"
-            $DRY_RUN_CMD cp "$skill_source" "$skill_target"
-          fi
-
-          # references, scripts, assets 심링크 (존재 시)
-          for child in references scripts assets; do
-            if [ -e "$source_skill_dir/$child" ]; then
-              expected_child="../../../.claude/skills/$skill_name/$child"
-              if [ ! -L "$target_skill_dir/$child" ] || [ "$(readlink "$target_skill_dir/$child")" != "$expected_child" ]; then
-                $DRY_RUN_CMD ln -sf "$expected_child" "$target_skill_dir/$child"
-              fi
-            fi
-          done
-
-          # agents/openai.yaml 생성 (sync.sh 단일 소스)
-          $DRY_RUN_CMD mkdir -p "$target_skill_dir/agents"
-          yaml_file="$target_skill_dir/agents/openai.yaml"
-          PATH="${pkgs.gawk}/bin:$PATH" bash "$SYNC_SH" generate-openai-yaml \
-            "$source_skill_dir/SKILL.md" "$yaml_file" "$skill_name"
-        done
-
-        # ── 깨진/고아 심링크 정리 ──
-        if [ -d "$TARGET_SKILLS" ]; then
-          for target_dir in "$TARGET_SKILLS"/*/; do
-            [ -d "$target_dir" ] || continue
-            skill_name="$(basename "$target_dir")"
-            if [ ! -d "$SOURCE_SKILLS/$skill_name" ]; then
-              echo "Removing orphan projected skill: .agents/skills/$skill_name"
-              $DRY_RUN_CMD rm -rf "$target_dir"
-            fi
-          done
-        fi
-      '';
+      done
+    fi
+  '';
 }

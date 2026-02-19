@@ -1,4 +1,0 @@
-interface:
-  display_name: "Managing SSH"
-  short_description: "SSH keys, ssh-agent, Tailscale VPN, mosh, sudo auth issues. Triggers: \"SSH key invalid format\", authentication failures, Tailsca"
-  default_prompt: "Use $managing-ssh to help with this task in nixos-config."

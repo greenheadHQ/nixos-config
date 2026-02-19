@@ -8,13 +8,11 @@ project-root/
 ├── AGENTS.override.md           # Supplementary Codex-specific rules
 ├── .agents/
 │   ├── skills/
-│   │   └── <skill-name>/
-│   │       ├── SKILL.md         # Real file copy (NOT symlink)
-│   │       ├── references/      # Symlink to source
-│   │       ├── scripts/         # Symlink to source (if exists)
-│   │       ├── assets/          # Symlink to source (if exists)
-│   │       └── agents/
-│   │           └── openai.yaml  # Auto-generated from frontmatter
+│   │   └── <skill-name>/       # Directory symlink → ../../.claude/skills/<skill-name>
+│   │       ├── SKILL.md         # (via symlink — real file lives in .claude/skills/)
+│   │       ├── references/      # (via symlink — real dir lives in .claude/skills/)
+│   │       ├── scripts/         # (via symlink, if exists)
+│   │       └── assets/          # (via symlink, if exists)
 │   └── <agent-name>.md          # Agent files (real copies)
 ├── .codex/
 │   └── config.toml              # MCP server config (TOML format)
@@ -34,15 +32,19 @@ project-root/
 | Plugins | Supported | Not supported |
 | Hooks | `hooks.json` | Not supported |
 
-## Critical: SKILL.md Must Be Real File
+## Critical: Directory-Level Symlinks Only
 
-Codex's project-scope scanner may not follow symlinks for SKILL.md discovery.
-Always use file copies, never symlinks, for SKILL.md files.
+Codex CLI는 **디렉토리 심링크**를 따라가지만 **파일 심링크**는 무시한다 (PR #8801).
+`.agents/skills/<name>`은 반드시 디렉토리 심링크여야 하며, 파일 단위 심링크는 사용 불가.
 See: `runbook-codex-compat-2026-02-08.md`
 
-## openai.yaml Format
+## openai.yaml (Optional)
+
+Codex CLI는 SKILL.md frontmatter만으로 스킬을 발견하므로 openai.yaml은 선택 사항이다.
+디렉토리 심링크 전환 이후 자동 생성하지 않는다.
 
 ```yaml
+# 수동 생성 시 형식:
 interface:
   display_name: "Skill Display Name"
   short_description: "Brief description (max 128 chars)"

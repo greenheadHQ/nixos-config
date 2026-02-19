@@ -1,9 +1,13 @@
 # openai.yaml Generation
 
+> **Deprecation Notice (2026-02-19)**: 디렉토리 심링크 전환 이후 openai.yaml 자동 생성은
+> 더 이상 수행되지 않는다. Codex CLI는 SKILL.md frontmatter만으로 스킬을 발견하므로
+> openai.yaml은 선택 사항이다. `generate-openai-yaml` 서브커맨드는 수동 생성용으로 유지.
+
 ## Overview
 
 Codex CLI discovers skills via `.agents/skills/*/agents/openai.yaml`.
-This file is auto-generated from each SKILL.md's YAML frontmatter.
+This file was previously auto-generated from each SKILL.md's YAML frontmatter.
 
 ## Source: SKILL.md Frontmatter
 

@@ -15,7 +15,7 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 - `~/.codex/config.toml` 실행 정책(`approval_policy`, `sandbox_mode`) 및 모델 설정
 - `AGENTS.md`/`.agents/skills` 투영 구조
-- `.agents/skills/*/SKILL.md` 복사본/심링크 판별
+- `.agents/skills/*` 디렉토리 심링크 검증
 - `nrs`(또는 동등 activation) 이후 결과 검증
 - Claude Code와 Codex CLI 동작 차이 정리
 
@@ -23,8 +23,8 @@ Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬
 
 ## 빠른 진단 체크리스트
 
-1. `.agents/skills/*/SKILL.md`가 심링크가 아닌 일반 파일인지 먼저 확인
-2. 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크 확인
+1. `.agents/skills/*`이 디렉토리 심링크인지 확인 (`ls -la .agents/skills/`)
+2. 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크 확인 (git-tracked)
 3. `./scripts/ai/verify-ai-compat.sh` 실행
 4. `codex exec`로 런타임에서 스킬 이름이 보이는지 확인
 5. 권한 프롬프트 이슈는 `approval_policy`, `sandbox_mode` 설정으로 분리 진단
@@ -81,8 +81,9 @@ nrs 흐름:
 
 ## 진단 우선순위 (중요)
 
-Skills 누락 이슈의 1차 원인은 `trust`보다 `SKILL.md` 투영 방식이다.  
-실제 회귀 기록(2026-02-08) 기준으로, `.agents/skills/*/SKILL.md`가 심링크일 때 누락이 재현되었고, **실파일 복사**로 바꾸면 해결됐다.
+Skills 누락 이슈의 1차 원인은 `trust`보다 투영 방식이다.
+Codex CLI는 **디렉토리 심링크**를 따라가지만 **파일 심링크**는 무시한다 (PR #8801).
+`.agents/skills/<name>`은 반드시 디렉토리 심링크여야 하며, SKILL.md 파일 자체를 심링크하면 안 된다.
 
 ## 실행 정책 / Trust 메모
 
@@ -99,18 +100,13 @@ sandbox_mode = "danger-full-access"
 ## 투영 아키텍처
 
 ```
-.claude/skills/<name>/SKILL.md         # 단일 원본
-      -> copy
-.agents/skills/<name>/SKILL.md         # Codex 발견용 (일반 파일)
-
-.claude/skills/<name>/references        # 원본
-      -> symlink
-.agents/skills/<name>/references        # 필요 시 링크
-
-.agents/skills/<name>/agents/openai.yaml # SKILL.md frontmatter 기반 자동 생성
+.claude/skills/<name>/                  # 단일 원본 (SKILL.md, references/ 등)
+      -> directory symlink
+.agents/skills/<name>/                  # ../../.claude/skills/<name> 심링크
 ```
 
-중요: `SKILL.md`는 일부 Codex 환경 호환성을 위해 심링크가 아니라 복사본으로 투영한다.
+Codex CLI는 디렉토리 심링크를 `follow_links(true)`로 순회한다 (PR #8801).
+파일 심링크는 무시되므로 반드시 디렉토리 단위로 심링크해야 한다.
 
 ## 활성화
 
@@ -123,9 +119,10 @@ sandbox_mode = "danger-full-access"
 # 구조 검증
 ./scripts/ai/verify-ai-compat.sh
 
-# SKILL.md 타입 검증 (심링크 0, 일반 파일 N)
-find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type l | wc -l
-find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type f | wc -l
+# 디렉토리 심링크 검증 (모두 심링크여야 함)
+for d in .agents/skills/*; do
+  [ -L "$d" ] && echo "OK: $(basename $d) -> $(readlink $d)" || echo "FAIL: $(basename $d)"
+done
 
 # 런타임 인식 검증
 codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex' available in this workspace?"

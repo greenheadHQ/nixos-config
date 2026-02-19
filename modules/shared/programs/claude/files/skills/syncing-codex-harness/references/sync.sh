@@ -86,10 +86,17 @@ YAML
 }
 
 # ─── project-skills: project local skills projection ───
+# Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
+# 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
 project_skills() {
   local source_dir="$1"
   local target_dir="$2"
   local count=0
+
+  # 상대경로 계산: target_dir(.agents/skills) → source_dir(.claude/skills)
+  local project_root
+  project_root="$(cd "$target_dir/../.." && pwd)"
+  local source_from_root="${source_dir#$project_root/}"
 
   for source_skill_dir in "$source_dir"/*/; do
     [ -d "$source_skill_dir" ] || continue
@@ -97,27 +104,18 @@ project_skills() {
 
     local skill_name
     skill_name="$(basename "$source_skill_dir")"
-    local target_skill_dir="$target_dir/$skill_name"
+    local target_link="$target_dir/$skill_name"
+    local rel_target="../../$source_from_root/$skill_name"
 
-    mkdir -p "$target_skill_dir"
+    # 이미 올바른 심링크면 스킵
+    if [ -L "$target_link" ] && [ "$(readlink "$target_link")" = "$rel_target" ]; then
+      count=$((count + 1))
+      continue
+    fi
 
-    # SKILL.md -> real file copy (NOT symlink — Codex compatibility)
-    rm -f "$target_skill_dir/SKILL.md"
-    cp "$source_skill_dir/SKILL.md" "$target_skill_dir/SKILL.md"
-
-    # references, scripts, assets -> relative symlinks
-    for child in references scripts assets; do
-      if [ -e "$source_skill_dir/$child" ]; then
-        # Compute relative path: .agents/skills/<name>/ -> .claude/skills/<name>/<child>
-        # Relative: ../../../.claude/skills/<name>/<child>
-        local rel_target="../../../.claude/skills/$skill_name/$child"
-        rm -f "$target_skill_dir/$child"
-        ln -sf "$rel_target" "$target_skill_dir/$child"
-      fi
-    done
-
-    # agents/openai.yaml
-    generate_openai_yaml "$source_skill_dir/SKILL.md" "$target_skill_dir/agents/openai.yaml" "$skill_name"
+    # 레거시 실디렉토리 또는 잘못된 심링크 제거 후 생성
+    rm -rf "$target_link"
+    ln -sfn "$rel_target" "$target_link"
 
     count=$((count + 1))
   done
@@ -126,6 +124,7 @@ project_skills() {
 }
 
 # ─── plugin-skills: plugin skills projection ───
+# 플러그인은 프로젝트 외부에 있으므로 절대경로 디렉토리 심링크 사용
 plugin_skills() {
   local source_dir="$1"
   local target_dir="$2"
@@ -148,29 +147,23 @@ plugin_skills() {
 
     # Check for name collision with existing skills
     local final_name="$skill_name"
-    if [ -n "$plugin_name" ] && [ -d "$target_dir/$skill_name" ]; then
+    if [ -n "$plugin_name" ] && { [ -d "$target_dir/$skill_name" ] || [ -L "$target_dir/$skill_name" ]; }; then
       final_name="${plugin_name}--${skill_name}"
     fi
-    local target_skill_dir="$target_dir/$final_name"
+    local target_link="$target_dir/$final_name"
 
-    mkdir -p "$target_skill_dir"
+    # 절대경로 디렉토리 심링크
+    local abs_target
+    abs_target="$(cd "$source_skill_dir" && pwd)"
 
-    # SKILL.md -> real file copy (NOT symlink)
-    rm -f "$target_skill_dir/SKILL.md"
-    cp "$source_skill_dir/SKILL.md" "$target_skill_dir/SKILL.md"
+    # 이미 올바른 심링크면 스킵
+    if [ -L "$target_link" ] && [ "$(readlink "$target_link")" = "$abs_target" ]; then
+      count=$((count + 1))
+      continue
+    fi
 
-    # references, scripts, assets -> absolute symlinks (plugin cache is outside project)
-    for child in references scripts assets; do
-      if [ -e "$source_skill_dir/$child" ]; then
-        local abs_target
-        abs_target="$(cd "$source_skill_dir" && pwd)/$child"
-        rm -f "$target_skill_dir/$child"
-        ln -sf "$abs_target" "$target_skill_dir/$child"
-      fi
-    done
-
-    # agents/openai.yaml
-    generate_openai_yaml "$source_skill_dir/SKILL.md" "$target_skill_dir/agents/openai.yaml" "$final_name"
+    rm -rf "$target_link"
+    ln -sfn "$abs_target" "$target_link"
 
     count=$((count + 1))
   done

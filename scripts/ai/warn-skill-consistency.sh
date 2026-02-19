@@ -21,7 +21,7 @@ err() {
 
 list_skill_dirs() {
   local base="$1"
-  find "$base" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort
+  find "$base" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -exec basename {} \; | sort
 }
 
 is_true() {
@@ -81,25 +81,22 @@ if [ "$has_source" -eq 1 ] && [ "$has_projected" -eq 1 ]; then
   while IFS= read -r skill_name; do
     [ -n "$skill_name" ] || continue
 
-    source_skill="$SOURCE_SKILLS_DIR/$skill_name/SKILL.md"
-    projected_skill="$PROJECTED_SKILLS_DIR/$skill_name/SKILL.md"
+    projected_entry="$PROJECTED_SKILLS_DIR/$skill_name"
+    expected_target="../../.claude/skills/$skill_name"
 
-    [ -f "$source_skill" ] || continue
-
-    if [ ! -f "$projected_skill" ]; then
-      warn "SKILL.md 누락: .agents/skills/$skill_name/SKILL.md"
-      warnings=$((warnings + 1))
+    # 디렉토리 심링크 여부 확인
+    if [ ! -L "$projected_entry" ]; then
+      if [ -d "$projected_entry" ]; then
+        warn "레거시 실디렉토리: .agents/skills/$skill_name (심링크 전환 필요)"
+        warnings=$((warnings + 1))
+      fi
       continue
     fi
 
-    if [ -L "$projected_skill" ]; then
-      warn "SKILL.md가 심링크임: .agents/skills/$skill_name/SKILL.md (실파일 복사 필요)"
-      warnings=$((warnings + 1))
-      continue
-    fi
-
-    if ! cmp -s "$source_skill" "$projected_skill"; then
-      warn "SKILL.md 내용 불일치: $skill_name"
+    # 심링크 대상 경로 확인
+    actual_target="$(readlink "$projected_entry")"
+    if [ "$actual_target" != "$expected_target" ]; then
+      warn "심링크 대상 불일치: $skill_name ($actual_target != $expected_target)"
       warnings=$((warnings + 1))
     fi
   done < <(list_skill_dirs "$SOURCE_SKILLS_DIR")

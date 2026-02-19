@@ -63,7 +63,7 @@ else
 fi
 
 echo ""
-echo "=== 프로젝트 스킬 투영 확인 ==="
+echo "=== 프로젝트 스킬 투영 확인 (디렉토리 심링크) ==="
 
 if [ ! -d "$TARGET_SKILLS_DIR" ]; then
   fail ".agents/skills/ 디렉토리 없음"
@@ -77,79 +77,44 @@ else
     skill_name="$(basename "$skill_dir")"
     src_count=$((src_count + 1))
 
-    projected_dir="$TARGET_SKILLS_DIR/$skill_name"
-    if [ ! -d "$projected_dir" ]; then
-      fail "투영 누락: .agents/skills/$skill_name"
+    projected_entry="$TARGET_SKILLS_DIR/$skill_name"
+    expected_target="../../.claude/skills/$skill_name"
+
+    # 디렉토리 심링크 여부 확인
+    if [ ! -L "$projected_entry" ]; then
+      if [ -d "$projected_entry" ]; then
+        fail "레거시 실디렉토리: .agents/skills/$skill_name (심링크 전환 필요)"
+      else
+        fail "투영 누락: .agents/skills/$skill_name"
+      fi
       continue
     fi
 
-    # SKILL.md 실파일 확인 (symlink가 아닌 복사본)
-    projected_skill="$projected_dir/SKILL.md"
-    source_skill="$skill_dir/SKILL.md"
-    if [ ! -f "$projected_skill" ]; then
-      fail "SKILL.md 파일 누락: $skill_name"
-    elif [ -L "$projected_skill" ]; then
-      fail "SKILL.md가 심링크임: $skill_name (project-scope 누락 가능성)"
-    elif cmp -s "$source_skill" "$projected_skill"; then
-      pass "SKILL.md 복사본 일치: $skill_name"
-    else
-      fail "SKILL.md 내용 불일치: $skill_name"
+    # 심링크 대상 경로 확인
+    actual_target="$(readlink "$projected_entry")"
+    if [ "$actual_target" != "$expected_target" ]; then
+      fail "심링크 대상 불일치: $skill_name ($actual_target != $expected_target)"
+      continue
     fi
 
-    # openai.yaml 존재 + 내용 검증
-    if [ -f "$projected_dir/agents/openai.yaml" ]; then
-      pass "openai.yaml 존재: $skill_name"
-      yaml_content="$(cat "$projected_dir/agents/openai.yaml")"
-
-      # 필수 필드 존재 확인
-      for field in display_name short_description default_prompt; do
-        if ! echo "$yaml_content" | grep -q "$field"; then
-          fail "openai.yaml $field 필드 누락: $skill_name"
-        fi
-      done
-
-      # short_description 내용 검증
-      short_desc="$(echo "$yaml_content" | grep 'short_description' | sed 's/.*: "//;s/"$//')"
-      if [ -z "$short_desc" ]; then
-        fail "short_description 비어있음: $skill_name"
-      else
-        # raw 128자 truncate 후 escape 확장 → 최대 ~150자 허용
-        desc_len="${#short_desc}"
-        if [ "$desc_len" -gt 150 ]; then
-          warn "short_description 150자 초과: $skill_name (${desc_len}자)"
-        fi
-        # 회귀 방지: 구 패턴 prefix 잔존 감지
-        if echo "$short_desc" | grep -q '^This skill should be used when'; then
-          warn "구 패턴 prefix 잔존: $skill_name"
-        fi
-      fi
-
-      # display_name 비어있지 않은지
-      if ! echo "$yaml_content" | grep -q 'display_name: "..*"'; then
-        fail "display_name 비어있음: $skill_name"
-      fi
-    else
-      warn "openai.yaml 누락: $skill_name"
+    # 대상 존재 확인 (깨진 심링크 = warn, Nix 생성 스킬 허용)
+    if [ ! -e "$projected_entry" ]; then
+      warn "깨진 심링크: .agents/skills/$skill_name (소스 미존재, Nix 생성 스킬일 수 있음)"
+      continue
     fi
 
-    # references/scripts/assets 심링크 확인 (소스에 존재 시)
-    for child in references scripts assets; do
-      if [ -e "$skill_dir/$child" ]; then
-        if [ -L "$projected_dir/$child" ]; then
-          if [ ! -e "$projected_dir/$child" ]; then
-            fail "깨진 $child 심링크: $skill_name"
-          fi
-        else
-          warn "$child 심링크 누락: $skill_name"
-        fi
-      fi
-    done
+    # SKILL.md 접근 가능 확인
+    if [ -f "$projected_entry/SKILL.md" ]; then
+      pass "디렉토리 심링크 정상: $skill_name"
+    else
+      fail "SKILL.md 접근 불가: $skill_name"
+    fi
   done
 
-  # 고아 디렉토리 탐지
-  for projected_dir in "$TARGET_SKILLS_DIR"/*/; do
-    [ -d "$projected_dir" ] || continue
-    skill_name="$(basename "$projected_dir")"
+  # 고아 심링크 탐지 (깨진 심링크도 포함)
+  for entry in "$TARGET_SKILLS_DIR"/*; do
+    [ -L "$entry" ] || [ -d "$entry" ] || continue
+    skill_name="$(basename "$entry")"
     dst_count=$((dst_count + 1))
     if [ ! -d "$SOURCE_SKILLS_DIR/$skill_name" ]; then
       fail "고아 투영: .agents/skills/$skill_name (원본 없음)"
