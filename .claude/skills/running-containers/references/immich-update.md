@@ -15,10 +15,10 @@
 | `modules/nixos/programs/immich-update/files/update-script.sh` | 수동 업데이트 |
 | `modules/nixos/lib/service-lib.sh` | 공통 함수 (send_notification, fetch_github_release 등) |
 | `modules/nixos/lib/service-lib.nix` | service-lib.sh Nix wrapper |
-| `modules/nixos/lib/mk-update-module.nix` | 업데이트 모듈 생성 헬퍼 (copyparty, uptime-kuma, archivebox용) |
+| `modules/nixos/lib/mk-update-module.nix` | 업데이트 모듈 생성 헬퍼 (copyparty, uptime-kuma, karakeep용) |
 
 > Immich는 API로 현재 버전을 확인하는 고유 로직이 있어 `mk-update-module.nix`를 사용하지 않고 독자 구현.
-> Copyparty, Uptime Kuma, ArchiveBox는 `mk-update-module.nix` + `generic-version-check.sh` 사용.
+> Copyparty, Uptime Kuma, Karakeep는 `mk-update-module.nix` + `generic-version-check.sh` 사용.
 > 통합 시스템 상세: [service-update-system.md](service-update-system.md)
 
 ## API 접근 URL

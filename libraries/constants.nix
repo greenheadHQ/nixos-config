@@ -18,7 +18,7 @@
       ankiSync = 27701;
       copyparty = 3923;
       vaultwarden = 8222;
-      archiveBox = 8000;
+      karakeep = 3000;
       caddy = 443;
     };
 
@@ -36,7 +36,7 @@
       uptimeKuma = "uptime-kuma";
       copyparty = "copyparty";
       vaultwarden = "vaultwarden";
-      archiveBox = "archive";
+      karakeep = "archive";
       dev = "dev";
     };
   };
@@ -95,10 +95,22 @@
       memory = "256m";
       cpus = "0.5";
     };
-    archiveBox = {
-      memory = "3g";
-      memorySwap = "4g";
-      cpus = "2";
+    karakeep = {
+      app = {
+        memory = "1536m";
+        memorySwap = "2g";
+        cpus = "1";
+      };
+      chrome = {
+        memory = "1g";
+        memorySwap = "1536m";
+        cpus = "1";
+      };
+      meilisearch = {
+        memory = "1g";
+        memorySwap = "1536m";
+        cpus = "0.5";
+      };
     };
   };
 

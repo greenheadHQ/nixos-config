@@ -60,9 +60,9 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │           │   ├── copyparty.nix  # 파일 서버 (Google Drive 대체)
 │           │   ├── vaultwarden.nix # 비밀번호 관리자
 │           │   ├── vaultwarden-backup.nix
-│           │   ├── archivebox.nix # 웹 아카이버
-│           │   ├── archivebox-backup.nix
-│           │   └── archivebox-notify.nix
+│           │   ├── karakeep.nix  # 웹 아카이버/북마크 관리 (3컨테이너)
+│           │   ├── karakeep-backup.nix
+│           │   └── karakeep-notify.nix
 │           ├── anki-sync-server/  # Anki 동기화 서버 (네이티브 모듈)
 │           ├── caddy.nix          # HTTPS 리버스 프록시 (Cloudflare DNS)
 │           ├── dev-proxy/         # dev.greenhead.dev 개발 서버 프록시
@@ -70,7 +70,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │           ├── immich-update/     # 버전 체크 + Pushover 알림
 │           ├── uptime-kuma-update/
 │           ├── copyparty-update/
-│           ├── archivebox-update/
+│           ├── karakeep-update/
 │           ├── temp-monitor/      # CPU/NVMe 온도 모니터링 (Pushover)
 │           ├── smartd.nix         # S.M.A.R.T. 디스크 건강 모니터링
 │           ├── tailscale.nix      # VPN
@@ -119,10 +119,10 @@ homeserver.ankiSync.enable = true;         # Anki 동기화 서버
 homeserver.copyparty.enable = true;        # 파일 서버 (Google Drive 대체)
 homeserver.copypartyUpdate.enable = true;
 homeserver.vaultwarden.enable = true;      # 비밀번호 관리자
-homeserver.archiveBox.enable = true;       # 웹 아카이버 (SingleFile)
-homeserver.archiveBoxBackup.enable = true; # SQLite 매일 백업 (HDD)
-homeserver.archiveBoxNotify.enable = true; # 런타임 이벤트 알림
-homeserver.archiveBoxUpdate.enable = true;
+homeserver.karakeep.enable = true;         # 웹 아카이버/북마크 관리 (Karakeep)
+homeserver.karakeepBackup.enable = true;   # SQLite 매일 백업 (HDD)
+homeserver.karakeepNotify.enable = true;   # 웹훅→Pushover 브리지
+homeserver.karakeepUpdate.enable = true;
 homeserver.reverseProxy.enable = true;     # Caddy HTTPS (*.greenhead.dev)
 homeserver.devProxy.enable = true;         # dev.greenhead.dev
 ```
@@ -207,7 +207,7 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | 시크릿 관리 | `managing-secrets` |
 | 컨테이너 서비스 | `running-containers` |
 | Vaultwarden | `hosting-vaultwarden` |
-| ArchiveBox | `hosting-archivebox` |
+| Karakeep | `hosting-karakeep` |
 | Copyparty | `hosting-copyparty` |
 | Anki 동기화 | `hosting-anki` |
 | dev-proxy | `proxying-dev-server` |

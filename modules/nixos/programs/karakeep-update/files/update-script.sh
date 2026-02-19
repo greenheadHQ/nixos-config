@@ -1,12 +1,11 @@
 #!/bin/bash
-# ArchiveBox 수동 업데이트 스크립트
+# Karakeep 수동 업데이트 스크립트
 # 이미지 pull → digest 비교 → 컨테이너 재시작 → 헬스체크 → 결과 알림
-# 백업 불필요 (ArchiveBox snapshot 데이터는 SSD/HDD 볼륨에 유지)
 set -euo pipefail
 
 # 동시 실행 방지 (flock)
 exec 200>"$STATE_DIR/.lock"
-flock -n 200 || { echo "ERROR: Another archivebox-update is already running"; exit 1; }
+flock -n 200 || { echo "ERROR: Another karakeep-update is already running"; exit 1; }
 
 # 환경변수 (래퍼에서 주입)
 : "${PUSHOVER_CRED_FILE:?PUSHOVER_CRED_FILE is required}"
@@ -64,7 +63,7 @@ if $DRY_RUN; then
   echo "  2. Compare image digest (skip restart if unchanged)"
   echo "  3. Stop $SERVICE_UNIT"
   echo "  4. Start $SERVICE_UNIT"
-  echo "  5. Health check ($HEALTH_URL)"
+  echo "  5. Health check ($HEALTH_URL/api/health)"
   echo "  6. Notify via Pushover"
   echo ""
   echo "Run without --dry-run to execute."
@@ -96,7 +95,7 @@ echo "Container restarted"
 
 # ─── 4. 헬스체크 ────────────────────────────────────────────────
 echo ""
-if ! http_health_check "$HEALTH_URL" 30 10; then
+if ! http_health_check "$HEALTH_URL/api/health" 30 10; then
   echo "=== Health check failed ==="
   send_notification "$SERVICE_DISPLAY_NAME Update" "헬스체크 실패: 업데이트 후 응답 없음. 로그 확인 필요" 1
   exit 1

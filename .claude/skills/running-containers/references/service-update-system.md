@@ -2,7 +2,7 @@
 
 ## 개요
 
-Immich, Uptime Kuma, Copyparty, ArchiveBox 4개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라.
+Immich, Uptime Kuma, Copyparty, Karakeep 4개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라.
 
 - **버전 체크 (자동)**: 매일 GitHub Releases API로 최신 버전 확인 → Pushover 알림
 - **업데이트 (수동)**: `sudo <서비스>-update` 명령으로 안전한 업데이트
@@ -30,7 +30,7 @@ modules/nixos/programs/
 │   ├── default.nix           ← mk-update-module.nix 사용
 │   └── files/
 │       └── update-script.sh  ← 수동 업데이트
-└── archivebox-update/
+└── karakeep-update/
     ├── default.nix           ← mk-update-module.nix 사용
     └── files/
         └── update-script.sh  ← 수동 업데이트
@@ -38,7 +38,7 @@ modules/nixos/programs/
 
 ### mk-update-module.nix
 
-Copyparty, Uptime Kuma, ArchiveBox 등 GitHub Releases 기반 서비스의 공통 패턴을 추출한 헬퍼. 서비스명, GitHub 레포, 시크릿 등을 파라미터로 전달하면 systemd service/timer, tmpfiles, agenix 시크릿, update 래퍼를 자동 생성.
+Copyparty, Uptime Kuma, Karakeep 등 GitHub Releases 기반 서비스의 공통 패턴을 추출한 헬퍼. 서비스명, GitHub 레포, 시크릿 등을 파라미터로 전달하면 systemd service/timer, tmpfiles, agenix 시크릿, update 래퍼를 자동 생성.
 
 Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 독자 구현 유지.
 
@@ -88,7 +88,7 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 - **ERR trap 복구**: 실패 시 컨테이너 자동 재시작
 - **Tailscale 불필요**: localhost + 인터넷만 사용
 
-### ArchiveBox
+### Karakeep
 
 - **현재 버전 확인**: 이미지에 버전 레이블 없음 → GitHub latest만 추적
 - **알림 형태**: "v0.x.y 출시됨"
@@ -103,7 +103,7 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 | Immich | `*-*-* 03:00:00` | 5m |
 | Uptime Kuma | `*-*-* 03:30:00` | 5m |
 | Copyparty | `*-*-* 04:00:00` | 5m |
-| ArchiveBox | `*-*-* 06:00:00` | 5m |
+| Karakeep | `*-*-* 06:00:00` | 5m |
 
 ## agenix 시크릿
 
@@ -112,7 +112,7 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 | `pushover-immich` | `immich.nix` | Immich 업데이트/클린업 알림 |
 | `pushover-uptime-kuma` | `uptime-kuma-update/default.nix` | Uptime Kuma 업데이트 알림 |
 | `pushover-copyparty` | `copyparty-update/default.nix` | Copyparty 업데이트 알림 |
-| `pushover-archivebox` | `archivebox-update/default.nix` | ArchiveBox 업데이트 알림 |
+| `pushover-karakeep` | `karakeep-update/default.nix` | Karakeep 업데이트 알림 |
 
 `age.identityPaths`는 `immich.nix`에서 이미 정의. 새 모듈에서 중복 정의 금지.
 

@@ -102,11 +102,16 @@ in
         '';
       };
 
-      virtualHosts."${subdomains.archiveBox}.${base}" = {
+      virtualHosts."${subdomains.karakeep}.${base}" = {
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
           ${securityHeaders}
-          reverse_proxy localhost:${toString constants.network.ports.archiveBox}
+          # CSP 헤더 제거: Karakeep iframe 내 SingleFile HTML의 CSS 렌더링 차단 방지
+          # Tailscale VPN 전용이므로 XSS 위험 무시 가능
+          # ref: https://github.com/karakeep-app/karakeep/issues/1977
+          header -Content-Security-Policy
+          header -Content-Security-Policy-Report-Only
+          reverse_proxy localhost:${toString constants.network.ports.karakeep}
         '';
       };
     };

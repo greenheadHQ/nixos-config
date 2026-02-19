@@ -145,10 +145,10 @@
   homeserver.ankiSync.enable = true; # Anki 자체 호스팅 동기화 서버
   homeserver.copyparty.enable = true; # 셀프호스팅 파일 서버
   homeserver.vaultwarden.enable = true; # Vaultwarden 비밀번호 관리자
-  homeserver.archiveBox.enable = true; # ArchiveBox 웹 아카이버 (headless Chromium + SingleFile)
-  homeserver.archiveBoxBackup.enable = true; # ArchiveBox SQLite 매일 백업 (HDD)
-  homeserver.archiveBoxNotify.enable = true; # ArchiveBox 런타임 이벤트 알림 (서버 오류/아카이빙 결과)
-  homeserver.archiveBoxUpdate.enable = true; # ArchiveBox 버전 체크 + 업데이트 알림
+  homeserver.karakeep.enable = true; # Karakeep 웹 아카이버/북마크 관리 (3컨테이너)
+  homeserver.karakeepBackup.enable = true; # Karakeep SQLite 매일 백업 (HDD)
+  homeserver.karakeepNotify.enable = true; # Karakeep 웹훅→Pushover 브리지
+  homeserver.karakeepUpdate.enable = true; # Karakeep 버전 체크 + 업데이트 알림
   homeserver.immichBackup.enable = true; # Immich PostgreSQL 매일 백업 (HDD)
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
   homeserver.devProxy.enable = true; # Dev server → dev.greenhead.dev 프록시

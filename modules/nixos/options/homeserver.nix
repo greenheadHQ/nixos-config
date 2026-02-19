@@ -105,17 +105,17 @@
       };
     };
 
-    archiveBox = {
-      enable = lib.mkEnableOption "ArchiveBox web archiver (headless Chromium + SingleFile)";
+    karakeep = {
+      enable = lib.mkEnableOption "Karakeep bookmark manager and web archiver";
       port = lib.mkOption {
         type = lib.types.port;
-        default = constants.network.ports.archiveBox;
-        description = "Port for ArchiveBox web interface";
+        default = constants.network.ports.karakeep;
+        description = "Karakeep web UI port";
       };
     };
 
-    archiveBoxBackup = {
-      enable = lib.mkEnableOption "ArchiveBox SQLite daily backup to HDD";
+    karakeepBackup = {
+      enable = lib.mkEnableOption "Karakeep SQLite daily backup to HDD";
       backupTime = lib.mkOption {
         type = lib.types.str;
         default = "*-*-* 05:00:00";
@@ -128,8 +128,8 @@
       };
     };
 
-    archiveBoxUpdate = {
-      enable = lib.mkEnableOption "ArchiveBox version check and update notifications";
+    karakeepUpdate = {
+      enable = lib.mkEnableOption "Karakeep version check and update notification";
       checkTime = lib.mkOption {
         type = lib.types.str;
         default = "*-*-* 06:00:00";
@@ -137,32 +137,12 @@
       };
     };
 
-    archiveBoxNotify = {
-      enable = lib.mkEnableOption "ArchiveBox runtime event notifications (server error, archive success/failure)";
-      pollIntervalSec = lib.mkOption {
-        type = lib.types.int;
-        default = 60;
-        description = "Polling interval in seconds for ArchiveBox event resolver";
-      };
-      successEnabled = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Whether to send archive success notifications";
-      };
-      includeFullUrl = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = "Whether to include full URL in notification body (false = sanitized domain only)";
-      };
-      silenceSuccessNight = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Suppress success notifications during night hours";
-      };
-      nightHours = lib.mkOption {
-        type = lib.types.str;
-        default = "00:00-07:00";
-        description = "Night quiet-hours range for success notifications (HH:MM-HH:MM)";
+    karakeepNotify = {
+      enable = lib.mkEnableOption "Karakeep webhook-to-Pushover bridge";
+      webhookPort = lib.mkOption {
+        type = lib.types.port;
+        default = 9999;
+        description = "Local port for webhook receiver";
       };
     };
 
@@ -190,10 +170,10 @@
     ../programs/docker/vaultwarden.nix # Vaultwarden 비밀번호 관리자
     ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)
     ../programs/docker/immich-backup.nix # Immich PostgreSQL 매일 백업
-    ../programs/docker/archivebox.nix # ArchiveBox 웹 아카이버
-    ../programs/docker/archivebox-backup.nix # ArchiveBox SQLite 매일 백업
-    ../programs/docker/archivebox-notify.nix # ArchiveBox 런타임 이벤트 알림 (Pushover)
-    ../programs/archivebox-update # ArchiveBox 버전 체크 + 업데이트 알림
+    ../programs/docker/karakeep.nix # Karakeep 웹 아카이버/북마크 관리 (3컨테이너)
+    ../programs/docker/karakeep-backup.nix # Karakeep SQLite 매일 백업
+    ../programs/docker/karakeep-notify.nix # Karakeep 웹훅→Pushover 브리지
+    ../programs/karakeep-update # Karakeep 버전 체크 + 업데이트 알림
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)
   ];
