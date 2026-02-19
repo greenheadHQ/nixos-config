@@ -1,4 +1,4 @@
 interface:
   display_name: "Hosting Karakeep"
-  short_description: "Karakeep web archiver/bookmark manager: 3-container setup, SingleFile integration, webhooks. Triggers: \"Karakeep\", \"웹 아카이브\", \"archive.greenhead.dev\", \"북마크\", \"아카이빙\""
+  short_description: "Karakeep web archiver/bookmark manager: 3-container setup, SingleFile integration, webhooks. Triggers: \"Karakeep\", \"웹 아카이브\", \"ar"
   default_prompt: "Use $hosting-karakeep to help with this task in nixos-config."
