@@ -83,7 +83,7 @@ preview_changes() {
     log_info "🔨 Building (${offline_tag}${label})..."
 
     # shellcheck disable=SC2086
-    if ! sudo "$REBUILD_CMD" build --flake "$FLAKE_PATH" $OFFLINE_FLAG; then
+    if ! "$REBUILD_CMD" build --flake "$FLAKE_PATH" $OFFLINE_FLAG; then
         log_error "❌ Build failed!"
         exit 1
     fi
@@ -111,8 +111,8 @@ cleanup_build_artifacts() {
     count=$(echo "$links" | grep -c . 2>/dev/null || echo 0)
 
     if [[ "$count" -gt 0 ]]; then
-        # result는 sudo rebuild로 생성되어 root 소유. 삭제할 때도 root 권한 필요
-        echo "$links" | xargs sudo rm -f
+        # result는 일반 사용자 build로 생성되어 사용자 소유
+        echo "$links" | xargs rm -f
         log_info "  ✓ Removed $count result symlink(s)"
     fi
 }

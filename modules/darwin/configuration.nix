@@ -21,6 +21,12 @@
   # Touch ID for sudo
   security.pam.services.sudo_local.touchIdAuth = true;
 
+  # darwin-rebuild를 Touch ID 없이 실행 (nrs 자동화용)
+  # 보안: NixOS는 이미 wheelNeedsPassword=false (ALL 명령 NOPASSWD). 이것은 더 제한적.
+  security.sudo.extraConfig = ''
+    ${username} ALL=(root) NOPASSWD: /run/current-system/sw/bin/darwin-rebuild
+  '';
+
   # 사용자 설정
   users.users.${username} = {
     shell = pkgs.zsh;
