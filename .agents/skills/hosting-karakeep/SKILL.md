@@ -1,3 +1,10 @@
+---
+name: hosting-karakeep
+description: |
+  Karakeep web archiver/bookmark manager: 3-container setup, SingleFile integration, webhooks.
+  Triggers: "Karakeep", "웹 아카이브", "archive.greenhead.dev", "북마크", "아카이빙".
+---
+
 # Hosting Karakeep
 
 ## Purpose
