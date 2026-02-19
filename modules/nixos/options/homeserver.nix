@@ -105,6 +105,15 @@
       };
     };
 
+    vaultwardenUpdate = {
+      enable = lib.mkEnableOption "Vaultwarden version check and update notifications";
+      checkTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 06:30:00";
+        description = "OnCalendar time for version check";
+      };
+    };
+
     karakeep = {
       enable = lib.mkEnableOption "Karakeep bookmark manager and web archiver";
       port = lib.mkOption {
@@ -169,6 +178,7 @@
     ../programs/docker/copyparty.nix # Copyparty 파일 서버
     ../programs/docker/vaultwarden.nix # Vaultwarden 비밀번호 관리자
     ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)
+    ../programs/vaultwarden-update # Vaultwarden 버전 체크 + 업데이트 알림
     ../programs/docker/immich-backup.nix # Immich PostgreSQL 매일 백업
     ../programs/docker/karakeep.nix # Karakeep 웹 아카이버/북마크 관리 (3컨테이너)
     ../programs/docker/karakeep-backup.nix # Karakeep SQLite 매일 백업

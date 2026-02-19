@@ -145,6 +145,7 @@
   homeserver.ankiSync.enable = true; # Anki 자체 호스팅 동기화 서버
   homeserver.copyparty.enable = true; # 셀프호스팅 파일 서버
   homeserver.vaultwarden.enable = true; # Vaultwarden 비밀번호 관리자
+  homeserver.vaultwardenUpdate.enable = true; # Vaultwarden 버전 체크 + 업데이트 알림
   homeserver.karakeep.enable = true; # Karakeep 웹 아카이버/북마크 관리 (3컨테이너)
   homeserver.karakeepBackup.enable = true; # Karakeep SQLite 매일 백업 (HDD)
   homeserver.karakeepNotify.enable = true; # Karakeep 웹훅→Pushover 브리지

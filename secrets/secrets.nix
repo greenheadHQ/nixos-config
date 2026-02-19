@@ -47,6 +47,7 @@ in
   # 서비스 업데이트 알림용 Pushover credentials
   "pushover-uptime-kuma.age".publicKeys = minipcOnly;
   "pushover-copyparty.age".publicKeys = minipcOnly;
+  "pushover-vaultwarden.age".publicKeys = minipcOnly;
 
   # Karakeep (웹 아카이버/북마크 관리)
   "karakeep-nextauth-secret.age".publicKeys = minipcOnly;
