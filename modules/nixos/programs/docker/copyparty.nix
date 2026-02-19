@@ -36,7 +36,7 @@ let
     [/]
       /data
       accs:
-        rwda: greenhead
+        rwmda: greenhead
     CONF
     chmod 0600 ${configPath}
   '';
