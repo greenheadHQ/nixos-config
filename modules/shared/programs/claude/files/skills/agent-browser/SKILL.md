@@ -6,6 +6,17 @@ allowed-tools: Bash(agent-browser:*)
 
 # Browser Automation with agent-browser
 
+## Tool Selection
+
+- **NixOS (Platform: linux)**: 항상 agent-browser 사용. Claude in Chrome 미지원 환경.
+- **macOS (Platform: darwin)**: AskUserQuestion으로 사용자에게 도구 선택을 물어본다.
+  - **Claude in Chrome**: 실제 Chrome 브라우저 제어. 기존 로그인 세션 활용 가능, 시각적 확인 가능.
+  - **agent-browser**: 헤드리스 CLI 도구. 독립 Chromium 사용, 인증 상태는 별도 관리 필요.
+
+이 규칙은 agent-browser 스킬의 자동 트리거보다 우선한다.
+
+NixOS/nix-darwin 환경에서 agent-browser 문제 발생 시 [references/troubleshooting.md](references/troubleshooting.md) 참조.
+
 ## Core Workflow
 
 Every browser automation follows this pattern:

@@ -50,16 +50,7 @@
     ]
   },
   "enabledPlugins": {
-    "plugin-dev@claude-plugins-official": true,
-    "astral@astral-sh": true
-  },
-  "extraKnownMarketplaces": {
-    "astral-sh": {
-      "source": {
-        "source": "github",
-        "repo": "astral-sh/claude-code-plugins"
-      }
-    }
+    "plugin-dev@claude-plugins-official": true
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,

@@ -128,7 +128,7 @@ in
     # MCP 설정 - 양방향 수정 가능
     ".claude/mcp.json".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/mcp.json";
 
-    # User-scope 지침 - 양방향 수정 가능 (Astral 플러그인 등 전역 설정)
+    # User-scope 지침 - 양방향 수정 가능
     ".claude/CLAUDE.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
 
     # Hooks - mkOutOfStoreSymlink로 nrs 없이 즉시 반영 (소스 파일에 chmod +x 필수)
