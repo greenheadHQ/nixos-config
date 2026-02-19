@@ -59,15 +59,10 @@
       # 단일 관리 포인트: 여기만 변경하면 nixosConfigPath + rebuild-common.sh FLAKE_PATH 자동 반영
       workspaceDir = "Workspace";
 
-      # Worktree 지원: nrs가 --impure로 빌드 시 env var로 nixosConfigPath 오버라이드
-      # pure mode(기본)에서는 ""을 반환하여 defaultPath 사용
-      nixosConfigPathOverride = builtins.getEnv "NIXOS_CONFIG_PATH";
-
       # 두 변수 설계:
-      #   nixosConfigPath      — 동적 (worktree 경로 or 메인 레포). mkOutOfStoreSymlink 등 대부분의 소비자가 사용.
-      #   nixosConfigDefaultPath — 항상 메인 레포. rebuild-common.sh의 @flakePath@ 전용.
-      # nixosConfigPath를 동적으로 만든 이유: mkOutOfStoreSymlink 소비자 ~16곳의 코드 변경을 0으로 유지하기 위함.
-      # 반대로 nixosConfigPath를 고정하고 새 동적 변수를 도입하면, ~16곳 모두 변수명 교체 필요.
+      #   nixosConfigPath        — 항상 메인 레포 경로. mkOutOfStoreSymlink 등 ~16곳에서 사용.
+      #   nixosConfigDefaultPath — 항상 메인 레포 경로. rebuild-common.sh의 @flakePath@ 전용.
+      # Worktree 빌드는 --flake <worktree> 인수로만 처리 (심링크 타깃은 항상 메인 레포).
 
       # macOS 호스트 설정 (확인: scutil --get LocalHostName)
       darwinHosts =
@@ -79,7 +74,7 @@
             in
             {
               inherit username hostType;
-              nixosConfigPath = if nixosConfigPathOverride != "" then nixosConfigPathOverride else defaultPath;
+              nixosConfigPath = defaultPath;
               nixosConfigDefaultPath = defaultPath;
             };
         in
@@ -98,7 +93,7 @@
             in
             {
               inherit username hostType;
-              nixosConfigPath = if nixosConfigPathOverride != "" then nixosConfigPathOverride else defaultPath;
+              nixosConfigPath = defaultPath;
               nixosConfigDefaultPath = defaultPath;
             };
         in

@@ -35,11 +35,11 @@ nrp
 
 **Git Worktree 지원:**
 
-git worktree에서 `nrs`/`nrp` 실행 시 자동 감지하여 worktree의 flake를 빌드합니다. `mkOutOfStoreSymlink` 심링크도 worktree 파일을 가리킵니다.
+git worktree에서 `nrs`/`nrp` 실행 시 자동 감지하여 worktree의 flake를 빌드합니다.
 
 - 감지: `detect_worktree()` (rebuild-common.sh source 시 자동 실행)
-- 메커니즘: `--impure` + `builtins.getEnv "NIXOS_CONFIG_PATH"` + `sudo env` 전파
-- **주의**: worktree 빌드 후 심링크가 worktree를 가리키므로, **worktree 삭제 전 반드시 메인 레포에서 `nrs` 재실행** 필요
+- 메커니즘: `FLAKE_PATH`만 worktree 경로로 전환 (`--flake <worktree>`로 빌드)
+- 심링크 타깃(`nixosConfigPath`)은 항상 메인 레포 — worktree 빌드 후에도 심링크가 안정적
 
 ### 주요 설정 파일
 

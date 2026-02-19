@@ -193,7 +193,7 @@ cat .wt/PROJ-12345/.wt-parent
 
 **nrs worktree 지원:**
 
-worktree에서 `nrs`/`nrp` 실행 시 자동으로 worktree의 flake를 빌드합니다 (`detect_worktree()`). `mkOutOfStoreSymlink` 심링크도 worktree 파일을 가리킵니다. **worktree 삭제 전 반드시 메인 레포에서 `nrs` 재실행** 필요 (dangling symlink 방지).
+worktree에서 `nrs`/`nrp` 실행 시 자동으로 worktree의 flake를 빌드합니다 (`detect_worktree()`). 심링크 타깃(`nixosConfigPath`)은 메인 레포로 고정되며, 기존 `.wt/*/modules/shared/programs/claude/files/*` stale 심링크(`~/.claude/skills`, `~/.claude/hooks`, `~/.claude/*.json`, `~/.claude/*.md`)는 activation에서 자동 정리되므로 별도 `nrs` 재실행은 필요하지 않습니다.
 
 ## wt-cleanup (워크트리 정리)
 

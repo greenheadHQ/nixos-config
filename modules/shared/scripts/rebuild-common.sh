@@ -17,10 +17,6 @@ fi
 
 FLAKE_PATH="@flakePath@"
 
-# Worktree 지원 변수 (detect_worktree에서 설정)
-NIXOS_CONFIG_PATH=""
-IMPURE_FLAG=""
-
 # 색상 정의
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -32,8 +28,9 @@ log_warn() { echo -e "${YELLOW}$1${NC}"; }
 log_error() { echo -e "${RED}$1${NC}"; }
 
 #───────────────────────────────────────────────────────────────────────────────
-# Worktree 감지: 현재 디렉토리가 FLAKE_PATH 저장소의 worktree인지 확인
+# Worktree 감지: 현재 디렉토리가 FLAKE_PATH 저장소의 worktree이면 FLAKE_PATH 전환
 # source 시점에 실행 (main()의 cd "$FLAKE_PATH"보다 먼저)
+# 심링크 타깃(nixosConfigPath)은 항상 메인 레포 — 여기서는 flake 빌드 경로만 전환
 #───────────────────────────────────────────────────────────────────────────────
 detect_worktree() {
     local git_toplevel
@@ -49,8 +46,6 @@ detect_worktree() {
 
     log_warn "⚠️  Worktree detected: $git_toplevel"
     FLAKE_PATH="$git_toplevel"
-    NIXOS_CONFIG_PATH="$git_toplevel"
-    IMPURE_FLAG="--impure"
 }
 
 detect_worktree
@@ -88,8 +83,7 @@ preview_changes() {
     log_info "🔨 Building (${offline_tag}${label})..."
 
     # shellcheck disable=SC2086
-    if ! sudo ${NIXOS_CONFIG_PATH:+env NIXOS_CONFIG_PATH="$NIXOS_CONFIG_PATH"} \
-        "$REBUILD_CMD" build --flake "$FLAKE_PATH" $IMPURE_FLAG $OFFLINE_FLAG; then
+    if ! sudo "$REBUILD_CMD" build --flake "$FLAKE_PATH" $OFFLINE_FLAG; then
         log_error "❌ Build failed!"
         exit 1
     fi

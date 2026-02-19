@@ -150,7 +150,7 @@ nrs/nrp 스크립트는 공통 함수를 `~/.local/lib/rebuild-common.sh`에서 
 
 **Worktree 감지 (`detect_worktree()`):**
 
-git worktree에서 nrs/nrp 실행 시 `git rev-parse --show-toplevel` + `--git-common-dir`로 worktree를 감지합니다. 감지 시 `FLAKE_PATH`를 worktree 경로로 오버라이드하고, `--impure` + `env NIXOS_CONFIG_PATH=...`를 통해 `flake.nix`의 `builtins.getEnv`에 worktree 경로를 전달합니다. 이를 통해 빌드와 `mkOutOfStoreSymlink` 심링크 모두 worktree를 가리킵니다.
+git worktree에서 nrs/nrp 실행 시 `git rev-parse --show-toplevel` + `--git-common-dir`로 worktree를 감지합니다. 감지 시 `FLAKE_PATH`만 worktree 경로로 오버라이드하여 빌드를 해당 worktree flake로 수행합니다. 심링크 타깃(`nixosConfigPath`)은 항상 메인 레포 경로를 유지합니다.
 
 Staleness 방지: `rebuild-common.sh`의 `@flakePath@`는 `nixosConfigDefaultPath`(항상 메인 레포)를 사용하여, worktree 빌드 후에도 다음 `nrs` 실행 시 올바른 기본 경로에서 시작합니다.
 
