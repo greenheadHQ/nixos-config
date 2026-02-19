@@ -6,7 +6,7 @@ description: |
   "todo 확인", "이슈 닫기", "close issue", "이슈 다시 열기", "reopen issue",
   "이슈 업데이트", "edit issue", "라벨 추가", "add label",
   "backlog 확인", "기술 부채", "tech debt", "이슈 감사", "triage",
-  or needs to manage GitHub Issues in the shren207/nixos-config repository.
+  or needs to manage GitHub Issues in the current repository.
   Triggers: "github issue", "이슈", "todo", "라벨", "label",
   "backlog", "priority", "할 일", "개선사항", "등록", "조회",
   "이슈 상태", "issue status", "남은 할 일", "부채", "audit", "reopen".
@@ -16,23 +16,38 @@ description: |
 
 ## Purpose
 
-`shren207/nixos-config` 레포지토리의 GitHub Issues를 `gh` CLI로 관리하는 스킬.
+현재 워킹 디렉토리의 GitHub 레포지토리 Issues를 `gh` CLI로 관리하는 스킬.
 이슈 생성, 조회, 라이프사이클 관리, 감사(audit) 절차를 정의한다.
 
 **모든 이슈는 반드시 `references/issue-template.md`의 고정 템플릿을 사용해야 한다.**
 포맷 일관성이 LLM 파싱과 자동화의 핵심이므로, 템플릿을 임의로 변경하지 않는다.
 
-## Repository
+## Repository Detection
 
-- **Repo**: `shren207/nixos-config`
+모든 이슈 관리 작업 시작 시 대상 레포지토리를 감지한다.
+
+### 감지 절차
+
+1. `gh repo view --json nameWithOwner -q .nameWithOwner` 실행
+2. 성공 → 반환된 `owner/repo` 사용
+3. 실패 (git 레포 외부, gh 미인증 등):
+   - `gh repo list --limit 10 --json nameWithOwner -q '.[].nameWithOwner'`로 인증된 사용자의 레포 목록 조회
+   - AskUserQuestion으로 후보 레포를 선택지로 제시
+
+### 사용 규칙
+
 - **CLI**: 모든 작업은 `gh` CLI로 수행 (웹 UI 사용 금지)
+- 감지된 `owner/repo`를 이후 모든 `gh` 명령의 `--repo` 플래그에 전달
+
+> **참고**: 이하 모든 `gh` 명령 예시에서 `--repo owner/repo`는 가독성을 위해 생략한다.
+> 실제 실행 시 감지된 owner/repo를 반드시 `--repo` 플래그로 전달한다.
 
 ## Label Taxonomy
 
 모든 이슈에 **1개 priority + 1개 area + 선택적 기본 라벨** 조합을 부착한다.
 
 - **Priority** (필수): `priority:high` / `priority:medium` / `priority:low`
-- **Area** (필수): `area:scalability` / `area:testing` / `area:security` / `area:infrastructure`
+- **Area** (필수): `area:` 접두사 라벨 (레포별로 정의)
 - **Default**: GitHub 기본 라벨 (`enhancement`, `bug`, `documentation` 등) 병용
 
 ### Area 라벨 선택 절차
@@ -72,7 +87,7 @@ area 라벨은 **필수**이다. 다음 순서로 판단한다:
 ```bash
 gh issue create \
   --title "feat: 제목" \
-  --label "enhancement,area:testing,priority:medium" \
+  --label "enhancement,area:도메인,priority:medium" \
   --body "$(cat <<'EOF'
 ## Summary
 ...
@@ -115,8 +130,8 @@ gh issue edit <number> --body "새 본문"
 ```bash
 gh issue list                                    # 전체 open
 gh issue list --label "priority:high"            # 우선순위별
-gh issue list --label "area:security"            # 도메인별
-gh issue list --label "priority:high,area:security"  # 조합
+gh issue list --label "area:도메인"              # 도메인별
+gh issue list --label "priority:high,area:도메인"  # 조합
 gh issue list --state all                        # closed 포함
 gh issue list --search "keyword"                 # 키워드 검색
 ```
@@ -174,7 +189,7 @@ gh issue list --limit 500 --json number,title,labels,createdAt
 이슈에 라벨 부착/제거:
 
 ```bash
-gh issue edit <number> --add-label "area:testing"
+gh issue edit <number> --add-label "area:도메인"
 gh issue edit <number> --remove-label "priority:low"
 ```
 

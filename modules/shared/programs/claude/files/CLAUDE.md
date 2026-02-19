@@ -7,6 +7,7 @@
 | agent-browser, 웹 자동화, 헤드리스 브라우저, 스크래핑, 폼 자동화           | `agent-browser`         |
 | codex sync, codex harness, codex 동기화, codex 투영                        | `syncing-codex-harness` |
 | karpathy, coding guidelines, 코딩 가이드라인, 오버 엔지니어링, YAGNI, NGMI | `karpathy-guidelines`   |
+| GitHub Issues, 이슈, todo, 라벨, backlog, 우선순위, 등록, 조회, 부채, audit | `managing-github-issues` |
 
 ## 필수 스킬
 

@@ -152,5 +152,9 @@ in
     # Andrej Karpathy의 LLM 코딩 행동 가이드라인 — 매 세션 CLAUDE.md에서 핵심 원칙 로드
     ".claude/skills/karpathy-guidelines".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/karpathy-guidelines";
+
+    # managing-github-issues 스킬 (user-scope)
+    ".claude/skills/managing-github-issues".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/managing-github-issues";
   };
 }

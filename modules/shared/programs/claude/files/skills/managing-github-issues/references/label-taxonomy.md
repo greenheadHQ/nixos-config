@@ -1,6 +1,6 @@
 # Label Taxonomy 상세
 
-`shren207/nixos-config` 레포지토리의 라벨 체계 정의.
+GitHub 이슈의 라벨 체계 정의.
 
 ## 설계 원칙
 
@@ -17,14 +17,30 @@
 | `priority:medium` | `#fbca04` (yellow) | 다음 작업 주기에 처리 | 회귀 위험 존재, 운영 효율 저하, 기술 부채 증가 중 |
 | `priority:low` | `#0e8a16` (green) | 여유 있을 때 처리 | YAGNI 해당, 현재 동작에 문제 없음, 향후 확장 대비 |
 
-## Domain Labels
+## Area Labels
 
-| Label | Hex Color | Description | 해당 파일/모듈 예시 |
-|-------|-----------|-------------|-------------------|
-| `area:scalability` | `#c5def5` (light blue) | 호스트 확장성, 구조적 확장 | constants.nix, flake.nix, eval-tests.nix |
-| `area:testing` | `#bfd4f2` (blue) | 테스트, CI/CD, 품질 보증 | tests/, lefthook.yml |
-| `area:security` | `#d4c5f9` (purple) | 보안, 인증, 암호화, 시크릿 | secrets/, agenix, 방화벽 설정 |
-| `area:infrastructure` | `#f9d0c4` (peach) | DNS, Cloudflare, Caddy, 네트워킹, 외부 인프라 | Cloudflare DNS, Caddy config, 도메인 설정 |
+### 개념
+
+- `area:` 접두사로 도메인 라벨을 GitHub 기본 라벨과 구분
+- 모든 이슈에 **1개 area 필수** — area 없는 이슈 등록 금지
+- 각 레포의 도메인에 맞는 area를 정의하여 사용
+
+### 네이밍 규칙
+
+- `area:` 접두사 필수
+- 소문자, 하이픈 구분 (예: `area:frontend`, `area:ci-cd`, `area:auth`)
+- 색상: 파스텔 계열 톤 통일 (#c5def5 ~ #f9d0c4 범위)
+
+### 첫 사용 시 area 정의
+
+새 레포에서 처음 이슈를 관리할 때:
+
+1. `gh label list`로 기존 라벨 확인
+2. `area:` 접두사 라벨이 없으면, 레포의 주요 도메인을 식별하여 2-5개 area 생성
+3. 예시:
+   - 웹앱: `area:frontend`, `area:backend`, `area:api`, `area:infra`
+   - 인프라: `area:networking`, `area:security`, `area:monitoring`
+   - 라이브러리: `area:core`, `area:docs`, `area:testing`
 
 ## 라벨 관리 명령어
 
@@ -58,5 +74,3 @@ gh label list
 2. 기존 라벨과 의미 중복 없는지 확인 (`gh label list`)
 3. 색상은 같은 카테고리 내에서 톤 통일
 4. description에 한국어로 용도 명시
-5. SKILL.md의 Label Taxonomy 요약 라인에 새 라벨 이름 추가
-6. CLAUDE.md의 스킬 라우팅 테이블에 해당 area가 반영되었는지 확인
