@@ -53,7 +53,7 @@ fi
 
 # 4. disko 설정 다운로드
 echo_info "disko 설정 다운로드 중..."
-curl -o /tmp/disko.nix https://raw.githubusercontent.com/shren207/nixos-config/main/hosts/greenhead-minipc/disko.nix
+curl -o /tmp/disko.nix https://raw.githubusercontent.com/greenheadHQ/nixos-config/main/hosts/greenhead-minipc/disko.nix
 
 echo_info "disko 설정 확인:"
 grep "device =" /tmp/disko.nix
@@ -92,7 +92,7 @@ echo ""
 
 # 7. NixOS 설치
 echo_info "=== NixOS 설치 시작 ==="
-echo_info "flake: github:shren207/nixos-config#greenhead-minipc"
+echo_info "flake: github:greenheadHQ/nixos-config#greenhead-minipc"
 echo ""
 
 read -p "NixOS 설치를 시작하시겠습니까? (y/N): " confirm
@@ -101,7 +101,7 @@ if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-nixos-install --flake github:shren207/nixos-config#greenhead-minipc
+nixos-install --flake github:greenheadHQ/nixos-config#greenhead-minipc
 
 echo ""
 echo_info "=== 설치 완료! ==="

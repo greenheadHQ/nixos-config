@@ -152,7 +152,7 @@ curl -L https://nixos.org/nix/install | sh
 
 # 2. 저장소 클론
 mkdir -p ~/Workspace && cd ~/Workspace
-git clone https://github.com/shren207/nixos-config.git
+git clone https://github.com/greenheadHQ/nixos-config.git
 cd nixos-config
 
 # 3. SSH 키 복원 (~/.ssh/id_ed25519)

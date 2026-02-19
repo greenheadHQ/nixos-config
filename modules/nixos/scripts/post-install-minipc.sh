@@ -45,13 +45,13 @@ fi
 # 3. nixos-config 클론
 if [[ ! -d ~/nixos-config ]]; then
     echo_info "nixos-config 클론 중..."
-    git clone git@github.com:shren207/nixos-config.git ~/nixos-config
+    git clone git@github.com:greenheadHQ/nixos-config.git ~/nixos-config
 fi
 
 cd ~/nixos-config
 
 # 4. git 설정
-git config user.email "shren207@naver.com"
+git config user.email "shren0812@gmail.com"
 git config user.name "greenhead"
 
 # 5. hardware-configuration.nix 복사

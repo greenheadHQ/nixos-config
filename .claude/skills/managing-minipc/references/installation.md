@@ -56,7 +56,7 @@ nix --experimental-features "nix-command flakes" run github:nix-community/disko 
 ### 3. NixOS 설치
 
 ```bash
-nixos-install --flake github:shren207/nixos-config#greenhead-minipc --no-root-passwd
+nixos-install --flake github:greenheadHQ/nixos-config#greenhead-minipc --no-root-passwd
 ```
 
 ### 4. 재부팅 후 초기 설정
@@ -66,7 +66,7 @@ nixos-install --flake github:shren207/nixos-config#greenhead-minipc --no-root-pa
 sudo tailscale up
 
 # nixos-config 클론
-git clone git@github.com:shren207/nixos-config.git
+git clone git@github.com:greenheadHQ/nixos-config.git
 cd nixos-config && nrs
 ```
 

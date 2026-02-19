@@ -19,7 +19,7 @@ NixOS MiniPC 관련 문제와 해결 방법을 정리합니다.
 **증상**: `flake.nix`를 수정하고 GitHub에 push한 후 `nixos-install --flake github:user/repo#host`를 실행해도 이전 버전이 사용됨.
 
 ```bash
-$ nixos-install --flake github:shren207/nixos-config#greenhead-minipc
+$ nixos-install --flake github:greenheadHQ/nixos-config#greenhead-minipc
 # 에러: 방금 수정한 내용이 반영되지 않음
 ```
 

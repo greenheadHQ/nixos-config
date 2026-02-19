@@ -22,7 +22,7 @@ The agent has no identities.  # ← 키가 없음!
 
 # 일반 ssh 명령은 작동 (macOS Keychain 직접 참조)
 $ ssh -T git@github.com
-Hi shren207! You've successfully authenticated...
+Hi greenheadHQ! You've successfully authenticated...
 ```
 
 nix-daemon은 별도 프로세스로 실행되어 Keychain에 직접 접근하지 못하고, `ssh-agent`만 사용합니다.
@@ -235,7 +235,7 @@ greenhead@greenhead-minipc:~$  # 성공!
 
 ```bash
 $ ssh -T git@github.com
-Hi shren207! You've successfully authenticated...
+Hi greenheadHQ! You've successfully authenticated...
 
 $ sudo git clone git@github.com:user/repo
 git@github.com: Permission denied (publickey).
