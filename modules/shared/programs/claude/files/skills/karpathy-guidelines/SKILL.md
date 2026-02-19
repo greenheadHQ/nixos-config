@@ -1,11 +1,14 @@
 ---
 name: karpathy-guidelines
-description: |
-  Behavioral guidelines to reduce common LLM coding mistakes.
-  Use when writing, reviewing, or refactoring code to avoid overcomplication,
-  make surgical changes, surface assumptions, and define verifiable success criteria.
+description: >-
+  This skill should be used when writing, reviewing, or refactoring code
+  to reduce common LLM coding mistakes. It provides behavioral guidelines
+  to avoid overcomplication, make surgical changes, surface assumptions,
+  and define verifiable success criteria.
   Triggers: "karpathy", "coding guidelines", "코딩 가이드라인", "과잉 엔지니어링",
-  "overcomplicated", "simplify code", "surgical changes".
+  "overcomplicated", "simplify code", "surgical changes", "write code",
+  "implement feature", "fix bug", "refactor", "review code",
+  "코드 작성", "코드 리뷰", "버그 수정", "리팩터링".
 license: MIT
 ---
 
