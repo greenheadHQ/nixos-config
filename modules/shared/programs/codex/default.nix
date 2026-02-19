@@ -90,7 +90,17 @@ in
         continue
       fi
 
-      # 레거시 실디렉토리 또는 잘못된 심링크 제거 후 생성
+      # 미래 방어: git이 추적하는 실디렉토리를 심링크로 덮어쓰지 않음
+      # 향후 디렉토리→심링크 전환이 발생할 때, git pull 전에 nrs가 실행되어
+      # HEAD와 파일시스템이 불일치하는 것을 방지 (PR#38 사후 분석에서 도출)
+      if [ -d "$target_link" ] && [ ! -L "$target_link" ]; then
+        if ${pkgs.git}/bin/git -C "$PROJECT_DIR" ls-files --error-unmatch "$target_link/SKILL.md" >/dev/null 2>&1; then
+          echo "Skipping .agents/skills/$skill_name: git-tracked directory (run 'git pull' first)"
+          continue
+        fi
+      fi
+
+      # 미추적 디렉토리 또는 잘못된 심링크 제거 후 생성
       $DRY_RUN_CMD rm -rf "$target_link"
       $DRY_RUN_CMD ln -sfn "$expected" "$target_link"
     done

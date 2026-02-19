@@ -17,3 +17,7 @@
 !AGENTS.override.md
 !.agents/
 .codex/
+
+# Codex sync 부산물 (.agents/ 심링크 경유로 .claude/에 생성되는 파일)
+.claude/skills/*/agents/
+.claude/skills/*/references/references
