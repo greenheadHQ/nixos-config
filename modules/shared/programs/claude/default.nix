@@ -156,5 +156,9 @@ in
     # managing-github-issues 스킬 (user-scope)
     ".claude/skills/managing-github-issues".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/managing-github-issues";
+
+    # maintaining-skills 스킬 (user-scope)
+    ".claude/skills/maintaining-skills".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/maintaining-skills";
   };
 }
