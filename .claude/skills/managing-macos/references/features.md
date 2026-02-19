@@ -144,9 +144,15 @@ nrs/nrp 스크립트는 공통 함수를 `~/.local/lib/rebuild-common.sh`에서 
 
 | 파일 | 역할 |
 |------|------|
-| `modules/shared/scripts/rebuild-common.sh` | 공통 라이브러리 (로깅, 인수 파싱, 외부 패키지 갱신, 빌드 미리보기, 아티팩트 정리) |
+| `modules/shared/scripts/rebuild-common.sh` | 공통 라이브러리 (로깅, 인수 파싱, worktree 감지, 빌드 미리보기, 아티팩트 정리) |
 | `modules/darwin/scripts/nrs.sh` | darwin switch (launchd 정리, Hammerspoon 재시작) |
 | `modules/darwin/scripts/nrp.sh` | darwin 미리보기 전용 |
+
+**Worktree 감지 (`detect_worktree()`):**
+
+git worktree에서 nrs/nrp 실행 시 `git rev-parse --show-toplevel` + `--git-common-dir`로 worktree를 감지합니다. 감지 시 `FLAKE_PATH`를 worktree 경로로 오버라이드하고, `--impure` + `env NIXOS_CONFIG_PATH=...`를 통해 `flake.nix`의 `builtins.getEnv`에 worktree 경로를 전달합니다. 이를 통해 빌드와 `mkOutOfStoreSymlink` 심링크 모두 worktree를 가리킵니다.
+
+Staleness 방지: `rebuild-common.sh`의 `@flakePath@`는 `nixosConfigDefaultPath`(항상 메인 레포)를 사용하여, worktree 빌드 후에도 다음 `nrs` 실행 시 올바른 기본 경로에서 시작합니다.
 
 ## 보안
 

@@ -191,6 +191,10 @@ cat .wt/PROJ-12345/.wt-parent
 | macOS | cursor (기본) | `WT_EDITOR`로 변경 가능 |
 | NixOS | 경로만 출력 | - |
 
+**nrs worktree 지원:**
+
+worktree에서 `nrs`/`nrp` 실행 시 자동으로 worktree의 flake를 빌드합니다 (`detect_worktree()`). `mkOutOfStoreSymlink` 심링크도 worktree 파일을 가리킵니다. **worktree 삭제 전 반드시 메인 레포에서 `nrs` 재실행** 필요 (dangling symlink 방지).
+
 ## wt-cleanup (워크트리 정리)
 
 `.wt/` 디렉토리 내의 워크트리를 정리하는 함수입니다.

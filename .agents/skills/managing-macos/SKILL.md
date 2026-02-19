@@ -30,8 +30,16 @@ nrp
 - launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
 - Hammerspoon 재시작 (HOME 오염 방지)
 
-> nrs/nrp 스크립트는 `~/.local/lib/rebuild-common.sh`를 source하여 공통 함수(로깅, 인수 파싱, 외부 패키지 갱신, 빌드 미리보기, 아티팩트 정리)를 사용합니다.
+> nrs/nrp 스크립트는 `~/.local/lib/rebuild-common.sh`를 source하여 공통 함수(로깅, 인수 파싱, worktree 감지, 빌드 미리보기, 아티팩트 정리)를 사용합니다.
 > 소스: `modules/shared/scripts/rebuild-common.sh`, 플랫폼별: `modules/darwin/scripts/{nrs,nrp}.sh`
+
+**Git Worktree 지원:**
+
+git worktree에서 `nrs`/`nrp` 실행 시 자동 감지하여 worktree의 flake를 빌드합니다. `mkOutOfStoreSymlink` 심링크도 worktree 파일을 가리킵니다.
+
+- 감지: `detect_worktree()` (rebuild-common.sh source 시 자동 실행)
+- 메커니즘: `--impure` + `builtins.getEnv "NIXOS_CONFIG_PATH"` + `sudo env` 전파
+- **주의**: worktree 빌드 후 심링크가 worktree를 가리키므로, **worktree 삭제 전 반드시 메인 레포에서 `nrs` 재실행** 필요
 
 ### 주요 설정 파일
 

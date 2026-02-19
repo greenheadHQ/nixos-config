@@ -6,6 +6,7 @@
   inputs,
   username,
   nixosConfigPath,
+  nixosConfigDefaultPath,
   hostType,
   constants,
   ...
@@ -16,8 +17,15 @@
   home-manager.useUserPackages = true;
   home-manager.backupFileExtension = "backup";
 
-  # Home Manager 모듈에 nixosConfigPath, hostType, constants 전달
-  home-manager.extraSpecialArgs = { inherit nixosConfigPath hostType constants; };
+  # Home Manager 모듈에 nixosConfigPath, nixosConfigDefaultPath, hostType, constants 전달
+  home-manager.extraSpecialArgs = {
+    inherit
+      nixosConfigPath
+      nixosConfigDefaultPath
+      hostType
+      constants
+      ;
+  };
 
   home-manager.users.${username} =
     {

@@ -3,7 +3,7 @@
   config,
   pkgs,
   lib,
-  nixosConfigPath,
+  nixosConfigDefaultPath,
   ...
 }:
 
@@ -21,11 +21,11 @@ in
   };
 
   # Shell 함수 라이브러리 (source로 로딩)
-  # replaceVars: @flakePath@ → nixosConfigPath (flake.nix의 workspaceDir로부터 파생)
-  # 이를 통해 rebuild-common.sh의 FLAKE_PATH가 flake.nix와 자동 동기화됨
+  # replaceVars: @flakePath@ → nixosConfigDefaultPath (항상 메인 레포 경로)
+  # worktree 감지는 런타임에 detect_worktree()가 처리
   home.file.".local/lib/rebuild-common.sh" = {
     source = pkgs.replaceVars "${sharedScriptsDir}/rebuild-common.sh" {
-      flakePath = nixosConfigPath;
+      flakePath = nixosConfigDefaultPath;
     };
   };
   home.file.".local/lib/git-worktree-functions.sh" = {

@@ -25,7 +25,8 @@ run_nixos_rebuild() {
 
     local rc=0
     # shellcheck disable=SC2086
-    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG || rc=$?
+    sudo ${NIXOS_CONFIG_PATH:+env NIXOS_CONFIG_PATH="$NIXOS_CONFIG_PATH"} \
+        "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $IMPURE_FLAG $OFFLINE_FLAG || rc=$?
 
     if [[ "$rc" -eq 0 ]]; then
         return 0
