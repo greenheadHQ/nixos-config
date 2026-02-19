@@ -54,6 +54,7 @@ in
     systemd.tmpfiles.rules = [
       "d ${dockerData}/copyparty/hists 0755 root root -"
       "d ${dockerData}/copyparty/config 0700 root root -"
+      "d ${dockerData}/copyparty/sessions 0700 root root -" # 세션 DB + salt + iphash
     ];
 
     # 비밀번호 주입 서비스 (컨테이너 시작 전 실행)
@@ -87,6 +88,7 @@ in
       volumes = [
         "${configPath}:/cfg/config.conf:ro"
         "${dockerData}/copyparty/hists:/cfg/hists"
+        "${dockerData}/copyparty/sessions:/cfg/copyparty" # 세션 영속성
         "${mediaData}:/data"
       ];
       environment = {

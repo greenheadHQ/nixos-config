@@ -97,6 +97,7 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 |------|--------|------|
 | `/var/lib/docker-data/copyparty/hists` | SSD | DB/인덱스/썸네일 캐시 |
 | `/var/lib/docker-data/copyparty/config` | SSD | 설정 파일 (0700) |
+| `/var/lib/docker-data/copyparty/sessions` | SSD | 세션 DB/salt/iphash (0700) |
 | `/mnt/data` | HDD | 전체 파일 저장소 |
 
 ## Known Issues
@@ -141,6 +142,12 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 **이미지 태그**
 - `copyparty/ac:latest` 사용 (audio/video/image 썸네일 + 트랜스코딩 포함)
 - 기본 `copyparty/copyparty` 이미지는 썸네일 미지원
+
+**세션 데이터 영속성**
+- CopyParty는 세션 DB(`sessions.db`)와 인증 salt(`ah-salt.txt`, `dk-salt.txt`, `fk-salt.txt`), `iphash`를 `/cfg/copyparty/`에 저장
+- 이 경로가 볼륨 마운트되지 않으면 컨테이너 재시작 시 세션 유실 → 403 에러
+- 해결: `${dockerData}/copyparty/sessions:/cfg/copyparty` 볼륨 마운트 (0700)
+- 세션 문제 발생 시 `sessions/` 디렉토리 내용을 비우고 재시작하면 초기화됨
 
 ## 자주 발생하는 문제
 

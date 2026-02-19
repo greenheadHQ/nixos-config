@@ -170,3 +170,29 @@ Copyparty Docker 이미지의 `-c` 플래그는 설정값(global, accounts)은 �
 - 로컬 Mac에서 `nrs` 실행 → darwin-rebuild만 됨, MiniPC에는 적용 안 됨
 - git push 없이 MiniPC에서 `git pull` → 변경사항 없음
 - flake 기반이라 **git에 추가되지 않은 파일은 빌드에 포함되지 않음**
+
+## 9. 컨테이너 재시작 후 403 에러 (세션 유실)
+
+**증상**: 컨테이너 재시작 후 로그인 상태가 풀리고 "오류 403: 접근 거부됨" 발생
+
+**원인**:
+CopyParty는 세션 DB(`sessions.db`)와 인증 salt 파일들을 컨테이너 내부 `/cfg/copyparty/`에 저장.
+이 경로가 볼륨 마운트되지 않으면 컨테이너 재시작 시 모든 세션 데이터 유실.
+salt 파일 유실 시 기존 세션 쿠키가 전부 무효화되어 재로그인 필요.
+
+**진단**:
+```bash
+# 세션 디렉토리 볼륨 마운트 확인
+sudo podman inspect copyparty --format '{{range .Mounts}}{{.Destination}} {{end}}' | grep copyparty
+
+# 호스트 세션 디렉토리 확인
+sudo ls -la /var/lib/docker-data/copyparty/sessions/
+# 예상: sessions.db, ah-salt.txt, dk-salt.txt, fk-salt.txt, iphash
+
+# 컨테이너 종료 코드 확인 (137 = OOM kill)
+sudo podman inspect copyparty --format '{{.State.ExitCode}}'
+```
+
+**해결**:
+- `copyparty.nix`에서 `${dockerData}/copyparty/sessions:/cfg/copyparty` 볼륨 마운트 확인
+- 세션 초기화 필요 시: `sudo rm /var/lib/docker-data/copyparty/sessions/*` 후 컨테이너 재시작
