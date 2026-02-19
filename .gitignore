@@ -4,9 +4,6 @@
 # direnv cache (nix-direnv가 devShell 평가 결과 캐싱)
 .direnv/
 
-# Nix로 생성되는 Claude Code 스킬 (symlink → /nix/store/)
-.claude/skills/viewing-immich-photo/
-
 # 업데이트 스크립트 백업 파일 (중단 시 잔류 가능)
 *.bak
 

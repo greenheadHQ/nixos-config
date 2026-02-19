@@ -97,7 +97,6 @@ CLAUDE.md 라우팅 테이블이 존재하는 파일을 모두 수집한다:
 
 글로벌 스킬에 한해:
 - `modules/shared/programs/claude/default.nix`의 `mkOutOfStoreSymlink` 항목과 실제 스킬 디렉토리가 매칭되는지
-- Nix 생성 스킬(viewing-immich-photo 등)이 올바르게 배포되는지
 
 ## Phase 3: 보고서 생성
 
