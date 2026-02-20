@@ -60,6 +60,7 @@ Karakeep 웹 아카이버/북마크 관리 서비스 운영 스킬.
 |--------|------|
 | `karakeep-nextauth-secret.age` | JWT 서명 키 (NEXTAUTH_SECRET) |
 | `karakeep-meili-master-key.age` | Meilisearch 인증 키 |
+| `karakeep-openai-key.age` | OpenAI API 키 (OPENAI_API_KEY) |
 | `pushover-karakeep.age` | Pushover 알림 자격증명 |
 
 ## SingleFile Integration
@@ -78,6 +79,42 @@ Karakeep 웹 아카이버/북마크 관리 서비스 운영 스킬.
 2. SingleFile 확장에서 REST Form API와 필수 field name(`file`, `url`)을 설정한다.
 3. 웹훅 브리지와 `CRAWLER_ALLOWED_INTERNAL_HOSTNAMES` 설정을 검증한다.
 4. 백업 타이머와 업데이트 체크 타이머 상태를 확인한다.
+
+## AI Tagging + Summarization (OpenAI)
+
+OpenAI 키가 있으면 Karakeep inference worker가 자동 태깅/요약을 수행한다.
+
+- 필수 시크릿 파일: `secrets/karakeep-openai-key.age`
+- 시크릿 내용 형식:
+  ```text
+  OPENAI_API_KEY=sk-...
+  ```
+- 현재 운영 기본값:
+  - `INFERENCE_LANG=korean`
+  - `INFERENCE_ENABLE_AUTO_SUMMARIZATION=true`
+  - `INFERENCE_TEXT_MODEL`/`INFERENCE_IMAGE_MODEL`은 Karakeep 기본값 사용
+
+적용 및 확인:
+
+```bash
+# 설정 적용
+nrs
+
+# 컨테이너/환경 파일 재기동
+sudo systemctl restart karakeep-env.service karakeep-openai-env.service podman-karakeep.service
+
+# 서비스 상태 확인
+sudo systemctl status karakeep-env.service karakeep-openai-env.service podman-karakeep.service --no-pager
+
+# OPENAI_API_KEY 주입 확인 (값 노출 없이 키 존재만 체크)
+sudo podman exec karakeep /bin/sh -lc 'printenv OPENAI_API_KEY >/dev/null && echo OPENAI_API_KEY=loaded'
+```
+
+기능 검증:
+
+1. Karakeep에 새 북마크 저장
+2. 태그가 한국어로 자동 생성되는지 확인
+3. 요약(summary)이 자동 생성되는지 확인
 
 ## Webhook Notification
 
@@ -146,6 +183,20 @@ podman stats --no-stream karakeep karakeep-chrome karakeep-meilisearch
 **Meilisearch 메모리 기준**: 안정 시 ~365MB 사용.
 512MB 제한에서 OOM 크래시 루프 발생 (98% 점유로 반복 kill).
 **최소 1GB 확보 필요** — Meilisearch가 죽으면 Karakeep 앱도 의존성 실패로 502 발생.
+
+### AI 태깅/요약 미동작
+
+점검 순서:
+
+1. `karakeep-openai-key.age`가 실제 키로 갱신되었는지 확인 (placeholder 금지)
+2. `karakeep-env.service`, `karakeep-openai-env.service` 실행 성공 여부 확인
+3. Karakeep 컨테이너 로그에서 OpenAI 요청 오류(401/429/timeout) 확인
+
+```bash
+sudo systemctl status karakeep-env.service karakeep-openai-env.service --no-pager
+sudo podman logs --tail=200 karakeep
+journalctl -u podman-karakeep.service -n 200 --no-pager
+```
 
 ### 모바일 앱 (iOS/Android)
 
