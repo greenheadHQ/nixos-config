@@ -241,9 +241,70 @@ let
 
   # Codex 피드백: 수동 방화벽 규칙 인젝션 방지
   # extraInputRules, extraForwardRules가 비어야 함
-  # 참고: extraCommands/extraStopCommands는 NixOS NAT 모듈이 자동 생성하므로 체크 제외
   # Opus 피드백: NixOS 옵션이 항상 존재하므로 or "" 불필요 (or [] 제거와 일관)
   noRawFirewallRules = fw.extraInputRules == "" && fw.extraForwardRules == "";
+
+  # extraCommands/extraStopCommands allowlist 검증
+  # NixOS NAT 모듈이 cleanup 명령(-D/-F/-X)을 extraCommands에 자동 생성하므로 전체 매칭 불가
+  # 보안 관련 규칙만 검증: nixos-fw-accept (NixOS 방화벽의 트래픽 허용 액션)
+  # 현재 허용: karakeep webhook 브리지 (podman+ → webhookPort)
+  # 규칙 문자열은 karakeep-notify.nix의 iptables 명령과 정확히 일치해야 함
+  # 새 서비스가 extraCommands를 사용할 경우, 해당 규칙과 expectedFwAcceptCount를 업데이트
+  karakeepNotifyCfg = nixosCfg.homeserver.karakeepNotify;
+  karakeepNotifyActive = karakeepNotifyCfg.enable && nixosCfg.homeserver.karakeep.enable;
+
+  # 허용된 karakeep iptables 규칙 문자열
+  karakeepExtraCmd = "iptables -I nixos-fw 1 -i podman+ -p tcp --dport ${toString karakeepNotifyCfg.webhookPort} -j nixos-fw-accept";
+
+  # extraCommands에서 nixos-fw-accept 출현 횟수 (= 트래픽 허용 규칙 수)
+  # NAT cleanup 명령은 nixos-fw-accept를 사용하지 않으므로 카운트에서 자연 제외
+  fwAcceptCount =
+    let
+      parts = builtins.split "nixos-fw-accept" fw.extraCommands;
+    in
+    builtins.length (builtins.filter builtins.isList parts);
+
+  expectedFwAcceptCount = if karakeepNotifyActive then 1 else 0;
+
+  # karakeep 규칙이 extraCommands에 정확히 포함되어야 함 (규칙 내용 변경 감지)
+  # builtins.split는 regex를 사용하므로 podman+의 +를 이스케이프
+  # 현재 규칙 문자열에 다른 regex 특수문자(. [ ( * ? { ^ $ |) 없음
+  karakeepExtraCmdRegex = builtins.replaceStrings [ "+" ] [ "\\+" ] karakeepExtraCmd;
+  karakeepRulePresent =
+    if karakeepNotifyActive then
+      builtins.length (builtins.split karakeepExtraCmdRegex fw.extraCommands) > 1
+    else
+      true;
+
+  # extraStopCommands: NixOS 시스템 콘텐츠 없으므로 정확 매칭
+  allowedExtraStopCommands =
+    if karakeepNotifyActive then
+      ''
+        iptables -D nixos-fw -i podman+ -p tcp --dport ${toString karakeepNotifyCfg.webhookPort} -j nixos-fw-accept 2>/dev/null || true
+      ''
+    else
+      "";
+
+  # 비NixOS-관례 트래픽 허용 타겟 검사 (우회 방지)
+  # NixOS 관례는 -j nixos-fw-accept (소문자) — 위 fwAcceptCount로 검증
+  # NAT cleanup 명령은 체인명(-j nixos-nat-pre 등)을 사용하므로 false positive 없음
+  noRawAcceptInExtraCommands =
+    builtins.all
+      (
+        target:
+        builtins.length (builtins.filter builtins.isList (builtins.split target fw.extraCommands)) == 0
+      )
+      [
+        "-j ACCEPT"
+        "-j DNAT"
+        "-j REDIRECT"
+      ];
+
+  extraCommandsAllowed =
+    fwAcceptCount == expectedFwAcceptCount
+    && karakeepRulePresent
+    && noRawAcceptInExtraCommands
+    && fw.extraStopCommands == allowedExtraStopCommands;
 
   # tailscale 포트 (UDP)
   tailscalePort = nixosCfg.services.tailscale.port;
@@ -390,6 +451,10 @@ let
     {
       name = "Test 6h: 수동 방화벽 규칙 없음 (extraInputRules, extraForwardRules 비어야 함)";
       cond = noRawFirewallRules;
+    }
+    {
+      name = "Test 6i: extraCommands/extraStopCommands allowlist 검증 (nixos-fw-accept 허용: ${toString expectedFwAcceptCount}건, 실제: ${toString fwAcceptCount}건, karakeep webhook port ${toString karakeepNotifyCfg.webhookPort})";
+      cond = extraCommandsAllowed;
     }
     {
       # Opus 피드백: useRoutingFeatures = "both"이면 exit node 활성화 가능
