@@ -26,9 +26,15 @@ in
     # 글로벌 AGENTS.md - Claude의 CLAUDE.md와 동일 소스 공유
     ".codex/AGENTS.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
 
-    # 글로벌 스킬: agent-browser (Claude와 동일 소스 공유)
+    # 글로벌 스킬 (Claude와 동일 소스 공유)
     ".codex/skills/agent-browser".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/agent-browser";
+    ".codex/skills/maintaining-skills".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/maintaining-skills";
+    ".codex/skills/managing-github-issues".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/managing-github-issues";
+    ".codex/skills/syncing-codex-harness".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";
   };
 
   # ─── NixOS: Codex CLI 바이너리 설치 (GitHub releases) ───

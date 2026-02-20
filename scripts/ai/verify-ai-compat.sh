@@ -148,12 +148,14 @@ else
   warn "$HOME/.codex/AGENTS.md 없음"
 fi
 
-# ~/.codex/skills/agent-browser
-if [ -d "$HOME/.codex/skills/agent-browser" ]; then
-  pass "$HOME/.codex/skills/agent-browser 존재"
-else
-  warn "$HOME/.codex/skills/agent-browser 없음"
-fi
+# ~/.codex/skills/ 글로벌 스킬 검증
+for skill in agent-browser maintaining-skills managing-github-issues syncing-codex-harness; do
+  if [ -d "$HOME/.codex/skills/$skill" ]; then
+    pass "$HOME/.codex/skills/$skill 존재"
+  else
+    warn "$HOME/.codex/skills/$skill 없음"
+  fi
+done
 
 echo ""
 echo "=== 원본 무결성 확인 ==="
