@@ -97,13 +97,13 @@
     };
     karakeep = {
       app = {
-        memory = "1536m";
-        memorySwap = "2g";
+        memory = "2g";
+        memorySwap = "3g";
         cpus = "1";
       };
       chrome = {
-        memory = "1g";
-        memorySwap = "1536m";
+        memory = "2g";
+        memorySwap = "3g";
         cpus = "1";
       };
       meilisearch = {

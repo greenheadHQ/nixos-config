@@ -150,6 +150,9 @@ in
         CRAWLER_FULL_PAGE_ARCHIVE = "false";
         CRAWLER_STORE_SCREENSHOT = "true";
         CRAWLER_VIDEO_DOWNLOAD = "false";
+        CRAWLER_NUM_WORKERS = "2";
+        CRAWLER_JOB_TIMEOUT_SEC = "180";
+        CRAWLER_SCREENSHOT_TIMEOUT_SEC = "30";
         MAX_ASSET_SIZE_MB = "100";
         INFERENCE_LANG = "korean";
         INFERENCE_ENABLE_AUTO_SUMMARIZATION = "true";
