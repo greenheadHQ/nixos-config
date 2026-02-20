@@ -12,6 +12,16 @@ description: |
 Karakeep 웹 아카이버/북마크 관리 서비스 운영 스킬.
 `https://archive.greenhead.dev`에서 Tailscale VPN 전용으로 제공.
 
+## 빠른 참조
+
+| 명령어 | 설명 |
+|--------|------|
+| `sudo systemctl start podman-karakeep.service` | Karakeep 앱 시작 |
+| `sudo systemctl stop podman-karakeep.service` | Karakeep 앱 중지 |
+| `sudo systemctl start karakeep-backup` | 수동 백업 실행 |
+| `sudo karakeep-update` | 수동 업데이트 |
+| `journalctl -u karakeep-webhook-bridge -f` | 웹훅 브리지 로그 확인 |
+
 ## Architecture
 
 3컨테이너 Podman 구성 (`karakeep-network`):
@@ -62,6 +72,13 @@ Karakeep 웹 아카이버/북마크 관리 서비스 운영 스킬.
 4. **archive data field name**: `file` (필수 — 누락 시 ZodError)
 5. **archive URL field name**: `url` (필수 — 누락 시 ZodError)
 
+## 핵심 절차
+
+1. `karakeep.nix`로 3컨테이너/네트워크를 적용한다.
+2. SingleFile 확장에서 REST Form API와 필수 field name(`file`, `url`)을 설정한다.
+3. 웹훅 브리지와 `CRAWLER_ALLOWED_INTERNAL_HOSTNAMES` 설정을 검증한다.
+4. 백업 타이머와 업데이트 체크 타이머 상태를 확인한다.
+
 ## Webhook Notification
 
 `karakeep-webhook-bridge.service` (socat TCP:9999):
@@ -93,7 +110,7 @@ sudo cp /mnt/data/backups/karakeep/YYYY-MM-DD/queue.db /mnt/data/karakeep/queue.
 sudo systemctl start podman-karakeep.service
 ```
 
-## Troubleshooting
+## 트러블슈팅
 
 ### CSS 렌더링 깨짐 (아카이브 인라인 뷰)
 
@@ -135,3 +152,7 @@ podman stats --no-stream karakeep karakeep-chrome karakeep-meilisearch
 - App Store: "Karakeep" 검색
 - 서버 URL: `https://archive.greenhead.dev`
 - 인라인 아카이브 뷰에서 CSS 깨짐은 웹과 동일 (CSP 제거로 해결)
+
+## 참조
+
+- CSS 이슈: https://github.com/karakeep-app/karakeep/issues/1977

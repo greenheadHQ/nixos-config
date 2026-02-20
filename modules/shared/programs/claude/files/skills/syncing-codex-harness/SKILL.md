@@ -3,8 +3,8 @@ name: syncing-codex-harness
 description: >-
   Syncs Claude Code harness to Codex CLI compatible format. Projects skills,
   agents, MCP servers, and rules into .agents/ and .codex/ directories.
-  Use when "codex sync", "codex harness", "codex 동기화", "codex 투영",
-  or making a project work with Codex CLI.
+  Triggers: "codex sync", "codex harness", "codex 동기화", "codex 투영",
+  "AGENTS.md", ".agents/skills", "Codex compatibility", "하네스 동기화".
 allowed-tools: Bash(*)
 ---
 
@@ -12,6 +12,19 @@ allowed-tools: Bash(*)
 
 이 스킬은 현재 프로젝트의 Claude Code 하니스(스킬, 에이전트, MCP, 규칙)를
 Codex CLI 호환 구조(`.agents/`, `.codex/`)로 프로젝션한다.
+
+## 목적과 범위
+
+프로젝트의 Claude 하니스를 Codex가 인식 가능한 디렉토리/설정 구조로 동기화하는 절차를 제공한다.
+
+## 빠른 참조
+
+| 단계 | 명령 |
+|------|------|
+| 전체 동기화 | `bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"` |
+| 로컬 스킬만 | `bash "$SYNC_SH" project-skills "$PWD" .claude/skills` |
+| MCP 섹션만 | `bash "$SYNC_SH" mcp-config "$PWD"` |
+| .gitignore 점검 | `bash "$SYNC_SH" gitignore-check "$PWD"` |
 
 `sync.sh` 스크립트 경로: 현재 SKILL.md가 위치한 디렉토리의 `references/sync.sh`를 사용하라.
 예: 이 SKILL.md의 실제 경로가 `~/.claude/skills/syncing-codex-harness/SKILL.md`이면
@@ -124,15 +137,16 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 ```
 
 진행상황이 stderr로 출력된다:
-```
+```text
 === syncing-codex-harness: Full Sync ===
-[1/7] Initialized .agents/ and .codex/
-[2/7] AGENTS.md: symlinked|copied|skipped
-[3/7] Local skills: N
-[4/7] Plugin skills: N, Agents: N
-[5/7] Rules -> AGENTS.override.md: N
-[6/7] MCP config updated|no sources found
-[7/7] .gitignore OK|Missing .gitignore entries: ...
+[1/8] Initialized .agents/ and .codex/
+[2/8] AGENTS.md: symlinked|copied|skipped
+[3/8] Local skills: N
+[4/8] Plugin skills: N, Agents: N
+[5/8] Rules -> AGENTS.override.md: N
+[6/8] MCP config updated|no sources found
+[7/8] Trust: trusted|already-trusted|skipped
+[8/8] .gitignore OK|Missing .gitignore entries: ...
 === Sync complete ===
 ```
 
@@ -171,6 +185,12 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 | AGENTS.override.md 사용자 커스텀 보존 | 마커 외부 내용 유지 |
 | `.codex/config.toml` 기존 설정 보존 | `[mcp_servers.*]` 섹션만 교체 |
 | Worktree 경로 | `$PWD`로 매칭 |
+
+## 트러블슈팅
+
+- `installPath` 해석 실패 시 플러그인 캐시 경로 존재 여부를 먼저 확인한다.
+- 동기화 후 스킬이 안 보이면 `.agents/skills/<name>`이 디렉토리 심링크인지 확인한다.
+- `.gitignore` 경고는 자동수정하지 않고 누락 항목을 수동 반영한다.
 
 ## 참조 문서
 

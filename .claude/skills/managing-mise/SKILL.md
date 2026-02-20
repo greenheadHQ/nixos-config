@@ -3,13 +3,17 @@ name: managing-mise
 description: |
   mise runtime versions: Node.js, pnpm, shims, .nvmrc, activate.
   Triggers: "pnpm not found", "node version mismatch", ".nvmrc",
-  "mise shims", "mise activate", runtime version issues in
-  non-interactive SSH, Node.js source build.
+  "mise shims", "mise activate", "mise 설정", "SSH에서 pnpm 안 됨",
+  "Node.js source build", "런타임 버전 불일치".
 ---
 
 # mise 런타임 버전 관리
 
 mise를 사용한 Node.js, pnpm 등 런타임 버전 관리 가이드입니다.
+
+## 목적과 범위
+
+런타임 버전 선택, shims 경로, SSH 비대화형 셸 이슈를 안정적으로 운영하는 절차를 다룬다.
 
 ## 빠른 참조
 
@@ -44,6 +48,13 @@ MISE_NODE_COMPILE=0 mise use -g node@lts
 |------|------|
 | `modules/shared/programs/shell/default.nix` | zsh mise 활성화 |
 | `libraries/packages.nix` | `pkgs.mise` 패키지 설치 (nixosOnly) |
+
+## 핵심 절차
+
+1. `mise current`로 현재 선택된 런타임을 확인한다.
+2. 전역 버전이 필요하면 `mise use -g node@lts`로 고정한다.
+3. 프로젝트별 버전은 `mise.toml` 또는 `.nvmrc` 기준으로 `mise install`을 실행한다.
+4. 비대화형 셸 문제는 `~/.zshenv`의 shims 경로와 `mise activate` 적용 여부를 점검한다.
 
 ## 자주 발생하는 문제
 

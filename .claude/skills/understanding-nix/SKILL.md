@@ -4,12 +4,17 @@ description: |
   Nix fundamentals: flakes, derivations, substituters, devShell.
   Triggers: "nix flake update", "flake change detection", "slow build",
   "substituter", "derivation", "direnv", "devShell",
-  "experimental features", Nix build issues common to NixOS/darwin.
+  "experimental features", "Nix 빌드 느림", "flake 인식 안 됨",
+  "nixos/darwin 공통 nix 이슈".
 ---
 
 # Nix 공통 이슈
 
 NixOS와 nix-darwin 모두에 해당하는 Nix 공통 개념 및 이슈입니다.
+
+## 목적과 범위
+
+flake 평가, derivation 해석, substituter/빌드 성능, 공통 오류 복구 절차를 다룬다.
 
 ## 핵심 개념
 
@@ -69,6 +74,13 @@ nix build --show-trace
 # derivation 확인
 nix derivation show .#darwinConfigurations.<host>.system
 ```
+
+## 핵심 절차
+
+1. 먼저 flake 상태(`git add`, `nix flake update`)를 정합화한다.
+2. 빌드 속도 이슈는 substituter/오프라인 모드로 분리 진단한다.
+3. 실패 시 `--show-trace`와 derivation 조회로 원인 모듈을 좁힌다.
+4. 수정 후 `nrs` 또는 `nrs-offline`으로 재검증한다.
 
 ## 자주 발생하는 문제
 

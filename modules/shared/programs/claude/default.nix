@@ -65,10 +65,6 @@ in
     ".claude/hooks/plan-notification.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/plan-notification.sh";
 
-    # agent-browser 스킬 (user-scope)
-    ".claude/skills/agent-browser".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/agent-browser";
-
     # syncing-codex-harness 스킬 (user-scope)
     ".claude/skills/syncing-codex-harness".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";

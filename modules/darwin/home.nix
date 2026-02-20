@@ -50,7 +50,6 @@
 
         # 공유 프로그램
         ../shared/programs/broot
-        ../shared/programs/agent-browser
         ../shared/programs/claude # shared로 이동됨
         ../shared/programs/codex # Codex CLI 호환 레이어
         ../shared/programs/direnv # 디렉토리별 개발 환경 자동 활성화

@@ -3,13 +3,18 @@ name: hosting-anki
 description: |
   Anki sync server: self-hosted sync, backup, client config.
   Triggers: "anki 동기화", "anki-sync-server", "anki 서버", "anki 백업",
-  sync connection issues, backup failures, AnkiMobile configuration.
+  "sync connection issues", "backup failures", "AnkiMobile configuration",
+  "AnkiMobile 설정", "self-hosted anki sync".
 ---
 
 # Anki Sync Server 관리
 
 NixOS 네이티브 `services.anki-sync-server` 모듈로 Anki 동기화 서버를 셀프호스팅합니다.
 Tailscale VPN 내에서만 접근 가능하며, agenix로 비밀번호를 관리합니다.
+
+## 목적과 범위
+
+Anki 동기화 서버의 배포, 접속, 백업, 장애 복구 절차를 다룬다.
 
 ## 모듈 구조
 
@@ -64,6 +69,13 @@ journalctl -u anki-sync-backup.service           # 백업 로그
 homeserver.ankiSync.enable = true;   # 활성화
 homeserver.ankiSync.port = 27701;    # 포트 (기본값은 constants.nix)
 ```
+
+## 핵심 절차
+
+1. 서비스 상태(`systemctl status anki-sync-server`)와 포트 리스닝을 확인한다.
+2. 클라이언트에 self-hosted URL을 적용하고 실제 Sync를 실행한다.
+3. 백업 타이머 상태와 백업 파일 생성을 검증한다.
+4. 인증/바인딩 오류는 agenix secret과 tailscale-wait 로그로 분리 진단한다.
 
 ## Known Issues
 

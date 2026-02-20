@@ -2,15 +2,21 @@
 name: managing-tmux
 description: |
   tmux config: keybindings, prefix, plugins, resurrect, notepad.
-  Triggers: pane notepad, tmux plugins, tmux-resurrect,
-  session save/restore, tmux.conf configuration,
-  prefix key, session management.
+  Triggers: "pane notepad", "tmux plugins", "tmux-resurrect",
+  "session save/restore", "tmux.conf configuration",
+  "prefix key", "session management", "tmux 설정", "tmux 단축키".
 ---
 # tmux 설정
 
 터미널 멀티플렉서 tmux 설정 및 단축키 가이드입니다.
 
-## 주요 설정 파일
+## 목적과 범위
+
+tmux 기본 동작, 플러그인, Pane Notepad 워크플로우를 다룬다.
+
+## 빠른 참조
+
+### 주요 설정 파일
 
 | 파일 | 용도 |
 |------|------|
@@ -26,6 +32,13 @@ description: |
 | `find-unused-prefixes.sh` | tmux prefix 키 중 미사용 조합 탐지 |
 | `pane-note.sh` | 노트 생성/편집 |
 | `pane-link.sh` | 노트 검색/연결 |
+
+## 핵심 절차
+
+1. `modules/shared/programs/tmux/files/tmux.conf`에서 키맵과 기본 동작을 조정한다.
+2. `modules/shared/programs/tmux/default.nix`에서 plugin 목록과 Home Manager 옵션을 맞춘다.
+3. Pane Notepad는 `pane-note.sh`와 `pane-link.sh`로 생성/연결을 수행한다.
+4. 세션 저장/복원은 tmux-resurrect/tmux-continuum 상태를 확인한다.
 
 ## 주요 Nix 옵션 (`programs.tmux`)
 
@@ -77,7 +90,11 @@ repo: nixos-config
 
 스크립트 목록, 태그 시스템, 링크 파일, 디버그 상세는 [references/pane-notepad.md](references/pane-notepad.md) 참조.
 
-## 레퍼런스
+## 트러블슈팅
+
+prefix 충돌, plugin 로드 실패, Pane Notepad 오류는 `references/troubleshooting.md`를 우선 확인한다.
+
+## 참조
 
 - Pane Notepad 상세: [references/pane-notepad.md](references/pane-notepad.md)
 - 단축키 가이드: [references/shortcuts.md](references/shortcuts.md)

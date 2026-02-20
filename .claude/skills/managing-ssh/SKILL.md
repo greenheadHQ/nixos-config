@@ -2,13 +2,18 @@
 name: managing-ssh
 description: |
   SSH keys, ssh-agent, Tailscale VPN, mosh, sudo auth issues.
-  Triggers: "SSH key invalid format", authentication failures,
-  Tailscale VPN issues, "sudo SSH_AUTH_SOCK", authorized keys, mosh setup.
+  Triggers: "SSH key invalid format", "SSH 인증 실패", "authentication failures",
+  "Tailscale VPN issues", "sudo SSH_AUTH_SOCK", "authorized keys",
+  "authorized_keys 설정", "mosh setup", "ssh-agent 문제".
 ---
 
 # SSH 및 Tailscale 관리
 
 SSH 키, ssh-agent, Tailscale VPN 관련 가이드입니다.
+
+## 목적과 범위
+
+SSH 인증, ssh-agent 로드, Tailscale 접속, sudo 환경변수 이슈를 통합적으로 다룬다.
 
 ## Known Issues
 
@@ -18,11 +23,11 @@ SSH 키, ssh-agent, Tailscale VPN 관련 가이드입니다.
 
 **재부팅 후 SSH 키 미로드**
 - launchd agent로 자동 로드 설정되어 있지만 실패할 수 있음
-- 수동 로드: `ssh-add ~/.ssh/id_ed25519`
+- 수동 로드: `ssh-add $HOME/.ssh/id_ed25519`
 
 **NixOS에서 SSH 키 자동 로드 방식 혼동**
 - NixOS는 launchd가 아니라 `services.ssh-agent` + `programs.keychain`으로 키 로드
-- 수동 로드: `ssh-add ~/.ssh/id_ed25519`
+- 수동 로드: `ssh-add $HOME/.ssh/id_ed25519`
 
 ## 빠른 참조
 
@@ -33,10 +38,10 @@ SSH 키, ssh-agent, Tailscale VPN 관련 가이드입니다.
 ssh-add -l
 
 # 키 로드
-ssh-add ~/.ssh/id_ed25519
+ssh-add $HOME/.ssh/id_ed25519
 
 # 키 언로드
-ssh-add -d ~/.ssh/id_ed25519
+ssh-add -d $HOME/.ssh/id_ed25519
 ```
 
 ### Tailscale 상태
@@ -56,10 +61,10 @@ tailscale ip -4
 
 | 파일 | 용도 |
 |------|------|
-| `~/.ssh/config` | SSH 호스트 설정 |
-| `~/.ssh/id_ed25519` | 개인 키 |
-| `~/.ssh/id_ed25519.pub` | 공개 키 |
-| `~/.ssh/authorized_keys` | 인증된 키 (서버) |
+| `$HOME/.ssh/config` | SSH 호스트 설정 |
+| `$HOME/.ssh/id_ed25519` | 개인 키 |
+| `$HOME/.ssh/id_ed25519.pub` | 공개 키 |
+| `$HOME/.ssh/authorized_keys` | 인증된 키 (서버) |
 | `modules/darwin/programs/ssh/default.nix` | macOS SSH/launchd 설정 |
 | `modules/nixos/programs/ssh-client/default.nix` | NixOS SSH 클라이언트 설정 |
 | `modules/nixos/home.nix` | NixOS `services.ssh-agent`/`programs.keychain` 설정 |
@@ -72,6 +77,13 @@ users.users.<username>.openssh.authorizedKeys.keys = [
   "ssh-ed25519 AAAA... user@host"
 ];
 ```
+
+## 핵심 절차
+
+1. `ssh-add -l`과 Tailscale 상태를 먼저 확인한다.
+2. 실패 증상을 키 형식/agent/sudo 환경변수 문제로 분류한다.
+3. NixOS는 `home.nix`의 `services.ssh-agent`와 `programs.keychain` 설정을 점검한다.
+4. 서버 키 배포는 `authorizedKeys` 선언 후 재적용으로 처리한다.
 
 ## 자주 발생하는 문제
 

@@ -2,13 +2,25 @@
 name: automating-hammerspoon
 description: |
   Hammerspoon hotkeys, launchd agents, Ghostty terminal on macOS.
-  Triggers: "open terminal from Finder", "setupLaunchAgents stuck",
-  "HOME is /var/root" in launchd, Ghostty terminal issues.
+  Triggers: "open terminal from Finder", "Finder에서 터미널 열기",
+  "setupLaunchAgents stuck", "launchd HOME is /var/root",
+  "Ghostty terminal issues", "Ghostty 새 창 문제", "Hammerspoon 단축키".
 ---
 
 # Hammerspoon 자동화
 
 Hammerspoon 단축키, launchd 서비스, Ghostty 연동 가이드입니다.
+
+## 목적과 범위
+
+macOS에서 Hammerspoon 자동화, launchd 연계, Ghostty 동작 이슈를 진단하고 복구하는 절차를 다룬다.
+
+## 핵심 절차
+
+1. `~/.hammerspoon/init.lua`와 LaunchAgent 상태를 함께 점검한다.
+2. `launchctl list`로 비정상 agent를 식별한다.
+3. Ghostty 다중 인스턴스/단축키 문제를 재현 후 설정을 수정한다.
+4. 재로드 후 핵심 단축키 동작을 검증한다.
 
 ## Known Issues
 
@@ -55,10 +67,14 @@ launchctl list | grep -v com.apple
 # 특정 에이전트 상태
 launchctl list <label>
 
-# 에이전트 언로드
-launchctl unload ~/Library/LaunchAgents/<plist>
+# 에이전트 언로드 (권장)
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/<plist>
 
-# 에이전트 재로드
+# 에이전트 로드 (권장)
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<plist>
+
+# 레거시 명령 (deprecated, 호환용)
+launchctl unload ~/Library/LaunchAgents/<plist>
 launchctl load ~/Library/LaunchAgents/<plist>
 ```
 

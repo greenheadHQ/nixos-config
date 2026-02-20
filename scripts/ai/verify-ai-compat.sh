@@ -149,7 +149,7 @@ else
 fi
 
 # ~/.codex/skills/ 글로벌 스킬 검증
-for skill in agent-browser maintaining-skills managing-github-issues syncing-codex-harness; do
+for skill in maintaining-skills managing-github-issues syncing-codex-harness; do
   if [ -d "$HOME/.codex/skills/$skill" ]; then
     pass "$HOME/.codex/skills/$skill 존재"
   else

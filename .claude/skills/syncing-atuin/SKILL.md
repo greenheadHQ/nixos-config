@@ -2,15 +2,20 @@
 name: syncing-atuin
 description: |
   Atuin shell history: sync errors, encryption, daemon, cleanup.
-  Triggers: "atuin status" 4XX errors, encryption key mismatch,
-  daemon problems, "atuin history delete", shell history backup,
-  zsh-autosuggestion TUI conflicts, Korean history bulk deletion,
-  last_sync_time troubleshooting, history database maintenance.
+  Triggers: "atuin status 4XX errors", "encryption key mismatch",
+  "atuin 동기화 오류", "atuin history delete", "shell history backup",
+  "zsh-autosuggestion TUI conflicts", "Korean history bulk deletion",
+  "한글 히스토리 삭제", "last_sync_time troubleshooting",
+  "history database maintenance".
 ---
 
 # Atuin 히스토리 동기화
 
 Atuin 쉘 히스토리 동기화 및 모니터링 가이드입니다.
+
+## 목적과 범위
+
+Atuin 동기화 상태 점검, 한글 히스토리 정리, encryption key 문제 분리를 다룬다.
 
 ## Known Issues
 
@@ -63,6 +68,13 @@ Hammerspoon 메뉴바에서 Atuin 동기화 상태 모니터링 가능:
 - 정상: 초록색
 - 경고 (5분 이상 미동기화): 노란색
 - 에러: 빨간색
+
+## 핵심 절차
+
+1. `atuin status`/`atuin sync`로 동기화 자체를 확인한다.
+2. `last_sync_time`과 DB 상태를 확인해 표시 이슈와 실제 동기화 이슈를 분리한다.
+3. 한글 히스토리 렌더링 문제는 `atuin-clean-kr`로 정리한다.
+4. 계정 이동 시 encryption key 불일치를 복구가 아닌 재초기화 대상으로 처리한다 (재초기화 시 로컬 히스토리 삭제, 마이그레이션 불가).
 
 ## 자주 발생하는 문제
 

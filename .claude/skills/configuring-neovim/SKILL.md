@@ -8,6 +8,10 @@ description: |
 
 # Neovim (LazyVim) 설정
 
+## 목적과 범위
+
+LazyVim 기반 Neovim 구성에서 Nix 경계, 플러그인 경계, 입력기 관련 운영 포인트를 다룬다.
+
 ## 아키텍처
 
 **Hybrid 방식**: Nix가 바이너리/외부 도구 관리, lazy.nvim이 플러그인 관리.
@@ -16,7 +20,9 @@ description: |
 - **lazy.nvim**: 런타임에 플러그인 다운로드 및 관리
 - **mkOutOfStoreSymlink**: `~/.config/nvim` → repo의 `files/nvim/` 심볼릭 링크 (양방향 수정 가능)
 
-## 파일 구조
+## 빠른 참조
+
+### 파일 구조
 
 ```
 modules/shared/programs/neovim/
@@ -42,7 +48,7 @@ modules/shared/programs/neovim/
             └── ui.lua               # bufferline, lualine, noice
 ```
 
-## extraPackages 요약
+### extraPackages 요약
 
 Nix `extraPackages`로 관리하는 도구 카테고리:
 
@@ -53,6 +59,13 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 
 > `ripgrep`, `fd`, `fzf`는 `libraries/packages.nix`에서, `lazygit`은 Home Manager (`programs.lazygit.enable = true`)로 설치됨 — 중복 추가 금지
 
+## 핵심 절차
+
+1. `modules/shared/programs/neovim/default.nix`에서 런타임 도구(`extraPackages`)를 선언한다.
+2. `files/nvim/lua/plugins/*.lua`에서 LazyVim 플러그인 동작을 조정한다.
+3. Mason 비활성화 원칙을 유지하고 LSP/formatter/linters는 Nix 패키지로 관리한다.
+4. 변경 후 Neovim을 재시작해 LSP attach, tree-sitter, im-select 동작을 확인한다.
+
 ## 제약사항
 
 - `programs.neovim`에 `plugins`/`initLua`/`extraConfig` 추가 금지 (심볼릭 링크 충돌)
@@ -61,7 +74,11 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 - **extraPackages에 C 컴파일러(gcc 등) 추가 시 반드시 `lib.optionals pkgs.stdenv.isLinux` 사용** — macOS에서 LLVM 소스 빌드 방지
 - **marksman 사용 금지** → `markdown-oxide` 사용. marksman은 dotnet→Swift 의존성 체인으로 macOS에서 Swift 소스 빌드 실패
 
-## 레퍼런스
+## 트러블슈팅
+
+빌드 지연, 한국어 입력, tree-sitter 오류는 [references/troubleshooting.md](references/troubleshooting.md)를 우선 확인한다.
+
+## 참조
 - 패키지/extras 상세: [references/packages.md](references/packages.md)
 - 키맵/치트시트: [references/cheatsheet.md](references/cheatsheet.md)
 - 한국어 입력: [references/korean-input.md](references/korean-input.md)

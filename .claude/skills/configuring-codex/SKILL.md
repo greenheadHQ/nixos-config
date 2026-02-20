@@ -2,16 +2,16 @@
 name: configuring-codex
 description: |
   Codex CLI config, skill projection, AGENTS.md, trust/sandbox.
-  Triggers: "codex config", "codex setup", "codex trust", "AGENTS.md",
-  ".agents/skills", "project-scope skill", Codex skill discovery
-  failures, approval/sandbox policy, Claude/Codex compatibility.
+  Triggers: "codex config", "codex setup", "codex trust", "Codex 설정",
+  "AGENTS.md", ".agents/skills", "project-scope skill", "스킬 투영",
+  "approval_policy", "sandbox_mode", "Codex compatibility".
 ---
 
 # Codex CLI 설정
 
 Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
-## 범위
+## 목적과 범위
 
 - `~/.codex/config.toml` 실행 정책(`approval_policy`, `sandbox_mode`) 및 모델 설정
 - `AGENTS.md`/`.agents/skills` 투영 구조
@@ -31,53 +31,18 @@ Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬
 
 ## 핵심 파일
 
-- `libraries/packages/codex-cli.nix` — Nix 패키지 (pre-built 바이너리)
 - `modules/shared/programs/codex/default.nix` — 설정 및 스킬 투영
 - `modules/shared/programs/codex/files/config.toml` — 실행 정책/모델 설정
-- `scripts/update-codex-cli.sh` — 버전 자동 업데이트
 - `scripts/ai/verify-ai-compat.sh` — 구조 검증
+- `modules/shared/programs/claude/files/CLAUDE.md` — 글로벌 라우팅/지침
 - `.claude/skills/*` (원본)
 - `.agents/skills/*` (Codex 발견용 투영)
 
-## 패키지 설치 및 업데이트
+## 설치/업데이트 경로
 
-Codex CLI는 Nix derivation으로 관리된다 (`libraries/packages/codex-cli.nix`).
-GitHub releases에서 플랫폼별 pre-built 바이너리를 가져온다.
-
-- macOS: `aarch64-darwin`
-- NixOS: `x86_64-linux` (musl 정적 링크)
-
-### 자동 업데이트 (nrs 통합)
-
-`nrs` 실행 시 빌드 전에 `scripts/update-codex-cli.sh`가 자동으로 실행된다.
-
-```
-nrs 흐름:
-  update_external_packages   ← GitHub latest 확인 → codex-cli.nix 갱신
-    ↓
-  (launchd 정리, macOS만)
-    ↓
-  preview_changes            ← 갱신된 버전으로 빌드
-    ↓
-  rebuild switch
-```
-
-동작 방식:
-- 버전 동일: curl HEAD 1회로 종료 (~1초 이내, 빌드 시간 영향 거의 없음)
-- 새 버전: `nix-prefetch-url`로 tarball 2개 다운로드 후 해시 계산 → nix 파일 갱신 (30-90초 소요)
-- `nrs --offline`: 업데이트 단계 건너뜀
-- 네트워크 오류: 경고 출력 후 기존 버전으로 빌드 계속 (non-fatal)
-- 태그 형식 변경(`rust-v*` 외): semver 검증 실패로 중단, 기존 버전으로 빌드 계속
-
-안전장치:
-- curl `--connect-timeout 5 --max-time 10` (무한 대기 방지)
-- 파일 수정 전 `.bak` 백업, EXIT trap으로 실패/중단 시 자동 복원
-
-### 수동 업데이트
-
-```bash
-./scripts/update-codex-cli.sh
-```
+Codex CLI 바이너리 설치/업데이트는 `modules/shared/programs/codex/default.nix`의
+`home.activation.installCodexCli`에서 관리한다. 운영 절차는 `nrs` 적용 후
+`codex --version`과 `./scripts/ai/verify-ai-compat.sh`로 검증한다.
 
 ## 진단 우선순위 (중요)
 
@@ -96,6 +61,13 @@ sandbox_mode = "danger-full-access"
 ```
 
 `trust_level` 프로젝트 엔트리는 경로별 세부 제어가 필요할 때만 추가한다.
+
+## 트러블슈팅 / FAQ
+
+- **스킬이 안 보임**: `.agents/skills/*`가 파일 심링크인지 확인하고 디렉토리 심링크로 교정한다.
+- **권한 프롬프트 반복**: `~/.codex/config.toml`의 `approval_policy`, `sandbox_mode`를 확인한다.
+- **AGENTS 불일치**: 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크를 복구한다.
+- **활성화 누락**: `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`로 재검증한다.
 
 ## 투영 아키텍처
 
