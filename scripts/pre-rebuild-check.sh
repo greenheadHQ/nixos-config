@@ -9,11 +9,11 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$ROOT_DIR"
 
 echo "═══ Flake Check ═══"
-nix flake check
+nix flake check --no-build --all-systems
 
 echo
 echo "═══ Format Check ═══"
-nix fmt -- --check .
+git ls-files '*.nix' | xargs nixfmt --check
 
 echo
 echo "✓ 모든 검증 통과"

@@ -1,6 +1,12 @@
 # Cursor (VS Code fork) 설정
 # Homebrew Cask로 앱 설치, Nix로 확장 관리
-{ config, pkgs, lib, nixosConfigPath, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  nixosConfigPath,
+  ...
+}:
 
 let
   cursorDir = ./files;
@@ -16,10 +22,46 @@ let
 
   # Cursor로 열 파일 확장자 목록
   codeExtensions = [
-    "txt" "text" "md" "mdx" "js" "jsx" "ts" "tsx" "mjs" "cjs"
-    "json" "yaml" "yml" "toml" "css" "scss" "sass" "less" "nix"
-    "sh" "bash" "zsh" "py" "rb" "go" "rs" "lua" "sql" "graphql" "gql"
-    "xml" "svg" "conf" "ini" "cfg" "env" "gitignore" "editorconfig" "prettierrc" "eslintrc"
+    "txt"
+    "text"
+    "md"
+    "mdx"
+    "js"
+    "jsx"
+    "ts"
+    "tsx"
+    "mjs"
+    "cjs"
+    "json"
+    "yaml"
+    "yml"
+    "toml"
+    "css"
+    "scss"
+    "sass"
+    "less"
+    "nix"
+    "sh"
+    "bash"
+    "zsh"
+    "py"
+    "rb"
+    "go"
+    "rs"
+    "lua"
+    "sql"
+    "graphql"
+    "gql"
+    "xml"
+    "svg"
+    "conf"
+    "ini"
+    "cfg"
+    "env"
+    "gitignore"
+    "editorconfig"
+    "prettierrc"
+    "eslintrc"
   ];
 
   # 확장 목록 정의
@@ -64,22 +106,24 @@ let
 
   # extensions.json 생성 (Cursor GUI가 확장을 인식하도록)
   # Cursor 원본 형식: identifier, version, location, relativeLocation, metadata
-  extensionsJson = pkgs.writeTextDir
-    "share/vscode/extensions/extensions.json"
-    (builtins.toJSON (map (ext: {
-      identifier.id = ext.vscodeExtUniqueId;
-      version = ext.version;
-      location = {
-        "$mid" = 1;
-        path = "${extensionsPath}/${ext.vscodeExtUniqueId}";
-        scheme = "file";
-      };
-      relativeLocation = ext.vscodeExtUniqueId;
-      metadata = {
-        installedTimestamp = 0;
-        targetPlatform = "undefined";
-      };
-    }) cursorExtensions));
+  extensionsJson = pkgs.writeTextDir "share/vscode/extensions/extensions.json" (
+    builtins.toJSON (
+      map (ext: {
+        identifier.id = ext.vscodeExtUniqueId;
+        version = ext.version;
+        location = {
+          "$mid" = 1;
+          path = "${extensionsPath}/${ext.vscodeExtUniqueId}";
+          scheme = "file";
+        };
+        relativeLocation = ext.vscodeExtUniqueId;
+        metadata = {
+          installedTimestamp = 0;
+          targetPlatform = "undefined";
+        };
+      }) cursorExtensions
+    )
+  );
 
   # 모든 확장을 하나의 디렉토리로 통합
   combinedExtensions = pkgs.buildEnv {
@@ -97,8 +141,8 @@ in
     echo "Setting Cursor as default editor for code files..."
 
     # 1. 개별 확장자 설정
-    ${lib.concatMapStringsSep "\n" (ext:
-      "${pkgs.duti}/bin/duti -s ${cursorBundleId} .${ext} all"
+    ${lib.concatMapStringsSep "\n" (
+      ext: "${pkgs.duti}/bin/duti -s ${cursorBundleId} .${ext} all"
     ) codeExtensions}
 
     # 2. 범용 UTI(Uniform Type Identifier) 설정

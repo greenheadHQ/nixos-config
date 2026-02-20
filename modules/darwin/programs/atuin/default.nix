@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   homeDir = config.home.homeDirectory;
@@ -6,8 +11,8 @@ let
 
   # 모니터링 설정 (Single Source of Truth)
   # 참고: 실제 sync는 atuin 내장 auto_sync가 담당 (sync_frequency = 1m)
-  syncCheckInterval = 600;        # 10분 (초) - watchdog 상태 체크 주기
-  syncThresholdMinutes = 5;       # 5분 이상 동기화 안 되면 경고
+  syncCheckInterval = 600; # 10분 (초) - watchdog 상태 체크 주기
+  syncThresholdMinutes = 5; # 5분 이상 동기화 안 되면 경고
 
   # Hammerspoon용 JSON 설정 파일
   monitorConfigJson = builtins.toJSON {
