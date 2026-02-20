@@ -87,6 +87,7 @@ homeserver.devProxy.enable = true;
 | Atuin sync, shell history, `atuin status`, encryption key | `syncing-atuin` |
 | Claude Code hooks, plugins, MCP, settings.json | `configuring-claude-code` |
 | Codex config, AGENTS.md, .agents/skills, trust/sandbox | `configuring-codex` |
+| codex exec, codex 실행, codex CLI, 비대화형 codex, codex review | `using-codex-exec` |
 | Hammerspoon hotkeys, launchd agents, Ghostty terminal | `automating-hammerspoon` |
 | Podman/Docker, immich, container OOM, service-lib, 서비스 업데이트, immich-db-backup | `running-containers` |
 | Anki sync server, anki 동기화, anki 서버, anki 백업 | `hosting-anki` |
@@ -103,4 +104,3 @@ homeserver.devProxy.enable = true;
 | Cursor IDE, Nix extensions.json, duti, 확장 0개 표시 | `managing-cursor` |
 | Pushover, 텍스트 공유, MiniPC→iPhone, share text | `sharing-text` |
 | dev-proxy, dev server, 개발 서버 프록시, dev.greenhead.dev, HMR, 모바일 미리보기 | `proxying-dev-server` |
-
