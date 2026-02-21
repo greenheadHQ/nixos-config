@@ -1,6 +1,8 @@
-# Anki Sync Server 설치/설정 상세
+# Anki 서비스 설치/설정 상세
 
 ## NixOS 모듈 옵션
+
+### Anki Sync Server
 
 ```nix
 # modules/nixos/options/homeserver.nix
@@ -13,6 +15,39 @@ ankiSync = {
   };
 };
 ```
+
+### AnkiConnect (Headless Anki)
+
+```nix
+# modules/nixos/options/homeserver.nix
+ankiConnect = {
+  enable = lib.mkEnableOption "Headless Anki with AnkiConnect API";
+  port = lib.mkOption {
+    type = lib.types.port;
+    default = constants.network.ports.ankiConnect;  # 8765
+    description = "Port for AnkiConnect HTTP API";
+  };
+  profile = lib.mkOption {
+    type = lib.types.str;
+    default = "server";
+    description = "Anki profile name";
+  };
+};
+```
+
+**핵심 설계:**
+- `pkgs.anki.withAddons` + `withConfig`: 설정이 Nix store에 bake됨 (immutable)
+- `QT_QPA_PLATFORM=offscreen`: GUI 없이 Qt 오프스크린 렌더링
+- 인증: Tailscale 네트워크 격리에 의존 (API key 불필요)
+- 프로필 자동 생성: `ExecStartPre`에서 디렉터리 보장 (offscreen 모드 profile picker 행 방지)
+
+## 아키텍처 참고
+
+**openFirewall 비활성**: 네이티브 모듈의 `openFirewall`은 모든 인터페이스에 포트 개방. `trustedInterfaces = [ "tailscale0" ]`가 Tailscale 전체 트래픽 허용하므로 별도 방화벽 룰 불필요. 보안은 Tailscale IP 바인딩(`address = minipcTailscaleIP`)에 의존.
+
+**DynamicUser (Sync Server)**: upstream 모듈이 `DynamicUser = true` 사용. `ExecStartPre`에서 tailscale-wait 실행 시 소켓 접근 불가 → `"+"` prefix로 root 권한 실행.
+
+**데이터 디렉토리**: Sync Server는 `StateDirectory`로 `/var/lib/anki-sync-server/` 자동 관리 (`DynamicUser`). AnkiConnect는 `StateDirectory = "anki"` → `/var/lib/anki/`.
 
 ## agenix 시크릿 관리
 
@@ -69,9 +104,9 @@ AnkiWeb 계정은 백업으로 유지 가능 (동기화만 중단됨).
 - 보존: 7일
 - 스케줄: 매일 04:00 KST
 
-## 검증 기준값
+## 검증 기준값 (2025-01 기준)
 
-마이그레이션 후 AnkiConnect API(localhost:8765)로 대조:
+마이그레이션 후 AnkiConnect API(`http://100.79.80.95:8765`)로 대조:
 
 | 항목 | 기대값 |
 |------|--------|

@@ -16,6 +16,7 @@
       immichMl = 3003;
       uptimeKuma = 3002;
       ankiSync = 27701;
+      ankiConnect = 8765;
       copyparty = 3923;
       vaultwarden = 8222;
       karakeep = 3000;

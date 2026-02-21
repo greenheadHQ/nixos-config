@@ -1,3 +1,5 @@
+# Anki 서비스 트러블슈팅
+
 # Anki Sync Server 트러블슈팅
 
 ## Sync 연결 실패
@@ -167,4 +169,110 @@ journalctl -u anki-sync-server.service --since today | grep -i error
 
 # 백업 로그
 journalctl -u anki-sync-backup.service --since today
+```
+
+---
+
+# AnkiConnect (Headless Anki) 트러블슈팅
+
+## API 무응답
+
+### 증상
+`curl http://100.79.80.95:8765` 연결 실패 또는 타임아웃
+
+### 진단
+```bash
+# 1. 서비스 상태 확인
+systemctl status anki-connect.service
+
+# 2. Tailscale IP 리스닝 확인
+ss -tlnp | grep 8765
+
+# 3. 로그에서 에러 확인
+journalctl -u anki-connect.service --since today --no-pager
+
+# 4. Tailscale 연결 확인
+tailscale status
+```
+
+### 일반적인 원인
+1. **Tailscale IP 미할당**: tailscale-wait가 60초 대기 후 timeout
+2. **프로필 디렉터리 문제**: ExecStartPre에서 생성 실패
+3. **메모리 초과**: `MemoryMax=512M` 도달 → OOMKilled
+
+### 해결
+- Tailscale 연결 확인: `tailscale up`
+- 서비스 재시작: `sudo systemctl restart anki-connect`
+- OOM 확인: `journalctl -u anki-connect.service | grep -i oom`
+
+## 덱 목록 비어있음
+
+### 증상
+`deckNames` API가 빈 배열 `[]` 반환
+
+### 원인
+AnkiConnect의 `server` 프로필에 DB가 없음. Anki Desktop에서 해당 프로필로 sync한 적이 없음.
+
+### 해결
+1. Anki Desktop에서 프로필을 `server`로 전환
+2. Sync Server URL(`http://100.79.80.95:27701/`)로 Sync 실행
+3. AnkiConnect 서비스 재시작: `sudo systemctl restart anki-connect`
+4. `deckNames` API 재확인
+
+## 서비스 재시작 루프
+
+### 증상
+`systemctl status`에서 `activating (auto-restart)` 반복
+
+### 진단
+```bash
+# 최근 실패 원인 확인
+journalctl -u anki-connect.service --since today --no-pager | tail -50
+
+# 프로필 디렉터리 확인
+ls -la /var/lib/anki/.local/share/Anki2/server/
+```
+
+### 일반적인 원인
+1. **offscreen 렌더링 실패**: Qt 관련 라이브러리 누락
+2. **프로필 잠금**: 이전 프로세스가 DB lock을 해제하지 않음
+3. **addon 로드 실패**: withAddons 설정 문제
+
+### 해결
+- Qt 라이브러리 확인: 로그에서 `qt.qpa` 관련 메시지 확인
+- 프로필 잠금 해제: `/var/lib/anki/.local/share/Anki2/server/.lock` 파일 확인/삭제
+- `nrs` 재배포로 addon 설정 재생성
+
+## CORS 에러
+
+### 증상
+awesome-anki 웹 앱에서 AnkiConnect API 호출 시 브라우저 콘솔에 CORS 에러
+
+### 원인
+`webCorsOriginList`에 요청 Origin이 포함되지 않음.
+
+### 해결
+**참고**: awesome-anki는 Hono 서버가 AnkiConnect를 프록시하므로 브라우저 → AnkiConnect 직접 호출은 발생하지 않음. CORS 에러가 보이면 프록시 경로 확인.
+
+현재 허용 Origin 목록 (Nix store에 bake됨):
+- `http://localhost`
+- `http://localhost:3000`
+- `http://localhost:5173`
+- `http://100.79.80.95`
+
+변경 시 `modules/nixos/programs/anki-connect/default.nix`의 `webCorsOriginList` 수정 후 `nrs` 재배포.
+
+## AnkiConnect 로그 확인
+
+```bash
+# 실시간 로그
+journalctl -u anki-connect.service -f
+
+# 오늘 로그에서 에러만
+journalctl -u anki-connect.service --since today | grep -i error
+
+# API 응답 테스트
+curl -s http://100.79.80.95:8765 \
+  -X POST -d '{"action":"version","version":6}'
+# 기대: {"result":6,"error":null}
 ```

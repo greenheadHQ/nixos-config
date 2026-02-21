@@ -87,6 +87,20 @@
       };
     };
 
+    ankiConnect = {
+      enable = lib.mkEnableOption "Headless Anki with AnkiConnect API";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = constants.network.ports.ankiConnect;
+        description = "Port for AnkiConnect HTTP API";
+      };
+      profile = lib.mkOption {
+        type = lib.types.str;
+        default = "server";
+        description = "Anki profile name";
+      };
+    };
+
     copyparty = {
       enable = lib.mkEnableOption "Copyparty file server (Google Drive alternative)";
       port = lib.mkOption {
@@ -207,6 +221,7 @@
     ../programs/uptime-kuma-update # Uptime Kuma 버전 체크 및 업데이트
     ../programs/copyparty-update # Copyparty 버전 체크 및 업데이트
     ../programs/anki-sync-server # Anki 자체 호스팅 동기화 서버
+    ../programs/anki-connect # Headless Anki + AnkiConnect API
     ../programs/docker/copyparty.nix # Copyparty 파일 서버
     ../programs/docker/vaultwarden.nix # Vaultwarden 비밀번호 관리자
     ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)

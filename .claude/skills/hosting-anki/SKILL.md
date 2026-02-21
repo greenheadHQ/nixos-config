@@ -1,22 +1,31 @@
 ---
 name: hosting-anki
 description: |
-  Anki sync server: self-hosted sync, backup, client config.
+  Anki sync server + AnkiConnect API: self-hosted sync, headless API, backup, client config.
   Triggers: "anki 동기화", "anki-sync-server", "anki 서버", "anki 백업",
+  "AnkiConnect", "anki-connect", "headless anki", "카드 API", "덱 조회",
   "sync connection issues", "backup failures", "AnkiMobile configuration",
-  "AnkiMobile 설정", "self-hosted anki sync".
+  "AnkiMobile 설정", "self-hosted anki sync", "anki CORS", "anki API 테스트".
 ---
 
-# Anki Sync Server 관리
+# Anki 서비스 관리
 
-NixOS 네이티브 `services.anki-sync-server` 모듈로 Anki 동기화 서버를 셀프호스팅합니다.
-Tailscale VPN 내에서만 접근 가능하며, agenix로 비밀번호를 관리합니다.
+MiniPC에서 두 가지 Anki 서비스를 셀프호스팅합니다:
+
+| 서비스 | 프로토콜 | 용도 | 포트 |
+|--------|----------|------|------|
+| Anki Sync Server | Anki sync protocol | 카드 DB 동기화 (클라이언트 ↔ 서버) | 27701 |
+| AnkiConnect | HTTP JSON API | 카드 CRUD, 덱 조회 (awesome-anki 웹앱) | 8765 |
+
+두 서비스 모두 Tailscale VPN 내에서만 접근 가능합니다.
 
 ## 목적과 범위
 
-Anki 동기화 서버의 배포, 접속, 백업, 장애 복구 절차를 다룬다.
+Anki 동기화 서버와 AnkiConnect API 서버의 배포, 접속, 백업, 장애 복구 절차를 다룬다.
 
 ## 모듈 구조
+
+### Anki Sync Server
 
 | 파일 | 역할 |
 |------|------|
@@ -26,6 +35,15 @@ Anki 동기화 서버의 배포, 접속, 백업, 장애 복구 절차를 다룬�
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
 | `secrets/anki-sync-password.age` | agenix 암호화 비밀번호 |
 | `libraries/constants.nix` | 포트 (`ankiSync = 27701`) |
+
+### AnkiConnect (Headless Anki)
+
+| 파일 | 역할 |
+|------|------|
+| `modules/nixos/options/homeserver.nix` | `ankiConnect` mkOption 정의 |
+| `modules/nixos/programs/anki-connect/default.nix` | Headless Anki + AnkiConnect 서비스 |
+| `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
+| `libraries/constants.nix` | 포트 (`ankiConnect = 8765`) |
 
 ## 빠른 참조
 
@@ -60,14 +78,28 @@ journalctl -u anki-sync-backup.service           # 백업 로그
 3. Media sync URL: 비워둠
 4. Anki 앱에서 Sync
 
-사용자: `greenhead` / 비밀번호: agenix secret
+사용자: `greenhead` / 비밀번호: `sudo cat /run/agenix/anki-sync-password`
+
+### AnkiConnect 서비스 관리
+
+```bash
+systemctl status anki-connect.service        # 상태 확인
+journalctl -u anki-connect.service -f        # 로그 실시간
+curl -s http://100.79.80.95:8765 -X POST \
+  -d '{"action":"version","version":6}'      # API 응답 확인
+```
+
+Headless mode (offscreen Qt), 설정은 Nix store에 bake됨. 상세: [references/setup.md](references/setup.md)
 
 ### 서비스 활성화/비활성화
 
 ```nix
 # modules/nixos/configuration.nix
-homeserver.ankiSync.enable = true;   # 활성화
-homeserver.ankiSync.port = 27701;    # 포트 (기본값은 constants.nix)
+homeserver.ankiSync.enable = true;      # Sync Server 활성화
+homeserver.ankiSync.port = 27701;       # 포트 (기본값은 constants.nix)
+homeserver.ankiConnect.enable = true;   # AnkiConnect API 활성화
+homeserver.ankiConnect.port = 8765;     # 포트 (기본값은 constants.nix)
+homeserver.ankiConnect.profile = "server"; # Anki 프로필명
 ```
 
 ## 핵심 절차
@@ -77,41 +109,22 @@ homeserver.ankiSync.port = 27701;    # 포트 (기본값은 constants.nix)
 3. 백업 타이머 상태와 백업 파일 생성을 검증한다.
 4. 인증/바인딩 오류는 agenix secret과 tailscale-wait 로그로 분리 진단한다.
 
-## Known Issues
+## 주의사항
 
-**로그인 UI에 "AnkiWeb" 표시**
-- 커스텀 sync 서버를 설정해도 로그인 다이얼로그에 "AnkiWeb 아이디"라고 표시됨
-- 정상 동작: 실제로는 커스텀 서버로 연결되므로 셀프호스팅 자격증명 입력
-
-**age 암호화 시 특수문자 이스케이프**
-- `nix-shell --run` 파이프로 비밀번호 전달 시 `!` 등 특수문자에 `\` 추가됨
-- 해결: 임시 파일 경유로 암호화 (`printf 'pw' > /tmp/pw && age ... /tmp/pw`)
-- 진단: `sudo cat /run/agenix/anki-sync-password | xxd`로 바이트 확인
-
-**DynamicUser + Tailscale 소켓 접근**
-- upstream 모듈이 `DynamicUser = true` 사용
-- `ExecStartPre`에서 tailscale-wait 스크립트 실행 시 소켓 접근 불가
-- 해결: `"+"` prefix로 root 권한 실행
-
-**Tailscale IP 타이밍**
-- 부팅 시 Tailscale IP 할당 전에 서비스 시작하면 바인딩 실패
-- 해결: `tailscale-wait.nix`로 60초 대기 (컨테이너 서비스와 동일 패턴)
-
-**openFirewall 비활성**
-- 네이티브 모듈의 `openFirewall`은 모든 인터페이스에 포트 개방
-- `trustedInterfaces = [ "tailscale0" ]`가 Tailscale 전체 트래픽 허용하므로 별도 방화벽 룰 불필요
-- 보안은 Tailscale IP 바인딩(`address = minipcTailscaleIP`)에 의존
-
-**데이터 디렉토리**
-- 네이티브 모듈이 `StateDirectory`로 `/var/lib/anki-sync-server/` 자동 관리
-- `DynamicUser = true`이므로 디렉토리 소유권은 systemd가 처리
+- **로그인 UI에 "AnkiWeb" 표시**: 커스텀 sync 서버에서도 로그인 다이얼로그에 "AnkiWeb 아이디"로 표시됨 → 셀프호스팅 자격증명 입력하면 정상 동작
 
 ## 자주 발생하는 문제
 
+### Sync Server
 1. **Sync 연결 실패**: Tailscale VPN 연결 확인, `ss -tlnp | grep 27701`
 2. **인증 실패**: agenix secret 복호화 확인 (`ls -la /run/agenix/anki-sync-password`)
 3. **백업 실패**: 소스 디렉토리 비어있으면 안전하게 중단 (의도적 동작)
 4. **서비스 시작 실패**: `journalctl -u anki-sync-server.service`로 원인 확인
+
+### AnkiConnect
+1. **API 무응답**: `systemctl status anki-connect` → Tailscale IP 대기 실패 가능
+2. **덱 목록 비어있음**: 프로필에 DB가 없음 → Anki에서 서버 프로필로 Sync 필요
+3. **재시작 루프**: `journalctl -u anki-connect -f` → 프로필 디렉터리 문제 확인
 
 ## 레퍼런스
 
