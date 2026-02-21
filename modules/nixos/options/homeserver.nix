@@ -5,6 +5,7 @@
   config,
   lib,
   constants,
+  username,
   ...
 }:
 
@@ -98,6 +99,63 @@
         type = lib.types.str;
         default = "server";
         description = "Anki profile name";
+      };
+      sync = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Enable AnkiConnect <-> Sync Server auto sync.";
+        };
+        url = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "Custom sync endpoint URL. null이면 로컬 Anki Sync Server URL을 사용.";
+        };
+        username = lib.mkOption {
+          type = lib.types.str;
+          default = username;
+          description = "Sync username used by headless Anki.";
+        };
+        onStart = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Trigger sync once after anki-connect service starts.";
+        };
+        interval = lib.mkOption {
+          type = lib.types.str;
+          default = "5m";
+          description = "OnUnitActiveSec interval for periodic sync.";
+        };
+        maxRetries = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 3;
+          description = "Maximum retry attempts per sync run.";
+        };
+        backoffBaseSec = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 5;
+          description = "Base seconds for exponential backoff (5, 10, 20...).";
+        };
+        stateFile = lib.mkOption {
+          type = lib.types.str;
+          default = "/var/lib/anki/sync-status.json";
+          description = "Path to sync status JSON used by operational checks/UI.";
+        };
+        bootstrapFromSyncServer = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Bootstrap AnkiConnect profile from Sync Server collection on first run.";
+        };
+        bootstrapMedia = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Copy media directory during one-time bootstrap.";
+        };
+        bootstrapMinCollectionBytes = lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = 262144;
+          description = "Treat local collection as empty when smaller than this threshold.";
+        };
       };
     };
 

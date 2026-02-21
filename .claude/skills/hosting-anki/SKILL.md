@@ -44,6 +44,7 @@ Anki 동기화 서버와 AnkiConnect API 서버의 배포, 접속, 백업, 장�
 |------|------|
 | `modules/nixos/options/homeserver.nix` | `ankiConnect` mkOption 정의 |
 | `modules/nixos/programs/anki-connect/default.nix` | Headless Anki + AnkiConnect 서비스 |
+| `modules/nixos/programs/anki-connect/sync.nix` | 자동 동기화 서비스/타이머 + 상태 파일 |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
 | `libraries/constants.nix` | 포트 (`ankiConnect = 8765`) |
 
@@ -89,6 +90,11 @@ systemctl status anki-connect.service        # 상태 확인
 journalctl -u anki-connect.service -f        # 로그 실시간
 curl -s http://100.79.80.95:8765 -X POST \
   -d '{"action":"version","version":6}'      # API 응답 확인
+
+systemctl status anki-connect-sync.service    # 마지막 sync 실행 상태
+systemctl status anki-connect-sync.timer      # 주기 sync 타이머 상태
+journalctl -u anki-connect-sync.service -f    # sync 로그 실시간
+cat /var/lib/anki/sync-status.json            # 마지막 sync 결과(state file)
 ```
 
 Headless mode (offscreen Qt), 설정은 Nix store에 bake됨. 상세: [references/setup.md](references/setup.md)
@@ -102,6 +108,11 @@ homeserver.ankiSync.port = 27701;       # 포트 (기본값은 constants.nix)
 homeserver.ankiConnect.enable = true;   # AnkiConnect API 활성화
 homeserver.ankiConnect.port = 8765;     # 포트 (기본값은 constants.nix)
 homeserver.ankiConnect.profile = "server"; # Anki 프로필명
+homeserver.ankiConnect.sync = {
+  enable = true;            # 자동 sync 활성화
+  onStart = true;           # 서비스 시작 시 1회 sync
+  interval = "5m";          # 주기 sync (OnUnitActiveSec)
+};
 ```
 
 ## 핵심 절차
@@ -127,7 +138,7 @@ homeserver.ankiConnect.profile = "server"; # Anki 프로필명
 1. **첫 부팅 무한 대기**: `prefs21.db` 없으면 `NoCloseDiag.exec()` 블로킹 → ExecStartPre에서 DB 사전 생성으로 해결됨
 2. **QtWebEngine SIGABRT**: GPU 없는 headless에서 EGL 실패 → `--disable-gpu` 플래그로 해결됨
 3. **API 무응답**: `systemctl status anki-connect` → Tailscale IP 대기 실패 가능
-4. **덱 목록 비어있음/Default만**: Sync Server → AnkiConnect 컬렉션 복사 필요 (일회성, 자동 동기화 미구현)
+4. **덱 목록 비어있음/Default만**: 첫 부팅 bootstrap 실패 가능 → `journalctl -u anki-connect.service`에서 bootstrap 로그 확인
 5. **재시작 루프**: `journalctl -u anki-connect -f` → 좀비 프로세스 DB lock 또는 프로필 디렉터리 문제
 
 ## 레퍼런스

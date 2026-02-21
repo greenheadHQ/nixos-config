@@ -291,7 +291,8 @@ sudo chown -R anki:anki /var/lib/anki/.local/share/Anki2/server/
 sudo systemctl start anki-connect.service
 ```
 
-**주의**: 이 방법은 일회성 copy입니다. Sync Server ↔ AnkiConnect 간 자동 동기화는 아직 미구현.
+**참고**: 현재는 `anki-connect` 시작 시 bootstrap + 주기 sync가 기본 동작입니다.
+위 절차는 bootstrap이 실패했거나 lock 손상 시 사용하는 수동 복구 경로입니다.
 
 ## 서비스 재시작 루프
 

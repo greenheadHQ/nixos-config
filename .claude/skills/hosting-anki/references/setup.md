@@ -42,6 +42,11 @@ ankiConnect = {
     default = "server";
     description = "Anki profile name";
   };
+  sync = {
+    enable = lib.mkOption { type = lib.types.bool; default = true; };
+    onStart = lib.mkOption { type = lib.types.bool; default = true; };
+    interval = lib.mkOption { type = lib.types.str; default = "5m"; };
+  };
 };
 ```
 
@@ -52,6 +57,9 @@ ankiConnect = {
 - 인증: Tailscale 네트워크 격리에 의존 (API key 불필요)
 - `prefs21.db` 사전 생성: `ExecStartPre`에서 Python/sqlite3/pickle로 `_global` + profile 엔트리 초기화 → offscreen 모드 `NoCloseDiag` 블로킹 방지
 - 프로필 자동 생성: `ExecStartPre`에서 디렉터리 + DB 보장
+- sync 설정 addon: profile open 시 custom sync URL/username 적용 + sync key 자동 초기화
+- 자동 동기화: `anki-connect-sync.service` + `anki-connect-sync.timer` (onStart + 5분 주기)
+- 상태 파일: `/var/lib/anki/sync-status.json` (마지막 시도/성공/에러 기록)
 
 ## 아키텍처 참고
 
