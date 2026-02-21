@@ -13,11 +13,15 @@ LOCK_FILE="${STATE_DIR}/fallback-sync.lock"
 FAILED_URL_QUEUE_LOCK_FILE="${FAILED_URL_QUEUE_LOCK_FILE:-${FAILED_URL_QUEUE_FILE}.lock}"
 PROCESSED_FILE="${STATE_DIR}/fallback-processed.tsv"
 NOTIFY_STATE_FILE="${STATE_DIR}/fallback-notify-state.tsv"
+UNMATCHED_NOTIFIED_FILE="${STATE_DIR}/fallback-unmatched-notified.tsv"
 NOTIFY_DEDUP_WINDOW_SEC=1800
 MAX_CONSECUTIVE_FAILURES="${MAX_CONSECUTIVE_FAILURES:-3}"
+UNMATCHED_STATE_RETENTION_DAYS="${UNMATCHED_STATE_RETENTION_DAYS:-30}"
+PROCESSED_STATE_RETENTION_DAYS="${PROCESSED_STATE_RETENTION_DAYS:-30}"
+NOTIFY_STATE_RETENTION_SEC="${NOTIFY_STATE_RETENTION_SEC:-86400}"
 
 mkdir -p "$STATE_DIR"
-touch "$FAILED_URL_QUEUE_FILE" "$PROCESSED_FILE" "$NOTIFY_STATE_FILE"
+touch "$FAILED_URL_QUEUE_FILE" "$PROCESSED_FILE" "$NOTIFY_STATE_FILE" "$UNMATCHED_NOTIFIED_FILE"
 
 QUEUE_LOCK_ENABLED=0
 if command -v flock > /dev/null 2>&1; then
@@ -37,6 +41,79 @@ if [ -z "$API_KEY" ]; then
   echo "KARAKEEP_API_KEY is not set in PUSHOVER_CRED_FILE; skipping auto relink"
   exit 0
 fi
+
+timestamp_to_epoch() {
+  local raw="$1"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    printf "%s" "$raw"
+    return 0
+  fi
+
+  date -d "$raw" +%s 2>/dev/null || printf "0"
+}
+
+gc_unmatched_notified_state() {
+  local now cutoff tmp hash ts file_path epoch
+  now=$(date +%s)
+  cutoff=$((now - UNMATCHED_STATE_RETENTION_DAYS * 86400))
+  tmp=$(mktemp -p "$STATE_DIR")
+
+  while IFS=$'\t' read -r hash ts file_path || [ -n "${hash:-}" ]; do
+    [ -n "${hash:-}" ] || continue
+    [ -n "${file_path:-}" ] || continue
+    [ -e "$file_path" ] || continue
+
+    epoch=$(timestamp_to_epoch "${ts:-}")
+    if [ "$epoch" -gt 0 ] && [ "$epoch" -lt "$cutoff" ]; then
+      continue
+    fi
+
+    printf "%s\t%s\t%s\n" "$hash" "$ts" "$file_path" >> "$tmp"
+  done < "$UNMATCHED_NOTIFIED_FILE"
+
+  mv "$tmp" "$UNMATCHED_NOTIFIED_FILE"
+}
+
+gc_processed_state() {
+  local now cutoff tmp hash failed_url file_path ts epoch
+  now=$(date +%s)
+  cutoff=$((now - PROCESSED_STATE_RETENTION_DAYS * 86400))
+  tmp=$(mktemp -p "$STATE_DIR")
+
+  while IFS=$'\t' read -r hash failed_url file_path ts || [ -n "${hash:-}" ]; do
+    [ -n "${hash:-}" ] || continue
+    [ -n "${file_path:-}" ] || continue
+    [ -e "$file_path" ] || continue
+
+    epoch=$(timestamp_to_epoch "${ts:-}")
+    if [ "$epoch" -gt 0 ] && [ "$epoch" -lt "$cutoff" ]; then
+      continue
+    fi
+
+    printf "%s\t%s\t%s\t%s\n" "$hash" "$failed_url" "$file_path" "$ts" >> "$tmp"
+  done < "$PROCESSED_FILE"
+
+  mv "$tmp" "$PROCESSED_FILE"
+}
+
+gc_notify_state() {
+  local now cutoff tmp
+  now=$(date +%s)
+  cutoff=$((now - NOTIFY_STATE_RETENTION_SEC))
+  tmp=$(mktemp -p "$STATE_DIR")
+
+  awk -F '\t' -v cutoff="$cutoff" '
+    NF >= 2 && $2 ~ /^[0-9]+$/ && $2 >= cutoff { print $1 "\t" $2 }
+  ' "$NOTIFY_STATE_FILE" > "$tmp"
+
+  mv "$tmp" "$NOTIFY_STATE_FILE"
+}
+
+gc_state_files() {
+  gc_unmatched_notified_state
+  gc_processed_state
+  gc_notify_state
+}
 
 normalize_url() {
   local url="$1"
@@ -78,11 +155,22 @@ should_notify_key() {
     return 1
   fi
 
-  tmp=$(mktemp)
+  tmp=$(mktemp -p "$STATE_DIR")
   awk -F '\t' -v key="$key" '$1 != key { print }' "$NOTIFY_STATE_FILE" > "$tmp"
   printf "%s\t%s\n" "$key" "$now" >> "$tmp"
   mv "$tmp" "$NOTIFY_STATE_FILE"
   return 0
+}
+
+is_unmatched_notified() {
+  local file_hash="$1"
+  awk -F '\t' -v hash="$file_hash" '$1 == hash { found = 1 } END { exit(found ? 0 : 1) }' "$UNMATCHED_NOTIFIED_FILE"
+}
+
+record_unmatched_notified() {
+  local file_hash="$1"
+  local file_path="$2"
+  printf "%s\t%s\t%s\n" "$file_hash" "$(date -Iseconds)" "$file_path" >> "$UNMATCHED_NOTIFIED_FILE"
 }
 
 remove_queue_url() {
@@ -94,7 +182,7 @@ remove_queue_url() {
     flock -x 10
   fi
 
-  tmp=$(mktemp)
+  tmp=$(mktemp -p "$STATE_DIR")
 
   awk -v target="$target" '
     BEGIN { removed = 0 }
@@ -225,10 +313,16 @@ process_file() {
 
   failed_url=$(find_matching_failed_url "$file" || true)
   if [ -z "$failed_url" ]; then
-    notify_key="unmatched:${file_hash}"
-    if should_notify_key "$notify_key"; then
-      message=$(printf "자동 재연결 보류: %s\n원인: 실패 URL 매칭 불가\n확인 경로: %s" "$(basename "$file")" "$FALLBACK_DIR")
-      send_notification "Karakeep" "$message" 0
+    if is_unmatched_notified "$file_hash"; then
+      echo "Unmatched fallback already notified once: $file"
+      return 0
+    fi
+
+    message=$(printf "자동 재연결 보류: %s\n원인: 실패 URL 매칭 불가\n확인 경로: %s" "$(basename "$file")" "$FALLBACK_DIR")
+    if send_notification_strict "Karakeep" "$message" 0; then
+      record_unmatched_notified "$file_hash" "$file"
+    else
+      echo "Unmatched fallback notification failed; will retry later: $file"
     fi
     echo "No matching failed URL for file: $file"
     return 0
@@ -257,6 +351,8 @@ if [ ! -d "$FALLBACK_DIR" ]; then
   echo "Fallback directory does not exist: $FALLBACK_DIR"
   exit 0
 fi
+
+gc_state_files
 
 if ! [ -s "$FAILED_URL_QUEUE_FILE" ]; then
   echo "No pending failed URLs in queue"

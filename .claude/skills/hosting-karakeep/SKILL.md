@@ -167,6 +167,9 @@ sudo podman exec karakeep /bin/sh -lc 'printenv OPENAI_API_KEY >/dev/null && ech
 - 매칭 규칙: HTML의 canonical/og:url/URL 후보와 실패 URL 큐를 정규화 비교
 - 성공 시: 실패 URL 큐에서 제거 + Pushover 완료 알림
 - 실패 시: 큐 유지 + dedup된 실패 알림
+- `실패 URL 매칭 불가` 보류 알림은 파일 hash 기준 1회만 발송 (동일 파일 반복 알림 방지)
+- 상태 파일(`fallback-processed.tsv`, `fallback-unmatched-notified.tsv`, `fallback-notify-state.tsv`)은 실행 시 GC된다.
+  기본 보존값: `*_STATE_RETENTION_DAYS=30`, `NOTIFY_STATE_RETENTION_SEC=86400`
 
 점검 명령어:
 
