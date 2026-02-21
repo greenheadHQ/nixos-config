@@ -155,6 +155,38 @@
       };
     };
 
+    karakeepLogMonitor = {
+      enable = lib.mkEnableOption "Karakeep log monitor (OOM/failure Pushover alerts)";
+      queueFile = lib.mkOption {
+        type = lib.types.str;
+        default = "/var/lib/karakeep-log-monitor/failed-urls.queue";
+        description = "Shared failed URL queue file used by karakeep-log-monitor and karakeep-fallback-sync";
+      };
+    };
+
+    karakeepFallbackSync = {
+      enable = lib.mkEnableOption "Karakeep archive-fallback auto relink sync";
+      syncInterval = lib.mkOption {
+        type = lib.types.str;
+        default = "1m";
+        description = "OnUnitActiveSec interval for fallback sync service";
+      };
+    };
+
+    karakeepSinglefileBridge = {
+      enable = lib.mkEnableOption "Karakeep SingleFile size-guard bridge";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 3010;
+        description = "Local port for Karakeep SingleFile bridge";
+      };
+      maxAssetSizeMb = lib.mkOption {
+        type = lib.types.int;
+        default = 50;
+        description = "Max SingleFile asset size in MB before fallback mode";
+      };
+    };
+
     reverseProxy = {
       enable = lib.mkEnableOption "Caddy reverse proxy with HTTPS for homeserver services";
     };
@@ -183,6 +215,9 @@
     ../programs/docker/karakeep.nix # Karakeep 웹 아카이버/북마크 관리 (3컨테이너)
     ../programs/docker/karakeep-backup.nix # Karakeep SQLite 매일 백업
     ../programs/docker/karakeep-notify.nix # Karakeep 웹훅→Pushover 브리지
+    ../programs/docker/karakeep-log-monitor.nix # Karakeep 로그 감시 (OOM/실패 알림)
+    ../programs/docker/karakeep-fallback-sync.nix # Karakeep fallback HTML 자동 재연결
+    ../programs/docker/karakeep-singlefile-bridge.nix # Karakeep SingleFile 대용량 분기 브리지
     ../programs/karakeep-update # Karakeep 버전 체크 + 업데이트 알림
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)

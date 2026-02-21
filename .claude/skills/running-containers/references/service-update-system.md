@@ -93,8 +93,12 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 - **현재 버전 확인**: 이미지에 버전 레이블 없음 → GitHub latest만 추적
 - **알림 형태**: "v0.x.y 출시됨"
 - **업데이트**: 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
+- **실행 명령**: `sudo karakeep-update --ack-bridge-risk` (`--ack-bridge-risk` 없이 실행 불가)
 - **ERR trap 복구**: 실패 시 컨테이너 자동 재시작
 - **Tailscale 불필요**: localhost + 인터넷만 사용
+- **⚠️ 업데이트 후 필수 확인**: `karakeep-log-monitor` 서비스가 의존하는 로그 패턴 검증 필요 — `hosting-karakeep` 스킬의 "업데이트 시 주의사항" 섹션 참조. 로그 형식 변경 시 모니터 regex 수정 + 서비스 재시작 필요.
+- **⚠️ fallback 자동 재연결 점검**: `karakeep-fallback-sync`가 URL 추출/매칭을 사용하므로, 업데이트 후 `journalctl -u karakeep-fallback-sync`로 재연결 성공/보류 로그 확인 필요.
+- **⚠️ SingleFile 대용량 분기 점검**: `karakeep-singlefile-bridge`가 `/api/v1/bookmarks/singlefile`를 우회 처리하므로, 업데이트 후 `systemctl status karakeep-singlefile-bridge` 및 `journalctl -u karakeep-singlefile-bridge` 확인 필요.
 
 ## 타이머 분산
 

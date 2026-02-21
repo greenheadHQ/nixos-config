@@ -3,10 +3,6 @@
 # 이미지 pull → digest 비교 → 컨테이너 재시작 → 헬스체크 → 결과 알림
 set -euo pipefail
 
-# 동시 실행 방지 (flock)
-exec 200>"$STATE_DIR/.lock"
-flock -n 200 || { echo "ERROR: Another karakeep-update is already running"; exit 1; }
-
 # 환경변수 (래퍼에서 주입)
 : "${PUSHOVER_CRED_FILE:?PUSHOVER_CRED_FILE is required}"
 : "${SERVICE_LIB:?SERVICE_LIB is required}"
@@ -26,9 +22,78 @@ source "$SERVICE_LIB"
 # shellcheck disable=SC1090
 source "$PUSHOVER_CRED_FILE"
 
+usage() {
+  cat <<'EOF'
+Usage: karakeep-update [--dry-run] [--ack-bridge-risk]
+
+  --dry-run            수행 예정 단계만 출력
+  --ack-bridge-risk    Karakeep 내부 동작/로그 형식 변경 시 브릿지 장애 위험을 인지하고 실행
+EOF
+}
+
+print_bridge_risk_notice() {
+  cat >&2 <<'EOF'
+[Bridge Guardrail Notice]
+Karakeep 업데이트는 아래 브릿지 체인을 깨뜨릴 수 있습니다.
+  1) karakeep-log-monitor (로그 패턴 기반 실패 URL 추적)
+  2) karakeep-fallback-sync (실패 URL 매칭 후 자동 재연결)
+  3) karakeep-singlefile-bridge (fullPageArchive 직접 연결)
+
+업데이트 후 필수 점검:
+  - systemctl status karakeep-log-monitor karakeep-fallback-sync.timer karakeep-singlefile-bridge --no-pager
+  - journalctl -u karakeep-log-monitor -n 50 --no-pager
+  - journalctl -u karakeep-fallback-sync -n 50 --no-pager
+  - journalctl -u karakeep-singlefile-bridge -n 50 --no-pager
+EOF
+}
+
+check_bridge_guard_services() {
+  local unit failed
+  failed=0
+  for unit in karakeep-log-monitor.service karakeep-fallback-sync.timer karakeep-singlefile-bridge.service; do
+    if systemctl is-enabled --quiet "$unit" 2>/dev/null && ! systemctl is-active --quiet "$unit"; then
+      echo "WARNING: $unit is enabled but not active"
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
 DRY_RUN=false
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=true
+ACK_BRIDGE_RISK=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      ;;
+    --ack-bridge-risk)
+      ACK_BRIDGE_RISK=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: Unknown option: $1"
+      usage
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if ! $DRY_RUN && ! $ACK_BRIDGE_RISK; then
+  print_bridge_risk_notice
+  echo "ERROR: karakeep-update requires --ack-bridge-risk"
+  echo "Example: sudo karakeep-update --ack-bridge-risk"
+  exit 2
+fi
+
+# 동시 실행 방지 (flock)
+exec 200>"$STATE_DIR/.lock"
+flock -n 200 || { echo "ERROR: Another karakeep-update is already running"; exit 1; }
+
+if $DRY_RUN; then
   echo "=== DRY RUN MODE ==="
 fi
 
@@ -64,9 +129,11 @@ if $DRY_RUN; then
   echo "  3. Stop $SERVICE_UNIT"
   echo "  4. Start $SERVICE_UNIT"
   echo "  5. Health check ($HEALTH_URL/api/health)"
-  echo "  6. Notify via Pushover"
+  echo "  6. Bridge guardrail service status check"
+  echo "  7. Notify via Pushover"
   echo ""
   echo "Run without --dry-run to execute."
+  echo "Real run command: sudo karakeep-update --ack-bridge-risk"
   exit 0
 fi
 
@@ -110,5 +177,15 @@ else
   VERSION_INFO="최신 이미지로"
 fi
 
+print_bridge_risk_notice
+BRIDGE_GUARD_WARN=false
+if ! check_bridge_guard_services; then
+  BRIDGE_GUARD_WARN=true
+fi
+
 echo "=== Update completed successfully ==="
-send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 완료: ${VERSION_INFO} 업데이트됨" 0
+if $BRIDGE_GUARD_WARN; then
+  send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 완료(주의): ${VERSION_INFO} 업데이트됨. bridge 연계 서비스 상태 확인 필요" 0
+else
+  send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 완료: ${VERSION_INFO} 업데이트됨" 0
+fi

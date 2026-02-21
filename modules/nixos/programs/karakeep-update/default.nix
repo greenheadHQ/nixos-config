@@ -1,7 +1,8 @@
 # modules/nixos/programs/karakeep-update/default.nix
 # Karakeep 버전 체크 (자동) 및 업데이트 (수동) 자동화
 # - 매일 GitHub Releases API로 최신 버전 확인 → Pushover 알림
-# - sudo karakeep-update 명령으로 안전한 업데이트 (pull → 재시작 → 헬스체크)
+# - sudo karakeep-update --ack-bridge-risk 명령으로 안전한 업데이트
+#   (pull → 재시작 → 헬스체크 + bridge 연계 점검 안내)
 import ../../lib/mk-update-module.nix {
   serviceName = "karakeep";
   serviceDisplayName = "Karakeep";

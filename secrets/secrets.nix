@@ -53,7 +53,7 @@ in
   "karakeep-nextauth-secret.age".publicKeys = minipcOnly;
   "karakeep-meili-master-key.age".publicKeys = minipcOnly;
   "karakeep-openai-key.age".publicKeys = allHosts;
-  "pushover-karakeep.age".publicKeys = minipcOnly;
+  "pushover-karakeep.age".publicKeys = allHosts;
 
   # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
   "pushover-system-monitor.age".publicKeys = minipcOnly;

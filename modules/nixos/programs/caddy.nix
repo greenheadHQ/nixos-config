@@ -11,6 +11,7 @@
 
 let
   cfg = config.homeserver.reverseProxy;
+  singlefileBridgeCfg = config.homeserver.karakeepSinglefileBridge;
   inherit (constants.network) minipcTailscaleIP;
   inherit (constants.domain) base subdomains;
 
@@ -111,7 +112,24 @@ in
           # ref: https://github.com/karakeep-app/karakeep/issues/1977
           header -Content-Security-Policy
           header -Content-Security-Policy-Report-Only
-          reverse_proxy localhost:${toString constants.network.ports.karakeep}
+          ${
+            if singlefileBridgeCfg.enable then
+              ''
+                route {
+                  @singlefile path /api/v1/bookmarks/singlefile*
+                  handle @singlefile {
+                    reverse_proxy localhost:${toString singlefileBridgeCfg.port}
+                  }
+                  handle {
+                    reverse_proxy localhost:${toString constants.network.ports.karakeep}
+                  }
+                }
+              ''
+            else
+              ''
+                reverse_proxy localhost:${toString constants.network.ports.karakeep}
+              ''
+          }
         '';
       };
     };
