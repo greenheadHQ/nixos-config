@@ -97,8 +97,8 @@
     };
     karakeep = {
       app = {
-        memory = "3g";
-        memorySwap = "4g";
+        memory = "2g";
+        memorySwap = "3g";
         cpus = "1";
       };
       chrome = {
