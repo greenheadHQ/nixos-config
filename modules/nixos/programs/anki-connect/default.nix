@@ -53,6 +53,8 @@ in
 
       environment = {
         QT_QPA_PLATFORM = "offscreen";
+        # QtWebEngine은 GPU 없는 headless 환경에서 EGL 초기화 실패로 abort됨
+        QTWEBENGINE_CHROMIUM_FLAGS = "--disable-gpu";
         HOME = "/var/lib/anki";
         XDG_DATA_HOME = "/var/lib/anki/.local/share";
         XDG_CONFIG_HOME = "/var/lib/anki/.config";
@@ -70,11 +72,33 @@ in
           (
             "+"
             + pkgs.writeShellScript "anki-ensure-profile" ''
-              profile_dir="/var/lib/anki/.local/share/Anki2/${cfg.profile}"
-              if [ ! -d "$profile_dir" ]; then
-                mkdir -p "$profile_dir"
-                chown -R anki:anki /var/lib/anki/.local/share/Anki2
-              fi
+                            ANKI2_DIR="/var/lib/anki/.local/share/Anki2"
+                            PROFILE_DIR="$ANKI2_DIR/${cfg.profile}"
+                            PREFS_DB="$ANKI2_DIR/prefs21.db"
+
+                            # 프로필 디렉터리 보장
+                            if [ ! -d "$PROFILE_DIR" ]; then
+                              mkdir -p "$PROFILE_DIR"
+                            fi
+
+                            # prefs21.db 초기화 (첫 부팅 시)
+                            # Anki 첫 실행 시 언어 선택 다이얼로그가 offscreen 모드에서 blocking되므로
+                            # _global + profile 엔트리를 미리 생성하여 firstTime=False로 우회
+                            if [ ! -f "$PREFS_DB" ]; then
+                              ${pkgs.python3}/bin/python3 -c "
+              import sqlite3, pickle, random, time
+              db = sqlite3.connect('$PREFS_DB')
+              db.execute('CREATE TABLE IF NOT EXISTS profiles (name TEXT PRIMARY KEY COLLATE NOCASE, data BLOB NOT NULL)')
+              meta = {'ver': 0, 'updates': True, 'created': int(time.time()), 'id': random.randrange(0, 2**63), 'lastMsg': 0, 'suppressUpdate': False, 'firstRun': False, 'defaultLang': 'en_US'}
+              db.execute('INSERT OR REPLACE INTO profiles VALUES (?, ?)', ('_global', pickle.dumps(meta)))
+              profile = {'mainWindowGeom': None, 'mainWindowState': None, 'numBackups': 50, 'lastOptimize': int(time.time()), 'searchHistory': [], 'syncKey': None, 'syncMedia': True, 'autoSync': True, 'allowHTML': False, 'importMode': 1, 'lastColour': '#00f', 'stripHTML': True, 'deleteMedia': False}
+              db.execute('INSERT OR REPLACE INTO profiles VALUES (?, ?)', ('${cfg.profile}', pickle.dumps(profile)))
+              db.commit()
+              db.close()
+              "
+                            fi
+
+                            chown -R anki:anki "$ANKI2_DIR"
             ''
           )
         ];
