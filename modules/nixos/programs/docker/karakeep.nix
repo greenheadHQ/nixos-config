@@ -156,6 +156,7 @@ in
         MAX_ASSET_SIZE_MB = "100";
         INFERENCE_LANG = "korean";
         INFERENCE_ENABLE_AUTO_SUMMARIZATION = "true";
+        NODE_OPTIONS = "--max-old-space-size=1536";
       }
       // lib.optionalAttrs notifyCfg.enable {
         # 사용자가 UI(Settings → Webhooks)에서 http://host.containers.internal:<port> 등록 시
