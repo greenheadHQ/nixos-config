@@ -204,15 +204,19 @@ in
 
                               if [ "$src_size" -gt 0 ] && [ "$dst_size" -lt "$min_collection_bytes" ]; then
                                 echo "anki-connect bootstrap: copy collection from sync server"
-                                ${pkgs.coreutils}/bin/cp "$SYNC_SERVER_COLLECTION" "$LOCAL_COLLECTION"
-
-                                if [ "${lib.boolToString syncCfg.bootstrapMedia}" = "true" ] && [ -d "$SYNC_SERVER_DIR/media" ]; then
-                                  ${pkgs.coreutils}/bin/mkdir -p "$PROFILE_DIR/collection.media"
-                                  ${pkgs.rsync}/bin/rsync -a --delete "$SYNC_SERVER_DIR/media/" "$PROFILE_DIR/collection.media/"
+                                if ${pkgs.coreutils}/bin/cp "$SYNC_SERVER_COLLECTION" "$LOCAL_COLLECTION"; then
+                                  if [ "${lib.boolToString syncCfg.bootstrapMedia}" = "true" ] && [ -d "$SYNC_SERVER_DIR/media" ]; then
+                                    ${pkgs.coreutils}/bin/mkdir -p "$PROFILE_DIR/collection.media"
+                                    ${pkgs.rsync}/bin/rsync -a --delete "$SYNC_SERVER_DIR/media/" "$PROFILE_DIR/collection.media/"
+                                  fi
+                                  ${pkgs.coreutils}/bin/touch "$BOOTSTRAP_MARKER"
+                                else
+                                  echo "anki-connect bootstrap: failed to copy collection from sync server" >&2
                                 fi
+                              elif [ "$dst_size" -ge "$min_collection_bytes" ]; then
+                                echo "anki-connect bootstrap: local collection already initialized, skipping"
+                                ${pkgs.coreutils}/bin/touch "$BOOTSTRAP_MARKER"
                               fi
-
-                              ${pkgs.coreutils}/bin/touch "$BOOTSTRAP_MARKER"
                             fi
 
                             ${pkgs.coreutils}/bin/chown -R anki:anki "$ANKI2_DIR"
