@@ -1,5 +1,15 @@
 # Anki 서비스 설치/설정 상세
 
+## 소프트웨어 버전 (2026-02 기준)
+
+| 컴포넌트 | 버전 | 비고 |
+|----------|------|------|
+| Anki | 25.09.2 | nixpkgs `pkgs.anki` |
+| AnkiConnect addon | 25.11.9.0 | `pkgs.ankiAddons.anki-connect` |
+| Qt | 6.10.1 | Anki 의존성 |
+| NixOS | 26.05 (unstable) | MiniPC 호스트 |
+| Python | 3.13.11 | Anki 런타임 |
+
 ## NixOS 모듈 옵션
 
 ### Anki Sync Server
@@ -38,8 +48,10 @@ ankiConnect = {
 **핵심 설계:**
 - `pkgs.anki.withAddons` + `withConfig`: 설정이 Nix store에 bake됨 (immutable)
 - `QT_QPA_PLATFORM=offscreen`: GUI 없이 Qt 오프스크린 렌더링
+- `QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu"`: GPU 없는 headless 환경에서 EGL abort 방지
 - 인증: Tailscale 네트워크 격리에 의존 (API key 불필요)
-- 프로필 자동 생성: `ExecStartPre`에서 디렉터리 보장 (offscreen 모드 profile picker 행 방지)
+- `prefs21.db` 사전 생성: `ExecStartPre`에서 Python/sqlite3/pickle로 `_global` + profile 엔트리 초기화 → offscreen 모드 `NoCloseDiag` 블로킹 방지
+- 프로필 자동 생성: `ExecStartPre`에서 디렉터리 + DB 보장
 
 ## 아키텍처 참고
 

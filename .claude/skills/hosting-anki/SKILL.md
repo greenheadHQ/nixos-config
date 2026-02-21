@@ -19,6 +19,8 @@ MiniPC에서 두 가지 Anki 서비스를 셀프호스팅합니다:
 
 두 서비스 모두 Tailscale VPN 내에서만 접근 가능합니다.
 
+**버전**: Anki 25.09.2 / AnkiConnect 25.11.9.0 / Qt 6.10.1 / NixOS 26.05
+
 ## 목적과 범위
 
 Anki 동기화 서버와 AnkiConnect API 서버의 배포, 접속, 백업, 장애 복구 절차를 다룬다.
@@ -122,9 +124,11 @@ homeserver.ankiConnect.profile = "server"; # Anki 프로필명
 4. **서비스 시작 실패**: `journalctl -u anki-sync-server.service`로 원인 확인
 
 ### AnkiConnect
-1. **API 무응답**: `systemctl status anki-connect` → Tailscale IP 대기 실패 가능
-2. **덱 목록 비어있음**: 프로필에 DB가 없음 → Anki에서 서버 프로필로 Sync 필요
-3. **재시작 루프**: `journalctl -u anki-connect -f` → 프로필 디렉터리 문제 확인
+1. **첫 부팅 무한 대기**: `prefs21.db` 없으면 `NoCloseDiag.exec()` 블로킹 → ExecStartPre에서 DB 사전 생성으로 해결됨
+2. **QtWebEngine SIGABRT**: GPU 없는 headless에서 EGL 실패 → `--disable-gpu` 플래그로 해결됨
+3. **API 무응답**: `systemctl status anki-connect` → Tailscale IP 대기 실패 가능
+4. **덱 목록 비어있음/Default만**: Sync Server → AnkiConnect 컬렉션 복사 필요 (일회성, 자동 동기화 미구현)
+5. **재시작 루프**: `journalctl -u anki-connect -f` → 좀비 프로세스 DB lock 또는 프로필 디렉터리 문제
 
 ## 레퍼런스
 
