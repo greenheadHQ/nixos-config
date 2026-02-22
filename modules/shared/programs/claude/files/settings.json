@@ -4,7 +4,8 @@
     "IS_DEMO": "true",
     "MAX_THINKING_TOKENS": "63999",
     "CLAUDE_CODE_ENABLE_UNIFIED_READ_TOOL": "true",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1"
   },
   "includeCoAuthoredBy": false,
   "permissions": {
@@ -14,7 +15,12 @@
       "Bash(rm -rf ~/*)",
       "Bash(rm -rf /*)"
     ],
-    "additionalDirectories": ["~/Downloads", "~/Documents", "~/Workspace"]
+    "additionalDirectories": [
+      "~/Desktop",
+      "~/Downloads",
+      "~/Documents",
+      "~/Workspace"
+    ]
   },
   "hooks": {
     "PreToolUse": [
