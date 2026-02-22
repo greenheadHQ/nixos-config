@@ -14,6 +14,9 @@ let
 
   # NixOS config (greenhead-minipc)
   nixosCfg = flake.nixosConfigurations.greenhead-minipc.config;
+  nixosOptions = flake.nixosConfigurations.greenhead-minipc.options;
+  ankiConfigApiMaxValueBytesDefault =
+    nixosOptions.homeserver.ankiConnect.configApi.maxValueBytes.default;
 
   # Darwin config 평가 테스트는 pre-push의 `nix flake check --all-systems`와
   # 100% 중복이므로 제거 (Opus 피드백). eval-tests는 네트워크 노출 경계에 집중.
@@ -308,6 +311,12 @@ let
 
   # tailscale 포트 (UDP)
   tailscalePort = nixosCfg.services.tailscale.port;
+  ankiConfigApi = nixosCfg.homeserver.ankiConnect.configApi;
+  ankiConfigApiHasPrefixes =
+    builtins.length ankiConfigApi.allowedKeyPrefixes > 0
+    && builtins.all (
+      prefix: builtins.match ".*[^[:space:]].*" prefix != null
+    ) ankiConfigApi.allowedKeyPrefixes;
 
   # ═══════════════════════════════════════════════════════════════
   # 테스트 실행
@@ -388,22 +397,34 @@ let
       cond = nixosCfg.services.openssh.openFirewall == false;
     }
     {
+      name = "Test 5c: ankiConnect.configApi.enable 기본값이 true이어야 함";
+      cond = ankiConfigApi.enable == true;
+    }
+    {
+      name = "Test 5d: ankiConnect.configApi.allowedKeyPrefixes는 비어있지 않고 공백-only 항목이 없어야 함";
+      cond = ankiConfigApiHasPrefixes;
+    }
+    {
+      name = "Test 5e: ankiConnect.configApi.maxValueBytes가 옵션 기본값과 일치해야 함";
+      cond = ankiConfigApi.maxValueBytes == ankiConfigApiMaxValueBytesDefault;
+    }
+    {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
-      name = "Test 5e: openssh PermitRootLogin이 'no'이어야 함";
+      name = "Test 5f: openssh PermitRootLogin이 'no'이어야 함";
       cond = nixosCfg.services.openssh.settings.PermitRootLogin == "no";
     }
     {
-      name = "Test 5f: openssh PasswordAuthentication이 false이어야 함 (공개키만 허용)";
+      name = "Test 5g: openssh PasswordAuthentication이 false이어야 함 (공개키만 허용)";
       cond = nixosCfg.services.openssh.settings.PasswordAuthentication == false;
     }
     {
       # Codex 피드백: vaultwarden 계정 생성 허용은 앱 레벨 보안 — Tailscale 경계와 독립
-      name = "Test 5g: vaultwarden SIGNUPS_ALLOWED가 'false'이어야 함 (계정 무단 생성 방지)";
+      name = "Test 5h: vaultwarden SIGNUPS_ALLOWED가 'false'이어야 함 (계정 무단 생성 방지)";
       cond = containers.vaultwarden.environment.SIGNUPS_ALLOWED == "false";
     }
     {
       # Opus 피드백: SIGNUPS_ALLOWED와 동일 보안 수준 — 계정 생성 경로 일관 차단
-      name = "Test 5g-2: vaultwarden INVITATIONS_ALLOWED가 'false'이어야 함 (초대 기반 계정 생성 방지)";
+      name = "Test 5h-2: vaultwarden INVITATIONS_ALLOWED가 'false'이어야 함 (초대 기반 계정 생성 방지)";
       cond = containers.vaultwarden.environment.INVITATIONS_ALLOWED == "false";
     }
     {

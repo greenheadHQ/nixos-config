@@ -14,6 +14,7 @@
 
 let
   cfg = config.homeserver.ankiConnect;
+  configApiCfg = cfg.configApi;
   syncCfg = cfg.sync;
   inherit (constants.network) minipcTailscaleIP;
 
@@ -86,10 +87,18 @@ let
         '';
       };
 
+  # Patch maintained against anki-connect 25.11.9.0 (nixpkgs addon package).
+  # If upstream addon source changes, verify patch context and run nix build gate.
+  ankiConnectAddon = pkgs.ankiAddons.anki-connect.overrideAttrs (oldAttrs: {
+    patches = (oldAttrs.patches or [ ]) ++ [ ./addons/anki-connect-config-actions.patch ];
+  });
+
   ankiWithConnect = pkgs.anki.withAddons (
     [
-      (pkgs.ankiAddons.anki-connect.withConfig {
+      (ankiConnectAddon.withConfig {
         config = {
+          # Keep key names in sync with constants in anki-connect-config-actions.patch:
+          # CONFIG_API_CONFIG_KEY_ENABLE / _ALLOWED_PREFIXES / _MAX_VALUE_BYTES
           webBindAddress = minipcTailscaleIP;
           webBindPort = cfg.port;
           webCorsOriginList = [
@@ -98,6 +107,9 @@ let
             "http://localhost:5173"
             "http://${minipcTailscaleIP}"
           ];
+          configApiEnable = configApiCfg.enable;
+          configApiAllowedKeyPrefixes = configApiCfg.allowedKeyPrefixes;
+          configApiMaxValueBytes = configApiCfg.maxValueBytes;
         };
       })
     ]

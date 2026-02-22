@@ -15,7 +15,7 @@ MiniPC에서 두 가지 Anki 서비스를 셀프호스팅합니다:
 | 서비스 | 프로토콜 | 용도 | 포트 |
 |--------|----------|------|------|
 | Anki Sync Server | Anki sync protocol | 카드 DB 동기화 (클라이언트 ↔ 서버) | 27701 |
-| AnkiConnect | HTTP JSON API | 카드 CRUD, 덱 조회 (awesome-anki 웹앱) | 8765 |
+| AnkiConnect | HTTP JSON API | 카드 CRUD, 덱 조회, 원격 config API (`getConfig`/`setConfig`) | 8765 |
 
 두 서비스 모두 Tailscale VPN 내에서만 접근 가능합니다.
 
@@ -45,6 +45,7 @@ Anki 동기화 서버와 AnkiConnect API 서버의 배포, 접속, 백업, 장�
 | `modules/nixos/options/homeserver.nix` | `ankiConnect` mkOption 정의 |
 | `modules/nixos/programs/anki-connect/default.nix` | Headless Anki + AnkiConnect 서비스 |
 | `modules/nixos/programs/anki-connect/sync.nix` | 자동 동기화 서비스/타이머 + 상태 파일 |
+| `modules/nixos/programs/anki-connect/addons/anki-connect-config-actions.patch` | AnkiConnect 커스텀 액션(`getConfig`, `setConfig`) 패치 |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
 | `libraries/constants.nix` | 포트 (`ankiConnect = 8765`) |
 
@@ -90,6 +91,12 @@ systemctl status anki-connect.service        # 상태 확인
 journalctl -u anki-connect.service -f        # 로그 실시간
 curl -s http://100.79.80.95:8765 -X POST \
   -d '{"action":"version","version":6}'      # API 응답 확인
+curl -s http://100.79.80.95:8765 -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"getConfig","version":6,"params":{"key":"awesomeAnki.prompts.system"}}'
+curl -s http://100.79.80.95:8765 -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"setConfig","version":6,"params":{"key":"awesomeAnki.prompts.system","val":{"revision":1,"systemPrompt":"hello"}}}'
 
 systemctl status anki-connect-sync.service    # 마지막 sync 실행 상태
 systemctl status anki-connect-sync.timer      # 주기 sync 타이머 상태
@@ -108,12 +115,24 @@ homeserver.ankiSync.port = 27701;       # 포트 (기본값은 constants.nix)
 homeserver.ankiConnect.enable = true;   # AnkiConnect API 활성화
 homeserver.ankiConnect.port = 8765;     # 포트 (기본값은 constants.nix)
 homeserver.ankiConnect.profile = "server"; # Anki 프로필명
+homeserver.ankiConnect.configApi = {
+  enable = true;
+  allowedKeyPrefixes = [ "awesomeAnki." ];
+  maxValueBytes = 65536;   # 64KB
+};
 homeserver.ankiConnect.sync = {
   enable = true;            # 자동 sync 활성화
   onStart = true;           # 서비스 시작 시 1회 sync
   interval = "5m";          # 주기 sync (OnUnitActiveSec)
 };
 ```
+
+### Config API 점검 절차 (배포 직후)
+
+1. `version` 응답 확인 (`error: null`)
+2. `getConfig` 미존재 key 조회 시 `result: null` 확인
+3. `setConfig` 저장 후 동일 key `getConfig` round-trip 확인
+4. 미허용 key(`other.prefix`) 저장 시 `config key is not allowed` 오류 확인
 
 ## 핵심 절차
 

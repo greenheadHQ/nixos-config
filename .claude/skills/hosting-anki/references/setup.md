@@ -42,6 +42,12 @@ ankiConnect = {
     default = "server";
     description = "Anki profile name";
   };
+  configApi = {
+    enable = lib.mkOption { type = lib.types.bool; default = true; };
+    # nonEmptyPrefixList: 비어있는 리스트 불가 + 공백-only 항목 불가
+    allowedKeyPrefixes = lib.mkOption { type = nonEmptyPrefixList; default = [ "awesomeAnki." ]; };
+    maxValueBytes = lib.mkOption { type = lib.types.ints.positive; default = 65536; };
+  };
   sync = {
     enable = lib.mkOption { type = lib.types.bool; default = true; };
     onStart = lib.mkOption { type = lib.types.bool; default = true; };
@@ -58,6 +64,10 @@ ankiConnect = {
 - `prefs21.db` 사전 생성: `ExecStartPre`에서 Python/sqlite3/pickle로 `_global` + profile 엔트리 초기화 → offscreen 모드 `NoCloseDiag` 블로킹 방지
 - 프로필 자동 생성: `ExecStartPre`에서 디렉터리 + DB 보장
 - sync 설정 addon: profile open 시 custom sync URL/username 적용 + sync key 자동 초기화
+- AnkiConnect 커스텀 액션: `getConfig(key)`, `setConfig(key,val)` 제공
+- key allowlist: 기본 `awesomeAnki.` prefix만 허용
+- 값 크기 제한: UTF-8 JSON 직렬화 기준 64KB
+- 로그 민감값 보호: `getConfig/setConfig` 요청/응답의 값(`params.val`, `result`)은 redaction 처리
 - 자동 동기화: `anki-connect-sync.service` + `anki-connect-sync.timer` (onStart + 5분 주기)
 - 상태 파일: `/var/lib/anki/sync-status.json` (마지막 시도/성공/에러 기록)
 
@@ -136,3 +146,16 @@ AnkiWeb 계정은 백업으로 유지 가능 (동기화만 중단됨).
 | 미디어 파일 수 | 1,229 |
 | 덱 수 | 15 |
 | 태그 수 | 22 |
+
+## Config API 배포 검증 (필수)
+
+1. 옵션/정적 검증:
+   - `nix eval --impure --file tests/eval-tests.nix`
+2. 빌드 검증:
+   - `nix build .#nixosConfigurations.greenhead-minipc.config.system.build.toplevel`
+3. 배포 후 스모크:
+   - `version` 성공
+   - `getConfig` 미존재 key는 `result: null`
+   - `setConfig` 후 `getConfig` round-trip 일치
+4. 성능 수용 기준(64KB 정책):
+   - `sync` 수동 20회 기준 `P95 < 10s`, 실패율 `0%`

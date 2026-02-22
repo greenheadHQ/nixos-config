@@ -44,6 +44,7 @@ Environment 섹션의 `Platform` 값으로 현재 실행 환경을 판별하세�
 | `modules/darwin/` | macOS 전용 설정 |
 | `modules/nixos/` | NixOS 전용 설정 |
 | `modules/nixos/options/homeserver.nix` | 홈서버 mkOption 정의 (immich, immichBackup, uptime-kuma, anki-sync, anki-connect, copyparty, vaultwarden, karakeep, devProxy) |
+| `modules/nixos/programs/anki-connect/addons/anki-connect-config-actions.patch` | AnkiConnect 커스텀 config API 액션(`getConfig`, `setConfig`) 패치 |
 | `modules/shared/` | 공유 설정 |
 | `scripts/` | 자동화 스크립트 (add-host, pre-rebuild-check, update-input) |
 

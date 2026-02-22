@@ -1,0 +1,193 @@
+--- a/__init__.py
++++ b/__init__.py
+@@ -58,6 +58,27 @@
+ from . import web, util
+ 
+ 
++CONFIG_API_REDACTED_ACTIONS = {'getConfig', 'setConfig'}
++CONFIG_API_REDACTED_VALUE = '<redacted>'
++CONFIG_API_MISSING = object()
++
++# These keys are the Nix<->Python config contract.
++# Keep in sync with modules/nixos/programs/anki-connect/default.nix.
++CONFIG_API_CONFIG_KEY_ENABLE = 'configApiEnable'
++CONFIG_API_CONFIG_KEY_ALLOWED_PREFIXES = 'configApiAllowedKeyPrefixes'
++CONFIG_API_CONFIG_KEY_MAX_VALUE_BYTES = 'configApiMaxValueBytes'
++
++CONFIG_API_DEFAULT_ALLOWED_PREFIXES = ['awesomeAnki.']
++CONFIG_API_DEFAULT_MAX_VALUE_BYTES = 65536
++
++ERR_CONFIG_API_DISABLED = 'config API is disabled'
++ERR_CONFIG_API_INVALID_SETTINGS = 'config API settings are invalid'
++ERR_INVALID_KEY = 'invalid config key'
++ERR_KEY_NOT_ALLOWED = 'config key is not allowed'
++ERR_INVALID_VALUE = 'invalid config value'
++ERR_VALUE_TOO_LARGE = 'config value exceeds size limit'
++
++
+ #
+ # AnkiConnect
+ #
+@@ -104,9 +125,12 @@
+ 
+ 
+     def handler(self, request):
+-        self.logEvent('request', request)
+-
+         name = request.get('action', '')
++        request_for_log = request
++        if name in CONFIG_API_REDACTED_ACTIONS:
++            request_for_log = self.redactRequestForLog(request)
++        self.logEvent('request', request_for_log)
++
+         version = request.get('version', 4)
+         params = request.get('params', {})
+         key = request.get('key')
+@@ -137,13 +161,26 @@
+             if method is None:
+                 raise Exception('unsupported action')
+ 
+-            api_return_value = methodInst(**params)
++            # Explicit parameter extraction prevents callers from injecting
++            # unexpected keyword arguments via **params.
++            if name == 'getConfig':
++                key_param = params.get('key') if isinstance(params, dict) else None
++                api_return_value = method(key=key_param)
++            elif name == 'setConfig':
++                key_param = params.get('key') if isinstance(params, dict) else None
++                val_param = params['val'] if isinstance(params, dict) and 'val' in params else CONFIG_API_MISSING
++                api_return_value = method(key=key_param, val=val_param)
++            else:
++                api_return_value = method(**params)
+             reply = format_success_reply(version, api_return_value)
+ 
+         except Exception as e:
+             reply = format_exception_reply(version, e)
+ 
+-        self.logEvent('reply', reply)
++        reply_for_log = reply
++        if name in CONFIG_API_REDACTED_ACTIONS:
++            reply_for_log = self.redactReplyForLog(reply)
++        self.logEvent('reply', reply_for_log)
+         return reply
+ 
+ 
+@@ -198,6 +235,95 @@
+ 
+         return media
+ 
++    def getConfigApiSettings(self):
++        config = self.window().addonManager.getConfig(__name__)
++        if not isinstance(config, dict):
++            raise Exception(ERR_CONFIG_API_INVALID_SETTINGS)
++
++        # Fail closed if the config key is missing due contract drift.
++        enabled = config.get(CONFIG_API_CONFIG_KEY_ENABLE, False)
++        if not isinstance(enabled, bool):
++            raise Exception(ERR_CONFIG_API_INVALID_SETTINGS)
++
++        prefixes = config.get(CONFIG_API_CONFIG_KEY_ALLOWED_PREFIXES, CONFIG_API_DEFAULT_ALLOWED_PREFIXES)
++        if not isinstance(prefixes, list) or len(prefixes) == 0:
++            raise Exception(ERR_CONFIG_API_INVALID_SETTINGS)
++
++        normalized_prefixes = []
++        for prefix in prefixes:
++            if not isinstance(prefix, str):
++                raise Exception(ERR_CONFIG_API_INVALID_SETTINGS)
++
++            normalized_prefix = prefix.strip()
++            if not normalized_prefix:
++                raise Exception(ERR_CONFIG_API_INVALID_SETTINGS)
++
++            normalized_prefixes.append(normalized_prefix)
++
++        max_value_bytes = config.get(CONFIG_API_CONFIG_KEY_MAX_VALUE_BYTES, CONFIG_API_DEFAULT_MAX_VALUE_BYTES)
++        if isinstance(max_value_bytes, bool) or not isinstance(max_value_bytes, int) or max_value_bytes <= 0:
++            raise Exception(ERR_CONFIG_API_INVALID_SETTINGS)
++
++        return enabled, normalized_prefixes, max_value_bytes
++
++    def requireConfigApiEnabled(self, settings):
++        enabled, _, _ = settings
++        if not enabled:
++            raise Exception(ERR_CONFIG_API_DISABLED)
++
++    def validateConfigKey(self, key, settings):
++        _, allowed_prefixes, _ = settings
++        if not isinstance(key, str):
++            raise Exception(ERR_INVALID_KEY)
++
++        normalized_key = key.strip()
++        if not normalized_key:
++            raise Exception(ERR_INVALID_KEY)
++
++        if not any(normalized_key.startswith(prefix) for prefix in allowed_prefixes):
++            raise Exception(ERR_KEY_NOT_ALLOWED)
++
++        return normalized_key
++
++    def validateConfigValue(self, val, settings):
++        _, _, max_value_bytes = settings
++        if val is CONFIG_API_MISSING:
++            raise Exception(ERR_INVALID_VALUE)
++
++        try:
++            encoded = json.dumps(val, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
++        except (TypeError, ValueError, OverflowError):
++            raise Exception(ERR_INVALID_VALUE)
++
++        if len(encoded) > max_value_bytes:
++            raise Exception(ERR_VALUE_TOO_LARGE)
++
++    def redactRequestForLog(self, request):
++        if not isinstance(request, dict):
++            return request
++
++        redacted_request = dict(request)
++        params = redacted_request.get('params')
++        if isinstance(params, dict):
++            redacted_params = dict(params)
++            if 'val' in redacted_params:
++                redacted_params['val'] = CONFIG_API_REDACTED_VALUE
++            redacted_request['params'] = redacted_params
++        elif 'params' in redacted_request:
++            redacted_request['params'] = CONFIG_API_REDACTED_VALUE
++
++        return redacted_request
++
++    def redactReplyForLog(self, reply):
++        if not isinstance(reply, dict):
++            return reply
++
++        redacted_reply = dict(reply)
++        if redacted_reply.get('result') is not None:
++            redacted_reply['result'] = CONFIG_API_REDACTED_VALUE
++
++        return redacted_reply
++
+ 
+     def getModel(self, modelName):
+         model = self.collection().models.by_name(modelName)
+@@ -471,6 +597,22 @@
+         return self.window().pm.name
+ 
+     @util.api()
++    def getConfig(self, key):
++        settings = self.getConfigApiSettings()
++        self.requireConfigApiEnabled(settings)
++        normalized_key = self.validateConfigKey(key, settings)
++        return self.collection().get_config(normalized_key, None)
++
++    @util.api()
++    def setConfig(self, key, val=CONFIG_API_MISSING):
++        settings = self.getConfigApiSettings()
++        self.requireConfigApiEnabled(settings)
++        normalized_key = self.validateConfigKey(key, settings)
++        self.validateConfigValue(val, settings)
++        self.collection().set_config(normalized_key, val, undoable=False)
++        return None
++
++    @util.api()
+     def loadProfile(self, name):
+         if name not in self.window().pm.profiles():
+             return False
