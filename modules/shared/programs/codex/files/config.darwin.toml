@@ -14,3 +14,7 @@ hide_full_access_warning = true
 multi_agent = true
 apps = true
 prevent_idle_sleep = true
+
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@latest", "--autoConnect", "--channel=stable", "--no-usage-statistics"]

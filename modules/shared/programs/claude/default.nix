@@ -12,6 +12,8 @@ let
   claudeDir = ./files;
   # mkOutOfStoreSymlink용 절대 경로 (양방향 수정 가능)
   claudeFilesPath = "${nixosConfigPath}/modules/shared/programs/claude/files";
+  # macOS에서는 chrome-devtools-mcp를 user-scope MCP로 사용, NixOS는 빈 설정 유지
+  claudeMcpFile = if pkgs.stdenv.isDarwin then "mcp.darwin.json" else "mcp.json";
 in
 {
   # Worktree 심링크 정리: .wt/ 아래 Claude 관리 경로(files/*)를 가리키는 stale 심링크 제거
@@ -52,7 +54,10 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/settings.json";
 
     # MCP 설정 - 양방향 수정 가능
-    ".claude/mcp.json".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/mcp.json";
+    # 주의: macOS에서 claude-in-chrome(--chrome)와 chrome-devtools-mcp(CDP)를 동시에 쓰면
+    # 동일 탭 제어가 경합할 수 있다. 디버깅/자동화 용도를 분리해 사용한다.
+    ".claude/mcp.json".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/${claudeMcpFile}";
 
     # User-scope 지침 - 양방향 수정 가능
     ".claude/CLAUDE.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";

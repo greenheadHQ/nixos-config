@@ -24,6 +24,7 @@ Codex CLI 호환 구조(`.agents/`, `.codex/`)로 프로젝션한다.
 | 전체 동기화 | `bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"` |
 | 로컬 스킬만 | `bash "$SYNC_SH" project-skills "$PWD" .claude/skills` |
 | MCP 섹션만 | `bash "$SYNC_SH" mcp-config "$PWD"` |
+| User-scope MCP 투영 | `bash "$SYNC_SH" mcp-config "$PWD" --user-mcp="$HOME/.claude/mcp.json"` |
 | .gitignore 점검 | `bash "$SYNC_SH" gitignore-check "$PWD"` |
 
 `sync.sh` 스크립트 경로: 현재 SKILL.md가 위치한 디렉토리의 `references/sync.sh`를 사용하라.
@@ -125,6 +126,9 @@ ARGS=()
 # PLUGIN_NAME: plugin-key에서 @ 앞부분 (e.g. "example-front")
 ARGS+=(--plugin-install-path="$INSTALL_PATH:$PLUGIN_NAME")
 
+# user-scope MCP까지 함께 투영하고 싶을 때 (선택)
+ARGS+=(--user-mcp="$HOME/.claude/mcp.json")
+
 # 프로젝트에 CLAUDE.md가 없고, 플러그인이 CLAUDE.md를 제공하는 경우
 [ ! -e "CLAUDE.md" ] && [ -f "$INSTALL_PATH/CLAUDE.md" ] && \
   ARGS+=(--plugin-claude-md="$INSTALL_PATH/CLAUDE.md")
@@ -156,6 +160,25 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 `AGENTS.md`와 `AGENTS.override.md`가 누락으로 보고되면 사용자에게 프로젝트 `.gitignore`에 추가를 제안한다.
 **자동으로 수정하지 않는다.**
 
+### User-scope MCP 투영 (Claude -> Codex)
+
+`mcp-config`는 프로젝트 스코프 외에 user-scope 변환도 지원한다.
+
+```bash
+# ~/.claude/mcp.json -> ~/.codex/config.toml
+bash "$SYNC_SH" mcp-config "$PWD" \
+  --user-mcp="$HOME/.claude/mcp.json"
+
+# target 경로를 명시적으로 지정할 수도 있음
+bash "$SYNC_SH" mcp-config "$PWD" \
+  --user-mcp="$HOME/.claude/mcp.json" \
+  --user-codex-config="$HOME/.codex/config.toml"
+```
+
+포맷 호환:
+- Claude user-scope 형식: `{"mcpServers": {...}}`
+- 레거시 형식: `{ "server-name": {...} }`
+
 ### 개별 서브커맨드 (필요시)
 
 `all` 대신 개별 단계를 실행할 수도 있다:
@@ -168,7 +191,7 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 | `agents` | 에이전트 파일 복사 |
 | `agents-md` | AGENTS.md 생성 (심링크/복사) |
 | `agents-override` | AGENTS.override.md 생성 (마커 기반) |
-| `mcp-config` | .codex/config.toml MCP 섹션 생성 |
+| `mcp-config` | 프로젝트/유저 대상 config.toml MCP 섹션 생성 |
 | `gitignore-check` | .gitignore 누락 확인 |
 
 상세 사용법은 `sync.sh` 상단 Usage 참조.
@@ -184,6 +207,7 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 | 스킬 이름 충돌 (로컬 vs 플러그인) | 플러그인 스킬에 `{plugin-name}--` 접두사 |
 | AGENTS.override.md 사용자 커스텀 보존 | 마커 외부 내용 유지 |
 | `.codex/config.toml` 기존 설정 보존 | `[mcp_servers.*]` 섹션만 교체 |
+| `~/.claude/mcp.json` 형식 차이 | `mcpServers` 래퍼 유무 모두 허용 |
 | Worktree 경로 | `$PWD`로 매칭 |
 
 ## 트러블슈팅
@@ -191,6 +215,7 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 - `installPath` 해석 실패 시 플러그인 캐시 경로 존재 여부를 먼저 확인한다.
 - 동기화 후 스킬이 안 보이면 `.agents/skills/<name>`이 디렉토리 심링크인지 확인한다.
 - `.gitignore` 경고는 자동수정하지 않고 누락 항목을 수동 반영한다.
+- `chrome-devtools-mcp` 사용 시 `claude --chrome`(claude-in-chrome)와 동일 탭 동시 제어를 피한다.
 
 ## 참조 문서
 

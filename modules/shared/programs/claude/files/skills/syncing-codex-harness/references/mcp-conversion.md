@@ -1,8 +1,8 @@
-# MCP Conversion: .mcp.json -> .codex/config.toml
+# MCP Conversion: Claude MCP JSON -> Codex config.toml
 
 ## Overview
 
-Claude Code uses `.mcp.json` (JSON) for MCP server configuration.
+Claude Code uses `.mcp.json` or `~/.claude/mcp.json` (JSON) for MCP server configuration.
 Codex CLI uses `.codex/config.toml` with `[mcp_servers.*]` sections (TOML).
 
 Reference: https://developers.openai.com/codex/mcp/
@@ -17,15 +17,21 @@ No `${CLAUDE_PLUGIN_ROOT}` substitution needed. Paths are already absolute or re
 
 `${CLAUDE_PLUGIN_ROOT}` must be replaced with the plugin's `installPath` absolute path.
 
+### 3. User-scope `~/.claude/mcp.json`
+
+No `${CLAUDE_PLUGIN_ROOT}` substitution needed. Convert all servers inside the `mcpServers` wrapper object.
+
 ## Conversion Rules
 
 ### stdio type (command + args)
 
 ```json
 {
-  "server-name": {
-    "command": "node",
-    "args": ["path/to/index.js", "--flag"]
+  "mcpServers": {
+    "server-name": {
+      "command": "node",
+      "args": ["path/to/index.js", "--flag"]
+    }
   }
 }
 ```
@@ -92,9 +98,12 @@ Example:
 
 ## Output File
 
-Write to `.codex/config.toml`:
-- If file exists: replace only `[mcp_servers.*]` sections, preserve other settings
-- If file doesn't exist: create with MCP sections only
+Write target:
+- project-scope: `.codex/config.toml`
+- user-scope: `~/.codex/config.toml` (or the path specified via `--user-codex-config`)
+
+If file exists: replace only `[mcp_servers.*]` sections, preserve other settings.
+If file doesn't exist: create with MCP sections only.
 
 ## TOML Encoding
 
@@ -134,5 +143,7 @@ def replace_mcp_sections(existing_toml: str, new_mcp_toml: str) -> str:
 
 ## Merging Multiple Sources
 
-When both project and plugin MCP configs exist, merge all servers into a single `.codex/config.toml`.
+When both project and plugin MCP configs exist, merge all servers into a single target config.
 If server names conflict, prefix plugin servers with `{plugin-name}--`.
+
+User MCP (`--user-mcp`) is merged the same way and can target user config directly.

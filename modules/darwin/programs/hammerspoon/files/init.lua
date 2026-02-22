@@ -179,6 +179,59 @@ end
 hs.hotkey.bind({"ctrl", "alt", "cmd"}, "t", openGhosttyFromFinder)
 
 --------------------------------------------------------------------------------
+-- Chrome DevTools autoConnect 준비 (Ctrl + Option + Cmd + C)
+--------------------------------------------------------------------------------
+
+local homeDir = os.getenv("HOME") or ""
+local chromeDebugScript = homeDir .. "/.local/bin/ensure-chrome-autoconnect.sh"
+
+local function prepareChromeAutoConnect()
+    local mode = hs.fs.attributes(chromeDebugScript, "mode")
+    if not mode then
+        hs.notify.new({
+            title = "Chrome DevTools",
+            informativeText = "ensure-chrome-autoconnect.sh 없음, 일반 Chrome 실행"
+        }):send()
+        hs.application.launchOrFocus("Google Chrome")
+        return
+    end
+
+    local task = hs.task.new(chromeDebugScript, function(exitCode, _, stdErr)
+        if exitCode ~= 0 then
+            hs.notify.new({
+                title = "Chrome DevTools",
+                informativeText = "autoConnect 준비 실패, 로그를 확인하세요"
+            }):send()
+            if stdErr and stdErr ~= "" then
+                print("[chrome-debug] " .. stdErr)
+            end
+        end
+
+        hs.timer.doAfter(0.2, function()
+            hs.application.launchOrFocus("Google Chrome")
+        end)
+    end, {})
+
+    if task then
+        if not task:start() then
+            hs.notify.new({
+                title = "Chrome DevTools",
+                informativeText = "스크립트 시작 실패, 일반 Chrome 실행"
+            }):send()
+            hs.application.launchOrFocus("Google Chrome")
+        end
+    else
+        hs.notify.new({
+            title = "Chrome DevTools",
+            informativeText = "스크립트 실행 실패, 일반 Chrome 실행"
+        }):send()
+        hs.application.launchOrFocus("Google Chrome")
+    end
+end
+
+hs.hotkey.bind({"ctrl", "alt", "cmd"}, "c", prepareChromeAutoConnect)
+
+--------------------------------------------------------------------------------
 -- Atuin 동기화 상태 메뉴바
 --------------------------------------------------------------------------------
 

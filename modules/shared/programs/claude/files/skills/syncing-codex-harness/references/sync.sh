@@ -7,10 +7,10 @@
 #   sync.sh agents            <source-agents-dir> <target-agents-dir>
 #   sync.sh agents-md         <project-root> [plugin-claude-md-path]
 #   sync.sh agents-override   <project-root> [--plugin-install-path=PATH:NAME]...
-#   sync.sh mcp-config        <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]...
+#   sync.sh mcp-config        <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]... [--user-mcp=PATH] [--user-codex-config=PATH]
 #   sync.sh trust-project     <project-root>
 #   sync.sh gitignore-check   <project-root>
-#   sync.sh all               <project-root> [--local-skills-dir=DIR] [--plugin-install-path=PATH:NAME]... [--plugin-claude-md=PATH]
+#   sync.sh all               <project-root> [--local-skills-dir=DIR] [--plugin-install-path=PATH:NAME]... [--plugin-claude-md=PATH] [--user-mcp=PATH] [--user-codex-config=PATH]
 
 set -euo pipefail
 
@@ -96,7 +96,7 @@ project_skills() {
   # 상대경로 계산: target_dir(.agents/skills) → source_dir(.claude/skills)
   local project_root
   project_root="$(cd "$target_dir/../.." && pwd)"
-  local source_from_root="${source_dir#$project_root/}"
+  local source_from_root="${source_dir#"$project_root"/}"
 
   for source_skill_dir in "$source_dir"/*/; do
     [ -d "$source_skill_dir" ] || continue
@@ -344,7 +344,9 @@ OVERRIDE
   echo "$rule_count"
 }
 
-# ─── mcp-config: generate .codex/config.toml MCP sections ───
+# ─── mcp-config: generate MCP sections in target config.toml ───
+# default target: <project-root>/.codex/config.toml
+# user target (--user-mcp): $HOME/.codex/config.toml or --user-codex-config=PATH
 mcp_config() {
   local project_root="$1"
   shift
@@ -353,12 +355,22 @@ mcp_config() {
   # Collect MCP source args
   local project_mcp=""
   local plugin_mcps=()
+  local user_mcp=""
+  local user_codex_config=""
   for arg in "$@"; do
     case "$arg" in
       --project-mcp=*) project_mcp="${arg#--project-mcp=}" ;;
       --plugin-mcp=*)  plugin_mcps+=("${arg#--plugin-mcp=}") ;;
+      --user-mcp=*) user_mcp="${arg#--user-mcp=}" ;;
+      --user-codex-config=*) user_codex_config="${arg#--user-codex-config=}" ;;
     esac
   done
+
+  if [ -n "$user_mcp" ]; then
+    config_file="${user_codex_config:-${CODEX_HOME:-$HOME/.codex}/config.toml}"
+  elif [ -n "$user_codex_config" ]; then
+    config_file="$user_codex_config"
+  fi
 
   mkdir -p "$(dirname "$config_file")"
 
@@ -366,12 +378,14 @@ mcp_config() {
   local env_args=()
   env_args+=("CONFIG_FILE=$config_file")
   [ -n "$project_mcp" ] && env_args+=("PROJECT_MCP=$project_mcp")
+  [ -n "$user_mcp" ] && env_args+=("USER_MCP=$user_mcp")
   local idx=0
   for pm in "${plugin_mcps[@]}"; do
     env_args+=("PLUGIN_MCP_${idx}=$pm")
     idx=$((idx + 1))
   done
 
+  local mcp_toml
   mcp_toml="$(env "${env_args[@]}" python3 << 'PYEOF'
 import json, os, re, sys
 
@@ -390,9 +404,17 @@ def toml_key(name):
 
 def load_mcp(path, install_path=None):
     with open(path) as f:
-        servers = json.load(f)
+        payload = json.load(f)
+    if isinstance(payload, dict) and isinstance(payload.get('mcpServers'), dict):
+        servers = payload['mcpServers']
+    elif isinstance(payload, dict):
+        servers = payload
+    else:
+        return {}
     result = {}
     for name, cfg in servers.items():
+        if not isinstance(cfg, dict):
+            continue
         cfg_str = json.dumps(cfg)
         if install_path:
             cfg_str = cfg_str.replace('${CLAUDE_PLUGIN_ROOT}', install_path)
@@ -427,6 +449,11 @@ if project_mcp and os.path.isfile(project_mcp):
     for name, cfg in load_mcp(project_mcp).items():
         all_servers.append((name, cfg, ''))
 
+user_mcp = os.environ.get('USER_MCP', '')
+if user_mcp and os.path.isfile(user_mcp):
+    for name, cfg in load_mcp(user_mcp).items():
+        all_servers.append((name, cfg, ''))
+
 i = 0
 while True:
     pm = os.environ.get(f'PLUGIN_MCP_{i}', '')
@@ -446,8 +473,13 @@ for name, _, _ in all_servers:
     name_counts[name] = name_counts.get(name, 0) + 1
 
 toml_parts = []
+# final_name 충돌 시 마지막 소스를 우선 적용하여 TOML 중복 섹션을 방지
+resolved_servers = {}
 for name, cfg, prefix in all_servers:
     final_name = (prefix + '--' + name) if (name_counts[name] > 1 and prefix) else name
+    resolved_servers[final_name] = cfg
+
+for final_name, cfg in resolved_servers.items():
     toml_parts.append(server_to_toml(final_name, cfg))
 
 new_mcp = '\n'.join(toml_parts)
@@ -501,11 +533,15 @@ sync_all() {
   local local_skills_dir=""
   local plugin_args=()
   local plugin_claude_md=""
+  local user_mcp=""
+  local user_codex_config=""
   for arg in "$@"; do
     case "$arg" in
       --local-skills-dir=*)    local_skills_dir="${arg#--local-skills-dir=}" ;;
       --plugin-install-path=*) plugin_args+=("$arg") ;;
       --plugin-claude-md=*)    plugin_claude_md="${arg#--plugin-claude-md=}" ;;
+      --user-mcp=*) user_mcp="${arg#--user-mcp=}" ;;
+      --user-codex-config=*) user_codex_config="${arg#--user-codex-config=}" ;;
     esac
   done
 
@@ -569,10 +605,34 @@ sync_all() {
   if [ -f "$project_root/.mcp.json" ]; then
     project_mcp_arg="--project-mcp=$project_root/.mcp.json"
   fi
-  if [ -n "$project_mcp_arg" ] || [ ${#mcp_args[@]} -gt 0 ]; then
-    mcp_config "$project_root" $project_mcp_arg "${mcp_args[@]}"
-    echo "[6/8] MCP config updated" >&2
-  else
+
+  local project_mcp_args=()
+  [ -n "$project_mcp_arg" ] && project_mcp_args+=("$project_mcp_arg")
+  project_mcp_args+=("${mcp_args[@]}")
+
+  local did_mcp_update=0
+
+  # project-scope sources -> <project>/.codex/config.toml
+  if [ ${#project_mcp_args[@]} -gt 0 ]; then
+    mcp_config "$project_root" "${project_mcp_args[@]}"
+    echo "[6/8] MCP config updated (project)" >&2
+    did_mcp_update=1
+  fi
+
+  # user-scope source -> ~/.codex/config.toml (or --user-codex-config target)
+  if [ -n "$user_mcp" ]; then
+    local user_mcp_args=("--user-mcp=$user_mcp")
+    [ -n "$user_codex_config" ] && user_mcp_args+=("--user-codex-config=$user_codex_config")
+    mcp_config "$project_root" "${user_mcp_args[@]}"
+    if [ ${#project_mcp_args[@]} -gt 0 ]; then
+      echo "[6b/8] MCP config updated (user)" >&2
+    else
+      echo "[6/8] MCP config updated (user)" >&2
+    fi
+    did_mcp_update=1
+  fi
+
+  if [ "$did_mcp_update" -eq 0 ]; then
     echo "[6/8] MCP config: no sources found" >&2
   fi
 

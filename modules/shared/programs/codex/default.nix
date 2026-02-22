@@ -12,16 +12,36 @@
 
 let
   codexFilesPath = "${nixosConfigPath}/modules/shared/programs/codex/files";
+  codexConfigFile = if pkgs.stdenv.isDarwin then "config.darwin.toml" else "config.toml";
   # Claude 파일 경로 (공유 소스)
   claudeFilesPath = "${nixosConfigPath}/modules/shared/programs/claude/files";
 in
 {
+  # Worktree 심링크 정리: .wt/ 아래 codex/claude 관리 경로를 가리키는 stale 심링크 제거
+  # checkLinkTargets 전에 실행하여 "~/.codex/config.toml would be clobbered" 회귀 방지
+  home.activation.cleanStaleWorktreeSymlinksCodex = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+    for link in "$HOME/.codex/config.toml" "$HOME/.codex/AGENTS.md" "$HOME/.codex/skills/"*; do
+      if [ -L "$link" ]; then
+        target=$(readlink "$link")
+        case "$target" in
+          "${nixosConfigPath}/.wt/"*/modules/shared/programs/codex/files/*|\
+          "${nixosConfigPath}/.wt/"*/modules/shared/programs/claude/files/*)
+            $DRY_RUN_CMD rm "$link"
+            $VERBOSE_ECHO "Removed stale worktree symlink: $link -> $target"
+            ;;
+        esac
+      fi
+    done
+  '';
+
   # ─── 글로벌 설정 (~/.codex/) ───
 
   home.file = {
     # Codex config.toml - 양방향 수정 가능 (codex mcp add 등 반영)
     # ⚠️ trust 설정 포함 — 이것이 .agents/skills/ 발견의 전제조건
-    ".codex/config.toml".source = config.lib.file.mkOutOfStoreSymlink "${codexFilesPath}/config.toml";
+    # 주의: macOS는 chrome-devtools-mcp user-scope MCP를 포함한 별도 템플릿 사용
+    ".codex/config.toml".source =
+      config.lib.file.mkOutOfStoreSymlink "${codexFilesPath}/${codexConfigFile}";
 
     # 글로벌 AGENTS.md - Claude의 CLAUDE.md와 동일 소스 공유
     ".codex/AGENTS.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";

@@ -195,6 +195,8 @@ ssh greenhead@100.79.80.95  # 직접 IP
 
 ## 문서
 
+- Chrome DevTools MCP autoConnect 상세 가이드: `docs/CHROME_DEVTOOLS_MCP_AUTOCONNECT.md`
+
 상세 문서는 `.claude/skills/` 폴더에서 관리됩니다.
 Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니다.
 
