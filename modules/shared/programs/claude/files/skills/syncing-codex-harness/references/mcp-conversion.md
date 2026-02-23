@@ -131,14 +131,23 @@ Apply `toml_key()` to server names in section headers (e.g., `[mcp_servers.{toml
 
 ## Existing config.toml Preservation
 
-When `.codex/config.toml` already exists with non-MCP settings, only the `[mcp_servers.*]` sections should be replaced. Use Python regex to strip existing MCP sections, then append new ones:
+When `.codex/config.toml` already exists with non-MCP settings, only the `[mcp_servers.*]` sections should be replaced. Use line-by-line parsing to strip existing MCP sections, then append new ones:
 
 ```python
-import re
-
 def replace_mcp_sections(existing_toml: str, new_mcp_toml: str) -> str:
-    cleaned = re.sub(r'\n?\[mcp_servers[^\]]*\][^\[]*', '', existing_toml)
-    return cleaned.rstrip() + '\n' + new_mcp_toml + '\n'
+    lines = existing_toml.splitlines()
+    result = []
+    in_mcp = False  # True while inside [mcp_servers.*] section (skips lines)
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith('['):
+            in_mcp = stripped.startswith('[mcp_servers.')
+        if not in_mcp:
+            result.append(line)
+    cleaned = '\n'.join(result).rstrip()
+    if new_mcp_toml.strip():
+        return cleaned + '\n' + new_mcp_toml + '\n'
+    return cleaned + '\n'
 ```
 
 ## Merging Multiple Sources

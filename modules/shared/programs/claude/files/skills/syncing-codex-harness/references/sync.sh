@@ -387,7 +387,7 @@ mcp_config() {
 
   local mcp_toml
   mcp_toml="$(env "${env_args[@]}" python3 << 'PYEOF'
-import json, os, re, sys
+import json, os, sys
 
 def toml_escape_value(s):
     s = s.replace('\\', '\\\\')
@@ -438,8 +438,19 @@ def server_to_toml(name, cfg):
     return '\n'.join(lines)
 
 def replace_mcp_sections(existing_toml, new_mcp_toml):
-    cleaned = re.sub(r'\n?\[mcp_servers[^\]]*\][^\[]*', '', existing_toml)
-    return cleaned.rstrip() + '\n' + new_mcp_toml + '\n'
+    lines = existing_toml.splitlines()
+    result = []
+    in_mcp = False  # True while inside [mcp_servers.*] section (skips lines)
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith('['):
+            in_mcp = stripped.startswith('[mcp_servers.')
+        if not in_mcp:
+            result.append(line)
+    cleaned = '\n'.join(result).rstrip()
+    if new_mcp_toml.strip():
+        return cleaned + '\n' + new_mcp_toml + '\n'
+    return cleaned + '\n'
 
 # Collect all servers: (name, cfg, prefix)
 all_servers = []
