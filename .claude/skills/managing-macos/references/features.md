@@ -308,7 +308,10 @@ fc-list | grep -i "JetBrains"
 
 ## GUI 앱 (Homebrew Casks)
 
-`modules/darwin/programs/homebrew.nix`에서 관리됩니다.
+`modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다.
+
+- **hostType 제한**: `lib.mkIf (hostType == "personal")` — personal 호스트만 적용
+- **cleanup = "none"**: 선언되지 않은 앱을 자동 삭제하지 않음 (수동 설치 cask 보호)
 
 ### 서드파티 Tap Formula 주의사항
 
@@ -324,8 +327,8 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 
 | 앱             | 용도                       |
 | -------------- | -------------------------- |
+| Codex          | AI 코딩 에이전트           |
 | Cursor         | AI 코드 에디터             |
-| Ghostty        | 터미널                     |
 | Raycast        | 런처 (Spotlight 대체)      |
 | Rectangle      | 창 관리                    |
 | Hammerspoon    | 키보드 리매핑/자동화       |
@@ -335,6 +338,81 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | Slack          | 메신저                     |
 | Figma          | 디자인                     |
 | MonitorControl | 외부 모니터 밝기 조절      |
+
+> **참고**: boring-notch는 의도적으로 선언에서 제외. 수동 설치 cask로 유지하며, cleanup="none"이므로 삭제되지 않음.
+
+### Nix 패키지로 관리하는 GUI 앱
+
+`libraries/packages.nix`의 `darwinOnly`에서 관리됩니다. nixpkgs에 macOS .app 번들이 포함되어 있어 Homebrew 대신 Nix로 전환한 앱입니다.
+
+| 앱      | 패키지         | 용도         |
+| ------- | -------------- | ------------ |
+| Shottr  | `pkgs.shottr`  | 스크린샷     |
+
+### Homebrew Cask에서 Nix 전환이 불가능한 앱
+
+| 앱      | 사유 |
+| ------- | ---- |
+| Cursor  | `pkgs.code-cursor`가 존재하지만, Nix store와 `/Applications`에 각각 .app이 생성되어 Spotlight에 2개 표시됨. `programs.vscode.package`가 별도 번들을 생성하는 구조적 문제. |
+| Ghostty | `pkgs.ghostty-bin`은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음. Ghostty.app은 Homebrew Cask로만 설치 가능. |
+| Docker  | Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재) |
+| Fork    | 상용 Git GUI, nixpkgs에 없음 |
+| Figma   | nixpkgs에 Linux 비공식 래퍼(`figma-linux`)만 존재, macOS 공식 앱 미지원 |
+
+### Brew Formula
+
+| Formula                    | 용도                              |
+| -------------------------- | --------------------------------- |
+| `laishulu/homebrew/macism` | macOS 입력 소스 전환 (Neovim 한영 전환) |
+
+### 직접 설치 앱의 adopt 전환
+
+기존에 `/Applications`에 직접 설치된 앱을 Homebrew Cask 관리로 전환하려면 `--adopt` 플래그를 사용합니다.
+
+**`--adopt`가 필요한 이유:**
+
+Homebrew Cask는 `/Applications`에 동일 앱이 이미 존재하면 `brew install`을 거부합니다:
+
+```text
+Error: It seems there is already an App at '/Applications/Cursor.app'
+```
+
+`--adopt` 없이는 두 가지 선택지뿐입니다:
+1. 기존 앱 삭제 후 `brew install` → 앱 설정, 로그인 상태 유실 위험
+2. homebrew.nix에서 해당 cask 제거 → 선언적 관리 포기
+
+`--adopt`는 **세 번째 선택지**를 제공합니다:
+
+```text
+일반 brew install --cask cursor:
+  1. Cursor.zip 다운로드
+  2. /Applications/Cursor.app 이미 있음 → 에러, 중단
+
+brew install --cask --adopt cursor:
+  1. Cursor.zip 다운로드
+  2. /Applications/Cursor.app 이미 있음 → 기존 앱을 Caskroom으로 이동(백업)
+  3. Homebrew 메타데이터에 "cursor는 내가 관리 중"으로 등록
+  4. 이후 brew upgrade cursor로 업데이트 가능
+```
+
+기존 앱을 삭제하지 않으므로 설정/로그인 상태가 보존됩니다. adopt 후 `nrs`를 실행하면 homebrew.nix 선언과 실제 설치 상태가 일치합니다.
+
+**실행 방법:**
+
+```bash
+# 개별 앱 adopt
+brew install --cask --adopt cursor
+
+# 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr 제외)
+for cask in codex cursor ghostty raycast rectangle hammerspoon homerow docker fork slack figma monitorcontrol; do
+  brew install --cask --adopt "$cask" || echo "FAILED: $cask"
+done
+
+# adopt 결과 확인
+brew list --cask
+```
+
+**주의:** SSH non-interactive 세션에서는 xattr 권한 문제나 sudo 프롬프트로 adopt가 실패할 수 있습니다. 실패 시 Mac 터미널에서 직접 재시도하세요.
 
 ## 폴더 액션 (launchd)
 

@@ -7,7 +7,7 @@
 **원인**: `programs.vscode.package = pkgs.code-cursor` 사용 시 Nix store에도 Cursor가 설치됨
 
 **해결**: 현재 설정은 이 문제를 해결한 구조입니다:
-- Cursor 앱: Homebrew Cask로만 설치 (`homebrew.nix`)
+- Cursor 앱: Homebrew Cask로 설치 (`modules/darwin/programs/homebrew.nix`에서 선언적 관리)
 - 확장 관리: `home.file`로 직접 관리 (`cursor/default.nix`)
 
 ```bash

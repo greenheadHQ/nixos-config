@@ -8,7 +8,7 @@
 | 2차 | im-select.nvim | `editor.lua` | Insert↔Normal 전환 시 영문/한글 자동 전환 |
 
 - **macOS 전용**: `vim.fn.executable("macism") == 1`로 NixOS/SSH 환경에서 자동 비활성화
-- **macism 설치**: Homebrew 필수 (`brew tap laishulu/homebrew && brew install laishulu/homebrew/macism`). nixpkgs는 Swift 빌드 실패
+- **macism 설치**: `modules/darwin/programs/homebrew.nix`에서 선언적 관리 (`nrs` 시 자동 설치). nixpkgs는 Swift 빌드 실패로 Homebrew 전용
 - **langmap/langmapper 미사용**: 한글 IME 조합(자음+모음→음절) 특성상 extra keystroke 문제 발생. 러시아어(키릴)처럼 1:1 매핑이 되지 않아 실용성 없음
 
 ## 알려진 제한
