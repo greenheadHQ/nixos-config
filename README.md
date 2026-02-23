@@ -29,8 +29,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │   ├── constants.nix              # 전역 상수 (IP, 포트, 경로, SSH 키, UID 등)
 │   ├── packages.nix               # 공통 패키지 (shared/darwinOnly/nixosOnly)
 │   ├── nixpkgs/default.nix        # overlay 설정
-│   └── packages/
-│       └── sarasa-mono-k-nerd-font.nix  # 커스텀 폰트 패키지
+│   └── packages/                    # 커스텀 패키지 (필요 시 추가)
 ├── modules/
 │   ├── shared/                    # Darwin + NixOS 공통
 │   │   ├── configuration.nix      # Nix GC, 병렬 다운로드, flakes

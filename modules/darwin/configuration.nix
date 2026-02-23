@@ -13,9 +13,34 @@
     ./programs/mosh # mosh 서버 (Termius 등에서 사용)
   ];
   # 폰트 설치 (nix-darwin이 /Library/Fonts/Nix Fonts에 자동 링크)
+  #
+  # [주의] Sarasa Mono K Nerd Font를 사용하지 않는 이유:
+  # Sarasa는 Iosevka(라틴) + Source Han Sans(CJK) 합성 폰트로 CJK:ASCII = 2:1 너비 비율이
+  # 정확하여 한영 혼용 정렬에 유리하지만, 치명적인 단점이 있음:
+  #
+  # 1) 저DPI 모니터에서 심각한 가독성 저하
+  #    - MacBook Pro 16" Liquid Retina XDR (254 PPI): 깔끔하게 렌더링됨
+  #    - DELL S2725DS 27" QHD (109 PPI): 글자가 자글자글(fuzzy/jagged)하게 보임
+  #    - 복합 합성 폰트(여러 폰트 파일을 합친 구조)는 서브픽셀 힌팅이 저DPI에서
+  #      제대로 동작하지 않아 단일 폰트 대비 렌더링 품질이 크게 떨어짐
+  #    - 경험적 기준: ~200 PPI 이상에서만 복합 합성 폰트가 깨끗하게 보임
+  #      일반 외장 모니터 PPI 참고:
+  #        24" FHD(1080p) = 92 PPI  → 자글자글할 가능성 높음
+  #        27" QHD(1440p) = 109 PPI → 실제로 자글자글하게 확인됨
+  #        27" 4K(2160p)  = 163 PPI → 개선되지만 완벽하지 않을 수 있음
+  #        32" 4K(2160p)  = 137 PPI → 개선되지만 완벽하지 않을 수 있음
+  #      → 비-Retina 외장 모니터(~200 PPI 미만)에서는 Sarasa 류의 합성 폰트 사용을 피할 것.
+  #        단일 설계 폰트(JetBrains Mono, Fira Code 등)는 저DPI에서도 깔끔하게 렌더링됨.
+  #
+  # 2) CJK 2:1 너비 비율의 실질적 이점 부재
+  #    - ASCII 아트를 주로 LLM이 생성하는데, LLM이 폰트의 글자 폭 규칙을 인지하지 못하므로
+  #      2:1 비율이어도 부정확한 결과물이 생성됨. Skill 신설은 context 토큰 비용 대비 비효율적.
+  #
+  # 향후 Sarasa와 유사한 합성 폰트(예: M+ 계열, Monaspace + CJK 합성 등)를 고려할 때
+  # 반드시 사용 중인 모든 모니터의 PPI를 확인하고, ~200 PPI 미만 모니터가 있다면 사용을 피할 것.
+  # 이 폰트를 다시 설치하려면 git log에서 이 커밋을 참조할 것.
   fonts.packages = [
-    (pkgs.callPackage ../../libraries/packages/sarasa-mono-k-nerd-font.nix { })
-    pkgs.nerd-fonts.jetbrains-mono # fallback (Sarasa에 없는 글리프 대비)
+    pkgs.nerd-fonts.jetbrains-mono
   ];
 
   # Touch ID for sudo
