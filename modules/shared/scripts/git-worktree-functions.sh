@@ -63,6 +63,10 @@ wt() {
     git_root=$(cd "$git_common_dir" && cd ../.. && pwd)
   fi
 
+  # 현재 작업 트리 루트 (워크트리 내부에서 실행 시 해당 워크트리 루트)
+  local source_root
+  source_root=$(git rev-parse --show-toplevel 2>/dev/null)
+
   # 3. 워크트리 상태 확인 (브랜치 사용 여부)
   local worktree_info
   worktree_info=$(git worktree list --porcelain | awk -v branch="$branch_name" '
@@ -350,6 +354,18 @@ wt() {
       echo "$parent_branch_for_wt" > "$worktree_dir/.wt-parent"
     fi
   fi
+
+  # .claude/, .codex/, .agents/ 를 워크트리에 복사
+  # 이 디렉토리들은 gitignore 대상이라 워크트리 생성 시 포함되지 않는다.
+  # 매번 워크트리에서 Claude Code 플러그인을 재설치하고 Codex 하네스를
+  # 다시 동기화하는 반복 작업을 없애기 위해, 소스 트리에서 그대로 복사한다.
+  for _dir in .claude .codex .agents; do
+    if [[ -d "$source_root/$_dir" ]]; then
+      cp -R "$source_root/$_dir" "$worktree_dir/$_dir"
+    fi
+  done
+  # .claude/plans/는 세션별 데이터이므로 복사하지 않음
+  rm -rf "$worktree_dir/.claude/plans"
 
   echo "✅ 워크트리 생성 완료: $worktree_dir"
   if [[ "$stay" == false ]]; then
