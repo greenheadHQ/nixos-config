@@ -23,7 +23,7 @@
     # upgrade=true + greedyCasks=true 조합:
     # - upgrade=true: nrs 실행 시 brew upgrade를 자동 실행
     # - greedyCasks=true: auto_updates가 있는 cask도 brew upgrade 대상에 포함
-    # 자체 업데이터가 있는 앱(Cursor, Slack 등)이 Homebrew와 독립적으로 버전을 변경해도
+    # 자체 업데이터가 있는 앱(Cursor 등)이 Homebrew와 독립적으로 버전을 변경해도
     # nrs 실행 시 Homebrew가 최신 버전으로 동기화하여 버전 드리프트를 방지한다.
     greedyCasks = true;
 
@@ -73,6 +73,7 @@
     # [Homebrew에서 제거한 앱]
     # figma: 자체 업데이터가 적극적으로 버전을 변경하여 Homebrew가 관리하는 버전과 불일치 발생.
     #        adopt 시 버전 불일치로 설치 거부됨. 자체 업데이터에 위임.
+    # slack: 수동 설치 선호. 자체 업데이터에 위임.
     #
     casks = [
       "codex"
@@ -84,7 +85,6 @@
       "homerow"
       "docker"
       "fork"
-      "slack"
       "monitorcontrol"
     ];
 

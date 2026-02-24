@@ -335,7 +335,6 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | Homerow        | 키보드 네비게이션          |
 | Docker         | 컨테이너                   |
 | Fork           | Git GUI                    |
-| Slack          | 메신저                     |
 | MonitorControl | 외부 모니터 밝기 조절      |
 
 ### Nix 패키지로 관리하는 GUI 앱
@@ -362,13 +361,14 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 - **upgrade = true**: `nrs` 실행 시 `brew upgrade`를 자동 실행
 - **greedyCasks = true**: `auto_updates` 속성이 있는 cask도 `brew upgrade` 대상에 포함
 
-자체 업데이터가 있는 앱(Cursor, Slack 등)이 Homebrew와 독립적으로 버전을 변경해도, `nrs` 실행 시 Homebrew가 최신 버전으로 동기화합니다.
+자체 업데이터가 있는 앱(Cursor 등)이 Homebrew와 독립적으로 버전을 변경해도, `nrs` 실행 시 Homebrew가 최신 버전으로 동기화합니다.
 
 ### Homebrew 관리에서 제외한 앱
 
 | 앱 | 사유 |
 | --- | --- |
 | Figma | 자체 업데이터가 적극적으로 버전을 변경하여 Homebrew 관리 버전과 불일치. adopt 시 버전 차이로 설치 거부됨. 자체 업데이터에 위임. |
+| Slack | 수동 설치 선호. 자체 업데이터에 위임. |
 
 > `cleanup = "none"`이므로 cask 목록에서 제거해도 기존 `/Applications/Figma.app`은 삭제되지 않습니다.
 
@@ -417,7 +417,7 @@ brew install --cask --adopt cursor:
 brew install --cask --adopt cursor
 
 # 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr 제외)
-for cask in codex cursor ghostty raycast rectangle hammerspoon homerow docker fork slack monitorcontrol; do
+for cask in codex cursor ghostty raycast rectangle hammerspoon homerow docker fork monitorcontrol; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
 
