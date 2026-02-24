@@ -186,7 +186,7 @@ in
       network_connect_timeout = 5;
       local_timeout = 5;
       style = "compact";
-      inline_height = 9;
+      inline_height = if pkgs.stdenv.isDarwin then 40 else 9;
       show_help = false;
       update_check = false;
       search_mode = "fulltext";
