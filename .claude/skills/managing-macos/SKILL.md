@@ -75,13 +75,15 @@ darwinOnly = [ ... pkgs.패키지명 ];
 
 ```nix
 # cleanup = "none" — 선언되지 않은 앱을 삭제하지 않음 (수동 설치 cask 보호)
+# upgrade = true + greedyCasks = true — 자체 업데이터 앱의 버전 드리프트 방지
 homebrew.casks = [
   "codex" "cursor" "ghostty" "raycast" "rectangle"
   "hammerspoon" "homerow" "docker"
-  "fork" "slack" "figma" "monitorcontrol"
+  "fork" "slack" "monitorcontrol"
 ];
 homebrew.brews = [ "laishulu/homebrew/macism" ]; # Neovim 한영 전환
 # shottr → Nix 패키지로 관리 (libraries/packages.nix darwinOnly)
+# figma → Homebrew에서 제거 (자체 업데이터가 버전을 변경하여 adopt 시 버전 충돌)
 ```
 
 **새 Mac 세팅 시**: 직접 설치된 앱은 `brew install --cask --adopt <앱>`으로 Homebrew 관리로 전환 필요.

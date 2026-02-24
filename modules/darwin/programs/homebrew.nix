@@ -15,8 +15,17 @@
     # 선언되지 않은 앱 정리
     onActivation = {
       autoUpdate = true;
-      cleanup = "none"; # 선언되지 않은 앱을 자동 삭제하지 않음 (boring-notch 등 수동 설치 cask 보호)
+      upgrade = true; # 선언된 모든 패키지를 최신 버전으로 업그레이드
+      cleanup = "none"; # 선언되지 않은 앱을 자동 삭제하지 않음
     };
+
+    # [업그레이드 정책]
+    # upgrade=true + greedyCasks=true 조합:
+    # - upgrade=true: nrs 실행 시 brew upgrade를 자동 실행
+    # - greedyCasks=true: auto_updates가 있는 cask도 brew upgrade 대상에 포함
+    # 자체 업데이터가 있는 앱(Cursor, Slack 등)이 Homebrew와 독립적으로 버전을 변경해도
+    # nrs 실행 시 Homebrew가 최신 버전으로 동기화하여 버전 드리프트를 방지한다.
+    greedyCasks = true;
 
     # Homebrew Tap (서드파티 저장소)
     taps = [
@@ -61,9 +70,10 @@
     #          Ghostty.app은 Homebrew Cask로만 설치 가능.
     # docker: Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재)
     # fork: 상용 Git GUI, nixpkgs에 없음
-    # figma: nixpkgs에 Linux 비공식 래퍼만 존재 (figma-linux), macOS 공식 앱 미지원
+    # [Homebrew에서 제거한 앱]
+    # figma: 자체 업데이터가 적극적으로 버전을 변경하여 Homebrew가 관리하는 버전과 불일치 발생.
+    #        adopt 시 버전 불일치로 설치 거부됨. 자체 업데이터에 위임.
     #
-    # 참고: boring-notch는 의도적으로 제외 (수동 설치 cask로 유지, cleanup="none"이므로 삭제되지 않음)
     casks = [
       "codex"
       "cursor"
@@ -75,7 +85,6 @@
       "docker"
       "fork"
       "slack"
-      "figma"
       "monitorcontrol"
     ];
 

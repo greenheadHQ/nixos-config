@@ -336,10 +336,7 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | Docker         | 컨테이너                   |
 | Fork           | Git GUI                    |
 | Slack          | 메신저                     |
-| Figma          | 디자인                     |
 | MonitorControl | 외부 모니터 밝기 조절      |
-
-> **참고**: boring-notch는 의도적으로 선언에서 제외. 수동 설치 cask로 유지하며, cleanup="none"이므로 삭제되지 않음.
 
 ### Nix 패키지로 관리하는 GUI 앱
 
@@ -357,7 +354,23 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | Ghostty | `pkgs.ghostty-bin`은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음. Ghostty.app은 Homebrew Cask로만 설치 가능. |
 | Docker  | Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재) |
 | Fork    | 상용 Git GUI, nixpkgs에 없음 |
-| Figma   | nixpkgs에 Linux 비공식 래퍼(`figma-linux`)만 존재, macOS 공식 앱 미지원 |
+
+### 업그레이드 정책
+
+`onActivation.upgrade = true` + `greedyCasks = true` 조합으로 버전 드리프트를 방지합니다.
+
+- **upgrade = true**: `nrs` 실행 시 `brew upgrade`를 자동 실행
+- **greedyCasks = true**: `auto_updates` 속성이 있는 cask도 `brew upgrade` 대상에 포함
+
+자체 업데이터가 있는 앱(Cursor, Slack 등)이 Homebrew와 독립적으로 버전을 변경해도, `nrs` 실행 시 Homebrew가 최신 버전으로 동기화합니다.
+
+### Homebrew 관리에서 제외한 앱
+
+| 앱 | 사유 |
+| --- | --- |
+| Figma | 자체 업데이터가 적극적으로 버전을 변경하여 Homebrew 관리 버전과 불일치. adopt 시 버전 차이로 설치 거부됨. 자체 업데이터에 위임. |
+
+> `cleanup = "none"`이므로 cask 목록에서 제거해도 기존 `/Applications/Figma.app`은 삭제되지 않습니다.
 
 ### Brew Formula
 
@@ -404,7 +417,7 @@ brew install --cask --adopt cursor:
 brew install --cask --adopt cursor
 
 # 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr 제외)
-for cask in codex cursor ghostty raycast rectangle hammerspoon homerow docker fork slack figma monitorcontrol; do
+for cask in codex cursor ghostty raycast rectangle hammerspoon homerow docker fork slack monitorcontrol; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
 
