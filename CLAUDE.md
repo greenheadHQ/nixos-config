@@ -106,3 +106,17 @@ homeserver.devProxy.enable = true;
 | Cursor IDE, Nix extensions.json, duti, 확장 0개 표시 | `managing-cursor` |
 | Pushover, 텍스트 공유, MiniPC→iPhone, share text | `sharing-text` |
 | dev-proxy, dev server, 개발 서버 프록시, dev.greenhead.dev, HMR, 모바일 미리보기 | `proxying-dev-server` |
+
+## 스킬 문서 불일치 시 행동 원칙
+
+스킬 문서에 기재된 CLI 명령/플래그를 실행했는데 에러가 발생하면:
+
+1. 해당 명령의 `--help`를 실행해 실제 지원 플래그를 확인한다.
+2. 문서 내용과 실제 CLI 동작의 차이를 정리한다.
+3. 사용자에게 즉시 알린다:
+   - 에러 내용
+   - 문서에 기재된 내용 vs 실제 CLI `--help` 결과
+   - 문서 수정이 필요한지 판단을 요청
+4. 자의적으로 문서를 우회하거나 무시하고 진행하지 않는다.
+
+> CLI `--help` 출력이 스킬 문서보다 항상 우선하는 진실 원천이다.

@@ -186,7 +186,28 @@ warning: Model metadata for `<model>` not found. Defaulting to fallback metadata
 2. 모델명을 강제할 필요가 없다면 기본 모델 정책으로 되돌린다.
 3. stdin/파이프 입력 관련 이상 징후가 있으면 **3번 섹션**을 함께 점검한다.
 
-## 9. 재현 가능한 최소 실행으로 복구
+## 9. `codex exec review`에 `-o` 사용 시 오류
+
+### 증상
+
+```text
+error: unexpected argument '-o' found
+```
+
+### 원인
+
+- `-o`(`--output-last-message`)는 `codex exec` 전용 플래그이며 `review` 서브커맨드에서는 지원하지 않는다.
+- `codex exec review --help`에 `-o`가 존재하지 않음으로 확인 가능하다.
+
+### 해결
+
+`review` 결과를 파일로 저장하려면 stdout 리다이렉트를 사용한다:
+
+```bash
+codex exec review --base main --full-auto > /tmp/review-result.md 2>&1
+```
+
+## 10. 재현 가능한 최소 실행으로 복구
 
 실패가 반복될 때는 아래 최소 명령으로 상태를 리셋한다.
 

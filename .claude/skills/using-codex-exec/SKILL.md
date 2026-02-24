@@ -48,15 +48,18 @@ CLI 버전이 바뀌면 플래그/동작이 달라질 수 있으므로, 실행 �
 
 ## 핵심 플래그
 
-| 플래그 | 의미 | 운영 원칙 |
-|--------|------|-----------|
-| `--full-auto` | 자동 실행 편의 별칭 | 기본 실행값으로 사용 |
-| `-m <MODEL>` | 모델 지정 | 기본적으로 생략하고 기본 모델 사용 |
-| `-o <FILE>` | 마지막 에이전트 메시지 저장 | 결과 보존이 필요하면 항상 지정 |
-| `--ephemeral` | 세션 파일 미저장 | 일회성/민감 프롬프트에서 사용 |
-| `--json` | JSONL 이벤트 출력 | 파이프라인 연동 시만 사용 |
-| `-` (PROMPT 위치) | stdin에서 프롬프트 읽기 | 파이프 입력 시 명시 가능 |
-| `--skip-git-repo-check` | git 저장소 체크 건너뜀 | 저장소 외 실행이 필요한 경우에만 사용 |
+| 플래그 | 적용 | 의미 | 운영 원칙 |
+|--------|------|------|-----------|
+| `--full-auto` | 공통 | 자동 실행 편의 별칭 | 기본 실행값으로 사용 |
+| `-m <MODEL>` | 공통 | 모델 지정 | 기본적으로 생략하고 기본 모델 사용 |
+| `-o <FILE>` | exec 전용 | 마지막 에이전트 메시지 저장 | 결과 보존이 필요하면 항상 지정. **review에서는 사용 불가** — stdout 리다이렉트(`> file 2>&1`)로 대체 |
+| `--ephemeral` | 공통 | 세션 파일 미저장 | 일회성/민감 프롬프트에서 사용 |
+| `--json` | 공통 | JSONL 이벤트 출력 | 파이프라인 연동 시만 사용 |
+| `-` (PROMPT 위치) | 공통 | stdin에서 프롬프트 읽기 | 파이프 입력 시 명시 가능 |
+| `--skip-git-repo-check` | 공통 | git 저장소 체크 건너뜀 | 저장소 외 실행이 필요한 경우에만 사용 |
+| `--base <BRANCH>` | review 전용 | 비교 대상 브랜치 | PR 리뷰 시 사용 |
+| `--uncommitted` | review 전용 | 미커밋 변경 리뷰 | 로컬 self-review 시 사용 |
+| `--commit <SHA>` | review 전용 | 특정 커밋 리뷰 | 단일 커밋 검토 시 사용 |
 
 ## 모델 사용 원칙
 
@@ -207,4 +210,5 @@ cat /tmp/review-instruction.md | codex exec review - --base main --full-auto
 - 실패 대응 절차: [references/troubleshooting.md](references/troubleshooting.md)
 - 실전 명령 모음: [references/examples.md](references/examples.md)
 
-작업 도중 불일치가 보이면 현재 도움말(`codex exec --help`)을 우선 진실 원천으로 사용한다.
+문서와 CLI 동작이 다를 때는 CLAUDE.md의 "스킬 문서 불일치 시 행동 원칙"을 따른다.
+현재 도움말(`codex exec --help`, `codex exec review --help`) 출력이 이 문서보다 항상 우선하는 진실 원천이다.

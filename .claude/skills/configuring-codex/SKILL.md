@@ -107,3 +107,5 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex'
 ## 레퍼런스
 
 - 상세 장애 기록 및 회귀 체크: `references/runbook-codex-compat-2026-02-08.md`
+
+문서와 CLI 동작이 다를 때는 CLAUDE.md의 "스킬 문서 불일치 시 행동 원칙"을 따른다.
