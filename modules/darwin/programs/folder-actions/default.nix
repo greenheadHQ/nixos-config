@@ -1,10 +1,11 @@
 # Folder Actions - launchd WatchPaths 기반 폴더 감시
-# 감시 폴더: ~/FolderActions/{compress-rar, compress-video, rename-asset, convert-video-to-gif, upload-immich}/
+# upload-immich는 Tailscale/Immich 의존이므로 personal 전용 (work Mac은 Tailnet 미소속)
 {
   config,
   pkgs,
   lib,
   constants,
+  hostType,
   ...
 }:
 
@@ -34,6 +35,8 @@ in
       source = "${scriptsDir}/convert-video-to-gif.sh";
       executable = true;
     };
+  }
+  // lib.optionalAttrs (hostType == "personal") {
     ".local/bin/upload-immich.sh" = {
       source = "${scriptsDir}/upload-immich.sh";
       executable = true;
@@ -108,8 +111,8 @@ in
         };
       };
     };
-
-    # Immich 자동 업로드 폴더 감시
+  }
+  // lib.optionalAttrs (hostType == "personal") {
     folder-action-upload-immich = {
       enable = true;
       config = {

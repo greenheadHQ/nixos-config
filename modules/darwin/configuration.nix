@@ -2,7 +2,9 @@
 {
   config,
   pkgs,
+  lib,
   username,
+  hostType,
   constants,
   ...
 }:
@@ -60,7 +62,10 @@
     # SSH 원격 접속 허용 키
     openssh.authorizedKeys.keys = [
       constants.sshKeys.macbook # Termius 등 외부 기기에서 접속
-      constants.sshKeys.minipc # MiniPC에서 접속
+    ]
+    ++ lib.optionals (hostType == "personal") [
+      # MiniPC는 Tailscale IP 전용 — work Mac에는 불필요
+      constants.sshKeys.minipc
     ];
   };
 

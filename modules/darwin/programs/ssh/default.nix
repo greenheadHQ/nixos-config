@@ -1,7 +1,9 @@
 {
   config,
   pkgs,
+  lib,
   constants,
+  hostType,
   ...
 }:
 let
@@ -31,6 +33,9 @@ in
           AddKeysToAgent = "yes";
         };
       };
+    }
+    // lib.optionalAttrs (hostType == "personal") {
+      # MiniPC는 Tailscale IP 전용 — work Mac(Tailnet 미소속)에서는 접속 불가
       "minipc" = {
         hostname = constants.network.minipcTailscaleIP;
         user = "greenhead";
