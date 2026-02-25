@@ -8,7 +8,7 @@
 # 의존성: yq (brew install yq 또는 nix-shell -p yq)
 # 참고: 이 스크립트는 Nix 설정에서 참조되지 않음 (수동 실행용)
 
-set -e
+set -euo pipefail
 
 echo "=== Skills Validation ==="
 echo "Date: $(date)"
@@ -29,8 +29,12 @@ done
 echo
 echo "## 2. 길이 검증 (150-260자)"
 for f in .claude/skills/*/SKILL.md; do
-  len=$(sed -n '2,/^---$/p' "$f" | head -n -1 | yq -r '.description' | wc -c)
   name=$(basename "$(dirname "$f")")
+  if ! description=$(sed -n '2,/^---$/p' "$f" | head -n -1 | yq -r '.description'); then
+    echo "❌ $name: YAML .description 파싱 실패"
+    continue
+  fi
+  len=$(printf '%s\n' "$description" | wc -c)
   if [ "$len" -lt 150 ] || [ "$len" -gt 260 ]; then
     echo "⚠️  $name: ${len}자 (범위 초과)"
   else
