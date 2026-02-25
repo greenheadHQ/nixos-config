@@ -1,0 +1,9 @@
+---
+tags: [ neovim, lazyvim, buffer ]
+---
+버퍼 (탭)
+
+  H             이전 버퍼 (왼쪽 탭)
+  L             다음 버퍼 (오른쪽 탭)
+  <leader>bd    현재 버퍼 닫기
+  <leader>bo    다른 버퍼 모두 닫기

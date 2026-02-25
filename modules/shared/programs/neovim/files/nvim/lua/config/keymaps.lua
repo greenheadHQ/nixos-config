@@ -61,3 +61,14 @@ end, { desc = "Copy absolute path" })
 --   <leader>fr        → 최근 파일 목록
 --   <leader>e         → 파일 탐색기 열기
 --   <leader>qs        → 마지막 세션 복원 (persistence.nvim)
+
+-- ============================================================================
+-- Cheat sheet 조회 (fzf 브라우징)
+-- ============================================================================
+-- cheat CLI로 주제별 cheatsheet를 플로팅 터미널에서 즉시 조회
+-- fzf 미리보기로 내용 확인 후 Enter로 전체 보기, Esc로 닫기
+vim.keymap.set("n", "<leader>C", function()
+  Snacks.terminal("cheat -l | fzf --header-lines=1 --preview 'cheat {1}' --preview-window=right:70% --bind 'enter:become(cheat {1})'", {
+    win = { style = "float" },
+  })
+end, { desc = "Cheat sheets" })

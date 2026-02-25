@@ -1,0 +1,6 @@
+---
+tags: [ neovim, lazyvim, git ]
+---
+Git
+
+  <leader>gg    lazygit 열기

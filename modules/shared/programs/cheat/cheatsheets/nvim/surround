@@ -1,0 +1,35 @@
+---
+tags: [ neovim, surround, nvim-surround ]
+---
+Surround (nvim-surround)
+
+3가지 핵심 동작
+  ys{모션}{문자}   감싸기   (you surround {모션} with {문자})
+  cs{기존}{새것}   변경     (change surround {기존} to {새것})
+  ds{문자}         삭제     (delete surround {문자})
+
+감싸기 (ys)
+  ysiw"    단어를 "" 로 감싸기       hello → "hello"
+  ysiw)    단어를 () 로 감싸기       hello → (hello)
+  ysiw}    단어를 {} 로 감싸기       hello → {hello}
+  ysiwt    태그로 감싸기 (태그명 입력) hello → <div>hello</div>
+  yss"     줄 전체를 "" 로 감싸기
+
+  닫는 괄호 )]} = 공백 없음, 여는 괄호 ([{ = 안쪽에 공백 추가.
+
+Visual 모드 감싸기 (S)
+  viw → S"   단어 선택 후 "" 로 감싸기
+  V → S{     줄 전체 선택 후 {} 로 감싸기
+
+변경 (cs)
+  cs"'      " → '
+  cs")      " → ()
+  cst<span> 태그 → 다른 태그
+
+삭제 (ds)
+  ds"       "" 제거
+  ds(       () 제거
+  dst       태그 제거
+
+dot repeat
+  nvim-surround의 모든 동작은 . 으로 반복 가능하다.

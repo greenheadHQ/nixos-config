@@ -1,0 +1,14 @@
+---
+tags: [ neovim, lazyvim, custom, keymap ]
+---
+커스텀 키맵 + 편집 도구
+
+커스텀 키맵
+  <leader>yp    상대 경로 복사 (클립보드)
+  <leader>yP    절대 경로 복사 (클립보드)
+  jk            Esc (Insert 모드)
+  Ctrl+\        터미널 Normal 모드
+
+편집 도구
+  gcc           줄 주석 토글
+  gc (Visual)   선택 영역 주석 토글

@@ -36,6 +36,7 @@ in
     ../shared/programs/shell/nixos.nix # Linux 전용 추가
     ../shared/programs/tmux
     ../shared/programs/neovim
+    ../shared/programs/cheat # 터미널 cheatsheet 즉시 조회
 
     # NixOS 전용
     ./programs/ssh-client # macOS SSH 접속 설정

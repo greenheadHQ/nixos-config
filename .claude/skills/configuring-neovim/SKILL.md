@@ -80,7 +80,7 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 
 ## 참조
 - 패키지/extras 상세: [references/packages.md](references/packages.md)
-- 키맵/치트시트: [references/cheatsheet.md](references/cheatsheet.md)
+- 키맵/치트시트: `cheat nvim/{topic}` 명령으로 조회 — 소스: `modules/shared/programs/cheat/cheatsheets/nvim/`
 - 한국어 입력: [references/korean-input.md](references/korean-input.md)
 - 기타 상세: [references/details.md](references/details.md)
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)

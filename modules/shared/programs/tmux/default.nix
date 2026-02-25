@@ -21,6 +21,7 @@ let
     "save-pane-vars"
     "restore-pane-vars"
     "smoke-test"
+    "cheat-browse"
   ];
   mkScript = name: {
     name = ".tmux/scripts/${name}.sh";

@@ -1,0 +1,15 @@
+---
+tags: [ neovim, vim-abolish, case ]
+---
+Case 전환 (vim-abolish)
+
+커서가 단어 위에 있을 때 cr{문자}로 case 전환.
+
+  crs    snake_case      fooBar → foo_bar
+  crm    PascalCase      foo_bar → FooBar
+  crc    camelCase       foo_bar → fooBar
+  cru    UPPER_CASE      fooBar → FOO_BAR
+  cr-    kebab-case      fooBar → foo-bar
+
+실전: React 컴포넌트명(PascalCase) ↔ 파일명(kebab-case),
+      Python(snake_case) ↔ JS(camelCase) 전환.

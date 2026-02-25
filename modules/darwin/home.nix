@@ -59,6 +59,7 @@
         ../shared/programs/shell/darwin.nix # macOS 전용 shell 추가
         ../shared/programs/tmux
         ../shared/programs/neovim
+        ../shared/programs/cheat # 터미널 cheatsheet 즉시 조회
 
         # macOS 전용
         ./programs/atuin

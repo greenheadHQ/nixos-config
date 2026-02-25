@@ -1,0 +1,11 @@
+---
+tags: [ neovim, lazyvim, plugin ]
+---
+플러그인 관리
+
+  :Lazy               플러그인 매니저 UI 열기
+  :Lazy update        모든 플러그인 최신으로 업데이트
+  :Lazy restore       lazy-lock.json 기준으로 복원
+  :Lazy health        플러그인 상태 점검
+
+업데이트 후 lazy-lock.json 변경사항을 커밋해야 다른 머신과 동기화된다.

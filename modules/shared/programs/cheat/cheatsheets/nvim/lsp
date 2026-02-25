@@ -1,0 +1,12 @@
+---
+tags: [ neovim, lazyvim, lsp ]
+---
+코드 탐색 (LSP)
+
+  gd            정의로 이동               (F12 / Cmd+Click)
+  gr            참조 찾기                 (Shift+F12)
+  K             호버 문서                 (마우스 호버)
+  <leader>cr    이름 변경                 (F2)
+  <leader>cd    줄 진단 표시              (문제 패널)
+  ]d / [d       다음/이전 진단
+  <leader>cf    파일 포맷                 (Shift+Alt+F)
