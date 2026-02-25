@@ -193,19 +193,28 @@ Staleness 방지: `rebuild-common.sh`의 `@flakePath@`는 `nixosConfigDefaultPat
 
 ## 키보드 단축키 (Symbolic Hotkeys)
 
-`modules/darwin/configuration.nix`의 `CustomUserPreferences."com.apple.symbolichotkeys"`에서 관리됩니다.
+`modules/darwin/configuration.nix`의 `system.activationScripts.postActivation`에서 `defaults write -dict-add`로 관리됩니다.
 
-macOS 시스템 키보드 단축키를 nix-darwin으로 선언적으로 관리합니다. `darwin-rebuild switch` 시 `activateSettings -u`로 즉시 적용됩니다.
+> **주의**: `CustomUserPreferences."com.apple.symbolichotkeys"`는 사용하지 않습니다.
+> nix-darwin이 `defaults write` (dict replace)로 AppleSymbolicHotKeys 전체를 교체하여
+> 기존 항목(사용자 오버라이드 포함)을 삭제할 수 있기 때문입니다. 대신 postActivation에서
+> `defaults write -dict-add`로 개별 항목만 수정하여 기존 항목을 보존합니다.
+
+**적용 흐름** (`nrs` 실행 시):
+1. nix-darwin defaults write (시스템 설정) → 2. HM activation (Shottr 앱 설정) → 3. postActivation (symbolic hotkeys + cfprefsd kill + activateSettings + Shottr 재시작)
+
+> HM activation의 `activateSettings -u`는 `launchctl asuser + sudo` 컨텍스트에서
+> WindowServer와 통신하지 못합니다. 따라서 root 컨텍스트인 postActivation에서 실행합니다.
 
 **스크린샷 설정:**
 
-| ID  | 단축키 | 기능                  | 상태     |
-| --- | ------ | --------------------- | -------- |
-| 28  | ⇧⌘3    | 화면 → 파일           | 비활성화 |
-| 29  | ⌃⇧⌘3   | 화면 → 클립보드       | 활성화   |
-| 30  | ⇧⌘4    | 선택 영역 → 파일      | 비활성화 |
-| 31  | ⇧⌘4    | 선택 영역 → 클립보드  | 활성화   |
-| 32  | ⇧⌘5    | 스크린샷 및 기록 옵션 | 활성화   |
+| ID  | 단축키  | 기능                  | 상태     | 비고              |
+| --- | ------- | --------------------- | -------- | ----------------- |
+| 28  | ⇧⌘3    | 화면 → 파일           | 비활성화 | Shottr가 대체     |
+| 29  | ⌃⇧⌘3   | 화면 → 클립보드       | 활성화   |                   |
+| 30  | ⇧⌘4    | 선택 영역 → 파일      | 비활성화 | Shottr가 대체     |
+| 31  | ⇧⌘4    | 선택 영역 → 클립보드  | 활성화   |                   |
+| 184 | ⇧⌘5    | 스크린샷 및 기록 옵션 | 활성화   |                   |
 
 **입력 소스 설정:**
 
@@ -251,7 +260,7 @@ defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys | grep -A 5 '"61"'
 
 **즉시 적용**:
 
-`darwin-rebuild switch` 시 `activateSettings -u`를 실행하여 키보드 단축키가 즉시 반영됩니다. 재시작/로그아웃 불필요.
+postActivation에서 `cfprefsd kill` → `activateSettings -u` → Shottr 재시작 순서로 실행하여 키보드 단축키가 즉시 반영됩니다. 재시작/로그아웃 불필요.
 
 > **참고**: `activateSettings -u`는 `마우스` > `자연스러운 스크롤` 옵션을 **활성화**시키는 부작용이 있어, 직후에 `defaults write`로 재설정합니다.
 

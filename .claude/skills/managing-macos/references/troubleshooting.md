@@ -156,13 +156,14 @@ system.activationScripts.postActivation.text = ''
   /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 '';
 
-# X 더 심각한 문제: killall cfprefsd 사용
+# O 권장: cfprefsd kill → activateSettings → 스크롤 방향 재설정
 system.activationScripts.postActivation.text = ''
-  killall cfprefsd 2>/dev/null || true  # 모든 설정 캐시 플러시 → 다양한 설정 롤백
-'';
+  # symbolic hotkeys를 defaults write -dict-add로 작성한 뒤...
 
-# O 권장: activateSettings 후 스크롤 방향 재설정
-system.activationScripts.postActivation.text = ''
+  # cfprefsd kill로 디스크 plist에서 강제 재읽기
+  killall cfprefsd 2>/dev/null || true
+  sleep 1
+
   # 키보드 단축키 등 설정 즉시 적용
   /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 
@@ -175,7 +176,7 @@ system.activationScripts.postActivation.text = ''
 - `activateSettings -u`: 키보드 단축키 등 설정을 즉시 반영 (재시작/로그아웃 불필요)
 - 단, 스크롤 방향을 롤백시키는 부작용이 있음
 - 해결: `activateSettings` 직후 `defaults write`로 스크롤 방향 재설정
-- `killall cfprefsd`는 **절대 사용 금지** (더 심각한 문제 유발)
+- `killall cfprefsd`는 postActivation에서 `defaults write -dict-add` → `cfprefsd kill` → `activateSettings` 순서로 사용해야 함. 단독 사용 또는 `activateSettings` 없이 사용하면 설정 롤백 위험
 
 **임시 복구** (이미 발생한 경우):
 

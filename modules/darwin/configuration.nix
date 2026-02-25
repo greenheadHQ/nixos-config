@@ -9,6 +9,46 @@
   ...
 }:
 
+let
+  # symbolic hotkeys plist XML 헬퍼
+  #
+  # nix-darwin CustomUserPreferences는 AppleSymbolicHotKeys dict 전체를 replace하여
+  # 기존 항목(사용자 오버라이드 포함)을 삭제한다. 또한 enabled=false + nested value
+  # 조합을 올바르게 직렬화하지 못한다.
+  # 대신 postActivation에서 defaults write -dict-add로 개별 항목만 수정하여
+  # dict 내 기존 key를 보존하고, root 컨텍스트에서 activateSettings를 호출한다.
+  mkHotkey =
+    {
+      enabled,
+      ascii,
+      keyCode,
+      modifiers,
+    }:
+    ''
+      <dict>
+        <key>enabled</key>
+        <${if enabled then "true" else "false"}/>
+        <key>value</key>
+        <dict>
+          <key>parameters</key>
+          <array>
+            <integer>${toString ascii}</integer>
+            <integer>${toString keyCode}</integer>
+            <integer>${toString modifiers}</integer>
+          </array>
+          <key>type</key>
+          <string>standard</string>
+        </dict>
+      </dict>'';
+
+  mkDisabledNoValue = ''
+    <dict>
+      <key>enabled</key>
+      <false/>
+    </dict>'';
+
+  asUser = "launchctl asuser \"$(id -u -- ${username})\" sudo --user=${username} --set-home --";
+in
 {
   imports = [
     ./programs/homebrew.nix # Homebrew 패키지 관리 (GUI 앱)
@@ -128,112 +168,13 @@
       appswitcher-all-displays = true;
     };
 
-    # 키보드 단축키 설정 (com.apple.symbolichotkeys)
+    # 키보드 단축키 (com.apple.symbolichotkeys)
     #
-    # Symbolic Hotkeys ID 설명:
-    #   - 각 숫자는 macOS 시스템 단축키의 고유 식별자 (Apple 내부 ID)
-    #   - 시스템 환경설정 > 키보드 > 키보드 단축키의 각 항목에 대응
-    #
-    # 현재 시스템의 전체 ID 목록 확인:
-    #   defaults read com.apple.symbolichotkeys AppleSymbolicHotKeys | grep -E '^\s+[0-9]+ ='
-    #
-    # 주요 ID 참조 (비공식, 커뮤니티 문서 기반):
-    #   28-31: 스크린샷 (28=화면→파일, 29=화면→클립보드, 30=선택→파일, 31=선택→클립보드)
-    #   32-34: Mission Control (32=Mission Control, 33=앱 윈도우, 34=데스크탑 보기)
-    #   60-61: 입력 소스 (60=이전, 61=다음)
-    #   64-65: Spotlight (64=검색, 65=Finder 검색)
-    #
-    # parameters 배열: [ ASCII/keyCode, virtualKeyCode, modifierFlags ]
-    #   modifierFlags: Control=262144, Shift=131072, Option=524288, Command=1048576, Fn=8388608
-    #
-    CustomUserPreferences."com.apple.symbolichotkeys" = {
-      AppleSymbolicHotKeys = {
-        # === 스크린샷 설정 ===
-        # 28: 화면→파일 (⇧⌘3) - 비활성화
-        "28" = {
-          enabled = false;
-        };
-        # 30: 선택→파일 (⇧⌘4) - 비활성화
-        "30" = {
-          enabled = false;
-        };
-
-        # 29: 화면→클립보드 (⌃⇧⌘3) - 활성화
-        "29" = {
-          enabled = true;
-          value = {
-            parameters = [
-              51
-              20
-              1441792
-            ];
-            type = "standard";
-          };
-        };
-        # 31: 선택→클립보드 (⇧⌘4) - 활성화
-        "31" = {
-          enabled = true;
-          value = {
-            parameters = [
-              52
-              21
-              1179648
-            ];
-            type = "standard";
-          };
-        };
-
-        # === Mission Control 설정 ===
-        # 32: Mission Control (F3) - 활성화
-        "32" = {
-          enabled = true;
-          value = {
-            parameters = [
-              65535
-              99
-              8388608
-            ];
-            type = "standard";
-          };
-        };
-
-        # === 입력 소스 설정 ===
-        # 60: 이전 입력 소스 (⌃Space) - 비활성화
-        "60" = {
-          enabled = false;
-        };
-        # 61: 다음 입력 소스 (F18) - 활성화 (Hammerspoon Capslock→F18 연동)
-        "61" = {
-          enabled = true;
-          value = {
-            parameters = [
-              65535
-              79
-              8388608
-            ];
-            type = "standard";
-          };
-        };
-
-        # === Spotlight 설정 (Raycast 사용으로 비활성화) ===
-        # 64: Spotlight 검색 (⌘Space) - 비활성화
-        "64" = {
-          enabled = false;
-        };
-        # 65: Finder 검색 윈도우 (⌥⌘Space) - 활성화
-        "65" = {
-          enabled = true;
-          value = {
-            parameters = [
-              32
-              49
-              1572864
-            ];
-            type = "standard";
-          };
-        };
-      };
-    };
+    # [주의] CustomUserPreferences가 아닌 postActivation에서 관리.
+    # nix-darwin CustomUserPreferences."com.apple.symbolichotkeys"는 defaults write로
+    # AppleSymbolicHotKeys dict 전체를 교체(replace)하여 기존 항목(사용자 오버라이드 포함)을 삭제한다.
+    # 또한 enabled=false + nested value 조합을 올바르게 직렬화하지 못한다.
+    # 대신 postActivation에서 defaults write -dict-add로 개별 항목만 수정한다.
 
     # 윈도우 매니저
     WindowManager = {
@@ -242,10 +183,137 @@
   };
 
   # 시스템 설정 즉시 적용 (activation 스크립트)
+  #
+  # 실행 순서:
+  #   1. nix-darwin defaults write (system.defaults.*) → Dock, Finder 등 plist 적용
+  #   2. Home Manager activation → Shottr 설정, 라이센스 등 적용
+  #   3. postActivation (이 스크립트) → symbolic hotkeys + activateSettings + Shottr 재시작
+  #
+  # symbolic hotkeys와 Shottr 재시작을 postActivation에서 처리하는 이유:
+  #   - HM activation의 activateSettings -u는 launchctl asuser + sudo 컨텍스트에서
+  #     WindowServer와 통신하지 못해 적용되지 않음 (root 컨텍스트에서만 정상 동작)
+  #   - Shottr는 activateSettings 이후에 재시작해야 올바른 symbolic hotkey 상태로 기동됨
   system.activationScripts.postActivation.text = ''
     # 입력소스 전환 툴팁 비활성화
     sudo defaults write /Library/Preferences/FeatureFlags/Domain/UIKit.plist \
       redesigned_text_cursor -dict-add Enabled -bool NO 2>/dev/null || true
+
+    # === macOS 키보드 단축키 (Symbolic Hotkeys) ===
+    #
+    # defaults write -dict-add로 개별 항목만 수정하여 dict 내 기존 key를 보존.
+    # CustomUserPreferences."com.apple.symbolichotkeys"는 dict 전체를 교체하므로 사용하지 않음.
+    #
+    # Symbolic Hotkeys ID:
+    #   28-31: 스크린샷 (28=화면→파일, 29=화면→클립보드, 30=선택→파일, 31=선택→클립보드)
+    #   32-34: Mission Control (32=Mission Control, 33=앱 윈도우, 34=데스크탑 보기)
+    #   60-61: 입력 소스 (60=이전, 61=다음)
+    #   64-65: Spotlight (64=검색, 65=Finder 검색)
+    #   184: 스크린샷 도구모음
+    #
+    # parameters: [ ASCII/keyCode, virtualKeyCode, modifierFlags ]
+    #   modifierFlags: Shift+Cmd=1179648, Ctrl+Shift+Cmd=1441792, Fn=8388608, Opt+Cmd=1572864
+
+    # --- 스크린샷 (Shottr 연동) ---
+    # Shottr 호환: disabled 항목에 반드시 value 블록을 포함해야 macOS WindowServer가
+    # CopySymbolicHotKeys에서 해당 키 조합을 정상 해제함.
+    # value 없이 enabled=false만 설정하면 키 이벤트가 Shottr에 도달하지 못함.
+    # 28: ⇧⌘3 화면→파일 — 비활성화 (Shottr Area에 양보)
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "28" '${
+        mkHotkey {
+          enabled = false;
+          ascii = 51;
+          keyCode = 20;
+          modifiers = 1179648;
+        }
+      }'
+    # 29: ⌃⇧⌘3 화면→클립보드 — 활성화
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "29" '${
+        mkHotkey {
+          enabled = true;
+          ascii = 51;
+          keyCode = 20;
+          modifiers = 1441792;
+        }
+      }'
+    # 30: ⇧⌘4 선택→파일 — 비활성화 (⇧⌘4 클립보드 전용으로 사용)
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "30" '${
+        mkHotkey {
+          enabled = false;
+          ascii = 52;
+          keyCode = 21;
+          modifiers = 1179648;
+        }
+      }'
+    # 31: ⇧⌘4 선택→클립보드 — 활성화
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "31" '${
+        mkHotkey {
+          enabled = true;
+          ascii = 52;
+          keyCode = 21;
+          modifiers = 1179648;
+        }
+      }'
+    # 184: ⇧⌘5 스크린샷 도구모음 — 활성화
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "184" '${
+        mkHotkey {
+          enabled = true;
+          ascii = 53;
+          keyCode = 23;
+          modifiers = 1179648;
+        }
+      }'
+
+    # --- Mission Control ---
+    # 32: Mission Control (F3) — 활성화
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "32" '${
+        mkHotkey {
+          enabled = true;
+          ascii = 65535;
+          keyCode = 99;
+          modifiers = 8388608;
+        }
+      }'
+
+    # --- 입력 소스 ---
+    # 60: 이전 입력 소스 (⌃Space) — 비활성화
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "60" '${mkDisabledNoValue}'
+    # 61: 다음 입력 소스 (F18) — 활성화 (Hammerspoon Capslock→F18 연동)
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "61" '${
+        mkHotkey {
+          enabled = true;
+          ascii = 65535;
+          keyCode = 79;
+          modifiers = 8388608;
+        }
+      }'
+
+    # --- Spotlight (Raycast 사용으로 비활성화) ---
+    # 64: Spotlight 검색 (⌘Space) — 비활성화
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "64" '${mkDisabledNoValue}'
+    # 65: Finder 검색 윈도우 (⌥⌘Space) — 활성화
+    ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
+      "65" '${
+        mkHotkey {
+          enabled = true;
+          ascii = 32;
+          keyCode = 49;
+          modifiers = 1572864;
+        }
+      }'
+
+    # 캐시 초기화 + 설정 즉시 적용
+    # cfprefsd kill로 디스크 plist에서 강제 재읽기 후 activateSettings로 WindowServer에 반영
+    killall cfprefsd 2>/dev/null || true
+    sleep 1
 
     # 키보드 단축키 등 설정 즉시 적용 (PrivateFramework - macOS 업데이트 시 경로 변경 가능)
     if [ -x /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings ]; then
@@ -260,6 +328,14 @@
 
     # Hammerspoon 설정 리로드 (F18 리매핑과 연동)
     /Applications/Hammerspoon.app/Contents/Frameworks/hs/hs -c "hs.reload()" 2>/dev/null || true
+
+    # Shottr 재시작 (activateSettings로 symbolic hotkeys 반영 후)
+    # Shottr 미설치/GUI 세션 없음(SSH) 등에서 실패해도 activation을 중단하지 않음
+    if pgrep -x Shottr >/dev/null 2>&1; then
+      killall Shottr 2>/dev/null || true
+      sleep 1
+      ${asUser} /usr/bin/open -a Shottr 2>/dev/null || echo "경고: Shottr 재시작 실패 (GUI 세션 없음?)"
+    fi
   '';
 
   system.primaryUser = username;

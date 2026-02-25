@@ -1,5 +1,10 @@
 # Shottr 설정 (macOS)
 #
+# Shottr 앱 고유 설정만 관리. macOS symbolic hotkeys(스크린샷 단축키)와
+# Shottr 재시작은 modules/darwin/configuration.nix의 postActivation에서 처리.
+# 이유: HM activation의 activateSettings -u가 launchctl asuser + sudo 컨텍스트에서
+# WindowServer와 통신하지 못하므로, root 컨텍스트의 postActivation에서 실행해야 함.
+#
 # NOTE: home.activation 스크립트에서 /usr/bin/defaults, /usr/bin/killall 등 절대 경로를 사용하는 이유:
 # Home Manager activation은 최소한의 PATH로 실행되어 /usr/bin이 포함되지 않는다.
 # 반면 system.activationScripts (nix-darwin 시스템 레벨)는 일반 PATH를 가지므로
@@ -35,7 +40,7 @@ in
     fi
   '';
 
-  # 핵심 설정 선언 적용
+  # Shottr 앱 고유 설정 적용
   #
   # Carbon modifier flags:
   #   cmdKey=256(0x100) shiftKey=512(0x200) optionKey=2048(0x800) controlKey=4096(0x1000)
@@ -55,8 +60,6 @@ in
     # ref: https://shottr.cc/kb/faq
     # ref: https://hurricane-flower-fdf.notion.site/Manual-Scrolling-Capture-120d943b739b80bf868dd1009eeadc17
     /usr/bin/defaults write "${shottrDomain}" scrollingManualEnabled -bool true
-
-    /usr/bin/killall cfprefsd 2>/dev/null || true
   '';
 
   # 라이센스 pre-fill (agenix secret → defaults write)
@@ -89,12 +92,8 @@ in
         fi
       '';
 
-  # 설정 반영을 위해 Shottr 항상 (재)시작
-  home.activation.restartShottr = lib.hm.dag.entryAfter [ "applyShottrLicenseFromSecret" ] ''
-    /usr/bin/killall Shottr 2>/dev/null || true
-    # killall 직후 open -a 하면 Launch Services가 아직 프로세스 종료를 인식하지 못해
-    # error -600 (procNotFound)으로 실패한다. 1초 대기로 회피.
-    sleep 1
-    /usr/bin/open -a Shottr
-  '';
+  # Shottr 재시작은 configuration.nix postActivation에서 처리.
+  # activateSettings -u가 root 컨텍스트에서만 WindowServer와 통신 가능하므로,
+  # postActivation에서 symbolic hotkeys 적용 → cfprefsd kill → activateSettings → Shottr 재시작
+  # 순서로 실행한다. HM activation에서는 Shottr 앱 설정만 작성하고 재시작하지 않는다.
 }

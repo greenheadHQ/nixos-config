@@ -97,10 +97,14 @@ Shottr 설정과 라이센스를 선언적으로 관리합니다.
 
 | 파일 | 용도 |
 |------|------|
-| `modules/darwin/programs/shottr/default.nix` | 설정 선언 적용 + 라이센스 pre-fill |
+| `modules/darwin/programs/shottr/default.nix` | Shottr 앱 고유 설정 + 라이센스 pre-fill |
+| `modules/darwin/configuration.nix` | symbolic hotkeys (스크린샷 단축키) + activateSettings + Shottr 재시작 |
 | `libraries/constants.nix` | Shottr 기본 저장경로 상대 경로 상수 |
 | `secrets/shottr-license.age` | agenix 암호화 라이센스 키 (`KC_LICENSE` + `KC_VAULT`) |
 | `modules/shared/programs/secrets/default.nix` | `~/.config/shottr/license` 배포 |
+
+> **아키텍처 노트**: symbolic hotkeys와 Shottr 재시작은 `configuration.nix`의 postActivation에서 처리합니다.
+> HM activation의 `activateSettings -u`가 `launchctl asuser + sudo` 컨텍스트에서 WindowServer와 통신하지 못하기 때문입니다.
 
 운영 순서:
 
