@@ -293,15 +293,16 @@ nix-darwin의 `fonts.packages` 옵션을 사용하여 폰트를 선언적으로 
 | 폰트                     | 패키지                      | 역할    | 용도                              |
 | ------------------------ | --------------------------- | ------- | --------------------------------- |
 | JetBrains Mono Nerd Font | `nerd-fonts.jetbrains-mono` | 주 폰트 | 에디터/터미널 모노스페이스 + Nerd Font 글리프 |
+| D2Coding                 | `d2coding`                  | 한글 폴백 | 네이버 코딩 전용 한글 폰트 (앱별 font-family 폴백) |
 
 **폰트 사용처:**
 
 | 앱       | 설정 파일                                           | 영문 폰트                | 한글 폴백                |
 | -------- | --------------------------------------------------- | ------------------------ | ------------------------ |
-| Ghostty  | `modules/darwin/programs/ghostty/default.nix`       | JetBrainsMono Nerd Font  | Apple SD Gothic Neo      |
-| Cursor   | `modules/darwin/programs/cursor/files/settings.json` | JetBrainsMono Nerd Font  | Apple SD Gothic Neo      |
+| Ghostty  | `modules/darwin/programs/ghostty/default.nix`       | JetBrainsMono Nerd Font  | D2Coding                 |
+| Cursor   | `modules/darwin/programs/cursor/files/settings.json` | JetBrainsMono Nerd Font  | D2Coding                 |
 
-한글은 Apple SD Gothic Neo(macOS 시스템 내장 폰트)를 앱별 font-family 폴백으로 명시적 지정한다.
+한글은 D2Coding(Nix 설치, 네이버 코딩 전용 폰트)을 앱별 font-family 폴백으로 명시적 지정한다.
 
 **설치 경로:** `/Library/Fonts/Nix Fonts/`
 
@@ -313,6 +314,7 @@ ls "/Library/Fonts/Nix Fonts/"
 
 # 폰트 목록에서 확인
 fc-list | grep -i "JetBrains"
+fc-list | grep -i "D2Coding"
 ```
 
 ## GUI 앱 (Homebrew Casks)

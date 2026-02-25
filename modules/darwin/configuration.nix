@@ -85,9 +85,10 @@ in
   #
   # [현재 폰트 전략]
   # 영문: JetBrainsMono Nerd Font (Nix 설치, 단일 설계 폰트로 저DPI에서도 깔끔)
-  # 한글: Apple SD Gothic Neo (macOS 시스템 내장 폰트, 앱별 font-family 폴백으로 지정)
+  # 한글: D2Coding (Nix 설치, 네이버 코딩 전용 한글 폰트, 앱별 font-family 폴백으로 지정)
   fonts.packages = [
     pkgs.nerd-fonts.jetbrains-mono
+    pkgs.d2coding
   ];
 
   # Touch ID for sudo

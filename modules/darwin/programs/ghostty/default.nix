@@ -10,9 +10,9 @@
     # 없는 경우에만 2순위 이하로 넘어간다.
     #
     # 1순위: JetBrainsMono Nerd Font — 영문/숫자/기호/Nerd Font 아이콘
-    # 2순위: Apple SD Gothic Neo — 한글 (macOS 시스템 내장 폰트)
+    # 2순위: D2Coding — 한글 (Nix 설치, 네이버 코딩 전용 폰트)
     font-family = JetBrainsMono Nerd Font
-    font-family = Apple SD Gothic Neo
+    font-family = D2Coding
 
     # macOS Option 키를 Alt로 사용 (왼쪽만)
     macos-option-as-alt = left
