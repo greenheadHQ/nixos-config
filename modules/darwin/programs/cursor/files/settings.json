@@ -17,10 +17,10 @@
   // ============================================================================
   // 폰트 설정
   // ============================================================================
-  "editor.fontFamily": "JetBrainsMono Nerd Font", // 에디터 기본 폰트
+  "editor.fontFamily": "JetBrainsMono Nerd Font, 'Apple SD Gothic Neo'", // 영문: JetBrains Mono, 한글: Apple SD Gothic Neo
   "editor.fontLigatures": true, // 리가처 활성화 (=>, !==, -> 등 합자 표시)
-  "editor.codeLensFontFamily": "JetBrainsMono Nerd Font", // CodeLens(참조 수 등) 폰트
-  "editor.inlayHints.fontFamily": "JetBrainsMono Nerd Font", // 인라인 힌트(타입 추론 등) 폰트
+  "editor.codeLensFontFamily": "JetBrainsMono Nerd Font, 'Apple SD Gothic Neo'", // CodeLens(참조 수 등) 폰트
+  "editor.inlayHints.fontFamily": "JetBrainsMono Nerd Font, 'Apple SD Gothic Neo'", // 인라인 힌트(타입 추론 등) 폰트
 
   // ============================================================================
   // 에디터 기본 설정

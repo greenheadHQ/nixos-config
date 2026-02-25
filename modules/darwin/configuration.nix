@@ -82,6 +82,10 @@ in
   # 향후 Sarasa와 유사한 합성 폰트(예: M+ 계열, Monaspace + CJK 합성 등)를 고려할 때
   # 반드시 사용 중인 모든 모니터의 PPI를 확인하고, ~200 PPI 미만 모니터가 있다면 사용을 피할 것.
   # 이 폰트를 다시 설치하려면 git log에서 이 커밋을 참조할 것.
+  #
+  # [현재 폰트 전략]
+  # 영문: JetBrainsMono Nerd Font (Nix 설치, 단일 설계 폰트로 저DPI에서도 깔끔)
+  # 한글: Apple SD Gothic Neo (macOS 시스템 내장 폰트, 앱별 font-family 폴백으로 지정)
   fonts.packages = [
     pkgs.nerd-fonts.jetbrains-mono
   ];

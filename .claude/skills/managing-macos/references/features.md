@@ -296,12 +296,12 @@ nix-darwin의 `fonts.packages` 옵션을 사용하여 폰트를 선언적으로 
 
 **폰트 사용처:**
 
-| 앱       | 설정 파일                                           | 폰트 이름                |
-| -------- | --------------------------------------------------- | ------------------------ |
-| Ghostty  | `modules/darwin/programs/ghostty/default.nix`       | JetBrainsMono Nerd Font  |
-| Cursor   | `modules/darwin/programs/cursor/files/settings.json` | JetBrainsMono Nerd Font  |
+| 앱       | 설정 파일                                           | 영문 폰트                | 한글 폴백                |
+| -------- | --------------------------------------------------- | ------------------------ | ------------------------ |
+| Ghostty  | `modules/darwin/programs/ghostty/default.nix`       | JetBrainsMono Nerd Font  | Apple SD Gothic Neo      |
+| Cursor   | `modules/darwin/programs/cursor/files/settings.json` | JetBrainsMono Nerd Font  | Apple SD Gothic Neo      |
 
-CJK(한글 등) 문자는 macOS 시스템 폰트(Apple SD Gothic Neo 등)가 자동으로 폴백 처리한다.
+한글은 Apple SD Gothic Neo(macOS 시스템 내장 폰트)를 앱별 font-family 폴백으로 명시적 지정한다.
 
 **설치 경로:** `/Library/Fonts/Nix Fonts/`
 
