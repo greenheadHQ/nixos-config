@@ -30,7 +30,7 @@ find "$WATCH_DIR" -type f -maxdepth 1 \( -iname "*.mp4" -o -iname "*.mov" -o -in
     echo "[$(date)] 압축 시작: $filename"
 
     # H.265 압축 (hvc1 태그로 Apple 호환성 확보)
-    if ffmpeg -i "$f" \
+    if ffmpeg -nostdin -i "$f" \
         -c:v libx265 -preset fast -crf 28 -tag:v hvc1 \
         -c:a eac3 -b:a 224k \
         -y "$output_path" 2>/dev/null; then

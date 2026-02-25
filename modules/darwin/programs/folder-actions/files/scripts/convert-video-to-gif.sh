@@ -34,7 +34,7 @@ find "$WATCH_DIR" -type f -maxdepth 1 \( -iname "*.mp4" -o -iname "*.mov" -o -in
     echo "[$(date)] GIF 변환 시작: $filename (${FPS}fps, ${WIDTH}px)"
 
     # GIF 변환
-    if ffmpeg -hide_banner -loglevel error -y \
+    if ffmpeg -nostdin -hide_banner -loglevel error -y \
         -i "$f" \
         -vf "fps=${FPS},scale=${WIDTH}:-1:flags=lanczos" \
         -c:v gif -f gif "$output_path" 2>/dev/null; then
