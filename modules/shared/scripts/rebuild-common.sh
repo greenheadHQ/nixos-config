@@ -8,6 +8,9 @@
 # 제공 함수:
 #   parse_args, log_info, log_warn, log_error,
 #   preview_changes, cleanup_build_artifacts
+#
+# 출력 변수:
+#   NO_CHANGES - preview_changes() 실행 후 true/false (store 경로 비교)
 
 # fail-fast: REBUILD_CMD 미설정 시 즉시 실패
 if [[ -z "${REBUILD_CMD:-}" ]]; then
@@ -16,6 +19,8 @@ if [[ -z "${REBUILD_CMD:-}" ]]; then
 fi
 
 FLAKE_PATH="@flakePath@"
+# shellcheck disable=SC2034  # NO_CHANGES는 source한 nrs.sh에서 사용
+NO_CHANGES=false
 
 # 색상 정의
 GREEN='\033[0;32m'
@@ -71,6 +76,7 @@ parse_args() {
 #───────────────────────────────────────────────────────────────────────────────
 # 빌드 및 변경사항 미리보기
 # 인수: $1 = 빌드 라벨 ("preview" 또는 "preview only"), $2 = diff 헤더 메시지
+# 부수효과: NO_CHANGES를 true/false로 설정 (store 경로 비교)
 # offline 접두사는 OFFLINE_FLAG에 따라 자동 추가
 #───────────────────────────────────────────────────────────────────────────────
 preview_changes() {
@@ -95,6 +101,11 @@ preview_changes() {
     # - nvd diff는 동일 결과 시 non-zero 반환 가능
     if ! nvd diff /run/current-system ./result; then
         log_warn "⚠️  nvd diff returned non-zero (possibly identical results)"
+    fi
+
+    if [[ "$(readlink ./result)" == "$(readlink /run/current-system)" ]]; then
+        # shellcheck disable=SC2034  # NO_CHANGES는 source한 nrs.sh에서 사용
+        NO_CHANGES=true
     fi
     echo ""
 }

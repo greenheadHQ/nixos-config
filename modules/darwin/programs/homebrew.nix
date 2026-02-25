@@ -52,7 +52,7 @@
     #      "내가 설치한 것"으로 인식하도록 등록만 수행. 이후 brew upgrade로 관리 가능.
     #
     # 따라서 nrs 실행 전에 직접 설치된 앱을 --adopt로 전환해야 한다:
-    #   brew install --cask --adopt cursor docker ...
+    #   brew install --cask --adopt cursor docker-desktop ...
     #
     # adopt 후에는 nrs(darwin-rebuild)가 해당 cask를 정상적으로 인식하여 에러 없이 통과한다.
     # cleanup="none"이므로 미adopt 앱이 남아있어도 삭제되지는 않지만,
@@ -68,7 +68,7 @@
     #         (자세한 내용: .claude/skills/managing-cursor/references/troubleshooting.md)
     # ghostty: pkgs.ghostty-bin은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음.
     #          Ghostty.app은 Homebrew Cask로만 설치 가능.
-    # docker: Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재)
+    # docker-desktop: Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재)
     # fork: 상용 Git GUI, nixpkgs에 없음
     # [Homebrew에서 제거한 앱]
     # figma: 자체 업데이터가 적극적으로 버전을 변경하여 Homebrew가 관리하는 버전과 불일치 발생.
@@ -83,7 +83,7 @@
       "rectangle"
       "hammerspoon"
       "homerow"
-      "docker"
+      "docker-desktop"
       "fork"
       "monitorcontrol"
     ];

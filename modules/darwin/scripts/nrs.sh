@@ -104,8 +104,14 @@ main() {
     cd "$FLAKE_PATH" || exit 1
 
     echo ""
-    cleanup_launchd_agents
     preview_changes "preview" "Changes to be applied:"
+    if [[ "$NO_CHANGES" == true ]]; then
+        cleanup_build_artifacts
+        echo ""
+        log_info "✅ No changes to apply. Skipping rebuild."
+        return 0
+    fi
+    cleanup_launchd_agents
     run_darwin_rebuild
     restart_hammerspoon
     cleanup_build_artifacts
