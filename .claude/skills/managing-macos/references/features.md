@@ -312,7 +312,7 @@ nix-darwin의 `fonts.packages` 옵션을 사용하여 폰트를 선언적으로 
 # 설치된 폰트 확인
 ls "/Library/Fonts/Nix Fonts/"
 
-# 폰트 목록에서 확인
+# 폰트 목록에서 확인 (fc-list에 안 보이면 fc-cache -fv 먼저 실행)
 fc-list | grep -i "JetBrains"
 fc-list | grep -i "D2Coding"
 ```
