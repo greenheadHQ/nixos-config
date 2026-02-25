@@ -61,6 +61,9 @@ in
     # lazygit 단축
     lg = "lazygit";
 
+    # cheat content search 단축
+    cs = "cheat -c -s";
+
     # 디렉토리 이동 단축
     ".." = "cd ..";
     "..." = "cd ../..";

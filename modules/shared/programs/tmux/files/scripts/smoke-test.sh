@@ -154,8 +154,6 @@ scripts=(
   "pane-helpers.sh"
   "pane-tag.sh"
   "pane-restore.sh"
-  "prefix-help.sh"
-  "cheat-browse.sh"
 )
 for script in "${scripts[@]}"; do
   if [ -x "$HOME/.tmux/scripts/$script" ]; then

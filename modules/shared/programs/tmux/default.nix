@@ -15,13 +15,11 @@ let
     "pane-link"
     "pane-helpers"
     "pane-restore"
-    "prefix-help"
     "pane-tag"
     "find-unused-prefixes"
     "save-pane-vars"
     "restore-pane-vars"
     "smoke-test"
-    "cheat-browse"
   ];
   mkScript = name: {
     name = ".tmux/scripts/${name}.sh";

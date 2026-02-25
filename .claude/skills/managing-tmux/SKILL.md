@@ -28,7 +28,6 @@ tmux 기본 동작, 플러그인, Pane Notepad 워크플로우를 다룬다.
 
 | 스크립트 | 용도 |
 |------|------|
-| `prefix-help.sh` | `prefix + a` 도움말 팝업 |
 | `find-unused-prefixes.sh` | tmux prefix 키 중 미사용 조합 탐지 |
 | `pane-note.sh` | 노트 생성/편집 |
 | `pane-link.sh` | 노트 검색/연결 |
