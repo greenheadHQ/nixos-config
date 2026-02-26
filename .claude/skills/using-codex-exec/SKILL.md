@@ -4,211 +4,186 @@ description: |
   This skill should be used when the user needs reliable Codex CLI
   non-interactive execution in Claude Code sessions. Triggers: "codex exec",
   "codex 실행", "codex CLI", "비대화형 codex", "non-interactive codex",
-  "codex review".
+  "codex review", "codex 리뷰", "코드 리뷰 피드백".
 ---
 
 # Codex Exec 사용
 
 Claude Code 세션 내부에서 `codex exec`를 정확하고 반복 가능하게 실행하는 절차를 다룬다.
 
-## 목적과 범위
-
-- `codex exec` 비대화형 실행 명령을 안정적으로 구성한다.
-- 표준 입력(stdin) 기반 프롬프트 전달 패턴을 사용한다.
-- 결과 파일 저장(`-o`)과 자동화(JSONL) 출력(`--json`)을 분리해 관리한다.
-- 코드 리뷰 서브커맨드(`codex exec review`)의 기본 사용법을 제공한다.
-
-대화형 TUI 사용법, Codex 설정 파일의 전체 관리, Claude 하네스 투영은 이 스킬의 범위를 벗어난다.
-해당 주제는 `configuring-codex`, `syncing-codex-harness`를 사용한다.
-
 ## 작성 기준
 
-- 확인 날짜: **2026-02-20**
-- 확인 버전: **`codex-cli 0.104.0`**
-- 재검증 명령:
+- 확인 날짜: **2026-02-26**
+- 확인 버전: **codex-cli 0.104.0**
+- 재검증: `codex --version && codex exec --help && codex exec review --help`
 
-```bash
-codex --version
-codex exec --help
-codex exec review --help
+CLI 버전이 바뀌면 플래그/동작이 달라질 수 있으므로, 실행 전 도움말로 확인한다.
+
+## 범위
+
+| 포함 | 제외 |
+|------|------|
+| `codex exec` 비대화형 실행 | 대화형 TUI 사용법 |
+| `codex exec review` 코드 리뷰 | Codex 설정 파일 전체 관리 → `configuring-codex` |
+| stdin/파일 기반 프롬프트 전달 | Claude 하네스 투영 → `syncing-codex-harness` |
+| 결과 저장 및 자동화 출력 | |
+
+## 의사결정 트리
+
+```
+codex exec 실행이 필요한가?
+│
+├─ 코드 리뷰인가?
+│  ├─ YES → 커스텀 리뷰 지시가 필요한가?
+│  │  ├─ YES ─────────────────────────────────────────────┐
+│  │  │  ⚠️ review에서 PROMPT과 scope flag                 │
+│  │  │  동시 사용 불가 (Known Issue #7825)                 │
+│  │  │                                                    │
+│  │  │  방법 A: AGENTS.md에 리뷰 지시 배치 후              │
+│  │  │         review --base/--uncommitted 실행           │
+│  │  │         (영구 지시, review의 diff 스코핑 유지)       │
+│  │  │                                                    │
+│  │  │  방법 B: codex exec에 diff + 지시를                 │
+│  │  │         프롬프트로 직접 전달 (review 서브커맨드 미사용)│
+│  │  │         (1회성 지시, 가장 유연)                      │
+│  │  │                                                    │
+│  │  │  → references/patterns.md 패턴 3, 4 참조           │
+│  │  └──────────────────────────────────────────────────┘
+│  │
+│  └─ NO → codex exec review + scope flag
+│          → references/patterns.md 패턴 2 참조
+│
+└─ 일반 실행 → codex exec --full-auto [-o result.md]
+               → references/patterns.md 패턴 1 참조
 ```
 
-CLI 버전이 바뀌면 플래그/동작이 달라질 수 있으므로, 실행 전 도움말을 다시 확인한다.
+## 호환성 매트릭스
 
-## 빠른 참조
+### exec 전용 플래그 (review 미지원)
 
-| 상황 | 권장 명령 |
-|------|-----------|
-| 프롬프트 파일을 stdin으로 전달 | `cat /tmp/prompt.md \| codex exec --full-auto -o /tmp/result.md 2>&1` |
-| 즉시 한 줄 프롬프트 실행 | `codex exec --full-auto "변경사항 위험 요인 3개만 정리"` |
-| 세션 파일 없이 1회성 실행 | `codex exec --full-auto --ephemeral "..."` |
-| 이벤트 스트림 자동화(JSONL) | `codex exec --full-auto --json "..."` |
-| 브랜치 비교 코드 리뷰 | `codex exec review --base main --full-auto` |
-| 워킹트리 리뷰 | `codex exec review --uncommitted --full-auto` |
+| 플래그 | 설명 |
+|--------|------|
+| `-o <FILE>` | 마지막 에이전트 메시지 저장 |
+| `--output-schema <FILE>` | 구조화 JSON 출력 |
+| `-i <FILE>` | 이미지 첨부 |
+| `-s <MODE>` | 샌드박스 정책 |
+| `-C <DIR>` | 작업 디렉토리 지정 |
+| `--add-dir <DIR>` | 추가 쓰기 가능 디렉토리 |
 
-## 핵심 플래그
+### exec · review 공통 플래그
 
-| 플래그 | 적용 | 의미 | 운영 원칙 |
-|--------|------|------|-----------|
-| `--full-auto` | 공통 | 자동 실행 편의 별칭 | 기본 실행값으로 사용 |
-| `-m <MODEL>` | 공통 | 모델 지정 | 기본적으로 생략하고 기본 모델 사용 |
-| `-o <FILE>` | exec 전용 | 마지막 에이전트 메시지 저장 | 결과 보존이 필요하면 항상 지정. **review에서는 사용 불가** — stdout 리다이렉트(`> file 2>&1`)로 대체 |
-| `--ephemeral` | 공통 | 세션 파일 미저장 | 일회성/민감 프롬프트에서 사용 |
-| `--json` | 공통 | JSONL 이벤트 출력 | 파이프라인 연동 시만 사용 |
-| `-` (PROMPT 위치) | 공통 | stdin에서 프롬프트 읽기 | 파이프 입력 시 명시 가능 |
-| `--skip-git-repo-check` | 공통 | git 저장소 체크 건너뜀 | 저장소 외 실행이 필요한 경우에만 사용 |
-| `--base <BRANCH>` | review 전용 | 비교 대상 브랜치 | PR 리뷰 시 사용 |
-| `--uncommitted` | review 전용 | 미커밋 변경 리뷰 | 로컬 self-review 시 사용 |
-| `--commit <SHA>` | review 전용 | 특정 커밋 리뷰 | 단일 커밋 검토 시 사용 |
+| 플래그 | 설명 |
+|--------|------|
+| `--full-auto` | 자동 실행 편의 별칭 (기본 사용값) |
+| `-m <MODEL>` | 모델 지정 (생략 시 config.toml 기본값) |
+| `--ephemeral` | 세션 파일 미저장 |
+| `--json` | JSONL 이벤트 출력 |
+| `--skip-git-repo-check` | Git 저장소 체크 건너뜀 |
+| `-c <key=value>` | config 값 오버라이드 |
 
-## 모델 사용 원칙
+### ⚠️ review 상호 배타 규칙
 
-- 기본 모델은 `~/.codex/config.toml`의 `model` 값을 따른다.
-- 이 저장소 기본값은 `gpt-5.3-codex`다.
-- 실무 기본 원칙:
-  1. 우선 `-m`을 생략한다.
-  2. 공통 기준이 필요한 경우에만 `-m gpt-5.3-codex`를 명시한다.
-  3. 팀 문서/스크립트에는 모델명을 혼합 표기하지 않는다.
+**다음 4개 인자는 모두 상호 배타적** — 한 번에 하나만 사용 가능:
 
-### 모델 호환성 주의사항
+|  | PROMPT | --base | --uncommitted | --commit |
+|---|:---:|:---:|:---:|:---:|
+| **PROMPT** | — | ❌ | ❌ | ❌ |
+| **--base** | ❌ | — | ❌ | ❌ |
+| **--uncommitted** | ❌ | ❌ | — | ❌ |
+| **--commit** | ❌ | ❌ | ❌ | — |
 
-- 계정/구독 조건에 따라 일부 모델은 실행 불가할 수 있다.
-- 실행 불가 모델 지정 시 `"model is not supported"` 오류가 발생한다.
-- 해당 오류가 나면 `-m`을 제거해 기본 모델로 재시도한다.
-- 상세 복구 절차는 [references/troubleshooting.md](references/troubleshooting.md)를 따른다.
+위반 시 에러:
+
+```
+error: the argument '[PROMPT]' cannot be used with '--base <BRANCH>'
+error: the argument '--base <BRANCH>' cannot be used with '--uncommitted'
+```
+
+근본 원인과 상세 분석: [references/known-issues.md](references/known-issues.md) §1
 
 ## 표준 실행 절차
 
-1. 프롬프트를 파일로 준비한다.
-2. stdin 파이프로 `codex exec`에 전달한다.
-3. `-o`로 결과 파일을 저장한다.
-4. 결과 파일을 읽고 다음 라운드 입력을 구성한다.
-5. 필요 시 `--ephemeral` 또는 `--json`을 추가한다.
+### 일반 exec
 
-기본 템플릿:
-
-```bash
-cat /tmp/prompt.md | codex exec --full-auto -o /tmp/result.md 2>&1
-```
-
-## 입력 패턴
-
-### 패턴 A: 파일 -> stdin 파이프 (기본)
-
-```bash
-cat /tmp/prompt.md | codex exec --full-auto -o /tmp/result.md 2>&1
-```
-
-장점:
-- 프롬프트 이력 파일 관리가 쉽다.
-- Claude Code/터미널 환경 모두에서 재현 가능하다.
-- 결과 파일(`-o`)과 분리해 루프를 구성하기 쉽다.
-
-### 패턴 B: heredoc으로 프롬프트 생성 후 실행
+프롬프트를 파일로 작성하고, stdin 파이프로 전달하며, `-o`로 결과를 저장한다:
 
 ```bash
 cat > /tmp/prompt.md <<'PROMPT'
-다음 diff를 검토하고, 실제 배포 리스크만 5개 이내로 지적한다.
+이 변경의 배포 리스크를 3개 이내로 지적한다.
 PROMPT
 
 cat /tmp/prompt.md | codex exec --full-auto -o /tmp/result.md 2>&1
 ```
 
-장점:
-- 임시 프롬프트를 빠르게 생성 가능하다.
-- 명령 이력만으로 재현이 가능하다.
-
-### 패턴 C: 인라인 프롬프트 (짧은 질의)
+인라인 프롬프트도 가능하다 (짧은 질의에 한해):
 
 ```bash
 codex exec --full-auto "git diff 기준으로 회귀 가능성 한 줄 요약"
 ```
 
-장점:
-- 단문 질의에서 가장 빠르다.
-
-주의:
-- 긴 지시문, 구조화된 체크리스트에는 파일 기반 패턴을 우선한다.
-
-## 출력 패턴
-
-### 결과 메시지 파일 저장
+### 코드 리뷰 — scope flag만 사용 (커스텀 지시 불필요)
 
 ```bash
-cat /tmp/prompt.md | codex exec --full-auto -o /tmp/result.md 2>&1
+codex exec review --base main --full-auto > /tmp/review.md 2>&1
+codex exec review --uncommitted --full-auto > /tmp/review.md 2>&1
+codex exec review --commit <sha> --full-auto > /tmp/review.md 2>&1
 ```
 
-`-o`는 마지막 에이전트 메시지를 파일로 저장한다.
-장기 루프(검토 -> 수정 -> 재검토)에서는 필수로 사용한다.
+review 결과를 파일 저장하려면 stdout 리다이렉트(`> file 2>&1`)를 사용한다.
+`-o`는 review에서 지원하지 않는다.
 
-### 이벤트 스트림(JSONL)
+### 코드 리뷰 — 커스텀 지시 필요
 
-```bash
-codex exec --full-auto --json "현재 변경의 배포 체크리스트 생성"
-```
+PROMPT과 scope flag이 상호 배타이므로, 두 가지 대안 중 선택한다:
 
-`--json`은 파이프라인 수집/파싱 용도로만 사용한다.
-일반 수동 사용에서는 가독성 때문에 기본 출력 모드를 유지한다.
+**방법 A — AGENTS.md 활용 (영구 지시, review diff 스코핑 유지)**
 
-## codex exec review 기본 사용
+프로젝트 `AGENTS.md` 또는 `~/.codex/AGENTS.override.md`에 리뷰 정책을 배치한 뒤,
+scope flag으로 review를 실행하면 지시가 자동 적용된다.
+(지시 파일 우선순위: [references/patterns.md](references/patterns.md) 패턴 3 참조)
 
-코드 리뷰는 일반 `exec` 프롬프트보다 `review` 서브커맨드를 우선한다.
+**방법 B — exec 우회 (1회성 지시, 최대 유연성)**
 
-### 브랜치 기준 리뷰
+`codex exec` (review 미사용)에 `git diff` 출력과 커스텀 지시를 프롬프트로 직접 전달한다.
+`-o`로 결과 저장이 가능하고, 프롬프트 내용을 자유롭게 구성할 수 있다.
 
-```bash
-codex exec review --base main --full-auto
-```
+상세 명령과 예제: [references/patterns.md](references/patterns.md) 패턴 3, 4
 
-현재 브랜치를 `main`과 비교해 리뷰한다.
+## 모델 사용 원칙
 
-### 워킹트리 리뷰
-
-```bash
-codex exec review --uncommitted --full-auto
-```
-
-staged/unstaged/untracked 변경을 함께 리뷰한다.
-
-### 특정 커밋 리뷰
-
-```bash
-codex exec review --commit <sha> --full-auto
-```
-
-단일 커밋의 변경을 리뷰한다.
-
-### 커스텀 지시 추가
-
-```bash
-cat /tmp/review-instruction.md | codex exec review - --base main --full-auto
-```
-
-`-`를 사용해 stdin 지시를 추가한다.
+- 기본 모델: `~/.codex/config.toml`의 `model` 값을 따른다.
+- 리뷰 전용 모델: `review_model` 설정으로 분리 가능하다.
+- 실무 원칙:
+  1. `-m`을 생략하고 기본 모델을 사용한다.
+  2. `model is not supported` 오류 시 `-m`을 제거하고 재시도한다.
+  3. 모델명을 매번 다르게 혼용하지 않는다.
 
 ## 운영 체크리스트
 
 실행 전:
-- `codex --version`이 기대 버전인지 확인한다.
-- 현재 디렉토리가 대상 저장소 루트인지 확인한다.
-- 프롬프트 파일 경로와 결과 파일 경로를 분리한다.
+- `codex --version`으로 기대 버전 확인
+- `pwd`가 대상 저장소 루트인지 확인
+- 프롬프트 파일 경로와 결과 파일 경로를 분리
 
 실행 후:
-- `-o` 결과 파일이 생성되었는지 확인한다.
-- 결과가 비어 있으면 stderr 로그부터 확인한다.
-- 다음 라운드 입력에 반영할 액션 항목만 추린다.
+- 결과 파일 생성 여부 확인 (`-o` 또는 리다이렉트)
+- 빈 결과 시 stderr 로그부터 확인
+- 다음 라운드 입력에 반영할 액션 항목만 추출
 
 ## 하지 말아야 할 패턴
 
-- `codex exec` 일반 실행에 존재하지 않는 플래그를 임의로 추가하지 않는다.
-- 모델명을 매번 다르게 혼용하지 않는다.
-- 긴 검토 루프에서 결과를 콘솔에만 남기고 파일 저장을 생략하지 않는다.
-- 실패 원인을 확인하기 전에 명령을 반복 재시도하지 않는다.
+| 금지 패턴 | 발생 에러 | 올바른 대안 |
+|-----------|----------|------------|
+| review에 `-o` 사용 | `unexpected argument '-o' found` | stdout 리다이렉트 `> file 2>&1` |
+| review에서 PROMPT + scope flag | `'[PROMPT]' cannot be used with '--base'` | 의사결정 트리의 방법 A 또는 B |
+| exec 전용 플래그를 review에 전달 | `unexpected argument` | exec 전용/공통 매트릭스 확인 |
+| 실패 원인 미확인 후 반복 재시도 | 동일 에러 반복 | known-issues.md 진단 절차 |
+| 긴 루프에서 결과 파일 저장 생략 | 결과 유실 | `-o` 또는 리다이렉트 필수 사용 |
 
-## 트러블슈팅/예제 참조
+## 참조
 
-- 실패 대응 절차: [references/troubleshooting.md](references/troubleshooting.md)
-- 실전 명령 모음: [references/examples.md](references/examples.md)
+- **상황별 실행 패턴**: [references/patterns.md](references/patterns.md)
+- **제한사항/트러블슈팅**: [references/known-issues.md](references/known-issues.md)
 
 문서와 CLI 동작이 다를 때는 CLAUDE.md의 "스킬 문서 불일치 시 행동 원칙"을 따른다.
-현재 도움말(`codex exec --help`, `codex exec review --help`) 출력이 이 문서보다 항상 우선하는 진실 원천이다.
+`codex exec --help` / `codex exec review --help` 출력이 이 문서보다 항상 우선하는 진실 원천이다.
