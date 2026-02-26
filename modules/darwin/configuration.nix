@@ -331,8 +331,9 @@ in
     # activateSettings가 스크롤 방향을 롤백시키므로 명시적으로 재설정
     defaults write -g com.apple.swipescrolldirection -bool false
 
-    # Hammerspoon 설정 리로드 (F18 리매핑과 연동)
-    /Applications/Hammerspoon.app/Contents/Frameworks/hs/hs -c "hs.reload()" 2>/dev/null || true
+    # Hammerspoon 재시작은 nrs.sh의 restart_hammerspoon()에서 처리 (kill+open)
+    # 여기서 hs.reload()를 호출하면 nrs.sh와 이중 리로드되어 알림 2회 발생
+    # 직접 darwin-rebuild를 실행한 경우 수동으로 hsr 또는 앱 재시작 필요
 
     # Shottr 재시작 (activateSettings로 symbolic hotkeys 반영 후)
     # Shottr 미설치/GUI 세션 없음(SSH) 등에서 실패해도 activation을 중단하지 않음
