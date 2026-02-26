@@ -50,8 +50,8 @@ in
     # broot: tree 스타일 출력
     bt = "br -c :pt";
 
-    # Claude Code (macOS에서만 Claude in Chrome 활성화 + 권한 스킵 + MCP 설정 자동 로드)
-    c = "command claude${
+    # Claude Code (wrapper로 hooks trust 자동 주입 + macOS Chrome 활성화 + 권한 스킵)
+    c = "~/.local/bin/claude-wrapper.sh${
       if pkgs.stdenv.isDarwin then " --chrome" else ""
     } --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 

@@ -14,6 +14,7 @@ let
   claudeFilesPath = "${nixosConfigPath}/modules/shared/programs/claude/files";
   # macOS에서는 chrome-devtools-mcp를 user-scope MCP로 사용, NixOS는 빈 설정 유지
   claudeMcpFile = if pkgs.stdenv.isDarwin then "mcp.darwin.json" else "mcp.json";
+  jqBin = "${pkgs.jq}/bin/jq";
 in
 {
   # Worktree 심링크 정리: .wt/ 아래 Claude 관리 경로(files/*)를 가리키는 stale 심링크 제거
@@ -46,6 +47,74 @@ in
     fi
   '';
 
+  # Hooks trust 자동 주입: ~/.claude.json의 기존 프로젝트에 trust 플래그 패치
+  # 배경: upstream #5572, #10409 — hasTrustDialogHooksAccepted를 공식 인터페이스로 설정 불가
+  # v2.1.51 보안 수정으로 interactive hooks 실행에 이 플래그가 필수가 되었으나,
+  # --dangerously-skip-permissions가 trust dialog를 건너뛰면서 플래그도 설정하지 않는 버그 존재
+  home.activation.ensureClaudeHooksTrust = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    cfg="$HOME/.claude.json"
+    lockdir="''${cfg}.lock"
+
+    # 파일 없거나 비어있으면 skip (서브쉘이 아닌 조건문으로 처리)
+    if [ -s "$cfg" ]; then
+
+      # mkdir 기반 lock (macOS/Linux 모두 POSIX 원자적)
+      acquire_lock() {
+        local waited=0
+        while ! mkdir -- "$lockdir" 2>/dev/null; do
+          if [ -f "$lockdir/pid" ]; then
+            local other_pid
+            other_pid=$(cat "$lockdir/pid" 2>/dev/null || echo "")
+            if [ -n "$other_pid" ] && ! kill -0 "$other_pid" 2>/dev/null; then
+              rm -rf -- "$lockdir"
+              continue
+            fi
+          elif [ -d "$lockdir" ]; then
+            # PID 파일 없는 stale lock: 즉시 제거
+            rm -rf -- "$lockdir"
+            continue
+          fi
+          waited=$((waited + 1))
+          if [ "$waited" -ge 100 ]; then
+            echo "ensureClaudeHooksTrust: lock timeout, skipping"
+            return 1
+          fi
+          sleep 0.1
+        done
+        echo $$ > "$lockdir/pid"
+        return 0
+      }
+
+      if acquire_lock; then
+        tmp=$(mktemp "''${cfg}.tmp.XXXXXX")
+        trap 'rm -f "$tmp"; rm -rf -- "$lockdir"' EXIT INT TERM
+
+        if $DRY_RUN_CMD ${jqBin} '
+          if (.projects | type) != "object" then .
+          else
+            .projects |= with_entries(
+              .value |= (
+                if (type == "object")
+                then . + { hasTrustDialogAccepted: true, hasTrustDialogHooksAccepted: true }
+                else .
+                end
+              )
+            )
+          end
+        ' "$cfg" > "$tmp" && [ -s "$tmp" ] && ${jqBin} empty "$tmp" >/dev/null 2>&1; then
+          $DRY_RUN_CMD mv -- "$tmp" "$cfg"
+        else
+          echo "ensureClaudeHooksTrust: jq patch failed, skipping"
+          rm -f "$tmp"
+        fi
+
+        rm -rf -- "$lockdir"
+        trap - EXIT INT TERM
+      fi
+
+    fi
+  '';
+
   # ~/.claude/ 디렉토리 관리 (선택적 파일만)
   home.file = {
     # 메인 설정 파일 - 양방향 수정 가능 (nixos-config 직접 참조)
@@ -69,6 +138,10 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/ask-notification.sh";
     ".claude/hooks/plan-notification.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/plan-notification.sh";
+
+    # Claude wrapper script - trust 자동 주입 후 claude 실행 (chmod +x 필수)
+    ".local/bin/claude-wrapper.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/claude-wrapper.sh";
 
     # syncing-codex-harness 스킬 (user-scope)
     ".claude/skills/syncing-codex-harness".source =
