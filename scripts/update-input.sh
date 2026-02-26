@@ -25,3 +25,7 @@ done
 echo
 echo "═══ flake.lock 변경사항 ═══"
 git diff flake.lock
+
+echo
+echo "💡 FOD hash mismatch 수동 수정: ./scripts/fix-fod-hashes.sh"
+echo "   주의: 현재 호스트의 config만 검증. NixOS FOD는 MiniPC에서 실행해야 감지됨."
