@@ -59,13 +59,26 @@ fileSystems."/mnt/data" = { device = "by-uuid/..."; };          # HDD UUID 종�
 ### Rebuild 명령어
 
 ```bash
-nrs             # 설정 적용 (미리보기 + 적용)
-nrs --offline   # 오프라인 rebuild (캐시만 사용)
-nrp             # 미리보기만
+nrs                       # 설정 적용 (미리보기 + 적용)
+nrs --offline             # 오프라인 rebuild (캐시만 사용)
+nrs --force               # 소스 빌드 경고 무시하고 진행
+nrs --force --cores 2     # 코어 제한으로 진행 (과열 방지)
+nrp                       # 미리보기만
 ```
 
 > nrs/nrp 스크립트는 `~/.local/lib/rebuild-common.sh`를 source하여 공통 함수(로깅, 인수 파싱, worktree 감지, 빌드 미리보기, 아티팩트 정리)를 사용합니다.
 > 소스: `modules/shared/scripts/rebuild-common.sh`, 플랫폼별: `modules/nixos/scripts/{nrs,nrp}.sh`
+
+**소스 빌드 Pre-flight 체크** (NixOS 전용):
+
+`nrs`/`nrp` 실행 시 `nix build --dry-run`으로 소스 빌드 대상을 사전 감지합니다.
+NixOS 설정 조립용 trivial derivation(home-manager, unit, etc, activate, nixos-system 등)을 필터링하고,
+남은 non-trivial 패키지가 있으면 `nrs`는 abort, `nrp`는 경고만 출력합니다.
+
+- `--force`: 소스 빌드 경고를 무시하고 빌드 진행
+- `--cores N`: nix build/nixos-rebuild에 `--cores N` 전달 (CPU 코어 제한으로 과열 방지)
+- `--offline` 모드에서는 dry-run 결과가 부정확하므로 pre-flight 자동 스킵
+- dry-run eval 에러 시 fallthrough (pre-flight 실패가 빌드를 차단하지 않음)
 
 **Git Worktree 지원:**
 

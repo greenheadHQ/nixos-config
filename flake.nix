@@ -130,6 +130,7 @@
         nixpkgs.lib.nixosSystem {
           system = systems.linux;
           modules = [
+            nixpkgs-shared
             inputs.agenix.nixosModules.default
             disko.nixosModules.disko
             home-manager.nixosModules.home-manager

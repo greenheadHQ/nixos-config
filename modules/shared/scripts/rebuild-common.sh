@@ -7,10 +7,12 @@
 #
 # 제공 함수:
 #   parse_args, log_info, log_warn, log_error,
-#   preview_changes, cleanup_build_artifacts
+#   preflight_source_build_check, preview_changes, cleanup_build_artifacts
 #
 # 출력 변수:
 #   NO_CHANGES - preview_changes() 실행 후 true/false (store 경로 비교)
+#   FORCE_FLAG - --force 전달 시 true
+#   CORES_FLAG - --cores N 전달 시 "--cores N"
 
 # fail-fast: REBUILD_CMD 미설정 시 즉시 실패
 if [[ -z "${REBUILD_CMD:-}" ]]; then
@@ -56,21 +58,104 @@ detect_worktree() {
 detect_worktree
 
 #───────────────────────────────────────────────────────────────────────────────
-# 인수 파싱 (OFFLINE_FLAG 설정)
+# 인수 파싱 (OFFLINE_FLAG, FORCE_FLAG, CORES_FLAG 설정)
 #───────────────────────────────────────────────────────────────────────────────
 parse_args() {
     OFFLINE_FLAG=""
-    for arg in "$@"; do
-        case "$arg" in
-            --offline)
-                OFFLINE_FLAG="--offline"
-                ;;
-            *)
-                log_error "Unknown argument: $arg"
-                exit 1
-                ;;
+    FORCE_FLAG=false
+    CORES_FLAG=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --offline) OFFLINE_FLAG="--offline" ;;
+            --force)   FORCE_FLAG=true ;;
+            --cores)
+                [[ -z "${2:-}" || "$2" =~ ^-- ]] && { log_error "--cores requires a number"; exit 1; }
+                [[ ! "$2" =~ ^[0-9]+$ ]] && { log_error "--cores: positive integer required"; exit 1; }
+                (( 10#$2 < 1 )) && { log_error "--cores: positive integer required"; exit 1; }
+                CORES_FLAG="--cores $2"; shift ;;
+            *) log_error "Unknown argument: $1"; exit 1 ;;
         esac
+        shift
     done
+}
+
+#───────────────────────────────────────────────────────────────────────────────
+# Pre-flight 소스 빌드 체크 (NixOS 전용, nrs.sh/nrp.sh에서 호출)
+# nix build --dry-run으로 소스 빌드 대상을 사전 감지하고,
+# non-trivial 패키지가 있으면 --force 없이는 abort
+# 인수: --warn-only → abort 대신 경고만 출력 (nrp에서 사용)
+#───────────────────────────────────────────────────────────────────────────────
+preflight_source_build_check() {
+    local warn_only=false
+    [[ "${1:-}" == "--warn-only" ]] && warn_only=true
+
+    # offline 모드에서는 dry-run 결과가 부정확하므로 스킵
+    if [[ -n "$OFFLINE_FLAG" ]]; then
+        log_info "🔍 Pre-flight skipped (offline mode)."
+        return 0
+    fi
+
+    log_info "🔍 Checking for source builds..."
+
+    local dry_run_output
+    if ! dry_run_output=$(nix build \
+        "${FLAKE_PATH}#nixosConfigurations.$(hostname).config.system.build.toplevel" \
+        --dry-run 2>&1); then
+        log_warn "⚠️  Pre-flight dry-run failed. Proceeding with build."
+        return 0  # fallthrough — pre-flight 실패가 빌드를 차단하면 안 됨
+    fi
+
+    # .drv 라인 추출 — dry-run 출력에서 .drv로 끝나는 경로는
+    # "will be built" 섹션에만 존재 (fetched 경로는 빌드 출력이므로 .drv 아님)
+    # 참고: nix CLI 출력 형식은 unstable이나, .drv 확장자는 Nix 설계상 불변
+    local build_drvs
+    build_drvs=$(echo "$dry_run_output" | grep '\.drv$' || true)
+    [[ -z "$build_drvs" ]] && { log_info "  ✓ All packages cached."; return 0; }
+
+    # known-trivial: NixOS 설정 조립 derivation (컴파일 아님)
+    # 패턴은 /nix/store/<hash>-<name>.drv 전체 경로에 매칭됨
+    local trivial_patterns=(
+        '-home-manager-'        '-hm_'                  '-unit-script-'
+        '-unit-.*\.(service|socket|timer|mount|target|path|slice)\.drv$'
+        '-system-units\.drv$'   '-etc\.drv$'
+        '-activate\.drv$'       '-nixos-system-'        '-user-environment\.drv$'
+        '-with-addons-'
+    )
+    local filter_regex
+    filter_regex=$(printf '|%s' "${trivial_patterns[@]}")
+    filter_regex="${filter_regex:1}"
+
+    local nontrivial_drvs
+    nontrivial_drvs=$(echo "$build_drvs" | grep -Ev -- "$filter_regex" || true)
+    [[ -z "$nontrivial_drvs" ]] && { log_info "  ✓ Only trivial builds."; return 0; }
+
+    # 패키지명 추출
+    local pkg_names
+    pkg_names=$(echo "$nontrivial_drvs" | sed 's|.*/[a-z0-9]\{32\}-||; s|\.drv$||' | sort -u)
+
+    # --force 또는 warn-only: 경고만 출력하고 진행
+    if [[ "$FORCE_FLAG" == true || "$warn_only" == true ]]; then
+        local reason=""
+        [[ "$FORCE_FLAG" == true ]] && reason=" (--force로 진행)"
+        log_warn "⚠️  소스 빌드 감지${reason}:"
+        while IFS= read -r pkg; do echo "  - $pkg"; done <<< "$pkg_names"
+        echo ""
+        return 0
+    fi
+
+    # abort — 호출 스크립트명을 $0에서 추출
+    local cmd_name
+    cmd_name=$(basename "$0" .sh)
+
+    log_warn "⚠️  다음 패키지가 소스에서 빌드됩니다 (Nix 캐시 없음):"
+    while IFS= read -r pkg; do echo "  - $pkg"; done <<< "$pkg_names"
+    echo ""
+    echo "MiniPC에서 소스 빌드는 과열 및 장시간 소요될 수 있습니다."
+    echo "  ${cmd_name} --force            # 경고 무시하고 진행"
+    echo "  ${cmd_name} --force --cores 2  # 코어 제한으로 진행 (과열 방지)"
+    echo ""
+    echo "또는 Hydra 캐시가 준비될 때까지 대기하세요."
+    exit 1
 }
 
 #───────────────────────────────────────────────────────────────────────────────
@@ -89,7 +174,7 @@ preview_changes() {
     log_info "🔨 Building (${offline_tag}${label})..."
 
     # shellcheck disable=SC2086
-    if ! "$REBUILD_CMD" build --flake "$FLAKE_PATH" $OFFLINE_FLAG; then
+    if ! "$REBUILD_CMD" build --flake "$FLAKE_PATH" $OFFLINE_FLAG $CORES_FLAG; then
         log_error "❌ Build failed!"
         exit 1
     fi

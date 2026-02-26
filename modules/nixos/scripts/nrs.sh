@@ -2,8 +2,10 @@
 # nixos-rebuild wrapper script
 #
 # 사용법:
-#   nrs.sh           # 일반 rebuild
-#   nrs.sh --offline # 오프라인 rebuild (빠름)
+#   nrs.sh                       # 일반 rebuild
+#   nrs.sh --offline             # 오프라인 rebuild (빠름)
+#   nrs.sh --force               # 소스 빌드 경고 무시
+#   nrs.sh --force --cores 2    # 코어 제한으로 진행
 
 set -euo pipefail
 
@@ -25,7 +27,7 @@ run_nixos_rebuild() {
 
     local rc=0
     # shellcheck disable=SC2086
-    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG || rc=$?
+    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG $CORES_FLAG || rc=$?
 
     if [[ "$rc" -eq 0 ]]; then
         return 0
@@ -45,6 +47,7 @@ main() {
     cd "$FLAKE_PATH" || exit 1
 
     echo ""
+    preflight_source_build_check
     preview_changes "preview" "Changes to be applied:"
     if [[ "$NO_CHANGES" == true ]]; then
         cleanup_build_artifacts
