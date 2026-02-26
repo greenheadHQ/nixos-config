@@ -13,7 +13,8 @@
       "Bash(rm -rf /)",
       "Bash(rm -rf ~)",
       "Bash(rm -rf ~/*)",
-      "Bash(rm -rf /*)"
+      "Bash(rm -rf /*)",
+      "Bash(npm *)"
     ],
     "additionalDirectories": [
       "~/Desktop",
