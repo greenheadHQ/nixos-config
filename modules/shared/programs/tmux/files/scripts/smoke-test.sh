@@ -202,6 +202,133 @@ else
 fi
 echo ""
 
+# 11. open-url / edit 라인점프 회귀 테스트
+echo "[open-url / edit 회귀 테스트]"
+MOCK_DIR=$(mktemp -d)
+MOCK_LOG="$MOCK_DIR/tmux.log"
+MOCK_NOTE="$MOCK_DIR/note.md"
+: > "$MOCK_LOG"
+
+# tmux mock 생성
+cat > "$MOCK_DIR/tmux" <<'TMUX_MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+LOG="${TMUX_MOCK_LOG:?}"
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  display-message)
+    if [[ "${1:-}" == "-p" ]]; then
+      case "${2:-}" in
+        '#{pane_id}') echo '%1' ;;
+        '#{pane_current_path}') echo "${TMUX_MOCK_PANE_PATH:-$PWD}" ;;
+        '#{@custom_pane_title}') echo "${TMUX_MOCK_TITLE:-}" ;;
+        '#{@pane_note_path}') echo "${TMUX_MOCK_NOTE:-}" ;;
+        *) echo '' ;;
+      esac
+    fi ;;
+  show-option) echo '0' ;;
+  set) ;;
+  display-popup)
+    printf 'DISPLAY-POPUP'  >> "$LOG"
+    for a in "$@"; do printf '\t%s' "$a" >> "$LOG"; done
+    printf '\n' >> "$LOG" ;;
+  display-menu)
+    printf 'DISPLAY-MENU' >> "$LOG"
+    for a in "$@"; do printf '\t%s' "$a" >> "$LOG"; done
+    printf '\n' >> "$LOG" ;;
+  *) ;;
+esac
+TMUX_MOCK
+chmod +x "$MOCK_DIR/tmux"
+
+SCRIPT="$HOME/.tmux/scripts/pane-note.sh"
+run_mock() {
+  : > "$MOCK_LOG"
+  PATH="$MOCK_DIR:$PATH" TMUX_MOCK_LOG="$MOCK_LOG" \
+    TMUX_MOCK_NOTE="$MOCK_NOTE" TMUX_MOCK_PANE_PATH="$MOCK_DIR" \
+    bash "$SCRIPT" "$@"
+}
+
+# 테스트 11-1: edit + 라인번호 → +N 포함
+: > "$MOCK_NOTE"
+run_mock edit 42
+if tail -n1 "$MOCK_LOG" | grep -q '+42'; then
+  echo "  OK: edit 라인번호 전달 (+42)"
+else
+  echo "  FAIL: edit 라인번호 미전달"; exit 1
+fi
+
+# 테스트 11-2: edit + 비숫자 → +abc 미포함
+: > "$MOCK_NOTE"
+run_mock edit abc
+if tail -n1 "$MOCK_LOG" | grep -q '+abc'; then
+  echo "  FAIL: 비숫자 라인번호가 전달됨"; exit 1
+else
+  echo "  OK: 비숫자 라인번호 무시"
+fi
+
+# 테스트 11-3: edit 인자 없음 → + 미포함
+: > "$MOCK_NOTE"
+run_mock edit
+if tail -n1 "$MOCK_LOG" | grep -Eq '\+[0-9]+'; then
+  echo "  FAIL: 인자 없는데 라인번호 전달됨"; exit 1
+else
+  echo "  OK: 인자 없으면 점프 없음"
+fi
+
+# 테스트 11-4: open-url 마지막 URL 포함 (printf 버그 회귀)
+cat > "$MOCK_NOTE" <<'URL_NOTE'
+- 링크A: https://one.example/a
+- 링크B: https://two.example/b
+- 링크C: https://three.example/c
+URL_NOTE
+run_mock open-url
+if tail -n1 "$MOCK_LOG" | grep -q 'three.example/c'; then
+  echo "  OK: 마지막 URL 포함 (printf 버그 수정 확인)"
+else
+  echo "  FAIL: 마지막 URL 누락 (printf 버그 회귀)"; exit 1
+fi
+
+# 테스트 11-5: URL 없는 항목 파싱 (URL+no-URL 혼합)
+cat > "$MOCK_NOTE" <<'NOURL_NOTE'
+- 있는링크: https://example.com
+- 없는링크:
+NOURL_NOTE
+run_mock open-url
+if tail -n1 "$MOCK_LOG" | grep -q 'URL 없음'; then
+  echo "  OK: URL 없는 항목 메뉴 표시 (혼합)"
+else
+  echo "  FAIL: URL 없는 항목 미표시 (혼합)"; exit 1
+fi
+
+# 테스트 11-6: URL 없는 항목만 있는 노트 (no-URL-only)
+cat > "$MOCK_NOTE" <<'NOURONLY_NOTE'
+- 슬랙:
+- 지라:
+NOURONLY_NOTE
+run_mock open-url
+if tail -n1 "$MOCK_LOG" | grep -q 'URL 없음'; then
+  echo "  OK: URL 없는 항목만 있는 노트 메뉴 표시"
+else
+  echo "  FAIL: URL 없는 항목만 있는 노트 미표시"; exit 1
+fi
+
+# 테스트 11-7: line_num 인젝션 방지 (탭 포함 라벨)
+cat > "$MOCK_NOTE" <<'INJECT_NOTE'
+- 정상: https://example.com
+INJECT_NOTE
+# 탭+페이로드가 포함된 라인을 직접 추가
+printf -- '- 악성\t$(touch /tmp/pwn):\n' >> "$MOCK_NOTE"
+run_mock open-url
+if tail -n1 "$MOCK_LOG" | grep -q 'touch'; then
+  echo "  FAIL: line_num 인젝션 방어 실패"; exit 1
+else
+  echo "  OK: line_num 인젝션 차단"
+fi
+
+rm -rf "$MOCK_DIR"
+echo ""
+
 echo "==========================================="
 echo "  All tests passed!"
 echo "==========================================="

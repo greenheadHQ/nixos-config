@@ -113,11 +113,22 @@ ensure_exist_or_msg(){
 }
 
 open_popup_edit(){
+  local line_num="${1:-}"
   # 절대 경로로 resolve: display-popup 셸의 PATH 불완전 방지
   local editor_cmd
   editor_cmd="$(command -v "${EDITOR:-nvim}" 2>/dev/null || command -v nvim 2>/dev/null || command -v vim 2>/dev/null || echo vi)"
-  tmux display-popup -E -w 90% -h 85% \
-    "exec '$editor_cmd' '$note'"
+  local line_arg=""
+  # 라인번호가 순수 숫자인 경우에만 점프
+  if [[ "$line_num" =~ ^[0-9]+$ ]]; then
+    line_arg="+${line_num}"
+  fi
+  if [[ -n "$line_arg" ]]; then
+    tmux display-popup -E -w 90% -h 85% \
+      "exec '$editor_cmd' $line_arg '$note'"
+  else
+    tmux display-popup -E -w 90% -h 85% \
+      "exec '$editor_cmd' '$note'"
+  fi
 }
 
 open_popup_view(){
@@ -267,7 +278,7 @@ case "${1:-}" in
     ;;
   edit)
     ensure_exist_or_msg
-    open_popup_edit
+    open_popup_edit "${2:-}"
     ;;
   view)
     ensure_exist_or_msg
@@ -289,14 +300,23 @@ case "${1:-}" in
     ;;
   open-url|open_url|openurl)
     ensure_exist_or_msg
-    # 1) 라벨:URL
+    # 1) 라벨:URL 추출
     labeled="$(sed -n -E 's/^[[:space:]]*[-*][[:space:]]*([^:]+)[[:space:]]*:[[:space:]]*(https?:\/\/[^ )]+).*/\1\t\2/p' "$note")"
-    # 2) 라벨 없으면 전체 URL 수집
+
+    # 2) URL 없는 라벨 수집 (라인번호 포함, 에디터 점프용) — fallback exit 전에 수집
+    no_url_entries="$(grep -n -E '^[[:space:]]*[-*][[:space:]]*[^:]+:[[:space:]]*$' "$note" \
+      | sed -E 's/^([0-9]+):[[:space:]]*[-*][[:space:]]*(.*[^[:space:]])[[:space:]]*:[[:space:]]*$/\2\t\1/' || true)"
+
+    # 3) 라벨 없으면 전체 URL 수집 (fallback)
     if [ -z "$labeled" ]; then
       urls="$(grep -Eo 'https?://[^ )]+' "$note" | sed 's/[),.]\?$//' | awk '!seen[$0]++' || true)"
-      [ -z "$urls" ] && { tmux display-message "No URLs found in note"; exit 0; }
+      if [ -z "$urls" ] && [ -z "$no_url_entries" ]; then
+        tmux display-message "No URLs found in note"
+        exit 0
+      fi
       labeled=""
       while IFS= read -r u; do
+        [ -z "$u" ] && continue
         host="$(printf "%s" "$u" | sed -E 's#^https?://([^/]+).*#\1#')"
         case "$host" in
           *figma.com*)                     lbl="피그마 링크" ;;
@@ -311,21 +331,44 @@ case "${1:-}" in
       done < <(printf '%s\n' "$urls")
     fi
 
+    # URL도 없고 라벨도 없으면 메시지
+    if [ -z "$labeled" ] && [ -z "$no_url_entries" ]; then
+      tmux display-message "No URLs found in note"
+      exit 0
+    fi
+
     MENU=(display-menu -T "Open URL" -x C -y C)
     i=1
+
+    # URL 있는 항목
     while IFS=$'\t' read -r label url; do
       [ -z "${url:-}" ] && continue
       lbl="$(printf "%s" "$label" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
       [ -z "$lbl" ] && lbl="$(printf "%s" "$url" | sed -E 's#^https?://([^/]+).*#\1#')"
-      disp="$(printf "%s" "$lbl" | cut -c1-40)"; [ "${#lbl}" -gt 40 ] && disp="${disp}…"
+      disp="${lbl:0:40}"; [ "${#lbl}" -gt 40 ] && disp="${disp}…"
       esc="$(printf "%s" "$url" | sed "s/'/'\\\\''/g")"
       MENU+=( "$i. $disp" "" "run-shell \"if command -v open >/dev/null 2>&1; then open '$esc' >/dev/null 2>&1 & else (xdg-open '$esc' >/dev/null 2>&1 || true) & fi; tmux display-message '🌐 Opened: $esc'\"" )
       i=$((i+1))
-    done < <(printf '%s' "$labeled")
+    done < <(printf '%s\n' "$labeled")
+
+    # URL 없는 항목 (분리선 + 하단 섹션)
+    if [ -n "$no_url_entries" ]; then
+      [ "$i" -gt 1 ] && MENU+=("" "" "")  # URL 항목이 있을 때만 분리선
+      while IFS=$'\t' read -r label line_num; do
+        [ -z "${label:-}" ] && continue
+        # line_num 숫자 검증 (인젝션 방지)
+        [[ "$line_num" =~ ^[0-9]+$ ]] || continue
+        lbl="$(printf "%s" "$label" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        disp="${lbl:0:30}"; [ "${#lbl}" -gt 30 ] && disp="${disp}…"
+        MENU+=( "- $disp (URL 없음)" "" \
+          "run-shell \"$HOME/.tmux/scripts/pane-note.sh edit $line_num\"" )
+      done < <(printf '%s\n' "$no_url_entries")
+    fi
+
     tmux "${MENU[@]}" >/dev/null 2>&1 || true
     ;;
   *)
-    echo "Usage: $0 {new <title>|edit|view|add-clipboard|open-url|path|filename|ensure-var}" >&2
+    echo "Usage: $0 {new <title>|edit [line]|view|add-clipboard|open-url|path|filename|ensure-var}" >&2
     exit 2
     ;;
 esac
