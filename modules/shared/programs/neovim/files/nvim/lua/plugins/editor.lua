@@ -111,6 +111,60 @@ return {
             return vim.o.columns >= 100 and "default" or "vertical"
           end,
         },
+        -- Tab/Shift+Tab: 순수 이동 (기본 select_and_next/prev → list_down/up)
+        -- Space: 선택 토글 (normal 모드만 — insert에서 공백 입력 유지)
+        actions = {
+          toggle_select = function(picker)
+            picker.list:select()
+          end,
+        },
+        win = {
+          input = {
+            keys = {
+              ["<Tab>"] = { "list_down", mode = { "i", "n" } },
+              ["<S-Tab>"] = { "list_up", mode = { "i", "n" } },
+              ["<Space>"] = { "toggle_select", mode = { "n" } },
+            },
+          },
+          list = {
+            keys = {
+              ["<Tab>"] = { "list_down", mode = { "n", "x" } },
+              ["<S-Tab>"] = { "list_up", mode = { "n", "x" } },
+              ["<Space>"] = { "toggle_select", mode = { "n", "x" } },
+            },
+          },
+        },
+        -- grep: Option+S로 대소문자 구분 토글
+        -- rg 기본값은 --smart-case (소문자만 → insensitive, 대문자 포함 → sensitive)
+        -- 이 토글은 전부 소문자 쿼리에서 case-sensitive 검색이 필요할 때 사용
+        sources = {
+          grep = {
+            case_sens = false,
+            finder = function(opts, ctx)
+              local args_extend = { "--case-sensitive" }
+              opts.args = vim.iter(opts.args or {}):filter(function(val)
+                return not vim.list_contains(args_extend, val)
+              end):totable()
+              if opts.case_sens then
+                opts.args = vim.list_extend(vim.deepcopy(opts.args or {}), args_extend)
+              end
+              return require("snacks.picker.source.grep").grep(opts, ctx)
+            end,
+            actions = {
+              toggle_live_case_sens = function(picker)
+                picker.opts.case_sens = not picker.opts.case_sens
+                picker:find()
+              end,
+            },
+            win = {
+              input = {
+                keys = {
+                  ["<M-s>"] = { "toggle_live_case_sens", mode = { "i", "n" } },
+                },
+              },
+            },
+          },
+        },
       },
     },
   },

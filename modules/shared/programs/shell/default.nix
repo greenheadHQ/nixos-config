@@ -208,5 +208,8 @@ in
     enableZshIntegration = true;
     defaultCommand = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
     fileWidgetCommand = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
+    defaultOptions = [
+      "--bind=tab:down,shift-tab:up"
+    ];
   };
 }

@@ -560,8 +560,8 @@ wt-cleanup() {
       --with-nth=4 \
       --preview='echo {} | cut -d"|" -f2 | xargs -I{} git -C {} log --oneline -5 2>/dev/null || echo "로그 없음"' \
       --preview-window=right:50% \
-      --header="TAB: 다중 선택 / Enter: 확인 / ESC: 취소" \
-      --bind='ctrl-a:select-all')
+      --bind='space:toggle,ctrl-a:select-all' \
+      --header="Space: 다중 선택 / Enter: 확인 / ESC: 취소")
 
     if [[ -z "$selected" ]]; then
       echo "취소되었습니다."

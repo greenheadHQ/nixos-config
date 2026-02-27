@@ -7,3 +7,10 @@ tags: [ neovim, lazyvim, buffer ]
   L             다음 버퍼 (오른쪽 탭)
   <leader>bd    현재 버퍼 닫기
   <leader>bo    다른 버퍼 모두 닫기
+
+창 분할 (window split)
+
+  <C-w>v        수직 분할 (좌우)
+  <C-w>s        수평 분할 (상하)
+  <C-w>h/j/k/l  창 간 이동 (좌/하/상/우)
+  <C-w>q        현재 창 닫기

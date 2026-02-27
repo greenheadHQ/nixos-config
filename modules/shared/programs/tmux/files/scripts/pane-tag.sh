@@ -53,8 +53,9 @@ if [ -n "$current_tags" ]; then
   echo "1단계: 제거할 태그 선택 (없으면 Enter)"
   set +e
   to_remove=$(echo "$current_tags" | fzf --multi \
-    --prompt='제거할 태그 (Tab으로 선택)> ' \
-    --header="현재 태그 중 제거할 것 선택 | Enter: 다음 단계, ESC: 취소")
+    --prompt='제거할 태그 (Space로 선택)> ' \
+    --bind='space:toggle' \
+    --header="Space: 선택/해제 | Enter: 다음 단계, ESC: 취소")
   fzf_exit=$?
   set -e
 
@@ -87,6 +88,7 @@ set +e
 # fzf --print-query로 쿼리(직접 입력)와 선택 모두 처리
 result=$(echo "$available_tags" | grep -v '^$' | fzf --multi \
   --prompt='추가할 태그 (Tab으로 선택, 직접 입력도 가능)> ' \
+  --bind='tab:toggle+down,shift-tab:toggle+up' \
   --header="새 태그 선택 | Enter: 적용, ESC: 취소" \
   --print-query)
 fzf_exit=$?

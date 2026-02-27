@@ -11,3 +11,8 @@ tags: [ neovim, lazyvim, search, telescope ]
   <leader>fb    열린 버퍼 목록             (탭 전환)
   <leader>fr    최근 파일 목록             (Recent Files)
   <leader>e     파일 탐색기 토글           (Explorer 패널)
+
+탐색기 (Explorer)
+
+  <C-h>         Explorer에서 Buffer로 포커스 이동
+  <M-h>         숨김파일 표시/숨기기 토글 (Mac: Option)

@@ -26,7 +26,8 @@ gdf() {
   selected=$(echo "$files" | fzf --multi --ansi \
     --preview "git diff $* -- {} 2>/dev/null | delta --paging=never --width=\$FZF_PREVIEW_COLUMNS" \
     --preview-window=right:60% \
-    --header="TAB: 다중 선택 / Enter: nvim으로 열기")
+    --bind='space:toggle' \
+    --header="Space: 다중 선택 / Enter: nvim으로 열기")
 
   [[ -n "$selected" ]] && echo "$selected" | xargs nvim
 }

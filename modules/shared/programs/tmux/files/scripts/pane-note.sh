@@ -213,7 +213,7 @@ create_note(){
     tags_file=$(mktemp)
     echo "$ALL_TAGS" > "$tags_file"
     tmux display-popup -E -w 90% -h 50% \
-      "cat '$tags_file' | fzf --multi --print-query --prompt='Tags> ' --header=\$'Tab: 기존 태그 선택/해제 | Enter: 완료 | ESC: 건너뛰기\n새 태그 입력: 프롬프트에 직접 입력 (쉼표로 여러 개 가능, 예: 긴급,중요)' > '$tmp_file'" 2>/dev/null || true
+      "cat '$tags_file' | fzf --multi --print-query --bind='tab:toggle+down,shift-tab:toggle+up' --prompt='Tags> ' --header=\$'Tab: 기존 태그 선택/해제 | Enter: 완료 | ESC: 건너뛰기\n새 태그 입력: 프롬프트에 직접 입력 (쉼표로 여러 개 가능, 예: 긴급,중요)' > '$tmp_file'" 2>/dev/null || true
     rm -f "$tags_file"
     # 첫 줄: custom tag (쿼리), 나머지: 선택된 기존 태그
     local query selected_items
