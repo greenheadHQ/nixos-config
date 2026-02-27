@@ -12,23 +12,48 @@
 ```text
 scripts/prompts/
 ├── modules/
-│   ├── 원칙.md
-│   ├── 계획.md
-│   ├── DA-피드백.md
-│   ├── 검증.md
-│   ├── 커밋.md
-│   └── PR.md
+│   ├── principles.md
+│   ├── planning.md
+│   ├── da-feedback.md
+│   ├── verification.md
+│   ├── commit.md
+│   └── pr.md
 └── presets/
-    ├── 기능개발-풀.md
-    ├── 기능개발-라이트.md
-    ├── 버그수정.md
-    ├── 리팩토링.md
-    ├── 코드리뷰.md
-    ├── 탐색조사.md
-    ├── 도메인무지-이슈.md
-    ├── 기술학습.md
-    └── PR-피드백.md
+    ├── feature-dev-full.md
+    ├── feature-dev-light.md
+    ├── bugfix.md
+    ├── refactoring.md
+    ├── code-review.md
+    ├── exploration.md
+    ├── domain-unfamiliar.md
+    ├── tech-learning.md
+    └── pr-feedback.md
 ```
+
+## CLI 사용법
+
+`prompt-render` 명령으로 preset의 코드 블록을 추출하고 placeholder를 치환한 뒤 clipboard에 복사한다.
+
+```bash
+# 예시 1 — 순수 대화형
+prompt-render --preset feature-dev-full
+# DA_TOOL: codex exec ↵
+# DA_MODEL_1: gpt-5.3-codex ↵
+# DA_MODEL_2: gpt-5.3-codex ↵
+
+# 예시 2 — --var 혼합
+prompt-render --preset feature-dev-full --var DA_TOOL="codex exec" --var DA_MODEL_1=gpt-5.3-codex
+# DA_MODEL_2: gpt-5.3-codex ↵  (나머지만 대화형)
+
+# 예시 3 — --non-interactive 실패
+prompt-render --preset feature-dev-full --var DA_TOOL="codex exec" --non-interactive
+# Error: missing variables: DA_MODEL_1, DA_MODEL_2
+# exit code: 2
+```
+
+`cheat-browse --prompts`로 fzf preset 브라우저를 열고, Enter로 선택하면 대화형 렌더가 실행된다.
+
+> 범위 제외: GUI/에디터 통합, 원격 동기화는 본 시스템 범위 외
 
 ## 핵심 운영 정책
 
@@ -38,7 +63,7 @@ scripts/prompts/
 4. 2차 DA는 모델명을 반드시 명시한다.
 5. PR 생성은 2차 DA 완료를 기다리지 않고 먼저 수행한다.
 
-## 권장 흐름 (기능개발-풀)
+## 권장 흐름 (feature-dev-full)
 
 1. 계획 수립 + 1차 DA(plan)
 2. 구현 + 테스트 + 1차 커밋
@@ -53,16 +78,17 @@ scripts/prompts/
 
 ## 버전 관리 규칙
 
-- 프리셋 버전 태그: `preset-name@vX.Y` (예: `기능개발-풀@v1.0`)
+- 프리셋 버전 태그: `preset-name@vX.Y` (예: `feature-dev-full@v1.0`)
 - 변경 로그 최소 항목:
   - 변경 전 버전 / 변경 후 버전
   - 변경 이유
   - 기대 효과
   - 회귀 위험
 - 변수 스키마는 프리셋 상단에 명시:
-  - 모델 변수: `{DA모델_1}`, `{DA모델_2}`
-  - 도구 변수: `{DA도구}`
-  - 도메인 변수: `{학습대상}`, `{익숙한기술}`, `{대상}`
+  - 모델 변수: `{DA_MODEL_1}`, `{DA_MODEL_2}`
+  - 도구 변수: `{DA_TOOL}`
+  - DA 제어: `{DA_INTENSITY}`, `{DA_TIMING}`
+  - 도메인 변수: `{LEARN_TARGET}`, `{FAMILIAR_TECH}`, `{TARGET}`
 
 ## 참고 레퍼런스
 

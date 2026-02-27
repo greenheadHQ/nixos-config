@@ -2,23 +2,23 @@
 
 > Devil's Advocate 루프를 강도/시점/모델로 제어
 > 플레이스홀더
-> - `{강도}`: `light` / `standard` / `strict`
-> - `{시점}`: `plan` / `post-impl` / `both`
-> - `{DA도구}`: `codex exec` / `agent`
-> - `{DA모델_1}`: 계획 단계 DA 모델 (권장 `gpt-5.3-codex`)
-> - `{DA모델_2}`: 구현 후 DA 모델 (필수 명시)
+> - `{DA_INTENSITY}`: `light` / `standard` / `strict`
+> - `{DA_TIMING}`: `plan` / `post-impl` / `both`
+> - `{DA_TOOL}`: `codex exec` / `agent`
+> - `{DA_MODEL_1}`: 계획 단계 DA 모델 (권장 `gpt-5.3-codex`)
+> - `{DA_MODEL_2}`: 구현 후 DA 모델 (필수 명시)
 
 ```text
-DA 피드백 루프를 수행해. {DA도구}를 사용하고 모델은 아래처럼 명시해.
-- 1차 DA(plan): {DA모델_1}
-- 2차 DA(post-impl): {DA모델_2}  # 반드시 명시, 생략 금지
+DA 피드백 루프를 수행해. {DA_TOOL}를 사용하고 모델은 아래처럼 명시해.
+- 1차 DA(plan): {DA_MODEL_1}
+- 2차 DA(post-impl): {DA_MODEL_2}  # 반드시 명시, 생략 금지
 
-강도: {강도}
+강도: {DA_INTENSITY}
 - light: 1회
 - standard: OK까지 반복(최대 3회)
 - strict: OK까지 반복(상한 없음)
 
-시점: {시점}
+시점: {DA_TIMING}
 - plan: 계획 수립 직후
 - post-impl: PR 생성 직후
 - both: 둘 다 수행

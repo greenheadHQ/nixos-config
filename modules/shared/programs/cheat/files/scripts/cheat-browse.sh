@@ -57,6 +57,27 @@ if [[ "${1:-}" == "--toggle" ]]; then
   exit 0
 fi
 
+# --prompts: prompt preset 브라우저
+if [[ "${1:-}" == "--prompts" ]]; then
+  presets_dir="${PROMPT_PRESETS_DIR:?PROMPT_PRESETS_DIR not set}"
+  [[ -d "$presets_dir" ]] || { echo "Error: preset dir not found: $presets_dir" >&2; exit 1; }
+  prompt_render_cmd="$(command -v prompt-render 2>/dev/null || echo "$HOME/.local/bin/prompt-render")"
+  [[ -x "$prompt_render_cmd" ]] || { echo "Error: prompt-render not found. Is the Nix config applied?" >&2; exit 1; }
+  selected="" fzf_rc=0
+  selected=$(find "$presets_dir" -maxdepth 1 -type f -name '*.md' -exec basename {} .md \; 2>/dev/null \
+    | sort \
+    | "$fzf_cmd" \
+        --ansi \
+        --header "  [prompt presets] Enter: 렌더 실행" \
+        --prompt "preset> " \
+        --preview "cat -- \"${presets_dir}/{}.md\"" \
+        --preview-window=right:70%) || fzf_rc=$?
+  # fzf exit: 0=선택, 1=no match, 130=Ctrl-C → 정상 종료; 그 외 → 오류 전파
+  if [[ $fzf_rc -ne 0 && $fzf_rc -ne 1 && $fzf_rc -ne 130 ]]; then exit "$fzf_rc"; fi
+  [[ -z "$selected" ]] && exit 0
+  exec "$prompt_render_cmd" --preset "$selected"
+fi
+
 # 기본: fzf 브라우저 실행
 state_file="$(mktemp)"
 echo "title" > "$state_file"
