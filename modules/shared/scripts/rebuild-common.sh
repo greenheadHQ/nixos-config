@@ -119,6 +119,7 @@ preflight_source_build_check() {
         '-unit-.*\.(service|socket|timer|mount|target|path|slice)\.drv$'
         '-system-units\.drv$'   '-etc\.drv$'
         '-activate\.drv$'       '-nixos-system-'        '-user-environment\.drv$'
+        '-activation-script\.drv$'
         '-with-addons-'
     )
     local filter_regex
