@@ -85,6 +85,7 @@ rm -rf .git/rr-cache
 2. **gitconfig 충돌**: 기존 `$HOME/.gitconfig`가 있으면 Home Manager와 충돌
 3. **rebase 역순 안 됨**: `GIT_SEQUENCE_EDITOR` 환경변수 확인
 4. **lazygit에서 delta side-by-side가 꺼지지 않음**: [트러블슈팅 참조](references/troubleshooting.md#lazygit에서-delta-side-by-side-오버라이드가-안-됨)
+5. **`wt` 직후 `?? .claude/.claude/`, `?? .agents/.agents/` 발생**: [트러블슈팅 참조](references/troubleshooting.md#wt-직후-claudeclaude-agentsagents-중첩-디렉토리가-생김)
 
 ## 레퍼런스
 

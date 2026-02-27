@@ -13,6 +13,9 @@ pre-commit:
       run: shellcheck -S warning {staged_files}
     eval-tests:
       run: bash ./tests/run-eval-tests.sh
+    wt-regression:
+      glob: "modules/shared/scripts/git-worktree-functions.sh"
+      run: bash ./tests/run-wt-regression.sh
 
 pre-push:
   commands:

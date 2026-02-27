@@ -36,7 +36,7 @@ project-root/
 
 Codex CLI는 **디렉토리 심링크**를 따라가지만 **파일 심링크**는 무시한다 (PR #8801).
 `.agents/skills/<name>`은 반드시 디렉토리 심링크여야 하며, 파일 단위 심링크는 사용 불가.
-See: `runbook-codex-compat-2026-02-08.md`
+See: `runbook-codex-compat.md`
 
 ## openai.yaml (Optional)
 

@@ -4,6 +4,7 @@ Git 관련 문제와 해결 방법을 정리합니다.
 
 ## 목차
 
+- [wt 직후 .claude/.claude, .agents/.agents 중첩 디렉토리가 생김](#wt-직후-claudeclaude-agentsagents-중첩-디렉토리가-생김)
 - [lazygit에서 delta side-by-side 오버라이드가 안 됨](#lazygit에서-delta-side-by-side-오버라이드가-안-됨)
 - [비대화형 SSH에서 side-by-side가 비활성화되지 않음](#비대화형-ssh에서-side-by-side가-비활성화되지-않음)
 - [iOS SSH 앱에서 delta 마우스 스크롤이 안 됨](#ios-ssh-앱에서-delta-마우스-스크롤이-안-됨)
@@ -13,6 +14,60 @@ Git 관련 문제와 해결 방법을 정리합니다.
 - [git commit 시 Author identity unknown](#git-commit-시-author-identity-unknown)
 
 ---
+
+## wt 직후 .claude/.claude, .agents/.agents 중첩 디렉토리가 생김
+
+**증상**:
+
+```bash
+git status --short
+?? .agents/.agents/
+?? .claude/.claude/
+```
+
+**원인 (회귀 당시)**:
+
+`modules/shared/scripts/git-worktree-functions.sh`의 `wt()`가 worktree 생성 후 `.claude/.codex/.agents`를 `cp -R`로 재복사한다.
+현재 저장소에서는 `.claude`/`.agents`가 이미 git-tracked라 `git worktree add` 단계에서 존재하므로, 재복사 시 하위 중첩 디렉토리(`.claude/.claude`, `.agents/.agents`)가 생성된다.
+
+핵심 전제 붕괴:
+- 과거 전제: 이 디렉토리들은 worktree에 자동 포함되지 않음
+- 현재 상태: `.claude`, `.agents`는 추적되어 자동 포함됨
+
+**왜 위험한가**:
+
+- source worktree가 중첩된 상태에서 다시 `wt`를 실행하면 `.claude/.claude/.claude`처럼 재귀적으로 오염될 수 있다.
+- `.claude/.claude/worktrees`까지 복제되어 용량/노이즈가 급격히 늘어난다.
+- `.agents/.agents`는 Codex 투영 경로처럼 보이지만 잘못된 깊이의 복사본이라 혼동을 유발한다.
+
+**진단**:
+
+```bash
+# 중첩 여부 확인
+find .claude -maxdepth 4 -type d -name .claude
+find .agents -maxdepth 4 -type d -name .agents
+
+# 복사 회귀 여부 확인 (wt 구현)
+rg -n 'cp -R "\$source_root/\$_dir" "\$worktree_dir/\$_dir"' modules/shared/scripts/git-worktree-functions.sh
+```
+
+**임시 정리**:
+
+```bash
+rm -rf .claude/.claude .agents/.agents
+```
+
+**영구 수정 가이드**:
+
+1. 대상 디렉토리가 이미 존재하면 복사를 스킵한다.
+2. 병합 복사(`cp -R source/. target/`)로 바꾸지 않는다.
+3. 수정 후 `wt -s <temp-branch>`로 생성 테스트하고, `git status --short`가 깨끗한지 확인한다.
+
+**자동 회귀 방지**:
+
+1. `wt()` 내부에 중첩 디렉토리 감지 가드가 있어 `.claude/.claude`, `.agents/.agents`, `.codex/.codex` 발견 시 즉시 실패한다.
+2. `tests/run-wt-regression.sh`를 통해 `wt` 생성 후 중첩 여부를 자동 검증한다.
+3. `lefthook` pre-commit에서 `modules/shared/scripts/git-worktree-functions.sh` 변경 시 위 테스트가 자동 실행된다.
 
 ## lazygit에서 delta side-by-side 오버라이드가 안 됨
 

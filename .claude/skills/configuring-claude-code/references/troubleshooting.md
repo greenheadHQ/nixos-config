@@ -3,7 +3,7 @@
 Claude Code 관련 문제와 해결 방법을 정리합니다.
 
 > Codex CLI trust/.agents/skills/project-scope 이슈는 `configuring-codex` 스킬의
-> `references/runbook-codex-compat-2026-02-08.md`를 우선 참고하세요.
+> `references/runbook-codex-compat.md`를 우선 참고하세요.
 
 ## 목차
 

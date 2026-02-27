@@ -8,6 +8,57 @@
 
 ---
 
+## wt 실행 직후 `.claude/.claude`, `.agents/.agents`가 생김
+
+### 증상
+
+`wt <branch>` 실행 직후:
+
+```bash
+git status --short
+?? .agents/.agents/
+?? .claude/.claude/
+```
+
+### 원인 (회귀 당시)
+
+`modules/shared/scripts/git-worktree-functions.sh`의 `wt()`에서 worktree 생성 후 `.claude/.codex/.agents`를 `cp -R`로 재복사한다.
+현재 저장소에서는 `.claude`, `.agents`가 이미 git-tracked라 `git worktree add`만으로 생성되므로, 재복사 시 하위 중첩(`.claude/.claude`, `.agents/.agents`)이 만들어진다.
+
+핵심은 "과거에는 untracked라 복사가 필요했다"는 전제가 현재와 달라졌다는 점이다.
+
+### 영향
+
+1. source worktree가 오염된 상태에서 다시 `wt`를 실행하면 `.claude/.claude/.claude`처럼 재귀적으로 악화될 수 있음
+2. `.claude/.claude/worktrees`까지 복제되어 불필요한 용량 증가
+3. `.agents/.agents`가 Codex 투영처럼 보여 디버깅 혼선을 유발
+
+### 진단 명령
+
+```bash
+find .claude -maxdepth 4 -type d -name .claude
+find .agents -maxdepth 4 -type d -name .agents
+rg -n 'cp -R "\$source_root/\$_dir" "\$worktree_dir/\$_dir"' modules/shared/scripts/git-worktree-functions.sh
+```
+
+### 임시 정리
+
+```bash
+rm -rf .claude/.claude .agents/.agents
+```
+
+### 영구 수정 원칙
+
+1. 대상 디렉토리가 이미 존재하면 복사를 스킵한다.
+2. 병합 복사(`cp -R source/. target/`)로 바꾸지 않는다. 세션 부산물/중첩 오염 전파 위험이 더 크다.
+3. 수정 후 `wt -s <temp-branch>`로 생성 테스트하고 `git status --short`가 깨끗한지 확인한다.
+
+### 자동 회귀 방지
+
+1. `wt()` 내부에서 `.claude/.claude`, `.agents/.agents`, `.codex/.codex`를 감지하면 즉시 실패하도록 가드를 둔다.
+2. `tests/run-wt-regression.sh`로 `wt` 생성 후 중첩 디렉토리 회귀를 자동 검증한다.
+3. `lefthook` pre-commit에서 `modules/shared/scripts/git-worktree-functions.sh`가 변경되면 위 테스트를 자동 실행한다.
+
 ## Termius에서 Codex 스크롤 히스토리 소실
 
 ### 증상

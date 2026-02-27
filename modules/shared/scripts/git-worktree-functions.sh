@@ -355,17 +355,31 @@ wt() {
     fi
   fi
 
-  # .claude/, .codex/, .agents/ 를 워크트리에 복사
-  # 이 디렉토리들은 gitignore 대상이라 워크트리 생성 시 포함되지 않는다.
-  # 매번 워크트리에서 Claude Code 플러그인을 재설치하고 Codex 하네스를
-  # 다시 동기화하는 반복 작업을 없애기 위해, 소스 트리에서 그대로 복사한다.
-  for _dir in .claude .codex .agents; do
-    if [[ -d "$source_root/$_dir" ]]; then
-      cp -R "$source_root/$_dir" "$worktree_dir/$_dir"
+  # 워크트리 bootstrap: 비추적 로컬 산출물만 최소 복사
+  # - .claude, .agents는 git-tracked이므로 전체 디렉토리 재복사 금지
+  #   (중첩 디렉토리 .claude/.claude, .agents/.agents 회귀 방지)
+  # - .codex는 비추적 산출물이라 대상에 없을 때만 복사
+  if [[ -d "$source_root/.codex" ]] && [[ ! -e "$worktree_dir/.codex" ]]; then
+    cp -R "$source_root/.codex" "$worktree_dir/.codex"
+  fi
+
+  # 로컬 Claude 설정은 파일 단위로만 전달 (디렉토리 재귀 복사 금지)
+  if [[ -f "$source_root/.claude/settings.local.json" ]] && [[ ! -e "$worktree_dir/.claude/settings.local.json" ]]; then
+    mkdir -p "$worktree_dir/.claude"
+    cp "$source_root/.claude/settings.local.json" "$worktree_dir/.claude/settings.local.json"
+  fi
+
+  # .claude/plans/는 세션별 데이터이므로 워크트리 생성 시 제거
+  rm -rf "$worktree_dir/.claude/plans"
+
+  # 회귀 가드: 중첩 디렉토리가 감지되면 즉시 실패 처리
+  for _dir in .claude .agents .codex; do
+    if [[ -d "$worktree_dir/$_dir/$_dir" ]]; then
+      echo "❌ 워크트리 bootstrap 회귀 감지: $worktree_dir/$_dir/$_dir"
+      echo "   원인 후보: 디렉토리 재귀 복사. 정리 후 wt 로직을 점검하세요."
+      return 1
     fi
   done
-  # .claude/plans/는 세션별 데이터이므로 복사하지 않음
-  rm -rf "$worktree_dir/.claude/plans"
 
   echo "✅ 워크트리 생성 완료: $worktree_dir"
   if [[ "$stay" == false ]]; then
