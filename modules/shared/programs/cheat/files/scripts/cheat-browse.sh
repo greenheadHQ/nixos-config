@@ -70,7 +70,7 @@ if [[ "${1:-}" == "--prompts" ]]; then
         --ansi \
         --header "  [prompt presets] Enter: 렌더 실행" \
         --prompt "preset> " \
-        --preview "cat -- \"${presets_dir}/{}.md\"" \
+        --preview "cat -- '${presets_dir}'/{}.md" \
         --preview-window=right:70%) || fzf_rc=$?
   # fzf exit: 0=선택, 1=no match, 130=Ctrl-C → 정상 종료; 그 외 → 오류 전파
   if [[ $fzf_rc -ne 0 && $fzf_rc -ne 1 && $fzf_rc -ne 130 ]]; then exit "$fzf_rc"; fi

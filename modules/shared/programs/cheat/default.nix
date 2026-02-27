@@ -14,9 +14,13 @@ in
 {
   home.packages = [ pkgs.cheat ];
 
-  # cheat-browse: cheat + fzf 브라우저 (tmux/nvim/터미널 공용)
+  # cheat-browse: wrapper (PROMPT_PRESETS_DIR 주입 + 실행)
   home.file.".local/bin/cheat-browse" = {
-    source = ./files/scripts/cheat-browse.sh;
+    text = ''
+      #!/usr/bin/env bash
+      export PROMPT_PRESETS_DIR="''${PROMPT_PRESETS_DIR:-${presetsPath}}"
+      exec bash "${nixosConfigPath}/modules/shared/programs/cheat/files/scripts/cheat-browse.sh" "$@"
+    '';
     executable = true;
   };
 
