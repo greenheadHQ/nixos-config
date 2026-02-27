@@ -33,6 +33,29 @@ if [[ "${1:-}" == "--preview" ]]; then
   exit 0
 fi
 
+# --preview-prompt FILE: preset markdown을 구문 강조하여 출력
+# 헤더 → bold cyan, blockquote → dim, 코드 펜스 → dim, {PLACEHOLDER} → bold yellow
+if [[ "${1:-}" == "--preview-prompt" ]]; then
+  cat -- "${2:?file required}" 2>/dev/null | awk '
+    /^```/ {
+      printf "\033[2m%s\033[0m\n", $0
+      in_code = !in_code; next
+    }
+    in_code {
+      line = $0; result = ""
+      while (match(line, /\{[A-Z0-9_]+\}/)) {
+        result = result substr(line, 1, RSTART-1) "\033[1;33m" substr(line, RSTART, RLENGTH) "\033[0m"
+        line = substr(line, RSTART + RLENGTH)
+      }
+      print result line; next
+    }
+    /^# / { printf "\033[1;36m%s\033[0m\n", $0; next }
+    /^>/ { printf "\033[2m%s\033[0m\n", $0; next }
+    { print }
+  '
+  exit 0
+fi
+
 # --content: 모든 시트 내용을 title\t내용줄 형태로 출력
 if [[ "${1:-}" == "--content" ]]; then
   "$cheat_cmd" -l | awk 'NR>1 {print $1}' | while read -r title; do
@@ -70,7 +93,7 @@ if [[ "${1:-}" == "--prompts" ]]; then
         --ansi \
         --header "  [prompt presets] Enter: 렌더 실행" \
         --prompt "preset> " \
-        --preview "cat -- '${presets_dir}'/{}.md" \
+        --preview "$SELF --preview-prompt '${presets_dir}'/{}.md" \
         --preview-window=right:70%) || fzf_rc=$?
   # fzf exit: 0=선택, 1=no match, 130=Ctrl-C → 정상 종료; 그 외 → 오류 전파
   if [[ $fzf_rc -ne 0 && $fzf_rc -ne 1 && $fzf_rc -ne 130 ]]; then exit "$fzf_rc"; fi
