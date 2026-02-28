@@ -41,7 +41,7 @@ iPhone의 Shortcuts 앱에서 SSH 키를 생성한다:
 iOS Shortcuts의 `Run Script over SSH`는 non-interactive shell이므로 PATH를 명시 설정해야 한다:
 
 ```bash
-export LC_ALL=en_US.UTF-8; export PATH="/run/current-system/sw/bin:/home/greenhead/.nix-profile/bin:/home/greenhead/.local/bin:$PATH"
+export LC_ALL=en_US.UTF-8; export PATH="/run/current-system/sw/bin:/etc/profiles/per-user/greenhead/bin:/home/greenhead/.nix-profile/bin:/home/greenhead/.local/bin:$PATH"
 ```
 
 ### 명령 예시
@@ -70,7 +70,7 @@ prompt-render --preset feature-dev-full --var DA_TOOL='codex exec' --var DA_MODE
 ```text
 [Run Script over SSH]
   Host: 100.79.80.95 | User: greenhead | Auth: SSH Key
-  Script: export LC_ALL=en_US.UTF-8; export PATH="/run/current-system/sw/bin:/home/greenhead/.nix-profile/bin:/home/greenhead/.local/bin:$PATH"; prompt-render --list-presets --format json
+  Script: export LC_ALL=en_US.UTF-8; export PATH="/run/current-system/sw/bin:/etc/profiles/per-user/greenhead/bin:/home/greenhead/.nix-profile/bin:/home/greenhead/.local/bin:$PATH"; prompt-render --list-presets --format json
 ```
 
 ### Step 2: JSON 파싱 + 에러 체크
@@ -168,6 +168,7 @@ push "$(prompt-render --preset bugfix --non-interactive --stdout-only)"
 | SSH 연결 시간 초과 | VPN 미연결 | Tailscale 앱에서 VPN 연결 확인 |
 | "Permission denied" | SSH 키 미등록 | `libraries/constants.nix` → `sshKeys.iphoneShortcuts` 확인 후 `nrs` |
 | "command not found: prompt-render" | PATH 미설정 | SSH 명령에 PATH export 포함 확인 |
+| "jq not found" JSON 에러 | Home Manager PATH 누락 | PATH에 `/etc/profiles/per-user/greenhead/bin` 포함 확인 |
 | Tailscale SSH 사용 시 에러 | Tailscale SSH 버그 ([#12485](https://github.com/tailscale/tailscale/issues/12485)) | 전통 sshd 사용 (기본 설정) |
 | 클립보드 복사 안 됨 | Shortcut 권한 문제 | 설정 → Shortcuts → 권한 확인 |
 
