@@ -62,6 +62,10 @@
     minipc = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN64oEThAvKkI806sMRcIXOJxiaT2A8BbqcO4DfWlirO greenhead@minipc";
     # iPhone Shortcuts (iOS Shortcuts SSH 접속용)
     iphoneShortcuts = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoav5BDZpPvBeacyorEiT9cmD2w795a+9gNUg+c/LYR greenhead-iphone_shortcuts";
+    # MacBook Shortcuts (macOS Shortcuts SSH 접속용)
+    # ⚠️ macOS 단축어 앱은 "새로운 키 생성"으로 만든 키가 앱 재시작 시 리셋됨.
+    #    반드시 기본 키(앱 재시작 후 표시되는 키)의 공개키를 등록할 것.
+    macShortcuts = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAk9cbn4DqZsyckwsVLUN0ooFBab2mHi7VlfMKWcY7HN greenhead-macbook_shortcuts";
   };
 
   # ═══════════════════════════════════════════════════════════════

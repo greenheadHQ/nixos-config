@@ -3,8 +3,7 @@
 > 포함 요소: 원칙 + 계획 + 검증 + DA(standard, post-impl) + 커밋
 > 대상: 동작 불변 구조 개선
 > 플레이스홀더
-> ⚠️ 사용 전 필수 — 도구/모델 플레이스홀더를 반드시 실제 값으로 교체
-> - `{DA_TOOL}`: `codex exec` 또는 `agent`
+> - `{DA_TOOL}`: `codex exec` 또는 `claude agent`
 > - `{DA_MODEL_2}`: 예) `gpt-5.3-codex` (필수)
 
 ```text
@@ -16,4 +15,9 @@
 
 그 다음 {DA_TOOL}로 구현 후 DA를 수행해. 모델은 반드시 {DA_MODEL_2}를 명시하고, 각 지적에 반증 예제를 포함하게 해.
 유효한 항목만 반영해 후속 커밋해.
+```
+
+```vars
+DA_TOOL|코드 실행 도구|codex exec,claude agent|codex exec
+DA_MODEL_2|DA 모델|gpt-5.3-codex,claude-opus-4-6|gpt-5.3-codex
 ```

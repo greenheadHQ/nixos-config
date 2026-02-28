@@ -35,6 +35,19 @@ _extract_vars() {
   echo "$1" | grep -oE '\{[A-Z0-9_]+\}' | sort -u || true
 }
 
+# ```vars``` 블록에서 변수 메타데이터 추출 (NAME|desc|options|default 형식)
+_extract_vars_meta() {
+  awk '/^```vars[[:space:]]*$/{found=1; next} found && /^```$/{exit} found{print}' "$1"
+}
+
+# 템플릿에서 변수가 등장하는 첫 줄을 추출, 대상 변수를 ___로, 다른 {VAR}를 변수명으로 치환
+_extract_var_context() {
+  local template="$1" var_name="$2"
+  echo "$template" | grep -m1 -F "{${var_name}}" \
+    | sed "s/{${var_name}}/___/g" \
+    | sed 's/{\([A-Z0-9_]*\)}/\1/g'
+}
+
 # JSON 모드: 응답 생성 후 exit 0
 _json_exit() {
   trap - ERR
@@ -168,6 +181,7 @@ fi
 
 # --- 코드 블록 추출 ---
 template=$(_extract_template "$preset_file")
+vars_meta=$(_extract_vars_meta "$preset_file")
 
 if [[ -z "$template" ]]; then
   if [[ "$format" == "json" ]]; then
@@ -215,7 +229,44 @@ if [[ -n "$remaining" ]]; then
   if [[ "$non_interactive" == true ]]; then
     missing=$(echo "$remaining" | sed 's/[{}]//g' | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
     if [[ "$format" == "json" ]]; then
-      missing_json=$(echo "$remaining" | sed 's/[{}]//g' | jq -Rnc '[inputs | select(length > 0)]')
+      if [[ -n "$vars_meta" ]]; then
+        # vars 블록 정의 순서로 메타데이터 포함 객체 배열 생성
+        missing_json=$(
+          {
+            while IFS='|' read -r meta_name meta_desc meta_opts meta_def; do
+              [[ -z "$meta_name" ]] && continue
+              echo "$remaining" | grep -qF "{${meta_name}}" || continue
+              ctx=$(_extract_var_context "$template" "$meta_name")
+              if [[ -n "$meta_opts" ]]; then
+                opts_json=$(echo "$meta_opts" | tr ',' '\n' | jq -Rnc '[inputs | select(length > 0)]')
+              else
+                opts_json="[]"
+              fi
+              if [[ -n "$meta_def" ]]; then
+                jq -nc --arg n "$meta_name" --arg d "$meta_desc" --arg c "$ctx" \
+                  --argjson o "$opts_json" --arg df "$meta_def" \
+                  '{name:$n, desc:$d, context:$c, options:$o, default:$df}'
+              else
+                jq -nc --arg n "$meta_name" --arg d "$meta_desc" --arg c "$ctx" \
+                  --argjson o "$opts_json" \
+                  '{name:$n, desc:$d, context:$c, options:$o, default:null}'
+              fi
+            done <<< "$vars_meta"
+            # vars 블록에 누락된 remaining 변수를 fallback 객체로 추가
+            while IFS= read -r placeholder; do
+              [[ -z "$placeholder" ]] && continue
+              key="${placeholder//[\{\}]/}"
+              echo "$vars_meta" | grep -q "^${key}|" && continue
+              ctx=$(_extract_var_context "$template" "$key")
+              jq -nc --arg n "$key" --arg c "$ctx" \
+                '{name:$n, desc:"", context:$c, options:[], default:null}'
+            done <<< "$remaining"
+          } | jq -sc '.'
+        )
+      else
+        # fallback: vars 블록 없으면 기존 문자열 배열
+        missing_json=$(echo "$remaining" | sed 's/[{}]//g' | jq -Rnc '[inputs | select(length > 0)]')
+      fi
       _json_exit false "$preset" "" "missing variables: $missing" "$missing_json" "[]"
     fi
     echo "Error: missing variables: $missing" >&2

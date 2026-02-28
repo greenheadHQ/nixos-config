@@ -5,7 +5,7 @@
 > 버전: `feature-dev-full@v1.0`
 > 플레이스홀더
 > ⚠️ 사용 전 필수 — 반드시 `{DA_TOOL}`, `{DA_MODEL_1}`, `{DA_MODEL_2}`를 실제 값으로 치환
-> - `{DA_TOOL}`: `codex exec` 또는 `agent`
+> - `{DA_TOOL}`: `codex exec` 또는 `claude agent`
 > - `{DA_MODEL_1}`: 예) `gpt-5.3-codex`
 > - `{DA_MODEL_2}`: 예) `gpt-5.3-codex` (필수)
 
@@ -29,4 +29,10 @@ DA는 사용자 지시만으로 기각하지 말고, 실행 가능 근거를 가
 DA는 각 지적마다 재현 명령, 실행 결과 요약, 계획 가설 반증 예제를 포함해야 해.
 각 라운드 종료 시 prompt version/model/리스크 증감을 기록해.
 DA와 CodeRabbit 피드백은 병렬로 처리하고, 유효한 항목만 후속 커밋으로 반영해 PR에 추가 push.
+```
+
+```vars
+DA_TOOL|코드 실행 도구|codex exec,claude agent|codex exec
+DA_MODEL_1|1차 DA 모델|gpt-5.3-codex,claude-opus-4-6|gpt-5.3-codex
+DA_MODEL_2|2차 DA 모델|gpt-5.3-codex,claude-opus-4-6|gpt-5.3-codex
 ```
