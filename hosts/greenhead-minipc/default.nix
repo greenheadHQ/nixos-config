@@ -15,9 +15,10 @@
     ./disko.nix
   ];
 
-  # SSH 공개키 (Mac에서 접속용)
+  # SSH 공개키 (Mac + iPhone Shortcuts 접속용)
   users.users.${username}.openssh.authorizedKeys.keys = [
     constants.sshKeys.macbook
+    constants.sshKeys.iphoneShortcuts
   ];
 
   # Wake-on-LAN (같은 LAN 전용)

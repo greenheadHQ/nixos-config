@@ -53,7 +53,30 @@ prompt-render --preset feature-dev-full --var DA_TOOL="codex exec" --non-interac
 
 `cheat-browse --prompts`로 fzf preset 브라우저를 열고, Enter로 선택하면 대화형 렌더가 실행된다.
 
-> 범위 제외: GUI/에디터 통합, 원격 동기화는 본 시스템 범위 외
+### JSON 모드 (모바일/자동화용)
+
+`--format json` 플래그로 JSON 출력을 활성화한다. **JSON 모드 계약: 항상 exit 0, 성공/실패는 `ok` 필드로 판단.**
+
+```bash
+# preset 목록 조회
+prompt-render --list-presets --format json
+# → {"ok":true,"presets":["bugfix","code-review",...]}
+
+# 렌더링 (JSON)
+prompt-render --preset bugfix --non-interactive --format json --stdout-only
+# → {"ok":true,"preset":"bugfix","rendered":"...","missing":[],"invalid":[],"error":""}
+
+# 변수 누락 시 (render-first 패턴)
+prompt-render --preset feature-dev-full --non-interactive --format json --stdout-only
+# → {"ok":false,...,"missing":["DA_MODEL_1","DA_MODEL_2","DA_TOOL"],...}
+```
+
+### 모바일 워크플로우 (iOS Shortcut)
+
+iPhone에서 Tailscale VPN + iOS Shortcuts의 `Run Script over SSH`로 preset을 원탭 복사할 수 있다.
+상세 설정: [`docs/PROMPT_MOBILE_SHORTCUT.md`](../../docs/PROMPT_MOBILE_SHORTCUT.md)
+
+> 범위 제외: GUI/에디터 통합은 본 시스템 범위 외
 
 ## 핵심 운영 정책
 
