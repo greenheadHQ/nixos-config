@@ -1,0 +1,98 @@
+// Prompt Render — iOS/macOS Shortcut
+// SSH로 MiniPC의 prompt-render CLI를 호출하여 프롬프트 프리셋을 렌더링+클립보드 복사
+//
+// 플레이스홀더 (@SSH_*@)는 Nix substituteInPlace로 constants.nix 값이 주입됨
+// ref: docs/PROMPT_MOBILE_SHORTCUT.md
+
+#define name "Prompt Render"
+#define color blue
+
+#include 'actions/scripting'
+#include 'actions/network'
+#include 'actions/text'
+#include 'actions/sharing'
+#include 'actions/basic'
+
+// SSH 공통 설정 — Nix substituteInPlace로 상수 주입
+@sshPath = "@SSH_PATH_EXPORT@"
+@sshHost = "@SSH_HOST@"
+@sshUser = "@SSH_USER@"
+@sshPort = "@SSH_PORT@"
+@empty = nothing()
+
+// Phase 1: preset 목록 조회
+@listCmd = "\(@sshPath)prompt-render --list-presets --format json --stdout-only"
+@listResult = runSSHScript(@listCmd, @empty, @sshHost, @sshPort, @sshUser, "SSH Key", "")
+@listDict = getDictionary(@listResult)
+@listOk = getValue(@listDict, "ok")
+
+if @listOk == "true" {
+    @presets = @listDict['presets']
+    @selected = chooseFromList(@presets, "프리셋 선택")
+    // chooseFromList가 trailing newline을 추가하는 iOS Shortcuts 알려진 이슈 방지
+    // ref: docs/PROMPT_MOBILE_SHORTCUT.md 트러블슈팅 "preset not found: \nbugfix"
+    @selected = replaceText("\n", "", @selected)
+    @selected = replaceText("\r", "", @selected)
+    // preset 이름의 single quote 이스케이프 (셸 명령 안전성)
+    @selectedEscaped = replaceText("'", "'\\''", @selected)
+
+    // Phase 2: 변수 없이 렌더링 시도
+    @renderCmd = "\(@sshPath)prompt-render --preset '\(@selectedEscaped)' --non-interactive --format json --stdout-only"
+    @renderResult = runSSHScript(@renderCmd, @empty, @sshHost, @sshPort, @sshUser, "SSH Key", "")
+    @renderDict = getDictionary(@renderResult)
+    @renderOk = getValue(@renderDict, "ok")
+
+    if @renderOk == "true" {
+        // Phase 3-A: 성공 → 클립보드 복사
+        @rendered = @renderDict['rendered']
+        setClipboard(@rendered)
+        showNotification("복사 완료", "\(@selected)")
+    } else {
+        // Phase 3-B: 변수 입력 필요
+        @missing = @renderDict['missing']
+        @varArgs = ""
+
+        // Phase 4: 변수 입력 루프
+        for item in @missing {
+            @itemDict = getDictionary(item)
+            @varName = getValue(@itemDict, "name")
+            @varDesc = getValue(@itemDict, "desc")
+            @varContext = getValue(@itemDict, "context")
+            @varDefault = getValue(@itemDict, "default")
+            @varOptions = @itemDict['options']
+            @optionCount = count(@varOptions)
+
+            if @optionCount > 0 {
+                // options 있음 → 선택형 UI (Choose from List)
+                @input = chooseFromList(@varOptions, "\(@varName): \(@varDesc)")
+            } else {
+                // options 없음 (null 또는 빈 배열) → 자유 텍스트 입력 (Ask for Input)
+                @promptText = "\(@varDesc)\n\n\(@varContext)"
+                @input = prompt(@promptText, "Text", @varDefault)
+            }
+
+            // chooseFromList trailing newline 제거
+            @input = replaceText("\n", "", @input)
+            @input = replaceText("\r", "", @input)
+            @escaped = replaceText("'", "'\\''", @input)
+            @varArgs = "\(@varArgs) --var '\(@varName)=\(@escaped)'"
+        }
+
+        // Phase 5: 변수 포함 최종 렌더링
+        @retryCmd = "\(@sshPath)prompt-render --preset '\(@selectedEscaped)' \(@varArgs) --non-interactive --format json --stdout-only"
+        @retryResult = runSSHScript(@retryCmd, @empty, @sshHost, @sshPort, @sshUser, "SSH Key", "")
+        @retryDict = getDictionary(@retryResult)
+        @retryOk = getValue(@retryDict, "ok")
+
+        if @retryOk == "true" {
+            @retryRendered = @retryDict['rendered']
+            setClipboard(@retryRendered)
+            showNotification("복사 완료", "\(@selected)")
+        } else {
+            @err = getValue(@retryDict, "error")
+            alert("오류: \(@err)")
+        }
+    }
+} else {
+    alert("서버 응답 오류 — VPN/SSH 상태를 확인하세요")
+}

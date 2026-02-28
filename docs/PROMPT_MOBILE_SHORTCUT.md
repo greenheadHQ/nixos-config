@@ -8,32 +8,57 @@ iPhone에서 prompt preset을 선택하고 변수를 입력하면, MiniPC에서 
 - Shortcuts 앱 (기본 설치)
 - MiniPC에 SSH 키 등록 완료
 
-## Quick Start
+## Shortcut 설치 (Cherri 자동 빌드)
 
-### 1. SSH 키 생성
+Shortcut은 [Cherri DSL](https://cherrilang.org) 소스에서 Nix derivation으로 자동 빌드된다. Mac 재설치 시 수동 구성 불필요.
 
-iPhone의 Shortcuts 앱에서 SSH 키를 생성한다:
+### 소스 위치
 
-1. Shortcuts 앱 → 새 Shortcut → `Run Script over SSH` 액션 추가
-2. Host: MiniPC의 Tailscale IP, User: `greenhead`
-3. Authentication: `SSH Key` 선택
-4. `Generate New Key` (Ed25519 권장)
-5. 생성된 공개키를 복사하여 프로젝트 관리자에게 전달
+`modules/darwin/programs/shortcuts/sources/prompt-render.cherri`
 
-### 2. MiniPC에 키 등록
+### 빌드 파이프라인
 
-`libraries/constants.nix`의 `sshKeys.iphoneShortcuts` 값을 실제 공개키로 교체한 뒤 `nrs` 적용.
+```text
+.cherri 소스 → substituteInPlace(상수 주입) → cherri --skip-sign(unsigned)
+  → shortcuts sign --mode anyone(signed) → open(import 다이얼로그 1클릭)
+```
 
-### 3. Shortcut 빌드
+### 새 Mac 설정
 
-아래 "Shortcut 액션 상세" 섹션을 따라 Shortcut을 구성한다.
+1. SSH 키 등록 완료 확인 (아래 "SSH 키 설정" 참조)
+2. `nrs` 실행 → Shortcut 자동 빌드+서명
+3. "Add Shortcut" 다이얼로그에서 클릭 1회로 import 완료
 
-### 4. 검증
+### 단축어 업데이트
+
+Cherri 소스 변경 후 기존 단축어를 업데이트하려면:
+
+1. Shortcuts.app에서 기존 "Prompt Render" 단축어 수동 삭제
+2. `nrs` 실행 → 새 버전 빌드+서명 → import 다이얼로그 표시
+3. "Add Shortcut" 클릭
+
+> `shortcuts` CLI에 delete 서브커맨드가 없으므로 수동 삭제 1회가 필요하다.
+
+### 검증
 
 1. Tailscale VPN 연결 확인
 2. Shortcut 실행 → `bugfix` 선택 → 클립보드에 프롬프트가 복사되는지 확인
 3. `feature-dev-full` 선택 → 변수 3개를 목록에서 선택 → 클립보드 확인
 4. `exploration` 선택 → 자유 텍스트 입력 → 클립보드 확인
+
+## SSH 키 설정
+
+### iPhone SSH 키
+
+1. Shortcuts 앱 → 새 Shortcut → `Run Script over SSH` 액션 추가
+2. Host: MiniPC의 Tailscale IP, User: `greenhead`
+3. Authentication: `SSH Key` 선택
+4. `Generate New Key` (Ed25519 권장)
+5. 생성된 공개키를 `libraries/constants.nix`의 `sshKeys.iphoneShortcuts`에 등록 후 `nrs`
+
+### macOS SSH 키
+
+macOS 단축어 앱의 SSH 키 등록은 아래 "macOS 단축어 SSH 키 주의사항" 참조.
 
 ---
 
@@ -227,7 +252,13 @@ prompt-render --preset feature-dev-full \
 
 ---
 
-## Shortcut 액션 상세
+## 레거시: Shortcut 수동 구성 가이드
+
+> **이 섹션은 참고용이다.** Cherri 자동 빌드가 정상 동작하면 이 가이드는 불필요하다.
+> Cherri 컴파일에 문제가 생겼을 때 수동 폴백으로만 사용한다.
+> Cherri 소스: `modules/darwin/programs/shortcuts/sources/prompt-render.cherri`
+
+### Shortcut 액션 상세
 
 > **빌드 전 필수 확인사항**
 >

@@ -20,6 +20,7 @@
   # Home Manager 모듈에 nixosConfigPath, nixosConfigDefaultPath, hostType, constants 전달
   home-manager.extraSpecialArgs = {
     inherit
+      inputs
       nixosConfigPath
       nixosConfigDefaultPath
       hostType
@@ -68,6 +69,7 @@
         ./programs/folder-actions
         ./programs/ghostty
         ./programs/shottr
+        ./programs/shortcuts
         ./programs/keybindings
         ./programs/ssh
       ];
