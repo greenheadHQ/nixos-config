@@ -18,7 +18,7 @@
 }:
 
 let
-  cherri = inputs.cherri.packages.${pkgs.system}.default;
+  cherri = inputs.cherri.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
   # SSH 접속 정보 (MiniPC)
   sshHost = constants.network.minipcTailscaleIP; # "100.79.80.95"
