@@ -408,6 +408,35 @@ let
       name = "Test 5e: ankiConnect.configApi.maxValueBytes가 옵션 기본값과 일치해야 함";
       cond = ankiConfigApi.maxValueBytes == ankiConfigApiMaxValueBytesDefault;
     }
+    # ── Nix↔Python 상수 정합성 하드 핀 ──────────────────────────
+    # Nix 옵션 기본값을 알려진 Python patch defaults에 하드 핀으로 고정.
+    # Nix 측 드리프트만 자동 감지 — Python patch 측 드리프트는 PR 리뷰로 방어.
+    {
+      name = "Test 5e-2: ankiConnect.configApi.allowedKeyPrefixes가 Python 패치 기본값 [\"awesomeAnki.\"]과 일치해야 함";
+      cond = ankiConfigApi.allowedKeyPrefixes == [ "awesomeAnki." ];
+    }
+    {
+      name = "Test 5e-3: ankiConnect.configApi.maxValueBytes가 Python 패치 기본값 65536과 일치해야 함";
+      cond = ankiConfigApi.maxValueBytes == 65536;
+    }
+    # ── 포트 매핑 고정 ──────────────────────────────────────────
+    # constants.nix 포트 상수 변경 시 회귀를 감지한다.
+    {
+      name = "Test 5e-4: constants.network.ports.ankiConnect가 8765이어야 함";
+      cond = constants.network.ports.ankiConnect == 8765;
+    }
+    {
+      name = "Test 5e-5: constants.network.ports.ankiSync가 27701이어야 함";
+      cond = constants.network.ports.ankiSync == 27701;
+    }
+    {
+      name = "Test 5e-6: homeserver.ankiConnect.port가 constants 포트(8765)와 일치해야 함";
+      cond = nixosCfg.homeserver.ankiConnect.port == constants.network.ports.ankiConnect;
+    }
+    {
+      name = "Test 5e-7: homeserver.ankiSync.port가 constants 포트(27701)와 일치해야 함";
+      cond = nixosCfg.homeserver.ankiSync.port == constants.network.ports.ankiSync;
+    }
     {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
       name = "Test 5f: openssh PermitRootLogin이 'no'이어야 함";

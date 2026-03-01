@@ -380,6 +380,7 @@ nix build .#nixosConfigurations.greenhead-minipc.config.system.build.toplevel
 1. `homeserver.ankiConnect.configApi.enable = true` 확인
 2. `modules/nixos/programs/anki-connect/default.nix`의 config key 이름과 patch 상수 계약 일치 확인
 3. `nrs` 재배포 후 `systemctl restart anki-connect.service`
+4. `nix eval --impure --file tests/eval-tests.nix`로 계약 테스트(allowed prefixes/max bytes 정합성) 통과 확인
 
 ## `config API settings are invalid` 오류
 

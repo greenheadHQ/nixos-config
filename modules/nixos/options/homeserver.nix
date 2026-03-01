@@ -121,12 +121,20 @@ in
         allowedKeyPrefixes = lib.mkOption {
           type = nonEmptyPrefixList;
           default = [ "awesomeAnki." ];
-          description = "Allowed key prefixes for config API writes/reads.";
+          description = ''
+            Allowed key prefixes for config API writes/reads.
+            Keys not matching any prefix are rejected with "config key is not allowed".
+            Must match CONFIG_API_DEFAULT_ALLOWED_PREFIXES in the AnkiConnect patch.
+          '';
         };
         maxValueBytes = lib.mkOption {
           type = lib.types.ints.positive;
           default = 65536;
-          description = "Maximum serialized UTF-8 JSON payload size per config value.";
+          description = ''
+            Maximum serialized UTF-8 JSON payload size per config value.
+            Values exceeding this limit are rejected with "config value exceeds size limit".
+            Must match CONFIG_API_DEFAULT_MAX_VALUE_BYTES in the AnkiConnect patch.
+          '';
         };
       };
       sync = {

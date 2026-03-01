@@ -97,8 +97,13 @@ let
     [
       (ankiConnectAddon.withConfig {
         config = {
-          # Keep key names in sync with constants in anki-connect-config-actions.patch:
-          # CONFIG_API_CONFIG_KEY_ENABLE / _ALLOWED_PREFIXES / _MAX_VALUE_BYTES
+          # Nix<->Python config contract: key names must match constants in
+          # anki-connect-config-actions.patch (CONFIG_API_CONFIG_KEY_*).
+          # ⚠️ WARNING: key 이름 변경 시 Python patch 상수도 반드시 동시 수정할 것.
+          # 불일치 시 Python이 fail-closed defaults를 사용:
+          #   configApiEnable -> False (API 비활성화)
+          #   configApiAllowedKeyPrefixes -> ['awesomeAnki.']
+          #   configApiMaxValueBytes -> 65536
           webBindAddress = minipcTailscaleIP;
           webBindPort = cfg.port;
           webCorsOriginList = [

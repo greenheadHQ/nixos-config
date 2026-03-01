@@ -133,6 +133,7 @@ homeserver.ankiConnect.sync = {
 2. `getConfig` 미존재 key 조회 시 `result: null` 확인
 3. `setConfig` 저장 후 동일 key `getConfig` round-trip 확인
 4. 미허용 key(`other.prefix`) 저장 시 `config key is not allowed` 오류 확인
+5. 포트 매핑 확인 (`ss -tlnp | grep -E '8765|27701'`) → 두 포트 모두 LISTEN 상태
 
 ## 핵심 절차
 
@@ -144,6 +145,12 @@ homeserver.ankiConnect.sync = {
 ## 주의사항
 
 - **로그인 UI에 "AnkiWeb" 표시**: 커스텀 sync 서버에서도 로그인 다이얼로그에 "AnkiWeb 아이디"로 표시됨 → 셀프호스팅 자격증명 입력하면 정상 동작
+
+### Nix↔Python 계약
+
+- **값 계약** (`allowedKeyPrefixes`, `maxValueBytes`, 포트 번호): `eval-tests.nix`가 Nix 옵션 기본값을 알려진 Python patch defaults에 하드 핀으로 고정 (Nix 측 드리프트 자동 감지, Python patch 측은 PR 리뷰로 방어)
+- **키 이름 계약** (`configApiEnable` 등 문자열): eval 시점 자동 검증 불가 → `default.nix` 주석 경고 + PR 리뷰로 방어
+- 키 이름 불일치 시 Python patch가 fail-closed defaults 사용: API 비활성화, `['awesomeAnki.']`, `65536`
 
 ## 자주 발생하는 문제
 

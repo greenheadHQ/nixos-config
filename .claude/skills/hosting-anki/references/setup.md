@@ -68,6 +68,7 @@ ankiConnect = {
 - key allowlist: 기본 `awesomeAnki.` prefix만 허용
 - 값 크기 제한: UTF-8 JSON 직렬화 기준 64KB
 - 로그 민감값 보호: `getConfig/setConfig` 요청/응답의 값(`params.val`, `result`)은 redaction 처리
+- Nix↔Python 계약 검증: `eval-tests.nix`가 Nix 옵션 기본값을 알려진 Python patch defaults에 하드 핀으로 고정 + 포트 매핑(ankiConnect=8765, ankiSync=27701) 검증
 - 자동 동기화: `anki-connect-sync.service` + `anki-connect-sync.timer` (onStart + 5분 주기)
 - 상태 파일: `/var/lib/anki/sync-status.json` (마지막 시도/성공/에러 기록)
 
