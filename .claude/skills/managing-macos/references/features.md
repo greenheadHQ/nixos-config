@@ -132,6 +132,7 @@ locale charmap  # UTF-8 확인
 |------|--------|------|
 | `nrs` | `~/.local/bin/nrs.sh` | rebuild (미리보기 + 적용) |
 | `nrs-offline` | `~/.local/bin/nrs.sh --offline` | 오프라인 rebuild |
+| `nrs --force` | `~/.local/bin/nrs.sh --force` | NO_CHANGES 스킵 우회 (activation scripts 강제 재실행) |
 | `nrp` | `~/.local/bin/nrp.sh` | 미리보기 전용 |
 | `nrp-offline` | `~/.local/bin/nrp.sh --offline` | 오프라인 미리보기 |
 | `nrh` | `~/.local/bin/nrh.sh` | 최근 10개 세대 |

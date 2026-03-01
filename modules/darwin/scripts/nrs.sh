@@ -5,6 +5,7 @@
 # 사용법:
 #   nrs.sh           # 일반 rebuild
 #   nrs.sh --offline # 오프라인 rebuild (빠름)
+#   nrs.sh --force   # NO_CHANGES 스킵 우회 (activation scripts 강제 재실행)
 
 set -euo pipefail
 
@@ -105,10 +106,11 @@ main() {
 
     echo ""
     preview_changes "preview" "Changes to be applied:"
-    if [[ "$NO_CHANGES" == true ]]; then
+    if [[ "$NO_CHANGES" == true && "$FORCE_FLAG" != true ]]; then
         cleanup_build_artifacts
         echo ""
         log_info "✅ No changes to apply. Skipping rebuild."
+        log_info "  (Use 'nrs --force' to force full rebuild including activation scripts)"
         return 0
     fi
     cleanup_launchd_agents

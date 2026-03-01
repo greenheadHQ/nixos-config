@@ -241,14 +241,16 @@ NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "week
 **`nrs` / `nrs-offline` 동작 흐름 (macOS 전용):**
 
 ```
-1. 외부 패키지 버전 갱신 (update_external_packages)
-   └── fetchurl 기반 패키지 업데이트 (--offline 시 스킵)
-
-2. launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
-   └── com.green.* 에이전트 동적 탐색 → bootout + plist 삭제
-
-3. darwin-rebuild build + nvd diff (미리보기)
+1. darwin-rebuild build + nvd diff (미리보기)
    └── 빌드 실패 시 즉시 종료 (에러 처리)
+
+2. NO_CHANGES 판정 (store 경로 비교)
+   ├── 변경 없음 (NO_CHANGES=true) → 스킵 + --force 힌트 출력 후 종료
+   │   └── nrs --force 사용 시 스킵 우회 → 3번부터 계속 실행
+   └── 변경 있음 (NO_CHANGES=false) → 계속 실행
+
+3. launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
+   └── com.green.* 에이전트 동적 탐색 → bootout + plist 삭제
 
 4. darwin-rebuild switch 실행
    └── --offline 플래그 (nrs-offline만)

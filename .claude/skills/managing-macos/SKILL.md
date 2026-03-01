@@ -22,6 +22,9 @@ nrs
 # 오프라인 rebuild (캐시만 사용, 빠름)
 nrs --offline
 
+# NO_CHANGES 스킵 우회 (activation scripts 강제 재실행)
+nrs --force
+
 # 미리보기만
 nrp
 ```
