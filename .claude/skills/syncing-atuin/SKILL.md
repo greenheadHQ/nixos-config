@@ -1,7 +1,8 @@
 ---
 name: syncing-atuin
 description: |
-  Atuin shell history: sync errors, encryption, daemon, cleanup.
+  This skill should be used when the user needs help with Atuin shell history
+  sync errors, encryption key issues, daemon management, or history cleanup.
   Triggers: "atuin status 4XX errors", "encryption key mismatch",
   "atuin 동기화 오류", "atuin history delete", "shell history backup",
   "zsh-autosuggestion TUI conflicts", "Korean history bulk deletion",

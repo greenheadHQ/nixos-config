@@ -1,7 +1,8 @@
 ---
 name: hosting-copyparty
 description: |
-  Copyparty file server: WebDAV, HDD web access, file sharing.
+  This skill should be used when the user needs to manage Copyparty file server:
+  WebDAV, HDD web access, file sharing.
   Triggers: "파일 서버", "copyparty", "파일 공유", "HDD 웹 접근",
   "WebDAV", "Google Drive 대체", "파일 업로드", "파일 다운로드",
   ACL permissions, config generation, password injection issues.

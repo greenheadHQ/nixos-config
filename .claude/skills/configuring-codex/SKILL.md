@@ -1,7 +1,8 @@
 ---
 name: configuring-codex
 description: |
-  Codex CLI config, skill projection, AGENTS.md, trust/sandbox.
+  This skill should be used when the user needs to configure Codex CLI,
+  manage skill projection, AGENTS.md structure, or trust/sandbox settings.
   Triggers: "codex config", "codex setup", "codex trust", "Codex 설정",
   "AGENTS.md", ".agents/skills", "project-scope skill", "스킬 투영",
   "approval_policy", "sandbox_mode", "Codex compatibility".
@@ -33,7 +34,8 @@ Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬
 ## 핵심 파일
 
 - `modules/shared/programs/codex/default.nix` — 설정 및 스킬 투영
-- `modules/shared/programs/codex/files/config.toml` — 실행 정책/모델 설정
+- `modules/shared/programs/codex/files/config.toml` — 실행 정책/모델 설정 (NixOS)
+- `modules/shared/programs/codex/files/config.darwin.toml` — macOS 전용 설정 (user-scope MCP 포함)
 - `scripts/ai/verify-ai-compat.sh` — 구조 검증
 - `modules/shared/programs/claude/files/CLAUDE.md` — 글로벌 라우팅/지침
 - `.claude/skills/*` (원본)

@@ -1,7 +1,7 @@
 ---
 name: managing-secrets
 description: |
-  Use this skill when the user asks about agenix secrets,
+  This skill should be used when the user asks about agenix secrets,
   .age file encryption/decryption, re-encryption, or secret key management.
   Triggers: "add a secret", "create .age file", "encrypt with agenix",
   "decrypt secret", "agenix -e", "/dev/stdin" errors, "secrets.nix",

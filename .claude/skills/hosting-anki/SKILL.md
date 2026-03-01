@@ -1,7 +1,8 @@
 ---
 name: hosting-anki
 description: |
-  Anki sync server + AnkiConnect API: self-hosted sync, headless API, backup, client config.
+  This skill should be used when the user needs to manage Anki sync server or AnkiConnect API:
+  self-hosted sync, headless API, backup, client config.
   Triggers: "anki 동기화", "anki-sync-server", "anki 서버", "anki 백업",
   "AnkiConnect", "anki-connect", "headless anki", "카드 API", "덱 조회",
   "sync connection issues", "backup failures", "AnkiMobile configuration",

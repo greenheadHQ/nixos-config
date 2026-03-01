@@ -1,7 +1,8 @@
 ---
 name: managing-ssh
 description: |
-  SSH keys, ssh-agent, Tailscale VPN, mosh, sudo auth issues.
+  This skill should be used when the user encounters SSH keys, ssh-agent,
+  Tailscale VPN, mosh, or sudo auth issues.
   Triggers: "SSH key invalid format", "SSH 인증 실패", "authentication failures",
   "Tailscale VPN issues", "sudo SSH_AUTH_SOCK", "authorized keys",
   "authorized_keys 설정", "mosh setup", "ssh-agent 문제".
@@ -67,6 +68,8 @@ tailscale ip -4
 | `$HOME/.ssh/authorized_keys` | 인증된 키 (서버) |
 | `modules/darwin/programs/ssh/default.nix` | macOS SSH/launchd 설정 |
 | `modules/nixos/programs/ssh-client/default.nix` | NixOS SSH 클라이언트 설정 |
+| `modules/nixos/programs/tailscale.nix` | NixOS Tailscale VPN + 방화벽 설정 |
+| `modules/nixos/programs/mosh.nix` | NixOS mosh 설정 (Tailscale 전용, LAN 비노출) |
 | `modules/nixos/home.nix` | NixOS `services.ssh-agent`/`programs.keychain` 설정 |
 
 ### authorizedKeys 추가 (NixOS)

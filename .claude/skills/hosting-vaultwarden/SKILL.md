@@ -1,7 +1,8 @@
 ---
 name: hosting-vaultwarden
 description: |
-  Vaultwarden/Bitwarden: password manager, admin panel, backup.
+  This skill should be used when the user needs to manage Vaultwarden/Bitwarden:
+  password manager, admin panel, backup, updates.
   Triggers: "비밀번호 관리자", "볼트워든", "vaultwarden 설정",
   "vaultwarden 백업", "비밀번호 서버", "비밀번호 동기화",
   "master password", "admin token", "admin 패널",
@@ -19,9 +20,10 @@ Mac 브라우저 확장 + iPhone Bitwarden 앱에서 사용합니다.
 
 | 파일 | 역할 |
 |------|------|
-| `modules/nixos/options/homeserver.nix` | `vaultwarden` mkOption 정의 |
+| `modules/nixos/options/homeserver.nix` | `vaultwarden` + `vaultwardenUpdate` mkOption 정의 |
 | `modules/nixos/programs/docker/vaultwarden.nix` | Podman 컨테이너 + 시크릿 주입 |
 | `modules/nixos/programs/docker/vaultwarden-backup.nix` | 매일 SQLite 안전 백업 (SSD -> HDD) |
+| `modules/nixos/programs/vaultwarden-update/` | 버전 체크 + 수동 업데이트 자동화 |
 | `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 (Vaultwarden 포함) |
 | `secrets/vaultwarden-admin-token.age` | agenix 암호화 관리자 토큰 |
 | `libraries/constants.nix` | 포트 (`vaultwarden = 8222`), 리소스 제한 |
@@ -86,8 +88,9 @@ journalctl -u vaultwarden-backup.service          # 백업 로그
 
 ```nix
 # modules/nixos/configuration.nix
-homeserver.vaultwarden.enable = true;     # 활성화
-homeserver.vaultwarden.port = 8222;       # 포트 (기본값은 constants.nix)
+homeserver.vaultwarden.enable = true;          # 활성화
+homeserver.vaultwarden.port = 8222;            # 포트 (기본값은 constants.nix)
+homeserver.vaultwardenUpdate.enable = true;    # 버전 체크 + 업데이트 알림 (06:30)
 ```
 
 ## 보안 구성
@@ -141,11 +144,12 @@ homeserver.vaultwarden.port = 8222;       # 포트 (기본값은 constants.nix)
 - 30초 후 자동으로 `healthy` 상태로 전환
 - 확인: `sudo podman inspect vaultwarden | jq '.[0].State.Health.Status'`
 
-**이미지 버전 고정 (자동 업데이트 미구현)**
+**이미지 버전 고정 + 업데이트 자동화**
 - `vaultwarden/server:1.35.2` (`:latest` 미사용)
 - 재부팅 시 예기치 않은 버전 변경 방지
-- immich/uptime-kuma/copyparty와 달리 자동 버전 체크 시스템 없음
-- 업데이트 시 `vaultwarden.nix`에서 버전 태그 수동 변경 후 `nrs`
+- `homeserver.vaultwardenUpdate.enable = true`로 매일 06:30 자동 버전 체크 + Pushover 알림
+- 수동 업데이트: `sudo vaultwarden-update` (pinned tag pull → digest 비교 → 재시작 → 헬스체크)
+- 통합 업데이트 시스템 상세: `running-containers` 스킬의 [service-update-system.md](../running-containers/references/service-update-system.md) 참조
 
 **Master Password 복구 불가**
 - Bitwarden은 클라이언트 측 암호화 (서버에 키 저장 안 함)

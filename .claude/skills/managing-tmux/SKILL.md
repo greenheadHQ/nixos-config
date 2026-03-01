@@ -1,7 +1,8 @@
 ---
 name: managing-tmux
 description: |
-  tmux config: keybindings, prefix, plugins, resurrect, notepad.
+  This skill should be used when the user asks about tmux configuration
+  including keybindings, prefix, plugins, resurrect, and pane notepad.
   Triggers: "pane notepad", "tmux plugins", "tmux-resurrect",
   "session save/restore", "tmux.conf configuration",
   "prefix key", "session management", "tmux 설정", "tmux 단축키".
@@ -31,6 +32,7 @@ tmux 기본 동작, 플러그인, Pane Notepad 워크플로우를 다룬다.
 | `find-unused-prefixes.sh` | tmux prefix 키 중 미사용 조합 탐지 |
 | `pane-note.sh` | 노트 생성/편집 |
 | `pane-link.sh` | 노트 검색/연결 |
+| `pane-tag.sh` | 노트 태그 수정 |
 
 ## 핵심 절차
 

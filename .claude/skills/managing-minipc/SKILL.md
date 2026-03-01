@@ -1,7 +1,7 @@
 ---
 name: managing-minipc
 description: |
-  Use this skill when the user asks about NixOS MiniPC management,
+  This skill should be used when the user asks about NixOS MiniPC management,
   nixos-rebuild, disko, hardware-configuration.nix, generation rollback,
   config placement ("설정 배치", "어디에 넣어야", "configuration.nix에 넣을까 host에 넣을까"),
   or NixOS boot/rebuild errors.

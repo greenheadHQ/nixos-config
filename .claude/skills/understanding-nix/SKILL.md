@@ -1,7 +1,8 @@
 ---
 name: understanding-nix
 description: |
-  Nix fundamentals: flakes, derivations, substituters, devShell.
+  This skill should be used when the user encounters Nix fundamentals issues
+  including flakes, derivations, substituters, and devShell configuration.
   Triggers: "nix flake update", "flake change detection", "slow build",
   "substituter", "derivation", "direnv", "devShell",
   "experimental features", "Nix 빌드 느림", "flake 인식 안 됨",

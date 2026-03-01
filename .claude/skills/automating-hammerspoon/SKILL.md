@@ -1,7 +1,8 @@
 ---
 name: automating-hammerspoon
 description: |
-  Hammerspoon hotkeys, launchd agents, Ghostty terminal on macOS.
+  This skill should be used when the user needs to manage Hammerspoon hotkeys,
+  launchd agents, or Ghostty terminal on macOS.
   Triggers: "open terminal from Finder", "Finder에서 터미널 열기",
   "setupLaunchAgents stuck", "launchd HOME is /var/root",
   "Ghostty terminal issues", "Ghostty 새 창 문제", "Hammerspoon 단축키".
@@ -53,9 +54,11 @@ macOS에서 Hammerspoon 자동화, launchd 연계, Ghostty 동작 이슈를 진�
 
 | 파일 | 용도 |
 |------|------|
-| `~/.hammerspoon/init.lua` | Hammerspoon 메인 설정 |
-| `~/.hammerspoon/foundation_remapping.lua` | Caps Lock → F18 리매핑 |
-| `~/.hammerspoon/atuin_menubar.lua` | Atuin 메뉴바 상태 표시 |
+| `modules/darwin/programs/hammerspoon/default.nix` | Nix 모듈 (파일 배포 선언) |
+| `modules/darwin/programs/hammerspoon/files/init.lua` | Hammerspoon 메인 설정 (소스) |
+| `modules/darwin/programs/hammerspoon/files/foundation_remapping.lua` | Caps Lock → F18 리매핑 (소스) |
+| `modules/darwin/programs/hammerspoon/files/atuin_menubar.lua` | Atuin 메뉴바 상태 표시 (소스) |
+| `modules/darwin/programs/hammerspoon/files/ensure-chrome-autoconnect.sh` | Chrome DevTools MCP 자동연결 (소스) |
 | `~/Library/LaunchAgents/` | launchd 사용자 에이전트 |
 
 ### launchd 디버깅

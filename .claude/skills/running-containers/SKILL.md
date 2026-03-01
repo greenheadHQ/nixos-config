@@ -1,13 +1,13 @@
 ---
 name: running-containers
 description: |
-  Use this skill when the user asks about Podman/Docker containers,
+  This skill should be used when the user asks about Podman/Docker containers,
   homeserver services (immich, uptime-kuma, copyparty, vaultwarden, karakeep), container OOM,
   service updates, or database backups.
   Triggers: "update immich", "immich 업데이트", "immich-update",
   "check immich version", "immich 버전 확인", upgrading Immich server,
-  "uptime-kuma-update", "copyparty-update", "karakeep-update", "서비스 업데이트",
-  "service-lib", "version-check", unified service update system,
+  "uptime-kuma-update", "copyparty-update", "vaultwarden-update", "karakeep-update",
+  "서비스 업데이트", "service-lib", "version-check", unified service update system,
   container OOM, "Tailscale IP binding" timing, OCI backend config,
   "immich-db-backup", "DB 백업", "vaultwarden-backup", "백업 타이머",
   "컨테이너", Caddy reverse proxy.
@@ -32,8 +32,10 @@ homeserver.immichUpdate.enable = true;        # Immich 버전 체크 + 업데이
 homeserver.uptimeKumaUpdate.enable = true;    # Uptime Kuma 버전 체크 + 업데이트 (03:30)
 homeserver.copypartyUpdate.enable = true;     # Copyparty 버전 체크 + 업데이트 (04:00)
 homeserver.ankiSync.enable = true;            # Anki 자체 호스팅 동기화 서버
+homeserver.ankiConnect.enable = true;         # Headless Anki + AnkiConnect API
 homeserver.copyparty.enable = true;           # 파일 서버
 homeserver.vaultwarden.enable = true;         # 비밀번호 관리자
+homeserver.vaultwardenUpdate.enable = true;   # Vaultwarden 버전 체크 + 업데이트 (06:30)
 homeserver.karakeep.enable = true;             # Karakeep 웹 아카이버
 homeserver.karakeepBackup.enable = true;      # Karakeep SQLite 매일 백업 (05:00)
 homeserver.karakeepNotify.enable = true;      # Karakeep 웹훅→Pushover 브리지 (socat)
@@ -43,6 +45,7 @@ homeserver.karakeepSinglefileBridge.enable = true; # SingleFile 대용량 분기
 homeserver.karakeepUpdate.enable = true;      # Karakeep 버전 체크 + 업데이트 (06:00)
 homeserver.immichBackup.enable = true;        # Immich PostgreSQL 매일 백업 (05:30)
 homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
+homeserver.devProxy.enable = true;            # Dev server → dev.greenhead.dev 프록시
 ```
 
 ### 파일 구조
@@ -64,6 +67,7 @@ homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 | `modules/nixos/programs/immich-update/` | Immich 버전 체크 + 업데이트 |
 | `modules/nixos/programs/uptime-kuma-update/` | Uptime Kuma 버전 체크 + 업데이트 |
 | `modules/nixos/programs/copyparty-update/` | Copyparty 버전 체크 + 업데이트 |
+| `modules/nixos/programs/vaultwarden-update/` | Vaultwarden 버전 체크 + 업데이트 |
 | `modules/nixos/programs/karakeep-update/` | Karakeep 버전 체크 + 업데이트 |
 | `modules/nixos/programs/docker/karakeep-notify.nix` | Karakeep 웹훅→Pushover 브리지 (socat) |
 | `modules/nixos/programs/docker/karakeep-log-monitor.nix` | Karakeep 로그 감시 + 실패 URL 큐 적재 |
@@ -168,7 +172,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 ### 통합 서비스 업데이트 시스템
 
-4개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라:
+5개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라:
 
 | 서비스 | 버전 체크 (자동) | 수동 업데이트 | 타이머 |
 |--------|-----------------|--------------|--------|
@@ -176,6 +180,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 | Uptime Kuma | `uptime-kuma-version-check` | `sudo uptime-kuma-update` | 03:30 |
 | Copyparty | `copyparty-version-check` | `sudo copyparty-update` | 04:00 |
 | Karakeep | `karakeep-version-check` | `sudo karakeep-update --ack-bridge-risk` | 06:00 |
+| Vaultwarden | `vaultwarden-version-check` | `sudo vaultwarden-update` | 06:30 |
 
 **백업 타이머**:
 
@@ -188,7 +193,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 공통 라이브러리 함수: `send_notification`, `fetch_github_release`, `get_image_digest`, `check_watchdog`, `check_initial_run`, `record_success`, `http_health_check`
 
-서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`, `pushover-karakeep`).
+서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`, `pushover-karakeep`, `pushover-vaultwarden`).
 
 **Immich**: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. 상세: [references/immich-update.md](references/immich-update.md)
 

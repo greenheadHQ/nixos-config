@@ -1,7 +1,8 @@
 ---
 name: managing-cursor
 description: |
-  Cursor IDE: Nix extensions.json, settings, file associations.
+  This skill should be used when the user asks about Cursor IDE management
+  including Nix extensions.json, settings, and file associations.
   Triggers: "add Cursor extension", "install extension via Nix",
   "manage Cursor settings", "Extensions have been modified on disk",
   "확장 0개 표시", extension loading, duti file associations.

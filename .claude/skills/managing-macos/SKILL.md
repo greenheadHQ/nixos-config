@@ -1,10 +1,13 @@
 ---
 name: managing-macos
 description: |
-  macOS/nix-darwin: Dock, Finder, Touch ID sudo, Homebrew Cask.
+  This skill should be used when the user asks about macOS/nix-darwin system settings,
+  Dock/Finder configuration, Homebrew Cask management, Shottr setup, or Folder Actions.
   Triggers: "darwin-rebuild", Dock/Finder settings, "/etc/bashrc conflict",
   "/etc/zshrc conflict", "killall cfprefsd", "primary user does not exist",
-  "shottr 설정", "shottr 단축키", "스크린샷 저장 경로", "shottr 라이센스".
+  "shottr 설정", "shottr 단축키", "스크린샷 저장 경로", "shottr 라이센스",
+  "Folder Actions", "폴더 감시", "compress-video", "compress-rar", "upload-immich".
+  For iOS Shortcuts and Cherri DSL details use managing-shortcuts.
 ---
 
 # macOS 관리 (nix-darwin)
@@ -146,6 +149,26 @@ nrs
 - defaults 조작 테스트 시에는 반드시 `kill -9 $(pgrep -x Shottr)` (SIGKILL) 사용 후 `defaults delete/write` 실행
 
 > 테스트 환경: Shottr 1.9.1 (build 128, versionCode 10901), macOS Darwin 24.6.0, 2026-02-18
+
+### Folder Actions (launchd WatchPaths)
+
+`modules/darwin/programs/folder-actions/default.nix`에서 launchd WatchPaths 기반 폴더 감시 자동화를 관리합니다.
+
+| 액션 | 감시 폴더 | 용도 |
+|------|-----------|------|
+| compress-rar | `~/FolderActions/compress-rar` | RAR 압축 |
+| compress-video | `~/FolderActions/compress-video` | FFmpeg 비디오 압축 |
+| rename-asset | `~/FolderActions/rename-asset` | 파일 이름 변경 |
+| convert-video-to-gif | `~/FolderActions/convert-video-to-gif` | FFmpeg 비디오→GIF 변환 |
+| upload-immich | Shottr 스크린샷 폴더 | Immich 자동 업로드 (personal 전용) |
+
+로그: `~/Library/Logs/folder-actions/`
+
+### iOS Shortcuts / Cherri DSL
+
+iOS Shortcuts 빌드 파이프라인(Cherri DSL), prompt-render CLI, 모바일 프롬프트 워크플로우는 `managing-shortcuts` 스킬을 참조하세요.
+
+관련 모듈: `modules/darwin/programs/shortcuts/`
 
 ## 자주 발생하는 문제
 

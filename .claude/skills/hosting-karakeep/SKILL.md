@@ -1,7 +1,8 @@
 ---
 name: hosting-karakeep
 description: |
-  Karakeep web archiver/bookmark manager: 3-container setup, SingleFile integration, webhooks.
+  This skill should be used when the user needs to manage Karakeep web archiver/bookmark manager:
+  3-container setup, SingleFile integration, webhooks, backup, log monitoring, fallback sync.
   Triggers: "Karakeep", "웹 아카이브", "archive.greenhead.dev", "북마크", "아카이빙".
 ---
 
@@ -60,6 +61,19 @@ Karakeep 웹 아카이버/북마크 관리 서비스 운영 스킬.
 | `modules/nixos/programs/docker/karakeep-singlefile-bridge/files/singlefile-bridge.py` | 대용량 파일 분기 처리 핸들러 |
 | `modules/nixos/programs/karakeep-update/` | 버전 체크 + 수동 업데이트 |
 | `modules/nixos/programs/caddy.nix` | HTTPS 리버스 프록시 (CSP 제거 포함) |
+
+### 서비스 활성화/비활성화
+
+```nix
+# modules/nixos/configuration.nix
+homeserver.karakeep.enable = true;                # 3컨테이너 앱 (포트 3000)
+homeserver.karakeepBackup.enable = true;          # SQLite 매일 백업 (05:00)
+homeserver.karakeepUpdate.enable = true;          # 버전 체크 + 업데이트 알림 (06:00)
+homeserver.karakeepNotify.enable = true;          # 웹훅→Pushover 브리지
+homeserver.karakeepLogMonitor.enable = true;      # OOM/크롤 실패 로그 감시
+homeserver.karakeepFallbackSync.enable = true;    # fallback HTML 자동 재연결
+homeserver.karakeepSinglefileBridge.enable = true; # SingleFile 대용량 분기 브리지
+```
 
 ### Secrets (agenix)
 

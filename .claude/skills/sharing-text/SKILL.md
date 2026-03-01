@@ -1,7 +1,8 @@
 ---
 name: sharing-text
 description: |
-  Pushover text sharing: macOS/NixOS terminal to iPhone push.
+  This skill should be used when the user needs to share text from
+  macOS/NixOS terminal to iPhone via Pushover push notifications.
   Triggers: "share text", "push text", "terminal to iPhone",
   "텍스트 공유", "Pushover로 보내", "텍스트를 아이폰으로".
 ---

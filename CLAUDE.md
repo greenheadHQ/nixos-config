@@ -105,6 +105,7 @@ homeserver.devProxy.enable = true;
 | Neovim, LazyVim, LSP, nvim 플러그인, lazy.nvim, im-select | `configuring-neovim` |
 | Cursor IDE, Nix extensions.json, duti, 확장 0개 표시 | `managing-cursor` |
 | Pushover, 텍스트 공유, MiniPC→iPhone, share text | `sharing-text` |
+| iOS Shortcuts, Cherri DSL, prompt-render, prompt preset, 프리셋, 프롬프트 렌더, cheat-browse --prompts, Shortcut 빌드/서명 | `managing-shortcuts` |
 | dev-proxy, dev server, 개발 서버 프록시, dev.greenhead.dev, HMR, 모바일 미리보기 | `proxying-dev-server` |
 
 ## 스킬 문서 불일치 시 행동 원칙

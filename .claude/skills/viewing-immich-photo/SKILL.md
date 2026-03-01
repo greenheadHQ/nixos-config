@@ -1,7 +1,8 @@
 ---
 name: viewing-immich-photo
 description: |
-  Immich photo viewer: resolve photo paths, display images.
+  This skill should be used when the user needs to view Immich photos by
+  resolving photo paths and displaying images from the self-hosted server.
   Triggers: "view immich photo", "이미치 사진 확인", "immich 파일 보여줘",
   "immich 사진 보여줘", paths containing "/var/lib/docker-data/immich/upload-cache"
   or "/var/lib/docker-data/immich".

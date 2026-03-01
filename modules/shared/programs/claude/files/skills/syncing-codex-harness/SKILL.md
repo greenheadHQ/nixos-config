@@ -1,8 +1,9 @@
 ---
 name: syncing-codex-harness
 description: >-
-  Syncs Claude Code harness to Codex CLI compatible format. Projects skills,
-  agents, MCP servers, and rules into .agents/ and .codex/ directories.
+  This skill should be used when the user needs to sync Claude Code harness
+  to Codex CLI compatible format, projecting skills, agents, MCP servers,
+  and rules into .agents/ and .codex/ directories.
   Triggers: "codex sync", "codex harness", "codex 동기화", "codex 투영",
   "AGENTS.md", ".agents/skills", "Codex compatibility", "하네스 동기화".
 allowed-tools: Bash(*)
