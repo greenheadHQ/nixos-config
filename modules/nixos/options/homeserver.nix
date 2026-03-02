@@ -300,6 +300,15 @@ in
       enable = lib.mkEnableOption "Caddy reverse proxy with HTTPS for homeserver services";
     };
 
+    awesomeAnki = {
+      enable = lib.mkEnableOption "awesome-anki web service for Anki card splitting";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = constants.network.ports.awesomeAnki;
+        description = "Port for awesome-anki web interface";
+      };
+    };
+
     devProxy = {
       enable = lib.mkEnableOption "Dev server reverse proxy (dev.greenhead.dev)";
     };
@@ -329,6 +338,7 @@ in
     ../programs/docker/karakeep-fallback-sync.nix # Karakeep fallback HTML 자동 재연결
     ../programs/docker/karakeep-singlefile-bridge.nix # Karakeep SingleFile 대용량 분기 브리지
     ../programs/karakeep-update # Karakeep 버전 체크 + 업데이트 알림
+    ../programs/docker/awesome-anki.nix # awesome-anki 카드 분할 웹 서비스
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)
   ];

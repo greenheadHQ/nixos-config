@@ -17,7 +17,7 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 
 **플랫폼별 설정**:
 - macOS: Homebrew GUI 앱, Hammerspoon, Cursor, Ghostty, Shottr, 폴더 액션
-- NixOS: 홈서버 17개 서비스, Tailscale VPN, SSH/mosh, 하드웨어 모니터링
+- NixOS: 홈서버 18개 서비스, Tailscale VPN, SSH/mosh, 하드웨어 모니터링
 
 ---
 
@@ -44,7 +44,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │       ├── configuration.nix      # systemd-boot, watchdog, nix-ld, 서비스 활성화
 │       ├── home.nix               # HM 패키지 + 모듈 import
 │       ├── options/
-│       │   └── homeserver.nix     # mkOption 서비스 정의 (17개)
+│       │   └── homeserver.nix     # mkOption 서비스 정의 (18개)
 │       ├── lib/
 │       │   ├── service-lib.nix    # 공통 셸 라이브러리 (Nix store 배치)
 │       │   ├── mk-update-module.nix # 서비스 업데이트 모듈 생성 헬퍼
@@ -61,7 +61,8 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │           │   ├── vaultwarden-backup.nix
 │           │   ├── karakeep.nix  # 웹 아카이버/북마크 관리 (3컨테이너)
 │           │   ├── karakeep-backup.nix
-│           │   └── karakeep-notify.nix
+│           │   ├── karakeep-notify.nix
+│           │   └── awesome-anki.nix # Anki 카드 분할 웹 서비스
 │           ├── anki-sync-server/  # Anki 동기화 서버 (네이티브 모듈)
 │           ├── caddy.nix          # HTTPS 리버스 프록시 (Cloudflare DNS)
 │           ├── dev-proxy/         # dev.greenhead.dev 개발 서버 프록시
@@ -77,7 +78,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │           ├── mosh.nix           # 모바일 쉘
 │           └── ssh-client/        # macOS SSH 접속 설정
 ├── hosts/greenhead-minipc/        # 호스트별 하드웨어 설정 (disko, WoL, HDD)
-├── secrets/                       # agenix 암호화 시크릿 (19개 .age 파일)
+├── secrets/                       # agenix 암호화 시크릿 (21개 .age 파일)
 ├── scripts/                       # 자동화 스크립트
 │   ├── add-host.sh                # 호스트 추가 마법사
 │   ├── pre-rebuild-check.sh       # 빌드 전 검증
@@ -92,8 +93,8 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 
 | 카테고리 | 내용 |
 |----------|------|
-| `network` | Tailscale IP, 서비스 포트 7개, Podman 서브넷 |
-| `domain` | `greenhead.dev` + 서브도메인 6개 |
+| `network` | Tailscale IP, 서비스 포트 8개, Podman 서브넷 |
+| `domain` | `greenhead.dev` + 서브도메인 7개 |
 | `paths` | Docker 데이터(SSD), 미디어 데이터(HDD) |
 | `sshKeys` | MacBook/MiniPC SSH 공개키 (`secrets/secrets.nix`에서도 import) |
 | `containers` | 서비스별 리소스 제한 (메모리, CPU) |
@@ -115,6 +116,8 @@ homeserver.immichUpdate.enable = true;     # 버전 체크 + Pushover 알림
 homeserver.uptimeKuma.enable = true;       # 서비스 모니터링
 homeserver.uptimeKumaUpdate.enable = true;
 homeserver.ankiSync.enable = true;         # Anki 동기화 서버
+homeserver.ankiConnect.enable = true;     # Headless Anki + AnkiConnect API
+homeserver.awesomeAnki.enable = true;     # Anki 카드 분할 웹 서비스
 homeserver.copyparty.enable = true;        # 파일 서버 (Google Drive 대체)
 homeserver.copypartyUpdate.enable = true;
 homeserver.vaultwarden.enable = true;      # 비밀번호 관리자

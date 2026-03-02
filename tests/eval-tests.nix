@@ -68,7 +68,10 @@ let
   containerNames = builtins.attrNames containers;
 
   # host network allowlist — 이 목록에 없는 컨테이너가 --network=host를 사용하면 실패
-  hostNetworkAllowlist = [ "uptime-kuma" ];
+  hostNetworkAllowlist = [
+    "uptime-kuma"
+    "awesome-anki"
+  ];
 
   # 컨테이너가 --network=host를 사용하는지 확인
   # --network=host, --net=host (결합형) + --network host, --net host (공백 분리형) 모두 감지

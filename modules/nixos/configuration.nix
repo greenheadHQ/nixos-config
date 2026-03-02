@@ -118,6 +118,7 @@
   homeserver.karakeepSinglefileBridge.enable = true; # SingleFile 대용량 자동 분기 (링크+보관 fullPageArchive)
   homeserver.karakeepUpdate.enable = true; # Karakeep 버전 체크 + 업데이트 알림
   homeserver.immichBackup.enable = true; # Immich PostgreSQL 매일 백업 (HDD)
+  homeserver.awesomeAnki.enable = true; # awesome-anki 카드 분할 웹 서비스
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
   homeserver.devProxy.enable = true; # Dev server → dev.greenhead.dev 프록시
 }
