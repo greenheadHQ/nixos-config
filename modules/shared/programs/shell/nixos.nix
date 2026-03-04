@@ -29,6 +29,13 @@ in
     executable = true;
   };
 
+  # NixOS: mise prebuilt 바이너리 사용 (소스 빌드 방지)
+  # NixOS에서 all_compile/node.compile 기본값이 true → Python 3.13과 Node.js configure.py 비호환 에러 발생
+  home.sessionVariables = {
+    MISE_ALL_COMPILE = "0";
+    MISE_NODE_COMPILE = "0"; # Node 전용 안전핀
+  };
+
   # NixOS 전용 패키지 (macOS는 Homebrew python3 사용)
   home.packages = [
     pkgs.python3
