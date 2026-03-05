@@ -66,5 +66,6 @@
   "autoUpdatesChannel": "latest",
   "plansDirectory": "./.claude/plans",
   "skipDangerousModePermissionPrompt": true,
-  "effortLevel": "high"
+  "effortLevel": "high",
+  "voiceEnabled": true
 }
