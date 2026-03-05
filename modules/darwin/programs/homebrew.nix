@@ -35,6 +35,7 @@
     # Homebrew Formula (CLI 도구)
     brews = [
       "laishulu/homebrew/macism" # macOS 입력 소스 전환 (Neovim 한영 전환 자동화)
+      "sox" # 오디오 처리 (Claude Code /voice 모드)
     ];
 
     # Homebrew Cask (GUI 앱)
