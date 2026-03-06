@@ -6,11 +6,15 @@ tags: [ neovim, lazyvim, search, telescope ]
 <leader> = Space 키. which-key 팝업으로 모든 키 확인 가능.
 
   <leader>ff    파일 이름으로 검색         (Cmd+P)
+  <leader>fF    파일 이름으로 검색 — cwd   (모노레포 전체)
   <leader>fg    Git 파일 찾기
   <leader>/     텍스트 검색 (grep)         (Cmd+Shift+F)
+  <leader>sG    텍스트 검색 (grep) — cwd   (모노레포 전체)
   <leader>fb    열린 버퍼 목록             (탭 전환)
   <leader>fr    최근 파일 목록             (Recent Files)
   <leader>e     파일 탐색기 토글           (Explorer 패널)
+
+  ※ 모노레포: 소문자(ff, /)는 LSP root(현재 패키지), 대문자(fF, sG)는 cwd(전체)
 
 탐색기 (Explorer)
 
