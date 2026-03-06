@@ -214,7 +214,7 @@ preview_changes() {
         log_warn "⚠️  nvd diff returned non-zero (possibly identical results)"
     fi
 
-    if [[ "$(readlink ./result)" == "$(readlink /run/current-system)" ]]; then
+    if [[ -L ./result ]] && [[ "$(readlink ./result)" == "$(readlink /run/current-system)" ]]; then
         # shellcheck disable=SC2034  # NO_CHANGES는 source한 nrs.sh에서 사용
         NO_CHANGES=true
     fi
@@ -225,14 +225,13 @@ preview_changes() {
 # 빌드 아티팩트 정리
 #───────────────────────────────────────────────────────────────────────────────
 cleanup_build_artifacts() {
-    log_info "🧹 Cleaning up build artifacts..."
-
     local links
     links=$(find "$FLAKE_PATH" -maxdepth 1 -name 'result*' -type l 2>/dev/null)
     local count
-    count=$(echo "$links" | grep -c . 2>/dev/null || echo 0)
+    count=$(echo "$links" | grep -c . 2>/dev/null || true)
 
     if [[ "$count" -gt 0 ]]; then
+        log_info "🧹 Cleaning up build artifacts..."
         # result는 일반 사용자 build로 생성되어 사용자 소유
         echo "$links" | xargs rm -f
         log_info "  ✓ Removed $count result symlink(s)"

@@ -103,11 +103,11 @@ restart_hammerspoon() {
 main() {
     # darwin-rebuild build가 pwd에 ./result를 생성하므로 디렉토리 이동 필수
     cd "$FLAKE_PATH" || exit 1
+    trap cleanup_build_artifacts EXIT
 
     echo ""
     preview_changes "preview" "Changes to be applied:"
     if [[ "$NO_CHANGES" == true && "$FORCE_FLAG" != true ]]; then
-        cleanup_build_artifacts
         echo ""
         log_info "✅ No changes to apply. Skipping rebuild."
         log_info "  (Use 'nrs --force' to force full rebuild including activation scripts)"
@@ -118,7 +118,7 @@ main() {
     restart_hammerspoon
     cleanup_build_artifacts
     echo ""
-    log_info "✅ Done!"
+    log_info "✅ Done! (${SECONDS}s)"
 }
 
 main

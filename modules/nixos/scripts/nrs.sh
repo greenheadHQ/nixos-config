@@ -45,12 +45,12 @@ run_nixos_rebuild() {
 #───────────────────────────────────────────────────────────────────────────────
 main() {
     cd "$FLAKE_PATH" || exit 1
+    trap cleanup_build_artifacts EXIT
 
     echo ""
     preflight_source_build_check
     preview_changes "preview" "Changes to be applied:"
-    if [[ "$NO_CHANGES" == true ]]; then
-        cleanup_build_artifacts
+    if [[ "$NO_CHANGES" == true && "$FORCE_FLAG" != true ]]; then
         echo ""
         log_info "✅ No changes to apply. Skipping rebuild."
         return 0
@@ -59,7 +59,7 @@ main() {
     cleanup_build_artifacts
 
     echo ""
-    log_info "✅ Done!"
+    log_info "✅ Done! (${SECONDS}s)"
 }
 
 main
