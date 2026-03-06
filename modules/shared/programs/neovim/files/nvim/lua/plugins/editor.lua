@@ -138,6 +138,16 @@ return {
         -- rg 기본값은 --smart-case (소문자만 → insensitive, 대문자 포함 → sensitive)
         -- 이 토글은 전부 소문자 쿼리에서 case-sensitive 검색이 필요할 때 사용
         sources = {
+          explorer = {
+            win = {
+              list = {
+                keys = {
+                  -- picker의 toggle_select 매핑 해제 → explorer에서 <leader> 정상 동작
+                  ["<Space>"] = false,
+                },
+              },
+            },
+          },
           grep = {
             case_sens = false,
             finder = function(opts, ctx)

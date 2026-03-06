@@ -6,6 +6,7 @@ tags: [ neovim, lazyvim, search, telescope ]
 <leader> = Space 키. which-key 팝업으로 모든 키 확인 가능.
 
   <leader>ff    파일 이름으로 검색         (Cmd+P)
+  <leader>Space 파일 이름으로 검색         (= <leader>ff)
   <leader>fF    파일 이름으로 검색 — cwd   (모노레포 전체)
   <leader>fg    Git 파일 찾기
   <leader>/     텍스트 검색 (grep)         (Cmd+Shift+F)
