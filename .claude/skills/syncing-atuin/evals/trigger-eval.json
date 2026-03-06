@@ -1,0 +1,22 @@
+[
+  {"query": "atuin status에서 404 에러가 나와", "should_trigger": true},
+  {"query": "atuin 동기화가 안 돼", "should_trigger": true},
+  {"query": "한글 히스토리 일괄 삭제하려면?", "should_trigger": true},
+  {"query": "atuin encryption key 불일치 오류", "should_trigger": true},
+  {"query": "zsh-autosuggestion에서 한글 경로가 깨져", "should_trigger": true},
+  {"query": "atuin history delete 명령어가 없어", "should_trigger": true},
+  {"query": "last_sync_time 파일이 업데이트 안 돼", "should_trigger": true},
+  {"query": "atuin search 모드를 fulltext로 바꾸고 싶어", "should_trigger": true},
+  {"query": "atuin watchdog 로그 확인", "should_trigger": true},
+  {"query": "shell history 데이터베이스 정리", "should_trigger": true},
+  {"query": "tmux 세션 저장이 안 돼", "should_trigger": false},
+  {"query": "tmux 단축키 설정 변경", "should_trigger": false},
+  {"query": "SSH 키 인증 실패", "should_trigger": false},
+  {"query": "Tailscale 접속이 안 돼", "should_trigger": false},
+  {"query": "Hammerspoon 메뉴바 아이콘 추가", "should_trigger": false},
+  {"query": "git config delta 설정", "should_trigger": false},
+  {"query": "NixOS rebuild 에러", "should_trigger": false},
+  {"query": "mise 런타임 버전 불일치", "should_trigger": false},
+  {"query": "pane notepad 노트 태그 수정", "should_trigger": false},
+  {"query": "mosh 접속 설정", "should_trigger": false}
+]

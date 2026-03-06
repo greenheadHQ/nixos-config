@@ -1,11 +1,14 @@
 ---
 name: managing-tmux
 description: |
-  This skill should be used when the user asks about tmux configuration
-  including keybindings, prefix, plugins, resurrect, and pane notepad.
-  Triggers: "pane notepad", "tmux plugins", "tmux-resurrect",
-  "session save/restore", "tmux.conf configuration",
-  "prefix key", "session management", "tmux 설정", "tmux 단축키".
+  tmux terminal multiplexer configuration, keybindings, plugins (resurrect,
+  continuum, thumbs, yank), and Pane Notepad workflow via Home Manager.
+  NOT for SSH/Tailscale (managing-ssh), shell history (syncing-atuin),
+  or Hammerspoon/Ghostty (automating-hammerspoon).
+  Triggers: "pane notepad", "tmux plugins", "tmux-resurrect", "tmux-continuum",
+  "tmux-thumbs", "tmux-yank", "session save/restore", "tmux.conf configuration",
+  "prefix key", "copy-mode", "tmux 설정", "tmux 단축키", "tmux 플러그인",
+  "pane 제목", "노트 태그", "tmux 세션 복원".
 ---
 # tmux 설정
 

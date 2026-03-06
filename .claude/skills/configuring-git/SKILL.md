@@ -1,16 +1,22 @@
 ---
 name: configuring-git
 description: |
-  This skill should be used when the user needs to manage Git configuration
-  via Home Manager: delta, rerere, lazygit, aliases.
-  Triggers: "gitconfig conflicts", "git-cleanup scripts",
+  Git configuration via Home Manager: delta diff viewer, lazygit TUI integration,
+  rerere conflict resolution, aliases (s, l), worktree management (wt, wt-cleanup),
+  gdf/gdl diff file selector, git-cleanup branch pruning, and interactive rebase
+  reverse display. Covers delta feature/pager settings and side-by-side control.
+  NOT for Claude Code hooks/plugins (use configuring-claude-code)
+  or Codex CLI/.agents config (use configuring-codex).
+  Triggers: "gitconfig conflicts", "git-cleanup", "git cleanup",
   "rebase reverse display", "lazygit delta pager config",
-  "git 설정 충돌", "delta 설정", "Git alias".
+  "git 설정 충돌", "delta 설정", "Git alias", "worktree", "wt 생성",
+  "wt-cleanup", "gdf", "gdl", "side-by-side", "rerere",
+  "git 브랜치 정리", "delta pager".
 ---
 
 # Git 설정
 
-Git, delta diff, lazygit, rerere 등 Git 관련 설정 가이드입니다.
+Git, delta diff, lazygit, rerere 등 Git 관련 설정을 다룬다.
 
 ## 목적과 범위
 

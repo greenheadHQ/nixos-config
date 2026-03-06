@@ -1,0 +1,22 @@
+[
+  {"query": "codex sync 실행해줘", "should_trigger": true},
+  {"query": "codex 하네스 동기화", "should_trigger": true},
+  {"query": "codex 투영 해줘", "should_trigger": true},
+  {"query": ".agents/skills로 스킬 프로젝션", "should_trigger": true},
+  {"query": "AGENTS.md 생성해줘", "should_trigger": true},
+  {"query": "Codex compatibility 맞춰줘", "should_trigger": true},
+  {"query": "Claude 하네스를 Codex 구조로 변환", "should_trigger": true},
+  {"query": "MCP를 config.toml로 변환", "should_trigger": true},
+  {"query": ".codex/config.toml에 MCP 서버 추가", "should_trigger": true},
+  {"query": "sync.sh all 실행", "should_trigger": true},
+  {"query": "codex exec review --base main", "should_trigger": false},
+  {"query": "codex 실행해줘", "should_trigger": false},
+  {"query": "비대화형 codex 실행", "should_trigger": false},
+  {"query": "codex exec로 코드 리뷰", "should_trigger": false},
+  {"query": "codex CLI로 프롬프트 전달", "should_trigger": false},
+  {"query": "Codex 설정 config.toml 수정", "should_trigger": false},
+  {"query": "스킬 감사 해줘", "should_trigger": false},
+  {"query": "이슈 등록해줘", "should_trigger": false},
+  {"query": "claude settings 수정", "should_trigger": false},
+  {"query": "codex exec -o result.md", "should_trigger": false}
+]

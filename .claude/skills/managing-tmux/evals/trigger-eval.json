@@ -1,0 +1,21 @@
+[
+  {"query": "tmux prefix key 변경하고 싶어", "should_trigger": true},
+  {"query": "pane notepad에 노트를 추가하려면?", "should_trigger": true},
+  {"query": "tmux-resurrect로 세션 복원이 안 돼", "should_trigger": true},
+  {"query": "tmux.conf 설정 파일 위치가 어디야?", "should_trigger": true},
+  {"query": "tmux 단축키 목록 보여줘", "should_trigger": true},
+  {"query": "tmux 플러그인 추가하는 방법", "should_trigger": true},
+  {"query": "tmux-thumbs로 URL 복사하기", "should_trigger": true},
+  {"query": "tmux copy-mode vi 키바인딩", "should_trigger": true},
+  {"query": "tmux continuum 자동 저장 주기 변경", "should_trigger": true},
+  {"query": "tmux pane 제목 설정하는 법", "should_trigger": true},
+  {"query": "SSH 키가 로드 안 돼", "should_trigger": false},
+  {"query": "atuin 히스토리 검색이 안 돼", "should_trigger": false},
+  {"query": "Tailscale VPN 연결 상태 확인", "should_trigger": false},
+  {"query": "zsh-autosuggestion 한글 깨짐", "should_trigger": false},
+  {"query": "Ghostty 터미널 설정 변경", "should_trigger": false},
+  {"query": "Hammerspoon 단축키 추가", "should_trigger": false},
+  {"query": "Neovim 플러그인 설치", "should_trigger": false},
+  {"query": "launchd agent가 실행 안 돼", "should_trigger": false},
+  {"query": "shell history 백업하고 싶어", "should_trigger": false}
+]

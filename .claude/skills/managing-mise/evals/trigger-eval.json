@@ -1,0 +1,21 @@
+[
+  {"query": "pnpm not found 에러가 SSH에서 발생해", "should_trigger": true},
+  {"query": ".nvmrc 파일을 mise가 인식 못 해", "should_trigger": true},
+  {"query": "NixOS에서 mise로 Node.js 설치하면 빌드 실패해", "should_trigger": true},
+  {"query": "mise shims 설정 어떻게 해?", "should_trigger": true},
+  {"query": "mise activate 설정하려면?", "should_trigger": true},
+  {"query": "mise current로 런타임 버전 확인", "should_trigger": true},
+  {"query": "node version mismatch 문제 해결하려면?", "should_trigger": true},
+  {"query": "mise 전역 설정은 어디서 하지?", "should_trigger": true},
+  {"query": "mise trust 실행이 필요한가?", "should_trigger": true},
+  {"query": "SSH 비대화형 세션에서 런타임이 안 잡혀", "should_trigger": true},
+  {"query": "Neovim extraPackages에 LSP 추가하기", "should_trigger": false},
+  {"query": "Cursor 확장 관리하려면?", "should_trigger": false},
+  {"query": "tmux 세션 복원 방법", "should_trigger": false},
+  {"query": "Git config 설정 변경", "should_trigger": false},
+  {"query": "Homebrew로 앱 설치하기", "should_trigger": false},
+  {"query": "NixOS 컨테이너 서비스 업데이트", "should_trigger": false},
+  {"query": "Claude Code MCP 설정하려면?", "should_trigger": false},
+  {"query": "agenix 시크릿 관리", "should_trigger": false},
+  {"query": "Hammerspoon 핫키 추가", "should_trigger": false}
+]

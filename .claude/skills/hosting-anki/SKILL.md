@@ -11,14 +11,14 @@ description: |
 
 # Anki 서비스 관리
 
-MiniPC에서 두 가지 Anki 서비스를 셀프호스팅합니다:
+MiniPC에서 두 가지 Anki 서비스를 셀프호스팅한다:
 
 | 서비스 | 프로토콜 | 용도 | 포트 |
 |--------|----------|------|------|
 | Anki Sync Server | Anki sync protocol | 카드 DB 동기화 (클라이언트 ↔ 서버) | 27701 |
 | AnkiConnect | HTTP JSON API | 카드 CRUD, 덱 조회, 원격 config API (`getConfig`/`setConfig`) | 8765 |
 
-두 서비스 모두 Tailscale VPN 내에서만 접근 가능합니다.
+두 서비스 모두 Tailscale VPN 내에서만 접근 가능하다.
 
 **버전**: Anki 25.09.2 / AnkiConnect 25.11.9.0 / Qt 6.10.1 / NixOS 26.05
 

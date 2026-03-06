@@ -1,11 +1,13 @@
 ---
 name: automating-hammerspoon
 description: |
-  This skill should be used when the user needs to manage Hammerspoon hotkeys,
-  launchd agents, or Ghostty terminal on macOS.
-  Triggers: "open terminal from Finder", "Finder에서 터미널 열기",
-  "setupLaunchAgents stuck", "launchd HOME is /var/root",
-  "Ghostty terminal issues", "Ghostty 새 창 문제", "Hammerspoon 단축키".
+  Hammerspoon desktop automation, hotkeys, launchd agents, and Ghostty terminal
+  integration on macOS. Not for iOS Shortcuts or mobile workflows (see managing-shortcuts).
+  Triggers: "Hammerspoon hotkey", "Hammerspoon 단축키", "핫키 설정",
+  "open terminal from Finder", "Finder에서 터미널 열기", "Ghostty 새 창 문제",
+  "setupLaunchAgents stuck", "launchd agent", "launchd HOME is /var/root",
+  "Ghostty terminal issues", "Ghostty CSI u", "한글 입력소스 Ctrl",
+  "init.lua", "eventtap", "데스크탑 자동화", "hs.ipc", "Hammerspoon reload".
 ---
 
 # Hammerspoon 자동화

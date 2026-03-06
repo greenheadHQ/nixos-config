@@ -1,0 +1,22 @@
+[
+  {"query": "darwin-rebuild 하니까 setupLaunchAgents에서 멈춤", "should_trigger": true},
+  {"query": "Homebrew cask에서 Cursor adopt 하려는데 에러 나", "should_trigger": true},
+  {"query": "macOS Finder에서 숨김 파일 표시 설정은 어디서 관리하지?", "should_trigger": true},
+  {"query": "shottr 단축키가 안 먹어. 스크린샷 설정 확인해줘", "should_trigger": true},
+  {"query": "/etc/zshrc 충돌로 nix-darwin 부트스트랩이 실패해", "should_trigger": true},
+  {"query": "Folder Actions에서 compress-video가 동작 안 해. 로그 확인해줘", "should_trigger": true},
+  {"query": "killall cfprefsd 실행 후 스크롤 방향이 롤백됐어", "should_trigger": true},
+  {"query": "nrs 실행하면 빌드 없이 바로 종료돼. launchd 정리 메시지만 나와", "should_trigger": true},
+  {"query": "primary user does not exist 에러로 darwin-rebuild 실패", "should_trigger": true},
+  {"query": "Hammerspoon이 darwin-rebuild 후 HOME을 /var/root로 인식해", "should_trigger": true},
+  {"query": "NixOS MiniPC에서 nixos-rebuild 에러가 나", "should_trigger": false},
+  {"query": "nix flake update 했는데 빌드가 느려졌어", "should_trigger": false},
+  {"query": "direnv 환경이 활성화 안 되는데 어떻게 하지?", "should_trigger": false},
+  {"query": "WoL 설정 확인하려면 어떻게 해?", "should_trigger": false},
+  {"query": "smartd 디스크 모니터링 알림이 안 와", "should_trigger": false},
+  {"query": "flake 변경이 인식되지 않아. git add 했는데도", "should_trigger": false},
+  {"query": "iOS Shortcuts를 Cherri DSL로 빌드하는 방법 알려줘", "should_trigger": false},
+  {"query": "disko.nix 파티션 설정을 변경하고 싶어", "should_trigger": false},
+  {"query": "Neovim에서 한글 입력 전환이 안 돼. im-select 문제인 것 같아", "should_trigger": false},
+  {"query": "SSH 키 생성하고 Tailscale VPN 설정하려면?", "should_trigger": false}
+]

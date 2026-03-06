@@ -1,0 +1,82 @@
+[
+  {
+    "query": "delta가 git diff에서 적용이 안 돼",
+    "should_trigger": true
+  },
+  {
+    "query": "lazygit에서 side-by-side를 끄고 싶은데 안 꺼져",
+    "should_trigger": true
+  },
+  {
+    "query": "gitconfig이 Home Manager 설정이랑 충돌해",
+    "should_trigger": true
+  },
+  {
+    "query": "git cleanup으로 오래된 브랜치를 정리하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "rebase -i에서 최신 커밋을 위에 표시하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "wt로 워크트리를 생성하려면 어떻게 해?",
+    "should_trigger": true
+  },
+  {
+    "query": "gdf 명령어로 diff 파일을 fzf로 선택하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "rerere cache를 정리하려면",
+    "should_trigger": true
+  },
+  {
+    "query": "git alias s랑 l이 뭐야?",
+    "should_trigger": true
+  },
+  {
+    "query": "wt-cleanup으로 머지된 워크트리를 정리하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude Code PreToolUse 훅을 설정하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "settings.json에서 플러그인 설정을 바꾸고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "codex에서 .agents/skills 투영이 깨졌어",
+    "should_trigger": false
+  },
+  {
+    "query": "AGENTS.md가 CLAUDE.md를 가리키는지 확인해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "immich 컨테이너를 업데이트하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "tmux prefix 키를 바꾸고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "SSH 에이전트가 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "mise에서 Node.js 버전이 안 맞아",
+    "should_trigger": false
+  },
+  {
+    "query": "nix develop 환경에서 git commit이 실패해",
+    "should_trigger": false
+  },
+  {
+    "query": "codex exec로 코드 리뷰하고 싶어",
+    "should_trigger": false
+  }
+]

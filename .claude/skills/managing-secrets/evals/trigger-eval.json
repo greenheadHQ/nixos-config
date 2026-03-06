@@ -1,0 +1,22 @@
+[
+  { "query": "agenix로 새 시크릿 추가하고 싶어", "should_trigger": true },
+  { "query": "add a new .age secret for the API key", "should_trigger": true },
+  { "query": "secrets.nix에 공개키 등록하는 법", "should_trigger": true },
+  { "query": "agenix -e 실행하면 /dev/stdin 에러가 나", "should_trigger": true },
+  { "query": "re-encrypt all secrets after adding a new host", "should_trigger": true },
+  { "query": "shottr 라이센스 키 암호화 방법", "should_trigger": true },
+  { "query": "age key identity path 문제 해결", "should_trigger": true },
+  { "query": "시크릿 복호화가 안 돼", "should_trigger": true },
+  { "query": "nrs 후 secret 파일이 생성되지 않음", "should_trigger": true },
+  { "query": "macOS에서 agenix .tmp 파일 잔류 문제", "should_trigger": true },
+  { "query": "Hammerspoon 단축키 설정 변경하고 싶어", "should_trigger": false },
+  { "query": "immich 컨테이너 OOM 문제", "should_trigger": false },
+  { "query": "SSH 접속이 안 돼", "should_trigger": false },
+  { "query": "Tailscale VPN 설정", "should_trigger": false },
+  { "query": "NixOS 설정 빌드 에러", "should_trigger": false },
+  { "query": "iOS Shortcuts 빌드 파이프라인", "should_trigger": false },
+  { "query": "Neovim LSP 설정", "should_trigger": false },
+  { "query": "tmux prefix 키 변경", "should_trigger": false },
+  { "query": "Git config delta 설정", "should_trigger": false },
+  { "query": "Podman 컨테이너 업데이트", "should_trigger": false }
+]

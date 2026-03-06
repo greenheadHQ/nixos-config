@@ -2,66 +2,73 @@
 name: managing-cursor
 description: |
   This skill should be used when the user asks about Cursor IDE management
-  including Nix extensions.json, settings, and file associations.
+  including Nix extensions.json, settings, file associations, and snippets.
   Triggers: "add Cursor extension", "install extension via Nix",
   "manage Cursor settings", "Extensions have been modified on disk",
-  "확장 0개 표시", extension loading, duti file associations.
+  "확장 0개 표시", "Cursor 확장", extension loading, duti file associations,
+  "keybindings.json", "Cursor 설정", "Cursor 스니펫".
 ---
 
-# Cursor 확장 관리
+# Cursor IDE 관리
 
-Cursor IDE 확장 프로그램 관리 가이드.
+Cursor AI 코드 에디터의 확장, 설정, 파일 연결을 Nix로 선언적 관리하는 가이드.
 
-## Known Issues
+## 목적과 범위
 
-**Spotlight에 Cursor 2개 표시**
-- Homebrew Cask로 설치된 Cursor와 다른 경로의 Cursor가 공존
-- 해결: `/Applications/Cursor.app` 외 다른 Cursor 삭제
-
-**"Extensions have been modified on disk" 경고**
-- Nix로 확장이 관리되어 외부 수정 감지됨
-- 무시해도 됨, 재시작하면 사라짐
-
-**GUI에서 확장 설치/제거 안 됨**
-- extensions.json이 Nix로 관리되어 읽기 전용
-- 해결: Nix 설정에서 추가/제거 후 `nrs`
+Cursor 앱은 Homebrew Cask로 설치하고, 확장/설정/키바인딩/스니펫은 Nix(Home Manager)로 관리한다.
+GUI에서의 확장 설치/제거는 불가능하며, 모든 변경은 Nix 설정을 통해야 한다.
 
 ## 빠른 참조
 
-### 확장 관리 구조
+### 파일 구조
 
 ```
+modules/darwin/programs/cursor/
+├── default.nix                 # 확장 목록, 심볼릭 링크, duti 설정
+└── files/
+    ├── settings.json           # → ~/Library/.../User/settings.json
+    ├── keybindings.json        # → ~/Library/.../User/keybindings.json
+    └── snippets/*.json         # → ~/Library/.../User/snippets/
+
 ~/.cursor/
-├── extensions/           # 확장 파일 (Nix buildEnv)
-│   └── extensions.json   # 확장 목록 (Nix에서 자동 생성)
-└── (확장 메타데이터/캐시)
+├── extensions/                 # Nix buildEnv (읽기 전용)
+│   └── extensions.json         # Nix 자동 생성
+└── (메타데이터/캐시)
 
 ~/Library/Application Support/Cursor/User/
-├── settings.json         # mkOutOfStoreSymlink (양방향 수정)
-├── keybindings.json      # mkOutOfStoreSymlink (양방향 수정)
-└── snippets/*.json       # Nix 관리 스니펫
+├── settings.json               # mkOutOfStoreSymlink (양방향 수정)
+├── keybindings.json            # mkOutOfStoreSymlink (양방향 수정)
+└── snippets/*.json             # Nix 관리
 ```
 
-**mkOutOfStoreSymlink 패턴**
-- Nix store 대신 실제 파일 경로로 심볼릭 링크
-- 양방향 수정 가능
+### 확장 추가/제거 절차
 
-**Shell wrapper**
-- `modules/shared/programs/shell/darwin.nix`에서 `cursor()` 함수를 제공
-- 인수 없이 `cursor` 실행 시 현재 디렉터리를 자동으로 여는 `cursor .` 래퍼를 사용
+1. `modules/darwin/programs/cursor/default.nix`에서 `cursorExtensions` 수정
+2. `nrs` 실행
+3. Cursor 재시작
 
-### 확장 추가하기
+확장 소스 선택: 먼저 `open-vsx`에서 검색, 없으면 `vscode-marketplace` 사용.
+상세 가이드: [references/extensions.md](references/extensions.md)
 
-확장 추가/제거/업데이트는 [references/extensions.md](references/extensions.md) 참조.
+### Shell wrapper
+
+`modules/shared/programs/shell/darwin.nix`에서 `cursor()` 함수 제공.
+인수 없이 `cursor` 실행 시 현재 디렉터리를 자동으로 여는 `cursor .` 래퍼.
 
 ## 자주 발생하는 문제
 
-1. **확장 0개 표시**: extensions.json 심볼릭 링크 확인
-2. **설치 안 됨**: Nix 설정에서 추가 필요
-3. **Spotlight 중복**: 불필요한 Cursor 앱 삭제
+1. **확장 0개 표시**: `extensions.json`에 `location`/`metadata` 필드 누락 → `default.nix` 형식 확인
+2. **"Extensions have been modified on disk" 경고**: 정상 동작, Cursor 재시작으로 해결
+3. **GUI에서 확장 설치 안 됨**: `~/.cursor/extensions`가 Nix store 심볼릭 링크 → Nix 설정에서 추가 후 `nrs`
+4. **Spotlight에 Cursor 2개 표시**: `/Applications/Cursor.app` 외 다른 Cursor 삭제
+
+## 기본 앱 연결 (duti)
+
+텍스트/코드 파일 더블클릭 시 Cursor로 열리도록 `duti`를 사용한다.
+`home.activation`에서 `nrs` 시 자동 적용. 상세: [references/settings.md](references/settings.md)
 
 ## 레퍼런스
 
 - 확장 관리: [references/extensions.md](references/extensions.md)
-- Cursor 설정: [references/settings.md](references/settings.md)
+- Cursor 설정/duti: [references/settings.md](references/settings.md)
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)

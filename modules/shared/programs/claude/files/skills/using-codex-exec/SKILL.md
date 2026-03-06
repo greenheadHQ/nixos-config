@@ -1,10 +1,13 @@
 ---
 name: using-codex-exec
 description: |
-  This skill should be used when the user needs reliable Codex CLI
-  non-interactive execution in Claude Code sessions. Triggers: "codex exec",
-  "codex 실행", "codex CLI", "비대화형 codex", "non-interactive codex",
-  "codex review", "codex 리뷰", "코드 리뷰 피드백".
+  Codex CLI non-interactive execution (codex exec, codex exec review) in
+  Claude Code sessions: running prompts, code reviews, result capture.
+  NOT for syncing harness/projecting skills to .agents/ (use syncing-codex-harness).
+  NOT for Codex config.toml or trust settings (use configuring-codex).
+  Triggers: "codex exec", "codex 실행", "codex CLI", "비대화형 codex",
+  "non-interactive codex", "codex review", "codex 리뷰", "코드 리뷰 피드백",
+  "codex exec review", "codex 결과 저장", "-o result.md".
 ---
 
 # Codex Exec 사용

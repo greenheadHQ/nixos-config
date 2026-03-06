@@ -1,0 +1,22 @@
+[
+  {"query": "스킬 감사 해줘", "should_trigger": true},
+  {"query": "skill audit 실행", "should_trigger": true},
+  {"query": "스킬 품질 점검", "should_trigger": true},
+  {"query": "routing table 점검해줘", "should_trigger": true},
+  {"query": "스킬 최신화 필요해", "should_trigger": true},
+  {"query": "skill cleanup 해야 할 것 같아", "should_trigger": true},
+  {"query": "스킬 인벤토리 확인", "should_trigger": true},
+  {"query": "skill split/merge 분석", "should_trigger": true},
+  {"query": "스킬 리뷰 진행하자", "should_trigger": true},
+  {"query": "스킬 유지보수 절차 알려줘", "should_trigger": true},
+  {"query": "이슈 등록해줘", "should_trigger": false},
+  {"query": "codex sync 실행", "should_trigger": false},
+  {"query": "codex exec review", "should_trigger": false},
+  {"query": "GitHub issue 만들어", "should_trigger": false},
+  {"query": "새 스킬 만들어줘", "should_trigger": false},
+  {"query": "claude settings 설정", "should_trigger": false},
+  {"query": "nvim 플러그인 추가", "should_trigger": false},
+  {"query": "tmux 설정 변경", "should_trigger": false},
+  {"query": "nrs 실행해", "should_trigger": false},
+  {"query": "git config 수정", "should_trigger": false}
+]

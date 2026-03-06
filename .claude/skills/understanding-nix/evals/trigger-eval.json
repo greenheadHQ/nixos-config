@@ -1,0 +1,22 @@
+[
+  {"query": "nix flake update 했는데 flake.lock이 변경 안 돼", "should_trigger": true},
+  {"query": "flake 변경이 인식되지 않아. 새 파일 추가했는데 빌드에 반영 안 됨", "should_trigger": true},
+  {"query": "darwin-rebuild가 너무 느려. CPU는 6%밖에 안 쓰는데 3분 걸려", "should_trigger": true},
+  {"query": "experimental Nix feature nix-command is disabled 에러 해결 방법", "should_trigger": true},
+  {"query": "direnv allow 했는데 devShell 도구들이 PATH에 안 잡혀", "should_trigger": true},
+  {"query": "gitleaks: command not found 에러가 git commit 할 때 나와", "should_trigger": true},
+  {"query": "substituter에서 캐시 미스가 많이 나서 소스 빌드가 자주 발생해", "should_trigger": true},
+  {"query": "builtins.toJSON으로 생성한 JSON 파일이 한 줄로 나와", "should_trigger": true},
+  {"query": "nix derivation 구조를 확인하고 싶어. show-trace 말고 다른 방법 있어?", "should_trigger": true},
+  {"query": "max-substitution-jobs 설정을 변경해서 병렬 다운로드를 늘리고 싶어", "should_trigger": true},
+  {"query": "MiniPC nixos-rebuild switch 에러가 나", "should_trigger": false},
+  {"query": "macOS Dock 크기를 변경하고 싶어", "should_trigger": false},
+  {"query": "Homebrew cask에서 앱 adopt 하려는데", "should_trigger": false},
+  {"query": "disko.nix 파티션 레이아웃을 수정하고 싶어", "should_trigger": false},
+  {"query": "shottr 스크린샷 단축키 설정 변경하려면?", "should_trigger": false},
+  {"query": "WoL 매직 패킷이 작동하지 않아", "should_trigger": false},
+  {"query": "Hammerspoon에서 Caps Lock을 F18로 리매핑하는 설정", "should_trigger": false},
+  {"query": "Podman 컨테이너 OOM 에러 해결법", "should_trigger": false},
+  {"query": "agenix로 새 시크릿 파일 암호화하려면?", "should_trigger": false},
+  {"query": "tmux resurrect로 세션 복구가 안 돼", "should_trigger": false}
+]

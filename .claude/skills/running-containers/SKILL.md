@@ -6,76 +6,46 @@ description: |
   service updates, or database backups.
   Triggers: "update immich", "immich 업데이트", "immich-update",
   "check immich version", "immich 버전 확인", upgrading Immich server,
-  "uptime-kuma-update", "copyparty-update", "vaultwarden-update", "karakeep-update",
+  "uptime-kuma-update",
   "서비스 업데이트", "service-lib", "version-check", unified service update system,
   container OOM, "Tailscale IP binding" timing, OCI backend config,
-  "immich-db-backup", "DB 백업", "vaultwarden-backup", "백업 타이머",
+  "immich-db-backup", "DB 백업", "백업 타이머",
   "컨테이너", Caddy reverse proxy.
-  For Anki sync details use hosting-anki. For Vaultwarden details use hosting-vaultwarden.
+  For service-specific workflows use hosting-anki, hosting-copyparty, hosting-vaultwarden, hosting-karakeep.
 ---
 
 # 컨테이너 관리 (Podman/홈서버)
 
-Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty, vaultwarden, karakeep) 가이드입니다.
-Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접근합니다.
+Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty, vaultwarden, karakeep) 운영 가이드.
+Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접근한다.
 
 ## 모듈 구조 (mkOption 기반)
 
-홈서버 서비스는 `homeserver.*` 옵션으로 선언적 활성화:
+홈서버 서비스는 `homeserver.*` 옵션으로 선언적 활성화한다:
 
 ```nix
-# modules/nixos/configuration.nix
+# modules/nixos/configuration.nix — 주요 서비스만 발췌
 homeserver.immich.enable = true;              # 사진 백업
 homeserver.uptimeKuma.enable = true;          # 모니터링
-homeserver.immichCleanup.enable = true;       # Claude Code Temp 앨범 매일 삭제
-homeserver.immichUpdate.enable = true;        # Immich 버전 체크 + 업데이트 (03:00)
-homeserver.uptimeKumaUpdate.enable = true;    # Uptime Kuma 버전 체크 + 업데이트 (03:30)
-homeserver.copypartyUpdate.enable = true;     # Copyparty 버전 체크 + 업데이트 (04:00)
-homeserver.ankiSync.enable = true;            # Anki 자체 호스팅 동기화 서버
-homeserver.ankiConnect.enable = true;         # Headless Anki + AnkiConnect API
 homeserver.copyparty.enable = true;           # 파일 서버
 homeserver.vaultwarden.enable = true;         # 비밀번호 관리자
-homeserver.vaultwardenUpdate.enable = true;   # Vaultwarden 버전 체크 + 업데이트 (06:30)
-homeserver.karakeep.enable = true;             # Karakeep 웹 아카이버
-homeserver.karakeepBackup.enable = true;      # Karakeep SQLite 매일 백업 (05:00)
-homeserver.karakeepNotify.enable = true;      # Karakeep 웹훅→Pushover 브리지 (socat)
-homeserver.karakeepLogMonitor.enable = true;  # Karakeep 로그 감시 + 실패 URL 큐
-homeserver.karakeepFallbackSync.enable = true;# fallback HTML 자동 재연결 (1분)
-homeserver.karakeepSinglefileBridge.enable = true; # SingleFile 대용량 분기 (Karakeep fullPageArchive attach)
-homeserver.karakeepUpdate.enable = true;      # Karakeep 버전 체크 + 업데이트 (06:00)
-homeserver.immichBackup.enable = true;        # Immich PostgreSQL 매일 백업 (05:30)
+homeserver.karakeep.enable = true;            # 웹 아카이버
 homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
-homeserver.devProxy.enable = true;            # Dev server → dev.greenhead.dev 프록시
+# 부가 서비스: *Update, *Backup, *Cleanup, *Notify 등도 동일 패턴
 ```
 
 ### 파일 구조
 
-| 파일 | 역할 |
-|------|------|
+| 경로 패턴 | 역할 |
+|-----------|------|
 | `modules/nixos/options/homeserver.nix` | mkOption 정의 + 서비스 모듈 import |
 | `modules/nixos/programs/docker/runtime.nix` | Podman 런타임 공통 설정 |
-| `modules/nixos/programs/docker/immich.nix` | Immich (mkIf cfg.enable 래핑) |
-| `modules/nixos/programs/docker/uptime-kuma.nix` | Uptime Kuma (mkIf 래핑) |
-| `modules/nixos/programs/docker/copyparty.nix` | Copyparty 파일 서버 (mkIf 래핑) |
-| `modules/nixos/programs/docker/vaultwarden.nix` | Vaultwarden 비밀번호 관리자 (mkIf 래핑) |
-| `modules/nixos/programs/docker/vaultwarden-backup.nix` | Vaultwarden SQLite 백업 (mkIf 래핑) |
-| `modules/nixos/programs/docker/immich-backup.nix` | Immich PostgreSQL 매일 백업 (mkIf 래핑) |
-| `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 (mkIf 래핑) |
+| `modules/nixos/programs/docker/<서비스>.nix` | 개별 컨테이너 정의 (immich, uptime-kuma, copyparty, vaultwarden, karakeep 등) |
+| `modules/nixos/programs/<서비스>-update/` | 버전 체크 + 업데이트 (immich, uptime-kuma, copyparty, vaultwarden, karakeep) |
+| `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 |
+| `modules/nixos/lib/service-lib.sh` / `.nix` | 공통 셸 라이브러리 + Nix wrapper |
+| `modules/nixos/lib/mk-update-module.nix` | 업데이트 모듈 생성 헬퍼 |
 | `modules/nixos/lib/tailscale-wait.nix` | Tailscale IP 대기 유틸리티 |
-| `modules/nixos/lib/service-lib.sh` | 공통 셸 라이브러리 (send_notification, fetch_github_release 등) |
-| `modules/nixos/lib/service-lib.nix` | service-lib.sh Nix wrapper |
-| `modules/nixos/programs/immich-update/` | Immich 버전 체크 + 업데이트 |
-| `modules/nixos/programs/uptime-kuma-update/` | Uptime Kuma 버전 체크 + 업데이트 |
-| `modules/nixos/programs/copyparty-update/` | Copyparty 버전 체크 + 업데이트 |
-| `modules/nixos/programs/vaultwarden-update/` | Vaultwarden 버전 체크 + 업데이트 |
-| `modules/nixos/programs/karakeep-update/` | Karakeep 버전 체크 + 업데이트 |
-| `modules/nixos/programs/docker/karakeep-notify.nix` | Karakeep 웹훅→Pushover 브리지 (socat) |
-| `modules/nixos/programs/docker/karakeep-log-monitor.nix` | Karakeep 로그 감시 + 실패 URL 큐 적재 |
-| `modules/nixos/programs/docker/karakeep-fallback-sync.nix` | fallback HTML → Karakeep API 자동 재연결 |
-| `modules/nixos/programs/docker/karakeep-singlefile-bridge.nix` | SingleFile 대용량 분기 브리지 (Karakeep `/api/v1/assets` + `fullPageArchive` 직접 연결) |
-| `modules/nixos/programs/anki-sync-server/` | Anki sync (NixOS 네이티브 모듈, 비컨테이너) |
-| `modules/nixos/programs/docker/karakeep.nix` | Karakeep 웹 아카이버 (Podman 컨테이너) |
-| `modules/nixos/programs/docker/karakeep-backup.nix` | Karakeep SQLite 매일 백업 |
 | `libraries/constants.nix` | IP, 경로, 도메인, 리소스 제한, UID 상수 |
 
 ### 상수 참조
@@ -98,60 +68,20 @@ Docker 서비스에서 사용하는 상수 (`libraries/constants.nix`):
 | Karakeep | `https://archive.greenhead.dev` | `127.0.0.1:3000` |
 | Anki Sync | (Caddy 미경유) | `100.79.80.95:27701` |
 
-Caddy가 Cloudflare DNS-01 ACME로 Let's Encrypt 인증서를 자동 발급합니다.
-Tailscale IP (`100.79.80.95:443`)에만 바인딩되어 VPN 내부 전용입니다.
+Caddy가 Cloudflare DNS-01 ACME로 Let's Encrypt 인증서를 자동 발급한다.
+Tailscale IP (`100.79.80.95:443`)에만 바인딩되어 VPN 내부 전용이다.
 
-### 타임존 설정
-
-모든 컨테이너는 시스템 타임존을 참조합니다:
-
-```nix
-# modules/nixos/programs/docker/immich.nix (예시)
-environment = {
-  TZ = config.time.timeZone;  # configuration.nix의 time.timeZone 참조
-};
-```
-
-타임존 변경 시 `modules/nixos/configuration.nix`의 `time.timeZone`만 수정하면 모든 컨테이너에 자동 적용됩니다.
+모든 컨테이너는 `config.time.timeZone`을 참조하며, `configuration.nix`의 `time.timeZone`만 수정하면 자동 적용된다.
 
 ## Known Issues
 
-**OCI 백엔드 명시 필수**
-- `virtualisation.oci-containers.backend = "podman";` (`runtime.nix`에서 설정)
-- 누락 시 Docker 백엔드로 fallback되어 에러 발생
-
-**immich ML 컨테이너 OOM**
-- GPU 없는 환경에서 기본 ML 컨테이너가 메모리 부족
-- 해결: CPU 버전 컨테이너 사용 (`ghcr.io/immich-app/immich-machine-learning:release`)
-
-**Tailscale IP 바인딩 타이밍**
-- 부팅 시 Tailscale IP 할당 전에 서비스 시작하면 바인딩 실패
-- 해결: `tailscale-wait.nix` 공통 모듈로 60초 대기
-- 예외: Immich/Copyparty/Uptime Kuma는 `127.0.0.1` 바인딩 (Caddy가 프록시)
-
-**Uptime Kuma `--network=host` 모드**
-- localhost 서비스 (Immich, Copyparty 등) 모니터링을 위해 호스트 네트워크 사용
-- 기본 Podman 브릿지에서는 `127.0.0.1` 바인딩된 서비스에 접근 불가
-- `UPTIME_KUMA_HOST=127.0.0.1` + `UPTIME_KUMA_PORT`로 리스닝 주소 지정
-- `ports` 옵션 불필요 (`--network=host`가 직접 호스트 포트 사용)
-
-**Caddy HTTPS 리버스 프록시**
-- `modules/nixos/programs/caddy.nix`에서 Cloudflare DNS-01 ACME 사용
-- `caddy.withPlugins`로 Cloudflare 플러그인 빌드 (SRI 해시 필요)
-- Tailscale IP에만 바인딩 (외부 노출 안 됨)
-- `caddy-env` oneshot 서비스가 시작 전 Cloudflare API 토큰 환경변수 생성
-- agenix secret: `secrets/cloudflare-dns-api-token.age`
-- 인증서 만료 감지: Uptime Kuma HTTPS 모니터 (`https://immich.greenhead.dev`)로 모니터링
-
-**방화벽 보안 모델**
-- `trustedInterfaces = [ "tailscale0" ]`가 Tailscale 네트워크 전체 트래픽 허용
-- 따라서 per-interface 방화벽 룰은 불필요 (no-op) — 서비스별 방화벽 룰 없음
-- 보안은 **서비스 바인딩 주소**에 의존: localhost 서비스는 Caddy만 접근, Tailscale IP 서비스는 VPN 내부만 접근
-
-**Immich DB 비밀번호**
-- agenix로 관리 (`secrets/immich-db-password.age`)
-- `POSTGRES_PASSWORD_FILE` / `DB_PASSWORD_FILE` 볼륨 마운트 방식
-- 시크릿 파일 경로: `config.age.secrets.immich-db-password.path`
+- **OCI 백엔드 명시 필수**: `runtime.nix`의 `backend = "podman"` 누락 시 Docker fallback 에러
+- **immich ML OOM**: CPU 버전 이미지 사용 (`release`, openvino 아님)
+- **Tailscale IP 바인딩**: `tailscale-wait.nix`로 60초 대기. Immich/Copyparty/Uptime Kuma/Vaultwarden은 `127.0.0.1` 바인딩 (Caddy 프록시)
+- **Uptime Kuma `--network=host`**: localhost 서비스 모니터링을 위해 호스트 네트워크 필수
+- **Caddy HTTPS**: Cloudflare DNS-01 ACME, Tailscale IP 전용 바인딩, `secrets/cloudflare-dns-api-token.age`
+- **방화벽**: `trustedInterfaces = [ "tailscale0" ]` — 보안은 서비스 바인딩 주소에 의존
+- **Immich DB 비밀번호**: agenix `secrets/immich-db-password.age`, `POSTGRES_PASSWORD_FILE` 볼륨 마운트
 
 ## 빠른 참조
 
@@ -202,26 +132,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 **Uptime Kuma/Copyparty/Karakeep**: 이미지에 버전 레이블 없음 → GitHub latest 추적 + 이미지 digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
 Karakeep 수동 업데이트는 `--ack-bridge-risk` 플래그가 필수다 (브릿지/로그 의존성 인지 강제).
 
-**Karakeep 이벤트 알림**: `karakeep-notify`가 웹훅→Pushover 브리지(socat)로 아카이빙 성공/실패 알림을 전송합니다.
-
-### Uptime Kuma 알림 발송 조건
-
-Uptime Kuma는 매 체크마다 알림을 보내지 않고, **상태 전환 이벤트** 기준으로 알림을 보냅니다.
-
-- **DOWN 알림**: 실패 누적 후 상태가 `PENDING -> DOWN`으로 바뀌는 순간 발송
-  - `maxretries = 0`이면 첫 실패에서 즉시 DOWN
-- **복구 알림**: 상태가 `DOWN -> UP`으로 바뀌는 순간 발송
-- **DOWN 재알림**: DOWN 상태가 지속될 때 `resendInterval` 설정 주기로 재발송
-- **최초 체크**: 첫 결과가 DOWN이면 DOWN 알림이 갈 수 있고, 첫 결과가 UP이면 일반적으로 알림 없음
-- **Maintenance(점검 모드)**: 점검 기간에는 알림 억제
-- **HTTPS 인증서 만료 알림**: HTTPS 모니터에서 만료 알림 옵션을 켠 경우 별도 발송
-
-실무 권장값(홈서버 내부 서비스 모니터 기준):
-
-- `interval`: 60s
-- `maxretries`: 3
-- `retryInterval`: 20s
-- `resendInterval`: 10m (지속 장애 재알림이 필요할 때만)
+**Karakeep 이벤트 알림**: `karakeep-notify`가 웹훅→Pushover 브리지(socat)로 아카이빙 성공/실패 알림을 전송한다.
 
 ### FolderAction 자동 업로드
 

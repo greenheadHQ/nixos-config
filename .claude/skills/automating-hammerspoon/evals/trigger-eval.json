@@ -1,0 +1,22 @@
+[
+  { "query": "Hammerspoon 단축키 추가하고 싶어", "should_trigger": true },
+  { "query": "Finder에서 터미널 여는 핫키가 안 돼", "should_trigger": true },
+  { "query": "setupLaunchAgents가 멈춰서 darwin-rebuild가 안 끝나", "should_trigger": true },
+  { "query": "launchd HOME이 /var/root로 설정되는 문제", "should_trigger": true },
+  { "query": "Ghostty에서 Ctrl+C 누르면 이상한 문자가 나와", "should_trigger": true },
+  { "query": "한글 입력소스에서 Ctrl 단축키가 동작 안 함", "should_trigger": true },
+  { "query": "init.lua에 IPC 모듈 추가하는 법", "should_trigger": true },
+  { "query": "Ghostty 새 창이 별도 인스턴스로 열려", "should_trigger": true },
+  { "query": "eventtap으로 키 입력 가로채기", "should_trigger": true },
+  { "query": "launchd agent 디버깅 방법", "should_trigger": true },
+  { "query": "iOS Shortcut 빌드하고 싶어", "should_trigger": false },
+  { "query": "prompt-render preset 추가", "should_trigger": false },
+  { "query": "Cherri DSL 컴파일 에러", "should_trigger": false },
+  { "query": "agenix 시크릿 암호화", "should_trigger": false },
+  { "query": "SSH 키 생성 방법", "should_trigger": false },
+  { "query": "Neovim 플러그인 설정", "should_trigger": false },
+  { "query": "tmux 창 분할 단축키", "should_trigger": false },
+  { "query": "모바일에서 프롬프트 프리셋 실행", "should_trigger": false },
+  { "query": "iPhone Shortcuts 자동화", "should_trigger": false },
+  { "query": "NixOS 서비스 설정", "should_trigger": false }
+]

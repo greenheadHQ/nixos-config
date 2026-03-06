@@ -15,6 +15,7 @@
 | 포매터 | `stylua` | Lua |
 | 포매터 | `nixfmt` | Nix |
 | 린터 | `statix` | Nix |
+| 린터 | `markdownlint-cli2` | Markdown (LazyVim lang.markdown extra 의존) |
 | 빌드 | `tree-sitter` | nvim-treesitter 파서 컴파일 CLI |
 | 빌드 | `gcc` | tree-sitter 파서 컴파일 **(Linux 전용)** |
 | 빌드 | `nodejs` | LSP 런타임 의존성 |

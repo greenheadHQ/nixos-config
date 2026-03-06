@@ -1,11 +1,16 @@
 ---
 name: managing-ssh
 description: |
-  This skill should be used when the user encounters SSH keys, ssh-agent,
-  Tailscale VPN, mosh, or sudo auth issues.
+  SSH keys, ssh-agent, Tailscale VPN, mosh, and sudo auth for macOS/NixOS
+  cross-machine access. Covers key auto-load (launchd/keychain), Tailscale
+  MagicDNS, Ghostty terminfo over SSH, and NOPASSWD sudo configuration.
+  NOT for tmux (managing-tmux), shell history (syncing-atuin),
+  or Hammerspoon (automating-hammerspoon).
   Triggers: "SSH key invalid format", "SSH 인증 실패", "authentication failures",
   "Tailscale VPN issues", "sudo SSH_AUTH_SOCK", "authorized keys",
-  "authorized_keys 설정", "mosh setup", "ssh-agent 문제".
+  "authorized_keys 설정", "mosh setup", "ssh-agent 문제",
+  "Tailscale DNS SERVFAIL", "MagicDNS", "Ghostty unknown terminal type",
+  "ssh minipc", "ssh mac", "tailscale status", "SSH 키 로드".
 ---
 
 # SSH 및 Tailscale 관리

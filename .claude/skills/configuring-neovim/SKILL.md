@@ -1,10 +1,12 @@
 ---
 name: configuring-neovim
 description: |
-  This skill should be used when the user needs to configure Neovim/LazyVim:
-  LSP, plugins, im-select, extraPackages.
+  Neovim (LazyVim) configuration via Nix: LSP, plugins, im-select, extraPackages.
+  Mason is disabled; all LSP/formatters/linters are managed by Nix extraPackages.
   Triggers: "nvim 플러그인", "lazy.nvim", "한글 입력", "im-select",
-  "extraPackages", Mason migration, tree-sitter build errors.
+  "extraPackages", "Mason 비활성화", "tree-sitter 빌드 오류",
+  "LSP 서버 안 됨", "markdownlint", "Neovim 설정",
+  Mason migration, tree-sitter build errors, lazy-lock.json conflict.
 ---
 
 # Neovim (LazyVim) 설정
@@ -55,7 +57,7 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 
 - **LSP**: lua-language-server, nil, vtsls, tailwindcss-language-server, yaml-language-server, vscode-langservers-extracted, markdown-oxide
 - **포매터**: prettier, stylua, nixfmt
-- **린터**: statix
+- **린터**: statix, markdownlint-cli2
 - **빌드**: tree-sitter, gcc (Linux 전용), nodejs
 
 > `ripgrep`, `fd`, `fzf`는 `libraries/packages.nix`에서, `lazygit`은 Home Manager (`programs.lazygit.enable = true`)로 설치됨 — 중복 추가 금지

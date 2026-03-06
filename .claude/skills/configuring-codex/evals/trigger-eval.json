@@ -1,0 +1,82 @@
+[
+  {
+    "query": "Codex CLI에서 .agents/skills 스킬이 인식 안 돼",
+    "should_trigger": true
+  },
+  {
+    "query": "codex config.toml에서 approval_policy를 never로 설정하려면",
+    "should_trigger": true
+  },
+  {
+    "query": "AGENTS.md 심링크가 CLAUDE.md를 가리키는지 확인해줘",
+    "should_trigger": true
+  },
+  {
+    "query": ".agents/skills가 디렉토리 심링크인지 파일 심링크인지 어떻게 확인해?",
+    "should_trigger": true
+  },
+  {
+    "query": "verify-ai-compat.sh 스크립트 실행이 실패해",
+    "should_trigger": true
+  },
+  {
+    "query": "Codex 호환성 문제 해결하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "스킬 투영 구조를 알려줘",
+    "should_trigger": false
+  },
+  {
+    "query": "sandbox_mode를 danger-full-access로 바꾸려면",
+    "should_trigger": true
+  },
+  {
+    "query": "nrs 실행 후 codex 스킬 검증을 어떻게 해?",
+    "should_trigger": true
+  },
+  {
+    "query": "wt 직후 .agents/.agents 중첩 디렉토리가 생겨",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude Code에서 PreToolUse 훅 만들고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "claude plugin install이 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "settings.json이 read-only라 수정이 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "codex exec로 비대화형 리뷰를 하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "codex harness를 다른 프로젝트에 동기화하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "git delta 설정이 적용 안 되는데",
+    "should_trigger": false
+  },
+  {
+    "query": "mcp.json에 서버를 추가하려면",
+    "should_trigger": false
+  },
+  {
+    "query": "Neovim에서 im-select 한글 입력이 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "SSH 키가 인증 실패해",
+    "should_trigger": false
+  },
+  {
+    "query": "nix flake derivation 빌드가 느려",
+    "should_trigger": false
+  }
+]

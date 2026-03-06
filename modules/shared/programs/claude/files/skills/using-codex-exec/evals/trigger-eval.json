@@ -1,0 +1,22 @@
+[
+  {"query": "codex exec 실행해줘", "should_trigger": true},
+  {"query": "비대화형 codex 실행", "should_trigger": true},
+  {"query": "codex exec review --base main", "should_trigger": true},
+  {"query": "codex 리뷰 해줘", "should_trigger": true},
+  {"query": "codex CLI로 프롬프트 전달", "should_trigger": true},
+  {"query": "codex로 코드 리뷰 피드백 받자", "should_trigger": true},
+  {"query": "codex exec -o result.md 결과 저장", "should_trigger": true},
+  {"query": "non-interactive codex로 자동 리뷰", "should_trigger": true},
+  {"query": "codex exec review --uncommitted", "should_trigger": true},
+  {"query": "codex exec로 Devil's Advocate 리뷰", "should_trigger": true},
+  {"query": "codex sync 실행", "should_trigger": false},
+  {"query": "codex 하네스 동기화", "should_trigger": false},
+  {"query": ".agents/skills 프로젝션", "should_trigger": false},
+  {"query": "AGENTS.md 생성", "should_trigger": false},
+  {"query": "MCP를 config.toml로 변환", "should_trigger": false},
+  {"query": "Codex 설정 config.toml 수정", "should_trigger": false},
+  {"query": "이슈 등록해줘", "should_trigger": false},
+  {"query": "스킬 감사 해줘", "should_trigger": false},
+  {"query": "claude settings 수정", "should_trigger": false},
+  {"query": "sync.sh all 실행", "should_trigger": false}
+]

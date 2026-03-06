@@ -13,6 +13,18 @@ description: |
 
 Claude Code 스킬의 품질, 일관성, 라우팅 정합성을 감사하고 유지보수하는 절차.
 
+## 빠른 참조
+
+| 항목 | 경로/명령 |
+|------|----------|
+| 글로벌 스킬 소스 (nixos-config) | `modules/shared/programs/claude/files/skills/` |
+| 글로벌 스킬 심링크 | `~/.claude/skills/` |
+| 프로젝트 스킬 | `.claude/skills/` |
+| 글로벌 라우팅 테이블 | `modules/shared/programs/claude/files/CLAUDE.md` |
+| 프로젝트 라우팅 테이블 | 프로젝트 루트 `CLAUDE.md` |
+| Nix 심링크 등록 | `modules/shared/programs/claude/default.nix` |
+| 품질 기준 상세 | `references/quality-criteria.md` |
+
 ## 감사 범위 결정
 
 ### 프로젝트 유형 감지

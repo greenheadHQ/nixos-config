@@ -1,12 +1,13 @@
 ---
 name: proxying-dev-server
 description: |
-  This skill should be used when setting up or troubleshooting the dev server
-  reverse proxy on NixOS MiniPC.
+  Dev server reverse proxy on NixOS MiniPC via `dev-proxy` CLI and Caddy.
+  Proxies local dev servers to https://dev.greenhead.dev for mobile preview.
   Triggers: "dev-proxy 설정", "dev server 프록시", "개발 서버 프록시",
-  "dev.greenhead.dev 503 에러", "HMR이 안 됨", "Hot Reload proxy",
-  "WebSocket proxy", "dev-proxy off --hard", "모바일 미리보기",
-  "iPhone/iPad dev preview".
+  "dev.greenhead.dev", "503 에러", "HMR이 안 됨", "Hot Reload proxy",
+  "WebSocket proxy", "dev-proxy off", "dev-proxy status",
+  "모바일 미리보기", "iPhone/iPad dev preview",
+  "dp 포트", "Caddy upstream", "Vite clientPort".
 ---
 
 # Dev Server Reverse Proxy (dev.greenhead.dev)

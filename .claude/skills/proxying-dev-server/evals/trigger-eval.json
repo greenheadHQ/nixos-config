@@ -1,0 +1,82 @@
+[
+  {
+    "query": "dev-proxy 설정해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "dev.greenhead.dev에서 503 에러가 나",
+    "should_trigger": true
+  },
+  {
+    "query": "HMR이 프록시에서 안 됨",
+    "should_trigger": true
+  },
+  {
+    "query": "개발 서버를 모바일에서 미리보기하려면",
+    "should_trigger": true
+  },
+  {
+    "query": "dev-proxy off --hard 실행했는데 거부됨",
+    "should_trigger": true
+  },
+  {
+    "query": "Vite HMR WebSocket이 프록시 뒤에서 작동 안 해",
+    "should_trigger": true
+  },
+  {
+    "query": "set up reverse proxy for dev server",
+    "should_trigger": true
+  },
+  {
+    "query": "dev-proxy status 결과가 이상해",
+    "should_trigger": true
+  },
+  {
+    "query": "iPhone에서 개발 서버 접속하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "Caddy reload가 실패해서 프록시가 안 돼",
+    "should_trigger": true
+  },
+  {
+    "query": "Pushover로 텍스트 보내줘",
+    "should_trigger": false
+  },
+  {
+    "query": "immich 서비스 재시작",
+    "should_trigger": false
+  },
+  {
+    "query": "Tailscale 설정 변경",
+    "should_trigger": false
+  },
+  {
+    "query": "nginx 설정 파일 수정",
+    "should_trigger": false
+  },
+  {
+    "query": "Caddy 보안 헤더 추가",
+    "should_trigger": false
+  },
+  {
+    "query": "NixOS 빌드가 실패해",
+    "should_trigger": false
+  },
+  {
+    "query": "pnpm install이 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "SSH 터널 설정",
+    "should_trigger": false
+  },
+  {
+    "query": "Docker 컨테이너 로그 확인",
+    "should_trigger": false
+  },
+  {
+    "query": "Vite 빌드 최적화",
+    "should_trigger": false
+  }
+]

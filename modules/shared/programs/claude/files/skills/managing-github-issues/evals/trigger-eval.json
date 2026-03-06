@@ -1,0 +1,22 @@
+[
+  {"query": "이슈 등록해줘", "should_trigger": true},
+  {"query": "GitHub issue 만들어", "should_trigger": true},
+  {"query": "todo 만들어줘", "should_trigger": true},
+  {"query": "backlog 확인해봐", "should_trigger": true},
+  {"query": "기술 부채 현황 정리", "should_trigger": true},
+  {"query": "이슈 닫아줘 #42", "should_trigger": true},
+  {"query": "라벨 추가해줘 priority:high", "should_trigger": true},
+  {"query": "open issue 목록 조회", "should_trigger": true},
+  {"query": "이슈 감사 triage 해줘", "should_trigger": true},
+  {"query": "남은 할 일 확인", "should_trigger": true},
+  {"query": "스킬 감사 해줘", "should_trigger": false},
+  {"query": "codex exec review", "should_trigger": false},
+  {"query": "codex harness 동기화", "should_trigger": false},
+  {"query": "PR 만들어줘", "should_trigger": false},
+  {"query": "git commit 해줘", "should_trigger": false},
+  {"query": "immich 업데이트", "should_trigger": false},
+  {"query": "anki 동기화 설정", "should_trigger": false},
+  {"query": "SSH 인증 실패", "should_trigger": false},
+  {"query": "Nix 빌드 느림", "should_trigger": false},
+  {"query": "tmux 단축키 변경", "should_trigger": false}
+]

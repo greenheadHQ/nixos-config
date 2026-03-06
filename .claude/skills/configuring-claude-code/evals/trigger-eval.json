@@ -1,0 +1,82 @@
+[
+  {
+    "query": "Claude Code에서 PreToolUse 훅을 만들고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "settings.json이 read-only라서 플러그인 설치가 안 돼",
+    "should_trigger": true
+  },
+  {
+    "query": "mcp.json에 MCP 서버를 추가하려면 어떻게 해?",
+    "should_trigger": true
+  },
+  {
+    "query": "claude alias c에 --chrome 플래그가 포함되어 있는지 확인해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Pushover 알림 훅에서 한글이 깨져서 물음표로 나와",
+    "should_trigger": true
+  },
+  {
+    "query": "Claude Code 플러그인 구조를 알려줘 (plugin.json)",
+    "should_trigger": true
+  },
+  {
+    "query": "Stop 훅 이벤트는 언제 발생해?",
+    "should_trigger": true
+  },
+  {
+    "query": "mkOutOfStoreSymlink로 claude 설정 파일 관리하는 방법",
+    "should_trigger": true
+  },
+  {
+    "query": "claude plugin install 명령어가 에러 나",
+    "should_trigger": true
+  },
+  {
+    "query": "hooks trust가 자동으로 적용 안 되는데 어떻게 해?",
+    "should_trigger": true
+  },
+  {
+    "query": "Codex에서 .agents/skills 스킬이 안 보여",
+    "should_trigger": false
+  },
+  {
+    "query": "codex config.toml에서 approval_policy를 바꾸고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "git delta가 적용 안 되는데 core.pager 설정 확인해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "lazygit에서 side-by-side가 꺼지지 않아",
+    "should_trigger": false
+  },
+  {
+    "query": "AGENTS.md와 CLAUDE.md 심링크가 깨졌어",
+    "should_trigger": false
+  },
+  {
+    "query": "codex exec로 스킬 인식 테스트하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "nix flake update가 느려",
+    "should_trigger": false
+  },
+  {
+    "query": "Cursor에서 extensions.json 관리하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "git worktree 생성 후 .claude/.claude 중첩이 생겨",
+    "should_trigger": false
+  },
+  {
+    "query": "Neovim LSP 설정을 바꾸고 싶어",
+    "should_trigger": false
+  }
+]

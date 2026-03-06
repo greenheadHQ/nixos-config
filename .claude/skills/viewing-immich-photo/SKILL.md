@@ -1,11 +1,16 @@
 ---
 name: viewing-immich-photo
 description: |
-  This skill should be used when the user needs to view Immich photos by
-  resolving photo paths and displaying images from the self-hosted server.
-  Triggers: "view immich photo", "이미치 사진 확인", "immich 파일 보여줘",
-  "immich 사진 보여줘", paths containing "/var/lib/docker-data/immich/upload-cache"
+  Immich photo path resolution and image viewing across macOS/NixOS.
+  Converts container paths to host paths, validates security boundaries,
+  and displays images via SSH (macOS) or local Read (NixOS).
+  Triggers: "view immich photo", "immich 사진 보여줘", "이미치 사진 확인",
+  "immich 파일 보여줘", "immich 사진 경로", "immich photo path",
+  "upload-cache 파일 확인", "Scriptable 이미지 확인",
+  paths containing "/var/lib/docker-data/immich/upload-cache"
   or "/var/lib/docker-data/immich".
+  Not for immich container management (use running-containers) or
+  Scriptable script development (use running-containers references).
 ---
 
 # Immich 사진 확인

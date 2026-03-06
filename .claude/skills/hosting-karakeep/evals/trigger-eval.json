@@ -1,0 +1,22 @@
+[
+  {"query": "Karakeep 서비스 상태 확인해줘", "should_trigger": true},
+  {"query": "archive.greenhead.dev 접속이 안 돼", "should_trigger": true},
+  {"query": "SingleFile 확장에서 Karakeep으로 push가 안 되는데 ZodError 나와", "should_trigger": true},
+  {"query": "karakeep 백업 수동으로 실행하고 싶어", "should_trigger": true},
+  {"query": "Meilisearch OOM으로 Karakeep이 502 뜨고 있어", "should_trigger": true},
+  {"query": "karakeep-update 실행하면 ack-bridge-risk가 뭐야?", "should_trigger": true},
+  {"query": "웹 아카이브 서비스에서 CSS가 깨져 보여", "should_trigger": true},
+  {"query": "karakeep fallback sync가 실패 URL을 재연결 못하고 있어", "should_trigger": true},
+  {"query": "북마크 아카이빙 서비스 새로 세팅하려면?", "should_trigger": true},
+  {"query": "karakeep AI 태깅이 안 되는데 OpenAI 키 문제인 것 같아", "should_trigger": true},
+  {"query": "Copyparty 파일 서버 설정 변경하고 싶어", "should_trigger": false},
+  {"query": "Vaultwarden admin token 변경 방법", "should_trigger": false},
+  {"query": "immich 사진 업로드가 안 돼", "should_trigger": false},
+  {"query": "Podman 컨테이너 전체 리소스 모니터링", "should_trigger": false},
+  {"query": "비밀번호 관리자 백업 복원", "should_trigger": false},
+  {"query": "agenix로 새 시크릿 추가하려면?", "should_trigger": false},
+  {"query": "Caddy 리버스 프록시 인증서 갱신", "should_trigger": false},
+  {"query": "WebDAV로 HDD 파일 접근하고 싶어", "should_trigger": false},
+  {"query": "Anki sync server 설정", "should_trigger": false},
+  {"query": "컨테이너 서비스 업데이트 시스템 구조가 어떻게 되어있어?", "should_trigger": false}
+]

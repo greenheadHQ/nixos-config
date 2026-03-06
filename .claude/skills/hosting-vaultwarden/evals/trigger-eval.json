@@ -1,0 +1,22 @@
+[
+  {"query": "Vaultwarden 서비스 상태 확인해줘", "should_trigger": true},
+  {"query": "비밀번호 관리자 admin token 변경 방법", "should_trigger": true},
+  {"query": "Bitwarden 앱에서 셀프호스팅 서버 연결이 안 돼", "should_trigger": true},
+  {"query": "vaultwarden 백업 수동으로 실행하고 싶어", "should_trigger": true},
+  {"query": "볼트워든 관리자 패널 접근이 안 되는데", "should_trigger": true},
+  {"query": "vaultwarden 업데이트하려면 어떻게 해?", "should_trigger": true},
+  {"query": "비밀번호 서버 백업에서 복원하는 절차 알려줘", "should_trigger": true},
+  {"query": "iPhone Bitwarden 앱 Self-hosted 설정", "should_trigger": true},
+  {"query": "master password 분실 시 복구 방법이 있어?", "should_trigger": true},
+  {"query": "vaultwarden nrs 후 exit code 4 경고 뜨는데 괜찮아?", "should_trigger": true},
+  {"query": "Karakeep SingleFile push 설정", "should_trigger": false},
+  {"query": "Copyparty 파일 서버 WebDAV 연결", "should_trigger": false},
+  {"query": "copyparty CORS 403 에러", "should_trigger": false},
+  {"query": "웹 아카이브 서비스 OOM 문제", "should_trigger": false},
+  {"query": "agenix로 시크릿 암호화하는 방법", "should_trigger": false},
+  {"query": "immich 사진 백업 복원", "should_trigger": false},
+  {"query": "Podman 컨테이너 전체 재시작", "should_trigger": false},
+  {"query": "Anki sync server 연결 문제", "should_trigger": false},
+  {"query": "HDD 파일 서버 비밀번호 변경", "should_trigger": false},
+  {"query": "NixOS 홈서버 서비스 목록 확인", "should_trigger": false}
+]

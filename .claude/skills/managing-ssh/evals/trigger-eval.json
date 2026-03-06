@@ -1,0 +1,22 @@
+[
+  {"query": "SSH 키가 invalid format이라고 나와", "should_trigger": true},
+  {"query": "ssh-agent에 키가 로드 안 돼", "should_trigger": true},
+  {"query": "Tailscale VPN이 만료돼서 접속 안 돼", "should_trigger": true},
+  {"query": "sudo 실행하면 SSH 인증 실패해", "should_trigger": true},
+  {"query": "MiniPC에 SSH 접속이 타임아웃돼", "should_trigger": true},
+  {"query": "authorized_keys 설정 방법", "should_trigger": true},
+  {"query": "mosh로 MiniPC 접속하려면?", "should_trigger": true},
+  {"query": "NixOS에서 ssh-agent 자동 시작 설정", "should_trigger": true},
+  {"query": "Ghostty SSH 접속 시 unknown terminal type", "should_trigger": true},
+  {"query": "Tailscale DNS 해석이 실패해 (SERVFAIL)", "should_trigger": true},
+  {"query": "tmux 세션 복원이 안 돼", "should_trigger": false},
+  {"query": "atuin 동기화 오류", "should_trigger": false},
+  {"query": "한글 히스토리 삭제", "should_trigger": false},
+  {"query": "tmux prefix 키 변경", "should_trigger": false},
+  {"query": "agenix로 시크릿 암호화", "should_trigger": false},
+  {"query": "Hammerspoon 단축키 설정", "should_trigger": false},
+  {"query": "nix flake update 에러", "should_trigger": false},
+  {"query": "Neovim LSP가 안 돼", "should_trigger": false},
+  {"query": "zsh-autosuggestion 한글 깨짐", "should_trigger": false},
+  {"query": "launchd agent 상태 확인", "should_trigger": false}
+]

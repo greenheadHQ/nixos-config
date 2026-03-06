@@ -1,0 +1,82 @@
+[
+  {
+    "query": "이 immich 사진 경로 확인해줘: /var/lib/docker-data/immich/upload-cache/abc/12/34/photo.jpg",
+    "should_trigger": true
+  },
+  {
+    "query": "이미치 사진 보여줘",
+    "should_trigger": true
+  },
+  {
+    "query": "immich 파일 보여줘",
+    "should_trigger": true
+  },
+  {
+    "query": "/var/lib/docker-data/immich/upload-cache/UUID/xx/xx/file.png 이 파일 봐줘",
+    "should_trigger": true
+  },
+  {
+    "query": "immich에 올린 스크린샷을 확인하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "immich 사진 경로가 맞는지 검증해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "Scriptable로 올린 이미지를 Read 도구로 확인",
+    "should_trigger": true
+  },
+  {
+    "query": "immich upload-cache에 있는 파일을 macOS에서 보려면",
+    "should_trigger": true
+  },
+  {
+    "query": "view this immich photo path",
+    "should_trigger": true
+  },
+  {
+    "query": "immich 사진이 안 보여. 경로 변환이 필요한 것 같아",
+    "should_trigger": true
+  },
+  {
+    "query": "immich 업데이트하는 방법",
+    "should_trigger": false
+  },
+  {
+    "query": "podman 컨테이너 로그 확인",
+    "should_trigger": false
+  },
+  {
+    "query": "anki 동기화 서버 상태 확인",
+    "should_trigger": false
+  },
+  {
+    "query": "immich DB 백업 설정",
+    "should_trigger": false
+  },
+  {
+    "query": "Scriptable 스크립트 코드 작성해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "FolderAction으로 immich에 업로드하는 방법",
+    "should_trigger": false
+  },
+  {
+    "query": "SSH로 MiniPC에 접속하는 방법",
+    "should_trigger": false
+  },
+  {
+    "query": "immich 컨테이너가 OOM으로 죽었어",
+    "should_trigger": false
+  },
+  {
+    "query": "vaultwarden 비밀번호 관리자 설정",
+    "should_trigger": false
+  },
+  {
+    "query": "Caddy HTTPS 리버스 프록시 설정",
+    "should_trigger": false
+  }
+]

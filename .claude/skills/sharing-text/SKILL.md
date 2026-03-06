@@ -1,10 +1,12 @@
 ---
 name: sharing-text
 description: |
-  This skill should be used when the user needs to share text from
-  macOS/NixOS terminal to iPhone via Pushover push notifications.
+  Terminal-to-iPhone text sharing via the `push` shell function and Pushover
+  push notifications. Supports direct text, pipe input, and tmux buffer.
   Triggers: "share text", "push text", "terminal to iPhone",
-  "텍스트 공유", "Pushover로 보내", "텍스트를 아이폰으로".
+  "텍스트 공유", "Pushover로 보내", "텍스트를 아이폰으로",
+  "push 함수", "push 명령어", "아이폰으로 보내",
+  "pipe to push", "tmux buffer to phone", "URL 공유".
 ---
 
 # Pushover로 텍스트 공유
@@ -91,43 +93,11 @@ push "공유할 텍스트"
 
 ## 구현 위치
 
-- **함수**: `modules/shared/programs/shell/default.nix` → `push()` 함수
+- **함수**: `modules/shared/programs/shell/default.nix` 내 `push()` 함수
 - **Credentials**: `$HOME/.config/pushover/claude-code` (agenix 관리)
+- **입력 우선순위**: 인자 > 파이프(stdin) > tmux buffer
 
-## push 함수 동작
+## 참조
 
-```bash
-push() {
-  local text
-  if [ $# -gt 0 ]; then
-    text="$*"
-  elif [ ! -t 0 ]; then
-    text=$(cat)
-  elif [ -n "$TMUX" ]; then
-    text=$(tmux save-buffer - 2>/dev/null)
-  fi
-  [ -z "$text" ] && { echo "Usage: push <text> or pipe input"; return 1; }
-
-  local cred="$HOME/.config/pushover/claude-code"
-  if [ ! -f "$cred" ]; then
-    echo "Error: Pushover credentials not found" >&2
-    return 1
-  fi
-
-  source "$cred"
-  curl -s -X POST \
-    -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
-    --data-urlencode "token=$PUSHOVER_TOKEN" \
-    --data-urlencode "user=$PUSHOVER_USER" \
-    --data-urlencode "title=📋 텍스트 공유 (${#text}자)" \
-    --data-urlencode "message=$text" \
-    https://api.pushover.net/1/messages.json > /dev/null
-  echo "✓ Pushover 전송 (${#text}자)"
-}
-```
-
-**우선순위**: 인자 > 파이프 > tmux buffer
-
-## 레퍼런스
-
+- push() 함수 구현 상세: [references/push-implementation.md](references/push-implementation.md)
 - QR 코드 방식 (deprecated): [references/archive-qr.md](references/archive-qr.md)

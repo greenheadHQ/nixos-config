@@ -1,11 +1,17 @@
 ---
 name: configuring-codex
 description: |
-  This skill should be used when the user needs to configure Codex CLI,
-  manage skill projection, AGENTS.md structure, or trust/sandbox settings.
+  Codex CLI configuration: config.toml execution policies (approval_policy,
+  sandbox_mode), .agents/skills directory symlink projection, AGENTS.md structure,
+  and verify-ai-compat.sh validation. Covers skill discovery failures caused by
+  file-vs-directory symlink issues, worktree nesting regression (.agents/.agents),
+  and post-nrs verification workflows.
+  NOT for Claude Code hooks/plugins/settings.json (use configuring-claude-code),
+  codex exec runtime (use using-codex-exec), or harness sync (use syncing-codex-harness).
   Triggers: "codex config", "codex setup", "codex trust", "Codex 설정",
-  "AGENTS.md", ".agents/skills", "project-scope skill", "스킬 투영",
-  "approval_policy", "sandbox_mode", "Codex compatibility".
+  "AGENTS.md", ".agents/skills", "project-scope skill", ".agents/skills 심링크",
+  "approval_policy", "sandbox_mode", "Codex compatibility",
+  "verify-ai-compat", "디렉토리 심링크", "config.toml".
 ---
 
 # Codex CLI 설정
@@ -20,7 +26,7 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 - `nrs`(또는 동등 activation) 이후 결과 검증
 - Claude Code와 Codex CLI 동작 차이 정리
 
-Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬을 사용합니다.
+Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬을 참조한다.
 
 ## 빠른 진단 체크리스트
 

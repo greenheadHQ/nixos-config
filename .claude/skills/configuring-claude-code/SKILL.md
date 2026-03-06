@@ -1,17 +1,22 @@
 ---
 name: configuring-claude-code
 description: |
-  This skill should be used when the user asks about Claude Code hooks, plugins,
-  aliases, MCP, settings.json, or plugin development.
+  Claude Code hooks, plugins, aliases, MCP servers, and settings.json management
+  via Nix (mkOutOfStoreSymlink). Covers plugin install/uninstall, hook events
+  (PreToolUse, PostToolUse, Stop, Notification), Pushover notification hooks,
+  and plugin development (plugin.json structure).
+  NOT for Codex CLI config/trust/skills projection (use configuring-codex)
+  or Git delta/lazygit/rerere (use configuring-git).
   Triggers: "how to create a hook", "Claude 훅 설정", "add a plugin",
   "플러그인 설치", "claude alias", "--chrome flag", "claude settings",
   "claude 설정", "mcp.json", "settings read-only", "plugin structure",
-  "플러그인 개발", "hook events".
+  "플러그인 개발", "hook events", "PreToolUse", "Pushover 알림 훅",
+  "hooks trust", "enabledPlugins", "유령 플러그인".
 ---
 
 # Claude Code 설정
 
-Claude Code 플러그인, 훅, alias, 플러그인 개발 설정을 다룹니다.
+Claude Code 플러그인, 훅, alias, 플러그인 개발 설정을 다룬다.
 
 ## 범위
 
@@ -21,7 +26,7 @@ Claude Code 플러그인, 훅, alias, 플러그인 개발 설정을 다룹니다
 - 플러그인 구조: `plugin.json`, `commands/`, `hooks/`, `skills/`, `agents/`
 - shell alias (`c`) 설정
 
-Codex 전용 설정과 장애 대응은 `configuring-codex` 스킬을 사용합니다.
+Codex 전용 설정과 장애 대응은 `configuring-codex` 스킬을 참조한다.
 
 ## 빠른 참조
 
@@ -160,7 +165,7 @@ c = "command claude${if pkgs.stdenv.isDarwin then " --chrome" else ""} --dangero
 - `ensureClaudeHooksTrust` - hooks trust 자동 주입 (`hasTrustDialogHooksAccepted`)
 - `cleanStaleWorktreeSymlinks` - worktree stale 심링크 정리
 
-모든 설정 파일은 `mkOutOfStoreSymlink`로 관리되어 양방향 수정이 가능합니다.
+모든 설정 파일은 `mkOutOfStoreSymlink`로 관리되어 양방향 수정이 가능하다.
 
 ## 자주 발생하는 문제
 
@@ -172,7 +177,7 @@ c = "command claude${if pkgs.stdenv.isDarwin then " --chrome" else ""} --dangero
 
 ## Codex 관련 안내
 
-Codex 설정/호환 이슈는 `configuring-codex` 스킬을 사용합니다.
+Codex 설정/호환 이슈는 `configuring-codex` 스킬을 참조한다.
 
 - trust/project scope: `configuring-codex`
 - `.agents/skills` 투영/검증: `configuring-codex`

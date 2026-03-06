@@ -2,10 +2,15 @@
 name: hosting-copyparty
 description: |
   This skill should be used when the user needs to manage Copyparty file server:
-  WebDAV, HDD web access, file sharing.
+  WebDAV, HDD web access, file sharing, container config, ACL setup.
   Triggers: "파일 서버", "copyparty", "파일 공유", "HDD 웹 접근",
   "WebDAV", "Google Drive 대체", "파일 업로드", "파일 다운로드",
-  ACL permissions, config generation, password injection issues.
+  "copyparty.greenhead.dev", "copyparty 설정", "copyparty 비밀번호",
+  "copyparty CORS", "copyparty-update", "파일 서버 로그인 실패",
+  ACL permissions, config generation, password injection issues,
+  ENTRYPOINT override, initcfg conflict, session 403 error.
+  For generic container-level operations (Podman, OOM, shared update framework internals), use running-containers instead.
+  Service-specific Copyparty workflows such as `copyparty-update` stay here.
 ---
 
 # Copyparty 파일 서버 관리
@@ -70,7 +75,7 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 - 이미지에 버전 레이블이 없으므로 GitHub latest 추적 + 이미지 digest 비교 방식
 - 백업 불필요 (설정은 Nix 관리, 데이터는 HDD 볼륨)
 - ERR trap에서 컨테이너 자동 복구
-- 통합 업데이트 시스템 상세: `running-containers` 스킬의 [service-update-system.md] 참조
+- 통합 업데이트 시스템 상세: `running-containers` 스킬의 [service-update-system.md](../running-containers/references/service-update-system.md) 참조
 
 ### ACL 구조
 

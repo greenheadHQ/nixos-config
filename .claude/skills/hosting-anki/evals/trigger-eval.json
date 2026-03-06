@@ -1,0 +1,82 @@
+[
+  {
+    "query": "anki 동기화 서버가 응답이 없어",
+    "should_trigger": true
+  },
+  {
+    "query": "AnkiConnect API로 덱 목록 조회하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "anki-sync-server 백업이 실패했어",
+    "should_trigger": true
+  },
+  {
+    "query": "AnkiMobile에서 self-hosted sync 서버 설정은 어떻게 해?",
+    "should_trigger": true
+  },
+  {
+    "query": "headless anki가 SIGABRT로 크래시돼",
+    "should_trigger": true
+  },
+  {
+    "query": "anki 서버 비밀번호를 변경하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "getConfig API가 unsupported action을 반환해",
+    "should_trigger": true
+  },
+  {
+    "query": "anki-connect sync timer 상태를 확인하려면",
+    "should_trigger": true
+  },
+  {
+    "query": "anki CORS 에러가 발생해",
+    "should_trigger": true
+  },
+  {
+    "query": "카드 API 테스트하는 curl 명령어 알려줘",
+    "should_trigger": true
+  },
+  {
+    "query": "immich 사진을 확인하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "podman 컨테이너가 OOM으로 죽었어",
+    "should_trigger": false
+  },
+  {
+    "query": "vaultwarden 백업 설정 방법",
+    "should_trigger": false
+  },
+  {
+    "query": "copyparty에 파일 업로드하는 방법",
+    "should_trigger": false
+  },
+  {
+    "query": "karakeep 웹 아카이브 설정",
+    "should_trigger": false
+  },
+  {
+    "query": "SSH 키 설정이 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "immich 업데이트 방법 알려줘",
+    "should_trigger": false
+  },
+  {
+    "query": "Tailscale VPN 연결이 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "agenix로 새 시크릿 만들기",
+    "should_trigger": false
+  },
+  {
+    "query": "nix flake update가 느려",
+    "should_trigger": false
+  }
+]

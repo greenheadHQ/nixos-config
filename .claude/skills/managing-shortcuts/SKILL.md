@@ -1,11 +1,12 @@
 ---
 name: managing-shortcuts
 description: |
-  This skill should be used when the user asks about iOS Shortcuts management,
-  Cherri DSL compilation, prompt-render presets, or the mobile prompt workflow.
+  iOS/macOS Shortcuts management via Cherri DSL, prompt-render presets,
+  and mobile prompt workflow. Not for desktop hotkeys or Hammerspoon (see automating-hammerspoon).
   Triggers: "iOS Shortcuts", "Cherri", "cherri DSL", "prompt-render", "prompt preset",
   "프리셋", "프롬프트 렌더", "cheat-browse --prompts", "Shortcut 빌드", "Shortcut 서명",
-  "모바일 프롬프트", "shortcuts sign", "shortcut import".
+  "모바일 프롬프트", "shortcuts sign", "shortcut import", "iOS 자동화",
+  ".cherri 소스", "chooseFromList".
 ---
 
 # iOS Shortcuts 관리 (Cherri DSL + prompt-render)

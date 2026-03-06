@@ -1,0 +1,82 @@
+[
+  {
+    "query": "이 URL을 아이폰으로 공유해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "push 명령어로 텍스트 보내는 방법",
+    "should_trigger": true
+  },
+  {
+    "query": "터미널에서 아이폰으로 텍스트 보내고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "Pushover로 이 결과를 보내줘",
+    "should_trigger": true
+  },
+  {
+    "query": "share this text to my iPhone",
+    "should_trigger": true
+  },
+  {
+    "query": "텍스트를 푸시 알림으로 전송하려면",
+    "should_trigger": true
+  },
+  {
+    "query": "tmux buffer 내용을 폰으로 보내줘",
+    "should_trigger": true
+  },
+  {
+    "query": "push 함수가 뭐야",
+    "should_trigger": true
+  },
+  {
+    "query": "명령어 결과를 iPhone에 복사하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "파이프로 텍스트 push 하는 법",
+    "should_trigger": true
+  },
+  {
+    "query": "SSH 키 설정하는 방법",
+    "should_trigger": false
+  },
+  {
+    "query": "Tailscale VPN 연결이 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "클립보드에 복사해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "이메일로 보내줘",
+    "should_trigger": false
+  },
+  {
+    "query": "tmux 설정 변경하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "dev-proxy 설정해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "Homebrew 패키지 추가해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "agenix로 시크릿 관리",
+    "should_trigger": false
+  },
+  {
+    "query": "git push origin main",
+    "should_trigger": false
+  },
+  {
+    "query": "NixOS 서비스 재시작",
+    "should_trigger": false
+  }
+]

@@ -1,13 +1,16 @@
 ---
 name: syncing-atuin
 description: |
-  This skill should be used when the user needs help with Atuin shell history
-  sync errors, encryption key issues, daemon management, or history cleanup.
+  Atuin shell history sync, monitoring (Hammerspoon menubar + launchd watchdog),
+  encryption key recovery, and history cleanup (atuin-clean-kr).
+  NOT for tmux sessions (managing-tmux), SSH/Tailscale (managing-ssh),
+  or Hammerspoon hotkeys (automating-hammerspoon).
   Triggers: "atuin status 4XX errors", "encryption key mismatch",
   "atuin 동기화 오류", "atuin history delete", "shell history backup",
   "zsh-autosuggestion TUI conflicts", "Korean history bulk deletion",
   "한글 히스토리 삭제", "last_sync_time troubleshooting",
-  "history database maintenance".
+  "history database maintenance", "atuin-clean-kr", "atuin watchdog",
+  "atuin search_mode", "fulltext search", "atuin 설정".
 ---
 
 # Atuin 히스토리 동기화

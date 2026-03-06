@@ -1,0 +1,82 @@
+[
+  {
+    "query": "immich 업데이트 방법 알려줘",
+    "should_trigger": true
+  },
+  {
+    "query": "podman 컨테이너가 OOM으로 죽었어",
+    "should_trigger": true
+  },
+  {
+    "query": "서비스 업데이트 시스템이 어떻게 동작해?",
+    "should_trigger": true
+  },
+  {
+    "query": "immich-db-backup 서비스 상태 확인",
+    "should_trigger": true
+  },
+  {
+    "query": "uptime-kuma가 localhost 서비스 모니터링을 못 해",
+    "should_trigger": true
+  },
+  {
+    "query": "Caddy HTTPS 인증서가 만료됐어",
+    "should_trigger": true
+  },
+  {
+    "query": "컨테이너 백업 타이머 스케줄 확인",
+    "should_trigger": true
+  },
+  {
+    "query": "service-lib.sh에 새 함수 추가하려면",
+    "should_trigger": true
+  },
+  {
+    "query": "OCI backend 설정이 안 돼있어",
+    "should_trigger": true
+  },
+  {
+    "query": "version-check 타이머가 안 돌고 있어",
+    "should_trigger": true
+  },
+  {
+    "query": "anki 동기화 서버 설정 방법",
+    "should_trigger": false
+  },
+  {
+    "query": "AnkiConnect API 응답이 없어",
+    "should_trigger": false
+  },
+  {
+    "query": "immich 사진 경로를 확인하고 싶어",
+    "should_trigger": false
+  },
+  {
+    "query": "vaultwarden admin 패널 접근 방법",
+    "should_trigger": false
+  },
+  {
+    "query": "copyparty WebDAV 설정",
+    "should_trigger": false
+  },
+  {
+    "query": "karakeep SingleFile 브리지 설정",
+    "should_trigger": false
+  },
+  {
+    "query": "SSH 키가 인식이 안 돼",
+    "should_trigger": false
+  },
+  {
+    "query": "nix-darwin 빌드가 실패해",
+    "should_trigger": false
+  },
+  {
+    "query": "Hammerspoon 핫키 설정",
+    "should_trigger": false
+  },
+  {
+    "query": "tmux resurrect가 세션을 복원 못 해",
+    "should_trigger": false
+  }
+]
