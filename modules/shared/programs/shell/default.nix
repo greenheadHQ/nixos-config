@@ -130,7 +130,7 @@ in
       # Shell 함수 라이브러리 로딩
       #─────────────────────────────────────────────────────────────────────────
       ''
-        # Git Worktree 관리 함수 (wt, wt-cleanup, _wt_open_editor)
+        # Git Worktree 관리 함수 (wt, wt-cleanup)
         source "$HOME/.local/lib/git-worktree-functions.sh"
 
         # Git Diff → fzf → Neovim (gdf, gdl)

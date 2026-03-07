@@ -4,24 +4,26 @@ tmux 터미널 멀티플렉서의 단축키와 기능을 정리합니다.
 
 ## 목차
 
-- [처음 시작 (필수 5가지)](#처음-시작-필수-5가지)
+- [처음 시작](#처음-시작)
 - [기본 단축키](#기본-단축키)
 - [세션 저장/복원 (tmux-resurrect)](#세션-저장복원-tmux-resurrect)
 - [텍스트 복사 (tmux-thumbs)](#텍스트-복사-tmux-thumbs)
 - [Pane Notepad 기능](#pane-notepad-기능)
 - [Pane 상태 표시](#pane-상태-표시)
 - [세션 관리](#세션-관리)
+- [워크트리-윈도우 연동](#워크트리-윈도우-연동)
 
 ---
 
-## 처음 시작 (필수 5가지)
+## 처음 시작
 
-아래 5가지만 알면 기본 사용이 가능합니다.
+아래 단축키만 알면 기본 사용이 가능합니다.
 
 | 단축키             | 기능                                           |
 | ------------------ | ---------------------------------------------- |
 | `prefix + c`       | 새 창 만들기                                   |
 | `prefix + 1-9`     | 해당 번호 창으로 이동                          |
+| `prefix + w`       | 전체 창 트리 뷰 (모든 이슈 한눈에 확인)        |
 | `prefix + d`       | tmux에서 나가기 (세션 유지)                         |
 | `prefix + Ctrl-s`  | 세션 저장                                      |
 | `prefix + Ctrl-r`  | 세션 복원                                      |
@@ -208,3 +210,18 @@ tmux attach -t session-name
 # 세션 분리 (tmux 내에서)
 prefix + d
 ```
+
+---
+
+## 워크트리-윈도우 연동
+
+`wt` 셸 함수가 git worktree와 tmux window를 자동 연동합니다.
+
+| 명령 | 기능 |
+| ---- | ---- |
+| `wt <branch>` | worktree + tmux window 생성/전환 |
+| `wt -s <branch>` | worktree + tmux window 백그라운드 생성 |
+| `wt-cleanup` | worktree 삭제 시 연결된 window 자동 종료 (현재 window는 건너뜀) |
+
+**Window 매칭**: 이름 우선(exact match) → pane current_path fallback.
+`prefix + ,`로 window 이름 변경 시 이름 매칭 불가 → 경로로 fallback.

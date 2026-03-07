@@ -33,6 +33,9 @@ wt() {
   local parent_branch_for_wt
   parent_branch_for_wt=$(git branch --show-current 2>/dev/null)
 
+  # [n] 재생성 시 pane 변수 보존용 (window kill → 새 window에 복원)
+  local _saved_note_path=""
+
   if [[ -z "$branch_name" ]]; then
     echo "사용법: wt [-s|--stay] <브랜치명>"
     echo ""
@@ -91,10 +94,11 @@ wt() {
 
     case "$wt_choice" in
       o|O|"")
-        if [[ "$stay" == false ]]; then
+        _wt_tmux_open "$branch_name" "$worktree_info" "$stay"
+        # tmux 외부 fallback: stay=false일 때만 cd
+        if [[ -z "${TMUX:-}" && "$stay" == false ]]; then
           cd "$worktree_info" || echo "⚠️  디렉토리 이동 실패"
         fi
-        _wt_open_editor "$worktree_info"
         return 0
         ;;
       n|N)
@@ -151,6 +155,16 @@ wt() {
             return 1
           fi
         fi
+
+        # Pane 변수 보존 (window kill 전)
+        if [[ -n "${TMUX:-}" ]]; then
+          local _old_win
+          _old_win=$(_wt_find_tmux_window "$branch_name" "$worktree_info")
+          if [[ -n "$_old_win" ]]; then
+            _saved_note_path=$(tmux display-message -t ":$_old_win" -p '#{@pane_note_path}' 2>/dev/null || true)
+          fi
+        fi
+        _wt_tmux_close "$branch_name" "$worktree_info"
 
         # Worktree 삭제
         git worktree remove "$worktree_info" --force || {
@@ -314,6 +328,16 @@ wt() {
 
         # worktree 삭제 (있는 경우만)
         if [[ -n "$existing_worktree" ]]; then
+          # Pane 변수 보존 + tmux window 닫기 (worktree 삭제 전)
+          if [[ -n "${TMUX:-}" ]]; then
+            local _old_win
+            _old_win=$(_wt_find_tmux_window "$branch_name" "$existing_worktree")
+            if [[ -n "$_old_win" ]]; then
+              _saved_note_path=$(tmux display-message -t ":$_old_win" -p '#{@pane_note_path}' 2>/dev/null || true)
+            fi
+          fi
+          _wt_tmux_close "$branch_name" "$existing_worktree"
+
           git worktree remove "$existing_worktree" --force || {
             echo "❌ 기존 워크트리 삭제 실패"
             return 1
@@ -382,31 +406,143 @@ wt() {
   done
 
   echo "✅ 워크트리 생성 완료: $worktree_dir"
-  if [[ "$stay" == false ]]; then
+  _wt_tmux_open "$branch_name" "$worktree_dir" "$stay"
+  local tmux_result=$?
+  # tmux 외부이거나 tmux window 생성 실패 시 cd fallback
+  if [[ (-z "${TMUX:-}" || $tmux_result -ne 0) && "$stay" == false ]]; then
     cd "$worktree_dir" || echo "⚠️  디렉토리 이동 실패"
   fi
-  _wt_open_editor "$worktree_dir"
+  # 보존된 pane 변수 복원 (재생성 시)
+  if [[ -n "${TMUX:-}" && -n "$_saved_note_path" ]]; then
+    local _new_win
+    _new_win=$(_wt_find_tmux_window "$branch_name" "$worktree_dir")
+    if [[ -n "$_new_win" ]]; then
+      tmux set-option -t ":$_new_win" -p @pane_note_path "$_saved_note_path" 2>/dev/null || true
+    fi
+  fi
 }
 
 #───────────────────────────────────────────────────────────────────────
-# wt 헬퍼: 에디터 열기 (플랫폼별)
+# wt 헬퍼: tmux window에서 worktree에 대응하는 window 찾기
 #───────────────────────────────────────────────────────────────────────
-_wt_open_editor() {
-  local target_dir="$1"
+_wt_find_tmux_window() {
+  local branch_name="$1"
+  local worktree_abs_path="$2"
 
-  if [[ "$(uname)" == "Darwin" ]]; then
-    # macOS: 에디터 실행
-    local editor="${WT_EDITOR:-cursor}"
-    if command -v "$editor" &>/dev/null; then
-      "$editor" "$target_dir"
-    else
-      echo "⚠️  에디터 실행 실패: $editor"
-      echo "📁 워크트리 경로: $target_dir"
-    fi
-  else
-    # NixOS/Linux: 경로만 출력
-    echo "📁 워크트리 경로: $target_dir"
+  local window_list
+  window_list=$(tmux list-windows -F '#{window_id}|#{window_name}|#{pane_current_path}' 2>/dev/null) || return 1
+
+  # 1차: window_name exact match
+  local found
+  found=$(echo "$window_list" | awk -F'|' -v name="$branch_name" '$2 == name { print $1; exit }')
+  if [[ -n "$found" ]]; then
+    echo "$found"
+    return 0
   fi
+
+  # 2차 fallback: pane_current_path match
+  found=$(echo "$window_list" | awk -F'|' -v path="$worktree_abs_path" '$3 == path { print $1; exit }')
+  if [[ -n "$found" ]]; then
+    echo "$found"
+    return 0
+  fi
+
+  return 1
+}
+
+#───────────────────────────────────────────────────────────────────────
+# wt 헬퍼: worktree용 tmux window 생성 또는 기존 window로 전환
+#───────────────────────────────────────────────────────────────────────
+_wt_tmux_open() {
+  local branch_name="$1"
+  local worktree_abs_path="$2"
+  local stay="$3"
+
+  # tmux 외부면 아무것도 안 함 (caller가 cd 처리)
+  if [[ -z "${TMUX:-}" ]]; then
+    return 0
+  fi
+
+  # 기존 window 검색
+  local found
+  found=$(_wt_find_tmux_window "$branch_name" "$worktree_abs_path")
+
+  if [[ -n "$found" ]]; then
+    # 기존 window로 전환
+    if [[ "$stay" == false ]]; then
+      tmux select-window -t "$found"
+    fi
+    return 0
+  fi
+
+  # 새 window 생성 (stderr를 분리하여 pane_id 오염 방지)
+  local _tmux_err="${TMPDIR:-/tmp}/_wt_tmux_err.$$"
+  if [[ "$stay" == false ]]; then
+    local new_pane
+    new_pane=$(tmux new-window -n "$branch_name" -c "$worktree_abs_path" -P -F '#{pane_id}' 2>"$_tmux_err") || {
+      echo "❌ tmux window 생성 실패" >&2
+      echo "  명령어: tmux new-window -n \"$branch_name\" -c \"$worktree_abs_path\"" >&2
+      echo "  에러: $(cat "$_tmux_err" 2>/dev/null)" >&2
+      echo "  환경: TMUX='${TMUX}' TERM='${TERM}' tmux_version='$(tmux -V 2>/dev/null)'" >&2
+      echo "⚠️  cd fallback으로 전환합니다" >&2
+      rm -f "$_tmux_err"
+      return 1
+    }
+    rm -f "$_tmux_err"
+    tmux set-option -t "$new_pane" -p @custom_pane_title "$branch_name"
+  else
+    local new_pane
+    new_pane=$(tmux new-window -d -n "$branch_name" -c "$worktree_abs_path" -P -F '#{pane_id}' 2>"$_tmux_err") || {
+      echo "❌ tmux window 생성 실패" >&2
+      echo "  명령어: tmux new-window -d -n \"$branch_name\" -c \"$worktree_abs_path\"" >&2
+      echo "  에러: $(cat "$_tmux_err" 2>/dev/null)" >&2
+      echo "  환경: TMUX='${TMUX}' TERM='${TERM}' tmux_version='$(tmux -V 2>/dev/null)'" >&2
+      echo "⚠️  cd fallback으로 전환합니다" >&2
+      rm -f "$_tmux_err"
+      return 1
+    }
+    rm -f "$_tmux_err"
+    tmux set-option -t "$new_pane" -p @custom_pane_title "$branch_name"
+  fi
+
+  return 0
+}
+
+#───────────────────────────────────────────────────────────────────────
+# wt 헬퍼: worktree에 대응하는 tmux window 닫기
+#───────────────────────────────────────────────────────────────────────
+_wt_tmux_close() {
+  local branch_name="$1"
+  local worktree_abs_path="$2"
+
+  if [[ -z "${TMUX:-}" ]]; then
+    return 0
+  fi
+
+  local found
+  found=$(_wt_find_tmux_window "$branch_name" "$worktree_abs_path")
+  if [[ -z "$found" ]]; then
+    return 0
+  fi
+
+  # 현재 window는 닫지 않음 (쉘이 종료됨)
+  local current
+  current=$(tmux display-message -p '#{window_id}')
+  if [[ "$found" == "$current" ]]; then
+    echo "   ⚠️  현재 윈도우는 닫을 수 없습니다 (수동으로 닫아주세요)"
+    return 2
+  fi
+
+  # 마지막 window는 닫지 않음 (세션이 종료됨)
+  local window_count
+  window_count=$(tmux list-windows | wc -l)
+  if [[ $window_count -le 1 ]]; then
+    echo "   ⚠️  마지막 윈도우는 닫을 수 없습니다 (세션이 종료됩니다)"
+    return 0
+  fi
+
+  tmux kill-window -t "$found" 2>/dev/null
+  echo "   └─ tmux 윈도우 닫힘"
 }
 
 #───────────────────────────────────────────────────────────────────────
@@ -667,6 +803,13 @@ wt-cleanup() {
     fi
 
     echo "🗑️  $wt_name 삭제 중..."
+
+    # tmux 윈도우 닫기 (worktree 제거 전)
+    _wt_tmux_close "$branch" "$wt_path"
+    if [[ $? -eq 2 ]]; then
+      echo "   ⏭️  현재 윈도우의 워크트리는 삭제할 수 없습니다. 다른 윈도우로 이동 후 다시 시도하세요."
+      continue
+    fi
 
     # 워크트리 제거
     if git worktree remove "$wt_path" --force 2>/dev/null; then

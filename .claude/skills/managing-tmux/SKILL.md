@@ -2,7 +2,7 @@
 name: managing-tmux
 description: |
   tmux terminal multiplexer configuration, keybindings, plugins (resurrect,
-  continuum, thumbs, yank), and Pane Notepad workflow via Home Manager.
+  continuum, thumbs, yank), Pane Notepad, and window-based worktree workflow via Home Manager.
   NOT for SSH/Tailscale (managing-ssh), shell history (syncing-atuin),
   or Hammerspoon/Ghostty (automating-hammerspoon).
   Triggers: "pane notepad", "tmux plugins", "tmux-resurrect", "tmux-continuum",
@@ -16,7 +16,7 @@ description: |
 
 ## 목적과 범위
 
-tmux 기본 동작, 플러그인, Pane Notepad 워크플로우를 다룬다.
+tmux 기본 동작, 플러그인, Pane Notepad + Window 기반 워크트리 워크플로우를 다룬다.
 
 ## 빠른 참조
 
@@ -27,6 +27,7 @@ tmux 기본 동작, 플러그인, Pane Notepad 워크플로우를 다룬다.
 | `modules/shared/programs/tmux/default.nix` | Home Manager tmux 모듈 (플러그인 포함) |
 | `modules/shared/programs/tmux/files/tmux.conf` | tmux 설정 파일 |
 | `modules/shared/programs/tmux/files/scripts/` | Pane Notepad + 보조 스크립트 |
+| `modules/shared/scripts/git-worktree-functions.sh` | wt/wt-cleanup 워크트리-윈도우 연동 |
 
 ### 주요 스크립트
 
@@ -93,6 +94,19 @@ repo: nixos-config
 ```
 
 스크립트 목록, 태그 시스템, 링크 파일, 디버그 상세는 [references/pane-notepad.md](references/pane-notepad.md) 참조.
+
+## Window 기반 워크트리 워크플로우
+
+`wt` 명령으로 git worktree와 tmux window를 자동 연동한다:
+
+- `wt <branch>`: worktree 생성 + tmux window 생성/전환 + pane title 설정
+- `wt -s <branch>`: 백그라운드 window 생성 (현재 window 유지)
+- `wt-cleanup`: worktree 삭제 시 연결된 tmux window 자동 종료 (현재 window는 건너뜀)
+
+Window 매칭 전략: 이름 우선 매칭 + pane current_path fallback.
+`prefix + ,`로 window 이름을 변경하면 이름 매칭 실패 → 경로 fallback 사용.
+
+상세 단축키는 [references/shortcuts.md](references/shortcuts.md) 참조.
 
 ## 트러블슈팅
 
