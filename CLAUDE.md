@@ -107,6 +107,7 @@ homeserver.devProxy.enable = true;
 | Pushover, 텍스트 공유, MiniPC→iPhone, share text | `sharing-text` |
 | iOS Shortcuts, Cherri DSL, prompt-render, prompt preset, 프리셋, 프롬프트 렌더, cheat-browse --prompts, Shortcut 빌드/서명 | `managing-shortcuts` |
 | dev-proxy, dev server, 개발 서버 프록시, dev.greenhead.dev, HMR, 모바일 미리보기 | `proxying-dev-server` |
+| 의도 기록, CIR, ADR, 의사결정 기록, 결정 근거, CIR 조회, 결정 이력, 왜 이렇게 했는지 | `documenting-intent` |
 
 ## 스킬 문서 불일치 시 행동 원칙
 
