@@ -1,0 +1,26 @@
+---
+tags: [ fzf, keybinding, shell ]
+---
+fzf 셸 단축키
+
+[파일 경로 삽입]
+  Ctrl+T      파일/디렉토리 퍼지 검색 → 커맨드에 경로 삽입
+              예: vim Ctrl+T → 파일 선택 → vim src/foo.nix 완성
+
+[디렉토리 점프]
+  Ctrl+G      하위 디렉토리 퍼지 검색 → 바로 cd
+              zoxide(z)는 방문 기록 기반, 이건 현재 위치 하위 탐색
+              (원래 Alt+C이나 한글 IME 호환을 위해 리바인드)
+
+[퍼지 자동완성 (**Tab)]
+  cd **<Tab>       디렉토리만 검색
+  cat **<Tab>      파일만 검색
+  kill **<Tab>     프로세스 이름으로 검색 → PID 자동 입력
+  ssh **<Tab>      SSH 호스트 검색
+
+[fzf 내부 조작]
+  Tab         아래로 이동 (커스텀: 기본은 toggle)
+  Shift+Tab   위로 이동
+
+[참고]
+  Ctrl+R      Atuin이 대체 중 (fzf 히스토리 검색 비활성)

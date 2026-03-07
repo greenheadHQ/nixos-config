@@ -127,6 +127,19 @@ in
       '')
 
       #─────────────────────────────────────────────────────────────────────────
+      # fzf 키바인딩 재설정 (fzf zsh integration 로드 후 실행)
+      #─────────────────────────────────────────────────────────────────────────
+      (lib.mkAfter ''
+        # fzf Alt+C → Ctrl+G (한글 IME 호환: Alt 조합은 한글 입력소스에서 IME가 가로챔)
+        bindkey -rM emacs '\ec'
+        bindkey -rM vicmd '\ec'
+        bindkey -rM viins '\ec'
+        bindkey -M emacs '\C-g' fzf-cd-widget
+        bindkey -M vicmd '\C-g' fzf-cd-widget
+        bindkey -M viins '\C-g' fzf-cd-widget
+      '')
+
+      #─────────────────────────────────────────────────────────────────────────
       # Shell 함수 라이브러리 로딩
       #─────────────────────────────────────────────────────────────────────────
       ''
