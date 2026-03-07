@@ -199,7 +199,10 @@
               # worktree 환경에서 공유 config에 남은 core.hooksPath를 정리
               # (lefthook 2.x는 core.hooksPath가 설정되어 있으면 install을 거부함)
               git config --unset-all --local core.hooksPath 2>/dev/null || true
-              lefthook install 2>/dev/null || true
+              # lefthook hook 실행 중(LEFTHOOK=0)에는 재설치 방지 (Issue #125)
+              if [ "''${LEFTHOOK:-}" != "0" ]; then
+                lefthook install 2>/dev/null || true
+              fi
             '';
           };
         }

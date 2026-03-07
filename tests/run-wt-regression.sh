@@ -39,7 +39,7 @@ if [[ ! -f "$WT_LIB" ]]; then
   exit 1
 fi
 
-if ! zsh -lc "cd '$REPO_ROOT'; source '$WT_LIB'; WT_EDITOR=true wt -s '$BRANCH_NAME'" >"$LOG_FILE" 2>&1; then
+if ! env -u LEFTHOOK zsh -c "cd '$REPO_ROOT' && source '$WT_LIB' && WT_EDITOR=true wt -s '$BRANCH_NAME'" >"$LOG_FILE" 2>&1; then
   echo "FAIL: wt command failed" >&2
   cat "$LOG_FILE" >&2
   exit 1
