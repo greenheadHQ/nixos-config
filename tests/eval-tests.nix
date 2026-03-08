@@ -210,6 +210,19 @@ let
   ) vhostNames;
 
   # ═══════════════════════════════════════════════════════════════
+  # Caddy virtualHost 완전성 검증
+  # ═══════════════════════════════════════════════════════════════
+  # dev.greenhead.dev는 dev-proxy 모듈에서 별도 처리
+  devProxyEnabled = nixosCfg.homeserver.devProxy.enable;
+  devVhostName = "${constants.domain.subdomains.dev}.${constants.domain.base}";
+
+  allSubdomainsHaveVhosts = builtins.all (
+    sub:
+    sub == "dev"
+    || builtins.elem "${constants.domain.subdomains.${sub}}.${constants.domain.base}" vhostNames
+  ) (builtins.attrNames constants.domain.subdomains);
+
+  # ═══════════════════════════════════════════════════════════════
   # 방화벽 검증 헬퍼
   # ═══════════════════════════════════════════════════════════════
   fw = nixosCfg.networking.firewall;
@@ -378,6 +391,14 @@ let
       # Opus 피드백: vhost extraConfig 내부의 `bind` 디렉티브는 listenAddresses를 오버라이드
       name = "Test 3d: Caddy vhost extraConfig에 bind 디렉티브가 없어야 함 (listenAddresses 우회 방지)";
       cond = noBindInVhosts;
+    }
+    {
+      name = "Test 3e: 모든 subdomain(dev 제외)에 대응하는 Caddy virtualHost가 존재해야 함";
+      cond = allSubdomainsHaveVhosts;
+    }
+    {
+      name = "Test 3f: devProxy 활성 시 dev.${constants.domain.base} virtualHost가 존재해야 함";
+      cond = !devProxyEnabled || builtins.elem devVhostName vhostNames;
     }
     {
       name = "Test 4a: Caddy globalConfig에 default_bind ${minipcTailscaleIP}가 포함되어야 함 (줄 끝까지 정확 매칭, 다중 주소 방지)";

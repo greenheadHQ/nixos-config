@@ -312,6 +312,20 @@ in
     devProxy = {
       enable = lib.mkEnableOption "Dev server reverse proxy (dev.greenhead.dev)";
     };
+
+    smokeTest = {
+      enable = lib.mkEnableOption "Homeserver runtime smoke test (healthcheck + backup freshness)";
+      timerInterval = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 06:00:00";
+        description = "OnCalendar interval for smoke test (default: daily 06:00)";
+      };
+      backupMaxAgeHours = lib.mkOption {
+        type = lib.types.int;
+        default = 26;
+        description = "Maximum age (hours) for backup files before alerting";
+      };
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -341,5 +355,6 @@ in
     ../programs/docker/awesome-anki.nix # awesome-anki 카드 분할 웹 서비스
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)
+    ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
   ];
 }
