@@ -20,6 +20,21 @@ let
   openaiKeyPath = config.age.secrets.awesome-anki-openai-key.path;
   geminiKeyPath = config.age.secrets.awesome-anki-gemini-key.path;
   envFilePath = "/run/awesome-anki-env";
+  imageName = "ghcr.io/greenheadhq/awesome-anki:latest";
+
+  # GHCR에서 latest 이미지 pull → digest 비교 → 변경 시 systemctl restart
+  # podman auto-update는 NixOS oci-containers의 systemd 라이프사이클과 충돌하므로
+  # systemctl restart를 직접 사용하여 안전하게 교체
+  autoUpdateScript = pkgs.writeShellScript "awesome-anki-auto-update" ''
+    set -euo pipefail
+    CURRENT=$(${pkgs.podman}/bin/podman inspect awesome-anki --format '{{.Image}}' 2>/dev/null || echo "none")
+    ${pkgs.podman}/bin/podman pull ${imageName} >/dev/null 2>&1 || exit 0
+    NEW=$(${pkgs.podman}/bin/podman image inspect ${imageName} --format '{{.Id}}' 2>/dev/null || echo "none")
+    if [ "$CURRENT" != "$NEW" ]; then
+      echo "awesome-anki: new image detected, restarting..."
+      /run/current-system/sw/bin/systemctl restart podman-awesome-anki
+    fi
+  '';
 
   # agenix 시크릿에서 환경변수 파일 생성 (karakeep.nix 패턴)
   envScript = pkgs.writeShellScript "awesome-anki-env-gen" ''
@@ -84,7 +99,7 @@ in
     # awesome-anki 컨테이너
     # ═══════════════════════════════════════════════════════════════
     virtualisation.oci-containers.containers.awesome-anki = {
-      image = "ghcr.io/greenheadhq/awesome-anki:latest";
+      image = imageName;
       autoStart = true;
       volumes = [
         "${dockerData}/awesome-anki/data:/app/data"
@@ -101,6 +116,27 @@ in
         "--memory=${awesomeAnki.memory}"
         "--cpus=${awesomeAnki.cpus}"
       ];
+    };
+
+    # ═══════════════════════════════════════════════════════════════
+    # 이미지 자동 업데이트 (5분 주기)
+    # ═══════════════════════════════════════════════════════════════
+    systemd.services.awesome-anki-auto-update = {
+      description = "Auto-update awesome-anki container image";
+      after = [ "podman-awesome-anki.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = autoUpdateScript;
+      };
+    };
+
+    systemd.timers.awesome-anki-auto-update = {
+      description = "awesome-anki image auto-update timer";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "*:0/5";
+        Persistent = true;
+      };
     };
 
     # 시크릿 존재 확인 + env 서비스 의존성
