@@ -58,6 +58,7 @@ in
   # awesome-anki (Anki 카드 분할 웹 서비스)
   "awesome-anki-openai-key.age".publicKeys = minipcOnly;
   "awesome-anki-gemini-key.age".publicKeys = minipcOnly;
+  "pushover-awesome-anki.age".publicKeys = minipcOnly;
 
   # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
   "pushover-system-monitor.age".publicKeys = minipcOnly;
