@@ -16,6 +16,8 @@ let
 
   srcDir = "${dockerData}/vaultwarden/data";
   backupDir = "${mediaData}/backups/vaultwarden";
+  pushoverCredPath = config.age.secrets.pushover-vaultwarden.path;
+  serviceLib = import ../../lib/service-lib.nix { inherit pkgs; };
 
   backupScript = pkgs.writeShellApplication {
     name = "vaultwarden-backup";
@@ -25,8 +27,25 @@ let
       coreutils
       findutils
       gzip
+      curl # service-lib.sh의 send_notification에서 사용
     ];
     text = ''
+      # service-lib.sh 로드 (send_notification 사용)
+      # shellcheck source=/dev/null
+      source "$PUSHOVER_CRED_FILE"
+      # shellcheck source=/dev/null
+      source "$SERVICE_LIB"
+
+      # 에러 핸들러: 실패 시 Pushover 알림
+      cleanup_on_error() {
+        local exit_code=$?
+        if [ $exit_code -ne 0 ]; then
+          send_notification "Vaultwarden Backup" \
+            "백업 실패 (exit $exit_code). journalctl -u vaultwarden-backup 확인 필요." 1
+        fi
+      }
+      trap cleanup_on_error EXIT
+
       # 소스 디렉토리가 비어있으면 백업 중단 (데이터 유실 방지)
       if [ -z "$(ls -A "${srcDir}" 2>/dev/null)" ]; then
         echo "ERROR: Source directory empty, skipping backup" >&2
@@ -73,9 +92,20 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
+    # Pushover 시크릿 (vaultwarden-update와 동일 선언 — 모듈 시스템이 merge)
+    age.secrets.pushover-vaultwarden = {
+      file = ../../../../secrets/pushover-vaultwarden.age;
+      owner = "root";
+      mode = "0400";
+    };
+
     # 백업 서비스 (oneshot)
     systemd.services.vaultwarden-backup = {
       description = "Vaultwarden backup (SSD -> HDD, SQLite-safe)";
+
+      unitConfig = {
+        ConditionPathExists = pushoverCredPath;
+      };
 
       serviceConfig = {
         Type = "oneshot";
@@ -85,6 +115,11 @@ in
         ReadOnlyPaths = [ srcDir ];
         PrivateTmp = true;
         NoNewPrivileges = true;
+      };
+
+      environment = {
+        PUSHOVER_CRED_FILE = pushoverCredPath;
+        SERVICE_LIB = "${serviceLib}";
       };
     };
 
