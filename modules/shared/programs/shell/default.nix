@@ -34,9 +34,6 @@ in
       flakePath = nixosConfigDefaultPath;
     };
   };
-  home.file.".local/lib/git-worktree-functions.sh" = {
-    source = "${sharedScriptsDir}/git-worktree-functions.sh";
-  };
   home.file.".local/lib/git-diff-fzf-functions.sh" = {
     source = "${sharedScriptsDir}/git-diff-fzf-functions.sh";
   };
@@ -56,8 +53,8 @@ in
     # broot: tree 스타일 출력
     bt = "br -c :pt";
 
-    # Claude Code (wrapper로 hooks trust 자동 주입 + macOS Chrome 활성화 + 권한 스킵)
-    c = "~/.local/bin/claude-wrapper.sh${
+    # Claude Code (macOS Chrome 활성화 + 권한 스킵)
+    c = "claude${
       if pkgs.stdenv.isDarwin then " --chrome" else ""
     } --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 
@@ -152,9 +149,6 @@ in
       # Shell 함수 라이브러리 로딩
       #─────────────────────────────────────────────────────────────────────────
       ''
-        # Git Worktree 관리 함수 (wt, wt-cleanup)
-        source "$HOME/.local/lib/git-worktree-functions.sh"
-
         # Git Diff → fzf → Neovim (gdf, gdl)
         source "$HOME/.local/lib/git-diff-fzf-functions.sh"
       ''

@@ -165,10 +165,6 @@ in
 
       # Python
       "__pycache__/"
-
-      # wt worktree 디렉토리 및 메타데이터
-      ".wt/"
-      ".wt-parent"
     ];
   };
 

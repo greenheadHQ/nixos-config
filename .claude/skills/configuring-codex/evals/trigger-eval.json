@@ -36,10 +36,6 @@
     "should_trigger": true
   },
   {
-    "query": "wt 직후 .agents/.agents 중첩 디렉토리가 생겨",
-    "should_trigger": true
-  },
-  {
     "query": "Claude Code에서 PreToolUse 훅 만들고 싶어",
     "should_trigger": false
   },

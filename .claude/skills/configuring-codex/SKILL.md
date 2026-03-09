@@ -4,8 +4,7 @@ description: |
   Codex CLI configuration: config.toml execution policies (approval_policy,
   sandbox_mode), .agents/skills directory symlink projection, AGENTS.md structure,
   and verify-ai-compat.sh validation. Covers skill discovery failures caused by
-  file-vs-directory symlink issues, worktree nesting regression (.agents/.agents),
-  and post-nrs verification workflows.
+  file-vs-directory symlink issues, and post-nrs verification workflows.
   NOT for Claude Code hooks/plugins/settings.json (use configuring-claude-code),
   codex exec runtime (use using-codex-exec), or harness sync (use syncing-codex-harness).
   Triggers: "codex config", "codex setup", "codex trust", "Codex 설정",
@@ -31,11 +30,10 @@ Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬
 ## 빠른 진단 체크리스트
 
 1. `.agents/skills/*`이 디렉토리 심링크인지 확인 (`ls -la .agents/skills/`)
-2. `wt` 생성 직후 `.agents/.agents`, `.claude/.claude` 중첩이 없는지 확인
-3. 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크 확인 (git-tracked)
-4. `./scripts/ai/verify-ai-compat.sh` 실행
-5. `codex exec`로 런타임에서 스킬 이름이 보이는지 확인
-6. 권한 프롬프트 이슈는 `approval_policy`, `sandbox_mode` 설정으로 분리 진단
+2. 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크 확인 (git-tracked)
+3. `./scripts/ai/verify-ai-compat.sh` 실행
+4. `codex exec`로 런타임에서 스킬 이름이 보이는지 확인
+5. 권한 프롬프트 이슈는 `approval_policy`, `sandbox_mode` 설정으로 분리 진단
 
 ## 핵심 파일
 
@@ -74,8 +72,6 @@ sandbox_mode = "danger-full-access"
 ## 트러블슈팅 / FAQ
 
 - **스킬이 안 보임**: `.agents/skills/*`가 파일 심링크인지 확인하고 디렉토리 심링크로 교정한다.
-- **`wt` 직후 `?? .agents/.agents/`, `?? .claude/.claude/`**: worktree 복사 회귀다. `.agents/.agents`는 Codex가 기대하는 투영 경로가 아니므로 정리 후 원인(`wt`의 중복 `cp -R`)을 먼저 수정한다.
-- **자동 회귀 방지 확인**: `tests/run-wt-regression.sh`를 실행하고, `lefthook.yml`의 `wt-regression` pre-commit 훅이 활성화되어 있는지 확인한다.
 - **권한 프롬프트 반복**: `~/.codex/config.toml`의 `approval_policy`, `sandbox_mode`를 확인한다.
 - **AGENTS 불일치**: 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크를 복구한다.
 - **활성화 누락**: `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`로 재검증한다.

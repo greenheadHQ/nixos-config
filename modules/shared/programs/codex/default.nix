@@ -17,23 +17,6 @@ let
   claudeFilesPath = "${nixosConfigPath}/modules/shared/programs/claude/files";
 in
 {
-  # Worktree 심링크 정리: .wt/ 아래 codex/claude 관리 경로를 가리키는 stale 심링크 제거
-  # checkLinkTargets 전에 실행하여 "~/.codex/config.toml would be clobbered" 회귀 방지
-  home.activation.cleanStaleWorktreeSymlinksCodex = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
-    for link in "$HOME/.codex/config.toml" "$HOME/.codex/AGENTS.md" "$HOME/.codex/skills/"*; do
-      if [ -L "$link" ]; then
-        target=$(readlink "$link")
-        case "$target" in
-          "${nixosConfigPath}/.wt/"*/modules/shared/programs/codex/files/*|\
-          "${nixosConfigPath}/.wt/"*/modules/shared/programs/claude/files/*)
-            $DRY_RUN_CMD rm "$link"
-            $VERBOSE_ECHO "Removed stale worktree symlink: $link -> $target"
-            ;;
-        esac
-      fi
-    done
-  '';
-
   # ─── 글로벌 설정 (~/.codex/) ───
 
   home.file = {

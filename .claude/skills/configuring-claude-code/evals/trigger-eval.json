@@ -72,10 +72,6 @@
     "should_trigger": false
   },
   {
-    "query": "git worktree 생성 후 .claude/.claude 중첩이 생겨",
-    "should_trigger": false
-  },
-  {
     "query": "Neovim LSP 설정을 바꾸고 싶어",
     "should_trigger": false
   }

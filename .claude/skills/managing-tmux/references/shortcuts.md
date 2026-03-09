@@ -11,7 +11,6 @@ tmux 터미널 멀티플렉서의 단축키와 기능을 정리합니다.
 - [Pane Notepad 기능](#pane-notepad-기능)
 - [Pane 상태 표시](#pane-상태-표시)
 - [세션 관리](#세션-관리)
-- [워크트리-윈도우 연동](#워크트리-윈도우-연동)
 
 ---
 
@@ -211,17 +210,3 @@ tmux attach -t session-name
 prefix + d
 ```
 
----
-
-## 워크트리-윈도우 연동
-
-`wt` 셸 함수가 git worktree와 tmux window를 자동 연동합니다.
-
-| 명령 | 기능 |
-| ---- | ---- |
-| `wt <branch>` | worktree + tmux window 생성/전환 |
-| `wt -s <branch>` | worktree + tmux window 백그라운드 생성 |
-| `wt-cleanup` | worktree 삭제 시 연결된 window 자동 종료 (현재 window는 건너뜀) |
-
-**Window 매칭**: 이름 우선(exact match) → pane current_path fallback.
-`prefix + ,`로 window 이름 변경 시 이름 매칭 불가 → 경로로 fallback.

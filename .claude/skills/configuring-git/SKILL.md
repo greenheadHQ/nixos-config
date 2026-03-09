@@ -2,15 +2,15 @@
 name: configuring-git
 description: |
   Git configuration via Home Manager: delta diff viewer, lazygit TUI integration,
-  rerere conflict resolution, aliases (s, l), worktree management (wt, wt-cleanup),
-  gdf/gdl diff file selector, git-cleanup branch pruning, and interactive rebase
-  reverse display. Covers delta feature/pager settings and side-by-side control.
+  rerere conflict resolution, aliases (s, l), gdf/gdl diff file selector,
+  git-cleanup branch pruning, and interactive rebase reverse display.
+  Covers delta feature/pager settings and side-by-side control.
   NOT for Claude Code hooks/plugins (use configuring-claude-code)
   or Codex CLI/.agents config (use configuring-codex).
   Triggers: "gitconfig conflicts", "git-cleanup", "git cleanup",
   "rebase reverse display", "lazygit delta pager config",
-  "git 설정 충돌", "delta 설정", "Git alias", "worktree", "wt 생성",
-  "wt-cleanup", "gdf", "gdl", "side-by-side", "rerere",
+  "git 설정 충돌", "delta 설정", "Git alias",
+  "gdf", "gdl", "side-by-side", "rerere",
   "git 브랜치 정리", "delta pager".
 ---
 
@@ -37,8 +37,6 @@ Home Manager 기반 Git 설정과 lazygit/delta 통합, 충돌 복구 절차를 
 | git-cleanup | 오래된/삭제된 브랜치 정리 |
 | gdf | git diff 파일을 fzf로 선택하여 nvim으로 열기 (delta preview) |
 | gdl | 직전 커밋 파일을 fzf로 선택하여 nvim으로 열기 (`gdl 3`으로 N커밋) |
-| wt | Git worktree 생성 및 관리 (삭제 시 커밋 체크) |
-| wt-cleanup | 워크트리 정리 (PR 상태 + 커밋 체크) |
 
 ### delta 설정 확인
 
@@ -92,10 +90,9 @@ rm -rf .git/rr-cache
 2. **gitconfig 충돌**: 기존 `$HOME/.gitconfig`가 있으면 Home Manager와 충돌
 3. **rebase 역순 안 됨**: `GIT_SEQUENCE_EDITOR` 환경변수 확인
 4. **lazygit에서 delta side-by-side가 꺼지지 않음**: [트러블슈팅 참조](references/troubleshooting.md#lazygit에서-delta-side-by-side-오버라이드가-안-됨)
-5. **`wt` 직후 `?? .claude/.claude/`, `?? .agents/.agents/` 발생**: [트러블슈팅 참조](references/troubleshooting.md#wt-직후-claudeclaude-agentsagents-중첩-디렉토리가-생김)
 
 ## 레퍼런스
 
 - delta/lazygit/rebase 설정 상세: [references/config.md](references/config.md)
-- gdf/git-cleanup/wt/wt-cleanup 사용법: [references/commands.md](references/commands.md)
+- gdf/git-cleanup 사용법: [references/commands.md](references/commands.md)
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)

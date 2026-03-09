@@ -20,10 +20,6 @@
     "should_trigger": true
   },
   {
-    "query": "wt로 워크트리를 생성하려면 어떻게 해?",
-    "should_trigger": true
-  },
-  {
     "query": "gdf 명령어로 diff 파일을 fzf로 선택하고 싶어",
     "should_trigger": true
   },
@@ -33,10 +29,6 @@
   },
   {
     "query": "git alias s랑 l이 뭐야?",
-    "should_trigger": true
-  },
-  {
-    "query": "wt-cleanup으로 머지된 워크트리를 정리하고 싶어",
     "should_trigger": true
   },
   {
