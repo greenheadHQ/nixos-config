@@ -46,8 +46,15 @@ for (( round=1; round<=MAX_ROUNDS+1; round++ )); do
     echo "최종 검증 빌드..."
   fi
 
-  build_output=""
-  if build_output=$(nix build ".#${ATTR}" --no-link 2>&1); then
+  build_log=$(mktemp)
+  set +e
+  nix build ".#${ATTR}" --no-link 2>&1 | tee "$build_log"
+  build_rc=${PIPESTATUS[0]}
+  set -e
+  build_output=$(cat "$build_log")
+  rm -f "$build_log"
+
+  if (( build_rc == 0 )); then
     break
   fi
 
