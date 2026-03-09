@@ -42,7 +42,7 @@ Claude Code는 플러그인 설치/삭제 시 `settings.json`을 수정하려고
 - Claude Code 버전 업데이트
 - 기타 다양한 내부 동작
 
-이는 Cursor가 GUI에서 설정 변경 시 `settings.json`을 자동 수정하는 것과 동일한 패턴입니다. 두 앱 모두 Nix의 불변(immutable) 파일 관리 방식과 충돌이 발생하므로 `mkOutOfStoreSymlink`가 필요합니다.
+이는 VSCode가 GUI에서 설정 변경 시 `settings.json`을 자동 수정하는 것과 동일한 패턴입니다. 두 앱 모두 Nix의 불변(immutable) 파일 관리 방식과 충돌이 발생하므로 `mkOutOfStoreSymlink`가 필요합니다.
 
 > **참고**: `mcp-config.json`은 Claude Code가 자동 생성하는 파일이 아닙니다. 사용자가 직접 생성/관리하며, `claude -m` 옵션으로 해당 파일을 MCP 설정으로 지정하여 사용합니다.
 
@@ -97,15 +97,15 @@ $ claude plugin uninstall typescript-lsp@claude-plugins-official --scope user
 ✔ Successfully uninstalled plugin: typescript-lsp
 ```
 
-**Cursor와의 비교**:
+**VSCode와의 비교**:
 
-| 항목 | Cursor | Claude Code |
+| 항목 | VSCode | Claude Code |
 |------|--------|-------------|
 | 확장/플러그인 관리 | Nix로 선언적 관리 (UI에서 설치 불가) | CLI로 자유롭게 관리 |
 | `settings.json` | `mkOutOfStoreSymlink` (양방향) | `mkOutOfStoreSymlink` (양방향) |
 | 런타임 파일 수정 | GUI 설정 변경, 확장 설정 시 자동 수정 | 플러그인/MCP 설정 시 자동 수정 |
 
-두 앱 모두 `settings.json`의 런타임 수정이 필요하므로 `mkOutOfStoreSymlink`를 사용합니다. 차이점은 확장/플러그인 관리 방식뿐입니다: Cursor는 확장을 Nix로 고정 관리하고, Claude Code는 플러그인을 CLI로 자유롭게 관리합니다.
+두 앱 모두 `settings.json`의 런타임 수정이 필요하므로 `mkOutOfStoreSymlink`를 사용합니다. 차이점은 확장/플러그인 관리 방식뿐입니다: VSCode는 확장을 Nix로 고정 관리하고, Claude Code는 플러그인을 CLI로 자유롭게 관리합니다.
 
 > **참고**: Claude Code 설정은 `modules/shared/programs/claude/default.nix`에서 관리됩니다.
 

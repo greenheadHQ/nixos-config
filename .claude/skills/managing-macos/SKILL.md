@@ -83,7 +83,7 @@ darwinOnly = [ ... pkgs.패키지명 ];
 # cleanup = "none" — 선언되지 않은 앱을 삭제하지 않음 (수동 설치 cask 보호)
 # upgrade = true + greedyCasks = true — 자체 업데이터 앱의 버전 드리프트 방지
 homebrew.casks = [
-  "codex" "cursor" "ghostty" "raycast" "rectangle"
+  "codex" "ghostty" "raycast" "rectangle"
   "hammerspoon" "homerow" "docker"
   "fork" "monitorcontrol"
 ];

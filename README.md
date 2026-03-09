@@ -16,7 +16,7 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 - 시크릿 관리 (agenix)
 
 **플랫폼별 설정**:
-- macOS: Homebrew GUI 앱, Hammerspoon, Cursor, Ghostty, Shottr, 폴더 액션
+- macOS: Homebrew GUI 앱, Hammerspoon, VSCode, Ghostty, Shottr, 폴더 액션
 - NixOS: 홈서버 18개 서비스, Tailscale VPN, SSH/mosh, 하드웨어 모니터링
 
 ---
@@ -38,7 +38,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │   ├── darwin/                    # macOS 전용
 │   │   ├── configuration.nix      # Dock, Finder, 키보드, 단축키, Touch ID sudo
 │   │   ├── home.nix               # HM 패키지 + 모듈 import
-│   │   └── programs/              # hammerspoon, cursor, ghostty, shottr,
+│   │   └── programs/              # hammerspoon, vscode, ghostty, shottr,
 │   │                              # folder-actions, keybindings, atuin, sshd, ssh, mosh
 │   └── nixos/                     # NixOS 전용
 │       ├── configuration.nix      # systemd-boot, watchdog, nix-ld, 서비스 활성화

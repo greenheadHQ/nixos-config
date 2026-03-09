@@ -44,7 +44,7 @@ return {
 
   -- ── nvim-treesitter-context: 코드 컨텍스트 상단 고정 ──
   -- 현재 커서가 있는 함수/클래스/조건문의 시작 줄을 상단에 고정 표시
-  -- VSCode/Cursor의 sticky scroll과 동일한 기능
+  -- VSCode의 sticky scroll과 동일한 기능
   -- <leader>ut 로 토글 가능
   {
     "nvim-treesitter/nvim-treesitter-context",

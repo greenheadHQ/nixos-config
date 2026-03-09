@@ -33,7 +33,7 @@
       inputs.home-manager.follows = "home-manager";
     };
 
-    # VSCode/Cursor 확장 프로그램 관리
+    # VSCode 확장 프로그램 관리
     nix-vscode-extensions = {
       url = "github:nix-community/nix-vscode-extensions";
       inputs.nixpkgs.follows = "nixpkgs";

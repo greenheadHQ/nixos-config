@@ -1,6 +1,6 @@
-# Cursor 확장 관리
+# VSCode 확장 관리
 
-Nix로 Cursor 확장을 선언적으로 관리하는 가이드.
+Nix(Home Manager `programs.vscode` 모듈)로 VSCode 확장을 선언적으로 관리하는 가이드.
 
 ## 설치된 확장 목록
 
@@ -15,10 +15,11 @@ Nix로 Cursor 확장을 선언적으로 관리하는 가이드.
 | aaron-bond.better-comments | 주석 하이라이팅 |
 | eamodio.gitlens | Git 기록/blame |
 | github.vscode-pull-request-github | GitHub PR 통합 |
-| bbenoist.nix | Nix 언어 지원 |
+| jnoortheen.nix-ide | Nix 언어 지원 (nixd LSP) |
 | buenon.scratchpads | 스크래치패드 |
 | kisstkondoros.vscode-gutter-preview | 이미지 미리보기 |
 | k--kato.intellij-idea-keybindings | IntelliJ 키바인딩 |
+| hashicorp.terraform | Terraform |
 | anthropic.claude-code | Claude Code |
 
 ### VS Code Marketplace
@@ -34,18 +35,20 @@ Nix로 Cursor 확장을 선언적으로 관리하는 가이드.
 
 ### 1. 설정 파일 수정
 
-`modules/darwin/programs/cursor/default.nix`에서 `cursorExtensions` 수정:
+`modules/darwin/programs/vscode/default.nix`에서 `profiles.default.extensions` 수정:
 
 ```nix
-cursorExtensions =
-  (with pkgs.open-vsx; [
-    # 여기에 open-vsx 확장 추가
-    dbaeumer.vscode-eslint
-  ])
-  ++ (with pkgs.vscode-marketplace; [
-    # 여기에 marketplace 확장 추가
-    ms-vscode.vscode-typescript-next
-  ]);
+profiles.default = {
+  extensions =
+    (with pkgs.open-vsx; [
+      # 여기에 open-vsx 확장 추가
+      dbaeumer.vscode-eslint
+    ])
+    ++ (with pkgs.vscode-marketplace; [
+      # 여기에 marketplace 확장 추가
+      ms-vscode.vscode-typescript-next
+    ]);
+};
 ```
 
 ### 2. 빌드 적용
@@ -54,14 +57,9 @@ cursorExtensions =
 nrs
 ```
 
-### 3. Cursor 재시작
+### 3. VSCode 재시작
 
-확장이 적용되려면 Cursor 재시작 필요.
-
-### extensions.json 경로
-
-Cursor는 확장 메타데이터 파일을 `~/.cursor/extensions/extensions.json`에서 읽습니다.
-(`~/.cursor/extensions.json` 경로는 현재 구조에서 사용하지 않음)
+확장이 적용되려면 VSCode 재시작 필요.
 
 ## 확장 소스 선택 기준
 
@@ -105,12 +103,6 @@ nix flake update
 nrs
 ```
 
-### 현재 고정 버전
-
-`flake.lock` 기준:
-- **날짜**: 2026-02-10
-- **rev**: `07f2af64427334c4098770884746ecf2471a574f`
-
 ### 동작 원리
 
 ```
@@ -120,25 +112,22 @@ nix-vscode-extensions flake
     ↓
 pkgs.open-vsx / pkgs.vscode-marketplace (overlay)
     ↓
-modules/darwin/programs/cursor/default.nix
+modules/darwin/programs/vscode/default.nix
     ↓
-~/.cursor/extensions/
+HM programs.vscode 모듈이 확장 디렉토리 자동 관리
 ```
 
 ### 권장 워크플로우
 
 ```bash
-# 1. 업데이트 전 현재 확장 버전 확인 (선택)
-ls -la ~/.cursor/extensions/
-
-# 2. flake input 업데이트
+# 1. flake input 업데이트
 nix flake update nix-vscode-extensions
 
-# 3. 변경사항 확인
+# 2. 변경사항 확인
 git diff flake.lock
 
-# 4. 빌드 및 적용
+# 3. 빌드 및 적용
 nrs
 
-# 5. Cursor 재시작 (확장 변경 감지 경고 → 정상)
+# 4. VSCode 재시작
 ```

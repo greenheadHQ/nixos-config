@@ -38,7 +38,7 @@
   "workbench.colorTheme": "Webstorm Darcula 2022", // 컬러 테마
   "workbench.iconTheme": "a-file-icon-vscode", // 파일 아이콘 테마
   "workbench.activityBar.orientation": "vertical", // 액티비티 바 세로 배치
-  "window.commandCenter": 1, // 타이틀 바에 커맨드 센터(검색창) 표시
+  "window.commandCenter": true, // 타이틀 바에 커맨드 센터(검색창) 표시
 
   // ============================================================================
   // 파일 관리
@@ -90,18 +90,22 @@
   "claudeCode.preferredLocation": "panel", // Claude Code 패널 위치 (하단 패널)
 
   // ============================================================================
-  // Cursor AI 설정
+  // Nix 언어 서버 (nixd)
   // ============================================================================
-  "cursor.cmdk.autoSelect": false, // Cmd+K 시 자동 선택 비활성화
-  "cursor.composer.shouldChimeAfterChatFinishes": true, // 채팅 완료 시 알림음
-  "cursor.diffs.useCharacterLevelDiffs": true, // 문자 단위 diff 표시 (더 정밀한 변경 추적)
+  "nix.enableLanguageServer": true,
+  "nix.serverPath": "nixd",
+  "nix.serverSettings": {
+    "nixd": {
+      "formatting": { "command": ["nixfmt"] }
+    }
+  },
 
   // ============================================================================
   // 보안 및 업데이트
   // ============================================================================
   "redhat.telemetry.enabled": false, // Red Hat 텔레메트리 비활성화
   "security.promptForLocalFileProtocolHandling": false, // 로컬 파일 프로토콜 핸들링 프롬프트 비활성화
-  "update.releaseTrack": "prerelease", // 프리릴리스 업데이트 추적
+  "update.mode": "none", // Nix로 앱 버전 관리하므로 자동 업데이트 비활성화
 
   // ============================================================================
   // 확장 프로그램 관리 (Nix로 관리하므로 자동 업데이트 비활성화)
@@ -139,7 +143,7 @@
   // ============================================================================
   // 에디터 탭 커스텀 라벨 (Next.js 프로젝트 가독성 개선)
   //
-  // VS Code 한계 (Cursor 2.3.33 / VS Code 1.93.0 기준):
+  // VS Code 한계:
   // - Named Capture Group 미지원 (예: ${app:([^/]+)})
   // - 정규식 캡처 미지원 (예: $1, $2)
   // - ** 와일드카드와 ${dirname(N)} 조합 시 예측 불가

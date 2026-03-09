@@ -65,7 +65,7 @@
         # macOS 전용
         ./programs/atuin
         ./programs/hammerspoon
-        ./programs/cursor
+        ./programs/vscode
         ./programs/folder-actions
         ./programs/ghostty
         ./programs/shottr

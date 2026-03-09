@@ -48,7 +48,7 @@ $HOME/<nixos-config-path>/modules/shared/programs/claude/files/settings.json
 | Nix store 심볼릭 링크   | 불가           | 불가      | 읽기 전용이라 CLI로 플러그인 설치/삭제 불가 |
 | **mkOutOfStoreSymlink** | CLI로 자유롭게 | 양방향    | 없음                                        |
 
-> **참고**: Cursor의 `settings.json`, `keybindings.json`도 동일한 방식으로 관리됩니다.
+> **참고**: VSCode의 `settings.json`, `keybindings.json`도 동일한 방식으로 관리됩니다.
 
 ## 플러그인 관리
 

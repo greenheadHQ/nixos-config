@@ -301,7 +301,7 @@ nix-darwin의 `fonts.packages` 옵션을 사용하여 폰트를 선언적으로 
 | 앱       | 설정 파일                                           | 영문 폰트                | 한글 폴백                |
 | -------- | --------------------------------------------------- | ------------------------ | ------------------------ |
 | Ghostty  | `modules/darwin/programs/ghostty/default.nix`       | JetBrainsMono Nerd Font  | D2Coding                 |
-| Cursor   | `modules/darwin/programs/cursor/files/settings.json` | JetBrainsMono Nerd Font  | D2Coding                 |
+| VSCode   | `modules/darwin/programs/vscode/files/settings.json` | JetBrainsMono Nerd Font  | D2Coding                 |
 
 한글은 D2Coding(Nix 설치, 네이버 코딩 전용 폰트)을 앱별 font-family 폴백으로 명시적 지정한다.
 
@@ -340,7 +340,6 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | 앱             | 용도                       |
 | -------------- | -------------------------- |
 | Codex          | AI 코딩 에이전트           |
-| Cursor         | AI 코드 에디터             |
 | Raycast        | 런처 (Spotlight 대체)      |
 | Rectangle      | 창 관리                    |
 | Hammerspoon    | 키보드 리매핑/자동화       |
@@ -356,12 +355,12 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | 앱      | 패키지         | 용도         |
 | ------- | -------------- | ------------ |
 | Shottr  | `pkgs.shottr`  | 스크린샷     |
+| VSCode  | HM `programs.vscode` | 코드 에디터 |
 
 ### Homebrew Cask에서 Nix 전환이 불가능한 앱
 
 | 앱      | 사유 |
 | ------- | ---- |
-| Cursor  | `pkgs.code-cursor`가 존재하지만, Nix store와 `/Applications`에 각각 .app이 생성되어 Spotlight에 2개 표시됨. `programs.vscode.package`가 별도 번들을 생성하는 구조적 문제. |
 | Ghostty | `pkgs.ghostty-bin`은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음. Ghostty.app은 Homebrew Cask로만 설치 가능. |
 | Docker  | Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재) |
 | Fork    | 상용 Git GUI, nixpkgs에 없음 |
@@ -373,7 +372,7 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 - **upgrade = true**: `nrs` 실행 시 `brew upgrade`를 자동 실행
 - **greedyCasks = true**: `auto_updates` 속성이 있는 cask도 `brew upgrade` 대상에 포함
 
-자체 업데이터가 있는 앱(Cursor 등)이 Homebrew와 독립적으로 버전을 변경해도, `nrs` 실행 시 Homebrew가 최신 버전으로 동기화합니다.
+자체 업데이터가 있는 앱이 Homebrew와 독립적으로 버전을 변경해도, `nrs` 실행 시 Homebrew가 최신 버전으로 동기화합니다.
 
 ### Homebrew 관리에서 제외한 앱
 
@@ -399,7 +398,7 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 Homebrew Cask는 `/Applications`에 동일 앱이 이미 존재하면 `brew install`을 거부합니다:
 
 ```text
-Error: It seems there is already an App at '/Applications/Cursor.app'
+Error: It seems there is already an App at '/Applications/Docker.app'
 ```
 
 `--adopt` 없이는 두 가지 선택지뿐입니다:
@@ -409,15 +408,15 @@ Error: It seems there is already an App at '/Applications/Cursor.app'
 `--adopt`는 **세 번째 선택지**를 제공합니다:
 
 ```text
-일반 brew install --cask cursor:
-  1. Cursor.zip 다운로드
-  2. /Applications/Cursor.app 이미 있음 → 에러, 중단
+일반 brew install --cask docker-desktop:
+  1. Docker Desktop 다운로드
+  2. /Applications/Docker.app 이미 있음 → 에러, 중단
 
-brew install --cask --adopt cursor:
-  1. Cursor.zip 다운로드
-  2. /Applications/Cursor.app 이미 있음 → 기존 앱을 Caskroom으로 이동(백업)
-  3. Homebrew 메타데이터에 "cursor는 내가 관리 중"으로 등록
-  4. 이후 brew upgrade cursor로 업데이트 가능
+brew install --cask --adopt docker-desktop:
+  1. Docker Desktop 다운로드
+  2. /Applications/Docker.app 이미 있음 → 기존 앱을 Caskroom으로 이동(백업)
+  3. Homebrew 메타데이터에 "docker-desktop은 내가 관리 중"으로 등록
+  4. 이후 brew upgrade docker-desktop으로 업데이트 가능
 ```
 
 기존 앱을 삭제하지 않으므로 설정/로그인 상태가 보존됩니다. adopt 후 `nrs`를 실행하면 homebrew.nix 선언과 실제 설치 상태가 일치합니다.
@@ -426,10 +425,10 @@ brew install --cask --adopt cursor:
 
 ```bash
 # 개별 앱 adopt
-brew install --cask --adopt cursor
+brew install --cask --adopt docker-desktop
 
-# 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr 제외)
-for cask in codex cursor ghostty raycast rectangle hammerspoon homerow docker fork monitorcontrol; do
+# 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, vscode 제외)
+for cask in codex ghostty raycast rectangle hammerspoon homerow docker-desktop fork monitorcontrol; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
 

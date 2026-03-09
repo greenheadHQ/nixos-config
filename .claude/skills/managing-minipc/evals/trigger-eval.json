@@ -11,7 +11,7 @@
   {"query": "미니PC SSH 접속이 안 돼. Tailscale VPN은 연결되어 있어", "should_trigger": false},
   {"query": "darwin-rebuild에서 /etc/bashrc 충돌 에러 발생", "should_trigger": false},
   {"query": "nix flake update 하면 빌드가 너무 느려져", "should_trigger": false},
-  {"query": "Homebrew cask로 Cursor 설치하는 방법 알려줘", "should_trigger": false},
+  {"query": "Homebrew cask로 앱 설치하는 방법 알려줘", "should_trigger": false},
   {"query": "direnv allow 했는데 devShell 환경이 안 되네", "should_trigger": false},
   {"query": "macOS Dock 자동 숨김 설정 변경하고 싶어", "should_trigger": false},
   {"query": "flake.lock 파일을 업데이트하고 싶어", "should_trigger": false},

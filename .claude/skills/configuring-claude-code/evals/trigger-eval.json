@@ -68,7 +68,7 @@
     "should_trigger": false
   },
   {
-    "query": "Cursor에서 extensions.json 관리하고 싶어",
+    "query": "VSCode에서 extensions.json 관리하고 싶어",
     "should_trigger": false
   },
   {

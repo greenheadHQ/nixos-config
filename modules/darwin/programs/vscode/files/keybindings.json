@@ -163,10 +163,6 @@
     "command": "timeline.focus"
   },
   {
-    "key": "ctrl+;",
-    "command": "metaGo.gotoSmart"
-  },
-  {
     "key": "f7",
     "command": "references-view.findReferences",
     "when": "editorHasReferenceProvider"
@@ -276,10 +272,6 @@
     "when": "editorTextFocus"
   },
   {
-    "key": "shift+cmd+l",
-    "command": "workbench.panel.composerViewPane2.view.focus"
-  },
-  {
     "key": "shift+cmd+c",
     "command": "copyFilePath",
     "when": "editorFocus && !terminalFocus"
@@ -329,16 +321,6 @@
     "when": "sideBarFocus || explorerViewletFocus || searchViewletFocus"
   },
   {
-    "key": "shift+alt+j",
-    "command": "aiSettings.action.open",
-    "when": "!isSettingsPaneOpen"
-  },
-  {
-    "key": "shift+cmd+j",
-    "command": "-aiSettings.action.open",
-    "when": "!isSettingsPaneOpen"
-  },
-  {
     "key": "ctrl+alt+]",
     "command": "workbench.action.moveEditorToNextGroup"
   },
@@ -361,10 +343,6 @@
   {
     "key": "shift+alt+[",
     "command": "workbench.action.decreaseViewWidth"
-  },
-  {
-    "key": "shift shift",
-    "command": "-workbench.action.quickOpen"
   },
   {
     "key": "ctrl+alt+cmd+k",
@@ -411,10 +389,5 @@
     "key": "cmd+]",
     "command": "-editor.action.indentLines",
     "when": "editorTextFocus && !editorReadonly"
-  },
-  {
-    "key": "cmd+n",
-    "command": "chatgpt.addToThread",
-    "when": "chatgpt.sidebarView.visible"
   }
 ]

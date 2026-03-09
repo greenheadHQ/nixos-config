@@ -74,15 +74,6 @@ in
     '')
 
     ''
-      # cursor 래퍼: 인수 없이 실행 시 현재 디렉터리 열기
-      cursor() {
-        if [ $# -eq 0 ]; then
-          command cursor .
-        else
-          command cursor "$@"
-        fi
-      }
-
       # NVM bash completion
       [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 

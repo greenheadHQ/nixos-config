@@ -23,7 +23,7 @@
     # upgrade=true + greedyCasks=true 조합:
     # - upgrade=true: nrs 실행 시 brew upgrade를 자동 실행
     # - greedyCasks=true: auto_updates가 있는 cask도 brew upgrade 대상에 포함
-    # 자체 업데이터가 있는 앱(Cursor 등)이 Homebrew와 독립적으로 버전을 변경해도
+    # 자체 업데이터가 있는 앱이 Homebrew와 독립적으로 버전을 변경해도
     # nrs 실행 시 Homebrew가 최신 버전으로 동기화하여 버전 드리프트를 방지한다.
     greedyCasks = true;
 
@@ -44,7 +44,7 @@
     #
     # nix-darwin은 이 목록을 기반으로 `brew install --cask <앱>`을 실행한다.
     # 그런데 Homebrew Cask는 /Applications에 동일 앱이 이미 존재하면 설치를 거부한다:
-    #   Error: It seems there is already an App at '/Applications/Cursor.app'
+    #   Error: It seems there is already an App at '/Applications/Docker.app'
     #
     # 이때 선택지는 3가지:
     #   1) 기존 앱 삭제 후 brew install → 앱 설정/로그인 상태 유실 위험
@@ -53,7 +53,7 @@
     #      "내가 설치한 것"으로 인식하도록 등록만 수행. 이후 brew upgrade로 관리 가능.
     #
     # 따라서 nrs 실행 전에 직접 설치된 앱을 --adopt로 전환해야 한다:
-    #   brew install --cask --adopt cursor docker-desktop ...
+    #   brew install --cask --adopt docker-desktop ghostty ...
     #
     # adopt 후에는 nrs(darwin-rebuild)가 해당 cask를 정상적으로 인식하여 에러 없이 통과한다.
     # cleanup="none"이므로 미adopt 앱이 남아있어도 삭제되지는 않지만,
@@ -61,12 +61,9 @@
     #
     # [Nix 패키지로 전환한 앱]
     # shottr → libraries/packages.nix darwinOnly로 이동 (pkgs.shottr가 macOS .app 번들 포함)
+    # vscode → programs.vscode HM 모듈로 관리 (~/Applications/Home Manager Apps/)
     #
     # [Nix 전환이 불가능한 앱]
-    # cursor: pkgs.code-cursor가 존재하지만, Nix store와 /Applications에 각각 설치되어
-    #         Spotlight에 동일 앱이 2개 표시되는 문제 발생. programs.vscode.package로 관리 시
-    #         Nix가 별도 .app 번들을 생성하기 때문. 이를 회피하려면 Homebrew Cask 단독 관리 필요.
-    #         (자세한 내용: .claude/skills/managing-cursor/references/troubleshooting.md)
     # ghostty: pkgs.ghostty-bin은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음.
     #          Ghostty.app은 Homebrew Cask로만 설치 가능.
     # docker-desktop: Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재)
@@ -78,7 +75,6 @@
     #
     casks = [
       "codex"
-      "cursor"
       "ghostty"
       "raycast"
       "rectangle"

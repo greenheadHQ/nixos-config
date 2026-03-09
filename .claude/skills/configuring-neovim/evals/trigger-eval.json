@@ -9,7 +9,7 @@
   {"query": "Neovim에서 markdownlint 규칙 설정하려면?", "should_trigger": true},
   {"query": "lazy-lock.json이 Mac과 MiniPC에서 충돌해", "should_trigger": true},
   {"query": "nrs 빌드 시 LLVM 소스 빌드가 시작되면서 수십 분 걸려", "should_trigger": true},
-  {"query": "Cursor에 확장 추가하려면?", "should_trigger": false},
+  {"query": "VSCode에 확장 추가하려면?", "should_trigger": false},
   {"query": "pnpm not found 에러가 발생해", "should_trigger": false},
   {"query": "tmux 키바인딩 변경하고 싶어", "should_trigger": false},
   {"query": "SSH 키 인증 실패해", "should_trigger": false},

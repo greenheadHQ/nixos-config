@@ -1,0 +1,22 @@
+[
+  {"query": "VSCode에 ESLint 확장 추가하려면?", "should_trigger": true},
+  {"query": "Nix로 VSCode 확장 관리하는 방법 알려줘", "should_trigger": true},
+  {"query": "VSCode에서 확장 로드 오류가 떠", "should_trigger": true},
+  {"query": "VSCode settings.json은 어디서 수정해?", "should_trigger": true},
+  {"query": "텍스트 파일 더블클릭 시 Xcode로 열려", "should_trigger": true},
+  {"query": "VSCode keybindings.json 변경하려면?", "should_trigger": true},
+  {"query": "VSCode 확장 버전 업데이트하려면?", "should_trigger": true},
+  {"query": "VSCode에서 확장 설치가 안 돼, GUI로 못 해", "should_trigger": true},
+  {"query": "nixd LSP가 VSCode에서 동작 안 해", "should_trigger": true},
+  {"query": "nix-ide 확장 설정하려면?", "should_trigger": true},
+  {"query": "Neovim LSP 설정 변경하려면?", "should_trigger": false},
+  {"query": "mise로 Node.js 버전 관리하기", "should_trigger": false},
+  {"query": "tmux 플러그인 추가하고 싶어", "should_trigger": false},
+  {"query": "Claude Code 설정 변경하려면?", "should_trigger": false},
+  {"query": "Hammerspoon에서 앱 전환 단축키 만들기", "should_trigger": false},
+  {"query": "SSH로 MiniPC 접속이 안 돼", "should_trigger": false},
+  {"query": "lazygit 설정 바꾸려면?", "should_trigger": false},
+  {"query": "NixOS에서 Podman 컨테이너 설정", "should_trigger": false},
+  {"query": "Nix flake update 방법 알려줘", "should_trigger": false},
+  {"query": "Hammerspoon 단축키 변경하려면?", "should_trigger": false}
+]
