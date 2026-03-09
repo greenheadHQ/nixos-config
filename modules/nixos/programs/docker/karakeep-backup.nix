@@ -26,6 +26,7 @@ let
       coreutils
       findutils
       gzip
+      curl # service-lib.sh의 send_notification에서 사용
     ];
     text = ''
       # service-lib.sh 로드 (send_notification 사용)
