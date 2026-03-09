@@ -17,6 +17,15 @@
 #   nfu가 자동 호출하거나, nix flake update 후 수동 실행
 set -euo pipefail
 
+NO_CACHE_CHECK=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-cache-check) NO_CACHE_CHECK=true ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
@@ -31,6 +40,54 @@ else
   ATTR="nixosConfigurations.\"${HOST}\".config.system.build.toplevel"
 fi
 
+cache_precheck() {
+  if [[ "$NO_CACHE_CHECK" == true ]]; then
+    return 0
+  fi
+
+  echo "캐시 상태 확인 중..."
+  local dry_output
+  if ! dry_output=$(nix build ".#${ATTR}" --dry-run 2>&1); then
+    echo "⚠️  dry-run 실패 — 캐시 확인을 건너뜁니다."
+    return 0
+  fi
+
+  # .drv 경로 추출 (rebuild-common.sh preflight_source_build_check()와 동일 패턴)
+  local build_drvs
+  build_drvs=$(echo "$dry_output" | grep '\.drv$' || true)
+
+  if [[ -z "$build_drvs" ]]; then
+    echo "✓ 모든 패키지가 캐시에 있습니다."
+    return 0
+  fi
+
+  # 패키지명 추출 (rebuild-common.sh preflight_source_build_check()와 동일 패턴)
+  local pkg_names pkg_count
+  pkg_names=$(printf '%s\n' "$build_drvs" | sed 's|.*/[a-z0-9]\{32\}-||; s|\.drv$||' | sort -u)
+  pkg_count=$(printf '%s\n' "$pkg_names" | wc -l | tr -d ' ')
+
+  echo ""
+  echo "⚠️  ${pkg_count}개 패키지가 소스에서 빌드됩니다 (캐시 없음):"
+  printf '%s\n' "$pkg_names" | while IFS= read -r pkg; do
+    echo "  - $pkg"
+  done
+  echo ""
+
+  if [[ ! -t 0 ]]; then
+    echo "(비대화형 환경 — 자동 진행)"
+    return 0
+  fi
+
+  read -rp "계속하시겠습니까? [y/N] " answer
+  case "$answer" in
+    [yY]|[yY][eE][sS]) return 0 ;;
+    *)
+      echo "빌드를 취소합니다. (flake.lock 변경은 롤백됩니다)"
+      exit 1
+      ;;
+  esac
+}
+
 MAX_ROUNDS=3
 fixed=0
 modified_files=()
@@ -42,6 +99,9 @@ for (( round=1; round<=MAX_ROUNDS+1; round++ )); do
   echo ""
   if (( round <= MAX_ROUNDS )); then
     echo "빌드 검증 중... (${round}/${MAX_ROUNDS})"
+    if (( round == 1 )); then
+      cache_precheck
+    fi
   else
     echo "최종 검증 빌드..."
   fi
@@ -53,6 +113,14 @@ for (( round=1; round<=MAX_ROUNDS+1; round++ )); do
   set -e
   build_output=$(cat "$build_log")
   rm -f "$build_log"
+
+  # 사용자 중단 감지: SIGINT(130), SIGPIPE(141), SIGTERM(143)
+  # SIGPIPE: tee가 먼저 SIGINT로 죽으면 nix build가 broken pipe로 141 받을 수 있음
+  if (( build_rc == 130 || build_rc == 141 || build_rc == 143 )); then
+    echo ""
+    echo "⚠️  사용자가 빌드를 취소했습니다."
+    exit 130
+  fi
 
   if (( build_rc == 0 )); then
     break

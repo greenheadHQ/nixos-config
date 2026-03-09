@@ -26,17 +26,20 @@ rollback() {
 # ── 인수 파싱 ──
 UPDATE_ALL=false
 NRS_ARGS=()
+FOD_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -a|--all)    UPDATE_ALL=true ;;
     --cores)
       [[ -z "${2:-}" || ! "$2" =~ ^[1-9][0-9]*$ ]] && { log_error "--cores: positive integer required"; exit 1; }
       NRS_ARGS+=("--cores" "$2"); shift ;;
+    --no-cache-check) FOD_ARGS+=(--no-cache-check) ;;
     -h|--help)
-      echo "사용법: nfu [-a|--all] [--cores N]"
-      echo "  (기본)    fzf로 업데이트할 input 선택"
-      echo "  -a, --all 모든 input 일괄 업데이트"
-      echo "  --cores N nrs에 --cores N 전달 (NixOS 과열 방지)"
+      echo "사용법: nfu [-a|--all] [--cores N] [--no-cache-check]"
+      echo "  (기본)           fzf로 업데이트할 input 선택"
+      echo "  -a, --all        모든 input 일괄 업데이트"
+      echo "  --cores N        nrs에 --cores N 전달 (NixOS 과열 방지)"
+      echo "  --no-cache-check 소스 빌드 사전 확인 건너뛰기"
       exit 0 ;;
     *) log_error "Unknown argument: $1"; exit 1 ;;
   esac
@@ -99,7 +102,7 @@ echo ""
 
 # 5. FOD hash 자동 수정 (내부적으로 nix build로 빌드 검증 포함)
 log_info "═══ FOD hash 검증 ═══"
-"$FLAKE_PATH/scripts/fix-fod-hashes.sh"
+"$FLAKE_PATH/scripts/fix-fod-hashes.sh" "${FOD_ARGS[@]+${FOD_ARGS[@]}}"
 echo ""
 
 # ── Phase 2: 빌드 검증 완료, 롤백 비활성화 ──

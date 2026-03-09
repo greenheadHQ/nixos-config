@@ -2,7 +2,18 @@
   description = "green/nixos-config - macOS & NixOS Development Environment";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable-small";
+    # === Change Intent Record ===
+    # nixpkgs 채널: nixos-unstable-small → nixos-unstable 전환 (2026-03-09)
+    # v1: nixos-unstable-small 사용 — 빠른 업데이트 우선
+    # v2 (이번 변경): cache hit 최우선 정책으로 전환
+    #   대안 1: nixos-unstable-small — 빠르지만 darwin 캐시 보장 안됨 (Mac 소스 빌드 30분+)
+    #   대안 2: nixpkgs-unstable — darwin 캐시 우수하나 NixOS 모듈 테스트 없음
+    #   대안 3: nixos-24.11 (stable) — 안정적이나 최신 패키지 접근 불가
+    #   선택: nixos-unstable — 전체 NixOS 테스트 + Hydra 빌드 시간 충분 → 캐시 커버리지 최대
+    #   trade-off: 업데이트가 수일 지연되나, 최신 버전보다 캐시 가용성을 우선하므로 수용.
+    #   참고: darwin nrs.sh에는 preflight_source_build_check가 없어,
+    #         채널 수준의 캐시 커버리지가 Mac의 1차 방어선임.
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
     nix-darwin = {
       url = "github:nix-darwin/nix-darwin";
