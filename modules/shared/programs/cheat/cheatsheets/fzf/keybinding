@@ -19,8 +19,10 @@ fzf 셸 단축키
   ssh **<Tab>      SSH 호스트 검색
 
 [fzf 내부 조작]
-  Tab         아래로 이동 (커스텀: 기본은 toggle)
-  Shift+Tab   위로 이동
+  Tab         multi: 선택/해제 + 아래로 이동
+  Shift+Tab   multi: 선택/해제 + 위로 이동
+  Ctrl+J/N    아래로 이동
+  Ctrl+K/P    위로 이동
 
 [참고]
   Ctrl+R      Atuin이 대체 중 (fzf 히스토리 검색 비활성)

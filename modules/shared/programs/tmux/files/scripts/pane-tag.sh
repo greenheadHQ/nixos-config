@@ -88,7 +88,6 @@ set +e
 # fzf --print-query로 쿼리(직접 입력)와 선택 모두 처리
 result=$(echo "$available_tags" | grep -v '^$' | fzf --multi \
   --prompt='추가할 태그 (Tab으로 선택, 직접 입력도 가능)> ' \
-  --bind='tab:toggle+down,shift-tab:toggle+up' \
   --header="새 태그 선택 | Enter: 적용, ESC: 취소" \
   --print-query)
 fzf_exit=$?
