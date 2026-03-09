@@ -146,9 +146,10 @@ in
       ".cursorrules"
       ".cursor"
 
-      # Claude Code (settings.local.json만 무시, 나머지는 프로젝트별 커밋 가능)
+      # Claude Code (settings.local.json과 런타임 아티팩트만 무시, 나머지는 프로젝트별 커밋 가능)
       "**/.claude/settings.local.json"
       "**/.claude/plans"
+      "**/.claude/worktrees"
       "CLAUDE.local.md"
       "CLAUDE.local.*.md"
 

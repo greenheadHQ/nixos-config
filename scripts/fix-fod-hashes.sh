@@ -14,7 +14,7 @@
 #
 # 사용법:
 #   ./scripts/fix-fod-hashes.sh          # 독립 실행
-#   nix flake update 후 수동 실행 권장 (update-input.sh 안내 참조)
+#   nfu가 자동 호출하거나, nix flake update 후 수동 실행
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

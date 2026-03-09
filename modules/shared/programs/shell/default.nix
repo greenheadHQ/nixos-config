@@ -19,6 +19,12 @@ in
     source = "${sharedScriptsDir}/git-cleanup.sh";
     executable = true;
   };
+  home.file.".local/bin/nfu.sh" = {
+    source = pkgs.replaceVars "${sharedScriptsDir}/nfu.sh" {
+      flakePath = nixosConfigDefaultPath;
+    };
+    executable = true;
+  };
 
   # Shell 함수 라이브러리 (source로 로딩)
   # replaceVars: @flakePath@ → nixosConfigDefaultPath (항상 메인 레포 경로)
@@ -57,6 +63,9 @@ in
 
     # Codex CLI 위험 모드 단축 (사용자 요청)
     codex = "command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen";
+
+    # Nix Flake Update (원자적 업데이트 워크플로우)
+    nfu = "~/.local/bin/nfu.sh";
 
     # lazygit 단축
     lg = "lazygit";

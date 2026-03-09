@@ -37,8 +37,9 @@ flake 평가, derivation 해석, substituter/빌드 성능, 공통 오류 복구
 ### Flake 명령어
 
 ```bash
-nix flake update                          # 모든 input 업데이트
-nix flake lock --update-input nixpkgs     # 특정 input만 업데이트
+nfu                                       # fzf로 input 선택 → update → FOD fix → nrs (권장)
+nfu -a                                    # 모든 input 일괄 업데이트
+nix flake update <input-name>             # 수동: 특정 input만 업데이트
 nix flake check --no-build --all-systems  # flake 평가 오류 검사
 ```
 

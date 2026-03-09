@@ -82,7 +82,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 ├── scripts/                       # 자동화 스크립트
 │   ├── add-host.sh                # 호스트 추가 마법사
 │   ├── pre-rebuild-check.sh       # 빌드 전 검증
-│   └── update-input.sh            # Flake input 업데이트
+│   └── fix-fod-hashes.sh          # FOD hash mismatch 자동 수정
 └── tests/
     └── eval-tests.nix             # Nix 평가 테스트
 ```
