@@ -6,10 +6,10 @@
   // - 메인 저장소에서 열 때: worktree 폴더가 숨겨져 중복 표시/검색 방지
   // - 워크트리에서 열 때: 영향 없음 (패턴 매칭되는 하위 폴더가 없음)
   "files.exclude": {
-    "**/.claude/worktrees": true
+    "**/.claude/worktrees": true,
   },
   "search.exclude": {
-    "**/.claude/worktrees": true
+    "**/.claude/worktrees": true,
   },
 
   // ============================================================================
@@ -29,7 +29,7 @@
   "editor.smartSelect.selectSubwords": false, // 단어 선택 시 subword 구분 안 함 (camelCase 전체 선택)
   "editor.snippetSuggestions": "top", // 스니펫을 자동완성 목록 최상단에 표시
   "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": "explicit" // 저장 시 ESLint 자동 수정 (명시적 실행만)
+    "source.fixAll.eslint": "explicit", // 저장 시 ESLint 자동 수정 (명시적 실행만)
   },
 
   // ============================================================================
@@ -59,29 +59,29 @@
   "eslint.format.enable": true, // ESLint를 포맷터로 사용 가능
   "eslint.codeActionsOnSave.rules": null, // ESLint 규칙 전체 적용 (null = 모두)
   "[javascript]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "[javascriptreact]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "[typescript]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "[typescriptreact]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
 
   // ============================================================================
   // 언어별 포맷터 설정 (JSON)
   // ============================================================================
   "[json]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "[jsonc]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "[jsonl]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
 
   // ============================================================================
@@ -96,8 +96,8 @@
   "nix.serverPath": "nixd",
   "nix.serverSettings": {
     "nixd": {
-      "formatting": { "command": ["nixfmt"] }
-    }
+      "formatting": { "command": ["nixfmt"] },
+    },
   },
 
   // ============================================================================
@@ -119,7 +119,7 @@
     "camel", // camelCase
     "snake", // snake_case
     "kebab", // kebab-case
-    "pascal" // PascalCase
+    "pascal", // PascalCase
   ],
 
   // ============================================================================
@@ -128,7 +128,7 @@
   "editor.stickyScroll.enabled": true, // 스크롤 시 현재 스코프(함수/클래스) 상단 고정
   "editor.bracketPairColorization.enabled": true, // 괄호 쌍 색상화
   "editor.guides.bracketPairs": "active", // 활성 괄호 쌍 가이드 라인 표시
-  "editor.minimap.autohide": true, // 미니맵 자동 숨김 (호버 시만 표시)
+  "editor.minimap.autohide": "mouseover", // 미니맵 자동 숨김 (호버 시만 표시)
   "editor.renderLineHighlight": "all", // 현재 줄 전체 하이라이트 (줄 번호 + 내용)
 
   // ============================================================================
@@ -164,6 +164,6 @@
     "**/index.{ts,tsx,js,jsx}": "${dirname}/index.${extname}",
 
     // 유틸리티 파일들 - hooks.ts, utils.ts 등이 여러 개일 때 폴더명으로 구분
-    "**/{hook,hooks,constant,constants,util,utils,state,states,type,types,style,styles}.{ts,tsx,js,jsx}": "${dirname}/${filename}.${extname}"
-  }
+    "**/{hook,hooks,constant,constants,util,utils,state,states,type,types,style,styles}.{ts,tsx,js,jsx}": "${dirname}/${filename}.${extname}",
+  },
 }
