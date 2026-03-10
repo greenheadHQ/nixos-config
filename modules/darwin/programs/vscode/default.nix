@@ -86,7 +86,7 @@ in
   home.packages = [
     pkgs.duti # macOS 파일 연결 CLI 도구
     pkgs.nixd # Nix LSP (nix-ide 확장 의존성)
-    pkgs.nixfmt-rfc-style # Nix 포매터 (nixd formatting 의존성)
+    pkgs.nixfmt # Nix 포매터 (nixd formatting 의존성)
   ];
 
   programs.vscode = {

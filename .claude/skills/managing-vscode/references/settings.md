@@ -56,7 +56,7 @@ VSCode에서 `.nix` 파일 편집 시 nixd LSP를 사용합니다.
 **패키지 위치**: `modules/darwin/programs/vscode/default.nix`의 `home.packages`
 
 - `pkgs.nixd` — Nix LSP 서버
-- `pkgs.nixfmt-rfc-style` — Nix 포매터 (nixd formatting 의존성)
+- `pkgs.nixfmt` — Nix 포매터 (nixd formatting 의존성)
 
 nixd와 nixfmt를 VSCode 모듈에 co-locate하여 macOS에서만 설치합니다 (NixOS에서는 Neovim이 nil을 사용).
 
