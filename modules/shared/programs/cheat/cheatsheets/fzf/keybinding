@@ -24,8 +24,8 @@ fzf 셸 단축키
   Ctrl+G      디렉토리: eza 트리 미리보기 (depth 2)
 
 [fzf 내부 조작]
-  Tab         multi: 선택/해제 + 아래로 이동
-  Shift+Tab   multi: 선택/해제 + 위로 이동
+  Tab         single: 아래로 이동 / multi: 선택/해제 + 아래로 이동
+  Shift+Tab   single: 위로 이동 / multi: 선택/해제 + 위로 이동
   Ctrl+J/N    아래로 이동
   Ctrl+K/P    위로 이동
 

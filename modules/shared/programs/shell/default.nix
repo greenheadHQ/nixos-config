@@ -237,6 +237,9 @@ in
     defaultCommand = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
     fileWidgetCommand = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
     changeDirWidgetCommand = "${lib.getExe pkgs.fd} --type d --strip-cwd-prefix --exclude .git";
+    defaultOptions = [
+      "--bind=tab:toggle-down,shift-tab:toggle-up"
+    ];
     fileWidgetOptions = [
       "--preview 'if [ -d {} ]; then ${lib.getExe pkgs.eza} --tree --level=2 --color=always {}; else ${lib.getExe pkgs.bat} --color=always --style=numbers --line-range=:500 {}; fi'"
       "--preview-window=right:60%:wrap"
