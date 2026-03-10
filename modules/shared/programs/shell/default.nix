@@ -153,6 +153,33 @@ in
       '')
 
       #─────────────────────────────────────────────────────────────────────────
+      # fzf-tab: Tab completion을 fzf 퍼지 검색으로 대체
+      # mkAfter에서 source하여 fzf --zsh(mkOrder 910) 이후에 로드
+      # → fzf_default_completion에 expand-or-complete가 정상 저장 (무한루프 방지)
+      # → _ftb_orig_widget에 fzf-completion이 저장 (**<Tab> 폴백 보존)
+      #─────────────────────────────────────────────────────────────────────────
+      (lib.mkAfter ''
+        source ${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh
+
+        # Tab으로 선택 확정 (fzf-tab 기본값 tab:down → tab:accept)
+        zstyle ':fzf-tab:*' fzf-bindings 'tab:accept'
+        # '/'로 디렉토리 하위 연속 탐색
+        zstyle ':fzf-tab:*' continuous-trigger '/'
+        # F1/F2로 completion 그룹 전환
+        zstyle ':fzf-tab:*' switch-group 'F1' 'F2'
+
+        # 미리보기: 파일→bat 구문 강조, 디렉토리→eza 트리
+        zstyle ':fzf-tab:complete:*' fzf-preview \
+          'if [[ -d $realpath ]]; then ${lib.getExe pkgs.eza} --tree --level=2 --color=always $realpath; elif [[ -f $realpath ]]; then ${lib.getExe pkgs.bat} --color=always --style=numbers --line-range=:500 $realpath; fi'
+
+        # git 브랜치/ref 미리보기 (커밋 로그)
+        zstyle ':fzf-tab:complete:git-(checkout|switch|log):*' fzf-preview \
+          'git log --oneline --graph --color=always $word -- 2>/dev/null | head -20'
+        zstyle ':fzf-tab:complete:git-diff:*' fzf-preview \
+          'git diff --color=always $word 2>/dev/null | head -50'
+      '')
+
+      #─────────────────────────────────────────────────────────────────────────
       # Shell 함수 라이브러리 로딩
       #─────────────────────────────────────────────────────────────────────────
       ''

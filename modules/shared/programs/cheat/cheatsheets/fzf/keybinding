@@ -1,7 +1,16 @@
 ---
-tags: [ fzf, keybinding, shell ]
+tags: [ fzf, fzf-tab, keybinding, shell ]
 ---
 fzf 셸 단축키
+
+[Tab 자동완성 — fzf-tab]
+  <Tab>        fzf-tab 퍼지 검색 자동완성 (zsh 기본 완성 대체)
+               Tab: 선택/수락, Ctrl+Space: 다중 선택 토글
+               /: continuous trigger (디렉토리 선택 후 하위 계속 탐색)
+               F1/F2: 완성 그룹 전환
+  미리보기:    파일→bat 구문 강조, 디렉토리→eza 트리
+               git branch/switch/log→커밋 이력, git diff→변경사항
+  토글:        disable-fzf-tab / enable-fzf-tab (런타임 on/off)
 
 [파일 경로 삽입]
   Ctrl+T      파일/디렉토리 퍼지 검색 → 커맨드에 경로 삽입
@@ -13,21 +22,29 @@ fzf 셸 단축키
               zoxide(z)는 방문 기록 기반, 이건 현재 위치 하위 탐색
               (원래 Alt+C이나 한글 IME 호환을 위해 리바인드)
 
-[퍼지 자동완성 (**Tab)]
+[퍼지 자동완성 (**Tab) — fzf 네이티브]
   cd **<Tab>       디렉토리만 검색
   cat **<Tab>      파일만 검색
   kill **<Tab>     프로세스 이름으로 검색 → PID 자동 입력
   ssh **<Tab>      SSH 호스트 검색
+  ※ fzf-tab 활성 시에도 **<Tab>은 fzf 네이티브로 동작 (폴백)
 
 [미리보기]
   Ctrl+T      파일: bat 구문 강조 미리보기 (우측 60%)
   Ctrl+G      디렉토리: eza 트리 미리보기 (depth 2)
 
-[fzf 내부 조작]
+[fzf 내부 조작 — Ctrl+T/Ctrl+G (독립 fzf)]
   Tab         single: 아래로 이동 / multi: 선택/해제 + 아래로 이동
   Shift+Tab   single: 위로 이동 / multi: 선택/해제 + 위로 이동
   Ctrl+J/N    아래로 이동
   Ctrl+K/P    위로 이동
 
+[fzf 내부 조작 — fzf-tab 모드]
+  Tab         수락 (선택 확정)
+  Ctrl+Space  다중 선택 토글
+  /           continuous completion (디렉토리 하위 계속 탐색)
+  F1/F2       완성 그룹 전환
+
 [참고]
   Ctrl+R      Atuin이 대체 중 (fzf 히스토리 검색 비활성)
+  FZF_DEFAULT_OPTS  fzf-tab에 영향 없음 (내부적으로 격리)
