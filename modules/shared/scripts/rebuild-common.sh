@@ -125,7 +125,6 @@ preflight_source_build_check() {
     #    trade-off: 새 무거운 패키지 추가 시 수동 등록 필요하나,
     #              false positive를 크게 줄여 사용자 경험이 압도적으로 나음.
     local heavy_packages=(
-        anki    # 로컬 overlay (doInstallCheck=false) → Hydra 캐시 없음, 항상 소스 빌드
         mise    # Rust 패키지 → flake update 후 캐시 미스 시 장시간 빌드
     )
 
