@@ -5,7 +5,7 @@ fzf 셸 단축키
 
 [Tab 자동완성 — fzf-tab]
   <Tab>        fzf-tab 퍼지 검색 자동완성 (zsh 기본 완성 대체)
-               Tab: 선택/수락, Ctrl+Space: 다중 선택 토글
+               Tab/Shift+Tab: 아래/위 이동, Enter: 수락, Ctrl+Space: 다중 선택 토글
                /: continuous trigger (디렉토리 선택 후 하위 계속 탐색)
                F1/F2: 완성 그룹 전환
   미리보기:    파일→bat 구문 강조, 디렉토리→eza 트리
@@ -40,7 +40,9 @@ fzf 셸 단축키
   Ctrl+K/P    위로 이동
 
 [fzf 내부 조작 — fzf-tab 모드]
-  Tab         수락 (선택 확정)
+  Tab         아래로 이동 (독립 fzf와 동일)
+  Shift+Tab   위로 이동
+  Enter       수락 (선택 확정)
   Ctrl+Space  다중 선택 토글
   /           continuous completion (디렉토리 하위 계속 탐색)
   F1/F2       완성 그룹 전환

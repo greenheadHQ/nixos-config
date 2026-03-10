@@ -161,8 +161,14 @@ in
       (lib.mkAfter ''
         source ${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh
 
-        # Tab으로 선택 확정 (fzf-tab 기본값 tab:down → tab:accept)
-        zstyle ':fzf-tab:*' fzf-bindings 'tab:accept'
+        # === Change Intent Record ===
+        # v1 (PR #188): LLM 추천으로 tab:accept 설정 — Tab 2-tap 빠른 확정 흐름
+        # v2 (이번 변경): tab:accept 제거, fzf-tab 기본값 tab:down 복원
+        #    독립 fzf(Ctrl+T/G)의 tab:toggle-down(PR #185)과 동작 불일치 해소.
+        #    Enter가 이미 보편적 accept 키이고, 단일 결과는 팝업 없이 자동 수락됨.
+        #    trade-off: Tab 2-tap 빠른 확정을 잃지만, 모든 fzf 컨텍스트에서
+        #              Tab=아래이동 일관성 확보가 더 가치 있음.
+
         # '/'로 디렉토리 하위 연속 탐색
         zstyle ':fzf-tab:*' continuous-trigger '/'
         # F1/F2로 completion 그룹 전환
