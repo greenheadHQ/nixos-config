@@ -103,8 +103,7 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/settings.json";
 
     # MCP 설정 - 양방향 수정 가능
-    # 주의: macOS에서 claude-in-chrome(--chrome)와 chrome-devtools-mcp(CDP)를 동시에 쓰면
-    # 동일 탭 제어가 경합할 수 있다. 디버깅/자동화 용도를 분리해 사용한다.
+    # chrome-devtools MCP(CDP)만 사용 — claude-in-chrome(--chrome)은 제거됨 (CIR 참조: shell/default.nix)
     ".claude/mcp.json".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/${claudeMcpFile}";
 

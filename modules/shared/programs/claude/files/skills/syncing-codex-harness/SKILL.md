@@ -218,7 +218,7 @@ bash "$SYNC_SH" mcp-config "$PWD" \
 - `installPath` 해석 실패 시 플러그인 캐시 경로 존재 여부를 먼저 확인한다.
 - 동기화 후 스킬이 안 보이면 `.agents/skills/<name>`이 디렉토리 심링크인지 확인한다.
 - `.gitignore` 경고는 자동수정하지 않고 누락 항목을 수동 반영한다.
-- `chrome-devtools-mcp` 사용 시 `claude --chrome`(claude-in-chrome)와 동일 탭 동시 제어를 피한다.
+- `chrome-devtools-mcp` 사용 시 동일 탭을 다른 도구(예: Claude in Chrome)와 동시 제어하지 않는다.
 
 ## 참조 문서
 

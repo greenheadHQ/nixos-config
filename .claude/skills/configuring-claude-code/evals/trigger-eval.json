@@ -12,7 +12,7 @@
     "should_trigger": true
   },
   {
-    "query": "claude alias c에 --chrome 플래그가 포함되어 있는지 확인해줘",
+    "query": "claude alias c의 플래그 구성을 확인해줘",
     "should_trigger": true
   },
   {

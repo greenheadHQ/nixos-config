@@ -44,7 +44,7 @@
 description: |
   Claude Code hooks, plugins, aliases, MCP, and settings.json.
   Triggers: "how to create a hook", "add a plugin", "claude alias",
-  "--chrome flag", "claude settings", "mcp.json", PreToolUse/PostToolUse/Stop
+  "claude settings", "mcp.json", PreToolUse/PostToolUse/Stop
   hooks, plugin installation, ghost plugin issues, settings read-only.
 ```
 
