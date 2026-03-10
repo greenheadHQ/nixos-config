@@ -20,10 +20,6 @@
     "should_trigger": true
   },
   {
-    "query": "gdf 명령어로 diff 파일을 fzf로 선택하고 싶어",
-    "should_trigger": true
-  },
-  {
     "query": "rerere cache를 정리하려면",
     "should_trigger": true
   },

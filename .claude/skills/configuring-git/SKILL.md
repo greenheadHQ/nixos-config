@@ -2,7 +2,7 @@
 name: configuring-git
 description: |
   Git configuration via Home Manager: delta diff viewer, lazygit TUI integration,
-  rerere conflict resolution, aliases (s, l), gdf/gdl diff file selector,
+  rerere conflict resolution, aliases (s, l),
   git-cleanup branch pruning, and interactive rebase reverse display.
   Covers delta feature/pager settings and side-by-side control.
   NOT for Claude Code hooks/plugins (use configuring-claude-code)
@@ -10,7 +10,7 @@ description: |
   Triggers: "gitconfig conflicts", "git-cleanup", "git cleanup",
   "rebase reverse display", "lazygit delta pager config",
   "git 설정 충돌", "delta 설정", "Git alias",
-  "gdf", "gdl", "side-by-side", "rerere",
+  "side-by-side", "rerere",
   "git 브랜치 정리", "delta pager".
 ---
 
@@ -35,8 +35,6 @@ Home Manager 기반 Git 설정과 lazygit/delta 통합, 충돌 복구 절차를 
 | 기본 정책 | `push.autoSetupRemote=true`, `merge.conflictStyle=zdiff3` |
 | rebase 역순 | Interactive rebase에서 최신 커밋이 위로 |
 | git-cleanup | 오래된/삭제된 브랜치 정리 |
-| gdf | git diff 파일을 fzf로 선택하여 nvim으로 열기 (delta preview) |
-| gdl | 직전 커밋 파일을 fzf로 선택하여 nvim으로 열기 (`gdl 3`으로 N커밋) |
 
 ### delta 설정 확인
 
@@ -94,5 +92,5 @@ rm -rf .git/rr-cache
 ## 레퍼런스
 
 - delta/lazygit/rebase 설정 상세: [references/config.md](references/config.md)
-- gdf/git-cleanup 사용법: [references/commands.md](references/commands.md)
+- git-cleanup 사용법: [references/commands.md](references/commands.md)
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)

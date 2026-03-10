@@ -34,10 +34,6 @@ in
       flakePath = nixosConfigDefaultPath;
     };
   };
-  home.file.".local/lib/git-diff-fzf-functions.sh" = {
-    source = "${sharedScriptsDir}/git-diff-fzf-functions.sh";
-  };
-
   # PATH 추가 (공통)
   home.sessionPath = [
     "$HOME/.local/bin"
@@ -184,14 +180,6 @@ in
         zstyle ':fzf-tab:complete:git-diff:*' fzf-preview \
           'git diff --color=always $word 2>/dev/null | head -50'
       '')
-
-      #─────────────────────────────────────────────────────────────────────────
-      # Shell 함수 라이브러리 로딩
-      #─────────────────────────────────────────────────────────────────────────
-      ''
-        # Git Diff → fzf → Neovim (gdf, gdl)
-        source "$HOME/.local/lib/git-diff-fzf-functions.sh"
-      ''
 
       #─────────────────────────────────────────────────────────────────────────
       # Pushover 텍스트 공유 (MiniPC -> iPhone)
