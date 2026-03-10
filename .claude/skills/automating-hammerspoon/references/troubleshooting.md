@@ -329,11 +329,10 @@ hs -c 'print(hs.application.frontmostApplication():bundleID())'
 **임시 복구** (CSI u 모드에 갇힌 경우):
 
 ```bash
-# reset-term alias 사용
-reset-term
-
-# 또는 직접 실행
+# 직접 실행
 printf "\033[?u\033[<u"
 
 # 또는 새 탭 열기/Ghostty 재시작
 ```
+
+> Ghostty 1.3.0부터 CSI u 복원이 자체 처리되어 `reset-term` alias는 제거됨 (PR #184).

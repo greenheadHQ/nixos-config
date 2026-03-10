@@ -229,7 +229,6 @@ NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "week
 | `nrh-all`     | 전체 세대 히스토리 (스크립트) |
 | `hs`          | Hammerspoon CLI                             |
 | `hsr`         | Hammerspoon 설정 리로드 (완료 시 알림 표시) |
-| `reset-term`  | 터미널 CSI u 모드 리셋 (문제 발생 시 복구)  |
 
 **NixOS 전용 alias:**
 

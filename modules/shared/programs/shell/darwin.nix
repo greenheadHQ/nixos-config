@@ -53,9 +53,6 @@ in
     # Hammerspoon CLI
     hs = "/Applications/Hammerspoon.app/Contents/Frameworks/hs/hs";
     hsr = ''hs -c "hs.reload()"'';
-
-    # 터미널 CSI u 모드 리셋
-    reset-term = ''printf "\033[?u\033[<u"'';
   };
 
   # macOS 전용 Zsh 초기화

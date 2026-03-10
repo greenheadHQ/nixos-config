@@ -16,5 +16,16 @@
 
     # macOS Option 키를 Alt로 사용 (왼쪽만)
     macos-option-as-alt = left
+
+    # 명령어 완료 알림 (1.3.0+)
+    # 포커스되지 않은 창에서 10초 이상 걸린 명령어 완료 시 macOS 알림 전송
+    notify-on-command-finish = unfocused
+    notify-on-command-finish-action = notify
+    # CIR: 10s 선택 — 기본값 5s는 짧은 명령(git push 등)에도 알림이 와서 노이즈 발생
+    notify-on-command-finish-after = 10s
+
+    # Split zoom 유지 (1.3.0+)
+    # Ghostty 네이티브 split 간 이동 시 zoom 상태 유지
+    split-preserve-zoom = navigation
   '';
 }
