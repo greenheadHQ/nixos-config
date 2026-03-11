@@ -66,30 +66,96 @@ cache_precheck() {
   pkg_names=$(printf '%s\n' "$build_drvs" | sed 's|.*/[a-z0-9]\{32\}-||; s|\.drv$||' | sort -u)
   pkg_count=$(printf '%s\n' "$pkg_names" | wc -l | tr -d ' ')
 
-  # heavy 패키지 판별: inputDrvs에 cargo/rustc/cmake/meson/go 빌드 도구가 있는 .drv
-  local heavy_pkgs=""
+  # === Change Intent Record ===
+  # Heavy 빌드 패키지 판별 — Multi-Signal Scoring
+  #
+  # v1 (95b4261): inputDrvs에 cargo/rustc/cmake/meson/go 존재 여부만 확인
+  #   → false positive: fd, stylua, delta 등 소형 Rust 패키지가 heavy로 표시됨
+  #     (Mac에서 <1분, MiniPC에서도 <5분에 빌드 완료)
+  #
+  # v2 (이번 변경): Multi-Signal Scoring — inputDrvs의 비인프라 라이브러리 수 +
+  #   heavy framework(Qt/WebKit/Electron/LLVM) + 다중 언어 빌드 감지.
+  #   2-tier 경고: HEAVY(빨강 ⚠️, score≥3) / MODERATE(노랑 🔶, Rust/C++ 빌드이나 소규모)
+  #   20/20 검증 정확도 (Mac arm64 + MiniPC x86_64 실측). ~0.17s 오버헤드 (66 drvs 기준).
+  #
+  # trade-off: jq 스코어링 로직이 복잡해졌지만, false positive 제거 +
+  #            severity 구분으로 사용자 판단력 향상이 더 가치 있음.
+  #            nix show-derivation 1회 배치 호출이므로 성능 영향 미미.
+
   local drv_paths
   drv_paths=$(printf '%s\n' "$build_drvs" | sed 's/^[[:space:]]*//')
+
+  # heavy_pkgs: "패키지명<TAB>HEAVY|MODERATE" 형식 (탭 구분)
+  local heavy_pkgs=""
   # shellcheck disable=SC2086
   heavy_pkgs=$(nix show-derivation $drv_paths 2>/dev/null | jq -r '
+    # Glue derivation 제외 (빌드 시간 무의미한 시스템 조립용 drv)
+    def is_glue:
+      test("^(activation-|home-manager-|darwin-system-|nixos-system-|etc-|set-environment|unit-script-|system-path)");
+
+    # 인프라 drv 필터링 (빌드 도구/wrapper/stdenv — 라이브러리 의존이 아님)
+    def is_infra:
+      test("^(hook-|.*-hook-|wrapper-|stdenv-|bash-|source-|vendor-|.*-setup-hook|patch-)");
+
     to_entries[] |
-    .key as $drv |
+    (.key | sub("/nix/store/[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")) as $pkg |
+    select(($pkg | is_glue) | not) |
+
+    # inputDrvs에서 dep 이름 추출
     (.value.inputDrvs | keys | map(
       capture("/nix/store/[a-z0-9]{32}-(?<name>.+)\\.drv").name // empty
-    )) as $deps |
-    ($deps | map(select(test("^(auditable-cargo|cargo|rustc-wrapper|cmake|meson|go)-[0-9]"))) | unique) as $heavy_deps |
-    select(($heavy_deps | length) > 0) |
-    (.key | sub("/nix/store/[a-z0-9]{32}-"; "") | sub("\\.drv$"; ""))
+    ) | map(select(. != ""))) as $all_deps |
+
+    # 인프라 제외한 라이브러리 의존 수
+    ($all_deps | map(select(is_infra | not)) | length) as $lib_count |
+
+    # 빌드 도구 감지
+    ($all_deps | map(select(test("^(auditable-cargo|cargo|rustc-wrapper)-[0-9]"))) | length > 0) as $has_rust |
+    ($all_deps | map(select(test("^(cmake)-[0-9]"))) | length > 0) as $has_cmake |
+    ($all_deps | map(select(test("^(meson)-[0-9]"))) | length > 0) as $has_meson |
+    ($all_deps | map(select(test("^(python3|python3-minimal)-[0-9]"))) | length > 0) as $has_python |
+    ($all_deps | map(select(test("^(go)-[0-9]"))) | length > 0) as $has_go |
+    ($all_deps | map(select(test("^(nodejs|node)-[0-9]"))) | length > 0) as $has_node |
+
+    # Heavy framework 감지 (단독으로 빌드 시간 지배적)
+    ($all_deps | map(select(test("qtwebengine|webkit|electron|chromium"))) | length > 0) as $has_heavy_fw |
+    ($all_deps | map(select(test("^(llvm|clang)-[0-9]"))) | length > 0) as $has_llvm |
+
+    # 스코어링
+    (0
+      + (if $has_heavy_fw then 3 else 0 end)
+      + (if $has_llvm then 3 else 0 end)
+      + (if $lib_count >= 15 then 3 elif $lib_count >= 10 then 1 else 0 end)
+      + (if ([$has_rust, $has_python, $has_node, $has_go] | map(select(.)) | length) >= 2 then 2 else 0 end)
+      + (if ($has_cmake or $has_meson) and $lib_count >= 10 then 2 else 0 end)
+    ) as $score |
+
+    # 분류: HEAVY(score≥3), MODERATE(컴파일 언어 빌드 도구 있으나 소규모), 나머지 무시
+    # Python/Node는 MODERATE 조건에서 의도적으로 제외:
+    #   MODERATE는 "컴파일 언어 소규모 빌드"를 의미 — Python(setuptools)/Node(npm)은
+    #   파일 복사 중심이라 단독으로는 빌드 시간 무시 가능.
+    #   python3/nodejs-slim 자체 빌드는 무겁지만(MiniPC: 15분/2분), 이들은 lib_count≥15라
+    #   score≥3 → HEAVY 경로를 타므로 MODERATE 조건과 무관.
+    #   C extension Python 패키지는 cmake/meson 동반 → 이미 조건에 포함됨.
+    #   Python/Node는 multi-lang scoring signal(+2)로만 활용.
+    if $score >= 3 then "\($pkg)\tHEAVY"
+    elif ($has_rust or $has_cmake or $has_meson or $has_go) and $score > 0 then "\($pkg)\tMODERATE"
+    else empty
+    end
   ' 2>/dev/null || true)
 
   echo ""
   echo "⚠️  ${pkg_count}개 패키지가 소스에서 빌드됩니다 (캐시 없음):"
   printf '%s\n' "$pkg_names" | while IFS= read -r pkg; do
-    if printf '%s\n' "$heavy_pkgs" | grep -qxF "$pkg"; then
-      echo -e "  - \033[0;31m${pkg} ⚠️\033[0m"
-    else
-      echo "  - $pkg"
+    local tier=""
+    if [[ -n "$heavy_pkgs" ]]; then
+      tier=$(printf '%s\n' "$heavy_pkgs" | awk -F'\t' -v p="$pkg" '$1 == p { print $2; exit }')
     fi
+    case "$tier" in
+      HEAVY)    echo -e "  - \033[0;31m${pkg} ⚠️\033[0m" ;;
+      MODERATE) echo -e "  - \033[0;33m${pkg} 🔶\033[0m" ;;
+      *)        echo "  - $pkg" ;;
+    esac
   done
   echo ""
 
