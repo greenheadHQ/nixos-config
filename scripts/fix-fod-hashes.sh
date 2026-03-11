@@ -66,10 +66,30 @@ cache_precheck() {
   pkg_names=$(printf '%s\n' "$build_drvs" | sed 's|.*/[a-z0-9]\{32\}-||; s|\.drv$||' | sort -u)
   pkg_count=$(printf '%s\n' "$pkg_names" | wc -l | tr -d ' ')
 
+  # heavy 패키지 판별: inputDrvs에 cargo/rustc/cmake/meson/go 빌드 도구가 있는 .drv
+  local heavy_pkgs=""
+  local drv_paths
+  drv_paths=$(printf '%s\n' "$build_drvs" | sed 's/^[[:space:]]*//')
+  # shellcheck disable=SC2086
+  heavy_pkgs=$(nix show-derivation $drv_paths 2>/dev/null | jq -r '
+    to_entries[] |
+    .key as $drv |
+    (.value.inputDrvs | keys | map(
+      capture("/nix/store/[a-z0-9]{32}-(?<name>.+)\\.drv").name // empty
+    )) as $deps |
+    ($deps | map(select(test("^(auditable-cargo|cargo|rustc-wrapper|cmake|meson|go)-[0-9]"))) | unique) as $heavy_deps |
+    select(($heavy_deps | length) > 0) |
+    (.key | sub("/nix/store/[a-z0-9]{32}-"; "") | sub("\\.drv$"; ""))
+  ' 2>/dev/null || true)
+
   echo ""
   echo "⚠️  ${pkg_count}개 패키지가 소스에서 빌드됩니다 (캐시 없음):"
   printf '%s\n' "$pkg_names" | while IFS= read -r pkg; do
-    echo "  - $pkg"
+    if printf '%s\n' "$heavy_pkgs" | grep -qxF "$pkg"; then
+      echo -e "  - \033[0;31m${pkg} ⚠️\033[0m"
+    else
+      echo "  - $pkg"
+    fi
   done
   echo ""
 
