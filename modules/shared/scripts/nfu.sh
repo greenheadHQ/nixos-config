@@ -101,7 +101,6 @@ git --no-pager diff flake.lock
 echo ""
 
 # 5. FOD hash 자동 수정 (내부적으로 nix build로 빌드 검증 포함)
-log_info "═══ FOD hash 검증 ═══"
 "$FLAKE_PATH/scripts/fix-fod-hashes.sh" "${FOD_ARGS[@]+${FOD_ARGS[@]}}"
 echo ""
 
