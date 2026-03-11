@@ -91,7 +91,7 @@ cache_precheck() {
   heavy_pkgs=$(nix show-derivation $drv_paths 2>/dev/null | jq -r '
     # Glue derivation 제외 (빌드 시간 무의미한 시스템 조립용 drv)
     def is_glue:
-      test("^(activation-|home-manager-|darwin-system-|nixos-system-|etc-|set-environment|unit-script-|system-path)");
+      test("^(activation-|activate$|home-manager-|darwin-system-|nixos-system-|etc-|etc$|set-environment|unit-script-|unit-|system-path|system-units|user-units|system-generators|user-generators|system-shutdown|shutdown-ramfs)");
 
     # 인프라 drv 필터링 (빌드 도구/wrapper/stdenv — 라이브러리 의존이 아님)
     def is_infra:
