@@ -65,7 +65,6 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │           │   └── awesome-anki.nix # Anki 카드 분할 웹 서비스
 │           ├── anki-sync-server/  # Anki 동기화 서버 (네이티브 모듈)
 │           ├── caddy.nix          # HTTPS 리버스 프록시 (Cloudflare DNS)
-│           ├── dev-proxy/         # dev.greenhead.dev 개발 서버 프록시
 │           ├── immich-cleanup/    # 임시 앨범 자동 삭제
 │           ├── immich-update/     # 버전 체크 + Pushover 알림
 │           ├── uptime-kuma-update/
@@ -94,7 +93,7 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 | 카테고리 | 내용 |
 |----------|------|
 | `network` | Tailscale IP, 서비스 포트 8개, Podman 서브넷 |
-| `domain` | `greenhead.dev` + 서브도메인 7개 |
+| `domain` | `greenhead.dev` + 서브도메인 6개 |
 | `paths` | Docker 데이터(SSD), 미디어 데이터(HDD) |
 | `sshKeys` | MacBook/MiniPC SSH 공개키 (`secrets/secrets.nix`에서도 import) |
 | `containers` | 서비스별 리소스 제한 (메모리, CPU) |
@@ -126,7 +125,6 @@ homeserver.karakeepBackup.enable = true;   # SQLite 매일 백업 (HDD)
 homeserver.karakeepNotify.enable = true;   # 웹훅→Pushover 브리지
 homeserver.karakeepUpdate.enable = true;
 homeserver.reverseProxy.enable = true;     # Caddy HTTPS (*.greenhead.dev)
-homeserver.devProxy.enable = true;         # dev.greenhead.dev
 ```
 
 ### 개발 도구 체인
@@ -214,7 +212,6 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | Karakeep | `hosting-karakeep` |
 | Copyparty | `hosting-copyparty` |
 | Anki 동기화 | `hosting-anki` |
-| dev-proxy | `proxying-dev-server` |
 | Claude Code | `configuring-claude-code` |
 
 전체 스킬 목록은 `CLAUDE.md`를 참고하세요.

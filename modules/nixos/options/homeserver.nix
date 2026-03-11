@@ -309,10 +309,6 @@ in
       };
     };
 
-    devProxy = {
-      enable = lib.mkEnableOption "Dev server reverse proxy (dev.greenhead.dev)";
-    };
-
     smokeTest = {
       enable = lib.mkEnableOption "Homeserver runtime smoke test (healthcheck + backup freshness)";
       timerInterval = lib.mkOption {
@@ -354,7 +350,6 @@ in
     ../programs/karakeep-update # Karakeep 버전 체크 + 업데이트 알림
     ../programs/docker/awesome-anki.nix # awesome-anki 카드 분할 웹 서비스
     ../programs/caddy.nix # HTTPS 리버스 프록시
-    ../programs/dev-proxy # Dev server reverse proxy (dev.greenhead.dev)
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
   ];
 }

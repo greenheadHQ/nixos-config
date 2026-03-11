@@ -40,7 +40,6 @@
       vaultwarden = "vaultwarden";
       karakeep = "archive";
       awesomeAnki = "anki";
-      dev = "dev";
     };
   };
 

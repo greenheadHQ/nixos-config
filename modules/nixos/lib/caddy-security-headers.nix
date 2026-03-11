@@ -1,5 +1,5 @@
 # modules/nixos/lib/caddy-security-headers.nix
-# Caddy virtualHost 공통 보안 헤더 (caddy.nix + dev-proxy에서 공유)
+# Caddy virtualHost 공통 보안 헤더 (caddy.nix에서 사용)
 #
 # Tailscale 내부 전용 환경(100.79.80.95:443)에서는 실질적 보안 효과가 제한적이다.
 # 외부 노출이 없으므로 HSTS, X-Frame-Options 등이 방어하는 공격 벡터가 사실상 부재하나,

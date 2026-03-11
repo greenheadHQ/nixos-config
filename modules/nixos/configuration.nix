@@ -120,6 +120,5 @@
   homeserver.immichBackup.enable = true; # Immich PostgreSQL 매일 백업 (HDD)
   homeserver.awesomeAnki.enable = true; # awesome-anki 카드 분할 웹 서비스
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
-  homeserver.devProxy.enable = true; # Dev server → dev.greenhead.dev 프록시
   homeserver.smokeTest.enable = true; # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
 }
