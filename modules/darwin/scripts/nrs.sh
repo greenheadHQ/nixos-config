@@ -77,6 +77,15 @@ run_darwin_rebuild() {
 
     if [[ "$rc" -ne 0 ]]; then
         log_error "❌ darwin-rebuild switch failed (exit code: $rc)"
+        if [[ -n "${UNINSTALLED_CASKS:-}" ]]; then
+            echo ""
+            log_warn "⚠️  The following cask(s) were uninstalled before rebuild:"
+            # shellcheck disable=SC2086  # 의도적 word splitting — 공백 구분 cask 목록
+            for cask in $UNINSTALLED_CASKS; do
+                echo "    brew install --cask $cask"
+            done
+            echo "  Run the above to restore if needed."
+        fi
         exit "$rc"
     fi
 }
@@ -113,6 +122,7 @@ main() {
         log_info "  (Use 'nrs --force' to force full rebuild including activation scripts)"
         return 0
     fi
+    preflight_cask_conflict_check
     cleanup_launchd_agents
     run_darwin_rebuild
     restart_hammerspoon
