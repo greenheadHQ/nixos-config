@@ -75,7 +75,7 @@
     #
     casks = [
       "codex"
-      "ghostty"
+      "ghostty@tip" # TEMP: 1.3.0 phantom drag 버그 회피 (PR #11276), 1.3.1 릴리스 후 "ghostty"로 복원
       "raycast"
       "rectangle"
       "hammerspoon"
