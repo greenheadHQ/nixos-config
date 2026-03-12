@@ -5,7 +5,7 @@
 > - `{DA_INTENSITY}`: `light` / `standard` / `strict`
 > - `{DA_TIMING}`: `plan` / `post-impl` / `both`
 > - `{DA_TOOL}`: `codex exec` / `agent`
-> - `{DA_MODEL_1}`: 계획 단계 DA 모델 (권장 `gpt-5.3-codex`)
+> - `{DA_MODEL_1}`: 계획 단계 DA 모델 (권장 `gpt-5.4`)
 > - `{DA_MODEL_2}`: 구현 후 DA 모델 (필수 명시)
 
 ```text

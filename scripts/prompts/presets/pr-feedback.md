@@ -1,6 +1,9 @@
+---
+modules: []
+---
+
 # PR 피드백 반영
 
-> 독립 프리셋
 > CodeRabbit/인간 리뷰어 코멘트 triage 및 반영
 
 ```text

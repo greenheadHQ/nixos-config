@@ -1,23 +1,24 @@
+---
+modules:
+  - principles
+  - planning
+  - verification
+  - commit
+---
+
 # 리팩토링
 
-> 포함 요소: 원칙 + 계획 + 검증 + DA(standard, post-impl) + 커밋
 > 대상: 동작 불변 구조 개선
-> 플레이스홀더
-> - `{DA_TOOL}`: `codex exec` 또는 `claude agent`
-> - `{DA_MODEL_2}`: 예) `gpt-5.3-codex` (필수)
 
 ```text
-기능 동작은 바꾸지 않고 구조만 개선해. YAGNI/NGMI를 지키고 기존 패턴과 일관성을 유지해.
-
+기능 동작은 바꾸지 않고 구조만 개선해.
 계획 단계에서 동작 동일성 검증 방법(테스트/스모크/비교 기준)을 먼저 정의해.
 
-변경 후 실제 실행 검증을 수행하고 1차 커밋해.
-
-그 다음 {DA_TOOL}로 구현 후 DA를 수행해. 모델은 반드시 {DA_MODEL_2}를 명시하고, 각 지적에 반증 예제를 포함하게 해.
+{DA_TOOL}로 구현 후 DA를 수행해. 모델은 반드시 {DA_MODEL_2}를 명시하고, 각 지적에 반증 예제를 포함하게 해.
 유효한 항목만 반영해 후속 커밋해.
 ```
 
 ```vars
 DA_TOOL|코드 실행 도구|codex exec,claude agent|codex exec
-DA_MODEL_2|DA 모델|gpt-5.3-codex,claude-opus-4-6|gpt-5.3-codex
+DA_MODEL_2|DA 모델|gpt-5.4,claude-opus-4-6|gpt-5.4
 ```

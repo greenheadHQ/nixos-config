@@ -30,28 +30,77 @@ scripts/prompts/
     └── pr-feedback.md
 ```
 
+## 프리셋 형식
+
+프리셋은 YAML frontmatter로 사용할 모듈을 선언하고, `text` 블록에 프리셋 고유 지시만 포함한다.
+`prompt-render`가 모듈의 `text` 블록을 순서대로 합성한 뒤 프리셋 `text`를 뒤에 붙인다.
+
+```markdown
+---
+modules:
+  - principles
+  - planning
+  - da-feedback
+  - verification
+  - commit
+  - pr
+---
+
+# 기능개발 (풀)
+
+> 대상: 대규모 기능 개발, 아키텍처 변경
+
+\```text
+(프리셋 고유 내용만 — 모듈 내용은 자동 합성)
+\```
+
+\```vars
+DA_TOOL|코드 실행 도구|codex exec,claude agent|codex exec
+\```
+```
+
+- `modules: []`이면 모듈 합성 없이 프리셋 `text`만 사용
+- `vars` 블록은 기존 `NAME|desc|options|default` 파이프 형식 유지
+
 ## CLI 사용법
 
 `prompt-render` 명령으로 preset의 코드 블록을 추출하고 placeholder를 치환한 뒤 clipboard에 복사한다.
 
+### 대화형 (fzf 변수 편집 UI)
+
 ```bash
-# 예시 1 — 순수 대화형
+# fzf가 있으면: 단일 세션에서 모든 변수를 한눈에 보고 편집
+# Enter: 개별 변수 편집, Ctrl-D: 완료, Esc: 취소
+# 실시간 프리뷰로 치환 결과 확인
 prompt-render --preset feature-dev-full
-# DA_TOOL: codex exec ↵
-# DA_MODEL_1: gpt-5.3-codex ↵
-# DA_MODEL_2: gpt-5.3-codex ↵
+```
 
-# 예시 2 — --var 혼합
-prompt-render --preset feature-dev-full --var DA_TOOL="codex exec" --var DA_MODEL_1=gpt-5.3-codex
-# DA_MODEL_2: gpt-5.3-codex ↵  (나머지만 대화형)
+### --var 혼합
 
-# 예시 3 — --non-interactive 실패
+```bash
+prompt-render --preset feature-dev-full --var DA_TOOL="codex exec" --var DA_MODEL_1=gpt-5.4
+# 나머지 미해결 변수만 대화형 편집
+```
+
+### --non-interactive
+
+```bash
 prompt-render --preset feature-dev-full --var DA_TOOL="codex exec" --non-interactive
-# Error: missing variables: DA_MODEL_1, DA_MODEL_2
+# Error: missing variables: DA_MODEL_1, DA_MODEL_2, DA_INTENSITY, DA_TIMING
 # exit code: 2
 ```
 
-`cheat-browse --prompts`로 fzf preset 브라우저를 열고, Enter로 선택하면 대화형 렌더가 실행된다.
+### --validate
+
+```bash
+# 프리셋 검증: 모듈 존재 여부, placeholder/vars 불일치 검출
+prompt-render --validate feature-dev-full
+# → Validation passed
+```
+
+`cheat-browse --prompts`로 fzf preset 브라우저를 열고, Enter로 선택하면:
+- 변수 없는 프리셋: 즉시 렌더링 + 클립보드 복사
+- 변수 있는 프리셋: fzf 변수 편집 UI 실행
 
 ### JSON 모드 (모바일/자동화용)
 
@@ -68,7 +117,7 @@ prompt-render --preset bugfix --non-interactive --format json --stdout-only
 
 # 변수 누락 시 (render-first 패턴)
 prompt-render --preset feature-dev-full --non-interactive --format json --stdout-only
-# → {"ok":false,...,"missing":["DA_MODEL_1","DA_MODEL_2","DA_TOOL"],...}
+# → {"ok":false,...,"missing":[{"name":"DA_TOOL","desc":"코드 실행 도구","options":["codex exec","claude agent"],...}],...}
 ```
 
 ### 모바일 워크플로우 (iOS Shortcut)
@@ -77,6 +126,15 @@ iPhone에서 Tailscale VPN + iOS Shortcuts의 `Run Script over SSH`로 preset을
 상세 설정: [`docs/PROMPT_MOBILE_SHORTCUT.md`](../../docs/PROMPT_MOBILE_SHORTCUT.md)
 
 > 범위 제외: GUI/에디터 통합은 본 시스템 범위 외
+
+## 키바인딩
+
+| 환경 | 키 | 동작 |
+|------|-----|------|
+| tmux | `prefix+P` | `cheat-browse --prompts` 팝업 |
+| tmux | `prefix+C` | `cheat-browse` (cheatsheet) 팝업 |
+| neovim | `<leader>P` | `cheat-browse --prompts` 플로팅 터미널 |
+| neovim | `<leader>C` | `cheat-browse` (cheatsheet) 플로팅 터미널 |
 
 ## 핵심 운영 정책
 
@@ -96,12 +154,12 @@ iPhone에서 Tailscale VPN + iOS Shortcuts의 `Run Script over SSH`로 preset을
 
 ## 모델 정책
 
-- 기본 권장: `gpt-5.3-codex`
+- 기본 권장: `gpt-5.4`
 - 2차 DA 실행 시 `-m <모델>` 생략 금지
 
 ## 버전 관리 규칙
 
-- 프리셋 버전 태그: `preset-name@vX.Y` (예: `feature-dev-full@v1.0`)
+- 프리셋 버전 태그: `preset-name@vX.Y` (예: `feature-dev-full@v2.0`)
 - 변경 로그 최소 항목:
   - 변경 전 버전 / 변경 후 버전
   - 변경 이유

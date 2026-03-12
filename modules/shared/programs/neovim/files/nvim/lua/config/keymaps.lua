@@ -72,3 +72,10 @@ vim.keymap.set("n", "<leader>C", function()
     win = { style = "float" },
   })
 end, { desc = "Cheat sheets" })
+
+-- Prompt preset 브라우저 (변수 편집 + 실시간 프리뷰)
+vim.keymap.set("n", "<leader>P", function()
+  Snacks.terminal("cheat-browse --prompts", {
+    win = { style = "float" },
+  })
+end, { desc = "Prompt presets" })
