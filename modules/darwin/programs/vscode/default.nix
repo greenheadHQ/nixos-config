@@ -123,6 +123,22 @@ in
           hashicorp.terraform
 
           # Claude Code
+          # === Change Intent Record ===
+          # VSCode 확장 anthropic.claude-code 유지 결정 (2026-03-12)
+          #
+          # 검토 배경: CLI auto-updater(~/.local/bin/claude)와 Nix 패키지(확장 의존성)로
+          #   업데이트 채널이 이중화됨. 확장 제거하여 Nix 채널 제거를 검토.
+          #
+          # 거부 이유: 다음 2개 기능이 확장의 WebSocket MCP 서버에 의존함을 확인:
+          #   1) Cmd+Opt+K 단축키 — 에디터 선택 영역을 @mention으로 Claude 프롬프트에 삽입
+          #      (확장 package.json의 keybindings에 등록, CLI에는 이 기능 없음)
+          #   2) ide - getDiagnostics (MCP) — 확장이 WebSocket MCP 서버를 띄우고
+          #      ~/.claude/ide/<port>.lock 파일로 CLI와 연결. CLI는 MCP 클라이언트일 뿐,
+          #      vscode.languages.getDiagnostics() API는 확장 호스트에서만 호출 가능.
+          #
+          # trade-off: nrs 시 nixpkgs 경유로 claude-code Nix 패키지도 갱신되어
+          #   업데이트 채널이 이중화되나, Nix 쪽은 DISABLE_AUTOUPDATER=1로 격리되어
+          #   터미널 CLI(auto-updater)와 충돌하지 않음. 실질적 부작용 없음.
           anthropic.claude-code
         ])
 

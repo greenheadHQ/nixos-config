@@ -18,6 +18,9 @@ let
 in
 {
   # Binary Claude Code 설치 (Node.js 버전 의존성 없음)
+  # CIR: curl install.sh 방식 유지 — Nix 패키지(VSCode 확장 의존성)와 별개 채널이지만,
+  #   auto-updater가 터미널 CLI를 항상 최신으로 유지하므로 이 방식이 최적.
+  #   VSCode 확장 쪽 Nix 패키지는 DISABLE_AUTOUPDATER=1로 격리됨 (vscode/default.nix CIR 참조)
   home.activation.installClaudeCode = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     if [ ! -f "$HOME/.local/bin/claude" ]; then
       echo "Installing Claude Code binary..."
