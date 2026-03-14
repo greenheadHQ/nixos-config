@@ -4,22 +4,20 @@
 
 input=$(cat)
 
-CWD=$(echo "$input" | jq -r '.cwd // empty')
+TRANSCRIPT=$(echo "$input" | jq -r '.transcript_path // empty')
 
 # --- Plan 파일 감지 ---
-# .claude/plans/ 에서 가장 최근 수정된 plan 파일을 찾는다.
-# worktree에서는 plans가 main repo에만 존재하므로 fallback 탐색.
+# 현재 세션의 transcript에서 plan 파일 Read/Write 기록을 추출한다.
+# ※ 이전 ls -t 방식은 세션과 무관하게 가장 최근 파일을 반환하여
+#   다른 세션의 plan을 오표시하는 버그가 있었음 (worktree fallback 포함).
 PLAN_FILE=""
-if [ -n "$CWD" ]; then
-  PLAN_FILE=$(ls -t "$CWD/.claude/plans/"*.md 2>/dev/null | head -1)
-
-  # Worktree fallback: CWD가 .claude/worktrees/ 하위이면 main repo의 plans 확인
-  if [ -z "$PLAN_FILE" ]; then
-    MAIN_REPO=${CWD%/.claude/worktrees/*}
-    if [ "$MAIN_REPO" != "$CWD" ]; then
-      PLAN_FILE=$(ls -t "$MAIN_REPO/.claude/plans/"*.md 2>/dev/null | head -1)
-    fi
-  fi
+if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+  # agent_progress 이벤트 제외 (subagent가 다른 세션 plan을 읽은 기록 필터링)
+  # agent plan 파일명(-agent-) 제외
+  PLAN_FILE=$(grep -v '"type":"agent_progress"' "$TRANSCRIPT" 2>/dev/null \
+    | grep -oE '"(filePath|file_path|planFilePath)":"[^"]*\.claude/plans/[^"]*\.md"' \
+    | grep -v 'plans/[^"]*-agent-' \
+    | tail -1 | sed 's/^"[^"]*":"//;s/"$//')
 fi
 
 # --- 출력 ---
