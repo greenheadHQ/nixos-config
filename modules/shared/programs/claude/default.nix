@@ -142,5 +142,9 @@ in
     # documenting-intent 스킬 (user-scope)
     ".claude/skills/documenting-intent".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/documenting-intent";
+
+    # Statusline script - 양방향 수정 가능
+    ".claude/scripts/statusline.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
   };
 }
