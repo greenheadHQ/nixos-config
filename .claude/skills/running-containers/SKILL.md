@@ -30,6 +30,7 @@ homeserver.uptimeKuma.enable = true;          # 모니터링
 homeserver.copyparty.enable = true;           # 파일 서버
 homeserver.vaultwarden.enable = true;         # 비밀번호 관리자
 homeserver.karakeep.enable = true;            # 웹 아카이버
+homeserver.immichBackup.enable = true;        # Immich DB 백업
 homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 # 부가 서비스: *Update, *Backup, *Cleanup, *Notify 등도 동일 패턴
 ```
