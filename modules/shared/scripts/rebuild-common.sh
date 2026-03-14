@@ -62,6 +62,122 @@ detect_worktree() {
 detect_worktree
 
 #───────────────────────────────────────────────────────────────────────────────
+# NRS Lock: worktree 간 동시 rebuild 방지를 위한 협조적 잠금
+# Lock 파일: /tmp/nrs-state (JSON: worktree, branch, timestamp, pid)
+# 타임아웃: 2시간 자동 만료
+#───────────────────────────────────────────────────────────────────────────────
+NRS_LOCK_FILE="/tmp/nrs-state"
+NRS_LOCK_TIMEOUT_HOURS=2
+NRS_LOCK_ACQUIRED=false    # 이 프로세스가 lock을 획득했는가? (EXIT trap 보호용)
+NRS_LOCK_REENTRY=false     # 기존 lock에 대한 재진입인가?
+
+acquire_nrs_lock() {
+    local now
+    now=$(date +%s)
+
+    if [[ -f "$NRS_LOCK_FILE" ]]; then
+        local lock_ts lock_worktree lock_branch
+        lock_ts=$(jq -r '.timestamp' "$NRS_LOCK_FILE" 2>/dev/null || echo "0")
+        lock_worktree=$(jq -r '.worktree' "$NRS_LOCK_FILE" 2>/dev/null || echo "")
+        lock_branch=$(jq -r '.branch' "$NRS_LOCK_FILE" 2>/dev/null || echo "")
+
+        local expiry=$(( lock_ts + NRS_LOCK_TIMEOUT_HOURS * 3600 ))
+
+        if (( now > expiry )); then
+            log_warn "⚠️  Expired lock detected ($(( (now - lock_ts) / 3600 ))h old). Removing."
+            rm -f "$NRS_LOCK_FILE"
+        elif [[ "$lock_worktree" == "$FLAKE_PATH" ]]; then
+            # 같은 worktree — re-entry
+            # 기존 lock의 PID가 아직 살아있으면 동시 실행 → 차단
+            local lock_pid
+            lock_pid=$(jq -r '.pid' "$NRS_LOCK_FILE" 2>/dev/null || echo "0")
+            if [[ "$lock_pid" != "0" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+                if [[ "$lock_pid" != "$$" ]]; then
+                    log_error "❌ Another nrs process (PID $lock_pid) is running in this worktree."
+                    echo "  Wait for it to finish or run 'nrs-unlock' to force release."
+                    exit 1
+                fi
+            fi
+            NRS_LOCK_REENTRY=true
+            NRS_LOCK_ACQUIRED=true
+            local branch
+            branch=$(git -C "$FLAKE_PATH" branch --show-current 2>/dev/null || echo "unknown")
+            local json
+            json=$(jq -n \
+                --arg w "$FLAKE_PATH" \
+                --arg b "$branch" \
+                --argjson t "$now" \
+                --argjson p "$$" \
+                '{worktree: $w, branch: $b, timestamp: $t, pid: $p}')
+            # tmpfile + mv로 원자적 교체 (truncate 중 partial read 방지)
+            local tmpfile
+            tmpfile=$(mktemp "${NRS_LOCK_FILE}.XXXXXX")
+            echo "$json" > "$tmpfile"
+            mv -f "$tmpfile" "$NRS_LOCK_FILE"
+            log_info "🔒 Lock re-entry: $branch ($FLAKE_PATH)"
+            return 0
+        else
+            # 다른 worktree — 충돌
+            local elapsed=$(( (now - lock_ts) / 60 ))
+            log_error "❌ Another worktree holds the nrs lock:"
+            echo "  Branch:   $lock_branch"
+            echo "  Worktree: $lock_worktree"
+            echo "  Locked:   ${elapsed}m ago"
+            echo ""
+            echo "  Run 'nrs-unlock' to release the lock."
+            exit 1
+        fi
+    fi
+
+    # Lock 생성: tmpfile에 쓰고 ln으로 원자적 생성 (partial-read 방지)
+    # ln은 대상이 이미 존재하면 실패 → noclobber와 동일한 경쟁 방지
+    local branch
+    branch=$(git -C "$FLAKE_PATH" branch --show-current 2>/dev/null || echo "unknown")
+    local json
+    json=$(jq -n \
+        --arg w "$FLAKE_PATH" \
+        --arg b "$branch" \
+        --argjson t "$now" \
+        --argjson p "$$" \
+        '{worktree: $w, branch: $b, timestamp: $t, pid: $p}')
+
+    local tmpfile
+    tmpfile=$(mktemp "${NRS_LOCK_FILE}.XXXXXX")
+    echo "$json" > "$tmpfile"
+    if ! ln "$tmpfile" "$NRS_LOCK_FILE" 2>/dev/null; then
+        rm -f "$tmpfile"
+        log_error "❌ Race condition: another process acquired the lock."
+        exit 1
+    fi
+    rm -f "$tmpfile"
+
+    NRS_LOCK_ACQUIRED=true
+    log_info "🔒 Lock acquired: $branch ($FLAKE_PATH)"
+}
+
+release_nrs_lock() {
+    rm -f "$NRS_LOCK_FILE"
+    NRS_LOCK_ACQUIRED=false
+    log_info "🔓 Lock released"
+}
+
+release_nrs_lock_on_failure() {
+    # 4가지 조건 모두 충족 시에만 lock 삭제:
+    #   1. 이 프로세스가 lock을 획득한 경우
+    #   2. switch가 성공하지 않은 경우
+    #   3. re-entry가 아닌 경우 (기존 lock 보호)
+    #   4. 현재 lock 파일의 PID가 자기 것인 경우 (owner-blind rm 방지)
+    if [[ "$NRS_LOCK_ACQUIRED" == true && "${NRS_LOCK_SWITCH_SUCCESS:-}" != true && "$NRS_LOCK_REENTRY" != true ]]; then
+        local lock_pid
+        lock_pid=$(jq -r '.pid' "$NRS_LOCK_FILE" 2>/dev/null || echo "0")
+        if [[ "$lock_pid" == "$$" ]]; then
+            rm -f "$NRS_LOCK_FILE"
+            log_warn "🔓 Lock released (build failed)"
+        fi
+    fi
+}
+
+#───────────────────────────────────────────────────────────────────────────────
 # 인수 파싱 (OFFLINE_FLAG, FORCE_FLAG, CORES_FLAG 설정)
 #───────────────────────────────────────────────────────────────────────────────
 parse_args() {

@@ -109,22 +109,32 @@ restart_hammerspoon() {
 #───────────────────────────────────────────────────────────────────────────────
 # 메인
 #───────────────────────────────────────────────────────────────────────────────
+# shellcheck disable=SC2034  # NRS_LOCK_SWITCH_SUCCESS는 source된 rebuild-common.sh의 release_nrs_lock_on_failure에서 사용
+NRS_LOCK_SWITCH_SUCCESS=false
+
 main() {
     # darwin-rebuild build가 pwd에 ./result를 생성하므로 디렉토리 이동 필수
     cd "$FLAKE_PATH" || exit 1
-    trap cleanup_build_artifacts EXIT
+    trap 'cleanup_build_artifacts; release_nrs_lock_on_failure' EXIT
 
     echo ""
+    acquire_nrs_lock
     preview_changes "preview" "Changes to be applied:"
     if [[ "$NO_CHANGES" == true && "$FORCE_FLAG" != true ]]; then
         echo ""
         log_info "✅ No changes to apply. Skipping rebuild."
         log_info "  (Use 'nrs --force' to force full rebuild including activation scripts)"
+        # re-entry가 아닐 때만 lock 해제
+        if [[ "$NRS_LOCK_REENTRY" != true ]]; then
+            release_nrs_lock
+        fi
         return 0
     fi
     preflight_cask_conflict_check
     cleanup_launchd_agents
     run_darwin_rebuild
+    # shellcheck disable=SC2034
+    NRS_LOCK_SWITCH_SUCCESS=true
     restart_hammerspoon
     cleanup_build_artifacts
     echo ""

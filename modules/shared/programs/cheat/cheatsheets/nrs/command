@@ -1,0 +1,42 @@
+---
+tags: [ nrs, nix, darwin-rebuild, rebuild, lock, worktree ]
+---
+nrs — Nix rebuild switch wrapper (darwin-rebuild)
+
+[rebuild]
+  nrs                    빌드 + switch (변경 미리보기 포함)
+  nrs --offline          오프라인 모드 (네트워크 없이 빠르게)
+  nrs --force            NO_CHANGES 무시하고 강제 rebuild
+  nrs --cores 2          빌드 코어 제한 (과열 방지)
+
+  순서: preview → cask 충돌 체크 → launchd 정리 → switch → Hammerspoon 재시작
+
+[preview only]
+  nrp                    빌드 + 변경사항 미리보기 (switch 없이)
+  nrp --offline          오프라인 미리보기
+
+[세대 히스토리]
+  nrh                    최근 10개 세대 표시
+  nrh -n 20              최근 20개 세대
+  nrh --all              전체 세대 (느림)
+
+[worktree lock]
+  nrs-status             현재 lock 상태 조회 (branch, worktree, 경과/남은 시간)
+  nrs-unlock             lock 수동 해제
+
+  lock 동작:
+    nrs 실행 → lock 획득 → switch 성공 → lock 유지 (테스트 보호)
+    다른 worktree에서 nrs → lock 감지 → abort
+    같은 worktree에서 nrs → re-entry (lock 갱신)
+    2시간 후 자동 만료
+
+  lock 파일: /tmp/nrs-state (JSON: worktree, branch, timestamp, pid)
+
+[worktree 감지]
+  worktree 안에서 nrs 실행 → FLAKE_PATH 자동 전환
+  main repo에서 실행 → 기본 경로 사용
+
+Tip
+- nrp로 미리보기 → nrs로 적용이 안전한 워크플로우
+- worktree 작업 완료 후 nrs-unlock 잊지 말 것
+- --force는 lock을 무시하지 않음 (NO_CHANGES 스킵만 해당)

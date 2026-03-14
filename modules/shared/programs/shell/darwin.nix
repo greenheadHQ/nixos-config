@@ -8,6 +8,7 @@
 
 let
   darwinScriptsDir = ../../../darwin/scripts;
+  sharedScriptsDir = ../../../shared/scripts;
 in
 {
   # macOS용 스크립트 설치
@@ -23,6 +24,12 @@ in
 
   home.file.".local/bin/nrh.sh" = {
     source = "${darwinScriptsDir}/nrh.sh";
+    executable = true;
+  };
+
+  # nrs-lock CLI (lock 상태 조회/해제)
+  home.file.".local/bin/nrs-lock.sh" = {
+    source = "${sharedScriptsDir}/nrs-lock.sh";
     executable = true;
   };
 
@@ -49,6 +56,10 @@ in
     nrp-offline = "~/.local/bin/nrp.sh --offline";
     nrh = "~/.local/bin/nrh.sh";
     nrh-all = "~/.local/bin/nrh.sh --all";
+
+    # nrs lock 관리
+    nrs-status = "~/.local/bin/nrs-lock.sh status";
+    nrs-unlock = "~/.local/bin/nrs-lock.sh unlock";
 
     # Hammerspoon CLI
     hs = "/Applications/Hammerspoon.app/Contents/Frameworks/hs/hs";

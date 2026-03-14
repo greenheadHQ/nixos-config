@@ -120,6 +120,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/ask-notification.sh";
     ".claude/hooks/plan-notification.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/plan-notification.sh";
+    ".claude/hooks/nrs-lock-guard.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/nrs-lock-guard.sh";
 
     # syncing-codex-harness 스킬 (user-scope)
     ".claude/skills/syncing-codex-harness".source =
