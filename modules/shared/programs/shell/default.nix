@@ -19,6 +19,10 @@ in
     source = "${sharedScriptsDir}/git-cleanup.sh";
     executable = true;
   };
+  home.file.".local/bin/wt" = {
+    source = "${sharedScriptsDir}/wt.sh";
+    executable = true;
+  };
   home.file.".local/bin/nfu.sh" = {
     source = pkgs.replaceVars "${sharedScriptsDir}/nfu.sh" {
       flakePath = nixosConfigDefaultPath;
@@ -72,6 +76,9 @@ in
 
     # cheat content search 단축
     cs = "cheat -c -s";
+
+    # 워크트리 정리 단축
+    wt-cleanup = "wt cleanup";
 
     # 디렉토리 이동 단축
     ".." = "cd ..";
@@ -180,6 +187,34 @@ in
         zstyle ':fzf-tab:complete:git-diff:*' fzf-preview \
           'git diff --color=always $word 2>/dev/null | head -50'
       '')
+
+      #─────────────────────────────────────────────────────────────────────────
+      # wt 래퍼 함수 (cd 서브커맨드: caller 셸 cwd 변경 필요)
+      #─────────────────────────────────────────────────────────────────────────
+      ''
+        wt() {
+          if [[ "''${1:-}" == "cd" ]]; then
+            shift
+            local target
+            target=$(command wt cd "$@") || return $?
+            [[ -n "$target" ]] && cd "$target"
+          else
+            # stdout 캡처: tmux 밖에서 create/cd 시 경로가 출력되면 cd
+            local output
+            output=$(command wt "$@")
+            local rc=$?
+            if [[ $rc -ne 0 ]]; then
+              [[ -n "$output" ]] && echo "$output"
+              return $rc
+            fi
+            if [[ -n "$output" && -d "$output" ]]; then
+              cd "$output"
+            elif [[ -n "$output" ]]; then
+              echo "$output"
+            fi
+          fi
+        }
+      ''
 
       #─────────────────────────────────────────────────────────────────────────
       # Pushover 텍스트 공유 (MiniPC -> iPhone)

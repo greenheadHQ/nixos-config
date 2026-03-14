@@ -14,6 +14,9 @@
     # 개발 도구
     pkgs.shellcheck # 쉘 스크립트 린터
 
+    # TUI 도구
+    pkgs.gum # TUI 컴포넌트 (wt 워크트리 관리)
+
     # 기타 유틸리티
     pkgs.curl # HTTP 클라이언트
     pkgs.jq # JSON 처리
