@@ -43,6 +43,12 @@ in
     "$HOME/.local/bin"
   ];
 
+  # recall resume 시 dangerously-skip-permissions 활성화
+  # shell alias 'c'와 동일 플래그 — recall은 exec()로 직접 실행하므로 alias 무시됨
+  home.sessionVariables = {
+    RECALL_CLAUDE_CMD = "claude --dangerously-skip-permissions --mcp-config $HOME/.claude/mcp.json --resume {id}";
+  };
+
   # Shell aliases (공통)
   home.shellAliases = {
     # 파일 목록 (eza 사용)
