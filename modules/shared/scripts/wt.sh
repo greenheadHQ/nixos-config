@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# wt: Git worktree 관리 도구 (gum TUI, tmux 통합)
-# 사용법: wt [--stay] [--claude] <branch> | wt cd [name] | wt ls | wt cleanup [--auto]
+# wt: Git worktree 관리 도구 (fzf TUI, tmux 통합)
+# 사용법: wt [--stay] [--claude] <branch> | wt cd [-|name] | wt ls | wt cleanup [--auto]
 
 # === Change Intent Record ===
 # v1 (2025년 초~): 커스텀 wt/wt-cleanup 셸 함수 838줄 (zsh, fzf 기반)
@@ -8,22 +8,30 @@
 # v2 (PR #176, CLOSED): claude-wrapper.sh Killed: 9 수정 시도, wrapper 복잡성 한계 확인
 # v3 (PR #180): Claude Code v2.x 내장 --worktree --tmux로 완전 대체, -1441줄 삭제
 #    판단 근거: 내장 기능이 동일 역할을 수행하므로 코드 제거가 합리적
-# v4 (이번 변경, #203): 내장 --worktree의 치명적 한계 확인 후 커스텀 구현 복구+고도화
+# v4 (PR #205): 내장 --worktree의 치명적 한계 확인 후 커스텀 구현 복구+고도화
 #    한계 1: 항상 default branch 기준 분기 (Git Flow 환경에서 치명적, GitHub Issue #28958)
 #    한계 2: Ctrl+C/Z 시 main worktree cwd로 복귀 (worktree 컨텍스트 유실)
 #    한계 3: worktree 정리 도구 부재 (stale worktree 누적)
-#    고도화: gum TUI, wt cd/ls 서브커맨드, --claude 플래그, bash 전환(zsh job table 버그 해소)
-#    trade-off: ~950줄 커스텀 코드 재도입이지만,
-#              claude --worktree가 커버하지 못하는 범용 워크플로우 + Git Flow 지원이 필수적.
+#    TUI 백엔드: gum (choose/filter/confirm/spin/style/table 6종 서브커맨드 활용)
+# v5 (이번 변경): TUI 백엔드를 gum → fzf로 전환
+#    전환 이유 1: gum의 wide character truncation 버그 — 한글 커밋 메시지가 바이트 경계에서
+#               잘려서 인코딩이 깨짐 (CJK 2-column width 미고려)
+#    전환 이유 2: fzf의 --preview 지원 — 선택 전 worktree 상태(커밋 로그, dirty) 미리보기 가능
+#    전환 이유 3: 사용자가 fzf에 더 익숙하고, 프로젝트 전체가 이미 fzf 기반 (cheat, tmux, nfu)
+#    trade-off: gum의 대화형 컴포넌트(choose/filter/confirm)를 잃지만,
+#              fzf의 preview + 정확한 유니코드 처리가 실용적으로 더 우수.
+#    보존: gum table/style은 표시 전용(wide char 무관)이므로 wt ls에서 유지.
 
 set -euo pipefail
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
 
 WORKTREE_DIR=".claude/worktrees"
+WT_LAST_FILE=".claude/worktrees/.wt-last"
 
 # ── 유틸리티 ─────────────────────────────────────────────────────────────────
 
+_has_fzf() { command -v fzf &>/dev/null; }
 _has_gum() { command -v gum &>/dev/null; }
 
 # worktree 내부에서도 항상 main repo root를 정확히 찾음
@@ -65,8 +73,47 @@ _die() {
   exit 1
 }
 
+# CIR: echo → printf ANSI 선택 — echo "$*"는 간결하지만 스타일링 불가.
+#   gum style은 표시 전용에는 적합하나 매 호출마다 프로세스 fork 부담.
+#   printf + 인라인 ANSI가 fork 없이 즉시 출력되어 가장 효율적.
 _info() {
-  echo ":: $*" >&2
+  printf '\033[38;5;179m› \033[38;5;245m%s\033[0m\n' "$*" >&2
+}
+
+# y/N 확인 프롬프트 (gum confirm 대체)
+_confirm() {
+  local msg="$1"
+  printf "%s (y/N): " "$msg" >&2
+  local yn
+  read -r yn
+  [[ "$yn" =~ ^[yY] ]]
+}
+
+# 단일 선택 (fzf 사용, fallback: 번호 선택)
+_choose() {
+  local header="${1:-선택}"
+  shift
+  local options=("$@")
+
+  if _has_fzf; then
+    printf '%s\n' "${options[@]}" | fzf --no-multi --height ~$((${#options[@]} + 4)) \
+      --prompt "선택> " --header "$header"
+  else
+    echo "$header:" >&2
+    local i=1
+    for opt in "${options[@]}"; do
+      echo "  $i) $opt" >&2
+      ((i++))
+    done
+    printf "번호 [1-${#options[@]}]: " >&2
+    local choice_num
+    read -r choice_num
+    if [[ "$choice_num" =~ ^[0-9]+$ ]] && (( choice_num >= 1 && choice_num <= ${#options[@]} )); then
+      echo "${options[$((choice_num - 1))]}"
+    else
+      return 1
+    fi
+  fi
 }
 
 # ── tmux 헬퍼 ────────────────────────────────────────────────────────────────
@@ -272,10 +319,9 @@ _wt_pr_status() {
   esac
 }
 
-# 마지막 커밋 메시지 (한 줄, 50자 제한, 쉼표 제거)
-# gum choose --selected가 쉼표로 값을 분리하므로 라벨 안전을 위해 제거
+# 마지막 커밋 메시지 (한 줄)
 _wt_last_commit_msg() {
-  git -C "$1" log -1 --format='%s' 2>/dev/null | head -c 50 | tr ',' ' '
+  git -C "$1" log -1 --format='%s' 2>/dev/null | cut -c1-60
 }
 
 # ── PR 상태 병렬 조회 ────────────────────────────────────────────────────────
@@ -300,16 +346,8 @@ _fetch_pr_statuses() {
     pids+=($!)
   done
 
-  if _has_gum && (( ${#pids[@]} > 0 )); then
-    # 각 pid를 파일에 기록하고 polling으로 완료 대기
-    printf '%s\n' "${pids[@]}" > "$tmp_dir/pids"
-    gum spin --spinner dot --title "PR 상태 조회 중..." -- bash -c "
-      while IFS= read -r pid; do
-        while kill -0 \"\$pid\" 2>/dev/null; do sleep 0.1; done
-      done < '$tmp_dir/pids'
-    " 2>/dev/null || true
-    for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done
-  else
+  if (( ${#pids[@]} > 0 )); then
+    _info "PR 상태 조회 중..."
     for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done
   fi
 }
@@ -375,7 +413,12 @@ _open_worktree() {
   else
     # tmux 밖: 경로 stdout 출력 (래퍼가 cd)
     [[ "$run_claude" == "true" ]] && _info "경고: --claude는 tmux 세션 안에서만 동작합니다"
-    echo "$wt_path"
+    if [[ "$stay" == "true" ]]; then
+      # --stay: 현재 디렉토리 유지, 경로만 안내
+      _info "worktree 경로: $wt_path"
+    else
+      echo "$wt_path"
+    fi
   fi
 }
 
@@ -491,26 +534,8 @@ _handle_existing_worktree() {
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
-  local choices=("기존 열기" "재생성" "취소")
   local choice
-
-  if _has_gum; then
-    choice=$(gum choose --header "worktree '$branch_name'이(가) 이미 존재합니다" "${choices[@]}") || return 1
-  else
-    echo "worktree '$branch_name'이(가) 이미 존재합니다:" >&2
-    local i=1
-    for c in "${choices[@]}"; do
-      echo "  $i) $c" >&2
-      ((i++))
-    done
-    printf "선택 [1-3]: " >&2
-    read -r choice_num
-    case "$choice_num" in
-      1) choice="기존 열기" ;;
-      2) choice="재생성" ;;
-      *) choice="취소" ;;
-    esac
-  fi
+  choice=$(_choose "worktree '$branch_name'이(가) 이미 존재합니다" "기존 열기" "재생성" "취소") || return 1
 
   case "$choice" in
     "기존 열기")
@@ -527,15 +552,7 @@ _handle_existing_worktree() {
         for w in "${warnings[@]}"; do
           echo "  - $w" >&2
         done
-        local confirmed=false
-        if _has_gum; then
-          gum confirm "정말 재생성하시겠습니까? (모든 변경사항 삭제)" && confirmed=true
-        else
-          printf "정말 재생성하시겠습니까? (y/N): " >&2
-          read -r yn
-          [[ "$yn" =~ ^[yY] ]] && confirmed=true
-        fi
-        [[ "$confirmed" == "false" ]] && { _info "취소됨"; return 1; }
+        _confirm "정말 재생성하시겠습니까? (모든 변경사항 삭제)" || { _info "취소됨"; return 1; }
       fi
 
       # cwd 가드: 현재 셸이 대상 worktree 안에 있으면 재생성 불가
@@ -556,7 +573,7 @@ _handle_existing_worktree() {
       _wt_tmux_close "$worktree_dir" || true
       git worktree remove --force "$worktree_dir" 2>/dev/null || rm -rf "$worktree_dir"
       git worktree prune 2>/dev/null || true
-      git branch -D "$branch_name" 2>/dev/null || true
+      git branch -D "$branch_name" >&2 2>/dev/null || true
 
       git worktree add -b "$branch_name" "$worktree_dir" >&2 || _die "worktree 재생성 실패"
       echo "$parent_branch" > "$worktree_dir/.wt-parent"
@@ -591,26 +608,8 @@ _handle_existing_branch() {
     return 1
   fi
 
-  local choices=("기존 브랜치 사용" "새로 생성" "취소")
   local choice
-
-  if _has_gum; then
-    choice=$(gum choose --header "브랜치 '$branch_name'이(가) 이미 존재합니다 (worktree 없음)" "${choices[@]}") || return 1
-  else
-    echo "브랜치 '$branch_name'이(가) 이미 존재합니다 (worktree 없음):" >&2
-    local i=1
-    for c in "${choices[@]}"; do
-      echo "  $i) $c" >&2
-      ((i++))
-    done
-    printf "선택 [1-3]: " >&2
-    read -r choice_num
-    case "$choice_num" in
-      1) choice="기존 브랜치 사용" ;;
-      2) choice="새로 생성" ;;
-      *) choice="취소" ;;
-    esac
-  fi
+  choice=$(_choose "브랜치 '$branch_name'이(가) 이미 존재합니다 (worktree 없음)" "기존 브랜치 사용" "새로 생성" "취소") || return 1
 
   case "$choice" in
     "기존 브랜치 사용")
@@ -627,20 +626,9 @@ _handle_existing_branch() {
       ahead_count=$(git rev-list --count "HEAD..$branch_name" 2>/dev/null) || true
       if (( ${ahead_count:-0} > 0 )); then
         _info "경고: '$branch_name'에 현재 HEAD에 없는 커밋 ${ahead_count}개가 있습니다"
-        local delete_confirmed=false
-        if _has_gum; then
-          gum confirm "브랜치를 삭제하고 새로 생성하시겠습니까?" && delete_confirmed=true
-        else
-          printf "브랜치를 삭제하고 새로 생성하시겠습니까? (y/N): " >&2
-          local yn; read -r yn
-          [[ "$yn" =~ ^[yY] ]] && delete_confirmed=true
-        fi
-        if [[ "$delete_confirmed" == "false" ]]; then
-          _info "취소됨"
-          return 1
-        fi
+        _confirm "브랜치를 삭제하고 새로 생성하시겠습니까?" || { _info "취소됨"; return 1; }
       fi
-      git branch -D "$branch_name" 2>/dev/null || true
+      git branch -D "$branch_name" >&2 2>/dev/null || true
       mkdir -p "$(dirname "$worktree_dir")"
       git worktree add -b "$branch_name" "$worktree_dir" >&2 || _die "worktree 생성 실패"
       echo "$parent_branch" > "$worktree_dir/.wt-parent"
@@ -675,6 +663,24 @@ cmd_cd() {
   local target_path=""
   local search="${1:-}"
 
+  # wt cd - : 이전 worktree로 이동 (cd -, git checkout - 와 동일 패턴)
+  if [[ "$search" == "-" ]]; then
+    local last_file="$git_root/$WT_LAST_FILE"
+    [[ -f "$last_file" ]] || _die "이전 worktree 기록이 없습니다"
+    local last_path
+    last_path=$(cat "$last_file")
+    if [[ ! -d "$last_path" ]]; then
+      _info "이전 worktree가 삭제됨: $(basename "$last_path") → main repo로 이동"
+      last_path="$git_root"
+    fi
+    # 현재 위치 저장 후 이동
+    local current_dir
+    current_dir=$(pwd -P)
+    echo "$current_dir" > "$last_file"
+    echo "$last_path"
+    return 0
+  fi
+
   if [[ -n "$search" ]]; then
     # substring 매치: 디렉토리명 + 브랜치명 + sanitized 검색어 모두 시도
     local sanitized_search
@@ -691,15 +697,18 @@ cmd_cd() {
     done
     [[ -z "$target_path" ]] && _die "매치하는 worktree 없음: $search"
   else
-    # 인터랙티브 선택
+    # 인터랙티브 선택 (fzf + preview)
     local names=()
     for wt in "${worktrees[@]}"; do
       names+=("$(basename "$wt")")
     done
 
     local selected
-    if _has_gum; then
-      selected=$(printf '%s\n' "${names[@]}" | gum filter --fuzzy --header "worktree 선택") || return 1
+    if _has_fzf; then
+      selected=$(printf '%s\n' "${names[@]}" | fzf --no-multi \
+        --header "worktree 선택" --prompt "cd> " \
+        --preview "git -C '$wt_base/{}' log --oneline -5 2>/dev/null; echo '---'; git -C '$wt_base/{}' status --short 2>/dev/null" \
+        --preview-window right,75% --preview-label "worktree 상태") || return 1
     else
       echo "worktree 선택:" >&2
       local i=1
@@ -708,6 +717,7 @@ cmd_cd() {
         ((i++))
       done
       printf "번호: " >&2
+      local choice_num
       read -r choice_num
       if ! [[ "$choice_num" =~ ^[0-9]+$ ]] || (( choice_num < 1 || choice_num > ${#names[@]} )); then
         _die "잘못된 선택"
@@ -717,6 +727,11 @@ cmd_cd() {
 
     target_path="$wt_base/$selected"
   fi
+
+  # 이전 worktree 경로 저장 (wt cd - 용)
+  local current_dir
+  current_dir=$(pwd -P)
+  echo "$current_dir" > "$git_root/$WT_LAST_FILE"
 
   # tmux 안이면 윈도우 전환 시도
   if [[ -n "${TMUX:-}" ]]; then
@@ -785,17 +800,21 @@ cmd_ls() {
     current_mark=""
     [[ "$wt" == "$current_wt" ]] && current_mark="*"
 
-    # ST 아이콘
-    local st_icon
+    # PR 상태 표시 (이모지 + 텍스트 통합)
+    local pr_display
     case "$pr_status" in
-      MERGED) st_icon="✅" ;;
-      OPEN)   st_icon="🔵" ;;
-      CLOSED) st_icon="🔴" ;;
-      *)      st_icon="⚪" ;;
+      MERGED) pr_display="✅ MERGED" ;;
+      OPEN)   pr_display="🔵 OPEN" ;;
+      CLOSED) pr_display="🔴 CLOSED" ;;
+      *)      pr_display="⚪ NONE" ;;
     esac
 
-    # timestamp|icon|name|branch|age|pr|dirty 형식으로 저장
-    entries+=("$ts|$st_icon|$current_mark$name|$branch|$age|$pr_status|$dirty_mark")
+    # 현재 worktree 표시: name (*) 접미사
+    local display_name="$name"
+    [[ -n "$current_mark" ]] && display_name="$name (*)"
+
+    # timestamp|name|branch|age|pr_display|dirty 형식으로 저장
+    entries+=("$ts|$display_name|$branch|$age|$pr_display|$dirty_mark")
   done
 
   # age 기준 정렬 (최신 우선 = timestamp 내림차순)
@@ -803,24 +822,23 @@ cmd_ls() {
 
   # 출력
   if _has_gum; then
-    local header="ST,NAME,BRANCH,AGE,PR,DIRTY"
+    local header="NAME,BRANCH,AGE,PR,DIRTY"
     local rows=""
     for entry in "${sorted[@]}"; do
-      IFS='|' read -r _ icon name branch age pr dirty <<< "$entry"
+      IFS='|' read -r _ name branch age pr dirty <<< "$entry"
       (( ${#branch} > 25 )) && branch="${branch:0:22}..."
-      rows+="$icon,$name,$branch,$age,$pr,$dirty"$'\n'
+      rows+="$name,$branch,$age,$pr,$dirty"$'\n'
     done
-
     gum style --bold --border double --padding "0 1" "Worktrees (${#sorted[@]})" >&2
     echo "${header}"$'\n'"${rows%$'\n'}" | gum table --print >&2
   else
-    printf "%-4s %-30s %-25s %-5s %-8s %s\n" "ST" "NAME" "BRANCH" "AGE" "PR" "DIRTY" >&2
-    printf '%.0s─' {1..80} >&2
-    echo >&2
+    _info "Worktrees (${#sorted[@]})"
+    printf "  %-30s %-25s %-5s %-12s %s\n" "NAME" "BRANCH" "AGE" "PR" "DIRTY" >&2
+    printf "  " >&2; printf '%.0s─' {1..78} >&2; echo >&2
     for entry in "${sorted[@]}"; do
-      IFS='|' read -r _ icon name branch age pr dirty <<< "$entry"
+      IFS='|' read -r _ name branch age pr dirty <<< "$entry"
       (( ${#branch} > 25 )) && branch="${branch:0:22}..."
-      printf "%-4s %-30s %-25s %-5s %-8s %s\n" "$icon" "$name" "$branch" "$age" "$pr" "$dirty" >&2
+      printf "  %-30s %-25s %-5s %-12s %s\n" "$name" "$branch" "$age" "$pr" "$dirty" >&2
     done
   fi
 }
@@ -861,8 +879,19 @@ cmd_cleanup() {
   # PR 상태 병렬 조회
   _fetch_pr_statuses "$git_root" "$_wt_cleanup_tmp" "${worktrees[@]}"
 
+  # 현재 worktree 감지 (cleanup 목록에서 제외)
+  local current_wt=""
+  local current_dir
+  current_dir=$(pwd -P)
+  for wt in "${worktrees[@]}"; do
+    if [[ "$current_dir" == "$wt" || "$current_dir" == "$wt/"* ]]; then
+      current_wt="$wt"
+      break
+    fi
+  done
+
   # 데이터 수집
-  local items=()        # gum choose 라벨
+  local items=()        # fzf 라벨
   local item_paths=()   # worktree 경로
   local item_branches=() # 브랜치명
   local item_pr=()      # PR 상태
@@ -872,6 +901,9 @@ cmd_cleanup() {
 
   local idx=0
   for wt in "${worktrees[@]}"; do
+    # 현재 worktree는 cleanup 대상에서 제외
+    [[ "$wt" == "$current_wt" ]] && continue
+
     local name branch ts age pr_status dirty_flag unpushed_flag last_msg
     name=$(basename "$wt")
     branch=$(_wt_branch "$wt")
@@ -903,7 +935,8 @@ cmd_cleanup() {
     local unpushed_mark=""
     [[ "$unpushed_flag" == "true" ]] && unpushed_mark=" ↑unpushed"
 
-    # gum choose --selected는 쉼표로 값을 분리하므로 라벨에 쉼표 사용 금지
+    # 라벨: "ICON NAME [age PR dirty unpushed] — msg\tPATH"
+    # fzf --with-nth 1로 라벨만 표시, --delimiter '\t'로 PATH 분리
     local label="$st_icon $name [$age $pr_status${dirty_mark}${unpushed_mark}] — $last_msg"
 
     items+=("$label")
@@ -956,22 +989,26 @@ cmd_cleanup() {
   fi
 
   # 인터랙티브 모드
-  local selected_labels=()
+  local selected_names=()
 
-  if _has_gum; then
-    # MERGED 항목 pre-select
-    local selected_args=()
-    for i in "${merged_indices[@]}"; do
-      selected_args+=("--selected=${items[$i]}")
+  if _has_fzf; then
+    # fzf 멀티 선택 + preview
+    # 라벨\t경로 형식으로 전달, --with-nth 1로 라벨만 표시
+    local fzf_input=""
+    for ((i=0; i<${#items[@]}; i++)); do
+      fzf_input+="${items[$i]}"$'\t'"${item_paths[$i]}"$'\n'
     done
 
     local chosen
-    chosen=$(printf '%s\n' "${items[@]}" | gum choose --no-limit \
-      --header "정리할 worktree 선택 (Space로 토글, Enter로 확인)" \
-      "${selected_args[@]}") || { _info "취소됨"; return 0; }
+    chosen=$(printf '%s' "$fzf_input" | fzf --multi --delimiter $'\t' --with-nth 1 \
+      --header "정리할 worktree 선택 (Tab 토글, Enter 확인)" \
+      --prompt "cleanup> " \
+      --preview 'git -C {2} log --oneline -5 2>/dev/null; echo "---"; git -C {2} status --short 2>/dev/null' \
+      --preview-window right,75% --preview-label "worktree 상태") || { _info "취소됨"; return 0; }
 
-    while IFS= read -r line; do
-      [[ -n "$line" ]] && selected_labels+=("$line")
+    # 선택된 항목에서 worktree 이름 추출
+    while IFS=$'\t' read -r label path; do
+      [[ -n "$path" ]] && selected_names+=("$(basename "$path")")
     done <<< "$chosen"
   else
     # fallback: 번호 선택
@@ -982,6 +1019,7 @@ cmd_cleanup() {
       ((i++))
     done
     printf "번호: " >&2
+    local nums_str
     read -r nums_str
     [[ -z "$nums_str" ]] && { _info "취소됨"; return 0; }
 
@@ -990,23 +1028,22 @@ cmd_cleanup() {
       num=$(echo "$num" | tr -d ' ')
       local idx=$((num - 1))
       if (( idx >= 0 && idx < ${#items[@]} )); then
-        selected_labels+=("${items[$idx]}")
+        selected_names+=("$(basename "${item_paths[$idx]}")")
       fi
     done
   fi
 
-  if (( ${#selected_labels[@]} == 0 )); then
+  if (( ${#selected_names[@]} == 0 )); then
     _info "선택한 항목이 없습니다"
     return 0
   fi
 
   # 선택된 항목 처리
   local removed=0
-  for label in "${selected_labels[@]}"; do
-    # 라벨에서 원본 인덱스 찾기
+  for sel_name in "${selected_names[@]}"; do
     local found_idx=-1
-    for ((i=0; i<${#items[@]}; i++)); do
-      if [[ "${items[$i]}" == "$label" ]]; then
+    for ((i=0; i<${#item_paths[@]}; i++)); do
+      if [[ "$(basename "${item_paths[$i]}")" == "$sel_name" ]]; then
         found_idx=$i
         break
       fi
@@ -1024,20 +1061,8 @@ cmd_cleanup() {
       [[ "${item_dirty[$found_idx]}" == "true" ]] && warn_msg+=" uncommitted 변경사항"
       [[ "${item_unpushed[$found_idx]}" == "true" ]] && warn_msg+=" push하지 않은 커밋"
 
-      local confirmed=false
-      if _has_gum; then
-        _info "$warn_msg"
-        gum confirm "정말 삭제하시겠습니까?" && confirmed=true
-      else
-        printf "%s — 삭제? (y/N): " "$warn_msg" >&2
-        read -r yn
-        [[ "$yn" =~ ^[yY] ]] && confirmed=true
-      fi
-
-      if [[ "$confirmed" == "false" ]]; then
-        _info "스킵: $name"
-        continue
-      fi
+      _info "$warn_msg"
+      _confirm "정말 삭제하시겠습니까?" || { _info "스킵: $name"; continue; }
     fi
 
     if _remove_worktree "$wt_path" "$branch" "$git_root"; then
@@ -1055,11 +1080,11 @@ show_help() {
   cat << 'EOF'
 사용법: wt [옵션] <command|branch>
 
-Git worktree 관리 도구 (gum TUI, tmux 통합)
+Git worktree 관리 도구 (fzf TUI, tmux 통합)
 
 서브커맨드:
   wt <branch>             현재 HEAD 기준 worktree 생성
-  wt cd [name]            worktree로 이동 (fuzzy 검색)
+  wt cd [name|-]          worktree로 이동 (fuzzy 검색, - = 이전)
   wt ls                   worktree 목록 (PR 상태, age, dirty)
   wt cleanup [--auto]     worktree 정리 (인터랙티브/자동)
 
@@ -1074,6 +1099,7 @@ Git worktree 관리 도구 (gum TUI, tmux 통합)
   wt feature-login        feature-login 브랜치 + worktree 생성
   wt --claude fix-bug     worktree 생성 + claude 실행
   wt cd login             "login" 포함 worktree로 이동
+  wt cd -                 이전 worktree로 이동
   wt ls                   전체 worktree 상태 확인
   wt cleanup              인터랙티브 정리
   wt cleanup --auto       MERGED 자동 정리

@@ -77,9 +77,6 @@ in
     # cheat content search 단축
     cs = "cheat -c -s";
 
-    # 워크트리 정리 단축
-    wt-cleanup = "wt cleanup";
-
     # 디렉토리 이동 단축
     ".." = "cd ..";
     "..." = "cd ../..";
