@@ -15,10 +15,6 @@ remapper:register()
 --------------------------------------------------------------------------------
 
 local inputEnglish = "com.apple.keylayout.ABC"
-local restoreTimer = nil
-local savedInputSource = nil
-local restoreAppBundleID = nil
-local KEYSTROKE_DELAY = 10000  -- 10ms (기본 200ms에서 단축, 체감 지연 해소)
 
 -- 앱 감지 헬퍼
 local terminalBundleIDs = {
@@ -38,99 +34,58 @@ local function isGhostty()
     return app and app:bundleID() == "com.mitchellh.ghostty"
 end
 
--- 복원 취소 헬퍼 (sticky-English 액션이 pending 복원 무효화)
-local function cancelRestore()
-    if restoreTimer then restoreTimer:stop() end
-    restoreTimer = nil
-    savedInputSource = nil
-    restoreAppBundleID = nil
-end
-
 -- 공통 함수: 영어로 전환 후 키 전달 (재귀 방지 포함)
--- restore=true: 키 입력 후 100ms 디바운스로 원래 입력소스 복원
-local function convertToEngAndSendKey(bind, mods, key, restore)
-    local currentInput = hs.keycodes.currentSourceID()
-    local needSwitch = currentInput ~= inputEnglish
-
-    if restore then
-        if needSwitch then
-            savedInputSource = currentInput
-        end
-        local app = hs.application.frontmostApplication()
-        restoreAppBundleID = app and app:bundleID()
-    end
-
-    if needSwitch then
+local function convertToEngAndSendKey(bind, mods, key)
+    if hs.keycodes.currentSourceID() ~= inputEnglish then
         hs.keycodes.currentSourceID(inputEnglish)
     end
-
     bind:disable()
-    hs.eventtap.keyStroke(mods, key, KEYSTROKE_DELAY)
+    hs.eventtap.keyStroke(mods, key)
     bind:enable()
-
-    if restore and savedInputSource then
-        if restoreTimer then restoreTimer:stop() end
-        restoreTimer = hs.timer.doAfter(0.1, function()
-            local app = hs.application.frontmostApplication()
-            local currentBundleID = app and app:bundleID()
-            if hs.keycodes.currentSourceID() == inputEnglish
-               and currentBundleID == restoreAppBundleID then
-                hs.keycodes.currentSourceID(savedInputSource)
-            end
-            savedInputSource = nil
-            restoreTimer = nil
-            restoreAppBundleID = nil
-        end)
-    end
 end
 
 -- Ctrl + ; → 영어 전환
 local control_semicolon_bind
 control_semicolon_bind = hs.hotkey.bind({'ctrl'}, ';', function()
-    cancelRestore()
     convertToEngAndSendKey(control_semicolon_bind, {'ctrl'}, ';')
 end)
 
 -- Cmd + Shift + Space → 영어 전환 후 Homerow 실행
 local command_shift_space_bind
 command_shift_space_bind = hs.hotkey.bind({'cmd', 'shift'}, 'space', function()
-    cancelRestore()
     if hs.keycodes.currentSourceID() ~= inputEnglish then
         hs.keycodes.currentSourceID(inputEnglish)
     end
-    hs.eventtap.keyStroke({'cmd', 'shift'}, 'space', KEYSTROKE_DELAY)
+    hs.eventtap.keyStroke({'cmd', 'shift'}, 'space')
     command_shift_space_bind:disable()
-    hs.eventtap.keyStroke({'cmd', 'shift'}, 'space', KEYSTROKE_DELAY)
+    hs.eventtap.keyStroke({'cmd', 'shift'}, 'space')
     command_shift_space_bind:enable()
 end)
 
 -- Ctrl + B → 영어 전환 후 tmux prefix 전달 (전역)
 local ctrl_b_bind
 ctrl_b_bind = hs.hotkey.bind({'ctrl'}, 'b', function()
-    cancelRestore()
     convertToEngAndSendKey(ctrl_b_bind, {'ctrl'}, 'b')
 end)
 
 --------------------------------------------------------------------------------
 -- Ghostty 전용: Ctrl 키 조합 (CSI u 모드 우회)
--- Claude Code에서 한글 입력소스일 때 Ctrl 단축키가 동작하지 않는 문제 해결
--- 영어 전환 후 키 전달, 100ms 디바운스로 원래 입력소스 복원
+-- Claude Code 2.1.0+ 에서 한글 입력소스일 때 Ctrl 단축키가 동작하지 않는 문제 해결
 --------------------------------------------------------------------------------
 
 local ghosttyCtrlKeys = {'c', 'u', 'k', 'w', 'a', 'e', 'l', 'f', 's', 'v', 'z', 'd', 'r', 'g', 'o', 't', 'y'}
 
 for _, key in ipairs(ghosttyCtrlKeys) do
     local bind
-    local function handler()
+    bind = hs.hotkey.bind({'ctrl'}, key, function()
         if isGhostty() then
-            convertToEngAndSendKey(bind, {'ctrl'}, key, true)
+            convertToEngAndSendKey(bind, {'ctrl'}, key)
         else
             bind:disable()
-            hs.eventtap.keyStroke({'ctrl'}, key, KEYSTROKE_DELAY)
+            hs.eventtap.keyStroke({'ctrl'}, key)
             bind:enable()
         end
-    end
-    bind = hs.hotkey.bind({'ctrl'}, key, handler, nil, handler)
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -138,20 +93,19 @@ end
 -- Opt+B/F (단어 이동)가 한글 입력소스에서 동작하지 않는 문제 해결
 --------------------------------------------------------------------------------
 
-local terminalOptKeys = {'b', 'f'}
+local terminalOptKeys = {'b', 'f', 'd'}
 
 for _, key in ipairs(terminalOptKeys) do
     local bind
-    local function handler()
+    bind = hs.hotkey.bind({'alt'}, key, function()
         if isTerminalApp() then
-            convertToEngAndSendKey(bind, {'alt'}, key, true)
+            convertToEngAndSendKey(bind, {'alt'}, key)
         else
             bind:disable()
-            hs.eventtap.keyStroke({'alt'}, key, KEYSTROKE_DELAY)
+            hs.eventtap.keyStroke({'alt'}, key)
             bind:enable()
         end
-    end
-    bind = hs.hotkey.bind({'alt'}, key, handler, nil, handler)
+    end)
 end
 
 --------------------------------------------------------------------------------
