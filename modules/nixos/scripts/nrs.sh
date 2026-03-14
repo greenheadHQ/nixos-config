@@ -55,6 +55,7 @@ main() {
         log_info "✅ No changes to apply. Skipping rebuild."
         return 0
     fi
+    worktree_symlink_guard
     run_nixos_rebuild
     cleanup_build_artifacts
 

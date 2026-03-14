@@ -130,6 +130,7 @@ main() {
         fi
         return 0
     fi
+    worktree_symlink_guard
     preflight_cask_conflict_check
     cleanup_launchd_agents
     run_darwin_rebuild
