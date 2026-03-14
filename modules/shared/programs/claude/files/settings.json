@@ -64,9 +64,9 @@
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
+  "effortLevel": "high",
   "autoUpdatesChannel": "latest",
   "plansDirectory": "./.claude/plans",
   "voiceEnabled": true,
-  "skipDangerousModePermissionPrompt": true,
-  "effortLevel": "high"
+  "skipDangerousModePermissionPrompt": true
 }
