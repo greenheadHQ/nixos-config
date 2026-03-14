@@ -190,6 +190,19 @@ in
       #─────────────────────────────────────────────────────────────────────────
       ''
         wt() {
+          # --tmux: exec tmux를 위해 subshell 캡처 우회
+          local _wt_has_tmux=false
+          local _wt_arg
+          for _wt_arg in "$@"; do
+            [[ "$_wt_arg" == "--tmux" ]] && _wt_has_tmux=true
+          done
+
+          # tmux 밖에서만 bypass (tmux 안이면 exec tmux 불가 → 기존 cd 로직 필요)
+          if [[ "$_wt_has_tmux" == "true" ]] && [[ -z "''${TMUX:-}" ]]; then
+            command wt "$@"
+            return $?
+          fi
+
           if [[ "''${1:-}" == "cd" ]]; then
             shift
             local target

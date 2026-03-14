@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wt: Git worktree 관리 도구 (fzf TUI, tmux 통합)
-# 사용법: wt [--stay] [--claude] <branch> | wt cd [-|name] | wt ls | wt cleanup [--auto]
+# 사용법: wt [--stay] [--claude] [--tmux] <branch> | wt cd [--tmux] [-|name] | wt ls | wt cleanup [--auto]
 
 # === Change Intent Record ===
 # v1 (2025년 초~): 커스텀 wt/wt-cleanup 셸 함수 838줄 (zsh, fzf 기반)
@@ -21,6 +21,11 @@
 #    trade-off: gum의 대화형 컴포넌트(choose/filter/confirm)를 잃지만,
 #              fzf의 preview + 정확한 유니코드 처리가 실용적으로 더 우수.
 #    보존: gum table/style은 표시 전용(wide char 무관)이므로 wt ls에서 유지.
+# v6 (이번 변경): --tmux 플래그 추가 — tmux 밖에서 독립 tmux 세션 생성+attach
+#    동기: claude --worktree --tmux와 유사한 경험을 wt에서도 제공
+#    세션 이름: wt-<repo>-<dir_name> (repo별 네임스페이스 — 멀티 repo 충돌 방지)
+#    핵심 제약: 래퍼의 subshell $() 안에서 exec tmux 불가 → --tmux 감지 시 우회
+#    tmux 안에서 --tmux: 기존 윈도우 모드로 fallback (의도적 정책 — 세션 전환보다 윈도우가 워크플로우에 적합)
 
 set -euo pipefail
 
@@ -196,6 +201,82 @@ _wt_has_active_process() {
   done < <(tmux list-panes -t "$window_id" -F '#{pane_current_command}' 2>/dev/null)
 
   return 1
+}
+
+# ── tmux 세션 헬퍼 (--tmux 플래그용) ──────────────────────────────────────
+
+# 세션 이름 생성: wt-<repo>-<dir> (repo별 네임스페이스로 충돌 방지)
+# === Change Intent Record ===
+# v1 (45aa39e): wt-<dir> — repo 구분 없이 dir_name만 사용.
+#    멀티 repo에서 동명 브랜치 시 잘못된 세션 attach/kill (DA 피드백으로 발견)
+# v2 (이번 변경, f862deb): wt-<repo>-<dir> — basename 네임스페이스 추가
+#    거부한 대안 1: 이중 하이픈 구분자 (wt-repo--dir) — 하이픈 조합 충돌은 해결하나
+#                  같은 basename의 다른 경로 repo 충돌은 미해결 (부분 수정)
+#    거부한 대안 2: 경로 해시 접두사 (wt-a1b2c3-repo-dir) — 모든 충돌 해결하나
+#                  세션 이름의 의미 없는 해시가 가독성을 해침
+#    trade-off: 같은 basename repo 충돌은 미해결이지만,
+#              ~/Workspace 내 프로젝트명이 고유하므로 실질적 충돌 없음.
+#              가독성(tmux ls에서 한눈에 파악)이 완전한 유일성보다 가치 있음.
+_wt_session_name() {
+  local dir_name="$1"
+  local repo_name
+  repo_name=$(basename "$(_get_repo_root)" 2>/dev/null) || repo_name="default"
+  # tmux target 구분자(. :)를 언더스코어로 치환
+  repo_name="${repo_name//[.:]/_}"
+  echo "wt-${repo_name}-${dir_name}"
+}
+
+# 세션 존재 확인 (= prefix: exact match — tmux default prefix matching 방지)
+_wt_tmux_session_exists() {
+  tmux has-session -t "=$1" 2>/dev/null
+}
+
+# 세션 생성/attach
+_wt_tmux_session_open() {
+  local wt_path="$1" session_name="$2" stay="$3" run_claude="$4"
+
+  # 기존 세션 확인
+  if _wt_tmux_session_exists "$session_name"; then
+    if [[ "$stay" == "true" ]]; then
+      _info "기존 tmux 세션 유지: $session_name"
+      return 0
+    fi
+    _info "기존 tmux 세션으로 전환: $session_name"
+    exec tmux attach-session -t "=$session_name"
+  fi
+
+  # 새 세션 생성
+  if [[ "$run_claude" == "true" ]]; then
+    tmux new-session -d -s "$session_name" -c "$wt_path"
+    tmux send-keys -t "=$session_name" \
+      "claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json" Enter
+    if [[ "$stay" == "true" ]]; then
+      _info "tmux 세션 생성 (detached): $session_name"
+      _info "접속: tmux attach -t $session_name"
+      return 0
+    fi
+    exec tmux attach-session -t "=$session_name"
+  fi
+
+  if [[ "$stay" == "true" ]]; then
+    tmux new-session -d -s "$session_name" -c "$wt_path"
+    _info "tmux 세션 생성 (detached): $session_name"
+    _info "접속: tmux attach -t $session_name"
+    return 0
+  fi
+
+  exec tmux new-session -s "$session_name" -c "$wt_path"
+}
+
+# 세션 정리 (cleanup용, = prefix: exact match)
+# 연결된 클라이언트가 있으면 세션을 죽이지 않음 (활성 사용 보호)
+_wt_tmux_session_close() {
+  local session_name="$1"
+  if tmux list-clients -t "=$session_name" 2>/dev/null | grep -q .; then
+    _info "스킵: tmux 세션 '$session_name'에 연결된 클라이언트가 있습니다"
+    return 1
+  fi
+  tmux kill-session -t "=$session_name" 2>/dev/null || true
 }
 
 # tmux 윈도우 안전하게 닫기
@@ -385,7 +466,15 @@ _bootstrap_worktree() {
 # ── worktree 열기 (tmux 또는 stdout) ─────────────────────────────────────────
 
 _open_worktree() {
-  local wt_path="$1" window_name="$2" stay="$3" run_claude="$4"
+  local wt_path="$1" window_name="$2" stay="$3" run_claude="$4" use_tmux_session="${5:-false}"
+
+  # --tmux: tmux 밖에서만 세션 모드 활성화 (tmux 안이면 윈도우 모드로 fallback — 의도적 정책)
+  if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
+    local session_name
+    session_name=$(_wt_session_name "$window_name")
+    _wt_tmux_session_open "$wt_path" "$session_name" "$stay" "$run_claude"
+    return
+  fi
 
   if [[ -n "${TMUX:-}" ]]; then
     local window_id open_rc=0
@@ -445,6 +534,14 @@ _remove_worktree() {
   # tmux 윈도우 닫기 (실패해도 worktree는 삭제)
   _wt_tmux_close "$wt_path" || true
 
+  # tmux 세션 정리 (wt- 접두사 세션, 연결된 클라이언트 있으면 삭제 중단)
+  local session_name
+  session_name=$(_wt_session_name "$name")
+  _wt_tmux_session_close "$session_name" || {
+    _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
+    return 1
+  }
+
   # worktree 제거
   git -C "$git_root" worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path"
 
@@ -461,6 +558,7 @@ _remove_worktree() {
 cmd_create() {
   local stay=false
   local run_claude=false
+  local use_tmux_session=false
   local branch_name=""
 
   # 옵션 파싱
@@ -468,6 +566,7 @@ cmd_create() {
     case "$1" in
       --stay)   stay=true ;;
       --claude) run_claude=true ;;
+      --tmux)   use_tmux_session=true ;;
       -h|--help) show_help; return 0 ;;
       -*)       _die "알 수 없는 옵션: $1" ;;
       *)
@@ -503,7 +602,7 @@ cmd_create() {
   # 기존 디렉토리 처리
   if [[ -d "$worktree_dir" ]]; then
     if [[ -f "$worktree_dir/.git" ]]; then
-      _handle_existing_worktree "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude"
+      _handle_existing_worktree "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude" "$use_tmux_session"
       return $?
     fi
     # 디렉토리는 있지만 유효한 worktree가 아님 → 정리 후 새로 생성
@@ -512,7 +611,7 @@ cmd_create() {
 
   # 기존 브랜치 존재 확인
   if git show-ref --verify --quiet "refs/heads/$branch_name" 2>/dev/null; then
-    _handle_existing_branch "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude"
+    _handle_existing_branch "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude" "$use_tmux_session"
     return $?
   fi
 
@@ -525,12 +624,12 @@ cmd_create() {
 
   _info "worktree 생성: $branch_name (from $parent_branch)"
 
-  _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude"
+  _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
 }
 
 # 기존 worktree 처리
 _handle_existing_worktree() {
-  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6"
+  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6" use_tmux_session="${7:-false}"
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
@@ -539,7 +638,7 @@ _handle_existing_worktree() {
 
   case "$choice" in
     "기존 열기")
-      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude"
+      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     "재생성")
       # unpushed/dirty 경고
@@ -571,6 +670,14 @@ _handle_existing_worktree() {
       fi
 
       _wt_tmux_close "$worktree_dir" || true
+      # tmux 세션 정리 (연결된 클라이언트 있으면 재생성 중단)
+      local _recreate_session
+      _recreate_session=$(_wt_session_name "$dir_name")
+      _wt_tmux_session_close "$_recreate_session" || {
+        _info "재생성 불가: tmux 세션에 연결된 클라이언트가 있습니다"
+        _info "세션을 종료한 뒤 다시 시도하세요"
+        return 1
+      }
       git worktree remove --force "$worktree_dir" 2>/dev/null || rm -rf "$worktree_dir"
       git worktree prune 2>/dev/null || true
       git branch -D "$branch_name" >&2 2>/dev/null || true
@@ -579,7 +686,7 @@ _handle_existing_worktree() {
       echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 재생성: $branch_name (from $parent_branch)"
-      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude"
+      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     *)
       _info "취소됨"
@@ -590,7 +697,7 @@ _handle_existing_worktree() {
 
 # 기존 브랜치 처리 (worktree 없음)
 _handle_existing_branch() {
-  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6"
+  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6" use_tmux_session="${7:-false}"
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
@@ -618,7 +725,7 @@ _handle_existing_branch() {
       echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 생성 (기존 브랜치): $branch_name"
-      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude"
+      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     "새로 생성")
       # 커밋 유실 경고: 현재 HEAD에서 도달 불가능한 커밋이 있으면 확인
@@ -634,7 +741,7 @@ _handle_existing_branch() {
       echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 생성 (브랜치 재생성): $branch_name (from $parent_branch)"
-      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude"
+      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     *)
       _info "취소됨"
@@ -661,7 +768,21 @@ cmd_cd() {
   (( ${#worktrees[@]} == 0 )) && _die "활성 worktree가 없습니다"
 
   local target_path=""
-  local search="${1:-}"
+  local use_tmux_session=false
+  local search=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tmux) use_tmux_session=true ;;
+      -)      search="-" ;;
+      -*)     _die "알 수 없는 옵션: $1" ;;
+      *)
+        [[ -n "$search" ]] && _die "검색어가 이미 지정됨: $search (추가: $1)"
+        search="$1"
+        ;;
+    esac
+    shift
+  done
 
   # wt cd - : 이전 worktree로 이동 (cd -, git checkout - 와 동일 패턴)
   if [[ "$search" == "-" ]]; then
@@ -677,6 +798,15 @@ cmd_cd() {
     local current_dir
     current_dir=$(pwd -P)
     echo "$current_dir" > "$last_file"
+
+    # --tmux: 세션 모드 (tmux 밖에서만)
+    if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
+      local session_name
+      session_name=$(_wt_session_name "$(basename "$last_path")")
+      _wt_tmux_session_open "$last_path" "$session_name" "false" "false"
+      return 0
+    fi
+
     echo "$last_path"
     return 0
   fi
@@ -732,6 +862,14 @@ cmd_cd() {
   local current_dir
   current_dir=$(pwd -P)
   echo "$current_dir" > "$git_root/$WT_LAST_FILE"
+
+  # --tmux: 세션 attach/생성 (tmux 밖에서만)
+  if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
+    local session_name
+    session_name=$(_wt_session_name "$(basename "$target_path")")
+    _wt_tmux_session_open "$target_path" "$session_name" "false" "false"
+    return 0
+  fi
 
   # tmux 안이면 윈도우 전환 시도
   if [[ -n "${TMUX:-}" ]]; then
@@ -1091,6 +1229,10 @@ Git worktree 관리 도구 (fzf TUI, tmux 통합)
 옵션 (create):
   --stay                  tmux 윈도우를 백그라운드로 생성
   --claude                worktree 생성 후 Claude Code 자동 실행
+  --tmux                  독립 tmux 세션 생성+attach (tmux 밖에서)
+
+옵션 (cd):
+  --tmux                  worktree를 tmux 세션으로 열기 (tmux 밖에서)
 
 옵션 (cleanup):
   --auto                  MERGED 상태 worktree 자동 정리
@@ -1098,7 +1240,11 @@ Git worktree 관리 도구 (fzf TUI, tmux 통합)
 예시:
   wt feature-login        feature-login 브랜치 + worktree 생성
   wt --claude fix-bug     worktree 생성 + claude 실행
+  wt --tmux feature-x     worktree 생성 + tmux 세션 attach
+  wt --tmux --claude pr   worktree + tmux 세션 + claude 실행
+  wt --tmux --stay test   tmux 세션 detached 생성
   wt cd login             "login" 포함 worktree로 이동
+  wt cd --tmux login      worktree를 tmux 세션으로 열기
   wt cd -                 이전 worktree로 이동
   wt ls                   전체 worktree 상태 확인
   wt cleanup              인터랙티브 정리

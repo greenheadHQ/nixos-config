@@ -1,7 +1,7 @@
 ---
-tags: [ wt, worktree, git, tmux, gum ]
+tags: [ wt, worktree, git, tmux, fzf ]
 ---
-wt — Git worktree 관리 (gum TUI, tmux 통합)
+wt — Git worktree 관리 (fzf TUI, tmux 통합)
 
 [worktree 생성]
   wt <branch>               현재 HEAD 기준 worktree 생성 + tmux 윈도우
@@ -12,18 +12,31 @@ wt — Git worktree 관리 (gum TUI, tmux 통합)
   경로: .claude/worktrees/<branch> (슬래시 → 언더스코어)
   핵심: 항상 현재 HEAD에서 분기 (claude --worktree는 default branch 고정)
 
+[tmux 세션 모드]
+  wt --tmux <branch>                worktree 생성 + tmux 세션 attach
+  wt --tmux --claude <branch>      worktree + tmux 세션 + claude 실행
+  wt --tmux --stay <branch>        detached 세션 생성 (attach 안 함)
+  wt --tmux --claude --stay <br>   detached + claude 실행
+  wt cd --tmux <name>              기존 worktree를 tmux 세션으로 열기
+
+  세션 이름: wt-<repo>-<dir_name> (예: wt-nixos-config-feat_login)
+  기존 세션 있으면 재생성 없이 attach
+  tmux 안에서 --tmux → 기존 윈도우 모드로 fallback (의도적 정책)
+  cleanup 시 wt- 세션도 함께 정리
+
 [이미 존재할 때]
-  기존 worktree 있음       → gum choose: 기존 열기 / 재생성 / 취소
-  브랜치만 있음 (wt 없음)  → gum choose: 기존 브랜치 사용 / 새로 생성 / 취소
-  재생성 시 dirty/unpushed  → 경고 + gum confirm
+  기존 worktree 있음       → fzf 선택: 기존 열기 / 재생성 / 취소
+  브랜치만 있음 (wt 없음)  → fzf 선택: 기존 브랜치 사용 / 새로 생성 / 취소
+  재생성 시 dirty/unpushed  → 경고 + 확인 프롬프트
 
 [worktree 이동]
-  wt cd                     gum filter 퍼지 검색으로 선택 → cd
+  wt cd                     fzf 퍼지 검색으로 선택 → cd
   wt cd <name>              substring 매치 → 즉시 cd
+  wt cd -                   이전 worktree로 이동
   tmux 안이면               기존 tmux 윈도우가 있으면 윈도우 전환 우선
 
 [worktree 목록]
-  wt ls                     gum table 대시보드 (PR 상태 병렬 조회 + 스피너)
+  wt ls                     대시보드 (PR 상태 병렬 조회)
 
   ST 아이콘:
     ✅ MERGED    🔵 OPEN    🔴 CLOSED    ⚪ NONE
@@ -32,21 +45,18 @@ wt — Git worktree 관리 (gum TUI, tmux 통합)
   정렬: age 기준 (최신 우선)
 
 [worktree 정리]
-  wt cleanup                인터랙티브 — gum choose 다중 선택 (Space 토글)
-                            MERGED 항목 자동 pre-select
-                            dirty/unpushed 항목은 개별 gum confirm
+  wt cleanup                인터랙티브 — fzf 다중 선택 (Tab 토글, Enter 확인)
+                            dirty/unpushed 항목은 개별 확인
   wt cleanup --auto         MERGED 자동 정리 (dirty/unpushed → 스킵 + 경고)
 
-  삭제 시: tmux 윈도우 닫기 → git worktree remove → git branch -D
+  삭제 시: tmux 윈도우/세션 닫기 → git worktree remove → git branch -D
   안전 가드: 현재 윈도우 / 마지막 윈도우는 닫지 않음
 
 [tmux 밖에서]
   wt <branch>               worktree 생성 후 해당 경로로 cd
+  wt --tmux <branch>        worktree 생성 후 tmux 세션 attach
   wt cd <name>              해당 경로로 cd
-  wt ls / wt cleanup        동일하게 동작 (gum TUI)
-
-[alias]
-  wt-cleanup                = wt cleanup
+  wt ls / wt cleanup        동일하게 동작
 
 [.wt-parent]
   부모 브랜치를 worktree 루트에 기록 (gitignore됨)
@@ -55,4 +65,4 @@ wt — Git worktree 관리 (gum TUI, tmux 통합)
 Tip
 - wt ls로 상태 확인 → wt cleanup으로 MERGED 일괄 정리가 기본 워크플로우
 - --claude는 셸 위에서 claude를 실행하므로 종료 후 git diff 등 후속 작업 가능
-- gum 미설치 시 fallback: 번호 선택 + read (packages.nix로 보장)
+- fzf 미설치 시 fallback: 번호 선택 + read (packages.nix로 보장)
