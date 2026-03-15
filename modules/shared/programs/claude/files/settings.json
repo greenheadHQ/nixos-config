@@ -43,6 +43,15 @@
             "command": "~/.claude/hooks/plan-notification.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/worktree-path-guard.sh"
+          }
+        ]
       }
     ],
     "Stop": [

@@ -61,6 +61,11 @@ in
     nrs-status = "~/.local/bin/nrs-lock.sh status";
     nrs-unlock = "~/.local/bin/nrs-lock.sh unlock";
 
+    # nrs-relink (worktree 심링크 전환)
+    nrs-relink = "~/.local/bin/nrs-relink.sh relink";
+    nrs-restore = "~/.local/bin/nrs-relink.sh restore";
+    nrs-relink-status = "~/.local/bin/nrs-relink.sh status";
+
     # Hammerspoon CLI
     hs = "/Applications/Hammerspoon.app/Contents/Frameworks/hs/hs";
     hsr = ''hs -c "hs.reload()"'';

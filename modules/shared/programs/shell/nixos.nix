@@ -60,6 +60,11 @@ in
     # Claude Code Remote Control
     claude-rc = "~/.local/bin/claude-rc.sh";
 
+    # nrs-relink (worktree 심링크 전환)
+    nrs-relink = "~/.local/bin/nrs-relink.sh relink";
+    nrs-restore = "~/.local/bin/nrs-relink.sh restore";
+    nrs-relink-status = "~/.local/bin/nrs-relink.sh status";
+
     # NixOS 세대 히스토리
     nrh = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system | tail -10";
     nrh-all = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system";

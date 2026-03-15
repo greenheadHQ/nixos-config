@@ -122,6 +122,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/plan-notification.sh";
     ".claude/hooks/nrs-session-cleanup.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/nrs-session-cleanup.sh";
+    ".claude/hooks/worktree-path-guard.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/worktree-path-guard.sh";
 
     # syncing-codex-harness 스킬 (user-scope)
     ".claude/skills/syncing-codex-harness".source =

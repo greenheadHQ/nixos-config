@@ -29,6 +29,12 @@ in
     };
     executable = true;
   };
+  home.file.".local/bin/nrs-relink.sh" = {
+    source = pkgs.replaceVars "${sharedScriptsDir}/nrs-relink.sh" {
+      flakePath = nixosConfigDefaultPath;
+    };
+    executable = true;
+  };
 
   # Shell 함수 라이브러리 (source로 로딩)
   # replaceVars: @flakePath@ → nixosConfigDefaultPath (항상 메인 레포 경로)
