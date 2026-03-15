@@ -43,7 +43,7 @@
             "command": "~/.claude/hooks/plan-notification.sh"
           }
         ]
-      },
+      }
     ],
     "Stop": [
       {
