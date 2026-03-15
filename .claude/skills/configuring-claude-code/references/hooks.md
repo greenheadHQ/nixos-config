@@ -163,6 +163,26 @@ claude plugin uninstall plugin-name@marketplace --scope user
 [래핑된 명령어 실행]
 ```
 
+**Hook 입력 JSON 구조:**
+
+Hook 스크립트는 stdin으로 다음 JSON을 수신합니다:
+
+```json
+{
+  "hookEventName": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git add . && git commit -m \"test\""
+  }
+}
+```
+
+| 필드 | 설명 |
+|------|------|
+| `hookEventName` | 훅 이벤트 타입 (`PreToolUse`, `PostToolUse`, `Stop`, `Notification`) |
+| `tool_name` | 도구 이름 (`Bash`, `Read`, `Edit` 등) |
+| `tool_input` | 도구 입력 파라미터 |
+
 **예시:**
 
 ```bash

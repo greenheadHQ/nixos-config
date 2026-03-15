@@ -37,8 +37,8 @@ Karakeep 웹 아카이버/북마크 관리 서비스 운영 스킬.
 
 | 컨테이너 | 이미지 | 역할 | 리소스 |
 |-----------|--------|------|--------|
-| `karakeep` | `ghcr.io/karakeep-app/karakeep:release` | Next.js 앱 (포트 3000) | 1.5GB / 1 CPU |
-| `karakeep-chrome` | `gcr.io/zenika-hub/alpine-chrome:124` | 헤드리스 Chrome (스크린샷) | 1GB / 1 CPU |
+| `karakeep` | `ghcr.io/karakeep-app/karakeep:release` | Next.js 앱 (포트 3000) | 2GB / 1 CPU |
+| `karakeep-chrome` | `gcr.io/zenika-hub/alpine-chrome:124` | 헤드리스 Chrome (스크린샷) | 2GB / 1 CPU |
 | `karakeep-meilisearch` | `getmeili/meilisearch:v1.13.3` | 전문 검색 | 1GB / 0.5 CPU |
 
 ### Data Path

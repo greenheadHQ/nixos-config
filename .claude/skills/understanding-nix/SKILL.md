@@ -27,7 +27,7 @@ flake 평가, derivation 해석, substituter/빌드 성능, 공통 오류 복구
 
 | 파일 | 용도 |
 |------|------|
-| `flake.nix` | 입력과 출력 정의 (nixpkgs → `nixos-unstable-small`) |
+| `flake.nix` | 입력과 출력 정의 (nixpkgs → `nixos-unstable`) |
 | `flake.lock` | 입력 버전 고정 |
 | `modules/shared/configuration.nix` | 공통 Nix 설정 (experimental-features, GC, substituter) |
 | `modules/shared/programs/direnv/default.nix` | direnv + nix-direnv 설정 |

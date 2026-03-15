@@ -193,7 +193,7 @@ lefthook run pre-commit
 
 ```nix
 # flake.nix
-inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable-small";
+inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 ```
 
 **공통 Nix 설정** (`modules/shared/configuration.nix`):

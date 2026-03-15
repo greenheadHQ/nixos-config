@@ -53,7 +53,7 @@ Claude Code는 플러그인 설치/삭제 시 `settings.json`을 수정하려고
 기존에 Nix에서 동적 생성하던 내용을 JSON 파일로 분리:
 
 ```bash
-# modules/darwin/programs/claude/files/settings.json
+# modules/shared/programs/claude/files/settings.json
 {
   "cleanupPeriodDays": 7,
   "alwaysThinkingEnabled": true,
@@ -83,7 +83,7 @@ nrs  # 또는 darwin-rebuild switch --flake .
 ```bash
 # 심볼릭 링크 확인: nixos-config 경로를 가리켜야 함
 $ ls -la ~/.claude/settings.json
-lrwxr-xr-x  ... -> $HOME/<nixos-config-path>/modules/darwin/programs/claude/files/settings.json
+lrwxr-xr-x  ... -> $HOME/<nixos-config-path>/modules/shared/programs/claude/files/settings.json
 
 # 쓰기 권한 확인
 $ touch ~/.claude/settings.json && echo "O 쓰기 가능"
