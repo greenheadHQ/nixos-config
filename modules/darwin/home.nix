@@ -68,7 +68,7 @@
         ./programs/vscode
         ./programs/folder-actions
         ./programs/ghostty
-        # ./programs/shottr  # TEMP: macOS sandbox defaults write 오류로 임시 비활성화
+        ./programs/shottr
         ./programs/shortcuts
         ./programs/keybindings
         ./programs/ssh

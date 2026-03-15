@@ -21,6 +21,13 @@ let
   shottrDomain = "cc.ffitch.shottr";
   shottrDefaultFolder = "${homeDir}/${constants.macos.paths.shottrDefaultFolderRelative}";
   shottrLicensePath = "${config.xdg.configHome}/shottr/license";
+  shottrDefaultsWriteHelper = ''
+    _shottr_defaults_write() {
+      if ! /usr/bin/defaults write "$@" 2>/dev/null; then
+        echo "Warning: defaults write $2 failed (sandbox restriction?). Skipping."
+      fi
+    }
+  '';
 in
 {
   # 경로 가드: 폴더/북마크 이슈를 조기에 알림
@@ -47,19 +54,20 @@ in
   # Carbon key codes:
   #   1=18(0x12) 2=19(0x13) 3=20(0x14) O=31(0x1F)
   home.activation.applyShottrCoreSettings = lib.hm.dag.entryAfter [ "checkShottrFolderAndWarn" ] ''
-    /usr/bin/defaults write "${shottrDomain}" defaultFolder "${shottrDefaultFolder}"
-    /usr/bin/defaults write "${shottrDomain}" saveFormat "Auto"
-    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_fullscreen -string '{"carbonModifiers":768,"carbonKeyCode":18}'   # ⇧⌘1
-    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_area -string '{"carbonKeyCode":20,"carbonModifiers":768}'          # ⇧⌘3
-    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_scrolling -string '{"carbonModifiers":768,"carbonKeyCode":19}'     # ⇧⌘2
-    /usr/bin/defaults write "${shottrDomain}" KeyboardShortcuts_ocr -string '{"carbonModifiers":6400,"carbonKeyCode":31}'          # ⌃⌥⌘O
+    ${shottrDefaultsWriteHelper}
+    _shottr_defaults_write "${shottrDomain}" defaultFolder "${shottrDefaultFolder}"
+    _shottr_defaults_write "${shottrDomain}" saveFormat "Auto"
+    _shottr_defaults_write "${shottrDomain}" KeyboardShortcuts_fullscreen -string '{"carbonModifiers":768,"carbonKeyCode":18}'   # ⇧⌘1
+    _shottr_defaults_write "${shottrDomain}" KeyboardShortcuts_area -string '{"carbonKeyCode":20,"carbonModifiers":768}'          # ⇧⌘3
+    _shottr_defaults_write "${shottrDomain}" KeyboardShortcuts_scrolling -string '{"carbonModifiers":768,"carbonKeyCode":19}'     # ⇧⌘2
+    _shottr_defaults_write "${shottrDomain}" KeyboardShortcuts_ocr -string '{"carbonModifiers":6400,"carbonKeyCode":31}'          # ⌃⌥⌘O
 
     # Manual Scrolling Capture 활성화
     # Auto Scroll Capture는 Terminal, VS Code 등 비표준 스크롤 앱에서 화면이 짤림.
     # Manual 모드는 사용자가 직접 스크롤하며 캡처하므로 이런 앱에서도 정상 동작.
     # ref: https://shottr.cc/kb/faq
     # ref: https://hurricane-flower-fdf.notion.site/Manual-Scrolling-Capture-120d943b739b80bf868dd1009eeadc17
-    /usr/bin/defaults write "${shottrDomain}" scrollingManualEnabled -bool true
+    _shottr_defaults_write "${shottrDomain}" scrollingManualEnabled -bool true
   '';
 
   # 라이센스 pre-fill (agenix secret → defaults write)
@@ -71,6 +79,7 @@ in
   home.activation.applyShottrLicenseFromSecret =
     lib.hm.dag.entryAfter [ "applyShottrCoreSettings" "setupLaunchAgents" ]
       ''
+        ${shottrDefaultsWriteHelper}
         _waited=0
         while [ ! -f "${shottrLicensePath}" ] && [ "$_waited" -lt 5 ]; do
           sleep 1
@@ -84,10 +93,10 @@ in
           kc_vault="$(sed -n 's/^KC_VAULT=//p' "${shottrLicensePath}" | tail -n 1 | tr -d '\r')"
 
           if [ -n "$kc_license" ]; then
-            /usr/bin/defaults write "${shottrDomain}" kc-license -string "$kc_license"
+            _shottr_defaults_write "${shottrDomain}" kc-license -string "$kc_license"
           fi
           if [ -n "$kc_vault" ]; then
-            /usr/bin/defaults write "${shottrDomain}" kc-vault -string "$kc_vault"
+            _shottr_defaults_write "${shottrDomain}" kc-vault -string "$kc_vault"
           fi
         fi
       '';
