@@ -602,6 +602,39 @@ preflight_cask_conflict_check() {
 }
 
 #───────────────────────────────────────────────────────────────────────────────
+# Worktree 심링크 전환/복원: worktree에서는 relink, main에서는 잔존 심링크 복원
+# nrs.sh의 NO_CHANGES 및 rebuild 경로 양쪽에서 호출
+#───────────────────────────────────────────────────────────────────────────────
+maybe_relink_or_restore() {
+    if [[ "$FLAKE_PATH" != "$MAIN_FLAKE_PATH" ]]; then
+        log_info "🔗 Relinking symlinks to worktree..."
+        "$HOME/.local/bin/nrs-relink.sh" relink || log_warn "⚠️  nrs-relink failed (non-fatal)"
+    else
+        # Main repo: worktree 심링크가 잔존하면 nix store 체인으로 복원
+        # NO_CHANGES 경로에서는 rebuild가 스킵되어 HM activation이 실행되지 않고,
+        # --force rebuild에서도 동일 generation이면 HM이 심링크를 재생성하지 않으므로
+        # 명시적 복원이 필요
+        # 다중 probe: sed -i 등으로 대표 파일이 일반 파일로 바뀌거나,
+        # relink skip으로 partial mismatch가 발생한 경우를 방어
+        local _needs_restore=false
+        local _p
+        for _p in "$HOME/.claude/settings.json" "$HOME/.claude/mcp.json" "$HOME/.codex/config.toml"; do
+            [[ ! -L "$_p" ]] && continue
+            local _target
+            _target=$(readlink "$_p" 2>/dev/null) || continue
+            if [[ "$_target" != /nix/store/* ]]; then
+                _needs_restore=true
+                break
+            fi
+        done
+        if [[ "$_needs_restore" == true ]]; then
+            log_info "🔗 Restoring symlinks to nix store chain..."
+            "$HOME/.local/bin/nrs-relink.sh" restore || log_warn "⚠️  nrs-restore failed (non-fatal)"
+        fi
+    fi
+}
+
+#───────────────────────────────────────────────────────────────────────────────
 # 빌드 및 변경사항 미리보기
 # 인수: $1 = 빌드 라벨 ("preview" 또는 "preview only"), $2 = diff 헤더 메시지
 # 부수효과: NO_CHANGES를 true/false로 설정 (store 경로 비교)

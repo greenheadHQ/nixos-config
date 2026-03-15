@@ -53,20 +53,12 @@ main() {
     if [[ "$NO_CHANGES" == true && "$FORCE_FLAG" != true ]]; then
         echo ""
         log_info "✅ No changes to apply. Skipping rebuild."
-        # Nix 변경 없어도 worktree 심링크는 전환 (hook/skill 소스 PoC 테스트용)
-        if [[ "$FLAKE_PATH" != "$MAIN_FLAKE_PATH" ]]; then
-            log_info "🔗 Relinking symlinks to worktree..."
-            "$HOME/.local/bin/nrs-relink.sh" relink || log_warn "⚠️  nrs-relink failed (non-fatal)"
-        fi
+        maybe_relink_or_restore
         return 0
     fi
     worktree_symlink_guard
     run_nixos_rebuild
-    # Worktree 심링크 전환
-    if [[ "$FLAKE_PATH" != "$MAIN_FLAKE_PATH" ]]; then
-        log_info "🔗 Relinking symlinks to worktree..."
-        "$HOME/.local/bin/nrs-relink.sh" relink || log_warn "⚠️  nrs-relink failed (non-fatal)"
-    fi
+    maybe_relink_or_restore
     cleanup_build_artifacts
 
     echo ""
