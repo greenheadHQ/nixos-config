@@ -134,6 +134,12 @@ main() {
     worktree_symlink_guard
     preflight_cask_conflict_check
     cleanup_launchd_agents
+    # Pre-rebuild restore (darwin 전용):
+    # HM activation의 checkLinkTargets가 non-HMF 심링크(worktree 타깃)를
+    # "would be clobbered"로 거부하므로, main에서는 rebuild 전에 먼저 복원
+    if [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]; then
+        maybe_relink_or_restore
+    fi
     run_darwin_rebuild
     # shellcheck disable=SC2034
     NRS_LOCK_SWITCH_SUCCESS=true
