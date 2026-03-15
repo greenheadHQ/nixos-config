@@ -45,7 +45,7 @@ run_nixos_rebuild() {
 #───────────────────────────────────────────────────────────────────────────────
 main() {
     cd "$FLAKE_PATH" || exit 1
-    trap cleanup_build_artifacts EXIT
+    trap 'cleanup_build_artifacts; release_rebuild_lock_on_failure' EXIT
 
     echo ""
     preflight_source_build_check
@@ -57,6 +57,7 @@ main() {
         return 0
     fi
     worktree_symlink_guard
+    acquire_rebuild_lock
     # Pre-rebuild restore (darwin과 같은 이유):
     # HM activation의 checkLinkTargets가 non-HMF 심링크(worktree 타깃)를
     # "would be clobbered"로 거부하므로, main에서는 rebuild 전에 먼저 복원
@@ -68,6 +69,7 @@ main() {
     fi
     run_nixos_rebuild
     maybe_relink_or_restore
+    release_rebuild_lock
     cleanup_build_artifacts
 
     echo ""
