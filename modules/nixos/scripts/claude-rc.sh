@@ -43,6 +43,7 @@ claude-rc: Claude Code Remote Control tmux wrapper
   claude-rc --detach                     서버 시작 (백그라운드)
   claude-rc --attach                     기존 세션 접속
   claude-rc --stop                       서버 종료
+  claude-rc --cleanup                    zombie 세션 + stale worktree 정리
 
 옵션:
   --permission-mode <mode>   권한 모드 (default: bypassPermissions)
@@ -99,6 +100,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --stop)    ACTION="stop"; shift ;;
+            --cleanup) ACTION="cleanup"; shift ;;
             --attach)  ACTION="attach"; shift ;;
             --detach)  DETACH=true; shift ;;
             --help|-h) usage; exit 0 ;;
@@ -146,6 +148,77 @@ do_attach() {
     else
         log_error "실행 중인 세션 없음 (claude-rc로 시작하세요)"
         exit 1
+    fi
+}
+
+#───────────────────────────────────────────────────────────────────────────────
+# 서브커맨드: cleanup
+#
+# Workaround: claude remote-control의 disconnect ≠ end session 설계로 인해
+# bridge 프로세스가 종료되지 않아 capacity 슬롯이 영구 점유되는 문제.
+# upstream에서 세션 revoke(#28917) 또는 idle timeout(#32050)이 구현되면
+# 이 서브커맨드는 불필요해질 수 있다 — 그때 제거를 검토할 것.
+# refs: https://github.com/anthropics/claude-code/issues/28917
+#       https://github.com/anthropics/claude-code/issues/32050
+#───────────────────────────────────────────────────────────────────────────────
+do_cleanup() {
+    # 세션 내부 실행 감지: do_stop이 현재 셸을 kill하므로 cleanup을 먼저 수행
+    local inside=false
+    if [[ -n "${TMUX:-}" ]]; then
+        local current_session
+        current_session=$(tmux display-message -p '#{session_name}' 2>/dev/null) || true
+        [[ "$current_session" == "$TMUX_SESSION" ]] && inside=true
+    fi
+
+    # 1단계: 서버 종료 (외부 실행 시만 — 내부 실행 시 마지막에 처리)
+    if [[ "$inside" == false ]]; then
+        do_stop
+    fi
+
+    # 2단계: git worktree prune
+    cd "$WORK_DIR" || exit 1
+    local prune_output
+    prune_output=$(git worktree prune --expire=now --verbose 2>&1) || true
+    if [[ -n "$prune_output" ]]; then
+        log_info "worktree prune:"
+        echo "$prune_output"
+    fi
+
+    # 3단계: orphan worktree 디렉토리 정리
+    local wt_dir="${WORK_DIR}/.claude/worktrees"
+    if [[ -d "$wt_dir" ]]; then
+        # prune 후 git worktree list에 등록된 경로 수집
+        local porcelain_output
+        if ! porcelain_output=$(git worktree list --porcelain 2>&1); then
+            log_error "git worktree list 실패 — orphan sweep 건너뜀"
+        else
+            local -a live_worktrees=()
+            while IFS= read -r line; do
+                [[ "$line" == worktree\ * ]] && live_worktrees+=("${line#worktree }")
+            done <<< "$porcelain_output"
+
+            for dir in "$wt_dir"/*/; do
+                [[ -d "$dir" ]] || continue
+                local canonical
+                canonical=$(realpath "$dir")
+                local is_live=false
+                for live in "${live_worktrees[@]}"; do
+                    [[ "$(realpath "$live" 2>/dev/null)" == "$canonical" ]] && { is_live=true; break; }
+                done
+                if [[ "$is_live" == false ]]; then
+                    log_info "orphan 디렉토리 삭제: $(basename "$dir")"
+                    rm -rf "$dir"
+                fi
+            done
+        fi
+    fi
+
+    # 세션 내부: cleanup 완료 후 세션 종료 (이 셸도 함께 종료됨)
+    if [[ "$inside" == true ]]; then
+        log_info "정리 완료 — 세션 종료 중..."
+        tmux kill-session -t "$TMUX_SESSION"
+    else
+        log_info "정리 완료 — claude-rc 또는 claude-rc --detach 로 서버 재시작"
     fi
 }
 
@@ -258,8 +331,9 @@ do_start_inner() {
 parse_args "$@"
 
 case "$ACTION" in
-    stop)   do_stop ;;
-    attach) do_attach ;;
+    stop)    do_stop ;;
+    attach)  do_attach ;;
+    cleanup) do_cleanup ;;
     start)
         if inside_rc_session; then
             do_start_inner
