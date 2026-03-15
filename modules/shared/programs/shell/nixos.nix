@@ -3,6 +3,7 @@
   config,
   pkgs,
   lib,
+  nixosConfigDefaultPath,
   ...
 }:
 
@@ -29,6 +30,13 @@ in
     executable = true;
   };
 
+  home.file.".local/bin/claude-rc.sh" = {
+    source = pkgs.replaceVars "${nixosScriptsDir}/claude-rc.sh" {
+      flakePath = nixosConfigDefaultPath;
+    };
+    executable = true;
+  };
+
   # NixOS: mise prebuilt 바이너리 사용 (소스 빌드 방지)
   # NixOS에서 all_compile/node.compile 기본값이 true → Python 3.13과 Node.js configure.py 비호환 에러 발생
   home.sessionVariables = {
@@ -48,6 +56,9 @@ in
     nrs-offline = "~/.local/bin/nrs.sh --offline";
     nrp = "~/.local/bin/nrp.sh";
     nrp-offline = "~/.local/bin/nrp.sh --offline";
+
+    # Claude Code Remote Control
+    claude-rc = "~/.local/bin/claude-rc.sh";
 
     # NixOS 세대 히스토리
     nrh = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system | tail -10";
