@@ -7,6 +7,7 @@ description: |
   Claude Code 전용 — Codex CLI 에이전트는 이 스킬을 사용하지 않는다.
   NOT for syncing harness/projecting skills to .agents/ (use syncing-codex-harness).
   NOT for Codex config.toml or trust settings (use configuring-codex).
+  NOT for claude -p / headless Claude Code 비대화형 모드 (use using-claude-p).
   Triggers: "codex exec", "codex 실행", "codex CLI", "비대화형 codex",
   "non-interactive codex", "codex review", "codex 리뷰", "코드 리뷰 피드백",
   "codex exec review", "codex 결과 저장", "-o result.md", "codex e",

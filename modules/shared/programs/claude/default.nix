@@ -145,6 +145,10 @@ in
     ".claude/skills/documenting-intent".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/documenting-intent";
 
+    # using-claude-p 스킬 (user-scope)
+    ".claude/skills/using-claude-p".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/using-claude-p";
+
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
