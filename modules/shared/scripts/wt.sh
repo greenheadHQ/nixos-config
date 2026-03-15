@@ -559,7 +559,7 @@ _remove_worktree() {
     if [[ "$nrs_wt" == "$wt_path" ]]; then
       _info "⚠️  삭제된 worktree가 마지막 rebuild 소스였습니다."
       _info "   심링크가 dangling 상태일 수 있습니다."
-      _info "   main repo에서 rebuild를 실행하거나 'nrs-restore'를 실행하세요."
+      _info "   main repo에서 rebuild를 실행하거나 'nrs-relink restore'를 실행하세요."
     fi
   fi
 }

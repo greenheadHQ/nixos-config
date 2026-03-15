@@ -23,13 +23,13 @@ in
     source = "${sharedScriptsDir}/wt.sh";
     executable = true;
   };
-  home.file.".local/bin/nfu.sh" = {
+  home.file.".local/bin/nfu" = {
     source = pkgs.replaceVars "${sharedScriptsDir}/nfu.sh" {
       flakePath = nixosConfigDefaultPath;
     };
     executable = true;
   };
-  home.file.".local/bin/nrs-relink.sh" = {
+  home.file.".local/bin/nrs-relink" = {
     source = pkgs.replaceVars "${sharedScriptsDir}/nrs-relink.sh" {
       flakePath = nixosConfigDefaultPath;
     };
@@ -79,9 +79,6 @@ in
 
     # Codex CLI 위험 모드 단축 (사용자 요청)
     codex = "command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen";
-
-    # Nix Flake Update (원자적 업데이트 워크플로우)
-    nfu = "~/.local/bin/nfu.sh";
 
     # lazygit 단축
     lg = "lazygit";

@@ -279,7 +279,7 @@ acquire_nrs_lock() {
             if [[ "$lock_pid" != "0" ]] && kill -0 "$lock_pid" 2>/dev/null; then
                 if [[ "$lock_pid" != "$$" ]]; then
                     log_error "❌ Another nrs process (PID $lock_pid) is running in this worktree."
-                    echo "  Wait for it to finish or run 'nrs-unlock' to force release."
+                    echo "  Wait for it to finish or run 'nrs-lock unlock' to force release."
                     exit 1
                 fi
             fi
@@ -309,7 +309,7 @@ acquire_nrs_lock() {
             echo "  Worktree: $lock_worktree"
             echo "  Locked:   ${elapsed}m ago"
             echo ""
-            echo "  Run 'nrs-unlock' to release the lock."
+            echo "  Run 'nrs-lock unlock' to release the lock."
             exit 1
         fi
     fi
@@ -608,7 +608,7 @@ preflight_cask_conflict_check() {
 maybe_relink_or_restore() {
     if [[ "$FLAKE_PATH" != "$MAIN_FLAKE_PATH" ]]; then
         log_info "🔗 Relinking symlinks to worktree..."
-        "$HOME/.local/bin/nrs-relink.sh" relink || log_warn "⚠️  nrs-relink failed (non-fatal)"
+        "$HOME/.local/bin/nrs-relink" relink || log_warn "⚠️  nrs-relink failed (non-fatal)"
     else
         # Main repo: worktree 심링크가 잔존하면 nix store 체인으로 복원
         # NO_CHANGES 경로에서는 rebuild가 스킵되어 HM activation이 실행되지 않고,
@@ -629,7 +629,7 @@ maybe_relink_or_restore() {
         done
         if [[ "$_needs_restore" == true ]]; then
             log_info "🔗 Restoring symlinks to nix store chain..."
-            "$HOME/.local/bin/nrs-relink.sh" restore || log_warn "⚠️  nrs-restore failed (non-fatal)"
+            "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
         fi
     fi
 }

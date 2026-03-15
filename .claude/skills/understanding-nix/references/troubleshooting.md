@@ -158,7 +158,7 @@ ls -d /nix/store/*-source 2>/dev/null | wc -l
 sudo darwin-rebuild switch --flake . --offline
 
 # 또는 alias 사용
-nrs-offline
+nrs --offline
 ```
 
 - 네트워크 요청 없이 로컬 캐시만 사용
@@ -192,10 +192,10 @@ git add flake.lock && git commit -m "update" && git push
 
 # 2. 다른 호스트에서 pull 후 offline rebuild
 git pull
-nrs-offline  # ~10초 완료!
+nrs --offline  # ~10초 완료!
 ```
 
-> **참고**: `nrs`, `nrs-offline`, `nrp` alias는 `modules/shared/programs/shell/default.nix`에서 정의됩니다.
+> **참고**: `nrs`, `nrp` 명령은 `~/.local/bin/`에 설치되며, `--offline` 플래그로 오프라인 모드를 사용합니다.
 
 ---
 

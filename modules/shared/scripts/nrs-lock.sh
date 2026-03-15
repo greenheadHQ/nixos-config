@@ -84,7 +84,7 @@ case "${1:-}" in
     status)  cmd_status ;;
     unlock)  cmd_unlock ;;
     *)
-        echo "Usage: nrs-lock.sh {status|unlock}" >&2
+        echo "Usage: nrs-lock {status|unlock}" >&2
         exit 1
         ;;
 esac

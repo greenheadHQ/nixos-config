@@ -2,10 +2,10 @@
 # nixos-rebuild wrapper script
 #
 # 사용법:
-#   nrs.sh                       # 일반 rebuild
-#   nrs.sh --offline             # 오프라인 rebuild (빠름)
-#   nrs.sh --force               # 소스 빌드 경고 무시
-#   nrs.sh --force --cores 2    # 코어 제한으로 진행
+#   nrs                       # 일반 rebuild
+#   nrs --offline             # 오프라인 rebuild (빠름)
+#   nrs --force               # 소스 빌드 경고 무시
+#   nrs --force --cores 2    # 코어 제한으로 진행
 
 set -euo pipefail
 

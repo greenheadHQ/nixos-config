@@ -3,9 +3,9 @@
 # standalone 스크립트 — rebuild-common.sh를 source하지 않음
 #
 # 사용법:
-#   nrs-relink.sh relink   # ~/.claude/* 등을 현재 worktree로 전환
-#   nrs-relink.sh restore  # nix store 체인으로 복원
-#   nrs-relink.sh status   # 현재 심링크 상태 표시
+#   nrs-relink relink   # ~/.claude/* 등을 현재 worktree로 전환
+#   nrs-relink restore  # nix store 체인으로 복원
+#   nrs-relink status   # 현재 심링크 상태 표시
 
 set -euo pipefail
 
@@ -171,7 +171,7 @@ case "${1:-}" in
     restore) cmd_restore ;;
     status)  cmd_status ;;
     *)
-        echo "Usage: nrs-relink.sh {relink|restore|status}" >&2
+        echo "Usage: nrs-relink {relink|restore|status}" >&2
         exit 1
         ;;
 esac

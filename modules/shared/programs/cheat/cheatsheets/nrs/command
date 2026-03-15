@@ -21,8 +21,8 @@ nrs — Nix rebuild switch wrapper (darwin-rebuild)
   nrh --all              전체 세대 (느림)
 
 [worktree lock]
-  nrs-status             현재 lock 상태 조회 (branch, worktree, 경과/남은 시간)
-  nrs-unlock             lock 수동 해제
+  nrs-lock status        현재 lock 상태 조회 (branch, worktree, 경과/남은 시간)
+  nrs-lock unlock        lock 수동 해제
 
   lock 동작:
     main에서 nrs → lock 미취득 (worktree lock 존재 시 경고만)
@@ -40,5 +40,5 @@ nrs — Nix rebuild switch wrapper (darwin-rebuild)
 
 Tip
 - nrp로 미리보기 → nrs로 적용이 안전한 워크플로우
-- worktree 작업 완료 후 nrs-unlock 또는 CC 세션 종료 시 자동 해제
+- worktree 작업 완료 후 nrs-lock unlock 또는 CC 세션 종료 시 자동 해제
 - --force는 lock을 무시하지 않음 (NO_CHANGES 스킵만 해당)

@@ -82,7 +82,7 @@ curl -I https://vaultwarden.greenhead.dev
 
 **원인**: 컨테이너 재시작 직후 Podman 헬스체크 transient 서비스가 start-period(30초) 내에 실행되어 실패
 
-**현재 동작**: `nrs.sh`가 exit code 4를 경고로 자동 처리하므로 빌드 결과물 정리 등 후속 작업 정상 진행
+**현재 동작**: `nrs`가 exit code 4를 경고로 자동 처리하므로 빌드 결과물 정리 등 후속 작업 정상 진행
 ```bash
 # 경고 메시지 예시:
 # ⚠️  switch-to-configuration exited with status 4 (transient unit failures, e.g. health check start period)

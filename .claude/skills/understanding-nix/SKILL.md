@@ -52,7 +52,7 @@ nix flake check --no-build --all-systems  # flake 평가 오류 검사
 
 | 방법 | 명령어/설정 | 효과 |
 |------|------------|------|
-| 오프라인 빌드 | `nrs-offline` | 네트워크 요청 없음 (~10초, 18배 빠름) |
+| 오프라인 빌드 | `nrs --offline` | 네트워크 요청 없음 (~10초, 18배 빠름) |
 | 병렬 다운로드 | `max-substitution-jobs = 128` | 동시 128개 다운로드 (기본 16) |
 | HTTP 연결 | `http-connections = 50` | 동시 50 연결 (기본 25) |
 | GitHub 토큰 | `access-tokens = github.com=...` | rate limit 해제 |
@@ -70,7 +70,7 @@ nix derivation show .#darwinConfigurations.<host>.system  # derivation 확인
 
 1. `git add .` — Nix flakes는 git-tracked 파일만 인식한다.
 2. `nix flake update <input-name>` — 외부 input 갱신이 필요한 경우.
-3. `nrs` 또는 `nrs-offline`으로 빌드.
+3. `nrs` 또는 `nrs --offline`으로 빌드.
 
 ### 빌드 실패 진단
 
@@ -107,7 +107,7 @@ direnv 환경이 비활성 상태에서 커밋하면 hook이 실패한다. `dire
 
 1. **flake 인식 안 됨**: `git add` 필요 (untracked 파일은 무시됨)
 2. **experimental features 비활성화**: `nix-command flakes` 활성화 필요
-3. **빌드 느림**: `nrs-offline` 사용 또는 substituter 설정 확인
+3. **빌드 느림**: `nrs --offline` 사용 또는 substituter 설정 확인
 4. **gitleaks/lefthook not found**: direnv 환경 미활성 — `direnv allow` 실행
 5. **builtins.toJSON 한 줄 출력**: `pkgs.formats.json` 사용으로 pretty-print
 

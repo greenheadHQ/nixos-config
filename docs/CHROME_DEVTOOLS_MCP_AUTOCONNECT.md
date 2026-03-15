@@ -29,7 +29,7 @@
 
 1. 최신 설정 적용 완료
 ```bash
-~/.local/bin/nrs.sh
+~/.local/bin/nrs
 ```
 
 2. Google Chrome Stable 설치
@@ -192,7 +192,7 @@ readlink ~/.codex/config.toml
 
 ## 13. 30초 점검 체크리스트
 
-1. `~/.local/bin/nrs.sh` 적용 완료
+1. `~/.local/bin/nrs` 적용 완료
 2. `codex mcp list`에 `chrome-devtools` 표시
 3. args에 `--autoConnect --channel=stable` 확인
 4. `Ctrl+Option+Cmd+C`로 inspect 페이지 열기

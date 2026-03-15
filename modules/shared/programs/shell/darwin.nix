@@ -12,23 +12,23 @@ let
 in
 {
   # macOS용 스크립트 설치
-  home.file.".local/bin/nrs.sh" = {
+  home.file.".local/bin/nrs" = {
     source = "${darwinScriptsDir}/nrs.sh";
     executable = true;
   };
 
-  home.file.".local/bin/nrp.sh" = {
+  home.file.".local/bin/nrp" = {
     source = "${darwinScriptsDir}/nrp.sh";
     executable = true;
   };
 
-  home.file.".local/bin/nrh.sh" = {
+  home.file.".local/bin/nrh" = {
     source = "${darwinScriptsDir}/nrh.sh";
     executable = true;
   };
 
   # nrs-lock CLI (lock 상태 조회/해제)
-  home.file.".local/bin/nrs-lock.sh" = {
+  home.file.".local/bin/nrs-lock" = {
     source = "${sharedScriptsDir}/nrs-lock.sh";
     executable = true;
   };
@@ -49,23 +49,6 @@ in
 
   # macOS 전용 aliases
   home.shellAliases = {
-    # Nix 시스템 관리 (darwin-rebuild)
-    nrs = "~/.local/bin/nrs.sh";
-    nrs-offline = "~/.local/bin/nrs.sh --offline";
-    nrp = "~/.local/bin/nrp.sh";
-    nrp-offline = "~/.local/bin/nrp.sh --offline";
-    nrh = "~/.local/bin/nrh.sh";
-    nrh-all = "~/.local/bin/nrh.sh --all";
-
-    # nrs lock 관리
-    nrs-status = "~/.local/bin/nrs-lock.sh status";
-    nrs-unlock = "~/.local/bin/nrs-lock.sh unlock";
-
-    # nrs-relink (worktree 심링크 전환)
-    nrs-relink = "~/.local/bin/nrs-relink.sh relink";
-    nrs-restore = "~/.local/bin/nrs-relink.sh restore";
-    nrs-relink-status = "~/.local/bin/nrs-relink.sh status";
-
     # Hammerspoon CLI
     hs = "/Applications/Hammerspoon.app/Contents/Frameworks/hs/hs";
     hsr = ''hs -c "hs.reload()"'';

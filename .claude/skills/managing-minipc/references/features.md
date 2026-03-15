@@ -198,10 +198,10 @@ services.tailscale = {
 
 | Alias | 명령어 | 설명 |
 |-------|--------|------|
-| `nrs` | `~/.local/bin/nrs.sh` | rebuild (미리보기 + 확인 + 적용) |
-| `nrs-offline` | `~/.local/bin/nrs.sh --offline` | 오프라인 rebuild |
-| `nrp` | `~/.local/bin/nrp.sh` | 미리보기만 |
-| `nrp-offline` | `~/.local/bin/nrp.sh --offline` | 오프라인 미리보기 |
+| `nrs` | `~/.local/bin/nrs` | rebuild (미리보기 + 확인 + 적용) |
+| `nrs --offline` | `~/.local/bin/nrs --offline` | 오프라인 rebuild |
+| `nrp` | `~/.local/bin/nrp` | 미리보기만 |
+| `nrp --offline` | `~/.local/bin/nrp --offline` | 오프라인 미리보기 |
 | `nrh` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system \| tail -10` | 최근 10개 세대 |
 | `nrh-all` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system` | 전체 세대 |
 

@@ -130,13 +130,13 @@ locale charmap  # UTF-8 확인
 
 | Alias | 명령어 | 설명 |
 |------|--------|------|
-| `nrs` | `~/.local/bin/nrs.sh` | rebuild (미리보기 + 적용) |
-| `nrs-offline` | `~/.local/bin/nrs.sh --offline` | 오프라인 rebuild |
-| `nrs --force` | `~/.local/bin/nrs.sh --force` | NO_CHANGES 스킵 우회 (activation scripts 강제 재실행) |
-| `nrp` | `~/.local/bin/nrp.sh` | 미리보기 전용 |
-| `nrp-offline` | `~/.local/bin/nrp.sh --offline` | 오프라인 미리보기 |
-| `nrh` | `~/.local/bin/nrh.sh` | 최근 10개 세대 |
-| `nrh-all` | `~/.local/bin/nrh.sh --all` | 전체 세대 |
+| `nrs` | `~/.local/bin/nrs` | rebuild (미리보기 + 적용) |
+| `nrs --offline` | `~/.local/bin/nrs --offline` | 오프라인 rebuild |
+| `nrs --force` | `~/.local/bin/nrs --force` | NO_CHANGES 스킵 우회 (activation scripts 강제 재실행) |
+| `nrp` | `~/.local/bin/nrp` | 미리보기 전용 |
+| `nrp --offline` | `~/.local/bin/nrp --offline` | 오프라인 미리보기 |
+| `nrh` | `~/.local/bin/nrh` | 최근 10개 세대 |
+| `nrh --all` | `~/.local/bin/nrh --all` | 전체 세대 |
 
 **Rebuild 스크립트 아키텍처:**
 
@@ -489,4 +489,4 @@ darwinOnly = [
 ];
 ```
 
-`nrs`로 적용. 새 패키지 추가 시 `nrs-offline`은 사용 불가 (다운로드 필요).
+`nrs`로 적용. 새 패키지 추가 시 `nrs --offline`은 사용 불가 (다운로드 필요).

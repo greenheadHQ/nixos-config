@@ -2,10 +2,10 @@
 # nixos-rebuild preview script (build only, no switch)
 #
 # 사용법:
-#   nrp.sh                       # 미리보기
-#   nrp.sh --offline             # 오프라인 미리보기 (빠름)
-#   nrp.sh --force               # 소스 빌드 경고 무시
-#   nrp.sh --force --cores 2    # 코어 제한으로 진행
+#   nrp                       # 미리보기
+#   nrp --offline             # 오프라인 미리보기 (빠름)
+#   nrp --force               # 소스 빌드 경고 무시
+#   nrp --force --cores 2    # 코어 제한으로 진행
 
 set -euo pipefail
 

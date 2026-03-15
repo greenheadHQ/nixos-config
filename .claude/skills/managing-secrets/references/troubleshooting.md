@@ -129,7 +129,7 @@ ls -la secrets/*.age
 age: error: open /var/folders/.../agenix.d/<N>/<secret>.tmp: permission denied
 ```
 
-**원인**: `nrs.sh`의 launchd cleanup이 복호화 중인 agenix agent를 kill → 0400 권한의 `.tmp` 파일이 다음 generation 디렉토리에 남음 → agent 재시작 시 해당 `.tmp`를 덮어쓸 수 없어 crash loop.
+**원인**: `nrs`의 launchd cleanup이 복호화 중인 agenix agent를 kill → 0400 권한의 `.tmp` 파일이 다음 generation 디렉토리에 남음 → agent 재시작 시 해당 `.tmp`를 덮어쓸 수 없어 crash loop.
 
 **진단**:
 

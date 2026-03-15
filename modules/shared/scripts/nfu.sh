@@ -109,7 +109,7 @@ NEED_ROLLBACK=false
 log_info "═══ 시스템 적용 (nrs) ═══"
 # --force 항상 전달: nfu는 명시적 업데이트이므로 preflight heavy package 체크 우회
 # (fix-fod-hashes.sh가 이미 빌드 검증 완료)
-~/.local/bin/nrs.sh --force "${NRS_ARGS[@]}"
+~/.local/bin/nrs --force "${NRS_ARGS[@]}"
 
 echo ""
 log_info "═══ 업데이트 완료 ═══"

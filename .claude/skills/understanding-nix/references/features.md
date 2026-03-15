@@ -214,19 +214,19 @@ NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "week
 
 **공통 alias:**
 
-| Alias         | 용도                                        |
+| 명령어        | 용도                                        |
 | ------------- | ------------------------------------------- |
 | `nrs`         | 일반 rebuild (미리보기 + 확인 + 적용) |
-| `nrs-offline` | 오프라인 rebuild (빠름, 동일한 안전 조치 포함) |
+| `nrs --offline` | 오프라인 rebuild (빠름, 동일한 안전 조치 포함) |
 | `nrp`         | 미리보기만 (적용 안 함) |
-| `nrp-offline` | 오프라인 미리보기 |
+| `nrp --offline` | 오프라인 미리보기 |
 
 **macOS 전용 alias:**
 
 | Alias         | 용도                                        |
 | ------------- | ------------------------------------------- |
 | `nrh`         | 최근 10개 세대 히스토리 (스크립트) |
-| `nrh-all`     | 전체 세대 히스토리 (스크립트) |
+| `nrh --all`   | 전체 세대 히스토리 (스크립트) |
 | `hs`          | Hammerspoon CLI                             |
 | `hsr`         | Hammerspoon 설정 리로드 (완료 시 알림 표시) |
 
@@ -237,7 +237,7 @@ NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "week
 | `nrh`         | 최근 10개 세대 히스토리 (`nix-env` alias) |
 | `nrh-all`     | 전체 세대 히스토리 (`nix-env` alias) |
 
-**`nrs` / `nrs-offline` 동작 흐름 (macOS 전용):**
+**`nrs` / `nrs --offline` 동작 흐름 (macOS 전용):**
 
 ```
 1. darwin-rebuild build + nvd diff (미리보기)
@@ -252,7 +252,7 @@ NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "week
    └── com.green.* 에이전트 동적 탐색 → bootout + plist 삭제
 
 4. darwin-rebuild switch 실행
-   └── --offline 플래그 (nrs-offline만)
+   └── --offline 플래그 (nrs --offline만)
 
 5. Hammerspoon 완전 재시작 (HOME 오염 방지)
    └── killall → sleep 1 → open -a Hammerspoon
@@ -261,7 +261,7 @@ NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "week
    └── ./result* 심볼릭 링크 삭제
 ```
 
-**`nrs` / `nrs-offline` 동작 흐름 (NixOS 전용):**
+**`nrs` / `nrs --offline` 동작 흐름 (NixOS 전용):**
 
 ```
 1. 외부 패키지 버전 갱신 (update_external_packages)
@@ -271,7 +271,7 @@ NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "week
    └── 빌드 실패 시 즉시 종료 (에러 처리)
 
 3. nixos-rebuild switch 실행
-   └── --offline 플래그 (nrs-offline만)
+   └── --offline 플래그 (nrs --offline만)
    └── exit code 4 (일시적 unit 실패)는 경고만 출력 후 계속
 
 4. 빌드 아티팩트 정리
@@ -282,8 +282,8 @@ NixOS는 추가로 `modules/nixos/configuration.nix`에서 `nix.gc.dates = "week
 
 - macOS 스크립트: `modules/darwin/scripts/nrs.sh`, `modules/darwin/scripts/nrp.sh`, `modules/darwin/scripts/nrh.sh`
 - NixOS 스크립트: `modules/nixos/scripts/nrs.sh`, `modules/nixos/scripts/nrp.sh`
-- 설치 위치: `~/.local/bin/nrs.sh`, `~/.local/bin/nrp.sh` (macOS는 `~/.local/bin/nrh.sh` 추가)
-- alias: `nrs` → `~/.local/bin/nrs.sh`, `nrs-offline` → `~/.local/bin/nrs.sh --offline`
+- 설치 위치: `~/.local/bin/nrs`, `~/.local/bin/nrp` (macOS는 `~/.local/bin/nrh` 추가)
+- PATH에 `~/.local/bin`이 포함되어 직접 실행 가능 (`nrs`, `nrs --offline`)
 
 macOS에서는 에이전트 목록을 하드코딩하지 않고 `launchctl list | grep com.green`으로 동적 탐색합니다.
 
@@ -291,10 +291,10 @@ macOS에서는 에이전트 목록을 하드코딩하지 않고 `launchctl list 
 
 ```bash
 # 평소 (설정만 변경, flake.lock 동기화된 상태)
-nrs-offline  # ~10초 완료!
+nrs --offline  # ~10초 완료!
 
 # 새 패키지 추가 또는 flake update 후
-nrs          # 일반 모드 (다운로드 필요)
+nrs            # 일반 모드 (다운로드 필요)
 ```
 
 **`--offline` 플래그의 의미:**
@@ -305,7 +305,7 @@ nrs          # 일반 모드 (다운로드 필요)
 
 **소스 참조 방식 (로컬 vs Remote):**
 
-> **중요**: `nrs`와 `nrs-offline` **모두** `flake.lock`에 잠긴 **Remote Git URL**에서 소스를 참조합니다.
+> **중요**: `nrs`와 `nrs --offline` **모두** `flake.lock`에 잠긴 **Remote Git URL**에서 소스를 참조합니다.
 
 | 항목 | 설명 |
 |------|------|
@@ -322,9 +322,9 @@ nrs          # 일반 모드 (다운로드 필요)
 
 **주의사항:**
 
-- `nrs-offline`은 캐시에 모든 패키지가 있어야 동작
+- `nrs --offline`은 캐시에 모든 패키지가 있어야 동작
 - 새 패키지 추가 시에는 `nrs` 사용 필요
-- 집/회사 간 `flake.lock`을 git으로 동기화하면 어디서든 `nrs-offline` 사용 가능
+- 집/회사 간 `flake.lock`을 git으로 동기화하면 어디서든 `nrs --offline` 사용 가능
 
 ## 패키지 변경사항 미리보기 (nvd)
 
@@ -333,15 +333,15 @@ nrs          # 일반 모드 (다운로드 필요)
 | 명령어 | 설명 |
 |--------|------|
 | `nrp` | 빌드 후 변경사항 미리보기 (적용 안 함) |
-| `nrp-offline` | 오프라인 미리보기 |
-| `nrh` (macOS) | 최근 10개 세대 히스토리 (`nrh.sh`) |
-| `nrh-all` (macOS) | 전체 세대 히스토리 (`nrh.sh --all`) |
+| `nrp --offline` | 오프라인 미리보기 |
+| `nrh` (macOS) | 최근 10개 세대 히스토리 |
+| `nrh --all` (macOS) | 전체 세대 히스토리 |
 | `nrh` (NixOS) | 최근 10개 세대 (`nix-env --list-generations ...` 후 tail 10) |
 | `nrh-all` (NixOS) | 전체 세대 (`nix-env ...`) |
 
 > **참고**: `nrs` 실행 시에도 빌드 후 `nvd diff`를 출력합니다.
 
-`nrh`의 `-n`/`-a` 옵션은 macOS 스크립트(`~/.local/bin/nrh.sh`)에서만 지원합니다.
+`nrh`의 `-n`/`-a` 옵션은 macOS 스크립트(`~/.local/bin/nrh`)에서만 지원합니다.
 NixOS는 alias 기반이라 `nrh`/`nrh-all` 두 명령으로 구분합니다.
 
 **출력 예시:**
@@ -362,7 +362,7 @@ git add flake.lock && git commit -m "update flake.lock" && git push
 
 # 2. 회사에서 pull 후 빠른 rebuild
 git pull
-nrs-offline  # 네트워크 요청 없이 빠르게 빌드
+nrs --offline  # 네트워크 요청 없이 빠르게 빌드
 ```
 
 ## 병렬 다운로드 최적화

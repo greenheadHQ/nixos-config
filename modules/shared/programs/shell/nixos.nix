@@ -20,17 +20,17 @@ in
   ];
 
   # NixOS용 스크립트 설치
-  home.file.".local/bin/nrs.sh" = {
+  home.file.".local/bin/nrs" = {
     source = "${nixosScriptsDir}/nrs.sh";
     executable = true;
   };
 
-  home.file.".local/bin/nrp.sh" = {
+  home.file.".local/bin/nrp" = {
     source = "${nixosScriptsDir}/nrp.sh";
     executable = true;
   };
 
-  home.file.".local/bin/claude-rc.sh" = {
+  home.file.".local/bin/claude-rc" = {
     source = pkgs.replaceVars "${nixosScriptsDir}/claude-rc.sh" {
       flakePath = nixosConfigDefaultPath;
     };
@@ -51,20 +51,6 @@ in
 
   # NixOS 전용 aliases
   home.shellAliases = {
-    # Nix 시스템 관리 (nixos-rebuild)
-    nrs = "~/.local/bin/nrs.sh";
-    nrs-offline = "~/.local/bin/nrs.sh --offline";
-    nrp = "~/.local/bin/nrp.sh";
-    nrp-offline = "~/.local/bin/nrp.sh --offline";
-
-    # Claude Code Remote Control
-    claude-rc = "~/.local/bin/claude-rc.sh";
-
-    # nrs-relink (worktree 심링크 전환)
-    nrs-relink = "~/.local/bin/nrs-relink.sh relink";
-    nrs-restore = "~/.local/bin/nrs-relink.sh restore";
-    nrs-relink-status = "~/.local/bin/nrs-relink.sh status";
-
     # NixOS 세대 히스토리
     nrh = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system | tail -10";
     nrh-all = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system";
