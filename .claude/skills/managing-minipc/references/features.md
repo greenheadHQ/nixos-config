@@ -35,15 +35,26 @@ MiniPC(greenhead-minipc)에서 사용되는 NixOS 전용 설정입니다.
 ```nix
 homeserver.immich.enable = true;
 homeserver.uptimeKuma.enable = true;
-homeserver.immichCleanup.enable = true;
-homeserver.immichUpdate.enable = true;
-homeserver.uptimeKumaUpdate.enable = true;
-homeserver.copypartyUpdate.enable = true;
-homeserver.ankiSync.enable = true;
-homeserver.copyparty.enable = true;
-homeserver.vaultwarden.enable = true;
-homeserver.immichBackup.enable = true;
-homeserver.reverseProxy.enable = true;
+homeserver.immichCleanup.enable = true;            # Claude Code Temp 앨범 매일 전체 삭제
+homeserver.immichUpdate.enable = true;              # Immich 버전 체크 + 업데이트 알림
+homeserver.uptimeKumaUpdate.enable = true;          # Uptime Kuma 버전 체크 + 업데이트 알림
+homeserver.copypartyUpdate.enable = true;           # Copyparty 버전 체크 + 업데이트 알림
+homeserver.ankiSync.enable = true;                  # Anki 자체 호스팅 동기화 서버
+homeserver.ankiConnect.enable = true;               # Headless Anki + AnkiConnect API
+homeserver.copyparty.enable = true;                 # 셀프호스팅 파일 서버
+homeserver.vaultwarden.enable = true;               # Vaultwarden 비밀번호 관리자
+homeserver.vaultwardenUpdate.enable = true;         # Vaultwarden 버전 체크 + 업데이트 알림
+homeserver.karakeep.enable = true;                  # Karakeep 웹 아카이버/북마크 관리 (3컨테이너)
+homeserver.karakeepBackup.enable = true;            # Karakeep SQLite 매일 백업 (HDD)
+homeserver.karakeepNotify.enable = true;            # Karakeep 웹훅→Pushover 브리지
+homeserver.karakeepLogMonitor.enable = true;        # Karakeep 로그 모니터 (OOM/실패 알림)
+homeserver.karakeepFallbackSync.enable = true;      # fallback HTML 자동 재연결 (API)
+homeserver.karakeepSinglefileBridge.enable = true;  # SingleFile 대용량 자동 분기 (링크+보관 fullPageArchive)
+homeserver.karakeepUpdate.enable = true;            # Karakeep 버전 체크 + 업데이트 알림
+homeserver.immichBackup.enable = true;              # Immich PostgreSQL 매일 백업 (HDD)
+homeserver.awesomeAnki.enable = true;               # awesome-anki 카드 분할 웹 서비스
+homeserver.reverseProxy.enable = true;              # Caddy HTTPS 리버스 프록시
+homeserver.smokeTest.enable = true;                 # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
 ```
 
 모든 옵션 정의와 모듈 import는 `modules/nixos/options/homeserver.nix`에 있습니다.
