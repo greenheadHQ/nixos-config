@@ -10,7 +10,7 @@ git-cleanup 커스텀 명령어 사용법입니다.
 
 ## git-cleanup
 
-`scripts/git-cleanup.sh`에서 관리됩니다.
+`modules/shared/scripts/git-cleanup.sh`에서 관리됩니다.
 
 더 이상 사용되지 않는 로컬 브랜치를 식별하고 정리하는 스크립트입니다. `git cleanup` 또는 `git-cleanup` 명령어로 실행합니다.
 

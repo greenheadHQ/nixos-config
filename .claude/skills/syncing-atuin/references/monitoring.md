@@ -15,7 +15,7 @@ Atuin 동기화 상태를 모니터링하고, 동기화 지연 시 알림을 전
 
 ---
 
-> **테스트 버전**: atuin 18.10.0
+> **테스트 버전**: atuin 18.12.1
 
 `modules/darwin/programs/atuin/`에서 관리됩니다.
 
@@ -122,7 +122,7 @@ tail -f ~/.local/share/atuin/watchdog.log
 | ---- | ---- | ---- |
 | `atuin status` 404 | Atuin 서버가 Sync v1 API 비활성화 | 무시해도 됨 |
 | fuzzy search 오매칭 | 기본 fuzzy 모드는 의도치 않은 결과 포함 | `search_mode = "fulltext"`로 해결 |
-| `atuin history delete` 미존재 | v18.11.0에 해당 서브커맨드 없음, SQLite 직접 수정 필요 | 우회 적용 |
+| `atuin history delete` 미존재 | v18.12.1에 해당 서브커맨드 없음, SQLite 직접 수정 필요 | 우회 적용 |
 | 한글 히스토리 TUI 깨짐 | zsh-autosuggestions 0.7.1이 한글 너비 계산 오류 | 히스토리 삭제로 완화 |
 
 > **참고**: 자세한 트러블슈팅은 TROUBLESHOOTING.md의 Atuin 관련 섹션을 참고하세요.

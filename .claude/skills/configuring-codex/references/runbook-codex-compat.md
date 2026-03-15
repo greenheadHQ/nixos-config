@@ -86,7 +86,7 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 
 ## codex trust 관련 메모
 
-- `codex-cli 0.98.0` 기준 `codex trust` 독립 서브커맨드는 확인되지 않았다.
+- `codex-cli 0.114.0` 기준 `codex trust` 독립 서브커맨드는 확인되지 않았다.
 - trust 관리는 CLI 서브커맨드가 아니라 `config.toml` 프로젝트 엔트리로만 가능하다.
 - 본 케이스에서 Skills 누락의 근본 원인으로는 확인되지 않았다(심링크 이슈가 근본 원인).
 

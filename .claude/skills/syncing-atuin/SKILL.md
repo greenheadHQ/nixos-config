@@ -28,7 +28,7 @@ Atuin 동기화 상태 점검, 한글 히스토리 정리, encryption key 문제
 - v2 API 사용 중, `last_sync_time` 파일이 CLI sync에서 자동 업데이트되지 않음
 - 동기화 자체는 정상 작동
 
-**`atuin history delete` 서브커맨드 미존재 (v18.11.0)**
+**`atuin history delete` 서브커맨드 미존재 (v18.12.1)**
 - `atuin history` 하위에 `delete` 명령어가 없음
 - 한글 포함 항목 일괄 삭제: `atuin-clean-kr` 스크립트 사용
 - DB 경로: `~/.local/share/atuin/history.db`
