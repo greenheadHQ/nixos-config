@@ -52,8 +52,21 @@ codex exec review --commit abc1234 --title "Fix sandbox leak" --full-auto > /tmp
 
 ### 주의사항
 
-- **`-o` 미지원**: review 결과 저장은 반드시 stdout 리다이렉트(`> file 2>&1`)로 한다.
+- **`-o` upstream bug**: `-o`는 review --help에 표시되지만 upstream bug(#12502)로 빈 파일을 생성한다(`Warning: no last agent message; wrote empty content`). `> file 2>&1`이 유일한 워크어라운드.
 - **PROMPT 금지**: scope flag과 PROMPT은 상호 배타. 자세한 내용은 SKILL.md 호환성 매트릭스 참조.
+
+## 패턴 2b: stdin PROMPT로 review (`-o` 대신 `> redirect` 사용)
+
+scope flag 없이 PROMPT을 stdin으로 전달하여 review를 실행한다.
+
+```bash
+cat prompt.md | codex exec review - --full-auto > /tmp/result.md 2>&1
+```
+
+> **⚠️ scope flag 미사용**: PROMPT 사용 시 scope flag(`--uncommitted`/`--base`/`--commit`)와
+> 상호 배타이므로 내장 scope flag의 정밀한 diff 스코핑이 적용되지 않는다.
+> review 세션이 자체적으로 diff를 참조할 수 있지만, 어떤 diff가 대상인지는 보장되지 않는다.
+> 정밀한 브랜치/커밋 기준 리뷰가 필요하면 패턴 2 (scope flag) 또는 패턴 4 (exec 우회)를 사용한다.
 
 ## 패턴 3: 커스텀 리뷰 — AGENTS.md 활용 (영구 지시)
 
@@ -131,7 +144,7 @@ cat /tmp/review-prompt.md | codex exec --full-auto -o /tmp/review-result.md 2>&1
 
 ### 장점
 
-- `-o`로 결과 저장 가능 (review 서브커맨드에서는 불가).
+- `-o`로 결과 저장 가능 (review 서브커맨드에서는 upstream bug로 빈 파일 생성).
 - 프롬프트 내용을 완전히 자유롭게 구성 가능.
 - `--output-schema`와 조합하여 구조화된 JSON 출력도 가능.
 
@@ -259,12 +272,22 @@ cat /tmp/smoke-result.md
 
 통과하면, 기존 복잡한 프롬프트로 단계적으로 복귀한다.
 
+## exec vs review 비교표
+
+| 항목 | `codex exec` | `codex exec review` |
+|------|-------------|---------------------|
+| 프롬프트 | 완전 자유 제어 | diff 컨텍스트 내장 |
+| 대상 | 범용 작업 | 코드 리뷰 특화 |
+| diff 스코핑 | 수동 (heredoc 등) | 자동 (--uncommitted/--base/--commit) |
+| `-o` 동작 | 정상 | 빈 파일 생성 (bug #12502) |
+
 ## 빠른 참조 표
 
 | 상황 | 패턴 | 명령 요약 |
 |------|------|-----------|
 | 일반 실행 | 1 | `cat prompt \| codex exec --full-auto -o result` |
 | 리뷰 (기본) | 2 | `codex exec review --base main --full-auto > result` |
+| 리뷰 (stdin PROMPT) | 2b | `cat prompt \| codex exec review - --full-auto > result` |
 | 리뷰 + 커스텀 지시 (영구) | 3 | AGENTS.md 작성 후 review --base |
 | 리뷰 + 커스텀 지시 (1회) | 4 | `cat diff+지시 \| codex exec --full-auto -o result` |
 | 피드백 루프 | 5 | 라운드별 prompt → exec -o → 분석 → 반복 |

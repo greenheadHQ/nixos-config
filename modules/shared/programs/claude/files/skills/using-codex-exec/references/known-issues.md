@@ -99,22 +99,40 @@ pub commit: Option<String>,
 echo "test" | codex exec review - --base main --full-auto 2>&1 | head -5
 ```
 
-### 2. review에서 -o (--output-last-message) 미지원
+### 2. review `-o` upstream bug — 빈 파일 생성
 
 **심각도**: 높음
 
-**증상**:
+**관찰된 동작**: `-o` 사용 시 `Warning: no last agent message; wrote empty content` 출력, 0바이트 파일 생성 (v0.114.0에서 직접 재현)
 
+**참고**: `-o`(`--output-last-message`)는 `codex exec review --help`에 표시되므로 CLI 파서는 인자를 수용한다. 문제는 `ReviewTask::run()`이 None을 반환하여 빈 파일이 생성되는 것이다.
+
+**관련 GitHub Issues**:
+
+| 이슈 | 상태 | 설명 |
+|------|------|------|
+| [#12502](https://github.com/openai/codex/issues/12502) | **OPEN** (2026-02-22~) | review `-o` 빈 파일 생성 보고 |
+| [#14335](https://github.com/openai/codex/issues/14335) | **OPEN** (2026-03-11~) | 동일 증상 재보고 |
+
+**영향 범위**: v0.104.0 ~ v0.115.0-alpha (직접 검증 기준)
+
+**재현**:
+
+```bash
+echo "test" | codex exec review - --full-auto -o /tmp/test.md 2>&1
+# → 0바이트 파일 + "Warning: no last agent message; wrote empty content"
 ```
-error: unexpected argument '-o' found
-```
 
-**원인**: `-o`(`--output-last-message`)는 `codex exec` 전용 플래그이며 `review` 서브커맨드의 인자 목록에 포함되지 않는다. `codex exec review --help` 출력에 `-o`가 없음으로 확인 가능.
-
-**대안**: stdout 리다이렉트로 대체한다:
+**워크어라운드**: stdout 리다이렉트로 대체한다:
 
 ```bash
 codex exec review --base main --full-auto > /tmp/review-result.md 2>&1
+```
+
+**재검증 방법**: 아래 명령으로 `-o`가 비어있지 않은 파일을 생성하면 수정된 것이다:
+
+```bash
+echo "test" | codex exec review - --full-auto -o /tmp/test.md 2>&1 && [ -s /tmp/test.md ] && echo "FIXED" || echo "STILL BROKEN"
 ```
 
 ### 3. review가 working-tree 변경을 잘못 포함
@@ -157,12 +175,14 @@ codex exec review --base main --full-auto > /tmp/review-result.md 2>&1
 **원인**:
 - 실행이 중간 실패하여 마지막 에이전트 메시지가 없을 수 있다.
 - `Warning: no last agent message; wrote empty content` 경고가 stderr에 출력된다.
+- **review 서브커맨드에서 `-o` 사용 시**: upstream bug #12502로 항상 빈 파일 생성. §2 참조.
 
 **해결**:
 1. `2>&1`로 stderr를 함께 캡처한다.
-2. 프롬프트 파일 내용이 비어 있지 않은지 확인한다.
-3. 상위 오류(`model is not supported` 등)를 먼저 해결한다.
-4. 최소 프롬프트(패턴 8 스모크 테스트)로 재현 범위를 줄인다.
+2. review에서는 `-o` 대신 stdout 리다이렉트(`> file 2>&1`)를 사용한다.
+3. 프롬프트 파일 내용이 비어 있지 않은지 확인한다.
+4. 상위 오류(`model is not supported` 등)를 먼저 해결한다.
+5. 최소 프롬프트(패턴 8 스모크 테스트)로 재현 범위를 줄인다.
 
 ### 7. stdin 입력이 멈춘 것처럼 보임
 
@@ -199,7 +219,7 @@ codex exec review --base main --full-auto > /tmp/review-result.md 2>&1
 ERROR: {"detail":"The '<model>' model is not supported when using Codex with a ChatGPT account."}
 ```
 
-**원인**: 현재 계정에서 접근할 수 없는 모델을 `-m`으로 지정했다.
+**원인**: Codex 모델 라인업에 포함되지 않은 모델(`o3`, `o4-mini`, `gpt-4.1` 등)을 `-m`으로 지정했다. ChatGPT 계정에서만 발생하며, "Model metadata not found" 경고(§10)가 선행한다.
 
 **해결**:
 1. `-m`을 제거하고 기본 모델(`~/.codex/config.toml`)로 재시도한다.
@@ -213,7 +233,7 @@ ERROR: {"detail":"The '<model>' model is not supported when using Codex with a C
 warning: Model metadata for `<model>` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
 ```
 
-**원인**: 지정한 모델의 메타데이터를 CLI가 찾지 못했다. 미지원/오타 모델 지정과 함께 나타난다.
+**원인**: 지정한 모델이 CLI의 내장 모델 레지스트리에 없다. Codex 라인업 외 모델(`o3`, `o4-mini`, `gpt-4.1` 등) 지정 시 항상 발생하며, §9 에러와 함께 나타난다.
 
 **해결**: `-m`을 제거하거나 `config.toml`의 기본 모델로 되돌린다.
 

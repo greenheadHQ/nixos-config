@@ -88,6 +88,9 @@ YAML
 # ─── project-skills: project local skills projection ───
 # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
 # 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
+# Claude Code 전용 스킬은 Codex 프로젝션에서 제외 (자기 참조 방지, #212)
+CODEX_EXCLUDE_SKILLS="using-codex-exec"
+
 project_skills() {
   local source_dir="$1"
   local target_dir="$2"
@@ -104,6 +107,11 @@ project_skills() {
 
     local skill_name
     skill_name="$(basename "$source_skill_dir")"
+
+    # Claude Code 전용 스킬 제외
+    case " $CODEX_EXCLUDE_SKILLS " in
+      *" $skill_name "*) continue ;;
+    esac
     local target_link="$target_dir/$skill_name"
     local rel_target="../../$source_from_root/$skill_name"
 

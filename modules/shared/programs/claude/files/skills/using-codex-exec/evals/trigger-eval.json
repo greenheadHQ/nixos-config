@@ -9,6 +9,12 @@
   {"query": "non-interactive codex로 자동 리뷰", "should_trigger": true},
   {"query": "codex exec review --uncommitted", "should_trigger": true},
   {"query": "codex exec로 Devil's Advocate 리뷰", "should_trigger": true},
+  {"query": "codex exec resume --last", "should_trigger": true},
+  {"query": "codex e \"prompt\"", "should_trigger": true},
+  {"query": "codex exec review --base main --full-auto", "should_trigger": true},
+  {"query": "codex exec --yolo \"prompt\"", "should_trigger": true},
+  {"query": "codex review --base main 실행", "should_trigger": true},
+  {"query": "codex exec 구조화 출력 --output-schema", "should_trigger": true},
   {"query": "codex sync 실행", "should_trigger": false},
   {"query": "codex 하네스 동기화", "should_trigger": false},
   {"query": ".agents/skills 프로젝션", "should_trigger": false},
@@ -18,5 +24,7 @@
   {"query": "이슈 등록해줘", "should_trigger": false},
   {"query": "스킬 감사 해줘", "should_trigger": false},
   {"query": "claude settings 수정", "should_trigger": false},
-  {"query": "sync.sh all 실행", "should_trigger": false}
+  {"query": "sync.sh all 실행", "should_trigger": false},
+  {"query": "codex resume", "should_trigger": false},
+  {"query": "codex --search \"query\"", "should_trigger": false}
 ]

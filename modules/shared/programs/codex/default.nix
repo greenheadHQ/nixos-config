@@ -84,11 +84,18 @@ in
     # ── 스킬 투영 (디렉토리 심링크) ──
     # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
     # 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
+    # Claude Code 전용 스킬은 Codex 프로젝션에서 제외 (자기 참조 방지, #212)
+    CODEX_EXCLUDE_SKILLS="using-codex-exec"
     for source_skill_dir in "$SOURCE_SKILLS"/*/; do
       [ -d "$source_skill_dir" ] || continue
       [ -f "$source_skill_dir/SKILL.md" ] || continue
 
       skill_name="$(basename "$source_skill_dir")"
+
+      # Claude Code 전용 스킬 제외
+      case " $CODEX_EXCLUDE_SKILLS " in
+        *" $skill_name "*) continue ;;
+      esac
       target_link="$TARGET_SKILLS/$skill_name"
       expected="../../.claude/skills/$skill_name"
 
