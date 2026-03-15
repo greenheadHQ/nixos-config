@@ -5,7 +5,8 @@
 set -euo pipefail
 
 NRS_LOCK_FILE="/tmp/nrs-state"
-NRS_LOCK_TIMEOUT_HOURS=2
+# 주의: 이 값은 rebuild-common.sh, nrs-lock.sh, nrs-lock-guard.sh 3곳에서 동일하게 유지해야 함
+NRS_LOCK_TIMEOUT_MINUTES=30
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
@@ -25,7 +26,7 @@ cmd_status() {
 
     local elapsed=$(( now - lock_ts ))
     local elapsed_min=$(( elapsed / 60 ))
-    local expiry=$(( lock_ts + NRS_LOCK_TIMEOUT_HOURS * 3600 ))
+    local expiry=$(( lock_ts + NRS_LOCK_TIMEOUT_MINUTES * 60 ))
     local remaining=$(( expiry - now ))
 
     echo "Lock active:"
@@ -48,6 +49,25 @@ cmd_status() {
         fi
     else
         echo -e "  ${YELLOW}Expired:   $(( -remaining / 60 ))m ago (will be cleaned on next nrs run)${NC}"
+    fi
+
+    # Stale 진단 정보
+    local stale=false
+    if [[ "$lock_worktree" != "?" && ! -d "$lock_worktree" ]]; then
+        echo -e "  ${YELLOW}Worktree: MISSING${NC}"
+        stale=true
+    fi
+    if [[ "$lock_pid" != "?" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
+        echo -e "  ${YELLOW}Process:  NOT RUNNING${NC}"
+    fi
+    if (( remaining <= 0 )); then
+        # PID가 살아있으면 타임아웃 초과해도 stale 아님 (장시간 빌드)
+        if [[ "$lock_pid" == "?" ]] || ! kill -0 "$lock_pid" 2>/dev/null; then
+            stale=true
+        fi
+    fi
+    if [[ "$stale" == true ]]; then
+        echo -e "  ${YELLOW}Status:   STALE (will be auto-cleaned on next nrs run)${NC}"
     fi
 }
 

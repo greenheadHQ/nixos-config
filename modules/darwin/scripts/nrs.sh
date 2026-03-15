@@ -125,7 +125,7 @@ main() {
         log_info "✅ No changes to apply. Skipping rebuild."
         log_info "  (Use 'nrs --force' to force full rebuild including activation scripts)"
         # re-entry가 아닐 때만 lock 해제
-        if [[ "$NRS_LOCK_REENTRY" != true ]]; then
+        if [[ "$NRS_LOCK_ACQUIRED" == true && "$NRS_LOCK_REENTRY" != true ]]; then
             release_nrs_lock
         fi
         return 0

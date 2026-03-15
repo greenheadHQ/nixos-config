@@ -200,16 +200,60 @@ worktree_symlink_guard() {
 #───────────────────────────────────────────────────────────────────────────────
 # NRS Lock: worktree 간 동시 rebuild 방지를 위한 협조적 잠금
 # Lock 파일: /tmp/nrs-state (JSON: worktree, branch, timestamp, pid)
-# 타임아웃: 2시간 자동 만료
+# 타임아웃: 30분 자동 만료
 #───────────────────────────────────────────────────────────────────────────────
 NRS_LOCK_FILE="/tmp/nrs-state"
-NRS_LOCK_TIMEOUT_HOURS=2
+# 주의: 이 값은 rebuild-common.sh, nrs-lock.sh, nrs-lock-guard.sh 3곳에서 동일하게 유지해야 함
+NRS_LOCK_TIMEOUT_MINUTES=30
 NRS_LOCK_ACQUIRED=false    # 이 프로세스가 lock을 획득했는가? (EXIT trap 보호용)
 NRS_LOCK_REENTRY=false     # 기존 lock에 대한 재진입인가?
+
+is_stale_lock() {
+    # Returns 0 (true) if stale, 1 (false) if active
+    # Stale 조건 (OR): worktree 경로 미존재 OR (타임아웃 초과 AND PID 미생존)
+    # DA Fix: PID가 살아있으면 타임아웃 초과해도 stale 아님 (장시간 빌드 보호)
+    local lock_worktree lock_ts lock_pid now
+    lock_worktree=$(jq -r '.worktree' "$NRS_LOCK_FILE" 2>/dev/null || echo "")
+    lock_ts=$(jq -r '.timestamp' "$NRS_LOCK_FILE" 2>/dev/null || echo "0")
+    lock_pid=$(jq -r '.pid' "$NRS_LOCK_FILE" 2>/dev/null || echo "0")
+    now=$(date +%s)
+
+    if [[ -n "$lock_worktree" && ! -d "$lock_worktree" ]]; then
+        return 0
+    fi
+
+    local expiry=$(( lock_ts + NRS_LOCK_TIMEOUT_MINUTES * 60 ))
+    if (( now > expiry )); then
+        # PID가 살아있으면 stale 아님 (장시간 빌드 보호)
+        if [[ "$lock_pid" != "0" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+            return 1
+        fi
+        return 0
+    fi
+
+    return 1
+}
 
 acquire_nrs_lock() {
     local now
     now=$(date +%s)
+
+    # Main worktree: lock 취득하지 않음, 기존 lock 존재 시 경고만 표시
+    if [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]; then
+        if [[ -f "$NRS_LOCK_FILE" ]]; then
+            local lock_worktree lock_branch
+            lock_worktree=$(jq -r '.worktree' "$NRS_LOCK_FILE" 2>/dev/null || echo "")
+            lock_branch=$(jq -r '.branch' "$NRS_LOCK_FILE" 2>/dev/null || echo "")
+            if is_stale_lock; then
+                log_warn "⚠️  Stale lock detected. Removing."
+                log_warn "    Branch: $lock_branch, Worktree: $lock_worktree"
+                rm -f "$NRS_LOCK_FILE"
+            else
+                log_warn "⚠️  Worktree lock active (branch: $lock_branch). Proceeding from main."
+            fi
+        fi
+        return 0
+    fi
 
     if [[ -f "$NRS_LOCK_FILE" ]]; then
         local lock_ts lock_worktree lock_branch
@@ -217,10 +261,15 @@ acquire_nrs_lock() {
         lock_worktree=$(jq -r '.worktree' "$NRS_LOCK_FILE" 2>/dev/null || echo "")
         lock_branch=$(jq -r '.branch' "$NRS_LOCK_FILE" 2>/dev/null || echo "")
 
-        local expiry=$(( lock_ts + NRS_LOCK_TIMEOUT_HOURS * 3600 ))
-
-        if (( now > expiry )); then
-            log_warn "⚠️  Expired lock detected ($(( (now - lock_ts) / 3600 ))h old). Removing."
+        if is_stale_lock; then
+            local stale_reason=""
+            if [[ -n "$lock_worktree" && ! -d "$lock_worktree" ]]; then
+                stale_reason="worktree deleted"
+            else
+                stale_reason="timeout ($(( (now - lock_ts) / 60 ))m, limit: ${NRS_LOCK_TIMEOUT_MINUTES}m)"
+            fi
+            log_warn "⚠️  Stale lock detected ($stale_reason). Removing."
+            log_warn "    Branch: $lock_branch, Worktree: $lock_worktree"
             rm -f "$NRS_LOCK_FILE"
         elif [[ "$lock_worktree" == "$FLAKE_PATH" ]]; then
             # 같은 worktree — re-entry

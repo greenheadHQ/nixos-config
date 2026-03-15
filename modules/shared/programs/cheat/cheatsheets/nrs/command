@@ -25,10 +25,12 @@ nrs — Nix rebuild switch wrapper (darwin-rebuild)
   nrs-unlock             lock 수동 해제
 
   lock 동작:
-    nrs 실행 → lock 획득 → switch 성공 → lock 유지 (테스트 보호)
-    다른 worktree에서 nrs → lock 감지 → abort
+    main에서 nrs → lock 미취득 (worktree lock 존재 시 경고만)
+    worktree에서 nrs → lock 획득 → switch 성공 → lock 유지
+    다른 worktree에서 nrs → lock 감지 → abort (stale이면 자동 정리)
     같은 worktree에서 nrs → re-entry (lock 갱신)
-    2시간 후 자동 만료
+    30분 후 자동 만료 (PID 살아있으면 유지)
+    CC 세션 종료(Stop/SessionEnd) 시 자동 해제
 
   lock 파일: /tmp/nrs-state (JSON: worktree, branch, timestamp, pid)
 
@@ -38,5 +40,5 @@ nrs — Nix rebuild switch wrapper (darwin-rebuild)
 
 Tip
 - nrp로 미리보기 → nrs로 적용이 안전한 워크플로우
-- worktree 작업 완료 후 nrs-unlock 잊지 말 것
+- worktree 작업 완료 후 nrs-unlock 또는 CC 세션 종료 시 자동 해제
 - --force는 lock을 무시하지 않음 (NO_CHANGES 스킵만 해당)
