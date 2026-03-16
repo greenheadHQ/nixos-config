@@ -25,7 +25,7 @@ Memory 아이콘(🧠)은 statusline에서 자동 감지하므로 이 스킬과 
 | 💬 | `slack` | magenta | Slack 채널/스레드 |
 | 🎨 | `figma` | red | Figma 디자인 |
 | 📓 | `memo` | green | 세션 메모 파일 |
-| 🧠 | (자동) | blue | Memory 파일 (auto-detect) |
+| 🧠 | (자동) | blue | Memory 파일 (auto-detect, worktree 공유, orphan 시 ⚠) |
 
 ### 상태 파일 구조
 

@@ -53,8 +53,28 @@ elif [ -z "$PLAN_FILE" ] && [ -n "$PLAN_STATE_FILE" ] && [ -f "$PLAN_STATE_FILE"
 fi
 
 # --- Memory 디렉토리 감지 ---
-# transcript_path에서 프로젝트 디렉토리를 유도하여 memory/ 경로를 결정한다.
-# Plan과 동일하게 statusline에서 직접 감지 (상태 파일 불필요).
+#
+# === Change Intent Record ===
+# v1 (PR #264): dirname(transcript_path)/memory/로 경로 유도.
+#    main repo에서는 정상 동작하나 worktree 세션에서 아이콘 미표시 버그 발견.
+#    원인: Claude Code는 findCanonicalGitRoot(.git → gitdir → commondir)로
+#    worktree에서도 main repo의 memory를 사용하지만, transcript_path는
+#    worktree별 프로젝트 디렉토리(~/.claude/projects/<worktree-encoded>/)에
+#    저장되어 memory 경로와 불일치.
+# v2 (이번): cwd + git rev-parse --git-common-dir로 canonical root를 해석.
+#    transcript 경로에 memory/가 없으면 cwd에서 git common dir를 찾아
+#    main repo 경로를 유도하고 zP 인코딩(non-alphanumeric → -)으로
+#    ~/.claude/projects/<main-repo-encoded>/memory/를 구성.
+#    trade-off: worktree 세션에서 git rev-parse 1~2회 추가 실행(~5ms)하지만,
+#              main repo와 동일한 memory를 정확히 표시.
+#
+# orphan 감지 (v2 추가):
+#    MEMORY.md에 등록되지 않은 파일은 Claude가 접근 불가(getMemoryFiles는
+#    MEMORY.md만 읽고 디렉토리를 스캔하지 않음). orphan 존재 시 ⚠ 표시.
+#    대안 검토: MEMORY.md 참조만 카운트 → 실제 파일 수와 괴리 혼동,
+#              양쪽 분수 표시(5/7) → label 과도, 자동 등록/삭제 → 데이터 손실 위험.
+#    trade-off: ⚠ 의미를 사용자가 알아야 하지만, 평소엔 깔끔하고
+#              orphan 존재 시에만 시각적 신호를 제공.
 MEMORY_LINK=""
 MEMORY_LABEL=""
 
@@ -63,6 +83,28 @@ if [ -n "$TRANSCRIPT" ]; then
   GLOBAL_MEMORY_DIR="$HOME/.claude/memory"
   MEMORY_COUNT=0
   MEMORY_INDEX=""
+
+  # worktree 보정: transcript 경로에 memory/가 없으면 cwd에서 canonical root를 해석
+  CWD=$(echo "$input" | jq -r '.cwd // empty' 2>/dev/null) || true
+  if [ ! -d "$PROJECT_MEMORY_DIR" ] && [ -n "$CWD" ] && [ -d "$CWD" ]; then
+    GIT_COMMON=$(git -C "$CWD" rev-parse --git-common-dir 2>/dev/null) || true
+    if [ -n "$GIT_COMMON" ]; then
+      # 상대 경로를 절대 경로로 변환
+      if [[ "$GIT_COMMON" != /* ]]; then
+        GIT_DIR=$(git -C "$CWD" rev-parse --git-dir 2>/dev/null) || true
+        if [ -n "$GIT_DIR" ]; then
+          [[ "$GIT_DIR" != /* ]] && GIT_DIR="$CWD/$GIT_DIR"
+          GIT_COMMON=$(cd "$GIT_DIR" && cd "$GIT_COMMON" && pwd 2>/dev/null) || true
+        fi
+      fi
+      if [ -n "$GIT_COMMON" ]; then
+        MAIN_REPO=$(dirname "$GIT_COMMON")
+        ENCODED=$(echo "$MAIN_REPO" | sed 's/[^a-zA-Z0-9]/-/g')
+        CANONICAL_MEMORY="$HOME/.claude/projects/$ENCODED/memory"
+        [ -d "$CANONICAL_MEMORY" ] && PROJECT_MEMORY_DIR="$CANONICAL_MEMORY"
+      fi
+    fi
+  fi
 
   # 프로젝트 메모리 (주 표시 대상)
   if [ -d "$PROJECT_MEMORY_DIR" ]; then
@@ -78,8 +120,12 @@ if [ -n "$TRANSCRIPT" ]; then
   fi
 
   if [ "$MEMORY_COUNT" -gt 0 ] && [ -n "$MEMORY_INDEX" ] && [ -f "$MEMORY_INDEX" ]; then
+    # orphan 감지: MEMORY.md 참조 수 vs 실제 파일 수
+    REFERENCED=$(grep -cE '^[[:space:]]*-[[:space:]]*\[.*\.md\]' "$MEMORY_INDEX" 2>/dev/null) || REFERENCED=0
+    MEMORY_WARN=""
+    [ "$MEMORY_COUNT" -gt "$REFERENCED" ] && MEMORY_WARN=$'\xe2\x9a\xa0'
     MEMORY_LINK="file://${MEMORY_INDEX}"
-    MEMORY_LABEL="Memory ($MEMORY_COUNT)"
+    MEMORY_LABEL="Memory (${MEMORY_COUNT}${MEMORY_WARN})"
   fi
 fi
 
