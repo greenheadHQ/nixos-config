@@ -124,7 +124,10 @@ if [ -n "$TRANSCRIPT" ]; then
     REFERENCED=$(grep -cE '^[[:space:]]*-[[:space:]]*\[.*\.md\]' "$MEMORY_INDEX" 2>/dev/null) || REFERENCED=0
     MEMORY_WARN=""
     [ "$MEMORY_COUNT" -gt "$REFERENCED" ] && MEMORY_WARN=$'\xe2\x9a\xa0'
-    MEMORY_LINK="file://${MEMORY_INDEX}"
+    # CIR: MEMORY_INDEX(파일) 대신 dirname(디렉토리)을 링크 대상으로 사용.
+    #   MEMORY_INDEX는 project/global fallback을 따르므로 dirname도 정확한 디렉토리를 가리킨다.
+    #   대안: ${PROJECT_MEMORY_DIR} 직접 사용 → global-only 시나리오에서 dead link (DA 발견).
+    MEMORY_LINK="file://$(dirname "$MEMORY_INDEX")"
     MEMORY_LABEL="Memory (${MEMORY_COUNT}${MEMORY_WARN})"
   fi
 fi
