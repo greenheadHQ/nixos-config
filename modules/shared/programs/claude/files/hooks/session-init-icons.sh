@@ -38,9 +38,8 @@ case "$SOURCE" in
     mkdir -p "$STATE_DIR" "$MEMO_DIR"
     touch "$MEMO_FILE"
 
-    # 초기 상태 파일 생성 (memo만)
-    jq -n --arg path "$MEMO_FILE" \
-      '{"memo":{"path":$path,"label":"Memo"}}' > "$STATE_FILE"
+    # 초기 상태 파일 생성 (빈 객체 — 아이콘은 스킬 호출 시 추가)
+    echo '{}' > "$STATE_FILE"
 
     # 30일 초과 파일 정리
     find "$STATE_DIR" -name "*.json" -mtime +30 -delete 2>/dev/null || true

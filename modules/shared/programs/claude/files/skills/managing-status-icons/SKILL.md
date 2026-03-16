@@ -89,8 +89,9 @@ AskUserQuestion으로 필요한 링크를 물어본다:
 ```
 
 사용자가 URL을 입력하면 아래 jq 명령어로 상태 파일을 업데이트한다.
+Memo 아이콘도 스킬 호출 시 자동 등록한다 (메모 설정 섹션 참조).
 
-> ⚠️ `jq -n` 사용 금지 — 기존 memo 키가 덮어씌워진다.
+> ⚠️ `jq -n` 사용 금지 — 기존 키가 덮어씌워진다.
 > 반드시 기존 파일을 입력으로 사용: `tmp=$(mktemp) && jq '...' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"`
 
 ### Jira 설정
@@ -130,17 +131,25 @@ tmp=$(mktemp) && jq --arg url "https://www.figma.com/design/..." \
 tmp=$(mktemp) && jq 'del(.figma)' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
 ```
 
-### 메모 파일
+### 메모 설정
+
+메모 파일은 SessionStart hook이 자동 생성하지만, 아이콘은 스킬 호출 시 등록한다:
+
+```bash
+# MEMO_FILE은 additionalContext의 "메모:" 뒤 경로
+tmp=$(mktemp) && jq --arg path "$MEMO_FILE" \
+  '.memo = {"path":$path,"label":"Memo"}' \
+  "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+```
 
 - 경로: `~/.claude/memos/<session-id>.md`
-- SessionStart hook이 자동 생성 (빈 파일)
 - 상태바에서 📓 Memo Cmd+Click으로 `file://` URL을 통해 열 수 있다
 
 ## 동작 원리
 
 | 상황 | 동작 |
 |------|------|
-| 새 세션 / `/clear` | 새 상태 파일 + 메모 파일 생성, Memo만 초기값 |
+| 새 세션 / `/clear` | 빈 상태 파일 + 메모 파일 생성, 아이콘 없음 |
 | `--resume` / `--continue` | 기존 상태 파일 읽기, 모든 아이콘 유지 |
 | `compact` | 동일하게 상태 재주입 |
 | 30일 초과 | 상태 파일 + 메모 파일 자동 정리 |
