@@ -124,6 +124,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/nrs-session-cleanup.sh";
     ".claude/hooks/worktree-path-guard.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/worktree-path-guard.sh";
+    ".claude/hooks/session-init-icons.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/session-init-icons.sh";
 
     # syncing-codex-harness 스킬 (user-scope)
     ".claude/skills/syncing-codex-harness".source =
@@ -148,6 +150,10 @@ in
     # using-claude-p 스킬 (user-scope)
     ".claude/skills/using-claude-p".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/using-claude-p";
+
+    # managing-status-icons 스킬 (user-scope)
+    ".claude/skills/managing-status-icons".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/managing-status-icons";
 
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =
