@@ -1,0 +1,22 @@
+[
+  {"query": "LLM 이행 가이드 작성해줘, #252 이슈", "should_trigger": true},
+  {"query": "이슈에 migration guide 코멘트 달아줘", "should_trigger": true},
+  {"query": "이행 지침 작성해서 이슈에 남겨줘", "should_trigger": true},
+  {"query": "LLM handoff 가이드 만들어줘", "should_trigger": true},
+  {"query": "이슈 가이드 작성해줘, Claude가 자율 작업할 수 있게", "should_trigger": true},
+  {"query": "implementation guide for LLM on issue #260", "should_trigger": true},
+  {"query": "세션 인수인계 가이드 작성", "should_trigger": true},
+  {"query": "이 이슈에 LLM이 따라할 수 있는 가이드 코멘트 달아줘", "should_trigger": true},
+  {"query": "Claude 인수인계 문서 만들어줘", "should_trigger": true},
+  {"query": "이슈에 Phase 기반 이행 가이드 작성", "should_trigger": true},
+  {"query": "PR 만들어줘", "should_trigger": false},
+  {"query": "PR 본문 상세하게 작성해줘", "should_trigger": false},
+  {"query": "DA 피드백 해줘", "should_trigger": false},
+  {"query": "이슈 등록해줘", "should_trigger": false},
+  {"query": "CIR 기록해줘", "should_trigger": false},
+  {"query": "코드리뷰 반영해줘", "should_trigger": false},
+  {"query": "계획 세워줘", "should_trigger": false},
+  {"query": "스킬 감사해줘", "should_trigger": false},
+  {"query": "커밋해줘", "should_trigger": false},
+  {"query": "전수조사 해줘", "should_trigger": false}
+]

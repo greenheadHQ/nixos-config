@@ -1,0 +1,22 @@
+[
+  {"query": "PR 본문 상세하게 작성해줘", "should_trigger": true},
+  {"query": "PR 만들어줘, CIR/ADR 포함해서", "should_trigger": true},
+  {"query": "create PR with detailed body", "should_trigger": true},
+  {"query": "PR 업데이트 해줘, Human Test 섹션 추가", "should_trigger": true},
+  {"query": "PR 본문이 부실해서 보강하고 싶어", "should_trigger": true},
+  {"query": "Pre-Merge 테스트 가이드 포함해서 PR 생성", "should_trigger": true},
+  {"query": "상세 PR 작성해줘", "should_trigger": true},
+  {"query": "PR body에 ADR 테이블 넣어줘", "should_trigger": true},
+  {"query": "PR 생성하고 8섹션 다 채워줘", "should_trigger": true},
+  {"query": "기존 PR 본문 업데이트해줘, CIR 빠져있어", "should_trigger": true},
+  {"query": "DA 피드백 해줘", "should_trigger": false},
+  {"query": "PR 코멘트 처리해줘", "should_trigger": false},
+  {"query": "LLM 이행 가이드 작성해줘", "should_trigger": false},
+  {"query": "CIR 기록해줘", "should_trigger": false},
+  {"query": "이슈 등록해줘", "should_trigger": false},
+  {"query": "커밋해줘", "should_trigger": false},
+  {"query": "코드리뷰 반영해줘", "should_trigger": false},
+  {"query": "스킬 감사해줘", "should_trigger": false},
+  {"query": "계획 세워줘", "should_trigger": false},
+  {"query": "전수조사 해줘", "should_trigger": false}
+]

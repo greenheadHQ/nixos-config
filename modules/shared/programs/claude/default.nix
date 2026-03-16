@@ -155,6 +155,30 @@ in
     ".claude/skills/managing-status-icons".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/managing-status-icons";
 
+    # plan-with-questions 스킬 (user-scope)
+    ".claude/skills/plan-with-questions".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/plan-with-questions";
+
+    # da-feedback 스킬 (user-scope)
+    ".claude/skills/da-feedback".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/da-feedback";
+
+    # review-pr-feedback 스킬 (user-scope)
+    ".claude/skills/review-pr-feedback".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/review-pr-feedback";
+
+    # pr-detailed 스킬 (user-scope)
+    ".claude/skills/pr-detailed".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/pr-detailed";
+
+    # llm-migration-guide 스킬 (user-scope)
+    ".claude/skills/llm-migration-guide".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/llm-migration-guide";
+
+    # parallel-audit 스킬 (user-scope)
+    ".claude/skills/parallel-audit".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/parallel-audit";
+
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";

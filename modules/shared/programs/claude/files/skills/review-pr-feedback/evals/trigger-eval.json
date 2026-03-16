@@ -1,0 +1,22 @@
+[
+  {"query": "PR 코멘트 반영해줘", "should_trigger": true},
+  {"query": "coderabbit 피드백 처리해줘", "should_trigger": true},
+  {"query": "코드리뷰 반영해줘", "should_trigger": true},
+  {"query": "리뷰 피드백 확인하고 반영해", "should_trigger": true},
+  {"query": "PR 피드백 처리해줘", "should_trigger": true},
+  {"query": "review feedback on this PR", "should_trigger": true},
+  {"query": "코드리뷰 피드백 반영해줘", "should_trigger": true},
+  {"query": "리뷰 코멘트 처리해줘", "should_trigger": true},
+  {"query": "PR review comments 반영", "should_trigger": true},
+  {"query": "AI 리뷰 피드백 triage 해줘", "should_trigger": true},
+  {"query": "DA 피드백 루프 실행해", "should_trigger": false},
+  {"query": "PR 만들어줘", "should_trigger": false},
+  {"query": "이슈 등록해줘", "should_trigger": false},
+  {"query": "계획 세워줘", "should_trigger": false},
+  {"query": "커밋해줘", "should_trigger": false},
+  {"query": "CIR 기록해", "should_trigger": false},
+  {"query": "스킬 감사해줘", "should_trigger": false},
+  {"query": "codex exec review", "should_trigger": false},
+  {"query": "전수조사 해줘", "should_trigger": false},
+  {"query": "LLM 이행 가이드 작성", "should_trigger": false}
+]
