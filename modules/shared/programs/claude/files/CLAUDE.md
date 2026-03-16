@@ -10,4 +10,4 @@
 | 스킬 감사, 스킬 점검, 스킬 리뷰, 스킬 최신화, skill audit, skill review       | `maintaining-skills`    |
 | 의도 기록, CIR, ADR, 의사결정 기록, 결정 근거, CIR 조회, 결정 이력, 왜 이렇게 했는지 | `documenting-intent`    |
 | claude -p, claude --print, 비대화형 claude, headless, harness test, 셀프테스트, self-test, init event, 프로그래밍적 실행 | `using-claude-p`        |
-| status icon, 상태바 아이콘, jira 링크, slack 링크, figma 링크, 메모 열어, 아이콘 설정 | `managing-status-icons`  |
+| status icon, 상태바 아이콘, jira 링크, slack 링크, figma 링크, 메모 열어, 아이콘 설정, 아이콘 수정, 아이콘 제거, 링크 변경 | `managing-status-icons`  |
