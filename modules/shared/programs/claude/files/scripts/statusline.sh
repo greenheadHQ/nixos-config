@@ -52,6 +52,37 @@ elif [ -z "$PLAN_FILE" ] && [ -n "$PLAN_STATE_FILE" ] && [ -f "$PLAN_STATE_FILE"
   PLAN_FILE=$(cat "$PLAN_STATE_FILE" 2>/dev/null)
 fi
 
+# --- Memory 디렉토리 감지 ---
+# transcript_path에서 프로젝트 디렉토리를 유도하여 memory/ 경로를 결정한다.
+# Plan과 동일하게 statusline에서 직접 감지 (상태 파일 불필요).
+MEMORY_LINK=""
+MEMORY_LABEL=""
+
+if [ -n "$TRANSCRIPT" ]; then
+  PROJECT_MEMORY_DIR="$(dirname "$TRANSCRIPT")/memory"
+  GLOBAL_MEMORY_DIR="$HOME/.claude/memory"
+  MEMORY_COUNT=0
+  MEMORY_INDEX=""
+
+  # 프로젝트 메모리 (주 표시 대상)
+  if [ -d "$PROJECT_MEMORY_DIR" ]; then
+    MEMORY_INDEX="$PROJECT_MEMORY_DIR/MEMORY.md"
+    MEMORY_COUNT=$(find "$PROJECT_MEMORY_DIR" -maxdepth 1 -name "*.md" ! -name "MEMORY.md" -type f 2>/dev/null | wc -l | tr -d ' ')
+  fi
+
+  # 글로벌 메모리 (존재하면 합산)
+  if [ -d "$GLOBAL_MEMORY_DIR" ]; then
+    GLOBAL_COUNT=$(find "$GLOBAL_MEMORY_DIR" -maxdepth 1 -name "*.md" ! -name "MEMORY.md" -type f 2>/dev/null | wc -l | tr -d ' ')
+    MEMORY_COUNT=$((MEMORY_COUNT + GLOBAL_COUNT))
+    [ -z "$MEMORY_INDEX" ] && MEMORY_INDEX="$GLOBAL_MEMORY_DIR/MEMORY.md"
+  fi
+
+  if [ "$MEMORY_COUNT" -gt 0 ] && [ -n "$MEMORY_INDEX" ] && [ -f "$MEMORY_INDEX" ]; then
+    MEMORY_LINK="file://${MEMORY_INDEX}"
+    MEMORY_LABEL="Memory ($MEMORY_COUNT)"
+  fi
+fi
+
 # --- Status icons 읽기 ---
 # SessionStart hook은 session_id로 상태 파일을 생성하므로 이 가정이 깨지면 아이콘이 미표시된다.
 ICONS_FILE="$HOME/.claude/status-icons/$SESSION_ID.json"
@@ -94,7 +125,7 @@ print_icon() {
   HAS_OUTPUT=true
 }
 
-# 아이콘 순서: Jira → Slack → Figma → Plan → Memo → PR
+# 아이콘 순서: Jira → Slack → Figma → Plan → Memo → Memory
 
 # Jira: yellow underline — ⚡
 if [ -n "$JIRA_URL" ] && [ -n "$JIRA_LABEL" ]; then
@@ -121,6 +152,12 @@ fi
 # Memo: green underline — 📓
 if [ -n "$MEMO_PATH" ] && [ -f "$MEMO_PATH" ]; then
   print_icon "32" "file://${MEMO_PATH}" "\xf0\x9f\x93\x93" "${MEMO_LABEL:-Memo}"
+fi
+
+# Memory: blue underline — 🧠
+# statusline에서 직접 감지 (Plan과 동일한 방식, 상태 파일 불필요)
+if [ -n "$MEMORY_LINK" ]; then
+  print_icon "34" "$MEMORY_LINK" "\xf0\x9f\xa7\xa0" "$MEMORY_LABEL"
 fi
 
 # 아이콘이 하나라도 있으면 최종 개행
