@@ -32,8 +32,8 @@ in
     # 글로벌 스킬 (Claude와 동일 소스 공유)
     ".codex/skills/maintaining-skills".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/maintaining-skills";
-    ".codex/skills/managing-github-issues".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/managing-github-issues";
+    ".codex/skills/create-issue".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-issue";
     ".codex/skills/syncing-codex-harness".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";
 

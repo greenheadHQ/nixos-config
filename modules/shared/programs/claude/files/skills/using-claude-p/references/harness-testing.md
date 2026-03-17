@@ -75,7 +75,7 @@ for s in init.get('skills', []):
 EXPECTED_SKILLS=(
   "using-claude-p"
   "using-codex-exec"
-  "managing-github-issues"
+  "create-issue"
   "syncing-codex-harness"
   "maintaining-skills"
   "documenting-intent"

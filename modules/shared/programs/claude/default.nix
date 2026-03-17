@@ -131,9 +131,9 @@ in
     ".claude/skills/syncing-codex-harness".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";
 
-    # managing-github-issues 스킬 (user-scope)
-    ".claude/skills/managing-github-issues".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/managing-github-issues";
+    # create-issue 스킬 (user-scope)
+    ".claude/skills/create-issue".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-issue";
 
     # maintaining-skills 스킬 (user-scope)
     ".claude/skills/maintaining-skills".source =

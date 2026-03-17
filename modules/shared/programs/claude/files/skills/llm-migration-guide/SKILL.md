@@ -6,7 +6,7 @@ description: |
   전달하면 처음부터 끝까지 자율 작업이 가능하도록 Phase 기반으로 구성한다.
   NOT for PR 본문 작성 (use pr-detailed).
   NOT for DA 피드백 루프 (use da-feedback).
-  NOT for 이슈 생성/관리 (use managing-github-issues).
+  NOT for 이슈 생성 (use create-issue).
   Triggers: "LLM 이행", "migration guide", "이행 가이드", "이행 지침",
   "LLM handoff", "이슈 가이드 작성", "인수인계", "LLM 이행 가이드 작성",
   "이슈에 가이드 코멘트", "implementation guide for LLM",

@@ -1,0 +1,22 @@
+[
+  {"query": "이슈 등록해줘", "should_trigger": true},
+  {"query": "GitHub issue 만들어", "should_trigger": true},
+  {"query": "todo 만들어줘", "should_trigger": true},
+  {"query": "이 버그 이슈로 등록해줘", "should_trigger": true},
+  {"query": "개선사항 이슈 추가해줘", "should_trigger": true},
+  {"query": "이슈 생성해줘 nrs 동시 실행 방지", "should_trigger": true},
+  {"query": "create an issue for this", "should_trigger": true},
+  {"query": "이거 이슈로 남겨줘", "should_trigger": true},
+  {"query": "feature request 등록", "should_trigger": true},
+  {"query": "bug report 만들어", "should_trigger": true},
+  {"query": "이슈 닫아줘 #42", "should_trigger": false},
+  {"query": "이슈 목록 보여줘", "should_trigger": false},
+  {"query": "backlog 확인해봐", "should_trigger": false},
+  {"query": "기술 부채 현황 정리", "should_trigger": false},
+  {"query": "LLM 이행 가이드 작성해줘", "should_trigger": false},
+  {"query": "PR 만들어줘", "should_trigger": false},
+  {"query": "CIR 기록해줘", "should_trigger": false},
+  {"query": "DA 피드백 해줘", "should_trigger": false},
+  {"query": "전수조사 해줘", "should_trigger": false},
+  {"query": "계획 세워줘", "should_trigger": false}
+]

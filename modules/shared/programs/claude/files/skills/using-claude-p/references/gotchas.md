@@ -220,8 +220,8 @@ echo "현재 디렉토리의 파일 목록을 보여줘" | claude -p --tools ""
 ### #13. `--disable-slash-commands`로 스킬 비활성화 시 "Unknown skill"
 
 ```bash
-echo "/managing-github-issues 이슈 보여줘" | claude -p --disable-slash-commands --dangerously-skip-permissions
-# "Unknown skill: managing-github-issues"
+echo "/create-issue 이슈 보여줘" | claude -p --disable-slash-commands --dangerously-skip-permissions
+# "Unknown skill: create-issue"
 ```
 
 ### #35. `allowedTools` 패턴 공백 의미 차이

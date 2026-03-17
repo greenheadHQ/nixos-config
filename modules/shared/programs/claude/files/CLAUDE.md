@@ -6,7 +6,7 @@
 | -------------------------------------------------------------------------- | ----------------------- |
 | codex sync, codex harness, codex 동기화, codex 투영                        | `syncing-codex-harness` |
 | codex exec, codex 실행, codex CLI, 비대화형 codex, codex review            | `using-codex-exec`      |
-| GitHub Issues, 이슈, todo, 라벨, backlog, 우선순위, 등록, 조회, 부채, audit | `managing-github-issues` |
+| 이슈 등록, 이슈 만들어, create issue, 이슈 생성, todo 등록, todo 만들어, 개선사항 등록, 버그 등록, GitHub issue, 이슈 추가 | `create-issue` |
 | 스킬 감사, 스킬 점검, 스킬 리뷰, 스킬 최신화, skill audit, skill review       | `maintaining-skills`    |
 | 의도 기록, CIR, ADR, 의사결정 기록, 결정 근거, CIR 조회, 결정 이력, 왜 이렇게 했는지 | `documenting-intent`    |
 | claude -p, claude --print, 비대화형 claude, headless, harness test, 셀프테스트, self-test, init event, 프로그래밍적 실행 | `using-claude-p`        |
