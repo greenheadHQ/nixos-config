@@ -162,7 +162,7 @@ c = "claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 
 주요 activation:
 - `installClaudeCode` - Claude Code 바이너리 설치 (curl)
-- `ensureClaudeHooksTrust` - hooks trust 자동 주입 (`hasTrustDialogHooksAccepted`)
+- `patchClaudeJson` - hooks trust 자동 주입 + notification defaults 주입
 
 모든 설정 파일은 `mkOutOfStoreSymlink`로 관리되어 양방향 수정이 가능하다.
 
