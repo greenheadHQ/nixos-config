@@ -45,11 +45,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # iOS Shortcuts DSL 컴파일러 (Cherri)
-    cherri = {
-      url = "github:electrikmilk/cherri";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =

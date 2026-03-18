@@ -7,7 +7,6 @@ description: |
   "/etc/zshrc conflict", "killall cfprefsd", "primary user does not exist",
   "shottr 설정", "shottr 단축키", "스크린샷 저장 경로", "shottr 라이센스",
   "Folder Actions", "폴더 감시", "compress-video", "compress-rar", "upload-immich".
-  For iOS Shortcuts and Cherri DSL details use managing-shortcuts.
 ---
 
 # macOS 관리 (nix-darwin)
@@ -163,12 +162,6 @@ nrs
 | upload-immich | Shottr 스크린샷 폴더 | Immich 자동 업로드 (personal 전용) |
 
 로그: `~/Library/Logs/folder-actions/`
-
-### iOS Shortcuts / Cherri DSL
-
-iOS Shortcuts 빌드 파이프라인(Cherri DSL), prompt-render CLI, 모바일 프롬프트 워크플로우는 `managing-shortcuts` 스킬을 참조하세요.
-
-관련 모듈: `modules/darwin/programs/shortcuts/`
 
 ## 자주 발생하는 문제
 

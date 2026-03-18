@@ -2,7 +2,7 @@
 name: automating-hammerspoon
 description: |
   Hammerspoon desktop automation, hotkeys, launchd agents, and Ghostty terminal
-  integration on macOS. Not for iOS Shortcuts or mobile workflows (see managing-shortcuts).
+  integration on macOS.
   Triggers: "Hammerspoon hotkey", "Hammerspoon 단축키", "핫키 설정",
   "open terminal from Finder", "Finder에서 터미널 열기", "Ghostty 새 창 문제",
   "setupLaunchAgents stuck", "launchd agent", "launchd HOME is /var/root",

@@ -69,7 +69,6 @@
         ./programs/folder-actions
         ./programs/ghostty
         ./programs/shottr
-        ./programs/shortcuts
         ./programs/keybindings
         ./programs/ssh
       ];

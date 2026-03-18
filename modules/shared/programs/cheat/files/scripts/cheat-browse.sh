@@ -33,55 +33,6 @@ if [[ "${1:-}" == "--preview" ]]; then
   exit 0
 fi
 
-# --preview-prompt FILE: preset markdown을 구문 강조하여 출력
-# CIR: 프리뷰는 프리셋 고유 내용 + 모듈 목록만 표시 — 합성 전체(수백 줄)는 브라우징에 부적합
-# frontmatter에서 모듈 목록을 추출하여 상단에 표시한 뒤, 프리셋 고유 내용만 출력
-# 헤더 → bold cyan, blockquote → dim, 코드 펜스 → dim, {PLACEHOLDER} → bold yellow
-if [[ "${1:-}" == "--preview-prompt" ]]; then
-  file="${2:?file required}"
-  # 모듈 목록 추출 (frontmatter)
-  modules=$(awk '
-    NR==1 && /^---[[:space:]]*$/ { in_fm=1; next }
-    in_fm && /^---[[:space:]]*$/ { exit }
-    in_fm && /^modules:/ { in_mod=1; next }
-    in_mod && /^[[:space:]]*-[[:space:]]+/ {
-      sub(/^[[:space:]]*-[[:space:]]+/, "")
-      sub(/[[:space:]]*$/, "")
-      printf "%s", (mod_count++ > 0 ? ", " : "") $0
-      next
-    }
-    in_mod { exit }
-  ' "$file" 2>/dev/null)
-  # 모듈 목록 표시
-  if [[ -n "$modules" ]]; then
-    printf '\033[2m━━ 포함 모듈 ━━\033[0m\n'
-    printf '\033[1;36m%s\033[0m\n' "$modules"
-    printf '\033[2m━━━━━━━━━━━━━━━\033[0m\n\n'
-  fi
-  # frontmatter 이후 내용만 출력 (구문 강조)
-  awk '
-    NR==1 && /^---[[:space:]]*$/ { in_fm=1; next }
-    in_fm && /^---[[:space:]]*$/ { in_fm=0; next }
-    in_fm { next }
-    /^```/ {
-      printf "\033[2m%s\033[0m\n", $0
-      in_code = !in_code; next
-    }
-    in_code {
-      line = $0; result = ""
-      while (match(line, /\{[A-Z0-9_]+\}/)) {
-        result = result substr(line, 1, RSTART-1) "\033[1;33m" substr(line, RSTART, RLENGTH) "\033[0m"
-        line = substr(line, RSTART + RLENGTH)
-      }
-      print result line; next
-    }
-    /^# / { printf "\033[1;36m%s\033[0m\n", $0; next }
-    /^>/ { printf "\033[2m%s\033[0m\n", $0; next }
-    { print }
-  ' "$file" 2>/dev/null
-  exit 0
-fi
-
 # --content: 모든 시트 내용을 title\t내용줄 형태로 출력
 if [[ "${1:-}" == "--content" ]]; then
   "$cheat_cmd" -l | awk 'NR>1 {print $1}' | while read -r title; do
@@ -104,48 +55,6 @@ if [[ "${1:-}" == "--toggle" ]]; then
     echo "reload($cheat_cmd -l | awk 'NR>1 {print \$1}')+change-header(  [title 모드] Ctrl-S: content 모드 전환)+change-prompt(title> )+change-nth(..)"
   fi
   exit 0
-fi
-
-# --prompts: prompt preset 브라우저
-if [[ "${1:-}" == "--prompts" ]]; then
-  presets_dir="${PROMPT_PRESETS_DIR:?PROMPT_PRESETS_DIR not set}"
-  [[ -d "$presets_dir" ]] || { echo "Error: preset dir not found: $presets_dir" >&2; exit 1; }
-  prompt_render_cmd="$(command -v prompt-render 2>/dev/null || echo "$HOME/.local/bin/prompt-render")"
-  [[ -x "$prompt_render_cmd" ]] || { echo "Error: prompt-render not found. Is the Nix config applied?" >&2; exit 1; }
-  selected="" fzf_rc=0
-  selected=$(find "$presets_dir" -maxdepth 1 -type f -name '*.md' -exec basename {} .md \; 2>/dev/null \
-    | sort \
-    | "$fzf_cmd" \
-        --ansi \
-        --header "  [prompt presets] Enter: 렌더 실행" \
-        --prompt "preset> " \
-        --preview "$SELF --preview-prompt '${presets_dir}'/{}.md" \
-        --preview-window=right:70%) || fzf_rc=$?
-  # fzf exit: 0=선택, 1=no match, 130=Ctrl-C → 정상 종료; 그 외 → 오류 전파
-  if [[ $fzf_rc -ne 0 && $fzf_rc -ne 1 && $fzf_rc -ne 130 ]]; then exit "$fzf_rc"; fi
-  [[ -z "$selected" ]] && exit 0
-
-  # CIR: 변수 없는 프리셋은 즉시 렌더링 — fzf 세션 재진입 없이 원클릭 완료
-  render_output="" render_rc=0
-  render_output=$("$prompt_render_cmd" --preset "$selected" --non-interactive --stdout-only 2>/dev/null) || render_rc=$?
-  if [[ $render_rc -eq 0 ]]; then
-    # 변수 없거나 모두 기본값으로 해결됨 → 바로 클립보드 복사
-    clipboard_cmd=""
-    if command -v pbcopy &>/dev/null; then clipboard_cmd="pbcopy"
-    elif command -v wl-copy &>/dev/null; then clipboard_cmd="wl-copy"
-    elif command -v xclip &>/dev/null; then clipboard_cmd="xclip -selection clipboard"
-    fi
-    if [[ -n "$clipboard_cmd" ]] && printf '%s\n' "$render_output" | $clipboard_cmd 2>/dev/null; then
-      echo "✓ 클립보드 복사 완료: $selected"
-    else
-      printf '%s\n' "$render_output"
-      echo "⚠ 클립보드 복사 실패 — stdout 출력: $selected" >&2
-    fi
-    exit 0
-  fi
-
-  # 변수 필요 (exit 2) → 대화형 UI로 전환
-  exec "$prompt_render_cmd" --preset "$selected"
 fi
 
 # 기본: fzf 브라우저 실행

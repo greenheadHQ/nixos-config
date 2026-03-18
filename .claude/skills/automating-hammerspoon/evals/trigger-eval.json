@@ -10,7 +10,6 @@
   { "query": "eventtap으로 키 입력 가로채기", "should_trigger": true },
   { "query": "launchd agent 디버깅 방법", "should_trigger": true },
   { "query": "iOS Shortcut 빌드하고 싶어", "should_trigger": false },
-  { "query": "prompt-render preset 추가", "should_trigger": false },
   { "query": "Cherri DSL 컴파일 에러", "should_trigger": false },
   { "query": "agenix 시크릿 암호화", "should_trigger": false },
   { "query": "SSH 키 생성 방법", "should_trigger": false },
