@@ -20,17 +20,26 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 CREDENTIALS_FILE="$HOME/.config/pushover/claude-code"
 
+PUSHOVER_AVAILABLE=false
 if [ -f "$CREDENTIALS_FILE" ]; then
   # shellcheck source=/dev/null
   source "$CREDENTIALS_FILE"
-else
-  # PreToolUse: exit 0으로 tool call을 정상 통과시킴
-  # (Stop hook의 exit 1과 다름 — credentials 없어도 Claude 동작에 영향 없음)
+  PUSHOVER_AVAILABLE=true
+fi
+
+# Pushover도 없고 macOS도 아니면 알림 채널이 없으므로 조기 종료
+if [ "$PUSHOVER_AVAILABLE" = false ] && [[ "$OSTYPE" != darwin* ]]; then
   exit 0
 fi
 
 # stdin에서 JSON 입력 읽기
 INPUT=$(cat)
+
+# agent_id 가드: 서브에이전트 내부에서 PreToolUse가 발동한 경우 알림 불필요
+AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || true)
+if [ -n "$AGENT_ID" ]; then
+  exit 0
+fi
 
 # 질문 추출 (최대 4개 가능, printf로 안정적 UTF-8 전달)
 QUESTION_COUNT=$(printf '%s' "$INPUT" | jq -r '.tool_input.questions | length' 2>/dev/null)
@@ -87,14 +96,64 @@ MESSAGE="🖥️ $HOST
 $CONTEXT
 $QUESTION_LINE"
 
-curl -s -X POST \
-  -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
-  --data-urlencode "token=$PUSHOVER_TOKEN" \
-  --data-urlencode "user=$PUSHOVER_USER" \
-  --data-urlencode "title=Claude Code [📝질문 대기]" \
-  --data-urlencode "priority=0" \
-  --data-urlencode "sound=falling" \
-  --data-urlencode "message=$MESSAGE" \
-  https://api.pushover.net/1/messages.json > /dev/null
+# CIR: hs.notify 성공 시 Pushover skip (중복 알림 해소) → stop-notification.sh 참조
+
+# macOS 로컬 데스크탑 알림 (Hammerspoon hs.notify)
+# hs.notify 성공 시 HS_SENT=true → Pushover skip. 실패 시 Pushover 폴백.
+HS_SENT=false
+if [[ "$OSTYPE" == darwin* ]] && command -v hs >/dev/null 2>&1; then
+  # 세션 이름 추출: transcript JSONL의 custom-title 엔트리
+  HS_SESSION_NAME=""
+  HS_TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+  if [ -n "$HS_TRANSCRIPT" ] && [ -f "$HS_TRANSCRIPT" ]; then
+    HS_SESSION_NAME=$(grep '"custom-title"' "$HS_TRANSCRIPT" 2>/dev/null | tail -1 | jq -r '.customTitle // empty' 2>/dev/null || true)
+  fi
+  # CIR: 호스트 제외 + subtitle→body 이동 의사결정 → stop-notification.sh 참조
+  HS_REPO="$REPO"
+  HS_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+  if [ -n "$HS_COMMON_DIR" ] && [ "$HS_COMMON_DIR" != ".git" ]; then
+    HS_REPO=$(basename "$(cd "$HS_COMMON_DIR/.." 2>/dev/null && pwd)")
+  fi
+  HS_BODY=""
+  if [ -n "$HS_SESSION_NAME" ]; then
+    HS_BODY="$HS_SESSION_NAME"
+  fi
+  if [ -n "$HS_REPO" ]; then
+    HS_BODY="${HS_BODY:+$HS_BODY
+}📁 ${HS_REPO}${BRANCH:+ · 🌿 $BRANCH}"
+  fi
+  HS_ICON="$HOME/.claude/assets/notification-icon.png"
+  # Lua single-quoted string 삽입: ' \ 제거(Lua escape 방어) + " $ ` 제거(bash interpolation 방어)
+  HS_BODY_SAFE="${HS_BODY//\'/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//\"/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//\\/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//\`/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//\$/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//$'\n'/\\n}"
+  timeout 2 hs -c "
+    local n = hs.notify.new({
+      title = 'Claude Code [📝질문 대기]',
+      informativeText = '${HS_BODY_SAFE}',
+      soundName = 'Glass',
+      -- CIR: withdrawAfter 의사결정 → stop-notification.sh Lua 블록 참조
+      withdrawAfter = 0
+    })
+    local img = hs.image.imageFromPath('${HS_ICON}')
+    if img then n:contentImage(img) end
+    n:send()
+  " >/dev/null 2>&1 && HS_SENT=true || true
+fi
+
+if [ "$PUSHOVER_AVAILABLE" = true ] && [ "$HS_SENT" = false ]; then
+  curl -s --max-time 4 -X POST \
+    -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+    --data-urlencode "token=$PUSHOVER_TOKEN" \
+    --data-urlencode "user=$PUSHOVER_USER" \
+    --data-urlencode "title=Claude Code [📝질문 대기]" \
+    --data-urlencode "priority=0" \
+    --data-urlencode "sound=falling" \
+    --data-urlencode "message=$MESSAGE" \
+    https://api.pushover.net/1/messages.json >/dev/null 2>&1
+fi
 
 exit 0

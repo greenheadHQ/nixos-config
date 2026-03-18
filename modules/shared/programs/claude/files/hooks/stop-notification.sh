@@ -27,15 +27,18 @@ wait_for_stable_transcript() {
 }
 
 # agenix로 관리되는 credentials 로드
-CREDENTIALS_FILE="${PUSHOVER_CREDENTIALS_FILE:-$HOME/.config/pushover/claude-code}"
-PUSHOVER_API_URL="${PUSHOVER_API_URL:-https://api.pushover.net/1/messages.json}"
+CREDENTIALS_FILE="$HOME/.config/pushover/claude-code"
 
+PUSHOVER_AVAILABLE=false
 if [ -f "$CREDENTIALS_FILE" ]; then
   # shellcheck source=/dev/null
   source "$CREDENTIALS_FILE"
-else
-  echo "Error: Pushover credentials not found at $CREDENTIALS_FILE" >&2
-  exit 1
+  PUSHOVER_AVAILABLE=true
+fi
+
+# Pushover도 없고 macOS도 아니면 알림 채널이 없으므로 조기 종료 (NixOS 불필요 연산 방지)
+if [ "$PUSHOVER_AVAILABLE" = false ] && [[ "$OSTYPE" != darwin* ]]; then
+  exit 0
 fi
 
 # UTF-8 길이 계산 (jq 미설치 시 bash 길이로 폴백)
@@ -135,6 +138,11 @@ if [ ! -t 0 ]; then
 fi
 
 if [ -n "$INPUT" ] && command -v jq >/dev/null 2>&1; then
+  # agent_id 가드: 서브에이전트 내부에서 Stop이 발동한 경우 알림 불필요
+  AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || true)
+  if [ -n "$AGENT_ID" ]; then
+    exit 0
+  fi
   TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 fi
 
@@ -173,13 +181,83 @@ fi
 # 최종 안전망: 전체 메시지 1024자 상한 보장
 MESSAGE="$(clip_tail_chars "$MESSAGE" "$MAX_MESSAGE_CHARS")"
 
-curl -s --max-time 4 -X POST \
-  -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
-  --data-urlencode "token=$PUSHOVER_TOKEN" \
-  --data-urlencode "user=$PUSHOVER_USER" \
-  --data-urlencode "title=Claude Code [✅작업 완료]" \
-  --data-urlencode "sound=jobs_done" \
-  --data-urlencode "message=$MESSAGE" \
-  "$PUSHOVER_API_URL" > /dev/null
+# === Change Intent Record: 중복 알림 해소 ===
+# v1 (초기): Pushover와 hs.notify를 독립 실행 → 개인맥북에서 2중 알림(폰+데스크탑)으로 알림 피로 발생
+# v2 (현재): hs.notify 성공 시 Pushover skip — HS_SENT 플래그 기반 fail-open 패턴
+#
+# 검토한 대안과 거부 이유:
+# - OSTYPE==darwin이면 Pushover 무조건 skip: Hammerspoon 장애 시 알림 블랙홀 (fail-close)
+# - hostname 분기: fragile, 머신 추가/변경 시 유지보수 비용
+# - 환경변수 토글 (CLAUDE_NOTI_CHANNELS): 사용성 나쁨, 머신별 env 관리 필요
+# - 자리 감지(screen lock 등): 과도한 복잡성
+#
+# 선택한 방식(HS_SENT 플래그)의 장점:
+# - fail-open: hs.notify 실패(Hammerspoon 꺼짐/크래시/timeout) → HS_SENT=false → Pushover 폴백
+# - NixOS: hs 블록 전체 skip → HS_SENT=false → Pushover만 전송 (기존과 동일)
+# - macOS + Hammerspoon 정상: hs.notify만 전송 (중복 제거)
+
+# macOS 로컬 데스크탑 알림 (Hammerspoon hs.notify)
+# hs.notify 성공 시 HS_SENT=true → Pushover skip (중복 알림 방지)
+# hs 미설치/에러/timeout 시 HS_SENT=false 유지 → Pushover 폴백
+HS_SENT=false
+if [[ "$OSTYPE" == darwin* ]] && command -v hs >/dev/null 2>&1; then
+  # 세션 이름 추출: transcript JSONL의 custom-title 엔트리 (/rename으로 설정된 이름)
+  HS_SESSION_NAME=""
+  if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+    HS_SESSION_NAME=$(grep '"custom-title"' "$TRANSCRIPT_PATH" 2>/dev/null | tail -1 | jq -r '.customTitle // empty' 2>/dev/null || true)
+  fi
+  # CIR: 호스트(🖥️) 제외 — Hammerspoon은 macOS 전용이라 머신 구분 불필요. Pushover에는 유지(MiniPC 포함).
+  # CIR: subtitle 대신 body에 세션이름+레포 배치 — subtitle은 macOS가 ~30자에서 잘라 세션이름이 말줄임됨.
+  # worktree에서 REPO가 worktree 디렉토리명으로 잡히므로, 실제 repo 이름을 사용
+  HS_REPO="$REPO"
+  HS_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+  if [ -n "$HS_COMMON_DIR" ] && [ "$HS_COMMON_DIR" != ".git" ]; then
+    HS_REPO=$(basename "$(cd "$HS_COMMON_DIR/.." 2>/dev/null && pwd)")
+  fi
+  # body: 세션이름(있으면) + repo·branch — subtitle 대신 body에 모두 배치 (잘림 방지)
+  HS_BODY=""
+  if [ -n "$HS_SESSION_NAME" ]; then
+    HS_BODY="$HS_SESSION_NAME"
+  fi
+  if [ -n "$HS_REPO" ]; then
+    HS_BODY="${HS_BODY:+$HS_BODY
+}📁 ${HS_REPO}${BRANCH:+ · 🌿 $BRANCH}"
+  fi
+  HS_ICON="$HOME/.claude/assets/notification-icon.png"
+  # Lua single-quoted string 삽입: ' \ 제거(Lua escape 방어) + " $ ` 제거(bash interpolation 방어)
+  HS_BODY_SAFE="${HS_BODY//\'/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//\"/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//\\/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//\`/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//\$/}"
+  HS_BODY_SAFE="${HS_BODY_SAFE//$'\n'/\\n}"
+  timeout 2 hs -c "
+    local n = hs.notify.new({
+      title = 'Claude Code [✅작업 완료]',
+      informativeText = '${HS_BODY_SAFE}',
+      soundName = 'Purr',
+      -- === Change Intent Record ===
+      -- v1: withdrawAfter 미설정(기본값 5초) → 배너 사라진 뒤 NC에서도 완전 증발
+      -- v2: withdrawAfter=0 + Alerts 스타일 → 알림이 화면에 상시 표시되어 둔감화 유발
+      -- v3 (최종): withdrawAfter=0 + Banners 스타일(System Settings) →
+      --   배너는 ~5초 후 자동 사라지되, NC에는 사용자가 직접 제거할 때까지 유지
+      withdrawAfter = 0
+    })
+    local img = hs.image.imageFromPath('${HS_ICON}')
+    if img then n:contentImage(img) end
+    n:send()
+  " >/dev/null 2>&1 && HS_SENT=true || true
+fi
+
+if [ "$PUSHOVER_AVAILABLE" = true ] && [ "$HS_SENT" = false ]; then
+  curl -s --max-time 4 -X POST \
+    -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
+    --data-urlencode "token=$PUSHOVER_TOKEN" \
+    --data-urlencode "user=$PUSHOVER_USER" \
+    --data-urlencode "title=Claude Code [✅작업 완료]" \
+    --data-urlencode "sound=jobs_done" \
+    --data-urlencode "message=$MESSAGE" \
+    https://api.pushover.net/1/messages.json >/dev/null 2>&1
+fi
 
 exit 0
