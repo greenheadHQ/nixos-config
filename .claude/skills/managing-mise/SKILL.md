@@ -1,12 +1,8 @@
 ---
 name: managing-mise
 description: |
-  This skill should be used when the user asks about mise runtime version management
-  including Node.js, pnpm, shims, .nvmrc, and activate configuration.
-  Triggers: "pnpm not found", "node version mismatch", ".nvmrc",
-  "mise shims", "mise activate", "mise 설정", "SSH에서 pnpm 안 됨",
-  "Node.js source build", "런타임 버전 불일치",
-  "mise current", "mise install", "mise trust".
+  Manage mise runtime: Node.js, pnpm, shims.
+  Trigger: 'mise 설정', 'pnpm not found', '.nvmrc', 'mise shims', 'mise activate', '런타임 버전 불일치'.
 ---
 
 # mise 런타임 버전 관리

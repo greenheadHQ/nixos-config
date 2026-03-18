@@ -1,12 +1,9 @@
 ---
 name: hosting-anki
 description: |
-  This skill should be used when the user needs to manage Anki sync server or AnkiConnect API:
-  self-hosted sync, headless API, backup, client config.
-  Triggers: "anki 동기화", "anki-sync-server", "anki 서버", "anki 백업",
-  "AnkiConnect", "anki-connect", "headless anki", "카드 API", "덱 조회",
-  "sync connection issues", "backup failures", "AnkiMobile configuration",
-  "AnkiMobile 설정", "self-hosted anki sync", "anki CORS", "anki API 테스트".
+  Manage Anki sync server and AnkiConnect API.
+  Trigger: 'anki 동기화', 'anki 서버', 'anki 백업', 'AnkiConnect', 'AnkiMobile 설정', '카드 API'.
+  NOT for 컨테이너/Podman (use running-containers).
 ---
 
 # Anki 서비스 관리

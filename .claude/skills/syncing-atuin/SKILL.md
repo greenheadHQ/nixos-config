@@ -1,16 +1,9 @@
 ---
 name: syncing-atuin
 description: |
-  Atuin shell history sync, monitoring (Hammerspoon menubar + launchd watchdog),
-  encryption key recovery, and history cleanup (atuin-clean-kr).
-  NOT for tmux sessions (managing-tmux), SSH/Tailscale (managing-ssh),
-  or Hammerspoon hotkeys (automating-hammerspoon).
-  Triggers: "atuin status 4XX errors", "encryption key mismatch",
-  "atuin 동기화 오류", "atuin history delete", "shell history backup",
-  "zsh-autosuggestion TUI conflicts", "Korean history bulk deletion",
-  "한글 히스토리 삭제", "last_sync_time troubleshooting",
-  "history database maintenance", "atuin-clean-kr", "atuin watchdog",
-  "atuin search_mode", "fulltext search", "atuin 설정".
+  Sync Atuin shell history, 암호화 키 복구, atuin-clean-kr.
+  Trigger: 'atuin 동기화 오류', 'encryption key', 'atuin-clean-kr', '한글 히스토리 삭제', 'atuin 설정'.
+  NOT for tmux (use managing-tmux). NOT for SSH (use managing-ssh).
 ---
 
 # Atuin 히스토리 동기화

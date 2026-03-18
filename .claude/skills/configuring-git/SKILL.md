@@ -1,17 +1,9 @@
 ---
 name: configuring-git
 description: |
-  Git configuration via Home Manager: delta diff viewer, lazygit TUI integration,
-  rerere conflict resolution, aliases (s, l),
-  git-cleanup branch pruning, and interactive rebase reverse display.
-  Covers delta feature/pager settings and side-by-side control.
-  NOT for Claude Code hooks/plugins (use configuring-claude-code)
-  or Codex CLI/.agents config (use configuring-codex).
-  Triggers: "gitconfig conflicts", "git-cleanup", "git cleanup",
-  "rebase reverse display", "lazygit delta pager config",
-  "git 설정 충돌", "delta 설정", "Git alias",
-  "side-by-side", "rerere",
-  "git 브랜치 정리", "delta pager".
+  Configure Git via Home Manager: delta, lazygit, rerere.
+  Trigger: 'git 설정 충돌', 'delta 설정', 'lazygit', 'rerere', 'git-cleanup', 'git 브랜치 정리'.
+  NOT for Claude Code hooks (use configuring-claude-code).
 ---
 
 # Git 설정

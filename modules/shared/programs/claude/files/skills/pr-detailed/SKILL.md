@@ -2,16 +2,9 @@
 name: pr-detailed
 argument-hint: "[update]"
 description: |
-  PR 본문을 CIR/ADR/Human Test/Pre-Merge LLM E2E 테스트 가이드를 포함하여
-  상세히 작성한다. 인자 없이 호출하면 새 PR을 생성하고, "update" 인자를
-  전달하면 기존 PR 본문을 업데이트한다.
-  NOT for DA 피드백 루프 (use da-feedback).
-  NOT for PR 코멘트 처리 (use review-pr-feedback).
-  NOT for LLM 이행 가이드 (use llm-migration-guide).
-  Triggers: "PR 본문", "PR 작성", "PR 상세", "pr detailed",
-  "PR 업데이트", "PR에 CIR 포함", "Human Test", "Pre-Merge 테스트",
-  "PR 본문이 부실", "PR 만들어줘", "create PR", "PR 생성",
-  "PR body", "상세 PR".
+  Create/update PR with CIR/Human Test/Pre-Merge guide. Args: (none)=create, update.
+  Trigger: 'PR 본문', 'PR 작성', 'PR 만들어줘', 'PR 업데이트', 'Human Test'.
+  NOT for DA (use da-feedback). NOT for PR 코멘트 (use review-pr-feedback).
 ---
 
 # 상세 PR 작성

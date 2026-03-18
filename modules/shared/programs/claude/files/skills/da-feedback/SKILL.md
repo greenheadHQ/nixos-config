@@ -2,17 +2,9 @@
 name: da-feedback
 argument-hint: "[for_plan|for_pr|both]"
 description: |
-  Run Devil's Advocate feedback loop with 8 domain-specialized parallel review
-  agents (YAGNI, NGMI, HALLUCINATION, SECURITY, SIDE_EFFECT, CONSISTENCY,
-  READABILITY, CLEAN_CODE) to rigorously review plans or code.
-  Args: for_plan (plan DA 1x), for_pr (code DA 1x), both (2x).
-  NOT for PR 코멘트(CodeRabbit 등) 처리 (use review-pr-feedback).
-  NOT for 전수조사/감사 (use parallel-audit).
-  NOT for PR 본문 작성 (use pr-detailed).
-  NOT for 계획 수립 (use plan-with-questions).
-  Triggers: "DA", "Devil's Advocate", "피드백 루프", "DA 피드백",
-  "da feedback", "코드 리뷰 루프", "YAGNI 리뷰", "DA 리뷰",
-  "피드백 루프 실행", "DA loop", "devil's advocate review".
+  Run Devil's Advocate 8-agent parallel review. Args: for_plan, for_pr, both.
+  Trigger: 'DA', 'DA 피드백', '피드백 루프', 'YAGNI 리뷰', '코드 리뷰 루프'.
+  NOT for PR 코멘트 (use review-pr-feedback). NOT for 전수조사 (use parallel-audit).
 ---
 
 # Devil's Advocate 피드백 루프

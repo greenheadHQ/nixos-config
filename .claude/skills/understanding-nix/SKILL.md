@@ -1,16 +1,9 @@
 ---
 name: understanding-nix
 description: |
-  This skill should be used when the user encounters Nix fundamentals issues
-  including flakes, derivations, substituters, devShell, direnv, and pre-commit hooks.
-  Triggers: "nix flake update", "flake change detection", "slow build",
-  "substituter", "derivation", "direnv", "direnv allow", "devShell",
-  "experimental features", "Nix 빌드 느림", "flake 인식 안 됨",
-  "gitleaks not found", "lefthook not found", "pre-commit hook 실패",
-  "builtins.toJSON", "nix-ld", "pkgs.formats.json",
-  "max-substitution-jobs", "병렬 다운로드", "nix.conf 설정".
-  For NixOS/MiniPC hardware issues use managing-minipc.
-  For macOS/nix-darwin system settings use managing-macos.
+  Resolve Nix fundamentals: flake, derivation, substituter, direnv.
+  Trigger: 'Nix 빌드 느림', 'flake 인식 안 됨', 'substituter', 'direnv', 'pre-commit hook 실패'.
+  NOT for NixOS MiniPC (use managing-minipc). NOT for nix-darwin (use managing-macos).
 ---
 
 # Nix 공통 이슈

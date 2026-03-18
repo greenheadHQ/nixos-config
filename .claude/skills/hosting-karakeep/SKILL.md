@@ -1,14 +1,9 @@
 ---
 name: hosting-karakeep
 description: |
-  This skill should be used when the user needs to manage Karakeep web archiver/bookmark manager:
-  3-container setup, SingleFile integration, webhooks, backup, log monitoring, fallback sync.
-  Triggers: "Karakeep", "카라킵", "웹 아카이브", "web archive",
-  "archive.greenhead.dev", "북마크", "아카이빙", "bookmark manager",
-  "SingleFile push", "singlefile-bridge", "karakeep-update",
-  "karakeep 백업", "karakeep 로그", "karakeep OOM",
-  "fallback sync", "crawl failure", "Meilisearch".
-  For container-level operations (OOM, Podman, update system), use running-containers instead.
+  Manage Karakeep web archiver/bookmarks.
+  Trigger: 'Karakeep', '웹 아카이브', '북마크', '아카이빙', 'archive.greenhead.dev', 'karakeep-update'.
+  NOT for 컨테이너/Podman (use running-containers).
 ---
 
 # Hosting Karakeep

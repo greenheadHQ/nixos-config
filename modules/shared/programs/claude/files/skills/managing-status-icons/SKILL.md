@@ -1,14 +1,9 @@
 ---
 name: managing-status-icons
 description: |
-  Manage status bar icons (Jira, Slack, Figma, Memo) for Claude Code sessions.
-  Memory icon is auto-detected by statusline.sh and displayed separately.
-  Each session has clickable OSC 8 hyperlink icons in the status bar.
-  Links persist per session_id and survive --resume/--continue/compact.
-  NOT for modifying statusline.sh or hook scripts (use configuring-claude-code).
-  Triggers: "status icon", "상태바 아이콘", "jira 링크", "slack 링크",
-  "figma 링크", "메모 열어", "아이콘 설정", "아이콘 수정", "아이콘 제거",
-  "링크 변경", "/managing-status-icons".
+  Set session status bar icons (Jira, Slack, Figma, Memo).
+  Trigger: '상태바 아이콘', 'jira 링크', 'slack 링크', 'figma 링크', '아이콘 설정', '링크 변경'.
+  NOT for statusline.sh 수정 (use configuring-claude-code).
 ---
 
 # 상태바 아이콘 관리

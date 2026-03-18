@@ -1,12 +1,8 @@
 ---
 name: maintaining-skills
 description: |
-  This skill should be used when the user needs to audit, update, or maintain
-  Claude Code skills -- checking quality, routing consistency, and structure.
-  Triggers: "스킬 감사", "스킬 점검", "스킬 리뷰", "스킬 최신화",
-  "스킬 유지보수", "skill audit", "skill review", "skill maintenance",
-  "스킬 품질 확인", "스킬 정리", "skill cleanup", "routing table 점검",
-  skill split/merge analysis, skill inventory.
+  Audit and maintain Claude Code skills quality.
+  Trigger: '스킬 감사', '스킬 점검', '스킬 리뷰', '스킬 최신화', 'skill audit', '스킬 정리'.
 ---
 
 # 스킬 유지보수

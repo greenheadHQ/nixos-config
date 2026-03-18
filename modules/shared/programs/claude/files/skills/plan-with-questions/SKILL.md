@@ -2,13 +2,9 @@
 name: plan-with-questions
 argument-hint: "[issue-url | issue-number | task description]"
 description: |
-  Clarify all ambiguities through iterative Q&A before creating a detailed plan.
-  Validates issue relevance/YAGNI first, then checks side-effect/trade-off awareness.
-  NOT for DA 피드백 루프 실행 (use da-feedback).
-  NOT for PR 본문 작성 (use pr-detailed).
-  Triggers: "계획 수립", "계획 세우기", "plan", "자세한 계획",
-  "AskUserQuestion", "스무고개", "요구사항 파악", "불명확점 질문",
-  "이슈 해결 계획", "planning", "plan this issue".
+  Clarify ambiguities via iterative Q&A before planning.
+  Trigger: '계획 수립', '계획 세우기', 'plan', '스무고개', '요구사항 파악', '불명확점 질문'.
+  NOT for DA (use da-feedback). NOT for PR 본문 (use pr-detailed).
 ---
 
 # 스무고개식 계획 수립

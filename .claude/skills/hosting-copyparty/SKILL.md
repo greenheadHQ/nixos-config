@@ -1,16 +1,9 @@
 ---
 name: hosting-copyparty
 description: |
-  This skill should be used when the user needs to manage Copyparty file server:
-  WebDAV, HDD web access, file sharing, container config, ACL setup.
-  Triggers: "파일 서버", "copyparty", "파일 공유", "HDD 웹 접근",
-  "WebDAV", "Google Drive 대체", "파일 업로드", "파일 다운로드",
-  "copyparty.greenhead.dev", "copyparty 설정", "copyparty 비밀번호",
-  "copyparty CORS", "copyparty-update", "파일 서버 로그인 실패",
-  ACL permissions, config generation, password injection issues,
-  ENTRYPOINT override, initcfg conflict, session 403 error.
-  For generic container-level operations (Podman, OOM, shared update framework internals), use running-containers instead.
-  Service-specific Copyparty workflows such as `copyparty-update` stay here.
+  Manage Copyparty file server: WebDAV, ACL.
+  Trigger: '파일 서버', 'copyparty', 'WebDAV', 'copyparty-update'.
+  NOT for 컨테이너/Podman (use running-containers).
 ---
 
 # Copyparty 파일 서버 관리

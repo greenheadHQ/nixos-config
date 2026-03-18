@@ -1,12 +1,8 @@
 ---
 name: managing-macos
 description: |
-  This skill should be used when the user asks about macOS/nix-darwin system settings,
-  Dock/Finder configuration, Homebrew Cask management, Shottr setup, or Folder Actions.
-  Triggers: "darwin-rebuild", Dock/Finder settings, "/etc/bashrc conflict",
-  "/etc/zshrc conflict", "killall cfprefsd", "primary user does not exist",
-  "shottr 설정", "shottr 단축키", "스크린샷 저장 경로", "shottr 라이센스",
-  "Folder Actions", "폴더 감시", "compress-video", "compress-rar", "upload-immich".
+  Configure macOS/nix-darwin: Dock, Finder, Homebrew Cask, Folder Actions.
+  Trigger: 'darwin-rebuild', 'shottr 설정', 'Folder Actions', 'compress-video', 'upload-immich'.
 ---
 
 # macOS 관리 (nix-darwin)
@@ -15,36 +11,13 @@ nix-darwin 및 macOS 시스템 설정 가이드입니다.
 
 ## 빠른 참조
 
-### Rebuild 명령어
+### macOS 전용 nrs 옵션
 
 ```bash
-# 설정 적용 (미리보기 + 적용)
-nrs
-
-# 오프라인 rebuild (캐시만 사용, 빠름)
-nrs --offline
-
-# NO_CHANGES 스킵 우회 (activation scripts 강제 재실행)
-nrs --force
-
-# 미리보기만
-nrp
+nrs --force               # activation scripts 강제 재실행 (NO_CHANGES 스킵 우회)
 ```
 
-**nrs 안전 기능:**
-- launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
-- Hammerspoon 재시작 (HOME 오염 방지)
-
-> nrs/nrp 스크립트는 `~/.local/lib/rebuild-common.sh`를 source하여 공통 함수(로깅, 인수 파싱, worktree 감지, 빌드 미리보기, 아티팩트 정리)를 사용합니다.
-> 소스: `modules/shared/scripts/rebuild-common.sh`, 플랫폼별: `modules/darwin/scripts/{nrs,nrp}.sh`
-
-**Git Worktree 지원:**
-
-git worktree에서 `nrs`/`nrp` 실행 시 자동 감지하여 worktree의 flake를 빌드합니다.
-
-- 감지: `detect_worktree()` (rebuild-common.sh source 시 자동 실행)
-- 메커니즘: `FLAKE_PATH`만 worktree 경로로 전환 (`--flake <worktree>`로 빌드)
-- 심링크 타깃(`nixosConfigPath`)은 항상 메인 레포 — worktree 빌드 후에도 심링크가 안정적
+> nrs/nrp 소스: `modules/shared/scripts/rebuild-common.sh`, `modules/darwin/scripts/{nrs,nrp}.sh`
 
 ### 주요 설정 파일
 
@@ -119,35 +92,7 @@ nrs
 # 새 맥북: Shottr 실행 후 Activate 버튼 1회 클릭
 ```
 
-#### Shottr 크레덴셜 관리 (상세)
-
-**샌드박스 앱 구조**: Shottr는 macOS 샌드박스 앱이며 plist가 `~/Library/Containers/cc.ffitch.shottr/Data/Library/Preferences/cc.ffitch.shottr.plist`에 저장됩니다. `~/Library/Preferences/`에는 존재하지 않습니다. 다만 `defaults read/write cc.ffitch.shottr ...`는 `cfprefsd`를 통해 Container plist에 투명하게 접근하므로, 추가 경로 지정 없이 정상 동작합니다.
-
-**라이센스 이중 저장 구조**:
-
-| 저장소 | 키 | 용도 |
-|--------|---|------|
-| macOS Keychain | `Shottr-license`, `Shottr-vault` | Primary (서버 검증 후 기록) |
-| defaults (plist) | `kc-license`, `kc-vault` | Secondary (UI pre-fill용) |
-
-- Keychain 삭제 → defaults에서 라이센스를 UI에 pre-fill하되, "Activate" 버튼 1회 클릭 필요
-- defaults 삭제 → Keychain에서 자동 복원 (라이센스 유지)
-- 양쪽 모두 삭제 → 미등록 상태
-- "Registered to:" 이메일은 **Keychain** (`Shottr-vault`)에서 읽힘 — defaults의 `kc-vault`와 무관
-- `kc-vault`(defaults)의 정확한 역할은 불명 (Activate 시 서버 통신 데이터 캐시로 추정). 안전을 위해 둘 다 기록
-
-**Nix 관리 전략**: `defaults write kc-license + kc-vault`로 라이센스를 pre-fill합니다. 완전 자동 활성화는 불가능하지만(Keychain은 Nix로 관리 불가), 새 맥북에서 **라이센스 키를 기억/입력할 필요 없이 Activate 버튼 1회 클릭만으로 활성화**할 수 있습니다.
-
-**HM activation에서의 주의사항**:
-- Home Manager activation 스크립트는 최소한의 PATH로 실행 → macOS 시스템 명령어는 절대 경로 필수 (`/usr/bin/defaults`, `/usr/bin/killall`)
-- `defaults write`에서 `{...}` 패턴은 plist dictionary로 해석 시도 → JSON 형태 문자열은 반드시 `-string` 플래그 명시
-- 예: `/usr/bin/defaults write cc.ffitch.shottr KeyboardShortcuts_area -string '{"carbonKeyCode":20,"carbonModifiers":768}'`
-
-**defaults 테스트 시 SIGTERM vs SIGKILL**:
-- `killall Shottr`(SIGTERM)로 종료하면 Shottr가 종료 시점에 메모리 캐시를 plist에 재기록
-- defaults 조작 테스트 시에는 반드시 `kill -9 $(pgrep -x Shottr)` (SIGKILL) 사용 후 `defaults delete/write` 실행
-
-> 테스트 환경: Shottr 1.9.1 (build 128, versionCode 10901), macOS Darwin 24.6.0, 2026-02-18
+크레덴셜 이중 저장 구조(Keychain + defaults), HM activation 주의사항, defaults 테스트 절차 상세: [references/shottr-credentials.md](references/shottr-credentials.md)
 
 ### Folder Actions (launchd WatchPaths)
 

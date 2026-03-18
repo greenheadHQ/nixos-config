@@ -52,6 +52,24 @@
             "command": "~/.claude/hooks/worktree-path-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/log-skill.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/fragile-hardcoding-guard.sh"
+          }
+        ]
       }
     ],
     "Stop": [

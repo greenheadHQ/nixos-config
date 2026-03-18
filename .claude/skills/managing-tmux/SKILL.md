@@ -1,14 +1,9 @@
 ---
 name: managing-tmux
 description: |
-  tmux terminal multiplexer configuration, keybindings, plugins (resurrect,
-  continuum, thumbs, yank), and Pane Notepad via Home Manager.
-  NOT for SSH/Tailscale (managing-ssh), shell history (syncing-atuin),
-  or Hammerspoon/Ghostty (automating-hammerspoon).
-  Triggers: "pane notepad", "tmux plugins", "tmux-resurrect", "tmux-continuum",
-  "tmux-thumbs", "tmux-yank", "session save/restore", "tmux.conf configuration",
-  "prefix key", "copy-mode", "tmux 설정", "tmux 단축키", "tmux 플러그인",
-  "pane 제목", "노트 태그", "tmux 세션 복원".
+  Configure tmux: plugins (resurrect, thumbs, yank), Pane Notepad.
+  Trigger: 'tmux 설정', 'tmux 플러그인', 'pane notepad', 'tmux-resurrect', 'tmux 단축키', 'tmux 세션 복원'.
+  NOT for SSH (use managing-ssh). NOT for Atuin (use syncing-atuin).
 ---
 # tmux 설정
 

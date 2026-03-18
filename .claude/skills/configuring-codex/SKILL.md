@@ -1,16 +1,9 @@
 ---
 name: configuring-codex
 description: |
-  Codex CLI configuration: config.toml execution policies (approval_policy,
-  sandbox_mode), .agents/skills directory symlink projection, AGENTS.md structure,
-  and verify-ai-compat.sh validation. Covers skill discovery failures caused by
-  file-vs-directory symlink issues, and post-nrs verification workflows.
-  NOT for Claude Code hooks/plugins/settings.json (use configuring-claude-code),
-  codex exec runtime (use using-codex-exec), or harness sync (use syncing-codex-harness).
-  Triggers: "codex config", "codex setup", "codex trust", "Codex 설정",
-  "AGENTS.md", ".agents/skills", "project-scope skill", ".agents/skills 심링크",
-  "approval_policy", "sandbox_mode", "Codex compatibility",
-  "verify-ai-compat", "디렉토리 심링크", "config.toml".
+  Configure Codex CLI config.toml, .agents/skills, AGENTS.md.
+  Trigger: 'Codex 설정', 'AGENTS.md', '.agents/skills', 'approval_policy', 'sandbox_mode', 'verify-ai-compat'.
+  NOT for Claude Code (use configuring-claude-code). NOT for codex exec (use using-codex-exec).
 ---
 
 # Codex CLI 설정

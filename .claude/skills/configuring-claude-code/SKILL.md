@@ -1,17 +1,9 @@
 ---
 name: configuring-claude-code
 description: |
-  Claude Code hooks, plugins, aliases, MCP servers, and settings.json management
-  via Nix (mkOutOfStoreSymlink). Covers plugin install/uninstall, hook events
-  (PreToolUse, PostToolUse, Stop, Notification), Pushover notification hooks,
-  and plugin development (plugin.json structure).
-  NOT for Codex CLI config/trust/skills projection (use configuring-codex)
-  or Git delta/lazygit/rerere (use configuring-git).
-  Triggers: "how to create a hook", "Claude 훅 설정", "add a plugin",
-  "플러그인 설치", "claude alias", "claude settings",
-  "claude 설정", "mcp.json", "settings read-only", "plugin structure",
-  "플러그인 개발", "hook events", "PreToolUse", "Pushover 알림 훅",
-  "hooks trust", "enabledPlugins", "유령 플러그인".
+  Configure Claude Code hooks, plugins, MCP, settings.json.
+  Trigger: 'Claude 훅 설정', '플러그인 설치', 'claude 설정', 'mcp.json', 'hook events', '알림 훅'.
+  NOT for Codex CLI (use configuring-codex). NOT for Git delta/lazygit (use configuring-git).
 ---
 
 # Claude Code 설정

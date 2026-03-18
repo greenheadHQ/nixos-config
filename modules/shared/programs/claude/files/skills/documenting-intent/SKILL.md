@@ -1,22 +1,8 @@
 ---
 name: documenting-intent
 description: |
-  This skill should be used when the user asks to document intent, record
-  decision rationale, write a CIR (Change Intent Record), ADR (Architecture
-  Decision Record), capture why an alternative was rejected, or look up
-  past decision history for a piece of code or architecture.
-  Use this skill whenever the user mentions intent documentation, decision
-  history, trade-off recording, asks "why did we do it this way", or wants
-  to find/retrieve/search existing CIR/ADR records — even if they don't
-  explicitly say "CIR" or "ADR".
-  Triggers: "의도 기록", "CIR", "CIR 작성", "ADR", "의사결정 기록",
-  "왜 이렇게 했는지 기록", "change intent", "decision record",
-  "대안 거부 이유", "intent documentation", "결정 근거", "의사결정 이력",
-  "trade-off 기록", "번복 이력", "의도 남겨", "intent record",
-  "decision rationale", "rejected alternative",
-  "왜 이렇게 했는지 찾아봐", "의사결정 히스토리 조회",
-  "이 설계 이유", "CIR 찾아줘", "결정 이력 검색",
-  "여기 구조가 이렇게 된 이유", "이전 방향 전환 이력".
+  Record CIR/ADR or retrieve past decision history.
+  Trigger: '의도 기록', 'CIR', 'ADR', '결정 근거', '왜 이렇게 했는지', 'CIR 찾아줘', '결정 이력'.
 ---
 
 # Intent Documentation (CIR/ADR)

@@ -1,16 +1,9 @@
 ---
 name: viewing-immich-photo
 description: |
-  Immich photo path resolution and image viewing across macOS/NixOS.
-  Converts container paths to host paths, validates security boundaries,
-  and displays images via SSH (macOS) or local Read (NixOS).
-  Triggers: "view immich photo", "immich 사진 보여줘", "이미치 사진 확인",
-  "immich 파일 보여줘", "immich 사진 경로", "immich photo path",
-  "upload-cache 파일 확인", "Scriptable 이미지 확인",
-  paths containing "/mnt/data/immich/photos"
-  or "/var/lib/docker-data/immich/upload-cache".
-  Not for immich container management (use running-containers) or
-  Scriptable script development (use running-containers references).
+  View immich photos: container→host path conversion, image display.
+  Trigger: 'immich 사진 보여줘', 'immich 파일 보여줘', 'immich 사진 경로', 'upload-cache 파일 확인'.
+  NOT for immich 컨테이너 관리 (use running-containers).
 ---
 
 # Immich 사진 확인

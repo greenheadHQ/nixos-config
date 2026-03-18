@@ -1,12 +1,9 @@
 ---
 name: configuring-neovim
 description: |
-  Neovim (LazyVim) configuration via Nix: LSP, plugins, im-select, extraPackages.
-  Mason is disabled; all LSP/formatters/linters are managed by Nix extraPackages.
-  Triggers: "nvim 플러그인", "lazy.nvim", "한글 입력", "im-select",
-  "extraPackages", "Mason 비활성화", "tree-sitter 빌드 오류",
-  "LSP 서버 안 됨", "markdownlint", "Neovim 설정",
-  Mason migration, tree-sitter build errors, lazy-lock.json conflict.
+  Configure Neovim (LazyVim) via Nix: LSP, plugins, im-select.
+  Trigger: 'nvim 플러그인', 'Neovim 설정', 'im-select', 'LSP 서버 안 됨', 'Mason 비활성화', 'extraPackages'.
+  NOT for VSCode/확장 (use managing-vscode).
 ---
 
 # Neovim (LazyVim) 설정

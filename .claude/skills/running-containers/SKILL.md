@@ -1,17 +1,9 @@
 ---
 name: running-containers
 description: |
-  This skill should be used when the user asks about Podman/Docker containers,
-  homeserver services (immich, uptime-kuma, copyparty, vaultwarden, karakeep), container OOM,
-  service updates, or database backups.
-  Triggers: "update immich", "immich 업데이트", "immich-update",
-  "check immich version", "immich 버전 확인", upgrading Immich server,
-  "uptime-kuma-update",
-  "서비스 업데이트", "service-lib", "version-check", unified service update system,
-  container OOM, "Tailscale IP binding" timing, OCI backend config,
-  "immich-db-backup", "DB 백업", "백업 타이머",
-  "컨테이너", Caddy reverse proxy.
-  For service-specific workflows use hosting-anki, hosting-copyparty, hosting-vaultwarden, hosting-karakeep.
+  Manage Podman containers, homeserver service updates, OOM, DB backups.
+  Trigger: '컨테이너', '서비스 업데이트', 'immich 업데이트', 'container OOM', 'service-lib', 'immich-db-backup', 'Caddy'.
+  NOT for 서비스별 워크플로 (use hosting-anki, hosting-copyparty, hosting-vaultwarden, hosting-karakeep).
 ---
 
 # 컨테이너 관리 (Podman/홈서버)

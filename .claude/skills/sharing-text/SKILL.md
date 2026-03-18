@@ -1,12 +1,8 @@
 ---
 name: sharing-text
 description: |
-  Terminal-to-iPhone text sharing via the `push` shell function and Pushover
-  push notifications. Supports direct text, pipe input, and tmux buffer.
-  Triggers: "share text", "push text", "terminal to iPhone",
-  "텍스트 공유", "Pushover로 보내", "텍스트를 아이폰으로",
-  "push 함수", "push 명령어", "아이폰으로 보내",
-  "pipe to push", "tmux buffer to phone", "URL 공유".
+  Share text from terminal to iPhone via Pushover push function.
+  Trigger: '텍스트 공유', 'push 명령어', '아이폰으로 보내', 'Pushover로 보내', 'URL 공유'.
 ---
 
 # Pushover로 텍스트 공유

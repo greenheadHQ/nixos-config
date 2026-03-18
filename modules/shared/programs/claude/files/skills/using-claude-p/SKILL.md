@@ -1,15 +1,9 @@
 ---
 name: using-claude-p
 description: |
-  Claude Code non-interactive (-p/--print) 모드의 프로그래밍적 사용법:
-  harness 셀프테스트, SSH 크로스머신 패턴, 입출력 형식, 권한 모델, 숨겨진 동작.
-  NOT for Codex CLI (use using-codex-exec).
-  NOT for Claude Code hooks/plugins/settings 설정 (use configuring-claude-code).
-  NOT for codex harness 동기화 (use syncing-codex-harness).
-  Triggers: "claude -p", "claude --print", "비대화형 claude", "headless",
-  "harness test", "harness 테스트", "claude -p 테스트", "init event",
-  "셀프테스트", "self-test", "c -p", "프로그래밍적 실행",
-  "non-interactive claude", "headless mode", "Agent SDK CLI".
+  Use Claude Code non-interactive (-p/--print) mode.
+  Trigger: 'claude -p', '비대화형 claude'.
+  NOT for Codex CLI (use using-codex-exec). NOT for Claude Code 설정 (use configuring-claude-code).
 ---
 
 # Claude Code 비대화형 모드 (`claude -p`) 사용

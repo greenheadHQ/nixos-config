@@ -1,13 +1,9 @@
 ---
 name: managing-vscode
 description: |
-  This skill should be used when the user asks about VSCode management
-  including Nix extensions, settings, file associations, and snippets.
-  Triggers: "add VSCode extension", "install extension via Nix",
-  "manage VSCode settings", "확장 로드 오류", "VSCode 확장",
-  extension loading, duti file associations,
-  "keybindings.json", "VSCode 설정", "VSCode 스니펫",
-  "nix-ide", "nixd LSP".
+  Manage VSCode: Nix extensions, settings, duti.
+  Trigger: 'VSCode 확장', '확장 로드 오류', 'VSCode 설정', 'nix-ide', 'nixd LSP', 'VSCode 스니펫'.
+  NOT for Neovim/LazyVim (use configuring-neovim).
 ---
 
 # VSCode 관리

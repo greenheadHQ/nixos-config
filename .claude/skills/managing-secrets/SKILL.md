@@ -1,13 +1,9 @@
 ---
 name: managing-secrets
 description: |
-  This skill should be used when the user asks about agenix secrets,
-  .age file encryption/decryption, re-encryption, or secret key management.
-  Triggers: "add a secret", "create .age file", "encrypt with agenix",
-  "decrypt secret", "agenix -e", "/dev/stdin" errors, "secrets.nix",
-  "re-encrypt", "age key", "identity path" issues, "시크릿", "암호화",
-  "shottr-license", "shottr 라이센스".
-  For service-specific secret usage, see the respective service skill.
+  Manage agenix secrets: .age encryption, re-encrypt, key management.
+  Trigger: '시크릿', '암호화', 'agenix -e', 'secrets.nix', 're-encrypt', 'age key'.
+  NOT for Vaultwarden 비밀번호 관리자 (use hosting-vaultwarden).
 ---
 
 # Secret 관리 (agenix)
