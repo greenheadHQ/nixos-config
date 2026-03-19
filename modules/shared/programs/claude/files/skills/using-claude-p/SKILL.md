@@ -1,9 +1,14 @@
 ---
 name: using-claude-p
 description: |
-  Use Claude Code non-interactive (-p/--print) mode.
-  Trigger: 'claude -p', '비대화형 claude'.
-  NOT for Codex CLI (use using-codex-exec). NOT for Claude Code 설정 (use configuring-claude-code).
+  Use Claude Code non-interactive (-p/--print) mode for scripting, automation, and headless
+  execution. Trigger: '''claude -p''', '''비대화형 claude''', '''headless claude''', '''스크립트에서 claude'''. Covers: CLI flag usage and gotchas (--output-format, --allowedTools, --resume,
+  --dangerously-skip-permissions), JSON output parsing, session chaining, saving results to files,
+  SSH remote execution of claude, harness self-testing (T1~T8), and known flag interaction bugs. Use
+  when users want to run claude programmatically, pipe output, parse results, automate workflows,
+  troubleshoot CLI flag behavior, or execute claude on remote machines. NOT for Codex CLI (use
+  using-codex-exec). NOT for Claude Code settings/hooks/plugins (use configuring-claude-code). NOT
+  for interactive TUI usage.
 ---
 
 # Claude Code 비대화형 모드 (`claude -p`) 사용

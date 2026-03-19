@@ -1,9 +1,14 @@
 ---
 name: configuring-claude-code
 description: |
-  Configure Claude Code hooks, plugins, MCP, settings.json.
-  Trigger: 'Claude 훅 설정', '플러그인 설치', 'claude 설정', 'mcp.json', 'hook events', '알림 훅'.
-  NOT for Codex CLI (use configuring-codex). NOT for Git delta/lazygit (use configuring-git).
+  Use this skill to configure Claude Code — the AI coding assistant's settings, hooks, plugins,
+  MCP servers, and shell alias. Covers editing settings.json (permissions, session cleanup,
+  environment variables, language), mcp.json (adding/removing MCP servers), hook scripts
+  (PreToolUse, PostToolUse, Stop, Notification, SessionStart, SessionEnd — creation, debugging,
+  Pushover alerts not working), plugin installation/removal/development, and the `claude`/`c` shell
+  alias. Also handles generic requests about "AI 어시스턴트 설정" or "코딩 도우미 설정" when they refer to Claude
+  Code. NOT for Codex CLI config (use configuring-codex). NOT for Git delta/lazygit (use
+  configuring-git).
 ---
 
 # Claude Code 설정

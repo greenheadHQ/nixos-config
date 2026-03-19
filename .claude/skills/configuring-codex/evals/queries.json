@@ -1,0 +1,22 @@
+[
+  {"query": "Codex CLI config.toml 설정 바꾸기", "should_trigger": true, "why": "명시적: Codex 설정은 핵심 트리거 키워드"},
+  {"query": "AGENTS.md 심링크가 깨졌어", "should_trigger": true, "why": "명시적: AGENTS.md는 트리거 키워드"},
+  {"query": ".agents/skills 디렉토리 심링크 검증", "should_trigger": true, "why": "명시적: .agents/skills는 트리거 키워드"},
+  {"query": "approval_policy 설정 변경하고 싶어", "should_trigger": true, "why": "경계선: approval_policy는 config.toml 설정"},
+  {"query": "verify-ai-compat.sh 실행 결과가 FAIL이야", "should_trigger": true, "why": "경계선: 검증 스크립트는 codex 스킬 범위"},
+  {"query": "Codex에서 스킬이 인식 안 돼", "should_trigger": true, "why": "경계선: 스킬 발견 문제는 투영 이슈"},
+  {"query": "sandbox_mode를 danger-full-access로 바꾸기", "should_trigger": true, "why": "경계선: sandbox_mode는 codex config 범위"},
+  {"query": "Codex 권한 프롬프트가 계속 떠", "should_trigger": true, "why": "저항적: 권한 프롬프트 = approval_policy 설정"},
+  {"query": "AI 도구 호환 설정 확인", "should_trigger": true, "why": "저항적: AI 도구 호환 = codex 호환 레이어"},
+  {"query": "codex 바이너리 업데이트하기", "should_trigger": true, "why": "저항적: 설치/업데이트 경로는 codex 스킬"},
+  {"query": "Claude Code settings.json 수정하기", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "mcp.json에 서버 추가하기", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "Stop 훅 알림 설정", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "PreToolUse 훅 스크립트 작성", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "플러그인 marketplace에서 설치하기", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "Pushover 알림 훅이 안 돼", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "permissions.deny 패턴 추가", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "Claude Code 플러그인 개발하기", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "hooks trust가 안 먹어", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"},
+  {"query": "c alias 설정 확인", "should_trigger": false, "why": "혼동 쌍: configuring-claude-code"}
+]

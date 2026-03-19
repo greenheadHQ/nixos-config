@@ -1,0 +1,22 @@
+[
+  {"query": "codex exec로 비대화형 실행하기", "should_trigger": true, "why": "명시적: codex exec는 핵심 트리거 키워드"},
+  {"query": "codex review로 코드 리뷰 돌려줘", "should_trigger": true, "why": "명시적: codex review는 트리거 키워드"},
+  {"query": "--yolo로 샌드박스 우회해서 실행", "should_trigger": true, "why": "명시적: --yolo는 트리거 키워드"},
+  {"query": "codex exec review에서 PROMPT이랑 --base 같이 쓰면 에러나", "should_trigger": true, "why": "경계선: 상호 배타 규칙은 codex exec 스킬"},
+  {"query": "--full-auto로 자동 실행하기", "should_trigger": true, "why": "경계선: --full-auto는 exec/review 공통 플래그"},
+  {"query": "codex exec resume --last로 세션 재개", "should_trigger": true, "why": "경계선: 세션 재개는 codex exec 범위"},
+  {"query": "codex exec -o result.md로 결과 저장", "should_trigger": true, "why": "경계선: -o 출력은 codex exec 범위"},
+  {"query": "비대화형 codex로 diff 리뷰하기", "should_trigger": true, "why": "저항적: 비대화형 codex = codex exec"},
+  {"query": "코드 리뷰 자동화하기", "should_trigger": true, "why": "저항적: 코드 리뷰 자동화 = codex exec review"},
+  {"query": "codex로 파일 기반 프롬프트 실행", "should_trigger": true, "why": "저항적: stdin/파일 기반 입력은 codex exec"},
+  {"query": "claude -p로 비대화형 실행하기", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "--output-format json으로 JSON 출력", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "SSH로 원격에서 claude 실행", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "claude --print 모드 사용법", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "--dangerously-skip-permissions로 도구 허용", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "harness 셀프테스트 T1~T8 실행", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "claude -p --resume SESSION_ID", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "echo prompt | claude -p로 실행", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "claude headless 모드에서 결과 파싱", "should_trigger": false, "why": "혼동 쌍: using-claude-p"},
+  {"query": "--append-system-prompt로 시스템 프롬프트 추가", "should_trigger": false, "why": "혼동 쌍: using-claude-p"}
+]

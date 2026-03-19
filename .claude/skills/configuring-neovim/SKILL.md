@@ -1,9 +1,13 @@
 ---
 name: configuring-neovim
 description: |
-  Configure Neovim (LazyVim) via Nix: LSP, plugins, im-select.
-  Trigger: 'nvim 플러그인', 'Neovim 설정', 'im-select', 'LSP 서버 안 됨', 'Mason 비활성화', 'extraPackages'.
-  NOT for VSCode/확장 (use managing-vscode).
+  Configure Neovim (LazyVim) via Nix: plugins, LSP, formatters, linters, themes, treesitter,
+  im-select. Use this skill when the user wants to change their code editor or 에디터 settings, fix
+  LSP/autocompletion issues, add or update lazy.nvim plugins, configure formatters (prettier,
+  stylua) or linters, change colorscheme/theme (e.g. catppuccin), troubleshoot treesitter parser
+  builds, fix Korean input switching (한영 전환, im-select), or modify Nix extraPackages for editor
+  tooling. This is the user's primary code editor — queries about "에디터", "코드 편집기", or "편집기 설정"
+  refer to Neovim unless VSCode is explicitly mentioned. NOT for VSCode/확장 (use managing-vscode).
 ---
 
 # Neovim (LazyVim) 설정

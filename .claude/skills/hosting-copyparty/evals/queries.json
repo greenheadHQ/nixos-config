@@ -1,0 +1,22 @@
+[
+  {"query": "copyparty 서비스 상태 확인해줘", "should_trigger": true, "why": "명시적: copyparty는 핵심 트리거 키워드"},
+  {"query": "파일 서버 WebDAV 연결이 안 돼", "should_trigger": true, "why": "명시적: WebDAV는 트리거 키워드"},
+  {"query": "copyparty-update 최신 버전 확인", "should_trigger": true, "why": "명시적: copyparty-update는 트리거 키워드"},
+  {"query": "파일 서버 로그인 비밀번호가 뭐야", "should_trigger": true, "why": "경계선: copyparty 인증은 이 스킬 범위"},
+  {"query": "copyparty에서 CORS 403 에러가 나", "should_trigger": true, "why": "경계선: CORS 이슈는 copyparty known issue"},
+  {"query": "Mac Finder에서 서버에 연결하기", "should_trigger": true, "why": "경계선: WebDAV Mac 연결은 copyparty 스킬"},
+  {"query": "https://copyparty.greenhead.dev 접속이 느려", "should_trigger": true, "why": "경계선: 도메인으로 copyparty 유추"},
+  {"query": "HDD 파일 웹으로 탐색하기", "should_trigger": true, "why": "저항적: HDD 웹 탐색 = copyparty"},
+  {"query": "파일 서버 설정 바꾸기", "should_trigger": true, "why": "저항적: 파일 서버 = copyparty"},
+  {"query": "업로드 서비스 ACL 확인", "should_trigger": true, "why": "저항적: ACL은 copyparty 설정 범위"},
+  {"query": "podman 컨테이너 전체 목록 보기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "Caddy 인증서 갱신 실패", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "service-lib.sh에서 send_notification 수정", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "컨테이너 OOM 해결 방법", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "homeserver 옵션 전체 확인", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "immich 서비스 업데이트 체크", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "constants.nix 도메인 설정 변경", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "tailscale-wait.nix가 타임아웃 나", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "전체 서비스 포트 매핑 테이블", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "Podman 네트워크 설정 확인", "should_trigger": false, "why": "혼동 쌍: running-containers"}
+]

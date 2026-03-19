@@ -1,0 +1,22 @@
+[
+  {"query": "agenix -e로 시크릿 수정하려는데 에러 나", "should_trigger": true, "why": "명시적: agenix -e는 시크릿 스킬 핵심 키워드"},
+  {"query": "secrets.nix에 새 시크릿 추가하고 싶어", "should_trigger": true, "why": "명시적: secrets.nix는 시크릿 스킬 범위"},
+  {"query": ".age 파일 re-encrypt 해야 돼", "should_trigger": true, "why": "명시적: re-encrypt는 시크릿 스킬 트리거 키워드"},
+  {"query": "새 서비스에 비밀 값을 넣어야 하는데 어떻게 암호화해", "should_trigger": true, "why": "경계선: 암호화 워크플로는 시크릿 스킬 범위"},
+  {"query": "SSH 공개키 변경 후 시크릿이 복호화 안 돼", "should_trigger": true, "why": "경계선: 키 불일치 트러블슈팅은 시크릿 스킬"},
+  {"query": "age key로 파일 복호화하는 방법", "should_trigger": true, "why": "경계선: age key 관리는 시크릿 스킬 범위"},
+  {"query": "nrs 후에 /run/agenix/ 경로에 파일이 안 생겨", "should_trigger": true, "why": "경계선: agenix 배포 문제는 시크릿 스킬"},
+  {"query": "시크릿 관리 어떻게 하는 거야", "should_trigger": true, "why": "저항적: 시크릿 관리 = managing-secrets 스킬"},
+  {"query": "Pushover 토큰 추가하려면", "should_trigger": true, "why": "저항적: Pushover 시크릿은 agenix로 관리"},
+  {"query": "암호화된 값 확인하고 싶어", "should_trigger": true, "why": "저항적: 복호화 워크플로는 시크릿 스킬"},
+  {"query": "Vaultwarden 비밀번호 관리자 백업 상태 확인해줘", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "Bitwarden 클라이언트에서 로그인이 안 돼", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "vaultwarden 관리자 패널 접속 방법", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "비밀번호 관리자 서버 상태 확인", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "vaultwarden 컨테이너가 재시작됐어", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "Master Password 분실했을 때 복구 방법", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "vaultwarden 백업이 실패했다는 알림 받았어", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "iPhone에서 Bitwarden 앱 설정하기", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "ADMIN_TOKEN을 Argon2id로 변경하기", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
+  {"query": "vaultwarden-update 명령 실행해줘", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"}
+]

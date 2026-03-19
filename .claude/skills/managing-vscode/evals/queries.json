@@ -1,0 +1,22 @@
+[
+  {"query": "VSCode 확장 추가하려면 어떻게 해", "should_trigger": true, "why": "명시적: VSCode 확장은 이 스킬의 핵심 키워드"},
+  {"query": "nix-ide 확장이 제대로 안 뜨는데", "should_trigger": true, "why": "명시적: nix-ide는 VSCode 스킬 트리거 키워드"},
+  {"query": "VSCode 설정 파일 경로 알려줘", "should_trigger": true, "why": "명시적: VSCode 설정 관리는 이 스킬 범위"},
+  {"query": "확장 프로그램이 GUI에서 설치가 안 돼", "should_trigger": true, "why": "경계선: mutableExtensionsDir=false 문제"},
+  {"query": "nixd가 .nix 파일에서 자동완성이 안 돼", "should_trigger": true, "why": "경계선: nixd LSP는 VSCode 모듈에서 관리"},
+  {"query": "settings.json이 nrs 후에 충돌나", "should_trigger": true, "why": "경계선: mkOutOfStoreSymlink 충돌 이슈"},
+  {"query": "open-vsx에서 확장 검색하는 법", "should_trigger": true, "why": "경계선: 확장 소스 선택은 VSCode 스킬 범위"},
+  {"query": "텍스트 파일 더블클릭하면 다른 앱이 열려", "should_trigger": true, "why": "저항적: duti 파일 연결은 VSCode 스킬 범위"},
+  {"query": "에디터 키바인딩 바꾸고 싶어", "should_trigger": true, "why": "저항적: keybindings.json은 VSCode 스킬 범위"},
+  {"query": "코드 편집기 확장 관리", "should_trigger": true, "why": "저항적: 확장 관리 = VSCode 스킬"},
+  {"query": "nvim 플러그인 추가하려면 어디 수정해", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"},
+  {"query": "LazyVim extras 목록에 항목 추가하고 싶어", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"},
+  {"query": "extraPackages에 LSP 서버 추가하기", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"},
+  {"query": "Neovim에서 한글 입력이 안 돼", "should_trigger": false, "why": "혼동 쌍: configuring-neovim (im-select 범위)"},
+  {"query": "Mason을 비활성화하는 이유가 뭐야", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"},
+  {"query": "treesitter 파서 목록에 추가하는 법", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"},
+  {"query": "nvim colorscheme을 변경하고 싶어", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"},
+  {"query": "lua-language-server가 attach 안 돼", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"},
+  {"query": "stylua.toml indent 설정 바꾸기", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"},
+  {"query": "lazy-lock.json 충돌 해결하기", "should_trigger": false, "why": "혼동 쌍: configuring-neovim"}
+]

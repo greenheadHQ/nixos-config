@@ -1,9 +1,16 @@
 ---
 name: managing-vscode
 description: |
-  Manage VSCode: Nix extensions, settings, duti.
-  Trigger: 'VSCode 확장', '확장 로드 오류', 'VSCode 설정', 'nix-ide', 'nixd LSP', 'VSCode 스니펫'.
-  NOT for Neovim/LazyVim (use configuring-neovim).
+  Manage VSCode: extensions, settings, keybindings, file associations via Nix Home Manager. Use this
+  skill when the user wants to install/remove/troubleshoot VSCode extensions (open-vsx, marketplace,
+  GUI install blocked), edit VSCode settings.json or keybindings.json, find VSCode config file
+  paths, fix settings conflicts after nrs, configure nixd LSP for .nix autocompletion, change
+  default app for file types (duti, double-click opens wrong app), manage editor snippets, or
+  resolve any VSCode-related build/config issues. Trigger: '''VSCode''', '''vscode''', '''확장
+  프로그램''', '''extensions''', '''settings.json''', '''keybindings''', '''키바인딩''', '''VSCode 에디터 설정''',
+  '''VSCode 키바인딩''', '''nixd''', '''nix-ide''', '''open-vsx''', '''기본 앱 연결''', '''duti''', '''더블클릭''',
+  '''확장 로드''', '''VSCode 스니펫'''. NOT for Neovim/LazyVim (use configuring-neovim). NOT for Claude
+  Code editor (use configuring-claude-code).
 ---
 
 # VSCode 관리

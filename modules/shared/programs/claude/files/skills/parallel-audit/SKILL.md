@@ -2,9 +2,8 @@
 name: parallel-audit
 argument-hint: "[agent-count]"
 description: |
-  Run N parallel agents for exhaustive side-effect/regression audit.
-  Trigger: '전수조사', '사이드이펙트 조사', '회귀 조사', '병렬 감사', '에이전트 N개 조사'.
-  NOT for DA (use da-feedback).
+  Run N parallel agents for exhaustive side-effect/regression audit. Trigger: '''전수조사''', '''사이드이펙트
+  조사''', '''회귀 조사''', '''병렬 감사''', '''에이전트 N개 조사'''. NOT for DA (use da-feedback).
 ---
 
 # 병렬 에이전트 전수조사

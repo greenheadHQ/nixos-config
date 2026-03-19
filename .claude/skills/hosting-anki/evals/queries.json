@@ -1,0 +1,22 @@
+[
+  {"query": "anki 동기화 서버가 응답을 안 해", "should_trigger": true, "why": "명시적: anki 동기화 서버는 핵심 트리거 키워드"},
+  {"query": "AnkiConnect API로 카드 목록 조회하기", "should_trigger": true, "why": "명시적: AnkiConnect는 트리거 키워드"},
+  {"query": "anki 백업 타이머 상태 확인해줘", "should_trigger": true, "why": "명시적: anki 백업은 트리거 키워드"},
+  {"query": "AnkiMobile에서 custom sync server 설정하기", "should_trigger": true, "why": "경계선: AnkiMobile 설정은 anki 스킬 범위"},
+  {"query": "anki-connect 서비스가 재시작 루프에 빠졌어", "should_trigger": true, "why": "경계선: anki-connect 장애는 이 스킬 범위"},
+  {"query": "anki sync 비밀번호가 뭐야", "should_trigger": true, "why": "경계선: sync 인증 정보는 anki 스킬 범위"},
+  {"query": "getConfig API로 awesomeAnki 설정 조회하기", "should_trigger": true, "why": "경계선: config API는 AnkiConnect 스킬 범위"},
+  {"query": "27701 포트가 리스닝 안 돼", "should_trigger": true, "why": "저항적: 27701은 anki sync server 포트"},
+  {"query": "카드 덱이 비어 있어", "should_trigger": true, "why": "저항적: 덱 목록 문제는 anki 스킬 범위"},
+  {"query": "headless anki 서비스 상태 확인", "should_trigger": true, "why": "저항적: headless anki = AnkiConnect 서비스"},
+  {"query": "podman 컨테이너 전체 상태 확인", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "Caddy 리버스 프록시 설정 보기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "service-lib.sh 공통 함수 수정", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "homeserver 옵션 구조 전체 보기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "immich 서비스 업데이트 상태", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "컨테이너 리소스 제한 변경하기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "전체 서비스 백업 타이머 목록", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "Podman 런타임 설정 바꾸기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "mk-update-module.nix 구조 알려줘", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "uptime-kuma 서비스 상태 확인", "should_trigger": false, "why": "혼동 쌍: running-containers"}
+]

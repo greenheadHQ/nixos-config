@@ -1,0 +1,22 @@
+[
+  {"query": "PR 코멘트 처리해줘", "should_trigger": true, "why": "명시적: PR 코멘트는 핵심 트리거 키워드"},
+  {"query": "CodeRabbit 리뷰 피드백 반영해줘", "should_trigger": true, "why": "명시적: coderabbit은 트리거 키워드"},
+  {"query": "코드리뷰 반영하고 답글 달아줘", "should_trigger": true, "why": "명시적: 코드리뷰 반영은 트리거 키워드"},
+  {"query": "PR에 달린 피드백 중 유효한 것만 골라줘", "should_trigger": true, "why": "경계선: 피드백 검증은 이 스킬의 핵심 절차"},
+  {"query": "AI 리뷰어가 지적한 게 맞는지 확인해줘", "should_trigger": true, "why": "경계선: HALLUCINATION 검증은 이 스킬"},
+  {"query": "resolved 안 된 리뷰 코멘트 수집해줘", "should_trigger": true, "why": "경계선: 코멘트 수집은 Step 1"},
+  {"query": "리뷰 피드백 반영 후 커밋하고 푸시해줘", "should_trigger": true, "why": "경계선: 반영 + 커밋 + 푸시는 Step 4-5"},
+  {"query": "PR 피드백 처리해야 돼", "should_trigger": true, "why": "저항적: PR 피드백 처리는 트리거 키워드"},
+  {"query": "리뷰 댓글 정리해줘", "should_trigger": true, "why": "저항적: 리뷰 댓글 = PR 코멘트"},
+  {"query": "코멘트 답변 작성해줘", "should_trigger": true, "why": "저항적: 코멘트 답변은 Step 6"},
+  {"query": "PR 만들어줘", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "CIR 포함해서 PR 본문 작성", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "8섹션 템플릿으로 PR 생성", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "Human Test Plan 작성해줘", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "기존 PR 본문 업데이트", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "Pre-Merge E2E 가이드 작성", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "ADR 테이블 포함한 PR", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "이 브랜치로 PR 올려", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "변경사항 정리해서 PR 작성", "should_trigger": false, "why": "혼동 쌍: pr-detailed"},
+  {"query": "PR 작성해야 되는데", "should_trigger": false, "why": "혼동 쌍: pr-detailed"}
+]

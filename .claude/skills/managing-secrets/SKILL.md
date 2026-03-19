@@ -1,9 +1,13 @@
 ---
 name: managing-secrets
 description: |
-  Manage agenix secrets: .age encryption, re-encrypt, key management.
-  Trigger: '시크릿', '암호화', 'agenix -e', 'secrets.nix', 're-encrypt', 'age key'.
-  NOT for Vaultwarden 비밀번호 관리자 (use hosting-vaultwarden).
+  Use this skill when adding, modifying, decrypting, or troubleshooting encrypted secrets managed by
+  agenix. Covers: creating/editing .age files, re-encrypting after SSH key changes, resolving
+  decryption failures, fixing missing files under /run/agenix/ after nrs, and registering new
+  credentials (Pushover tokens, API keys, passwords, license keys) into the agenix secret store.
+  Trigger: '''시크릿''', '''암호화''', '''복호화''', '''agenix''', '''secrets.nix''', '''age key''',
+  '''.age''', '''토큰 추가''', '''re-encrypt''', '''/run/agenix'''. NOT for Vaultwarden 비밀번호 관리자 (use
+  hosting-vaultwarden).
 ---
 
 # Secret 관리 (agenix)

@@ -1,0 +1,22 @@
+[
+  {"query": "nvim에서 Mason 관련 에러가 자꾸 뜨는데 어떻게 해", "should_trigger": true, "why": "명시적: Mason은 neovim 스킬의 핵심 키워드"},
+  {"query": "Neovim에 새 LSP 서버 추가하고 싶어", "should_trigger": true, "why": "명시적: Neovim LSP 설정은 이 스킬 범위"},
+  {"query": "im-select가 nvim에서 한영 전환이 안 돼", "should_trigger": true, "why": "명시적: im-select는 neovim 스킬 트리거 키워드"},
+  {"query": "에디터에서 LSP 자동완성이 갑자기 안 돼", "should_trigger": true, "why": "경계선: LSP 자동완성은 neovim 설정 범위"},
+  {"query": "extraPackages에 prettier 추가하려면 어디 수정해야 해", "should_trigger": true, "why": "경계선: extraPackages는 neovim/default.nix 설정"},
+  {"query": "lazy.nvim 플러그인 업데이트했더니 에러나", "should_trigger": true, "why": "경계선: lazy.nvim 플러그인 관리는 neovim 스킬"},
+  {"query": "treesitter 파서가 빌드 안 돼", "should_trigger": true, "why": "경계선: tree-sitter는 neovim extraPackages 범위"},
+  {"query": "코드 편집기 설정 바꾸고 싶어", "should_trigger": true, "why": "저항적: 코드 편집기 = neovim (프로젝트에서 주력 에디터)"},
+  {"query": "에디터 테마를 catppuccin으로 바꿀래", "should_trigger": true, "why": "저항적: 테마 변경은 neovim plugins/colorscheme.lua 범위"},
+  {"query": "lua 포매터 설정 어디서 하지", "should_trigger": true, "why": "저항적: stylua 설정은 neovim files/nvim/ 하위"},
+  {"query": "VSCode에서 nix-ide 확장이 로드 안 돼", "should_trigger": false, "why": "혼동 쌍: managing-vscode"},
+  {"query": "VSCode 설정 파일은 어디서 관리해", "should_trigger": false, "why": "혼동 쌍: managing-vscode"},
+  {"query": "VSCode에 새 확장 프로그램 추가하고 싶어", "should_trigger": false, "why": "혼동 쌍: managing-vscode"},
+  {"query": "nixd LSP가 VSCode에서 동작 안 하는데", "should_trigger": false, "why": "혼동 쌍: managing-vscode (nixd는 VSCode 모듈에서 설치)"},
+  {"query": "VSCode keybindings.json 수정하려면", "should_trigger": false, "why": "혼동 쌍: managing-vscode"},
+  {"query": "duti로 파일 연결 변경하고 싶어", "should_trigger": false, "why": "혼동 쌍: managing-vscode (duti는 VSCode 스킬 범위)"},
+  {"query": "mutableExtensionsDir 때문에 확장 설치가 안 돼", "should_trigger": false, "why": "혼동 쌍: managing-vscode"},
+  {"query": "VSCode 스니펫 추가하려면 어디 수정해", "should_trigger": false, "why": "혼동 쌍: managing-vscode"},
+  {"query": "profiles.default.extensions에 확장 추가하는 법", "should_trigger": false, "why": "혼동 쌍: managing-vscode"},
+  {"query": "Visual Studio Code가 HM Apps에 안 나타나", "should_trigger": false, "why": "혼동 쌍: managing-vscode"}
+]

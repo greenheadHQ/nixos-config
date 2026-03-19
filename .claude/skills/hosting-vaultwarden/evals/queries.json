@@ -1,0 +1,22 @@
+[
+  {"query": "vaultwarden 백업 상태 확인해줘", "should_trigger": true, "why": "명시적: vaultwarden 백업은 이 스킬 핵심 키워드"},
+  {"query": "비밀번호 관리자 서비스가 죽었어", "should_trigger": true, "why": "명시적: 비밀번호 관리자는 vaultwarden 트리거 키워드"},
+  {"query": "vaultwarden-update 최신 버전으로 업데이트해줘", "should_trigger": true, "why": "명시적: vaultwarden-update는 트리거 키워드"},
+  {"query": "Bitwarden 클라이언트에서 self-hosted 서버 연결이 안 돼", "should_trigger": true, "why": "경계선: 클라이언트 설정은 vaultwarden 스킬 범위"},
+  {"query": "관리자 패널 토큰이 작동 안 하는데", "should_trigger": true, "why": "경계선: admin token은 vaultwarden 운영 이슈"},
+  {"query": "vaultwarden 헬스체크 실패해", "should_trigger": true, "why": "경계선: /alive 헬스체크는 vaultwarden 스킬"},
+  {"query": "iPhone Bitwarden 앱에서 동기화가 안 돼", "should_trigger": true, "why": "경계선: 모바일 클라이언트 이슈는 vaultwarden"},
+  {"query": "비번 저장소 서버 설정 보고 싶어", "should_trigger": true, "why": "저항적: 비번 저장소 = vaultwarden"},
+  {"query": "https://vaultwarden.greenhead.dev 접속 안 돼", "should_trigger": true, "why": "저항적: 도메인으로 유추 가능"},
+  {"query": "vault 서비스 로그 확인", "should_trigger": true, "why": "저항적: vault 서비스 = vaultwarden"},
+  {"query": "secrets.nix에 새 시크릿 추가하기", "should_trigger": false, "why": "혼동 쌍: managing-secrets"},
+  {"query": "agenix -e로 값 수정하려면", "should_trigger": false, "why": "혼동 쌍: managing-secrets"},
+  {"query": ".age 파일 재암호화 방법", "should_trigger": false, "why": "혼동 쌍: managing-secrets"},
+  {"query": "age key 관리하는 법", "should_trigger": false, "why": "혼동 쌍: managing-secrets"},
+  {"query": "podman ps로 전체 컨테이너 상태 보기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "Caddy HTTPS 인증서 갱신 실패", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "service-lib.sh 공통 함수 수정하기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "immich 업데이트 확인해줘", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "homeserver 옵션 전체 목록", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "SSH 공개키 변경 후 시크릿 복호화 안 돼", "should_trigger": false, "why": "혼동 쌍: managing-secrets"}
+]

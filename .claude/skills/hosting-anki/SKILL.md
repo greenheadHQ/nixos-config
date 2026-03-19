@@ -1,9 +1,10 @@
 ---
 name: hosting-anki
 description: |
-  Manage Anki sync server and AnkiConnect API.
-  Trigger: 'anki 동기화', 'anki 서버', 'anki 백업', 'AnkiConnect', 'AnkiMobile 설정', '카드 API'.
-  NOT for 컨테이너/Podman (use running-containers).
+  Manage Anki sync server and AnkiConnect API on MiniPC homeserver. Use for: Anki 동기화 서버
+  장애·설정·포트(27701) 문제, AnkiConnect HTTP API(8765) 카드/덱 조회·CRUD·getConfig/setConfig, anki 백업 타이머,
+  headless Anki 서비스 상태·재시작·로그, anki sync 비밀번호(agenix), AnkiMobile/macOS 클라이언트 sync 설정, 카드 덱 비어있음 등
+  Anki 관련 모든 서비스 운영·트러블슈팅. NOT for 컨테이너/Podman 일반 관리 (use running-containers).
 ---
 
 # Anki 서비스 관리

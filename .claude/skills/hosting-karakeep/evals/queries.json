@@ -1,0 +1,22 @@
+[
+  {"query": "Karakeep에서 아카이빙이 실패해", "should_trigger": true, "why": "명시적: Karakeep은 핵심 트리거 키워드"},
+  {"query": "웹 아카이브 서비스 상태 확인", "should_trigger": true, "why": "명시적: 웹 아카이브는 트리거 키워드"},
+  {"query": "archive.greenhead.dev에서 CSS가 깨져", "should_trigger": true, "why": "명시적: archive.greenhead.dev는 Karakeep 도메인"},
+  {"query": "SingleFile 확장에서 Karakeep에 페이지 전송이 안 돼", "should_trigger": true, "why": "경계선: SingleFile integration은 Karakeep 스킬"},
+  {"query": "karakeep-update --ack-bridge-risk 실행해줘", "should_trigger": true, "why": "경계선: karakeep-update는 이 스킬 범위"},
+  {"query": "Meilisearch가 OOM으로 죽어", "should_trigger": true, "why": "경계선: Meilisearch는 Karakeep 3컨테이너 중 하나"},
+  {"query": "북마크 검색이 안 돼", "should_trigger": true, "why": "경계선: 북마크 검색은 Karakeep + Meilisearch"},
+  {"query": "웹훅 알림이 안 오는데", "should_trigger": true, "why": "저항적: 웹훅 브리지는 Karakeep 범위"},
+  {"query": "아카이브 백업 확인", "should_trigger": true, "why": "저항적: karakeep-backup은 이 스킬"},
+  {"query": "AI 태깅이 작동 안 해", "should_trigger": true, "why": "저항적: OpenAI inference worker는 Karakeep 범위"},
+  {"query": "podman 전체 컨테이너 상태 보기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "Caddy 리버스 프록시 에러", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "service-lib.sh의 fetch_github_release 함수", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "homeserver 옵션 새로 추가하기", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "immich DB 백업 상태 확인", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "컨테이너 리소스 제한 constants.nix", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "uptime-kuma 모니터링 설정", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "mk-update-module.nix 사용법", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "Cloudflare DNS API 토큰 갱신", "should_trigger": false, "why": "혼동 쌍: running-containers"},
+  {"query": "전체 서비스 업데이트 타이머 확인", "should_trigger": false, "why": "혼동 쌍: running-containers"}
+]
