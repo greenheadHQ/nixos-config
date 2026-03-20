@@ -139,11 +139,17 @@ main() {
     acquire_rebuild_lock
     preflight_cask_conflict_check
     cleanup_launchd_agents
-    # Pre-rebuild restore (darwin 전용):
+    # Pre-rebuild restore:
     # HM activation의 checkLinkTargets가 non-HMF 심링크(worktree 타깃)를
-    # "would be clobbered"로 거부하므로, main에서는 rebuild 전에 먼저 복원
+    # "would be clobbered"로 거부하므로, rebuild 전에 먼저 복원한다.
+    # - main: maybe_relink_or_restore() → stale worktree symlink 제거 + nix store 복원
+    # - worktree: nrs-relink restore → worktree symlink를 nix store 체인으로 복원
+    #   (activation 성공 후 maybe_relink_or_restore()가 다시 worktree로 relink)
     if [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]; then
         maybe_relink_or_restore
+    else
+        log_info "🔗 Restoring symlinks before rebuild..."
+        "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
     fi
     run_darwin_rebuild
     # shellcheck disable=SC2034

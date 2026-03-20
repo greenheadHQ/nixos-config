@@ -58,14 +58,17 @@ main() {
     fi
     worktree_symlink_guard
     acquire_rebuild_lock
-    # Pre-rebuild restore (darwin과 같은 이유):
+    # Pre-rebuild restore:
     # HM activation의 checkLinkTargets가 non-HMF 심링크(worktree 타깃)를
-    # "would be clobbered"로 거부하므로, main에서는 rebuild 전에 먼저 복원
+    # "would be clobbered"로 거부하므로, rebuild 전에 먼저 복원한다.
     # Safety: HM gcroot가 유효할 때만 실행 — gcroot 파손 시 Phase 1(rm)만 되고
     # Phase 2(restore) 실패하여 심링크 유실 방지
     if [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]] \
        && [[ -e "$HOME/.local/state/home-manager/gcroots/current-home" ]]; then
         maybe_relink_or_restore
+    elif [[ "$FLAKE_PATH" != "$MAIN_FLAKE_PATH" ]]; then
+        log_info "🔗 Restoring symlinks before rebuild..."
+        "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
     fi
     run_nixos_rebuild
     maybe_relink_or_restore
