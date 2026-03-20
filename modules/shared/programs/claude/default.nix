@@ -219,5 +219,11 @@ in
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
+
+    # Eval 인프라 스크립트 — trigger-eval.sh, improve-description.sh (#283)
+    ".claude/scripts/trigger-eval.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/trigger-eval.sh";
+    ".claude/scripts/improve-description.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/improve-description.sh";
   };
 }

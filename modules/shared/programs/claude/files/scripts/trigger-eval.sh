@@ -86,8 +86,9 @@ run_query() {
   # Remove CLAUDECODE (nesting guard) and ANTHROPIC_API_KEY (forces API key mode
   # with Sonnet default instead of subscription Opus) to ensure eval runs use
   # the user's subscription with their configured model.
+  # Set SKILL_EVAL_MODE=1 so PreToolUse hooks skip logging (#283).
   local output
-  output=$(env -u CLAUDECODE -u ANTHROPIC_API_KEY timeout "${timeout}s" \
+  output=$(env -u CLAUDECODE -u ANTHROPIC_API_KEY SKILL_EVAL_MODE=1 timeout "${timeout}s" \
     claude -p "$query" \
       --output-format json \
       --max-turns 1 \
