@@ -3,7 +3,6 @@ name: configuring-git
 description: |
   Configure Git via Home Manager: delta, lazygit, rerere.
   Trigger: 'git 설정 충돌', 'delta 설정', 'lazygit', 'rerere', 'git-cleanup', 'git 브랜치 정리'.
-  NOT for Claude Code hooks (use configuring-claude-code).
 ---
 
 # Git 설정

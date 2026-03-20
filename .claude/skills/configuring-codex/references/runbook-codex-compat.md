@@ -122,7 +122,7 @@ Codex CLI가 **디렉토리 심링크**는 공식 지원함을 확인했다.
   디렉토리 심링크는 `follow_links(true)`로 순회, 파일 심링크는 `continue`로 무시
 - **PR #8801** (2026-01-07 merged): 디렉토리 심링크 지원 추가
 - **OpenAI 공식 답변** (Issue #9365): "We support symlinks to a skill directory, not the SKILL.md file itself"
-- **로컬 검증**: 22개 스킬 디렉토리 심링크 전환 후 `codex exec` 런타임 정상 인식 확인
+- **로컬 검증**: 전체 스킬 디렉토리 심링크 전환 후 `codex exec` 런타임 정상 인식 확인
 
 ### 최종 정책
 

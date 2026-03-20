@@ -31,7 +31,13 @@ if [[ "$command" =~ ^git[[:space:]]+(add|commit|push|stash) ]] && \
    [[ ! "$command" =~ ^nix[[:space:]]+develop ]] && \
    [[ ! "$command" =~ ^echo[[:space:]].*base64 ]]; then
 
-  # Base64 인코딩으로 모든 특수문자 문제 회피
+  # === Change Intent Record ===
+  # v1: nix develop -c $command 직접 래핑 → chain command(&&)에서 첫 번째 명령만
+  #     nix 환경에서 실행되고 나머지는 시스템 셸로 탈출하는 문제 발생.
+  #     커밋 메시지의 따옴표/한글/백틱/$변수도 JSON 이스케이프 실패 유발.
+  # v2 (이번): base64 인코딩으로 전체 command를 단일 bash stdin으로 전달.
+  #     trade-off: 디버그 시 base64 디코딩 필요하나,
+  #               chain command + 특수문자 + JSON 출력 안정성을 한번에 해결.
   encoded=$(printf '%s' "$command" | base64 | tr -d '\n')
   wrapped_command="echo $encoded | base64 -d | nix develop -c bash"
 

@@ -130,6 +130,10 @@ in
   home.file = {
     # 메인 설정 파일 - 양방향 수정 가능 (nixos-config 직접 참조)
     # Claude Code에서 플러그인 설치/설정 변경 시 nixos-config에 바로 반영됨
+    # CIR: mkOutOfStoreSymlink 사용 — Nix store symlink는 Claude Code 런타임 쓰기 불가.
+    #   주의: enabledPlugins를 settings.json에서 직접 편집하면 유령 플러그인 발생
+    #   (UI에 표시되나 토글/삭제 불가). 해결: 유령 항목 재추가 후 CLI로 삭제.
+    #   플러그인 관리는 반드시 `claude plugin install/uninstall` CLI로 수행할 것.
     ".claude/settings.json".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/settings.json";
 

@@ -9,8 +9,7 @@ description: |
   resolve any VSCode-related build/config issues. Trigger: '''VSCode''', '''vscode''', '''확장
   프로그램''', '''extensions''', '''settings.json''', '''keybindings''', '''키바인딩''', '''VSCode 에디터 설정''',
   '''VSCode 키바인딩''', '''nixd''', '''nix-ide''', '''open-vsx''', '''기본 앱 연결''', '''duti''', '''더블클릭''',
-  '''확장 로드''', '''VSCode 스니펫'''. NOT for Neovim/LazyVim (use configuring-neovim). NOT for Claude
-  Code editor (use configuring-claude-code).
+  '''확장 로드''', '''VSCode 스니펫'''. NOT for Neovim/LazyVim (use configuring-neovim).
 ---
 
 # VSCode 관리

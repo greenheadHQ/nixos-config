@@ -7,8 +7,7 @@ description: |
   SSH remote execution of claude, harness self-testing (T1~T8), and known flag interaction bugs. Use
   when users want to run claude programmatically, pipe output, parse results, automate workflows,
   troubleshoot CLI flag behavior, or execute claude on remote machines. NOT for Codex CLI (use
-  using-codex-exec). NOT for Claude Code settings/hooks/plugins (use configuring-claude-code). NOT
-  for interactive TUI usage.
+  using-codex-exec). NOT for interactive TUI usage.
 ---
 
 # Claude Code 비대화형 모드 (`claude -p`) 사용
@@ -26,7 +25,7 @@ Claude Code의 `-p`/`--print` 모드(비대화형/headless)를 정확하게 사�
 | 포함 | 제외 |
 |------|------|
 | `claude -p` 비대화형 실행 | 대화형 TUI 사용법 |
-| `--output-format json` 파싱 | Claude Code hooks/plugins 설정 → `configuring-claude-code` |
+| `--output-format json` 파싱 | Claude Code hooks/plugins 설정 |
 | harness 셀프테스트 (T1~T8) | Codex CLI 실행 → `using-codex-exec` |
 | SSH 경유 크로스머신 실행 | harness 동기화 → `syncing-codex-harness` |
 | 숨겨진 동작 36건 | Python/TS SDK (별도 스킬 분리 대상) |

@@ -3,7 +3,6 @@ name: managing-status-icons
 description: |
   Set session status bar icons (Jira, Slack, Figma, Memo).
   Trigger: '상태바 아이콘', 'jira 링크', 'slack 링크', 'figma 링크', '아이콘 설정', '링크 변경'.
-  NOT for statusline.sh 수정 (use configuring-claude-code).
 ---
 
 # 상태바 아이콘 관리
@@ -164,4 +163,4 @@ tmp=$(mktemp) && jq --arg path "$MEMO_FILE" \
 - `$STATE_FILE` 변수는 SessionStart hook의 `additionalContext`에서 확인한다
 - jq로 상태 파일을 수정할 때 항상 임시 파일을 거쳐 atomic write한다
 - 상태 파일이 없거나 JSON이 깨지면 아이콘 미표시 (graceful degradation)
-- `statusline.sh`나 hook 스크립트 수정은 `configuring-claude-code` 스킬을 참조한다
+- `statusline.sh`나 hook 스크립트 수정은 관련 소스 코드를 직접 참조한다

@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # Claude Code Stop Hook - Pushover 알림 전송
 
-# UTF-8 인코딩 강제 설정 (Claude Code 환경에서 LANG이 미설정될 수 있음)
+# === Change Intent Record ===
+# v1: --form-string/-F (multipart/form-data) 방식으로 Pushover 전송 → 간헐적으로 이모지/한글이 ?로 표시.
+#     원인: multipart/form-data 인코딩에서 UTF-8 문자 처리가 불안정.
+#     echo로 jq 출력을 파이프하면 플랫폼별 escape sequence 처리가 달라 UTF-8 추가 손상.
+# v2 (이번): --data-urlencode로 통일 (application/x-www-form-urlencoded; charset=utf-8),
+#     echo 대신 printf '%s'로 입력 그대로 전달, LANG/LC_ALL 강제 설정.
+#     trade-off: 없음 — 세 가지 수정이 모두 호환성 향상.
+# 적용 대상: stop-notification.sh, ask-notification.sh, plan-notification.sh (동일 패턴)
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 

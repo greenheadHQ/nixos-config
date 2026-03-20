@@ -9,7 +9,7 @@ description: |
   스킬 인식''', '''AGENTS.md 심링크''', '''.agents/skills 심링크''', '''verify-ai-compat''', '''codex 권한''',
   '''codex 업데이트''', '''AI 도구 호환''', '''codex 바이너리''', '''approval_policy''', '''sandbox_mode''',
   '''Codex 권한 프롬프트'''. NOT for harness 동기화 (use syncing-codex-harness). NOT for codex exec 실행 (use
-  using-codex-exec). NOT for Claude Code 플러그인/훅 (use configuring-claude-code).
+  using-codex-exec).
 ---
 
 # Codex CLI 설정
@@ -23,8 +23,6 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 - `.agents/skills/*` 디렉토리 심링크 검증
 - `nrs`(또는 동등 activation) 이후 결과 검증
 - Claude Code와 Codex CLI 동작 차이 정리
-
-Claude 전용 플러그인/훅 세부 내용은 `configuring-claude-code` 스킬을 참조한다.
 
 ## 빠른 진단 체크리스트
 

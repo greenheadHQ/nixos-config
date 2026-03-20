@@ -212,7 +212,6 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | Karakeep | `hosting-karakeep` |
 | Copyparty | `hosting-copyparty` |
 | Anki 동기화 | `hosting-anki` |
-| Claude Code | `configuring-claude-code` |
 
 전체 스킬 목록은 `CLAUDE.md`를 참고하세요.
 
