@@ -652,6 +652,28 @@ preflight_cask_conflict_check() {
 }
 
 #───────────────────────────────────────────────────────────────────────────────
+# Worktree 심링크 제거: 지정 패턴에 매칭되는 심링크를 $HOME/.claude, .codex에서 제거
+# 사용처: maybe_relink_or_restore() (main: stale 제거), nrs.sh (worktree: pre-rebuild 제거)
+#───────────────────────────────────────────────────────────────────────────────
+_remove_worktree_symlinks() {
+    local pattern="$1" label="${2:-worktree}"
+    local _wt_cleaned=0
+    while IFS= read -r -d '' _link; do
+        local _lt
+        _lt=$(readlink "$_link" 2>/dev/null) || continue
+        if [[ "$_lt" == "$pattern"* ]]; then
+            rm -f "$_link"
+            ((++_wt_cleaned))
+        fi
+    done < <(find "$HOME/.claude" "$HOME/.codex" -maxdepth 3 -type l -print0 2>/dev/null)
+    if [[ $_wt_cleaned -gt 0 ]]; then
+        log_info "  ✓ Removed $_wt_cleaned ${label} symlink(s)"
+        return 0  # 제거 발생
+    fi
+    return 1  # 제거 없음
+}
+
+#───────────────────────────────────────────────────────────────────────────────
 # Worktree 심링크 전환/복원: worktree에서는 relink, main에서는 잔존 심링크 복원
 # nrs.sh의 NO_CHANGES 및 rebuild 경로 양쪽에서 호출
 #───────────────────────────────────────────────────────────────────────────────
@@ -678,21 +700,10 @@ maybe_relink_or_restore() {
         #    (d) 워크트리 경로 패턴 매칭으로 직접 제거 → 채택
         #    trade-off: .claude/worktrees/ 외부에 수동 생성된 워크트리는 탐지 불가하지만,
         #              wt 스크립트가 .claude/worktrees/에만 생성하므로 실용적으로 충분.
-        local _wt_cleaned=0
-        local _wt_pattern="$MAIN_FLAKE_PATH/.claude/worktrees/"
-        while IFS= read -r -d '' _link; do
-            local _lt
-            _lt=$(readlink "$_link" 2>/dev/null) || continue
-            if [[ "$_lt" == "$_wt_pattern"* ]]; then
-                rm -f "$_link"
-                ((++_wt_cleaned))
-            fi
-        done < <(find "$HOME/.claude" "$HOME/.codex" -maxdepth 3 -type l -print0 2>/dev/null)
-        if [[ $_wt_cleaned -gt 0 ]]; then
-            log_info "🧹 Removed $_wt_cleaned stale worktree symlink(s)"
-            # Phase 1이 probe 파일(settings.json 등)을 삭제하면 Phase 2의 probe 탐지가
-            # 실패하여 restore를 건너뛸 수 있음. NO_CHANGES 경로에서는 HM activation이
-            # 실행되지 않아 심링크가 영구 유실됨. Phase 1이 작동했으면 무조건 restore 실행.
+        if _remove_worktree_symlinks "$MAIN_FLAKE_PATH/.claude/worktrees/" "stale worktree"; then
+            # stale worktree 심링크가 제거되면 probe 파일(settings.json 등)도 사라져
+            # Phase 2의 probe 탐지가 실패할 수 있음. NO_CHANGES 경로에서는 HM activation이
+            # 실행되지 않아 심링크가 영구 유실됨 → 무조건 restore 실행.
             log_info "🔗 Restoring symlinks to nix store chain..."
             "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
         else

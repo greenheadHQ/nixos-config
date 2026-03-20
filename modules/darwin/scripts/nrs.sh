@@ -143,12 +143,18 @@ main() {
     # HM activation의 checkLinkTargets가 non-HMF 심링크(worktree 타깃)를
     # "would be clobbered"로 거부하므로, rebuild 전에 먼저 복원한다.
     # - main: maybe_relink_or_restore() → stale worktree symlink 제거 + nix store 복원
-    # - worktree: nrs-relink restore → worktree symlink를 nix store 체인으로 복원
+    # - worktree: worktree 심링크 직접 제거 + nrs-relink restore로 기존 entry 복원
     #   (activation 성공 후 maybe_relink_or_restore()가 다시 worktree로 relink)
     if [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]; then
         maybe_relink_or_restore
     else
-        log_info "🔗 Restoring symlinks before rebuild..."
+        # Worktree pre-rebuild: worktree 경로를 가리키는 심링크를 제거하여
+        # HM activation의 checkLinkTargets가 정상 생성할 수 있도록 한다.
+        # nrs-relink restore는 현재 HMF(gcroot) 기반이라 worktree-only entry를 모르므로,
+        # _remove_worktree_symlinks()로 먼저 제거한 뒤 restore를 실행한다.
+        log_info "🔗 Removing worktree symlinks before rebuild..."
+        _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
+        # 기존 entry를 nix store chain으로 복원 (rebuild 실패 시에도 안전)
         "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
     fi
     run_darwin_rebuild
