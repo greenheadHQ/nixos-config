@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code custom statusline - plan 파일 경로 + status icons 표시
+# Claude Code custom statusline - plan 파일 경로, status icons, rate limits 표시
 # stdin으로 JSON 세션 데이터를 받아 statusbar 내용을 stdout으로 출력
 
 input=$(cat)
@@ -156,6 +156,21 @@ if [ -n "$SESSION_ID" ] && [ -f "$ICONS_FILE" ] && command -v jq >/dev/null 2>&1
   ' "$ICONS_FILE" 2>/dev/null)" 2>/dev/null || true
 fi
 
+# --- Rate Limits 읽기 ---
+# v2.1.80에서 추가된 rate_limits 필드: Claude.ai 플랜의 5시간/7일 롤링 윈도우 사용률
+# API 사용자나 필드 미지원 버전에서는 빈 값으로 graceful skip
+RATE_5H="" RATE_5H_RESET=""
+RATE_7D="" RATE_7D_RESET=""
+
+if command -v jq >/dev/null 2>&1; then
+  eval "$(echo "$input" | jq -r '
+    @sh "RATE_5H=\(.rate_limits.five_hour.used_percentage // "")",
+    @sh "RATE_5H_RESET=\(.rate_limits.five_hour.resets_at // "")",
+    @sh "RATE_7D=\(.rate_limits.seven_day.used_percentage // "")",
+    @sh "RATE_7D_RESET=\(.rate_limits.seven_day.resets_at // "")"
+  ' 2>/dev/null)" 2>/dev/null || true
+fi
+
 # --- 출력 ---
 # 아이콘을 한 줄에 렌더링. ANSI/OSC 코드는 %b로, 사용자 텍스트(label)는 %s로 출력하여
 # label에 포함된 \n, \t 등이 printf에 의해 해석되는 것을 방지한다.
@@ -174,7 +189,74 @@ print_icon() {
   HAS_OUTPUT=true
 }
 
-# 아이콘 순서: Jira → Slack → Figma → Plan → Memo → Memory
+# rate_color: 사용률에 따른 ANSI 색상 코드 반환
+# $1=percentage → 32(green <50%) / 33(yellow 50-79%) / 31(red ≥80%)
+rate_color() {
+  if [ "${1:-0}" -ge 80 ] 2>/dev/null; then echo "31"
+  elif [ "${1:-0}" -ge 50 ] 2>/dev/null; then echo "33"
+  else echo "32"
+  fi
+}
+
+# format_remaining: 초 → 사람이 읽기 쉬운 형식 (XdYh / XhYYm / Xm)
+format_remaining() {
+  local secs=${1:-0}
+  if [ "$secs" -le 0 ] 2>/dev/null; then echo "0m"; return; fi
+  local d=$((secs / 86400)) h=$(((secs % 86400) / 3600)) m=$(((secs % 3600) / 60))
+  if [ "$d" -gt 0 ]; then printf '%dd%dh' $d $h
+  elif [ "$h" -gt 0 ]; then printf '%dh%02dm' $h $m
+  else printf '%dm' $m
+  fi
+}
+
+# render_rate_window: progress bar + 잔여 시간 + 리셋 시각
+# $1=pct $2=window_name $3=resets_at(unix) $4=now(unix) $5=detail_level
+# detail: 4=full, 3=no date, 2=no remaining, 1=no bar
+render_rate_window() {
+  local pct=${1:-0} window=$2 resets_at=$3 now=$4 detail=${5:-4}
+  # 소수점 truncate (bash 산술은 정수만 지원, e.g. "37.5" → "37")
+  pct=${pct%%.*}
+  pct=${pct:-0}
+  # pct를 0-100으로 clamp (음수/초과값 방어)
+  [ "$pct" -lt 0 ] 2>/dev/null && pct=0
+  [ "$pct" -gt 100 ] 2>/dev/null && pct=100
+  local color
+  color=$(rate_color "$pct")
+
+  # Progress bar (detail ≥ 2)
+  if [ "$detail" -ge 2 ]; then
+    local filled=$((pct / 10)) empty
+    # 0%가 아니면 최소 1블록으로 시각적 존재감 확보
+    [ "$pct" -gt 0 ] 2>/dev/null && [ "$filled" -eq 0 ] && filled=1
+    empty=$((10 - filled))
+    local i bar_filled="" bar_empty=""
+    for ((i=0; i<filled; i++)); do bar_filled+="█"; done
+    for ((i=0; i<empty; i++)); do bar_empty+="░"; done
+    printf '%b%s%b%s%b ' "\e[${color}m" "$bar_filled" "\e[90m" "$bar_empty" "\e[0m"
+  fi
+
+  # Percentage + window (always)
+  printf '%b%s%b %s' "\e[${color}m" "${pct}%" "\e[0m" "$window"
+
+  if [ -n "$resets_at" ] && [ "$resets_at" -gt 0 ] 2>/dev/null; then
+    # → remaining (detail ≥ 3)
+    if [ "$detail" -ge 3 ]; then
+      local remaining=$((resets_at - now))
+      if [ "$remaining" -gt 0 ]; then
+        printf ' %b%s%b %s' "\e[90m" "→" "\e[0m" "$(format_remaining $remaining)"
+      fi
+    fi
+    # (reset_date) (detail ≥ 4)
+    if [ "$detail" -ge 4 ]; then
+      local reset_fmt
+      reset_fmt=$(date -r "$resets_at" "+%m/%d %H:%M" 2>/dev/null \
+               || date -d "@$resets_at" "+%m/%d %H:%M" 2>/dev/null)
+      [ -n "$reset_fmt" ] && printf ' %b(%s)%b' "\e[90m" "$reset_fmt" "\e[0m"
+    fi
+  fi
+}
+
+# 출력 순서: Link Icons → Rate Limits (별도 줄)
 
 # Jira: yellow underline — ⚡
 if [ -n "$JIRA_URL" ] && [ -n "$JIRA_LABEL" ]; then
@@ -211,3 +293,32 @@ fi
 
 # 아이콘이 하나라도 있으면 최종 개행
 if $HAS_OUTPUT; then printf '\n'; fi
+
+# Rate Limits: 터미널 폭에 따라 progressive disclosure
+# detail 4: ██░░░░░░░░ 1% 5h → 3h49m (03/20 16:00) | █████████░ 97% 7d → 8h49m (03/20 21:00)
+# detail 3: ██░░░░░░░░ 1% 5h → 3h49m | █████████░ 97% 7d → 8h49m
+# detail 2: ██░░░░░░░░ 1% 5h | █████████░ 97% 7d
+# detail 1: 1% 5h | 97% 7d
+if [ -n "$RATE_5H" ] || [ -n "$RATE_7D" ]; then
+  # tput cols는 서브프로세스에서 항상 80 고정 → stty size </dev/tty로 실제 폭 조회
+  COLS=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+  [ "${COLS:-0}" -gt 0 ] 2>/dev/null || COLS=80
+  # 우측 Claude Code 콘텐츠(토큰 수, 버전) ~40자 여유 확보
+  if   [ "$COLS" -ge 130 ]; then RATE_DETAIL=4
+  elif [ "$COLS" -ge 100 ]; then RATE_DETAIL=3
+  elif [ "$COLS" -ge 80 ];  then RATE_DETAIL=2
+  else RATE_DETAIL=1
+  fi
+
+  NOW=$(date +%s)
+  if [ -n "$RATE_5H" ]; then
+    render_rate_window "$RATE_5H" "5h" "$RATE_5H_RESET" "$NOW" "$RATE_DETAIL"
+  fi
+  if [ -n "$RATE_5H" ] && [ -n "$RATE_7D" ]; then
+    printf ' %b%s%b ' "\e[90m" "|" "\e[0m"
+  fi
+  if [ -n "$RATE_7D" ]; then
+    render_rate_window "$RATE_7D" "7d" "$RATE_7D_RESET" "$NOW" "$RATE_DETAIL"
+  fi
+  printf '\n'
+fi
