@@ -3,7 +3,7 @@ name: review-pr-feedback
 description: |
   Triage PR comments (CodeRabbit, AI, human) and apply valid feedback.
   Trigger: 'PR 코멘트', 'coderabbit', '코드리뷰 반영', '리뷰 피드백', 'PR 피드백 처리'.
-  NOT for DA (use da-feedback). NOT for PR 본문 (use pr-detailed).
+  NOT for DA (use run-da). NOT for PR 본문 (use create-pr).
 ---
 
 # PR 리뷰 피드백 처리
@@ -161,6 +161,14 @@ gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
 | YAGNI | 지금 필요한 변경인가? | 기각 (불필요) |
 | REGRESSION | 수정 시 회귀 위험이 없는가? | 기각 (회귀 위험) |
 | HALLUCINATION | 리뷰어의 지적이 사실인가? | 기각 (허위 지적) |
+
+## 검증 의무
+
+### 피드백 검증 시 로컬 확인 의무
+- 리뷰어의 각 지적을 수용하기 전에, 해당 파일:줄을 직접 Read 도구로 읽어 지적이 사실인지 확인한다.
+- 가능하면 로컬에서 재현을 시도한다 (빌드, 명령 실행, 설정 확인 등).
+- "리뷰어가 지적했으니 맞겠지"라는 가정으로 검증 없이 수용하지 않는다.
+- 특히 AI 리뷰어(CodeRabbit 등)의 피드백은 HALLUCINATION 비율이 높으므로, 반드시 코드를 직접 읽어 확인한 뒤 수용/기각한다.
 
 ## 주의사항
 

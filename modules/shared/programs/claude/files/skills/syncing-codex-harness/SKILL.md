@@ -3,7 +3,7 @@ name: syncing-codex-harness
 description: |
   Sync Claude Code harness to Codex CLI via sync.sh.
   Trigger: 'codex sync', 'codex 동기화', '하네스 동기화', 'sync.sh'.
-  NOT for codex exec (use using-codex-exec). NOT for Codex 설정 (use configuring-codex).
+  NOT for codex exec (use using-codex-exec).
 allowed-tools: Bash(*)
 ---
 

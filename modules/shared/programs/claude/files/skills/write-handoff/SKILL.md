@@ -1,10 +1,10 @@
 ---
-name: llm-migration-guide
+name: write-handoff
 argument-hint: "[issue-number or URL]"
 description: |
   Write LLM migration guide comment on GitHub issue.
-  Trigger: 'LLM 이행', '이행 가이드', '인수인계', '세션 인수인계'.
-  NOT for PR 본문 (use pr-detailed). NOT for 이슈 생성 (use create-issue).
+  Trigger: 'LLM 이행', '이행 가이드', '인수인계', '세션 인수인계', 'write-handoff', 'handoff'.
+  NOT for PR 본문 (use create-pr). NOT for 이슈 생성 (use create-issue).
 ---
 
 # LLM 이행 가이드 작성
@@ -118,7 +118,7 @@ LLM이 커밋 메시지를 자의적으로 작성하지 않고, 가이드에 명
 가이드의 마지막 Phase 또는 주의사항에 DA 피드백 루프 수행을 권장하는 지시를 포함한다.
 
 ```
-구현 완료 후, da-feedback 스킬(for_pr 모드)을 실행하여
+구현 완료 후, run-da 스킬(for_pr 모드)을 실행하여
 코드 품질을 검증한 뒤 PR을 생성하라.
 ```
 

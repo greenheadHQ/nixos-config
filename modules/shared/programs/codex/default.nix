@@ -40,14 +40,14 @@ in
     # 프롬프트 빌딩 블록 스킬 (Claude와 동일 소스 공유)
     ".codex/skills/plan-with-questions".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/plan-with-questions";
-    ".codex/skills/da-feedback".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/da-feedback";
+    ".codex/skills/run-da".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/run-da";
     ".codex/skills/review-pr-feedback".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/review-pr-feedback";
-    ".codex/skills/pr-detailed".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/pr-detailed";
-    ".codex/skills/llm-migration-guide".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/llm-migration-guide";
+    ".codex/skills/create-pr".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-pr";
+    ".codex/skills/write-handoff".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/write-handoff";
     ".codex/skills/parallel-audit".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/parallel-audit";
   };

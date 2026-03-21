@@ -4,7 +4,7 @@ argument-hint: "[issue title or description (optional)]"
 description: |
   Create a structured GitHub issue with auto-enriched labels.
   Trigger: '이슈 등록', '이슈 만들어', 'todo 등록', '버그 등록', '이슈 추가'.
-  NOT for CIR/ADR (use documenting-intent). NOT for PR 본문 (use pr-detailed).
+  NOT for CIR/ADR (use documenting-intent). NOT for PR 본문 (use create-pr).
 ---
 
 # 이슈 등록
@@ -61,6 +61,15 @@ description: |
 1. 등록 전 **제목, 라벨 조합을 사용자에게 보여주고 확인**을 받는다.
 2. 확인 후 `gh issue create`를 실행한다.
 3. 생성된 이슈 URL을 반환한다.
+
+### Step 5 — LLM 이행 가이드 연계
+
+이슈 생성이 완료되면, AskUserQuestion으로 사용자에게 묻는다:
+
+"LLM 이행 가이드를 작성할까요?"
+
+- 사용자가 승인 → `/write-handoff <생성된 이슈 번호>` 스킬을 실행한다.
+- 사용자가 거부 → 이슈 URL 반환 후 종료한다.
 
 ## Title Conventions
 

@@ -200,21 +200,21 @@ in
     ".claude/skills/plan-with-questions".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/plan-with-questions";
 
-    # da-feedback 스킬 (user-scope)
-    ".claude/skills/da-feedback".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/da-feedback";
+    # run-da 스킬 (user-scope)
+    ".claude/skills/run-da".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/run-da";
 
     # review-pr-feedback 스킬 (user-scope)
     ".claude/skills/review-pr-feedback".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/review-pr-feedback";
 
-    # pr-detailed 스킬 (user-scope)
-    ".claude/skills/pr-detailed".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/pr-detailed";
+    # create-pr 스킬 (user-scope)
+    ".claude/skills/create-pr".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-pr";
 
-    # llm-migration-guide 스킬 (user-scope)
-    ".claude/skills/llm-migration-guide".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/llm-migration-guide";
+    # write-handoff 스킬 (user-scope)
+    ".claude/skills/write-handoff".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/write-handoff";
 
     # parallel-audit 스킬 (user-scope)
     ".claude/skills/parallel-audit".source =
