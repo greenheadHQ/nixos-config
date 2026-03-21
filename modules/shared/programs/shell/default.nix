@@ -146,6 +146,16 @@ in
           fi
         }
         precmd_functions+=(_update_delta_features)
+
+        # worktree 삭제 후 dangling 심링크 자동 복구 안전망 (#294)
+        # 성능: nrs-relink fix-dangling(~12ms) 대신 인라인 canary(~4ms)로 hot path 최적화.
+        # fix-dangling과 동일 로직이지만, 매 프롬프트 fork 비용을 회피한다.
+        _repair_claude_symlinks() {
+          if [[ -L "$HOME/.claude/settings.json" && ! -e "$HOME/.claude/settings.json" ]]; then
+            "$HOME/.local/bin/nrs-relink" restore >/dev/null 2>&1
+          fi
+        }
+        precmd_functions+=(_repair_claude_symlinks)
       '')
 
       #─────────────────────────────────────────────────────────────────────────

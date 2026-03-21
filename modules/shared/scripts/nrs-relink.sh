@@ -3,9 +3,10 @@
 # standalone 스크립트 — rebuild-common.sh를 source하지 않음
 #
 # 사용법:
-#   nrs-relink relink   # ~/.claude/* 등을 현재 worktree로 전환
-#   nrs-relink restore  # nix store 체인으로 복원
-#   nrs-relink status   # 현재 심링크 상태 표시
+#   nrs-relink relink       # ~/.claude/* 등을 현재 worktree로 전환
+#   nrs-relink restore      # nix store 체인으로 복원
+#   nrs-relink status       # 현재 심링크 상태 표시
+#   nrs-relink fix-dangling  # dangling 감지 시에만 조건부 restore (#294)
 
 set -euo pipefail
 
@@ -164,14 +165,28 @@ cmd_status() {
 }
 
 #───────────────────────────────────────────────────────────────────────────────
+# fix-dangling: dangling 감지 시에만 조건부 restore (#294)
+# wt.sh, PostToolUse hook에서 호출. precmd는 성능상 인라인 canary 사용 (동일 로직).
+#───────────────────────────────────────────────────────────────────────────────
+cmd_fix_dangling() {
+    # settings.json을 대표 canary로 사용:
+    # 모든 OOS 심링크가 동시에 relink/restore되므로, 하나만 dangling이면 전체가 dangling.
+    # nrs-relink restore가 전체 OOS 심링크를 일괄 복원한다.
+    if [[ -L "$HOME/.claude/settings.json" && ! -e "$HOME/.claude/settings.json" ]]; then
+        cmd_restore
+    fi
+}
+
+#───────────────────────────────────────────────────────────────────────────────
 # Entry point
 #───────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in
-    relink)  cmd_relink ;;
-    restore) cmd_restore ;;
-    status)  cmd_status ;;
+    relink)       cmd_relink ;;
+    restore)      cmd_restore ;;
+    status)       cmd_status ;;
+    fix-dangling) cmd_fix_dangling ;;
     *)
-        echo "Usage: nrs-relink {relink|restore|status}" >&2
+        echo "Usage: nrs-relink {relink|restore|status|fix-dangling}" >&2
         exit 1
         ;;
 esac

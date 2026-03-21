@@ -108,6 +108,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "ExitWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.local/bin/nrs-relink fix-dangling"
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {

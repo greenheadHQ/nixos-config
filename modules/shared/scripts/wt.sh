@@ -552,16 +552,9 @@ _remove_worktree() {
 
   _info "삭제: $name ($branch)"
 
-  # worktree 제거 후, 해당 worktree가 마지막 rebuild 소스였는지 확인
-  if [[ -f /tmp/nrs-state ]]; then
-    local nrs_wt
-    nrs_wt=$(jq -r '.worktree' /tmp/nrs-state 2>/dev/null || echo "")
-    if [[ "$nrs_wt" == "$wt_path" ]]; then
-      _info "⚠️  삭제된 worktree가 마지막 rebuild 소스였습니다."
-      _info "   심링크가 dangling 상태일 수 있습니다."
-      _info "   main repo에서 rebuild를 실행하거나 'nrs-relink restore'를 실행하세요."
-    fi
-  fi
+  # worktree 삭제 후 dangling 심링크 자동 복원 (#294)
+  "$HOME/.local/bin/nrs-relink" fix-dangling >/dev/null 2>&1 || \
+      _info "⚠️  심링크 복원 실패 (치명적이지 않음, 수동 nrs 필요)"
 }
 
 # ── 서브커맨드: create ───────────────────────────────────────────────────────
