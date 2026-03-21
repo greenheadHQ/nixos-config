@@ -162,6 +162,17 @@ gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
 | REGRESSION | 수정 시 회귀 위험이 없는가? | 기각 (회귀 위험) |
 | HALLUCINATION | 리뷰어의 지적이 사실인가? | 기각 (허위 지적) |
 
+### 기각 포맷
+
+기각 시 다음 필드를 모두 포함한다:
+
+| 필드 | 필수 | 설명 |
+|------|------|------|
+| **기각 분류** | ✅ | `HALLUCINATION` / `VERIFIED_FALSE_POSITIVE` / `STALE_REVIEW` / `SCOPE_DEFERRAL` / `DESIGN_TRADEOFF` / `TECHNICAL_DISAGREEMENT` / `WRONG_REFERENCE` 중 택1 |
+| **검증 방법** | ✅ | Read 도구로 확인한 파일:줄, 또는 로컬 재현 결과 |
+| **기술적 근거** | ✅ | 1문장 이상 |
+| **신뢰도** | ✅ | HIGH / MEDIUM / LOW (LOW 시 사용자 AskUserQuestion) |
+
 ## 검증 의무
 
 ### 피드백 검증 시 로컬 확인 의무
@@ -169,6 +180,25 @@ gh api repos/{owner}/{repo}/issues/{pr_number}/comments \
 - 가능하면 로컬에서 재현을 시도한다 (빌드, 명령 실행, 설정 확인 등).
 - "리뷰어가 지적했으니 맞겠지"라는 가정으로 검증 없이 수용하지 않는다.
 - 특히 AI 리뷰어(CodeRabbit 등)의 피드백은 HALLUCINATION 비율이 높으므로, 반드시 코드를 직접 읽어 확인한 뒤 수용/기각한다.
+- 사용자에게 판단을 요청할 때는 [사용자 질문 시 맥락 설명 의무](../run-da/SKILL.md#사용자-질문-시-맥락-설명-의무)를 따른다 (WTF Moment 방지).
+
+## 기각 분류 가이드라인 (HALLUCINATION 오분류 방지)
+
+리뷰어의 지적을 기각할 때 정확한 분류를 사용한다.
+
+| 상황 | 올바른 분류 | 잘못된 분류 |
+|------|------------|------------|
+| 리뷰어가 존재하지 않는 코드/동작을 지적 | `HALLUCINATION` | - |
+| 리뷰어가 이미 수정된 코드를 지적 | `STALE_REVIEW` | ~~HALLUCINATION~~ |
+| 리뷰어와 기술적 견해가 다름 | `TECHNICAL_DISAGREEMENT` | ~~HALLUCINATION~~ |
+| 리뷰어가 잘못된 경로/파일을 참조 | `WRONG_REFERENCE` | ~~HALLUCINATION~~ |
+| 리뷰어의 지적이 현재 변경 범위 밖 | `SCOPE_DEFERRAL` | ~~HALLUCINATION~~ |
+
+특히 CodeRabbit(AI 리뷰어)의 지적은 **stale diff 기반 리뷰**인 경우가 많다.
+이미 수정된 항목에 대한 지적은 "리뷰어가 날조한 것"(HALLUCINATION)이 아니라
+"리뷰 시점의 diff와 현재 상태가 다른 것"(STALE_REVIEW)이다.
+
+(근거: #298 Case 6에서 CodeRabbit 4건을 모두 HALLUCINATION으로 분류. Items #1, #2는 이미 수정된 항목이었으므로 STALE_REVIEW가 정확한 분류.)
 
 ## 주의사항
 
