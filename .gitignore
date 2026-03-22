@@ -18,3 +18,7 @@
 # Codex sync 부산물 (.agents/ 심링크 경유로 .claude/에 생성되는 파일)
 .claude/skills/*/agents/
 .claude/skills/*/references/references
+
+# run-loop.sh 결과 파일 (evals/queries.json만 tracked)
+.claude/skills/*/evals/loop-results-*.json
+modules/shared/programs/claude/files/skills/*/evals/loop-results-*.json

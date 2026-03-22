@@ -8,8 +8,9 @@ skill-creator 플러그인의 Python 스크립트를 직접 호출하지 마라.
 |---|---|---|
 | `improve_description.py` | `~/.claude/scripts/improve-description.sh` | description 개선 |
 | `run_eval.py` | `~/.claude/scripts/trigger-eval.sh` | 트리거 평가 |
+| `run_loop.py` | `~/.claude/scripts/run-loop.sh` | description 최적화 loop |
 
-두 스크립트 모두 `claude -p` 기반이라 ANTHROPIC_API_KEY 불필요. JSON을 stdout으로 출력, 진행 상황은 stderr.
+위 스크립트는 모두 `claude -p` 기반이라 ANTHROPIC_API_KEY 불필요. JSON을 stdout으로 출력, 진행 상황은 stderr.
 
 ### CLI 레퍼런스
 
@@ -24,12 +25,17 @@ skill-creator 플러그인의 Python 스크립트를 직접 호출하지 마라.
 
 # 트리거 평가 (배치)
 ~/.claude/scripts/trigger-eval.sh --batch <dir>
+
+# description 최적화 loop
+~/.claude/scripts/run-loop.sh \
+  --skill-path <dir> --queries <json> \
+  [--max-iterations N] [--reps N] [--holdout 0.4] [--apply]
 ```
 
 ### 필수 주의사항
 
 - **python3 필수**: macOS에 `python`은 없다. SKILL.md에 `python`으로 적혀 있어도 `python3`으로 실행하라.
-- **`run_loop.py`는 Override 없음**: 원본 `run_eval.py`/`improve_description.py`를 Python import로 직접 호출하므로 ANTHROPIC_API_KEY가 필요하다. `python3 -m scripts.run_loop`으로 플러그인 캐시 디렉토리(`ls ~/.claude/plugins/cache/claude-plugins-official/skill-creator/`)에서 실행하라.
+- **`run_loop.py` Override**: `run-loop.sh`가 우선. 폴백으로 skill-creator 플러그인 캐시 디렉토리에서 `python3 -m scripts.run_loop`로 실행 가능하나 ANTHROPIC_API_KEY가 필요하다.
 - **플래그 추측 금지**: 처음 사용하는 CLI의 플래그는 반드시 `--help`로 먼저 확인하라. 추측한 플래그로 실행하면 API 호출이 낭비된다.
 
 > 배경: 캐시된 skill-creator 플러그인이 구버전(Anthropic SDK 직접 호출)이라 Override 필요. (#281)

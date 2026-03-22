@@ -224,10 +224,12 @@ in
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
 
-    # Eval 인프라 스크립트 — trigger-eval.sh, improve-description.sh (#283)
+    # Eval 인프라 스크립트 — trigger-eval.sh, improve-description.sh, run-loop.sh (#283, #316)
     ".claude/scripts/trigger-eval.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/trigger-eval.sh";
     ".claude/scripts/improve-description.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/improve-description.sh";
+    ".claude/scripts/run-loop.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/run-loop.sh";
   };
 }
