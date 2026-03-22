@@ -16,6 +16,14 @@ fi
 # statusline stdin에는 session_id 필드가 없으므로 transcript 파일명에서 유도한다.
 SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
 
+# --- SSH 환경 감지 ---
+# SSH 세션에서는 OSC 8 하이퍼링크가 클릭 불가하므로,
+# 외부 링크(Jira/Slack/Figma)는 숨기고 로컬 상태(Plan/Memo/Memory)는 텍스트만 표시.
+# SSH_CONNECTION은 sshd가 export하며 모든 자식 프로세스에서 상속됨.
+# 비SSH 환경에서는 IS_SSH=false → 기존 동작 완전 유지 (fallback 안전).
+IS_SSH=false
+[ -n "$SSH_CONNECTION" ] && IS_SSH=true
+
 # --- Plan 파일 감지 ---
 # 현재 세션의 transcript에서 plan 파일 Read/Write 기록을 추출한다.
 # ※ 이전 ls -t 방식은 세션과 무관하게 가장 최근 파일을 반환하여
@@ -176,16 +184,21 @@ fi
 # label에 포함된 \n, \t 등이 printf에 의해 해석되는 것을 방지한다.
 HAS_OUTPUT=false
 
-# print_icon: 아이콘 하나를 OSC 8 하이퍼링크로 출력
-# $1=color_code $2=url $3=emoji_bytes $4=label
+# print_icon: 아이콘 하나를 출력
+# $1=color_code $2=url (빈 문자열이면 OSC 8 생략) $3=emoji_bytes $4=label
 print_icon() {
   $HAS_OUTPUT && printf '  '
-  # ANSI start + OSC 8 open (URL은 사용자 입력이지만 OSC 8 spec상 escape 불필요)
-  printf '%b' "\e[4;${1}m\e]8;;${2}\a${3} "
-  # label은 %s로 안전하게 출력 (escape sequence 해석 방지)
-  printf '%s' "$4"
-  # OSC 8 close + ANSI reset
-  printf '%b' "\e]8;;\a\e[0m"
+  if [ -n "$2" ]; then
+    # With link: underline + color + OSC 8 하이퍼링크
+    printf '%b' "\e[4;${1}m\e]8;;${2}\a${3} "
+    printf '%s' "$4"
+    printf '%b' "\e]8;;\a\e[0m"
+  else
+    # Without link: color only (SSH 환경에서 사용)
+    printf '%b' "\e[${1}m${3} "
+    printf '%s' "$4"
+    printf '%b' "\e[0m"
+  fi
   HAS_OUTPUT=true
 }
 
@@ -258,37 +271,40 @@ render_rate_window() {
 
 # 출력 순서: Link Icons → Rate Limits (별도 줄)
 
-# Jira: yellow underline — ⚡
-if [ -n "$JIRA_URL" ] && [ -n "$JIRA_LABEL" ]; then
+# Jira: yellow — ⚡ (SSH에서는 클릭 불가한 외부 URL이므로 숨김)
+if [ -n "$JIRA_URL" ] && [ -n "$JIRA_LABEL" ] && ! $IS_SSH; then
   print_icon "33" "$JIRA_URL" "\xe2\x9a\xa1" "$JIRA_LABEL"
 fi
 
-# Slack: magenta underline — 💬
-if [ -n "$SLACK_URL" ] && [ -n "$SLACK_LABEL" ]; then
+# Slack: magenta — 💬 (SSH에서 숨김)
+if [ -n "$SLACK_URL" ] && [ -n "$SLACK_LABEL" ] && ! $IS_SSH; then
   print_icon "35" "$SLACK_URL" "\xf0\x9f\x92\xac" "$SLACK_LABEL"
 fi
 
-# Figma: red underline — 🎨
-if [ -n "$FIGMA_URL" ] && [ -n "$FIGMA_LABEL" ]; then
+# Figma: red — 🎨 (SSH에서 숨김)
+if [ -n "$FIGMA_URL" ] && [ -n "$FIGMA_LABEL" ] && ! $IS_SSH; then
   print_icon "31" "$FIGMA_URL" "\xf0\x9f\x8e\xa8" "$FIGMA_LABEL"
 fi
 
-# Plan: cyan underline — 📝
+# Plan: cyan — 📝 (SSH에서는 링크 없이 텍스트만 표시)
 # stale state file은 [ -f "$PLAN_FILE" ]에 의해 아이콘 미표시,
 # 새 plan 생성 시 자연 덮어쓰기로 갱신됨
 if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ]; then
-  print_icon "36" "file://${PLAN_FILE}" "\xf0\x9f\x93\x9d" "Plan"
+  PLAN_URL="file://${PLAN_FILE}"; $IS_SSH && PLAN_URL=""
+  print_icon "36" "$PLAN_URL" "\xf0\x9f\x93\x9d" "Plan"
 fi
 
-# Memo: green underline — 📓
+# Memo: green — 📓 (SSH에서는 링크 없이 텍스트만 표시)
 if [ -n "$MEMO_PATH" ] && [ -f "$MEMO_PATH" ]; then
-  print_icon "32" "file://${MEMO_PATH}" "\xf0\x9f\x93\x93" "${MEMO_LABEL:-Memo}"
+  MEMO_URL="file://${MEMO_PATH}"; $IS_SSH && MEMO_URL=""
+  print_icon "32" "$MEMO_URL" "\xf0\x9f\x93\x93" "${MEMO_LABEL:-Memo}"
 fi
 
-# Memory: blue underline — 🧠
+# Memory: blue — 🧠 (SSH에서는 링크 없이 텍스트만 표시)
 # statusline에서 직접 감지 (Plan과 동일한 방식, 상태 파일 불필요)
 if [ -n "$MEMORY_LINK" ]; then
-  print_icon "34" "$MEMORY_LINK" "\xf0\x9f\xa7\xa0" "$MEMORY_LABEL"
+  MEMORY_URL="$MEMORY_LINK"; $IS_SSH && MEMORY_URL=""
+  print_icon "34" "$MEMORY_URL" "\xf0\x9f\xa7\xa0" "$MEMORY_LABEL"
 fi
 
 # 아이콘이 하나라도 있으면 최종 개행
@@ -303,10 +319,25 @@ if [ -n "$RATE_5H" ] || [ -n "$RATE_7D" ]; then
   # tput cols는 서브프로세스에서 항상 80 고정 → stty size </dev/tty로 실제 폭 조회
   COLS=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
   [ "${COLS:-0}" -gt 0 ] 2>/dev/null || COLS=80
-  # 우측 Claude Code 콘텐츠(토큰 수, 버전) ~40자 여유 확보
-  if   [ "$COLS" -ge 130 ]; then RATE_DETAIL=4
-  elif [ "$COLS" -ge 100 ]; then RATE_DETAIL=3
-  elif [ "$COLS" -ge 80 ];  then RATE_DETAIL=2
+
+  # === 유효 폭(EFF_COLS) 계산 ===
+  # Claude Code statusbar는 좌측(statusline 출력)과 우측(토큰 수, 버전 등)을 한 줄에 배치.
+  # COLS >= 80: 좌우 콘텐츠가 한 줄에 공존 → 우측 ~40자 감안하여 유효폭 축소.
+  # COLS < 80: 줄바꿈이 발생하여 각 항목이 별도 행 → rate limits가 전체 폭 사용 가능.
+  #   근거: ~50 cols 터미널(iPhone Termius)에서 아이콘/rate/토큰/버전이 각각 별도 행 확인.
+  if [ "$COLS" -lt 80 ]; then
+    EFF_COLS=$COLS
+  else
+    EFF_COLS=$((COLS - 40))
+  fi
+
+  # 콘텐츠 너비 기반 임계값:
+  #   detail 4 = bar(11) + "100% 5h → 99d23h (12/31 23:59)"(~30) × 2 + sep(3) ≈ 최대 85자 → 임계값 88
+  #   detail 3 = bar(11) + "100% 5h → 99d23h"(~16) × 2 + sep(3) ≈ 최대 55자 → 임계값 58
+  #   detail 2 = bar(11) + "100% 5h"(7) × 2 + sep(3) = 최대 39자 → 임계값 40
+  if   [ "$EFF_COLS" -ge 88 ]; then RATE_DETAIL=4
+  elif [ "$EFF_COLS" -ge 58 ]; then RATE_DETAIL=3
+  elif [ "$EFF_COLS" -ge 40 ]; then RATE_DETAIL=2
   else RATE_DETAIL=1
   fi
 
