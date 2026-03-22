@@ -43,13 +43,11 @@
       # Homebrew Tap (서드파티 저장소)
       taps = [
         "laishulu/homebrew" # macism (macOS 입력 소스 전환 CLI)
-        "microsoft/inshellisense" # IDE 스타일 쉘 자동완성 (0.0.1)
       ];
 
       # Homebrew Formula (CLI 도구)
       brews = [
         "laishulu/homebrew/macism" # macOS 입력 소스 전환 (Neovim 한영 전환 자동화)
-        "microsoft/inshellisense/inshellisense" # IDE 스타일 쉘 자동완성
         "sox" # 오디오 처리 (Claude Code /voice 모드)
       ];
 
