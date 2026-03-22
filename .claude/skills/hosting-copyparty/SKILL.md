@@ -1,11 +1,10 @@
 ---
 name: hosting-copyparty
 description: |
-  Manage Copyparty file server: status, config, troubleshooting, updates, ACL. Trigger:
-  '''copyparty''', '''copyparty-update''', '''copyparty.greenhead.dev''', '''파일 서버''', '''WebDAV''',
-  '''Finder에서 서버''', '''업로드 서비스'''. Use for: Copyparty 서비스 상태 확인, 로그 조회, 설정 변경, 비밀번호/로그인 문제, CORS
-  에러, ACL/권한 관리, 버전 업데이트, Mac Finder 서버 연결, 접속 장애/느림 진단. NOT for 컨테이너/Podman 일반 관리 (use
-  running-containers). NOT for agenix 시크릿 일반 (use managing-secrets).
+  Manage Copyparty file server: status, config, troubleshooting, updates, ACL.
+  Trigger: 'copyparty', 'copyparty-update', 'copyparty.greenhead.dev', '파일 서버', 'WebDAV',
+  'Finder에서 서버', '업로드 서비스'.
+  NOT for 컨테이너/Podman 일반 관리 (use running-containers). NOT for agenix 시크릿 일반 (use managing-secrets).
 ---
 
 # Copyparty 파일 서버 관리

@@ -172,6 +172,27 @@ CLAUDE.md 라우팅 테이블이 존재하는 파일을 모두 수집한다:
 **자동 적용 금지 원칙**: 사용자 확인 없이 스킬 파일을 수정하거나 삭제하지 않는다.
 삭제가 필요한 경우, 파일 목록과 사유를 명시하고 명시적 승인을 받은 후에만 실행한다.
 
+### CSO (Claude Search Optimization) 원칙
+
+description 필드에 **트리거 조건만** 기술한다. 워크플로우 요약을 포함하면
+LLM이 SKILL.md 본문을 읽지 않고 description만으로 동작을 결정하여 프로세스가 축약된다.
+
+**위반 예**: `"PR을 8섹션으로 생성하고 CIR/Human Test를 포함한다"` (워크플로우 요약)
+**준수 예**: `"Trigger: 'PR 만들어줘', 'PR 생성'. NOT for DA (use run-da)."` (트리거 조건만)
+
+### 토큰 효율 가이드
+
+SKILL.md 본문의 권장 길이 (`references/quality-criteria.md` 크기 가이드라인 보완):
+
+| 유형 | 상한 | 예시 |
+|---|---|---|
+| 자주 로드되는 스킬 | <200 단어 | managing-status-icons, sharing-text |
+| 일반 스킬 | <500 단어 | hosting-*, configuring-* |
+| 복합 워크플로우 스킬 | 제한 없음 (references/ 분리 필수) | run-da, plan-with-questions |
+
+> quality-criteria.md의 "200-1200 단어" 기준은 전체 SKILL.md 크기 범위.
+> 이 가이드는 유형별 목표 상한으로, 크기 최적화 시 참고한다.
+
 ## 상세 품질 기준
 
 `references/quality-criteria.md` 참조 — frontmatter 규칙, description 작성 가이드,

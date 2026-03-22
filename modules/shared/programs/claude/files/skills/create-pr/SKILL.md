@@ -2,7 +2,7 @@
 name: create-pr
 argument-hint: "[update]"
 description: |
-  Create PR with CIR/Human Test/Pre-Merge guide. Default: create new PR. Args: update (existing PR body).
+  Create structured PR. Default: create new PR. Args: update (existing PR body).
   Trigger: 'PR 만들어줘', 'PR 생성', 'PR 올려', 'create PR', 'PR 업데이트', 'Human Test'.
   NOT for DA (use run-da). NOT for PR 코멘트 (use review-pr-feedback).
 ---
@@ -34,6 +34,19 @@ PR 본문은 반드시 다음 8개 섹션을 포함한다.
 | 8 | Pre-Merge E2E 테스트 가이드 | LLM이 직접 실행하는 자동 검증 절차 |
 
 각 섹션의 작성 규칙, 예시, 흔한 실수는 [references/pr-template.md](references/pr-template.md) 참조.
+
+## PR 전 결정
+
+PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
+
+| 선택지 | 조건 | 행동 |
+|---|---|---|
+| **PR 생성** | 리뷰가 필요한 변경 | 이 스킬의 절차를 진행 |
+| **직접 merge** | 사용자가 명시적으로 승인한 단순 변경 | main에 현재 브랜치를 `git merge` 후 종료 |
+| **보류 (keep)** | 추가 작업이 필요하거나 다른 브랜치와 조율 필요 | 사용자에게 보고 후 종료 |
+| **폐기 (discard)** | 접근 방식이 잘못되었거나 불필요해짐 | 사용자 확인 후 브랜치 삭제 |
+
+판단이 어려우면 **PR 생성**을 기본으로 선택한다.
 
 ## 절차
 

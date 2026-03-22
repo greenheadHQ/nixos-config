@@ -2,7 +2,7 @@
 name: run-da
 argument-hint: "[for_plan|for_pr|both] [fresh]"
 description: |
-  Run Devil's Advocate 8-agent parallel review. Args: for_plan, for_pr, both. Modifier: fresh.
+  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both. Modifier: fresh.
   Trigger: 'DA', 'DA 피드백', '피드백 루프', 'YAGNI 리뷰', '코드 리뷰 루프', 'run-da'.
   NOT for PR 코멘트 (use review-pr-feedback). NOT for 전수조사 (use parallel-audit).
 ---

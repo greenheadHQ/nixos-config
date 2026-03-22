@@ -1,15 +1,11 @@
 ---
 name: configuring-codex
 description: |
-  Use this skill to configure Codex CLI settings, fix Codex skill discovery issues, and troubleshoot
-  the AGENTS.md/.agents/skills symlink projection layer. Covers: Codex config.toml (approval_policy,
-  sandbox_mode, model), permission prompt tuning, .agents/skills directory symlink verification,
-  AGENTS.md symlink repair, verify-ai-compat.sh diagnostics, Codex binary installation/updates, and
-  AI tool compatibility checks between Claude Code and Codex CLI. Trigger: '''Codex 설정''', '''codex
-  스킬 인식''', '''AGENTS.md 심링크''', '''.agents/skills 심링크''', '''verify-ai-compat''', '''codex 권한''',
-  '''codex 업데이트''', '''AI 도구 호환''', '''codex 바이너리''', '''approval_policy''', '''sandbox_mode''',
-  '''Codex 권한 프롬프트'''. NOT for harness 동기화 (use syncing-codex-harness). NOT for codex exec 실행 (use
-  using-codex-exec).
+  Configure Codex CLI settings and troubleshoot AGENTS.md/.agents/skills symlink projection.
+  Trigger: 'Codex 설정', 'codex 스킬 인식', 'AGENTS.md 심링크', '.agents/skills 심링크', 'verify-ai-compat',
+  'codex 권한', 'codex 업데이트', 'AI 도구 호환', 'codex 바이너리', 'approval_policy', 'sandbox_mode',
+  'Codex 권한 프롬프트'.
+  NOT for harness 동기화 (use syncing-codex-harness). NOT for codex exec 실행 (use using-codex-exec).
 ---
 
 # Codex CLI 설정

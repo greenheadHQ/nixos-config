@@ -34,3 +34,28 @@ skill-creator 플러그인의 Python 스크립트를 직접 호출하지 마라.
 
 > 배경: 캐시된 skill-creator 플러그인이 구버전(Anthropic SDK 직접 호출)이라 Override 필요. (#281)
 > 플러그인 업데이트 시 이 Override 제거 가능.
+
+## Superpowers 플러그인 라우팅
+
+Superpowers(obra/superpowers) 플러그인이 활성화되어 있다.
+충돌하는 스킬은 내 하네스가 우선하며, 아래 Superpowers 스킬은 사용하지 않는다.
+
+### 비활성화 (내 스킬이 대체)
+
+| Superpowers 스킬 | 대체하는 내 스킬 | 이유 |
+|---|---|---|
+| `requesting-code-review` | `run-da` | DA 8-agent 병렬 리뷰가 더 정교 |
+| `receiving-code-review` | `run-da` protocol | DA 프로토콜이 커버 |
+| `dispatching-parallel-agents` | `parallel-audit` | 10-관점 전수조사가 더 정교 |
+| `finishing-a-development-branch` | `create-pr` | 8-섹션 PR 템플릿 제공 |
+| `executing-plans` | `plan-with-questions` | 스무고개식 계획이 더 정교 |
+| `subagent-driven-development` | 해당 없음 | SDD 패턴 미사용 |
+
+위 스킬의 트리거 키워드가 감지되면 대응하는 내 스킬을 사용한다.
+
+### 활성 유지 (내 하네스에 없는 방법론)
+
+`using-superpowers`, `brainstorming`, `writing-plans`, `test-driven-development`,
+`systematic-debugging`, `verification-before-completion`, `using-git-worktrees`, `writing-skills`
+
+> Superpowers 플러그인 업데이트 시 이 테이블도 함께 검토한다 (최종 검토: v5.0.5 기준).

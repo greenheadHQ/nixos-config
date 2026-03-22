@@ -1,15 +1,11 @@
 ---
 name: running-containers
 description: |
-  Use this skill for managing Podman containers and the NixOS homeserver service infrastructure.
-  Covers: container operations (listing, logs, restart, resource limits, OOM), homeserver.* mkOption
-  service modules, service update/version-check timers, DB backup services (immich-db-backup etc.),
-  Caddy HTTPS reverse proxy and certificate issues, service-lib.sh shared library, port mappings,
-  and constants.nix container settings. Use when the user wants to operate, debug, update, or extend
-  any containerized homeserver service or its supporting infrastructure (timers, backups,
-  networking, reverse proxy). NOT for service-specific application workflows like Anki sync,
-  Copyparty ACL, Vaultwarden admin, or Karakeep archiving — use the dedicated hosting-* skills
-  instead.
+  Manage Podman containers and NixOS homeserver service infrastructure.
+  Trigger: 'podman', '컨테이너', 'container', 'OOM', 'homeserver', 'Caddy', '리버스 프록시', 'service-lib',
+  '포트 매핑', '서비스 업데이트', 'DB 백업', 'immich-db-backup'.
+  NOT for service-specific workflows (use hosting-anki, hosting-copyparty, hosting-vaultwarden,
+  hosting-karakeep).
 ---
 
 # 컨테이너 관리 (Podman/홈서버)

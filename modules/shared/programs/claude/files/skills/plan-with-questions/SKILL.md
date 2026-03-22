@@ -2,7 +2,7 @@
 name: plan-with-questions
 argument-hint: "[issue-url | issue-number | task description]"
 description: |
-  Clarify ambiguities via iterative Q&A before planning.
+  Structured planning with requirements clarification.
   Trigger: '계획 수립', '계획 세우기', 'plan', '스무고개', '요구사항 파악', '불명확점 질문'.
   NOT for DA (use run-da). NOT for PR 본문 (use create-pr).
 ---

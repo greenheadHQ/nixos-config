@@ -1,14 +1,10 @@
 ---
 name: hosting-karakeep
 description: |
-  Manage Karakeep web archiver/bookmarks service on archive.greenhead.dev. Use this skill for:
-  troubleshooting Karakeep issues (CSS rendering, search failures, OOM crashes, webhook
-  notifications, AI tagging), running karakeep-update, checking backup status, managing SingleFile
-  integration, and operating the 3-container Podman stack (Karakeep app, headless Chrome,
-  Meilisearch). Trigger: '''Karakeep''', '''웹 아카이브''', '''북마크''', '''아카이빙''',
-  '''archive.greenhead.dev''', '''karakeep-update''', '''Meilisearch''', '''웹훅 알림''', '''AI 태깅''',
-  '''아카이브 백업''', '''북마크 검색''', '''SingleFile'''. NOT for general 컨테이너/Podman 관리 (use
-  running-containers).
+  Manage Karakeep web archiver/bookmarks service on archive.greenhead.dev.
+  Trigger: 'Karakeep', '웹 아카이브', '북마크', '아카이빙', 'archive.greenhead.dev', 'karakeep-update',
+  'Meilisearch', '웹훅 알림', 'AI 태깅', '아카이브 백업', '북마크 검색', 'SingleFile'.
+  NOT for general 컨테이너/Podman 관리 (use running-containers).
 ---
 
 # Hosting Karakeep
