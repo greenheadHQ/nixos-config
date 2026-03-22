@@ -65,7 +65,7 @@ in
     # Vaultwarden 컨테이너
     # ═══════════════════════════════════════════════════════════════
     virtualisation.oci-containers.containers.vaultwarden = {
-      image = "vaultwarden/server:1.35.2";
+      image = "vaultwarden/server:1.35.4";
       autoStart = true;
       ports = [ "127.0.0.1:${toString cfg.port}:80" ];
       volumes = [
