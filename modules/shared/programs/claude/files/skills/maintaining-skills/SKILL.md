@@ -94,6 +94,16 @@ CLAUDE.md 라우팅 테이블이 존재하는 파일을 모두 수집한다:
 - **키워드 충돌**: 두 스킬이 같은 키워드를 점유 → WARN
 - **키워드 부족**: 라우팅 키워드가 description Triggers와 불일치 → WARN
 
+#### Superpowers 동기화 검증
+
+Superpowers 플러그인 업데이트 시 CLAUDE.md 라우팅 재정의 테이블과의 정합성을 검증한다:
+
+1. 플러그인 캐시에서 실제 스킬 목록 추출 (`~/.claude/plugins/cache/claude-plugins-official/superpowers/`)
+2. CLAUDE.md의 비활성화/활성유지 테이블과 대조
+3. 새로 추가된 Superpowers 스킬이 기존 하네스 스킬과 충돌하는지 확인
+4. 제거/이름 변경된 스킬이 비활성화 테이블에 남아있으면 정리
+5. `(최종 검토: vX.Y.Z 기준)` 버전 태그 업데이트
+
 ### 2.2 스킬 범위 분석
 
 - **분할 후보**: SKILL.md + references/ 합계 5000단어 초과, 독립 서비스 2개 이상 포함

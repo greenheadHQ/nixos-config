@@ -59,3 +59,4 @@ Superpowers(obra/superpowers) 플러그인이 활성화되어 있다.
 `systematic-debugging`, `verification-before-completion`, `using-git-worktrees`, `writing-skills`
 
 > Superpowers 플러그인 업데이트 시 이 테이블도 함께 검토한다 (최종 검토: v5.0.5 기준).
+> 갱신 절차: maintaining-skills 스킬의 Phase 2.1 "Superpowers 동기화 검증" 참조.

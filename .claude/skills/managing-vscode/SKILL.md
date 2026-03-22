@@ -1,10 +1,15 @@
 ---
 name: managing-vscode
 description: |
-  Manage VSCode: extensions, settings, keybindings, file associations via Nix Home Manager.
-  Trigger: 'VSCode', 'vscode', '확장 프로그램', 'extensions', 'settings.json', 'keybindings', '키바인딩',
-  'VSCode 에디터 설정', 'VSCode 키바인딩', 'nixd', 'nix-ide', 'open-vsx', '기본 앱 연결', 'duti', '더블클릭',
-  '확장 로드', 'VSCode 스니펫'.
+  Manage VSCode via Nix Home Manager: extensions, settings, keybindings, file associations.
+  Use for any VSCode-related query: installing/searching extensions (open-vsx, marketplace),
+  editing settings.json or keybindings.json, nixd LSP setup for .nix autocompletion, resolving
+  settings conflicts after nrs, default app associations (duti) for file double-click behavior,
+  and VSCode snippets. Also use when '에디터' context involves extensions, settings.json,
+  keybindings, or file associations.
+  Trigger: 'VSCode', 'vscode', '확장 프로그램', 'extensions', 'settings.json', 'keybindings',
+  '키바인딩', 'nixd', 'nix-ide', 'open-vsx', '기본 앱 연결', 'duti', '더블클릭', '확장 로드',
+  'VSCode 스니펫', 'marketplace'.
   NOT for Neovim/LazyVim (use configuring-neovim).
 ---
 

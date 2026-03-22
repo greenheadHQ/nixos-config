@@ -1,0 +1,22 @@
+[
+  {"query": "계획 수립해줘", "should_trigger": true, "why": "명시적: 계획 수립은 핵심 트리거 키워드"},
+  {"query": "이슈 해결 계획 세워줘", "should_trigger": true, "why": "명시적: 계획 세우기는 핵심 트리거 키워드"},
+  {"query": "스무고개식으로 요구사항 파악하자", "should_trigger": true, "why": "명시적: 스무고개는 핵심 트리거 키워드"},
+  {"query": "불명확점 질문해서 계획 만들어줘", "should_trigger": true, "why": "경계선: 불명확점 질문+계획 두 키워드 조합"},
+  {"query": "이 이슈 분석하고 plan 짜줘", "should_trigger": true, "why": "경계선: plan은 트리거 키워드이나 분석+plan 조합"},
+  {"query": "요구사항 명확하지 않은데 정리 좀", "should_trigger": true, "why": "경계선: 요구사항 파악은 트리거 키워드의 변형"},
+  {"query": "뭘 해야 하는지 정확히 파악하자", "should_trigger": true, "why": "경계선: 요구사항 파악의 의미적 동치"},
+  {"query": "이슈 보고 질문 먼저 정리해줘", "should_trigger": true, "why": "저항적: 질문 정리는 스무고개 절차의 핵심"},
+  {"query": "#123 이슈 처리 방법 같이 정리하자", "should_trigger": true, "why": "저항적: 이슈 처리 방법 정리 = 계획 수립"},
+  {"query": "이 작업 어떻게 접근할지 논의하자", "should_trigger": true, "why": "저항적: 접근법 논의 = 계획 수립 과정"},
+  {"query": "spec 기반으로 구현 계획 작성해줘", "should_trigger": false, "why": "혼동 쌍: writing-plans"},
+  {"query": "implementation plan 문서 만들어줘", "should_trigger": false, "why": "혼동 쌍: writing-plans"},
+  {"query": "brainstorming 후 plan으로 전환", "should_trigger": false, "why": "혼동 쌍: writing-plans"},
+  {"query": "DA 피드백 돌려줘", "should_trigger": false, "why": "혼동 쌍: run-da"},
+  {"query": "YAGNI 관점에서 리뷰해줘", "should_trigger": false, "why": "혼동 쌍: run-da"},
+  {"query": "PR 만들어줘", "should_trigger": false, "why": "혼동 쌍: create-pr"},
+  {"query": "코드 리뷰 루프 실행", "should_trigger": false, "why": "혼동 쌍: run-da"},
+  {"query": "전수조사 해줘", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
+  {"query": "LLM 인수인계 작성", "should_trigger": false, "why": "혼동 쌍: write-handoff"},
+  {"query": "이슈 등록해줘", "should_trigger": false, "why": "혼동 쌍: create-issue"}
+]

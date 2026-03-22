@@ -8,7 +8,7 @@
 # Usage:
 #   trigger-eval.sh --skill <name> --queries <path> [--reps N] [--workers N] [--timeout N]
 #   trigger-eval.sh --queries <path>                 # auto-detect skill from queries.json parent dir
-#   trigger-eval.sh --batch <dir>                    # run all skills with evals/ subdirs
+#   trigger-eval.sh --batch <dir>                    # run all skills with evals/ subdirs (dir must be the project root)
 #
 # Input (queries.json):
 #   [{"query": "...", "should_trigger": true, "why": "..."}]
@@ -48,6 +48,8 @@ done
 # --- Batch mode ---
 if [[ -n "$BATCH_DIR" ]]; then
   results=()
+  # Project-local skills (.claude/skills/)
+  # Global skills source (modules/shared/.../skills/)
   for qfile in "$BATCH_DIR"/.claude/skills/*/evals/queries.json \
                "$BATCH_DIR"/modules/shared/programs/claude/files/skills/*/evals/queries.json; do
     [[ -f "$qfile" ]] || continue
@@ -56,6 +58,12 @@ if [[ -n "$BATCH_DIR" ]]; then
     result=$("$0" --skill "$skill_name" --queries "$qfile" --reps "$REPS" --workers "$WORKERS" --timeout "$TIMEOUT" 2>/dev/null)
     results+=("$result")
   done
+  if [[ ${#results[@]} -eq 0 ]]; then
+    echo "Error: no evals found under '$BATCH_DIR'." >&2
+    echo "Pass the project root, not a skills subdirectory." >&2
+    echo "Example: trigger-eval.sh --batch ." >&2
+    exit 1
+  fi
   printf '%s\n' "${results[@]}" | jq -s '.'
   exit 0
 fi
@@ -157,15 +165,16 @@ done
 echo "" >&2
 
 # --- Aggregate results ---
+export SKILL_VAR="$SKILL" QUERIES_VAR="$QUERIES" RESULTS_DIR_VAR="$results_dir" REPS_VAR="$REPS"
 jq -n --arg skill "$SKILL" --argjson reps "$REPS" '
   { skill_name: $skill, reps_per_query: $reps, results: [], summary: {} }
 ' | python3 -c "
 import json, sys, os
 
-skill = '$SKILL'
-queries = json.load(open('$QUERIES'))
-results_dir = '$results_dir'
-reps = $REPS
+skill = os.environ['SKILL_VAR']
+queries = json.load(open(os.environ['QUERIES_VAR']))
+results_dir = os.environ['RESULTS_DIR_VAR']
+reps = int(os.environ['REPS_VAR'])
 
 results = []
 tp = tn = fp = fn = 0
