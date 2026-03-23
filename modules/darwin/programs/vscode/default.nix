@@ -148,6 +148,7 @@ in
           wix.vscode-import-cost
           imekachi.webstorm-darcula
           atommaterial.a-file-icon-vscode
+          mermaidchart.vscode-mermaid-chart
         ]);
 
       # 스니펫 (HM이 자동으로 snippets/ 디렉토리에 배치)
