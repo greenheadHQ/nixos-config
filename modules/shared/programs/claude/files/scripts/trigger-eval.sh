@@ -6,7 +6,7 @@
 # the Skill tool call in JSON output.
 #
 # Usage:
-#   trigger-eval.sh --skill <name> --queries <path> [--reps N] [--workers N] [--timeout N]
+#   trigger-eval.sh --skill <name> --queries <path> [--reps N] [--workers N] [--timeout N] [--threshold F]
 #   trigger-eval.sh --queries <path>                 # auto-detect skill from queries.json parent dir
 #   trigger-eval.sh --batch <dir>                    # run all skills with evals/ subdirs (dir must be the project root)
 #
@@ -26,6 +26,7 @@ WORKERS=4
 TIMEOUT=30
 SKILL=""
 QUERIES=""
+THRESHOLD="0.5"
 BATCH_DIR=""
 
 # --- Parse args ---
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --reps)     REPS="$2";      shift 2 ;;
     --workers)  WORKERS="$2";   shift 2 ;;
     --timeout)  TIMEOUT="$2";   shift 2 ;;
+    --threshold) THRESHOLD="$2"; shift 2 ;;
     --batch)    BATCH_DIR="$2"; shift 2 ;;
     -h|--help)
       sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
@@ -55,7 +57,7 @@ if [[ -n "$BATCH_DIR" ]]; then
     [[ -f "$qfile" ]] || continue
     skill_dir="$(dirname "$(dirname "$qfile")")"
     skill_name="$(basename "$skill_dir")"
-    result=$("$0" --skill "$skill_name" --queries "$qfile" --reps "$REPS" --workers "$WORKERS" --timeout "$TIMEOUT" 2>/dev/null)
+    result=$("$0" --skill "$skill_name" --queries "$qfile" --reps "$REPS" --workers "$WORKERS" --timeout "$TIMEOUT" --threshold "$THRESHOLD" 2>/dev/null)
     results+=("$result")
   done
   if [[ ${#results[@]} -eq 0 ]]; then
@@ -165,7 +167,7 @@ done
 echo "" >&2
 
 # --- Aggregate results ---
-export SKILL_VAR="$SKILL" QUERIES_VAR="$QUERIES" RESULTS_DIR_VAR="$results_dir" REPS_VAR="$REPS"
+export SKILL_VAR="$SKILL" QUERIES_VAR="$QUERIES" RESULTS_DIR_VAR="$results_dir" REPS_VAR="$REPS" THRESHOLD_VAR="$THRESHOLD"
 jq -n --arg skill "$SKILL" --argjson reps "$REPS" '
   { skill_name: $skill, reps_per_query: $reps, results: [], summary: {} }
 ' | python3 -c "
@@ -175,6 +177,7 @@ skill = os.environ['SKILL_VAR']
 queries = json.load(open(os.environ['QUERIES_VAR']))
 results_dir = os.environ['RESULTS_DIR_VAR']
 reps = int(os.environ['REPS_VAR'])
+threshold = float(os.environ.get('THRESHOLD_VAR', '0.5'))
 
 results = []
 tp = tn = fp = fn = 0
@@ -192,13 +195,13 @@ for i, q in enumerate(queries):
 
     should = q['should_trigger']
     if should:
-        passed = trigger_rate >= 0.5
+        passed = trigger_rate >= threshold
         if passed:
             tp += 1
         else:
             fn += 1
     else:
-        passed = trigger_rate < 0.5
+        passed = trigger_rate < threshold
         if passed:
             tn += 1
         else:

@@ -231,5 +231,7 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/improve-description.sh";
     ".claude/scripts/run-loop.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/run-loop.sh";
+    ".claude/scripts/generate-report.py".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/generate-report.py";
   };
 }

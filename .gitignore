@@ -21,4 +21,6 @@
 
 # run-loop.sh 결과 파일 (evals/queries.json만 tracked)
 .claude/skills/*/evals/loop-results-*.json
+.claude/skills/*/evals/skill_report_*.html
 modules/shared/programs/claude/files/skills/*/evals/loop-results-*.json
+modules/shared/programs/claude/files/skills/*/evals/skill_report_*.html

@@ -21,15 +21,18 @@ skill-creator 플러그인의 Python 스크립트를 직접 호출하지 마라.
 
 # 트리거 평가 (단일)
 ~/.claude/scripts/trigger-eval.sh \
-  --queries <path> [--skill <name>] [--reps N] [--workers N] [--timeout N]
+  --queries <path> [--skill <name>] [--reps N] [--workers N] [--timeout N] [--threshold F]
 
 # 트리거 평가 (배치)
 ~/.claude/scripts/trigger-eval.sh --batch <dir>
 
-# description 최적화 loop
+# description 최적화 loop (run_loop.py 완전 대체)
 ~/.claude/scripts/run-loop.sh \
-  --skill-path <dir> --queries <json> \
-  [--max-iterations N] [--reps N] [--holdout 0.4] [--apply]
+  --eval-set <json> --skill-path <dir> \
+  [--max-iterations N] [--runs-per-query N] [--holdout 0.4] \
+  [--num-workers N] [--timeout N] [--trigger-threshold F] \
+  [--description TEXT] [--apply] [--verbose] \
+  [--report auto|none|PATH] [--results-dir DIR]
 ```
 
 ### 필수 주의사항
