@@ -320,62 +320,65 @@ for ((iteration = 1; iteration <= MAX_ITERATIONS; iteration++)); do
   # Save description-enriched results for report history
   cp "$work_dir/eval-results.json" "$work_dir/iter-${iteration}-train.json"
 
-  # B. Early exit if all train pass
-  if [[ "$train_failed" == "0" ]]; then
-    log "  All train queries passed! Early exit."
+  # B. Test eval (holdout only) — same description X as train
+  # WHY test-before-improve: train and test must use the same description so that
+  # each iteration's results are self-consistent. Matches run_loop.py's approach
+  # of evaluating all queries (train+test) in a single call before improving.
+  test_passed=0
+  test_total=0
+  if [[ -n "$test_file" ]]; then
+    log "  Test eval..."
+    # WHY || true: test eval failure should not block the iteration — improve
+    # still uses train results only. Skipping improve on test failure would stall
+    # the loop on the same description. (Codex review R1 regression fix)
+    test_results=$(run_eval "$test_file") || true
+    if [[ -n "$test_results" ]] && printf '%s' "$test_results" | jq -e '.summary' >/dev/null 2>&1; then
+      printf '%s' "$test_results" > "$work_dir/iter-${iteration}-test.json"
+      test_passed=$(printf '%s' "$test_results" | jq '.summary.passed')
+      test_total=$(printf '%s' "$test_results" | jq '.summary.total')
+      log "  Test: $test_passed/$test_total passed"
 
-    # Still run test eval for the final score
-    test_passed=0
-    test_total=0
-    if [[ -n "$test_file" ]]; then
-      log "  Final test eval..."
-      test_results=$(run_eval "$test_file") || true
-      if [[ -n "$test_results" ]] && printf '%s' "$test_results" | jq -e '.summary' >/dev/null 2>&1; then
-        printf '%s' "$test_results" > "$work_dir/iter-${iteration}-test.json"
-        test_passed=$(printf '%s' "$test_results" | jq '.summary.passed')
-        test_total=$(printf '%s' "$test_results" | jq '.summary.total')
-        log "  Test: $test_passed/$test_total passed"
-
-        if (( test_passed > best_test_passed )); then
-          best_test_passed=$test_passed
-          best_iteration=$iteration
-          cp "$work_dir/current_desc.txt" "$work_dir/best_desc.txt"
-        fi
-      else
-        log "  Warning: test eval failed, no holdout score available"
+      # WHY test-based selection: train score would select descriptions overfit to
+      # training queries. Test set is unseen by the improvement model, serving as
+      # a generalization proxy.
+      if (( test_passed > best_test_passed )); then
+        best_test_passed=$test_passed
+        best_iteration=$iteration
+        cp "$work_dir/current_desc.txt" "$work_dir/best_desc.txt"
+        log "  New best! (test=$test_passed/$test_total)"
       fi
-      # Even if test eval failed, this iteration's train passed — set as best if none yet
+    else
+      log "  Warning: test eval failed, skipping holdout scoring"
+      # Ensure best_iteration is set even when all test evals fail.
+      # Without this, best_iteration stays 0 → serializer produces ?/?.
+      # (Codex review R2 fallback fix)
       if (( best_iteration == 0 )); then
         best_iteration=$iteration
         cp "$work_dir/current_desc.txt" "$work_dir/best_desc.txt"
       fi
-    else
+    fi
+  else
+    if (( train_passed > best_test_passed )); then
+      best_test_passed=$train_passed
       best_iteration=$iteration
       cp "$work_dir/current_desc.txt" "$work_dir/best_desc.txt"
     fi
+  fi
 
-    touch "$work_dir/iter-${iteration}-complete"
-    iterations_completed=$iteration
+  # Mark iteration eval as complete (train+test results recorded).
+  # Written before improve so that improve failure does not orphan best_iteration.
+  # (Codex review R1 bookkeeping fix)
+  touch "$work_dir/iter-${iteration}-complete"
+  iterations_completed=$iteration
+
+  # C. Early exit if all train pass
+  if [[ "$train_failed" == "0" ]]; then
+    log "  All train queries passed! Early exit."
     exit_reason="all_passed (iteration $iteration)"
     break
   fi
 
-  # C-pre. Baseline test eval for current description (before improving)
-  # Ensures the starting description has a test score to compare against.
-  if [[ -n "$test_file" && $best_test_passed -lt 0 ]]; then
-    log "  Baseline test eval..."
-    baseline_test=$(run_eval "$test_file") || true
-    if [[ -n "$baseline_test" ]]; then
-      baseline_passed=$(printf '%s' "$baseline_test" | jq '.summary.passed // 0')
-      baseline_total=$(printf '%s' "$baseline_test" | jq '.summary.total // 0')
-      log "  Baseline test: $baseline_passed/$baseline_total passed"
-      best_test_passed=$baseline_passed
-      best_iteration=$iteration
-      cp "$work_dir/current_desc.txt" "$work_dir/best_desc.txt"
-    fi
-  fi
-
-  # C. Improve description
+  # D. Improve description
   log "  Improving description..."
 
   improve_args=(
@@ -391,61 +394,18 @@ for ((iteration = 1; iteration <= MAX_ITERATIONS; iteration++)); do
     continue
   }
 
-  # D. Extract new description
+  # E. Extract + apply new description
   printf '%s' "$improve_output" | jq -r '.description' > "$work_dir/new_desc.txt"
   new_desc_len=$(wc -c < "$work_dir/new_desc.txt" | tr -d ' ')
   log "  New description: ${new_desc_len} chars"
 
   cp "$work_dir/new_desc.txt" "$work_dir/current_desc.txt"
-
-  # E. Replace SKILL.md description (in-place)
   replace_description "$SKILL_PATH/SKILL.md" "$work_dir/current_desc.txt"
 
-  # Save post-improve description separately for history
-  # NOTE: iter-N-train.json keeps pre-improve description (matches train results).
-  # iter-N-improved-desc.txt has the improved description (matches test results).
-  cp "$work_dir/current_desc.txt" "$work_dir/iter-${iteration}-improved-desc.txt"
-
-  # F. Test eval
-  test_passed=0
-  test_total=0
-  if [[ -n "$test_file" ]]; then
-    log "  Test eval..."
-    test_results=$(run_eval "$test_file") || {
-      log "  Error: trigger-eval.sh failed for test set"
-      continue
-    }
-
-    printf '%s' "$test_results" > "$work_dir/iter-${iteration}-test.json"
-    test_passed=$(printf '%s' "$test_results" | jq '.summary.passed')
-    test_total=$(printf '%s' "$test_results" | jq '.summary.total')
-    log "  Test: $test_passed/$test_total passed"
-
-    # WHY test-first: train score would select descriptions overfit to training
-    # queries. Test set is unseen by the improvement model, serving as a
-    # generalization proxy.
-    if (( test_passed > best_test_passed )); then
-      best_test_passed=$test_passed
-      best_iteration=$iteration
-      cp "$work_dir/current_desc.txt" "$work_dir/best_desc.txt"
-      log "  New best! (test=$test_passed/$test_total)"
-    fi
-  else
-    if (( train_passed > best_test_passed )); then
-      best_test_passed=$train_passed
-      best_iteration=$iteration
-      cp "$work_dir/current_desc.txt" "$work_dir/best_desc.txt"
-    fi
-  fi
-
-  # G. Update improve-description.sh history
+  # F. Update improve-description.sh history
   printf '%s' "$improve_output" | jq '.history' > "$work_dir/improve_history.json"
 
-  # Mark iteration as fully complete (partial iterations excluded from final assembly)
-  touch "$work_dir/iter-${iteration}-complete"
-  iterations_completed=$iteration
-
-  # H. Update live report (if enabled)
+  # G. Update live report (if enabled)
   if [[ -n "$report_path" && -f "$report_path" ]]; then
     # Build partial results for in-progress report
     partial_json=$(WORK_DIR="$work_dir" ITERS="$iteration" \
@@ -471,11 +431,8 @@ for i in range(1, iters + 1):
             xd = json.loads(xf.read_text())
             xs, xr = xd.get('summary', {}), xd.get('results', [])
         except: pass
-    imp_f = Path(work) / f'iter-{i}-improved-desc.txt'
-    imp_desc = imp_f.read_text().strip() if imp_f.exists() else None
     history.append({
         'iteration': i, 'description': td.get('description', ''),
-        'improved_description': imp_desc,
         'train_passed': ts.get('passed', 0), 'train_failed': ts.get('failed', 0),
         'train_total': ts.get('total', 0), 'train_results': td.get('results', []),
         'test_passed': xs.get('passed'), 'test_total': xs.get('total'),
@@ -565,16 +522,11 @@ for i in range(1, iters + 1):
         except json.JSONDecodeError:
             pass  # test eval failed — empty/corrupt file
 
-    # description: pre-improve (matches train results)
-    # improved_description: post-improve (matches test results, if improve ran)
     desc = train_data.get('description', '')
-    improved_desc_f = Path(work) / f'iter-{i}-improved-desc.txt'
-    improved_desc = improved_desc_f.read_text().strip() if improved_desc_f.exists() else None
 
     entry = {
         'iteration': i,
-        'description': desc,  # pre-improve (matches train_results)
-        'improved_description': improved_desc,  # post-improve (matches test_results, if any)
+        'description': desc,  # same description used for both train and test
         'train_passed': train_summary.get('passed', 0),
         'train_failed': train_summary.get('failed', 0),
         'train_total': train_summary.get('total', 0),

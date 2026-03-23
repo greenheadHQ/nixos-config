@@ -27,8 +27,12 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
     if history:
         for r in history[0].get("train_results", history[0].get("results", [])):
             train_queries.append({"query": r["query"], "should_trigger": r.get("should_trigger", True)})
-        if history[0].get("test_results"):
-            for r in history[0].get("test_results", []):
+        # Use first iteration with valid test_results for column headers.
+        # When test eval flakes on iteration 1, later iterations may still have
+        # valid holdout data. (Codex review R2 regression fix)
+        test_entry = next((h for h in history if h.get("test_results")), None)
+        if test_entry:
+            for r in test_entry.get("test_results", []):
                 test_queries.append({"query": r["query"], "should_trigger": r.get("should_trigger", True)})
 
     refresh_tag = '    <meta http-equiv="refresh" content="5">\n' if auto_refresh else ""
@@ -163,12 +167,7 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
         html_parts.append(f'            <td><span class="score {_score_cls(train_c, train_r)}">{train_c}/{train_r}</span></td>\n')
         if test_queries:
             html_parts.append(f'            <td><span class="score {_score_cls(test_c, test_r)}">{test_c}/{test_r}</span></td>\n')
-        # Show improved_description only when test_results exist (matches test columns);
-        # otherwise show pre-improve description (matches train columns)
-        display_desc = h.get("description", "")
-        if h.get("test_results") and h.get("improved_description"):
-            display_desc = h["improved_description"]
-        html_parts.append(f'            <td class="description">{html.escape(display_desc)}</td>\n')
+        html_parts.append(f'            <td class="description">{html.escape(h.get("description", ""))}</td>\n')
 
         for qinfo in train_queries:
             r = train_by_q.get(qinfo["query"], {})
@@ -180,6 +179,10 @@ def generate_html(data: dict, auto_refresh: bool = False, skill_name: str = "") 
             html_parts.append(f'            <td class="result {css}">{icon}<span class="rate">{triggers}/{runs}</span></td>\n')
 
         for qinfo in test_queries:
+            if not test_results:
+                # No holdout data for this iteration — show dash instead of misleading ✗ 0/0
+                html_parts.append('            <td class="result test-result">\u2014</td>\n')
+                continue
             r = test_by_q.get(qinfo["query"], {})
             did_pass = r.get("pass", False)
             triggers = _get_triggers(r)
