@@ -1,5 +1,6 @@
 ---
 name: managing-status-icons
+disable-model-invocation: true
 description: |
   Set session status bar icons (Jira, Slack, Figma, Memo).
   Trigger: '상태바 아이콘', 'jira 링크', 'slack 링크', 'figma 링크', '아이콘 설정', '링크 변경'.
