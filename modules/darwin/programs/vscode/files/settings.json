@@ -166,4 +166,5 @@
     // 유틸리티 파일들 - hooks.ts, utils.ts 등이 여러 개일 때 폴더명으로 구분
     "**/{hook,hooks,constant,constants,util,utils,state,states,type,types,style,styles}.{ts,tsx,js,jsx}": "${dirname}/${filename}.${extname}",
   },
+  "security.workspace.trust.untrustedFiles": "open",
 }
