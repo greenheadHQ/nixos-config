@@ -1,5 +1,6 @@
 ---
-name: managing-status-icons
+# CIR: managing-status-icons → set-icons 이름 변경 — 스킬 이름이 과도하게 길어 간결화
+name: set-icons
 disable-model-invocation: true
 description: |
   Set session status bar icons (Jira, Slack, Figma, Memo).
@@ -49,7 +50,7 @@ STATE_FILE="$HOME/.claude/status-icons/<session-id>.json"
 
 ### 대화형 설정
 
-사용자가 `/managing-status-icons`를 호출하거나 링크 설정을 요청하면,
+사용자가 `/set-icons`를 호출하거나 링크 설정을 요청하면,
 AskUserQuestion으로 필요한 링크를 물어본다:
 
 ```json

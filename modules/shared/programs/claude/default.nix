@@ -192,9 +192,9 @@ in
     ".claude/skills/using-claude-p".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/using-claude-p";
 
-    # managing-status-icons 스킬 (user-scope)
-    ".claude/skills/managing-status-icons".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/managing-status-icons";
+    # set-icons 스킬 (user-scope)
+    ".claude/skills/set-icons".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/set-icons";
 
     # plan-with-questions 스킬 (user-scope)
     ".claude/skills/plan-with-questions".source =

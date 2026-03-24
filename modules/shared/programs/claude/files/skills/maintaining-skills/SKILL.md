@@ -196,7 +196,7 @@ SKILL.md 본문의 권장 길이 (`references/quality-criteria.md` 크기 가이
 
 | 유형 | 상한 | 예시 |
 |---|---|---|
-| 자주 로드되는 스킬 | <200 단어 | managing-status-icons, sharing-text |
+| 자주 로드되는 스킬 | <200 단어 | set-icons, sharing-text |
 | 일반 스킬 | <500 단어 | hosting-*, configuring-* |
 | 복합 워크플로우 스킬 | 제한 없음 (references/ 분리 필수) | run-da, plan-with-questions |
 

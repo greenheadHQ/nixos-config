@@ -45,7 +45,7 @@ case "$SOURCE" in
     #    proactive하게 질문 + Memo 아이콘 자동 등록. 매 세션마다 링크를 물어봄.
     #    AskUserQuestion 호출 방식만 6회 시행착오 (3회개별→1회일괄→탭UI 등).
     # v2 (d65e7d0): 링크 불필요한 세션이 대다수라 매번 묻는 것이 방해됨.
-    #    AskUserQuestion 지시 제거, /managing-status-icons 스킬 호출 시에만 링크 설정.
+    #    AskUserQuestion 지시 제거, /set-icons 스킬 호출 시에만 링크 설정.
     #    단, Memo는 항상 유용하다고 판단하여 자동 등록 유지 → 상태바에 Memo 노출.
     # v3 (d3bbb3c, 이번): Memo도 불필요 시 상태바를 차지하므로 자동 등록 제거.
     #    빈 객체({})로 시작, 모든 아이콘을 스킬 호출 시에만 등록.
@@ -60,7 +60,7 @@ case "$SOURCE" in
     CONTEXT="Status bar icons 초기화됨.
 상태 파일: $STATE_FILE
 메모: $MEMO_FILE
-링크 설정: /managing-status-icons 스킬로 Jira, Slack, Figma 링크를 추가할 수 있습니다."
+링크 설정: /set-icons 스킬로 Jira, Slack, Figma 링크를 추가할 수 있습니다."
     ;;
 
   resume|compact)
