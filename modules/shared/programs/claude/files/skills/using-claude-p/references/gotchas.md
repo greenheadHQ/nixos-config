@@ -1,4 +1,4 @@
-# 숨겨진 동작 36건
+# 숨겨진 동작
 
 공식 문서에 없는 `claude -p` (비대화형 모드) 동작을 카테고리별로 정리합니다.
 
@@ -50,6 +50,43 @@ claude -p ""                 # 빈 문자열 인수 → 에러, exit 1
 echo "prompt" | claude -p    # ✅ pipe 사용
 claude -p "prompt" < /dev/null  # ✅ stdin 닫기
 ```
+
+### #39. 커스텀 환경변수는 `VAR=val claude -p` 형태로 명시적 전달 필요
+
+`claude -p` 내부 에이전트는 `.env` 파일을 자동으로 읽지 않는다. 에이전트가 환경변수를 참조하려면 프로세스 시작 시 환경변수가 설정되어 있어야 한다.
+
+```bash
+# ❌ .env 파일 자동 로드 안 됨
+echo "FIGMA_TOKEN=xxx" > .env
+claude -p "REST API 호출해줘"
+# → 에이전트가 .env를 자동으로 읽지 않음
+
+# ✅ 명시적 전달 (가장 확실)
+MY_TOKEN="xxx" claude -p "REST API 호출해줘"
+
+# ✅ export 후 실행 (동작하지만 셸 세션에 남음)
+export MY_TOKEN="xxx"
+claude -p "REST API 호출해줘"
+
+# ✅ 에이전트가 직접 .env 파일을 읽도록 프롬프트에 지시
+# ⚠️ --dangerously-skip-permissions 필수 → 에이전트가 .env 내 모든 credential에 접근 가능
+echo "먼저 .env 파일에서 MY_TOKEN을 읽은 뒤 사용하라" | claude -p --dangerously-skip-permissions
+```
+
+⚠️ **보안 주의**: `VAR=val command` 형태는 셸 히스토리와 `/proc/<pid>/environ`에 credential이 노출된다. 프로덕션에서는 secrets manager 또는 `read -s VAR && VAR="$VAR" claude -p ...` 패턴을 사용하라. `.env` + `--dangerously-skip-permissions` 조합은 에이전트가 파일 내 모든 secret을 읽고 임의 명령으로 외부 전송할 수 있으므로, 신뢰할 수 없는 환경에서는 사용하지 마라.
+
+v2.1.81 실측. `CLAUDE_CODE_MAX_RETRIES`, `ANTHROPIC_API_KEY` 등 Claude Code 내장 환경변수는 정상 인식됨.
+
+### #40. stdin 파이프 대용량 입력 정상 동작 확인
+
+SKILL.md + 에이전트 지시서 + 참조 파일 다수를 합산한 대용량 stdin을 파이프로 전달해도 정상 실행됨을 확인했다. 실제 입력 분량은 `wc -l`로 측정하라.
+
+```bash
+# 대용량 프롬프트 정상 동작 (실측 기준: SKILL.md + 에이전트 + 참조 파일 합산)
+cat skill.md agent.md references.md | claude -p --output-format text > result.md
+```
+
+⚠️ 극단적 상한은 미확인. CLI → Node.js 런타임 → API context window로 이어지는 다층 파이프라인 중 어느 레이어에서 상한이 걸리는지 미검증. 프로덕션 파이프라인에서는 적절한 청킹 전략을 병행하라. v2.1.81 실측.
 
 ### #36. `allowedTools` 패턴에서 공백이 중요
 
@@ -181,6 +218,8 @@ echo "ls /tmp 실행해줘" | claude -p; echo "EXIT: $?"
 
 도구를 못 썼는데도 에러가 아닌 정상 종료. 실패를 감지하려면 출력 내용을 파싱해야 한다.
 
+⚠️ **`--dangerously-skip-permissions` + `--allowedTools` 상호작용**: `--dangerously-skip-permissions`는 `--allowedTools` 제한을 **완전히 무시**한다. `--allowedTools "Read"`로 Bash를 제한하더라도 `--dangerously-skip-permissions`가 있으면 Bash가 제한 없이 사용 가능하다. 도구를 실제로 제한하려면 `--dangerously-skip-permissions` 없이 `--allowedTools`를 단독 사용하라. v2.1.81 실측.
+
 ### #7. `--permission-mode bypassPermissions` = `--dangerously-skip-permissions`
 
 ```bash
@@ -217,12 +256,37 @@ echo "현재 디렉토리의 파일 목록을 보여줘" | claude -p --tools ""
 
 ⚠️ `--mcp-servers ""` / `--no-mcp` 플래그는 v2.1.76에 존재하지 않음. MCP 도구를 비활성화하는 공식 방법은 `claude -p --help` 출력을 확인한다.
 
+⚠️ **역방향도 성립**: `--allowedTools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 **초기화되지 않으면 사용 불가**. `allowedTools`는 허용 목록이지, 서버 활성화 지시가 아니다. MCP 서버 초기화는 `.mcp.json` 또는 `settings.json`의 MCP 설정에 의존한다 (`.mcp.json`에 미등록이거나 서버 프로세스가 init 단계에서 연결 실패한 경우 "미활성"). `--strict-mcp-config`로 특정 MCP 설정만 로드하는 것도 가능하다 (v2.1.81+). v2.1.81 실측.
+
 ### #13. `--disable-slash-commands`로 스킬 비활성화 시 "Unknown skill"
 
 ```bash
 echo "/create-issue 이슈 보여줘" | claude -p --disable-slash-commands --dangerously-skip-permissions
 # "Unknown skill: create-issue"
 ```
+
+### #38. 플러그인 스킬 인식은 설치 시점에 고정됨
+
+`claude -p`는 `~/.claude/plugins/installed_plugins.json`의 `installPath` → `skills/` 디렉토리에서 스킬을 로드한다. **설치 시점에 존재했던 스킬만 인식**하며, 이후 캐시 디렉토리에 파일을 추가하거나 symlink를 생성하거나 marketplace repo를 다른 브랜치로 checkout해도 인식되지 않는다.
+
+```bash
+# ❌ 캐시에 물리 복사 — 인식 안 됨
+cp -R my-new-skill/ ~/.claude/plugins/cache/my-plugin/1.0.0/skills/my-new-skill
+
+# ❌ symlink — 인식 안 됨
+ln -sfn /path/to/dev-plugin ~/.claude/plugins/cache/my-plugin/1.0.0
+
+# ❌ marketplace repo 브랜치 변경 — 인식 안 됨
+cd ~/.claude/plugins/marketplaces/my-plugin && git checkout feature-branch
+
+# ✅ 해결: SKILL.md 내용을 stdin으로 직접 주입
+cat skill-content.md agent-instructions.md | claude -p --output-format text > result.md
+
+# ✅ 해결: 플러그인 재설치
+# Claude Code 대화형 모드에서 /plugins 또는 재설치 명령 실행
+```
+
+⚠️ 이 동작은 Claude Code의 내부 플러그인 인덱싱 메커니즘에 의존하며, 향후 버전에서 변경될 수 있다. v2.1.81 실측. 상세 우회 패턴: [patterns.md](patterns.md) 패턴 9 참조.
 
 ### #35. `allowedTools` 패턴 공백 의미 차이
 
@@ -363,6 +427,6 @@ wait
 
 ## 참고
 
-- 확인 날짜: **2026-03-15**
-- 확인 버전: **Claude Code v2.1.76**
+- 확인 날짜: **2026-03-24**
+- 확인 버전: **Claude Code v2.1.81**
 - 재검증: `claude --version` 출력과 비교 후, 변경된 항목이 있으면 갱신한다

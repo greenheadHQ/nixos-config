@@ -195,6 +195,43 @@ done
 # Event: result
 ```
 
+## 패턴 9: 미설치 플러그인 스킬을 stdin 주입으로 우회
+
+개발 중이거나 미배포 플러그인의 스킬을 테스트할 때, 스킬 내용을 프롬프트에 직접 주입한다.
+
+### 기본 패턴
+
+```bash
+# 1. 프롬프트 작성 (에이전트에게 줄 지시)
+cat > /tmp/e2e-prompt.md <<'PROMPT'
+아래는 {skill-name} 스킬의 지시서이다. 이 지시서를 정확히 따라 실행하라.
+{사용자 입력 또는 URL}
+PROMPT
+
+# 2. 스킬 지시서 + 에이전트 지시서 + 참조 파일을 합성하여 주입
+#    - e2e-prompt.md: 에이전트에게 주는 지시 (what to do)
+#    - SKILL.md: 스킬 원문 (how to do, 컨텍스트)
+#    - agent.md + refs: 추가 컨텍스트
+#    순서: 지시 → 컨텍스트 (LLM이 지시를 먼저 인지하도록)
+cat /tmp/e2e-prompt.md skills/{name}/SKILL.md agents/{name}.md skills/{name}/references/*.md \
+  | MY_TOKEN="xxx" claude -p --output-format text --dangerously-skip-permissions \
+  > /tmp/result.md 2>/tmp/stderr.txt
+```
+
+### 주의사항
+
+- 대용량 stdin도 정상 동작 확인. 극단적 상한은 미확인 ([gotcha #40](gotchas.md) 참조)
+- `--dangerously-skip-permissions`는 `--allowedTools` 제한을 무시함 ([gotcha #3](gotchas.md) 참조)
+- 커스텀 환경변수는 `VAR=val claude -p` 형태로 전달 ([gotcha #39](gotchas.md) 참조)
+- MCP 도구 사용 시 해당 MCP 서버가 세션에서 활성화되어야 함 ([gotcha #5](gotchas.md) 참조)
+
+⚠️ **보안 주의**: stdin으로 주입하는 파일 내용이 신뢰할 수 있는 출처인지 확인하라. `--dangerously-skip-permissions`와 결합 시 파일 내 prompt injection이 임의 명령 실행으로 이어질 수 있다. 신뢰할 수 없는 입력에는 `--dangerously-skip-permissions` 없이 `--allowedTools`로 도구를 제한하라:
+
+```bash
+# 신뢰할 수 없는 입력 시 안전한 패턴 (--dangerously-skip-permissions 미사용)
+cat untrusted-skill.md | claude -p --allowed-tools "Read,Grep,Glob" --output-format text
+```
+
 ---
 
 ## 빠른 참조 표
@@ -209,3 +246,4 @@ done
 | 연쇄 호출 | 6 | `claude -p \| ... \| claude -p` |
 | 병렬 실행 | 7 | `claude -p ... &` + `--no-session-persistence` |
 | 결과 파싱 | 8 | `--output-format json` → python3 파싱 |
+| 미설치 스킬 stdin 주입 | 9 | `cat SKILL.md agent.md \| claude -p` |
