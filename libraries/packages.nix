@@ -17,6 +17,10 @@
     # TUI 도구
     pkgs.gum # TUI 컴포넌트 (wt 워크트리 관리)
 
+    # 미디어 도구
+    pkgs.ffmpeg # 미디어 처리
+    pkgs.yt-dlp # 영상 다운로더
+
     # 기타 유틸리티
     pkgs.curl # HTTP 클라이언트
     pkgs.jq # JSON 처리
@@ -27,7 +31,6 @@
 
   # macOS 전용 패키지
   darwinOnly = [
-    pkgs.ffmpeg # 미디어 처리
     # ghostty: Homebrew Cask로 관리 (homebrew.nix)
     # pkgs.ghostty-bin은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음
     pkgs.imagemagick # 이미지 처리
