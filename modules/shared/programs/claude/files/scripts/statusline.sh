@@ -24,6 +24,10 @@ SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
 IS_SSH=false
 [ -n "$SSH_CONNECTION" ] && IS_SSH=true
 
+# 256-color 고정 그레이 — 터미널 팔레트 의존 \e[90m 대신 사용
+# Termius 등 bright black을 검정으로 렌더링하는 터미널에서 가시성 확보
+MUTED="38;5;242"   # #6c6c6c
+
 # --- Plan 파일 감지 ---
 # 현재 세션의 transcript에서 plan 파일 Read/Write 기록을 추출한다.
 # ※ 이전 ls -t 방식은 세션과 무관하게 가장 최근 파일을 반환하여
@@ -245,7 +249,7 @@ render_rate_window() {
     local i bar_filled="" bar_empty=""
     for ((i=0; i<filled; i++)); do bar_filled+="█"; done
     for ((i=0; i<empty; i++)); do bar_empty+="░"; done
-    printf '%b%s%b%s%b ' "\e[${color}m" "$bar_filled" "\e[90m" "$bar_empty" "\e[0m"
+    printf '%b%s%b%s%b ' "\e[${color}m" "$bar_filled" "\e[${MUTED}m" "$bar_empty" "\e[0m"
   fi
 
   # Percentage + window (always)
@@ -256,7 +260,7 @@ render_rate_window() {
     if [ "$detail" -ge 3 ]; then
       local remaining=$((resets_at - now))
       if [ "$remaining" -gt 0 ]; then
-        printf ' %b%s%b %s' "\e[90m" "→" "\e[0m" "$(format_remaining $remaining)"
+        printf ' %b%s%b %s' "\e[${MUTED}m" "→" "\e[0m" "$(format_remaining $remaining)"
       fi
     fi
     # (reset_date) (detail ≥ 4)
@@ -264,7 +268,7 @@ render_rate_window() {
       local reset_fmt
       reset_fmt=$(date -r "$resets_at" "+%m/%d %H:%M" 2>/dev/null \
                || date -d "@$resets_at" "+%m/%d %H:%M" 2>/dev/null)
-      [ -n "$reset_fmt" ] && printf ' %b(%s)%b' "\e[90m" "$reset_fmt" "\e[0m"
+      [ -n "$reset_fmt" ] && printf ' %b(%s)%b' "\e[${MUTED}m" "$reset_fmt" "\e[0m"
     fi
   fi
 }
@@ -346,7 +350,7 @@ if [ -n "$RATE_5H" ] || [ -n "$RATE_7D" ]; then
     render_rate_window "$RATE_5H" "5h" "$RATE_5H_RESET" "$NOW" "$RATE_DETAIL"
   fi
   if [ -n "$RATE_5H" ] && [ -n "$RATE_7D" ]; then
-    printf ' %b%s%b ' "\e[90m" "|" "\e[0m"
+    printf ' %b%s%b ' "\e[${MUTED}m" "|" "\e[0m"
   fi
   if [ -n "$RATE_7D" ]; then
     render_rate_window "$RATE_7D" "7d" "$RATE_7D_RESET" "$NOW" "$RATE_DETAIL"
