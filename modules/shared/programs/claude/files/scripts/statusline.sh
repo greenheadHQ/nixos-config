@@ -51,17 +51,43 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
 fi
 
 # --- Plan state file 관리 ---
-# 마이그레이션: 이전 프로젝트 단위 상태 파일 경로 (세션별 격리 이전)
-LEGACY_PLAN_STATE="$(dirname "$TRANSCRIPT")/.statusline-plan"
+#
+# === Change Intent Record ===
+# v1 (초기): 세션별 state file (.statusline-plan-<session_id>)로 격리.
+#    resume/compact 시 동일 session_id로 fallback 정상 작동.
+# v2: /clear 시 Claude Code가 새 transcript(= 새 session_id)를 생성하여
+#    이전 session_id의 state file을 찾지 못하는 문제 발견.
+#    프로젝트 단위 fallback (.statusline-plan-current) 추가.
+#    우선순위: transcript 감지 > 세션별 state > 프로젝트 단위 state.
+# v3 (이번): 프로젝트 단위 fallback 사용 시 plan 파일 복사본 생성.
+#    원본과의 편집 충돌 방지. 복사본 이름: <원본>-<session_id 8자>.md.
+#    세션별 state에 복사본 경로를 저장하여 이후 렌더에서 직접 사용.
+PROJECT_PLAN_STATE="$(dirname "$TRANSCRIPT")/.statusline-plan-current"
 
 if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ] && [ -n "$PLAN_STATE_FILE" ]; then
   # transcript에서 plan 감지 성공 + 파일 존재 확인 → 상태 파일에 저장
   printf '%s' "$PLAN_FILE" > "$PLAN_STATE_FILE" 2>/dev/null
-  # 레거시 파일 정리 (세션별 파일이 생성되었으므로 더 이상 불필요)
-  rm -f "$LEGACY_PLAN_STATE" 2>/dev/null
+  # 프로젝트 단위 fallback도 갱신 (/clear 후 session_id 변경 대비)
+  printf '%s' "$PLAN_FILE" > "$PROJECT_PLAN_STATE" 2>/dev/null
 elif [ -z "$PLAN_FILE" ] && [ -n "$PLAN_STATE_FILE" ] && [ -f "$PLAN_STATE_FILE" ]; then
-  # transcript에서 감지 실패 (context clear 등) → 상태 파일에서 복원
+  # transcript에서 감지 실패 → 세션별 상태 파일에서 복원
   PLAN_FILE=$(cat "$PLAN_STATE_FILE" 2>/dev/null)
+elif [ -z "$PLAN_FILE" ] && [ -f "$PROJECT_PLAN_STATE" ]; then
+  # 세션별 상태도 없음 → 프로젝트 단위 fallback (/clear로 session_id가 변경된 경우)
+  ORIGINAL_PLAN=$(cat "$PROJECT_PLAN_STATE" 2>/dev/null)
+  if [ -n "$ORIGINAL_PLAN" ] && [ -f "$ORIGINAL_PLAN" ]; then
+    # Plan 파일 복사본 생성 (원본과의 충돌 방지)
+    # session_id 앞 8자로 복사본 구분 (UUID 축약 관례)
+    PLAN_COPY="$(dirname "$ORIGINAL_PLAN")/$(basename "$ORIGINAL_PLAN" .md)-${SESSION_ID:0:8}.md"
+    if [ ! -f "$PLAN_COPY" ]; then
+      cp "$ORIGINAL_PLAN" "$PLAN_COPY"
+      # 30일 초과 plan 복사본 정리 (-????????.md 패턴)
+      find "$(dirname "$ORIGINAL_PLAN")" -name "*-????????.md" -mtime +30 -delete 2>/dev/null || true
+    fi
+    PLAN_FILE="$PLAN_COPY"
+    # 세션별 state에 복사본 경로 저장 (다음 렌더부터 직접 사용)
+    printf '%s' "$PLAN_FILE" > "$PLAN_STATE_FILE" 2>/dev/null
+  fi
 fi
 
 # --- Memory 디렉토리 감지 ---
