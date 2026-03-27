@@ -12,6 +12,7 @@ Atuin 및 Zsh 관련 문제와 해결 방법을 정리합니다.
 - [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)
 - [네트워크 문제로 sync 실패](#네트워크-문제로-sync-실패)
 - [Fuzzy search로 의도치 않은 검색 결과](#fuzzy-search로-의도치-않은-검색-결과)
+- [DB migration 불일치로 history 명령 실패](#db-migration-불일치로-history-명령-실패)
 
 ---
 
@@ -494,3 +495,57 @@ programs.atuin.settings = {
 | `fulltext` | 검색어가 **정확히 포함**된 명령어만 검색 | 가장 균형 잡힌 선택 |
 
 **TUI에서 모드 변경**: `Ctrl+r` 누르면 모드 순환 (Fuzzy -> Prefix -> Fulltext -> Skim)
+
+---
+
+## DB migration 불일치로 history 명령 실패
+
+> **발생 시점**: 2026-03-27
+> **환경**: atuin 18.12.1 (nixpkgs) + DB에 18.13.0 migration 적용됨
+> **상태**: 해결 (nixpkgs 업데이트, PR #333)
+
+**증상**: `atuin history list` 등 모든 히스토리 관련 명령이 실패.
+
+```
+Error: migration 20260224000100 was previously applied but is missing in the resolved migrations
+
+Location:
+    crates/atuin/src/command/client/history.rs:676:18
+```
+
+**원인**: atuin DB migration은 forward-only. 새 버전의 atuin이 DB에 migration을 적용하면, 해당 migration을 모르는 구버전에서 에러가 발생한다.
+
+이번 사례:
+1. 어떤 경로로 atuin 18.13.x가 실행되어 migration `20260224000100` ("history author intent")이 Mac DB에 적용됨
+2. nixpkgs lock(2026-03-08)은 atuin 18.12.1을 제공 — 이 migration을 포함하지 않음
+3. 이후 모든 atuin 명령에서 "previously applied but missing" 에러 발생
+4. MiniPC는 해당 migration이 미적용 상태라 영향 없었음
+
+**진단 방법**:
+
+```bash
+# 1. DB에 적용된 migration 확인
+sqlite3 ~/.local/share/atuin/history.db \
+  "SELECT version, description FROM _sqlx_migrations ORDER BY version;"
+
+# 2. 현재 바이너리에 포함된 migration 확인 (이름으로 검색)
+strings $(which atuin) | grep -i "create.history\|drop.events\|deleted.at\|author.intent"
+
+# 3. 현재 atuin 버전 확인
+atuin --version
+```
+
+**해결**:
+
+```bash
+# nixpkgs를 해당 migration을 포함하는 버전 이상으로 업데이트
+nix flake update nixpkgs  # 또는 nix flake update (전체)
+nrs                        # rebuild 적용
+atuin --version            # 18.13.x 이상 확인
+```
+
+**예방**:
+
+- `nix run nixpkgs#atuin`이나 `nix shell nixpkgs#atuin` 등으로 nixpkgs lock보다 새 버전을 임시 실행하지 않기
+- atuin 버전을 올렸으면 nixpkgs lock도 함께 올리기 (DB migration이 비가역이므로)
+- 롤백 시 atuin DB는 되돌릴 수 없음 — pre-migration 백업이 없으면 해당 버전 이상 유지 필수
