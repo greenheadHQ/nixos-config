@@ -64,31 +64,64 @@ description: |
 ### for_plan 모드
 
 1. 현재 계획 파일(`.claude/plans/`) 또는 대화 컨텍스트에서 계획 내용을 수집한다.
-2. 8개 영역별 DA 에이전트를 **한 턴에 동시 병렬 실행**한다.
-   - 각 에이전트에게 계획 전체 내용 + 프로젝트 컨텍스트를 제공한다.
+2. 8개 영역별 DA 에이전트를 `codex exec --full-auto`로 **병렬 실행**한다.
+   실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
+   - 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)`
+   - 8개 영역별 프롬프트 파일을 생성한다: `$DA_DIR/{domain}.md`
+     각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 계획 전체 내용을 포함한다.
+     반드시 "계획 외의 관련 파일도 직접 읽어 탐색하라"는 지시를 포함한다.
+   - 8개 codex exec를 백그라운드(`&`)로 동시 실행하고 PID를 보존한다:
+     ```zsh
+     declare -A PIDS
+     for domain in YAGNI NGMI HALLUCINATION SECURITY SIDE_EFFECT CONSISTENCY READABILITY CLEAN_CODE; do
+       cat "$DA_DIR/$domain.md" | codex exec --full-auto --ephemeral \
+         -o "$DA_DIR/$domain-result.md" 2>"$DA_DIR/$domain-stderr.log" &
+       PIDS[$domain]=$!
+     done
+     for domain in "${(@k)PIDS}"; do
+       wait ${PIDS[$domain]}; echo "$domain:$?" >> "$DA_DIR/exit-codes.log"
+     done
+     ```
    - `fresh` modifier가 있으면 이전 라운드 결과를 프롬프트에 포함하지 않는다.
-   - 에이전트는 읽기 전용이며 수정 권한이 없다.
-3. 모든 DA 결과를 수신한 뒤 종합 리포트를 작성한다.
+   - codex exec는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
+     (이유: codex CLI 제약상 `--full-auto`가 `-s read-only`를 override하여 read-only 강제 불가. exec 우회 패턴 사용을 위한 트레이드오프.)
+   - `--ephemeral`로 실행하여 Codex 세션 히스토리를 오염시키지 않는다.
+   - 모델은 codex config.toml 기본값을 따른다. `-m` 플래그를 생략한다.
+   - `/using-codex-exec` 패턴 5의 실행 흐름(stdin 파이핑, `-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙(문맥 보존, 라운드 히스토리 포함 여부)은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
+3. `wait` 완료 후 8개 결과 파일(`$DA_DIR/*-result.md`)을 수집하여 종합 리포트를 작성한다.
+   실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우(`$DA_DIR/*-stderr.log` 확인).
+   실패한 영역만 재실행한다. 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. 유효한 지적만 선별하여 계획에 반영한다.
    - 기각하는 지적에는 반드시 [구조화된 기각 포맷](references/protocol.md#구조화된-기각-포맷)을 사용한다.
-   - 기각 전 반드시 해당 파일:줄을 Read 도구로 직접 확인한다. **검증 없는 기각을 금지한다.**
+   - 기각 전 반드시 해당 파일:줄을 직접 읽어 확인한다. **검증 없는 기각을 금지한다.**
    - [묵살 안티패턴](references/protocol.md#묵살-안티패턴-금지)에 해당하는 기각 패턴을 사용하지 않는다.
-5. 반영 후 동일 8개 DA를 **새 에이전트로** 재실행한다.
+5. 반영 후 동일 8개 DA를 **새 codex exec 프로세스로** 재실행한다.
 6. 8개 DA 전부 CLEAR를 반환할 때까지 반복한다.
 
 ### for_pr 모드
 
-1. `git diff`로 변경사항을 수집한다 (staged + unstaged).
-2. 8개 영역별 DA 에이전트를 **한 턴에 동시 병렬 실행**한다.
-   - 각 에이전트에게 diff + 프로젝트 컨텍스트를 제공한다.
+1. 변경사항이 커밋되어 있는지 확인한다 (`git status --porcelain`이 빈 출력이면 clean).
+   `git diff main...HEAD`로 diff를 수집한다.
+   - diff를 프롬프트에 직접 포함한다 (exec 우회 패턴).
+   - diff가 과도하게 크면 (`git diff main...HEAD | wc -l`로 확인) 기계적 변경(flake.lock, hash 변경 등)을 필터링한 축약 diff를 사용한다.
+     `git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능.
+2. 8개 영역별 DA 에이전트를 `codex exec --full-auto --ephemeral`로 **병렬 실행**한다.
+   실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)를 참조한다.
+   - 라운드별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-pr-XXXXXX)`
+   - 8개 영역별 프롬프트 파일을 생성한다: `$DA_DIR/{domain}.md`
+     각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 diff를 `<git-diff>` 태그로 감싸서 포함한다.
+     반드시 "diff 외부의 관련 파일도 직접 읽어 탐색하라"는 지시를 포함한다.
+   - 8개 codex exec를 백그라운드(`&`)로 동시 실행하고 PID별 `wait`로 exit code를 수집한다 (for_plan과 동일 패턴).
    - `fresh` modifier가 있으면 이전 라운드 결과를 프롬프트에 포함하지 않는다.
-   - 에이전트는 읽기 전용이며 수정 권한이 없다.
-3. 모든 DA 결과를 수신한 뒤 종합 리포트를 작성한다.
+   - 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
+3. `wait` 완료 후 8개 결과 파일을 수집하여 종합 리포트를 작성한다.
+   실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우. 실패한 영역만 재실행한다.
+   라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. 유효한 지적만 선별하여 코드에 반영하고 커밋한다.
    - 기각하는 지적에는 반드시 [구조화된 기각 포맷](references/protocol.md#구조화된-기각-포맷)을 사용한다.
-   - 기각 전 반드시 해당 파일:줄을 Read 도구로 직접 확인한다. **검증 없는 기각을 금지한다.**
+   - 기각 전 반드시 해당 파일:줄을 직접 읽어 확인한다. **검증 없는 기각을 금지한다.**
    - [묵살 안티패턴](references/protocol.md#묵살-안티패턴-금지)에 해당하는 기각 패턴을 사용하지 않는다.
-5. 반영 후 동일 8개 DA를 **새 에이전트로** 재실행한다.
+5. 반영 후 동일 8개 DA를 **새 codex exec 프로세스로** 재실행한다.
 6. 8개 DA 전부 CLEAR를 반환할 때까지 반복한다.
 7. 최종 승인 후 push한다.
 
@@ -148,18 +181,18 @@ description: |
 - "~할 수도 있다", "~이 우려된다" 등 증거 없는 추상적 우려는 즉시 기각한다.
 
 ### 메인 에이전트 검증 의무
-- DA 에이전트의 각 발견 사항을 수용하기 전에, 해당 파일:줄을 직접 Read 도구로 읽어 사실 여부를 확인한다.
+- DA 에이전트의 각 발견 사항을 수용하기 전에, 해당 파일:줄을 직접 읽어 사실 여부를 확인한다.
 - 검증 없이 DA 결과를 그대로 수용하는 것을 금지한다.
 - 검증 결과를 DA_ROUND_LOG(라운드별 발견/해결/기각 요약 — 형식은 references/protocol.md 참조)에 기록한다:
   "확인됨: 파일:줄에서 실제로 [문제] 발견" 또는
   "확인됨: 계획 Step N에서 [문제] 확인" 또는
   "기각: 파일:줄 확인 결과 DA 지적이 사실과 다름"
-- 계획 모드에서도 Read/Grep/Glob/Explore 에이전트는 사용 가능하므로, 검증 불이행의 변명이 될 수 없다.
+- 계획 모드에서도 파일 시스템 탐색이 가능하므로, 검증 불이행의 변명이 될 수 없다.
 
 ## 주의사항
 
-- 매 라운드 새 에이전트를 사용한다 (이전 라운드 결과에 의한 확증 편향 방지).
-- DA 에이전트는 읽기 전용이다. 코드나 계획을 직접 수정하지 않는다.
+- 매 라운드 새 codex exec 프로세스를 사용한다 (이전 라운드 결과에 의한 확증 편향 방지).
+- DA codex 프로세스는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 수정 금지를 지시한다. 코드나 계획을 직접 수정하지 않는다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 영역을 침범한 지적은 해당 영역의 DA 결과로 이관하거나 무시한다.
 - 피드백 루프 결과는 PR 코멘트로 게시하여 이력을 보존한다.
@@ -168,3 +201,4 @@ description: |
 
 - **[references/da-domains.md](references/da-domains.md)** -- 8개 DA 영역별 상세 정의, 프롬프트 템플릿, 출력 형식
 - **[references/protocol.md](references/protocol.md)** -- 피드백 수용/기각 판단 기준, PoC 의무화 규칙, 무한 루프 방지, DA_ROUND_LOG 페이로드, PR 코멘트 형식
+- **[/using-codex-exec 스킬](../using-codex-exec/SKILL.md)** -- codex exec 실행 패턴 (패턴 4: exec 우회, 패턴 5: DA 피드백 루프). 플래그/제한사항 확인용.
