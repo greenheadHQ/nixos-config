@@ -25,6 +25,23 @@ MAIN_REPO=$(cd "$COMMON_DIR/.." 2>/dev/null && pwd) || exit 0
 # 대상 파일의 실제 경로 확인 (심링크 해석)
 RESOLVED=$(readlink -f "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
 
+# main repo guard 예외: Claude plan 파일 허용
+# claude --worktree의 main session에서 plan write가 $MAIN_REPO/.claude/plans/로 나가는
+# 사례가 관측되어 예외 허용 (Claude Code 2.x, plansDirectory를 main repo 기준으로 해석)
+_is_main_repo_plan_path() {
+  local p="$1"
+  [[ "$p" == *".."* ]] && return 1  # path traversal 방어
+  local dir base
+  dir=$(dirname "$p")
+  base=$(basename "$p")
+  [[ "$dir" == "$MAIN_REPO/.claude/plans" ]] && [[ "$base" == *.md ]] && return 0
+  return 1
+}
+
+if _is_main_repo_plan_path "$RESOLVED"; then
+  exit 0
+fi
+
 # main repo 경로이면서 현재 worktree 하위가 아닌 경우 차단
 _is_main_repo_path() {
   local p="$1"
