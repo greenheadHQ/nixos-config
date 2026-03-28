@@ -262,9 +262,9 @@ bash -x ~/Workspace/nixos-config/modules/darwin/scripts/nrs.sh
 **증상**: `sudo darwin-rebuild switch --flake .` 실행 시 `Activating setupLaunchAgents` 단계에서 무한 대기.
 
 ```
-Activating setVSCodeAsDefaultEditor
-Setting VSCode as default editor for code files...
-VSCode default settings applied successfully.
+Activating setZedAsDefaultEditor
+Setting Zed as default editor for code files...
+Zed default settings applied successfully.
 Activating setupLaunchAgents
 ← 여기서 멈춤
 ```

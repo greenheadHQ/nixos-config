@@ -52,6 +52,9 @@ in
     # Hammerspoon CLI
     hs = "/Applications/Hammerspoon.app/Contents/Frameworks/hs/hs";
     hsr = ''hs -c "hs.reload()"'';
+
+    # Zed CLI (nixpkgs가 기존 zed 패키지와 충돌 방지로 zeditor로 명명)
+    zed = "zeditor";
   };
 
   # macOS 전용 Zsh 초기화

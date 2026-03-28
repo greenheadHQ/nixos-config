@@ -74,7 +74,7 @@
       #
       # [Nix 패키지로 전환한 앱]
       # shottr → libraries/packages.nix darwinOnly로 이동 (pkgs.shottr가 macOS .app 번들 포함)
-      # vscode → programs.vscode HM 모듈로 관리 (~/Applications/Home Manager Apps/)
+      # zed → programs.zed-editor HM 모듈로 관리 (~/Applications/Home Manager Apps/)
       #
       # [Nix 전환이 불가능한 앱]
       # docker-desktop: Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재)

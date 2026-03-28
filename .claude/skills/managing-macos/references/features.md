@@ -301,7 +301,7 @@ nix-darwin의 `fonts.packages` 옵션을 사용하여 폰트를 선언적으로 
 | 앱       | 설정 파일                                           | 영문 폰트                | 한글 폴백                |
 | -------- | --------------------------------------------------- | ------------------------ | ------------------------ |
 | Ghostty  | `modules/darwin/programs/ghostty/default.nix`       | JetBrainsMono Nerd Font  | D2Coding                 |
-| VSCode   | `modules/darwin/programs/vscode/files/settings.json` | JetBrainsMono Nerd Font  | D2Coding                 |
+| Zed      | `modules/darwin/programs/zed/files/settings.json`    | JetBrainsMono Nerd Font  | D2Coding                 |
 
 한글은 D2Coding(Nix 설치, 네이버 코딩 전용 폰트)을 앱별 font-family 폴백으로 명시적 지정한다.
 
@@ -355,7 +355,7 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | 앱      | 패키지         | 용도         |
 | ------- | -------------- | ------------ |
 | Shottr  | `pkgs.shottr`  | 스크린샷     |
-| VSCode  | HM `programs.vscode` | 코드 에디터 |
+| Zed     | HM `programs.zed-editor` | 코드 에디터 |
 
 ### Homebrew Cask에서 Nix 전환이 불가능한 앱
 
@@ -428,7 +428,7 @@ brew install --cask --adopt docker-desktop:
 # 개별 앱 adopt
 brew install --cask --adopt docker-desktop
 
-# 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, vscode 제외)
+# 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, zed 제외)
 for cask in codex ghostty raycast rectangle hammerspoon homerow docker-desktop fork monitorcontrol; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
