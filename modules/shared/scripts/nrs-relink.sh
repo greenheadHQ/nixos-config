@@ -13,6 +13,7 @@ set -euo pipefail
 MAIN_REPO="@flakePath@"
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
 #───────────────────────────────────────────────────────────────────────────────
@@ -74,6 +75,46 @@ _discover_oos_entries() {
 }
 
 #───────────────────────────────────────────────────────────────────────────────
+# Post-relink: HMF 내 OOS 심링크 체인 무결성 검증 (non-blocking)
+# 현재 HM mkOutOfStoreSymlink는 2-hop 체인: HMF → /nix/store/hm_xxx → $MAIN_REPO/...
+# 이 함수는 각 hop의 대상이 유효한지 확인하고, 손상 시 경고 + 복구 명령을 안내한다.
+#───────────────────────────────────────────────────────────────────────────────
+_check_oos_chain() {
+    local hmf="$1" main_repo="$2"
+    local corrupted=0
+    while IFS= read -r -d '' link; do
+        local store_link
+        # readlink 실패 = 경로 소멸 또는 읽기 불가; best-effort skip
+        store_link=$(readlink "$link" 2>/dev/null) || continue
+
+        # L1: HMF entry는 반드시 /nix/store/*를 가리켜야 함
+        if [[ "$store_link" != /nix/store/* ]]; then
+            echo -e "${RED}  nix store corruption: ${link#"$hmf"/} -> $store_link${NC}" >&2
+            echo -e "${YELLOW}  Fix: sudo nix-store --repair-path $hmf${NC}" >&2
+            ((++corrupted))
+            continue
+        fi
+
+        # L2: mkOutOfStoreSymlink derivation만 검사 (regular file은 non-OOS이므로 skip)
+        if [[ -L "$store_link" ]]; then
+            local store_target
+            # readlink 실패 = derivation 경로 소멸 또는 읽기 불가; best-effort skip
+            store_target=$(readlink "$store_link" 2>/dev/null) || continue
+            if [[ "$store_target" != "$main_repo"/* ]]; then
+                echo -e "${RED}  nix store corruption: ${link#"$hmf"/} -> $store_target${NC}" >&2
+                echo -e "${YELLOW}  Fix: sudo nix-store --repair-path $store_link${NC}" >&2
+                ((++corrupted))
+            fi
+        fi
+    done < <(find "$hmf" -type l -print0 2>/dev/null)
+
+    if [[ $corrupted -gt 0 ]]; then
+        echo -e "${RED}  $corrupted corrupted nix store symlink(s) detected${NC}" >&2
+    fi
+    return 0
+}
+
+#───────────────────────────────────────────────────────────────────────────────
 # relink: worktree 경로로 심링크 전환
 #───────────────────────────────────────────────────────────────────────────────
 cmd_relink() {
@@ -114,6 +155,9 @@ cmd_relink() {
     if [[ $skipped -gt 0 ]]; then
         echo -e "${YELLOW}  ($skipped skipped — not present in worktree)${NC}"
     fi
+
+    # Post-relink: nix store 심링크 체인 무결성 검증 (warn only, non-blocking)
+    _check_oos_chain "$hmf" "$MAIN_REPO"
 }
 
 #───────────────────────────────────────────────────────────────────────────────
