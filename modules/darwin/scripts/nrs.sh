@@ -150,8 +150,8 @@ main() {
     else
         # Worktree pre-rebuild: worktree 경로를 가리키는 심링크를 제거하여
         # HM activation의 checkLinkTargets가 정상 생성할 수 있도록 한다.
-        # nrs-relink restore는 현재 HMF(gcroot) 기반이라 worktree-only entry를 모르므로,
-        # _remove_worktree_symlinks()로 먼저 제거한 뒤 restore를 실행한다.
+        # _remove_worktree_symlinks()로 worktree 경로 심링크를 먼저 제거한 뒤
+        # nrs-relink restore로 nix store chain으로 복원한다.
         log_info "🔗 Removing worktree symlinks before rebuild..."
         _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
         # 기존 entry를 nix store chain으로 복원 (rebuild 실패 시에도 안전)

@@ -51,10 +51,22 @@ _discover_hmf() {
 _discover_oos_entries() {
     local hmf="$1" main_repo="$2"
     find "$hmf" -type l -print0 2>/dev/null | while IFS= read -r -d '' link; do
-        local final_target
-        final_target=$(readlink -f "$link" 2>/dev/null) || continue
-        # main repo 하위 파일만 (nix store 내부 심링크는 제외)
-        [[ "$final_target" == "$main_repo"/* ]] || continue
+        # CIR: readlink -f → hop-by-hop 루프 선택 — readlink -f는 부모 디렉토리가 없으면 실패하여
+        #      worktree-only 새 디렉토리의 파일을 발견하지 못함 (#332)
+        local current="$link" final_target="" hop=0
+        local max_hops=10  # nix store 체인은 2-3 hop; 10은 안전 마진
+        while [[ $hop -lt $max_hops ]]; do
+            local target
+            target=$(readlink "$current" 2>/dev/null) || break
+            # 중간 hop은 nix store 절대 심링크. 첫 $main_repo/* match를 OOS 매핑으로 사용.
+            if [[ "$target" == "$main_repo"/* ]]; then
+                final_target="$target"
+                break
+            fi
+            current="$target"
+            ((++hop))
+        done
+        [[ -n "$final_target" ]] || continue
         local home_rel="${link#"$hmf"/}"
         local repo_rel="${final_target#"$main_repo"/}"
         echo "${home_rel}|${repo_rel}"
