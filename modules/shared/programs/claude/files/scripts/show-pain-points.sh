@@ -29,8 +29,10 @@ trap 'rm -rf "$TMPDIR"' EXIT
 {
   [ -f "$PAIN_FILE" ] && [ -s "$PAIN_FILE" ] && cat "$PAIN_FILE" || true
   [ -f "$ARCHIVE_FILE" ] && [ -s "$ARCHIVE_FILE" ] && cat "$ARCHIVE_FILE" || true
-# 불량 JSONL 행을 건너뛰고 유효한 레코드만 수집 (jq -s는 한 줄 불량에 전면 실패)
-} | jq -Rsc '[inputs | fromjson?]' > "$TMPDIR/data.json" 2>/dev/null || echo '[]' > "$TMPDIR/data.json"
+# 불량 JSONL 행을 건너뛰고 유효한 레코드만 수집
+# jq -Rc: 각 줄을 raw string으로 읽어 fromjson?로 파싱 (실패 시 skip)
+# jq -s: 결과를 배열로 합침
+} | jq -Rc 'fromjson?' 2>/dev/null | jq -s '.' > "$TMPDIR/data.json" 2>/dev/null || echo '[]' > "$TMPDIR/data.json"
 
 # 3) context가 없는 레코드에 대해 transcript에서 context 보충 (fallback)
 # hook에서 감지 시점 context를 이미 저장한 레코드는 skip.
