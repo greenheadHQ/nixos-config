@@ -56,18 +56,18 @@ skill_content=$(cat "$SKILL_PATH/SKILL.md")
 current_description=$(jq -r '.description' "$EVAL_RESULTS")
 
 # --- Build scores summary ---
-scores_summary=$(python3 -c "
-import json
-er = json.load(open('$EVAL_RESULTS'))
+scores_summary=$(EVAL_FILE="$EVAL_RESULTS" python3 -c "
+import json, os
+er = json.load(open(os.environ['EVAL_FILE']))
 s = er['summary']
 train = f\"{s['passed']}/{s['total']}\"
 print(f'Train: {train}')
 ")
 
 # --- Build failure analysis ---
-failure_analysis=$(python3 -c "
-import json
-er = json.load(open('$EVAL_RESULTS'))
+failure_analysis=$(EVAL_FILE="$EVAL_RESULTS" python3 -c "
+import json, os
+er = json.load(open(os.environ['EVAL_FILE']))
 lines = []
 
 failed = [r for r in er['results'] if r['should_trigger'] and not r['pass']]
@@ -95,9 +95,9 @@ print('\n'.join(lines))
 # --- Build history section ---
 history_section=""
 if [[ -n "$HISTORY" && -f "$HISTORY" ]]; then
-  history_section=$(python3 -c "
-import json
-history = json.load(open('$HISTORY'))
+  history_section=$(HISTORY_FILE="$HISTORY" python3 -c "
+import json, os
+history = json.load(open(os.environ['HISTORY_FILE']))
 lines = []
 if history:
     lines.append('PREVIOUS ATTEMPTS (do NOT repeat these — try something structurally different):\n')
@@ -235,13 +235,13 @@ fi
 desc_tmpfile=$(mktemp)
 printf '%s' "$new_description" > "$desc_tmpfile"
 
-python3 -c "
-import json, sys
+DESC_FILE="$desc_tmpfile" EVAL_FILE="$EVAL_RESULTS" HISTORY_FILE="${HISTORY}" python3 -c "
+import json, sys, os
 
-description = open('$desc_tmpfile').read()
-eval_results = json.load(open('$EVAL_RESULTS'))
-history_file = '${HISTORY}'
-history = json.load(open(history_file)) if history_file and history_file != '' else []
+description = open(os.environ['DESC_FILE']).read()
+eval_results = json.load(open(os.environ['EVAL_FILE']))
+history_file = os.environ.get('HISTORY_FILE', '')
+history = json.load(open(history_file)) if history_file else []
 
 # Append current to history
 history.append({
