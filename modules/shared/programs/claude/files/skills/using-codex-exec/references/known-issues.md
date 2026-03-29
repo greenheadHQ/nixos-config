@@ -280,7 +280,8 @@ cat /tmp/smoke-result.md
 | `cat file \| codex exec` (stdin pipe) 다수 병렬 | **불안정** | stdin 경합으로 프롬프트 누락 |
 | `codex exec "$(cat file)"` (인라인 인자) | **OK** | shell 확장 후 인자 전달 |
 | `codex exec < file` (file redirect) | **OK** | 정상 작동 |
-| 병렬 Bash tool 호출 | **OK** | tool-level 병렬화 |
+| 병렬 Bash tool 호출 (foreground) | **OK** | tool-level 병렬화, 전부 완료까지 대기 |
+| Bash tool `run_in_background: true` | **OK** | background 실행, 각 완료 시 자동 알림 |
 
 **영향 범위**: Claude Code Bash tool sandbox 전용. 일반 터미널에서는 모든 방식 정상 작동.
 
@@ -309,10 +310,27 @@ cat /tmp/smoke-result.md
 
 3. 모든 Bash tool 호출 완료 후 결과 수집.
 
+**Background 대안** — 다수 병렬 실행 시 LLM 블로킹 방지:
+
+2b. 각 codex exec를 Bash tool `run_in_background: true`로 실행:
+    ```bash
+    # Bash tool 호출 시 run_in_background: true 파라미터 사용
+    codex exec --full-auto --ephemeral \
+      -o "$DA_DIR/domain-result.md" \
+      "$(cat "$DA_DIR/domain.md")" \
+      2>"$DA_DIR/domain-stderr.log"
+    ```
+    - LLM이 즉시 반환받아 사용자와 대화 가능
+    - 각 완료 시 자동 알림 수신 (sleep/poll 금지)
+    - 모든 완료 알림 수신 후 결과 파일 일괄 수집
+
+3b. foreground와 동일하게 결과 파일로 수집. `-o` 결과 파일은 프로세스 종료 시 생성됨.
+
 **금지 패턴**:
 - `&` + `wait` + `$!` (shell-level background)
 - 8개 동시 stdin pipe (`cat file | codex exec`)
 - here-doc + pipe 조합의 다수 병렬
+- Bash tool `run_in_background: true` 사용 후 sleep/poll로 완료 확인 (알림이 자동으로 옴)
 
 **재검증 방법**:
 ```bash
