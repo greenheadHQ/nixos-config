@@ -82,11 +82,13 @@ for entry in data:
                             if isinstance(block, dict) and block.get('type') == 'text':
                                 content = block.get('text', '')[:300]
                                 break
-                    records.append({'type': rec['type'], 'content': content})
+                    # 텍스트가 있는 턴만 수집 (tool_use만 있는 턴은 skip)
+                    if content.strip():
+                        records.append({'type': rec['type'], 'content': content})
             except (json.JSONDecodeError, KeyError):
                 continue
 
-        # pain point timestamp에 가장 가까운 4턴 추출
+        # 텍스트가 있는 최근 4턴 추출
         entry['context'] = records[-4:] if records else []
     except Exception:
         pass

@@ -73,6 +73,9 @@ elif printf '%s' "$PROMPT" | grep -q '해야지'; then
 elif printf '%s' "$PROMPT" | grep -q '그거 말고'; then
   HAS_KEYWORD=true
   MATCHED_KEYWORD="그거 말고"
+elif printf '%s' "$PROMPT" | grep -qE '^야,|^야 '; then
+  HAS_KEYWORD=true
+  MATCHED_KEYWORD="야,"
 fi
 
 # 아무것도 감지 안 되면 exit
@@ -100,13 +103,14 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     split("\n")
     | map(select(length > 0) | fromjson?)
     | map(select(.type == "user" or .type == "assistant"))
-    | .[-4:]
     | map({type, content: (
         .message.content // ""
         | if type == "string" then .[0:300]
           elif type == "array" then ([.[] | select(type == "object" and .type == "text") | .text] | first // "") | .[0:300]
           else "" end
       )})
+    | map(select(.content | length > 0))
+    | .[-4:]
   ' "$TRANSCRIPT_PATH" 2>/dev/null || echo "[]")
 fi
 

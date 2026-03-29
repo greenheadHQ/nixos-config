@@ -25,7 +25,6 @@ fi
 AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || true)
 [ -n "$AGENT_ID" ] && exit 0
 
-SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)
 TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 
 [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ] || exit 0
@@ -33,8 +32,6 @@ TRANSCRIPT_PATH=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/de
 # --- 설정 ---
 PAIN_FILE="${PAIN_POINTS_FILE:-$HOME/.claude/pain-points.jsonl}"
 ARCHIVE_FILE="${PAIN_ARCHIVE_FILE:-$HOME/.claude/pain-points.archive.jsonl}"
-TURN_THRESHOLD=30
-
 # --- Transcript 안정화 대기 (stop-notification.sh와 동일 패턴) ---
 wait_for_stable_transcript() {
   local file="$1"
@@ -54,65 +51,9 @@ wait_for_stable_transcript "$TRANSCRIPT_PATH"
 # --- Git 정보 (worktree 보정) ---
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null)
 REPO="${REPO:-unknown}"
-BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
 if [ -n "$COMMON_DIR" ] && [ "$COMMON_DIR" != ".git" ]; then
   REPO=$(basename "$(cd "$COMMON_DIR/.." 2>/dev/null && pwd)" 2>/dev/null || echo "$REPO")
-fi
-
-# --- 세션 메트릭 수집 ---
-
-# 턴 수
-TURNS=$(jq -Rrs '
-  split("\n")
-  | map(select(length > 0) | fromjson?)
-  | map(select(.type == "user"))
-  | length
-' "$TRANSCRIPT_PATH" 2>/dev/null || echo "0")
-
-# 세션 시간 (분)
-DURATION_MIN=$(jq -Rrs '
-  split("\n")
-  | map(select(length > 0) | fromjson?)
-  | map(.timestamp // empty | select(. != null and . != ""))
-  | if length > 1 then
-      ( (last | sub("\\.[0-9]+Z$"; "Z") | sub("\\+00:00$"; "Z") | fromdateiso8601)
-      - (first | sub("\\.[0-9]+Z$"; "Z") | sub("\\+00:00$"; "Z") | fromdateiso8601) ) / 60 | floor
-    else 0 end
-' "$TRANSCRIPT_PATH" 2>/dev/null || echo "0")
-
-# 긴 세션(31턴+, TURN_THRESHOLD 초과)이면 메트릭 레코드 기록
-# 중복 방지: 동일 session_id로 이미 기록된 long_session이 있으면 skip
-# (Stop hook은 매 턴 발동하므로 30턴 이후 매번 기록되는 것을 방지)
-if [ "$TURNS" -gt "$TURN_THRESHOLD" ]; then
-  ALREADY_RECORDED=false
-  if [ -f "$PAIN_FILE" ]; then
-    ALREADY_RECORDED=$(jq -rs --arg sid "${SESSION_ID:-unknown}" \
-      'map(select(.session_id == $sid and .signals.keyword == "long_session")) | length > 0' \
-      "$PAIN_FILE" 2>/dev/null || echo "false")
-  fi
-
-  if [ "$ALREADY_RECORDED" != "true" ]; then
-    TS=$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")
-    # append는 OS 레벨에서 원자적 (1줄 JSONL < PIPE_BUF)
-    jq -nc \
-      --arg ts "$TS" \
-      --arg sid "${SESSION_ID:-unknown}" \
-      --arg repo "$REPO" \
-      --arg branch "$BRANCH" \
-      --argjson turns "$TURNS" \
-      --argjson dur "$DURATION_MIN" \
-      --arg tp "${TRANSCRIPT_PATH:-}" \
-      '{
-        ts: $ts, session_id: $sid, repo: $repo, branch: $branch,
-        source: "auto", severity: "medium",
-        signals: { keyword: "long_session", turns: ($turns), duration_min: ($dur) },
-        description: ("\($turns)턴, \($dur)분 — 긴 세션"),
-        user_note: null,
-        transcript_path: (if $tp == "" then null else $tp end),
-        context: []
-      }' >> "$PAIN_FILE" 2>/dev/null || true
-  fi
 fi
 
 # --- 정제: 7일 이전 항목 처리 ---
