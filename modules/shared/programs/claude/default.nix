@@ -183,10 +183,6 @@ in
     ".claude/skills/create-issue".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-issue";
 
-    # maintaining-skills 스킬 (user-scope)
-    ".claude/skills/maintaining-skills".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/maintaining-skills";
-
     # using-codex-exec 스킬 (user-scope)
     ".claude/skills/using-codex-exec".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/using-codex-exec";

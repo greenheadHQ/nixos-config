@@ -194,9 +194,6 @@ EOF
 2. **skill-creator**: 에이전트를 활용하여 evals/trigger-eval.json 검증
    - positive 10개 + negative 10개 충족
    - negative에 인접 스킬 트리거 포함
-3. **maintaining-skills**: 전체 스킬 인벤토리와의 정합성 확인
-   - 라우팅 테이블 등록 여부
-   - 키워드 충돌 여부
 ```
 
 ## 모범 패턴 (Issue #252 기반)

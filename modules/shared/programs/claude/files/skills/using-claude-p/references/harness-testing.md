@@ -77,7 +77,6 @@ EXPECTED_SKILLS=(
   "using-codex-exec"
   "create-issue"
   "syncing-codex-harness"
-  "maintaining-skills"
   "documenting-intent"
 )
 
