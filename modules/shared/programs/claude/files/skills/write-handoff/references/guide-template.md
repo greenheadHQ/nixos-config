@@ -191,7 +191,7 @@ EOF
    - frontmatter 유효성 (name, description, Triggers)
    - 본문 구조 (Purpose → 빠른참조 → 핵심절차 → 참조)
    - references/ 링크 유효성
-2. **skill-creator**: 에이전트를 활용하여 evals/trigger-eval.json 검증
+2. **skill-creator**: 에이전트를 활용하여 evals/queries.json 검증
    - positive 10개 + negative 10개 충족
    - negative에 인접 스킬 트리거 포함
 ```

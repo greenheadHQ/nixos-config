@@ -2,7 +2,7 @@
 """Generate an HTML report from run-loop.sh output.
 
 Adapted from skill-creator's generate_report.py for the claude -p based
-eval infrastructure. Accepts both run_loop.py and trigger-eval.sh field
+eval infrastructure. Accepts both run_loop.py and run-eval.sh field
 naming conventions (triggers/runs vs trigger_count/total_runs).
 
 Usage:

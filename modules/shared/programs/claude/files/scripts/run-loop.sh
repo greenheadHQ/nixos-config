@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run-loop.sh — Description optimization loop via claude -p
 #
-# Orchestrates trigger-eval.sh and improve-description.sh in an iterative
+# Orchestrates run-eval.sh and improve-description.sh in an iterative
 # loop to find the best skill description. Uses train/test split to prevent
 # overfitting. Drop-in replacement for skill-creator's run_loop.py,
 # eliminating the ANTHROPIC_API_KEY requirement.
@@ -213,10 +213,10 @@ if [[ -n "$DESCRIPTION_OVERRIDE" ]]; then
   replace_description "$SKILL_PATH/SKILL.md" "$work_dir/current_desc.txt"
 fi
 
-# --- trigger-eval.sh wrapper ---
+# --- run-eval.sh wrapper ---
 run_eval() {
   local queries_file="$1"
-  "$SCRIPT_DIR/trigger-eval.sh" \
+  "$SCRIPT_DIR/run-eval.sh" \
     --queries "$queries_file" \
     --skill "$skill_name" \
     --reps "$RUNS_PER_QUERY" \
@@ -302,7 +302,7 @@ for ((iteration = 1; iteration <= MAX_ITERATIONS; iteration++)); do
   # A. Train eval
   log "  Training eval..."
   train_results=$(run_eval "$train_file") || {
-    log "  Error: trigger-eval.sh failed for train set"
+    log "  Error: run-eval.sh failed for train set"
     continue
   }
 

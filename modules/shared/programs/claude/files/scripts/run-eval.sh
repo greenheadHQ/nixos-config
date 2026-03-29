@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# trigger-eval.sh — Custom skill trigger evaluation
+# run-eval.sh — Custom skill trigger evaluation
 #
+# Drop-in replacement for skill-creator's run_eval.py.
 # Tests whether Claude correctly triggers (or avoids) a skill
 # by running claude -p with --allowedTools "Skill" and checking
 # the Skill tool call in JSON output.
 #
 # Usage:
-#   trigger-eval.sh --skill <name> --queries <path> [--reps N] [--workers N] [--timeout N] [--threshold F]
-#   trigger-eval.sh --queries <path>                 # auto-detect skill from queries.json parent dir
-#   trigger-eval.sh --batch <dir>                    # run all skills with evals/ subdirs (dir must be the project root)
+#   run-eval.sh --skill <name> --queries <path> [--reps N] [--workers N] [--timeout N] [--threshold F]
+#   run-eval.sh --queries <path>                 # auto-detect skill from queries.json parent dir
+#   run-eval.sh --batch <dir>                    # run all skills with evals/ subdirs (dir must be the project root)
 #
 # Input (queries.json):
 #   [{"query": "...", "should_trigger": true, "why": "..."}]
@@ -63,7 +64,7 @@ if [[ -n "$BATCH_DIR" ]]; then
   if [[ ${#results[@]} -eq 0 ]]; then
     echo "Error: no evals found under '$BATCH_DIR'." >&2
     echo "Pass the project root, not a skills subdirectory." >&2
-    echo "Example: trigger-eval.sh --batch ." >&2
+    echo "Example: run-eval.sh --batch ." >&2
     exit 1
   fi
   printf '%s\n' "${results[@]}" | jq -s '.'
