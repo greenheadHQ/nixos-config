@@ -18,5 +18,8 @@
   {"query": "엣지 케이스 전수 점검", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
   {"query": "성능 회귀 조사해줘", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
   {"query": "에이전트 5개로 감사 돌려줘", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
-  {"query": "병렬 에이전트로 코드 점검", "should_trigger": false, "why": "혼동 쌍: parallel-audit"}
+  {"query": "병렬 에이전트로 코드 점검", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
+  {"query": "간단한 오타 수정인데 DA 필요해?", "should_trigger": true, "why": "경계선: SKIP 판단이 필요하므로 run-da 트리거"},
+  {"query": "full로 DA 돌려줘", "should_trigger": true, "why": "명시적: full modifier 사용"},
+  {"query": "이건 간단하니까 DA 생략하자", "should_trigger": true, "why": "경계선: SKIP 판단 절차가 필요하므로 트리거 (LLM이 직접 생략 불가)"}
 ]
