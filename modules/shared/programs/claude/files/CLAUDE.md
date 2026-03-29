@@ -1,5 +1,11 @@
 # User-scope Instructions
 
+## 사고 언어
+
+내부 사고(thinking)를 항상 한국어로 수행하라. 영어로 사고하지 마라.
+
+> 배경: Opus 4.6의 영어 thinking 기본 동작을 한국어로 유도. 공식 `thinking_language` 설정이 추가되면 이 섹션을 제거한다. (#345)
+
 ## skill-creator 스크립트 Override
 
 skill-creator 플러그인의 Python 스크립트를 직접 호출하지 마라. 아래 셸 스크립트 대체물을 사용하라.
