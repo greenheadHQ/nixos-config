@@ -162,6 +162,14 @@ in
     ".claude/hooks/fragile-hardcoding-guard.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/fragile-hardcoding-guard.sh";
 
+    # Pain point collection hooks
+    ".claude/hooks/detect-pain-point.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/detect-pain-point.sh";
+    ".claude/hooks/collect-pain-points.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/collect-pain-points.sh";
+    ".claude/hooks/read-pain-points.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/read-pain-points.sh";
+
     # hs.notify contentImage용 아이콘 (Claude.app에서 추출한 128x128 PNG, macOS 전용)
     ".claude/assets/notification-icon.png" = lib.mkIf pkgs.stdenv.isDarwin {
       source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/assets/notification-icon.png";
