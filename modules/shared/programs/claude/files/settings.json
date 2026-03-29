@@ -9,6 +9,8 @@
     "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "1"
   },
   "includeCoAuthoredBy": false,
+  "showClearContextOnPlanAccept": true,
+  "showThinkingSummaries": true,
   "permissions": {
     "deny": [
       "Bash(rm -rf /)",
