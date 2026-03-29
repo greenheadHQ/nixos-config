@@ -50,6 +50,10 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/write-handoff";
     ".codex/skills/parallel-audit".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/parallel-audit";
+
+    # agent-browser 스킬 (글로벌, Claude와 동일 소스)
+    ".codex/skills/agent-browser".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/agent-browser";
   };
 
   # ─── NixOS: Codex CLI 바이너리 설치 (GitHub releases) ───

@@ -24,3 +24,8 @@
 .claude/skills/*/evals/skill_report_*.html
 modules/shared/programs/claude/files/skills/*/evals/loop-results-*.json
 modules/shared/programs/claude/files/skills/*/evals/skill_report_*.html
+
+# agent-browser 인증 상태 파일 (평문 세션 토큰 포함)
+auth-state.json
+oauth-state.json
+2fa-state.json

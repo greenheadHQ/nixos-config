@@ -231,6 +231,10 @@ in
     ".claude/skills/show-pains".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/show-pains";
 
+    # agent-browser 스킬 (user-scope)
+    ".claude/skills/agent-browser".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/agent-browser";
+
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
