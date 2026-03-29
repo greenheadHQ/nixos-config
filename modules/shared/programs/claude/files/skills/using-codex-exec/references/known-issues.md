@@ -265,3 +265,59 @@ cat /tmp/smoke-result.md
 
 통과하면 기존 복잡한 프롬프트로 단계적으로 복귀한다.
 실패하면 §0 공통 진단부터 다시 시작한다.
+
+---
+
+### 11. Claude Code Bash tool sandbox 제약
+
+**심각도**: 치명적 — Bash tool에서 codex exec 병렬 실행 시 반드시 적용
+
+**관찰된 동작** (2026-03-29 재현):
+
+| 방식 | 결과 | 원인 |
+|------|------|------|
+| `&` + `$!` (background PID) | **BROKEN** | `$!` → 리터럴 문자열, PID 미캡처 |
+| `cat file \| codex exec` (stdin pipe) 다수 병렬 | **불안정** | stdin 경합으로 프롬프트 누락 |
+| `codex exec "$(cat file)"` (인라인 인자) | **OK** | shell 확장 후 인자 전달 |
+| `codex exec < file` (file redirect) | **OK** | 정상 작동 |
+| 병렬 Bash tool 호출 | **OK** | tool-level 병렬화 |
+
+**영향 범위**: Claude Code Bash tool sandbox 전용. 일반 터미널에서는 모든 방식 정상 작동.
+
+**근본 원인**:
+- Bash tool은 각 호출을 격리된 shell에서 실행하며, background process와 job control이 제한됨.
+- `$!`가 변수 확장되지 않고 리터럴로 처리됨.
+- 다수 Bash tool 호출이 동시에 stdin pipe를 사용하면 경합 발생 가능.
+
+**올바른 패턴** — codex exec 병렬 실행:
+
+1. 프롬프트 파일을 1개 Bash call로 생성:
+   ```bash
+   DA_DIR=$(mktemp -d /tmp/da-XXXXXX)
+   cat > "$DA_DIR/domain.md" <<'PROMPT'
+   ...프롬프트 내용...
+   PROMPT
+   ```
+
+2. 각 codex exec를 별도 Bash tool 호출로 병렬 실행 (8개 동시):
+   ```bash
+   codex exec --full-auto --ephemeral \
+     -o "$DA_DIR/domain-result.md" \
+     "$(cat "$DA_DIR/domain.md")" \
+     2>"$DA_DIR/domain-stderr.log"
+   ```
+
+3. 모든 Bash tool 호출 완료 후 결과 수집.
+
+**금지 패턴**:
+- `&` + `wait` + `$!` (shell-level background)
+- 8개 동시 stdin pipe (`cat file | codex exec`)
+- here-doc + pipe 조합의 다수 병렬
+
+**재검증 방법**:
+```bash
+sleep 0.1 &
+echo "PID: $!"
+# "PID: $!" (리터럴) → sandbox 제약 유효
+# "PID: 12345" (숫자) → sandbox 제약 해소
+```

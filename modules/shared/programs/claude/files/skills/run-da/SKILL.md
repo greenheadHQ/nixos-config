@@ -70,25 +70,31 @@ description: |
    - 8개 영역별 프롬프트 파일을 생성한다: `$DA_DIR/{domain}.md`
      각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 계획 전체 내용을 포함한다.
      반드시 "계획 외의 관련 파일도 직접 읽어 탐색하라"는 지시를 포함한다.
-   - 8개 codex exec를 백그라운드(`&`)로 동시 실행하고 PID를 보존한다:
-     ```zsh
-     declare -A PIDS
+   - 8개 codex exec를 **8개 병렬 Bash tool 호출**로 동시 실행한다:
+     ```bash
+     # 1개 Bash call: 임시 디렉토리 + 8개 프롬프트 파일 생성
+     DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)
      for domain in YAGNI NGMI HALLUCINATION SECURITY SIDE_EFFECT CONSISTENCY READABILITY CLEAN_CODE; do
-       cat "$DA_DIR/$domain.md" | codex exec --full-auto --ephemeral \
-         -o "$DA_DIR/$domain-result.md" 2>"$DA_DIR/$domain-stderr.log" &
-       PIDS[$domain]=$!
+       cat > "$DA_DIR/$domain.md" <<PROMPT
+       ... 영역별 프롬프트 ...
+     PROMPT
      done
-     for domain in "${(@k)PIDS}"; do
-       wait ${PIDS[$domain]}; echo "$domain:$?" >> "$DA_DIR/exit-codes.log"
-     done
+
+     # 8개 병렬 Bash tool 호출: 각각 1개 codex exec 실행
+     codex exec --full-auto --ephemeral \
+       -o "$DA_DIR/YAGNI-result.md" \
+       "$(cat "$DA_DIR/YAGNI.md")" \
+       2>"$DA_DIR/YAGNI-stderr.log"
      ```
+   - `& + wait` shell-level 병렬을 사용하지 않는다 (Bash tool sandbox 제약, [known-issues.md §11](../using-codex-exec/references/known-issues.md) 참조).
+   - stdin pipe(`cat file | codex exec`) 대신 `"$(cat file)"` 인라인 인자를 사용한다.
    - `fresh` modifier가 있으면 이전 라운드 결과를 프롬프트에 포함하지 않는다.
    - codex exec는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
      (이유: codex CLI 제약상 `--full-auto`가 `-s read-only`를 override하여 read-only 강제 불가. exec 우회 패턴 사용을 위한 트레이드오프.)
    - `--ephemeral`로 실행하여 Codex 세션 히스토리를 오염시키지 않는다.
    - 모델은 codex config.toml 기본값을 따른다. `-m` 플래그를 생략한다.
-   - `/using-codex-exec` 패턴 5의 실행 흐름(stdin 파이핑, `-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙(문맥 보존, 라운드 히스토리 포함 여부)은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
-3. `wait` 완료 후 8개 결과 파일(`$DA_DIR/*-result.md`)을 수집하여 종합 리포트를 작성한다.
+   - `/using-codex-exec` 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙(문맥 보존, 라운드 히스토리 포함 여부)은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
+3. 8개 Bash tool 호출 완료 후 결과 파일(`$DA_DIR/*-result.md`)을 수집하여 종합 리포트를 작성한다.
    실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우(`$DA_DIR/*-stderr.log` 확인).
    실패한 영역만 재실행한다. 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. 유효한 지적만 선별하여 계획에 반영한다.
@@ -111,10 +117,12 @@ description: |
    - 8개 영역별 프롬프트 파일을 생성한다: `$DA_DIR/{domain}.md`
      각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 diff를 `<git-diff>` 태그로 감싸서 포함한다.
      반드시 "diff 외부의 관련 파일도 직접 읽어 탐색하라"는 지시를 포함한다.
-   - 8개 codex exec를 백그라운드(`&`)로 동시 실행하고 PID별 `wait`로 exit code를 수집한다 (for_plan과 동일 패턴).
+   - 8개 codex exec를 **8개 병렬 Bash tool 호출**로 동시 실행한다 (for_plan과 동일 패턴).
+     stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
+     `& + wait` shell-level 병렬을 사용하지 않는다 (Bash tool sandbox 제약).
    - `fresh` modifier가 있으면 이전 라운드 결과를 프롬프트에 포함하지 않는다.
    - 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
-3. `wait` 완료 후 8개 결과 파일을 수집하여 종합 리포트를 작성한다.
+3. 8개 Bash tool 호출 완료 후 결과 파일을 수집하여 종합 리포트를 작성한다.
    실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우. 실패한 영역만 재실행한다.
    라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. 유효한 지적만 선별하여 코드에 반영하고 커밋한다.
