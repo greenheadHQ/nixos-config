@@ -40,12 +40,6 @@
         path = "${config.xdg.configHome}/pushover/claude-code";
         mode = "0400";
       };
-      pushover-atuin = {
-        file = ../../../../secrets/pushover-atuin.age;
-        path = "${config.xdg.configHome}/pushover/atuin";
-        mode = "0400";
-      };
-
       # Pane Notepad 링크 파일 (회사 대시보드 등)
       # 사용처: pane-note.sh에서 새 노트 생성 시 Links 섹션에 포함
       pane-note-links = {

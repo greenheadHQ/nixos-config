@@ -8,7 +8,7 @@ description: |
 
 # Atuin 히스토리 동기화
 
-Atuin 쉘 히스토리 동기화 및 모니터링 가이드입니다.
+Atuin 쉘 히스토리 동기화 가이드입니다.
 
 ## 목적과 범위
 
@@ -67,13 +67,6 @@ atuin sync
 | `~/.local/share/atuin/` | 데이터 디렉토리 |
 | `~/.local/share/atuin/last_sync_time` | 마지막 동기화 타임스탬프 |
 
-### 모니터링 (Hammerspoon)
-
-Hammerspoon 메뉴바에서 Atuin 동기화 상태 모니터링 가능:
-- 정상: 초록색
-- 경고 (5분 이상 미동기화): 노란색
-- 에러: 빨간색
-
 ## 핵심 절차
 
 1. `atuin status`/`atuin sync`로 동기화 자체를 확인한다.
@@ -92,4 +85,3 @@ Hammerspoon 메뉴바에서 Atuin 동기화 상태 모니터링 가능:
 ## 레퍼런스
 
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)
-- 모니터링 설정: [references/monitoring.md](references/monitoring.md)

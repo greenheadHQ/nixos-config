@@ -63,7 +63,6 @@
         ../shared/programs/cheat # 터미널 cheatsheet 즉시 조회
 
         # macOS 전용
-        ./programs/atuin
         ./programs/hammerspoon
         ./programs/zed
         ./programs/folder-actions

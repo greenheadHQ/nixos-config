@@ -270,11 +270,9 @@ if settings.sync_v1_enabled {
 atuin doctor 2>&1 | grep -o '"last_sync": "[^"]*"'
 # 예: "last_sync": "2026-01-13 8:12:42.22629 +00:00:00"
 
-# watchdog 스크립트 수동 실행
-awd
 ```
 
-> **주의**: atuin CLI sync (v2)는 `last_sync_time` 파일을 업데이트하지 않는 버그가 있습니다. 현재 설정에서는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당하고, `com.green.atuin-watchdog`이 상태를 모니터링합니다. 자세한 내용은 [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)를 참고하세요.
+> **주의**: atuin CLI sync (v2)는 `last_sync_time` 파일을 업데이트하지 않는 버그가 있습니다. 현재 설정에서는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당합니다. 자세한 내용은 [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)를 참고하세요.
 
 ---
 
@@ -318,8 +316,6 @@ atuin register -u <username> -e <email>
 cp ~/.local/share/atuin/key ~/.local/share/atuin/key.backup-$(date +%Y%m%d)
 ```
 
-> **참고**: Atuin 모니터링 시스템은 `modules/darwin/programs/atuin/` 및 `modules/darwin/programs/hammerspoon/files/atuin_menubar.lua`에서 구현됩니다.
-
 ---
 
 ## Atuin daemon 불안정 (deprecated)
@@ -342,21 +338,7 @@ launchctl print gui/$(id -u)/com.green.atuin-daemon
 - 시스템 슬립/웨이크 후 복구 실패
 - CLI sync (v2)와 달리 save_sync_time() 호출 로직이 있으나 실제로 동작하지 않는 경우 있음
 
-**해결**: daemon 대신 atuin 내장 `auto_sync` + launchd watchdog으로 대체
-
-```nix
-# modules/darwin/programs/atuin/default.nix
-# sync는 atuin 내장 auto_sync가 담당 (sync_frequency = 1m)
-# watchdog은 동기화 상태 모니터링만 수행
-launchd.agents.atuin-watchdog = {
-  enable = true;
-  config = {
-    Label = "com.green.atuin-watchdog";
-    ProgramArguments = [ "${homeDir}/.local/bin/atuin-watchdog.sh" ];
-    StartInterval = syncCheckInterval;  # 10분마다
-  };
-};
-```
+**해결**: daemon 대신 atuin 내장 `auto_sync` (sync_frequency = 1m)로 대체
 
 **현재 상태**:
 
@@ -364,7 +346,6 @@ launchd.agents.atuin-watchdog = {
 | -------- | ---- | ---- |
 | `com.green.atuin-daemon` | 삭제됨 | - |
 | `com.green.atuin-sync` | 삭제됨 (내장 auto_sync로 대체) | - |
-| `com.green.atuin-watchdog` | 활성화 | 10분마다 상태 체크 |
 
 ---
 
@@ -403,9 +384,9 @@ pub async fn run(...) -> Result<()> {
 }
 ```
 
-**해결**: 현재는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당합니다. `com.green.atuin-sync` launchd 에이전트는 삭제되었으며, `com.green.atuin-watchdog`이 동기화 상태만 모니터링합니다.
+**해결**: 현재는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당합니다. `com.green.atuin-sync` launchd 에이전트는 삭제되었습니다.
 
-> **참고**: `last_sync_time` 파일이 업데이트되지 않더라도, watchdog은 `atuin doctor` 출력을 통해 실제 동기화 상태를 확인합니다.
+> **참고**: `last_sync_time` 파일이 업데이트되지 않더라도, `atuin doctor` 출력을 통해 실제 동기화 상태를 확인할 수 있습니다.
 
 **수동으로 last_sync_time 갱신이 필요한 경우**:
 
@@ -427,30 +408,16 @@ atuin sync && printf '%s' "$(date -u +'%Y-%m-%dT%H:%M:%S.000000Z')" > ~/.local/s
 
 **증상**: 회사 네트워크 등에서 sync가 실패하지만 원인을 알 수 없음.
 
-**원인**: 기존 watchdog이 에러를 무시(`2>/dev/null`)하고, 네트워크 상태를 확인하지 않았음.
-
-**해결**: watchdog에 네트워크 확인 및 로깅 추가
+**해결**: 네트워크 연결 상태를 확인하여 원인을 분리
 
 ```bash
 # 네트워크 확인 (DNS + HTTPS)
 host api.atuin.sh
 curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 https://api.atuin.sh
 
-# 로그 확인
-tail -f ~/.local/share/atuin/watchdog.log
+# 동기화 상태 확인
+atuin doctor 2>&1 | grep -o '"last_sync": "[^"]*"'
 ```
-
-**로그 파일**: `~/.local/share/atuin/watchdog.log`
-
-```
-[2026-01-14 11:29:51] [INFO] === Atuin Watchdog ===
-[2026-01-14 11:29:51] [INFO] Host: work-MacBookPro
-[2026-01-14 11:29:51] [INFO] Checking network to api.atuin.sh...
-[2026-01-14 11:29:51] [ERROR] DNS resolution failed for api.atuin.sh
-[2026-01-14 11:29:51] [ERROR] Network issue detected - skipping recovery
-```
-
-> **참고**: 자동 복구 기능은 `modules/darwin/programs/atuin/files/atuin-watchdog.sh`에서 구현됩니다.
 
 ---
 

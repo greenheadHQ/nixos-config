@@ -292,7 +292,6 @@ sleep 1                                        # 1초 대기
 # 1. 멈춘 darwin-rebuild를 Ctrl+C로 중단
 
 # 2. 에이전트 수동 정리 (sudo 없이 실행!)
-launchctl bootout gui/$(id -u)/com.green.atuin-watchdog 2>/dev/null
 launchctl bootout gui/$(id -u)/com.green.folder-action.compress-rar 2>/dev/null
 launchctl bootout gui/$(id -u)/com.green.folder-action.compress-video 2>/dev/null
 launchctl bootout gui/$(id -u)/com.green.folder-action.convert-video-to-gif 2>/dev/null
@@ -314,27 +313,9 @@ sudo darwin-rebuild switch --flake ~/Workspace/nixos-config
 
 > **발생 시점**: 2026-01-14
 
-**증상**: darwin-rebuild 완료 후 Atuin menubar가 "오류 발생" 상태 표시. Hammerspoon이 watchdog 스크립트 실행 실패.
-
-```lua
--- Hammerspoon 콘솔에서 확인
-hs -c 'return hs.execute(os.getenv("HOME") .. "/.local/bin/atuin-watchdog.sh --status 2>&1")'
--- 결과: sh: /var/root/.local/bin/atuin-watchdog.sh: Permission denied
-```
+**증상**: darwin-rebuild 완료 후 Hammerspoon 모듈이 오류 상태. `sudo` 환경에서 reload되면 `os.getenv("HOME")`이 `/var/root`로 오염됨.
 
 **원인**: `sudo darwin-rebuild` 실행 중 Hammerspoon이 IPC를 통해 reload되면 환경변수가 오염됩니다.
-
-```
-sudo darwin-rebuild switch
-   ↓
-activation script에서 hs -c "hs.reload()" 실행
-   ↓
-Hammerspoon이 sudo 환경에서 reload됨
-   ↓
-os.getenv("HOME") = "/var/root" (root의 HOME)
-   ↓
-watchdog 스크립트 경로가 /var/root/.local/bin/...로 잘못 해석됨
-```
 
 **해결**: Hammerspoon 완전 재시작
 
