@@ -13,6 +13,9 @@ flock -n 200 || { echo "ERROR: Another immich-update is already running"; exit 1
 : "${PUSHOVER_CRED_FILE:?PUSHOVER_CRED_FILE is required}"
 : "${BACKUP_DIR:?BACKUP_DIR is required}"
 : "${SERVICE_LIB:?SERVICE_LIB is required}"
+: "${SERVER_IMAGE:?SERVER_IMAGE is required}"
+: "${ML_IMAGE:?ML_IMAGE is required}"
+: "${GITHUB_REPO:?GITHUB_REPO is required}"
 
 # 공통 라이브러리 로드
 # shellcheck disable=SC1090
@@ -36,8 +39,12 @@ fi
 # 에러 발생 시 알림 전송
 trap 'send_notification "Immich Update" "업데이트 실패: 스크립트 오류 발생" 1' ERR
 
-# ─── 0. 현재 버전 확인 ──────────────────────────────────────────
+# ─── 0. 현재 버전 확인 + 최신 버전 조회 ────────────────────────────
 echo "=== Immich Update ==="
+CURRENT_TAG="${SERVER_IMAGE##*:}"
+CURRENT_TAG_CLEAN="${CURRENT_TAG#v}"
+fetch_github_release "$GITHUB_REPO"
+LATEST_VERSION="${GITHUB_LATEST_VERSION:-}"
 CURRENT_RESPONSE=$(curl -sf --max-time 15 \
   -H "x-api-key: $API_KEY" \
   "$IMMICH_URL/api/server/version") || {
@@ -67,12 +74,17 @@ if $DRY_RUN; then
   echo ""
   echo "=== Dry Run Summary ==="
   echo "Current version: v$CURRENT_VERSION"
+  echo "Server image: $SERVER_IMAGE"
+  echo "ML image: $ML_IMAGE"
   echo "Containers: immich-postgres (running)"
+  if [ -n "$LATEST_VERSION" ]; then
+    echo "GitHub latest: v$LATEST_VERSION"
+  fi
   echo ""
   echo "Would perform:"
   echo "  1. DB backup to $BACKUP_DIR/"
-  echo "  2. Pull ghcr.io/immich-app/immich-server:release"
-  echo "  3. Pull ghcr.io/immich-app/immich-machine-learning:release"
+  echo "  2. Pull $SERVER_IMAGE"
+  echo "  3. Pull $ML_IMAGE"
   echo "  4. Stop immich-server, immich-ml"
   echo "  5. Start immich-ml, immich-server"
   echo "  6. Health check (60 retries, 10s interval)"
@@ -109,9 +121,9 @@ echo "Backup saved: $BACKUP_FILE ($(numfmt --to=iec "$BACKUP_SIZE"))"
 
 # ─── 3. 이미지 pull ─────────────────────────────────────────────
 echo ""
-echo "Pulling latest images..."
-podman pull ghcr.io/immich-app/immich-server:release
-podman pull ghcr.io/immich-app/immich-machine-learning:release
+echo "Pulling configured images..."
+podman pull "$SERVER_IMAGE"
+podman pull "$ML_IMAGE"
 echo "Images pulled"
 
 # ─── 4. 컨테이너 재시작 (stop all → start ML → start Server) ────
@@ -156,9 +168,13 @@ if $HEALTHY; then
     echo "WARNING: immich-ml is not running (OOM or compatibility issue)"
     send_notification "Immich Update" "업데이트 완료 (v${CURRENT_VERSION} → v${NEW_VERSION}) 단, ML 컨테이너 미실행. 로그 확인: podman logs immich-ml" 0
   fi
+  VERSION_INFO="v${CURRENT_VERSION} → v${NEW_VERSION}"
+  if [ -n "$LATEST_VERSION" ] && [ "$CURRENT_TAG_CLEAN" != "$LATEST_VERSION" ]; then
+    VERSION_INFO="${VERSION_INFO} (pinned :${CURRENT_TAG}, GitHub latest: v${LATEST_VERSION})"
+  fi
   echo "=== Update completed successfully ==="
-  echo "Version: v$CURRENT_VERSION → v$NEW_VERSION"
-  send_notification "Immich Update" "업데이트 완료: v${CURRENT_VERSION} → v${NEW_VERSION}" 0
+  echo "Version: $VERSION_INFO"
+  send_notification "Immich Update" "업데이트 완료: ${VERSION_INFO}" 0
 else
   echo "=== Health check failed ==="
   echo "Immich did not respond after $((MAX_RETRIES * RETRY_INTERVAL / 60)) minutes"

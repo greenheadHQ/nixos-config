@@ -135,7 +135,7 @@ in
     # Karakeep 앱 컨테이너
     # ═══════════════════════════════════════════════════════════════
     virtualisation.oci-containers.containers.karakeep = {
-      image = "ghcr.io/karakeep-app/karakeep:release";
+      image = "ghcr.io/karakeep-app/karakeep:0.31.0";
       autoStart = true;
       ports = [ "127.0.0.1:${toString cfg.port}:3000" ];
       volumes = [ "${mediaData}/karakeep:/data" ];

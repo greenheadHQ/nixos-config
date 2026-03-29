@@ -43,6 +43,9 @@ let
     text = builtins.readFile ./files/update-script.sh;
   };
 
+  serverImage = config.virtualisation.oci-containers.containers.immich-server.image;
+  mlImage = config.virtualisation.oci-containers.containers.immich-ml.image;
+
   # 래퍼: 환경변수 설정 후 본체 실행 (standalone 실행용)
   updateScript = pkgs.writeShellScriptBin "immich-update" ''
     export IMMICH_URL="${immichUrl}"
@@ -50,6 +53,9 @@ let
     export PUSHOVER_CRED_FILE="${pushoverCredPath}"
     export BACKUP_DIR="/var/lib/immich-update/backups"
     export SERVICE_LIB="${serviceLib}"
+    export SERVER_IMAGE="${serverImage}"
+    export ML_IMAGE="${mlImage}"
+    export GITHUB_REPO="immich-app/immich"
     exec ${updateScriptInner}/bin/immich-update-inner "$@"
   '';
 in

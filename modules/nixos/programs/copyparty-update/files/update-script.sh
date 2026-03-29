@@ -48,10 +48,15 @@ cleanup() {
 }
 trap cleanup ERR
 
-# ─── 0. 현재 이미지 digest 저장 ──────────────────────────────────
+# ─── 0. 현재 이미지 digest 저장 + 최신 버전 조회 ─────────────────
 echo "=== $SERVICE_DISPLAY_NAME Update ==="
 CURRENT_DIGEST=$(get_image_digest "$CONTAINER_NAME")
 echo "Current image digest: ${CURRENT_DIGEST:0:20}..."
+
+CURRENT_TAG="${CONTAINER_IMAGE##*:}"
+CURRENT_TAG_CLEAN="${CURRENT_TAG#v}"
+fetch_github_release "$GITHUB_REPO"
+LATEST_VERSION="${GITHUB_LATEST_VERSION:-}"
 
 if $DRY_RUN; then
   echo ""
@@ -73,14 +78,18 @@ fi
 
 # ─── 1. 이미지 pull (컨테이너 실행 중, 다운타임 없음) ────────────
 echo ""
-echo "Pulling latest image..."
+echo "Pulling configured image..."
 podman pull "$CONTAINER_IMAGE"
 echo "Image pulled"
 
 # ─── 2. 새 이미지 digest 비교 ───────────────────────────────────
 NEW_IMAGE_DIGEST=$(podman image inspect "$CONTAINER_IMAGE" --format '{{.Id}}' 2>/dev/null || echo "")
 if [ -n "$CURRENT_DIGEST" ] && [ "$CURRENT_DIGEST" = "$NEW_IMAGE_DIGEST" ]; then
-  echo "Image unchanged (already latest). Skipping restart."
+  echo "Image unchanged (already up-to-date for pinned tag :$CURRENT_TAG)."
+  if [ -n "$LATEST_VERSION" ] && [ "$CURRENT_TAG_CLEAN" != "$LATEST_VERSION" ]; then
+    echo "NOTE: GitHub latest is v$LATEST_VERSION. Current pinned tag is :$CURRENT_TAG."
+    echo "Update modules/nixos/programs/docker/copyparty.nix tag, then run nrs."
+  fi
   echo "=== No update needed ==="
   exit 0
 fi
@@ -104,12 +113,10 @@ fi
 
 # ─── 5. 결과 알림 ───────────────────────────────────────────────
 echo ""
-fetch_github_release "$GITHUB_REPO"
-if [ -n "$GITHUB_LATEST_VERSION" ]; then
-  VERSION_INFO="v${GITHUB_LATEST_VERSION}로"
-else
-  VERSION_INFO="최신 이미지로"
+VERSION_INFO="pinned tag :${CURRENT_TAG}"
+if [ -n "$LATEST_VERSION" ] && [ "$CURRENT_TAG_CLEAN" != "$LATEST_VERSION" ]; then
+  VERSION_INFO="${VERSION_INFO} (GitHub latest: v${LATEST_VERSION})"
 fi
 
 echo "=== Update completed successfully ==="
-send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 완료: ${VERSION_INFO} 업데이트됨" 0
+send_notification "$SERVICE_DISPLAY_NAME Update" "업데이트 완료: ${VERSION_INFO} 적용됨" 0
