@@ -227,6 +227,10 @@ in
     ".claude/skills/parallel-audit".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/parallel-audit";
 
+    # show-pains 스킬 (user-scope) — pain point HTML 대시보드
+    ".claude/skills/show-pains".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/show-pains";
+
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
@@ -240,5 +244,9 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/run-loop.sh";
     ".claude/scripts/generate-report.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/generate-report.py";
+
+    # show-pain-points 대시보드 스크립트
+    ".claude/scripts/show-pain-points.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/show-pain-points.sh";
   };
 }

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pain Point Dashboard</title>
+  <!-- Tailwind CSS CDN (동적 JIT 스크립트라 SRI 미적용) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+  <!-- Chart.js (고정 버전 + SRI) -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+    integrity="sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC"
+    crossorigin="anonymous"
+  ></script>
+</head>
+<body class="dark bg-gray-900 text-gray-100 min-h-screen p-6">
+
+<!-- 데이터 주입 (XSS 방지: application/json + textContent) -->
+<script type="application/json" id="pain-data">__PAIN_DATA_JSON__</script>
+
+<div id="app" class="max-w-7xl mx-auto space-y-6">
+  <!-- 헤더 -->
+  <header class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold">Pain Point Dashboard</h1>
+      <p class="text-gray-400 text-sm">최근 30일 롤링 뷰 (active + archive)</p>
+    </div>
+    <p id="last-updated" class="text-gray-500 text-xs"></p>
+  </header>
+
+  <!-- 요약 카드 -->
+  <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="bg-gray-800 rounded-xl shadow-lg p-5">
+      <p class="text-gray-400 text-sm">총 Pain Points</p>
+      <p id="total-count" class="text-3xl font-bold mt-1">0</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl shadow-lg p-5 border-l-4 border-red-500">
+      <p class="text-red-400 text-sm">HIGH</p>
+      <p id="high-count" class="text-3xl font-bold mt-1 text-red-500">0</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl shadow-lg p-5 border-l-4 border-yellow-500">
+      <p class="text-yellow-400 text-sm">MEDIUM</p>
+      <p id="medium-count" class="text-3xl font-bold mt-1 text-yellow-500">0</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl shadow-lg p-5 border-l-4 border-blue-500">
+      <p class="text-blue-400 text-sm">MANUAL</p>
+      <p id="manual-count" class="text-3xl font-bold mt-1 text-blue-500">0</p>
+    </div>
+  </section>
+
+  <!-- 트렌드 차트 -->
+  <section class="bg-gray-800 rounded-xl shadow-lg p-5">
+    <h2 class="text-lg font-semibold mb-4">일별 트렌드</h2>
+    <canvas id="trend-chart" height="100"></canvas>
+  </section>
+
+  <!-- 필터 바 -->
+  <section class="bg-gray-800 rounded-xl shadow-lg p-4 flex flex-wrap gap-4 items-center">
+    <div>
+      <label class="text-gray-400 text-xs block mb-1">Bucket</label>
+      <select id="filter-bucket" class="bg-gray-700 text-gray-100 rounded px-3 py-1.5 text-sm">
+        <option value="ALL">ALL</option>
+        <option value="HIGH">HIGH</option>
+        <option value="MEDIUM">MEDIUM</option>
+        <option value="MANUAL">MANUAL</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-gray-400 text-xs block mb-1">Source</label>
+      <select id="filter-source" class="bg-gray-700 text-gray-100 rounded px-3 py-1.5 text-sm">
+        <option value="ALL">ALL</option>
+        <option value="auto">auto</option>
+        <option value="manual">manual</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-gray-400 text-xs block mb-1">Repo</label>
+      <select id="filter-repo" class="bg-gray-700 text-gray-100 rounded px-3 py-1.5 text-sm">
+        <option value="ALL">ALL</option>
+      </select>
+    </div>
+    <div class="ml-auto text-gray-500 text-xs">
+      <span id="filtered-count">0</span> / <span id="total-display">0</span> 표시 중
+    </div>
+  </section>
+
+  <!-- Pain Point 테이블 -->
+  <section class="bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-700 text-gray-300">
+        <tr>
+          <th class="px-4 py-3 text-left">날짜</th>
+          <th class="px-4 py-3 text-left">Bucket</th>
+          <th class="px-4 py-3 text-left">Description</th>
+          <th class="px-4 py-3 text-left">Reason</th>
+          <th class="px-4 py-3 text-left">Repo / Branch</th>
+          <th class="px-4 py-3 text-left">Keyword</th>
+        </tr>
+      </thead>
+      <tbody id="pain-table" class="divide-y divide-gray-700"></tbody>
+    </table>
+    <div id="empty-msg" class="hidden text-center text-gray-500 py-8">
+      필터 조건에 맞는 데이터가 없습니다.
+    </div>
+  </section>
+
+  <!-- Context 모달 -->
+  <div id="context-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-semibold">세션 컨텍스트</h3>
+        <button onclick="document.getElementById('context-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-200 text-xl">&times;</button>
+      </div>
+      <div id="modal-meta" class="text-xs text-gray-400 mb-4 space-y-1"></div>
+      <div id="modal-context" class="space-y-3"></div>
+    </div>
+  </div>
+
+  <!-- 반복 패턴 -->
+  <section id="repeat-section" class="space-y-4">
+    <h2 class="text-lg font-semibold">반복 패턴 (3회+)</h2>
+    <div id="repeat-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    <p id="no-repeats" class="hidden text-gray-500 text-sm">3회 이상 반복된 패턴이 없습니다.</p>
+  </section>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // --- 상수 ---
+  const REPEAT_THRESHOLD = 3;
+  const BUCKET_COLORS = { HIGH: '#ef4444', MEDIUM: '#eab308', MANUAL: '#3b82f6' };
+  const BUCKET_BG = { HIGH: 'bg-red-500/20 text-red-400', MEDIUM: 'bg-yellow-500/20 text-yellow-400', MANUAL: 'bg-blue-500/20 text-blue-400' };
+
+  // --- 데이터 로드 ---
+  const raw = document.getElementById('pain-data').textContent;
+  const PAIN_DATA = JSON.parse(raw);
+
+  // --- 핵심 함수 (단일 진실 공급원) ---
+  function getBucket(e) {
+    if (e.source === 'manual') return 'MANUAL';
+    if (e.severity === 'high') return 'HIGH';
+    return 'MEDIUM';
+  }
+
+  function getRepeatKey(e) {
+    return (e.signals && e.signals.keyword) || e.user_note || e.description || '';
+  }
+
+  function formatDate(ts) {
+    if (!ts) return '-';
+    return ts.slice(0, 10);
+  }
+
+  function formatDateTime(ts) {
+    if (!ts) return '-';
+    return ts.slice(0, 16).replace('T', ' ');
+  }
+
+  // --- 초기화 ---
+  const data = PAIN_DATA.map(e => ({ ...e, _bucket: getBucket(e), _repeatKey: getRepeatKey(e) }))
+    .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+
+  // 요약 카드
+  const total = data.length;
+  const highCount = data.filter(e => e._bucket === 'HIGH').length;
+  const medCount = data.filter(e => e._bucket === 'MEDIUM').length;
+  const manualCount = data.filter(e => e._bucket === 'MANUAL').length;
+
+  document.getElementById('total-count').textContent = total;
+  document.getElementById('high-count').textContent = highCount;
+  document.getElementById('medium-count').textContent = medCount;
+  document.getElementById('manual-count').textContent = manualCount;
+  document.getElementById('total-display').textContent = total;
+
+  if (data.length > 0) {
+    document.getElementById('last-updated').textContent =
+      '최근: ' + formatDateTime(data[0].ts);
+  }
+
+  // Repo 필터 동적 채우기
+  const repos = [...new Set(data.map(e => e.repo).filter(Boolean))].sort();
+  const repoSelect = document.getElementById('filter-repo');
+  repos.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r;
+    opt.textContent = r;
+    repoSelect.appendChild(opt);
+  });
+
+  // --- 트렌드 차트 ---
+  function buildTrendChart() {
+    const dateMap = {};
+    data.forEach(e => {
+      const d = formatDate(e.ts);
+      if (!dateMap[d]) dateMap[d] = { HIGH: 0, MEDIUM: 0, MANUAL: 0 };
+      dateMap[d][e._bucket]++;
+    });
+
+    const dates = Object.keys(dateMap).sort();
+    const ctx = document.getElementById('trend-chart').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [
+          { label: 'HIGH', data: dates.map(d => dateMap[d].HIGH), borderColor: BUCKET_COLORS.HIGH, backgroundColor: BUCKET_COLORS.HIGH + '33', tension: 0.3, fill: false },
+          { label: 'MEDIUM', data: dates.map(d => dateMap[d].MEDIUM), borderColor: BUCKET_COLORS.MEDIUM, backgroundColor: BUCKET_COLORS.MEDIUM + '33', tension: 0.3, fill: false },
+          { label: 'MANUAL', data: dates.map(d => dateMap[d].MANUAL), borderColor: BUCKET_COLORS.MANUAL, backgroundColor: BUCKET_COLORS.MANUAL + '33', tension: 0.3, fill: false },
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { labels: { color: '#9ca3af' } }
+        },
+        scales: {
+          x: { ticks: { color: '#6b7280' }, grid: { color: '#374151' } },
+          y: { ticks: { color: '#6b7280', stepSize: 1 }, grid: { color: '#374151' }, beginAtZero: true }
+        }
+      }
+    });
+  }
+  buildTrendChart();
+
+  // --- 테이블 렌더링 ---
+  function renderTable() {
+    const bucket = document.getElementById('filter-bucket').value;
+    const source = document.getElementById('filter-source').value;
+    const repo = document.getElementById('filter-repo').value;
+
+    const filtered = data.filter(e => {
+      if (bucket !== 'ALL' && e._bucket !== bucket) return false;
+      if (source !== 'ALL' && e.source !== source) return false;
+      if (repo !== 'ALL' && e.repo !== repo) return false;
+      return true;
+    });
+
+    const tbody = document.getElementById('pain-table');
+    tbody.innerHTML = '';
+
+    const emptyMsg = document.getElementById('empty-msg');
+    if (filtered.length === 0) {
+      emptyMsg.classList.remove('hidden');
+    } else {
+      emptyMsg.classList.add('hidden');
+    }
+
+    document.getElementById('filtered-count').textContent = filtered.length;
+
+    filtered.forEach(e => {
+      const hasContext = e.context && e.context.length > 0;
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-gray-700/50' + (hasContext ? ' cursor-pointer' : '');
+      if (hasContext) {
+        tr.addEventListener('click', () => showContextModal(e));
+      }
+
+      const tdDate = document.createElement('td');
+      tdDate.className = 'px-4 py-3 text-gray-400 whitespace-nowrap';
+      tdDate.textContent = formatDateTime(e.ts);
+
+      const tdBucket = document.createElement('td');
+      tdBucket.className = 'px-4 py-3';
+      const badge = document.createElement('span');
+      badge.className = 'px-2 py-0.5 rounded-full text-xs font-medium ' + (BUCKET_BG[e._bucket] || '');
+      badge.textContent = e._bucket;
+      tdBucket.appendChild(badge);
+
+      const tdDesc = document.createElement('td');
+      tdDesc.className = 'px-4 py-3';
+      tdDesc.textContent = e.source === 'manual' ? (e.user_note || e.description) : e.description;
+
+      const tdReason = document.createElement('td');
+      tdReason.className = 'px-4 py-3 text-gray-300 text-sm';
+      if (e.reason) {
+        tdReason.textContent = e.reason;
+      } else if (hasContext) {
+        tdReason.innerHTML = '<span class="text-gray-500 italic">클릭하여 확인</span>';
+      } else {
+        tdReason.textContent = '-';
+      }
+
+      const tdRepo = document.createElement('td');
+      tdRepo.className = 'px-4 py-3 text-gray-400 whitespace-nowrap';
+      tdRepo.textContent = (e.repo || '-') + ' / ' + (e.branch || '-');
+
+      const tdKeyword = document.createElement('td');
+      tdKeyword.className = 'px-4 py-3 text-gray-500 font-mono text-xs';
+      tdKeyword.textContent = (e.signals && e.signals.keyword) || '-';
+
+      tr.appendChild(tdDate);
+      tr.appendChild(tdBucket);
+      tr.appendChild(tdDesc);
+      tr.appendChild(tdReason);
+      tr.appendChild(tdRepo);
+      tr.appendChild(tdKeyword);
+      tbody.appendChild(tr);
+    });
+  }
+
+  // 필터 이벤트
+  ['filter-bucket', 'filter-source', 'filter-repo'].forEach(id => {
+    document.getElementById(id).addEventListener('change', renderTable);
+  });
+  renderTable();
+
+  // --- 반복 패턴 ---
+  function renderRepeatPatterns() {
+    const keyCount = {};
+    data.forEach(e => {
+      const k = e._repeatKey;
+      if (!k) return;
+      if (!keyCount[k]) keyCount[k] = { count: 0, first: e.ts, last: e.ts, bucket: e._bucket };
+      keyCount[k].count++;
+      if (e.ts < keyCount[k].first) keyCount[k].first = e.ts;
+      if (e.ts > keyCount[k].last) keyCount[k].last = e.ts;
+    });
+
+    const repeats = Object.entries(keyCount)
+      .filter(([, v]) => v.count >= REPEAT_THRESHOLD)
+      .sort((a, b) => b[1].count - a[1].count);
+
+    const container = document.getElementById('repeat-cards');
+    const noRepeats = document.getElementById('no-repeats');
+
+    if (repeats.length === 0) {
+      noRepeats.classList.remove('hidden');
+      return;
+    }
+    noRepeats.classList.add('hidden');
+
+    repeats.forEach(([key, info]) => {
+      const card = document.createElement('div');
+      card.className = 'bg-gray-800 rounded-xl shadow-lg p-4 border-l-4';
+      card.style.borderColor = BUCKET_COLORS[info.bucket] || '#6b7280';
+
+      const title = document.createElement('p');
+      title.className = 'font-medium text-sm';
+      // XSS 방지
+      title.textContent = key;
+
+      const meta = document.createElement('div');
+      meta.className = 'mt-2 text-xs text-gray-400 space-y-1';
+      meta.innerHTML =
+        '<p>' + info.count + '회 반복</p>' +
+        '<p>최초: ' + formatDate(info.first) + '</p>' +
+        '<p>최근: ' + formatDate(info.last) + '</p>';
+
+      card.appendChild(title);
+      card.appendChild(meta);
+      container.appendChild(card);
+    });
+  }
+  renderRepeatPatterns();
+
+  // --- Context 모달 ---
+  window.showContextModal = function(e) {
+    const modal = document.getElementById('context-modal');
+    const meta = document.getElementById('modal-meta');
+    const ctx = document.getElementById('modal-context');
+
+    // 메타 정보
+    meta.innerHTML = '';
+    const metaItems = [
+      ['날짜', formatDateTime(e.ts)],
+      ['Bucket', e._bucket],
+      ['Description', e.source === 'manual' ? (e.user_note || e.description) : e.description],
+      ['Repo / Branch', (e.repo || '-') + ' / ' + (e.branch || '-')],
+      ['Session', e.session_id || '-'],
+    ];
+    if (e.reason) {
+      metaItems.push(['Reason (LLM)', e.reason]);
+    }
+    metaItems.forEach(([label, value]) => {
+      const p = document.createElement('p');
+      const strong = document.createElement('strong');
+      strong.textContent = label + ': ';
+      strong.className = 'text-gray-300';
+      p.appendChild(strong);
+      const span = document.createElement('span');
+      span.textContent = value;
+      p.appendChild(span);
+      meta.appendChild(p);
+    });
+
+    // 대화 컨텍스트
+    ctx.innerHTML = '';
+    if (e.context && e.context.length > 0) {
+      e.context.forEach(turn => {
+        const div = document.createElement('div');
+        const isUser = turn.type === 'user';
+        div.className = 'rounded-lg p-3 text-sm ' +
+          (isUser ? 'bg-blue-900/30 border border-blue-800' : 'bg-gray-700/50 border border-gray-600');
+        const label = document.createElement('p');
+        label.className = 'text-xs font-medium mb-1 ' + (isUser ? 'text-blue-400' : 'text-gray-400');
+        label.textContent = isUser ? 'User' : 'Assistant';
+        const content = document.createElement('p');
+        content.className = 'text-gray-200 whitespace-pre-wrap break-words';
+        content.textContent = turn.content || '(empty)';
+        div.appendChild(label);
+        div.appendChild(content);
+        ctx.appendChild(div);
+      });
+    } else {
+      const p = document.createElement('p');
+      p.className = 'text-gray-500';
+      p.textContent = '대화 컨텍스트가 없습니다.';
+      ctx.appendChild(p);
+    }
+
+    modal.classList.remove('hidden');
+  };
+
+})();
+</script>
+
+</body>
+</html>

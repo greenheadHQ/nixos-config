@@ -102,12 +102,15 @@ if [ "$TURNS" -gt "$TURN_THRESHOLD" ]; then
       --arg branch "$BRANCH" \
       --argjson turns "$TURNS" \
       --argjson dur "$DURATION_MIN" \
+      --arg tp "${TRANSCRIPT_PATH:-}" \
       '{
         ts: $ts, session_id: $sid, repo: $repo, branch: $branch,
         source: "auto", severity: "medium",
         signals: { keyword: "long_session", turns: ($turns), duration_min: ($dur) },
         description: ("\($turns)턴, \($dur)분 — 긴 세션"),
-        user_note: null
+        user_note: null,
+        transcript_path: (if $tp == "" then null else $tp end),
+        context: []
       }' >> "$PAIN_FILE" 2>/dev/null || true
   fi
 fi
