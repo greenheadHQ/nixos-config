@@ -292,6 +292,7 @@ fi
 # --- Initialize tracking ---
 best_test_passed=-1
 best_iteration=0
+best_train_fallback=-1
 iterations_completed=0
 
 # --- Main loop ---
@@ -349,10 +350,12 @@ for ((iteration = 1; iteration <= MAX_ITERATIONS; iteration++)); do
       fi
     else
       log "  Warning: test eval failed, skipping holdout scoring"
-      # Ensure best_iteration is set even when all test evals fail.
-      # Without this, best_iteration stays 0 → serializer produces ?/?.
-      # (Codex review R2 fallback fix)
-      if (( best_iteration == 0 )); then
+      # WHY best_test_passed < 0 guard: if any test eval succeeded (best_test_passed >= 0),
+      # the test-based best is authoritative — train fallback must not override it.
+      # Without this guard, a mixed scenario (some tests pass, some fail) could replace
+      # the test-based best with a train-based one, causing best_description/best_test_score mismatch.
+      if (( best_test_passed < 0 && train_passed > best_train_fallback )); then
+        best_train_fallback=$train_passed
         best_iteration=$iteration
         cp "$work_dir/current_desc.txt" "$work_dir/best_desc.txt"
       fi
