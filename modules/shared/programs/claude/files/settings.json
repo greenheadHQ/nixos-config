@@ -9,8 +9,6 @@
     "CLAUDE_CODE_EFFORT_LEVEL": "max"
   },
   "includeCoAuthoredBy": false,
-  "showClearContextOnPlanAccept": true,
-  "showThinkingSummaries": true,
   "permissions": {
     "deny": [
       "Bash(rm -rf /)",
@@ -142,21 +140,24 @@
       }
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/scripts/statusline.sh"
+  },
   "enabledPlugins": {
     "plugin-dev@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "slack@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true
+    "superpowers@claude-plugins-official": true,
+    "notion@claude-plugins-official": true
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
+  "showClearContextOnPlanAccept": true,
   "autoUpdatesChannel": "latest",
   "plansDirectory": "./.claude/plans",
   "voiceEnabled": true,
-  "skipDangerousModePermissionPrompt": true,
-  "statusLine": {
-    "type": "command",
-    "command": "~/.claude/scripts/statusline.sh"
-  }
+  "showThinkingSummaries": true,
+  "skipDangerousModePermissionPrompt": true
 }
