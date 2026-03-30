@@ -151,7 +151,7 @@ DA for_plan 결과에서 유효한 지적을 반영한다.
 
 1. 변경사항 커밋
 2. `/run-da for_pr` — 코드 DA 피드백 루프
-3. `/parallel-audit 10` — 전수조사
+3. `/parallel-audit` — 전수조사
 4. `/create-pr` — main 브랜치 대상 PR 생성
 
 사용자가 명시적으로 특정 단계를 생략하라고 지시한 경우에만 해당 단계를 건너뛴다.
