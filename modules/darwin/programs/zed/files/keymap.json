@@ -179,6 +179,46 @@
   },
 
   // ============================================================================
+  // 패널(독) 크기 조절
+  // Ctrl+Alt+Cmd+방향키 → 포커스된 패널의 크기 증가/감소
+  // VSCode의 increaseViewSize/decreaseViewSize 대응.
+  // CIR: Zed 기본 ctrl-alt-=/-는 Rectangle이 Ctrl+Alt prefix를 글로벌 점유하여 사용 불가.
+  //   Ctrl+Alt+Cmd+Down은 기존 editor::GoToDefinitionSplit을 덮어씀
+  //   (Cmd+B로 정의 이동 후 Cmd+K L로 수동 스플릿 대체 가능).
+  // ============================================================================
+  {
+    "bindings": {
+      "ctrl-alt-cmd-up": ["workspace::IncreaseActiveDockSize", { "px": 0 }],
+      "ctrl-alt-cmd-right": ["workspace::IncreaseActiveDockSize", { "px": 0 }],
+      "ctrl-alt-cmd-down": ["workspace::DecreaseActiveDockSize", { "px": 0 }],
+      "ctrl-alt-cmd-left": ["workspace::DecreaseActiveDockSize", { "px": 0 }]
+    }
+  },
+
+  // ============================================================================
+  // 에디터를 다른 패인으로 이동
+  // Ctrl+Alt+]/[ → 현재 탭을 우측/좌측 패인으로 이동
+  // VSCode의 moveEditorToNextGroup/moveEditorToPreviousGroup 대응.
+  // ============================================================================
+  {
+    "bindings": {
+      "ctrl-alt-]": ["workspace::MoveItemToPaneInDirection", { "direction": "right" }],
+      "ctrl-alt-[": ["workspace::MoveItemToPaneInDirection", { "direction": "left" }]
+    }
+  },
+
+  // ============================================================================
+  // 닫힌 탭 다시 열기
+  // Shift+Cmd+T → 마지막으로 닫은 탭 복원
+  // Zed 기본에 있으나 JetBrains keymap이 덮어쓸 수 있으므로 명시적 override.
+  // ============================================================================
+  {
+    "bindings": {
+      "shift-cmd-t": "pane::ReopenClosedItem"
+    }
+  },
+
+  // ============================================================================
   // Untitled Buffer (Scratchpad 대체)
   // Shift+Cmd+N → 새 untitled 버퍼 (언어 변경: Ctrl+Cmd+M)
   // CIR: action::Sequence로 NewFile + language_selector::Toggle 시도했으나
