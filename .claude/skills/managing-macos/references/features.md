@@ -355,7 +355,7 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | 앱      | 패키지         | 용도         |
 | ------- | -------------- | ------------ |
 | Shottr  | `pkgs.shottr`  | 스크린샷     |
-| Zed     | HM `programs.zed-editor` | 코드 에디터 |
+| Zed     | Homebrew cask `zed` | 코드 에디터 |
 
 ### Homebrew Cask에서 Nix 전환이 불가능한 앱
 

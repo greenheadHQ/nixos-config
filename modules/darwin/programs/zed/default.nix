@@ -1,5 +1,5 @@
-# Zed 에디터 설정
-# Nix로 패키지 관리, settings/keymap은 mkOutOfStoreSymlink (양방향)
+# Zed 에디터 설정 관리 (앱 바이너리는 homebrew.nix에서 Homebrew cask로 설치)
+# 이 모듈의 책임: settings/keymap 심링크, LSP/formatter 패키지, 기본 에디터 등록
 #
 # === Change Intent Record ===
 # VSCode → Zed 마이그레이션 (Issue #329)
@@ -7,11 +7,8 @@
 # 1) 전환 동기: Claude Code CLI 중심 워크플로 확립으로 IDE의 역할이 코드 확인/소규모 편집으로
 #    축소됨. VSCode보다 가벼운 에디터가 필요하여 Zed로 전환. (Cursor → VSCode: #171)
 # 2) 설정 관리: mkOutOfStoreSymlink으로 양방향 편집 보장 (VSCode 패턴 계승).
-#    HM programs.zed-editor 모듈의 userSettings/extensions/userKeymaps 옵션은 의도적 미사용.
-#    이유: 이 옵션들을 설정하면 HM activation이 ~/.config/zed/settings.json을 직접 써서
-#    mkOutOfStoreSymlink 심링크를 파괴함. 빈 기본값이면 mergedSettings={} → 가드에 의해
-#    activation/xdg.configFile 모두 비활성 (HM zed-editor.nix 소스 검증됨).
-# 3) 확장 관리: HM extensions 옵션 대신 settings.json의 auto_install_extensions에 직접 기입.
+#    Zed 앱은 Homebrew cask가 설치하지만, settings.json/keymap.json은 이 모듈이 관리.
+# 3) 확장 관리: settings.json의 auto_install_extensions에 직접 기입.
 #    trade-off: VSCode의 Nix 결정론적 관리(nix-vscode-extensions)와 달리 Zed 확장은
 #    런타임 네트워크 다운로드. 버전 고정/오프라인 빌드 불가. Zed 에코시스템 한계로 수용.
 # 4) 포기 기능 (trade-off): GitHub PR in-editor review, Scratchpads 전용 패널,
@@ -20,6 +17,10 @@
 #    Protocol) 기반 네이티브 통합. getDiagnostics는 Zed LSP 연동으로 대체.
 # 6) 보안: settings.json이 git-tracked public repo에 노출되므로 API 키/토큰 절대 금지.
 #    Zed 인증은 ~/.config/zed/credentials.json (git 미추적) 또는 환경변수로 분리.
+# 7) 설치 방식: nixpkgs(HM programs.zed-editor) → Homebrew cask 전환.
+#    Nix store는 읽기 전용이라 Zed 자체 업데이터가 바이너리를 교체할 수 없어
+#    자동 업데이트가 불가능했음. Homebrew cask는 /Applications/Zed.app에 설치되어
+#    자체 업데이터가 정상 작동. CLI(zed)도 cask가 직접 제공.
 {
   config,
   pkgs,
@@ -85,17 +86,6 @@ in
     pkgs.nixfmt # Nix 포매터 (nixd formatting 의존성)
     pkgs.nodePackages.prettier # JS/TS/JSON 포매터 (Zed formatter 의존성)
   ];
-
-  # CIR: userSettings/extensions/userKeymaps 의도적 미사용
-  # → 이 옵션들을 설정하면 HM이 ~/.config/zed/settings.json을 직접 관리하여
-  #   mkOutOfStoreSymlink과 충돌. 빈 기본값이면 HM이 파일을 건드리지 않음.
-  #   검증: HM zed-editor.nix의 `mkIf (mergedSettings != {})` 가드 — userSettings={}이고
-  #   extensions=[]이면 mergedSettings={} → activation/xdg.configFile 모두 비활성.
-  #   DO NOT add userSettings, extensions, or userKeymaps here.
-  #   Edit files/settings.json and files/keymap.json instead.
-  programs.zed-editor = {
-    enable = true;
-  };
 
   # settings.json / keymap.json — 양방향 수정 가능
   home.file = {
