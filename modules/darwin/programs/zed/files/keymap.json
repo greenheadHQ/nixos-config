@@ -179,6 +179,22 @@
   },
 
   // ============================================================================
+  // 확대/축소 + 코드 접기
+  // JetBrains keymap이 Cmd+-/+를 fold/unfold로 덮어쓰므로 zoom으로 복원.
+  // fold/unfold는 VSCode 기본키인 Alt+Cmd+[/]로 재배치.
+  // persist: false → 세션 간 폰트 크기 변경을 settings.json에 저장하지 않음.
+  // ============================================================================
+  {
+    "context": "Editor",
+    "bindings": {
+      "cmd--": ["zed::DecreaseBufferFontSize", { "persist": false }],
+      "cmd-+": ["zed::IncreaseBufferFontSize", { "persist": false }],
+      "alt-cmd-[": "editor::Fold",
+      "alt-cmd-]": "editor::UnfoldLines"
+    }
+  },
+
+  // ============================================================================
   // 패널(독) 크기 조절
   // Ctrl+Alt+Cmd+방향키 → 포커스된 패널의 크기 증가/감소
   // VSCode의 increaseViewSize/decreaseViewSize 대응.
