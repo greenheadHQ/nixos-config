@@ -14,3 +14,9 @@ tags: [ neovim, lazyvim, buffer ]
   <C-w>s        수평 분할 (상하)
   <C-w>h/j/k/l  창 간 이동 (좌/하/상/우)
   <C-w>q        현재 창 닫기
+
+종료
+
+  :qa           모든 창 닫고 종료 (quit all)
+  :qa!          저장 안 한 변경 무시하고 강제 종료
+  <leader>qq    전체 종료 (LazyVim)
