@@ -117,8 +117,8 @@
       mkDarwinConfig =
         hostname: hostConfig:
         nix-darwin.lib.darwinSystem {
-          system = systems.darwin;
           modules = [
+            { nixpkgs.hostPlatform = systems.darwin; }
             nixpkgs-shared
             home-manager.darwinModules.home-manager
             ./modules/shared/configuration.nix
@@ -140,8 +140,8 @@
       mkNixosConfig =
         hostname: hostConfig:
         nixpkgs.lib.nixosSystem {
-          system = systems.linux;
           modules = [
+            { nixpkgs.hostPlatform = systems.linux; }
             nixpkgs-shared
             inputs.agenix.nixosModules.default
             disko.nixosModules.disko

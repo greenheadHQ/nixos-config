@@ -8,6 +8,6 @@
 
 {
   home.packages = [
-    inputs.recall.packages.${pkgs.system}.default
+    inputs.recall.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 }
