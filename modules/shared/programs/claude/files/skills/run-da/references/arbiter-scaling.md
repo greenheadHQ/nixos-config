@@ -61,11 +61,33 @@ codex exec 실패 시 (exit code != 0, 빈 결과 파일):
 
 ## Codex 환경 대응
 
-Codex에서 run-da 실행 시 AskUserQuestion 미지원:
+Codex 환경 감지: 환경 변수 `CODEX_CI=1`이 설정되어 있으면 Codex로 간주한다.
+(`CODEX_CI`는 codex의 `UNIFIED_EXEC_ENV`에 하드코딩되어 모든 subprocess에 강제 주입된다. 검증 기준: codex-cli v0.117.0+)
+
+Codex에서 run-da 실행 시 AskUserQuestion(`request_user_input`) 미지원 (검증: codex-cli v0.118.0, Default 모드에서 `request_user_input` 호출 시 에러 반환):
 
 - NEEDS_MORE_INFO 항목은 **CONFIRMED_ISSUE로 자동 승격**한다 (텍스트 보고만으로는 상태 전이가 불가능하므로).
 - CONFIRMED_ISSUE는 동일하게 자동 수정한다.
-- Codex 환경 감지: `AGENTS.override.md`가 존재하면 Codex로 간주한다.
+- SKIP 판정 시 AskUserQuestion 불가 → **자동 LITE 승격**.
+- 3회 반복 규칙 도달 시 AskUserQuestion 불가 → **자동 수용** (지적대로 수정).
+- 5회 라운드 초과 시 AskUserQuestion 불가 → **자동 종료** (현재 상태로 CLEAR 간주, DA 루프 종료).
+
+## Review Intensity 판단 에이전트 실행 계약
+
+DA 에이전트/Arbiter와 동일한 codex exec 계약을 따르되, 다음이 다르다:
+
+| 항목 | DA/Arbiter | Review Intensity |
+|------|-----------|-----------------|
+| 입력 | diff 전체 또는 계획 전체 | `git diff --stat` 또는 계획 파일 목록 |
+| 출력 | findings/verdicts | SKIP/LITE/FULL + 근거 (첫 줄 판정 + 이후 근거) |
+| 참조 | da-domains.md, arbiter-prompt.md | intensity-rules.md |
+| 실패 시 | NEEDS_MORE_INFO 승격 | **FULL 강제** |
+
+- `--full-auto --ephemeral`로 실행한다.
+- 프롬프트에서 "references/intensity-rules.md를 직접 읽어 규칙을 적용하라"고 지시한다.
+- 프롬프트 파일은 `umask 077`로 권한 제한한다.
+- 메인 LLM은 결과 파일을 읽고 판정에 따라 분기한다. AskUserQuestion(SKIP 시)은 메인 LLM이 호출한다.
+- Codex 환경에서의 SKIP 처리는 위 "Codex 환경 대응" 섹션의 규칙을 따른다.
 
 ## 향후 확장
 

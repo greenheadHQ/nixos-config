@@ -38,6 +38,10 @@ The auto-generated section may include:
 ### 3. Codex-specific notes
 - Skill invocation syntax: `$skill-name` (not `/skill-name`)
 - Hooks/plugins not supported in Codex
+- DA Arbiter 흐름: AskUserQuestion(`request_user_input`)이 Codex exec에서 미지원이므로,
+  NEEDS_MORE_INFO→자동 CONFIRMED 승격, SKIP→자동 LITE 승격, 3회 반복→자동 수용, 5회 초과→자동 종료
+- Codex 환경 감지: `CODEX_CI=1` 환경 변수로 판별 (codex `UNIFIED_EXEC_ENV`에 하드코딩)
+- 검증 기준: codex-cli v0.117.0+ (`CODEX_CI`), v0.118.0 (`request_user_input` Default 모드 미지원)
 
 ## Preservation Logic
 

@@ -11,13 +11,22 @@ description: |
 
 최대 8개 영역별 전문 DA 에이전트를 변경 규모에 맞게 병렬 실행하여 계획/코드를 엄격 리뷰한다.
 
+**주의: Review Intensity 판단은 메인 LLM의 역할이 아니다**
+
+Review Intensity 판단은 독립 에이전트가 수행한다.
+"이건 단순한 변경이니 DA를 건너뛰어도 된다"는 생각이 떠오르면,
+그것이 정확히 독립 에이전트가 존재하는 이유다.
+DA 호출 자체를 생략하지 마라 — run-da를 호출하면
+독립 에이전트가 SKIP/LITE/FULL을 자동 판단한다.
+합리화 방지 상세는 [references/protocol.md](references/protocol.md) 참조.
+
 ## 모드
 
 | `$ARGUMENTS` | 동작 |
 |--------------|------|
 | `for_plan` | 계획 단계 DA 1회 — 계획 파일 또는 대화 컨텍스트 대상 |
 | `for_pr` | 구현 후 코드 DA 1회 — git diff 대상 |
-| `both` | for_plan → 사용자 승인 → 구현 → for_pr 순차 수행 (각 단계의 실행 강도는 Review Intensity에 따라 다름) |
+| `both` | for_plan → 사용자 승인 → 구현 → for_pr 순차 수행 (각 단계의 실행 강도는 Review Intensity에 따라 **독립적으로** 결정됨) |
 | *(비어있음)* | 사용자에게 모드 선택을 질문한다 |
 
 ### `full` modifier
@@ -29,7 +38,7 @@ description: |
 |------|----------|------------|
 | 경중 판단 | 자동 수행 (SKIP/LITE/FULL) | 건너뜀 → FULL 강제 |
 | 에이전트 수 | 판단 결과에 따라 가변 | 항상 전체 |
-| 사용 시점 | 일반 | 상위 스킬이 강한 검토를 보장해야 할 때 |
+| 사용 시점 | 일반 | 상위 스킬(plan-with-questions 등 run-da를 내부에서 호출하는 스킬)이 강한 검토를 보장해야 할 때 |
 
 ### `fresh` modifier
 
@@ -52,10 +61,11 @@ description: |
 
 | 항목 | 위치 |
 |------|------|
+| Review Intensity 판단 규칙 | [references/intensity-rules.md](references/intensity-rules.md) |
 | DA 영역 상세 + 프롬프트 템플릿 | [references/da-domains.md](references/da-domains.md) |
-| 피드백 프로토콜 상세 | [references/protocol.md](references/protocol.md) |
+| 피드백 프로토콜 + 합리화 방지 상세 | [references/protocol.md](references/protocol.md) |
 | Arbiter 프롬프트 + 판정 기준 | [references/arbiter-prompt.md](references/arbiter-prompt.md) |
-| Arbiter 스케일링 + 실행 계약 | [references/arbiter-scaling.md](references/arbiter-scaling.md) |
+| Arbiter/Intensity 스케일링 + 실행 계약 | [references/arbiter-scaling.md](references/arbiter-scaling.md) |
 
 ## DA 영역
 
@@ -74,7 +84,8 @@ description: |
 
 ## Review Intensity (변경 규모 판단)
 
-for_plan/for_pr 절차 시작 전에 실행한다. `full` modifier가 있으면 이 단계를 건너뛰고 FULL로 직행한다.
+Review Intensity 판단은 **독립 에이전트(codex exec)**가 수행한다. 메인 LLM은 판단에 관여하지 않는다.
+`full` modifier가 있으면 이 단계를 건너뛰고 FULL로 직행한다.
 
 ### 3단계
 
@@ -84,31 +95,38 @@ for_plan/for_pr 절차 시작 전에 실행한다. `full` modifier가 있으면 
 | LITE | SECURITY 필수 + 관련 도메인 | 불필요 | 관련 도메인만 선택 실행 |
 | FULL | 전체 | 불필요 | 현행 전체 실행 |
 
-### 판단 알고리즘
+### 판단 실행 절차
 
-다음 순서로 평가한다. **먼저 매치된 조건이 우선**한다:
+1. 임시 디렉토리를 생성한다: `INTENSITY_DIR=$(mktemp -d /tmp/da-intensity-XXXXXX)`
+2. 프롬프트 파일을 생성한다 (umask 077로 권한 제한):
+   ```zsh
+   (umask 077; cat > "$INTENSITY_DIR/prompt.md" <<'PROMPT'
+   references/intensity-rules.md를 직접 읽어 판단 알고리즘 규칙을 적용하라.
+   아래 변경 정보를 보고 SKIP/LITE/FULL 중 하나를 판정하라.
+   결과의 첫 줄에 판정(SKIP/LITE/FULL), 이후에 근거를 기술하라.
+   리뷰만 수행하고 파일을 수정하지 마라.
+   
+   {for_pr: `git diff --stat main...HEAD` 출력 / for_plan: 변경 대상 파일 목록 + 변경 유형}
+   PROMPT
+   )
+   ```
+   - for_pr: `git diff --stat main...HEAD` (파일 목록+라인 수만, 내용 불포함)
+   - for_plan: 계획 요약 (변경 대상 파일 목록 + 변경 유형)
+3. codex exec로 실행한다 (`-o`는 --output-last-message: 에이전트 최종 응답만 저장):
+   ```zsh
+   codex exec --full-auto --ephemeral \
+     -o "$INTENSITY_DIR/result.md" \
+     "$(cat "$INTENSITY_DIR/prompt.md")" \
+     2>"$INTENSITY_DIR/stderr.log"
+   ```
+4. 메인 LLM이 결과 파일을 읽고 판정에 따라 분기한다:
+   - SKIP → AskUserQuestion으로 사용자 승인 (기존 SKIP 절차)
+   - LITE → 도메인 선택 (기존 LITE 절차)
+   - FULL → 전체 영역 실행
+5. **실패 시 fallback: FULL 강제** — 결과 파일이 없거나 빈 경우, exit code가 0이 아닌 경우, 또는 첫 줄이 SKIP/LITE/FULL이 아닌 경우(파싱 실패).
+6. Review Intensity 판단 결과(SKIP/LITE/FULL)와 근거를 사용자에게 보고한다.
 
-1. `full` modifier → **FULL**
-2. 보안 관련 변경 (인증, 권한, 시크릿, 네트워크 노출, TLS) → **FULL**
-3. 새 모듈/서비스 추가, 아키텍처/인터페이스 변경 → **FULL**
-4. 설정/포트/환경변수/의존성 변경 → **FULL**
-5. 단일 함수 소규모 수정, 리팩터링 → **LITE**
-6. 순수 문서/주석/오타/whitespace/CHANGELOG → **SKIP** (단, 에이전트 실행 정책 파일 — SKILL.md, hooks/*, settings.json, AGENTS*.md — 은 문서가 아닌 코드 변경으로 취급하여 FULL)
-7. 혼합 변경 → 포함된 변경 중 **가장 높은 단계** 적용
-8. 불명확 → **FULL**
-
-### 예시
-
-| 변경 유형 | 단계 | 이유 |
-|----------|------|------|
-| README 오타, 주석 오탈자 | SKIP | 비실행 텍스트 |
-| docstring 업데이트 | SKIP | 비실행 텍스트 |
-| 기존 함수의 소규모 로직 수정 | LITE | 단일 함수, 구조 변경 없음 |
-| flake.lock hash 업데이트 | FULL | 의존성 변경 (규칙 4) |
-| 포트 번호 변경 | FULL | 설정/포트 변경 (규칙 4) |
-| 새 NixOS 모듈 추가 | FULL | 새 모듈 (규칙 3) |
-| secrets.nix 수정 | FULL | 보안 관련 (규칙 2) |
-| README 오타 + 포트 변경 혼합 | FULL | 혼합: 가장 높은 FULL 적용 (규칙 7) |
+판단 알고리즘 규칙 상세 및 예시는 [references/intensity-rules.md](references/intensity-rules.md) 참조.
 
 ### SKIP 절차
 
@@ -174,6 +192,7 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
      done
 
      # 선택된 도메인 수만큼 background Bash tool 호출 (run_in_background: true)
+     # -o는 --output-last-message: 에이전트 최종 응답만 저장
      codex exec --full-auto --ephemeral \
        -o "$DA_DIR/${domain}-result.md" \
        "$(cat "$DA_DIR/${domain}.md")" \
@@ -197,7 +216,7 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
    - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md) 참조).
    - codex exec로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
    - 결과를 수집하여 사용자에게 전건 보고한다:
-     - CONFIRMED_ISSUE + CRITICAL: **진행 차단** — 즉시 수정, 다음 라운드 전 해결 필수.
+     - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
      - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 계획에 반영한다.
      - NOT_AN_ISSUE: 보고만 (반영 불필요).
      - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
@@ -234,7 +253,7 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
    - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md) 참조).
    - codex exec로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
    - 결과를 수집하여 사용자에게 전건 보고한다:
-     - CONFIRMED_ISSUE + CRITICAL: **진행 차단** — 즉시 수정, 다음 라운드 전 해결 필수.
+     - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
      - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 코드에 반영하고 커밋한다.
      - NOT_AN_ISSUE: 보고만 (반영 불필요).
      - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
@@ -251,6 +270,15 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
 5. 최종 커밋 후 push하고 PR을 생성한다.
 
 ## 피드백 프로토콜
+
+### 메인 에이전트 역할
+
+| 수행 | 금지 |
+|------|------|
+| CONFIRMED_ISSUE 수정 | Review Intensity 판단 |
+| AskUserQuestion 호출 (SKIP/NEEDS_MORE_INFO) | DA finding 직접 판정 |
+| Arbiter 결과 수신 및 보고 | "사용자 지시"로 DA 기각 |
+| 결과 파일 파싱 | 프롬프트 조향 |
 
 핵심 원칙 요약:
 
@@ -319,8 +347,9 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
 
 ## 참조 자료
 
+- **[references/intensity-rules.md](references/intensity-rules.md)** -- Review Intensity 판단 알고리즘 규칙 (단일 소스)
 - **[references/da-domains.md](references/da-domains.md)** -- DA 영역별 상세 정의, 프롬프트 템플릿, 출력 형식
-- **[references/protocol.md](references/protocol.md)** -- 상태 흐름 매핑, Arbiter 판정 프로토콜, PoC 의무화 규칙, 무한 루프 방지, PR 코멘트 형식
+- **[references/protocol.md](references/protocol.md)** -- 상태 흐름 매핑, Arbiter 판정 프로토콜, PoC 의무화 규칙, 무한 루프 방지, 합리화 방지, PR 코멘트 형식
 - **[references/arbiter-prompt.md](references/arbiter-prompt.md)** -- Arbiter 프롬프트 템플릿, 4가지 판정 기준, few-shot 교정 예시, blind review 범위, 편향 방지
-- **[references/arbiter-scaling.md](references/arbiter-scaling.md)** -- 동적 스케일링, codex exec 실행 계약, 실패 처리
+- **[references/arbiter-scaling.md](references/arbiter-scaling.md)** -- 동적 스케일링, codex exec 실행 계약 (DA/Arbiter/Intensity), 실패 처리
 - **[/using-codex-exec 스킬](../using-codex-exec/SKILL.md)** -- codex exec 실행 패턴 (패턴 4: exec 우회, 패턴 5: DA 피드백 루프). 플래그/제한사항 확인용.
