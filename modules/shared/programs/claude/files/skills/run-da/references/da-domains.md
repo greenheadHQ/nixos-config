@@ -40,6 +40,9 @@ DA 영역의 집중 관점과 에이전트 프롬프트 구성을 정의한다. 
 각 DA 에이전트에게 아래 구조의 프롬프트를 전달한다.
 `{DOMAIN}`, `{FOCUS_QUESTION}`, `{FOCUS_TARGETS}`, `{OTHER_DOMAINS}`를 영역별로 치환한다.
 
+> **⚠️ 이 플레이스홀더는 셸 변수가 아니다.** 조립 절차는 [run-da/SKILL.md](../SKILL.md)를 참조한다.
+> `{OTHER_DOMAINS}`는 전체 8개 도메인 중 현재 도메인을 제외한 이름의 쉼표 구분 목록이다.
+
 ```text
 당신은 {DOMAIN} 전문 Devil's Advocate이다. 오직 {DOMAIN} 관점에서만 리뷰한다.
 {FOCUS_QUESTION}
