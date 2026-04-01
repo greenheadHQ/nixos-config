@@ -150,7 +150,11 @@ error: the argument '--base <BRANCH>' cannot be used with '--uncommitted'
 cat > /tmp/prompt.md <<'PROMPT'
 이 변경의 배포 리스크를 3개 이내로 지적한다.
 PROMPT
+```
 
+**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([§11](references/known-issues.md) 하위 항목).
+
+```bash
 cat /tmp/prompt.md | codex exec --full-auto -o /tmp/result.md 2>&1
 ```
 
