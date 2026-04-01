@@ -375,21 +375,24 @@ nrs --offline  # 네트워크 요청 없이 빠르게 빌드
 nix.settings = {
   max-substitution-jobs = 128;  # 동시 다운로드 수 (기본값: 16)
   http-connections = 50;        # 동시 HTTP 연결 수 (기본값: 25)
+  download-buffer-size = 256 * 1024 * 1024; # 다운로드 버퍼 (기본값: 64 MiB)
 };
 ```
 
 **효과:**
 
-| 설정                    | 기본값 | 현재값 | 효과                         |
-| ----------------------- | ------ | ------ | ---------------------------- |
-| `max-substitution-jobs` | 16     | 128    | 동시에 128개 패키지 다운로드 |
-| `http-connections`      | 25     | 50     | HTTP 연결 2배 증가           |
+| 설정                    | 기본값 | 현재값  | 효과                            |
+| ----------------------- | ------ | ------- | ------------------------------- |
+| `max-substitution-jobs` | 16     | 128     | 동시에 128개 패키지 다운로드    |
+| `http-connections`      | 25     | 50      | HTTP 연결 2배 증가              |
+| `download-buffer-size`  | 64 MiB | 256 MiB | 버퍼 부족 시 다운로드 정체 방지 |
 
 **확인 방법:**
 
 ```bash
-nix config show | grep -E "(max-substitution|http-connections)"
+nix config show | grep -E "(max-substitution|http-connections|download-buffer)"
 # 출력:
+# download-buffer-size = 268435456
 # http-connections = 50
 # max-substitution-jobs = 128
 ```

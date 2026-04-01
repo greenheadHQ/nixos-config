@@ -12,8 +12,10 @@
       warn-dirty = false;
 
       # 병렬 다운로드 최적화
+      # 높은 동시성(128 substitution + 50 HTTP)에서 버퍼 부족 시 다운로드 정체 방지
       max-substitution-jobs = 128; # 기본값 16 → 128
       http-connections = 50; # 기본값 25 → 50
+      download-buffer-size = 256 * 1024 * 1024; # 기본값 64 MiB → 256 MiB
     };
 
     # 스토어 최적화 (auto-optimise-store 대신 사용)

@@ -48,6 +48,7 @@ nix flake check --no-build --all-systems  # flake 평가 오류 검사
 | 오프라인 빌드 | `nrs --offline` | 네트워크 요청 없음 (~10초, 18배 빠름) |
 | 병렬 다운로드 | `max-substitution-jobs = 128` | 동시 128개 다운로드 (기본 16) |
 | HTTP 연결 | `http-connections = 50` | 동시 50 연결 (기본 25) |
+| 다운로드 버퍼 | `download-buffer-size = 256 * 1024 * 1024` | 기본 64 MiB → 256 MiB |
 | GitHub 토큰 | `access-tokens = github.com=...` | rate limit 해제 |
 
 ### 에러 디버깅

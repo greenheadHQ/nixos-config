@@ -172,6 +172,7 @@ nrs --offline
 nix.settings = {
   max-substitution-jobs = 128;  # 기본값 16
   http-connections = 50;        # 기본값 25
+  download-buffer-size = 256 * 1024 * 1024; # 기본값 64 MiB
 };
 ```
 
