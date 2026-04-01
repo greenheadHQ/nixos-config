@@ -74,7 +74,8 @@
       # 두 변수 설계:
       #   nixosConfigPath        — 항상 메인 레포 경로. mkOutOfStoreSymlink 등 ~16곳에서 사용.
       #   nixosConfigDefaultPath — 항상 메인 레포 경로. rebuild-common.sh의 @flakePath@ 전용.
-      # Worktree 빌드는 --flake <worktree> 인수로만 처리 (심링크 타깃은 항상 메인 레포).
+      # Worktree 빌드는 --flake <worktree> 인수로만 처리.
+      # $HOME 아래 OOS symlink의 relink/restore는 nrs-relink이 담당 — 상세는 CLAUDE.md 참조.
 
       # macOS 호스트 설정 (확인: scutil --get LocalHostName)
       darwinHosts =

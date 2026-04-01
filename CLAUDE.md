@@ -16,7 +16,7 @@ Environment 섹션의 `Platform` 값으로 현재 환경을 판별한다.
 
 ## 빌드
 
-`nrs`를 사용. `darwin-rebuild`/`nixos-rebuild` 직접 실행 금지. `nrs`는 preview를 포함하며, macOS에서는 launchd 정리와 Hammerspoon 재시작도 처리한다.
+`nrs`를 사용. `darwin-rebuild`/`nixos-rebuild` 직접 실행 금지. `nrs`는 preview를 포함하며, macOS에서는 launchd 정리와 Hammerspoon 재시작도 처리한다. 워크트리에서 `nrs` 완료 시 `$HOME` 아래 out-of-store symlink의 워크트리 relink을 시도한다 (`nrs-relink`, non-fatal). main repo에서 `nrs` 실행 시 nix store 체인으로 복원을 시도한다.
 
 ## 상수
 
