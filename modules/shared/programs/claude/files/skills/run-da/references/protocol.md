@@ -34,7 +34,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 ### Arbiter 출력 요건
 
 - 각 finding에 대해 verdict, 신뢰도, 4가지 기준 평가, 근거를 반환한다.
-- NOT_AN_ISSUE 판정에는 파일:줄 직접 읽기 + 반증 코드 스니펫이 필수다.
+- NOT_AN_ISSUE 판정에는 직접 확인 + 반증 근거가 필수다 (모드별 상세: [arbiter-prompt.md](arbiter-prompt.md) 참조).
 - LOW 신뢰도 NOT_AN_ISSUE는 자동으로 NEEDS_MORE_INFO로 승격된다.
 
 ## 합리화 방지 (Rationalization Prevention)
@@ -75,7 +75,7 @@ DA 에이전트가 위반을 지적할 때 반드시 다음 중 하나를 제시
 
 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 때:
 
-- 수정 전 해당 파일:줄을 직접 읽어 현재 상태를 확인한다 (수정 작업의 일부).
+- 수정 전 해당 위치(for_pr: 파일:줄 / for_plan: 관련 파일 또는 계획 항목)를 직접 확인한다 (수정 작업의 일부).
 - 수정한 코드/계획의 diff를 명시한다.
 - 수정 결과가 finding을 해결하는지 확인한다.
 
@@ -83,7 +83,7 @@ Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 때:
 
 ### 3회 반복 규칙
 
-동일한 지적(도메인 + 위치(파일:줄) 기준)이 3회 연속 라운드에서 반복되면:
+동일한 지적(도메인 + 위치(파일:줄 또는 계획 항목 번호) 기준)이 3회 연속 라운드에서 반복되면:
 
 1. 해당 지적과 이전 라운드의 Arbiter 판정 이력을 요약한다.
 2. 사용자에게 AskUserQuestion으로 3가지 선택지를 제시한다:

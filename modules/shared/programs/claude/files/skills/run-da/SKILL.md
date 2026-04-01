@@ -55,7 +55,7 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 - 이전 라운드에서 수용/기각된 지적 내역
 - "이번에는 다른 관점에서 봐주세요" 등 이전 라운드를 암시하는 표현
 
-메인 에이전트는 finding의 도메인 + 위치(파일:줄) 조합으로 라운드 간 반복 감지를 수행한다.
+메인 에이전트는 finding의 도메인 + 위치(파일:줄 또는 계획 항목 번호) 조합으로 라운드 간 반복 감지를 수행한다.
 
 ## 빠른 참조
 
@@ -186,8 +186,8 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
      # 1개 Bash call: 임시 디렉토리 + 선택된 도메인별 프롬프트 파일 생성
      DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)
      for domain in "${SELECTED_DOMAINS[@]}"; do
-       cat > "$DA_DIR/$domain.md" <<PROMPT
-       ... 영역별 프롬프트 ...
+       cat > "$DA_DIR/$domain.md" <<'PROMPT'
+       ... 영역별 프롬프트 (비신뢰 텍스트 포함 시 반드시 quoted heredoc 사용) ...
      PROMPT
      done
 
@@ -213,7 +213,9 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
    실패한 영역만 재실행한다. 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
-   - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md) 참조).
+   - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md)의 **for_plan 조립 규칙** 참조).
+     for_plan에서는 반드시 계획 원문을 포함해야 하며,
+     상세 조립 형식은 arbiter-prompt.md의 "프롬프트 조립 > for_plan 모드" 참조.
    - codex exec로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
    - 결과를 수집하여 사용자에게 전건 보고한다:
      - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
@@ -324,17 +326,17 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
 
 ### DA 에이전트 출력 요건
 - 모든 지적에는 반드시 구체적 파일:줄 또는 계획 항목 번호를 제시해야 한다.
-- 코드 스니펫을 직접 인용하여 문제를 증명해야 한다.
+- 코드 스니펫 또는 계획 원문을 직접 인용하여 문제를 증명해야 한다.
 - "~할 수도 있다", "~이 우려된다" 등 증거 없는 추상적 우려는 즉시 기각한다.
 
 ### Arbiter 검증 의무
 - Arbiter는 각 finding에 대해 4가지 판정 기준(사실 정확성, 변경 연관성, 심각도 타당성, 실행 가능성)으로 독립 검증한다.
-- NOT_AN_ISSUE 판정에는 파일:줄 직접 읽기 + 반증 코드 스니펫이 필수다.
+- NOT_AN_ISSUE 판정에는 직접 확인 + 반증 근거가 필수다 (모드별 증거 요건: [arbiter-prompt.md](references/arbiter-prompt.md) 참조).
 - NEEDS_MORE_INFO는 추가 정보가 필요한 경우에만 사용한다.
 - 상세 판정 기준은 [references/arbiter-prompt.md](references/arbiter-prompt.md) 참조.
 
 ### 메인 에이전트 수정 의무
-- CONFIRMED_ISSUE 항목을 수정할 때, 해당 파일:줄을 읽는 것은 수정 작업의 일부로 수행한다.
+- CONFIRMED_ISSUE 항목을 수정할 때, 해당 위치(파일:줄 또는 계획 항목)를 확인하는 것은 수정 작업의 일부로 수행한다.
 - 수정 결과가 finding을 해결하는지 확인한다.
 
 ## 주의사항

@@ -36,8 +36,8 @@ stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
 ARBITER_DIR=$(mktemp -d /tmp/da-arbiter-XXXXXX)
 
 # 2. Arbiter 프롬프트 파일 조립 (arbiter-prompt.md의 조립 규칙 참조)
-cat > "$ARBITER_DIR/arbiter-prompt.md" << PROMPT
-{조립된 Arbiter 프롬프트}
+cat > "$ARBITER_DIR/arbiter-prompt.md" <<'PROMPT'
+{조립된 Arbiter 프롬프트 — 비신뢰 텍스트(계획 원문, DA 결과) 포함 시 반드시 quoted heredoc 사용}
 PROMPT
 
 # 3. codex exec 실행 (background)
