@@ -21,3 +21,6 @@ voice_transcription = true
 [mcp_servers.chrome-devtools]
 command = "npx"
 args = ["-y", "chrome-devtools-mcp@latest", "--autoConnect", "--channel=stable", "--no-usage-statistics"]
+
+[plugins."github@openai-curated"]
+enabled = true
