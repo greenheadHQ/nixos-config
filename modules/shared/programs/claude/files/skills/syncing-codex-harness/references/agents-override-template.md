@@ -39,9 +39,12 @@ The auto-generated section may include:
 - Skill invocation syntax: `$skill-name` (not `/skill-name`)
 - Claude hooks are experimental in Codex; only the compatibility-checked subset should be projected into `.codex/hooks.json`
 - Plugins remain unsupported in Codex
+- direct Codex sessions should prefer native subagents for `run-da`, `parallel-audit`, and `plan-with-questions` fan-out
+- `codex exec` remains the default only for subprocess automation or explicit CLI requests
 - DA Arbiter 흐름: AskUserQuestion(`request_user_input`)이 Codex exec에서 미지원이므로,
   NEEDS_MORE_INFO→자동 CONFIRMED 승격, SKIP→자동 LITE 승격, 3회 반복→자동 수용, 5회 초과→자동 종료
-- Codex 환경 감지: `CODEX_CI=1` 환경 변수로 판별 (codex `UNIFIED_EXEC_ENV`에 하드코딩)
+- direct Codex 세션도 `CODEX_CI=1`을 가질 수 있으므로, 이를 direct session vs `codex exec` subprocess의 sole discriminator로 쓰지 않는다
+- current session의 open agent thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 말고, completed agent thread는 다음 round/retry 전에 close한다
 - 검증 기준: codex-cli v0.117.0+ (`CODEX_CI`), v0.118.0 (`request_user_input` Default 모드 미지원)
 
 ## Preservation Logic

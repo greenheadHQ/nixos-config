@@ -103,6 +103,8 @@ description: |
 - **무조건 호출**: DA 호출 여부를 메인 LLM이 판단하지 않는다.
   Review Intensity 판단은 run-da 내부의 독립 에이전트가 수행하므로,
   이 단계를 건너뛸 이유가 없다.
+- **런타임 분기는 run-da를 따른다**: direct Codex 세션에서는 nested `codex exec`가 아니라 native subagent 경로가 기본이다.
+  Claude Code subprocess/비대화형 경로에서만 `codex exec` fallback을 사용한다.
 - **기본 경로는 lean default**: `/run-da for_plan`의 자동 FULL은 4 reviewer bundle strong review다.
   8개 세부 도메인 exhaustive path는 명시적 `full` modifier가 있을 때만 쓴다.
 - **YAGNI 예외 근거**: DA 호출 자체는 YAGNI 판단 대상이 아니다.
@@ -110,6 +112,8 @@ description: |
   사용자 승인을 거쳐 자동 생략된다. 메인 LLM은 호출만 하면 된다.
 - **책임 분리**: Review Intensity 판단은 run-da의 책임이다.
   메인 LLM은 DA 호출 여부를 스스로 판단하지 않는다.
+- **thread cap 준수**: direct Codex 세션에서는 current session의 open-thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 않고,
+  completed reviewer/Arbiter thread를 다음 round/retry 전에 `close_agent`로 닫아야 한다.
 - **타이밍**: 반드시 계획 모드 진입 전에 이 단계를 완료한다
   (DA 에이전트가 일반 모드에서 full tool access로 PoC 검증을 수행할 수 있도록).
 

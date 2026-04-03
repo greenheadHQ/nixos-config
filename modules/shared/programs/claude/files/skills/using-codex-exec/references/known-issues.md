@@ -1,6 +1,9 @@
 # using-codex-exec 제한사항 및 트러블슈팅
 
 Codex CLI의 알려진 제한사항, 미해결 이슈, 실행 실패 대응 절차를 통합 관리한다.
+이 문서는 **`codex exec` / `codex exec review` subprocess 경로**만 다룬다.
+direct Codex 세션에서 `spawn_agent` / `wait_agent` / `close_agent`로 오케스트레이션하는 native subagent path에는
+여기의 stdin 경쟁, heredoc hang, 결과 파일 회수 제약을 기본 가정으로 적용하지 않는다.
 
 ## 0. 공통 진단
 
@@ -287,7 +290,8 @@ cat /tmp/smoke-result.md
 | 병렬 Bash tool 호출 (foreground) | **OK** | tool-level 병렬화, 전부 완료까지 대기 |
 | Bash tool `run_in_background: true` | **OK** | background 실행, 각 완료 시 자동 알림 |
 
-**영향 범위**: Claude Code Bash tool sandbox 전용. 일반 터미널에서는 모든 방식 정상 작동.
+**영향 범위**: Claude Code Bash tool sandbox에서 `codex exec` subprocess를 돌리는 경우에만 적용.
+direct Codex native subagent path와 일반 터미널에는 이 제약을 기본 전제로 적용하지 않는다.
 
 **근본 원인**:
 - Bash tool은 각 호출을 격리된 shell에서 실행하며, background process와 job control이 제한됨.

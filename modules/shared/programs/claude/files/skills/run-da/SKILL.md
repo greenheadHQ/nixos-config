@@ -72,6 +72,16 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 | Arbiter 프롬프트 + 판정 기준 | [references/arbiter-prompt.md](references/arbiter-prompt.md) |
 | Arbiter/Intensity 스케일링 + 실행 계약 | [references/arbiter-scaling.md](references/arbiter-scaling.md) |
 
+## 런타임 경로
+
+| 경로 | 사용 시점 | fan-out / wait / close |
+|------|----------|------------------------|
+| direct Codex path | 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`, `close_agent`)을 사용할 수 있을 때 | native subagent를 직접 fan-out하고, `wait_agent`로 결과를 받고, 다음 round/retry 전 completed thread를 `close_agent`로 닫는다 |
+| fallback / explicit `codex exec` path | Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때, 또는 사용자가 `codex exec`를 명시적으로 요구할 때 | `codex exec --full-auto --ephemeral` + 임시 prompt/result 파일 + stderr/result 검증 |
+
+`CODEX_CI=1`만으로 direct Codex 세션과 `codex exec` subprocess를 구분하지 않는다.
+direct Codex 세션에서도 같은 값이 보일 수 있으므로, **현재 세션 capability**를 기준으로 경로를 고른다.
+
 ## DA reviewer bundles
 
 | reviewer bundle | 포함 세부 도메인 | 집중 관점 | 심각도 기준 |
@@ -91,7 +101,9 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 
 ## Review Intensity (변경 규모 판단)
 
-Review Intensity 판단은 **독립 에이전트(codex exec)**가 수행한다. 메인 LLM은 판단에 관여하지 않는다.
+Review Intensity 판단은 **독립 에이전트**가 수행한다. 메인 LLM은 판단에 관여하지 않는다.
+direct Codex 세션에서는 native subagent를 기본 경로로 사용하고,
+Claude Code subprocess/비대화형 경로에서만 `codex exec` fallback을 사용한다.
 `full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override로 직행한다.
 
 ### 3단계
@@ -107,33 +119,39 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
 
 ### 판단 실행 절차
 
-1. 임시 디렉토리를 생성한다: `INTENSITY_DIR=$(mktemp -d /tmp/da-intensity-XXXXXX)`
-2. 프롬프트 파일을 생성한다 (umask 077로 권한 제한):
-   ```zsh
-   (umask 077; cat > "$INTENSITY_DIR/prompt.md" <<'PROMPT'
-   references/intensity-rules.md를 직접 읽어 판단 알고리즘 규칙을 적용하라.
-   아래 변경 정보를 보고 SKIP/LITE/FULL 중 하나를 판정하라.
-   결과의 첫 줄에 판정(SKIP/LITE/FULL), 이후에 근거를 기술하라.
-   리뷰만 수행하고 파일을 수정하지 마라.
-   
-   {for_pr: `git diff --stat main...HEAD` 출력 / for_plan: 변경 대상 파일 목록 + 변경 유형}
-   PROMPT
-   )
-   ```
+1. 변경 규모 판단용 입력을 준비한다.
    - for_pr: `git diff --stat main...HEAD` (파일 목록+라인 수만, 내용 불포함)
    - for_plan: 계획 요약 (변경 대상 파일 목록 + 변경 유형)
-3. codex exec로 실행한다 (`-o`는 --output-last-message: 에이전트 최종 응답만 저장):
-   ```zsh
-   codex exec --full-auto --ephemeral \
-     -o "$INTENSITY_DIR/result.md" \
-     "$(cat "$INTENSITY_DIR/prompt.md")" \
-     2>"$INTENSITY_DIR/stderr.log"
-   ```
-4. 메인 LLM이 결과 파일을 읽고 판정에 따라 분기한다:
+2. **direct Codex path**:
+   - fresh intensity subagent 1개를 띄운다.
+   - 프롬프트에는 `references/intensity-rules.md`를 직접 읽고 SKIP/LITE/FULL 중 하나를 첫 줄에 반환하라고 지시한다.
+   - 결과는 `wait_agent`로 받고, 파싱이 끝나면 completed intensity thread를 `close_agent`로 닫는다.
+3. **fallback / explicit `codex exec` path**:
+   - 임시 디렉토리를 생성한다: `INTENSITY_DIR=$(mktemp -d /tmp/da-intensity-XXXXXX)`
+   - 프롬프트 파일을 생성한다 (umask 077로 권한 제한):
+     ```zsh
+     (umask 077; cat > "$INTENSITY_DIR/prompt.md" <<'PROMPT'
+     references/intensity-rules.md를 직접 읽어 판단 알고리즘 규칙을 적용하라.
+     아래 변경 정보를 보고 SKIP/LITE/FULL 중 하나를 판정하라.
+     결과의 첫 줄에 판정(SKIP/LITE/FULL), 이후에 근거를 기술하라.
+     리뷰만 수행하고 파일을 수정하지 마라.
+
+     {for_pr: `git diff --stat main...HEAD` 출력 / for_plan: 변경 대상 파일 목록 + 변경 유형}
+     PROMPT
+     )
+     ```
+   - `codex exec`로 실행한다 (`-o`는 --output-last-message: 에이전트 최종 응답만 저장):
+     ```zsh
+     codex exec --full-auto --ephemeral \
+       -o "$INTENSITY_DIR/result.md" \
+       "$(cat "$INTENSITY_DIR/prompt.md")" \
+       2>"$INTENSITY_DIR/stderr.log"
+     ```
+4. 메인 LLM이 결과를 읽고 판정에 따라 분기한다:
    - SKIP → AskUserQuestion으로 사용자 승인 (기존 SKIP 절차)
    - LITE → reviewer bundle 선택 (기존 LITE 절차)
    - FULL → 4 reviewer bundles 실행
-5. **실패 시 fallback: FULL 강제** — 결과 파일이 없거나 빈 경우, exit code가 0이 아닌 경우, 또는 첫 줄이 SKIP/LITE/FULL이 아닌 경우(파싱 실패).
+5. **실패 시 fallback: FULL 강제** — direct path에서는 응답 파싱 실패/agent failure, fallback path에서는 결과 파일 없음·빈 결과·exit code 비정상·첫 줄 파싱 실패.
 6. Review Intensity 판단 결과(SKIP/LITE/FULL)와 근거를 사용자에게 보고한다.
 
 판단 알고리즘 규칙 상세 및 예시는 [references/intensity-rules.md](references/intensity-rules.md) 참조.
@@ -183,67 +201,39 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
    - LITE → LITE 절차에 따라 실행할 reviewer bundle을 선택한다.
    - FULL → 4 reviewer bundles를 실행한다.
 1. 현재 계획 파일 또는 대화 컨텍스트에서 계획 내용을 수집한다.
-2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 `codex exec --full-auto`로 **병렬 실행**한다.
-   실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
-   - 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)`
-   - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
-     각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 계획 전체 내용을 포함한다.
-     반드시 "계획 외의 관련 파일도 직접 읽어 탐색하라"는 지시를 포함한다.
-   - 선택된 review unit 수만큼 codex exec를 **background Bash tool 호출** (`run_in_background: true`)로 실행한다:
-     ```zsh
-     # ⚠️ Bash tool은 zsh에서 실행됨. bash 전용 간접 확장(${!arr[@]}) 금지.
-     #   zsh 호환 배열("${arr[@]}", typeset -A)은 사용 가능.
-     # da-domains.md의 공통 프롬프트 구조에 따라 각 review unit별 프롬프트를 조립한다.
-     # 비신뢰 텍스트(계획/diff) 포함 시 quoted heredoc(<<'PROMPT') 사용.
-     #   (패턴 4의 unquoted heredoc은 $(git diff) shell 치환이 필요한 경우에만 적용)
-
-     # Bash call 1: 임시 디렉토리 + 선택된 review unit별 프롬프트 파일 생성
-     DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)
-
-     # 각 선택 review unit마다 cat(프롬프트 생성) + codex exec(실행)를 반복한다.
-     # 반복은 shell loop가 아닌 tool-level 병렬 호출로 처리한다.
-     # 예시: Correctness bundle
-     cat > "$DA_DIR/Correctness.md" <<'PROMPT'
-     당신은 Correctness reviewer bundle이다. 세부 관점은 HALLUCINATION, SECURITY다.
-     존재하지 않는 가정 또는 공격자가 악용할 수 있는 경로를 식별하라.
-     ...
-     PROMPT
-
-     # Bash call 2~N: 선택된 review unit 수만큼 background Bash tool 호출 (run_in_background: true)
-     # -o는 --output-last-message: 에이전트 최종 응답만 저장
-     codex exec --full-auto --ephemeral \
-       -o "$DA_DIR/Correctness-result.md" \
-       "$(cat "$DA_DIR/Correctness.md")" \
-       2>"$DA_DIR/Correctness-stderr.log"
-     ```
-   - `run_in_background: true`로 실행하면 LLM이 즉시 반환받아 사용자와 대화 가능하다.
-     각 codex exec 완료 시 자동 알림이 온다. sleep/poll로 완료를 확인하지 않는다.
-   - `& + wait` shell-level 병렬을 사용하지 않는다 (Bash tool sandbox 제약, [known-issues.md §11](../using-codex-exec/references/known-issues.md) 참조).
-   - stdin pipe(`cat file | codex exec`) 대신 `"$(cat file)"` 인라인 인자를 사용한다.
-   - `fresh` modifier가 있으면 이전 라운드 결과를 프롬프트에 포함하지 않는다.
-   - 기본 propagation은 selective다. 이전 라운드 결과를 전달할 때는
-     [references/protocol.md](references/protocol.md)의 selective propagation 규칙만 따른다.
-     `full` modifier는 reviewer fan-out만 확장하며 propagation 기본값은 바꾸지 않는다.
-   - codex exec는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
-     (이유: codex CLI 제약상 `--full-auto`가 `-s read-only`를 override하여 read-only 강제 불가. exec 우회 패턴 사용을 위한 트레이드오프.)
-   - `--ephemeral`로 실행하여 Codex 세션 히스토리를 오염시키지 않는다.
-   - 모델은 codex config.toml 기본값을 따른다. `-m` 플래그를 생략한다.
-   - `/using-codex-exec` 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙(문맥 보존, 라운드 히스토리 포함 여부)은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
-3. 모든 background 작업의 완료 알림을 수신한 후 결과 파일(`$DA_DIR/*-result.md`)을 수집하여 종합 리포트를 작성한다.
-   실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우(`$DA_DIR/*-stderr.log` 확인).
-   실패한 review unit만 재실행한다. 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
+2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 **병렬 실행**한다.
+   - **direct Codex path**:
+     - 선택된 review unit마다 fresh native subagent 1개를 `spawn_agent`로 실행한다.
+     - 각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 계획 전체 내용을 포함하고, "계획 외의 관련 파일도 직접 읽어 탐색하라", "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
+     - 선택된 review unit 수가 current session의 open slot을 넘으면 batch한다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 계속 점유한다.
+     - `fresh` modifier와 selective propagation 규칙은 동일하게 적용한다.
+   - **fallback / explicit `codex exec` path**:
+     - 실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
+     - 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)`
+     - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
+     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral`를 background Bash tool 호출로 실행한다.
+     - `run_in_background: true`를 사용하면 완료 알림이 자동으로 오므로 sleep/poll로 확인하지 않는다.
+     - `& + wait` shell-level 병렬을 사용하지 않고, stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
+     - `/using-codex-exec` 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
+3. 모든 reviewer 결과를 수신한 후 종합 리포트를 작성한다.
+   - direct path: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
+   - fallback path: 결과 파일(`$DA_DIR/*-result.md`)을 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
+   - 실패한 review unit만 재실행한다. fallback path는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
    - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md)의 **for_plan 조립 규칙** 참조).
      for_plan에서는 반드시 계획 원문을 포함해야 하며,
      상세 조립 형식은 arbiter-prompt.md의 "프롬프트 조립 > for_plan 모드" 참조.
-   - codex exec로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
+   - direct path: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
+   - fallback path: `codex exec`로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
    - 결과를 수집하여 사용자에게 전건 보고한다:
      - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
      - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 계획에 반영한다.
      - NOT_AN_ISSUE: 보고만 (반영 불필요).
      - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
-6. 반영 후 동일 선택 review unit을 **새 codex exec 프로세스로** 재실행한다.
+6. 반영 후 동일 선택 review unit을 **새 reviewer 실행 단위**로 재실행한다.
+   - direct path: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
+   - fallback path: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
 7. 선택된 review unit 전부 CLEAR를 반환할 때까지 반복한다.
 
 ### for_pr 모드
@@ -258,32 +248,35 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
    - diff를 프롬프트에 직접 포함한다 (exec 우회 패턴).
    - diff가 과도하게 크면 (`git diff main...HEAD | wc -l`로 확인) 기계적 변경(flake.lock, hash 변경 등)을 필터링한 축약 diff를 사용한다.
      `git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능.
-2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 `codex exec --full-auto --ephemeral`로 **병렬 실행**한다.
-   실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)를 참조한다.
-   - 라운드별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-pr-XXXXXX)`
-   - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
-     각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 diff를 `<git-diff>` 태그로 감싸서 포함한다.
-     반드시 "diff 외부의 관련 파일도 직접 읽어 탐색하라"는 지시를 포함한다.
-   - 선택된 review unit 수만큼 codex exec를 **background Bash tool 호출** (`run_in_background: true`)로 실행한다 (for_plan과 동일 패턴).
-     stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
-     `& + wait` shell-level 병렬을 사용하지 않는다 (Bash tool sandbox 제약).
-   - `fresh` modifier가 있으면 이전 라운드 결과를 프롬프트에 포함하지 않는다.
-   - 기본 propagation은 selective다. 이전 라운드 결과를 전달할 때는
-     [references/protocol.md](references/protocol.md)의 selective propagation 규칙만 따른다.
-   - 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
-3. 모든 background 작업의 완료 알림을 수신한 후 결과 파일을 수집하여 종합 리포트를 작성한다.
-   실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우. 실패한 review unit만 재실행한다.
-   라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
+2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 **병렬 실행**한다.
+   - **direct Codex path**:
+     - 선택된 review unit마다 fresh native subagent 1개를 `spawn_agent`로 실행한다.
+     - 각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 diff를 `<git-diff>` 태그로 감싸서 포함하고, "diff 외부의 관련 파일도 직접 읽어 탐색하라", "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
+     - 선택된 review unit 수가 current session의 open slot을 넘으면 batch한다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread는 `close_agent` 전까지 슬롯을 점유한다.
+     - `fresh` modifier와 selective propagation 규칙은 동일하게 적용한다.
+   - **fallback / explicit `codex exec` path**:
+     - 실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)를 참조한다.
+     - 라운드별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-pr-XXXXXX)`
+     - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
+     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral`를 background Bash tool 호출로 실행한다.
+     - stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용하고, `& + wait` shell-level 병렬을 사용하지 않는다.
+3. 모든 reviewer 결과를 수신한 후 종합 리포트를 작성한다.
+   - direct path: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
+   - fallback path: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다. 실패한 review unit만 재실행한다.
+   - fallback path는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
    - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md) 참조).
-   - codex exec로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
+   - direct path: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
+   - fallback path: `codex exec`로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
    - 결과를 수집하여 사용자에게 전건 보고한다:
      - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
      - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 코드에 반영하고 커밋한다.
      - NOT_AN_ISSUE: 보고만 (반영 불필요).
      - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
-6. 반영 후 동일 선택 review unit을 **새 codex exec 프로세스로** 재실행한다.
+6. 반영 후 동일 선택 review unit을 **새 reviewer 실행 단위**로 재실행한다.
+   - direct path: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
+   - fallback path: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
 7. 선택된 review unit 전부 CLEAR를 반환할 때까지 반복한다.
 8. 최종 승인 후 push한다.
 
@@ -369,8 +362,9 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 
 ## 주의사항
 
-- 매 라운드 새 codex exec 프로세스를 사용한다 (이전 라운드 결과에 의한 확증 편향 방지).
-- DA codex 프로세스는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 수정 금지를 지시한다. 코드나 계획을 직접 수정하지 않는다.
+- 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다. direct Codex path에서는 새 native subagent thread, fallback path에서는 새 `codex exec` 프로세스다.
+- direct Codex path에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
+- fallback path의 DA `codex exec` 프로세스는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 수정 금지를 지시한다. 코드나 계획을 직접 수정하지 않는다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
 - 피드백 루프 결과는 PR 코멘트로 게시하여 이력을 보존한다.
@@ -381,5 +375,5 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 - **[references/da-domains.md](references/da-domains.md)** -- DA reviewer bundle/세부 도메인 정의, 프롬프트 템플릿, 출력 형식
 - **[references/protocol.md](references/protocol.md)** -- 상태 흐름 매핑, Arbiter 판정 프로토콜, PoC 의무화 규칙, 무한 루프 방지, 합리화 방지, PR 코멘트 형식
 - **[references/arbiter-prompt.md](references/arbiter-prompt.md)** -- Arbiter 프롬프트 템플릿, 4가지 판정 기준, few-shot 교정 예시, blind review 범위, 편향 방지
-- **[references/arbiter-scaling.md](references/arbiter-scaling.md)** -- 동적 스케일링, codex exec 실행 계약 (DA/Arbiter/Intensity), 실패 처리
-- **[/using-codex-exec 스킬](../using-codex-exec/SKILL.md)** -- codex exec 실행 패턴 (패턴 4: exec 우회, 패턴 5: DA 피드백 루프). 플래그/제한사항 확인용.
+- **[references/arbiter-scaling.md](references/arbiter-scaling.md)** -- 동적 스케일링, direct Codex / `codex exec` 런타임 분기, 실패 처리
+- **[/using-codex-exec 스킬](../using-codex-exec/SKILL.md)** -- fallback / explicit `codex exec` 실행 패턴 (패턴 4: exec 우회, 패턴 5: DA 피드백 루프). 플래그/제한사항 확인용.
