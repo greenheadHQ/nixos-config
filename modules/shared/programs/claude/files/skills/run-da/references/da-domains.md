@@ -1,18 +1,22 @@
-# DA 영역 상세 정의
+# DA reviewer bundle 상세 정의
 
-DA 영역의 집중 관점과 에이전트 프롬프트 구성을 정의한다. Review Intensity에 따라 일부 영역만 실행될 수 있다.
+기본 FULL path는 4개 reviewer bundle을 사용한다. 각 bundle은 두 개의 세부 도메인을 묶어
+중복 fan-out을 줄이고, 각 finding에는 실제로 문제를 포착한 세부 관점을 함께 표기한다.
+
+명시적 exhaustive override(`run-da ... full`)가 필요할 때만 bundle을 세부 도메인 단위로 확장한다.
 
 ## 공통 출력 형식
 
-모든 DA 에이전트는 다음 형식으로 결과를 반환한다.
+모든 DA reviewer는 다음 형식으로 결과를 반환한다.
 
 위반 발견 시:
 
 ```text
-## [영역] 위반 발견: [count]건
+## [reviewer bundle] 위반 발견: [count]건
 
 ### 1. [위반 제목]
-- **ID**: {DOMAIN}-{순번}
+- **ID**: {BUNDLE}-{순번}
+- **세부 관점**: {SUBDOMAIN}
 - **위치**: [파일:줄] 또는 [계획 항목 번호]
 - **문제**: 구체적 문제 기술
 - **근거**: PoC 또는 레퍼런스
@@ -23,10 +27,13 @@ DA 영역의 집중 관점과 에이전트 프롬프트 구성을 정의한다. 
 위반 미발견 시:
 
 ```text
-[영역]: CLEAR
+[reviewer bundle]: CLEAR
 ```
 
-### 심각도별 행동 의무
+`{SUBDOMAIN}`은 bundle 내부에서 실제로 해당 finding을 포착한 세부 관점이다.
+예: `Correctness` bundle에서 `SECURITY`, `Maintainability` bundle에서 `READABILITY`.
+
+## 심각도별 행동 의무
 
 | 심각도 | 행동 | 설명 |
 |---|---|---|
@@ -37,33 +44,43 @@ DA 영역의 집중 관점과 에이전트 프롬프트 구성을 정의한다. 
 
 ## 공통 프롬프트 구조
 
-각 DA 에이전트에게 아래 구조의 프롬프트를 전달한다.
-`{DOMAIN}`, `{FOCUS_QUESTION}`, `{FOCUS_TARGETS}`, `{OTHER_DOMAINS}`를 영역별로 치환한다.
+각 DA reviewer에게 아래 구조의 프롬프트를 전달한다.
+`{BUNDLE}`, `{SUBDOMAINS}`, `{FOCUS_QUESTION}`, `{FOCUS_TARGETS}`, `{OTHER_BUNDLES}`를 bundle별로 치환한다.
 
 > **⚠️ 이 플레이스홀더는 셸 변수가 아니다.** 조립 절차는 [run-da/SKILL.md](../SKILL.md)를 참조한다.
-> `{OTHER_DOMAINS}`는 전체 8개 도메인 중 현재 도메인을 제외한 이름의 쉼표 구분 목록이다.
+> `{OTHER_BUNDLES}`는 현재 bundle을 제외한 reviewer bundle 이름의 쉼표 구분 목록이다.
 
 ```text
-당신은 {DOMAIN} 전문 Devil's Advocate이다. 오직 {DOMAIN} 관점에서만 리뷰한다.
+당신은 {BUNDLE} reviewer bundle이다. 세부 관점은 {SUBDOMAINS}다.
+오직 {BUNDLE} 범위 안에서만 리뷰하고, 각 finding에는 가장 적절한 세부 관점 하나를 붙여라.
 {FOCUS_QUESTION}
 
 집중 대상:
 {FOCUS_TARGETS}
 
-다른 영역({OTHER_DOMAINS})은 절대 언급하지 마라.
+다른 bundle({OTHER_BUNDLES})의 우려는 언급하지 마라.
+위반이 없으면 CLEAR를 반환하라.
 
 [공통 출력 형식에 따라 결과를 반환하라]
 ```
 
-## 영역별 정의
+## 기본 reviewer bundle 정의
 
-| 영역 | 핵심 질문 | 집중 대상 |
-|------|----------|----------|
-| **YAGNI** | "지금 필요하지 않은 것"을 식별하라 | 사용처 없는 인터페이스/추상화, "나중에 필요할 수 있으니까" 코드, 단일 구현에 대한 불필요한 레이어, 요구사항에 없는 설정 노출 |
-| **NGMI** | "이 설계로는 결국 막다른 골목"을 식별하라 | 가정 붕괴 시 전면 재작성 필요한 구조, 확장 경로 차단된 아키텍처, 잘못된 추상화 경계, 데이터 모델의 근본적 한계 |
-| **HALLUCINATION** | "실제로 존재하는가, 실제로 그렇게 동작하는가"를 검증하라 | 존재하지 않는 API/CLI 플래그/함수, 잘못된 시그니처/인자, 실제와 다른 프레임워크 동작 가정, 존재하지 않는 경로/설정 키 |
-| **SECURITY** | "공격자가 악용할 수 있는 경로"를 식별하라 | credential/API key 하드코딩, 인증/인가 우회 경로, 입력 검증 부재(injection, path traversal), 과도한 권한/네트워크 노출 |
-| **SIDE_EFFECT** | "건드리지 않은 기존 코드에 무슨 영향을 주는가"를 추적하라 | 공유 상태의 암묵적 변경, import/export 변경의 파급, 인터페이스 계약 변경, 실행 순서/타이밍 변경, 환경 변수/경로/포트 변경 |
-| **CONSISTENCY** | "기존 프로젝트 패턴과 다른 것"을 식별하라 | 네이밍 규칙 위반, 아키텍처 패턴 불일치, 기존 유틸 무시 재구현, 설정/디렉토리 관례 위반, 프로젝트 문서 규칙 위반 |
-| **READABILITY** | "다음에 읽는 사람(또는 LLM)이 의도를 빠르게 파악할 수 있는가"를 판단하라 | 함수/변수명과 동작 불일치, 복잡 로직에 why 주석 부재, 과도한 체이닝/중첩, 암묵적 규약 의존, 비직관적 제어 흐름 |
-| **CLEAN_CODE** | "기술 부채를 증가시키는 코드"를 식별하라 | 복사-붙여넣기 중복(DRY 위반), 매직넘버/매직스트링, 사용되지 않는 import/변수/함수, 죽은 코드 경로, 방치된 TODO/HACK |
+| reviewer bundle | 세부 관점 | 핵심 질문 | 집중 대상 |
+|-----------------|----------|----------|----------|
+| **Correctness** | `HALLUCINATION`, `SECURITY` | "이 변경이 실제로 존재하는 동작인가, 그리고 안전한가?"를 검증하라 | 존재하지 않는 API/CLI 플래그/경로, 잘못된 시그니처/인자, trust boundary 오판, 인증/인가 우회, 입력 검증 부재, 과도한 네트워크 노출 |
+| **Design** | `YAGNI`, `NGMI` | "지금 필요하지 않은 복잡성을 만들거나, 구조적 막다른 길을 만들지 않는가?"를 판단하라 | 사용처 없는 인터페이스/추상화, 미래 대비 과설계, 가정 붕괴 시 전면 재작성 필요한 구조, 잘못된 책임 분리, 확장 경로 차단된 데이터/모듈 경계 |
+| **Regression** | `SIDE_EFFECT`, `CONSISTENCY` | "기존 동작이나 프로젝트 관례를 조용히 깨지 않는가?"를 추적하라 | 공유 상태의 암묵적 변경, 인터페이스 계약 변경, 환경 변수/경로/포트 변경, import/export 파급, 네이밍/디렉토리/설정 규칙 위반, 기존 패턴 무시 재구현 |
+| **Maintainability** | `READABILITY`, `CLEAN_CODE` | "다음 개발자(LLM 포함)가 이 변경을 빠르게 이해하고 안전하게 수정할 수 있는가?"를 판단하라 | 함수/변수명과 동작 불일치, why 주석 부재, 복잡한 제어 흐름, 복사-붙여넣기 중복, 매직넘버/매직스트링, 죽은 코드, 방치된 TODO/HACK |
+
+## 명시적 exhaustive override 매핑
+
+`run-da ... full`은 기본 bundle fan-out을 세부 도메인으로 확장한다. 이 경로는
+기본값이 아니라 **exhaustive override**이며, reviewer 수를 늘리는 대신 recall을 우선한다.
+
+| reviewer bundle | exhaustive override로 확장되는 세부 도메인 |
+|-----------------|------------------------------------------|
+| Correctness | `HALLUCINATION`, `SECURITY` |
+| Design | `YAGNI`, `NGMI` |
+| Regression | `SIDE_EFFECT`, `CONSISTENCY` |
+| Maintainability | `READABILITY`, `CLEAN_CODE` |

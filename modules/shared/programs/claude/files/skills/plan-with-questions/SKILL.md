@@ -103,6 +103,8 @@ description: |
 - **무조건 호출**: DA 호출 여부를 메인 LLM이 판단하지 않는다.
   Review Intensity 판단은 run-da 내부의 독립 에이전트가 수행하므로,
   이 단계를 건너뛸 이유가 없다.
+- **기본 경로는 lean default**: `/run-da for_plan`의 자동 FULL은 4 reviewer bundle strong review다.
+  8개 세부 도메인 exhaustive path는 명시적 `full` modifier가 있을 때만 쓴다.
 - **YAGNI 예외 근거**: DA 호출 자체는 YAGNI 판단 대상이 아니다.
   변경이 "단순"해 보여도 독립 에이전트가 SKIP으로 판단하면
   사용자 승인을 거쳐 자동 생략된다. 메인 LLM은 호출만 하면 된다.

@@ -9,7 +9,8 @@ description: |
 
 # Devil's Advocate 피드백 루프
 
-최대 8개 영역별 전문 DA 에이전트를 변경 규모에 맞게 병렬 실행하여 계획/코드를 엄격 리뷰한다.
+기본 경로는 4개 reviewer bundle을 변경 규모에 맞게 병렬 실행하여 계획/코드를 엄격 리뷰한다.
+명시적 exhaustive override가 필요할 때만 `run-da ... full`로 8개 세부 도메인까지 확장한다.
 
 **주의: Review Intensity 판단은 메인 LLM의 역할이 아니다**
 
@@ -32,13 +33,17 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 ### `full` modifier
 
 모드 뒤에 `full`을 추가하면 (예: `for_pr full`, `both full fresh`)
-**Review Intensity 판단을 건너뛰고 항상 전체 영역을 실행**한다.
+**Review Intensity 판단을 건너뛰고 exhaustive override를 실행**한다.
 
 | 구분 | 기본 동작 | `full` 동작 |
 |------|----------|------------|
-| 경중 판단 | 자동 수행 (SKIP/LITE/FULL) | 건너뜀 → FULL 강제 |
-| 에이전트 수 | 판단 결과에 따라 가변 | 항상 전체 |
-| 사용 시점 | 일반 | 상위 스킬(plan-with-questions 등 run-da를 내부에서 호출하는 스킬)이 강한 검토를 보장해야 할 때 |
+| 경중 판단 | 자동 수행 (SKIP/LITE/FULL) | 건너뜀 → exhaustive FULL 강제 |
+| fan-out | 판단 결과에 따라 0 / 선택 bundle / 4 reviewer bundles | 항상 8개 세부 도메인 |
+| 사용 시점 | 일반 | 사용자 명시적 exhaustive 요청, recall 민감도가 높은 변경, 예외적 고위험 diff |
+
+자동 판정의 **FULL**도 여전히 강한 기본 검토다. 차이는 fan-out뿐이다:
+- 자동 `FULL` = `Correctness`, `Design`, `Regression`, `Maintainability` 4 bundle
+- `full` modifier = 위 bundle을 8개 세부 도메인으로 확장한 exhaustive override
 
 ### `fresh` modifier
 
@@ -55,45 +60,50 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 - 이전 라운드에서 수용/기각된 지적 내역
 - "이번에는 다른 관점에서 봐주세요" 등 이전 라운드를 암시하는 표현
 
-메인 에이전트는 finding의 도메인 + 위치(파일:줄 또는 계획 항목 번호) 조합으로 라운드 간 반복 감지를 수행한다.
+메인 에이전트는 finding의 세부 관점 + 위치(파일:줄 또는 계획 항목 번호) 조합으로 라운드 간 반복 감지를 수행한다.
 
 ## 빠른 참조
 
 | 항목 | 위치 |
 |------|------|
 | Review Intensity 판단 규칙 | [references/intensity-rules.md](references/intensity-rules.md) |
-| DA 영역 상세 + 프롬프트 템플릿 | [references/da-domains.md](references/da-domains.md) |
+| DA reviewer bundle 상세 + 프롬프트 템플릿 | [references/da-domains.md](references/da-domains.md) |
 | 피드백 프로토콜 + 합리화 방지 상세 | [references/protocol.md](references/protocol.md) |
 | Arbiter 프롬프트 + 판정 기준 | [references/arbiter-prompt.md](references/arbiter-prompt.md) |
 | Arbiter/Intensity 스케일링 + 실행 계약 | [references/arbiter-scaling.md](references/arbiter-scaling.md) |
 
-## DA 영역
+## DA reviewer bundles
 
-| 영역 | 집중 관점 | 심각도 기준 |
-|------|----------|-----------|
-| YAGNI | 불필요한 추상화, 미래 대비 과설계 | 사용처 0인 코드/인터페이스 존재 |
-| NGMI | 근본적 설계 결함, 확장 불가 구조 | 요구사항 변경 시 전면 재작성 필요 |
-| HALLUCINATION | 존재하지 않는 API/플래그/경로 사용 | 실행 시 즉시 에러 |
-| SECURITY | 인증 우회, 비밀 노출, 입력 미검증 | 공격 표면 확대 |
-| SIDE_EFFECT | 수정하지 않은 기존 기능에 대한 영향 | 기존 동작 변경/파괴 |
-| CONSISTENCY | 프로젝트 컨벤션/네이밍/구조 위반 | 코드베이스 일관성 훼손 |
-| READABILITY | 이해하기 어려운 로직, 주석 부재 | 다음 개발자(LLM 포함)가 의도 파악 불가 |
-| CLEAN_CODE | 중복 코드, 매직넘버, 죽은 코드 | 유지보수 비용 증가 |
+| reviewer bundle | 포함 세부 도메인 | 집중 관점 | 심각도 기준 |
+|-----------------|------------------|----------|-----------|
+| Correctness | HALLUCINATION + SECURITY | 존재하지 않는 가정, 안전하지 않은 경계, 검증 누락 | 실행 즉시 실패 또는 공격 표면 확대 |
+| Design | YAGNI + NGMI | 과설계, 막다른 구조, 요구 변경 시 붕괴할 추상화 | 구조적 재작업 필요 |
+| Regression | SIDE_EFFECT + CONSISTENCY | 기존 동작 파괴, 인접 기능 파급, 프로젝트 패턴 드리프트 | 기존 계약/관례 훼손 |
+| Maintainability | READABILITY + CLEAN_CODE | 이해 난이도, 중복, 매직값, 죽은 코드 | 유지보수 비용 증가 |
+
+기본 FULL path는 위 4개 reviewer bundle을 사용한다. 각 finding은 bundle 이름 아래에서
+세부 관점(`HALLUCINATION`, `SECURITY` 등)을 함께 표기한다.
+
+명시적 exhaustive override(`run-da ... full`)는 위 bundle을 다음 8개 세부 도메인으로 확장한다:
+`YAGNI`, `NGMI`, `HALLUCINATION`, `SECURITY`, `SIDE_EFFECT`, `CONSISTENCY`, `READABILITY`, `CLEAN_CODE`.
 
 상세 프롬프트 템플릿과 출력 형식은 [references/da-domains.md](references/da-domains.md) 참조.
 
 ## Review Intensity (변경 규모 판단)
 
 Review Intensity 판단은 **독립 에이전트(codex exec)**가 수행한다. 메인 LLM은 판단에 관여하지 않는다.
-`full` modifier가 있으면 이 단계를 건너뛰고 FULL로 직행한다.
+`full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override로 직행한다.
 
 ### 3단계
 
 | 단계 | 에이전트 수 | 사용자 승인 | 설명 |
 |------|-----------|-----------|------|
 | SKIP | 0 | AskUserQuestion **필수** | DA 완전 생략 |
-| LITE | SECURITY 필수 + 관련 도메인 | 불필요 | 관련 도메인만 선택 실행 |
-| FULL | 전체 | 불필요 | 현행 전체 실행 |
+| LITE | Correctness 필수 + 관련 reviewer bundles | 불필요 | 필요한 bundle만 선택 실행 |
+| FULL | 4 reviewer bundles | 불필요 | 기본 strong review |
+
+`full` modifier는 위 표의 FULL과 다르다. 자동 FULL은 4 reviewer bundle이고,
+modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 진입한다.
 
 ### 판단 실행 절차
 
@@ -121,8 +131,8 @@ Review Intensity 판단은 **독립 에이전트(codex exec)**가 수행한다. 
    ```
 4. 메인 LLM이 결과 파일을 읽고 판정에 따라 분기한다:
    - SKIP → AskUserQuestion으로 사용자 승인 (기존 SKIP 절차)
-   - LITE → 도메인 선택 (기존 LITE 절차)
-   - FULL → 전체 영역 실행
+   - LITE → reviewer bundle 선택 (기존 LITE 절차)
+   - FULL → 4 reviewer bundles 실행
 5. **실패 시 fallback: FULL 강제** — 결과 파일이 없거나 빈 경우, exit code가 0이 아닌 경우, 또는 첫 줄이 SKIP/LITE/FULL이 아닌 경우(파싱 실패).
 6. Review Intensity 판단 결과(SKIP/LITE/FULL)와 근거를 사용자에게 보고한다.
 
@@ -139,27 +149,28 @@ Review Intensity 판단은 **독립 에이전트(codex exec)**가 수행한다. 
 
 ### LITE 절차
 
-1. SECURITY는 항상 포함한다.
-2. 코드 변경이면 SIDE_EFFECT도 기본 포함한다 (기존 호출부 회귀 검출을 위해).
-3. 나머지 도메인 중 변경 성격에 관련된 도메인만 선택한다.
-   선택 판단 기준: 해당 도메인의 "집중 대상"(da-domains.md)이 이번 변경에 적용되는가.
-4. 선택되지 않은 도메인은 NOT_RUN으로 기록한다.
-5. 선택된 도메인만으로 기존 for_plan/for_pr 절차를 수행한다.
-6. 종료 조건: **선택된 도메인 전부 CLEAR** (NOT_RUN 도메인은 평가 대상 아님).
+1. `Correctness`는 항상 포함한다. (`SECURITY`와 `HALLUCINATION` 안전장치를 함께 유지한다.)
+2. 코드 변경이면 `Regression`도 기본 포함한다 (기존 호출부 회귀 검출을 위해).
+3. 나머지 bundle 중 변경 성격에 직접 관련된 bundle만 선택한다.
+   선택 판단 기준: 해당 bundle의 "집중 대상"(da-domains.md)이 이번 변경에 적용되는가.
+4. 선택되지 않은 bundle은 `NOT_RUN`으로 기록한다.
+5. 선택된 bundle만으로 기존 for_plan/for_pr 절차를 수행한다.
+6. 종료 조건: **선택된 bundle 전부 CLEAR** (`NOT_RUN` bundle은 평가 대상 아님).
 
 ### LITE 예시
 
-단일 함수명 정리 리팩터링 → **SECURITY** + **SIDE_EFFECT** + **READABILITY** + **CONSISTENCY** 실행.
-미실행: YAGNI(NOT_RUN), NGMI(NOT_RUN), HALLUCINATION(NOT_RUN), CLEAN_CODE(NOT_RUN).
-이유: SECURITY는 항상 포함, SIDE_EFFECT는 코드 변경이므로 기본 포함, READABILITY/CONSISTENCY는 이름 변경에 직접 관련.
+단일 함수명 정리 리팩터링 → **Correctness** + **Regression** + **Maintainability** 실행.
+미실행: Design(NOT_RUN).
+이유: Correctness는 항상 포함, Regression은 코드 변경이므로 기본 포함,
+Maintainability는 이름/가독성 변화에 직접 관련된다.
 
 ### LITE 라운드 요약 형식
 
 ```text
-Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
+Round N 요약 (LITE: 선택 M개/전체 4개 reviewer bundles): DA 발견 X건
 → Arbiter: CONFIRMED Y건, NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
-영역별: SECURITY CLEAR, SIDE_EFFECT 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
-미실행: YAGNI(NOT_RUN), NGMI(NOT_RUN), ...
+bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
+미실행: Design(NOT_RUN), ...
 ```
 
 ## 절차
@@ -167,48 +178,52 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
 ### for_plan 모드
 
 0. **Review Intensity 판단**을 수행한다.
+   - `full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(8개 세부 도메인)로 진입한다.
    - SKIP → SKIP 절차를 따른다. 승인 시 for_plan을 종료한다.
-   - LITE → LITE 절차에 따라 실행할 도메인을 선택한다.
-   - FULL → 전체 영역을 실행한다.
+   - LITE → LITE 절차에 따라 실행할 reviewer bundle을 선택한다.
+   - FULL → 4 reviewer bundles를 실행한다.
 1. 현재 계획 파일 또는 대화 컨텍스트에서 계획 내용을 수집한다.
-2. 선택된 영역별 DA 에이전트를 `codex exec --full-auto`로 **병렬 실행**한다.
+2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 `codex exec --full-auto`로 **병렬 실행**한다.
    실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
    - 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)`
-   - 선택된 영역별 프롬프트 파일을 생성한다: `$DA_DIR/{domain}.md`
+   - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
      각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 계획 전체 내용을 포함한다.
      반드시 "계획 외의 관련 파일도 직접 읽어 탐색하라"는 지시를 포함한다.
-   - 선택된 도메인 수만큼 codex exec를 **background Bash tool 호출** (`run_in_background: true`)로 실행한다:
+   - 선택된 review unit 수만큼 codex exec를 **background Bash tool 호출** (`run_in_background: true`)로 실행한다:
      ```zsh
      # ⚠️ Bash tool은 zsh에서 실행됨. bash 전용 간접 확장(${!arr[@]}) 금지.
      #   zsh 호환 배열("${arr[@]}", typeset -A)은 사용 가능.
-     # da-domains.md의 공통 프롬프트 구조에 따라 각 도메인별 프롬프트를 조립한다.
+     # da-domains.md의 공통 프롬프트 구조에 따라 각 review unit별 프롬프트를 조립한다.
      # 비신뢰 텍스트(계획/diff) 포함 시 quoted heredoc(<<'PROMPT') 사용.
      #   (패턴 4의 unquoted heredoc은 $(git diff) shell 치환이 필요한 경우에만 적용)
 
-     # Bash call 1: 임시 디렉토리 + 선택된 도메인별 프롬프트 파일 생성
+     # Bash call 1: 임시 디렉토리 + 선택된 review unit별 프롬프트 파일 생성
      DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)
 
-     # 각 선택 도메인마다 cat(프롬프트 생성) + codex exec(실행)를 반복한다.
+     # 각 선택 review unit마다 cat(프롬프트 생성) + codex exec(실행)를 반복한다.
      # 반복은 shell loop가 아닌 tool-level 병렬 호출로 처리한다.
-     # 예시: SECURITY 도메인
-     cat > "$DA_DIR/SECURITY.md" <<'PROMPT'
-     당신은 SECURITY 전문 Devil's Advocate이다. 오직 SECURITY 관점에서만 리뷰한다.
-     "공격자가 악용할 수 있는 경로"를 식별하라.
+     # 예시: Correctness bundle
+     cat > "$DA_DIR/Correctness.md" <<'PROMPT'
+     당신은 Correctness reviewer bundle이다. 세부 관점은 HALLUCINATION, SECURITY다.
+     존재하지 않는 가정 또는 공격자가 악용할 수 있는 경로를 식별하라.
      ...
      PROMPT
 
-     # Bash call 2~N: 선택된 도메인 수만큼 background Bash tool 호출 (run_in_background: true)
+     # Bash call 2~N: 선택된 review unit 수만큼 background Bash tool 호출 (run_in_background: true)
      # -o는 --output-last-message: 에이전트 최종 응답만 저장
      codex exec --full-auto --ephemeral \
-       -o "$DA_DIR/SECURITY-result.md" \
-       "$(cat "$DA_DIR/SECURITY.md")" \
-       2>"$DA_DIR/SECURITY-stderr.log"
+       -o "$DA_DIR/Correctness-result.md" \
+       "$(cat "$DA_DIR/Correctness.md")" \
+       2>"$DA_DIR/Correctness-stderr.log"
      ```
    - `run_in_background: true`로 실행하면 LLM이 즉시 반환받아 사용자와 대화 가능하다.
      각 codex exec 완료 시 자동 알림이 온다. sleep/poll로 완료를 확인하지 않는다.
    - `& + wait` shell-level 병렬을 사용하지 않는다 (Bash tool sandbox 제약, [known-issues.md §11](../using-codex-exec/references/known-issues.md) 참조).
    - stdin pipe(`cat file | codex exec`) 대신 `"$(cat file)"` 인라인 인자를 사용한다.
    - `fresh` modifier가 있으면 이전 라운드 결과를 프롬프트에 포함하지 않는다.
+   - 기본 propagation은 selective다. 이전 라운드 결과를 전달할 때는
+     [references/protocol.md](references/protocol.md)의 selective propagation 규칙만 따른다.
+     `full` modifier는 reviewer fan-out만 확장하며 propagation 기본값은 바꾸지 않는다.
    - codex exec는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
      (이유: codex CLI 제약상 `--full-auto`가 `-s read-only`를 override하여 read-only 강제 불가. exec 우회 패턴 사용을 위한 트레이드오프.)
    - `--ephemeral`로 실행하여 Codex 세션 히스토리를 오염시키지 않는다.
@@ -216,7 +231,7 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
    - `/using-codex-exec` 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙(문맥 보존, 라운드 히스토리 포함 여부)은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
 3. 모든 background 작업의 완료 알림을 수신한 후 결과 파일(`$DA_DIR/*-result.md`)을 수집하여 종합 리포트를 작성한다.
    실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우(`$DA_DIR/*-stderr.log` 확인).
-   실패한 영역만 재실행한다. 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
+   실패한 review unit만 재실행한다. 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
    - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md)의 **for_plan 조립 규칙** 참조).
@@ -228,33 +243,36 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
      - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 계획에 반영한다.
      - NOT_AN_ISSUE: 보고만 (반영 불필요).
      - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
-6. 반영 후 동일 선택 DA를 **새 codex exec 프로세스로** 재실행한다.
-7. 선택된 DA 전부 CLEAR를 반환할 때까지 반복한다.
+6. 반영 후 동일 선택 review unit을 **새 codex exec 프로세스로** 재실행한다.
+7. 선택된 review unit 전부 CLEAR를 반환할 때까지 반복한다.
 
 ### for_pr 모드
 
 0. **Review Intensity 판단**을 수행한다.
+   - `full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(8개 세부 도메인)로 진입한다.
    - SKIP → SKIP 절차를 따른다. 승인 시 for_pr을 종료한다.
-   - LITE → LITE 절차에 따라 실행할 도메인을 선택한다.
-   - FULL → 전체 영역을 실행한다.
+   - LITE → LITE 절차에 따라 실행할 reviewer bundle을 선택한다.
+   - FULL → 4 reviewer bundles를 실행한다.
 1. 변경사항이 커밋되어 있는지 확인한다 (`git status --porcelain`이 빈 출력이면 clean).
    `git diff main...HEAD`로 diff를 수집한다.
    - diff를 프롬프트에 직접 포함한다 (exec 우회 패턴).
    - diff가 과도하게 크면 (`git diff main...HEAD | wc -l`로 확인) 기계적 변경(flake.lock, hash 변경 등)을 필터링한 축약 diff를 사용한다.
      `git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능.
-2. 선택된 영역별 DA 에이전트를 `codex exec --full-auto --ephemeral`로 **병렬 실행**한다.
+2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 `codex exec --full-auto --ephemeral`로 **병렬 실행**한다.
    실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)를 참조한다.
    - 라운드별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-pr-XXXXXX)`
-   - 선택된 영역별 프롬프트 파일을 생성한다: `$DA_DIR/{domain}.md`
+   - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
      각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 diff를 `<git-diff>` 태그로 감싸서 포함한다.
      반드시 "diff 외부의 관련 파일도 직접 읽어 탐색하라"는 지시를 포함한다.
-   - 선택된 도메인 수만큼 codex exec를 **background Bash tool 호출** (`run_in_background: true`)로 실행한다 (for_plan과 동일 패턴).
+   - 선택된 review unit 수만큼 codex exec를 **background Bash tool 호출** (`run_in_background: true`)로 실행한다 (for_plan과 동일 패턴).
      stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
      `& + wait` shell-level 병렬을 사용하지 않는다 (Bash tool sandbox 제약).
    - `fresh` modifier가 있으면 이전 라운드 결과를 프롬프트에 포함하지 않는다.
+   - 기본 propagation은 selective다. 이전 라운드 결과를 전달할 때는
+     [references/protocol.md](references/protocol.md)의 selective propagation 규칙만 따른다.
    - 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라"를 명시한다.
 3. 모든 background 작업의 완료 알림을 수신한 후 결과 파일을 수집하여 종합 리포트를 작성한다.
-   실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우. 실패한 영역만 재실행한다.
+   실패 판정: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아닌 경우. 실패한 review unit만 재실행한다.
    라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
@@ -265,8 +283,8 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
      - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 코드에 반영하고 커밋한다.
      - NOT_AN_ISSUE: 보고만 (반영 불필요).
      - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
-6. 반영 후 동일 선택 DA를 **새 codex exec 프로세스로** 재실행한다.
-7. 선택된 DA 전부 CLEAR를 반환할 때까지 반복한다.
+6. 반영 후 동일 선택 review unit을 **새 codex exec 프로세스로** 재실행한다.
+7. 선택된 review unit 전부 CLEAR를 반환할 때까지 반복한다.
 8. 최종 승인 후 push한다.
 
 ### both 모드
@@ -300,10 +318,14 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
   증거 없는 추상적 우려는 Arbiter가 NOT_AN_ISSUE로 판정한다.
 - **Fresh perspective 보장**: 매 라운드마다 새 에이전트를 사용한다.
   `fresh` modifier 사용 시 이전 라운드 맥락도 완전히 차단한다.
+- **Selective propagation 기본값**: Arbiter/후속 reviewer에게는 unique findings, conflicting findings,
+  high-severity findings, user decision required findings만 전달한다.
+  raw transcript 전체, CLEAR 결과, 중복 low-signal finding의 all-to-all broadcast는 금지한다.
+  `full` modifier는 propagation이 아니라 fan-out만 확장한다.
 - **프롬프트 조향 금지**: 후속 라운드 DA/Arbiter 프롬프트에 이전 라운드의 판정 결과를 포함하지 않는다.
   이전 라운드 결과를 "이미 해결된 사안"으로 프레이밍하는 것도 금지한다.
-- **무한 루프 방지**: 3회 연속 동일 지적(도메인 + 위치 기준)이 반복되면 사용자 결정에 위임한다.
-- **탈출 조건**: 선택된 DA 모두 CLEAR를 반환하면 루프를 종료한다 (NOT_RUN 도메인 제외).
+- **무한 루프 방지**: 3회 연속 동일 지적(세부 관점 + 위치 기준)이 반복되면 사용자 결정에 위임한다.
+- **탈출 조건**: 선택된 review unit 모두 CLEAR를 반환하면 루프를 종료한다 (`NOT_RUN` 제외).
 
 상세 프로토콜은 [references/protocol.md](references/protocol.md) 참조.
 
@@ -321,7 +343,7 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
 > "SECURITY DA가 3회 연속 동일 지적을 반복합니다. 수용/기각/보류 중 선택해주세요."
 
 **좋은 예** (맥락 풍부):
-> "현재 PR #296 코드 리뷰 3라운드째입니다. SECURITY 영역 DA가 '입력 검증 누락'을 3회 연속 지적하고 있습니다.
+> "현재 PR #296 코드 리뷰 3라운드째입니다. `SECURITY` 세부 관점 finding이 3회 연속 '입력 검증 누락'을 지적하고 있습니다.
 > 해당 코드는 modules/foo.nix:42의 사용자 입력 처리 부분인데, 쉽게 비유하면 '현관문에 잠금장치를 달아야 한다'는 지적입니다.
 > 저는 이전 2라운드에서 '이 입력은 내부 시스템에서만 오므로 잠금이 불필요하다'고 기각했지만, DA가 계속 지적합니다.
 > - 수용: 입력 검증 코드 추가 (안전하지만 불필요한 코드 증가)
@@ -350,13 +372,13 @@ Round N 요약 (LITE: 선택 M개/전체 N개): DA 발견 X건
 - 매 라운드 새 codex exec 프로세스를 사용한다 (이전 라운드 결과에 의한 확증 편향 방지).
 - DA codex 프로세스는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 수정 금지를 지시한다. 코드나 계획을 직접 수정하지 않는다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
-- DA 결과에서 다른 영역을 침범한 지적은 해당 영역의 DA 결과로 이관하거나 무시한다.
+- DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
 - 피드백 루프 결과는 PR 코멘트로 게시하여 이력을 보존한다.
 
 ## 참조 자료
 
 - **[references/intensity-rules.md](references/intensity-rules.md)** -- Review Intensity 판단 알고리즘 규칙 (단일 소스)
-- **[references/da-domains.md](references/da-domains.md)** -- DA 영역별 상세 정의, 프롬프트 템플릿, 출력 형식
+- **[references/da-domains.md](references/da-domains.md)** -- DA reviewer bundle/세부 도메인 정의, 프롬프트 템플릿, 출력 형식
 - **[references/protocol.md](references/protocol.md)** -- 상태 흐름 매핑, Arbiter 판정 프로토콜, PoC 의무화 규칙, 무한 루프 방지, 합리화 방지, PR 코멘트 형식
 - **[references/arbiter-prompt.md](references/arbiter-prompt.md)** -- Arbiter 프롬프트 템플릿, 4가지 판정 기준, few-shot 교정 예시, blind review 범위, 편향 방지
 - **[references/arbiter-scaling.md](references/arbiter-scaling.md)** -- 동적 스케일링, codex exec 실행 계약 (DA/Arbiter/Intensity), 실패 처리

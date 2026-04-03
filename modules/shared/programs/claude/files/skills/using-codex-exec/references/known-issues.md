@@ -304,7 +304,7 @@ cat /tmp/smoke-result.md
    PROMPT
    ```
 
-2. 각 codex exec를 별도 Bash tool 호출로 병렬 실행 (8개 동시):
+2. 각 codex exec를 별도 Bash tool 호출로 병렬 실행 (필요 수만큼 동시):
    ```bash
    codex exec --full-auto --ephemeral \
      -o "$DA_DIR/domain-result.md" \
@@ -332,7 +332,7 @@ cat /tmp/smoke-result.md
 
 **금지 패턴**:
 - `&` + `wait` + `$!` (shell-level background)
-- 8개 동시 stdin pipe (`cat file | codex exec`)
+- 다수 동시 stdin pipe (`cat file | codex exec`)
 - here-doc + pipe 조합의 다수 병렬
 - heredoc + codex exec 체이닝 (같은 Bash 호출에서 `run_in_background` 사용 시 — 하위 항목 참조)
 - Bash tool `run_in_background: true` 사용 후 sleep/poll로 완료 확인 (알림이 자동으로 옴)
