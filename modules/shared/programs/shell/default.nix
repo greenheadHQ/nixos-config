@@ -23,6 +23,10 @@ in
     source = "${sharedScriptsDir}/wt.sh";
     executable = true;
   };
+  home.file.".local/bin/codex-sync" = {
+    source = "${sharedScriptsDir}/codex-sync.sh";
+    executable = true;
+  };
   home.file.".local/bin/nfu" = {
     source = pkgs.replaceVars "${sharedScriptsDir}/nfu.sh" {
       flakePath = nixosConfigDefaultPath;
