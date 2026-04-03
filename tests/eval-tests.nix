@@ -1,5 +1,5 @@
 # tests/eval-tests.nix
-# Pre-commit E2E eval 테스트 — 네트워크 노출 경계 중심
+# Pre-commit E2E eval 테스트 — NixOS 네트워크 노출 경계 + Darwin intent 검증
 #
 # 실행: nix eval --impure --file tests/eval-tests.nix
 # --impure 필요: builtins.getFlake가 로컬 unlocked flake 참조
@@ -18,8 +18,18 @@ let
   ankiConfigApiMaxValueBytesDefault =
     nixosOptions.homeserver.ankiConnect.configApi.maxValueBytes.default;
 
-  # Darwin config 평가 테스트는 pre-push의 `nix flake check --all-systems`와
-  # 100% 중복이므로 제거 (Opus 피드백). eval-tests는 네트워크 노출 경계에 집중.
+  # Darwin intent 검증은 여기서 직접 수행한다.
+  # 범위: evaluation-safe value-level 설정만 검증.
+  # 제외: postActivation, symbolic hotkeys, GUI 세션/WindowServer 의존 동작.
+  darwinCfgs = flake.darwinConfigurations;
+  expectedDarwinHosts = [
+    "greenhead-MacBookPro"
+    "work-MacBookPro"
+  ];
+  darwinHostNames = builtins.attrNames darwinCfgs;
+  unexpectedDarwinHosts = builtins.filter (
+    name: !(builtins.elem name expectedDarwinHosts)
+  ) darwinHostNames;
 
   inherit (constants.network) minipcTailscaleIP;
 
@@ -328,6 +338,85 @@ let
       prefix: builtins.match ".*[^[:space:]].*" prefix != null
     ) ankiConfigApi.allowedKeyPrefixes;
 
+  # Darwin sudo.extraConfig 정규화 헬퍼
+  splitLines = text: builtins.filter builtins.isString (builtins.split "\n" text);
+
+  isBlankLine = line: builtins.match "[[:space:]]*" line != null;
+  isKnownDarwinSudoMetadataLine =
+    line:
+    builtins.elem line [
+      "# Keep terminfo database for root and %admin."
+      "Defaults:root,%admin env_keep+=TERMINFO_DIRS"
+      "Defaults:root,%admin env_keep+=TERMINFO"
+    ];
+
+  expectedDarwinSudoRule =
+    cfg: "${cfg.system.primaryUser} ALL=(root) NOPASSWD: /run/current-system/sw/bin/darwin-rebuild";
+
+  normalizedDarwinSudoPolicyLines =
+    cfg:
+    builtins.filter (line: !(isBlankLine line || isKnownDarwinSudoMetadataLine line)) (
+      splitLines cfg.security.sudo.extraConfig
+    );
+
+  darwinSudoRuleMatchesExactly =
+    cfg:
+    let
+      policyLines = normalizedDarwinSudoPolicyLines cfg;
+    in
+    builtins.length policyLines == 1 && builtins.elemAt policyLines 0 == expectedDarwinSudoRule cfg;
+
+  darwinIntentTests = builtins.concatLists (
+    map (
+      hostName:
+      let
+        hasHost = builtins.hasAttr hostName darwinCfgs;
+        cfg = if hasHost then darwinCfgs.${hostName}.config else null;
+      in
+      [
+        {
+          name = "Test D0 ${hostName}: darwinConfigurations에 expected host가 존재해야 함";
+          cond = hasHost;
+        }
+        {
+          name = "Test D1 ${hostName}: Touch ID sudo가 활성화되어야 함";
+          cond = hasHost && cfg.security.pam.services.sudo_local.touchIdAuth == true;
+        }
+        {
+          name = "Test D2 ${hostName}: sudo.extraConfig 정규화 후 darwin-rebuild NOPASSWD 규칙 1줄만 남아야 함";
+          cond = hasHost && darwinSudoRuleMatchesExactly cfg;
+        }
+        {
+          name = "Test D3 ${hostName}: Dock autohide가 true여야 함";
+          cond = hasHost && cfg.system.defaults.dock.autohide == true;
+        }
+        {
+          name = "Test D4 ${hostName}: Dock show-recents가 false여야 함";
+          cond = hasHost && cfg.system.defaults.dock."show-recents" == false;
+        }
+        {
+          name = "Test D5 ${hostName}: Dock tilesize가 constants.macos.dock.tileSize와 일치해야 함";
+          cond = hasHost && cfg.system.defaults.dock.tilesize == constants.macos.dock.tileSize;
+        }
+        {
+          name = "Test D6 ${hostName}: InitialKeyRepeat가 constants.macos.keyboard.initialKeyRepeat와 일치해야 함";
+          cond =
+            hasHost
+            && cfg.system.defaults.NSGlobalDomain.InitialKeyRepeat == constants.macos.keyboard.initialKeyRepeat;
+        }
+        {
+          name = "Test D7 ${hostName}: KeyRepeat가 constants.macos.keyboard.keyRepeat와 일치해야 함";
+          cond =
+            hasHost && cfg.system.defaults.NSGlobalDomain.KeyRepeat == constants.macos.keyboard.keyRepeat;
+        }
+        {
+          name = "Test D8 ${hostName}: 자연 스크롤이 비활성화되어야 함";
+          cond = hasHost && cfg.system.defaults.NSGlobalDomain."com.apple.swipescrolldirection" == false;
+        }
+      ]
+    ) expectedDarwinHosts
+  );
+
   # ═══════════════════════════════════════════════════════════════
   # 테스트 실행
   # ═══════════════════════════════════════════════════════════════
@@ -526,7 +615,14 @@ let
       name = "Test 7a: Tailscale useRoutingFeatures가 server이어야 함 (exit node 방지)";
       cond = nixosCfg.services.tailscale.useRoutingFeatures == "server";
     }
-  ];
+  ]
+  ++ [
+    {
+      name = "Test D9: unexpected Darwin host가 없어야 함 (현재 unexpected: [${builtins.concatStringsSep ", " unexpectedDarwinHosts}])";
+      cond = unexpectedDarwinHosts == [ ];
+    }
+  ]
+  ++ darwinIntentTests;
 
   # 모든 테스트를 순차적으로 평가 (실패 시 해당 테스트 이름과 함께 throw)
   runTests = builtins.foldl' (acc: t: if acc then check t.name t.cond true else acc) true tests;
