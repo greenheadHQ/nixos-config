@@ -23,6 +23,7 @@ Codex CLI 호환 구조(`.agents/`, `.codex/`)로 프로젝션한다.
 | 전체 동기화 | `bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"` |
 | 로컬 스킬만 | `bash "$SYNC_SH" project-skills "$PWD" .claude/skills` |
 | MCP 섹션만 | `bash "$SYNC_SH" mcp-config "$PWD"` |
+| Hooks 섹션만 | `bash "$SYNC_SH" hooks-config "$PWD"` |
 | User-scope MCP 투영 | `bash "$SYNC_SH" mcp-config "$PWD" --user-mcp="$HOME/.claude/mcp.json"` |
 | .gitignore 점검 | `bash "$SYNC_SH" gitignore-check "$PWD"` |
 
@@ -69,7 +70,7 @@ fi
 
 ```bash
 resolve_plugin() {
-  local plugin_key="$1"  # e.g. "example-front@example-plugins"
+  local plugin_key="$1"  # e.g. "sample-plugin@sample-marketplace"
   local manifest="$HOME/.claude/plugins/installed_plugins.json"
 
   python3 -c "
@@ -106,6 +107,8 @@ Step 1-2에서 감지/해석한 결과를 `sync.sh all` 서브커맨드에 인�
 > Note: `sync.sh all`은 항상 전체 재생성을 수행한다. `.agents/`는 매번 삭제 후 재생성되고,
 > `.codex/config.toml`은 `[mcp_servers.*]` 섹션만 교체된다 (사용자 설정 보존).
 > 변경이 없어도 재실행해도 안전하다 (멱등).
+> 또한 `.codex/hooks.json`과 `.codex/hooks.compatibility.json`도 함께 재생성한다.
+> 단, Codex 공식 표면에서 의미가 유지되는 hook만 포함되고 나머지는 compatibility report에 기록된다.
 
 ### 인자 구성
 
@@ -122,7 +125,7 @@ ARGS=()
 
 # 각 플러그인마다 (Case B, C)
 # INSTALL_PATH: Step 2에서 해석한 installPath
-# PLUGIN_NAME: plugin-key에서 @ 앞부분 (e.g. "example-front")
+# PLUGIN_NAME: plugin-key에서 @ 앞부분 (e.g. "sample-plugin")
 ARGS+=(--plugin-install-path="$INSTALL_PATH:$PLUGIN_NAME")
 
 # user-scope MCP까지 함께 투영하고 싶을 때 (선택)
@@ -142,14 +145,15 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 진행상황이 stderr로 출력된다:
 ```text
 === syncing-codex-harness: Full Sync ===
-[1/8] Initialized .agents/ and .codex/
-[2/8] AGENTS.md: symlinked|copied|skipped
-[3/8] Local skills: N
-[4/8] Plugin skills: N, Agents: N
-[5/8] Rules -> AGENTS.override.md: N
-[6/8] MCP config updated|no sources found
-[7/8] Trust: trusted|already-trusted|skipped
-[8/8] .gitignore OK|Missing .gitignore entries: ...
+[1/9] Initialized .agents/ and .codex/
+[2/9] AGENTS.md: symlinked|copied|skipped
+[3/9] Local skills: N
+[4/9] Plugin skills: N, Agents: N
+[5/9] Rules -> AGENTS.override.md: N
+[6/9] MCP config updated|no sources found
+[7/9] Hooks config: updated|missing-source|missing-compiler
+[8/9] Trust: trusted|already-trusted|skipped
+[9/9] .gitignore OK|Missing .gitignore entries: ...
 === Sync complete ===
 ```
 
@@ -191,6 +195,7 @@ bash "$SYNC_SH" mcp-config "$PWD" \
 | `agents-md` | AGENTS.md 생성 (심링크/복사) |
 | `agents-override` | AGENTS.override.md 생성 (마커 기반) |
 | `mcp-config` | 프로젝트/유저 대상 config.toml MCP 섹션 생성 |
+| `hooks-config` | 프로젝트 대상 `.codex/hooks.json` + compatibility report 생성 |
 | `gitignore-check` | .gitignore 누락 확인 |
 
 상세 사용법은 `sync.sh` 상단 Usage 참조.

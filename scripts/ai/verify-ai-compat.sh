@@ -18,16 +18,42 @@ echo "=== Codex 실행 정책 확인 ==="
 
 CODEX_CONFIG="$HOME/.codex/config.toml"
 if [ -f "$CODEX_CONFIG" ]; then
-  if grep -Eq '^[[:space:]]*approval_policy[[:space:]]*=[[:space:]]*"never"' "$CODEX_CONFIG"; then
+  if python3 - "$CODEX_CONFIG" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], 'rb') as f:
+    data = tomllib.load(f)
+assert data.get('approval_policy') == 'never'
+PY
+  then
     pass "approval_policy = \"never\""
   else
     fail "approval_policy = \"never\" 미설정"
   fi
 
-  if grep -Eq '^[[:space:]]*sandbox_mode[[:space:]]*=[[:space:]]*"danger-full-access"' "$CODEX_CONFIG"; then
+  if python3 - "$CODEX_CONFIG" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], 'rb') as f:
+    data = tomllib.load(f)
+assert data.get('sandbox_mode') == 'danger-full-access'
+PY
+  then
     pass "sandbox_mode = \"danger-full-access\""
   else
     fail "sandbox_mode = \"danger-full-access\" 미설정"
+  fi
+
+  if python3 - "$CODEX_CONFIG" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], 'rb') as f:
+    data = tomllib.load(f)
+features = data.get('features', {})
+assert isinstance(features, dict)
+assert features.get('codex_hooks') is True
+PY
+  then
+    pass "codex_hooks = true"
+  else
+    fail "codex_hooks = true 미설정"
   fi
 
   if grep -q 'nixos-config' "$CODEX_CONFIG"; then
@@ -116,9 +142,20 @@ else
     [ -L "$entry" ] || [ -d "$entry" ] || continue
     skill_name="$(basename "$entry")"
     dst_count=$((dst_count + 1))
-    if [ ! -d "$SOURCE_SKILLS_DIR/$skill_name" ]; then
-      fail "고아 투영: .agents/skills/$skill_name (원본 없음)"
+
+    if [ -d "$SOURCE_SKILLS_DIR/$skill_name" ]; then
+      continue
     fi
+
+    if [ -L "$entry" ]; then
+      target="$(readlink "$entry")"
+      if [[ "$target" = /* ]] && [ -f "$entry/SKILL.md" ]; then
+        pass "플러그인 스킬 심링크 정상: $skill_name"
+        continue
+      fi
+    fi
+
+    fail "고아 투영: .agents/skills/$skill_name (원본 없음)"
   done
 
   echo ""
@@ -156,6 +193,60 @@ for skill in create-issue syncing-codex-harness agent-browser; do
     warn "$HOME/.codex/skills/$skill 없음"
   fi
 done
+
+echo ""
+echo "=== Hooks 산출물 확인 ==="
+
+if [ -f "$REPO_ROOT/.codex/hooks.json" ]; then
+  if python3 - "$REPO_ROOT/.codex/hooks.json" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+if not isinstance(data, dict):
+    raise SystemExit(".codex/hooks.json top-level must be an object")
+hooks = data.get("hooks")
+if not isinstance(hooks, dict):
+    raise SystemExit(".codex/hooks.json must contain a top-level 'hooks' object")
+for event, groups in hooks.items():
+    if not isinstance(event, str):
+        raise SystemExit("hook event names must be strings")
+    if not isinstance(groups, list):
+        raise SystemExit(f"hook groups for {event} must be a list")
+    for group in groups:
+        if not isinstance(group, dict):
+            raise SystemExit(f"hook group for {event} must be an object")
+        if not isinstance(group.get("hooks"), list):
+            raise SystemExit(f"hook list for {event} must be a list")
+PY
+  then
+    pass ".codex/hooks.json JSON 파싱 성공"
+  else
+    fail ".codex/hooks.json JSON 파싱 실패"
+  fi
+else
+  warn ".codex/hooks.json 없음 (hooks sync 미실행)"
+fi
+
+if [ -f "$REPO_ROOT/.codex/hooks.compatibility.json" ]; then
+  if python3 - "$REPO_ROOT/.codex/hooks.compatibility.json" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+if not isinstance(data, dict):
+    raise SystemExit(".codex/hooks.compatibility.json top-level must be an object")
+if not isinstance(data.get("summary"), dict):
+    raise SystemExit(".codex/hooks.compatibility.json must contain a summary object")
+if not isinstance(data.get("items"), list):
+    raise SystemExit(".codex/hooks.compatibility.json must contain an items array")
+PY
+  then
+    pass ".codex/hooks.compatibility.json 구조 확인"
+  else
+    fail ".codex/hooks.compatibility.json 구조 확인 실패"
+  fi
+else
+  warn ".codex/hooks.compatibility.json 없음 (hooks sync 미실행)"
+fi
 
 echo ""
 echo "=== 원본 무결성 확인 ==="

@@ -15,7 +15,9 @@ project-root/
 │   │       └── assets/          # (via symlink, if exists)
 │   └── <agent-name>.md          # Agent files (real copies)
 ├── .codex/
-│   └── config.toml              # MCP server config (TOML format)
+│   ├── config.toml              # MCP server config (TOML format)
+│   ├── hooks.json               # Project-local Codex hooks (experimental subset)
+│   └── hooks.compatibility.json # Compatibility report for lossy/unsupported Claude hooks
 └── .gitignore                   # Should include AGENTS.md, AGENTS.override.md (.agents/, .codex/ are in global gitignore)
 ```
 
@@ -30,7 +32,7 @@ project-root/
 | MCP config | `.mcp.json` (JSON) | `.codex/config.toml` (TOML) |
 | Rules | `rules/*.md` (markdown AI guidelines) | `rules/*.rules` (Starlark execution policy) |
 | Plugins | Supported | Not supported |
-| Hooks | `hooks.json` | Not supported |
+| Hooks | `settings.json`의 `hooks` | `.codex/hooks.json` (experimental, partial compatibility) |
 
 ## Critical: Directory-Level Symlinks Only
 
@@ -55,7 +57,8 @@ interface:
 
 - `allowed-tools` frontmatter from SKILL.md has no Codex equivalent. This metadata is present in projected SKILL.md files but silently ignored by Codex CLI.
 - Claude Code rules with `alwaysApply: false` are included in AGENTS.override.md but will always be applied (Codex has no conditional rule application). Rules with `alwaysApply: true` behave identically.
-- Hooks (`hooks.json`) and plugins are Claude Code-only features with no Codex equivalent.
+- Hooks are no longer fully unsupported, but only a compiled subset is safe to project. This repo syncs supported/lossy Claude hook groups into `.codex/hooks.json` and records unsupported groups in `.codex/hooks.compatibility.json`.
+- Plugins remain unsupported in Codex.
 
 ## Global vs Project Scope
 
