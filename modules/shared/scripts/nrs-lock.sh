@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-NRS_LOCK_FILE="/tmp/nrs-state"
-# 주의: 이 값은 rebuild-common.sh, nrs-lock.sh, nrs-lock-guard.sh 3곳에서 동일하게 유지해야 함
+NRS_LOCK_FILE="${NRS_LOCK_FILE:-/tmp/nrs-state}"
+# 주의: 기본값은 rebuild-common.sh, nrs-lock.sh, nrs-lock-guard.sh와 동일하게 유지해야 함
 NRS_LOCK_TIMEOUT_MINUTES=30
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'

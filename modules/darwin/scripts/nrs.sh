@@ -15,6 +15,29 @@ REBUILD_CMD="darwin-rebuild"
 source "$HOME/.local/lib/rebuild-common.sh"
 parse_args "$@"
 
+# repo-local 최신 entrypoint가 이전 deployed helper tree와 조합돼도 동작하도록 유지.
+install_rebuild_common_compat_shims() {
+    declare -F rebuild_is_main_flake >/dev/null || rebuild_is_main_flake() {
+        [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]
+    }
+    declare -F prepare_worktree_symlinks_for_rebuild >/dev/null || prepare_worktree_symlinks_for_rebuild() {
+        log_info "🔗 Removing worktree symlinks before rebuild..."
+        _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
+        "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
+    }
+    declare -F release_nrs_lock_after_no_changes >/dev/null || release_nrs_lock_after_no_changes() {
+        if [[ "${NRS_LOCK_ACQUIRED:-false}" == true && "${NRS_LOCK_REENTRY:-false}" != true ]]; then
+            release_nrs_lock
+        fi
+    }
+    declare -F mark_nrs_lock_switch_success >/dev/null || mark_nrs_lock_switch_success() {
+        # shellcheck disable=SC2034  # Older deployed helpers still read this global in failure cleanup.
+        NRS_LOCK_SWITCH_SUCCESS=true
+    }
+}
+
+install_rebuild_common_compat_shims
+
 #───────────────────────────────────────────────────────────────────────────────
 # launchd 에이전트 정리
 #───────────────────────────────────────────────────────────────────────────────
@@ -109,9 +132,6 @@ restart_hammerspoon() {
 #───────────────────────────────────────────────────────────────────────────────
 # 메인
 #───────────────────────────────────────────────────────────────────────────────
-# shellcheck disable=SC2034  # NRS_LOCK_SWITCH_SUCCESS는 source된 rebuild-common.sh의 release_nrs_lock_on_failure에서 사용
-NRS_LOCK_SWITCH_SUCCESS=false
-
 main() {
     # darwin-rebuild build가 pwd에 ./result를 생성하므로 디렉토리 이동 필수
     cd "$FLAKE_PATH" || exit 1
@@ -125,10 +145,7 @@ main() {
         log_info "✅ No changes to apply. Skipping rebuild."
         log_info "  (Use 'nrs --force' to force full rebuild including activation scripts)"
         maybe_relink_or_restore
-        # re-entry가 아닐 때만 lock 해제
-        if [[ "$NRS_LOCK_ACQUIRED" == true && "$NRS_LOCK_REENTRY" != true ]]; then
-            release_nrs_lock
-        fi
+        release_nrs_lock_after_no_changes
         return 0
     fi
     worktree_symlink_guard
@@ -145,21 +162,13 @@ main() {
     # - main: maybe_relink_or_restore() → stale worktree symlink 제거 + nix store 복원
     # - worktree: worktree 심링크 직접 제거 + nrs-relink restore로 기존 entry 복원
     #   (activation 성공 후 maybe_relink_or_restore()가 다시 worktree로 relink)
-    if [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]; then
+    if rebuild_is_main_flake; then
         maybe_relink_or_restore
     else
-        # Worktree pre-rebuild: worktree 경로를 가리키는 심링크를 제거하여
-        # HM activation의 checkLinkTargets가 정상 생성할 수 있도록 한다.
-        # _remove_worktree_symlinks()로 worktree 경로 심링크를 먼저 제거한 뒤
-        # nrs-relink restore로 nix store chain으로 복원한다.
-        log_info "🔗 Removing worktree symlinks before rebuild..."
-        _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
-        # 기존 entry를 nix store chain으로 복원 (rebuild 실패 시에도 안전)
-        "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
+        prepare_worktree_symlinks_for_rebuild
     fi
     run_darwin_rebuild
-    # shellcheck disable=SC2034
-    NRS_LOCK_SWITCH_SUCCESS=true
+    mark_nrs_lock_switch_success
     maybe_relink_or_restore
     release_rebuild_lock
     restart_hammerspoon

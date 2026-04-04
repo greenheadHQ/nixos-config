@@ -35,18 +35,14 @@ cmd_cd() {
 
   # wt cd - : 이전 worktree로 이동 (cd -, git checkout - 와 동일 패턴)
   if [[ "$search" == "-" ]]; then
-    local last_file="$git_root/$WT_LAST_FILE"
-    [[ -f "$last_file" ]] || _die "이전 worktree 기록이 없습니다"
     local last_path
-    last_path=$(cat "$last_file")
+    last_path=$(_wt_read_last_path "$git_root") || _die "이전 worktree 기록이 없습니다"
     if [[ ! -d "$last_path" ]]; then
       _info "이전 worktree가 삭제됨: $(basename "$last_path") → main repo로 이동"
       last_path="$git_root"
     fi
     # 현재 위치 저장 후 이동
-    local current_dir
-    current_dir=$(pwd -P)
-    echo "$current_dir" > "$last_file"
+    _wt_record_last_path "$git_root"
 
     # --tmux: 세션 모드 (tmux 밖에서만)
     if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
@@ -108,9 +104,7 @@ cmd_cd() {
   fi
 
   # 이전 worktree 경로 저장 (wt cd - 용)
-  local current_dir
-  current_dir=$(pwd -P)
-  echo "$current_dir" > "$git_root/$WT_LAST_FILE"
+  _wt_record_last_path "$git_root"
 
   # --tmux: 세션 attach/생성 (tmux 밖에서만)
   if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then

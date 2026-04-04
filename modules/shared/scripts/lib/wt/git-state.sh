@@ -1,4 +1,27 @@
 # shellcheck shell=bash
+_wt_last_file_path() {
+  local git_root="$1"
+  echo "$git_root/$WT_LAST_FILE"
+}
+
+_wt_record_last_path() {
+  local git_root="$1"
+  local current_dir
+  local last_file
+  current_dir=$(pwd -P)
+  last_file=$(_wt_last_file_path "$git_root")
+  mkdir -p "$(dirname "$last_file")"
+  echo "$current_dir" > "$last_file"
+}
+
+_wt_read_last_path() {
+  local git_root="$1"
+  local last_file
+  last_file=$(_wt_last_file_path "$git_root")
+  [[ -f "$last_file" ]] || return 1
+  cat "$last_file"
+}
+
 # worktree 목록 수집
 _collect_worktrees() {
   local git_root="$1"

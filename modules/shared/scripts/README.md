@@ -8,6 +8,12 @@
 - `rebuild-common.sh`: `nrs`/`nrp`가 source하는 compatibility loader (`~/.local/lib/` 배포, 직접 실행 아님)
 - `nrs-relink.sh`: standalone relink CLI. 이번 helper 분해 범위 밖의 독립 스크립트다.
 
+## Contract Source
+
+- 이 파일이 shared shell helper contract의 authoritative source다.
+- top-level loader 주석은 이 파일을 요약할 수는 있지만, 서로 다른 contract를 정의하면 안 된다.
+- `tests/shell-script-tests.sh`는 이 파일의 contract를 runtime/deployed-layout 기준으로 검증한다.
+
 ## Helper Boundaries
 
 - `lib/wt/ui.sh`: prompt, formatting, repo/path helpers
@@ -24,6 +30,28 @@
 - `lib/rebuild/relink.sh`: worktree symlink cleanup/relink/restore helpers
 - `lib/rebuild/preview.sh`: build preview and artifact cleanup
 
+## Rebuild Contract
+
+- Public rebuild helpers:
+  `parse_args`, `log_info`, `log_warn`, `log_error`, `worktree_symlink_guard`,
+  `acquire_nrs_lock`, `release_nrs_lock`, `release_nrs_lock_after_no_changes`,
+  `release_nrs_lock_on_failure`, `mark_nrs_lock_switch_success`,
+  `acquire_rebuild_lock`, `release_rebuild_lock`, `release_rebuild_lock_on_failure`,
+  `preflight_source_build_check`, `preflight_cask_conflict_check`,
+  `rebuild_is_main_flake`, `prepare_worktree_symlinks_for_rebuild`,
+  `maybe_relink_or_restore`, `preview_changes`, `cleanup_build_artifacts`
+- Public caller-visible rebuild state:
+  `FLAKE_PATH`, `OFFLINE_FLAG`, `NO_CHANGES`, `FORCE_FLAG`, `CORES_FLAG`, `UNINSTALLED_CASKS`
+- Internal rebuild state:
+  `MAIN_FLAKE_PATH`, `NRS_LOCK_ACQUIRED`, `NRS_LOCK_REENTRY`, `NRS_LOCK_SWITCH_SUCCESS`
+- Caller는 underscored helper와 internal rebuild state를 직접 참조하지 않는다.
+
+## wt Contract
+
+- `WT_HELPERS`의 membership과 source order는 계속 계약이다.
+- `WT_LAST_FILE`의 읽기/쓰기는 `lib/wt/git-state.sh` helper를 통해서만 공유한다.
+- `WORKTREE_DIR`는 top-level constant contract로 유지한다. 이번 범위에서는 generic accessor layer로 승격하지 않는다.
+
 ## Rules
 
 - Top-level entrypoints stay thin. New runtime logic belongs in a helper file unless it is dispatch/help text.
@@ -32,3 +60,4 @@
 - If a new helper is added under an existing helper directory, update the entrypoint helper manifest and tests together. `modules/shared/programs/shell/default.nix` only needs changes for new top-level entrypoints or new helper directories.
 - `tests/shell-script-tests.sh` must stay hermetic and recursive-layout aware: it should ignore host Git hooks/config and mirror the deployed helper tree shape, not a flat copy.
 - Tests must exercise the deployed layout, not only the repo-local path. `tests/shell-script-tests.sh` should validate both the expected Home Manager wiring and runtime smoke paths.
+- Public surface smoke를 유지하되, ordered helper manifest/order contract를 검증하는 최소 fixture test도 유지한다.

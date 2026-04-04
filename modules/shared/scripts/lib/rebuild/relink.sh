@@ -21,12 +21,23 @@ _remove_worktree_symlinks() {
     return 1  # 제거 없음
 }
 
+rebuild_is_main_flake() {
+    [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]
+}
+
+prepare_worktree_symlinks_for_rebuild() {
+    log_info "🔗 Removing worktree symlinks before rebuild..."
+    _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
+    # 기존 entry를 nix store chain으로 복원 (rebuild 실패 시에도 안전)
+    "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
+}
+
 #───────────────────────────────────────────────────────────────────────────────
 # Worktree 심링크 전환/복원: worktree에서는 relink, main에서는 잔존 심링크 복원
 # nrs.sh의 NO_CHANGES 및 rebuild 경로 양쪽에서 호출
 #───────────────────────────────────────────────────────────────────────────────
 maybe_relink_or_restore() {
-    if [[ "$FLAKE_PATH" != "$MAIN_FLAKE_PATH" ]]; then
+    if ! rebuild_is_main_flake; then
         log_info "🔗 Relinking symlinks to worktree..."
         "$HOME/.local/bin/nrs-relink" relink || log_warn "⚠️  nrs-relink failed (non-fatal)"
     else

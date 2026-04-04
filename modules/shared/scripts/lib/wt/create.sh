@@ -1,14 +1,6 @@
 # shellcheck shell=bash
 # ── 서브커맨드: create ───────────────────────────────────────────────────────
 
-_record_wt_last_path() {
-  local git_root="$1"
-  local current_dir
-  current_dir=$(pwd -P)
-  mkdir -p "$(dirname "$git_root/$WT_LAST_FILE")"
-  echo "$current_dir" > "$git_root/$WT_LAST_FILE"
-}
-
 cmd_create() {
   local stay=false
   local run_claude=false
@@ -78,7 +70,7 @@ cmd_create() {
 
   _info "worktree 생성: $branch_name (from $parent_branch)"
 
-  _record_wt_last_path "$git_root"
+  _wt_record_last_path "$git_root"
   _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
 }
 
@@ -93,7 +85,7 @@ _handle_existing_worktree() {
 
   case "$choice" in
     "기존 열기")
-      _record_wt_last_path "$git_root"
+      _wt_record_last_path "$git_root"
       _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     "재생성")
@@ -142,7 +134,7 @@ _handle_existing_worktree() {
       echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 재생성: $branch_name (from $parent_branch)"
-      _record_wt_last_path "$git_root"
+      _wt_record_last_path "$git_root"
       _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     *)
@@ -182,7 +174,7 @@ _handle_existing_branch() {
       echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 생성 (기존 브랜치): $branch_name"
-      _record_wt_last_path "$git_root"
+      _wt_record_last_path "$git_root"
       _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     "새로 생성")
@@ -199,7 +191,7 @@ _handle_existing_branch() {
       echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 생성 (브랜치 재생성): $branch_name (from $parent_branch)"
-      _record_wt_last_path "$git_root"
+      _wt_record_last_path "$git_root"
       _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     *)

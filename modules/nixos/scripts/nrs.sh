@@ -15,6 +15,20 @@ REBUILD_CMD="nixos-rebuild"
 source "$HOME/.local/lib/rebuild-common.sh"
 parse_args "$@"
 
+# repo-local 최신 entrypoint가 이전 deployed helper tree와 조합돼도 동작하도록 유지.
+install_rebuild_common_compat_shims() {
+    declare -F rebuild_is_main_flake >/dev/null || rebuild_is_main_flake() {
+        [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]
+    }
+    declare -F prepare_worktree_symlinks_for_rebuild >/dev/null || prepare_worktree_symlinks_for_rebuild() {
+        log_info "🔗 Removing worktree symlinks before rebuild..."
+        _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
+        "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
+    }
+}
+
+install_rebuild_common_compat_shims
+
 #───────────────────────────────────────────────────────────────────────────────
 # nixos-rebuild switch 실행
 #───────────────────────────────────────────────────────────────────────────────
@@ -63,18 +77,11 @@ main() {
     # "would be clobbered"로 거부하므로, rebuild 전에 먼저 복원한다.
     # Safety: HM gcroot가 유효할 때만 실행 — gcroot 파손 시 Phase 1(rm)만 되고
     # Phase 2(restore) 실패하여 심링크 유실 방지
-    if [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]] \
+    if rebuild_is_main_flake \
        && [[ -e "$HOME/.local/state/home-manager/gcroots/current-home" ]]; then
         maybe_relink_or_restore
-    elif [[ "$FLAKE_PATH" != "$MAIN_FLAKE_PATH" ]]; then
-        # Worktree pre-rebuild: worktree 경로를 가리키는 심링크를 제거하여
-        # HM activation의 checkLinkTargets가 정상 생성할 수 있도록 한다.
-        # _remove_worktree_symlinks()로 worktree 경로 심링크를 먼저 제거한 뒤
-        # nrs-relink restore로 nix store chain으로 복원한다.
-        log_info "🔗 Removing worktree symlinks before rebuild..."
-        _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
-        # 기존 entry를 nix store chain으로 복원 (rebuild 실패 시에도 안전)
-        "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
+    elif ! rebuild_is_main_flake; then
+        prepare_worktree_symlinks_for_rebuild
     fi
     run_nixos_rebuild
     maybe_relink_or_restore

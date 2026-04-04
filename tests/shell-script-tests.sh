@@ -239,12 +239,16 @@ test_rebuild_common_exports_public_api() {
       declare -F log_error
       declare -F acquire_nrs_lock
       declare -F release_nrs_lock
+      declare -F release_nrs_lock_after_no_changes
       declare -F release_nrs_lock_on_failure
+      declare -F mark_nrs_lock_switch_success
       declare -F acquire_rebuild_lock
       declare -F release_rebuild_lock
       declare -F release_rebuild_lock_on_failure
       declare -F preflight_source_build_check
       declare -F preflight_cask_conflict_check
+      declare -F rebuild_is_main_flake
+      declare -F prepare_worktree_symlinks_for_rebuild
       declare -F preview_changes
       declare -F worktree_symlink_guard
       declare -F maybe_relink_or_restore
@@ -260,12 +264,16 @@ test_rebuild_common_exports_public_api() {
   assert_contains "$output" "log_error"
   assert_contains "$output" "acquire_nrs_lock"
   assert_contains "$output" "release_nrs_lock"
+  assert_contains "$output" "release_nrs_lock_after_no_changes"
   assert_contains "$output" "release_nrs_lock_on_failure"
+  assert_contains "$output" "mark_nrs_lock_switch_success"
   assert_contains "$output" "acquire_rebuild_lock"
   assert_contains "$output" "release_rebuild_lock"
   assert_contains "$output" "release_rebuild_lock_on_failure"
   assert_contains "$output" "preflight_source_build_check"
   assert_contains "$output" "preflight_cask_conflict_check"
+  assert_contains "$output" "rebuild_is_main_flake"
+  assert_contains "$output" "prepare_worktree_symlinks_for_rebuild"
   assert_contains "$output" "preview_changes"
   assert_contains "$output" "worktree_symlink_guard"
   assert_contains "$output" "maybe_relink_or_restore"
@@ -290,12 +298,14 @@ test_detect_worktree_uses_current_worktree_path() {
       cd "'"$worktree_root"'"
       REBUILD_CMD="nixos-rebuild"
       source "'"$home_dir/.local/lib/rebuild-common.sh"'"
-      printf "flake=%s\nmain=%s\n" "$FLAKE_PATH" "$MAIN_FLAKE_PATH"
+      printf "flake=%s\nis_main=%s\n" \
+        "$FLAKE_PATH" \
+        "$(rebuild_is_main_flake && echo true || echo false)"
     ' 2>&1
   )
 
   assert_contains "$output" "flake=$worktree_root"
-  assert_contains "$output" "main=$repo_root"
+  assert_contains "$output" "is_main=false"
 }
 
 test_wt_ls_from_deployed_layout_lists_worktrees() {
@@ -931,6 +941,87 @@ EOF
   assert_contains "$output" "Done!"
 }
 
+test_darwin_nrs_no_changes_releases_worktree_lock() {
+  local sandbox home_dir repo_root worktree_root stub_dir output result_target current_target lock_file
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stub-bin"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  worktree_root="$repo_root/.claude/worktrees/feature_one"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_platform_nrs_entrypoint "$sandbox" darwin
+
+  mkdir -p "$stub_dir" "$home_dir/.local/bin"
+  current_target="$sandbox/current-system"
+  mkdir -p "$current_target"
+  lock_file="$sandbox/nrs-state"
+  rm -f "$lock_file"
+
+  cat > "$stub_dir/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+"$@"
+EOF
+  cat > "$stub_dir/darwin-rebuild" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  build)
+    ln -sfn "${DARWIN_RESULT_TARGET:?}" ./result
+    ;;
+  switch)
+    :
+    ;;
+  *)
+    echo "unexpected darwin-rebuild subcommand: $1" >&2
+    exit 1
+    ;;
+esac
+EOF
+  cat > "$stub_dir/nvd" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "stub nvd diff"
+EOF
+  cat > "$stub_dir/readlink" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "/run/current-system" ]]; then
+  printf '%s\n' "${DARWIN_CURRENT_SYSTEM:?}"
+else
+  /usr/bin/readlink "$@"
+fi
+EOF
+  cat > "$home_dir/.local/bin/nrs-relink" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  chmod +x "$stub_dir/sudo" "$stub_dir/darwin-rebuild" "$stub_dir/nvd" "$stub_dir/readlink" "$home_dir/.local/bin/nrs-relink"
+
+  result_target="$current_target"
+  output=$(
+    HOME="$home_dir" \
+    PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
+    DARWIN_RESULT_TARGET="$result_target" \
+    DARWIN_CURRENT_SYSTEM="$current_target" \
+    NRS_LOCK_FILE="$lock_file" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$worktree_root"'"
+      "'"$home_dir/.local/bin/nrs"'" 
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Lock acquired"
+  assert_contains "$output" "No changes to apply"
+  assert_contains "$output" "Lock released"
+  [[ ! -e "$lock_file" ]] || fail "expected sandbox nrs lock file to be removed after no-change early return"
+}
+
 run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
@@ -949,3 +1040,4 @@ run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
+run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
