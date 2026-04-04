@@ -1,5 +1,5 @@
 {
-  "cleanupPeriodDays": 7,
+  "cleanupPeriodDays": 99999,
   "env": {
     "IS_DEMO": "true",
     "CLAUDE_CODE_ENABLE_UNIFIED_READ_TOOL": "true",
@@ -125,6 +125,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/nrs-session-cleanup.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/auto-archive.sh"
           }
         ]
       }

@@ -161,6 +161,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/log-skill.sh";
     ".claude/hooks/fragile-hardcoding-guard.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/fragile-hardcoding-guard.sh";
+    ".claude/hooks/auto-archive.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/auto-archive.sh";
 
     # Pain point collection hooks
     ".claude/hooks/detect-pain-point.sh".source =

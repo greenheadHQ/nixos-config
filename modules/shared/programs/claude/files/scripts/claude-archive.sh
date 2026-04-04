@@ -24,6 +24,7 @@ Archive Claude Code session data to ~/.claude/archive/
 
 Options:
   (none)          Archive current session
+  --session <id>  Archive specific session by ID
   --all           Archive all sessions for current CWD
   --project       Archive all sessions for main repo + worktrees
   --list          List archived sessions
@@ -37,6 +38,12 @@ EOF
 # CWD 인코딩 (statusline.sh:140, collect-pain-points.sh:82 와 동일 패턴)
 encode_path() {
   printf '%s' "$1" | sed 's/[^a-zA-Z0-9]/-/g'
+}
+
+# JSONL 헤더에서 메타데이터 필드 추출
+extract_header_field() {
+  local file="$1" field="$2"
+  head -"$HEADER_SCAN_LINES" "$file" | jq -r "select(.$field) | .$field" 2>/dev/null | head -1 || true
 }
 
 # git canonical root: git-common-dir → dirname
@@ -155,11 +162,11 @@ convert_to_markdown() {
   local session_id="$2"
   local output_file="$3"
 
-  # 헤더 정보 추출 (JSONL 선두 N줄에서 메타데이터 필드를 추출)
+  # 헤더 정보 추출
   local git_branch cwd timestamp
-  git_branch=$(head -"$HEADER_SCAN_LINES" "$jsonl_file" | jq -r 'select(.gitBranch) | .gitBranch' 2>/dev/null | head -1 || true)
-  cwd=$(head -"$HEADER_SCAN_LINES" "$jsonl_file" | jq -r 'select(.cwd) | .cwd' 2>/dev/null | head -1 || true)
-  timestamp=$(head -"$HEADER_SCAN_LINES" "$jsonl_file" | jq -r 'select(.timestamp) | .timestamp' 2>/dev/null | head -1 || true)
+  git_branch=$(extract_header_field "$jsonl_file" "gitBranch")
+  cwd=$(extract_header_field "$jsonl_file" "cwd")
+  timestamp=$(extract_header_field "$jsonl_file" "timestamp")
   local date_str="${timestamp%%T*}"
 
   {
@@ -167,6 +174,10 @@ convert_to_markdown() {
     [ -n "${git_branch:-}" ] && echo "- **Branch**: $git_branch"
     [ -n "${date_str:-}" ] && echo "- **Date**: $date_str"
     [ -n "${cwd:-}" ] && echo "- **CWD**: $cwd"
+    echo ""
+    echo "> **Note**: This Markdown is a lossy summary. Excluded: thinking blocks,"
+    echo "> tool input/result truncated (${TOOL_INPUT_PREVIEW_MAX}/${TOOL_RESULT_PREVIEW_MAX} chars),"
+    echo "> system/file-history-snapshot entries. See the .jsonl file for the full transcript."
     echo ""
     echo "---"
     echo ""
@@ -221,7 +232,7 @@ archive_session() {
 
   # 프로젝트 이름 결정
   local cwd_from_jsonl project_name
-  cwd_from_jsonl=$(head -"$HEADER_SCAN_LINES" "$jsonl_path" | jq -r 'select(.cwd) | .cwd' 2>/dev/null | head -1 || true)
+  cwd_from_jsonl=$(extract_header_field "$jsonl_path" "cwd")
 
   if [ -z "$cwd_from_jsonl" ]; then
     # CWD를 추출 못하면 JSONL 경로에서 유추
@@ -264,9 +275,10 @@ archive_session() {
 
   # 6. meta.json 생성
   local git_branch has_icons has_memo message_count is_worktree
-  git_branch=$(head -"$HEADER_SCAN_LINES" "$jsonl_path" | jq -r 'select(.gitBranch) | .gitBranch' 2>/dev/null | head -1 || true)
+  git_branch=$(extract_header_field "$jsonl_path" "gitBranch")
   [ -f "$icons_file" ] && has_icons=true || has_icons=false
   [ -f "$memo_file" ] && has_memo=true || has_memo=false
+  # raw user+assistant entry count (not conversation turns; MD section count may differ)
   message_count=$(grep -cE '"type":"(user|assistant)"' "$jsonl_path" 2>/dev/null || echo 0)
 
   # worktree 판별
@@ -323,7 +335,7 @@ list_archives() {
     local wt_tag=""
     [ "$is_wt" = "true" ] && wt_tag=" [worktree]"
 
-    printf '%s  %-20s  %-40s  %3s msgs  %s%s\n' \
+    printf '%s  %-20s  %-40s  %3s entries  %s%s\n' \
       "${archived_at%%T*}" "$project" "$branch" "$msg_count" "$sid" "$wt_tag"
     count=$((count + 1))
   done < <(find "$ARCHIVE_DIR" -name meta.json -print0 2>/dev/null | sort -z)
@@ -409,9 +421,15 @@ restore_archive() {
 main() {
   local mode="current"
   local restore_id=""
+  local target_session_id=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
+      --session)
+        mode="session"
+        [ -z "${2:-}" ] && { err "Missing session ID for --session"; usage; exit 1; }
+        target_session_id="$2"
+        shift 2 ;;
       --all)     mode="all"; shift ;;
       --project) mode="project"; shift ;;
       --list)    mode="list"; shift ;;
@@ -434,10 +452,35 @@ main() {
       restore_archive "$restore_id"
       ;;
 
+    session)
+      # --session <id>: CWD 인코딩으로 JSONL 경로 결정 (PID 파일 불필요)
+      # UUID 형식 검증 (경로 traversal 방지)
+      if ! printf '%s' "$target_session_id" | grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+        err "Invalid session ID format: $target_session_id"
+        exit 1
+      fi
+
+      local encoded
+      encoded=$(encode_path "$PWD")
+      local jsonl_path="$CLAUDE_DIR/projects/$encoded/$target_session_id.jsonl"
+
+      if [ ! -f "$jsonl_path" ]; then
+        err "Session file not found: $jsonl_path"
+        exit 1
+      fi
+
+      info "Session: $target_session_id (direct ID)"
+      info "Path: $jsonl_path"
+      archive_session "$jsonl_path"
+      ;;
+
     current)
       local session_id
-      session_id=$(find_current_session "$PWD") || {
+      session_id=$(find_current_session "$PWD") && {
+        info "Session: $session_id (live PID match)"
+      } || {
         # fallback: CWD 프로젝트 디렉토리에서 가장 최근 수정된 JSONL
+        warn "PID match failed, using latest JSONL fallback"
         local latest=""
         local latest_mtime=0
         while IFS= read -r f; do
@@ -454,6 +497,8 @@ main() {
           err "No sessions found for current directory"
           exit 1
         fi
+        info "Session: $(basename "$latest" .jsonl) (latest JSONL fallback)"
+        info "Path: $latest"
         archive_session "$latest"
         exit 0
       }
@@ -467,6 +512,7 @@ main() {
         exit 1
       fi
 
+      info "Path: $jsonl_path"
       archive_session "$jsonl_path"
       ;;
 

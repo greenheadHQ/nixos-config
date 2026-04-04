@@ -60,6 +60,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/nrs-session-cleanup.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/auto-archive.sh"
           }
         ]
       }
