@@ -155,7 +155,8 @@
     "slack@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
     "notion@claude-plugins-official": true,
-    "codex@openai-codex": true
+    "codex@openai-codex": true,
+    "linear@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
