@@ -169,11 +169,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1774937393,
-        "narHash": "sha256-p9svbw7xnfBRMuaTHWzKagrlYQwQkTKdNzLBfuromk4=",
+        "lastModified": 1775288855,
+        "narHash": "sha256-uUIgCUXO+1upPo+FEBGjAHZ8MwOMbk0GXtkpb8BFITA=",
         "owner": "greenheadHQ",
         "repo": "recall",
-        "rev": "3db8b58f8b33434c58b89e8dd6cb5a48a26f80e0",
+        "rev": "2c21916dc58f0b3085e2d13e1a5dc27609a8d5b6",
         "type": "github"
       },
       "original": {
