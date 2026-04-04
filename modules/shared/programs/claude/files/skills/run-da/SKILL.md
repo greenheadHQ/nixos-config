@@ -77,7 +77,7 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 | 경로 | 사용 시점 | fan-out / wait / close |
 |------|----------|------------------------|
 | direct Codex path | 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`, `close_agent`)을 사용할 수 있을 때 | native subagent를 직접 fan-out하고, `wait_agent`로 결과를 받고, 다음 round/retry 전 completed thread를 `close_agent`로 닫는다 |
-| fallback / explicit `codex exec` path | Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때, 또는 사용자가 `codex exec`를 명시적으로 요구할 때 | `codex exec --full-auto --ephemeral` + 임시 prompt/result 파일 + stderr/result 검증 |
+| fallback / explicit `codex exec` path | Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때, 또는 사용자가 `codex exec`를 명시적으로 요구할 때 | reviewer/Intensity: `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"`, Arbiter: `codex exec --full-auto --ephemeral` (config 기본 xhigh) + 임시 prompt/result 파일 + stderr/result 검증 |
 
 `CODEX_CI=1`만으로 direct Codex 세션과 `codex exec` subprocess를 구분하지 않는다.
 direct Codex 세션에서도 같은 값이 보일 수 있으므로, **현재 세션 capability**를 기준으로 경로를 고른다.
@@ -92,7 +92,8 @@ fallback / explicit `codex exec` path는 [arbiter-scaling.md](references/arbiter
 
 | 용어 | 뜻 | 우선순위 |
 |------|-----|---------|
-| strong review profile | direct Codex reviewer/auditor/Arbiter/Intensity subagent는 `model="gpt-5.4"`와 `reasoning_effort="xhigh"`로 실행한다 | direct path spawn 기본값 |
+| strong review profile | direct Codex Arbiter subagent는 `model="gpt-5.4"`와 `reasoning_effort="xhigh"`로 실행한다. Claude Code에서는 `model: "opus"` | Arbiter spawn 기본값 |
+| standard review profile | direct Codex reviewer/auditor/Intensity subagent는 `model="gpt-5.4"`와 `reasoning_effort="high"`로 실행한다. Claude Code에서는 `model: "sonnet"` | DA/Intensity spawn 기본값 |
 | conservative wait | `wait_agent` timeout이나 단순 지연은 실패 신호가 아니다. 명시적 agent failure, documented violation, 최종 응답 파싱 실패 전에는 kill/self-auditing 대체를 금지한다 | 조급한 조기 종료보다 우선 |
 | single-writer | tracked workspace write, 최종 파일 수정, branch mutation, commit/push, GitHub comment/issue/PR write는 메인 에이전트 소유다. explicit delegation만 예외다 | generic PoC 허용보다 우선 |
 | main-agent-only commands | `wt`, `nrs`, rebuild 계열과 host/repo 상태를 바꾸는 동급 명령은 direct fan-out subagent가 실행하지 않는다 | lock-sensitive convenience보다 우선 |
@@ -144,7 +145,7 @@ Claude Code subprocess/비대화형 경로에서만 `codex exec` fallback을 사
 |------|-----------|-----------|------|
 | SKIP | 0 | AskUserQuestion **필수** | DA 완전 생략 |
 | LITE | Correctness 필수 + 관련 reviewer bundles | 불필요 | 필요한 bundle만 선택 실행 |
-| FULL | 4 reviewer bundles | 불필요 | 기본 strong review |
+| FULL | 4 reviewer bundles | 불필요 | 4 reviewer bundle 기본 리뷰 |
 
 `full` modifier는 위 표의 FULL과 다르다. 자동 FULL은 4 reviewer bundle이고,
 modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 진입한다.
@@ -155,7 +156,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    - for_pr: `git diff --stat main...HEAD` (파일 목록+라인 수만, 내용 불포함)
    - for_plan: 계획 요약 (변경 대상 파일 목록 + 변경 유형)
 2. **direct Codex path**:
-   - fresh intensity subagent 1개를 strong review profile로 띄운다.
+   - fresh intensity subagent 1개를 standard review profile로 띄운다.
    - 프롬프트에는 `references/intensity-rules.md`를 직접 읽고 SKIP/LITE/FULL 중 하나를 첫 줄에 반환하라고 지시한다. Intensity는 no-write role이므로 파일 수정, scratch PoC, main-agent-only command 실행을 금지한다.
    - 결과는 `wait_agent`로 받고, timeout만으로 실패 처리하거나 중간 kill/self-auditing 대체를 하지 않는다. 파싱이 끝나면 completed intensity thread를 `close_agent`로 닫는다.
 3. **fallback / explicit `codex exec` path**:
@@ -175,6 +176,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    - `codex exec`로 실행한다 (`-o`는 --output-last-message: 에이전트 최종 응답만 저장):
      ```zsh
      codex exec --full-auto --ephemeral \
+       -c model_reasoning_effort="high" \
        -o "$INTENSITY_DIR/result.md" \
        "$(cat "$INTENSITY_DIR/prompt.md")" \
        2>"$INTENSITY_DIR/stderr.log"
@@ -235,7 +237,7 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 1. 현재 계획 파일 또는 대화 컨텍스트에서 계획 내용을 수집한다.
 2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 **병렬 실행**한다.
    - **direct Codex path**:
-     - 선택된 review unit마다 fresh native subagent 1개를 strong review profile로 `spawn_agent` 실행한다.
+     - 선택된 review unit마다 fresh native subagent 1개를 standard review profile로 `spawn_agent` 실행한다.
      - 각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 계획 전체 내용을 포함하고, "계획 외의 관련 파일도 직접 읽어 탐색하라", "out-of-repo scratch PoC만 허용한다", "`run-da` canonical contract의 stateful-violation 금지 작업(`tracked write`, `branch mutation`, `commit/push`, `GitHub write`, `main-agent-only command`, `host mutation`)을 축약 없이 따르라", "규칙 위반은 finding 대신 `VIOLATION`으로 반환하라"를 명시한다.
      - 선택된 review unit 수가 current session의 open slot을 넘으면 batch한다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 계속 점유한다.
      - `wait_agent` timeout만으로 실패 처리하거나 reviewer를 kill/self-auditing으로 대체하지 않는다.
@@ -244,7 +246,7 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
      - 실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
      - 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)`
      - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
-     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral`를 background Bash tool 호출로 실행한다.
+     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"`를 background Bash tool 호출로 실행한다.
      - `run_in_background: true`를 사용하면 완료 알림이 자동으로 오므로 sleep/poll로 확인하지 않는다.
      - `& + wait` shell-level 병렬을 사용하지 않고, stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
      - `/using-codex-exec` 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
@@ -284,7 +286,7 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
      `git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능.
 2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 **병렬 실행**한다.
    - **direct Codex path**:
-     - 선택된 review unit마다 fresh native subagent 1개를 strong review profile로 `spawn_agent` 실행한다.
+     - 선택된 review unit마다 fresh native subagent 1개를 standard review profile로 `spawn_agent` 실행한다.
      - 각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 diff를 `<git-diff>` 태그로 감싸서 포함하고, "diff 외부의 관련 파일도 직접 읽어 탐색하라", "out-of-repo scratch PoC만 허용한다", "`run-da` canonical contract의 stateful-violation 금지 작업(`tracked write`, `branch mutation`, `commit/push`, `GitHub write`, `main-agent-only command`, `host mutation`)을 축약 없이 따르라", "규칙 위반은 finding 대신 `VIOLATION`으로 반환하라"를 명시한다.
      - 선택된 review unit 수가 current session의 open slot을 넘으면 batch한다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread는 `close_agent` 전까지 슬롯을 점유한다.
      - `wait_agent` timeout만으로 실패 처리하거나 reviewer를 kill/self-auditing으로 대체하지 않는다.
@@ -293,7 +295,7 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
      - 실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)를 참조한다.
      - 라운드별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-pr-XXXXXX)`
      - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
-     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral`를 background Bash tool 호출로 실행한다.
+     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"`를 background Bash tool 호출로 실행한다.
      - stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용하고, `& + wait` shell-level 병렬을 사용하지 않는다.
 3. 모든 reviewer 결과를 수신한 후 종합 리포트를 작성한다.
    - direct path: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
@@ -408,7 +410,7 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다. direct Codex path에서는 새 native subagent thread, fallback path에서는 새 `codex exec` 프로세스다.
 - direct Codex path에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
-- direct Codex path의 reviewer/auditor/Arbiter/Intensity는 strong review profile을 사용하고, 역할별 write 경계를 넘지 않는다.
+- direct Codex path의 reviewer/auditor/Intensity는 standard review profile, Arbiter는 strong review profile을 사용하고, 역할별 write 경계를 넘지 않는다.
 - fallback path의 DA `codex exec` 프로세스는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 수정 금지를 지시한다. 코드나 계획을 직접 수정하지 않는다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.

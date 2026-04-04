@@ -54,7 +54,7 @@ fan-out 에이전트에 할당할 수 있는 역할:
 | 의존성/사이드이펙트 | 변경의 영향 범위, 의존 관계 분석 | Sonnet |
 
 LLM이 작업의 복잡도/도메인에 따라 에이전트 수(2-6개)와 역할을 동적으로 결정한다.
-DA/review 에이전트는 Opus를 사용한다 (레퍼런스 수집 에이전트와 구분).
+DA/review 에이전트는 run-da canonical contract의 프로파일을 따른다 (reviewer/Intensity는 standard, Arbiter는 strong).
 
 ### fan-in 통합 전략
 
@@ -220,7 +220,7 @@ for_action 모드에서, 모든 질문이 해소되면 EnterPlanMode 전에 `/ru
   이 단계를 건너뛸 이유가 없다.
 - **런타임 분기는 run-da를 따른다**: direct Codex 세션에서는 nested `codex exec`가 아니라 native subagent 경로가 기본이다.
   Claude Code subprocess/비대화형 경로에서만 `codex exec` fallback을 사용한다.
-- **기본 경로는 lean default**: `/run-da for_plan`의 자동 FULL은 4 reviewer bundle strong review다.
+- **기본 경로는 lean default**: `/run-da for_plan`의 자동 FULL은 4 reviewer bundle 기본 리뷰다.
   8개 세부 도메인 exhaustive path는 명시적 `full` modifier가 있을 때만 쓴다.
 - **YAGNI 예외 근거**: DA 호출 자체는 YAGNI 판단 대상이 아니다.
   변경이 "단순"해 보여도 독립 에이전트가 SKIP으로 판단하면
@@ -229,7 +229,7 @@ for_action 모드에서, 모든 질문이 해소되면 EnterPlanMode 전에 `/ru
   메인 LLM은 DA 호출 여부를 스스로 판단하지 않는다.
 - **thread cap 준수**: direct Codex 세션에서는 current session의 open-thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 않고,
   completed reviewer/Arbiter thread를 다음 round/retry 전에 `close_agent`로 닫아야 한다.
-- **direct Codex hardening 계약 준수**: `/run-da for_plan`의 reviewer/Arbiter/Intensity는 direct Codex path에서 `run-da` canonical contract의 strong review profile을 따른다.
+- **direct Codex hardening 계약 준수**: `/run-da for_plan`의 reviewer/Intensity는 standard review profile, Arbiter는 strong review profile을 따른다.
   `wait_agent` timeout만으로 중간 kill/self-auditing 대체를 하지 않고, reviewer PoC는 repo 밖 scratch에 한정한다.
 - **main-agent-only 유지**: single-writer/main-agent-only boundary는 `run-da` canonical contract를 그대로 따른다.
   tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 for_plan subagent가 직접 실행하지 않는다.

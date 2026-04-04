@@ -27,7 +27,7 @@ description: |
 | 경로 | 사용 시점 | fan-out / wait / close |
 |------|----------|------------------------|
 | direct Codex path | 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`, `close_agent`)을 사용할 수 있을 때 | native subagent를 직접 fan-out하고, `wait_agent`로 결과를 수신한 뒤, 결과 집계 후 completed audit thread를 `close_agent`로 닫는다 |
-| fallback / explicit `codex exec` path | Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때, 또는 사용자가 `codex exec`를 명시적으로 요구할 때 | bundle별 `codex exec --full-auto --ephemeral` subprocess + 임시 prompt/result 파일 + `/using-codex-exec` 제약 |
+| fallback / explicit `codex exec` path | Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때, 또는 사용자가 `codex exec`를 명시적으로 요구할 때 | bundle별 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` subprocess + 임시 prompt/result 파일 + `/using-codex-exec` 제약 |
 
 `CODEX_CI=1`만으로 direct Codex 세션과 `codex exec` subprocess를 구분하지 않는다.
 direct Codex path의 상세 wait/write/violation 계약은 [run-da/SKILL.md](../run-da/SKILL.md)의 `direct Codex 하드닝 계약`을 따른다.
@@ -100,7 +100,7 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 - 담당 bundle에만 집중한다. 다른 bundle은 언급하지 않는다.
 - 발견 사항마다 구체적 파일:줄과 근거를 제시한다.
 - 발견이 없으면 SAFE를 반환한다.
-- direct Codex path에서는 `run-da` canonical contract의 strong review profile을 사용한다.
+- direct Codex path에서는 `run-da` canonical contract의 standard review profile을 사용한다.
 - `wait_agent` timeout이나 단순 지연만으로 auditor를 kill하거나 self-auditing으로 대체하지 않는다.
 - tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 auditor가 실행하지 않는다.
 - direct Codex path에서는 current session의 open slot을 넘기지 않는다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 점유한다.
@@ -108,13 +108,13 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 ### Step 3a: direct Codex path
 
 - direct Codex 세션에서는 이 경로를 기본으로 사용한다.
-- bundle마다 fresh native subagent 1개를 strong review profile로 `spawn_agent` 실행한다.
+- bundle마다 fresh native subagent 1개를 standard review profile로 `spawn_agent` 실행한다.
 - bundle 수가 현재 open slot보다 많으면 batch로 나눈다.
 - 모든 결과는 `wait_agent`로 수신한다. timeout만으로 실패 처리하거나 auditor를 중간 kill/self-auditing으로 대체하지 않는다.
 
 ### Step 3b: fallback / explicit `codex exec` path
 
-- Claude Code subprocess/비대화형 경로에서는 bundle마다 `codex exec --full-auto --ephemeral` subprocess 1개를 사용한다.
+- Claude Code subprocess/비대화형 경로에서는 bundle마다 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` subprocess 1개를 사용한다.
 - 임시 prompt/result 파일, stderr/result 검증, `run_in_background`, stdin pipe 경쟁, heredoc hang 제약은 [/using-codex-exec 스킬](../using-codex-exec/SKILL.md)과 [known-issues.md](../using-codex-exec/references/known-issues.md)를 따른다.
 
 ### Step 4: 결과 수신 및 검증

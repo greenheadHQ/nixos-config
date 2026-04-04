@@ -4,7 +4,7 @@ Review Intensity 판단 알고리즘 규칙의 단일 소스. SKILL.md와 독립
 SKIP/LITE/FULL 절차(실행 방법)는 SKILL.md에 정의되어 있다.
 
 해석 규칙:
-- 여기서 **FULL**은 기본 strong review를 뜻하며, 기본 fan-out은 4 reviewer bundle이다.
+- 여기서 **FULL**은 4 reviewer bundle 기본 리뷰를 뜻하며, 기본 fan-out은 4 reviewer bundle이다.
 - 명시적 `full` modifier는 Review Intensity를 건너뛰고 exhaustive override(8개 세부 도메인)로 진입한다.
 - policy-file 변경을 더 공격적으로 downscale하는 실험은 P1 범위다. 이번 P0에서는 현재 FULL safety rule을 유지한다.
 
