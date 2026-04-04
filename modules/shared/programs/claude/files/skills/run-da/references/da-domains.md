@@ -9,12 +9,12 @@
 
 모든 DA reviewer는 다음 형식으로 결과를 반환한다.
 
-위반 발견 시:
+문제 발견 시:
 
 ```text
-## [reviewer bundle] 위반 발견: [count]건
+## [reviewer bundle] 문제 발견: [count]건
 
-### 1. [위반 제목]
+### 1. [문제 제목]
 - **ID**: {BUNDLE}-{순번}
 - **세부 관점**: {SUBDOMAIN}
 - **위치**: [파일:줄] 또는 [계획 항목 번호]
@@ -24,10 +24,22 @@
 - **권장 수정**: 구체적 수정 방향
 ```
 
-위반 미발견 시:
+문제 미발견 시:
 
 ```text
 [reviewer bundle]: CLEAR
+```
+
+계약 위반 또는 금지된 작업 필요 시:
+
+```text
+## [reviewer bundle] 위반 상태: VIOLATION
+
+- **유형**: RECOVERABLE / STATEFUL
+- **이유**: 어떤 규칙을 왜 위반했는지
+- **필요 작업**: RECOVERABLE이면 `N/A` 또는 설명을 적고, STATEFUL이면 `run-da` canonical contract의 stateful-violation 정의에서 실제로 발생한 항목 (`tracked write`, `branch mutation`, `commit/push`, `GitHub write`, `main-agent-only command`, `host mutation`)을 그대로 적는다
+- **정리 대상**: RECOVERABLE이면 `N/A`, STATEFUL이면 이번 실행이 만든 scratch dir, 임시 ref/branch, 기타 산출물처럼 cleanup 범위를 특정하는 정보를 적는다
+- **로컬 정리 필요**: YES / NO
 ```
 
 `{SUBDOMAIN}`은 bundle 내부에서 실제로 해당 finding을 포착한 세부 관점이다.
@@ -58,8 +70,12 @@
 집중 대상:
 {FOCUS_TARGETS}
 
+PoC가 필요하면 `umask 077` 아래에서 `mktemp -d`로 만든 repo 밖 private scratch 디렉토리에서만 수행하라.
+tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-only command, host mutation은 explicit delegation 없이는 금지다.
+위 규칙을 위반했거나 금지된 작업이 필요하면 finding 대신 `VIOLATION` 형식으로 반환하라.
+
 다른 bundle({OTHER_BUNDLES})의 우려는 언급하지 마라.
-위반이 없으면 CLEAR를 반환하라.
+문제가 없으면 CLEAR를 반환하라.
 
 [공통 출력 형식에 따라 결과를 반환하라]
 ```

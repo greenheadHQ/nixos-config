@@ -30,6 +30,8 @@ description: |
 | fallback / explicit `codex exec` path | Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때, 또는 사용자가 `codex exec`를 명시적으로 요구할 때 | bundle별 `codex exec --full-auto --ephemeral` subprocess + 임시 prompt/result 파일 + `/using-codex-exec` 제약 |
 
 `CODEX_CI=1`만으로 direct Codex 세션과 `codex exec` subprocess를 구분하지 않는다.
+direct Codex path의 상세 wait/write/violation 계약은 [run-da/SKILL.md](../run-da/SKILL.md)의 `direct Codex 하드닝 계약`을 따른다.
+다만 `parallel-audit`에서는 auditor read-only/no-write 경계가 항상 우선한다.
 
 ## 조사 bundle
 
@@ -98,14 +100,17 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 - 담당 bundle에만 집중한다. 다른 bundle은 언급하지 않는다.
 - 발견 사항마다 구체적 파일:줄과 근거를 제시한다.
 - 발견이 없으면 SAFE를 반환한다.
+- direct Codex path에서는 `run-da` canonical contract의 strong review profile을 사용한다.
+- `wait_agent` timeout이나 단순 지연만으로 auditor를 kill하거나 self-auditing으로 대체하지 않는다.
+- tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 auditor가 실행하지 않는다.
 - direct Codex path에서는 current session의 open slot을 넘기지 않는다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 점유한다.
 
 ### Step 3a: direct Codex path
 
 - direct Codex 세션에서는 이 경로를 기본으로 사용한다.
-- bundle마다 fresh native subagent 1개를 `spawn_agent`로 실행한다.
+- bundle마다 fresh native subagent 1개를 strong review profile로 `spawn_agent` 실행한다.
 - bundle 수가 현재 open slot보다 많으면 batch로 나눈다.
-- 모든 결과는 `wait_agent`로 수신한다.
+- 모든 결과는 `wait_agent`로 수신한다. timeout만으로 실패 처리하거나 auditor를 중간 kill/self-auditing으로 대체하지 않는다.
 
 ### Step 3b: fallback / explicit `codex exec` path
 
@@ -120,6 +125,8 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 2. 중복 발견을 제거한다 (여러 bundle에서 같은 문제를 지적한 경우).
 3. 심각도 순으로 정렬한다.
 4. direct Codex path에서는 결과 집계가 끝난 completed audit thread를 `close_agent`로 닫아 다음 batch/retry 슬롯을 회수한다.
+5. `RECOVERABLE VIOLATION`은 `SAFE`에서 제외하고 fresh auditor로 재디스패치한다. 이는 auditor가 새 상태 코드를 정의하는 것이 아니라, 메인 에이전트가 출력 형식 위반이나 scope 침범 같은 contract breach를 감지했을 때 부여하는 조율 분류다.
+6. `STATEFUL VIOLATION`만 `BLOCKED (VIOLATION)`로 남긴다. 이 경우 cleanup 범위가 특정되거나 사용자에게 불완전한 run이 보고되기 전에는 fresh auditor로 재디스패치하지 않는다.
 
 ### Step 5: 종합 리포트 생성
 
@@ -166,6 +173,8 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 | 컨텍스트 부족 | 추가 파일/정보를 제공 후 재디스패치 |
 | 범위 과대 | bundle을 세분화하여 2개 에이전트로 분할 |
 | 접근 불가 | 해당 bundle을 사용자에게 보고하고 수동 확인 요청 |
+| recoverable violation | 메인 에이전트가 current unit을 `RECOVERABLE VIOLATION`으로 분류하고, `SAFE` 계산에서 제외한 뒤 fresh auditor로 재디스패치 |
+| stateful violation | 메인 에이전트가 current unit을 `BLOCKED (VIOLATION)`로 분류하고, tracked write/branch mutation/commit/push/GitHub/main-agent-only command/host mutation 시도 여부와 이번 실행이 만든 산출물 범위를 먼저 확인한다. cleanup 범위가 특정되기 전에는 fresh auditor 재디스패치 금지 |
 
 에이전트의 BLOCKED를 무시하거나 같은 조건으로 재시도하지 않는다.
 
@@ -236,4 +245,5 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
 - 변경 범위가 극소한 경우 에이전트 수를 줄여 효율을 높인다.
 - 기본값은 6이며, `parallel-audit 10`만 exhaustive override다. 10은 기본값이 아니다.
 - direct Codex path에서는 completed audit thread를 다음 batch/retry 전에 명시적으로 `close_agent`로 닫는다.
+- `SAFE`는 유효한 auditor 결과가 모두 확보된 뒤에만 반환한다. `RECOVERABLE VIOLATION` 재디스패치 중이거나 `BLOCKED (VIOLATION)` unit이 남아 있으면 완료로 간주하지 않는다.
 - DA 피드백 루프(run-da)와 목적이 다르다: DA는 설계/코드 품질을 반복 개선하고, 전수조사는 변경의 안전성을 일회성으로 검증한다.
