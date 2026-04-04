@@ -95,6 +95,9 @@ in
     # lazygit 단축
     lg = "lazygit";
 
+    # git stash --include-untracked 단축
+    gs = "git stash --include-untracked";
+
     # cheat content search 단축
     cs = "cheat -c -s";
 
