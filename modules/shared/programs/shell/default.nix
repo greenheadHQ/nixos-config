@@ -23,6 +23,10 @@ in
     source = "${sharedScriptsDir}/wt.sh";
     executable = true;
   };
+  home.file.".local/lib/wt" = {
+    source = "${sharedScriptsDir}/lib/wt";
+    recursive = true;
+  };
   home.file.".local/bin/codex-sync" = {
     source = "${sharedScriptsDir}/codex-sync.sh";
     executable = true;
@@ -47,6 +51,10 @@ in
     source = pkgs.replaceVars "${sharedScriptsDir}/rebuild-common.sh" {
       flakePath = nixosConfigDefaultPath;
     };
+  };
+  home.file.".local/lib/rebuild" = {
+    source = "${sharedScriptsDir}/lib/rebuild";
+    recursive = true;
   };
   # PATH 추가 (공통)
   home.sessionPath = [

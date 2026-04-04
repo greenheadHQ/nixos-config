@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  style)
+    printf '%s\n' "${*: -1}"
+    ;;
+  table)
+    cat
+    ;;
+  *)
+    cat
+    ;;
+esac

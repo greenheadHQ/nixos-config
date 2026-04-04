@@ -16,5 +16,7 @@ pre-commit:
 
 pre-push:
   commands:
+    shell-script-tests:
+      run: bash ./tests/run-shell-script-tests.sh
     flake-check:
       run: nix flake check --no-build --all-systems

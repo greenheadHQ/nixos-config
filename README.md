@@ -83,7 +83,10 @@ flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
 │   ├── pre-rebuild-check.sh       # 빌드 전 검증
 │   └── fix-fod-hashes.sh          # FOD hash mismatch 자동 수정
 └── tests/
-    └── eval-tests.nix             # Nix 평가 테스트
+    ├── eval-tests.nix             # Nix 평가 테스트
+    ├── run-eval-tests.sh          # eval 테스트 실행기
+    ├── run-shell-script-tests.sh  # shell fixture 테스트 실행기
+    └── shell-script-tests.sh      # 배포 레이아웃 shell 테스트
 ```
 
 ### 상수 관리
@@ -134,10 +137,11 @@ homeserver.reverseProxy.enable = true;     # Caddy HTTPS (*.greenhead.dev)
 | lefthook | Git 훅 관리 (pre-commit, pre-push) |
 | nixfmt | Nix 코드 포매팅 |
 | shellcheck | 셸 스크립트 린팅 |
+| shell-script-tests | 배포 레이아웃 shell fixture 테스트 (`tests/shell-script-tests.sh`) |
 | gitleaks | 시크릿 유출 방지 |
 | eval-tests | Nix 평가 테스트 (`tests/eval-tests.nix`) |
 
-pre-push 시 `nix flake check --no-build --all-systems` 자동 실행.
+pre-push 시 `bash ./tests/run-shell-script-tests.sh`와 `nix flake check --no-build --all-systems`를 자동 실행한다.
 
 ---
 
