@@ -64,6 +64,9 @@ description: |
 
 ### Step 5 — LLM 이행 가이드 연계
 
+**호출 맥락 확인**: plan-with-questions에서 호출된 경우(Step I-5), 이 단계를 건너뛴다.
+(plan-with-questions Step I-6에서 통합 선택지로 제안하므로 중복 방지.)
+
 이슈 생성이 완료되면, AskUserQuestion으로 사용자에게 묻는다:
 
 "LLM 이행 가이드를 작성할까요?"
