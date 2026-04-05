@@ -74,26 +74,50 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 
 ## 런타임 경로
 
-| 경로 | 사용 시점 | fan-out / wait / close |
-|------|----------|------------------------|
-| direct Codex path | 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`, `close_agent`)을 사용할 수 있을 때 | native subagent를 직접 fan-out하고, `wait_agent`로 결과를 받고, 다음 round/retry 전 completed thread를 `close_agent`로 닫는다 |
-| fallback / explicit `codex exec` path | Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때, 또는 사용자가 `codex exec`를 명시적으로 요구할 때 | reviewer/Intensity: `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"`, Arbiter: `codex exec --full-auto --ephemeral` (config 기본 xhigh) + 임시 prompt/result 파일 + stderr/result 검증 |
+**"나는 어떤 세션에서 실행되고 있는가?"** 로 경로를 선택한다.
 
-`CODEX_CI=1`만으로 direct Codex 세션과 `codex exec` subprocess를 구분하지 않는다.
-direct Codex 세션에서도 같은 값이 보일 수 있으므로, **현재 세션 capability**를 기준으로 경로를 고른다.
+| 경로 | 조건 | 기본 실행 |
+|------|------|----------|
+| **Codex 세션** | Codex CLI가 호스트 — `spawn_agent`/`wait_agent`/`close_agent` API 사용 가능 | native subagent fan-out → `wait_agent` → `close_agent` |
+| **Claude Code 세션** | Claude Code가 호스트 — `Agent` tool 사용 가능 | **codex exec subprocess가 기본**. 사전점검(`command -v codex >/dev/null && codex --version >/dev/null 2>&1`) → 성공 시 codex exec 실행 → 실패 시(`exit code ≠ 0` 또는 빈 결과) Agent tool fallback. reviewer/Intensity: `-c model_reasoning_effort="high"`, Arbiter: config 기본 xhigh |
+| **headless 세션** | CI, `claude -p`, `codex exec` subprocess | codex exec 직접 실행. reviewer/Intensity: `-c model_reasoning_effort="high"`, Arbiter: config 기본 xhigh |
 
-## direct Codex 하드닝 계약
+`CODEX_CI=1`만으로 세션 유형을 구분하지 않는다.
+Codex 세션에서도 같은 값이 보일 수 있으므로, **현재 세션 호스트**를 기준으로 경로를 고른다.
 
-이 섹션은 **direct Codex path에서만** 적용된다.
-fallback / explicit `codex exec` path는 [arbiter-scaling.md](references/arbiter-scaling.md)의 subprocess 계약을 따른다.
+본문에서 **codex exec 경로**는 Claude Code 세션과 headless 세션의 공통 실행 substrate를 가리킨다.
+
+### codex exec 경로 위생 규칙
+
+- **모드 시작 시 이전 임시 디렉토리 정리**: for_plan 시작 시 `rm -rf /tmp/da-pr-* /tmp/da-arbiter-*`, for_pr 시작 시 `rm -rf /tmp/da-plan-* /tmp/da-intensity-*`. 같은 모드의 이전 라운드는 라운드 교체 시 정리.
+- **결과 파일 참조**: `$INTENSITY_DIR`, `$DA_DIR`, `$ARBITER_DIR` 변수로 정확히 참조한다. **`/tmp/da-*` 와일드카드 glob 금지** — 이전 실행의 결과가 섞인다.
+- **Intensity/Arbiter는 foreground 실행**: 단일 exec이므로 `run_in_background` 없이 foreground로 실행하여 결과를 즉시 확인한다. **reviewer만 background 병렬 실행**(`run_in_background: true`).
+
+## Claude Code 세션 Agent tool fallback contract
+
+Claude Code 세션에서 codex exec 사용 불가 시 Agent tool로 fallback할 때의 lifecycle:
+
+| 항목 | Claude Code Agent tool |
+|------|----------------------|
+| fan-out | `Agent` tool + `run_in_background: true` |
+| wait | 자동 완료 알림 (background task notification) |
+| close | 불필요 (Agent tool은 완료 시 자동 해제) |
+| thread-cap | Claude Code의 병렬 Agent 제한을 따름 |
+| violation 처리 | 프롬프트에서 읽기 전용을 지시하지만, 구조적 보증이 아닌 프롬프트 수준 제약이다. 하위 Agent가 side effect를 만들 가능성이 있으므로, Codex 세션 하드닝 계약의 역할별 경계(reviewer: 읽기+검색+scratch PoC만, Arbiter/Intensity: 읽기 전용)를 프롬프트에 명시한다 |
+| review profile | Arbiter: `model: "opus"`, reviewer/Intensity: `model: "sonnet"` |
+
+## Codex 세션 하드닝 계약
+
+이 섹션은 **Codex 세션 경로에서만** 적용된다.
+codex exec 경로(Claude Code 세션 · headless 세션)는 [arbiter-scaling.md](references/arbiter-scaling.md)의 subprocess 계약을 따른다.
 여러 규칙이 충돌하면 **더 엄격한 역할 제한**이 generic PoC 허용보다 우선한다.
 
 ### 용어와 우선순위
 
 | 용어 | 뜻 | 우선순위 |
 |------|-----|---------|
-| strong review profile | direct Codex Arbiter subagent는 `model="gpt-5.4"`와 `reasoning_effort="xhigh"`로 실행한다. Claude Code에서는 `model: "opus"` | Arbiter spawn 기본값 |
-| standard review profile | direct Codex reviewer/auditor/Intensity subagent는 `model="gpt-5.4"`와 `reasoning_effort="high"`로 실행한다. Claude Code에서는 `model: "sonnet"` | DA/Intensity spawn 기본값 |
+| strong review profile | Codex 세션 Arbiter subagent는 `model="gpt-5.4"`와 `reasoning_effort="xhigh"`로 실행한다. Claude Code에서는 `model: "opus"` | Arbiter spawn 기본값 |
+| standard review profile | Codex 세션 reviewer/auditor/Intensity subagent는 `model="gpt-5.4"`와 `reasoning_effort="high"`로 실행한다. Claude Code에서는 `model: "sonnet"` | DA/Intensity spawn 기본값 |
 | conservative wait | `wait_agent` timeout이나 단순 지연은 실패 신호가 아니다. 명시적 agent failure, documented violation, 최종 응답 파싱 실패 전에는 kill/self-auditing 대체를 금지한다 | 조급한 조기 종료보다 우선 |
 | single-writer | tracked workspace write, 최종 파일 수정, branch mutation, commit/push, GitHub comment/issue/PR write는 메인 에이전트 소유다. explicit delegation만 예외다 | generic PoC 허용보다 우선 |
 | main-agent-only commands | `wt`, `nrs`, rebuild 계열과 host/repo 상태를 바꾸는 동급 명령은 direct fan-out subagent가 실행하지 않는다 | lock-sensitive convenience보다 우선 |
@@ -135,8 +159,7 @@ fallback / explicit `codex exec` path는 [arbiter-scaling.md](references/arbiter
 ## Review Intensity (변경 규모 판단)
 
 Review Intensity 판단은 **독립 에이전트**가 수행한다. 메인 LLM은 판단에 관여하지 않는다.
-direct Codex 세션에서는 native subagent를 기본 경로로 사용하고,
-Claude Code subprocess/비대화형 경로에서만 `codex exec` fallback을 사용한다.
+Codex 세션에서는 native subagent, Claude Code 세션과 headless 세션에서는 codex exec을 사용한다.
 `full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override로 직행한다.
 
 ### 3단계
@@ -155,11 +178,11 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
 1. 변경 규모 판단용 입력을 준비한다.
    - for_pr: `git diff --stat main...HEAD` (파일 목록+라인 수만, 내용 불포함)
    - for_plan: 계획 요약 (변경 대상 파일 목록 + 변경 유형)
-2. **direct Codex path**:
+2. **Codex 세션 경로**:
    - fresh intensity subagent 1개를 standard review profile로 띄운다.
    - 프롬프트에는 `references/intensity-rules.md`를 직접 읽고 SKIP/LITE/FULL 중 하나를 첫 줄에 반환하라고 지시한다. Intensity는 no-write role이므로 파일 수정, scratch PoC, main-agent-only command 실행을 금지한다.
    - 결과는 `wait_agent`로 받고, timeout만으로 실패 처리하거나 중간 kill/self-auditing 대체를 하지 않는다. 파싱이 끝나면 completed intensity thread를 `close_agent`로 닫는다.
-3. **fallback / explicit `codex exec` path**:
+3. **codex exec 경로** (Claude Code 세션 · headless 세션):
    - 임시 디렉토리를 생성한다: `INTENSITY_DIR=$(mktemp -d /tmp/da-intensity-XXXXXX)`
    - 프롬프트 파일을 생성한다 (umask 077로 권한 제한):
      ```zsh
@@ -173,7 +196,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
      PROMPT
      )
      ```
-   - `codex exec`로 실행한다 (`-o`는 --output-last-message: 에이전트 최종 응답만 저장):
+   - **foreground** Bash tool 호출로 `codex exec`를 실행한다 (`run_in_background` 사용 안 함. 단일 exec이므로 결과를 즉시 확인):
      ```zsh
      codex exec --full-auto --ephemeral \
        -c model_reasoning_effort="high" \
@@ -185,7 +208,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    - SKIP → AskUserQuestion으로 사용자 승인 (기존 SKIP 절차)
    - LITE → reviewer bundle 선택 (기존 LITE 절차)
    - FULL → 4 reviewer bundles 실행
-5. **실패 시 fallback: FULL 강제** — direct path에서는 응답 파싱 실패/agent failure, fallback path에서는 결과 파일 없음·빈 결과·exit code 비정상·첫 줄 파싱 실패.
+5. **실패 시 FULL 강제** — Codex 세션 경로에서는 응답 파싱 실패/agent failure, codex exec 경로에서는 결과 파일 없음·빈 결과·exit code 비정상·첫 줄 파싱 실패.
 6. Review Intensity 판단 결과(SKIP/LITE/FULL)와 근거를 사용자에게 보고한다.
 
 판단 알고리즘 규칙 상세 및 예시는 [references/intensity-rules.md](references/intensity-rules.md) 참조.
@@ -236,13 +259,13 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
    - FULL → 4 reviewer bundles를 실행한다.
 1. 현재 계획 파일 또는 대화 컨텍스트에서 계획 내용을 수집한다.
 2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 **병렬 실행**한다.
-   - **direct Codex path**:
+   - **Codex 세션 경로**:
      - 선택된 review unit마다 fresh native subagent 1개를 standard review profile로 `spawn_agent` 실행한다.
      - 각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 계획 전체 내용을 포함하고, "계획 외의 관련 파일도 직접 읽어 탐색하라", "out-of-repo scratch PoC만 허용한다", "`run-da` canonical contract의 stateful-violation 금지 작업(`tracked write`, `branch mutation`, `commit/push`, `GitHub write`, `main-agent-only command`, `host mutation`)을 축약 없이 따르라", "규칙 위반은 finding 대신 `VIOLATION`으로 반환하라"를 명시한다.
      - 선택된 review unit 수가 current session의 open slot을 넘으면 batch한다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 계속 점유한다.
      - `wait_agent` timeout만으로 실패 처리하거나 reviewer를 kill/self-auditing으로 대체하지 않는다.
      - `fresh` modifier와 selective propagation 규칙은 동일하게 적용한다.
-   - **fallback / explicit `codex exec` path**:
+   - **codex exec 경로** (Claude Code 세션 · headless 세션):
      - 실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
      - 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)`
      - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
@@ -251,25 +274,25 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
      - `& + wait` shell-level 병렬을 사용하지 않고, stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
      - `/using-codex-exec` 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
 3. 모든 reviewer 결과를 수신한 후 종합 리포트를 작성한다.
-   - direct path: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
-   - direct path: `VIOLATION` 처리 규칙은 위 `direct Codex 하드닝 계약`의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
-   - fallback path: 결과 파일(`$DA_DIR/*-result.md`)을 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
-   - 실패한 review unit만 재실행한다. fallback path는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
+   - Codex 세션 경로: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
+   - Codex 세션 경로: `VIOLATION` 처리 규칙은 위 `Codex 세션 하드닝 계약`의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
+   - codex exec 경로: 4개 background 완료 후, 각 `$DA_DIR/{bundle}-result.md`를 `Read` 도구로 명시적으로 읽어 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
+   - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
    - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md)의 **for_plan 조립 규칙** 참조).
      for_plan에서는 반드시 계획 원문을 포함해야 하며,
      상세 조립 형식은 arbiter-prompt.md의 "프롬프트 조립 > for_plan 모드" 참조.
-   - direct path: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
-   - fallback path: `codex exec`로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
+   - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
+   - codex exec 경로: **foreground** Bash tool 호출로 `codex exec`를 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조). 단일 exec이므로 `run_in_background` 사용 안 함.
    - 결과를 수집하여 사용자에게 전건 보고한다:
      - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
      - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 계획에 반영한다.
      - NOT_AN_ISSUE: 보고만 (반영 불필요).
      - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
 6. 반영 후 동일 선택 review unit을 **새 reviewer 실행 단위**로 재실행한다.
-   - direct path: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
-   - fallback path: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
+   - Codex 세션 경로: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
+   - codex exec 경로: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
 7. 선택된 review unit 전부 CLEAR를 반환할 때까지 반복한다.
 
 ### for_pr 모드
@@ -285,36 +308,36 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
    - diff가 과도하게 크면 (`git diff main...HEAD | wc -l`로 확인) 기계적 변경(flake.lock, hash 변경 등)을 필터링한 축약 diff를 사용한다.
      `git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능.
 2. 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 **병렬 실행**한다.
-   - **direct Codex path**:
+   - **Codex 세션 경로**:
      - 선택된 review unit마다 fresh native subagent 1개를 standard review profile로 `spawn_agent` 실행한다.
      - 각 프롬프트는 [da-domains.md](references/da-domains.md)의 공통 프롬프트 구조에 diff를 `<git-diff>` 태그로 감싸서 포함하고, "diff 외부의 관련 파일도 직접 읽어 탐색하라", "out-of-repo scratch PoC만 허용한다", "`run-da` canonical contract의 stateful-violation 금지 작업(`tracked write`, `branch mutation`, `commit/push`, `GitHub write`, `main-agent-only command`, `host mutation`)을 축약 없이 따르라", "규칙 위반은 finding 대신 `VIOLATION`으로 반환하라"를 명시한다.
      - 선택된 review unit 수가 current session의 open slot을 넘으면 batch한다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread는 `close_agent` 전까지 슬롯을 점유한다.
      - `wait_agent` timeout만으로 실패 처리하거나 reviewer를 kill/self-auditing으로 대체하지 않는다.
      - `fresh` modifier와 selective propagation 규칙은 동일하게 적용한다.
-   - **fallback / explicit `codex exec` path**:
+   - **codex exec 경로** (Claude Code 세션 · headless 세션):
      - 실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)를 참조한다.
      - 라운드별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-pr-XXXXXX)`
      - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
      - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"`를 background Bash tool 호출로 실행한다.
      - stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용하고, `& + wait` shell-level 병렬을 사용하지 않는다.
 3. 모든 reviewer 결과를 수신한 후 종합 리포트를 작성한다.
-   - direct path: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
-   - direct path: `VIOLATION` 처리 규칙은 위 `direct Codex 하드닝 계약`의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
-   - fallback path: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다. 실패한 review unit만 재실행한다.
-   - fallback path는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
+   - Codex 세션 경로: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
+   - Codex 세션 경로: `VIOLATION` 처리 규칙은 위 `Codex 세션 하드닝 계약`의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
+   - codex exec 경로: 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다. 실패한 review unit만 재실행한다.
+   - codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
    - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md) 참조).
-   - direct path: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
-   - fallback path: `codex exec`로 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조).
+   - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
+   - codex exec 경로: **foreground** Bash tool 호출로 `codex exec`를 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조). 단일 exec이므로 `run_in_background` 사용 안 함.
    - 결과를 수집하여 사용자에게 전건 보고한다:
      - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
      - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 코드에 반영하고 커밋한다.
      - NOT_AN_ISSUE: 보고만 (반영 불필요).
      - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
 6. 반영 후 동일 선택 review unit을 **새 reviewer 실행 단위**로 재실행한다.
-   - direct path: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
-   - fallback path: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
+   - Codex 세션 경로: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
+   - codex exec 경로: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
 7. 선택된 review unit 전부 CLEAR를 반환할 때까지 반복한다.
 8. 최종 승인 후 push한다.
 
@@ -347,7 +370,7 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
   CRITICAL 심각도는 진행을 차단하고 즉시 수정한다.
 - **사용자 전건 보고**: 모든 Arbiter 판정 결과(CONFIRMED_ISSUE, NOT_AN_ISSUE, NEEDS_MORE_INFO)를 사용자에게 보고한다.
   NEEDS_MORE_INFO 항목은 AskUserQuestion으로 사용자 판단을 요청한다.
-- **Conservative wait**: direct Codex path에서 `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter/Intensity를 kill하지 않는다.
+- **Conservative wait**: Codex 세션 경로에서 `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter/Intensity를 kill하지 않는다.
   explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다.
 - **Single-writer 유지**: tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 메인 에이전트가 수행한다.
   DA reviewer의 PoC는 repo 밖 scratch에 한정한다.
@@ -408,10 +431,10 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 
 ## 주의사항
 
-- 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다. direct Codex path에서는 새 native subagent thread, fallback path에서는 새 `codex exec` 프로세스다.
-- direct Codex path에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
-- direct Codex path의 reviewer/auditor/Intensity는 standard review profile, Arbiter는 strong review profile을 사용하고, 역할별 write 경계를 넘지 않는다.
-- fallback path의 DA `codex exec` 프로세스는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 수정 금지를 지시한다. 코드나 계획을 직접 수정하지 않는다.
+- 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다. Codex 세션 경로에서는 새 native subagent thread, codex exec 경로에서는 새 `codex exec` 프로세스다.
+- Codex 세션 경로에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
+- Codex 세션 경로의 reviewer/auditor/Intensity는 standard review profile, Arbiter는 strong review profile을 사용하고, 역할별 write 경계를 넘지 않는다.
+- codex exec 경로의 DA `codex exec` 프로세스는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 수정 금지를 지시한다. 코드나 계획을 직접 수정하지 않는다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
 - 피드백 루프 결과는 PR 코멘트로 게시하여 이력을 보존한다.
@@ -422,5 +445,5 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 - **[references/da-domains.md](references/da-domains.md)** -- DA reviewer bundle/세부 도메인 정의, 프롬프트 템플릿, 출력 형식
 - **[references/protocol.md](references/protocol.md)** -- 상태 흐름 매핑, Arbiter 판정 프로토콜, PoC 의무화 규칙, 무한 루프 방지, 합리화 방지, PR 코멘트 형식
 - **[references/arbiter-prompt.md](references/arbiter-prompt.md)** -- Arbiter 프롬프트 템플릿, 4가지 판정 기준, few-shot 교정 예시, blind review 범위, 편향 방지
-- **[references/arbiter-scaling.md](references/arbiter-scaling.md)** -- 동적 스케일링, direct Codex / `codex exec` 런타임 분기, 실패 처리
-- **[/using-codex-exec 스킬](../using-codex-exec/SKILL.md)** -- fallback / explicit `codex exec` 실행 패턴 (패턴 4: exec 우회, 패턴 5: DA 피드백 루프). 플래그/제한사항 확인용.
+- **[references/arbiter-scaling.md](references/arbiter-scaling.md)** -- 동적 스케일링, 3-way 런타임 분기, 실패 처리
+- **[/using-codex-exec 스킬](../using-codex-exec/SKILL.md)** -- codex exec 실행 패턴 (Claude Code 세션 기본 경로, headless 세션). 플래그/제한사항 확인용.

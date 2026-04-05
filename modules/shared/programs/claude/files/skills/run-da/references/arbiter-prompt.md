@@ -2,7 +2,7 @@
 
 독립 Arbiter 에이전트가 DA findings를 검증할 때 사용하는 프롬프트 구조.
 메인 에이전트는 이 템플릿으로 Arbiter 프롬프트를 조립하여 실행한다.
-direct Codex 세션에서는 native subagent, fallback 경로에서는 `codex exec`를 사용한다.
+Codex 세션에서는 native subagent, Claude Code 세션과 headless 세션에서는 codex exec을 사용한다.
 
 ## 허용/금지 컨텍스트
 

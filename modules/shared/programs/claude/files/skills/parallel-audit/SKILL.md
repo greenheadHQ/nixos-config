@@ -24,13 +24,16 @@ description: |
 
 ## 런타임 경로
 
-| 경로 | 사용 시점 | fan-out / wait / close |
-|------|----------|------------------------|
-| direct Codex path | 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`, `close_agent`)을 사용할 수 있을 때 | native subagent를 직접 fan-out하고, `wait_agent`로 결과를 수신한 뒤, 결과 집계 후 completed audit thread를 `close_agent`로 닫는다 |
-| fallback / explicit `codex exec` path | Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때, 또는 사용자가 `codex exec`를 명시적으로 요구할 때 | bundle별 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` subprocess + 임시 prompt/result 파일 + `/using-codex-exec` 제약 |
+**"나는 어떤 세션에서 실행되고 있는가?"** 로 경로를 선택한다.
 
-`CODEX_CI=1`만으로 direct Codex 세션과 `codex exec` subprocess를 구분하지 않는다.
-direct Codex path의 상세 wait/write/violation 계약은 [run-da/SKILL.md](../run-da/SKILL.md)의 `direct Codex 하드닝 계약`을 따른다.
+| 경로 | 조건 | 기본 실행 |
+|------|------|----------|
+| **Codex 세션** | Codex CLI가 호스트 — `spawn_agent`/`wait_agent`/`close_agent` API 사용 가능 | native subagent fan-out → `wait_agent` → 결과 집계 → `close_agent` |
+| **Claude Code 세션** | Claude Code가 호스트 — `Agent` tool 사용 가능 | **codex exec subprocess가 기본**. 사전점검(`command -v codex >/dev/null && codex --version >/dev/null 2>&1`) → 존재하면 bundle별 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` → 실패 시 Claude Code `Agent` tool fallback |
+| **headless 세션** | CI, `claude -p`, `codex exec` subprocess | bundle별 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` + 임시 prompt/result 파일 |
+
+`CODEX_CI=1`만으로 세션 유형을 구분하지 않는다.
+Codex 세션의 상세 wait/write/violation 계약은 [run-da/SKILL.md](../run-da/SKILL.md)의 `Codex 세션 하드닝 계약`을 따른다.
 다만 `parallel-audit`에서는 auditor read-only/no-write 경계가 항상 우선한다.
 
 ## 조사 bundle
@@ -100,22 +103,29 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 - 담당 bundle에만 집중한다. 다른 bundle은 언급하지 않는다.
 - 발견 사항마다 구체적 파일:줄과 근거를 제시한다.
 - 발견이 없으면 SAFE를 반환한다.
-- direct Codex path에서는 `run-da` canonical contract의 standard review profile을 사용한다.
+- Codex 세션 경로에서는 `run-da` canonical contract의 standard review profile을 사용한다.
 - `wait_agent` timeout이나 단순 지연만으로 auditor를 kill하거나 self-auditing으로 대체하지 않는다.
 - tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 auditor가 실행하지 않는다.
-- direct Codex path에서는 current session의 open slot을 넘기지 않는다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 점유한다.
+- Codex 세션 경로에서는 current session의 open slot을 넘기지 않는다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 점유한다.
 
-### Step 3a: direct Codex path
+### Step 3a: Codex 세션 경로
 
-- direct Codex 세션에서는 이 경로를 기본으로 사용한다.
+- Codex 세션에서는 이 경로를 기본으로 사용한다.
 - bundle마다 fresh native subagent 1개를 standard review profile로 `spawn_agent` 실행한다.
 - bundle 수가 현재 open slot보다 많으면 batch로 나눈다.
 - 모든 결과는 `wait_agent`로 수신한다. timeout만으로 실패 처리하거나 auditor를 중간 kill/self-auditing으로 대체하지 않는다.
 
-### Step 3b: fallback / explicit `codex exec` path
+### Step 3b: codex exec 경로 (Claude Code 세션 · headless 세션)
 
-- Claude Code subprocess/비대화형 경로에서는 bundle마다 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` subprocess 1개를 사용한다.
+- Claude Code 세션 · headless 세션에서는 bundle마다 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` subprocess 1개를 사용한다.
 - 임시 prompt/result 파일, stderr/result 검증, `run_in_background`, stdin pipe 경쟁, heredoc hang 제약은 [/using-codex-exec 스킬](../using-codex-exec/SKILL.md)과 [known-issues.md](../using-codex-exec/references/known-issues.md)를 따른다.
+
+### Step 3c: Claude Code Agent tool fallback (codex 미가용 시)
+
+- `command -v codex`/`codex --version` 사전점검 실패 또는 codex exec 실행 실패 시에만 진입한다.
+- bundle별 `Agent` tool을 `run_in_background: true`로 병렬 실행한다.
+- reviewer는 read-only/no-write 범위를 프롬프트에 명시한다.
+- 완료 알림 수신 후 결과를 집계하고, `RECOVERABLE VIOLATION`/`STATEFUL VIOLATION` 분류 규칙은 Step 4와 동일하게 적용한다.
 
 ### Step 4: 결과 수신 및 검증
 
@@ -124,7 +134,7 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 1. 각 발견 사항의 유효성을 검증한다 (파일:줄이 실제로 존재하는지, 근거가 타당한지).
 2. 중복 발견을 제거한다 (여러 bundle에서 같은 문제를 지적한 경우).
 3. 심각도 순으로 정렬한다.
-4. direct Codex path에서는 결과 집계가 끝난 completed audit thread를 `close_agent`로 닫아 다음 batch/retry 슬롯을 회수한다.
+4. Codex 세션 경로에서는 결과 집계가 끝난 completed audit thread를 `close_agent`로 닫아 다음 batch/retry 슬롯을 회수한다.
 5. `RECOVERABLE VIOLATION`은 `SAFE`에서 제외하고 fresh auditor로 재디스패치한다. 이는 auditor가 새 상태 코드를 정의하는 것이 아니라, 메인 에이전트가 출력 형식 위반이나 scope 침범 같은 contract breach를 감지했을 때 부여하는 조율 분류다.
 6. `STATEFUL VIOLATION`만 `BLOCKED (VIOLATION)`로 남긴다. 이 경우 cleanup 범위가 특정되거나 사용자에게 불완전한 run이 보고되기 전에는 fresh auditor로 재디스패치하지 않는다.
 
@@ -244,6 +254,6 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
 - 조사 결과를 사용자에게 먼저 제시하고, 수정은 사용자 승인 후 진행한다.
 - 변경 범위가 극소한 경우 에이전트 수를 줄여 효율을 높인다.
 - 기본값은 6이며, `parallel-audit 10`만 exhaustive override다. 10은 기본값이 아니다.
-- direct Codex path에서는 completed audit thread를 다음 batch/retry 전에 명시적으로 `close_agent`로 닫는다.
+- Codex 세션 경로에서는 completed audit thread를 다음 batch/retry 전에 명시적으로 `close_agent`로 닫는다.
 - `SAFE`는 유효한 auditor 결과가 모두 확보된 뒤에만 반환한다. `RECOVERABLE VIOLATION` 재디스패치 중이거나 `BLOCKED (VIOLATION)` unit이 남아 있으면 완료로 간주하지 않는다.
 - DA 피드백 루프(run-da)와 목적이 다르다: DA는 설계/코드 품질을 반복 개선하고, 전수조사는 변경의 안전성을 일회성으로 검증한다.
