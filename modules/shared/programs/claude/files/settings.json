@@ -174,5 +174,6 @@
   "plansDirectory": "./.claude/plans",
   "voiceEnabled": true,
   "showThinkingSummaries": true,
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "autoMemoryEnabled": false
 }
