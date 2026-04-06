@@ -156,7 +156,8 @@
     "superpowers@claude-plugins-official": true,
     "notion@claude-plugins-official": true,
     "codex@openai-codex": true,
-    "linear@claude-plugins-official": true
+    "linear@claude-plugins-official": true,
+    "atlassian@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
@@ -173,7 +174,7 @@
   "autoUpdatesChannel": "latest",
   "plansDirectory": "./.claude/plans",
   "voiceEnabled": true,
+  "autoMemoryEnabled": false,
   "showThinkingSummaries": true,
-  "skipDangerousModePermissionPrompt": true,
-  "autoMemoryEnabled": false
+  "skipDangerousModePermissionPrompt": true
 }
