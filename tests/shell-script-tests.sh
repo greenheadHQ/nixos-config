@@ -64,34 +64,58 @@ new_sandbox() {
   printf '%s\n' "$dir"
 }
 
-assert_shell_default_wiring() {
-  local shell_nix="$REPO_ROOT/modules/shared/programs/shell/default.nix"
-
-  assert_file_contains "$shell_nix" '  home.file.".local/bin/wt" = {'
-  assert_file_contains "$shell_nix" '    executable = true;'
-  assert_file_contains "$shell_nix" '  home.file.".local/lib/wt" = {'
-  # shellcheck disable=SC2016  # Literal Nix source string.
-  assert_file_contains "$shell_nix" '    source = "${sharedScriptsDir}/lib/wt";'
-  assert_file_contains "$shell_nix" '  home.file.".local/lib/rebuild-common.sh" = {'
-  assert_file_contains "$shell_nix" '  home.file.".local/lib/rebuild" = {'
-  # shellcheck disable=SC2016  # Literal Nix source string.
-  assert_file_contains "$shell_nix" '    source = "${sharedScriptsDir}/lib/rebuild";'
-  assert_line_count "$shell_nix" '    recursive = true;' 2
+assert_nix_has_attr() {
+  local nix_file="$1" deployed_path="$2"
+  shift 2
+  local block
+  block="$(
+    awk -v target="  home.file.\"$deployed_path\" = {" '
+      $0 == target { in_block = 1 }
+      in_block { print }
+      in_block && $0 == "  };" { exit }
+    ' "$nix_file"
+  )"
+  [[ -n "$block" ]] || fail "expected $nix_file to define home.file.\"$deployed_path\""
+  local prop
+  for prop in "$@"; do
+    grep -Fqx "$prop" <<<"$block" >/dev/null || \
+      fail "expected $nix_file:$deployed_path to contain exact line: $prop"
+  done
 }
 
-assert_platform_nrs_wiring() {
-  local darwin_shell_nix="$REPO_ROOT/modules/shared/programs/shell/darwin.nix"
-  local nixos_shell_nix="$REPO_ROOT/modules/shared/programs/shell/nixos.nix"
+# register_* — Nix wiring assertion + fixture install을 함께 수행.
+# home_dir, generated_dir는 caller의 local 변수에 bash dynamic scoping으로 접근.
 
-  assert_file_contains "$darwin_shell_nix" '  home.file.".local/bin/nrs" = {'
+register_copy_exec() {
+  local nix_file="$1" deployed_path="$2" nix_source_expr="$3" repo_source="$4"
   # shellcheck disable=SC2016  # Literal Nix source string.
-  assert_file_contains "$darwin_shell_nix" '    source = "${darwinScriptsDir}/nrs.sh";'
-  assert_file_contains "$darwin_shell_nix" '    executable = true;'
+  assert_nix_has_attr "$nix_file" "$deployed_path" \
+    "    source = \"$nix_source_expr\";" \
+    "    executable = true;"
+  local gen_name; gen_name="$(basename "$deployed_path")"
+  cp "$REPO_ROOT/$repo_source" "$generated_dir/$gen_name"
+  chmod +x "$generated_dir/$gen_name"
+  ln -sf "$generated_dir/$gen_name" "$home_dir/$deployed_path"
+}
 
-  assert_file_contains "$nixos_shell_nix" '  home.file.".local/bin/nrs" = {'
+register_recursive() {
+  local nix_file="$1" deployed_path="$2" nix_source_expr="$3" repo_source="$4"
   # shellcheck disable=SC2016  # Literal Nix source string.
-  assert_file_contains "$nixos_shell_nix" '    source = "${nixosScriptsDir}/nrs.sh";'
-  assert_file_contains "$nixos_shell_nix" '    executable = true;'
+  assert_nix_has_attr "$nix_file" "$deployed_path" \
+    "    source = \"$nix_source_expr\";" \
+    "    recursive = true;"
+  symlink_helper_dir "$REPO_ROOT/$repo_source" "$home_dir/$deployed_path"
+}
+
+register_replace_vars() {
+  local nix_file="$1" deployed_path="$2" flake_path="$3" repo_source="$4" nix_source_expr="$5" nix_var_line="$6"
+  # shellcheck disable=SC2016  # Literal Nix source string.
+  assert_nix_has_attr "$nix_file" "$deployed_path" \
+    "    source = pkgs.replaceVars \"$nix_source_expr\" {" \
+    "$nix_var_line"
+  local gen_name; gen_name="$(basename "$deployed_path")"
+  sed "s|@flakePath@|$flake_path|g" "$REPO_ROOT/$repo_source" > "$generated_dir/$gen_name"
+  ln -sf "$generated_dir/$gen_name" "$home_dir/$deployed_path"
 }
 
 read_bash_array_from_script() {
@@ -125,45 +149,64 @@ install_deployed_layout() {
   local sandbox="$1"
   local flake_path="${2:-$REPO_ROOT}"
   local home_dir="$sandbox/home"
-  local bin_dir="$home_dir/.local/bin"
-  local lib_dir="$home_dir/.local/lib"
   local generated_dir="$sandbox/generated"
+  local shell_nix="$REPO_ROOT/modules/shared/programs/shell/default.nix"
 
-  assert_shell_default_wiring
-  mkdir -p "$bin_dir" "$lib_dir/wt" "$lib_dir/rebuild" "$generated_dir"
+  mkdir -p "$home_dir/.local/bin" "$home_dir/.local/lib" "$generated_dir"
 
-  cp "$REPO_ROOT/modules/shared/scripts/wt.sh" "$generated_dir/wt.sh"
-  chmod +x "$generated_dir/wt.sh"
-  ln -sf "$generated_dir/wt.sh" "$bin_dir/wt"
-  ln -sf "$FIXTURE_DIR/bin/codex-sync" "$bin_dir/codex-sync"
-  symlink_helper_dir "$REPO_ROOT/modules/shared/scripts/lib/wt" "$lib_dir/wt"
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_copy_exec "$shell_nix" ".local/bin/wt" \
+    '${sharedScriptsDir}/wt.sh' "modules/shared/scripts/wt.sh"
 
-  sed "s|@flakePath@|$flake_path|g" \
-    "$REPO_ROOT/modules/shared/scripts/rebuild-common.sh" > "$generated_dir/rebuild-common.sh"
-  ln -sf "$generated_dir/rebuild-common.sh" "$lib_dir/rebuild-common.sh"
-  symlink_helper_dir "$REPO_ROOT/modules/shared/scripts/lib/rebuild" "$lib_dir/rebuild"
+  # codex-sync: Nix 배포 있지만 테스트에서는 fixture stub 사용 (shadow-path 테스트용)
+  # cp로 sandbox에 복사하여 원본 fixture 보호
+  cp "$FIXTURE_DIR/bin/codex-sync" "$generated_dir/codex-sync"
+  chmod +x "$generated_dir/codex-sync"
+  ln -sf "$generated_dir/codex-sync" "$home_dir/.local/bin/codex-sync"
+
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_recursive "$shell_nix" ".local/lib/wt" \
+    '${sharedScriptsDir}/lib/wt' "modules/shared/scripts/lib/wt"
+
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_replace_vars "$shell_nix" ".local/lib/rebuild-common.sh" \
+    "$flake_path" "modules/shared/scripts/rebuild-common.sh" \
+    '${sharedScriptsDir}/rebuild-common.sh' \
+    '      flakePath = nixosConfigDefaultPath;'
+
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_recursive "$shell_nix" ".local/lib/rebuild" \
+    '${sharedScriptsDir}/lib/rebuild' "modules/shared/scripts/lib/rebuild"
+
+  # cross-cutting: recursive 배포가 정확히 2개
+  assert_line_count "$shell_nix" '    recursive = true;' 2
 }
 
 install_platform_nrs_entrypoint() {
-  local sandbox="$1"
-  local platform="$2"
+  local sandbox="$1" platform="$2"
   local home_dir="$sandbox/home"
-  local bin_dir="$home_dir/.local/bin"
   local generated_dir="$sandbox/generated"
-  local source_path
 
-  assert_platform_nrs_wiring
-  mkdir -p "$bin_dir" "$generated_dir"
+  mkdir -p "$home_dir/.local/bin" "$generated_dir"
 
+  # shellcheck disable=SC2016  # Literal Nix source strings.
   case "$platform" in
-    nixos) source_path="$REPO_ROOT/modules/nixos/scripts/nrs.sh" ;;
-    darwin) source_path="$REPO_ROOT/modules/darwin/scripts/nrs.sh" ;;
+    darwin)
+      register_copy_exec \
+        "$REPO_ROOT/modules/shared/programs/shell/darwin.nix" \
+        ".local/bin/nrs" \
+        '${darwinScriptsDir}/nrs.sh' \
+        "modules/darwin/scripts/nrs.sh"
+      ;;
+    nixos)
+      register_copy_exec \
+        "$REPO_ROOT/modules/shared/programs/shell/nixos.nix" \
+        ".local/bin/nrs" \
+        '${nixosScriptsDir}/nrs.sh' \
+        "modules/nixos/scripts/nrs.sh"
+      ;;
     *) fail "unknown platform for nrs entrypoint: $platform" ;;
   esac
-
-  cp "$source_path" "$generated_dir/nrs-$platform.sh"
-  chmod +x "$generated_dir/nrs-$platform.sh"
-  ln -sf "$generated_dir/nrs-$platform.sh" "$bin_dir/nrs"
 }
 
 create_git_fixture_repo() {

@@ -13,6 +13,7 @@
 - 이 파일이 shared shell helper contract의 authoritative source다.
 - top-level loader 주석은 이 파일을 요약할 수는 있지만, 서로 다른 contract를 정의하면 안 된다.
 - `tests/shell-script-tests.sh`는 이 파일의 contract를 runtime/deployed-layout 기준으로 검증한다.
+- 테스트의 `register_*` 함수는 Nix wiring assertion과 fixture install을 함께 수행한다. 이는 fixture 생성 편의를 위한 것이지, authoritative source가 아니다. Nix 선언(`default.nix`, `darwin.nix`, `nixos.nix`)이 배포 계약의 authoritative source다.
 
 ## Helper Boundaries
 
@@ -57,7 +58,7 @@
 - Top-level entrypoints stay thin. New runtime logic belongs in a helper file unless it is dispatch/help text.
 - Helpers are grouped by change reason, not by arbitrary line counts.
 - Loader source order is part of the contract. The ordered helper manifest in each top-level entrypoint is the single source of truth for helper membership and load order.
-- If a new helper is added under an existing helper directory, update the entrypoint helper manifest and tests together. `modules/shared/programs/shell/default.nix` only needs changes for new top-level entrypoints or new helper directories.
+- If a new helper is added under an existing helper directory, update the entrypoint helper manifest and tests together. `modules/shared/programs/shell/default.nix` only needs changes for new top-level entrypoints or new helper directories. New deployment entries must add a `register_*` call in `install_deployed_layout()` or `install_platform_nrs_entrypoint()`.
 - `tests/shell-script-tests.sh` must stay hermetic and recursive-layout aware: it should ignore host Git hooks/config and mirror the deployed helper tree shape, not a flat copy.
 - Tests must exercise the deployed layout, not only the repo-local path. `tests/shell-script-tests.sh` should validate both the expected Home Manager wiring and runtime smoke paths.
 - Public surface smoke를 유지하되, ordered helper manifest/order contract를 검증하는 최소 fixture test도 유지한다.
