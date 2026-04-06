@@ -89,8 +89,18 @@ Codex 세션에서도 같은 값이 보일 수 있으므로, **현재 세션 호
 
 ### codex exec 경로 위생 규칙
 
-- **모드 시작 시 이전 임시 디렉토리 정리**: for_plan 시작 시 `rm -rf /tmp/da-pr-* /tmp/da-arbiter-*`, for_pr 시작 시 `rm -rf /tmp/da-plan-* /tmp/da-intensity-*`. 같은 모드의 이전 라운드는 라운드 교체 시 정리.
+- **세션 네임스페이스**: 동시 다중 세션 간 /tmp 디렉토리 충돌을 방지한다.
+  ```zsh
+  # 세션 식별 해시 (8자: /tmp 경로 가독성과 충돌 확률의 균형)
+  _DA_SID="${CODEX_COMPANION_SESSION_ID:+${CODEX_COMPANION_SESSION_ID:0:8}}"
+  # CODEX_COMPANION_SESSION_ID 미노출 환경(headless/CI)에서 디렉토리별 충돌 방지용 결정적 해시
+  [ -z "$_DA_SID" ] && _DA_SID="$(printf '%s' "$PWD" | sha1sum 2>/dev/null | head -c 8 || printf '%s' "$PWD" | shasum | head -c 8)"
+  ```
+  이후 모든 `mktemp -d`와 cleanup glob에서 `$_DA_SID`를 prefix에 포함한다.
+- **모드 시작 시 이전 임시 디렉토리 정리**: for_plan 시작 시 `rm -rf /tmp/da-${_DA_SID}-pr-*(N) /tmp/da-${_DA_SID}-arbiter-*(N) /tmp/da-pr-*(N) /tmp/da-arbiter-*(N)`, for_pr 시작 시 `rm -rf /tmp/da-${_DA_SID}-plan-*(N) /tmp/da-${_DA_SID}-intensity-*(N) /tmp/da-plan-*(N) /tmp/da-intensity-*(N)`. 같은 모드의 이전 라운드는 라운드 교체 시 정리.
+  zsh `(N)` qualifier로 매칭 파일 없을 때 오류를 방지한다. legacy glob(NS 없음)은 전환기 고아 디렉토리 정리용이다.
 - **결과 파일 참조**: `$INTENSITY_DIR`, `$DA_DIR`, `$ARBITER_DIR` 변수로 정확히 참조한다. **`/tmp/da-*` 와일드카드 glob 금지** — 이전 실행의 결과가 섞인다.
+- **stdin 명시적 닫기**: 모든 codex exec 호출에 `< /dev/null`을 추가한다. Claude Code Bash tool이 병렬 호출 시 background로 자동 전환할 때 stdin이 닫히지 않아 `Reading additional input from stdin...`에서 hang이 발생한다. `< /dev/null`로 stdin을 즉시 EOF로 만들어 방지한다 (Codex 공식 플러그인의 `stdio: "ignore"` 패턴과 동일 효과).
 - **Intensity/Arbiter는 foreground 실행**: 단일 exec이므로 `run_in_background` 없이 foreground로 실행하여 결과를 즉시 확인한다. **reviewer만 background 병렬 실행**(`run_in_background: true`).
 
 ## Claude Code 세션 Agent tool fallback contract
@@ -183,7 +193,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    - 프롬프트에는 `references/intensity-rules.md`를 직접 읽고 SKIP/LITE/FULL 중 하나를 첫 줄에 반환하라고 지시한다. Intensity는 no-write role이므로 파일 수정, scratch PoC, main-agent-only command 실행을 금지한다.
    - 결과는 `wait_agent`로 받고, timeout만으로 실패 처리하거나 중간 kill/self-auditing 대체를 하지 않는다. 파싱이 끝나면 completed intensity thread를 `close_agent`로 닫는다.
 3. **codex exec 경로** (Claude Code 세션 · headless 세션):
-   - 임시 디렉토리를 생성한다: `INTENSITY_DIR=$(mktemp -d /tmp/da-intensity-XXXXXX)`
+   - 임시 디렉토리를 생성한다: `INTENSITY_DIR=$(mktemp -d /tmp/da-${_DA_SID}-intensity-XXXXXX)`
    - 프롬프트 파일을 생성한다 (umask 077로 권한 제한):
      ```zsh
      (umask 077; cat > "$INTENSITY_DIR/prompt.md" <<'PROMPT'
@@ -202,6 +212,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
        -c model_reasoning_effort="high" \
        -o "$INTENSITY_DIR/result.md" \
        "$(cat "$INTENSITY_DIR/prompt.md")" \
+       < /dev/null \
        2>"$INTENSITY_DIR/stderr.log"
      ```
 4. 메인 LLM이 결과를 읽고 판정에 따라 분기한다:
@@ -267,11 +278,11 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
      - `fresh` modifier와 selective propagation 규칙은 동일하게 적용한다.
    - **codex exec 경로** (Claude Code 세션 · headless 세션):
      - 실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
-     - 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-plan-XXXXXX)`
+     - 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-plan-XXXXXX)`
      - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
-     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"`를 background Bash tool 호출로 실행한다.
+     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high" ... < /dev/null`를 background Bash tool 호출로 실행한다.
      - `run_in_background: true`를 사용하면 완료 알림이 자동으로 오므로 sleep/poll로 확인하지 않는다.
-     - `& + wait` shell-level 병렬을 사용하지 않고, stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
+     - `& + wait` shell-level 병렬을 사용하지 않고, stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다. 모든 호출에 `< /dev/null`을 포함한다.
      - `/using-codex-exec` 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙은 이 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
 3. 모든 reviewer 결과를 수신한 후 종합 리포트를 작성한다.
    - Codex 세션 경로: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
@@ -316,10 +327,10 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
      - `fresh` modifier와 selective propagation 규칙은 동일하게 적용한다.
    - **codex exec 경로** (Claude Code 세션 · headless 세션):
      - 실행 전 `/using-codex-exec` 스킬의 패턴 4 (exec 우회)를 참조한다.
-     - 라운드별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-pr-XXXXXX)`
+     - 라운드별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-pr-XXXXXX)`
      - 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
-     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"`를 background Bash tool 호출로 실행한다.
-     - stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용하고, `& + wait` shell-level 병렬을 사용하지 않는다.
+     - 선택된 review unit 수만큼 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high" ... < /dev/null`를 background Bash tool 호출로 실행한다.
+     - stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용하고, `& + wait` shell-level 병렬을 사용하지 않는다. 모든 호출에 `< /dev/null`을 포함한다.
 3. 모든 reviewer 결과를 수신한 후 종합 리포트를 작성한다.
    - Codex 세션 경로: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
    - Codex 세션 경로: `VIOLATION` 처리 규칙은 위 `Codex 세션 하드닝 계약`의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.

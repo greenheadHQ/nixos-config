@@ -25,6 +25,7 @@ cat /tmp/codex-result.md
 핵심 요소:
 - `-o`: 마지막 에이전트 메시지를 파일로 저장. 루프 연동 시 필수.
 - `2>&1`: stderr도 함께 캡처하여 실패 원인 추적에 활용.
+- `< /dev/null`: Claude Code 병렬 Bash 호출 시 background 전환에 의한 stdin hang 방지. 병렬/`run_in_background` 환경에서 필수. 단독 foreground에서도 무해하므로 추가 권장 ([known-issues.md §13](known-issues.md)).
 - 인라인 프롬프트(`codex exec --full-auto "..."`)는 짧은 질의에만 사용.
 
 ## 패턴 2: 코드 리뷰 — scope flag만 사용 (커스텀 지시 불필요)

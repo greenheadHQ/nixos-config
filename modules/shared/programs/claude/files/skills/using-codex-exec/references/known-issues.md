@@ -389,3 +389,32 @@ codex exec --full-auto --ephemeral \
 **올바른 패턴**: 프롬프트 파일 생성과 codex exec를 별도 Bash tool 호출로 분리한다. §11 본문의 "올바른 패턴"과 동일 원리. 호출 간 상태 공유는 파일 경로를 통해서만 한다 (셸 변수는 호출 간 유지되지 않으므로, 1단계에서 출력한 경로를 2단계에서 직접 사용).
 
 **§11 본문과의 관계**: §11은 `& + wait` shell-level 병렬과 다수 stdin pipe 경합의 제약이고, 이 항목은 heredoc 체이닝의 stdin 관련 문제이다. 원인은 다르지만 해결 패턴(별도 Bash tool 호출 분리)은 동일하다.
+
+### 12. 동시 다중 세션 간 /tmp/da-* 경쟁 상태
+
+**심각도**: 높음 — 동시에 여러 Claude Code 세션이 DA를 실행할 때 발생
+
+**증상**: 한 세션의 cleanup glob(`rm -rf /tmp/da-pr-*`)이 다른 세션의 결과 파일을 삭제. codex exec가 결과 파일 누락으로 실패하거나, 다른 세션의 결과를 잘못 읽음.
+
+**근본 원인**: cleanup glob이 세션을 구분하지 않아, 다른 워크트리/세션의 임시 파일까지 삭제.
+
+**해결**: run-da SKILL.md의 세션 네임스페이스(`$_DA_SID`) 규칙에 따라 `$CODEX_COMPANION_SESSION_ID` 앞 8자 (또는 `$PWD` 해시 fallback)를 모든 임시 디렉토리 prefix에 포함한다.
+
+**참고**: Codex 공식 플러그인은 Session ID 기반 필터링(`state.jobs.filter(job => job.sessionId === sessionId)`)으로 동일 문제를 해결한다 (glob 대신 명시적 참조 추적).
+
+### 13. 병렬 Bash 호출 시 codex exec background 전환 → stdin hang
+
+**심각도**: 높음 — Claude Code에서 병렬 Bash tool 호출 시 발생
+
+**증상**: foreground로 실행한 codex exec가 Claude Code에 의해 background로 자동 전환됨. background 전환 후 `Reading additional input from stdin...`에서 무한 대기. 결과 파일(`-o`)이 생성되지 않고 프로세스가 Ss(sleeping) 상태로 남음.
+
+**재현**: 2개 이상의 Bash tool 호출을 동시에 보내면, 하나가 완료된 후 나머지가 background로 전환될 수 있음. 단독 실행에서는 발생하지 않음.
+
+**근본 원인**: Claude Code Bash tool이 병렬 실행 시 background 전환하면서 stdin이 적절히 닫히지 않음. codex exec는 인자로 프롬프트를 받아도 stdin이 열려있으면 추가 입력을 기다림.
+
+**해결**: 모든 codex exec 호출에 `< /dev/null`을 추가하여 stdin을 즉시 EOF로 만든다.
+```bash
+codex exec --full-auto --ephemeral -o "$DIR/result.md" "$(cat prompt.md)" < /dev/null
+```
+
+**참고**: Codex 공식 플러그인의 background 작업은 `stdio: "ignore"`로 stdin/stdout/stderr를 모두 /dev/null로 리다이렉트한다 (동일 효과).

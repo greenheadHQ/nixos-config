@@ -117,7 +117,8 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 
 ### Step 3b: codex exec 경로 (Claude Code 세션 · headless 세션)
 
-- Claude Code 세션 · headless 세션에서는 bundle마다 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` subprocess 1개를 사용한다.
+- Claude Code 세션 · headless 세션에서는 bundle마다 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high" ... < /dev/null` subprocess 1개를 사용한다.
+- 세션 네임스페이스(`$_DA_SID`)와 stdin 닫기(`< /dev/null`) 패턴은 [run-da/SKILL.md](../run-da/SKILL.md)의 "codex exec 경로 위생 규칙"을 따른다.
 - 임시 prompt/result 파일, stderr/result 검증, `run_in_background`, stdin pipe 경쟁, heredoc hang 제약은 [/using-codex-exec 스킬](../using-codex-exec/SKILL.md)과 [known-issues.md](../using-codex-exec/references/known-issues.md)를 따른다.
 
 ### Step 3c: Claude Code Agent tool fallback (codex 미가용 시)

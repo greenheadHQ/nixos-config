@@ -73,7 +73,7 @@ stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
 
 ```bash
 # 1. Arbiter 임시 디렉토리 생성
-ARBITER_DIR=$(mktemp -d /tmp/da-arbiter-XXXXXX)
+ARBITER_DIR=$(mktemp -d /tmp/da-${_DA_SID}-arbiter-XXXXXX)
 
 # 2. Arbiter 프롬프트 파일 조립 (arbiter-prompt.md의 조립 규칙 참조)
 cat > "$ARBITER_DIR/arbiter-prompt.md" <<'PROMPT'
@@ -84,6 +84,7 @@ PROMPT
 codex exec --full-auto --ephemeral \
   -o "$ARBITER_DIR/arbiter-result.md" \
   "$(cat "$ARBITER_DIR/arbiter-prompt.md")" \
+  < /dev/null \
   2>"$ARBITER_DIR/arbiter-stderr.log"
 
 # 4. 결과 수집
