@@ -148,7 +148,8 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/scripts/statusline.sh"
+    "command": "~/.claude/scripts/statusline.sh",
+    "refreshInterval": "10"
   },
   "enabledPlugins": {
     "plugin-dev@claude-plugins-official": true,
@@ -158,7 +159,8 @@
     "notion@claude-plugins-official": true,
     "codex@openai-codex": true,
     "linear@claude-plugins-official": true,
-    "atlassian@claude-plugins-official": true
+    "atlassian@claude-plugins-official": true,
+    "figma@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {

@@ -25,3 +25,13 @@ args = ["-y", "chrome-devtools-mcp@latest", "--autoConnect", "--channel=stable",
 
 [plugins."github@openai-curated"]
 enabled = true
+
+[plugins."figma@openai-curated"]
+enabled = true
+
+[plugins."slack@openai-curated"]
+enabled = true
+
+[plugins."notion@openai-curated"]
+enabled = true
+
