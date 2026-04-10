@@ -149,7 +149,7 @@
   "statusLine": {
     "type": "command",
     "command": "~/.claude/scripts/statusline.sh",
-    "refreshInterval": "10"
+    "refreshInterval": 10
   },
   "enabledPlugins": {
     "plugin-dev@claude-plugins-official": true,
