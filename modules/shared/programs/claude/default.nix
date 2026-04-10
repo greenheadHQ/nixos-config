@@ -235,9 +235,9 @@ in
     ".claude/skills/show-pains".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/show-pains";
 
-    # agent-browser 스킬 (user-scope)
-    ".claude/skills/agent-browser".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/agent-browser";
+    # playwright-cli 스킬 (user-scope)
+    ".claude/skills/playwright-cli".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/playwright-cli";
 
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =

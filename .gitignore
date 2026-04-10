@@ -25,7 +25,10 @@
 modules/shared/programs/claude/files/skills/*/evals/loop-results-*.json
 modules/shared/programs/claude/files/skills/*/evals/skill_report_*.html
 
-# agent-browser 인증 상태 파일 (평문 세션 토큰 포함)
+# 브라우저 자동화 인증 상태 파일 (평문 세션 토큰 포함)
 auth-state.json
 oauth-state.json
 2fa-state.json
+
+# playwright-cli 런타임 산출물 (스냅샷, 세션 데이터)
+.playwright-cli/
