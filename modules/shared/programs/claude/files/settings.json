@@ -80,6 +80,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/detect-pain-point.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/record-prompt-submit.sh"
           }
         ]
       }
@@ -99,6 +103,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/collect-pain-points.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/record-last-stop.sh"
           }
         ]
       }
@@ -148,7 +156,7 @@
   "statusLine": {
     "type": "command",
     "command": "~/.claude/scripts/statusline.sh",
-    "refreshInterval": 10
+    "refreshInterval": 1
   },
   "enabledPlugins": {
     "plugin-dev@claude-plugins-official": true,

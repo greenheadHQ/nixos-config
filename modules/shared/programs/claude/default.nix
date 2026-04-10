@@ -164,6 +164,12 @@ in
     ".claude/hooks/auto-archive.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/auto-archive.sh";
 
+    # Cache TTL tracking hooks
+    ".claude/hooks/record-last-stop.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-last-stop.sh";
+    ".claude/hooks/record-prompt-submit.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-prompt-submit.sh";
+
     # Pain point collection hooks
     ".claude/hooks/detect-pain-point.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/detect-pain-point.sh";

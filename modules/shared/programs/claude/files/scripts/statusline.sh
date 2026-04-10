@@ -16,6 +16,23 @@ fi
 # statusline stdin에는 session_id 필드가 없으므로 transcript 파일명에서 유도한다.
 SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
 
+# --- Heavy 연산 분기 ---
+# refreshInterval=1(매초)에서 Plan/Memory 감지(grep/git/find)를 매초 실행하면 비효율적.
+# 캐시 TTL만 매초 갱신하고, heavy 연산은 HEAVY_INTERVAL 간격으로만 실행한다.
+NOW=$(date +%s)
+HEAVY_CACHE_DIR="${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline}"
+mkdir -p "$HEAVY_CACHE_DIR"
+HEAVY_STATE="${HEAVY_CACHE_DIR}/heavy-${SESSION_ID}"
+HEAVY_INTERVAL=10
+DO_HEAVY=true
+
+if [ -f "$HEAVY_STATE" ]; then
+  last_heavy=$(head -1 "$HEAVY_STATE" 2>/dev/null || echo 0)
+  if [ "$((NOW - last_heavy))" -lt "$HEAVY_INTERVAL" ]; then
+    DO_HEAVY=false
+  fi
+fi
+
 # --- SSH 환경 감지 ---
 # SSH 세션에서는 OSC 8 하이퍼링크가 클릭 불가하므로,
 # 외부 링크(Jira/Slack/Figma)는 숨기고 로컬 상태(Plan/Memo/Memory)는 텍스트만 표시.
@@ -28,11 +45,19 @@ IS_SSH=false
 # Termius 등 bright black을 검정으로 렌더링하는 터미널에서 가시성 확보
 MUTED="38;5;242"   # #6c6c6c
 
-# --- Plan 파일 감지 ---
+# --- Plan 파일 감지 + Memory 디렉토리 감지 (Heavy 연산) ---
+# DO_HEAVY=true일 때만 실행하고, 결과를 파일로 캐시.
+# DO_HEAVY=false일 때는 캐시된 변수를 복원하여 렌더링에 사용.
+PLAN_FILE=""
+MEMORY_LINK=""
+MEMORY_LABEL=""
+
+if $DO_HEAVY; then
+
+# -- Plan 파일 감지 --
 # 현재 세션의 transcript에서 plan 파일 Read/Write 기록을 추출한다.
 # ※ 이전 ls -t 방식은 세션과 무관하게 가장 최근 파일을 반환하여
 #   다른 세션의 plan을 오표시하는 버그가 있었음 (worktree fallback 포함).
-PLAN_FILE=""
 PLAN_STATE_FILE=""
 
 if [ -n "$TRANSCRIPT" ]; then
@@ -90,7 +115,7 @@ elif [ -z "$PLAN_FILE" ] && [ -f "$PROJECT_PLAN_STATE" ]; then
   fi
 fi
 
-# --- Memory 디렉토리 감지 ---
+# -- Memory 디렉토리 감지 --
 #
 # === Change Intent Record ===
 # v1 (PR #264): dirname(transcript_path)/memory/로 경로 유도.
@@ -113,8 +138,6 @@ fi
 #              양쪽 분수 표시(5/7) → label 과도, 자동 등록/삭제 → 데이터 손실 위험.
 #    trade-off: ⚠ 의미를 사용자가 알아야 하지만, 평소엔 깔끔하고
 #              orphan 존재 시에만 시각적 신호를 제공.
-MEMORY_LINK=""
-MEMORY_LABEL=""
 
 if [ -n "$TRANSCRIPT" ]; then
   PROJECT_MEMORY_DIR="$(dirname "$TRANSCRIPT")/memory"
@@ -168,6 +191,17 @@ if [ -n "$TRANSCRIPT" ]; then
     MEMORY_LINK="file://$(dirname "$MEMORY_INDEX")"
     MEMORY_LABEL="Memory (${MEMORY_COUNT}${MEMORY_WARN})"
   fi
+fi
+
+# -- Heavy 결과 저장 --
+printf 'PLAN_FILE=%q\nMEMORY_LINK=%q\nMEMORY_LABEL=%q\n' \
+  "$PLAN_FILE" "$MEMORY_LINK" "$MEMORY_LABEL" > "${HEAVY_STATE}.vars"
+echo "$NOW" > "$HEAVY_STATE"
+
+else
+  # -- Light run: 캐시된 변수 복원 --
+  # shellcheck source=/dev/null
+  source "${HEAVY_STATE}.vars" 2>/dev/null || true
 fi
 
 # --- Status icons 읽기 ---
@@ -337,6 +371,51 @@ if [ -n "$MEMORY_LINK" ]; then
   print_icon "34" "$MEMORY_URL" "\xf0\x9f\xa7\xa0" "$MEMORY_LABEL"
 fi
 
+# Cache TTL: 프롬프트 캐시 남은 시간 표시
+# 값 "0" = API 호출 중 (UserPromptSubmit → Stop 사이) → 5:00 고정 표시
+# 값 >0  = Unix epoch (Stop 시점) → 카운트다운
+# green(≥2min) / yellow(1-2min) / red(<1min) / muted(expired)
+# 세션별 파일 우선, 글로벌 fallback
+CACHE_TTL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/claude-hooks"
+if [ -n "$SESSION_ID" ]; then
+  LAST_STOP_FILE="${CACHE_TTL_DIR}/last-stop-${SESSION_ID}"
+else
+  LAST_STOP_FILE="${CACHE_TTL_DIR}/last-stop"
+fi
+CACHE_TTL=300  # 5분
+
+if [ -f "$LAST_STOP_FILE" ]; then
+  last_stop=$(cat "$LAST_STOP_FILE" 2>/dev/null)
+  if [ -n "$last_stop" ] 2>/dev/null; then
+    if [ "$last_stop" = "0" ]; then
+      # API 호출 중 — 캐시가 활발히 갱신되므로 5:00 고정
+      # 안전장치: 프로세스 kill 등으로 Stop 미발동 시 "0"이 영구 지속되는 것을 방지
+      # 파일 수정 시각이 CACHE_TTL을 초과하면 expired로 전환
+      file_mtime=$(stat -c %Y "$LAST_STOP_FILE" 2>/dev/null || stat -f %m "$LAST_STOP_FILE" 2>/dev/null || echo 0)
+      if [ "$((NOW - file_mtime))" -ge "$CACHE_TTL" ]; then
+        print_icon "$MUTED" "" "\xf0\x9f\x92\xa4" "expired"
+      else
+        print_icon "36" "" "\xe2\x8f\xb1\xef\xb8\x8f" "5:00"
+      fi
+    elif [ "$last_stop" -gt 0 ] 2>/dev/null; then
+      elapsed=$((NOW - last_stop))
+      remaining=$((CACHE_TTL - elapsed))
+      if [ "$remaining" -gt 0 ]; then
+        minutes=$((remaining / 60))
+        seconds=$((remaining % 60))
+        CACHE_LABEL=$(printf '%d:%02d' "$minutes" "$seconds")
+        if [ "$remaining" -ge 120 ]; then CACHE_COLOR="32"
+        elif [ "$remaining" -ge 60 ]; then CACHE_COLOR="33"
+        else CACHE_COLOR="31"
+        fi
+        print_icon "$CACHE_COLOR" "" "\xe2\x8f\xb1\xef\xb8\x8f" "$CACHE_LABEL"
+      else
+        print_icon "$MUTED" "" "\xf0\x9f\x92\xa4" "expired"
+      fi
+    fi
+  fi
+fi
+
 # 아이콘이 하나라도 있으면 최종 개행
 if $HAS_OUTPUT; then printf '\n'; fi
 
@@ -371,7 +450,7 @@ if [ -n "$RATE_5H" ] || [ -n "$RATE_7D" ]; then
   else RATE_DETAIL=1
   fi
 
-  NOW=$(date +%s)
+  # NOW는 스크립트 상단에서 이미 계산됨
   if [ -n "$RATE_5H" ]; then
     render_rate_window "$RATE_5H" "5h" "$RATE_5H_RESET" "$NOW" "$RATE_DETAIL"
   fi
