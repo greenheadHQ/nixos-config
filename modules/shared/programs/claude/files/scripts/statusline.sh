@@ -41,6 +41,10 @@ fi
 IS_SSH=false
 [ -n "$SSH_CONNECTION" ] && IS_SSH=true
 
+# 캐시 가이드 URL (TTL + 히트율 아이콘 클릭 시 브라우저에서 열림)
+CACHE_GUIDE_URL="https://github.com/greenheadHQ/nixos-config/blob/main/modules/shared/programs/claude/files/docs/cache-guide.md"
+$IS_SSH && CACHE_GUIDE_URL=""
+
 # 256-color 고정 그레이 — 터미널 팔레트 의존 \e[90m 대신 사용
 # Termius 등 bright black을 검정으로 렌더링하는 터미널에서 가시성 확보
 MUTED="38;5;242"   # #6c6c6c
@@ -193,15 +197,55 @@ if [ -n "$TRANSCRIPT" ]; then
   fi
 fi
 
+# -- Cache TTL 동적 감지 --
+# === Change Intent Record ===
+# v1 (PR #444): CACHE_TTL=300 하드코딩 (5분 전용).
+# v2 (이번): Max 구독자 1시간 TTL 대응. transcript에서 assistant usage의
+#   cache_creation.ephemeral_1h_input_tokens를 jq로 파싱하여 감지.
+#   grep 대신 jq: user 메시지에 포함된 필드명 텍스트 오탐 방지 (DA Regression-F2).
+#   sticky: 이전 heavy에서 감지한 CACHE_TTL을 vars에서 복원.
+#     pure cache hit(cache_creation 없음)에서는 이전 값을 유지한다.
+#     실측: 매 턴 새 메시지 추가로 cache_creation > 0 (최솟값 ~120 tokens),
+#     ephemeral 상세도 항상 존재하므로 pure hit에 의한 stale은 발생하지 않음.
+#     cache_creation이 있는 가장 최근 메시지의 TTL 타입으로 업데이트한다.
+#   다운그레이드 감지: 마지막 cache_creation이 5m이면 300으로 복귀.
+#     Extra Usage 진입 후에도 기존 1h 캐시는 유효하므로 3600 유지가 정확하고,
+#     캐시 만료 시 새 creation(5m 타입)이 발생하면 자동 감지한다.
+# 우선순위: CLAUDE_CACHE_TTL env > transcript 감지 > vars 캐시 > 기본값 300
+CACHE_TTL=300
+if [ -f "${HEAVY_STATE}.vars" ]; then
+  eval "$(grep '^CACHE_TTL=' "${HEAVY_STATE}.vars" 2>/dev/null)" 2>/dev/null || true
+fi
+if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+  # 가장 최근 cache_creation의 TTL 타입을 감지 (jq, macOS/Linux 모두 동작).
+  # 1h → 3600, 5m → 300, cache_creation 없음(pure hit) → empty(이전 값 유지).
+  _detected=$(jq -r '
+    select(.message.usage.cache_creation)
+    | if .message.usage.cache_creation.ephemeral_1h_input_tokens > 0 then "3600"
+      elif .message.usage.cache_creation.ephemeral_5m_input_tokens > 0 then "300"
+      else empty end
+  ' "$TRANSCRIPT" 2>/dev/null | tail -1)
+  [ -n "$_detected" ] && CACHE_TTL="$_detected"
+fi
+
 # -- Heavy 결과 저장 --
-printf 'PLAN_FILE=%q\nMEMORY_LINK=%q\nMEMORY_LABEL=%q\n' \
-  "$PLAN_FILE" "$MEMORY_LINK" "$MEMORY_LABEL" > "${HEAVY_STATE}.vars"
+printf 'PLAN_FILE=%q\nMEMORY_LINK=%q\nMEMORY_LABEL=%q\nCACHE_TTL=%q\n' \
+  "$PLAN_FILE" "$MEMORY_LINK" "$MEMORY_LABEL" "$CACHE_TTL" > "${HEAVY_STATE}.vars"
 echo "$NOW" > "$HEAVY_STATE"
 
 else
   # -- Light run: 캐시된 변수 복원 --
   # shellcheck source=/dev/null
   source "${HEAVY_STATE}.vars" 2>/dev/null || true
+fi
+
+# --- CACHE_TTL 환경변수 override ---
+# CLAUDE_CACHE_TTL이 설정되면 transcript 감지/캐시 값을 덮어씀.
+# Pro/API 사용자 대응 및 디버깅 용도.
+# source 이후에 적용하여 light run 캐시 복원을 확실히 덮어씀 (DA Regression-F3).
+# 숫자 검증: -gt 0 비교가 비숫자를 자동 거부 (DA Correctness-F2).
+if [ -n "${CLAUDE_CACHE_TTL:-}" ] && [ "$CLAUDE_CACHE_TTL" -gt 0 ] 2>/dev/null; then
+  CACHE_TTL=$CLAUDE_CACHE_TTL
 fi
 
 # --- Status icons 읽기 ---
@@ -239,8 +283,17 @@ if command -v jq >/dev/null 2>&1; then
     @sh "RATE_5H=\(.rate_limits.five_hour.used_percentage // "")",
     @sh "RATE_5H_RESET=\(.rate_limits.five_hour.resets_at // "")",
     @sh "RATE_7D=\(.rate_limits.seven_day.used_percentage // "")",
-    @sh "RATE_7D_RESET=\(.rate_limits.seven_day.resets_at // "")"
+    @sh "RATE_7D_RESET=\(.rate_limits.seven_day.resets_at // "")",
+    @sh "CACHE_READ=\(.context_window.current_usage.cache_read_input_tokens // 0)",
+    @sh "CACHE_CREATE=\(.context_window.current_usage.cache_creation_input_tokens // 0)"
   ' 2>/dev/null)" 2>/dev/null || true
+fi
+
+# --- 캐시 히트율 계산 ---
+CACHE_HIT_PCT=""
+_cache_total=$((${CACHE_READ:-0} + ${CACHE_CREATE:-0}))
+if [ "$_cache_total" -gt 0 ] 2>/dev/null; then
+  CACHE_HIT_PCT=$((${CACHE_READ:-0} * 100 / _cache_total))
 fi
 
 # --- 출력 ---
@@ -266,24 +319,47 @@ print_icon() {
   HAS_OUTPUT=true
 }
 
+# _render_cache_hit: 캐시 히트율 suffix 출력 (render_cache_ttl 내부에서 호출)
+# CACHE_HIT_PCT 전역 변수 참조. 비어있으면 아무것도 출력하지 않음.
+_render_cache_hit() {
+  [ -z "$CACHE_HIT_PCT" ] && return
+  local sym color
+  if [ "$CACHE_HIT_PCT" -ge 80 ] 2>/dev/null; then
+    sym=$'\xe2\x9c\x93'; color="32"      # ✓ green
+  elif [ "$CACHE_HIT_PCT" -ge 50 ] 2>/dev/null; then
+    sym=$'\xe2\x96\xb3'; color="33"      # △ yellow
+  else
+    sym=$'\xe2\x9c\x97'; color="31"      # ✗ red
+  fi
+  printf ' %b' "\e[${color}m${sym}"
+  printf '%s%%' "$CACHE_HIT_PCT"
+  printf '%b' "\e[0m"
+}
+
 # render_cache_ttl: 캐시 TTL 남은 시간을 색상 + 아이콘으로 출력
-# $1=remaining_seconds → green(≥2min) / yellow(1-2min) / red(<1min) / muted(expired)
+# $1=remaining_seconds. 색상 임계값은 CACHE_TTL에 비례 (DA 합의).
+# 5분 TTL: green≥2m, yellow≥1m, red<1m (기존과 동일)
+# 1시간 TTL: green≥24m, yellow≥12m, red<12m
 render_cache_ttl() {
   local remaining=$1
   if [ "$remaining" -le 0 ]; then
-    print_icon "$MUTED" "" "\xf0\x9f\x92\xa4" "expired"
+    print_icon "$MUTED" "$CACHE_GUIDE_URL" "\xf0\x9f\x92\xa4" "expired"
+    _render_cache_hit
     return
   fi
   local minutes=$((remaining / 60))
   local seconds=$((remaining % 60))
   local cache_label
   cache_label=$(printf '%d:%02d' "$minutes" "$seconds")
+  local green_th=$((CACHE_TTL * 40 / 100))
+  local yellow_th=$((CACHE_TTL * 20 / 100))
   local cache_color
-  if [ "$remaining" -ge 120 ]; then cache_color="32"
-  elif [ "$remaining" -ge 60 ]; then cache_color="33"
+  if [ "$remaining" -ge "$green_th" ]; then cache_color="32"
+  elif [ "$remaining" -ge "$yellow_th" ]; then cache_color="33"
   else cache_color="31"
   fi
-  print_icon "$cache_color" "" "\xe2\x8f\xb1\xef\xb8\x8f" "$cache_label"
+  print_icon "$cache_color" "$CACHE_GUIDE_URL" "\xe2\x8f\xb1\xef\xb8\x8f" "$cache_label"
+  _render_cache_hit
 }
 
 # rate_color: 사용률에 따른 ANSI 색상 코드 반환
@@ -404,8 +480,6 @@ if [ -n "$SESSION_ID" ]; then
 else
   LAST_STOP_FILE="${CACHE_TTL_DIR}/last-stop"
 fi
-CACHE_TTL=300  # 5분
-
 if [ -f "$LAST_STOP_FILE" ]; then
   last_stop=$(cat "$LAST_STOP_FILE" 2>/dev/null)
   if [ -n "$last_stop" ] 2>/dev/null; then
