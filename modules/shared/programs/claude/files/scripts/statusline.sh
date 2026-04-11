@@ -266,6 +266,26 @@ print_icon() {
   HAS_OUTPUT=true
 }
 
+# render_cache_ttl: 캐시 TTL 남은 시간을 색상 + 아이콘으로 출력
+# $1=remaining_seconds → green(≥2min) / yellow(1-2min) / red(<1min) / muted(expired)
+render_cache_ttl() {
+  local remaining=$1
+  if [ "$remaining" -le 0 ]; then
+    print_icon "$MUTED" "" "\xf0\x9f\x92\xa4" "expired"
+    return
+  fi
+  local minutes=$((remaining / 60))
+  local seconds=$((remaining % 60))
+  local cache_label
+  cache_label=$(printf '%d:%02d' "$minutes" "$seconds")
+  local cache_color
+  if [ "$remaining" -ge 120 ]; then cache_color="32"
+  elif [ "$remaining" -ge 60 ]; then cache_color="33"
+  else cache_color="31"
+  fi
+  print_icon "$cache_color" "" "\xe2\x8f\xb1\xef\xb8\x8f" "$cache_label"
+}
+
 # rate_color: 사용률에 따른 ANSI 색상 코드 반환
 # $1=percentage → 32(green <50%) / 33(yellow 50-79%) / 31(red ≥80%)
 rate_color() {
@@ -372,9 +392,11 @@ if [ -n "$MEMORY_LINK" ]; then
 fi
 
 # Cache TTL: 프롬프트 캐시 남은 시간 표시
-# 값 "0" = API 호출 중 (UserPromptSubmit → Stop 사이) → 5:00 고정 표시
+# 값 "0" = Stop 미기록 상태 (UserPromptSubmit → Stop 사이) → mtime 기준 카운트다운
+#   정상 API 호출 중에는 Stop에서 타임스탬프가 곧 기록되어 리셋됨
+#   중단(Escape/Ctrl+C) 시에는 자연스럽게 0까지 감소 후 expired
 # 값 >0  = Unix epoch (Stop 시점) → 카운트다운
-# green(≥2min) / yellow(1-2min) / red(<1min) / muted(expired)
+# 공통 렌더링: render_cache_ttl 함수 사용
 # 세션별 파일 우선, 글로벌 fallback
 CACHE_TTL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/claude-hooks"
 if [ -n "$SESSION_ID" ]; then
@@ -388,30 +410,15 @@ if [ -f "$LAST_STOP_FILE" ]; then
   last_stop=$(cat "$LAST_STOP_FILE" 2>/dev/null)
   if [ -n "$last_stop" ] 2>/dev/null; then
     if [ "$last_stop" = "0" ]; then
-      # API 호출 중 — 캐시가 활발히 갱신되므로 5:00 고정
-      # 안전장치: 프로세스 kill 등으로 Stop 미발동 시 "0"이 영구 지속되는 것을 방지
-      # 파일 수정 시각이 CACHE_TTL을 초과하면 expired로 전환
+      # "0" = Stop 미기록 상태의 in-flight sentinel (mtime 기준 카운트다운)
       file_mtime=$(stat -c %Y "$LAST_STOP_FILE" 2>/dev/null || stat -f %m "$LAST_STOP_FILE" 2>/dev/null || echo 0)
-      if [ "$((NOW - file_mtime))" -ge "$CACHE_TTL" ]; then
-        print_icon "$MUTED" "" "\xf0\x9f\x92\xa4" "expired"
-      else
-        print_icon "36" "" "\xe2\x8f\xb1\xef\xb8\x8f" "5:00"
-      fi
+      elapsed=$((NOW - file_mtime))
+      remaining=$((CACHE_TTL - elapsed))
+      render_cache_ttl "$remaining"
     elif [ "$last_stop" -gt 0 ] 2>/dev/null; then
       elapsed=$((NOW - last_stop))
       remaining=$((CACHE_TTL - elapsed))
-      if [ "$remaining" -gt 0 ]; then
-        minutes=$((remaining / 60))
-        seconds=$((remaining % 60))
-        CACHE_LABEL=$(printf '%d:%02d' "$minutes" "$seconds")
-        if [ "$remaining" -ge 120 ]; then CACHE_COLOR="32"
-        elif [ "$remaining" -ge 60 ]; then CACHE_COLOR="33"
-        else CACHE_COLOR="31"
-        fi
-        print_icon "$CACHE_COLOR" "" "\xe2\x8f\xb1\xef\xb8\x8f" "$CACHE_LABEL"
-      else
-        print_icon "$MUTED" "" "\xf0\x9f\x92\xa4" "expired"
-      fi
+      render_cache_ttl "$remaining"
     fi
   fi
 fi

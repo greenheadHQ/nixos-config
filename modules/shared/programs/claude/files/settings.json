@@ -94,6 +94,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "~/.claude/hooks/record-last-stop.sh"
+          },
+          {
+            "type": "command",
             "command": "~/.claude/hooks/stop-notification.sh"
           },
           {
@@ -103,10 +107,6 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/collect-pain-points.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/record-last-stop.sh"
           }
         ]
       }

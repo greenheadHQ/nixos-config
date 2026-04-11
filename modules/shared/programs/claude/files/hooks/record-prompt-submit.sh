@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# record-prompt-submit.sh — 프롬프트 전송 시 캐시 TTL을 "활성" 상태로 전환
-# "0"을 기록하면 statusline.sh가 5:00 고정 표시 (API 호출 중 = 캐시 갱신 중)
+# record-prompt-submit.sh — 프롬프트 전송 시 캐시 TTL을 "in-flight" 상태로 전환
+# "0"을 기록하면 statusline.sh가 mtime 기준 카운트다운 표시 (Stop 미기록 상태)
 
 # stdin에서 세션 정보 읽기 (agent_id 가드 + session_id 파싱 공용)
 INPUT=""
