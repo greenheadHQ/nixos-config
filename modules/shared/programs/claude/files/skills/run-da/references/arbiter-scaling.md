@@ -71,6 +71,8 @@ stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
+**이 코드블록 전체를 단일 Bash tool 호출로 실행한다** (Bash tool 간 환경변수 비공유 — 호출을 나누면 `$ARBITER_DIR`이 유실됨).
+
 ```bash
 # 1. Arbiter 임시 디렉토리 생성
 ARBITER_DIR=$(mktemp -d /tmp/da-${_DA_SID}-arbiter-XXXXXX)
@@ -80,19 +82,42 @@ cat > "$ARBITER_DIR/arbiter-prompt.md" <<'PROMPT'
 {조립된 Arbiter 프롬프트 — 비신뢰 텍스트(계획 원문, DA 결과) 포함 시 반드시 quoted heredoc 사용}
 PROMPT
 
-# 3. codex exec 실행 (background)
+# 3. codex exec 실행 (foreground)
 codex exec --full-auto --ephemeral \
   -o "$ARBITER_DIR/arbiter-result.md" \
   "$(cat "$ARBITER_DIR/arbiter-prompt.md")" \
   < /dev/null \
   2>"$ARBITER_DIR/arbiter-stderr.log"
 
-# 4. 결과 수집
-# - arbiter-result.md가 있고 비어있지 않으면 성공
-# - 없거나 빈 경우, 또는 exit code != 0이면 실패
+# 4. 결과 수집 — exit code + 빈 파일 모두 확인 (ARBITER_DIR이 다음 호출에서 유실되므로 같은 호출에서 처리)
+_EC=$?
+if [ $_EC -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then
+  _RS=$([ ! -f "$ARBITER_DIR/arbiter-result.md" ] && echo 'missing' || ([ ! -s "$ARBITER_DIR/arbiter-result.md" ] && echo 'empty' || echo 'present-but-exit-failed'))
+  echo "ARBITER_FAILED: exit=$_EC result=$_RS dir=$ARBITER_DIR"
+  echo "--- stderr ---"
+  cat "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null
+  exit 1
+else
+  cat "$ARBITER_DIR/arbiter-result.md"
+fi
+```
+
+### Bash tool 변수 유실 방지
+
+`codex exec` 결과를 파일로 받아 후속 처리하는 경우, **위 코드블록 전체(#1~#4)**를 단일 Bash tool 호출로 체이닝한다. 위 코드블록이 올바른 패턴이다.
+
+아래는 호출을 분리하면 발생하는 잘못된 패턴이다:
+
+```bash
+# 잘못된 패턴 — 변수가 다음 호출에서 유실됨
+# [호출 1] ARBITER_DIR=$(mktemp -d /tmp/da-${_DA_SID}-arbiter-XXXXXX)
+# [호출 2] codex exec -o "$ARBITER_DIR/result.md" ...
+#   ← $ARBITER_DIR이 unset → "/result.md" (루트 경로)로 확장됨
 ```
 
 ## 실패 처리
+
+**단일 호출 패턴에서의 실패 감지**: 위 코드블록은 `exit 1`로 종료하여 Bash tool이 비정상 종료를 보고한다. stdout에 `ARBITER_FAILED:` 접두어가 출력되며, `dir=` 필드에 임시 디렉토리 경로, 이어서 stderr 로그 내용이 포함된다. 메인 에이전트는 Bash tool의 exit code 또는 stdout의 `ARBITER_FAILED:` 접두어로 실패를 감지한다.
 
 codex exec 실패 시 (exit code != 0, 빈 결과 파일):
 
