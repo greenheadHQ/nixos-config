@@ -50,7 +50,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `codex exec --full-auto --ephemeral`
 - **foreground** Bash tool 호출 (`run_in_background` 사용 안 함 — 단일 exec이므로 결과를 즉시 확인)
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
-- `"$(cat "$ARBITER_DIR/arbiter-prompt.md")"` 인라인 인자
+- `cat "$ARBITER_DIR/arbiter-prompt.md" | codex exec ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
 - `-m` 플래그 생략 (config.toml 기본 모델)
 - Arbiter는 config.toml 기본 `model_reasoning_effort`(xhigh = strong review profile)를 사용한다. `-c` 오버라이드 불필요.
@@ -58,7 +58,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `--ephemeral`로 세션 히스토리 오염 방지
 
 `& + wait` shell-level 병렬을 사용하지 않는다 (Bash tool sandbox 제약).
-stdin pipe 대신 `"$(cat file)"` 인라인 인자를 사용한다.
+`cat file | codex exec ... -` stdin pipe로 프롬프트를 전달한다. 인라인 인자 `"$(cat file)"`는 사용하지 않는다.
 
 ## 실행 절차
 
@@ -83,10 +83,9 @@ cat > "$ARBITER_DIR/arbiter-prompt.md" <<'PROMPT'
 PROMPT
 
 # 3. codex exec 실행 (foreground)
-codex exec --full-auto --ephemeral \
+cat "$ARBITER_DIR/arbiter-prompt.md" | codex exec --full-auto --ephemeral \
   -o "$ARBITER_DIR/arbiter-result.md" \
-  "$(cat "$ARBITER_DIR/arbiter-prompt.md")" \
-  < /dev/null \
+  - \
   2>"$ARBITER_DIR/arbiter-stderr.log"
 
 # 4. 결과 수집 — exit code + 빈 파일 모두 확인 (ARBITER_DIR이 다음 호출에서 유실되므로 같은 호출에서 처리)

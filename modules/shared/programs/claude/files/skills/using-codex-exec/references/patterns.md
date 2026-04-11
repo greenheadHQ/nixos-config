@@ -133,10 +133,10 @@ $(git diff main...HEAD)
 PROMPT
 ```
 
-**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 file redirect를 사용한다.
+**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
 ```bash
-codex exec --full-auto -o /tmp/review-result.md < /tmp/review-prompt.md 2>&1
+cat /tmp/review-prompt.md | codex exec --full-auto -o /tmp/review-result.md - 2>&1
 cat /tmp/review-result.md
 ```
 
@@ -152,7 +152,7 @@ PROMPT
 ```
 
 ```bash
-codex exec --full-auto -o /tmp/review-result.md < /tmp/review-prompt.md 2>&1
+cat /tmp/review-prompt.md | codex exec --full-auto -o /tmp/review-result.md - 2>&1
 ```
 
 ### 장점
@@ -167,7 +167,7 @@ codex exec --full-auto -o /tmp/review-result.md < /tmp/review-prompt.md 2>&1
 리터럴 텍스트만 전달할 때는 `<<'PROMPT'` (따옴표 포함)를 사용한다.
 패턴 1, 5, 8은 명령 치환이 불필요하므로 `<<'PROMPT'`를 사용한다.
 
-**코드 블록 분리**: `run_in_background` 환경에서 heredoc과 codex exec를 같은 Bash 호출에 넣으면 stdin hang이 발생한다 ([known-issues.md §11](known-issues.md) 하위 항목 참조). 모든 패턴에서 heredoc(프롬프트 생성)과 codex exec(실행)를 별도 코드 블록으로 분리한다. diff가 포함되어 프롬프트가 클 수 있는 패턴 4/6은 file redirect(`< file`)를 사용한다.
+**코드 블록 분리**: `run_in_background` 환경에서 heredoc과 codex exec를 같은 Bash 호출에 넣으면 stdin hang이 발생한다 ([known-issues.md §11](known-issues.md) 하위 항목 참조). 모든 패턴에서 heredoc(프롬프트 생성)과 codex exec(실행)를 별도 코드 블록으로 분리한다. 실행 블록에서는 stdin pipe(`cat file | codex exec ... -`)를 사용한다.
 
 ### 단점
 
@@ -188,11 +188,11 @@ Ignore style-only issues.
 PROMPT
 ```
 
-**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. DA 루프에서는 인라인 인자(`"$(cat file)"`)를 사용한다.
+**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. DA 루프에서는 stdin pipe(`cat file | codex exec ... -`)를 사용한다.
 
 ```bash
-codex exec --full-auto -o /tmp/da-round1-result.md \
-  "$(cat /tmp/da-round1.md)" 2>/tmp/da-round1-stderr.log
+cat /tmp/da-round1.md | codex exec --full-auto -o /tmp/da-round1-result.md \
+  - 2>/tmp/da-round1-stderr.log
 cat /tmp/da-round1-result.md
 ```
 
@@ -213,8 +213,8 @@ PROMPT
 ```
 
 ```bash
-codex exec --full-auto -o /tmp/da-round2-result.md \
-  "$(cat /tmp/da-round2.md)" 2>/tmp/da-round2-stderr.log
+cat /tmp/da-round2.md | codex exec --full-auto -o /tmp/da-round2-result.md \
+  - 2>/tmp/da-round2-stderr.log
 ```
 
 핵심: 매 라운드마다 `-o`로 결과를 파일 저장하여 이력을 보존한다.
@@ -258,11 +258,11 @@ $(git diff main...HEAD)
 PROMPT
 ```
 
-**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 file redirect를 사용한다.
+**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
 ```bash
-codex exec --full-auto --output-schema /tmp/review-schema.json \
-  -o /tmp/review-structured.json < /tmp/review-prompt.md 2>&1
+cat /tmp/review-prompt.md | codex exec --full-auto --output-schema /tmp/review-schema.json \
+  -o /tmp/review-structured.json - 2>&1
 ```
 
 주의: `--output-schema`는 exec 전용. review 서브커맨드에서 사용 불가.
@@ -325,7 +325,7 @@ cat /tmp/smoke-result.md
 | 리뷰 (기본) | 2 | `codex exec review --base main --full-auto > result` |
 | 리뷰 (stdin PROMPT) | 2b | `cat prompt \| codex exec review - --full-auto > result` |
 | 리뷰 + 커스텀 지시 (영구) | 3 | AGENTS.md 작성 후 review --base |
-| 리뷰 + 커스텀 지시 (1회) | 4 | `codex exec --full-auto -o result < diff+지시` |
+| 리뷰 + 커스텀 지시 (1회) | 4 | `cat diff+지시 \| codex exec --full-auto -o result -` |
 | 피드백 루프 | 5 | 라운드별 prompt → exec -o → 분석 → 반복 |
 | 구조화 출력 | 6 | `exec --output-schema schema.json -o result` |
 | JSONL 스트림 | 7 | `exec --full-auto --json > events.jsonl` |
