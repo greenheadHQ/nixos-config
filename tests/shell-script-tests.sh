@@ -949,13 +949,15 @@ EOF
 set -euo pipefail
 exit 0
 EOF
-  cat > "$stub_dir/readlink" <<'EOF'
+  local real_readlink
+  real_readlink="$(command -v readlink)"
+  cat > "$stub_dir/readlink" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-}" == "/run/current-system" ]]; then
-  printf '%s\n' "${DARWIN_CURRENT_SYSTEM:?}"
+if [[ "\${1:-}" == "/run/current-system" ]]; then
+  printf '%s\n' "\${DARWIN_CURRENT_SYSTEM:?}"
 else
-  /usr/bin/readlink "$@"
+  "$real_readlink" "\$@"
 fi
 EOF
   cat > "$home_dir/.local/bin/nrs-relink" <<'EOF'
@@ -997,7 +999,7 @@ test_darwin_nrs_no_changes_releases_worktree_lock() {
   install_deployed_layout "$sandbox" "$repo_root"
   install_platform_nrs_entrypoint "$sandbox" darwin
 
-  mkdir -p "$stub_dir" "$home_dir/.local/bin"
+  mkdir -p "$stub_dir" "$home_dir/.local/bin" "$home_dir/Library/LaunchAgents"
   current_target="$sandbox/current-system"
   mkdir -p "$current_target"
   lock_file="$sandbox/nrs-state"
@@ -1029,13 +1031,15 @@ EOF
 set -euo pipefail
 echo "stub nvd diff"
 EOF
-  cat > "$stub_dir/readlink" <<'EOF'
+  local real_readlink
+  real_readlink="$(command -v readlink)"
+  cat > "$stub_dir/readlink" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-}" == "/run/current-system" ]]; then
-  printf '%s\n' "${DARWIN_CURRENT_SYSTEM:?}"
+if [[ "\${1:-}" == "/run/current-system" ]]; then
+  printf '%s\n' "\${DARWIN_CURRENT_SYSTEM:?}"
 else
-  /usr/bin/readlink "$@"
+  "$real_readlink" "\$@"
 fi
 EOF
   cat > "$home_dir/.local/bin/nrs-relink" <<'EOF'

@@ -53,13 +53,17 @@ let
       # 마커 파일: 실패 에피소드당 1회만 알림 (5분 주기 스팸 방지)
       PULL_FAIL_MARKER="/run/awesome-anki-pull-failed"
       if ! podman pull "$IMAGE_NAME" >/dev/null 2>&1; then
-        echo "awesome-anki: pull failed (network error)"
-        if [ ! -f "$PULL_FAIL_MARKER" ]; then
-          send_notification "awesome-anki Deploy" \
-            "이미지 pull 실패 (네트워크 오류). 다음 주기에 재시도." "-1"
-          touch "$PULL_FAIL_MARKER"
+        echo "awesome-anki: pull failed, retrying in 5s..."
+        sleep 5
+        if ! podman pull "$IMAGE_NAME" >/dev/null 2>&1; then
+          echo "awesome-anki: pull failed (network error)"
+          if [ ! -f "$PULL_FAIL_MARKER" ]; then
+            send_notification "awesome-anki Deploy" \
+              "이미지 pull 실패 (네트워크 오류). 다음 주기에 재시도." "-1"
+            touch "$PULL_FAIL_MARKER"
+          fi
+          exit 0
         fi
-        exit 0
       fi
       rm -f "$PULL_FAIL_MARKER"
 
