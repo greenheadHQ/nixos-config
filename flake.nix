@@ -39,12 +39,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Claude Code 세션 아카이브 TUI 열람
-    recall = {
-      url = "github:greenheadHQ/recall";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
   };
 
   outputs =

@@ -11,13 +11,13 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
+    "Stop": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/detect-pain-point.sh"
+            "command": "~/.claude/hooks/stop-notification.sh"
           }
         ]
       },
@@ -26,18 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/detect-pain-point-extra.sh"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/stop-notification.sh"
+            "command": "~/.claude/hooks/extra-stop-hook.sh"
           }
         ]
       }

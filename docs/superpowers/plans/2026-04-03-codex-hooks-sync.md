@@ -1,5 +1,12 @@
 # Codex Hooks Sync Implementation Plan
 
+> **Historical Note (#455):** 이 문서의 fixture 예시와 smoke test에 포함된
+> `detect-pain-point.sh`, `collect-pain-points.sh`, `read-pain-points.sh`, `auto-archive.sh`,
+> `pain-points.jsonl`은 #455에서 제거되었다. 본문의 fixture 생성, 기대값, smoke test 절차는
+> 제거 이전 기준이다. 현재 hook surface는 `settings.json`을 참조할 것.
+
+<!-- separator: historical note와 agentic worker 지침은 별개 blockquote -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add safe, declarative Codex hooks sync for this repository by enabling the Codex hooks feature globally, compiling the Claude hook declarations into `<repo>/.codex/hooks.json`, and generating a machine-readable compatibility report for unsupported or lossy hooks.

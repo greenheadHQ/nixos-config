@@ -1,5 +1,10 @@
 # Codex Hooks Sync Design
 
+> **Historical Note (#455):** 이 문서의 hook 분류 예시와 예상 산출물에 포함된
+> `detect-pain-point.sh`, `collect-pain-points.sh`, `read-pain-points.sh`, `auto-archive.sh`는
+> #455에서 제거되었다. 본문의 supported/lossy 분류, 예상 `.codex/hooks.json`, smoke test 예시는
+> 제거 이전 기준이다. 현재 hook surface는 `settings.json`을 참조할 것.
+
 ## 상태
 
 - 작성일: 2026-04-03

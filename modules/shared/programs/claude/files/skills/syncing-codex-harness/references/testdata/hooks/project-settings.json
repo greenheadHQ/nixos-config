@@ -11,17 +11,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/detect-pain-point.sh"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "",
@@ -60,10 +49,6 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/nrs-session-cleanup.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/auto-archive.sh"
           }
         ]
       }

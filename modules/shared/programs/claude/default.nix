@@ -161,22 +161,11 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/log-skill.sh";
     ".claude/hooks/fragile-hardcoding-guard.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/fragile-hardcoding-guard.sh";
-    ".claude/hooks/auto-archive.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/auto-archive.sh";
-
     # Cache TTL tracking hooks
     ".claude/hooks/record-last-stop.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-last-stop.sh";
     ".claude/hooks/record-prompt-submit.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-prompt-submit.sh";
-
-    # Pain point collection hooks
-    ".claude/hooks/detect-pain-point.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/detect-pain-point.sh";
-    ".claude/hooks/collect-pain-points.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/collect-pain-points.sh";
-    ".claude/hooks/read-pain-points.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/read-pain-points.sh";
 
     # hs.notify contentImage용 아이콘 (Claude.app에서 추출한 128x128 PNG, macOS 전용)
     ".claude/assets/notification-icon.png" = lib.mkIf pkgs.stdenv.isDarwin {
@@ -231,10 +220,6 @@ in
     ".claude/skills/parallel-audit".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/parallel-audit";
 
-    # show-pains 스킬 (user-scope) — pain point HTML 대시보드
-    ".claude/skills/show-pains".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/show-pains";
-
     # playwright-cli 스킬 (user-scope)
     ".claude/skills/playwright-cli".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/playwright-cli";
@@ -253,16 +238,5 @@ in
     ".claude/scripts/generate-report.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/generate-report.py";
 
-    # show-pain-points 대시보드 스크립트
-    ".claude/scripts/show-pain-points.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/show-pain-points.sh";
-
-    # claude-archive 스크립트
-    ".claude/scripts/claude-archive.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/claude-archive.sh";
-
-    # archive 스킬 (user-scope)
-    ".claude/skills/archive".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/archive";
   };
 }

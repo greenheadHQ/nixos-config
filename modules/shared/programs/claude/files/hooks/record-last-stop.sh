@@ -3,7 +3,7 @@ set -euo pipefail
 # record-last-stop.sh — 프롬프트 캐시 TTL 추적용 타임스탬프 기록
 # statusline.sh가 세션별 파일을 읽어 캐시 남은 시간을 계산한다.
 # 주의: settings.json의 Stop 훅 배열에서 첫 번째로 실행되어야 한다.
-# 다른 Stop 훅(collect-pain-points.sh 등)보다 먼저 타임스탬프를 기록하여
+# 다른 Stop 훅보다 먼저 타임스탬프를 기록하여
 # statusline 카운트다운의 레이스 컨디션을 최소화한다.
 
 # stdin에서 세션 정보 읽기 (agent_id 가드 + session_id 파싱 공용)

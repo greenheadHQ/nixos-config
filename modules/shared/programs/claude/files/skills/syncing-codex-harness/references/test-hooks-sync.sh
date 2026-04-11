@@ -20,8 +20,8 @@ python3 "$COMPILER" \
 
 jq -e '.hooks.SessionStart[0].matcher == "startup|resume"' "$TMPDIR/hooks.json" >/dev/null
 jq -e '.hooks.PreToolUse[0].matcher == ""' "$TMPDIR/hooks.json" >/dev/null
-jq -e '.summary.total == 6' "$TMPDIR/report.json" >/dev/null
-jq -e '.summary.supported == 3' "$TMPDIR/report.json" >/dev/null
+jq -e '.summary.total == 5' "$TMPDIR/report.json" >/dev/null
+jq -e '.summary.supported == 2' "$TMPDIR/report.json" >/dev/null
 jq -e '.summary.lossy == 1' "$TMPDIR/report.json" >/dev/null
 jq -e '.summary.unsupported == 2' "$TMPDIR/report.json" >/dev/null
 jq -e '.drift_detected == false' "$TMPDIR/report.json" >/dev/null
@@ -72,6 +72,6 @@ HOME="$HOME_ROOT" CODEX_HOME="$HOME_ROOT/.codex" bash "$SYNC_SH" hooks-config "$
 
 jq -e '.hooks.SessionStart[0].matcher == "startup|resume"' "$REPO_ROOT/.codex/hooks.json" >/dev/null
 jq -e '.summary.lossy == 1' "$REPO_ROOT/.codex/hooks.compatibility.json" >/dev/null
-jq -e '.summary.supported == 3' "$REPO_ROOT/.codex/hooks.compatibility.json" >/dev/null
+jq -e '.summary.supported == 2' "$REPO_ROOT/.codex/hooks.compatibility.json" >/dev/null
 
 echo "test-hooks-sync: PASS"
