@@ -52,7 +52,7 @@
 | B2 | 레퍼런스 앞에 한 문장으로 "왜 읽어야 하는지" 설명 | [Anthropic Contextual Retrieval (2024)](https://www.anthropic.com/engineering/contextual-retrieval) |
 | B3 | Source reliability 등급: official docs > repo code > issue > blog > LLM 기억 | [RAG with Source Reliability (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1738/) |
 | B5 | Quote-first: 원문 short quote → 해석 | [Verifiable by Design (NAACL 2025)](https://aclanthology.org/2025.naacl-long.191/) |
-| C2 | 코드블록 + 언어 태그 (`bash`, `nix` 등) | [OpenAI Prompt Engineering: Strategies](https://platform.openai.com/docs/guides/prompt-engineering/strategies-to-improve-reliability) |
+| C2 | 코드블록 + 언어 태그 (`bash`, `nix` 등) | — |
 | C4 | 환경 분기 명시 (macOS/NixOS, `ssh minipc` 등) | 프로젝트 `CLAUDE.md` Platform 규칙 |
 | D3 | heading depth 3단계 이하 | [Document Structure in Long Document Transformers (EACL 2024)](https://aclanthology.org/2024.eacl-long.64/) |
 | D4 | 표는 비교 행렬에만 사용 | [Table Meets LLM (Microsoft 2024)](https://www.microsoft.com/en-us/research/publication/table-meets-llm-can-large-language-models-understand-structured-table-data-a-benchmark-and-empirical-study/) |
@@ -100,7 +100,6 @@
 - [Anthropic Contextual Retrieval (2024)](https://www.anthropic.com/engineering/contextual-retrieval).
 - [OpenAI: GPT-5 prompting guide (2025)](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5_prompting_guide).
 - [OpenAI Evals: Structured Outputs Evaluation (2025)](https://cookbook.openai.com/examples/evaluation/use-cases/structured-outputs-evaluation) — Structured Outputs 평가 기준 (C1).
-- [OpenAI Prompt Engineering: Strategies](https://platform.openai.com/docs/guides/prompt-engineering/strategies-to-improve-reliability) — reliability 개선 전략 (C2).
 - [GitHub Copilot: Prompt engineering](https://docs.github.com/en/copilot/concepts/prompting/prompt-engineering).
 
 학술 (2023-2025):
