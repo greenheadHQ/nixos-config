@@ -242,5 +242,9 @@ in
     ".claude/scripts/generate-report.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/generate-report.py";
 
+    # write-handoff 동적 context 주입 helper (SKILL.md `!`<cmd>`` 문법 제약 회피)
+    ".claude/scripts/write-handoff-repo-slug.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/write-handoff-repo-slug.sh";
+
   };
 }

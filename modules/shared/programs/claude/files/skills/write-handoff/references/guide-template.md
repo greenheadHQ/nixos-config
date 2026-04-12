@@ -1,5 +1,24 @@
 # LLM 이행 가이드 마크다운 템플릿
 
+## TL;DR 블록 (최상단)
+
+가이드 최상단(헤더 블록보다 앞)에 4슬롯 TL;DR을 배치한다. 새 세션 LLM이 첫 화면에서 전체 맥락을 파악하도록 한다. 체크리스트 D1 참조.
+
+````markdown
+## TL;DR
+
+- **상황**: <배경 + 지금까지의 맥락>
+- **현재 상태**: <관련 파일 현황 (repo-relative), 남은 단계, 실패한 검증 결과 등 공개 안전 정보>
+- **다음 액션**: <Phase 1부터 시작할 첫 명령어>
+- **Blockers**: <있으면 명시, 없으면 "없음">
+````
+
+**작성 규칙**:
+- 가이드 상단 10줄 이내에 배치 (primacy bias 활용).
+- 4슬롯 모두 채운다. 해당 없으면 "없음" 명시.
+- **공개 노출 주의**: 이 가이드는 `gh issue comment`로 GitHub에 게시된다. `현재 상태` 슬롯에 민감한 로컬 컨텍스트(`git status` 출력, 워크트리 dirty state, 개인 작업 경로)를 적지 않는다. 공개 안전 정보(repo-relative 파일 경로, 작업 단계, 검증 결과)만 기술.
+- 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — 장문에서 모델은 시작/끝 정보에 강하고 중간 정보 활용이 약함.
+
 ## 헤더 블록
 
 blockquote 형태로 작업의 메타 정보를 한눈에 제공한다.
@@ -58,9 +77,10 @@ grep "toolPath" libraries/constants.nix
 ```
 
 **기대 결과**:
-- version = "1.2.3" (이슈에 "1.2.3"이라 적혀 있지만, 실제 값이 다르면 실제 값 기준으로 진행)
-- config.nix에 `enableFeature = false;` 존재
-- constants.nix에 `toolPath = "/old/path";` 존재
+- `modules/shared/programs/tool/default.nix:15` 에 `version = "1.2.3"` (이슈 본문 line 42의 주장에 따라, 실제 값이 다르면 실제 값 기준으로 진행 — [이슈 #NNN](https://github.com/<owner>/<repo>/issues/NNN))
+- `modules/shared/programs/tool/config.nix:8` 에 `enableFeature = false;` 존재
+- `libraries/constants.nix:42` 에 `toolPath = "/old/path";` 존재
+- `[UNVERIFIED]` `toolPath`가 다른 모듈에서 import되는지 여부는 구현 시점에 `grep -rn toolPath modules/` 로 실측 필요
 ````
 
 **작성 규칙:**
@@ -77,7 +97,7 @@ BEFORE/AFTER 형식으로 변경 내용을 명시한다.
 
 ### 2-1. 버전 업데이트
 
-**파일**: `modules/shared/programs/tool/default.nix`
+**파일**: `modules/shared/programs/tool/default.nix:15` ([upstream v1.3.0 release notes](https://github.com/example/tool/releases/tag/v1.3.0) 근거)
 
 BEFORE:
 ```nix
@@ -88,6 +108,8 @@ AFTER:
 ```nix
 version = "1.3.0";
 ```
+
+> `[UNVERIFIED]` v1.3.0에서 breaking change가 있는지 릴리스 노트 재확인 권장.
 
 ### 2-2. 설정 변경
 
@@ -196,6 +218,59 @@ EOF
    - negative에 인접 스킬 트리거 포함
 ```
 
+## Next Session Starter 블록 (최하단)
+
+가이드 말미(QA 체크리스트 뒤)에 Next Session Starter를 배치한다. 다음 세션 LLM이 이 가이드만 읽고 즉시 작업을 시작할 수 있도록 재개 지점을 명시한다. 체크리스트 D2 참조.
+
+````markdown
+## Next Session Starter
+
+- **이 가이드 읽고 바로 시작할 명령어** (복붙 즉시 실행 가능. 임의 cwd에서 실행해도 대상 repo로 복귀 + 실패 시 즉시 중단):
+  ```bash
+  # 작성자 LLM: 아래 두 placeholder를 write-handoff/SKILL.md "동적 Context" 주입값으로 치환
+  REPO="<REPO_SLUG>"      # 예: acme/project (owner/name)
+  BRANCH="<BRANCH_NAME>"  # 예: feat/foo (handoff 대상 branch)
+
+  # 서브쉘 + set -e: 중간 명령 실패 시 즉시 중단하여 엉뚱한 cwd의 follow-up 명령 실행 방지
+  (
+    set -e
+    TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)" || true
+    CURRENT_REPO=""
+    [ -n "$TOPLEVEL" ] && CURRENT_REPO="$(cd "$TOPLEVEL" && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" || true
+    if [ "$CURRENT_REPO" = "$REPO" ]; then
+      cd "$TOPLEVEL"
+    else
+      gh repo clone "$REPO" "${REPO##*/}"
+      cd "${REPO##*/}"
+    fi
+    git fetch origin "$BRANCH"
+    git checkout "$BRANCH"
+    git status
+    git log --oneline -3
+  ) || { echo "ERROR: handoff restore failed. REPO=$REPO BRANCH=$BRANCH"; echo "수동으로 repo/branch 확보 후 재시도하세요."; }
+  ```
+  - **REPO와 BRANCH는 `write-handoff/SKILL.md`의 "동적 Context" 섹션 주입 값으로 치환**한다. 주입 경로: repo slug는 `gh issue view $NUM --json url -q .url`로 URL을 받아 `owner/name`을 파싱(또는 cwd에서 `gh repo view --json nameWithOwner`), branch는 `gh api graphql`로 `linkedBranches` 조회(1순위), 미확보 시 `closedByPullRequestsReferences`의 PR 번호로 `gh pr view --json headRefName` 호출(2순위), 최종 미확보 시 `AskUserQuestion`. `gh issue view --json`은 `repository`/`linkedBranches` 필드를 지원하지 않으므로 절대 `gh issue view --json repository` 또는 `gh issue view --json linkedBranches`로 대체하지 않는다. 작성자 LLM은 placeholder(`<REPO_SLUG>`, `<BRANCH_NAME>`)를 그대로 두지 않고 주입된 값으로 치환한다. 특정 repo slug(`greenheadHQ/nixos-config` 등)을 예시로 하드코딩하지 않는다 — 다른 repo handoff에서 엉뚱한 clone을 유발한다.
+  - **게시 전 placeholder 검증 필수**: Step 8 Self-verification 5번 항목에서 다음 중 하나라도 남아 있으면 게시 금지.
+    - `<...>` 형태 placeholder (`<REPO_SLUG>`, `<BRANCH_NAME>`, `<unknown-*>` 등)
+    - 빈 문자열
+    - `null` 리터럴 문자열
+    - 실제 handoff 대상과 다른 기본 branch(`main`/`master`)
+    - 이 template의 예시 repo slug(`greenheadHQ/nixos-config` 등) 리터럴이 실제 handoff 대상 repo와 다름에도 남아 있는 경우
+    해당 시 SKILL.md "동적 Context > 주입 실패 처리" 순서(Step 3 수동 실행 → `AskUserQuestion`)로 실제 값 확보 후 치환.
+  - `git rev-parse --show-toplevel`은 repo 밖에서 `fatal: not a git repository`를 반환하므로 `2>/dev/null` + `|| true`로 우회하고 `CURRENT_REPO` 빈 변수 검사로 분기한다.
+  - **"어떤 git repo든 toplevel로 이동" 방지**: 사용자가 다른 repo 체크아웃 안에서 이 명령을 실행해도 `CURRENT_REPO ≠ REPO`일 때 clone 경로로 분기하므로 엉뚱한 repo를 재사용하지 않는다.
+  - **실패 경로 격리 (서브쉘 + `set -e`)**: `gh repo clone` 실패, `cd` 실패, `git fetch` 실패 등 어떤 중간 명령이 실패해도 서브쉘이 즉시 exit 1로 종료한다. 따라서 `git fetch`/`git checkout`가 **엉뚱한 cwd**(예: clone 실패 후 이전 디렉토리)에서 실행되는 경로가 원천 차단. 서브쉘 종료 후 `||` 에러 메시지로 사용자에게 명시적 복구 안내.
+  - **주의**: `gh repo clone`은 기본 branch(main)를 체크아웃하므로 `git fetch origin $BRANCH && git checkout $BRANCH` 단계로 handoff 작업 맥락 복귀.
+- **이전 세션 산출물 위치**: <파일 경로 또는 PR/이슈 URL>
+- **재개 지점**: Phase N-M부터
+- **남은 Blockers**: <있으면 명시, 없으면 "없음">
+````
+
+**작성 규칙**:
+- 가이드의 마지막 섹션으로 배치 (recency bias 활용). 필수 슬롯(재개 명령/산출물 위치/재개 지점/Blockers)만 포함하고 간결하게 유지한다.
+- **공개 노출 주의**: 이 가이드는 `gh issue comment`로 GitHub에 게시된다. 로컬 사용자명/절대 경로/워크트리 메타데이터가 공개 코멘트에 포함되지 않도록 한다. `<worktree-root>` 같은 placeholder 또는 repo-relative 경로를 우선 사용한다.
+- 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long).
+
 ## 모범 패턴 (Issue #252 기반)
 
 Issue #252의 LLM 이행 가이드에서 관찰된 효과적인 패턴:
@@ -234,11 +309,28 @@ Issue #252의 LLM 이행 가이드에서 관찰된 효과적인 패턴:
 
 실행 환경에 따라 달라지는 행동을 명시하여 LLM이 올바른 경로를 선택하도록 한다.
 
-### "미검증 주석" 패턴
+### "TL;DR + Next Session Starter" 패턴
+
+장문 가이드에서 핵심 맥락을 상단 TL;DR에, 재개 지점을 하단 Next Session Starter에 배치한다. "Lost in the Middle" 현상을 상쇄하여 새 세션 LLM의 맥락 파악을 돕는다. 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long), [Anthropic: Long context tips](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/long-context-tips).
+
+### "`[UNVERIFIED]` 라벨" 패턴
+
+근거 없는 주장을 가이드에 남길 때 인라인 라벨을 사용한다. `[INFERRED]`(근접 근거의 추론), `[CONFLICTING]`(출처 상충)도 함께. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [MetaFaith (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1505/).
+
+예:
+```markdown
+`[UNVERIFIED]` 이 옵션은 NixOS 24.11에서 동작하지만 24.05에서는 미확인.
+`[INFERRED]` PoC 추가가 품질을 개선한다 — 정량 벤치마크 부재, PROMPTEVALS 등 인접 근거로 추론.
+`[CONFLICTING]` FRONT(2024)는 pipeline 분리 우세, Evaluating Design Choices(2025)는 direct generation 우세.
+```
+
+### "미검증 주석" 패턴 (DEPRECATED)
+
+> **DEPRECATED**: 이 HTML 주석 패턴은 더 이상 권장되지 않는다. 신규 산출물은 위 [`[UNVERIFIED]` 라벨 패턴](#unverified-라벨-패턴)을 사용한다. 기존 산출물은 점진적으로 마이그레이션한다.
 
 ```markdown
 <!-- 미검증: NixOS에서 이 옵션이 적용되는지 확인 필요. macOS에서만 테스트됨. -->
 ```
 
-가이드 작성 시점에 확인하지 못한 사항을 HTML 주석으로 표시한다.
-실행 LLM이 해당 부분에서 추가 검증을 수행하도록 유도한다.
+(참고용 — 가이드 작성 시점에 확인하지 못한 사항을 HTML 주석으로 표시하던 구 패턴.
+`[UNVERIFIED]` 라벨은 본문에 인라인으로 노출되어 실행 LLM이 더 안정적으로 인지한다.)

@@ -5,17 +5,39 @@
 
 ## 템플릿
 
-```markdown
+````markdown
 ## Summary (필수)
 
-[1-2 문장으로 무엇을 왜 해야 하는지 요약]
+[1-2 문장으로 무엇을 왜 해야 하는지 요약. 체크리스트 A1: '무슨 문제 / 누가 / 현재 증상 / 기대 결과']
 
 ## Context (필수)
 
-[배경 설명]
+[배경 설명 — 체크리스트 A2]
 - 현 상태는 어떤지
-- 왜 이 변경이 필요한지
+- 왜 이 변경이 필요한지 (안 하면 리스크)
 - 어떤 문제/한계가 있는지
+
+## References (필수)
+
+[체크리스트 B1/B4. **실제 근거가 있으면 최소 1개 링크를 포함**한다. 근거가 전혀 없으면 섹션을 비우지 말고 `[UNVERIFIED]` 항목만으로 채운다.]
+
+- [링크 텍스트](URL) — 한 문장으로 "무엇을 뒷받침하는지"
+- `path/to/file.nix:LINE` 또는 `path/to/file.nix:START-END` — 코드 근거 (단일 라인 또는 라인 범위 허용)
+- `#NNN` / `abc1234` — 관련 이슈/커밋
+
+## PoC / Reproduction (선택)
+
+[재현이 중요한 주장에 포함. 체크리스트 C1. 6필드 예시:]
+
+```bash
+# 환경: macOS 14.x, nrs 최신
+# 입력: ...
+# 절차:
+<명령어>
+# 기대 결과: ...
+# 실제 결과: ...
+# 성공 기준: ...
+```
 
 ## Related Commits (선택)
 
@@ -31,14 +53,14 @@
 
 ## Proposed Changes (필수)
 
-- [ ] 구체적 변경 사항 1
+- [ ] 구체적 변경 사항 1 (필요 시 근거 링크 또는 `[UNVERIFIED]`)
 - [ ] 구체적 변경 사항 2
 - [ ] 구체적 변경 사항 3
 
 ## Notes (선택)
 
-[제약사항, 관련 이슈 번호, 참고사항]
-```
+[제약사항, 관련 이슈 번호, YAGNI 판단 근거, `[UNVERIFIED]` 항목 목록]
+````
 
 ## 섹션별 작성 가이드
 
@@ -51,6 +73,18 @@
 - 현 상태 → 문제점 → 필요성 순으로 서술
 - 관련 커밋이나 이전 결정이 있으면 참조
 - LLM이 이 섹션만 읽고 작업 배경을 이해할 수 있어야 함
+
+### References (필수)
+- 비자명한 주장마다 근거 제공 (체크리스트 B1/B4)
+- 근거 타입 (Source reliability 순위 — 체크리스트 B3): 공식 docs URL > repo 내부 파일(`path/to/file.nix:LINE` 또는 `path:START-END`) > 관련 이슈/커밋(`#NNN`/`abc1234`) > blog > LLM 기억
+- **근거 존재 시**: 최소 1개 링크 또는 path 참조 필수
+- **근거 부재 시**: 섹션을 비우지 않고 `[UNVERIFIED]` 항목으로 대체 (체크리스트 E1)
+- 둘 이상 출처가 상충하면 `[CONFLICTING]` + 양측 인용 (체크리스트 E3)
+
+### PoC / Reproduction (선택)
+- 재현이 중요한 버그 리포트나 검증 필요한 주장에 포함
+- 6필드 모두 채움: 환경 / 입력 / 절차 / 기대 결과 / 실제 결과 / 성공 기준 (체크리스트 C1)
+- 절차는 코드블록 + 언어 태그 (`bash`, `nix` 등) 사용
 
 ### Related Commits (선택)
 - 포맷: `- \`해시7자리\` — 커밋 메시지 한줄 요약`
@@ -76,6 +110,8 @@
 
 ## 작성 예시
 
+> **가상 예시 주의**: 아래는 템플릿 작성 형식 예시이며, 실제 repo 상태와 시점에 따라 불일치할 수 있다 (예: `darwinConfigurations` 평가는 이미 `tests/eval-tests.nix`에 존재). line 번호는 작성 시점 기준으로 실측 반영한다.
+
 ```markdown
 ## Summary
 
@@ -88,6 +124,13 @@ Darwin(macOS) 설정에 대한 eval-test를 추가하여 macOS 설정 회귀를 
 - Darwin은 `lefthook.yml`의 pre-push `nix flake check --all-systems`에만 의존
 - `nix flake check`는 "평가 가능한가"만 확인, "의도대로 설정되었는가"는 검증 불가
 - Dock 설정, 키보드 단축키, Touch ID sudo 등 회귀 가치 있는 설정이 존재
+
+## References
+
+- [nix flake check docs](https://nixos.org/manual/nix/stable/command-ref/new-cli/nix3-flake-check.html) — "평가 가능성"만 확인함을 뒷받침
+- `tests/eval-tests.nix:15-17` — NixOS config 평가 블록 (`nixosCfg = flake.nixosConfigurations.greenhead-minipc.config`)
+- `lefthook.yml:21-22` — pre-push `nix flake check --all-systems` 훅 근거
+- `[UNVERIFIED]` Darwin eval이 x86_64-linux에서 평가 가능한지는 실측 필요 (Notes 참조)
 
 ## Related Commits
 
@@ -111,6 +154,6 @@ Darwin(macOS) 설정에 대한 eval-test를 추가하여 macOS 설정 회귀를 
 
 ## Notes
 
-- Darwin eval은 `--all-systems` 없이 x86_64-linux에서도 평가 가능한지 확인 필요
+- `[UNVERIFIED]` Darwin eval은 `--all-systems` 없이 x86_64-linux에서도 평가 가능한지 실측 필요
 - 불가능하면 별도 `tests/darwin-eval-tests.nix` 파일로 분리 고려
 ```

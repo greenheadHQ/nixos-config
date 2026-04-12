@@ -211,9 +211,36 @@ PROMPT
 # 2. 스킬 지시서 + 에이전트 지시서 + 참조 파일을 합성하여 주입
 #    - e2e-prompt.md: 에이전트에게 주는 지시 (what to do)
 #    - SKILL.md: 스킬 원문 (how to do, 컨텍스트)
-#    - agent.md + refs: 추가 컨텍스트
+#    - agent.md + skill-local refs: 추가 컨텍스트
+#    - shared refs: 대상 skill이 의존하는 sibling skill의 references
 #    순서: 지시 → 컨텍스트 (LLM이 지시를 먼저 인지하도록)
-cat /tmp/e2e-prompt.md skills/{name}/SKILL.md agents/{name}.md skills/{name}/references/*.md \
+CAT_FILES=(/tmp/e2e-prompt.md "skills/{name}/SKILL.md" "agents/{name}.md")
+
+# skill-local references — find 기반 (bash/zsh 공통)
+# zsh 기본 `nomatch` 옵션은 `shopt -s nullglob` 로 꺼지지 않으므로(zsh builtin이 아님),
+# `_refs=(.../*.md)` 에서 매칭 실패 시 스크립트 전체가 abort된다.
+# find + IFS=$'\n' 배열 split 으로 shell glob 의존을 제거한다.
+# (일부 skill 은 references/ 디렉토리가 비어 있거나 존재하지 않음)
+_refs_dir="skills/{name}/references"
+if [ -d "$_refs_dir" ]; then
+  _old_ifs="$IFS"
+  IFS=$'\n'
+  _refs=( $(find "$_refs_dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null) )
+  IFS="$_old_ifs"
+  [ "${#_refs[@]}" -gt 0 ] && CAT_FILES+=("${_refs[@]}")
+fi
+
+# shared refs 의존 목록 (sibling skill references that {name} relies on):
+# - create-issue, plan-with-questions  →  skills/write-handoff/references/llm-friendly-checklist.md
+# 새 의존 추가 시 이 case 블록 갱신
+case "{name}" in
+  create-issue|plan-with-questions)
+    [ -f "skills/write-handoff/references/llm-friendly-checklist.md" ] \
+      && CAT_FILES+=("skills/write-handoff/references/llm-friendly-checklist.md")
+    ;;
+esac
+
+cat "${CAT_FILES[@]}" \
   | MY_TOKEN="xxx" claude -p --output-format text --dangerously-skip-permissions \
   > /tmp/result.md 2>/tmp/stderr.txt
 ```
