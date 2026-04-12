@@ -33,10 +33,22 @@
 - [ ] **D1.** `write-handoff` 가이드 상단 10줄 이내에 **TL;DR** (상황/현재 상태/다음 액션/Blockers 4슬롯)을 둔다. 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — 중간 정보는 활용률이 낮고 앞/뒤 정보에 강함.
 - [ ] **D2.** `write-handoff` 가이드의 **마지막 섹션**으로 **Next Session Starter**를 둔다 (이 가이드 읽고 바로 실행할 명령어/재개 지점). 필수 슬롯만 포함하고 간결하게 유지. 출처: recency bias, 위 D1과 동일 논문.
 
+  ❌ **BAD**: `cd /Users/alice/projects/myrepo && git fetch origin feat/foo` _(why: 작성자의 로컬 사용자 경로가 공개 이슈 코멘트에 노출 — 다른 세션/머신에서 재사용 불가, NSS 재개 지점 목적 저해)_
+
+  ✅ **GOOD**: `REPO="acme/project"; BRANCH="feat/foo"` — Step 8 Self-verification으로 `<REPO_SLUG>`/`<BRANCH_NAME>` placeholder 치환 완료 검증 후 `guide-template.md`의 NSS 패턴(서브쉘 + `set -e` + clone-or-reuse 분기) 사용.
+
 ### E. Anti-hallucination (Evidence-gated)
 
 - [ ] **E1.** 근거가 없거나 확신 없는 주장은 `[UNVERIFIED]` 라벨을 붙이거나 삭제한다. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [MetaFaith (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1505/) — faithful uncertainty 표현이 개선됨.
+
+  ❌ **BAD**: `"이 옵션은 Claude Code 2.0+에서 동작한다."` _(why: 버전별 동작은 공식 docs 또는 로컬 재현 없이 단정 불가 — hallucination 위험)_
+
+  ✅ **GOOD**: `"Claude Code 2.1.104에서 동작 확인. [UNVERIFIED] 이전 버전 호환성은 미확인."`
 - [ ] **E2.** 초안 후 **Self-verification 패스** (CoVe 경량)를 수행한다: 주요 claim을 검증 질문으로 바꾸고 독립적으로 답한 뒤 불일치 시 수정. `create-issue`/`write-handoff` 모두 적용한다. 출처: [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495), [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/).
+
+  ❌ **BAD**: `"1차 초안 작성 후 즉시 gh issue create 실행."` _(why: CoVe 검증 단계 생략 → 오류가 게시된 이슈로 그대로 확산)_
+
+  ✅ **GOOD**: `"1차 초안의 비자명 주장을 Read/Grep/gh로 재검증 후 [UNVERIFIED] 라벨 추가 또는 삭제, 그 다음 게시(create-issue: gh issue create / write-handoff: gh issue comment --body-file)."`
 
 ---
 
