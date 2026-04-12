@@ -34,7 +34,7 @@ description: |
 |------|-----------|-----------|
 | 입력 | 이슈 레퍼런스 (URL/ID/이슈키) | 텍스트 설명 또는 빈 인자 |
 | 출력 | 사용자 승인을 받은 상세 실행 계획 (계획 파일) | 등록된 이슈 (+ 선택적 LLM 이행 가이드) |
-| 핵심 도구 | AskUserQuestion, EnterPlanMode, ExitPlanMode | AskUserQuestion, Agent(fan-out), /create-issue |
+| 핵심 도구 | AskUserQuestion, EnterPlanMode, ExitPlanMode | AskUserQuestion, codex exec / Agent / native subagent(런타임 분기), /create-issue |
 | DA | for_plan 실행 (for_action에서만) | 생략 (스무고개 자체가 품질 보장) |
 | PlanMode | 사용 (Step 7-9) | 미사용 (산출물이 이슈) |
 | 제1원칙 | YAGNI / NGMI | YAGNI / NGMI |
@@ -82,7 +82,13 @@ $ARGUMENTS의 텍스트 설명 또는 대화 컨텍스트를 분석하여,
 역할 카탈로그에서 적절한 역할을 선택하고 에이전트를 병렬 발사한다.
 
 에이전트 수와 역할은 작업의 범위/복잡도에 따라 동적으로 결정한다 (2-6개).
-모든 에이전트는 `run_in_background: true`로 발사하여 병렬 실행한다.
+
+**런타임 분기** (codex exec fan-out 패턴은 /codex-fan-out 스킬 참조):
+- **Claude Code 세션**: codex exec 기본. 사전점검(`command -v codex >/dev/null && codex --version >/dev/null 2>&1`) 실패 시 Agent tool fallback (`run_in_background: true`).
+- **headless 세션**: codex exec only.
+- **Codex 세션**: native subagent fan-out (기존).
+
+codex exec 실행 시 각 에이전트 프롬프트에 "파일을 수정하지 마라" no-write boundary를 명시한다.
 
 ### Step I-2: fan-in 결과 통합 [일반 모드]
 

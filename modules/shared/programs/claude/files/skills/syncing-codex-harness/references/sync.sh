@@ -90,7 +90,7 @@ YAML
 # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
 # 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
 # Claude Code 전용 스킬은 Codex 프로젝션에서 제외 (자기 참조 방지, #212)
-CODEX_EXCLUDE_SKILLS="using-codex-exec"
+CODEX_EXCLUDE_SKILLS="using-codex-exec codex-fan-out"
 
 project_skills() {
   local source_dir="$1"

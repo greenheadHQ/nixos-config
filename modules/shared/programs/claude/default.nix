@@ -224,6 +224,10 @@ in
     ".claude/skills/playwright-cli".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/playwright-cli";
 
+    # codex-fan-out 스킬 (user-scope)
+    ".claude/skills/codex-fan-out".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/codex-fan-out";
+
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
