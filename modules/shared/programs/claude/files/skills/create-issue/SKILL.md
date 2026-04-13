@@ -51,10 +51,10 @@ description: |
 
 ### Step 3 — Anti-hallucination 자체 검증
 
-작성된 이슈 본문에 대해 다음을 수행한다 (LLM 친화성 체크리스트 E1/E2 참조).
+작성된 이슈 본문에 체크리스트 E1/E2를 적용한다 (규칙 상세 정의와 출처는 [`../write-handoff/references/llm-friendly-checklist.md`](../write-handoff/references/llm-friendly-checklist.md) Normative E1/E2 참조).
 
-- **E1. `[UNVERIFIED]` 라벨**: 코드베이스 직접 확인 또는 출처 링크가 없는 모든 주장에 `[UNVERIFIED]` 라벨을 붙이거나 삭제한다. 근접 근거로부터의 추론은 `[INFERRED]`, 두 출처 상충은 `[CONFLICTING]`. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [MetaFaith (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1505/).
-- **E2. Self-verification 패스 (CoVe 경량)**: 초안의 비자명 주장을 질문으로 변환 → `Read`/`Grep`/`gh` 재실행으로 독립 확인 → 불일치 또는 근거 부재 시 `[UNVERIFIED]` 라벨 또는 삭제. 출처: [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495).
+- **E1**: 근거 링크 또는 코드 직접 확인이 없거나 확신이 낮은 주장에 `[UNVERIFIED]` 라벨을 붙이거나 삭제한다. 근접 근거 추론은 `[INFERRED]`, 출처 상충은 `[CONFLICTING]`.
+- **E2**: 비자명 주장을 검증 질문으로 변환 → `Read`/`Grep`/`gh` 재실행으로 독립 확인 → 불일치/근거 부재 시 라벨 또는 삭제.
 
 ### Step 4 — 라벨 자동 결정
 
@@ -126,7 +126,7 @@ description: |
 - 이슈 본문에 시크릿/credential/API 키를 포함하지 않는다. `.age` 복호화 값, `.env` 내용은 파일 경로만 참조한다.
 - 조회(`gh issue list`), 감사(audit), 라이프사이클(close/reopen/edit), 라벨 관리(CRUD)는 이 스킬의 범위 밖이다. `gh` CLI를 직접 사용한다.
 - `gh issue create` 실행 시 본문은 **`--body-file`로 전달**한다. HEREDOC(`$(cat <<'EOF' ... EOF)`) 방식은 본문 내부에 PoC/Reproduction 섹션의 nested `cat <<'EOF'` 예시나 독립 `EOF` 라인이 포함될 때 outer heredoc가 조기 종료되어 등록이 실패하거나 본문이 잘린다. `PoC / Reproduction` 섹션(issue-template)의 shell 재현 스니펫이 기본 기능이므로 HEREDOC 전달은 금지.
-- **근거 없는 주장 금지**: 코드베이스 직접 확인 또는 출처 링크가 없는 주장은 `[UNVERIFIED]` 라벨을 붙이거나 삭제한다 (체크리스트 E1). `<!-- 미검증 -->` HTML 주석은 DEPRECATED.
+- **근거 없거나 확신 없는 주장 금지**: 코드베이스 직접 확인 또는 출처 링크가 없거나 확신이 낮은 주장은 `[UNVERIFIED]` 라벨을 붙이거나 삭제한다 (체크리스트 E1). `<!-- 미검증 -->` HTML 주석은 DEPRECATED.
 
 ## 참조 자료
 
