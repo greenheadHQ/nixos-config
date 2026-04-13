@@ -42,20 +42,6 @@ PY
     fail "sandbox_mode = \"danger-full-access\" 미설정"
   fi
 
-  if python3 - "$CODEX_CONFIG" <<'PY'
-import sys, tomllib
-with open(sys.argv[1], 'rb') as f:
-    data = tomllib.load(f)
-features = data.get('features', {})
-assert isinstance(features, dict)
-assert features.get('codex_hooks') is True
-PY
-  then
-    pass "codex_hooks = true"
-  else
-    fail "codex_hooks = true 미설정"
-  fi
-
   if grep -q 'nixos-config' "$CODEX_CONFIG"; then
     pass "프로젝트 trust 항목 존재 (선택)"
   else
@@ -197,55 +183,10 @@ done
 echo ""
 echo "=== Hooks 산출물 확인 ==="
 
-if [ -f "$REPO_ROOT/.codex/hooks.json" ]; then
-  if python3 - "$REPO_ROOT/.codex/hooks.json" <<'PY'
-import json, sys
-with open(sys.argv[1]) as f:
-    data = json.load(f)
-if not isinstance(data, dict):
-    raise SystemExit(".codex/hooks.json top-level must be an object")
-hooks = data.get("hooks")
-if not isinstance(hooks, dict):
-    raise SystemExit(".codex/hooks.json must contain a top-level 'hooks' object")
-for event, groups in hooks.items():
-    if not isinstance(event, str):
-        raise SystemExit("hook event names must be strings")
-    if not isinstance(groups, list):
-        raise SystemExit(f"hook groups for {event} must be a list")
-    for group in groups:
-        if not isinstance(group, dict):
-            raise SystemExit(f"hook group for {event} must be an object")
-        if not isinstance(group.get("hooks"), list):
-            raise SystemExit(f"hook list for {event} must be a list")
-PY
-  then
-    pass ".codex/hooks.json JSON 파싱 성공"
-  else
-    fail ".codex/hooks.json JSON 파싱 실패"
-  fi
+if [ -e "$REPO_ROOT/.codex/hooks.json" ] || [ -e "$REPO_ROOT/.codex/hooks.compatibility.json" ]; then
+  fail "stale Codex hook artifacts present (.codex/hooks*.json)"
 else
-  warn ".codex/hooks.json 없음 (hooks sync 미실행)"
-fi
-
-if [ -f "$REPO_ROOT/.codex/hooks.compatibility.json" ]; then
-  if python3 - "$REPO_ROOT/.codex/hooks.compatibility.json" <<'PY'
-import json, sys
-with open(sys.argv[1]) as f:
-    data = json.load(f)
-if not isinstance(data, dict):
-    raise SystemExit(".codex/hooks.compatibility.json top-level must be an object")
-if not isinstance(data.get("summary"), dict):
-    raise SystemExit(".codex/hooks.compatibility.json must contain a summary object")
-if not isinstance(data.get("items"), list):
-    raise SystemExit(".codex/hooks.compatibility.json must contain an items array")
-PY
-  then
-    pass ".codex/hooks.compatibility.json 구조 확인"
-  else
-    fail ".codex/hooks.compatibility.json 구조 확인 실패"
-  fi
-else
-  warn ".codex/hooks.compatibility.json 없음 (hooks sync 미실행)"
+  pass "repo-local Codex hook artifacts 없음"
 fi
 
 echo ""

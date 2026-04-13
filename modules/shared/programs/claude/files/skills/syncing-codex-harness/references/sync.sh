@@ -8,7 +8,6 @@
 #   sync.sh agents-md         <project-root> [plugin-claude-md-path]
 #   sync.sh agents-override   <project-root> [--plugin-install-path=PATH:NAME]...
 #   sync.sh mcp-config        <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]... [--user-mcp=PATH] [--user-codex-config=PATH]
-#   sync.sh hooks-config      <project-root> [--project-settings=PATH] [--effective-settings=PATH]
 #   sync.sh trust-project     <project-root>
 #   sync.sh gitignore-check   <project-root>
 #   sync.sh all               <project-root> [--local-skills-dir=DIR] [--plugin-install-path=PATH:NAME]... [--plugin-claude-md=PATH] [--user-mcp=PATH] [--user-codex-config=PATH]
@@ -209,6 +208,9 @@ init_agents_dir() {
   rm -rf "$project_root/.agents/"
   mkdir -p "$project_root/.agents/skills"
   mkdir -p "$project_root/.codex"
+  # CIR: clear stale repo-local hook artifacts left behind by the retired
+  # Claude-to-Codex projection path so old worktrees cannot invoke removed hooks.
+  rm -f "$project_root/.codex/hooks.json" "$project_root/.codex/hooks.compatibility.json"
 }
 
 # ─── gitignore-check: check entries ───
@@ -318,7 +320,6 @@ agents_override() {
   auto_content+="- \`/skill-name\`은 Codex에서 \`\$skill-name\`에 대응"$'\n'
 
   auto_content+=$'\n'"## 도구 차이"$'\n\n'
-  auto_content+="- Codex hooks는 experimental이며, sync.sh는 Claude hooks 중 호환 가능한 subset만 \`.codex/hooks.json\`로 투영하고 진단은 \`.codex/hooks.compatibility.json\`에 기록한다"$'\n'
   auto_content+="- Claude Code 전용 plugin/MCP UI surface는 Codex에서 그대로 대응되지 않는다"$'\n'
   auto_content+="- 런타임 경로는 3-way: **Codex 세션**(native subagent) / **Claude Code 세션**(codex exec 기본 → Agent tool fallback) / **headless 세션**(codex exec). 상세는 run-da/SKILL.md의 \`런타임 경로\` 참조"$'\n'
   auto_content+="- Codex 세션에서 review/audit/planning fan-out 시 nested \`codex exec\`보다 native subagent 경로를 우선한다"$'\n'
@@ -576,66 +577,6 @@ print("trusted")
 PYEOF
 }
 
-# ─── hooks-config: compile Claude hooks into Codex hooks ───
-hooks_config() {
-  local project_root="$1"
-  shift
-
-  local project_settings="$project_root/modules/shared/programs/claude/files/settings.json"
-  local effective_settings="${CLAUDE_SETTINGS_PATH:-$HOME/.claude/settings.json}"
-
-  for arg in "$@"; do
-    case "$arg" in
-      --project-settings=*) project_settings="${arg#--project-settings=}" ;;
-      --effective-settings=*) effective_settings="${arg#--effective-settings=}" ;;
-    esac
-  done
-
-  if [ ! -f "$project_settings" ]; then
-    echo "Warning: Hooks source settings not found: $project_settings" >&2
-    echo "missing-source"
-    return 0
-  fi
-
-  local script_dir compiler
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  compiler="$script_dir/compile-hooks.py"
-
-  if [ ! -f "$compiler" ]; then
-    echo "Warning: Hooks compiler not found: $compiler" >&2
-    echo "missing-compiler"
-    return 0
-  fi
-
-  mkdir -p "$project_root/.codex"
-
-  python3 "$compiler" \
-    --project-settings "$project_settings" \
-    --effective-settings "$effective_settings" \
-    --output-hooks "$project_root/.codex/hooks.json" \
-    --output-report "$project_root/.codex/hooks.compatibility.json"
-
-  local summary
-  summary="$(
-    python3 - "$project_root/.codex/hooks.compatibility.json" <<'PYEOF'
-import json, sys
-with open(sys.argv[1]) as f:
-    report = json.load(f)
-summary = report.get("summary", {})
-print(
-    f'Hooks: {summary.get("supported", 0)} supported, '
-    f'{summary.get("lossy", 0)} lossy, '
-    f'{summary.get("unsupported", 0)} unsupported'
-)
-PYEOF
-  )"
-
-  echo "$summary" >&2
-  echo "Hooks report: .codex/hooks.compatibility.json" >&2
-  echo "Hooks output: .codex/hooks.json" >&2
-  echo "updated"
-}
-
 # ─── all: full sync pipeline ───
 sync_all() {
   local project_root="$1"
@@ -660,19 +601,19 @@ sync_all() {
 
   # 1. Init
   init_agents_dir "$project_root"
-  echo "[1/9] Initialized .agents/ and .codex/" >&2
+  echo "[1/8] Initialized .agents/ and .codex/" >&2
 
   # 2. AGENTS.md
   local md_result
   md_result="$(agents_md "$project_root" "$plugin_claude_md")"
-  echo "[2/9] AGENTS.md: $md_result" >&2
+  echo "[2/8] AGENTS.md: $md_result" >&2
 
   # 3. Local skills
   local local_count=0
   if [ -n "$local_skills_dir" ] && [ -d "$project_root/$local_skills_dir" ]; then
     local_count=$(project_skills "$project_root/$local_skills_dir" "$project_root/.agents/skills")
   fi
-  echo "[3/9] Local skills: $local_count" >&2
+  echo "[3/8] Local skills: $local_count" >&2
 
   # 4. Plugin skills + agents
   local plugin_skill_count=0
@@ -704,12 +645,12 @@ sync_all() {
       mcp_args+=("--plugin-mcp=$ipath/.mcp.json:$ipath:$pname")
     fi
   done
-  echo "[4/9] Plugin skills: $plugin_skill_count, Agents: $agent_count" >&2
+  echo "[4/8] Plugin skills: $plugin_skill_count, Agents: $agent_count" >&2
 
   # 5. AGENTS.override.md
   local rule_count
   rule_count=$(agents_override "$project_root" "${override_args[@]}")
-  echo "[5/9] Rules -> AGENTS.override.md: $rule_count" >&2
+  echo "[5/8] Rules -> AGENTS.override.md: $rule_count" >&2
 
   # 6. MCP config
   local project_mcp_arg=""
@@ -726,7 +667,7 @@ sync_all() {
   # project-scope sources -> <project>/.codex/config.toml
   if [ ${#project_mcp_args[@]} -gt 0 ]; then
     mcp_config "$project_root" "${project_mcp_args[@]}"
-    echo "[6/9] MCP config updated (project)" >&2
+    echo "[6/8] MCP config updated (project)" >&2
     did_mcp_update=1
   fi
 
@@ -736,35 +677,30 @@ sync_all() {
     [ -n "$user_codex_config" ] && user_mcp_args+=("--user-codex-config=$user_codex_config")
     mcp_config "$project_root" "${user_mcp_args[@]}"
     if [ ${#project_mcp_args[@]} -gt 0 ]; then
-      echo "[6b/9] MCP config updated (user)" >&2
+      echo "[6b/8] MCP config updated (user)" >&2
     else
-      echo "[6/9] MCP config updated (user)" >&2
+      echo "[6/8] MCP config updated (user)" >&2
     fi
     did_mcp_update=1
   fi
 
   if [ "$did_mcp_update" -eq 0 ]; then
-    echo "[6/9] MCP config: no sources found" >&2
+    echo "[6/8] MCP config: no sources found" >&2
   fi
 
-  # 7. Hooks config
-  local hooks_status
-  hooks_status="$(hooks_config "$project_root")"
-  echo "[7/9] Hooks config: ${hooks_status:-unknown}" >&2
-
-  # 8. Trust project in global config
+  # 7. Trust project in global config
   local trust_result
   trust_result="$(ensure_project_trusted "$project_root")"
-  echo "[8/9] Trust: $trust_result" >&2
+  echo "[7/8] Trust: $trust_result" >&2
 
-  # 9. Gitignore check
+  # 8. Gitignore check
   local missing
   missing="$(gitignore_check "$project_root")"
   if [ -n "$missing" ]; then
-    echo "[9/9] Missing .gitignore entries:" >&2
+    echo "[8/8] Missing .gitignore entries:" >&2
     echo "$missing" >&2
   else
-    echo "[9/9] .gitignore OK" >&2
+    echo "[8/8] .gitignore OK" >&2
   fi
 
   echo "=== Sync complete ===" >&2
@@ -803,9 +739,6 @@ case "${1:-}" in
   mcp-config)
     mcp_config "$2" "${@:3}"
     ;;
-  hooks-config)
-    hooks_config "$2" "${@:3}"
-    ;;
   trust-project)
     ensure_project_trusted "$2"
     ;;
@@ -816,7 +749,7 @@ case "${1:-}" in
     sync_all "$2" "${@:3}"
     ;;
   *)
-    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|hooks-config|trust-project|generate-openai-yaml|init|gitignore-check|all} ..." >&2
+    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|generate-openai-yaml|init|gitignore-check|all} ..." >&2
     exit 1
     ;;
 esac

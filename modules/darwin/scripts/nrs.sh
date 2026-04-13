@@ -34,6 +34,9 @@ install_rebuild_common_compat_shims() {
         # shellcheck disable=SC2034  # Older deployed helpers still read this global in failure cleanup.
         NRS_LOCK_SWITCH_SUCCESS=true
     }
+    declare -F _clear_retired_codex_hook_artifacts >/dev/null || _clear_retired_codex_hook_artifacts() {
+        rm -f "$FLAKE_PATH/.codex/hooks.json" "$FLAKE_PATH/.codex/hooks.compatibility.json"
+    }
 }
 
 install_rebuild_common_compat_shims
@@ -137,6 +140,7 @@ main() {
     cd "$FLAKE_PATH" || exit 1
     trap 'cleanup_build_artifacts; release_rebuild_lock_on_failure; release_nrs_lock_on_failure' EXIT
 
+    _clear_retired_codex_hook_artifacts
     echo ""
     acquire_nrs_lock
     preview_changes "preview" "Changes to be applied:"

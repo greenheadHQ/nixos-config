@@ -865,6 +865,9 @@ EOF
 
   result_target="$sandbox/current-system"
   mkdir -p "$result_target"
+  mkdir -p "$repo_root/.codex"
+  printf '{}\n' > "$repo_root/.codex/hooks.json"
+  printf '{}\n' > "$repo_root/.codex/hooks.compatibility.json"
 
   output=$(
     HOME="$home_dir" \
@@ -879,6 +882,8 @@ EOF
 
   assert_contains "$output" "Applying changes (offline)"
   assert_contains "$output" "Done!"
+  [[ ! -e "$repo_root/.codex/hooks.json" ]] || fail "expected nixos nrs to remove retired hooks.json"
+  [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected nixos nrs to remove retired hooks.compatibility.json"
 }
 
 test_darwin_nrs_offline_force_smoke() {
@@ -969,6 +974,9 @@ EOF
 
   result_target="$sandbox/darwin-result"
   mkdir -p "$result_target"
+  mkdir -p "$repo_root/.codex"
+  printf '{}\n' > "$repo_root/.codex/hooks.json"
+  printf '{}\n' > "$repo_root/.codex/hooks.compatibility.json"
 
   output=$(
     HOME="$home_dir" \
@@ -984,6 +992,8 @@ EOF
 
   assert_contains "$output" "Applying changes (offline)"
   assert_contains "$output" "Done!"
+  [[ ! -e "$repo_root/.codex/hooks.json" ]] || fail "expected darwin nrs to remove retired hooks.json"
+  [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected darwin nrs to remove retired hooks.compatibility.json"
 }
 
 test_darwin_nrs_no_changes_releases_worktree_lock() {
@@ -1004,6 +1014,9 @@ test_darwin_nrs_no_changes_releases_worktree_lock() {
   mkdir -p "$current_target"
   lock_file="$sandbox/nrs-state"
   rm -f "$lock_file"
+  mkdir -p "$worktree_root/.codex"
+  printf '{}\n' > "$worktree_root/.codex/hooks.json"
+  printf '{}\n' > "$worktree_root/.codex/hooks.compatibility.json"
 
   cat > "$stub_dir/sudo" <<'EOF'
 #!/usr/bin/env bash
@@ -1067,6 +1080,8 @@ EOF
   assert_contains "$output" "No changes to apply"
   assert_contains "$output" "Lock released"
   [[ ! -e "$lock_file" ]] || fail "expected sandbox nrs lock file to be removed after no-change early return"
+  [[ ! -e "$worktree_root/.codex/hooks.json" ]] || fail "expected no-change darwin nrs to remove retired hooks.json"
+  [[ ! -e "$worktree_root/.codex/hooks.compatibility.json" ]] || fail "expected no-change darwin nrs to remove retired hooks.compatibility.json"
 }
 
 run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout

@@ -13,7 +13,6 @@ AGENTS.md(= CLAUDE.md 심링크)의 프로젝트 규칙을 모두 따르되, 아
 
 ## 도구 차이
 
-- Codex hooks는 experimental이며, sync.sh는 Claude hooks 중 호환 가능한 subset만 `.codex/hooks.json`로 투영하고 진단은 `.codex/hooks.compatibility.json`에 기록한다
 - Claude Code 전용 plugin/MCP UI surface는 Codex에서 그대로 대응되지 않는다
 - 런타임 경로는 3-way: **Codex 세션**(native subagent) / **Claude Code 세션**(codex exec 기본 → Agent tool fallback) / **headless 세션**(codex exec). 상세는 run-da/SKILL.md의 `런타임 경로` 참조
 - Codex 세션에서 review/audit/planning fan-out 시 nested `codex exec`보다 native subagent 경로를 우선한다

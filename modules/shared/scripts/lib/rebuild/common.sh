@@ -25,6 +25,20 @@ detect_worktree() {
 }
 
 #───────────────────────────────────────────────────────────────────────────────
+# Retired Codex hooks cleanup: 기존 worktree/checkout에 남은 repo-local hook
+# 산출물을 rebuild 전에 정리하여 verify-ai-compat 경로를 복구한다.
+#───────────────────────────────────────────────────────────────────────────────
+_clear_retired_codex_hook_artifacts() {
+    local hooks_json="$FLAKE_PATH/.codex/hooks.json"
+    local hooks_report="$FLAKE_PATH/.codex/hooks.compatibility.json"
+
+    if [[ -e "$hooks_json" || -e "$hooks_report" ]]; then
+        rm -f "$hooks_json" "$hooks_report"
+        log_info "🧹 Removed retired Codex hook artifacts."
+    fi
+}
+
+#───────────────────────────────────────────────────────────────────────────────
 # mkOutOfStoreSymlink 엔트리 추출 (awk 단일 파서, 매치 없어도 항상 exit 0)
 # 사용: extract_oos_entries "main:path/to.nix"  (git show)
 #       extract_oos_entries "/abs/path/to.nix"   (파일시스템)

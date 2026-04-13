@@ -18,7 +18,6 @@ multi_agent = true
 apps = true
 prevent_idle_sleep = true
 voice_transcription = true
-codex_hooks = true
 
 [mcp_servers.chrome-devtools]
 command = "npx"
@@ -35,4 +34,3 @@ enabled = true
 
 [plugins."notion@openai-curated"]
 enabled = true
-

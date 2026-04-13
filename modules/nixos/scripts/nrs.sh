@@ -25,6 +25,9 @@ install_rebuild_common_compat_shims() {
         _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
         "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
     }
+    declare -F _clear_retired_codex_hook_artifacts >/dev/null || _clear_retired_codex_hook_artifacts() {
+        rm -f "$FLAKE_PATH/.codex/hooks.json" "$FLAKE_PATH/.codex/hooks.compatibility.json"
+    }
 }
 
 install_rebuild_common_compat_shims
@@ -61,6 +64,7 @@ main() {
     cd "$FLAKE_PATH" || exit 1
     trap 'cleanup_build_artifacts; release_rebuild_lock_on_failure' EXIT
 
+    _clear_retired_codex_hook_artifacts
     echo ""
     preflight_source_build_check
     preview_changes "preview" "Changes to be applied:"
