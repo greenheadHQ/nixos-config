@@ -15,6 +15,11 @@
     {
       enable = true;
 
+      # Homebrew Formula (CLI 도구) — 공통
+      brews = [
+        "playwright-cli" # AI 에이전트 브라우저 자동화 CLI (Playwright 기반, 토큰 효율적)
+      ];
+
       # [Nix 전환이 불가능한 앱]
       # ghostty: pkgs.ghostty-bin은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음.
       #          Ghostty.app은 Homebrew Cask로만 설치 가능.
@@ -55,9 +60,8 @@
         "laishulu/homebrew" # macism (macOS 입력 소스 전환 CLI)
       ];
 
-      # Homebrew Formula (CLI 도구)
+      # Homebrew Formula (CLI 도구) — personal 전용
       brews = [
-        "playwright-cli" # AI 에이전트 브라우저 자동화 CLI (Playwright 기반, 토큰 효율적)
         "laishulu/homebrew/macism" # macOS 입력 소스 전환 (Neovim 한영 전환 자동화)
         "sox" # 오디오 처리 (Claude Code /voice 모드)
       ];
