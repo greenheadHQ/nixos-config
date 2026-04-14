@@ -147,6 +147,29 @@ return {
                 },
               },
             },
+            actions = {
+              -- macOS 일반 파일은 Zed로 열고, 그 외(디렉토리/non-mac/nil item)는
+              -- upstream explorer_open에 위임해 snacks 업데이트 시 구현 변경을 자동 반영한다.
+              -- Zed launch 실패(미설치/앱명 불일치) 시 upstream으로 fallback.
+              explorer_open = function(picker, item, action)
+                local upstream = require("snacks.explorer.actions").actions.explorer_open
+                if vim.fn.has("mac") == 1 and item and not item.dir then
+                  vim.system(
+                    { "open", "-a", "Zed", item.file },
+                    { text = true },
+                    vim.schedule_wrap(function(res)
+                      if res.code ~= 0 then
+                        -- Zed launch 실패 시 조용히 upstream으로 fallback.
+                        -- 최종 실패는 upstream의 vim.ui.open 에러 처리가 노출한다.
+                        upstream(picker, item, action)
+                      end
+                    end)
+                  )
+                  return
+                end
+                upstream(picker, item, action)
+              end,
+            },
           },
           grep = {
             case_sens = false,
