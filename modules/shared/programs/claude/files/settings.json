@@ -145,7 +145,6 @@
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,
     "slack@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true,
     "notion@claude-plugins-official": true,
     "codex@openai-codex": true,
     "linear@claude-plugins-official": true,
@@ -166,8 +165,8 @@
   "showClearContextOnPlanAccept": true,
   "autoUpdatesChannel": "latest",
   "plansDirectory": "./.claude/plans",
-  "voiceEnabled": true,
   "autoMemoryEnabled": false,
   "showThinkingSummaries": true,
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "voiceEnabled": true
 }
