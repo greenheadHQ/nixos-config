@@ -161,6 +161,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/log-skill.sh";
     ".claude/hooks/fragile-hardcoding-guard.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/fragile-hardcoding-guard.sh";
+    ".claude/hooks/system-bash-guard.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/system-bash-guard.sh";
     # Cache TTL tracking hooks
     ".claude/hooks/record-last-stop.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-last-stop.sh";

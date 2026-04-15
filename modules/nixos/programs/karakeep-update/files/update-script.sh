@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Karakeep 수동 업데이트 스크립트
 # 이미지 pull → digest 비교 → 컨테이너 재시작 → 헬스체크 → 결과 알림
 set -euo pipefail

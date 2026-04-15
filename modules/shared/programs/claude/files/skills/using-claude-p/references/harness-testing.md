@@ -13,7 +13,7 @@
 **비용**: ~$0.07 | **위치**: 로컬
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # T1: Harness Inventory Check
 RESULT=$(echo "ok" | claude -p --output-format json 2>/dev/null)
 
@@ -61,7 +61,7 @@ $PASS && echo "T1: PASS" || echo "T1: FAIL"
 **비용**: ~$0.07 (T1과 동일 init 이벤트 재사용 가능) | **위치**: 로컬
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # T2: Skill Trigger Spot Check
 RESULT=$(echo "ok" | claude -p --output-format json 2>/dev/null)
 
@@ -102,7 +102,7 @@ $PASS && echo "T2: PASS" || echo "T2: FAIL"
 **비용**: $0 (파일 시스템 검사만) | **위치**: 로컬
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # T3: Hooks File Verification
 SETTINGS="$HOME/.claude/settings.json"
 PASS=true
@@ -158,7 +158,7 @@ $PASS && echo "T3: PASS" || echo "T3: FAIL"
 **비용**: ~$0.07 (T1과 동일 init 이벤트 재사용 가능) | **위치**: 로컬
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # T4: MCP Server Verification
 RESULT=$(echo "ok" | claude -p --output-format json 2>/dev/null)
 
@@ -205,7 +205,7 @@ $PASS && echo "T4: PASS" || echo "T4: FAIL"
 **비용**: ~$0.14 (2회 호출) | **위치**: 로컬
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # T5: Permission Model Check
 PASS=true
 
@@ -255,7 +255,7 @@ $PASS && echo "T5: PASS" || echo "T5: FAIL"
 **비용**: ~$0.07 | **위치**: 크로스머신 (Mac -> MiniPC 또는 반대)
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # T6: SSH Cross-Machine Execution
 # 현재 머신에 따라 원격 대상 결정
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -288,7 +288,7 @@ fi
 **비용**: ~$0.14 (2회 호출) | **위치**: 로컬
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # T7: Session Chaining
 SECRET="T7_$(date +%s)"
 
@@ -327,7 +327,7 @@ fi
 **비용**: ~$0.14 (2회 동시 호출) | **위치**: 로컬
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # T8: Concurrent Execution
 TMPDIR=$(mktemp -d)
 

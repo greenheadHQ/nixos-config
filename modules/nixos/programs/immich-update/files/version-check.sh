@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Immich 버전 체크 및 Pushover 알림
 # 매일 GitHub Releases API로 최신 버전을 확인하고, 새 버전 발견 시 알림 전송
 set -euo pipefail

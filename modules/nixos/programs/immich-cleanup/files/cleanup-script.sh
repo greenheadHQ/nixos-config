@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Immich 임시 앨범 자동 정리 스크립트
 # "Claude Code Temp" 앨범의 모든 이미지를 삭제
 set -euo pipefail

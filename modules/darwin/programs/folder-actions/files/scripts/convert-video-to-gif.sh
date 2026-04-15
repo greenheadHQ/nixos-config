@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Folder Action: 비디오를 GIF로 변환
 # 감시 폴더: ~/FolderActions/convert-video-to-gif/
 # 결과물: ~/Downloads/<타임스탬프>.gif

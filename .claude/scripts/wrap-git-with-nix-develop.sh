@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PreToolUse hook: git 명령어를 nix develop 환경에서 실행
 # 이 프로젝트는 lefthook (gitleaks, shellcheck 등)을 사용하므로
 # nix develop 환경에서 git 명령어를 실행해야 함

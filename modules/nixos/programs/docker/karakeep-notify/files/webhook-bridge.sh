@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Karakeep 웹훅 → Pushover 브리지
 # socat EXEC: 핸들러로 실행됨 (stdin=HTTP 요청, stdout=HTTP 응답)
 set -uo pipefail

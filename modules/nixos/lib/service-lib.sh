@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 홈서버 서비스 공통 셸 라이브러리
 # 각 서비스의 version-check, update-script, cleanup에서 source하여 사용
 # 주의: set -euo pipefail은 호출 스크립트가 선언 (라이브러리에서 선언하지 않음)

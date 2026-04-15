@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Folder Action: Immich 자동 업로드
 # 감시 폴더: $WATCH_DIR (기본값: ~/FolderActions/upload-immich/)
 # 미디어 파일 → Immich 서버 업로드 → Pushover 알림 → 원본 삭제

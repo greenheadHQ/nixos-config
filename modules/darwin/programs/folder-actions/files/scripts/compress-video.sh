@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Folder Action: 비디오 H.265 압축
 # 감시 폴더: ~/FolderActions/compress-video/
 # 결과물: ~/Downloads/<타임스탬프>.mp4

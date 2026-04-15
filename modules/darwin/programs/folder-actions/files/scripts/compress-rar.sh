@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Folder Action: RAR 압축 + 체크섬 가이드 생성
 # 감시 폴더: ~/FolderActions/compress-rar/
 # 결과물: ~/Downloads/<파일명>/<파일명>.rar + 데이터_무결성_검증방법.txt

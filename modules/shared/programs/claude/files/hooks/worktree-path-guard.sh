@@ -55,7 +55,7 @@ if _is_main_repo_path "$FILE_PATH" || _is_main_repo_path "$RESOLVED"; then
   REL="${local_resolved#"$MAIN_REPO"/}"
   SUGGESTED="$WORKTREE_ROOT/$REL"
   jq -n --arg reason "main repo 파일을 직접 수정할 수 없습니다 (worktree에서 실행 중). worktree 경로를 사용하세요: $SUGGESTED" \
-    '{decision: "block", reason: $reason}'
+    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
   exit 0
 fi
 

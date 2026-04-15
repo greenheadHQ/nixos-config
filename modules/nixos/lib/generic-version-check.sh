@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 서비스 버전 체크 및 Pushover 알림 (공통)
 # 매일 GitHub Releases API로 최신 버전을 확인하고, 새 버전 발견 시 알림 전송
 # 이미지에 버전 레이블이 없으므로 GitHub latest 추적 방식 사용

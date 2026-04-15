@@ -63,7 +63,7 @@ playwright-cli open example.com  # Uses "mysession" automatically
 ### Concurrent Scraping
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # Scrape multiple sites concurrently
 
 # Start all browsers

@@ -71,6 +71,24 @@
             "command": "~/.claude/hooks/fragile-hardcoding-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/system-bash-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/system-bash-guard.sh"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

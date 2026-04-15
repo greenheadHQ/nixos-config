@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Folder Action: 파일 이름을 타임스탬프로 변경
 # 감시 폴더: ~/FolderActions/rename-asset/
 # 결과물: ~/Downloads/<타임스탬프>.<확장자>

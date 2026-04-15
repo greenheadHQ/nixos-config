@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PostToolUse hook: git commit 후 빈 커밋 감지
 # tree hash 비교로 staging area 초기화 버그 감지 (Issue #125)
 set -euo pipefail

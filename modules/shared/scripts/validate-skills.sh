@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # validate-skills.sh - Claude Code 스킬 유효성 검사 도구
 #
 # 용도: .claude/skills/*/SKILL.md 파일들의 YAML 프론트매터를 검증

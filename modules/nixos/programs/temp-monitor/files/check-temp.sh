@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # writeShellApplication이 set -euo pipefail + shebang 자동 적용
 
 # 환경변수 검증

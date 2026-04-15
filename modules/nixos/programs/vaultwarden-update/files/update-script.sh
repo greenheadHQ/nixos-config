@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Vaultwarden 수동 업데이트 스크립트
 # pinned tag 이미지 pull → digest 비교 → 안전 백업 → 재시작 → 헬스체크 → 결과 알림
 set -euo pipefail
