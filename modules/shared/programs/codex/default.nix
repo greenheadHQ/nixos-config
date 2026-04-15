@@ -15,6 +15,46 @@ let
   codexConfigFile = if pkgs.stdenv.isDarwin then "config.darwin.toml" else "config.toml";
   # Claude 파일 경로 (공유 소스)
   claudeFilesPath = "${nixosConfigPath}/modules/shared/programs/claude/files";
+
+  # ─── Shared skill 노출 정책 (direct Codex 글로벌, #486) ───
+  # SoT: 아래 두 리스트. 독립 감사는 scripts/ai/verify-ai-compat.sh가 수행한다.
+
+  # 노출 대상 (9)
+  exposedCodexSkills = [
+    "create-issue"
+    "create-pr"
+    "parallel-audit"
+    "plan-with-questions"
+    "playwright-cli"
+    "review-pr-feedback"
+    "run-da"
+    "syncing-codex-harness"
+    "write-handoff"
+  ];
+
+  # 의도적 비노출 (5) — 정책 선언 전용 리스트.
+  # Nix evaluation에서 직접 소비되지 않으며 (lazy eval로 자동 생략),
+  # verify-ai-compat.sh가 독립 감사 오라클로 이 목록을 재확인한다.
+  # 이 리스트 멤버가 ~/.codex/skills/ 에 존재하면 verify가 FAIL한다.
+  intentionallyNotExposed = [
+    # set-icons: Claude UI(status bar) 전용
+    "set-icons"
+    # using-claude-p: Claude -p/--print 사용 가이드 (Codex 무관)
+    "using-claude-p"
+    # using-codex-exec: Codex 자기 참조 방지 (PR #212)
+    "using-codex-exec"
+    # codex-fan-out: Codex 세션은 native subagent fan-out이 기본 경로이므로 자기 참조가 된다.
+    # 이 스킬은 Claude/headless 세션에서 codex exec subprocess를 구동하는 패턴용.
+    "codex-fan-out"
+    # documenting-intent: P1 exposure 후보 — 별도 follow-up 이슈에서 전환
+    "documenting-intent"
+  ];
+
+  mkCodexSkillEntry = name: {
+    name = ".codex/skills/${name}";
+    value.source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/${name}";
+  };
+  codexSkillEntries = builtins.listToAttrs (map mkCodexSkillEntry exposedCodexSkills);
 in
 {
   # ─── 글로벌 설정 (~/.codex/) ───
@@ -29,30 +69,13 @@ in
     # 글로벌 AGENTS.md - Claude의 CLAUDE.md와 동일 소스 공유
     ".codex/AGENTS.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
 
-    # 글로벌 스킬 (Claude와 동일 소스 공유)
-    ".codex/skills/create-issue".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-issue";
-    ".codex/skills/syncing-codex-harness".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";
-
-    # 프롬프트 빌딩 블록 스킬 (Claude와 동일 소스 공유)
-    ".codex/skills/plan-with-questions".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/plan-with-questions";
-    ".codex/skills/run-da".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/run-da";
-    ".codex/skills/review-pr-feedback".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/review-pr-feedback";
-    ".codex/skills/create-pr".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-pr";
-    ".codex/skills/write-handoff".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/write-handoff";
-    ".codex/skills/parallel-audit".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/parallel-audit";
-
-    # playwright-cli 스킬 (글로벌, Claude와 동일 소스)
-    ".codex/skills/playwright-cli".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/playwright-cli";
-  };
+    # write-handoff helper: Codex 세션에서도 LLM이 직접 호출 가능하도록 프로비저닝 (#486 F8)
+    # Claude와 동일 source를 공유한다.
+    ".codex/scripts/write-handoff-repo-slug.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/write-handoff-repo-slug.sh";
+  }
+  # 글로벌 스킬 (Claude와 동일 소스 공유) — exposedCodexSkills에서 자동 생성
+  // codexSkillEntries;
 
   # ─── NixOS: Codex CLI 바이너리 설치 (GitHub releases) ───
   # macOS는 brew cask로 관리 (modules/darwin/programs/homebrew.nix)
@@ -101,6 +124,9 @@ in
     # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
     # 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
     # Claude Code 전용 스킬은 Codex 프로젝션에서 제외 (자기 참조 방지, #212)
+    # NOTE: 아래 변수는 repo-local `.claude/skills/` → `.agents/skills/` 투영 축 전용이다.
+    # shared global `~/.codex/skills/` exposure 정책(exposedCodexSkills / intentionallyNotExposed)과
+    # 별개의 축이며, SoT는 위 let 블록이다 (#486).
     CODEX_EXCLUDE_SKILLS="using-codex-exec"
     for source_skill_dir in "$SOURCE_SKILLS"/*/; do
       [ -d "$source_skill_dir" ] || continue

@@ -171,14 +171,106 @@ else
   warn "$HOME/.codex/AGENTS.md 없음"
 fi
 
-# ~/.codex/skills/ 글로벌 스킬 검증
-for skill in create-issue syncing-codex-harness playwright-cli; do
-  if [ -d "$HOME/.codex/skills/$skill" ]; then
-    pass "$HOME/.codex/skills/$skill 존재"
-  else
-    warn "$HOME/.codex/skills/$skill 없음"
+echo ""
+echo "=== Shared 글로벌 스킬 노출 정책 확인 ==="
+
+SHARED_SKILLS_DIR="$REPO_ROOT/modules/shared/programs/claude/files/skills"
+CODEX_GLOBAL_SKILLS_DIR="$HOME/.codex/skills"
+
+# Nix SoT(default.nix)와 독립된 감사 오라클.
+# 두 리스트는 서로 교집합이 없어야 하며, shared 디렉토리의 모든 스킬이 둘 중 하나에 속해야 한다.
+EXPECTED_EXPOSED=(
+  create-issue
+  create-pr
+  parallel-audit
+  plan-with-questions
+  playwright-cli
+  review-pr-feedback
+  run-da
+  syncing-codex-harness
+  write-handoff
+)
+INTENTIONAL_EXCLUDE=(
+  set-icons
+  using-claude-p
+  using-codex-exec
+  codex-fan-out
+  documenting-intent
+)
+
+in_list() {
+  local needle="$1"; shift
+  local item
+  for item in "$@"; do
+    [ "$item" = "$needle" ] && return 0
+  done
+  return 1
+}
+
+if [ ! -d "$SHARED_SKILLS_DIR" ]; then
+  fail "shared skills 디렉토리 없음: $SHARED_SKILLS_DIR"
+else
+  shared_count=0
+  for skill_dir in "$SHARED_SKILLS_DIR"/*/; do
+    [ -d "$skill_dir" ] || continue
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    skill_name="$(basename "$skill_dir")"
+    shared_count=$((shared_count + 1))
+
+    exposed_path="$CODEX_GLOBAL_SKILLS_DIR/$skill_name"
+
+    if in_list "$skill_name" "${EXPECTED_EXPOSED[@]}"; then
+      if [ ! -L "$exposed_path" ]; then
+        fail "노출 누락: ~/.codex/skills/$skill_name (심링크 없음)"
+        continue
+      fi
+      # Canonical target 검증: readlink -f 결과가 shared source에 도달해야 함
+      resolved="$(readlink -f "$exposed_path" 2>/dev/null || true)"
+      expected_real="$(readlink -f "$skill_dir" 2>/dev/null || true)"
+      if [ -z "$resolved" ] || [ "$resolved" != "$expected_real" ]; then
+        fail "노출 대상 불일치: $skill_name (actual=$resolved expected=$expected_real)"
+        continue
+      fi
+      pass "shared 노출 정상: $skill_name"
+    elif in_list "$skill_name" "${INTENTIONAL_EXCLUDE[@]}"; then
+      # broken symlink도 노출 상태로 간주 (-e는 깨진 심링크에 false; -L || -e로 둘 다 검출)
+      if [ -L "$exposed_path" ] || [ -e "$exposed_path" ]; then
+        fail "의도적 비노출이 노출됨: $skill_name"
+      else
+        pass "의도적 비노출 확인: $skill_name"
+      fi
+    else
+      fail "미분류 shared 스킬: $skill_name (EXPECTED_EXPOSED 또는 INTENTIONAL_EXCLUDE 중 하나에 등록 필요)"
+    fi
+  done
+
+  echo ""
+  echo "  shared 스킬: ${shared_count}개, 노출 기대값: ${#EXPECTED_EXPOSED[@]}개, 비노출 기대값: ${#INTENTIONAL_EXCLUDE[@]}개"
+fi
+
+echo ""
+echo "=== Codex helper 스크립트 확인 ==="
+
+# Codex 프로비저닝된 helper가 shared source를 정확히 가리키는지 검증 (#486 F4/F8)
+verify_codex_helper() {
+  local helper="$1"
+  local helper_path="$HOME/.codex/scripts/$helper"
+  local helper_source="$REPO_ROOT/modules/shared/programs/claude/files/scripts/$helper"
+  if [ ! -L "$helper_path" ]; then
+    fail "$helper_path 심링크 없음"
+    return
   fi
-done
+  local resolved expected
+  resolved="$(readlink -f "$helper_path" 2>/dev/null || true)"
+  expected="$(readlink -f "$helper_source" 2>/dev/null || true)"
+  if [ -z "$resolved" ] || [ "$resolved" != "$expected" ]; then
+    fail "$helper_path 대상 불일치: actual=$resolved expected=$expected"
+  else
+    pass "Codex helper 정상: $helper"
+  fi
+}
+
+verify_codex_helper "write-handoff-repo-slug.sh"
 
 echo ""
 echo "=== Hooks 산출물 확인 ==="

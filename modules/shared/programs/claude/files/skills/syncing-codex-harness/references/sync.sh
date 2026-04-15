@@ -89,7 +89,13 @@ YAML
 # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
 # 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
 # Claude Code 전용 스킬은 Codex 프로젝션에서 제외 (자기 참조 방지, #212)
-CODEX_EXCLUDE_SKILLS="using-codex-exec codex-fan-out"
+#
+# NOTE (#486): 아래 변수는 repo-local `.claude/skills/` → `.agents/skills/` 투영 축 전용이다.
+# shared global `~/.codex/skills/` exposure 정책(9 expose / 5 intentional-exclude)과 별개의 축이며,
+# shared 정책의 SoT는 `modules/shared/programs/codex/default.nix`의 exposedCodexSkills /
+# intentionallyNotExposed 리스트다. 이 값은 동일 프로젝트의 default.nix activation script의
+# CODEX_EXCLUDE_SKILLS와 정렬한다.
+CODEX_EXCLUDE_SKILLS="using-codex-exec"
 
 project_skills() {
   local source_dir="$1"

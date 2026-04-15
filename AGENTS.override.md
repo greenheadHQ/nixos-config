@@ -29,8 +29,10 @@ AGENTS.md(= CLAUDE.md 심링크)의 프로젝트 규칙을 모두 따르되, 아
 - 이 저장소의 reviewer/auditor/Arbiter/Intensity는 [modules/shared/programs/claude/files/skills/run-da/SKILL.md](modules/shared/programs/claude/files/skills/run-da/SKILL.md)의 `Codex 세션 하드닝 계약` 섹션을 따른다.
 - tracked workspace write, branch mutation, commit/push, GitHub write는 메인 에이전트 전용이며 explicit delegation만 예외다.
 - `wt`/`nrs`/rebuild 계열은 메인 에이전트 전용이다.
+- Shared 스킬 노출 정책의 SoT는 [modules/shared/programs/codex/default.nix](modules/shared/programs/codex/default.nix)이며, 독립 감사는 [scripts/ai/verify-ai-compat.sh](scripts/ai/verify-ai-compat.sh)가 수행한다.
 
 ### 빌드
 
 - `nrs` alias 사용. `darwin-rebuild`/`nixos-rebuild` 직접 실행 금지
 - nix 관련 명령은 `nix develop` 환경에서 실행 (direnv 자동 활성화)
+- Codex 스킬 노출/정책을 바꾼 뒤에는 `nrs` 후 즉시 `./scripts/ai/verify-ai-compat.sh`로 런타임 surface를 검증한다 (`nrs`가 `~/.codex/skills/*`, `~/.codex/scripts/*` out-of-store symlink를 갱신하므로 repo-local edits만으로는 불충분).

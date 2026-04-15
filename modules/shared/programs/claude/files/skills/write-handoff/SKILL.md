@@ -19,54 +19,18 @@ Phase 기반 이행 가이드를 작성하고, 이슈 코멘트로 게시한다.
 |------|------|
 | 이행 가이드 마크다운 템플릿 | [references/guide-template.md](references/guide-template.md) |
 
-## 동적 Context (스킬 로드 시 주입)
+## 런타임 도구 매핑
 
-아래 값은 Claude Code의 [동적 context 주입](https://code.claude.com/docs/en/skills#inject-dynamic-context) 기능(backtick-bang syntax)으로 스킬 로드 preprocessing 단계에 실제 값으로 대체된다. 명령은 cwd 위치와 무관하게 동작하도록 **이슈 인자 기반 다단 fallback**으로 구성된다.
+이 스킬은 Claude Code 세션과 direct Codex 세션 모두에서 동작한다.
+아래 행동은 런타임에 해당하는 도구로 수행한다.
 
-**스킬 저자 주의**: Inject syntax 는 zsh eval 로 실행되며 nested single quotes 와 redirect 토큰을 안전하게 처리하지 못한다 (Claude Code known bug — anthropics/claude-code issue 14315, 13655, 17119). 복잡한 파이프 또는 sed 패턴은 SKILL.md inline 이 아니라 standalone script 로 분리해야 한다. 본 파일은 sed 와 grep 파이프를 scripts 디렉토리의 write-handoff-repo-slug helper 로 옮겨 inline 토큰이 단일 스크립트 호출 더하기 인자만 포함하도록 한다. 본 주의 문단은 backtick, 부등호, redirect 토큰을 리터럴로 포함하지 않는다 — parser 가 이 문단을 또다른 명령으로 잘못 감지하지 않도록 한국어 평문만 사용한다.
+| 행동 | Claude Code 세션 | Codex 세션 |
+|------|------------------|------------|
+| 사용자에게 질문 | `AskUserQuestion` 도구 | plain-text 번호 질문 |
+| helper 스크립트 경로 | `~/.claude/scripts/write-handoff-repo-slug.sh` | `~/.codex/scripts/write-handoff-repo-slug.sh` |
 
-- **현재 repo slug**: !`~/.claude/scripts/write-handoff-repo-slug.sh "$ARGUMENTS"`
-- **handoff 대상 branch**: *(자동 주입 없음 — 아래 "branch 확보 절차" 참조)*
-
-우선순위 (repo slug): (1) `$ARGUMENTS`의 이슈 URL 파싱 (cwd 무관) → (2) cwd repo.
-
-**branch 자동 주입 제거 이유**: `git branch --show-current`는 **작성자 LLM의 cwd 현재 branch**일 뿐, handoff 대상 branch가 아니다. 사용자가 main으로 돌아왔거나 다른 feature branch에서 `/write-handoff <num>`을 호출한 경우, 엉뚱한 branch가 NSS에 주입되어 placeholder 검증(`<...>`/null/main/master 가드)을 통과해도 **의미상 잘못된 branch**가 게시될 수 있다. cwd 기반 추정보다 아래 확보 절차 중 하나로 명시적 확답을 받는다.
-
-**branch 확보 절차 (Step 3/8에서 LLM이 실행)**:
-1. **GraphQL linkedBranches 1순위**: 이슈에 Development panel로 명시적 연결된 branch 조회 (아래 GraphQL 예시). `nodes`가 비어 있지 않으면 그 값 사용.
-2. **closedByPullRequestsReferences 2순위**: 이미 PR이 연결된 이슈면 2-step hop으로 branch 조회. `gh issue view --json closedByPullRequestsReferences`는 `number`/`url`/`repository`만 반환하고 `headRefName`을 포함하지 않으므로 PR 번호를 받은 뒤 `gh pr view`로 다시 조회한다.
-   ```bash
-   PR_NUM=$(gh issue view "$NUM" --json closedByPullRequestsReferences \
-     -q '.closedByPullRequestsReferences[0].number' 2>/dev/null)
-   [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ] && \
-     gh pr view "$PR_NUM" --json headRefName -q .headRefName
-   ```
-3. **사용자 직접 확답 (필수 최종 게이트)**: 1·2에서 값 확보 실패 시 **`AskUserQuestion`으로 사용자에게 handoff 대상 branch를 질의**한다. 이것은 bypass 불가. `git branch --show-current`의 cwd branch를 묵시적 default로 사용하지 않는다.
-
-**gh CLI `--json` wrapper 제약 vs GraphQL API**: `gh issue view --json`은 REST-style wrapper 필드만 노출하여 `repository`/`linkedBranches` 필드를 지원하지 않는다(gh 2.89.0 최신에서도 동일). 그러나 **GitHub GraphQL API 자체는 [`Issue.repository`](https://docs.github.com/en/graphql/reference/objects#repository)와 [`Issue.linkedBranches`](https://docs.github.com/en/graphql/reference/objects#linkedbranch) 타입을 제공**하므로, 필요 시 `gh api graphql`로 직접 조회할 수 있다:
-
-```bash
-# 이슈에 연결된 branch 조회 (handoff 대상 branch 자동 유도에 유효)
-gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){
-  repository(owner:$o,name:$r){
-    issue(number:$n){
-      linkedBranches(first:1){nodes{ref{name}}}
-    }
-  }
-}' -f o="<OWNER>" -f r="<REPO>" -F n=<NUM> \
-  -q '.data.repository.issue.linkedBranches.nodes[0].ref.name'
-```
-
-위 GraphQL 쿼리는 inline 주입(backtick-bang syntax)으로 쓰이지 않는다 — `--json url` sed 파싱은 **repo slug 주입 전용**이다. branch는 inline 주입 없이 Step 3에서 LLM이 위 `branch 확보 절차`(linkedBranches → closedByPullRequestsReferences 2-step hop → `AskUserQuestion`)를 직접 실행하여 확보한다. `linkedBranches.nodes`가 비어 있어도 `git branch --show-current`를 묵시적 default로 사용하지 않는다 — 위 "branch 자동 주입 제거 이유" 참조.
-
-**`grep -vE '^(null|)$'` 가드** (line 26 repo slug 주입 전용): `null` 리터럴 문자열과 빈 줄을 pipe에서 exit 1로 전환해 `||` fallback/최종 빈 값으로 연결. 최종 값이 비어 있으면 "주입 실패 처리" 순서로 수동 확보. (branch 자동 주입은 제거되었으므로 `main`/`master` 필터는 사용하지 않는다 — cwd branch 자체가 주입 경로가 아니기 때문.)
-
-**주입 실패 처리** (주입된 값이 빈 문자열이거나 placeholder 형태일 때):
-1. `disableSkillShellExecution: true` 설정되어 있는 환경이면, 이 지시서의 LLM이 Step 3에서 repo slug 주입 명령을 직접 실행하여 값 확보. branch는 "branch 확보 절차"를 따른다.
-2. branch 확보는 **항상 명시적** — cwd branch 묵시적 default 금지. linkedBranches/closedByPullRequestsReferences에서 확보 실패 시 반드시 `AskUserQuestion`으로 사용자에게 질의한다.
-3. **NSS 블록에 unresolved placeholder(`<BRANCH_NAME>`, `<unknown-*>`, 빈 문자열)가 남은 상태로는 절대 게시하지 않는다.** Step 8 Self-verification에서 placeholder 잔존 여부를 검증.
-
-Next Session Starter 블록 작성 시 위에서 확보한 두 값을 실제 값으로 치환하여 handoff 본문에 포함한다. `<BRANCH_NAME>` placeholder와 `greenheadHQ/nixos-config` 하드코딩을 그대로 두지 않는다.
+본문의 "질문 도구"는 위 표의 런타임별 질문 도구를 가리킨다.
+helper 스크립트는 양 런타임에서 동일 source를 공유한다 (Home Manager로 각 경로에 프로비저닝).
 
 ## 가이드 구조
 
@@ -89,10 +53,11 @@ Next Session Starter 블록 작성 시 위에서 확보한 두 값을 실제 값
 
 ## 절차
 
-### Step 1: 이슈 내용 읽기
+### Step 1: 이슈 내용 읽기 + 컨텍스트 확보
 
-`$ARGUMENTS`가 비어있으면 사용자에게 이슈 번호 또는 URL을 입력하라고 질문한다.
+**1-A. 이슈 읽기**
 
+`$ARGUMENTS`가 비어있으면 런타임 도구 매핑 표의 질문 도구로 이슈 번호 또는 URL을 요청한다.
 `$ARGUMENTS`에서 이슈 번호 또는 URL을 파싱한다.
 
 ```bash
@@ -104,6 +69,70 @@ gh issue view <url> --json title,body,labels,assignees,comments
 ```
 
 이슈 본문, 라벨, 기존 코멘트를 분석하여 작업 범위를 파악한다.
+
+**1-B. Repo slug 확보 (필수)**
+
+LLM이 helper 스크립트를 직접 호출한다. 런타임 도구 매핑 표의 helper 경로를 사용한다.
+
+```bash
+# Claude Code 세션
+~/.claude/scripts/write-handoff-repo-slug.sh "$ARGUMENTS"
+# Codex 세션
+~/.codex/scripts/write-handoff-repo-slug.sh "$ARGUMENTS"
+```
+
+우선순위 (helper 내부, fail-closed):
+1. **이슈 인자가 있으면**: `gh issue view "$issue_arg" --json url`로 URL 파싱. 실패 시 **빈 줄 반환 (cwd fallback 하지 않음)**.
+2. **이슈 인자가 없으면**: cwd repo의 `gh repo view --json nameWithOwner`.
+3. 결과가 빈 줄이면 → 아래 **1-D. 값 확보 실패 처리**.
+
+**주의 (bare 번호 입력 시 cwd 의존)**: `$ARGUMENTS`가 `123`, `#123` 같은 bare 번호일 때 `gh issue view 123`은 **cwd repo의 이슈로 해석**된다. cwd가 handoff 대상 repo와 다르면 **전혀 다른 이슈**를 resolve하여 잘못된 repo slug를 placeholder 검증을 통과하는 형태로 반환할 수 있다. `gh issue view --json`은 `repository` 필드를 지원하지 않으므로 이 모호성을 helper 내부에서 제거할 방법이 없다. bare 번호 입력 시 LLM은:
+
+1. `gh repo view --json nameWithOwner -q .nameWithOwner`로 현재 cwd repo를 확인한다.
+2. 작업 맥락(이슈 본문의 파일 경로, 사용자 요청 등)을 살펴 cwd가 handoff 대상 repo와 일치하는지 판단한다.
+3. 확신이 없으면 런타임 도구 매핑 표의 질문 도구로 **이슈 URL 또는 repo slug**를 사용자에게 명시적으로 확답받고, helper를 URL 인자로 재실행한다.
+
+bare 번호 + cwd 불일치 조합은 Step 1-D 실패 처리 대상이다.
+
+**1-C. Handoff 대상 branch 확보 (필수)**
+
+`git branch --show-current`는 작성자 LLM의 cwd 현재 branch일 뿐, handoff 대상 branch가 아니다.
+사용자가 main으로 돌아왔거나 다른 feature branch에서 `/write-handoff <num>`을 호출한 경우,
+엉뚱한 branch가 NSS에 주입되어 placeholder 검증을 통과해도 의미상 잘못된 branch가 게시될 수 있다.
+cwd 기반 추정을 사용하지 않고 아래 절차를 따른다.
+
+1. **GraphQL linkedBranches 1순위**: 이슈에 Development panel로 명시적 연결된 branch 조회. `nodes`가 비어 있지 않으면 그 값 사용.
+   ```bash
+   gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){
+     repository(owner:$o,name:$r){
+       issue(number:$n){
+         linkedBranches(first:1){nodes{ref{name}}}
+       }
+     }
+   }' -f o="<OWNER>" -f r="<REPO>" -F n=<NUM> \
+     -q '.data.repository.issue.linkedBranches.nodes[0].ref.name'
+   ```
+2. **closedByPullRequestsReferences 2순위**: 이미 PR이 연결된 이슈면 2-step hop으로 branch 조회. `gh issue view --json closedByPullRequestsReferences`는 `number`/`url`/`repository`만 반환하고 `headRefName`을 포함하지 않으므로 PR 번호를 받은 뒤 `gh pr view`로 다시 조회한다.
+   ```bash
+   PR_NUM=$(gh issue view "$NUM" --json closedByPullRequestsReferences \
+     -q '.closedByPullRequestsReferences[0].number' 2>/dev/null)
+   [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ] && \
+     gh pr view "$PR_NUM" --json headRefName -q .headRefName
+   ```
+3. **사용자 직접 확답 (최종 게이트)**: 1·2에서 값 확보 실패 시 런타임 도구 매핑 표의 질문 도구로 handoff 대상 branch를 질의한다. bypass 불가. `git branch --show-current`의 cwd branch를 묵시적 default로 사용하지 않는다.
+
+**`gh CLI --json` wrapper 제약**: `gh issue view --json`은 REST-style wrapper 필드만 노출하여 `repository`/`linkedBranches` 필드를 지원하지 않는다 (gh 2.89.0 최신에서도 동일). GitHub GraphQL API 자체는 [`Issue.repository`](https://docs.github.com/en/graphql/reference/objects#repository)와 [`Issue.linkedBranches`](https://docs.github.com/en/graphql/reference/objects#linkedbranch) 타입을 제공하므로 위처럼 `gh api graphql`로 직접 조회한다.
+
+**1-D. 값 확보 실패 / 유효성 검사 처리**
+
+1-B 또는 1-C 결과가 빈 문자열, `null` 리터럴 문자열, placeholder 형태(`<...>`)인 경우:
+1. helper를 재실행하거나 (1-B), `gh api graphql` 쿼리 / PR 2-step hop을 직접 재시도한다 (1-C).
+2. 여전히 실패하면 런타임 도구 매핑 표의 질문 도구로 사용자에게 repo slug / branch를 확답받는다.
+3. **NSS 블록에 unresolved placeholder(`<REPO_SLUG>`, `<BRANCH_NAME>`, `<unknown-*>`, 빈 문자열)가 남은 상태로는 Step 9(게시)로 진행하지 않는다.** Step 8 self-verification에서 placeholder 잔존 여부를 재검증한다.
+
+**Shell-안전성 가드 (필수)**: NSS 블록은 `REPO='...'` / `BRANCH='...'` 처럼 single-quoted literal로 값을 삽입하여 `$(...)`, 백틱, `$var` 해석을 차단한다. 확보한 값에 **`'`(single quote)** 가 포함되면 single-quoted literal을 조기에 닫아 주변 명령을 오염시킬 수 있으므로 치환 즉시 게시를 중단하고 질문 도구로 사용자에게 escape 전략을 확답받는다. (참고: `\`는 Git이 `git check-ref-format`에서 거부하므로 branch 이름에 존재할 수 없고, `$`/`"`/백틱은 Git이 허용하지만 single-quoted literal 내부에서는 리터럴로 처리되어 안전하다.)
+
+Next Session Starter 블록 작성 시 위에서 확보한 두 값을 실제 값으로 치환해 handoff 본문에 포함한다. 예시 template의 repo slug(`greenheadHQ/nixos-config` 등) 하드코딩을 그대로 두지 않는다.
 
 ### Step 2: 복잡도 판단
 
@@ -195,12 +224,13 @@ LLM이 커밋 메시지를 자의적으로 작성하지 않고, 가이드에 명
 2. **검증 질문 재작성**: 각 claim을 검증 질문으로 변환. 예: `"파일 X에 Y 함수가 있다"` → `"실제 파일 X에 Y 함수가 있는가?"`
 3. **독립 답변**: 초안을 보지 않은 상태로 `Read`/`Grep`/`gh` 재실행으로 질문에 답.
 4. **불일치 처리**: 답변과 초안이 일치하지 않으면 초안 수정. 확인 불가 시 `[UNVERIFIED]` 라벨 또는 삭제.
-5. **NSS placeholder 검증 (필수)**: Next Session Starter 블록의 BRANCH와 REPO가 다음 중 하나라도 해당하면 "동적 Context" 섹션의 "주입 실패 처리" 순서로 실제 값 확보 후 치환. 치환 완료 전에는 Step 9(게시)로 진행하지 않는다.
+5. **NSS placeholder 검증 (필수)**: Next Session Starter 블록의 BRANCH와 REPO가 다음 중 하나라도 해당하면 Step 1-D "값 확보 실패 처리" 순서로 실제 값 확보 후 치환. 치환 완료 전에는 Step 9(게시)로 진행하지 않는다.
     - `<...>` 형태 placeholder (`<REPO_SLUG>`, `<BRANCH_NAME>`, `<unknown-*>`, `<repo-root-path>` 등)
     - 빈 문자열
     - `null` 리터럴 문자열 (jq 쿼리가 `linkedBranches=[]`에서 `null`을 출력하는 케이스)
     - `refs/heads/main` 같은 기본 branch가 실제 handoff 대상과 다른 경우
-    - **REPO 값이 동적 Context 주입값과 불일치**: 예시 template의 repo slug(`greenheadHQ/nixos-config` 등)이 남아 있고 실제 handoff 대상이 다른 repo인 경우. 주입된 `$ARGUMENTS`의 이슈 repository 값과 **문자열 비교하여 동일 여부 확인**. 다르면 반드시 치환.
+    - **REPO 값이 Step 1-B에서 확보한 repo slug와 불일치**: 예시 template의 repo slug(`greenheadHQ/nixos-config` 등)이 남아 있고 실제 handoff 대상이 다른 repo인 경우. Step 1-B에서 확보한 repo slug와 **문자열 비교하여 동일 여부 확인**. 다르면 반드시 치환.
+6. **Shell-안전성 재검증 (필수)**: NSS 블록의 `REPO=` / `BRANCH=` 할당이 **single-quoted literal(`'...'`)** 형태인지 확인하고, 값에 `'`(single quote)이 포함되어 있으면 Step 9를 중단한다 (Step 1-D Shell-안전성 가드 참조).
 
 ### Step 9: 이슈 코멘트로 게시
 
