@@ -2,7 +2,7 @@
 
 각 패턴은 Claude Code 세션 안팎에서 동일하게 재현 가능한 순수 셸 명령으로 작성한다.
 
-> **⚠️ Bash tool은 zsh에서 실행됨.** bash 전용 간접 확장(`${!arr[@]}`) 사용 금지.
+> **⚠️ Bash tool은 zsh에서 실행됨.** bash 전용 문법(간접 확장, case modification 등) 사용 금지 — 상세 규칙은 repo 루트 `CLAUDE.md` "Bash tool 환경" 섹션 참조.
 
 ## 패턴 1: 기본 exec — 파일 프롬프트 → 결과 저장
 
