@@ -61,6 +61,7 @@
         ../shared/programs/tmux
         ../shared/programs/neovim
         ../shared/programs/cheat # 터미널 cheatsheet 즉시 조회
+        ../shared/programs/yazi # TUI 파일 매니저
 
         # macOS 전용
         ./programs/hammerspoon

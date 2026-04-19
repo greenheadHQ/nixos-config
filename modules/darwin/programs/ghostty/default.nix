@@ -27,5 +27,11 @@
     # Split zoom 유지 (1.3.0+)
     # Ghostty 네이티브 split 간 이동 시 zoom 상태 유지
     split-preserve-zoom = navigation
+
+    # SSH integration: 원격 세션에 TERM_PROGRAM/COLORTERM 전달 (yazi SSH 이미지 프리뷰 전제)
+    # 출처: https://ghostty.org/docs/features/shell-integration
+    # ssh-terminfo는 제외 — MiniPC는 이미 pkgs.ghostty.terminfo 설치됨 (libraries/packages.nix)
+    # ssh-terminfo를 켜면 모든 SSH 대상에 tic 원격 실행 발생
+    shell-integration-features = ssh-env
   '';
 }

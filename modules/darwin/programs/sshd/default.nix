@@ -29,5 +29,9 @@ in
     # 세션 타임아웃
     ClientAliveInterval ${toString clientAliveInterval}
     ClientAliveCountMax ${toString clientAliveCountMax}
+
+    # Ghostty SSH integration (shell-integration-features = ssh-env)이 전달하는
+    # 환경 변수 수용 — 원격 yazi SSH 이미지 프리뷰 감지에 사용됨. NixOS sshd와 동일 contract.
+    AcceptEnv COLORTERM TERM_PROGRAM TERM_PROGRAM_VERSION
   '';
 }

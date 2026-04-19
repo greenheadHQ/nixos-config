@@ -39,6 +39,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # yazi 테마/플레이버 저장소 (catppuccin-mocha 등)
+    # nixpkgs에 yaziFlavors/yaziPlugins.catppuccin-mocha가 없어 flake input으로 고정.
+    yazi-flavors = {
+      url = "github:yazi-rs/flavors";
+      flake = false;
+    };
+
   };
 
   outputs =

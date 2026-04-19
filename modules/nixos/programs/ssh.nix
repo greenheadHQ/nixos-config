@@ -26,6 +26,14 @@ in
         "hmac-sha2-512"
         "hmac-sha2-256"
       ];
+
+      # Ghostty SSH integration (`shell-integration-features = ssh-env`)이 전달하는
+      # 환경 변수 수용 — yazi SSH 이미지 프리뷰 감지에 사용됨.
+      AcceptEnv = [
+        "COLORTERM"
+        "TERM_PROGRAM"
+        "TERM_PROGRAM_VERSION"
+      ];
     };
   };
 }
