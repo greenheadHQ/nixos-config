@@ -2,6 +2,17 @@
 
 macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적으로 관리하는 프로젝트입니다.
 
+## Quick Reference
+
+| 작업 | 명령 / 위치 |
+|------|-------------|
+| 빌드 | `nrs` (`darwin-rebuild`/`nixos-rebuild` 직접 실행 금지) |
+| 플랫폼 판별 | Environment `Platform`: `darwin` → Mac · `linux` → MiniPC |
+| MiniPC 접속 | `ssh minipc` (Tailscale VPN 연결 시). 호스트/IP: [`libraries/constants.nix`](./libraries/constants.nix) |
+| LLM 행동 규칙 | [`CLAUDE.md`](./CLAUDE.md) |
+
+---
+
 ## 플랫폼 구성
 
 | 호스트 | OS | 용도 | 접속 방법 |
@@ -17,131 +28,80 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 
 **플랫폼별 설정**:
 - macOS: Homebrew GUI 앱, Hammerspoon, Zed, Ghostty, Shottr, 폴더 액션
-- NixOS: 홈서버 18개 서비스, Tailscale VPN, SSH/mosh, 하드웨어 모니터링
+- NixOS: 홈서버 서비스, Tailscale VPN, SSH/mosh, 하드웨어 모니터링
 
 ---
 
 ## 아키텍처
 
+**주요 진입점**:
+- [`flake.nix`](./flake.nix) — `mkDarwinConfig` / `mkNixosConfig`
+- [`libraries/constants.nix`](./libraries/constants.nix) — IP/포트/경로/SSH 키/UID 상수 (단일 소스)
+- [`modules/nixos/options/homeserver.nix`](./modules/nixos/options/homeserver.nix) — 홈서버 서비스 옵션 선언
+- [`modules/shared/programs/`](./modules/shared/programs/) — 공통 개발 도구
+
+**디렉토리 구조**:
+
+```text
+flake.nix
+libraries/        # 상수, 공통 패키지, overlay
+modules/
+├── shared/       # Darwin + NixOS 공통 (zsh, git, tmux, neovim, yazi, secrets, claude, codex)
+├── darwin/       # macOS 전용 (hammerspoon, zed, ghostty, shottr, folder-actions)
+└── nixos/        # NixOS 전용 (caddy, tailscale, 컨테이너 서비스, temp-monitor)
+hosts/            # 호스트별 하드웨어 설정 (disko, WoL)
+secrets/          # agenix 암호화 시크릿 (.age)
+scripts/          # add-host.sh, pre-rebuild-check.sh, fix-fod-hashes.sh
+tests/            # eval-tests, shell-script-tests
 ```
-flake.nix                          # 진입점: mkDarwinConfig / mkNixosConfig
-├── libraries/
-│   ├── constants.nix              # 전역 상수 (IP, 포트, 경로, SSH 키, UID 등)
-│   ├── packages.nix               # 공통 패키지 (shared/darwinOnly/nixosOnly)
-│   ├── nixpkgs/default.nix        # overlay 설정
-│   └── packages/                    # 커스텀 패키지 (필요 시 추가)
-├── modules/
-│   ├── shared/                    # Darwin + NixOS 공통
-│   │   ├── configuration.nix      # Nix GC, 병렬 다운로드, flakes
-│   │   └── programs/              # git, tmux, neovim, shell, claude, codex,
-│   │                              # lazygit, direnv, broot, yazi, secrets
-│   ├── darwin/                    # macOS 전용
-│   │   ├── configuration.nix      # Dock, Finder, 키보드, 단축키, Touch ID sudo
-│   │   ├── home.nix               # HM 패키지 + 모듈 import
-│   │   └── programs/              # hammerspoon, zed, ghostty, shottr,
-│   │                              # folder-actions, keybindings, atuin, sshd, ssh, mosh
-│   └── nixos/                     # NixOS 전용
-│       ├── configuration.nix      # systemd-boot, watchdog, nix-ld, 서비스 활성화
-│       ├── home.nix               # HM 패키지 + 모듈 import
-│       ├── options/
-│       │   └── homeserver.nix     # mkOption 서비스 정의 (18개)
-│       ├── lib/
-│       │   ├── service-lib.nix    # 공통 셸 라이브러리 (Nix store 배치)
-│       │   ├── mk-update-module.nix # 서비스 업데이트 모듈 생성 헬퍼
-│       │   ├── caddy-security-headers.nix
-│       │   └── tailscale-wait.nix # Tailscale IP 대기 유틸리티
-│       └── programs/
-│           ├── docker/            # 컨테이너 서비스 (Podman 기반)
-│           │   ├── runtime.nix    # Podman 공통 설정
-│           │   ├── immich.nix     # 사진 백업 (PostgreSQL + Redis + ML)
-│           │   ├── immich-backup.nix
-│           │   ├── uptime-kuma.nix
-│           │   ├── copyparty.nix  # 파일 서버 (Google Drive 대체)
-│           │   ├── vaultwarden.nix # 비밀번호 관리자
-│           │   ├── vaultwarden-backup.nix
-│           │   ├── karakeep.nix  # 웹 아카이버/북마크 관리 (3컨테이너)
-│           │   ├── karakeep-backup.nix
-│           │   ├── karakeep-notify.nix
-│           │   └── awesome-anki.nix # Anki 카드 분할 웹 서비스
-│           ├── anki-sync-server/  # Anki 동기화 서버 (네이티브 모듈)
-│           ├── caddy.nix          # HTTPS 리버스 프록시 (Cloudflare DNS)
-│           ├── immich-cleanup/    # 임시 앨범 자동 삭제
-│           ├── immich-update/     # 버전 체크 + Pushover 알림
-│           ├── uptime-kuma-update/
-│           ├── copyparty-update/
-│           ├── karakeep-update/
-│           ├── temp-monitor/      # CPU/NVMe 온도 모니터링 (Pushover)
-│           ├── smartd.nix         # S.M.A.R.T. 디스크 건강 모니터링
-│           ├── tailscale.nix      # VPN
-│           ├── ssh.nix            # OpenSSH 서버
-│           ├── mosh.nix           # 모바일 쉘
-│           └── ssh-client/        # macOS SSH 접속 설정
-├── hosts/greenhead-minipc/        # 호스트별 하드웨어 설정 (disko, WoL, HDD)
-├── secrets/                       # agenix 암호화 시크릿 (21개 .age 파일)
-├── scripts/                       # 자동화 스크립트
-│   ├── add-host.sh                # 호스트 추가 마법사
-│   ├── pre-rebuild-check.sh       # 빌드 전 검증
-│   └── fix-fod-hashes.sh          # FOD hash mismatch 자동 수정
-└── tests/
-    ├── eval-tests.nix             # Nix 평가 테스트
-    ├── run-eval-tests.sh          # eval 테스트 실행기
-    ├── run-shell-script-tests.sh  # shell fixture 테스트 실행기
-    └── shell-script-tests.sh      # 배포 레이아웃 shell 테스트
-```
-
-### 상수 관리
-
-모든 공유 상수는 `libraries/constants.nix`에서 단일 소스로 관리됩니다:
-
-| 카테고리 | 내용 |
-|----------|------|
-| `network` | Tailscale IP, 서비스 포트 8개, Podman 서브넷 |
-| `domain` | `greenhead.dev` + 서브도메인 6개 |
-| `paths` | Docker 데이터(SSD), 미디어 데이터(HDD) |
-| `sshKeys` | MacBook/MiniPC SSH 공개키 (`secrets/secrets.nix`에서도 import) |
-| `containers` | 서비스별 리소스 제한 (메모리, CPU) |
-| `ids` | UID/GID (postgres, user, render) |
-| `macos` | Dock, 키보드, Shottr 경로 |
-| `ssh` | 타임아웃 설정 (Darwin sshd + NixOS openssh 공통) |
-| `tempMonitor` | CPU/NVMe 온도 경고/긴급 임계값 |
 
 ### 홈서버 서비스
 
-NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적 활성화:
+NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성화합니다.
 
-```nix
-# modules/nixos/configuration.nix
-homeserver.immich.enable = true;           # 사진 백업
-homeserver.immichBackup.enable = true;     # PostgreSQL 매일 백업 (HDD)
-homeserver.immichCleanup.enable = true;    # 임시 앨범 자동 삭제
-homeserver.immichUpdate.enable = true;     # 버전 체크 + Pushover 알림
-homeserver.uptimeKuma.enable = true;       # 서비스 모니터링
-homeserver.uptimeKumaUpdate.enable = true;
-homeserver.ankiSync.enable = true;         # Anki 동기화 서버
-homeserver.ankiConnect.enable = true;     # Headless Anki + AnkiConnect API
-homeserver.awesomeAnki.enable = true;     # Anki 카드 분할 웹 서비스
-homeserver.copyparty.enable = true;        # 파일 서버 (Google Drive 대체)
-homeserver.copypartyUpdate.enable = true;
-homeserver.vaultwarden.enable = true;      # 비밀번호 관리자
-homeserver.karakeep.enable = true;         # 웹 아카이버/북마크 관리 (Karakeep)
-homeserver.karakeepBackup.enable = true;   # SQLite 매일 백업 (HDD)
-homeserver.karakeepNotify.enable = true;   # 웹훅→Pushover 브리지
-homeserver.karakeepUpdate.enable = true;
-homeserver.reverseProxy.enable = true;     # Caddy HTTPS (*.greenhead.dev)
-```
+- 옵션 선언: [`modules/nixos/options/homeserver.nix`](./modules/nixos/options/homeserver.nix)
+- 활성화 위치: [`modules/nixos/configuration.nix`](./modules/nixos/configuration.nix)
 
-### 개발 도구 체인
+**서비스 카테고리**: Immich(사진), Vaultwarden(비밀번호), Karakeep(웹 아카이버/북마크), Copyparty(파일 서버), Anki(동기화 · AnkiConnect · awesome-anki), Uptime Kuma(모니터링), Caddy(HTTPS 리버스 프록시). 각 서비스별 백업/업데이트 체크/알림 서브시스템 포함.
 
-| 도구 | 용도 |
-|------|------|
-| lefthook | Git 훅 관리 (pre-commit, pre-push) |
-| nixfmt | Nix 코드 포매팅 |
-| shellcheck | 셸 스크립트 린팅 |
-| shell-script-tests | 배포 레이아웃 shell fixture 테스트 (`tests/shell-script-tests.sh`) |
-| gitleaks | 시크릿 유출 방지 |
-| eval-tests | Nix 평가 테스트 (`tests/eval-tests.nix`) |
+### 상수 관리
 
-pre-push 시 `bash ./tests/run-shell-script-tests.sh`와 `nix flake check --no-build --all-systems`를 자동 실행한다.
+모든 공유 상수는 [`libraries/constants.nix`](./libraries/constants.nix)에서 단일 소스로 관리합니다:
+
+| 카테고리 | 내용 |
+|----------|------|
+| `network` | Tailscale IP, 서비스 포트, Podman 서브넷 |
+| `domain` | `greenhead.dev` + 서브도메인 |
+| `paths` | Docker 데이터(SSD), 미디어 데이터(HDD), Immich 업로드 캐시 |
+| `sshKeys` | MacBook/MiniPC SSH 공개키 (`secrets/secrets.nix`에서도 import) |
+| `containers` | 서비스별 리소스 제한 (메모리, CPU) |
+| `ids` | UID/GID (postgres, user, users, render) |
+| `macos` | Dock, 키보드, Shottr 경로 |
+| `ssh` | 타임아웃 설정 (Darwin sshd + NixOS openssh 공통) |
+| `tempMonitor` | CPU/NVMe 온도 경고/긴급 임계값, 쿨다운 |
+
+---
+
+## 검증 / 훅
+
+[`lefthook.yml`](./lefthook.yml)로 pre-commit/pre-push 훅 관리.
+
+**pre-commit** (병렬):
+- `ai-skills-consistency` — `.claude/skills`, `.agents/skills`, `modules/shared/programs/codex` 구조 일관성
+- `gitleaks` — 시크릿 유출 방지
+- `nixfmt` — Nix 포매팅 검증
+- `shellcheck` — 셸 스크립트 린팅
+- `eval-tests` — Nix 평가 테스트 ([`tests/eval-tests.nix`](./tests/eval-tests.nix))
+
+**pre-push**:
+- `shell-script-tests` — 배포 레이아웃 fixture 테스트 ([`tests/shell-script-tests.sh`](./tests/shell-script-tests.sh))
+- `flake-check` — `nix flake check --no-build --all-systems`
+
+`ai-skills-consistency` 훅 동작 ([`scripts/ai/warn-skill-consistency.sh`](./scripts/ai/warn-skill-consistency.sh)):
+- **일반 커밋**: 불일치 감지 시 경고만 출력 (차단 없음)
+- **스킬/Codex 관련 파일 staged 시**: 커밋 차단 — 해당 경로는 `.claude/skills/*`, `.agents/skills/*`, `modules/shared/programs/codex/*`, `lefthook.yml`, `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, `scripts/ai/verify-ai-compat.sh`, `scripts/ai/warn-skill-consistency.sh`
+- 긴급 우회: `SKIP_AI_SKILL_CHECK=1 git commit ...`
+- 해결 후: `nrs` + [`scripts/ai/verify-ai-compat.sh`](./scripts/ai/verify-ai-compat.sh) 재검증
 
 ---
 
@@ -178,30 +138,16 @@ sudo --preserve-env=SSH_AUTH_SOCK nix run nix-darwin -- switch --flake .
 nrs
 ```
 
-### 새 호스트 추가
+### 새 호스트 추가 / MiniPC 설치
 
-```bash
-bash scripts/add-host.sh
-```
-
-마법사가 안내하는 대로 `flake.nix`, `constants.nix` 수정 후 시크릿 재암호화를 수행합니다.
-
-### MiniPC 접속
-
-```bash
-ssh minipc              # Tailscale VPN 연결 시
-ssh greenhead@100.79.80.95  # 직접 IP
-```
-
-설치/복구 가이드: `.claude/skills/managing-minipc/` 참고
+- 새 호스트: `bash scripts/add-host.sh` → `flake.nix`, `constants.nix` 수정 → 시크릿 재암호화
+- MiniPC 설치/복구: [`managing-minipc`](./.claude/skills/managing-minipc/) 스킬
 
 ---
 
-## 문서
+## 문서 / 스킬
 
-- Chrome DevTools MCP autoConnect 상세 가이드: `docs/CHROME_DEVTOOLS_MCP_AUTOCONNECT.md`
-
-상세 문서는 `.claude/skills/` 폴더에서 관리됩니다.
+상세 문서는 [`.claude/skills/`](./.claude/skills/)에서 관리합니다.
 Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니다.
 
 | 주제 | 스킬 |
@@ -217,8 +163,6 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | Copyparty | `hosting-copyparty` |
 | Anki 동기화 | `hosting-anki` |
 
-전체 스킬 목록은 `CLAUDE.md`를 참고하세요.
-
-> pre-commit `ai-skills-consistency` 훅이 `.claude/skills`, `.agents/skills`, `modules/shared/programs/codex` 관련 staged 변경에서 구조 불일치를 감지하면 커밋을 차단합니다.
-> 불일치 해결 후 `nrs`와 `./scripts/ai/verify-ai-compat.sh`로 재검증하세요.
-> 긴급 우회: `SKIP_AI_SKILL_CHECK=1 git commit ...`
+추가 참고:
+- [`CLAUDE.md`](./CLAUDE.md) — LLM 행동 규칙 (실행 환경 판별, 빌드, Bash tool 환경, 상수 관리 등)
+- [`docs/CHROME_DEVTOOLS_MCP_AUTOCONNECT.md`](./docs/CHROME_DEVTOOLS_MCP_AUTOCONNECT.md) — Chrome DevTools MCP autoConnect 상세
