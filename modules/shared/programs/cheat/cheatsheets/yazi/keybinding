@@ -1,0 +1,47 @@
+---
+tags: [ yazi, keybinding, file-manager ]
+---
+yazi TUI 파일 매니저 핵심 키 (preset 기준, v26.x)
+
+[진입/종료]
+  y            셸에서 yazi 실행 (HM shellWrapperName=y 래퍼)
+  q            종료 — yazi 의 현재 디렉터리를 셸 cwd 로 상속
+  Q            종료 — cwd 상속 안 함
+  Esc          visual 해제 / 선택 지우기 / find 취소
+
+[네비게이션]
+  j / k        다음 / 이전 파일
+  h / l        상위 디렉터리로 / 하위 디렉터리로
+  gg / G       최상단 / 최하단
+  Enter        파일/디렉터리 열기 (l 과 달리 파일도 open)
+
+[선택]
+  Space        현재 토글 후 다음으로 이동
+  v            visual mode (커서 이동으로 범위 선택)
+
+[파일 조작]
+  y / x        복사(yank) / 잘라내기
+  p / P        붙여넣기 / 강제 덮어쓰기
+  d / D        휴지통 이동 / 영구 삭제
+  r            이름 변경 (확장자 앞에 커서)
+  a            생성 — name/ 로 끝내면 디렉터리
+
+[검색 및 점프]
+  / + n / N    이름으로 find (앞/뒤 다음/이전)
+  z / Z        fzf 점프 / zoxide 점프
+
+[기타]
+  .            숨김 파일 토글
+  ; / :        셸 실행 (논블로킹 / 블로킹)
+  ~ (F1)       내장 help (검색/필터 가능)
+
+[치트시트]
+  C            치트시트 브라우징 (cheat + fzf, Ctrl-S: content 모드 전환)
+
+Tip
+- `y` wrapper: `q` 로 종료 시 yazi 현재 위치가 셸 cwd 로 따라옴. 브라우징 후 그 자리에서 작업 계속. 상속 거부는 `Q`.
+- `C` 는 nvim `<leader>C`, tmux `prefix+C` 와 동일 키. 세 환경 모두 같은 `cheat-browse` 실행.
+- git.yazi 플러그인이 파일 옆 linemode 에 git 상태(M/A/D/? 등) 표시. `m m/s/p/b/o/n` 으로 linemode 전환.
+- `z` = fzf, `Z` = zoxide. 자주 반대로 기억하니 주의.
+- Ghostty + tmux + SSH 이미지 프리뷰는 tmux `allow-passthrough on` + Ghostty `shell-integration-features=ssh-env` + sshd `AcceptEnv` 3축 전제 (이 레포에 이미 구성). 프리뷰 안 뜨면 이 3축부터 확인.
+- 전체 기본 키는 yazi 실행 후 `~` 로 내장 help 에서 조회 (`f` 로 필터).
