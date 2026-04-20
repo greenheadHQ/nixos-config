@@ -7,6 +7,146 @@
   pkgs,
   ...
 }:
+let
+  # 2벌식 한글 IME dual binding for [mgr] 단일 문자 키.
+  # preset 의 영문 단일 키 바인딩을 한글 IME 상태에서도 동일 동작하게 미러링.
+  # 충돌 규칙: shift 변형이 동일 자모(V→ㅍ = v)인 키는 소문자 우선 (더 자주 사용).
+  # shift 더블 자모(Q→ㅃ, O→ㅒ, P→ㅖ) 와 G(g 단독 없음) 는 uppercase 액션에 매핑.
+  # 다중 키 시퀀스(gg, m m 등)는 IME 조합 타이밍 불안정으로 제외.
+  mkHangul =
+    {
+      ko,
+      run,
+      desc,
+    }:
+    {
+      on = [ ko ];
+      inherit run desc;
+    };
+  hangulMgrBindings = map mkHangul [
+    # 종료
+    {
+      ko = "ㅂ";
+      run = "quit";
+      desc = "Quit the process (한글 IME)";
+    }
+    {
+      ko = "ㅃ";
+      run = "quit --no-cwd-file";
+      desc = "Quit without outputting cwd-file (한글 IME)";
+    }
+    # 네비게이션
+    {
+      ko = "ㅏ";
+      run = "arrow prev";
+      desc = "Previous file (한글 IME)";
+    }
+    {
+      ko = "ㅓ";
+      run = "arrow next";
+      desc = "Next file (한글 IME)";
+    }
+    {
+      ko = "ㅎ";
+      run = "arrow bot";
+      desc = "Go to bottom (한글 IME)";
+    }
+    {
+      ko = "ㅗ";
+      run = "leave";
+      desc = "Back to the parent directory (한글 IME)";
+    }
+    {
+      ko = "ㅣ";
+      run = "enter";
+      desc = "Enter the child directory (한글 IME)";
+    }
+    # 비주얼 모드
+    {
+      ko = "ㅍ";
+      run = "visual_mode";
+      desc = "Enter visual mode (한글 IME)";
+    }
+    # 파일 조작
+    {
+      ko = "ㅐ";
+      run = "open";
+      desc = "Open selected files (한글 IME)";
+    }
+    {
+      ko = "ㅒ";
+      run = "open --interactive";
+      desc = "Open selected files interactively (한글 IME)";
+    }
+    {
+      ko = "ㅛ";
+      run = "yank";
+      desc = "Yank selected files (copy) (한글 IME)";
+    }
+    {
+      ko = "ㅌ";
+      run = "yank --cut";
+      desc = "Yank selected files (cut) (한글 IME)";
+    }
+    {
+      ko = "ㅔ";
+      run = "paste";
+      desc = "Paste yanked files (한글 IME)";
+    }
+    {
+      ko = "ㅖ";
+      run = "paste --force";
+      desc = "Paste yanked files (overwrite) (한글 IME)";
+    }
+    {
+      ko = "ㅇ";
+      run = "remove";
+      desc = "Trash selected files (한글 IME)";
+    }
+    {
+      ko = "ㅁ";
+      run = "create";
+      desc = "Create a file (한글 IME)";
+    }
+    {
+      ko = "ㄱ";
+      run = "rename --cursor=before_ext";
+      desc = "Rename selected file(s) (한글 IME)";
+    }
+    # 검색 및 점프
+    {
+      ko = "ㄴ";
+      run = "search --via=fd";
+      desc = "Search files by name via fd (한글 IME)";
+    }
+    {
+      ko = "ㅋ";
+      run = "plugin fzf";
+      desc = "Jump to a file/directory via fzf (한글 IME)";
+    }
+    {
+      ko = "ㄹ";
+      run = "filter --smart";
+      desc = "Filter files (한글 IME)";
+    }
+    {
+      ko = "ㅜ";
+      run = "find_arrow";
+      desc = "Next found (한글 IME)";
+    }
+    # 탭/태스크
+    {
+      ko = "ㅅ";
+      run = "tab_create --current";
+      desc = "Create a new tab with CWD (한글 IME)";
+    }
+    {
+      ko = "ㅈ";
+      run = "tasks:show";
+      desc = "Show task manager (한글 IME)";
+    }
+  ];
+in
 {
   programs.yazi = {
     enable = true;
@@ -59,7 +199,8 @@
         run = ''shell "$HOME/.local/bin/cheat-browse" --block'';
         desc = "Browse cheatsheets (한글 IME)";
       }
-    ];
+    ]
+    ++ hangulMgrBindings;
 
     # 세 플러그인 모두 명시적 setup 필요 (upstream README 기준).
     initLua = ''

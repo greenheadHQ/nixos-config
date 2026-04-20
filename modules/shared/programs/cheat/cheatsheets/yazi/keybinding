@@ -41,7 +41,7 @@ yazi TUI 파일 매니저 핵심 키 (preset 기준, v26.x)
 Tip
 - `y` wrapper: `q` 로 종료 시 yazi 현재 위치가 셸 cwd 로 따라옴. 브라우징 후 그 자리에서 작업 계속. 상속 거부는 `Q`.
 - `C` 는 nvim `<leader>C`, tmux `prefix+C` 와 동일 키. 세 환경 모두 같은 `cheat-browse` 실행.
-- 한글 2벌식 IME 활성 시 `Shift+C` → `ㅊ` 로 들어오므로 `ㅊ` 도 동일하게 바인딩 (yazi 한정).
+- 한글 2벌식 IME 활성 시에도 [mgr] 단일 키는 대부분 동작 (q, v, o, p 등 소문자 + Q, O, P, G). shift 변형이 동일 자모가 되는 키(H, L, V, K, J, Y, X, D, S, Z, N)와 다중 키 시퀀스(gg, m m)는 영문 IME 필요.
 - git.yazi 플러그인이 파일 옆 linemode 에 git 상태(M/A/D/? 등) 표시. `m m/s/p/b/o/n` 으로 linemode 전환.
 - `z` = fzf, `Z` = zoxide. 자주 반대로 기억하니 주의.
 - Ghostty + tmux + SSH 이미지 프리뷰는 tmux `allow-passthrough on` + Ghostty `shell-integration-features=ssh-env` + sshd `AcceptEnv` 3축 전제 (이 레포에 이미 구성). 프리뷰 안 뜨면 이 3축부터 확인.
