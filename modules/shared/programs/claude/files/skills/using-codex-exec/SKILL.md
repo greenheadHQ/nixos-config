@@ -16,8 +16,8 @@ description: |
 
 ## 작성 기준
 
-- 확인 날짜: **2026-03-15**
-- 확인 버전: **codex-cli 0.114.0**
+- 확인 날짜: **2026-04-21**
+- 확인 버전: **codex-cli 0.122.0**
 - 재검증: `codex --version && codex exec --help && codex exec review --help`
 
 CLI 버전이 바뀌면 플래그/동작이 달라질 수 있으므로, 실행 전 도움말로 확인한다.
@@ -88,7 +88,6 @@ codex exec 실행이 필요한가?
 | `--local-provider <PROVIDER>` | 로컬 프로바이더 (lmstudio/ollama) |
 | `-p, --profile <PROFILE>` | config.toml 프로필 |
 | `--color <COLOR>` | 색상 설정 (always/never/auto) |
-| `--progress-cursor` | 커서 기반 진행률 |
 
 ### review 전용 플래그
 
@@ -111,6 +110,8 @@ codex exec 실행이 필요한가?
 | `--dangerously-bypass-approvals-and-sandbox` | 샌드박스 우회 (--yolo 숨은 alias) |
 | `--skip-git-repo-check` | Git 저장소 체크 건너뜀 |
 | `--ephemeral` | 세션 파일 미저장 |
+| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지) |
+| `--ignore-rules` | user/project execpolicy `.rules` 파일 로드 차단 |
 | `--json` | JSONL 이벤트 출력 |
 | `-o, --output-last-message <FILE>` | 마지막 메시지 파일 저장 (**review에서 upstream bug #12502로 빈 파일 생성**) |
 

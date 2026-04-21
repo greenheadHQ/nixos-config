@@ -222,6 +222,5 @@ bash "$SYNC_SH" mcp-config "$PWD" \
 
 - `references/sync.sh` — 기계적 프로젝션 셸 스크립트
 - `references/mcp-conversion.md` — MCP JSON->TOML 변환 가이드
-- `references/openai-yaml-generation.md` — openai.yaml 생성 절차
 - `references/agents-override-template.md` — AGENTS.override.md 템플릿
 - `references/codex-structure.md` — Codex 프로젝트 구조 레퍼런스

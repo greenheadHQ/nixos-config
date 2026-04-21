@@ -16,75 +16,6 @@ set -euo pipefail
 
 # Requires UTF-8 locale for correct multibyte handling (${var:0:N})
 
-# ─── openai.yaml generation ───
-# 단일 소스: default.nix의 activation script에서도 이 함수를 호출함
-generate_openai_yaml() {
-  local skill_md="$1"
-  local yaml_file="$2"
-  local skill_name="$3"
-
-  # Extract 'name' from frontmatter
-  local declared_name
-  declared_name="$(awk '
-    BEGIN { in_fm = 0 }
-    /^---[[:space:]]*$/ { if (in_fm == 0) { in_fm = 1; next } else { exit } }
-    in_fm == 1 && /^name:[[:space:]]*/ {
-      line = $0; sub(/^name:[[:space:]]*/, "", line);
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line);
-      print line; exit
-    }
-  ' "$skill_md")"
-  [ -z "$declared_name" ] && declared_name="$skill_name"
-
-  # Extract description (128 char limit)
-  local short_desc
-  short_desc="$(awk '
-    BEGIN { in_fm = 0; mode = ""; desc = "" }
-    /^---[[:space:]]*$/ { if (in_fm == 0) { in_fm = 1; next } else { exit } }
-    in_fm != 1 { next }
-    mode == "" && /^description:[[:space:]]*\|[[:space:]]*$/ { mode = "block"; next }
-    mode == "" && /^description:[[:space:]]*>[[:space:]]*-?[[:space:]]*$/ { mode = "block"; next }
-    mode == "" && /^description:[[:space:]]*/ {
-      line = $0; sub(/^description:[[:space:]]*/, "", line);
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line);
-      print line; exit
-    }
-    mode == "block" {
-      if ($0 ~ /^[A-Za-z0-9_-]+:[[:space:]]*/) { print desc; exit }
-      line = $0; sub(/^[[:space:]]+/, "", line);
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line);
-      if (line == "") next;
-      if (desc == "") desc = line; else desc = desc " " line
-    }
-    END { if (mode == "block" && desc != "") print desc }
-  ' "$skill_md")"
-  short_desc="${short_desc:0:128}"
-  [ -z "$short_desc" ] && short_desc="Project skill for nixos-config workflows"
-
-  # display_name: kebab-case -> Title Case
-  local display_name
-  display_name="$(echo "$declared_name" | tr '-' ' ' | awk '{
-    for (i = 1; i <= NF; i++) $i = toupper(substr($i, 1, 1)) substr($i, 2)
-    print
-  }')"
-
-  # 알려진 약어 보정
-  display_name="$(echo "$display_name" | sed 's/\bSsh\b/SSH/g; s/\bMacos\b/macOS/g; s/\bMinipc\b/MiniPC/g; s/\bGithub\b/GitHub/g')"
-
-  # Escape YAML special chars
-  local escaped_display escaped_desc
-  escaped_display="$(echo "$display_name" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-  escaped_desc="$(echo "$short_desc" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-
-  mkdir -p "$(dirname "$yaml_file")"
-  cat > "$yaml_file" <<YAML
-interface:
-  display_name: "$escaped_display"
-  short_description: "$escaped_desc"
-  default_prompt: "Use \$$declared_name to help with this task in nixos-config."
-YAML
-}
-
 # ─── project-skills: project local skills projection ───
 # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
 # 파일 심링크는 무시하므로 반드시 디렉토리 단위로 심링크
@@ -748,14 +679,11 @@ case "${1:-}" in
   trust-project)
     ensure_project_trusted "$2"
     ;;
-  generate-openai-yaml)
-    generate_openai_yaml "$2" "$3" "$4"
-    ;;
   all)
     sync_all "$2" "${@:3}"
     ;;
   *)
-    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|generate-openai-yaml|init|gitignore-check|all} ..." >&2
+    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|init|gitignore-check|all} ..." >&2
     exit 1
     ;;
 esac

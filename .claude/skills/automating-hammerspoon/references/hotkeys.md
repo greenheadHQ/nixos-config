@@ -53,7 +53,7 @@ Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작
 | -------- | ------------------------------- |
 | `Ctrl+B` | tmux prefix (영어 전환 후 전달) |
 
-> **참고**: 자세한 트러블슈팅은 TROUBLESHOOTING.md의 한글 입력소스 관련 섹션을 참고하세요.
+> **참고**: 자세한 트러블슈팅은 [`references/troubleshooting.md`의 "한글 입력소스에서 Ctrl/Opt 단축키가 동작하지 않음"](troubleshooting.md#한글-입력소스에서-ctrlopt-단축키가-동작하지-않음) 섹션을 참고하세요.
 
 ## Finder → Ghostty 터미널 열기
 
@@ -79,4 +79,4 @@ Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작
 - IPC 모듈 로드로 CLI에서 `hs` 명령 사용 가능
 - 설정 리로드 완료 시 macOS 알림 표시
 
-> **참고**: 구현 과정에서 발생한 문제와 해결 방법은 TROUBLESHOOTING.md의 Hammerspoon 관련 섹션을 참고하세요.
+> **참고**: 구현 과정에서 발생한 문제와 해결 방법은 [`references/troubleshooting.md`의 "Hammerspoon 관련"](troubleshooting.md#hammerspoon-관련) 섹션을 참고하세요.

@@ -51,7 +51,7 @@ modules/
 └── nixos/        # NixOS 전용 (caddy, tailscale, 컨테이너 서비스, temp-monitor)
 hosts/            # 호스트별 하드웨어 설정 (disko, WoL)
 secrets/          # agenix 암호화 시크릿 (.age)
-scripts/          # add-host.sh, pre-rebuild-check.sh, fix-fod-hashes.sh
+scripts/          # add-host.sh, fix-fod-hashes.sh
 tests/            # eval-tests, shell-script-tests
 ```
 
@@ -165,4 +165,3 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 
 추가 참고:
 - [`CLAUDE.md`](./CLAUDE.md) — LLM 행동 규칙 (실행 환경 판별, 빌드, Bash tool 환경, 상수 관리 등)
-- [`docs/CHROME_DEVTOOLS_MCP_AUTOCONNECT.md`](./docs/CHROME_DEVTOOLS_MCP_AUTOCONNECT.md) — Chrome DevTools MCP autoConnect 상세

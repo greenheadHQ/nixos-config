@@ -15,9 +15,9 @@
   {"query": "tmux 세션 자동 복원 기능을 추가하고 싶어", "should_trigger": true, "why": "경계선: 텍스트 설명만 → for_issue 모드"},
   {"query": "for_issue 개인 이슈 트래커 도입", "should_trigger": true, "why": "명시적: for_issue 모드 지정"},
   {"query": "이런 기능이 필요할 것 같은데 같이 정리해보자", "should_trigger": true, "why": "저항적: 정리=스무고개 과정 → for_issue 모드"},
-  {"query": "spec 기반으로 구현 계획 작성해줘", "should_trigger": false, "why": "혼동 쌍: writing-plans"},
-  {"query": "implementation plan 문서 만들어줘", "should_trigger": false, "why": "혼동 쌍: writing-plans"},
-  {"query": "brainstorming 후 plan으로 전환", "should_trigger": false, "why": "혼동 쌍: writing-plans"},
+  {"query": "spec 기반으로 구현 계획 작성해줘", "should_trigger": false, "why": "경계선: 명확한 spec이 이미 있으면 스무고개 불필요"},
+  {"query": "implementation plan 문서 만들어줘", "should_trigger": false, "why": "경계선: 명확한 spec이 이미 있으면 스무고개 불필요"},
+  {"query": "brainstorming 후 plan으로 전환", "should_trigger": true, "why": "경계선: plan 전환 요청은 스무고개 진입과 동치 (brainstorming 핵심 내재화)"},
   {"query": "DA 피드백 돌려줘", "should_trigger": false, "why": "혼동 쌍: run-da"},
   {"query": "YAGNI 관점에서 리뷰해줘", "should_trigger": false, "why": "혼동 쌍: run-da"},
   {"query": "PR 만들어줘", "should_trigger": false, "why": "혼동 쌍: create-pr"},
@@ -25,5 +25,5 @@
   {"query": "전수조사 해줘", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
   {"query": "LLM 인수인계 작성", "should_trigger": false, "why": "혼동 쌍: write-handoff"},
   {"query": "이슈 등록해줘", "should_trigger": false, "why": "혼동 쌍: create-issue (이슈 등록 자체가 목적이면 create-issue 직접 호출. for_issue는 아이디어→이슈 정의 과정을 포함하므로 다름)"},
-  {"query": "이슈 트래커 어떤 거 쓸까?", "should_trigger": false, "why": "혼동 쌍: brainstorming (이슈 트래커 선택은 도구 비교, 이슈 정의가 아님)"}
+  {"query": "이슈 트래커 어떤 거 쓸까?", "should_trigger": false, "why": "경계선: 도구 선택/비교는 이슈 정의가 아님 (for_issue는 아이디어→이슈 정의 과정)"}
 ]

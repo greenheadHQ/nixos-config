@@ -35,7 +35,9 @@
 
 - 파일: `modules/shared/programs/codex/default.nix`
 - 변경: `.agents/skills/<name>/SKILL.md`를 심링크가 아니라 **실파일 복사**로 생성
-- 유지: `references`, `scripts`, `assets`는 심링크 유지, `agents/openai.yaml` 자동 생성 유지
+- 유지: `references`, `scripts`, `assets`는 심링크 유지
+
+> **2026-02-19 업데이트**: 이후 디렉토리 심링크로 전환됨. 하단 "2026-02-19 재검증" 섹션 참조.
 
 ### 2) 검증 스크립트 기준 변경
 
@@ -86,7 +88,7 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 
 ## codex trust 관련 메모
 
-- `codex-cli 0.114.0` 기준 `codex trust` 독립 서브커맨드는 확인되지 않았다.
+- `codex-cli 0.122.0` 기준 `codex trust` 독립 서브커맨드는 확인되지 않았다.
 - trust 관리는 CLI 서브커맨드가 아니라 `config.toml` 프로젝트 엔트리로만 가능하다.
 - 본 케이스에서 Skills 누락의 근본 원인으로는 확인되지 않았다(심링크 이슈가 근본 원인).
 
@@ -113,7 +115,6 @@ Codex CLI가 **디렉토리 심링크**는 공식 지원함을 확인했다.
 |------|-------------------|-------------------|
 | SKILL.md 투영 | 실파일 복사 | 디렉토리 심링크 |
 | references/scripts/assets | 개별 파일 심링크 | 디렉토리 심링크에 포함 |
-| openai.yaml | 자동 생성 | 생략 (선택 사항) |
 | sync drift | 복사 시점 차이로 발생 가능 | 원천 제거 (단일 소스) |
 
 ### 근거
@@ -127,7 +128,6 @@ Codex CLI가 **디렉토리 심링크**는 공식 지원함을 확인했다.
 ### 최종 정책
 
 - `.agents/skills/<name>` → `../../.claude/skills/<name>` 디렉토리 심링크
-- openai.yaml 자동 생성 중단
 - `verify-ai-compat.sh`, `warn-skill-consistency.sh`에서 디렉토리 심링크 기준 검증
 
 ## 참고 문서
