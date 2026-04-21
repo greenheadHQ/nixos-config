@@ -18,5 +18,8 @@
   {"query": "AI 리뷰어 피드백 검증해줘", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback"},
   {"query": "PR 코멘트 분류하고 답변 작성", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback"},
   {"query": "resolved 안 된 코멘트 목록 뽑아줘", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback"},
-  {"query": "리뷰 피드백 반영 후 커밋", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback"}
+  {"query": "리뷰 피드백 반영 후 커밋", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback"},
+  {"query": "review thread resolve 처리", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback Step 6 mutation"},
+  {"query": "stale review 처리해줘", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback rejection-taxonomy"},
+  {"query": "리뷰 스레드 해결 상태 확인", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback Step 7 재확인"}
 ]

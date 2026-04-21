@@ -37,7 +37,9 @@
 
 ## `review-pr-feedback` 기각 라벨과의 축 구분
 
-`review-pr-feedback`의 기각 분류(`HALLUCINATION`, `STALE_REVIEW`, `DUPLICATE_CONCERN`, `OUT_OF_SCOPE` 등)는 **리뷰어의 지적이 왜 기각되는가**를 나타낸다. 본 스킬의 6분류는 **requirement가 문서 대비 어떤 상태인가**를 나타낸다.
+`review-pr-feedback`의 기각 분류는 **리뷰어의 지적이 왜 기각되는가**를 나타낸다.
+정본 taxonomy 7개(`HALLUCINATION`, `STALE_REVIEW`, `WRONG_REFERENCE`, `SCOPE_DEFERRAL`, `VERIFIED_FALSE_POSITIVE`, `DESIGN_TRADEOFF`, `TECHNICAL_DISAGREEMENT`)와 각 카테고리 정의/답글 템플릿은 [review-pr-feedback/references/rejection-taxonomy.md](../../review-pr-feedback/references/rejection-taxonomy.md)를 따른다.
+본 스킬의 6분류는 **requirement가 문서 대비 어떤 상태인가**를 나타낸다.
 
 두 축은 혼용하지 않는다. 동일 이슈가 양쪽에서 보이면:
 
