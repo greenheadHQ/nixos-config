@@ -94,12 +94,7 @@ description: |
 
 ### Evidence 라벨
 
-각 finding에는 evidence 수준을 라벨로 표시한다 (정본: [`../write-handoff/references/llm-friendly-checklist.md`](../write-handoff/references/llm-friendly-checklist.md)):
-
-- `[UNVERIFIED]`: 직접 확인 없이 쓴 주장.
-- `[INFERRED]`: 근접 근거로부터의 추론.
-- `[CONFLICTING]`: 출처가 서로 상충, 양측 인용.
-- (라벨 없음): 직접 확인된 사실.
+각 finding에는 evidence 수준을 라벨로 표시한다. 직접 확인된 사실은 라벨 없음. 그 외 라벨 정의(`[UNVERIFIED]`/`[INFERRED]`/`[CONFLICTING]`)는 [체크리스트 라벨 체계](../write-handoff/references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조.
 
 6분류(requirement status 축)와 evidence 라벨은 별개 축이므로 함께 사용한다 — 예: `partial [INFERRED]`.
 

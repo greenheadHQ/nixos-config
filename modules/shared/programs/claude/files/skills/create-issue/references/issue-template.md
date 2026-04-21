@@ -78,8 +78,9 @@
 - 비자명한 주장마다 근거 제공 (체크리스트 B1/B4)
 - 근거 타입 (Source reliability 순위 — 체크리스트 B3): 공식 docs URL > repo 내부 파일(`path/to/file.nix:LINE` 또는 `path:START-END`) > 관련 이슈/커밋(`#NNN`/`abc1234`) > blog > LLM 기억
 - **근거 존재 시**: 최소 1개 링크 또는 path 참조 필수
-- **근거 부재 시**: 섹션을 비우지 않고 `[UNVERIFIED]` 항목으로 대체 (체크리스트 E1)
-- 둘 이상 출처가 상충하면 `[CONFLICTING]` + 양측 인용 (체크리스트 E3)
+- **근거 부재 시**: 섹션을 비우지 않고 `[UNVERIFIED]` 항목으로 대체
+- **상충 시**: `[CONFLICTING]` + 양측 인용 (체크리스트 E3)
+- 라벨 체계 상세는 [체크리스트 라벨 체계](../../write-handoff/references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조 (`[UNVERIFIED]`/`[INFERRED]`/`[CONFLICTING]` 정의)
 
 ### PoC / Reproduction (선택)
 - 재현이 중요한 버그 리포트나 검증 필요한 주장에 포함

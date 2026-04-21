@@ -173,7 +173,7 @@ Next Session Starter 블록 작성 시 위에서 확보한 두 값을 실제 값
 - 명령어와 기대 결과를 코드블록으로 제공한다.
 - BEFORE/AFTER 형식으로 치환 내용을 명시한다 (체크리스트 C3).
 - **비자명한 주장에는 인라인 citation을 붙인다** (체크리스트 B1). 예: `Nix rebuild 경로는 main-agent-only [run-da/SKILL.md의 main-agent-only commands 항목 참조]`.
-- **근거 없는 주장은 `[UNVERIFIED]` 라벨 또는 삭제** (체크리스트 E1). 근접 추론은 `[INFERRED]`, 출처 상충은 `[CONFLICTING]`.
+- **근거 없는 주장은 `[UNVERIFIED]` 라벨 또는 삭제** (체크리스트 E1; 라벨 체계 상세는 [체크리스트 라벨 체계](references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조).
 
 ### Step 5: "진실 원천 우선" 원칙 적용
 
@@ -286,8 +286,6 @@ gh issue comment <number> --body-file <path-to-guide.md>
 - **환경별 분기 명시**: macOS/NixOS 분기, `ssh minipc` 필요 여부 등 환경에 따라 달라지는 행동을 명확히 기술한다.
 - **QA 체인**: 스킬 관련 이슈의 기본 QA 체인은 `/run-da for_pr` + skill-creator 플러그인(evals/queries.json 검증)이다. `/parallel-audit`는 다중 스킬 영향·광범위 사이드이펙트·고위험 변경일 때만 조건부로 추가한다. 검증 축(frontmatter/구조/links/evals)은 유지하고 도구만 활성 경로로 교체한다.
 - **병렬 힌트 제공**: 독립적으로 실행 가능한 명령에는 `(병렬 가능)` 힌트를 명시하여 LLM이 병렬 실행을 활용하도록 유도한다.
-- **Anti-hallucination 라벨**: 미검증 사항은 `[UNVERIFIED]` 인라인 라벨 사용 (체크리스트 E1). 근접 추론은 `[INFERRED]`, 출처 상충은 `[CONFLICTING]`. `<!-- 미검증: ... -->` HTML 주석은 **DEPRECATED** — 신규 가이드는 `[UNVERIFIED]` 라벨을 사용한다.
-
 ## 참조 자료
 
 - **[references/guide-template.md](references/guide-template.md)** — LLM 이행 가이드 마크다운 템플릿 + TL;DR 블록 + Next Session Starter 블록 + 헤더 블록/Phase 구조/커밋 템플릿/QA 체크리스트 + 모범 패턴

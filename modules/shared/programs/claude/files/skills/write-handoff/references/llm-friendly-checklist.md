@@ -75,12 +75,14 @@
 
 ## 라벨 체계 (Anti-hallucination)
 
-이슈/이행가이드 작성 중 다음 라벨을 사용한다:
+> **단일 진실 원천**. `create-issue`/`write-handoff`/`plan-with-questions`/`review-implementation` 및 해당 reference 파일은 이 섹션을 참조한다. 규칙 변경 시 이 섹션을 먼저 수정하고, 소비자 문서의 요약 문구/포인터도 함께 점검한다.
+
+이슈/이행가이드/계획/리뷰 finding 작성 중 다음 라벨을 사용한다:
 
 | 라벨 | 의미 | 사용 예시 |
 |------|------|----------|
 | (없음) | 직접 확인된 사실 | 파일을 직접 Read로 확인 후 기술한 내용 |
-| `[UNVERIFIED]` | 근거 링크 또는 직접 확인 없이 쓴 주장 (**정본**) | `[UNVERIFIED]` Claude Code skill discovery가 `_shared/` 디렉토리를 스킬로 오인할 수 있음 |
+| `[UNVERIFIED]` | 근거 링크 또는 직접 확인 없이 쓴 주장 | `[UNVERIFIED]` Claude Code skill discovery가 `_shared/` 디렉토리를 스킬로 오인할 수 있음 |
 | `[INFERRED]` | 근접한 근거로부터의 추론 (직접 근거 아님) | `[INFERRED]` PoC 첨부가 hallucination을 줄인다는 정량 연구는 없으나, reproducibility-first의 인접 근거에서 강하게 추론됨 |
 | `[CONFLICTING]` | 두 개 이상 출처가 상충 | `[CONFLICTING]` FRONT(2024)는 pipeline 분리 우위를 보고, Evaluating Design Choices(2025)는 direct generation 우위를 보고 |
 

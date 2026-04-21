@@ -64,4 +64,4 @@
 - **권장**: CSV export 구현 추가 또는 FR-3 scope 축소 결정
 ```
 
-`[UNVERIFIED]` / `[INFERRED]` / `[CONFLICTING]` 라벨은 evidence 수준을 나타낸다 (정본: `../../write-handoff/references/llm-friendly-checklist.md`). 6분류는 requirement status 축이므로 두 축을 함께 쓴다 — 예: `partial [INFERRED]` = "부분 충족으로 보이나 증거가 근접 추론 수준이다".
+Evidence 라벨은 별개 축이다 (상세: [체크리스트 라벨 체계](../../write-handoff/references/llm-friendly-checklist.md#라벨-체계-anti-hallucination)). 6분류(requirement status)와 evidence 라벨은 함께 쓴다 — 예: `partial [INFERRED]` = "부분 충족으로 보이나 증거가 근접 추론 수준이다".

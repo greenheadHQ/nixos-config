@@ -318,7 +318,7 @@ Issue #252의 LLM 이행 가이드에서 관찰된 효과적인 패턴:
 
 ### "`[UNVERIFIED]` 라벨" 패턴
 
-근거 없는 주장을 가이드에 남길 때 인라인 라벨을 사용한다. `[INFERRED]`(근접 근거의 추론), `[CONFLICTING]`(출처 상충)도 함께. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [MetaFaith (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1505/).
+근거 없는 주장을 가이드에 남길 때 인라인 라벨을 사용한다. 라벨 정의와 사용 예시 상세는 [체크리스트 라벨 체계](llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조 (출처 링크는 체크리스트 E1/Sources 섹션).
 
 예:
 ```markdown
@@ -329,11 +329,6 @@ Issue #252의 LLM 이행 가이드에서 관찰된 효과적인 패턴:
 
 ### "미검증 주석" 패턴 (DEPRECATED)
 
-> **DEPRECATED**: 이 HTML 주석 패턴은 더 이상 권장되지 않는다. 신규 산출물은 위 [`[UNVERIFIED]` 라벨 패턴](#unverified-라벨-패턴)을 사용한다. 기존 산출물은 점진적으로 마이그레이션한다.
+> **DEPRECATED**: HTML 주석 `<!-- 미검증: ... -->` 패턴은 더 이상 권장되지 않는다. 신규 산출물은 위 [`[UNVERIFIED]` 라벨 패턴](#unverified-라벨-패턴)을 사용한다. 규칙 상세와 마이그레이션 정책은 [체크리스트 라벨 체계](llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조.
 
-```markdown
-<!-- 미검증: NixOS에서 이 옵션이 적용되는지 확인 필요. macOS에서만 테스트됨. -->
-```
-
-(참고용 — 가이드 작성 시점에 확인하지 못한 사항을 HTML 주석으로 표시하던 구 패턴.
-`[UNVERIFIED]` 라벨은 본문에 인라인으로 노출되어 실행 LLM이 더 안정적으로 인지한다.)
+HTML 주석은 실행 컨텍스트에서 눈에 덜 띄어 후속 LLM이 간과하기 쉽다. `[UNVERIFIED]` 라벨은 본문에 인라인으로 노출되어 더 안정적으로 인지된다.

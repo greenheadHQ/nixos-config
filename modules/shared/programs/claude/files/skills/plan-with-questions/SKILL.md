@@ -290,7 +290,7 @@ DA for_plan의 Arbiter 판정 결과를 처리한다:
 - "추후 결정", "별도 검토 필요", "적절히 처리", "필요에 따라" 등 미결정 표현을 금지한다.
   계획의 모든 항목은 구체적 행동으로 서술한다 ("에러 핸들링 추가"가 아니라 "X 함수에서 Y 예외를 catch하여 Z로 처리").
   단, `[UNVERIFIED]` 라벨처럼 검증 상태를 명시하는 표기는 허용한다 (상세는 [`../write-handoff/references/llm-friendly-checklist.md`](../write-handoff/references/llm-friendly-checklist.md)의 라벨 체계 참조).
-- 확인하지 못한 사항이 있으면 계획에 포함하지 않거나, `[UNVERIFIED]` 라벨로 명시한다. 근접 근거 추론은 `[INFERRED]`, 출처 상충은 `[CONFLICTING]`. 구 HTML 주석(`<!-- 미검증: ... -->`)은 DEPRECATED.
+- 확인하지 못한 사항은 계획에 포함하지 않거나 `[UNVERIFIED]` 라벨로 명시 (라벨 체계 상세는 [체크리스트 라벨 체계](../write-handoff/references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조).
 - 계획 추적 진입 후 새로운 가정이 필요해지면, 먼저 Read/Grep/Glob으로 확인한다 (추적 상태에서도 가능).
   그래도 확인 불가하면 승인 요청 도구로 종료 → 검증 → 계획 추적 도구로 재진입한다.
   확인 없이 가정을 계획에 추가하지 않는다.
