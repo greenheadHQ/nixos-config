@@ -30,20 +30,22 @@ let
   # ─── Shared skill 노출 정책 (direct Codex 글로벌, #486) ───
   # SoT: 아래 두 리스트. 독립 감사는 scripts/ai/verify-ai-compat.sh가 수행한다.
 
-  # 노출 대상 (9)
+  # 노출 대상 — SoT: 아래 exposedCodexSkills 리스트
   exposedCodexSkills = [
     "create-issue"
     "create-pr"
     "parallel-audit"
     "plan-with-questions"
     "playwright-cli"
+    "prd"
+    "review-implementation"
     "review-pr-feedback"
     "run-da"
     "syncing-codex-harness"
     "write-handoff"
   ];
 
-  # 의도적 비노출 (5) — 정책 선언 전용 리스트.
+  # 의도적 비노출 — SoT: 아래 intentionallyNotExposed 리스트. 정책 선언 전용.
   # Nix evaluation에서 직접 소비되지 않으며 (lazy eval로 자동 생략),
   # verify-ai-compat.sh가 독립 감사 오라클로 이 목록을 재확인한다.
   # 이 리스트 멤버가 ~/.codex/skills/ 에 존재하면 verify가 FAIL한다.

@@ -36,6 +36,7 @@ if git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     case "$path" in
       .claude/skills/* | \
       .agents/skills/* | \
+      modules/shared/programs/claude/* | \
       modules/shared/programs/codex/* | \
       scripts/ai/verify-ai-compat.sh | \
       scripts/ai/warn-skill-consistency.sh | \
@@ -100,6 +101,33 @@ if [ "$has_source" -eq 1 ] && [ "$has_projected" -eq 1 ]; then
       warnings=$((warnings + 1))
     fi
   done < <(list_skill_dirs "$SOURCE_SKILLS_DIR")
+fi
+
+# Shared user-scope skill source ↔ 노출 정책 정합성 검사
+# 신규 스킬이 modules/shared/programs/claude/files/skills/ 아래 staged 되었을 때
+# Home Manager 노출(.claude/skills/<name>)과 Codex SoT(exposedCodexSkills 또는
+# intentionallyNotExposed)가 함께 갱신됐는지 확인한다. 양쪽 projection이 함께
+# stale인 상태에서는 기존 .claude/skills ↔ .agents/skills 비교만으로는
+# regression을 잡을 수 없다.
+SHARED_CLAUDE_NIX="$REPO_ROOT/modules/shared/programs/claude/default.nix"
+SHARED_CODEX_NIX="$REPO_ROOT/modules/shared/programs/codex/default.nix"
+
+if git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 && [ -f "$SHARED_CLAUDE_NIX" ]; then
+  while IFS= read -r shared_skill_md; do
+    [ -n "$shared_skill_md" ] || continue
+    skill_name="$(basename "$(dirname "$shared_skill_md")")"
+    if ! grep -qF "\".claude/skills/$skill_name\"" "$SHARED_CLAUDE_NIX"; then
+      err "신규 shared 스킬 '$skill_name': modules/shared/programs/claude/default.nix 에 .claude/skills/$skill_name 엔트리 누락"
+      warnings=$((warnings + 1))
+      should_enforce_fail=1
+    fi
+    if [ -f "$SHARED_CODEX_NIX" ] && ! grep -qE "\"$skill_name\"" "$SHARED_CODEX_NIX"; then
+      err "신규 shared 스킬 '$skill_name': modules/shared/programs/codex/default.nix 의 exposedCodexSkills 또는 intentionallyNotExposed 리스트에 미분류"
+      warnings=$((warnings + 1))
+      should_enforce_fail=1
+    fi
+  done < <(git -C "$REPO_ROOT" diff --name-only --cached --diff-filter=A \
+    -- "modules/shared/programs/claude/files/skills/*/SKILL.md" 2>/dev/null || true)
 fi
 
 if [ "$warnings" -eq 0 ]; then

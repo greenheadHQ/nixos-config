@@ -71,6 +71,7 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 | 피드백 프로토콜 + 합리화 방지 상세 | [references/protocol.md](references/protocol.md) |
 | Arbiter 프롬프트 + 판정 기준 | [references/arbiter-prompt.md](references/arbiter-prompt.md) |
 | Arbiter/Intensity 스케일링 + 실행 계약 | [references/arbiter-scaling.md](references/arbiter-scaling.md) |
+| Validation-path catalog (공용) | [../prd/references/validation-paths.md](../prd/references/validation-paths.md) |
 
 ## 런타임 경로
 

@@ -1,0 +1,19 @@
+[
+  {"query": "PRD 작성해줘", "should_trigger": true, "why": "명시적: PRD 작성은 핵심 트리거 키워드"},
+  {"query": "이 기능 PRD 만들어줘", "should_trigger": true, "why": "명시적: PRD 생성 트리거"},
+  {"query": "PRD 업데이트해줘", "should_trigger": true, "why": "명시적: PRD 업데이트는 핵심 트리거 키워드"},
+  {"query": "phase 계획 짜자", "should_trigger": true, "why": "명시적: phase 계획은 트리거 키워드"},
+  {"query": "이 기능 스펙 정리해줘", "should_trigger": true, "why": "명시적: 기능 스펙은 트리거 키워드"},
+  {"query": "living document로 PRD 만들어줘", "should_trigger": true, "why": "경계선: living document는 PRD 고유 개념"},
+  {"query": "Phase Discovery Gate 있는 계획서 작성", "should_trigger": true, "why": "경계선: PRD 템플릿의 고유 섹션 명시"},
+  {"query": "이 이슈 계획 세우자", "should_trigger": false, "why": "혼동 쌍: plan-with-questions (일회성 계획은 plan-with-questions)"},
+  {"query": "계획 수립해줘", "should_trigger": false, "why": "혼동 쌍: plan-with-questions"},
+  {"query": "스무고개식으로 요구사항 파악하자", "should_trigger": false, "why": "혼동 쌍: plan-with-questions"},
+  {"query": "DA 피드백 돌려줘", "should_trigger": false, "why": "혼동 쌍: run-da"},
+  {"query": "YAGNI 리뷰해줘", "should_trigger": false, "why": "혼동 쌍: run-da"},
+  {"query": "문서 대비 구현 리뷰", "should_trigger": false, "why": "혼동 쌍: review-implementation"},
+  {"query": "overbuilt 검사해줘", "should_trigger": false, "why": "혼동 쌍: review-implementation"},
+  {"query": "PR 만들어줘", "should_trigger": false, "why": "혼동 쌍: create-pr"},
+  {"query": "이슈 등록해줘", "should_trigger": false, "why": "혼동 쌍: create-issue"},
+  {"query": "전수조사 해줘", "should_trigger": false, "why": "혼동 쌍: parallel-audit"}
+]

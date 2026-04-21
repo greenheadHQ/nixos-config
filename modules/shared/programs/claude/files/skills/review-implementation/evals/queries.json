@@ -1,0 +1,19 @@
+[
+  {"query": "문서 대비 구현 리뷰 해줘", "should_trigger": true, "why": "명시적: 문서 대비 구현 리뷰는 핵심 트리거 키워드"},
+  {"query": "스펙 대비 감사해줘", "should_trigger": true, "why": "명시적: 스펙 대비 감사는 핵심 트리거 키워드"},
+  {"query": "overbuilt 검사해줘", "should_trigger": true, "why": "명시적: overbuilt 검사는 고유 트리거"},
+  {"query": "이 PRD phase 완료됐는지 확인해줘", "should_trigger": true, "why": "명시적: PRD phase 완료 확인은 트리거 키워드"},
+  {"query": "구현 감사 돌려줘", "should_trigger": true, "why": "명시적: 구현 감사는 트리거 키워드"},
+  {"query": "spec.md 대비 코드 어긋난 부분 찾아줘", "should_trigger": true, "why": "경계선: spec 대비 + 구현 확인"},
+  {"query": "PRD에 없는 기능이 구현됐는지 찾아줘", "should_trigger": true, "why": "경계선: overbuilt 감지 의미적 동치"},
+  {"query": "문서 요구사항 satisfied/missing 분류해줘", "should_trigger": true, "why": "저항적: 6분류는 본 스킬 고유"},
+  {"query": "PR 코멘트 처리해줘", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback"},
+  {"query": "CodeRabbit 리뷰 반영", "should_trigger": false, "why": "혼동 쌍: review-pr-feedback"},
+  {"query": "DA 피드백 돌려줘", "should_trigger": false, "why": "혼동 쌍: run-da (범용 DA)"},
+  {"query": "YAGNI 리뷰해줘", "should_trigger": false, "why": "혼동 쌍: run-da (prospective YAGNI)"},
+  {"query": "전수조사 해줘", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
+  {"query": "사이드이펙트 조사", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
+  {"query": "PRD 작성해줘", "should_trigger": false, "why": "혼동 쌍: prd (PRD 생성은 prd 스킬)"},
+  {"query": "PRD 업데이트", "should_trigger": false, "why": "혼동 쌍: prd (PRD 내용 수정은 prd 스킬)"},
+  {"query": "계획 수립해줘", "should_trigger": false, "why": "혼동 쌍: plan-with-questions"}
+]

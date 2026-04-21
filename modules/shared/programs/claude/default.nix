@@ -230,6 +230,13 @@ in
     ".claude/skills/codex-fan-out".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/codex-fan-out";
 
+    # prd 스킬 (user-scope)
+    ".claude/skills/prd".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/prd";
+
+    # review-implementation 스킬 (user-scope)
+    ".claude/skills/review-implementation".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/review-implementation";
+
     # Statusline script - 양방향 수정 가능
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
