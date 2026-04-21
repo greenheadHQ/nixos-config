@@ -349,6 +349,7 @@ CODEX_GLOBAL_SKILLS_DIR="$HOME/.codex/skills"
 EXPECTED_EXPOSED=(
   create-issue
   create-pr
+  documenting-intent
   parallel-audit
   plan-with-questions
   playwright-cli
@@ -364,7 +365,6 @@ INTENTIONAL_EXCLUDE=(
   using-claude-p
   using-codex-exec
   codex-fan-out
-  documenting-intent
 )
 
 in_list() {

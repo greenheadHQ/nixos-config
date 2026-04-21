@@ -38,6 +38,7 @@ let
   exposedCodexSkills = [
     "create-issue"
     "create-pr"
+    "documenting-intent"
     "parallel-audit"
     "plan-with-questions"
     "playwright-cli"
@@ -63,8 +64,6 @@ let
     # codex-fan-out: Codex 세션은 native subagent fan-out이 기본 경로이므로 자기 참조가 된다.
     # 이 스킬은 Claude/headless 세션에서 codex exec subprocess를 구동하는 패턴용.
     "codex-fan-out"
-    # documenting-intent: P1 exposure 후보 — 별도 follow-up 이슈에서 전환
-    "documenting-intent"
   ];
 
   mkCodexSkillEntry = name: {
