@@ -15,7 +15,8 @@
 #   release_rebuild_lock_on_failure, preflight_source_build_check,
 #   preflight_cask_conflict_check, rebuild_is_main_flake,
 #   prepare_worktree_symlinks_for_rebuild, maybe_relink_or_restore,
-#   preview_changes, cleanup_build_artifacts
+#   preview_changes, cleanup_build_artifacts,
+#   repair_codex_config_drift_no_changes
 #
 # caller-facing 출력 변수:
 #   FLAKE_PATH - detect_worktree 후 실제 build/switch 대상 flake 경로
@@ -63,6 +64,7 @@ REBUILD_HELPERS=(
     preflight
     relink
     preview
+    codex
 )
 
 case "$REBUILD_COMMON_DIR" in
@@ -86,6 +88,13 @@ fi
 
 [[ -n "$REBUILD_COMMON_LIB_DIR" ]] || {
     echo "ERROR: rebuild helper directory not found" >&2
+    echo "  expected location: $REBUILD_DEPLOYED_LIB_DIR" >&2
+    [[ -n "$REBUILD_REPO_LIB_DIR" ]] && echo "  also tried (repo): $REBUILD_REPO_LIB_DIR" >&2
+    echo "  required helpers (manifest): ${REBUILD_HELPERS[*]}" >&2
+    # mixed-version 배포(예: rebuild-common.sh 는 새 버전인데 lib/rebuild/ 는 일부 helper
+    # 누락)에서 hard-fail 하면 사용자가 진단 정보 없이 막힌다. 안내 한 줄을 더해 nrs --force
+    # 로 generation 을 재활성화하면 deploy 가 정합 상태로 돌아간다.
+    echo "  if this is a mixed-version deployment (partial home-manager update), run 'nrs --force' once to refresh ~/.local/lib/." >&2
     exit 1
 }
 

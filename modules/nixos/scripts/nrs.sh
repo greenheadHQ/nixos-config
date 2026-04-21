@@ -28,6 +28,12 @@ install_rebuild_common_compat_shims() {
     declare -F _clear_retired_codex_hook_artifacts >/dev/null || _clear_retired_codex_hook_artifacts() {
         rm -f "$FLAKE_PATH/.codex/hooks.json" "$FLAKE_PATH/.codex/hooks.compatibility.json"
     }
+    # 구버전 rebuild-common.sh 는 codex helper 가 없어 이 함수도 없다. 그 조합에서는
+    # NO_CHANGES 경로가 "command not found"로 죽지 않도록 no-op shim 을 둔다. 사용자가
+    # 한 번 nrs --force 로 새 HM generation 을 활성화하면 shim 이 실 helper 로 교체된다.
+    declare -F repair_codex_config_drift_no_changes >/dev/null || repair_codex_config_drift_no_changes() {
+        return 0
+    }
 }
 
 install_rebuild_common_compat_shims
@@ -72,6 +78,7 @@ main() {
         echo ""
         log_info "✅ No changes to apply. Skipping rebuild."
         maybe_relink_or_restore
+        repair_codex_config_drift_no_changes
         return 0
     fi
     worktree_symlink_guard

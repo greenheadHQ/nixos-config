@@ -62,6 +62,11 @@ maybe_relink_or_restore() {
         # v3 (이번 변경): ~/.codex/config.toml을 HM out-of-store symlink에서 activation
         #    seed+merge 기반 regular file로 전환. probe 대상에서 제외하여 이제 probe 2개
         #    (settings.json, mcp.json)로 축소.
+        # v4 (#511 followup): NO_CHANGES 경로 ~/.codex/config.toml drift 자동 복구 도입.
+        #    이 함수(maybe_relink_or_restore)는 symlink/relink 책임만 유지하고, 이전 v3
+        #    하단의 config.toml 경고 가드는 lib/rebuild/codex.sh 의
+        #    repair_codex_config_drift_no_changes() 가 대체한다. no-op 계약과 self-heal
+        #    범위의 authoritative 설명은 sync-codex-config.py docstring 참고.
         if _remove_worktree_symlinks "$MAIN_FLAKE_PATH/.claude/worktrees/" "stale worktree"; then
             # stale worktree 심링크가 제거되면 probe 파일(settings.json 등)도 사라져
             # Phase 2의 probe 탐지가 실패할 수 있음. NO_CHANGES 경로에서는 HM activation이
@@ -91,19 +96,8 @@ maybe_relink_or_restore() {
                 "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
             fi
         fi
-
-        # Migration window guard: ~/.codex/config.toml은 이제 activation이 regular
-        # file로 관리한다. 이전 symlink 세대에서 업그레이드하는 환경에서는 NO_CHANGES
-        # 경로가 activation을 건너뛰어 자동 self-heal이 안 될 수 있으므로 명시 경고.
-        # 또한 legacy symlink가 worktree 경로로 relink된 상태였다면 Phase 1의
-        # _remove_worktree_symlinks가 이미 그 symlink를 제거해 파일 자체가 없어진
-        # 상태로 도달할 수 있다. "symlink" / "missing" 두 케이스 모두 경고 대상.
-        if [[ -L "$HOME/.codex/config.toml" ]]; then
-            log_warn "⚠️  ~/.codex/config.toml is still a symlink (legacy)."
-            log_warn "    Run \`nrs --force\` once to let syncCodexConfig rewrite it as a regular file."
-        elif [[ ! -e "$HOME/.codex/config.toml" ]]; then
-            log_warn "⚠️  ~/.codex/config.toml is missing (likely removed by worktree symlink cleanup)."
-            log_warn "    Run \`nrs --force\` to regenerate it via syncCodexConfig."
-        fi
+        # ~/.codex/config.toml 의 legacy symlink / missing / mode drift / content drift 는
+        # lib/rebuild/codex.sh 의 repair_codex_config_drift_no_changes() 가 nrs.sh
+        # NO_CHANGES 분기에서 atomic write 로 직접 복구한다 (v4 CIR 참고).
     fi
 }

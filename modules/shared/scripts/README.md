@@ -30,6 +30,7 @@
 - `lib/rebuild/preflight.sh`: source-build and cask preflight checks
 - `lib/rebuild/relink.sh`: worktree symlink cleanup/relink/restore helpers
 - `lib/rebuild/preview.sh`: build preview and artifact cleanup
+- `lib/rebuild/codex.sh`: NO_CHANGES 경로 `~/.codex/config.toml` drift 자동 복구 helper
 
 ## Rebuild Contract
 
@@ -40,7 +41,8 @@
   `acquire_rebuild_lock`, `release_rebuild_lock`, `release_rebuild_lock_on_failure`,
   `preflight_source_build_check`, `preflight_cask_conflict_check`,
   `rebuild_is_main_flake`, `prepare_worktree_symlinks_for_rebuild`,
-  `maybe_relink_or_restore`, `preview_changes`, `cleanup_build_artifacts`
+  `maybe_relink_or_restore`, `preview_changes`, `cleanup_build_artifacts`,
+  `repair_codex_config_drift_no_changes`
 - Public caller-visible rebuild state:
   `FLAKE_PATH`, `OFFLINE_FLAG`, `NO_CHANGES`, `FORCE_FLAG`, `CORES_FLAG`, `UNINSTALLED_CASKS`
 - Internal rebuild state:
