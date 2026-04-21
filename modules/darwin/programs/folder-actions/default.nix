@@ -19,6 +19,10 @@ in
 {
   # 스크립트 파일 배치
   home.file = {
+    # 공유 헬퍼 (4개 스크립트 source 전용; non-executable)
+    ".local/bin/_folder-actions-lib.sh" = {
+      source = "${scriptsDir}/_folder-actions-lib.sh";
+    };
     ".local/bin/compress-rar.sh" = {
       source = "${scriptsDir}/compress-rar.sh";
       executable = true;

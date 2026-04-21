@@ -531,9 +531,17 @@ trap 'on_signal TERM' TERM
 
 acquire_lock
 
-# 감시 폴더 내 파일 처리
-find "$WATCH_DIR" -maxdepth 1 -type f ! -name ".*" | while read -r f; do
-    [ -f "$f" ] || continue
+# shellcheck source=/dev/null
+. "$(/usr/bin/dirname "$0")/_folder-actions-lib.sh"
+
+# 처리 대상 후보 (필터를 한 곳에만 정의)
+find_candidates() {
+    find "$WATCH_DIR" -maxdepth 1 -type f ! -name ".*"
+}
+
+process_one() {
+    local f="$1"
+    local filename name_no_ext target_dir rar_output_path checksum_val guide_file
 
     filename=$(basename "$f")
     name_no_ext="${filename%.*}"
@@ -583,5 +591,9 @@ EOF_GUIDE
         log_info "압축 완료: $filename -> ${target_dir}/"
     else
         log_error "압축 실패: $filename"
+        quarantine_or_abort "$f"
     fi
-done
+}
+
+# 큐 비우기 + 락 보유 재스캔 (#374). drain_queue가 안정화 대기와 종료 조건을 통합.
+drain_queue process_one

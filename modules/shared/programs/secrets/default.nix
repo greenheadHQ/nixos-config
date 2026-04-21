@@ -60,6 +60,11 @@
         path = "${config.xdg.configHome}/pushover/immich";
         mode = "0400";
       };
+      pushover-folder-actions = {
+        file = ../../../../secrets/pushover-folder-actions.age;
+        path = "${config.xdg.configHome}/pushover/folder-actions";
+        mode = "0400";
+      };
       shottr-license = {
         file = ../../../../secrets/shottr-license.age;
         path = "${config.xdg.configHome}/shottr/license";

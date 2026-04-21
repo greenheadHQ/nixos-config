@@ -528,27 +528,41 @@ trap 'on_signal TERM' TERM
 
 acquire_lock
 
-# 카운터 (동시에 여러 파일 처리 시)
+# shellcheck source=/dev/null
+. "$(/usr/bin/dirname "$0")/_folder-actions-lib.sh"
+
+# 처리 대상 후보 (필터를 한 곳에만 정의)
+find_candidates() {
+    find "$WATCH_DIR" -maxdepth 1 -type f ! -name ".*"
+}
+
+# 같은 초/같은 batch에 들어온 파일들의 출력 파일명 충돌 회피용 카운터.
+# drain_queue가 process substitution을 사용하므로 이 변수는 outer shell에 있고
+# process_one 호출 사이에 정상 증가한다 (라운드 간에도 단조 증가 보장).
+# macOS BSD date는 GNU `%N`(나노초)을 지원하지 않으므로 초 단위 timestamp + i를
+# 우선 정렬 키로 두고, PID + RANDOM은 카운터 뒤에 두어 lexicographic sort가
+# 처리 순서를 보존하도록 한다 (#374 R3 R-1).
 i=1
 
-# 감시 폴더 내 파일 처리
-find "$WATCH_DIR" -type f -maxdepth 1 ! -name ".*" | while read -r f; do
-    [ -f "$f" ] || continue
+process_one() {
+    local f="$1"
+    local filename ext timestamp new_filename output_path
 
     filename=$(basename "$f")
     ext="${filename##*.}"
-    timestamp=$(/bin/date +"%Y%m%dT%H%M%S%3N")
-
-    # 새 파일명 생성
-    new_filename="${timestamp}_${i}.${ext}"
+    timestamp=$(/bin/date +"%Y%m%dT%H%M%S")
+    new_filename="${timestamp}_${i}_${CURRENT_PID}_${RANDOM}.${ext}"
     output_path="${DEST_DIR}/${new_filename}"
 
-    # 파일 이동
     if /bin/mv -- "$f" "$output_path"; then
         log_info "이동 완료: $filename -> $new_filename"
     else
         log_error "이동 실패: $filename"
+        quarantine_or_abort "$f"
     fi
 
     ((i++))
-done
+}
+
+# 큐 비우기 + 락 보유 재스캔 (#374). drain_queue가 안정화 대기와 종료 조건을 통합.
+drain_queue process_one

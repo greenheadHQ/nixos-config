@@ -586,9 +586,19 @@ trap 'on_signal TERM' TERM
 acquire_lock
 preflight_stderr_path "$EXPECTED_STDERR_PATH"
 
-# 감시 폴더 내 비디오 파일 처리
-find "$WATCH_DIR" -type f -maxdepth 1 \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.avi" -o -iname "*.mkv" -o -iname "*.wmv" \) | while read -r f; do
-    [ -f "$f" ] || continue
+# shellcheck source=/dev/null
+. "$(/usr/bin/dirname "$0")/_folder-actions-lib.sh"
+
+# 처리 대상 후보 (필터를 한 곳에만 정의)
+find_candidates() {
+    find "$WATCH_DIR" -maxdepth 1 -type f \
+        \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.avi" \
+           -o -iname "*.mkv" -o -iname "*.wmv" \)
+}
+
+process_one() {
+    local f="$1"
+    local filename timestamp output_filename output_path
 
     filename=$(basename "$f")
     timestamp=$(/bin/date +"%Y%m%dT%H%M%S")
@@ -602,11 +612,13 @@ find "$WATCH_DIR" -type f -maxdepth 1 \( -iname "*.mp4" -o -iname "*.mov" -o -in
         -c:v hevc_videotoolbox -q:v "$VT_QUALITY" -tag:v hvc1 \
         -c:a eac3 -b:a 224k \
         -y "$output_path"; then
-
-        # 원본 삭제
         /bin/rm -f "$f"
         log_info "압축 완료: $filename -> ${output_filename}"
     else
         log_error "압축 실패: $filename"
+        quarantine_or_abort "$f"
     fi
-done
+}
+
+# 큐 비우기 + 락 보유 재스캔 (#374). drain_queue가 안정화 대기와 종료 조건을 통합.
+drain_queue process_one
