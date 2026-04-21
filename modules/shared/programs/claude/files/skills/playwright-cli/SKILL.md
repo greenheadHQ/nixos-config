@@ -191,6 +191,14 @@ playwright-cli open --profile=/path/to/profile
 # Connect to browser via extension
 playwright-cli attach --extension
 
+# Connect to a running Chrome or Edge by channel name
+# (security notes: see references/session-management.md §Attaching to a Running Browser)
+playwright-cli attach --cdp=chrome
+playwright-cli attach --cdp=msedge
+
+# Connect to a running browser via CDP endpoint
+playwright-cli attach --cdp=http://localhost:9222
+
 # Start with config file
 playwright-cli open --config=my-config.json
 
@@ -281,11 +289,7 @@ If global `playwright-cli` command is not available, try a local version via `np
 npx --no-install playwright-cli --version
 ```
 
-When local version is available, use `npx playwright-cli` in all commands. Otherwise, install `playwright-cli` as a global command:
-
-```bash
-npm install -g @playwright/cli@latest
-```
+When local version is available, use `npx playwright-cli` in all commands. Global installation in this repo is declaration-managed (nix-darwin Homebrew: `brews = [ "playwright-cli" ]` in `modules/darwin/programs/homebrew.nix`).
 
 ## Example: Form submission
 
