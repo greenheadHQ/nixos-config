@@ -172,7 +172,8 @@
       "source": {
         "source": "github",
         "repo": "openai/codex-plugin-cc"
-      }
+      },
+      "autoUpdate": true
     }
   },
   "language": "Korean",
@@ -184,6 +185,6 @@
   "autoMemoryEnabled": false,
   "showThinkingSummaries": true,
   "skipDangerousModePermissionPrompt": true,
-  "voiceEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "voiceEnabled": true
 }
