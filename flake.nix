@@ -215,5 +215,21 @@
           };
         }
       );
+
+      # test/verifier 래핑용 tomlkit 포함 python3.
+      # pre-push hook(lefthook.yml)과 verify-ai-compat이 `nix shell .#pythonWithTomlkit --command`로
+      # 호출한다. devShell은 건드리지 않아 direnv/bare python3 해석에는 영향 없음.
+      # 정의는 `libraries/python-runtimes.nix` 단일 소스이며, activation(`codex/default.nix`)도
+      # 같은 파일을 import해 동일 store path를 공유한다.
+      packages = nixpkgs.lib.genAttrs [ systems.darwin systems.linux ] (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          pythonRuntimes = import ./libraries/python-runtimes.nix { inherit pkgs; };
+        in
+        {
+          inherit (pythonRuntimes) pythonWithTomlkit;
+        }
+      );
     };
 }

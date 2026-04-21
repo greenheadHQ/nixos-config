@@ -104,10 +104,36 @@ else:
 Step 1-2에서 감지/해석한 결과를 `sync.sh all` 서브커맨드에 인자로 전달한다.
 
 > Note: `sync.sh all`은 항상 전체 재생성을 수행한다. `.agents/`는 매번 삭제 후 재생성되고,
-> `.codex/config.toml`은 `[mcp_servers.*]` 섹션만 교체된다 (사용자 설정 보존).
+> 프로젝트-로컬 `.codex/config.toml`은 `[mcp_servers.*]` 섹션만 교체된다 (사용자 설정 보존).
 > 변경이 없어도 재실행해도 안전하다 (멱등).
 > retired Codex hooks projection에서 남긴 `.codex/hooks.json`과
 > `.codex/hooks.compatibility.json` 잔재는 초기화 단계에서 명시적으로 삭제한다.
+
+### 계약 참고: user-scope `sync.sh` vs activation writer
+
+이 스킬의 `sync.sh`는 기본적으로 **repo-local `$PWD/.codex/config.toml`**의
+`[mcp_servers.*]` 섹션만 LLM 요청에 따라 교체/보존하는 멱등 runner이다. 또한
+`--user-mcp`가 지정되면 예외적으로 **`~/.codex/config.toml`의 `[mcp_servers.*]` 섹션만**
+함께 교체한다 (`references/sync.sh`의 mcp-config target 참조). 두 경우 모두
+`[mcp_servers.*]` 외의 설정은 건드리지 않는다.
+
+반면 Home Manager activation이 관리하는 `~/.codex/config.toml`의 **그 외 모든 키**
+(`model`, `approval_policy`, `[features]`, `[plugins.*]` 등)는 **별개 계약**이며, 이 스킬이
+손대지 않는다. 두 경로를 혼동하지 않도록 계약을 아래와 같이 나란히 둔다.
+
+| 축 | user-scope `sync.sh` (이 스킬) | activation writer `sync-codex-config.py` |
+|----|-------------------------------|-------------------------------------------|
+| 관리 대상 | `$PWD/.codex/config.toml` (프로젝트 로컬, 항상). 옵션 `--user-mcp`가 주어지면 `~/.codex/config.toml`도 포함하지만 **`[mcp_servers.*]` 섹션만**. | `~/.codex/config.toml` (전역, Home Manager). `[mcp_servers.*]`를 포함한 모든 template-declared leaf 전체. |
+| 진입점 | LLM이 이 SKILL 지시에 따라 수동 호출 | `home.activation.syncCodexConfig` (매 activation 시 자동) |
+| 교체 범위 | `[mcp_servers.*]` 섹션만 (그 외 사용자 설정 완전 보존) | template이 선언한 모든 leaf (재귀, leaf 단위). 그 외 top-level 키 + `[projects.*]` + template에 없는 `[mcp_servers.<이름>]` + 선언 테이블 안의 sibling leaf는 모두 preserve |
+| 쓰기 방식 | 전체 재생성 (idempotent) | atomic tempfile + `os.replace`, mode 0600 |
+| malformed input 대응 | 경고 후 넘어감 | `<target>.bad-<ts>`로 quarantine 후 template에서 재생성 |
+| 검증 축 | 없음 (운영자가 수동 확인) | `sync-codex-config.py check` + `verify-ai-compat.sh`의 `template ↔ live drift 검증` 섹션 (writer와 `_walk_template_leaves` 공유) |
+
+두 계약은 축이 다르다: activation writer가 `~/.codex/config.toml`의 base state
+(repo-managed leaf 전체)를 유지하고, user-scope `sync.sh`는 `$PWD/.codex/config.toml`
+전체를 소유하며 `--user-mcp` 옵션이 있을 때만 `~/.codex/config.toml`의
+`[mcp_servers.*]` 섹션에도 한정적으로 MCP 항목을 덧씌운다.
 
 ### 인자 구성
 
@@ -207,7 +233,7 @@ bash "$SYNC_SH" mcp-config "$PWD" \
 | 플러그인 캐시 경로 미존재 | 경고 후 건너뛰기 |
 | 스킬 이름 충돌 (로컬 vs 플러그인) | 플러그인 스킬에 `{plugin-name}--` 접두사 |
 | AGENTS.override.md 사용자 커스텀 보존 | 마커 외부 내용 유지 |
-| `.codex/config.toml` 기존 설정 보존 | `[mcp_servers.*]` 섹션만 교체 |
+| `.codex/config.toml` 기존 설정 보존 | user-scope `$PWD/.codex/config.toml`의 `[mcp_servers.*]` 섹션만 교체 (그 외 사용자 설정 완전 보존). `--user-mcp` 옵션이 주어지면 `~/.codex/config.toml`의 `[mcp_servers.*]` 섹션에도 같은 규칙으로 반영하되 그 외 키는 건드리지 않음. `~/.codex/config.toml`의 `[mcp_servers.*]` 외 영역(`model`/`approval_policy`/`[features]`/`[plugins.*]` 등)은 activation writer가 별도 계약으로 관리하므로 이 스킬이 손대지 않음 (Step 3 "계약 참고" 참조). |
 | `~/.claude/mcp.json` 형식 차이 | `mcpServers` 래퍼 유무 모두 허용 |
 | Worktree 경로 | `$PWD`로 매칭 |
 

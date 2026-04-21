@@ -1,0 +1,9 @@
+model = "gpt-5.4"
+approval_policy = "never"
+extra_user_field = "preserved"
+
+[features]
+multi_agent = true
+
+[projects."/home/user/p"]
+trust = "trusted"

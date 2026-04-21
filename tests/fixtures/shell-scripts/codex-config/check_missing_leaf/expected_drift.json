@@ -1,0 +1,1 @@
+{"target_state": "present", "drift": [{"path": "approval_policy", "reason": "missing_leaf", "expected": "never", "actual": null}]}

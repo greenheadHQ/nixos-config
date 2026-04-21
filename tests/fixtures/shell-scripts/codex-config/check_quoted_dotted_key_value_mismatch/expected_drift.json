@@ -1,0 +1,1 @@
+{"target_state": "present", "drift": [{"path": "notice.model_migrations.\"gpt-5.2\"", "reason": "value_mismatch", "expected": "gpt-5.2-codex", "actual": "gpt-5.1-codex"}]}

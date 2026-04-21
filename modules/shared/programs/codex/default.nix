@@ -3,7 +3,9 @@
 # Claude Code 스킬을 Codex에서도 사용할 수 있도록 심볼릭 링크 관리
 # trust는 런타임 mutation(사용자 승인, 디렉토리당 1회)이 SoT. template은 trust를
 # 하드코딩하지 않으며, ~/.codex/config.toml은 activation의 syncCodexConfig가
-# repo-managed 키와 사용자 소유 섹션(projects/사용자 MCP)을 merge한 regular file.
+# template-declared leaf는 template wins, template 밖의 top-level 키/sibling leaf/
+# [projects.*]/template 없는 mcp_servers.<이름>은 preserve하는 방식으로 merge한 regular file.
+# (상세 policy는 home.activation.syncCodexConfig 위 주석 참조.)
 {
   config,
   pkgs,
@@ -22,8 +24,10 @@ let
   # activation에서 repo-managed 키와 사용자 소유 섹션을 merge하는 Python 스크립트.
   # 동일하게 store path로 copy되므로 현 flake 기준으로 동작한다.
   codexSyncScript = ./files/sync-codex-config.py;
-  # tomlkit: 주석/순서 보존 가능한 TOML read/write 라이브러리. nixpkgs 제공.
-  pythonWithTomlkit = pkgs.python3.withPackages (ps: [ ps.tomlkit ]);
+  # tomlkit 포함 python3. 정의는 `libraries/python-runtimes.nix` 단일 소스 (flake.nix의
+  # `packages.${system}.pythonWithTomlkit` output도 같은 파일을 import하여 store path를 공유).
+  pythonWithTomlkit =
+    (import ../../../../libraries/python-runtimes.nix { inherit pkgs; }).pythonWithTomlkit;
   # Claude 파일 경로 (공유 소스)
   claudeFilesPath = "${nixosConfigPath}/modules/shared/programs/claude/files";
 
@@ -85,12 +89,16 @@ in
   // codexSkillEntries;
 
   # ─── ~/.codex/config.toml 동기화 (activation) ───
-  # repo-managed 키(model, approval_policy, sandbox_mode, plugins 등)는 매 activation에서
-  # template으로 재적용한다. 사용자 소유 섹션은 보존한다:
-  #   - [projects.*]                              (runtime trust — codex CLI가 append)
-  #   - [mcp_servers.<template에 없는 이름>]      (codex mcp add 등)
+  # Ownership policy: template이 선언한 leaf만 overwrite (재귀, leaf 단위).
+  # template이 선언하지 않은 나머지는 preserve:
+  #   - [projects.*]                    (runtime trust — codex CLI가 append; template에서 선언 금지)
+  #   - template 밖의 top-level 키       (사용자/새 Codex CLI 테이블)
+  #   - template 선언 테이블 안의 sibling leaf (예: [features].my_extra_flag)
+  #   - [mcp_servers.<template에 없는 이름>]  (codex mcp add 등)
   # 결과는 regular file (mode 0600). symlink 기반 관리와 달리 codex CLI의 config write가
   # repo 원본에 write-through되지 않아 git working tree가 오염되지 않는다.
+  # 동일 ownership policy는 `sync-codex-config.py check` 모드가 drift 검증에 재사용한다
+  # (writer와 checker가 _walk_template_leaves를 공유하여 정책 drift를 차단).
   home.activation.syncCodexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     config_dir="$HOME/.codex"
     $DRY_RUN_CMD mkdir -p "$config_dir"

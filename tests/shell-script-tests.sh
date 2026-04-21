@@ -248,6 +248,158 @@ run_test() {
   "$@"
 }
 
+# ─── codex-config fixture helpers ───
+# sync-codex-config.py의 sync/check 계약을 fixture 기반으로 고정.
+# tomlkit 의존이 필요하므로 lefthook 밖 직접 실행 시에는 tomlkit import 가능 여부에 따라
+# 조건부로 돌린다. lefthook pre-push는 repo-pinned `nix shell .#pythonWithTomlkit --command`로
+# wrap 되어 항상 가용.
+CODEX_CONFIG_SCRIPT="$REPO_ROOT/modules/shared/programs/codex/files/sync-codex-config.py"
+CODEX_CONFIG_FIXTURE_DIR="$FIXTURE_DIR/codex-config"
+
+codex_config_tomlkit_available() {
+  command -v python3 >/dev/null 2>&1 && python3 -c 'import tomlkit' >/dev/null 2>&1
+}
+
+toml_semantic_equal() {
+  # $1, $2 모두 path. parse 후 동등성 비교.
+  python3 - "$1" "$2" <<'PY'
+import sys, tomllib
+try:
+    with open(sys.argv[1], 'rb') as fa, open(sys.argv[2], 'rb') as fb:
+        a = tomllib.load(fa)
+        b = tomllib.load(fb)
+except Exception as e:
+    print(f"parse error: {e}", file=sys.stderr)
+    sys.exit(2)
+sys.exit(0 if a == b else 1)
+PY
+}
+
+json_semantic_equal() {
+  # $1 = actual JSON string, $2 = expected JSON path.
+  # expected는 {"target_state":..,"drift":[...]} 부분 집합만 검증 (template/target 경로는 runtime 값이라 비교 제외).
+  python3 - "$1" "$2" <<'PY'
+import sys, json
+try:
+    actual = json.loads(sys.argv[1])
+except Exception as e:
+    print(f"actual JSON parse error: {e}", file=sys.stderr)
+    sys.exit(2)
+try:
+    with open(sys.argv[2]) as f:
+        expected = json.load(f)
+except Exception as e:
+    print(f"expected JSON read error: {e}", file=sys.stderr)
+    sys.exit(2)
+for key in expected:
+    if actual.get(key) != expected[key]:
+        print(f"mismatch on '{key}': expected={expected[key]!r} actual={actual.get(key)!r}", file=sys.stderr)
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
+test_codex_config_sync_fixtures() {
+  local scenario sandbox template existing expected actual rc
+  for scenario in sync_basic_merge sync_malformed_root sync_malformed_toml_quarantine sync_quoted_dotted_key; do
+    local dir="$CODEX_CONFIG_FIXTURE_DIR/$scenario"
+    [[ -d "$dir" ]] || fail "sync fixture missing: $dir"
+    sandbox=$(new_sandbox)
+    template="$dir/template.toml"
+    existing="$dir/existing.toml"
+    expected="$dir/expected.toml"
+    actual="$sandbox/target.toml"
+
+    [[ -f "$existing" ]] && cp "$existing" "$actual"
+
+    # sync subcommand 호출
+    if ! python3 "$CODEX_CONFIG_SCRIPT" sync "$template" "$actual" 2>/dev/null; then
+      fail "sync($scenario) exited non-zero"
+    fi
+    [[ -f "$actual" ]] || fail "sync($scenario) did not produce target"
+    if ! toml_semantic_equal "$actual" "$expected"; then
+      echo "--- actual ($scenario) ---" >&2
+      cat "$actual" >&2
+      echo "--- expected ($scenario) ---" >&2
+      cat "$expected" >&2
+      fail "sync($scenario) result ≠ expected"
+    fi
+  done
+}
+
+test_codex_config_bare_sync_compat() {
+  # bare 2-arg 호출 결과가 explicit sync subcommand 호출과 동일해야 한다.
+  local dir="$CODEX_CONFIG_FIXTURE_DIR/bare_sync_compat"
+  local sandbox sub_result bare_result
+  sandbox=$(new_sandbox)
+  sub_result="$sandbox/via_sub.toml"
+  bare_result="$sandbox/via_bare.toml"
+
+  cp "$dir/existing.toml" "$sub_result"
+  cp "$dir/existing.toml" "$bare_result"
+
+  python3 "$CODEX_CONFIG_SCRIPT" sync "$dir/template.toml" "$sub_result" 2>/dev/null \
+    || fail "bare_sync_compat: sync subcommand exited non-zero"
+  python3 "$CODEX_CONFIG_SCRIPT" "$dir/template.toml" "$bare_result" 2>/dev/null \
+    || fail "bare_sync_compat: bare 2-arg exited non-zero"
+
+  toml_semantic_equal "$sub_result" "$bare_result" \
+    || fail "bare_sync_compat: bare 2-arg result ≠ sync subcommand result"
+  toml_semantic_equal "$sub_result" "$dir/expected.toml" \
+    || fail "bare_sync_compat: sync result ≠ expected"
+}
+
+test_codex_config_check_fixtures() {
+  local scenario dir sandbox template target_path actual_stdout actual_stderr rc expected_exit
+  for scenario in check_match check_value_mismatch check_missing_leaf check_type_mismatch \
+                  check_target_missing check_template_missing check_template_parse_error \
+                  check_quoted_dotted_key_match check_quoted_dotted_key_value_mismatch \
+                  check_empty_template; do
+    dir="$CODEX_CONFIG_FIXTURE_DIR/$scenario"
+    [[ -d "$dir" ]] || fail "check fixture missing: $dir"
+    sandbox=$(new_sandbox)
+    actual_stdout="$sandbox/stdout"
+    actual_stderr="$sandbox/stderr"
+
+    if [[ -f "$dir/template.toml" ]]; then
+      template="$dir/template.toml"
+    else
+      template="$sandbox/nonexistent-template.toml"
+    fi
+    if [[ -f "$dir/target.toml" ]]; then
+      target_path="$sandbox/target.toml"
+      cp "$dir/target.toml" "$target_path"
+    else
+      target_path="$sandbox/nonexistent-target.toml"
+    fi
+
+    rc=0
+    python3 "$CODEX_CONFIG_SCRIPT" check "$template" "$target_path" \
+      >"$actual_stdout" 2>"$actual_stderr" || rc=$?
+
+    expected_exit="$(cat "$dir/expected_exit" | tr -d '[:space:]')"
+    [[ "$rc" == "$expected_exit" ]] \
+      || fail "check($scenario): expected exit $expected_exit, got $rc. stderr: $(cat "$actual_stderr")"
+
+    if [[ -f "$dir/expected_drift.json" ]]; then
+      # stdout의 JSON을 기대치와 semantic 비교
+      local stdout_content
+      stdout_content="$(cat "$actual_stdout")"
+      [[ -n "$stdout_content" ]] || fail "check($scenario): stdout empty (expected JSON)"
+      json_semantic_equal "$stdout_content" "$dir/expected_drift.json" \
+        || fail "check($scenario): JSON mismatch"
+    fi
+
+    if [[ -f "$dir/expected_stderr_substring" ]]; then
+      local needle
+      needle="$(cat "$dir/expected_stderr_substring" | tr -d '\n')"
+      assert_contains "$(cat "$actual_stderr")" "$needle"
+      [[ ! -s "$actual_stdout" ]] || fail "check($scenario): expected empty stdout on EXIT_ERROR, got: $(cat "$actual_stdout")"
+    fi
+  done
+}
+
+
 test_wt_help_from_deployed_layout() {
   local sandbox output
   sandbox=$(new_sandbox)
@@ -1103,3 +1255,14 @@ run_test "fixture git setup ignores host global hooks" test_fixture_git_is_herme
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
+
+# codex-config fixture는 tomlkit이 필요하다. lefthook pre-push는 `nix shell` wrap으로
+# 항상 tomlkit을 제공하지만, 사용자가 직접 실행할 때는 미가용일 수 있다. 미가용이면
+# codex-config 섹션만 skip + 안내 (기본 shell suite 진입은 유지).
+if codex_config_tomlkit_available; then
+  run_test "codex-config sync fixtures" test_codex_config_sync_fixtures
+  run_test "codex-config bare 2-arg compat" test_codex_config_bare_sync_compat
+  run_test "codex-config check fixtures" test_codex_config_check_fixtures
+else
+  echo "==> codex-config fixtures: SKIPPED (tomlkit 미가용; 'nix shell .#pythonWithTomlkit --command bash tests/run-shell-script-tests.sh'로 전건 실행 권장; pre-push hook은 자동 wrap됨)" >&2
+fi

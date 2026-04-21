@@ -1,0 +1,7 @@
+model = "old-model"
+
+[projects."/home/user/project"]
+trust = "trusted"
+
+[mcp_servers.custom]
+command = "user-mcp"

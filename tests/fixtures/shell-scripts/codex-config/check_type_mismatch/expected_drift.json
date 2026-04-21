@@ -1,0 +1,1 @@
+{"target_state": "present", "drift": [{"path": "model", "reason": "type_mismatch", "expected": "gpt-5.4", "actual": 5.4}]}

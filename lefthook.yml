@@ -17,6 +17,12 @@ pre-commit:
 pre-push:
   commands:
     shell-script-tests:
-      run: bash ./tests/run-shell-script-tests.sh
+      # nix shell wrap: codex-config fixture가 tomlkit을 필요로 하므로, repo-pinned
+      # packages.${system}.pythonWithTomlkit(flake.nix)를 PATH에 얹어 실행. devShell은
+      # 건드리지 않아 direnv/bare python3 해석 영향이 없고, nixpkgs# 임시 registry
+      # fetch 대신 flake input에 고정된 store path를 재사용해 오버헤드도 최소화.
+      # `_TOMLKIT_BOOTSTRAP_READY=1` env를 명시적으로 넘겨, `tests/run-shell-script-tests.sh`
+      # 내부의 tomlkit-bootstrap.sh가 중첩 `nix shell ...`을 다시 exec하지 않도록 한다.
+      run: nix shell .#pythonWithTomlkit --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
     flake-check:
       run: nix flake check --no-build --all-systems

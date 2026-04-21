@@ -1,0 +1,10 @@
+model = "gpt-5.4"
+
+[projects."/home/user/project"]
+trust = "trusted"
+
+[mcp_servers.custom]
+command = "user-mcp"
+
+[features]
+multi_agent = true

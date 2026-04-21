@@ -1,0 +1,5 @@
+model = "gpt-5.4"
+approval_policy = "never"
+
+[features]
+multi_agent = true
