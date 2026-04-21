@@ -14,32 +14,97 @@ pass() { echo "  [OK] $1"; }
 fail() { echo "  [FAIL] $1" >&2; errors=$((errors + 1)); }
 warn() { echo "  [WARN] $1" >&2; warnings=$((warnings + 1)); }
 
+# ─── Python 사전 체크 ───
+# 이 스크립트는 python3 >= 3.11 (tomllib 내장)을 가정한다. 사전에 명확히 실패해서
+# "tomllib 미존재" → "TOML parse 실패" 같은 오검진을 방지한다.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "  [FAIL] python3 not found in PATH" >&2
+  exit 1
+fi
+if ! python3 - <<'PY' 2>/dev/null
+import sys, tomllib  # tomllib requires 3.11+
+if sys.version_info < (3, 11):
+    raise SystemExit(1)
+PY
+then
+  echo "  [FAIL] python3 >= 3.11 with tomllib is required" >&2
+  exit 1
+fi
+
+# ─── TOML helper ───
+# 여러 곳에서 쓰이는 python3 inline 블록을 단일 헬퍼로 통일.
+# 사용법:
+#   _toml_parse        <file>                : valid TOML이면 0, 아니면 1
+#   _toml_get_scalar   <file> <dotted.path>  : 경로의 scalar(str/int/float/bool)을
+#                                              stdout으로. 없거나 table이면 empty.
+#                                              TOML parse 실패 시에도 empty + 0으로
+#                                              끝나므로 `set -euo pipefail` 환경에서
+#                                              command substitution으로 안전하게 호출 가능.
+#   _toml_has_table    <file> <dotted.path>  : table로 존재하면 0, 아니면 1
+#   _file_mode         <file>                : 8진수 mode 문자열 (예: "600"), 실패 시 "?"
+_toml_parse() {
+  python3 - "$1" <<'PY' >/dev/null 2>&1
+import sys, tomllib
+with open(sys.argv[1], 'rb') as f:
+    tomllib.load(f)
+PY
+}
+
+_toml_get_scalar() {
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import sys, tomllib
+try:
+    with open(sys.argv[1], 'rb') as f:
+        data = tomllib.load(f)
+except Exception:
+    sys.exit(0)
+cur = data
+for part in sys.argv[2].split('.'):
+    if not isinstance(cur, dict) or part not in cur:
+        sys.exit(0)
+    cur = cur[part]
+if isinstance(cur, (str, int, float, bool)):
+    print(cur)
+PY
+}
+
+_toml_has_table() {
+  python3 - "$1" "$2" <<'PY'
+import sys, tomllib
+try:
+    with open(sys.argv[1], 'rb') as f:
+        data = tomllib.load(f)
+except Exception:
+    sys.exit(1)
+cur = data
+for part in sys.argv[2].split('.'):
+    if not isinstance(cur, dict) or part not in cur:
+        sys.exit(1)
+    cur = cur[part]
+sys.exit(0 if isinstance(cur, dict) else 1)
+PY
+}
+
+_file_mode() {
+  python3 -c 'import os, stat, sys; print(f"{stat.S_IMODE(os.stat(sys.argv[1]).st_mode):o}")' "$1" 2>/dev/null || echo "?"
+}
+
 echo "=== Codex 실행 정책 확인 ==="
 
 CODEX_CONFIG="$HOME/.codex/config.toml"
 if [ -f "$CODEX_CONFIG" ]; then
-  if python3 - "$CODEX_CONFIG" <<'PY'
-import sys, tomllib
-with open(sys.argv[1], 'rb') as f:
-    data = tomllib.load(f)
-assert data.get('approval_policy') == 'never'
-PY
-  then
+  _ap="$(_toml_get_scalar "$CODEX_CONFIG" approval_policy)"
+  if [ "$_ap" = "never" ]; then
     pass "approval_policy = \"never\""
   else
-    fail "approval_policy = \"never\" 미설정"
+    fail "approval_policy = \"never\" 미설정 (actual: \"$_ap\")"
   fi
 
-  if python3 - "$CODEX_CONFIG" <<'PY'
-import sys, tomllib
-with open(sys.argv[1], 'rb') as f:
-    data = tomllib.load(f)
-assert data.get('sandbox_mode') == 'danger-full-access'
-PY
-  then
+  _sm="$(_toml_get_scalar "$CODEX_CONFIG" sandbox_mode)"
+  if [ "$_sm" = "danger-full-access" ]; then
     pass "sandbox_mode = \"danger-full-access\""
   else
-    fail "sandbox_mode = \"danger-full-access\" 미설정"
+    fail "sandbox_mode = \"danger-full-access\" 미설정 (actual: \"$_sm\")"
   fi
 
   if grep -q 'nixos-config' "$CODEX_CONFIG"; then
@@ -151,14 +216,27 @@ fi
 echo ""
 echo "=== 글로벌 설정 확인 ==="
 
-# ~/.codex/config.toml 심링크
-if [ -L "$HOME/.codex/config.toml" ]; then
-  pass "$HOME/.codex/config.toml 심링크"
+# ~/.codex/config.toml 관리 상태
+# activation의 syncCodexConfig가 repo-managed 키와 사용자 소유 섹션을 merge한 regular file로
+# 유지한다. PASS 기준: (a) regular file, (b) mode 0600, (c) TOML 파싱 성공,
+#                     (d) template-managed key 존재 (model/approval_policy/sandbox_mode).
+# mode 불일치는 fail로 승격, legacy symlink 감지 시 nrs --force 안내.
+_codex_cfg="$HOME/.codex/config.toml"
+if [ ! -e "$_codex_cfg" ]; then
+  fail "$_codex_cfg 없음"
+elif [ -L "$_codex_cfg" ]; then
+  fail "$_codex_cfg 심링크 — syncCodexConfig 미적용 (NO_CHANGES 경로 회피 위해 \`nrs --force\` 실행 필요)"
+elif [ ! -f "$_codex_cfg" ]; then
+  fail "$_codex_cfg regular file 아님"
 else
-  if [ -f "$HOME/.codex/config.toml" ]; then
-    warn "$HOME/.codex/config.toml 일반 파일 (심링크 아님)"
+  _mode="$(_file_mode "$_codex_cfg")"
+  if [ "$_mode" = "600" ]; then
+    pass "$_codex_cfg regular file, mode=0600"
   else
-    fail "$HOME/.codex/config.toml 없음"
+    fail "$_codex_cfg mode=$_mode (기대: 0600) — 권한 제한 실패"
+  fi
+  if ! _toml_parse "$_codex_cfg"; then
+    fail "$_codex_cfg TOML 파싱 실패"
   fi
 fi
 
@@ -169,6 +247,41 @@ elif [ -f "$HOME/.codex/AGENTS.md" ]; then
   warn "$HOME/.codex/AGENTS.md 일반 파일 (심링크 아님)"
 else
   warn "$HOME/.codex/AGENTS.md 없음"
+fi
+
+# ─── template-managed 계약 검증 ───
+# syncCodexConfig merge 정책은 "repo-managed 키는 template wins"를 보장한다.
+# 이 계약을 verify 수준에서 검증할 수 있도록, template이 반드시 가져야 하는 구조를 확인한다.
+echo ""
+echo "=== template-managed 계약 확인 ==="
+
+if [ -f "$CODEX_CONFIG" ] && _toml_parse "$CODEX_CONFIG"; then
+  # top-level 필수 키
+  for _k in model approval_policy sandbox_mode service_tier personality; do
+    if [ -n "$(_toml_get_scalar "$CODEX_CONFIG" "$_k")" ]; then
+      pass "top-level 키 존재: $_k"
+    else
+      fail "top-level 키 누락: $_k (template-managed 계약 위반)"
+    fi
+  done
+  # template table 존재
+  if _toml_has_table "$CODEX_CONFIG" features; then
+    pass "[features] table 존재"
+  else
+    fail "[features] table 누락"
+  fi
+  # Darwin template은 [mcp_servers.chrome-devtools]를 가지며 누락 시 fail.
+  # Non-Darwin template에는 해당 섹션이 없으므로 존재하지 않는 것이 정상(pass).
+  if _toml_has_table "$CODEX_CONFIG" "mcp_servers.chrome-devtools"; then
+    pass "[mcp_servers.chrome-devtools] 존재 (Darwin template)"
+  else
+    case "$(uname -s)" in
+      Darwin) fail "[mcp_servers.chrome-devtools] 누락 (Darwin template-managed 계약 위반)" ;;
+      *)      pass "[mcp_servers.chrome-devtools] 없음 (non-Darwin platform)" ;;
+    esac
+  fi
+else
+  warn "template 계약 체크 스킵 (config 파일 없음 또는 파싱 실패)"
 fi
 
 echo ""

@@ -170,12 +170,14 @@ npx --version
 ## 11. Worktree/심볼릭 링크 주의
 
 Home Manager 링크 타깃이 메인 레포를 가리키는 환경에서는, worktree 전용 파일이 링크 경로와 불일치할 수 있다.
-merge 전에는 실제 런타임 파일 링크를 반드시 확인한다.
+`~/.claude/mcp.json`은 여전히 out-of-store symlink로 관리되므로 `readlink`로 대상 확인이 유효하다.
+`~/.codex/config.toml`은 activation(`syncCodexConfig`)이 관리하는 regular file이며, 이 파일의 "관리 상태" 검증은
+`bash scripts/ai/verify-ai-compat.sh`로 수행한다 (regular file + 0600 + TOML 파싱 확인).
 
 ```bash
 ls -l ~/.claude/mcp.json ~/.codex/config.toml
-readlink ~/.claude/mcp.json
-readlink ~/.codex/config.toml
+readlink ~/.claude/mcp.json   # symlink 대상 확인
+bash scripts/ai/verify-ai-compat.sh   # ~/.codex/config.toml 관리 상태 검증
 ```
 
 ## 12. 실패 시 대안 전략
