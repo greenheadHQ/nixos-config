@@ -69,8 +69,9 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 | Review Intensity 판단 규칙 | [references/intensity-rules.md](references/intensity-rules.md) |
 | DA reviewer bundle 상세 + 프롬프트 템플릿 | [references/da-domains.md](references/da-domains.md) |
 | 피드백 프로토콜 + 합리화 방지 상세 | [references/protocol.md](references/protocol.md) |
-| Arbiter 프롬프트 + 판정 기준 | [references/arbiter-prompt.md](references/arbiter-prompt.md) |
+| Arbiter 프롬프트 + 5가지 판정 기준 | [references/arbiter-prompt.md](references/arbiter-prompt.md) |
 | Arbiter/Intensity 스케일링 + 실행 계약 | [references/arbiter-scaling.md](references/arbiter-scaling.md) |
+| Selective consistency 정책 (vote-shape + offline kappa) | [references/stability-measurement.md](references/stability-measurement.md) |
 | Validation-path catalog (공용) | [../prd/references/validation-paths.md](../prd/references/validation-paths.md) |
 
 ## 런타임 경로
@@ -259,7 +260,10 @@ Round N 요약 (LITE: 선택 M개/전체 4개 reviewer bundles): DA 발견 X건
 → Arbiter: CONFIRMED Y건, NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
 bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 미실행: Design(NOT_RUN), ...
+selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_failure T건  ← selective consistency 발동 라운드에만 추가
 ```
+
+selective consistency가 발동하지 않은 라운드는 마지막 줄을 생략한다. stability_status 집계 규칙은 [references/protocol.md](references/protocol.md)의 "라운드 요약 기록" 참조.
 
 ## 절차
 
@@ -293,16 +297,22 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
    - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
-   - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md)의 **for_plan 조립 규칙** 참조).
+   - 5a. **first-pass Arbiter**: Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md)의 **for_plan 조립 규칙** 참조).
      for_plan에서는 반드시 계획 원문을 포함해야 하며,
      상세 조립 형식은 arbiter-prompt.md의 "프롬프트 조립 > for_plan 모드" 참조.
-   - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
-   - codex exec 경로: **foreground** Bash tool 호출로 `codex exec`를 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조). 단일 exec이므로 `run_in_background` 사용 안 함.
-   - 결과를 수집하여 사용자에게 전건 보고한다:
-     - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
-     - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 계획에 반영한다.
-     - NOT_AN_ISSUE: 보고만 (반영 불필요).
-     - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
+     - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
+     - codex exec 경로: **foreground** Bash tool 호출로 `codex exec`를 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조). 단일 exec이므로 `run_in_background` 사용 안 함.
+   - 5b. **Selective consistency trigger 검사**: first-pass 결과의 VERDICT_JSON 블록을 읽어 [stability-measurement.md](references/stability-measurement.md)의 trigger 조건에 매치되는 finding을 식별한다 (조건 정의는 해당 문서가 SSOT).
+   - 5c. **N=3 재판정** (trigger 매치 finding에 한해): 동일 Arbiter 프롬프트로 독립 N=3을 실행한다. 실행 계약과 환경 격리는 [arbiter-scaling.md](references/arbiter-scaling.md)의 "N=3 실행 계약" 섹션 참조. selective consistency 서브런은 outer round 카운트에 포함되지 않는다.
+   - 5d. **vote-shape 집계**: 세션 scope에 맞는 harness(`~/.claude/scripts/fleiss-kappa.py` 또는 `~/.codex/scripts/fleiss-kappa.py` — 양쪽에 동일 소스가 프로비저닝된다)로 3개 결과 markdown의 VERDICT_JSON 블록을 파싱하여 finding별 `stability_status`(stable/split/fragmented) 및 `low_confidence_warning`을 `per_finding[]`에서, top-level `partial_failure`(및 `missing`/`file_level_failures`/`per_file_malformed` 세부)를 얻는다. `partial_failure=true`이면 해당 finding은 `per_finding`에 포함되지 않으므로 caller는 finding별 BLOCKED로 매핑한다 (상세는 [references/protocol.md](references/protocol.md) 참조).
+   - 5e. **상태 전이 적용** — 상세 전이표는 [protocol.md](references/protocol.md)의 "Selective consistency 상태 전이" 참조. trigger되지 않은 finding은 `stability_status=N/A`로 first-pass 결과 그대로 사용.
+   - 결과를 수집하여 사용자에게 전건 보고한다 (vote-shape/low_confidence_warning이 있으면 함께 보고):
+     - CONFIRMED_ISSUE + CRITICAL + (N/A 또는 stable) + `low_confidence_warning=false`: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
+     - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW + (N/A 또는 stable) + `low_confidence_warning=false`: 자동으로 계획에 반영한다.
+     - NOT_AN_ISSUE + (N/A 또는 stable) + `low_confidence_warning=false`: 보고만 (반영 불필요).
+     - NEEDS_MORE_INFO 또는 `stability_status=split`: AskUserQuestion으로 사용자 판단을 요청한다 (vote-shape와 minority verdict도 함께 보고).
+     - 임의 verdict + (N/A 또는 stable) + `low_confidence_warning=true`: **fail-closed 승격** — AskUserQuestion으로 사용자 판단 요청 (unanimous/단일 Arbiter라도 LOW confidence 이력이 있으면 기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약을 유지).
+     - `stability_status=fragmented` 또는 `partial_failure=true`: **BLOCKED** — AskUser 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).
 6. 반영 후 동일 선택 review unit을 **새 reviewer 실행 단위**로 재실행한다.
    - Codex 세션 경로: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
    - codex exec 경로: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
@@ -340,14 +350,20 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
    - codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 4. findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR, 종료.
 5. findings 1건 이상 → Arbiter 실행:
-   - Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md) 참조).
-   - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
-   - codex exec 경로: **foreground** Bash tool 호출로 `codex exec`를 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조). 단일 exec이므로 `run_in_background` 사용 안 함.
-   - 결과를 수집하여 사용자에게 전건 보고한다:
-     - CONFIRMED_ISSUE + CRITICAL: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
-     - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW: 자동으로 코드에 반영하고 커밋한다.
-     - NOT_AN_ISSUE: 보고만 (반영 불필요).
-     - NEEDS_MORE_INFO: AskUserQuestion으로 사용자 판단을 요청한다.
+   - 5a. **first-pass Arbiter**: Arbiter 프롬프트를 조립한다 ([arbiter-prompt.md](references/arbiter-prompt.md) 참조).
+     - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
+     - codex exec 경로: **foreground** Bash tool 호출로 `codex exec`를 실행한다 ([arbiter-scaling.md](references/arbiter-scaling.md) 실행 계약 참조). 단일 exec이므로 `run_in_background` 사용 안 함.
+   - 5b. **Selective consistency trigger 검사**: first-pass 결과의 VERDICT_JSON 블록을 읽어 [stability-measurement.md](references/stability-measurement.md)의 trigger 조건에 매치되는 finding을 식별한다 (조건 정의는 해당 문서가 SSOT).
+   - 5c. **N=3 재판정** (trigger 매치 finding에 한해): 동일 Arbiter 프롬프트로 독립 N=3을 실행한다. 실행 계약과 환경 격리는 [arbiter-scaling.md](references/arbiter-scaling.md)의 "N=3 실행 계약" 섹션 참조. selective consistency 서브런은 outer round 카운트에 포함되지 않는다.
+   - 5d. **vote-shape 집계**: 세션 scope에 맞는 harness(`~/.claude/scripts/fleiss-kappa.py` 또는 `~/.codex/scripts/fleiss-kappa.py` — 양쪽에 동일 소스가 프로비저닝된다)로 3개 결과 markdown의 VERDICT_JSON 블록을 파싱하여 finding별 `stability_status`(stable/split/fragmented) 및 `low_confidence_warning`을 `per_finding[]`에서, top-level `partial_failure`(및 `missing`/`file_level_failures`/`per_file_malformed` 세부)를 얻는다. `partial_failure=true`이면 해당 finding은 `per_finding`에 포함되지 않으므로 caller는 finding별 BLOCKED로 매핑한다 (상세는 [references/protocol.md](references/protocol.md) 참조).
+   - 5e. **상태 전이 적용** — 상세 전이표는 [protocol.md](references/protocol.md)의 "Selective consistency 상태 전이" 참조. trigger되지 않은 finding은 `stability_status=N/A`로 first-pass 결과 그대로 사용.
+   - 결과를 수집하여 사용자에게 전건 보고한다 (vote-shape/low_confidence_warning이 있으면 함께 보고):
+     - CONFIRMED_ISSUE + CRITICAL + (N/A 또는 stable) + `low_confidence_warning=false`: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
+     - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW + (N/A 또는 stable) + `low_confidence_warning=false`: 자동으로 코드에 반영하고 커밋한다.
+     - NOT_AN_ISSUE + (N/A 또는 stable) + `low_confidence_warning=false`: 보고만 (반영 불필요).
+     - NEEDS_MORE_INFO 또는 `stability_status=split`: AskUserQuestion으로 사용자 판단을 요청한다 (vote-shape와 minority verdict도 함께 보고).
+     - 임의 verdict + (N/A 또는 stable) + `low_confidence_warning=true`: **fail-closed 승격** — AskUserQuestion으로 사용자 판단 요청 (unanimous/단일 Arbiter라도 LOW confidence 이력이 있으면 기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약을 유지).
+     - `stability_status=fragmented` 또는 `partial_failure=true`: **BLOCKED** — AskUser 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).
 6. 반영 후 동일 선택 review unit을 **새 reviewer 실행 단위**로 재실행한다.
    - Codex 세션 경로: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
    - codex exec 경로: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
@@ -397,6 +413,10 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
   high-severity findings, user decision required findings만 전달한다.
   raw transcript 전체, CLEAR 결과, 중복 low-signal finding의 all-to-all broadcast는 금지한다.
   `full` modifier는 propagation이 아니라 fan-out만 확장한다.
+- **Selective consistency on ambiguous findings**: first-pass Arbiter 결과가 애매한 경우에만
+  N=3 재판정을 실행한다. 명확한 finding은 first-pass single Arbiter로 종료한다. 정책(trigger/vote-shape/threshold)은
+  [references/stability-measurement.md](references/stability-measurement.md)가 SSOT,
+  상태 전이는 [references/protocol.md](references/protocol.md), 실행 계약은 [references/arbiter-scaling.md](references/arbiter-scaling.md) 참조.
 - **프롬프트 조향 금지**: 후속 라운드 DA/Arbiter 프롬프트에 이전 라운드의 판정 결과를 포함하지 않는다.
   이전 라운드 결과를 "이미 해결된 사안"으로 프레이밍하는 것도 금지한다.
 - **무한 루프 방지**: 3회 연속 동일 지적(세부 관점 + 위치 기준)이 반복되면 사용자 결정에 위임한다.
@@ -433,7 +453,7 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 - "~할 수도 있다", "~이 우려된다" 등 증거 없는 추상적 우려는 즉시 기각한다.
 
 ### Arbiter 검증 의무
-- Arbiter는 각 finding에 대해 4가지 판정 기준(사실 정확성, 변경 연관성, 심각도 타당성, 실행 가능성)으로 독립 검증한다.
+- Arbiter는 각 finding에 대해 5가지 판정 기준(사실 정확성, 변경 연관성, 심각도 타당성, 실행 가능성, Portability / Cross-Environment Drift)으로 독립 검증한다. Portability는 verdict 결정권 없는 guardrail 축이다.
 - NOT_AN_ISSUE 판정에는 직접 확인 + 반증 근거가 필수다 (모드별 증거 요건: [arbiter-prompt.md](references/arbiter-prompt.md) 참조).
 - NEEDS_MORE_INFO는 추가 정보가 필요한 경우에만 사용한다.
 - 상세 판정 기준은 [references/arbiter-prompt.md](references/arbiter-prompt.md) 참조.
@@ -457,6 +477,6 @@ bundle별: Correctness CLEAR, Regression 2건(CONFIRMED 1, NOT_AN_ISSUE 1), ...
 - **[references/intensity-rules.md](references/intensity-rules.md)** -- Review Intensity 판단 알고리즘 규칙 (단일 소스)
 - **[references/da-domains.md](references/da-domains.md)** -- DA reviewer bundle/세부 도메인 정의, 프롬프트 템플릿, 출력 형식
 - **[references/protocol.md](references/protocol.md)** -- 상태 흐름 매핑, Arbiter 판정 프로토콜, PoC 의무화 규칙, 무한 루프 방지, 합리화 방지, PR 코멘트 형식
-- **[references/arbiter-prompt.md](references/arbiter-prompt.md)** -- Arbiter 프롬프트 템플릿, 4가지 판정 기준, few-shot 교정 예시, blind review 범위, 편향 방지
+- **[references/arbiter-prompt.md](references/arbiter-prompt.md)** -- Arbiter 프롬프트 템플릿, 5가지 판정 기준(4 core + Portability guardrail), few-shot 교정 예시, blind review 범위, 편향 방지, VERDICT_JSON 블록 스키마
 - **[references/arbiter-scaling.md](references/arbiter-scaling.md)** -- 동적 스케일링, 3-way 런타임 분기, 실패 처리
 - **[/using-codex-exec 스킬](../using-codex-exec/SKILL.md)** -- codex exec 실행 패턴 (Claude Code 세션 기본 경로, headless 세션). 플래그/제한사항 확인용.

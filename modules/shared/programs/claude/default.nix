@@ -251,6 +251,11 @@ in
     ".claude/scripts/generate-report.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/generate-report.py";
 
+    # run-da Arbiter selective consistency harness. stability-measurement.md 정책을 따라
+    # N개 Arbiter VERDICT_JSON 블록으로부터 vote-shape와 (옵션) offline Fleiss kappa를 계산.
+    ".claude/scripts/fleiss-kappa.py".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
+
     # write-handoff repo slug 확보 helper. LLM이 SKILL.md Step 1-B 절차에 따라 직접 호출한다 (#486).
     # Codex 세션은 ~/.codex/scripts/ 경로에서 동일 source를 공유한다 (codex/default.nix).
     ".claude/scripts/write-handoff-repo-slug.sh".source =
