@@ -1,5 +1,5 @@
 personality = "pragmatic"
-model = "gpt-5.4"
+model = "gpt-5.5"
 model_auto_compact_token_limit = 900000
 model_context_window = 1000000
 model_reasoning_effort = "xhigh"

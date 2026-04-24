@@ -29,8 +29,8 @@ description: |
 | 경로 | 조건 | 기본 실행 |
 |------|------|----------|
 | **Codex 세션** | Codex CLI가 호스트 — `spawn_agent`/`wait_agent`/`close_agent` API 사용 가능 | native subagent fan-out → `wait_agent` → 결과 집계 → `close_agent` |
-| **Claude Code 세션** | Claude Code가 호스트 — `Agent` tool 사용 가능 | **codex exec subprocess가 기본**. 사전점검(`command -v codex >/dev/null && codex --version >/dev/null 2>&1`) → 존재하면 bundle별 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` → 실패 시 Claude Code `Agent` tool fallback |
-| **headless 세션** | CI, `claude -p`, `codex exec` subprocess | bundle별 `codex exec --full-auto --ephemeral -c model_reasoning_effort="high"` + 임시 prompt/result 파일 |
+| **Claude Code 세션** | Claude Code가 호스트 — `Agent` tool 사용 가능 | **codex exec subprocess가 기본**. 사전점검(`command -v codex >/dev/null && codex --version >/dev/null 2>&1`) → 존재하면 bundle별 `codex exec --full-auto --ephemeral -c model_reasoning_effort="medium"` → 실패 시 Claude Code `Agent` tool fallback |
+| **headless 세션** | CI, `claude -p`, `codex exec` subprocess | bundle별 `codex exec --full-auto --ephemeral -c model_reasoning_effort="medium"` + 임시 prompt/result 파일 |
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다.
 Codex 세션의 상세 wait/write/violation 계약은 [run-da/SKILL.md](../run-da/SKILL.md)의 `Codex 세션 하드닝 계약`을 따른다.
@@ -118,7 +118,7 @@ N개 에이전트를 **한 턴에 동시 병렬 실행**한다.
 ### Step 3b: codex exec 경로 (Claude Code 세션 · headless 세션)
 
 - 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-audit-XXXXXX)`. `DA_DIR` 경로를 `echo`로 출력하여 이후 호출에서 리터럴로 재사용한다.
-- Claude Code 세션 · headless 세션에서는 bundle마다 `cat "$DA_DIR/{unit}.md" | codex exec --full-auto --ephemeral -c model_reasoning_effort="high" -o "$DA_DIR/{unit}-result.md" -` subprocess 1개를 사용한다.
+- Claude Code 세션 · headless 세션에서는 bundle마다 `cat "$DA_DIR/{unit}.md" | codex exec --full-auto --ephemeral -c model_reasoning_effort="medium" -o "$DA_DIR/{unit}-result.md" -` subprocess 1개를 사용한다.
 - 세션 네임스페이스(`$_DA_SID`)와 stdin pipe 패턴은 [run-da/SKILL.md](../run-da/SKILL.md)의 "codex exec 경로 위생 규칙"을 따른다.
 - 임시 prompt/result 파일, stderr/result 검증, `run_in_background`, stdin pipe 경쟁, heredoc hang 제약은 [/using-codex-exec 스킬](../using-codex-exec/SKILL.md)과 [known-issues.md](../using-codex-exec/references/known-issues.md)를 따른다.
 

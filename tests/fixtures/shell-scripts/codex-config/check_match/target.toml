@@ -1,4 +1,4 @@
-model = "gpt-5.4"
+model = "gpt-5.5"
 approval_policy = "never"
 extra_user_field = "preserved"
 
