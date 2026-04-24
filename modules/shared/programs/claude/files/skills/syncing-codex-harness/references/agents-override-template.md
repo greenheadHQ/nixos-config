@@ -38,7 +38,7 @@ The auto-generated section may include:
 ### 3. Codex-specific notes
 - Skill invocation syntax: `$skill-name` (not `/skill-name`)
 - Claude Code-only plugin/MCP UI surfaces do not map 1:1 onto Codex
-- Runtime paths are 3-way: **Codex session** (native subagent) / **Claude Code session** (codex exec primary → Agent tool fallback) / **headless session** (codex exec). See run-da/SKILL.md `런타임 경로` for details
+- Runtime paths are 3-way: **Codex session** (native subagent) / **Claude Code session** (codex exec primary → Agent tool fallback) / **headless session** (codex exec). See run-da/SKILL.md `런타임 도구 매핑` for details
 - Codex sessions should prefer native subagents over nested `codex exec` for review/audit/planning fan-out
 - `CODEX_CI=1` alone does not distinguish session types
 - current session의 open agent thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 말고, completed agent thread는 다음 round/retry 전에 close한다
