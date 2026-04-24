@@ -22,6 +22,17 @@ in
     # 모든 neovim 설정은 files/nvim/에서 lazy.nvim이 관리합니다.
     # HM이 xdg.configFile."nvim/" 파일을 생성하면 디렉토리 심볼릭 링크와 충돌합니다.
 
+    # init.lua 파일 생성 금지 — HM은 provider 설정 등을 init.lua에 주입하는데,
+    # mkOutOfStoreSymlink로 대체된 ~/.config/nvim/ 아래 별도 파일로 설치하면
+    # 새 home-manager(26.05+)의 realpath 체크가 "$HOME 외부"로 판단해 실패한다.
+    # sideload=true면 init.lua 파일 대신 wrapper --cmd 인자로 주입하므로 충돌 없음.
+    sideloadInitLua = true;
+
+    # 새 기본값(false)에 수렴 — provider를 쓰지 않으므로 legacy warning 제거.
+    withRuby = false;
+    withPython3 = false;
+    withNodeJs = false;
+
     extraPackages =
       with pkgs;
       [

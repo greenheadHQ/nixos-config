@@ -84,7 +84,7 @@ in
     pkgs.duti # macOS 파일 연결 CLI 도구
     pkgs.nixd # Nix LSP (Zed nix 확장 의존성)
     pkgs.nixfmt # Nix 포매터 (nixd formatting 의존성)
-    pkgs.nodePackages.prettier # JS/TS/JSON 포매터 (Zed formatter 의존성)
+    pkgs.prettier # JS/TS/JSON 포매터 (Zed formatter 의존성)
   ];
 
   # settings.json / keymap.json — 양방향 수정 가능
