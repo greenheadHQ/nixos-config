@@ -35,7 +35,7 @@
 
   ❌ **BAD**: `cd /Users/alice/projects/myrepo && git fetch origin feat/foo` _(why: 작성자의 로컬 사용자 경로가 공개 이슈 코멘트에 노출 — 다른 세션/머신에서 재사용 불가, NSS 재개 지점 목적 저해)_
 
-  ✅ **GOOD**: `REPO="acme/project"; BRANCH="feat/foo"` — Step 8 Self-verification으로 `<REPO_SLUG>`/`<BRANCH_NAME>` placeholder 치환 완료 검증 후 `guide-template.md`의 NSS 패턴(서브쉘 + `set -e` + clone-or-reuse 분기) 사용.
+  ✅ **GOOD**: `REPO='acme/project'; ISSUE_NUM='123'` — Step 8 Self-verification으로 `<REPO_SLUG>`/`<ISSUE_NUM>` placeholder 치환 완료를 검증한 뒤 `guide-template.md`의 NSS 패턴(서브쉘 + `set -e` + `issue/{N}` non-destructive restore) 사용. 규약 상세는 `write-handoff/SKILL.md`의 "Handoff branch convention" 섹션 참조.
 
 ### E. Anti-hallucination (Evidence-gated)
 

@@ -439,6 +439,7 @@ verify_codex_helper() {
   fi
 }
 
+verify_codex_helper "write-handoff-repo-and-issue.sh"
 verify_codex_helper "write-handoff-repo-slug.sh"
 verify_codex_helper "fleiss-kappa.py"
 
@@ -461,6 +462,8 @@ verify_claude_helper() {
   fi
 }
 
+verify_claude_helper "write-handoff-repo-and-issue.sh"
+verify_claude_helper "write-handoff-repo-slug.sh"
 verify_claude_helper "fleiss-kappa.py"
 
 echo ""

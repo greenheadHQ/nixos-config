@@ -79,8 +79,11 @@ in
     # 글로벌 AGENTS.md - Claude의 CLAUDE.md와 동일 소스 공유
     ".codex/AGENTS.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
 
-    # write-handoff helper: Codex 세션에서도 LLM이 직접 호출 가능하도록 프로비저닝 (#486 F8)
+    # write-handoff repo+issue helper: Codex 세션에서도 LLM이 직접 호출 가능하도록 프로비저닝 (#486 F8)
     # Claude와 동일 source를 공유한다.
+    ".codex/scripts/write-handoff-repo-and-issue.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/write-handoff-repo-and-issue.sh";
+    # Backward-compatible shim: 구 slug-only helper 경로.
     ".codex/scripts/write-handoff-repo-slug.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/write-handoff-repo-slug.sh";
 

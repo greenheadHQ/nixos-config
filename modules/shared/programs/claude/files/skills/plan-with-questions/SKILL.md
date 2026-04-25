@@ -150,9 +150,9 @@ create-issue 호출 시 내부 write-handoff 제안을 생략한다.
 이슈 생성 완료 후, 질문 도구로 사용자에게 묻는다:
 "이슈 등록이 완료되었습니다. 바로 for_action으로 전환하여 작업을 진행하시겠습니까?"
 
-- Yes → 생성된 이슈 레퍼런스로 for_action 모드를 시작한다.
-- No (/write-handoff로 마무리) → 생성된 이슈 레퍼런스를 인자로 /write-handoff 스킬을 실행하여 LLM 이행 가이드를 작성한 뒤 종료한다.
-- No (여기서 종료) → 생성된 이슈 레퍼런스를 반환하고 종료한다.
+- Yes → 생성된 이슈 URL(create-issue Step 5의 `ISSUE_URL`)로 for_action 모드를 시작한다.
+- No (/write-handoff로 마무리) → 생성된 **이슈 URL(ISSUE_URL)** 을 인자로 `/write-handoff` 스킬을 실행하여 LLM 이행 가이드를 작성한 뒤 종료한다 (bare 번호 대신 URL을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피).
+- No (여기서 종료) → 생성된 이슈 URL을 반환하고 종료한다.
 
 ## for_action 모드 (이슈 레퍼런스 있음)
 
