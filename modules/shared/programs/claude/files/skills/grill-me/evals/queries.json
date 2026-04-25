@@ -1,0 +1,20 @@
+[
+  {"query": "그릴해줘", "should_trigger": true, "why": "명시적: 핵심 트리거"},
+  {"query": "이 계획 심층 인터뷰해줘", "should_trigger": true, "why": "명시적: 심층 인터뷰 + 인터뷰 intent"},
+  {"query": "내 결정 트리 검증해줘", "should_trigger": true, "why": "명시적: 결정 트리 검증"},
+  {"query": "분기 해소 인터뷰해줘", "should_trigger": true, "why": "명시적: 분기 해소 인터뷰"},
+  {"query": "스무고개식으로 요구사항 파악", "should_trigger": false, "why": "혼동 쌍: plan-with-questions ('스무고개' 트리거 보유)"},
+  {"query": "내가 놓친 분기 있는지 인터뷰해", "should_trigger": true, "why": "경계선: 놓친 분기 인터뷰"},
+  {"query": "결정 트리 모든 분기 한번씩 질문해", "should_trigger": true, "why": "저항적: 의미적 동치"},
+  {"query": "그릴해서 결정 분기 해소", "should_trigger": true, "why": "저항적: 그릴 + 결정 분기"},
+  {"query": "계획 수립해줘", "should_trigger": false, "why": "혼동 쌍: plan-with-questions (산출물=계획)"},
+  {"query": "스무고개로 계획 만들어줘", "should_trigger": false, "why": "혼동 쌍: plan-with-questions"},
+  {"query": "DA 피드백 돌려줘", "should_trigger": false, "why": "혼동 쌍: run-da"},
+  {"query": "설계 검토해줘", "should_trigger": false, "why": "혼동 쌍: run-da (설계/디자인 검토는 인터뷰가 아니라 코드/계획 리뷰)"},
+  {"query": "이 디자인 검증해줘", "should_trigger": false, "why": "혼동 쌍: run-da (설계/디자인 검토는 인터뷰가 아니라 코드/계획 리뷰)"},
+  {"query": "PR 만들어줘", "should_trigger": false, "why": "혼동 쌍: create-pr"},
+  {"query": "이슈 등록해줘", "should_trigger": false, "why": "혼동 쌍: create-issue"},
+  {"query": "불명확점 질문해줘", "should_trigger": false, "why": "혼동 쌍: plan-with-questions ('불명확점 질문'이 해당 스킬 트리거이며 산출물=계획). grill-me 본질과 의미 겹치지만 산출물 의도가 핵심 분리 기준"},
+  {"query": "내 디자인 한번 까봐", "should_trigger": false, "why": "혼동 쌍: run-da ('까봐'가 인터뷰스럽지만 '디자인'은 코드/계획 검토 intent)"},
+  {"query": "결정 근거 기록해줘", "should_trigger": false, "why": "혼동 쌍: documenting-intent ('결정 근거'는 CIR/ADR 기록이며 인터뷰가 아님. grill-me의 '결정 트리' 트리거와 단어 겹침 주의)"}
+]
