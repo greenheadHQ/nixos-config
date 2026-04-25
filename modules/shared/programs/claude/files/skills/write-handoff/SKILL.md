@@ -32,7 +32,7 @@ Phase 기반 이행 가이드를 작성하고, 이슈 코멘트로 게시한다.
 본문의 "질문 도구"는 위 표의 런타임별 질문 도구를 가리킨다.
 helper 스크립트는 양 런타임에서 동일 source를 공유한다 (Home Manager로 각 경로에 프로비저닝).
 
-**프로비저닝 전제**: 위 helper 경로는 `nrs` (`nixos-rebuild`/`darwin-rebuild` 래퍼)로 Home Manager symlink가 생성된 후에만 유효하다. repo 코드를 `git pull`했지만 `nrs`를 아직 실행하지 않은 환경에서는 새 helper 경로가 존재하지 않을 수 있다. 그 경우 (1) `nrs` 실행 후 재시도하거나, (2) legacy 경로 `~/.{claude,codex}/scripts/write-handoff-repo-slug.sh`(이미 프로비저닝된 shim이 자기완결 fallback 포함)를 임시 호출한다. legacy 경로는 slug 1-line만 반환하므로 ISSUE_NUM은 별도 파싱 필요.
+**프로비저닝 전제**: 위 helper 경로는 `nrs` (`nixos-rebuild`/`darwin-rebuild` 래퍼)로 Home Manager symlink가 생성된 후에만 유효하다. repo 코드를 `git pull`했지만 `nrs`를 아직 실행하지 않은 환경에서는 새 helper 경로가 존재하지 않을 수 있다. 그 경우 (1) `nrs` 실행 후 재시도하거나, (2) legacy 경로 `~/.{claude,codex}/scripts/write-handoff-repo-slug.sh`(이미 프로비저닝된 shim이 자기완결 fallback 포함)를 임시 호출한다. legacy 경로는 slug 1-line만 반환하므로 ISSUE_NUM은 별도 파싱 필요. **단, 이 임시 경로는 ERR_ 진단 코드 출력을 보장하지 않는다 — 새 helper가 프로비저닝된 환경에서 shim이 새 helper로 위임할 때만 stderr ERR_가 통과하며, 새 helper가 부재할 때 동작하는 legacy의 inline fallback은 stderr를 그대로 버린다. 진단성이 필요하면 `nrs` 실행 후 새 helper 경로로 재시도하라.**
 
 ## Handoff branch convention
 
@@ -98,19 +98,24 @@ gh issue view <url> --json title,body,labels,assignees,comments
 LLM이 helper 스크립트를 직접 호출한다. 런타임 도구 매핑 표의 helper 경로를 사용한다. helper는 REPO slug와 ISSUE_NUM을 각각 한 줄씩 개행 구분으로 출력한다 (실제 출력 계약은 script source 상단 주석 참조). 둘 중 하나가 빈 줄일 수 있다.
 
 ```bash
-# Claude Code 세션
-~/.claude/scripts/write-handoff-repo-and-issue.sh "$ARGUMENTS"
-# Codex 세션
-~/.codex/scripts/write-handoff-repo-and-issue.sh "$ARGUMENTS"
+# Claude Code 세션 — stderr 진단 코드를 함께 캡처하려면 다음 패턴을 사용한다
+TMP_ERR=$(mktemp)
+trap 'rm -f "$TMP_ERR"' EXIT
+HELPER_OUT=$(~/.claude/scripts/write-handoff-repo-and-issue.sh "$ARGUMENTS" 2>"$TMP_ERR")
+HELPER_ERR=$(cat "$TMP_ERR")
+REPO_SLUG=$(printf '%s\n' "$HELPER_OUT" | sed -n '1p')
+ISSUE_NUM=$(printf '%s\n' "$HELPER_OUT" | sed -n '2p')
+
+# Codex 세션은 ~/.codex/scripts/write-handoff-repo-and-issue.sh 경로를 사용한다.
 # 출력 예:
-#   greenheadHQ/nixos-config
-#   534
+#   stdout: greenheadHQ/nixos-config\n534
+#   stderr: (정상) 빈 줄 / (실패) ERR_NOT_FOUND 등 한 줄 (Step 1-C 표 참조)
 ```
 
 우선순위 (helper 내부, fail-closed):
 1. **이슈 인자가 있으면**: `gh issue view "$issue_arg" --json url,number`로 URL + number 동시 파싱. 실패 시 **두 값 모두 빈 줄 반환 (cwd fallback 하지 않음)**.
 2. **이슈 인자가 없으면**: cwd repo의 `gh repo view --json nameWithOwner` (REPO만; ISSUE_NUM은 빈 줄).
-3. 결과에서 REPO 또는 ISSUE_NUM이 빈 줄이면 → 아래 **1-D. 값 확보 실패 처리**.
+3. 결과에서 REPO 또는 ISSUE_NUM이 빈 줄이면 → 아래 **1-C. 값 확보 실패 / 유효성 검사 처리**.
 
 두 값은 NSS placeholder 치환(`<REPO_SLUG>`, `<ISSUE_NUM>`)에 그대로 사용된다. Step 1-A의 `$ARGUMENTS` 원형은 이슈 본문 읽기에만 쓰고, NSS 주입에는 helper 출력을 쓴다 (입력 해석 경로 단일화).
 
@@ -124,10 +129,24 @@ bare 번호 + cwd 불일치 조합은 Step 1-C 실패 처리 대상이다.
 
 **1-C. 값 확보 실패 / 유효성 검사 처리**
 
-1-B helper 출력의 REPO 또는 ISSUE_NUM이 빈 문자열, `null` 리터럴 문자열, placeholder 형태(`<...>`)인 경우:
-1. helper를 URL 인자(full `https://github.com/owner/repo/issues/N`)로 재실행하여 두 값 모두 재확보한다.
-2. 여전히 실패하면 런타임 도구 매핑 표의 질문 도구로 사용자에게 **이슈 URL**을 확답받는다 (repo slug 단독은 `gh issue view`의 허용 입력이 아니다).
-3. **NSS 블록에 unresolved placeholder(`<REPO_SLUG>`, `<ISSUE_NUM>`, `<unknown-*>`, 빈 문자열)가 남은 상태로는 Step 9(게시)로 진행하지 않는다.** Step 8 self-verification에서 placeholder 잔존 여부를 재검증한다.
+helper의 stderr (`HELPER_ERR`)에 `ERR_<CODE>` 한 줄이 있으면 다음 표에 따라 복구 경로를 분기한다.
+
+| `ERR_` 코드 | 의미 | 복구 |
+|---|---|---|
+| `ERR_AUTH` | gh auth 미인증 / 토큰 무효 | 사용자에게 `gh auth login` 안내 후 중단 |
+| `ERR_NETWORK` | 네트워크 오류 | 한 번 재시도. 여전히 실패 시 사용자 보고 |
+| `ERR_NOT_FOUND` | 이슈/repo 미존재 | 질문 도구로 이슈 URL/번호 재확인 |
+| `ERR_URL_PARSE` | gh 성공했으나 URL 파싱 실패 | GitHub URL 형식 확인 요청 |
+| `ERR_NO_CWD_REPO` | cwd가 git repo 밖 (인자 없는 호출) | 이슈 인자 전달 또는 올바른 cwd로 이동 요청 |
+| `ERR_GH_UNKNOWN` | 분류 실패 | 코드(`ERR_GH_UNKNOWN`)만 사용자에게 보고한다. helper는 raw `gh` stderr를 의도적으로 emit하지 않는다(URL/credential/local path 누출 차단). 디버깅이 필요하면 사용자가 underlying gh 명령을 직접 실행해 stderr를 검사한다 (인자 있는 호출은 `gh issue view "$ARGUMENTS" --json url,number`, no-arg 호출은 `gh repo view --json nameWithOwner -q .nameWithOwner`). helper 자체를 재실행하면 raw stderr가 다시 `ERR_GH_UNKNOWN`으로 collapse되므로 디버그에 쓸 수 없다 |
+
+위 표가 control flow의 단일 진실이다. 각 코드의 복구 액션은 표 항목에 한정되며 공통 후속 절차는 두지 않는다 — 서로 다른 복구 입력(URL/cwd 이동/재인증/네트워크 복구)을 한 절차로 묶지 않는다. 이슈 URL을 사용자에게 확답받아야 하는 경로(`ERR_NOT_FOUND`, `ERR_URL_PARSE`, `ERR_NO_CWD_REPO` 중 사용자가 URL을 모를 때)는 질문 도구로 URL을 받은 뒤 helper를 그 URL 인자로 재실행하면 된다 (repo slug 단독은 `gh issue view`의 허용 입력이 아니다).
+
+**Invalid-output 케이스 (stderr가 비어 있고 출력이 비정상)**:
+- 인자 있는 호출에서 `REPO_SLUG` 또는 `ISSUE_NUM`이 빈 문자열, `null` 리터럴 문자열, placeholder 형태(`<...>`)이면 helper 버그 가능성 — 그대로 사용자에게 보고한다.
+- 인자 없는 호출(no-arg)에서는 `ISSUE_NUM` 빈 줄이 정상 계약이다 (cwd repo fallback은 REPO만 반환). 이 모드에서는 `REPO_SLUG`만 검증하고, 빈 줄이면 cwd 이동 또는 인자 전달을 사용자에게 요청한다.
+
+**NSS 블록에 unresolved placeholder(`<REPO_SLUG>`, `<ISSUE_NUM>`, `<unknown-*>`, 빈 문자열)가 남은 상태로는 Step 9(게시)로 진행하지 않는다.** Step 8 self-verification에서 placeholder 잔존 여부를 재검증한다.
 
 **Shell-안전성 가드 (필수)**: NSS 블록은 `REPO='...'` / `ISSUE_NUM='...'` 처럼 single-quoted literal로 값을 삽입하여 `$(...)`, 백틱, `$var` 해석을 차단한다. REPO 값에 **`'`(single quote)** 가 포함되면 single-quoted literal을 조기에 닫아 주변 명령을 오염시킬 수 있으므로 치환 즉시 게시를 중단하고 질문 도구로 사용자에게 escape 전략을 확답받는다. (ISSUE_NUM은 정수이므로 single quote가 포함될 수 없다. `$`/`"`/백틱은 single-quoted literal 내부에서는 리터럴로 처리되어 안전하다.)
 

@@ -334,7 +334,7 @@ EOF
     - `null` 리터럴 문자열
     - ISSUE_NUM이 정수가 아닌 값 (`[0-9]+` 불일치)
     - 이 template의 예시 repo slug(`greenheadHQ/nixos-config` 등) 리터럴이 실제 handoff 대상 repo와 다름에도 남아 있는 경우
-    해당 시 SKILL.md Step 1-C "값 확보 실패 처리" 순서(helper 재실행 → 런타임 질문 도구)로 실제 값 확보 후 치환.
+    해당 시 SKILL.md Step 1-C의 ERR_ 코드별 복구 표에 따라 실제 값 확보 후 치환.
   - `git rev-parse --show-toplevel`은 repo 밖에서 `fatal: not a git repository`를 반환하므로 `2>/dev/null` + `|| true`로 우회하고 `CURRENT_REPO` 빈 변수 검사로 분기한다.
   - **"어떤 git repo든 toplevel로 이동" 방지**: 사용자가 다른 repo 체크아웃 안에서 이 명령을 실행해도 `CURRENT_REPO ≠ REPO`일 때 clone 경로로 분기하므로 엉뚱한 repo를 재사용하지 않는다.
   - **실패 경로 격리 (서브쉘 + 명시적 `|| exit 1`)**: 필수 명령(`gh repo clone`, `cd`, `git fetch`, `git switch`, `git merge --ff-only`, 최종 `git status`/`git log`)에 `|| exit 1`을 부착해 실패 시 중단하고, divergence/issue ref 부재는 명시적 `exit 1`로 처리한다. `ls-remote`/`show-ref` 같은 probe 명령은 `if`/`case`로 exit code를 상태 판정에 사용한다. `set -e`는 POSIX 규정상 AND-OR list의 비최종 위치(`( ... ) || { ... }` 문맥 포함)에서 억제되어 사용하지 않는다. 상세 근거와 참고 링크는 `write-handoff/SKILL.md`의 "Handoff branch convention" 섹션 참조.
