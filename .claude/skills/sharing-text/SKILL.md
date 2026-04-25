@@ -21,7 +21,10 @@ push "https://github.com/user/repo"
 # 파이프 입력 (Unix-like)
 echo "hello" | push
 cat file.txt | push
-hostname -I | awk '{print $1}' | push
+
+# IP 주소 공유 (플랫폼별 분기 — hostname -I는 macOS 미지원)
+hostname -I | awk '{print $1}' | push      # NixOS/Linux
+ipconfig getifaddr en0 | push              # macOS
 
 # tmux buffer에서 읽기 (인자 없이 실행)
 push
@@ -46,11 +49,13 @@ push "https://github.com/anthropics/claude-code"
 ### 2. 명령어 결과 공유
 
 ```bash
-# IP 주소 공유
-push "$(hostname -I | awk '{print $1}')"
-
-# 현재 경로 공유
+# 현재 경로 공유 (플랫폼 독립)
 push "$(pwd)"
+
+# 커널 정보 공유
+push "$(uname -sr)"
+
+# IP 주소 분기 예시는 위 "핵심 명령어" 섹션 참조
 ```
 
 ### 3. tmux-thumbs와 연계
@@ -61,14 +66,19 @@ push "$(pwd)"
 push
 ```
 
-### 4. Claude Code에서 텍스트 공유 요청 시
+### 4. AI 에이전트에서 텍스트 공유 요청 시
 
-사용자가 "이거 공유해줘", "Pushover로 보내줘" 등의 요청을 하면:
+사용자가 "이거 공유해줘", "Pushover로 보내줘" 등의 요청을 하면, canonical 호출 형태는 **heredoc + stdin** 경로다. `push`는 `.zshrc`의 셸 함수이므로 `zsh -ic`(interactive)로 호출해야 로드된다 (`zsh -c` non-interactive는 `.zshrc` 미로드로 `push not found`).
 
 ```bash
-# Bash 도구로 push 함수 실행
-push "공유할 텍스트"
+zsh -ic 'push' <<'PUSH_END'
+공유할 텍스트
+PUSH_END
 ```
+
+heredoc content는 stdin으로 전달되어 zsh 해석을 거치지 않는다. 사용자 제공 텍스트에 `$(...)`, backtick, quote가 포함돼도 안전하다. interactive zsh 초기화 과정에서 stderr에 `can't change option: zle` 경고가 표시될 수 있으나, `✓ Pushover 전송` 출력이면 전송 성공이다.
+
+인자 형태(`zsh -ic 'push "<텍스트>"'`)는 사용자가 직접 터미널에 입력하는 경우에만 사용한다. AI 에이전트가 사용자 텍스트를 인자 문자열로 인터폴레이션하면 `$(...)`/backtick/quote가 push 호출 전 zsh에서 확장되므로 사용하지 마라.
 
 ## 지원 범위
 
@@ -86,6 +96,9 @@ push "공유할 텍스트"
 |------|------|
 | Pushover 메시지 제한 | 1,024자 (초과 시 잘림) |
 | 네트워크 | 인터넷 연결 필요 |
+| Pushover credentials | `$HOME/.config/pushover/claude-code` 필요 (agenix 관리). 부재 시 함수가 `Error: Pushover credentials not found`을 stderr로 출력하고 `return 1` (non-zero) |
+| zsh 함수 의존 | `push`는 `.zshrc`의 셸 함수. `zsh -c` (non-interactive) 호출은 `push not found`로 실패. canonical 호출은 `zsh -ic` |
+| tmux buffer 경로 | 무인자 `push`는 `TMUX` 환경변수가 설정된 tmux 세션 필요. AI 에이전트 exec 세션에서는 기본 부재 — 인자 또는 stdin 경로를 사용하라 |
 
 ## 구현 위치
 
