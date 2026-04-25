@@ -238,23 +238,22 @@ EOF
   REMOTE_REF="refs/remotes/origin/$TARGET"
   REMOTE_STATE="unknown"
 
-  # 서브쉘 + set -e: 중간 명령 실패 시 즉시 중단하여 엉뚱한 cwd의 follow-up 명령 실행 방지
+  # 서브쉘 + 명시적 || exit 1: 중간 명령 실패 시 즉시 중단하여 엉뚱한 cwd의 follow-up 명령 실행 방지
   (
-    set -e
     TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)" || true
     CURRENT_REPO=""
     [ -n "$TOPLEVEL" ] && CURRENT_REPO="$(cd "$TOPLEVEL" && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" || true
     if [ "$CURRENT_REPO" = "$REPO" ]; then
-      cd "$TOPLEVEL"
+      cd "$TOPLEVEL" || exit 1
     else
-      gh repo clone "$REPO" "${REPO##*/}"
-      cd "${REPO##*/}"
+      gh repo clone "$REPO" "${REPO##*/}" || exit 1
+      cd "${REPO##*/}" || exit 1
     fi
 
     # remote branch 존재는 ls-remote(exit 0=present, 2=absent) + explicit refspec fetch로만 신뢰한다.
     if git ls-remote --exit-code --heads origin "$TARGET" >/dev/null 2>&1; then
       REMOTE_STATE="present"
-      git fetch origin "refs/heads/$TARGET:$REMOTE_REF"
+      git fetch origin "refs/heads/$TARGET:$REMOTE_REF" || exit 1
     else
       status=$?
       if [ "$status" -eq 2 ]; then
@@ -276,14 +275,15 @@ EOF
       # --track origin/$TARGET`가 "not a branch" 로 실패한다. explicit refs/
       # 경로를 기반점으로 하여 local branch를 생성하면 tracking 없이도 checkout
       # 가능. set-upstream-to는 아래 clean+behind 분기에서 best-effort로 시도한다.
-      git switch -c "$TARGET" "refs/remotes/origin/$TARGET"
+      git switch -c "$TARGET" "refs/remotes/origin/$TARGET" || exit 1
     elif [ "$LOCAL_EXISTS" -eq 1 ]; then
-      git switch "$TARGET"
+      git switch "$TARGET" || exit 1
 
       if [ "$REMOTE_STATE" = "present" ]; then
         git branch --set-upstream-to="origin/$TARGET" "$TARGET" >/dev/null 2>&1 || true
 
-        if [ -n "$(git status --porcelain)" ]; then
+        STATUS="$(git status --porcelain)" || exit 1
+        if [ -n "$STATUS" ]; then
           echo "→ local '$TARGET'에 uncommitted change가 있습니다."
           echo "→ 자동 reset/merge를 중단합니다. 상태를 확인한 뒤 수동으로 동기화하세요."
           exit 1
@@ -310,7 +310,7 @@ EOF
           exit 1
         fi
         if [ "$BEHIND" -gt 0 ]; then
-          git merge --ff-only "origin/$TARGET"
+          git merge --ff-only "origin/$TARGET" || exit 1
         fi
       else
         echo "→ origin/$TARGET 는 없고 local branch만 존재합니다. local branch로 재개합니다."
@@ -322,8 +322,8 @@ EOF
       exit 1
     fi
 
-    git status
-    git log --oneline -3
+    git status || exit 1
+    git log --oneline -3 || exit 1
   ) || { echo "ERROR: handoff restore failed. REPO=$REPO ISSUE_NUM=$ISSUE_NUM TARGET=$TARGET"; echo "수동으로 repo/branch 상태를 확인한 뒤 재시도하세요."; false; }
   ```
   - **REPO와 ISSUE_NUM은 `write-handoff/SKILL.md` Step 1-B helper 출력으로 치환**한다. helper 경로는 `~/.claude/scripts/write-handoff-repo-and-issue.sh` 또는 `~/.codex/scripts/write-handoff-repo-and-issue.sh`다. 작성자 LLM은 placeholder(`<REPO_SLUG>`, `<ISSUE_NUM>`)를 그대로 두지 않는다. `TARGET`은 NSS 내부에서 `"issue/$ISSUE_NUM"`으로 자동 구성된다.
@@ -337,7 +337,7 @@ EOF
     해당 시 SKILL.md Step 1-C "값 확보 실패 처리" 순서(helper 재실행 → 런타임 질문 도구)로 실제 값 확보 후 치환.
   - `git rev-parse --show-toplevel`은 repo 밖에서 `fatal: not a git repository`를 반환하므로 `2>/dev/null` + `|| true`로 우회하고 `CURRENT_REPO` 빈 변수 검사로 분기한다.
   - **"어떤 git repo든 toplevel로 이동" 방지**: 사용자가 다른 repo 체크아웃 안에서 이 명령을 실행해도 `CURRENT_REPO ≠ REPO`일 때 clone 경로로 분기하므로 엉뚱한 repo를 재사용하지 않는다.
-  - **실패 경로 격리 (서브쉘 + `set -e`)**: `gh repo clone` 실패, `cd` 실패, `ls-remote`/`fetch` 실패, `git switch` 실패, divergence 감지 후 `exit 1`, `issue/{N}` ref 부재 시 `exit 1` 모두 서브쉘이 즉시 종료한다. 따라서 `git status`/`git log`가 **엉뚱한 cwd 또는 wrong-branch 상태**에서 실행되는 경로가 원천 차단된다.
+  - **실패 경로 격리 (서브쉘 + 명시적 `|| exit 1`)**: 필수 명령(`gh repo clone`, `cd`, `git fetch`, `git switch`, `git merge --ff-only`, 최종 `git status`/`git log`)에 `|| exit 1`을 부착해 실패 시 중단하고, divergence/issue ref 부재는 명시적 `exit 1`로 처리한다. `ls-remote`/`show-ref` 같은 probe 명령은 `if`/`case`로 exit code를 상태 판정에 사용한다. `set -e`는 POSIX 규정상 AND-OR list의 비최종 위치(`( ... ) || { ... }` 문맥 포함)에서 억제되어 사용하지 않는다. 상세 근거와 참고 링크는 `write-handoff/SKILL.md`의 "Handoff branch convention" 섹션 참조.
 - **이전 세션 산출물 위치**: <파일 경로 또는 PR/이슈 URL>
 - **재개 지점**: Phase N-M부터
 - **남은 Blockers**: <있으면 명시, 없으면 "없음">
