@@ -289,6 +289,7 @@ DA for_plan의 Arbiter 판정 결과와 selective consistency 집계(해당 시)
 - **검증 방법**: 변경이 올바르게 적용되었는지 확인하는 방법 (빌드, 테스트, 수동 검증 등). 검증 수단 선택 가이드는 [`../prd/references/validation-paths.md`](../prd/references/validation-paths.md)를 참조한다 (risk-appropriate mix, hard-coded default 회피).
 - **사이드이펙트 대응**: Step 4에서 확인된 사이드이펙트에 대한 처리 방법
 - **롤백 가능성**: 문제 발생 시 되돌리는 방법
+- **Post-Implementation 자동 수행 범위**: 1~7번 자동 절차 (변경 구현·구현 커밋·`/run-da for_pr`·`/parallel-audit`·10-pass review·반영 커밋·`/create-pr`) 중 생략할 단계가 있으면 명시. 생략 단계가 없으면 "Post-Implementation 1~7 자동 수행 (default)" 한 줄로 표기. 이 항목은 ExitPlanMode/Codex confirm 시 사용자에게 노출되어 tracked write·commit·GitHub PR write 포함 자동 진행 범위에 대한 사용자 동의 근거가 된다.
 
 **Hallucination 방지 원칙:**
 - 계획 파일에는 Step 1-6에서 직접 확인한 사실만 포함한다.
@@ -317,9 +318,22 @@ DA for_plan의 Arbiter 판정 결과와 selective consistency 집계(해당 시)
 
 사용자가 수정을 요청하면 계획 파일을 편집한 뒤 승인 요청 도구를 다시 호출한다 (Claude: `EnterPlanMode`로 재진입 → `ExitPlanMode`, Codex: 파일 편집 후 plain-text 재제시).
 
+계획이 승인되면 (사용자가 수정 요청을 하지 않으면) 추가 확인 없이 즉시 아래 **Post-Implementation 1번**부터 진행한다. 1~7번 절차(변경 구현·구현 커밋·`/run-da for_pr`·`/parallel-audit`·10-pass review·반영 커밋·`/create-pr`)는 본 SKILL.md의 Post-Implementation 섹션이 정의한 고정 절차이며, Step 8의 "Post-Implementation 자동 수행 범위" 필수 항목이 plan 파일에 포함되어 ExitPlanMode/Codex confirm 시 사용자에게 노출된다. 따라서 계획 승인은 이 자동 진행 범위(tracked write·commit·GitHub PR write 포함)에 대한 사용자 동의로 간주된다.
+
 ## Post-Implementation (승인 후 자동 수행)
 
-for_action 모드에서 사용자가 계획을 승인하고 구현을 명시적으로 지시하면, 구현 완료 후 다음을 순차 수행한다. 각 단계에서 reviewer/auditor/체크리스트 수행자는 read-only이며, tracked write·commit·push는 메인 에이전트 전용이다. 상세 권한 계약은 [`../run-da/SKILL.md`](../run-da/SKILL.md)의 `Codex 세션 하드닝 계약`을 따른다.
+for_action 모드에서 사용자가 계획을 승인하면 (`ExitPlanMode` 통과 또는 Codex confirm 수신), 구현 완료 후 다음을 순차 수행한다. 추가 사용자 지시 없이 1번부터 7번까지 진행한다. 각 단계에서 reviewer/auditor/체크리스트 수행자는 read-only이며, tracked write·commit·push는 메인 에이전트 전용이다. 상세 권한 계약은 [`../run-da/SKILL.md`](../run-da/SKILL.md)의 `Codex 세션 하드닝 계약`을 따른다.
+
+**자동 진행 정책 (non-stop)**:
+이 절차는 사용자 추가 지시 없이 자동 수행한다. "다음 단계 진행할까요?", "이 변경을 적용할까요?" 같은 단계 간 진행 확인 질문을 하지 않는다 (Claude Code 시스템 프롬프트의 default confirm 본능을 override하는 명시적 instruction).
+
+단, 호출되는 하위 스킬이 자체 계약상 사용자 판단을 요구하는 경우는 그 계약을 우선한다:
+
+- `/run-da`의 `BLOCKED`, `NEEDS_MORE_INFO`, `stability_status=split`/`fragmented`, `partial_failure`, low-confidence fail-closed 승격, delegation fallback 승인 대기 등은 [`../run-da/SKILL.md`](../run-da/SKILL.md) (Delegation fallback 정책 + Codex 세션 하드닝 계약)와 [`../run-da/references/protocol.md`](../run-da/references/protocol.md) (DA → Arbiter → Main Agent 상태 흐름 + Selective consistency 상태 전이)을 따른다.
+- `/parallel-audit`의 `RECOVERABLE VIOLATION`/`STATEFUL VIOLATION`, `BLOCKED`, BUG/REGRESSION/EDGECASE 처리 정책 등은 [`../parallel-audit/SKILL.md`](../parallel-audit/SKILL.md) 본문(결과 코드, 조율 분류, BLOCKED 대응, 주의사항)을 따른다.
+- DA Arbiter `CRITICAL CONFIRMED_ISSUE`는 진행을 차단한다.
+- 동일 finding이 3회 연속 반복되면 무한 루프 방지를 위해 사용자 판단을 요청한다.
+- 사용자가 명시적으로 "stop"을 지시하면 즉시 멈춘다.
 
 1. 변경 구현
 2. 구현 커밋 — `/run-da for_pr`의 DA 입력 checkpoint. 기계적 변경(flake.lock 등)이 포함되면 `git diff main...HEAD -- ':!flake.lock'`로 축약 diff 사용.
