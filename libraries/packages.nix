@@ -23,6 +23,7 @@
 
     # 기타 유틸리티
     pkgs.curl # HTTP 클라이언트
+    pkgs.file # 파일 타입/메타데이터 (viewing-immich-photo 비이미지 fallback)
     pkgs.jq # JSON 처리
     pkgs.nvd # Nix 변경사항 비교
     pkgs.qrencode # QR 코드 생성 (MiniPC -> iPhone 텍스트 공유)
