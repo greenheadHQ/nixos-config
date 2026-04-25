@@ -29,6 +29,16 @@ PR에 달린 모든 리뷰 코멘트를 수집하고, 각 피드백을 다각도
 | 기각 7개 분류 + 오분류 방지 + PR #399 사례 | [references/rejection-taxonomy.md](references/rejection-taxonomy.md) |
 | 답글/resolve mutation + multiline 전송 + retry 정책 | [references/reply-and-resolve.md](references/reply-and-resolve.md) |
 
+## 용어 정책
+
+이 스킬은 Claude Code 세션과 Codex 세션 양쪽에서 호출된다. 본문은 **도구-중립 용어**를 쓰며, 런타임별 실제 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../run-da/SKILL.md#런타임-도구-매핑)를 단일 진실 원천으로 참조한다 (중복 복제 금지).
+
+| 용어 유형 | 처리 |
+|----------|------|
+| 사용자 질문 실행 지시 | "질문 도구" |
+| 파일 읽기 지시 | "파일 읽기 도구" |
+| 검색 지시 | 명시적 셸 명령 (`rg -n`, `git diff`) |
+
 ## 절차
 
 ### Step 1: PR 코멘트 수집 (GraphQL-first)
@@ -177,7 +187,7 @@ PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
 
 ## 검증 의무
 
-- 리뷰어 각 지적을 수용하기 전에 해당 파일:줄을 직접 Read 도구로 읽어 사실성을 확인한다.
+- 리뷰어 각 지적을 수용하기 전에 해당 파일:줄을 직접 파일 읽기 도구로 읽어 사실성을 확인한다.
 - 가능하면 로컬에서 재현을 시도한다 (빌드, 명령 실행, 설정 확인 등).
 - "리뷰어가 지적했으니 맞겠지"라는 가정으로 검증 없이 수용하지 않는다.
 - 특히 AI 리뷰어(CodeRabbit 등)는 HALLUCINATION/STALE_REVIEW 비율이 높다.
