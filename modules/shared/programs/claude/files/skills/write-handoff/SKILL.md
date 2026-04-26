@@ -175,12 +175,12 @@ Next Session Starter 블록 작성 시 위에서 확보한 REPO와 ISSUE_NUM 두
 코드베이스를 직접 탐색하여 이슈에 명시되지 않은 관련 파일(예: 상수 참조, 테스트, 설정)도 식별한다.
 
 **탐색 도구 예시** (관련 파일/경로를 찾아 Phase 작성 시 B4 `path:LINE` citation에 활용):
-- `Glob "**/*.nix"` 또는 `find . -name "*.nix" -path "*<키워드>*"` — 파일 경로 검색
-- `Grep -n "<심볼>" <경로>` — import/상수/테스트 참조 발견
+- 셸 `find . -name "*.nix" -path "*<키워드>*"` 또는 그에 상당하는 검색 도구 — 파일 경로 검색
+- 셸 `rg -n "<심볼>" <경로>` 또는 그에 상당하는 검색 도구 — import/상수/테스트 참조 발견
 - `git log --oneline -20 -- <경로>` — 최근 변경 이력
 - `git blame <파일>` — 라인별 맥락
 
-관련 파일 누락 방지: `Grep "<심볼>" modules/ libraries/ tests/`로 repo 전체 재검색.
+관련 파일 누락 방지: `rg "<심볼>" modules/ libraries/ tests/` 또는 그에 상당하는 검색 도구로 repo 전체 재검색.
 
 ### Step 4: Phase별 가이드 작성
 
@@ -240,7 +240,7 @@ LLM이 커밋 메시지를 자의적으로 작성하지 않고, 가이드에 명
 절차:
 1. **Claim 추출**: 가이드 본문에서 비자명한 주장을 추출. 자명/trivial 사실 제외.
 2. **검증 질문 재작성**: 각 claim을 검증 질문으로 변환. 예: `"파일 X에 Y 함수가 있다"` → `"실제 파일 X에 Y 함수가 있는가?"`
-3. **독립 답변**: 초안을 보지 않은 상태로 `Read`/`Grep`/`gh` 재실행으로 질문에 답.
+3. **독립 답변**: 초안을 보지 않은 상태로 파일 읽기·검색 도구 또는 `gh` CLI 재실행으로 질문에 답.
 4. **불일치 처리**: 답변과 초안이 일치하지 않으면 초안 수정. 확인 불가 시 `[UNVERIFIED]` 라벨 또는 삭제.
 5. **NSS placeholder 검증 (필수)**: Next Session Starter 블록의 REPO와 ISSUE_NUM이 다음 중 하나라도 해당하면 Step 1-C "값 확보 실패 처리" 순서로 실제 값 확보 후 치환. 치환 완료 전에는 Step 9(게시)로 진행하지 않는다.
     - `<...>` 형태 placeholder (`<REPO_SLUG>`, `<ISSUE_NUM>`, `<unknown-*>`, `<repo-root-path>` 등)
