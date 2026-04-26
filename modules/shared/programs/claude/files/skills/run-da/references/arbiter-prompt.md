@@ -326,7 +326,7 @@ Working directory: {cwd}
 - 비신뢰 텍스트(계획 원문, DA 결과)를 포함할 때 quoted heredoc(`<<'PROMPT'`) 사용을 의무화한다.
 
 **Selective consistency N=3 재판정 시 조립 규칙** (for_pr·for_plan 공통):
-- `## 검증 대상 findings` 섹션에 **trigger된 finding subset만** 포함한다 (전체 first-pass batch 재사용 금지). first-pass 프롬프트 전체를 N=3번 재실행하면 xhigh reasoning 비용이 batch 크기에 비례해 3배 증가한다.
+- `## 검증 대상 findings` 섹션에 **trigger된 finding subset만** 포함한다 (전체 first-pass batch 재사용 금지). first-pass 프롬프트 전체를 N=3번 재실행하면 high reasoning 비용이 batch 크기에 비례해 3배 증가한다.
 - 계획 원문(for_plan) 또는 diff 컨텍스트(for_pr)는 그대로 유지한다. 축소 대상은 finding 목록뿐이다.
 - 결과 VERDICT_JSON 블록도 trigger된 finding에 대해서만 출력된다.
 

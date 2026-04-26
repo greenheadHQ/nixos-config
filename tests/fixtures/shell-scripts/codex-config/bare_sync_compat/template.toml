@@ -1,5 +1,4 @@
 model = "gpt-5.5"
-service_tier = "fast"
 
 [features]
 multi_agent = true
