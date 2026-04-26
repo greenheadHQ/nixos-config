@@ -38,7 +38,6 @@ let
   exposedCodexSkills = [
     "create-issue"
     "create-pr"
-    "documenting-intent"
     "grill-me"
     "parallel-audit"
     "plan-with-questions"

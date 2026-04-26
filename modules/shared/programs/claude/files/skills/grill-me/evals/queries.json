@@ -16,5 +16,5 @@
   {"query": "이슈 등록해줘", "should_trigger": false, "why": "혼동 쌍: create-issue"},
   {"query": "불명확점 질문해줘", "should_trigger": false, "why": "혼동 쌍: plan-with-questions ('불명확점 질문'이 해당 스킬 트리거이며 산출물=계획). grill-me 본질과 의미 겹치지만 산출물 의도가 핵심 분리 기준"},
   {"query": "내 디자인 한번 까봐", "should_trigger": false, "why": "혼동 쌍: run-da ('까봐'가 인터뷰스럽지만 '디자인'은 코드/계획 검토 intent)"},
-  {"query": "결정 근거 기록해줘", "should_trigger": false, "why": "혼동 쌍: documenting-intent ('결정 근거'는 CIR/ADR 기록이며 인터뷰가 아님. grill-me의 '결정 트리' 트리거와 단어 겹침 주의)"}
+  {"query": "결정 근거 기록해줘", "should_trigger": false, "why": "혼동 쌍: create-pr (CIR은 PR 본문/커밋 메시지/코드 인라인 주석에 직접 기록. grill-me의 '결정 트리' 트리거와 단어 겹침 주의)"}
 ]
