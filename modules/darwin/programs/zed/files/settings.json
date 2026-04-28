@@ -2,6 +2,11 @@
   // ============================================================================
   // 기본 설정
   // ============================================================================
+  "agent_servers": {
+    "claude-acp": {
+      "type": "registry"
+    }
+  },
   "auto_update": true, // Zed 앱 내장 업데이터 (Homebrew onActivation.autoUpdate와 별개)
   "base_keymap": "JetBrains",
 
