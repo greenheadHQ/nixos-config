@@ -176,7 +176,7 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 
 ## PR 코멘트 게시 형식
 
-DA 피드백 루프가 완료되면 PR 본문 또는 코멘트에 결과를 게시한다:
+DA 피드백 루프가 완료되면 결과를 **PR 코멘트로** 게시한다 (PR 본문에는 박지 않는다 — `create-pr/SKILL.md`의 `DA 피드백 분리` 정책 참조):
 
 ```markdown
 ## DA Feedback Summary

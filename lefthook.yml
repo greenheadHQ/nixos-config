@@ -14,6 +14,13 @@ pre-commit:
     eval-tests:
       run: bash ./tests/run-eval-tests.sh
 
+commit-msg:
+  commands:
+    pinning:
+      # 워크트리/cherry-pick 시나리오에서 lefthook.yml만 받고 스크립트 미동반 시
+      # 차단 회피용 방어 가드 (silent skip).
+      run: '[ -f ./scripts/ai/commit-msg-pinning.sh ] && bash ./scripts/ai/commit-msg-pinning.sh {1} || true'
+
 pre-push:
   commands:
     shell-script-tests:

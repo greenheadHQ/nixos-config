@@ -47,7 +47,9 @@ Closes #115
 
 ### 작성 규칙
 - 변경 과정에서 검토한 대안들과 방향 전환 이력을 시간순으로 기록한다.
-- 각 버전에 참조(PR 번호 또는 커밋 해시)를 포함한다.
+- 각 버전에 안정 식별자(PR 번호 `#N` 또는 머지된 commit SHA)를 포함한다. 본인 PR의 mid-flight partial hash는 사용하지 않는다 — squash 머지 후 dangling 위험.
+- 예외: PR 생성 전 초안 시점의 **현재 작업 중인 버전**은 PR 번호가 아직 없으므로 `(이번 변경)`으로 표기한다 (PR 본문에 그대로 게시 — 머지 후에는 자기 PR로 자명).
+- 검토 라운드 번호, finding ID(`Correctness-1`, `CORR-2` 등)는 CIR에 포함하지 않는다 (휘발성 보고용).
 - 최종 결정의 trade-off를 솔직하게 명시한다.
 - 단순 변경이면 "해당 없음 — 단순 변경"으로 간소화한다.
 
@@ -56,8 +58,8 @@ Closes #115
 ```markdown
 ## CIR (Change Intent Record)
 
-- **v1** (`b9cd235`): known-heavy blocklist 방식 구상 → 관리 부담 우려로 known-trivial allowlist 채택
-- **v2** (`f09a575`): `activation-script` 등 false positive 발생, trivial 패턴 추가로 대응
+- **v1** (PR #112): known-heavy blocklist 방식 구상 → 관리 부담 우려로 known-trivial allowlist 채택
+- **v2** (PR #115): `activation-script` 등 false positive 발생, trivial 패턴 추가로 대응
 - **v3** (이번 변경): allowlist 방식이 두더지 잡기(끝없는 패턴 추가)임을 확인, 원래 구상대로 known-heavy blocklist로 회귀
 
 **trade-off**: 새 무거운 패키지 추가 시 수동 등록 필요하지만, false positive를 근본적으로 제거하여 사용자 경험이 압도적으로 개선됨.
@@ -131,7 +133,8 @@ local heavy_packages=("anki" "mise")
 
 ### 작성 규칙
 - 관련 PR, 이슈, 외부 링크를 나열한다.
-- 각 항목에 커밋 해시(단축 7자) + 1줄 설명을 포함한다.
+- 각 항목에 안정 식별자(PR 번호 `#N`, 이슈 번호 `#N`, 또는 머지된 commit SHA) + 1줄 설명을 포함한다.
+- 본인 PR의 mid-flight commit hash 또는 squash 전 partial hash chain은 박제하지 않는다 — squash 머지 후 dangling 위험.
 - 레퍼런스가 없으면 "해당 없음"으로 명시한다.
 
 ### 예시
@@ -139,15 +142,16 @@ local heavy_packages=("anki" "mise")
 ```markdown
 ## 참고 레퍼런스
 
-- PR #112 (`a1b2c3d`) — pre-flight 체크 최초 구현
-- PR #115 (`b9cd235`) — known-trivial allowlist 도입
+- PR #112 — pre-flight 체크 최초 구현
+- PR #115 — known-trivial allowlist 도입
 - Issue #118 — `activation-script` false positive 보고
 - [Nix pills: derivation basics](https://nixos.org/guides/nix-pills/our-first-derivation.html) — derivation 판별 로직 참고
 ```
 
 ### 흔한 실수
-- "관련 PR 참조"처럼 구체적 번호/해시 없이 모호하게 쓰는 것.
+- "관련 PR 참조"처럼 구체적 번호 없이 모호하게 쓰는 것.
 - 설명 없이 링크만 나열하는 것.
+- 본인 PR의 mid-flight commit hash chain을 참고 레퍼런스에 박는 것 (squash 후 무효).
 
 ## 7. Human Test Plan
 

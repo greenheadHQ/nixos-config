@@ -23,7 +23,7 @@
 
 - [링크 텍스트](URL) — 한 문장으로 "무엇을 뒷받침하는지"
 - `path/to/file.nix:LINE` 또는 `path/to/file.nix:START-END` — 코드 근거 (단일 라인 또는 라인 범위 허용)
-- `#NNN` / `abc1234` — 관련 이슈/커밋
+- `#NNN` (이슈/PR 번호) 또는 머지된 commit SHA — **출처 입증에 불가결한 경우에만**. 단순 색인용 인용 금지 (close/rename 시 stale).
 
 ## PoC / Reproduction (선택)
 
@@ -41,8 +41,8 @@
 
 ## Related Commits (선택)
 
-- `해시7자리` — 커밋 메시지 한줄 요약
-- `해시7자리` — 커밋 메시지 한줄 요약
+- `<머지된 SHA>` — 커밋 메시지 한줄 요약
+- `<머지된 SHA>` — 커밋 메시지 한줄 요약
 
 ## Affected Files (선택)
 
@@ -76,7 +76,8 @@
 
 ### References (필수)
 - 비자명한 주장마다 근거 제공 (체크리스트 B1/B4)
-- 근거 타입 (Source reliability 순위 — 체크리스트 B3): 공식 docs URL > repo 내부 파일(`path/to/file.nix:LINE` 또는 `path:START-END`) > 관련 이슈/커밋(`#NNN`/`abc1234`) > blog > LLM 기억
+- 근거 타입 (Source reliability 순위 — 체크리스트 B3): 공식 docs URL > repo 내부 파일(`path/to/file.nix:LINE` 또는 `path:START-END`) > 머지된 commit SHA > 관련 이슈/PR 번호 (`#NNN`) > blog > LLM 기억
+- 관련 이슈/PR 번호 인용은 **출처 입증에 불가결한 경우에만**. 단순 색인용 인용은 close/rename 시 stale 위험.
 - **근거 존재 시**: 최소 1개 링크 또는 path 참조 필수
 - **근거 부재 시**: 섹션을 비우지 않고 `[UNVERIFIED]` 항목으로 대체
 - **상충 시**: `[CONFLICTING]` + 양측 인용 (체크리스트 E3)
@@ -88,8 +89,8 @@
 - 절차는 코드블록 + 언어 태그 (`bash`, `nix` 등) 사용
 
 ### Related Commits (선택)
-- 포맷: `- \`해시7자리\` — 커밋 메시지 한줄 요약`
-- 이 이슈가 생성된 배경/맥락이 되는 **기존 커밋**만 기재
+- 포맷: `- \`머지된 SHA\` — 커밋 메시지 한줄 요약` (안정 식별자만; mid-flight partial hash 박제 금지 — squash 후 dangling 위험)
+- 이 이슈가 생성된 배경/맥락이 되는 **기존 머지된 커밋**만 기재 (단순 색인용 인용 금지)
 - 포함 기준은 SKILL.md Step 2 참조
 
 ### Affected Files (선택)
@@ -130,13 +131,13 @@ Darwin(macOS) 설정에 대한 eval-test를 추가하여 macOS 설정 회귀를 
 
 - [nix flake check docs](https://nixos.org/manual/nix/stable/command-ref/new-cli/nix3-flake-check.html) — "평가 가능성"만 확인함을 뒷받침
 - `tests/eval-tests.nix:15-17` — NixOS config 평가 블록 (`nixosCfg = flake.nixosConfigurations.greenhead-minipc.config`)
-- `lefthook.yml:21-22` — pre-push `nix flake check --all-systems` 훅 근거
+- `lefthook.yml`의 `pre-push.flake-check` 항목 — `nix flake check --all-systems` 훅 근거 (라인번호 박제 회피: hook 추가/이동 시 라인이 밀린다)
 - `[UNVERIFIED]` Darwin eval이 x86_64-linux에서 평가 가능한지는 실측 필요 (Notes 참조)
 
 ## Related Commits
 
-- `bfa4054` — feat(tests): pre-commit E2E eval 테스트 도입 — 네트워크 노출 경계 보안 검증
-- `e2e5a73` — fix(tests): Opus 4.6 DA 피드백 루프 완료 — 36→29개 테스트, A 등급 달성
+- `<머지된 SHA>` — feat(tests): pre-commit E2E eval 테스트 도입 — 네트워크 노출 경계 보안 검증
+- `<머지된 SHA>` — fix(tests): 검토 피드백 루프 완료 — 테스트 정리 + 등급 달성
 
 ## Affected Files
 

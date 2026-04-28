@@ -26,7 +26,7 @@ PR에 달린 모든 리뷰 코멘트를 수집하고, 각 피드백을 다각도
 | 참고 레퍼런스 | 위치 |
 |---------------|------|
 | 수집 쿼리/pagination/REST 보조 정본 | [references/comment-collection.md](references/comment-collection.md) |
-| 기각 7개 분류 + 오분류 방지 + PR #399 사례 | [references/rejection-taxonomy.md](references/rejection-taxonomy.md) |
+| 기각 7개 분류 + 오분류 방지 사례 | [references/rejection-taxonomy.md](references/rejection-taxonomy.md) |
 | 답글/resolve mutation + multiline 전송 + retry 정책 | [references/reply-and-resolve.md](references/reply-and-resolve.md) |
 
 ## 용어 정책
@@ -154,7 +154,7 @@ actionable로 분류된 각 피드백을 다음 7개 기준으로 검증한다.
 
 모든 피드백(반영 여부 무관)에 대해 사유를 담은 답글/follow-up을 남기고 review thread는 resolve한다.
 분기 요약만 여기 둔다. 구체 mutation, multiline body 전송 규칙, `mktemp` 처리,
-PR #399 반례는 [references/reply-and-resolve.md](references/reply-and-resolve.md)가 정본이다.
+반례는 [references/reply-and-resolve.md](references/reply-and-resolve.md)가 정본이다.
 
 각 thread 처리 전에 다음 가드를 적용한다.
 - **thread.id가 null/empty** → Step 6/7을 건너뛰고 사용자 보고 대상으로 분리.
