@@ -7,8 +7,16 @@ runner: `tests/test-codex-hook-fixtures.sh`.
 
 | 경로 | 의도 | 소비처 |
 |------|------|--------|
-| `stdin/` | Codex 0.124+ stdin payload (실측 schema). `record-prompt-submit.sh`, `record-last-stop.sh`, `stop-notification.sh` 등 hook이 stdin으로 받는 JSON. | `test_stdin_payloads_create_expected_hook_artifacts_codex_0_124` |
+| `stdin/` | Codex 0.124+ stdin payload (실측 schema). `record-prompt-submit.sh`, `record-last-stop.sh`, `stop-notification.sh` 등 hook이 stdin으로 받는 JSON. | `test_stdin_payloads_create_expected_hook_artifacts_codex_0_124`, `test_stop_notification_codex_transcript_fallback`, `test_stop_notification_secret_redaction` |
 | `sync-preservation/` | `sync-codex-config.py`가 `~/.codex/config.toml`을 merge할 때 user-owned 영역을 어떻게 보존/덮어쓰는지 검증할 user 측 입력 TOML. | `test_sync_preservation_scenarios` |
+| `transcripts/` | Codex 0.124+ session JSONL transcript 샘플. stop-notification.sh의 `extract_last_assistant_text` fallback 경로 검증용. | `test_stop_notification_codex_transcript_fallback` (6.1) |
+
+### stdin/ 카테고리 6 fixture
+
+| 파일 | 카테고리 | placeholder 규약 |
+|------|----------|------------------|
+| `stop-no-last-message-codex-transcript.json` | 6.1 | `transcript_path` 값의 `__SANDBOX_TRANSCRIPT_PATH__`를 runner가 sandbox 내부 transcript 경로로 sed 치환 |
+| `stop-with-secret-reply.json` | 6.2 | `last_assistant_message`에 7 token family 패턴(`sk-ant`/`sk-openai`/`gh-classic`/`github-pat`/`jwt`/`aws-akia`/`aws-asia`)이 함께 포함된 통합 fixture |
 
 ## 외부 contract만 디렉토리로 노출
 

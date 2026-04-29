@@ -52,21 +52,25 @@ check_ere() {
   fi
 }
 
-# 패턴 A — 진행 라운드 카운터: "Round N" (단어경계 + Round prefix 의무화).
+# 패턴 A — 진행 라운드 카운터: "Round N" / "round N" / "ROUND N" (case-insensitive).
 # 단독 R[0-9]+는 false positive 너무 많아 제외 (정당한 약어 IPv4 R3, docs 표 R1/R2/R3 등).
-PATTERN_A='\bRound [0-9]+\b'
+# Round 변형 case는 모두 매치 — commit message에서 'DA round 3' / 'Round 1' 모두 박제 대상.
+PATTERN_A='\b[Rr][Oo][Uu][Nn][Dd] [0-9]+\b'
 
-# 패턴 B — DA finding ID 형식: BUNDLE-순번 (BUNDLE은 Title Case 풀이름 / UPPERCASE 세부 도메인 /
-# 약어 모두 가능, suffix는 항상 숫자 시작). DA 출력 형식 SSOT는 modules/.../run-da/references/da-domains.md.
-# 본 토큰 enum은 SSOT 스냅샷이며 자동 동기화되지 않는다 — da-domains.md에서 bundle/세부 도메인을
-# 추가/제거하면 본 패턴도 함께 갱신해야 한다. 숫자 시작 suffix 의무화로 자연어 (Design-pattern,
-# Regression-fix, YAGNI-concern, F-string, CIR-section, REG-istry 등) false positive 회피.
-# 'F' 토큰은 SSOT 정의 없어 제거. 'DESIGN'/'REGR'은 'Design'/'REG'와 중복이라 제거.
-PATTERN_B='\b(Correctness|Design|Regression|Maintainability|SECURITY|HALLUCINATION|SIDE_EFFECT|CONSISTENCY|READABILITY|CLEAN_CODE|YAGNI|NGMI|CORR|MAINT|REG|CIR)-[0-9][A-Za-z0-9-]*\b'
+# 패턴 B — DA finding ID 형식: BUNDLE-순번 (suffix는 항상 숫자 시작). DA 출력 형식 SSOT는
+# modules/.../run-da/references/da-domains.md. 본 토큰 enum은 SSOT 스냅샷이며 자동 동기화되지
+# 않는다 — da-domains.md에서 bundle/세부 도메인을 추가/제거하면 본 패턴도 함께 갱신해야 한다.
+# 숫자 시작 suffix 의무화로 자연어 (Design-pattern, Regression-fix, YAGNI-concern, F-string,
+# CIR-section, REG-istry 등) false positive 회피.
+# Bundle 풀이름은 reviewer 출력에서 Title Case (`Maintainability-1`) / UPPERCASE (`MAINTAINABILITY-1`)
+# 둘 다 등장하므로 양쪽 모두 enum. 세부 도메인도 Title Case (`Security-2`) / UPPERCASE (`SECURITY-2`)
+# 둘 다 등장. 약어 (CORR/MAINT/REG/CIR)와 'MNT' (Maintainability 단축형)도 commit msg에 자주 등장.
+PATTERN_B='\b(Correctness|CORRECTNESS|Design|DESIGN|Regression|REGRESSION|Maintainability|MAINTAINABILITY|Security|SECURITY|Hallucination|HALLUCINATION|Side_effect|SIDE_EFFECT|Consistency|CONSISTENCY|Readability|READABILITY|Clean_code|CLEAN_CODE|Yagni|YAGNI|Ngmi|NGMI|CORR|MAINT|MNT|REG|CIR)-[0-9][A-Za-z0-9-]*\b'
 
-# 패턴 C — DA 키워드 컨텍스트: "DA for_pr" / "DA for_plan" / "DA 피드백".
-# 앞쪽 단어경계 + 컨텍스트 좁힘. "DA Round N"은 패턴 A가 처리하므로 중복 분기 제거 (alert fatigue 회피).
-PATTERN_C='\bDA (for_pr|for_plan|피드백)\b'
+# 패턴 C — DA/검토 키워드 컨텍스트: "DA for_pr" / "DA for_plan" / "DA 피드백" / "DA round" /
+# "Auditor X-N" / "parallel-audit 반영". reviewer/auditor 출력 인용을 commit msg에 박는 패턴 차단.
+# "Round N"은 패턴 A가 처리하므로 'DA round'는 중복 안전망.
+PATTERN_C='\bDA (for_pr|for_plan|피드백|[Rr]ound)\b|\bAuditor [A-Za-z_]+-[0-9]|\bparallel-audit (반영|결과|finding)\b'
 
 # 패턴 D — partial hex 박제. 백틱 토큰뿐 아니라 raw `7e75df6` / `(7e75df6)` / `commit 7e75df6`
 # 같은 일반 인용 형태도 감지한다 (Codex review로 백틱 전용 PATTERN_D가 raw hex 박제 사례를

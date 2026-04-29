@@ -2,12 +2,13 @@
 # tests/test-codex-hook-fixtures.sh
 # Codex 0.124+ stable hook 회귀 차단 fixture runner.
 #
-# 5 카테고리:
+# 6 카테고리:
 #   1. stdin schema baseline 0.124       — fixtures/codex-hooks/stdin/*.json
 #   2. dispatcher ordering / failure recovery — runner 내부 mock subscript
 #   3. noise-guard env 변형              — runner 내부 helper (4 env 조합)
 #   4. sync-codex-config.py preservation — fixtures/codex-hooks/sync-preservation/*.toml
 #   5. env propagation (live opt-in)      — CODEX_HOOK_LIVE=1 / --live
+#   6. stop-notification reliability/security — transcripts/ + stdin secret/transcript fixtures
 #
 # nrs-session-cleanup.sh는 NRS_LOCK_FILE을 하드코딩하므로 (host /tmp/nrs-state 누수 위험)
 # fixture는 real script를 직접 호출하지 않고 mock subscript로 대체한다.
@@ -199,6 +200,34 @@ _run_hook_in_sandbox_core() {
       XDG_CONFIG_HOME="$sandbox/xdg-config" \
       CODEX_HOME="$sandbox/codex-home" \
       "$sandbox/home/.codex/hooks/$hook" "$@"
+}
+
+# 카테고리 6 (stop-notification reliability/security) 공용: Pushover credential + curl mock 설치.
+# - sandbox/home/.config/pushover/claude-code: dummy credential (실제 Pushover API 차단)
+# - sandbox/bin-stubs/curl: 호출 인자를 sandbox/curl-args.log에 dump 후 exit 0 (redaction 검증용)
+# heredoc unquoted라 $sandbox는 expansion되고 \$@/\$arg는 stub 안에 escape 상태로 남는다.
+install_pushover_mock_with_curl_log() {
+  local sandbox="$1"
+  local creds_dir="$sandbox/home/.config/pushover"
+  mkdir -p "$creds_dir"
+  cat > "$creds_dir/claude-code" <<'CRED'
+PUSHOVER_TOKEN=dummy_token_for_fixture_only
+PUSHOVER_USER=dummy_user_for_fixture_only
+CRED
+  chmod 0600 "$creds_dir/claude-code"
+
+  cat > "$sandbox/bin-stubs/curl" <<STUB
+#!/usr/bin/env bash
+# fixture curl mock — 호출 단위로 invocation marker + 각 인자를 줄바꿈 구분 dump.
+{
+  echo "===CURL_INVOCATION==="
+  for arg in "\$@"; do
+    printf '%s\n' "\$arg"
+  done
+} >> "$sandbox/curl-args.log"
+exit 0
+STUB
+  chmod +x "$sandbox/bin-stubs/curl"
 }
 
 install_mock_subscripts_with_log() {
@@ -437,7 +466,7 @@ _sync_preservation_run_one() {
 }
 
 test_sync_preservation_scenarios() {
-  # tomlkit이 없으면 sync-codex-config.py가 sync 모드에서 fail하므로 5 카테고리 중 한 카테고리가
+  # tomlkit이 없으면 sync-codex-config.py가 sync 모드에서 fail하므로 sync-preservation 카테고리가
   # 누락된 상태로 "All passed"가 출력될 위험이 있다. hard fail로 회귀 차단.
   if ! python3 -c 'import tomlkit' >/dev/null 2>&1; then
     fail "tomlkit 미가용 — pre-commit/pre-push hook 또는 'nix shell .#pythonWithTomlkit' 환경에서 실행 필요"
@@ -509,6 +538,147 @@ assert len(sub) == 1
 cmd = sub[0].get("command", "")
 assert cmd == expected_stop_cmd, f"command={cmd!r} expected={expected_stop_cmd!r}"
 PY
+}
+
+# ─── 카테고리 6: stop-notification reliability/security ───
+# 6.1 Codex JSONL transcript fallback 추출 검증.
+# fixture stdin은 last_assistant_message=null + transcript_path를 sandbox 안의 Codex schema
+# JSONL fixture로 가리키게 만든다. extract_last_assistant_text 호출 결과가 fixture transcript의
+# output_text 본문(FIXTURE_LAST_ASSISTANT_OUTPUT)을 반환하여 Pushover 본문에 포함됨을 검증한다.
+test_stop_notification_codex_transcript_fallback() {
+  local sandbox transcript_dest stdin_dest
+  sandbox=$(new_hook_sandbox)
+  install_pushover_mock_with_curl_log "$sandbox"
+
+  transcript_dest="$sandbox/codex-transcript.jsonl"
+  cp "$FIXTURE_DIR/transcripts/codex-0.124-sample.jsonl" "$transcript_dest"
+
+  # fixture stdin의 __SANDBOX_TRANSCRIPT_PATH__ placeholder를 실제 sandbox path로 치환.
+  stdin_dest="$sandbox/stop-input.json"
+  sed "s|__SANDBOX_TRANSCRIPT_PATH__|$transcript_dest|g" \
+    "$FIXTURE_DIR/stdin/stop-no-last-message-codex-transcript.json" > "$stdin_dest"
+
+  run_hook_in_sandbox "$sandbox" "stop-notification.sh" \
+    < "$stdin_dest" \
+    || fail "[6.1] stop-notification (codex transcript fallback) 비정상 종료"
+
+  [[ -s "$sandbox/curl-args.log" ]] \
+    || fail "[6.1] curl mock이 호출되지 않음 (Pushover fallback 미진입)"
+  grep -q "FIXTURE_LAST_ASSISTANT_OUTPUT" "$sandbox/curl-args.log" \
+    || fail "[6.1] Codex schema transcript의 output_text가 Pushover 본문에 추출되지 않음"
+}
+
+# 6.2 secret pattern redaction 검증.
+# last_assistant_message에 7 token family 패턴을 모두 포함하고, Pushover curl mock 호출 인자에서
+# 각 family 원본이 사라지고 ***REDACTED***가 등장하는지 family별로 assert. 회귀 시 어느 family가
+# 깨졌는지 즉시 식별 가능하도록 family 이름을 fail 메시지에 포함한다.
+test_stop_notification_secret_redaction() {
+  local sandbox
+  sandbox=$(new_hook_sandbox)
+  install_pushover_mock_with_curl_log "$sandbox"
+
+  run_hook_in_sandbox "$sandbox" "stop-notification.sh" \
+    < "$FIXTURE_DIR/stdin/stop-with-secret-reply.json" \
+    || fail "[6.2] stop-notification (secret reply) 비정상 종료"
+
+  [[ -s "$sandbox/curl-args.log" ]] \
+    || fail "[6.2] curl mock이 호출되지 않음 (Pushover fallback 미진입)"
+
+  local log="$sandbox/curl-args.log"
+
+  # PROBE 마커는 본문이 실제로 message 인자에 포함됐음을 확인 (sanity check).
+  grep -q "PROBE_PREFIX" "$log" \
+    || fail "[6.2] message 본문이 curl 인자에 전달되지 않음 (sanity check 실패)"
+
+  # family별 원본 fragment 부재 + ***REDACTED*** 등장.
+  # 각 family 고유의 원본 fragment를 검사한다 (full 원본 토큰 일부; ***REDACTED***로 치환됐다면 부재).
+  local families_negative=(
+    "sk-ant:sk-ant-aBcDeFgHiJkLmNoPqRsTuVwXyZ"
+    "sk-openai:sk-aBcDeFgHiJkLmNoPqRsTuVwXyZ"
+    "gh-classic-ghp:ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+    "gh-classic-ghs:ghs_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+    "gh-classic-gho:gho_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+    "gh-classic-ghu:ghu_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+    "github-pat:github_pat_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789aBcDeFgHiJkL"
+    "jwt-standard:eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEyMzR9.signature_segment_xyz"
+    "jwt-whitespace-header:eyAhbGciOiJIUzI1NiJ9.eyJzdWIiOjEyMzR9.whitespace_jwt_var"
+    "aws-akia:AKIA0123456789ABCDEF"
+    "aws-asia:ASIA0123456789ABCDEF"
+  )
+
+  local entry family fragment
+  for entry in "${families_negative[@]}"; do
+    family="${entry%%:*}"
+    fragment="${entry#*:}"
+    if grep -qF "$fragment" "$log"; then
+      fail "[6.2/$family] 원본 secret fragment가 curl 인자에 그대로 남아 있음: '$fragment'"
+    fi
+  done
+
+  grep -q "\*\*\*REDACTED\*\*\*" "$log" \
+    || fail "[6.2] ***REDACTED*** 마커가 curl 인자에 등장하지 않음 (redaction 자체 실패 가능성)"
+}
+
+# 6.3 timeout 미가용 fail-open 검증 (Darwin 전용).
+# bin-stubs에 timeout을 exit 127 stub으로 둬서 macOS BSD coreutils 환경(GNU coreutils 부재) 시나리오를
+# 시뮬레이션한다. hook의 run_with_timeout 호출은 `[[ "$OSTYPE" == darwin* ]] && command -v hs` 블록
+# 내부이므로 non-Darwin runner에서는 Hammerspoon 블록이 통째로 skip되어 검증 의미가 없다 → skip.
+# Darwin runner에서는 timeout stub의 exit 127로 HS_SENT=false 유지 → Pushover fallback (curl mock).
+test_stop_notification_timeout_unavailable_failopen() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    warn "[6.3] non-Darwin runner — Hammerspoon 블록 skip되므로 검증 의미 없음. skip."
+    return 0
+  fi
+
+  local sandbox
+  sandbox=$(new_hook_sandbox)
+  install_pushover_mock_with_curl_log "$sandbox"
+
+  cat > "$sandbox/bin-stubs/timeout" <<'STUB'
+#!/usr/bin/env bash
+exit 127
+STUB
+  chmod +x "$sandbox/bin-stubs/timeout"
+
+  run_hook_in_sandbox "$sandbox" "stop-notification.sh" \
+    < "$FIXTURE_DIR/stdin/stop-codex-0.124.json" \
+    || fail "[6.3] stop-notification (timeout 부재 stub) 비정상 종료"
+
+  [[ -s "$sandbox/curl-args.log" ]] \
+    || fail "[6.3] timeout 부재 시 Pushover fallback으로 전이되지 않음 (HS_SENT=false 보존 실패)"
+}
+
+# 6.4 양쪽 hook helper 블록 동등성 검증.
+# Codex 사본과 Claude 원본의 redact_secrets()/run_with_timeout() 함수 본문이 byte-for-byte
+# 동일함을 보장한다. hook이 cp 동기화 패턴이라 한쪽만 패턴 추가/regex 수정하는 drift를 차단.
+# Marker 기반 추출: helper 위/아래에 `# === HELPER_BEGIN: <name> ===` / `HELPER_END` 주석을 두고
+# 그 사이를 추출한다. 함수 선언부 포맷(공백/괄호 위치) 변화에 robust하다.
+_extract_function_block() {
+  local file="$1" name="$2"
+  awk -v name="$name" '
+    $0 == "# === HELPER_BEGIN: " name " ===" { in_block = 1; next }
+    in_block && $0 == "# === HELPER_END: " name " ===" { in_block = 0; exit }
+    in_block { print }
+  ' "$file"
+}
+
+test_stop_notification_helper_equivalence() {
+  local codex_hook="$REPO_ROOT/modules/shared/programs/codex/files/hooks/stop-notification.sh"
+  local claude_hook="$REPO_ROOT/modules/shared/programs/claude/files/hooks/stop-notification.sh"
+
+  local fn
+  for fn in redact_secrets run_with_timeout; do
+    local codex_block claude_block
+    codex_block=$(_extract_function_block "$codex_hook" "$fn")
+    claude_block=$(_extract_function_block "$claude_hook" "$fn")
+
+    [[ -n "$codex_block" ]] || fail "[6.4/$fn] Codex 사본에서 함수 본문을 추출하지 못함"
+    [[ -n "$claude_block" ]] || fail "[6.4/$fn] Claude 원본에서 함수 본문을 추출하지 못함"
+
+    if [[ "$codex_block" != "$claude_block" ]]; then
+      fail "[6.4/$fn] Codex 사본과 Claude 원본의 helper 본문이 drift 됨 — sync 필요"
+    fi
+  done
 }
 
 # ─── 카테고리 5: env propagation live (opt-in) ───
@@ -621,6 +791,15 @@ run_test "noise-guard env variants (cleanup unguarded)" \
   test_noise_guard_env_variants_with_cleanup_unguarded
 run_test "sync-codex-config preservation scenarios A/B/C/D" \
   test_sync_preservation_scenarios
+
+run_test "stop-notification codex transcript fallback (6.1)" \
+  test_stop_notification_codex_transcript_fallback
+run_test "stop-notification secret redaction (6.2)" \
+  test_stop_notification_secret_redaction
+run_test "stop-notification timeout unavailable fail-open (6.3)" \
+  test_stop_notification_timeout_unavailable_failopen
+run_test "stop-notification helper equivalence (6.4)" \
+  test_stop_notification_helper_equivalence
 
 if [[ "$LIVE_MODE" == "1" ]]; then
   run_test "env propagation live (codex exec --ephemeral)" \
