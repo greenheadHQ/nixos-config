@@ -232,9 +232,10 @@ STUB
 
 install_mock_subscripts_with_log() {
   # dispatcher가 호출하는 3 sub-script를 mock으로 교체.
-  # $1=sandbox, $2=ordering log path, $3..=각 sub-script의 exit 코드 (인자 순서: record-last-stop, stop-notification, nrs-session-cleanup).
+  # $1=sandbox, $2=ordering log path, $3..=각 sub-script의 exit 코드.
+  # 인자 순서는 dispatcher 호출 순서와 동일 (issue #590): record-last-stop, nrs-session-cleanup, stop-notification.
   local sandbox="$1" log="$2"
-  local rls_rc="${3:-0}" sn_rc="${4:-0}" nsc_rc="${5:-0}"
+  local rls_rc="${3:-0}" nsc_rc="${4:-0}" sn_rc="${5:-0}"
 
   cat > "$sandbox/home/.codex/hooks/record-last-stop.sh" <<EOF
 #!/usr/bin/env bash
@@ -337,11 +338,11 @@ test_dispatcher_ordering_with_mock_subscripts() {
 }
 
 test_dispatcher_recovers_from_subscript_failures() {
-  # (record-last-stop fail), (stop-notification fail), (nrs-session-cleanup fail) 각 시나리오.
+  # 시나리오 순서는 dispatcher 호출 순서(record-last-stop → nrs-session-cleanup → stop-notification)를 따른다.
   local scenarios=(
     "1 0 0:record-last-stop"
-    "0 1 0:stop-notification"
-    "0 0 1:nrs-session-cleanup"
+    "0 1 0:nrs-session-cleanup"
+    "0 0 1:stop-notification"
   )
 
   # expected ordering 은 baseline test와 동일 helper 사용.
@@ -354,14 +355,14 @@ test_dispatcher_recovers_from_subscript_failures() {
     local fail_target="${entry##*:}"
     # shellcheck disable=SC2086  # 의도된 word-splitting (rc_triple은 "0 0 1" 형태)
     set -- $rc_triple
-    local rls_rc="$1" sn_rc="$2" nsc_rc="$3"
+    local rls_rc="$1" nsc_rc="$2" sn_rc="$3"
 
     local sandbox log err
     sandbox=$(new_hook_sandbox)
     log="$sandbox/ordering.log"
     err="$sandbox/dispatcher.stderr"
 
-    install_mock_subscripts_with_log "$sandbox" "$log" "$rls_rc" "$sn_rc" "$nsc_rc"
+    install_mock_subscripts_with_log "$sandbox" "$log" "$rls_rc" "$nsc_rc" "$sn_rc"
 
     if ! run_hook_in_sandbox "$sandbox" "_stop-dispatcher.sh" \
         < "$FIXTURE_DIR/stdin/stop-codex-0.124.json" 2>"$err"; then

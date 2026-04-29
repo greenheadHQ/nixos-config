@@ -24,9 +24,10 @@ EXPECTED_USER_PROMPT_COMMAND='$HOME/.codex/hooks/record-prompt-submit.sh'
 # ~/.codex/config.toml의 [[hooks.Stop.hooks]] command — 단일 dispatcher.
 EXPECTED_STOP_DISPATCHER_COMMAND='$HOME/.codex/hooks/_stop-dispatcher.sh'
 
-# dispatcher가 호출하는 sub-script. ordering은 record-last-stop → stop-notification →
-# nrs-session-cleanup. 본 배열 순서는 dispatcher 호출 순서이며 fixture ordering 검증의 expected.
-EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh stop-notification.sh nrs-session-cleanup.sh)
+# dispatcher가 호출하는 sub-script. ordering은 record-last-stop → nrs-session-cleanup →
+# stop-notification (issue #590: cleanup이 notification 외부 IPC latency 앞에서 lock 즉시 해제).
+# 본 배열 순서는 dispatcher 호출 순서이며 fixture ordering 검증의 expected.
+EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh stop-notification.sh)
 
 # live env propagation fixture에서 codex exec --ephemeral 호출 timeout (hang 방어).
 LIVE_CODEX_TIMEOUT_SECONDS=30

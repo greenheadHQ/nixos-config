@@ -97,7 +97,8 @@ in
     # Claude `~/.claude/hooks/*` 무변경 보장이 필요하므로 Codex 전용 사본을 분리한다.
     # 사본은 modules/shared/programs/codex/files/hooks/ 에서 mkOutOfStoreSymlink로 노출.
     # Stop hook은 _stop-dispatcher.sh 단일 entry로 inline [[hooks.Stop]]에 등록되며
-    # dispatcher가 record-last-stop → stop-notification → nrs-session-cleanup을 순차 호출한다.
+    # dispatcher가 record-last-stop → nrs-session-cleanup → stop-notification을 순차 호출한다
+    # (issue #590: lock 해제가 notification 외부 IPC latency를 기다리지 않도록 cleanup을 앞으로 이동).
     ".codex/hooks/record-prompt-submit.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/record-prompt-submit.sh";
     ".codex/hooks/record-last-stop.sh".source =
