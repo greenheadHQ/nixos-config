@@ -150,6 +150,15 @@
             "command": "~/.local/bin/nrs-relink fix-dangling"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pinning-alert.sh"
+          }
+        ]
       }
     ]
   },

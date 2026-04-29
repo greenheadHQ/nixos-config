@@ -487,8 +487,10 @@ echo "=== Codex active hooks 검사 ==="
 #      template 미선언 event로 등록하는 것이 보존된다. 본 검사는 managed entry 존재만 확인한다.
 #   2) ~/.codex/config.toml의 [[hooks.Stop]]는 정확히 single managed dispatcher entry — Codex가
 #      same-event multiple command를 concurrent 실행하므로 ordering 보장을 dispatcher에 위임한다.
-#   3) UserPromptSubmit / Stop expected command가 가리키는 hook + dispatcher 사본 + 3 sub-script 실재
-#   4) tests/test-codex-hook-fixtures.sh deterministic 모드 통과 (live fixture 미실행)
+#   3) ~/.codex/config.toml의 [[hooks.PostToolUse]]에 expected pinning-alert managed command가 포함되어 있는지.
+#      issue #603에서 PostToolUse도 template-owned event로 전환되었다 (warn-only pinning alert).
+#   4) UserPromptSubmit / Stop / PostToolUse expected command가 가리키는 hook + dispatcher 사본 + 3 sub-script + pinning-alert 실재
+#   5) tests/test-codex-hook-fixtures.sh deterministic 모드 통과 (live fixture 미실행)
 # fail() 한 건이라도 발생하면 errors++ → exit 1 (FAIL gate).
 
 _active_hooks_runner="$REPO_ROOT/tests/test-codex-hook-fixtures.sh"
@@ -508,15 +510,17 @@ else
   # UserPromptSubmit은 expected managed command가 포함되었는지만 검증 (사용자 추가 entry 허용).
   # Stop은 정확히 single managed dispatcher entry 강제 (concurrent 회피 contract).
   _hooks_dump=""
-  if ! _hooks_dump="$(python3 - "$CODEX_CONFIG" "$EXPECTED_USER_PROMPT_COMMAND" "$EXPECTED_STOP_DISPATCHER_COMMAND" <<'PY'
+  if ! _hooks_dump="$(python3 - "$CODEX_CONFIG" "$EXPECTED_USER_PROMPT_COMMAND" "$EXPECTED_STOP_DISPATCHER_COMMAND" "$EXPECTED_POST_TOOL_USE_PINNING_COMMAND" <<'PY'
 import sys, tomllib
 with open(sys.argv[1], "rb") as f:
     data = tomllib.load(f)
 expected_ups = sys.argv[2]
 expected_stop = sys.argv[3]
+expected_post = sys.argv[4]
 hooks = data.get("hooks", {})
 ups = hooks.get("UserPromptSubmit", []) or []
 stop = hooks.get("Stop", []) or []
+post = hooks.get("PostToolUse", []) or []
 
 ups_managed = any(
     h.get("command") == expected_ups
@@ -532,6 +536,14 @@ if len(stop) == 1:
     print(f"STOP_INNER_COUNT {len(sub)}")
     if sub:
         print(f"STOP_COMMAND {sub[0].get('command', '')}")
+
+post_managed = any(
+    h.get("command") == expected_post
+    for entry in post
+    for h in (entry.get("hooks", []) or [])
+)
+print(f"POST_TOTAL_COUNT {len(post)}")
+print(f"POST_HAS_MANAGED {'1' if post_managed else '0'}")
 PY
   )"; then
     fail "$CODEX_CONFIG hooks 구조 파싱 실패 (race 또는 invariant 위반)"
@@ -541,6 +553,8 @@ PY
     _stop_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="STOP_COUNT"{print $2}')"
     _stop_inner_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="STOP_INNER_COUNT"{print $2}')"
     _stop_command="$(printf '%s\n' "$_hooks_dump" | sed -n 's/^STOP_COMMAND //p')"
+    _post_total_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="POST_TOTAL_COUNT"{print $2}')"
+    _post_has_managed="$(printf '%s\n' "$_hooks_dump" | awk '$1=="POST_HAS_MANAGED"{print $2}')"
 
     if [ "${_ups_total_count:-0}" -ge 1 ] 2>/dev/null; then
       pass "[[hooks.UserPromptSubmit]] entry 존재 (count=$_ups_total_count)"
@@ -568,6 +582,20 @@ PY
       pass "Stop dispatcher command = $EXPECTED_STOP_DISPATCHER_COMMAND"
     else
       fail "Stop dispatcher command 불일치 (actual='$_stop_command' expected='$EXPECTED_STOP_DISPATCHER_COMMAND')"
+    fi
+
+    # PostToolUse는 issue #603에서 template-owned로 등록 — pinning-alert managed entry 포함 여부 검사.
+    # 사용자 추가 entry는 sync-codex-config.py 정책상 보존되지 않지만, 본 검사는 managed entry 존재만 확인.
+    if [ "${_post_total_count:-0}" -ge 1 ] 2>/dev/null; then
+      pass "[[hooks.PostToolUse]] entry 존재 (count=$_post_total_count)"
+    else
+      fail "[[hooks.PostToolUse]] entry 부재 (count=${_post_total_count:-?})"
+    fi
+
+    if [ "$_post_has_managed" = "1" ]; then
+      pass "PostToolUse에 expected managed command 포함: $EXPECTED_POST_TOOL_USE_PINNING_COMMAND"
+    else
+      fail "PostToolUse에 expected managed command 없음 (expected='$EXPECTED_POST_TOOL_USE_PINNING_COMMAND')"
     fi
   fi
 fi
@@ -610,6 +638,39 @@ _check_hook_executable ".codex/hooks/record-prompt-submit.sh"
 _check_hook_executable ".codex/hooks/_stop-dispatcher.sh"
 for _sub in "${EXPECTED_DISPATCHER_SUB_SCRIPTS[@]}"; do
   _check_hook_executable ".codex/hooks/$_sub"
+done
+_check_hook_executable ".codex/hooks/pinning-alert.sh"
+
+# Pinning patterns lockstep 검사 (issue #603 R2 Maintainability-1):
+#   scripts/ai/commit-msg-pinning.sh를 SSOT로 두고 신규 PostToolUse hook 두 개가 PATTERN_A/B/C/D
+#   + HASH_MIN/MAX를 inline 사본으로 들고 있다. drift 자동 감지 자동화 없음을 운영 검증으로
+#   대체한다는 정책이지만, 최소한 수동 갱신 누락을 verifier가 잡아내야 한다.
+echo ""
+echo "=== Pinning patterns SSOT lockstep 검사 ==="
+_pinning_ssot="$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
+_pinning_hooks=(
+  "$REPO_ROOT/modules/shared/programs/claude/files/hooks/pinning-alert.sh"
+  "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-alert.sh"
+)
+for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D HASH_MIN HASH_MAX; do
+  # `set -euo pipefail` 아래에서 grep 매치 실패 시 nonzero가 command substitution을
+  # 통해 부모 shell을 종료시켜 drift 보고 자체가 막히므로 `|| true`로 무력화한다.
+  _ssot_line="$(grep -m1 -E "^${_var}=" "$_pinning_ssot" || true)"
+  if [ -z "$_ssot_line" ]; then
+    fail "SSOT $_var 정의 부재 (scripts/ai/commit-msg-pinning.sh)"
+    continue
+  fi
+  for _hook in "${_pinning_hooks[@]}"; do
+    _hook_basename="${_hook#"$REPO_ROOT"/}"
+    _hook_line="$(grep -m1 -E "^${_var}=" "$_hook" || true)"
+    if [ "$_hook_line" = "$_ssot_line" ]; then
+      pass "pinning $_var lockstep OK: $_hook_basename"
+    else
+      # fail()는 첫 인자만 출력하므로 SSOT/HOOK 세부 비교를 단일 형식 문자열로 결합한다.
+      fail "$(printf 'pinning %s drift: %s\n    SSOT: %s\n    HOOK: %s' \
+        "$_var" "$_hook_basename" "$_ssot_line" "${_hook_line:-<missing>}")"
+    fi
+  done
 done
 
 # fixture self-test (deterministic, live 미실행).

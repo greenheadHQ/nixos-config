@@ -26,13 +26,14 @@ voice_transcription = true
 # subagent agent_id 부재 등은 graceful fallback에 의존.
 #
 # 사용자 hook 추가 워크플로 주의 (sync-codex-config.py 정책):
-# template이 선언한 `[[hooks.UserPromptSubmit]]` 또는 `[[hooks.Stop]]` array에 사용자가
-# 별도 entry를 추가하면, nrs 재실행 시 array 전체가 template-owned로 덮어써져 사용자
-# entry가 손실된다. 보존되는 사용자 hook 등록은 다음 한 가지뿐이다:
+# template이 선언한 `[[hooks.UserPromptSubmit]]`, `[[hooks.Stop]]`, `[[hooks.PostToolUse]]`
+# array에 사용자가 별도 entry를 추가하면, nrs 재실행 시 array 전체가 template-owned로
+# 덮어써져 사용자 entry가 손실된다. 보존되는 사용자 hook 등록은 다음 한 가지뿐이다:
 #   - template이 선언하지 않은 다른 이벤트(`PreToolUse`/`SessionStart` 등)에 추가.
 # Stop dispatcher 경유 sub-script 등록은 _stop-dispatcher.sh 자체가 tracked 파일이므로
 # 본 repo의 dispatcher 수정이 필요하며 user-config 작업으로는 지원되지 않는다.
 # same-event append/identity merge는 sync-codex-config.py 변경 필요로 별도 follow-up.
+# PostToolUse pinning-alert는 issue #603에서 template-owned로 등록되었다.
 
 [[hooks.UserPromptSubmit]]
 
@@ -45,6 +46,12 @@ command = "$HOME/.codex/hooks/record-prompt-submit.sh"
 [[hooks.Stop.hooks]]
 type = "command"
 command = "$HOME/.codex/hooks/_stop-dispatcher.sh"
+
+[[hooks.PostToolUse]]
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/pinning-alert.sh"
 
 [plugins."github@openai-curated"]
 enabled = true

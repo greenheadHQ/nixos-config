@@ -109,6 +109,9 @@ in
       config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/nrs-session-cleanup.sh";
     ".codex/hooks/_stop-dispatcher.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/_stop-dispatcher.sh";
+    # PostToolUse pinning-alert hook (issue #603) — apply_patch envelope + Edit/Write/NotebookEdit warn-only.
+    ".codex/hooks/pinning-alert.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/pinning-alert.sh";
   }
   # 글로벌 스킬 (Claude와 동일 소스 공유) — exposedCodexSkills에서 자동 생성
   // codexSkillEntries;

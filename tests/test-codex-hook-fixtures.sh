@@ -539,6 +539,30 @@ assert len(sub) == 1
 cmd = sub[0].get("command", "")
 assert cmd == expected_stop_cmd, f"command={cmd!r} expected={expected_stop_cmd!r}"
 PY
+
+  # ── E: PostToolUse template-owned (issue #603) ──
+  # PostToolUse도 template이 declare한 array이므로 사용자가 동일 event에 별도 entry를 추가하면
+  # template-owned leaf 정책에 따라 손실된다. scenario-B의 UserPromptSubmit 변형으로,
+  # PostToolUse에도 동일 정책이 적용됨을 강제한다.
+  target=$(_sync_preservation_run_one \
+    "$FIXTURE_DIR/sync-preservation/scenario-E-posttooluse-template-owned.toml" "scenario-E")
+  python3 - "$target" "$EXPECTED_POST_TOOL_USE_PINNING_COMMAND" <<'PY' \
+    || fail "scenario-E: PostToolUse 사용자 entry가 손실되어야 하지만 보존됨 (template-owned leaf 정책 위반)"
+import sys, tomllib
+with open(sys.argv[1], "rb") as f:
+    d = tomllib.load(f)
+expected_post_cmd = sys.argv[2]
+post = d.get("hooks", {}).get("PostToolUse", [])
+assert isinstance(post, list) and len(post) == 1, f"PostToolUse len={len(post)} (expected 1)"
+sub = post[0].get("hooks", [])
+assert len(sub) == 1, f"PostToolUse.hooks len={len(sub)}"
+cmd = sub[0].get("command", "")
+assert cmd == expected_post_cmd, f"command={cmd!r} expected={expected_post_cmd!r}"
+# 사용자 marker는 손실되어야 함
+all_commands = [h.get("command", "") for entry in post for h in entry.get("hooks", [])]
+assert all("USER-POSTTOOLUSE-LOST" not in c for c in all_commands), \
+    f"user marker still present: {all_commands}"
+PY
 }
 
 # ─── 카테고리 6: stop-notification reliability/security ───
@@ -790,7 +814,7 @@ run_test "dispatcher recovers from sub-script failures" \
   test_dispatcher_recovers_from_subscript_failures
 run_test "noise-guard env variants (cleanup unguarded)" \
   test_noise_guard_env_variants_with_cleanup_unguarded
-run_test "sync-codex-config preservation scenarios A/B/C/D" \
+run_test "sync-codex-config preservation scenarios A/B/C/D/E" \
   test_sync_preservation_scenarios
 
 run_test "stop-notification codex transcript fallback (6.1)" \
