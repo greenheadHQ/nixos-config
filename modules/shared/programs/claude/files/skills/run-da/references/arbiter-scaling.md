@@ -61,7 +61,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `codex exec --full-auto --ephemeral`
 - **foreground 실행** (병렬/background 없음 — 단일 exec이므로 결과를 즉시 확인. 런타임별 매커니즘은 SKILL.md "런타임 도구 매핑" 표 참조)
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
-- `cat "$ARBITER_DIR/arbiter-prompt.md" | codex exec ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지)
+- `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
 - `-m` 플래그 생략 (config.toml 기본 모델)
 - Arbiter는 strong review profile(high)을 사용한다. config.toml 기본 `model_reasoning_effort`(xhigh)와 다르므로 `-c model_reasoning_effort="high"`를 명시적으로 지정한다.
@@ -69,7 +69,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `--ephemeral`로 세션 히스토리 오염 방지
 
 `& + wait` shell-level 병렬을 사용하지 않는다 (런타임 공통; Claude Code Bash tool sandbox 제약에서 유래했으나 Codex `exec_command`·headless 셸 모두 동일하게 적용).
-`cat file | codex exec ... -` stdin pipe로 프롬프트를 전달한다. 인라인 인자 `"$(cat file)"`는 사용하지 않는다.
+`cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -` stdin pipe로 프롬프트를 전달한다. 인라인 인자 `"$(cat file)"`는 사용하지 않는다 (marker는 codex 프로세스 적용 — issue #585).
 
 ### Codex delegation-denied fallback (subprocess 실행 계약)
 
@@ -79,7 +79,7 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 - `--sandbox read-only` + `--ignore-user-config`를 함께 강제한다. `--sandbox read-only`는 model-generated shell command의 파일시스템 쓰기만 막고, user `config.toml`의 MCP server/plugin/connector 로딩은 차단하지 못한다. `--ignore-user-config`로 MCP 등 외부 연결 surface를 함께 차단해야 reviewer/Arbiter/Intensity/Auditor의 no-write 경계가 실효성 있게 보장된다 (N=3 경로와 동일한 방식).
 - `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 `model`/`model_reasoning_effort`도 차단하므로 role별 표의 `-c model="gpt-5.5"`·`-c model_reasoning_effort="..."` 명시가 필수다 (defensive explicit pin).
 - `--ephemeral`로 세션 히스토리 오염 방지.
-- `exec_command`를 `cat "$DIR/prompt.md" | codex exec --sandbox read-only --ignore-user-config --ephemeral ... - 2>stderr.log` 형태로 stdin pipe 전달.
+- `exec_command`를 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --sandbox read-only --ignore-user-config --ephemeral ... - 2>stderr.log` 형태로 stdin pipe 전달.
 - 각 review unit은 독립 subprocess (fresh 판정 경계는 프로세스 경계로 보존).
 - 사용자 승인 후에만 실행 (SKILL.md "Delegation fallback" 섹션 참조).
 
@@ -88,7 +88,8 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 **reviewer / Auditor** (standard profile):
 
 ```bash
-cat "$DA_DIR/{unit}.md" | codex exec --sandbox read-only --ignore-user-config --ephemeral \
+# marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
+cat "$DA_DIR/{unit}.md" | env CODEX_PROGRAMMATIC=1 codex exec --sandbox read-only --ignore-user-config --ephemeral \
   -c model="gpt-5.5" -c model_reasoning_effort="medium" \
   -o "$DA_DIR/{unit}-result.md" - 2>"$DA_DIR/{unit}-stderr.log"
 ```
@@ -96,7 +97,7 @@ cat "$DA_DIR/{unit}.md" | codex exec --sandbox read-only --ignore-user-config --
 **Intensity** (standard profile):
 
 ```bash
-cat "$INTENSITY_DIR/prompt.md" | codex exec --sandbox read-only --ignore-user-config --ephemeral \
+cat "$INTENSITY_DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --sandbox read-only --ignore-user-config --ephemeral \
   -c model="gpt-5.5" -c model_reasoning_effort="medium" \
   -o "$INTENSITY_DIR/result.md" - 2>"$INTENSITY_DIR/stderr.log"
 ```
@@ -104,7 +105,7 @@ cat "$INTENSITY_DIR/prompt.md" | codex exec --sandbox read-only --ignore-user-co
 **Arbiter** (strong profile):
 
 ```bash
-cat "$ARBITER_DIR/arbiter-prompt.md" | codex exec --sandbox read-only --ignore-user-config --ephemeral \
+cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --sandbox read-only --ignore-user-config --ephemeral \
   -c model="gpt-5.5" -c model_reasoning_effort="high" \
   -o "$ARBITER_DIR/arbiter-result.md" - 2>"$ARBITER_DIR/arbiter-stderr.log"
 ```
@@ -141,7 +142,8 @@ PROMPT
 
 # 3. codex exec 실행 (foreground)
 # Arbiter는 strong review profile(high) — config.toml 기본값(xhigh)을 오버라이드. model은 -m 생략하여 config.toml 기본값 사용.
-cat "$ARBITER_DIR/arbiter-prompt.md" | codex exec --full-auto --ephemeral \
+# marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
+cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --full-auto --ephemeral \
   -c model_reasoning_effort="high" \
   -o "$ARBITER_DIR/arbiter-result.md" \
   - \

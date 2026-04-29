@@ -92,6 +92,22 @@ in
     # 런타임에서 사용 가능하게 한다.
     ".codex/scripts/fleiss-kappa.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
+
+    # Codex 0.124+ stable hooks (issue #585 / epic #584).
+    # Claude `~/.claude/hooks/*` 무변경 보장이 필요하므로 Codex 전용 사본을 분리한다.
+    # 사본은 modules/shared/programs/codex/files/hooks/ 에서 mkOutOfStoreSymlink로 노출.
+    # Stop hook은 _stop-dispatcher.sh 단일 entry로 inline [[hooks.Stop]]에 등록되며
+    # dispatcher가 record-last-stop → stop-notification → nrs-session-cleanup을 순차 호출한다.
+    ".codex/hooks/record-prompt-submit.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/record-prompt-submit.sh";
+    ".codex/hooks/record-last-stop.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/record-last-stop.sh";
+    ".codex/hooks/stop-notification.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/stop-notification.sh";
+    ".codex/hooks/nrs-session-cleanup.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/nrs-session-cleanup.sh";
+    ".codex/hooks/_stop-dispatcher.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/_stop-dispatcher.sh";
   }
   # 글로벌 스킬 (Claude와 동일 소스 공유) — exposedCodexSkills에서 자동 생성
   // codexSkillEntries;
