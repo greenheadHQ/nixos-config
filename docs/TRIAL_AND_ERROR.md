@@ -1200,9 +1200,11 @@ codeExtensions = [
    - 특정 UTI는 사용자가 변경할 수 없도록 잠겨 있음
    - CLI 도구로 강제 변경 불가
 
-2. **duti 에러는 치명적이지 않음**
-   - 개별 확장자 설정 실패해도 다른 확장자에 영향 없음
-   - activation 전체가 중단되지 않음
+2. **duti 에러는 set -e 환경에서 치명적임**
+   - home-manager activate 스크립트는 `set -eu -o pipefail`로 실행됨 (`setupLaunchAgents`만 `set +e`로 보호)
+   - duti 호출이 직접 실행되면 **첫 실패에서 set -e 발동 → activation 전체 중단 → darwin-rebuild exit 2**
+   - 위 (1)의 `error -54` 케이스에서도 정적 UTI 매핑이 있어 activation은 통과했지만, 정적 UTI가 없는 확장자(`.mdx`, `.nix`, `.toml` 등)는 동적 UTI로 매핑되어 `error -50`을 반환하며 첫 실패에서 빌드를 중단시킴 (실제 회귀 사례는 별도 후속 항목 참조)
+   - 활성화 스크립트는 helper로 감싸 실패를 흡수하거나 명시적으로 `set +e` 보호 필요
 
 3. **HTML 파일은 브라우저로 여는 것이 macOS 기본 정책**
    - 개발자 워크플로우와 충돌하는 부분

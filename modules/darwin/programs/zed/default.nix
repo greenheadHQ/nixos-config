@@ -96,17 +96,57 @@ in
   };
 
   # Zed를 기본 에디터로 설정 (duti)
+  # macOS LaunchServices에 정적 UTI가 없는 확장자(.mdx, .nix, .toml 등)는 동적 UTI(dyn.*)로
+  # 매핑되어 duti가 -50을 반환한다. activate 스크립트는 set -eu로 실행되므로 첫 실패 시
+  # darwin-rebuild가 exit 2로 종료되므로 helper로 감싸 실패를 카운터로 집계한다.
   home.activation.setZedAsDefaultEditor = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     echo "Setting Zed as default editor for code files..."
 
-    ${lib.concatMapStringsSep "\n" (
-      ext: "${pkgs.duti}/bin/duti -s ${zedBundleId} .${ext} all"
-    ) codeExtensions}
+    skipped=0
+    total=0
+    first_failure=""
+    first_failure_err=""
+    public_uti_failed=0
+    set_handler() {
+      total=$((total + 1))
+      local err
+      if ! err=$(${pkgs.duti}/bin/duti -s ${zedBundleId} "$1" all 2>&1); then
+        skipped=$((skipped + 1))
+        if [ -z "$first_failure" ]; then
+          first_failure="$1"
+          first_failure_err="$err"
+        fi
+      fi
+    }
 
-    # UTI 설정 (public.data 제거 — 범위가 너무 넓음)
-    ${pkgs.duti}/bin/duti -s ${zedBundleId} public.plain-text all
-    ${pkgs.duti}/bin/duti -s ${zedBundleId} public.source-code all
+    # public.plain-text / public.source-code는 정적 UTI라 정상 등록되어야 한다.
+    # 실패는 카운트로 흡수하지 않고 즉시 출력 + 별도 카운터 — 정적 UTI fallback이 깨지면
+    # codeExtensions 매핑에 없는 파일이 Zed로 열리지 않을 수 있다.
+    register_public_uti() {
+      local err
+      if ! err=$(${pkgs.duti}/bin/duti -s ${zedBundleId} "$1" all 2>&1); then
+        public_uti_failed=$((public_uti_failed + 1))
+        echo "  ❌ Failed to register $1: $err — Zed may not open code files via fallback UTI"
+      fi
+    }
 
-    echo "Zed default settings applied successfully."
+    ${lib.concatMapStringsSep "\n" (ext: ''set_handler ".${ext}"'') codeExtensions}
+
+    register_public_uti public.plain-text
+    register_public_uti public.source-code
+
+    if [ "$skipped" -gt 0 ]; then
+      echo "  ⚠️  Skipped $skipped of $total extensions rejected by duti (first: $first_failure → $first_failure_err)"
+    fi
+    # Catastrophic case: 모든 codeExtensions 실패 + 모든 public.* 실패 — bundle id 오류,
+    # Zed 미설치, duti 자체 고장 같은 설정 오류 신호. activation은 통과시키되 즉시 보임.
+    if [ "$total" -gt 0 ] && [ "$skipped" -eq "$total" ] && [ "$public_uti_failed" -eq 2 ]; then
+      echo "  🚨 Critical: all duti registrations failed — likely incorrect bundle id, Zed not installed, or duti broken"
+    fi
+    if [ "$public_uti_failed" -gt 0 ]; then
+      echo "Zed default settings applied with warnings ($public_uti_failed public UTI registration failed)."
+    else
+      echo "Zed default settings applied."
+    fi
   '';
 }
