@@ -1,0 +1,16 @@
+# Scenario A: template이 declare한 event를 user가 (의도치 않게) 동일 entry로 들고 있는 경우.
+# sync 후에도 template이 declare한 leaf 그대로 유지된다.
+
+model = "gpt-5.5"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/record-prompt-submit.sh"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/_stop-dispatcher.sh"

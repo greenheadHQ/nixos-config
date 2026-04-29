@@ -22,16 +22,16 @@ prevent_idle_sleep = true
 # 활성화 불필요. 발화 미실측 시 rollback path = `[features].codex_hooks = true`.
 # Stop은 _stop-dispatcher.sh 단일 entry로 등록 (Codex가 같은 이벤트의 multiple command를
 # concurrent 실행하므로 ordering 보장을 dispatcher에 위임).
-# subagent agent_id 부재 등은 graceful fallback에 의존 (#586 fixture가 측정).
+# subagent agent_id 부재 등은 graceful fallback에 의존.
 #
 # 사용자 hook 추가 워크플로 주의 (sync-codex-config.py 정책):
 # template이 선언한 `[[hooks.UserPromptSubmit]]` 또는 `[[hooks.Stop]]` array에 사용자가
 # 별도 entry를 추가하면, nrs 재실행 시 array 전체가 template-owned로 덮어써져 사용자
-# entry가 손실된다 (epic #584 PoC 시나리오 B). 사용자 hook을 추가하려면:
-#   (1) template이 선언하지 않은 다른 이벤트(`PreToolUse`/`SessionStart` 등)에 추가,
-#   (2) 또는 별도 dispatcher wrapper에 sub-script로 등록 후 dispatcher만 template에 둔다.
-# 본 epic의 non-goal: same-event append/identity merge는 sync-codex-config.py 변경이
-# 필요하므로 별도 follow-up.
+# entry가 손실된다. 보존되는 사용자 hook 등록은 다음 한 가지뿐이다:
+#   - template이 선언하지 않은 다른 이벤트(`PreToolUse`/`SessionStart` 등)에 추가.
+# Stop dispatcher 경유 sub-script 등록은 _stop-dispatcher.sh 자체가 tracked 파일이므로
+# 본 repo의 dispatcher 수정이 필요하며 user-config 작업으로는 지원되지 않는다.
+# same-event append/identity merge는 sync-codex-config.py 변경 필요로 별도 follow-up.
 
 [[hooks.UserPromptSubmit]]
 

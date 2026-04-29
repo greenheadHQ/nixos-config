@@ -1,0 +1,21 @@
+# Scenario D: 사용자 mcp_servers entry와 hooks가 인접 ownership view로 공존하는지 확인.
+# template은 mcp_servers를 declare하지 않으므로 사용자 mcp_servers는 user-owned로 보존되고,
+# hooks는 template이 declare한 그대로 유지된다.
+
+model = "gpt-5.5"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[mcp_servers.test-marker-user-mcp]
+command = "/tmp/test-marker-USER-MCP-PRESERVED.sh"
+args = ["--fixture-only"]
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/record-prompt-submit.sh"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/_stop-dispatcher.sh"

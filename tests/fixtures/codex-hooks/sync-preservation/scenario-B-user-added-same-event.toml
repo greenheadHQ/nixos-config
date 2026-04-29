@@ -1,0 +1,18 @@
+# Scenario B: 사용자가 template이 declare한 동일 event(hooks.UserPromptSubmit)에 추가
+# entry를 넣은 경우. sync-codex-config.py는 이 array 전체를 template-owned leaf로 보고
+# template 값으로 덮어쓴다 → 사용자 entry "/tmp/test-marker-USER-ENTRY-LOST.sh"는 손실된다.
+# fixture는 이 정책 동작을 명시적으로 검증한다.
+
+model = "gpt-5.5"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/record-prompt-submit.sh"
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "/tmp/test-marker-USER-ENTRY-LOST.sh"

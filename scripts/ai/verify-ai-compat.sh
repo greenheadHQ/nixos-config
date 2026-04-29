@@ -469,10 +469,161 @@ verify_claude_helper "fleiss-kappa.py"
 echo ""
 echo "=== Hooks 산출물 확인 ==="
 
+# stale guard: <repo>/.codex/hooks.json 또는 <repo>/.codex/hooks.compatibility.json은
+# 폐기된 패턴이라 잔재 시 fail. 단 user-level ~/.codex/hooks.json은 0.124+ stable inline TOML과
+# 함께 valid source 가능성이 있어 검사 대상 아님.
 if [ -e "$REPO_ROOT/.codex/hooks.json" ] || [ -e "$REPO_ROOT/.codex/hooks.compatibility.json" ]; then
   fail "stale Codex hook artifacts present (.codex/hooks*.json)"
 else
   pass "repo-local Codex hook artifacts 없음"
+fi
+
+echo ""
+echo "=== Codex active hooks 검사 ==="
+
+# Codex 0.124+ stable hook host-state 검사:
+#   1) ~/.codex/config.toml의 [[hooks.UserPromptSubmit]]에 expected managed command가 포함되어 있는지.
+#      sync-codex-config.py는 같은 event의 사용자 추가 entry를 보존하지 않으므로 사용자 hook 추가는
+#      template 미선언 event로 등록하는 것이 보존된다. 본 검사는 managed entry 존재만 확인한다.
+#   2) ~/.codex/config.toml의 [[hooks.Stop]]는 정확히 single managed dispatcher entry — Codex가
+#      same-event multiple command를 concurrent 실행하므로 ordering 보장을 dispatcher에 위임한다.
+#   3) UserPromptSubmit / Stop expected command가 가리키는 hook + dispatcher 사본 + 3 sub-script 실재
+#   4) tests/test-codex-hook-fixtures.sh deterministic 모드 통과 (live fixture 미실행)
+# fail() 한 건이라도 발생하면 errors++ → exit 1 (FAIL gate).
+
+_active_hooks_runner="$REPO_ROOT/tests/test-codex-hook-fixtures.sh"
+# Hook contract expectation oracle: tests/lib/codex-hook-expectations.sh가 단일 정의 위치.
+# shellcheck source=../../tests/lib/codex-hook-expectations.sh
+. "$REPO_ROOT/tests/lib/codex-hook-expectations.sh"
+
+if [ ! -f "$CODEX_CONFIG" ]; then
+  fail "$CODEX_CONFIG 없음 — active hooks 검사 불가"
+elif ! _toml_inspect --what=parse "$CODEX_CONFIG"; then
+  # tomllib hard-exit 대신 soft-fail로 wrap. 다른 검사 섹션과 동일 accumulate 패턴 유지
+  # (errors++ → 최종 summary에서 한꺼번에 보고).
+  fail "$CODEX_CONFIG TOML 파싱 실패 — active hooks 구조 검사 skip"
+else
+  # tomllib로 hooks 구조 파싱 (bootstrap에서 python3 ≥ 3.11 보장).
+  # parse는 위에서 이미 성공 확인했으므로 여기서 traceback이 나오면 race(파일 교체) 외 케이스는 없다.
+  # UserPromptSubmit은 expected managed command가 포함되었는지만 검증 (사용자 추가 entry 허용).
+  # Stop은 정확히 single managed dispatcher entry 강제 (concurrent 회피 contract).
+  _hooks_dump=""
+  if ! _hooks_dump="$(python3 - "$CODEX_CONFIG" "$EXPECTED_USER_PROMPT_COMMAND" "$EXPECTED_STOP_DISPATCHER_COMMAND" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as f:
+    data = tomllib.load(f)
+expected_ups = sys.argv[2]
+expected_stop = sys.argv[3]
+hooks = data.get("hooks", {})
+ups = hooks.get("UserPromptSubmit", []) or []
+stop = hooks.get("Stop", []) or []
+
+ups_managed = any(
+    h.get("command") == expected_ups
+    for entry in ups
+    for h in (entry.get("hooks", []) or [])
+)
+print(f"UPS_TOTAL_COUNT {len(ups)}")
+print(f"UPS_HAS_MANAGED {'1' if ups_managed else '0'}")
+
+print(f"STOP_COUNT {len(stop)}")
+if len(stop) == 1:
+    sub = stop[0].get("hooks", []) or []
+    print(f"STOP_INNER_COUNT {len(sub)}")
+    if sub:
+        print(f"STOP_COMMAND {sub[0].get('command', '')}")
+PY
+  )"; then
+    fail "$CODEX_CONFIG hooks 구조 파싱 실패 (race 또는 invariant 위반)"
+  else
+    _ups_total_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="UPS_TOTAL_COUNT"{print $2}')"
+    _ups_has_managed="$(printf '%s\n' "$_hooks_dump" | awk '$1=="UPS_HAS_MANAGED"{print $2}')"
+    _stop_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="STOP_COUNT"{print $2}')"
+    _stop_inner_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="STOP_INNER_COUNT"{print $2}')"
+    _stop_command="$(printf '%s\n' "$_hooks_dump" | sed -n 's/^STOP_COMMAND //p')"
+
+    if [ "${_ups_total_count:-0}" -ge 1 ] 2>/dev/null; then
+      pass "[[hooks.UserPromptSubmit]] entry 존재 (count=$_ups_total_count)"
+    else
+      fail "[[hooks.UserPromptSubmit]] entry 부재 (count=${_ups_total_count:-?})"
+    fi
+
+    if [ "$_ups_has_managed" = "1" ]; then
+      pass "UserPromptSubmit에 expected managed command 포함: $EXPECTED_USER_PROMPT_COMMAND"
+    else
+      fail "UserPromptSubmit에 expected managed command 없음 (expected='$EXPECTED_USER_PROMPT_COMMAND')"
+    fi
+
+    # Stop은 dispatcher 단일 entry contract — concurrent 실행 회피.
+    # 사용자 추가 hook은 template 미선언 event(예: PreToolUse, SessionStart)에 등록할 때만
+    # sync-codex-config.py가 보존한다. Stop dispatcher 경유 sub-script 추가는 _stop-dispatcher.sh가
+    # tracked 파일이라 user-config로 지원되지 않는다 (config.toml 주석 참조).
+    if [ "${_stop_count:-0}" = "1" ] && [ "${_stop_inner_count:-0}" = "1" ]; then
+      pass "[[hooks.Stop]] single managed dispatcher entry (concurrent 회피)"
+    else
+      fail "[[hooks.Stop]]은 정확히 single dispatcher entry여야 함 (outer=${_stop_count:-?} inner=${_stop_inner_count:-?})"
+    fi
+
+    if [ "$_stop_command" = "$EXPECTED_STOP_DISPATCHER_COMMAND" ]; then
+      pass "Stop dispatcher command = $EXPECTED_STOP_DISPATCHER_COMMAND"
+    else
+      fail "Stop dispatcher command 불일치 (actual='$_stop_command' expected='$EXPECTED_STOP_DISPATCHER_COMMAND')"
+    fi
+  fi
+fi
+
+# command resolution: $HOME 확장 후 hook 사본이 실재 + executable + canonical target이
+# 어떤 nixos-config checkout의 modules/shared/programs/codex/files/hooks/<name>인지 검증.
+# worktree 환경에서는 activation이 mkOutOfStoreSymlink target을 main checkout(nixosConfigPath)으로
+# 두지만 verifier는 worktree REPO_ROOT에서 실행되므로 두 경로가 다를 수 있다. 따라서 path suffix
+# 매칭(.../modules/shared/programs/codex/files/hooks/<name>)과 readlink target 실재만 검사하여
+# main checkout / worktree 양쪽에서 false fail이 나지 않도록 한다.
+_check_hook_executable() {
+  local relpath="$1" abspath="$HOME/$1" hook_name
+  hook_name="$(basename "$relpath")"
+  local expected_suffix="modules/shared/programs/codex/files/hooks/$hook_name"
+  if [ ! -e "$abspath" ]; then
+    fail "hook 사본 없음: $abspath"
+    return
+  fi
+  if [ ! -x "$abspath" ]; then
+    fail "hook 실행 권한 없음: $abspath"
+    return
+  fi
+  local resolved
+  resolved="$(readlink -f "$abspath" 2>/dev/null || true)"
+  if [ -z "$resolved" ] || [ ! -f "$resolved" ]; then
+    fail "hook 사본 readlink 실패 또는 target 부재: $relpath (resolved=$resolved)"
+    return
+  fi
+  case "$resolved" in
+    */"$expected_suffix")
+      pass "hook 사본 OK: $relpath"
+      ;;
+    *)
+      fail "hook 사본 대상 path suffix 불일치: $relpath (resolved=$resolved expected_suffix=*/$expected_suffix)"
+      ;;
+  esac
+}
+
+_check_hook_executable ".codex/hooks/record-prompt-submit.sh"
+_check_hook_executable ".codex/hooks/_stop-dispatcher.sh"
+for _sub in "${EXPECTED_DISPATCHER_SUB_SCRIPTS[@]}"; do
+  _check_hook_executable ".codex/hooks/$_sub"
+done
+
+# fixture self-test (deterministic, live 미실행).
+if [ ! -x "$_active_hooks_runner" ]; then
+  fail "tests/test-codex-hook-fixtures.sh 실행 불가 (path=$_active_hooks_runner)"
+else
+  _runner_log="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-runner.XXXXXX")"
+  if "$_active_hooks_runner" --no-live >"$_runner_log" 2>&1; then
+    pass "test-codex-hook-fixtures.sh deterministic 통과"
+  else
+    fail "test-codex-hook-fixtures.sh deterministic 실패 — 아래 로그 참조"
+    sed 's/^/    /' "$_runner_log" >&2
+  fi
+  rm -f "$_runner_log"
 fi
 
 echo ""

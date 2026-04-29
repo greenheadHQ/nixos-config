@@ -13,6 +13,11 @@ pre-commit:
       run: shellcheck -S warning {staged_files}
     eval-tests:
       run: bash ./tests/run-eval-tests.sh
+    codex-hook-fixtures:
+      # deterministic 모드 (live fixture 미실행). runner 자체가 scripts/ai/lib/tomlkit-bootstrap.sh를
+      # source하여 repo-pinned pythonWithTomlkit으로 self-wrap하므로 lefthook에서 추가 nix shell
+      # wrap이 불필요하다. live propagation 검증은 manual/scheduled에 위임.
+      run: bash ./tests/test-codex-hook-fixtures.sh --no-live
 
 commit-msg:
   commands:
@@ -31,5 +36,9 @@ pre-push:
       # `_TOMLKIT_BOOTSTRAP_READY=1` env를 명시적으로 넘겨, `tests/run-shell-script-tests.sh`
       # 내부의 tomlkit-bootstrap.sh가 중첩 `nix shell ...`을 다시 exec하지 않도록 한다.
       run: nix shell .#pythonWithTomlkit --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
+    codex-hook-fixtures:
+      # pre-commit에 이미 동일 명령이 있지만 push 직전 재검증해 stale state 회귀 차단.
+      # runner self-bootstrap이라 추가 nix shell wrap 불필요. live propagation은 attach하지 않음.
+      run: bash ./tests/test-codex-hook-fixtures.sh --no-live
     flake-check:
       run: nix flake check --no-build --all-systems

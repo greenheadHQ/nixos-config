@@ -1,0 +1,21 @@
+# Scenario C: template이 선언하지 않은 event(hooks.SessionStart)를 사용자가 추가한 경우.
+# sync-codex-config.py는 template-undeclared leaf를 user-owned로 간주해 그대로 보존한다.
+
+model = "gpt-5.5"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/record-prompt-submit.sh"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/_stop-dispatcher.sh"
+
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "/tmp/test-marker-USER-SESSIONSTART-PRESERVED.sh"
