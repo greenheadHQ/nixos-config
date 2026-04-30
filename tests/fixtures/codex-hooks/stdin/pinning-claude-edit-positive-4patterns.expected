@@ -1,0 +1,5 @@
+[pinning-alert] Edit on /tmp/fixture-pinning-positive.md 매치:
+  - Round counter 박제: 'Round N'
+  - Bundle finding ID 박제: 'Bundle-N'
+  - DA 실행 키워드 박제
+  - Partial commit hash 박제 (7~12자)

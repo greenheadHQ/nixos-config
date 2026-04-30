@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/fixture-pinning-clean.md",
+    "content": "Hello world.\nThis text contains no Round counter, no finding ID, no DA keyword, no commit hash.\n"
+  }
+}

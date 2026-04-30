@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "echo 'Round 1 with deadbeef hash but Bash is out of scope'"
+  }
+}
