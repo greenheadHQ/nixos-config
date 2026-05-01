@@ -648,13 +648,14 @@ test_wt_cd_by_name_returns_target_path() {
 
   expected_path="$repo_root/.claude/worktrees/feature_one"
   output=$(
-    HOME="$home_dir" \
-    PATH="$FIXTURE_DIR/bin:$PATH" \
-    bash -c '
-      set -euo pipefail
-      cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/wt"'" cd feature_one
-    ' 2>&1
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" cd feature_one
+      ' 2>&1
   )
 
   assert_contains "$output" "$expected_path"
@@ -803,14 +804,15 @@ EOF
   chmod +x "$fallback_dir/codex-sync"
 
   output=$(
-    HOME="$home_dir" \
-    PATH="$fallback_dir:$FIXTURE_DIR/bin:$PATH" \
-    CODEX_SYNC_MARKER="$marker_file" \
-    bash -c '
-      set -euo pipefail
-      cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/wt"'" feature-two
-    ' 2>&1
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$fallback_dir:$FIXTURE_DIR/bin:$PATH" \
+      CODEX_SYNC_MARKER="$marker_file" \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" feature-two
+      ' 2>&1
   )
 
   new_worktree="$repo_root/.claude/worktrees/feature-two"
