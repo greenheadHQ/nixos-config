@@ -332,16 +332,54 @@ mcp_config() {
 
   # Collect MCP source args
   local project_mcp=""
+  local project_mcp_set=0
   local plugin_mcps=()
+  local plugin_mcp_paths=()
+  local plugin_mcp_installs=()
+  local plugin_mcp_names=()
   local user_mcp=""
+  local user_mcp_set=0
   local user_codex_config=""
   for arg in "$@"; do
     case "$arg" in
-      --project-mcp=*) project_mcp="${arg#--project-mcp=}" ;;
+      --project-mcp=*) project_mcp="${arg#--project-mcp=}"; project_mcp_set=1 ;;
       --plugin-mcp=*)  plugin_mcps+=("${arg#--plugin-mcp=}") ;;
-      --user-mcp=*) user_mcp="${arg#--user-mcp=}" ;;
+      --user-mcp=*) user_mcp="${arg#--user-mcp=}"; user_mcp_set=1 ;;
       --user-codex-config=*) user_codex_config="${arg#--user-codex-config=}" ;;
     esac
+  done
+
+  if [ "$project_mcp_set" -eq 0 ] && [ "$user_mcp_set" -eq 0 ] && [ "${#plugin_mcps[@]}" -eq 0 ]; then
+    echo "sync.sh mcp-config: at least one source option (--project-mcp/--plugin-mcp/--user-mcp) required" >&2
+    echo "Usage: sync.sh mcp-config <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]... [--user-mcp=PATH] [--user-codex-config=PATH]" >&2
+    return 1
+  fi
+  if [ "$project_mcp_set" -eq 1 ] && [ ! -f "$project_mcp" ]; then
+    echo "sync.sh mcp-config: --project-mcp source missing: ${project_mcp:-<empty>} (create the file or omit --project-mcp)" >&2
+    return 1
+  fi
+  if [ "$user_mcp_set" -eq 1 ] && [ ! -f "$user_mcp" ]; then
+    echo "sync.sh mcp-config: --user-mcp source missing: ${user_mcp:-<empty>} (create the file or omit --user-mcp)" >&2
+    return 1
+  fi
+  for pm in "${plugin_mcps[@]}"; do
+    local plugin_mcp_path="${pm%%:*}"
+    local plugin_mcp_rest="${pm#*:}"
+    local plugin_mcp_install="${plugin_mcp_rest%%:*}"
+    local plugin_mcp_name="${plugin_mcp_rest#*:}"
+    if [ "$plugin_mcp_rest" = "$pm" ] || [ "$plugin_mcp_name" = "$plugin_mcp_rest" ] \
+      || [[ "$plugin_mcp_name" == *:* ]] \
+      || [ -z "$plugin_mcp_path" ] || [ -z "$plugin_mcp_install" ] || [ -z "$plugin_mcp_name" ]; then
+      echo "sync.sh mcp-config: malformed --plugin-mcp source: ${pm:-<empty>} (expected PATH:INSTALL_PATH:NAME)" >&2
+      return 1
+    fi
+    if [ ! -f "$plugin_mcp_path" ]; then
+      echo "sync.sh mcp-config: --plugin-mcp source missing: $plugin_mcp_path (create the file or omit --plugin-mcp)" >&2
+      return 1
+    fi
+    plugin_mcp_paths+=("$plugin_mcp_path")
+    plugin_mcp_installs+=("$plugin_mcp_install")
+    plugin_mcp_names+=("$plugin_mcp_name")
   done
 
   if [ -n "$user_mcp" ]; then
@@ -358,8 +396,10 @@ mcp_config() {
   [ -n "$project_mcp" ] && env_args+=("PROJECT_MCP=$project_mcp")
   [ -n "$user_mcp" ] && env_args+=("USER_MCP=$user_mcp")
   local idx=0
-  for pm in "${plugin_mcps[@]}"; do
-    env_args+=("PLUGIN_MCP_${idx}=$pm")
+  while [ "$idx" -lt "${#plugin_mcp_paths[@]}" ]; do
+    env_args+=("PLUGIN_MCP_PATH_${idx}=${plugin_mcp_paths[$idx]}")
+    env_args+=("PLUGIN_MCP_INSTALL_${idx}=${plugin_mcp_installs[$idx]}")
+    env_args+=("PLUGIN_MCP_NAME_${idx}=${plugin_mcp_names[$idx]}")
     idx=$((idx + 1))
   done
 
@@ -445,15 +485,17 @@ if user_mcp and os.path.isfile(user_mcp):
 
 i = 0
 while True:
-    pm = os.environ.get(f'PLUGIN_MCP_{i}', '')
-    if not pm:
+    mcp_path = os.environ.get(f'PLUGIN_MCP_PATH_{i}', '')
+    if not mcp_path:
         break
-    parts = pm.split(':', 2)
-    if len(parts) == 3:
-        mcp_path, ipath, pname = parts
-        if os.path.isfile(mcp_path):
-            for name, cfg in load_mcp(mcp_path, ipath).items():
-                all_servers.append((name, cfg, pname))
+    ipath = os.environ.get(f'PLUGIN_MCP_INSTALL_{i}', '')
+    pname = os.environ.get(f'PLUGIN_MCP_NAME_{i}', '')
+    if not ipath or not pname:
+        sys.exit(f"sync.sh mcp-config: malformed normalized plugin MCP source at index {i}")
+    if not os.path.isfile(mcp_path):
+        sys.exit(f"sync.sh mcp-config: --plugin-mcp source missing after validation: {mcp_path}")
+    for name, cfg in load_mcp(mcp_path, ipath).items():
+        all_servers.append((name, cfg, pname))
     i += 1
 
 # Collision-based prefixing: only prefix when names collide
@@ -533,6 +575,11 @@ sync_all() {
       --user-codex-config=*) user_codex_config="${arg#--user-codex-config=}" ;;
     esac
   done
+
+  if [ -n "$user_mcp" ] && [ ! -f "$user_mcp" ]; then
+    echo "sync.sh all: --user-mcp source missing: $user_mcp (create the file or omit --user-mcp)" >&2
+    return 1
+  fi
 
   echo "=== syncing-codex-harness: Full Sync ===" >&2
 

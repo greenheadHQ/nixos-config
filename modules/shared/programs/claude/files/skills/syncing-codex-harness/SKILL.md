@@ -28,7 +28,7 @@ Codex CLI 호환 구조(`.agents/`, `.codex/`)로 프로젝션한다.
 
 ### MCP 섹션 가드 예시
 
-`mcp-config`는 source 파일 부재 시 기존 `[mcp_servers.*]`를 silent 삭제하므로 호출 전 존재 가드가 필수다. 가드는 `if [ -f X ]; then ...; fi` 형태로 작성한다 — `set -e` 환경에서도 안전하다.
+`mcp-config`는 source 옵션 없이 호출하거나 `--project-mcp`/`--plugin-mcp`/`--user-mcp` source 파일이 없으면 fail-fast한다. 선택적 source를 다루는 호출자는 불필요한 실패를 피하기 위해 `if [ -f X ]; then ...; fi` 가드를 사용한다 — `set -e` 환경에서도 안전하다.
 
 ```bash
 # 프로젝트 MCP 섹션만
@@ -43,7 +43,7 @@ fi
 ```
 
 > 추가 동작 노트:
-> - `mcp-config`는 source 옵션 (`--project-mcp` / `--plugin-mcp` / `--user-mcp`) 중 적어도 하나가 필요하다. source 없이 호출하거나 `--project-mcp=<path>`의 path 파일이 없으면 새 MCP TOML이 비어 `replace_mcp_sections`가 기존 `[mcp_servers.*]` 섹션을 모두 제거한다 (`references/sync.sh`의 mcp-config 경로 참조). `sync.sh`는 source 부재를 오류로 처리하지 않으므로 호출자(또는 위 가드)가 책임진다.
+> - `mcp-config`는 source 옵션 (`--project-mcp` / `--plugin-mcp` / `--user-mcp`) 중 적어도 하나가 필요하다. source 없이 호출하거나 source path 파일이 없으면 `sync.sh`가 non-zero로 종료하며 기존 `[mcp_servers.*]` 섹션을 건드리지 않는다. `--plugin-mcp`는 `PATH:INSTALL_PATH:NAME` 형식이어야 한다.
 > - `all` 경로는 인자 조립 시점에 `[ -f .mcp.json ]` 가드를 두어 이 문제를 피한다.
 > - `project-skills`는 `<source-skills-dir> <target-skills-dir>` 두 인자를 모두 명시해야 한다. `sync.sh`는 `set -u` 아래에서 동작하므로 한 인자만 넘기면 즉시 `unbound variable`로 실패하고 종료한다 (투영이 0개로 끝나는 게 아니라 실행 자체가 멈춘다).
 > - **`set -e` 가드 패턴 (단일 SoT)**: 위 if 가드 형태가 본 SKILL의 표준이다. 이전 `test -f X && cmd` 형태는 standalone statement 위치(함수/스크립트 마지막 또는 단독 실행)에서 false 평가 시 exit 1을 propagate해 `set -e` caller를 abort시킨다. `if` 조건 *내부*의 `[ ... ] && [ ... ]`은 단일 평가식이므로 안전하며 본 가이드의 금지 대상이 아니다.

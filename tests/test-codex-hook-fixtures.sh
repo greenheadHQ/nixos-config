@@ -2,7 +2,7 @@
 # tests/test-codex-hook-fixtures.sh
 # Codex 0.124+ stable hook 회귀 차단 fixture runner.
 #
-# 7 카테고리:
+# 8 카테고리:
 #   1. stdin schema baseline 0.124       — fixtures/codex-hooks/stdin/{userpromptsubmit-codex-0.124,stop-codex-0.124,stop-no-last-message}.json
 #   2. dispatcher ordering / failure recovery — runner 내부 mock subscript
 #   3. noise-guard env 변형              — runner 내부 helper (4 env 조합)
@@ -10,6 +10,7 @@
 #   5. env propagation (live opt-in)      — CODEX_HOOK_LIVE=1 / --live
 #   6. stop-notification reliability/security — transcripts/ + stdin secret/transcript fixtures
 #   7. pinning-alert behavioral          — fixtures/codex-hooks/stdin/pinning-{claude,codex}-*.json
+#   8. sync.sh mcp-config fail-fast      — missing/no source가 기존 MCP 섹션을 지우지 않음
 #
 # nrs-session-cleanup.sh는 NRS_LOCK_FILE을 하드코딩하므로 (host /tmp/nrs-state 누수 위험)
 # fixture는 real script를 직접 호출하지 않고 mock subscript로 대체한다.
@@ -69,6 +70,7 @@ else
   TEMPLATE_REPO_FILE="$REPO_ROOT/modules/shared/programs/codex/files/config.toml"
 fi
 SYNC_SCRIPT="$REPO_ROOT/modules/shared/programs/codex/files/sync-codex-config.py"
+SYNC_HARNESS_SH="$REPO_ROOT/modules/shared/programs/claude/files/skills/syncing-codex-harness/references/sync.sh"
 
 # ─── CLI 인자 / opt-in 모드 ───
 # Precedence: CODEX_HOOK_LIVE env가 default를 set하고, CLI 인자가 그 위에 적용된다.
@@ -579,6 +581,154 @@ assert all("USER-POSTTOOLUSE-LOST" not in c for c in all_commands), \
 PY
 }
 
+# ─── 카테고리 8: syncing-codex-harness mcp-config fail-fast (#609) ───
+_write_existing_mcp_config() {
+  local target="$1"
+  mkdir -p "$(dirname "$target")"
+  cat > "$target" <<'EOF'
+model = "gpt-5.5"
+
+[mcp_servers.existing]
+command = "/tmp/existing-mcp"
+EOF
+}
+
+_assert_existing_mcp_preserved() {
+  local target="$1" scenario="$2"
+  grep -Fqx '[mcp_servers.existing]' "$target" \
+    || fail "[$scenario] 기존 mcp_servers.existing 섹션이 보존되어야 함"
+  grep -Fqx 'command = "/tmp/existing-mcp"' "$target" \
+    || fail "[$scenario] 기존 MCP command가 보존되어야 함"
+}
+
+test_sync_sh_mcp_config_valid_sources() {
+  local sandbox project_root config_file plugin_dir
+  sandbox=$(new_hook_sandbox)
+  project_root="$sandbox/project"
+  config_file="$project_root/.codex/config.toml"
+  plugin_dir="$project_root/plugin"
+  mkdir -p "$project_root/.codex" "$plugin_dir"
+
+  cat > "$project_root/.mcp.json" <<'EOF'
+{
+  "mcpServers": {
+    "project-server": {
+      "command": "/tmp/project-server"
+    }
+  }
+}
+EOF
+  cat > "$plugin_dir/.mcp.json" <<'EOF'
+{
+  "mcpServers": {
+    "plugin-server": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/plugin-server",
+      "args": ["--root", "${CLAUDE_PLUGIN_ROOT}"]
+    }
+  }
+}
+EOF
+
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --project-mcp="$project_root/.mcp.json" \
+    --plugin-mcp="$plugin_dir/.mcp.json:$plugin_dir:test-plugin" \
+    >"$sandbox/valid-sources.stdout" 2>"$sandbox/valid-sources.stderr" \
+    || fail "[valid-sources] valid MCP sources should succeed: $(cat "$sandbox/valid-sources.stderr" 2>/dev/null || true)"
+
+  grep -Fqx '[mcp_servers.project-server]' "$config_file" \
+    || fail "[valid-sources] project MCP server missing"
+  grep -Fqx 'command = "/tmp/project-server"' "$config_file" \
+    || fail "[valid-sources] project MCP command missing"
+  grep -Fqx '[mcp_servers.plugin-server]' "$config_file" \
+    || fail "[valid-sources] plugin MCP server missing"
+  grep -Fqx "command = \"$plugin_dir/bin/plugin-server\"" "$config_file" \
+    || fail "[valid-sources] plugin MCP command did not substitute CLAUDE_PLUGIN_ROOT"
+  grep -Fqx "args = [\"--root\", \"$plugin_dir\"]" "$config_file" \
+    || fail "[valid-sources] plugin MCP args did not substitute CLAUDE_PLUGIN_ROOT"
+}
+
+test_sync_sh_mcp_config_failfast() {
+  local sandbox project_root config_file stderr_log rc
+  sandbox=$(new_hook_sandbox)
+  project_root="$sandbox/project"
+  config_file="$project_root/.codex/config.toml"
+  stderr_log="$sandbox/sync-sh.stderr"
+  mkdir -p "$project_root/.codex"
+
+  _write_existing_mcp_config "$config_file"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --project-mcp="$project_root/.mcp.json" >"$sandbox/missing-project.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[missing-project] missing --project-mcp가 non-zero로 실패해야 함"
+  grep -Fq "sync.sh mcp-config: --project-mcp source missing:" "$stderr_log" \
+    || fail "[missing-project] stderr에 missing source 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$config_file" "missing-project"
+
+  _write_existing_mcp_config "$config_file"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --user-mcp="$project_root/missing-user-mcp.json" \
+    --user-codex-config="$config_file" >"$sandbox/missing-user.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[missing-user] missing --user-mcp가 non-zero로 실패해야 함"
+  grep -Fq "sync.sh mcp-config: --user-mcp source missing:" "$stderr_log" \
+    || fail "[missing-user] stderr에 missing user source 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$config_file" "missing-user"
+
+  _write_existing_mcp_config "$config_file"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --plugin-mcp="$project_root/missing-plugin-mcp.json:$project_root/plugin:missing-plugin" \
+    >"$sandbox/missing-plugin.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[missing-plugin] missing --plugin-mcp가 non-zero로 실패해야 함"
+  grep -Fq "sync.sh mcp-config: --plugin-mcp source missing:" "$stderr_log" \
+    || fail "[missing-plugin] stderr에 missing plugin source 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$config_file" "missing-plugin"
+
+  mkdir -p "$project_root/plugin"
+  printf '{}\n' > "$project_root/plugin/.mcp.json"
+  _write_existing_mcp_config "$config_file"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --plugin-mcp="$project_root/plugin/.mcp.json:$project_root/plugin" \
+    >"$sandbox/malformed-plugin.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[malformed-plugin] malformed --plugin-mcp가 non-zero로 실패해야 함"
+  grep -Fq "sync.sh mcp-config: malformed --plugin-mcp source:" "$stderr_log" \
+    || fail "[malformed-plugin] stderr에 malformed plugin source 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$config_file" "malformed-plugin"
+
+  _write_existing_mcp_config "$config_file"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --plugin-mcp="$project_root/plugin/.mcp.json:$project_root/plugin:plugin-name:extra" \
+    >"$sandbox/malformed-plugin-extra.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[malformed-plugin-extra] extra field --plugin-mcp가 non-zero로 실패해야 함"
+  grep -Fq "sync.sh mcp-config: malformed --plugin-mcp source:" "$stderr_log" \
+    || fail "[malformed-plugin-extra] stderr에 malformed plugin source 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$config_file" "malformed-plugin-extra"
+
+  _write_existing_mcp_config "$config_file"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" >"$sandbox/no-source.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[no-source] source 옵션 없는 mcp-config가 non-zero로 실패해야 함"
+  grep -Fq "at least one source option" "$stderr_log" \
+    || fail "[no-source] stderr에 source option 필수 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$config_file" "no-source"
+
+  local all_project_root="$sandbox/all-project"
+  mkdir -p "$all_project_root"
+  rc=0
+  bash "$SYNC_HARNESS_SH" all "$all_project_root" \
+    --user-mcp="$all_project_root/missing-user-mcp.json" \
+    >"$sandbox/all-missing-user.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[all-missing-user] sync all missing --user-mcp가 non-zero로 실패해야 함"
+  grep -Fq "sync.sh all: --user-mcp source missing:" "$stderr_log" \
+    || fail "[all-missing-user] stderr에 sync all missing user source 진단이 있어야 함"
+  [[ ! -e "$all_project_root/.agents" ]] \
+    || fail "[all-missing-user] source preflight 전에 .agents를 생성하면 안 됨"
+  [[ ! -e "$all_project_root/.codex" ]] \
+    || fail "[all-missing-user] source preflight 전에 .codex를 생성하면 안 됨"
+}
+
 # ─── 카테고리 6: stop-notification reliability/security ───
 # 6.1 Codex JSONL transcript fallback 추출 검증.
 # fixture stdin은 last_assistant_message=null + transcript_path를 sandbox 안의 Codex schema
@@ -893,6 +1043,10 @@ run_test "stop-notification helper equivalence (6.4)" \
 
 run_test "pinning-alert behavioral (#606)" \
   test_pinning_alert_behavioral
+run_test "sync.sh mcp-config valid sources (#609)" \
+  test_sync_sh_mcp_config_valid_sources
+run_test "sync.sh mcp-config fail-fast (#609)" \
+  test_sync_sh_mcp_config_failfast
 
 if [[ "$LIVE_MODE" == "1" ]]; then
   run_test "env propagation live (codex exec --ephemeral)" \
