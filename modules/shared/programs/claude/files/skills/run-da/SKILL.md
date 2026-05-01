@@ -182,7 +182,7 @@ Codex 세션에서 `spawn_agent`가 정책상 거부되면(예: `multi_agent=fal
 1. **BLOCKED + 사용자 승인 대기** (기본): `spawn_agent` 거부 감지 시 현재 DA 라운드 중단, 사용자에게 "delegation 거부 감지 — codex exec subprocess fallback 승인?"을 보고한다. 승인 수단은 런타임별로 다음과 같이 취한다:
    - 질문 도구 지원 런타임 (Claude Code 세션, Codex 세션): 질문 도구로 즉시 승인 요청. 승인 시 **같은 턴에서 바로** fallback 단계 진행.
    - 질문 도구 미지원 런타임 (headless 세션 등): plain-text로 상황 보고 후 DA 루프 종료한다. 사용자는 새 메시지에서 "fallback 진행"으로 명시 승인하거나 `run-da <mode>`를 다시 실행하여 **새 라운드로** 재개한다 (이전 라운드 상태는 복원하지 않음, 깨끗한 fresh round로 시작). 명시 승인 없이 자동 재개하지 않는다.
-2. **codex exec subprocess fallback** (사용자 승인 후에만): [`arbiter-scaling.md`](references/arbiter-scaling.md)의 "Codex delegation-denied fallback" 섹션이 정의한 role별 명령(standard profile = `model="gpt-5.5"`+medium, strong profile = `model="gpt-5.5"`+high)을 `--sandbox read-only --ignore-user-config --ephemeral`로 실행한다 (MCP/plugin/connector surface 차단을 위해 `--ignore-user-config`가 필수다 — 상세는 SSOT 참조). 각 unit은 독립 subprocess.
+2. **codex exec subprocess fallback** (사용자 승인 후에만): [`arbiter-scaling.md`](references/arbiter-scaling.md)의 "Codex delegation-denied fallback" 섹션이 정의한 role별 명령(standard profile = `model="gpt-5.5"`+medium, strong profile = `model="gpt-5.5"`+high)을 `--sandbox read-only --ignore-user-config --ephemeral`로 실행한다 (user config의 MCP/plugin/connector surface 차단을 위해 `--ignore-user-config`가 필수다. 단, cwd 기반 project config는 차단하지 못하므로 한계는 Non-goals #1 참조). 각 unit은 독립 subprocess.
 
 라운드 요약에는 경로와 sandbox 모드를 명시한다:
 

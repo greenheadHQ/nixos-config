@@ -76,7 +76,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=false`, `"delegation not permitted"`·`"multi_agent disabled"` 에러) 사용되는 subprocess 실행 계약이다. SKILL.md의 "Delegation fallback" 섹션은 정책 요약(승인 관문, 자동 우회 금지)만 두고, 실제 명령은 이 섹션이 SSOT다.
 
 **공통**:
-- `--sandbox read-only` + `--ignore-user-config`를 함께 강제한다. `--sandbox read-only`는 model-generated shell command의 파일시스템 쓰기만 막고, user `config.toml`의 MCP server/plugin/connector 로딩은 차단하지 못한다. `--ignore-user-config`로 MCP 등 외부 연결 surface를 함께 차단해야 reviewer/Arbiter/Intensity/Auditor의 no-write 경계가 실효성 있게 보장된다 (N=3 경로와 동일한 방식).
+- `--sandbox read-only` + `--ignore-user-config`를 함께 강제한다. `--sandbox read-only`는 model-generated shell command의 파일시스템 쓰기만 막고, user `config.toml`의 MCP server/plugin/connector 로딩은 차단하지 못한다. `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 user MCP/plugin/connector surface를 차단하지만, cwd 기반 project config (`.codex/config.toml`의 `[mcp_servers.*]`)는 차단하지 못한다. 이 project-config 한계는 `run-da/SKILL.md` Non-goals #1이 canonical이다.
 - `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 `model`/`model_reasoning_effort`도 차단하므로 role별 표의 `-c model="gpt-5.5"`·`-c model_reasoning_effort="..."` 명시가 필수다 (defensive explicit pin).
 - `--ephemeral`로 세션 히스토리 오염 방지.
 - `exec_command`를 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --sandbox read-only --ignore-user-config --ephemeral ... - 2>stderr.log` 형태로 stdin pipe 전달.
