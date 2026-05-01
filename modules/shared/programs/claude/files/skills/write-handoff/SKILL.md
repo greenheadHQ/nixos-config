@@ -26,7 +26,7 @@ Phase 기반 이행 가이드를 작성하고, 이슈 코멘트로 게시한다.
 
 | 행동 | Claude Code 세션 | Codex 세션 |
 |------|------------------|------------|
-| 사용자에게 질문 | `AskUserQuestion` 도구 | plain-text 번호 질문 |
+| 사용자에게 질문 | `AskUserQuestion` 도구 | `request_user_input` |
 | helper 스크립트 경로 | `~/.claude/scripts/write-handoff-repo-and-issue.sh` | `~/.codex/scripts/write-handoff-repo-and-issue.sh` |
 
 본문의 "질문 도구"는 위 표의 런타임별 질문 도구를 가리킨다.

@@ -30,6 +30,7 @@ AGENTS.md(= CLAUDE.md 심링크)의 프로젝트 규칙을 모두 따르되, 아
 - tracked workspace write, branch mutation, commit/push, GitHub write는 메인 에이전트 전용이며 explicit delegation만 예외다.
 - `wt`/`nrs`/rebuild 계열은 메인 에이전트 전용이다.
 - Shared 스킬 노출 정책의 SoT는 [modules/shared/programs/codex/default.nix](modules/shared/programs/codex/default.nix)이며, 독립 감사는 [scripts/ai/verify-ai-compat.sh](scripts/ai/verify-ai-compat.sh)가 수행한다.
+- default mode `request_user_input` 활성화/검증 절차는 [.claude/skills/configuring-codex/SKILL.md](.claude/skills/configuring-codex/SKILL.md) 참조. 인터뷰 기반/사용자 확인 단계 스킬은 plain-text 대신 `request_user_input`을 명시적으로 사용한다 (default mode 모델은 자동 호출 안 함).
 
 ### 빌드
 

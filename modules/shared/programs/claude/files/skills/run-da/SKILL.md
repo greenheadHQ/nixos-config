@@ -91,13 +91,13 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 
 | 행동 | Codex 세션 | Claude Code 세션 | headless 세션 |
 |------|-----------|------------------|---------------|
-| 사용자에게 질문 (**blocking tool call**) | Plan mode의 `request_user_input` (지원 런타임에서만). Plan mode 밖에서는 **질문 도구 미지원**으로 간주하고 [`arbiter-scaling.md`](references/arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 전이를 따른다 | `AskUserQuestion` 도구 | **미지원** (자동 전이 적용) |
+| 사용자에게 질문 (**blocking tool call**) | `request_user_input` | `AskUserQuestion` 도구 | **미지원** (자동 전이 적용) |
 | fan-out 실행 (기본) | `spawn_agent` → `wait_agent` → `close_agent` (delegation 허용 시) | `Bash tool` + `run_in_background: true`로 `codex exec` subprocess 병렬 발사 (codex exec 사전점검 성공 시 기본) | `codex exec` subprocess를 **serial foreground**로 순차 실행 (완료 알림/`&+wait` 없음) |
 | fan-out 실행 (fallback) | codex exec subprocess (아래 "Delegation fallback" + `arbiter-scaling.md` 실행 계약) | `Agent` tool + `run_in_background: true` (codex exec 사전점검 실패 시 — "Claude Code 세션 Agent tool fallback 세부" 섹션) | — |
 | 결과 수집 | `wait_agent` 반환값, 또는 `exec_command`로 `cat`/`sed` 셸 읽기 | `Read` 도구 | `cat`/`sed` via shell |
 | 파일 읽기 | `exec_command`로 `cat`/`sed`/`rg` | `Read` 도구 | `cat`/`sed`/`rg` |
 
-**plain-text 재개 ≠ 질문 도구** — Codex 세션의 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 승인, 3회 반복 판정, 5회 라운드 초과)은 Codex 세션이 Plan mode를 쓰지 않는 한 **자동 상태 전이 경로**(arbiter-scaling.md)로 처리한다.
+**plain-text 재개 ≠ 질문 도구** — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 승인, 3회 반복 판정, 5회 라운드 초과)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 **자동 상태 전이 경로**(arbiter-scaling.md)로 처리한다.
 
 **review profile 매핑** (fan-out 대상 역할별):
 - **Arbiter (strong review profile)** — Codex: `model="gpt-5.5"`, `reasoning_effort="high"`. Claude Code: `model: "opus"`.
@@ -180,8 +180,8 @@ Codex 세션에서 `spawn_agent`가 정책상 거부되면(예: `multi_agent=fal
 **자동 우회 금지** — `spawn_agent` 거부는 정책 의사표시다. `codex exec --full-auto`(workspace-write)로 조용히 우회하면 reviewer/Arbiter/Intensity의 no-write 경계가 구조적으로 보장되지 않는다. 자동 subprocess fallback을 허용하기 **전에** 사용자 승인을 얻고, 실행 시 read-only sandbox를 강제한다 (명령 상세는 위 SSOT).
 
 1. **BLOCKED + 사용자 승인 대기** (기본): `spawn_agent` 거부 감지 시 현재 DA 라운드 중단, 사용자에게 "delegation 거부 감지 — codex exec subprocess fallback 승인?"을 보고한다. 승인 수단은 런타임별로 다음과 같이 취한다:
-   - 질문 도구 지원 런타임 (Claude Code 세션, Codex Plan mode `request_user_input` 지원 시): 질문 도구로 즉시 승인 요청. 승인 시 **같은 턴에서 바로** fallback 단계 진행.
-   - 질문 도구 미지원 런타임 (Codex 일반 세션 등): plain-text로 상황 보고 후 DA 루프 종료한다. 사용자는 새 메시지에서 "fallback 진행"으로 명시 승인하거나 `run-da <mode>`를 다시 실행하여 **새 라운드로** 재개한다 (이전 라운드 상태는 복원하지 않음, 깨끗한 fresh round로 시작). 명시 승인 없이 자동 재개하지 않는다.
+   - 질문 도구 지원 런타임 (Claude Code 세션, Codex 세션): 질문 도구로 즉시 승인 요청. 승인 시 **같은 턴에서 바로** fallback 단계 진행.
+   - 질문 도구 미지원 런타임 (headless 세션 등): plain-text로 상황 보고 후 DA 루프 종료한다. 사용자는 새 메시지에서 "fallback 진행"으로 명시 승인하거나 `run-da <mode>`를 다시 실행하여 **새 라운드로** 재개한다 (이전 라운드 상태는 복원하지 않음, 깨끗한 fresh round로 시작). 명시 승인 없이 자동 재개하지 않는다.
 2. **codex exec subprocess fallback** (사용자 승인 후에만): [`arbiter-scaling.md`](references/arbiter-scaling.md)의 "Codex delegation-denied fallback" 섹션이 정의한 role별 명령(standard profile = `model="gpt-5.5"`+medium, strong profile = `model="gpt-5.5"`+high)을 `--sandbox read-only --ignore-user-config --ephemeral`로 실행한다 (MCP/plugin/connector surface 차단을 위해 `--ignore-user-config`가 필수다 — 상세는 SSOT 참조). 각 unit은 독립 subprocess.
 
 라운드 요약에는 경로와 sandbox 모드를 명시한다:

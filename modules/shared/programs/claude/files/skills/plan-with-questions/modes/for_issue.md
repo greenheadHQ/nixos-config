@@ -59,7 +59,7 @@ trigger 카테고리 정의 (키워드 목록 + transition 매핑)는 [`../SKILL
 - **review-impl 의도** → 권장: **for_action 진입** (Post-Implementation 5번 Final review에서 [`../references/prd/multi-pass-review.md`](../references/prd/multi-pass-review.md)의 PRD 10-pass + [`../references/review-impl/implementation-review.md`](../references/review-impl/implementation-review.md) overlay(6-classification 라벨링 + overbuilt 우선 분류) 적용).
 - **위 카테고리 매칭 없음** → 표준 for_action transition 또는 write-handoff/종료.
 
-옵션은 모든 카테고리에서 **3개로 통일** (Codex Plan mode `request_user_input` max-3 제약):
+옵션은 모든 카테고리에서 **3개로 통일** (`request_user_input` max-3 제약):
 - **Yes** → trigger 카테고리에 따라 자동 권장 모드(`for_prd <ISSUE_URL>` 또는 `for_action <ISSUE_URL>`)로 진입.
 - **No (write-handoff로 마무리)** → 생성된 **이슈 URL(`ISSUE_URL`)** 을 인자로 `/write-handoff` 스킬을 실행하여 LLM 이행 가이드를 작성한 뒤 종료한다 (bare 번호 대신 URL을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피).
 - **No (여기서 종료)** → 생성된 이슈 URL을 반환하고 종료한다.

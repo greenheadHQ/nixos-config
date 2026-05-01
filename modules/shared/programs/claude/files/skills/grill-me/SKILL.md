@@ -19,7 +19,7 @@ description: |
 
 | 행동 | Claude Code 세션 | Codex 세션 |
 |------|------------------|------------|
-| 사용자에게 질문 | `AskUserQuestion` 도구 | plain-text 번호 질문 |
+| 사용자에게 질문 | `AskUserQuestion` 도구 | `request_user_input` |
 
 본문의 "질문 도구"는 위 표의 런타임별 실제 도구를 가리킨다.
 

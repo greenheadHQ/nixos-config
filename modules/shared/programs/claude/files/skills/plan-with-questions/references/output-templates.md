@@ -36,7 +36,7 @@
 
 이슈 생성 완료 후, 질문 도구로 사용자에게 묻는다. 메시지 본문과 첫 옵션은 **사용자 입력 시점의 자연어 trigger 카테고리**에 따라 달라진다.
 
-trigger 카테고리 정의 (키워드 목록 + 권장 transition 모드)는 [`../SKILL.md`](../SKILL.md#모드-판별)의 "자연어 trigger → transition 매핑" 표 (SSOT)를 참조한다. 본 섹션은 각 카테고리의 사용자 메시지 문안과 옵션 본문만 정의한다. 모든 카테고리는 옵션을 **3개로 통일**한다 (Codex Plan mode `request_user_input`의 max-3 제약 준수).
+trigger 카테고리 정의 (키워드 목록 + 권장 transition 모드)는 [`../SKILL.md`](../SKILL.md#모드-판별)의 "자연어 trigger → transition 매핑" 표 (SSOT)를 참조한다. 본 섹션은 각 카테고리의 사용자 메시지 문안과 옵션 본문만 정의한다. 모든 카테고리는 옵션을 **3개로 통일**한다 (`request_user_input`의 max-3 제약 준수).
 
 ### PRD 작성 의도 trigger 매칭 시
 

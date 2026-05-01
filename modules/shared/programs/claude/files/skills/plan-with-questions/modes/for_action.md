@@ -7,9 +7,9 @@
 **이 스킬을 호출했다고 해서 즉시 계획 추적 도구로 진입하지 않는다.** 반드시 Step 1-6을 일반 모드에서 완료한 뒤, Step 7에서 계획 추적 도구로 진입한다. 일반 모드에서 빌드/명령 실행/로컬 재현으로 계획 가정을 검증해야 hallucination이 억제된다.
 
 - **Claude Code 세션**: 계획 추적 도구 진입 시점부터 write 작업이 제한되므로 검증은 반드시 진입 전에 완료돼야 한다.
-- **Codex Plan mode**: chat state 추적은 write 제한을 강제하지 않지만, Step 7 이후는 "검증 단계 종료 + 계획 작성 단계"로 규약되므로 동일하게 Step 1-6에서 검증을 완료한다.
+- **Codex 세션**: chat state 추적은 write 제한을 강제하지 않지만, Step 7 이후는 "검증 단계 종료 + 계획 작성 단계"로 규약되므로 동일하게 Step 1-6에서 검증을 완료한다.
 
-미지원 런타임(Codex 일반 세션 · headless)은 Step 4에서 이미 BLOCKED 처리되어 이 단계에 도달하지 않는다 ([`../references/runtime-boundaries.md`](../references/runtime-boundaries.md#질문-도구-미지원-대응)).
+미지원 런타임(headless)은 Step 4에서 이미 BLOCKED 처리되어 이 단계에 도달하지 않는다 ([`../references/runtime-boundaries.md`](../references/runtime-boundaries.md#질문-도구-미지원-대응)).
 
 ## Step 1: 이슈 유효성 판단 [일반 모드]
 
@@ -83,10 +83,10 @@ Step 3.5는 DA(Step 5)와 목적이 다르다. 3.5는 사용자에게 옵션 제
 
 ## Step 7: 계획 상태 진입 [전환점]
 
-모든 분석, 질문, DA 검토가 완료되었으므로 계획 추적 도구로 진입한다 (런타임별 실제 도구는 [`../references/runtime-boundaries.md`](../references/runtime-boundaries.md#런타임-도구-매핑-plan-with-questions-고유) 참조). Codex 일반 세션·headless에서는 Step 4에서 이미 BLOCKED 처리되어 이 단계에 도달하지 않는다.
+모든 분석, 질문, DA 검토가 완료되었으므로 계획 추적 도구로 진입한다 (런타임별 실제 도구는 [`../references/runtime-boundaries.md`](../references/runtime-boundaries.md#런타임-도구-매핑-plan-with-questions-고유) 참조). headless 세션은 Step 4에서 이미 BLOCKED 처리되어 이 단계에 도달하지 않는다.
 
 - **Claude Code 세션**: 계획 추적 도구가 계획 파일 경로 배정과 write 제한 모드 전환을 수행한다. Step 8에서 파일 편집 도구로 해당 경로에 계획 파일을 작성한다.
-- **Codex Plan mode**: chat state 추적을 시작한 뒤, Step 8에서 파일 편집 도구로 `.claude/plans/<slug>.md`에 직접 작성한다 (chat state 추적은 상태 표시 전용이며 파일을 생성하지 않는다).
+- **Codex 세션**: chat state 추적을 시작한 뒤, Step 8에서 파일 편집 도구로 `.claude/plans/<slug>.md`에 직접 작성한다 (chat state 추적은 상태 표시 전용이며 파일을 생성하지 않는다).
 
 ## Step 8: 계획 파일 작성 [계획 추적 상태]
 
