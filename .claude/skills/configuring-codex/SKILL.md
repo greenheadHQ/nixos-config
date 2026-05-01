@@ -24,7 +24,7 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 - `AGENTS.md`/`.agents/skills` 투영 구조
 - `.agents/skills/*` 디렉토리 심링크 검증
 - `nrs`(또는 동등 activation) 이후 결과 검증
-- Claude Code와 Codex CLI 동작 차이 정리
+- Claude Code / Codex CLI 등 AI 에이전트별 동작 차이 정리
 
 ## 빠른 진단 체크리스트
 

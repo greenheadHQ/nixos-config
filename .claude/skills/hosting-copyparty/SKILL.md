@@ -156,6 +156,17 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 3. **CORS 403 (리버스 프록시)**: `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 설정 확인, 컨테이너 재시작
 4. **비밀번호 변경**: `agenix -e secrets/copyparty-password.age` 후 `nrs` 재적용
 
+## 런타임 환경 전제
+
+이 스킬의 절차는 **NixOS MiniPC 호스트 환경 전제**다. AI 에이전트 세션(Claude Code · Codex CLI · headless)이 어디서 실행되든 다음 의존을 충족하지 못하면 명령은 실행 불가하다.
+
+- `sudo`로 systemd/podman/agenix 명령 실행 (호스트 sudoers 등록 필요)
+- Tailscale VPN 내부에서 `https://copyparty.greenhead.dev` 도달
+- agenix가 호스트의 identity key(`/home/<user>/.ssh/id_ed25519`)로 복호화한 secret 파일(`/run/agenix/copyparty-password`) 접근 권한
+- Podman socket / `podman-<container>.service` systemd unit 권한
+
+따라서 본 스킬을 macOS Codex 세션이나 다른 호스트에서 호출하면 명령이 작동하지 않는다. 호스트 환경에서의 동작만 본 스킬의 보장 범위다.
+
 ## 레퍼런스
 
 - 설치/설정 상세: [references/setup.md](references/setup.md)

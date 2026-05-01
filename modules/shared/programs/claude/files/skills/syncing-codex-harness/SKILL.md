@@ -21,10 +21,32 @@ Codex CLI 호환 구조(`.agents/`, `.codex/`)로 프로젝션한다.
 | 단계 | 명령 |
 |------|------|
 | 전체 동기화 | `bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"` |
-| 로컬 스킬만 | `bash "$SYNC_SH" project-skills "$PWD" .claude/skills` |
-| MCP 섹션만 | `bash "$SYNC_SH" mcp-config "$PWD"` |
-| User-scope MCP 투영 | `bash "$SYNC_SH" mcp-config "$PWD" --user-mcp="$HOME/.claude/mcp.json"` |
+| 로컬 스킬만 | `bash "$SYNC_SH" project-skills "$PWD/.claude/skills" "$PWD/.agents/skills"` |
+| 프로젝트 MCP 섹션만 | 아래 "MCP 섹션 가드 예시" 참조 |
+| User-scope MCP 투영 | 아래 "MCP 섹션 가드 예시" 참조 |
 | .gitignore 점검 | `bash "$SYNC_SH" gitignore-check "$PWD"` |
+
+### MCP 섹션 가드 예시
+
+`mcp-config`는 source 파일 부재 시 기존 `[mcp_servers.*]`를 silent 삭제하므로 호출 전 존재 가드가 필수다. 가드는 `if [ -f X ]; then ...; fi` 형태로 작성한다 — `set -e` 환경에서도 안전하다.
+
+```bash
+# 프로젝트 MCP 섹션만
+if [ -f "$PWD/.mcp.json" ]; then
+  bash "$SYNC_SH" mcp-config "$PWD" --project-mcp="$PWD/.mcp.json"
+fi
+
+# User-scope MCP 투영
+if [ -f "$HOME/.claude/mcp.json" ]; then
+  bash "$SYNC_SH" mcp-config "$PWD" --user-mcp="$HOME/.claude/mcp.json"
+fi
+```
+
+> 추가 동작 노트:
+> - `mcp-config`는 source 옵션 (`--project-mcp` / `--plugin-mcp` / `--user-mcp`) 중 적어도 하나가 필요하다. source 없이 호출하거나 `--project-mcp=<path>`의 path 파일이 없으면 새 MCP TOML이 비어 `replace_mcp_sections`가 기존 `[mcp_servers.*]` 섹션을 모두 제거한다 (`references/sync.sh`의 mcp-config 경로 참조). `sync.sh`는 source 부재를 오류로 처리하지 않으므로 호출자(또는 위 가드)가 책임진다.
+> - `all` 경로는 인자 조립 시점에 `[ -f .mcp.json ]` 가드를 두어 이 문제를 피한다.
+> - `project-skills`는 `<source-skills-dir> <target-skills-dir>` 두 인자를 모두 명시해야 한다. `sync.sh`는 `set -u` 아래에서 동작하므로 한 인자만 넘기면 즉시 `unbound variable`로 실패하고 종료한다 (투영이 0개로 끝나는 게 아니라 실행 자체가 멈춘다).
+> - **`set -e` 가드 패턴 (단일 SoT)**: 위 if 가드 형태가 본 SKILL의 표준이다. 이전 `test -f X && cmd` 형태는 standalone statement 위치(함수/스크립트 마지막 또는 단독 실행)에서 false 평가 시 exit 1을 propagate해 `set -e` caller를 abort시킨다. `if` 조건 *내부*의 `[ ... ] && [ ... ]`은 단일 평가식이므로 안전하며 본 가이드의 금지 대상이 아니다.
 
 `sync.sh` 스크립트 경로: 현재 SKILL.md가 위치한 디렉토리의 `references/sync.sh`를 사용하라.
 예: 이 SKILL.md의 실제 경로가 `~/.claude/skills/syncing-codex-harness/SKILL.md`이면
@@ -146,7 +168,9 @@ SYNC_SH="<SKILL.md가 위치한 디렉토리>/references/sync.sh"
 ARGS=()
 
 # 로컬 스킬이 있으면 (Case A, C)
-[ -d ".claude/skills" ] && ARGS+=(--local-skills-dir=.claude/skills)
+if [ -d ".claude/skills" ]; then
+  ARGS+=(--local-skills-dir=.claude/skills)
+fi
 
 # 각 플러그인마다 (Case B, C)
 # INSTALL_PATH: Step 2에서 해석한 installPath
@@ -154,11 +178,15 @@ ARGS=()
 ARGS+=(--plugin-install-path="$INSTALL_PATH:$PLUGIN_NAME")
 
 # user-scope MCP까지 함께 투영하고 싶을 때 (선택)
-ARGS+=(--user-mcp="$HOME/.claude/mcp.json")
+# 빠른 참조의 "MCP 섹션 가드 예시"와 동일한 source 파일 존재 가드 정책 적용.
+if [ -f "$HOME/.claude/mcp.json" ]; then
+  ARGS+=(--user-mcp="$HOME/.claude/mcp.json")
+fi
 
 # 프로젝트에 CLAUDE.md가 없고, 플러그인이 CLAUDE.md를 제공하는 경우
-[ ! -e "CLAUDE.md" ] && [ -f "$INSTALL_PATH/CLAUDE.md" ] && \
+if [ ! -e "CLAUDE.md" ] && [ -f "$INSTALL_PATH/CLAUDE.md" ]; then
   ARGS+=(--plugin-claude-md="$INSTALL_PATH/CLAUDE.md")
+fi
 ```
 
 ### 실행
@@ -193,14 +221,20 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 
 ```bash
 # ~/.claude/mcp.json -> ~/.codex/config.toml
-bash "$SYNC_SH" mcp-config "$PWD" \
-  --user-mcp="$HOME/.claude/mcp.json"
+if [ -f "$HOME/.claude/mcp.json" ]; then
+  bash "$SYNC_SH" mcp-config "$PWD" \
+    --user-mcp="$HOME/.claude/mcp.json"
+fi
 
 # target 경로를 명시적으로 지정할 수도 있음
-bash "$SYNC_SH" mcp-config "$PWD" \
-  --user-mcp="$HOME/.claude/mcp.json" \
-  --user-codex-config="$HOME/.codex/config.toml"
+if [ -f "$HOME/.claude/mcp.json" ]; then
+  bash "$SYNC_SH" mcp-config "$PWD" \
+    --user-mcp="$HOME/.claude/mcp.json" \
+    --user-codex-config="$HOME/.codex/config.toml"
+fi
 ```
+
+> source 파일 존재 가드 정책의 단일 진실 원천은 위 "빠른 참조 > MCP 섹션 가드 예시"다. 두 예시 모두 같은 `if [ -f ]; then ... fi` 패턴을 따른다.
 
 포맷 호환:
 - Claude user-scope 형식: `{"mcpServers": {...}}`
@@ -233,7 +267,7 @@ bash "$SYNC_SH" mcp-config "$PWD" \
 | 플러그인 캐시 경로 미존재 | 경고 후 건너뛰기 |
 | 스킬 이름 충돌 (로컬 vs 플러그인) | 플러그인 스킬에 `{plugin-name}--` 접두사 |
 | AGENTS.override.md 사용자 커스텀 보존 | 마커 외부 내용 유지 |
-| `.codex/config.toml` 기존 설정 보존 | user-scope `$PWD/.codex/config.toml`의 `[mcp_servers.*]` 섹션만 교체 (그 외 사용자 설정 완전 보존). `--user-mcp` 옵션이 주어지면 `~/.codex/config.toml`의 `[mcp_servers.*]` 섹션에도 같은 규칙으로 반영하되 그 외 키는 건드리지 않음. `~/.codex/config.toml`의 `[mcp_servers.*]` 외 영역(`model`/`approval_policy`/`[features]`/`[plugins.*]` 등)은 activation writer가 별도 계약으로 관리하므로 이 스킬이 손대지 않음 (Step 3 "계약 참고" 참조). |
+| `.codex/config.toml` 기존 설정 보존 | Step 3 "계약 참고: user-scope `sync.sh` vs activation writer" 표를 단일 진실 원천으로 참조. `[mcp_servers.*]` 섹션만 교체하며 그 외 키는 보존. |
 | `~/.claude/mcp.json` 형식 차이 | `mcpServers` 래퍼 유무 모두 허용 |
 | Worktree 경로 | `$PWD`로 매칭 |
 

@@ -137,6 +137,17 @@ ls -la /var/lib/temp-monitor/                  # 상태 파일 (쿨다운 기록
 2. **hardware-configuration.nix 충돌**: disko와 fileSystems 중복 확인
 3. **부팅 불가**: systemd-boot에서 이전 세대 선택 후 롤백
 
+## 런타임 환경 전제
+
+이 스킬은 **NixOS MiniPC 호스트 환경 전제**다. AI 에이전트 세션(Claude Code · Codex CLI · headless)이 어디서 실행되든 다음 의존을 충족하지 못하면 명령은 실행 불가하다.
+
+- `nixos-rebuild`, `nrs`, `nrp` 등 NixOS 전용 명령은 NixOS 호스트에서만 동작 (macOS 호스트는 `nrs` 입력 시 nix-darwin 경로로 분기됨 — `managing-macos` 사용)
+- `sudo` 권한으로 systemd/smartd/temp-monitor 명령 실행
+- BIOS/UEFI WoL 설정, 하드웨어 인터페이스명(`enp2s0`), 디스크 UUID는 `hosts/greenhead-minipc/`에 호스트 종속으로 박혀 있음 — 다른 NixOS 호스트로 이식 시 직접 수정 필요
+- `~/.local/lib/`의 `rebuild-common.sh` 등 user-scope helper는 home-manager activation에 의해 설치되며 host 외부에선 부재
+
+본 스킬을 macOS Codex 세션이나 다른 NixOS 호스트에서 호출하면 호스트 종속 부분(인터페이스명/UUID/하드웨어 모니터링)이 실패할 수 있다.
+
 ## 레퍼런스
 
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)

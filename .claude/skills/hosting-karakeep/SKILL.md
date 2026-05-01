@@ -131,6 +131,17 @@ OpenAI 키가 있으면 inference worker가 자동 태깅/요약을 수행한다
 3. **컨테이너 OOM**: Meilisearch 최소 1GB 확보 필요. 상세: [references/troubleshooting.md](references/troubleshooting.md) 항목 4
 4. **업데이트 후 로그 모니터 패턴 깨짐**: [references/update-guide.md](references/update-guide.md) 참조
 
+## 런타임 환경 전제
+
+이 스킬의 절차는 **NixOS MiniPC 호스트 환경 전제**다. AI 에이전트 세션(Claude Code · Codex CLI · headless)이 어디서 실행되든 다음 의존을 충족하지 못하면 명령은 실행 불가하다.
+
+- `sudo`로 systemd/podman 명령 실행 (호스트 sudoers 등록 필요)
+- Tailscale VPN 내부에서 `https://archive.greenhead.dev` 도달
+- agenix가 호스트의 identity key(`/home/<user>/.ssh/id_ed25519`)로 복호화한 secret 파일(`/run/agenix/karakeep-*`) 접근 권한
+- 3컨테이너 Podman 네트워크(`karakeep-network`) 권한 + OpenAI/Meilisearch 외부 의존
+
+본 스킬을 macOS Codex 세션 등 다른 호스트에서 호출하면 명령이 작동하지 않는다.
+
 ## 참조
 
 - 트러블슈팅 상세: [references/troubleshooting.md](references/troubleshooting.md)
