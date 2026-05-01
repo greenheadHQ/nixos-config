@@ -1,9 +1,10 @@
 ---
 name: plan-with-questions
-argument-hint: "[for_action|for_issue] [issue-ref | task description]"
+argument-hint: "[for_action|for_issue|for_prd] [issue-ref (for_action/for_prd) | task description (for_issue)]"
 description: |
   Structured planning with requirements clarification via iterative Q&A.
-  Two modes: for_action (issue ref → plan), for_issue (idea → issue creation).
+  Three modes: for_action (issue ref → plan), for_issue (idea → issue creation),
+  for_prd (Living PRD with phase tracking — auto-detect for Phase ≥4 or 다중 도메인 + 보조 신호).
   Trigger: '계획 수립', '계획 세우기', 'plan', '스무고개', '요구사항 파악', '불명확점 질문',
   '파악하자', '접근', '같이 정리', '논의', '어떻게 할지', '이슈 분석'.
   NOT for DA (use run-da). NOT for PR 본문 (use create-pr).
@@ -14,378 +15,85 @@ description: |
 
 `$ARGUMENTS`를 이슈 레퍼런스 또는 작업 설명으로 수신한다.
 
-이 스킬은 인터뷰 기반이므로 질문 도구가 필수다.
+이 스킬은 인터뷰 기반이므로 질문 도구가 필수다. 런타임 도구·용어·미지원 대응은 [`references/runtime-boundaries.md`](./references/runtime-boundaries.md)가 SSOT다.
 
-## 지원 런타임
+## Invariants (예외 없이 적용)
 
-| 런타임 | 지원 여부 |
-|--------|----------|
-| Claude Code 세션 | 완전 지원 |
-| Codex Plan mode (`request_user_input` 지원 시) | 완전 지원 |
-| Codex 일반 세션 (Plan mode 미사용) | BLOCKED ("질문 도구 미지원 대응" 섹션 참조) |
-| headless 세션 (CI · `claude -p` · `codex exec`) | BLOCKED ("질문 도구 미지원 대응" 섹션 참조) |
-
-## 용어 정책
-
-이 스킬은 Claude Code 세션과 Codex 세션 양쪽에서 호출된다. 본문은 **도구-중립 용어**를 쓰며, 런타임별 실제 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../run-da/SKILL.md#런타임-도구-매핑)를 단일 진실 원천으로 참조한다 (중복 복제 금지).
-
-| 용어 유형 | 처리 |
-|----------|------|
-| 사용자 질문 실행 지시 | "질문 도구" |
-| 사용자 승인 요청 지시 | "승인 요청 도구" (런타임별 실제 도구는 아래 "런타임 도구 매핑" 표의 "계획 승인 요청" 행 참조) — **plan-with-questions 국소 용어** (run-da SSOT 미정의; sibling 자동 전파 대상 아님) |
-| 파일 읽기/검색 지시 | "파일 읽기 도구" (또는 명시적 셸 명령 `rg -n` / `sed -n` / `find`) |
-| 파일 편집 지시 | "파일 편집 도구" |
-
-## 런타임 도구 매핑 (plan-with-questions 고유)
-
-이 표는 plan-with-questions 고유 행만 정의한다. 사용자 질문/fan-out/파일 읽기·편집은 [run-da 런타임 도구 매핑 표](../run-da/SKILL.md#런타임-도구-매핑)를 단일 진실 원천으로 참조한다 (중복 복제 금지).
-
-**미지원 런타임 처리**: Codex 일반 세션·headless는 본 표의 어떤 행에도 도달하지 않는다 (Step 4/Step I-4에서 질문 도구 호출 시점에 BLOCKED). 상세는 위 "지원 런타임" 표와 "질문 도구 미지원 대응" 섹션이 단일 소스다.
-
-| 행동 | Claude Code 세션 | Codex Plan mode |
-|------|------------------|-----------------|
-| 계획 추적 상태 진입 | `EnterPlanMode` (계획 파일 경로 배정 + write 제한 모드) | `update_plan` (단계별 chat state 추적; 파일 IO 없음) |
-| 계획 파일 작성/편집 | `Write`/`Edit`로 진입 시 배정된 경로에 작성 | `apply_patch`로 `.claude/plans/<slug>.md`에 직접 작성 |
-| 계획 승인 요청 | `ExitPlanMode`로 계획 파일 제시 및 승인 대기 | 계획 파일 경로/요약을 `request_user_input`으로 제시하고 confirm 대기 |
-
-본문의 "계획 추적 도구", "파일 편집 도구", "승인 요청 도구"는 위 표의 런타임별 실제 도구를 가리킨다. 최종 산출물은 두 지원 런타임 모두 `.claude/plans/<slug>.md` 계획 **파일**이다.
-
-## 질문 도구 미지원 대응
-
-이 섹션은 Step 4 / Step I-4 / Step 7에서 참조되는 BLOCKED 처리 정책의 단일 소스다.
-
-현재 런타임에서 질문 도구를 호출할 수 없으면 (Codex 일반 세션 + Plan mode 미사용, headless 세션 등), plan-with-questions는 **BLOCKED 처리**한다. 인터뷰 기반 SKILL의 본질상 사용자 입력 없는 자동 진행이 불가능하므로 자동 전이를 채택하지 않는다.
-
-처리 절차:
-1. 현재 단계(Step 4 / Step I-4 / Step 7 등)와 차단 사유(질문 도구 미지원)를 plain-text로 보고한다 (보고 채널이 없는 headless에서는 silent exit한다).
-2. SKILL 절차를 종료한다.
-3. 사용자가 새 메시지에서 명시 재개("계속 진행" 등)하거나 질문 도구 지원 런타임으로 전환할 때까지 자동 재개하지 않는다. **지원 런타임 전환 방법**: Claude Code 세션 사용 또는 Codex Plan mode 활성화. Codex Plan mode 활성화 절차는 사용자 codex 환경 설정에 따른다 (이 SKILL의 책임 범위 밖).
-
-이 정책은 [run-da의 "질문 도구 미지원 대응"](../run-da/references/arbiter-scaling.md#질문-도구-미지원-대응) 섹션과 결을 같이 하지만, plan-with-questions 인터뷰 컨텍스트 전용으로 적용 규칙이 다르다 (자동 승격/LITE 승격/5라운드 종료 같은 DA 흐름 규칙은 적용하지 않는다).
+1. **질문 도구 의무**: 사용자에게 질문할 때는 질문 도구를 사용한다. 미지원 시 BLOCKED 처리 ([`references/runtime-boundaries.md`](./references/runtime-boundaries.md#질문-도구-미지원-대응)).
+2. **Black-box zero**: 계획에 모호한 부분이 남아 있으면 완성이 아니다. 사용자에게 묻기 전에 코드베이스를 충분히 탐색하여 스스로 답할 수 있는 질문은 걸러낸다.
+3. **YAGNI/NGMI 제1원칙**: 계획의 각 단계에서 "이게 정말 필요한가?"를 반복 검증한다. 단, DA 호출 자체는 YAGNI 대상이 아니다.
+4. **지연 계획 추적**: for_action 모드에서 Step 1-6은 일반 모드에서 수행한다. 계획 추적 도구 진입은 Step 7에서만. for_issue는 계획 추적 도구 미사용.
+5. **Single-writer / main-agent-only**: tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 reviewer/auditor subagent가 직접 실행하지 않는다. [`run-da/SKILL.md`](../run-da/SKILL.md)의 `Codex 세션 하드닝 계약` SSOT를 따른다.
+6. **Step 3.5 → Step 4 순서**: 트레이드오프 옵션이 1+이면 Step 3.5 외부 자문을 사용자 질문 전에 호출한다. 자문 결과 도착 후 Step 4에서 anti-anchoring 4 규칙(라벨 금지·옵션 셔플·disqualifier 표시·judgment-first)으로 옵션을 제시한다. **codex exec 호출 명령은 [`references/consulting-step.md`](./references/consulting-step.md#codex-exec-호출-명령-템플릿-ssot)가 단일 SSOT**다 — 본문/모드 파일은 명령을 복제하지 않는다.
+7. **Living checkbox 갱신 의무**: 각 단계(Phase Discovery Gate, Implementation Checklist, Validation Checklist, Exit Criteria, Phase-end review) 완료 즉시 plan/PRD 본문의 `- [ ]`를 `- [x]`로 갱신한다. **lazy/end-of-session bulk update 금지** — Status·Resume From·Phase Progress 같은 헤더 메타데이터만 갱신하고 본문 체크박스를 미루는 self-optimization은 `#453` 회귀 패턴이며 dogfooding 추적성을 깬다. 메인 LLM이 "헤더 메타데이터만 갱신해도 충분"이라고 자체 판단하지 않는다. **for_prd 모드 적용 범위**: plan-with-questions가 자체 PRD 사본을 만들지 않으므로 `/prd` handoff **이전에는** PRD master/phase 파일 체크박스를 건드리지 않는다. handoff 이후 PRD master + active phase 파일 체크박스 즉시 갱신 의무는 `/prd` 스킬이 owner다.
 
 ## 모드 판별
 
 | 우선순위 | 조건 | 모드 |
 |----------|------|------|
-| 1 | `$ARGUMENTS` 첫 토큰이 `for_action` 또는 `for_issue` | 명시된 모드 |
+| 1 | `$ARGUMENTS` 첫 토큰이 `for_action`/`for_issue`/`for_prd` | 명시된 모드 |
 | 2 | URL 패턴 (`https://...`, `http://...`) 포함 | **for_action** |
 | 3 | 이슈 번호 패턴 (`#NNN`, `NNN`만 단독) 포함 | **for_action** |
 | 4 | 이슈키 패턴 (`PREFIX-NNN`, 예: `DEV-123`) 포함 | **for_action** |
-| 5 | 위 패턴 없음 (텍스트 설명 또는 빈 인자) | **for_issue** |
+| 5 | for_action 진입 후 Step 1-2에서 `Phase ≥4` 단독 OR (`다중 도메인` + 보조 신호 1+) 감지 ([`references/task-size-routing.md`](./references/task-size-routing.md#트리거-알고리즘-의사코드)) | **for_prd 후보** (사용자 1회 알림 + opt-out) |
+| 6 | 위 패턴 없음 (텍스트 설명 또는 빈 인자) | **for_issue** |
 
-**이슈 레퍼런스 resolve**: 특정 이슈 트래커 CLI에 의존하지 않는다.
-환경에서 사용 가능한 도구(gh CLI, Linear API/MCP, 웹 검색 등)를 활용하여
-이슈 레퍼런스를 resolve한다. 도구 선택은 LLM이 환경에 맞게 판단한다.
+**이슈 레퍼런스 resolve**: 특정 이슈 트래커 CLI에 의존하지 않는다. 환경에서 사용 가능한 도구(gh CLI, Linear API/MCP, 웹 검색 등)를 활용한다.
+
+**자동 PRD 후보 알림 메시지** + opt-out 패턴: [`references/output-templates.md`](./references/output-templates.md#for_prd-모드-자동-트리거-알림-메시지). 트리거 알고리즘(tier-1/tier-2 신호 + 의사코드)·산출물 경로 결정·review-implementation 통합 시점은 [`references/task-size-routing.md`](./references/task-size-routing.md) SSOT.
 
 ## 빠른 참조
 
-| 항목 | for_action | for_issue |
-|------|-----------|-----------|
-| 입력 | 이슈 레퍼런스 (URL/ID/이슈키) | 텍스트 설명 또는 빈 인자 |
-| 출력 | 사용자 승인을 받은 상세 실행 계획 (계획 파일) | 등록된 이슈 (+ 선택적 LLM 이행 가이드) |
-| 핵심 도구 | 자체 "런타임 도구 매핑" + run-da SSOT 참조 | 자체 "런타임 도구 매핑" + run-da SSOT 참조 + codex exec / Agent / native subagent(런타임 분기) + /create-issue |
-| DA | for_plan 실행 (for_action에서만) | 생략 (스무고개 자체가 품질 보장) |
-| 계획 추적 도구 | 사용 (Step 7-9) | 미사용 (산출물이 이슈) |
-| 제1원칙 | YAGNI / NGMI | YAGNI / NGMI |
-
-## fan-out / fan-in (for_issue)
-
-### 역할 카탈로그
-
-fan-out 에이전트에 할당할 수 있는 역할:
-
-| 역할 | 설명 | 모델 권장 |
-|------|------|----------|
-| 코드베이스 분석 | 관련 파일/모듈/패턴 탐색 | Sonnet |
-| 이슈/PR 검색 | 기존 이슈, closed PR, 중복 확인 | Sonnet |
-| 커밋 이력 분석 | 관련 커밋, blame, 변경 맥락 | Sonnet |
-| 웹 리서치 | 외부 문서, 라이브러리, 패턴 조사 | Sonnet |
-| 의존성/사이드이펙트 | 변경의 영향 범위, 의존 관계 분석 | Sonnet |
-
-LLM이 작업의 복잡도/도메인에 따라 에이전트 수(2-6개)와 역할을 동적으로 결정한다.
-DA/review 에이전트는 run-da canonical contract의 프로파일을 따른다 (reviewer/Intensity는 standard, Arbiter는 strong).
-
-### fan-in 통합 전략
-
-에이전트 결과를 카테고리별로 분류하여 통합한다:
-1. **코드 패턴**: 코드베이스에서 발견한 관련 패턴, 기존 구현
-2. **관련 이슈/PR**: 중복, 선행 작업, 참고 이슈
-3. **외부 레퍼런스**: 웹 리서치 결과, 문서, 패턴
-4. **사이드이펙트**: 변경이 다른 모듈/기능에 미치는 영향
-
-중복을 제거하고, 모순이 있으면 명시하여 스무고개 질문에 포함한다.
-
-## for_issue 모드 (이슈 레퍼런스 없음)
-
-$ARGUMENTS에 이슈 레퍼런스가 없으면 이 모드로 진행한다.
-brainstorming의 핵심(요구사항 탐색, 블랙박스 해소)을 내재화하고,
-최종 산출물은 /create-issue로 생성한 이슈 + LLM 이행 가이드이다.
-
-DA는 for_issue에서 실행하지 않는다.
-스무고개 루프가 DA의 역할(불명확점 해소, 품질 보장)을 대체한다.
-계획 추적 도구 미사용 (산출물이 계획 파일이 아닌 이슈).
-
-### Step I-1: fan-out 레퍼런스 수집 [일반 모드]
-
-$ARGUMENTS의 텍스트 설명 또는 대화 컨텍스트를 분석하여,
-역할 카탈로그에서 적절한 역할을 선택하고 에이전트를 병렬 발사한다.
-
-에이전트 수와 역할은 작업의 범위/복잡도에 따라 동적으로 결정한다 (2-6개).
-
-**런타임 분기** (codex exec fan-out 패턴은 /codex-fan-out 스킬 참조):
-- **Claude Code 세션**: codex exec 기본. 사전점검(`command -v codex >/dev/null && codex --version >/dev/null 2>&1`) 실패 시 Agent tool fallback (`run_in_background: true`).
-- **headless 세션**: codex exec only.
-- **Codex 세션**: native subagent fan-out (기존).
-
-codex exec 실행 시 각 에이전트 프롬프트에 "파일을 수정하지 마라" no-write boundary를 명시한다.
-
-**Codex 세션 fan-out delegation 거부 처리**: Codex 세션에서 `spawn_agent`가 정책상 거부되면 [run-da SKILL.md "Delegation fallback (정책 요약)"](../run-da/SKILL.md#delegation-fallback-정책-요약)을 그대로 적용한다 (BLOCKED + 사용자 승인 대기 → 승인 시 codex exec subprocess fallback, no-write boundary 동일). 명칭과 정책은 run-da SSOT를 따르며 본문에 별도 신설하지 않는다.
-
-### Step I-2: fan-in 결과 통합 [일반 모드]
-
-에이전트 결과를 fan-in 통합 전략에 따라 카테고리별로 분류한다.
-중복을 제거하고, 모순점을 식별한다.
-
-### Step I-3: 블랙박스 체크리스트 동적 생성 [일반 모드]
-
-fan-in 결과에서 미해결 항목(블랙박스 제로 원칙의 "블랙박스" — 모호하거나 결정되지 않은 사항)을
-체크리스트 형태로 구조화한다.
-
-체크리스트는 카테고리별로 구분한다:
-- **A. 요구사항**: 해석이 여러 가지 가능한 부분
-- **B. 설계 결정**: 사용자의 선호도/우선순위가 필요한 선택
-- **C. 트레이드오프**: 접근법이 2개 이상인 경우
-- **D. 사이드이펙트**: 사용자가 인지해야 할 영향
-- **E. 기타**: 위 카테고리에 속하지 않는 사항
-
-사용자에게 체크리스트를 보여주고, 모든 항목이 ✅가 될 때까지
-또는 사용자가 "충분하다"고 판단할 때까지 스무고개를 반복한다.
-
-### Step I-4: 스무고개 피드백 루프 [일반 모드]
-
-**사용자에게 질문할 때는 질문 도구를 사용한다.** 질문 도구 미지원 시 본 SKILL.md의 "질문 도구 미지원 대응" 섹션을 따른다.
-
-질문 도구로 한 라운드에 최대 4개 질문을 묻는다.
-우선순위가 높은(아키텍처 결정, 핵심 요구사항) 질문부터 시작한다.
-(for_action Step 4의 "한번에 모아서"와 달리 라운드당 제한을 두는 이유:
-for_issue는 반복 라운드로 점진적으로 이슈를 정의하므로 과부하 방지가 필요하다.)
-
-각 라운드 후:
-1. 답변된 체크리스트 항목을 ✅로 업데이트
-2. 답변에서 파생된 새 불명확점이 있으면 체크리스트에 추가
-3. 남은 항목이 있으면 다음 라운드 진행
-4. 모든 항목 ✅ 또는 사용자 "충분" → Step I-5로
-
-### Step I-5: 이슈 생성 [일반 모드]
-
-스무고개 결과를 바탕으로 /create-issue 스킬을 실행하여 이슈를 등록한다.
-write-handoff 실행 여부는 Step I-6에서 통합 선택지로 제안하므로,
-create-issue 호출 시 내부 write-handoff 제안을 생략한다.
-
-### Step I-6: for_action 전환 제안 [일반 모드]
-
-이슈 생성 완료 후, 질문 도구로 사용자에게 묻는다:
-"이슈 등록이 완료되었습니다. 바로 for_action으로 전환하여 작업을 진행하시겠습니까?"
-
-- Yes → 생성된 이슈 URL(create-issue Step 5의 `ISSUE_URL`)로 for_action 모드를 시작한다.
-- No (/write-handoff로 마무리) → 생성된 **이슈 URL(ISSUE_URL)** 을 인자로 `/write-handoff` 스킬을 실행하여 LLM 이행 가이드를 작성한 뒤 종료한다 (bare 번호 대신 URL을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피).
-- No (여기서 종료) → 생성된 이슈 URL을 반환하고 종료한다.
-
-## for_action 모드 (이슈 레퍼런스 있음)
-
-$ARGUMENTS에 이슈 레퍼런스가 있으면 이 모드로 진행한다.
-이슈를 resolve하여 내용을 가져오고, 계획 수립까지 진행한다.
-
-### 주의: 즉시 계획 추적 도구 진입 금지
-
-**이 스킬을 호출했다고 해서 즉시 계획 추적 도구로 진입하지 않는다.**
-반드시 Step 1-6을 일반 모드에서 완료한 뒤, Step 7에서 계획 추적 도구로 진입한다.
-일반 모드에서 빌드/명령 실행/로컬 재현으로 계획 가정을 검증해야 hallucination이 억제된다.
-
-- **Claude Code 세션**: 계획 추적 도구 진입 시점부터 write 작업이 제한되므로 검증은 반드시 진입 전에 완료돼야 한다.
-- **Codex Plan mode**: chat state 추적은 write 제한을 강제하지 않지만, Step 7 이후는 "검증 단계 종료 + 계획 작성 단계"로 규약되므로 동일하게 Step 1-6에서 검증을 완료한다.
-
-미지원 런타임(Codex 일반 세션 · headless)은 Step 4에서 이미 BLOCKED 처리되어 이 단계에 도달하지 않는다 ("질문 도구 미지원 대응" 섹션 참조).
-
-### Step 1: 이슈 유효성 판단 [일반 모드]
-
-계획 수립에 앞서, 대상 이슈/작업이 실제로 수행할 가치가 있는지 먼저 판단한다.
-
-이슈 레퍼런스를 resolve하여 내용을 가져온다.
-특정 이슈 트래커 CLI에 의존하지 않고, 환경에서 사용 가능한 도구를 활용한다.
-
-- **이미 해결되었는가?** — 관련 코드, 최근 커밋, closed PR을 탐색하여 이미 해결된 문제가 아닌지 확인한다.
-- **YAGNI인가?** — 현재 시점에서 실제로 필요한 변경인지 판단한다. "나중에 필요할 수도 있으니까"는 충분한 근거가 아니다.
-- **NGMI인가?** — 현재 아키텍처/기술 제약 상 실현 불가능한 요구인지 확인한다.
-
-유효하지 않다고 판단되면 사용자에게 근거를 제시하고, 계획을 중단할지 여부를 확인한다.
-사용자가 그래도 진행하겠다고 하면 계속한다.
-
-**Scope 분해 판단:**
-요청이 독립적인 서브시스템(서비스/플랫폼/독립 모듈 단위) 2개 이상을 포함하는 경우,
-계획 파일 내 별도 Phase/섹션으로 구분하여 다룬다.
-출력은 여전히 단일 계획 파일이며, 별도의 plan-with-questions 사이클로 분리하지 않는다.
-분해 여부가 불분명하면 Step 2 코드베이스 탐색 후 판단한다.
-
-### Step 2: 코드베이스 탐색 + 로컬 재현 [일반 모드]
-
-대상 이슈를 정독하고, 관련 코드베이스를 탐색한다.
-
-- 이슈에 언급된 파일, 모듈, 설정을 코드베이스에서 찾아 현재 상태를 파악한다.
-- 관련된 기존 구현, 의존성, 설정 패턴을 확인한다.
-- 이슈에 링크된 PR, 커밋, 다른 이슈가 있으면 함께 확인한다.
-
-**로컬 검증 의무:**
-- 이슈/작업에서 언급된 문제를 로컬에서 직접 재현한다.
-- 관련 명령어 실행, 빌드 시도, 설정 확인 등을 수행한다.
-- API/플래그/경로의 존재 여부를 grep/which/--help로 확인한다.
-- "~일 것이다", "~로 추정된다" 등 추측 기반 분석을 금지한다.
-- 코드베이스를 직접 읽어 확인하지 않은 내용은 이후 단계에서 사용하지 않는다.
-
-### Step 3: 질문 수집 [일반 모드]
-
-분석 과정에서 발견한 모든 불명확점을 수집한다. 다음 관점에서 빠짐없이 점검한다:
-
-- **요구사항 불명확점**: 이슈/작업 설명에서 해석이 여러 가지 가능한 부분
-- **판단 기준**: 사용자의 선호도나 우선순위가 필요한 결정 사항
-- **사이드이펙트**: 변경이 다른 기능/모듈/플랫폼에 미치는 영향
-- **트레이드오프/접근법 비교**: 실행 가능한 접근법이 2개 이상이면, 각 접근법의 장단점을 정리하고 추천안을 준비한다. 접근법이 1개뿐이면 건너뛴다.
-- **인지 상태 확인**: 사용자가 특정 제약이나 영향을 알고 있는지 여부
-- **XY Problem 검증**: 사용자가 실제 문제(X)가 아닌 자신이 시도한 해결책(Y)에 대해 요청하고 있지는 않은지 점검한다. 의심되면 "해결하려는 근본 문제가 무엇인가요?"를 질문한다.
-
-하나도 빠짐없이 전부 수집한다. "이 정도면 됐겠지"는 금지한다.
-
-### Step 4: 사용자에게 질문 [일반 모드]
-
-**사용자에게 질문할 때는 질문 도구를 사용한다.
-이 규칙은 예외 없이 적용된다.** 질문 도구 미지원 시 본 SKILL.md의 "질문 도구 미지원 대응" 섹션을 따른다.
-
-수집한 질문을 질문 도구로 한번에 모아서 사용자에게 제시한다.
-질문이 많으면 카테고리별로 묶어서 번호를 매긴다.
-
-사용자의 답변에 따라 추가 질문이 생기면, 다시 질문 도구로 한번에 질문한다.
-모든 불명확점이 해소될 때까지 이 과정을 반복한다.
-
-질문 시 다음 패턴을 활용한다:
-
-- 사이드이펙트 인지 확인: "이렇게 변경하면 ...에도 영향이 갑니다. 인지하고 계셨나요?"
-- 트레이드오프 선택: "A 방식은 ...이 장점이고, B 방식은 ...이 장점입니다. 어느 쪽을 선호하시나요?"
-- 판단 기준 요청: "이 부분은 판단 기준이 필요합니다: ..."
-- 범위 확인: "이 이슈의 범위에 ...도 포함되나요, 아니면 별도 이슈로 분리할까요?"
-
-### Step 5: DA for_plan 실행 [일반 모드]
-
-for_action 모드에서, 모든 질문이 해소되면 계획 추적 도구 진입 전에 `/run-da for_plan` 스킬을 실행한다.
-
-- **무조건 호출**: for_action 모드에서 DA 호출 여부를 메인 LLM이 판단하지 않는다.
-  Review Intensity 판단은 run-da 내부의 독립 에이전트가 수행하므로,
-  이 단계를 건너뛸 이유가 없다.
-- **런타임 분기는 run-da를 따른다**: 3-way 분기 — Codex 세션에서는 native subagent, Claude Code 세션에서는 codex exec(사전점검 후 불가 시 Agent tool fallback), headless 세션에서는 codex exec.
-- **기본 경로는 lean default**: `/run-da for_plan`의 자동 FULL은 4 reviewer bundle 기본 리뷰다.
-  8개 세부 도메인 exhaustive path는 명시적 `full` modifier가 있을 때만 쓴다.
-- **YAGNI 예외 근거**: DA 호출 자체는 YAGNI 판단 대상이 아니다.
-  변경이 "단순"해 보여도 독립 에이전트가 SKIP으로 판단하면
-  사용자 승인을 거쳐 자동 생략된다. 메인 LLM은 호출만 하면 된다.
-- **책임 분리**: Review Intensity 판단은 run-da의 책임이다.
-  메인 LLM은 DA 호출 여부를 스스로 판단하지 않는다.
-- **thread cap 준수**: Codex 세션에서는 current session의 open-thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 않고,
-  completed reviewer/Arbiter thread를 다음 round/retry 전에 `close_agent`로 닫아야 한다.
-- **Codex 세션 hardening 계약 준수**: `/run-da for_plan`의 reviewer/Intensity는 standard review profile, Arbiter는 strong review profile을 따른다.
-  `wait_agent` timeout만으로 중간 kill/self-auditing 대체를 하지 않고, reviewer PoC는 repo 밖 scratch에 한정한다.
-- **main-agent-only 유지**: single-writer/main-agent-only boundary는 `run-da` canonical contract를 그대로 따른다.
-  tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 for_plan subagent가 직접 실행하지 않는다.
-  상세 용어와 violation 처리 규칙은 [run-da/SKILL.md](../run-da/SKILL.md)의 `Codex 세션 하드닝 계약`을 따른다.
-- **타이밍**: 반드시 계획 추적 도구 진입 전에 이 단계를 완료한다
-  (DA 에이전트가 일반 모드에서 full tool access로 PoC 검증을 수행할 수 있도록).
-
-### Step 6: DA 결과 반영 [일반 모드]
-
-DA for_plan의 Arbiter 판정 결과와 selective consistency 집계(해당 시)를 함께 처리한다. 상세 상태 전이는 [`run-da/references/protocol.md`](../run-da/references/protocol.md)의 "DA → Arbiter → Main Agent 상태 흐름" 및 "Selective consistency 상태 전이" 참조.
-
-| verdict × stability_status | 메인 에이전트 행동 |
-|----------------------------|-------------------|
-| CONFIRMED_ISSUE (stability=`N/A` 또는 `stable`, `low_confidence_warning=false`) | 계획에 자동 반영한다. |
-| NOT_AN_ISSUE (stability=`N/A` 또는 `stable`, `low_confidence_warning=false`) | 반영 불필요 (Arbiter 판정을 신뢰한다). |
-| NEEDS_MORE_INFO (stability=`N/A` 또는 `stable`) | 질문 도구로 사용자 판단을 요청한다. |
-| 임의 verdict + `stability_status=stable` + `low_confidence_warning=true` | fail-closed 승격: 질문 도구로 사용자 판단 요청 (unanimous이어도 low-confidence 이력 공유). |
-| majority verdict + `stability_status=split` | 질문 도구로 사용자 판단 요청. vote-shape(2:1)와 minority verdict도 함께 제시. |
-| `stability_status=fragmented` 또는 partial_failure | BLOCKED. 질문 도구 지원 시 사용자 판단 요청(비유법 포함), 미지원 시 자동 승격 금지하고 중단 보고. |
-
-### Step 7: 계획 상태 진입 [전환점]
-
-모든 분석, 질문, DA 검토가 완료되었으므로 계획 추적 도구로 진입한다 (런타임별 실제 도구는 자체 "런타임 도구 매핑" 표 참조). Codex 일반 세션·headless에서는 Step 4(또는 for_issue의 Step I-4)에서 이미 BLOCKED 처리되어 이 단계에 도달하지 않는다 (상세는 "질문 도구 미지원 대응" 섹션 참조).
-
-- **Claude Code 세션**: 계획 추적 도구가 계획 파일 경로 배정과 write 제한 모드 전환을 수행한다. Step 8에서 파일 편집 도구로 해당 경로에 계획 파일을 작성한다.
-- **Codex Plan mode**: chat state 추적을 시작한 뒤, Step 8에서 파일 편집 도구로 `.claude/plans/<slug>.md`에 직접 작성한다 (chat state 추적은 상태 표시 전용이며 파일을 생성하지 않는다).
-
-### Step 8: 계획 파일 작성 [계획 추적 상태]
-
-상세 실행 계획을 계획 파일에 작성한다.
-
-계획에 포함할 내용:
-- **변경 대상 파일 목록**: 수정/추가/삭제할 파일과 각 파일에서의 변경 내용
-- **실행 순서**: 의존 관계를 고려한 작업 순서
-- **검증 방법**: 변경이 올바르게 적용되었는지 확인하는 방법 (빌드, 테스트, 수동 검증 등). 검증 수단 선택 가이드는 [`../prd/references/validation-paths.md`](../prd/references/validation-paths.md)를 참조한다 (risk-appropriate mix, hard-coded default 회피).
-- **사이드이펙트 대응**: Step 4에서 확인된 사이드이펙트에 대한 처리 방법
-- **롤백 가능성**: 문제 발생 시 되돌리는 방법
-- **Post-Implementation 자동 수행 범위**: 1~7번 자동 절차 (변경 구현·구현 커밋·`/run-da for_pr`·`/parallel-audit`·10-pass review·반영 커밋·`/create-pr`) 중 생략할 단계가 있으면 명시. 생략 단계가 없으면 "Post-Implementation 1~7 자동 수행 (default)" 한 줄로 표기. 이 항목은 승인 요청 도구 호출 시 사용자에게 노출되어 tracked write·commit·GitHub PR write 포함 자동 진행 범위에 대한 사용자 동의 근거가 된다.
-
-**Hallucination 방지 원칙:**
-- 계획 파일에는 Step 1-6에서 직접 확인한 사실만 포함한다.
-- "~일 것이다", "~로 추정된다" 등 추측 표현을 금지한다.
-- "추후 결정", "별도 검토 필요", "적절히 처리", "필요에 따라" 등 미결정 표현을 금지한다.
-  계획의 모든 항목은 구체적 행동으로 서술한다 ("에러 핸들링 추가"가 아니라 "X 함수에서 Y 예외를 catch하여 Z로 처리").
-  단, `[UNVERIFIED]` 라벨처럼 검증 상태를 명시하는 표기는 허용한다 (상세는 [`../write-handoff/references/llm-friendly-checklist.md`](../write-handoff/references/llm-friendly-checklist.md)의 라벨 체계 참조).
-- 확인하지 못한 사항은 계획에 포함하지 않거나 `[UNVERIFIED]` 라벨로 명시 (라벨 체계 상세는 [체크리스트 라벨 체계](../write-handoff/references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조).
-- 계획 추적 진입 후 새로운 가정이 필요해지면, 먼저 파일 읽기 도구(예: 셸 `rg -n` / `sed -n` 또는 그에 상당하는 도구)로 확인한다 (추적 상태에서도 가능).
-  그래도 확인 불가하면 승인 요청 도구로 종료 → 검증 → 계획 추적 도구로 재진입한다.
-  확인 없이 가정을 계획에 추가하지 않는다.
-
-**승인 요청 전 자체 점검:**
-- **이슈 커버리지**: 원본 이슈/작업 설명의 모든 요구사항이 계획에 매핑되는가?
-- **내부 일관성**: 실행 순서와 파일 간 의존 관계가 모순되지 않는가?
-
-누락이나 모순이 발견되면 계획 추적 상태에서 즉시 수정한다.
-추가 확인이 필요하면 승인 요청 도구로 종료 → 검증 → 계획 추적 도구로 재진입한다.
-
-### Step 9: 사용자 승인 요청
-
-계획이 완성되면 승인 요청 도구로 사용자에게 계획 승인을 요청한다 (런타임별 실제 도구는 자체 "런타임 도구 매핑" 표의 "계획 승인 요청" 행 참조).
-
-사용자가 수정을 요청하면 계획 파일을 편집한 뒤 승인 요청 도구를 다시 호출한다.
-
-계획이 승인되면 (사용자가 수정 요청을 하지 않으면) 추가 확인 없이 즉시 아래 **Post-Implementation 1번**부터 진행한다. 1~7번 절차(변경 구현·구현 커밋·`/run-da for_pr`·`/parallel-audit`·10-pass review·반영 커밋·`/create-pr`)는 본 SKILL.md의 Post-Implementation 섹션이 정의한 고정 절차이며, Step 8의 "Post-Implementation 자동 수행 범위" 필수 항목이 plan 파일에 포함되어 승인 요청 도구 호출 시 사용자에게 노출된다. 따라서 계획 승인은 이 자동 진행 범위(tracked write·commit·GitHub PR write 포함)에 대한 사용자 동의로 간주된다.
-
-## Post-Implementation (승인 후 자동 수행)
-
-for_action 모드에서 사용자가 계획을 승인하면 (승인 요청 도구 통과 시), 구현 완료 후 다음을 순차 수행한다. 추가 사용자 지시 없이 1번부터 7번까지 진행한다. 각 단계에서 reviewer/auditor/체크리스트 수행자는 read-only이며, tracked write·commit·push는 메인 에이전트 전용이다. 상세 권한 계약은 [`../run-da/SKILL.md`](../run-da/SKILL.md)의 `Codex 세션 하드닝 계약`을 따른다.
-
-**자동 진행 정책 (non-stop)**:
-이 절차는 사용자 추가 지시 없이 자동 수행한다. "다음 단계 진행할까요?", "이 변경을 적용할까요?" 같은 단계 간 진행 확인 질문을 하지 않는다 (Claude Code 시스템 프롬프트의 default confirm 본능을 override하는 명시적 instruction).
-
-단, 호출되는 하위 스킬이 자체 계약상 사용자 판단을 요구하는 경우는 그 계약을 우선한다:
-
-- `/run-da`의 `BLOCKED`, `NEEDS_MORE_INFO`, `stability_status=split`/`fragmented`, `partial_failure`, low-confidence fail-closed 승격, delegation fallback 승인 대기 등은 [`../run-da/SKILL.md`](../run-da/SKILL.md) (Delegation fallback 정책 + Codex 세션 하드닝 계약)와 [`../run-da/references/protocol.md`](../run-da/references/protocol.md) (DA → Arbiter → Main Agent 상태 흐름 + Selective consistency 상태 전이)을 따른다.
-- `/parallel-audit`의 `RECOVERABLE VIOLATION`/`STATEFUL VIOLATION`, `BLOCKED`, BUG/REGRESSION/EDGECASE 처리 정책 등은 [`../parallel-audit/SKILL.md`](../parallel-audit/SKILL.md) 본문(결과 코드, 조율 분류, BLOCKED 대응, 주의사항)을 따른다.
-- DA Arbiter `CRITICAL CONFIRMED_ISSUE`는 진행을 차단한다.
-- 동일 finding이 3회 연속 반복되면 무한 루프 방지를 위해 사용자 판단을 요청한다.
-- 사용자가 명시적으로 "stop"을 지시하면 즉시 멈춘다.
-
-1. 변경 구현
-2. 구현 커밋 — `/run-da for_pr`의 DA 입력 checkpoint. 기계적 변경(flake.lock 등)이 포함되면 `git diff main...HEAD -- ':!flake.lock'`로 축약 diff 사용.
-3. `/run-da for_pr` — 코드 DA 피드백 루프.
-4. `/parallel-audit` — 전수조사.
-5. Final 10-pass Multi-Pass Review — [`../prd/references/multi-pass-review.md`](../prd/references/multi-pass-review.md) 체크리스트 수행. 메인 에이전트 직접 수행(fan-out 금지; `run-da` 4-bundle과 축 구분 — Cross-Phase Integration, Validation 선택, Documentation, PRD Closeout은 run-da가 커버하지 않는 영역). 작업 입력 또는 현재 diff에 `.claude/prds/` 파일이 포함된 경우에만 PRD Closeout 항목을 수행하고, 아니면 해당 항목 skip + 스킵 근거 기록.
-6. 10-pass 반영 커밋 (수정 발생 시) — 논리 단위로 분할 커밋 허용.
-7. `/create-pr` — main 브랜치 대상 PR 생성.
-
-사용자가 명시적으로 특정 단계를 생략하라고 지시한 경우에만 해당 단계를 건너뛴다.
+| 항목 | for_action | for_issue | for_prd |
+|------|-----------|-----------|---------|
+| 입력 | 이슈 레퍼런스 (URL/ID/이슈키) | 텍스트 설명 또는 빈 인자 | 이슈 레퍼런스 (`for_action`과 동일 — 자동 후보 또는 명시 호출 모두 ref 전제) |
+| 출력 | 사용자 승인을 받은 계획 파일 (`.claude/plans/<slug>.md`) | 등록된 이슈 (+ 선택적 LLM 이행 가이드) | `/prd` 호출로 작성된 Living PRD (`.claude/prds/prd-<feature>.md` 또는 split) — plan-with-questions 자체 산출물 없음 |
+| 단계 흐름 | [`modes/for_action.md`](./modes/for_action.md) | [`modes/for_issue.md`](./modes/for_issue.md) | [`modes/for_prd.md`](./modes/for_prd.md) (handoff wrapper) |
+| DA | for_plan 실행 (Step 5) | 생략 | for_plan + phase별 6-classification + Final 9-pass |
+| Step 3.5 외부 자문 | 트레이드오프 1+ 항목 시 | 트레이드오프 1+ 항목 시 | 트레이드오프 1+ 항목 시 (`/prd` handoff 전 1회) |
+| 계획 추적 도구 | 사용 (Step 7-9) | 미사용 (산출물이 이슈) | 미사용 — `/prd` 스킬에 handoff |
+| 제1원칙 | YAGNI / NGMI | YAGNI / NGMI | YAGNI / NGMI |
+
+## 단계 흐름 — 모드별 분리
+
+상세 단계 흐름은 모드 파일에서 정의한다 (1-depth 원칙):
+
+- **for_action**: [`modes/for_action.md`](./modes/for_action.md) — Step 1 (이슈 유효성) → 2 (탐색+재현) → 3 (질문 수집) → **3.5 (트레이드오프 1+ 시 외부 자문, background 병렬)** → 4 (사용자 질문) → 5-6 (DA + 반영) → 7 (계획 추적 진입) → 8 (계획 작성) → 9 (승인 요청).
+- **for_issue**: [`modes/for_issue.md`](./modes/for_issue.md) — Step I-1 (fan-out) → I-2 (fan-in) → I-3 (블랙박스 체크리스트) → **I-3.5 (외부 자문, 트레이드오프 있을 시)** → I-4 (스무고개 루프) → I-5 (이슈 생성) → I-6 (for_action 전환 제안).
+- **for_prd**: [`modes/for_prd.md`](./modes/for_prd.md) — `for_action` Step 1-6(인터뷰·자문·DA) 후 Step 7에서 **`/prd` 스킬에 handoff**. plan-with-questions 자체 PRD 사본 만들지 않음 (`/prd`가 정본 owner). Implementation 단계에서 phase 종료 시 6-classification, Final에서 prd 10-pass + review-impl 9-pass review-only 통합.
+
+승인 후 자동 절차는 [`references/post-implementation.md`](./references/post-implementation.md) 1~7번을 따른다 (사용자 stop·하위 스킬 BLOCKED 외에는 자체 생략 금지 — #453/#569 회귀 방지).
+
+## Reference Index (progressive disclosure)
+
+| 파일 | 용도 |
+|------|------|
+| [`references/runtime-boundaries.md`](./references/runtime-boundaries.md) | 지원 런타임 / 용어 / 도구 매핑 / 미지원 대응 SSOT |
+| [`references/fanout-fanin.md`](./references/fanout-fanin.md) | 역할 카탈로그 + 런타임 분기 + fan-in 통합 전략 |
+| [`references/da-integration.md`](./references/da-integration.md) | Step 5 호출 계약 + Step 6 결과 반영 상태표 |
+| [`references/post-implementation.md`](./references/post-implementation.md) | 7단계 자동 진행 + 자체 생략 금지 신뢰 경계 |
+| [`references/output-templates.md`](./references/output-templates.md) | 사용자 메시지 / 체크리스트 / 질문 패턴 / anti-anchoring 규칙 |
+| [`references/consulting-step.md`](./references/consulting-step.md) | Step 3.5 입출력 schema + anti-anchoring 4 규칙 |
+| [`references/plan-file-template.md`](./references/plan-file-template.md) | 14 metadata 필드 + Decision Log SSOT |
+| [`references/resume-state.md`](./references/resume-state.md) | Resume From enum 카탈로그 + baseline drift 검증 |
+| [`references/task-size-routing.md`](./references/task-size-routing.md) | for_prd 자동 트리거 알고리즘 + 산출물 경로 + review-impl 통합 시점 |
+| [`references/bias-measurement.md`](./references/bias-measurement.md) | 4축 grep + 4 metric (baseline은 `scripts/ai/measure-anchoring-bias.sh` 실행으로 동적 산출 — script가 SSOT) |
+
+차용 reference (`/prd`, `/review-implementation`):
+
+| 파일 | 사용처 |
+|------|--------|
+| [`../prd/references/validation-paths.md`](../prd/references/validation-paths.md) | 검증 수단 선택 (모든 모드) |
+| [`../prd/references/multi-pass-review.md`](../prd/references/multi-pass-review.md) | Post-Implementation 5번 Final review |
+| [`../prd/references/prd-master-template.md`](../prd/references/prd-master-template.md) | for_prd 모드 차용 (직접 복제 금지, 링크) |
+| [`../prd/references/phase-template.md`](../prd/references/phase-template.md) | for_prd 모드 phase 단위 |
+| [`../prd/references/file-mode-selection.md`](../prd/references/file-mode-selection.md) | for_prd Single vs Split |
+| [`../review-implementation/SKILL.md`](../review-implementation/SKILL.md) | for_prd phase 종료 6-classification + Final 9-pass (auto-fix 미사용) |
 
 ## 주의사항
 
-- **질문 도구 의무**: 사용자에게 질문할 때는 질문 도구를 사용한다. 이 규칙은 예외 없이 적용된다. 질문 도구 미지원 시 "질문 도구 미지원 대응" 섹션을 따른다.
-- **블랙박스 제로 원칙**: 계획에 모호한 부분이 남아 있으면 완성이 아니다. 사용자에게 물어보기 전에 코드베이스를 충분히 탐색하여 스스로 답할 수 있는 질문은 걸러낸다.
-- **YAGNI/NGMI를 제1원칙으로**: 계획의 각 단계에서 "이게 정말 필요한가?"를 반복 검증한다. 불필요한 추가 작업을 계획에 포함하지 않는다.
-- **질문은 빠짐없이**: "사용자가 귀찮아하지 않을까" 걱정하지 않는다. 불명확한 채로 진행하면 나중에 더 큰 비용이 발생한다. 다만 한번에 모아서 질문하여 왕복 횟수는 최소화한다.
-- **기존 패턴 존중**: 코드베이스에 이미 확립된 패턴(디렉토리 구조, 네이밍 컨벤션, 설정 방식)을 파악하고, 계획이 기존 패턴과 일관되도록 한다.
-- **지연 계획 추적**: for_action 모드에서 Step 1-6은 일반 모드에서 수행한다. 로컬 재현, 빌드, 명령 실행 등이 필요하기 때문이다. 계획 추적 도구 진입은 모든 분석과 질문이 완료된 Step 7에서만 수행한다. for_issue 모드에서는 계획 추적 도구를 사용하지 않는다.
+- **블랙박스 제로 원칙**: Invariant 2.
+- **자체 생략 금지**: 메인 LLM은 Post-Implementation 1~7 중 어떤 단계도 자체 판단으로 생략하지 않는다. "범위 대비 비용 과도" 같은 메인 LLM 자체 판단은 사용자 stop이 아니다 (#453 회귀 방지).
+- **승인 의미 명확화**: 계획 승인은 Post-Implementation 자동 진행 동의로 간주된다. 그 범위(tracked write·commit·PR write)를 plan Step 8에 명시한다 (#569 회귀 방지).
+- **기존 패턴 존중**: 코드베이스에 이미 확립된 패턴을 파악하고, 계획이 기존 패턴과 일관되도록 한다.
+- **질문은 빠짐없이 한번에**: "사용자가 귀찮아하지 않을까" 걱정하지 않는다. 단 한번에 모아서 왕복 횟수는 최소화한다 (Step 4) 또는 라운드당 최대 4개 (Step I-4).

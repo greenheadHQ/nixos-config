@@ -32,3 +32,6 @@ oauth-state.json
 
 # playwright-cli 런타임 산출물 (스냅샷, 세션 데이터)
 .playwright-cli/
+
+# anchoring-bias baseline measurements (스크립트로 동적 산출, repo에 수치 저장 안 함)
+.claude/metrics/
