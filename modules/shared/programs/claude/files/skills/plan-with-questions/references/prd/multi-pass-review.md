@@ -2,7 +2,7 @@
 
 모든 phase가 완료된 직후, 다음 항목을 **순서대로** 완료한다. 개별 phase의 `Phase-End Multi-Pass Review`(별도 문서)는 phase 종료마다 수행하고, 본 리스트는 프로젝트 마감 직전에 한 번 수행한다.
 
-본 체크리스트는 sibling skill에서도 재사용된다 — 예: `plan-with-questions` Post-Implementation step 5 ("Final 10-pass Multi-Pass Review")는 이 파일을 canonical 참조로 링크한다.
+본 체크리스트는 `plan-with-questions` 내부 reference이며, for_prd 모드와 for_action 모드의 Post-Implementation Step 5 ("Final 10-pass Multi-Pass Review")가 canonical 참조로 링크한다.
 
 ## 체크리스트
 
@@ -13,7 +13,7 @@
 - [ ] **5. Duplication / cleanup review** — 중복 로직, dead code, temporary code, 잡음 log, 주석 처리 잔재, 사용되지 않는 파일/의존성이 제거되었다.
 - [ ] **6. Security / privacy review** — 인증/인가, secret, 민감 데이터, 감사 가능성, 데이터 노출이 안전하다.
 - [ ] **7. Performance / load review** — bottleneck, 비싼 query, N+1, 불필요한 재렌더, 불필요한 네트워크 호출이 다루어졌다.
-- [ ] **8. Validation review** — 최종 validation 조합이 risk에 적절하다. 경로 enumeration과 선택 근거는 [`validation-paths.md`](./validation-paths.md) catalog를 정본으로 따른다 (static / unit / integration / API-level E2E / browser-UI E2E / agent-dev browser / mobile-simulator / visual-screenshot / manual smoke / observability).
+- [ ] **8. Validation review** — 최종 validation 조합이 risk에 적절하다. 경로 enumeration과 선택 근거는 [`validation-paths.md`](../validation-paths.md) catalog를 정본으로 따른다 (static / unit / integration / API-level E2E / browser-UI E2E / agent-dev browser / mobile-simulator / visual-screenshot / manual smoke / observability).
 - [ ] **9. Documentation / operability review** — 문서, runbook, release note, migration, rollback, 모니터링, 지원 note가 필요에 따라 갱신되었다.
 - [ ] **10. PRD closeout review** — PRD status가 Complete, change log가 최신, follow-up이 기록되어 있다.
 

@@ -95,7 +95,7 @@ Step 3.5는 DA(Step 5)와 목적이 다르다. 3.5는 사용자에게 옵션 제
 **핵심 포함 내용** (template 외 본문):
 - **변경 대상 파일 목록**: 수정/추가/삭제할 파일과 각 파일에서의 변경 내용
 - **실행 순서**: 의존 관계를 고려한 작업 순서
-- **검증 방법**: 변경이 올바르게 적용되었는지 확인하는 방법. 검증 수단 선택 가이드는 [`../../prd/references/validation-paths.md`](../../prd/references/validation-paths.md)를 참조한다 (risk-appropriate mix, hard-coded default 회피).
+- **검증 방법**: 변경이 올바르게 적용되었는지 확인하는 방법. 검증 수단 선택 가이드는 [`../references/validation-paths.md`](../references/validation-paths.md)를 참조한다 (risk-appropriate mix, hard-coded default 회피).
 - **사이드이펙트 대응**: Step 4에서 확인된 사이드이펙트에 대한 처리 방법
 - **롤백 가능성**: 문제 발생 시 되돌리는 방법
 - **Post-Implementation 자동 수행 범위**: [`../references/post-implementation.md`](../references/post-implementation.md) 1~7번 절차 중 생략할 단계가 있으면 명시. 생략 단계가 없으면 "Post-Implementation 1~7 자동 수행 (default)" 한 줄로 표기. 이 항목은 승인 요청 시 사용자에게 노출되어 tracked write·commit·GitHub PR write 포함 자동 진행 범위 동의 근거가 된다.

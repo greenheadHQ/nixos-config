@@ -34,14 +34,36 @@
 
 ## for_issue Step I-6 전환 제안 메시지
 
-이슈 생성 완료 후, 질문 도구로 사용자에게 묻는다:
+이슈 생성 완료 후, 질문 도구로 사용자에게 묻는다. 메시지 본문과 첫 옵션은 **사용자 입력 시점의 자연어 trigger 카테고리**에 따라 달라진다.
+
+trigger 카테고리 정의 (키워드 목록 + 권장 transition 모드)는 [`../SKILL.md`](../SKILL.md#모드-판별)의 "자연어 trigger → transition 매핑" 표 (SSOT)를 참조한다. 본 섹션은 각 카테고리의 사용자 메시지 문안과 옵션 본문만 정의한다. 모든 카테고리는 옵션을 **3개로 통일**한다 (Codex Plan mode `request_user_input`의 max-3 제약 준수).
+
+### PRD 작성 의도 trigger 매칭 시
+
+> "이슈 등록이 완료되었습니다. 입력에 PRD 작성 의도가 포함되어 있어, 바로 **for_prd 모드로 PRD 작성**을 시작할 수 있습니다. 어떻게 진행할까요?"
+
+옵션 (3개):
+- **Yes (for_prd 진입)** → 생성된 이슈 URL(create-issue Step 5의 `ISSUE_URL`)로 `for_prd <ISSUE_URL>` 진입.
+- **No (write-handoff로 마무리)** → 이슈 URL을 인자로 `/write-handoff` 실행 후 종료.
+- **No (여기서 종료)** → 이슈 URL 반환 후 종료. (사용자가 for_action 우회를 원하면 별도 메시지로 `for_action <ISSUE_URL>` 명시 호출 가능.)
+
+### review-impl 의도 trigger 매칭 시
+
+> "이슈 등록이 완료되었습니다. 입력에 구현 감사·문서 대비 리뷰 의도가 포함되어 있어, **for_action 모드로 진입 후 Post-Implementation 5번 Final review**에서 PRD 10-pass(`references/prd/multi-pass-review.md`) + review-impl overlay(`references/review-impl/implementation-review.md` — 6-classification 라벨링 + overbuilt 우선 분류)를 적용합니다. 어떻게 진행할까요?"
+
+옵션 (3개):
+- **Yes (for_action 진입)** → 생성된 이슈 URL로 `for_action <ISSUE_URL>` 진입.
+- **No (write-handoff로 마무리)** → 이슈 URL을 인자로 `/write-handoff` 실행 후 종료.
+- **No (여기서 종료)** → 이슈 URL 반환 후 종료.
+
+### 일반 텍스트 (위 카테고리 매칭 없음)
 
 > "이슈 등록이 완료되었습니다. 바로 for_action으로 전환하여 작업을 진행하시겠습니까?"
 
-옵션:
-- **Yes** → 생성된 이슈 URL(create-issue Step 5의 `ISSUE_URL`)로 for_action 모드를 시작한다.
-- **No (write-handoff로 마무리)** → 생성된 **이슈 URL(ISSUE_URL)** 을 인자로 `/write-handoff` 스킬을 실행하여 LLM 이행 가이드를 작성한 뒤 종료한다 (bare 번호 대신 URL을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피).
-- **No (여기서 종료)** → 생성된 이슈 URL을 반환하고 종료한다.
+옵션 (3개):
+- **Yes** → 생성된 이슈 URL로 `for_action <ISSUE_URL>` 진입.
+- **No (write-handoff로 마무리)** → 이슈 URL을 인자로 `/write-handoff` 실행 후 종료 (bare 번호 대신 URL을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피).
+- **No (여기서 종료)** → 이슈 URL 반환 후 종료.
 
 ## for_prd 모드 자동 트리거 알림 메시지
 

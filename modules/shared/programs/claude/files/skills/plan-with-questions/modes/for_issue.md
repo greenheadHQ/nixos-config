@@ -49,10 +49,19 @@ fan-in 결과에서 미해결 항목(블랙박스 제로 원칙의 "블랙박스
 
 스무고개 결과를 바탕으로 `/create-issue` 스킬을 실행하여 이슈를 등록한다. write-handoff 실행 여부는 Step I-6에서 통합 선택지로 제안하므로, create-issue 호출 시 내부 write-handoff 제안을 생략한다.
 
-## Step I-6: for_action 전환 제안 [일반 모드]
+## Step I-6: 후속 모드 전환 제안 [일반 모드]
 
-이슈 생성 완료 후, 질문 도구로 사용자에게 묻는다 (메시지·옵션은 [`../references/output-templates.md`](../references/output-templates.md#for_issue-step-i-6-전환-제안-메시지) 참조).
+이슈 생성 완료 후, 질문 도구로 사용자에게 묻는다 (메시지·옵션은 [`../references/output-templates.md`](../references/output-templates.md#for_issue-step-i-6-전환-제안-메시지) 참조). 입력 시점의 **자연어 trigger 카테고리**에 따라 첫 옵션의 권장 모드가 달라진다 (이슈 본문에 별도 marker는 추가하지 않는다 — 모드 결정은 사용자 입력의 trigger 카테고리만으로 충분).
 
-- **Yes** → 생성된 이슈 URL(`/create-issue` Step 5의 `ISSUE_URL`)로 for_action 모드를 시작한다.
+trigger 카테고리 정의 (키워드 목록 + transition 매핑)는 [`../SKILL.md`](../SKILL.md#모드-판별)의 "자연어 trigger → transition 매핑" 표 (SSOT)를 참조한다. Step I-6은 그 표가 정한 권장 모드를 첫 옵션으로 제시한다:
+
+- **PRD 작성 의도** → 권장: **for_prd 직접 진입** (생성된 이슈 URL + PRD 의도 결합). 또는 for_action 진입 후 Step 1-2 baseline에서 Phase ≥4 감지 시 자동 for_prd 후보 알림.
+- **review-impl 의도** → 권장: **for_action 진입** (Post-Implementation 5번 Final review에서 [`../references/prd/multi-pass-review.md`](../references/prd/multi-pass-review.md)의 PRD 10-pass + [`../references/review-impl/implementation-review.md`](../references/review-impl/implementation-review.md) overlay(6-classification 라벨링 + overbuilt 우선 분류) 적용).
+- **위 카테고리 매칭 없음** → 표준 for_action transition 또는 write-handoff/종료.
+
+옵션은 모든 카테고리에서 **3개로 통일** (Codex Plan mode `request_user_input` max-3 제약):
+- **Yes** → trigger 카테고리에 따라 자동 권장 모드(`for_prd <ISSUE_URL>` 또는 `for_action <ISSUE_URL>`)로 진입.
 - **No (write-handoff로 마무리)** → 생성된 **이슈 URL(`ISSUE_URL`)** 을 인자로 `/write-handoff` 스킬을 실행하여 LLM 이행 가이드를 작성한 뒤 종료한다 (bare 번호 대신 URL을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피).
 - **No (여기서 종료)** → 생성된 이슈 URL을 반환하고 종료한다.
+
+PRD 카테고리에서 사용자가 for_action 우회 진입을 원하면 별도 메시지로 `for_action <ISSUE_URL>`을 명시 호출하면 된다 (3-옵션 제약으로 본 prompt에는 fallback 옵션 미포함).

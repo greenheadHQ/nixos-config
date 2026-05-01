@@ -1,11 +1,11 @@
 # Plan File Template (`.claude/plans/<slug>.md`)
 
-`for_action` 모드 산출물의 표준 형식. 14 metadata 필드 + Decision Log + 본문 구조. `/prd` master template의 Document Status를 차용했지만 plan-with-questions 단일 파일에 맞게 압축한다.
+`for_action` 모드 산출물의 표준 형식. 14 metadata 필드 + Decision Log + 본문 구조. [`./prd/prd-master-template.md`](./prd/prd-master-template.md)의 Document Status를 차용했지만 plan-with-questions 단일 파일에 맞게 압축한다.
 
 ## 적용 범위
 
 - **for_action**: 14필드 중 PRD 전용 필드(`Current Phase`, `Phase Progress`, `Active Phase File`)는 N/A 또는 생략.
-- **for_prd**: 본 template **미적용**. PRD 정본은 `/prd` 스킬이 작성하며 `prd/references/prd-master-template.md`의 Document Status가 정본이다 (두 SSOT 병존 회피). plan-with-questions의 Resume From enum (`for_prd.*`)은 `/prd` 호출 직전까지의 진행 단계 추적 용도로만 쓴다.
+- **for_prd**: 본 template **미적용**. PRD 정본은 for_prd 모드가 [`./prd/prd-master-template.md`](./prd/prd-master-template.md)를 따라 `.claude/prds/`에 직접 작성한다 (두 SSOT 병존 회피). Resume From enum (`for_prd.*`)은 PRD 작성 직전까지의 진행 단계 추적 용도로만 쓴다.
 - **for_issue**: 산출물이 이슈이므로 본 template 미적용. plan 파일이 없으므로 Resume From 메커니즘은 issue body에 inline (write-handoff가 처리).
 
 ## 14 Metadata 필드 (plan 상단 — Document Status 표)
@@ -45,7 +45,7 @@
 
 ### Mode 값
 
-`for_action` 전용. `for_prd`는 본 template 미적용 (`/prd` 스킬이 정본 owner) — for_prd 자동 트리거 시 plan-with-questions는 `/prd`로 handoff하고 본 template 산출물을 만들지 않는다.
+`for_action` 전용. `for_prd`는 본 template 미적용 ([`./prd/prd-master-template.md`](./prd/prd-master-template.md)이 정본) — for_prd 자동 트리거 시 plan-with-questions는 `.claude/prds/`에 직접 작성하고 본 template 산출물은 만들지 않는다.
 
 ### Resume From / Last Completed Step
 
@@ -94,7 +94,7 @@ Step 3.5 자문 결과의 `result.json` 경로 또는 핵심 decision_id list. p
 <의존 관계 고려한 작업 순서>
 
 ## Validation Strategy
-<risk-appropriate mix — `prd/references/validation-paths.md` catalog 인용>
+<risk-appropriate mix — `~/.claude/skills/plan-with-questions/references/validation-paths.md` catalog 인용>
 
 ## 사이드이펙트 + 대응
 | 영향 | 대응 |
@@ -138,7 +138,7 @@ Step 3.5 자문 결과의 `result.json` 경로 또는 핵심 decision_id list. p
 1. **사용자 선택 번복** — Step 4에서 사용자가 옵션 A를 골랐다가 Step 6 DA 또는 후속 단계에서 옵션 B로 바뀐 경우.
 2. **DA Round 큰 설계 변경** — `CONFIRMED_ISSUE`로 핵심 메커니즘 재설계.
 3. **재개 시 baseline drift 감지** — git HEAD 변경으로 Step 1-2 재실행이 트리거된 경우.
-4. **mode 전환** — `for_action` → `for_prd` 자동 후보 알림 + 사용자 승인 또는 거부 (승인 시 `/prd`로 handoff하고 본 template 사용 중단).
+4. **mode 전환** — `for_action` → `for_prd` 자동 후보 알림 + 사용자 승인 또는 거부 (승인 시 PRD 규약을 따라 `.claude/prds/`에 직접 작성, 본 template 사용 중단).
 5. **Step 3.5 자문 결과로 옵션 변경** — 메인 LLM 1차 후보가 자문 disqualifier로 폐기된 경우.
 
 ### 사용처 (생략 가능)

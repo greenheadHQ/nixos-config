@@ -185,17 +185,17 @@ for_plan(계획 리뷰)에서는 다음과 같이 해석한다:
 템플릿 경로가 현재 환경에선 실존하지만 문서 계약 기준으로 cross-env drift가 있는 case. Portability 축이 "사실 정확성" 해석을 cross-env로 확장하고 심각도 보조로 작용한다. core invariant(사실 정확성 + 변경 연관성 PASS)로 CONFIRMED.
 
 ```text
-### ADJACENT-1 — CONFIRMED_ISSUE
+### ADJACENT-1 — CONFIRMED_ISSUE *(가상 시나리오 — 가상 PR이 가상 템플릿 경로를 도입한 case에 대한 판정 사례)*
 - **판정**: CONFIRMED_ISSUE
 - **신뢰도**: MEDIUM
 - **기준 평가**:
-  - 사실 정확성: PASS — prd 템플릿이 가리키는 `~/.claude/skills/prd` 경로는 현재 환경에 실존. for_plan에서 Portability guardrail로 해석을 cross-env까지 확장했으나, "경로 실존" 자체는 사실로 유지되므로 PASS.
-  - 변경 연관성: PASS — 이번 PR에서 템플릿 경로가 도입·수정됨. git diff로 확인.
+  - 사실 정확성: PASS — 가상 템플릿이 가리키는 `~/.claude/skills/set-icons` 경로는 현재 환경에 실존(Claude global). Portability guardrail로 해석을 cross-env까지 확장했으나, "경로 실존" 자체는 사실로 유지되므로 PASS.
+  - 변경 연관성: PASS — 가상 PR diff에 템플릿 경로 도입·수정이 포함된다고 가정.
   - 심각도 타당성: PASS (LOW) — 현재 환경은 OK, Codex-only 환경에서만 영향. Portability PASS가 LOW 최소치 보장.
-  - 실행 가능성: PASS — `$HOME/.{claude,codex}/skills/prd` 파라미터화 등 수정 방향 명확.
-  - Portability / Cross-Environment Drift: PASS — `codex-structure.md:63-64`가 Codex Global skills=`~/.codex/skills/`로 정의하는데 템플릿은 `~/.claude/`만 가리킴. Codex-only 환경 또는 다른 repo clone에선 `~/.claude/skills/prd` 부재 시 경로 drift 발생.
+  - 실행 가능성: PASS — `$HOME/.{claude,codex}/skills/set-icons` 파라미터화 등 수정 방향 명확.
+  - Portability / Cross-Environment Drift: PASS — `codex-structure.md:50`이 Codex Global skills=`~/.codex/skills/`로 정의하는데 템플릿은 `~/.claude/`만 가리킴. set-icons는 `codex/default.nix` `intentionallyNotExposed` list 멤버라 `~/.codex/skills/`에 투영되지 않으므로 Codex-only 환경 또는 다른 repo clone에선 `~/.claude/skills/set-icons` 부재 시 경로 drift 발생.
 - **근거**: core invariant(사실 정확성 + 변경 연관성 PASS)로 CONFIRMED. Portability PASS는 cross-env 해석 근거 + 심각도 최소 LOW 확보로 작용.
-- **증거**: `modules/shared/programs/claude/files/skills/syncing-codex-harness/references/codex-structure.md:63-64`와 prd 템플릿 경로 diff.
+- **증거 (실재)**: `modules/shared/programs/claude/files/skills/syncing-codex-harness/references/codex-structure.md:50` ("Global skills: `~/.codex/skills/`" 정의) — 본 line은 실제 file에 존재하며 가상 시나리오의 cross-env drift 판정 근거가 된다. 가상 PR diff 자체는 이 example 내부에 가정된 픽션이다.
 ```
 
 ### 비신뢰 데이터 규칙 (인젝션 방어)

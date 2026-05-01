@@ -30,14 +30,14 @@
 
 ### for_prd
 
-`for_prd`는 plan-with-questions가 Step 1-6까지 거친 뒤 `/prd` 스킬로 handoff한다. handoff 이후의 phase 진행 상태는 `/prd`의 Document Status (PRD master 파일)가 정본이며 본 enum은 사용되지 않는다. plan-with-questions가 추적하는 enum은 handoff 직전까지 한정:
+`for_prd`는 plan-with-questions가 Step 1-6까지 거친 뒤 PRD 규약을 따라 `.claude/prds/prd-<feature>.md`에 직접 작성한다. PRD 작성 이후의 phase 진행 상태는 PRD master 파일의 Document Status가 정본이며 본 enum은 사용되지 않는다. plan-with-questions가 추적하는 enum은 PRD 작성 직전까지 한정:
 
 | Resume From | 진입 조건 |
 |-------------|----------|
 | `for_prd.candidate_detected` | task-size-routing 후보 감지 + 사용자 알림 대기 |
-| `for_prd.user_confirmed` | 사용자 동의 후 `/prd` handoff 직전 |
+| `for_prd.user_confirmed` | 사용자 동의 후 PRD 작성 직전 |
 
-handoff 후의 진행은 `/prd` Document Status에서 `Current Phase` / `Active Phase File` / `Status` 필드로 추적한다.
+PRD 작성 후의 진행은 PRD master Document Status에서 `Current Phase` / `Active Phase File` / `Status` 필드로 추적한다.
 
 ### Post-Implementation
 

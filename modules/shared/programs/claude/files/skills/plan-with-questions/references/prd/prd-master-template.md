@@ -38,7 +38,7 @@ Single-file mode에서는 아래 구조 전체를 단일 파일에 둔다. Split
 ## Discovery Summary
 - Reviewed: [중요 코드/docs/tests/configs/외부 docs, 또는 context 파일 링크]
 - Current system: [관련 시스템이 현재 어떻게 동작하는가]
-- Validation surface: [가용 검증 도구/gap — 상세 가이드는 prd 스킬의 references/validation-paths.md 참조]
+- Validation surface: [가용 검증 도구/gap — 상세 가이드는 plan-with-questions의 references/validation-paths.md 참조]
 - Design implications: [이 PRD를 형성한 사실들]
 - Confidence / gaps: [아직 불확실한 항목 + 이유]
 
@@ -66,7 +66,7 @@ Single-file mode에서는 아래 구조 전체를 단일 파일에 둔다. Split
 - 다음 항목에 한해서만 진행을 멈추고 도움을 요청한다: 접근 권한 부재, 비가역적 파괴 변경, 주요 요구사항 충돌, 보안/법률 관련 의미 있는 risk.
 - 목표를 만족하는 최소·가역적 변경을 선호한다.
 - 명백한 사유가 없는 한 기존 코드 패턴을 보존한다.
-- 검증 방법은 risk와 가용 도구에 맞춰 선택한다. 모든 phase에 동일 tool을 기본값으로 사용하지 않는다 (prd 스킬의 references/validation-paths.md 참조).
+- 검증 방법은 risk와 가용 도구에 맞춰 선택한다. 모든 phase에 동일 tool을 기본값으로 사용하지 않는다 (plan-with-questions의 references/validation-paths.md 참조).
 - 각 phase 종료 시 본 PRD를 갱신하고 학습 결과에 따라 후속 phase를 수정한다.
 
 ## Phase Index
@@ -82,7 +82,7 @@ Single-file mode에서는 아래 구조 전체를 단일 파일에 둔다. Split
 [Single-file mode일 때만 phase-template.md 구조를 여기 인라인으로 포함.]
 
 ## Final Multi-Pass Review After All Phases
-prd 스킬의 references/multi-pass-review.md 체크리스트를 여기 인라인으로 복제하거나, 해당 파일을 참조 문자열로만 둔다.
+plan-with-questions의 references/prd/multi-pass-review.md 체크리스트를 여기 인라인으로 복제하거나, 해당 파일을 참조 문자열로만 둔다.
 
 ## Open Questions
 - ...

@@ -353,8 +353,6 @@ EXPECTED_EXPOSED=(
   parallel-audit
   plan-with-questions
   playwright-cli
-  prd
-  review-implementation
   review-pr-feedback
   run-da
   syncing-codex-harness

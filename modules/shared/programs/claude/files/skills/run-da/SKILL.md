@@ -72,7 +72,7 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 | Arbiter 프롬프트 + 5가지 판정 기준 | [references/arbiter-prompt.md](references/arbiter-prompt.md) |
 | Arbiter/Intensity 스케일링 + 실행 계약 | [references/arbiter-scaling.md](references/arbiter-scaling.md) |
 | Selective consistency 정책 (vote-shape + offline kappa) | [references/stability-measurement.md](references/stability-measurement.md) |
-| Validation-path catalog (공용) | [../prd/references/validation-paths.md](../prd/references/validation-paths.md) |
+| Validation-path catalog (공용) | [../plan-with-questions/references/validation-paths.md](../plan-with-questions/references/validation-paths.md) |
 
 ## 용어 정책
 

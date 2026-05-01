@@ -40,7 +40,7 @@ Last Updated: YYYY-MM-DD
 - [ ] [대상 파일/컴포넌트/시스템 + 기대 outcome을 포함한 구체적 구현 단계]
 
 ## Validation Strategy
-[위험에 맞는 최소 충분 검증 조합을 고른다. 단위/통합/API E2E/browser/simulator/visual/manual/observability 중 왜 그 조합인지 설명한다. 도구/command를 알면 함께 적는다. 상세 가이드는 prd 스킬의 references/validation-paths.md 참조.]
+[위험에 맞는 최소 충분 검증 조합을 고른다. 단위/통합/API E2E/browser/simulator/visual/manual/observability 중 왜 그 조합인지 설명한다. 도구/command를 알면 함께 적는다. 상세 가이드는 `~/.claude/skills/plan-with-questions/references/validation-paths.md` 참조.]
 
 ## Validation Checklist
 - [ ] Static check 통과 (가용 시): [command]

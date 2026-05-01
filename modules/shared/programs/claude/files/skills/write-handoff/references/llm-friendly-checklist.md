@@ -75,7 +75,7 @@
 
 ## 라벨 체계 (Anti-hallucination)
 
-> **단일 진실 원천**. `create-issue`/`write-handoff`/`plan-with-questions`/`review-implementation` 및 해당 reference 파일은 이 섹션을 참조한다. 규칙 변경 시 이 섹션을 먼저 수정하고, 소비자 문서의 요약 문구/포인터도 함께 점검한다.
+> **단일 진실 원천**. `create-issue`/`write-handoff`/`plan-with-questions` 및 해당 reference 파일(특히 `plan-with-questions/references/review-impl/*`)은 이 섹션을 참조한다. 규칙 변경 시 이 섹션을 먼저 수정하고, 소비자 문서의 요약 문구/포인터도 함께 점검한다.
 
 이슈/이행가이드/계획/리뷰 finding 작성 중 다음 라벨을 사용한다:
 

@@ -1,6 +1,6 @@
 # Validation-Path Catalog
 
-공유 reference — Dependent Skills: `prd` (primary owner), `plan-with-questions`, `run-da`, `review-implementation`.
+공유 reference — Owner: `plan-with-questions` (primary, for_prd Validation Policy + for_action validation 단계). Dependent skills: `run-da`.
 
 의존 스킬이 신규 추가되면 이 섹션을 갱신한다. drift inventory 문서는 생성하지 않는다 (#470 Lessons Learned — 실시간 `rg`/`grep`으로 대체 가능한 정보는 작성하지 않는다).
 

@@ -55,7 +55,7 @@ plan-with-questions의 런타임 지원·용어·도구 매핑·미지원 대응
 본문의 "계획 추적 도구", "파일 편집 도구", "승인 요청 도구"는 위 표의 런타임별 실제 도구를 가리킨다. 최종 산출물은 모드별로 다르다:
 
 - **for_action**: `.claude/plans/<slug>.md` 계획 파일.
-- **for_prd**: `.claude/prds/prd-<feature>.md` (split mode면 + `.claude/prds/prd-<feature>/phase-NN-<name>.md`) — `/prd` 스킬이 작성하며 plan-with-questions는 사본을 만들지 않는다.
+- **for_prd**: `.claude/prds/prd-<feature>.md` (split mode면 + `.claude/prds/prd-<feature>/phase-NN-<name>.md`) — for_prd 모드가 PRD 규약([`./prd/prd-master-template.md`](./prd/prd-master-template.md) + [`./prd/phase-template.md`](./prd/phase-template.md))을 따라 직접 작성한다. 별도 plan 사본은 만들지 않는다.
 - **for_issue**: 산출물이 등록된 이슈. 계획 파일 없음.
 
 ## 질문 도구 미지원 대응
