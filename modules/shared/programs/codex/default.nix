@@ -11,6 +11,7 @@
   pkgs,
   lib,
   nixosConfigPath,
+  hostType ? null,
   ...
 }:
 
@@ -90,6 +91,17 @@ in
     # 런타임에서 사용 가능하게 한다.
     ".codex/scripts/fleiss-kappa.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
+
+    # macOS personal hosts install Codex via the Homebrew cask, but login/non-interactive
+    # shells only get the Home Manager session PATH. Expose a narrow wrapper in
+    # ~/.local/bin instead of prepending the whole Homebrew prefix and changing
+    # unrelated command resolution such as notification hook `timeout` behavior.
+    ".local/bin/codex" = lib.mkIf (pkgs.stdenv.isDarwin && hostType == "personal") {
+      source = pkgs.writeShellScript "codex-homebrew-wrapper" ''
+        exec /opt/homebrew/bin/codex "$@"
+      '';
+      executable = true;
+    };
 
     # Codex 0.124+ stable hooks (issue #585 / epic #584).
     # Claude `~/.claude/hooks/*` 무변경 보장이 필요하므로 Codex 전용 사본을 분리한다.
