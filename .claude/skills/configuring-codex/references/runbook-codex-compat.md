@@ -68,11 +68,14 @@ sandbox_mode = "danger-full-access"
 # 1) 구조 검증
 ./scripts/ai/verify-ai-compat.sh
 
-# 2) SKILL.md 타입 검증
+# 2) SKILL.md 도구-중립성 lint fixture 검증
+./scripts/ai/verify-ai-compat.sh --run-fixture-tests
+
+# 3) SKILL.md 타입 검증
 find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type l | wc -l
 find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type f | wc -l
 
-# 3) 런타임 인식 검증
+# 4) 런타임 인식 검증
 codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' available in this workspace?"
 ```
 
@@ -100,6 +103,26 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 4. `codex exec`로 project-scope 스킬 1개 이상 런타임 확인
 5. `configuring-codex` 스킬 문서와 실제 구현(`default.nix`, verify script) 간 불일치 여부 점검
 6. pre-commit `ai-skills-consistency` 훅 확인 (관련 staged 변경 시 fail, 긴급 우회: `SKIP_AI_SKILL_CHECK=1`)
+
+## 2026-05-02 업데이트: SKILL.md 도구-중립성 lint
+
+`verify-ai-compat.sh`는 `SKILL.md` 본문에 남은 특정 런타임 전용 도구 지시를 검사한다.
+일반 실행에서 FAIL findings는 기존 `fail()` 경로로 집계되어 exit 1을 만든다. WARN findings는
+보고만 하고 exit 0을 유지한다.
+
+정책 요약:
+
+- YAML frontmatter는 metadata로 보고 본문 lint에서 제외한다.
+- fenced code block은 예시 코드로 보고 제외한다.
+- blockquote 안의 FAIL literal은 WARN으로 downgrade한다.
+- 런타임별 binding을 보여주는 구조적 mapping table은 예외로 허용하되, 일반 prose는 엄격하게 검사한다.
+- `set-icons`, `using-claude-p`, `using-codex-exec`, `codex-fan-out`는 별도의 SKILL.md lint 제외 목록을 따른다.
+
+fixture만 빠르게 확인하려면 다음을 실행한다:
+
+```bash
+./scripts/ai/verify-ai-compat.sh --run-fixture-tests
+```
 
 ## 2026-02-19 재검증: 디렉토리 심링크 전환
 

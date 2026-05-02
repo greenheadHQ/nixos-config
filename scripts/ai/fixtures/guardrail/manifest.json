@@ -1,0 +1,105 @@
+[
+  {
+    "path": "should-fail/ask-user-question.md",
+    "fail_count": 1,
+    "warn_count": 0,
+    "rule_ids": ["fail.ask_user_question"]
+  },
+  {
+    "path": "should-fail/agent-background.md",
+    "fail_count": 2,
+    "warn_count": 0,
+    "rule_ids": ["fail.agent_tool", "fail.run_in_background"]
+  },
+  {
+    "path": "should-fail/standalone-grep.md",
+    "fail_count": 1,
+    "warn_count": 0,
+    "rule_ids": ["fail.standalone_grep"]
+  },
+  {
+    "path": "should-fail/non-table-dual-prose.md",
+    "fail_count": 1,
+    "warn_count": 0,
+    "rule_ids": ["fail.runtime_tool_literal"]
+  },
+  {
+    "path": "should-fail/generic-dual-table.md",
+    "fail_count": 1,
+    "warn_count": 0,
+    "rule_ids": ["fail.runtime_tool_literal"]
+  },
+  {
+    "path": "should-fail/backticked-read-tool.md",
+    "fail_count": 1,
+    "warn_count": 0,
+    "rule_ids": ["fail.runtime_tool_literal"]
+  },
+  {
+    "path": "should-fail/backticked-agent-tool.md",
+    "fail_count": 1,
+    "warn_count": 0,
+    "rule_ids": ["fail.agent_tool"]
+  },
+  {
+    "path": "should-fail/warn-web-tool.md",
+    "fail_count": 0,
+    "warn_count": 1,
+    "rule_ids": ["warn.web_tool_literal"]
+  },
+  {
+    "path": "should-fail/blockquote-downgrade.md",
+    "fail_count": 0,
+    "warn_count": 1,
+    "rule_ids": ["fail.ask_user_question"]
+  },
+  {
+    "path": "should-pass/fenced-code.md",
+    "fail_count": 0,
+    "warn_count": 0,
+    "rule_ids": []
+  },
+  {
+    "path": "should-pass/runtime-table.md",
+    "fail_count": 0,
+    "warn_count": 0,
+    "rule_ids": []
+  },
+  {
+    "path": "should-pass/binding-table-backticked-tool.md",
+    "fail_count": 0,
+    "warn_count": 0,
+    "rule_ids": []
+  },
+  {
+    "path": "should-pass/review-pr-command.md",
+    "fail_count": 0,
+    "warn_count": 0,
+    "rule_ids": []
+  },
+  {
+    "path": "should-pass/rest-reviews-path.md",
+    "fail_count": 0,
+    "warn_count": 0,
+    "rule_ids": []
+  },
+  {
+    "path": "should-pass/frontmatter-allowed-tools.md",
+    "fail_count": 0,
+    "warn_count": 0,
+    "rule_ids": []
+  },
+  {
+    "path": "live-root/set-icons/SKILL.md",
+    "fail_count": 0,
+    "warn_count": 0,
+    "skipped": true,
+    "rule_ids": []
+  },
+  {
+    "path": "live-root/non-excluded/SKILL.md",
+    "fail_count": 1,
+    "warn_count": 0,
+    "rule_ids": ["fail.ask_user_question"]
+  }
+]
