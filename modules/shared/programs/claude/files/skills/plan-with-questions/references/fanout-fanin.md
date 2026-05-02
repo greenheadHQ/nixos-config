@@ -22,7 +22,7 @@ DA/review 에이전트는 run-da canonical contract의 프로파일을 따른다
 
 codex exec fan-out 패턴은 [`/codex-fan-out` 스킬](../../codex-fan-out/SKILL.md)이 단일 소스다.
 
-- **Claude Code 세션**: codex exec 기본. 사전점검(`command -v codex >/dev/null && codex --version >/dev/null 2>&1`) 실패 시 Agent tool fallback (`run_in_background: true`).
+- **Claude Code 세션**: codex exec 기본. 사전점검은 [`/codex-fan-out` SSOT](../../codex-fan-out/SKILL.md)의 "사전점검" 섹션(`codex` + `codex-exec-supervised` 가용성 + `codex-exec-supervised --check` capability probe)을 그대로 따른다. 사전점검 실패 시 Agent tool fallback (`run_in_background: true`).
 - **headless 세션**: codex exec only.
 - **Codex 세션**: native subagent fan-out (기존).
 

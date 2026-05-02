@@ -125,7 +125,7 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
 - Codex 세션 경로에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
 - Codex 세션 경로의 reviewer/auditor/Intensity는 standard review profile, Arbiter는 strong review profile을 사용한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑).
-- codex exec 경로의 DA `codex exec` 프로세스는 `--full-auto`(workspace-write)로 실행되나, 프롬프트에서 수정 금지를 지시한다. 코드나 계획을 직접 수정하지 않는다.
+- codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행되어 코드/계획 write를 read-only sandbox로 구조적으로 차단한다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
 - 피드백 루프 결과는 PR 코멘트로 게시하여 이력을 보존한다 ([`references/protocol.md`](references/protocol.md) 참조).

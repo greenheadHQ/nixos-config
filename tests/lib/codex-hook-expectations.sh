@@ -38,3 +38,13 @@ EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh stop
 
 # live env propagation fixture에서 codex exec --ephemeral 호출 timeout (hang 방어).
 LIVE_CODEX_TIMEOUT_SECONDS=30
+
+# codex-exec-supervised wrapper kill-after grace (issue #593).
+# rationale: npm wrapper SIGTERM forward 후 native 응답 대기.
+# 본 fixture는 wrapper의 default timeout을 사용하지 않는다 (운영 budget = 10분).
+# 대신 invocation matrix 전용 짧은 timeout을 별도 oracle 상수로 둔다.
+CODEX_EXEC_KILL_AFTER_SECONDS=5
+
+# invocation matrix fixture default timeout — fixture 안에서 supervisor 발동(timeout 정리)을 검증.
+# wrapper default(600s)와 분리하여 호출자가 fixture 전용 짧은 budget을 명시한다.
+INVOCATION_MATRIX_TIMEOUT_SECONDS=40

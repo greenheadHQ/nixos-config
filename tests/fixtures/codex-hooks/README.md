@@ -70,3 +70,29 @@ agent_id 키는 0.124 schema에 없으며 hook은 graceful fallback에 의존한
 | `scenario-C-user-different-event.toml` | template 미선언 이벤트는 user-owned로 보존 | hooks.SessionStart 등이 그대로 유지 |
 | `scenario-D-mcp-servers-coexist.toml` | mcp_servers와 hooks 인접 ownership view | 사용자 mcp_servers entry 보존 + hooks template 적용 |
 | `scenario-E-posttooluse-template-owned.toml` | template이 선언한 PostToolUse 이벤트(issue #603)에 사용자가 entry 추가 시 sync가 template 값으로 덮어씀 | 사용자 PostToolUse marker가 사라지고 managed pinning-alert command만 남음 |
+
+## codex exec invocation matrix 시나리오 (live opt-in, issue #593)
+
+`test_codex_exec_invocation_live_matrix` 카테고리는 fix 적용 후 PASS가 기대되는 시나리오만 검증한다 (must-pass-only). PR #595 fixture pattern hang은 본 matrix 제외 — known caveat: [`using-codex-exec/references/known-issues.md`](../../../modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md) §15 + 별도 follow-up.
+
+| 케이스 이름 | 패턴 | 기대 동작 | 검증 의의 |
+|-------------|------|----------|----------|
+| `host_home_no_override_stdin_pipe_supervised_pass` | host HOME + no `-c hooks` override + stdin pipe + read-only + `codex-exec-supervised` | 정상 종료 (rc=0) + result 파일 생성 | host HOME + supervisor 정상 동작 회귀 차단 |
+| `raw_override_inline_toml_hang_with_supervisor_pass` | host HOME + `-c hooks.<event>` override + stdin pipe + read-only + `codex-exec-supervised` | rc=0/124/137 모두 PASS (supervisor가 timeout 안에 정리) | issue #593 raw PoC 패턴 + supervisor 적용 시 native 잔존 차단 회귀 차단 |
+
+환경 결함(timeout/codex/codex-exec-supervised 부재) 시 WARN skip — capability-probe 정책 ([`run-da/SKILL.md`](../../../modules/shared/programs/claude/files/skills/run-da/SKILL.md) "stdin pipe + supervised wrapper").
+
+## issue #593 PoC variant legend
+
+총 8 PoC variant 진단 (Mac codex 0.128, supervised wrapper 미적용 상태에서의 raw 동작):
+
+| 시나리오 | hooks override | sandbox | stdin | wrapper 미적용 결과 | wrapper 적용 후 |
+|----------|----------------|---------|-------|---------------------|-----------------|
+| `raw_full_auto_override_inherited_stdin_hang*` (skip-git 유무·cwd 변형) | `-c hooks.<event>` | full-auto | inherited (TTY/pipe) | HANG (timeout 못 죽임) | known-issues.md §15 (override 그룹) |
+| `standard_skip_git_ignore_user_config_override_inherited_stdin_hang` | `-c hooks.<event>` | read-only | inherited | HANG (`Reading additional input from stdin...`) | known-issues.md §15 |
+| `standard_override_devnull_stdin_hang` | `-c hooks.<event>` | read-only | `</dev/null` | HANG (timeout 못 죽임) | known-issues.md §15 |
+| `standard_override_stdin_pipe_hang` | `-c hooks.<event>` | read-only | pipe + `-` | HANG (timeout 못 죽임) | known-issues.md §15 |
+| `host_home_no_override_stdin_pipe_pass` | 없음 | read-only | pipe + `-` 또는 `</dev/null` | OK 12s, hook fired, "PONG" | invocation matrix scenario-1 (wrapper 적용 시 `_supervised_pass`) |
+| `isolated_codex_home_overrideless_known_hang` | 없음 (ephemeral config.toml로 hook 등록) | read-only | inherited | HANG (PR #595 fixture pattern) | known-issues.md §15 caveat + **follow-up: [#634](https://github.com/greenheadHQ/nixos-config/issues/634)** |
+
+**`isolated_codex_home_overrideless_known_hang` caveat**: PR #595 fixture `test_env_propagation_live`가 mac 0.128에서 hang/CLAUDECODE 미도달 fail. 본 PR scope 외 — follow-up [#634](https://github.com/greenheadHQ/nixos-config/issues/634)에서 추적.

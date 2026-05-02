@@ -31,6 +31,23 @@ in
     source = "${sharedScriptsDir}/codex-sync.sh";
     executable = true;
   };
+  # codex exec hang supervisor (issue #593): Nix wrapper가 absolute store path env var를 set한 후
+  # raw script를 exec한다. raw script는 CODEX_EXEC_TIMEOUT_BIN/CODEX_EXEC_SETSID_BIN 우선 사용.
+  # 이로써 wrapper subprocess + codex exec 자식 shell의 PATH를 건드리지 않아 user PATH(BSD
+  # coreutils 우선)를 보존한다.
+  home.file.".local/bin/codex-exec-supervised" =
+    let
+      rawScript = "${sharedScriptsDir}/codex-exec-supervised.sh";
+      wrapper = pkgs.writeShellScript "codex-exec-supervised-wrapper" ''
+        export CODEX_EXEC_TIMEOUT_BIN="${pkgs.coreutils}/bin/timeout"
+        export CODEX_EXEC_SETSID_BIN="${pkgs.util-linux}/bin/setsid"
+        exec "${rawScript}" "$@"
+      '';
+    in
+    {
+      source = wrapper;
+      executable = true;
+    };
   home.file.".local/bin/nfu" = {
     source = pkgs.replaceVars "${sharedScriptsDir}/nfu.sh" {
       flakePath = nixosConfigDefaultPath;

@@ -47,7 +47,10 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    - **foreground 실행** (단일 exec이므로 결과를 즉시 확인):
      ```zsh
      # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ hooks의 early-exit 신호.
-     cat "$INTENSITY_DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --full-auto --ephemeral \
+     # standard review profile (model="gpt-5.5", effort="medium") — --ignore-user-config로 config.toml의
+     # model과 effort가 모두 차단되므로 둘 다 explicit pin (review profile 매핑은 runtime-mapping.md SSOT).
+     cat "$INTENSITY_DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
+       -c model="gpt-5.5" \
        -c model_reasoning_effort="medium" \
        -o "$INTENSITY_DIR/result.md" \
        - \

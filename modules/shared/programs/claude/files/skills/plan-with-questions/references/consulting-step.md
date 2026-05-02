@@ -126,17 +126,17 @@ echo "CONSULT_DIR=$CONSULT_DIR"
 
 메인 에이전트는 stdout의 `CONSULT_DIR` 리터럴 값을 후속 호출에서 재사용한다 (Bash tool 호출 간 변수 비공유).
 
-### 셸 호출 2 — codex exec 실행 (background, timeout 강제)
+### 셸 호출 2 — codex exec 실행 (background, supervised wrapper)
 
 ```zsh
-# 위 CONSULT_DIR 리터럴 값을 그대로 사용. timeout으로 budget 강제.
-# pipe 좌측에 timeout을 두면 cat (producer)에만 적용되고 codex exec (consumer)는
-# 무기한 실행되므로, timeout이 codex exec 프로세스 자체에 적용되도록
-# stdin 파일 redirect를 사용한다.
-timeout 180 env CODEX_PROGRAMMATIC=1 codex exec \
+# 위 CONSULT_DIR 리터럴 값을 그대로 사용. supervised wrapper가 setsid + timeout으로
+# process group kill을 보장한다 (issue #593, known-issues.md §15).
+# CODEX_EXEC_TIMEOUT_SECONDS=180으로 1-3분 budget 강제 (consult-specific override).
+CODEX_EXEC_TIMEOUT_SECONDS=180 env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
     -C /tmp/consult-<sid>-XXXXXX \
     --skip-git-repo-check \
     --ignore-user-config \
+    --ignore-rules \
     --sandbox read-only --ephemeral \
     -c model="gpt-5.5" \
     -c model_reasoning_effort="high" \
@@ -146,13 +146,14 @@ timeout 180 env CODEX_PROGRAMMATIC=1 codex exec \
     2>/tmp/consult-<sid>-XXXXXX/stderr.log
 ```
 
-- **`timeout 180`**: 1-3분 budget 강제. timeout 시 메인 에이전트는 result.json을 무시하고 Step 4에서 Step 3 raw 옵션을 anti-anchoring 4 규칙으로 직접 제시한다 (External Consult: `[UNVERIFIED: timed out]` 기록).
-- **`-C /tmp/consult-<sid>-XXXXXX`**: cwd를 repo 외 scratch로 이동. repo의 `.codex/config.toml`(Slack/Linear MCP 등 project-scoped connector) 로드 차단.
-- **`--skip-git-repo-check`**: scratch 디렉토리는 git repo 밖이라 codex가 `Not inside a trusted directory`로 거부 — 이 플래그가 필수.
-- **`--ignore-user-config`**: `$CODEX_HOME/config.toml` 로드 차단. **이 플래그가 user config의 `model` 설정도 무시하므로 `-c model="gpt-5.5"` 명시가 필수다** (run-da `arbiter-scaling.md` 동일 규칙).
-- **`-c model="gpt-5.5"`**: model pin (위 사유로 필수).
-- **`--sandbox read-only`**: 모델 shell 실행이 write를 못 한다. **단 read-only sandbox는 파일시스템 write만 차단한다** — `~/.config`, `~/.ssh`, `/run/agenix` 등 secret 경로 read는 허용된다. 따라서 Step 3.5 입력에는 sanitized excerpt만 전달하고, 자문 결과는 untrusted output으로 취급해 Step 4 anti-anchoring schema 검증을 거쳐야 한다.
-- **`--ephemeral`**: 세션 영속화 안 함.
+- **`codex-exec-supervised`** (Layer 2 = Layer 1 + `-C scratch + --skip-git-repo-check`): supervised wrapper가 setsid + timeout/gtimeout capability-probe로 npm wrapper detach 부재로 인한 native binary 잔존을 차단한다. SSOT는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15.
+- **`CODEX_EXEC_TIMEOUT_SECONDS=180`**: consult-specific 1-3분 budget. wrapper default(600s = 10분)와 분리하여 자문 호출의 짧은 budget을 강제한다. timeout 시 메인 에이전트는 result.json을 무시하고 Step 4에서 Step 3 raw 옵션을 anti-anchoring 4 규칙으로 직접 제시한다 (External Consult: `[UNVERIFIED: timed out]` 기록).
+- **`-C /tmp/consult-<sid>-XXXXXX`** (Layer 2): cwd를 repo 외 scratch로 이동. repo의 `.codex/config.toml`(Slack/Linear MCP 등 project-scoped connector) 로드 차단.
+- **`--skip-git-repo-check`** (Layer 2): scratch 디렉토리는 git repo 밖이라 codex가 `Not inside a trusted directory`로 거부 — 이 플래그가 필수.
+- **`--ignore-user-config`** (Layer 1): `$CODEX_HOME/config.toml` 로드 차단. **이 플래그가 user config의 `model` 설정도 무시하므로 `-c model="gpt-5.5"` 명시가 필수다** (run-da `arbiter-scaling.md` 동일 규칙).
+- **`-c model="gpt-5.5"`** (Layer 1): model pin (위 사유로 필수).
+- **`--sandbox read-only`** (Layer 1): 모델 shell 실행이 write를 못 한다. **단 read-only sandbox는 파일시스템 write만 차단한다** — `~/.config`, `~/.ssh`, `/run/agenix` 등 secret 경로 read는 허용된다. 따라서 Step 3.5 입력에는 sanitized excerpt만 전달하고, 자문 결과는 untrusted output으로 취급해 Step 4 anti-anchoring schema 검증을 거쳐야 한다.
+- **`--ephemeral`** (Layer 1): 세션 영속화 안 함.
 - **`-o`**: 마지막 모델 응답을 파일에 저장. **JSON 스키마 강제는 아니다** — `--output-schema` 별도 필요. 우리 흐름은 호출 후 `jq -e . < result.json`으로 파싱 검증, 실패 시 raw 옵션 fallback.
 - **xhigh**: 명시적 심층 자문 요청 시에만 (`model_reasoning_effort="xhigh"`).
 
