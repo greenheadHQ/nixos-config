@@ -158,14 +158,12 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 
 ## 런타임 환경 전제
 
-이 스킬의 절차는 **NixOS MiniPC 호스트 환경 전제**다. AI 에이전트 세션(Claude Code · Codex CLI · headless)이 어디서 실행되든 다음 의존을 충족하지 못하면 명령은 실행 불가하다.
+공통 NixOS MiniPC 호스트 전제는 [`../managing-minipc/references/host-prerequisites.md`](../managing-minipc/references/host-prerequisites.md) 참조. 본 스킬 고유 의존:
 
-- `sudo`로 systemd/podman/agenix 명령 실행 (호스트 sudoers 등록 필요)
-- Tailscale VPN 내부에서 `https://copyparty.greenhead.dev` 도달
-- agenix가 호스트의 identity key(`/home/<user>/.ssh/id_ed25519`)로 복호화한 secret 파일(`/run/agenix/copyparty-password`) 접근 권한
-- Podman socket / `podman-<container>.service` systemd unit 권한
-
-따라서 본 스킬을 macOS Codex 세션이나 다른 호스트에서 호출하면 명령이 작동하지 않는다. 호스트 환경에서의 동작만 본 스킬의 보장 범위다.
+- agenix secret: `/run/agenix/copyparty-password`, `/run/agenix/pushover-copyparty`
+- 도메인: `https://copyparty.greenhead.dev`
+- Podman/서비스 의존: `podman-copyparty.service` + `copyparty-config.service` (oneshot, agenix secret 주입)
+- 외부 의존: GitHub Releases API + Pushover API (`copyparty-update` 버전 체크 + 알림)
 
 ## 레퍼런스
 

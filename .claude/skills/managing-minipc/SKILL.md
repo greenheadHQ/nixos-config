@@ -153,3 +153,4 @@ ls -la /var/lib/temp-monitor/                  # 상태 파일 (쿨다운 기록
 - 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)
 - 설치 가이드: [references/installation.md](references/installation.md)
 - 기능 목록: [references/features.md](references/features.md)
+- 호스트 환경 전제 (hosting-copyparty/karakeep/vaultwarden 공유): [references/host-prerequisites.md](references/host-prerequisites.md)
