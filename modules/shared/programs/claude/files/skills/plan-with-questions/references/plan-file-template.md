@@ -4,7 +4,7 @@
 
 ## 적용 범위
 
-- **for_action**: 14필드 중 PRD 전용 필드(`Current Phase`, `Phase Progress`, `Active Phase File`)는 N/A 또는 생략.
+- **for_action**: 14필드를 모두 작성한다. PRD 전용 필드(`Current Phase`, `Phase Progress`, `Active Phase File`)는 `N/A`로 명시한다.
 - **for_prd**: 본 template **미적용**. PRD 정본은 for_prd 모드가 [`./prd/prd-master-template.md`](./prd/prd-master-template.md)를 따라 `.claude/prds/`에 직접 작성한다 (두 SSOT 병존 회피). Resume From enum (`for_prd.*`)은 PRD 작성 직전까지의 진행 단계 추적 용도로만 쓴다.
 - **for_issue**: 산출물이 이슈이므로 본 template 미적용. plan 파일이 없으므로 Resume From 메커니즘은 issue body에 inline (write-handoff가 처리).
 
@@ -27,9 +27,30 @@
 | Last Updated | YYYY-MM-DD |
 | Baseline | branch=<name>, HEAD=<sha7>, dirty=<clean|hash> |
 | External Consult | <Step 3.5 result.json 경로 또는 요약> |
-| DA State | <Pre-DA | Round N | CONFIRMED | NEEDS_MORE_INFO> |
+| DA State | <PRE_DA | RUNNING | APPLYING | CONFIRMED | SKIPPED | BLOCKED | NEEDS_USER> |
 | Pending User Questions | <count> (link to high-impact) |
 ```
+
+### Step 4.5 초기값 (for_action)
+
+`for_action` Step 4.5에서 공식 plan 파일을 처음 만들 때 다음 값을 채운다:
+
+| 필드 | 초기값 |
+|------|--------|
+| Status | `Draft` |
+| Mode | `for_action` |
+| Source | resolve된 이슈 ref 또는 URL |
+| Plan File | self-referential path (`.claude/plans/<slug>.md`) |
+| Resume From | `for_action.step5_da` |
+| Last Completed Step | `for_action.step4_user_questions` |
+| Current Phase | `N/A` |
+| Phase Progress | `N/A` |
+| Active Phase File | `N/A` |
+| Last Updated | 현재 날짜 (`YYYY-MM-DD`) |
+| Baseline | `branch=<name>, HEAD=<sha7>, dirty=<clean\|hash>` |
+| External Consult | Step 3.5 result path/요약 또는 `N/A` |
+| DA State | `PRE_DA` |
+| Pending User Questions | `0` |
 
 ### Status enum
 
@@ -58,6 +79,18 @@
 ### External Consult
 
 Step 3.5 자문 결과의 `result.json` 경로 또는 핵심 decision_id list. plan 파일은 자문 raw output을 인라인 복제하지 않는다 (별도 path 또는 git ignored 임시 파일).
+
+### DA State 값
+
+- `PRE_DA`: Step 4.5 초기 상태. 아직 Step 5 DA를 시작하지 않음.
+- `RUNNING`: Step 5 DA를 시작했으나 durable verdict가 plan 파일에 반영되지 않음. 이 상태에서는 `Change Log`에 DA Run ID와 started-at이 있어야 한다.
+- `APPLYING`: Step 5 DA verdict를 수신했고 Step 6 반영 중. 이 상태에서는 `Resume From=for_action.step6_da_apply`와 최신 DA Run ID에 해당하는 DA result path 또는 verdict 요약이 `Change Log`에 있어야 한다.
+- `CONFIRMED`: Step 6 반영이 완료되고 다음 단계로 진행 가능.
+- `SKIPPED`: run-da Intensity가 SKIP으로 판정했고 사용자 승인 또는 계약상 skip 처리가 완료됨.
+- `BLOCKED`: DA 또는 selective consistency 상태가 BLOCKED.
+- `NEEDS_USER`: DA 결과 반영에 사용자 판단이 필요함.
+
+기존 plan 파일의 legacy/free-form 값은 [`resume-state.md`](./resume-state.md#legacy-da-state-compatibility)에 따라 호환 처리한다.
 
 ## 본문 구조
 
@@ -136,7 +169,7 @@ Step 3.5 자문 결과의 `result.json` 경로 또는 핵심 decision_id list. p
 ### 사용처 (필수 기록)
 
 1. **사용자 선택 번복** — Step 4에서 사용자가 옵션 A를 골랐다가 Step 6 DA 또는 후속 단계에서 옵션 B로 바뀐 경우.
-2. **DA Round 큰 설계 변경** — `CONFIRMED_ISSUE`로 핵심 메커니즘 재설계.
+2. **Step 5/6 DA 결과 반영** — `CONFIRMED_ISSUE`로 핵심 메커니즘 재설계, DA로 인한 confirmed rejection, `BLOCKED`/`NEEDS_USER` 전이.
 3. **재개 시 baseline drift 감지** — git HEAD 변경으로 Step 1-2 재실행이 트리거된 경우.
 4. **mode 전환** — `for_action` → `for_prd` 자동 후보 알림 + 사용자 승인 또는 거부 (승인 시 PRD 규약을 따라 `.claude/prds/`에 직접 작성, 본 template 사용 중단).
 5. **Step 3.5 자문 결과로 옵션 변경** — 메인 LLM 1차 후보가 자문 disqualifier로 폐기된 경우.
@@ -164,7 +197,10 @@ Step 3.5 자문 결과의 `result.json` 경로 또는 핵심 decision_id list. p
 
 ## 작성 시점
 
-- **Step 8 (계획 작성)**: 14필드 + 본문 + 초기 Decision Log (D-1~D-N) + Change Log 첫 줄.
+- **Step 4.5 (공식 plan 파일 초기화)**: 14필드 초기값 + Step 1-4 evidence 기반 최소 본문 + Change Log 첫 줄.
+- **Step 5/6 DA 실행/반영**: 같은 plan 파일의 `DA State`, `Resume From`, 본문, `Decision Log`, `Change Log`를 갱신한다. DA 시작 직전 `RUNNING` + DA Run ID/started-at, verdict 수신 직후 `APPLYING` + `Resume From=for_action.step6_da_apply` + 같은 DA Run ID의 result path/요약, 반영 완료 시 `CONFIRMED`/`SKIPPED`/`BLOCKED`/`NEEDS_USER` 중 하나로 기록한다. 최신 DA Run ID와 맞지 않는 늦은 verdict는 stale result로 `Change Log`에만 남기고 반영하지 않는다.
+- **Step 7 계획 추적 진입**: Step 4.5의 기존 plan 파일을 추적 상태에 바인딩한다. 새 파일을 만들지 않는다.
+- **Step 8 (계획 파일 review/refine)**: 기존 plan 파일의 본문, Decision Log, Post-Implementation 자동 수행 범위를 승인 가능한 수준으로 정리한다.
 - **Step 9 승인 후**: Status `Approved` → `Implementing`. Last Updated 갱신.
 - **Post-Impl 각 단계 완료 시**: Last Completed Step / Resume From / DA State 갱신.
 - **재개 시**: Baseline 비교 → drift 시 DL 추가 + Status `Implementing`로 복원.

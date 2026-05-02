@@ -56,8 +56,9 @@ PR openai/codex#12735는 collaboration mode 가용성만 확장하고 tool spec/
 
 | 행동 | Claude Code 세션 | Codex 세션 |
 |------|------------------|--------------------------------|
-| 계획 추적 상태 진입 | `EnterPlanMode` (계획 파일 경로 배정 + write 제한 모드) | `update_plan` (단계별 chat state 추적; 파일 IO 없음) |
-| 계획 파일 작성/편집 | `Write`/`Edit`로 진입 시 배정된 경로에 작성 | `apply_patch`로 `.claude/plans/<slug>.md`에 직접 작성 |
+| for_action Step 4.5 공식 plan 파일 초기화 | 파일 편집 도구로 안전 검증된 `.claude/plans/<slug>.md`를 생성 (계획 추적 상태 진입 전) | `apply_patch`로 안전 검증된 `.claude/plans/<slug>.md`를 생성 (chat state 추적 전) |
+| 계획 추적 상태 진입 | `EnterPlanMode`로 승인/tracking 상태 진입. canonical plan 파일은 Step 4.5의 기존 경로이며, 런타임이 별도 transient buffer/path를 노출해도 새 canonical plan으로 승격하지 않는다 | `update_plan` (단계별 chat state 추적; 파일 IO 없음). 추적 대상은 Step 4.5의 기존 plan 파일 |
+| 계획 파일 review/refine | `Write`/`Edit`로 Step 4.5의 기존 canonical plan 파일을 편집. transient buffer/path가 있으면 승인 전 canonical 파일에 최종 내용을 반영 | `apply_patch`로 Step 4.5의 기존 `.claude/plans/<slug>.md`만 편집 |
 | 계획 승인 요청 | `ExitPlanMode`로 계획 파일 제시 및 승인 대기 | 계획 파일 경로/요약을 `request_user_input`으로 제시하고 confirm 대기 |
 
 본문의 "계획 추적 도구", "파일 편집 도구", "승인 요청 도구"는 위 표의 런타임별 실제 도구를 가리킨다. 최종 산출물은 모드별로 다르다:
@@ -65,6 +66,8 @@ PR openai/codex#12735는 collaboration mode 가용성만 확장하고 tool spec/
 - **for_action**: `.claude/plans/<slug>.md` 계획 파일.
 - **for_prd**: `.claude/prds/prd-<feature>.md` (split mode면 + `.claude/prds/prd-<feature>/phase-NN-<name>.md`) — for_prd 모드가 PRD 규약([`./prd/prd-master-template.md`](./prd/prd-master-template.md) + [`./prd/phase-template.md`](./prd/phase-template.md))을 따라 직접 작성한다. 별도 plan 사본은 만들지 않는다.
 - **for_issue**: 산출물이 등록된 이슈. 계획 파일 없음.
+
+`for_prd`는 위 표의 Step 4.5 plan 파일 초기화 행을 사용하지 않는다. PRD mode의 승인·작성 lifecycle은 [`../modes/for_prd.md`](../modes/for_prd.md)가 정의하며 `.claude/prds/`만 산출물로 사용한다.
 
 ## 질문 도구 미지원 대응
 

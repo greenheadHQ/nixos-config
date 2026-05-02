@@ -66,7 +66,7 @@ def should_trigger_prd(step12_result):
 요약:
 - default: PRD 모드 진행 (단 over-trigger 방지를 위해 다중 도메인 단독은 후보 단계에서 보조 신호 검증 후에만 알림 표시)
 - opt-out: `for_action` 모드 fallback (Phase plan 없는 단일 plan)
-- 사용자가 명시적 거부 시 plan에 `Decision Log` 기록:
+- 사용자가 명시적 거부 시점에는 아직 Step 4.5 plan 파일이 없을 수 있으므로 즉시 `.claude/plans/` 파일을 만들지 않는다. 거부 사유를 PRD-trigger pending note로 세션/context에 보존하고, `for_action`으로 계속 진행해 Step 4.5 plan 파일을 만들 때 아래 `Decision Log` 항목으로 이관한다:
 
 ```markdown
 ### DL-N: PRD auto-trigger declined
@@ -87,11 +87,11 @@ def should_trigger_prd(step12_result):
 
 산출물 경로:
 - **Single**: `.claude/prds/prd-<feature>.md`
-- **Split**: master `.claude/prds/prd-<feature>.md` + phase 파일 `.claude/prds/prd-<feature>/phase-0N-<name>.md` (master는 phase 디렉토리 옆 sibling)
+- **Split**: master `.claude/prds/prd-<feature>.md` + phase 파일 `.claude/prds/prd-<feature>/phase-NN-<name>.md` (master는 phase 디렉토리 옆 sibling)
 
 자동 트리거 조건이 `Phase ≥4`이면 보통 split이 자연스럽다. 사용자가 "single로 유지해" 또는 "split으로 나눠줘"라고 명시하면 그 지시를 우선한다.
 
-file-mode-selection 규약을 plan-with-questions가 직접 적용한다. 본 모드는 트리거 + Step 1-6(인터뷰·자문·DA) 완료 후 `.claude/prds/`에 직접 작성한다. plan-with-questions는 `.claude/plans/` 사본을 만들지 않는다.
+file-mode-selection 규약을 plan-with-questions가 직접 적용한다. 본 모드는 트리거 + Step 1-4 인터뷰·자문 + Step 5-6 DA 완료 후 `.claude/prds/`에 직접 작성한다. `for_action` Step 4.5 plan 파일 초기화는 건너뛰며, plan-with-questions는 `.claude/plans/` 사본을 만들지 않는다.
 
 ## review-impl 통합 시점
 
@@ -118,7 +118,7 @@ Post-Impl 5번 Final Multi-Pass Review는 **모든 모드에서 mandatory**다 (
 | `for_action.step1_validity` 종료 후 | 강한 신호(Phase ≥4, 명시 PRD 요청) 1차 평가 |
 | `for_action.step2_exploration` 종료 후 | 다중 도메인 + 보조 신호 종합 평가 → 트리거 결정 |
 | 트리거 시 | 사용자 알림(질문 도구) → opt-out 확인 |
-| 사용자 동의 시 | Mode 갱신 (`for_action` → `for_prd`) + Decision Log 기록 → [`../modes/for_prd.md`](../modes/for_prd.md) Step 1-6 진행 → Step 7 명시 승인 게이트 → Step 8 `.claude/prds/`에 PRD 작성 |
-| 사용자 거부 시 | `for_action` 모드 유지 + Decision Log "PRD auto-trigger declined" 기록 |
+| 사용자 동의 시 | Mode 갱신 (`for_action` → `for_prd`) + 전환 사유를 PRD draft/context에 기록(작성 후 master `Change Log`로 이관) → [`../modes/for_prd.md`](../modes/for_prd.md) Step 1-4 + Step 5-6 진행 (Step 4.5 skip) → Step 7 명시 승인 게이트 → Step 8 `.claude/prds/`에 PRD 작성 |
+| 사용자 거부 시 | `for_action` 모드 유지 + PRD-trigger pending note 기록 → Step 4.5 plan 초기화 시 Decision Log "PRD auto-trigger declined"로 이관 |
 
 이후 흐름은 [`../modes/for_prd.md`](../modes/for_prd.md)로 분기.

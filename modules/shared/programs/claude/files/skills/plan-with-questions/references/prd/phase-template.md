@@ -2,7 +2,7 @@
 
 Split-file mode의 각 phase 파일은 아래 구조를 사용한다. Single-file mode에서는 master PRD의 `Phase Plan` 섹션 안에 동일 구조를 phase별로 인라인한다.
 
-경로: `.claude/prds/prd-[feature-name]/phase-0N-[phase-name].md`
+경로: `.claude/prds/prd-[feature-name]/phase-NN-[phase-name].md`
 
 ```markdown
 # Phase N: [Phase Name]
@@ -82,6 +82,7 @@ Last Updated: YYYY-MM-DD
 
 ## 작성 규칙
 
+- `[phase-name]` slug와 phase file path는 [`file-mode-selection.md`](./file-mode-selection.md#경로-slug-안전-규칙)의 basename/canonical containment 규칙을 따른다.
 - Phase Discovery Gate는 모든 phase 파일에 필수다. 편집 전에 다시 읽고 체크한다.
 - Validation Checklist 항목에는 "어떤 command / 어떤 surface / 어떤 시나리오"를 적어 evidence로 만든다.
 - Phase-End 10-pass는 phase 종료마다 수행한다. 프로젝트 마감 시 수행하는 Final 10-pass ([`multi-pass-review.md`](./multi-pass-review.md))와는 다른 축이다 — Phase-End는 future-phase/PRD sync 관점이 있고, Final은 closeout 관점이 있다.
