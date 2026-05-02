@@ -13,7 +13,7 @@
 - **책임 분리**: Review Intensity 판단은 run-da의 책임이다. 메인 LLM은 DA 호출 여부를 스스로 판단하지 않는다.
 - **thread cap 준수**: Codex 세션에서는 current session의 open-thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 않고, completed reviewer/Arbiter thread를 다음 round/retry 전에 `close_agent`로 닫아야 한다.
 - **Codex 세션 hardening 계약 준수**: `/run-da for_plan`의 reviewer/Intensity는 standard review profile, Arbiter는 strong review profile을 따른다. `wait_agent` timeout만으로 중간 kill/self-auditing 대체를 하지 않고, reviewer PoC는 repo 밖 scratch에 한정한다.
-- **main-agent-only 유지**: single-writer/main-agent-only boundary는 `run-da` canonical contract를 그대로 따른다. tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 for_plan subagent가 직접 실행하지 않는다. 상세 용어와 violation 처리 규칙은 [run-da/SKILL.md](../../run-da/SKILL.md)의 `Codex 세션 하드닝 계약`을 따른다.
+- **main-agent-only 유지**: single-writer/main-agent-only boundary는 `run-da` canonical contract를 그대로 따른다. tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 for_plan subagent가 직접 실행하지 않는다. 상세 용어와 violation 처리 규칙은 [run-da/references/hardening-contract.md](../../run-da/references/hardening-contract.md) `Codex 세션 하드닝 계약`을 따른다.
 - **타이밍**: 반드시 계획 추적 도구 진입 전에 이 단계를 완료한다 (DA 에이전트가 일반 모드에서 full tool access로 PoC 검증을 수행할 수 있도록).
 
 ## Step 6: DA 결과 반영 [일반 모드]

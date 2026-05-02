@@ -46,7 +46,7 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`, `close_agent`)을 사용할 수 있으면
 Arbiter/Review Intensity도 이를 기본 경로로 사용한다.
 
-- 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](../SKILL.md)의 strong review profile로, Intensity subagent는 standard review profile로 사용한다.
+- 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로, Intensity subagent는 standard review profile로 사용한다.
 - 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt/result 파일을 기본 경로로 요구하지 않는다.
 - Arbiter/Intensity는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다.
 - 결과는 `wait_agent`로 수신하고, timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 결과를 파싱한 뒤 completed thread를 `close_agent`로 닫는다.
@@ -59,7 +59,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 또는 사용자가 `codex exec`를 명시적으로 요구할 때는 기존 `codex exec` 계약을 따른다.
 
 - `codex exec --full-auto --ephemeral`
-- **foreground 실행** (병렬/background 없음 — 단일 exec이므로 결과를 즉시 확인. 런타임별 매커니즘은 SKILL.md "런타임 도구 매핑" 표 참조)
+- **foreground 실행** (병렬/background 없음 — 단일 exec이므로 결과를 즉시 확인. 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조)
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
 - `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
@@ -73,7 +73,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 
 ### Codex delegation-denied fallback (subprocess 실행 계약)
 
-Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=false`, `"delegation not permitted"`·`"multi_agent disabled"` 에러) 사용되는 subprocess 실행 계약이다. SKILL.md의 "Delegation fallback" 섹션은 정책 요약(승인 관문, 자동 우회 금지)만 두고, 실제 명령은 이 섹션이 SSOT다.
+Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=false`, `"delegation not permitted"`·`"multi_agent disabled"` 에러) 사용되는 subprocess 실행 계약이다. [`hardening-contract.md`](hardening-contract.md)의 "Delegation fallback" 섹션은 정책 요약(승인 관문, 자동 우회 금지)만 두고, 실제 명령은 이 섹션이 SSOT다.
 
 **공통**:
 - `--sandbox read-only` + `--ignore-user-config`를 함께 강제한다. `--sandbox read-only`는 model-generated shell command의 파일시스템 쓰기만 막고, user `config.toml`의 MCP server/plugin/connector 로딩은 차단하지 못한다. `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 user MCP/plugin/connector surface를 차단하지만, cwd 기반 project config (`.codex/config.toml`의 `[mcp_servers.*]`)는 차단하지 못한다. 이 project-config 한계는 `run-da/SKILL.md` Non-goals #1이 canonical이다.
@@ -81,9 +81,9 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 - `--ephemeral`로 세션 히스토리 오염 방지.
 - `exec_command`를 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --sandbox read-only --ignore-user-config --ephemeral ... - 2>stderr.log` 형태로 stdin pipe 전달.
 - 각 review unit은 독립 subprocess (fresh 판정 경계는 프로세스 경계로 보존).
-- 사용자 승인 후에만 실행 (SKILL.md "Delegation fallback" 섹션 참조).
+- 사용자 승인 후에만 실행 ([`hardening-contract.md`](hardening-contract.md) "Delegation fallback" 섹션 참조).
 
-**role별 명령** (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 SKILL.md 본문 절차를 따른다). 아래 fenced code block은 바로 복사해 실행할 수 있도록 standard/strong profile의 model/effort 값을 **literal**로 고정한다. profile 이름·의미의 SSOT는 SKILL.md 상단 "런타임 도구 매핑"의 **review profile 매핑** 불릿이며, 값이 바뀌면 아래 literal도 함께 갱신해야 한다 (문서-코드 manual sync contract — selective consistency harness와 동일한 패턴). **현재 effort 매핑**: `medium` = standard profile (reviewer/Intensity/auditor), `high` = strong profile (Arbiter), `xhigh` = `config.toml` `model_reasoning_effort` 기본값 (보존; Arbiter 호출 경로에서만 `-c`로 `high`로 다운그레이드).
+**role별 명령** (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 아래 fenced code block은 바로 복사해 실행할 수 있도록 standard/strong profile의 model/effort 값을 **literal**로 고정한다. profile 이름·의미의 SSOT는 [`runtime-mapping.md`](runtime-mapping.md)의 **review profile 매핑** 불릿이며, 값이 바뀌면 아래 literal도 함께 갱신해야 한다 (문서-코드 manual sync contract — selective consistency harness와 동일한 패턴). **현재 effort 매핑**: `medium` = standard profile (reviewer/Intensity/auditor), `high` = strong profile (Arbiter), `xhigh` = `config.toml` `model_reasoning_effort` 기본값 (보존; Arbiter 호출 경로에서만 `-c`로 `high`로 다운그레이드).
 
 **reviewer / Auditor** (standard profile):
 
@@ -114,7 +114,7 @@ cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --san
 
 **실행 방식**: serial (multiple review units를 순차 실행). 병렬 발사는 `spawn_agent`가 거부된 상황이므로 shell-level `&+wait` 대신 각 subprocess를 직렬로 기동한다. 결과 파일은 `$DA_DIR/{unit}-result.md`에 수집 후 메인 에이전트가 파싱한다.
 
-**Degraded mode 계약** (fallback 경로 한정): `--sandbox read-only` 강제로 인해 reviewer는 SKILL.md "역할별 경계" 표의 `out-of-repo private scratch PoC (mktemp -d, umask 077)`를 **이 경로에서는 수행할 수 없다**. fallback reviewer는 **파일 증거·문서 인용·diff 확인만**으로 finding을 생성하고, scratch PoC가 필요한 지적은 "PoC 불가 — 문서/파일 증거 기반 추정"임을 명시한 뒤 심각도를 보수적으로 보고한다. 이 제약은 fallback이 `spawn_agent` 원본 경로의 **수용 가능한 근사**임을 인정하는 것이며, 구조적 write 차단이 우선이다.
+**Degraded mode 계약** (fallback 경로 한정): `--sandbox read-only` 강제로 인해 reviewer는 [`hardening-contract.md`](hardening-contract.md) "역할별 경계" 표의 `out-of-repo private scratch PoC (mktemp -d, umask 077)`를 **이 경로에서는 수행할 수 없다**. fallback reviewer는 **파일 증거·문서 인용·diff 확인만**으로 finding을 생성하고, scratch PoC가 필요한 지적은 "PoC 불가 — 문서/파일 증거 기반 추정"임을 명시한 뒤 심각도를 보수적으로 보고한다. 이 제약은 fallback이 `spawn_agent` 원본 경로의 **수용 가능한 근사**임을 인정하는 것이며, 구조적 write 차단이 우선이다.
 
 **실패 처리**: 이 경로에서도 exit code ≠ 0, 빈 결과 파일, stdin hang은 위 "codex exec 경로" 섹션의 실패 감지 규칙을 따른다. `codex` binary 부재나 반복 실패 시 BLOCKED 처리.
 
@@ -192,7 +192,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션, N=3)
 
-**실행 매커니즘은 런타임에 따라 다르다** (SKILL.md "런타임 도구 매핑" 표의 fan-out 실행 행 참조):
+**실행 매커니즘은 런타임에 따라 다르다** ([`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표의 fan-out 실행 행 참조):
 - **Claude Code 세션**: 아래 병렬(background) 방식으로 3개 프로세스 동시 실행, 완료 알림 기반 수집.
 - **headless 세션**: **serial foreground**로 3개 프로세스를 순차 실행한다 (완료 알림/`&+wait` 없음, 각 프로세스 종료 후 다음 프로세스 기동). 결과 파일 경로·환경 격리 방식은 아래와 동일하게 적용하되, 실행 방식만 serial로 바꾼다.
 

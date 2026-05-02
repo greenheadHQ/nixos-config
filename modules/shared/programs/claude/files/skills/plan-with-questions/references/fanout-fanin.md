@@ -28,7 +28,7 @@ codex exec fan-out 패턴은 [`/codex-fan-out` 스킬](../../codex-fan-out/SKILL
 
 codex exec 실행 시 각 에이전트 프롬프트에 "파일을 수정하지 마라" no-write boundary를 명시한다.
 
-**Codex 세션 fan-out delegation 거부 처리**: Codex 세션에서 `spawn_agent`가 정책상 거부되면 [run-da SKILL.md "Delegation fallback (정책 요약)"](../../run-da/SKILL.md#delegation-fallback-정책-요약)을 그대로 적용한다 (BLOCKED + 사용자 승인 대기 → 승인 시 codex exec subprocess fallback, no-write boundary 동일). 명칭과 정책은 run-da SSOT를 따르며 본문에 별도 신설하지 않는다.
+**Codex 세션 fan-out delegation 거부 처리**: Codex 세션에서 `spawn_agent`가 정책상 거부되면 [run-da references/hardening-contract.md "Delegation fallback (정책 요약)"](../../run-da/references/hardening-contract.md#delegation-fallback-정책-요약)을 그대로 적용한다 (BLOCKED + 사용자 승인 대기 → 승인 시 codex exec subprocess fallback, no-write boundary 동일). 명칭과 정책은 run-da SSOT를 따르며 본문에 별도 신설하지 않는다.
 
 ## fan-in 통합 전략
 

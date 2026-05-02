@@ -88,7 +88,7 @@ Resume From enum의 `for_prd.*` 항목 ([`../references/resume-state.md`](../ref
 
 ## main-agent-only 경계
 
-PRD 파일·phase 파일은 모두 tracked write이므로 메인 에이전트 전용. fan-out·subagent 위임 금지. PRD 10-pass + review-impl overlay 수행자도 read-only이며 적용은 메인이 수행. [`../../run-da/SKILL.md`](../../run-da/SKILL.md)의 `Codex 세션 하드닝 계약` SSOT를 따른다.
+PRD 파일·phase 파일은 모두 tracked write이므로 메인 에이전트 전용. fan-out·subagent 위임 금지. PRD 10-pass + review-impl overlay 수행자도 read-only이며 적용은 메인이 수행. [`../../run-da/references/hardening-contract.md`](../../run-da/references/hardening-contract.md) `Codex 세션 하드닝 계약` SSOT를 따른다.
 
 ## for_prd 모드 특징
 

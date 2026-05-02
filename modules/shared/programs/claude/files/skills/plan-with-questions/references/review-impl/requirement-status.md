@@ -80,4 +80,4 @@ Evidence 라벨은 별개 축이다 (상세: [체크리스트 라벨 체계](../
 
 ## main-agent-only 경계
 
-본 reference (6-classification + overbuilt overlay)는 read-only다. 라벨링·우선 분류 결과는 보고만 산출하며, 구현 추가/제거/체크박스 전환/PRD 정정 같은 tracked write는 메인 에이전트가 사용자 승인된 remediation 단계에서 수행한다. 상세 경계는 [`../../../run-da/SKILL.md`](../../../run-da/SKILL.md) `Codex 세션 하드닝 계약` SSOT를 따른다.
+본 reference (6-classification + overbuilt overlay)는 read-only다. 라벨링·우선 분류 결과는 보고만 산출하며, 구현 추가/제거/체크박스 전환/PRD 정정 같은 tracked write는 메인 에이전트가 사용자 승인된 remediation 단계에서 수행한다. 상세 경계는 [`../../../run-da/references/hardening-contract.md`](../../../run-da/references/hardening-contract.md) `Codex 세션 하드닝 계약` SSOT를 따른다.

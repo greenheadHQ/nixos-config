@@ -8,7 +8,7 @@ upstream `playmoreai/agent-skills`의 `prd/SKILL.md` Validation Policy 섹션에
 
 ## main-agent-only 경계
 
-본 reference를 참조하는 스킬이 이 catalog 기반으로 tracked write(코드·문서 수정)를 수행할 때, 해당 실행은 메인 에이전트 전용이다. `nrs`·`verify-ai-compat.sh`·commit·push·GitHub write도 동일하다. subagent는 read-only 검토까지만 수행한다. 상세 계약은 [`../../run-da/SKILL.md`](../../run-da/SKILL.md)의 `Codex 세션 하드닝 계약` 섹션을 따른다.
+본 reference를 참조하는 스킬이 이 catalog 기반으로 tracked write(코드·문서 수정)를 수행할 때, 해당 실행은 메인 에이전트 전용이다. `nrs`·`verify-ai-compat.sh`·commit·push·GitHub write도 동일하다. subagent는 read-only 검토까지만 수행한다. 상세 계약은 [`../../run-da/references/hardening-contract.md`](../../run-da/references/hardening-contract.md) `Codex 세션 하드닝 계약` 섹션을 따른다.
 
 ## 원칙
 

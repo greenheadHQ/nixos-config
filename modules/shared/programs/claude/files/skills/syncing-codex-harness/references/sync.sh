@@ -258,7 +258,7 @@ agents_override() {
 
   auto_content+=$'\n'"## 도구 차이"$'\n\n'
   auto_content+="- Claude Code 전용 plugin/MCP UI surface는 Codex에서 그대로 대응되지 않는다"$'\n'
-  auto_content+="- 런타임 경로는 3-way: **Codex 세션**(native subagent) / **Claude Code 세션**(codex exec 기본 → Agent tool fallback) / **headless 세션**(codex exec). 상세는 run-da/SKILL.md의 \`런타임 도구 매핑\` 참조"$'\n'
+  auto_content+="- 런타임 경로는 3-way: **Codex 세션**(native subagent) / **Claude Code 세션**(codex exec 기본 → Agent tool fallback) / **headless 세션**(codex exec). 상세는 run-da/references/runtime-mapping.md의 \`런타임 도구 매핑\` 참조"$'\n'
   auto_content+="- Codex 세션에서 review/audit/planning fan-out 시 nested \`codex exec\`보다 native subagent 경로를 우선한다"$'\n'
   auto_content+="- \`CODEX_CI=1\`만으로 세션 유형을 구분하지 않는다"$'\n'
   auto_content+="- current session의 open agent thread cap(\`agents.max_threads\`, unset 기본 6)을 넘기지 말고, completed agent thread는 다음 round/retry 전에 close한다"$'\n'

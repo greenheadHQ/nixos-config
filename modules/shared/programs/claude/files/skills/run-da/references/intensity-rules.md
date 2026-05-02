@@ -1,7 +1,7 @@
 # Review Intensity 판단 규칙
 
 Review Intensity 판단 알고리즘 규칙의 단일 소스. SKILL.md와 독립 에이전트 프롬프트 모두 이 파일을 참조한다.
-SKIP/LITE/FULL 절차(실행 방법)는 SKILL.md에 정의되어 있다.
+SKIP/LITE/FULL 절차(실행 방법)는 [`intensity-procedure.md`](intensity-procedure.md)에 정의되어 있다.
 
 해석 규칙:
 - 여기서 **FULL**은 4 reviewer bundle 기본 리뷰를 뜻하며, 기본 fan-out은 4 reviewer bundle이다.

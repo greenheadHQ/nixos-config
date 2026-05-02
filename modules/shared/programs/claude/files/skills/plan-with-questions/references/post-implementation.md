@@ -1,6 +1,6 @@
 # Post-Implementation (승인 후 자동 수행)
 
-`for_action` 모드에서 사용자가 계획을 승인하면 (승인 요청 도구 통과 시), 구현 완료 후 다음을 순차 수행한다. 추가 사용자 지시 없이 1번부터 7번까지 진행한다. 각 단계에서 reviewer/auditor/체크리스트 수행자는 read-only이며, tracked write·commit·push는 메인 에이전트 전용이다. 상세 권한 계약은 [`../../run-da/SKILL.md`](../../run-da/SKILL.md)의 `Codex 세션 하드닝 계약`을 따른다.
+`for_action` 모드에서 사용자가 계획을 승인하면 (승인 요청 도구 통과 시), 구현 완료 후 다음을 순차 수행한다. 추가 사용자 지시 없이 1번부터 7번까지 진행한다. 각 단계에서 reviewer/auditor/체크리스트 수행자는 read-only이며, tracked write·commit·push는 메인 에이전트 전용이다. 상세 권한 계약은 [`../../run-da/references/hardening-contract.md`](../../run-da/references/hardening-contract.md) `Codex 세션 하드닝 계약`을 따른다.
 
 ## 자동 진행 정책 (non-stop)
 
@@ -8,7 +8,7 @@
 
 단, 호출되는 하위 스킬이 자체 계약상 사용자 판단을 요구하는 경우는 그 계약을 우선한다:
 
-- `/run-da`의 `BLOCKED`, `NEEDS_MORE_INFO`, `stability_status=split`/`fragmented`, `partial_failure`, low-confidence fail-closed 승격, delegation fallback 승인 대기 등은 [`../../run-da/SKILL.md`](../../run-da/SKILL.md) (Delegation fallback 정책 + Codex 세션 하드닝 계약)와 [`../../run-da/references/protocol.md`](../../run-da/references/protocol.md) (DA → Arbiter → Main Agent 상태 흐름 + Selective consistency 상태 전이)을 따른다.
+- `/run-da`의 `BLOCKED`, `NEEDS_MORE_INFO`, `stability_status=split`/`fragmented`, `partial_failure`, low-confidence fail-closed 승격, delegation fallback 승인 대기 등은 [`../../run-da/references/hardening-contract.md`](../../run-da/references/hardening-contract.md) (Delegation fallback 정책 + Codex 세션 하드닝 계약)와 [`../../run-da/references/protocol.md`](../../run-da/references/protocol.md) (DA → Arbiter → Main Agent 상태 흐름 + Selective consistency 상태 전이)을 따른다.
 - `/parallel-audit`의 `RECOVERABLE VIOLATION`/`STATEFUL VIOLATION`, `BLOCKED`, BUG/REGRESSION/EDGECASE 처리 정책 등은 [`../../parallel-audit/SKILL.md`](../../parallel-audit/SKILL.md) 본문(결과 코드, 조율 분류, BLOCKED 대응, 주의사항)을 따른다.
 - DA Arbiter `CRITICAL CONFIRMED_ISSUE`는 진행을 차단한다.
 - 동일 finding이 3회 연속 반복되면 무한 루프 방지를 위해 사용자 판단을 요청한다.

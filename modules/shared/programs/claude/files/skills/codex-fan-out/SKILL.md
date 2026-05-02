@@ -31,7 +31,7 @@ codex exec는 별도 프로세스로 실행되어 메인 컨텍스트에 attachm
 
 ## 런타임 분기
 
-run-da의 3-way contract와 동일한 구조를 따른다.
+run-da의 3-way contract와 동일한 구조를 따른다 ([`../run-da/references/runtime-mapping.md`](../run-da/references/runtime-mapping.md)).
 
 | 경로 | 조건 | 실행 |
 |------|------|------|
@@ -51,7 +51,7 @@ command -v codex >/dev/null && codex --version >/dev/null 2>&1
 
 ## 실행 패턴
 
-using-codex-exec 패턴 1 (기본 exec)과 run-da의 codex exec 경로 위생 규칙을 따른다.
+using-codex-exec 패턴 1 (기본 exec)과 [run-da의 codex exec 경로 위생 규칙](../run-da/references/runtime-mapping.md#codex-exec-경로-위생-규칙)을 따른다.
 
 ### 세션 네임스페이스 + 디렉토리 생성
 

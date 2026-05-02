@@ -190,7 +190,7 @@ Next Session Starter 블록 작성 시 위에서 확보한 REPO와 ISSUE_NUM 두
 - 각 Phase는 독립 실행 가능해야 한다 (이전 Phase의 출력에 의존하되, 맥락 공유 없이도 수행 가능).
 - 명령어와 기대 결과를 코드블록으로 제공한다.
 - BEFORE/AFTER 형식으로 치환 내용을 명시한다 (체크리스트 C3).
-- **비자명한 주장에는 인라인 citation을 붙인다** (체크리스트 B1). 예: `Nix rebuild 경로는 main-agent-only [run-da/SKILL.md의 main-agent-only commands 항목 참조]`.
+- **비자명한 주장에는 인라인 citation을 붙인다** (체크리스트 B1). 예: `Nix rebuild 경로는 main-agent-only [run-da/references/hardening-contract.md의 main-agent-only commands 항목 참조]`.
 - **근거 없는 주장은 `[UNVERIFIED]` 라벨 또는 삭제** (체크리스트 E1; 라벨 체계 상세는 [체크리스트 라벨 체계](references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조).
 
 ### Step 5: "진실 원천 우선" 원칙 적용
