@@ -219,18 +219,19 @@ _exec_with_sandbox_env() {
 }
 
 # 카테고리 6 (stop-notification reliability/security) 공용: Pushover credential + curl mock 설치.
-# - sandbox/home/.config/pushover/claude-code: dummy credential (실제 Pushover API 차단)
+# - sandbox/home/.config/pushover/codex: dummy credential (실제 Pushover API 차단)
 # - sandbox/bin-stubs/curl: 호출 인자를 sandbox/curl-args.log에 dump 후 exit 0 (redaction 검증용)
 # heredoc unquoted라 $sandbox는 expansion되고 \$@/\$arg는 stub 안에 escape 상태로 남는다.
 install_pushover_mock_with_curl_log() {
   local sandbox="$1"
+  local credential_name="${2:-codex}"
   local creds_dir="$sandbox/home/.config/pushover"
   mkdir -p "$creds_dir"
-  cat > "$creds_dir/claude-code" <<'CRED'
+  cat > "$creds_dir/$credential_name" <<'CRED'
 PUSHOVER_TOKEN=dummy_token_for_fixture_only
 PUSHOVER_USER=dummy_user_for_fixture_only
 CRED
-  chmod 0600 "$creds_dir/claude-code"
+  chmod 0600 "$creds_dir/$credential_name"
 
   cat > "$sandbox/bin-stubs/curl" <<STUB
 #!/usr/bin/env bash
@@ -808,6 +809,20 @@ test_stop_notification_secret_redaction() {
     || fail "[6.2] ***REDACTED*** 마커가 curl 인자에 등장하지 않음 (redaction 자체 실패 가능성)"
 }
 
+# 6.2b Codex hook은 Claude Code credential path를 fallback으로 쓰면 안 된다.
+test_stop_notification_requires_codex_pushover_credentials() {
+  local sandbox
+  sandbox=$(new_hook_sandbox)
+  install_pushover_mock_with_curl_log "$sandbox" "claude-code"
+
+  run_hook_in_sandbox "$sandbox" "stop-notification.sh" \
+    < "$FIXTURE_DIR/stdin/stop-codex-0.124.json" \
+    || fail "[6.2b] stop-notification (old claude-code credential only) 비정상 종료"
+
+  [[ ! -e "$sandbox/curl-args.log" ]] \
+    || fail "[6.2b] Codex hook이 ~/.config/pushover/claude-code credential을 사용함"
+}
+
 # 6.3 timeout 미가용 fail-open 검증 (Darwin 전용).
 # bin-stubs에 timeout을 exit 127 stub으로 둬서 macOS BSD coreutils 환경(GNU coreutils 부재) 시나리오를
 # 시뮬레이션한다. hook의 run_with_timeout 호출은 `[[ "$OSTYPE" == darwin* ]] && command -v hs` 블록
@@ -1036,6 +1051,8 @@ run_test "stop-notification codex transcript fallback (6.1)" \
   test_stop_notification_codex_transcript_fallback
 run_test "stop-notification secret redaction (6.2)" \
   test_stop_notification_secret_redaction
+run_test "stop-notification requires codex pushover credential (6.2b)" \
+  test_stop_notification_requires_codex_pushover_credentials
 run_test "stop-notification timeout unavailable fail-open (6.3)" \
   test_stop_notification_timeout_unavailable_failopen
 run_test "stop-notification helper equivalence (6.4)" \

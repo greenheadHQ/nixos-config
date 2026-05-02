@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Codex-only divergence from Claude hook: skip programmatic/nested codex sessions
-# to avoid duplicate Pushover notifications. Original lacks `set -euo pipefail`
-# so guard placed immediately after shebang, before all real work
-# (locale export, function defs, stdin parse).
-# Keep in sync with ~/.claude/hooks/stop-notification.sh.
+# Codex Stop Hook - Pushover 알림 전송.
+# Intentional divergences from the Claude hook:
+# - skip programmatic/nested Codex sessions before all real work
+# - use Codex-only Pushover credentials at ~/.config/pushover/codex
+# Keep helper blocks in sync with ~/.claude/hooks/stop-notification.sh, but do not
+# sync the credential path back to Claude's ~/.config/pushover/claude-code path.
 if [ "${CLAUDECODE:-}" = "1" ] || [ "${CODEX_PROGRAMMATIC:-}" = "1" ]; then
   exit 0
 fi
-# Claude Code Stop Hook - Pushover 알림 전송
 
 # === Change Intent Record ===
 # v1: --form-string/-F (multipart/form-data) 방식으로 Pushover 전송 → 간헐적으로 이모지/한글이 ?로 표시.
@@ -51,7 +51,7 @@ wait_for_stable_transcript() {
 }
 
 # agenix로 관리되는 credentials 로드
-CREDENTIALS_FILE="$HOME/.config/pushover/claude-code"
+CREDENTIALS_FILE="$HOME/.config/pushover/codex"
 
 PUSHOVER_AVAILABLE=false
 if [ -f "$CREDENTIALS_FILE" ]; then
