@@ -57,6 +57,202 @@ assert_line_count() {
   [[ "$actual" == "$expected" ]] || fail "expected $path to contain $expected occurrences of: $needle (actual: $actual)"
 }
 
+write_mixed_user_codex_hooks() {
+  local home_dir="$1"
+  mkdir -p "$home_dir/.codex"
+  # session-init-icons.sh is a known stale Claude-era user hook; Codex should prune it, not run it.
+  cat > "$home_dir/.codex/hooks.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.codex/hooks/session-init-icons.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/tmp/custom-user-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+  printf '{}\n' > "$home_dir/.codex/hooks.compatibility.json"
+}
+
+write_malformed_user_codex_hooks() {
+  local home_dir="$1"
+  mkdir -p "$home_dir/.codex"
+  printf '{ not valid json\n' > "$home_dir/.codex/hooks.json"
+  printf '{}\n' > "$home_dir/.codex/hooks.compatibility.json"
+}
+
+write_symlinked_user_codex_hooks() {
+  local home_dir="$1"
+  mkdir -p "$home_dir/.codex" "$home_dir/dotfiles/codex"
+  cat > "$home_dir/dotfiles/codex/hooks.json" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.codex/hooks/session-init-icons.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+  ln -s "$home_dir/dotfiles/codex/hooks.json" "$home_dir/.codex/hooks.json"
+  printf '{}\n' > "$home_dir/.codex/hooks.compatibility.json"
+}
+
+write_clean_symlinked_user_codex_hooks() {
+  local home_dir="$1"
+  mkdir -p "$home_dir/.codex" "$home_dir/dotfiles/codex"
+  cat > "$home_dir/dotfiles/codex/hooks.json" <<'EOF'
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/tmp/custom-user-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+  ln -s "$home_dir/dotfiles/codex/hooks.json" "$home_dir/.codex/hooks.json"
+}
+
+assert_user_codex_hooks_pruned() {
+  local home_dir="$1"
+  local hooks_json="$home_dir/.codex/hooks.json"
+  [[ ! -e "$home_dir/.codex/hooks.compatibility.json" ]] || fail "expected user-level hooks.compatibility.json to be removed"
+  [[ -f "$hooks_json" ]] || fail "expected user-level hooks.json with preserved custom entry"
+  local hooks_content
+  hooks_content="$(cat "$hooks_json")"
+  assert_contains "$hooks_content" "/tmp/custom-user-hook.sh"
+  assert_not_contains "$hooks_content" "session-init-icons.sh"
+}
+
+assert_malformed_user_codex_hooks_preserved() {
+  local home_dir="$1"
+  local hooks_json="$home_dir/.codex/hooks.json"
+  [[ ! -e "$home_dir/.codex/hooks.compatibility.json" ]] || fail "expected user-level hooks.compatibility.json to be removed"
+  [[ -f "$hooks_json" ]] || fail "expected malformed user-level hooks.json to remain for manual repair"
+  [[ "$(cat "$hooks_json")" == "{ not valid json" ]] || fail "expected malformed user-level hooks.json content to remain unchanged"
+}
+
+assert_symlinked_user_codex_hooks_preserved() {
+  local home_dir="$1"
+  local hooks_json="$home_dir/.codex/hooks.json"
+  [[ ! -e "$home_dir/.codex/hooks.compatibility.json" ]] || fail "expected user-level hooks.compatibility.json to be removed"
+  [[ -L "$hooks_json" ]] || fail "expected user-level hooks.json symlink to remain intact"
+  [[ "$(readlink "$hooks_json")" == "$home_dir/dotfiles/codex/hooks.json" ]] || fail "expected user-level hooks.json symlink target to remain unchanged"
+  assert_contains "$(cat "$home_dir/dotfiles/codex/hooks.json")" "session-init-icons.sh"
+}
+
+test_user_hooks_stale_filter_supports_clean_symlink_target() {
+  local sandbox home_dir count
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  write_clean_symlinked_user_codex_hooks "$home_dir"
+
+  source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
+  count="$(jq -r "$(codex_legacy_user_hook_count_jq_filter)" "$home_dir/.codex/hooks.json")"
+  [[ "$count" == "0" ]] || fail "expected clean symlinked user hooks.json stale count 0, got: $count"
+}
+
+test_user_hooks_stale_filter_detects_symlink_target_stale_entries() {
+  local sandbox home_dir count
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  write_symlinked_user_codex_hooks "$home_dir"
+
+  source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
+  count="$(jq -r "$(codex_legacy_user_hook_count_jq_filter)" "$home_dir/.codex/hooks.json")"
+  [[ "$count" == "1" ]] || fail "expected symlinked user hooks.json stale count 1, got: $count"
+}
+
+test_user_hooks_stale_filter_ignores_stale_path_mentions() {
+  local sandbox home_dir hooks_json count
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  hooks_json="$home_dir/.codex/hooks.json"
+  mkdir -p "$home_dir/.codex"
+  cat > "$hooks_json" <<'EOF'
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/tmp/foo/.codex/hooks/session-init-icons.sh.backup"
+          },
+          {
+            "type": "command",
+            "command": "bash -lc 'test -e ~/.codex/hooks/session-init-icons.sh'"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+
+  source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
+  count="$(HOME="$home_dir" jq -r "$(codex_legacy_user_hook_count_jq_filter)" "$hooks_json")"
+  [[ "$count" == "0" ]] || fail "expected stale path mentions to be ignored, got stale count: $count"
+}
+
+test_user_hooks_stale_filter_detects_exact_home_path() {
+  local sandbox home_dir hooks_json count
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  hooks_json="$home_dir/.codex/hooks.json"
+  mkdir -p "$home_dir/.codex"
+  cat > "$hooks_json" <<EOF
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$home_dir/.codex/hooks/worktree-path-guard.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+
+  source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
+  count="$(HOME="$home_dir" jq -r "$(codex_legacy_user_hook_count_jq_filter)" "$hooks_json")"
+  [[ "$count" == "1" ]] || fail "expected exact HOME path stale count 1, got: $count"
+}
+
 new_sandbox() {
   local dir
   dir=$(mktemp -d "${TMPDIR:-/tmp}/shell-script-tests.XXXXXX")
@@ -180,6 +376,45 @@ install_deployed_layout() {
 
   # cross-cutting: recursive 배포가 정확히 2개
   assert_line_count "$shell_nix" '    recursive = true;' 2
+}
+
+install_repo_local_only_codex_cleanup_helper() {
+  local home_dir="$1"
+  local helper="$home_dir/.local/lib/rebuild/common.sh"
+  rm -f "$helper"
+  cp "$REPO_ROOT/modules/shared/scripts/lib/rebuild/common.sh" "$helper"
+  cat >> "$helper" <<'EOF'
+
+_clear_retired_codex_hook_artifacts() {
+    local hooks_json="$FLAKE_PATH/.codex/hooks.json"
+    local hooks_report="$FLAKE_PATH/.codex/hooks.compatibility.json"
+
+    if [[ -e "$hooks_json" || -e "$hooks_report" ]]; then
+        rm -f "$hooks_json" "$hooks_report"
+        log_info "🧹 Removed retired Codex hook artifacts."
+    fi
+}
+EOF
+}
+
+install_partial_deployed_codex_legacy_hooks_helper() {
+  local home_dir="$1"
+  local helper="$home_dir/.local/lib/rebuild/codex-legacy-hooks.sh"
+  mkdir -p "$(dirname "$helper")"
+  rm -f "$helper"
+  cat > "$helper" <<'EOF'
+# Partial old deployed helper fixture: readable, but missing codex_clear_retired_hook_artifacts.
+codex_partial_legacy_hooks_helper_loaded() {
+    return 0
+}
+EOF
+}
+
+install_repo_fallback_codex_legacy_hooks_helper() {
+  local repo_root="$1"
+  local helper="$repo_root/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
+  mkdir -p "$(dirname "$helper")"
+  cp "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh" "$helper"
 }
 
 install_platform_nrs_entrypoint() {
@@ -1092,6 +1327,9 @@ test_nixos_nrs_offline_force_smoke() {
   repo_root="$(cd "$repo_root" && pwd -P)"
   install_deployed_layout "$sandbox" "$repo_root"
   install_platform_nrs_entrypoint "$sandbox" nixos
+  install_repo_local_only_codex_cleanup_helper "$home_dir"
+  install_partial_deployed_codex_legacy_hooks_helper "$home_dir"
+  install_repo_fallback_codex_legacy_hooks_helper "$repo_root"
 
   mkdir -p "$stub_dir" "$home_dir/.local/bin"
   cat > "$stub_dir/sudo" <<'EOF'
@@ -1132,6 +1370,7 @@ EOF
   mkdir -p "$repo_root/.codex"
   printf '{}\n' > "$repo_root/.codex/hooks.json"
   printf '{}\n' > "$repo_root/.codex/hooks.compatibility.json"
+  write_mixed_user_codex_hooks "$home_dir"
 
   output=$(
     HOME="$home_dir" \
@@ -1146,8 +1385,113 @@ EOF
 
   assert_contains "$output" "Applying changes (offline)"
   assert_contains "$output" "Done!"
+  assert_contains "$output" "Removed retired user-level Codex hooks.compatibility.json"
+  assert_contains "$output" "Pruned 1 stale Codex hook entry"
   [[ ! -e "$repo_root/.codex/hooks.json" ]] || fail "expected nixos nrs to remove retired hooks.json"
   [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected nixos nrs to remove retired hooks.compatibility.json"
+  assert_user_codex_hooks_pruned "$home_dir"
+}
+
+test_clear_retired_codex_hook_artifacts_preserves_malformed_user_hooks() {
+  local sandbox home_dir repo_root output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  mkdir -p "$repo_root/.codex"
+  printf '{}\n' > "$repo_root/.codex/hooks.json"
+  printf '{}\n' > "$repo_root/.codex/hooks.compatibility.json"
+  write_malformed_user_codex_hooks "$home_dir"
+
+  output=$(
+    HOME="$home_dir" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      REBUILD_CMD="nixos-rebuild"
+      source "'"$home_dir/.local/lib/rebuild-common.sh"'"
+      _clear_retired_codex_hook_artifacts
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Removed retired Codex hook artifacts."
+  assert_contains "$output" "Removed retired user-level Codex hooks.compatibility.json"
+  assert_contains "$output" "Could not parse $home_dir/.codex/hooks.json; leaving user-owned hook file unchanged."
+  [[ ! -e "$repo_root/.codex/hooks.json" ]] || fail "expected repo-local hooks.json to be removed"
+  [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected repo-local hooks.compatibility.json to be removed"
+  assert_malformed_user_codex_hooks_preserved "$home_dir"
+}
+
+test_clear_retired_codex_hook_artifacts_preserves_symlinked_user_hooks() {
+  local sandbox home_dir repo_root output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  mkdir -p "$repo_root/.codex"
+  printf '{}\n' > "$repo_root/.codex/hooks.json"
+  printf '{}\n' > "$repo_root/.codex/hooks.compatibility.json"
+  write_symlinked_user_codex_hooks "$home_dir"
+
+  output=$(
+    HOME="$home_dir" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      REBUILD_CMD="nixos-rebuild"
+      source "'"$home_dir/.local/lib/rebuild-common.sh"'"
+      _clear_retired_codex_hook_artifacts
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Removed retired Codex hook artifacts."
+  assert_contains "$output" "Removed retired user-level Codex hooks.compatibility.json"
+  assert_contains "$output" "$home_dir/.codex/hooks.json is a symlink; leaving user-owned hook file unchanged"
+  [[ ! -e "$repo_root/.codex/hooks.json" ]] || fail "expected repo-local hooks.json to be removed"
+  [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected repo-local hooks.compatibility.json to be removed"
+  assert_symlinked_user_codex_hooks_preserved "$home_dir"
+}
+
+test_clear_retired_codex_hook_artifacts_removes_dangling_artifact_symlinks() {
+  local sandbox home_dir repo_root output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  mkdir -p "$repo_root/.codex" "$home_dir/.codex"
+  rm -f "$repo_root/.codex/hooks.json" "$repo_root/.codex/hooks.compatibility.json" "$home_dir/.codex/hooks.compatibility.json"
+  ln -s "$repo_root/.codex/missing-hooks.json" "$repo_root/.codex/hooks.json"
+  ln -s "$repo_root/.codex/missing-hooks.compatibility.json" "$repo_root/.codex/hooks.compatibility.json"
+  ln -s "$home_dir/.codex/missing-hooks.compatibility.json" "$home_dir/.codex/hooks.compatibility.json"
+
+  output=$(
+    HOME="$home_dir" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      REBUILD_CMD="nixos-rebuild"
+      source "'"$home_dir/.local/lib/rebuild-common.sh"'"
+      _clear_retired_codex_hook_artifacts
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Removed retired Codex hook artifacts."
+  assert_contains "$output" "Removed retired user-level Codex hooks.compatibility.json"
+  [[ ! -L "$repo_root/.codex/hooks.json" ]] || fail "expected dangling repo-local hooks.json symlink to be removed"
+  [[ ! -L "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected dangling repo-local hooks.compatibility.json symlink to be removed"
+  [[ ! -L "$home_dir/.codex/hooks.compatibility.json" ]] || fail "expected dangling user-level hooks.compatibility.json symlink to be removed"
 }
 
 test_darwin_nrs_offline_force_smoke() {
@@ -1241,6 +1585,7 @@ EOF
   mkdir -p "$repo_root/.codex"
   printf '{}\n' > "$repo_root/.codex/hooks.json"
   printf '{}\n' > "$repo_root/.codex/hooks.compatibility.json"
+  write_mixed_user_codex_hooks "$home_dir"
 
   output=$(
     HOME="$home_dir" \
@@ -1256,8 +1601,11 @@ EOF
 
   assert_contains "$output" "Applying changes (offline)"
   assert_contains "$output" "Done!"
+  assert_contains "$output" "Removed retired user-level Codex hooks.compatibility.json"
+  assert_contains "$output" "Pruned 1 stale Codex hook entry"
   [[ ! -e "$repo_root/.codex/hooks.json" ]] || fail "expected darwin nrs to remove retired hooks.json"
   [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected darwin nrs to remove retired hooks.compatibility.json"
+  assert_user_codex_hooks_pruned "$home_dir"
 }
 
 test_darwin_nrs_no_changes_releases_worktree_lock() {
@@ -1272,6 +1620,9 @@ test_darwin_nrs_no_changes_releases_worktree_lock() {
   worktree_root="$repo_root/.claude/worktrees/feature_one"
   install_deployed_layout "$sandbox" "$repo_root"
   install_platform_nrs_entrypoint "$sandbox" darwin
+  install_repo_local_only_codex_cleanup_helper "$home_dir"
+  install_partial_deployed_codex_legacy_hooks_helper "$home_dir"
+  install_repo_fallback_codex_legacy_hooks_helper "$worktree_root"
 
   mkdir -p "$stub_dir" "$home_dir/.local/bin" "$home_dir/Library/LaunchAgents"
   current_target="$sandbox/current-system"
@@ -1281,6 +1632,7 @@ test_darwin_nrs_no_changes_releases_worktree_lock() {
   mkdir -p "$worktree_root/.codex"
   printf '{}\n' > "$worktree_root/.codex/hooks.json"
   printf '{}\n' > "$worktree_root/.codex/hooks.compatibility.json"
+  write_mixed_user_codex_hooks "$home_dir"
 
   cat > "$stub_dir/sudo" <<'EOF'
 #!/usr/bin/env bash
@@ -1343,9 +1695,12 @@ EOF
   assert_contains "$output" "Lock acquired"
   assert_contains "$output" "No changes to apply"
   assert_contains "$output" "Lock released"
+  assert_contains "$output" "Removed retired user-level Codex hooks.compatibility.json"
+  assert_contains "$output" "Pruned 1 stale Codex hook entry"
   [[ ! -e "$lock_file" ]] || fail "expected sandbox nrs lock file to be removed after no-change early return"
   [[ ! -e "$worktree_root/.codex/hooks.json" ]] || fail "expected no-change darwin nrs to remove retired hooks.json"
   [[ ! -e "$worktree_root/.codex/hooks.compatibility.json" ]] || fail "expected no-change darwin nrs to remove retired hooks.compatibility.json"
+  assert_user_codex_hooks_pruned "$home_dir"
 }
 
 run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
@@ -1365,6 +1720,13 @@ run_test "wt cleanup auto skips merged branch reuse" test_wt_cleanup_auto_skips_
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
+run_test "stale filter supports clean symlinked user hooks" test_user_hooks_stale_filter_supports_clean_symlink_target
+run_test "stale filter detects symlinked stale user hooks" test_user_hooks_stale_filter_detects_symlink_target_stale_entries
+run_test "stale filter ignores stale path mentions" test_user_hooks_stale_filter_ignores_stale_path_mentions
+run_test "stale filter detects exact HOME hook path" test_user_hooks_stale_filter_detects_exact_home_path
+run_test "retired hook cleanup preserves malformed user hooks" test_clear_retired_codex_hook_artifacts_preserves_malformed_user_hooks
+run_test "retired hook cleanup preserves symlinked user hooks" test_clear_retired_codex_hook_artifacts_preserves_symlinked_user_hooks
+run_test "retired hook cleanup removes dangling artifact symlinks" test_clear_retired_codex_hook_artifacts_removes_dangling_artifact_symlinks
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
 

@@ -11,6 +11,9 @@ TARGET_SKILLS_DIR="$REPO_ROOT/.agents/skills"
 SHARED_SKILLS_DIR="$REPO_ROOT/modules/shared/programs/claude/files/skills"
 CODEX_GLOBAL_SKILLS_DIR="$HOME/.codex/skills"
 
+# shellcheck source=/dev/null
+. "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
+
 # Nix SoT(default.nix)와 독립된 감사 오라클.
 # 두 리스트는 서로 교집합이 없어야 하며, shared 디렉토리의 모든 스킬이 둘 중 하나에 속해야 한다.
 EXPECTED_EXPOSED=(
@@ -916,12 +919,45 @@ echo ""
 echo "=== Hooks 산출물 확인 ==="
 
 # stale guard: <repo>/.codex/hooks.json 또는 <repo>/.codex/hooks.compatibility.json은
-# 폐기된 패턴이라 잔재 시 fail. 단 user-level ~/.codex/hooks.json은 0.124+ stable inline TOML과
-# 함께 valid source 가능성이 있어 검사 대상 아님.
-if [ -e "$REPO_ROOT/.codex/hooks.json" ] || [ -e "$REPO_ROOT/.codex/hooks.compatibility.json" ]; then
+# 폐기된 패턴이라 잔재 시 fail. 단 user-level ~/.codex/hooks.json은 공식 hook source라
+# 존재 자체가 아니라 알려진 legacy entry만 검사한다.
+if [ -e "$REPO_ROOT/.codex/hooks.json" ] || [ -L "$REPO_ROOT/.codex/hooks.json" ] || \
+   [ -e "$REPO_ROOT/.codex/hooks.compatibility.json" ] || [ -L "$REPO_ROOT/.codex/hooks.compatibility.json" ]; then
   fail "stale Codex hook artifacts present (.codex/hooks*.json)"
 else
   pass "repo-local Codex hook artifacts 없음"
+fi
+
+_user_hooks_json="$HOME/.codex/hooks.json"
+_user_hooks_report="$HOME/.codex/hooks.compatibility.json"
+
+if [ -e "$_user_hooks_report" ] || [ -L "$_user_hooks_report" ]; then
+  fail "stale user-level Codex hook artifact present ($_user_hooks_report) — run nrs to remove retired hooks.compatibility.json"
+else
+  pass "user-level Codex hooks.compatibility.json 없음"
+fi
+
+if [ -L "$_user_hooks_json" ] && [ ! -e "$_user_hooks_json" ]; then
+  fail "$_user_hooks_json dangling symlink — user-level hook file must be repaired manually"
+elif [ -f "$_user_hooks_json" ]; then
+  if ! command -v jq >/dev/null 2>&1; then
+    fail "jq 없음 — $_user_hooks_json stale entry 검사 불가"
+  else
+    _user_stale_hook_count=""
+    if ! _user_stale_hook_count="$(jq -r "$(codex_legacy_user_hook_count_jq_filter)" "$_user_hooks_json")"; then
+      fail "$_user_hooks_json JSON 파싱 실패 — user-level hook 파일을 수동 점검하세요"
+    elif [ "$_user_stale_hook_count" -gt 0 ] 2>/dev/null; then
+      if [ -L "$_user_hooks_json" ]; then
+        fail "stale user-level Codex hook entries present ($_user_hooks_json count=$_user_stale_hook_count) — symlinked hook files are preserved by nrs; remove known Claude-era entries manually"
+      else
+        fail "stale user-level Codex hook entries present ($_user_hooks_json count=$_user_stale_hook_count) — run nrs to prune known Claude-era entries"
+      fi
+    else
+      pass "user-level Codex hooks.json stale legacy entry 없음"
+    fi
+  fi
+else
+  pass "user-level Codex hooks.json 없음"
 fi
 
 echo ""

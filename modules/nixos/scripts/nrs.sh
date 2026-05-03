@@ -25,8 +25,21 @@ install_rebuild_common_compat_shims() {
         _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
         "$HOME/.local/bin/nrs-relink" restore || log_warn "⚠️  nrs-relink restore failed (non-fatal)"
     }
-    declare -F _clear_retired_codex_hook_artifacts >/dev/null || _clear_retired_codex_hook_artifacts() {
-        rm -f "$FLAKE_PATH/.codex/hooks.json" "$FLAKE_PATH/.codex/hooks.compatibility.json"
+    local codex_legacy_hooks_helper
+    local -a codex_legacy_hooks_candidates=()
+    if [[ -n "${REBUILD_COMMON_LIB_DIR:-}" ]]; then
+        codex_legacy_hooks_candidates+=("$REBUILD_COMMON_LIB_DIR/codex-legacy-hooks.sh")
+    fi
+    codex_legacy_hooks_candidates+=("$FLAKE_PATH/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh")
+
+    for codex_legacy_hooks_helper in "${codex_legacy_hooks_candidates[@]}"; do
+        [[ -n "$codex_legacy_hooks_helper" && -f "$codex_legacy_hooks_helper" ]] || continue
+        # shellcheck source=/dev/null
+        source "$codex_legacy_hooks_helper"
+        declare -F codex_clear_retired_hook_artifacts >/dev/null && break
+    done
+    declare -F codex_clear_retired_hook_artifacts >/dev/null && _clear_retired_codex_hook_artifacts() {
+        codex_clear_retired_hook_artifacts "$FLAKE_PATH" "$HOME"
     }
     # 구버전 rebuild-common.sh 는 codex helper 가 없어 이 함수도 없다. 그 조합에서는
     # NO_CHANGES 경로가 "command not found"로 죽지 않도록 no-op shim 을 둔다. 사용자가

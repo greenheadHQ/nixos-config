@@ -26,16 +26,32 @@ detect_worktree() {
 
 #───────────────────────────────────────────────────────────────────────────────
 # Retired Codex hooks cleanup: 기존 worktree/checkout에 남은 repo-local hook
-# 산출물을 rebuild 전에 정리하여 verify-ai-compat 경로를 복구한다.
+# 산출물과 알려진 user-level legacy hook entry를 rebuild 전에 정리한다.
 #───────────────────────────────────────────────────────────────────────────────
-_clear_retired_codex_hook_artifacts() {
-    local hooks_json="$FLAKE_PATH/.codex/hooks.json"
-    local hooks_report="$FLAKE_PATH/.codex/hooks.compatibility.json"
+_source_codex_legacy_hooks_helper() {
+    declare -F codex_clear_retired_hook_artifacts >/dev/null && return 0
 
-    if [[ -e "$hooks_json" || -e "$hooks_report" ]]; then
-        rm -f "$hooks_json" "$hooks_report"
-        log_info "🧹 Removed retired Codex hook artifacts."
+    local helper
+    local -a candidates=()
+    if [[ -n "${REBUILD_COMMON_LIB_DIR:-}" ]]; then
+        candidates+=("$REBUILD_COMMON_LIB_DIR/codex-legacy-hooks.sh")
     fi
+    candidates+=("$FLAKE_PATH/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh")
+
+    for helper in "${candidates[@]}"; do
+        [[ -n "$helper" && -f "$helper" ]] || continue
+        # shellcheck source=/dev/null
+        source "$helper"
+        declare -F codex_clear_retired_hook_artifacts >/dev/null && return 0
+    done
+
+    log_error "Codex legacy hook cleanup helper not found"
+    return 1
+}
+
+_clear_retired_codex_hook_artifacts() {
+    _source_codex_legacy_hooks_helper
+    codex_clear_retired_hook_artifacts "$FLAKE_PATH" "$HOME"
 }
 
 #───────────────────────────────────────────────────────────────────────────────
