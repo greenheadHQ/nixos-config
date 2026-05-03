@@ -992,16 +992,18 @@ else
   # UserPromptSubmit은 expected managed command가 포함되었는지만 검증 (사용자 추가 entry 허용).
   # Stop은 정확히 single managed dispatcher entry 강제 (concurrent 회피 contract).
   _hooks_dump=""
-  if ! _hooks_dump="$(python3 - "$CODEX_CONFIG" "$EXPECTED_USER_PROMPT_COMMAND" "$EXPECTED_STOP_DISPATCHER_COMMAND" "$EXPECTED_POST_TOOL_USE_PINNING_COMMAND" <<'PY'
+  if ! _hooks_dump="$(python3 - "$CODEX_CONFIG" "$EXPECTED_USER_PROMPT_COMMAND" "$EXPECTED_STOP_DISPATCHER_COMMAND" "$EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND" "$EXPECTED_POST_TOOL_USE_PINNING_COMMAND" <<'PY'
 import sys, tomllib
 with open(sys.argv[1], "rb") as f:
     data = tomllib.load(f)
 expected_ups = sys.argv[2]
 expected_stop = sys.argv[3]
-expected_post = sys.argv[4]
+expected_pre = sys.argv[4]
+expected_post = sys.argv[5]
 hooks = data.get("hooks", {})
 ups = hooks.get("UserPromptSubmit", []) or []
 stop = hooks.get("Stop", []) or []
+pre = hooks.get("PreToolUse", []) or []
 post = hooks.get("PostToolUse", []) or []
 
 ups_managed = any(
@@ -1019,6 +1021,14 @@ if len(stop) == 1:
     if sub:
         print(f"STOP_COMMAND {sub[0].get('command', '')}")
 
+pre_managed = any(
+    h.get("command") == expected_pre
+    for entry in pre
+    for h in (entry.get("hooks", []) or [])
+)
+print(f"PRE_TOTAL_COUNT {len(pre)}")
+print(f"PRE_HAS_MANAGED {'1' if pre_managed else '0'}")
+
 post_managed = any(
     h.get("command") == expected_post
     for entry in post
@@ -1035,6 +1045,8 @@ PY
     _stop_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="STOP_COUNT"{print $2}')"
     _stop_inner_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="STOP_INNER_COUNT"{print $2}')"
     _stop_command="$(printf '%s\n' "$_hooks_dump" | sed -n 's/^STOP_COMMAND //p')"
+    _pre_total_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="PRE_TOTAL_COUNT"{print $2}')"
+    _pre_has_managed="$(printf '%s\n' "$_hooks_dump" | awk '$1=="PRE_HAS_MANAGED"{print $2}')"
     _post_total_count="$(printf '%s\n' "$_hooks_dump" | awk '$1=="POST_TOTAL_COUNT"{print $2}')"
     _post_has_managed="$(printf '%s\n' "$_hooks_dump" | awk '$1=="POST_HAS_MANAGED"{print $2}')"
 
@@ -1051,7 +1063,7 @@ PY
     fi
 
     # Stop은 dispatcher 단일 entry contract — concurrent 실행 회피.
-    # 사용자 추가 hook은 template 미선언 event(예: PreToolUse, SessionStart)에 등록할 때만
+    # 사용자 추가 hook은 template 미선언 event(예: SessionStart)에 등록할 때만
     # sync-codex-config.py가 보존한다. Stop dispatcher 경유 sub-script 추가는 _stop-dispatcher.sh가
     # tracked 파일이라 user-config로 지원되지 않는다 (config.toml 주석 참조).
     if [ "${_stop_count:-0}" = "1" ] && [ "${_stop_inner_count:-0}" = "1" ]; then
@@ -1064,6 +1076,19 @@ PY
       pass "Stop dispatcher command = $EXPECTED_STOP_DISPATCHER_COMMAND"
     else
       fail "Stop dispatcher command 불일치 (actual='$_stop_command' expected='$EXPECTED_STOP_DISPATCHER_COMMAND')"
+    fi
+
+    # PreToolUse는 issue #587에서 template-owned로 등록 — pinning-guard managed entry 포함 여부 검사.
+    if [ "${_pre_total_count:-0}" -ge 1 ] 2>/dev/null; then
+      pass "[[hooks.PreToolUse]] entry 존재 (count=$_pre_total_count)"
+    else
+      fail "[[hooks.PreToolUse]] entry 부재 (count=${_pre_total_count:-?})"
+    fi
+
+    if [ "$_pre_has_managed" = "1" ]; then
+      pass "PreToolUse에 expected managed command 포함: $EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND"
+    else
+      fail "PreToolUse에 expected managed command 없음 (expected='$EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND')"
     fi
 
     # PostToolUse는 issue #603에서 template-owned로 등록 — pinning-alert managed entry 포함 여부 검사.
@@ -1122,37 +1147,97 @@ for _sub in "${EXPECTED_DISPATCHER_SUB_SCRIPTS[@]}"; do
   _check_hook_executable ".codex/hooks/$_sub"
 done
 _check_hook_executable ".codex/hooks/pinning-alert.sh"
+_check_hook_executable ".codex/hooks/pinning-guard.sh"
 
-# Pinning patterns lockstep 검사 (issue #603 R2 Maintainability-1):
-#   scripts/ai/commit-msg-pinning.sh를 SSOT로 두고 신규 PostToolUse hook 두 개가 PATTERN_A/B/C/D
-#   + HASH_MIN/MAX를 inline 사본으로 들고 있다. drift 자동 감지 자동화 없음을 운영 검증으로
-#   대체한다는 정책이지만, 최소한 수동 갱신 누락을 verifier가 잡아내야 한다.
+_check_executable_symlink_suffix() {
+  local relpath="$1" expected_suffix="$2"
+  local abspath="$HOME/$relpath"
+  if [ ! -e "$abspath" ]; then
+    fail "프로비저닝 실행 파일 없음: $abspath"
+    return
+  fi
+  if [ ! -x "$abspath" ]; then
+    fail "프로비저닝 실행 권한 없음: $abspath"
+    return
+  fi
+  local resolved
+  resolved="$(readlink -f "$abspath" 2>/dev/null || true)"
+  if [ -z "$resolved" ] || [ ! -f "$resolved" ]; then
+    fail "프로비저닝 실행 파일 readlink 실패 또는 target 부재: $relpath (resolved=$resolved)"
+    return
+  fi
+  case "$resolved" in
+    */"$expected_suffix")
+      pass "프로비저닝 실행 파일 OK: $relpath"
+      ;;
+    *)
+      fail "프로비저닝 실행 파일 target suffix 불일치: $relpath (resolved=$resolved expected_suffix=*/$expected_suffix)"
+      ;;
+  esac
+}
+
+_check_executable_symlink_suffix ".claude/hooks/pinning-guard.sh" \
+  "modules/shared/programs/claude/files/hooks/pinning-guard.sh"
+
+_check_readable_symlink_suffix() {
+  local relpath="$1" expected_suffix="$2"
+  local abspath="$HOME/$relpath"
+  if [ ! -e "$abspath" ]; then
+    fail "프로비저닝 파일 없음: $abspath"
+    return
+  fi
+  if [ ! -r "$abspath" ]; then
+    fail "프로비저닝 파일 읽기 불가: $abspath"
+    return
+  fi
+  local resolved
+  resolved="$(readlink -f "$abspath" 2>/dev/null || true)"
+  if [ -z "$resolved" ] || [ ! -f "$resolved" ]; then
+    fail "프로비저닝 파일 readlink 실패 또는 target 부재: $relpath (resolved=$resolved)"
+    return
+  fi
+  case "$resolved" in
+    */"$expected_suffix")
+      pass "프로비저닝 파일 OK: $relpath"
+      ;;
+    *)
+      fail "프로비저닝 파일 target suffix 불일치: $relpath (resolved=$resolved expected_suffix=*/$expected_suffix)"
+      ;;
+  esac
+}
+
+_pinning_lib_suffix="modules/shared/programs/claude/files/lib/pinning-patterns.sh"
+_check_readable_symlink_suffix ".claude/lib/pinning-patterns.sh" "$_pinning_lib_suffix"
+_check_readable_symlink_suffix ".codex/lib/pinning-patterns.sh" "$_pinning_lib_suffix"
+
+# Pinning patterns shared library 검사:
+#   scripts/ai/commit-msg-pinning.sh 및 Pre/PostToolUse pinning hook들이 공통 lib를 source한다.
+#   패턴 정의와 scan helper drift는 lib provisioning + direct source checks로 검증한다.
 echo ""
-echo "=== Pinning patterns SSOT lockstep 검사 ==="
-_pinning_ssot="$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
+echo "=== Pinning patterns shared library 검사 ==="
+_pinning_lib="$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh"
 _pinning_hooks=(
+  "$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
   "$REPO_ROOT/modules/shared/programs/claude/files/hooks/pinning-alert.sh"
+  "$REPO_ROOT/modules/shared/programs/claude/files/hooks/pinning-guard.sh"
   "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-alert.sh"
+  "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-guard.sh"
 )
 for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D HASH_MIN HASH_MAX; do
-  # `set -euo pipefail` 아래에서 grep 매치 실패 시 nonzero가 command substitution을
-  # 통해 부모 shell을 종료시켜 drift 보고 자체가 막히므로 `|| true`로 무력화한다.
-  _ssot_line="$(grep -m1 -E "^${_var}=" "$_pinning_ssot" || true)"
-  if [ -z "$_ssot_line" ]; then
-    fail "SSOT $_var 정의 부재 (scripts/ai/commit-msg-pinning.sh)"
-    continue
+  _lib_line="$(grep -m1 -E "^${_var}=" "$_pinning_lib" || true)"
+  if [ -n "$_lib_line" ]; then
+    pass "pinning $_var shared lib 정의 OK"
+  else
+    fail "pinning $_var 정의 부재 ($_pinning_lib)"
   fi
-  for _hook in "${_pinning_hooks[@]}"; do
-    _hook_basename="${_hook#"$REPO_ROOT"/}"
-    _hook_line="$(grep -m1 -E "^${_var}=" "$_hook" || true)"
-    if [ "$_hook_line" = "$_ssot_line" ]; then
-      pass "pinning $_var lockstep OK: $_hook_basename"
-    else
-      # fail()는 첫 인자만 출력하므로 SSOT/HOOK 세부 비교를 단일 형식 문자열로 결합한다.
-      fail "$(printf 'pinning %s drift: %s\n    SSOT: %s\n    HOOK: %s' \
-        "$_var" "$_hook_basename" "$_ssot_line" "${_hook_line:-<missing>}")"
-    fi
-  done
+done
+for _hook in "${_pinning_hooks[@]}"; do
+  _hook_basename="${_hook#"$REPO_ROOT"/}"
+  if grep -Eq '^[[:space:]]*\.[[:space:]]+"\$PINNING_LIB"' "$_hook"; then
+    pass "pinning shared lib source OK: $_hook_basename"
+  else
+    fail "pinning shared lib source 부재: $_hook_basename"
+  fi
 done
 
 # fixture self-test (deterministic, live 미실행).

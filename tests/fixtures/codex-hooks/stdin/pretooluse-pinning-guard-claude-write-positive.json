@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/fixture-pretooluse-claude-write-positive.md",
+    "content": "Round 14 write output"
+  }
+}

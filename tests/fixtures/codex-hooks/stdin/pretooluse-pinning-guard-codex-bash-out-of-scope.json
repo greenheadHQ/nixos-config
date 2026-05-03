@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "printf \"Regression-7 stays local\""
+  }
+}

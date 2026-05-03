@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr comment 123 --body \"cherry-pick abc1234 needs stable wording\""
+  }
+}

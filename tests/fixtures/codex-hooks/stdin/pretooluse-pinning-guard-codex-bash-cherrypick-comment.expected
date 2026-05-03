@@ -1,0 +1,3 @@
+[pinning-guard] Bash on durable shell command contains volatile review/session metadata:
+  - Partial commit hash 박제 (7~12자)
+Use stable identifiers or plain natural-language context before retrying.

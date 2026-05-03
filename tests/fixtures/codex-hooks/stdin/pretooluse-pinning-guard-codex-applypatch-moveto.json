@@ -1,0 +1,6 @@
+{
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Update File: /tmp/fixture-pretooluse-codex-old.txt\n*** Move to: /tmp/fixture-pretooluse-codex-new.md\n@@\n+Round 7 move target\n*** End Patch\n"
+  }
+}

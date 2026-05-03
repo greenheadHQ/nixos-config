@@ -87,6 +87,24 @@
             "command": "~/.claude/hooks/system-bash-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pinning-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/pinning-guard.sh"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

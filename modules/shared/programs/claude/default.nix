@@ -170,6 +170,10 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/system-bash-guard.sh";
     ".claude/hooks/pinning-alert.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/pinning-alert.sh";
+    ".claude/hooks/pinning-guard.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/pinning-guard.sh";
+    ".claude/lib/pinning-patterns.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/pinning-patterns.sh";
     # Cache TTL tracking hooks
     ".claude/hooks/record-last-stop.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-last-stop.sh";

@@ -1,0 +1,3 @@
+[pinning-guard] Bash on durable shell command contains volatile review/session metadata:
+  - Bundle finding ID 박제: 'Bundle-N'
+Use stable identifiers or plain natural-language context before retrying.

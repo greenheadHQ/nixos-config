@@ -1,0 +1,6 @@
+[pinning-guard] Edit on /tmp/fixture-pretooluse-claude-edit.md contains volatile review/session metadata:
+  - Round counter 박제: 'Round N'
+  - Bundle finding ID 박제: 'Bundle-N'
+  - DA 실행 키워드 박제
+  - Partial commit hash 박제 (7~12자)
+Use stable identifiers or plain natural-language context before retrying.

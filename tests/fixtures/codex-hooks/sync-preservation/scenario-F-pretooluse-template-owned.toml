@@ -1,0 +1,23 @@
+# Scenario F: 사용자가 template이 declare한 동일 event(hooks.PreToolUse)에 추가 entry를
+# 넣은 경우. issue #587에서 PreToolUse도 template-owned event로 전환되었으므로,
+# sync-codex-config.py는 array 전체를 template 값으로 덮어써 사용자 entry
+# "/tmp/test-marker-USER-PRETOOLUSE-LOST.sh"를 손실시켜야 한다.
+
+model = "gpt-5.5"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/record-prompt-submit.sh"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/_stop-dispatcher.sh"
+
+[[hooks.PreToolUse]]
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/tmp/test-marker-USER-PRETOOLUSE-LOST.sh"

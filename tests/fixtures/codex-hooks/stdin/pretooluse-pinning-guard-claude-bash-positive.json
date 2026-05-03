@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr comment 123 --body \"Regression-4 needs a stable description\""
+  }
+}

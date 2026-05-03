@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api repos/O/R/issues/587/comments -f body='Round 18 issue comment'"
+  }
+}

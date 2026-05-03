@@ -1,0 +1,6 @@
+{
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Update File: /tmp/fixture-pretooluse-clean.ts\n@@\n+const stable = true\n*** Update File: /tmp/fixture-pretooluse-codex-multi.md\n@@\n+Design-5 needs stable wording\n*** End Patch\n"
+  }
+}

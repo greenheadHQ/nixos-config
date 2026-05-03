@@ -97,6 +97,13 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 **commit-msg**:
 - `pinning` — commit message LLM 박제 패턴 감지 (warn-only) ([`scripts/ai/commit-msg-pinning.sh`](./scripts/ai/commit-msg-pinning.sh))
 
+**LLM durable-output pinning guard layers**:
+- Runtime hard-fail: Claude/Codex PreToolUse `pinning-guard.sh` blocks new volatile review/session metadata before supported edit/apply_patch tools and targeted git/gh durable commands write eligible markdown, shell, notebook, body-temp, commit, PR, or issue text.
+- Runtime warn-only: Claude/Codex PostToolUse `pinning-alert.sh` remains as a second signal after supported edit/apply_patch tools run.
+- Commit-message warn-only: `commit-msg-pinning.sh` still reports the same shared pattern family for commit messages.
+- Shared source: pattern definitions and reporting live in [`modules/shared/programs/claude/files/lib/pinning-patterns.sh`](./modules/shared/programs/claude/files/lib/pinning-patterns.sh); Codex fixture coverage is in [`tests/fixtures/codex-hooks/README.md`](./tests/fixtures/codex-hooks/README.md).
+- Codex config ownership: `hooks.PreToolUse` is now template-owned like `UserPromptSubmit`, `Stop`, and `PostToolUse`; add user hooks under events not declared by the template unless `sync-codex-config.py` is changed.
+
 **pre-push**:
 - `shell-script-tests` — 배포 레이아웃 fixture 테스트. tomlkit bootstrap wrapper [`tests/run-shell-script-tests.sh`](./tests/run-shell-script-tests.sh)가 [`tests/shell-script-tests.sh`](./tests/shell-script-tests.sh)를 호출.
 - `codex-hook-fixtures` — Codex 0.124+ stable hook 회귀 차단 deterministic fixture (`--no-live`) ([`tests/test-codex-hook-fixtures.sh`](./tests/test-codex-hook-fixtures.sh))

@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh issue comment 587 --body \"Security-6 needs stable wording\""
+  }
+}

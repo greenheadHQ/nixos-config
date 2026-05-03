@@ -1,0 +1,3 @@
+[pinning-guard] Bash on durable shell command contains volatile review/session metadata:
+  - Round counter 박제: 'Round N'
+Use stable identifiers or plain natural-language context before retrying.
