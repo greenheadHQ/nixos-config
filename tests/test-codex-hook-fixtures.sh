@@ -2,7 +2,7 @@
 # tests/test-codex-hook-fixtures.sh
 # Codex 0.124+ stable hook 회귀 차단 fixture runner.
 #
-# 10 카테고리 (8 deterministic + 2 live opt-in subsets):
+# 11 카테고리 (9 deterministic + 2 live opt-in subsets):
 #   1. stdin schema baseline 0.124       — fixtures/codex-hooks/stdin/{userpromptsubmit-codex-0.124,stop-codex-0.124,stop-no-last-message}.json
 #   2. dispatcher ordering / failure recovery — runner 내부 mock subscript
 #   3. noise-guard env 변형              — runner 내부 helper (4 env 조합)
@@ -13,6 +13,7 @@
 #   6. stop-notification reliability/security — transcripts/ + stdin secret/transcript fixtures
 #   7. pinning-alert behavioral          — fixtures/codex-hooks/stdin/pinning-{claude,codex}-*.json
 #   7b. PreToolUse pinning-guard behavioral — hard-fail deny JSON + clean pass fixtures
+#   7c. commit-msg pinning behavioral    — fixtures/codex-hooks/commit-msg/*.msg
 #   8. sync.sh mcp-config fail-fast      — missing/no source가 기존 MCP 섹션을 지우지 않음
 #
 # nrs-session-cleanup.sh는 NRS_LOCK_FILE을 하드코딩하므로 (host /tmp/nrs-state 누수 위험)
@@ -1123,6 +1124,38 @@ $unexpected"
   done
 }
 
+# ─── 카테고리 7c: commit-msg pinning behavioral ───
+# commit-msg-pinning.sh도 guard/alert와 같은 shared partial-hash helper를 소비한다.
+_assert_commit_msg_expectation() {
+  local fixture="$1" stderr_log="$2"
+  local expected="${fixture%.msg}.expected"
+  if ! diff -u "$expected" "$stderr_log" >/dev/null 2>&1; then
+    local diff_out
+    diff_out=$(diff -u "$expected" "$stderr_log" 2>&1 | head -40 || true)
+    fail "[7c] $(basename "$fixture") stderr expectation drift:
+$diff_out"
+  fi
+}
+
+test_commit_msg_pinning_behavioral() {
+  local hook="$REPO_ROOT/scripts/ai/commit-msg-pinning.sh"
+  local fixture sandbox stderr_log exit_code
+
+  for fixture in "$FIXTURE_DIR"/commit-msg/*.msg; do
+    assert_file_exists "${fixture%.msg}.expected" "7c/$(basename "$fixture")"
+    sandbox=$(new_hook_sandbox)
+    stderr_log="$sandbox/commit-msg-stderr.log"
+
+    if _exec_with_sandbox_env "$sandbox" "" "$hook" "$fixture" 2>"$stderr_log"; then
+      exit_code=0
+    else
+      exit_code=$?
+    fi
+    assert_eq "$exit_code" "0" "[7c] $(basename "$fixture"): warn-only contract 위반 (exit must be 0)"
+    _assert_commit_msg_expectation "$fixture" "$stderr_log"
+  done
+}
+
 # ─── 카테고리 5: programmatic env inheritance live (opt-in) ───
 # programmatic codex exec 호출자가 CODEX_PROGRAMMATIC=1을 codex 프로세스에 붙이면,
 # UserPromptSubmit hook subprocess까지 해당 marker가 상속되는지 검증한다. managed hook
@@ -1406,6 +1439,8 @@ run_test "pretooluse pinning-guard behavioral (#587)" \
   test_pretooluse_pinning_guard_behavioral
 run_test "pretooluse pinning-guard meta behavioral (#587)" \
   test_pretooluse_pinning_guard_meta_behavioral
+run_test "commit-msg pinning behavioral" \
+  test_commit_msg_pinning_behavioral
 run_test "sync.sh mcp-config valid sources (#609)" \
   test_sync_sh_mcp_config_valid_sources
 run_test "sync.sh mcp-config fail-fast (#609)" \

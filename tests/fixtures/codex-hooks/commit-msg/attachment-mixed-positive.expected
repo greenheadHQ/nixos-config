@@ -1,0 +1,3 @@
+[WARN] pinning: Partial commit hash 박제 감지. squash 머지 시 dangling 위험. 안정 식별자(PR 번호, 머지된 SHA)로 대체하라.
+         3: abc1234
+[WARN] pinning: 위 경고는 차단하지 않습니다 (warn-only). 검토 후 amend로 정정하거나 의도적 사용이면 무시하세요.

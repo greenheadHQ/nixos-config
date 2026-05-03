@@ -8,6 +8,7 @@ runner: `tests/test-codex-hook-fixtures.sh`.
 | 경로 | 의도 | 소비처 |
 |------|------|--------|
 | `stdin/` | hook stdin fixture 공용 디렉터리. Codex 0.124+ payload(`record-prompt-submit.sh`/`record-last-stop.sh`/`stop-notification.sh` 등), PostToolUse pinning-alert warn-only fixture, PreToolUse pinning-guard hard-fail fixture(`*.expected` sidecar 포함)가 함께 위치. 카테고리별 파일 표는 아래 카테고리 6/7/7b 절 참조. | `test_stdin_payloads_create_expected_hook_artifacts_codex_0_124`, `test_stop_notification_codex_transcript_fallback`, `test_stop_notification_secret_redaction`, `test_pinning_alert_behavioral`, `test_pretooluse_pinning_guard_behavioral` |
+| `commit-msg/` | commit-msg-pinning.sh 입력 메시지와 stderr expected sidecar. shared pinning helper가 commit message 경로에서도 hook 경로와 같은 결과를 내는지 검증한다. | `test_commit_msg_pinning_behavioral` |
 | `sync-preservation/` | `sync-codex-config.py`가 `~/.codex/config.toml`을 merge할 때 user-owned 영역을 어떻게 보존/덮어쓰는지 검증할 user 측 입력 TOML. | `test_sync_preservation_scenarios` |
 | `transcripts/` | Codex 0.124+ session JSONL transcript 샘플. stop-notification.sh의 `extract_last_assistant_text` fallback 경로 검증용. | `test_stop_notification_codex_transcript_fallback` (6.1) |
 
@@ -30,6 +31,11 @@ runner: `tests/test-codex-hook-fixtures.sh`.
 | `pinning-claude-write-clean.json` | Claude Write | 정상 텍스트 | 빈 파일 (false positive 회피) |
 | `pinning-claude-self-exclude.json` | Claude Edit | path가 `…/scripts/ai/commit-msg-pinning.sh` (self-exclude) | 빈 파일 |
 | `pinning-codex-applypatch-md-positive.json` | Codex apply_patch | 단일 `.md` Update + Round | `apply_patch on …` 헤더 + Round 라인 |
+| `pinning-codex-applypatch-github-attachment-pass.json` | Codex apply_patch | Markdown/inline-code/HTML/raw GitHub attachment URLs in `/tmp/*body*.md` | 빈 파일 (attachment UUID false positive 회피) |
+| `pinning-codex-applypatch-github-attachment-mixed-positive.json` | Codex apply_patch | GitHub attachment URL + 별도 short hash on same line | `apply_patch on …` 헤더 + partial hash 라인 |
+| `pinning-codex-applypatch-github-attachment-malformed-positive.json` | Codex apply_patch | GitHub attachment-like URL with malformed UUID | `apply_patch on …` 헤더 + partial hash 라인 |
+| `pinning-codex-applypatch-github-attachment-nonhex-suffix-positive.json` | Codex apply_patch | GitHub attachment-like URL with non-hex suffix | `apply_patch on …` 헤더 + partial hash 라인 |
+| `pinning-codex-applypatch-github-attachment-punct-suffix-positive.json` | Codex apply_patch | GitHub attachment-like URL with extension/query suffix | `apply_patch on …` 헤더 + partial hash 라인 |
 | `pinning-codex-applypatch-moveto.json` | Codex apply_patch | `*** Move to:` (`.txt` → `.md`) + Round + hash | Move 후 `.md` path로 보고 (R3 분기) |
 | `pinning-codex-applypatch-multifile.json` | Codex apply_patch | `.ts` 정상 + `.md` 박제 | `.md` path만 보고 (multi-file attribution) |
 | `pinning-codex-applypatch-removeonly.json` | Codex apply_patch | 박제 패턴이 `^-` 라인에만 (제거 patch) | 빈 파일 (added line만 검사) |
@@ -59,6 +65,11 @@ Claude/Codex missing shared-library fail-closed 분기를 검증한다.
 | `pretooluse-pinning-guard-claude-bash-git-option-commit.json` | Claude PreToolUse | `git` global-option commit command | deny reason |
 | `pretooluse-pinning-guard-claude-bash-revert-hash-pass.json` | Claude PreToolUse | real `git commit` revert message with short hash | 빈 파일 |
 | `pretooluse-pinning-guard-codex-applypatch-positive.json` | Codex PreToolUse | apply_patch adds volatile metadata to `.md` | deny reason |
+| `pretooluse-pinning-guard-codex-applypatch-github-attachment-pass.json` | Codex PreToolUse | apply_patch adds Markdown/inline-code/HTML/raw GitHub attachment URLs to `/tmp/*body*.md` | 빈 파일 |
+| `pretooluse-pinning-guard-codex-applypatch-github-attachment-mixed-positive.json` | Codex PreToolUse | GitHub attachment URL + 별도 short hash on same line | deny reason |
+| `pretooluse-pinning-guard-codex-applypatch-github-attachment-malformed-positive.json` | Codex PreToolUse | GitHub attachment-like URL with malformed UUID | deny reason |
+| `pretooluse-pinning-guard-codex-applypatch-github-attachment-nonhex-suffix-positive.json` | Codex PreToolUse | GitHub attachment-like URL with non-hex suffix | deny reason |
+| `pretooluse-pinning-guard-codex-applypatch-github-attachment-punct-suffix-positive.json` | Codex PreToolUse | GitHub attachment-like URL with extension/query suffix | deny reason |
 | `pretooluse-pinning-guard-codex-applypatch-multifile.json` | Codex PreToolUse | apply_patch multi-file attribution | deny reason for matched `.md` |
 | `pretooluse-pinning-guard-codex-applypatch-multimatch.json` | Codex PreToolUse | apply_patch has multiple matched eligible files | single deny reason for first matched path |
 | `pretooluse-pinning-guard-codex-applypatch-moveto.json` | Codex PreToolUse | apply_patch `*** Move to:` effective path | deny reason for moved `.md` |
@@ -73,6 +84,17 @@ Claude/Codex missing shared-library fail-closed 분기를 검증한다.
 | `pretooluse-pinning-guard-codex-bash-gh-api-comment.json` | Codex PreToolUse | `gh api` issue comment body | deny reason |
 | `pretooluse-pinning-guard-codex-bash-revert-hash-pass.json` | Codex PreToolUse | real `git commit` revert message with short hash | 빈 파일 |
 | `pretooluse-pinning-guard-codex-bash-out-of-scope.json` | Codex PreToolUse | non-durable Bash command | 빈 파일 |
+
+### commit-msg/ 카테고리 7c fixture (commit-msg-pinning behavioral)
+
+각 `*.msg` 옆에 동일 basename의 `*.expected`가 있다. 빈 expected는 clean pass.
+
+| 파일 | 시나리오 | 기대 |
+|------|----------|------|
+| `attachment-pass.msg` | Markdown/inline-code/HTML/raw GitHub attachment URLs | 빈 파일 |
+| `attachment-mixed-positive.msg` | GitHub attachment URL + 별도 short hash | partial hash warn |
+| `attachment-extended-positive.msg` | GitHub attachment-like URL with extension/query suffix | partial hash warn |
+| `revert-skip.msg` | Revert commit message partial hash skip | 빈 파일 |
 
 ## 외부 contract만 디렉토리로 노출
 
