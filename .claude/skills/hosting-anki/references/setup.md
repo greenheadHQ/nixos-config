@@ -87,7 +87,7 @@ ankiConnect = {
 ```bash
 # 비밀번호 생성/변경 (MiniPC에서 실행)
 cd ~/Workspace/nixos-config
-nix run github:ryantm/agenix -- -e secrets/anki-sync-password.age
+(cd secrets && nix run github:ryantm/agenix -- -e anki-sync-password.age)
 # 에디터에서 비밀번호만 입력 (KEY=value 형식 아님, 평문 비밀번호)
 
 # 비밀번호 확인

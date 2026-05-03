@@ -66,7 +66,7 @@ cat ~/.ssh/id_ed25519.pub
 nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age'
 ```
 
-키가 포함되어 있지 않다면 `secrets/secrets.nix`에 공개키 추가 후 `agenix -r`로 재암호화 필요.
+키가 포함되어 있지 않다면 `secrets/secrets.nix`에 공개키 추가 후 `cd secrets && nix run github:ryantm/agenix -- -r`로 재암호화 필요.
 
 ---
 
@@ -74,7 +74,7 @@ nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age'
 
 **증상**: `secrets/secrets.nix`에서 publicKeys를 변경했는데, 새 호스트에서 복호화 실패.
 
-**원인**: publicKeys 변경 후 `agenix -r` (재암호화) 미실행. `.age` 파일은 변경 시점의 recipient 목록으로 암호화되어 있으므로, publicKeys를 변경한 후 반드시 재암호화해야 한다.
+**원인**: publicKeys 변경 후 `cd secrets && nix run github:ryantm/agenix -- -r` (재암호화) 미실행. `.age` 파일은 변경 시점의 recipient 목록으로 암호화되어 있으므로, publicKeys를 변경한 후 반드시 재암호화해야 한다.
 
 **해결**:
 
