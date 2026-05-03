@@ -80,7 +80,7 @@ nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age'
 
 ```bash
 # 모든 .age 파일을 secrets.nix의 최신 publicKeys로 재암호화
-nix run github:ryantm/agenix -- -r
+cd secrets && nix run github:ryantm/agenix -- -r
 ```
 
 **호스트 키 변경 시**: 해당 호스트의 SSH 키가 재생성된 경우, `secrets/secrets.nix`에서 공개키를 업데이트한 후 재암호화.

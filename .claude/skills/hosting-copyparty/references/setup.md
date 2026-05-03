@@ -20,7 +20,7 @@ containers.copyparty = {
 "copyparty-password.age".publicKeys = allKeys;
 
 # 비밀번호 암호화
-agenix -e secrets/copyparty-password.age
+(cd secrets && agenix -e copyparty-password.age)
 # 또는 직접 age 명령어로 암호화
 printf '%s\n' "PASSWORD" | age -r "ssh-ed25519 ..." -o secrets/copyparty-password.age
 ```

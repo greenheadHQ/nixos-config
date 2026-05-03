@@ -154,7 +154,7 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 1. **컨테이너 시작 실패**: `journalctl -u podman-copyparty`에서 "multiple filesystem-paths" 또는 initcfg 충돌 확인. 상세: troubleshooting 항목 6, 7
 2. **로그인 실패**: agenix secret 복호화 확인 (`sudo cat /run/agenix/copyparty-password`)
 3. **CORS 403 (리버스 프록시)**: `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 설정 확인, 컨테이너 재시작
-4. **비밀번호 변경**: `agenix -e secrets/copyparty-password.age` 후 `nrs` 재적용
+4. **비밀번호 변경**: `(cd secrets && agenix -e copyparty-password.age)` 후 `nrs` 재적용
 
 ## 런타임 환경 전제
 

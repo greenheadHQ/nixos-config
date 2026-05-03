@@ -29,7 +29,7 @@ sudo cat /run/agenix/copyparty-password | xxd         # 바이트 레벨 확인 
 ```
 
 **해결**:
-- 비밀번호에 이스케이프 문자(`\`)가 포함되면 `agenix -e secrets/copyparty-password.age`로 재입력
+- 비밀번호에 이스케이프 문자(`\`)가 포함되면 `(cd secrets && agenix -e copyparty-password.age)`로 재입력
 - 설정 파일 재생성: `sudo systemctl restart copyparty-config && sudo systemctl restart podman-copyparty`
 
 ## 3. HTTPS 접근 실패 (CORS 403)
@@ -54,7 +54,7 @@ curl -sI -H 'Origin: https://copyparty.greenhead.dev' https://copyparty.greenhea
 **절차**:
 ```bash
 # 1. 시크릿 파일 재암호화
-agenix -e secrets/copyparty-password.age
+(cd secrets && agenix -e copyparty-password.age)
 # 에디터에서 새 비밀번호 입력 후 저장
 
 # 2. 빌드 적용

@@ -103,7 +103,7 @@ openssl rand -hex 32
 
 # 2. agenix secret 수정
 cd ~/Workspace/nixos-config
-nix run github:ryantm/agenix -- -e secrets/vaultwarden-admin-token.age
+(cd secrets && nix run github:ryantm/agenix -- -e vaultwarden-admin-token.age)
 
 # 3. 적용
 nrs

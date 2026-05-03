@@ -10,7 +10,6 @@
 - agenix CLI로 `<name>.age` 편집 (sudo 불필요. agenix는 cwd의 `./secrets.nix`를 RULES로 로드하므로 `secrets/` 디렉토리에서 실행)
   - canonical: `cd secrets && agenix -e <name>.age` (PATH `agenix` 사용 가능 시)
   - fallback: `cd secrets && nix run github:ryantm/agenix -- -e <name>.age`
-  - 주의: top-level SKILL.md (`hosting-copyparty/SKILL.md`, `hosting-vaultwarden/SKILL.md`) 및 consumer 문서 (`hosting-copyparty/references/{setup,troubleshooting}.md`, `hosting-vaultwarden/references/troubleshooting.md`)에 남은 root-relative `agenix -e secrets/<name>.age` (또는 `nix run github:ryantm/agenix -- -e secrets/<name>.age`) 표기는 별도 follow-up 일관화 대상 (#598 scope 외, agenix wrapper RULES 동작 분석 + `managing-secrets/references/workflows.md` 정정 포함)
 - Podman socket 접근 권한 + 각 서비스별 `podman-<service>.service` systemd unit 관리
 
 본 스킬을 macOS Codex 세션 등 다른 호스트에서 호출하면 명령이 작동하지 않는다.
