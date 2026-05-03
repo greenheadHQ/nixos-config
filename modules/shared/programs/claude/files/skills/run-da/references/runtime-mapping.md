@@ -31,7 +31,13 @@
   # 세션 식별 해시 (8자: /tmp 경로 가독성과 충돌 확률의 균형)
   _DA_SID="${CODEX_COMPANION_SESSION_ID:+${CODEX_COMPANION_SESSION_ID:0:8}}"
   # CODEX_COMPANION_SESSION_ID 미노출 환경(headless/CI)에서 디렉토리별 충돌 방지용 결정적 해시
-  [ -z "$_DA_SID" ] && _DA_SID="$(printf '%s' "$PWD" | sha1sum 2>/dev/null | head -c 8 || printf '%s' "$PWD" | shasum | head -c 8)"
+  if [ -z "$_DA_SID" ]; then
+    if command -v sha1sum >/dev/null 2>&1; then
+      _DA_SID="$(printf '%s' "$PWD" | sha1sum | head -c 8)"
+    else
+      _DA_SID="$(printf '%s' "$PWD" | shasum | head -c 8)"
+    fi
+  fi
   ```
   이후 모든 `mktemp -d`와 cleanup glob에서 `$_DA_SID`를 prefix에 포함한다.
 - **모드 시작 시 이전 임시 디렉토리 정리**: for_plan 시작 시 `rm -rf /tmp/da-${_DA_SID}-pr-*(N) /tmp/da-${_DA_SID}-arbiter-*(N) /tmp/da-pr-*(N) /tmp/da-arbiter-*(N)`, for_pr 시작 시 `rm -rf /tmp/da-${_DA_SID}-plan-*(N) /tmp/da-${_DA_SID}-intensity-*(N) /tmp/da-plan-*(N) /tmp/da-intensity-*(N)`. 같은 모드의 이전 라운드는 라운드 교체 시 정리.
@@ -40,6 +46,10 @@
 - **셸 호출 간 변수 유지** (모든 런타임 공통): 위 공통 주의 참조. 런타임 종류와 무관하게 셸 호출마다 별도 shell이 생성되므로 `mktemp -d` 결과를 stdout으로 출력해 메인 에이전트가 다음 호출에서 리터럴로 재사용하거나 단일 shell에 체이닝한다. 상세 패턴은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "셸 호출 변수 유실 방지" 참조.
 - **stdin pipe로 프롬프트 전달 (Layer 1 supervised wrapper)**: 모든 programmatic codex exec 호출은 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral -c model="gpt-5.5" -c model_reasoning_effort="..." -o "$DIR/result.md" -` 형태의 Layer 1 supervised wrapper 호출을 사용한다 (raw `codex exec --full-auto`는 user-interactive 호출 전용이며 SKILL 내 programmatic 경로에서는 사용하지 않는다). `--ignore-rules`는 user/project execpolicy `.rules` 파일을 차단해 read-only sandbox로 막을 수 없는 network/system mutation 명령(예: `git push`, `aws ec2 describe`)이 reviewer/auditor에서 실행되지 않게 한다. pipe EOF가 stdin을 자동으로 닫아 background 전환 시 stdin hang을 구조적으로 방지한다. `< /dev/null`은 pipe가 대체하므로 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. **`CODEX_PROGRAMMATIC=1` env assignment는 pipeline 우측 codex 프로세스에 적용되어야 한다 (issue #585).** wrapper 상세는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 참조.
 - **Intensity/Arbiter는 foreground 실행** (단일 exec): 결과를 즉시 확인한다. **reviewer만 병렬 실행** (런타임별 병렬 실행 매커니즘은 위 표 참조).
+
+### literal 재사용 시 random suffix 환각 금지 (issue #632)
+
+Generic codex exec split-call rule은 [`using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)가 SSOT다. run-da 고유 적용은 `_DA_SID` 세션 네임스페이스와 `$INTENSITY_DIR`/`$DA_DIR`/`$ARBITER_DIR` 결과 파일 경로에 해당 generic rule을 적용하는 것이다.
 
 ## Claude Code 세션 fallback 세부 정보
 

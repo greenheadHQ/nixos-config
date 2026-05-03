@@ -73,16 +73,21 @@ if [ -z "$_FO_SID" ]; then
   fi
 fi
 FO_DIR=$(mktemp -d /tmp/fo-${_FO_SID}-XXXXXX)
+[ -d "$FO_DIR" ] || { echo "missing FO_DIR=$FO_DIR"; exit 1; }
 echo "FO_DIR=$FO_DIR"
 ```
 
 이후 호출에서 `$FO_DIR` 대신 출력된 리터럴 경로 (예: `/tmp/fo-c4a35fc4-AbCdEf`)를 사용한다.
 
+> **literal 재사용 환각 주의 (issue #632)**: background fan-out은 출력된 `FO_DIR` 리터럴과 호출 직전 dir/file guard를 유지한다. Generic rule은 [`using-codex-exec/known-issues.md`](../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
+
 ### 프롬프트 생성 + 실행
 
 2. 에이전트별 프롬프트 파일을 생성한다 (별도 Bash tool 호출, 리터럴 경로 사용):
    ```zsh
-   (umask 077; cat > "/tmp/fo-c4a35fc4-AbCdEf/agent-1.md" <<'PROMPT'
+   FO_DIR=/tmp/fo-c4a35fc4-AbCdEf
+   [ -d "$FO_DIR" ] || { echo "missing FO_DIR=$FO_DIR"; exit 1; }
+   (umask 077; cat > "$FO_DIR/agent-1.md" <<'PROMPT'
    {호출자가 결정한 프롬프트 내용}
 
    파일을 수정하지 마라. 읽기와 검색만 수행하라.
@@ -98,14 +103,17 @@ echo "FO_DIR=$FO_DIR"
 
 3. 각 에이전트를 **background Bash tool 호출**로 병렬 실행한다 (리터럴 경로 사용):
    ```zsh
+   FO_DIR=/tmp/fo-c4a35fc4-AbCdEf
+   [ -d "$FO_DIR" ] || { echo "missing FO_DIR=$FO_DIR"; exit 1; }
+   [ -f "$FO_DIR/agent-1.md" ] || { echo "missing prompt=$FO_DIR/agent-1.md"; exit 1; }
    # marker must apply to `codex`, not `cat` (issue #585 / epic #584).
    # CODEX_PROGRAMMATIC=1은 Codex 0.124+ user-level hooks의 early-exit guard 신호.
-   cat "/tmp/fo-c4a35fc4-AbCdEf/agent-1.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
+   cat "$FO_DIR/agent-1.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
      -c model="gpt-5.5" \
      -c model_reasoning_effort="high" \
-     -o "/tmp/fo-c4a35fc4-AbCdEf/agent-1-result.md" \
+     -o "$FO_DIR/agent-1-result.md" \
      - \
-     2>"/tmp/fo-c4a35fc4-AbCdEf/agent-1-stderr.log"
+     2>"$FO_DIR/agent-1-stderr.log"
    ```
    - `run_in_background: true`로 Bash tool을 호출한다.
    - stdin pipe가 EOF를 닫으므로 `< /dev/null`은 불필요하다.

@@ -115,6 +115,7 @@ if [ -z "$_FO_SID" ]; then
   fi
 fi
 CONSULT_DIR=$(mktemp -d /tmp/consult-${_FO_SID}-XXXXXX)
+[ -d "$CONSULT_DIR" ] || { echo "consulting-step: missing CONSULT_DIR=$CONSULT_DIR"; exit 1; }
 
 # Untrusted input 보호: 메인 에이전트는 프롬프트를 셸 heredoc에 직접 삽입하지 말고
 # 파일 편집 도구(Write/Edit)로 "$CONSULT_DIR/prompt.md"에 작성한다. 이슈 본문/외부 입력에
@@ -126,29 +127,34 @@ echo "CONSULT_DIR=$CONSULT_DIR"
 
 메인 에이전트는 stdout의 `CONSULT_DIR` 리터럴 값을 후속 호출에서 재사용한다 (Bash tool 호출 간 변수 비공유).
 
+> **literal 재사용 환각 주의 (issue #632)**: 이 3-call flow는 출력된 `CONSULT_DIR` 리터럴과 dir/file guard를 유지한다. Generic rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
+
 ### 셸 호출 2 — codex exec 실행 (background, supervised wrapper)
 
 ```zsh
 # 위 CONSULT_DIR 리터럴 값을 그대로 사용. supervised wrapper가 setsid + timeout으로
 # process group kill을 보장한다 (issue #593, known-issues.md §15).
 # CODEX_EXEC_TIMEOUT_SECONDS=180으로 1-3분 budget 강제 (consult-specific override).
+CONSULT_DIR=/tmp/consult-c4a35fc4-AbCdEf
+[ -d "$CONSULT_DIR" ] || { echo "consulting-step: missing CONSULT_DIR=$CONSULT_DIR"; exit 1; }
+[ -f "$CONSULT_DIR/prompt.md" ] || { echo "consulting-step: missing prompt=$CONSULT_DIR/prompt.md"; exit 1; }
 CODEX_EXEC_TIMEOUT_SECONDS=180 env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
-    -C /tmp/consult-<sid>-XXXXXX \
+    -C "$CONSULT_DIR" \
     --skip-git-repo-check \
     --ignore-user-config \
     --ignore-rules \
     --sandbox read-only --ephemeral \
     -c model="gpt-5.5" \
     -c model_reasoning_effort="high" \
-    -o /tmp/consult-<sid>-XXXXXX/result.json \
+    -o "$CONSULT_DIR/result.json" \
     - \
-    < /tmp/consult-<sid>-XXXXXX/prompt.md \
-    2>/tmp/consult-<sid>-XXXXXX/stderr.log
+    < "$CONSULT_DIR/prompt.md" \
+    2>"$CONSULT_DIR/stderr.log"
 ```
 
 - **`codex-exec-supervised`** (Layer 2 = Layer 1 + `-C scratch + --skip-git-repo-check`): supervised wrapper가 setsid + timeout/gtimeout capability-probe로 npm wrapper detach 부재로 인한 native binary 잔존을 차단한다. SSOT는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15.
 - **`CODEX_EXEC_TIMEOUT_SECONDS=180`**: consult-specific 1-3분 budget. wrapper default(600s = 10분)와 분리하여 자문 호출의 짧은 budget을 강제한다. timeout 시 메인 에이전트는 result.json을 무시하고 Step 4에서 Step 3 raw 옵션을 anti-anchoring 4 규칙으로 직접 제시한다 (External Consult: `[UNVERIFIED: timed out]` 기록).
-- **`-C /tmp/consult-<sid>-XXXXXX`** (Layer 2): cwd를 repo 외 scratch로 이동. repo의 `.codex/config.toml`(Slack/Linear MCP 등 project-scoped connector) 로드 차단.
+- **`-C "$CONSULT_DIR"`** (Layer 2): cwd를 repo 외 scratch로 이동. `CONSULT_DIR` 값은 stdout에 출력된 실제 리터럴 경로다 (예: `/tmp/consult-c4a35fc4-AbCdEf`). repo의 `.codex/config.toml`(project-scoped MCP connector) 로드 차단.
 - **`--skip-git-repo-check`** (Layer 2): scratch 디렉토리는 git repo 밖이라 codex가 `Not inside a trusted directory`로 거부 — 이 플래그가 필수.
 - **`--ignore-user-config`** (Layer 1): `$CODEX_HOME/config.toml` 로드 차단. **이 플래그가 user config의 `model` 설정도 무시하므로 `-c model="gpt-5.5"` 명시가 필수다** (run-da `arbiter-scaling.md` 동일 규칙).
 - **`-c model="gpt-5.5"`** (Layer 1): model pin (위 사유로 필수).
@@ -160,13 +166,25 @@ CODEX_EXEC_TIMEOUT_SECONDS=180 env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 ### 셸 호출 3 — 결과 검증 + 명시 cleanup (foreground)
 
 ```zsh
-RESULT=/tmp/consult-<sid>-XXXXXX/result.json
+CONSULT_DIR=/tmp/consult-c4a35fc4-AbCdEf
+CONSULT_PARENT=$(dirname "$CONSULT_DIR")
+CONSULT_NAME=$(basename "$CONSULT_DIR")
+if [ "$CONSULT_PARENT" != "/tmp" ]; then
+  echo "consulting-step: unsafe CONSULT_DIR parent=$CONSULT_PARENT"
+  exit 1
+fi
+case "$CONSULT_NAME" in
+  consult-*) ;;
+  *) echo "consulting-step: unsafe CONSULT_DIR name=$CONSULT_NAME"; exit 1 ;;
+esac
+[ -d "$CONSULT_DIR" ] || { echo "consulting-step: missing CONSULT_DIR=$CONSULT_DIR"; exit 1; }
+RESULT="$CONSULT_DIR/result.json"
 if [ -s "$RESULT" ] && jq -e . < "$RESULT" >/dev/null 2>&1; then
   cat "$RESULT"  # 또는 jq로 필요한 필드만 추출
 else
   echo "consulting-step: result invalid or empty — fallback to Step 3 raw options"
 fi
-rm -rf -- /tmp/consult-<sid>-XXXXXX
+rm -rf -- "$CONSULT_DIR"
 ```
 
 `trap` 사용 금지 — 셸 호출이 분리되어 있어 trap이 호출 1 종료 시점에 발동하면 호출 2 이전에 디렉토리가 삭제된다. 명시적 `rm -rf` 한 번이 정본.

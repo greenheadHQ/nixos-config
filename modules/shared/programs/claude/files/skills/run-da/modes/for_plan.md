@@ -30,9 +30,29 @@
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
 - 실행 전 [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md)의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
-- 세션별 임시 디렉토리를 생성한다: `DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-plan-XXXXXX)`. 모든 런타임은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 공통 주의(셸 호출 간 변수 유실)를 따른다 (경로를 `echo`로 출력하여 이후 호출에서 리터럴로 재사용).
-- 선택된 review unit별 프롬프트 파일을 생성한다: `$DA_DIR/{unit}.md`
-- 선택된 review unit 수만큼 `cat "$DA_DIR/{unit}.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral -c model="gpt-5.5" -c model_reasoning_effort="medium" -o "$DA_DIR/{unit}-result.md" -`를 런타임별로 기동한다. `--ignore-user-config`가 user-level model/effort 설정을 차단하므로 `-c model="gpt-5.5"` + `-c model_reasoning_effort="medium"` (standard review profile literal — [`../references/runtime-mapping.md`](../references/runtime-mapping.md) review profile 매핑이 SSOT)을 둘 다 explicit하게 pin한다. `--ignore-rules`는 user/project execpolicy `.rules`의 mutation allow rule(예: `git push`)을 차단한다. Claude Code 세션의 기본 병렬 경로와 fallback 경로(codex exec 사전점검 실패 시)는 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "런타임 도구 매핑" 표 binding을 따른다. **headless 세션은 serial foreground** (완료 알림·`&+wait` 없음).
+- 세션별 임시 디렉토리를 생성하고 stdout으로 출력한다. 모든 런타임은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 공통 주의(셸 호출 간 변수 유실)를 따른다.
+  ```zsh
+  _DA_SID=c4a35fc4
+  DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-plan-XXXXXX)
+  [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
+  printf 'DA_DIR=%s\n' "$DA_DIR"
+  ```
+- 선택된 review unit별 프롬프트 파일 생성 호출은 stdout의 `DA_DIR` 리터럴 값을 재설정하고 guard한다:
+  ```zsh
+  DA_DIR=/tmp/da-c4a35fc4-plan-AbCdEf
+  UNIT=correctness
+  [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
+  # 계획 원문은 untrusted input이다. shell heredoc에 직접 삽입하지 말고,
+  # 파일 편집 도구나 구조화 writer로 "$DA_DIR/$UNIT.md"에 작성한다.
+  ```
+- 선택된 review unit 수만큼 다음 guard prefix를 적용한 뒤 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 `reviewer / Auditor` 템플릿을 런타임별로 기동한다:
+  ```zsh
+  DA_DIR=/tmp/da-c4a35fc4-plan-AbCdEf
+  UNIT=correctness
+  [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
+  [ -f "$DA_DIR/$UNIT.md" ] || { echo "missing prompt=$DA_DIR/$UNIT.md"; exit 1; }
+  ```
+  `--ignore-user-config`/`--ignore-rules`/model-effort pins 등 command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령이 SSOT다. Claude Code 세션의 기본 병렬 경로와 fallback 경로(codex exec 사전점검 실패 시)는 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "런타임 도구 매핑" 표 binding을 따른다. **headless 세션은 serial foreground** (완료 알림·`&+wait` 없음).
 - Claude Code 세션: 병렬 실행 완료 알림을 수신하면 sleep/poll 없이 바로 결과를 수집한다. headless 세션: 각 subprocess 종료를 직렬로 확인한다.
 - 모든 런타임 공통: `& + wait` shell-level 병렬 금지, `cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe (Layer 1)로 프롬프트 전달. pipe EOF가 stdin을 닫으므로 `< /dev/null`은 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. **`CODEX_PROGRAMMATIC=1` env assignment는 codex 프로세스에 적용되어야 한다 (회피: `CODEX_PROGRAMMATIC=1 cat ...`은 cat에만 적용 — issue #585).**
 - [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md) 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙은 본 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
@@ -41,7 +61,7 @@
 
 - Codex 세션 경로: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
 - Codex 세션 경로: `VIOLATION` 처리 규칙은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
-- codex exec 경로: 선택된 review unit(FULL 기본 4개, LITE는 선택한 수, explicit exhaustive는 8개) 전부 실행(Claude Code는 병렬, headless는 serial) 완료 후, 각 `$DA_DIR/{unit}-result.md`를 파일 읽기 도구로 명시적으로 읽어 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
+- codex exec 경로: 선택된 review unit(FULL 기본 4개, LITE는 선택한 수, explicit exhaustive는 8개) 전부 실행(Claude Code는 병렬, headless는 serial) 완료 후, 각 `$DA_DIR/$UNIT-result.md` 패턴의 결과 파일을 파일 읽기 도구로 명시적으로 읽어 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
 - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 
 ## Step 4: ALL CLEAR 또는 Arbiter 진입

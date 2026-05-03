@@ -69,6 +69,7 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 | Mode for_plan 절차 | [`modes/for_plan.md`](modes/for_plan.md) |
 | Mode for_pr 절차 (for_plan delta) | [`modes/for_pr.md`](modes/for_pr.md) |
 | 런타임 도구 매핑 + codex exec 위생 + fallback 세부 정보 | [`references/runtime-mapping.md`](references/runtime-mapping.md) |
+| literal 재사용 환각 주의 (issue #632) | [`../using-codex-exec/references/known-issues.md`](../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632) |
 | Codex 세션 하드닝 계약 (single-writer / 역할별 경계 / VIOLATION / Delegation fallback) | [`references/hardening-contract.md`](references/hardening-contract.md) |
 | Review Intensity 판단 절차 (3단계, SKIP/LITE 절차) | [`references/intensity-procedure.md`](references/intensity-procedure.md) |
 | Review Intensity 판단 알고리즘 규칙 | [`references/intensity-rules.md`](references/intensity-rules.md) |
@@ -136,7 +137,7 @@ DA 호출 자체를 생략하지 마라 — run-da를 호출하면
 
 1. **`spawn_agent` per-child read-only sandbox 부재**: Codex `spawn_agent` API는 자식 에이전트에 read-only sandbox를 구조적으로 강제할 수 없다 (codex-cli 0.124.0 기준 `--ignore-user-config`, `--ephemeral`, `--sandbox` 전역 옵션만 존재, per-child flag 없음). reviewer/Arbiter/Intensity의 "읽기 전용" 경계는 **프롬프트 지시 + 사후 diff 점검**으로만 운영한다. 자식이 구조적으로 write를 못 하게 막지는 않는다.
 
-   **연관 한계 (project config MCP 차단 불가)**: `--ignore-user-config`는 `$CODEX_HOME/config.toml` 로드만 차단하고, **cwd 기반 project config (`.codex/config.toml`의 `[mcp_servers.*]`)는 차단하지 않는다**. 이 리포는 `.codex/config.toml`에 Slack/Linear MCP를 정의하므로, Delegation fallback subprocess가 repo root에서 실행되면 project-scoped MCP connector surface가 reviewer/Arbiter에게 남을 수 있다. 완전 차단이 필요하면 `codex exec -C <non-repo-scratch-dir>`로 cwd를 project config 없는 디렉토리로 이동시키는 별도 Non-goal 범위 follow-up이 필요하다.
+   **연관 한계 (project config MCP 차단 불가)**: `--ignore-user-config`는 `$CODEX_HOME/config.toml` 로드만 차단하고, **cwd 기반 project config (`.codex/config.toml`의 `[mcp_servers.*]`)는 차단하지 않는다**. 이 리포는 `.codex/config.toml`에 project-scoped MCP connector를 정의하므로, Delegation fallback subprocess가 repo root에서 실행되면 project-scoped MCP connector surface가 reviewer/Arbiter에게 남을 수 있다. 완전 차단이 필요하면 `codex exec -C <non-repo-scratch-dir>`로 cwd를 project config 없는 디렉토리로 이동시키는 별도 Non-goal 범위 follow-up이 필요하다.
 2. **push / PR / comment 작성은 네트워크·auth 정책 의존**: `for_pr` 마지막 단계 `push`, `both` 마지막 단계 `push + PR 생성`, PR 코멘트 게시 형식은 네트워크 가능 환경 + GitHub auth 전제. `sandbox_mode=danger-full-access` 또는 GitHub 커넥터 경로에서만 자동 실행한다. 다른 샌드박스 모드에서는 해당 단계를 명시적 사용자 승인 후 수행하거나, 메인 에이전트가 사용자에게 위임한다.
 3. **zsh 고정 가정 (headless 포함)**: codex exec 경로의 `_DA_SID` 해시 계산, cleanup glob `*(N)` qualifier, heredoc 문법 등은 **zsh 전제**다. bash/sh 환경에서는 `*(N)`이 문법 오류가 난다. **headless 세션도 zsh 환경에서의 실행**을 지원 범위로 둔다 — bash/sh headless는 현재 지원 범위 밖이다 (POSIX-safe helper 도입 전까지). POSIX-safe 변형은 별도 follow-up (예: guardrail 스킬에서 shell 전제 lint).
 4. **`/tmp` 쓰기 권한은 sandbox 정책 의존**: `danger-full-access` · `workspace-write` 모드에서는 `mktemp -d /tmp/...`가 정상 동작한다. 더 제한적인 sandbox에서는 실패할 수 있다. 필요 시 `mktemp -d "${TMPDIR:-/tmp}/..."`로 대체하거나 repo 내부 임시 디렉토리로 우회한다 (follow-up).

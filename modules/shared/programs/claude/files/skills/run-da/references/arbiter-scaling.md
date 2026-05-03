@@ -83,15 +83,23 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 - 각 review unit은 독립 subprocess (fresh 판정 경계는 프로세스 경계로 보존).
 - 사용자 승인 후에만 실행 ([`hardening-contract.md`](hardening-contract.md) "Delegation fallback" 섹션 참조).
 
-**role별 명령** (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 아래 fenced code block은 바로 복사해 실행할 수 있도록 standard/strong profile의 model/effort 값을 **literal**로 고정한다. profile 이름·의미의 SSOT는 [`runtime-mapping.md`](runtime-mapping.md)의 **review profile 매핑** 불릿이며, 값이 바뀌면 아래 literal도 함께 갱신해야 한다 (문서-코드 manual sync contract — selective consistency harness와 동일한 패턴). **현재 effort 매핑**: `medium` = standard profile (reviewer/Intensity/auditor), `high` = strong profile (Arbiter), `xhigh` = `config.toml` `model_reasoning_effort` 기본값 (보존; Arbiter 호출 경로에서만 `-c`로 `high`로 다운그레이드).
+**role별 명령** (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정한 뒤 guard와 함께 실행한다. standard/strong profile의 model/effort 값은 **literal**로 고정한다. profile 이름·의미의 SSOT는 [`runtime-mapping.md`](runtime-mapping.md)의 **review profile 매핑** 불릿이며, 값이 바뀌면 아래 literal도 함께 갱신해야 한다 (문서-코드 manual sync contract — selective consistency harness와 동일한 패턴). **현재 effort 매핑**: `medium` = standard profile (reviewer/Intensity/auditor), `high` = strong profile (Arbiter), `xhigh` = `config.toml` `model_reasoning_effort` 기본값 (보존; Arbiter 호출 경로에서만 `-c`로 `high`로 다운그레이드).
 
 **reviewer / Auditor** (standard profile):
 
 ```bash
+: "${DA_DIR:?missing DA_DIR}"
+: "${UNIT:?missing UNIT}"
+case "$UNIT" in
+  *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]*)
+    echo "invalid UNIT=$UNIT"; exit 1 ;;
+esac
+[ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
+[ -f "$DA_DIR/$UNIT.md" ] || { echo "missing prompt=$DA_DIR/$UNIT.md"; exit 1; }
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
-cat "$DA_DIR/{unit}.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
+cat "$DA_DIR/$UNIT.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
   -c model="gpt-5.5" -c model_reasoning_effort="medium" \
-  -o "$DA_DIR/{unit}-result.md" - 2>"$DA_DIR/{unit}-stderr.log"
+  -o "$DA_DIR/$UNIT-result.md" - 2>"$DA_DIR/$UNIT-stderr.log"
 ```
 
 **Intensity** (standard profile):
@@ -112,7 +120,7 @@ cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-super
 
 `-o` 플래그(`--output-last-message <FILE>`)가 마지막 메시지를 결과 파일로 저장한다 (이것이 없으면 파일 수집 계약이 깨진다). stderr도 별도 로그 파일로 분리해 실패 진단을 보존한다.
 
-**실행 방식**: serial (multiple review units를 순차 실행). 병렬 발사는 `spawn_agent`가 거부된 상황이므로 shell-level `&+wait` 대신 각 subprocess를 직렬로 기동한다. 결과 파일은 `$DA_DIR/{unit}-result.md`에 수집 후 메인 에이전트가 파싱한다.
+**실행 방식**: serial (multiple review units를 순차 실행). 병렬 발사는 `spawn_agent`가 거부된 상황이므로 shell-level `&+wait` 대신 각 subprocess를 직렬로 기동한다. 결과 파일은 reviewer/Auditor 템플릿의 `$DA_DIR/$UNIT-result.md` 경로에 수집 후 메인 에이전트가 파싱한다.
 
 **Degraded mode 계약** (fallback 경로 한정): `--sandbox read-only` 강제로 인해 reviewer는 [`hardening-contract.md`](hardening-contract.md) "역할별 경계" 표의 `out-of-repo private scratch PoC (mktemp -d, umask 077)`를 **이 경로에서는 수행할 수 없다**. fallback reviewer는 **파일 증거·문서 인용·diff 확인만**으로 finding을 생성하고, scratch PoC가 필요한 지적은 "PoC 불가 — 문서/파일 증거 기반 추정"임을 명시한 뒤 심각도를 보수적으로 보고한다. 이 제약은 fallback이 `spawn_agent` 원본 경로의 **수용 가능한 근사**임을 인정하는 것이며, 구조적 write 차단이 우선이다.
 
@@ -129,16 +137,20 @@ cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-super
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
-**이 코드블록 전체를 단일 셸 호출로 실행한다** (런타임 공통 — 셸 호출 간 환경변수 비공유. 호출을 나누면 `$ARBITER_DIR`이 유실됨).
+**이 코드블록 전체를 단일 셸 호출로 실행한다** (런타임 공통 — 셸 호출 간 환경변수 비공유. 호출을 나누면 `$ARBITER_DIR`이 유실됨). **literal 재사용 환각 주의 (issue #632)**: first-pass Arbiter는 단일 foreground exec이므로 `ARBITER_DIR` suffix를 다음 호출에서 literal로 재입력하지 않게 단일 shell 호출을 구조적으로 강제한다. full rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
 
 ```bash
 # 1. Arbiter 임시 디렉토리 생성
+# 같은 shell 안에서 runtime-mapping.md "세션 네임스페이스" 블록을 먼저 실행한다.
+[ -n "$_DA_SID" ] || { echo "ARBITER_FAILED: missing _DA_SID; initialize per runtime-mapping.md"; exit 1; }
 ARBITER_DIR=$(mktemp -d /tmp/da-${_DA_SID}-arbiter-XXXXXX)
+[ -d "$ARBITER_DIR" ] || { echo "ARBITER_FAILED: missing dir=$ARBITER_DIR"; exit 1; }
 
 # 2. Arbiter 프롬프트 파일 조립 (arbiter-prompt.md의 조립 규칙 참조)
 cat > "$ARBITER_DIR/arbiter-prompt.md" <<'PROMPT'
 {조립된 Arbiter 프롬프트 — 비신뢰 텍스트(계획 원문, DA 결과) 포함 시 반드시 quoted heredoc 사용}
 PROMPT
+[ -f "$ARBITER_DIR/arbiter-prompt.md" ] || { echo "ARBITER_FAILED: missing prompt=$ARBITER_DIR/arbiter-prompt.md"; exit 1; }
 
 # 3. codex exec 실행 (foreground)
 # Arbiter는 strong review profile(model="gpt-5.5", model_reasoning_effort="high") — --ignore-user-config로

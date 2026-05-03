@@ -28,9 +28,13 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    - 결과는 `wait_agent`로 받고, timeout만으로 실패 처리하거나 중간 kill/self-auditing 대체를 하지 않는다. 파싱이 끝나면 completed intensity thread를 `close_agent`로 닫는다.
 3. **codex exec 경로** (Claude Code 세션 · headless 세션):
    - 모든 런타임은 [`runtime-mapping.md`](runtime-mapping.md)의 공통 주의(셸 호출 간 변수 유실)를 따른다.
-   - 임시 디렉토리를 생성한다: `INTENSITY_DIR=$(mktemp -d /tmp/da-${_DA_SID}-intensity-XXXXXX)`
-   - 프롬프트 파일을 생성한다 (umask 077로 권한 제한):
+   - **단일 shell 호출 강제 — issue #632**: `INTENSITY_DIR` 생성, 프롬프트 파일 생성, foreground codex exec, 결과 파일 확인을 같은 shell 호출 안에서 완료한다. 호출을 분리하면 다음 호출에서 `INTENSITY_DIR` literal을 재사용해야 하며, mktemp random suffix 환각으로 prompt/result 경로가 갈라질 수 있다. full rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
      ```zsh
+     # 같은 shell 안에서 runtime-mapping.md "세션 네임스페이스" 블록을 먼저 실행한다.
+     [ -n "$_DA_SID" ] || { echo "INTENSITY_FAILED: missing _DA_SID; initialize per runtime-mapping.md"; exit 1; }
+     INTENSITY_DIR=$(mktemp -d /tmp/da-${_DA_SID}-intensity-XXXXXX)
+     [ -d "$INTENSITY_DIR" ] || { echo "INTENSITY_FAILED: missing dir=$INTENSITY_DIR"; exit 1; }
+
      (umask 077; cat > "$INTENSITY_DIR/prompt.md" <<'PROMPT'
      run-da skill의 references/intensity-rules.md (홈 기준 경로:
      ~/.claude/skills/run-da/references/intensity-rules.md
@@ -43,9 +47,8 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
      {for_pr: `git diff --stat main...HEAD` 출력 / for_plan: 변경 대상 파일 목록 + 변경 유형}
      PROMPT
      )
-     ```
-   - **foreground 실행** (단일 exec이므로 결과를 즉시 확인):
-     ```zsh
+
+     [ -f "$INTENSITY_DIR/prompt.md" ] || { echo "INTENSITY_FAILED: missing prompt=$INTENSITY_DIR/prompt.md"; exit 1; }
      # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ hooks의 early-exit 신호.
      # standard review profile (model="gpt-5.5", effort="medium") — --ignore-user-config로 config.toml의
      # model과 effort가 모두 차단되므로 둘 다 explicit pin (review profile 매핑은 runtime-mapping.md SSOT).
@@ -55,6 +58,16 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
        -o "$INTENSITY_DIR/result.md" \
        - \
        2>"$INTENSITY_DIR/stderr.log"
+
+     _EC=$?
+     if [ $_EC -ne 0 ] || [ ! -s "$INTENSITY_DIR/result.md" ]; then
+       _RS=$([ ! -f "$INTENSITY_DIR/result.md" ] && echo 'missing' || ([ ! -s "$INTENSITY_DIR/result.md" ] && echo 'empty' || echo 'present-but-exit-failed'))
+       echo "INTENSITY_FAILED: exit=$_EC result=$_RS dir=$INTENSITY_DIR"
+       echo "--- stderr ---"
+       cat "$INTENSITY_DIR/stderr.log" 2>/dev/null
+       exit 1
+     fi
+     cat "$INTENSITY_DIR/result.md"
      ```
 4. 메인 LLM이 결과를 읽고 판정에 따라 분기한다:
    - SKIP → 질문 도구로 사용자 승인 (아래 SKIP 절차)
