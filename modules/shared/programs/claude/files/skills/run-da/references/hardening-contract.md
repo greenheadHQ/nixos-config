@@ -27,6 +27,14 @@ codex exec 경로(Claude Code 세션 · headless 세션)는 [`arbiter-scaling.md
 | Auditor (`parallel-audit`) | 읽기 전용 검증 | 모든 write, scratch PoC, main-agent-only command |
 | 메인 에이전트 | tracked write, external write, main-agent-only command, explicit delegation | Review Intensity/Arbiter 판정 대체 |
 
+## Skill-internal fan-out authorization
+
+Direct Codex 세션에서 사용자가 `$plan-with-questions`, `$run-da`, `$parallel-audit`처럼 fan-out 실행을 문서화한 스킬을 호출하면, 그 호출은 해당 스킬이 선언한 role/work scope 안에서 내부 native subagent fan-out을 수행하라는 explicit delegation으로 간주한다.
+
+이 권한은 delegated reviewer/auditor/Arbiter/Intensity의 read-only/no-write 경계를 약화하지 않는다. tracked workspace write, branch mutation, commit/push, GitHub write, `wt`, `nrs`, rebuild 계열 명령은 별도 explicit delegation 없이는 계속 메인 에이전트 전용이다.
+
+이 권한은 native subagent 경로에만 적용된다. Skill invocation itself does not authorize `codex-exec-supervised` fallback. `codex-exec-supervised` fallback은 아래 Delegation fallback 절차에 따라 native delegation 거부/미지원 사유 기록과 별도 사용자 승인을 받은 뒤에만 사용한다.
+
 ## `VIOLATION` 공통 처리
 
 - `RECOVERABLE`: offending unit 결과만 폐기하고 fresh rerun한다. rerun 전까지 `CLEAR` 계산에 포함하지 않는다.
@@ -34,6 +42,8 @@ codex exec 경로(Claude Code 세션 · headless 세션)는 [`arbiter-scaling.md
 - `STATEFUL` 경로에서도 기존 local tracked/untracked 변경은 자동 정리하지 않는다. 비가역적 외부 side effect가 있었거나 cleanup 범위를 특정할 수 없으면 해당 unit을 `BLOCKED`로 남기고 명시적 rerun 전까지 종료한다.
 
 ## Delegation fallback (정책 요약)
+
+이 섹션은 direct Codex 세션에서 native `spawn_agent` delegation이 실제로 정책상 거부되거나 미지원일 때만 적용한다. 위 Skill-internal fan-out authorization은 native subagent 사용에 대한 explicit delegation이며, `codex-exec-supervised` fallback 승인을 뜻하지 않는다.
 
 Codex 세션에서 `spawn_agent`가 정책상 거부되면(예: `multi_agent=false`, `"delegation not permitted"`·`"multi_agent disabled"` 에러) 메인 에이전트는 다음 정책을 따른다. **subprocess 실행 계약(role별 명령, sandbox 플래그, stdin pipe, 실패 처리)의 SSOT는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "Codex delegation-denied fallback" 섹션**이다.
 

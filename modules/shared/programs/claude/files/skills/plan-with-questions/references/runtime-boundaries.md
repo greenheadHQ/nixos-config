@@ -41,6 +41,8 @@ PR openai/codex#12735는 collaboration mode 가용성만 확장하고 tool spec/
 
 이 스킬은 Claude Code 세션과 Codex 세션 양쪽에서 호출된다. 본문은 **도구-중립 용어**를 쓰며, 런타임별 실제 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../../run-da/references/runtime-mapping.md#런타임-도구-매핑)를 단일 진실 원천으로 참조한다 (중복 복제 금지).
 
+Direct Codex 세션에서 `$plan-with-questions` 호출이 내부 native subagent fan-out explicit delegation으로 취급되는 권한 계약과 `codex-exec-supervised` fallback 승인 경계는 [run-da `hardening-contract.md`의 `Skill-internal fan-out authorization`](../../run-da/references/hardening-contract.md#skill-internal-fan-out-authorization)이 정본이다. 본 문서는 plan-with-questions 고유 질문/승인/plan 파일 lifecycle만 정의한다.
+
 | 용어 유형 | 처리 |
 |----------|------|
 | 사용자 질문 실행 지시 | "질문 도구" |

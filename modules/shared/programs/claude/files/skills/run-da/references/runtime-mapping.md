@@ -12,6 +12,8 @@
 | 결과 수집 | `wait_agent` 반환값, 또는 `exec_command`로 `cat`/`sed` 셸 읽기 | `Read` 도구 | `cat`/`sed` via shell |
 | 파일 읽기 | `exec_command`로 `cat`/`sed`/`rg` | `Read` 도구 | `cat`/`sed`/`rg` |
 
+**Skill-internal fan-out authorization**: Direct Codex 세션에서 fan-out 스킬 호출이 내부 native subagent fan-out에 대한 explicit delegation으로 취급되는 권한 계약은 [`hardening-contract.md`](hardening-contract.md#skill-internal-fan-out-authorization)가 정본이다. 이 파일은 해당 권한을 실제 런타임 도구 binding으로만 연결한다.
+
 **plain-text 재개 ≠ 질문 도구** — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 승인, 3회 반복 판정, 5회 라운드 초과)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 **자동 상태 전이 경로**(arbiter-scaling.md)로 처리한다.
 
 **review profile 매핑** (fan-out 대상 역할별):

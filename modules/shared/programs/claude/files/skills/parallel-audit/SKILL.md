@@ -49,6 +49,8 @@ description: |
 Codex 세션의 상세 wait/write/violation 계약은 [run-da/references/hardening-contract.md](../run-da/references/hardening-contract.md)의 `Codex 세션 하드닝 계약`을 따른다.
 다만 `parallel-audit`에서는 auditor read-only/no-write 경계가 항상 우선한다.
 
+Direct Codex 세션에서 `$parallel-audit` 호출은 auditor bundle 범위의 내부 native subagent fan-out explicit delegation으로 취급한다. 이 권한은 auditor bundle 범위에만 한정되며, `codex-exec-supervised` fallback approval이나 tracked write, branch mutation, commit/push, GitHub write, `wt`, `nrs`, rebuild 권한을 부여하지 않는다. 정본은 [run-da `hardening-contract.md`의 `Skill-internal fan-out authorization`](../run-da/references/hardening-contract.md#skill-internal-fan-out-authorization)이다.
+
 ## 조사 bundle
 
 6개 기본 조사 bundle을 정의한다. 에이전트 수에 따라 자동 조절한다.

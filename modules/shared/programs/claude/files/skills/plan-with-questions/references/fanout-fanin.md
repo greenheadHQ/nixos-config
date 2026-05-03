@@ -1,6 +1,6 @@
 # Fan-out / Fan-in (for_issue, for_action Step 3.5)
 
-`for_issue` 레퍼런스 수집과 `for_action`의 Step 3.5 외부 자문 양쪽이 사용하는 codex exec 병렬 호출 카탈로그.
+`for_issue` 레퍼런스 수집은 이 문서의 fan-out/fan-in runtime route를 따른다. `for_action` Step 3.5 외부 자문은 아래 역할 카탈로그에만 연결되며, 호출 경로는 [`consulting-step.md#codex-exec-호출-명령-템플릿-ssot`](./consulting-step.md#codex-exec-호출-명령-템플릿-ssot)가 정본이다.
 
 ## 역할 카탈로그
 
@@ -20,11 +20,14 @@ DA/review 에이전트는 run-da canonical contract의 프로파일을 따른다
 
 ## 런타임 분기
 
-codex exec fan-out 패턴은 [`/codex-fan-out` 스킬](../../codex-fan-out/SKILL.md)이 단일 소스다.
+fan-out/fan-in runtime route는 [run-da `runtime-mapping.md`](../../run-da/references/runtime-mapping.md#런타임-도구-매핑)가 단일 소스다. Direct Codex 세션에서 `$plan-with-questions` 호출이 내부 native subagent fan-out explicit delegation으로 취급되는 권한 계약은 [run-da `hardening-contract.md`의 `Skill-internal fan-out authorization`](../../run-da/references/hardening-contract.md#skill-internal-fan-out-authorization)이 정본이다.
+
+`codex-fan-out`은 Claude Code/headless 세션에서 쓰는 `codex exec` mechanics만 담당한다. Direct Codex 세션의 native subagent fan-out을 소유하지 않는다.
 
 - **Claude Code 세션**: codex exec 기본. 사전점검은 [`/codex-fan-out` SSOT](../../codex-fan-out/SKILL.md)의 "사전점검" 섹션(`codex` + `codex-exec-supervised` 가용성 + `codex-exec-supervised --check` capability probe)을 그대로 따른다. 사전점검 실패 시 Agent tool fallback (`run_in_background: true`).
 - **headless 세션**: codex exec only.
-- **Codex 세션**: native subagent fan-out (기존).
+- **Codex 세션 (reference fan-out)**: native subagent fan-out. 권한 범위와 `codex-exec-supervised` fallback 승인 경계는 run-da hardening contract를 따른다.
+- **Codex 세션 (Step 3.5 external consult exception)**: Step 3.5 외부 자문은 native delegation-denied fallback이 아니다. [`consulting-step.md`](./consulting-step.md#codex-exec-호출-명령-템플릿-ssot)의 `codex-exec-supervised -C` scratch consult route가 기본 경로이며, `--ignore-user-config`, `--ignore-rules`, `--sandbox read-only`, `--ephemeral` trust boundary를 유지한다.
 
 codex exec 실행 시 각 에이전트 프롬프트에 "파일을 수정하지 마라" no-write boundary를 명시한다.
 

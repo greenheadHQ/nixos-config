@@ -40,6 +40,7 @@ The auto-generated section may include:
 - Claude Code-only plugin/MCP UI surfaces do not map 1:1 onto Codex
 - Runtime paths are 3-way: **Codex session** (native subagent) / **Claude Code session** (codex exec primary → Agent tool fallback) / **headless session** (codex exec). See run-da/references/runtime-mapping.md `런타임 도구 매핑` for details
 - Codex sessions should prefer native subagents over nested `codex exec` for review/audit/planning fan-out
+- Skill-internal fan-out invocation is explicit delegation for the documented bounded native subagent work scope. `codex-exec-supervised` fallback still requires native delegation denial/unavailability and separate user approval.
 - `CODEX_CI=1` alone does not distinguish session types
 - current session의 open agent thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 말고, completed agent thread는 다음 round/retry 전에 close한다
 - project-specific direct-Codex authority boundaries, write rules, and lock-sensitive command rules should stay in project-local skill docs or the custom section of `AGENTS.override.md`
