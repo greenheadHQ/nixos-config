@@ -526,9 +526,9 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 |----------|------|-----------|-----------|---------|-------|--------|--------|
 | `host_home_no_override_stdin_pipe_pass` | host | host | 없음 (host config inline) | read-only | `</dev/null` 또는 pipe | OK 12s, hook fired, "PONG" | OK (wrapper grace 무관 — 이미 정상) |
 | `raw_override_inline_toml_hang` | host/sandbox | host/sandbox | `-c hooks.<event>` override | full-auto/read-only | host inherited 또는 pipe | HANG (timeout 못 죽임) | wrapper의 setsid+kill-after로 timeout 안에 정리되어 PASS |
-| `isolated_codex_home_overrideless_known_hang` | sandbox | sandbox | ephemeral config.toml | read-only | inherited | HANG (PR #595 fixture pattern) | known caveat — 별도 follow-up 이슈로 분리 |
+| `isolated_codex_home_overrideless_retired_self_injection` | sandbox | sandbox | ephemeral config.toml | read-only | inherited | HANG/marker unset in retired PR #595 self-injection assertion | Retired historical context (#634) — local fixture now validates caller-supplied `CODEX_PROGRAMMATIC=1` inheritance with supervised wrapper + stdin pipe EOF |
 
-**`isolated_codex_home_overrideless_known_hang` caveat**: `tests/test-codex-hook-fixtures.sh:940-1030`의 `test_env_propagation_live`(opt-in, `CODEX_HOOK_LIVE=1`)는 `CODEX_HOME=$sandbox/codex-home` + ephemeral config.toml로 hook 등록 + override 없음 + `--sandbox read-only` 패턴이지만 mac 0.128에서 hang이 관측됐다 (`CLAUDECODE=1` 미도달 fail). lefthook은 `--no-live`만 실행하므로 daily gate에서 검증되지 않은 상태다. fix는 issue #593 scope 외 — **follow-up: [issue #634](https://github.com/greenheadHQ/nixos-config/issues/634)**. 보강 시 supervised wrapper + 추가 진단 필요.
+**Retired historical context (#634)**: `tests/test-codex-hook-fixtures.sh`의 기존 PR #595 self-injection assertion은 `CODEX_HOME=$sandbox/codex-home` + ephemeral config.toml + inherited stdin + raw `codex exec`에서 mac 0.128 marker unset/hang 계열 실패를 보였다. #634에서 fixture 계약을 local supported path로 정렬했다: programmatic caller가 `CODEX_PROGRAMMATIC=1`을 codex 프로세스에 붙이고, live fixture는 `codex-exec-supervised` + stdin pipe EOF + sandbox `CODEX_HOME` hook config로 이 marker가 hook subprocess까지 상속되는지만 검증한다. managed hook early-exit 자체는 deterministic noise-guard fixture가 검증한다.
 
 **§14와의 관계**: §14는 stdin EOF 보장을 stdin pipe로 구조적으로 제공한다. §15는 그 위에 process group/SIGKILL grace를 추가해 wrapper PID 종료가 native까지 닿지 않는 시나리오를 차단한다. 두 패턴은 결합 사용한다.
 

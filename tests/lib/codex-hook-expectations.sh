@@ -36,7 +36,7 @@ EXPECTED_POST_TOOL_USE_PINNING_COMMAND='$HOME/.codex/hooks/pinning-alert.sh'
 # 본 배열 순서는 dispatcher 호출 순서이며 fixture ordering 검증의 expected.
 EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh stop-notification.sh)
 
-# live env propagation fixture에서 codex exec --ephemeral 호출 timeout (hang 방어).
+# live programmatic env inheritance fixture에서 codex-exec-supervised 호출 timeout (hang 방어).
 LIVE_CODEX_TIMEOUT_SECONDS=30
 
 # codex-exec-supervised wrapper kill-after grace (issue #593).

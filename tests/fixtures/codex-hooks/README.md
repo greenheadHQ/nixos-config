@@ -38,7 +38,7 @@ runner: `tests/test-codex-hook-fixtures.sh`.
 
 ## 외부 contract만 디렉토리로 노출
 
-dispatcher ordering / noise-guard / env-propagation 시나리오는 runner 내부 helper가
+dispatcher ordering / noise-guard / programmatic env inheritance 시나리오는 runner 내부 helper가
 sandbox 안에서 동적으로 mock script를 작성한다. 디렉토리에 빈 placeholder를 두지 않는다.
 
 ## 실행
@@ -93,6 +93,6 @@ agent_id 키는 0.124 schema에 없으며 hook은 graceful fallback에 의존한
 | `standard_override_devnull_stdin_hang` | `-c hooks.<event>` | read-only | `</dev/null` | HANG (timeout 못 죽임) | known-issues.md §15 |
 | `standard_override_stdin_pipe_hang` | `-c hooks.<event>` | read-only | pipe + `-` | HANG (timeout 못 죽임) | known-issues.md §15 |
 | `host_home_no_override_stdin_pipe_pass` | 없음 | read-only | pipe + `-` 또는 `</dev/null` | OK 12s, hook fired, "PONG" | invocation matrix scenario-1 (wrapper 적용 시 `_supervised_pass`) |
-| `isolated_codex_home_overrideless_known_hang` | 없음 (ephemeral config.toml로 hook 등록) | read-only | inherited | HANG (PR #595 fixture pattern) | known-issues.md §15 caveat + **follow-up: [#634](https://github.com/greenheadHQ/nixos-config/issues/634)** |
+| `isolated_codex_home_overrideless_retired_self_injection` | 없음 (ephemeral config.toml로 hook 등록) | read-only | inherited | HANG/marker unset in retired PR #595 self-injection assertion | Retired historical context: #634 replaces this with `programmatic_env_inheritance_live` using caller-supplied `CODEX_PROGRAMMATIC=1`, supervised wrapper, and stdin pipe EOF |
 
-**`isolated_codex_home_overrideless_known_hang` caveat**: PR #595 fixture `test_env_propagation_live`가 mac 0.128에서 hang/CLAUDECODE 미도달 fail. 본 PR scope 외 — follow-up [#634](https://github.com/greenheadHQ/nixos-config/issues/634)에서 추적.
+**Retired historical context (#634)**: PR #595의 기존 self-injection assertion은 mac 0.128에서 marker unset fail을 보였지만, repo의 지원 계약은 Codex CLI self-injection이 아니라 caller-supplied `CODEX_PROGRAMMATIC=1`이다. 현재 live fixture는 sandbox `CODEX_HOME` hook config + `codex-exec-supervised` + stdin pipe EOF로 해당 marker가 hook subprocess까지 상속되는지만 검증한다. managed hook early-exit 동작은 deterministic noise-guard fixture가 검증한다.

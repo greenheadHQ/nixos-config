@@ -7,9 +7,9 @@
 #   2. dispatcher ordering / failure recovery — runner 내부 mock subscript
 #   3. noise-guard env 변형              — runner 내부 helper (4 env 조합)
 #   4. sync-codex-config.py preservation — fixtures/codex-hooks/sync-preservation/*.toml
-#   5. env propagation (live opt-in)      — CODEX_HOOK_LIVE=1 / --live
+#   5. programmatic env inheritance (live opt-in) — CODEX_HOOK_LIVE=1 / --live
 #   5b. codex exec invocation matrix (live opt-in, must-pass-only) — issue #593 supervised wrapper 회귀 차단
-#       (--live 시 invocation matrix를 env propagation보다 먼저 실행)
+#       (--live 시 invocation matrix를 programmatic env inheritance보다 먼저 실행)
 #   6. stop-notification reliability/security — transcripts/ + stdin secret/transcript fixtures
 #   7. pinning-alert behavioral          — fixtures/codex-hooks/stdin/pinning-{claude,codex}-*.json
 #   8. sync.sh mcp-config fail-fast      — missing/no source가 기존 MCP 섹션을 지우지 않음
@@ -33,7 +33,7 @@ for arg in "$@"; do
 Usage: $0 [--live | --no-live]
   default      deterministic fixture만 실행
   --live       live opt-in fixture까지 실행: codex exec invocation matrix(must-pass-only)
-               + env propagation live fixture (실행 순서대로)
+               + programmatic env inheritance live fixture (실행 순서대로)
   --no-live    deterministic 강제 (default와 동일; verify-ai-compat가 사용)
 ENV: CODEX_HOOK_LIVE=1  (--live와 동등; CLI 인자가 env보다 우선하며 마지막 모드 인자가 이긴다)
 EOF
@@ -939,23 +939,26 @@ test_pinning_alert_behavioral() {
   done
 }
 
-# ─── 카테고리 5: env propagation live (opt-in) ───
-# codex exec --ephemeral로 임시 dump-env hook을 실행해 CLAUDECODE/CODEX_PROGRAMMATIC propagation
-# 도달을 검증한다. 환경 결함(timeout 부재 / codex 부재 / hang / session 실패)이면 WARN skip.
-test_env_propagation_live() {
-  local timeout_bin=""
-  if command -v timeout >/dev/null 2>&1; then
-    timeout_bin="timeout"
-  elif command -v gtimeout >/dev/null 2>&1; then
-    timeout_bin="gtimeout"
-  else
-    warn "live env propagation: timeout/gtimeout 부재 — skip"
+# ─── 카테고리 5: programmatic env inheritance live (opt-in) ───
+# programmatic codex exec 호출자가 CODEX_PROGRAMMATIC=1을 codex 프로세스에 붙이면,
+# UserPromptSubmit hook subprocess까지 해당 marker가 상속되는지 검증한다. managed hook
+# early-exit 자체는 deterministic noise-guard fixture(카테고리 3)가 검증한다.
+# 환경 결함(codex/wrapper 부재, wrapper capability-probe 실패, session 실패)이면 WARN skip.
+test_programmatic_env_inheritance_live() {
+  if ! command -v codex >/dev/null 2>&1; then
+    warn "programmatic env inheritance live: codex 바이너리 부재 — skip"
     return 0
   fi
 
-  if ! command -v codex >/dev/null 2>&1; then
-    warn "live env propagation: codex 바이너리 부재 — skip"
-    return 0
+  local supervised
+  if command -v codex-exec-supervised >/dev/null 2>&1; then
+    supervised="codex-exec-supervised"
+  else
+    supervised="$REPO_ROOT/modules/shared/scripts/codex-exec-supervised.sh"
+    if [[ ! -x "$supervised" ]]; then
+      warn "programmatic env inheritance live: codex-exec-supervised 미설치 (~/.local/bin 또는 $supervised) — skip (환경 결함)"
+      return 0
+    fi
   fi
 
   local sandbox dump_log
@@ -988,33 +991,37 @@ type = "command"
 command = "$sandbox/home/.codex/hooks/dump-env.sh"
 EOF
 
-  # 본 fixture의 검증 의도는 "codex CLI가 hook subprocess에 CLAUDECODE/CODEX_PROGRAMMATIC을
-  # 자체 propagate한다"이다. 부모 env에 CODEX_PROGRAMMATIC=1을 미리 set하면 codex CLI가
-  # set하는지가 아니라 부모 값이 inherit되는지를 측정하게 되므로 의도가 약화된다.
-  # CLAUDECODE도 동일 이유로 부모에서 set하지 않고 codex CLI가 propagate하는지를 본다.
-  # cwd는 sandbox로 강제하고 codex exec에 --skip-git-repo-check + --sandbox read-only를 명시해
-  # outside-git 거부가 환경 결함으로 분류되지 않도록 + filesystem 보호가 강제되도록 한다.
+  # 본 fixture의 검증 의도는 "programmatic 호출자가 codex 프로세스에 붙인 CODEX_PROGRAMMATIC=1이
+  # hook subprocess까지 상속되는지"이다. CLAUDECODE는 부모에서 제거해 이 fixture가 Claude nesting
+  # marker에 의존하지 않음을 보인다.
+  #
+  # dump-env hook 등록은 sandbox CODEX_HOME/config.toml에 있으므로 --ignore-user-config를 쓰지 않는다.
+  # 쓰면 sandbox config 자체가 무시되어 hook이 발화하지 않는다. stdin은 wrapper 책임이 아니므로
+  # pipe + '-'로 EOF를 명시해 inherited-stdin hang shape를 차단한다.
   local codex_rc=0
   local codex_stderr="$sandbox/codex-exec.stderr"
-  ( cd "$sandbox" && env -u CLAUDECODE -u CODEX_PROGRAMMATIC \
+  ( cd "$sandbox" && printf 'noop\n' | env -u CLAUDECODE \
+       CODEX_PROGRAMMATIC=1 \
+       CODEX_EXEC_TIMEOUT_SECONDS="$LIVE_CODEX_TIMEOUT_SECONDS" \
+       CODEX_EXEC_KILL_AFTER_SECONDS="$CODEX_EXEC_KILL_AFTER_SECONDS" \
        CODEX_HOME="$sandbox/codex-home" \
        HOME="$sandbox/home" \
        XDG_DATA_HOME="$sandbox/xdg-data" \
        XDG_CONFIG_HOME="$sandbox/xdg-config" \
-       "$timeout_bin" "$LIVE_CODEX_TIMEOUT_SECONDS" \
-       codex exec --ephemeral --skip-git-repo-check --sandbox read-only 'noop' >/dev/null 2>"$codex_stderr" ) \
+       "$supervised" \
+         --ephemeral --skip-git-repo-check --sandbox read-only --ignore-rules \
+         -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+         - >/dev/null 2>"$codex_stderr" ) \
     || codex_rc=$?
 
   # hook이 codex exec 실패 전에 실행되었을 수 있으므로 dump_log를 우선 검사한다. dump_log에
-  # 기록이 있으면 propagation 결과를 직접 확인 (환경 결함으로 가리지 않는다). dump_log가 비어 있고
+  # 기록이 있으면 inheritance 결과를 직접 확인 (환경 결함으로 가리지 않는다). dump_log가 비어 있고
   # codex exec도 실패한 경우에만 환경 결함 WARN skip으로 분류한다.
   if [[ -s "$dump_log" ]]; then
-    grep -qE '^CLAUDECODE=1$' "$dump_log" \
-      || fail "live env propagation: CLAUDECODE=1 미도달 (dump_log=$(cat "$dump_log"))"
     grep -qE '^CODEX_PROGRAMMATIC=1$' "$dump_log" \
-      || fail "live env propagation: CODEX_PROGRAMMATIC=1 미도달 (dump_log=$(cat "$dump_log"))"
+      || fail "programmatic env inheritance live: CODEX_PROGRAMMATIC=1 미도달 (dump_log=$(cat "$dump_log"))"
     if (( codex_rc != 0 )); then
-      warn "live env propagation: hook propagation 도달 확인 + codex exec 후속 비정상(rc=$codex_rc) — propagation 통과"
+      warn "programmatic env inheritance live: hook inheritance 도달 확인 + codex exec 후속 비정상(rc=$codex_rc) — inheritance 통과"
     fi
     return 0
   fi
@@ -1024,12 +1031,12 @@ EOF
     # codex exec stderr 마지막 부분을 진단에 포함해 운영자가 timeout/auth/network 원인을 식별 가능하게.
     local stderr_tail
     stderr_tail=$(tail -c 800 "$codex_stderr" 2>/dev/null | tr '\n' ' ' || true)
-    warn "live env propagation: codex exec 비정상(rc=$codex_rc) 또는 timeout(${LIVE_CODEX_TIMEOUT_SECONDS}s) + dump_log empty — skip (환경 결함). stderr_tail: ${stderr_tail:-<empty>}"
+    warn "programmatic env inheritance live: codex exec 비정상(rc=$codex_rc) 또는 timeout(${LIVE_CODEX_TIMEOUT_SECONDS}s) + dump_log empty — skip (환경 결함). stderr_tail: ${stderr_tail:-<empty>}"
     return 0
   fi
 
-  # codex exec 정상 종료 + dump_log 부재 → hook propagation 미도달 회귀.
-  fail "live env propagation: codex exec 정상 종료했으나 dump_log empty — hook propagation 미도달"
+  # codex exec 정상 종료 + dump_log 부재 → hook inheritance 미도달 회귀.
+  fail "programmatic env inheritance live: codex exec 정상 종료했으나 dump_log empty — hook inheritance 미도달"
 }
 
 # ─── 카테고리 5b: codex exec invocation matrix (live opt-in, must-pass-only — issue #593) ───
@@ -1217,17 +1224,16 @@ run_test "sync.sh mcp-config fail-fast (#609)" \
   test_sync_sh_mcp_config_failfast
 
 if [[ "$LIVE_MODE" == "1" ]]; then
-  # invocation matrix를 env propagation보다 먼저 실행한다 (issue #593):
-  # PR #595의 test_env_propagation_live는 mac 0.128에서 hang으로 fail이 관측되어 별도 follow-up
-  # 이슈로 분리됐다 (vJ caveat). invocation matrix가 먼저 실행되어야 새 fixture가
-  # 회귀 차단 신호를 제공할 수 있다.
+  # invocation matrix를 programmatic env inheritance보다 먼저 실행한다 (issue #593):
+  # wrapper/process-group 회귀 차단 신호를 먼저 확보한 뒤, sandbox CODEX_HOME에 등록한
+  # dump hook이 caller-supplied CODEX_PROGRAMMATIC marker를 상속받는지 확인한다.
   run_test "codex exec invocation matrix (supervised wrapper, must-pass-only)" \
     test_codex_exec_invocation_live_matrix
-  run_test "env propagation live (codex exec --ephemeral)" \
-    test_env_propagation_live
+  run_test "programmatic env inheritance live (codex exec --ephemeral)" \
+    test_programmatic_env_inheritance_live
 else
   echo "==> codex exec invocation matrix  (skip; --live 또는 CODEX_HOOK_LIVE=1로 활성화)"
-  echo "==> env propagation live  (skip; --live 또는 CODEX_HOOK_LIVE=1로 활성화)"
+  echo "==> programmatic env inheritance live  (skip; --live 또는 CODEX_HOOK_LIVE=1로 활성화)"
 fi
 
 echo "All codex hook fixture tests passed."
