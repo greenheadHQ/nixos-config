@@ -65,7 +65,7 @@
 
         # macOS 전용
         ./programs/hammerspoon
-        ./programs/zed
+        ./programs/vscode
         ./programs/folder-actions
         ./programs/ghostty
         ./programs/cmux

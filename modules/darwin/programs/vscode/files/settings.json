@@ -1,0 +1,173 @@
+{
+  // ============================================================================
+  // Worktree 제외 설정
+  // ============================================================================
+  // claude --worktree가 생성하는 .claude/worktrees/ 디렉토리를 탐색기와 검색에서 제외
+  // - 메인 저장소에서 열 때: worktree 폴더가 숨겨져 중복 표시/검색 방지
+  // - 워크트리에서 열 때: 영향 없음 (패턴 매칭되는 하위 폴더가 없음)
+  "files.exclude": {
+    "**/.claude/worktrees": true,
+  },
+  "search.exclude": {
+    "**/.claude/worktrees": true,
+  },
+
+  // ============================================================================
+  // 폰트 설정
+  // ============================================================================
+  "editor.fontFamily": "JetBrainsMono Nerd Font, D2Coding", // 영문: JetBrains Mono, 한글: D2Coding
+  "editor.fontLigatures": true, // 리가처 활성화 (=>, !==, -> 등 합자 표시)
+  "editor.codeLensFontFamily": "JetBrainsMono Nerd Font, D2Coding", // CodeLens(참조 수 등) 폰트
+  "editor.inlayHints.fontFamily": "JetBrainsMono Nerd Font, D2Coding", // 인라인 힌트(타입 추론 등) 폰트
+
+  // ============================================================================
+  // 에디터 기본 설정
+  // ============================================================================
+  "editor.accessibilitySupport": "off", // 접근성 지원 비활성화 (성능 향상)
+  "editor.formatOnSave": true, // 저장 시 자동 포맷팅
+  "editor.linkedEditing": true, // HTML 태그 동시 편집 (여는 태그 수정 시 닫는 태그도 변경)
+  "editor.smartSelect.selectSubwords": false, // 단어 선택 시 subword 구분 안 함 (camelCase 전체 선택)
+  "editor.snippetSuggestions": "top", // 스니펫을 자동완성 목록 최상단에 표시
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit", // 저장 시 ESLint 자동 수정 (명시적 실행만)
+  },
+
+  // ============================================================================
+  // 테마 및 UI
+  // ============================================================================
+  "workbench.colorTheme": "Webstorm Darcula 2022", // 컬러 테마
+  "workbench.iconTheme": "a-file-icon-vscode", // 파일 아이콘 테마
+  "workbench.activityBar.orientation": "vertical", // 액티비티 바 세로 배치
+  "window.commandCenter": true, // 타이틀 바에 커맨드 센터(검색창) 표시
+
+  // ============================================================================
+  // 파일 관리
+  // ============================================================================
+  "files.autoSave": "afterDelay", // 일정 시간 후 자동 저장
+  "explorer.confirmDragAndDrop": false, // 파일 드래그앤드롭 시 확인 안 함
+  "json.format.keepLines": true, // JSON 포맷팅 시 기존 줄바꿈 유지
+
+  // ============================================================================
+  // Git
+  // ============================================================================
+  "githubPullRequests.pullBranch": "never", // PR 생성 시 브랜치 자동 pull 안 함
+  "gitlens.graph.minimap.enabled": false, // GitLens 그래프 미니맵 비활성화
+
+  // ============================================================================
+  // 언어별 포맷터 설정 (JavaScript/TypeScript)
+  // ============================================================================
+  "eslint.format.enable": true, // ESLint를 포맷터로 사용 가능
+  "eslint.codeActionsOnSave.rules": null, // ESLint 규칙 전체 적용 (null = 모두)
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+
+  // ============================================================================
+  // 언어별 포맷터 설정 (JSON)
+  // ============================================================================
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[jsonl]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+
+  // ============================================================================
+  // 확장 프로그램 설정
+  // ============================================================================
+  "claudeCode.preferredLocation": "panel", // Claude Code 패널 위치 (하단 패널)
+
+  // ============================================================================
+  // Nix 언어 서버 (nixd)
+  // ============================================================================
+  "nix.enableLanguageServer": true,
+  "nix.serverPath": "nixd",
+  "nix.serverSettings": {
+    "nixd": {
+      "formatting": { "command": ["nixfmt"] },
+    },
+  },
+
+  // ============================================================================
+  // 보안 및 업데이트
+  // ============================================================================
+  "redhat.telemetry.enabled": false, // Red Hat 텔레메트리 비활성화
+  "security.promptForLocalFileProtocolHandling": false, // 로컬 파일 프로토콜 핸들링 프롬프트 비활성화 — 단일 사용자 dotfiles 환경에서 marketplace/문서 링크 클릭 시 prompt 마찰 제거 (보안 trade-off: 신뢰 안 되는 link 클릭 시 자동 처리됨)
+  "update.mode": "none", // Nix로 앱 버전 관리하므로 자동 업데이트 비활성화
+
+  // ============================================================================
+  // 확장 프로그램 관리 (Nix로 관리하므로 자동 업데이트 비활성화)
+  // ============================================================================
+  "extensions.autoUpdate": false, // 확장 자동 업데이트 비활성화
+  "extensions.autoCheckUpdates": false, // 확장 업데이트 자동 확인 비활성화
+  "caseConverter.caseCycle": [
+    // Case Converter 확장: 변환 순서 정의
+    "original", // 원본
+    "const", // CONST_CASE
+    "camel", // camelCase
+    "snake", // snake_case
+    "kebab", // kebab-case
+    "pascal", // PascalCase
+  ],
+
+  // ============================================================================
+  // 에디터 시각적 가이드
+  // ============================================================================
+  "editor.stickyScroll.enabled": true, // 스크롤 시 현재 스코프(함수/클래스) 상단 고정
+  "editor.bracketPairColorization.enabled": true, // 괄호 쌍 색상화
+  "editor.guides.bracketPairs": "active", // 활성 괄호 쌍 가이드 라인 표시
+  "editor.minimap.autohide": "mouseover", // 미니맵 자동 숨김 (호버 시만 표시)
+  "editor.renderLineHighlight": "all", // 현재 줄 전체 하이라이트 (줄 번호 + 내용)
+
+  // ============================================================================
+  // 자동완성 항목 표시 설정
+  // ============================================================================
+  "editor.suggest.showMethods": true, // 메서드 표시
+  "editor.suggest.showFunctions": true, // 함수 표시
+  "editor.suggest.showVariables": true, // 변수 표시
+  "editor.suggest.showConstants": true, // 상수 표시
+  "editor.suggest.snippetsPreventQuickSuggestions": false, // 스니펫 입력 중에도 자동완성 표시
+
+  // ============================================================================
+  // 에디터 탭 커스텀 라벨 (Next.js 프로젝트 가독성 개선)
+  //
+  // VS Code 한계:
+  // - Named Capture Group 미지원 (예: ${app:([^/]+)})
+  // - 정규식 캡처 미지원 (예: $1, $2)
+  // - ** 와일드카드와 ${dirname(N)} 조합 시 예측 불가
+  //   → ${dirname(N)}은 파일 기준 절대 인덱싱이라 경로 깊이에 따라 결과 변동
+  //
+  // 지원되는 변수: ${filename}, ${extname}, ${dirname}, ${dirname(N)}
+  // 모노레포에서 앱별 동적 추출 불가 → 앱별 명시적 패턴 필요
+  // 상세: docs/TRIAL_AND_ERROR.md 참고
+  // ============================================================================
+  "workbench.editor.customLabels.patterns": {
+    // App Router (Next.js 13+) - page.tsx, layout.tsx 등이 여러 개 열릴 때 폴더명으로 구분
+    "**/app/**/{page,layout,loading,error,not-found,template,default}.{ts,tsx,js,jsx}": "${dirname}/${filename}.${extname}",
+
+    // Pages Router (Next.js 12 이하 또는 hybrid)
+    "**/pages/**/{index,_app,_document,_error}.{ts,tsx,js,jsx}": "${dirname}/${filename}.${extname}",
+
+    // 공통 index 파일 - 어느 폴더의 index인지 표시
+    "**/index.{ts,tsx,js,jsx}": "${dirname}/index.${extname}",
+
+    // 유틸리티 파일들 - hooks.ts, utils.ts 등이 여러 개일 때 폴더명으로 구분
+    "**/{hook,hooks,constant,constants,util,utils,state,states,type,types,style,styles}.{ts,tsx,js,jsx}": "${dirname}/${filename}.${extname}",
+  },
+  // 단일 사용자 dotfiles로 외부 워크스페이스 비신뢰 시나리오가 거의 없음.
+  // Workspace Trust 의 untrusted file 처리 prompt를 생략하고 즉시 open한다 (사용자 의도).
+  // 외부 untrusted 코드를 자주 다루게 되면 "prompt"/"newWindow"로 되돌릴 것.
+  "security.workspace.trust.untrustedFiles": "open",
+}

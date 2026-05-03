@@ -15,5 +15,7 @@
   #   trade-off: 향후 nixpkgs 업데이트로 installCheck가 다시 깨지면 overlay를 복원해야 함.
   #             단, nrs dry-run이 소스 빌드를 사전 감지하므로 조기 발견 가능.
   nixpkgs.overlays = [
+    # VSCode 확장: open-vsx 우선, 미등록은 vscode-marketplace fallback (modules/darwin/programs/vscode/default.nix 참조)
+    inputs.nix-vscode-extensions.overlays.default
   ];
 }

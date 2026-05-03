@@ -27,7 +27,7 @@ macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적
 - 시크릿 관리 (agenix)
 
 **플랫폼별 설정**:
-- macOS: Homebrew GUI 앱, Hammerspoon, Zed, Ghostty, Shottr, 폴더 액션
+- macOS: Homebrew GUI 앱, Hammerspoon, VSCode, Ghostty, Shottr, 폴더 액션
 - NixOS: 홈서버 서비스, Tailscale VPN, SSH/mosh, 하드웨어 모니터링
 
 ---
@@ -47,7 +47,7 @@ flake.nix
 libraries/        # 상수, 공통 패키지, overlay
 modules/
 ├── shared/       # Darwin + NixOS 공통 (zsh, git, tmux, neovim, yazi, secrets, claude, codex)
-├── darwin/       # macOS 전용 (hammerspoon, zed, ghostty, shottr, folder-actions)
+├── darwin/       # macOS 전용 (hammerspoon, vscode, ghostty, shottr, folder-actions)
 └── nixos/        # NixOS 전용 (caddy, tailscale, 컨테이너 서비스, temp-monitor)
 hosts/            # 호스트별 하드웨어 설정 (disko, WoL)
 secrets/          # agenix 암호화 시크릿 (.age)
