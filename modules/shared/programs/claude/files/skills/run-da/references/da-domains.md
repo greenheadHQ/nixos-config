@@ -71,7 +71,9 @@
 집중 대상:
 {FOCUS_TARGETS}
 
-PoC가 필요하면 `umask 077` 아래에서 `mktemp -d`로 만든 repo 밖 private scratch 디렉토리에서만 수행하라.
+Self-verification을 위해 nested `codex exec` 또는 `codex-exec-supervised`를 호출하지 마라.
+codex exec fallback 경로처럼 read-only sandbox에서 실행 중이면 파일 증거, 문서 인용, diff 확인만 사용하라.
+PoC가 필요하고 현재 런타임이 out-of-repo write를 허용하면 `umask 077` 아래에서 `mktemp -d`로 만든 repo 밖 private scratch 디렉토리에서만 수행하라.
 tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-only command, host mutation은 explicit delegation 없이는 금지다.
 위 규칙을 위반했거나 금지된 작업이 필요하면 finding 대신 `VIOLATION` 형식으로 반환하라.
 
