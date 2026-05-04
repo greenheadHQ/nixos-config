@@ -25,14 +25,20 @@
 #   codex-exec-supervised --check  # 모든 dependency(setsid/timeout/codex) 가용 시 exit 0, 부재 시 127
 #
 # 환경 변수 (override 가능):
-#   CODEX_EXEC_TIMEOUT_SECONDS    overall timeout, default 600 (10분)
+#   CODEX_EXEC_TIMEOUT_SECONDS    overall timeout, default 1800 (30분; Codex
+#                                 agents.job_max_runtime_seconds worker fallback
+#                                 1800초와 일치 — 출처는 Codex config-reference
+#                                 https://developers.openai.com/codex/config-reference 의 agents 섹션)
 #                                 rationale: programmatic codex 호출(reviewer/Arbiter/Intensity/fan-out/
-#                                 consult)은 xhigh reasoning + 큰 prompt에서 수 분 걸린다. 기본값을
-#                                 운영 budget(10분)으로 두고, fixture/검증용 짧은 timeout은 호출자가
+#                                 consult)은 xhigh reasoning + 큰 prompt에서 수 분 걸리며 upstream
+#                                 보고는 12-15분 지연 사례까지 있다 (openai/codex#9872). 기본값을
+#                                 운영 budget(30분)으로 두고, fixture/검증용 짧은 timeout은 호출자가
 #                                 env로 명시한다 (예: invocation matrix는 INVOCATION_MATRIX_TIMEOUT_SECONDS
 #                                 oracle 상수로 40초 명시).
 #                                 양수 정수만 허용 (invalid 값은 fail-closed).
-#                                 상한 7200초 (2시간 — 어떤 reasoning level도 cover).
+#                                 상한 7200초 (2시간 — supervisor fail-closed 상한. default 운영
+#                                 budget(1800초)을 초과하는 합법 작업의 escape는 raw codex exec
+#                                 우회로 처리).
 #   CODEX_EXEC_KILL_AFTER_SECONDS SIGTERM 후 SIGKILL 전환 grace, default 5
 #                                 rationale: npm wrapper SIGTERM forward 후 native 응답 대기.
 #                                 양수 정수만 허용. 상한 60초.
@@ -67,7 +73,7 @@ _validate_positive_int() {
   return 0
 }
 
-CODEX_EXEC_TIMEOUT_SECONDS="${CODEX_EXEC_TIMEOUT_SECONDS:-600}"
+CODEX_EXEC_TIMEOUT_SECONDS="${CODEX_EXEC_TIMEOUT_SECONDS:-1800}"
 CODEX_EXEC_KILL_AFTER_SECONDS="${CODEX_EXEC_KILL_AFTER_SECONDS:-5}"
 _validate_positive_int CODEX_EXEC_TIMEOUT_SECONDS "$CODEX_EXEC_TIMEOUT_SECONDS" 7200 || exit 127
 _validate_positive_int CODEX_EXEC_KILL_AFTER_SECONDS "$CODEX_EXEC_KILL_AFTER_SECONDS" 60 || exit 127

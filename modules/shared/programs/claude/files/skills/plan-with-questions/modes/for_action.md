@@ -61,7 +61,7 @@ Step 3 완료 즉시, 사용자 질문 전(Step 4 직전)에 외부 LLM에 ancho
 
 - **호출 시점**: Step 3 종료 직후 background 병렬. 메인은 Discovery Summary 정리·plan draft 초안 등 다른 준비를 진행한다.
 - **결과 도착 시**: Step 4로 진입.
-- **budget**: 1-3분 (high reasoning). xhigh는 명시적 심층 요청 시에만.
+- **budget**: 30분 이내 (high/xhigh 공통). xhigh는 명시적 심층 요청 시에만.
 - **호출 명령 SSOT**: [`../references/consulting-step.md`](../references/consulting-step.md#codex-exec-호출-명령-템플릿-ssot) — codex exec 명령은 본 reference만 정본이다 (`-C` scratch cwd + `--ignore-user-config` + `--sandbox read-only` + `--ephemeral`로 trust boundary 완결). 본 파일은 명령을 복제하지 않는다.
 - **입출력 schema·anti-anchoring 4 규칙**: [`../references/consulting-step.md`](../references/consulting-step.md). 자문 단계가 미구현 상태이면 메인 LLM은 Step 3 결과를 직접 사용자에게 제시하되 anti-anchoring 4 규칙(라벨 금지·옵션 셔플·disqualifier 명시·judgment-first)은 즉시 적용한다.
 

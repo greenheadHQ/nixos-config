@@ -134,11 +134,11 @@ echo "CONSULT_DIR=$CONSULT_DIR"
 ```zsh
 # 위 CONSULT_DIR 리터럴 값을 그대로 사용. supervised wrapper가 setsid + timeout으로
 # process group kill을 보장한다 (issue #593, known-issues.md §15).
-# CODEX_EXEC_TIMEOUT_SECONDS=180으로 1-3분 budget 강제 (consult-specific override).
+# CODEX_EXEC_TIMEOUT_SECONDS=1800으로 wrapper default와 동일한 30분 budget 적용 (consult-specific 단축 override 폐지 — 측정 누적 후 재평가 대상).
 CONSULT_DIR=/tmp/consult-c4a35fc4-AbCdEf
 [ -d "$CONSULT_DIR" ] || { echo "consulting-step: missing CONSULT_DIR=$CONSULT_DIR"; exit 1; }
 [ -f "$CONSULT_DIR/prompt.md" ] || { echo "consulting-step: missing prompt=$CONSULT_DIR/prompt.md"; exit 1; }
-CODEX_EXEC_TIMEOUT_SECONDS=180 env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+CODEX_EXEC_TIMEOUT_SECONDS=1800 env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
     -C "$CONSULT_DIR" \
     --skip-git-repo-check \
     --ignore-user-config \
@@ -153,7 +153,7 @@ CODEX_EXEC_TIMEOUT_SECONDS=180 env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 ```
 
 - **`codex-exec-supervised`** (Layer 2 = Layer 1 + `-C scratch + --skip-git-repo-check`): supervised wrapper가 setsid + timeout/gtimeout capability-probe로 npm wrapper detach 부재로 인한 native binary 잔존을 차단한다. SSOT는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15.
-- **`CODEX_EXEC_TIMEOUT_SECONDS=180`**: consult-specific 1-3분 budget. wrapper default(600s = 10분)와 분리하여 자문 호출의 짧은 budget을 강제한다. timeout 시 메인 에이전트는 result.json을 무시하고 Step 4에서 Step 3 raw 옵션을 anti-anchoring 4 규칙으로 직접 제시한다 (External Consult: `[UNVERIFIED: timed out]` 기록).
+- **`CODEX_EXEC_TIMEOUT_SECONDS=1800`**: wrapper default(1800s = 30분)와 동일. Step 3.5 consult는 high/xhigh reasoning + 자문 schema 처리에 30분까지 허용한다. consult-specific 단축 override는 callsite별 elapsed p95/p99 측정이 누적된 뒤 재평가 대상이다. timeout 시 메인 에이전트는 result.json을 무시하고 Step 4에서 Step 3 raw 옵션을 anti-anchoring 4 규칙으로 직접 제시한다 (External Consult: `[UNVERIFIED: timed out]` 기록).
 - **`-C "$CONSULT_DIR"`** (Layer 2): cwd를 repo 외 scratch로 이동. `CONSULT_DIR` 값은 stdout에 출력된 실제 리터럴 경로다 (예: `/tmp/consult-c4a35fc4-AbCdEf`). repo의 `.codex/config.toml`(project-scoped MCP connector) 로드 차단.
 - **`--skip-git-repo-check`** (Layer 2): scratch 디렉토리는 git repo 밖이라 codex가 `Not inside a trusted directory`로 거부 — 이 플래그가 필수.
 - **`--ignore-user-config`** (Layer 1): `$CODEX_HOME/config.toml` 로드 차단. **이 플래그가 user config의 `model` 설정도 무시하므로 `-c model="gpt-5.5"` 명시가 필수다** (run-da `arbiter-scaling.md` 동일 규칙).
@@ -197,7 +197,7 @@ rm -rf -- "$CONSULT_DIR"
   - Plan draft 초안 (변경 대상 파일 / 실행 순서 / 검증 surface).
   - Step 3에서 수집한 사용자 질문의 비-트레이드오프 항목(요구사항 명료화 등) 1차 점검.
 - **결과 도착 시**: Step 4(또는 I-4 첫 라운드) 사용자 질문 제시. 자문 매트릭스를 입력으로 통합.
-- **budget**: 1-3분 (high). 초과 시 (a) timeout 알림 후 자문 없이 Step 4 진행 + plan에 [UNVERIFIED] 라벨로 자문 부재 명시, 또는 (b) 사용자에게 대기 의사 확인.
+- **budget**: 30분 이내 (high/xhigh 모두). 초과 시 (a) timeout 알림 후 자문 없이 Step 4 진행 + plan에 [UNVERIFIED] 라벨로 자문 부재 명시, 또는 (b) 사용자에게 대기 의사 확인.
 
 ## Anti-anchoring 4 규칙 (사용자 제시 단계에서 강제)
 
@@ -233,5 +233,5 @@ for_action 기록 형식:
 - dummy decision (옵션 A/B 2개) 1개로 Step 3.5 round-trip 1회 성공.
 - 출력 JSON에 "Recommended" / "Best" / "Default" 라벨 부재 확인 (`rg`).
 - 옵션 순서가 다른 `decision_id` 입력 2건에 대해 다름 / 같은 `decision_id` 재호출 시 동일 (decision_id-seeded stable shuffle 검증).
-- 1-3분 내 결과 도착 (`time codex exec ...`).
+- 30분 이내 결과 도착 (`time codex exec ...`).
 - `--sandbox read-only`로 호출했을 때 file write 시도가 sandbox에서 차단됨 (negative test).
