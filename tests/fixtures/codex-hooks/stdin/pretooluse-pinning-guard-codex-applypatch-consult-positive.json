@@ -1,0 +1,6 @@
+{
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Update File: /tmp/fixture-pretooluse-codex-consult.md\n@@\n+자문 결과 path: /tmp/consult-abc12345-XYZ123/result.json\n*** End Patch\n"
+  }
+}

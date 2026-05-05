@@ -1,4 +1,4 @@
-[WARN] pinning: Partial commit hash 박제 감지. squash 머지 시 dangling 위험. 안정 식별자(PR 번호, 머지된 SHA)로 대체하라.
+[WARN] pinning: 짧은 임시 hex 식별자 박제 감지. squash 머지 시 dangling 위험 (partial commit hash 포함). 안정 식별자(PR 번호, 머지된 SHA)로 대체하라.
          3: 9c368446
          3: 4307403c4c04
          4: 9c368446

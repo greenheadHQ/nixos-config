@@ -26,7 +26,7 @@
 | Active Phase File | <split mode일 때 phase 파일 링크> 또는 N/A |
 | Last Updated | YYYY-MM-DD |
 | Baseline | branch=<name>, HEAD=<sha7>, dirty=<clean|hash> |
-| External Consult | <Step 3.5 result.json 경로 또는 요약> |
+| External Consult | <Step 3.5 자문 회차 자연어 요약 + decision_id list + verdict 요약. 임시 경로 리터럴 박제 금지> |
 | DA State | <PRE_DA | RUNNING | APPLYING | CONFIRMED | SKIPPED | BLOCKED | NEEDS_USER> |
 | Pending User Questions | <count> (link to high-impact) |
 ```
@@ -48,7 +48,7 @@
 | Active Phase File | `N/A` |
 | Last Updated | 현재 날짜 (`YYYY-MM-DD`) |
 | Baseline | `branch=<name>, HEAD=<sha7>, dirty=<clean\|hash>` |
-| External Consult | Step 3.5 result path/요약 또는 `N/A` |
+| External Consult | Step 3.5 자문 회차 자연어 요약 + decision_id list + verdict 요약 또는 `N/A` (임시 경로 리터럴 박제 금지) |
 | DA State | `PRE_DA` |
 | Pending User Questions | `0` |
 
@@ -78,7 +78,7 @@
 
 ### External Consult
 
-Step 3.5 자문 결과의 `result.json` 경로 또는 핵심 decision_id list. plan 파일은 자문 raw output을 인라인 복제하지 않는다 (별도 path 또는 git ignored 임시 파일).
+Step 3.5 자문 결과의 자문 회차 자연어 요약(예: "1차 자문(전체 N결정)") + 핵심 `decision_id` list + verdict 요약. plan 파일은 자문 raw output을 인라인 복제하지 않으며, `/tmp/consult-XXXXXXXX-YYYYYY/result.json` 같은 임시 경로 리터럴도 박지 않는다 — 임시 경로는 세션 종료 시 사라지는 ephemeral identifier이며 dir suffix hex 토큰이 `pinning-guard.sh` PATTERN_D에 차단된다(라벨: "짧은 임시 hex 식별자 박제"). 셸 호출 사이의 `CONSULT_DIR` 리터럴 재사용은 runtime 요구이지만 durable plan에는 기록하지 않는다는 경계를 분리해 적용한다.
 
 ### DA State 값
 
@@ -162,7 +162,7 @@ Step 3.5 자문 결과의 `result.json` 경로 또는 핵심 decision_id list. p
 - **Context**: 왜 이 결정이 필요했는가 (1-3 문장).
 - **Decision**: 무엇을 결정했는가 (1-2 문장).
 - **Consequences**: 의도된 영향 + 예측되는 trade-off (2-4 bullet).
-- **External Consult**: <Step 3.5 result.json 경로 또는 요약 — 자문이 결정에 영향을 준 경우만>
+- **External Consult**: <Step 3.5 자문 회차 자연어 요약 + decision_id list + verdict 요약 — 자문이 결정에 영향을 준 경우만. 임시 경로 리터럴 박제 금지>
 - **Superseded By**: DL-M (해당 시)
 ```
 

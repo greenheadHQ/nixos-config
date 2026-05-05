@@ -7,6 +7,11 @@
 HASH_MIN=7
 HASH_MAX=12
 
+# partial-hash finding 라벨 식별 substring. 라벨 출력과 hooks의 partial-hash exception
+# 필터(`pinning_strip_partial_hash_finding`)가 동일 정의를 단일 SSOT로 공유한다.
+# 라벨 텍스트가 바뀌면 이 변수 한 곳만 갱신하면 출력과 helper grep이 동시에 동기화된다.
+PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR='짧은 임시 hex 식별자 박제'
+
 # Pattern A: progress counters.
 PATTERN_A='\b[Rr][Oo][Uu][Nn][Dd] [0-9]+\b'
 
@@ -81,10 +86,18 @@ pinning_findings_text() {
     findings="${findings}\n  - DA 실행 키워드 박제"
   fi
   if [ -n "$(pinning_partial_hash_report "$scan_file")" ]; then
-    findings="${findings}\n  - Partial commit hash 박제 (${HASH_MIN}~${HASH_MAX}자)"
+    findings="${findings}\n  - ${PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR} (${HASH_MIN}~${HASH_MAX}자)"
   fi
 
   printf '%b' "$findings"
+}
+
+# revert/cherry-pick 같은 git partial-hash exception에서 호출자(hooks/pinning-guard.sh)가
+# pinning_findings_text 출력에서 partial-hash 라벨 라인만 제거하기 위해 사용한다.
+# 라벨 substring은 PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR이 단일 SSOT다.
+pinning_strip_partial_hash_finding() {
+  local findings="$1"
+  printf '%b\n' "$findings" | grep -v -- "$PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR" || true
 }
 
 pinning_match_count() {

@@ -144,7 +144,7 @@ case "$TOOL_NAME" in
     _scan_text_file "$COMMAND_TEXT" "$SCAN_DIR/new.txt"
     findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
     if _allow_partial_hash_exception "$COMMAND_TEXT"; then
-      findings="$(printf '%b\n' "$findings" | grep -v 'Partial commit hash' || true)"
+      findings="$(pinning_strip_partial_hash_finding "$findings")"
     fi
     [ -n "$findings" ] || exit 0
     _deny "$TOOL_NAME" "durable shell command" "$findings"

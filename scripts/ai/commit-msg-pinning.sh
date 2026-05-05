@@ -70,7 +70,7 @@ check_ere "$PATTERN_C" "DA 키워드 박제 감지. 검토 라운드/모드 표�
 if [[ ! "$FIRST_LINE" =~ ^[Rr]evert ]]; then
   pinning_hash_report=$(pinning_partial_hash_report "$CLEAN_MSG")
   if [ -n "$pinning_hash_report" ]; then
-    warn "Partial commit hash 박제 감지. squash 머지 시 dangling 위험. 안정 식별자(PR 번호, 머지된 SHA)로 대체하라."
+    warn "${PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR} 감지. squash 머지 시 dangling 위험 (partial commit hash 포함). 안정 식별자(PR 번호, 머지된 SHA)로 대체하라."
     echo "$pinning_hash_report" >&2
     found=1
   fi
