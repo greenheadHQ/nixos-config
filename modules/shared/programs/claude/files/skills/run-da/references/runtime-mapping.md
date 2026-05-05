@@ -18,7 +18,9 @@
 
 **review profile 매핑** (fan-out 대상 역할별):
 - **Arbiter (strong review profile)** — Codex: `model="gpt-5.5"`, `reasoning_effort="high"`. Claude Code: `model: "opus"`.
-- **reviewer / Intensity / auditor (standard review profile)** — Codex: `model="gpt-5.5"`, `reasoning_effort="medium"`. Claude Code: `model: "sonnet"`.
+- **reviewer / auditor (standard review profile)** — Codex: `model="gpt-5.5"`, `reasoning_effort="medium"`. Claude Code: `model: "sonnet"`.
+
+**Review Intensity는 fan-out 대상이 아니다** — 메인 LLM 인라인 체크리스트(`intensity-rules.md`의 8 룰 기계적 적용)이므로 별도 review profile이 적용되지 않는다. 절차는 [`intensity-procedure.md`](intensity-procedure.md) SSOT.
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다 (Codex 세션에서도 같은 값이 보일 수 있음). **현재 세션 호스트**를 기준으로 경로를 고른다.
 
@@ -42,16 +44,16 @@
   fi
   ```
   이후 모든 `mktemp -d`와 cleanup glob에서 `$_DA_SID`를 prefix에 포함한다.
-- **모드 시작 시 이전 임시 디렉토리 정리**: for_plan 시작 시 `rm -rf /tmp/da-${_DA_SID}-pr-*(N) /tmp/da-${_DA_SID}-arbiter-*(N) /tmp/da-pr-*(N) /tmp/da-arbiter-*(N)`, for_pr 시작 시 `rm -rf /tmp/da-${_DA_SID}-plan-*(N) /tmp/da-${_DA_SID}-intensity-*(N) /tmp/da-plan-*(N) /tmp/da-intensity-*(N)`. 같은 모드의 이전 라운드는 라운드 교체 시 정리.
+- **모드 시작 시 이전 임시 디렉토리 정리**: for_plan 시작 시 `rm -rf /tmp/da-${_DA_SID}-pr-*(N) /tmp/da-${_DA_SID}-arbiter-*(N) /tmp/da-${_DA_SID}-intensity-*(N) /tmp/da-pr-*(N) /tmp/da-arbiter-*(N) /tmp/da-intensity-*(N)`, for_pr 시작 시 `rm -rf /tmp/da-${_DA_SID}-plan-*(N) /tmp/da-${_DA_SID}-intensity-*(N) /tmp/da-plan-*(N) /tmp/da-intensity-*(N)`. 같은 모드의 이전 라운드는 라운드 교체 시 정리. **Intensity legacy glob (`-intensity-*`)은 마이그레이션 cleanup 용도로 두 모드 모두에 포함** — 인라인 체크리스트 전환 후에는 새로 생성되지 않지만 이전 버전이 만든 디렉토리를 자동 정리하기 위해 모드와 무관하게 cleanup 명령에 그대로 남긴다.
   zsh `(N)` qualifier로 매칭 파일 없을 때 오류를 방지한다. legacy glob(NS 없음)은 전환기 고아 디렉토리 정리용이다.
-- **결과 파일 참조**: `$INTENSITY_DIR`, `$DA_DIR`, `$ARBITER_DIR` 변수로 정확히 참조한다. **`/tmp/da-*` 와일드카드 glob 금지** — 이전 실행의 결과가 섞인다.
+- **결과 파일 참조**: `$DA_DIR`, `$ARBITER_DIR` 변수로 정확히 참조한다. **`/tmp/da-*` 와일드카드 glob 금지** — 이전 실행의 결과가 섞인다. (Intensity는 메인 LLM 인라인 체크리스트라 별도 임시 디렉토리를 만들지 않는다.)
 - **셸 호출 간 변수 유지** (모든 런타임 공통): 위 공통 주의 참조. 런타임 종류와 무관하게 셸 호출마다 별도 shell이 생성되므로 `mktemp -d` 결과를 stdout으로 출력해 메인 에이전트가 다음 호출에서 리터럴로 재사용하거나 단일 shell에 체이닝한다. 상세 패턴은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "셸 호출 변수 유실 방지" 참조.
 - **stdin pipe로 프롬프트 전달 (Layer 1 supervised wrapper)**: 모든 programmatic codex exec 호출은 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral -c model="gpt-5.5" -c model_reasoning_effort="..." -o "$DIR/result.md" -` 형태의 Layer 1 supervised wrapper 호출을 사용한다 (raw `codex exec --full-auto`는 user-interactive 호출 전용이며 SKILL 내 programmatic 경로에서는 사용하지 않는다). `--ignore-rules`는 user/project execpolicy `.rules` 파일을 차단해 read-only sandbox로 막을 수 없는 network/system mutation 명령(예: `git push`, `aws ec2 describe`)이 reviewer/auditor에서 실행되지 않게 한다. pipe EOF가 stdin을 자동으로 닫아 background 전환 시 stdin hang을 구조적으로 방지한다. `< /dev/null`은 pipe가 대체하므로 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. **`CODEX_PROGRAMMATIC=1` env assignment는 pipeline 우측 codex 프로세스에 적용되어야 한다 (issue #585).** wrapper 상세는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 참조.
-- **Intensity/Arbiter는 foreground 실행** (단일 exec): 결과를 즉시 확인한다. **reviewer만 병렬 실행** (런타임별 병렬 실행 매커니즘은 위 표 참조).
+- **Arbiter는 foreground 실행** (단일 exec): 결과를 즉시 확인한다. **reviewer만 병렬 실행** (런타임별 병렬 실행 매커니즘은 위 표 참조). (Review Intensity는 fan-out이 아니라 메인 LLM 인라인 체크리스트.)
 
 ### literal 재사용 시 random suffix 환각 금지 (issue #632)
 
-Generic codex exec split-call rule은 [`using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)가 SSOT다. run-da 고유 적용은 `_DA_SID` 세션 네임스페이스와 `$INTENSITY_DIR`/`$DA_DIR`/`$ARBITER_DIR` 결과 파일 경로에 해당 generic rule을 적용하는 것이다.
+Generic codex exec split-call rule은 [`using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)가 SSOT다. run-da 고유 적용은 `_DA_SID` 세션 네임스페이스와 `$DA_DIR`/`$ARBITER_DIR` 결과 파일 경로에 해당 generic rule을 적용하는 것이다.
 
 ## Claude Code 세션 fallback 세부 정보
 
@@ -63,4 +65,4 @@ Claude Code 세션에서 codex exec 사전점검이 실패했을 때 legacy fall
 | wait | 자동 완료 알림 (background task notification) |
 | close | 불필요 (완료 시 자동 해제) |
 | thread-cap | Claude Code의 병렬 제한을 따름 |
-| violation 처리 | 프롬프트에서 읽기 전용을 지시하지만, 구조적 보증이 아닌 프롬프트 수준 제약이다. 하위 fallback unit이 side effect를 만들 가능성이 있으므로, [`hardening-contract.md`](hardening-contract.md)의 역할별 경계(reviewer: 읽기+검색+scratch PoC만, Arbiter/Intensity: 읽기 전용)를 프롬프트에 명시한다 |
+| violation 처리 | 프롬프트에서 읽기 전용을 지시하지만, 구조적 보증이 아닌 프롬프트 수준 제약이다. 하위 fallback unit이 side effect를 만들 가능성이 있으므로, [`hardening-contract.md`](hardening-contract.md)의 역할별 경계(reviewer: 읽기+검색+scratch PoC만, Arbiter: 읽기 전용)를 프롬프트에 명시한다 |

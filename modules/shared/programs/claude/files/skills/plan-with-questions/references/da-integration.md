@@ -6,13 +6,13 @@
 
 `for_action` 모드에서 모든 사용자 질문이 해소되고 Step 4.5 공식 plan 파일이 초기화되면, 계획 추적 도구 진입 전에 `/run-da for_plan`을 실행한다.
 
-- **무조건 호출**: for_action 모드에서 DA 호출 여부를 메인 LLM이 판단하지 않는다. Review Intensity 판단은 run-da 내부의 독립 에이전트가 수행하므로, 이 단계를 건너뛸 이유가 없다.
+- **무조건 호출**: for_action 모드에서 DA 호출 여부를 메인 LLM이 판단하지 않는다. Review Intensity 판단(메인 LLM 인라인 체크리스트로 SKIP/LITE/FULL 분기)은 `/run-da` 호출 진입 후 수행되므로, plan-with-questions 단계에서 DA 호출 자체를 건너뛸 이유가 없다.
 - **런타임 분기는 run-da를 따른다**: 3-way 분기 — Codex 세션에서는 native subagent, Claude Code 세션에서는 codex exec(사전점검 후 불가 시 Agent tool fallback), headless 세션에서는 codex exec.
 - **기본 경로는 lean default**: `/run-da for_plan`의 자동 FULL은 4 reviewer bundle 기본 리뷰다. 8개 세부 도메인 exhaustive path는 명시적 `full` modifier가 있을 때만 쓴다.
-- **YAGNI 예외 근거**: DA 호출 자체는 YAGNI 판단 대상이 아니다. 변경이 "단순"해 보여도 독립 에이전트가 SKIP으로 판단하면 사용자 승인을 거쳐 자동 생략된다. 메인 LLM은 호출만 하면 된다.
-- **책임 분리**: Review Intensity 판단은 run-da의 책임이다. 메인 LLM은 DA 호출 여부를 스스로 판단하지 않는다.
+- **YAGNI 예외 근거**: DA 호출 자체는 YAGNI 판단 대상이 아니다. 변경이 "단순"해 보여도 `/run-da` 진입 후 8 룰 체크리스트가 SKIP으로 판단하면 사용자 승인을 거쳐 자동 생략된다. plan-with-questions 메인 LLM은 호출만 하면 된다.
+- **책임 분리**: Review Intensity 판단(SKIP/LITE/FULL)은 `/run-da` 진입 후 메인 LLM이 8 룰 체크리스트를 인라인으로 적용하는 절차이며, run-da SSOT가 정한다. plan-with-questions 메인 LLM은 DA 호출 자체의 생략 여부를 자유롭게 판단하지 않는다.
 - **thread cap 준수**: Codex 세션에서는 current session의 open-thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 않고, completed reviewer/Arbiter thread를 다음 round/retry 전에 `close_agent`로 닫아야 한다.
-- **Codex 세션 hardening 계약 준수**: `/run-da for_plan`의 reviewer/Intensity는 standard review profile, Arbiter는 strong review profile을 따른다. `wait_agent` timeout만으로 중간 kill/self-auditing 대체를 하지 않고, reviewer PoC는 repo 밖 scratch에 한정한다.
+- **Codex 세션 hardening 계약 준수**: `/run-da for_plan`의 reviewer는 standard review profile, Arbiter는 strong review profile을 따른다. Review Intensity는 메인 LLM 인라인 체크리스트라 별도 review profile이 적용되지 않는다. `wait_agent` timeout만으로 중간 kill/self-auditing 대체를 하지 않고, reviewer PoC는 repo 밖 scratch에 한정한다.
 - **main-agent-only 유지**: single-writer/main-agent-only boundary는 `run-da` canonical contract를 그대로 따른다. tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 for_plan subagent가 직접 실행하지 않는다. 상세 용어와 violation 처리 규칙은 [run-da/references/hardening-contract.md](../../run-da/references/hardening-contract.md) `Codex 세션 하드닝 계약`을 따른다.
 - **타이밍**: 반드시 계획 추적 도구 진입 전에 이 단계를 완료한다 (DA 에이전트가 일반 모드에서 full tool access로 PoC 검증을 수행할 수 있도록).
 - **for_action 입력 계약**: Step 4.5에서 만든 공식 `.claude/plans/<slug>.md` 경로와 파일 내용을 DA 입력 context에 포함한다. `/run-da for_plan` 뒤에 path argument나 modifier를 추가하지 않는다.

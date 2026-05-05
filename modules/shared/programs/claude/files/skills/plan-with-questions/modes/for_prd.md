@@ -48,7 +48,7 @@
 - **Step 2**: 트리거 결정 시 사용자에게 알림 + opt-out 확인. 사용자 동의 시 Mode 전환 (`for_action` → `for_prd`).
 - **Step 3.5**: 자문 입력에 phase 구조 후보를 포함 (PRD는 phase 단위 결정이 핵심).
 - **Step 4.5**: 건너뛴다. `for_prd`는 `.claude/plans/` 파일과 plan-file-template 14 metadata를 만들지 않는다.
-- **Step 5 DA**: 기본은 `/run-da for_plan` 호출 — `run-da`의 독립 Intensity agent가 SKIP/LITE/FULL을 자동 판정한다. DA 입력은 PRD draft/context, candidate phase structure, Step 1-4 evidence이며 plan 파일 path가 아니다. phase 4+ 복잡 plan에서 사용자가 명시적으로 exhaustive review를 원하면 `/run-da for_plan full` 사용 (full modifier는 Intensity 판단을 우회하고 8 도메인 강제). 두 의미는 다르다.
+- **Step 5 DA**: 기본은 `/run-da for_plan` 호출 — `run-da` 진입 후 메인 LLM이 8 룰 체크리스트를 기계적으로 적용하여 SKIP/LITE/FULL을 판정한다. DA 입력은 PRD draft/context, candidate phase structure, Step 1-4 evidence이며 plan 파일 path가 아니다. phase 4+ 복잡 plan에서 사용자가 명시적으로 exhaustive review를 원하면 `/run-da for_plan full` 사용 (full modifier는 인라인 체크리스트를 우회하고 8 도메인 강제). 두 의미는 다르다.
 - **Step 6 DA 반영**: DA 결과는 PRD draft/context와 후보 phase 구조에 반영한다. PRD 작성 후에는 PRD master `Change Log`와, split mode에서 특정 phase가 영향받는 경우 해당 phase의 `Discoveries / Decisions`에 반영 이력을 남긴다.
 - **Step 5/6 resume**: PRD 파일이 아직 없으면 DA draft/context는 durable artifact가 아니다. 세션이 끊긴 뒤 재개하면 transient DA verdict를 신뢰하지 않고 `for_prd.step5_da`부터 보수적으로 재실행한다. 재실행 사유는 PRD 작성 후 master `Change Log`에 남긴다.
 

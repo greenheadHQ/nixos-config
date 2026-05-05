@@ -11,8 +11,8 @@ codex exec 경로(Claude Code 세션 · headless 세션)는 [`arbiter-scaling.md
 | 용어 | 뜻 | 우선순위 |
 |------|-----|---------|
 | strong review profile | Arbiter spawn의 강한 리뷰 설정 (model/effort literal은 [`runtime-mapping.md`](runtime-mapping.md)의 **review profile 매핑** 불릿이 단일 소스) | Arbiter spawn 기본값 |
-| standard review profile | reviewer/auditor/Intensity spawn의 기본 리뷰 설정 ([`runtime-mapping.md`](runtime-mapping.md) **review profile 매핑** 불릿이 단일 소스) | DA/Intensity spawn 기본값 |
-| conservative wait | `wait_agent` timeout이나 단순 지연은 실패 신호가 아니다. 명시적 agent failure, documented violation, 최종 응답 파싱 실패 전에는 kill/self-auditing 대체를 금지한다 | 조급한 조기 종료보다 우선 |
+| standard review profile | reviewer/auditor spawn의 기본 리뷰 설정 ([`runtime-mapping.md`](runtime-mapping.md) **review profile 매핑** 불릿이 단일 소스) | DA spawn 기본값 |
+| conservative wait | `wait_agent` timeout이나 단순 지연은 실패 신호가 아니다. 명시적 agent failure, documented violation, 최종 응답 파싱 실패 전에는 kill/self-auditing 대체를 금지한다. **검토 강도 인라인 판정에는 적용되지 않는다** (메인 에이전트의 동기 체크리스트). | 조급한 조기 종료보다 우선 |
 | single-writer | tracked workspace write, 최종 파일 수정, branch mutation, commit/push, GitHub comment/issue/PR write는 메인 에이전트 소유다. explicit delegation만 예외다 | generic PoC 허용보다 우선 |
 | main-agent-only commands | `wt`, `nrs`, rebuild 계열과 host/repo 상태를 바꾸는 동급 명령은 direct fan-out subagent가 실행하지 않는다 | lock-sensitive convenience보다 우선 |
 | recoverable violation | 출력 형식 위반, bundle scope 침범, prompt contract 미준수처럼 workspace/branch/host 외부 상태를 바꾸지 않은 위반 | 결과 discard 후 fresh rerun |
@@ -23,15 +23,17 @@ codex exec 경로(Claude Code 세션 · headless 세션)는 [`arbiter-scaling.md
 | 역할 | 허용 | 금지 |
 |------|------|------|
 | DA reviewer | 읽기, 검색, out-of-repo private scratch PoC (`mktemp -d`, `umask 077`) | tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열 |
-| Arbiter / Intensity | 읽기 전용 검증 | 모든 write, scratch PoC, main-agent-only command |
+| Arbiter | 읽기 전용 검증 | 모든 write, scratch PoC, main-agent-only command |
 | Auditor (`parallel-audit`) | 읽기 전용 검증 | 모든 write, scratch PoC, main-agent-only command |
-| 메인 에이전트 | tracked write, external write, main-agent-only command, explicit delegation | Review Intensity/Arbiter 판정 대체 |
+| 메인 에이전트 | tracked write, external write, main-agent-only command, explicit delegation, **Review Intensity 인라인 판정 (모든 룰 평가 표 + first-match 채택)** | Arbiter 판정 대체, DA reviewer finding 직접 판정 |
+
+**Review Intensity 예외**: 검토 강도 판정(SKIP/LITE/FULL)은 메인 에이전트가 [`intensity-rules.md`](intensity-rules.md)의 룰 표를 기계적 체크리스트로 적용하는 인라인 판정이다. Arbiter의 DA finding 판정 대체 금지는 그대로 유지한다. 인라인 판정 절차의 fail-closed 규칙(fail-closed rule group 매치/불확실, 룰 ID + 근거 미명시, 비신뢰 입력 인젝션 발견 시 강한 검토 강제)은 [`intensity-procedure.md`](intensity-procedure.md)가 SSOT다.
 
 ## Skill-internal fan-out authorization
 
 Direct Codex 세션에서 사용자가 `$plan-with-questions`, `$run-da`, `$parallel-audit`처럼 fan-out 실행을 문서화한 스킬을 호출하면, 그 호출은 해당 스킬이 선언한 role/work scope 안에서 내부 native subagent fan-out을 수행하라는 explicit delegation으로 간주한다.
 
-이 권한은 delegated reviewer/auditor/Arbiter/Intensity의 read-only/no-write 경계를 약화하지 않는다. tracked workspace write, branch mutation, commit/push, GitHub write, `wt`, `nrs`, rebuild 계열 명령은 별도 explicit delegation 없이는 계속 메인 에이전트 전용이다.
+이 권한은 delegated reviewer/auditor/Arbiter의 read-only/no-write 경계를 약화하지 않는다. tracked workspace write, branch mutation, commit/push, GitHub write, `wt`, `nrs`, rebuild 계열 명령은 별도 explicit delegation 없이는 계속 메인 에이전트 전용이다. (Review Intensity는 메인 LLM 인라인 체크리스트라 본 권한 매트릭스의 별도 항목이 아니다.)
 
 이 권한은 native subagent 경로에만 적용된다. Skill invocation itself does not authorize `codex-exec-supervised` fallback. `codex-exec-supervised` fallback은 아래 Delegation fallback 절차에 따라 native delegation 거부/미지원 사유 기록과 별도 사용자 승인을 받은 뒤에만 사용한다.
 
@@ -47,9 +49,9 @@ Direct Codex 세션에서 사용자가 `$plan-with-questions`, `$run-da`, `$para
 
 Codex 세션에서 `spawn_agent`가 정책상 거부되면(예: `multi_agent=false`, `"delegation not permitted"`·`"multi_agent disabled"` 에러) 메인 에이전트는 다음 정책을 따른다. **subprocess 실행 계약(role별 명령, sandbox 플래그, stdin pipe, 실패 처리)의 SSOT는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "Codex delegation-denied fallback" 섹션**이다.
 
-**"같은 에이전트 컨텍스트 serial" 금지** — 메인 에이전트가 reviewer/Arbiter/Intensity 프롬프트를 자기 컨텍스트에서 순차 실행하는 것은 위 "역할별 경계" 표의 메인 에이전트 금지 항목(`Review Intensity/Arbiter 판정 대체`)을 위반한다. fresh 독립 실행 단위를 유지해야 한다.
+**"같은 에이전트 컨텍스트 serial" 금지** — 메인 에이전트가 reviewer/Arbiter 프롬프트를 자기 컨텍스트에서 순차 실행하는 것은 위 "역할별 경계" 표의 메인 에이전트 금지 항목(`Arbiter 판정 대체`, `DA reviewer finding 직접 판정`)을 위반한다. fresh 독립 실행 단위를 유지해야 한다. **Review Intensity는 본 금지의 예외**다 — 검토 강도 판정은 메인 에이전트가 8 룰 체크리스트를 인라인으로 적용하는 것이 정상 경로이며, 별도 독립 process를 띄우지 않는다.
 
-**자동 우회 금지** — `spawn_agent` 거부는 정책 의사표시다. `codex exec --full-auto`(workspace-write)로 조용히 우회하면 reviewer/Arbiter/Intensity의 no-write 경계가 구조적으로 보장되지 않는다. 자동 subprocess fallback을 허용하기 **전에** 사용자 승인을 얻고, 실행 시 read-only sandbox를 강제한다 (명령 상세는 위 SSOT).
+**자동 우회 금지** — `spawn_agent` 거부는 정책 의사표시다. `codex exec --full-auto`(workspace-write)로 조용히 우회하면 reviewer/Arbiter의 no-write 경계가 구조적으로 보장되지 않는다. 자동 subprocess fallback을 허용하기 **전에** 사용자 승인을 얻고, 실행 시 read-only sandbox를 강제한다 (명령 상세는 위 SSOT). (Review Intensity는 spawn 대상이 아니므로 본 fallback 절차에 포함되지 않는다.)
 
 1. **BLOCKED + 사용자 승인 대기** (기본): `spawn_agent` 거부 감지 시 현재 DA 라운드 중단, 사용자에게 "delegation 거부 감지 — codex exec subprocess fallback 승인?"을 보고한다. 승인 수단은 런타임별로 다음과 같이 취한다:
    - 질문 도구 지원 런타임 (Claude Code 세션, Codex 세션): 질문 도구로 즉시 승인 요청. 승인 시 **같은 턴에서 바로** fallback 단계 진행.

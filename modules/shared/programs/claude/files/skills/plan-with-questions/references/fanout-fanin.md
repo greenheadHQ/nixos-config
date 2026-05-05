@@ -16,7 +16,7 @@ fan-out 에이전트에 할당할 수 있는 역할:
 | 기술 자문 (Step 3.5) | 옵션별 anchoring-neutral 평가 매트릭스 | codex exec high reasoning |
 
 LLM이 작업의 복잡도/도메인에 따라 에이전트 수(2-6개)와 역할을 동적으로 결정한다.
-DA/review 에이전트는 run-da canonical contract의 프로파일을 따른다 (reviewer/Intensity는 standard, Arbiter는 strong).
+DA/review 에이전트는 run-da canonical contract의 프로파일을 따른다 (reviewer는 standard, Arbiter는 strong). Review Intensity는 fan-out이 아니라 메인 LLM 인라인 체크리스트.
 
 ## 런타임 분기
 
