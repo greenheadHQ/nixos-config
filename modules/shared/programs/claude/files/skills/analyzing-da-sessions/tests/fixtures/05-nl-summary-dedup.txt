@@ -1,0 +1,15 @@
+// 메인 LLM 요약 + Arbiter 결과 헤더 카운트 중복 — NL summary는 finding-level 분포에 포함되지 않아야 한다.
+
+# 메인 LLM 분석 요약
+
+이번 라운드 결과: CONFIRMED 5건, NOT_AN_ISSUE 2건. 자세한 내용은 Arbiter 결과 참조.
+
+## Arbiter 검증 결과: 7건
+
+(생략: 본 fixture는 Arbiter 결과 본문 없이 헤더 카운트만 표현. NL summary는 finding-level 분포 대상 아님.)
+
+추가로 메인 LLM 후속 메시지에서 같은 카운트가 다시 등장:
+"Arbiter 검증 결과: 7건"이 두 번째로 인용됨.
+
+이 텍스트의 finding-level 회수 대상은 0건이어야 한다 (4-tier strict/unmarked/kv 모두 미매치).
+NL summary signal은 true (적어도 하나의 NL summary 패턴 매치).

@@ -4,7 +4,7 @@ argument-hint: "[for_plan|for_pr|both] [full] [fresh]"
 description: |
   Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both. Modifier: full, fresh.
   Trigger: 'DA', 'DA 피드백', '피드백 루프', 'YAGNI 리뷰', '코드 리뷰 루프', 'run-da'.
-  NOT for PR 코멘트 (use review-pr-feedback). NOT for 전수조사 (use parallel-audit).
+  NOT for PR 코멘트 (use review-pr-feedback). NOT for 전수조사 (use parallel-audit). NOT for DA session log/statistics/verdict 분포 정량 분석 (use analyzing-da-sessions, 사용자 명시 호출 전용).
 ---
 
 # Devil's Advocate 피드백 루프

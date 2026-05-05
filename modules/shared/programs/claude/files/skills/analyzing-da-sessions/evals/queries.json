@@ -1,0 +1,9 @@
+[
+  {"query": "DA 세션 분석해줘", "should_trigger": false, "why": "disable-model-invocation: true 의도로 자동 trigger 차단. 자연어 query는 명시 호출이 아니므로 trigger 안 됨"},
+  {"query": "verdict 분포 측정해줘", "should_trigger": false, "why": "explicit-only 계약. 자연어 trigger 차단"},
+  {"query": "Claude Code 세션 정량 분석", "should_trigger": false, "why": "explicit-only 계약"},
+  {"query": "Codex session log 통계 보여줘", "should_trigger": false, "why": "explicit-only 계약"},
+  {"query": "review-intensity 분포 알려줘", "should_trigger": false, "why": "explicit-only 계약"},
+  {"query": "arbiter 통계 정량 측정", "should_trigger": false, "why": "explicit-only 계약"},
+  {"query": "stability_status 분포 분석", "should_trigger": false, "why": "explicit-only 계약. 메트릭 키워드도 trigger 대상 아님"}
+]

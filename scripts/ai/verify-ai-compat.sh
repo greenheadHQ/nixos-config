@@ -17,6 +17,7 @@ CODEX_GLOBAL_SKILLS_DIR="$HOME/.codex/skills"
 # Nix SoT(default.nix)와 독립된 감사 오라클.
 # 두 리스트는 서로 교집합이 없어야 하며, shared 디렉토리의 모든 스킬이 둘 중 하나에 속해야 한다.
 EXPECTED_EXPOSED=(
+  analyzing-da-sessions
   create-issue
   create-pr
   grill-me

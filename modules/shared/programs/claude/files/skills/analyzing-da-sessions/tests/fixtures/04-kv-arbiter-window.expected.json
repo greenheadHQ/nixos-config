@@ -1,0 +1,8 @@
+{
+  "description": "KV recovery — Arbiter 결과 window 한정 (window 밖 KV는 회수 안 됨)",
+  "strict_count": 0,
+  "unmarked_count": 0,
+  "kv_count": 2,
+  "nl_signal": false,
+  "finding_level_count": 2
+}

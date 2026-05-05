@@ -1,0 +1,15 @@
+// marker 없는 fenced JSON array — json_unmarked source로 회수돼야 한다 (Tier 3).
+
+# Arbiter 결과 (legacy 형식)
+
+이 세션에서는 verdict-json marker delimiter가 누락된 채 fenced JSON으로만 출력됐다:
+
+```json
+[
+  {"finding_id": "Correctness-1", "verdict": "CONFIRMED_ISSUE", "confidence": "HIGH"},
+  {"finding_id": "Design-2", "verdict": "NOT_AN_ISSUE", "confidence": "MEDIUM"},
+  {"finding_id": "Regression-3", "verdict": "NEEDS_MORE_INFO", "confidence": "N/A"}
+]
+```
+
+이 array는 marker 없이도 Tier 3 (`json_unmarked`)로 회수돼야 한다.

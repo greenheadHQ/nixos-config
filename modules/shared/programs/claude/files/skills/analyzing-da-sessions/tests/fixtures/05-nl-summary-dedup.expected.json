@@ -1,0 +1,8 @@
+{
+  "description": "NL summary는 finding-level 분포에 포함되지 않음 (중복 인용 회피)",
+  "strict_count": 0,
+  "unmarked_count": 0,
+  "kv_count": 0,
+  "nl_signal": true,
+  "finding_level_count": 0
+}

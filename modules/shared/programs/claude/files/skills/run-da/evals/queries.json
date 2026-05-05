@@ -22,5 +22,9 @@
   {"query": "병렬 에이전트로 코드 점검", "should_trigger": false, "why": "혼동 쌍: parallel-audit"},
   {"query": "간단한 오타 수정인데 DA 필요해?", "should_trigger": true, "why": "경계선: SKIP 판단이 필요하므로 run-da 트리거"},
   {"query": "full로 exhaustive DA 돌려줘", "should_trigger": true, "why": "명시적: exhaustive override(`run-da ... full`)"},
-  {"query": "이건 간단하니까 DA 생략하자", "should_trigger": true, "why": "경계선: SKIP 판단 절차가 필요하므로 트리거 (LLM이 직접 생략 불가)"}
+  {"query": "이건 간단하니까 DA 생략하자", "should_trigger": true, "why": "경계선: SKIP 판단 절차가 필요하므로 트리거 (LLM이 직접 생략 불가)"},
+  {"query": "DA 세션 분석해줘", "should_trigger": false, "why": "혼동 쌍: analyzing-da-sessions (사용자 명시 호출 전용 정량 통계 측정)"},
+  {"query": "verdict 분포 측정해줘", "should_trigger": false, "why": "혼동 쌍: analyzing-da-sessions"},
+  {"query": "stability_status 분포 분석", "should_trigger": false, "why": "혼동 쌍: analyzing-da-sessions"},
+  {"query": "Claude Code session log 통계", "should_trigger": false, "why": "혼동 쌍: analyzing-da-sessions"}
 ]

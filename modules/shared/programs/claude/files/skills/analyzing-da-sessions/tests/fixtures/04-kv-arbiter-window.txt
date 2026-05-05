@@ -1,0 +1,20 @@
+// KV `**판정**:` recovery — Arbiter 결과 헤더 window 안에서만 매치돼야 한다 (Tier 4).
+
+# 메인 LLM 메모
+
+여기서는 **판정**: CONFIRMED_ISSUE 같은 형식을 임의로 적어도 Arbiter window 밖이라 회수되지 않는다.
+
+## Arbiter 검증 결과
+
+### finding-1
+- **판정**: CONFIRMED_ISSUE
+- 신뢰도: HIGH
+
+### finding-2
+- **판정**: NOT_AN_ISSUE
+- 신뢰도: MEDIUM
+
+## 다른 섹션
+
+다음 섹션은 Arbiter window 밖이다.
+**판정**: NEEDS_MORE_INFO 같은 형식이 여기 있어도 회수되지 않아야 한다.

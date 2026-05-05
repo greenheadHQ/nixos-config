@@ -1,0 +1,8 @@
+{
+  "description": "marker 없는 fenced JSON array recovery (Tier 3)",
+  "strict_count": 0,
+  "unmarked_count": 3,
+  "kv_count": 0,
+  "nl_signal": false,
+  "finding_level_count": 3
+}

@@ -1,0 +1,16 @@
+// 본 fixture는 Skill 문서 LLM context 로드 케이스 — verdict 키워드가 본문에 인용되지만
+// 실제 verdict 회수 대상이 아니어야 한다 (false positive 차단 검증).
+
+# arbiter-prompt.md (인용)
+
+이 문서는 Arbiter 프롬프트 SSOT이다. 판정 enum은 CONFIRMED_ISSUE / NOT_AN_ISSUE / NEEDS_MORE_INFO 셋이며,
+Arbiter는 sessile finding에 verdict을 판정한다. 예: "verdict": "CONFIRMED_ISSUE"는 finding이 실재한다는 의미.
+
+# DA reviewer fan-out
+
+DA reviewer가 finding을 produce하면 Arbiter가 verdict를 부여한다. 본 SKILL 문서는 LLM context로 로드되므로
+verdict 키워드가 그냥 본문에 인용된다. 실제 Arbiter 결과 출력이 아니다.
+
+이 본문에는 ARBITER_DIR marker도 없고 (`/tmp/da-` prefix가 본문에 안 박힘),
+VERDICT_JSON 블록도 없으며, Arbiter 결과 헤더 (`## Arbiter 검증 결과`)도 없다.
+따라서 verdict 회수 대상이 아니어야 한다.

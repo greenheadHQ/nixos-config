@@ -37,6 +37,7 @@ let
 
   # 노출 대상 — SoT: 아래 exposedCodexSkills 리스트
   exposedCodexSkills = [
+    "analyzing-da-sessions"
     "create-issue"
     "create-pr"
     "grill-me"

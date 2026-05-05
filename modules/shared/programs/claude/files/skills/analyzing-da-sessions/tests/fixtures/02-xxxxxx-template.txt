@@ -1,0 +1,11 @@
+// XXXXXX 템플릿 marker (placeholder code) — false positive 차단 검증.
+// ARBITER_DIR_MARKER 정규식의 negative lookahead `(?!XXXXXX\b)`가 이 케이스를 잡아야 한다.
+
+# 코드 예시 (mktemp template)
+
+```bash
+ARBITER_DIR=$(mktemp -d /tmp/da-${_DA_SID}-arbiter-XXXXXX)
+[ -d "$ARBITER_DIR" ] || { echo "ARBITER_FAILED: missing dir=$ARBITER_DIR"; exit 1; }
+```
+
+위 코드는 mktemp 템플릿 — 실제 ARBITER_DIR이 아니라 코드 예시다. 본문에는 verdict 본문이 없다.
