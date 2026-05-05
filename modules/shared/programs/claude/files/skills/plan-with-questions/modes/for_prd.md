@@ -46,7 +46,8 @@
 [`for_action.md`](./for_action.md) Step 1-4와 Step 5-6의 핵심 절차를 따른다. 차이점:
 - **Step 1**: tier-1/aux 신호 1차 평가 (자동 트리거 가능성 검토).
 - **Step 2**: 트리거 결정 시 사용자에게 알림 + opt-out 확인. 사용자 동의 시 Mode 전환 (`for_action` → `for_prd`).
-- **Step 3.5**: 자문 입력에 phase 구조 후보를 포함 (PRD는 phase 단위 결정이 핵심).
+- **Step 3.5**: 자문 입력에 phase 구조 후보를 포함 (PRD는 phase 단위 결정이 핵심). 자문 출력의 두 layer schema(`technical_matrix` + `user_facing`)와 D2 fallback 규칙은 [`../references/consulting-step.md`](../references/consulting-step.md) SSOT를 그대로 따른다.
+- **Step 4 (D1/D2/D4 동일 적용)**: for_action Step 4의 정책을 그대로 차용 — 라운드당 `questions` 배열 길이 1 (D1), 사용자 노출은 `user_facing` layer만 (D2), 트레이드오프 라운드는 D4 합의 알고리즘 4단계 호출 + 후보가 정확히 1개로 좁혀진 합의 PASS 옵션에만 `(Recommended)` 부착, judgment-first 사전 라운드는 D4 미실행 + 라벨 절대 금지, fallback enum(D4_FALLBACK_A/B/C/C_MULTI) 발생 시 사용자에게는 평이 한국어 문구만 노출. for_prd는 별도 사본을 두지 않고 [`for_action.md` Step 4](./for_action.md#step-4-사용자에게-질문-일반-모드)를 callsite로 인용한다 — 모든 phase 인터뷰가 동일 정책 적용을 받는다 (PRD가 multi-phase여도 D1 라운드당 1개는 유지).
 - **Step 4.5**: 건너뛴다. `for_prd`는 `.claude/plans/` 파일과 plan-file-template 14 metadata를 만들지 않는다.
 - **Step 5 DA**: 기본은 `/run-da for_plan` 호출 — `run-da` 진입 후 메인 LLM이 8 룰 체크리스트를 기계적으로 적용하여 SKIP/LITE/FULL을 판정한다. DA 입력은 PRD draft/context, candidate phase structure, Step 1-4 evidence이며 plan 파일 path가 아니다. phase 4+ 복잡 plan에서 사용자가 명시적으로 exhaustive review를 원하면 `/run-da for_plan full` 사용 (full modifier는 인라인 체크리스트를 우회하고 8 도메인 강제). 두 의미는 다르다.
 - **Step 6 DA 반영**: DA 결과는 PRD draft/context와 후보 phase 구조에 반영한다. PRD 작성 후에는 PRD master `Change Log`와, split mode에서 특정 phase가 영향받는 경우 해당 phase의 `Discoveries / Decisions`에 반영 이력을 남긴다.

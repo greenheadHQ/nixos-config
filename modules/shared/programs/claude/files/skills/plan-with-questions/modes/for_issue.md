@@ -35,12 +35,14 @@ fan-in 결과에서 미해결 항목(블랙박스 제로 원칙의 "블랙박스
 
 **사용자에게 질문할 때는 질문 도구를 사용한다.** 질문 도구 미지원 시 [`../references/runtime-boundaries.md`](../references/runtime-boundaries.md#질문-도구-미지원-대응)를 따른다.
 
-질문 도구로 한 라운드에 최대 4개 질문을 묻는다. 우선순위가 높은(아키텍처 결정, 핵심 요구사항) 질문부터 시작한다. (for_action Step 4의 "한번에 모아서"와 달리 라운드당 제한을 두는 이유: for_issue는 반복 라운드로 점진적으로 이슈를 정의하므로 과부하 방지가 필요하다.)
+**라운드당 1개 질문 (D1, for_action Step 4와 동일 정책)**: 질문 도구 호출 시 `questions` 배열 길이는 1로 고정한다. 우선순위가 높은(아키텍처 결정, 핵심 요구사항) 질문부터 시작한다. 이전 정책 "라운드당 최대 4개"는 폐기한다 — for_action과 통일하여 인지 부하/turn_abort 회귀를 방지한다 (for_issue도 반복 라운드로 점진적으로 이슈를 정의하므로 라운드당 1개로도 동일 효과를 얻는다 — 라운드 수 증가는 D1 trade-off로 명시 수용).
+
+트레이드오프 라운드 D4 합의 알고리즘 호출, user_facing layer 사용, judgment-first 라벨 금지, fallback enum(D4_FALLBACK_A/B/C/C_MULTI + D2_FALLBACK_USER_FACING) 사용자 노출 평이 문구 표기는 모두 [`for_action.md` Step 4](./for_action.md#step-4-사용자에게-질문-일반-모드) 정책을 동일하게 적용한다 (for_issue는 별도 사본을 두지 않고 callsite로 인용).
 
 각 라운드 후:
 1. 답변된 체크리스트 항목을 ✅로 업데이트
 2. 답변에서 파생된 새 불명확점이 있으면 체크리스트에 추가
-3. 남은 항목이 있으면 다음 라운드 진행
+3. 남은 항목이 있으면 다음 라운드 진행 (여전히 questions 배열 길이 1)
 4. 모든 항목 ✅ 또는 사용자 "충분" → Step I-5로
 
 질문 패턴과 anti-anchoring 표시 규칙은 [`../references/output-templates.md`](../references/output-templates.md#step-4--step-i-4-질문-패턴) 참조.
