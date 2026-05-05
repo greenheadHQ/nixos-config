@@ -1,8 +1,8 @@
-# DA Integration (Step 5 호출 + Step 6 결과 반영)
+# External Review Integration (Step 5 호출 + Step 6 결과 반영)
 
 `for_action` 모드 Step 5/6의 `/run-da for_plan` 호출 계약과 결과 반영 상태표. `for_prd`는 같은 DA 호출을 쓰되 plan 파일 대신 PRD draft/context를 입력과 반영 대상으로 사용한다.
 
-## Step 5: DA for_plan 실행 [일반 모드]
+## Step 5: 외부 검토 plan-mode 실행 [일반 모드]
 
 `for_action` 모드에서 모든 사용자 질문이 해소되고 Step 4.5 공식 plan 파일이 초기화되면, 계획 추적 도구 진입 전에 `/run-da for_plan`을 실행한다.
 
@@ -17,12 +17,22 @@
 - **타이밍**: 반드시 계획 추적 도구 진입 전에 이 단계를 완료한다 (DA 에이전트가 일반 모드에서 full tool access로 PoC 검증을 수행할 수 있도록).
 - **for_action 입력 계약**: Step 4.5에서 만든 공식 `.claude/plans/<slug>.md` 경로와 파일 내용을 DA 입력 context에 포함한다. `/run-da for_plan` 뒤에 path argument나 modifier를 추가하지 않는다.
 - **for_action fail-closed precondition**: Step 4.5 plan 파일이 없거나 canonical path가 `.claude/plans/` 밖이면 `/run-da for_plan`을 호출하지 않고 BLOCKED 처리한다. slug 재생성 또는 파일 초기화를 먼저 완료한다.
-- **for_action DA State 전이**: DA 시작 직전에 같은 plan 파일의 `DA State`를 `RUNNING`으로 바꾸고 `Change Log`에 DA Run ID(`da-YYYYMMDD-HHMMSS-<shortsha>-<nonce>`)와 started-at을 기록한다. `<nonce>`는 6자 이상 random/unique suffix(예: mktemp basename, UUID fragment, session id + counter)이며, 같은 plan 파일의 기존 `Change Log` 안에서 중복되면 새 suffix를 생성한다. verdict를 수신한 즉시 Step 6 반영 전에 `DA State=APPLYING`, `Resume From=for_action.step6_da_apply`로 갱신하고, 같은 DA Run ID의 result path(있으면) 또는 verdict 요약을 `Change Log`에 기록한다. Step 6은 최신 DA Run ID와 일치하는 verdict만 반영하며, 나중에 도착한 이전 run verdict는 stale result로 기록하고 무시한다.
+- **for_action DA State 전이**: 외부 검토 시작 직전에 같은 plan 파일의 `DA State`를 `RUNNING`으로 바꾸고 `Change Log`에는 외부 검토가 시작됐다는 자연어 상태만 기록한다. 개별 run 상관관계 값은 live session memory 또는 scratch에만 두고 durable markdown에는 쓰지 않는다. verdict를 수신한 즉시 Step 6 반영 전에 `DA State=APPLYING`, `Resume From=for_action.step6_da_apply`로 갱신하고, durable verdict summary 또는 stable artifact name을 `Change Log`에 기록한다. Step 6은 같은 active session에서 runtime-only 상관관계가 현재 verdict임을 확인할 수 있을 때만 반영한다. 세션 재개 후 상관관계를 확인할 수 없거나 verdict 기록이 불충분하면 같은 plan 파일을 입력으로 외부 검토를 재실행하고, 늦게 도착한 이전 verdict는 stale result로만 기록하고 적용하지 않는다.
 - **for_prd 예외**: `for_prd`는 Step 4.5와 `.claude/plans/` precondition을 적용하지 않는다. Step 5 DA 입력은 PRD draft/context, candidate phase structure, Step 1-4 evidence다.
+
+### Durable wording guardrails
+
+Durable plan/PRD/PR/issue/comment text must not duplicate the guard pattern definitions. The pattern SSOT is [`pinning-patterns.sh`](../../../lib/pinning-patterns.sh); examples in this file are illustrative and must be validated with that helper.
+
+Guard-safe examples for plan `Change Log` entries:
+
+- `외부 검토 plan-mode 시작`
+- `외부 검토 결과 반영: verdict summary recorded`
+- `이전 외부 검토 결과 도착: stale result ignored`
 
 ## Step 6: DA 결과 반영 [일반 모드]
 
-DA for_plan의 Arbiter 판정 결과와 selective consistency 집계(해당 시)를 함께 처리한다. 상세 상태 전이는 [`run-da/references/protocol.md`](../../run-da/references/protocol.md)의 "DA → Arbiter → Main Agent 상태 흐름" 및 "Selective consistency 상태 전이" 참조.
+외부 검토 plan-mode의 Arbiter 판정 결과와 selective consistency 집계(해당 시)를 함께 처리한다. 상세 상태 전이는 [`run-da/references/protocol.md`](../../run-da/references/protocol.md)의 "DA → Arbiter → Main Agent 상태 흐름" 및 "Selective consistency 상태 전이" 참조.
 
 | verdict × stability_status | 메인 에이전트 행동 |
 |----------------------------|-------------------|
