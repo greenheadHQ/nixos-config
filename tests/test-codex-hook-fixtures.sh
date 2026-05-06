@@ -937,6 +937,10 @@ test_pinning_shared_library_behavioral() {
     printf '%s\n' "DA ""for_plan"
     printf '%s\n' "dead""bee"
   } > "$scan_file"
+  mkdir -p \
+    "$sandbox/.claude/prds" \
+    "$sandbox/.claude/plans" \
+    "$sandbox/docs/examples/.claude/prds"
 
   # shellcheck source=../modules/shared/programs/claude/files/lib/pinning-patterns.sh
   . "$PINNING_LIB_REPO_FILE"
@@ -945,8 +949,14 @@ test_pinning_shared_library_behavioral() {
     "[7/lib] raw helper must keep PATTERN_A visible"
   assert_eq "$(pinning_match_count_for_path "$scan_file" "$sandbox/outside.md")" "4" \
     "[7/lib] outside path must keep PATTERN_A visible"
-  assert_eq "$(pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/prd.md")" "3" \
+  assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/prd.md")" "3" \
     "[7/lib] PRD path must skip only PATTERN_A"
+  assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/docs/examples/.claude/prds/prd.md")" "4" \
+    "[7/lib] nested PRD-looking path must not skip PATTERN_A"
+  assert_eq "$(if PINNING_PROJECT_ROOT="$sandbox" pinning_should_check_path "$sandbox/.claude/prds/spec.txt"; then printf check; else printf skip; fi)" "check" \
+    "[7/lib] PRD/plan path should_check must bypass generic extension gate"
+  assert_eq "$(if PINNING_PROJECT_ROOT="$sandbox" pinning_should_check_path "$sandbox/outside.txt"; then printf check; else printf skip; fi)" "skip" \
+    "[7/lib] outside non-durable extension should still skip"
 
   cat > "$sandbox/bin-stubs/realpath" <<'STUB'
 #!/usr/bin/env bash
@@ -957,20 +967,22 @@ STUB
 exit 1
 STUB
   chmod +x "$sandbox/bin-stubs/realpath" "$sandbox/bin-stubs/readlink"
-  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/plan.md")" "3" \
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/plan.md")" "3" \
     "[7/lib] PRD/plan path fallback must not require GNU realpath/readlink"
+  assert_eq "$(if PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_should_check_path "$sandbox/.claude/plans/plan.yaml"; then printf check; else printf skip; fi)" "check" \
+    "[7/lib] PRD/plan should_check fallback must not require durable extension"
   assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}"; if pinning_should_check_path "/home/test/repo/scripts/ai/commit-msg-pinning.sh"; then printf check; else printf skip; fi)" "skip" \
     "[7/lib] should_check fallback must preserve self-exclude paths without GNU realpath/readlink"
   assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}"; if pinning_should_check_path "/tmp/da-test-abc/scratch.md"; then printf check; else printf skip; fi)" "skip" \
     "[7/lib] should_check fallback must preserve DA scratch whitelist without GNU realpath/readlink"
   mkdir -p "$sandbox/.claude/plans"
   : > "$sandbox/.claude/plans/existing.md"
-  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/existing.md")" "3" \
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/existing.md")" "3" \
     "[7/lib] PRD/plan path fallback must cover existing regular files"
   mkdir -p "$sandbox/.claude/prds"
   : > "$sandbox/outside.md"
   ln -s "$sandbox/outside.md" "$sandbox/.claude/prds/symlink.md"
-  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/symlink.md")" "4" \
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/symlink.md")" "4" \
     "[7/lib] PRD/plan fallback must fail closed for existing symlink targets"
   da_symlink_dir=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/da-test-symlink.XXXXXX") \
     || fail "[7/lib] DA symlink mktemp -d 실패"
@@ -996,7 +1008,7 @@ $diff_out"
 test_pinning_alert_behavioral() {
   local hook_claude="$REPO_ROOT/modules/shared/programs/claude/files/hooks/pinning-alert.sh"
   local hook_codex="$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-alert.sh"
-  local fixture sandbox materialized stderr_log hook exit_code
+  local fixture sandbox materialized stderr_log hook exit_code pinning_root_env
 
   for fixture in "$FIXTURE_DIR"/stdin/pinning-*.json; do
     assert_file_exists "${fixture%.json}.expected" "7/$(basename "$fixture")"
@@ -1009,6 +1021,7 @@ test_pinning_alert_behavioral() {
     sandbox=$(new_hook_sandbox)
     materialized="$(_materialize_pinning_fixture "$fixture" "$sandbox")"
     stderr_log="$sandbox/pinning-stderr.log"
+    pinning_root_env="PINNING_PROJECT_ROOT=$sandbox/fixture-pinning"
 
     case "$(basename "$fixture")" in
       pinning-claude-*) hook="$hook_claude" ;;
@@ -1016,7 +1029,7 @@ test_pinning_alert_behavioral() {
       *) fail "[7] unexpected fixture name: $(basename "$fixture")" ;;
     esac
 
-    if _exec_with_sandbox_env "$sandbox" "" "$hook" < "$materialized" 2>"$stderr_log"; then
+    if _exec_with_sandbox_env "$sandbox" "$pinning_root_env" "$hook" < "$materialized" 2>"$stderr_log"; then
       exit_code=0
     else
       exit_code=$?
@@ -1079,8 +1092,8 @@ _materialize_pinning_fixture() {
   )
   local paths=(
     "$sandbox/existing-pinned.md"
-    "$sandbox/.claude/prds/existing.md"
-    "$sandbox/.claude/plans/existing.md"
+    "$sandbox/fixture-pinning/.claude/prds/existing.md"
+    "$sandbox/fixture-pinning/.claude/plans/existing.md"
   )
   local sed_args=(
     -e "s#/tmp/da-test-abc/#${da_sandbox_sed}/#g"
@@ -1094,7 +1107,8 @@ _materialize_pinning_fixture() {
   mkdir -p \
     "$sandbox/da-x" \
     "$sandbox/fixture-pinning/.claude/prds" \
-    "$sandbox/fixture-pinning/.claude/plans"
+    "$sandbox/fixture-pinning/.claude/plans" \
+    "$sandbox/fixture-pinning/docs/examples/.claude/prds"
   for i in "${!placeholders[@]}"; do
     mkdir -p "$(dirname "${paths[$i]}")"
     sed_args+=(-e "s#${placeholders[$i]}#$(sed_replacement_escape "${paths[$i]}")#g")
@@ -1115,7 +1129,7 @@ _materialize_pinning_fixture() {
 test_pretooluse_pinning_guard_behavioral() {
   local hook_claude="$REPO_ROOT/modules/shared/programs/claude/files/hooks/pinning-guard.sh"
   local hook_codex="$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-guard.sh"
-  local fixture sandbox hook materialized stdout_log stderr_log reason_log exit_code stderr_head
+  local fixture sandbox hook materialized stdout_log stderr_log reason_log exit_code stderr_head pinning_root_env
 
   for fixture in "$FIXTURE_DIR"/stdin/pretooluse-pinning-guard-*.json; do
     assert_file_exists "${fixture%.json}.expected" "7b/$(basename "$fixture")"
@@ -1125,6 +1139,7 @@ test_pretooluse_pinning_guard_behavioral() {
     stdout_log="$sandbox/pretooluse-stdout.log"
     stderr_log="$sandbox/pretooluse-stderr.log"
     reason_log="$sandbox/pretooluse-reason.log"
+    pinning_root_env="PINNING_PROJECT_ROOT=$sandbox/fixture-pinning"
 
     case "$(basename "$fixture")" in
       pretooluse-pinning-guard-claude-*) hook="$hook_claude" ;;
@@ -1132,7 +1147,7 @@ test_pretooluse_pinning_guard_behavioral() {
       *) fail "[7b] unexpected fixture name: $(basename "$fixture")" ;;
     esac
 
-    if _exec_with_sandbox_env "$sandbox" "" "$hook" < "$materialized" >"$stdout_log" 2>"$stderr_log"; then
+    if _exec_with_sandbox_env "$sandbox" "$pinning_root_env" "$hook" < "$materialized" >"$stdout_log" 2>"$stderr_log"; then
       exit_code=0
     else
       exit_code=$?

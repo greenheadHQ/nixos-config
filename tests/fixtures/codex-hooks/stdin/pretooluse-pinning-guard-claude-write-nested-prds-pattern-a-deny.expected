@@ -1,0 +1,4 @@
+[pinning-guard] Write on /tmp/fixture-pinning/docs/examples/.claude/prds/foo.md contains volatile review/session metadata:
+  - Round counter 박제: 'Round N'
+         1: Round 73
+Use stable identifiers or plain natural-language context before retrying.

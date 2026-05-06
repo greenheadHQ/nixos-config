@@ -83,6 +83,30 @@ pinning_canonicalize_existing_parent_path() {
   )
 }
 
+pinning_project_root_path() {
+  local root="${PINNING_PROJECT_ROOT:-}"
+  local canon
+  if [ -n "$root" ]; then
+    case "$root" in
+      *'/../'* | '../'* | *'/..' | '..' ) return 1 ;;
+    esac
+  elif command -v git >/dev/null 2>&1; then
+    root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=""
+  fi
+  [ -n "$root" ] || root="$PWD"
+  [ -d "$root" ] || return 1
+
+  canon="$(pinning_canonicalize_path "$root")"
+  if [ -z "$canon" ] && [ ! -L "$root" ]; then
+    canon="$(pinning_canonicalize_existing_parent_path "$root")"
+  fi
+  [ -n "$canon" ] || return 1
+  case "$canon" in
+    *'/../'* | '../'* | *'/..' | '..' ) return 1 ;;
+  esac
+  printf '%s\n' "$canon"
+}
+
 pinning_should_check_path() {
   local raw="$1"
   # Reject path traversal segments at the raw layer so callers cannot
@@ -108,11 +132,13 @@ pinning_should_check_path() {
     *'/../'* | '../'* | *'/..' | '..' ) return 0 ;;
   esac
 
-  case "$path" in
-    *.md | *.sh | *.ipynb) ;;
-    /tmp/*body* | /var/folders/*/T/*body*) ;;
-    *) return 1 ;;
-  esac
+  if ! pinning_is_prd_or_plan_path "$path"; then
+    case "$path" in
+      *.md | *.sh | *.ipynb) ;;
+      /tmp/*body* | /var/folders/*/T/*body*) ;;
+      *) return 1 ;;
+    esac
+  fi
 
   case "$path" in
     */hooks/pinning-alert.sh) return 1 ;;
@@ -139,7 +165,7 @@ pinning_is_prd_or_plan_path() {
     *'/../'* | '../'* | *'/..' | '..' ) return 1 ;;
   esac
 
-  local path
+  local path root
   path="$(pinning_canonicalize_path "$raw")"
   if [ -z "$path" ] && [ ! -L "$raw" ]; then
     path="$(pinning_canonicalize_existing_parent_path "$raw")"
@@ -149,8 +175,11 @@ pinning_is_prd_or_plan_path() {
     *'/../'* | '../'* | *'/..' | '..' ) return 1 ;;
   esac
 
+  root="$(pinning_project_root_path)" || return 1
+  [ -n "$root" ] || return 1
+
   case "$path" in
-    */.claude/prds/* | */.claude/plans/*) return 0 ;;
+    "$root"/.claude/prds/* | "$root"/.claude/plans/*) return 0 ;;
     *) return 1 ;;
   esac
 }

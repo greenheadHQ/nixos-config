@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/fixture-pinning/docs/examples/.claude/prds/foo.md",
+    "content": "Round 73"
+  }
+}
