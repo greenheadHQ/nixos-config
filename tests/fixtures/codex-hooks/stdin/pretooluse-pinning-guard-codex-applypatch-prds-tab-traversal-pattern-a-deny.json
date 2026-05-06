@@ -1,0 +1,6 @@
+{
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Add File: /tmp/fixture-pinning/.claude/prds/tab.md\t/../../../outside.md\n+Round 70\n*** End Patch\n"
+  }
+}

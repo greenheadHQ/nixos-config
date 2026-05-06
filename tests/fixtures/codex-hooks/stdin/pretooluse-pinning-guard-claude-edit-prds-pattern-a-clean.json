@@ -1,0 +1,8 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/tmp/fixture-pinning/.claude/prds/prd-edit.md",
+    "old_string": "stable text",
+    "new_string": "Round 68"
+  }
+}

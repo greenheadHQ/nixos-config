@@ -79,7 +79,7 @@ case "$TOOL_NAME" in
     SCAN_FILE="$SCAN_DIR/scan.txt"
     printf '%s' "$TEXT" > "$SCAN_FILE"
 
-    findings="$(pinning_findings_text "$SCAN_FILE")"
+    findings="$(pinning_findings_text_for_path "$SCAN_FILE" "$FILE_PATH")"
     if [ -n "$findings" ]; then
       printf '[pinning-alert] %s on %s 매치:%b\n' "$TOOL_NAME" "$FILE_PATH" "$findings" >&2
     fi
@@ -95,30 +95,11 @@ case "$TOOL_NAME" in
     PATCH_FILE="$SCAN_DIR/patch.txt"
     printf '%s' "$PATCH_TEXT" > "$PATCH_FILE"
 
-    # awk로 파일별 added line을 분리. 출력: <path>\t<line> per line.
-    # path는 다음 헤더가 나오기 전까지 유지. End Patch 또는 새 File 헤더에서 reset.
-    # `*** Move to: <newpath>`를 만나면 current section의 effective path를 새 경로로 갱신
-    # (V4A rename 케이스: old.txt → new.md에서 새 산출물의 확장자 기준 eligibility 판단 — 이슈 #603 R3 Correctness-1/Regression-1).
-    SECTIONS_FILE="$SCAN_DIR/sections.tsv"
-    awk '
-      /^\*\*\* (Update|Add|Delete) File: / {
-        path = $0
-        sub(/^\*\*\* [A-Za-z]+ File: /, "", path)
-        next
-      }
-      /^\*\*\* Move to: / {
-        newpath = $0
-        sub(/^\*\*\* Move to: /, "", newpath)
-        path = newpath
-        next
-      }
-      /^\*\*\* End Patch/ { path = ""; next }
-      path != "" && /^\+/ && !/^\*\*\*/ {
-        line = $0
-        sub(/^\+/, "", line)
-        printf "%s\t%s\n", path, line
-      }
-    ' "$PATCH_FILE" > "$SECTIONS_FILE"
+    # shared helper가 파일별 added line을 분리한다. 출력은 length-prefixed records이며,
+    # companion helper로 path와 line을 꺼낸다.
+    # `*** Move to: <newpath>`는 current section의 effective path를 새 경로로 갱신한다.
+    SECTIONS_FILE="$SCAN_DIR/sections.records"
+    pinning_apply_patch_added_sections "$PATCH_FILE" > "$SECTIONS_FILE"
 
     [ -s "$SECTIONS_FILE" ] || exit 0
 
@@ -127,16 +108,15 @@ case "$TOOL_NAME" in
     # 초과하면 redirection이 'File name too long'으로 실패하고 set -e로 hook이 exit 1이 되어
     # warn-only 계약을 위반한다 (#603 DA for_pr R2 Correctness-1/Regression-1). path는 보고용
     # 변수로만 유지하고 scan 파일은 mktemp으로 익명 basename을 받는다.
-    awk -F'\t' '{print $1}' "$SECTIONS_FILE" | sort -u | while IFS= read -r p; do
+    pinning_apply_patch_section_paths "$SECTIONS_FILE" | while IFS= read -r p; do
       [ -n "$p" ] || continue
       if ! pinning_should_check_path "$p"; then
         continue
       fi
       PATH_SCAN_FILE=$(mktemp "$SCAN_DIR/scan-XXXXXX")
-      awk -F'\t' -v target="$p" '$1 == target { print substr($0, length(target) + 2) }' \
-        "$SECTIONS_FILE" > "$PATH_SCAN_FILE"
+      pinning_apply_patch_section_lines_for_path "$SECTIONS_FILE" "$p" > "$PATH_SCAN_FILE"
       [ -s "$PATH_SCAN_FILE" ] || continue
-      findings="$(pinning_findings_text "$PATH_SCAN_FILE")"
+      findings="$(pinning_findings_text_for_path "$PATH_SCAN_FILE" "$p")"
       if [ -n "$findings" ]; then
         printf '[pinning-alert] apply_patch on %s 매치:%b\n' "$p" "$findings" >&2
       fi

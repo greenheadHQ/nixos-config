@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/fixture-pinning/.claude/plans/foo.md",
+    "content": "Round 49"
+  }
+}

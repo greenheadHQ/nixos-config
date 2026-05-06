@@ -1,0 +1,8 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/tmp/fixture-pinning/.claude/plans/plan-codex-edit.md",
+    "old_string": "stable text",
+    "new_string": "Round 71"
+  }
+}

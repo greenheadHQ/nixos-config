@@ -1438,7 +1438,7 @@ for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D HASH_MIN HASH_MAX PINNING_RE
     fail "pinning $_var 정의 부재 ($_pinning_lib)"
   fi
 done
-for _fn in pinning_findings_records pinning_findings_text pinning_match_count pinning_should_check_path; do
+for _fn in pinning_findings_records pinning_findings_text pinning_match_count pinning_should_check_path pinning_is_prd_or_plan_path pinning_canonicalize_existing_parent_path pinning_apply_patch_added_sections pinning_apply_patch_section_paths pinning_apply_patch_section_lines_for_path pinning_findings_records_for_path pinning_findings_text_for_path pinning_match_count_for_path pinning_guard_findings_text_for_path; do
   if grep -m1 -E "^${_fn}\(\)" "$_pinning_lib" >/dev/null 2>&1; then
     pass "pinning $_fn shared lib 함수 OK"
   else
@@ -1453,6 +1453,25 @@ for _hook in "${_pinning_hooks[@]}"; do
     fail "pinning shared lib source 부재: $_hook_basename"
   fi
 done
+
+_check_pinning_policy_text() {
+  local _policy_file="$1"
+  local _label="$2"
+  if [ ! -f "$_policy_file" ]; then
+    fail "pinning policy text 확인 불가 ($_label): 파일 없음 ($_policy_file)"
+    return
+  fi
+  if grep -Fq 'Canonical non-traversal PRD/plan path(`.claude/prds/*`, `.claude/plans/*`)에서는 PATTERN_A만 예외적으로 허용한다.' "$_policy_file" && \
+     grep -Fq 'PATTERN_B/C/D는 해당 path에서도 계속 차단/경고한다.' "$_policy_file"; then
+    pass "pinning policy text OK: $_label"
+  else
+    fail "pinning policy text 누락: $_label ($_policy_file)"
+  fi
+}
+
+_check_pinning_policy_text "$REPO_ROOT/modules/shared/programs/claude/files/CLAUDE.md" "source CLAUDE.md"
+_check_pinning_policy_text "$HOME/.claude/CLAUDE.md" "\$HOME/.claude/CLAUDE.md"
+_check_pinning_policy_text "$HOME/.codex/AGENTS.md" "\$HOME/.codex/AGENTS.md"
 
 # fixture self-test (deterministic, live 미실행).
 if [ ! -x "$_active_hooks_runner" ]; then

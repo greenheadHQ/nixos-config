@@ -1,0 +1,4 @@
+[pinning-guard] Write on /tmp/fixture-pinning/.claude/plans/foo.md contains volatile review/session metadata:
+  - Bundle finding ID 박제: 'Bundle-N'
+         1: Correctness-1
+Use stable identifiers or plain natural-language context before retrying.

@@ -1,0 +1,8 @@
+{
+  "_fixture_existing_content": "Correctness-1",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "__SANDBOX_EXISTING_PRD_MD__",
+    "content": "DA for_plan"
+  }
+}

@@ -73,12 +73,6 @@ _scan_text_file() {
   printf '%s' "$text" > "$scan_file"
 }
 
-_count_text() {
-  local text="$1" scan_file="$2"
-  _scan_text_file "$text" "$scan_file"
-  pinning_match_count "$scan_file"
-}
-
 case "$TOOL_NAME" in
   Bash)
     COMMAND_TEXT=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
@@ -103,38 +97,34 @@ case "$TOOL_NAME" in
     [ -n "$FILE_PATH" ] || exit 0
     pinning_should_check_path "$FILE_PATH" || exit 0
 
-    OLD_COUNT=0
-    NEW_COUNT=0
     case "$TOOL_NAME" in
       Edit)
         OLD_STR=$(printf '%s' "$INPUT" | jq -r '.tool_input.old_string // empty' 2>/dev/null)
         NEW_STR=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null)
         [ -n "$NEW_STR" ] || exit 0
-        if [ -n "$OLD_STR" ]; then
-          OLD_COUNT=$(_count_text "$OLD_STR" "$SCAN_DIR/old.txt")
-        fi
-        NEW_COUNT=$(_count_text "$NEW_STR" "$SCAN_DIR/new.txt")
+        _scan_text_file "${OLD_STR:-}" "$SCAN_DIR/old.txt"
+        _scan_text_file "$NEW_STR" "$SCAN_DIR/new.txt"
         ;;
       Write)
         CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // empty' 2>/dev/null)
         [ -n "$CONTENT" ] || exit 0
-        NEW_COUNT=$(_count_text "$CONTENT" "$SCAN_DIR/new.txt")
         if [ -f "$FILE_PATH" ]; then
-          OLD_COUNT=$(_count_text "$(cat "$FILE_PATH")" "$SCAN_DIR/old.txt")
+          cat "$FILE_PATH" > "$SCAN_DIR/old.txt"
+        else
+          : > "$SCAN_DIR/old.txt"
         fi
+        _scan_text_file "$CONTENT" "$SCAN_DIR/new.txt"
         ;;
       NotebookEdit)
         NEW_SOURCE=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_source // empty' 2>/dev/null)
         [ -n "$NEW_SOURCE" ] || exit 0
         OLD_SOURCE=$(printf '%s' "$INPUT" | jq -r '.tool_input.old_source // .tool_input.old_string // empty' 2>/dev/null)
-        NEW_COUNT=$(_count_text "$NEW_SOURCE" "$SCAN_DIR/new.txt")
-        if [ -n "$OLD_SOURCE" ]; then
-          OLD_COUNT=$(_count_text "$OLD_SOURCE" "$SCAN_DIR/old.txt")
-        fi
+        _scan_text_file "${OLD_SOURCE:-}" "$SCAN_DIR/old.txt"
+        _scan_text_file "$NEW_SOURCE" "$SCAN_DIR/new.txt"
         ;;
     esac
-    if [ "$NEW_COUNT" -gt "$OLD_COUNT" ]; then
-      findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
+    findings="$(pinning_guard_findings_text_for_path "$SCAN_DIR/old.txt" "$SCAN_DIR/new.txt" "$FILE_PATH")"
+    if [ -n "$findings" ]; then
       _deny "$TOOL_NAME" "$FILE_PATH" "$findings"
     fi
     ;;
@@ -144,26 +134,8 @@ case "$TOOL_NAME" in
 
     PATCH_FILE="$SCAN_DIR/patch.txt"
     printf '%s' "$PATCH_TEXT" > "$PATCH_FILE"
-    SECTIONS_FILE="$SCAN_DIR/sections.tsv"
-    awk '
-      /^\*\*\* (Update|Add|Delete) File: / {
-        path = $0
-        sub(/^\*\*\* [A-Za-z]+ File: /, "", path)
-        next
-      }
-      /^\*\*\* Move to: / {
-        newpath = $0
-        sub(/^\*\*\* Move to: /, "", newpath)
-        path = newpath
-        next
-      }
-      /^\*\*\* End Patch/ { path = ""; next }
-      path != "" && /^\+/ && !/^\*\*\*/ {
-        line = $0
-        sub(/^\+/, "", line)
-        printf "%s\t%s\n", path, line
-      }
-    ' "$PATCH_FILE" > "$SECTIONS_FILE"
+    SECTIONS_FILE="$SCAN_DIR/sections.records"
+    pinning_apply_patch_added_sections "$PATCH_FILE" > "$SECTIONS_FILE"
 
     [ -s "$SECTIONS_FILE" ] || exit 0
 
@@ -171,13 +143,12 @@ case "$TOOL_NAME" in
       [ -n "$path" ] || continue
       pinning_should_check_path "$path" || continue
       PATH_SCAN_FILE=$(mktemp "$SCAN_DIR/scan-XXXXXX")
-      awk -F'\t' -v target="$path" '$1 == target { print substr($0, length(target) + 2) }' \
-        "$SECTIONS_FILE" > "$PATH_SCAN_FILE"
+      pinning_apply_patch_section_lines_for_path "$SECTIONS_FILE" "$path" > "$PATH_SCAN_FILE"
       [ -s "$PATH_SCAN_FILE" ] || continue
-      findings="$(pinning_findings_text "$PATH_SCAN_FILE")"
+      findings="$(pinning_findings_text_for_path "$PATH_SCAN_FILE" "$path")"
       [ -n "$findings" ] || continue
       _deny "$TOOL_NAME" "$path" "$findings"
-    done < <(awk -F'\t' '{print $1}' "$SECTIONS_FILE" | sort -u)
+    done < <(pinning_apply_patch_section_paths "$SECTIONS_FILE")
     ;;
 esac
 

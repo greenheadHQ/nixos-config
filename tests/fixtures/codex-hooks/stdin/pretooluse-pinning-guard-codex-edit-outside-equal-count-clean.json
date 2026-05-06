@@ -1,0 +1,8 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/tmp/fixture-pinning/outside.md",
+    "old_string": "Correctness-1",
+    "new_string": "Regression-1"
+  }
+}

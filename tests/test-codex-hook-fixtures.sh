@@ -112,6 +112,10 @@ trap cleanup EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 warn() { echo "WARN: $*" >&2; }
 
+sed_replacement_escape() {
+  printf '%s' "$1" | sed 's/[&#]/\\&/g'
+}
+
 assert_eq() {
   # $1=actual $2=expected $3=message
   [[ "$1" == "$2" ]] || fail "$3 (actual='$1' expected='$2')"
@@ -923,6 +927,59 @@ test_stop_notification_helper_equivalence() {
 # 옆에 위치한 *.expected에 stderr 출력을 박는다. exit code는 모두 0(warn-only contract).
 # Codex apply_patch envelope V4A awk parser의 핵심 분기(*** Move to: rename, multi-file
 # attribution, removeonly added-line filter, backtick HASH_MIN 미만)를 함께 보호한다.
+test_pinning_shared_library_behavioral() {
+  local sandbox scan_file da_symlink_dir
+  sandbox=$(new_hook_sandbox)
+  scan_file="$sandbox/pinning-shared-scan.txt"
+  {
+    printf '%s\n' "Ro""und 1"
+    printf '%s\n' "Correctness""-1"
+    printf '%s\n' "DA ""for_plan"
+    printf '%s\n' "dead""bee"
+  } > "$scan_file"
+
+  # shellcheck source=../modules/shared/programs/claude/files/lib/pinning-patterns.sh
+  . "$PINNING_LIB_REPO_FILE"
+
+  assert_eq "$(pinning_match_count "$scan_file")" "4" \
+    "[7/lib] raw helper must keep PATTERN_A visible"
+  assert_eq "$(pinning_match_count_for_path "$scan_file" "$sandbox/outside.md")" "4" \
+    "[7/lib] outside path must keep PATTERN_A visible"
+  assert_eq "$(pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/prd.md")" "3" \
+    "[7/lib] PRD path must skip only PATTERN_A"
+
+  cat > "$sandbox/bin-stubs/realpath" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  cat > "$sandbox/bin-stubs/readlink" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  chmod +x "$sandbox/bin-stubs/realpath" "$sandbox/bin-stubs/readlink"
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/plan.md")" "3" \
+    "[7/lib] PRD/plan path fallback must not require GNU realpath/readlink"
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}"; if pinning_should_check_path "/home/test/repo/scripts/ai/commit-msg-pinning.sh"; then printf check; else printf skip; fi)" "skip" \
+    "[7/lib] should_check fallback must preserve self-exclude paths without GNU realpath/readlink"
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}"; if pinning_should_check_path "/tmp/da-test-abc/scratch.md"; then printf check; else printf skip; fi)" "skip" \
+    "[7/lib] should_check fallback must preserve DA scratch whitelist without GNU realpath/readlink"
+  mkdir -p "$sandbox/.claude/plans"
+  : > "$sandbox/.claude/plans/existing.md"
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/existing.md")" "3" \
+    "[7/lib] PRD/plan path fallback must cover existing regular files"
+  mkdir -p "$sandbox/.claude/prds"
+  : > "$sandbox/outside.md"
+  ln -s "$sandbox/outside.md" "$sandbox/.claude/prds/symlink.md"
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/symlink.md")" "4" \
+    "[7/lib] PRD/plan fallback must fail closed for existing symlink targets"
+  da_symlink_dir=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/da-test-symlink.XXXXXX") \
+    || fail "[7/lib] DA symlink mktemp -d 실패"
+  printf '%s\n' "$da_symlink_dir" >> "$TEST_TMP_FILE"
+  ln -s "$sandbox/outside.md" "$da_symlink_dir/link.md"
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}"; if pinning_should_check_path "$da_symlink_dir/link.md"; then printf check; else printf skip; fi)" "check" \
+    "[7/lib] should_check fallback must fail closed for existing symlink targets"
+}
+
 _assert_pinning_expectation() {
   local fixture="$1" stderr_log="$2"
   local expected="${fixture%.json}.expected"
@@ -939,7 +996,7 @@ $diff_out"
 test_pinning_alert_behavioral() {
   local hook_claude="$REPO_ROOT/modules/shared/programs/claude/files/hooks/pinning-alert.sh"
   local hook_codex="$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-alert.sh"
-  local fixture sandbox stderr_log hook exit_code
+  local fixture sandbox materialized stderr_log hook exit_code
 
   for fixture in "$FIXTURE_DIR"/stdin/pinning-*.json; do
     assert_file_exists "${fixture%.json}.expected" "7/$(basename "$fixture")"
@@ -950,6 +1007,7 @@ test_pinning_alert_behavioral() {
     # pinning-alert.sh는 sandbox 내부 hook copy가 아닌 repo root path를 직접 호출하지만 env 격리
     # 계약은 카테고리 6 helper와 단일 source를 공유한다.
     sandbox=$(new_hook_sandbox)
+    materialized="$(_materialize_pinning_fixture "$fixture" "$sandbox")"
     stderr_log="$sandbox/pinning-stderr.log"
 
     case "$(basename "$fixture")" in
@@ -958,13 +1016,13 @@ test_pinning_alert_behavioral() {
       *) fail "[7] unexpected fixture name: $(basename "$fixture")" ;;
     esac
 
-    if _exec_with_sandbox_env "$sandbox" "" "$hook" < "$fixture" 2>"$stderr_log"; then
+    if _exec_with_sandbox_env "$sandbox" "" "$hook" < "$materialized" 2>"$stderr_log"; then
       exit_code=0
     else
       exit_code=$?
     fi
     assert_eq "$exit_code" "0" "[7] $(basename "$fixture"): warn-only contract 위반 (exit must be 0)"
-    _assert_pinning_expectation "$fixture" "$stderr_log"
+    _assert_pinning_expectation "$materialized" "$stderr_log"
   done
 }
 
@@ -1002,15 +1060,55 @@ $diff_out"
   fi
 }
 
-_materialize_pretooluse_fixture() {
+_materialize_pinning_fixture() {
   local fixture="$1" sandbox="$2"
-  local materialized="$fixture"
-  local existing_file="$sandbox/existing-pinned.md"
-  if grep -q "__SANDBOX_EXISTING_PINNED_MD__" "$fixture"; then
-    materialized="$sandbox/$(basename "$fixture")"
-    sed "s#__SANDBOX_EXISTING_PINNED_MD__#$existing_file#g" "$fixture" > "$materialized"
-    jq -r '.tool_input.old_string // empty' "$materialized" > "$existing_file"
-  fi
+  local materialized
+  materialized="$sandbox/$(basename "$fixture")"
+  local materialized_meta="$materialized.with-meta"
+  local sandbox_sed
+  sandbox_sed="$(sed_replacement_escape "$sandbox")"
+  local da_sandbox da_sandbox_sed
+  da_sandbox=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/da-codex-hook-fixture.XXXXXX") \
+    || fail "DA scratch mktemp -d 실패"
+  printf '%s\n' "$da_sandbox" >> "$TEST_TMP_FILE"
+  da_sandbox_sed="$(sed_replacement_escape "$da_sandbox")"
+  local placeholders=(
+    "__SANDBOX_EXISTING_PINNED_MD__"
+    "__SANDBOX_EXISTING_PRD_MD__"
+    "__SANDBOX_EXISTING_PLAN_MD__"
+  )
+  local paths=(
+    "$sandbox/existing-pinned.md"
+    "$sandbox/.claude/prds/existing.md"
+    "$sandbox/.claude/plans/existing.md"
+  )
+  local sed_args=(
+    -e "s#/tmp/da-test-abc/#${da_sandbox_sed}/#g"
+    -e "s#/tmp/da-x/../../home/greenhead/Workspace/nixos-config/#${sandbox_sed}/da-x/../repo/#g"
+    -e "s#/tmp/fixture-pinning-#${sandbox_sed}/fixture-pinning-#g"
+    -e "s#/tmp/fixture-pinning/#${sandbox_sed}/fixture-pinning/#g"
+    -e "s#/tmp/fixture-pretooluse-#${sandbox_sed}/fixture-pretooluse-#g"
+  )
+  local i
+
+  mkdir -p \
+    "$sandbox/da-x" \
+    "$sandbox/fixture-pinning/.claude/prds" \
+    "$sandbox/fixture-pinning/.claude/plans"
+  for i in "${!placeholders[@]}"; do
+    mkdir -p "$(dirname "${paths[$i]}")"
+    sed_args+=(-e "s#${placeholders[$i]}#$(sed_replacement_escape "${paths[$i]}")#g")
+  done
+
+  sed "${sed_args[@]}" "$fixture" > "$materialized_meta"
+  sed "${sed_args[@]}" "${fixture%.json}.expected" > "${materialized%.json}.expected"
+  for i in "${!placeholders[@]}"; do
+    if grep -q "${placeholders[$i]}" "$fixture"; then
+      jq -r '._fixture_existing_content // .tool_input.old_string // empty' "$materialized_meta" > "${paths[$i]}"
+    fi
+  done
+  jq 'del(._fixture_existing_content)' "$materialized_meta" > "$materialized"
+  rm -f "$materialized_meta"
   printf '%s\n' "$materialized"
 }
 
@@ -1023,7 +1121,7 @@ test_pretooluse_pinning_guard_behavioral() {
     assert_file_exists "${fixture%.json}.expected" "7b/$(basename "$fixture")"
 
     sandbox=$(new_hook_sandbox)
-    materialized="$(_materialize_pretooluse_fixture "$fixture" "$sandbox")"
+    materialized="$(_materialize_pinning_fixture "$fixture" "$sandbox")"
     stdout_log="$sandbox/pretooluse-stdout.log"
     stderr_log="$sandbox/pretooluse-stderr.log"
     reason_log="$sandbox/pretooluse-reason.log"
@@ -1045,7 +1143,7 @@ test_pretooluse_pinning_guard_behavioral() {
       fail "[7b] $(basename "$fixture"): expected empty stderr, got:
 $stderr_head"
     fi
-    _assert_pretooluse_guard_expectation "$fixture" "$stdout_log" "$reason_log"
+    _assert_pretooluse_guard_expectation "$materialized" "$stdout_log" "$reason_log"
   done
 }
 
@@ -1433,6 +1531,8 @@ run_test "stop-notification timeout unavailable fail-open (6.3)" \
 run_test "stop-notification helper equivalence (6.4)" \
   test_stop_notification_helper_equivalence
 
+run_test "pinning shared library behavioral" \
+  test_pinning_shared_library_behavioral
 run_test "pinning-alert behavioral (#606)" \
   test_pinning_alert_behavioral
 run_test "pretooluse pinning-guard behavioral (#587)" \

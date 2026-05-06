@@ -1,0 +1,8 @@
+{
+  "tool_name": "NotebookEdit",
+  "tool_input": {
+    "notebook_path": "/tmp/fixture-pinning/.claude/prds/prd-codex-notebook.ipynb",
+    "old_source": "stable source",
+    "new_source": "Round 72"
+  }
+}

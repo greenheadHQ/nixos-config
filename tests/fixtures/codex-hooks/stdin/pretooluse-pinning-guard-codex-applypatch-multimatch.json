@@ -1,6 +1,6 @@
 {
   "tool_name": "apply_patch",
   "tool_input": {
-    "command": "*** Begin Patch\n*** Update File: /tmp/fixture-pretooluse-codex-a.md\n@@\n+Design-5 needs stable wording\n*** Update File: /tmp/fixture-pretooluse-codex-z.md\n@@\n+Review-7 also needs stable wording\n*** End Patch\n"
+    "command": "*** Begin Patch\n*** Update File: /tmp/fixture-pretooluse-codex-a.md\n@@\n+Design-5 needs stable wording\n*** Update File: /tmp/fixture-pretooluse-codex-z.md\n@@\n+Regression-7 also needs stable wording\n*** End Patch\n"
   }
 }

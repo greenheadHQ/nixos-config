@@ -35,12 +35,6 @@ _scan_text_file() {
   printf '%s' "$text" > "$out_file"
 }
 
-_count_text() {
-  local text="$1" scan_file="$2"
-  _scan_text_file "$text" "$scan_file"
-  pinning_match_count "$scan_file"
-}
-
 _is_git_commit_command() {
   local cmd="$1"
   case "$cmd" in
@@ -89,15 +83,10 @@ case "$TOOL_NAME" in
     NEW_STR=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null)
     [ -n "$NEW_STR" ] || exit 0
 
-    OLD_COUNT=0
-    NEW_COUNT=0
-    if [ -n "$OLD_STR" ]; then
-      OLD_COUNT=$(_count_text "$OLD_STR" "$SCAN_DIR/old.txt")
-    fi
-    NEW_COUNT=$(_count_text "$NEW_STR" "$SCAN_DIR/new.txt")
-
-    if [ "$NEW_COUNT" -gt "$OLD_COUNT" ]; then
-      findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
+    _scan_text_file "${OLD_STR:-}" "$SCAN_DIR/old.txt"
+    _scan_text_file "$NEW_STR" "$SCAN_DIR/new.txt"
+    findings="$(pinning_guard_findings_text_for_path "$SCAN_DIR/old.txt" "$SCAN_DIR/new.txt" "$FILE_PATH")"
+    if [ -n "$findings" ]; then
       _deny "$TOOL_NAME" "$FILE_PATH" "$findings"
     fi
     ;;
@@ -108,13 +97,14 @@ case "$TOOL_NAME" in
 
     CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // empty' 2>/dev/null)
     [ -n "$CONTENT" ] || exit 0
-    NEW_COUNT=$(_count_text "$CONTENT" "$SCAN_DIR/new.txt")
-    OLD_COUNT=0
     if [ -f "$FILE_PATH" ]; then
-      OLD_COUNT=$(_count_text "$(cat "$FILE_PATH")" "$SCAN_DIR/old.txt")
+      cat "$FILE_PATH" > "$SCAN_DIR/old.txt"
+    else
+      : > "$SCAN_DIR/old.txt"
     fi
-    if [ "$NEW_COUNT" -gt "$OLD_COUNT" ]; then
-      findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
+    _scan_text_file "$CONTENT" "$SCAN_DIR/new.txt"
+    findings="$(pinning_guard_findings_text_for_path "$SCAN_DIR/old.txt" "$SCAN_DIR/new.txt" "$FILE_PATH")"
+    if [ -n "$findings" ]; then
       _deny "$TOOL_NAME" "$FILE_PATH" "$findings"
     fi
     ;;
@@ -126,13 +116,10 @@ case "$TOOL_NAME" in
     NEW_SOURCE=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_source // empty' 2>/dev/null)
     [ -n "$NEW_SOURCE" ] || exit 0
     OLD_SOURCE=$(printf '%s' "$INPUT" | jq -r '.tool_input.old_source // .tool_input.old_string // empty' 2>/dev/null)
-    NEW_COUNT=$(_count_text "$NEW_SOURCE" "$SCAN_DIR/new.txt")
-    OLD_COUNT=0
-    if [ -n "$OLD_SOURCE" ]; then
-      OLD_COUNT=$(_count_text "$OLD_SOURCE" "$SCAN_DIR/old.txt")
-    fi
-    if [ "$NEW_COUNT" -gt "$OLD_COUNT" ]; then
-      findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
+    _scan_text_file "${OLD_SOURCE:-}" "$SCAN_DIR/old.txt"
+    _scan_text_file "$NEW_SOURCE" "$SCAN_DIR/new.txt"
+    findings="$(pinning_guard_findings_text_for_path "$SCAN_DIR/old.txt" "$SCAN_DIR/new.txt" "$FILE_PATH")"
+    if [ -n "$findings" ]; then
       _deny "$TOOL_NAME" "$FILE_PATH" "$findings"
     fi
     ;;

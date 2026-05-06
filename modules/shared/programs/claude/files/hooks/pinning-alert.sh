@@ -57,7 +57,7 @@ SCAN_FILE=$(mktemp "${TMPDIR:-/tmp}/pinning-scan-XXXXXX") || exit 0
 trap 'rm -f "$SCAN_FILE"' EXIT
 printf '%s' "$TEXT" > "$SCAN_FILE"
 
-findings="$(pinning_findings_text "$SCAN_FILE")"
+findings="$(pinning_findings_text_for_path "$SCAN_FILE" "$FILE_PATH")"
 
 if [ -n "$findings" ]; then
   printf '[pinning-alert] %s on %s 매치:%b\n' "$TOOL_NAME" "$FILE_PATH" "$findings" >&2

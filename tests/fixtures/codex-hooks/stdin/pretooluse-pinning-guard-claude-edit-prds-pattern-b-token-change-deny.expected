@@ -1,0 +1,4 @@
+[pinning-guard] Edit on /tmp/fixture-pinning/.claude/prds/prd-foo.md contains volatile review/session metadata:
+  - Bundle finding ID 박제: 'Bundle-N'
+         1: Regression-1
+Use stable identifiers or plain natural-language context before retrying.

@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/fixture-pinning/.claude/prds/prd-foo.md",
+    "content": "deadbee"
+  }
+}
