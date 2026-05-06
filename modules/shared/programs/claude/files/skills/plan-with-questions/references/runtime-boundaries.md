@@ -41,6 +41,10 @@ codex 환경 가정·활성화 절차는 [`.claude/skills/configuring-codex/SKIL
 
 PR openai/codex#12735는 collaboration mode 가용성만 확장하고 tool spec/schema는 미변경이므로, 위 가이드는 collaboration mode와 무관하게 schema 차원에서 일관 — 단 prompt template 차원에서는 mode별 차이가 있다 (위 plan.md/default.md 차이).
 
+### 자동 run-da preflight gate의 질문 도구
+
+[`run-da-preflight-gate.md`](./run-da-preflight-gate.md)의 SKIP 승인 질문은 plan-with-questions 인터뷰 질문이 아니라 `run-da` Review Intensity 절차의 일부다. 따라서 질문 도구 미지원 시 이 문서의 BLOCKED 정책을 적용하지 않고, [`run-da`의 질문 도구 미지원 대응](../../run-da/references/arbiter-scaling.md#질문-도구-미지원-대응)을 적용한다. 현재 정책상 SKIP verdict는 질문 도구 승인 없이 완료되지 않으며 자동 LITE 승격으로 처리된다.
+
 ## 용어 정책
 
 이 스킬은 Claude Code 세션과 Codex 세션 양쪽에서 호출된다. 본문은 **도구-중립 용어**를 쓰며, 런타임별 실제 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../../run-da/references/runtime-mapping.md#런타임-도구-매핑)를 단일 진실 원천으로 참조한다 (중복 복제 금지).

@@ -17,7 +17,7 @@
 | `for_action.step3_5_awaiting` | Step 3.5 결과 대기 (background 진행 중) |
 | `for_action.step4_user_questions` | 사용자에게 질문 제시 (자문 결과 통합) |
 | `for_action.step4_awaiting_user` | 사용자 답변 대기 |
-| `for_action.step5_da` | Step 4.5에서 만든 공식 plan 파일을 context로 `/run-da for_plan` 호출 |
+| `for_action.step5_da` | Step 4.5에서 만든 공식 plan 파일을 context로 preflight gate 적용 후 `/run-da for_plan` 호출 또는 승인된 SKIP 처리 |
 | `for_action.step6_da_apply` | Step 4.5에서 만든 같은 plan 파일에 DA 결과 반영 |
 | `for_action.step7_plan_mode_entry` | 계획 추적 도구 진입 + 기존 plan 파일 바인딩 |
 | `for_action.step8_plan_writing` | 기존 plan 파일 review/refine |
@@ -40,7 +40,8 @@ Step 5/6 진행 중에는 [`plan-file-template.md`](./plan-file-template.md#da-s
 - `PRE_DA` + `Resume From=for_action.step5_da`: DA를 아직 시작하지 않았으므로 Step 5로 진입한다.
 - `RUNNING`: 외부 검토가 시작된 상태다. `Change Log`에서 외부 검토 시작 상태를 확인한다. 같은 active session에서 원 run이 아직 진행 중임을 runtime-only 상관관계로 확인할 수 있으면 기다리고, 세션 재개 후 active 여부를 확인할 수 없거나 durable verdict가 없으면 같은 plan 파일을 입력해 재실행한다. 나중에 도착한 이전 verdict는 stale result로 기록하고 적용하지 않는다.
 - `APPLYING` + `Resume From=for_action.step6_da_apply`: verdict를 수신했으므로 `Change Log`의 durable verdict summary 또는 stable artifact name을 읽고 Step 6 반영 상태를 점검한다. 기록이 없거나 runtime-only 상관관계 부재로 현재 verdict임을 확인할 수 없으면 같은 plan 파일을 입력으로 재실행하고 Change Log에 재실행 사유를 기록한 뒤 반영한다.
-- `CONFIRMED`/`SKIPPED`: Step 6 이후의 첫 미완료 blocking step으로 이동한다.
+- `CONFIRMED`: Step 6 이후의 첫 미완료 blocking step으로 이동한다.
+- `SKIPPED`: preflight gate 또는 `/run-da` 내부 체크리스트에서 SKIP이 판정되고 질문 도구 사용자 승인이 기록된 상태다. Step 6 이후의 첫 미완료 blocking step으로 이동한다. 질문 도구 미지원 또는 사용자 거부로 승격된 경우는 `SKIPPED`로 해석하지 않는다.
 - `BLOCKED`/`NEEDS_USER`: 질문 도구로 사용자 판단을 요청하거나 하위 스킬 BLOCKED 계약을 따른다.
 
 따라서 세션이 Step 5 직전이나 Step 6 반영 중 끊겨도 메인 LLM은 기존 plan 파일을 읽고 baseline drift 검증 후 `for_action.step5_da` 또는 `for_action.step6_da_apply`로 복귀한다.
@@ -56,7 +57,7 @@ Step 5/6 진행 중에는 [`plan-file-template.md`](./plan-file-template.md#da-s
 | Resume From | 진입 조건 |
 |-------------|----------|
 | `for_prd.candidate_detected` | task-size-routing 후보 감지 + 사용자 알림 대기 |
-| `for_prd.step5_da` | PRD draft/context 기준 `/run-da for_plan` 호출 |
+| `for_prd.step5_da` | PRD draft/context 기준 preflight gate 적용 후 `/run-da for_plan` 호출 또는 승인된 SKIP 처리 |
 | `for_prd.step6_da_apply` | PRD draft/context와 candidate phase structure에 DA 결과 반영 |
 | `for_prd.user_confirmed` | 사용자 동의 후 PRD 작성 직전 |
 
@@ -70,11 +71,13 @@ PRD 파일 작성 전의 `for_prd.step5_da` / `for_prd.step6_da_apply`는 durabl
 |-------------|----------|
 | `post_impl.implementation` | 변경 구현 (1번) |
 | `post_impl.implementation_commit` | 구현 커밋 (2번) |
-| `post_impl.run_da_for_pr` | `/run-da for_pr` (3번) |
+| `post_impl.run_da_for_pr` | preflight gate 적용 후 `/run-da for_pr` 또는 승인된 SKIP 처리 (3번) |
 | `post_impl.parallel_audit` | `/parallel-audit` (4번) |
 | `post_impl.final_10pass` | Final Multi-Pass Review (5번) |
 | `post_impl.review_commit` | 10-pass 반영 커밋 (6번, 수정 발생 시) |
 | `post_impl.create_pr` | `/create-pr` (7번) |
+
+Post-Implementation Step 3 outcome is recorded in the active plan `Change Log` for for_action work or PRD master `Change Log` for for_prd work. Approved Step 3 SKIP must set `Last Completed Step=post_impl.run_da_for_pr` and `Resume From=post_impl.parallel_audit`. It does not overwrite plan-mode `DA State`, which only tracks Step 5/6 plan DA.
 
 ## Baseline drift 검증 알고리즘
 

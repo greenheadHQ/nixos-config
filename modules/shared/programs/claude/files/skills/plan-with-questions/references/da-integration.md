@@ -4,21 +4,21 @@
 
 ## Step 5: 외부 검토 plan-mode 실행 [일반 모드]
 
-`for_action` 모드에서 모든 사용자 질문이 해소되고 Step 4.5 공식 plan 파일이 초기화되면, 계획 추적 도구 진입 전에 `/run-da for_plan`을 실행한다.
+`for_action` 모드에서 모든 사용자 질문이 해소되고 Step 4.5 공식 plan 파일이 초기화되면, 계획 추적 도구 진입 전에 [`run-da-preflight-gate.md`](./run-da-preflight-gate.md)를 적용한다. 그 결과가 승인된 SKIP이 아니면 `/run-da for_plan`을 실행한다.
 
-- **무조건 호출**: for_action 모드에서 DA 호출 여부를 메인 LLM이 판단하지 않는다. Review Intensity 판단(메인 LLM 인라인 체크리스트로 SKIP/LITE/FULL 분기)은 `/run-da` 호출 진입 후 수행되므로, plan-with-questions 단계에서 DA 호출 자체를 건너뛸 이유가 없다.
+- **preflight gate**: for_action 모드에서 DA 생략 여부를 자유 판단하지 않는다. [`run-da-preflight-gate.md`](./run-da-preflight-gate.md)가 정의한 자동 호출 전 gate에서 `run-da` Review Intensity 체크리스트를 적용하고, SKIP verdict는 질문 도구 승인 없이는 완료 상태가 아니다.
 - **런타임 분기는 run-da를 따른다**: 3-way 분기 — Codex 세션에서는 native subagent, Claude Code 세션에서는 codex exec(사전점검 후 불가 시 Agent tool fallback), headless 세션에서는 codex exec.
 - **기본 경로는 lean default**: `/run-da for_plan`의 자동 FULL은 4 reviewer bundle 기본 리뷰다. 8개 세부 도메인 exhaustive path는 명시적 `full` modifier가 있을 때만 쓴다.
-- **YAGNI 예외 근거**: DA 호출 자체는 YAGNI 판단 대상이 아니다. 변경이 "단순"해 보여도 `/run-da` 진입 후 8 룰 체크리스트가 SKIP으로 판단하면 사용자 승인을 거쳐 자동 생략된다. plan-with-questions 메인 LLM은 호출만 하면 된다.
-- **책임 분리**: Review Intensity 판단(SKIP/LITE/FULL)은 `/run-da` 진입 후 메인 LLM이 8 룰 체크리스트를 인라인으로 적용하는 절차이며, run-da SSOT가 정한다. plan-with-questions 메인 LLM은 DA 호출 자체의 생략 여부를 자유롭게 판단하지 않는다.
+- **YAGNI 경계**: 변경이 "단순"해 보인다는 자유 추론은 SKIP 근거가 아니다. preflight gate가 `run-da` SSOT 체크리스트로 SKIP을 판정하고 사용자가 승인한 경우에만 `/run-da for_plan` 호출을 완료 상태로 대체한다.
+- **책임 분리**: Review Intensity 판단(SKIP/LITE/FULL)은 `run-da` SSOT가 정한다. plan-with-questions는 preflight gate의 호출자이며, 룰 표를 복제하거나 변형하지 않는다.
 - **thread cap 준수**: Codex 세션에서는 current session의 open-thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 않고, completed reviewer/Arbiter thread를 다음 round/retry 전에 `close_agent`로 닫아야 한다.
 - **Codex 세션 hardening 계약 준수**: `/run-da for_plan`의 reviewer는 standard review profile, Arbiter는 strong review profile을 따른다. Review Intensity는 메인 LLM 인라인 체크리스트라 별도 review profile이 적용되지 않는다. `wait_agent` timeout만으로 중간 kill/self-auditing 대체를 하지 않고, reviewer PoC는 repo 밖 scratch에 한정한다.
 - **main-agent-only 유지**: single-writer/main-agent-only boundary는 `run-da` canonical contract를 그대로 따른다. tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 for_plan subagent가 직접 실행하지 않는다. 상세 용어와 violation 처리 규칙은 [run-da/references/hardening-contract.md](../../run-da/references/hardening-contract.md) `Codex 세션 하드닝 계약`을 따른다.
-- **타이밍**: 반드시 계획 추적 도구 진입 전에 이 단계를 완료한다 (DA 에이전트가 일반 모드에서 full tool access로 PoC 검증을 수행할 수 있도록).
+- **타이밍**: 반드시 계획 추적 도구 진입 전에 이 단계(preflight gate 또는 `/run-da for_plan`)를 완료한다.
 - **for_action 입력 계약**: Step 4.5에서 만든 공식 `.claude/plans/<slug>.md` 경로와 파일 내용을 DA 입력 context에 포함한다. `/run-da for_plan` 뒤에 path argument나 modifier를 추가하지 않는다.
 - **for_action fail-closed precondition**: Step 4.5 plan 파일이 없거나 canonical path가 `.claude/plans/` 밖이면 `/run-da for_plan`을 호출하지 않고 BLOCKED 처리한다. slug 재생성 또는 파일 초기화를 먼저 완료한다.
-- **for_action DA State 전이**: 외부 검토 시작 직전에 같은 plan 파일의 `DA State`를 `RUNNING`으로 바꾸고 `Change Log`에는 외부 검토가 시작됐다는 자연어 상태만 기록한다. 개별 run 상관관계 값은 live session memory 또는 scratch에만 두고 durable markdown에는 쓰지 않는다. verdict를 수신한 즉시 Step 6 반영 전에 `DA State=APPLYING`, `Resume From=for_action.step6_da_apply`로 갱신하고, durable verdict summary 또는 stable artifact name을 `Change Log`에 기록한다. Step 6은 같은 active session에서 runtime-only 상관관계가 현재 verdict임을 확인할 수 있을 때만 반영한다. 세션 재개 후 상관관계를 확인할 수 없거나 verdict 기록이 불충분하면 같은 plan 파일을 입력으로 외부 검토를 재실행하고, 늦게 도착한 이전 verdict는 stale result로만 기록하고 적용하지 않는다.
-- **for_prd 예외**: `for_prd`는 Step 4.5와 `.claude/plans/` precondition을 적용하지 않는다. Step 5 DA 입력은 PRD draft/context, candidate phase structure, Step 1-4 evidence다.
+- **for_action DA State 전이**: `/run-da for_plan` 실행 직전에 같은 plan 파일의 `DA State`를 `RUNNING`으로 바꾸고 `Change Log`에는 외부 검토가 시작됐다는 자연어 상태만 기록한다. 개별 run 상관관계 값은 live session memory 또는 scratch에만 두고 durable markdown에는 쓰지 않는다. verdict를 수신한 즉시 Step 6 반영 전에 `DA State=APPLYING`, `Resume From=for_action.step6_da_apply`로 갱신하고, durable verdict summary 또는 stable artifact name을 `Change Log`에 기록한다. Step 6은 같은 active session에서 runtime-only 상관관계가 현재 verdict임을 확인할 수 있을 때만 반영한다. 세션 재개 후 상관관계를 확인할 수 없거나 verdict 기록이 불충분하면 같은 plan 파일을 입력으로 외부 검토를 재실행하고, 늦게 도착한 이전 verdict는 stale result로만 기록하고 적용하지 않는다. preflight gate에서 사용자 승인 SKIP이 완료되면 `DA State=SKIPPED`, `Resume From=for_action.step7_plan_mode_entry`, `Last Completed Step=for_action.step6_da_apply`로 기록한다.
+- **for_prd 예외**: `for_prd`는 Step 4.5와 `.claude/plans/` precondition을 적용하지 않는다. Step 5 preflight/DA 입력은 PRD draft/context, candidate phase structure, Step 1-4 evidence다.
 
 ### Durable wording guardrails
 

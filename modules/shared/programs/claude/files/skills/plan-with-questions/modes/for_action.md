@@ -106,7 +106,7 @@ Step 3.5는 DA(Step 5)와 목적이 다르다. 3.5는 사용자에게 옵션 제
 
 ## Step 5-6: 외부 검토 plan-mode + 결과 반영
 
-상세는 [`../references/da-integration.md`](../references/da-integration.md) 참조 (Step 5 호출 계약 + Step 6 결과 반영 상태표). `/run-da for_plan` 명령 자체는 바꾸지 않고, Step 4.5에서 만든 plan 파일 경로와 내용을 context로 전달한다. 외부 검토 결과의 중요 변경은 같은 plan 파일의 Decision Log에 기록한다.
+상세는 [`../references/da-integration.md`](../references/da-integration.md) 참조 (Step 5 preflight gate + Step 6 결과 반영 상태표). 승인된 SKIP이 아니면 `/run-da for_plan`에 Step 4.5에서 만든 plan 파일 경로와 내용을 context로 전달한다. 외부 검토 결과의 중요 변경은 같은 plan 파일의 Decision Log에 기록한다.
 
 ## Step 7: 계획 상태 진입 [전환점]
 

@@ -4,6 +4,8 @@ Review Intensity 판단의 실행 절차. 판단 알고리즘 규칙 SSOT는 [`i
 
 Review Intensity 판정은 **메인 LLM이 인라인으로 8 룰 체크리스트를 기계적으로 적용**한다. 별도 독립 process(codex exec / native subagent)를 띄우지 않는다. 메인 LLM은 룰을 자유롭게 추론해서는 안 되고, [`intensity-rules.md`](intensity-rules.md)의 룰 1-8을 순서대로 평가해 결과 표를 plan/대화에 남겨야 한다.
 
+기본 진입점은 `/run-da` 호출 직후다. 예외적으로 문서화된 자동 호출자(예: `plan-with-questions`의 자동 review gate)는 같은 절차를 `/run-da` 호출 직전에 적용할 수 있다. 자동 호출자가 만든 handoff가 유효하면 `/run-da`는 그 체크리스트 결과를 재사용하고, handoff가 없거나 stale이면 현재 입력으로 이 절차를 다시 수행한다.
+
 `full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(8개 세부 도메인)로 직행한다.
 
 ## 3단계
@@ -19,7 +21,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
 
 ## 인라인 체크리스트 절차 (강제)
 
-메인 LLM은 `/run-da` 호출 진입 시 다음을 순서대로 수행한다. **자유 추론 금지** — 8 룰 체크리스트를 기계적으로 적용한다.
+메인 LLM은 `/run-da` 호출 진입 시, 또는 문서화된 자동 호출자의 preflight gate 진입 시, 다음을 순서대로 수행한다. **자유 추론 금지** — 8 룰 체크리스트를 기계적으로 적용한다.
 
 1. **변경 규모 입력 수집**
    - for_pr: `git diff --stat main...HEAD` (파일 목록 + 라인 수). 변경 의도 파악이 어려우면 메인 LLM이 commit message나 변경된 파일의 diff hunk를 추가로 읽어 `change_summary` 보조 입력을 스스로 도출한다 (자유 요약 금지 — 실제 변경 사항만 정리).
@@ -52,6 +54,12 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
 
 5. **결과 보고** — 판정(SKIP/LITE/FULL)과 위 체크리스트를 plan/대화에 명시 기록한다. SKIP일 경우 사용자 승인 절차로 진입.
 
+### 자동 호출자 handoff
+
+자동 호출자가 preflight gate에서 이 체크리스트를 먼저 적용한 경우, `/run-da`에 handoff를 전달할 수 있다. handoff schema와 freshness fields의 SSOT는 [`../../plan-with-questions/references/run-da-preflight-gate.md`](../../plan-with-questions/references/run-da-preflight-gate.md#handoff-to-run-da)다.
+
+유효한 handoff가 있고 freshness fields가 현재 입력과 일치하며 판정에 사용한 checklist input facts가 모두 포함되어 있으면 `/run-da`는 같은 입력에 대해 같은 질문을 반복하지 않는다. handoff가 없거나 malformed이거나 freshness fields가 현재 입력과 다르거나 판정 입력 사실이 빠져 있으면 handoff를 버리고 현재 입력으로 체크리스트를 다시 적용한다. SKIP을 사용자가 거부했거나 질문 도구를 사용할 수 없었던 handoff는 freshness validation을 통과한 경우에만 `SKIPPED`가 아닌 거부/미지원 경로로 승격한다.
+
 ## 메인 LLM의 의무 (합리화 방지)
 
 - "이건 단순한 변경이니 SKIP/LITE 정도면 될 것 같다"는 **자유 추론은 금지**. 반드시 모든 룰을 평가한 표를 기계적으로 적용한다.
@@ -66,7 +74,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    - SKIP 판단 근거 (위 체크리스트 표 인용)
    - "DA를 생략해도 괜찮겠습니까?"
 2. 사용자가 승인하면 DA를 생략하고 해당 모드(for_plan/for_pr)를 종료하여 상위 워크플로로 복귀한다.
-3. 사용자가 거부하면 LITE 또는 FULL로 승격하여 DA를 진행한다.
+3. 사용자가 거부하면 LITE 또는 FULL로 승격하여 DA를 진행한다. 자동 호출자 handoff에 이미 `SKIP rejected`가 기록되어 있고 freshness validation을 통과한 경우에만 같은 질문을 반복하지 않고 이 승격 경로로 바로 진입한다.
 
 질문 도구를 호출할 수 없는 런타임에서는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 섹션을 따른다 (자동 LITE 승격 등).
 
