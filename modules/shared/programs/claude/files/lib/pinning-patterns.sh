@@ -150,8 +150,10 @@ pinning_should_check_path() {
     tests/fixtures/* | */tests/fixtures/*) return 1 ;;
     evals/queries.json | */evals/queries.json) return 1 ;;
     eval-workspace/* | */eval-workspace/*) return 1 ;;
-    /tmp/da-*/*) return 1 ;;
-    /var/folders/*/T/da-*/*) return 1 ;;
+    # macOS는 /tmp가 /private/tmp의 symlink, /var가 /private/var의 symlink.
+    # realpath -m 등으로 canonicalize되면 /private/* 형태가 되므로 둘 다 매치 필요.
+    /tmp/da-*/* | /private/tmp/da-*/*) return 1 ;;
+    /var/folders/*/T/da-*/* | /private/var/folders/*/T/da-*/*) return 1 ;;
   esac
 
   return 0
