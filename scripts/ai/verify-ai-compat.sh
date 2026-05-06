@@ -1430,7 +1430,7 @@ _pinning_hooks=(
   "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-alert.sh"
   "$REPO_ROOT/modules/shared/programs/codex/files/hooks/pinning-guard.sh"
 )
-for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D HASH_MIN HASH_MAX PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR; do
+for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D HASH_MIN HASH_MAX PINNING_REPORT_INDENT PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR PINNING_PATTERN_A_LABEL PINNING_PATTERN_B_LABEL PINNING_PATTERN_C_LABEL PINNING_PATTERN_D_LABEL; do
   _lib_line="$(grep -m1 -E "^${_var}=" "$_pinning_lib" || true)"
   if [ -n "$_lib_line" ]; then
     pass "pinning $_var shared lib 정의 OK"
@@ -1438,7 +1438,7 @@ for _var in PATTERN_A PATTERN_B PATTERN_C PATTERN_D HASH_MIN HASH_MAX PINNING_PA
     fail "pinning $_var 정의 부재 ($_pinning_lib)"
   fi
 done
-for _fn in pinning_findings_text pinning_match_count pinning_should_check_path pinning_strip_partial_hash_finding; do
+for _fn in pinning_findings_records pinning_findings_text pinning_match_count pinning_should_check_path; do
   if grep -m1 -E "^${_fn}\(\)" "$_pinning_lib" >/dev/null 2>&1; then
     pass "pinning $_fn shared lib 함수 OK"
   else

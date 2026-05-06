@@ -1,3 +1,4 @@
 [pinning-guard] NotebookEdit on /tmp/fixture-pretooluse-claude.ipynb contains volatile review/session metadata:
   - Bundle finding ID 박제: 'Bundle-N'
+         1: Maintainability-3
 Use stable identifiers or plain natural-language context before retrying.

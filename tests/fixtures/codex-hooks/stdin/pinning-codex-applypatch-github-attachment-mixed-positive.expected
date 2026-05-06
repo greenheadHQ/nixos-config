@@ -1,2 +1,3 @@
 [pinning-alert] apply_patch on /tmp/fixture-pinning-github-attachment-mixed.md 매치:
   - 짧은 임시 hex 식별자 박제 (7~12자)
+         1: abc1234

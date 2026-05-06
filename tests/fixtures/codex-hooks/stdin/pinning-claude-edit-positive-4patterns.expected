@@ -1,5 +1,9 @@
 [pinning-alert] Edit on /tmp/fixture-pinning-positive.md 매치:
   - Round counter 박제: 'Round N'
+         1: Round 2
   - Bundle finding ID 박제: 'Bundle-N'
+         1: Correctness-1
   - DA 실행 키워드 박제
+         1: DA for_pr
   - 짧은 임시 hex 식별자 박제 (7~12자)
+         1: deadbeef

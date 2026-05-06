@@ -73,12 +73,6 @@ _scan_text_file() {
   printf '%s' "$text" > "$scan_file"
 }
 
-_scan_text() {
-  local text="$1" scan_file="$2"
-  _scan_text_file "$text" "$scan_file"
-  pinning_findings_text "$scan_file"
-}
-
 _count_text() {
   local text="$1" scan_file="$2"
   _scan_text_file "$text" "$scan_file"
@@ -91,9 +85,11 @@ case "$TOOL_NAME" in
     [ -n "$COMMAND_TEXT" ] || exit 0
     _targeted_bash_command "$COMMAND_TEXT" || exit 0
 
-    findings="$(_scan_text "$COMMAND_TEXT" "$SCAN_DIR/bash.txt")"
+    _scan_text_file "$COMMAND_TEXT" "$SCAN_DIR/bash.txt"
     if _allow_partial_hash_exception "$COMMAND_TEXT"; then
-      findings="$(pinning_strip_partial_hash_finding "$findings")"
+      findings="$(pinning_findings_text "$SCAN_DIR/bash.txt" 1)"
+    else
+      findings="$(pinning_findings_text "$SCAN_DIR/bash.txt")"
     fi
     [ -n "$findings" ] || exit 0
     _deny "$TOOL_NAME" "durable shell command" "$findings"

@@ -1,0 +1,4 @@
+[WARN] pinning: DA 키워드 박제 감지. 검토 라운드/모드 표기는 commit message에 박지 말고 PR 코멘트 또는 휘발성 작업 노트에 둬라.
+  - DA 실행 키워드 박제
+         1: DA for_pr
+[WARN] pinning: 위 경고는 차단하지 않습니다 (warn-only). 검토 후 amend로 정정하거나 의도적 사용이면 무시하세요.

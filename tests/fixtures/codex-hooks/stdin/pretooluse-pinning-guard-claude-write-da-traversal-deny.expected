@@ -1,10 +1,10 @@
-[pinning-guard] Edit on /tmp/fixture-pretooluse-claude-edit.md contains volatile review/session metadata:
+[pinning-guard] Write on /tmp/da-x/../../home/greenhead/Workspace/nixos-config/docs/review.md contains volatile review/session metadata:
   - Round counter 박제: 'Round N'
-         1: Round 4
+         1: Round 5
   - Bundle finding ID 박제: 'Bundle-N'
-         1: Correctness-2
+         1: Correctness-1
   - DA 실행 키워드 박제
          1: DA for_pr
   - 짧은 임시 hex 식별자 박제 (7~12자)
-         1: cafebabe
+         1: a3f8c1d2
 Use stable identifiers or plain natural-language context before retrying.

@@ -1,3 +1,5 @@
 [pinning-alert] apply_patch on /tmp/fixture-pinning-tagged.md 매치:
   - Round counter 박제: 'Round N'
+         1: Round 6
   - Bundle finding ID 박제: 'Bundle-N'
+         1: Maintainability-2

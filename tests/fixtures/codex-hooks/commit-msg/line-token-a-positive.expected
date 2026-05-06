@@ -1,0 +1,4 @@
+[WARN] pinning: 라운드 카운터(`Round N`) 박제 감지. 영구 산출물에는 자연어 설명으로 표현하라.
+  - Round counter 박제: 'Round N'
+         1: Round 5
+[WARN] pinning: 위 경고는 차단하지 않습니다 (warn-only). 검토 후 amend로 정정하거나 의도적 사용이면 무시하세요.

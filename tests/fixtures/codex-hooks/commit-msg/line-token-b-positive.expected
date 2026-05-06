@@ -1,0 +1,4 @@
+[WARN] pinning: DA finding ID 박제 감지. 라운드/finding ID는 휘발성 보고에만 사용하고 commit message에는 박지 마라.
+  - Bundle finding ID 박제: 'Bundle-N'
+         1: Correctness-1
+[WARN] pinning: 위 경고는 차단하지 않습니다 (warn-only). 검토 후 amend로 정정하거나 의도적 사용이면 무시하세요.

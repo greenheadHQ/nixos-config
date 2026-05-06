@@ -142,9 +142,10 @@ case "$TOOL_NAME" in
     _targeted_bash_command "$COMMAND_TEXT" || exit 0
 
     _scan_text_file "$COMMAND_TEXT" "$SCAN_DIR/new.txt"
-    findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
     if _allow_partial_hash_exception "$COMMAND_TEXT"; then
-      findings="$(pinning_strip_partial_hash_finding "$findings")"
+      findings="$(pinning_findings_text "$SCAN_DIR/new.txt" 1)"
+    else
+      findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
     fi
     [ -n "$findings" ] || exit 0
     _deny "$TOOL_NAME" "durable shell command" "$findings"
