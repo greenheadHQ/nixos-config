@@ -38,12 +38,17 @@
   config,
   pkgs,
   lib,
+  inputs,
   nixosConfigPath,
   ...
 }:
 
 let
   vscodeFilesPath = "${nixosConfigPath}/modules/darwin/programs/vscode/files";
+  islandsDark = import ./islands-dark.nix {
+    inherit lib pkgs;
+    source = inputs.vscode-dark-islands;
+  };
 
   # VSCode bundle identifier (macOS 앱 식별자)
   vscodeBundleId = "com.microsoft.VSCode";
@@ -112,6 +117,8 @@ in
 
   programs.vscode = {
     enable = true;
+    # Keep the notarized app bundle untouched; patching VSCode resources breaks
+    # macOS code-signing sealed resource checks.
     package = pkgs.vscode;
     mutableExtensionsDir = false;
 
@@ -155,6 +162,11 @@ in
           # 갱신되어도 DISABLE_AUTOUPDATER=1로 격리되어 터미널 CLI(auto-updater)와 충돌 없음.
           anthropic.claude-code
         ])
+
+        ++ [
+          # Custom pinned source extension; not provided by nix-vscode-extensions.
+          islandsDark.extension
+        ]
 
         # vscode-marketplace (open-vsx에 없는 확장): https://marketplace.visualstudio.com/vscode
         ++ (with pkgs.vscode-marketplace; [

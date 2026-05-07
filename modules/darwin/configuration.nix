@@ -3,6 +3,7 @@
   config,
   pkgs,
   lib,
+  inputs,
   username,
   hostType,
   constants,
@@ -48,6 +49,10 @@ let
     </dict>'';
 
   asUser = "launchctl asuser \"$(id -u -- ${username})\" sudo --user=${username} --set-home --";
+  islandsDark = import ./programs/vscode/islands-dark.nix {
+    inherit lib pkgs;
+    source = inputs.vscode-dark-islands;
+  };
 in
 {
   imports = [
@@ -86,9 +91,11 @@ in
   # [현재 폰트 전략]
   # 영문: JetBrainsMono Nerd Font (Nix 설치, 단일 설계 폰트로 저DPI에서도 깔끔)
   # 한글: D2Coding (Nix 설치, 네이버 코딩 전용 한글 폰트, 앱별 font-family 폴백으로 지정)
+  # UI: Bear Sans UI (VSCode Islands Dark custom CSS의 UI font-family 참조용)
   fonts.packages = [
     pkgs.nerd-fonts.jetbrains-mono
     pkgs.d2coding
+    islandsDark.fonts.bearSansUi
   ];
 
   # Touch ID for sudo

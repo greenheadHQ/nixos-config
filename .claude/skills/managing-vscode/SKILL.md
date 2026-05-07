@@ -31,6 +31,7 @@ GUI에서의 확장 설치/제거는 불가능하며(`mutableExtensionsDir = fal
 ```
 modules/darwin/programs/vscode/
 ├── default.nix                 # 확장 목록, HM 모듈, duti 설정
+├── islands-dark.nix            # Islands Dark custom pinned source + font/CSS contract guard
 └── files/
     ├── settings.json           # → ~/Library/.../Code/User/settings.json
     └── keybindings.json        # → ~/Library/.../Code/User/keybindings.json
@@ -50,7 +51,7 @@ modules/darwin/programs/vscode/
 2. `nrs` 실행
 3. VSCode 재시작
 
-확장 소스 선택: 먼저 `open-vsx`에서 검색, 없으면 `vscode-marketplace` 사용.
+확장 소스 선택: 먼저 `open-vsx`에서 검색, 없으면 `vscode-marketplace` 사용. Marketplace/Open-VSX에 없거나 upstream source/font/CSS contract까지 함께 고정해야 하면 custom pinned source 경로를 사용한다.
 상세 가이드: [references/extensions.md](references/extensions.md)
 
 ### Nix LSP (nixd)

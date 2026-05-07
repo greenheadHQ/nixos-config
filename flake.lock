@@ -131,6 +131,7 @@
         "nix-darwin": "nix-darwin",
         "nix-vscode-extensions": "nix-vscode-extensions",
         "nixpkgs": "nixpkgs",
+        "vscode-dark-islands": "vscode-dark-islands",
         "yazi-flavors": "yazi-flavors"
       }
     },
@@ -146,6 +147,22 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "vscode-dark-islands": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772048925,
+        "narHash": "sha256-HvM7U7L8VqNl/innkiRO4jQ0Bqb15WFltcad1GC93Ao=",
+        "owner": "bwya77",
+        "repo": "vscode-dark-islands",
+        "rev": "6a1621a980053af19161594bf82322af7c911578",
+        "type": "github"
+      },
+      "original": {
+        "owner": "bwya77",
+        "repo": "vscode-dark-islands",
         "type": "github"
       }
     },
