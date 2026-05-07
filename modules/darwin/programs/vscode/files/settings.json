@@ -35,7 +35,7 @@
   // ============================================================================
   // 테마 및 UI
   // ============================================================================
-  "workbench.colorTheme": "Islands Dark", // 컬러 테마
+  "workbench.colorTheme": "Webstorm Darcula 2022", // 컬러 테마
   "workbench.iconTheme": "a-file-icon-vscode", // 파일 아이콘 테마
   "workbench.activityBar.orientation": "vertical", // 액티비티 바 세로 배치
   "window.commandCenter": true, // 타이틀 바에 커맨드 센터(검색창) 표시

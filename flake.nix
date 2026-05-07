@@ -39,12 +39,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # VSCode Islands Dark theme source (custom extension + CSS)
-    vscode-dark-islands = {
-      url = "github:bwya77/vscode-dark-islands";
-      flake = false;
-    };
-
     # NixOS 디스크 파티셔닝
     disko = {
       url = "github:nix-community/disko";
