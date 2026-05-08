@@ -3,21 +3,8 @@ name: plan-with-questions
 argument-hint: "[for_action|for_issue|for_prd] [issue-ref (for_action/for_prd) | task description (for_issue)]"
 description: |
   Structured planning with requirements clarification via iterative Q&A.
-  Three modes: for_action (issue ref → plan), for_issue (idea → issue creation),
-  for_prd (Living PRD with phase tracking — auto-detect for Phase ≥4 or 다중 도메인 + 보조 신호).
+  Three modes: for_action (issue ref → plan), for_issue (idea → issue creation), for_prd (Living PRD with phase tracking — auto-detect for Phase ≥4 or 다중 도메인 + 보조 신호).
   Sole user-facing entry for PRD authoring/updates and implementation review.
-  Trigger: '계획 수립', '계획 세우기', 'plan 짜줘', 'plan으로 전환', '스무고개', '요구사항 파악', '불명확점 질문',
-  '뭘 해야 하는지', '파악하자', '질문 먼저 정리', '접근', '같이 정리', '논의', '어떻게 할지',
-  '어떻게 할까', '기능 어떻게 할까', '요구사항 정리', '#NNN 이슈 분석', '이슈 번호 포함', '이슈 분석', 'DEV-123 작업 착수',
-  '기능을 추가하고 싶어', 'tmux 세션 자동 복원 기능을 추가하고 싶어',
-  'PRD 작성', 'PRD 만들어', 'PRD 업데이트', 'Living PRD', 'phase 계획', '기능 스펙 정리',
-  'Discovery Gate 있는 계획서', '구현 감사', '문서 대비 구현 리뷰', '스펙 대비 감사',
-  'overbuilt 검사', 'PRD phase 완료 확인'.
-  Takes precedence over domain-specific config skills only when the request explicitly asks to clarify, plan, or review a vague feature idea before implementation.
-  NOT for straightforward implementation plan documents from an already clear spec, such as 'spec 기반으로 구현 계획 작성' or 'implementation plan 문서'.
-  NOT for DA (use run-da). NOT for PR 본문 (use create-pr).
-  NOT for 산출물 없는 결정 트리 인터뷰 (use grill-me).
-  NOT for PR 코멘트 (use review-pr-feedback). NOT for 전수조사 (use parallel-audit).
 ---
 
 # 스무고개식 계획 수립
@@ -39,22 +26,22 @@ description: |
 
 ## 모드 판별
 
-| 우선순위 | 조건 | 모드 |
+| 우선순위 | 조건                                                                                                                                                                                     | 모드                                                                                                 |
 |----------|------|------|
-| 1 | `$ARGUMENTS` 첫 토큰이 `for_action`/`for_issue`/`for_prd` | 명시된 모드 |
-| 2 | URL 패턴 (`https://...`, `http://...`) 포함 | **for_action** |
-| 3 | 이슈 번호 패턴 (`#NNN`, `NNN`만 단독) 포함 | **for_action** |
-| 4 | 이슈키 패턴 (`PREFIX-NNN`, 예: `DEV-123`) 포함 | **for_action** |
-| 5 | for_action 진입 후 Step 1-2에서 `Phase ≥4` 단독 OR (`다중 도메인` + 보조 신호 1+) 감지 ([`references/task-size-routing.md`](./references/task-size-routing.md#트리거-알고리즘-의사코드)) | **for_prd 후보** (사용자 1회 알림 + opt-out) |
-| 6 | 위 패턴 없음 (텍스트 설명 또는 빈 인자) | **for_issue** — 단 자연어 trigger 의도가 명확하면 Step I-6에서 매칭 모드로 transition (아래 표 참조) |
+| 1        | `$ARGUMENTS` 첫 토큰이 `for_action`/`for_issue`/`for_prd`                                                                                                                                | 명시된 모드                                                                                          |
+| 2        | URL 패턴 (`https://...`, `http://...`) 포함                                                                                                                                              | **for_action**                                                                                       |
+| 3        | 이슈 번호 패턴 (`#NNN`, `NNN`만 단독) 포함                                                                                                                                               | **for_action**                                                                                       |
+| 4        | 이슈키 패턴 (`PREFIX-NNN`, 예: `DEV-123`) 포함                                                                                                                                           | **for_action**                                                                                       |
+| 5        | for_action 진입 후 Step 1-2에서 `Phase ≥4` 단독 OR (`다중 도메인` + 보조 신호 1+) 감지 ([`references/task-size-routing.md`](./references/task-size-routing.md#트리거-알고리즘-의사코드)) | **for_prd 후보** (사용자 1회 알림 + opt-out)                                                         |
+| 6        | 위 패턴 없음 (텍스트 설명 또는 빈 인자)                                                                                                                                                  | **for_issue** — 단 자연어 trigger 의도가 명확하면 Step I-6에서 매칭 모드로 transition (아래 표 참조) |
 
 **자연어 trigger → transition 매핑** (우선순위 6에서 for_issue 진입 후 Step I-6 분기):
 
-| 자연어 trigger 카테고리 | Step I-6 transition 권장 |
+| 자연어 trigger 카테고리                                                                                                | Step I-6 transition 권장                                                                                                                                |
 |-------------------------|--------------------------|
 | PRD 작성 의도 (`PRD 작성`, `Living PRD`, `phase 계획`, `기능 스펙 정리`, `Discovery Gate 있는 계획서`, `PRD 업데이트`) | **for_prd 직접 진입** (이슈 ref + PRD 의도 결합으로 명확). 또는 for_action 진입 후 Step 1-2 baseline에서 Phase ≥4 감지 시 우선순위 5 자동 PRD 후보 알림 |
-| review-impl 의도 (`구현 감사`, `문서 대비 구현 리뷰`, `스펙 대비 감사`, `overbuilt 검사`, `PRD phase 완료 확인`) | **for_action 진입** (Post-Implementation 5번 Final review에서 PRD 10-pass + review-impl overlay (6-classification + overbuilt 우선) 적용) |
-| 일반 텍스트 (위 카테고리 매칭 없음) | for_action transition 또는 write-handoff/종료 (Step I-6 표준 옵션) |
+| review-impl 의도 (`구현 감사`, `문서 대비 구현 리뷰`, `스펙 대비 감사`, `overbuilt 검사`, `PRD phase 완료 확인`)       | **for_action 진입** (Post-Implementation 5번 Final review에서 PRD 10-pass + review-impl overlay (6-classification + overbuilt 우선) 적용)               |
+| 일반 텍스트 (위 카테고리 매칭 없음)                                                                                    | for_action transition 또는 write-handoff/종료 (Step I-6 표준 옵션)                                                                                      |
 
 이 표는 우선순위 6의 후속 분기를 명시하며 모드 판별 자체는 우선순위 1-5가 담당한다. transition은 사용자 입력 시점의 자연어 trigger 카테고리만으로 결정되며, 이슈 본문에 별도 marker를 추가하지 않는다 (for_action Step 1-2의 Phase ≥4 감지가 baseline 분석 자체로 작동).
 
@@ -64,15 +51,15 @@ description: |
 
 ## 빠른 참조
 
-| 항목 | for_action | for_issue | for_prd |
+| 항목               | for_action                                                | for_issue                                    | for_prd                                                                                                               |
 |------|-----------|-----------|---------|
-| 입력 | 이슈 레퍼런스 (URL/ID/이슈키) | 텍스트 설명 또는 빈 인자 | 이슈 레퍼런스 (`for_action`과 동일 — 자동 후보 또는 명시 호출 모두 ref 전제) |
-| 출력 | 사용자 승인을 받은 계획 파일 (`.claude/plans/<slug>.md`) | 등록된 이슈 (+ 선택적 LLM 이행 가이드) | Living PRD (`.claude/prds/prd-<feature>.md` 또는 split) |
-| 단계 흐름 | [`modes/for_action.md`](./modes/for_action.md) | [`modes/for_issue.md`](./modes/for_issue.md) | [`modes/for_prd.md`](./modes/for_prd.md) |
-| DA | preflight gate 후 for_plan 실행 또는 승인된 SKIP (Step 5) | 생략 | preflight gate 후 for_plan 실행 또는 승인된 SKIP + phase별 6-classification + Final PRD 10-pass + review-impl overlay |
-| Step 3.5 외부 자문 | 트레이드오프 1+ 항목 시 | 트레이드오프 1+ 항목 시 | 트레이드오프 1+ 항목 시 (PRD 작성 전 1회) |
-| 계획 추적 도구 | 사용 (Step 7-9; Step 4.5에서 공식 plan 파일 선초기화) | 미사용 (산출물이 이슈) | 미사용 — PRD 파일이 추적 |
-| 제1원칙 | YAGNI / NGMI | YAGNI / NGMI | YAGNI / NGMI |
+| 입력               | 이슈 레퍼런스 (URL/ID/이슈키)                             | 텍스트 설명 또는 빈 인자                     | 이슈 레퍼런스 (`for_action`과 동일 — 자동 후보 또는 명시 호출 모두 ref 전제)                                          |
+| 출력               | 사용자 승인을 받은 계획 파일 (`.claude/plans/<slug>.md`)  | 등록된 이슈 (+ 선택적 LLM 이행 가이드)       | Living PRD (`.claude/prds/prd-<feature>.md` 또는 split)                                                               |
+| 단계 흐름          | [`modes/for_action.md`](./modes/for_action.md)            | [`modes/for_issue.md`](./modes/for_issue.md) | [`modes/for_prd.md`](./modes/for_prd.md)                                                                              |
+| DA                 | preflight gate 후 for_plan 실행 또는 승인된 SKIP (Step 5) | 생략                                         | preflight gate 후 for_plan 실행 또는 승인된 SKIP + phase별 6-classification + Final PRD 10-pass + review-impl overlay |
+| Step 3.5 외부 자문 | 트레이드오프 1+ 항목 시                                   | 트레이드오프 1+ 항목 시                      | 트레이드오프 1+ 항목 시 (PRD 작성 전 1회)                                                                             |
+| 계획 추적 도구     | 사용 (Step 7-9; Step 4.5에서 공식 plan 파일 선초기화)     | 미사용 (산출물이 이슈)                       | 미사용 — PRD 파일이 추적                                                                                              |
+| 제1원칙            | YAGNI / NGMI                                              | YAGNI / NGMI                                 | YAGNI / NGMI                                                                                                          |
 
 ## 단계 흐름 — 모드별 분리
 
@@ -86,30 +73,30 @@ description: |
 
 ## Reference Index (progressive disclosure)
 
-| 파일 | 용도 |
+| 파일                                                                           | 용도                                                                                                       |
 |------|------|
-| [`references/runtime-boundaries.md`](./references/runtime-boundaries.md) | 지원 런타임 / 용어 / 도구 매핑 / 미지원 대응 SSOT |
-| [`references/fanout-fanin.md`](./references/fanout-fanin.md) | 역할 카탈로그 + 런타임 분기 + fan-in 통합 전략 |
-| [`references/run-da-preflight-gate.md`](./references/run-da-preflight-gate.md) | 자동 run-da 호출 전 SKIP gate + 질문 도구 승인/승격 규칙 |
-| [`references/da-integration.md`](./references/da-integration.md) | Step 5 호출 계약 + Step 6 결과 반영 상태표 |
-| [`references/post-implementation.md`](./references/post-implementation.md) | 7단계 자동 진행 + 자유 생략 금지 신뢰 경계 |
-| [`references/output-templates.md`](./references/output-templates.md) | 사용자 메시지 / 체크리스트 / 질문 패턴 / anti-anchoring 규칙 |
-| [`references/consulting-step.md`](./references/consulting-step.md) | Step 3.5 입출력 schema + anti-anchoring 4 규칙 |
-| [`references/plan-file-template.md`](./references/plan-file-template.md) | 14 metadata 필드 + Decision Log SSOT |
-| [`references/resume-state.md`](./references/resume-state.md) | Resume From enum 카탈로그 + baseline drift 검증 |
-| [`references/task-size-routing.md`](./references/task-size-routing.md) | for_prd 자동 트리거 알고리즘 + 산출물 경로 + review-impl 통합 시점 |
-| [`references/bias-measurement.md`](./references/bias-measurement.md) | 4축 grep + 4 metric (baseline은 `scripts/ai/measure-anchoring-bias.sh` 실행으로 동적 산출 — script가 SSOT) |
+| [`references/runtime-boundaries.md`](./references/runtime-boundaries.md)       | 지원 런타임 / 용어 / 도구 매핑 / 미지원 대응 SSOT                                                          |
+| [`references/fanout-fanin.md`](./references/fanout-fanin.md)                   | 역할 카탈로그 + 런타임 분기 + fan-in 통합 전략                                                             |
+| [`references/run-da-preflight-gate.md`](./references/run-da-preflight-gate.md) | 자동 run-da 호출 전 SKIP gate + 질문 도구 승인/승격 규칙                                                   |
+| [`references/da-integration.md`](./references/da-integration.md)               | Step 5 호출 계약 + Step 6 결과 반영 상태표                                                                 |
+| [`references/post-implementation.md`](./references/post-implementation.md)     | 7단계 자동 진행 + 자유 생략 금지 신뢰 경계                                                                 |
+| [`references/output-templates.md`](./references/output-templates.md)           | 사용자 메시지 / 체크리스트 / 질문 패턴 / anti-anchoring 규칙                                               |
+| [`references/consulting-step.md`](./references/consulting-step.md)             | Step 3.5 입출력 schema + anti-anchoring 4 규칙                                                             |
+| [`references/plan-file-template.md`](./references/plan-file-template.md)       | 14 metadata 필드 + Decision Log SSOT                                                                       |
+| [`references/resume-state.md`](./references/resume-state.md)                   | Resume From enum 카탈로그 + baseline drift 검증                                                            |
+| [`references/task-size-routing.md`](./references/task-size-routing.md)         | for_prd 자동 트리거 알고리즘 + 산출물 경로 + review-impl 통합 시점                                         |
+| [`references/bias-measurement.md`](./references/bias-measurement.md)           | 4축 grep + 4 metric (baseline은 `scripts/ai/measure-anchoring-bias.sh` 실행으로 동적 산출 — script가 SSOT) |
 
 PRD / review references (모든 모드 공용 또는 for_prd 전용):
 
-| 파일 | 사용처 |
+| 파일                                                                                                     | 사용처                                                                                                        |
 |------|--------|
-| [`./references/validation-paths.md`](./references/validation-paths.md) | 검증 수단 선택 (모든 모드) |
-| [`./references/prd/multi-pass-review.md`](./references/prd/multi-pass-review.md) | Post-Implementation 5번 Final review |
-| [`./references/prd/prd-master-template.md`](./references/prd/prd-master-template.md) | for_prd 모드 PRD master 구조 |
-| [`./references/prd/phase-template.md`](./references/prd/phase-template.md) | for_prd 모드 phase 단위 |
-| [`./references/prd/file-mode-selection.md`](./references/prd/file-mode-selection.md) | for_prd Single vs Split |
-| [`./references/review-impl/requirement-status.md`](./references/review-impl/requirement-status.md) | review-impl 6-classification taxonomy (requirement → 구현 매핑) |
+| [`./references/validation-paths.md`](./references/validation-paths.md)                                   | 검증 수단 선택 (모든 모드)                                                                                    |
+| [`./references/prd/multi-pass-review.md`](./references/prd/multi-pass-review.md)                         | Post-Implementation 5번 Final review                                                                          |
+| [`./references/prd/prd-master-template.md`](./references/prd/prd-master-template.md)                     | for_prd 모드 PRD master 구조                                                                                  |
+| [`./references/prd/phase-template.md`](./references/prd/phase-template.md)                               | for_prd 모드 phase 단위                                                                                       |
+| [`./references/prd/file-mode-selection.md`](./references/prd/file-mode-selection.md)                     | for_prd Single vs Split                                                                                       |
+| [`./references/review-impl/requirement-status.md`](./references/review-impl/requirement-status.md)       | review-impl 6-classification taxonomy (requirement → 구현 매핑)                                               |
 | [`./references/review-impl/implementation-review.md`](./references/review-impl/implementation-review.md) | review-impl overlay (PRD 10-pass에 얹는 6-classification 라벨링 + overbuilt 우선 분류 delta, auto-fix 미사용) |
 
 ## 주의사항
