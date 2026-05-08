@@ -45,9 +45,24 @@ tags: [ neovim, lazyvim, buffer, window, split ]
   <C-w>q        현재 윈도우 닫기 (Vim 순정, = <leader>wd)
   <C-w>o        현재만 남기고 다른 윈도우 모두 닫기   VSCode "Close Other Editors"
 
-윈도우 크기 균등화
+윈도우 크기 조정
 
+  <C-Up>        높이 증가 (±2)                LazyVim
+  <C-Down>      높이 감소 (±2)                LazyVim
+  <C-Left>      너비 감소 (±2)                LazyVim
+  <C-Right>     너비 증가 (±2)                LazyVim
+  <C-w>+        높이 +1                       Vim 순정
+  <C-w>-        높이 -1                       Vim 순정
+  <C-w>>        너비 +1                       Vim 순정
+  <C-w><        너비 -1                       Vim 순정
+  <C-w>_        현재 윈도우 높이 최대화
+  <C-w>|        현재 윈도우 너비 최대화
   <C-w>=        모든 윈도우 크기 균등 분배
+  :resize N            높이 절대값(N), `:res +N`/`-N`은 상대값
+  :vertical resize N   너비 절대값(N), `:vert res +N`/`-N`은 상대값
+
+  macOS: <C-Up>/<C-Down>이 Mission Control과 충돌하면
+  시스템 설정 → 키보드 → 단축키에서 끄거나 <C-w>+/- 사용.
 
 헷갈리는 키 비교
 
