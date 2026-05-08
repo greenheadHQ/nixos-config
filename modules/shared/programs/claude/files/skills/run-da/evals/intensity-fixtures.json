@@ -1,5 +1,5 @@
 {
-  "$schema_description": "Review Intensity 회귀 검증 fixture (수동 replay 가이드). 메인 LLM 인라인 체크리스트가 intensity-rules.md의 8 룰을 기계적으로 적용해 expected_intensity와 일치하는지 확인. 자동 eval runner 연결은 follow-up 범위 — 현재 run-eval.sh는 evals/queries.json만 batch discovery하므로 본 fixtures[] 스키마는 별도 replay runner 또는 스키마 통합이 필요. 절차 SSOT는 references/intensity-procedure.md, 룰 SSOT는 references/intensity-rules.md.",
+  "$schema_description": "Review Intensity 회귀 검증 fixture (수동 replay 가이드). 메인 LLM 인라인 체크리스트가 intensity-rules.md의 8 룰을 기계적으로 적용해 expected_intensity와 일치하는지 확인. 자동 eval runner는 본 스킬 범위 밖이며 본 fixtures[] 스키마는 수동 replay 가이드 전용이다. 절차 SSOT는 references/intensity-procedure.md, 룰 SSOT는 references/intensity-rules.md.",
   "$input_contract_note": "각 fixture의 changed_files는 실제 repo 경로(또는 'synthetic:' prefix로 가상 신규 추가)다. change_summary는 수동 replay 시점에 메인 LLM이 의도를 파악할 수 있도록 제공하는 보조 입력이며, 실제 런타임 for_pr 입력(`git diff --stat main...HEAD`)은 파일 경로 + 라인 수 변화 요약만 포함하고 의도 요약(change_summary)은 포함되지 않는다. 인라인 체크리스트 절차는 필요 시 commit message나 hunk diff로 의도를 보강한다. 즉 fixture는 '파일 경로 + 라인 수 + 의도 요약'까지 합쳐서 expected_intensity가 어떻게 결정되어야 하는지를 검증하는 ground truth다. 본 fixture가 '필요 이상의 스키마' 인지에 대한 trade-off는 PR 단위에서 수용된 한계 — 수동 replay 가이드 가치를 인정하되 자동 runner 통합은 follow-up.",
   "fixtures": [
     {

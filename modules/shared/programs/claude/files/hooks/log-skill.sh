@@ -5,9 +5,6 @@
 # Log format (TSV): timestamp user session_id repo skill args
 # 예: 1742302800	green	abc123	nixos-config	managing-minipc	""
 
-# eval 모드에서는 로깅 스킵 — 실사용 데이터 오염 방지 (#283)
-[[ -n "${SKILL_EVAL_MODE:-}" ]] && exit 0
-
 command -v jq >/dev/null 2>&1 || exit 0
 
 INPUT=$(cat)

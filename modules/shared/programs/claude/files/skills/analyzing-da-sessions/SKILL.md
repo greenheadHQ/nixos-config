@@ -20,7 +20,6 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 | 출력 형식 (markdown + JSON spec, GitHub Mermaid 안전 subset) | [`references/output-format.md`](references/output-format.md) |
 | `--hosts` 인자 + SSH whitelist + partial result 처리 | [`references/host-handling.md`](references/host-handling.md) |
 | pytest 회귀 검증 fixture 5종 | [`tests/`](tests/) |
-| trigger accuracy fixture (negative only) | [`evals/queries.json`](evals/queries.json) |
 
 ## 호출 예시
 

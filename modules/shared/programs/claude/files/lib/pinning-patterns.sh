@@ -148,7 +148,6 @@ pinning_should_check_path() {
     */skills/run-da/*) return 1 ;;
     */skills/parallel-audit/*) return 1 ;;
     tests/fixtures/* | */tests/fixtures/*) return 1 ;;
-    evals/queries.json | */evals/queries.json) return 1 ;;
     eval-workspace/* | */eval-workspace/*) return 1 ;;
     # macOS는 /tmp가 /private/tmp의 symlink, /var가 /private/var의 symlink.
     # realpath -m 등으로 canonicalize되면 /private/* 형태가 되므로 둘 다 매치 필요.

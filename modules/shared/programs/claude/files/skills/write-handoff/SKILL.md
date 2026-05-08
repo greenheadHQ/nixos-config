@@ -302,7 +302,6 @@ gh issue comment <number> --body-file <path-to-guide.md>
 - **복잡한 이슈의 세션 분리**: Phase 6인 복잡한 이슈는 각 Phase를 `<details>` 태그로 접어서 제공한다. LLM이 한 세션에서 하나의 Phase만 펼쳐 실행하고, 다음 세션에서 다음 Phase를 진행한다.
 - **대안 선택 기준 명시**: 구현 방법에 대안이 있으면 각 대안의 장단점과 추천 선택지를 명시한다. LLM이 자의적으로 판단하지 않도록 한다.
 - **환경별 분기 명시**: macOS/NixOS 분기, `ssh minipc` 필요 여부 등 환경에 따라 달라지는 행동을 명확히 기술한다.
-- **QA 체인**: 스킬 관련 이슈의 기본 QA 체인은 `/run-da for_pr` + skill-creator 플러그인(evals/queries.json 검증)이다. `/parallel-audit`는 다중 스킬 영향·광범위 사이드이펙트·고위험 변경일 때만 조건부로 추가한다. 검증 축(frontmatter/구조/links/evals)은 유지하고 도구만 활성 경로로 교체한다.
 - **병렬 힌트 제공**: 독립적으로 실행 가능한 명령에는 `(병렬 가능)` 힌트를 명시하여 LLM이 병렬 실행을 활용하도록 유도한다.
 ## 참조 자료
 

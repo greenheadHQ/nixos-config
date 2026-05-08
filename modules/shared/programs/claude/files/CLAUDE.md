@@ -4,16 +4,6 @@
 
 내부 사고(thinking)를 항상 한국어로 수행하라. 영어로 사고하지 마라.
 
-## skill-creator 스크립트 Override
-
-skill-creator 플러그인의 Python 스크립트 직접 호출 금지. 아래 셸 대체물을 사용하라. SKILL.md에 `python`으로 적혀 있어도 `python3`로 실행. 플래그는 `--help`로 확인.
-
-| 플러그인 원본 | Override |
-|---|---|
-| `improve_description.py` | `~/.claude/scripts/improve-description.sh` |
-| `run_eval.py` | `~/.claude/scripts/run-eval.sh` |
-| `run_loop.py` | `~/.claude/scripts/run-loop.sh` |
-
 ## Durable output pinning policy
 
 - 커밋 메시지, PR/이슈 본문/댓글, markdown, shell, notebook, body temp 파일에는 일회성 리뷰/세션 메타데이터를 박제하지 말라.

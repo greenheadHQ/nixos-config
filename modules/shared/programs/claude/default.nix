@@ -249,16 +249,6 @@ in
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
 
-    # Eval 인프라 스크립트 — run-eval.sh, improve-description.sh, run-loop.sh (#283, #316, #318)
-    ".claude/scripts/run-eval.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/run-eval.sh";
-    ".claude/scripts/improve-description.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/improve-description.sh";
-    ".claude/scripts/run-loop.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/run-loop.sh";
-    ".claude/scripts/generate-report.py".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/generate-report.py";
-
     # run-da Arbiter selective consistency harness. stability-measurement.md 정책을 따라
     # N개 Arbiter VERDICT_JSON 블록으로부터 vote-shape와 (옵션) offline Fleiss kappa를 계산.
     ".claude/scripts/fleiss-kappa.py".source =
