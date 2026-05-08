@@ -188,18 +188,8 @@
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": false,
     "slack@claude-plugins-official": true,
-    "codex@openai-codex": true,
     "atlassian@claude-plugins-official": true,
     "figma@claude-plugins-official": true
-  },
-  "extraKnownMarketplaces": {
-    "openai-codex": {
-      "source": {
-        "source": "github",
-        "repo": "openai/codex-plugin-cc"
-      },
-      "autoUpdate": true
-    }
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
