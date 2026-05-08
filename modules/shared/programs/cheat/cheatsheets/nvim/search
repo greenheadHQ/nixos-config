@@ -13,11 +13,17 @@ tags: [ neovim, lazyvim, search, telescope ]
   <leader>sG    텍스트 검색 (grep) — cwd   (모노레포 전체)
   <leader>fb    열린 버퍼 목록             (탭 전환)
   <leader>fr    최근 파일 목록             (Recent Files)
-  <leader>e     파일 탐색기 토글           (Explorer 패널)
+  <leader>e     Explorer 열기 / 포커스 / 닫기  (snacks.explorer, 3단계 토글)
 
   ※ 모노레포: 소문자(ff, /)는 LSP root(현재 패키지), 대문자(fF, sG)는 cwd(전체)
 
 탐색기 (Explorer)
 
-  <C-h>         Explorer에서 Buffer로 포커스 이동
-  <M-h>         숨김파일 표시/숨기기 토글 (Mac: Option)
+  <leader>e     Explorer 3단계 토글
+                  닫혀 있음     → 열기 + Explorer로 포커스
+                  열림 + 에디터 → Explorer로 포커스 이동
+                  열림 + Explorer → 닫기
+  <M-h>         (Explorer 안에서) 숨김파일 표시/숨기기 토글  Mac: Option
+
+  ※ Explorer ↔ Editor 포커스 이동은 일반 윈도우 이동(<C-h>/<C-l>)이 더 직관적.
+    상세는 nvim/buffer 참조.

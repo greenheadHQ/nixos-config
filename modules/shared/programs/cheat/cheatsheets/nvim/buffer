@@ -1,19 +1,61 @@
 ---
-tags: [ neovim, lazyvim, buffer ]
+tags: [ neovim, lazyvim, buffer, window, split ]
 ---
-버퍼 (탭)
+버퍼 vs 윈도우 (개념)
+
+  버퍼    메모리에 로드된 파일      (≈ VSCode 탭)
+  윈도우  화면의 split 칸          (≈ VSCode 분할 영역)
+
+  한 윈도우는 어떤 버퍼든 보여줄 수 있고, 한 버퍼를 여러 윈도우에서 동시에 볼 수도 있다.
+  → 키 동작이 "버퍼 단위"인지 "윈도우 단위"인지가 가장 헷갈리는 포인트.
+
+버퍼 전환 (같은 윈도우에서 보여주는 파일 갈아끼우기, 윈도우 수 그대로)
 
   H             이전 버퍼 (왼쪽 탭)
   L             다음 버퍼 (오른쪽 탭)
   <leader>bd    현재 버퍼 닫기
-  <leader>bo    다른 버퍼 모두 닫기
+  <leader>bo    현재 버퍼만 남기고 나머지 모두 닫기
+  <leader>fb    열린 버퍼 목록 (Picker로 골라서 점프)
 
-창 분할 (window split)
+윈도우 분할 (split 만들기 — VSCode "Split Editor")
 
-  <C-w>v        수직 분할 (좌우)
-  <C-w>s        수평 분할 (상하)
-  <C-w>h/j/k/l  창 간 이동 (좌/하/상/우)
-  <C-w>q        현재 창 닫기
+  <leader>|     세로 분할 (좌/우)             VSCode "Split Editor Right"
+  <leader>-     가로 분할 (상/하)             VSCode "Split Editor Down"
+  <C-w>v        세로 분할 (= <leader>|)        Vim 순정
+  <C-w>s        가로 분할 (= <leader>-)        Vim 순정
+  :vsp <파일>   세로 분할 + 지정 파일 열기
+  :sp <파일>    가로 분할 + 지정 파일 열기
+
+  파일 지정 없이 분할하면 양쪽이 같은 버퍼를 공유 (편집 동기화, 커서/스크롤은 독립).
+  파일을 지정하면 별도 버퍼가 열림 (동기화 없음).
+
+윈도우 포커스 이동 (split 간 이동, 보고 있는 파일은 그대로)
+
+  <C-h>         왼쪽 split으로 이동
+  <C-j>         아래 split으로 이동
+  <C-k>         위 split으로 이동
+  <C-l>         오른쪽 split으로 이동
+  <C-w>h/j/k/l  동일 (Vim 순정, LazyVim이 <C-h/j/k/l>로 단축)
+
+  Explorer가 왼쪽이면: Editor에서 <C-h>로 들어가고, <C-l>로 나온다.
+
+윈도우 닫기
+
+  <leader>wd    현재 윈도우 닫기 (LazyVim)
+  <C-w>q        현재 윈도우 닫기 (Vim 순정, = <leader>wd)
+  <C-w>o        현재만 남기고 다른 윈도우 모두 닫기   VSCode "Close Other Editors"
+
+윈도우 크기 균등화
+
+  <C-w>=        모든 윈도우 크기 균등 분배
+
+헷갈리는 키 비교
+
+  H / L          버퍼 전환       현재 윈도우의 표시 파일 변경. 윈도우 수 변화 없음.
+  <C-h> / <C-l>  윈도우 포커스   다른 split으로 커서 이동. 보고 있는 파일은 그대로.
+
+  → 같은 윈도우에서 다른 파일 보고 싶으면 H/L.
+    옆 split(예: Explorer)으로 가고 싶으면 <C-h>/<C-l>.
 
 종료
 
