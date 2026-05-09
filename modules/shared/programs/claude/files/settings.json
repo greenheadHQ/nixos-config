@@ -11,11 +11,7 @@
   },
   "includeCoAuthoredBy": false,
   "permissions": {
-    "deny": [
-      "Bash(rm -rf /)",
-      "Bash(rm -rf ~)",
-      "Bash(npm *)"
-    ],
+    "deny": ["Bash(rm -rf /)", "Bash(rm -rf ~)", "Bash(npm *)"],
     "additionalDirectories": [
       "~/Desktop",
       "~/Downloads",
@@ -184,11 +180,6 @@
     "type": "command",
     "command": "~/.claude/scripts/statusline.sh",
     "refreshInterval": 1
-  },
-  "enabledPlugins": {
-    "slack@claude-plugins-official": true,
-    "atlassian@claude-plugins-official": true,
-    "figma@claude-plugins-official": true
   },
   "language": "Korean",
   "alwaysThinkingEnabled": true,
