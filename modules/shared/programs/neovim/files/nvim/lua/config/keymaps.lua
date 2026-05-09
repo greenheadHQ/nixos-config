@@ -65,10 +65,10 @@ end, { desc = "Copy absolute path" })
 -- ============================================================================
 -- Cheat sheet 조회 (fzf 브라우징)
 -- ============================================================================
--- cheat-browse: cheat + fzf 브라우저 (~/.local/bin/cheat-browse)
+-- cheatsheet: cheat + fzf 브라우저 (~/.local/bin/cheatsheet)
 -- fzf 미리보기로 내용 확인 후 Enter로 전체 보기, Ctrl-S로 content 모드 전환
 vim.keymap.set("n", "<leader>C", function()
-  Snacks.terminal("cheat-browse", {
+  Snacks.terminal("cheatsheet", {
     win = { style = "float" },
   })
 end, { desc = "Cheat sheets" })

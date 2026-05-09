@@ -13,11 +13,11 @@ in
 {
   home.packages = [ pkgs.cheat ];
 
-  # cheat-browse: wrapper
-  home.file.".local/bin/cheat-browse" = {
+  # cheatsheet: wrapper
+  home.file.".local/bin/cheatsheet" = {
     text = ''
       #!/usr/bin/env bash
-      exec bash "${nixosConfigPath}/modules/shared/programs/cheat/files/scripts/cheat-browse.sh" "$@"
+      exec bash "${nixosConfigPath}/modules/shared/programs/cheat/files/scripts/cheatsheet.sh" "$@"
     '';
     executable = true;
   };

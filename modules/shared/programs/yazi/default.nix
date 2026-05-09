@@ -184,19 +184,19 @@ in
       }
     ];
 
-    # C: cheat-browse (cheat + fzf) 띄우기. nvim <leader>C / tmux prefix+C 와 동일 키로 일관성.
+    # C: cheatsheet (cheat + fzf) 띄우기. nvim <leader>C / tmux prefix+C 와 동일 키로 일관성.
     # preset [mgr] 섹션에 C 단독 바인딩 없음 — 충돌 없음.
     # 절대경로 사용: tmux.conf 의 display-popup 과 동일 규약, PATH 환경 차이에 무관.
     # "ㅊ" 이중 바인딩: 한글 2벌식 IME 활성 시 Shift+C → ㅊ 로 들어오므로 동일 동작 보장.
     keymap.mgr.prepend_keymap = [
       {
         on = [ "C" ];
-        run = ''shell "$HOME/.local/bin/cheat-browse" --block'';
+        run = ''shell "$HOME/.local/bin/cheatsheet" --block'';
         desc = "Browse cheatsheets (cheat + fzf)";
       }
       {
         on = [ "ㅊ" ];
-        run = ''shell "$HOME/.local/bin/cheat-browse" --block'';
+        run = ''shell "$HOME/.local/bin/cheatsheet" --block'';
         desc = "Browse cheatsheets (한글 IME)";
       }
     ]
