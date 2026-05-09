@@ -31,11 +31,6 @@
 ### D. 구조 (Structuring)
 
 - [ ] **D1.** `write-handoff` 가이드 상단 10줄 이내에 **TL;DR** (상황/현재 상태/다음 액션/Blockers 4슬롯)을 둔다. 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — 중간 정보는 활용률이 낮고 앞/뒤 정보에 강함.
-- [ ] **D2.** `write-handoff` 가이드의 **마지막 섹션**으로 **Next Session Starter**를 둔다 (이 가이드 읽고 바로 실행할 명령어/재개 지점). 필수 슬롯만 포함하고 간결하게 유지. 출처: recency bias, 위 D1과 동일 논문.
-
-  ❌ **BAD**: `cd /Users/alice/projects/myrepo && git fetch origin feat/foo` _(why: 작성자의 로컬 사용자 경로가 공개 이슈 코멘트에 노출 — 다른 세션/머신에서 재사용 불가, NSS 재개 지점 목적 저해)_
-
-  ✅ **GOOD**: `REPO='acme/project'; ISSUE_NUM='123'` — Step 8 Self-verification으로 `<REPO_SLUG>`/`<ISSUE_NUM>` placeholder 치환 완료를 검증한 뒤 `guide-template.md`의 NSS 패턴(서브쉘 + 명시적 `|| exit 1` + `issue/{N}` non-destructive restore) 사용. 규약 상세는 `write-handoff/SKILL.md`의 "Handoff branch convention" 섹션 참조.
 
 ### E. Anti-hallucination (Evidence-gated)
 
@@ -119,7 +114,7 @@
 학술 (2023-2025):
 
 - [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495) — 초안 → 검증 질문 → 독립 답변 → 재작성 (E2).
-- [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — primacy/recency bias (D1, D2).
+- [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — primacy bias (D1).
 - [Learning Fine-Grained Grounded Citations (ACL Findings 2024)](https://aclanthology.org/2024.findings-acl.838/) — fine-grained quote grounding (B1).
 - [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/) — self-evaluation 기반 factuality alignment (E2).
 - [Document Structure in Long Document Transformers (EACL 2024)](https://aclanthology.org/2024.eacl-long.64/) — heading depth / section 경계 (D3).

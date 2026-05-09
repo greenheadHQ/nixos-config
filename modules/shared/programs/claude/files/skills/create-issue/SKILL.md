@@ -257,7 +257,7 @@ fi
 
 "LLM 이행 가이드를 작성할까요?"
 
-- 사용자가 승인 → `/write-handoff <생성된 ISSUE_URL>` 스킬을 실행한다 (bare 번호 대신 Step 5의 `ISSUE_URL`을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피한다).
+- 사용자가 승인 → `/write-handoff <생성된 ISSUE_URL>` 스킬을 실행한다 (bare 번호 대신 Step 5의 `ISSUE_URL`을 전달해 cwd-dependent bare-number 모호성을 회피한다).
 - 사용자가 거부 → 이슈 URL 반환 후 종료한다.
 
 ## Title Conventions

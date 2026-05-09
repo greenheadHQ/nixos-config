@@ -254,13 +254,5 @@ in
     ".claude/scripts/fleiss-kappa.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
 
-    # write-handoff repo+issue 확보 helper. LLM이 SKILL.md Step 1-B 절차에 따라 직접 호출한다 (#486).
-    # Codex 세션은 ~/.codex/scripts/ 경로에서 동일 source를 공유한다 (codex/default.nix).
-    ".claude/scripts/write-handoff-repo-and-issue.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/write-handoff-repo-and-issue.sh";
-    # Backward-compatible shim: 구 slug-only helper 경로.
-    ".claude/scripts/write-handoff-repo-slug.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/write-handoff-repo-slug.sh";
-
   };
 }

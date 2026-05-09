@@ -100,7 +100,7 @@ trigger 카테고리 정의 (키워드 목록 + 권장 transition 모드)는 [`.
 
 옵션 (3개):
 - **Yes** → 생성된 이슈 URL로 `for_action <ISSUE_URL>` 진입.
-- **No (write-handoff로 마무리)** → 이슈 URL을 인자로 `/write-handoff` 실행 후 종료 (bare 번호 대신 URL을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피).
+- **No (write-handoff로 마무리)** → 이슈 URL을 인자로 `/write-handoff` 실행 후 종료 (bare 번호 대신 URL을 전달해 cwd-dependent bare-number 모호성을 회피).
 - **No (여기서 종료)** → 이슈 URL 반환 후 종료.
 
 ## for_prd 모드 자동 트리거 알림 메시지

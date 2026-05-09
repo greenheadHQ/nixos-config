@@ -1095,8 +1095,6 @@ verify_codex_helper() {
   fi
 }
 
-verify_codex_helper "write-handoff-repo-and-issue.sh"
-verify_codex_helper "write-handoff-repo-slug.sh"
 verify_codex_helper "fleiss-kappa.py"
 
 # Claude helper도 양쪽 scope에 동일 source가 프로비저닝되는지 확인 (selective consistency harness)
@@ -1118,8 +1116,6 @@ verify_claude_helper() {
   fi
 }
 
-verify_claude_helper "write-handoff-repo-and-issue.sh"
-verify_claude_helper "write-handoff-repo-slug.sh"
 verify_claude_helper "fleiss-kappa.py"
 
 echo ""

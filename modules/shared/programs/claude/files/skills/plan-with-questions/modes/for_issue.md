@@ -63,7 +63,7 @@ trigger 카테고리 정의 (키워드 목록 + transition 매핑)는 [`../SKILL
 
 옵션은 모든 카테고리에서 **3개로 통일** (`request_user_input` max-3 제약):
 - **Yes** → trigger 카테고리에 따라 자동 권장 모드(`for_prd <ISSUE_URL>` 또는 `for_action <ISSUE_URL>`)로 진입.
-- **No (write-handoff로 마무리)** → 생성된 **이슈 URL(`ISSUE_URL`)** 을 인자로 `/write-handoff` 스킬을 실행하여 LLM 이행 가이드를 작성한 뒤 종료한다 (bare 번호 대신 URL을 전달해 write-handoff 헬퍼의 cwd 의존성을 회피).
+- **No (write-handoff로 마무리)** → 생성된 **이슈 URL(`ISSUE_URL`)** 을 인자로 `/write-handoff` 스킬을 실행하여 LLM 이행 가이드를 작성한 뒤 종료한다 (bare 번호 대신 URL을 전달해 cwd-dependent bare-number 모호성을 회피).
 - **No (여기서 종료)** → 생성된 이슈 URL을 반환하고 종료한다.
 
 PRD 카테고리에서 사용자가 for_action 우회 진입을 원하면 별도 메시지로 `for_action <ISSUE_URL>`을 명시 호출하면 된다 (3-옵션 제약으로 본 prompt에는 fallback 옵션 미포함).
