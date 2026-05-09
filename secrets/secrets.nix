@@ -17,9 +17,9 @@ let
   minipcOnly = [ constants.sshKeys.minipc ];
 in
 {
-  # 서비스별 Pushover credentials (독립적 토큰 revocation + API rate limit 분리)
-  "pushover-claude-code.age".publicKeys = allHosts;
-  "pushover-codex.age".publicKeys = allHosts;
+  # sharing-text 스킬의 수동 push 함수가 사용하는 Pushover credentials
+  # (이전에는 Claude Code/Codex hook 알림과 공유. native push 도입으로 hook은 제거됨.)
+  "pushover-share.age".publicKeys = allHosts;
   "pane-note-links.age".publicKeys = allHosts;
 
   # Immich PostgreSQL 비밀번호

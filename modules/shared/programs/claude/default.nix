@@ -150,12 +150,6 @@ in
     ".claude/CLAUDE.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
 
     # Hooks - mkOutOfStoreSymlink로 nrs 없이 즉시 반영 (소스 파일에 chmod +x 필수)
-    ".claude/hooks/stop-notification.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/stop-notification.sh";
-    ".claude/hooks/ask-notification.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/ask-notification.sh";
-    ".claude/hooks/plan-notification.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/plan-notification.sh";
     ".claude/hooks/nrs-session-cleanup.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/nrs-session-cleanup.sh";
     ".claude/hooks/worktree-path-guard.sh".source =

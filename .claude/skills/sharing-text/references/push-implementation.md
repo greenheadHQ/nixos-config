@@ -18,7 +18,7 @@ push() {
   fi
   [ -z "$text" ] && { echo "Usage: push <text> or pipe input"; return 1; }
 
-  local cred="$HOME/.config/pushover/claude-code"
+  local cred="$HOME/.config/pushover/share"
   if [ ! -f "$cred" ]; then
     echo "Error: Pushover credentials not found" >&2
     return 1
@@ -54,7 +54,7 @@ push() {
 
 ## Credentials
 
-- 경로: `$HOME/.config/pushover/claude-code`
+- 경로: `$HOME/.config/pushover/share`
 - 관리: agenix로 암호화
 - 내용: `PUSHOVER_TOKEN`, `PUSHOVER_USER` 환경변수
 

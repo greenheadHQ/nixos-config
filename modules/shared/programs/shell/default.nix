@@ -288,7 +288,7 @@ in
           fi
           [ -z "$text" ] && { echo "Usage: push <text> or pipe input"; return 1; }
 
-          local cred="$HOME/.config/pushover/claude-code"
+          local cred="$HOME/.config/pushover/share"
           if [ ! -f "$cred" ]; then
             echo "Error: Pushover credentials not found" >&2
             return 1

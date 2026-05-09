@@ -36,10 +36,9 @@ EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND='$HOME/.codex/hooks/pinning-guard.sh
 # modules/shared/programs/codex/files/hooks/pinning-alert.sh 헤더 주석 참조).
 EXPECTED_POST_TOOL_USE_PINNING_COMMAND='$HOME/.codex/hooks/pinning-alert.sh'
 
-# dispatcher가 호출하는 sub-script. ordering은 record-last-stop → nrs-session-cleanup →
-# stop-notification (issue #590: cleanup이 notification 외부 IPC latency 앞에서 lock 즉시 해제).
+# dispatcher가 호출하는 sub-script. ordering은 record-last-stop → nrs-session-cleanup.
 # 본 배열 순서는 dispatcher 호출 순서이며 fixture ordering 검증의 expected.
-EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh stop-notification.sh)
+EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh)
 
 # live programmatic env inheritance fixture에서 codex-exec-supervised 호출 timeout (hang 방어).
 LIVE_CODEX_TIMEOUT_SECONDS=30

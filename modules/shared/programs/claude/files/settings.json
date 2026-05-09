@@ -22,24 +22,6 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/ask-notification.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/plan-notification.sh"
-          }
-        ]
-      },
-      {
         "matcher": "Edit|Write",
         "hooks": [
           {
@@ -121,10 +103,6 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/record-last-stop.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/stop-notification.sh"
           },
           {
             "type": "command",

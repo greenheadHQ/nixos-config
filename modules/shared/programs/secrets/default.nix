@@ -34,15 +34,11 @@
 
     # 공통 시크릿
     secrets = {
-      # 서비스별 Pushover credentials (독립적 토큰 revocation + API rate limit 분리)
-      pushover-claude-code = {
-        file = ../../../../secrets/pushover-claude-code.age;
-        path = "${config.xdg.configHome}/pushover/claude-code";
-        mode = "0400";
-      };
-      pushover-codex = {
-        file = ../../../../secrets/pushover-codex.age;
-        path = "${config.xdg.configHome}/pushover/codex";
+      # sharing-text 스킬의 수동 push 함수용 Pushover credentials
+      # (Claude Code / Codex hook 알림은 native push로 대체되어 hook은 제거됨.)
+      pushover-share = {
+        file = ../../../../secrets/pushover-share.age;
+        path = "${config.xdg.configHome}/pushover/share";
         mode = "0400";
       };
       # Pane Notepad 링크 파일 (회사 대시보드 등)

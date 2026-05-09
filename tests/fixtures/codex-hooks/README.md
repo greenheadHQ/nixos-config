@@ -7,17 +7,11 @@ runner: `tests/test-codex-hook-fixtures.sh`.
 
 | 경로 | 의도 | 소비처 |
 |------|------|--------|
-| `stdin/` | hook stdin fixture 공용 디렉터리. Codex 0.124+ payload(`record-prompt-submit.sh`/`record-last-stop.sh`/`stop-notification.sh` 등), PostToolUse pinning-alert warn-only fixture, PreToolUse pinning-guard hard-fail fixture(`*.expected` sidecar 포함)가 함께 위치. 카테고리별 파일 표는 아래 카테고리 6/7/7b 절 참조. | `test_stdin_payloads_create_expected_hook_artifacts_codex_0_124`, `test_stop_notification_codex_transcript_fallback`, `test_stop_notification_secret_redaction`, `test_pinning_alert_behavioral`, `test_pretooluse_pinning_guard_behavioral` |
+| `stdin/` | hook stdin fixture 공용 디렉터리. Codex 0.124+ payload(`record-prompt-submit.sh`/`record-last-stop.sh` 등), PostToolUse pinning-alert warn-only fixture, PreToolUse pinning-guard hard-fail fixture(`*.expected` sidecar 포함)가 함께 위치. 카테고리별 파일 표는 아래 카테고리 7/7b 절 참조. | `test_stdin_payloads_create_expected_hook_artifacts_codex_0_124`, `test_pinning_alert_behavioral`, `test_pretooluse_pinning_guard_behavioral` |
 | `commit-msg/` | commit-msg-pinning.sh 입력 메시지와 stderr expected sidecar. shared pinning helper가 commit message 경로에서도 hook 경로와 같은 결과를 내는지 검증한다. | `test_commit_msg_pinning_behavioral` |
 | `sync-preservation/` | `sync-codex-config.py`가 `~/.codex/config.toml`을 merge할 때 user-owned 영역을 어떻게 보존/덮어쓰는지 검증할 user 측 입력 TOML. | `test_sync_preservation_scenarios` |
-| `transcripts/` | Codex 0.124+ session JSONL transcript 샘플. stop-notification.sh의 `extract_last_assistant_text` fallback 경로 검증용. | `test_stop_notification_codex_transcript_fallback` (6.1) |
 
-### stdin/ 카테고리 6 fixture
-
-| 파일 | 카테고리 | placeholder 규약 |
-|------|----------|------------------|
-| `stop-no-last-message-codex-transcript.json` | 6.1 | `transcript_path` 값의 `__SANDBOX_TRANSCRIPT_PATH__`를 runner가 sandbox 내부 transcript 경로로 sed 치환 |
-| `stop-with-secret-reply.json` | 6.2 | `last_assistant_message`에 7 token family 패턴(`sk-ant`/`sk-openai`/`gh-classic`/`github-pat`/`jwt`/`aws-akia`/`aws-asia`)이 함께 포함된 통합 fixture |
+(이전에는 `transcripts/` 디렉터리와 카테고리 6 stop-notification reliability/security fixture가 있었으나, native push 도입으로 stop-notification hook과 함께 제거되었다.)
 
 ### stdin/ 카테고리 7 fixture (pinning-alert behavioral, #606)
 
