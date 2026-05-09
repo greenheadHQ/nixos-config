@@ -3,7 +3,9 @@
 `$ARGUMENTS`에 이슈 레퍼런스가 없으면 이 모드로 진행한다.
 brainstorming의 핵심(요구사항 탐색, 블랙박스 해소)을 내재화하고, 최종 산출물은 `/create-issue`로 생성한 이슈 + LLM 이행 가이드이다.
 
-DA는 for_issue에서 실행하지 않는다. 스무고개 루프가 DA의 역할(불명확점 해소, 품질 보장)을 대체한다. 계획 추적 도구 미사용 (산출물이 계획 파일이 아닌 이슈).
+DA는 for_issue에서 실행하지 않는다. 스무고개 루프가 DA의 역할(불명확점 해소, 품질 보장)을 대체한다. 계획 추적 도구는 사용하지 않는다 (산출물이 계획 파일이 아닌 이슈).
+
+Post-Implementation 7단계는 호출하지 않는다. 적용 범위는 [`../references/post-implementation.md`](../references/post-implementation.md) 참조.
 
 ## Step I-1: fan-out 레퍼런스 수집 [일반 모드]
 
@@ -35,9 +37,9 @@ fan-in 결과에서 미해결 항목(블랙박스 제로 원칙의 "블랙박스
 
 **사용자에게 질문할 때는 질문 도구를 사용한다.** 질문 도구 미지원 시 [`../references/runtime-boundaries.md`](../references/runtime-boundaries.md#질문-도구-미지원-대응)를 따른다.
 
-**라운드당 1개 질문 (D1, for_action Step 4와 동일 정책)**: 질문 도구 호출 시 `questions` 배열 길이는 1로 고정한다. 우선순위가 높은(아키텍처 결정, 핵심 요구사항) 질문부터 시작한다. 이전 정책 "라운드당 최대 4개"는 폐기한다 — for_action과 통일하여 인지 부하/turn_abort 회귀를 방지한다 (for_issue도 반복 라운드로 점진적으로 이슈를 정의하므로 라운드당 1개로도 동일 효과를 얻는다 — 라운드 수 증가는 D1 trade-off로 명시 수용).
+**라운드당 하나의 질문 (for_action Step 4와 동일 정책)**: 질문 도구 호출 시 `questions` 배열 길이는 1로 고정한다. 우선순위가 높은(아키텍처 결정, 핵심 요구사항) 질문부터 시작한다. 이유는 인지 부하와 turn_abort 위험을 줄이기 위해서다 (for_issue도 반복 라운드로 점진적으로 이슈를 정의하므로 라운드당 하나의 질문으로 동일 효과를 얻는다 — 라운드 수 증가는 명시적으로 수용한 trade-off).
 
-트레이드오프 라운드 D4 합의 알고리즘 호출, user_facing layer 사용, judgment-first 라벨 금지, fallback enum(D4_FALLBACK_A/B/C/C_MULTI + D2_FALLBACK_USER_FACING) 사용자 노출 평이 문구 표기는 모두 [`for_action.md` Step 4](./for_action.md#step-4-사용자에게-질문-일반-모드) 정책을 동일하게 적용한다 (for_issue는 별도 사본을 두지 않고 callsite로 인용).
+트레이드오프 라운드 추천 라벨 합의 알고리즘 호출, `user_facing` layer 사용, judgment-first 라벨 금지, fallback 사용자 노출 평이 문구 표기는 모두 [`for_action.md` Step 4](./for_action.md#step-4-사용자에게-질문-일반-모드) 정책을 동일하게 적용한다 (for_issue는 별도 사본을 두지 않고 callsite로 인용).
 
 각 라운드 후:
 1. 답변된 체크리스트 항목을 ✅로 업데이트

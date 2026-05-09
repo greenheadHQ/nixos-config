@@ -52,18 +52,18 @@ Step 5/6 진행 중에는 [`plan-file-template.md`](./plan-file-template.md#da-s
 
 ### for_prd
 
-`for_prd`는 plan-with-questions가 Step 1-4와 Step 5-6을 거친 뒤 PRD 규약을 따라 `.claude/prds/prd-<feature>.md`에 직접 작성한다. `for_action` Step 4.5 plan 파일 초기화는 적용하지 않는다. PRD 작성 이후의 phase 진행 상태는 PRD master 파일의 Document Status가 정본이며 본 enum은 사용되지 않는다. plan-with-questions가 추적하는 enum은 PRD 작성 직전까지 한정:
+`for_prd`는 plan-with-questions가 P1-P5와 P6-P7을 거친 뒤 PRD 규약을 따라 `.claude/prds/prd-<feature>.md`에 직접 작성한다. `for_action` Step 4.5 plan 파일 초기화는 적용하지 않는다. PRD 작성 이후의 phase 진행 상태는 PRD master 파일의 Document Status가 정본이며 본 enum은 사용되지 않는다. plan-with-questions가 추적하는 enum은 PRD 작성 직전까지 한정:
 
 | Resume From | 진입 조건 |
 |-------------|----------|
 | `for_prd.candidate_detected` | task-size-routing 후보 감지 + 사용자 알림 대기 |
-| `for_prd.step5_da` | PRD draft/context 기준 preflight gate 적용 후 `/run-da for_plan` 호출 또는 승인된 SKIP 처리 |
-| `for_prd.step6_da_apply` | PRD draft/context와 candidate phase structure에 DA 결과 반영 |
+| `for_prd.p6_da` | PRD draft/context 기준 preflight gate 적용 후 `/run-da for_plan` 호출 또는 승인된 SKIP 처리 |
+| `for_prd.p7_da_apply` | PRD draft/context와 candidate phase structure에 DA 결과 반영 |
 | `for_prd.user_confirmed` | 사용자 동의 후 PRD 작성 직전 |
 
 PRD 작성 후의 진행은 PRD master Document Status에서 `Current Phase` / `Active Phase File` / `Status` 필드로 추적한다.
 
-PRD 파일 작성 전의 `for_prd.step5_da` / `for_prd.step6_da_apply`는 durable file artifact를 전제하지 않는다. 세션이 끊긴 뒤 재개하면 transient draft/context와 DA verdict를 신뢰하지 않고 이슈 ref + Step 1-4 evidence를 다시 확인한 뒤 Step 5 DA부터 재실행한다. PRD 파일을 작성한 뒤에는 재실행 사유와 최종 verdict 요약을 master `Change Log`에 기록한다.
+PRD 파일 작성 전의 `for_prd.p6_da` / `for_prd.p7_da_apply`는 durable file artifact를 전제하지 않는다. 세션이 끊긴 뒤 재개하면 transient draft/context와 DA verdict를 신뢰하지 않고 이슈 ref + P1-P5 evidence를 다시 확인한 뒤 P6 DA부터 재실행한다. PRD 파일을 작성한 뒤에는 재실행 사유와 최종 verdict 요약을 master `Change Log`에 기록한다.
 
 ### Post-Implementation
 

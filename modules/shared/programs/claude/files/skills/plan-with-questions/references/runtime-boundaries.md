@@ -32,12 +32,12 @@ codex 환경 가정·활성화 절차는 [`.claude/skills/configuring-codex/SKIL
 
 본 SKILL의 운영 정책:
 
-1. **라운드당 1개 질문 강제 (D1, FR-1)** — `request_user_input`/`AskUserQuestion` 호출 시 `questions` 배열 길이는 1로 고정한다. for_action·for_issue·for_prd 모두 동일 정책이며 별도 자동 축소 로직이 필요 없다 (이전 정책 "for_issue 라운드당 최대 4개를 3개로 자동 축소", "for_action 한번에 모아서"는 모두 폐기). tool description의 "2-3 choices" 가이드는 한 question 내 options 개수에 적용되며, 본 정책의 questions 배열 길이 1과는 별개 차원이다.
-2. **Step 3.5 추천 라벨 — D4 합의 알고리즘 호출 (D4, FR-5)** — tool description은 "recommended option first"를 권고하지만 본 SKILL은 [`./consulting-step.md`](./consulting-step.md)의 D4 합의 알고리즘 4단계(schema 한계 내 보수적 합의 정의)를 적용해 후보가 정확히 1개로 좁혀진 합의 PASS 옵션에만 `(Recommended)` 라벨을 부착한다. 합의 미달 옵션에는 어떤 fallback에서도 라벨을 부착하지 않으며, 옵션 dict에서 라벨 문자열이 발견되면 강제 제거한다 (D4 hard rule). 옵션 순서는 `decision_id` 기반 stable shuffle로 결정한다 (anti-anchoring 2번 규칙 보존). 본 정책은 codex/AskUserQuestion tool description LLM convention에 대한 로컬 정책 override다.
+1. **라운드당 하나의 질문** — `request_user_input`/`AskUserQuestion` 호출 시 `questions` 배열 길이는 1로 고정한다. for_action·for_issue·for_prd 모두 동일 정책이며 별도 자동 축소 로직이 필요 없다. tool description의 "2-3 choices" 가이드는 한 question 내 options 개수에 적용되며, 본 정책의 questions 배열 길이와는 별개 차원이다.
+2. **Step 3.5 추천 라벨 — 합의 알고리즘 호출** — tool description은 "recommended option first"를 권고하지만 본 SKILL은 [`./consulting-step.md`](./consulting-step.md)의 추천 라벨 합의 알고리즘 4단계(schema 한계 내 보수적 합의 정의)를 적용해 후보가 정확히 1개로 좁혀진 합의 통과 옵션에만 `(Recommended)` 라벨을 부착한다. 합의 미달 옵션에는 어떤 fallback에서도 라벨을 부착하지 않으며, 옵션 dict에서 라벨 문자열이 발견되면 강제 제거한다. 옵션 순서는 `decision_id` 기반 stable shuffle로 결정한다 (anti-anchoring 2번 규칙 보존). 본 정책은 codex/AskUserQuestion tool description LLM convention에 대한 로컬 정책 override다.
 
-### for_action·for_issue 라운드 정책 통일 (D1)
+### for_action·for_issue 라운드 정책 통일
 
-세 모드 모두 라운드당 `questions` 배열 길이 1을 강제한다. modes/*.md(for_action Step 4 / for_issue Step I-4 / for_prd 차용)가 SSOT이며 본 reference는 그 정책을 런타임 도구 호출 차원에서 명시한다. 라운드 수가 늘어나는 trade-off는 D1으로 명시 수용된다 (사용자 인지 부하/turn_abort 회귀 방지가 우선).
+세 모드 모두 라운드당 `questions` 배열 길이 1을 강제한다. modes/*.md(for_action Step 4 / for_issue Step I-4 / for_prd 차용)가 SSOT이며 본 reference는 그 정책을 런타임 도구 호출 차원에서 명시한다. 라운드 수가 늘어나는 trade-off는 명시적으로 수용된다 (사용자 인지 부하와 turn_abort 위험 감소가 우선).
 
 PR openai/codex#12735는 collaboration mode 가용성만 확장하고 tool spec/schema는 미변경이므로, 위 가이드는 collaboration mode와 무관하게 schema 차원에서 일관 — 단 prompt template 차원에서는 mode별 차이가 있다 (위 plan.md/default.md 차이).
 

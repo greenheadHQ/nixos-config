@@ -5,7 +5,7 @@ Automatic `plan-with-questions` call sites may apply the `run-da` Review Intensi
 ## 적용 call sites
 
 - `for_action` Step 5: plan-mode review for the `.claude/plans/<slug>.md` plan.
-- `for_prd` Step 5: plan-mode review for PRD draft/context.
+- `for_prd` P6: plan-mode review for PRD draft/context.
 - Post-Implementation Step 3: code review for the implementation diff.
 
 Incidental guidance that merely mentions `/run-da` does not inherit this gate.
@@ -37,7 +37,7 @@ If these references change, this gate follows them. Call-site docs must link her
 
 | Condition | Action | Durable state |
 |-----------|--------|---------------|
-| User approves SKIP | Do not invoke `/run-da`; treat the automatic gate as completed. | `for_action` plan DA must record `DA State=SKIPPED`, `Resume From=for_action.step7_plan_mode_entry`, and `Last Completed Step=for_action.step6_da_apply`; `for_prd` records the Step 5 outcome in transient context and, after PRD creation, the PRD master `Change Log`; post-implementation records the Step 3 outcome in the active plan `Change Log` or PRD master `Change Log`, sets `Last Completed Step=post_impl.run_da_for_pr`, sets `Resume From=post_impl.parallel_audit`, and does not overwrite plan-mode `DA State`. |
+| User approves SKIP | Do not invoke `/run-da`; treat the automatic gate as completed. | `for_action` plan DA must record `DA State=SKIPPED`, `Resume From=for_action.step7_plan_mode_entry`, and `Last Completed Step=for_action.step6_da_apply`; `for_prd` records the P6 outcome in transient context and, after PRD creation, the PRD master `Change Log`; post-implementation records the Step 3 outcome in the active plan `Change Log` or PRD master `Change Log`, sets `Last Completed Step=post_impl.run_da_for_pr`, sets `Resume From=post_impl.parallel_audit`, and does not overwrite plan-mode `DA State`. |
 | User rejects SKIP | Invoke `/run-da` with `SKIP rejected` handoff. `/run-da` must not ask the same SKIP question again; it enters the post-refusal escalation path. | Record escalation, not `SKIPPED`. |
 | Question tool unavailable | Do not skip. Follow the `run-da` fallback policy, which escalates SKIP to LITE for this case. | Record escalation, not `SKIPPED`. |
 

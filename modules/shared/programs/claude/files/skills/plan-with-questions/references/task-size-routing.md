@@ -6,9 +6,9 @@
 
 ## 자동 트리거 신호
 
-가장 큰 변화: **단일 tier-1 hit만으로 트리거하지 않는다**. `Phase ≥4`는 단독으로 트리거하지만, "다중 도메인"은 보조 신호 1+와 결합될 때만 승격한다 (over-triggering 방지 — small config change가 Living PRD로 무거워지는 회귀 차단).
+가장 큰 변화: **단독 트리거 신호 하나만으로 트리거하지 않는다**. `Phase ≥4`는 단독으로 트리거하지만, "다중 도메인"은 보조 신호 1+와 결합될 때만 승격한다 (over-triggering 방지 — small config change가 Living PRD로 무거워지는 회귀 차단).
 
-### 강한 단일 신호 (단독 트리거)
+### 단독 트리거 신호 (혼자만 있어도 트리거)
 
 - **Phase ≥4**: 의존성 순서 phase가 4개 이상 필요. [`./prd/file-mode-selection.md`](./prd/file-mode-selection.md)의 Single/Split 판정 룰과 일치. 단독으로 PRD 트리거.
 - **명시적 PRD/spec 요청**: 사용자가 `for_prd`, `PRD`, `spec`, `명세`, `phase plan` 같은 PRD-naming을 명시 사용한 경우. 단독 트리거.
@@ -47,17 +47,17 @@ def should_trigger_prd(step12_result):
     if step12_result.estimated_phases >= 4:
         return "trigger"
     multi_domain = step12_result.distinct_domain_count >= 2
-    aux_hits = count_auxiliary_signals(step12_result)
-    if multi_domain and aux_hits >= 1:
+    auxiliary_signal_hits = count_auxiliary_signals(step12_result)
+    if multi_domain and auxiliary_signal_hits >= 1:
         return "trigger"
     return "no_trigger"
 ```
 
 핵심 차이 (이전 버전 대비):
 - 이전: `phase>=4 OR multi_domain >= 2` → 단일 hit으로 트리거 (over-trigger 위험).
-- 현재: `phase>=4` 단독 OR (`multi_domain` AND `aux >= 1`) — 다중 도메인은 항상 보조 신호와 결합.
+- 현재: `phase>=4` 단독 OR (`multi_domain` AND `보조 신호 >= 1`) — 다중 도메인은 항상 보조 신호와 결합.
 
-메인 LLM이 Step 1-2 결과를 보고 위 알고리즘을 적용. tier-1 신호는 명확하므로 직접 식별. tier-2의 "예상 소요일"은 메인 LLM의 추정으로, **보수적 기각**(under-trigger보다 명시적 사용자 요청 시 PRD 진입을 신뢰).
+메인 LLM이 Step 1-2 결과를 보고 위 알고리즘을 적용. 단독 트리거 신호는 명확하므로 직접 식별. 보조 신호 중 "예상 소요일"은 메인 LLM의 추정으로, **보수적 기각**(under-trigger보다 명시적 사용자 요청 시 PRD 진입을 신뢰).
 
 ## opt-out 알림 메시지
 
@@ -91,17 +91,17 @@ def should_trigger_prd(step12_result):
 
 자동 트리거 조건이 `Phase ≥4`이면 보통 split이 자연스럽다. 사용자가 "single로 유지해" 또는 "split으로 나눠줘"라고 명시하면 그 지시를 우선한다.
 
-file-mode-selection 규약을 plan-with-questions가 직접 적용한다. 본 모드는 트리거 + Step 1-4 인터뷰·자문 + Step 5-6 DA 완료 후 `.claude/prds/`에 직접 작성한다. `for_action` Step 4.5 plan 파일 초기화는 건너뛰며, plan-with-questions는 `.claude/plans/` 사본을 만들지 않는다.
+file-mode-selection 규약을 plan-with-questions가 직접 적용한다. 본 모드는 트리거 + P1-P5 인터뷰·자문 + P6-P7 DA 완료 후 `.claude/prds/`에 직접 작성한다. `for_action` Step 4.5 plan 파일 초기화는 건너뛰며, plan-with-questions는 `.claude/plans/` 사본을 만들지 않는다.
 
 ## review-impl 통합 시점
 
-Post-Impl 5번 Final Multi-Pass Review는 **모든 모드에서 mandatory**다 ([`./post-implementation.md`](./post-implementation.md) Step 5). PRD/spec 산출물 부재 같은 mode-specific 조건은 일부 항목을 `N/A`로 skip할 수 있을 뿐, 단계 자체를 생략하지 않는다.
+Post-Impl 5번 Final Multi-Pass Review는 **`for_action` / `for_prd` 모드에서 mandatory**다 ([`./post-implementation.md`](./post-implementation.md) Step 5). `for_issue` 모드에는 Post-Implementation 7단계 자체가 적용되지 않으므로 Final review도 호출되지 않는다 ([`./post-implementation.md`](./post-implementation.md) 첫 단락 SSOT). PRD/spec 산출물 부재 같은 mode-specific 조건은 일부 항목을 `N/A`로 skip할 수 있을 뿐, 단계 자체를 생략하지 않는다.
 
 | 모드 | Phase-end 10-pass (prd) | 6-classification 적용 시점 | Post-Impl 5번 Final review 구성 | auto-fix |
 |------|--------------------------|----------------------------|---------------------------------|----------|
-| **for_action** (단순 작업, PRD 산출물 없음) | 미사용 | 미사용 | PRD 10-pass 단독 수행 (PRD closeout 항목은 `N/A` skip + 근거 기록, 나머지 9개 항목은 그대로 수행) | 미사용 |
-| **for_action** (review-impl 의도 trigger 진입, PRD/spec 입력 있음) | 미사용 | Post-Impl 5번 Final overlay에서 라벨링 (phase-end 미실행 — for_action에 phase 단위 없음) | PRD 10-pass + review-impl overlay (6-classification 라벨링 + overbuilt 우선 분류) | 미사용 |
-| **for_prd** | **phase-template 10-pass 수행** | Phase-end + Post-Impl 5번 Final 둘 다 (대체 아님) | PRD 10-pass + review-impl overlay (6-classification 라벨링 + overbuilt 우선 분류) | **미사용** (NG-2) |
+| **for_action** (단순 작업, PRD 산출물 없음) | 적용 안 함 | 적용 안 함 | PRD 10-pass 단독 수행 (PRD closeout 항목은 `N/A` skip + 근거 기록, 나머지 9개 항목은 그대로 수행) | 적용 안 함 |
+| **for_action** (review-impl 의도 trigger 진입, PRD/spec 입력 있음) | 적용 안 함 | Post-Impl 5번 Final overlay에서 라벨링 (phase-end 호출하지 않음 — for_action에 phase 단위 없음) | PRD 10-pass + review-impl overlay (6-classification 라벨링 + overbuilt 우선 분류) | 적용 안 함 |
+| **for_prd** | **phase-template 10-pass 수행** | Phase-end + Post-Impl 5번 Final 둘 다 (대체 아님) | PRD 10-pass + review-impl overlay (6-classification 라벨링 + overbuilt 우선 분류) | **적용하지 않음 (NG-2)** |
 
 **Phase-end 10-pass + 6-classification 동시 수행**: [`./prd/phase-template.md`](./prd/phase-template.md)의 Phase-End 10-pass(intent/correctness/simplicity/code quality/cleanup/security/performance/validation/future-phase/PRD sync)를 그대로 수행하고, 추가로 [`./review-impl/requirement-status.md`](./review-impl/requirement-status.md)의 6-classification(satisfied/partial/missing/conflicting/overbuilt/deferred)을 보조 layer로 적용한다.
 
@@ -118,7 +118,7 @@ Post-Impl 5번 Final Multi-Pass Review는 **모든 모드에서 mandatory**다 (
 | `for_action.step1_validity` 종료 후 | 강한 신호(Phase ≥4, 명시 PRD 요청) 1차 평가 |
 | `for_action.step2_exploration` 종료 후 | 다중 도메인 + 보조 신호 종합 평가 → 트리거 결정 |
 | 트리거 시 | 사용자 알림(질문 도구) → opt-out 확인 |
-| 사용자 동의 시 | Mode 갱신 (`for_action` → `for_prd`) + 전환 사유를 PRD draft/context에 기록(작성 후 master `Change Log`로 이관) → [`../modes/for_prd.md`](../modes/for_prd.md) Step 1-4 + Step 5-6 진행 (Step 4.5 skip) → Step 7 명시 승인 게이트 → Step 8 `.claude/prds/`에 PRD 작성 |
+| 사용자 동의 시 | Mode 갱신 (`for_action` → `for_prd`) + 전환 사유를 PRD draft/context에 기록(작성 후 master `Change Log`로 이관) → [`../modes/for_prd.md`](../modes/for_prd.md) P1-P5 + P6-P7 진행 (for_action Step 4.5는 skip) → P8 명시 승인 게이트 → P9 `.claude/prds/`에 PRD 작성 |
 | 사용자 거부 시 | `for_action` 모드 유지 + PRD-trigger pending note 기록 → Step 4.5 plan 초기화 시 Decision Log "PRD auto-trigger declined"로 이관 |
 
 이후 흐름은 [`../modes/for_prd.md`](../modes/for_prd.md)로 분기.

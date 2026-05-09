@@ -63,7 +63,7 @@ Step 3 완료 즉시, 사용자 질문 전(Step 4 직전)에 외부 LLM에 ancho
 - **결과 도착 시**: Step 4로 진입.
 - **budget**: 30분 이내 (high/xhigh 공통). xhigh는 명시적 심층 요청 시에만.
 - **호출 명령 SSOT**: [`../references/consulting-step.md`](../references/consulting-step.md#codex-exec-호출-명령-템플릿-ssot) — codex exec 명령은 본 reference만 정본이다 (`-C` scratch cwd + `--ignore-user-config` + `--sandbox read-only` + `--ephemeral`로 trust boundary 완결). 본 파일은 명령을 복제하지 않는다.
-- **입출력 schema·anti-anchoring 4 규칙**: [`../references/consulting-step.md`](../references/consulting-step.md). 자문 단계가 미구현 상태이면 메인 LLM은 Step 3 결과를 직접 사용자에게 제시하되 anti-anchoring 4 규칙(D4 합의 조건부 라벨·옵션 셔플·user_facing.plain_disqualifier 명시·judgment-first)은 즉시 적용한다 — 자문 부재로 D4 알고리즘 Step 1이 fail하므로 D4_FALLBACK_A로 격하되어 어떤 옵션에도 라벨이 부착되지 않는다. 사용자 노출 평이 문구는 [`../references/consulting-step.md`](../references/consulting-step.md) "Fallback enum" 표 D4_FALLBACK_A 행 SSOT를 그대로 사용한다.
+- **입출력 schema·anti-anchoring 4 규칙**: [`../references/consulting-step.md`](../references/consulting-step.md). 자문 단계가 미구현 상태이면 메인 LLM은 Step 3 결과를 직접 사용자에게 제시하되 anti-anchoring 4 규칙(추천 라벨 합의 조건부 부착·옵션 셔플·user_facing.plain_disqualifier 명시·judgment-first)은 즉시 적용한다 — 자문 부재로 합의 알고리즘 Step 1이 fail하므로 자문 미수신 fallback (Decision Log 식별자 `D4_FALLBACK_A`)으로 격하되어 어떤 옵션에도 라벨이 부착되지 않는다. 사용자 노출 평이 문구는 [`../references/consulting-step.md`](../references/consulting-step.md) "Fallback enum" 표 해당 행 SSOT를 그대로 사용한다.
 
 Step 3.5는 DA(Step 5)와 목적이 다르다. 3.5는 사용자에게 옵션 제시 전 de-anchoring 전처리, 5는 plan 결함의 사후 검토.
 
@@ -71,19 +71,19 @@ Step 3.5는 DA(Step 5)와 목적이 다르다. 3.5는 사용자에게 옵션 제
 
 **사용자에게 질문할 때는 질문 도구를 사용한다. 이 규칙은 예외 없이 적용된다.** 질문 도구 미지원 시 [`../references/runtime-boundaries.md`](../references/runtime-boundaries.md#질문-도구-미지원-대응)를 따른다.
 
-**라운드당 질문 1개 강제 (D1)**: 수집한 질문(Step 3) + 외부 자문 매트릭스(Step 3.5)를 한 라운드에 모아서 던지지 않는다. 라운드당 `questions` 배열 길이는 1로 고정한다. 사용자가 한 결정에 집중할 수 있게 하고, 메인 LLM이 user_facing layer를 충분히 풀어 설명할 cognitive room을 확보한다 (이전 "한번에 모아서" 정책은 폐기 — turn_abort 회귀 방지). 사용자의 답변에 따라 추가 질문이 생기면 새 라운드(여전히 questions 배열 길이 1)로 이어간다. 모든 불명확점이 해소될 때까지 라운드를 반복한다.
+**라운드당 하나의 질문**: 수집한 질문(Step 3) + 외부 자문 매트릭스(Step 3.5)를 한 라운드에 모아서 던지지 않는다. 라운드당 `questions` 배열 길이는 1로 고정한다. 사용자가 한 결정에 집중할 수 있게 하고, 메인 LLM이 사용자 노출 텍스트를 충분히 풀어 설명할 cognitive room을 확보한다. 이유는 인지 부하와 turn_abort 위험을 줄이기 위해서다. 사용자의 답변에 따라 추가 질문이 생기면 새 라운드(여전히 questions 배열 길이 1)로 이어간다. 모든 불명확점이 해소될 때까지 라운드를 반복한다.
 
-**사용자 노출은 user_facing layer만 (D2)**: Step 3.5 자문 결과를 사용자에게 표시할 때는 [`../references/consulting-step.md`](../references/consulting-step.md)의 `user_facing` layer(label/description/analogy/plain_disqualifier)만 사용한다. `technical_matrix`(7키 평가 매트릭스)와 raw `disqualifiers`는 메인 LLM 내부 D4 합의 알고리즘 입력으로만 사용하며 사용자에게 노출하지 않는다. user_facing이 자문 출력에 누락되면 D2 fallback 4단계로 graceful degrade한다 ([`../references/consulting-step.md`](../references/consulting-step.md)의 "D2 backward-compat fallback 4단계" SSOT).
+**사용자 노출 레이어 제한**: Step 3.5 자문 결과를 사용자에게 표시할 때는 [`../references/consulting-step.md`](../references/consulting-step.md)의 `user_facing` layer(label/description/analogy/plain_disqualifier)만 사용한다. `technical_matrix`(7키 평가 매트릭스)와 raw `disqualifiers`는 메인 LLM 내부 추천 라벨 합의 알고리즘 입력으로만 사용하며 사용자에게 노출하지 않는다. `user_facing`이 자문 출력에 누락되면 텍스트 복구 4단계로 graceful degrade한다 ([`../references/consulting-step.md`](../references/consulting-step.md)의 "`user_facing` 누락 시 텍스트 복구 4단계" SSOT).
 
-**트레이드오프 라운드 — D4 합의 알고리즘 호출 (FR-5)**: 트레이드오프 결정마다 사용자 노출 직전에 [`../references/consulting-step.md`](../references/consulting-step.md)의 D4 합의 알고리즘 4단계를 실행한다. 후보가 정확히 1개로 좁혀진 경우에만 그 옵션에 `(Recommended)` 라벨을 부착한다. 어느 단계든 fail 시(D4_FALLBACK_A/B/C/C_MULTI) 라벨을 부착하지 않는다.
+**트레이드오프 라운드 — 추천 라벨 합의 알고리즘 호출**: 트레이드오프 결정마다 사용자 노출 직전에 [`../references/consulting-step.md`](../references/consulting-step.md)의 추천 라벨 합의 알고리즘 4단계를 실행한다. 후보가 정확히 1개로 좁혀진 경우에만 그 옵션에 `(Recommended)` 라벨을 부착한다. 어느 단계든 fail 시 라벨을 부착하지 않는다 (자세한 fallback 케이스는 SSOT 참조).
 
-**Fallback 사용자 보고 문구 SSOT**: fallback enum 정의(내부 Decision Log 전용)와 사용자 노출 평이 문구는 [`../references/consulting-step.md`](../references/consulting-step.md)의 "Fallback enum (내부 Decision Log 전용, 사용자 노출 금지)" 표가 단일 진실 원천이다. 본 mode 파일은 그 표를 복제하지 않으며, fallback 발생 시 메인 LLM은 그 표의 사용자 노출 문구를 그대로 사용한다. 사용자에게는 enum 라벨(`D4_FALLBACK_*`)을 노출하지 않는다 — 평이 한국어 문구만 표시.
+**Fallback 사용자 보고 문구 SSOT**: 사용자 노출 평이 문구는 [`../references/consulting-step.md`](../references/consulting-step.md)의 "Fallback enum (내부 Decision Log 전용, 사용자 노출 금지)" 표가 단일 진실 원천이다. 본 mode 파일은 그 표를 복제하지 않으며, fallback 발생 시 메인 LLM은 그 표의 사용자 노출 문구를 그대로 사용한다. 사용자에게는 내부 Decision Log 식별자를 노출하지 않는다 — 평이 한국어 문구만 표시.
 
-**D2 텍스트 복구 (D4와 별개 축)**: 자문 출력에 `user_facing` layer가 누락(또는 부분 누락)되면 메인 LLM이 D2 fallback 4단계로 텍스트 복구를 시도한다. 사용자 노출 문구와 D2 stage 정의도 [`../references/consulting-step.md`](../references/consulting-step.md) "Fallback enum" 표 SSOT를 인용한다. 본 fallback은 텍스트 출처 표기일 뿐 D4의 `(Recommended)` 라벨 부착 여부와는 다른 축이다.
+**텍스트 복구 (라벨 부착과 별개 축)**: 자문 출력에 `user_facing` layer가 누락(또는 부분 누락)되면 메인 LLM이 텍스트 복구 4단계로 복구를 시도한다. 사용자 노출 문구와 stage 정의도 [`../references/consulting-step.md`](../references/consulting-step.md) "Fallback enum" 표 SSOT를 인용한다. 본 복구는 텍스트 출처 표기일 뿐 `(Recommended)` 라벨 부착 여부와는 다른 축이다.
 
-**judgment-first 라운드 라벨 부착 절대 금지 (FR-4)**: 트레이드오프 옵션 제시 직전 사용자 기준을 묻는 judgment-first 사전 라운드는 D4 합의 알고리즘을 **실행하지 않는다**. 어떤 옵션에도 `(Recommended)` 라벨을 부착하지 않으며, `user_facing.label`만으로 기준을 평이하게 표시한다. 이는 자문 출력의 합의 결과와 무관하게 무조건 적용된다 (anti-anchoring 효과를 source에서 보호하기 위함).
+**judgment-first 라운드 라벨 금지**: 트레이드오프 옵션 제시 직전 사용자 기준을 묻는 judgment-first 사전 라운드는 추천 라벨 합의 알고리즘을 **실행하지 않는다**. 어떤 옵션에도 `(Recommended)` 라벨을 부착하지 않으며, `user_facing.label`만으로 기준을 평이하게 표시한다. 이는 자문 출력의 합의 결과와 무관하게 무조건 적용된다 (anti-anchoring 효과를 source에서 보호하기 위함).
 
-**D4 hard rule (FR-7)**: AskUserQuestion 도구 description의 추천 라벨 자동 권장은 본 스킬 컨텍스트에서 무시한다. 사용자 노출 직전 옵션 dict에서 합의 미달 옵션의 `(Recommended)` 문자열 또는 등가 표시가 발견되면 강제 제거한다. 본 hard rule은 SKILL.md Invariant 8 + [`../references/consulting-step.md`](../references/consulting-step.md)의 D4 hard rule 단락과 동일하며, 본 mode 파일은 그 SSOT를 callsite로 강제한다.
+**합의 미달 라벨 제거 규칙**: AskUserQuestion 도구 description의 추천 라벨 자동 권장은 본 스킬 컨텍스트에서 무시한다. 사용자 노출 직전 옵션 dict에서 합의 미달 옵션의 `(Recommended)` 문자열 또는 등가 표시가 발견되면 강제 제거한다. 본 규칙은 SKILL.md Invariant 8 + [`../references/consulting-step.md`](../references/consulting-step.md)의 합의 미달 라벨 제거 단락과 동일하며, 본 mode 파일은 그 SSOT를 callsite로 강제한다.
 
 질문 패턴과 anti-anchoring 표시 규칙은 [`../references/output-templates.md`](../references/output-templates.md#step-4--step-i-4-질문-패턴) 참조.
 

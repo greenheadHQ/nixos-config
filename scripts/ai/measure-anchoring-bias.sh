@@ -15,16 +15,11 @@
 # is the canonical source. The doc table is illustrative; PAT_* arrays here
 # are authoritative.
 #
-# Scope: this script measures TRANSCRIPT anchoring signals only. PWQ source
-# label sanitization (D4 정책 일관성 — source 본문에서 (Recommended) 라벨이
-# 합의 PASS 컨텍스트로만 등장하는지 검증) is a separate baseline whose SSOT
-# lives in modules/shared/programs/claude/files/skills/plan-with-questions/
-# references/bias-measurement.md "Source label sanitization baseline (D4 정책
-# 일관성)" section. Run that section's inline `rg` commands against the
-# repo-tracked source tree by default; after merge + nrs, optionally re-check
-# the deployed `~/.claude/skills/plan-with-questions/` tree. Keeping the two
-# cadences separate avoids coupling D4 policy changes to transcript metric
-# releases.
+# Scope: this script measures TRANSCRIPT anchoring signals only. It does not
+# validate source-side label sanitization. The source-side D4 hard rule policy
+# is defined (not statically enforced) in modules/shared/programs/claude/
+# files/skills/plan-with-questions/references/consulting-step.md sections
+# "D4 hard rule" and "Anti-anchoring 4 규칙".
 #
 # Usage:
 #   ./scripts/ai/measure-anchoring-bias.sh             # default mtime=-60
