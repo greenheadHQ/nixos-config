@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🧠 Anki 회상 챌린지 — TLB와 페이지 테이블</title>
+<style>
+  :root {
+    --bg: #0e1117; --panel: #161b22; --panel2: #1f2630; --border: #2d333b;
+    --text: #e6edf3; --muted: #8b949e;
+    --accent: #58a6ff; --accent2: #f78166; --good: #3fb950; --bad: #f85149;
+    --warn: #d29922; --gold: #ffd33d;
+    --hit: #4d9fff; --miss: #ff6b6b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0; }
+  .container { max-width: 720px; margin: 0 auto; padding: 16px; }
+
+  .header { display: flex; flex-direction: column; gap: 8px; padding: 8px 4px 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(248,129,102,0.12); color: var(--accent2); border: 1px solid rgba(248,129,102,0.3); width: fit-content; letter-spacing: 0.3px; }
+  .title { font-size: 20px; font-weight: 700; margin: 0; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .meta .pill { background: var(--panel); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px; margin-right: 4px; }
+
+  .progress { display: flex; gap: 4px; margin: 14px 0 22px; }
+  .progress .step { flex: 1; height: 4px; background: var(--border); border-radius: 2px; transition: background 0.3s; }
+  .progress .step.active { background: var(--accent); }
+  .progress .step.done { background: var(--good); }
+
+  .stage { display: none; animation: fadeIn 0.3s ease; }
+  .stage.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: var(--accent); }
+  .card .sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+  .prompt { background: var(--panel2); border-left: 3px solid var(--accent2); padding: 12px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 15px; }
+  .prompt strong { color: var(--accent2); }
+  .prompt code { background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 4px; font-size: 13px; color: var(--gold); }
+
+  textarea, input[type="text"] { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 15px; font-family: inherit; resize: vertical; }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
+  textarea { min-height: 70px; }
+  label.field-label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  label.field-label .accent { color: var(--accent); font-weight: 600; }
+
+  .hint-box { background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--warn); margin-top: 10px; cursor: pointer; user-select: none; }
+  .hint-box.locked::before { content: "🔒 힌트 보기 (탭하면 -10pt)"; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  button { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  button:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #0d1117; }
+  .btn-secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+
+  .scoreboard { position: fixed; top: 12px; right: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; z-index: 10; }
+  .scoreboard .score { color: var(--gold); }
+
+  /* 히트/미스 비교 박스 */
+  .hitmiss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .hitmiss-col { background: var(--panel2); border-radius: 10px; padding: 14px; border-top: 3px solid; }
+  .hitmiss-col.hit { border-color: var(--hit); }
+  .hitmiss-col.miss { border-color: var(--miss); }
+  .hitmiss-col h3 { margin: 0 0 10px; font-size: 14px; }
+  .hitmiss-col.hit h3 { color: var(--hit); }
+  .hitmiss-col.miss h3 { color: var(--miss); }
+  .hitmiss-col label { font-size: 11px; color: var(--muted); margin-top: 8px; display: block; }
+  .hitmiss-col input, .hitmiss-col textarea { width: 100%; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; margin-top: 4px; }
+  @media (max-width: 480px) {
+    .hitmiss-grid { grid-template-columns: 1fr; }
+  }
+
+  /* 정답 공개 */
+  .reveal-card { background: linear-gradient(135deg, rgba(88,166,255,0.06), rgba(248,129,102,0.04)); border: 1px solid var(--accent); }
+  .answer-block { background: var(--panel2); padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
+  .answer-block .ko { color: var(--good); font-weight: 600; }
+  .answer-block .en { color: var(--accent); font-style: italic; font-size: 12px; }
+  .answer-block.correction { border-left: 3px solid var(--warn); }
+  .answer-block.correction strong { color: var(--warn); }
+  .answer-block.deep { border-left: 3px solid var(--accent); }
+  .answer-block.deep strong { color: var(--accent); }
+  .answer-block table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .answer-block th, .answer-block td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  .answer-block th { color: var(--muted); font-size: 11px; font-weight: 600; }
+
+  .self-rate { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0; }
+  .self-rate button { padding: 12px 4px; font-size: 13px; }
+  .rate-again { background: #f85149; color: white; }
+  .rate-hard { background: #d29922; color: #0d1117; }
+  .rate-good { background: #3fb950; color: #052e16; }
+  .rate-easy { background: #58a6ff; color: #0d1117; }
+
+  .complete { text-align: center; padding: 32px 16px; }
+  .complete .emoji { font-size: 64px; margin-bottom: 12px; }
+  .complete h2 { font-size: 24px; margin: 8px 0; }
+  .complete .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 20px 0; }
+  .complete .stat-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .complete .stat-num { font-size: 22px; font-weight: 700; color: var(--gold); }
+  .complete .stat-label { font-size: 11px; color: var(--muted); }
+
+  .submit-status { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 14px; text-align: center; }
+  .submit-status.pending { background: rgba(88,166,255,0.1); color: var(--accent); }
+  .submit-status.success { background: rgba(63,185,80,0.1); color: var(--good); }
+  .submit-status.error { background: rgba(248,81,73,0.1); color: var(--bad); }
+
+  .footer-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  img.note-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); margin: 8px 0; background: white; }
+  .num-input { display: inline-flex; align-items: center; gap: 6px; }
+  .num-input input { width: 80px !important; text-align: center; font-size: 18px !important; font-weight: 600; }
+  .formula { background: rgba(255,211,61,0.06); border: 1px dashed rgba(255,211,61,0.3); padding: 8px 12px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 13px; color: var(--gold); }
+</style>
+</head>
+<body>
+  <div class="scoreboard">⏱ <span class="timer" id="timer">00:00</span> · 🏆 <span class="score" id="score">0</span>pt</div>
+
+  <div class="container">
+    <div class="header">
+      <span class="badge">🔥 lapses 6회 · reps 20회 · interval 44일</span>
+      <h1 class="title">TLB와 페이지 테이블</h1>
+      <div class="meta">
+        <span class="pill">3장 운영체제</span>
+        <span class="pill">가상 메모리</span>
+        <span class="pill">주소 변환</span>
+      </div>
+    </div>
+
+    <div class="progress">
+      <div class="step active" id="p0"></div>
+      <div class="step" id="p1"></div>
+      <div class="step" id="p2"></div>
+      <div class="step" id="p3"></div>
+      <div class="step" id="p4"></div>
+    </div>
+
+    <!-- Stage 0: Warm-up -->
+    <div class="stage active" id="stage0">
+      <div class="card">
+        <h2>🚦 Stage 1 / 5 · 워밍업</h2>
+        <div class="sub">왜 TLB가 필요해졌는지 (10pt)</div>
+        <div class="prompt">
+          페이지 테이블을 도입한 덕에 가상 메모리가 가능해졌지만, 그 자체가 새로운 문제를 만들었어.<br>
+          <strong>TLB가 등장한 배경 — 어떤 문제를 해결하려고?</strong> 한두 줄로.
+        </div>
+        <textarea id="q_warmup" placeholder="페이지 테이블을 쓰면 ..."></textarea>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="nextStage(1)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 1: PTBR + 메모리 접근 횟수 -->
+    <div class="stage" id="stage1">
+      <div class="card">
+        <h2>📚 Stage 2 / 5 · PTBR과 메모리 접근 비용</h2>
+        <div class="sub">페이지 테이블이 실제로 어떻게 운용되는지 (총 30pt)</div>
+
+        <div class="prompt">
+          <strong>Q1.</strong> <code>PTBR</code>(Page Table Base Register)이란 무엇인지 한 줄로? <span style="color:var(--muted); font-size:13px">(10pt)</span>
+        </div>
+        <textarea id="q_ptbr" placeholder="페이지 테이블의 ..."></textarea>
+
+        <div class="prompt" style="margin-top: 18px;">
+          <strong>Q2.</strong> 문맥 교환(context switch)이 일어나면 PTBR 값은 어떻게 될까? 왜? <span style="color:var(--muted); font-size:13px">(10pt)</span>
+        </div>
+        <textarea id="q_ctx" placeholder="..."></textarea>
+
+        <div class="prompt" style="margin-top: 18px;">
+          <strong>Q3.</strong> <strong>TLB가 없는</strong> 단일 레벨 페이지 테이블 시스템에서, CPU가 한 번의 메모리 읽기를 위해 실제로 메모리에 접근해야 하는 횟수는? <span style="color:var(--muted); font-size:13px">(10pt)</span>
+        </div>
+        <div class="num-input">
+          <input type="text" id="q_acc_count" placeholder="?">
+          <span style="color: var(--muted)">번 — 그 이유도 한 줄로:</span>
+        </div>
+        <textarea id="q_acc_reason" style="margin-top: 6px;" placeholder="..."></textarea>
+
+        <div class="hint-box locked" id="hint1" onclick="unlockHint('hint1', '한 번 메모리 읽기 = (1) 페이지 테이블 조회 + (2) 실제 프레임 접근')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(0)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(2)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 2: TLB 히트 vs 미스 -->
+    <div class="stage" id="stage2">
+      <div class="card">
+        <h2>🎯 Stage 3 / 5 · TLB 히트 / 미스</h2>
+        <div class="sub">두 시나리오의 흐름과 비용 차이 (총 30pt)</div>
+        <div class="prompt">
+          TLB는 페이지 테이블의 <strong>캐시</strong>야. 캐시가 그렇듯 히트와 미스가 있고, 각 경우의 흐름이 다르지.
+        </div>
+
+        <div class="hitmiss-grid">
+          <div class="hitmiss-col hit">
+            <h3>🔵 TLB 히트</h3>
+            <label>발생 조건은?</label>
+            <input type="text" id="hit_cond" placeholder="페이지 번호가 ...">
+            <label>이후 흐름 (한두 줄)</label>
+            <textarea id="hit_flow" placeholder="페이지 테이블을 ..."></textarea>
+            <label>메모리(DRAM) 접근 횟수</label>
+            <input type="text" id="hit_count" placeholder="? 번">
+          </div>
+          <div class="hitmiss-col miss">
+            <h3>🔴 TLB 미스</h3>
+            <label>발생 조건은?</label>
+            <input type="text" id="miss_cond" placeholder="페이지 번호가 ...">
+            <label>이후 흐름 (누가 무엇을 하는가?)</label>
+            <textarea id="miss_flow" placeholder="MMU가 ..."></textarea>
+            <label>메모리 접근 횟수 (다단계 페이지 테이블 가정)</label>
+            <input type="text" id="miss_count" placeholder="? 번">
+          </div>
+        </div>
+
+        <div class="prompt" style="margin-top: 18px;">
+          <strong>보너스 Q.</strong> TLB는 사실상 <em>캐시</em>인데, 이 캐시가 효과적인 이유 — 어떤 <strong>원리</strong>가 작용하는지? <span style="color:var(--muted); font-size:13px">(10pt)</span>
+        </div>
+        <textarea id="q_principle" placeholder="..."></textarea>
+
+        <div class="hint-box locked" id="hint2" onclick="unlockHint('hint2', '키워드: 지역성 (Locality)')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(1)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(3)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 3: 종합 사고 -->
+    <div class="stage" id="stage3">
+      <div class="card">
+        <h2>🧩 Stage 4 / 5 · 종합 사고</h2>
+        <div class="sub">개념 응용 (각 15pt × 2)</div>
+
+        <div class="prompt">
+          <strong>Q1.</strong> 프로세스 A가 실행 중이다가 <strong>문맥 교환</strong>으로 프로세스 B가 실행되기 시작했어.
+          이 순간 <em>TLB의 내용</em>은 어떻게 처리되어야 할까? 왜?
+        </div>
+        <textarea id="q_synth1" placeholder="..."></textarea>
+
+        <div class="prompt" style="margin-top:18px">
+          <strong>Q2.</strong> TLB의 <strong>크기는 매우 작다</strong> (보통 수십~수백 entries).
+          큰 메모리를 다루는 프로그램에서 TLB 미스를 줄이려면 <em>OS나 프로그래머</em>가 어떤 전략을 쓸 수 있을까? 한 가지만이라도.
+        </div>
+        <textarea id="q_synth2" placeholder="..."></textarea>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(2)">← 이전</button>
+          <button class="btn-primary" onclick="submitAnswers()">📤 제출하고 정답 보기</button>
+        </div>
+
+        <div id="submitStatus"></div>
+      </div>
+    </div>
+
+    <!-- Stage 4: 정답 공개 -->
+    <div class="stage" id="stage4">
+      <div class="card reveal-card">
+        <h2>✨ Stage 5 / 5 · 정답 공개 + 깊이 보충</h2>
+        <div class="sub">책 정답 + 실제 동작 메커니즘 보충</div>
+
+        <strong>📌 PTBR과 페이지 테이블</strong>
+        <div class="answer-block">
+          <span class="ko">PTBR (Page Table Base Register)</span> — 현재 실행 중인 프로세스의 <strong>페이지 테이블이 메모리에 적재된 위치</strong>를 가리키는 특별한 레지스터.
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li>프로세스마다 고유 → <strong>PCB에 저장</strong></li>
+            <li>문맥 교환 시 <strong>해당 프로세스의 PTBR 값으로 변경</strong>됨 (그래야 새 프로세스의 페이지 테이블을 본다)</li>
+          </ul>
+          <img src="tlb_ptbr.png" class="note-img">
+        </div>
+
+        <strong>📌 TLB가 없을 때 메모리 접근 비용</strong>
+        <div class="answer-block">
+          한 번의 메모리 읽기 = <strong>2회</strong> 접근
+          <ol style="margin: 6px 0 0 18px; padding: 0;">
+            <li>페이지 테이블 조회 (논리 주소 → 물리 주소 변환)</li>
+            <li>실제 프레임에 접근</li>
+          </ol>
+          → <strong>다단계 페이지 테이블이면 N+1회</strong> (N단계 조회 + 1회 실제 데이터)
+        </div>
+
+        <strong>📌 TLB 히트 / 미스</strong>
+        <div class="answer-block">
+          <table>
+            <tr><th></th><th><span style="color:var(--hit)">🔵 TLB 히트</span></th><th><span style="color:var(--miss)">🔴 TLB 미스</span></th></tr>
+            <tr><td>조건</td><td>페이지 번호가 TLB에 <strong>있음</strong></td><td>페이지 번호가 TLB에 <strong>없음</strong></td></tr>
+            <tr><td>주소 변환</td><td>TLB가 즉시 프레임 번호 반환</td><td>MMU가 페이지 테이블 워크 수행</td></tr>
+            <tr><td>DRAM 접근</td><td>1회 (실제 데이터만)</td><td><strong>N+1회</strong> (페이지 워크 + 데이터)</td></tr>
+            <tr><td>속도</td><td>~1 cycle</td><td>수십~수백 cycles</td></tr>
+          </table>
+          <img src="tlb_flow.png" class="note-img">
+        </div>
+
+        <strong>📌 TLB가 효과적인 원리</strong>
+        <div class="answer-block">
+          <span class="ko">참조 지역성 (Locality of Reference)</span> 덕분.
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li><strong>시간적 지역성</strong>: 최근 접근한 주소를 곧 다시 접근할 가능성 ↑</li>
+            <li><strong>공간적 지역성</strong>: 한 번 접근한 주소 근처를 곧 접근할 가능성 ↑</li>
+          </ul>
+          → 같은 페이지의 PTE가 TLB에 한 번 들어오면 그 페이지의 모든 접근에서 히트.
+          일반적인 프로그램은 <strong>TLB 히트율 95~99%</strong>.
+        </div>
+
+        <!-- 보충 -->
+        <div class="answer-block correction">
+          <strong>⚠️ 책 표현 정정 #1: "TLB 히트 시 한 번만 메모리 접근"</strong><br>
+          (네가 노트에 이미 적어둔 정정) — TLB 히트 시 DRAM 접근은 <strong>0~1회</strong>.
+          데이터/명령 캐시(L1/L2/L3)에 히트하면 0회, 캐시 미스면 1회 이상.
+          즉 "TLB 히트" ≠ "DRAM 접근 1회" — 캐시 계층과 별개.
+        </div>
+
+        <div class="answer-block correction">
+          <strong>⚠️ 책 표현 정정 #2: "MMU가 페이지 워크 수행"</strong><br>
+          정확하지만 살짝 단순화. 두 모드가 있어:
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li><strong>Hardware-managed TLB</strong> (x86, ARM): MMU가 자동으로 페이지 워크</li>
+            <li><strong>Software-managed TLB</strong> (MIPS, 일부 RISC): TLB 미스 시 OS의 트랩 핸들러가 직접 페이지 테이블 조회 → 더 느리지만 유연</li>
+          </ul>
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충 #1: 문맥 교환과 TLB</strong><br>
+          (Q1 답) 옛날에는 문맥 교환 시 <strong>TLB 전체 flush</strong>가 필요했어 — 다른 프로세스의 PTE를 그대로 쓰면 메모리 보호가 깨지니까.
+          하지만 매번 flush는 비용이 크다 (TLB가 다시 채워지는 동안 미스 폭증).
+          → 해결책: <strong>ASID/PCID</strong> (Address Space Identifier / Process Context ID).
+          <strong>TLB entry 자체에 address-space 태그</strong>를 붙여 여러 프로세스의 매핑이 같은 TLB에 공존 가능 (PTE 자체에 박는 게 아니라 TLB lookup 시 태그가 일치해야 hit). x86은 CR3 PCID 필드로 활성, ARM은 ASID로 동일 효과. 이 덕에 같은 프로세스로 돌아와도 TLB 미스가 적음.
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충 #2: TLB 미스 줄이는 전략</strong><br>
+          (Q2 답)
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li><strong>Huge Pages</strong>: 4KB 대신 <strong>2MB / 1GB</strong> 페이지 사용 — TLB 한 entry가 더 큰 영역을 cover. 데이터베이스/JVM에서 흔히 사용.</li>
+            <li><strong>접근 패턴 최적화</strong>: 큰 배열을 순차 접근하면 공간적 지역성 확보 (vs 랜덤 접근). 행 우선/열 우선 순서 일치시키기.</li>
+            <li><strong>Working set 작게 유지</strong>: 한 번에 다루는 활성 메모리를 TLB가 cover 가능한 범위로</li>
+          </ul>
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충 #3: 멀티코어와 TLB shootdown</strong><br>
+          멀티코어 환경에서 한 코어가 페이지 테이블을 변경 (예: <code>munmap</code>)하면, 다른 코어의 TLB에 캐시된 stale entry를 무효화해야 해.
+          이를 <strong>TLB shootdown</strong>이라고 부르며, IPI(Inter-Processor Interrupt)로 다른 코어에 알림 → 각 코어가 자기 TLB의 해당 entry를 invalidate.
+          코어 수가 많아질수록 비용 ↑ → Linux는 <code>mm_cpumask</code>로 IPI 대상을 좁힘.
+        </div>
+
+        <div class="answer-block" style="border-left: 3px solid var(--gold);">
+          <strong>💡 한 줄 요약</strong><br>
+          <span class="formula">EAT = h × (TLB시간 + 메모리시간) + (1-h) × (TLB시간 + 페이지워크 + 메모리시간)</span><br>
+          TLB는 "주소 변환"이라는 비용을 95~99% 확률로 거의 0으로 만드는, 가상 메모리의 사실상 필수 부품.
+        </div>
+
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+          <strong>🤔 스스로 평가</strong>
+          <div class="sub">정답 + 보충까지 보고, 회상 정도는?</div>
+          <div class="self-rate">
+            <button class="rate-again" onclick="rate('Again')">😵<br>Again<br><small>전혀</small></button>
+            <button class="rate-hard" onclick="rate('Hard')">😓<br>Hard<br><small>겨우</small></button>
+            <button class="rate-good" onclick="rate('Good')">😊<br>Good<br><small>잘함</small></button>
+            <button class="rate-easy" onclick="rate('Easy')">🚀<br>Easy<br><small>완벽</small></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 완료 -->
+    <div class="stage" id="stageDone">
+      <div class="complete card">
+        <div class="emoji" id="completeEmoji">🎉</div>
+        <h2>학습 완료!</h2>
+        <div style="color: var(--muted); font-size: 14px;">답안 저장됨. 채팅창으로 돌아가서 채점 받아.</div>
+        <div class="stats">
+          <div class="stat-box"><div class="stat-num" id="finalScore">0</div><div class="stat-label">자체 점수</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalTime">0:00</div><div class="stat-label">소요 시간</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalRate">-</div><div class="stat-label">자기평가</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalHints">0</div><div class="stat-label">힌트 사용</div></div>
+        </div>
+        <div class="footer-note">답안 ID: <code id="ansId">-</code></div>
+      </div>
+    </div>
+
+    <div class="footer-note">🖲️ MiniPC self-hosted · cardId 1749371918583 · noteId 1749371918582</div>
+  </div>
+
+<script>
+  const startTime = Date.now();
+  let score = 0;
+  let hintsUsed = 0;
+  let lastRating = '-';
+  const sessionId = 'sess_' + Date.now();
+
+  setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s % 60).padStart(2,'0');
+    document.getElementById('timer').textContent = mm + ':' + ss;
+  }, 500);
+
+  function setScore(delta) { score += delta; document.getElementById('score').textContent = score; }
+
+  function scoreCurrentStageInputs() {
+    const cur = document.querySelector('.stage.active');
+    if (!cur) return;
+    const inputs = cur.querySelectorAll('textarea, input[type="text"]');
+    let added = 0;
+    inputs.forEach(i => { if (i.value.trim().length > 1 && !i.dataset.scored) { added += 5; i.dataset.scored = '1'; } });
+    if (added > 0) setScore(added);
+  }
+
+  function nextStage(n) {
+    scoreCurrentStageInputs();
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function prevStage(n) {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function unlockHint(id, text) {
+    const el = document.getElementById(id);
+    if (el.classList.contains('unlocked')) return;
+    el.classList.remove('locked'); el.classList.add('unlocked');
+    el.textContent = '💡 힌트: ' + text;
+    setScore(-10); hintsUsed++;
+  }
+
+  function gather() {
+    return {
+      sessionId,
+      cardId: 1749371918583,
+      noteId: 1749371918582,
+      cardTitle: 'TLB와 페이지 테이블',
+      startTime: new Date(startTime).toISOString(),
+      submittedAt: new Date().toISOString(),
+      elapsedSec: Math.floor((Date.now() - startTime) / 1000),
+      hintsUsed,
+      selfScore: score,
+      answers: {
+        warmup: document.getElementById('q_warmup').value.trim(),
+        ptbr: {
+          q_ptbr: document.getElementById('q_ptbr').value.trim(),
+          q_ctx: document.getElementById('q_ctx').value.trim(),
+          q_acc_count: document.getElementById('q_acc_count').value.trim(),
+          q_acc_reason: document.getElementById('q_acc_reason').value.trim(),
+        },
+        hitmiss: {
+          hit_cond: document.getElementById('hit_cond').value.trim(),
+          hit_flow: document.getElementById('hit_flow').value.trim(),
+          hit_count: document.getElementById('hit_count').value.trim(),
+          miss_cond: document.getElementById('miss_cond').value.trim(),
+          miss_flow: document.getElementById('miss_flow').value.trim(),
+          miss_count: document.getElementById('miss_count').value.trim(),
+          q_principle: document.getElementById('q_principle').value.trim(),
+        },
+        synth: {
+          q1_tlb_on_ctx_switch: document.getElementById('q_synth1').value.trim(),
+          q2_reduce_tlb_miss: document.getElementById('q_synth2').value.trim(),
+        }
+      },
+      selfRating: null,
+    };
+  }
+
+  async function submitAnswers() {
+    const status = document.getElementById('submitStatus');
+    status.className = 'submit-status pending';
+    status.textContent = '⏳ 답안 저장 중...';
+    try {
+      scoreCurrentStageInputs();
+      const payload = gather();
+      const r = await fetch('/submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if (j.ok) {
+        status.className = 'submit-status success';
+        status.textContent = '✅ 저장 완료 (id: ' + j.id + ')';
+        document.getElementById('ansId').textContent = j.id;
+        setTimeout(() => nextStage(4), 700);
+      } else throw new Error(j.error || 'unknown');
+    } catch(e) {
+      status.className = 'submit-status error';
+      status.textContent = '❌ 저장 실패: ' + e.message;
+    }
+  }
+
+  async function rate(r) {
+    lastRating = r;
+    setScore(r === 'Easy' ? 20 : r === 'Good' ? 10 : r === 'Hard' ? 5 : 0);
+    try {
+      await fetch('/rate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ sessionId, rating: r })
+      });
+    } catch(e) {}
+    showComplete();
+  }
+
+  function showComplete() {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stageDone').classList.add('active');
+    for (let i = 0; i < 5; i++) document.getElementById('p' + i).classList.add('done');
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalTime').textContent = document.getElementById('timer').textContent;
+    document.getElementById('finalRate').textContent = lastRating;
+    document.getElementById('finalHints').textContent = hintsUsed;
+    const emoji = score >= 100 ? '🏆' : score >= 70 ? '🎉' : score >= 40 ? '👍' : '📚';
+    document.getElementById('completeEmoji').textContent = emoji;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+</body>
+</html>

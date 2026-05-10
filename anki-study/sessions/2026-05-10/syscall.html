@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🧠 Anki 회상 챌린지 — 시스템 콜과 이중 모드</title>
+<style>
+  :root {
+    --bg: #0e1117; --panel: #161b22; --panel2: #1f2630; --border: #2d333b;
+    --text: #e6edf3; --muted: #8b949e;
+    --accent: #58a6ff; --accent2: #f78166; --good: #3fb950; --bad: #f85149;
+    --warn: #d29922; --gold: #ffd33d;
+    --user: #ff6b6b; --kernel: #4d9fff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0; }
+  .container { max-width: 720px; margin: 0 auto; padding: 16px; }
+
+  .header { display: flex; flex-direction: column; gap: 8px; padding: 8px 4px 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(248,129,102,0.12); color: var(--accent2); border: 1px solid rgba(248,129,102,0.3); width: fit-content; letter-spacing: 0.3px; }
+  .title { font-size: 20px; font-weight: 700; margin: 0; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .meta .pill { background: var(--panel); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px; margin-right: 4px; }
+
+  .progress { display: flex; gap: 4px; margin: 14px 0 22px; }
+  .progress .step { flex: 1; height: 4px; background: var(--border); border-radius: 2px; transition: background 0.3s; }
+  .progress .step.active { background: var(--accent); }
+  .progress .step.done { background: var(--good); }
+
+  .stage { display: none; animation: fadeIn 0.3s ease; }
+  .stage.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: var(--accent); }
+  .card .sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+  .prompt { background: var(--panel2); border-left: 3px solid var(--accent2); padding: 12px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 15px; }
+  .prompt strong { color: var(--accent2); }
+  .prompt code { background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+
+  textarea, input[type="text"] { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 15px; font-family: inherit; resize: vertical; }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
+  textarea { min-height: 70px; }
+  label.field-label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+
+  .hint-box { background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--warn); margin-top: 10px; cursor: pointer; user-select: none; }
+  .hint-box.locked::before { content: "🔒 힌트 보기 (탭하면 -10pt)"; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  button { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  button:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #0d1117; }
+  .btn-secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+
+  .scoreboard { position: fixed; top: 12px; right: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; z-index: 10; }
+  .scoreboard .score { color: var(--gold); }
+
+  /* Stage 1: 4단계 */
+  .flow-step { display: flex; align-items: stretch; gap: 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+  .flow-step .num { font-size: 22px; font-weight: 700; color: var(--accent2); min-width: 36px; display: flex; align-items: center; justify-content: center; }
+  .flow-step .arrow { color: var(--muted); margin: 0 6px; align-self: center; }
+  .flow-step input { flex: 1; background: transparent; border: none; border-bottom: 1px solid var(--border); padding: 4px 0; }
+
+  /* Stage 2: 모드 비교 */
+  .mode-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .mode-col { background: var(--panel2); border-radius: 10px; padding: 14px; border-top: 3px solid; }
+  .mode-col.user { border-color: var(--user); }
+  .mode-col.kernel { border-color: var(--kernel); }
+  .mode-col h3 { margin: 0 0 10px; font-size: 14px; }
+  .mode-col.user h3 { color: var(--user); }
+  .mode-col.kernel h3 { color: var(--kernel); }
+  .mode-col label { font-size: 11px; color: var(--muted); margin-top: 8px; display: block; }
+  .mode-col input { width: 100%; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; margin-top: 4px; }
+  @media (max-width: 480px) {
+    .mode-compare { grid-template-columns: 1fr; }
+  }
+
+  /* 정답 공개 */
+  .reveal-card { background: linear-gradient(135deg, rgba(88,166,255,0.06), rgba(248,129,102,0.04)); border: 1px solid var(--accent); }
+  .answer-block { background: var(--panel2); padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
+  .answer-block .ko { color: var(--good); font-weight: 600; }
+  .answer-block .en { color: var(--accent); font-style: italic; font-size: 12px; }
+  .answer-block.correction { border-left: 3px solid var(--warn); }
+  .answer-block.correction strong { color: var(--warn); }
+  .answer-block.deep { border-left: 3px solid var(--accent); }
+  .answer-block.deep strong { color: var(--accent); }
+
+  .self-rate { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0; }
+  .self-rate button { padding: 12px 4px; font-size: 13px; }
+  .rate-again { background: #f85149; color: white; }
+  .rate-hard { background: #d29922; color: #0d1117; }
+  .rate-good { background: #3fb950; color: #052e16; }
+  .rate-easy { background: #58a6ff; color: #0d1117; }
+
+  .complete { text-align: center; padding: 32px 16px; }
+  .complete .emoji { font-size: 64px; margin-bottom: 12px; }
+  .complete h2 { font-size: 24px; margin: 8px 0; }
+  .complete .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 20px 0; }
+  .complete .stat-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .complete .stat-num { font-size: 22px; font-weight: 700; color: var(--gold); }
+  .complete .stat-label { font-size: 11px; color: var(--muted); }
+
+  .submit-status { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 14px; text-align: center; }
+  .submit-status.pending { background: rgba(88,166,255,0.1); color: var(--accent); }
+  .submit-status.success { background: rgba(63,185,80,0.1); color: var(--good); }
+  .submit-status.error { background: rgba(248,81,73,0.1); color: var(--bad); }
+
+  .footer-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  img.note-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); margin: 8px 0; background: white; }
+
+  /* User/Kernel 컬러 강조 */
+  .user-color { color: var(--user); font-weight: 600; }
+  .kernel-color { color: var(--kernel); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="scoreboard">⏱ <span class="timer" id="timer">00:00</span> · 🏆 <span class="score" id="score">0</span>pt</div>
+
+  <div class="container">
+    <div class="header">
+      <span class="badge">🔥 lapses 6회 · reps 23회 · interval 8일</span>
+      <h1 class="title">시스템 콜과 이중 모드</h1>
+      <div class="meta">
+        <span class="pill">3장 운영체제</span>
+        <span class="pill">OS 핵심</span>
+        <span class="pill">보호 / 권한</span>
+      </div>
+    </div>
+
+    <div class="progress">
+      <div class="step active" id="p0"></div>
+      <div class="step" id="p1"></div>
+      <div class="step" id="p2"></div>
+      <div class="step" id="p3"></div>
+      <div class="step" id="p4"></div>
+    </div>
+
+    <!-- Stage 0: Warm-up -->
+    <div class="stage active" id="stage0">
+      <div class="card">
+        <h2>🚦 Stage 1 / 5 · 워밍업</h2>
+        <div class="sub">시스템 콜이 무엇인지 네 말로 (10pt)</div>
+        <div class="prompt">
+          <strong>시스템 콜(System Call)</strong>이란 무엇인지, 왜 필요한지 한두 줄로 설명해 봐.<br>
+          <span style="color:var(--muted); font-size: 13px;">키워드 후보: 응용 프로그램, 운영체제, 자원, 권한</span>
+        </div>
+        <textarea id="q_warmup" placeholder="예) 응용 프로그램이 ..."></textarea>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="nextStage(1)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 1: 시스템 콜 4단계 -->
+    <div class="stage" id="stage1">
+      <div class="card">
+        <h2>⚙️ Stage 2 / 5 · 시스템 콜 처리 4단계</h2>
+        <div class="sub">호출되었을 때 일어나는 4단계를 순서대로 (각 10pt × 4)</div>
+        <div class="prompt">
+          응용 프로그램이 시스템 콜을 호출하면, CPU와 OS 내부에서 어떤 흐름이 일어나는지 <strong>순서대로</strong> 4단계로 적어봐.
+        </div>
+
+        <div class="flow-step">
+          <div class="num">1️⃣</div>
+          <input type="text" id="step1" placeholder="첫 단계: 무엇이 발생할까?">
+        </div>
+        <div class="flow-step">
+          <div class="num">2️⃣</div>
+          <input type="text" id="step2" placeholder="두 번째: 어떤 모드로 전환?">
+        </div>
+        <div class="flow-step">
+          <div class="num">3️⃣</div>
+          <input type="text" id="step3" placeholder="세 번째: 무엇을 실행?">
+        </div>
+        <div class="flow-step">
+          <div class="num">4️⃣</div>
+          <input type="text" id="step4" placeholder="네 번째: 어떤 모드로 복귀?">
+        </div>
+
+        <div class="hint-box locked" id="hint1" onclick="unlockHint('hint1', '키워드 (순서대로): 인터럽트 / 모드 전환 / OS 코드 / 모드 복귀')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(0)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(2)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 2: 사용자 vs 커널 모드 -->
+    <div class="stage" id="stage2">
+      <div class="card">
+        <h2>🔐 Stage 3 / 5 · 사용자 모드 vs 커널 모드</h2>
+        <div class="sub">두 모드의 차이를 정리 (각 5pt × 6)</div>
+        <div class="prompt">
+          <strong>이중 모드(dual mode)</strong>의 핵심은 두 모드가 무엇을 할 수 있고 없는지 <em>구분된다</em>는 것.
+          빈칸을 채워봐.
+        </div>
+
+        <div class="mode-compare">
+          <div class="mode-col user">
+            <h3>🔴 사용자 모드</h3>
+            <label>실행되는 코드 영역</label>
+            <input type="text" id="user_area" placeholder="예: 사용자 영역">
+            <label>OS 서비스 받을 수 있나? (O/X)</label>
+            <input type="text" id="user_os" placeholder="O 또는 X + 한 줄 이유">
+            <label>자원 접근 명령어 실행 결과는?</label>
+            <input type="text" id="user_resource" placeholder="예: 무시? 실행? 트랩?">
+          </div>
+          <div class="mode-col kernel">
+            <h3>🔵 커널 모드</h3>
+            <label>실행되는 코드 영역</label>
+            <input type="text" id="kernel_area" placeholder="예: 커널 영역">
+            <label>OS 서비스 받을 수 있나? (O/X)</label>
+            <input type="text" id="kernel_os" placeholder="O 또는 X + 한 줄 이유">
+            <label>실행 가능한 명령어 범위는?</label>
+            <input type="text" id="kernel_cmd" placeholder="예: 모든 명령어? 일부?">
+          </div>
+        </div>
+
+        <div class="hint-box locked" id="hint2" onclick="unlockHint('hint2', '단서: 사용자 모드는 자원 접근 명령을 만나도 \\'실행하지 않는다\\' / 커널 모드는 모든 명령 실행 가능')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(1)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(3)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 3: 종합 사고 -->
+    <div class="stage" id="stage3">
+      <div class="card">
+        <h2>🎯 Stage 4 / 5 · 종합 사고</h2>
+        <div class="sub">개념 응용 (각 10pt × 2)</div>
+
+        <div class="prompt">
+          <strong>Q1.</strong> 만약 <em>이중 모드가 없다면</em> (= 모든 코드가 같은 권한으로 실행) 어떤 문제가 생길까? 한 가지 시나리오를 들어봐.
+        </div>
+        <textarea id="q_synth1" placeholder="..."></textarea>
+
+        <div class="prompt" style="margin-top:18px">
+          <strong>Q2.</strong> <code>hello world</code> 한 줄 출력에도 시스템 콜이 수백 번 호출된다고 한다.
+          그렇다면 시스템 콜이 <strong>잦을수록</strong> 성능에 미치는 영향은? 왜 그럴까?
+        </div>
+        <textarea id="q_synth2" placeholder="..."></textarea>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(2)">← 이전</button>
+          <button class="btn-primary" onclick="submitAnswers()">📤 제출하고 정답 보기</button>
+        </div>
+
+        <div id="submitStatus"></div>
+      </div>
+    </div>
+
+    <!-- Stage 4: 정답 공개 + 보충 -->
+    <div class="stage" id="stage4">
+      <div class="card reveal-card">
+        <h2>✨ Stage 5 / 5 · 정답 공개 + 깊이 보충</h2>
+        <div class="sub">책 정답 + 실제로는 더 정교한 부분 보충</div>
+
+        <strong>📌 시스템 콜 처리 4단계 (책 정답)</strong>
+        <div class="answer-block">
+          1️⃣ <span class="ko">소프트웨어 인터럽트 발생</span><br>
+          2️⃣ <span class="ko">커널 모드로 전환</span><br>
+          3️⃣ <span class="ko">운영체제 코드 실행</span><br>
+          4️⃣ <span class="ko">사용자 모드로 재전환</span>
+          <img src="sc_flow.png" class="note-img">
+        </div>
+
+        <strong>📌 사용자 모드 vs 커널 모드</strong>
+        <div class="answer-block">
+          <table style="width:100%; font-size: 13px;">
+            <tr><th></th><th><span class="user-color">🔴 사용자 모드</span></th><th><span class="kernel-color">🔵 커널 모드</span></th></tr>
+            <tr><td>코드 영역</td><td>사용자 영역</td><td>커널 영역</td></tr>
+            <tr><td>OS 서비스</td><td>받을 수 <strong>없음</strong></td><td>받을 수 <strong>있음</strong></td></tr>
+            <tr><td>자원 접근 명령</td><td><strong>실행 안 함</strong></td><td>모든 명령 실행 가능</td></tr>
+          </table>
+          <img src="sc_modes.png" class="note-img">
+        </div>
+
+        <strong>📌 핵심 한 줄</strong>
+        <div class="answer-block">
+          <span class="ko">운영체제는 커널 모드로 실행되기 때문에 자원에 접근할 수 있다.</span>
+          반대로 <span class="user-color">사용자 모드</span>는 실수로라도 자원에 접근할 수 없다.
+          모드 구분은 <strong>플래그 레지스터의 슈퍼바이저 플래그</strong>로 식별.
+        </div>
+
+        <!-- 보충 / 보완 -->
+        <div class="answer-block correction">
+          <strong>⚠️ 책 표현 보완 #1: "소프트웨어 인터럽트"</strong><br>
+          전통적 x86에서는 <code>int 0x80</code> 같은 명령으로 인터럽트를 발생시켰지만,
+          <strong>현대 x86_64 Linux</strong>는 dedicated <code>syscall</code> / <code>sysret</code> 명령어를 쓴다.
+          이는 인터럽트가 아니라 <em>전용 trap 명령</em>으로, IDT 조회를 건너뛰고 <strong>MSR(Model Specific Register)</strong>에 미리 등록된 핸들러로 점프 → 훨씬 빠름.
+          개념적으로는 "인터럽트 같은" 흐름이지만 실제 메커니즘은 다르다.
+        </div>
+
+        <div class="answer-block correction">
+          <strong>⚠️ 책 표현 보완 #2: "슈퍼바이저 플래그"</strong><br>
+          이건 일부 아키텍처(M68k 등)의 표현이고, <strong>x86/x86_64에서는 그런 단일 플래그가 없다</strong>.
+          실제로는 <code>CS</code>(Code Segment) 레지스터 하위 2비트의 <strong>CPL (Current Privilege Level)</strong>로 판별 — 0이면 커널, 3이면 사용자.
+          (Ring 0 / Ring 3 라는 표현이 여기서 나옴)
+        </div>
+
+        <div class="answer-block correction">
+          <strong>⚠️ 책 표현 보완 #3: "hello world에 시스템 콜 600회"</strong><br>
+          이 숫자는 <strong>환경 의존적</strong>이다:
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li>순수 C 정적 링크: 약 <strong>3~5회</strong> (write, exit_group 등)</li>
+            <li>C 동적 링크 (보통의 컴파일): 약 <strong>25~40회</strong> (mmap, openat, read 등 dynamic linker 동작)</li>
+            <li>Python <code>print("hello")</code>: 수백~천 회 (인터프리터 시작 + 모듈 import)</li>
+          </ul>
+          직접 확인: <code>strace -c ./hello</code>
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충: 이중 모드의 진짜 보호 대상</strong><br>
+          책은 "자원 접근"으로 단순화했지만, 커널 모드만 할 수 있는 것은 더 다양하다:
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li><strong>특권 명령</strong>: <code>HLT</code>, <code>IN/OUT</code>, <code>LGDT</code>, <code>MOV CR3</code> (페이지 테이블 변경) 등</li>
+            <li><strong>커널 메모리 영역 접근</strong> (페이지 테이블 권한 비트로 분리)</li>
+            <li><strong>인터럽트 마스킹/허용</strong> (<code>CLI</code>, <code>STI</code>)</li>
+            <li><strong>I/O 포트 접근</strong></li>
+          </ul>
+          현대 OS는 여기에 더해 <strong>SMEP/SMAP</strong> (커널이 사용자 메모리를 실수로 실행/읽기 차단), <strong>KPTI</strong> (Meltdown 대응) 같은 추가 보호 layer를 둔다.
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충: 시스템 콜의 비용</strong><br>
+          시스템 콜은 모드 전환만이 아니라:
+          <ol style="margin: 6px 0 0 18px; padding: 0;">
+            <li>사용자 레지스터 저장 → 커널 스택 전환</li>
+            <li>커널 진입 시 보안 검증 (인자, 포인터 유효성)</li>
+            <li>CPU 캐시/TLB 일부 무효화 가능 (KPTI 환경)</li>
+            <li>핸들러 실행 후 다시 사용자 레지스터 복구</li>
+          </ol>
+          이 비용을 줄이려고 등장한 게 <strong>vDSO</strong> (시간 조회 같은 단순 syscall은 커널 진입 없이 사용자 공간에서 처리), <strong>io_uring</strong> (배치/비동기 syscall) 같은 메커니즘.
+        </div>
+
+        <div class="answer-block" style="border-left: 3px solid var(--gold);">
+          <strong>💡 한 문장 요약</strong><br>
+          이중 모드는 "프로그램이 OS의 특권을 빌릴 때만, 시스템 콜이라는 통제된 입구를 거치도록 강제하는 보호 메커니즘"이다.
+        </div>
+
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+          <strong>🤔 스스로 평가</strong>
+          <div class="sub">정답 + 보충 설명까지 보고, 떠올린 정도는?</div>
+          <div class="self-rate">
+            <button class="rate-again" onclick="rate('Again')">😵<br>Again<br><small>전혀</small></button>
+            <button class="rate-hard" onclick="rate('Hard')">😓<br>Hard<br><small>겨우</small></button>
+            <button class="rate-good" onclick="rate('Good')">😊<br>Good<br><small>잘함</small></button>
+            <button class="rate-easy" onclick="rate('Easy')">🚀<br>Easy<br><small>완벽</small></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 완료 -->
+    <div class="stage" id="stageDone">
+      <div class="complete card">
+        <div class="emoji" id="completeEmoji">🎉</div>
+        <h2>학습 완료!</h2>
+        <div style="color: var(--muted); font-size: 14px;">답안 저장됨. 채팅창으로 돌아가서 채점 받아.</div>
+        <div class="stats">
+          <div class="stat-box"><div class="stat-num" id="finalScore">0</div><div class="stat-label">자체 점수</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalTime">0:00</div><div class="stat-label">소요 시간</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalRate">-</div><div class="stat-label">자기평가</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalHints">0</div><div class="stat-label">힌트 사용</div></div>
+        </div>
+        <div class="footer-note">답안 ID: <code id="ansId">-</code></div>
+      </div>
+    </div>
+
+    <div class="footer-note">🖲️ MiniPC self-hosted · cardId 1740198752439 · noteId 1740198752438</div>
+  </div>
+
+<script>
+  const startTime = Date.now();
+  let score = 0;
+  let hintsUsed = 0;
+  let lastRating = '-';
+  const sessionId = 'sess_' + Date.now();
+
+  setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s % 60).padStart(2,'0');
+    document.getElementById('timer').textContent = mm + ':' + ss;
+  }, 500);
+
+  function setScore(delta) { score += delta; document.getElementById('score').textContent = score; }
+
+  function scoreCurrentStageInputs() {
+    const cur = document.querySelector('.stage.active');
+    if (!cur) return;
+    const inputs = cur.querySelectorAll('textarea, input[type="text"]');
+    let added = 0;
+    inputs.forEach(i => { if (i.value.trim().length > 0 && !i.dataset.scored) { added += 5; i.dataset.scored = '1'; } });
+    if (added > 0) setScore(added);
+  }
+
+  function nextStage(n) {
+    scoreCurrentStageInputs();
+
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function prevStage(n) {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function unlockHint(id, text) {
+    const el = document.getElementById(id);
+    if (el.classList.contains('unlocked')) return;
+    el.classList.remove('locked'); el.classList.add('unlocked');
+    el.textContent = '💡 힌트: ' + text;
+    setScore(-10); hintsUsed++;
+  }
+
+  function gather() {
+    return {
+      sessionId,
+      cardId: 1740198752439,
+      noteId: 1740198752438,
+      cardTitle: '시스템 콜과 이중 모드',
+      startTime: new Date(startTime).toISOString(),
+      submittedAt: new Date().toISOString(),
+      elapsedSec: Math.floor((Date.now() - startTime) / 1000),
+      hintsUsed,
+      selfScore: score,
+      answers: {
+        warmup: document.getElementById('q_warmup').value.trim(),
+        flow4: {
+          step1: document.getElementById('step1').value.trim(),
+          step2: document.getElementById('step2').value.trim(),
+          step3: document.getElementById('step3').value.trim(),
+          step4: document.getElementById('step4').value.trim(),
+        },
+        modes: {
+          user_area: document.getElementById('user_area').value.trim(),
+          user_os: document.getElementById('user_os').value.trim(),
+          user_resource: document.getElementById('user_resource').value.trim(),
+          kernel_area: document.getElementById('kernel_area').value.trim(),
+          kernel_os: document.getElementById('kernel_os').value.trim(),
+          kernel_cmd: document.getElementById('kernel_cmd').value.trim(),
+        },
+        synth: {
+          q1_no_dual_mode: document.getElementById('q_synth1').value.trim(),
+          q2_syscall_perf: document.getElementById('q_synth2').value.trim(),
+        }
+      },
+      selfRating: null,
+    };
+  }
+
+  async function submitAnswers() {
+    const status = document.getElementById('submitStatus');
+    status.className = 'submit-status pending';
+    status.textContent = '⏳ 답안 저장 중...';
+    try {
+      scoreCurrentStageInputs();
+      const payload = gather();
+      const r = await fetch('/submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if (j.ok) {
+        status.className = 'submit-status success';
+        status.textContent = '✅ 저장 완료 (id: ' + j.id + ')';
+        document.getElementById('ansId').textContent = j.id;
+        setTimeout(() => nextStage(4), 700);
+      } else throw new Error(j.error || 'unknown');
+    } catch(e) {
+      status.className = 'submit-status error';
+      status.textContent = '❌ 저장 실패: ' + e.message;
+    }
+  }
+
+  async function rate(r) {
+    lastRating = r;
+    setScore(r === 'Easy' ? 20 : r === 'Good' ? 10 : r === 'Hard' ? 5 : 0);
+    try {
+      await fetch('/rate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ sessionId, rating: r })
+      });
+    } catch(e) {}
+    showComplete();
+  }
+
+  function showComplete() {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stageDone').classList.add('active');
+    for (let i = 0; i < 5; i++) document.getElementById('p' + i).classList.add('done');
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalTime').textContent = document.getElementById('timer').textContent;
+    document.getElementById('finalRate').textContent = lastRating;
+    document.getElementById('finalHints').textContent = hintsUsed;
+    const emoji = score >= 100 ? '🏆' : score >= 70 ? '🎉' : score >= 40 ? '👍' : '📚';
+    document.getElementById('completeEmoji').textContent = emoji;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+</body>
+</html>

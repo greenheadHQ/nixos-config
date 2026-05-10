@@ -1,0 +1,35 @@
+{
+  "sessionId": "sess_1778395862166",
+  "cardId": 1754200921965,
+  "noteId": 1754200921964,
+  "cardTitle": "네트워크 인터페이스와 NIC",
+  "startTime": "2026-05-10T06:51:02.166Z",
+  "submittedAt": "2026-05-10T06:58:52.951Z",
+  "elapsedSec": 470,
+  "hintsUsed": 0,
+  "selfScore": 50,
+  "answers": {
+    "warmup": "“네트워크 인터페이스”에 Controller가 붙은 게 NIC 인거지? NIC가 있어야 인터넷 연결이 되는 아주 중요한 부품이지. 휴대폰에도 달려 있지. 네트워크 인터페이스는 그냥 추상적인 개념인건가.",
+    "interface": {
+      "if_def": "OS가 패킷을 주고받는 논리적 끝점",
+      "if_mac": "1개 (하드웨어가 출고되는 시점에 결정. 변경불가. 사람으로 치면 주민등록번호같은 것)",
+      "if_ip": "0개 이상 (IP 주소를 할당받지 않으면 0개. vpn 등을 사용하면 2개 이상의 ip주소를 할당받을 수도 있음)",
+      "if_basis": "모르겠음 ㅠ"
+    },
+    "nic": {
+      "nic_full": "Network Interface Controller",
+      "nic_aliases": "네트워크 카드, 랜카드, 어댑터 카드",
+      "card_scope": "칩. 이게 근본일듯. 여기에 포트도 딸려있음",
+      "port_scope": "NIC의 포트 부분? 여기에 트위스티드 페어 케이블을 꼽아야 함",
+      "nic_role": "인터넷 연결. 게이트웨이? 잘 모르겟음"
+    },
+    "mapping": {
+      "map_one_to_many": "모르겠음",
+      "map_many_to_one": "모르겠음",
+      "map_no_nic": "모르겠음",
+      "q_en0": "와이파이에 해당하는 NIC?"
+    }
+  },
+  "selfRating": "Again",
+  "_id": "ans_1778396333065"
+}

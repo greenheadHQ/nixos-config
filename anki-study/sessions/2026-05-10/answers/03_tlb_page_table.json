@@ -1,0 +1,35 @@
+{
+  "sessionId": "sess_1778394650372",
+  "cardId": 1749371918583,
+  "noteId": 1749371918582,
+  "cardTitle": "TLB와 페이지 테이블",
+  "startTime": "2026-05-10T06:30:50.372Z",
+  "submittedAt": "2026-05-10T06:40:05.003Z",
+  "elapsedSec": 554,
+  "hintsUsed": 0,
+  "selfScore": 55,
+  "answers": {
+    "warmup": "페이지 테이블 전체를 메모리에 적재함으로 발생하는 오버헤드? 솔직히 잘 모르겠다 ㅠ",
+    "ptbr": {
+      "q_ptbr": "페이지 테이블이 메모리 어디에 저장되어 있는지, 그 메모리 주소값을 저장한 레지스터?",
+      "q_ctx": "모르겠음",
+      "q_acc_count": "2",
+      "q_acc_reason": "이유는 잘 모르겠다"
+    },
+    "hitmiss": {
+      "hit_cond": "모르겠음 ㅠ",
+      "hit_flow": "모르겠음 ㅠ",
+      "hit_count": "모르겠음 ㅠ",
+      "miss_cond": "모르겠음 ㅠ",
+      "miss_flow": "모르겠음 ㅠ",
+      "miss_count": "모르겠음 ㅠ",
+      "q_principle": "캐시는 항상 효과적인거 아니야? 무슨 참조 지역성의 원리 어쩌구가 있었던 것 같긴 한데.."
+    },
+    "synth": {
+      "q1_tlb_on_ctx_switch": "모르겠음 ㅠ",
+      "q2_reduce_tlb_miss": "모르겠음 ㅠ"
+    }
+  },
+  "selfRating": "Again",
+  "_id": "ans_1778395205108"
+}

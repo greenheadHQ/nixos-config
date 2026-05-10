@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🧠 Anki 회상 챌린지 — 네트워크 인터페이스와 NIC</title>
+<style>
+  :root {
+    --bg: #0e1117; --panel: #161b22; --panel2: #1f2630; --border: #2d333b;
+    --text: #e6edf3; --muted: #8b949e;
+    --accent: #58a6ff; --accent2: #f78166; --good: #3fb950; --bad: #f85149;
+    --warn: #d29922; --gold: #ffd33d;
+    --logical: #4d9fff; --physical: #ff8a4d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0; }
+  .container { max-width: 720px; margin: 0 auto; padding: 16px; }
+
+  .header { display: flex; flex-direction: column; gap: 8px; padding: 8px 4px 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(248,129,102,0.12); color: var(--accent2); border: 1px solid rgba(248,129,102,0.3); width: fit-content; letter-spacing: 0.3px; }
+  .title { font-size: 20px; font-weight: 700; margin: 0; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .meta .pill { background: var(--panel); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px; margin-right: 4px; }
+
+  .progress { display: flex; gap: 4px; margin: 14px 0 22px; }
+  .progress .step { flex: 1; height: 4px; background: var(--border); border-radius: 2px; transition: background 0.3s; }
+  .progress .step.active { background: var(--accent); }
+  .progress .step.done { background: var(--good); }
+
+  .stage { display: none; animation: fadeIn 0.3s ease; }
+  .stage.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: var(--accent); }
+  .card .sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+  .prompt { background: var(--panel2); border-left: 3px solid var(--accent2); padding: 12px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 15px; }
+  .prompt strong { color: var(--accent2); }
+  .prompt code { background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 4px; font-size: 13px; color: var(--gold); }
+
+  textarea, input[type="text"] { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 15px; font-family: inherit; resize: vertical; }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
+  textarea { min-height: 70px; }
+  label.field-label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+
+  .hint-box { background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--warn); margin-top: 10px; cursor: pointer; user-select: none; }
+  .hint-box.locked::before { content: "🔒 힌트 보기 (탭하면 -10pt)"; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  button { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  button:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #0d1117; }
+  .btn-secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+
+  .scoreboard { position: fixed; top: 12px; right: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; z-index: 10; }
+  .scoreboard .score { color: var(--gold); }
+
+  /* logical vs physical 비교 */
+  .vs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .vs-col { background: var(--panel2); border-radius: 10px; padding: 14px; border-top: 3px solid; }
+  .vs-col.logical { border-color: var(--logical); }
+  .vs-col.physical { border-color: var(--physical); }
+  .vs-col h3 { margin: 0 0 10px; font-size: 14px; }
+  .vs-col.logical h3 { color: var(--logical); }
+  .vs-col.physical h3 { color: var(--physical); }
+  .vs-col label { font-size: 11px; color: var(--muted); margin-top: 8px; display: block; }
+  .vs-col input, .vs-col textarea { width: 100%; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; margin-top: 4px; }
+  @media (max-width: 480px) {
+    .vs-grid { grid-template-columns: 1fr; }
+  }
+
+  /* 관계 매핑 */
+  .mapping-row { background: var(--panel2); border-radius: 10px; padding: 12px; margin-bottom: 10px; border-left: 3px solid var(--accent); }
+  .mapping-row .ratio { font-family: ui-monospace, monospace; font-size: 13px; color: var(--accent); margin-bottom: 6px; font-weight: 600; }
+  .mapping-row label { font-size: 11px; color: var(--muted); display: block; margin-top: 4px; }
+  .mapping-row input { width: 100%; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; margin-top: 4px; }
+
+  /* 정답 */
+  .reveal-card { background: linear-gradient(135deg, rgba(88,166,255,0.06), rgba(248,129,102,0.04)); border: 1px solid var(--accent); }
+  .answer-block { background: var(--panel2); padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
+  .answer-block .ko { color: var(--good); font-weight: 600; }
+  .answer-block .en { color: var(--accent); font-style: italic; font-size: 12px; }
+  .answer-block.correction { border-left: 3px solid var(--warn); }
+  .answer-block.correction strong { color: var(--warn); }
+  .answer-block.deep { border-left: 3px solid var(--accent); }
+  .answer-block.deep strong { color: var(--accent); }
+  .answer-block table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .answer-block th, .answer-block td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  .answer-block th { color: var(--muted); font-size: 11px; font-weight: 600; }
+
+  .self-rate { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0; }
+  .self-rate button { padding: 12px 4px; font-size: 13px; }
+  .rate-again { background: #f85149; color: white; }
+  .rate-hard { background: #d29922; color: #0d1117; }
+  .rate-good { background: #3fb950; color: #052e16; }
+  .rate-easy { background: #58a6ff; color: #0d1117; }
+
+  .complete { text-align: center; padding: 32px 16px; }
+  .complete .emoji { font-size: 64px; margin-bottom: 12px; }
+  .complete h2 { font-size: 24px; margin: 8px 0; }
+  .complete .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 20px 0; }
+  .complete .stat-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .complete .stat-num { font-size: 22px; font-weight: 700; color: var(--gold); }
+  .complete .stat-label { font-size: 11px; color: var(--muted); }
+
+  .submit-status { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 14px; text-align: center; }
+  .submit-status.pending { background: rgba(88,166,255,0.1); color: var(--accent); }
+  .submit-status.success { background: rgba(63,185,80,0.1); color: var(--good); }
+  .submit-status.error { background: rgba(248,81,73,0.1); color: var(--bad); }
+
+  .footer-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  img.note-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); margin: 8px 0; background: white; }
+</style>
+</head>
+<body>
+  <div class="scoreboard">⏱ <span class="timer" id="timer">00:00</span> · 🏆 <span class="score" id="score">0</span>pt</div>
+
+  <div class="container">
+    <div class="header">
+      <span class="badge">🔥 lapses 5회 · reps 16회 · interval 19일</span>
+      <h1 class="title">네트워크 인터페이스와 NIC</h1>
+      <div class="meta">
+        <span class="pill">5장 네트워크</span>
+        <span class="pill">물리/데이터링크</span>
+        <span class="pill">하드웨어</span>
+      </div>
+    </div>
+
+    <div class="progress">
+      <div class="step active" id="p0"></div>
+      <div class="step" id="p1"></div>
+      <div class="step" id="p2"></div>
+      <div class="step" id="p3"></div>
+      <div class="step" id="p4"></div>
+    </div>
+
+    <!-- Stage 0: Warm-up -->
+    <div class="stage active" id="stage0">
+      <div class="card">
+        <h2>🚦 Stage 1 / 5 · 워밍업</h2>
+        <div class="sub">두 용어의 차이부터 (10pt)</div>
+        <div class="prompt">
+          <strong>"네트워크 인터페이스"</strong>와 <strong>"NIC"</strong> — 평소엔 거의 같이 쓰이는 두 용어. 한 줄로 차이를 적어봐.<br>
+          <span style="color:var(--muted); font-size: 13px;">힌트: 한쪽은 논리/소프트웨어, 한쪽은 물리/하드웨어</span>
+        </div>
+        <textarea id="q_warmup" placeholder="네트워크 인터페이스는 ... / NIC는 ..."></textarea>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="nextStage(1)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 1: 인터페이스 정의와 주소 -->
+    <div class="stage" id="stage1">
+      <div class="card">
+        <h2>🌐 Stage 2 / 5 · 인터페이스의 정의와 주소</h2>
+        <div class="sub">핵심 사실 4개 (각 5pt × 4)</div>
+        <div class="prompt">
+          <strong>네트워크 인터페이스</strong>는 OS가 패킷을 주고받는 <em>논리적 끝점</em>. 빈칸을 채워봐.
+        </div>
+
+        <label class="field-label">📍 정의 (한 줄)</label>
+        <input type="text" id="if_def" placeholder="OS가 ...">
+
+        <label class="field-label">🏷️ 인터페이스 1개당 <strong style="color: var(--logical)">MAC 주소</strong> 개수는?</label>
+        <input type="text" id="if_mac" placeholder="? 개">
+
+        <label class="field-label">🌍 인터페이스 1개당 <strong style="color: var(--logical)">IP 주소</strong> 개수는?</label>
+        <input type="text" id="if_ip" placeholder="? 개 (이상)">
+
+        <label class="field-label">🎯 인터페이스가 <strong>기준</strong>이 되는 시스템 설정 3가지는?</label>
+        <input type="text" id="if_basis" placeholder="라우팅 / ... / ...">
+
+        <div class="hint-box locked" id="hint1" onclick="unlockHint('hint1', 'MAC은 1개로 고정. IP는 0개도 가능. 기준이 되는 것: 패킷 흐름 제어 관련 3가지')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(0)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(2)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 2: NIC 용어 정리 -->
+    <div class="stage" id="stage2">
+      <div class="card">
+        <h2>🔧 Stage 3 / 5 · NIC 용어 정리</h2>
+        <div class="sub">하드웨어 측 용어들 (총 30pt)</div>
+        <div class="prompt">
+          <strong>NIC</strong>의 풀네임을 풀고, 자주 헷갈리는 별칭과 "포트"의 차이를 정리하자.
+        </div>
+
+        <label class="field-label">🔤 NIC가 무엇의 약자인가? (영문 풀네임)</label>
+        <input type="text" id="nic_full" placeholder="Network ...">
+
+        <label class="field-label">📛 NIC의 다른 이름 3가지 (책에 등장한 별칭)</label>
+        <input type="text" id="nic_aliases" placeholder="네트워크 카드, ...">
+
+        <div class="vs-grid" style="margin-top: 14px;">
+          <div class="vs-col logical">
+            <h3>📦 카드 / 어댑터</h3>
+            <label>지칭 범위 (한 줄)</label>
+            <textarea id="card_scope" placeholder="NIC의 ..."></textarea>
+          </div>
+          <div class="vs-col physical">
+            <h3>🔌 포트</h3>
+            <label>지칭 범위 (한 줄)</label>
+            <textarea id="port_scope" placeholder="NIC의 ..."></textarea>
+          </div>
+        </div>
+
+        <div class="prompt" style="margin-top: 14px;">
+          <strong>Q.</strong> NIC가 <em>실제로 하는 일</em>은? 두 가지 정도 적어봐. <span style="color:var(--muted); font-size:13px">(10pt)</span>
+        </div>
+        <textarea id="nic_role" placeholder="① ... / ② ..."></textarea>
+
+        <div class="hint-box locked" id="hint2" onclick="unlockHint('hint2', '카드/어댑터 = 전체. 포트 = 연결부만. 역할: 신호↔프레임 변환, FCS 검증')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(1)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(3)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 3: 인터페이스 ≠ NIC 매핑 케이스 -->
+    <div class="stage" id="stage3">
+      <div class="card">
+        <h2>🔀 Stage 4 / 5 · 인터페이스와 NIC의 관계</h2>
+        <div class="sub">"인터페이스 = NIC"가 아닌 이유 (총 30pt)</div>
+        <div class="prompt">
+          이게 이 카드의 <strong>제일 까다로운 부분</strong>이야. 인터페이스와 NIC는 <em>1:1이 아닐 수 있다</em>.
+          세 가지 케이스 각각 <strong>구체적인 예시</strong>를 적어봐.
+        </div>
+
+        <div class="mapping-row">
+          <div class="ratio">① 1개의 NIC → 여러 인터페이스</div>
+          <label>어떤 기술/예시? (인터페이스 이름이라도)</label>
+          <input type="text" id="map_one_to_many" placeholder="예: ...">
+        </div>
+
+        <div class="mapping-row">
+          <div class="ratio">② 여러 NIC → 1개의 인터페이스</div>
+          <label>어떤 기술/예시?</label>
+          <input type="text" id="map_many_to_one" placeholder="예: ...">
+        </div>
+
+        <div class="mapping-row">
+          <div class="ratio">③ NIC 없는 인터페이스 (=물리 하드웨어 없이 존재)</div>
+          <label>어떤 종류? (이름 2개 이상)</label>
+          <input type="text" id="map_no_nic" placeholder="예: lo0, ...">
+        </div>
+
+        <div class="hint-box locked" id="hint3" onclick="unlockHint('hint3', '① VLAN 서브인터페이스 (eth0.100) ② 본딩/티밍 (bond0, LACP) ③ 루프백, 터널, 브리지')"></div>
+
+        <div class="prompt" style="margin-top: 14px;">
+          <strong>보너스 Q.</strong> macOS에서 <code>en0</code>은 무엇을 가리키는가? Wi-Fi? 유선? 둘 다?
+          (정답이 직관과 다를 수 있음 ⚠️) <span style="color:var(--muted); font-size:13px">(10pt)</span>
+        </div>
+        <textarea id="q_en0" placeholder="..."></textarea>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(2)">← 이전</button>
+          <button class="btn-primary" onclick="submitAnswers()">📤 제출하고 정답 보기</button>
+        </div>
+
+        <div id="submitStatus"></div>
+      </div>
+    </div>
+
+    <!-- Stage 4: 정답 + 보충 -->
+    <div class="stage" id="stage4">
+      <div class="card reveal-card">
+        <h2>✨ Stage 5 / 5 · 정답 공개 + 깊이 보충</h2>
+        <div class="sub">책 정답 + 현대 NIC가 실제로 하는 일</div>
+
+        <strong>📌 인터페이스 vs NIC (핵심)</strong>
+        <div class="answer-block">
+          <table>
+            <tr><th></th><th><span style="color:var(--logical)">📡 네트워크 인터페이스</span></th><th><span style="color:var(--physical)">🔧 NIC</span></th></tr>
+            <tr><td>본질</td><td><strong>논리적</strong> 엔드포인트 단위</td><td><strong>물리</strong> 하드웨어</td></tr>
+            <tr><td>관리 주체</td><td>운영체제 (OS)</td><td>이더넷 카드, LAN 카드 등</td></tr>
+            <tr><td>설정 기준</td><td>라우팅 / 방화벽 / 모니터링</td><td>—</td></tr>
+            <tr><td>주소</td><td>MAC <strong>1개</strong> + IP <strong>0개 이상</strong></td><td>—</td></tr>
+          </table>
+        </div>
+
+        <strong>📌 NIC 용어 정리</strong>
+        <div class="answer-block">
+          <strong>NIC</strong> = <span class="ko">Network Interface Controller</span><br>
+          별칭 (모두 자주 사용 — 외워 둘 것):
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li>네트워크 카드 / 어댑터</li>
+            <li>이더넷 카드 / 어댑터</li>
+            <li>LAN 카드 / 어댑터</li>
+          </ul>
+          <table style="margin-top: 10px;">
+            <tr><th></th><th>지칭 범위</th></tr>
+            <tr><td><strong style="color:var(--logical)">카드 / 어댑터</strong></td><td>NIC <strong>전체</strong></td></tr>
+            <tr><td><strong style="color:var(--physical)">포트</strong></td><td>NIC의 <strong>물리 연결부만</strong></td></tr>
+          </table>
+          예) "M1 맥북엔 이더넷 <span style="color:var(--physical)">포트</span>가 없어" — NIC는 있지만 물리 포트가 없다는 뜻.
+        </div>
+
+        <strong>📌 NIC가 하는 일 (책 기준)</strong>
+        <div class="answer-block">
+          <ol style="margin: 6px 0 0 18px; padding: 0;">
+            <li>통신 매체 신호 ↔ 호스트 프레임 <strong>변환</strong></li>
+            <li>MAC 주소 기반으로 잘못 전송된 패킷 검증 (<strong>FCS</strong>; Frame Check Sequence)</li>
+          </ol>
+        </div>
+
+        <strong>📌 인터페이스 ≠ NIC, 3가지 케이스</strong>
+        <div class="answer-block">
+          <table>
+            <tr><th>관계</th><th>예시</th></tr>
+            <tr><td>1 NIC → N 인터페이스</td><td><strong>VLAN 서브인터페이스</strong>: <code>eth0.100</code>, <code>eth0.200</code></td></tr>
+            <tr><td>N NIC → 1 인터페이스</td><td><strong>본딩/티밍</strong>: <code>bond0</code> (Linux), <strong>LACP</strong> (link aggregation)</td></tr>
+            <tr><td>NIC 없는 인터페이스</td><td><strong>루프백</strong> <code>lo0</code>, <strong>터널</strong> <code>tun0</code>/<code>tap0</code>, <strong>브리지</strong> <code>bridge0</code> (Docker의 <code>docker0</code>도 동일)</td></tr>
+          </table>
+        </div>
+
+        <strong>📌 macOS의 en0</strong>
+        <div class="answer-block">
+          <code>en0</code>의 <code>en</code>은 본래 <strong>ethernet</strong> 약자.<br>
+          예전 Mac: <code>en0</code> = 유선 LAN, <code>en1</code> = Wi-Fi.<br>
+          오늘날 (애플 실리콘 맥): <code>en0</code> = <strong>Wi-Fi</strong> 인 경우가 많음 (이더넷 포트가 없으니까).
+          → 직관과 어긋남. 시스템에서 <code>networksetup -listallhardwareports</code>로 실제 매핑 확인.
+        </div>
+
+        <div class="answer-block correction">
+          <strong>⚠️ 책 표현 보완: "네트워크 인터페이스 = NIC"는 일상 용법</strong><br>
+          엄밀히는 다른 개념이지만, <strong>일상에서는 거의 같이 쓰인다</strong>는 점도 받아들여야 해.
+          예: <code>ip link show</code>로 보이는 <code>eth0</code>은 OS 측 인터페이스이지만, 실무에서 "이더넷 NIC"라고 부르기도 함.
+          중요한 건 "VLAN/본딩/루프백 시나리오에서는 두 개념이 갈라진다"는 점.
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충 #1: 현대 NIC는 "단순 변환 장치"가 아니다</strong><br>
+          책의 NIC 역할 (신호 ↔ 프레임 변환, FCS 검증)은 <strong>1990년대 NIC</strong> 수준.
+          현대 NIC는 CPU 부담을 덜기 위해 많은 처리를 직접 한다 (= <strong>오프로드</strong>):
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li><strong>TSO/GSO</strong> (TCP Segmentation Offload): 큰 데이터를 NIC가 패킷 단위로 분할</li>
+            <li><strong>LRO/GRO</strong> (Large/Generic Receive Offload): 작은 패킷을 NIC가 합쳐서 한 번에 OS에 전달</li>
+            <li><strong>RSS</strong> (Receive Side Scaling): 멀티큐로 여러 CPU 코어에 패킷 분산</li>
+            <li><strong>Checksum offload</strong>: TCP/IP 체크섬을 NIC가 직접 계산</li>
+          </ul>
+          이 덕에 10/40/100Gbps 네트워크에서도 CPU가 다 떠안지 않는다.
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충 #2: 인터페이스 ↔ 메모리 데이터 흐름</strong><br>
+          NIC는 단순히 신호를 변환하는 게 아니라, <strong>DMA</strong>로 호스트 메모리에 직접 패킷을 쓴다 (write).
+          <pre style="background:rgba(0,0,0,0.3); padding:8px; border-radius:6px; font-size:12px; overflow-x:auto;">패킷 도착 → NIC가 DMA로 ring buffer에 저장 → NIC가 IRQ 발생
+       → OS의 IRQ 핸들러가 NAPI poll 시작 → softirq에서 패킷 처리</pre>
+          이 흐름은 너의 <strong>다른 카드(DMA 입출력)</strong>와 직접 연결돼. 나중에 같이 묶으면 이해가 깊어져.
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충 #3: 가상 인터페이스의 위력</strong><br>
+          <code>tun0</code>/<code>tap0</code> 같은 NIC 없는 인터페이스는 <strong>VPN/컨테이너</strong>의 핵심.
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li>너의 <strong>Tailscale</strong>이 만든 <code>tailscale0</code> 인터페이스가 정확히 <strong>tun</strong> 타입</li>
+            <li>Docker의 <code>docker0</code>는 <strong>bridge</strong> 인터페이스로 컨테이너들을 묶음</li>
+            <li>이런 가상 인터페이스에 IP 할당 + 라우팅 테이블 조작으로 "물리 NIC 없이도 별도 네트워크"를 만든다</li>
+          </ul>
+          → <code>ip link show</code>로 직접 확인 가능. 지금 너의 minipc에서도 <code>tailscale0</code>이 살아있어.
+        </div>
+
+        <div class="answer-block" style="border-left: 3px solid var(--gold);">
+          <strong>💡 한 줄 요약</strong><br>
+          <strong>인터페이스</strong>는 OS가 만드는 <em>논리 객체</em>(라우팅·방화벽 기준), <strong>NIC</strong>는 그것의 <em>물리적 구현체</em>일 뿐.
+          그래서 1:N, N:1, 0:N 모두 가능하다.
+        </div>
+
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+          <strong>🤔 스스로 평가</strong>
+          <div class="sub">정답 + 깊이 보충까지, 회상 정도는?</div>
+          <div class="self-rate">
+            <button class="rate-again" onclick="rate('Again')">😵<br>Again<br><small>전혀</small></button>
+            <button class="rate-hard" onclick="rate('Hard')">😓<br>Hard<br><small>겨우</small></button>
+            <button class="rate-good" onclick="rate('Good')">😊<br>Good<br><small>잘함</small></button>
+            <button class="rate-easy" onclick="rate('Easy')">🚀<br>Easy<br><small>완벽</small></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 완료 -->
+    <div class="stage" id="stageDone">
+      <div class="complete card">
+        <div class="emoji" id="completeEmoji">🎉</div>
+        <h2>학습 완료!</h2>
+        <div style="color: var(--muted); font-size: 14px;">답안 저장됨. 채팅창으로 돌아가서 채점 받아.</div>
+        <div class="stats">
+          <div class="stat-box"><div class="stat-num" id="finalScore">0</div><div class="stat-label">자체 점수</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalTime">0:00</div><div class="stat-label">소요 시간</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalRate">-</div><div class="stat-label">자기평가</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalHints">0</div><div class="stat-label">힌트 사용</div></div>
+        </div>
+        <div class="footer-note">답안 ID: <code id="ansId">-</code></div>
+      </div>
+    </div>
+
+    <div class="footer-note">🖲️ MiniPC self-hosted · cardId 1754200921965 · noteId 1754200921964</div>
+  </div>
+
+<script>
+  const startTime = Date.now();
+  let score = 0;
+  let hintsUsed = 0;
+  let lastRating = '-';
+  const sessionId = 'sess_' + Date.now();
+
+  setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s % 60).padStart(2,'0');
+    document.getElementById('timer').textContent = mm + ':' + ss;
+  }, 500);
+
+  function setScore(delta) { score += delta; document.getElementById('score').textContent = score; }
+
+  function scoreCurrentStageInputs() {
+    const cur = document.querySelector('.stage.active');
+    if (!cur) return;
+    const inputs = cur.querySelectorAll('textarea, input[type="text"]');
+    let added = 0;
+    inputs.forEach(i => { if (i.value.trim().length > 1 && !i.dataset.scored) { added += 5; i.dataset.scored = '1'; } });
+    if (added > 0) setScore(added);
+  }
+
+  function nextStage(n) {
+    scoreCurrentStageInputs();
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function prevStage(n) {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function unlockHint(id, text) {
+    const el = document.getElementById(id);
+    if (el.classList.contains('unlocked')) return;
+    el.classList.remove('locked'); el.classList.add('unlocked');
+    el.textContent = '💡 힌트: ' + text;
+    setScore(-10); hintsUsed++;
+  }
+
+  function gather() {
+    return {
+      sessionId,
+      cardId: 1754200921965,
+      noteId: 1754200921964,
+      cardTitle: '네트워크 인터페이스와 NIC',
+      startTime: new Date(startTime).toISOString(),
+      submittedAt: new Date().toISOString(),
+      elapsedSec: Math.floor((Date.now() - startTime) / 1000),
+      hintsUsed,
+      selfScore: score,
+      answers: {
+        warmup: document.getElementById('q_warmup').value.trim(),
+        interface: {
+          if_def: document.getElementById('if_def').value.trim(),
+          if_mac: document.getElementById('if_mac').value.trim(),
+          if_ip: document.getElementById('if_ip').value.trim(),
+          if_basis: document.getElementById('if_basis').value.trim(),
+        },
+        nic: {
+          nic_full: document.getElementById('nic_full').value.trim(),
+          nic_aliases: document.getElementById('nic_aliases').value.trim(),
+          card_scope: document.getElementById('card_scope').value.trim(),
+          port_scope: document.getElementById('port_scope').value.trim(),
+          nic_role: document.getElementById('nic_role').value.trim(),
+        },
+        mapping: {
+          map_one_to_many: document.getElementById('map_one_to_many').value.trim(),
+          map_many_to_one: document.getElementById('map_many_to_one').value.trim(),
+          map_no_nic: document.getElementById('map_no_nic').value.trim(),
+          q_en0: document.getElementById('q_en0').value.trim(),
+        },
+      },
+      selfRating: null,
+    };
+  }
+
+  async function submitAnswers() {
+    const status = document.getElementById('submitStatus');
+    status.className = 'submit-status pending';
+    status.textContent = '⏳ 답안 저장 중...';
+    try {
+      scoreCurrentStageInputs();
+      const payload = gather();
+      const r = await fetch('/submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if (j.ok) {
+        status.className = 'submit-status success';
+        status.textContent = '✅ 저장 완료 (id: ' + j.id + ')';
+        document.getElementById('ansId').textContent = j.id;
+        setTimeout(() => nextStage(4), 700);
+      } else throw new Error(j.error || 'unknown');
+    } catch(e) {
+      status.className = 'submit-status error';
+      status.textContent = '❌ 저장 실패: ' + e.message;
+    }
+  }
+
+  async function rate(r) {
+    lastRating = r;
+    setScore(r === 'Easy' ? 20 : r === 'Good' ? 10 : r === 'Hard' ? 5 : 0);
+    try {
+      await fetch('/rate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ sessionId, rating: r })
+      });
+    } catch(e) {}
+    showComplete();
+  }
+
+  function showComplete() {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stageDone').classList.add('active');
+    for (let i = 0; i < 5; i++) document.getElementById('p' + i).classList.add('done');
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalTime').textContent = document.getElementById('timer').textContent;
+    document.getElementById('finalRate').textContent = lastRating;
+    document.getElementById('finalHints').textContent = hintsUsed;
+    const emoji = score >= 100 ? '🏆' : score >= 70 ? '🎉' : score >= 40 ? '👍' : '📚';
+    document.getElementById('completeEmoji').textContent = emoji;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+</body>
+</html>

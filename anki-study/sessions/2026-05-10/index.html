@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🧠 Anki 회상 챌린지 — 교착 상태 4조건</title>
+<style>
+  :root {
+    --bg: #0e1117;
+    --panel: #161b22;
+    --panel2: #1f2630;
+    --border: #2d333b;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #f78166;
+    --good: #3fb950;
+    --bad: #f85149;
+    --warn: #d29922;
+    --gold: #ffd33d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0; }
+  .container { max-width: 720px; margin: 0 auto; padding: 16px; }
+
+  /* 헤더 */
+  .header { display: flex; flex-direction: column; gap: 8px; padding: 8px 4px 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(248,129,102,0.12); color: var(--accent2); border: 1px solid rgba(248,129,102,0.3); width: fit-content; letter-spacing: 0.3px; }
+  .title { font-size: 20px; font-weight: 700; margin: 0; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .meta .pill { background: var(--panel); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px; margin-right: 4px; }
+
+  /* 진행바 */
+  .progress { display: flex; gap: 4px; margin: 14px 0 22px; }
+  .progress .step { flex: 1; height: 4px; background: var(--border); border-radius: 2px; transition: background 0.3s; }
+  .progress .step.active { background: var(--accent); }
+  .progress .step.done { background: var(--good); }
+
+  /* 단계 카드 */
+  .stage { display: none; animation: fadeIn 0.3s ease; }
+  .stage.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: var(--accent); }
+  .card .sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+  .prompt { background: var(--panel2); border-left: 3px solid var(--accent2); padding: 12px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 15px; }
+  .prompt strong { color: var(--accent2); }
+
+  .blank { display: inline-block; min-width: 80px; padding: 0 4px; border-bottom: 2px dashed var(--accent2); color: var(--accent2); }
+
+  textarea, input[type="text"] { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 15px; font-family: inherit; resize: vertical; }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
+  textarea { min-height: 80px; }
+  label.field-label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  label.field-label .en { color: var(--accent); font-weight: 600; }
+
+  .hint-box { background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--warn); margin-top: 10px; cursor: pointer; user-select: none; }
+  .hint-box.locked::before { content: "🔒 힌트 보기 (탭하면 -10pt)"; }
+  .hint-box.unlocked { cursor: default; }
+
+  /* 버튼 */
+  .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  button { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  button:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #0d1117; }
+  .btn-primary:hover { background: #79b8ff; }
+  .btn-secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  .btn-success { background: var(--good); color: #052e16; }
+  .btn-danger { background: var(--bad); color: #2c0507; }
+
+  /* 점수 표시 */
+  .scoreboard { position: fixed; top: 12px; right: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; z-index: 10; }
+  .scoreboard .score { color: var(--gold); }
+
+  /* 타이머 */
+  .timer { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+
+  /* 이미지 */
+  img.note-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); margin: 8px 0; background: white; }
+
+  /* Stage 2: 매칭 */
+  .match-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 12px 0; }
+  .match-item { display: flex; align-items: center; gap: 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .match-item .num { font-size: 18px; font-weight: 700; color: var(--accent2); min-width: 28px; }
+  .match-item input { flex: 1; background: transparent; border: none; border-bottom: 1px solid var(--border); padding: 4px 0; }
+  .match-item .en { font-size: 12px; color: var(--muted); font-style: italic; }
+
+  /* Stage 5: 정답 공개 */
+  .reveal-card { background: linear-gradient(135deg, rgba(88,166,255,0.06), rgba(248,129,102,0.04)); border: 1px solid var(--accent); }
+  .answer-block { background: var(--panel2); padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
+  .answer-block .ko { color: var(--good); font-weight: 600; }
+  .answer-block .en { color: var(--accent); font-style: italic; font-size: 12px; }
+  .self-rate { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0; }
+  .self-rate button { padding: 12px 4px; font-size: 13px; }
+  .rate-again { background: #f85149; color: white; }
+  .rate-hard { background: #d29922; color: #0d1117; }
+  .rate-good { background: #3fb950; color: #052e16; }
+  .rate-easy { background: #58a6ff; color: #0d1117; }
+
+  /* 완료 화면 */
+  .complete { text-align: center; padding: 32px 16px; }
+  .complete .emoji { font-size: 64px; margin-bottom: 12px; }
+  .complete h2 { font-size: 24px; margin: 8px 0; }
+  .complete .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 20px 0; }
+  .complete .stat-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .complete .stat-num { font-size: 22px; font-weight: 700; color: var(--gold); }
+  .complete .stat-label { font-size: 11px; color: var(--muted); }
+
+  .submit-status { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 14px; text-align: center; }
+  .submit-status.pending { background: rgba(88,166,255,0.1); color: var(--accent); }
+  .submit-status.success { background: rgba(63,185,80,0.1); color: var(--good); }
+  .submit-status.error { background: rgba(248,81,73,0.1); color: var(--bad); }
+
+  .footer-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="scoreboard">⏱ <span class="timer" id="timer">00:00</span> · 🏆 <span class="score" id="score">0</span>pt</div>
+
+  <div class="container">
+    <div class="header">
+      <span class="badge">🔥 lapses 7회 · reps 24회 · 가장 어려웠던 카드</span>
+      <h1 class="title">교착 상태(Deadlock) 발생 4조건</h1>
+      <div class="meta">
+        <span class="pill">3장 운영체제</span>
+        <span class="pill">동기화</span>
+        <span class="pill">interval 8일</span>
+      </div>
+    </div>
+
+    <div class="progress">
+      <div class="step active" id="p0"></div>
+      <div class="step" id="p1"></div>
+      <div class="step" id="p2"></div>
+      <div class="step" id="p3"></div>
+      <div class="step" id="p4"></div>
+    </div>
+
+    <!-- Stage 0: Warm-up -->
+    <div class="stage active" id="stage0">
+      <div class="card">
+        <h2>🚦 Stage 1 / 5 · 워밍업</h2>
+        <div class="sub">한 줄로 정의해보기 (배점 10pt)</div>
+        <div class="prompt">
+          <strong>교착 상태(Deadlock)</strong>가 무엇인지, <em>네 말</em>로 한두 줄 설명해 봐.<br>
+          <span style="color:var(--muted); font-size: 13px;">키워드: 프로세스, 자원, 기다림</span>
+        </div>
+        <textarea id="q_warmup" placeholder="예) 두 프로세스가 서로의 자원을 쥔 채 ..."></textarea>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="nextStage(1)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 1: 4조건 이름 -->
+    <div class="stage" id="stage1">
+      <div class="card">
+        <h2>🧩 Stage 2 / 5 · 4조건 이름 맞히기</h2>
+        <div class="sub">영어 이름을 보고 한국어 용어를 떠올리기 (각 10pt × 4)</div>
+        <div class="prompt">
+          교착 상태가 발생하려면 <strong>4가지 조건</strong>이 모두 충족되어야 한다.
+          영어 용어를 보고 한국어로 적어봐.
+        </div>
+
+        <div class="match-grid">
+          <div class="match-item">
+            <div class="num">1️⃣</div>
+            <div style="flex:1">
+              <input type="text" id="name1" placeholder="한국어로...">
+              <div class="en">Mutual exclusion</div>
+            </div>
+          </div>
+          <div class="match-item">
+            <div class="num">2️⃣</div>
+            <div style="flex:1">
+              <input type="text" id="name2" placeholder="한국어로...">
+              <div class="en">Hold and wait</div>
+            </div>
+          </div>
+          <div class="match-item">
+            <div class="num">3️⃣</div>
+            <div style="flex:1">
+              <input type="text" id="name3" placeholder="한국어로...">
+              <div class="en">No preemption</div>
+            </div>
+          </div>
+          <div class="match-item">
+            <div class="num">4️⃣</div>
+            <div style="flex:1">
+              <input type="text" id="name4" placeholder="한국어로...">
+              <div class="en">Circular wait</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint-box locked" id="hint1" onclick="unlockHint('hint1', '4글자 위주로 떠올려봐: ○○ ○제 / ○○와 ○기 / ○선점 / ○형 ○기')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(0)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(2)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 2: 정의 채우기 -->
+    <div class="stage" id="stage2">
+      <div class="card">
+        <h2>📖 Stage 3 / 5 · 각 조건의 정의</h2>
+        <div class="sub">"~는 경우" 형태로 정의 작성 (각 15pt × 4)</div>
+
+        <label class="field-label"><span class="en">1. Mutual exclusion (상호 배제)</span> — 정의는?</label>
+        <textarea id="def1" placeholder="어떤 자원은 ..."></textarea>
+
+        <label class="field-label"><span class="en">2. Hold and wait (점유와 대기)</span> — 정의는?</label>
+        <textarea id="def2" placeholder="한 프로세스가 ..."></textarea>
+
+        <label class="field-label"><span class="en">3. No preemption (비선점)</span> — 정의는?</label>
+        <textarea id="def3" placeholder="어떤 프로세스도 ..."></textarea>
+
+        <label class="field-label"><span class="en">4. Circular wait (원형 대기)</span> — 정의는?</label>
+        <textarea id="def4" placeholder="프로세스와 ..."></textarea>
+
+        <div class="hint-box locked" id="hint2" onclick="unlockHint('hint2', '키워드: ① 한 시점/하나만 ② 점유한 채 다른 자원 대기 ③ 강제로 빼앗지 못함 ④ 원의 형태')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(1)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(3)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 3: 종합 사고 -->
+    <div class="stage" id="stage3">
+      <div class="card">
+        <h2>🎯 Stage 4 / 5 · 종합 사고</h2>
+        <div class="sub">개념을 응용해보기 (각 15pt × 2)</div>
+
+        <div class="prompt">
+          <strong>Q1.</strong> 4조건이 <em>모두</em> 충족되면 교착 상태는 반드시 발생하는가? 왜?
+        </div>
+        <textarea id="q_synth1" placeholder="..."></textarea>
+
+        <div class="prompt" style="margin-top:18px">
+          <strong>Q2.</strong> 만약 운영체제가 <code>비선점</code> 조건을 깰 수 있게 만들면 교착 상태가 어떻게 풀릴까? 한 가지 시나리오를 들어봐.
+        </div>
+        <textarea id="q_synth2" placeholder="..."></textarea>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(2)">← 이전</button>
+          <button class="btn-primary" onclick="submitAnswers()">📤 제출하고 정답 보기</button>
+        </div>
+
+        <div id="submitStatus"></div>
+      </div>
+    </div>
+
+    <!-- Stage 4: 정답 공개 + 자기평가 -->
+    <div class="stage" id="stage4">
+      <div class="card reveal-card">
+        <h2>✨ Stage 5 / 5 · 정답 공개</h2>
+        <div class="sub">아래 정답과 비교해보고, 마지막에 자기 평가</div>
+
+        <div style="margin: 12px 0;">
+          <strong>📌 핵심 정의</strong>
+          <div class="answer-block">
+            2개 이상의 프로세스가 각자 가지고 있는 자원을 무작정 기다린다면,
+            더 이상 어떤 프로세스도 진행할 수 없는 <span class="ko">교착 상태(Deadlock)</span>가 발생할 수 있다.
+          </div>
+          <img src="img1.png" class="note-img" alt="교착상태 그림">
+        </div>
+
+        <strong>📌 발생 4조건</strong>
+        <div class="answer-block">
+          <div><span class="ko">1️⃣ 상호 배제</span> <span class="en">Mutual exclusion</span></div>
+          <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">어떤 자원은 한 시점에 하나의 프로세스만 사용할 수 있는 경우 (= 자원이 공유될 수 없는 경우)</div>
+        </div>
+        <div class="answer-block">
+          <div><span class="ko">2️⃣ 점유와 대기</span> <span class="en">Hold and wait</span></div>
+          <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">한 프로세스가 어떤 자원을 할당받은 상태(점유)에서 다른 자원을 할당받기를 기다리는 경우</div>
+        </div>
+        <div class="answer-block">
+          <div><span class="ko">3️⃣ 비선점</span> <span class="en">No preemption</span></div>
+          <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">어떤 프로세스도 다른 프로세스의 자원을 강제로 빼앗지 못하는 경우</div>
+        </div>
+        <div class="answer-block">
+          <div><span class="ko">4️⃣ 원형 대기</span> <span class="en">Circular wait</span></div>
+          <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">프로세스와 프로세스가 요청한 자원이 원의 형태를 이루는 경우 (= Hold and wait 관계의 프로세스들이 서로를 기다리는 경우)</div>
+          <img src="img2.png" class="note-img" alt="원형 대기 그림">
+        </div>
+
+        <div class="answer-block" style="border-left: 3px solid var(--gold);">
+          <strong>💡 핵심</strong> — 하나라도 만족하지 않으면 교착 상태는 <em>발생하지 않는다</em>.
+          반대로 4개 모두 만족해도 <em>발생 가능성</em>이 생길 뿐, 무조건 생기는 건 아니다.
+        </div>
+
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+          <strong>🤔 스스로 평가</strong>
+          <div class="sub">정답과 비교했을 때, 떠올린 정도는?</div>
+          <div class="self-rate">
+            <button class="rate-again" onclick="rate('Again')">😵<br>Again<br><small>전혀</small></button>
+            <button class="rate-hard" onclick="rate('Hard')">😓<br>Hard<br><small>겨우</small></button>
+            <button class="rate-good" onclick="rate('Good')">😊<br>Good<br><small>잘함</small></button>
+            <button class="rate-easy" onclick="rate('Easy')">🚀<br>Easy<br><small>완벽</small></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 완료 화면 -->
+    <div class="stage" id="stageDone">
+      <div class="complete card">
+        <div class="emoji" id="completeEmoji">🎉</div>
+        <h2>학습 완료!</h2>
+        <div style="color: var(--muted); font-size: 14px;">답안이 저장되었어. AI 채점 결과는 채팅창에서 확인해줘.</div>
+        <div class="stats">
+          <div class="stat-box">
+            <div class="stat-num" id="finalScore">0</div>
+            <div class="stat-label">자체 점수</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="finalTime">0:00</div>
+            <div class="stat-label">소요 시간</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="finalRate">-</div>
+            <div class="stat-label">자기평가</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-num" id="finalHints">0</div>
+            <div class="stat-label">힌트 사용</div>
+          </div>
+        </div>
+        <div class="footer-note">
+          답안 ID: <code id="ansId">-</code><br>
+          AI가 모든 답을 의미 단위로 평가해서 곧 알려줄게.
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      🖲️ MiniPC self-hosted · Anki cardId 1741423750639 · noteId 1741423750638
+    </div>
+  </div>
+
+<script>
+  const startTime = Date.now();
+  let score = 0;
+  let hintsUsed = 0;
+  let lastRating = '-';
+  const sessionId = 'sess_' + Date.now();
+
+  // 타이머
+  setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s % 60).padStart(2,'0');
+    document.getElementById('timer').textContent = mm + ':' + ss;
+  }, 500);
+
+  function setScore(delta) {
+    score += delta;
+    document.getElementById('score').textContent = score;
+  }
+
+  function scoreCurrentStageInputs() {
+    const cur = document.querySelector('.stage.active');
+    if (!cur) return;
+    const inputs = cur.querySelectorAll('textarea, input[type="text"]');
+    let added = 0;
+    inputs.forEach(i => { if (i.value.trim().length > 0 && !i.dataset.scored) { added += 5; i.dataset.scored = '1'; } });
+    if (added > 0) setScore(added);
+  }
+
+  function nextStage(n) {
+    // 자체 점수: 답이 비지 않은 필드당 +5
+    scoreCurrentStageInputs();
+
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+
+    // 진행바
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function prevStage(n) {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function unlockHint(id, text) {
+    const el = document.getElementById(id);
+    if (el.classList.contains('unlocked')) return;
+    el.classList.remove('locked');
+    el.classList.add('unlocked');
+    el.textContent = '💡 힌트: ' + text;
+    setScore(-10);
+    hintsUsed++;
+  }
+
+  function gather() {
+    return {
+      sessionId,
+      cardId: 1741423750639,
+      noteId: 1741423750638,
+      cardTitle: '교착 상태 발생 4조건',
+      startTime: new Date(startTime).toISOString(),
+      submittedAt: new Date().toISOString(),
+      elapsedSec: Math.floor((Date.now() - startTime) / 1000),
+      hintsUsed,
+      selfScore: score,
+      answers: {
+        warmup: document.getElementById('q_warmup').value.trim(),
+        names: {
+          n1_mutual_exclusion: document.getElementById('name1').value.trim(),
+          n2_hold_and_wait: document.getElementById('name2').value.trim(),
+          n3_no_preemption: document.getElementById('name3').value.trim(),
+          n4_circular_wait: document.getElementById('name4').value.trim(),
+        },
+        defs: {
+          d1_mutual_exclusion: document.getElementById('def1').value.trim(),
+          d2_hold_and_wait: document.getElementById('def2').value.trim(),
+          d3_no_preemption: document.getElementById('def3').value.trim(),
+          d4_circular_wait: document.getElementById('def4').value.trim(),
+        },
+        synth: {
+          q1_all_four_iff: document.getElementById('q_synth1').value.trim(),
+          q2_break_no_preemption: document.getElementById('q_synth2').value.trim(),
+        }
+      },
+      selfRating: null,
+    };
+  }
+
+  async function submitAnswers() {
+    const status = document.getElementById('submitStatus');
+    status.className = 'submit-status pending';
+    status.textContent = '⏳ 답안 저장 중...';
+    try {
+      scoreCurrentStageInputs();
+      const payload = gather();
+      const r = await fetch('/submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if (j.ok) {
+        status.className = 'submit-status success';
+        status.textContent = '✅ 저장 완료 (id: ' + j.id + '). 정답 공개합니다.';
+        document.getElementById('ansId').textContent = j.id;
+        setTimeout(() => nextStage(4), 700);
+      } else throw new Error(j.error || 'unknown');
+    } catch(e) {
+      status.className = 'submit-status error';
+      status.textContent = '❌ 저장 실패: ' + e.message;
+    }
+  }
+
+  async function rate(r) {
+    lastRating = r;
+    setScore(r === 'Easy' ? 20 : r === 'Good' ? 10 : r === 'Hard' ? 5 : 0);
+    // 자기평가도 추가 전송
+    try {
+      await fetch('/rate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ sessionId, rating: r })
+      });
+    } catch(e) {}
+    showComplete();
+  }
+
+  function showComplete() {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stageDone').classList.add('active');
+    for (let i = 0; i < 5; i++) document.getElementById('p' + i).classList.add('done');
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalTime').textContent = document.getElementById('timer').textContent;
+    document.getElementById('finalRate').textContent = lastRating;
+    document.getElementById('finalHints').textContent = hintsUsed;
+    const emoji = score >= 100 ? '🏆' : score >= 70 ? '🎉' : score >= 40 ? '👍' : '📚';
+    document.getElementById('completeEmoji').textContent = emoji;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+</body>
+</html>

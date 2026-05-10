@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🧠 Anki 회상 챌린지 — TCP/IP 4계층 ↔ OSI 7계층</title>
+<style>
+  :root {
+    --bg: #0e1117; --panel: #161b22; --panel2: #1f2630; --border: #2d333b;
+    --text: #e6edf3; --muted: #8b949e;
+    --accent: #58a6ff; --accent2: #f78166; --good: #3fb950; --bad: #f85149;
+    --warn: #d29922; --gold: #ffd33d;
+    --osi: #4d9fff; --tcpip: #ff8a4d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0; }
+  .container { max-width: 760px; margin: 0 auto; padding: 16px; }
+
+  .header { display: flex; flex-direction: column; gap: 8px; padding: 8px 4px 12px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(248,129,102,0.12); color: var(--accent2); border: 1px solid rgba(248,129,102,0.3); width: fit-content; letter-spacing: 0.3px; }
+  .title { font-size: 20px; font-weight: 700; margin: 0; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .meta .pill { background: var(--panel); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px; margin-right: 4px; }
+
+  .pre-note { background: rgba(63,185,80,0.06); border: 1px solid rgba(63,185,80,0.3); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; }
+  .pre-note .lbl { color: var(--good); font-weight: 600; font-size: 11px; letter-spacing: 1px; }
+  .pre-note ul { margin: 4px 0 0 18px; padding: 0; }
+
+  .progress { display: flex; gap: 4px; margin: 14px 0 22px; }
+  .progress .step { flex: 1; height: 4px; background: var(--border); border-radius: 2px; transition: background 0.3s; }
+  .progress .step.active { background: var(--accent); }
+  .progress .step.done { background: var(--good); }
+
+  .stage { display: none; animation: fadeIn 0.3s ease; }
+  .stage.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: var(--accent); }
+  .card .sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+  .prompt { background: var(--panel2); border-left: 3px solid var(--accent2); padding: 12px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 15px; }
+  .prompt strong { color: var(--accent2); }
+  .prompt code { background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 4px; font-size: 13px; color: var(--gold); }
+
+  textarea, input[type="text"] { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-size: 14px; font-family: inherit; resize: vertical; }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.15); }
+  textarea { min-height: 60px; }
+
+  .hint-box { background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.3); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--warn); margin-top: 10px; cursor: pointer; user-select: none; }
+  .hint-box.locked::before { content: "🔒 힌트 보기 (탭하면 -10pt)"; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  button { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  button:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #0d1117; }
+  .btn-secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+
+  .scoreboard { position: fixed; top: 12px; right: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; z-index: 10; }
+  .scoreboard .score { color: var(--gold); }
+
+  /* 계층 입력 스택 */
+  .layer-stack { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+  .layer-stack .lvl { display: flex; align-items: center; gap: 8px; background: var(--panel2); border-radius: 8px; padding: 10px 12px; border-left: 3px solid; }
+  .layer-stack .lvl.osi { border-color: var(--osi); }
+  .layer-stack .lvl.tcpip { border-color: var(--tcpip); }
+  .layer-stack .lvl .num { color: var(--muted); font-weight: 600; font-size: 13px; min-width: 60px; }
+  .layer-stack .lvl input { flex: 1; background: transparent; border: none; border-bottom: 1px dashed var(--border); padding: 4px 0; font-size: 14px; }
+
+  .two-col-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0; }
+  .two-col-stack > div { min-width: 0; }
+  .two-col-stack h3 { margin: 0 0 6px; font-size: 13px; }
+  .two-col-stack h3.osi { color: var(--osi); }
+  .two-col-stack h3.tcpip { color: var(--tcpip); }
+  @media (max-width: 540px) {
+    .two-col-stack { grid-template-columns: 1fr; }
+  }
+
+  /* 매핑 표 입력 */
+  .map-row { background: var(--panel2); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+  .map-row .head { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .map-row .head .tcpip-name { color: var(--tcpip); font-weight: 600; }
+  .map-row input { font-size: 13px; }
+
+  /* 정답 */
+  .reveal-card { background: linear-gradient(135deg, rgba(88,166,255,0.06), rgba(248,129,102,0.04)); border: 1px solid var(--accent); }
+  .answer-block { background: var(--panel2); padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
+  .answer-block .ko { color: var(--good); font-weight: 600; }
+  .answer-block.correction { border-left: 3px solid var(--warn); }
+  .answer-block.correction strong { color: var(--warn); }
+  .answer-block.deep { border-left: 3px solid var(--accent); }
+  .answer-block.deep strong { color: var(--accent); }
+  .answer-block.yagni { border-left: 3px solid var(--bad); }
+  .answer-block.yagni strong { color: var(--bad); }
+  .answer-block table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .answer-block th, .answer-block td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .answer-block th { color: var(--muted); font-size: 11px; font-weight: 600; }
+
+  /* 매핑 시각화 */
+  .mapping-viz { display: flex; align-items: stretch; gap: 8px; margin: 12px 0; }
+  .mapping-viz .col { flex: 1; }
+  .mapping-viz .col h4 { font-size: 12px; margin: 0 0 6px; text-align: center; }
+  .mapping-viz .col h4.osi { color: var(--osi); }
+  .mapping-viz .col h4.tcpip { color: var(--tcpip); }
+  .mapping-viz .layer { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; font-size: 12px; text-align: center; }
+  .mapping-viz .layer.merged { background: rgba(255,138,77,0.12); border-color: var(--tcpip); padding: 18px 8px; }
+
+  .self-rate { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0; }
+  .self-rate button { padding: 12px 4px; font-size: 13px; }
+  .rate-again { background: #f85149; color: white; }
+  .rate-hard { background: #d29922; color: #0d1117; }
+  .rate-good { background: #3fb950; color: #052e16; }
+  .rate-easy { background: #58a6ff; color: #0d1117; }
+
+  .complete { text-align: center; padding: 32px 16px; }
+  .complete .emoji { font-size: 64px; margin-bottom: 12px; }
+  .complete h2 { font-size: 24px; margin: 8px 0; }
+  .complete .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 20px 0; }
+  .complete .stat-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .complete .stat-num { font-size: 22px; font-weight: 700; color: var(--gold); }
+  .complete .stat-label { font-size: 11px; color: var(--muted); }
+
+  .submit-status { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 14px; text-align: center; }
+  .submit-status.pending { background: rgba(88,166,255,0.1); color: var(--accent); }
+  .submit-status.success { background: rgba(63,185,80,0.1); color: var(--good); }
+  .submit-status.error { background: rgba(248,81,73,0.1); color: var(--bad); }
+
+  .footer-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  img.note-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); margin: 8px 0; background: white; }
+</style>
+</head>
+<body>
+  <div class="scoreboard">⏱ <span class="timer" id="timer">00:00</span> · 🏆 <span class="score" id="score">0</span>pt</div>
+
+  <div class="container">
+    <div class="header">
+      <span class="badge">🔥 lapses 5회 · reps 16회 · interval 34일</span>
+      <h1 class="title">TCP/IP 4계층 ↔ OSI 7계층</h1>
+      <div class="meta">
+        <span class="pill">5장 네트워크</span>
+        <span class="pill">참조 모델</span>
+        <span class="pill">계층 매핑</span>
+      </div>
+    </div>
+
+    <div class="pre-note">
+      <span class="lbl">📋 이 카드의 사전 정리</span>
+      <ul>
+        <li><strong>🚫 YAGNI 제외</strong>: 책의 메타 진술(<i>"두 모델 직접 비교 어렵다"</i> 등)은 면접/실무 무용 → 빼고 진행</li>
+        <li><strong>⚠️ 팩트체크 발견</strong>: 책의 "네트워크 액세스 ↔ 데이터링크" 1:1 매핑은 부정확 → 정답 단계에서 정정</li>
+        <li><strong>➕ 추가</strong>: 책에 없는 <strong>각 계층 대표 프로토콜</strong> — 면접/실무 핵심</li>
+      </ul>
+    </div>
+
+    <div class="progress">
+      <div class="step active" id="p0"></div>
+      <div class="step" id="p1"></div>
+      <div class="step" id="p2"></div>
+      <div class="step" id="p3"></div>
+      <div class="step" id="p4"></div>
+    </div>
+
+    <!-- Stage 0: Warm-up -->
+    <div class="stage active" id="stage0">
+      <div class="card">
+        <h2>🚦 Stage 1 / 5 · 워밍업</h2>
+        <div class="sub">왜 두 모델이 공존하는가? (10pt)</div>
+        <div class="prompt">
+          <strong>OSI 7계층</strong>과 <strong>TCP/IP 4계층</strong> — 같은 목적 같은데 왜 두 개?
+          한 줄로 차이를 적어봐.
+        </div>
+        <textarea id="q_warmup" placeholder="OSI는 ... / TCP/IP는 ..."></textarea>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="nextStage(1)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 1: 계층 이름 회상 -->
+    <div class="stage" id="stage1">
+      <div class="card">
+        <h2>📚 Stage 2 / 5 · 계층 이름 회상</h2>
+        <div class="sub">위(상위) → 아래(하위) 순서로 (총 35pt)</div>
+        <div class="prompt">
+          두 모델의 계층 이름을 위에서 아래로 적어봐. <strong>최상위가 응용 계층</strong>이라는 점은 둘 다 공통.
+        </div>
+
+        <div class="two-col-stack">
+          <div>
+            <h3 class="tcpip">🔶 TCP/IP 4계층</h3>
+            <div class="layer-stack">
+              <div class="lvl tcpip"><div class="num">최상위</div><input type="text" id="tcp1" placeholder="? 계층"></div>
+              <div class="lvl tcpip"><div class="num">↓</div><input type="text" id="tcp2" placeholder="? 계층"></div>
+              <div class="lvl tcpip"><div class="num">↓</div><input type="text" id="tcp3" placeholder="? 계층"></div>
+              <div class="lvl tcpip"><div class="num">최하위</div><input type="text" id="tcp4" placeholder="? 계층"></div>
+            </div>
+          </div>
+
+          <div>
+            <h3 class="osi">🔷 OSI 7계층</h3>
+            <div class="layer-stack">
+              <div class="lvl osi"><div class="num">L7</div><input type="text" id="osi7" placeholder="? 계층"></div>
+              <div class="lvl osi"><div class="num">L6</div><input type="text" id="osi6" placeholder="? 계층"></div>
+              <div class="lvl osi"><div class="num">L5</div><input type="text" id="osi5" placeholder="? 계층"></div>
+              <div class="lvl osi"><div class="num">L4</div><input type="text" id="osi4" placeholder="? 계층"></div>
+              <div class="lvl osi"><div class="num">L3</div><input type="text" id="osi3" placeholder="? 계층"></div>
+              <div class="lvl osi"><div class="num">L2</div><input type="text" id="osi2" placeholder="? 계층"></div>
+              <div class="lvl osi"><div class="num">L1</div><input type="text" id="osi1" placeholder="? 계층"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint-box locked" id="hint1" onclick="unlockHint('hint1', 'OSI 암기법 (위→아래): A-P-S-T-N-D-P / 응용-표현-세션-전송-네트워크-데이터링크-물리. TCP/IP는 응용-전송-인터넷-네트워크 액세스')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(0)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(2)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 2: 매핑 -->
+    <div class="stage" id="stage2">
+      <div class="card">
+        <h2>🔀 Stage 3 / 5 · TCP/IP ↔ OSI 매핑</h2>
+        <div class="sub">각 TCP/IP 계층이 OSI의 어떤 계층(들)에 대응하는지 (총 30pt)</div>
+        <div class="prompt">
+          <strong>핵심</strong>: TCP/IP의 일부 계층은 OSI의 <em>여러 계층을 흡수</em>한다.
+          TCP/IP 측 계층 이름이 보이면, OSI 측 대응 계층을 적어봐.
+        </div>
+
+        <div class="map-row">
+          <div class="head">🔶 TCP/IP <span class="tcpip-name">응용 계층</span> ↔ OSI ?</div>
+          <input type="text" id="m1" placeholder="OSI의 어떤 계층(들)?">
+        </div>
+        <div class="map-row">
+          <div class="head">🔶 TCP/IP <span class="tcpip-name">전송 계층</span> ↔ OSI ?</div>
+          <input type="text" id="m2" placeholder="OSI의 어떤 계층?">
+        </div>
+        <div class="map-row">
+          <div class="head">🔶 TCP/IP <span class="tcpip-name">인터넷 계층</span> ↔ OSI ?</div>
+          <input type="text" id="m3" placeholder="OSI의 어떤 계층? (이름 다름!)">
+        </div>
+        <div class="map-row">
+          <div class="head">🔶 TCP/IP <span class="tcpip-name">네트워크 액세스 계층</span> ↔ OSI ?</div>
+          <input type="text" id="m4" placeholder="OSI의 어떤 계층(들)?">
+        </div>
+
+        <div class="hint-box locked" id="hint2" onclick="unlockHint('hint2', '응용은 OSI 위쪽 3개를 흡수. 전송은 1:1. 인터넷은 OSI에서 다른 이름. 네트워크 액세스는 OSI 아래쪽 1~2개.')"></div>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(1)">← 이전</button>
+          <button class="btn-primary" onclick="nextStage(3)">다음 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 3: 실전 - 대표 프로토콜 -->
+    <div class="stage" id="stage3">
+      <div class="card">
+        <h2>🛠️ Stage 4 / 5 · 실전 — 대표 프로토콜</h2>
+        <div class="sub">책에는 없지만 면접/실무에서 무조건 묻는 것 (각 5pt × 5)</div>
+        <div class="prompt">
+          계층 이름만 외우는 건 의미 없어. <strong>각 계층에서 실제로 쓰는 프로토콜</strong>을 한두 개씩 적어봐.
+        </div>
+
+        <div class="map-row">
+          <div class="head">🔶 응용 계층의 대표 프로토콜 (1~3개)</div>
+          <input type="text" id="p_app" placeholder="HTTP, ...">
+        </div>
+        <div class="map-row">
+          <div class="head">🔶 전송 계층의 대표 프로토콜 (2개)</div>
+          <input type="text" id="p_transport" placeholder="? , ?">
+        </div>
+        <div class="map-row">
+          <div class="head">🔶 인터넷 계층의 대표 프로토콜 (1~2개)</div>
+          <input type="text" id="p_internet" placeholder="? , ...">
+        </div>
+        <div class="map-row">
+          <div class="head">🔶 네트워크 액세스 계층의 대표 기술 (유선/무선 1개씩)</div>
+          <input type="text" id="p_link" placeholder="유선: ? / 무선: ?">
+        </div>
+
+        <div class="prompt" style="margin-top: 14px;">
+          <strong>실전 보너스 Q.</strong> 너가 지금 이 페이지에 접속하는 동안 동작 중인 프로토콜을
+          <em>각 TCP/IP 계층마다 1개씩 4개</em> 떠올려봐. <span style="color:var(--muted); font-size:13px">(5pt)</span>
+        </div>
+        <textarea id="p_realworld" placeholder="응용: ? / 전송: ? / 인터넷: ? / 네트워크 액세스: ?"></textarea>
+
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="prevStage(2)">← 이전</button>
+          <button class="btn-primary" onclick="submitAnswers()">📤 제출하고 정답 보기</button>
+        </div>
+
+        <div id="submitStatus"></div>
+      </div>
+    </div>
+
+    <!-- Stage 4: 정답 + 보충 -->
+    <div class="stage" id="stage4">
+      <div class="card reveal-card">
+        <h2>✨ Stage 5 / 5 · 정답 + 팩트체크 + 실전</h2>
+
+        <strong>📌 두 모델의 본질</strong>
+        <div class="answer-block">
+          <table>
+            <tr><th></th><th><span style="color:var(--osi)">🔷 OSI 7계층</span></th><th><span style="color:var(--tcpip)">🔶 TCP/IP 4계층</span></th></tr>
+            <tr><td>출처</td><td>ISO/IEC 표준 (1984)</td><td>IETF RFC 1122 (1989)</td></tr>
+            <tr><td>목적</td><td>이론적 참조 모델</td><td>실제 인터넷의 동작 모델</td></tr>
+            <tr><td>현실</td><td>거의 구현되지 않음 (이론적)</td><td>오늘날 모든 인터넷의 기반</td></tr>
+          </table>
+          <strong style="display: block; margin-top: 10px;">실무 한 줄</strong>: <em>"OSI는 시험용 표준, TCP/IP는 실제로 돌아가는 것"</em>
+        </div>
+
+        <strong>📌 계층 이름 (위 → 아래)</strong>
+        <div class="answer-block">
+          <table>
+            <tr><th>레벨</th><th><span style="color:var(--osi)">OSI</span></th><th><span style="color:var(--tcpip)">TCP/IP</span></th></tr>
+            <tr><td>L7</td><td>응용 (Application)</td><td rowspan="3" style="background: rgba(255,138,77,0.1); text-align:center;"><strong>응용 (Application)</strong></td></tr>
+            <tr><td>L6</td><td>표현 (Presentation)</td></tr>
+            <tr><td>L5</td><td>세션 (Session)</td></tr>
+            <tr><td>L4</td><td>전송 (Transport)</td><td><strong>전송 (Transport)</strong></td></tr>
+            <tr><td>L3</td><td>네트워크 (Network)</td><td><strong>인터넷 (Internet)</strong> ← 이름 다름!</td></tr>
+            <tr><td>L2</td><td>데이터링크 (Data Link)</td><td rowspan="2" style="background: rgba(255,138,77,0.1); text-align:center;"><strong>네트워크 액세스<br>(Network Access)</strong></td></tr>
+            <tr><td>L1</td><td>물리 (Physical)</td></tr>
+          </table>
+        </div>
+
+        <strong>📌 매핑 정리</strong>
+        <div class="answer-block">
+          <table>
+            <tr><th>TCP/IP</th><th>OSI 대응</th><th>특징</th></tr>
+            <tr><td><strong style="color:var(--tcpip)">응용</strong></td><td>응용 + 표현 + 세션</td><td>3개 흡수 (3:1)</td></tr>
+            <tr><td><strong style="color:var(--tcpip)">전송</strong></td><td>전송</td><td>1:1, 이름 같음</td></tr>
+            <tr><td><strong style="color:var(--tcpip)">인터넷</strong></td><td>네트워크</td><td>1:1, <strong>이름 다름</strong> ⚠️</td></tr>
+            <tr><td><strong style="color:var(--tcpip)">네트워크 액세스</strong></td><td>데이터링크 + 물리</td><td>2개 흡수 (2:1)</td></tr>
+          </table>
+        </div>
+
+        <strong>📌 각 계층의 대표 프로토콜 (실전)</strong>
+        <div class="answer-block">
+          <table>
+            <tr><th>TCP/IP 계층</th><th>대표 프로토콜 / 기술</th></tr>
+            <tr><td><strong style="color:var(--tcpip)">응용</strong></td><td><strong>HTTP / HTTPS, DNS, SMTP, SSH, FTP</strong> (TLS/SSL은 표현 계층 기능을 흡수)</td></tr>
+            <tr><td><strong style="color:var(--tcpip)">전송</strong></td><td><strong>TCP, UDP</strong> (둘만 알면 99% OK. 외에 QUIC, SCTP 등이 있긴 함)</td></tr>
+            <tr><td><strong style="color:var(--tcpip)">인터넷</strong></td><td><strong>IP (IPv4/IPv6), ICMP</strong> (ping이 ICMP)</td></tr>
+            <tr><td><strong style="color:var(--tcpip)">네트워크 액세스</strong></td><td>유선: <strong>Ethernet (IEEE 802.3)</strong> / 무선: <strong>Wi-Fi (IEEE 802.11)</strong> · <strong>ARP</strong> (RFC 1122는 ARP를 Link Layer에 분류 — IP↔MAC 매핑 보조)</td></tr>
+          </table>
+        </div>
+
+        <strong>📌 너가 지금 접속한 흐름 (보너스 Q 정답)</strong>
+        <div class="answer-block">
+          <ol style="margin: 0 0 0 18px; padding: 0;">
+            <li><strong style="color:var(--tcpip)">응용</strong>: <strong>HTTP</strong> (GET /tcpip.html)</li>
+            <li><strong style="color:var(--tcpip)">전송</strong>: <strong>TCP</strong> (포트 8001로 reliable stream)</li>
+            <li><strong style="color:var(--tcpip)">인터넷</strong>: <strong>IP</strong> (Tailscale의 100.79.80.95)</li>
+            <li><strong style="color:var(--tcpip)">네트워크 액세스</strong>: <strong>Wi-Fi</strong> 또는 <strong>Ethernet</strong> (실제 NIC) — 위에 <strong>WireGuard 터널</strong>이 끼어 있음 (Tailscale)</li>
+          </ol>
+        </div>
+
+        <!-- 팩트체크 -->
+        <div class="answer-block correction">
+          <strong>⚠️ 책 표현 정정 #1: "네트워크 액세스 ↔ 데이터링크" 1:1 매핑</strong><br>
+          책의 매핑은 <strong>부정확하다</strong>. 정확히는 TCP/IP의 네트워크 액세스(또는 Link) 계층은 <strong>OSI의 데이터링크 + 물리 계층 둘 다</strong>를 포함한다.
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li>RFC 1122: "Link Layer" — 호스트가 직접 통신 매체에 신호를 올려보내는 일까지 포함</li>
+            <li>책의 "물리 계층은 별도 견해" ⚠️ 박스가 이 부분을 살짝 인정한 것</li>
+            <li>면접에서 묻는다면: <em>"TCP/IP의 네트워크 액세스 ↔ OSI의 L1+L2"</em>가 정답</li>
+          </ul>
+        </div>
+
+        <div class="answer-block correction">
+          <strong>⚠️ 책 표현 정정 #2: "TCP/IP 응용 = 응용+표현+세션" 흡수</strong><br>
+          정확하지만 단순화. 실제로 TCP/IP에서 <strong>표현/세션 기능은 응용 계층 안에 통합되어 있거나, 별도 라이브러리/프로토콜로 분리</strong>되어 있다.
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li>표현 계층 기능 (암호화/인코딩) → <strong>TLS</strong> (TCP 위에 얹는 계층)</li>
+            <li>세션 계층 기능 (연결 관리) → 응용 프로토콜이 직접 (HTTP/2 stream, WebSocket)</li>
+          </ul>
+          → "흡수"라기보다 "재배치"가 더 정확.
+        </div>
+
+        <div class="answer-block yagni">
+          <strong>🚫 YAGNI: 외울 필요 없음</strong><br>
+          학습 부담을 늘리는 책의 부분들 (외워도 면접/실무 가치 낮음):
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li>"두 모델의 직접적이고 엄밀한 비교는 어려울 수 있다" — 메타 진술</li>
+            <li>"TCP/IP에 물리 계층을 추가한 확장 모델로 설명한다" — 한국 교재의 절충, 본질 아님</li>
+            <li>OSI 표현 계층의 ASN.1, 세션 계층의 RPC 같은 옛 프로토콜</li>
+          </ul>
+          → 시간 아껴서 위의 <strong>매핑 + 프로토콜 표</strong>에 집중.
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충: 패킷이 계층을 내려갈 때 무슨 일이?</strong><br>
+          <pre style="background:rgba(0,0,0,0.3); padding:8px; border-radius:6px; font-size:11px; overflow-x:auto; line-height:1.4;">[응용]   "GET /tcpip.html"           ← HTTP 헤더 + 본문
+[전송]   [TCP 헤더][...]             ← 포트, 시퀀스 번호 추가
+[인터넷] [IP 헤더][TCP 헤더][...]    ← 출발/도착 IP 추가
+[액세스] [Eth 헤더][IP 헤더][...]    ← 출발/도착 MAC 추가
+         → 전기/전파 신호로 매체에 송출</pre>
+          이를 <strong>encapsulation</strong>(캡슐화)이라고 부르며, 받는 쪽은 역순으로 헤더를 벗긴다 (decapsulation).
+          이게 OSI/TCP/IP 모델이 실제로 작동하는 메커니즘.
+        </div>
+
+        <div class="answer-block deep">
+          <strong>🔍 깊이 보충: 면접에서 "5계층 모델"이라 하면?</strong><br>
+          Tanenbaum 같은 일부 교재는 "TCP/IP 5계층"을 쓰기도 한다 — 네트워크 액세스를 <strong>데이터링크 / 물리</strong>로 분리한 절충판.
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            <li>4계층 (RFC 표준): 응용 / 전송 / 인터넷 / 네트워크 액세스</li>
+            <li>5계층 (절충): 응용 / 전송 / 네트워크 / 데이터링크 / 물리</li>
+          </ul>
+          어느 쪽을 쓰든 <strong>TCP/IP는 응용 계층에서 표현·세션을 흡수한다</strong>는 사실은 동일.
+        </div>
+
+        <div class="answer-block" style="border-left: 3px solid var(--gold);">
+          <strong>💡 한 페이지 요약</strong><br>
+          <pre style="background:rgba(0,0,0,0.3); padding:10px; border-radius:6px; font-size:11px; overflow-x:auto; line-height:1.4;">┌────────────────────────────────────────────────────────┐
+│ OSI                  │ TCP/IP            │ 프로토콜    │
+├────────────────────────────────────────────────────────┤
+│ L7 응용              │                   │ HTTP, DNS,  │
+│ L6 표현              │ 응용              │ SSH, SMTP   │
+│ L5 세션              │                   │ (+ TLS)     │
+├────────────────────────────────────────────────────────┤
+│ L4 전송              │ 전송              │ TCP, UDP    │
+├────────────────────────────────────────────────────────┤
+│ L3 네트워크          │ 인터넷 ⚠️ 이름    │ IP, ICMP    │
+├────────────────────────────────────────────────────────┤
+│ L2 데이터링크        │                   │ Ethernet,   │
+│ L1 물리              │ 네트워크 액세스   │ Wi-Fi       │
+└────────────────────────────────────────────────────────┘</pre>
+        </div>
+
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+          <strong>🤔 스스로 평가</strong>
+          <div class="self-rate">
+            <button class="rate-again" onclick="rate('Again')">😵<br>Again<br><small>전혀</small></button>
+            <button class="rate-hard" onclick="rate('Hard')">😓<br>Hard<br><small>겨우</small></button>
+            <button class="rate-good" onclick="rate('Good')">😊<br>Good<br><small>잘함</small></button>
+            <button class="rate-easy" onclick="rate('Easy')">🚀<br>Easy<br><small>완벽</small></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 완료 -->
+    <div class="stage" id="stageDone">
+      <div class="complete card">
+        <div class="emoji" id="completeEmoji">🎉</div>
+        <h2>학습 완료!</h2>
+        <div style="color: var(--muted); font-size: 14px;">답안 저장됨. 채팅창으로 돌아가서 채점 받아.</div>
+        <div class="stats">
+          <div class="stat-box"><div class="stat-num" id="finalScore">0</div><div class="stat-label">자체 점수</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalTime">0:00</div><div class="stat-label">소요 시간</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalRate">-</div><div class="stat-label">자기평가</div></div>
+          <div class="stat-box"><div class="stat-num" id="finalHints">0</div><div class="stat-label">힌트 사용</div></div>
+        </div>
+        <div class="footer-note">답안 ID: <code id="ansId">-</code></div>
+      </div>
+    </div>
+
+    <div class="footer-note">🖲️ MiniPC self-hosted · cardId 1754123021724 · noteId 1754123021724</div>
+  </div>
+
+<script>
+  const startTime = Date.now();
+  let score = 0;
+  let hintsUsed = 0;
+  let lastRating = '-';
+  const sessionId = 'sess_' + Date.now();
+
+  setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s % 60).padStart(2,'0');
+    document.getElementById('timer').textContent = mm + ':' + ss;
+  }, 500);
+
+  function setScore(delta) { score += delta; document.getElementById('score').textContent = score; }
+
+  function scoreCurrentStageInputs() {
+    const cur = document.querySelector('.stage.active');
+    if (!cur) return;
+    const inputs = cur.querySelectorAll('textarea, input[type="text"]');
+    let added = 0;
+    inputs.forEach(i => { if (i.value.trim().length > 1 && !i.dataset.scored) { added += 3; i.dataset.scored = '1'; } });
+    if (added > 0) setScore(added);
+  }
+
+  function nextStage(n) {
+    scoreCurrentStageInputs();
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function prevStage(n) {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stage' + n).classList.add('active');
+    for (let i = 0; i < 5; i++) {
+      const p = document.getElementById('p' + i);
+      p.classList.remove('active', 'done');
+      if (i < n) p.classList.add('done');
+      else if (i === n) p.classList.add('active');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function unlockHint(id, text) {
+    const el = document.getElementById(id);
+    if (el.classList.contains('unlocked')) return;
+    el.classList.remove('locked'); el.classList.add('unlocked');
+    el.textContent = '💡 힌트: ' + text;
+    setScore(-10); hintsUsed++;
+  }
+
+  function gather() {
+    return {
+      sessionId,
+      cardId: 1754123021724,
+      noteId: 1754123021724,
+      cardTitle: 'TCP/IP 4계층 ↔ OSI 7계층',
+      startTime: new Date(startTime).toISOString(),
+      submittedAt: new Date().toISOString(),
+      elapsedSec: Math.floor((Date.now() - startTime) / 1000),
+      hintsUsed,
+      selfScore: score,
+      answers: {
+        warmup: document.getElementById('q_warmup').value.trim(),
+        layers: {
+          tcpip: [1,2,3,4].map(i => document.getElementById('tcp'+i).value.trim()),
+          osi: [7,6,5,4,3,2,1].map(i => document.getElementById('osi'+i).value.trim()),
+        },
+        mapping: {
+          m1_app: document.getElementById('m1').value.trim(),
+          m2_transport: document.getElementById('m2').value.trim(),
+          m3_internet: document.getElementById('m3').value.trim(),
+          m4_link: document.getElementById('m4').value.trim(),
+        },
+        protocols: {
+          p_app: document.getElementById('p_app').value.trim(),
+          p_transport: document.getElementById('p_transport').value.trim(),
+          p_internet: document.getElementById('p_internet').value.trim(),
+          p_link: document.getElementById('p_link').value.trim(),
+          p_realworld: document.getElementById('p_realworld').value.trim(),
+        },
+      },
+      selfRating: null,
+    };
+  }
+
+  async function submitAnswers() {
+    const status = document.getElementById('submitStatus');
+    status.className = 'submit-status pending';
+    status.textContent = '⏳ 답안 저장 중...';
+    try {
+      scoreCurrentStageInputs();
+      const payload = gather();
+      const r = await fetch('/submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if (j.ok) {
+        status.className = 'submit-status success';
+        status.textContent = '✅ 저장 완료 (id: ' + j.id + ')';
+        document.getElementById('ansId').textContent = j.id;
+        setTimeout(() => nextStage(4), 700);
+      } else throw new Error(j.error || 'unknown');
+    } catch(e) {
+      status.className = 'submit-status error';
+      status.textContent = '❌ 저장 실패: ' + e.message;
+    }
+  }
+
+  async function rate(r) {
+    lastRating = r;
+    setScore(r === 'Easy' ? 20 : r === 'Good' ? 10 : r === 'Hard' ? 5 : 0);
+    try {
+      await fetch('/rate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ sessionId, rating: r })
+      });
+    } catch(e) {}
+    showComplete();
+  }
+
+  function showComplete() {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById('stageDone').classList.add('active');
+    for (let i = 0; i < 5; i++) document.getElementById('p' + i).classList.add('done');
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalTime').textContent = document.getElementById('timer').textContent;
+    document.getElementById('finalRate').textContent = lastRating;
+    document.getElementById('finalHints').textContent = hintsUsed;
+    const emoji = score >= 100 ? '🏆' : score >= 70 ? '🎉' : score >= 40 ? '👍' : '📚';
+    document.getElementById('completeEmoji').textContent = emoji;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+{
+  "sessionId": "sess_1778396989184",
+  "cardId": 1754123021724,
+  "noteId": 1754123021724,
+  "cardTitle": "TCP/IP 4계층 ↔ OSI 7계층",
+  "startTime": "2026-05-10T07:09:49.184Z",
+  "submittedAt": "2026-05-10T07:24:07.557Z",
+  "elapsedSec": 858,
+  "hintsUsed": 0,
+  "selfScore": 48,
+  "answers": {
+    "warmup": "OSI 7계층은 추상적인 부분이 많아서, 일부 개념이 실무와는 동떨어진 부분이 있엇음. 이를 해결하고자 TCP/IP 4계층이 나옴.",
+    "layers": {
+      "tcpip": [
+        "응용",
+        "연결",
+        "네트워크 액세스",
+        "물리"
+      ],
+      "osi": [
+        "응용",
+        "표현",
+        "세션",
+        "신뢰? 연결?",
+        "인터넷",
+        "네트워크",
+        "물리"
+      ]
+    },
+    "mapping": {
+      "m1_app": "응용, 표현, 세션",
+      "m2_transport": "전송",
+      "m3_internet": "인터넷, 네트워크",
+      "m4_link": "물리"
+    },
+    "protocols": {
+      "p_app": "HTTP, HTTPS, WS? 웹다브?",
+      "p_transport": "TCP/UDP",
+      "p_internet": "IP, ICMP(ping 보낼때 쓰는거)",
+      "p_link": "유선: 트위스티드 페어 케이블 /무선: AP (와이파이)",
+      "p_realworld": "응용: HTTP(HTTPS는 아님, 도메임이름이 아닌 IP주소로 직접 접속했으니 DNS도 사용안했을듯?) / 전송: TCP (HTTP가 TCP를 사용하는 것으로 알고 있음) / 인터넷: IP / 네트워크 엑세스 계층: AP? 이건 잘 모르겠음"
+    }
+  },
+  "selfRating": "Hard",
+  "_id": "ans_1778397847650"
+}
