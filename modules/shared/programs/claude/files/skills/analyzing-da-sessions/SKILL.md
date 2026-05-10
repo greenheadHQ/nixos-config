@@ -92,6 +92,6 @@ pytest tests/
 
 - 사용자 명시 호출 전용. Claude Code는 자연어 trigger로 자동 호출되지 않는다 (frontmatter `disable-model-invocation: true`). Codex는 동등 메커니즘이 없어 자동 trigger 차단이 best-effort이다.
 - `--hosts` 값은 `{mac, minipc}` whitelist 외에는 reject-fast.
-- 원격 path는 `HOST_PATH_MAP` base prefix 아래의 `.jsonl` 파일만 허용 (제어문자/shell metacharacter 거부).
+- 원격 path는 `HOST_PATH_MAP` base prefix 아래의 `.jsonl` 파일만 허용 (제어문자/shell metacharacter 거부 + `posixpath.commonpath` boundary 비교로 sibling-prefix 거부 — 상세는 `references/host-handling.md` "Command path vs validation/corpus path 역할 분리" 참조). SSH 명령 인자에는 host-neutral relative tilde 표현 (`~/.claude/projects` 등)을 사용한다.
 - SSH 실패는 silent fallback 금지. partial result + warnings 누적 + 명시적 경고 표시.
 - JSON sidecar 자동 경로(`/tmp/...`)는 재시작 시 휘발. 영구 저장은 `--json out=` 명시.

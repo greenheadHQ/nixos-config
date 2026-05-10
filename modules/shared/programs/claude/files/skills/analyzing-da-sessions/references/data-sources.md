@@ -7,7 +7,7 @@
 | Mac (`/Users/green`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 | MiniPC (`/home/greenhead`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 
-원격 호스트는 `subprocess.run(["ssh", alias, "find", "...", "-name", "*.jsonl", ...])` 고정 argv로 path 목록만 수집한 뒤, 실제 파일 내용은 `subprocess.run(["ssh", alias, "cat", path])`로 한 번에 가져온다 (large repo는 batch).
+원격 호스트는 `subprocess.run(["ssh", alias, "find", "~/.claude/projects", "-name", "*.jsonl", ...])` 고정 argv로 path 목록만 수집한 뒤, 실제 파일 내용은 `subprocess.run(["ssh", alias, "cat", path])`로 가져온다. 호스트당 SSH cat 호출은 ControlMaster 다중화 + `concurrent.futures.ThreadPoolExecutor(max_workers=SSH_FETCH_WORKERS)`로 병렬 처리한다 (host 순차 진행, host당 K=8 fetch 병렬). ControlMaster가 비활성인 호스트는 K=1 직렬 fallback이 5분 budget 안에 끝나지 않으므로 fetch 자체를 skip하고 명시적 warning을 누적한다 (사용자가 ControlMaster 활성화 누락을 즉시 인지).
 
 `/subagents/` 하위 jsonl은 분석에서 제외한다 (parent session에서 spawn된 보조 에이전트의 자체 산출물이 아닌 wrapper output이라 verdict 중복 카운트 위험).
 

@@ -20,6 +20,11 @@ in
         hostname = constants.network.macbookTailscaleIP;
         user = "green";
         identityFile = sshKeyPath;
+        extraOptions = {
+          ControlMaster = "auto";
+          ControlPath = "~/.ssh/cm-%h-%p-%r";
+          ControlPersist = "600";
+        };
       };
     };
   };

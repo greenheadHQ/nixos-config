@@ -40,6 +40,11 @@ in
         hostname = constants.network.minipcTailscaleIP;
         user = "greenhead";
         identityFile = sshKeyPath;
+        extraOptions = {
+          ControlMaster = "auto";
+          ControlPath = "~/.ssh/cm-%h-%p-%r";
+          ControlPersist = "600";
+        };
       };
     };
   };

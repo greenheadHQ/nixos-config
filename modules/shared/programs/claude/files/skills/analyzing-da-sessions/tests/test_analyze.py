@@ -95,3 +95,92 @@ def test_host_validation(analyze_module):
     # valid는 통과
     analyze_module._validate_host("mac")
     analyze_module._validate_host("minipc")
+
+
+def test_hostile_path_rejection(analyze_module):
+    """`_allowed_remote_path` boundary check가 다음 4 시나리오를 모두 거부함을 검증.
+
+    1. 외부 절대 경로 (`/etc/passwd`).
+    2. traversal (`/Users/green/.claude/projects/../../../etc/shadow`).
+    3. sibling-prefix (`/Users/green/.claude/projects-evil/x.jsonl`).
+    4. relative path (find stdout이 비정상으로 relative line을 내보낸 경우).
+    """
+    cases = [
+        ("mac", "/etc/passwd"),
+        ("mac", "/Users/green/.claude/projects/../../../etc/shadow"),
+        ("mac", "/Users/green/.claude/projects-evil/x.jsonl"),
+        ("mac", "Users/green/.claude/projects/a.jsonl"),
+        # 추가 시나리오: shell metacharacter 거부 (기존 계약 회귀 가드)
+        ("mac", "/Users/green/.claude/projects/a.jsonl;rm -rf /"),
+        # 추가 시나리오: .jsonl 확장자 부재 거부
+        ("mac", "/Users/green/.claude/projects/notes.txt"),
+    ]
+    for host, path in cases:
+        assert analyze_module._allowed_remote_path(host, path) is False, (
+            f"hostile path should be rejected: host={host} path={path!r}"
+        )
+
+
+def test_allowed_remote_path_boundary_check(analyze_module):
+    """정상 child path는 통과하고, sibling-prefix와 traversal은 거부됨을 검증.
+
+    posixpath.commonpath boundary 비교가 startswith의 sibling-prefix false positive를
+    차단하는지 unit-level로 확인한다.
+    """
+    # 정상 child path는 통과
+    assert analyze_module._allowed_remote_path(
+        "mac", "/Users/green/.claude/projects/abc/sess.jsonl"
+    ) is True
+    assert analyze_module._allowed_remote_path(
+        "mac", "/Users/green/.codex/sessions/2026/05/10/rollout-x.jsonl"
+    ) is True
+    assert analyze_module._allowed_remote_path(
+        "minipc", "/home/greenhead/.claude/projects/x/y.jsonl"
+    ) is True
+    # sibling-prefix는 startswith로는 통과하지만 commonpath로는 거부
+    assert analyze_module._allowed_remote_path(
+        "mac", "/Users/green/.claude/projects-evil/x.jsonl"
+    ) is False
+    # base 자체는 .jsonl이 아니므로 거부 + commonpath path_norm != base_norm 가드
+    assert analyze_module._allowed_remote_path(
+        "mac", "/Users/green/.claude/projects"
+    ) is False
+    # mac path를 minipc host로 검증 시 거부 (host별 base 분리)
+    assert analyze_module._allowed_remote_path(
+        "minipc", "/Users/green/.claude/projects/x.jsonl"
+    ) is False
+
+
+def test_analyze_remote_session_partial_fetch_result(analyze_module, monkeypatch):
+    """`analyze_remote_session()`이 SSH cat 실패 시 None + warning, 성공 시 분석 dict를
+    반환하는 partial result 단위 계약을 검증한다.
+
+    `fetch_remote_file`을 monkeypatch하여 일부 path는 None (실패), 일부는 더미 jsonl
+    내용을 반환하도록 한 뒤 `analyze_remote_session()`을 직접 호출한다.
+
+    참고: 본 테스트는 `analyze_remote_session()`의 단위 계약만 검증하며, `main()`의
+    `concurrent.futures.ThreadPoolExecutor` worker pool dispatch 경로는 통과하지
+    않는다. dispatch 경로 자체는 V-1 live 측정과 코드 review로 검증한다.
+    """
+    warnings: list[str] = []
+    fail_path = "/Users/green/.claude/projects/fail.jsonl"
+    ok_path = "/Users/green/.claude/projects/ok.jsonl"
+
+    def fake_fetch(host, path, w):
+        if path == fail_path:
+            w.append(f"host {host}: ssh cat failed for {path}")
+            return None
+        # 정상 dummy jsonl 내용 (verdict 분포에 영향 없는 빈 line)
+        return '{"type": "user", "uuid": "x", "timestamp": "2026-05-10"}\n'
+
+    monkeypatch.setattr(analyze_module, "fetch_remote_file", fake_fetch)
+
+    # 두 path 각각 호출
+    fail_result = analyze_module.analyze_remote_session("mac", fail_path, warnings)
+    ok_result = analyze_module.analyze_remote_session("mac", ok_path, warnings)
+
+    assert fail_result is None, "failed fetch should return None"
+    assert ok_result is not None, "successful fetch should return analysis dict"
+    assert any("ssh cat failed" in w for w in warnings), (
+        "failed fetch should accumulate a warning"
+    )
