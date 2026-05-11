@@ -2,27 +2,16 @@
 # Shared pinning pattern helpers for commit-msg and hook scanners.
 # Consumers decide whether a match is warn-only or hard-fail.
 
-# Partial commit hash length bounds: GitHub short hashes are at least 7 chars;
-# the upper bound keeps full hashes and long hex blobs out of this guard.
-HASH_MIN=7
-HASH_MAX=12
-
 # Named indent constant for line:token report rendering. Single SSOT for all
-# rendered output (partial-hash report and findings_text wrapper).
+# rendered output (findings_text wrapper).
 PINNING_REPORT_INDENT='         '
 
-# partial-hash finding 라벨 식별 substring. 라벨 텍스트가 바뀌면 이 변수 한 곳만
-# 갱신하면 카테고리 D 라벨 (PINNING_PATTERN_D_LABEL)이 자동 동기화된다. revert/cherry-pick
-# 예외는 record 생성 단계의 skip 옵션으로 처리되며 별도 라벨 substring 매칭이 필요 없다.
-PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR='짧은 임시 hex 식별자 박제'
-
 # Category labels (per-PATTERN). pinning_findings_records emits the label as
-# a stable field so callers can map by category code (A/B/C/D) instead of
+# a stable field so callers can map by category code (A/B/C) instead of
 # substring-matching the human-readable text.
 PINNING_PATTERN_A_LABEL="Round counter 박제: 'Round N'"
 PINNING_PATTERN_B_LABEL="Bundle finding ID 박제: 'Bundle-N'"
 PINNING_PATTERN_C_LABEL="DA 실행 키워드 박제"
-PINNING_PATTERN_D_LABEL="${PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR} (${HASH_MIN}~${HASH_MAX}자)"
 
 # Pattern A: progress counters.
 PATTERN_A='\b[Rr][Oo][Uu][Nn][Dd] [0-9]+\b'
@@ -33,15 +22,6 @@ PATTERN_B='\b(Correctness|CORRECTNESS|Design|DESIGN|Regression|REGRESSION|Mainta
 
 # Pattern C: review-mode keywords that should stay out of durable artifacts.
 PATTERN_C='\bDA (for_pr|for_plan|피드백|[Rr]ound)\b|\bAuditor [A-Za-z_]+-[0-9]|\bparallel-audit (반영|결과|finding)\b'
-
-# Pattern D: raw/backtick partial hex tokens. Callers apply HASH_MIN/HASH_MAX.
-PATTERN_D='\b[a-f0-9]{7,40}\b|`[a-f0-9]+`'
-
-# GitHub issue/PR attachment assets are durable media identifiers, not commits.
-# Keep this exact so other URL/path hex tokens remain visible to PATTERN_D.
-# The trailing delimiter is captured and restored by the sanitizer.
-# Sentence punctuation is only accepted before another delimiter or EOL.
-PATTERN_GITHUB_ATTACHMENT_ASSET_URL="https://github\.com/user-attachments/assets/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}([][:space:])}>\"'\`]|\$|[.,;:!?]([][:space:])}>\"'\`]|\$))"
 
 # Canonicalize a path for whitelist comparison. Returns the canonical path on
 # stdout when canonicalization succeeds, otherwise prints nothing. Callers
@@ -244,26 +224,6 @@ pinning_apply_patch_section_lines_for_path() {
   ' "$sections_file"
 }
 
-pinning_sanitize_partial_hash_input() {
-  local scan_file="$1"
-  sed -E "s#${PATTERN_GITHUB_ATTACHMENT_ASSET_URL}#__GITHUB_ATTACHMENT_ASSET_URL__\\1#g" "$scan_file"
-}
-
-# Raw matcher for PATTERN_D — emits TSV records (no rendering).
-# Used by pinning_findings_records and the pinning_partial_hash_report wrapper.
-_pinning_partial_hash_records() {
-  local scan_file="$1"
-  pinning_sanitize_partial_hash_input "$scan_file" 2>/dev/null \
-    | grep -noE "$PATTERN_D" 2>/dev/null \
-    | awk -v min="$HASH_MIN" -v max="$HASH_MAX" -v label="$PINNING_PATTERN_D_LABEL" '
-        { idx = index($0, ":"); lineno = substr($0, 1, idx - 1); tok = substr($0, idx + 1);
-          gsub(/`/, "", tok); n = length(tok);
-          if (n < min || n > max) next;
-          if (tok !~ /[a-f]/) next;
-          print "D\t" label "\t" lineno ": " tok }
-      ' || true
-}
-
 # Generic raw matcher for A/B/C — emits TSV records.
 _pinning_simple_records() {
   local scan_file="$1" code="$2" pattern="$3" label="$4"
@@ -276,34 +236,26 @@ _pinning_simple_records() {
 
 # Structured findings API. Output: TSV records, one per match.
 # Format: <category_code>\t<label>\t<line>:<token>
-# - category_code: stable identifier (A/B/C/D) — callers branch on this
+# - category_code: stable identifier (A/B/C) — callers branch on this
 #   without parsing the human-readable label, which keeps display-string
 #   changes from breaking branching logic.
 # - label: human-readable category label (sourced from PINNING_PATTERN_*_LABEL)
 # - line:token: 1-based line number from grep -n + matched token
-# Second arg `skip_partial_hash` (truthy) suppresses D records — used by the
-# git revert/cherry-pick exception so callers never need to post-process
-# rendered text to remove partial-hash entries.
 pinning_findings_records() {
   local scan_file="$1"
-  local skip_partial_hash="${2:-}"
 
   _pinning_simple_records "$scan_file" "A" "$PATTERN_A" "$PINNING_PATTERN_A_LABEL"
   _pinning_simple_records "$scan_file" "B" "$PATTERN_B" "$PINNING_PATTERN_B_LABEL"
   _pinning_simple_records "$scan_file" "C" "$PATTERN_C" "$PINNING_PATTERN_C_LABEL"
-  if [ -z "$skip_partial_hash" ]; then
-    _pinning_partial_hash_records "$scan_file"
-  fi
 }
 
 _pinning_findings_records_for_prd_or_plan_state() {
   local scan_file="$1"
-  local skip_partial_hash="${2:-}"
-  local is_prd_or_plan="${3:-}"
+  local is_prd_or_plan="${2:-}"
   if [ -n "$is_prd_or_plan" ]; then
-    pinning_findings_records "$scan_file" "$skip_partial_hash" | awk -F'\t' '$1 != "A"'
+    pinning_findings_records "$scan_file" | awk -F'\t' '$1 != "A"'
   else
-    pinning_findings_records "$scan_file" "$skip_partial_hash"
+    pinning_findings_records "$scan_file"
   fi
 }
 
@@ -315,23 +267,13 @@ _pinning_prd_or_plan_state_for_path() {
 }
 
 # Path-aware records keep the generic TSV format. PRD/plan paths suppress only
-# category A; categories B/C/D remain visible there.
+# category A; categories B/C remain visible there.
 pinning_findings_records_for_path() {
   local scan_file="$1"
   local path="$2"
-  local skip_partial_hash="${3:-}"
   local is_prd_or_plan
   is_prd_or_plan="$(_pinning_prd_or_plan_state_for_path "$path")"
-  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$skip_partial_hash" "$is_prd_or_plan"
-}
-
-# Compatibility wrapper: render PATTERN_D records as the legacy indented
-# `<line>: <token>` form. Kept so existing callers (tests, observability)
-# that only care about partial-hash output keep working.
-pinning_partial_hash_report() {
-  local scan_file="$1"
-  _pinning_partial_hash_records "$scan_file" \
-    | awk -F'\t' -v indent="$PINNING_REPORT_INDENT" '{ print indent $3 }'
+  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$is_prd_or_plan"
 }
 
 _pinning_render_records() {
@@ -353,47 +295,41 @@ _pinning_render_records() {
 
 # Render records as human-readable findings text. Output preserves the legacy
 # layout (label line per category followed by indented `<line>: <token>`
-# evidence lines). Second arg `skip_partial_hash` (truthy) suppresses D output.
+# evidence lines).
 pinning_findings_text() {
   local scan_file="$1"
-  local skip_partial_hash="${2:-}"
-  pinning_findings_records "$scan_file" "$skip_partial_hash" | _pinning_render_records
+  pinning_findings_records "$scan_file" | _pinning_render_records
 }
 
 _pinning_findings_text_for_prd_or_plan_state() {
   local scan_file="$1"
-  local skip_partial_hash="${2:-}"
-  local is_prd_or_plan="${3:-}"
-  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$skip_partial_hash" "$is_prd_or_plan" \
+  local is_prd_or_plan="${2:-}"
+  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$is_prd_or_plan" \
     | _pinning_render_records
 }
 
 pinning_match_count() {
   local scan_file="$1"
-  local skip_partial_hash="${2:-}"
-  pinning_findings_records "$scan_file" "$skip_partial_hash" | wc -l | tr -d ' '
+  pinning_findings_records "$scan_file" | wc -l | tr -d ' '
 }
 
 _pinning_match_count_for_prd_or_plan_state() {
   local scan_file="$1"
-  local skip_partial_hash="${2:-}"
-  local is_prd_or_plan="${3:-}"
-  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$skip_partial_hash" "$is_prd_or_plan" \
+  local is_prd_or_plan="${2:-}"
+  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$is_prd_or_plan" \
     | wc -l | tr -d ' '
 }
 
 pinning_findings_text_for_path() {
   local scan_file="$1"
   local path="$2"
-  local skip_partial_hash="${3:-}"
-  pinning_findings_records_for_path "$scan_file" "$path" "$skip_partial_hash" | _pinning_render_records
+  pinning_findings_records_for_path "$scan_file" "$path" | _pinning_render_records
 }
 
 pinning_match_count_for_path() {
   local scan_file="$1"
   local path="$2"
-  local skip_partial_hash="${3:-}"
-  pinning_findings_records_for_path "$scan_file" "$path" "$skip_partial_hash" | wc -l | tr -d ' '
+  pinning_findings_records_for_path "$scan_file" "$path" | wc -l | tr -d ' '
 }
 
 # Intermediate schema for the delta helper:
@@ -404,12 +340,11 @@ pinning_match_count_for_path() {
 _pinning_new_findings_records_for_prd_or_plan_state() {
   local old_scan_file="$1"
   local new_scan_file="$2"
-  local skip_partial_hash="${3:-}"
-  local is_prd_or_plan="${4:-}"
+  local is_prd_or_plan="${3:-}"
   {
-    _pinning_findings_records_for_prd_or_plan_state "$old_scan_file" "$skip_partial_hash" "$is_prd_or_plan" \
+    _pinning_findings_records_for_prd_or_plan_state "$old_scan_file" "$is_prd_or_plan" \
       | awk -F'\t' '{ token = $3; sub(/^[0-9]+: /, "", token); print "OLD\t" $1 "\t" token }'
-    _pinning_findings_records_for_prd_or_plan_state "$new_scan_file" "$skip_partial_hash" "$is_prd_or_plan" \
+    _pinning_findings_records_for_prd_or_plan_state "$new_scan_file" "$is_prd_or_plan" \
       | awk -F'\t' '{ token = $3; sub(/^[0-9]+: /, "", token); print "NEW\t" $1 "\t" $2 "\t" $3 "\t" token }'
   } | awk -F'\t' '
     $1 == "OLD" {
@@ -431,10 +366,9 @@ _pinning_new_findings_records_for_prd_or_plan_state() {
 _pinning_new_findings_text_for_prd_or_plan_state() {
   local old_scan_file="$1"
   local new_scan_file="$2"
-  local skip_partial_hash="${3:-}"
-  local is_prd_or_plan="${4:-}"
+  local is_prd_or_plan="${3:-}"
   _pinning_new_findings_records_for_prd_or_plan_state \
-      "$old_scan_file" "$new_scan_file" "$skip_partial_hash" "$is_prd_or_plan" \
+      "$old_scan_file" "$new_scan_file" "$is_prd_or_plan" \
     | _pinning_render_records
 }
 
@@ -442,20 +376,19 @@ pinning_guard_findings_text_for_path() {
   local old_scan_file="$1"
   local new_scan_file="$2"
   local path="$3"
-  local skip_partial_hash="${4:-}"
   local is_prd_or_plan
   is_prd_or_plan="$(_pinning_prd_or_plan_state_for_path "$path")"
 
   if [ -n "$is_prd_or_plan" ]; then
     _pinning_new_findings_text_for_prd_or_plan_state \
-      "$old_scan_file" "$new_scan_file" "$skip_partial_hash" "$is_prd_or_plan"
+      "$old_scan_file" "$new_scan_file" "$is_prd_or_plan"
     return
   fi
 
   local old_count new_count
-  old_count="$(_pinning_match_count_for_prd_or_plan_state "$old_scan_file" "$skip_partial_hash" "$is_prd_or_plan")"
-  new_count="$(_pinning_match_count_for_prd_or_plan_state "$new_scan_file" "$skip_partial_hash" "$is_prd_or_plan")"
+  old_count="$(_pinning_match_count_for_prd_or_plan_state "$old_scan_file" "$is_prd_or_plan")"
+  new_count="$(_pinning_match_count_for_prd_or_plan_state "$new_scan_file" "$is_prd_or_plan")"
   if [ "$new_count" -gt "$old_count" ]; then
-    _pinning_findings_text_for_prd_or_plan_state "$new_scan_file" "$skip_partial_hash" "$is_prd_or_plan"
+    _pinning_findings_text_for_prd_or_plan_state "$new_scan_file" "$is_prd_or_plan"
   fi
 }

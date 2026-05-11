@@ -50,7 +50,7 @@ LLM session and review metadata can still enter durable outputs outside the curr
 ### Scenario 3: Durable Bash Command
 - Actor: Claude Code or Codex session.
 - Trigger: Bash command attempts durable git or gh commit/PR/issue text containing pinning.
-- Expected outcome: PreToolUse denies before command execution, with documented skip behavior for legitimate revert or cherry-pick hash context.
+- Expected outcome: PreToolUse denies before command execution. (Note: legitimate revert/cherry-pick hash skip behavior was superseded by #725 — PATTERN_D and the partial-hash exception were removed; commit hash policy is now a CLAUDE.md prose guide, not hard-fail.)
 
 ### Scenario 4: Existing Pinned Content
 - Actor: Agent editing a file that already contains old pinned text.

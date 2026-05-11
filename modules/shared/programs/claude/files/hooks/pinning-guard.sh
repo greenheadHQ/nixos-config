@@ -35,32 +35,13 @@ _scan_text_file() {
   printf '%s' "$text" > "$out_file"
 }
 
-_is_git_commit_command() {
-  local cmd="$1"
-  case "$cmd" in
-    *"git commit"* | *"git -"*" commit"*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 _targeted_bash_command() {
   local cmd="$1"
-  if _is_git_commit_command "$cmd"; then
-    return 0
-  fi
   case "$cmd" in
+    *"git commit"* | *"git -"*" commit"* | \
     *"gh pr create"* | *"gh pr edit"* | *"gh pr comment"* | *"gh pr review"* | \
     *"gh issue create"* | *"gh issue edit"* | *"gh issue comment"* | \
     *"gh api"*"issues/"*"comments"* | *"gh api"*"pulls/"*"comments"* | *"gh api"*"pulls/"*"reviews"*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-_allow_partial_hash_exception() {
-  local cmd="$1"
-  _is_git_commit_command "$cmd" || return 1
-  case "$cmd" in
-    *"Revert "* | *"cherry-pick"* | *"cherry picked"*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -129,11 +110,7 @@ case "$TOOL_NAME" in
     _targeted_bash_command "$COMMAND_TEXT" || exit 0
 
     _scan_text_file "$COMMAND_TEXT" "$SCAN_DIR/new.txt"
-    if _allow_partial_hash_exception "$COMMAND_TEXT"; then
-      findings="$(pinning_findings_text "$SCAN_DIR/new.txt" 1)"
-    else
-      findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
-    fi
+    findings="$(pinning_findings_text "$SCAN_DIR/new.txt")"
     [ -n "$findings" ] || exit 0
     _deny "$TOOL_NAME" "durable shell command" "$findings"
     ;;

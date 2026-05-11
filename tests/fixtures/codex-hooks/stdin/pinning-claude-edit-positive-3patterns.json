@@ -3,6 +3,6 @@
   "tool_input": {
     "file_path": "/tmp/fixture-pinning-positive.md",
     "old_string": "x",
-    "new_string": "Round 2 with deadbeef hash and Correctness-1 finding from DA for_pr"
+    "new_string": "Round 2 finding Correctness-1 from DA for_pr"
   }
 }

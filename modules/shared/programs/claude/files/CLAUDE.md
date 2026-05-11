@@ -9,8 +9,9 @@
 - 커밋 메시지, PR/이슈 본문/댓글, markdown, shell, notebook, body temp 파일에는 일회성 리뷰/세션 메타데이터를 박제하지 말라.
 - Claude/Codex PreToolUse `pinning-guard.sh`는 supported edit/apply_patch tools와 targeted git/gh durable commands에서 해당 메타데이터가 새 durable output으로 들어가면 hard-fail한다.
 - PostToolUse `pinning-alert.sh`와 commit-msg `commit-msg-pinning.sh`는 같은 shared pattern library를 사용하는 warn-only 보조 신호다.
-- Canonical non-traversal PRD/plan path(`.claude/prds/*`, `.claude/plans/*`)에서는 PATTERN_A만 예외적으로 허용한다. PATTERN_B/C/D는 해당 path에서도 계속 차단/경고한다.
-- 차단되면 리뷰 실행명, 임시 finding id, 짧은 임시 hash 대신 안정적인 대상 이름과 자연어 근거로 다시 작성한다.
+- Canonical non-traversal PRD/plan path(`.claude/prds/*`, `.claude/plans/*`)에서는 PATTERN_A만 예외적으로 허용한다. PATTERN_B/C는 해당 path에서도 계속 차단/경고한다.
+- 차단되면 리뷰 실행명이나 임시 finding id 대신 안정적인 대상 이름과 자연어 근거로 다시 작성한다.
+- Commit hash 약식 인용은 PR 번호 또는 머지된 long SHA 같은 안정적 식별자로 대체하라 — squash/rebase 후 dangling되어 trace 추적이 깨질 수 있다.
 
 ## 브라우저 도구 라우팅
 

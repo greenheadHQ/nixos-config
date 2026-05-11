@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # commit-msg-pinning.sh
 # 목적: commit message에서 LLM 박제(pinning) 패턴을 감지하고 경고. 영구 산출물(commit/PR/이슈)에
-#       세션 내부 메타데이터(라운드 번호/finding ID/partial hash)가 박혀 squash 후 dangling되거나
-#       drift를 일으키는 것을 차단한다.
+#       세션 내부 메타데이터(라운드 번호/finding ID/DA 실행 키워드)가 박혀 drift나 stale 참조를
+#       일으키는 것을 경고한다.
 # 정책:
 # - warn-only: 매치 시 stderr 경고만 출력하고 exit 0. commit 차단하지 않음. lefthook 단계 자체를
 #   건너뛰려면 lefthook 표준 메커니즘 (`LEFTHOOK=0`, `--no-verify`)을 사용한다.
-# - revert 예외: commit msg 첫 줄이 "revert" 또는 "Revert"로 시작하면 partial hash 검사 skip.
 # 작동 범위: 이 hook은 신규 commit message만 검사한다. 과거 commit / squash commit body /
 #   PR · 이슈 본문에 이미 박힌 잔존 박제는 **소급해서 수정하지 않으며** 본 hook 범위 밖이다.
 set -euo pipefail
@@ -40,35 +39,23 @@ CLEAN_MSG=$(mktemp)
 trap 'rm -f "$CLEAN_MSG"' EXIT
 sed -e '/^#/d' "$COMMIT_MSG_FILE" > "$CLEAN_MSG"
 
-# commit msg 첫 줄 (revert prefix 판단용) — head는 첫 줄만 읽으므로 SIGPIPE 위험 동일하지만
-# 1줄 읽기는 buffer 크기 미만이라 실측 안전. 명시적 read로 더 견고하게.
-read -r FIRST_LINE < "$CLEAN_MSG" || FIRST_LINE=""
-
 warn() {
   echo "[WARN] pinning: $1" >&2
 }
 
 # Category code → user-facing remediation message mapping. category code is
-# the stable ID returned by pinning_findings_records (A/B/C/D); the message
+# the stable ID returned by pinning_findings_records (A/B/C); the message
 # stays here in commit-msg context to preserve existing UX wording without
 # embedding it in the shared lib.
 WARN_A="라운드 카운터(\`Round N\`) 박제 감지. 영구 산출물에는 자연어 설명으로 표현하라."
 WARN_B="DA finding ID 박제 감지. 라운드/finding ID는 휘발성 보고에만 사용하고 commit message에는 박지 마라."
 WARN_C="DA 키워드 박제 감지. 검토 라운드/모드 표기는 commit message에 박지 말고 PR 코멘트 또는 휘발성 작업 노트에 둬라."
-WARN_D="${PINNING_PARTIAL_HASH_FINDING_LABEL_SUBSTR} 감지. squash 머지 시 dangling 위험 (partial commit hash 포함). 안정 식별자(PR 번호, 머지된 SHA)로 대체하라."
-
-# revert prefix → suppress partial-hash (D) records at lib level
-SKIP_PARTIAL_HASH=""
-if [[ "$FIRST_LINE" =~ ^[Rr]evert ]]; then
-  SKIP_PARTIAL_HASH=1
-fi
 
 # Loop over the shared structured records. Verbose warn message is emitted
-# once per category (when the category code transitions). For A/B/C the
-# shared category label line is also printed so commit-msg output matches
-# the guard/alert rendering contract; for D the legacy verbose-only output
-# is preserved (existing fixtures do not include the label line).
-records=$(pinning_findings_records "$CLEAN_MSG" "$SKIP_PARTIAL_HASH")
+# once per category (when the category code transitions). The shared category
+# label line is also printed so commit-msg output matches the guard/alert
+# rendering contract.
+records=$(pinning_findings_records "$CLEAN_MSG")
 found=0
 
 if [ -n "$records" ]; then
@@ -81,7 +68,6 @@ if [ -n "$records" ]; then
         A) warn "$WARN_A"; printf '  - %s\n' "$label" >&2 ;;
         B) warn "$WARN_B"; printf '  - %s\n' "$label" >&2 ;;
         C) warn "$WARN_C"; printf '  - %s\n' "$label" >&2 ;;
-        D) warn "$WARN_D" ;;
         *) warn "$label" ;;
       esac
       prev_code="$code"

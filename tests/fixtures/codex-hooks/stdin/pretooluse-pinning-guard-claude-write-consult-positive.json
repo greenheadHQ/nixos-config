@@ -1,7 +1,0 @@
-{
-  "tool_name": "Write",
-  "tool_input": {
-    "file_path": "/tmp/fixture-pretooluse-claude-write-consult.md",
-    "content": "Step 3.5 자문 결과는 /tmp/consult-abc12345-XYZ123/result.json 경로에 저장됐다."
-  }
-}

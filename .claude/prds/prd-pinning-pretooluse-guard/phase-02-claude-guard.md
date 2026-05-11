@@ -45,7 +45,7 @@ Before code edits:
 - [x] Implement Edit old/new count comparison for eligible paths.
 - [x] Implement Write/new-file behavior and document why it is conservative or delta-based.
 - [x] Implement Bash durable command matching for git and gh commit/PR/issue surfaces.
-- [x] Implement revert/cherry-pick hash skip behavior for Bash command text.
+- [x] Implement revert/cherry-pick hash skip behavior for Bash command text. (Superseded by #725: PATTERN_D and the partial-hash exception were removed; revert/cherry-pick no longer requires a skip path because commit hash is not hard-fail anymore.)
 - [x] Register `Edit|Write|NotebookEdit` and `Bash` entries in Claude settings.
 - [x] Add Claude Home Manager provisioning for `pinning-guard.sh`.
 - [x] Add coexistence notes: PreToolUse hard-fail blocks before write/command; PostToolUse alert remains warn-only secondary signal.
@@ -61,7 +61,7 @@ Use direct stdin fixtures for Claude hook input because PreToolUse blocks before
 - [x] Direct stdin payload: Claude clean Write passes; full permanent clean matrix remains Phase 4.
 - [x] Direct stdin payload: Bash targeted durable command with pinning receives deny JSON.
 - [x] Direct stdin payload: Bash out-of-scope command passes.
-- [x] Direct stdin payload: legitimate revert/cherry-pick hash context passes.
+- [x] Direct stdin payload: legitimate revert/cherry-pick hash context passes. (Superseded by #725: fixture and skip path removed; commit hash skip no longer needed.)
 - [x] Existing PostToolUse warn-only fixture behavior remains unchanged.
 
 ## Exit Criteria

@@ -21,25 +21,19 @@ runner: `tests/test-codex-hook-fixtures.sh`.
 
 | 파일 | hook | 입력 의도 | expected stderr |
 |------|------|----------|-----------------|
-| `pinning-claude-edit-positive-4patterns.json` | Claude Edit | 4 패턴 동시 매치 (Round/Bundle/DA keyword/짧은 임시 hex 식별자) on `.md` | `Edit on …` 헤더 + 4 finding 라인 |
+| `pinning-claude-edit-positive-3patterns.json` | Claude Edit | 3 패턴 동시 매치 (Round/Bundle/DA keyword) on `.md` | `Edit on …` 헤더 + 3 finding 라인 |
 | `pinning-claude-write-clean.json` | Claude Write | 정상 텍스트 | 빈 파일 (false positive 회피) |
 | `pinning-claude-self-exclude.json` | Claude Edit | path가 `…/scripts/ai/commit-msg-pinning.sh` (self-exclude) | 빈 파일 |
 | `pinning-codex-applypatch-md-positive.json` | Codex apply_patch | 단일 `.md` Update + Round | `apply_patch on …` 헤더 + Round 라인 |
-| `pinning-codex-applypatch-github-attachment-pass.json` | Codex apply_patch | Markdown/inline-code/HTML/raw GitHub attachment URLs in `/tmp/*body*.md` | 빈 파일 (attachment UUID false positive 회피) |
-| `pinning-codex-applypatch-github-attachment-mixed-positive.json` | Codex apply_patch | GitHub attachment URL + 별도 short hash on same line | `apply_patch on …` 헤더 + 짧은 임시 hex 식별자 라인 |
-| `pinning-codex-applypatch-github-attachment-malformed-positive.json` | Codex apply_patch | GitHub attachment-like URL with malformed UUID | `apply_patch on …` 헤더 + 짧은 임시 hex 식별자 라인 |
-| `pinning-codex-applypatch-github-attachment-nonhex-suffix-positive.json` | Codex apply_patch | GitHub attachment-like URL with non-hex suffix | `apply_patch on …` 헤더 + 짧은 임시 hex 식별자 라인 |
-| `pinning-codex-applypatch-github-attachment-punct-suffix-positive.json` | Codex apply_patch | GitHub attachment-like URL with extension/query suffix | `apply_patch on …` 헤더 + 짧은 임시 hex 식별자 라인 |
-| `pinning-codex-applypatch-moveto.json` | Codex apply_patch | `*** Move to:` (`.txt` → `.md`) + Round + hash | Move 후 `.md` path로 보고 (R3 분기) |
+| `pinning-codex-applypatch-moveto.json` | Codex apply_patch | `*** Move to:` (`.txt` → `.md`) + Round | Move 후 `.md` path로 보고 (R3 분기) |
 | `pinning-codex-applypatch-multifile.json` | Codex apply_patch | `.ts` 정상 + `.md` 박제 | `.md` path만 보고 (multi-file attribution) |
 | `pinning-codex-applypatch-removeonly.json` | Codex apply_patch | 박제 패턴이 `^-` 라인에만 (제거 patch) | 빈 파일 (added line만 검사) |
-| `pinning-codex-applypatch-backtick-short.json` | Codex apply_patch | `` `abcde` `` 5자 backtick (`HASH_MIN=7` 미만) | 빈 파일 (false positive 회피) |
 | `pinning-codex-bash-out-of-scope.json` | Codex Bash | `tool_name=Bash` (사전 분기 대상) | 빈 파일 |
 
 Issue #686 path-aware PATTERN_A fixtures add PRD/plan-path coverage:
 
 - `pinning-claude-write-{prds,plans}-pattern-a-clean.*` and `pinning-codex-applypatch-{prds,plans}-pattern-a-clean.*` prove PATTERN_A-only content is clean under `.claude/prds/` and `.claude/plans/`.
-- `pinning-claude-write-prds-pattern-{b,d}-positive.*`, `pinning-claude-write-plans-pattern-c-positive.*`, `pinning-codex-applypatch-prds-pattern-{b,d}-positive.*`, and `pinning-codex-applypatch-plans-pattern-c-positive.*` prove non-A categories still warn inside PRD/plan paths.
+- `pinning-claude-write-prds-pattern-b-positive.*`, `pinning-claude-write-plans-pattern-c-positive.*`, `pinning-codex-applypatch-prds-pattern-b-positive.*`, and `pinning-codex-applypatch-plans-pattern-c-positive.*` prove non-A categories still warn inside PRD/plan paths.
 - `pinning-codex-applypatch-{moveto,multifile,update}-prds-pattern-a-clean.*` and `pinning-codex-applypatch-mixed-prds-outside-pattern-a-positive.*` protect Codex `apply_patch` effective-path attribution for the narrow exception.
 - `pinning-claude-write-prds-traversal-pattern-a-positive.*` and `pinning-codex-applypatch-prds-tab-traversal-pattern-a-positive.*` prove traversal-looking PRD paths do not receive the PATTERN_A exception.
 
@@ -60,19 +54,10 @@ Claude/Codex missing shared-library fail-closed 분기를 검증한다.
 | `pretooluse-pinning-guard-claude-edit-existing-no-increase.json` | Claude PreToolUse | 기존 pinned text count가 증가하지 않는 Edit | 빈 파일 |
 | `pretooluse-pinning-guard-claude-write-clean.json` | Claude PreToolUse | clean Write | 빈 파일 |
 | `pretooluse-pinning-guard-claude-write-positive.json` | Claude PreToolUse | Write content with volatile metadata | deny reason |
-| `pretooluse-pinning-guard-claude-write-consult-positive.json` | Claude PreToolUse | Write content referencing volatile `/tmp/consult-…/result.json` path | deny reason |
 | `pretooluse-pinning-guard-claude-notebook-positive.json` | Claude PreToolUse | NotebookEdit on `.ipynb` | deny reason |
 | `pretooluse-pinning-guard-claude-bash-positive.json` | Claude PreToolUse | durable `gh` command with volatile metadata | deny reason |
-| `pretooluse-pinning-guard-claude-bash-cherrypick-comment.json` | Claude PreToolUse | durable `gh` comment mentioning cherry-pick plus a short hash | deny reason |
 | `pretooluse-pinning-guard-claude-bash-git-option-commit.json` | Claude PreToolUse | `git` global-option commit command | deny reason |
-| `pretooluse-pinning-guard-claude-bash-revert-hash-pass.json` | Claude PreToolUse | real `git commit` revert message with short hash | 빈 파일 |
 | `pretooluse-pinning-guard-codex-applypatch-positive.json` | Codex PreToolUse | apply_patch adds volatile metadata to `.md` | deny reason |
-| `pretooluse-pinning-guard-codex-applypatch-consult-positive.json` | Codex PreToolUse | apply_patch adds volatile `/tmp/consult-…/result.json` path to `.md` | deny reason |
-| `pretooluse-pinning-guard-codex-applypatch-github-attachment-pass.json` | Codex PreToolUse | apply_patch adds Markdown/inline-code/HTML/raw GitHub attachment URLs to `/tmp/*body*.md` | 빈 파일 |
-| `pretooluse-pinning-guard-codex-applypatch-github-attachment-mixed-positive.json` | Codex PreToolUse | GitHub attachment URL + 별도 short hash on same line | deny reason |
-| `pretooluse-pinning-guard-codex-applypatch-github-attachment-malformed-positive.json` | Codex PreToolUse | GitHub attachment-like URL with malformed UUID | deny reason |
-| `pretooluse-pinning-guard-codex-applypatch-github-attachment-nonhex-suffix-positive.json` | Codex PreToolUse | GitHub attachment-like URL with non-hex suffix | deny reason |
-| `pretooluse-pinning-guard-codex-applypatch-github-attachment-punct-suffix-positive.json` | Codex PreToolUse | GitHub attachment-like URL with extension/query suffix | deny reason |
 | `pretooluse-pinning-guard-codex-applypatch-multifile.json` | Codex PreToolUse | apply_patch multi-file attribution | deny reason for matched `.md` |
 | `pretooluse-pinning-guard-codex-applypatch-multimatch.json` | Codex PreToolUse | apply_patch has multiple matched eligible files | single deny reason for first matched path |
 | `pretooluse-pinning-guard-codex-applypatch-moveto.json` | Codex PreToolUse | apply_patch `*** Move to:` effective path | deny reason for moved `.md` |
@@ -82,10 +67,8 @@ Claude/Codex missing shared-library fail-closed 분기를 검증한다.
 | `pretooluse-pinning-guard-codex-edit-existing-no-increase.json` | Codex PreToolUse | alias Edit existing-count no-increase | 빈 파일 |
 | `pretooluse-pinning-guard-codex-write-positive.json` | Codex PreToolUse | alias Write content with volatile metadata | deny reason |
 | `pretooluse-pinning-guard-codex-bash-positive.json` | Codex PreToolUse | durable `gh` command with volatile metadata | deny reason |
-| `pretooluse-pinning-guard-codex-bash-cherrypick-comment.json` | Codex PreToolUse | durable `gh` comment mentioning cherry-pick plus a short hash | deny reason |
 | `pretooluse-pinning-guard-codex-bash-git-option-commit.json` | Codex PreToolUse | `git` global-option commit command | deny reason |
 | `pretooluse-pinning-guard-codex-bash-gh-api-comment.json` | Codex PreToolUse | `gh api` issue comment body | deny reason |
-| `pretooluse-pinning-guard-codex-bash-revert-hash-pass.json` | Codex PreToolUse | real `git commit` revert message with short hash | 빈 파일 |
 | `pretooluse-pinning-guard-codex-bash-out-of-scope.json` | Codex PreToolUse | non-durable Bash command | 빈 파일 |
 
 Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
@@ -93,7 +76,7 @@ Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
 | 시나리오 | fixture |
 |----------|---------|
 | PATTERN_A allowed in `.claude/prds/` and `.claude/plans/` | `pretooluse-pinning-guard-claude-write-{prds,plans}-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-write-prds-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-applypatch-{prds,plans}-pattern-a-clean.*` |
-| PATTERN_B/C/D still denied in `.claude/prds/` and `.claude/plans/` | `pretooluse-pinning-guard-claude-write-{prds,plans}-pattern-{b,c,d}-deny.*`, `pretooluse-pinning-guard-codex-applypatch-prds-pattern-{b,d}-deny.*`, `pretooluse-pinning-guard-codex-applypatch-plans-pattern-c-deny.*` |
+| PATTERN_B/C still denied in `.claude/prds/` and `.claude/plans/` | `pretooluse-pinning-guard-claude-write-{prds,plans}-pattern-{b,c}-deny.*`, `pretooluse-pinning-guard-codex-applypatch-prds-pattern-b-deny.*`, `pretooluse-pinning-guard-codex-applypatch-plans-pattern-c-deny.*` |
 | Equal-count non-A replacement still denied | `pretooluse-pinning-guard-claude-write-prds-pattern-b-to-c-deny.*`, `pretooluse-pinning-guard-codex-write-plans-pattern-c-to-b-deny.*`, `pretooluse-pinning-guard-claude-edit-prds-pattern-b-token-change-deny.*` |
 | Equal-count replacement outside PRD/plan keeps existing count-gate behavior | `pretooluse-pinning-guard-codex-edit-outside-equal-count-clean.*` |
 | Codex `apply_patch` effective path remains correct | `pretooluse-pinning-guard-codex-applypatch-{moveto,multifile,update}-prds-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-applypatch-mixed-prds-outside-pattern-a-deny.*` |
@@ -106,10 +89,10 @@ Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
 
 | 파일 | 시나리오 | 기대 |
 |------|----------|------|
-| `attachment-pass.msg` | Markdown/inline-code/HTML/raw GitHub attachment URLs | 빈 파일 |
-| `attachment-mixed-positive.msg` | GitHub attachment URL + 별도 short hash | 짧은 임시 hex 식별자 warn |
-| `attachment-extended-positive.msg` | GitHub attachment-like URL with extension/query suffix | 짧은 임시 hex 식별자 warn |
-| `revert-skip.msg` | Revert commit message partial hash skip | 빈 파일 |
+| `clean.msg` | 박제 패턴 없는 정상 commit msg | 빈 파일 (warn 없음) |
+| `line-token-a-positive.msg` | PATTERN_A (Round counter) | A 라벨 + line:token warn |
+| `line-token-b-positive.msg` | PATTERN_B (Bundle finding ID) | B 라벨 + line:token warn |
+| `line-token-c-positive.msg` | PATTERN_C (DA 실행 키워드) | C 라벨 + line:token warn |
 
 ## 외부 contract만 디렉토리로 노출
 

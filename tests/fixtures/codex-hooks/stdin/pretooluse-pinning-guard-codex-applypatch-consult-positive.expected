@@ -1,4 +1,0 @@
-[pinning-guard] apply_patch on /tmp/fixture-pretooluse-codex-consult.md contains volatile review/session metadata:
-  - 짧은 임시 hex 식별자 박제 (7~12자)
-         1: abc12345
-Use stable identifiers or plain natural-language context before retrying.

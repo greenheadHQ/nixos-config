@@ -1,7 +1,0 @@
-[pinning-guard] apply_patch on /tmp/fixture-pretooluse-codex-github-attachment-punct-suffix.md contains volatile review/session metadata:
-  - 짧은 임시 hex 식별자 박제 (7~12자)
-         1: 9c368446
-         1: 4307403c4c04
-         2: 9c368446
-         2: 4307403c4c04
-Use stable identifiers or plain natural-language context before retrying.

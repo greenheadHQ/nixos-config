@@ -21,7 +21,7 @@
 ### B. 근거 / 레퍼런스 (Evidence-first)
 
 - [ ] **B1.** 비자명한 주장에 인라인 citation을 붙인다 (`[링크 텍스트](URL)`). `write-handoff`는 가이드 본문 인라인에 붙이고, `create-issue`는 필수 `References` 섹션에서 출처 링크 목록으로 제공한다. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [Learning Fine-Grained Grounded Citations (ACL Findings 2024)](https://aclanthology.org/2024.findings-acl.838/).
-- [ ] **B4.** 파일/함수/PR/doc URL은 본문에 직접 적는다 (예: `path/to/file.nix:42`, `#123`, `abc1234`). 출처: [Anthropic: Best Practices for Claude Code (2025)](https://code.claude.com/docs/en/best-practices).
+- [ ] **B4.** 파일/함수/PR/doc URL은 본문에 직접 적는다 (예: `path/to/file.nix:42`, `#123`). commit hash 약식 인용은 PR 번호나 머지된 long SHA 같은 안정적 식별자로 대체한다 (CLAUDE.md `Durable output pinning policy` 참조). 출처: [Anthropic: Best Practices for Claude Code (2025)](https://code.claude.com/docs/en/best-practices).
 
 ### C. PoC / 재현 (Reproducibility-first)
 

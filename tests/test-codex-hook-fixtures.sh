@@ -721,7 +721,7 @@ test_sync_sh_mcp_config_failfast() {
 # deterministic stdin fixture로 박제한다. fixture는 stdin/pinning-{claude,codex}-*.json이고,
 # 옆에 위치한 *.expected에 stderr 출력을 박는다. exit code는 모두 0(warn-only contract).
 # Codex apply_patch envelope V4A awk parser의 핵심 분기(*** Move to: rename, multi-file
-# attribution, removeonly added-line filter, backtick HASH_MIN 미만)를 함께 보호한다.
+# attribution, removeonly added-line filter)를 함께 보호한다.
 test_pinning_shared_library_behavioral() {
   local sandbox scan_file da_symlink_dir
   sandbox=$(new_hook_sandbox)
@@ -730,7 +730,6 @@ test_pinning_shared_library_behavioral() {
     printf '%s\n' "Ro""und 1"
     printf '%s\n' "Correctness""-1"
     printf '%s\n' "DA ""for_plan"
-    printf '%s\n' "dead""bee"
   } > "$scan_file"
   mkdir -p \
     "$sandbox/.claude/prds" \
@@ -740,13 +739,13 @@ test_pinning_shared_library_behavioral() {
   # shellcheck source=../modules/shared/programs/claude/files/lib/pinning-patterns.sh
   . "$PINNING_LIB_REPO_FILE"
 
-  assert_eq "$(pinning_match_count "$scan_file")" "4" \
+  assert_eq "$(pinning_match_count "$scan_file")" "3" \
     "[7/lib] raw helper must keep PATTERN_A visible"
-  assert_eq "$(pinning_match_count_for_path "$scan_file" "$sandbox/outside.md")" "4" \
+  assert_eq "$(pinning_match_count_for_path "$scan_file" "$sandbox/outside.md")" "3" \
     "[7/lib] outside path must keep PATTERN_A visible"
-  assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/prd.md")" "3" \
+  assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/prd.md")" "2" \
     "[7/lib] PRD path must skip only PATTERN_A"
-  assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/docs/examples/.claude/prds/prd.md")" "4" \
+  assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/docs/examples/.claude/prds/prd.md")" "3" \
     "[7/lib] nested PRD-looking path must not skip PATTERN_A"
   assert_eq "$(if PINNING_PROJECT_ROOT="$sandbox" pinning_should_check_path "$sandbox/.claude/prds/spec.txt"; then printf check; else printf skip; fi)" "check" \
     "[7/lib] PRD/plan path should_check must bypass generic extension gate"
@@ -762,7 +761,7 @@ STUB
 exit 1
 STUB
   chmod +x "$sandbox/bin-stubs/realpath" "$sandbox/bin-stubs/readlink"
-  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/plan.md")" "3" \
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/plan.md")" "2" \
     "[7/lib] PRD/plan path fallback must not require GNU realpath/readlink"
   assert_eq "$(if PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_should_check_path "$sandbox/.claude/plans/plan.yaml"; then printf check; else printf skip; fi)" "check" \
     "[7/lib] PRD/plan should_check fallback must not require durable extension"
@@ -772,12 +771,12 @@ STUB
     "[7/lib] should_check fallback must preserve DA scratch whitelist without GNU realpath/readlink"
   mkdir -p "$sandbox/.claude/plans"
   : > "$sandbox/.claude/plans/existing.md"
-  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/existing.md")" "3" \
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/existing.md")" "2" \
     "[7/lib] PRD/plan path fallback must cover existing regular files"
   mkdir -p "$sandbox/.claude/prds"
   : > "$sandbox/outside.md"
   ln -s "$sandbox/outside.md" "$sandbox/.claude/prds/symlink.md"
-  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/symlink.md")" "4" \
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/symlink.md")" "3" \
     "[7/lib] PRD/plan fallback must fail closed for existing symlink targets"
   da_symlink_dir=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/da-test-symlink.XXXXXX") \
     || fail "[7/lib] DA symlink mktemp -d 실패"
@@ -1033,7 +1032,7 @@ $unexpected"
 }
 
 # ─── 카테고리 7c: commit-msg pinning behavioral ───
-# commit-msg-pinning.sh도 guard/alert와 같은 shared partial-hash helper를 소비한다.
+# commit-msg-pinning.sh도 guard/alert와 같은 shared pinning records helper를 소비한다.
 _assert_commit_msg_expectation() {
   local fixture="$1" stderr_log="$2"
   local expected="${fixture%.msg}.expected"

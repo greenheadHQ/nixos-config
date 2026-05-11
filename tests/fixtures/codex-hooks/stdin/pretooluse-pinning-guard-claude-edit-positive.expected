@@ -5,6 +5,4 @@
          1: Correctness-2
   - DA 실행 키워드 박제
          1: DA for_pr
-  - 짧은 임시 hex 식별자 박제 (7~12자)
-         1: cafebabe
 Use stable identifiers or plain natural-language context before retrying.
