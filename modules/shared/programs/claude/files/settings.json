@@ -11,7 +11,11 @@
   },
   "includeCoAuthoredBy": false,
   "permissions": {
-    "deny": ["Bash(rm -rf /)", "Bash(rm -rf ~)", "Bash(npm *)"],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(npm *)"
+    ],
     "additionalDirectories": [
       "~/Desktop",
       "~/Downloads",
@@ -173,5 +177,6 @@
   "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "skipAutoPermissionPrompt": true
 }
