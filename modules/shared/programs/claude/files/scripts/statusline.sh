@@ -1,85 +1,247 @@
 #!/usr/bin/env bash
-# Claude Code custom statusline - plan 파일 경로, status icons, rate limits 표시
-# stdin으로 JSON 세션 데이터를 받아 statusbar 내용을 stdout으로 출력
+# Claude Code custom statusline
+#   plan 파일, status icons, cwd/branch/session-id, Cache TTL, rate limits 출력
+#   stdin으로 JSON 세션 데이터를 받아 statusbar 내용을 stdout으로 출력
+#
+# 라인 구조 (3-way 분기):
+#   L1: /set-icons (Jira/Slack/Figma/Memo) — 조건부, 미설정 시 라인 생략
+#   L2:
+#     - 비-git cwd: cwd + session-id (branch 생략)
+#     - git main repo: cwd + branch + session-id
+#     - git worktree: cwd 단독
+#   L3 (worktree만): branch + session-id
+#   L_M: Plan/Memory/Cache TTL + hit%
+#   L_N: Rate Limits (5h/7d)
 
 input=$(cat)
 
-TRANSCRIPT=$(echo "$input" | jq -r '.transcript_path // empty' 2>/dev/null) || true
+# ============================================================
+# Helper: 입력 검증 + sanitize
+# ============================================================
 
-# transcript_path 비어있으면 전체 skip
-if [ -z "$TRANSCRIPT" ]; then
+# URL 인자에 C0/DEL control 문자 포함 시 빈 문자열 반환 (universal sanitize)
+sanitize_osc8_url() {
+  local url=$1
+  [ -z "$url" ] && return
+  if printf '%s' "$url" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    return
+  fi
+  printf '%s' "$url"
+}
+
+# path segment 내부 공백/control/예약 문자만 percent-encode (`/` separator 유지)
+# byte-aware encoder: UTF-8 multi-byte 문자도 RFC 3986 octet 기준으로 인코딩
+# `jq @uri`는 byte 단위 percent-encoding이고 ASCII unreserved를 그대로 둔다.
+# `/`는 @uri가 `%2F`로 인코딩하므로 path separator 보존을 위해 다시 복원한다.
+percent_encode_segment() {
+  local input=$1
+  [ -z "$input" ] && return
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$input" | jq -sRr '@uri | gsub("%2F"; "/")'
+  else
+    # fallback (jq 미가용 시): char-level encoder. ASCII만 안전, 비ASCII는 깨질 수 있음
+    local i char hex
+    local output=""
+    local len=${#input}
+    for (( i=0; i<len; i++ )); do
+      char="${input:$i:1}"
+      case "$char" in
+        [a-zA-Z0-9._~/-]) output+="$char" ;;
+        *) printf -v hex '%%%02X' "'$char"; output+="$hex" ;;
+      esac
+    done
+    printf '%s' "$output"
+  fi
+}
+
+# 디렉토리를 canonical absolute path로 변환. 미존재 시 빈 문자열
+canonicalize_dir() {
+  local dir=$1
+  [ -z "$dir" ] && return
+  (cd "$dir" 2>/dev/null && pwd -P) 2>/dev/null
+}
+
+# transcript_path validation (D-10: 진입 직후, file I/O 전체 신뢰 경계)
+#   (a) 절대경로 (b) symlink 거부 (c) .jsonl 확장자
+#   (d) dirname canonical 변환 + $HOME/.claude/projects/ canonical 경계 포함 prefix
+#   (e) file canonical (realpath) 도 같은 root 하위
+# 통과 시 canonical transcript dir 반환, 미통과 시 빈 문자열
+validate_transcript_path() {
+  local transcript=$1
+  [ -z "$transcript" ] && return
+  case "$transcript" in /*) ;; *) return ;; esac
+  [ -L "$transcript" ] && return
+  case "$transcript" in *.jsonl) ;; *) return ;; esac
+  local dir canonical_dir canonical_root canonical_file
+  dir=$(dirname "$transcript")
+  canonical_dir=$(canonicalize_dir "$dir")
+  [ -z "$canonical_dir" ] && return
+  canonical_root=$(canonicalize_dir "$HOME/.claude/projects")
+  [ -z "$canonical_root" ] && return
+  case "$canonical_dir" in
+    "$canonical_root"|"$canonical_root"/*) ;;
+    *) return ;;
+  esac
+  # file 자체 realpath
+  if command -v realpath >/dev/null 2>&1; then
+    canonical_file=$(realpath "$transcript" 2>/dev/null)
+  else
+    canonical_file="$canonical_dir/$(basename "$transcript")"
+  fi
+  [ -z "$canonical_file" ] && return
+  case "$canonical_file" in
+    "$canonical_root"/*) ;;
+    *) return ;;
+  esac
+  printf '%s' "$canonical_dir"
+}
+
+# session_id 패턴 검증 (UUID 또는 safe filename pattern)
+# 통과: exit 0 / 실패: exit 1
+validate_session_id() {
+  local sid=$1
+  [ -z "$sid" ] && return 1
+  case "$sid" in
+    *[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  return 0
+}
+
+# cwd validation (D-2 보강: control 문자 거부 우선, 그 다음 절대경로 + canonical 디렉토리)
+# control 문자 검사를 절대경로 검사보다 먼저 — 상대경로 형태 cwd에 control 문자가 있으면
+# 검증 실패 fallback에서 raw display로 escape 주입되는 것을 방지
+# 통과 시 canonical cwd 반환, 미통과 시 빈 문자열
+canonicalize_cwd_check() {
+  local cwd=$1
+  [ -z "$cwd" ] && return
+  if printf '%s' "$cwd" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    return
+  fi
+  case "$cwd" in /*) ;; *) return ;; esac
+  canonicalize_dir "$cwd"
+}
+
+# Display sanitize: control 문자가 라벨로 직접 흘러가지 않도록 거부
+# 미통과 시 빈 문자열 반환 (호출부는 빈 문자열을 표시 skip으로 처리)
+sanitize_display_text() {
+  local t=$1
+  [ -z "$t" ] && return
+  if printf '%s' "$t" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    return
+  fi
+  printf '%s' "$t"
+}
+
+# $HOME 접두사를 `~`로 치환
+tilde_shorten() {
+  local p=$1
+  if [ -n "$HOME" ] && [ "${p#"$HOME"}" != "$p" ]; then
+    printf '~%s' "${p#"$HOME"}"
+  else
+    printf '%s' "$p"
+  fi
+}
+
+# ============================================================
+# Section 1-2 (통합): stdin JSON 필드 단일 jq 호출로 추출
+#   audit Performance-1: 매초 fork 비용 절감 (4회 → 1회)
+#   추출 후 transcript canonical validation 및 session_id resolution 수행
+# ============================================================
+
+if command -v jq >/dev/null 2>&1; then
+  eval "$(printf '%s' "$input" | jq -r '
+    @sh "TRANSCRIPT=\(.transcript_path // "")",
+    @sh "STDIN_SESSION_ID=\(.session_id // "")",
+    @sh "CWD=\(.cwd // "")",
+    @sh "WS_WORKTREE=\(.workspace.git_worktree // "")",
+    @sh "WORKTREE_BRANCH=\(.worktree.branch // "")"
+  ' 2>/dev/null)" 2>/dev/null || true
+fi
+
+if [ -z "${TRANSCRIPT:-}" ]; then
   exit 0
 fi
 
-# --- Session ID 추출 (Plan, Icons 공통 사용) ---
-# 주의: session_id == basename(transcript_path, .jsonl) 가정
-# statusline stdin에는 session_id 필드가 없으므로 transcript 파일명에서 유도한다.
-SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
+# transcript canonical validation (D-10)
+CANONICAL_TRANSCRIPT_DIR=$(validate_transcript_path "$TRANSCRIPT")
+TRANSCRIPT_VALID=false
+if [ -n "$CANONICAL_TRANSCRIPT_DIR" ]; then
+  TRANSCRIPT_VALID=true
+fi
 
-# --- Heavy 연산 분기 ---
-# refreshInterval=1(매초)에서 Plan/Memory 감지(grep/git/find)를 매초 실행하면 비효율적.
-# 캐시 TTL만 매초 갱신하고, heavy 연산은 HEAVY_INTERVAL 간격으로만 실행한다.
+# session_id resolution (D-8): stdin.session_id // basename(transcript .jsonl) + 패턴 검증
+SESSION_ID="${STDIN_SESSION_ID:-}"
+if [ -z "$SESSION_ID" ]; then
+  SESSION_ID=$(basename "$TRANSCRIPT" .jsonl)
+fi
+if ! validate_session_id "$SESSION_ID"; then
+  SESSION_ID=""
+fi
+
+SESSION_ID_SHORT=""
+[ -n "$SESSION_ID" ] && SESSION_ID_SHORT="${SESSION_ID:0:8}"
+
+# ============================================================
+# Section 3: HEAVY cache setup (D-15: CACHED_CWD invalidate)
+# ============================================================
+
 NOW=$(date +%s)
 HEAVY_CACHE_DIR="${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-statusline}"
 mkdir -p "$HEAVY_CACHE_DIR"
-HEAVY_STATE="${HEAVY_CACHE_DIR}/heavy-${SESSION_ID}"
+
+# Sidecar identity guard (D-8 + audit Edge Cases-1/2):
+#   SESSION_ID 비어있거나 TRANSCRIPT_VALID=false면 sidecar I/O 전체 비활성
+#   HEAVY_STATE, ICONS_FILE, LAST_STOP_FILE 모두 같은 guard로 묶음
+SIDECAR_IO_ENABLED=false
+HEAVY_STATE=""
+if [ -n "$SESSION_ID" ] && $TRANSCRIPT_VALID; then
+  SIDECAR_IO_ENABLED=true
+  HEAVY_STATE="${HEAVY_CACHE_DIR}/heavy-${SESSION_ID}"
+fi
 HEAVY_INTERVAL=10
 DO_HEAVY=true
 
-if [ -f "$HEAVY_STATE" ]; then
+# cwd 정규화 (위 jq 통합 추출에서 받음. 빈 문자열이면 $PWD fallback)
+CWD=${CWD:-$PWD}
+
+# Cached CWD 비교 → cwd 변경 시 timestamp 무관 DO_HEAVY=true
+if $SIDECAR_IO_ENABLED && [ -f "$HEAVY_STATE" ]; then
   last_heavy=$(head -1 "$HEAVY_STATE" 2>/dev/null || echo 0)
-  if [ "$((NOW - last_heavy))" -lt "$HEAVY_INTERVAL" ]; then
+  CACHED_CWD=""
+  if [ -f "${HEAVY_STATE}.vars" ]; then
+    eval "$(grep '^CACHED_CWD=' "${HEAVY_STATE}.vars" 2>/dev/null)" 2>/dev/null || true
+  fi
+  if [ "$CACHED_CWD" = "$CWD" ] && [ "$((NOW - last_heavy))" -lt "$HEAVY_INTERVAL" ]; then
     DO_HEAVY=false
   fi
 fi
 
-# --- SSH 환경 감지 ---
-# SSH 세션에서는 OSC 8 하이퍼링크가 클릭 불가하므로,
-# 외부 링크(Jira/Slack/Figma)는 숨기고 로컬 상태(Plan/Memo/Memory)는 텍스트만 표시.
-# SSH_CONNECTION은 sshd가 export하며 모든 자식 프로세스에서 상속됨.
-# 비SSH 환경에서는 IS_SSH=false → 기존 동작 완전 유지 (fallback 안전).
+# ============================================================
+# Section 4: SSH 감지
+#   SSH 세션에서는 OSC 8 hyperlink 클릭 불가 → URL 비활성, 텍스트만
+# ============================================================
 IS_SSH=false
 [ -n "$SSH_CONNECTION" ] && IS_SSH=true
 
-# 캐시 가이드 URL (TTL + 히트율 아이콘 클릭 시 브라우저에서 열림)
 CACHE_GUIDE_URL="https://github.com/greenheadHQ/nixos-config/blob/main/modules/shared/programs/claude/files/docs/cache-guide.md"
 $IS_SSH && CACHE_GUIDE_URL=""
 
-# 256-color 고정 그레이 — 터미널 팔레트 의존 \e[90m 대신 사용
-# Termius 등 bright black을 검정으로 렌더링하는 터미널에서 가시성 확보
-MUTED="38;5;242"   # #6c6c6c
+# 256-color 고정 그레이
+MUTED="38;5;242"
 
-# --- Plan 파일 감지 + Memory 디렉토리 감지 (Heavy 연산) ---
-# DO_HEAVY=true일 때만 실행하고, 결과를 파일로 캐시.
-# DO_HEAVY=false일 때는 캐시된 변수를 복원하여 렌더링에 사용.
+# ============================================================
+# Section 5: HEAVY 연산 (Plan/Memory/Cache TTL/Worktree/Branch)
+# ============================================================
 PLAN_FILE=""
 MEMORY_LINK=""
 MEMORY_LABEL=""
+CACHE_TTL=300
+IS_WORKTREE=false
+GIT_BRANCH=""
 
 if $DO_HEAVY; then
 
-# -- Plan 파일 감지 --
-# 현재 세션의 transcript에서 plan 파일 Read/Write 기록을 추출한다.
-# ※ 이전 ls -t 방식은 세션과 무관하게 가장 최근 파일을 반환하여
-#   다른 세션의 plan을 오표시하는 버그가 있었음 (worktree fallback 포함).
-PLAN_STATE_FILE=""
-
-if [ -n "$TRANSCRIPT" ]; then
-  # 상태 파일: session_id 포함하여 세션별 격리
-  # context clear 후 새 transcript에 plan 기록이 없을 때 fallback으로 사용
-  PLAN_STATE_FILE="$(dirname "$TRANSCRIPT")/.statusline-plan-${SESSION_ID}"
-fi
-
-if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  # agent_progress 이벤트 제외 (subagent가 다른 세션 plan을 읽은 기록 필터링)
-  # agent plan 파일명(-agent-) 제외
-  PLAN_FILE=$(grep -v '"type":"agent_progress"' "$TRANSCRIPT" 2>/dev/null \
-    | grep -oE '"(filePath|file_path|planFilePath)":"[^"]*\.claude/plans/[^"]*\.md"' \
-    | grep -v 'plans/[^"]*-agent-' \
-    | tail -1 | sed 's/^"[^"]*":"//;s/"$//')
-fi
-
-# --- Plan state file 관리 ---
+# -- Plan 파일 감지 (transcript valid 시에만)
 #
 # === Change Intent Record ===
 # v1 (초기): 세션별 state file (.statusline-plan-<session_id>)로 격리.
@@ -88,38 +250,44 @@ fi
 #    이전 session_id의 state file을 찾지 못하는 문제 발견.
 #    프로젝트 단위 fallback (.statusline-plan-current) 추가.
 #    우선순위: transcript 감지 > 세션별 state > 프로젝트 단위 state.
-# v3 (이번): 프로젝트 단위 fallback 사용 시 plan 파일 복사본 생성.
+# v3: 프로젝트 단위 fallback 사용 시 plan 파일 복사본 생성.
 #    원본과의 편집 충돌 방지. 복사본 이름: <원본>-<session_id 8자>.md.
-#    세션별 state에 복사본 경로를 저장하여 이후 렌더에서 직접 사용.
-PROJECT_PLAN_STATE="$(dirname "$TRANSCRIPT")/.statusline-plan-current"
+# v4 (이번): TRANSCRIPT_VALID 조건 추가. canonical transcript dir에 state 파일 조립.
+#    raw `dirname "$TRANSCRIPT"` 대신 canonical 경로 사용으로 path traversal 차단.
+PLAN_STATE_FILE=""
+PROJECT_PLAN_STATE=""
+if $TRANSCRIPT_VALID; then
+  PLAN_STATE_FILE="$CANONICAL_TRANSCRIPT_DIR/.statusline-plan-${SESSION_ID:-unknown}"
+  PROJECT_PLAN_STATE="$CANONICAL_TRANSCRIPT_DIR/.statusline-plan-current"
+fi
+
+if $TRANSCRIPT_VALID && [ -f "$TRANSCRIPT" ]; then
+  # agent_progress 이벤트 제외, agent plan 파일명 제외
+  PLAN_FILE=$(grep -v '"type":"agent_progress"' "$TRANSCRIPT" 2>/dev/null \
+    | grep -oE '"(filePath|file_path|planFilePath)":"[^"]*\.claude/plans/[^"]*\.md"' \
+    | grep -v 'plans/[^"]*-agent-' \
+    | tail -1 | sed 's/^"[^"]*":"//;s/"$//')
+fi
 
 if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ] && [ -n "$PLAN_STATE_FILE" ]; then
-  # transcript에서 plan 감지 성공 + 파일 존재 확인 → 상태 파일에 저장
   printf '%s' "$PLAN_FILE" > "$PLAN_STATE_FILE" 2>/dev/null
-  # 프로젝트 단위 fallback도 갱신 (/clear 후 session_id 변경 대비)
-  printf '%s' "$PLAN_FILE" > "$PROJECT_PLAN_STATE" 2>/dev/null
+  [ -n "$PROJECT_PLAN_STATE" ] && printf '%s' "$PLAN_FILE" > "$PROJECT_PLAN_STATE" 2>/dev/null
 elif [ -z "$PLAN_FILE" ] && [ -n "$PLAN_STATE_FILE" ] && [ -f "$PLAN_STATE_FILE" ]; then
-  # transcript에서 감지 실패 → 세션별 상태 파일에서 복원
   PLAN_FILE=$(cat "$PLAN_STATE_FILE" 2>/dev/null)
-elif [ -z "$PLAN_FILE" ] && [ -f "$PROJECT_PLAN_STATE" ]; then
-  # 세션별 상태도 없음 → 프로젝트 단위 fallback (/clear로 session_id가 변경된 경우)
+elif [ -z "$PLAN_FILE" ] && [ -n "$PROJECT_PLAN_STATE" ] && [ -f "$PROJECT_PLAN_STATE" ]; then
   ORIGINAL_PLAN=$(cat "$PROJECT_PLAN_STATE" 2>/dev/null)
   if [ -n "$ORIGINAL_PLAN" ] && [ -f "$ORIGINAL_PLAN" ]; then
-    # Plan 파일 복사본 생성 (원본과의 충돌 방지)
-    # session_id 앞 8자로 복사본 구분 (UUID 축약 관례)
     PLAN_COPY="$(dirname "$ORIGINAL_PLAN")/$(basename "$ORIGINAL_PLAN" .md)-${SESSION_ID:0:8}.md"
     if [ ! -f "$PLAN_COPY" ]; then
       cp "$ORIGINAL_PLAN" "$PLAN_COPY"
-      # 30일 초과 plan 복사본 정리 (-????????.md 패턴)
       find "$(dirname "$ORIGINAL_PLAN")" -name "*-????????.md" -mtime +30 -delete 2>/dev/null || true
     fi
     PLAN_FILE="$PLAN_COPY"
-    # 세션별 state에 복사본 경로 저장 (다음 렌더부터 직접 사용)
-    printf '%s' "$PLAN_FILE" > "$PLAN_STATE_FILE" 2>/dev/null
+    [ -n "$PLAN_STATE_FILE" ] && printf '%s' "$PLAN_FILE" > "$PLAN_STATE_FILE" 2>/dev/null
   fi
 fi
 
-# -- Memory 디렉토리 감지 --
+# -- Memory 감지 (canonical transcript dir 기반)
 #
 # === Change Intent Record ===
 # v1 (PR #264): dirname(transcript_path)/memory/로 경로 유도.
@@ -128,33 +296,25 @@ fi
 #    worktree에서도 main repo의 memory를 사용하지만, transcript_path는
 #    worktree별 프로젝트 디렉토리(~/.claude/projects/<worktree-encoded>/)에
 #    저장되어 memory 경로와 불일치.
-# v2 (이번): cwd + git rev-parse --git-common-dir로 canonical root를 해석.
+# v2: cwd + git rev-parse --git-common-dir로 canonical root를 해석.
 #    transcript 경로에 memory/가 없으면 cwd에서 git common dir를 찾아
-#    main repo 경로를 유도하고 zP 인코딩(non-alphanumeric → -)으로
-#    ~/.claude/projects/<main-repo-encoded>/memory/를 구성.
-#    trade-off: worktree 세션에서 git rev-parse 1~2회 추가 실행(~5ms)하지만,
+#    main repo 경로를 유도하고 ~/.claude/projects/<main-repo-encoded>/memory/를 구성.
+#    trade-off: worktree 세션에서 git rev-parse 1~2회 추가 실행되지만,
 #              main repo와 동일한 memory를 정확히 표시.
-#
-# orphan 감지 (v2 추가):
-#    MEMORY.md에 등록되지 않은 파일은 Claude가 접근 불가(getMemoryFiles는
-#    MEMORY.md만 읽고 디렉토리를 스캔하지 않음). orphan 존재 시 ⚠ 표시.
-#    대안 검토: MEMORY.md 참조만 카운트 → 실제 파일 수와 괴리 혼동,
-#              양쪽 분수 표시(5/7) → label 과도, 자동 등록/삭제 → 데이터 손실 위험.
-#    trade-off: ⚠ 의미를 사용자가 알아야 하지만, 평소엔 깔끔하고
-#              orphan 존재 시에만 시각적 신호를 제공.
-
-if [ -n "$TRANSCRIPT" ]; then
-  PROJECT_MEMORY_DIR="$(dirname "$TRANSCRIPT")/memory"
+# v3 (orphan 감지): MEMORY.md에 등록되지 않은 파일은 Claude가 접근 불가
+#    (getMemoryFiles는 MEMORY.md만 읽고 디렉토리를 스캔하지 않음).
+#    orphan 존재 시 ⚠ 표시. 평소엔 깔끔하고 orphan 존재 시에만 시각적 신호.
+# v4 (이번): canonical transcript dir 기반으로 변경. URL은 universal sanitize 적용.
+if $TRANSCRIPT_VALID; then
+  PROJECT_MEMORY_DIR="$CANONICAL_TRANSCRIPT_DIR/memory"
   GLOBAL_MEMORY_DIR="$HOME/.claude/memory"
   MEMORY_COUNT=0
   MEMORY_INDEX=""
 
-  # worktree 보정: transcript 경로에 memory/가 없으면 cwd에서 canonical root를 해석
-  CWD=$(echo "$input" | jq -r '.cwd // empty' 2>/dev/null) || true
+  # worktree 보정: canonical transcript dir에 memory/가 없으면 cwd → canonical git root
   if [ ! -d "$PROJECT_MEMORY_DIR" ] && [ -n "$CWD" ] && [ -d "$CWD" ]; then
     GIT_COMMON=$(git -C "$CWD" rev-parse --git-common-dir 2>/dev/null) || true
     if [ -n "$GIT_COMMON" ]; then
-      # 상대 경로를 절대 경로로 변환
       if [[ "$GIT_COMMON" != /* ]]; then
         GIT_DIR=$(git -C "$CWD" rev-parse --git-dir 2>/dev/null) || true
         if [ -n "$GIT_DIR" ]; then
@@ -171,13 +331,11 @@ if [ -n "$TRANSCRIPT" ]; then
     fi
   fi
 
-  # 프로젝트 메모리 (주 표시 대상)
   if [ -d "$PROJECT_MEMORY_DIR" ]; then
     MEMORY_INDEX="$PROJECT_MEMORY_DIR/MEMORY.md"
     MEMORY_COUNT=$(find "$PROJECT_MEMORY_DIR" -maxdepth 1 -name "*.md" ! -name "MEMORY.md" -type f 2>/dev/null | wc -l | tr -d ' ')
   fi
 
-  # 글로벌 메모리 (존재하면 합산)
   if [ -d "$GLOBAL_MEMORY_DIR" ]; then
     GLOBAL_COUNT=$(find "$GLOBAL_MEMORY_DIR" -maxdepth 1 -name "*.md" ! -name "MEMORY.md" -type f 2>/dev/null | wc -l | tr -d ' ')
     MEMORY_COUNT=$((MEMORY_COUNT + GLOBAL_COUNT))
@@ -185,40 +343,32 @@ if [ -n "$TRANSCRIPT" ]; then
   fi
 
   if [ "$MEMORY_COUNT" -gt 0 ] && [ -n "$MEMORY_INDEX" ] && [ -f "$MEMORY_INDEX" ]; then
-    # orphan 감지: MEMORY.md 참조 수 vs 실제 파일 수
     REFERENCED=$(grep -cE '^[[:space:]]*-[[:space:]]*\[.*\.md\]' "$MEMORY_INDEX" 2>/dev/null) || REFERENCED=0
     MEMORY_WARN=""
     [ "$MEMORY_COUNT" -gt "$REFERENCED" ] && MEMORY_WARN=$'\xe2\x9a\xa0'
-    # CIR: MEMORY_INDEX(파일) 대신 dirname(디렉토리)을 링크 대상으로 사용.
-    #   MEMORY_INDEX는 project/global fallback을 따르므로 dirname도 정확한 디렉토리를 가리킨다.
-    #   대안: ${PROJECT_MEMORY_DIR} 직접 사용 → global-only 시나리오에서 dead link (DA 발견).
     MEMORY_LINK="file://$(dirname "$MEMORY_INDEX")"
     MEMORY_LABEL="Memory (${MEMORY_COUNT}${MEMORY_WARN})"
   fi
 fi
 
-# -- Cache TTL 동적 감지 --
+# -- Cache TTL detection
+#
 # === Change Intent Record ===
 # v1 (PR #444): CACHE_TTL=300 하드코딩 (5분 전용).
-# v2 (이번): Max 구독자 1시간 TTL 대응. transcript에서 assistant usage의
+# v2: Max 구독자 1시간 TTL 대응. transcript에서 assistant usage의
 #   cache_creation.ephemeral_1h_input_tokens를 jq로 파싱하여 감지.
 #   grep 대신 jq: user 메시지에 포함된 필드명 텍스트 오탐 방지 (DA Regression-F2).
 #   sticky: 이전 heavy에서 감지한 CACHE_TTL을 vars에서 복원.
 #     pure cache hit(cache_creation 없음)에서는 이전 값을 유지한다.
 #     실측: 매 턴 새 메시지 추가로 cache_creation > 0 (최솟값 ~120 tokens),
 #     ephemeral 상세도 항상 존재하므로 pure hit에 의한 stale은 발생하지 않음.
-#     cache_creation이 있는 가장 최근 메시지의 TTL 타입으로 업데이트한다.
 #   다운그레이드 감지: 마지막 cache_creation이 5m이면 300으로 복귀.
-#     Extra Usage 진입 후에도 기존 1h 캐시는 유효하므로 3600 유지가 정확하고,
-#     캐시 만료 시 새 creation(5m 타입)이 발생하면 자동 감지한다.
+# v3 (이번): SIDECAR_IO_ENABLED 가드 추가. canonical transcript dir 기반.
 # 우선순위: CLAUDE_CACHE_TTL env > transcript 감지 > vars 캐시 > 기본값 300
-CACHE_TTL=300
 if [ -f "${HEAVY_STATE}.vars" ]; then
   eval "$(grep '^CACHE_TTL=' "${HEAVY_STATE}.vars" 2>/dev/null)" 2>/dev/null || true
 fi
-if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  # 가장 최근 cache_creation의 TTL 타입을 감지 (jq, macOS/Linux 모두 동작).
-  # 1h → 3600, 5m → 300, cache_creation 없음(pure hit) → empty(이전 값 유지).
+if $TRANSCRIPT_VALID && [ -f "$TRANSCRIPT" ]; then
   _detected=$(jq -r '
     select(.message.usage.cache_creation)
     | if .message.usage.cache_creation.ephemeral_1h_input_tokens > 0 then "3600"
@@ -228,38 +378,61 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
   [ -n "$_detected" ] && CACHE_TTL="$_detected"
 fi
 
-# -- Heavy 결과 저장 --
-printf 'PLAN_FILE=%q\nMEMORY_LINK=%q\nMEMORY_LABEL=%q\nCACHE_TTL=%q\n' \
-  "$PLAN_FILE" "$MEMORY_LINK" "$MEMORY_LABEL" "$CACHE_TTL" > "${HEAVY_STATE}.vars"
-echo "$NOW" > "$HEAVY_STATE"
-
-else
-  # -- Light run: 캐시된 변수 복원 --
-  # shellcheck source=/dev/null
-  source "${HEAVY_STATE}.vars" 2>/dev/null || true
+# -- Worktree detection (D-14)
+#    Primary: stdin.workspace.git_worktree (위 jq 통합에서 추출)
+#    Fallback: git rev-parse --path-format=absolute --git-dir/--git-common-dir
+if [ -n "${WS_WORKTREE:-}" ]; then
+  IS_WORKTREE=true
+elif [ -d "$CWD" ]; then
+  GIT_DIR_ABS=$(git -C "$CWD" rev-parse --path-format=absolute --git-dir 2>/dev/null) || true
+  GIT_COMMON_ABS=$(git -C "$CWD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || true
+  if [ -n "$GIT_DIR_ABS" ] && [ -n "$GIT_COMMON_ABS" ] && [ "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]; then
+    IS_WORKTREE=true
+  fi
 fi
 
-# --- CACHE_TTL 환경변수 override ---
-# CLAUDE_CACHE_TTL이 설정되면 transcript 감지/캐시 값을 덮어씀.
-# Pro/API 사용자 대응 및 디버깅 용도.
-# source 이후에 적용하여 light run 캐시 복원을 확실히 덮어씀 (DA Regression-F3).
-# 숫자 검증: -gt 0 비교가 비숫자를 자동 거부 (DA Correctness-F2).
+# -- Branch 추출 (D-14: worktree.branch || git branch --show-current)
+GIT_BRANCH="${WORKTREE_BRANCH:-}"
+if [ -z "$GIT_BRANCH" ] && [ -d "$CWD" ]; then
+  GIT_BRANCH=$(git -C "$CWD" branch --show-current 2>/dev/null) || true
+fi
+
+# -- Heavy 결과 저장 (D-15: CACHED_CWD 포함). SIDECAR_IO_ENABLED 가드
+if $SIDECAR_IO_ENABLED; then
+  printf 'PLAN_FILE=%q\nMEMORY_LINK=%q\nMEMORY_LABEL=%q\nCACHE_TTL=%q\nIS_WORKTREE=%q\nGIT_BRANCH=%q\nCACHED_CWD=%q\n' \
+    "$PLAN_FILE" "$MEMORY_LINK" "$MEMORY_LABEL" "$CACHE_TTL" "$IS_WORKTREE" "$GIT_BRANCH" "$CWD" \
+    > "${HEAVY_STATE}.vars"
+  echo "$NOW" > "$HEAVY_STATE"
+fi
+
+else
+  # Light run: 캐시된 변수 복원. SIDECAR_IO_ENABLED 시에만
+  if $SIDECAR_IO_ENABLED && [ -f "${HEAVY_STATE}.vars" ]; then
+    # shellcheck source=/dev/null
+    source "${HEAVY_STATE}.vars" 2>/dev/null || true
+  fi
+  # bash bool 변수 복원 (eval 결과 string이라 '$IS_WORKTREE' 평가가 문자열일 수 있음)
+  [ "$IS_WORKTREE" = "true" ] && IS_WORKTREE=true || IS_WORKTREE=false
+fi
+
+# CLAUDE_CACHE_TTL override
 if [ -n "${CLAUDE_CACHE_TTL:-}" ] && [ "$CLAUDE_CACHE_TTL" -gt 0 ] 2>/dev/null; then
   CACHE_TTL=$CLAUDE_CACHE_TTL
 fi
 
-# --- Status icons 읽기 ---
-# SessionStart hook은 session_id로 상태 파일을 생성하므로 이 가정이 깨지면 아이콘이 미표시된다.
-ICONS_FILE="$HOME/.claude/status-icons/$SESSION_ID.json"
+# ============================================================
+# Section 6: Status icons 읽기 (Jira/Slack/Figma/Memo)
+#   SESSION_ID 검증 통과 시에만 sidecar I/O
+# ============================================================
+ICONS_FILE=""
+$SIDECAR_IO_ENABLED && ICONS_FILE="$HOME/.claude/status-icons/$SESSION_ID.json"
 
 JIRA_URL="" JIRA_LABEL=""
 SLACK_URL="" SLACK_LABEL=""
 FIGMA_URL="" FIGMA_LABEL=""
 MEMO_PATH="" MEMO_LABEL=""
 
-if [ -n "$SESSION_ID" ] && [ -f "$ICONS_FILE" ] && command -v jq >/dev/null 2>&1; then
-  # 단일 jq 호출로 모든 필드를 원자적으로 읽기 (TOCTOU 방지)
-  # @sh로 shell-safe 이스케이프 (printf %b의 \n 해석 방지)
+if [ -n "$ICONS_FILE" ] && [ -f "$ICONS_FILE" ] && command -v jq >/dev/null 2>&1; then
   eval "$(jq -r '
     @sh "JIRA_URL=\(.jira.url // "")",
     @sh "JIRA_LABEL=\(.jira.label // "")",
@@ -272,14 +445,16 @@ if [ -n "$SESSION_ID" ] && [ -f "$ICONS_FILE" ] && command -v jq >/dev/null 2>&1
   ' "$ICONS_FILE" 2>/dev/null)" 2>/dev/null || true
 fi
 
-# --- Rate Limits 읽기 ---
-# v2.1.80에서 추가된 rate_limits 필드: Claude.ai 플랜의 5시간/7일 롤링 윈도우 사용률
-# API 사용자나 필드 미지원 버전에서는 빈 값으로 graceful skip
+# ============================================================
+# Section 7: Rate Limits + cache hit %
+# ============================================================
 RATE_5H="" RATE_5H_RESET=""
 RATE_7D="" RATE_7D_RESET=""
+CACHE_READ=0
+CACHE_CREATE=0
 
 if command -v jq >/dev/null 2>&1; then
-  eval "$(echo "$input" | jq -r '
+  eval "$(printf '%s' "$input" | jq -r '
     @sh "RATE_5H=\(.rate_limits.five_hour.used_percentage // "")",
     @sh "RATE_5H_RESET=\(.rate_limits.five_hour.resets_at // "")",
     @sh "RATE_7D=\(.rate_limits.seven_day.used_percentage // "")",
@@ -289,57 +464,112 @@ if command -v jq >/dev/null 2>&1; then
   ' 2>/dev/null)" 2>/dev/null || true
 fi
 
-# --- 캐시 히트율 계산 ---
 CACHE_HIT_PCT=""
 _cache_total=$((${CACHE_READ:-0} + ${CACHE_CREATE:-0}))
 if [ "$_cache_total" -gt 0 ] 2>/dev/null; then
   CACHE_HIT_PCT=$((${CACHE_READ:-0} * 100 / _cache_total))
 fi
 
-# --- 출력 ---
-# 아이콘을 한 줄에 렌더링. ANSI/OSC 코드는 %b로, 사용자 텍스트(label)는 %s로 출력하여
-# label에 포함된 \n, \t 등이 printf에 의해 해석되는 것을 방지한다.
-HAS_OUTPUT=false
+# ============================================================
+# Section 8: 폭/임계값 + display values (D-5: 정적 threshold)
+# ============================================================
 
-# print_icon: 아이콘 하나를 출력
-# $1=color_code $2=url (빈 문자열이면 OSC 8 생략) $3=emoji_bytes $4=label
-print_icon() {
-  $HAS_OUTPUT && printf '  '
-  if [ -n "$2" ]; then
-    # With link: underline + color + OSC 8 하이퍼링크
-    printf '%b' "\e[4;${1}m\e]8;;${2}\a${3} "
-    printf '%s' "$4"
-    printf '%b' "\e]8;;\a\e[0m"
+COLS=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+[ "${COLS:-0}" -gt 0 ] 2>/dev/null || COLS=80
+if [ "$COLS" -lt 80 ]; then
+  EFF_COLS=$COLS
+else
+  EFF_COLS=$((COLS - 40))
+fi
+
+# session-id display: EFF_COLS >= 100 ? full : short
+SESSION_ID_DISPLAY=""
+if [ -n "$SESSION_ID" ]; then
+  if [ "$EFF_COLS" -ge 100 ] 2>/dev/null; then
+    SESSION_ID_DISPLAY="$SESSION_ID"
   else
-    # Without link: color only (SSH 환경에서 사용)
-    printf '%b' "\e[${1}m${3} "
-    printf '%s' "$4"
-    printf '%b' "\e[0m"
+    SESSION_ID_DISPLAY="$SESSION_ID_SHORT"
   fi
-  HAS_OUTPUT=true
+fi
+
+# cwd canonical 검증 + display + URL
+CWD_CANONICAL=$(canonicalize_cwd_check "$CWD")
+if [ -n "$CWD_CANONICAL" ]; then
+  CWD_DISPLAY=$(tilde_shorten "$CWD_CANONICAL")
+  CWD_URL=""
+  if ! $IS_SSH; then
+    CWD_URL_PATH=$(percent_encode_segment "$CWD_CANONICAL")
+    CWD_URL="vscode://file${CWD_URL_PATH}/"
+  fi
+else
+  # 검증 실패: 텍스트만 표시. control 문자가 들어와 fallback으로 escape 주입되는 것 방지
+  CWD_DISPLAY=$(sanitize_display_text "$(tilde_shorten "$CWD")")
+  CWD_URL=""
+fi
+
+# session-id URL: transcript valid + SSH 아닐 때만
+SESSION_URL=""
+if [ -n "$SESSION_ID_DISPLAY" ] && $TRANSCRIPT_VALID && ! $IS_SSH; then
+  SESSION_URL_PATH=$(percent_encode_segment "$CANONICAL_TRANSCRIPT_DIR")
+  SESSION_URL="file://${SESSION_URL_PATH}"
+fi
+
+# ============================================================
+# Section 9: Render helpers (D-11: 라인별 상태 격리)
+# ============================================================
+
+LINE_HAS_OUTPUT=false
+
+begin_line() {
+  LINE_HAS_OUTPUT=false
 }
 
-# _render_cache_hit: 캐시 히트율 suffix 출력 (render_cache_ttl 내부에서 호출)
-# CACHE_HIT_PCT 전역 변수 참조. 비어있으면 아무것도 출력하지 않음.
+end_line() {
+  $LINE_HAS_OUTPUT && printf '\n'
+}
+
+# print_icon: 아이콘 + 라벨 + 선택적 OSC 8 hyperlink 출력
+#   D-9: URL 인자는 universal sanitize 후 %s로 출력 (escape 문자 분리)
+#   $1=ansi_color $2=url $3=emoji_bytes $4=label
+print_icon() {
+  local color=$1
+  local url=$2
+  local emoji=$3
+  local label=$4
+  url=$(sanitize_osc8_url "$url")
+  $LINE_HAS_OUTPUT && printf '  '
+  if [ -n "$url" ]; then
+    # OSC 8 hyperlink: escape sequence는 %b, URL은 %s, label은 %s
+    printf '%b' "\e[4;${color}m\e]8;;"
+    printf '%s' "$url"
+    printf '%b' "\a${emoji} "
+    printf '%s' "$label"
+    printf '%b' "\e]8;;\a\e[0m"
+  else
+    printf '%b' "\e[${color}m${emoji} "
+    printf '%s' "$label"
+    printf '%b' "\e[0m"
+  fi
+  LINE_HAS_OUTPUT=true
+}
+
+# 캐시 히트율 suffix (render_cache_ttl 내부 호출)
 _render_cache_hit() {
   [ -z "$CACHE_HIT_PCT" ] && return
   local sym color
   if [ "$CACHE_HIT_PCT" -ge 80 ] 2>/dev/null; then
-    sym=$'\xe2\x9c\x93'; color="32"      # ✓ green
+    sym=$'\xe2\x9c\x93'; color="32"
   elif [ "$CACHE_HIT_PCT" -ge 50 ] 2>/dev/null; then
-    sym=$'\xe2\x96\xb3'; color="33"      # △ yellow
+    sym=$'\xe2\x96\xb3'; color="33"
   else
-    sym=$'\xe2\x9c\x97'; color="31"      # ✗ red
+    sym=$'\xe2\x9c\x97'; color="31"
   fi
   printf ' %b' "\e[${color}m${sym}"
   printf '%s%%' "$CACHE_HIT_PCT"
   printf '%b' "\e[0m"
 }
 
-# render_cache_ttl: 캐시 TTL 남은 시간을 색상 + 아이콘으로 출력
-# $1=remaining_seconds. 색상 임계값은 CACHE_TTL에 비례 (DA 합의).
-# 5분 TTL: green≥2m, yellow≥1m, red<1m (기존과 동일)
-# 1시간 TTL: green≥24m, yellow≥12m, red<12m
+# Cache TTL 렌더 + hit% suffix
 render_cache_ttl() {
   local remaining=$1
   if [ "$remaining" -le 0 ]; then
@@ -362,8 +592,6 @@ render_cache_ttl() {
   _render_cache_hit
 }
 
-# rate_color: 사용률에 따른 ANSI 색상 코드 반환
-# $1=percentage → 32(green <50%) / 33(yellow 50-79%) / 31(red ≥80%)
 rate_color() {
   if [ "${1:-0}" -ge 80 ] 2>/dev/null; then echo "31"
   elif [ "${1:-0}" -ge 50 ] 2>/dev/null; then echo "33"
@@ -371,35 +599,27 @@ rate_color() {
   fi
 }
 
-# format_remaining: 초 → 사람이 읽기 쉬운 형식 (XdYh / XhYYm / Xm)
 format_remaining() {
   local secs=${1:-0}
   if [ "$secs" -le 0 ] 2>/dev/null; then echo "0m"; return; fi
   local d=$((secs / 86400)) h=$(((secs % 86400) / 3600)) m=$(((secs % 3600) / 60))
-  if [ "$d" -gt 0 ]; then printf '%dd%dh' $d $h
-  elif [ "$h" -gt 0 ]; then printf '%dh%02dm' $h $m
-  else printf '%dm' $m
+  if [ "$d" -gt 0 ]; then printf '%dd%dh' "$d" "$h"
+  elif [ "$h" -gt 0 ]; then printf '%dh%02dm' "$h" "$m"
+  else printf '%dm' "$m"
   fi
 }
 
-# render_rate_window: progress bar + 잔여 시간 + 리셋 시각
-# $1=pct $2=window_name $3=resets_at(unix) $4=now(unix) $5=detail_level
-# detail: 4=full, 3=no date, 2=no remaining, 1=no bar
 render_rate_window() {
   local pct=${1:-0} window=$2 resets_at=$3 now=$4 detail=${5:-4}
-  # 소수점 truncate (bash 산술은 정수만 지원, e.g. "37.5" → "37")
   pct=${pct%%.*}
   pct=${pct:-0}
-  # pct를 0-100으로 clamp (음수/초과값 방어)
   [ "$pct" -lt 0 ] 2>/dev/null && pct=0
   [ "$pct" -gt 100 ] 2>/dev/null && pct=100
   local color
   color=$(rate_color "$pct")
 
-  # Progress bar (detail ≥ 2)
   if [ "$detail" -ge 2 ]; then
     local filled=$((pct / 10)) empty
-    # 0%가 아니면 최소 1블록으로 시각적 존재감 확보
     [ "$pct" -gt 0 ] 2>/dev/null && [ "$filled" -eq 0 ] && filled=1
     empty=$((10 - filled))
     local i bar_filled="" bar_empty=""
@@ -408,18 +628,15 @@ render_rate_window() {
     printf '%b%s%b%s%b ' "\e[${color}m" "$bar_filled" "\e[${MUTED}m" "$bar_empty" "\e[0m"
   fi
 
-  # Percentage + window (always)
   printf '%b%s%b %s' "\e[${color}m" "${pct}%" "\e[0m" "$window"
 
   if [ -n "$resets_at" ] && [ "$resets_at" -gt 0 ] 2>/dev/null; then
-    # → remaining (detail ≥ 3)
     if [ "$detail" -ge 3 ]; then
       local remaining=$((resets_at - now))
       if [ "$remaining" -gt 0 ]; then
-        printf ' %b%s%b %s' "\e[${MUTED}m" "→" "\e[0m" "$(format_remaining $remaining)"
+        printf ' %b%s%b %s' "\e[${MUTED}m" "→" "\e[0m" "$(format_remaining "$remaining")"
       fi
     fi
-    # (reset_date) (detail ≥ 4)
     if [ "$detail" -ge 4 ]; then
       local reset_fmt
       reset_fmt=$(date -r "$resets_at" "+%m/%d %H:%M" 2>/dev/null \
@@ -429,63 +646,78 @@ render_rate_window() {
   fi
 }
 
-# 출력 순서: Link Icons → Rate Limits (별도 줄)
+# ============================================================
+# Output: 라인별 출력 (D-13: begin_line/end_line 헬퍼만, context_lines 추상화 없음)
+# ============================================================
 
-# Jira: yellow — ⚡ (SSH에서는 클릭 불가한 외부 URL이므로 숨김)
+# L1: /set-icons (Jira → Slack → Figma → Memo) — 조건부 라인
+begin_line
 if [ -n "$JIRA_URL" ] && [ -n "$JIRA_LABEL" ] && ! $IS_SSH; then
   print_icon "33" "$JIRA_URL" "\xe2\x9a\xa1" "$JIRA_LABEL"
 fi
-
-# Slack: magenta — 💬 (SSH에서 숨김)
 if [ -n "$SLACK_URL" ] && [ -n "$SLACK_LABEL" ] && ! $IS_SSH; then
   print_icon "35" "$SLACK_URL" "\xf0\x9f\x92\xac" "$SLACK_LABEL"
 fi
-
-# Figma: red — 🎨 (SSH에서 숨김)
 if [ -n "$FIGMA_URL" ] && [ -n "$FIGMA_LABEL" ] && ! $IS_SSH; then
   print_icon "31" "$FIGMA_URL" "\xf0\x9f\x8e\xa8" "$FIGMA_LABEL"
 fi
-
-# Plan: cyan — 📝 (SSH에서는 링크 없이 텍스트만 표시)
-# stale state file은 [ -f "$PLAN_FILE" ]에 의해 아이콘 미표시,
-# 새 plan 생성 시 자연 덮어쓰기로 갱신됨
-if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ]; then
-  PLAN_URL="file://${PLAN_FILE}"; $IS_SSH && PLAN_URL=""
-  print_icon "36" "$PLAN_URL" "\xf0\x9f\x93\x9d" "Plan"
-fi
-
-# Memo: green — 📓 (SSH에서는 링크 없이 텍스트만 표시)
 if [ -n "$MEMO_PATH" ] && [ -f "$MEMO_PATH" ]; then
   MEMO_URL="file://${MEMO_PATH}"; $IS_SSH && MEMO_URL=""
   print_icon "32" "$MEMO_URL" "\xf0\x9f\x93\x93" "${MEMO_LABEL:-Memo}"
 fi
+end_line
 
-# Memory: blue — 🧠 (SSH에서는 링크 없이 텍스트만 표시)
-# statusline에서 직접 감지 (Plan과 동일한 방식, 상태 파일 불필요)
+# L2: cwd + (워크트리가 아니면 branch + session-id 같은 라인)
+begin_line
+if [ -n "$CWD_DISPLAY" ]; then
+  # cwd 아이콘: 📁 (folder)
+  print_icon "36" "$CWD_URL" "\xf0\x9f\x93\x81" "$CWD_DISPLAY"
+fi
+if ! $IS_WORKTREE; then
+  if [ -n "$GIT_BRANCH" ]; then
+    # branch 아이콘: 🌿 (no link)
+    print_icon "32" "" "\xf0\x9f\x8c\xbf" "$GIT_BRANCH"
+  fi
+  if [ -n "$SESSION_ID_DISPLAY" ]; then
+    # session-id 아이콘: 🆔
+    print_icon "34" "$SESSION_URL" "\xf0\x9f\x86\x94" "$SESSION_ID_DISPLAY"
+  fi
+fi
+end_line
+
+# L3 (worktree만): branch + session-id
+if $IS_WORKTREE; then
+  begin_line
+  if [ -n "$GIT_BRANCH" ]; then
+    print_icon "32" "" "\xf0\x9f\x8c\xbf" "$GIT_BRANCH"
+  fi
+  if [ -n "$SESSION_ID_DISPLAY" ]; then
+    print_icon "34" "$SESSION_URL" "\xf0\x9f\x86\x94" "$SESSION_ID_DISPLAY"
+  fi
+  end_line
+fi
+
+# L_M: Plan/Memory/Cache TTL + hit%
+begin_line
+if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ]; then
+  PLAN_URL="file://${PLAN_FILE}"; $IS_SSH && PLAN_URL=""
+  print_icon "36" "$PLAN_URL" "\xf0\x9f\x93\x9d" "Plan"
+fi
 if [ -n "$MEMORY_LINK" ]; then
   MEMORY_URL="$MEMORY_LINK"; $IS_SSH && MEMORY_URL=""
   print_icon "34" "$MEMORY_URL" "\xf0\x9f\xa7\xa0" "$MEMORY_LABEL"
 fi
 
-# Cache TTL: 프롬프트 캐시 남은 시간 표시
-# 값 "0" = Stop 미기록 상태 (UserPromptSubmit → Stop 사이) → mtime 기준 카운트다운
-#   정상 API 호출 중에는 Stop에서 타임스탬프가 곧 기록되어 리셋됨
-#   중단(Escape/Ctrl+C) 시에는 자연스럽게 0까지 감소 후 expired
-# 값 >0  = Unix epoch (Stop 시점) → 카운트다운
-# 공통 렌더링: render_cache_ttl 함수 사용
-# 세션별 파일 우선, 글로벌 fallback
+# Cache TTL (기존 로직 유지, SESSION_ID 검증 통과 시에만)
 CACHE_TTL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/claude-hooks"
-if [ -n "$SESSION_ID" ]; then
-  LAST_STOP_FILE="${CACHE_TTL_DIR}/last-stop-${SESSION_ID}"
-else
-  LAST_STOP_FILE="${CACHE_TTL_DIR}/last-stop"
-fi
-if [ -f "$LAST_STOP_FILE" ]; then
+LAST_STOP_FILE=""
+$SIDECAR_IO_ENABLED && LAST_STOP_FILE="${CACHE_TTL_DIR}/last-stop-${SESSION_ID}"
+if [ -n "$LAST_STOP_FILE" ] && [ -f "$LAST_STOP_FILE" ]; then
   last_stop=$(cat "$LAST_STOP_FILE" 2>/dev/null)
   if [ -n "$last_stop" ] 2>/dev/null; then
     if [ "$last_stop" = "0" ]; then
-      # "0" = Stop 미기록 상태의 in-flight sentinel (mtime 기준 카운트다운)
-      file_mtime=$(stat -c %Y "$LAST_STOP_FILE" 2>/dev/null || stat -f %m "$LAST_STOP_FILE" 2>/dev/null || echo 0)
+      file_mtime=$(stat -c %Y "$LAST_STOP_FILE" 2>/dev/null \
+                || /usr/bin/stat -f %m "$LAST_STOP_FILE" 2>/dev/null || echo 0)
       elapsed=$((NOW - file_mtime))
       remaining=$((CACHE_TTL - elapsed))
       render_cache_ttl "$remaining"
@@ -496,42 +728,16 @@ if [ -f "$LAST_STOP_FILE" ]; then
     fi
   fi
 fi
+end_line
 
-# 아이콘이 하나라도 있으면 최종 개행
-if $HAS_OUTPUT; then printf '\n'; fi
-
-# Rate Limits: 터미널 폭에 따라 progressive disclosure
-# detail 4: ██░░░░░░░░ 1% 5h → 3h49m (03/20 16:00) | █████████░ 97% 7d → 8h49m (03/20 21:00)
-# detail 3: ██░░░░░░░░ 1% 5h → 3h49m | █████████░ 97% 7d → 8h49m
-# detail 2: ██░░░░░░░░ 1% 5h | █████████░ 97% 7d
-# detail 1: 1% 5h | 97% 7d
+# L_N: Rate Limits (5h/7d) — 폭에 따라 progressive disclosure
 if [ -n "$RATE_5H" ] || [ -n "$RATE_7D" ]; then
-  # tput cols는 서브프로세스에서 항상 80 고정 → stty size </dev/tty로 실제 폭 조회
-  COLS=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
-  [ "${COLS:-0}" -gt 0 ] 2>/dev/null || COLS=80
-
-  # === 유효 폭(EFF_COLS) 계산 ===
-  # Claude Code statusbar는 좌측(statusline 출력)과 우측(토큰 수, 버전 등)을 한 줄에 배치.
-  # COLS >= 80: 좌우 콘텐츠가 한 줄에 공존 → 우측 ~40자 감안하여 유효폭 축소.
-  # COLS < 80: 줄바꿈이 발생하여 각 항목이 별도 행 → rate limits가 전체 폭 사용 가능.
-  #   근거: ~50 cols 터미널(iPhone Termius)에서 아이콘/rate/토큰/버전이 각각 별도 행 확인.
-  if [ "$COLS" -lt 80 ]; then
-    EFF_COLS=$COLS
-  else
-    EFF_COLS=$((COLS - 40))
-  fi
-
-  # 콘텐츠 너비 기반 임계값:
-  #   detail 4 = bar(11) + "100% 5h → 99d23h (12/31 23:59)"(~30) × 2 + sep(3) ≈ 최대 85자 → 임계값 88
-  #   detail 3 = bar(11) + "100% 5h → 99d23h"(~16) × 2 + sep(3) ≈ 최대 55자 → 임계값 58
-  #   detail 2 = bar(11) + "100% 5h"(7) × 2 + sep(3) = 최대 39자 → 임계값 40
   if   [ "$EFF_COLS" -ge 88 ]; then RATE_DETAIL=4
   elif [ "$EFF_COLS" -ge 58 ]; then RATE_DETAIL=3
   elif [ "$EFF_COLS" -ge 40 ]; then RATE_DETAIL=2
   else RATE_DETAIL=1
   fi
 
-  # NOW는 스크립트 상단에서 이미 계산됨
   if [ -n "$RATE_5H" ]; then
     render_rate_window "$RATE_5H" "5h" "$RATE_5H_RESET" "$NOW" "$RATE_DETAIL"
   fi
