@@ -283,9 +283,9 @@ playwright-cli kill-all
 
 ## Installation
 
-The npm bin name `playwright-cli` is provided by the **`@playwright/cli`** package (Microsoft, Apache-2.0). The bare npm name `playwright-cli` (no scope) is a *different, deprecated* package — do not invoke it via `npx playwright-cli` because npx will resolve it to the deprecated, unrelated package or fail.
+The npm bin name `playwright-cli` is provided by the `@playwright/cli` package (Microsoft, Apache-2.0). The bare npm name `playwright-cli` (no scope) is a *different, deprecated* package — do not invoke it via `npx playwright-cli` because npx will resolve it to the deprecated, unrelated package or fail.
 
-If global `playwright-cli` command is not available, use the scoped package explicitly. The agent path is **cache-only** (no network, no install). Bootstrap and global install are **user-managed** because they fall outside the skill's `allowed-tools: Bash(playwright-cli:*) Bash(npx:*)` scope or perform side-effectful registry/install actions.
+If global `playwright-cli` command is not available, use the scoped package explicitly. The agent path is cache-only (no network, no install). Bootstrap and global install are user-managed because they fall outside the skill's `allowed-tools: Bash(playwright-cli:*) Bash(npx:*)` scope or perform side-effectful registry/install actions.
 
 ```bash
 # Agent path — cache-only check (no network; fails fast if @playwright/cli is not in npm cache)
@@ -296,7 +296,7 @@ Use `npx --offline --package=@playwright/cli playwright-cli` as the command pref
 
 ### User-managed setup (one-time, outside agent scope)
 
-When the cache-only check fails (cold cache or NixOS host without prior install), the user runs **one** of the following manually. Agent sessions must not auto-execute these — they perform registry fetch and/or filesystem install:
+When the cache-only check fails (cold cache or NixOS host without prior install), the user runs one of the following manually. Agent sessions must not auto-execute these — they perform registry fetch and/or filesystem install:
 
 ```bash
 # Bootstrap into npm cache (then re-run cache-only path)
@@ -360,8 +360,8 @@ playwright-cli close
 
 NixOS 또는 다른 호스트에서는 다음 단계를 따른다:
 
-1. **Cache-only 경로 (에이전트가 사용)** — `npx --offline --package=@playwright/cli playwright-cli`를 prefix로 사용. `@playwright/cli`가 local npm cache에 있을 때만 동작하며, 캐시 hit 외에는 즉시 실패한다 (네트워크 미사용). 이 경로는 frontmatter `allowed-tools: Bash(npx:*)` 권한 안에서 안전하게 동작한다.
-2. **Bootstrap / Install (사용자가 직접 셋업)** — cache-only가 실패하면 사용자가 본 스킬 frontmatter의 일상 사용 권한 범위 *밖*에서 한 번 셋업한다. 에이전트는 이 명령들을 자동 실행하지 말 것:
+1. Cache-only 경로 (에이전트가 사용) — `npx --offline --package=@playwright/cli playwright-cli`를 prefix로 사용. `@playwright/cli`가 local npm cache에 있을 때만 동작하며, 캐시 hit 외에는 즉시 실패한다 (네트워크 미사용). 이 경로는 frontmatter `allowed-tools: Bash(npx:*)` 권한 안에서 안전하게 동작한다.
+2. Bootstrap / Install (사용자가 직접 셋업) — cache-only가 실패하면 사용자가 본 스킬 frontmatter의 일상 사용 권한 범위 *밖*에서 한 번 셋업한다. 에이전트는 이 명령들을 자동 실행하지 말 것:
    - `npx --package=@playwright/cli --yes playwright-cli --version` — registry fetch 후 cache 채우고 1단계로 복귀
    - `npm install -g @playwright/cli` — global 설치 (NixOS 호스트에서 빈번한 사용 시 권장, deterministic)
    - `npm install --save-dev @playwright/cli` — per-project 설치
@@ -370,12 +370,12 @@ AI 에이전트 세션 종류(Claude Code · Codex CLI · headless)와 무관하
 
 ## Specific tasks
 
-* **Running and Debugging Playwright tests** [references/playwright-tests.md](references/playwright-tests.md)
-* **Request mocking** [references/request-mocking.md](references/request-mocking.md)
-* **Running Playwright code** [references/running-code.md](references/running-code.md)
-* **Browser session management** [references/session-management.md](references/session-management.md)
-* **Storage state (cookies, localStorage)** [references/storage-state.md](references/storage-state.md)
-* **Test generation** [references/test-generation.md](references/test-generation.md)
-* **Tracing** [references/tracing.md](references/tracing.md)
-* **Video recording** [references/video-recording.md](references/video-recording.md)
-* **Inspecting element attributes** [references/element-attributes.md](references/element-attributes.md)
+* Running and Debugging Playwright tests [references/playwright-tests.md](references/playwright-tests.md)
+* Request mocking [references/request-mocking.md](references/request-mocking.md)
+* Running Playwright code [references/running-code.md](references/running-code.md)
+* Browser session management [references/session-management.md](references/session-management.md)
+* Storage state (cookies, localStorage) [references/storage-state.md](references/storage-state.md)
+* Test generation [references/test-generation.md](references/test-generation.md)
+* Tracing [references/tracing.md](references/tracing.md)
+* Video recording [references/video-recording.md](references/video-recording.md)
+* Inspecting element attributes [references/element-attributes.md](references/element-attributes.md)

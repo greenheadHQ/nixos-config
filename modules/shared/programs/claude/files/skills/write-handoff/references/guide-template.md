@@ -13,10 +13,10 @@
 - **Blockers**: <있으면 명시, 없으면 "없음">
 ````
 
-**작성 규칙**:
+작성 규칙:
 - 가이드 상단 10줄 이내에 배치 (primacy bias 활용).
 - 4슬롯 모두 채운다. 해당 없으면 "없음" 명시.
-- **공개 노출 주의**: 이 가이드는 `gh issue comment`로 GitHub에 게시된다. `현재 상태` 슬롯에 민감한 로컬 컨텍스트(`git status` 출력, 워크트리 dirty state, 개인 작업 경로)를 적지 않는다. 공개 안전 정보(repo-relative 파일 경로, 작업 단계, 검증 결과)만 기술.
+- 공개 노출 주의: 이 가이드는 `gh issue comment`로 GitHub에 게시된다. `현재 상태` 슬롯에 민감한 로컬 컨텍스트(`git status` 출력, 워크트리 dirty state, 개인 작업 경로)를 적지 않는다. 공개 안전 정보(repo-relative 파일 경로, 작업 단계, 검증 결과)만 기술.
 - 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — 장문에서 모델은 시작/끝 정보에 강하고 중간 정보 활용이 약함.
 
 ## 헤더 블록
@@ -83,7 +83,7 @@ grep "toolPath" libraries/constants.nix
 - `[UNVERIFIED]` `toolPath`가 다른 모듈에서 import되는지 여부는 구현 시점에 `grep -rn toolPath modules/` 로 실측 필요
 ````
 
-**작성 규칙:**
+작성 규칙:
 - `(병렬 가능)` 힌트를 명시하여 LLM이 독립 명령을 동시 실행하도록 유도한다.
 - 이슈에 기재된 값과 실제 값이 다를 수 있음을 명시한다 ("진실 원천 우선" 패턴).
 - 기대 결과를 구체적으로 적어 LLM이 현재 상태와 비교할 수 있게 한다.
@@ -126,7 +126,7 @@ enableFeature = true;
 ```
 ````
 
-**작성 규칙:**
+작성 규칙:
 - BEFORE/AFTER 쌍을 반드시 제공한다. "version을 업데이트한다"같은 모호한 지시는 금지.
 - 각 변경에 대상 파일 경로를 명시한다.
 - 변경이 여러 파일에 걸치면 파일별로 소항목을 분리한다.
@@ -271,6 +271,6 @@ Issue #252의 LLM 이행 가이드에서 관찰된 효과적인 패턴:
 
 ### "미검증 주석" 패턴 (DEPRECATED)
 
-> **DEPRECATED**: HTML 주석 `<!-- 미검증: ... -->` 패턴은 더 이상 권장되지 않는다. 신규 산출물은 위 [`[UNVERIFIED]` 라벨 패턴](#unverified-라벨-패턴)을 사용한다. 규칙 상세와 마이그레이션 정책은 [체크리스트 라벨 체계](llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조.
+> DEPRECATED: HTML 주석 `<!-- 미검증: ... -->` 패턴은 더 이상 권장되지 않는다. 신규 산출물은 위 [`[UNVERIFIED]` 라벨 패턴](#unverified-라벨-패턴)을 사용한다. 규칙 상세와 마이그레이션 정책은 [체크리스트 라벨 체계](llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조.
 
 HTML 주석은 실행 컨텍스트에서 눈에 덜 띄어 후속 LLM이 간과하기 쉽다. `[UNVERIFIED]` 라벨은 본문에 인라인으로 노출되어 더 안정적으로 인지된다.

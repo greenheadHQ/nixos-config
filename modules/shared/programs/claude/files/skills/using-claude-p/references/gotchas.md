@@ -73,7 +73,7 @@ claude -p "REST API 호출해줘"
 echo "먼저 .env 파일에서 MY_TOKEN을 읽은 뒤 사용하라" | claude -p --dangerously-skip-permissions
 ```
 
-⚠️ **보안 주의**: `VAR=val command` 형태는 셸 히스토리와 `/proc/<pid>/environ`에 credential이 노출된다. 프로덕션에서는 secrets manager 또는 `read -s VAR && VAR="$VAR" claude -p ...` 패턴을 사용하라. `.env` + `--dangerously-skip-permissions` 조합은 에이전트가 파일 내 모든 secret을 읽고 임의 명령으로 외부 전송할 수 있으므로, 신뢰할 수 없는 환경에서는 사용하지 마라.
+⚠️ 보안 주의: `VAR=val command` 형태는 셸 히스토리와 `/proc/<pid>/environ`에 credential이 노출된다. 프로덕션에서는 secrets manager 또는 `read -s VAR && VAR="$VAR" claude -p ...` 패턴을 사용하라. `.env` + `--dangerously-skip-permissions` 조합은 에이전트가 파일 내 모든 secret을 읽고 임의 명령으로 외부 전송할 수 있으므로, 신뢰할 수 없는 환경에서는 사용하지 마라.
 
 v2.1.81 실측 (v2.1.116 재검증 미수행). `CLAUDE_CODE_MAX_RETRIES`, `ANTHROPIC_API_KEY` 등 Claude Code 내장 환경변수는 정상 인식됨.
 
@@ -218,7 +218,7 @@ echo "ls /tmp 실행해줘" | claude -p; echo "EXIT: $?"
 
 도구를 못 썼는데도 에러가 아닌 정상 종료. 실패를 감지하려면 출력 내용을 파싱해야 한다.
 
-⚠️ **`--dangerously-skip-permissions` + `--allowedTools` 상호작용**: `--dangerously-skip-permissions`는 `--allowedTools` 제한을 **완전히 무시**한다. `--allowedTools "Read"`로 Bash를 제한하더라도 `--dangerously-skip-permissions`가 있으면 Bash가 제한 없이 사용 가능하다. 도구를 실제로 제한하려면 `--dangerously-skip-permissions` 없이 `--allowedTools`를 단독 사용하라. v2.1.81 실측.
+⚠️ `--dangerously-skip-permissions` + `--allowedTools` 상호작용: `--dangerously-skip-permissions`는 `--allowedTools` 제한을 완전히 무시한다. `--allowedTools "Read"`로 Bash를 제한하더라도 `--dangerously-skip-permissions`가 있으면 Bash가 제한 없이 사용 가능하다. 도구를 실제로 제한하려면 `--dangerously-skip-permissions` 없이 `--allowedTools`를 단독 사용하라. v2.1.81 실측.
 
 ### #7. `--permission-mode bypassPermissions` = `--dangerously-skip-permissions`
 
@@ -256,7 +256,7 @@ echo "현재 디렉토리의 파일 목록을 보여줘" | claude -p --tools ""
 
 ⚠️ `--mcp-servers ""` / `--no-mcp` 플래그는 v2.1.76에 존재하지 않음. MCP 도구를 비활성화하는 공식 방법은 `claude -p --help` 출력을 확인한다.
 
-⚠️ **역방향도 성립**: `--allowedTools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 **초기화되지 않으면 사용 불가**. `allowedTools`는 허용 목록이지, 서버 활성화 지시가 아니다. MCP 서버 초기화는 `.mcp.json` 또는 `settings.json`의 MCP 설정에 의존한다 (`.mcp.json`에 미등록이거나 서버 프로세스가 init 단계에서 연결 실패한 경우 "미활성"). `--strict-mcp-config`로 특정 MCP 설정만 로드하는 것도 가능하다 (v2.1.81+). v2.1.81 실측.
+⚠️ 역방향도 성립: `--allowedTools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 초기화되지 않으면 사용 불가. `allowedTools`는 허용 목록이지, 서버 활성화 지시가 아니다. MCP 서버 초기화는 `.mcp.json` 또는 `settings.json`의 MCP 설정에 의존한다 (`.mcp.json`에 미등록이거나 서버 프로세스가 init 단계에서 연결 실패한 경우 "미활성"). `--strict-mcp-config`로 특정 MCP 설정만 로드하는 것도 가능하다 (v2.1.81+). v2.1.81 실측.
 
 ### #13. `--disable-slash-commands`로 스킬 비활성화 시 "Unknown skill"
 
@@ -267,7 +267,7 @@ echo "/create-issue 이슈 보여줘" | claude -p --disable-slash-commands --dan
 
 ### #38. 플러그인 스킬 인식은 설치 시점에 고정됨
 
-`claude -p`는 `~/.claude/plugins/installed_plugins.json`의 `installPath` → `skills/` 디렉토리에서 스킬을 로드한다. **설치 시점에 존재했던 스킬만 인식**하며, 이후 캐시 디렉토리에 파일을 추가하거나 symlink를 생성하거나 marketplace repo를 다른 브랜치로 checkout해도 인식되지 않는다.
+`claude -p`는 `~/.claude/plugins/installed_plugins.json`의 `installPath` → `skills/` 디렉토리에서 스킬을 로드한다. 설치 시점에 존재했던 스킬만 인식하며, 이후 캐시 디렉토리에 파일을 추가하거나 symlink를 생성하거나 marketplace repo를 다른 브랜치로 checkout해도 인식되지 않는다.
 
 ```bash
 # ❌ 캐시에 물리 복사 — 인식 안 됨
@@ -427,7 +427,7 @@ wait
 
 ## 참고
 
-- 확인 날짜: **2026-04-21**
-- 확인 버전: **Claude Code v2.1.116**
+- 확인 날짜: 2026-04-21
+- 확인 버전: Claude Code v2.1.116
 - 확인 범위: 문서 메타데이터/핵심 항목 기준이며, 각 항목의 재검증 상태는 본문 주석(예: "재검증 미수행")을 따른다.
 - 재검증: `claude --version` 출력과 비교 후, 변경된 항목이 있으면 갱신한다

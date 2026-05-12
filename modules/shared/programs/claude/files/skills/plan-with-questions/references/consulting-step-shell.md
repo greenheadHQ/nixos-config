@@ -47,7 +47,6 @@ literal 재사용 환각 주의 (issue #632): 이 3-call flow는 출력된 `CONS
 
 Background 실행 계약: 아래 명령 자체에는 `&` 를 붙이지 않는다. 호출자는 지원 런타임의 background 실행 옵션 (예: Claude Code Bash tool의 `run_in_background: true`) 으로 본 명령을 띄우고, 메인 에이전트가 Step 3.5 결과 도착까지 다른 작업을 병렬 진행한다. 셸 수준 `&` chain은 stdin EOF / heredoc 종료 경합으로 hang을 만들 수 있으므로 금지한다 ([`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) 참조).
 
-
 ```zsh
 # 위 CONSULT_DIR 리터럴 값을 그대로 사용. supervised wrapper가 setsid + timeout 으로
 # process group kill을 보장한다 (issue #593, known-issues.md §15).
@@ -87,7 +86,6 @@ CODEX_EXEC_TIMEOUT_SECONDS=1800 env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 Schema 키 set의 executable validator mirror: 아래 셸 호출 3 의 `jq -e` 검증은 schema의 7개 `technical_matrix` 키 (`요구충족`, `구현비용`, `되돌리기쉬움`, `운영위험`, `검증가능성`, `주요unknown`, `비용시간추정`) 와 `disqualifiers`, `evidence_gaps`, `user_facing` 4 필드 (`label`, `description`, `analogy`, `plain_disqualifier`) 를 하드코딩한다.
 
 schema 정의의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 의 출력 JSON schema 섹션이며, 본 jq 스니펫은 그 schema의 executable mirror 다 (SSOT 자체가 아니라 mirror 책임). schema 정의가 변경되면 본 mirror도 함께 갱신해야 한다 (manual sync contract). 자동 검증 강화는 별도 follow-up (예: `verify-ai-compat.sh`에 schema key set drift 검증 추가).
-
 
 ```zsh
 CONSULT_DIR=/tmp/consult-c4a35fc4-AbCdEf

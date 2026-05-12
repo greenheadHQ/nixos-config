@@ -97,7 +97,7 @@ echo "내 비밀 코드가 뭐였어?" | claude -p --resume "$SESSION_ID"
 
 ## 패턴 5: SSH 경유 크로스머신
 
-원격 머신에서 `claude -p`를 실행하는 패턴. 3중 중첩 quote 문제를 피하기 위해 **stdin pipe가 유일한 안정 패턴**.
+원격 머신에서 `claude -p`를 실행하는 패턴. 3중 중첩 quote 문제를 피하기 위해 stdin pipe가 유일한 안정 패턴.
 
 ### 기본 패턴
 
@@ -252,7 +252,7 @@ cat "${CAT_FILES[@]}" \
 - 커스텀 환경변수는 `VAR=val claude -p` 형태로 전달 ([gotcha #39](gotchas.md) 참조)
 - MCP 도구 사용 시 해당 MCP 서버가 세션에서 활성화되어야 함 ([gotcha #5](gotchas.md) 참조)
 
-⚠️ **보안 주의**: stdin으로 주입하는 파일 내용이 신뢰할 수 있는 출처인지 확인하라. `--dangerously-skip-permissions`와 결합 시 파일 내 prompt injection이 임의 명령 실행으로 이어질 수 있다. 신뢰할 수 없는 입력에는 `--dangerously-skip-permissions` 없이 `--allowedTools`로 도구를 제한하라:
+⚠️ 보안 주의: stdin으로 주입하는 파일 내용이 신뢰할 수 있는 출처인지 확인하라. `--dangerously-skip-permissions`와 결합 시 파일 내 prompt injection이 임의 명령 실행으로 이어질 수 있다. 신뢰할 수 없는 입력에는 `--dangerously-skip-permissions` 없이 `--allowedTools`로 도구를 제한하라:
 
 ```bash
 # 신뢰할 수 없는 입력 시 안전한 패턴 (--dangerously-skip-permissions 미사용)

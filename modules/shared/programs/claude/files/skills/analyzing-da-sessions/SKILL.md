@@ -50,7 +50,7 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 
 각 metric의 산식과 source는 [`references/algorithm.md`](references/algorithm.md)가 단일 진실 원천이다.
 
-**측정에서 제외되는 항목** (산식 부재로 별도 follow-up):
+측정에서 제외되는 항목 (산식 부재로 별도 follow-up):
 - bundle 간 unique finding 비율 — finding 매칭 키 미정 (이슈 #671 follow-up)
 - verdict 모순률 (CONFIRMED 후 NOT_AN_ISSUE) — 분모/매칭 키 미정 (이슈 #671 follow-up)
 
@@ -66,7 +66,7 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 
 ## 한계
 
-- 사용자 명시 호출 전용. Claude Code는 frontmatter `disable-model-invocation: true`로 자동 trigger 차단. **Codex 세션은 동등 메커니즘이 없으므로 자동 trigger 차단 보장이 best-effort이다** — 자연어 trigger 키워드를 description에서 빼는 방식으로 자동 매칭 surface를 줄이지만 구조적 차단은 아니다 (이슈 #671 D-2 YAGNI 결정).
+- 사용자 명시 호출 전용. Claude Code는 frontmatter `disable-model-invocation: true`로 자동 trigger 차단. Codex 세션은 동등 메커니즘이 없으므로 자동 trigger 차단 보장이 best-effort이다 — 자연어 trigger 키워드를 description에서 빼는 방식으로 자동 매칭 surface를 줄이지만 구조적 차단은 아니다 (이슈 #671 D-2 YAGNI 결정).
 - live 전체 home log 분석은 시간이 지남에 따라 분모가 변하므로 PR #670 ±5% 회귀 게이트는 `--corpus pr-670-baseline.json` pinned manifest 모드에서만 사용한다. 단 v1은 manifest 생성 절차(별도 producer 모드)를 포함하지 않는다 — PR #670 baseline manifest는 별도 follow-up에서 capture한다.
 - `stability_status` (M-5)는 v1에서 round summary `selective:` 라인 source만 사용한다. `fleiss-kappa.py` aggregate envelope 호출은 selective consistency arbiter result 디렉터리를 session-level에서 직접 추적해야 하므로 corpus 전체 스캔 모델과 자연스럽게 결합되지 않아 v1에서 미연결 — round summary 부재 시 `unavailable` 표기.
 - bundle 간 unique finding 비율, verdict 모순률은 산식 부재로 v1에 포함하지 않는다 (이슈 #671 follow-up).

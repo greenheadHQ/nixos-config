@@ -14,7 +14,7 @@ PLAYWRIGHT_HTML_OPEN=never npx --offline playwright test
 
 To debug a failing Playwright test, run it with `--debug=cli` option. This command will pause the test at the start and print the debugging instructions. Use the same package-manager-script or cache-only npx rule as normal test runs.
 
-**IMPORTANT**: run the command in the background and check the output until "Debugging Instructions" is printed.
+IMPORTANT: run the command in the background and check the output until "Debugging Instructions" is printed.
 
 Once instructions containing a session name are printed, use `playwright-cli` to attach the session and explore the page.
 

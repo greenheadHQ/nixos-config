@@ -2,15 +2,15 @@
 
 `claude -p --output-format json`의 init 이벤트를 활용하여 harness 구성요소를 자동 검증한다.
 
-- 확인 날짜: **2026-04-21**
-- 확인 버전: **Claude Code v2.1.116**
+- 확인 날짜: 2026-04-21
+- 확인 버전: Claude Code v2.1.116
 - 비용: 각 테스트 ~$0.07 (1-turn, 최소 프롬프트)
 
 ## T1: Harness 인벤토리 검증
 
-**목적**: init 이벤트에서 skills, tools, MCP, plugins 수가 기대치와 일치하는지 확인
+목적: init 이벤트에서 skills, tools, MCP, plugins 수가 기대치와 일치하는지 확인
 
-**비용**: ~$0.07 | **위치**: 로컬
+비용: ~$0.07 | 위치: 로컬
 
 ```bash
 #!/usr/bin/env bash
@@ -52,13 +52,13 @@ PASS=true
 $PASS && echo "T1: PASS" || echo "T1: FAIL"
 ```
 
-**판정 로직**: Skills >= 10, Tools >= 10, MCP >= 1이면 PASS. 정확한 기대값은 nrs 직후 한 번 측정하여 기준선으로 사용.
+판정 로직: Skills >= 10, Tools >= 10, MCP >= 1이면 PASS. 정확한 기대값은 nrs 직후 한 번 측정하여 기준선으로 사용.
 
 ## T2: 스킬 트리거 Spot Check
 
-**목적**: 주요 스킬이 init 이벤트의 skills 목록에 존재하는지 확인
+목적: 주요 스킬이 init 이벤트의 skills 목록에 존재하는지 확인
 
-**비용**: ~$0.07 (T1과 동일 init 이벤트 재사용 가능) | **위치**: 로컬
+비용: ~$0.07 (T1과 동일 init 이벤트 재사용 가능) | 위치: 로컬
 
 ```bash
 #!/usr/bin/env bash
@@ -92,13 +92,13 @@ done
 $PASS && echo "T2: PASS" || echo "T2: FAIL"
 ```
 
-**판정 로직**: 지정된 스킬 이름이 모두 init skills 목록에 존재하면 PASS.
+판정 로직: 지정된 스킬 이름이 모두 init skills 목록에 존재하면 PASS.
 
 ## T3: Hooks 로드 검증
 
-**목적**: settings.json에 등록된 hooks가 실제 파일로 존재하고 실행 가능한지 확인
+목적: settings.json에 등록된 hooks가 실제 파일로 존재하고 실행 가능한지 확인
 
-**비용**: $0 (파일 시스템 검사만) | **위치**: 로컬
+비용: $0 (파일 시스템 검사만) | 위치: 로컬
 
 ```bash
 #!/usr/bin/env bash
@@ -148,13 +148,13 @@ done <<< "$HOOK_PATHS"
 $PASS && echo "T3: PASS" || echo "T3: FAIL"
 ```
 
-**판정 로직**: settings.json에 등록된 모든 hook 파일이 존재하고 실행 가능하면 PASS.
+판정 로직: settings.json에 등록된 모든 hook 파일이 존재하고 실행 가능하면 PASS.
 
 ## T4: MCP 서버 검증
 
-**목적**: mcp.json에 등록된 MCP 서버가 init 이벤트에 나타나는지 확인
+목적: mcp.json에 등록된 MCP 서버가 init 이벤트에 나타나는지 확인
 
-**비용**: ~$0.07 (T1과 동일 init 이벤트 재사용 가능) | **위치**: 로컬
+비용: ~$0.07 (T1과 동일 init 이벤트 재사용 가능) | 위치: 로컬
 
 ```bash
 #!/usr/bin/env bash
@@ -195,13 +195,13 @@ done <<< "$EXPECTED_SERVERS"
 $PASS && echo "T4: PASS" || echo "T4: FAIL"
 ```
 
-**판정 로직**: mcp.json의 모든 서버 이름이 init mcp_servers에 존재하면 PASS.
+판정 로직: mcp.json의 모든 서버 이름이 init mcp_servers에 존재하면 PASS.
 
 ## T5: 권한 모델 검증
 
-**목적**: `-p` 모드에서 권한 없이 도구 사용이 차단되고, `--dangerously-skip-permissions`로 허용되는지 확인
+목적: `-p` 모드에서 권한 없이 도구 사용이 차단되고, `--dangerously-skip-permissions`로 허용되는지 확인
 
-**비용**: ~$0.14 (2회 호출) | **위치**: 로컬
+비용: ~$0.14 (2회 호출) | 위치: 로컬
 
 ```bash
 #!/usr/bin/env bash
@@ -245,13 +245,13 @@ fi
 $PASS && echo "T5: PASS" || echo "T5: FAIL"
 ```
 
-**판정 로직**: 5a에서 도구 차단 + 5b에서 도구 허용이면 PASS.
+판정 로직: 5a에서 도구 차단 + 5b에서 도구 허용이면 PASS.
 
 ## T6: SSH 크로스머신 실행
 
-**목적**: SSH 경유로 원격 머신에서 `claude -p`가 정상 실행되는지 확인
+목적: SSH 경유로 원격 머신에서 `claude -p`가 정상 실행되는지 확인
 
-**비용**: ~$0.07 | **위치**: 크로스머신 (Mac -> MiniPC 또는 반대)
+비용: ~$0.07 | 위치: 크로스머신 (Mac -> MiniPC 또는 반대)
 
 ```bash
 #!/usr/bin/env bash
@@ -276,15 +276,15 @@ else
 fi
 ```
 
-**판정 로직**: 원격 hostname이 기대값과 일치하면 PASS.
+판정 로직: 원격 hostname이 기대값과 일치하면 PASS.
 
 > 이 테스트는 SSH 연결이 가능한 환경에서만 실행한다. SSH 연결 실패 시 별도 진단.
 
 ## T7: 세션 체이닝
 
-**목적**: `--resume`으로 이전 `-p` 세션의 컨텍스트를 유지할 수 있는지 확인
+목적: `--resume`으로 이전 `-p` 세션의 컨텍스트를 유지할 수 있는지 확인
 
-**비용**: ~$0.14 (2회 호출) | **위치**: 로컬
+비용: ~$0.14 (2회 호출) | 위치: 로컬
 
 ```bash
 #!/usr/bin/env bash
@@ -317,13 +317,13 @@ else
 fi
 ```
 
-**판정 로직**: 2단계에서 1단계의 비밀 코드를 올바르게 recall하면 PASS.
+판정 로직: 2단계에서 1단계의 비밀 코드를 올바르게 recall하면 PASS.
 
 ## T8: 동시 실행 안정성
 
-**목적**: 같은 디렉토리에서 2개의 `claude -p` 프로세스가 충돌 없이 동시 실행되는지 확인
+목적: 같은 디렉토리에서 2개의 `claude -p` 프로세스가 충돌 없이 동시 실행되는지 확인
 
-**비용**: ~$0.14 (2회 동시 호출) | **위치**: 로컬
+비용: ~$0.14 (2회 동시 호출) | 위치: 로컬
 
 ```bash
 #!/usr/bin/env bash
@@ -360,7 +360,7 @@ rm -rf "$TMPDIR"
 $PASS && echo "T8: PASS" || echo "T8: FAIL"
 ```
 
-**판정 로직**: 두 프로세스 모두 exit 0이고 각각의 출력에 기대 문자열이 포함되면 PASS.
+판정 로직: 두 프로세스 모두 exit 0이고 각각의 출력에 기대 문자열이 포함되면 PASS.
 
 ---
 
@@ -377,7 +377,7 @@ $PASS && echo "T8: PASS" || echo "T8: FAIL"
 | T7 | ~$0.14 | 세션 관련 변경 시 | 2회 호출 |
 | T8 | ~$0.14 | CI/자동화 도입 시 | 2회 동시 호출 |
 
-**최적화**: T1, T2, T4는 동일한 init 이벤트를 재사용하므로, 한 번의 `claude -p --output-format json` 호출 결과를 파일에 저장하고 3개 테스트에서 공유한다:
+최적화: T1, T2, T4는 동일한 init 이벤트를 재사용하므로, 한 번의 `claude -p --output-format json` 호출 결과를 파일에 저장하고 3개 테스트에서 공유한다:
 
 ```bash
 echo "ok" | claude -p --output-format json > /tmp/harness-init.json 2>/dev/null

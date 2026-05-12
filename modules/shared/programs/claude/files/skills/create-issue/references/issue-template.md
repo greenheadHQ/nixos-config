@@ -65,9 +65,9 @@
 ## 섹션별 작성 가이드
 
 ### Summary (필수)
-- **길이**: 1-2 문장
-- **포함**: what + why
-- **예시**: "NixOS 호스트 2대 이상 추가 시 constants.nix의 IP/포트 구조와 eval-tests의 하드코딩된 호스트 참조를 리팩토링해야 한다. 현재는 1대 전용 설계라 확장 시 대규모 수정 필요."
+- 길이: 1-2 문장
+- 포함: what + why
+- 예시: "NixOS 호스트 2대 이상 추가 시 constants.nix의 IP/포트 구조와 eval-tests의 하드코딩된 호스트 참조를 리팩토링해야 한다. 현재는 1대 전용 설계라 확장 시 대규모 수정 필요."
 
 ### Context (필수)
 - 현 상태 → 문제점 → 필요성 순으로 서술
@@ -77,10 +77,10 @@
 ### References (필수)
 - 비자명한 주장마다 근거 제공 (체크리스트 B1/B4)
 - 근거 타입 (Source reliability 순위 — 체크리스트 B3): 공식 docs URL > repo 내부 파일(`path/to/file.nix:LINE` 또는 `path:START-END`) > 머지된 commit SHA > 관련 이슈/PR 번호 (`#NNN`) > blog > LLM 기억
-- 관련 이슈/PR 번호 인용은 **출처 입증에 불가결한 경우에만**. 단순 색인용 인용은 close/rename 시 stale 위험.
-- **근거 존재 시**: 최소 1개 링크 또는 path 참조 필수
-- **근거 부재 시**: 섹션을 비우지 않고 `[UNVERIFIED]` 항목으로 대체
-- **상충 시**: `[CONFLICTING]` + 양측 인용 (체크리스트 E3)
+- 관련 이슈/PR 번호 인용은 출처 입증에 불가결한 경우에만. 단순 색인용 인용은 close/rename 시 stale 위험.
+- 근거 존재 시: 최소 1개 링크 또는 path 참조 필수
+- 근거 부재 시: 섹션을 비우지 않고 `[UNVERIFIED]` 항목으로 대체
+- 상충 시: `[CONFLICTING]` + 양측 인용 (체크리스트 E3)
 - 라벨 체계 상세는 [체크리스트 라벨 체계](../../write-handoff/references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조 (`[UNVERIFIED]`/`[INFERRED]`/`[CONFLICTING]` 정의)
 
 ### PoC / Reproduction (선택)
@@ -90,17 +90,17 @@
 
 ### Related Commits (선택)
 - 포맷: `- \`머지된 SHA\` — 커밋 메시지 한줄 요약` (안정 식별자만; mid-flight partial hash 박제 금지 — squash 후 dangling 위험)
-- 이 이슈가 생성된 배경/맥락이 되는 **기존 머지된 커밋**만 기재 (단순 색인용 인용 금지)
+- 이 이슈가 생성된 배경/맥락이 되는 기존 머지된 커밋만 기재 (단순 색인용 인용 금지)
 - 포함 기준은 SKILL.md Step 2 참조
 
 ### Affected Files (선택)
-- **반드시 테이블 형식** 사용 (LLM 파싱 용이)
+- 반드시 테이블 형식 사용 (LLM 파싱 용이)
 - 파일 경로는 프로젝트 루트 기준 상대 경로
 - 백틱(`` ` ``)으로 경로 감싸기
 - 포함 기준은 SKILL.md Step 2 참조
 
 ### Proposed Changes (필수)
-- **반드시 체크박스** (`- [ ]`) 사용
+- 반드시 체크박스 (`- [ ]`) 사용
 - 각 항목은 독립적으로 완료 가능한 단위
 - 구현 순서대로 나열 (의존성 있으면 명시)
 - 모호한 표현 금지 ("개선한다" → "X를 Y로 변경한다")
@@ -112,7 +112,7 @@
 
 ## 작성 예시
 
-> **가상 예시 주의**: 아래는 템플릿 작성 형식 예시이며, 실제 repo 상태와 시점에 따라 불일치할 수 있다 (예: `darwinConfigurations` 평가는 이미 `tests/eval-tests.nix`에 존재). line 번호는 작성 시점 기준으로 실측 반영한다.
+> 가상 예시 주의: 아래는 템플릿 작성 형식 예시이며, 실제 repo 상태와 시점에 따라 불일치할 수 있다 (예: `darwinConfigurations` 평가는 이미 `tests/eval-tests.nix`에 존재). line 번호는 작성 시점 기준으로 실측 반영한다.
 
 ```markdown
 ## Summary

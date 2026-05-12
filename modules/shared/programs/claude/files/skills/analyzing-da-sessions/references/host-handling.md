@@ -20,7 +20,7 @@ for h in args.hosts:
         parser.error(f"invalid host: {h!r}. valid: {sorted(VALID_HOSTS)}")
 ```
 
-**whitelist reject-fast 의무**: `{mac, minipc}` 외 값은 즉시 거부. user-controlled 입력이 SSH alias로 들어가는 경계 보호.
+whitelist reject-fast 의무: `{mac, minipc}` 외 값은 즉시 거부. user-controlled 입력이 SSH alias로 들어가는 경계 보호.
 
 ## SSH alias 매핑
 
@@ -35,7 +35,7 @@ for h in args.hosts:
 
 ## SSH 호출 패턴 (subprocess.run 고정 argv + remote path 검증)
 
-shell string 금지. 항상 list argv 형태로 subprocess.run 호출. **단 ssh remote command는 원격 shell이 해석하므로 path 안의 shell metacharacter / 제어문자도 거부해야 명령 인젝션을 차단한다** — argv 고정만으로는 충분하지 않다. `analyze.py`의 `_allowed_remote_path` 검증이 SoT.
+shell string 금지. 항상 list argv 형태로 subprocess.run 호출. 단 ssh remote command는 원격 shell이 해석하므로 path 안의 shell metacharacter / 제어문자도 거부해야 명령 인젝션을 차단한다 — argv 고정만으로는 충분하지 않다. `analyze.py`의 `_allowed_remote_path` 검증이 SoT.
 
 검증 조건:
 - 다음 문자 부재: space, newline, carriage return, tab, `; | & $ \` ( ) { } [ ] < > * ? " ' \\`.
@@ -75,25 +75,25 @@ def _allowed_remote_path(host: str, path: str) -> bool:
     return False
 ```
 
-**금지**:
+금지:
 - `subprocess.run(f"ssh {alias} cat {path}", shell=True)` — 인젝션 위험.
 - `os.system(...)` — 인젝션 위험.
 - `subprocess.run(["bash", "-c", ...])` — shell 경유.
 
-**허용 + 의무**:
+허용 + 의무:
 - `subprocess.run(["ssh", alias, "find", base, ...], capture_output=True)` — argv 고정.
-- `subprocess.run(["ssh", alias, "cat", path], ...)` — argv 고정. **path는 `_allowed_remote_path` 통과 후에만**.
+- `subprocess.run(["ssh", alias, "cat", path], ...)` — argv 고정. path는 `_allowed_remote_path` 통과 후에만.
 
-remote `find` stdout의 path line은 **비신뢰 입력**으로 간주. 각 line을 `_allowed_remote_path`로 다시 검증하여 통과한 line만 수집한다.
+remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 `_allowed_remote_path`로 다시 검증하여 통과한 line만 수집한다.
 
 ## Command path vs validation/corpus path 역할 분리
 
-`HOST_PATH_MAP`의 absolute home prefix (`/Users/green/...`, `/home/greenhead/...`)는 **SSH 명령 인자에 직접 들어가지 않는다**. 명령 인자에는 host-neutral relative tilde 표현 (`~/.claude/projects`, `~/.codex/sessions`)을 사용해 host별 home directory hardcoded를 명령 구성에서 제거한다. 원격 shell이 `~`를 해당 user의 home으로 expansion한다.
+`HOST_PATH_MAP`의 absolute home prefix (`/Users/green/...`, `/home/greenhead/...`)는 SSH 명령 인자에 직접 들어가지 않는다. 명령 인자에는 host-neutral relative tilde 표현 (`~/.claude/projects`, `~/.codex/sessions`)을 사용해 host별 home directory hardcoded를 명령 구성에서 제거한다. 원격 shell이 `~`를 해당 user의 home으로 expansion한다.
 
 absolute prefix는 다음 두 용도로만 사용한다:
 
-1. **Validation path**: `_allowed_remote_path`가 SSH find stdout (비신뢰 입력) 각 line을 검증할 때 boundary 비교 기준으로 사용한다. `posixpath.normpath` + `posixpath.commonpath([base_norm, path_norm]) == base_norm` 비교로 sibling-prefix (`/Users/green/.claude/projects-evil/...`), traversal (`../../etc/shadow`), relative path (find stdout이 비정상으로 relative line을 내보낸 경우)를 모두 거부한다.
-2. **Corpus path**: `--corpus manifest.json` 모드에서 host 분류 prefix로도 사용한다 (`HOST_PATH_MAP` base prefix 순회). 미매칭 path는 silent host 배정 대신 warning만 누적한다 — 새 host 지원은 `HOST_PATH_MAP`에 명시 추가가 정답이다.
+1. Validation path: `_allowed_remote_path`가 SSH find stdout (비신뢰 입력) 각 line을 검증할 때 boundary 비교 기준으로 사용한다. `posixpath.normpath` + `posixpath.commonpath([base_norm, path_norm]) == base_norm` 비교로 sibling-prefix (`/Users/green/.claude/projects-evil/...`), traversal (`../../etc/shadow`), relative path (find stdout이 비정상으로 relative line을 내보낸 경우)를 모두 거부한다.
+2. Corpus path: `--corpus manifest.json` 모드에서 host 분류 prefix로도 사용한다 (`HOST_PATH_MAP` base prefix 순회). 미매칭 path는 silent host 배정 대신 warning만 누적한다 — 새 host 지원은 `HOST_PATH_MAP`에 명시 추가가 정답이다.
 
 이 역할 분리는 PR review thread의 `HOST_PATH_MAP` fragility 질문에 답한다 — 명령 구성에서는 hardcoded prefix를 제거하지만, 보안 경계와 corpus host inference에는 absolute prefix가 SSOT로 남는다 (host model 중앙화는 별도 PR로 분리, 본 reference의 NG-3 참조).
 

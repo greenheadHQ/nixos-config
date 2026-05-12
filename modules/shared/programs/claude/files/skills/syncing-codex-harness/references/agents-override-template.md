@@ -38,7 +38,7 @@ The auto-generated section may include:
 ### 3. Codex-specific notes
 - Skill invocation syntax: `$skill-name` (not `/skill-name`)
 - Claude Code-only plugin/MCP UI surfaces do not map 1:1 onto Codex
-- Runtime paths are 3-way: **Codex session** (native subagent) / **Claude Code session** (codex exec primary → Agent tool fallback) / **headless session** (codex exec). See run-da/references/runtime-mapping.md `런타임 도구 매핑` for details
+- Runtime paths are 3-way: Codex session (native subagent) / Claude Code session (codex exec primary → Agent tool fallback) / headless session (codex exec). See run-da/references/runtime-mapping.md `런타임 도구 매핑` for details
 - Codex sessions should prefer native subagents over nested `codex exec` for review/audit/planning fan-out
 - Skill-internal fan-out invocation is explicit delegation for the documented bounded native subagent work scope. `codex-exec-supervised` fallback still requires native delegation denial/unavailability and separate user approval.
 - `CODEX_CI=1` alone does not distinguish session types

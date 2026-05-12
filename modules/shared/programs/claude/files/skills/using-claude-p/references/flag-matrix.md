@@ -1,7 +1,7 @@
 # `claude -p` 플래그 호환성 매트릭스
 
-- 확인 날짜: **2026-04-21**
-- 확인 버전: **Claude Code v2.1.116**
+- 확인 날짜: 2026-04-21
+- 확인 버전: Claude Code v2.1.116
 - 재검증: `claude -p --help` 출력과 비교
 
 ## `-p` 전용 플래그
@@ -24,7 +24,7 @@
 |--------|------|---------------------|
 | `--model <MODEL>` | 모델 선택 (`sonnet`, `opus` 등) | 정상 동작 |
 | `--system-prompt <PROMPT>` | 시스템 프롬프트 설정 | CLAUDE.md와 별개로 추가 |
-| `--append-system-prompt <PROMPT>` | 기존 시스템 프롬프트에 **추가** (override 아님) | 기존 지시를 덮어쓰지 못함 |
+| `--append-system-prompt <PROMPT>` | 기존 시스템 프롬프트에 추가 (override 아님) | 기존 지시를 덮어쓰지 못함 |
 | `--resume [SESSION_ID]` | 이전 세션 이어서 실행 | `-p`에서 세션 체이닝 가능 (인자 선택적) |
 | `--dangerously-skip-permissions` | 권한 프롬프트 건너뛰기 | `-p`에서 도구 사용 시 거의 필수 |
 | `--permission-mode <MODE>` | 권한 모드 설정 | `bypassPermissions` = `--dangerously-skip-permissions` |

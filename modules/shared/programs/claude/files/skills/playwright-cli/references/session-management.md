@@ -109,7 +109,7 @@ playwright-cli open https://example.com --profile=/path/to/profile
 
 Use `attach` to connect to a browser that is already running, instead of launching a new one.
 
-> **Security note**: keep CDP endpoints loopback-only. Prefer a dedicated automation profile for sensitive tasks, and avoid attaching to a daily-use browser profile when chaining `cookie-get` / `state-save` operations.
+> Security note: keep CDP endpoints loopback-only. Prefer a dedicated automation profile for sensitive tasks, and avoid attaching to a daily-use browser profile when chaining `cookie-get` / `state-save` operations.
 
 ### Attach by channel name
 

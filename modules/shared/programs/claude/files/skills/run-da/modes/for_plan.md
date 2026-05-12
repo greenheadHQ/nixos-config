@@ -17,7 +17,7 @@
 
 ## Step 2: reviewer bundle 병렬 실행
 
-선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 **병렬 실행**한다. 런타임별 도구 매핑은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 참조.
+선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 병렬 실행한다. 런타임별 도구 매핑은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 참조.
 
 ### Codex 세션 경로
 
@@ -52,9 +52,9 @@
   [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
   [ -f "$DA_DIR/$UNIT.md" ] || { echo "missing prompt=$DA_DIR/$UNIT.md"; exit 1; }
   ```
-  `--ignore-user-config`/`--ignore-rules`/model-effort pins 등 command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령이 SSOT다. Claude Code 세션의 기본 병렬 경로와 fallback 경로(codex exec 사전점검 실패 시)는 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "런타임 도구 매핑" 표 binding을 따른다. **headless 세션은 serial foreground** (완료 알림·`&+wait` 없음).
+  `--ignore-user-config`/`--ignore-rules`/model-effort pins 등 command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령이 SSOT다. Claude Code 세션의 기본 병렬 경로와 fallback 경로(codex exec 사전점검 실패 시)는 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "런타임 도구 매핑" 표 binding을 따른다. headless 세션은 serial foreground (완료 알림·`&+wait` 없음).
 - Claude Code 세션: 병렬 실행 완료 알림을 수신하면 sleep/poll 없이 바로 결과를 수집한다. headless 세션: 각 subprocess 종료를 직렬로 확인한다.
-- 모든 런타임 공통: `& + wait` shell-level 병렬 금지, `cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe (Layer 1)로 프롬프트 전달. pipe EOF가 stdin을 닫으므로 `< /dev/null`은 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. **`CODEX_PROGRAMMATIC=1` env assignment는 codex 프로세스에 적용되어야 한다 (회피: `CODEX_PROGRAMMATIC=1 cat ...`은 cat에만 적용 — issue #585).**
+- 모든 런타임 공통: `& + wait` shell-level 병렬 금지, `cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe (Layer 1)로 프롬프트 전달. pipe EOF가 stdin을 닫으므로 `< /dev/null`은 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. `CODEX_PROGRAMMATIC=1` env assignment는 codex 프로세스에 적용되어야 한다 (회피: `CODEX_PROGRAMMATIC=1 cat ...`은 cat에만 적용 — issue #585).
 - [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md) 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙은 본 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
 
 ## Step 3: reviewer 결과 수신 + 종합 리포트
@@ -70,26 +70,26 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR
 
 ## Step 5: Arbiter 실행 (findings ≥ 1건 시)
 
-- **5a. first-pass Arbiter**: Arbiter 프롬프트를 조립한다 ([`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 **for_plan 조립 규칙** 참조). for_plan에서는 반드시 계획 원문을 포함해야 하며, 상세 조립 형식은 arbiter-prompt.md의 "프롬프트 조립 > for_plan 모드" 참조.
+- 5a. first-pass Arbiter: Arbiter 프롬프트를 조립한다 ([`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 for_plan 조립 규칙 참조). for_plan에서는 반드시 계획 원문을 포함해야 하며, 상세 조립 형식은 arbiter-prompt.md의 "프롬프트 조립 > for_plan 모드" 참조.
   - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
-  - codex exec 경로: **foreground 실행** (단일 exec이므로 결과를 즉시 확인. [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) 실행 계약 참조).
-- **5b. Selective consistency trigger 검사**: first-pass 결과의 VERDICT_JSON 블록을 읽어 [`../references/stability-measurement.md`](../references/stability-measurement.md)의 trigger 조건에 매치되는 finding을 식별한다 (조건 정의는 해당 문서가 SSOT).
-- **5c. N=3 재판정** (trigger 매치 finding에 한해): 동일 Arbiter 프롬프트로 독립 N=3을 실행한다. 실행 계약과 환경 격리는 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 "N=3 실행 계약" 섹션 참조. selective consistency 서브런은 outer round 카운트에 포함되지 않는다.
-- **5d. vote-shape 집계**: 세션 scope에 맞는 harness(`~/.claude/scripts/fleiss-kappa.py` 또는 `~/.codex/scripts/fleiss-kappa.py` — 양쪽에 동일 소스가 프로비저닝된다)로 3개 결과 markdown의 VERDICT_JSON 블록을 파싱하여 finding별 `stability_status`(stable/split/fragmented) 및 `low_confidence_warning`을 `per_finding[]`에서, top-level `partial_failure`(및 `missing`/`file_level_failures`/`per_file_malformed` 세부)를 얻는다. `partial_failure=true`이면 해당 finding은 `per_finding`에 포함되지 않으므로 caller는 finding별 BLOCKED로 매핑한다 (상세는 [`../references/protocol.md`](../references/protocol.md) 참조).
-- **5e. 상태 전이 적용** — 상세 전이표는 [`../references/protocol.md`](../references/protocol.md)의 "Selective consistency 상태 전이" 참조. trigger되지 않은 finding은 `stability_status=N/A`로 first-pass 결과 그대로 사용.
+  - codex exec 경로: foreground 실행 (단일 exec이므로 결과를 즉시 확인. [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) 실행 계약 참조).
+- 5b. Selective consistency trigger 검사: first-pass 결과의 VERDICT_JSON 블록을 읽어 [`../references/stability-measurement.md`](../references/stability-measurement.md)의 trigger 조건에 매치되는 finding을 식별한다 (조건 정의는 해당 문서가 SSOT).
+- 5c. N=3 재판정 (trigger 매치 finding에 한해): 동일 Arbiter 프롬프트로 독립 N=3을 실행한다. 실행 계약과 환경 격리는 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 "N=3 실행 계약" 섹션 참조. selective consistency 서브런은 outer round 카운트에 포함되지 않는다.
+- 5d. vote-shape 집계: 세션 scope에 맞는 harness(`~/.claude/scripts/fleiss-kappa.py` 또는 `~/.codex/scripts/fleiss-kappa.py` — 양쪽에 동일 소스가 프로비저닝된다)로 3개 결과 markdown의 VERDICT_JSON 블록을 파싱하여 finding별 `stability_status`(stable/split/fragmented) 및 `low_confidence_warning`을 `per_finding[]`에서, top-level `partial_failure`(및 `missing`/`file_level_failures`/`per_file_malformed` 세부)를 얻는다. `partial_failure=true`이면 해당 finding은 `per_finding`에 포함되지 않으므로 caller는 finding별 BLOCKED로 매핑한다 (상세는 [`../references/protocol.md`](../references/protocol.md) 참조).
+- 5e. 상태 전이 적용 — 상세 전이표는 [`../references/protocol.md`](../references/protocol.md)의 "Selective consistency 상태 전이" 참조. trigger되지 않은 finding은 `stability_status=N/A`로 first-pass 결과 그대로 사용.
 
 결과를 수집하여 사용자에게 전건 보고한다 (vote-shape/low_confidence_warning이 있으면 함께 보고):
 
-- CONFIRMED_ISSUE + CRITICAL + (N/A 또는 stable) + `low_confidence_warning=false`: **진행 차단** (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
+- CONFIRMED_ISSUE + CRITICAL + (N/A 또는 stable) + `low_confidence_warning=false`: 진행 차단 (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
 - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW + (N/A 또는 stable) + `low_confidence_warning=false`: 자동으로 계획에 반영한다.
 - NOT_AN_ISSUE + (N/A 또는 stable) + `low_confidence_warning=false`: 보고만 (반영 불필요).
 - NEEDS_MORE_INFO 또는 `stability_status=split`: 질문 도구로 사용자 판단을 요청한다 (vote-shape와 minority verdict도 함께 보고).
-- 임의 verdict + (N/A 또는 stable) + `low_confidence_warning=true`: **fail-closed 승격** — 질문 도구로 사용자 판단 요청 (unanimous/단일 Arbiter라도 LOW confidence 이력이 있으면 기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약을 유지).
-- `stability_status=fragmented` 또는 `partial_failure=true`: **BLOCKED** — 질문 도구 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).
+- 임의 verdict + (N/A 또는 stable) + `low_confidence_warning=true`: fail-closed 승격 — 질문 도구로 사용자 판단 요청 (unanimous/단일 Arbiter라도 LOW confidence 이력이 있으면 기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약을 유지).
+- `stability_status=fragmented` 또는 `partial_failure=true`: BLOCKED — 질문 도구 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).
 
 ## Step 6: 반영 후 새 라운드
 
-반영 후 동일 선택 review unit을 **새 reviewer 실행 단위**로 재실행한다.
+반영 후 동일 선택 review unit을 새 reviewer 실행 단위로 재실행한다.
 
 - Codex 세션 경로: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
 - codex exec 경로: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.

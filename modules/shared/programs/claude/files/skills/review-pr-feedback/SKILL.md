@@ -31,7 +31,7 @@ PR에 달린 모든 리뷰 코멘트를 수집하고, 각 피드백을 다각도
 
 ## 용어 정책
 
-이 스킬은 Claude Code 세션과 Codex 세션 양쪽에서 호출된다. 본문은 **도구-중립 용어**를 쓰며, 런타임별 실제 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../run-da/references/runtime-mapping.md#런타임-도구-매핑)를 단일 진실 원천으로 참조한다 (중복 복제 금지).
+이 스킬은 Claude Code 세션과 Codex 세션 양쪽에서 호출된다. 본문은 도구-중립 용어를 쓰며, 런타임별 실제 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../run-da/references/runtime-mapping.md#런타임-도구-매핑)를 단일 진실 원천으로 참조한다 (중복 복제 금지).
 
 | 용어 유형 | 처리 |
 |----------|------|
@@ -54,16 +54,16 @@ gh pr view --json number -q .number
   각 thread의 `id` / `isResolved` / `isOutdated` / `path` / `line` / 내부 comments를 받는다.
 - PR 일반 코멘트(대화 탭)는 REST `/issues/{pr}/comments`로 보조 수집한다.
 - Review 요약(`/pulls/{pr}/reviews`)은 `state`와 `body`를 함께 수집한다. body가 비어 있지 않으면 state별 분기 + approval-only 판정으로 answer pipeline에 올릴지 결정한다.
-  - **`state == CHANGES_REQUESTED` 또는 `COMMENTED`** + `body != empty`: **actionable 후보**. 길이와 무관하게 유지한다. `"Breaks CI."` / `"Revert this."` 같은 짧지만 명확한 reject/comment 사유가 length heuristic으로 버려지지 않도록 한다.
-  - **`state == APPROVED`** + `body != empty`: approval-only 판정을 적용해 drop 여부를 결정한다. `LGTM, but consider X` / `approved — nit: ...` 같은 mixed 승인 body는 actionable로 유지.
+  - `state == CHANGES_REQUESTED` 또는 `COMMENTED` + `body != empty`: actionable 후보. 길이와 무관하게 유지한다. `"Breaks CI."` / `"Revert this."` 같은 짧지만 명확한 reject/comment 사유가 length heuristic으로 버려지지 않도록 한다.
+  - `state == APPROVED` + `body != empty`: approval-only 판정을 적용해 drop 여부를 결정한다. `LGTM, but consider X` / `approved — nit: ...` 같은 mixed 승인 body는 actionable로 유지.
   - `state == DISMISSED` 또는 `PENDING`: 답글 대상 아님.
 
-  **approval-only 판정(APPROVED 전용 drop 규칙, exact-match only)**: `CHANGES_REQUESTED`/`COMMENTED`에는 적용하지 않는다. body를 다음 순서로 정규화한다.
+  approval-only 판정(APPROVED 전용 drop 규칙, exact-match only): `CHANGES_REQUESTED`/`COMMENTED`에는 적용하지 않는다. body를 다음 순서로 정규화한다.
   1. `trim()` — 양끝 공백 제거.
   2. 소문자 변환.
   3. 양끝의 `.`, `!`, `?`, `~`, 공백을 반복 제거.
 
-  정규화 결과가 다음 승인 구절 목록과 **정확히 일치**하면 drop. 이 목록 밖의 body는 길이와 무관하게 actionable로 유지한다. 목록에는 `looks good`, `looks good to me`, `ship it`처럼 공백 포함 multi-word 구절도 들어 있으므로 정규화 단계에서 공백이나 multi-word를 걸러내지 않는다.
+  정규화 결과가 다음 승인 구절 목록과 정확히 일치하면 drop. 이 목록 밖의 body는 길이와 무관하게 actionable로 유지한다. 목록에는 `looks good`, `looks good to me`, `ship it`처럼 공백 포함 multi-word 구절도 들어 있으므로 정규화 단계에서 공백이나 multi-word를 걸러내지 않는다.
 
   ```
   lgtm
@@ -90,12 +90,12 @@ gh pr view --json number -q .number
 
 ### Step 2: 코멘트 분류
 
-Step 1 수집 결과가 **모두 비어 있을 때**만 no-op로 종료한다 (Step 3-7 건너뛰기).
+Step 1 수집 결과가 모두 비어 있을 때만 no-op로 종료한다 (Step 3-7 건너뛰기).
 "모두 비어 있음"은 다음 세 조건을 동시에 만족하는 상태다.
 
 - `unresolved review thread == 0`
 - PR 일반 코멘트 (`/issues/{pr}/comments`) 중 actionable == 0
-- **actionable review summary == 0** (= Step 1 분기를 통과해 actionable 후보로 남은 summary 개수. `DISMISSED`/`PENDING`과 body empty, `APPROVED` + approval-only 판정 해당 건은 제외)
+- actionable review summary == 0 (= Step 1 분기를 통과해 actionable 후보로 남은 summary 개수. `DISMISSED`/`PENDING`과 body empty, `APPROVED` + approval-only 판정 해당 건은 제외)
 
 위 셋 중 하나라도 있으면 분류를 진행한다. 특히 리뷰어가 inline thread 없이
 summary body에만 reject/nit/follow-up 사유를 남기는 패턴은 thread/issue-comment
@@ -111,9 +111,9 @@ actionable summary-only 리뷰의 응답 경로는 Step 6의 PR top-level follow
 
 | 카테고리 | 설명 | 기본 처리 |
 |----------|------|----------|
-| **actionable** | 코드 변경이 필요한 실질적 피드백 | Step 3 검증 후 반영 |
-| **outside-diff** | 이번 PR diff 범위 밖의 지적 | 별도 이슈로 분리하거나 `SCOPE_DEFERRAL` 기각 |
-| **nitpick** | 스타일/취향 수준의 사소한 지적 | 합리적이면 반영, 아니면 기각 |
+| actionable | 코드 변경이 필요한 실질적 피드백 | Step 3 검증 후 반영 |
+| outside-diff | 이번 PR diff 범위 밖의 지적 | 별도 이슈로 분리하거나 `SCOPE_DEFERRAL` 기각 |
+| nitpick | 스타일/취향 수준의 사소한 지적 | 합리적이면 반영, 아니면 기각 |
 
 분류가 애매한 코멘트는 actionable로 분류하여 Step 3에서 면밀히 검증한다.
 기각할 때의 세부 분류(7개)와 템플릿은 [references/rejection-taxonomy.md](references/rejection-taxonomy.md)를 따른다.
@@ -157,25 +157,25 @@ actionable로 분류된 각 피드백을 다음 7개 기준으로 검증한다.
 반례는 [references/reply-and-resolve.md](references/reply-and-resolve.md)가 정본이다.
 
 각 thread 처리 전에 다음 가드를 적용한다.
-- **thread.id가 null/empty** → Step 6/7을 건너뛰고 사용자 보고 대상으로 분리.
-- **preflight requery**: reply 직전 `thread.id`로 최신 `isResolved`와 최신 comments를 다시 조회하고, 결과에 따라 reply / resolve를 독립적으로 분기한다.
+- thread.id가 null/empty → Step 6/7을 건너뛰고 사용자 보고 대상으로 분리.
+- preflight requery: reply 직전 `thread.id`로 최신 `isResolved`와 최신 comments를 다시 조회하고, 결과에 따라 reply / resolve를 독립적으로 분기한다.
   - `isResolved=true` → 전체 no-op (이미 완료).
-  - `isResolved=false` + 이번 run이 남긴 답글 존재 → reply는 skip, **resolve는 반드시 수행** (이전 run이 reply 성공 + resolve 실패로 중단된 케이스 복구).
+  - `isResolved=false` + 이번 run이 남긴 답글 존재 → reply는 skip, resolve는 반드시 수행 (이전 run이 reply 성공 + resolve 실패로 중단된 케이스 복구).
   - `isResolved=false` + 답글 없음 → reply + resolve 순차 수행.
 
 | 대상 | 액션 |
 |------|------|
 | Review thread | `addPullRequestReviewThreadReply` → `resolveReviewThread` |
-| PR 일반 코멘트 | `addComment` 또는 REST `/issues/{pr}/comments`로 **PR에 top-level follow-up 코멘트** 추가. resolve 없음. 원 코멘트 URL/`@<author>` 멘션으로 연결 |
-| Actionable review summary (inline thread 없음, body != empty; `CHANGES_REQUESTED`/`COMMENTED`는 길이 무관, `APPROVED`는 승인 구절 목록과 exact-match 아닌 경우) | `addComment` 또는 REST `/issues/{pr}/comments`로 **PR에 top-level follow-up 코멘트** 추가. 원 review URL(`pull/<n>#pullrequestreview-<id>`)과 `@<reviewer>` 멘션으로 연결. resolve 없음. `"Breaks CI."` 같은 짧은 reject 사유, `"LGTM, but ..."` mixed 승인 body, `APPROVED` + `"fix the typo"` 같은 짧은 실제 피드백 모두 대상 |
+| PR 일반 코멘트 | `addComment` 또는 REST `/issues/{pr}/comments`로 PR에 top-level follow-up 코멘트 추가. resolve 없음. 원 코멘트 URL/`@<author>` 멘션으로 연결 |
+| Actionable review summary (inline thread 없음, body != empty; `CHANGES_REQUESTED`/`COMMENTED`는 길이 무관, `APPROVED`는 승인 구절 목록과 exact-match 아닌 경우) | `addComment` 또는 REST `/issues/{pr}/comments`로 PR에 top-level follow-up 코멘트 추가. 원 review URL(`pull/<n>#pullrequestreview-<id>`)과 `@<reviewer>` 멘션으로 연결. resolve 없음. `"Breaks CI."` 같은 짧은 reject 사유, `"LGTM, but ..."` mixed 승인 body, `APPROVED` + `"fix the typo"` 같은 짧은 실제 피드백 모두 대상 |
 
 처리 결과별 답글 내용:
 
 | 처리 결과 | 답글 내용 |
 |----------|----------|
-| **반영** | 어떻게 반영했는지 간략 설명 + 커밋 해시 참조 + 검증 내역 |
-| **기각** | [references/rejection-taxonomy.md](references/rejection-taxonomy.md)의 4필드 포맷 (기각 분류 / 검증 방법 / 기술적 근거 / 신뢰도) |
-| **별도 이슈 분리** | 생성한 이슈 번호 링크 + `SCOPE_DEFERRAL` 분류 |
+| 반영 | 어떻게 반영했는지 간략 설명 + 커밋 해시 참조 + 검증 내역 |
+| 기각 | [references/rejection-taxonomy.md](references/rejection-taxonomy.md)의 4필드 포맷 (기각 분류 / 검증 방법 / 기술적 근거 / 신뢰도) |
+| 별도 이슈 분리 | 생성한 이슈 번호 링크 + `SCOPE_DEFERRAL` 분류 |
 
 ### Step 7: resolve 재확인
 
@@ -196,15 +196,15 @@ PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
 
 ## 주의사항
 
-- **모든 피드백에 답글 필수**: 반영하든 기각하든 사유를 명시한 답글을 남긴다. 무응답 금지.
-- **resolve 재확인 필수**: review thread는 Step 7 재조회까지 끝나야 완료다.
-- **AI 리뷰어 맹신 금지**: CodeRabbit 등 AI 리뷰어 피드백도 동일한 검증 기준을 적용한다.
+- 모든 피드백에 답글 필수: 반영하든 기각하든 사유를 명시한 답글을 남긴다. 무응답 금지.
+- resolve 재확인 필수: review thread는 Step 7 재조회까지 끝나야 완료다.
+- AI 리뷰어 맹신 금지: CodeRabbit 등 AI 리뷰어 피드백도 동일한 검증 기준을 적용한다.
   stale diff 기반 지적을 `HALLUCINATION`으로 오분류하지 말고 `STALE_REVIEW`를 쓴다.
-- **outside-diff 처리**: PR 범위 밖 지적은 유효해도 이번 PR에서 처리하지 않는다.
+- outside-diff 처리: PR 범위 밖 지적은 유효해도 이번 PR에서 처리하지 않는다.
   별도 이슈 등록 후 `SCOPE_DEFERRAL`로 답글.
-- **반영 전 회귀 확인**: 피드백 반영 시 변경이 다른 기능을 깨뜨리지 않는지 확인한다.
+- 반영 전 회귀 확인: 피드백 반영 시 변경이 다른 기능을 깨뜨리지 않는지 확인한다.
   특히 플랫폼 간(macOS/NixOS) 호환성에 주의.
-- **기각 사유는 구체적으로**: "불필요합니다"가 아니라 왜 불필요한지 근거 제시.
+- 기각 사유는 구체적으로: "불필요합니다"가 아니라 왜 불필요한지 근거 제시.
   [references/rejection-taxonomy.md](references/rejection-taxonomy.md)의 4필드 포맷을 지킨다.
-- **multiline body는 파일/stdin 경유**: 본문을 shell 확장으로 argv에 싣지 않는다 (같은 사용자 `ps`/로깅 노출 방지).
+- multiline body는 파일/stdin 경유: 본문을 shell 확장으로 argv에 싣지 않는다 (같은 사용자 `ps`/로깅 노출 방지).
   [references/reply-and-resolve.md](references/reply-and-resolve.md)의 권장 패턴(`gh api graphql -F body=@"$BODY_FILE"`, 또는 `jq -Rs '{body:.}' < "$BODY_FILE" | gh api --input -`)을 사용한다.

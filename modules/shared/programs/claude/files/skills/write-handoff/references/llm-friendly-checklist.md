@@ -1,7 +1,7 @@
 # LLM-Friendly Issue/Handoff Checklist
 
 > `create-issue`/`write-handoff`/`plan-with-questions` 스킬이 공유하는 품질 체크리스트.
-> **Normative**는 스킬이 실제로 강제한다. **Informational**은 작성 시 참고용 권장.
+> Normative는 스킬이 실제로 강제한다. Informational은 작성 시 참고용 권장.
 
 배경: 세션 로그 전수조사 결과 스킬 산출물에 대한 피드백이 "근거/레퍼런스 부족"과 "맥락 부족"에 집중된다. 본 체크리스트는 이 두 축을 구조적으로 방어한다. 상세 배경은 #461 참조.
 
@@ -13,37 +13,37 @@
 
 ### A. 자립성 (Self-contained)
 
-- [ ] **A1.** 첫 5줄 이내에 `무슨 문제 / 누가 겪는지 / 현재 증상 / 기대 결과`를 기술한다. 출처: [Anthropic: Be clear and direct](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct) (minimal-context colleague test), [GitHub Copilot: Prompt engineering](https://docs.github.com/en/copilot/concepts/prompting/prompt-engineering).
-- [ ] **A2.** "왜" 이 작업이 필요한지, 안 하면 어떤 리스크가 있는지 2-4문장으로 명시한다. 출처: [Anthropic: Be clear and direct](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct) — end goal을 주면 성능이 향상된다.
+- [ ] A1. 첫 5줄 이내에 `무슨 문제 / 누가 겪는지 / 현재 증상 / 기대 결과`를 기술한다. 출처: [Anthropic: Be clear and direct](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct) (minimal-context colleague test), [GitHub Copilot: Prompt engineering](https://docs.github.com/en/copilot/concepts/prompting/prompt-engineering).
+- [ ] A2. "왜" 이 작업이 필요한지, 안 하면 어떤 리스크가 있는지 2-4문장으로 명시한다. 출처: [Anthropic: Be clear and direct](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/be-clear-and-direct) — end goal을 주면 성능이 향상된다.
 
 (A3 `범위/비범위/제약/금지사항 별도 섹션`은 아래 Informational로 이동 — create-issue/write-handoff 기본 템플릿이 해당 섹션을 별도로 강제하지 않으므로 Normative에서 제외.)
 
 ### B. 근거 / 레퍼런스 (Evidence-first)
 
-- [ ] **B1.** 비자명한 주장에 인라인 citation을 붙인다 (`[링크 텍스트](URL)`). `write-handoff`는 가이드 본문 인라인에 붙이고, `create-issue`는 필수 `References` 섹션에서 출처 링크 목록으로 제공한다. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [Learning Fine-Grained Grounded Citations (ACL Findings 2024)](https://aclanthology.org/2024.findings-acl.838/).
-- [ ] **B4.** 파일/함수/PR/doc URL은 본문에 직접 적는다 (예: `path/to/file.nix:42`, `#123`). commit hash 약식 인용은 PR 번호나 머지된 long SHA 같은 안정적 식별자로 대체한다 (CLAUDE.md `Durable output pinning policy` 참조). 출처: [Anthropic: Best Practices for Claude Code (2025)](https://code.claude.com/docs/en/best-practices).
+- [ ] B1. 비자명한 주장에 인라인 citation을 붙인다 (`[링크 텍스트](URL)`). `write-handoff`는 가이드 본문 인라인에 붙이고, `create-issue`는 필수 `References` 섹션에서 출처 링크 목록으로 제공한다. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [Learning Fine-Grained Grounded Citations (ACL Findings 2024)](https://aclanthology.org/2024.findings-acl.838/).
+- [ ] B4. 파일/함수/PR/doc URL은 본문에 직접 적는다 (예: `path/to/file.nix:42`, `#123`). commit hash 약식 인용은 PR 번호나 머지된 long SHA 같은 안정적 식별자로 대체한다 (CLAUDE.md `Durable output pinning policy` 참조). 출처: [Anthropic: Best Practices for Claude Code (2025)](https://code.claude.com/docs/en/best-practices).
 
 ### C. PoC / 재현 (Reproducibility-first)
 
-- [ ] **C1.** 재현이 중요한 주장에는 최소 재현 절차 6필드를 포함한다: `환경 / 입력 / 절차 / 기대 결과 / 실제 결과 / 성공 기준`. 출처: [OpenAI Evals: Structured Outputs Evaluation (2025)](https://cookbook.openai.com/examples/evaluation/use-cases/structured-outputs-evaluation), [PROMPTEVALS (NAACL 2025)](https://aclanthology.org/2025.naacl-long.213/).
-- [ ] **C3.** BEFORE/AFTER 쌍을 제공한다 (`write-handoff` 전용. 기존 `references/guide-template.md` 패턴 유지).
+- [ ] C1. 재현이 중요한 주장에는 최소 재현 절차 6필드를 포함한다: `환경 / 입력 / 절차 / 기대 결과 / 실제 결과 / 성공 기준`. 출처: [OpenAI Evals: Structured Outputs Evaluation (2025)](https://cookbook.openai.com/examples/evaluation/use-cases/structured-outputs-evaluation), [PROMPTEVALS (NAACL 2025)](https://aclanthology.org/2025.naacl-long.213/).
+- [ ] C3. BEFORE/AFTER 쌍을 제공한다 (`write-handoff` 전용. 기존 `references/guide-template.md` 패턴 유지).
 
 ### D. 구조 (Structuring)
 
-- [ ] **D1.** `write-handoff` 가이드 상단 10줄 이내에 **TL;DR** (상황/현재 상태/다음 액션/Blockers 4슬롯)을 둔다. 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — 중간 정보는 활용률이 낮고 앞/뒤 정보에 강함.
+- [ ] D1. `write-handoff` 가이드 상단 10줄 이내에 TL;DR (상황/현재 상태/다음 액션/Blockers 4슬롯)을 둔다. 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — 중간 정보는 활용률이 낮고 앞/뒤 정보에 강함.
 
 ### E. Anti-hallucination (Evidence-gated)
 
-- [ ] **E1.** 근거가 없거나 확신 없는 주장은 `[UNVERIFIED]` 라벨을 붙이거나 삭제한다. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [MetaFaith (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1505/) — faithful uncertainty 표현이 개선됨.
+- [ ] E1. 근거가 없거나 확신 없는 주장은 `[UNVERIFIED]` 라벨을 붙이거나 삭제한다. 출처: [Anthropic: Reduce hallucinations](https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), [MetaFaith (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1505/) — faithful uncertainty 표현이 개선됨.
 
-  ❌ **BAD**: `"이 옵션은 Claude Code 2.0+에서 동작한다."` _(why: 버전별 동작은 공식 docs 또는 로컬 재현 없이 단정 불가 — hallucination 위험)_
+  ❌ BAD: `"이 옵션은 Claude Code 2.0+에서 동작한다."` _(why: 버전별 동작은 공식 docs 또는 로컬 재현 없이 단정 불가 — hallucination 위험)_
 
-  ✅ **GOOD**: `"Claude Code 2.1.104에서 동작 확인. [UNVERIFIED] 이전 버전 호환성은 미확인."`
-- [ ] **E2.** 초안 후 **Self-verification 패스** (CoVe 경량)를 수행한다: 주요 claim을 검증 질문으로 바꾸고 독립적으로 답한 뒤 불일치 시 수정. `create-issue`/`write-handoff` 모두 적용한다. 출처: [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495), [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/).
+  ✅ GOOD: `"Claude Code 2.1.104에서 동작 확인. [UNVERIFIED] 이전 버전 호환성은 미확인."`
+- [ ] E2. 초안 후 Self-verification 패스 (CoVe 경량)를 수행한다: 주요 claim을 검증 질문으로 바꾸고 독립적으로 답한 뒤 불일치 시 수정. `create-issue`/`write-handoff` 모두 적용한다. 출처: [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495), [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/).
 
-  ❌ **BAD**: `"1차 초안 작성 후 즉시 gh issue create 실행."` _(why: CoVe 검증 단계 생략 → 오류가 게시된 이슈로 그대로 확산)_
+  ❌ BAD: `"1차 초안 작성 후 즉시 gh issue create 실행."` _(why: CoVe 검증 단계 생략 → 오류가 게시된 이슈로 그대로 확산)_
 
-  ✅ **GOOD**: `"1차 초안의 비자명 주장을 Read/Grep/gh로 재검증 후 [UNVERIFIED] 라벨 추가 또는 삭제, 그 다음 게시(create-issue: gh issue create / write-handoff: gh issue comment --body-file)."`
+  ✅ GOOD: `"1차 초안의 비자명 주장을 Read/Grep/gh로 재검증 후 [UNVERIFIED] 라벨 추가 또는 삭제, 그 다음 게시(create-issue: gh issue create / write-handoff: gh issue comment --body-file)."`
 
 ---
 
@@ -70,7 +70,7 @@
 
 ## 라벨 체계 (Anti-hallucination)
 
-> **단일 진실 원천**. `create-issue`/`write-handoff`/`plan-with-questions` 및 해당 reference 파일(특히 `plan-with-questions/references/review-impl/*`)은 이 섹션을 참조한다. 규칙 변경 시 이 섹션을 먼저 수정하고, 소비자 문서의 요약 문구/포인터도 함께 점검한다.
+> 단일 진실 원천. `create-issue`/`write-handoff`/`plan-with-questions` 및 해당 reference 파일(특히 `plan-with-questions/references/review-impl/*`)은 이 섹션을 참조한다. 규칙 변경 시 이 섹션을 먼저 수정하고, 소비자 문서의 요약 문구/포인터도 함께 점검한다.
 
 이슈/이행가이드/계획/리뷰 finding 작성 중 다음 라벨을 사용한다:
 
@@ -81,7 +81,7 @@
 | `[INFERRED]` | 근접한 근거로부터의 추론 (직접 근거 아님) | `[INFERRED]` PoC 첨부가 hallucination을 줄인다는 정량 연구는 없으나, reproducibility-first의 인접 근거에서 강하게 추론됨 |
 | `[CONFLICTING]` | 두 개 이상 출처가 상충 | `[CONFLICTING]` FRONT(2024)는 pipeline 분리 우위를 보고, Evaluating Design Choices(2025)는 direct generation 우위를 보고 |
 
-**DEPRECATED**: `<!-- 미검증: ... -->` HTML 주석은 더 이상 권장되지 않는다. 신규 산출물은 `[UNVERIFIED]` 라벨을 사용한다. 기존 산출물은 점진적으로 마이그레이션한다.
+DEPRECATED: `<!-- 미검증: ... -->` HTML 주석은 더 이상 권장되지 않는다. 신규 산출물은 `[UNVERIFIED]` 라벨을 사용한다. 기존 산출물은 점진적으로 마이그레이션한다.
 
 ---
 
@@ -89,10 +89,10 @@
 
 `create-issue`/`write-handoff` 초안 완료 후 다음 패스를 1회 수행:
 
-1. **Claim 추출**: 본문에서 비자명한 주장을 추출. 단순/자명 사실 제외.
-2. **검증 질문 재작성**: 각 claim을 질문 형태로 전환. 예: `"Step 1에 Glob/Grep이 없다"` → `"실제 Step 1 본문에 Glob/Grep이 포함되어 있는가?"`
-3. **독립 답변**: 초안을 보지 않은 상태로 `Read`/`Grep`/`gh` 재실행으로 질문에 답.
-4. **비교 및 수정**: 답변과 초안이 불일치하면 초안 수정. 증거 없으면 `[UNVERIFIED]` 라벨 또는 삭제.
+1. Claim 추출: 본문에서 비자명한 주장을 추출. 단순/자명 사실 제외.
+2. 검증 질문 재작성: 각 claim을 질문 형태로 전환. 예: `"Step 1에 Glob/Grep이 없다"` → `"실제 Step 1 본문에 Glob/Grep이 포함되어 있는가?"`
+3. 독립 답변: 초안을 보지 않은 상태로 `Read`/`Grep`/`gh` 재실행으로 질문에 답.
+4. 비교 및 수정: 답변과 초안이 불일치하면 초안 수정. 증거 없으면 `[UNVERIFIED]` 라벨 또는 삭제.
 
 출처: [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495), [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/).
 

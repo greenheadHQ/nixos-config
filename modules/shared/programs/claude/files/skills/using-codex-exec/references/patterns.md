@@ -2,7 +2,7 @@
 
 각 패턴은 Claude Code 세션 안팎에서 동일하게 재현 가능한 순수 셸 명령으로 작성한다.
 
-> **⚠️ Bash tool은 zsh에서 실행됨.** bash 전용 문법(간접 확장, case modification 등) 사용 금지 — 상세 규칙은 repo 루트 `CLAUDE.md` "Bash tool 환경" 섹션 참조.
+> ⚠️ Bash tool은 zsh에서 실행됨. bash 전용 문법(간접 확장, case modification 등) 사용 금지 — 상세 규칙은 repo 루트 `CLAUDE.md` "Bash tool 환경" 섹션 참조.
 
 ## 패턴 1: 기본 exec — 파일 프롬프트 → 결과 저장
 
@@ -15,7 +15,7 @@ cat > /tmp/codex-prompt.md <<'PROMPT'
 PROMPT
 ```
 
-**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([known-issues.md §11](known-issues.md) 하위 항목).
+⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([known-issues.md §11](known-issues.md) 하위 항목).
 
 ```bash
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
@@ -60,8 +60,8 @@ env CODEX_PROGRAMMATIC=1 codex exec review --commit abc1234 --title "Fix sandbox
 
 ### 주의사항
 
-- **`-o` review 미지원**: `-o`는 review --help에 표시되지만 빈 파일을 생성한다(`Warning: no last agent message; wrote empty content`). `> file 2>&1`이 유일한 워크어라운드.
-- **PROMPT 금지**: scope flag과 PROMPT은 상호 배타. 자세한 내용은 SKILL.md 호환성 매트릭스 참조.
+- `-o` review 미지원: `-o`는 review --help에 표시되지만 빈 파일을 생성한다(`Warning: no last agent message; wrote empty content`). `> file 2>&1`이 유일한 워크어라운드.
+- PROMPT 금지: scope flag과 PROMPT은 상호 배타. 자세한 내용은 SKILL.md 호환성 매트릭스 참조.
 
 ## 패턴 2b: stdin PROMPT로 review (`-o` 대신 `> redirect` 사용)
 
@@ -71,14 +71,14 @@ scope flag 없이 PROMPT을 stdin으로 전달하여 review를 실행한다.
 cat prompt.md | env CODEX_PROGRAMMATIC=1 codex exec review - --full-auto > /tmp/result.md 2>&1
 ```
 
-> **⚠️ scope flag 미사용**: PROMPT 사용 시 scope flag(`--uncommitted`/`--base`/`--commit`)와
+> ⚠️ scope flag 미사용: PROMPT 사용 시 scope flag(`--uncommitted`/`--base`/`--commit`)와
 > 상호 배타이므로 내장 scope flag의 정밀한 diff 스코핑이 적용되지 않는다.
 > review 세션이 자체적으로 diff를 참조할 수 있지만, 어떤 diff가 대상인지는 보장되지 않는다.
 > 정밀한 브랜치/커밋 기준 리뷰가 필요하면 패턴 2 (scope flag) 또는 패턴 4 (exec 우회)를 사용한다.
 
 ## 패턴 3: 커스텀 리뷰 — AGENTS.md 활용 (영구 지시)
 
-**사용 조건**: 프로젝트 전체에 일관된 리뷰 정책을 적용하고 싶을 때.
+사용 조건: 프로젝트 전체에 일관된 리뷰 정책을 적용하고 싶을 때.
 
 AGENTS.md에 리뷰 지시를 배치하면, review 실행 시 Codex가 자동으로 읽어서 적용한다.
 scope flag의 diff 스코핑 기능을 그대로 유지할 수 있다.
@@ -119,7 +119,7 @@ AGENTS.override.md > AGENTS.md > TEAM_GUIDE.md > .agents.md
 
 ## 패턴 4: 커스텀 리뷰 — exec 우회 (1회성 지시)
 
-**사용 조건**: 이번 한 번만 특정 관점으로 리뷰하고 싶을 때.
+사용 조건: 이번 한 번만 특정 관점으로 리뷰하고 싶을 때.
 
 review 서브커맨드를 사용하지 않고, `codex exec`에 diff와 커스텀 지시를 직접 전달한다.
 
@@ -134,7 +134,7 @@ $(git diff main...HEAD)
 PROMPT
 ```
 
-**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
+⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
 ```bash
 cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/review-result.md - 2>&1
@@ -168,7 +168,7 @@ cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /
 리터럴 텍스트만 전달할 때는 `<<'PROMPT'` (따옴표 포함)를 사용한다.
 패턴 1, 5, 8은 명령 치환이 불필요하므로 `<<'PROMPT'`를 사용한다.
 
-**코드 블록 분리**: `run_in_background` 환경에서 heredoc과 codex exec를 같은 Bash 호출에 넣으면 stdin hang이 발생한다 ([known-issues.md §11](known-issues.md) 하위 항목 참조). 모든 패턴에서 heredoc(프롬프트 생성)과 codex exec(실행)를 별도 코드 블록으로 분리한다. 실행 블록에서는 stdin pipe(`cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -`)를 사용한다.
+코드 블록 분리: `run_in_background` 환경에서 heredoc과 codex exec를 같은 Bash 호출에 넣으면 stdin hang이 발생한다 ([known-issues.md §11](known-issues.md) 하위 항목 참조). 모든 패턴에서 heredoc(프롬프트 생성)과 codex exec(실행)를 별도 코드 블록으로 분리한다. 실행 블록에서는 stdin pipe(`cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -`)를 사용한다.
 
 ### 단점
 
@@ -189,7 +189,7 @@ Ignore style-only issues.
 PROMPT
 ```
 
-**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. DA 루프에서는 stdin pipe(`cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -`)를 사용한다.
+⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. DA 루프에서는 stdin pipe(`cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -`)를 사용한다.
 
 ```bash
 cat /tmp/da-round1.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/da-round1-result.md \
@@ -199,11 +199,11 @@ cat /tmp/da-round1-result.md
 
 ### 후속 라운드
 
-1. 결과를 **Arbiter 에이전트에 전달하여 독립 판정**을 받는다 (run-da 스킬의 Arbiter 절차 참조).
+1. 결과를 Arbiter 에이전트에 전달하여 독립 판정을 받는다 (run-da 스킬의 Arbiter 절차 참조).
    이 패턴은 codex exec 실행 기계만 제공한다. 유효성 판정은 Arbiter의 책임이다.
    기본 `run-da` 경로는 4 reviewer bundle을 쓰며, Arbiter/다음 라운드에는
    unique findings, conflicting findings, high-severity findings, user decision required findings만 selective propagation한다.
-2. Arbiter가 **CONFIRMED_ISSUE로 판정한 항목만** 수정한다.
+2. Arbiter가 CONFIRMED_ISSUE로 판정한 항목만 수정한다.
 3. 새 프롬프트 파일(`round2.md`)로 동일 구조를 반복한다:
 
 ```bash
@@ -259,7 +259,7 @@ $(git diff main...HEAD)
 PROMPT
 ```
 
-**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
+⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
 ```bash
 cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto --output-schema /tmp/review-schema.json \
@@ -296,7 +296,7 @@ cat > /tmp/smoke.md <<'PROMPT'
 PROMPT
 ```
 
-**⚠️ `run_in_background` 환경**: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([known-issues.md §11](known-issues.md) 하위 항목).
+⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([known-issues.md §11](known-issues.md) 하위 항목).
 
 ```bash
 cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/smoke-result.md 2>&1
