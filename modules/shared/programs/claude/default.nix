@@ -156,6 +156,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/worktree-path-guard.sh";
     ".claude/hooks/session-init-icons.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/session-init-icons.sh";
+    ".claude/hooks/record-last-session.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-last-session.sh";
     ".claude/hooks/log-skill.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/log-skill.sh";
     ".claude/hooks/fragile-hardcoding-guard.sh".source =
@@ -168,6 +170,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/pinning-guard.sh";
     ".claude/lib/pinning-patterns.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/pinning-patterns.sh";
+    ".claude/lib/session-state.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/session-state.sh";
     # Cache TTL tracking hooks
     ".claude/hooks/record-last-stop.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-last-stop.sh";

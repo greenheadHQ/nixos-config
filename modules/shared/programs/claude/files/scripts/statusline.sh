@@ -15,6 +15,16 @@
 
 input=$(cat)
 
+# 공유 helper. SESSION_STATE_DIR / is_safe_session_id 등 SSOT를 hook과 공유.
+# pinning-guard.sh와 동일 패턴: 설치된 $HOME/.claude/lib 우선, repo fallback.
+SESSION_STATE_LIB="${SESSION_STATE_LIB:-$HOME/.claude/lib/session-state.sh}"
+if [ ! -f "$SESSION_STATE_LIB" ]; then
+  STATUSLINE_DIR="$(cd "$(dirname "$0")" && pwd)"
+  SESSION_STATE_LIB="$STATUSLINE_DIR/../lib/session-state.sh"
+fi
+# shellcheck source=../lib/session-state.sh disable=SC1091
+[ -f "$SESSION_STATE_LIB" ] && . "$SESSION_STATE_LIB"
+
 # ============================================================
 # Helper: 입력 검증 + sanitize
 # ============================================================
@@ -96,13 +106,20 @@ validate_transcript_path() {
   printf '%s' "$canonical_dir"
 }
 
-# session_id 패턴 검증 (UUID 또는 safe filename pattern)
-# 통과: exit 0 / 실패: exit 1
+# session_id 패턴 검증 — lib/session-state.sh의 is_safe_session_id를 그대로 위임.
+# lib source 실패 시(개발 환경 부재) 동일 정책의 inline fallback 사용.
+# 정책 SSOT는 lib의 is_safe_session_id이며, 본 wrapper는 statusline 호출 표면만
+# 유지하기 위한 thin alias이다.
 validate_session_id() {
-  local sid=$1
-  [ -z "$sid" ] && return 1
-  case "$sid" in
+  if command -v is_safe_session_id >/dev/null 2>&1; then
+    is_safe_session_id "$1"
+    return $?
+  fi
+  # lib 미로드 fallback — 정책은 is_safe_session_id와 동일하게 유지한다.
+  case "${1:-}" in
+    "") return 1 ;;
     *[!A-Za-z0-9._-]*) return 1 ;;
+    *..*) return 1 ;;
   esac
   return 0
 }
@@ -433,7 +450,9 @@ fi
 #   SESSION_ID 검증 통과 시에만 sidecar I/O
 # ============================================================
 ICONS_FILE=""
-$SIDECAR_IO_ENABLED && ICONS_FILE="$HOME/.claude/status-icons/$SESSION_ID.json"
+# SESSION_STATE_DIR은 lib/session-state.sh의 SSOT. lib 미로드 시 hook과 동일 경로
+# 하드코딩으로 fallback (sidecar 파일은 동일 위치).
+$SIDECAR_IO_ENABLED && ICONS_FILE="${SESSION_STATE_DIR:-$HOME/.claude/status-icons}/$SESSION_ID.json"
 
 JIRA_URL="" JIRA_LABEL=""
 SLACK_URL="" SLACK_LABEL=""
