@@ -52,7 +52,7 @@ Step 5/6 진행 중에는 [`plan-file-template.md`](./plan-file-template.md#da-s
 
 ### for_prd
 
-`for_prd`는 plan-with-questions가 P1-P5와 P6-P7을 거친 뒤 PRD 규약을 따라 `.claude/prds/prd-<feature>.md`에 직접 작성한다. `for_action` Step 4.5 plan 파일 초기화는 적용하지 않는다. PRD 작성 이후의 phase 진행 상태는 PRD master 파일의 Document Status가 정본이며 본 enum은 사용되지 않는다. plan-with-questions가 추적하는 enum은 PRD 작성 직전까지 한정:
+`for_prd` 는 plan-with-questions가 P1-P5와 P6-P7을 거친 뒤 PRD 규약을 따라 `.claude/prds/prd-<feature>.md` 에 직접 작성한다. `for_action` 의 Step 4.5 plan 파일 초기화는 적용하지 않는다. PRD 작성 이후의 phase 진행 상태는 PRD master 파일의 Document Status가 SSOT이며 본 enum은 사용되지 않는다. plan-with-questions가 추적하는 enum은 PRD 작성 직전까지로 한정한다:
 
 | Resume From | 진입 조건 |
 |-------------|----------|
@@ -116,9 +116,9 @@ echo "branch=$BRANCH, HEAD=$HEAD_ANCHOR, dirty=$DIRTY"
    - Baseline이 위 새 형식이 아니거나 안전하게 파싱되지 않으면 Step 1-2를 재실행하거나 사용자 확인을 받는다.
 2. 현재 git 상태를 확인: branch 이름, 최근 commit subject, `git status --short`.
 3. 비교:
-   - **branch 동일 + anchor 의미가 현재 상태와 명확히 일치 + dirty 상태가 안전하게 비교됨**: `Resume From` enum 값으로 정확한 단계 점프.
-   - **branch 다름**: 사용자에게 경고 + 작업 의도 확인 (다른 브랜치에서 작업 재개 의도일 수 있음).
-   - **anchor 의미 불명확 또는 현재 상태와 불일치**: drift 발생 가능. Step 1-2 재실행 또는 사용자 확인이 필요하다. 확인 없이 `Resume From`으로 점프하지 않는다. plan에 `DL` 추가:
+   - branch 동일 + anchor 의미가 현재 상태와 명확히 일치 + dirty 상태가 안전하게 비교됨: `Resume From` enum 값으로 정확한 단계 점프.
+   - branch 다름: 사용자에게 경고 + 작업 의도 확인 (다른 브랜치에서 작업 재개 의도일 수 있음).
+   - anchor 의미 불명확 또는 현재 상태와 불일치: drift 발생 가능. Step 1-2 재실행 또는 사용자 확인이 필요하다. 확인 없이 `Resume From`으로 점프하지 않는다. plan에 `DL` 추가:
 
      ```markdown
      ### DL-N: Baseline drift detected on resume
@@ -131,35 +131,35 @@ echo "branch=$BRANCH, HEAD=$HEAD_ANCHOR, dirty=$DIRTY"
      - Decision: Step 1-2 재실행 후 plan 본문 갱신.
      - Consequences: Resume From이 `for_action.step1_validity`로 reset됨.
      ```
-   - **dirty 상태 불명확**: baseline 또는 현재 상태가 dirty이고 같은 미커밋 작업인지 안전하게 비교할 수 없으면 drift 발생 가능으로 처리한다. Step 1-2를 재실행하거나 사용자에게 추가 변경의 plan 통합 의도를 확인한다.
+   - dirty 상태 불명확: baseline 또는 현재 상태가 dirty이고 같은 미커밋 작업인지 안전하게 비교할 수 없으면 drift 발생 가능으로 처리한다. Step 1-2를 재실행하거나 사용자에게 추가 변경의 plan 통합 의도를 확인한다.
 
 ## 동일 세션 progressive commit vs 재개 drift 구분
 
 `Status=Implementing`인 plan을 같은 세션에서 phase별 commit으로 진행하는 경우, branch + HEAD 변경은 정상이다 (Phase 1 commit → Phase 2 commit → ... 자연 진행). 이때는 Baseline drift 처리 불필요 — 그냥 plan의 `Baseline`/`Last Updated`/`Last Completed Step`/`Resume From`/`Phase Progress`를 갱신한다.
 
-**drift 알고리즘 적용 조건**:
+drift 알고리즘 적용 조건:
 - 재개 시점 = 메인 LLM 세션 컨텍스트가 단절된 상태에서 plan 파일을 다시 열 때.
 - 신호: `Last Updated`가 오늘이 아니거나, `Status=Implementing`인데 메인 LLM이 진행 history를 메모리에 보유하지 않음.
 
-**진행 중 commit 신호** (drift 처리 skip):
+진행 중 commit 신호 (drift 처리 skip):
 - 동일 세션에서 phase 단위 commit 후 다음 phase 진입.
 - 메인 LLM이 직전 commit subject와 진행 맥락을 컨텍스트에 보유.
 - plan의 `Change Log` 마지막 entry가 직전 commit subject 또는 진행 요약과 일치.
 
 ## 불변조건
 
-- **첫 미완료 blocking step**: `Resume From`은 항상 첫 번째 미완료 blocking step만 가리킨다 (이미 끝난 단계나 skip된 단계를 가리키지 않는다).
-- **체크박스 evidence**: 완료 체크박스(`- [x]`)는 evidence 또는 validation note 없이 전환 금지. plan에 "Step 5 DA 완료"라 적으려면 외부 검토 verdict 요약, stable artifact name, 또는 validation note가 함께 있어야 한다. ephemeral scratch reference를 durable evidence로 쓰지 않는다.
-- **Last Updated 동기화**: `Last Updated`가 바뀌면 `Change Log`도 같은 날짜로 갱신된 entry가 있어야 한다.
-- **Mode 전환은 DL**: `Mode` 필드가 바뀌면(`for_action` → `for_prd`) 반드시 Decision Log에 기록한다.
-- **Baseline drift 처리 의무**: Baseline drift 또는 dirty 상태 ambiguity 감지 시 Step 1-2 재실행 또는 사용자 확인이 필요하다. 메인 LLM 자체 판단으로 "drift는 무시해도 되겠다"며 `Resume From`으로 점프하지 않는다.
+- 첫 미완료 blocking step: `Resume From`은 항상 첫 번째 미완료 blocking step만 가리킨다 (이미 끝난 단계나 skip된 단계를 가리키지 않는다).
+- 체크박스 evidence: 완료 체크박스(`- [x]`)는 evidence 또는 validation note 없이 전환 금지. plan에 "Step 5 DA 완료"라 적으려면 외부 검토 verdict 요약, stable artifact name, 또는 validation note가 함께 있어야 한다. ephemeral scratch reference를 durable evidence로 쓰지 않는다.
+- Last Updated 동기화: `Last Updated`가 바뀌면 `Change Log`도 같은 날짜로 갱신된 entry가 있어야 한다.
+- Mode 전환은 DL: `Mode` 필드가 바뀌면(`for_action` → `for_prd`) 반드시 Decision Log에 기록한다.
+- Baseline drift 처리 의무: Baseline drift 또는 dirty 상태 ambiguity 감지 시 Step 1-2 재실행 또는 사용자 확인이 필요하다. 메인 LLM 자체 판단으로 "drift는 무시해도 되겠다"며 `Resume From`으로 점프하지 않는다.
 
 ## 재개 호출 패턴 (사용자 입장)
 
 다음 세션에서 사용자가 다음 중 하나로 시작하면 재개:
 
-- 명시적: `"`.claude/plans/<path>.md` Resume From부터 이어가자"` 
-- plan 파일 path만: `".claude/plans/<path>.md"` (메인 LLM이 Status / Resume From 읽고 판단)
+- 명시적: "`.claude/plans/<path>.md` Resume From부터 이어가자"
+- plan 파일 path만: `".claude/plans/<path>.md"` (메인 LLM이 Status와 Resume From을 읽고 판단)
 - plan-with-questions 직접 재호출 + 같은 이슈 ref: 동일 ref면 기존 plan 발견 후 재개 모드
 
 메인 LLM은 plan 파일 상단 `Document Status` 표를 먼저 읽고, Baseline drift 검증 → Resume From 점프 순으로 진행한다.
