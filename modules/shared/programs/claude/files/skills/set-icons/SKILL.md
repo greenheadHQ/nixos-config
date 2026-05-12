@@ -170,6 +170,10 @@ tmp=$(mktemp) && jq --arg path "$MEMO_FILE" \
 5. **SessionStart hook 동작 (source별)**:
    - `startup` (새 세션): 빈 상태 파일 + 메모 파일 생성. 아이콘 없음
    - `clear` / `resume` / `compact` (기존 세션 재진입): 상태 파일 없으면 가장 최근 상태 파일을 복사하여 아이콘/메모 경로 보존
+6. **OSC 8 hyperlink 클릭 UX (macOS Ghostty + Claude Code fullscreen)**:
+   - **일반 Cmd+클릭** — Plan/Memo/Memory 같은 `file://` link는 Ghostty plain-text URL fallback detector로 동작 (Jira/Slack/Figma 같은 `https://`도 동작)
+   - **Cmd+Shift+클릭** — Claude Code TUI(`CLAUDE_CODE_NO_FLICKER` fullscreen 모드)가 mouse capture로 일반 Cmd+클릭을 가로채는 영역에서 escape hatch. cwd (`vscode://file/<path>/`) 처럼 fallback detector가 인식 못 하는 scheme은 **Cmd+Shift+클릭으로만 동작**
+   - 관련 upstream issue: anthropics/claude-code#26356, #37216, #45173 (mouse capture 회귀 미해결)
 
 ## 주의사항
 

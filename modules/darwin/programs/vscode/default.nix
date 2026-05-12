@@ -227,6 +227,8 @@ in
 
     register_public_uti public.plain-text
     register_public_uti public.source-code
+    # NB: public.folder default는 macOS가 Apple-protected (Finder 고정) — duti가 error -50
+    # 반환하여 등록 불가. 따라서 statusline.sh의 cwd Cmd+클릭은 Finder가 열리는 동작 수용.
 
     if [ "$skipped" -gt 0 ]; then
       echo "  ⚠️  Skipped $skipped of $total extensions rejected by duti (first: $first_failure → $first_failure_err)"

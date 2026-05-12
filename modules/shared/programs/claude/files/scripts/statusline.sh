@@ -381,14 +381,22 @@ fi
 # -- Worktree detection (D-14)
 #    Primary: stdin.workspace.git_worktree (위 jq 통합에서 추출)
 #    Fallback: git rev-parse --path-format=absolute --git-dir/--git-common-dir
-if [ -n "${WS_WORKTREE:-}" ]; then
-  IS_WORKTREE=true
-elif [ -d "$CWD" ]; then
+#    워크트리일 때 메인 repo 경로(MAIN_REPO_DIR)도 함께 추출 — D-4 display용
+MAIN_REPO_DIR=""
+if [ -d "$CWD" ]; then
   GIT_DIR_ABS=$(git -C "$CWD" rev-parse --path-format=absolute --git-dir 2>/dev/null) || true
   GIT_COMMON_ABS=$(git -C "$CWD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || true
-  if [ -n "$GIT_DIR_ABS" ] && [ -n "$GIT_COMMON_ABS" ] && [ "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]; then
-    IS_WORKTREE=true
-  fi
+fi
+
+if [ -n "${WS_WORKTREE:-}" ]; then
+  IS_WORKTREE=true
+elif [ -n "${GIT_DIR_ABS:-}" ] && [ -n "${GIT_COMMON_ABS:-}" ] && [ "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]; then
+  IS_WORKTREE=true
+fi
+
+# 워크트리면 메인 repo 경로 = git_common_dir의 부모 (= .git의 부모 = repo root)
+if $IS_WORKTREE && [ -n "${GIT_COMMON_ABS:-}" ]; then
+  MAIN_REPO_DIR=$(dirname "$GIT_COMMON_ABS")
 fi
 
 # -- Branch 추출 (D-14: worktree.branch || git branch --show-current)
@@ -399,8 +407,8 @@ fi
 
 # -- Heavy 결과 저장 (D-15: CACHED_CWD 포함). SIDECAR_IO_ENABLED 가드
 if $SIDECAR_IO_ENABLED; then
-  printf 'PLAN_FILE=%q\nMEMORY_LINK=%q\nMEMORY_LABEL=%q\nCACHE_TTL=%q\nIS_WORKTREE=%q\nGIT_BRANCH=%q\nCACHED_CWD=%q\n' \
-    "$PLAN_FILE" "$MEMORY_LINK" "$MEMORY_LABEL" "$CACHE_TTL" "$IS_WORKTREE" "$GIT_BRANCH" "$CWD" \
+  printf 'PLAN_FILE=%q\nMEMORY_LINK=%q\nMEMORY_LABEL=%q\nCACHE_TTL=%q\nIS_WORKTREE=%q\nGIT_BRANCH=%q\nMAIN_REPO_DIR=%q\nCACHED_CWD=%q\n' \
+    "$PLAN_FILE" "$MEMORY_LINK" "$MEMORY_LABEL" "$CACHE_TTL" "$IS_WORKTREE" "$GIT_BRANCH" "$MAIN_REPO_DIR" "$CWD" \
     > "${HEAVY_STATE}.vars"
   echo "$NOW" > "$HEAVY_STATE"
 fi
@@ -493,13 +501,24 @@ if [ -n "$SESSION_ID" ]; then
 fi
 
 # cwd canonical 검증 + display + URL
+# D-4 update: 워크트리일 때 display는 `<메인 repo ~ 단축>:<worktree 폴더명>` 형식
+#   (사용자 요청 — 풀 경로는 너무 길어 잘림). URL은 항상 canonical 풀 path (VSCode 정확 dispatch)
 CWD_CANONICAL=$(canonicalize_cwd_check "$CWD")
 if [ -n "$CWD_CANONICAL" ]; then
-  CWD_DISPLAY=$(tilde_shorten "$CWD_CANONICAL")
+  if $IS_WORKTREE && [ -n "${MAIN_REPO_DIR:-}" ]; then
+    MAIN_REPO_SHORT=$(tilde_shorten "$MAIN_REPO_DIR")
+    WORKTREE_NAME=$(basename "$CWD_CANONICAL")
+    CWD_DISPLAY="${MAIN_REPO_SHORT}:${WORKTREE_NAME}"
+  else
+    CWD_DISPLAY=$(tilde_shorten "$CWD_CANONICAL")
+  fi
   CWD_URL=""
   if ! $IS_SSH; then
     CWD_URL_PATH=$(percent_encode_segment "$CWD_CANONICAL")
-    CWD_URL="vscode://file${CWD_URL_PATH}/"
+    # ?windowId=_blank — vscode:// URL handler는 window.openFoldersInNewWindow 설정을
+    # 따르지 않고 기본적으로 마지막 활성 창을 덮어쓴다. query param이 공식 해결책으로
+    # 항상 새 창을 강제한다 (microsoft/vscode#141548, 머지 commit bcc2da6).
+    CWD_URL="vscode://file${CWD_URL_PATH}/?windowId=_blank"
   fi
 else
   # 검증 실패: 텍스트만 표시. control 문자가 들어와 fallback으로 escape 주입되는 것 방지
