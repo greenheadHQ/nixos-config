@@ -1,0 +1,86 @@
+---
+tags: [ rg, ripgrep, search, grep ]
+---
+rg — ripgrep recursive search (gitignore/숨김/바이너리 자동 제외)
+
+[기본 검색]
+
+  rg PATTERN                    재귀 검색 (현재 디렉토리)
+                                $ rg TODO
+                                src/foo.ts:14:// TODO: refactor
+
+  rg PATTERN path/              특정 경로만 검색
+                                $ rg fn modules/
+                                modules/foo.nix:5:  fn = ...
+
+  -i                            대소문자 무시 (=ignore case)
+                                $ rg -i todo
+                                src/foo.ts:14:// TODO
+                                src/bar.ts:3:// todo done
+
+  -g 'glob' / -g '!pattern'     glob 한정 / glob 제외
+                                $ rg fn -g '*.nix'
+                                modules/foo.nix:5:  fn = ...
+                                $ rg fn -g '!node_modules/**'
+
+  -M N --max-columns-preview    매치 줄 너비 N자 제한 + 잘림 미리보기
+                                $ rg long -M 80 --max-columns-preview
+                                src/foo.ts:14: very long line truncat[...]
+
+  --files                       검색 대상 파일 목록 (검색 X)
+                                $ rg --files -g '*.nix' | head -3
+                                modules/foo.nix
+                                modules/bar.nix
+
+[파일/디렉토리 범위]
+
+  -t TYPE                       특정 확장자만 (rg --type-list 로 목록 확인)
+                                $ rg fn -t nix
+                                modules/foo.nix:5:  fn = ...
+
+  --hidden                      숨김 파일 포함 (.dotfile)
+                                $ rg config --hidden
+                                .config/foo:1:config=...
+
+  -uu                           --no-ignore --hidden 묶음 (ignore 모두 끔)
+                                $ rg foo -uu
+                                node_modules/lib/foo.js:1:...
+
+[컨텍스트]
+
+  -C N                          매치 전후 N줄 (양방향)
+                                $ rg fn -C 1
+                                src/foo.ts:13-// before
+                                src/foo.ts:14:fn match
+                                src/foo.ts:15-// after
+
+[매칭 보조]
+
+  -S                            smart-case (소문자 입력 시 자동 case-insensitive)
+                                $ rg todo -S     → -i 처럼 동작
+                                $ rg Todo -S     → 정확히 'Todo' 만
+
+  -F 'literal'                  정규식 비활성, 리터럴 검색
+                                $ rg -F '$1.foo()'
+                                src/foo.ts:14:result = $1.foo()
+
+[출력 형태]
+
+  -l                            파일명만 출력 (xargs/fzf 파이프용)
+                                $ rg -l TODO
+                                src/foo.ts
+                                src/bar.ts
+
+  -c                            파일별 카운트
+                                $ rg -c TODO
+                                src/foo.ts:3
+                                src/bar.ts:1
+
+  -r '$1'                       치환 미리보기 (파일 수정 X, capture group)
+                                $ rg 'fn (\w+)' -r 'def $1'
+                                src/foo.ts:14:def match
+
+Tip
+- gitignore/숨김/바이너리는 기본 제외 — 누락되면 --hidden 또는 -uu 시도
+- 복잡한 정규식/멀티라인은 LLM에게 위임이 빠를 수 있음
+- --max-columns-preview 는 -M 미지정 시 아예 동작하지 않음 (rg --help: "If the -M/--max-columns flag is not set, then this has no effect.")
