@@ -42,7 +42,7 @@ rg — ripgrep recursive search (gitignore/숨김/바이너리 자동 제외)
                                 $ rg config --hidden
                                 .config/foo:1:config=...
 
-  -uu                           --no-ignore --hidden 묶음 (ignore 모두 끔)
+  -uu                           --no-ignore --hidden 묶음 (ignore 규칙 비활성 + 숨김 포함; binary 는 여전히 제외)
                                 $ rg foo -uu
                                 node_modules/lib/foo.js:1:...
 
@@ -81,6 +81,6 @@ rg — ripgrep recursive search (gitignore/숨김/바이너리 자동 제외)
                                 src/foo.ts:14:def match
 
 Tip
-- gitignore/숨김/바이너리는 기본 제외 — 누락되면 --hidden 또는 -uu 시도
+- gitignore/숨김/바이너리는 기본 제외 — 숨김 누락은 --hidden 또는 -uu, 바이너리 누락은 -uuu 또는 -a/--text 시도
 - 복잡한 정규식/멀티라인은 LLM에게 위임이 빠를 수 있음
 - --max-columns-preview 는 -M 미지정 시 아예 동작하지 않음 (rg --help: "If the -M/--max-columns flag is not set, then this has no effect.")
