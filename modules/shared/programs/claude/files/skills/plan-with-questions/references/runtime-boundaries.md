@@ -18,29 +18,28 @@ codex 환경 가정과 활성화 절차의 단일 SSOT는 [`.claude/skills/confi
 
 - `~/.config`, `~/.ssh`, `~/.codex`, `/run/agenix` (NixOS) 등 secret 경로의 read.
 - 외부 API 호출 (네트워크 차단 아님).
-- MCP 또는 connector 로딩 — `--ignore-user-config` + `-C scratch` 로 user와 project config 둘 다 차단해야 완결된다. 호출 명령과 trust boundary flag의 단일 SSOT는 [`consulting-step-shell.md`](./consulting-step-shell.md) 다 (schema와 anti-anchoring 정책은 [`consulting-step.md`](./consulting-step.md)).
+- MCP 또는 connector 로딩 — `--ignore-user-config` + `-C scratch` 로 user와 project config 둘 다 차단해야 완결된다. 호출 명령과 trust boundary flag의 단일 SSOT는 [`consulting-step-shell.md`](./consulting-step-shell.md) 다 (schema와 옵션 표시 정책은 [`consulting-step.md`](./consulting-step.md)).
 
-따라서 Step 3.5 입력에 무엇을 보낼지에 대한 보안 책임은 호출자 (메인 에이전트) 에 있다. repo evidence 중에서 sanitized excerpt만 전달하고, 자문 결과는 untrusted output으로 취급해 Step 4 의 anti-anchoring schema 검증을 거친다.
+따라서 Step 3.5 입력에 무엇을 보낼지에 대한 보안 책임은 호출자 (메인 에이전트) 에 있다. repo evidence 중에서 sanitized excerpt만 전달하고, 자문 결과는 untrusted output으로 취급해 Step 4 의 schema 검증을 거친다.
 
 ### `request_user_input` 페이로드 가이드
 
-`request_user_input` 의 옵션 개수 또는 Recommended 라벨은 schema 또는 server enforcement가 아니라 codex tool description의 LLM convention이다. 출처:
+`request_user_input` 의 옵션 개수 가이드라인은 schema 또는 server enforcement가 아니라 codex tool description의 LLM convention이다. 출처:
 
 - `codex-rs/tools/src/request_user_input_tool.rs` 의 JSON Schema description 문자열에 "2-3 choices", "questions ... do not exceed 3", "recommended option first" 가이드라인이 박혀 있다 (LLM이 자발적으로 따른다).
 - `codex-rs/core/templates/collaboration_mode/plan.md` 는 "2-4 options + recommended default" 를 요구한다. `default.md` 는 별도 옵션 개수 또는 라벨 지침이 없다 (mode 별 prompt template 차이가 있다).
-- TUI는 첫 옵션을 기본 선택 (커서) 으로 표시하지만 자동 `(Recommended)` 라벨을 부여하지는 않는다.
-- JSON schema (`ToolRequestUserInputOption`, `ToolRequestUserInputQuestion`) 와 `normalize_request_user_input_args` 에는 array-level `maxItems` 또는 `recommended` property가 없다 (PR #617 fact-check 결과).
+- TUI는 첫 옵션을 기본 선택 (커서) 으로 표시한다.
+- JSON schema (`ToolRequestUserInputOption`, `ToolRequestUserInputQuestion`) 와 `normalize_request_user_input_args` 에는 array-level `maxItems` 또는 `recommended` property가 없다.
 
 본 스킬의 운영 정책:
 
-1. 라운드당 하나의 질문: `request_user_input` 또는 `AskUserQuestion` 호출 시 `questions` 배열 길이는 1 로 고정한다. for_action과 for_issue와 for_prd 모두 동일 정책이며 별도 자동 축소 로직이 필요 없다. tool description의 "2-3 choices" 가이드는 한 question 내 options 개수에 적용되며, 본 정책의 questions 배열 길이와는 별개 차원이다.
-2. Step 3.5 추천 라벨 — 합의 알고리즘 호출: tool description은 "recommended option first" 를 권고하지만 본 스킬은 [`consulting-step.md`](./consulting-step.md) 의 추천 라벨 합의 알고리즘 4단계 (schema 한계 내 보수적 합의 정의) 를 적용한다. 후보가 정확히 1개로 좁혀진 합의 통과 옵션에만 `(Recommended)` 라벨을 부착한다. 합의 미달 옵션에는 어떤 fallback 에서도 라벨을 부착하지 않으며, 옵션 dict에서 라벨 문자열이 발견되면 강제 제거한다. 옵션 순서는 `decision_id` 기반 stable shuffle로 결정한다 (anti-anchoring 2번 규칙 보존). 본 정책은 codex 또는 AskUserQuestion tool description의 LLM convention에 대한 로컬 정책 override 다.
+- 라운드당 하나의 질문: `request_user_input` 또는 `AskUserQuestion` 호출 시 `questions` 배열 길이는 1 로 고정한다. for_action과 for_issue와 for_prd 모두 동일 정책이며 별도 자동 축소 로직이 필요 없다. tool description의 "2-3 choices" 가이드는 한 question 내 options 개수에 적용되며, 본 정책의 questions 배열 길이와는 별개 차원이다.
+
+옵션 순서와 라벨 표시는 본 스킬에서 명시적 정책을 두지 않으며, 도구 default 와 메인 LLM 의 평이한 한국어 표현에 맡긴다. 옵션의 트레이드오프 명료성은 자문 출력의 `user_facing.plain_disqualifier` 표시 (옵션 표시 정책) 로 확보한다.
 
 ### for_action과 for_issue와 for_prd의 라운드 정책 통일
 
 세 모드 모두 라운드당 `questions` 배열 길이 1 을 강제한다. modes/*.md의 정책 (for_action의 Step 4, for_issue의 Step I-4, for_prd의 차용 단계) 이 SSOT 다. 본 reference는 그 정책을 런타임 도구 호출 차원에서 명시할 뿐이다. 라운드 수가 늘어나는 trade-off는 명시적으로 수용된다 (사용자 인지 부하와 turn_abort 위험 감소가 우선이다).
-
-PR `openai/codex#12735` 는 collaboration mode 가용성만 확장하고 tool spec 또는 schema는 미변경이므로, 위 가이드는 collaboration mode와 무관하게 schema 차원에서 일관된다. 단 prompt template 차원에서는 mode 별 차이가 있다 (위 plan.md와 default.md의 차이).
 
 ### 자동 run-da preflight gate의 질문 도구
 

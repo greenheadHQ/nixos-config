@@ -30,56 +30,17 @@
 
 Step 3.5 자문 결과를 사용자에게 표시할 때는 [`consulting-step.md`](./consulting-step.md) 의 두 layer schema 중 `user_facing` layer만 사용한다 (label, description, analogy, plain_disqualifier 4 필드).
 
-`technical_matrix` (7키 평가 매트릭스 — 요구충족, 구현비용, 되돌리기쉬움, 운영위험, 검증가능성, 주요unknown, 비용시간추정) 와 raw `disqualifiers` 는 메인 LLM 내부 추천 라벨 합의 알고리즘 입력 전용이며 사용자에게 절대 노출하지 않는다.
+`technical_matrix` (7키 평가 매트릭스 — 요구충족, 구현비용, 되돌리기쉬움, 운영위험, 검증가능성, 주요unknown, 비용시간추정) 와 raw `disqualifiers` 는 메인 LLM 내부 옵션 분석 전용이며 사용자에게 절대 노출하지 않는다.
 
 `user_facing` 누락 시 텍스트 복구 4단계의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md#user_facing-누락-시-텍스트-복구-4단계) 다. 본 단계에 따라 graceful degrade 한다.
 
-### 추천 라벨 합의 알고리즘 호출 + 합의 미달 라벨 제거
+### 옵션 표시 정책 (Step 3.5 자문 결과)
 
-`(Recommended)` 라벨 부착의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 의 추천 라벨 합의 알고리즘 4단계다. 후보가 정확히 1개로 좁혀진 합의 통과 옵션에만 허용된다. 합의 미달 시 어떤 옵션에도 라벨이 부착되지 않는다. 사용자에게는 평이 한국어 문구만 노출한다 (정확한 문구는 consulting-step.md의 "Fallback enum" 표 SSOT).
-
-합의 미달 라벨 제거 규칙:
-
-- AskUserQuestion 도구 description의 추천 라벨 자동 권장은 본 스킬 컨텍스트에서 무시한다.
-- 사용자 노출 직전 옵션 dict에서 합의 미달 옵션의 `(Recommended)` 문자열 또는 등가 표시가 발견되면 강제 제거한다.
-- 본 규칙의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 의 합의 미달 라벨 제거 단락이다. SKILL.md의 Invariant 8 은 요약 callsite 다. 본 patterns 섹션은 SSOT를 callsite로 강제한다.
-
-### judgment-first 라운드 라벨 금지
-
-옵션 보이기 전 "어떤 기준이 가장 중요한가?" 를 먼저 묻는 judgment-first 사전 라운드는 추천 라벨 합의 알고리즘을 실행하지 않는다. 어떤 옵션에도 `(Recommended)` 라벨을 부착하지 않으며, `user_facing.label` 만으로 기준을 평이하게 표시한다 (자문 출력의 합의 결과와 무관). anti-anchoring 효과를 source 에서부터 보호하기 위함이다.
-
-### Step 3.5 자문 결과 표시 시 anti-anchoring 규칙 (필수)
-
-- 라벨 부착은 합의 통과인 단일 옵션에만 허용한다 (위 "추천 라벨 합의 알고리즘 호출" 단락 SSOT 참조). 합의 미달 옵션에는 어떤 부착도 금지하며 `(Recommended)` 를 강제 제거한다.
-- 옵션 순서를 `decision_id` 로 seed 한 stable shuffle로 결정한다 (같은 decision_id 면 같은 순서, 다른 decision_id 면 다른 순서).
 - 각 옵션에 `user_facing.plain_disqualifier` ("틀릴 수 있는 조건") 를 평이한 한국어로 명시한다. raw `disqualifiers` 는 메인 LLM 내부 사용 전용이다.
-- 옵션 보이기 전 "어떤 기준이 가장 중요한가?" 를 먼저 묻는 judgment-first 패턴을 적용한다.
 - 옵션 description은 `user_facing.description` 과 `user_facing.analogy` 를 그대로 사용한다. 사용자가 도메인 모르더라도 트레이드오프를 직관할 수 있게 하기 위함이다.
+- `user_facing` 텍스트 누락 시 [`consulting-step.md`](./consulting-step.md#user_facing-누락-시-텍스트-복구-4단계) 의 텍스트 복구 4단계로 graceful degrade.
 
-### 라운드별 룰 매트릭스 (라벨 부착 결정 흐름)
-
-본 표는 추천 라벨 합의 알고리즘의 결과로 라벨 부착 여부와 묶음 정책을 결정한다. `user_facing` 텍스트 출처 (자문 원본 vs 메인 LLM 자체 작성) 는 텍스트 복구 흐름의 별개 축이며 아래 "텍스트 복구" 단락에서 별도로 다룬다.
-
-fallback 사용자 노출 평이 문구의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 의 "Fallback enum (내부 Decision Log 전용, 사용자 노출 금지)" 표 이며 본 매트릭스는 그 표를 복제하지 않는다.
-
-| 라운드 종류 | 묶음 | `user_facing` 텍스트 사용 여부 | `(Recommended)` 라벨 부착 |
-|---|---|---|---|
-| 일반 (단순 요구사항 / 사이드이펙트) | 하나 | 옵션 표시 시 사용 | 적용 안 함 (옵션이 단순 또는 yes / no) |
-| 트레이드오프 — 합의 통과 (후보 정확히 1개) | 하나 | 사용 | 허용: 그 단일 옵션에만 |
-| 트레이드오프 — 합의 미달 fallback | 하나 | 텍스트 복구 사용 또는 자문 `user_facing` 그대로 | 절대 금지: 모든 옵션 라벨 없이 표시 |
-| judgment-first 사전 라운드 | 하나 | 사용 — 기준 평이 라벨 | 절대 금지: 합의 알고리즘 미실행 |
-
-위 표의 "합의 미달 fallback" 행 보충 — 단계별 동작의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 다.
-
-### 텍스트 복구 (라벨 부착과 별개 축)
-
-자문 출력에 `user_facing` layer가 누락 또는 부분 누락된 경우 메인 LLM은 [`consulting-step.md`](./consulting-step.md) 의 텍스트 복구 4단계로 복구를 시도한다.
-
-Stage 3 에서 메인 LLM이 description, analogy, plain_disqualifier를 자체 작성한 경우 사용자에게는 평이한 한국어 문구로 출처를 표기한다. 정확한 문구의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 의 "Fallback enum" 표다. 사용자에게는 내부 Decision Log 식별자 자체를 노출하지 않는다.
-
-텍스트가 복구돼도 `(Recommended)` 라벨 부착 여부와는 다른 축이다. 합의 알고리즘 schema 검증 fail이면 라벨은 여전히 부착되지 않는다.
-
-상세 schema와 algorithm의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 다.
+상세 schema와 자문 호출 흐름의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 다.
 
 ## for_issue Step I-6 전환 제안 메시지
 

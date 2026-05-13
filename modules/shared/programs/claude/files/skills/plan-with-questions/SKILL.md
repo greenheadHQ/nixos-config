@@ -44,9 +44,9 @@ tracked write, branch mutation, commit / push, GitHub write, `wt` / `nrs` / rebu
 트레이드오프 옵션이 1개 이상일 때 적용되는 순서다:
 
 - Step 3.5 에서 외부 자문을 사용자 질문 전에 호출한다.
-- 자문 결과 도착 후 Step 4 에서 anti-anchoring 4 규칙을 적용해 옵션을 사용자에게 제시한다. 4 규칙은 (a) 추천 라벨 합의 조건부 부착, (b) 옵션 셔플, (c) `user_facing.plain_disqualifier` 표시, (d) judgment-first 다.
+- 자문 결과 도착 후 Step 4 에서 옵션 표시 정책 (`user_facing.plain_disqualifier` 표시) 을 적용해 옵션을 사용자에게 제시한다.
 
-라벨 정책과 anti-anchoring 알고리즘의 단일 SSOT는 [`references/consulting-step.md`](./references/consulting-step.md) 다. 본 Invariant 본문은 SSOT 참조만 두고 정책을 복제하지 않는다. modes/* 파일도 마찬가지로 SSOT를 link 로만 참조한다 (정책 본문 복제 금지).
+옵션 표시 정책과 자문 schema 의 단일 SSOT는 [`references/consulting-step.md`](./references/consulting-step.md) 다. 본 Invariant 본문은 SSOT 참조만 두고 정책을 복제하지 않는다. modes/* 파일도 마찬가지로 SSOT를 link 로만 참조한다 (정책 본문 복제 금지).
 
 codex exec 호출 명령의 단일 SSOT는 [`references/consulting-step-shell.md`](./references/consulting-step-shell.md) 다 (`consulting-step.md` 의 codex exec 호출 코드블록을 분리한 후속 파일). SKILL.md 본문과 modes/* 파일은 명령을 복제하지 않는다.
 
@@ -60,16 +60,12 @@ codex exec 호출 명령의 단일 SSOT는 [`references/consulting-step-shell.md
 - 메인 LLM이 "헤더 메타데이터만 갱신해도 충분" 이라고 자체 판단하지 않는다.
 - for_prd 모드에서 PRD master + active phase 파일의 체크박스는 단계 완료 즉시 본 스킬이 갱신한다.
 
-### 8. 라운드당 하나의 질문 + 추천 라벨 합의 규칙
+### 8. 라운드당 하나의 질문
 
 - 사용자 질문 도구 호출 시 `questions` 배열 길이는 1 로 강제한다. for_action의 Step 4, for_issue의 Step I-4, for_prd의 차용 단계 모두 동일 정책이다.
 - 한 라운드에 여러 질문을 묶어 인지 부하를 일으키지 않는다.
 
-트레이드오프 라운드 정책의 단일 SSOT는 [`references/consulting-step.md`](./references/consulting-step.md) 다. 본 Invariant는 SSOT의 일부 결과만 요약한다:
-
-- `(Recommended)` 라벨은 후보가 정확히 1개로 좁혀진 합의 통과 옵션에만 부착한다.
-- 질문 도구의 자동 권장 convention은 본 스킬 컨텍스트에서 무시한다.
-- judgment-first 사전 라운드는 합의 알고리즘을 실행하지 않으며 어떤 옵션에도 라벨을 부착하지 않는다 (anti-anchoring 효과 보호).
+트레이드오프 라운드 정책의 단일 SSOT는 [`references/consulting-step.md`](./references/consulting-step.md) 다.
 
 ## 모드 판별
 
@@ -164,8 +160,8 @@ Implementation 단계에서는 phase 종료 시 6-classification을 적용한다
 | [`references/run-da-preflight-gate.md`](./references/run-da-preflight-gate.md) | 자동 run-da 호출 전 SKIP gate + 질문 도구 승인 / 승격 규칙 |
 | [`references/da-integration.md`](./references/da-integration.md) | Step 5 호출 계약 + Step 6 결과 반영 상태표 |
 | [`references/post-implementation.md`](./references/post-implementation.md) | 7단계 자동 진행 + 자유 생략 금지 신뢰 경계 |
-| [`references/output-templates.md`](./references/output-templates.md) | 사용자 메시지 / 체크리스트 / 질문 패턴 / anti-anchoring 규칙 |
-| [`references/consulting-step.md`](./references/consulting-step.md) | Step 3.5 입출력 schema + anti-anchoring 4 규칙 + 추천 라벨 합의 알고리즘 (단일 SSOT) |
+| [`references/output-templates.md`](./references/output-templates.md) | 사용자 메시지 / 체크리스트 / 질문 패턴 / 옵션 표시 정책 |
+| [`references/consulting-step.md`](./references/consulting-step.md) | Step 3.5 입출력 schema + 옵션 표시 정책 (단일 SSOT) |
 | [`references/consulting-step-shell.md`](./references/consulting-step-shell.md) | Step 3.5 codex exec 호출 명령 (단일 SSOT, consulting-step.md에서 분리한 코드블록) |
 | [`references/plan-file-template.md`](./references/plan-file-template.md) | 14 metadata 필드 + Decision Log SSOT |
 | [`references/resume-state.md`](./references/resume-state.md) | Resume From enum 카탈로그 + baseline drift 검증 |

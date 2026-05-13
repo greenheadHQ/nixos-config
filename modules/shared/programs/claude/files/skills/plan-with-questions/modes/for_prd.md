@@ -54,7 +54,7 @@
 - P2 (for_action Step 2 차용): 트리거 결정 시 사용자에게 알림과 opt-out 확인을 제공한다. 사용자 동의 시 Mode 전환 (`for_action` → `for_prd`).
 - P3 (for_action Step 3 차용): 질문 수집과 불명확 점 정리다. for_action의 Step 3 과 동일 정책을 적용한다 (요구사항 불명확 점, 트레이드오프, 사이드이펙트, 인지 상태, XY Problem). PRD 컨텍스트에서는 phase 구조 후보도 함께 모은다.
 - P4 (for_action Step 3.5 차용): 자문 입력에 phase 구조 후보를 포함한다 (PRD는 phase 단위 결정이 핵심이다). 자문 출력의 두 layer schema (`technical_matrix` + `user_facing`) 와 텍스트 복구 규칙의 단일 SSOT는 [`../references/consulting-step.md`](../references/consulting-step.md) 다.
-- P5 (for_action Step 4 차용, 질문 정책 동일 적용): for_action의 Step 4 정책을 그대로 차용한다. 본 mode 파일은 정책 본문을 복제하지 않고 [`for_action.md` 의 트레이드오프 라운드 정책 절](./for_action.md#트레이드오프-라운드-정책) 을 callsite로 인용한다. 추천 라벨 합의 알고리즘, `user_facing` layer 사용, judgment-first 사전 라운드 라벨 금지, fallback 평이 문구 표기, 합의 미달 라벨 제거 규칙의 단일 SSOT는 [`../references/consulting-step.md`](../references/consulting-step.md) 다. PRD가 multi-phase 여도 라운드당 하나의 질문은 유지한다.
+- P5 (for_action Step 4 차용, 질문 정책 동일 적용): for_action의 Step 4 정책을 그대로 차용한다. 본 mode 파일은 정책 본문을 복제하지 않고 [`for_action.md` 의 트레이드오프 라운드 정책 절](./for_action.md#트레이드오프-라운드-정책) 을 callsite로 인용한다. `user_facing` layer 만 사용자에게 노출 + 옵션 표시 정책 (`plain_disqualifier` 표시) + 텍스트 복구 4단계의 단일 SSOT는 [`../references/consulting-step.md`](../references/consulting-step.md) 다. PRD가 multi-phase 여도 라운드당 하나의 질문은 유지한다.
 - for_action Step 4.5 (plan 파일 초기화) 는 for_prd에서 skip 된다: `for_prd` 는 `.claude/plans/` 파일과 plan-file-template의 14 metadata를 만들지 않는다. for_prd는 정수 P-enum만 사용하며 `.5` suffix를 도입하지 않는다.
 - P6 DA (for_action Step 5 차용): 기본은 [`../references/run-da-preflight-gate.md`](../references/run-da-preflight-gate.md) 를 적용한 후 `/run-da for_plan` 을 호출한다. preflight gate가 `run-da` 의 Review Intensity 체크리스트를 기계적으로 적용하고, 승인된 SKIP이 아니면 `/run-da for_plan` 으로 진행한다. DA 입력은 PRD draft 또는 context, candidate phase structure, P1-P5의 evidence 다 (plan 파일 path가 아니다). phase 4+ 복잡 plan에서 사용자가 명시적으로 exhaustive review를 원하면 `/run-da for_plan full` 을 사용한다 (full modifier는 인라인 체크리스트를 우회하고 8 도메인을 강제한다). 두 의미는 다르다.
 - P7 DA 반영 (for_action Step 6 차용): DA 결과는 PRD draft 또는 context와 후보 phase 구조에 반영한다. PRD 작성 후에는 PRD master의 `Change Log` 와, split mode에서 특정 phase가 영향받는 경우 해당 phase의 `Discoveries / Decisions` 에 반영 이력을 남긴다.
@@ -113,4 +113,4 @@ PRD 파일과 phase 파일은 모두 tracked write 이므로 메인 에이전트
 | DA `/run-da for_plan` | P6 preflight gate 후 호출 또는 승인된 SKIP |
 | 산출물 | `.claude/prds/prd-<feature>.md` (split mode 면 phase 파일 추가) |
 
-본 모드는 인터뷰, anti-anchoring, DA 검증을 거쳐 `.claude/prds/` 에 PRD를 작성하는 단일 흐름이다.
+본 모드는 인터뷰, 외부 자문, DA 검증을 거쳐 `.claude/prds/` 에 PRD를 작성하는 단일 흐름이다.

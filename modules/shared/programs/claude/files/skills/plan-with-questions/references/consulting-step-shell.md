@@ -6,7 +6,7 @@ SKILL.md, modes/for_action.md, modes/for_issue.md, modes/for_prd.md, references/
 
 ## 관련 SSOT
 
-- 자문 단계의 목적, 입력 schema, 출력 JSON schema, anti-anchoring 4 규칙, 추천 라벨 합의 알고리즘, fallback enum의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 다.
+- 자문 단계의 목적, 입력 schema, 출력 JSON schema, 옵션 표시 정책, 텍스트 복구의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md) 다.
 - supervised wrapper (`codex-exec-supervised`) 의 setsid + timeout 동작 SSOT는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) 의 §15 다.
 
 ## 호출 패턴: 3 셸 호출 분리
@@ -71,12 +71,12 @@ CODEX_EXEC_TIMEOUT_SECONDS=1800 env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 플래그별 역할:
 
 - `codex-exec-supervised` (Layer 2 = Layer 1 + `-C scratch` + `--skip-git-repo-check`) — supervised wrapper가 setsid + timeout 또는 gtimeout capability-probe로 npm wrapper detach 부재로 인한 native binary 잔존을 차단한다. 단일 SSOT는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) 의 §15 다.
-- `CODEX_EXEC_TIMEOUT_SECONDS=1800`: wrapper default (1800s = 30분) 와 동일하다. Step 3.5 의 consult는 high 또는 xhigh reasoning과 자문 schema 처리에 30분까지 허용한다. consult-specific 단축 override는 callsite 별 elapsed p95 또는 p99 측정이 누적된 뒤 재평가 대상이다. timeout 시 메인 에이전트는 `result.json` 을 무시하고 Step 4 에서 Step 3 의 raw 옵션을 anti-anchoring 4 규칙으로 직접 제시한다 (External Consult: `[UNVERIFIED: timed out]` 기록).
+- `CODEX_EXEC_TIMEOUT_SECONDS=1800`: wrapper default (1800s = 30분) 와 동일하다. Step 3.5 의 consult는 high 또는 xhigh reasoning과 자문 schema 처리에 30분까지 허용한다. consult-specific 단축 override는 callsite 별 elapsed p95 또는 p99 측정이 누적된 뒤 재평가 대상이다. timeout 시 메인 에이전트는 `result.json` 을 무시하고 Step 4 에서 Step 3 의 raw 옵션을 옵션 표시 정책으로 직접 제시한다 (External Consult: `[UNVERIFIED: timed out]` 기록).
 - `-C "$CONSULT_DIR"` (Layer 2) — cwd를 repo 외 scratch로 이동한다. `CONSULT_DIR` 값은 stdout에 출력된 실제 리터럴 경로다 (예: `/tmp/consult-c4a35fc4-AbCdEf`). repo의 `.codex/config.toml` (project-scoped MCP connector) 로드를 차단한다.
 - `--skip-git-repo-check` (Layer 2) — scratch 디렉토리는 git repo 밖이라 codex가 `Not inside a trusted directory` 로 거부한다. 이 플래그가 필수다.
 - `--ignore-user-config` (Layer 1) — `$CODEX_HOME/config.toml` 로드를 차단한다. 이 플래그가 user config의 `model` 설정도 무시하므로 `-c model="gpt-5.5"` 명시가 필수다 (run-da의 `arbiter-scaling.md` 와 동일 규칙).
 - `-c model="gpt-5.5"` (Layer 1) — model pin (위 사유로 필수).
-- `--sandbox read-only` (Layer 1) — 모델 shell 실행이 write를 못 한다. 단 read-only sandbox는 파일시스템 write만 차단한다: `~/.config`, `~/.ssh`, `/run/agenix` 등 secret 경로 read는 허용된다. 따라서 Step 3.5 입력에는 sanitized excerpt만 전달하고, 자문 결과는 untrusted output으로 취급하여 Step 4 의 anti-anchoring schema 검증을 거쳐야 한다.
+- `--sandbox read-only` (Layer 1) — 모델 shell 실행이 write를 못 한다. 단 read-only sandbox는 파일시스템 write만 차단한다: `~/.config`, `~/.ssh`, `/run/agenix` 등 secret 경로 read는 허용된다. 따라서 Step 3.5 입력에는 sanitized excerpt만 전달하고, 자문 결과는 untrusted output으로 취급하여 Step 4 의 schema 검증을 거쳐야 한다.
 - `--ephemeral` (Layer 1) — 세션 영속화를 하지 않는다.
 - `-o`: 마지막 모델 응답을 파일에 저장한다. JSON 스키마 강제는 아니다: `--output-schema` 가 별도로 필요하다. 우리 흐름은 호출 후 `jq -e . < result.json` 으로 파싱 검증하고, 실패 시 raw 옵션 fallback으로 진행한다.
 - xhigh: 명시적 심층 자문 요청 시에만 사용한다 (`model_reasoning_effort="xhigh"`).
@@ -102,7 +102,7 @@ esac
 [ -d "$CONSULT_DIR" ] || { echo "consulting-step: missing CONSULT_DIR=$CONSULT_DIR"; exit 1; }
 RESULT="$CONSULT_DIR/result.json"
 if [ -s "$RESULT" ] && jq -e . < "$RESULT" >/dev/null 2>&1; then
-  # 추천 라벨 합의 알고리즘 Step 2 — schema-level 검증
+  # schema-level 검증 — 자문 출력의 두 layer schema (technical_matrix 7키 + user_facing 4 필드) 가 존재하는지 확인.
   # 한국어 키는 jq dot 접근에서 INVALID_CHARACTER로 compile fail 하므로
   # quoted key + has() 로 검증한다 (jq 1.8 검증).
   # option 단위 boolean을 array로 모은 뒤 length>0 + all() 로 평가하여,
@@ -131,16 +131,19 @@ if [ -s "$RESULT" ] && jq -e . < "$RESULT" >/dev/null 2>&1; then
   ' < "$RESULT" >/dev/null 2>&1; then
     cat "$RESULT"  # 또는 jq로 필요한 필드만 추출
   else
-    echo "consulting-step: schema validation failed — D4_FALLBACK_B (라벨 부착 금지)"
+    echo "consulting-step: schema validation failed"
     cat "$RESULT"  # raw 출력은 메인 LLM이 텍스트 복구 4단계 시도용으로 사용
   fi
 else
-  echo "consulting-step: result invalid or empty — D4_FALLBACK_A (라벨 부착 금지)"
+  echo "consulting-step: result invalid or empty"
 fi
 rm -rf -- "$CONSULT_DIR"
 ```
 
-fallback 사용자 노출 평이 문구의 단일 SSOT는 [`consulting-step.md`](./consulting-step.md#fallback-enum-내부-decision-log-전용-사용자-노출-금지) 의 "Fallback enum" 표다. 위 echo 메시지의 식별자 (`D4_FALLBACK_A`, `D4_FALLBACK_B`) 는 내부 Decision Log 용이며 사용자에게 노출하지 않는다.
+위 echo 메시지는 메인 에이전트 내부 진단용 문자열이며 사용자에게 그대로 노출하지 않는다. 자문 실패 시 사용자 노출 평이 문구는 다음 두 경로에서 정의된다:
+
+- **schema fail (raw 결과는 있지만 schema 검증 fail)**: 메인 LLM 이 raw `$RESULT` 를 입력으로 [`consulting-step.md`](./consulting-step.md#user_facing-누락-시-텍스트-복구-4단계) 의 텍스트 복구 4단계 Stage 1-3 를 시도한다. 사용자 노출 문구는 복구 성공 시 user_facing layer 형식, 모두 실패 시 Stage 4 의 "자문 결과 형식이 맞지 않아 옵션 설명을 복구하지 못했어요. 옵션을 그대로 보여드릴게요." 평이 한국어.
+- **empty/invalid (result.json 자체가 없거나 비어 있음)**: 텍스트 복구할 raw 가 없으므로 Stage 4 와 동등하게 처리. 사용자 노출 문구는 [`../modes/for_action.md`](../modes/for_action.md) Step 3.5 자문 미수신 fallback 의 "자문이 완료되지 못했어요. 옵션을 그대로 보여드릴게요." 평이 한국어.
 
 `trap` 사용 금지: 셸 호출이 분리되어 있어 trap이 호출 1 종료 시점에 발동하면 호출 2 이전에 디렉토리가 삭제된다. 명시적 `rm -rf` 한 번이 SSOT 다.
 
@@ -153,7 +156,6 @@ durable output 적합성은 작성자가 본 prose 가이드와 CLAUDE.md의 `Du
 durable output에는 다음만 기록한다:
 
 - 자문 회차 자연어 요약 (예: "1차 자문 (전체 N 결정)")
-- `decision_id` list
 - verdict 요약
 
 스코프: 본 금지는 _agent 가 이번 작업으로 새로 생성하는_ generated plan / PRD / PR / issue / comment 에만 적용된다. 본 reference 문서 자체의 셸 호출 예시 (위 셸 호출 1/2/3 코드블록의 placeholder hex 값) 는 runtime 동작을 가르치는 SSOT 가이드이므로 정책 적용 대상이 아니다. durable output 차단은 *새 박제 추가* 에만 작동하며 기존 SSOT 예시는 보존된다.
@@ -161,7 +163,6 @@ durable output에는 다음만 기록한다:
 ## Validation
 
 - dummy decision (옵션 A / B 2개) 1개로 Step 3.5 round-trip 1회 성공.
-- 출력 JSON에 `Recommended`, `Best`, `Default` 라벨 부재 확인 (`rg`).
-- 옵션 순서가 다른 `decision_id` 입력 2건에 대해 다름. 같은 `decision_id` 재호출 시 동일 (decision_id-seeded stable shuffle 검증).
+- 출력 JSON 의 schema sanity 검증 (`technical_matrix` 7키 + `user_facing` 4필드 + `disqualifiers`/`evidence_gaps` 배열 존재).
 - 30분 이내 결과 도착 (`time codex exec ...`).
 - `--sandbox read-only` 로 호출했을 때 file write 시도가 sandbox에서 차단됨 (negative test).
