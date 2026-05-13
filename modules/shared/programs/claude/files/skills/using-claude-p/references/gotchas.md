@@ -21,7 +21,7 @@
 
 ## 입력 (Input)
 
-### #1. `--allowedTools` 뒤에 인라인 프롬프트가 도구 이름으로 파싱됨
+### #1. `--allowed-tools` 뒤에 인라인 프롬프트가 도구 이름으로 파싱됨
 
 ```bash
 # ❌ 잘못된 사용
@@ -88,7 +88,7 @@ cat skill.md agent.md references.md | claude -p --output-format text > result.md
 
 ⚠️ 극단적 상한은 미확인. CLI → Node.js 런타임 → API context window로 이어지는 다층 파이프라인 중 어느 레이어에서 상한이 걸리는지 미검증. 프로덕션 파이프라인에서는 적절한 청킹 전략을 병행하라. v2.1.81 실측.
 
-### #36. `allowedTools` 패턴에서 공백이 중요
+### #36. `allowed-tools` 패턴에서 공백이 중요
 
 ```bash
 --allowed-tools "Bash(git diff *)"   # git diff 로 시작하는 명령만
@@ -218,7 +218,7 @@ echo "ls /tmp 실행해줘" | claude -p; echo "EXIT: $?"
 
 도구를 못 썼는데도 에러가 아닌 정상 종료. 실패를 감지하려면 출력 내용을 파싱해야 한다.
 
-⚠️ `--dangerously-skip-permissions` + `--allowedTools` 상호작용: `--dangerously-skip-permissions`는 `--allowedTools` 제한을 완전히 무시한다. `--allowedTools "Read"`로 Bash를 제한하더라도 `--dangerously-skip-permissions`가 있으면 Bash가 제한 없이 사용 가능하다. 도구를 실제로 제한하려면 `--dangerously-skip-permissions` 없이 `--allowedTools`를 단독 사용하라. v2.1.81 실측.
+⚠️ `--dangerously-skip-permissions` + `--allowed-tools` 상호작용: `--dangerously-skip-permissions`는 `--allowed-tools` 제한을 완전히 무시한다. `--allowed-tools "Read"`로 Bash를 제한하더라도 `--dangerously-skip-permissions`가 있으면 Bash가 제한 없이 사용 가능하다. 도구를 실제로 제한하려면 `--dangerously-skip-permissions` 없이 `--allowed-tools`를 단독 사용하라. v2.1.81 실측.
 
 ### #7. `--permission-mode bypassPermissions` = `--dangerously-skip-permissions`
 
@@ -256,7 +256,7 @@ echo "현재 디렉토리의 파일 목록을 보여줘" | claude -p --tools ""
 
 ⚠️ `--mcp-servers ""` / `--no-mcp` 플래그는 v2.1.76에 존재하지 않음. MCP 도구를 비활성화하는 공식 방법은 `claude -p --help` 출력을 확인한다.
 
-⚠️ 역방향도 성립: `--allowedTools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 초기화되지 않으면 사용 불가. `allowedTools`는 허용 목록이지, 서버 활성화 지시가 아니다. MCP 서버 초기화는 `.mcp.json` 또는 `settings.json`의 MCP 설정에 의존한다 (`.mcp.json`에 미등록이거나 서버 프로세스가 init 단계에서 연결 실패한 경우 "미활성"). `--strict-mcp-config`로 특정 MCP 설정만 로드하는 것도 가능하다 (v2.1.81+). v2.1.81 실측.
+⚠️ 역방향도 성립: `--allowed-tools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 초기화되지 않으면 사용 불가. `--allowed-tools`는 허용 목록이지, 서버 활성화 지시가 아니다. MCP 서버 초기화는 `.mcp.json` 또는 `settings.json`의 MCP 설정에 의존한다 (`.mcp.json`에 미등록이거나 서버 프로세스가 init 단계에서 연결 실패한 경우 "미활성"). `--strict-mcp-config`로 특정 MCP 설정만 로드하는 것도 가능하다 (v2.1.81+). v2.1.81 실측.
 
 ### #13. `--disable-slash-commands`로 스킬 비활성화 시 "Unknown skill"
 
@@ -288,9 +288,9 @@ cat skill-content.md agent-instructions.md | claude -p --output-format text > re
 
 ⚠️ 이 동작은 Claude Code의 내부 플러그인 인덱싱 메커니즘에 의존하며, 향후 버전에서 변경될 수 있다. v2.1.81 실측. 상세 우회 패턴: [patterns.md](patterns.md) 패턴 9 참조.
 
-### #35. `allowedTools` 패턴 공백 의미 차이
+### #35. `allowed-tools` 패턴 공백 의미 차이
 
-[#36](#36-allowedtools-패턴에서-공백이-중요) 참조.
+[#36](#36-allowed-tools-패턴에서-공백이-중요) 참조.
 
 ---
 

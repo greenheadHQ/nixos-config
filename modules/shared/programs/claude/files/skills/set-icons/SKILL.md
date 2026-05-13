@@ -91,7 +91,7 @@ AskUserQuestion으로 필요한 링크를 물어본다:
 Memo 아이콘도 스킬 호출 시 자동 등록한다 (메모 설정 섹션 참조).
 
 > ⚠️ `jq -n` 사용 금지 — 기존 키가 덮어씌워진다.
-> 반드시 기존 파일을 입력으로 사용: `tmp=$(mktemp) && jq '...' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"`
+> 반드시 기존 파일을 입력으로 사용: `tmp=$(mktemp "$(dirname "$STATE_FILE")/.${STATE_FILE##*/}.XXXXXX") && jq '...' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"`
 
 ### Jira 설정
 
@@ -102,7 +102,7 @@ URL에서 이슈번호를 자동 추출한다:
 JIRA_URL="https://example.atlassian.net/browse/PROJ-123"
 JIRA_LABEL=$(echo "$JIRA_URL" | grep -oE '[A-Z]+-[0-9]+' | tail -1)
 
-tmp=$(mktemp) && jq --arg url "$JIRA_URL" --arg label "$JIRA_LABEL" \
+tmp=$(mktemp "$(dirname "$STATE_FILE")/.${STATE_FILE##*/}.XXXXXX") && jq --arg url "$JIRA_URL" --arg label "$JIRA_LABEL" \
   '.jira = {"url":$url,"label":$label}' \
   "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
 ```
@@ -110,7 +110,7 @@ tmp=$(mktemp) && jq --arg url "$JIRA_URL" --arg label "$JIRA_LABEL" \
 ### Slack 설정
 
 ```bash
-tmp=$(mktemp) && jq --arg url "https://app.slack.com/client/T.../C..." \
+tmp=$(mktemp "$(dirname "$STATE_FILE")/.${STATE_FILE##*/}.XXXXXX") && jq --arg url "https://app.slack.com/client/T.../C..." \
   '.slack = {"url":$url,"label":"Slack"}' \
   "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
 ```
@@ -118,7 +118,7 @@ tmp=$(mktemp) && jq --arg url "https://app.slack.com/client/T.../C..." \
 ### Figma 설정
 
 ```bash
-tmp=$(mktemp) && jq --arg url "https://www.figma.com/design/..." \
+tmp=$(mktemp "$(dirname "$STATE_FILE")/.${STATE_FILE##*/}.XXXXXX") && jq --arg url "https://www.figma.com/design/..." \
   '.figma = {"url":$url,"label":"Figma"}' \
   "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
 ```
@@ -127,7 +127,7 @@ tmp=$(mktemp) && jq --arg url "https://www.figma.com/design/..." \
 
 ```bash
 # 특정 아이콘 제거 (예: figma)
-tmp=$(mktemp) && jq 'del(.figma)' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+tmp=$(mktemp "$(dirname "$STATE_FILE")/.${STATE_FILE##*/}.XXXXXX") && jq 'del(.figma)' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
 ```
 
 ### 메모 설정
@@ -136,7 +136,7 @@ tmp=$(mktemp) && jq 'del(.figma)' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FI
 
 ```bash
 # MEMO_FILE은 additionalContext의 "메모:" 뒤 경로
-tmp=$(mktemp) && jq --arg path "$MEMO_FILE" \
+tmp=$(mktemp "$(dirname "$STATE_FILE")/.${STATE_FILE##*/}.XXXXXX") && jq --arg path "$MEMO_FILE" \
   '.memo = {"path":$path,"label":"Memo"}' \
   "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
 ```

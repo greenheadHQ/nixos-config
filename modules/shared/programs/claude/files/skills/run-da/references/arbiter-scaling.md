@@ -193,7 +193,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 ### Codex 세션 경로 (N=3)
 
-1. 동일 Arbiter 프롬프트로 3개의 fresh subagent를 strong review profile로 `spawn_agent` 실행한다. 프롬프트는 first-pass와 동일하다(독립 판정 원칙; 이전 판정 transcript 공유 금지).
+1. 동일 판정 기준 / 템플릿으로 3개의 fresh subagent를 strong review profile로 `spawn_agent` 실행한다. 프롬프트 본문은 위 "프롬프트 축소 규칙"대로 trigger된 finding subset 만 포함해 조립하고, 이전 판정 transcript는 공유하지 않는다 (독립 판정 원칙).
 2. 현재 session의 open-thread slot이 `agents.max_threads`(unset 기본 6)을 넘으면 batch한다. 3개 발사 전에 first-pass Arbiter의 completed thread를 `close_agent`로 닫아 슬롯을 확보한다.
 3. `wait_agent`로 3개 결과를 모두 수신한 뒤 `close_agent`로 닫는다. timeout만으로 failure 처리하거나 self-auditing으로 대체하지 않는다(conservative wait).
 4. 3개 결과 markdown을 각각 파일로 저장(`/tmp/da-${_DA_SID}-arbiter-selective-*/arbiter-{1,2,3}.md`) 후 세션 scope의 `fleiss-kappa.py`(Claude: `~/.claude/scripts/`, Codex: `~/.codex/scripts/`)로 집계한다.

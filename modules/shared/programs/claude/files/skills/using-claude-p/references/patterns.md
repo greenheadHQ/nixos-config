@@ -22,7 +22,7 @@ cat /tmp/prompt.md | claude -p
 핵심 요소:
 - 인라인 프롬프트는 짧은 질의에만 사용 (quote 이슈 방지)
 - 긴 프롬프트는 파일로 작성 후 stdin pipe로 전달
-- ⚠️ `--allowedTools` 사용 시 인라인 프롬프트가 도구 이름으로 먹힘 → stdin 필수 ([gotchas.md](gotchas.md) #1)
+- ⚠️ `--allowed-tools` 사용 시 인라인 프롬프트가 도구 이름으로 먹힘 → stdin 필수 ([gotchas.md](gotchas.md) #1)
 
 ## 패턴 2: 도구 실행 — 권한 우회
 
@@ -248,11 +248,11 @@ cat "${CAT_FILES[@]}" \
 ### 주의사항
 
 - 대용량 stdin도 정상 동작 확인. 극단적 상한은 미확인 ([gotcha #40](gotchas.md) 참조)
-- `--dangerously-skip-permissions`는 `--allowedTools` 제한을 무시함 ([gotcha #3](gotchas.md) 참조)
+- `--dangerously-skip-permissions`는 `--allowed-tools` 제한을 무시함 ([gotcha #3](gotchas.md) 참조)
 - 커스텀 환경변수는 `VAR=val claude -p` 형태로 전달 ([gotcha #39](gotchas.md) 참조)
 - MCP 도구 사용 시 해당 MCP 서버가 세션에서 활성화되어야 함 ([gotcha #5](gotchas.md) 참조)
 
-⚠️ 보안 주의: stdin으로 주입하는 파일 내용이 신뢰할 수 있는 출처인지 확인하라. `--dangerously-skip-permissions`와 결합 시 파일 내 prompt injection이 임의 명령 실행으로 이어질 수 있다. 신뢰할 수 없는 입력에는 `--dangerously-skip-permissions` 없이 `--allowedTools`로 도구를 제한하라:
+⚠️ 보안 주의: stdin으로 주입하는 파일 내용이 신뢰할 수 있는 출처인지 확인하라. `--dangerously-skip-permissions`와 결합 시 파일 내 prompt injection이 임의 명령 실행으로 이어질 수 있다. 신뢰할 수 없는 입력에는 `--dangerously-skip-permissions` 없이 `--allowed-tools`로 도구를 제한하라:
 
 ```bash
 # 신뢰할 수 없는 입력 시 안전한 패턴 (--dangerously-skip-permissions 미사용)

@@ -2,7 +2,7 @@
 name: using-claude-p
 description: |
   Use Claude Code non-interactive (-p/--print) mode for scripting, automation, and headless
-  execution. Trigger: '''claude -p''', '''비대화형 claude''', '''headless claude''', '''스크립트에서 claude'''. Covers: CLI flag usage and gotchas (--output-format, --allowedTools, --resume,
+  execution. Trigger: '''claude -p''', '''비대화형 claude''', '''headless claude''', '''스크립트에서 claude'''. Covers: CLI flag usage and gotchas (--output-format, --allowed-tools, --resume,
   --dangerously-skip-permissions), JSON output parsing, session chaining, saving results to files,
   SSH remote execution of claude, harness self-testing (T1~T8), and known flag interaction bugs. Use
   when users want to run claude programmatically, pipe output, parse results, automate workflows,
@@ -82,7 +82,7 @@ claude -p 실행이 필요한가?
 
 ## 핵심 Gotchas
 
-1. `--allowedTools` + 인라인 프롬프트 = 버그: 인라인 프롬프트가 도구 이름으로 먹힘 → stdin 필수
+1. `--allowed-tools` + 인라인 프롬프트 = 버그: 인라인 프롬프트가 도구 이름으로 먹힘 → stdin 필수
 2. `--max-turns 1`은 도구 실행 불가: 도구 사용에 최소 2턴 필요 (호출 + 결과 수신)
 3. 도구 거부/예산 초과도 exit code 0: 실패를 감지하려면 `--output-format json`의 result subtype 확인 필수
 4. `--cwd`, `--output-file` 플래그 없음: `cd dir && claude -p`, shell redirect `> file` 사용
@@ -132,7 +132,7 @@ ssh minipc 'zsh -li -c "c -p \"...\""'  # → unmatched quote
 
 | 금지 패턴 | 발생 에러 | 올바른 대안 |
 |-----------|----------|------------|
-| `--allowedTools "Bash" "prompt"` | 프롬프트가 도구 이름으로 파싱 | stdin pipe 사용 |
+| `--allowed-tools "Bash" "prompt"` | 프롬프트가 도구 이름으로 파싱 | stdin pipe 사용 |
 | `--max-turns 1` + 도구 실행 기대 | Reached max turns | `--max-turns 2` 이상 |
 | exit code로 실패 판정 | 대부분 에러도 exit 0 | `--output-format json` subtype 확인 |
 | SSH에서 `c -p` alias | command not found | `claude -p` full path |
