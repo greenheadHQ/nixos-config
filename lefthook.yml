@@ -18,6 +18,14 @@ pre-commit:
       # source하여 repo-pinned pythonWithTomlkit으로 self-wrap하므로 lefthook에서 추가 nix shell
       # wrap이 불필요하다. live propagation 검증은 manual/scheduled에 위임.
       run: bash ./tests/test-codex-hook-fixtures.sh --no-live
+    skill-noise-check:
+      # shared skill projection (modules/shared/programs/claude/files/skills) 의 LLM 노이즈 syntax
+      # (bold / excessive empty lines) 잔존 0 검증. check-skill-noise.sh 의 기본 검사 경로는 본
+      # projection corpus 이며, lefthook 에서는 인자 없이 호출하여 default 경로만 검사한다
+      # (ai-skills-consistency / eval-tests / codex-hook-fixtures 와 동일한 항상 실행 패턴).
+      # script 는 Python stdlib only 라 nix shell wrap 불필요. .claude/skills 의 동일 invariant
+      # 적용은 별도 follow-up 으로 분리 (해당 corpus 의 bold 잔존 대량 cleanup 선행 필요).
+      run: bash ./scripts/ai/check-skill-noise.sh
 
 commit-msg:
   commands:

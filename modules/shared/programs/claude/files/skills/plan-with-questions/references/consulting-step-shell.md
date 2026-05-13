@@ -142,8 +142,8 @@ rm -rf -- "$CONSULT_DIR"
 
 위 echo 메시지는 메인 에이전트 내부 진단용 문자열이며 사용자에게 그대로 노출하지 않는다. 자문 실패 시 사용자 노출 평이 문구는 다음 두 경로에서 정의된다:
 
-- **schema fail (raw 결과는 있지만 schema 검증 fail)**: 메인 LLM 이 raw `$RESULT` 를 입력으로 [`consulting-step.md`](./consulting-step.md#user_facing-누락-시-텍스트-복구-4단계) 의 텍스트 복구 4단계 Stage 1-3 를 시도한다. 사용자 노출 문구는 복구 성공 시 user_facing layer 형식, 모두 실패 시 Stage 4 의 "자문 결과 형식이 맞지 않아 옵션 설명을 복구하지 못했어요. 옵션을 그대로 보여드릴게요." 평이 한국어.
-- **empty/invalid (result.json 자체가 없거나 비어 있음)**: 텍스트 복구할 raw 가 없으므로 Stage 4 와 동등하게 처리. 사용자 노출 문구는 [`../modes/for_action.md`](../modes/for_action.md) Step 3.5 자문 미수신 fallback 의 "자문이 완료되지 못했어요. 옵션을 그대로 보여드릴게요." 평이 한국어.
+- `schema fail` (raw 결과는 있지만 schema 검증 fail) : 메인 LLM 이 raw `$RESULT` 를 입력으로 [`consulting-step.md`](./consulting-step.md#user_facing-누락-시-텍스트-복구-4단계) 의 텍스트 복구 4단계 Stage 1-3 를 시도한다. 사용자 노출 문구는 복구 성공 시 user_facing layer 형식, 모두 실패 시 Stage 4 의 "자문 결과 형식이 맞지 않아 옵션 설명을 복구하지 못했어요. 옵션을 그대로 보여드릴게요." 평이 한국어.
+- `empty/invalid` (result.json 자체가 없거나 비어 있음) : 텍스트 복구할 raw 가 없으므로 Stage 4 와 동등하게 처리. 사용자 노출 문구는 [`../modes/for_action.md`](../modes/for_action.md) Step 3.5 자문 미수신 fallback 의 "자문이 완료되지 못했어요. 옵션을 그대로 보여드릴게요." 평이 한국어.
 
 `trap` 사용 금지: 셸 호출이 분리되어 있어 trap이 호출 1 종료 시점에 발동하면 호출 2 이전에 디렉토리가 삭제된다. 명시적 `rm -rf` 한 번이 SSOT 다.
 

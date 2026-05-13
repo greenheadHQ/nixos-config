@@ -5,18 +5,25 @@
 # - bold (`**X**`) 잔존: 0 건이어야 함 (코드 블록 / inline code 외).
 # - excessive empty lines: 0 건이어야 함 (코드 블록 외). 정의는 "3+ consecutive newlines" (`\n{3,}`) —
 #   markdown paragraph break (`\n\n`, 2 consecutive newlines) 는 보존하고, 그 이상은 정규화.
+#   파일 읽기는 Python `Path.read_text(encoding="utf-8-sig")` 의 universal newlines 동작에 의존하므로
+#   `\r\n` 입력도 `\n` 으로 정규화되어 동일 regex 가 CRLF 파일을 정상 검출한다.
 #
 # 보존 대상 (변경 없음):
 # - 코드 블록 (` ``` ... ``` `) 안 모든 syntax.
-# - inline code (`` `X` ``) 안 모든 syntax.
+# - inline code (`` `X` ``) 안 모든 syntax. CommonMark escaped backtick (`` \` ``) 은 inline code
+#   delimiter 가 아닌 literal 로 인식한다.
 # - HTML 태그, HTML comment, italic, strikethrough, emoji 등 본 검증 외.
 #
-# 회귀 차단 시스템 (lefthook hook / CI step) 통합은 별도 follow-up.
+# 회귀 차단:
+# - lefthook pre-commit `skill-noise-check` 항목으로 자동 통합 완료.
+# - CI step (GitHub Actions) 통합은 `.github/workflows/` 부재로 별도 follow-up.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SKILLS_DIR="$REPO_ROOT/modules/shared/programs/claude/files/skills"
+# 첫 positional arg 가 SKILLS_DIR override (PoC / 테스트 전용). 미지정 시 canonical repo 경로.
+# pre-commit hook 은 인자 없이 호출하여 ambient env 와 무관하게 canonical corpus 만 검사한다.
+SKILLS_DIR="${1:-$REPO_ROOT/modules/shared/programs/claude/files/skills}"
 
 if [ ! -d "$SKILLS_DIR" ]; then
   echo "[FAIL] Skills directory not found: $SKILLS_DIR" >&2
@@ -24,6 +31,7 @@ if [ ! -d "$SKILLS_DIR" ]; then
 fi
 
 python3 - "$SKILLS_DIR" <<'PY'
+import bisect
 import re
 import sys
 from pathlib import Path
@@ -68,29 +76,65 @@ def tokenize_fences(text):
     return sorted(spans)
 
 
+def _in_span(pos, sorted_spans, starts):
+    # sorted_spans 는 start 기준 정렬된 (start, end) 리스트. starts 는 (start, ...) 의 분리 캐시.
+    # bisect_right - 1 로 pos 이하의 가장 큰 start 를 찾고, end 와 비교한다.
+    if not sorted_spans:
+        return False
+    idx = bisect.bisect_right(starts, pos) - 1
+    if idx < 0:
+        return False
+    s, e = sorted_spans[idx]
+    return s <= pos < e
+
+
 def tokenize_inline_code(text, fence_spans):
-    def in_fence(pos):
-        return any(s <= pos < e for s, e in fence_spans)
+    # 같은 길이의 backtick run 두 개로 둘러싸인 inline code span을 paired matching.
+    # CommonMark: 같은 길이 backtick run delimiter, between text 에 두 개 이상의 연속 newline (`\n\n`)
+    # 있으면 inline code 미성립.
+    # Escaped backtick: opening delimiter 후보일 때만 escape literal 처리 (backslash 홀수 개면 skip).
+    # closing delimiter 후보 (open queue 에 같은 길이 entry 존재) 일 때는 escape 검사하지 않는다.
+    # CommonMark code span 내부에서는 backslash escape 가 동작하지 않기 때문이다 (Example 338).
+    # Fenced code block 안 backtick 은 fence_spans 로 미리 걸러진다.
+    fence_starts = [s for s, e in fence_spans]
     spans = []
-    runs = list(re.finditer(r'`+', text))
-    used = [False] * len(runs)
-    for i, m in enumerate(runs):
-        if used[i] or in_fence(m.start()):
+    open_runs = {}  # length -> [Match, ...] (FIFO queue per length)
+
+    def is_escaped(pos):
+        backslashes = 0
+        i = pos - 1
+        while i >= 0 and text[i] == '\\':
+            backslashes += 1
+            i -= 1
+        return backslashes % 2 == 1
+
+    for m in re.finditer(r'`+', text):
+        start = m.start()
+        if _in_span(start, fence_spans, fence_starts):
             continue
         run_len = len(m.group())
-        for j in range(i + 1, len(runs)):
-            if used[j]:
-                continue
-            m2 = runs[j]
-            if in_fence(m2.start()) or len(m2.group()) != run_len:
-                continue
-            between = text[m.end():m2.start()]
+        queue = open_runs.get(run_len)
+        if queue:
+            # closing delimiter 후보 — escape 검사 안 함 (code span 내부 escape 미동작)
+            m_open = queue.pop(0)
+            between = text[m_open.end():start]
             if '\n\n' in between:
+                # blank-line 을 사이에 둔 opener 는 만료한다. 그대로 큐에 두면 뒤쪽 문단의
+                # 정상 backtick pair 가 늘 같은 만료 opener 와 매칭되어 inline code span 으로
+                # 등록되지 않는다. 따라서 현재 run 은 새 opening delimiter 후보로 재평가한다.
+                if not queue:
+                    del open_runs[run_len]
+                if not is_escaped(start):
+                    open_runs.setdefault(run_len, []).append(m)
+            else:
+                spans.append((m_open.start(), m.end()))
+                if not queue:
+                    del open_runs[run_len]
+        else:
+            # opening delimiter 후보 — escape 검사
+            if is_escaped(start):
                 continue
-            spans.append((m.start(), m2.end()))
-            used[i] = True
-            used[j] = True
-            break
+            open_runs.setdefault(run_len, []).append(m)
     return sorted(spans)
 
 
@@ -107,19 +151,21 @@ def protected_spans(text):
     return out
 
 
-def is_contained(start, end, spans):
-    for s, e in spans:
-        if s <= start and end <= e:
-            return True
-    return False
-
-
 def count_bold_outside(text):
     spans = protected_spans(text)
+    starts = [s for s, e in spans]
     count = 0
     locations = []
     for m in re.finditer(r'\*\*[^*\n]+\*\*', text):
-        if not is_contained(m.start(), m.end(), spans):
+        # bold 매치 전체가 같은 span 안에 contained 되어야 protected.
+        contained = False
+        if spans:
+            idx = bisect.bisect_right(starts, m.start()) - 1
+            if idx >= 0:
+                s, e = spans[idx]
+                if s <= m.start() and m.end() <= e:
+                    contained = True
+        if not contained:
             count += 1
             lineno = text[:m.start()].count('\n') + 1
             locations.append((lineno, m.group()[:60]))
@@ -128,22 +174,28 @@ def count_bold_outside(text):
 
 def count_excessive_empty_outside(text):
     spans = protected_spans(text)
+    starts = [s for s, e in spans]
     count = 0
     locations = []
-    # 3+ consecutive newlines (= 2+ empty lines 이상). markdown paragraph break (\n\n, 2 newlines) 는 보존.
+    # 3+ consecutive newlines (= 2+ empty lines 이상). markdown paragraph break (\n\n) 는 보존.
     for m in re.finditer(r'\n{3,}', text):
-        if not any(s <= m.start() < e for s, e in spans):
+        if not _in_span(m.start(), spans, starts):
             count += 1
             lineno = text[:m.start()].count('\n') + 1
             locations.append((lineno, len(m.group())))
     return count, locations
 
 
+md_files = sorted(base.rglob('*.md'))
+if not md_files:
+    print(f"[FAIL] {base} 하위에 *.md 파일이 0 개 — skill projection 깨짐 또는 잘못된 SKILLS_DIR.", file=sys.stderr)
+    sys.exit(1)
+
 total_bold = 0
 total_empty = 0
 fail = False
-for f in sorted(base.rglob('*.md')):
-    text = f.read_text()
+for f in md_files:
+    text = f.read_text(encoding="utf-8-sig")
     bc, blocs = count_bold_outside(text)
     ec, elocs = count_excessive_empty_outside(text)
     if bc > 0 or ec > 0:
