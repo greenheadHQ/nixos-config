@@ -5,10 +5,10 @@
 
 ## QR 코드 방식의 문제점
 
-1. **스캔 필요**: iPhone 카메라로 QR 코드를 스캔해야 함 (2-3탭)
-2. **크기 제한**: 600 bytes 초과 시 iPhone Termius 화면에 다 안 들어감
-3. **폰트 의존성**: Termius에서 JetBrains Mono 폰트 필요 (Fira Code는 블록 문자 깨짐)
-4. **한글 문제**: UTF-8에서 한글은 3바이트라 실제 200자 정도만 가능
+1. 스캔 필요: iPhone 카메라로 QR 코드를 스캔해야 함 (2-3탭)
+2. 크기 제한: 600 bytes 초과 시 iPhone Termius 화면에 다 안 들어감
+3. 폰트 의존성: Termius에서 JetBrains Mono 폰트 필요 (Fira Code는 블록 문자 깨짐)
+4. 한글 문제: UTF-8에서 한글은 3바이트라 실제 200자 정도만 가능
 
 ## QR 코드 생성 방법 (참고용)
 

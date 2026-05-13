@@ -99,12 +99,12 @@ homeserver.karakeepSinglefileBridge.enable = true; # SingleFile 대용량 분기
 1. SingleFile 확장 -> Destinations -> "Upload to a REST Form API"
 2. URL: `https://archive.greenhead.dev/api/v1/bookmarks/singlefile`
 3. Token: Karakeep UI -> User Settings -> API Keys에서 발급
-4. **archive data field name**: `file` (필수 -- 누락 시 ZodError)
-5. **archive URL field name**: `url` (필수 -- 누락 시 ZodError)
+4. archive data field name: `file` (필수 -- 누락 시 ZodError)
+5. archive URL field name: `url` (필수 -- 누락 시 ZodError)
 
 Caddy가 `/api/v1/bookmarks/singlefile`만 `karakeep-singlefile-bridge`로 우회:
-- **50MB 이하**: 기존 Karakeep SingleFile API로 그대로 전달
-- **50MB 초과**: Karakeep `/api/v1/assets` 업로드 후 DB에 `fullPageArchive`로 직접 연결
+- 50MB 이하: 기존 Karakeep SingleFile API로 그대로 전달
+- 50MB 초과: Karakeep `/api/v1/assets` 업로드 후 DB에 `fullPageArchive`로 직접 연결
 
 ### Webhook Notification
 
@@ -126,10 +126,10 @@ OpenAI 키가 있으면 inference worker가 자동 태깅/요약을 수행한다
 
 ## 자주 발생하는 문제
 
-1. **CSS 렌더링 깨짐**: Caddy CSP 제거로 해결. 상세: [references/troubleshooting.md](references/troubleshooting.md) 항목 1
-2. **SingleFile ZodError**: `file`, `url` field name 확인. 상세: [references/troubleshooting.md](references/troubleshooting.md) 항목 3
-3. **컨테이너 OOM**: Meilisearch 최소 1GB 확보 필요. 상세: [references/troubleshooting.md](references/troubleshooting.md) 항목 4
-4. **업데이트 후 로그 모니터 패턴 깨짐**: [references/update-guide.md](references/update-guide.md) 참조
+1. CSS 렌더링 깨짐: Caddy CSP 제거로 해결. 상세: [references/troubleshooting.md](references/troubleshooting.md) 항목 1
+2. SingleFile ZodError: `file`, `url` field name 확인. 상세: [references/troubleshooting.md](references/troubleshooting.md) 항목 3
+3. 컨테이너 OOM: Meilisearch 최소 1GB 확보 필요. 상세: [references/troubleshooting.md](references/troubleshooting.md) 항목 4
+4. 업데이트 후 로그 모니터 패턴 깨짐: [references/update-guide.md](references/update-guide.md) 참조
 
 ## 런타임 환경 전제
 

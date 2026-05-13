@@ -19,9 +19,9 @@ MiniPC에서 Podman OCI 컨테이너로 운영되는 immich 사진 관리 서비
 immich는 Google Photos 대안으로 사용되는 셀프호스팅 사진/비디오 관리 플랫폼입니다.
 MiniPC(greenhead-minipc)에서 NixOS `virtualisation.oci-containers` (Podman 백엔드)로 운영됩니다.
 
-- **런타임**: Podman (`virtualisation.oci-containers.backend = "podman"`)
-- **네트워크 접근**: `127.0.0.1:2283` 바인딩 + Caddy HTTPS 리버스 프록시 (`https://immich.greenhead.dev`)
-- **활성화**: `homeserver.immich.enable = true;` (mkEnableOption)
+- 런타임: Podman (`virtualisation.oci-containers.backend = "podman"`)
+- 네트워크 접근: `127.0.0.1:2283` 바인딩 + Caddy HTTPS 리버스 프록시 (`https://immich.greenhead.dev`)
+- 활성화: `homeserver.immich.enable = true;` (mkEnableOption)
 
 ## 아키텍처
 

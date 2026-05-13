@@ -18,10 +18,10 @@ Atuin 및 Zsh 관련 문제와 해결 방법을 정리합니다.
 
 ## zsh-autosuggestion에서 한글/일본어 경로 레이아웃 깨짐
 
-> **발생 시점**: 2026-01-17
-> **상태**: 부분 해결 (문자 표시는 정상, 커서 위치는 일부 문제)
+> 발생 시점: 2026-01-17
+> 상태: 부분 해결 (문자 표시는 정상, 커서 위치는 일부 문제)
 
-**증상**: `cd` 입력 시 한글/일본어가 포함된 경로가 zsh-autosuggestion으로 제안되면 터미널 레이아웃이 깨짐.
+증상: `cd` 입력 시 한글/일본어가 포함된 경로가 zsh-autosuggestion으로 제안되면 터미널 레이아웃이 깨짐.
 
 ```
 # 정상 동작 (영어 경로)
@@ -33,7 +33,7 @@ Atuin 및 Zsh 관련 문제와 해결 방법을 정리합니다.
 # cd Documents/プロシ<3099>ェクト/한글폴더/  # <3099> 문자 노출, 커서 위치 틀어짐
 ```
 
-**원인**: macOS 파일 시스템(APFS/HFS+)의 NFD(분해형) 유니코드 정규화.
+원인: macOS 파일 시스템(APFS/HFS+)의 NFD(분해형) 유니코드 정규화.
 
 | 정규화 | 예시 | 바이트 |
 | ------ | ---- | ------ |
@@ -46,7 +46,7 @@ macOS는 파일명을 NFD로 저장하므로:
 
 zsh-autosuggestion이 결합 문자(combining character)의 너비를 잘못 계산하여 커서 위치가 틀어짐.
 
-**진단 방법**:
+진단 방법:
 
 ```bash
 # 1. 파일명 인코딩 확인
@@ -58,9 +58,9 @@ ls Documents | grep 한글  # NFC "한글"로 검색
 # NFD로 저장된 경우 매칭 안 됨!
 ```
 
-**해결 방법**:
+해결 방법:
 
-**1. `setopt COMBINING_CHARS` 추가 (핵심)**
+1. `setopt COMBINING_CHARS` 추가 (핵심)
 
 zsh 4.3.9부터 도입된 내장 옵션으로, 결합 문자를 기본 문자와 같은 화면 영역에 표시.
 
@@ -78,7 +78,7 @@ programs.zsh = {
 };
 ```
 
-**2. autosuggestion 설정 조정 (보조)**
+2. autosuggestion 설정 조정 (보조)
 
 ```nix
 programs.zsh = {
@@ -90,9 +90,9 @@ programs.zsh = {
 };
 ```
 
-> **주의**: `strategy = [ "history" ]`는 Tab completion 기반 제안을 비활성화함 (한 번도 실행 안 한 명령어는 제안 안 됨).
+> 주의: `strategy = [ "history" ]`는 Tab completion 기반 제안을 비활성화함 (한 번도 실행 안 한 명령어는 제안 안 됨).
 
-**적용 후 확인**:
+적용 후 확인:
 
 ```bash
 # setopt 적용 확인
@@ -102,20 +102,20 @@ setopt | grep -i combining  # 출력: combiningchars
 echo "テスト 한글"  # 정상 출력되는지 확인
 ```
 
-**결과**:
+결과:
 
 | 항목 | 적용 전 | 적용 후 |
 | ---- | ------- | ------- |
 | 문자 표시 | `タ<3099>` | `ダ` (정상) |
 | 커서 위치 | 틀어짐 | 일부 개선 (완전하지 않음) |
 
-**알려진 제한사항**:
+알려진 제한사항:
 
 - 커서 위치 계산은 zsh-autosuggestions 플러그인 자체 로직의 한계로 완전히 해결되지 않음
 - 문제가 심할 경우 `ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=50`으로 긴 경로 제안 제한 검토
 - Atuin TUI에서 NFD 한글이 초성만 표시되는 문제는 Ratatui 라이브러리 버그 (업스트림 패치 대기)
 
-**참고 자료**:
+참고 자료:
 
 - [zsh FAQ - COMBINING_CHARS](https://zsh.sourceforge.io/FAQ/zshfaq05.html)
 - [Home Manager - zsh.autosuggestion 옵션](https://mynixos.com/home-manager/options/programs.zsh.autosuggestion)
@@ -126,20 +126,20 @@ echo "テスト 한글"  # 정상 출력되는지 확인
 
 ## 한글 포함 히스토리 일괄 삭제
 
-> **발생 시점**: 2026-01-27
-> **환경**: atuin 18.11.0, zsh-autosuggestions 0.7.1 (nixpkgs)
-> **상태**: 해결 (`atuin-clean-kr` 스크립트)
+> 발생 시점: 2026-01-27
+> 환경: atuin 18.11.0, zsh-autosuggestions 0.7.1 (nixpkgs)
+> 상태: 해결 (`atuin-clean-kr` 스크립트)
 
-**증상**: zsh-autosuggestion이 한글이 포함된 명령어(예: git commit 한글 메시지)를 제안할 때 터미널 TUI 렌더링이 깨짐.
+증상: zsh-autosuggestion이 한글이 포함된 명령어(예: git commit 한글 메시지)를 제안할 때 터미널 TUI 렌더링이 깨짐.
 
 ```
 # 이런 히스토리가 autosuggestion으로 제안되면 TUI가 깨짐
 git commit -m 'fix(qa): [날씨] 날씨 페이지에서 하단 버튼 클릭...'
 ```
 
-**근본 원인**: **zsh-autosuggestions** 플러그인이 한글(멀티바이트 유니코드) 문자의 너비를 잘못 계산하여 TUI 렌더링이 깨짐. Atuin 자체의 문제가 아님에 주의.
+근본 원인: zsh-autosuggestions 플러그인이 한글(멀티바이트 유니코드) 문자의 너비를 잘못 계산하여 TUI 렌더링이 깨짐. Atuin 자체의 문제가 아님에 주의.
 
-**해결 방법**: `atuin-clean-kr` 스크립트로 한글 포함 항목 일괄 삭제.
+해결 방법: `atuin-clean-kr` 스크립트로 한글 포함 항목 일괄 삭제.
 
 ### 사용법
 
@@ -172,9 +172,9 @@ $ atuin history --help
 
 ### 주의사항
 
-- **로컬 전용**: 로컬 DB에서만 삭제됩니다. 새 기기 연동 시 서버에서 복원될 수 있습니다
-- **백업 자동 생성**: 삭제 전 `history.db.bak.YYYYMMDD-HHMMSS` 형식으로 자동 백업 (수동 정리 필요)
-- **재발 방지**: 한글이 포함된 명령어(예: git commit 한글 메시지)를 계속 사용하면 다시 쌓임. 근본적 해결은 zsh-autosuggestions 업스트림 패치 필요
+- 로컬 전용: 로컬 DB에서만 삭제됩니다. 새 기기 연동 시 서버에서 복원될 수 있습니다
+- 백업 자동 생성: 삭제 전 `history.db.bak.YYYYMMDD-HHMMSS` 형식으로 자동 백업 (수동 정리 필요)
+- 재발 방지: 한글이 포함된 명령어(예: git commit 한글 메시지)를 계속 사용하면 다시 쌓임. 근본적 해결은 zsh-autosuggestions 업스트림 패치 필요
 
 ### 실행 결과 (2026-01-27)
 
@@ -210,7 +210,7 @@ print('완료')
 "
 ```
 
-**정규식 매칭 범위**:
+정규식 매칭 범위:
 
 | 유니코드 범위 | 설명 |
 |---------------|------|
@@ -224,9 +224,9 @@ print('완료')
 
 ## atuin status가 404 오류 반환
 
-> **발생 시점**: 2026-01-13 / atuin 18.10.0, 18.11.0 모두 동일
+> 발생 시점: 2026-01-13 / atuin 18.10.0, 18.11.0 모두 동일
 
-**증상**: `atuin status` 명령 실행 시 404 오류 발생. `atuin sync`는 정상 작동.
+증상: `atuin status` 명령 실행 시 404 오류 발생. `atuin sync`는 정상 작동.
 
 ```
 Error: There was an error with the atuin sync service: Status 404.
@@ -236,7 +236,7 @@ Location:
     .../api_client.rs:186:9
 ```
 
-**원인**: Atuin 클라우드 서버(`api.atuin.sh`)가 **Sync v1 API를 비활성화**했기 때문입니다.
+원인: Atuin 클라우드 서버(`api.atuin.sh`)가 Sync v1 API를 비활성화했기 때문입니다.
 
 소스 코드 분석 결과 (`crates/atuin-server/src/router.rs`):
 
@@ -251,7 +251,7 @@ if settings.sync_v1_enabled {
 
 `/sync/status` 엔드포인트는 `sync_v1_enabled = true`일 때만 활성화됩니다. Atuin 클라우드 서버에서 이 설정을 비활성화하면서 404가 반환됩니다.
 
-**영향 범위**:
+영향 범위:
 
 | 명령어 | 사용 API | 상태 |
 |--------|----------|------|
@@ -259,11 +259,11 @@ if settings.sync_v1_enabled {
 | `atuin doctor` | 로컬 + 서버 | O 정상 |
 | `atuin status` | v1 (`/sync/status`) | X 404 |
 
-**해결**: 클라이언트에서 해결할 수 없음. Atuin 팀의 업데이트 필요.
+해결: 클라이언트에서 해결할 수 없음. Atuin 팀의 업데이트 필요.
 
-**현재 상태**: `atuin status`는 정보 표시용이므로 **실제 동기화 기능에 영향 없음**. 무시해도 됩니다.
+현재 상태: `atuin status`는 정보 표시용이므로 실제 동기화 기능에 영향 없음. 무시해도 됩니다.
 
-**동기화 상태 확인 방법**:
+동기화 상태 확인 방법:
 
 ```bash
 # atuin doctor 사용 (권장)
@@ -272,35 +272,35 @@ atuin doctor 2>&1 | grep -o '"last_sync": "[^"]*"'
 
 ```
 
-> **주의**: atuin CLI sync (v2)는 `last_sync_time` 파일을 업데이트하지 않는 버그가 있습니다. 현재 설정에서는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당합니다. 자세한 내용은 [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)를 참고하세요.
+> 주의: atuin CLI sync (v2)는 `last_sync_time` 파일을 업데이트하지 않는 버그가 있습니다. 현재 설정에서는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당합니다. 자세한 내용은 [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)를 참고하세요.
 
 ---
 
 ## Encryption key 불일치로 동기화 실패
 
-**증상**: `atuin sync` 실행 시 key 불일치 오류 발생
+증상: `atuin sync` 실행 시 key 불일치 오류 발생
 
 ```
 Error: attempting to decrypt with incorrect key.
 currently using k4.lid.XXX..., expecting k4.lid.YYY...
 ```
 
-**원인**: 서버에 저장된 히스토리가 다른 encryption key로 암호화되어 있음. 주로 다음 상황에서 발생:
+원인: 서버에 저장된 히스토리가 다른 encryption key로 암호화되어 있음. 주로 다음 상황에서 발생:
 
 1. 새 계정 생성 시 새 key가 자동 생성됨
 2. 다른 기기에서 다른 key를 사용 중
 3. key 파일을 백업하지 않고 재설치
 
-**해결**:
+해결:
 
-**방법 1: 기존 key 복원** (기존 히스토리 유지)
+방법 1: 기존 key 복원 (기존 히스토리 유지)
 ```bash
 # 백업된 key가 있는 경우
 cp ~/.local/share/atuin/key.backup ~/.local/share/atuin/key
 atuin sync
 ```
 
-**방법 2: 완전히 새로 시작** (히스토리 포기)
+방법 2: 완전히 새로 시작 (히스토리 포기)
 ```bash
 # 모든 atuin 데이터 삭제
 rm -rf ~/.local/share/atuin
@@ -309,7 +309,7 @@ rm -rf ~/.local/share/atuin
 atuin register -u <username> -e <email>
 ```
 
-**예방**: key 파일을 안전한 백업 위치에 보관
+예방: key 파일을 안전한 백업 위치에 보관
 
 ```bash
 # key 백업
@@ -320,10 +320,10 @@ cp ~/.local/share/atuin/key ~/.local/share/atuin/key.backup-$(date +%Y%m%d)
 
 ## Atuin daemon 불안정 (deprecated)
 
-> **발생 시점**: 2026-01-14
-> **해결**: daemon 비활성화, launchd로 대체
+> 발생 시점: 2026-01-14
+> 해결: daemon 비활성화, launchd로 대체
 
-**증상**: daemon 프로세스가 불안정하게 동작. exit code 1로 반복 종료되거나, 실행 중이지만 sync를 수행하지 않음.
+증상: daemon 프로세스가 불안정하게 동작. exit code 1로 반복 종료되거나, 실행 중이지만 sync를 수행하지 않음.
 
 ```bash
 # launchd 상태 확인
@@ -331,16 +331,16 @@ launchctl print gui/$(id -u)/com.green.atuin-daemon
 # 결과: runs = 218, last exit code = 1  ← 218번 재시작, 에러로 종료
 ```
 
-**원인**: atuin daemon은 아직 experimental 기능으로, 다음과 같은 문제가 있음:
+원인: atuin daemon은 아직 experimental 기능으로, 다음과 같은 문제가 있음:
 
 - 장시간 실행 시 좀비 상태로 전환
 - 네트워크 연결 불안정 시 복구 실패
 - 시스템 슬립/웨이크 후 복구 실패
 - CLI sync (v2)와 달리 save_sync_time() 호출 로직이 있으나 실제로 동작하지 않는 경우 있음
 
-**해결**: daemon 대신 atuin 내장 `auto_sync` (sync_frequency = 1m)로 대체
+해결: daemon 대신 atuin 내장 `auto_sync` (sync_frequency = 1m)로 대체
 
-**현재 상태**:
+현재 상태:
 
 | 에이전트 | 상태 | 역할 |
 | -------- | ---- | ---- |
@@ -351,10 +351,10 @@ launchctl print gui/$(id -u)/com.green.atuin-daemon
 
 ## CLI sync (v2)가 last_sync_time 파일 미업데이트
 
-> **발생 시점**: 2026-01-14
-> **상태**: atuin 버그, 우회 적용
+> 발생 시점: 2026-01-14
+> 상태: atuin 버그, 우회 적용
 
-**증상**: `atuin sync` 명령이 성공해도 `~/.local/share/atuin/last_sync_time` 파일이 업데이트되지 않음.
+증상: `atuin sync` 명령이 성공해도 `~/.local/share/atuin/last_sync_time` 파일이 업데이트되지 않음.
 
 ```bash
 $ cat ~/.local/share/atuin/last_sync_time
@@ -368,7 +368,7 @@ $ cat ~/.local/share/atuin/last_sync_time
 2026-01-13T12:57:07.715542Z  # 여전히 어제 시간!
 ```
 
-**원인**: atuin 소스코드 분석 결과, CLI sync (v2)에서 `save_sync_time()` 함수가 호출되지 않음.
+원인: atuin 소스코드 분석 결과, CLI sync (v2)에서 `save_sync_time()` 함수가 호출되지 않음.
 
 ```rust
 // crates/atuin/src/command/client/sync.rs
@@ -384,17 +384,17 @@ pub async fn run(...) -> Result<()> {
 }
 ```
 
-**해결**: 현재는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당합니다. `com.green.atuin-sync` launchd 에이전트는 삭제되었습니다.
+해결: 현재는 atuin 내장 `auto_sync` (sync_frequency = 1m)가 동기화를 담당합니다. `com.green.atuin-sync` launchd 에이전트는 삭제되었습니다.
 
-> **참고**: `last_sync_time` 파일이 업데이트되지 않더라도, `atuin doctor` 출력을 통해 실제 동기화 상태를 확인할 수 있습니다.
+> 참고: `last_sync_time` 파일이 업데이트되지 않더라도, `atuin doctor` 출력을 통해 실제 동기화 상태를 확인할 수 있습니다.
 
-**수동으로 last_sync_time 갱신이 필요한 경우**:
+수동으로 last_sync_time 갱신이 필요한 경우:
 
 ```bash
 atuin sync && printf '%s' "$(date -u +'%Y-%m-%dT%H:%M:%S.000000Z')" > ~/.local/share/atuin/last_sync_time
 ```
 
-**주의사항**:
+주의사항:
 
 - 줄바꿈 없이 작성해야 함 (`echo` 대신 `printf '%s'`)
 - UTC 시간으로 작성해야 함 (`date -u`)
@@ -404,11 +404,11 @@ atuin sync && printf '%s' "$(date -u +'%Y-%m-%dT%H:%M:%S.000000Z')" > ~/.local/s
 
 ## 네트워크 문제로 sync 실패
 
-> **발생 시점**: 2026-01-14
+> 발생 시점: 2026-01-14
 
-**증상**: 회사 네트워크 등에서 sync가 실패하지만 원인을 알 수 없음.
+증상: 회사 네트워크 등에서 sync가 실패하지만 원인을 알 수 없음.
 
-**해결**: 네트워크 연결 상태를 확인하여 원인을 분리
+해결: 네트워크 연결 상태를 확인하여 원인을 분리
 
 ```bash
 # 네트워크 확인 (DNS + HTTPS)
@@ -423,10 +423,10 @@ atuin doctor 2>&1 | grep -o '"last_sync": "[^"]*"'
 
 ## Fuzzy search로 의도치 않은 검색 결과
 
-> **발생 시점**: 2026-01-18 / atuin 18.11.0
-> **해결**: `search_mode = "fulltext"` 설정
+> 발생 시점: 2026-01-18 / atuin 18.11.0
+> 해결: `search_mode = "fulltext"` 설정
 
-**증상**: `atuin search "media"` 실행 시 `media`라는 문자열이 온전히 포함되지 않은 결과도 표시됨.
+증상: `atuin search "media"` 실행 시 `media`라는 문자열이 온전히 포함되지 않은 결과도 표시됨.
 
 ```bash
 $ atuin search "media"
@@ -434,16 +434,16 @@ $ atuin search "media"
 2025-12-21 17:29:38     sudo nix run ... nix-darwin -- switch --flake . # 이것도?
 ```
 
-**원인**: Atuin의 기본 `search_mode`가 `fuzzy`이기 때문입니다. Fuzzy 검색은 입력한 글자(`m`, `e`, `d`, `i`, `a`)가 **순서대로 흩어져 있기만 하면** 매칭됩니다.
+원인: Atuin의 기본 `search_mode`가 `fuzzy`이기 때문입니다. Fuzzy 검색은 입력한 글자(`m`, `e`, `d`, `i`, `a`)가 순서대로 흩어져 있기만 하면 매칭됩니다.
 
 예: `rm -rf ~/Library/Developer/Xcode/DerivedData/`
-- **m**: r**m**
-- **e**: D**e**veloper
-- **d**: **D**erived**D**ata
-- **i**: L**i**brary
-- **a**: Dat**a**
+- m: rm
+- e: Developer
+- d: DerivedData
+- i: Library
+- a: Data
 
-**해결**: `search_mode`를 `fulltext`로 변경
+해결: `search_mode`를 `fulltext`로 변경
 
 ```nix
 # modules/shared/programs/shell/default.nix
@@ -453,25 +453,25 @@ programs.atuin.settings = {
 };
 ```
 
-**왜 `fulltext`인가?**
+왜 `fulltext`인가?
 
 | 모드 | 특징 | 한계 |
 |------|------|------|
 | `fuzzy` (기본값) | 글자가 순서대로 흩어져 있으면 매칭 | 의도치 않은 결과 다수 포함 |
-| `prefix` | 검색어로 **시작**하는 명령어만 검색 | `sudo media...` 검색 불가 |
-| `fulltext` | 검색어가 **정확히 포함**된 명령어만 검색 | 가장 균형 잡힌 선택 |
+| `prefix` | 검색어로 시작하는 명령어만 검색 | `sudo media...` 검색 불가 |
+| `fulltext` | 검색어가 정확히 포함된 명령어만 검색 | 가장 균형 잡힌 선택 |
 
-**TUI에서 모드 변경**: `Ctrl+r` 누르면 모드 순환 (Fuzzy -> Prefix -> Fulltext -> Skim)
+TUI에서 모드 변경: `Ctrl+r` 누르면 모드 순환 (Fuzzy -> Prefix -> Fulltext -> Skim)
 
 ---
 
 ## DB migration 불일치로 history 명령 실패
 
-> **발생 시점**: 2026-03-27
-> **환경**: atuin 18.12.1 (nixpkgs) + DB에 18.13.0 migration 적용됨
-> **상태**: 해결 (nixpkgs 업데이트, PR #333)
+> 발생 시점: 2026-03-27
+> 환경: atuin 18.12.1 (nixpkgs) + DB에 18.13.0 migration 적용됨
+> 상태: 해결 (nixpkgs 업데이트, PR #333)
 
-**증상**: `atuin history list` 등 모든 히스토리 관련 명령이 실패.
+증상: `atuin history list` 등 모든 히스토리 관련 명령이 실패.
 
 ```
 Error: migration 20260224000100 was previously applied but is missing in the resolved migrations
@@ -480,7 +480,7 @@ Location:
     crates/atuin/src/command/client/history.rs:676:18
 ```
 
-**원인**: atuin DB migration은 forward-only. 새 버전의 atuin이 DB에 migration을 적용하면, 해당 migration을 모르는 구버전에서 에러가 발생한다.
+원인: atuin DB migration은 forward-only. 새 버전의 atuin이 DB에 migration을 적용하면, 해당 migration을 모르는 구버전에서 에러가 발생한다.
 
 이번 사례:
 1. 어떤 경로로 atuin 18.13.x가 실행되어 migration `20260224000100` ("history author intent")이 Mac DB에 적용됨
@@ -488,7 +488,7 @@ Location:
 3. 이후 모든 atuin 명령에서 "previously applied but missing" 에러 발생
 4. MiniPC는 해당 migration이 미적용 상태라 영향 없었음
 
-**진단 방법**:
+진단 방법:
 
 ```bash
 # 1. DB에 적용된 migration 확인
@@ -502,7 +502,7 @@ strings $(which atuin) | grep -i "create.history\|drop.events\|deleted.at\|autho
 atuin --version
 ```
 
-**해결**:
+해결:
 
 ```bash
 # nixpkgs를 해당 migration을 포함하는 버전 이상으로 업데이트
@@ -511,7 +511,7 @@ nrs                        # rebuild 적용
 atuin --version            # 18.13.x 이상 확인
 ```
 
-**예방**:
+예방:
 
 - `nix run nixpkgs#atuin`이나 `nix shell nixpkgs#atuin` 등으로 nixpkgs lock보다 새 버전을 임시 실행하지 않기
 - atuin 버전을 올렸으면 nixpkgs lock도 함께 올리기 (DB migration이 비가역이므로)

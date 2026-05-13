@@ -32,8 +32,8 @@ Immich 저장 경로 검증, 플랫폼별 파일 접근, 이미지 표시 절차
 | 이미지 표시 도구 | `Read` 도구 | `view_image` 도구 |
 | 비이미지 메타데이터 명령 | 공통 셸 `file -- <path>` | 공통 셸 `file -- <path>` |
 
-**이미지 표시**는 런타임 분기, **메타데이터 명령**은 파일 형식 분기다 — 같은 축으로 섞지 않는다.
-**비이미지 메타데이터 명령의 실행 위치**는 호스트 플랫폼에 따라 다르다: macOS는 SSH 원격에서 실행, NixOS는 로컬에서 실행 (상세는 아래 macOS/NixOS 섹션 참조).
+이미지 표시는 런타임 분기, 메타데이터 명령은 파일 형식 분기다 — 같은 축으로 섞지 않는다.
+비이미지 메타데이터 명령의 실행 위치는 호스트 플랫폼에 따라 다르다: macOS는 SSH 원격에서 실행, NixOS는 로컬에서 실행 (상세는 아래 macOS/NixOS 섹션 참조).
 
 ## 경로 검증 (보안)
 
@@ -43,7 +43,7 @@ Immich 저장 경로 검증, 플랫폼별 파일 접근, 이미지 표시 절차
 
 ## 플랫폼 감지
 
-**로컬 호스트 기준**으로 판별한다. SSH 원격 `uname`은 사용하지 않는다 — MiniPC 안의 OS는 항상 Linux이므로 분기에 무의미하다.
+로컬 호스트 기준으로 판별한다. SSH 원격 `uname`은 사용하지 않는다 — MiniPC 안의 OS는 항상 Linux이므로 분기에 무의미하다.
 
 | 우선순위 | 신호 | 출처 |
 |----------|------|------|
@@ -60,8 +60,8 @@ MiniPC에 저장된 파일이므로 이미지는 SSH로 staging한 뒤 이미지
 
 1. 위 "허용 루트" 표 기준으로 경로 검증 (`/mnt/data/immich/photos/` 또는 `/var/lib/docker-data/immich/upload-cache/`로 시작 + `..` 부재, path traversal 차단)
 2. 확장자 분기:
-   - **이미지** (`.jpg/.jpeg/.png/.webp/.gif`): `scp`로 `/tmp`에 staging → 이미지 표시 도구로 표시
-   - **비이미지** (동영상/문서 등): 원격 셸에 단일 command string으로 `file --`을 보내 메타데이터만 출력 (staging 불필요). 명령 형식은 아래 명령어 블록 참조.
+   - 이미지 (`.jpg/.jpeg/.png/.webp/.gif`): `scp`로 `/tmp`에 staging → 이미지 표시 도구로 표시
+   - 비이미지 (동영상/문서 등): 원격 셸에 단일 command string으로 `file --`을 보내 메타데이터만 출력 (staging 불필요). 명령 형식은 아래 명령어 블록 참조.
 3. `/tmp`는 시스템 자동 정리 (수동 삭제 불필요)
 
 ### 명령어
@@ -87,11 +87,11 @@ case "$BASENAME" in
 esac
 ```
 
-**보안**: `<원본경로>` 같은 placeholder를 명령 문자열에 직접 삽입하지 마라.
+보안: `<원본경로>` 같은 placeholder를 명령 문자열에 직접 삽입하지 마라.
 - `scp` 같은 로컬 명령에는 검증 통과한 변수를 quote(`"${FILE_PATH}"`)와 `--` end-of-options 구분자로 전달한다.
 - `ssh host cmd args`는 args를 공백으로 join해 원격 셸이 다시 파싱하므로, 로컬 quoting만으로 원격 셸 인자 경계가 보존되지 않는다. `printf '%q'`로 미리 quote해 단일 command string을 만들어 전달한다 (위 fallback 예시 참조).
 
-**주의**: `minipc`는 SSH config에 정의된 호스트 alias.
+주의: `minipc`는 SSH config에 정의된 호스트 alias.
 
 ## NixOS에서 실행 시
 
@@ -101,8 +101,8 @@ esac
 
 1. 경로 검증 규칙(허용 루트, `..` 부재)을 먼저 확인
 2. 확장자 분기:
-   - **이미지** (`.jpg/.jpeg/.png/.webp/.gif`): 로컬 경로를 이미지 표시 도구에 직접 전달
-   - **비이미지**: `file -- "${FILE_PATH}"`로 메타데이터 출력
+   - 이미지 (`.jpg/.jpeg/.png/.webp/.gif`): 로컬 경로를 이미지 표시 도구에 직접 전달
+   - 비이미지: `file -- "${FILE_PATH}"`로 메타데이터 출력
 
 ## 경로 패턴
 
@@ -124,7 +124,7 @@ esac
 - 이미지: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`
 - 비이미지 (동영상/문서 등): `file -- <path>`로 메타데이터만 출력 (시각적 표시는 불가)
 
-**참고**: Scriptable 업로드는 항상 `.jpg`로 저장됨
+참고: Scriptable 업로드는 항상 `.jpg`로 저장됨
 
 ## 트러블슈팅
 

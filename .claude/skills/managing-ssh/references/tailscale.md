@@ -18,7 +18,7 @@ SSH 키 자동 로드와 Tailscale VPN 관련 설정입니다.
 
 macOS는 launchd agent로 로그인 시 SSH 키를 자동 로드합니다.
 
-**아키텍처:**
+아키텍처:
 
 ```
 macOS 로그인
@@ -27,14 +27,14 @@ macOS 로그인
             └──▶ ssh-add ~/.ssh/id_ed25519
 ```
 
-**컴포넌트:**
+컴포넌트:
 
 | 컴포넌트 | 역할 |
 | -------- | ---- |
 | `programs.ssh` | `~/.ssh/config` 생성 (`AddKeysToAgent=yes`, `IdentityFile`) |
 | `launchd.agents.ssh-add-keys` | 로그인 시 SSH 키 자동 로드 |
 
-**생성되는 `~/.ssh/config`:**
+생성되는 `~/.ssh/config`:
 
 ```text
 Host *
@@ -42,7 +42,7 @@ Host *
   AddKeysToAgent yes
 ```
 
-**확인 방법:**
+확인 방법:
 
 ```bash
 ssh-add -l
@@ -54,7 +54,7 @@ cat ~/Library/Logs/ssh-add-keys.log
 
 NixOS는 launchd가 없으므로 Home Manager에서 `ssh-agent + keychain` 조합을 사용합니다.
 
-**설정:**
+설정:
 
 ```nix
 # modules/nixos/home.nix
@@ -82,7 +82,7 @@ tailscale ip -4
 
 MiniPC(greenhead-minipc)에서는 NixOS 모듈로 Tailscale을 관리합니다.
 
-**설정:**
+설정:
 
 ```nix
 services.tailscale = {
@@ -97,7 +97,7 @@ networking.firewall = {
 };
 ```
 
-**핵심 포인트:**
+핵심 포인트:
 
 | 항목 | 설명 |
 |------|------|
@@ -123,7 +123,7 @@ ssh green@100.65.50.98
 mosh greenhead@100.79.80.95 -- tmux attach -t main
 ```
 
-**양방향 SSH 요약:**
+양방향 SSH 요약:
 
 | 방향 | 명령어 | 설정 파일 |
 |------|--------|----------|

@@ -18,7 +18,7 @@ MiniPC에서 두 가지 Anki 서비스를 셀프호스팅한다:
 
 두 서비스 모두 Tailscale VPN 내에서만 접근 가능하다.
 
-**버전**: Anki 25.09.2 / AnkiConnect 25.11.9.0 / Qt 6.10.1 / NixOS 26.05
+버전: Anki 25.09.2 / AnkiConnect 25.11.9.0 / Qt 6.10.1 / NixOS 26.05
 
 ## 목적과 범위
 
@@ -70,12 +70,12 @@ journalctl -u anki-sync-backup.service           # 백업 로그
 
 ### 클라이언트 설정
 
-**macOS Desktop (Anki 2.1.66+)**:
+macOS Desktop (Anki 2.1.66+):
 1. Tools > Preferences > Syncing
 2. Self-hosted sync server: `http://100.79.80.95:27701/`
 3. Anki 재시작 후 Sync
 
-**AnkiMobile (iOS)**:
+AnkiMobile (iOS):
 1. iOS 설정 앱 > Anki
 2. SYNCING > Custom sync server: `http://100.79.80.95:27701/`
 3. Media sync URL: 비워둠
@@ -143,28 +143,28 @@ homeserver.ankiConnect.sync = {
 
 ## 주의사항
 
-- **로그인 UI에 "AnkiWeb" 표시**: 커스텀 sync 서버에서도 로그인 다이얼로그에 "AnkiWeb 아이디"로 표시됨 → 셀프호스팅 자격증명 입력하면 정상 동작
+- 로그인 UI에 "AnkiWeb" 표시: 커스텀 sync 서버에서도 로그인 다이얼로그에 "AnkiWeb 아이디"로 표시됨 → 셀프호스팅 자격증명 입력하면 정상 동작
 
 ### Nix↔Python 계약
 
-- **값 계약** (`allowedKeyPrefixes`, `maxValueBytes`, 포트 번호): `eval-tests.nix`가 Nix 옵션 기본값을 알려진 Python patch defaults에 하드 핀으로 고정 (Nix 측 드리프트 자동 감지, Python patch 측은 PR 리뷰로 방어)
-- **키 이름 계약** (`configApiEnable` 등 문자열): eval 시점 자동 검증 불가 → `default.nix` 주석 경고 + PR 리뷰로 방어
+- 값 계약 (`allowedKeyPrefixes`, `maxValueBytes`, 포트 번호): `eval-tests.nix`가 Nix 옵션 기본값을 알려진 Python patch defaults에 하드 핀으로 고정 (Nix 측 드리프트 자동 감지, Python patch 측은 PR 리뷰로 방어)
+- 키 이름 계약 (`configApiEnable` 등 문자열): eval 시점 자동 검증 불가 → `default.nix` 주석 경고 + PR 리뷰로 방어
 - 키 이름 불일치 시 Python patch가 fail-closed defaults 사용: API 비활성화, `['awesomeAnki.']`, `65536`
 
 ## 자주 발생하는 문제
 
 ### Sync Server
-1. **Sync 연결 실패**: Tailscale VPN 연결 확인, `ss -tlnp | grep 27701`
-2. **인증 실패**: agenix secret 복호화 확인 (`ls -la /run/agenix/anki-sync-password`)
-3. **백업 실패**: 소스 디렉토리 비어있으면 안전하게 중단 (의도적 동작)
-4. **서비스 시작 실패**: `journalctl -u anki-sync-server.service`로 원인 확인
+1. Sync 연결 실패: Tailscale VPN 연결 확인, `ss -tlnp | grep 27701`
+2. 인증 실패: agenix secret 복호화 확인 (`ls -la /run/agenix/anki-sync-password`)
+3. 백업 실패: 소스 디렉토리 비어있으면 안전하게 중단 (의도적 동작)
+4. 서비스 시작 실패: `journalctl -u anki-sync-server.service`로 원인 확인
 
 ### AnkiConnect
-1. **첫 부팅 무한 대기**: `prefs21.db` 없으면 `NoCloseDiag.exec()` 블로킹 → ExecStartPre에서 DB 사전 생성으로 해결됨
-2. **QtWebEngine SIGABRT**: GPU 없는 headless에서 EGL 실패 → `--disable-gpu` 플래그로 해결됨
-3. **API 무응답**: `systemctl status anki-connect` → Tailscale IP 대기 실패 가능
-4. **덱 목록 비어있음/Default만**: 첫 부팅 bootstrap 실패 가능 → `journalctl -u anki-connect.service`에서 bootstrap 로그 확인
-5. **재시작 루프**: `journalctl -u anki-connect -f` → 좀비 프로세스 DB lock 또는 프로필 디렉터리 문제
+1. 첫 부팅 무한 대기: `prefs21.db` 없으면 `NoCloseDiag.exec()` 블로킹 → ExecStartPre에서 DB 사전 생성으로 해결됨
+2. QtWebEngine SIGABRT: GPU 없는 headless에서 EGL 실패 → `--disable-gpu` 플래그로 해결됨
+3. API 무응답: `systemctl status anki-connect` → Tailscale IP 대기 실패 가능
+4. 덱 목록 비어있음/Default만: 첫 부팅 bootstrap 실패 가능 → `journalctl -u anki-connect.service`에서 bootstrap 로그 확인
+5. 재시작 루프: `journalctl -u anki-connect -f` → 좀비 프로세스 DB lock 또는 프로필 디렉터리 문제
 
 ## 레퍼런스
 

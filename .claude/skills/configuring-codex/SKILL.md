@@ -14,8 +14,8 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 ## 작성 기준
 
-- 확인 날짜: **2026-04-21**
-- 확인 버전: **codex-cli 0.122.0**
+- 확인 날짜: 2026-04-21
+- 확인 버전: codex-cli 0.122.0
 - 재검증: `codex --version && ./scripts/ai/verify-ai-compat.sh`
 
 ## 목적과 범위
@@ -67,7 +67,7 @@ Codex CLI 바이너리 설치/업데이트는 `modules/shared/programs/codex/def
 ## 진단 우선순위 (중요)
 
 Skills 누락 이슈의 1차 원인은 `trust`보다 투영 방식이다.
-Codex CLI는 **디렉토리 심링크**를 따라가지만 **파일 심링크**는 무시한다 (PR #8801).
+Codex CLI는 디렉토리 심링크를 따라가지만 파일 심링크는 무시한다 (PR #8801).
 `.agents/skills/<name>`은 반드시 디렉토리 심링크여야 하며, SKILL.md 파일 자체를 심링크하면 안 된다.
 
 ## 실행 정책 / Trust 메모
@@ -84,10 +84,10 @@ sandbox_mode = "danger-full-access"
 
 ## 트러블슈팅 / FAQ
 
-- **스킬이 안 보임**: `.agents/skills/*`가 파일 심링크인지 확인하고 디렉토리 심링크로 교정한다.
-- **권한 프롬프트 반복**: `~/.codex/config.toml`의 `approval_policy`, `sandbox_mode`를 확인한다.
-- **AGENTS 불일치**: 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크를 복구한다.
-- **활성화 누락**: `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`로 재검증한다.
+- 스킬이 안 보임: `.agents/skills/*`가 파일 심링크인지 확인하고 디렉토리 심링크로 교정한다.
+- 권한 프롬프트 반복: `~/.codex/config.toml`의 `approval_policy`, `sandbox_mode`를 확인한다.
+- AGENTS 불일치: 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크를 복구한다.
+- 활성화 누락: `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`로 재검증한다.
 
 ## 투영 아키텍처
 

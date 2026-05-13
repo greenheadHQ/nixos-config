@@ -260,6 +260,163 @@ new_sandbox() {
   printf '%s\n' "$dir"
 }
 
+skill_noise_git() {
+  local repo_root="$1"
+  shift
+  local home_dir
+  home_dir="$(dirname "$repo_root")/home"
+  HOME="$home_dir" \
+    XDG_CONFIG_HOME="$home_dir/.config" \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo_root" \
+    -c core.hooksPath=/dev/null \
+    -c commit.gpgSign=false \
+    -c init.templateDir= \
+    "$@"
+}
+
+create_skill_noise_fixture_repo() {
+  local repo_root="$1"
+  local sandbox_root home_dir
+  sandbox_root="$(dirname "$repo_root")"
+  home_dir="$sandbox_root/home"
+
+  mkdir -p \
+    "$repo_root/scripts/ai" \
+    "$repo_root/.claude/skills/demo" \
+    "$repo_root/.agents/skills" \
+    "$repo_root/modules/shared/programs/claude/files/skills/demo" \
+    "$home_dir/.config"
+  cp "$REPO_ROOT/scripts/ai/check-skill-noise.sh" "$repo_root/scripts/ai/check-skill-noise.sh"
+
+  (
+    cd "$repo_root"
+    skill_noise_git "$repo_root" init >/dev/null 2>&1
+    skill_noise_git "$repo_root" config user.name "Test User"
+    skill_noise_git "$repo_root" config user.email "test@example.com"
+    printf 'clean local\n' > .claude/skills/demo/SKILL.md
+    printf 'clean shared\n' > modules/shared/programs/claude/files/skills/demo/SKILL.md
+    ln -s ../../.claude/skills/demo .agents/skills/demo
+    skill_noise_git "$repo_root" add .
+    skill_noise_git "$repo_root" commit -m "initial" >/dev/null 2>&1
+  )
+}
+
+test_check_skill_noise_staged_reads_index_snapshot() {
+  local sandbox repo_root output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  printf 'Intro **staged-noise**\n' > "$repo_root/.claude/skills/demo/SKILL.md"
+  skill_noise_git "$repo_root" add .claude/skills/demo/SKILL.md
+  printf 'Intro clean worktree\n' > "$repo_root/.claude/skills/demo/SKILL.md"
+
+  if output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh --staged .claude/skills 2>&1); then
+    fail "expected staged noisy markdown to fail even when worktree is clean"
+  fi
+  assert_contains "$output" "bold 1 건 잔존"
+
+  printf 'Intro staged clean\n' > "$repo_root/.claude/skills/demo/SKILL.md"
+  skill_noise_git "$repo_root" add .claude/skills/demo/SKILL.md
+  printf 'Intro **worktree-noise**\n' > "$repo_root/.claude/skills/demo/SKILL.md"
+
+  output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh --staged .claude/skills 2>&1)
+  assert_contains "$output" "[PASS]"
+}
+
+test_check_skill_noise_staged_normalizes_crlf() {
+  local sandbox repo_root output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  printf 'Intro\r\n\r\n\r\nOutro\r\n' > "$repo_root/.claude/skills/demo/SKILL.md"
+  skill_noise_git "$repo_root" add .claude/skills/demo/SKILL.md
+
+  if output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh --staged .claude/skills 2>&1); then
+    fail "expected staged CRLF excessive empty lines to fail"
+  fi
+  assert_contains "$output" "excessive empty lines 1 건 잔존"
+}
+
+test_check_skill_noise_staged_follows_symlink_projection() {
+  local sandbox repo_root output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  printf 'Intro **projection-noise**\n' > "$repo_root/.claude/skills/demo/SKILL.md"
+  skill_noise_git "$repo_root" add .claude/skills/demo/SKILL.md
+
+  if output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh --staged .agents/skills 2>&1); then
+    fail "expected staged symlink projection scan to catch target noise"
+  fi
+  assert_contains "$output" "bold 1 건 잔존"
+}
+
+test_check_skill_noise_staged_rejects_non_regular_markdown() {
+  local sandbox repo_root output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  rm "$repo_root/.claude/skills/demo/SKILL.md"
+  ln -s target.md "$repo_root/.claude/skills/demo/SKILL.md"
+  skill_noise_git "$repo_root" add .claude/skills/demo/SKILL.md
+
+  if output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh --staged .claude/skills 2>&1); then
+    fail "expected staged non-regular markdown to fail"
+  fi
+  assert_contains "$output" "staged markdown is not a regular file"
+}
+
+test_check_skill_noise_worktree_follows_symlink_projection() {
+  local sandbox repo_root output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  cat > "$repo_root/.claude/skills/demo/SKILL.md" <<'EOF'
+inline code keeps `**literal**`
+
+```bash
+echo "**literal**"
+
+
+echo "blank lines inside fences stay protected"
+```
+EOF
+
+  output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh .agents/skills 2>&1)
+  assert_contains "$output" "[PASS]"
+
+  printf 'Intro\n\n\nOutro\n' > "$repo_root/.claude/skills/demo/SKILL.md"
+  if output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh .agents/skills 2>&1); then
+    fail "expected symlink projection scan to catch excessive empty lines"
+  fi
+  assert_contains "$output" "excessive empty lines 1 건 잔존"
+}
+
+test_check_skill_noise_worktree_rejects_external_symlink() {
+  local sandbox repo_root external_dir output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  external_dir="$sandbox/private"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  mkdir -p "$external_dir"
+  printf 'external **secret**\n' > "$external_dir/secret-not-in-repo.md"
+  ln -s "$external_dir" "$repo_root/.claude/skills/external"
+
+  if output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh .claude/skills 2>&1); then
+    fail "expected external symlink directory to fail"
+  fi
+  assert_contains "$output" "points outside repo"
+  assert_not_contains "$output" "**secret**"
+}
+
 assert_nix_has_attr() {
   local nix_file="$1" deployed_path="$2"
   shift 2
@@ -1727,6 +1884,12 @@ run_test "stale filter detects exact HOME hook path" test_user_hooks_stale_filte
 run_test "retired hook cleanup preserves malformed user hooks" test_clear_retired_codex_hook_artifacts_preserves_malformed_user_hooks
 run_test "retired hook cleanup preserves symlinked user hooks" test_clear_retired_codex_hook_artifacts_preserves_symlinked_user_hooks
 run_test "retired hook cleanup removes dangling artifact symlinks" test_clear_retired_codex_hook_artifacts_removes_dangling_artifact_symlinks
+run_test "check-skill-noise staged mode reads index snapshot" test_check_skill_noise_staged_reads_index_snapshot
+run_test "check-skill-noise staged mode normalizes CRLF" test_check_skill_noise_staged_normalizes_crlf
+run_test "check-skill-noise staged mode follows symlink projection" test_check_skill_noise_staged_follows_symlink_projection
+run_test "check-skill-noise staged mode rejects non-regular markdown" test_check_skill_noise_staged_rejects_non_regular_markdown
+run_test "check-skill-noise follows symlink skill projection" test_check_skill_noise_worktree_follows_symlink_projection
+run_test "check-skill-noise rejects external symlink skill projection" test_check_skill_noise_worktree_rejects_external_symlink
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
 

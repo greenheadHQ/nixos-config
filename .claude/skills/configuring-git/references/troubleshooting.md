@@ -16,11 +16,11 @@ Git 관련 문제와 해결 방법을 정리합니다.
 
 ## lazygit에서 delta side-by-side 오버라이드가 안 됨
 
-**증상**: lazygit에서 delta를 pager로 설정했는데, `[delta "lazygit"]` feature로 `side-by-side = false`를 지정해도 side-by-side가 계속 활성화됨
+증상: lazygit에서 delta를 pager로 설정했는데, `[delta "lazygit"]` feature로 `side-by-side = false`를 지정해도 side-by-side가 계속 활성화됨
 
-**원인**: delta의 우선순위 구조 때문.
+원인: delta의 우선순위 구조 때문.
 
-```
+```text
 우선순위 (높→낮):
 1. [delta] 기본 섹션 (gitconfig)
 2. 환경변수 (DELTA_FEATURES)
@@ -28,12 +28,12 @@ Git 관련 문제와 해결 방법을 정리합니다.
 4. feature 섹션 ([delta "feature-name"])
 ```
 
-`[delta]` 기본 섹션에 `side-by-side = true`가 있으면 **어떤 방법으로도 오버라이드 불가**:
+`[delta]` 기본 섹션에 `side-by-side = true`가 있으면 어떤 방법으로도 오버라이드 불가:
 - `--side-by-side=false` → boolean 플래그라 `=false` 문법 미지원
 - `--features lazygit` → feature가 기본 섹션보다 우선순위 낮음
 - `DELTA_FEATURES=+` → 기본 섹션 설정은 영향받지 않음
 
-**해결**: `side-by-side`와 `navigate`를 `[delta]`에서 feature로 분리
+해결: `side-by-side`와 `navigate`를 `[delta]`에서 feature로 분리
 
 ```nix
 # git/default.nix — 기본 섹션에서 제거하고 feature로 이동
@@ -56,17 +56,17 @@ pager = "env DELTA_FEATURES= delta --paging=never";
 
 `DELTA_FEATURES=` (빈 문자열)은 gitconfig의 `features = interactive` 설정을 오버라이드하여 빈 feature 리스트로 대체합니다.
 
-> **주의**: `DELTA_FEATURES=+` (플러스)는 동작하지 않음. 빈 문자열(`""`)만 feature를 리셋함.
+> 주의: `DELTA_FEATURES=+` (플러스)는 동작하지 않음. 빈 문자열(`""`)만 feature를 리셋함.
 
 ---
 
 ## 비대화형 SSH에서 side-by-side가 비활성화되지 않음
 
-**증상**: iPhone SSH 등 좁은 터미널에서 `git show`/`git diff` 실행 시 side-by-side가 활성화됨
+증상: iPhone SSH 등 좁은 터미널에서 `git show`/`git diff` 실행 시 side-by-side가 활성화됨
 
-**원인**: 동적 side-by-side 제어(`_update_delta_features`)가 `.zshrc`의 `precmd` 훅으로 구현되어 있어, 비대화형 셸(`.zshrc` 미소싱)에서는 `DELTA_FEATURES`가 설정되지 않음. delta가 gitconfig의 `features = interactive` → `side-by-side = true`를 그대로 사용.
+원인: 동적 side-by-side 제어(`_update_delta_features`)가 `.zshrc`의 `precmd` 훅으로 구현되어 있어, 비대화형 셸(`.zshrc` 미소싱)에서는 `DELTA_FEATURES`가 설정되지 않음. delta가 gitconfig의 `features = interactive` → `side-by-side = true`를 그대로 사용.
 
-**진단**:
+진단:
 
 ```bash
 echo $-                          # 'i' 없으면 비대화형
@@ -74,7 +74,7 @@ echo $COLUMNS                    # 0이면 터미널 너비 미감지
 echo ${DELTA_FEATURES+SET}       # 출력 없으면 DELTA_FEATURES 미설정
 ```
 
-**해결**: `.zshenv`에서 `DELTA_FEATURES=""` 기본값 설정
+해결: `.zshenv`에서 `DELTA_FEATURES=""` 기본값 설정
 
 ```nix
 # modules/shared/programs/shell/default.nix — envExtra (.zshenv)
@@ -87,16 +87,16 @@ export DELTA_FEATURES=""
 
 ## iOS SSH 앱에서 delta 마우스 스크롤이 안 됨
 
-**증상**: delta pager에 `--mouse` 플래그를 설정했는데, Termius 등 iOS SSH 앱에서 터치 스크롤로 diff를 탐색할 수 없음. 화면 하단에 `:` 프롬프트가 표시되고 `q`로만 종료 가능.
+증상: delta pager에 `--mouse` 플래그를 설정했는데, Termius 등 iOS SSH 앱에서 터치 스크롤로 diff를 탐색할 수 없음. 화면 하단에 `:` 프롬프트가 표시되고 `q`로만 종료 가능.
 
-**원인**: `less --mouse`는 터미널이 **마우스 이벤트 이스케이프 시퀀스**를 전달해야 동작합니다. iOS SSH 앱의 터치 스크롤은 앱 레벨에서 처리되어(터미널 스크롤백 버퍼 이동) less에 마우스 이벤트로 전달되지 않습니다.
+원인: `less --mouse`는 터미널이 마우스 이벤트 이스케이프 시퀀스를 전달해야 동작합니다. iOS SSH 앱의 터치 스크롤은 앱 레벨에서 처리되어(터미널 스크롤백 버퍼 이동) less에 마우스 이벤트로 전달되지 않습니다.
 
 ```
 [터치 스크롤] → iOS 앱이 가로챔 (스크롤백 버퍼) → less에 미전달
 [마우스 휠]   → 터미널이 이스케이프 시퀀스 전송 → less가 수신 → 스크롤
 ```
 
-**대안**: 모바일에서는 키보드 단축키로 탐색
+대안: 모바일에서는 키보드 단축키로 탐색
 
 | 키 | 동작 |
 |----|------|
@@ -106,23 +106,23 @@ export DELTA_FEATURES=""
 | `G` | 맨 끝 (`-e` 플래그: 한 번 더 누르면 자동 종료) |
 | `q` | 즉시 종료 |
 
-> **참고**: `--mouse`는 데스크톱 터미널(MacBook Ghostty, iTerm2 등)의 마우스 휠에서는 정상 동작합니다. 모바일 전용 제약사항입니다.
+> 참고: `--mouse`는 데스크톱 터미널(MacBook Ghostty, iTerm2 등)의 마우스 휠에서는 정상 동작합니다. 모바일 전용 제약사항입니다.
 
 ---
 
 ## lazygit config.yml permission denied
 
-**증상**: lazygit 실행 시 `permission denied` 에러
+증상: lazygit 실행 시 `permission denied` 에러
 
-```
+```text
 While attempting to write back migrated user config to
 .../lazygit/config.yml, an error occurred:
 open .../lazygit/config.yml: permission denied
 ```
 
-**원인**: Home Manager가 config.yml을 Nix store 심링크로 관리하므로 읽기 전용. lazygit이 `git.paging`을 `git.pagers` 배열로 자동 마이그레이션하려 할 때 쓰기 실패.
+원인: Home Manager가 config.yml을 Nix store 심링크로 관리하므로 읽기 전용. lazygit이 `git.paging`을 `git.pagers` 배열로 자동 마이그레이션하려 할 때 쓰기 실패.
 
-**해결**: 처음부터 새 형식(`git.pagers` 배열)을 사용
+해결: 처음부터 새 형식(`git.pagers` 배열)을 사용
 
 ```nix
 # 구 형식 (마이그레이션 시도 발생)
@@ -136,11 +136,11 @@ git.pagers = [{ colorArg = "always"; pager = "delta ..."; }];
 
 ## delta가 적용되지 않음
 
-**증상**: `programs.delta.enable = true`를 설정했는데 `git diff`에서 delta가 사용되지 않음
+증상: `programs.delta.enable = true`를 설정했는데 `git diff`에서 delta가 사용되지 않음
 
-**원인**: `enableGitIntegration`이 명시적으로 설정되지 않음. Home Manager 최신 버전에서는 자동 활성화가 deprecated됨.
+원인: `enableGitIntegration`이 명시적으로 설정되지 않음. Home Manager 최신 버전에서는 자동 활성화가 deprecated됨.
 
-**진단**:
+진단:
 ```bash
 # delta 설치 확인
 which delta
@@ -151,7 +151,7 @@ git config --get core.pager
 # 비어있으면 문제
 ```
 
-**해결**: `enableGitIntegration = true` 추가
+해결: `enableGitIntegration = true` 추가
 
 ```nix
 # modules/shared/programs/git/default.nix
@@ -166,15 +166,15 @@ programs.delta = {
 };
 ```
 
-> **참고**: `programs.delta`는 `programs.git`과 별도 모듈입니다. 이전에는 `programs.git.delta`였지만, 현재는 분리되었습니다.
+> 참고: `programs.delta`는 `programs.git`과 별도 모듈입니다. 이전에는 `programs.git.delta`였지만, 현재는 분리되었습니다.
 
 ---
 
 ## ~/.gitconfig과 Home Manager 설정이 충돌함
 
-**증상**: NixOS로 Git 설정을 관리하는데, 수동 설정(`~/.gitconfig`)이 계속 적용됨
+증상: NixOS로 Git 설정을 관리하는데, 수동 설정(`~/.gitconfig`)이 계속 적용됨
 
-**원인**: Git은 여러 설정 파일을 병합하여 사용합니다:
+원인: Git은 여러 설정 파일을 병합하여 사용합니다:
 
 | 우선순위 | 경로 | 설명 |
 |---------|------|------|
@@ -184,7 +184,7 @@ programs.delta = {
 
 Home Manager는 XDG 표준 경로(`~/.config/git/config`)를 사용하므로, `~/.gitconfig`이 있으면 두 설정이 병합됩니다.
 
-**해결**: `~/.gitconfig` 삭제
+해결: `~/.gitconfig` 삭제
 
 ```bash
 # 백업 후 삭제 (권장)
@@ -194,7 +194,7 @@ mv ~/.gitconfig ~/.gitconfig.backup
 rm ~/.gitconfig
 ```
 
-**확인**:
+확인:
 ```bash
 # Home Manager가 관리하는 설정만 표시되어야 함
 git config --list --show-origin | grep "\.config/git"
@@ -204,9 +204,9 @@ git config --list --show-origin | grep "\.config/git"
 
 ## git commit 시 Author identity unknown
 
-> **발생 시점**: NixOS 초기 설치 시
+> 발생 시점: NixOS 초기 설치 시
 
-**증상**: git commit 실행 시 author 정보 없음 에러.
+증상: git commit 실행 시 author 정보 없음 에러.
 
 ```
 $ git commit -m "message"
@@ -219,13 +219,13 @@ Run
   git config --global user.name "Your Name"
 ```
 
-**원인**: 새로 설치된 환경에서 git user 설정이 없음. Home Manager의 git 모듈이 아직 적용되지 않은 상태.
+원인: 새로 설치된 환경에서 git user 설정이 없음. Home Manager의 git 모듈이 아직 적용되지 않은 상태.
 
-**해결**: 수동으로 git config 설정
+해결: 수동으로 git config 설정
 
 ```bash
 git config --global user.email "your-email@example.com"
 git config --global user.name "your-username"
 ```
 
-**참고**: Home Manager의 `programs.git` 설정이 적용되면 이 설정은 자동으로 관리됩니다. 하지만 첫 rebuild 전에 commit이 필요한 경우 수동 설정이 필요합니다.
+참고: Home Manager의 `programs.git` 설정이 적용되면 이 설정은 자동으로 관리됩니다. 하지만 첫 rebuild 전에 commit이 필요한 경우 수동 설정이 필요합니다.

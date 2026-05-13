@@ -18,14 +18,14 @@
 
 ## 원인 분석
 
-1. **SKILL.md 투영 방식 (근본 원인)**
+1. SKILL.md 투영 방식 (근본 원인)
 - 기존 투영은 `.claude/skills/<name>/SKILL.md`를 `.agents/skills/<name>/SKILL.md`로 심링크했다.
 - 일부 Codex 환경에서 symlinked `SKILL.md`가 project-scope 발견 과정에서 누락될 수 있었다.
 
-2. **검증 기준 불일치**
+2. 검증 기준 불일치
 - 기존 검증 스크립트가 "심링크여야 정상" 기준으로 작성되어 실제 호환 수정 이후 기준과 충돌했다.
 
-3. **정책/발견 이슈 혼재**
+3. 정책/발견 이슈 혼재
 - 승인 프롬프트 문제(`approval_policy`, `sandbox_mode`)와 Skills 발견 문제를 한 원인으로 혼동하기 쉬웠다.
 - 실제로 Skills 누락의 근본 원인은 `trust`가 아니라 `SKILL.md` 심링크였다.
 
@@ -34,10 +34,10 @@
 ### 1) SKILL.md 투영 정책 변경
 
 - 파일: `modules/shared/programs/codex/default.nix`
-- 변경: `.agents/skills/<name>/SKILL.md`를 심링크가 아니라 **실파일 복사**로 생성
+- 변경: `.agents/skills/<name>/SKILL.md`를 심링크가 아니라 실파일 복사로 생성
 - 유지: `references`, `scripts`, `assets`는 심링크 유지
 
-> **2026-02-19 업데이트**: 이후 디렉토리 심링크로 전환됨. 하단 "2026-02-19 재검증" 섹션 참조.
+> 2026-02-19 업데이트: 이후 디렉토리 심링크로 전환됨. 하단 "2026-02-19 재검증" 섹션 참조.
 
 ### 2) 검증 스크립트 기준 변경
 
@@ -129,8 +129,8 @@ fixture만 빠르게 확인하려면 다음을 실행한다:
 ### 배경
 
 2026-02-08 런북에서 "SKILL.md 심링크 불가 → 실파일 복사" 정책을 수립했으나,
-이는 **파일 심링크**에 대한 결론이었다. 커뮤니티 리서치와 소스코드 분석을 통해
-Codex CLI가 **디렉토리 심링크**는 공식 지원함을 확인했다.
+이는 파일 심링크에 대한 결론이었다. 커뮤니티 리서치와 소스코드 분석을 통해
+Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
 
 ### 핵심 발견
 
@@ -142,11 +142,11 @@ Codex CLI가 **디렉토리 심링크**는 공식 지원함을 확인했다.
 
 ### 근거
 
-- **Codex CLI 소스코드** (`codex-rs/core/src/skills/loader.rs`):
+- Codex CLI 소스코드 (`codex-rs/core/src/skills/loader.rs`):
   디렉토리 심링크는 `follow_links(true)`로 순회, 파일 심링크는 `continue`로 무시
-- **PR #8801** (2026-01-07 merged): 디렉토리 심링크 지원 추가
-- **OpenAI 공식 답변** (Issue #9365): "We support symlinks to a skill directory, not the SKILL.md file itself"
-- **로컬 검증**: 전체 스킬 디렉토리 심링크 전환 후 `codex exec` 런타임 정상 인식 확인
+- PR #8801 (2026-01-07 merged): 디렉토리 심링크 지원 추가
+- OpenAI 공식 답변 (Issue #9365): "We support symlinks to a skill directory, not the SKILL.md file itself"
+- 로컬 검증: 전체 스킬 디렉토리 심링크 전환 후 `codex exec` 런타임 정상 인식 확인
 
 ### 최종 정책
 

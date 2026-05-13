@@ -75,10 +75,10 @@ rm -rf .git/rr-cache
 
 ## 자주 발생하는 문제
 
-1. **delta 적용 안 됨**: `core.pager` 설정 확인, PATH에 delta 있는지 확인
-2. **gitconfig 충돌**: 기존 `$HOME/.gitconfig`가 있으면 Home Manager와 충돌
-3. **rebase 역순 안 됨**: `GIT_SEQUENCE_EDITOR` 환경변수 확인
-4. **lazygit에서 delta side-by-side가 꺼지지 않음**: [트러블슈팅 참조](references/troubleshooting.md#lazygit에서-delta-side-by-side-오버라이드가-안-됨)
+1. delta 적용 안 됨: `core.pager` 설정 확인, PATH에 delta 있는지 확인
+2. gitconfig 충돌: 기존 `$HOME/.gitconfig`가 있으면 Home Manager와 충돌
+3. rebase 역순 안 됨: `GIT_SEQUENCE_EDITOR` 환경변수 확인
+4. lazygit에서 delta side-by-side가 꺼지지 않음: [트러블슈팅 참조](references/troubleshooting.md#lazygit에서-delta-side-by-side-오버라이드가-안-됨)
 
 ## 레퍼런스
 

@@ -99,11 +99,11 @@ direnv 환경이 비활성 상태에서 커밋하면 hook이 실패한다. `dire
 
 ## 자주 발생하는 문제
 
-1. **flake 인식 안 됨**: `git add` 필요 (untracked 파일은 무시됨)
-2. **experimental features 비활성화**: `nix-command flakes` 활성화 필요
-3. **빌드 느림**: `nrs --offline` 사용 또는 substituter 설정 확인
-4. **gitleaks/lefthook not found**: direnv 환경 미활성 — `direnv allow` 실행
-5. **builtins.toJSON 한 줄 출력**: `pkgs.formats.json` 사용으로 pretty-print
+1. flake 인식 안 됨: `git add` 필요 (untracked 파일은 무시됨)
+2. experimental features 비활성화: `nix-command flakes` 활성화 필요
+3. 빌드 느림: `nrs --offline` 사용 또는 substituter 설정 확인
+4. gitleaks/lefthook not found: direnv 환경 미활성 — `direnv allow` 실행
+5. builtins.toJSON 한 줄 출력: `pkgs.formats.json` 사용으로 pretty-print
 
 ## 레퍼런스
 

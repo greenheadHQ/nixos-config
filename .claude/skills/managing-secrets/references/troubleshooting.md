@@ -4,10 +4,10 @@
 
 ## agenix -e의 /dev/stdin 에러
 
-> **발생 시점**: 2026-01-27
-> **해결**: age CLI pipe 우회
+> 발생 시점: 2026-01-27
+> 해결: age CLI pipe 우회
 
-**증상**: Claude Code Bash 환경에서 `agenix -e` 실행 시 실패.
+증상: Claude Code Bash 환경에서 `agenix -e` 실행 시 실패.
 
 ```
 cp: cannot open '/dev/stdin' for reading: No such device or address
@@ -16,14 +16,14 @@ pushover-claude-stop.age wasn't created.
 
 `EDITOR="cp $TMPFILE"` 스크립트 우회도 동일하게 실패.
 
-**원인**: `agenix -e`는 내부적으로 `/dev/stdin`을 사용하는 interactive 모델이다. Claude Code의 Bash 환경은 non-interactive라 `/dev/stdin`이 없다.
+원인: `agenix -e`는 내부적으로 `/dev/stdin`을 사용하는 interactive 모델이다. Claude Code의 Bash 환경은 non-interactive라 `/dev/stdin`이 없다.
 
 | 방식 | Interactive 터미널 | Claude Code (non-interactive) |
 |------|:--:|:--:|
 | `agenix -e` | O | X (`/dev/stdin` 없음) |
 | `age` CLI (pipe) | O | O |
 
-**해결**: `age` CLI를 직접 호출하되, **임시 파일 경유**로 암호화. stdin 파이프는 `nix-shell --run` 내부 셸에서 특수문자(`!`, `$`, `` ` `` 등)가 이스케이프되어 `\!`처럼 백슬래시가 추가될 수 있다.
+해결: `age` CLI를 직접 호출하되, 임시 파일 경유로 암호화. stdin 파이프는 `nix-shell --run` 내부 셸에서 특수문자(`!`, `$`, `` ` `` 등)가 이스케이프되어 `\!`처럼 백슬래시가 추가될 수 있다.
 
 ```bash
 # 임시 파일 경유 (특수문자 안전)
@@ -40,18 +40,18 @@ rm /tmp/secret
 
 ## 복호화 실패
 
-**증상**: `age -d`로 복호화 시 에러.
+증상: `age -d`로 복호화 시 에러.
 
 ```
 Error: no identity matched any of the recipients
 ```
 
-**원인**:
+원인:
 
-1. **SSH 키 불일치**: 현재 머신의 SSH 키가 암호화 시 recipient에 포함되지 않음
-2. **identity path 오류**: 기본 경로(`~/.ssh/id_ed25519`)가 아닌 경우
+1. SSH 키 불일치: 현재 머신의 SSH 키가 암호화 시 recipient에 포함되지 않음
+2. identity path 오류: 기본 경로(`~/.ssh/id_ed25519`)가 아닌 경우
 
-**진단**:
+진단:
 
 ```bash
 # 현재 머신의 공개키 확인
@@ -60,7 +60,7 @@ cat ~/.ssh/id_ed25519.pub
 # secrets/secrets.nix의 allHosts에 포함되어 있는지 확인
 ```
 
-**해결**: identity path를 명시적으로 지정하여 복호화.
+해결: identity path를 명시적으로 지정하여 복호화.
 
 ```bash
 nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age'
@@ -72,32 +72,32 @@ nix-shell -p age --run 'age -d -i ~/.ssh/id_ed25519 secrets/<name>.age'
 
 ## 재암호화 실패
 
-**증상**: `secrets/secrets.nix`에서 publicKeys를 변경했는데, 새 호스트에서 복호화 실패.
+증상: `secrets/secrets.nix`에서 publicKeys를 변경했는데, 새 호스트에서 복호화 실패.
 
-**원인**: publicKeys 변경 후 `cd secrets && nix run github:ryantm/agenix -- -r` (재암호화) 미실행. `.age` 파일은 변경 시점의 recipient 목록으로 암호화되어 있으므로, publicKeys를 변경한 후 반드시 재암호화해야 한다.
+원인: publicKeys 변경 후 `cd secrets && nix run github:ryantm/agenix -- -r` (재암호화) 미실행. `.age` 파일은 변경 시점의 recipient 목록으로 암호화되어 있으므로, publicKeys를 변경한 후 반드시 재암호화해야 한다.
 
-**해결**:
+해결:
 
 ```bash
 # 모든 .age 파일을 secrets.nix의 최신 publicKeys로 재암호화
 cd secrets && nix run github:ryantm/agenix -- -r
 ```
 
-**호스트 키 변경 시**: 해당 호스트의 SSH 키가 재생성된 경우, `secrets/secrets.nix`에서 공개키를 업데이트한 후 재암호화.
+호스트 키 변경 시: 해당 호스트의 SSH 키가 재생성된 경우, `secrets/secrets.nix`에서 공개키를 업데이트한 후 재암호화.
 
 ---
 
 ## 배포 후 파일 미생성
 
-**증상**: `nrs` 실행 후 secret 파일이 기대 경로에 없음 (예: `~/.config/pushover/` 아래에 파일 없음).
+증상: `nrs` 실행 후 secret 파일이 기대 경로에 없음 (예: `~/.config/pushover/` 아래에 파일 없음).
 
-**원인**:
+원인:
 
 1. `modules/shared/programs/secrets/default.nix`에 배포 설정이 누락됨
 2. Home Manager agenix 서비스가 정상 작동하지 않음
 3. `.age` 파일이 아직 생성되지 않음
 
-**진단**:
+진단:
 
 ```bash
 # 배포된 파일 확인
@@ -110,7 +110,7 @@ systemctl --user status agenix
 ls -la secrets/*.age
 ```
 
-**해결**:
+해결:
 
 1. `modules/shared/programs/secrets/default.nix`에 배포 설정 추가
 2. `nrs`로 재빌드
@@ -120,18 +120,18 @@ ls -la secrets/*.age
 
 ## macOS agenix launchd agent crash loop (.tmp 파일 잔류)
 
-> **발생 시점**: 2026-02-18
-> **해결**: stale generation 정리 + 예방 코드 추가
+> 발생 시점: 2026-02-18
+> 해결: stale generation 정리 + 예방 코드 추가
 
-**증상**: `nrs` 후 일부 시크릿이 복호화되지 않음. `~/Library/Logs/agenix/stderr`에 아래 에러 반복:
+증상: `nrs` 후 일부 시크릿이 복호화되지 않음. `~/Library/Logs/agenix/stderr`에 아래 에러 반복:
 
 ```
 age: error: open /var/folders/.../agenix.d/<N>/<secret>.tmp: permission denied
 ```
 
-**원인**: `nrs`의 launchd cleanup이 복호화 중인 agenix agent를 kill → 0400 권한의 `.tmp` 파일이 다음 generation 디렉토리에 남음 → agent 재시작 시 해당 `.tmp`를 덮어쓸 수 없어 crash loop.
+원인: `nrs`의 launchd cleanup이 복호화 중인 agenix agent를 kill → 0400 권한의 `.tmp` 파일이 다음 generation 디렉토리에 남음 → agent 재시작 시 해당 `.tmp`를 덮어쓸 수 없어 crash loop.
 
-**진단**:
+진단:
 
 ```bash
 # agenix generation 디렉토리 확인
@@ -144,7 +144,7 @@ find "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/" -name '*.tmp'
 tail -20 ~/Library/Logs/agenix/stderr
 ```
 
-**수동 해결**:
+수동 해결:
 
 ```bash
 # 깨진 generation 삭제
@@ -154,19 +154,19 @@ rm -rf "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/<broken-gen-number>"
 launchctl kickstart -k "gui/$(id -u)/com.green.activate-agenix"
 ```
 
-**예방 코드**: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다.
+예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다.
 
 ---
 
 ## macOS agenix 시크릿이 home.activation 시점에 없음
 
-> **발생 시점**: 2026-02-18
+> 발생 시점: 2026-02-18
 
-**증상**: `home.activation` 스크립트에서 agenix 시크릿 파일을 참조하면 "not found".
+증상: `home.activation` 스크립트에서 agenix 시크릿 파일을 참조하면 "not found".
 
-**원인**: macOS에서 agenix는 `home.activation`이 아닌 `launchd.agents.activate-agenix` (RunAtLoad)로 시크릿을 복호화한다. `setupLaunchAgents`가 agent를 로드해야 복호화가 시작되므로, 그 이전 activation 단계에서는 시크릿이 없다.
+원인: macOS에서 agenix는 `home.activation`이 아닌 `launchd.agents.activate-agenix` (RunAtLoad)로 시크릿을 복호화한다. `setupLaunchAgents`가 agent를 로드해야 복호화가 시작되므로, 그 이전 activation 단계에서는 시크릿이 없다.
 
-**해결**: 시크릿을 참조하는 activation 단계를 `setupLaunchAgents` 이후로 배치 + 짧은 polling.
+해결: 시크릿을 참조하는 activation 단계를 `setupLaunchAgents` 이후로 배치 + 짧은 polling.
 
 ```nix
 home.activation.myStep =

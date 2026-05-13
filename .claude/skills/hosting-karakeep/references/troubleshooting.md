@@ -22,8 +22,8 @@ SingleFile 확장에서 push 시 아래 에러 발생:
 ```json
 {"success":false,"error":{"issues":[{"code":"invalid_type","expected":"string","received":"undefined","path":["url"],"message":"Required"},{"code":"custom","message":"Input not instance of File","fatal":true,"path":["file"]}],"name":"ZodError"}}
 ```
-**원인**: SingleFile 확장 설정에서 `archive data field name`, `archive URL field name` 필드가 비어있음.
-**해결**: 각각 `file`, `url`을 입력. 이 필드들은 SingleFile 확장이 기본값을 제공하지 않으므로 반드시 수동 입력 필요.
+원인: SingleFile 확장 설정에서 `archive data field name`, `archive URL field name` 필드가 비어있음.
+해결: 각각 `file`, `url`을 입력. 이 필드들은 SingleFile 확장이 기본값을 제공하지 않으므로 반드시 수동 입력 필요.
 
 ## 4. 컨테이너 OOM
 
@@ -32,9 +32,9 @@ SingleFile 확장에서 push 시 아래 에러 발생:
 podman stats --no-stream karakeep karakeep-chrome karakeep-meilisearch
 ```
 
-**Meilisearch 메모리 기준**: 안정 시 ~365MB 사용.
+Meilisearch 메모리 기준: 안정 시 ~365MB 사용.
 512MB 제한에서 OOM 크래시 루프 발생 (98% 점유로 반복 kill).
-**최소 1GB 확보 필요** -- Meilisearch가 죽으면 Karakeep 앱도 의존성 실패로 502 발생.
+최소 1GB 확보 필요 -- Meilisearch가 죽으면 Karakeep 앱도 의존성 실패로 502 발생.
 
 ## 5. AI 태깅/요약 미동작
 

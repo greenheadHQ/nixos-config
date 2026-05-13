@@ -15,14 +15,20 @@
 # - HTML 태그, HTML comment, italic, strikethrough, emoji 등 본 검증 외.
 #
 # 회귀 차단:
-# - lefthook pre-commit `skill-noise-check` 항목으로 자동 통합 완료.
+# - lefthook pre-commit `skill-noise-check` / `local-skill-noise-check` 항목으로 자동 통합 완료.
 # - CI step (GitHub Actions) 통합은 `.github/workflows/` 부재로 별도 follow-up.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# 첫 positional arg 가 SKILLS_DIR override (PoC / 테스트 전용). 미지정 시 canonical repo 경로.
-# pre-commit hook 은 인자 없이 호출하여 ambient env 와 무관하게 canonical corpus 만 검사한다.
+MODE="worktree"
+if [[ "${1:-}" == "--staged" ]]; then
+  MODE="staged"
+  shift
+fi
+
+# 첫 positional arg 가 SKILLS_DIR override. 미지정 시 shared projection corpus 를 검사한다.
+# pre-commit hook 은 staged snapshot 을 검사하고, 수동 실행은 worktree 전체 corpus 를 검사한다.
 SKILLS_DIR="${1:-$REPO_ROOT/modules/shared/programs/claude/files/skills}"
 
 if [ ! -d "$SKILLS_DIR" ]; then
@@ -30,13 +36,50 @@ if [ ! -d "$SKILLS_DIR" ]; then
   exit 1
 fi
 
-python3 - "$SKILLS_DIR" <<'PY'
+SKILLS_DIR_ABS="$(cd "$SKILLS_DIR" && pwd)"
+
+python3 - "$MODE" "$REPO_ROOT" "$SKILLS_DIR_ABS" <<'PY'
 import bisect
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
-base = Path(sys.argv[1])
+mode = sys.argv[1]
+repo_root = Path(sys.argv[2]).resolve()
+base = Path(sys.argv[3])
+
+
+def fail(message):
+    print(f"[FAIL] {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def is_relative_to(path, parent):
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def repo_relative(path):
+    return path.relative_to(repo_root).as_posix()
+
+
+def resolve_inside_repo(path, label):
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        fail(f"{label} resolve failed: {path} ({exc})")
+    if not is_relative_to(resolved, repo_root):
+        fail(f"{label} points outside repo: {path} -> {resolved}")
+    return resolved
+
+
+def normalize_newlines(text):
+    return text.replace('\r\n', '\n').replace('\r', '\n')
 
 def tokenize_fences(text):
     # CommonMark fenced code block: opening fence 가 있으면 같은 character + 같거나 더 긴 length 의
@@ -186,21 +229,164 @@ def count_excessive_empty_outside(text):
     return count, locations
 
 
-md_files = sorted(base.rglob('*.md'))
-if not md_files:
-    print(f"[FAIL] {base} 하위에 *.md 파일이 0 개 — skill projection 깨짐 또는 잘못된 SKILLS_DIR.", file=sys.stderr)
+def iter_worktree_markdown_files(root):
+    """Walk markdown files, following symlinked skill directories without looping."""
+    files = []
+    seen_dirs = set()
+    resolve_inside_repo(root, "Skills directory")
+    for current_root, dirs, names in os.walk(root, followlinks=True):
+        current = Path(current_root)
+        resolve_inside_repo(current, "Skill directory")
+        try:
+            stat = current.stat()
+        except OSError:
+            dirs[:] = []
+            continue
+        key = (stat.st_dev, stat.st_ino)
+        if key in seen_dirs:
+            dirs[:] = []
+            continue
+        seen_dirs.add(key)
+
+        kept_dirs = []
+        for dirname in dirs:
+            child = current / dirname
+            resolve_inside_repo(child, "Skill directory")
+            try:
+                child_stat = child.stat()
+            except OSError:
+                continue
+            child_key = (child_stat.st_dev, child_stat.st_ino)
+            if child_key not in seen_dirs:
+                kept_dirs.append(dirname)
+        dirs[:] = kept_dirs
+
+        for name in names:
+            if name.endswith(".md"):
+                child = current / name
+                resolve_inside_repo(child, "Skill markdown file")
+                files.append(child)
+    return sorted(files, key=lambda p: str(p))
+
+
+def worktree_items():
+    md_files = iter_worktree_markdown_files(base)
+    if not md_files:
+        print(f"[FAIL] {base} 하위에 *.md 파일이 0 개 — skill projection 깨짐 또는 잘못된 SKILLS_DIR.", file=sys.stderr)
+        sys.exit(1)
+    items = []
+    for f in md_files:
+        try:
+            rel = f.relative_to(base)
+        except ValueError:
+            rel = f
+        items.append((rel, normalize_newlines(f.read_text(encoding="utf-8-sig"))))
+    return items
+
+
+def staged_pathspecs(root):
+    pathspecs = set()
+    seen_dirs = set()
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        resolved = resolve_inside_repo(current, "Skill directory")
+        pathspecs.add(repo_relative(resolved))
+
+        try:
+            stat = resolved.stat()
+        except OSError:
+            continue
+        key = (stat.st_dev, stat.st_ino)
+        if key in seen_dirs:
+            continue
+        seen_dirs.add(key)
+
+        try:
+            children = sorted(current.iterdir(), key=lambda p: p.name)
+        except OSError:
+            continue
+        for child in children:
+            if child.is_dir():
+                child_resolved = resolve_inside_repo(child, "Skill directory")
+                pathspecs.add(repo_relative(child_resolved))
+                stack.append(child)
+    return sorted(pathspecs)
+
+
+def staged_index_mode(rel):
+    result = subprocess.run(
+        ["git", "-C", str(repo_root), "ls-files", "-s", "--", rel],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        print("[FAIL] staged index mode lookup failed", file=sys.stderr)
+        print(result.stderr, file=sys.stderr, end="")
+        sys.exit(1)
+    line = result.stdout.splitlines()[0] if result.stdout.splitlines() else ""
+    if not line:
+        fail(f"staged markdown missing from index: {rel}")
+    return line.split()[0]
+
+
+def staged_items():
+    pathspecs = staged_pathspecs(base)
+
+    result = subprocess.run(
+        ["git", "-C", str(repo_root), "diff", "--cached", "--name-only", "--diff-filter=ACMRT", "--", *pathspecs],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        print("[FAIL] staged file enumeration failed", file=sys.stderr)
+        print(result.stderr, file=sys.stderr, end="")
+        sys.exit(1)
+
+    rel_paths = sorted(p for p in result.stdout.splitlines() if p.endswith(".md"))
+    if not rel_paths:
+        print("[PASS] staged markdown 변경 0 건")
+        sys.exit(0)
+
+    items = []
+    for rel in rel_paths:
+        index_mode = staged_index_mode(rel)
+        if not index_mode.startswith("100"):
+            fail(f"staged markdown is not a regular file: {rel} (mode {index_mode})")
+        blob = subprocess.run(
+            ["git", "-C", str(repo_root), "show", f":{rel}"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if blob.returncode != 0:
+            print(f"[FAIL] staged blob read failed: {rel}", file=sys.stderr)
+            print(blob.stderr.decode("utf-8", errors="replace"), file=sys.stderr, end="")
+            sys.exit(1)
+        items.append((Path(rel), normalize_newlines(blob.stdout.decode("utf-8-sig"))))
+    return items
+
+
+if mode == "worktree":
+    md_items = worktree_items()
+elif mode == "staged":
+    md_items = staged_items()
+else:
+    print(f"[FAIL] unknown mode: {mode}", file=sys.stderr)
     sys.exit(1)
 
 total_bold = 0
 total_empty = 0
-fail = False
-for f in md_files:
-    text = f.read_text(encoding="utf-8-sig")
+has_failures = False
+for rel, text in md_items:
     bc, blocs = count_bold_outside(text)
     ec, elocs = count_excessive_empty_outside(text)
     if bc > 0 or ec > 0:
-        fail = True
-        rel = f.relative_to(base)
+        has_failures = True
         if bc > 0:
             print(f"[FAIL] {rel}: bold {bc} 건 잔존")
             for ln, ctx in blocs[:5]:
@@ -212,7 +398,7 @@ for f in md_files:
         total_bold += bc
         total_empty += ec
 
-if fail:
+if has_failures:
     print(f"\n[FAIL] TOTAL bold={total_bold}, excessive_empty={total_empty}")
     sys.exit(1)
 

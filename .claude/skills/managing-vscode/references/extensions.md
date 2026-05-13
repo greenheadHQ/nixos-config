@@ -69,7 +69,7 @@ nrs
 | `open-vsx` | 오픈소스 확장 (대부분) | ESLint, Prettier, GitLens |
 | `vscode-marketplace` | MS 전용/open-vsx에 없는 확장 | TypeScript, C# |
 
-**선택 방법:**
+선택 방법:
 1. 먼저 https://open-vsx.org 에서 검색
 2. 없으면 https://marketplace.visualstudio.com 사용
 

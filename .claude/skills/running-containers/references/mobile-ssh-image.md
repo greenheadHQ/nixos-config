@@ -9,7 +9,7 @@
 | WebFetch | Anthropic 서버 | 불가 |
 | Read | MiniPC 로컬 | 파일 경로로 가능 |
 
-WebFetch는 Anthropic 서버에서 실행되어 Tailscale 내부 IP에 접근 불가하지만, Read는 로컬에서 실행되어 **파일 경로**로 이미지를 읽을 수 있습니다.
+WebFetch는 Anthropic 서버에서 실행되어 Tailscale 내부 IP에 접근 불가하지만, Read는 로컬에서 실행되어 파일 경로로 이미지를 읽을 수 있습니다.
 
 ## 워크플로우
 
@@ -36,7 +36,7 @@ Immich API가 반환하는 `originalPath`:
 /var/lib/docker-data/immich/upload-cache/UUID/xx/xx/file.png
 ```
 
-**변환 규칙**: `/usr/src/app/upload/upload/` → `/var/lib/docker-data/immich/upload-cache/`
+변환 규칙: `/usr/src/app/upload/upload/` → `/var/lib/docker-data/immich/upload-cache/`
 
 ## 상세 설정
 

@@ -79,10 +79,10 @@ mise는 두 계층으로 활성화된다:
 
 ## 자주 발생하는 문제
 
-1. **SSH 비대화형 세션에서 pnpm not found**: `.zshenv`에 mise shims 누락 → 셸 활성화 구조 참조
-2. **.nvmrc 인식 안 됨**: mise 2025.10.0부터 기본 비활성화 → `idiomatic_version_file_enable_tools` 설정 필요
-3. **NixOS에서 node 빌드 실패**: `MISE_NODE_COMPILE=0` 필요 (현재 `nixos.nix`에서 영구 설정됨)
-4. **mise.local.toml 미신뢰**: `mise trust` 실행 필요 (최초 1회)
+1. SSH 비대화형 세션에서 pnpm not found: `.zshenv`에 mise shims 누락 → 셸 활성화 구조 참조
+2. .nvmrc 인식 안 됨: mise 2025.10.0부터 기본 비활성화 → `idiomatic_version_file_enable_tools` 설정 필요
+3. NixOS에서 node 빌드 실패: `MISE_NODE_COMPILE=0` 필요 (현재 `nixos.nix`에서 영구 설정됨)
+4. mise.local.toml 미신뢰: `mise trust` 실행 필요 (최초 1회)
 
 ## 레퍼런스
 

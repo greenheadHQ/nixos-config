@@ -83,17 +83,16 @@ networking.interfaces.enp2s0.wakeOnLan.enable = true;
 - systemd .link 파일로 매 부팅 시 `WakeOnLan=magic` 적용 (ethtool 불필요)
 - `enp2s0`은 이 MiniPC PCI 토폴로지에 종속 → 호스트별 설정에 배치
 
-**제한사항:**
-- Layer 2 브로드캐스트라 **같은 LAN에서만 동작** (원격 불가)
+제한사항:
+- Layer 2 브로드캐스트라 같은 LAN에서만 동작 (원격 불가)
 - 원격 전원 투입이 필요하면 스마트 플러그 + BIOS "Restore on AC Power Loss" 사용
 
-**확인 명령어:**
+확인 명령어:
 
 ```bash
 nix-shell -p ethtool --run "sudo ethtool enp2s0 | grep Wake"
 # Wake-on: g  ← magic packet 활성화 확인
 ```
-
 
 ## 하드웨어 모니터링
 
@@ -112,9 +111,9 @@ nix-shell -p ethtool --run "sudo ethtool enp2s0 | grep Wake"
 | 임계값 상수 | `libraries/constants.nix` → `tempMonitor` |
 | Pushover 전송 | `modules/nixos/lib/service-lib.sh` → `send_notification_strict` |
 
-**임계값**: CPU 경고 80°C / 위험 95°C, NVMe 경고 70°C / 위험 85°C
-**쿨다운**: 경고 15분, 위험 5분 (단계별 차등)
-**시크릿**: `pushover-system-monitor.age` (smartd와 공유, NixOS 모듈 시스템이 merge)
+임계값: CPU 경고 80°C / 위험 95°C, NVMe 경고 70°C / 위험 85°C
+쿨다운: 경고 15분, 위험 5분 (단계별 차등)
+시크릿: `pushover-system-monitor.age` (smartd와 공유, NixOS 모듈 시스템이 merge)
 
 ## 네트워크/보안 설정
 
@@ -124,7 +123,7 @@ nix-shell -p ethtool --run "sudo ethtool enp2s0 | grep Wake"
 | mosh | `programs/mosh.nix` | 모바일 쉘, LAN 포트 미개방 |
 | Tailscale | `programs/tailscale.nix` | VPN (100.79.80.95), 유일한 접근 경로 |
 
-**방화벽 정책 (tailscale.nix):**
+방화벽 정책 (tailscale.nix):
 
 ```nix
 networking.firewall = {
@@ -136,7 +135,7 @@ networking.firewall = {
 
 LAN(enp2s0)에서의 SSH/HTTP 접근은 차단됨. Tailscale VPN만 허용.
 
-**Pre-commit 보안 검증 (eval-tests):**
+Pre-commit 보안 검증 (eval-tests):
 
 `tests/eval-tests.nix`에서 매 커밋 시 네트워크 노출 경계를 자동 검증합니다:
 
@@ -148,13 +147,13 @@ nix eval --impure --file tests/eval-tests.nix
 ```
 
 주요 검증 카테고리 (상세: `tests/eval-tests.nix` 참조):
-- **Tailscale CGNAT**: IP 범위 독립 검증 (constants.nix oracle 무결성)
-- **포트 충돌**: homeserver 서비스 간 포트 중복 방지
-- **컨테이너 격리**: 127.0.0.1 바인딩 강제, publish 우회 방지, --network=host allowlist, host network listen address
-- **Caddy 바인딩**: virtualHost Tailscale IP 전용, extraConfig/bind 디렉티브 우회 방지, default_bind 다중 주소/중복 방지
-- **서비스 보안**: anki-sync 바인딩, openssh openFirewall/경화, vaultwarden 계정 생성 차단
-- **방화벽 정책**: firewall.enable, TCP/UDP 포트, trustedInterfaces, 인터페이스별 포트, 수동 규칙 인젝션 방지
-- **Tailscale 설정**: useRoutingFeatures 제한
+- Tailscale CGNAT: IP 범위 독립 검증 (constants.nix oracle 무결성)
+- 포트 충돌: homeserver 서비스 간 포트 중복 방지
+- 컨테이너 격리: 127.0.0.1 바인딩 강제, publish 우회 방지, --network=host allowlist, host network listen address
+- Caddy 바인딩: virtualHost Tailscale IP 전용, extraConfig/bind 디렉티브 우회 방지, default_bind 다중 주소/중복 방지
+- 서비스 보안: anki-sync 바인딩, openssh openFirewall/경화, vaultwarden 계정 생성 차단
+- 방화벽 정책: firewall.enable, TCP/UDP 포트, trustedInterfaces, 인터페이스별 포트, 수동 규칙 인젝션 방지
+- Tailscale 설정: useRoutingFeatures 제한
 
 새 서비스 추가 시: 컨테이너가 `127.0.0.1:` 접두사로 포트 매핑하면 자동으로 검증됨. --network=host가 필요하면 `tests/eval-tests.nix`의 `hostNetworkAllowlist`에 추가 필요.
 
@@ -216,7 +215,7 @@ services.tailscale = {
 | `nrh` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system \| tail -10` | 최근 10개 세대 |
 | `nrh-all` | `sudo nix-env --list-generations --profile /nix/var/nix/profiles/system` | 전체 세대 |
 
-**Rebuild 스크립트 아키텍처:**
+Rebuild 스크립트 아키텍처:
 
 nrs/nrp 스크립트는 공통 함수를 `~/.local/lib/rebuild-common.sh`에서 source합니다.
 각 스크립트는 `REBUILD_CMD` 변수를 설정한 후 공통 라이브러리를 로드합니다.
@@ -227,7 +226,7 @@ nrs/nrp 스크립트는 공통 함수를 `~/.local/lib/rebuild-common.sh`에서 
 | `modules/nixos/scripts/nrs.sh` | NixOS switch (exit code 4 핸들링) |
 | `modules/nixos/scripts/nrp.sh` | NixOS 미리보기 전용 |
 
-**Worktree 감지 (`detect_worktree()`):**
+Worktree 감지 (`detect_worktree()`):
 
 git worktree에서 nrs/nrp 실행 시 `git rev-parse --show-toplevel` + `--git-common-dir`로 worktree를 감지합니다. 감지 시 `FLAKE_PATH`만 worktree 경로로 오버라이드하여 빌드를 해당 worktree flake로 수행합니다. 심링크 타깃(`nixosConfigPath`)은 항상 메인 레포 경로를 유지합니다.
 

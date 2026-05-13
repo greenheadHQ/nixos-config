@@ -15,13 +15,13 @@ Hammerspoon을 사용한 키보드 자동화 및 단축키 설정입니다.
 
 Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작하지 않는 문제를 Hammerspoon에서 시스템 레벨로 해결합니다.
 
-**문제 원인:**
+문제 원인:
 
 - Claude Code가 enhanced keyboard 모드(CSI u)를 활성화
 - 한글 입력소스에서 Ctrl/Opt+알파벳 키가 다르게 처리됨
 - Ghostty keybind 설정도 CSI u 모드에서 우회됨
 
-**해결 방식:** Hammerspoon이 시스템 레벨에서 키 입력을 가로채서 영어로 전환 후 키 전달
+해결 방식: Hammerspoon이 시스템 레벨에서 키 입력을 가로채서 영어로 전환 후 키 전달
 
 ### Ghostty 전용 (Ctrl 키)
 
@@ -53,7 +53,7 @@ Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작
 | -------- | ------------------------------- |
 | `Ctrl+B` | tmux prefix (영어 전환 후 전달) |
 
-> **참고**: 자세한 트러블슈팅은 [`references/troubleshooting.md`의 "한글 입력소스에서 Ctrl/Opt 단축키가 동작하지 않음"](troubleshooting.md#한글-입력소스에서-ctrlopt-단축키가-동작하지-않음) 섹션을 참고하세요.
+> 참고: 자세한 트러블슈팅은 [`references/troubleshooting.md`의 "한글 입력소스에서 Ctrl/Opt 단축키가 동작하지 않음"](troubleshooting.md#한글-입력소스에서-ctrlopt-단축키가-동작하지-않음) 섹션을 참고하세요.
 
 ## Finder → Ghostty 터미널 열기
 
@@ -61,7 +61,7 @@ Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작
 | ------------------------- | ---------------------------------------- |
 | `Ctrl + Option + Cmd + T` | 현재 Finder 경로에서 Ghostty 터미널 열기 |
 
-**동작 방식:**
+동작 방식:
 
 | 상황                     | 동작                                |
 | ------------------------ | ----------------------------------- |
@@ -71,7 +71,7 @@ Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작
 | Ghostty 미실행 시        | `open -a Ghostty`로 시작            |
 | Ghostty 실행 중          | `Cmd+N`으로 새 창 + `cd` 명령어     |
 
-**구현 특징:**
+구현 특징:
 
 - AppleScript로 Finder 현재 경로 가져오기
 - 경로에 특수문자(`[`, `]` 등)나 공백이 있어도 정상 동작 (따옴표 처리)
@@ -79,4 +79,4 @@ Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작
 - IPC 모듈 로드로 CLI에서 `hs` 명령 사용 가능
 - 설정 리로드 완료 시 macOS 알림 표시
 
-> **참고**: 구현 과정에서 발생한 문제와 해결 방법은 [`references/troubleshooting.md`의 "Hammerspoon 관련"](troubleshooting.md#hammerspoon-관련) 섹션을 참고하세요.
+> 참고: 구현 과정에서 발생한 문제와 해결 방법은 [`references/troubleshooting.md`의 "Hammerspoon 관련"](troubleshooting.md#hammerspoon-관련) 섹션을 참고하세요.

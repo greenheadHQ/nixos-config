@@ -14,12 +14,12 @@ Shottr는 macOS 샌드박스 앱이며 plist가 `~/Library/Containers/cc.ffitch.
 - Keychain 삭제 -> defaults에서 라이센스를 UI에 pre-fill하되, "Activate" 버튼 1회 클릭 필요
 - defaults 삭제 -> Keychain에서 자동 복원 (라이센스 유지)
 - 양쪽 모두 삭제 -> 미등록 상태
-- "Registered to:" 이메일은 **Keychain** (`Shottr-vault`)에서 읽힘 -- defaults의 `kc-vault`와 무관
+- "Registered to:" 이메일은 Keychain (`Shottr-vault`)에서 읽힘 -- defaults의 `kc-vault`와 무관
 - `kc-vault`(defaults)의 정확한 역할은 불명 (Activate 시 서버 통신 데이터 캐시로 추정). 안전을 위해 둘 다 기록
 
 ## Nix 관리 전략
 
-`defaults write kc-license + kc-vault`로 라이센스를 pre-fill합니다. 완전 자동 활성화는 불가능하지만(Keychain은 Nix로 관리 불가), 새 맥북에서 **라이센스 키를 기억/입력할 필요 없이 Activate 버튼 1회 클릭만으로 활성화**할 수 있습니다.
+`defaults write kc-license + kc-vault`로 라이센스를 pre-fill합니다. 완전 자동 활성화는 불가능하지만(Keychain은 Nix로 관리 불가), 새 맥북에서 라이센스 키를 기억/입력할 필요 없이 Activate 버튼 1회 클릭만으로 활성화할 수 있습니다.
 
 ## HM activation에서의 주의사항
 

@@ -31,8 +31,8 @@ Immich 서버가 `127.0.0.1`에만 바인딩되어 있으므로, Tailscale IP로
 
 ### API 호출
 
-1. **현재 버전**: Immich API `/api/server/version` → `{"major":2,"minor":5,"patch":5}` → `"2.5.5"` 변환
-2. **최신 버전**: GitHub `repos/immich-app/immich/releases/latest` → `"tag_name": "v2.5.5"` → `"2.5.5"` 변환
+1. 현재 버전: Immich API `/api/server/version` → `{"major":2,"minor":5,"patch":5}` → `"2.5.5"` 변환
+2. 최신 버전: GitHub `repos/immich-app/immich/releases/latest` → `"tag_name": "v2.5.5"` → `"2.5.5"` 변환
 
 ### 상태 관리
 
@@ -108,21 +108,21 @@ sudo systemctl start podman-immich-server.service
 
 ### GitHub API rate limit
 
-**증상**: 버전 체크가 조용히 실패 (로그에 "GitHub API request failed")
+증상: 버전 체크가 조용히 실패 (로그에 "GitHub API request failed")
 
-**원인**: 비인증 요청 60회/시간 제한
+원인: 비인증 요청 60회/시간 제한
 
-**해결**: 1일 1회 체크이므로 일반적으로 문제 없음. 다른 서비스가 같은 IP에서 GitHub API를 대량 호출하는지 확인
+해결: 1일 1회 체크이므로 일반적으로 문제 없음. 다른 서비스가 같은 IP에서 GitHub API를 대량 호출하는지 확인
 
 ### 헬스체크 실패
 
-**증상**: "Immich did not respond after 10 minutes"
+증상: "Immich did not respond after 10 minutes"
 
-**원인**:
+원인:
 - DB 마이그레이션이 10분 이상 소요 (대규모 업데이트)
 - 컨테이너 시작 실패
 
-**해결**:
+해결:
 ```bash
 # 로그 확인
 sudo podman logs immich-server
@@ -135,9 +135,9 @@ sudo systemctl restart podman-immich-server.service
 
 ### Pushover 알림 미전송
 
-**증상**: 새 버전이 있지만 알림이 오지 않음
+증상: 새 버전이 있지만 알림이 오지 않음
 
-**확인**:
+확인:
 ```bash
 # 수동 실행하여 로그 확인
 sudo systemctl start immich-version-check
@@ -149,23 +149,23 @@ ls -la /run/agenix/immich-api-key /run/agenix/pushover-immich
 
 ### 초기 실행 후 알림 없음
 
-**원인**: 정상 동작. 첫 실행 시 현재 버전을 기록만 하고 알림을 보내지 않음.
+원인: 정상 동작. 첫 실행 시 현재 버전을 기록만 하고 알림을 보내지 않음.
 
-**확인**:
+확인:
 ```bash
 cat /var/lib/immich-update/last-notified-version
 ```
 
 ### 워치독 경고 수신
 
-**증상**: "버전 체크가 N일간 성공하지 못했습니다" Pushover 알림
+증상: "버전 체크가 N일간 성공하지 못했습니다" Pushover 알림
 
-**원인**:
+원인:
 - Immich 서비스가 장기간 다운
 - GitHub API가 지속적으로 실패
 - 네트워크 문제
 
-**확인**:
+확인:
 ```bash
 # 마지막 성공 시각 확인
 sudo cat /var/lib/immich-update/last-success
@@ -178,11 +178,11 @@ journalctl -u immich-version-check --no-pager
 
 ### 동시 실행 차단
 
-**증상**: "Another immich-update is already running"
+증상: "Another immich-update is already running"
 
-**원인**: `sudo immich-update`가 이미 다른 터미널에서 실행 중
+원인: `sudo immich-update`가 이미 다른 터미널에서 실행 중
 
-**해결**: 기존 프로세스 완료 대기 또는 `ps aux | grep immich-update`로 확인
+해결: 기존 프로세스 완료 대기 또는 `ps aux | grep immich-update`로 확인
 
 ### 타이머 미동작
 

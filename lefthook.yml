@@ -20,12 +20,17 @@ pre-commit:
       run: bash ./tests/test-codex-hook-fixtures.sh --no-live
     skill-noise-check:
       # shared skill projection (modules/shared/programs/claude/files/skills) 의 LLM 노이즈 syntax
-      # (bold / excessive empty lines) 잔존 0 검증. check-skill-noise.sh 의 기본 검사 경로는 본
-      # projection corpus 이며, lefthook 에서는 인자 없이 호출하여 default 경로만 검사한다
+      # (bold / excessive empty lines) 잔존 0 검증. pre-commit 은 staged snapshot 을 검사하고,
+      # check-skill-noise.sh 의 기본 worktree 검사 경로는 본 projection corpus 이다
       # (ai-skills-consistency / eval-tests / codex-hook-fixtures 와 동일한 항상 실행 패턴).
-      # script 는 Python stdlib only 라 nix shell wrap 불필요. .claude/skills 의 동일 invariant
-      # 적용은 별도 follow-up 으로 분리 (해당 corpus 의 bold 잔존 대량 cleanup 선행 필요).
-      run: bash ./scripts/ai/check-skill-noise.sh
+      # script 는 Python stdlib only 라 nix shell wrap 불필요.
+      run: bash ./scripts/ai/check-skill-noise.sh --staged
+    local-skill-noise-check:
+      # repo-local project skill corpus (.claude/skills) 의 동일 invariant 검증.
+      # .agents/skills 는 .claude/skills 를 가리키는 directory symlink projection 이므로
+      # hook 에서는 원본 corpus 의 staged snapshot 을 직접 검사한다. explicit directory arg 를 사용해
+      # shared corpus default 동작은 유지한다.
+      run: bash ./scripts/ai/check-skill-noise.sh --staged .claude/skills
 
 commit-msg:
   commands:

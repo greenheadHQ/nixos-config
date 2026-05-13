@@ -41,12 +41,12 @@ copyparty = {
 ### 4. 서비스 모듈 (`modules/nixos/programs/docker/copyparty.nix`)
 
 핵심 구성요소:
-- **copyparty-config** oneshot 서비스: agenix 시크릿에서 비밀번호 추출 → INI 설정 파일 생성
-- **copyparty** Podman 컨테이너: `copyparty/ac:latest` 이미지
-- **`--entrypoint=python3`**: 이미지 기본 ENTRYPOINT 오버라이드 (initcfg 볼륨 충돌 방지)
-- **cmd**: `["-m" "copyparty" "-c" "/cfg/config.conf"]`
-- **ConditionPathExists**: 설정 파일 없으면 시작 방지
-- **127.0.0.1 바인딩**: Caddy 리버스 프록시가 유일한 외부 진입점
+- copyparty-config oneshot 서비스: agenix 시크릿에서 비밀번호 추출 → INI 설정 파일 생성
+- copyparty Podman 컨테이너: `copyparty/ac:latest` 이미지
+- `--entrypoint=python3`: 이미지 기본 ENTRYPOINT 오버라이드 (initcfg 볼륨 충돌 방지)
+- cmd: `["-m" "copyparty" "-c" "/cfg/config.conf"]`
+- ConditionPathExists: 설정 파일 없으면 시작 방지
+- 127.0.0.1 바인딩: Caddy 리버스 프록시가 유일한 외부 진입점
 
 ### 5. 활성화
 
@@ -76,17 +76,17 @@ INI 스타일, 섹션별 구성:
     rwda: greenhead       # 읽기/쓰기/삭제/관리
 ```
 
-**주의사항**:
+주의사항:
 - 루트 `[/]` -> `/data` 볼륨 하나만 사용 (하위 경로 별도 마운트 시 충돌)
 - `r:` = 읽기 전용, `rwda:` = 전체 권한
 - 들여쓰기는 2칸 스페이스 (탭 불가)
 
 ## Docker 이미지 정보
 
-- **이미지**: `copyparty/ac:latest` (thumbnailer for audio/video/images + transcoding)
-- **기본 포트**: 3923
-- **기본 ENTRYPOINT**: `python3 -m copyparty -c /z/initcfg` ← **오버라이드 필수**
-- **우리 설정**: `--entrypoint=python3`, cmd: `-m copyparty -c /cfg/config.conf`
+- 이미지: `copyparty/ac:latest` (thumbnailer for audio/video/images + transcoding)
+- 기본 포트: 3923
+- 기본 ENTRYPOINT: `python3 -m copyparty -c /z/initcfg` ← 오버라이드 필수
+- 우리 설정: `--entrypoint=python3`, cmd: `-m copyparty -c /cfg/config.conf`
 
 ### initcfg 내용 (참고용 - 우리는 사용하지 않음)
 ```ini
@@ -107,9 +107,9 @@ initcfg를 완전히 건너뛰는 것이 유일한 해결책.
 
 ## 리소스 설정 근거
 
-- **메모리 1GB + swap 1GB**: FFmpeg 썸네일 생성 시 300-500MB 스파이크 대비
-- **CPU 1코어**: 단일 사용자, 다른 서비스 영향 최소화
-- **썸네일 캐시 90일**: 적절한 캐시 재활용과 디스크 사용 균형
+- 메모리 1GB + swap 1GB: FFmpeg 썸네일 생성 시 300-500MB 스파이크 대비
+- CPU 1코어: 단일 사용자, 다른 서비스 영향 최소화
+- 썸네일 캐시 90일: 적절한 캐시 재활용과 디스크 사용 균형
 
 ## WebDAV 연결 (Mac Finder)
 

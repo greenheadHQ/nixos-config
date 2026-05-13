@@ -17,11 +17,11 @@
 
 ## 핵심 설계
 
-- **`--delete` 버그 대응**: CLI는 중복 파일을 삭제하지 않음. 사전 기록한 미디어 목록 기반으로 수동 삭제
-- **데이터 손실 방지**: 업로드 전에 파일 목록을 배열에 기록, 완료 후 해당 파일만 삭제
-- **launchd TimeOut 1800초**: `bunx` 업로드 무한 대기 방지. PID 기반 stale lock으로 강제 종료 후 자동 복구
-- **`IMMICH_INSTANCE_URL`**: `constants.nix`에서 IP/포트 자동 구성 (launchd EnvironmentVariables)
-- **비미디어 파일**: 미디어 없이 비미디어만 있으면 무시 (알림 스팸 방지)
+- `--delete` 버그 대응: CLI는 중복 파일을 삭제하지 않음. 사전 기록한 미디어 목록 기반으로 수동 삭제
+- 데이터 손실 방지: 업로드 전에 파일 목록을 배열에 기록, 완료 후 해당 파일만 삭제
+- launchd TimeOut 1800초: `bunx` 업로드 무한 대기 방지. PID 기반 stale lock으로 강제 종료 후 자동 복구
+- `IMMICH_INSTANCE_URL`: `constants.nix`에서 IP/포트 자동 구성 (launchd EnvironmentVariables)
+- 비미디어 파일: 미디어 없이 비미디어만 있으면 무시 (알림 스팸 방지)
 
 ## 디버깅
 

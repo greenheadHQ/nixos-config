@@ -2,7 +2,7 @@
 
 ## .age 파일 생성/암호화
 
-**Interactive (터미널)** -- `agenix -e` 사용:
+Interactive (터미널) -- `agenix -e` 사용:
 
 ```bash
 cd secrets && nix run github:ryantm/agenix -- -e <name>.age
@@ -11,7 +11,7 @@ cd secrets && nix run github:ryantm/agenix -- -e <name>.age
 
 추가와 수정 모두 동일한 명령으로 처리.
 
-**Non-interactive (Claude Code)** -- `age` CLI pipe 사용:
+Non-interactive (Claude Code) -- `age` CLI pipe 사용:
 
 ```bash
 # 1. secrets/secrets.nix에서 공개키 확인

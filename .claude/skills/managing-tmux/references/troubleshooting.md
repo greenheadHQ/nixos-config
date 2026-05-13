@@ -27,14 +27,14 @@
 
 ### 해결 (2단계)
 
-**1차**: `pane-focus-in` hook 제거
+1차: `pane-focus-in` hook 제거
 
 ```bash
 # 제거됨 (복원 방해)
 # set-hook -g pane-focus-in 'run-shell "$HOME/.tmux/scripts/pane-note.sh ensure-var"'
 ```
 
-**2차**: 순서 기반(line_num) → 식별자 기반(`session:window.pane`) 매핑으로 전환
+2차: 순서 기반(line_num) → 식별자 기반(`session:window.pane`) 매핑으로 전환
 
 구 형식: `var_type|line_num|value` — pane 순서가 바뀌면 잘못된 pane에 복원됨
 신 형식: `var_type|session:window.pane|value` — 순서 무관하게 정확한 pane에 복원
@@ -49,7 +49,7 @@ pane_map=$(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} 
 target_pane=$(printf '%s\n' "$pane_map" | awk -v id="$ident" '$1 == id { print $2 }')
 ```
 
-**한계**: tmux-resurrect가 동명 세션 충돌 시 이름을 변경(`main` → `main_0`)하면 해당 pane의 변수 복원이 건너뛰어질 수 있음.
+한계: tmux-resurrect가 동명 세션 충돌 시 이름을 변경(`main` → `main_0`)하면 해당 pane의 변수 복원이 건너뛰어질 수 있음.
 
 ### 관련 파일
 
@@ -138,7 +138,7 @@ yq가 마크다운 파일을 직접 읽을 때 frontmatter 이후의 본문도 Y
 
 ### 해결
 
-**읽기 전용 작업**: `--front-matter=extract` 사용
+읽기 전용 작업: `--front-matter=extract` 사용
 
 ```bash
 # 문제가 되는 코드
@@ -148,7 +148,7 @@ yq -r '.title' "$file"  # exit code: 1 (본문 파싱 에러)
 yq --front-matter=extract -r '.title' "$file"  # exit code: 0
 ```
 
-**수정 작업**: `--front-matter=process` 사용
+수정 작업: `--front-matter=process` 사용
 
 ```bash
 # 문제가 되는 코드
@@ -238,7 +238,7 @@ fi
 
 ### 해결
 
-**수정 작업에는 `--front-matter=process` 사용**:
+수정 작업에는 `--front-matter=process` 사용:
 
 ```bash
 # 문제가 되는 코드
@@ -248,7 +248,7 @@ yq -i '.tags = ["new"]' "$file"
 yq --front-matter=process -i '.tags = ["new"]' "$file"
 ```
 
-**추가 주의**: yq의 `split("\n")`이 줄바꿈을 제대로 처리하지 못할 수 있음. 쉼표 구분자 사용 권장:
+추가 주의: yq의 `split("\n")`이 줄바꿈을 제대로 처리하지 못할 수 있음. 쉼표 구분자 사용 권장:
 
 ```bash
 # 줄바꿈을 쉼표로 변환
@@ -323,7 +323,7 @@ tmux display-popup -E -w 80% -h 80% \
 
 ### 해결
 
-**호출 측(현재 셸)에서 절대 경로로 미리 resolve**한 뒤, popup에 절대 경로를 전달:
+호출 측(현재 셸)에서 절대 경로로 미리 resolve한 뒤, popup에 절대 경로를 전달:
 
 ```bash
 # 에디터: 현재 셸에서 절대 경로 resolve
@@ -351,7 +351,7 @@ open_popup_view(){
 }
 ```
 
-핵심 원칙: **`display-popup` 셸의 PATH에 의존하지 말고, 호출 시점에 절대 경로를 확정**할 것.
+핵심 원칙: `display-popup` 셸의 PATH에 의존하지 말고, 호출 시점에 절대 경로를 확정할 것.
 
 ### 관련 파일
 

@@ -16,17 +16,17 @@ Atuin 동기화 상태 점검, 한글 히스토리 정리, encryption key 문제
 
 ## Known Issues
 
-**Atuin v1 API deprecated**
+Atuin v1 API deprecated
 - `atuin status` 명령어가 4XX 에러 반환 가능
 - v2 API 사용 중, `last_sync_time` 파일이 CLI sync에서 자동 업데이트되지 않음
 - 동기화 자체는 정상 작동
 
-**`atuin history delete` 서브커맨드 미존재 (v18.13.3)**
+`atuin history delete` 서브커맨드 미존재 (v18.13.3)
 - `atuin history` 하위에 `delete` 명령어가 없음
 - 한글 포함 항목 일괄 삭제: `atuin-clean-kr` 스크립트 사용
 - DB 경로: `~/.local/share/atuin/history.db`
 
-**DB migration 불일치 (nixpkgs 버전 다운그레이드 시)**
+DB migration 불일치 (nixpkgs 버전 다운그레이드 시)
 - 새 버전의 atuin이 DB에 migration을 적용한 후, 구버전으로 돌아가면 발생
 - 에러: `migration XXXXXXXX was previously applied but is missing in the resolved migrations`
 - 원인: atuin DB migration은 forward-only — 한번 적용되면 해당 버전 이상을 유지해야 함
@@ -76,11 +76,11 @@ atuin sync
 
 ## 자주 발생하는 문제
 
-1. **atuin status 4XX**: v1 API deprecated, 동기화는 정상
-2. **encryption key 불일치**: 계정별 고유 키, 마이그레이션 불가
-3. **zsh 한글 레이아웃 깨짐**: zsh-autosuggestion + 한글 경로 조합 문제 (근본 원인: zsh-autosuggestion)
-4. **한글 포함 히스토리 TUI 렌더링 깨짐**: zsh-autosuggestion이 한글 포함 명령어를 제안할 때 발생, SQLite 직접 삭제로 해결
-5. **DB migration 불일치**: nixpkgs보다 새 버전의 atuin을 임시 실행하면 DB migration이 적용되어, 이후 구버전에서 에러 발생. nixpkgs 업데이트로 해결
+1. atuin status 4XX: v1 API deprecated, 동기화는 정상
+2. encryption key 불일치: 계정별 고유 키, 마이그레이션 불가
+3. zsh 한글 레이아웃 깨짐: zsh-autosuggestion + 한글 경로 조합 문제 (근본 원인: zsh-autosuggestion)
+4. 한글 포함 히스토리 TUI 렌더링 깨짐: zsh-autosuggestion이 한글 포함 명령어를 제안할 때 발생, SQLite 직접 삭제로 해결
+5. DB migration 불일치: nixpkgs보다 새 버전의 atuin을 임시 실행하면 DB migration이 적용되어, 이후 구버전에서 에러 발생. nixpkgs 업데이트로 해결
 
 ## 레퍼런스
 

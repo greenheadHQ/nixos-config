@@ -63,7 +63,7 @@ sudo cat /run/agenix/anki-sync-password | xxd
 특수문자(`!`, `$`, `` ` `` 등)를 이스케이프하여 `\!`처럼 백슬래시가 추가됨.
 
 ### 해결
-파이프 대신 **임시 파일 경유**로 암호화:
+파이프 대신 임시 파일 경유로 암호화:
 
 ```bash
 printf '비밀번호' > /tmp/pw
@@ -104,9 +104,9 @@ journalctl -u anki-sync-server.service --since today --no-pager
 ```
 
 ### 일반적인 원인
-1. **Tailscale IP 미할당**: tailscale-wait가 60초 후 timeout → Tailscale 상태 확인
-2. **포트 충돌**: `ss -tlnp | grep 27701`로 다른 프로세스 확인
-3. **시크릿 복호화 실패**: SSH 키 경로 확인 (`/home/greenhead/.ssh/id_ed25519`)
+1. Tailscale IP 미할당: tailscale-wait가 60초 후 timeout → Tailscale 상태 확인
+2. 포트 충돌: `ss -tlnp | grep 27701`로 다른 프로세스 확인
+3. 시크릿 복호화 실패: SSH 키 경로 확인 (`/home/greenhead/.ssh/id_ed25519`)
 
 ## 백업 실패
 
@@ -145,7 +145,7 @@ Anki Desktop에서 커스텀 sync 서버 URL이 비워짐
 AnkiMobile 앱 내에서 sync 서버 설정을 찾을 수 없음
 
 ### 해결
-- AnkiMobile은 **iOS 설정 앱** > Anki에서 설정 (앱 내부가 아님)
+- AnkiMobile은 iOS 설정 앱 > Anki에서 설정 (앱 내부가 아님)
 - SYNCING 섹션 > Custom sync server
 
 ## 양방향 Sync 충돌
@@ -154,8 +154,8 @@ AnkiMobile 앱 내에서 sync 서버 설정을 찾을 수 없음
 "Please choose which side to keep" 프롬프트
 
 ### 해결
-1. 최신 데이터가 있는 기기에서 **"Upload"** 선택
-2. 다른 기기에서 **"Download"** 선택
+1. 최신 데이터가 있는 기기에서 "Upload" 선택
+2. 다른 기기에서 "Download" 선택
 3. 이후 정상적으로 양방향 sync 동작
 
 ## 로그 확인
@@ -186,7 +186,7 @@ journalctl -u anki-sync-backup.service --since today
 1. `_loadMeta()` → `firstTime=True` (DB 없음)
 2. `_ensureProfile()` → "User 1" 프로필 생성
 3. `openProfile("server")` → "server" 프로필 없음 → `invalid_profile_provided=True`
-4. `setDefaultLang()` → `NoCloseDiag(QDialog).exec()` → **영구 블로킹**
+4. `setDefaultLang()` → `NoCloseDiag(QDialog).exec()` → 영구 블로킹
 
 `NoCloseDiag`는 `reject()`를 `pass`로 오버라이드하므로 offscreen 모드에서 닫을 수 없음.
 
@@ -241,9 +241,9 @@ tailscale status
 ```
 
 ### 일반적인 원인
-1. **Tailscale IP 미할당**: tailscale-wait가 60초 대기 후 timeout
-2. **프로필 디렉터리 문제**: ExecStartPre에서 생성 실패
-3. **메모리 초과**: `MemoryMax=512M` 도달 → OOMKilled
+1. Tailscale IP 미할당: tailscale-wait가 60초 대기 후 timeout
+2. 프로필 디렉터리 문제: ExecStartPre에서 생성 실패
+3. 메모리 초과: `MemoryMax=512M` 도달 → OOMKilled
 
 ### 해결
 - Tailscale 연결 확인: `tailscale up`
@@ -257,8 +257,8 @@ tailscale status
 
 ### 원인
 AnkiConnect의 `server` 프로필에 컬렉션 데이터가 없음. 두 가지 경우:
-1. **첫 배포**: 프로필이 빈 상태로 생성됨 (ExecStartPre가 디렉터리만 보장)
-2. **좀비 프로세스 DB lock**: 이전 Anki 프로세스가 `collection.anki2` 잠금을 보유 중이면 새 프로세스가 빈 컬렉션으로 시작
+1. 첫 배포: 프로필이 빈 상태로 생성됨 (ExecStartPre가 디렉터리만 보장)
+2. 좀비 프로세스 DB lock: 이전 Anki 프로세스가 `collection.anki2` 잠금을 보유 중이면 새 프로세스가 빈 컬렉션으로 시작
 
 ### 진단
 ```bash
@@ -291,7 +291,7 @@ sudo chown -R anki:anki /var/lib/anki/.local/share/Anki2/server/
 sudo systemctl start anki-connect.service
 ```
 
-**참고**: 현재는 `anki-connect` 시작 시 bootstrap + 주기 sync가 기본 동작입니다.
+참고: 현재는 `anki-connect` 시작 시 bootstrap + 주기 sync가 기본 동작입니다.
 위 절차는 bootstrap이 실패했거나 lock 손상 시 사용하는 수동 복구 경로입니다.
 
 ## 서비스 재시작 루프
@@ -309,9 +309,9 @@ ls -la /var/lib/anki/.local/share/Anki2/server/
 ```
 
 ### 일반적인 원인
-1. **offscreen 렌더링 실패**: Qt 관련 라이브러리 누락
-2. **프로필 잠금**: 이전 프로세스가 DB lock을 해제하지 않음
-3. **addon 로드 실패**: withAddons 설정 문제
+1. offscreen 렌더링 실패: Qt 관련 라이브러리 누락
+2. 프로필 잠금: 이전 프로세스가 DB lock을 해제하지 않음
+3. addon 로드 실패: withAddons 설정 문제
 
 ### 해결
 - Qt 라이브러리 확인: 로그에서 `qt.qpa` 관련 메시지 확인
@@ -327,7 +327,7 @@ awesome-anki 웹 앱에서 AnkiConnect API 호출 시 브라우저 콘솔에 COR
 `webCorsOriginList`에 요청 Origin이 포함되지 않음.
 
 ### 해결
-**참고**: awesome-anki는 Hono 서버가 AnkiConnect를 프록시하므로 브라우저 → AnkiConnect 직접 호출은 발생하지 않음. CORS 에러가 보이면 프록시 경로 확인.
+참고: awesome-anki는 Hono 서버가 AnkiConnect를 프록시하므로 브라우저 → AnkiConnect 직접 호출은 발생하지 않음. CORS 에러가 보이면 프록시 경로 확인.
 
 현재 허용 Origin 목록 (Nix store에 bake됨):
 - `http://localhost`
