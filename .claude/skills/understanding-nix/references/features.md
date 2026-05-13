@@ -96,12 +96,16 @@ lefthook을 사용하여 커밋 전 자동 검사를 수행합니다. 민감 정
 
 | Stage | Hook | 도구 | 기능 |
 |-------|------|------|------|
-| pre-commit | ai-skills-consistency | `bash ./scripts/ai/warn-skill-consistency.sh` | AI 스킬 문서 일관성 검사 |
-| pre-commit | gitleaks | `gitleaks protect --staged --no-banner --redact` | 민감 정보(API 키, 비밀번호 등) 커밋 차단 |
+| pre-commit | ai-skills-consistency | `bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-consistency.sh` | staged snapshot 기준 AI 스킬 문서 일관성 검사 |
+| pre-commit | gitleaks | `bash ./scripts/ai/run-gitleaks-staged-policy.sh` | staged policy 기준 민감 정보(API 키, 비밀번호 등) 커밋 차단 |
 | pre-commit | nixfmt | `nixfmt --check` | Nix 파일 포맷 검사 |
 | pre-commit | shellcheck | `shellcheck -S warning` | Shell 스크립트 린팅 (warning 이상) |
-| pre-commit | eval-tests | `bash ./tests/run-eval-tests.sh` | NixOS 설정 E2E 보안 검증 (~1.2s) |
+| pre-commit | eval-tests | `bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/run-eval-tests.sh` | staged snapshot 기준 NixOS 설정 E2E 보안 검증 (~1.2s) |
+| pre-commit | skill-noise-check | `bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/check-skill-noise.sh` | staged snapshot 기준 shared skill markdown noise 검사 |
+| pre-commit | local-skill-noise-check | `bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/check-skill-noise.sh .claude/skills` | staged snapshot 기준 local skill markdown noise 검사 |
 | pre-push | flake-check | `nix flake check --no-build --all-systems` | Flake 평가 오류 검사 |
+
+상세 hook 정책은 repo 루트 `README.md`와 `lefthook.yml`을 기준으로 한다. 직접 스크립트 실행은 installed pre-commit staged snapshot 경로와 동일하지 않다.
 
 사용법:
 

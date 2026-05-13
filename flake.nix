@@ -199,6 +199,7 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          pythonRuntimes = import ./libraries/python-runtimes.nix { inherit pkgs; };
         in
         {
           default = pkgs.mkShell {
@@ -207,16 +208,11 @@
               lefthook
               gitleaks
               shellcheck
+              pythonRuntimes.pythonWithTomlkit
               inputs.agenix.packages.${system}.default
             ];
             shellHook = ''
-              # worktree 환경에서 공유 config에 남은 core.hooksPath를 정리
-              # (lefthook 2.x는 core.hooksPath가 설정되어 있으면 install을 거부함)
-              git config --unset-all --local core.hooksPath 2>/dev/null || true
-              # lefthook hook 실행 중(LEFTHOOK=0)에는 재설치 방지 (Issue #125)
-              if [ "''${LEFTHOOK:-}" != "0" ]; then
-                lefthook install 2>/dev/null || true
-              fi
+              bash ./scripts/ai/install-lefthook-hooks.sh
             '';
           };
         }
@@ -224,7 +220,8 @@
 
       # test/verifier 래핑용 tomlkit 포함 python3.
       # pre-push hook(lefthook.yml)과 verify-ai-compat이 `nix shell .#pythonWithTomlkit --command`로
-      # 호출한다. devShell은 건드리지 않아 direnv/bare python3 해석에는 영향 없음.
+      # 호출한다. devShell에도 포함되어 있어 install-lefthook-hooks.sh가 shellHook에서 같은
+      # interpreter를 사용하고, direnv 환경의 python3도 tomlkit 포함 버전으로 resolve된다.
       # 정의는 `libraries/python-runtimes.nix` 단일 소스이며, activation(`codex/default.nix`)도
       # 같은 파일을 import해 동일 store path를 공유한다.
       packages = nixpkgs.lib.genAttrs [ systems.darwin systems.linux ] (

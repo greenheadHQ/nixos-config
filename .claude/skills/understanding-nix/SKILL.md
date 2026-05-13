@@ -87,15 +87,13 @@ cd ~/Workspace/nixos-config  # 자동 활성화 (이후 이탈 시 자동 해제
 
 ## Pre-commit Hooks (lefthook)
 
-| Hook | 도구 | 기능 |
-|------|------|------|
-| gitleaks | `gitleaks protect --staged` | 민감 정보 커밋 차단 |
-| nixfmt | `nixfmt --check` | Nix 포맷 검사 |
-| shellcheck | `shellcheck -S warning` | Shell 스크립트 린팅 |
-| eval-tests | `tests/run-eval-tests.sh` | NixOS 보안 검증 (~1.2s) |
-| flake-check (pre-push) | `nix flake check` | Flake 평가 오류 검사 |
+Hook 상세 목록과 staged snapshot 정책은 repo 루트의 `README.md`와 `lefthook.yml`을 기준으로 확인한다.
 
-direnv 환경이 비활성 상태에서 커밋하면 hook이 실패한다. `direnv allow` 실행으로 해결.
+요약:
+- whole-repo / whole-corpus pre-commit hook은 staged index snapshot에서 실행된다.
+- `gitleaks`는 staged `.gitleaks.toml` / `.gitleaksignore` policy만 사용한다.
+- installed `git commit` 경로는 worktree-local pre-Lefthook guard가 `lefthook.yml` drift와 unsupported merged config surface를 차단한다.
+- direnv 환경이 비활성 상태에서 커밋하면 hook 도구가 없어 실패할 수 있다. `direnv allow` 실행으로 해결.
 
 ## 자주 발생하는 문제
 

@@ -2,9 +2,9 @@ pre-commit:
   parallel: true
   commands:
     ai-skills-consistency:
-      run: bash ./scripts/ai/warn-skill-consistency.sh
+      run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-consistency.sh
     gitleaks:
-      run: gitleaks protect --staged --no-banner --redact
+      run: bash ./scripts/ai/run-gitleaks-staged-policy.sh
     nixfmt:
       glob: "*.nix"
       run: nixfmt --check {staged_files}
@@ -12,25 +12,23 @@ pre-commit:
       glob: "*.sh"
       run: shellcheck -S warning {staged_files}
     eval-tests:
-      run: bash ./tests/run-eval-tests.sh
+      run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/run-eval-tests.sh
     codex-hook-fixtures:
       # deterministic 모드 (live fixture 미실행). runner 자체가 scripts/ai/lib/tomlkit-bootstrap.sh를
       # source하여 repo-pinned pythonWithTomlkit으로 self-wrap하므로 lefthook에서 추가 nix shell
       # wrap이 불필요하다. live propagation 검증은 manual/scheduled에 위임.
-      run: bash ./tests/test-codex-hook-fixtures.sh --no-live
+      run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/test-codex-hook-fixtures.sh --no-live
     skill-noise-check:
       # shared skill projection (modules/shared/programs/claude/files/skills) 의 LLM 노이즈 syntax
-      # (bold / excessive empty lines) 잔존 0 검증. pre-commit 은 staged snapshot 을 검사하고,
-      # check-skill-noise.sh 의 기본 worktree 검사 경로는 본 projection corpus 이다
-      # (ai-skills-consistency / eval-tests / codex-hook-fixtures 와 동일한 항상 실행 패턴).
+      # (bold / excessive empty lines) 잔존 0 검증. pre-commit 은 staged snapshot 안에서
+      # check-skill-noise.sh 의 기본 worktree 검사 경로를 사용한다.
       # script 는 Python stdlib only 라 nix shell wrap 불필요.
-      run: bash ./scripts/ai/check-skill-noise.sh --staged
+      run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/check-skill-noise.sh
     local-skill-noise-check:
       # repo-local project skill corpus (.claude/skills) 의 동일 invariant 검증.
       # .agents/skills 는 .claude/skills 를 가리키는 directory symlink projection 이므로
-      # hook 에서는 원본 corpus 의 staged snapshot 을 직접 검사한다. explicit directory arg 를 사용해
-      # shared corpus default 동작은 유지한다.
-      run: bash ./scripts/ai/check-skill-noise.sh --staged .claude/skills
+      # hook 에서는 원본 corpus 의 staged snapshot 을 직접 검사한다.
+      run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/check-skill-noise.sh .claude/skills
 
 commit-msg:
   commands:
