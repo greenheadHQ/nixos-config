@@ -63,7 +63,10 @@ in
 
       # Ghostty 쉘 통합 설정
       if [ -n "''${GHOSTTY_RESOURCES_DIR}" ]; then
-        builtin source "''${GHOSTTY_RESOURCES_DIR}/shell-integration/zsh/ghostty-integration"
+        # cmux can set GHOSTTY_RESOURCES_DIR without Ghostty.app's zsh integration path.
+        if [ -r "''${GHOSTTY_RESOURCES_DIR}/shell-integration/zsh/ghostty-integration" ]; then
+          builtin source "''${GHOSTTY_RESOURCES_DIR}/shell-integration/zsh/ghostty-integration"
+        fi
       fi
 
       # Homebrew 설정
