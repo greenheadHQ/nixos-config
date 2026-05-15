@@ -191,6 +191,8 @@ local heavy_packages=("anki" "mise")
 ### 작성 규칙
 - LLM이 직접 실행하여 PR 머지 전에 검증할 수 있는 자동화된 절차를 기술한다.
 - Phase 기반 구조를 따른다: Phase 0(정적) → Phase 1-N(기능) → Phase N+1(Regression).
+- ANSI escape sequence 또는 regex metacharacter를 literal로 검증할 때는 `grep -Fq`를 사용한다.
+  예: `printf '%s' "$preview_out" | grep -Fq $'\x1b[1;36m'`
 - 상세 작성 규칙은 `references/pre-merge-guide.md` 참조.
 
 ### 예시

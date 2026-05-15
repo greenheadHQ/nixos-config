@@ -32,6 +32,16 @@ ls <expected_file>
 - `grep -q "/new/path"` (새 값 존재) + `! grep -q "/old/path"` (old 값 부재)
 두 가지를 모두 검증한다.
 
+핵심 원칙 — Literal 검증은 fixed-string:
+ANSI escape sequence, `[` / `]`, `.` / `*` 처럼 regex metacharacter를 포함한 출력은 literal로 검증한다.
+이 경우 `grep -q` 대신 `grep -Fq`를 사용한다. Regex가 필요한 검증은 `grep -qE` 또는 `grep -q`를 명시적으로 사용한다.
+
+```bash
+# ANSI cyan escape가 출력에 포함되는지 literal로 확인
+printf '%s' "$preview_out" | grep -Fq $'\x1b[1;36m'
+# 기대: exit 0
+```
+
 ### Phase 1-N: 기능별 검증
 
 변경의 핵심 기능을 각각 독립적으로 검증한다.
