@@ -171,7 +171,8 @@ if command -v jq >/dev/null 2>&1; then
     @sh "STDIN_SESSION_ID=\(.session_id // "")",
     @sh "CWD=\(.cwd // "")",
     @sh "WS_WORKTREE=\(.workspace.git_worktree // "")",
-    @sh "WORKTREE_BRANCH=\(.worktree.branch // "")"
+    @sh "WORKTREE_BRANCH=\(.worktree.branch // "")",
+    @sh "STDIN_COLS=\(.terminal.columns // "")"
   ' 2>/dev/null)" 2>/dev/null || true
 fi
 
@@ -500,9 +501,73 @@ fi
 # ============================================================
 # Section 8: 폭/임계값 + display values (D-5: 정적 threshold)
 # ============================================================
+#
+# === Change Intent Record ===
+# v1 (초기): `stty size </dev/tty` → terminfo 80 fallback. controlling tty가
+#    있는 환경에서는 정상 동작.
+# v5 (이번): Claude Code v2.1.139부터 hook/statusline 자식에서 controlling tty가
+#    제거되어 stty가 항상 실패. RATE_DETAIL과 session-id display가 항상 가장
+#    좁은 fallback으로 떨어지는 회귀 발생. 폭 측정을 raw cols resolver
+#    `resolve_raw_terminal_cols`로 위임하여 5단계 chain으로 회복한다:
+#      (1) CLAUDE_STATUSLINE_COLUMNS env (사용자 명시 override, 항상 우선)
+#      (2) stdin .terminal.columns (forward-compat for upstream columns 요청 이슈)
+#      (3) $COLUMNS env (interactive parent shell이 export 한 경우)
+#      (4) stty size </dev/tty (pre-2.1.139 compatibility branch — v2.1.139+에서
+#          항상 실패하지만 1회 fork 비용 미미. 사용자 명시 결정으로 유지.)
+#      (5) 정적 기본값 140 cols (EFF_COLS=100 → detail=4 + full UUID 보장)
+#    함수는 raw cols만 반환한다. EFF_COLS 보정 (`COLS - 40`)은 호출자 책임이며
+#    아래 산식 그대로 유지한다.
+#    상세 결정 근거는 .claude/plans/statusline-width-fallback.md 참조.
+resolve_raw_terminal_cols() {
+  # raw cols default → EFF_COLS=COLS-40=100 → detail=4 임계값(EFF_COLS>=88) 통과
+  #   + session-id full UUID 임계값(EFF_COLS>=100) 도달. 기본값을 조정할 때
+  #   docs/임계값 매트릭스와 bats assertion 메시지도 함께 갱신한다.
+  local DEFAULT_RAW_COLS=140
+  local v
+  # decimal-only 가드: `0140` 같은 leading-zero 입력은 호출부의 `$((COLS - 40))`
+  # 에서 bash 가 octal로 해석한다. canonical decimal (1-9 leading) 1-4자리 (1..9999)
+  # 만 통과시킨다. 4자리 상한: 10000 이상 5자리+ 입력으로 bash 정수 연산이
+  # 오염되는 것을 차단한다 (정상 터미널 폭 80-300 범위 충분히 포함).
+  _is_decimal() {
+    [[ "$1" =~ ^[1-9][0-9]{0,3}$ ]]
+  }
 
-COLS=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
-[ "${COLS:-0}" -gt 0 ] 2>/dev/null || COLS=80
+  # (1) CLAUDE_STATUSLINE_COLUMNS env — 명시 override, 항상 우선
+  v=${CLAUDE_STATUSLINE_COLUMNS:-}
+  if _is_decimal "$v"; then
+    printf '%s' "$v"
+    return
+  fi
+
+  # (2) stdin .terminal.columns (Section 1-2의 jq 추출 결과)
+  v=${STDIN_COLS:-}
+  if _is_decimal "$v"; then
+    printf '%s' "$v"
+    return
+  fi
+
+  # (3) $COLUMNS env (interactive parent shell이 export 한 경우)
+  v=${COLUMNS:-}
+  if _is_decimal "$v"; then
+    printf '%s' "$v"
+    return
+  fi
+
+  # (4) stty size </dev/tty (pre-2.1.139 compatibility branch, dead in v2.1.139+)
+  # /dev/tty 가 stat-level 에서는 readable 이지만 controlling tty 부재 시 open이
+  # ENXIO로 실패하면서 shell 이 직접 stderr를 낸다. command group 의 stderr 까지
+  # 리다이렉트해서 noise 를 막는다.
+  v=$({ stty size </dev/tty | awk '{print $2}'; } 2>/dev/null)
+  if _is_decimal "$v"; then
+    printf '%s' "$v"
+    return
+  fi
+
+  # (5) 정적 기본값
+  printf '%s' "$DEFAULT_RAW_COLS"
+}
+
+COLS=$(resolve_raw_terminal_cols)
 if [ "$COLS" -lt 80 ]; then
   EFF_COLS=$COLS
 else

@@ -53,3 +53,11 @@ pre-push:
       run: bash ./tests/test-codex-hook-fixtures.sh --no-live
     flake-check:
       run: nix flake check --no-build --all-systems
+    statusline-bats:
+      # statusline.sh 폭 측정 fallback chain 회귀 검증. git hook PATH 는 devShell
+      # buildInputs 를 보장하지 않으므로 `nix shell` wrap 으로 hook 실행 환경
+      # PATH 와 무관하게 동작하게 한다. `--inputs-from .` 는 repo flake.lock 의
+      # nixpkgs 입력을 재사용하여 `nix shell .#pythonWithTomlkit` 패턴과 동일하게
+      # 프로젝트 pin 을 우회하지 않게 한다. pre-commit allowlist guard 우회를
+      # 위해 pre-push 에 배치. bats 호출은 ~1초로 짧아 비용 미미.
+      run: nix shell --inputs-from . nixpkgs#bats --command bats modules/shared/programs/claude/files/scripts/tests/statusline.bats

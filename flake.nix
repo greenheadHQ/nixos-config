@@ -208,6 +208,7 @@
               lefthook
               gitleaks
               shellcheck
+              bats
               pythonRuntimes.pythonWithTomlkit
               inputs.agenix.packages.${system}.default
             ];

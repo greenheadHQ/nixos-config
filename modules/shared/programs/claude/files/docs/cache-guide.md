@@ -1,5 +1,9 @@
 # Claude Code Prompt Cache Guide
 
+> 관련 docs: 터미널 폭 측정과 `CLAUDE_STATUSLINE_COLUMNS` env override 등 statusline 자체의
+> 환경 변수는 [`statusline-env.md`](./statusline-env.md) 가 다룬다. 본 문서는 prompt cache
+> 동작과 `CLAUDE_CACHE_TTL` override 만 다룬다.
+
 ## Statusline 표시
 
 ```
