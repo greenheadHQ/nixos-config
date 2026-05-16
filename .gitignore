@@ -19,6 +19,13 @@
 .claude/skills/*/agents/
 .claude/skills/*/references/references
 
+# .claude/plans/ — 글로벌 gitignore(~/.config/git/ignore)가 **/.claude/plans 디렉토리를 차단.
+# 디렉토리 정책 문서 README.md만 tracked로 유지하고 (이슈 #756 P0) 다른 plan 파일
+# (transient buffer + SSOT plan)은 그대로 untracked 유지.
+!.claude/plans
+.claude/plans/*
+!.claude/plans/README.md
+
 # 브라우저 자동화 인증 상태 파일 (평문 세션 토큰 포함)
 auth-state.json
 oauth-state.json
