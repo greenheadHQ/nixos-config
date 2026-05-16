@@ -61,7 +61,7 @@ found=0
 if [ -n "$records" ]; then
   found=1
   prev_code=""
-  while IFS=$'\t' read -r code label entry; do
+  while IFS=$'\t' read -r code label entry _sub_tag; do
     [ -n "$code" ] || continue
     if [ "$code" != "$prev_code" ]; then
       case "$code" in

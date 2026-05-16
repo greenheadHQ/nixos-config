@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/issue-draft/foo.md",
+    "content": "구현 완료 후 DA for_pr 로 리뷰한다."
+  }
+}

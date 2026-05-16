@@ -76,12 +76,22 @@ Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
 | 시나리오 | fixture |
 |----------|---------|
 | PATTERN_A allowed in `.claude/prds/` and `.claude/plans/` | `pretooluse-pinning-guard-claude-write-{prds,plans}-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-write-prds-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-applypatch-{prds,plans}-pattern-a-clean.*` |
-| PATTERN_B/C still denied in `.claude/prds/` and `.claude/plans/` | `pretooluse-pinning-guard-claude-write-{prds,plans}-pattern-{b,c}-deny.*`, `pretooluse-pinning-guard-codex-applypatch-prds-pattern-b-deny.*`, `pretooluse-pinning-guard-codex-applypatch-plans-pattern-c-deny.*` |
+| PATTERN_B still denied + PATTERN_C **volatile** sub-pattern still denied in `.claude/prds/` and `.claude/plans/` | `pretooluse-pinning-guard-claude-write-{prds,plans}-pattern-{b,c}-deny.*` (pattern-c-deny fixtures use volatile sub-pattern tokens after #767), `pretooluse-pinning-guard-codex-applypatch-prds-pattern-b-deny.*`, `pretooluse-pinning-guard-codex-applypatch-plans-pattern-c-deny.*` |
 | Equal-count non-A replacement still denied | `pretooluse-pinning-guard-claude-write-prds-pattern-b-to-c-deny.*`, `pretooluse-pinning-guard-codex-write-plans-pattern-c-to-b-deny.*`, `pretooluse-pinning-guard-claude-edit-prds-pattern-b-token-change-deny.*` |
 | Equal-count replacement outside PRD/plan keeps existing count-gate behavior | `pretooluse-pinning-guard-codex-edit-outside-equal-count-clean.*` |
 | Codex `apply_patch` effective path remains correct | `pretooluse-pinning-guard-codex-applypatch-{moveto,multifile,update}-prds-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-applypatch-mixed-prds-outside-pattern-a-deny.*` |
 | Traversal-looking PRD paths fail closed | `pretooluse-pinning-guard-claude-write-prds-traversal-pattern-a-deny.*`, `pretooluse-pinning-guard-codex-applypatch-prds-tab-traversal-pattern-a-deny.*` |
 | Edit/Notebook future-compatible PATTERN_A clean paths | `pretooluse-pinning-guard-claude-edit-prds-pattern-a-clean.*`, `pretooluse-pinning-guard-claude-notebook-plans-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-edit-plans-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-notebook-prds-pattern-a-clean.*` |
+
+Issue #767 PATTERN_C workflow/volatile split fixtures (workflow sub-pattern allowed in policy categories + alias, volatile sub-pattern still denied):
+
+| 시나리오 | fixture |
+|----------|---------|
+| PATTERN_C **workflow** sub-pattern allowed in `.claude/prds/` and `.claude/plans/` | `pretooluse-pinning-guard-claude-write-{prds,plans}-pattern-c-workflow-clean.*`, `pretooluse-pinning-guard-codex-applypatch-{prds,plans}-pattern-c-workflow-clean.*` |
+| PATTERN_C **workflow** sub-pattern allowed in `/tmp/issue-draft/` (issue/PR body draft staging) | `pretooluse-pinning-guard-claude-write-issue-draft-pattern-c-workflow-clean.*` |
+| Traversal raw path stays denied even with workflow tokens (workflow allow predicate fail-closes on traversal segment) | `pretooluse-pinning-guard-claude-write-body-temp-traversal-pattern-c-deny.*` |
+
+PostToolUse `pinning-alert.sh` and commit-msg-pinning.sh keep emitting both sub-patterns under category code "C" (warn-only diagnostic preserved). The PreToolUse hard-fail records API (`pinning_guard_findings_records_for_path`, `pinning_guard_findings_records_for_scan_path`) suppresses only the workflow sub-pattern on the allowed paths above.
 
 ### commit-msg/ 카테고리 7c fixture (commit-msg-pinning behavioral)
 

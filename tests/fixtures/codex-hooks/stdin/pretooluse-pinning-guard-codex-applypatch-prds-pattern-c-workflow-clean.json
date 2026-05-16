@@ -1,0 +1,6 @@
+{
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Add File: /tmp/fixture-pinning/.claude/prds/prd-c.md\n+Phase 검증에서 DA for_pr 로 리뷰.\n+같은 의미로 DA for_plan 절차도.\n*** End Patch\n"
+  }
+}

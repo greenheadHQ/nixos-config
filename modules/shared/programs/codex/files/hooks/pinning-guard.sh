@@ -122,7 +122,7 @@ case "$TOOL_NAME" in
       PATH_SCAN_FILE=$(mktemp "$SCAN_DIR/scan-XXXXXX")
       pinning_apply_patch_section_lines_for_path "$SECTIONS_FILE" "$path" > "$PATH_SCAN_FILE"
       [ -s "$PATH_SCAN_FILE" ] || continue
-      findings="$(pinning_findings_text_for_path "$PATH_SCAN_FILE" "$path")"
+      findings="$(pinning_guard_findings_text_for_scan_path "$PATH_SCAN_FILE" "$path")"
       [ -n "$findings" ] || continue
       _deny "$TOOL_NAME" "$path" "$findings"
     done < <(pinning_apply_patch_section_paths "$SECTIONS_FILE")

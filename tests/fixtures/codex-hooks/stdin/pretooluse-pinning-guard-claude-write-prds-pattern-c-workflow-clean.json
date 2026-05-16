@@ -2,6 +2,6 @@
   "tool_name": "Write",
   "tool_input": {
     "file_path": "/tmp/fixture-pinning/.claude/prds/prd-foo.md",
-    "content": "DA 피드백"
+    "content": "Phase 4: 검증 단계에서 DA for_pr 로 리뷰. 같은 의미로 DA for_plan 절차도 명시."
   }
 }

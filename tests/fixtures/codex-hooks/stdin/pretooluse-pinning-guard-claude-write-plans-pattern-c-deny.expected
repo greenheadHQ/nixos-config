@@ -1,4 +1,4 @@
 [pinning-guard] Write on /tmp/fixture-pinning/.claude/plans/foo.md contains volatile review/session metadata:
   - DA 실행 키워드 박제
-         1: DA for_plan
+         1: DA 피드백
 Use stable identifiers or plain natural-language context before retrying.
