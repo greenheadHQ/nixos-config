@@ -1,6 +1,22 @@
 pre-commit:
   parallel: true
   commands:
+    lefthook-guard-self-check:
+      # 회귀 방지 layer: 인접 worktree의 `lefthook install`이 (worktree-local 격리 없이)
+      # 메인 .git/hooks/pre-commit을 덮어쓰면서 staged-config guard를 silently 제거하는
+      # 시나리오를 commit-time에 fail-fast로 잡는다. install-lefthook-hooks.sh가
+      # 호출되는 worktree는 자기 worktree-local hook에 격리되어 안전하지만, 메인 repo
+      # hook은 8개 inline shellHook worktree(NG-1)의 매 direnv 진입으로 덮어써질 수
+      # 있다. 본 check가 메인에서 commit 시도 시 guard 부재를 발견하고 차단한다.
+      # parallel: true이지만 어느 command든 fail이면 commit이 차단되므로 순서는 무관.
+      run: |
+        hook_path="$(git rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+        if [ ! -f "$hook_path" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$hook_path"; then
+          echo "lefthook-guard-self-check: staged-config guard missing from $hook_path." >&2
+          echo "  Cause: another worktree's 'lefthook install' likely overwrote the shared hook." >&2
+          echo "  Fix:   re-run 'direnv reload' or 'bash scripts/ai/install-lefthook-hooks.sh' in the current worktree." >&2
+          exit 1
+        fi
     ai-skills-consistency:
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-consistency.sh
     gitleaks:
@@ -32,6 +48,19 @@ pre-commit:
 
 commit-msg:
   commands:
+    lefthook-guard-self-check:
+      # pre-commit의 guard-self-check 복제. lefthook 2.x는 staged files이 0인 commit
+      # (예: `git commit --allow-empty`)에서 pre-commit command를 "(skip) no matching
+      # staged files"로 무력화한다. commit-msg hook은 staged files와 무관하게 항상
+      # 실행되므로, 이 layer가 staged-files-가-0인 경로의 우회 시나리오까지 차단한다.
+      run: |
+        hook_path="$(git rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+        if [ ! -f "$hook_path" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$hook_path"; then
+          echo "lefthook-guard-self-check (commit-msg): staged-config guard missing from $hook_path." >&2
+          echo "  Cause: another worktree's 'lefthook install' likely overwrote the shared hook." >&2
+          echo "  Fix:   re-run 'direnv reload' or 'bash scripts/ai/install-lefthook-hooks.sh' in the current worktree." >&2
+          exit 1
+        fi
     pinning:
       # 워크트리/cherry-pick 시나리오에서 lefthook.yml만 받고 스크립트 미동반 시
       # 차단 회피용 방어 가드 (silent skip).

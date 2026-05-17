@@ -82,6 +82,15 @@ cat > "$expected_precommit" <<'EOF'
 pre-commit:
   parallel: true
   commands:
+    lefthook-guard-self-check:
+      run: |
+        hook_path="$(git rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+        if [ ! -f "$hook_path" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$hook_path"; then
+          echo "lefthook-guard-self-check: staged-config guard missing from $hook_path." >&2
+          echo "  Cause: another worktree's 'lefthook install' likely overwrote the shared hook." >&2
+          echo "  Fix:   re-run 'direnv reload' or 'bash scripts/ai/install-lefthook-hooks.sh' in the current worktree." >&2
+          exit 1
+        fi
     ai-skills-consistency:
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-consistency.sh
     gitleaks:
