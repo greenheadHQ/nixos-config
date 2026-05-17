@@ -28,8 +28,15 @@ PATTERN_B='\b(Correctness|CORRECTNESS|Design|DESIGN|Regression|REGRESSION|Mainta
 #   on allowed paths; diagnostic records (warn-only) still emit them.
 # - volatile sub-pattern: round counter / feedback / numbered reviewer label /
 #   parallel-audit follow-up action tokens. These remain hard-fail everywhere.
+#
+# Note on word boundary across multibyte tokens: GNU grep (gnugrep-3.12) does
+# not treat the transition between an ASCII word char and a Hangul (multibyte
+# UTF-8) char as a word boundary, so the trailing `\b` after a Hangul
+# alternative silently fails to match (BSD `grep` does match). To keep the
+# library working under both grep implementations, Hangul alternatives are
+# written without a trailing `\b` while ASCII alternatives retain it.
 PINNING_PATTERN_C_WORKFLOW='\bDA (for_pr|for_plan)\b'
-PINNING_PATTERN_C_VOLATILE='\bDA (피드백|[Rr]ound)\b|\bAuditor [A-Za-z_]+-[0-9][A-Za-z0-9-]*\b|\bparallel-audit (반영|결과|finding)\b'
+PINNING_PATTERN_C_VOLATILE='\bDA 피드백|\bDA [Rr]ound\b|\bAuditor [A-Za-z_]+-[0-9][A-Za-z0-9-]*\b|\bparallel-audit (반영|결과)|\bparallel-audit finding\b'
 
 # Combined PATTERN_C preserves backward-compat for `verify-ai-compat.sh`'s
 # exported-var inventory check. `pinning_findings_records` now grep's the
