@@ -1,0 +1,85 @@
+---
+tags: [ scenarios, process, troubleshooting, personal ]
+---
+process 운영 시나리오 — "지금 이 상황에서 뭘 치지?" 모음.
+
+[1. 특정 포트 점유 프로세스 찾아 종료]
+  $ lsof -i :3000                            # 누가 쓰는지 확인
+  COMMAND  PID USER ... NAME
+  node    8923 green ... TCP *:3000 (LISTEN)
+  $ kill 8923                                # 정상 종료 (SIGTERM)
+  $ lsof -i :3000                            # 확인 — 비었으면 OK
+  # 안 죽으면:
+  $ kill -9 8923                             # 강제 종료
+
+[2. CPU spike 프로세스 빠르게 추적]
+  # 상황: 팬이 갑자기 시끄러워지거나 시스템이 끊기게 느려질 때.
+  # macOS (-r = CPU 내림차순):
+  $ ps -Ao pid,user,%cpu,command -r | head -5
+    PID USER  %CPU COMMAND
+  82342 green 95.3 chrome --type=renderer --enable-...
+  47829 green 42.1 node /Users/green/proj/webpack-dev-server
+  47820 green 18.7 node /Users/green/proj/jest --watch
+   1023 root   8.2 /usr/sbin/spindump
+
+  # Linux (--sort -%cpu = CPU 내림차순):
+  $ ps -Ao pid,user,%cpu,command --sort -%cpu | head -5
+  # 동일 형식 출력. -r 대신 --sort -%cpu.
+
+  # 후속: 의심 PID 더 자세히 (시작 시간 + 메모리)
+  $ ps -p 82342 -o pid,user,%cpu,%mem,etime,command
+  # 또는 htop 띄우고 P (CPU 정렬) — F5 트리 뷰로 부모 chain 확인.
+  # 정상 동작이면 그대로, 폭주 중이면:
+  $ kill 82342                               # SIGTERM (정상 종료)
+
+[3. 메모리 누수 의심 프로세스 정리]
+  # 상황: free 메모리가 계속 줄거나 swap 사용이 시작될 때.
+  # macOS (-m = RSS 내림차순):
+  $ ps -Ao pid,user,%mem,rss,command -m | head -5
+    PID USER  %MEM     RSS COMMAND
+  41023 green 12.4 2031234 Discord Helper (Renderer)
+  82342 green  8.1 1326541 chrome --type=renderer ...
+  31002 green  5.2  852416 /Applications/Slack.app/Contents/...
+   1234 green  3.8  621304 node /Users/green/proj/server.js
+
+  # Linux (--sort -rss = RSS 내림차순):
+  $ ps -Ao pid,user,%mem,rss,command --sort -rss | head -5
+  # 동일 형식. -m 대신 --sort -rss.
+
+  # 후속: 의심 PID 정상 종료 시도 → 5-10초 대기 → 재확인
+  $ kill -15 41023                           # SIGTERM (정리 시간 부여)
+  $ ps -p 41023                              # 출력 없으면 종료 완료
+  # 안 죽으면 (drag-on cleanup):
+  $ kill -9 41023                            # SIGKILL (마지막 수단, lock dirty 위험)
+
+[4. 좀비/고아 프로세스 정리]
+  $ ps -Ao pid,ppid,stat,command | awk '$3 ~ /^Z/'   # 좀비 (Z 상태)
+  # 좀비는 직접 못 죽임. 부모(PPID) 를 죽이거나 reap 시켜야 함:
+  $ kill -CHLD <PPID>                        # 부모에게 자식 reap 요청
+  # 부모도 죽었으면 init(1)이 입양 후 정리
+
+[5. 부모 기준 자식 일괄 종료]
+  $ pgrep -P <PPID> -l                       # 자식 PID 확인
+  $ pkill -P <PPID>                          # 자식 일괄 SIGTERM
+  $ pkill -P <PPID> -9                       # 안 죽으면 SIGKILL
+
+[6. top COMMAND가 잘려서 정확한 이름을 모를 때]
+  # top 화면: "Slay the Spi" 처럼 잘림 → 풀 이름 모름
+  $ ps -Ao pid,command -r | head -20         # 풀 argv 확인
+  $ pgrep -fl "Slay the Spire"               # 매칭 확인
+  $ pkill -f "Slay the Spire"                # 풀 이름으로 종료
+
+[7. 특정 사용자 소유 프로세스 전부 정리 (logout 전)]
+  $ pgrep -U green -l                        # 확인 먼저
+  $ pkill -U green                           # 정상 종료
+  $ pkill -U green -9                        # 안 죽는 것만 강제
+
+[8. 데몬 설정 reload (재시작 없이)]
+  $ pkill -HUP nginx                         # nginx config reload
+  $ pkill -USR1 syslogd                      # syslog rotate
+
+Tip
+- 죽이기 전에 항상 pgrep -fl 또는 ps -p 로 매칭 확인. 잘못 죽이면 손실 위험.
+- -15 (SIGTERM) → 안 죽으면 -9 (SIGKILL) 순서. -9 먼저 쓰면 DB/파일 lock dirty.
+- lsof -i :PORT 는 매우 자주 쓰는 패턴 — alias 등록 고려 (process 도구는 alias 안 만들기로 합의했지만 본인 환경 자유).
+- 더 세밀한 옵션: cheat process/{pgrep,pkill,kill,ps,lsof,top,htop,btop}

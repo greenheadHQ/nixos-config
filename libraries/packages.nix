@@ -15,7 +15,9 @@
     pkgs.shellcheck # 쉘 스크립트 린터
 
     # TUI 도구
+    pkgs.btop # 프로세스 모니터 (그래프/디스크/네트워크 통합 TUI)
     pkgs.gum # TUI 컴포넌트 (wt 워크트리 관리)
+    pkgs.htop # 프로세스 모니터 (트리뷰/SSH 친화 TUI)
 
     # 미디어 도구
     pkgs.ffmpeg # 미디어 처리

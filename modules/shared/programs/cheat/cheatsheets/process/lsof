@@ -1,0 +1,48 @@
+---
+tags: [ lsof, process, port, file, network, personal ]
+---
+lsof — 열린 파일/소켓/포트를 누가 잡고 있는지 조회. "이 포트 누가 쓰지?" 의 표준 답.
+
+[포트/네트워크]
+  lsof -i :PORT              특정 포트를 점유한 프로세스
+                             $ lsof -i :3000
+                             COMMAND  PID USER ... NAME
+                             node    8923 green ... TCP *:3000 (LISTEN)
+
+  lsof -i tcp:PORT           TCP 한정
+                             $ lsof -i tcp:80
+
+  lsof -i udp:PORT           UDP 한정
+  lsof -i 4                  IPv4 소켓 전체
+  lsof -i 6                  IPv6 소켓 전체
+  lsof -iTCP -sTCP:LISTEN    LISTEN 상태 TCP 소켓만
+
+[프로세스 → 열린 파일]
+  lsof -p PID                특정 PID가 열어둔 파일/소켓 전체
+                             $ lsof -p 8923
+
+  lsof -p PID1,PID2          여러 PID
+
+  lsof -c COMMAND            이름 패턴으로 매칭 (부분일치)
+                             $ lsof -c ssh
+
+[파일 → 누가 잡고 있나]
+  lsof FILE                  특정 파일을 연 프로세스
+                             $ lsof /var/log/system.log
+
+  lsof +D DIR                디렉토리 하위 전체 (느릴 수 있음)
+
+[사용자/조합]
+  lsof -u green              특정 사용자 소유
+  lsof -u green -i :3000     green이 잡은 3000 포트만
+
+[삭제됐지만 열린 파일] (디스크 차지 누수)
+  lsof | grep '(deleted)'    rm 됐지만 process가 fd 잡고 있어 공간 점유
+
+Tip
+- "포트 X 누가 쓰지?" → lsof -i :X
+- "PID Y가 뭐 열고 있지?" → lsof -p Y
+- "log file이 안 줄어드네" → lsof | grep '(deleted)' (rotate 후 reopen 누락 의심)
+- 권한 부족 시 sudo lsof — 다른 사용자 프로세스/소켓도 조회.
+- 출력 첫 컬럼이 COMMAND (잘릴 수 있음) — PID로 ps -Ao command 재확인.
+- 시나리오 예시는 cheat process/scenarios 참고.

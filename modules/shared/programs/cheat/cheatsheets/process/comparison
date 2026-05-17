@@ -1,0 +1,37 @@
+---
+tags: [ comparison, process, top, htop, btop, activity-monitor, personal ]
+---
+top vs htop vs btop vs Activity Monitor — 언제 무엇을 쓰나.
+
+[비교표]
+  항목                  top         htop        btop        Activity Monitor
+  ----                  ---         ----        ----        ----------------
+  UI 종류               TUI         TUI         TUI         GUI (macOS only)
+  자원 사용             매우 가볍   가볍        보통        보통
+  CPU 코어별 그래프     X           X (막대만)  O (시간축)  O
+  Disk I/O              X           X           O           O
+  Network 트래픽        X           X           O           O
+  프로세스 트리         X           O (F5)      O (e)        제한적
+  컬럼 폭 조절          X           O (F2 setup) O (마우스)  X
+  검색/필터             기본 X      O (/)        O (f/)       O
+  마우스 조작           X           일부         적극 지원    O
+  원격 SSH 적합도       매우 좋음   매우 좋음   회선 좋을때  N/A (로컬만)
+  설치 필요             기본 탑재   별도 설치    별도 설치    macOS 기본
+  GPU 모니터링          X           X           제한적       O (Apple Silicon)
+
+[언제 무엇을 쓰나]
+  - 빠른 한 번 확인 (스냅샷)   → ps -Ao pid,%cpu,command -r | head -20
+  - 키보드 친화 + 트리 뷰      → htop  (디버깅에 강력)
+  - 시각 대시보드 + 디스크/넷  → btop  (로컬에서 모니터링 띄워두기)
+  - 어디든 깔려 있는 표준      → top   (낯선 서버, recovery shell)
+  - macOS GPU/에너지 자세히    → Activity Monitor (Apple Silicon CPU efficient/perf core)
+
+[조합 추천]
+  - 로컬 macOS: btop 평소 + htop (디버깅용) + Activity Monitor (GPU/에너지)
+  - 원격 NixOS (SSH): htop 위주 + top 백업
+  - 스크립트 자동화: ps -Ao ... + pgrep/pkill (cheat process/ps · pgrep)
+
+Tip
+- top의 두 불편함 (컬럼 잘림 + 1초 갱신 흔들림) 은 htop/btop이 해소.
+- Activity Monitor는 macOS GUI 전용 — 원격 SSH에서 못 씀.
+- 자세한 키맵: cheat process/{top,htop,btop}

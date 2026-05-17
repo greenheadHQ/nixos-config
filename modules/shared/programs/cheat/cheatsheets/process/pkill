@@ -1,0 +1,40 @@
+---
+tags: [ pkill, process, signal, kill, personal ]
+---
+pkill — 이름/속성 매칭으로 시그널 전송. pgrep과 동일 매처 + 시그널 인자.
+
+[기본 사용]
+  pkill PATTERN              이름 부분일치에 SIGTERM (-15) 전송
+                             $ pkill node
+                             (matching 프로세스 모두 종료)
+
+  pkill -x EXACT             이름 정확히 일치만
+                             $ pkill -x ssh
+
+  pkill -f PATTERN           풀 커맨드라인 매칭 (안전한 정밀 종료)
+                             $ pkill -f "Slay the Spire"
+
+[시그널 지정]
+  pkill -9 PATTERN           SIGKILL — 강제 종료 (정리 못 함)
+  pkill -15 PATTERN          SIGTERM — 정상 종료 요청 (default, 생략 가능)
+  pkill -HUP PATTERN         SIGHUP — 설정 reload 관례
+  pkill -USR1 PATTERN        SIGUSR1 — 앱 정의 시그널
+
+[속성 필터] (pgrep과 동일)
+  pkill -U green PATTERN     특정 사용자 소유만
+  pkill -P 1234 PATTERN      특정 PPID 자식만
+  pkill -g 5678 PATTERN      특정 PGID 그룹만
+
+[안전 패턴]
+  pgrep -fl PATTERN          죽이기 전에 먼저 매칭 확인
+  pkill -f -e PATTERN        echo (Linux 전용) — 죽인 PID 출력
+  pkill -INT PATTERN         SIGINT — Ctrl-C 시뮬레이션 (정상 인터럽트)
+  pkill -0 PATTERN           시그널 안 보내고 존재 확인만 (exit code)
+
+Tip
+- 먼저 -15 (SIGTERM)로 정상 종료 시도, 그래도 안 죽으면 -9 (SIGKILL).
+- -9는 시그널 trap 무시 — DB/파일 lock이 dirty 상태로 남을 수 있음.
+- top 화면의 COMMAND가 잘렸으면 pkill -f "<풀 이름>" 으로 정밀 종료.
+- -f 패턴은 자기 자신(pkill 프로세스)도 매칭할 수 있으니 주의.
+- 시그널 종류는 cheat process/kill 참고.
+- 시나리오 예시는 cheat process/scenarios 참고.

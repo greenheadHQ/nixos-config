@@ -1,0 +1,49 @@
+---
+tags: [ pgrep, process, search, personal ]
+---
+pgrep — 이름/속성으로 PID 검색. 출력은 PID(들). top/htop의 시각 의존 없이 정확한 매칭.
+
+[기본 매칭]
+  pgrep PATTERN              이름 부분일치 (정규식)
+                             $ pgrep ssh
+                             451
+                             8923
+
+  pgrep -x EXACT             이름 정확히 일치
+                             $ pgrep -x ssh
+                             451
+
+  pgrep -l PATTERN           PID + 이름 표시
+                             $ pgrep -l ssh
+                             451 sshd
+                             8923 ssh
+
+  pgrep -a PATTERN           PID + 풀 커맨드라인 표시 (Linux 전용)
+                             $ pgrep -a ssh
+                             451 /usr/sbin/sshd -D
+
+[풀 커맨드라인 매칭]
+  pgrep -f PATTERN           argv 전체에 매칭 (top COMMAND가 잘릴 때)
+                             $ pgrep -f "Google Chrome Helper"
+                             47823
+
+[속성 필터]
+  pgrep -U UID|user          소유 UID/사용자
+                             $ pgrep -U green -l
+                             8923 ssh
+
+  pgrep -P PPID              부모 PID
+                             $ pgrep -P 1 -l         # init 직계 자식
+                             451 sshd
+                             520 launchd
+
+  pgrep -g PGID              프로세스 그룹 ID
+
+[조합]
+  pgrep -fU green "Chrome"   green 소유 + Chrome 풀 커맨드라인 매칭
+
+Tip
+- 결과를 죽이려면 pgrep 대신 pkill을 직접 쓴다 (cheat process/pkill).
+- top 화면의 COMMAND 컬럼은 잘려 있으니 `pgrep -f` 또는 `ps -Ao command` 로 풀 이름 확인.
+- 매칭 0건이면 exit code 1 — 스크립트에서 `if pgrep -x foo; then ...` 패턴 활용.
+- macOS BSD pgrep와 Linux procps-ng pgrep 옵션은 거의 동일 (-a만 Linux 전용).

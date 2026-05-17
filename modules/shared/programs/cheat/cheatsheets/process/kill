@@ -1,0 +1,43 @@
+---
+tags: [ kill, signal, process, personal ]
+---
+kill — PID 또는 그룹에 시그널 전송. pgrep/pkill과 달리 매칭 없이 직접 PID 지정.
+
+[기본 사용]
+  kill PID                   SIGTERM (-15) 전송 (정상 종료 요청)
+                             $ kill 12345
+
+  kill -9 PID                SIGKILL — 강제 즉시 종료 (정리 못 함)
+                             $ kill -9 12345
+
+  kill -PID                  PID가 음수면 process group 전체에 시그널
+                             $ kill -12345           # PGID 12345 전체
+
+  kill -l                    시그널 목록 표시
+                             $ kill -l
+                             HUP INT QUIT ILL TRAP ABRT EMT FPE ...
+
+[자주 쓰는 시그널]
+  -1  / -HUP                 SIGHUP   — 터미널 종료 / 설정 reload 관례
+  -2  / -INT                 SIGINT   — Ctrl-C 인터럽트 (정상)
+  -3  / -QUIT                SIGQUIT  — Ctrl-\ (코어 덤프)
+  -9  / -KILL                SIGKILL  — 강제 즉시 종료 (trap 불가)
+  -15 / -TERM                SIGTERM  — 정상 종료 요청 (default)
+  -30 / -USR1                SIGUSR1  — 앱 정의 시그널 1
+  -31 / -USR2                SIGUSR2  — 앱 정의 시그널 2
+
+[시그널 동작 비교]
+  -15 (SIGTERM)              앱이 정리 로직 실행 후 종료 (DB flush, lock 해제 등)
+  -9  (SIGKILL)              커널이 즉시 process 회수 — 앱 정리 못 함
+                             → DB/파일 lock dirty 상태 잔존 위험
+  -1  (SIGHUP)               많은 데몬이 설정 재로드 (nginx -s reload 대신)
+
+[관련]
+  killall NAME               이름으로 종료 (macOS와 Linux 동작 약간 다름)
+  pkill PATTERN              패턴/속성 매칭 + 시그널 (cheat process/pkill)
+
+Tip
+- 먼저 -15로 시도하고, 응답 없을 때만 -9. dirty shutdown 방지.
+- PID는 top/htop/btop/ps/pgrep 으로 먼저 확인.
+- 음수 PID는 process group 전체 — 자식 process 까지 같이 잡고 싶을 때.
+- 시그널 이름은 SIG 접두어 생략 가능 (TERM == SIGTERM).

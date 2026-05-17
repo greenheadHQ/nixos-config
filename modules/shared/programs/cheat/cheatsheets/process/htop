@@ -1,0 +1,41 @@
+---
+tags: [ htop, process, monitor, tui, personal ]
+---
+htop — TUI 프로세스 모니터 (트리뷰/SSH 친화). macOS BSD top의 컬럼 잘림/순서 흔들림을 대체.
+
+[기본 단축키]
+  ↑/↓ k/j         프로세스 선택 이동
+  Space           선택 토글 (멀티 선택)
+  U               선택 해제 전체
+  /               증분 검색 (프로세스명)
+  \               필터 (matching만 표시, ESC 해제)
+
+[정렬]
+  P               %CPU 정렬
+  M               %MEM 정렬
+  T               TIME+ 정렬
+  F6              정렬 키 선택 (목록에서)
+  I               정렬 방향 토글 (오름/내림)
+
+[보기 전환]
+  t / F5          트리 뷰 토글 (부모-자식 관계)
+  H               유저 thread 숨김 토글
+  K               커널 thread 숨김 토글
+  Space (헤더에)  실시간 일시정지
+
+[프로세스 조작]
+  k / F9          시그널 보내기 (kill 메뉴)
+  Renice (F7/F8)  우선순위 - / +
+  s               strace attach (Linux 전용)
+  l               열린 파일 보기 (lsof, Linux 전용)
+
+[설정]
+  F2              Setup (컬럼/색 변경, 영구 저장)
+  F10 / q         종료
+
+Tip
+- macOS top의 두 불편함(컬럼 잘림 + 1초 갱신 흔들림)을 한 번에 해소.
+- 트리 뷰(F5)는 디버깅에 강력 — 부모 PID와 자식 chain 한눈에.
+- SSH 너머에서도 가볍게 동작. 회선 느릴 땐 화면 갱신만 살짝 답답.
+- 컬럼 폭/색/표시 항목 변경은 F2 Setup → 저장 시 ~/.config/htop/htoprc.
+- 자세한 비교: cheat process/comparison

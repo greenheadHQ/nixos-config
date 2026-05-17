@@ -69,7 +69,6 @@
     vim
     git
     curl
-    htop
     nvd
   ];
 

@@ -1,0 +1,58 @@
+---
+tags: [ ps, process, list, personal ]
+---
+ps — 프로세스 스냅샷. top/htop과 달리 정적 출력이라 순서 안 바뀜. macOS BSD와 Linux procps 옵션 일부 다름 — 아래 섹션 분리.
+
+[양 플랫폼 공통]
+  ps aux                     모든 프로세스 (BSD 스타일, user-친화)
+                             $ ps aux | head -3
+                             USER  PID %CPU %MEM ... COMMAND
+                             root    1  0.0  0.1 ... /sbin/launchd
+
+  ps -ef                     모든 프로세스 (System V 스타일, PPID 포함)
+                             $ ps -ef | head -3
+                             UID  PID PPID ... CMD
+
+  ps -p PID                  특정 PID만
+                             $ ps -p 1234
+
+  ps -Ao FIELDS              필드 커스텀 출력 (양 플랫폼 동일)
+                             $ ps -Ao pid,user,%cpu,%mem,comm
+                             $ ps -Ao pid,user,command
+
+  comm vs command            comm = 짧은 이름 (잘림 가능)
+                             command = 풀 argv (잘림 없음, top COMMAND 잘림 우회용)
+
+[macOS BSD]
+  ps -r                      CPU% 내림차순 정렬
+                             $ ps -Ao pid,%cpu,command -r | head -10
+
+  ps -m                      메모리(RSS) 내림차순 정렬
+                             $ ps -Ao pid,%mem,command -m | head -10
+
+  ps -U green                특정 사용자 소유만
+  ps -t ttys001              특정 tty만
+
+[Linux procps-ng]
+  ps --sort -%cpu            CPU% 내림차순 (- 접두 = 내림)
+                             $ ps -Ao pid,%cpu,command --sort -%cpu | head -10
+
+  ps --sort -rss             메모리 RSS 내림차순
+                             $ ps -Ao pid,rss,command --sort -rss | head -10
+
+  ps --sort -size            VSZ 기준 (rss vs size 의미 다름)
+
+  ps -U green                특정 사용자 (양 플랫폼 동일)
+  ps -t tty1                 특정 tty (양 플랫폼 동일)
+
+[자주 쓰는 조합]
+  ps -Ao pid,user,%cpu,%mem,command -r | head -10     # macOS CPU 상위 10
+  ps -Ao pid,user,%cpu,%mem,command --sort -%cpu | head -10  # Linux 동일
+  ps -ef --forest                                      # Linux 트리 뷰
+  ps axjf                                              # macOS/BSD 트리 비슷한 효과
+
+Tip
+- top의 COMMAND 컬럼 잘림 우회: ps -Ao pid,%cpu,command -r | head
+- BSD/SysV 스타일 옵션을 섞어도 인식됨 (`ps aux` BSD, `ps -ef` SysV).
+- 정적 스냅샷이라 매 실행 결과가 다름. `watch -n 2 'ps ...'` 로 갱신 가능 (Linux watch).
+- macOS는 `man ps` 의 "KEYWORDS" 섹션에서 사용 가능한 -o 필드 전체 목록 확인.

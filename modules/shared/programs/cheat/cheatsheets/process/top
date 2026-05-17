@@ -1,0 +1,69 @@
+---
+tags: [ top, process, monitor, bsd, procps, personal ]
+---
+top — 시스템 표준 프로세스 모니터. macOS BSD와 Linux procps-ng는 옵션 의미가 다름. 컬럼 잘림/순서 흔들림은 htop/btop이 더 편하지만 어디든 깔려 있는 강점.
+
+[macOS BSD]
+  top                        대화형 모드 (q로 종료)
+  top -l 1                   logging 모드 — 한 번 출력 후 종료 (스냅샷)
+  top -l 2 -s 1 | tail -n +N 첫 샘플은 CPU% 부정확 → 두 번째 샘플만 활용
+
+  top -s SECONDS             갱신 주기 (기본 1초)
+                             $ top -s 5
+
+  top -o KEY                 정렬 키 (내림차순 default)
+                             $ top -o cpu
+                             $ top -o mem
+                             $ top -o pid
+                             $ top -o -cpu              # + 또는 - 로 방향 명시
+
+  top -n NPROCS              상위 N개 프로세스만
+                             $ top -l 1 -o cpu -n 20
+
+  top -pid PID               특정 PID만 추적
+                             $ top -pid 1234
+
+  top -user green            특정 사용자 소유만
+  top -U green               동의어
+
+[Linux procps-ng]                  # NixOS / 대부분 Linux 배포판
+  top                        대화형 모드 (q로 종료)
+  top -b                     batch 모드 (출력 후 종료 형태로 사용)
+  top -n N                   N회 갱신 후 종료 (batch 조합)
+                             $ top -bn 1                # 한 번 찍고 종료
+
+  top -d SECONDS             갱신 주기 (delay) — macOS의 -s와 같은 의미
+                             $ top -d 5
+
+  top -o KEY                 정렬 키 (macOS와 같음)
+                             $ top -o %CPU
+                             $ top -o RES
+
+  top -p PID                 특정 PID만 (macOS는 -pid)
+                             $ top -p 1234,5678         # 여러 PID 콤마 구분
+
+  top -u USER                특정 사용자 (소문자 — macOS와 다름)
+  top -U USER                대문자 — 효과는 user filter
+
+[양 플랫폼 차이 한눈에]
+  의미              macOS BSD       Linux procps-ng
+  ----              ---------       ---------------
+  스냅샷/배치       -l N            -bn N
+  갱신 주기         -s SEC          -d SEC
+  상위 N개          -n N            (정렬 후 head로 잘라 사용)
+  PID 필터          -pid PID        -p PID
+  사용자 필터       -user|-U        -u|-U USER
+
+[macOS top 대화형 키]
+  q                  종료
+  Space              일시정지 (다시 누르면 재개)
+  o                  정렬 키 변경 (cpu/mem/pid)
+  s                  갱신 주기 변경
+
+Tip
+- macOS BSD top 첫 샘플은 CPU% 부정확 — `man 1 top` 명시:
+    "the first sample displayed will have an invalid %CPU"
+  스냅샷이 필요하면 -l 2로 두 번 찍고 두 번째 결과만 사용.
+- COMMAND 컬럼이 잘려서 보여도 매칭/종료는 풀 이름 기준:
+  pgrep -f "<풀 이름>" 또는 ps -Ao command 로 확인.
+- 컬럼 폭/표시 항목 조절은 BSD top에 없음 → htop/btop이 더 편함 (cheat process/comparison).
