@@ -170,12 +170,12 @@ marker 관리는 전적으로 Stop hook의 책임이다 — SessionStart hook은
 4. 아이콘 순서/라인 변경 불가: 순서와 라인 배치는 `statusline.sh`에 하드코딩
    - L1 (link icons 그룹): Jira → Slack → Figma → Memo. 조건부 라인 (모두 미설정 시 라인 자체 생략)
    - L2 (context 라인):
-     - 비-git cwd: cwd (📁) + session-id (🆔). branch 항목 자동 생략
-     - git 메인 repo: cwd (📁) + branch (🌿) + session-id (🆔)
+     - 비-git cwd: cwd (📁) 단독
+     - git 메인 repo: cwd (📁) + branch (🌿)
      - git 워크트리: cwd (📁) 단독
-   - L3 (워크트리만): branch (🌿) + session-id (🆔)
+   - L3 (워크트리만): branch (🌿)
    - L_M (heavy state 그룹): Plan (📝) → Memory (🧠) → Cache TTL (⏱). Memo는 L1으로 이동, Plan/Memory는 L_M 유지
-   - L_N: 5h/7d Rate Limits
+   - L_N: 5h/7d Rate Limits (SSH 분기는 vertical bracket `▏…▕` 게이지로 압축)
 5. SessionStart hook 동작 (source별):
    - 지원 source는 `startup`, `clear`, `resume`, `compact` 네 가지. 그 외 source는 hook이 즉시 `exit 0`로 skip한다 (sidecar/memo는 생성하지 않음).
    - startup: STATE_FILE이 부재하면 빈 객체 `{}`로 시작. 동일 sid로 startup이 재발화되면 STATE_FILE을 보존(아이콘 유실 방지). cwd 마커는 startup이 건드리지 않는다 (관리 책임은 Stop hook).

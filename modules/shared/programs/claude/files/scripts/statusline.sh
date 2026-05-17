@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Claude Code custom statusline
-#   plan 파일, status icons, cwd/branch/session-id, Cache TTL, rate limits 출력
+#   plan 파일, status icons, cwd/branch, Cache TTL, rate limits 출력
 #   stdin으로 JSON 세션 데이터를 받아 statusbar 내용을 stdout으로 출력
 #
 # 라인 구조 (3-way 분기):
 #   L1: /set-icons (Jira/Slack/Figma/Memo) — 조건부, 미설정 시 라인 생략
 #   L2:
-#     - 비-git cwd: cwd + session-id (branch 생략)
-#     - git main repo: cwd + branch + session-id
+#     - 비-git cwd: cwd 단독
+#     - git main repo: cwd + branch
 #     - git worktree: cwd 단독
-#   L3 (worktree만): branch + session-id
+#   L3 (worktree만): branch
 #   L_M: Plan/Memory/Cache TTL + hit%
-#   L_N: Rate Limits (5h/7d)
+#   L_N: Rate Limits (5h/7d) — SSH 분기는 vertical glyph + bracket으로 압축
 
 input=$(cat)
 
@@ -195,9 +195,6 @@ fi
 if ! validate_session_id "$SESSION_ID"; then
   SESSION_ID=""
 fi
-
-SESSION_ID_SHORT=""
-[ -n "$SESSION_ID" ] && SESSION_ID_SHORT="${SESSION_ID:0:8}"
 
 # ============================================================
 # Section 3: HEAVY cache setup (D-15: CACHED_CWD invalidate)
@@ -505,23 +502,23 @@ fi
 # === Change Intent Record ===
 # v1 (초기): `stty size </dev/tty` → terminfo 80 fallback. controlling tty가
 #    있는 환경에서는 정상 동작.
-# v5 (이번): Claude Code v2.1.139부터 hook/statusline 자식에서 controlling tty가
-#    제거되어 stty가 항상 실패. RATE_DETAIL과 session-id display가 항상 가장
-#    좁은 fallback으로 떨어지는 회귀 발생. 폭 측정을 raw cols resolver
-#    `resolve_raw_terminal_cols`로 위임하여 5단계 chain으로 회복한다:
+# v5: Claude Code v2.1.139부터 hook/statusline 자식에서 controlling tty가
+#    제거되어 stty가 항상 실패. RATE_DETAIL이 항상 가장 좁은 fallback으로 떨어지는
+#    회귀 발생. 폭 측정을 raw cols resolver `resolve_raw_terminal_cols`로 위임하여
+#    5단계 chain으로 회복한다:
 #      (1) CLAUDE_STATUSLINE_COLUMNS env (사용자 명시 override, 항상 우선)
 #      (2) stdin .terminal.columns (forward-compat for upstream columns 요청 이슈)
 #      (3) $COLUMNS env (interactive parent shell이 export 한 경우)
 #      (4) stty size </dev/tty (pre-2.1.139 compatibility branch — v2.1.139+에서
 #          항상 실패하지만 1회 fork 비용 미미. 사용자 명시 결정으로 유지.)
-#      (5) 정적 기본값 140 cols (EFF_COLS=100 → detail=4 + full UUID 보장)
+#      (5) 정적 기본값 140 cols (EFF_COLS=100 → detail=4 보장)
 #    함수는 raw cols만 반환한다. EFF_COLS 보정 (`COLS - 40`)은 호출자 책임이며
 #    아래 산식 그대로 유지한다.
 #    상세 결정 근거는 .claude/plans/statusline-width-fallback.md 참조.
 resolve_raw_terminal_cols() {
-  # raw cols default → EFF_COLS=COLS-40=100 → detail=4 임계값(EFF_COLS>=88) 통과
-  #   + session-id full UUID 임계값(EFF_COLS>=100) 도달. 기본값을 조정할 때
-  #   docs/임계값 매트릭스와 bats assertion 메시지도 함께 갱신한다.
+  # raw cols default → EFF_COLS=COLS-40=100 → detail=4 임계값(EFF_COLS>=88) 통과.
+  #   기본값을 조정할 때 docs/임계값 매트릭스와 bats assertion 메시지도 함께
+  #   갱신한다.
   local DEFAULT_RAW_COLS=140
   local v
   # decimal-only 가드: `0140` 같은 leading-zero 입력은 호출부의 `$((COLS - 40))`
@@ -574,16 +571,6 @@ else
   EFF_COLS=$((COLS - 40))
 fi
 
-# session-id display: EFF_COLS >= 100 ? full : short
-SESSION_ID_DISPLAY=""
-if [ -n "$SESSION_ID" ]; then
-  if [ "$EFF_COLS" -ge 100 ] 2>/dev/null; then
-    SESSION_ID_DISPLAY="$SESSION_ID"
-  else
-    SESSION_ID_DISPLAY="$SESSION_ID_SHORT"
-  fi
-fi
-
 # cwd canonical 검증 + display + URL
 # D-4 update: 워크트리일 때 display는 `<메인 repo ~ 단축>:<worktree 폴더명>` 형식
 #   (사용자 요청 — 풀 경로는 너무 길어 잘림). URL은 항상 canonical 풀 path (VSCode 정확 dispatch)
@@ -608,13 +595,6 @@ else
   # 검증 실패: 텍스트만 표시. control 문자가 들어와 fallback으로 escape 주입되는 것 방지
   CWD_DISPLAY=$(sanitize_display_text "$(tilde_shorten "$CWD")")
   CWD_URL=""
-fi
-
-# session-id URL: transcript valid + SSH 아닐 때만
-SESSION_URL=""
-if [ -n "$SESSION_ID_DISPLAY" ] && $TRANSCRIPT_VALID && ! $IS_SSH; then
-  SESSION_URL_PATH=$(percent_encode_segment "$CANONICAL_TRANSCRIPT_DIR")
-  SESSION_URL="file://${SESSION_URL_PATH}"
 fi
 
 # ============================================================
@@ -712,6 +692,46 @@ format_remaining() {
   fi
 }
 
+# SSH gauge core glyphs: 9단계 vertical block (U+2581-2588).
+# idx 0 = empty (출력은 literal " "로 치환), 1..8 = ▁..█.
+SSH_BAR_GLYPHS=("" "▁" "▂" "▃" "▄" "▅" "▆" "▇" "█")
+
+# 비-SSH: 10칸 horizontal bar (filled █ + empty ░). pct>0인데 filled=0이면
+# 시각적으로 0%와 구별되도록 floor 보정해 minimum 1칸을 채운다.
+_render_rate_bar_horizontal() {
+  local pct=$1 color=$2
+  local filled=$((pct / 10)) empty
+  [ "$pct" -gt 0 ] 2>/dev/null && [ "$filled" -eq 0 ] && filled=1
+  empty=$((10 - filled))
+  local i bar_filled="" bar_empty=""
+  for ((i=0; i<filled; i++)); do bar_filled+="█"; done
+  for ((i=0; i<empty; i++)); do bar_empty+="░"; done
+  printf '%b%s%b%s%b ' "\e[${color}m" "$bar_filled" "\e[${MUTED}m" "$bar_empty" "\e[0m"
+}
+
+# SSH: 좁은 폭(default 140 → EFF_COLS=100)에서 5h/7d 두 윈도우가 한 줄에 들어가도록
+# 3 cell로 압축한 vertical 게이지. ▏▕ thinnest vertical bracket — SSH gauge container.
+# 산식: idx = (pct==0)?0 : ((pct-1)*8/100 + 1). naive pct*8/100는 pct=1~12에서
+# idx=0으로 떨어져 0%와 시각 구별이 불가능해진다. boundary 보정으로 1% 이상은
+# 항상 idx>=1을 보장하고 idx<=8로 cap한다.
+_render_rate_bar_ssh_vertical() {
+  local pct=$1 color=$2
+  local idx
+  if [ "$pct" -eq 0 ] 2>/dev/null; then
+    idx=0
+  else
+    idx=$(((pct - 1) * 8 / 100 + 1))
+    [ "$idx" -gt 8 ] 2>/dev/null && idx=8
+  fi
+  local core
+  if [ "$idx" -eq 0 ]; then
+    core=" "
+  else
+    core="${SSH_BAR_GLYPHS[$idx]}"
+  fi
+  printf '%b▏%b%s%b▕%b ' "\e[${MUTED}m" "\e[${color}m" "$core" "\e[${MUTED}m" "\e[0m"
+}
+
 render_rate_window() {
   local pct=${1:-0} window=$2 resets_at=$3 now=$4 detail=${5:-4}
   pct=${pct%%.*}
@@ -722,13 +742,11 @@ render_rate_window() {
   color=$(rate_color "$pct")
 
   if [ "$detail" -ge 2 ]; then
-    local filled=$((pct / 10)) empty
-    [ "$pct" -gt 0 ] 2>/dev/null && [ "$filled" -eq 0 ] && filled=1
-    empty=$((10 - filled))
-    local i bar_filled="" bar_empty=""
-    for ((i=0; i<filled; i++)); do bar_filled+="█"; done
-    for ((i=0; i<empty; i++)); do bar_empty+="░"; done
-    printf '%b%s%b%s%b ' "\e[${color}m" "$bar_filled" "\e[${MUTED}m" "$bar_empty" "\e[0m"
+    if $IS_SSH; then
+      _render_rate_bar_ssh_vertical "$pct" "$color"
+    else
+      _render_rate_bar_horizontal "$pct" "$color"
+    fi
   fi
 
   printf '%b%s%b %s' "\e[${color}m" "${pct}%" "\e[0m" "$window"
@@ -770,7 +788,7 @@ if [ -n "$MEMO_PATH" ] && [ -f "$MEMO_PATH" ]; then
 fi
 end_line
 
-# L2: cwd + (워크트리가 아니면 branch + session-id 같은 라인)
+# L2: cwd + (워크트리가 아니면 같은 라인에 branch)
 begin_line
 if [ -n "$CWD_DISPLAY" ]; then
   # cwd 아이콘: 📁 (folder)
@@ -781,21 +799,14 @@ if ! $IS_WORKTREE; then
     # branch 아이콘: 🌿 (no link)
     print_icon "32" "" "\xf0\x9f\x8c\xbf" "$GIT_BRANCH"
   fi
-  if [ -n "$SESSION_ID_DISPLAY" ]; then
-    # session-id 아이콘: 🆔
-    print_icon "34" "$SESSION_URL" "\xf0\x9f\x86\x94" "$SESSION_ID_DISPLAY"
-  fi
 fi
 end_line
 
-# L3 (worktree만): branch + session-id
+# L3 (worktree만): branch
 if $IS_WORKTREE; then
   begin_line
   if [ -n "$GIT_BRANCH" ]; then
     print_icon "32" "" "\xf0\x9f\x8c\xbf" "$GIT_BRANCH"
-  fi
-  if [ -n "$SESSION_ID_DISPLAY" ]; then
-    print_icon "34" "$SESSION_URL" "\xf0\x9f\x86\x94" "$SESSION_ID_DISPLAY"
   fi
   end_line
 fi
