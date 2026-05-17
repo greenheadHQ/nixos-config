@@ -6,9 +6,27 @@
 ## 템플릿
 
 ````markdown
-## Summary (필수)
+## 🟢 TL;DR — 쉬운 말로
 
-[1-2 문장으로 무엇을 왜 해야 하는지 요약. 체크리스트 A1: '무슨 문제 / 누가 / 현재 증상 / 기대 결과']
+[첫 5줄 안에 1문장으로: 무슨 문제 / 누가 겪는지 / 현재 증상 / 기대 결과 — 체크리스트 A1 슬롯 보존. 기술 용어는 유지하되 문장 호흡을 짧게.]
+
+[아래 4 sub-section은 선택 scaffold — 이슈 종류에 따라 변형/추가/생략 자유. 작은 이슈는 1-2문단으로 압축 가능.]
+
+### 문제
+
+[무엇이 안 돼서 이 이슈가 필요한지]
+
+### 해결 (또는 결정/실증/결과)
+
+[어떻게 해결할지, 또는 어떤 결정인지. 채택하지 않기로 한 결정이나 부분 채택 결정은 "결정"으로 변형 가능]
+
+### 결과물
+
+[어떤 파일에 어떤 변화가 적용되는지, 또는 어떤 산출물이 만들어지는지]
+
+### 검증 (선택)
+
+[실증 데이터, PoC, 측정값이 있다면]
 
 ## Context (필수)
 
@@ -64,11 +82,6 @@
 
 ## 섹션별 작성 가이드
 
-### Summary (필수)
-- 길이: 1-2 문장
-- 포함: what + why
-- 예시: "NixOS 호스트 2대 이상 추가 시 constants.nix의 IP/포트 구조와 eval-tests의 하드코딩된 호스트 참조를 리팩토링해야 한다. 현재는 1대 전용 설계라 확장 시 대규모 수정 필요."
-
 ### Context (필수)
 - 현 상태 → 문제점 → 필요성 순으로 서술
 - 관련 커밋이나 이전 결정이 있으면 참조
@@ -115,10 +128,20 @@
 > 가상 예시 주의: 아래는 템플릿 작성 형식 예시이며, 실제 repo 상태와 시점에 따라 불일치할 수 있다 (예: `darwinConfigurations` 평가는 이미 `tests/eval-tests.nix`에 존재). line 번호는 작성 시점 기준으로 실측 반영한다.
 
 ```markdown
-## Summary
+## 🟢 TL;DR — 쉬운 말로
 
-Darwin(macOS) 설정에 대한 eval-test를 추가하여 macOS 설정 회귀를 pre-commit에서 자동 감지한다.
-현재 eval-tests.nix는 NixOS config만 검증하며, Darwin은 `nix flake check`의 평가 가능 여부만 확인한다.
+### 문제
+
+현재 `tests/eval-tests.nix`는 NixOS config만 평가하고, Darwin(macOS) 설정은 `nix flake check`의 "평가 가능 여부"만 확인한다. Dock 설정, 키보드 단축키, Touch ID sudo 같이 회귀 가치 있는 macOS 설정이 회귀해도 pre-commit에서 자동으로 잡히지 않는다.
+
+### 해결
+
+Darwin config에도 eval-test를 추가해 macOS 설정 회귀를 pre-commit에서 자동 감지한다. 기존 `eval-tests.nix`에 `darwinCfg` 변수를 추가하고 Touch ID sudo / Dock / 키보드 설정에 대한 검증 테스트를 작성한다.
+
+### 결과물
+
+- `tests/eval-tests.nix` — Darwin config 평가 블록 추가
+- `lefthook.yml` — 변경 불필요 (기존 eval-tests 커맨드 재사용)
 
 ## Context
 
