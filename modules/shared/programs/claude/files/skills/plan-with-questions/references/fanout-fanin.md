@@ -40,6 +40,10 @@ Codex 세션 fan-out delegation 거부 처리: Codex 세션에서 `spawn_agent` 
 
 ## fan-in 통합 전략
 
+worker 산출물 lifecycle 처리(머지 vs 보존 + cleanup): Claude Code/headless의 `codex exec` 경로에서 `$FO_DIR/agent-N-result.md` 파일 처리는 [`/codex-fan-out` SKILL.md의 fan-in 표준 절차](../../codex-fan-out/SKILL.md#fan-in-표준-절차)를 따른다(머지 분기 default). Direct Codex native subagent 결과는 위 [런타임 분기](#런타임-분기)의 hardening contract 경로를 따른다.
+
+아래 5 카테고리는 `plan-with-questions` 호출자가 런타임과 무관하게 적용하는 자체 통합 전략이다(`codex exec` 머지 분기든 Direct Codex 경로든 동일 적용 — `codex-fan-out`의 fan-in 표준 절차는 lifecycle 처리에만 한정되고 카테고리 분류를 대체하지 않는다).
+
 에이전트 결과를 카테고리별로 분류하여 통합한다:
 
 1. 코드 패턴: 코드베이스에서 발견한 관련 패턴, 기존 구현.
