@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
 # pinning-guard.sh — Codex PreToolUse hard-fail guard.
+# 패턴 SSOT: modules/shared/programs/claude/files/lib/pinning-patterns.sh.
+# 공통 helper SSOT: modules/shared/programs/claude/files/lib/hook-runtime.sh.
+# 정책: PreToolUse fail-closed — lib 누락 시 deny JSON 반환 (보안 경계 유지).
 set -euo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+_deny_with_reason() {
+  local reason="$1"
+  jq -n --arg reason "$reason" \
+    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
+  exit 0
+}
+
+# tool_name 사전 분기 — 비대상 tool 은 lib bootstrap 비용 없이 즉시 종료한다.
+# 이 순서는 fail-closed 경계의 영향 범위를 pinning 검사 대상 tool 로 한정한다.
 INPUT=$(cat)
 TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || exit 0
 
@@ -12,20 +24,23 @@ case "$TOOL_NAME" in
   *) exit 0 ;;
 esac
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PINNING_LIB="${PINNING_PATTERNS_LIB:-$HOME/.codex/lib/pinning-patterns.sh}"
-if [ ! -f "$PINNING_LIB" ]; then
-  PINNING_LIB="$SCRIPT_DIR/../../../claude/files/lib/pinning-patterns.sh"
+# Bootstrap: hook-runtime.sh source. 미발견 시 fail-closed (deny).
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.codex/lib/hook-runtime.sh}"
+if [ ! -f "$HOOK_RUNTIME_LIB" ]; then
+  _deny_with_reason "[pinning-guard] shared pinning policy library is missing: hook-runtime.sh ($HOOK_RUNTIME_LIB). HOOK_RUNTIME_LIB env var 또는 ~/.codex/lib/ 설치 필요."
 fi
-if [ ! -f "$PINNING_LIB" ]; then
-  jq -n --arg reason "[pinning-guard] shared pinning policy library is missing: $PINNING_LIB" \
-    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
-  exit 0
+# shellcheck source=../../../claude/files/lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
+# pinning-patterns.sh 로드. 미발견 시 fail-closed (deny).
+PINNING_LIB=$(hook_load_lib PINNING_PATTERNS_LIB "$HOME/.codex/lib" pinning-patterns.sh) || PINNING_LIB=""
+if [ -z "$PINNING_LIB" ]; then
+  _deny_with_reason "[pinning-guard] shared pinning policy library is missing: pinning-patterns.sh. PINNING_PATTERNS_LIB env var 또는 ~/.codex/lib/pinning-patterns.sh 설치 필요."
 fi
 # shellcheck source=../../../claude/files/lib/pinning-patterns.sh
 . "$PINNING_LIB"
 
-SCAN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pinning-guard-XXXXXX") || exit 0
+SCAN_DIR=$(hook_init_scan_dir pinning-guard) || _deny_with_reason "[pinning-guard] failed to initialize scan workspace; denying by fail-closed policy."
 trap 'rm -rf "$SCAN_DIR"' EXIT
 
 _deny() {
@@ -33,9 +48,7 @@ _deny() {
   local reason
   reason=$(printf '[pinning-guard] %s on %s contains volatile review/session metadata:%b\nUse stable identifiers or plain natural-language context before retrying.' \
     "$surface" "$target" "$findings")
-  jq -n --arg reason "$reason" \
-    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
-  exit 0
+  _deny_with_reason "$reason"
 }
 
 _targeted_bash_command() {

@@ -172,6 +172,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/pinning-patterns.sh";
     ".claude/lib/session-state.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/session-state.sh";
+    ".claude/lib/hook-runtime.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/hook-runtime.sh";
     # Cache TTL tracking hooks
     ".claude/hooks/record-last-stop.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-last-stop.sh";

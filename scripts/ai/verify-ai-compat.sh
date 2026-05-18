@@ -1412,6 +1412,9 @@ _check_readable_symlink_suffix() {
 _pinning_lib_suffix="modules/shared/programs/claude/files/lib/pinning-patterns.sh"
 _check_readable_symlink_suffix ".claude/lib/pinning-patterns.sh" "$_pinning_lib_suffix"
 _check_readable_symlink_suffix ".codex/lib/pinning-patterns.sh" "$_pinning_lib_suffix"
+_hook_runtime_lib_suffix="modules/shared/programs/claude/files/lib/hook-runtime.sh"
+_check_readable_symlink_suffix ".claude/lib/hook-runtime.sh" "$_hook_runtime_lib_suffix"
+_check_readable_symlink_suffix ".codex/lib/hook-runtime.sh" "$_hook_runtime_lib_suffix"
 
 # Pinning patterns shared library 검사:
 #   scripts/ai/commit-msg-pinning.sh 및 Pre/PostToolUse pinning hook들이 공통 lib를 source한다.
@@ -1468,6 +1471,169 @@ _check_pinning_policy_text() {
 _check_pinning_policy_text "$REPO_ROOT/modules/shared/programs/claude/files/CLAUDE.md" "source CLAUDE.md"
 _check_pinning_policy_text "$HOME/.claude/CLAUDE.md" "\$HOME/.claude/CLAUDE.md"
 _check_pinning_policy_text "$HOME/.codex/AGENTS.md" "\$HOME/.codex/AGENTS.md"
+
+# ─── USED-BY oracle ───
+# claude/files/lib/ 의 공유 라이브러리 (pinning-patterns.sh, session-state.sh, hook-runtime.sh)
+# 헤더의 `# USED-BY:` 블록에 선언된 use-site 와 실제 source 호출 패턴 일치를 strict 검증한다.
+#
+# 각 USED-BY 라인은 `<path>   # via $VAR_NAME` 형식이어야 한다. 형식 위반 라인은 silent skip
+# 하지 않고 awk 가 `BAD\t<line>` sentinel 을 emit, shell 이 fail 로 보고한다.
+#
+# `via $VAR_NAME` 의 의미: use-site 의 source local 변수 (예: `PINNING_LIB`, `SESSION_STATE_LIB`,
+# `HOOK_RUNTIME_LIB`). hook_load_lib helper 의 env override 변수 (예: `PINNING_PATTERNS_LIB`)
+# 와는 다르다. helper 호출은 `<expected_var>=$(hook_load_lib <env_var> "..." <basename>)` 형태로
+# expected_var 변수에 할당하고 그 변수를 source 한다.
+#
+# 매칭 조건: 같은 파일에 `<expected_var>=...<lib_basename>...` 변수 할당 + `. "$<expected_var>"`
+# 또는 `source "$<expected_var>"` 호출. helper 호출도 변수 할당 RHS 의 일부이므로 같은 매칭이 적용된다.
+# `# shellcheck source=` 주석 라인은 oracle 대상에서 제외 (실제 source 호출이 아니므로).
+verify_used_by_oracle() {
+  local _lib_path="$1"
+  local _lib_label="$2"
+  local _lib_basename _lib_basename_re
+  _lib_basename=$(basename "$_lib_path")
+  _lib_basename_re=${_lib_basename//./\\.}
+  if [ ! -f "$_lib_path" ]; then
+    fail "USED-BY oracle: lib 파일 없음 ($_lib_label) — $_lib_path"
+    return
+  fi
+
+  # 헤더에서 USED-BY 블록 파싱. `^#[[:space:]]+` 로 시작하는 모든 indented 주석 라인을 후보로
+  # 처리하고, 라인 형식이 정확히 `<path>.sh   # via $VAR_NAME` 인지 strict 검증한다.
+  # 위반은 `BAD\t<line>` sentinel 로 emit 하여 shell loop 가 명시 fail. 정상은 `OK\t<path>\t<var>`.
+  # 빈 주석 (`^#$`) 또는 비-주석 라인 (`!/^#/`) 에서만 블록 종료.
+  #
+  # strict 형식 (고정 위치):
+  #   - arr[1] = path (`.sh` 로 끝나는 형태)
+  #   - arr[2] = `#` (구분자)
+  #   - arr[3] = `via` (literal)
+  #   - arr[4] = `$VAR_NAME` ($ prefix + `[A-Z_][A-Z0-9_]*` 형태)
+  #   - arr[5+] = 선택적 trailing 주석/설명 (검증 안 함)
+  local _used_by_entries
+  _used_by_entries=$(awk '
+    /^# USED-BY:/ { in_block=1; next }
+    in_block {
+      if (/^#$/ || !/^#/) {
+        in_block=0
+        next
+      }
+      if (/^#[[:space:]]+/) {
+        line = $0
+        sub(/^#[[:space:]]+/, "", line)
+        if (line == "") next
+        n = split(line, arr, /[[:space:]]+/)
+        if (n < 4) {
+          printf "BAD\t%s\n", $0
+          next
+        }
+        path = arr[1]
+        if (path !~ "^[a-zA-Z][a-zA-Z0-9_./-]+\\.sh$") {
+          printf "BAD\t%s\n", $0
+          next
+        }
+        if (arr[2] != "#" || arr[3] != "via") {
+          printf "BAD\t%s\n", $0
+          next
+        }
+        var_raw = arr[4]
+        if (var_raw !~ "^\\$[A-Z_][A-Z0-9_]*$") {
+          printf "BAD\t%s\n", $0
+          next
+        }
+        var = var_raw
+        sub(/^\$/, "", var)
+        printf "OK\t%s\t%s\n", path, var
+      }
+    }
+  ' "$_lib_path")
+
+  if [ -z "$_used_by_entries" ]; then
+    fail "USED-BY oracle: lib 헤더에 USED-BY 블록 없음 ($_lib_label)"
+    return
+  fi
+
+  local _ok=1
+  local _count=0
+  # Forward check: 선언된 각 use-site 가 실제 source 패턴을 가지는지 확인.
+  # Declared list: backward check 시 비교용. newline-delimited 정규화된 path 를 모아 두고
+  # grep -Fxq 로 set membership 검사. `declare -A` (Bash 4+) 회피하여 macOS /bin/bash 3.2 호환.
+  local _declared_list=""
+  while IFS=$'\t' read -r _tag _arg1 _arg2; do
+    [ -n "$_tag" ] || continue
+    if [ "$_tag" = "BAD" ]; then
+      fail "USED-BY oracle: $_lib_label 헤더의 USED-BY 라인 형식 위반 ($_arg1) — \`<path>.sh   # via \$VAR_NAME\` 형식 필요"
+      _ok=0
+      continue
+    fi
+    local _use_site="$_arg1" _expected_var="$_arg2"
+    [ -n "$_use_site" ] || continue
+    _count=$((_count + 1))
+    _declared_list="${_declared_list}${_use_site}"$'\n'
+    local _use_full_path
+    case "$_use_site" in
+      claude/*|codex/*)
+        _use_full_path="$REPO_ROOT/modules/shared/programs/$_use_site"
+        ;;
+      *)
+        _use_full_path="$REPO_ROOT/$_use_site"
+        ;;
+    esac
+    if [ ! -f "$_use_full_path" ]; then
+      fail "USED-BY oracle: 선언된 use-site 미존재 ($_lib_label → $_use_site)"
+      _ok=0
+      continue
+    fi
+    # 주석 라인 제외 (특히 `# shellcheck source=`).
+    local _non_comment
+    _non_comment=$(grep -vE '^[[:space:]]*#' "$_use_full_path")
+
+    # 단일 매칭 규칙: expected_var (use-site source local 변수) 의 할당 RHS 가 lib_basename 포함
+    # + 동일 var 의 source 호출. hook_load_lib helper 호출은 변수 할당 RHS 의 일부이므로 같은 매칭 적용.
+    if printf '%s\n' "$_non_comment" | grep -qE "^[[:space:]]*${_expected_var}=.*${_lib_basename_re}" \
+      && printf '%s\n' "$_non_comment" | grep -qE "(\.[[:space:]]+|source[[:space:]]+)\"\\\$${_expected_var}\""; then
+      continue
+    fi
+    fail "USED-BY oracle: $_lib_label → $_use_site 에서 실제 source 패턴 미발견 (\$${_expected_var} 변수 할당 RHS 에 ${_lib_basename} 포함 + 동일 var source 필요)"
+    _ok=0
+  done <<< "$_used_by_entries"
+
+  # Backward check: repo 내에서 lib_basename 을 변수 할당 RHS 로 사용 + 동일 var source 호출이
+  # 있는 .sh 파일을 후보로 수집한 뒤, _declared_list 에 없는 후보는 fail.
+  # 이는 `실제 source 하지만 USED-BY 헤더에 미선언` 인 drift 를 잡는다 (양방향 검증).
+  # 검색 범위: modules/shared/programs/ + scripts/. 자기 자신 lib path 는 제외.
+  local _candidate _candidate_rel _candidate_abs_rel
+  while IFS= read -r _candidate; do
+    [ -n "$_candidate" ] || continue
+    # 자기 자신 (lib 정의 파일) 제외.
+    [ "$_candidate" = "$_lib_path" ] && continue
+    # lib 자체 디렉토리 내 다른 lib 파일은 제외 (예: hook-runtime 검증 시 pinning-patterns 본문 매치).
+    case "$_candidate" in
+      */modules/shared/programs/claude/files/lib/*) continue ;;
+      */modules/shared/programs/codex/files/lib/*) continue ;;
+    esac
+    # 변수 할당 + source 호출 패턴 둘 다 있어야 진짜 후보.
+    if grep -qE "^[[:space:]]*[A-Z_]+_LIB=.*${_lib_basename_re}" "$_candidate" \
+      && grep -qE "(\.[[:space:]]+|source[[:space:]]+)\"\\\$[A-Z_]+_LIB\"" "$_candidate"; then
+      _candidate_abs_rel="${_candidate#"$REPO_ROOT"/}"
+      _candidate_rel="${_candidate_abs_rel#modules/shared/programs/}"
+      if ! printf '%s' "$_declared_list" | grep -Fxq "$_candidate_rel" \
+        && ! printf '%s' "$_declared_list" | grep -Fxq "$_candidate_abs_rel"; then
+        fail "USED-BY oracle: $_lib_label backward check 실패 — $_candidate_rel 가 lib 을 source 하지만 USED-BY 헤더에 미선언"
+        _ok=0
+      fi
+    fi
+  done < <(grep -rlE "${_lib_basename_re}" \
+    --include='*.sh' \
+    "$REPO_ROOT/modules/shared/programs/" "$REPO_ROOT/scripts/" 2>/dev/null)
+
+  if [ "$_ok" = "1" ]; then
+    pass "USED-BY oracle 통과: $_lib_label ($_count use-site, backward check OK)"
+  fi
+}
+
+verify_used_by_oracle "$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh" "pinning-patterns.sh"
+verify_used_by_oracle "$REPO_ROOT/modules/shared/programs/claude/files/lib/session-state.sh" "session-state.sh"
+verify_used_by_oracle "$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh" "hook-runtime.sh"
 
 # fixture self-test (deterministic, live 미실행).
 if [ ! -x "$_active_hooks_runner" ]; then

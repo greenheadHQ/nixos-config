@@ -67,6 +67,7 @@ TEST_TMP_FILE="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-list.XXXXXX")"
 
 HOOK_REPO_DIR="$REPO_ROOT/modules/shared/programs/codex/files/hooks"
 PINNING_LIB_REPO_FILE="$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh"
+HOOK_RUNTIME_LIB_REPO_FILE="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh"
 # verify-ai-compat의 _TEMPLATE 분기와 동일하게 host platform에 맞는 template을 sync-preservation
 # 검증에 사용한다. Darwin은 mcp_servers.chrome-devtools 같은 platform-specific managed leaves를
 # 추가로 가지므로 platform-agnostic 검증은 부족하다.
@@ -169,6 +170,8 @@ new_hook_sandbox() {
   chmod +x "$sandbox/home/.codex/hooks/"*.sh
   cp -L "$PINNING_LIB_REPO_FILE" "$sandbox/home/.codex/lib/"
   cp -L "$PINNING_LIB_REPO_FILE" "$sandbox/home/.claude/lib/"
+  cp -L "$HOOK_RUNTIME_LIB_REPO_FILE" "$sandbox/home/.codex/lib/"
+  cp -L "$HOOK_RUNTIME_LIB_REPO_FILE" "$sandbox/home/.claude/lib/"
 
   printf '%s\n' "$sandbox"
 }
@@ -216,7 +219,7 @@ _exec_with_sandbox_env() {
   if [[ -n "$env_pairs_string" ]]; then
     read -ra env_array <<<"$env_pairs_string"
   fi
-  env -u CLAUDECODE -u CODEX_PROGRAMMATIC -u PINNING_PATTERNS_LIB "${env_array[@]}" \
+  env -u CLAUDECODE -u CODEX_PROGRAMMATIC -u PINNING_PATTERNS_LIB -u HOOK_RUNTIME_LIB "${env_array[@]}" \
       PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" \
       HOME="$sandbox/home" \
       XDG_DATA_HOME="$sandbox/xdg-data" \
@@ -979,6 +982,29 @@ $unexpected"
   if [ -s "$stdout_log" ]; then
     unexpected="$(head -40 "$stdout_log")"
     fail "[7b/meta] host PINNING_PATTERNS_LIB leak check: expected clean pass with empty stdout, got:
+$unexpected"
+  fi
+
+  # Issue #759 — host HOOK_RUNTIME_LIB leak check.
+  sandbox=$(new_hook_sandbox)
+  stdout_log="$sandbox/pretooluse-hookruntime-leak-stdout.log"
+  stderr_log="$sandbox/pretooluse-hookruntime-leak-stderr.log"
+  if HOOK_RUNTIME_LIB="$sandbox/host-leaked-hook-runtime.sh" \
+      _exec_with_sandbox_env "$sandbox" "" "$sandbox/home/.codex/hooks/pinning-guard.sh" \
+        < "$clean_fixture" >"$stdout_log" 2>"$stderr_log"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  assert_eq "$exit_code" "0" "[7b/meta] host HOOK_RUNTIME_LIB leak check: hook must exit 0"
+  if [ -s "$stderr_log" ]; then
+    unexpected="$(head -40 "$stderr_log")"
+    fail "[7b/meta] host HOOK_RUNTIME_LIB leak check: expected empty stderr, got:
+$unexpected"
+  fi
+  if [ -s "$stdout_log" ]; then
+    unexpected="$(head -40 "$stdout_log")"
+    fail "[7b/meta] host HOOK_RUNTIME_LIB leak check: expected clean pass with empty stdout, got:
 $unexpected"
   fi
 

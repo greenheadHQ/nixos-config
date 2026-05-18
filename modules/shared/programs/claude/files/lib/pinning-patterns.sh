@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Shared pinning pattern helpers for commit-msg and hook scanners.
 # Consumers decide whether a match is warn-only or hard-fail.
+#
+# USED-BY:
+#   claude/files/hooks/pinning-alert.sh   # via $PINNING_LIB
+#   claude/files/hooks/pinning-guard.sh   # via $PINNING_LIB
+#   codex/files/hooks/pinning-alert.sh    # via $PINNING_LIB
+#   codex/files/hooks/pinning-guard.sh    # via $PINNING_LIB
+#   scripts/ai/commit-msg-pinning.sh      # via $PINNING_LIB
+#
+# scripts/ai/verify-ai-compat.sh 가 본 USED-BY 선언과 실제 source 호출 일치를 oracle로 검증.
 
 # Named indent constant for line:token report rendering. Single SSOT for all
 # rendered output (findings_text wrapper).

@@ -116,6 +116,8 @@ in
       config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/hooks/pinning-guard.sh";
     ".codex/lib/pinning-patterns.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/claude/files/lib/pinning-patterns.sh";
+    ".codex/lib/hook-runtime.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/claude/files/lib/hook-runtime.sh";
   }
   # 글로벌 스킬 (Claude와 동일 소스 공유) — exposedCodexSkills에서 자동 생성
   // codexSkillEntries;

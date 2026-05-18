@@ -1,33 +1,44 @@
 #!/usr/bin/env bash
 # pinning-guard.sh — Claude Code PreToolUse hard-fail guard.
+# 패턴 SSOT: modules/shared/programs/claude/files/lib/pinning-patterns.sh.
+# 공통 helper SSOT: modules/shared/programs/claude/files/lib/hook-runtime.sh.
+# 정책: PreToolUse fail-closed — lib 누락 시 deny JSON 반환 (보안 경계 유지).
 set -euo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PINNING_LIB="${PINNING_PATTERNS_LIB:-$HOME/.claude/lib/pinning-patterns.sh}"
-if [ ! -f "$PINNING_LIB" ]; then
-  PINNING_LIB="$SCRIPT_DIR/../lib/pinning-patterns.sh"
-fi
-if [ ! -f "$PINNING_LIB" ]; then
-  jq -n --arg reason "[pinning-guard] shared pinning policy library is missing: $PINNING_LIB" \
+_deny_with_reason() {
+  local reason="$1"
+  jq -n --arg reason "$reason" \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
   exit 0
+}
+
+# Bootstrap: hook-runtime.sh source. 미발견 시 fail-closed (deny).
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+if [ ! -f "$HOOK_RUNTIME_LIB" ]; then
+  _deny_with_reason "[pinning-guard] shared pinning policy library is missing: hook-runtime.sh ($HOOK_RUNTIME_LIB)"
+fi
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
+# pinning-patterns.sh 로드. 미발견 시 fail-closed (deny).
+PINNING_LIB=$(hook_load_lib PINNING_PATTERNS_LIB "$HOME/.claude/lib" pinning-patterns.sh) || PINNING_LIB=""
+if [ -z "$PINNING_LIB" ]; then
+  _deny_with_reason "[pinning-guard] shared pinning policy library is missing: pinning-patterns.sh. PINNING_PATTERNS_LIB env var 또는 ~/.claude/lib/pinning-patterns.sh 설치 필요."
 fi
 # shellcheck source=../lib/pinning-patterns.sh
 . "$PINNING_LIB"
 
 INPUT=$(cat)
-TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || exit 0
+TOOL_NAME=$(printf '%s' "$INPUT" | hook_parse_tool_name)
 
 _deny() {
   local surface="$1" target="$2" findings="$3"
   local reason
   reason=$(printf '[pinning-guard] %s on %s contains volatile review/session metadata:%b\nUse stable identifiers or plain natural-language context before retrying.' \
     "$surface" "$target" "$findings")
-  jq -n --arg reason "$reason" \
-    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
-  exit 0
+  _deny_with_reason "$reason"
 }
 
 _scan_text_file() {
@@ -51,7 +62,7 @@ case "$TOOL_NAME" in
   *) exit 0 ;;
 esac
 
-SCAN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pinning-guard-XXXXXX") || exit 0
+SCAN_DIR=$(hook_init_scan_dir pinning-guard) || _deny_with_reason "[pinning-guard] failed to initialize scan workspace; denying by fail-closed policy."
 trap 'rm -rf "$SCAN_DIR"' EXIT
 
 case "$TOOL_NAME" in

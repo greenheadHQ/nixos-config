@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # pinning-alert.sh — Codex 0.124+ PostToolUse warn-only alert.
-# 정책 출처: https://github.com/greenheadHQ/nixos-config/issues/603
 # 패턴 SSOT: modules/shared/programs/claude/files/lib/pinning-patterns.sh.
+# 공통 helper SSOT: modules/shared/programs/claude/files/lib/hook-runtime.sh.
 # commit-msg, Claude/Codex PostToolUse alert, Claude/Codex PreToolUse guard가 같은
 # shared library를 source한다. runtime별 hook에는 stdin 파싱과 출력 정책만 남긴다.
 # 정책: warn-only — stderr alert + exit 0. permissionDecision 사용 금지.
 #
-# pipefail 안전 모델 (commit-msg-pinning.sh:26-29와 동일 SSOT):
+# pipefail 안전 모델 (commit-msg-pinning.sh와 동일 SSOT):
 #   `printf '%s' "$TEXT" | grep -qE ...` 조합은 큰 입력에서 grep -q 조기 종료 + SIGPIPE로
 #   producer가 nonzero를 반환해 pipefail 환경에서 silent miss를 만든다. 검사 텍스트를 mktemp
 #   파일에 저장하고 `grep -qE "$PATTERN" "$tmpfile"`로 검사하여 회피한다.
@@ -23,7 +23,7 @@
 # apply_patch attribution 모델:
 #   patch envelope을 파일 섹션별로 분리하여, eligible path마다 그 파일의 added line(`^+`,
 #   `*** Begin/End Patch` 헤더 제외)만 검사한다. 삭제 라인(`^-`)·context 라인(` `)·헤더는 제외.
-#   매치된 파일 path를 alert에 보고. multi-file patch에서 첫 파일만 보고하던 구조 회귀 (#603 DA for_pr Design-1/Regression-2).
+#   매치된 파일 path를 alert에 보고. multi-file patch에서 첫 파일만 보고하던 구조 회귀 방지.
 set -euo pipefail
 
 # 환경 가드(CLAUDECODE/CODEX_PROGRAMMATIC) 없음 — PostToolUse pinning-alert는 자식 LLM 세션의
@@ -35,27 +35,37 @@ set -euo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+# tool_name 사전 분기 — Codex의 PostToolUse는 모든 tool 호출(Bash 포함)에 발화하므로,
+# 검사 대상이 아닌 tool은 lib bootstrap 또는 SCAN_DIR 생성 비용 없이 즉시 종료한다.
+# 이 순서는 lib 미발견 stderr skip 메시지의 영향 범위를 pinning 검사 대상 tool 로 한정한다.
 INPUT=$(cat)
 TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || exit 0
 
-# tool_name 사전 분기 — Codex의 PostToolUse는 모든 tool 호출(Bash 포함)에 발화하므로,
-# 검사 대상이 아닌 tool은 SCAN_DIR 생성/cleanup 비용 없이 즉시 종료한다.
 case "$TOOL_NAME" in
   Edit | Write | NotebookEdit | apply_patch) ;;
   *) exit 0 ;;
 esac
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PINNING_LIB="${PINNING_PATTERNS_LIB:-$HOME/.codex/lib/pinning-patterns.sh}"
-if [ ! -f "$PINNING_LIB" ]; then
-  PINNING_LIB="$SCRIPT_DIR/../../../claude/files/lib/pinning-patterns.sh"
+# Bootstrap: hook-runtime.sh source. 미발견 시 warn-only 계약대로 exit 0.
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.codex/lib/hook-runtime.sh}"
+if [ ! -f "$HOOK_RUNTIME_LIB" ]; then
+  printf '[pinning-alert] hook-runtime.sh 미발견 (%s) — 검사 skip. HOOK_RUNTIME_LIB env var 또는 ~/.codex/lib/ 설치 필요.\n' "$HOOK_RUNTIME_LIB" >&2
+  exit 0
 fi
-[ -f "$PINNING_LIB" ] || exit 0
+# shellcheck source=../../../claude/files/lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
+# pinning-patterns.sh 로드. 미발견 시 warn-only 계약대로 exit 0.
+PINNING_LIB=$(hook_load_lib PINNING_PATTERNS_LIB "$HOME/.codex/lib" pinning-patterns.sh) || PINNING_LIB=""
+if [ -z "$PINNING_LIB" ]; then
+  printf '[pinning-alert] pinning-patterns.sh 미발견 — 검사 skip. PINNING_PATTERNS_LIB env var 또는 ~/.codex/lib/ 설치 필요.\n' >&2
+  exit 0
+fi
 # shellcheck source=../../../claude/files/lib/pinning-patterns.sh
 . "$PINNING_LIB"
 
 # 임시 디렉토리 (모든 mktemp 파일을 한 곳에 두고 EXIT trap으로 일괄 정리).
-SCAN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pinning-scan-XXXXXX") || exit 0
+SCAN_DIR=$(hook_init_scan_dir pinning-scan) || exit 0
 trap 'rm -rf "$SCAN_DIR"' EXIT
 
 case "$TOOL_NAME" in
@@ -106,8 +116,8 @@ case "$TOOL_NAME" in
     # 각 eligible path마다 added line만 모아 검사.
     # scan 파일명에 path 원문을 사용하지 않는다 — 긴 nested path가 NAME_MAX(보통 255 bytes)를
     # 초과하면 redirection이 'File name too long'으로 실패하고 set -e로 hook이 exit 1이 되어
-    # warn-only 계약을 위반한다 (#603 DA for_pr R2 Correctness-1/Regression-1). path는 보고용
-    # 변수로만 유지하고 scan 파일은 mktemp으로 익명 basename을 받는다.
+    # warn-only 계약을 위반한다. path는 보고용 변수로만 유지하고 scan 파일은 mktemp으로
+    # 익명 basename을 받는다.
     pinning_apply_patch_section_paths "$SECTIONS_FILE" | while IFS= read -r p; do
       [ -n "$p" ] || continue
       if ! pinning_should_check_path "$p"; then

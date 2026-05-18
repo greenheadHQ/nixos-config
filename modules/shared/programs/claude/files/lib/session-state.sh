@@ -9,6 +9,13 @@
 # 공유하는 상수·함수의 SSOT. 한쪽에서 변경하면 lineage 복원/sidecar I/O가
 # silently 어긋나는 위험을 코드 레벨에서 차단한다.
 #
+# USED-BY:
+#   claude/files/hooks/session-init-icons.sh    # via $SESSION_STATE_LIB
+#   claude/files/hooks/record-last-session.sh   # via $SESSION_STATE_LIB
+#   claude/files/scripts/statusline.sh          # via $SESSION_STATE_LIB (validate_session_id 정책)
+#
+# scripts/ai/verify-ai-compat.sh 가 본 USED-BY 선언과 실제 source 호출 일치를 oracle로 검증.
+#
 # 공개 API
 # ─────────
 #   상수:

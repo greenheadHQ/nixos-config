@@ -8,6 +8,8 @@ if [ "${CLAUDECODE:-}" = "1" ] || [ "${CODEX_PROGRAMMATIC:-}" = "1" ]; then
 fi
 # record-prompt-submit.sh — 프롬프트 전송 시 캐시 TTL을 "in-flight" 상태로 전환
 # "0"을 기록하면 statusline.sh가 mtime 기준 카운트다운 표시 (Stop 미기록 상태)
+# 공통 helper SSOT: modules/shared/programs/claude/files/lib/hook-runtime.sh.
+# 정책: hook-runtime.sh 미발견 시 inline fallback 자체 로직 실행 (자체 동작 보존).
 
 # stdin에서 세션 정보 읽기 (Codex 0.124+ schema는 agent_id 키 없음 — issue #585 DA C-2).
 # Claude 원본의 agent_id subagent guard는 Codex에서는 항상 비활성이므로 제거했다.
@@ -15,9 +17,17 @@ fi
 INPUT=""
 [ ! -t 0 ] && INPUT=$(cat)
 
-if [ -n "$INPUT" ]; then
-  # stdin JSON에서 session_id 파싱 (env var보다 신뢰성 높음)
-  SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)
+# hook-runtime.sh source 시도. 실패 시 inline fallback 으로 session_id 파싱.
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.codex/lib/hook-runtime.sh}"
+if [ -f "$HOOK_RUNTIME_LIB" ] && command -v jq >/dev/null 2>&1; then
+  # shellcheck source=../../../claude/files/lib/hook-runtime.sh
+  . "$HOOK_RUNTIME_LIB"
+  [ -n "$INPUT" ] && SESSION_ID=$(printf '%s' "$INPUT" | hook_parse_session_id)
+else
+  # inline fallback — hook-runtime.sh 또는 jq 미발견 시 자체 파싱.
+  if [ -n "$INPUT" ] && command -v jq >/dev/null 2>&1; then
+    SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)
+  fi
 fi
 
 # fallback: env var → 빈 문자열
