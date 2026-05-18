@@ -1460,8 +1460,9 @@ _check_pinning_policy_text() {
     fail "pinning policy text 확인 불가 ($_label): 파일 없음 ($_policy_file)"
     return
   fi
-  if grep -Fq 'Canonical non-traversal PRD/plan path(`.claude/prds/*`, `.claude/plans/*`)에서는 PATTERN_A만 예외적으로 허용한다.' "$_policy_file" && \
-     grep -Fq 'PATTERN_B/C는 해당 path에서도 계속 차단/경고한다.' "$_policy_file"; then
+  if grep -Fq 'Canonical non-traversal PRD/plan path(`.claude/prds/*`, `.claude/plans/*`)에서는 PATTERN_A가 예외적으로 허용된다.' "$_policy_file" && \
+     grep -Fq 'PRD/plan path + body temp draft path + issue-draft staging path에서는 PATTERN_C의 워크플로 sub-pattern(실행 모드 호출 키워드 두 토큰)이 예외적으로 허용된다.' "$_policy_file" && \
+     grep -Fq 'PATTERN_B와 PATTERN_C의 휘발성 sub-pattern(라운드 카운터 결합형 / 번호 reviewer 라벨 / 후속 액션 결합 토큰)은 해당 path에서도 계속 차단/경고한다.' "$_policy_file"; then
     pass "pinning policy text OK: $_label"
   else
     fail "pinning policy text 누락: $_label ($_policy_file)"

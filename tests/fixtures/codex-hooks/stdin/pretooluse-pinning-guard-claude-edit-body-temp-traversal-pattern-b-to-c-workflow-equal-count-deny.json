@@ -1,0 +1,8 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/tmp/fixture-body/../escape.md",
+    "old_string": "MAINT-1 reviewer 의견.",
+    "new_string": "DA for_pr 로 리뷰."
+  }
+}

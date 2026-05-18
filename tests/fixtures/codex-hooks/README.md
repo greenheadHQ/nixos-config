@@ -89,7 +89,9 @@ Issue #767 PATTERN_C workflow/volatile split fixtures (workflow sub-pattern allo
 |----------|---------|
 | PATTERN_C **workflow** sub-pattern allowed in `.claude/prds/` and `.claude/plans/` | `pretooluse-pinning-guard-claude-write-{prds,plans}-pattern-c-workflow-clean.*`, `pretooluse-pinning-guard-codex-applypatch-{prds,plans}-pattern-c-workflow-clean.*` |
 | PATTERN_C **workflow** sub-pattern allowed in `/tmp/issue-draft/` (issue/PR body draft staging) | `pretooluse-pinning-guard-claude-write-issue-draft-pattern-c-workflow-clean.*` |
+| PATTERN_C **workflow** sub-pattern allowed in body temp draft path (`/tmp/*-body*`) | `pretooluse-pinning-guard-claude-write-body-temp-pattern-c-workflow-clean.*` |
 | Traversal raw path stays denied even with workflow tokens (workflow allow predicate fail-closes on traversal segment) | `pretooluse-pinning-guard-claude-write-body-temp-traversal-pattern-c-deny.*` |
+| Traversal raw path under body-temp shape denies equal-count `category B → category C workflow` token replacement (D-1 token-delta) | `pretooluse-pinning-guard-claude-edit-body-temp-traversal-pattern-b-to-c-workflow-equal-count-deny.*` |
 
 PostToolUse `pinning-alert.sh` and commit-msg-pinning.sh keep emitting both sub-patterns under category code "C" (warn-only diagnostic preserved). The PreToolUse hard-fail records API (`pinning_guard_findings_records_for_path`, `pinning_guard_findings_records_for_scan_path`) suppresses only the workflow sub-pattern on the allowed paths above.
 
