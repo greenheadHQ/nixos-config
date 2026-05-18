@@ -104,7 +104,6 @@ in
         ./programs/vscode
         ./programs/folder-actions
         ./programs/ghostty
-        ./programs/cmux
         ./programs/shottr
         ./programs/keybindings
         ./programs/ssh

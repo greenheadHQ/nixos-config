@@ -23,11 +23,8 @@
       # [Nix 전환이 불가능한 앱]
       # ghostty: pkgs.ghostty-bin은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음.
       #          Ghostty.app은 Homebrew Cask로만 설치 가능.
-      # cmux: Homebrew core cask로 제공되므로 별도 tap 불필요.
-      #       사용자 설정은 ./programs/cmux에서 ~/.config/cmux/cmux.json으로 관리.
       casks = [
         "ghostty"
-        "cmux"
       ];
     }
 
