@@ -101,7 +101,16 @@ in
     c = "claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
 
     # Codex CLI 위험 모드 단축 (사용자 요청)
-    codex = "command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen";
+    # Linux MiniPC: apps feature 를 template 에서 비활성화해 fast startup 보장 (#772).
+    # 기본 codex 는 connector discovery 가 비활성화되므로 stderr 한 줄 안내를 출력하고,
+    # connector / plugin / tool_search 가 필요하면 codex-apps 로 세 feature 모두 복원한다.
+    # Darwin 은 features default 가 true 라 안내 echo 없이 기존 alias 그대로 유지한다.
+    codex =
+      if pkgs.stdenv.isLinux then
+        "echo '[codex] apps feature disabled for fast startup. Use codex-apps for full connector surface.' >&2; command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen"
+      else
+        "command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen";
+    codex-apps = "command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen --enable apps --enable plugins --enable tool_search";
 
     # lazygit 단축
     lg = "lazygit";
