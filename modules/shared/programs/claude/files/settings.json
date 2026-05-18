@@ -162,6 +162,9 @@
       }
     ]
   },
+  "worktree": {
+    "baseRef": "head"
+  },
   "statusLine": {
     "type": "command",
     "command": "~/.claude/scripts/statusline.sh",
@@ -181,6 +184,6 @@
   "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "voiceEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "voiceEnabled": true
 }
