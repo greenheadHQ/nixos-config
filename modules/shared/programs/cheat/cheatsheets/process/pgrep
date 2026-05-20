@@ -42,6 +42,23 @@ pgrep — 이름/속성으로 PID 검색. 출력은 PID(들). top/htop의 시각
 [조합]
   pgrep -fU green "Chrome"   green 소유 + Chrome 풀 커맨드라인 매칭
 
+[매칭 함정 — "활성 상태 보기에는 보이는데 pgrep은 안 잡을 때"]
+  $ pgrep -l chrome
+  972 chrome_crashpad        ← 15자에서 잘린 결과 (원본: chrome_crashpad_handler)
+  2786 chrome-native-h       ← 동일하게 15자에서 잘림
+  3301 node ...              ← chrome-devtools-mcp 스크립트는 실제 실행 파일이
+                               `node`라서 `chrome`으로는 매칭 안 됨
+  # Google Chrome 계열은 아예 안 보임 — 대문자 `Chrome` 이라 소문자 `chrome` 매칭 실패
+
+  원리:
+    - pgrep 디폴트는 프로세스의 "짧은 실행 파일 이름"(`comm` 필드)만 본다.
+      macOS는 이 필드를 15자에서 자르고, 대소문자도 구분한다.
+    - 활성 상태 보기 "프로세스 이름" 컬럼은 앱 번들의 표시 이름(Info.plist)과
+      실행 명령어(argv) 를 합쳐 보여줘서, pgrep `comm` 과 근본적으로 다르다.
+
+  해법: $ pgrep -fil chrome
+          # -f 실행 명령어 전체 매칭 / -i 대소문자 무시 / -l 이름 같이 출력
+
 Tip
 - 결과를 죽이려면 pgrep 대신 pkill을 직접 쓴다 (cheat process/pkill).
 - top 화면의 COMMAND 컬럼은 잘려 있으니 `pgrep -f` 또는 `ps -Ao command` 로 풀 이름 확인.
