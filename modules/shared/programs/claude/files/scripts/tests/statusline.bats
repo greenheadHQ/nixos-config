@@ -452,3 +452,130 @@ EOF
   echo "$plain" | grep -qF 'tmp' \
     || { echo "expected branch label 'tmp' in output; got: $plain" >&2; false; }
 }
+
+# ============================================================
+# Plan 아이콘 감지 (v5: 프로젝트 단위 fallback 제거 회귀 가드)
+# ============================================================
+# Plan 아이콘은 (1) transcript 직접 감지 또는 (2) 세션별 state 복원으로만
+# 표시된다. v5 이전의 프로젝트 단위 fallback(.statusline-plan-current)은
+# plan을 세운 적 없는 무관한 세션에 다른 세션의 plan을 상속시켜 false
+# positive를 유발했으므로 제거됐다. 아래 케이스는 가짜 HOME 아래
+# $HOME/.claude/projects/<dir>/ 구조를 만들어 TRANSCRIPT_VALID 신뢰 경계를
+# 통과시킨 뒤 plan 분기를 직접 검사한다. plan 토큰은 아이콘 label "Plan"으로
+# 식별한다 (strip_ansi가 OSC 8 hyperlink를 제거해도 label은 남는다).
+
+# 가짜 HOME + canonical transcript dir + plan .md 생성.
+# 인자: $1=session_id (고유). 전역 PLAN_HOME/PLAN_TDIR/PLAN_TRANSCRIPT/PLAN_MD 설정.
+_setup_plan_home() {
+  PLAN_HOME="$BATS_TEST_TMPDIR/h-$1"
+  PLAN_TDIR="$PLAN_HOME/.claude/projects/test-proj"
+  PLAN_TRANSCRIPT="$PLAN_TDIR/$1.jsonl"
+  PLAN_MD="$PLAN_HOME/.claude/plans/the-plan.md"
+  mkdir -p "$PLAN_TDIR" "$(dirname "$PLAN_MD")"
+  printf '# plan body\n' > "$PLAN_MD"
+}
+
+# plan fixture용 stdin JSON. $1=session_id $2=transcript_path
+_plan_json() {
+  cat <<EOF
+{
+  "session_id": "$1",
+  "transcript_path": "$2",
+  "cwd": "/tmp",
+  "model": {"display_name": "test"},
+  "workspace": {"current_dir": "/tmp"}
+}
+EOF
+}
+
+# plan fixture 실행 helper: HOME + XDG_* 를 모두 PLAN_HOME 하위로 pin 한다.
+# statusline.sh 는 HEAVY_CACHE_DIR/CACHE_TTL_DIR 에서 XDG_* 를 직접 참조하므로
+# (sidecar test 와 동일 사유), HOME 만 override 하면 부모 shell 의 XDG_* 가 set 일 때
+# heavy/cache 파일이 실제 시스템 경로로 leak 되어 호스트를 오염시키고 다음 run 의
+# cached vars 가 stale 해져 비결정적이 된다. PLAN_HOME 은 BATS_TEST_TMPDIR 하위라
+# 케이스마다 새로 생성된다.
+_run_plan() {
+  run run_statusline_with_input "$1" \
+    HOME="$PLAN_HOME" \
+    XDG_CONFIG_HOME="$PLAN_HOME/.config" \
+    XDG_CACHE_HOME="$PLAN_HOME/.cache" \
+    XDG_STATE_HOME="$PLAN_HOME/.local/state" \
+    XDG_DATA_HOME="$PLAN_HOME/.local/share" \
+    XDG_RUNTIME_DIR="$PLAN_HOME/.run"
+}
+
+@test "plan: project-level state alone does NOT show Plan (v5 false-positive guard)" {
+  local sid="planfp01-1111-2222-3333-444455556666"
+  _setup_plan_home "$sid"
+  # transcript에 plan 경로 없음 (무관한 user 라인만)
+  printf '%s\n' '{"type":"user","message":{"role":"user"}}' > "$PLAN_TRANSCRIPT"
+  # 다른 세션이 남긴 프로젝트 단위 state만 존재 (v5 이전엔 이게 상속됐다)
+  printf '%s' "$PLAN_MD" > "$PLAN_TDIR/.statusline-plan-current"
+
+  _run_plan "$(_plan_json "$sid" "$PLAN_TRANSCRIPT")"
+  [ "$status" -eq 0 ]
+  local plain
+  plain=$(echo "$output" | strip_ansi)
+  if echo "$plain" | grep -qF 'Plan'; then
+    echo "expected NO Plan icon from project-level state alone (v5 removed project fallback); got: $plain" >&2
+    false
+  fi
+  # 복사본도 생성되지 않아야 한다 (v3 복사본 로직 제거 확인)
+  copy_count=$(find "$(dirname "$PLAN_MD")" -name 'the-plan-*.md' 2>/dev/null | wc -l | tr -d ' ')
+  [ "$copy_count" -eq 0 ] \
+    || { echo "expected no plan copy created (v5 removed v3 copy logic); got count=$copy_count" >&2; false; }
+}
+
+@test "plan: transcript with plan path shows Plan" {
+  local sid="planok01-1111-2222-3333-444455556666"
+  _setup_plan_home "$sid"
+  printf '%s\n' "{\"type\":\"assistant\",\"planFilePath\":\"$PLAN_MD\"}" > "$PLAN_TRANSCRIPT"
+
+  _run_plan "$(_plan_json "$sid" "$PLAN_TRANSCRIPT")"
+  [ "$status" -eq 0 ]
+  local plain
+  plain=$(echo "$output" | strip_ansi)
+  echo "$plain" | grep -qF 'Plan' \
+    || { echo "expected Plan icon from transcript planFilePath; got: $plain" >&2; false; }
+}
+
+@test "plan: session-level state restores Plan when transcript lacks it" {
+  local sid="planss01-1111-2222-3333-444455556666"
+  _setup_plan_home "$sid"
+  printf '%s\n' '{"type":"user","message":{"role":"user"}}' > "$PLAN_TRANSCRIPT"
+  # 같은 session_id가 과거에 감지해 남긴 세션별 state (resume/compact 복원 경로)
+  printf '%s' "$PLAN_MD" > "$PLAN_TDIR/.statusline-plan-$sid"
+
+  _run_plan "$(_plan_json "$sid" "$PLAN_TRANSCRIPT")"
+  [ "$status" -eq 0 ]
+  local plain
+  plain=$(echo "$output" | strip_ansi)
+  echo "$plain" | grep -qF 'Plan' \
+    || { echo "expected Plan icon restored from session-level state; got: $plain" >&2; false; }
+}
+
+@test "plan: invalid session_id does NOT restore shared unknown state" {
+  # stdin session_id가 validate_session_id 실패('..' 포함)면 SESSION_ID="" →
+  # SIDECAR_IO_ENABLED=false → PLAN_STATE_FILE 미생성. 따라서 같은 transcript dir의
+  # 다른 invalid identity가 남긴 .statusline-plan-unknown 공유 state를 복원하지 않아야 한다.
+  # (가드 부재 시: .statusline-plan-${SESSION_ID:-unknown} = .statusline-plan-unknown 복원 → false positive)
+  local sid="bad..sid"
+  local validname="abcd1234-0000-1111-2222-333344445555"
+  PLAN_HOME="$BATS_TEST_TMPDIR/h-invalidsid"
+  PLAN_TDIR="$PLAN_HOME/.claude/projects/test-proj"
+  local leak_md="$PLAN_HOME/.claude/plans/leaked.md"
+  mkdir -p "$PLAN_TDIR" "$(dirname "$leak_md")"
+  printf '# leaked\n' > "$leak_md"
+  printf '%s\n' '{"type":"user","message":{"role":"user"}}' > "$PLAN_TDIR/$validname.jsonl"
+  # unknown 공유 state가 실재 plan을 가리켜도 복원되면 안 된다
+  printf '%s' "$leak_md" > "$PLAN_TDIR/.statusline-plan-unknown"
+
+  _run_plan "$(_plan_json "$sid" "$PLAN_TDIR/$validname.jsonl")"
+  [ "$status" -eq 0 ]
+  local plain
+  plain=$(echo "$output" | strip_ansi)
+  if echo "$plain" | grep -qF 'Plan'; then
+    echo "expected NO Plan icon with invalid session_id (unknown state must not be restored); got: $plain" >&2
+    false
+  fi
+}

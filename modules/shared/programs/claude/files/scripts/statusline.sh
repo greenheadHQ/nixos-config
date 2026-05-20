@@ -264,16 +264,30 @@ if $DO_HEAVY; then
 # v2: /clear 시 Claude Code가 새 transcript(= 새 session_id)를 생성하여
 #    이전 session_id의 state file을 찾지 못하는 문제 발견.
 #    프로젝트 단위 fallback (.statusline-plan-current) 추가.
-#    우선순위: transcript 감지 > 세션별 state > 프로젝트 단위 state.
-# v3: 프로젝트 단위 fallback 사용 시 plan 파일 복사본 생성.
-#    원본과의 편집 충돌 방지. 복사본 이름: <원본>-<session_id 8자>.md.
-# v4 (이번): TRANSCRIPT_VALID 조건 추가. canonical transcript dir에 state 파일 조립.
+# v3: 프로젝트 단위 fallback 사용 시 plan 파일 복사본 생성 (편집 충돌 방지).
+#    복사본 이름: <원본>-<session_id 8자>.md.
+# v4: TRANSCRIPT_VALID 조건 추가. canonical transcript dir에 state 파일 조립.
 #    raw `dirname "$TRANSCRIPT"` 대신 canonical 경로 사용으로 path traversal 차단.
+# v5 (이번): 프로젝트 단위 fallback(v2)과 복사본 생성(v3)을 제거.
+#    [근거] 프로젝트 fallback은 영구·무차별적이어서, plan을 세운 적 없는
+#    무관한 세션에도 "프로젝트의 마지막 plan"을 상속시켜 false positive를
+#    유발했다 (하나의 plan이 장기간 다수의 새 세션에 전염되고, 세션마다
+#    복사본을 양산해 plans 디렉토리를 오염시켰다).
+#    이제 우선순위는 (1) transcript 직접 감지 (2) 세션별 state 뿐이다.
+#    세션별 state는 유효한 SESSION_ID가 있고(SIDECAR_IO_ENABLED) transcript에서
+#    plan을 감지했을 때만 기록되므로 (아래 첫 분기), 같은 session_id의
+#    resume/compact 복원에만 쓰이고 교차 세션 누출이 없다. SESSION_ID 검증
+#    실패(빈 값) 시 다른 sidecar I/O와 동일하게 state를 만들지 않는다 —
+#    `.statusline-plan-${SESSION_ID:-unknown}`의 unknown fallback을 그대로 두면
+#    같은 transcript dir의 모든 invalid identity가 `.statusline-plan-unknown`을
+#    공유해 false positive가 축소 재발하므로, SIDECAR_IO_ENABLED 가드로 막는다.
+#    trade-off: /clear로 session_id가 바뀐 직후 세션은 plan 아이콘이 사라진다.
+#    의도적 컨텍스트 리셋이라 '잘못된 plan 표시'보다 안전한 실패 모드이며,
+#    plan을 다시 보려면 사용자가 직접 열거나 plan mode를 재진입한다.
 PLAN_STATE_FILE=""
-PROJECT_PLAN_STATE=""
-if $TRANSCRIPT_VALID; then
-  PLAN_STATE_FILE="$CANONICAL_TRANSCRIPT_DIR/.statusline-plan-${SESSION_ID:-unknown}"
-  PROJECT_PLAN_STATE="$CANONICAL_TRANSCRIPT_DIR/.statusline-plan-current"
+if $SIDECAR_IO_ENABLED; then
+  # SIDECAR_IO_ENABLED = 유효 SESSION_ID + TRANSCRIPT_VALID (Section 3). unknown fallback 불필요.
+  PLAN_STATE_FILE="$CANONICAL_TRANSCRIPT_DIR/.statusline-plan-${SESSION_ID}"
 fi
 
 if $TRANSCRIPT_VALID && [ -f "$TRANSCRIPT" ]; then
@@ -284,22 +298,11 @@ if $TRANSCRIPT_VALID && [ -f "$TRANSCRIPT" ]; then
     | tail -1 | sed 's/^"[^"]*":"//;s/"$//')
 fi
 
+# 우선순위: (1) transcript 직접 감지 → 세션별 state 기록  (2) 미감지 → 세션별 state 복원
 if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ] && [ -n "$PLAN_STATE_FILE" ]; then
   printf '%s' "$PLAN_FILE" > "$PLAN_STATE_FILE" 2>/dev/null
-  [ -n "$PROJECT_PLAN_STATE" ] && printf '%s' "$PLAN_FILE" > "$PROJECT_PLAN_STATE" 2>/dev/null
 elif [ -z "$PLAN_FILE" ] && [ -n "$PLAN_STATE_FILE" ] && [ -f "$PLAN_STATE_FILE" ]; then
   PLAN_FILE=$(cat "$PLAN_STATE_FILE" 2>/dev/null)
-elif [ -z "$PLAN_FILE" ] && [ -n "$PROJECT_PLAN_STATE" ] && [ -f "$PROJECT_PLAN_STATE" ]; then
-  ORIGINAL_PLAN=$(cat "$PROJECT_PLAN_STATE" 2>/dev/null)
-  if [ -n "$ORIGINAL_PLAN" ] && [ -f "$ORIGINAL_PLAN" ]; then
-    PLAN_COPY="$(dirname "$ORIGINAL_PLAN")/$(basename "$ORIGINAL_PLAN" .md)-${SESSION_ID:0:8}.md"
-    if [ ! -f "$PLAN_COPY" ]; then
-      cp "$ORIGINAL_PLAN" "$PLAN_COPY"
-      find "$(dirname "$ORIGINAL_PLAN")" -name "*-????????.md" -mtime +30 -delete 2>/dev/null || true
-    fi
-    PLAN_FILE="$PLAN_COPY"
-    [ -n "$PLAN_STATE_FILE" ] && printf '%s' "$PLAN_FILE" > "$PLAN_STATE_FILE" 2>/dev/null
-  fi
 fi
 
 # -- Memory 감지 (canonical transcript dir 기반)
