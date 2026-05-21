@@ -124,18 +124,20 @@ validate_session_id() {
   return 0
 }
 
-# cwd validation (D-2 보강: control 문자 거부 우선, 그 다음 절대경로 + canonical 디렉토리)
+# cwd 구문 검증 (보안 경계): control 문자 거부 우선, 그 다음 절대경로.
 # control 문자 검사를 절대경로 검사보다 먼저 — 상대경로 형태 cwd에 control 문자가 있으면
-# 검증 실패 fallback에서 raw display로 escape 주입되는 것을 방지
-# 통과 시 canonical cwd 반환, 미통과 시 빈 문자열
-canonicalize_cwd_check() {
+# 검증 실패 fallback에서 raw display로 escape 주입되는 것을 방지.
+# 통과 시 cwd를 그대로 반환(canonical 변환 없음), 미통과 시 빈 문자열.
+# canonicalize_dir(cd+pwd -P)과 분리된 책임: 이쪽은 escape 주입 방어의 핵심이고,
+# canonical 변환은 symlink resolve/존재 확인이라는 정확도 책임만 가진다.
+validate_cwd_syntax() {
   local cwd=$1
   [ -z "$cwd" ] && return
   if printf '%s' "$cwd" | LC_ALL=C grep -q '[[:cntrl:]]'; then
     return
   fi
   case "$cwd" in /*) ;; *) return ;; esac
-  canonicalize_dir "$cwd"
+  printf '%s' "$cwd"
 }
 
 # Display sanitize: control 문자가 라벨로 직접 흘러가지 않도록 거부
@@ -574,28 +576,49 @@ else
   EFF_COLS=$((COLS - 40))
 fi
 
-# cwd canonical 검증 + display + URL
+# cwd 검증 + display + URL
 # D-4 update: 워크트리일 때 display는 `<메인 repo ~ 단축>:<worktree 폴더명>` 형식
-#   (사용자 요청 — 풀 경로는 너무 길어 잘림). URL은 항상 canonical 풀 path (VSCode 정확 dispatch)
-CWD_CANONICAL=$(canonicalize_cwd_check "$CWD")
-if [ -n "$CWD_CANONICAL" ]; then
+#   (사용자 요청 — 풀 경로는 너무 길어 잘림). URL은 항상 풀 path (VSCode 정확 dispatch)
+#
+# === Change Intent Record ===
+# v1: cwd 검증을 단일 함수(구문 검증 + canonical 변환 결합)로 호출. canonical(cd+pwd -P)
+#    실패 시 URL을 통째로 포기.
+#    [문제] cwd 디렉토리가 그 순간 부재(LLM이 삭제될 임시 디렉토리/워크트리로 작업
+#    디렉토리를 옮긴 찰나)하거나 고부하 fork 실패 시 canonical만 실패해도, escape 방어를
+#    이미 통과한 절대경로가 버려져 OSC 8 vscode:// 링크가 간헐적으로 사라졌다
+#    (클릭 시 에디터 대신 Finder). canonical은 symlink resolve/존재 확인이라는 정확도
+#    책임일 뿐 보안 책임이 아니므로 과한 포기였다.
+# v2 (이번): canonical을 best-effort로 분리. (1) validate_cwd_syntax로 escape 방어
+#    (control 거부 + 절대경로)를 먼저 통과시키고 (2) canonicalize_dir은 best-effort로
+#    시도하되, 실패하면 검증된 raw 절대경로(CWD_VALID)로 fallback한다. URL/display는
+#    CWD_RESOLVED(canonical 우선, 실패 시 raw)를 쓴다. control/절대경로/percent-encode/
+#    sanitize_osc8_url 3중 방어는 그대로 유지되고, 양보하는 것은 symlink resolve
+#    정확도뿐이다 (vscode://file은 symlink·일시 부재 경로도 정상 처리).
+CWD_VALID=$(validate_cwd_syntax "$CWD")
+# CWD_CANONICAL="": (1) CWD_VALID 빈 값(구문 검증 실패)으로 canonicalize_dir 미시도, 또는
+#   (2) 시도했으나 디렉토리 부재/fork 실패. 두 경우 모두 아래 CWD_RESOLVED가 raw fallback으로 흡수.
+CWD_CANONICAL=""
+[ -n "$CWD_VALID" ] && CWD_CANONICAL=$(canonicalize_dir "$CWD_VALID")
+# canonical 우선, 실패 시(디렉토리 일시 부재/고부하 fork 실패) 검증된 raw 절대경로로 fallback
+CWD_RESOLVED="${CWD_CANONICAL:-$CWD_VALID}"
+if [ -n "$CWD_RESOLVED" ]; then
   if $IS_WORKTREE && [ -n "${MAIN_REPO_DIR:-}" ]; then
     MAIN_REPO_SHORT=$(tilde_shorten "$MAIN_REPO_DIR")
-    WORKTREE_NAME=$(basename "$CWD_CANONICAL")
+    WORKTREE_NAME=$(basename "$CWD_RESOLVED")
     CWD_DISPLAY="${MAIN_REPO_SHORT}:${WORKTREE_NAME}"
   else
-    CWD_DISPLAY=$(tilde_shorten "$CWD_CANONICAL")
+    CWD_DISPLAY=$(tilde_shorten "$CWD_RESOLVED")
   fi
   CWD_URL=""
   if ! $IS_SSH; then
-    CWD_URL_PATH=$(percent_encode_segment "$CWD_CANONICAL")
+    CWD_URL_PATH=$(percent_encode_segment "$CWD_RESOLVED")
     # ?windowId=_blank — vscode:// URL handler는 window.openFoldersInNewWindow 설정을
     # 따르지 않고 기본적으로 마지막 활성 창을 덮어쓴다. query param이 공식 해결책으로
     # 항상 새 창을 강제한다 (microsoft/vscode#141548, 머지 commit bcc2da6).
     CWD_URL="vscode://file${CWD_URL_PATH}/?windowId=_blank"
   fi
 else
-  # 검증 실패: 텍스트만 표시. control 문자가 들어와 fallback으로 escape 주입되는 것 방지
+  # 구문 검증 실패(control 문자/상대경로): 텍스트만 표시. escape 주입 방지.
   CWD_DISPLAY=$(sanitize_display_text "$(tilde_shorten "$CWD")")
   CWD_URL=""
 fi
@@ -806,14 +829,17 @@ fi
 end_line
 
 # L3 (worktree만): branch
-# basename(CWD_CANONICAL) == GIT_BRANCH면 L2가 이미 동일 토큰을 담고 있어 L3 라인째 생략.
+# basename(CWD_RESOLVED) == GIT_BRANCH면 L2가 이미 동일 토큰을 담고 있어 L3 라인째 생략.
 #   L2 표시: $IS_WORKTREE && MAIN_REPO_DIR 분기는 "<repo>:<폴더명>", else는 풀 경로 끝에 폴더명.
 #   어느 쪽이든 폴더명 토큰이 L2에 포함되므로 L3은 정보 손실 없이 생략 가능.
-# CWD_CANONICAL 부재 시 basename 결과가 ""라 GIT_BRANCH와 일치 불가 → 가드 자연스럽게 비활성.
+# CWD_RESOLVED 부재 시(구문 검증 실패) basename 결과가 ""라 GIT_BRANCH와 일치 불가 → 가드
+# 자연스럽게 비활성. 아래 basename "$CWD_RESOLVED"는 L2 워크트리 분기의
+# WORKTREE_NAME=$(basename "$CWD_RESOLVED")와 동일 연산이라 L2/L3 폴더명 토큰이 항상 일관된다
+# (canonical 실패 raw fallback 경로에서도 L2가 <repo>:<폴더명>을 담으므로 L3 생략은 중복 제거다).
 if $IS_WORKTREE; then
   begin_line
   WORKTREE_BASENAME=""
-  [ -n "$CWD_CANONICAL" ] && WORKTREE_BASENAME=$(basename "$CWD_CANONICAL")
+  [ -n "$CWD_RESOLVED" ] && WORKTREE_BASENAME=$(basename "$CWD_RESOLVED")
   if [ -n "$GIT_BRANCH" ] && [ "$WORKTREE_BASENAME" != "$GIT_BRANCH" ]; then
     print_icon "32" "" "\xf0\x9f\x8c\xbf" "$GIT_BRANCH"
   fi
