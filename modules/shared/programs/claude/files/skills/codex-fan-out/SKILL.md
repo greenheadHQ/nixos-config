@@ -128,7 +128,7 @@ echo "FO_DIR=$FO_DIR"
 - 머지 분기 (default): worker 산출물을 호출자 컨텍스트에 흡수한다. 호출자가 카테고리 분류 등 자체 통합 전략을 적용한 뒤, cleanup 절차로 `$FO_DIR`을 제거한다.
 - 보존 분기: (1) 호출자가 결과 파일을 `$FO_DIR` 밖의 호출자 소유 명시 경로(durable copy)로 복사 또는 이동한다. (2) 원래 `$FO_DIR`은 cleanup 절차로 항상 제거한다. (3) 보존된 durable copy의 lifecycle(보관 위치, 만료 기준 등)은 호출자가 책임진다.
 
-호출자 SoT 적용 범위: [`plan-with-questions/references/fanout-fanin.md`의 5 카테고리 통합 전략](../plan-with-questions/references/fanout-fanin.md#fan-in-통합-전략)은 호출자(`plan-with-questions`)의 런타임 무관 자체 분류 전략이다. 본 SKILL.md의 fan-in 표준 절차는 그 호출자가 codex exec 경로에서 적용하는 worker 산출물 lifecycle 처리(머지 vs 보존 + cleanup)에 한정된다 — 카테고리 분류를 대체하지 않는다. 본 SKILL.md는 도입 설명대로 Claude Code/headless의 `codex exec` mechanics만 담당하므로, Direct Codex 세션의 native subagent 결과 lifecycle은 본 표준 적용 대상이 아니다 — [`plan-with-questions/references/fanout-fanin.md`의 런타임 분기](../plan-with-questions/references/fanout-fanin.md#런타임-분기) 절을 따른다.
+호출자 SoT 적용 범위: 호출자의 카테고리 분류 등 자체 통합 전략은 호출자 측 문서가 정의한다. 본 SKILL.md의 fan-in 표준 절차는 그 호출자가 codex exec 경로에서 적용하는 worker 산출물 lifecycle 처리(머지 vs 보존 + cleanup)에 한정된다 — 카테고리 분류를 대체하지 않는다. 본 SKILL.md는 도입 설명대로 Claude Code/headless의 `codex exec` mechanics만 담당하므로, Direct Codex 세션의 native subagent 결과 lifecycle은 본 표준 적용 대상이 아니며, 그 처리는 호출자 측에서 정의한다.
 
 ### reasoning effort
 
@@ -170,7 +170,7 @@ Agent({
 다른 스킬에서 codex exec fan-out 패턴이 필요하면 이 스킬의 실행 패턴 섹션을 참조한다.
 Skill tool 호출이 아닌 문서 참조 방식이다.
 
-참조 예시 (plan-with-questions Step I-1):
+참조 예시:
 ```
 codex exec fan-out 패턴은 /codex-fan-out 스킬 참조.
 ```

@@ -45,7 +45,7 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 
 검증:
 - codex 세션 default mode에서 `use request_user_input to ask me ...`로 invoke 시 tool call이 실제 발생하는지 (plain-text 응답이 아닌지) 관찰.
-- 0.106 release 댓글에 따르면 default mode 모델은 "make assumptions and only stop if blocked" 정책으로 자동 호출하지 않으므로, 인터뷰 기반 스킬 (`plan-with-questions`, `run-da`, `grill-me`) 본문에 명시적 사용 지시가 있어야 한다.
+- 0.106 release 댓글에 따르면 default mode 모델은 "make assumptions and only stop if blocked" 정책으로 자동 호출하지 않으므로, 인터뷰 기반 스킬 (`run-da`, `grill-me`) 본문에 명시적 사용 지시가 있어야 한다.
 - 옵션 개수/Recommended 라벨은 schema/server enforcement가 아니라 codex tool description의 LLM convention이다 (codex 0.128 main fact-check 기준 — `tools/src/request_user_input_tool.rs`의 JSON Schema description 문자열에 "2-3 choices", "recommended option first" 가이드 존재). PR openai/codex#12735는 mode 가용성만 확장하고 schema는 미변경. prompt template 차원에서는 mode별 차이 있음 (`plan.md`만 "2-4 options + recommended default" 명시).
 
 ## 핵심 파일

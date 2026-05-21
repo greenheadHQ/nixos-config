@@ -4,7 +4,7 @@ Review Intensity 판단의 실행 절차. 판단 알고리즘 규칙 SSOT는 [`i
 
 Review Intensity 판정은 메인 LLM이 인라인으로 8 룰 체크리스트를 기계적으로 적용한다. 별도 독립 process(codex exec / native subagent)를 띄우지 않는다. 메인 LLM은 룰을 자유롭게 추론해서는 안 되고, [`intensity-rules.md`](intensity-rules.md)의 룰 1-8을 순서대로 평가해 결과 표를 plan/대화에 남겨야 한다.
 
-기본 진입점은 `/run-da` 호출 직후다. 예외적으로 문서화된 자동 호출자(예: `plan-with-questions`의 자동 review gate)는 같은 절차를 `/run-da` 호출 직전에 적용할 수 있다. 자동 호출자가 만든 handoff가 유효하면 `/run-da`는 그 체크리스트 결과를 재사용하고, handoff가 없거나 stale이면 현재 입력으로 이 절차를 다시 수행한다.
+기본 진입점은 `/run-da` 호출 직후다. 예외적으로 문서화된 자동 호출자는 같은 절차를 `/run-da` 호출 직전에 적용할 수 있다. 자동 호출자가 만든 handoff가 유효하면 `/run-da`는 그 체크리스트 결과를 재사용하고, handoff가 없거나 stale이면 현재 입력으로 이 절차를 다시 수행한다.
 
 `full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(8개 세부 도메인)로 직행한다.
 
@@ -56,7 +56,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
 
 ### 자동 호출자 handoff
 
-자동 호출자가 preflight gate에서 이 체크리스트를 먼저 적용한 경우, `/run-da`에 handoff를 전달할 수 있다. handoff schema와 freshness fields의 SSOT는 [`../../plan-with-questions/references/run-da-preflight-gate.md`](../../plan-with-questions/references/run-da-preflight-gate.md#handoff-to-run-da)다.
+자동 호출자가 preflight gate에서 이 체크리스트를 먼저 적용한 경우, `/run-da`에 handoff를 전달할 수 있다. handoff schema와 freshness fields는 자동 호출자 측 문서가 정의한다.
 
 유효한 handoff가 있고 freshness fields가 현재 입력과 일치하며 판정에 사용한 checklist input facts가 모두 포함되어 있으면 `/run-da`는 같은 입력에 대해 같은 질문을 반복하지 않는다. handoff가 없거나 malformed이거나 freshness fields가 현재 입력과 다르거나 판정 입력 사실이 빠져 있으면 handoff를 버리고 현재 입력으로 체크리스트를 다시 적용한다. SKIP을 사용자가 거부했거나 질문 도구를 사용할 수 없었던 handoff는 freshness validation을 통과한 경우에만 `SKIPPED`가 아닌 거부/미지원 경로로 승격한다.
 

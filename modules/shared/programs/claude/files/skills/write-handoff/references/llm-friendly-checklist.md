@@ -1,6 +1,6 @@
 # LLM-Friendly Issue/Handoff Checklist
 
-> `create-issue`/`write-handoff`/`plan-with-questions` 스킬이 공유하는 품질 체크리스트.
+> `create-issue`/`write-handoff` 스킬이 공유하는 품질 체크리스트.
 > Normative는 스킬이 실제로 강제한다. Informational은 작성 시 참고용 권장.
 
 배경: 세션 로그 전수조사 결과 스킬 산출물에 대한 피드백이 "근거/레퍼런스 부족"과 "맥락 부족"에 집중된다. 본 체크리스트는 이 두 축을 구조적으로 방어한다. 상세 배경은 #461 참조.
@@ -70,7 +70,7 @@
 
 ## 라벨 체계 (Anti-hallucination)
 
-> 단일 진실 원천. `create-issue`/`write-handoff`/`plan-with-questions` 및 해당 reference 파일(특히 `plan-with-questions/references/review-impl/*`)은 이 섹션을 참조한다. 규칙 변경 시 이 섹션을 먼저 수정하고, 소비자 문서의 요약 문구/포인터도 함께 점검한다.
+> 단일 진실 원천. `create-issue`/`write-handoff`는 이 섹션을 참조한다. 규칙 변경 시 이 섹션을 먼저 수정하고, 소비자 문서의 요약 문구/포인터도 함께 점검한다.
 
 이슈/이행가이드/계획/리뷰 finding 작성 중 다음 라벨을 사용한다:
 

@@ -250,9 +250,6 @@ SUBISSUE_STATUS 값 (`--parent` 지정 시에만 출력): `LINKED` / `FAILED_ID_
 
 진입 가드: 위 Step 5 진행 상태 매트릭스의 "Step 6 진행" 열을 따른다. 요약하면 Step 5-A 실패(create 실패 또는 URL validation 실패)는 Step 6 차단, Step 5-B `SUBISSUE_STATUS` 부분 실패는 Step 6 진행 허용. 존재하지 않는 이슈 번호로 `/write-handoff`를 호출하면 handoff comment가 엉뚱한 곳에 게시되거나 오류로 중단되므로 전자의 차단이 필수다.
 
-호출 맥락 확인: plan-with-questions에서 호출된 경우(Step I-5), 이 Step을 건너뛴다.
-(plan-with-questions Step I-6에서 통합 선택지로 제안하므로 중복 방지.)
-
 이슈 생성이 완료되면, 질문 도구로 사용자에게 묻는다:
 
 "LLM 이행 가이드를 작성할까요?"

@@ -1,14 +1,14 @@
 # Validation-Path Catalog
 
-공유 reference — Owner: `plan-with-questions` (primary, for_prd Validation Policy + for_action validation 단계). Dependent skills: `run-da`.
+공유 reference — Owner: `run-da` (PR/plan 리뷰의 validation 전략 판정). #810에서 `plan-with-questions` 제거와 함께 run-da로 이관됨.
 
-의존 스킬이 신규 추가되면 이 섹션을 갱신한다. drift inventory 문서는 생성하지 않는다 (#470 Lessons Learned — 실시간 `rg`/`grep`으로 대체 가능한 정보는 작성하지 않는다).
+다른 스킬이 이 catalog에 의존하게 되면 위 Owner 줄에 dependent로 명시한다. drift inventory 문서는 생성하지 않는다 (#470 Lessons Learned — 실시간 `rg`/`grep`으로 대체 가능한 정보는 작성하지 않는다).
 
 upstream `playmoreai/agent-skills` 의 `prd/SKILL.md` Validation Policy 섹션에는 별도 명명이 없다. 본 SSOT에서 이를 validation-path catalog로 명명한다. 현재 enumerate 된 path 수는 enumeration 섹션에서 직접 확인한다 (하드코딩된 숫자는 drift 위험이므로 본 문서 본문에 두지 않는다).
 
 ## main-agent-only 경계
 
-본 reference를 참조하는 스킬이 이 catalog 기반으로 tracked write (코드 또는 문서 수정) 를 수행할 때, 해당 실행은 메인 에이전트 전용이다. `nrs`, `verify-ai-compat.sh`, commit, push, GitHub write도 동일하다. subagent는 read-only 검토까지만 수행한다. 상세 계약의 단일 SSOT는 [`../../run-da/references/hardening-contract.md`](../../run-da/references/hardening-contract.md) 의 "Codex 세션 하드닝 계약" 섹션이다.
+본 reference를 참조하는 스킬이 이 catalog 기반으로 tracked write (코드 또는 문서 수정) 를 수행할 때, 해당 실행은 메인 에이전트 전용이다. `nrs`, `verify-ai-compat.sh`, commit, push, GitHub write도 동일하다. subagent는 read-only 검토까지만 수행한다. 상세 계약의 단일 SSOT는 [`./hardening-contract.md`](./hardening-contract.md) 의 "Codex 세션 하드닝 계약" 섹션이다.
 
 ## 원칙
 
