@@ -22,7 +22,6 @@ EXPECTED_EXPOSED=(
   create-pr
   grill-me
   parallel-audit
-  plan-with-questions
   playwright-cli
   review-pr-feedback
   run-da
@@ -737,41 +736,6 @@ require_contract_text \
   "runtime mapping pointer to authorization contract"
 
 require_contract_text \
-  "modules/shared/programs/claude/files/skills/plan-with-questions/references/fanout-fanin.md" \
-  "hardening-contract.md#skill-internal-fan-out-authorization" \
-  "plan-with-questions fanout-fanin authorization pointer"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/plan-with-questions/references/fanout-fanin.md" \
-  '`codex-exec-supervised` fallback 승인 경계' \
-  "plan-with-questions fanout-fanin fallback boundary"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/plan-with-questions/references/fanout-fanin.md" \
-  "Step 3.5 external consult exception" \
-  "plan-with-questions Step 3.5 consult exception anchor"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/plan-with-questions/references/fanout-fanin.md" \
-  "consulting-step-shell.md" \
-  "plan-with-questions Step 3.5 consult SSOT pointer"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/plan-with-questions/references/fanout-fanin.md" \
-  "delegation-denied fallback이 아니다" \
-  "plan-with-questions Step 3.5 consult is not fallback"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/plan-with-questions/references/runtime-boundaries.md" \
-  "hardening-contract.md#skill-internal-fan-out-authorization" \
-  "plan-with-questions runtime-boundaries authorization pointer"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/plan-with-questions/references/runtime-boundaries.md" \
-  '`codex-exec-supervised` fallback 승인 경계' \
-  "plan-with-questions runtime-boundaries fallback boundary"
-
-require_contract_text \
   "modules/shared/programs/claude/files/skills/parallel-audit/SKILL.md" \
   '$parallel-audit' \
   "parallel-audit invocation anchor"
@@ -797,10 +761,6 @@ require_contract_text \
   "AGENTS override template native fan-out authorization anchor"
 
 require_sync_generated_text \
-  '\`\$plan-with-questions\`' \
-  "sync.sh generated supplement mentions plan-with-questions"
-
-require_sync_generated_text \
   '\`\$run-da\`' \
   "sync.sh generated supplement mentions run-da"
 
@@ -819,10 +779,6 @@ require_sync_generated_text \
 require_sync_generated_text \
   "별도 사용자 승인" \
   "sync.sh generated supplement separate approval anchor"
-
-require_agents_override_generated_text \
-  '$plan-with-questions' \
-  "AGENTS.override generated block mentions plan-with-questions"
 
 require_agents_override_generated_text \
   '$run-da' \

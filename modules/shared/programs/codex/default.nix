@@ -42,7 +42,6 @@ let
     "create-pr"
     "grill-me"
     "parallel-audit"
-    "plan-with-questions"
     "playwright-cli"
     "review-pr-feedback"
     "run-da"

@@ -346,7 +346,7 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
 
 ## 관련 follow-up
 
-`parallel-audit` + `run-da` + `codex-fan-out` + `plan-with-questions` 4 SKILL의 args 처리 패턴이 서로 다르다 (정수 / mode 토큰 / 텍스트 우선 / 모드 판별 표). 4 SKILL 호출 인터페이스의 mental model 통일은 본 이슈 scope 외 — 별도 메타 이슈에서 다룬다.
+`parallel-audit` + `run-da` + `codex-fan-out` 3 SKILL의 args 처리 패턴이 서로 다르다 (정수 / mode 토큰 / 텍스트 우선). 3 SKILL 호출 인터페이스의 mental model 통일은 본 이슈 scope 외 — 별도 메타 이슈에서 다룬다.
 
 ## Non-goals
 

@@ -518,7 +518,7 @@ capability probe 동작 ([`modules/shared/scripts/codex-exec-supervised.sh`](../
 
 Nix wiring ([`modules/shared/programs/shell/default.nix`](../../../../../shell/default.nix)): home.file로 `~/.local/bin/codex-exec-supervised`를 `pkgs.writeShellScript` wrapper에 link한다. wrapper가 `CODEX_EXEC_TIMEOUT_BIN`/`CODEX_EXEC_SETSID_BIN`에 `pkgs.coreutils`/`pkgs.util-linux`의 absolute store path를 export한 뒤 raw script(`modules/shared/scripts/codex-exec-supervised.sh`)를 exec한다. wrapper는 PATH를 변경하지 않으므로 사용자 PATH의 BSD coreutils가 보존된다 (mac `stat -f %m` 같은 BSD 호출 의미 보존).
 
-오케스트레이션 vs 자문 (Layer 2 — `-C scratch` 추가): consult 전용 호출(예: [`plan-with-questions/references/consulting-step.md`](../../plan-with-questions/references/consulting-step.md))은 Layer 1 위에 `-C <non-repo-scratch-dir>` + `--skip-git-repo-check`를 추가한다. reviewer/auditor (run-da/parallel-audit/codex-fan-out)는 repo cwd가 필요하므로 Layer 2를 적용하지 않는다.
+오케스트레이션 vs 자문 (Layer 2 — `-C scratch` 추가): consult 전용 호출(외부 LLM에 옵션을 자문하는 비-repo 작업)은 Layer 1 위에 `-C <non-repo-scratch-dir>` + `--skip-git-repo-check`를 추가한다. reviewer/auditor (run-da/parallel-audit/codex-fan-out)는 repo cwd가 필요하므로 Layer 2를 적용하지 않는다.
 
 variant legend (issue #593 PoC 8 variant + wrapper 적용 분류):
 

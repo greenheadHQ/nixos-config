@@ -19,7 +19,7 @@ description: |
 Review Intensity 판단은 메인 LLM이 [`references/intensity-rules.md`](references/intensity-rules.md)의 룰 표를 기계적 체크리스트로 적용한다.
 "이건 단순한 변경이니 DA를 건너뛰어도 된다"는 자유 추론은 금지다.
 직접 `/run-da` 호출에서는 호출을 생략하지 마라 — run-da를 호출한 뒤 메인 LLM은 모든 룰을 평가한 표를 plan/대화에 남긴 뒤 first-match 룰의 단계를 채택해 SKIP/LITE/FULL을 결정한다.
-예외적으로, 문서화된 자동 호출자(예: `plan-with-questions`의 자동 review gate)는 동일 체크리스트를 호출 직전에 재사용할 수 있다. 이 경우에도 룰 표 복제나 자유 추론은 금지이며, SKIP은 질문 도구 승인 없이는 완료 상태가 아니다.
+예외적으로, 문서화된 자동 호출자는 동일 체크리스트를 호출 직전에 재사용할 수 있다. 이 경우에도 룰 표 복제나 자유 추론은 금지이며, SKIP은 질문 도구 승인 없이는 완료 상태가 아니다.
 체크리스트 표가 없거나 fail-closed rule group(보안/모듈/설정·의존성 — 자세한 ID는 `intensity-rules.md`)이 하나라도 매치/불확실이면 강한 검토(FULL)로 fail-closed.
 합리화 방지 상세는 [`references/intensity-procedure.md`](references/intensity-procedure.md)와 [`references/protocol.md`](references/protocol.md) 참조.
 
@@ -75,14 +75,13 @@ Review Intensity 판단을 건너뛰고 exhaustive override를 실행한다.
 | Codex 세션 하드닝 계약 (single-writer / 역할별 경계 / VIOLATION / Delegation fallback) | [`references/hardening-contract.md`](references/hardening-contract.md) |
 | Review Intensity 인라인 체크리스트 절차 (메인 LLM 기계적 적용 + fail-closed) | [`references/intensity-procedure.md`](references/intensity-procedure.md) |
 | Review Intensity 판단 알고리즘 규칙 (룰 표 + 안정적 ID + fail-closed group) | [`references/intensity-rules.md`](references/intensity-rules.md) |
-| 자동 호출자의 preflight gate | [`../plan-with-questions/references/run-da-preflight-gate.md`](../plan-with-questions/references/run-da-preflight-gate.md) |
 | 메인 에이전트 의무 (행동 + 사용자 질문 맥락 + 검증) | [`references/main-agent-obligations.md`](references/main-agent-obligations.md) |
 | DA reviewer bundle 상세 + 프롬프트 템플릿 | [`references/da-domains.md`](references/da-domains.md) |
 | DA → Arbiter 상태 흐름 + 합리화 방지 + PR 코멘트 형식 | [`references/protocol.md`](references/protocol.md) |
 | Arbiter 프롬프트 + 5가지 판정 기준 | [`references/arbiter-prompt.md`](references/arbiter-prompt.md) |
 | Arbiter 스케일링 + 실행 계약 (+ Review Intensity 인라인 체크리스트 실행 계약) | [`references/arbiter-scaling.md`](references/arbiter-scaling.md) |
 | Selective consistency 정책 (vote-shape + offline kappa) | [`references/stability-measurement.md`](references/stability-measurement.md) |
-| Validation-path catalog (공용) | [`../plan-with-questions/references/validation-paths.md`](../plan-with-questions/references/validation-paths.md) |
+| Validation-path catalog | [`references/validation-paths.md`](references/validation-paths.md) |
 
 ## 용어 정책
 

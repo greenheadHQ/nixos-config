@@ -231,10 +231,10 @@ if [ -d "$_refs_dir" ]; then
 fi
 
 # shared refs 의존 목록 (sibling skill references that {name} relies on):
-# - create-issue, plan-with-questions  →  skills/write-handoff/references/llm-friendly-checklist.md
+# - create-issue  →  skills/write-handoff/references/llm-friendly-checklist.md
 # 새 의존 추가 시 이 case 블록 갱신
 case "{name}" in
-  create-issue|plan-with-questions)
+  create-issue)
     [ -f "skills/write-handoff/references/llm-friendly-checklist.md" ] \
       && CAT_FILES+=("skills/write-handoff/references/llm-friendly-checklist.md")
     ;;
