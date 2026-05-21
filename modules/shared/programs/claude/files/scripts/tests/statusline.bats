@@ -415,12 +415,12 @@ EOF
     || { echo "expected branch label 'feat-foo' in output; got: $plain" >&2; false; }
 }
 
-# CWD_CANONICAL 부재 회귀 가드: canonicalize_cwd_check가 실패해 CWD_CANONICAL=""
-# 이면 WORKTREE_BASENAME=""이라 GIT_BRANCH와 일치할 수 없어 가드가 자연스럽게
-# 비활성된다. L3 가드 블록 주석이 약속한 동작을 박제해 L3가 의도치 않게
-# 숨겨지는 회귀를 막는다. cwd를 상대경로(="tmp")로 보내면
-# canonicalize_cwd_check 의 절대경로 가드(case "$cwd" in /*) ;; *) return ;; esac)에
-# 걸려 CWD_CANONICAL="" 이 자연 유도된다.
+# CWD_RESOLVED 부재 회귀 가드: 구문 검증 실패로 CWD_RESOLVED=""이면 WORKTREE_BASENAME=""
+# 이라 GIT_BRANCH와 일치할 수 없어 L3 생략 가드가 자연스럽게 비활성된다. L3 가드 블록
+# 주석이 약속한 동작을 박제해 L3가 의도치 않게 숨겨지는 회귀를 막는다. cwd를
+# 상대경로(="tmp")로 보내면 validate_cwd_syntax 의 절대경로 가드(case "$cwd" in /*) ;;
+# *) return ;; esac)에 걸려 CWD_VALID="" → CWD_RESOLVED="" 이 자연 유도된다 (상대경로는
+# raw fallback 대상도 아니다).
 @test "worktree with non-canonical cwd keeps L3 branch line (guard disabled)" {
   local now five_h seven_d
   now=$(date +%s)
@@ -448,9 +448,61 @@ EOF
   plain=$(echo "$output" | strip_ansi)
   branch_count=$(echo "$plain" | grep -oF '🌿' | wc -l | tr -d ' ')
   [ "$branch_count" -eq 1 ] \
-    || { echo "expected exactly 1 🌿 (L3 branch) when CWD_CANONICAL=\"\" (guard disabled); got count=$branch_count plain=$plain" >&2; false; }
+    || { echo "expected exactly 1 🌿 (L3 branch) when CWD_RESOLVED=\"\" (guard disabled); got count=$branch_count plain=$plain" >&2; false; }
   echo "$plain" | grep -qF 'tmp' \
     || { echo "expected branch label 'tmp' in output; got: $plain" >&2; false; }
+}
+
+# ============================================================
+# cwd URL raw fallback (canonical best-effort 회귀 가드)
+# ============================================================
+# canonical(cd+pwd -P) 실패 시 검증된 raw 절대경로로 vscode:// URL 을 유지해야 한다.
+# OSC 8 URL 은 strip_ansi 가 제거하므로 raw $output 에서 직접 매칭한다.
+
+# 부재 절대경로 cwd → raw fallback. 디렉토리가 그 순간 존재하지 않으면
+# (LLM 이 삭제될 임시 디렉토리/워크트리로 작업 디렉토리를 옮긴 찰나, 또는 고부하
+# fork 실패) canonicalize_dir 이 빈 값을 반환한다. canonical 단일 의존 시절엔 이
+# 경우 OSC 8 링크가 통째로 사라져 클릭 시 에디터 대신 Finder 로 열리는 간헐 회귀가
+# 있었다. 절대경로 + control-free 는 통과했으므로 raw 경로로 URL 을 유지해야 한다.
+@test "absent absolute cwd still emits vscode:// URL (raw fallback)" {
+  local gone="/tmp/statusline-bats-gone-$$-${RANDOM}"
+  rm -rf "$gone"
+  local stdin_json
+  stdin_json=$(cat <<EOF
+{
+  "session_id": "abc12345-def6-7890-abcd-ef1234567890",
+  "transcript_path": "/tmp/nonexistent.jsonl",
+  "cwd": "$gone",
+  "model": {"display_name": "test"}
+}
+EOF
+)
+  run run_statusline_with_input "$stdin_json"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF "vscode://file${gone}/?windowId=_blank" \
+    || { echo "expected raw-fallback vscode URL for absent cwd '$gone'; got: $output" >&2; false; }
+}
+
+# 보안 가드: 상대경로 cwd 는 raw fallback 대상이 아니다. validate_cwd_syntax 의
+# 절대경로 가드가 거부 → CWD_RESOLVED="" → URL 미생성. raw fallback 도입이
+# escape 방어(절대경로/control 검증)를 우회시키지 않음을 박제.
+@test "relative cwd emits no vscode:// URL (fallback respects abs-path guard)" {
+  local stdin_json
+  stdin_json=$(cat <<EOF
+{
+  "session_id": "abc12345-def6-7890-abcd-ef1234567890",
+  "transcript_path": "/tmp/nonexistent.jsonl",
+  "cwd": "relative/path",
+  "model": {"display_name": "test"}
+}
+EOF
+)
+  run run_statusline_with_input "$stdin_json"
+  [ "$status" -eq 0 ]
+  if echo "$output" | grep -qF 'vscode://'; then
+    echo "expected NO vscode URL for relative cwd; got: $output" >&2
+    false
+  fi
 }
 
 # ============================================================
