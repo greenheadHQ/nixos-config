@@ -23,8 +23,10 @@ goals = true
 default_mode_request_user_input = true
 
 # Codex 0.124+ stable hooks (issue #585 / epic #584).
-# `codex_hooks` feature flag는 PR openai/codex#19012로 default-enabled가 되어 명시
-# 활성화 불필요. 발화 미실측 시 rollback path = `[features].codex_hooks = true`.
+# hooks는 PR openai/codex#19012로 default-enabled가 되어 `[features].hooks`로 노출되며
+# 명시 활성화 불필요. 강제 활성화가 필요하면 `[features].hooks = true`.
+# 구 `codex_hooks` flag는 codex 0.130 기준 deprecated alias다 — 입력 시 codex가
+# "[features].codex_hooks is deprecated. Use [features].hooks instead." 경고를 띄우므로 사용 금지.
 # Stop은 _stop-dispatcher.sh 단일 entry로 등록 (Codex가 같은 이벤트의 multiple command를
 # concurrent 실행하므로 ordering 보장을 dispatcher에 위임).
 # subagent agent_id 부재 등은 graceful fallback에 의존.
