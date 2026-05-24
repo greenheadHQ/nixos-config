@@ -188,11 +188,13 @@ in
           || { node_ok=0; echo "Warning: 'mise use -g node@lts' failed; skipping Codex CLI install (non-fatal)"; }
       fi
       if [ "$node_ok" = 1 ]; then
-        # mise npm backend 설치는 내부적으로 npm 래퍼(exec node)를 호출하는데, 이 래퍼는 PATH의
-        # node를 찾는다. home-manager activation의 제한된 PATH에는 node가 없어 'exec: node: not found'로
-        # 실패하므로, mise-managed node bin을 PATH 앞에 보강한다(cleanupManualNodeCodex와 동일 의도).
+        # mise npm backend 설치는 내부적으로 npm 래퍼를 호출하는데, 이 래퍼는 두 외부 명령을 PATH에서
+        # 찾는다: (1) node 실행(exec node), (2) 설치 후 reshim 단계의 'mise reshim'. home-manager
+        # activation의 제한된 PATH에는 둘 다 없어 node는 'exec: node: not found', mise는
+        # 'mise: command not found'(reshim 단계 exit 127 → install 전체 실패)로 깨진다.
+        # mise-managed node bin과 mise bin을 함께 PATH 앞에 보강한다(cleanupManualNodeCodex와 동일 의도).
         node_bin="$("$mise_bin" where node 2>/dev/null)/bin"
-        [ -d "$node_bin" ] && export PATH="$node_bin:$PATH"
+        [ -d "$node_bin" ] && export PATH="$node_bin:${pkgs.mise}/bin:$PATH"
         # config 등록 + installed:true인 backend만 "이미 관리됨"으로 판정한다.
         # length>0만 보면 config 등록 후 install 실패한 [{installed:false}] 상태에 속아 영구 미설치로 고착된다.
         if "$mise_bin" ls -g --current --json npm:@openai/codex 2>/dev/null \
