@@ -45,6 +45,7 @@ modules/shared/programs/neovim/
             ├── disabled.lua         # Mason (mason-org/), mini.surround (nvim-mini/), tokyonight.nvim, indent-blankline.nvim, neo-tree.nvim 비활성화
             ├── colorscheme.lua      # Catppuccin Mocha
             ├── lsp.lua              # 추가 LSP (cssls, html)
+            ├── dap.lua              # nvim-dap JS/TS attach (--inspect 9229, Linux cond)
             ├── treesitter.lua       # 파서 목록
             ├── editor.lua           # nvim-surround, auto-save, treesitter-context, flash.nvim, vim-abolish, snacks.nvim, im-select
             ├── lint.lua             # markdownlint-cli2 설정

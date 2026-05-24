@@ -13,13 +13,17 @@ let
   # 명령은 의미가 드러나도록 `reset-all`로 둔다 (`off`처럼 좁게 읽히지 않게).
   #
   # 사전조건: Tailscale admin 콘솔에서 MagicDNS + HTTPS Certificates 활성화.
-  # 권한: tailscale serve는 root 필요 → sudo 사용.
+  # 권한: tailscale serve는 operator 미설정 시 root 필요 → sudo 사용.
   #       (비번 없이 쓰려면 `sudo tailscale set --operator=$USER` 후 sudo 제거 가능)
   # serve 트래픽은 tailscale0(trustedInterfaces)에서 동작하므로 별도 방화벽 개방 불필요.
   tsServe = pkgs.writeShellApplication {
     name = "ts-serve";
     text = ''
       ts=${pkgs.tailscale}/bin/tailscale
+      if [ "$#" -gt 1 ]; then
+        echo "인자는 하나만 받습니다: ts-serve <port> | status | reset-all" >&2
+        exit 1
+      fi
       case "''${1:-}" in
         status)
           sudo "$ts" serve status
@@ -40,17 +44,18 @@ let
           ;;
         *)
           port="$1"
-          if ! [[ "$port" =~ ^[0-9]+$ ]]; then
-            echo "포트는 숫자여야 합니다: $port" >&2
+          if ! [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || [ "$port" -gt 65535 ]; then
+            echo "포트는 1-65535 범위의 숫자여야 합니다: $port" >&2
             exit 1
           fi
           # 보안: 이 노드는 tailscale0이 trusted interface다. dev 서버가 0.0.0.0(또는
           # tailnet IP)에 바인딩하면 ts-serve의 HTTPS와 별개로 raw HTTP 포트가 tailnet에
-          # 직접 노출된다. dev 서버는 반드시 127.0.0.1에 바인딩해야 한다.
+          # 직접 노출된다. ss의 local address 필드만 검사해 실제 bind 주소를 판정한다
+          # (LISTEN 행의 peer 주소 0.0.0.0:* 오탐 방지). dev 서버는 127.0.0.1에 바인딩하라.
           if command -v ss >/dev/null 2>&1; then
-            _listen=$(ss -tlnH "sport = :$port" 2>/dev/null || true)
-            if printf '%s' "$_listen" | grep -qE '0\.0\.0\.0|\[::\]|100\.'; then
-              echo "경고: 포트 $port가 0.0.0.0/tailnet IP에 listen 중 — tailnet 직접 노출. dev 서버를 127.0.0.1에 바인딩하라." >&2
+            _laddr=$(ss -H -ltn "sport = :$port" 2>/dev/null | awk '{print $4}' || true)
+            if printf '%s\n' "$_laddr" | grep -qE '^(0\.0\.0\.0|\*|\[::\]|100\.)'; then
+              echo "경고: 포트 $port가 0.0.0.0/tailnet IP에 바인딩됨 — tailnet 직접 노출. dev 서버를 127.0.0.1에 바인딩하라." >&2
             fi
           fi
           # serve config는 노드 전역 상태다. <port> 노출은 기존 serve를 갱신/덮어쓸 수
