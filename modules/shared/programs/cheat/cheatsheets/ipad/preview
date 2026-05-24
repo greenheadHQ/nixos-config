@@ -11,7 +11,7 @@ iPad에서 dev 서버 미리보기 (Tailscale Serve)
 
   ts-serve 4200      # http://127.0.0.1:4200 을 tailnet HTTPS로 노출
   ts-serve status    # 현재 노출 상태 + URL 확인
-  ts-serve off       # 노출 해제 (주의: 이 노드의 전체 serve config를 reset)
+  ts-serve reset-all # 이 노드의 모든 serve config 초기화 (전역 — preview 한정 아님)
 
 접근 URL
 

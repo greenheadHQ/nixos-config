@@ -7,6 +7,11 @@ let
   # HTTPS라 secure-context 충족 → Clipboard/cookie/Service Worker 등 정상 동작.
   # 특정 프로젝트에 비종속 — dev 포트만 인자로 받는다 (가변 포트).
   #
+  # 범위 주의: tailscale serve config는 "노드 전역" 상태다. 이 helper는 전용 service로
+  # 격리하지 않으므로, <port> 노출은 노드 serve를 갱신하고 reset-all은 노드의 모든
+  # serve를 초기화한다. 그래서 <port> 실행 시 현재 상태를 먼저 보여주고, 전체 초기화
+  # 명령은 의미가 드러나도록 `reset-all`로 둔다 (`off`처럼 좁게 읽히지 않게).
+  #
   # 사전조건: Tailscale admin 콘솔에서 MagicDNS + HTTPS Certificates 활성화.
   # 권한: tailscale serve는 root 필요 → sudo 사용.
   #       (비번 없이 쓰려면 `sudo tailscale set --operator=$USER` 후 sudo 제거 가능)
@@ -19,18 +24,18 @@ let
         status)
           sudo "$ts" serve status
           ;;
-        off | reset)
-          # 주의: `tailscale serve reset`은 helper가 만든 preview만이 아니라
-          # 이 노드의 "전체" serve config를 초기화한다. 현재 설정을 먼저 보여줘
-          # 의도치 않은 다른 serve 설정 삭제를 사용자가 인지하게 한다.
-          echo "현재 serve 설정 (reset 대상 — 이 노드의 모든 serve):" >&2
+        reset-all)
+          # 이 노드의 "전체" serve config를 초기화한다 (helper preview 한정이 아님).
+          # 현재 설정을 먼저 보여줘 의도치 않은 타 serve 설정 삭제를 인지하게 한다.
+          echo "현재 serve 설정 (reset-all 대상 — 이 노드의 모든 serve):" >&2
           sudo "$ts" serve status 2>/dev/null || true
           sudo "$ts" serve reset
           echo "Tailscale serve 전체 config가 reset됨"
           ;;
         "")
-          echo "사용법: ts-serve <port> | status | off" >&2
-          echo "  예: ts-serve 4200   # http://127.0.0.1:4200 → tailnet HTTPS" >&2
+          echo "사용법: ts-serve <port> | status | reset-all" >&2
+          echo "  ts-serve 4200   # http://127.0.0.1:4200 → tailnet HTTPS" >&2
+          echo "  reset-all       # 이 노드의 모든 serve config 초기화 (전역)" >&2
           exit 1
           ;;
         *)
@@ -39,6 +44,10 @@ let
             echo "포트는 숫자여야 합니다: $port" >&2
             exit 1
           fi
+          # serve config는 노드 전역 상태다. <port> 노출은 기존 serve를 갱신/덮어쓸 수
+          # 있으므로 현재 상태를 먼저 보여줘 사용자가 인지하게 한다.
+          echo "현재 serve 설정 (ts-serve <port>는 노드 serve 설정을 갱신함):" >&2
+          sudo "$ts" serve status 2>/dev/null || true
           sudo "$ts" serve --bg "$port"
           echo "노출됨: http://127.0.0.1:$port → tailnet HTTPS (URL 확인: ts-serve status)"
           ;;

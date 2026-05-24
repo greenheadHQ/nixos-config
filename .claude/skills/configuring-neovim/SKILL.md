@@ -59,6 +59,7 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 - 포매터: prettier, stylua, nixfmt
 - 린터: statix, markdownlint-cli2
 - 빌드: tree-sitter, gcc (Linux 전용), nodejs
+- DAP: vscode-js-debug + js-debug-adapter wrapper (Linux 전용 — JS/TS 디버거)
 
 > `ripgrep`, `fd`, `fzf`는 `libraries/packages.nix`에서, `lazygit`은 Home Manager (`programs.lazygit.enable = true`)로 설치됨 — 중복 추가 금지
 
@@ -72,7 +73,7 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 ## 제약사항
 
 - `programs.neovim`에 `plugins`/`initLua`/`extraConfig` 추가 금지 (심볼릭 링크 충돌)
-- DAP 디버깅 미지원 (Mason 비활성화로 js-debug-adapter 미설치)
+- DAP(JS/TS 서버 디버깅) 지원: `dap.core` extra + Nix `vscode-js-debug`(`js-debug-adapter` wrapper로 이름 매칭). Mason 비활성 원칙 유지 — adapter는 `extraPackages`로 제공하며 Linux 전용(macOS는 VSCode로 디버깅). 키맵/사용법: `cheat nvim/dap`
 - `default.nix` 함수 시그니처에 `nixosConfigPath` 명시 필수
 - extraPackages에 C 컴파일러(gcc 등) 추가 시 반드시 `lib.optionals pkgs.stdenv.isLinux` 사용 — macOS에서 LLVM 소스 빌드 방지
 - marksman 사용 금지 → `markdown-oxide` 사용. marksman은 dotnet→Swift 의존성 체인으로 macOS에서 Swift 소스 빌드 실패

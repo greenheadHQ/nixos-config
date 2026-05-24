@@ -51,8 +51,10 @@ local spec = {
 -- Linux 전용인 이유: js-debug adapter(js-debug-adapter wrapper)가 default.nix의
 -- Linux-only extraPackages 블록에서만 설치된다. macOS는 VSCode로 디버깅하므로,
 -- macOS에서 dap.core를 켜면 adapter 없는 DAP UI/keymap만 노출되어 PATH 계약과
--- 불일치한다 → 비-macOS(Linux)에서만 import한다.
-if vim.fn.has("mac") == 0 then
+-- 불일치한다. 지원 플랫폼은 Linux/macOS뿐이라 is_linux로 명시한다
+-- (default.nix의 pkgs.stdenv.isLinux 조건과 의미를 맞춘다).
+local is_linux = vim.fn.has("linux") == 1
+if is_linux then
   table.insert(spec, { import = "lazyvim.plugins.extras.dap.core" })
 end
 
