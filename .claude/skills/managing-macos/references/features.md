@@ -429,7 +429,7 @@ brew install --cask --adopt docker-desktop:
 brew install --cask --adopt docker-desktop
 
 # 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, vscode 제외)
-for cask in codex ghostty raycast rectangle hammerspoon homerow docker-desktop fork monitorcontrol; do
+for cask in ghostty raycast rectangle hammerspoon homerow docker-desktop fork monitorcontrol; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
 

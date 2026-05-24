@@ -12,6 +12,7 @@
     pkgs.ripgrep # grep 대체 (빠른 텍스트 검색)
 
     # 개발 도구
+    pkgs.mise # 런타임 버전 관리 (node/pnpm; codex npm backend도 의존). macOS는 nix mise 사용 — 과거 수동 brew mise와 PATH 경합 시 brew uninstall 권장
     pkgs.shellcheck # 쉘 스크립트 린터
 
     # TUI 도구
@@ -52,6 +53,5 @@
     # Termius 등 다른 SSH 클라이언트는 자체 TERM(보통 xterm-256color)을 사용하므로 무관.
     pkgs.ghostty.terminfo
     pkgs.lm_sensors # 하드웨어 온도 모니터링 (sensors 명령어)
-    pkgs.mise # 런타임 버전 관리
   ];
 }
