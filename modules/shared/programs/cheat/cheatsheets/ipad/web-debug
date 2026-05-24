@@ -16,7 +16,9 @@ eruda — in-page 콘솔 / 네트워크 / 엘리먼트 (북마클릿)
      접근할 수 있다. 따라서:
        - dev/로컬 미리보기 같은 throwaway origin에서만 사용
        - 인증된 서비스·프로덕션·민감 데이터 페이지에서는 절대 사용 금지
-     버전 고정(eruda@3)으로 공급망 변동 위험을 줄인다.
+     아래 URL의 @3은 major version range다(자동으로 최신 3.x 로드). 공급망 변동을
+     완전히 막으려면 exact patch로 고정(예: eruda@3.4.3)하고 SRI(integrity) 해시도 같이
+     검증하라. 가장 안전한 건 검증한 사본을 self-host하는 것이다.
 
   javascript:(function(){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda@3';document.body.appendChild(s);s.onload=function(){eruda.init()};})();
 

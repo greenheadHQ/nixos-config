@@ -18,7 +18,12 @@ return {
     optional = true, -- dap.core extra가 없으면 안전하게 무시
     opts = function()
       local dap = require("dap")
-      local js_filetypes = { "typescript", "javascript", "typescriptreact", "javascriptreact" }
+      -- LazyVim lang.typescript extra가 pwa-node 어댑터를 등록하며
+      -- require("dap.ext.vscode").type_to_filetypes["pwa-node"]에 js filetype 목록을 채운다.
+      -- 그 값을 재사용해 목록을 두 곳에 복제하지 않는다(upstream 드리프트 방지).
+      -- 아직 비어 있으면(로드 순서) 동일 목록으로 폴백한다.
+      local js_filetypes = require("dap.ext.vscode").type_to_filetypes["pwa-node"]
+        or { "typescript", "javascript", "typescriptreact", "javascriptreact" }
       for _, ft in ipairs(js_filetypes) do
         dap.configurations[ft] = dap.configurations[ft] or {}
         table.insert(dap.configurations[ft], {
