@@ -1,5 +1,7 @@
 # Codex CLI 설정 (공통)
-# 바이너리: macOS=brew cask, NixOS=GitHub releases 직접 다운로드
+# 바이너리: macOS/NixOS 공통 — mise npm backend(npm:@openai/codex)로 설치 관리.
+#   버전 pinning 없음(@latest) + 자동 업데이트 없음(멱등 가드로 재호출 차단).
+#   설치/정리: home.activation.{cleanupLegacyCodexCli, installCodexCli, cleanupManualNodeCodex}.
 # Claude Code 스킬을 Codex에서도 사용할 수 있도록 심볼릭 링크 관리
 # trust는 런타임 mutation(사용자 승인, 디렉토리당 1회)이 SoT. template은 trust를
 # 하드코딩하지 않으며, ~/.codex/config.toml은 activation의 syncCodexConfig가
@@ -11,7 +13,6 @@
   pkgs,
   lib,
   nixosConfigPath,
-  hostType ? null,
   ...
 }:
 
@@ -84,17 +85,6 @@ in
     ".codex/scripts/fleiss-kappa.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
 
-    # macOS personal hosts install Codex via the Homebrew cask, but login/non-interactive
-    # shells only get the Home Manager session PATH. Expose a narrow wrapper in
-    # ~/.local/bin instead of prepending the whole Homebrew prefix and changing
-    # unrelated command resolution such as notification hook `timeout` behavior.
-    ".local/bin/codex" = lib.mkIf (pkgs.stdenv.isDarwin && hostType == "personal") {
-      source = pkgs.writeShellScript "codex-homebrew-wrapper" ''
-        exec /opt/homebrew/bin/codex "$@"
-      '';
-      executable = true;
-    };
-
     # Codex 0.124+ stable hooks (issue #585 / epic #584).
     # Claude `~/.claude/hooks/*` 무변경 보장이 필요하므로 Codex 전용 사본을 분리한다.
     # 사본은 modules/shared/programs/codex/files/hooks/ 에서 mkOutOfStoreSymlink로 노출.
@@ -141,31 +131,100 @@ in
       "$config_dir/config.toml"
   '';
 
-  # ─── NixOS: Codex CLI 바이너리 설치 (GitHub releases) ───
-  # macOS는 brew cask로 관리 (modules/darwin/programs/homebrew.nix)
-  home.activation.installCodexCli = lib.mkIf pkgs.stdenv.isLinux (
-    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      if ! command -v codex >/dev/null 2>&1; then
-        echo "Installing Codex CLI from GitHub releases..."
-        TAG="$(${pkgs.curl}/bin/curl -sI --connect-timeout 5 --max-time 10 \
-          "https://github.com/openai/codex/releases/latest" \
-          | ${pkgs.gnugrep}/bin/grep -i '^location:' | ${pkgs.gnused}/bin/sed 's|.*/tag/||; s/\r//')"
-        if [ -n "$TAG" ]; then
-          BINARY="codex-x86_64-unknown-linux-musl"
-          URL="https://github.com/openai/codex/releases/download/''${TAG}/''${BINARY}.tar.gz"
-          mkdir -p "$HOME/.local/bin"
-          ${pkgs.curl}/bin/curl -fsSL "$URL" | ${pkgs.gnutar}/bin/tar --use-compress-program=${pkgs.gzip}/bin/gzip -x -C /tmp
-          mv "/tmp/''${BINARY}" "$HOME/.local/bin/codex"
-          chmod +x "$HOME/.local/bin/codex"
-          echo "Codex CLI ''${TAG#rust-v} installed to ~/.local/bin/codex"
-        else
-          echo "Warning: Could not fetch Codex CLI release tag (skipping install)"
+  # ─── Codex CLI 설치 (mise npm backend — macOS + NixOS 공통) ───
+  # nix(GitHub 바이너리)/brew cask 대신 mise npm backend(npm:@openai/codex)로 통일한다.
+  # 3단계 DAG: 레거시 정리 → 설치 → 수동 npm 잔재 정리. 전부 non-fatal로,
+  # mise/node 부재나 네트워크 실패가 nrs(home-manager activation) 전체를 깨지 않게 한다.
+
+  # (1) 레거시 Codex CLI 정리
+  #   - NixOS: ~/.local/bin/codex (과거 GitHub releases ELF; HM 미추적 regular file)
+  #   - macOS: brew cask codex (homebrew cleanup="none"이라 cask 목록 제거만으론 미삭제)
+  #     darwin wrapper ~/.local/bin/codex(symlink)는 home.file 항목 제거로 HM이 자동 정리.
+  home.activation.cleanupLegacyCodexCli = lib.hm.dag.entryAfter [ "writeBoundary" ] (
+    lib.optionalString pkgs.stdenv.isLinux ''
+      legacy_bin="$HOME/.local/bin/codex"
+      if [ -f "$legacy_bin" ] && [ ! -L "$legacy_bin" ]; then
+        if ${pkgs.file}/bin/file -b "$legacy_bin" | ${pkgs.gnugrep}/bin/grep -q ELF; then
+          echo "Removing legacy GitHub-release Codex CLI at $legacy_bin"
+          $DRY_RUN_CMD rm -f "$legacy_bin"
         fi
-      else
-        echo "Codex CLI already installed at $(command -v codex)"
+      fi
+    ''
+    + lib.optionalString pkgs.stdenv.isDarwin ''
+      # Apple Silicon 전용 경로 — Intel Mac(/usr/local/bin/brew)은 이 프로젝트 범위 밖.
+      # brew 부재 시 아래 -x 가드로 no-op.
+      brew_bin="/opt/homebrew/bin/brew"
+      if [ -x "$brew_bin" ] && "$brew_bin" list --cask codex >/dev/null 2>&1; then
+        echo "Uninstalling Homebrew cask codex (migrated to mise npm backend)"
+        $DRY_RUN_CMD "$brew_bin" uninstall --cask codex \
+          || echo "Warning: 'brew uninstall --cask codex' failed (non-fatal)"
       fi
     ''
   );
+
+  # (2) mise npm backend로 Codex CLI 설치
+  #   - node 보장: 글로벌 node가 없을 때만 mise use -g node@lts. node는 npm backend 전반의
+  #     공통 선행조건이지만, 현재 npm backend 도구가 codex 하나뿐이라 별도 ensureMiseNode 모듈로
+  #     분리하지 않고 여기서 보장한다(YAGNI). npm backend 도구가 늘면 그때 공통 activation으로 분리.
+  #     node@lts: 버전을 pin하지 않고 최초 설치 시점의 최신 LTS를 받는다. 이후에는 그 버전이 유지되며
+  #     사용자가 명시적으로 mise upgrade 하기 전까지 자동 갱신되지 않는다(자동 추적이 아니라 1회 고정).
+  #     NixOS는 소스 빌드 회피를 위해 prebuilt 강제(MISE_*_COMPILE=0; shell/nixos.nix와 동일 의도).
+  #   - 멱등 가드: command -v codex / mise which codex 는 수동 npm·legacy 바이너리에 속으므로 쓰지 않고,
+  #     mise config 등록 + 실제 installed된 backend(mise ls --json의 installed:true)로 판정한다.
+  #     기존 사용자의 수동 npm 글로벌 codex는 config 미등록이라 가드에 안 잡히므로, 마이그레이션
+  #     최초 1회는 @latest로 설치되어 버전 점프가 생길 수 있다(의도된 전환; 이후 nrs는 가드로 skip).
+  home.activation.installCodexCli = lib.hm.dag.entryAfter [ "cleanupLegacyCodexCli" ] ''
+    mise_bin="${pkgs.mise}/bin/mise"
+    if [ ! -x "$mise_bin" ]; then
+      echo "Warning: mise not found; skipping Codex CLI install (non-fatal)"
+    else
+      # NixOS는 mise의 node 소스 빌드를 막고 prebuilt를 강제한다(shell/nixos.nix와 동일 의도). macOS는 불필요.
+      ${lib.optionalString pkgs.stdenv.isLinux "export MISE_NODE_COMPILE=0 MISE_ALL_COMPILE=0"}
+      # 글로벌 node 보장. mise which는 로컬 .mise.toml에도 반응하므로 -g --current로 글로벌만 확인한다.
+      node_ok=1
+      if ! "$mise_bin" ls -g --current node 2>/dev/null | grep -q .; then
+        echo "Installing node@lts via mise (Codex CLI dependency)..."
+        $DRY_RUN_CMD "$mise_bin" use -g node@lts \
+          || { node_ok=0; echo "Warning: 'mise use -g node@lts' failed; skipping Codex CLI install (non-fatal)"; }
+      fi
+      if [ "$node_ok" = 1 ]; then
+        # config 등록 + installed:true인 backend만 "이미 관리됨"으로 판정한다.
+        # length>0만 보면 config 등록 후 install 실패한 [{installed:false}] 상태에 속아 영구 미설치로 고착된다.
+        if "$mise_bin" ls -g --current --json npm:@openai/codex 2>/dev/null \
+            | ${pkgs.jq}/bin/jq -e '[.[] | select(.installed == true)] | length > 0' >/dev/null 2>&1; then
+          echo "Codex CLI already managed by mise npm backend"
+        else
+          echo "Installing Codex CLI via mise npm backend (npm:@openai/codex)..."
+          $DRY_RUN_CMD "$mise_bin" use -g npm:@openai/codex \
+            || echo "Warning: Codex CLI install via mise skipped (non-fatal)"
+        fi
+      fi
+    fi
+  '';
+
+  # (3) mise node 글로벌의 수동 npm @openai/codex 잔재 제거 (일회성 마이그레이션)
+  #   전환 전 수동 `npm install -g @openai/codex`로 깔린 잔재를 정리한다. mise npm backend 정착
+  #   이후에는 재발생하지 않으므로 한동안 멱등 no-op으로 남는다(향후 제거 가능).
+  #   PATH상 node/<ver>/bin이 mise shims보다 우선이라, 남기면 backend shim을 가린다.
+  #   node 버전이 동적이라 mise 기본 data dir의 installs 트리를 스캔한다(MISE_DATA_DIR 커스텀
+  #   환경은 경로가 달라질 수 있으나 이 프로젝트 범위 밖).
+  home.activation.cleanupManualNodeCodex = lib.hm.dag.entryAfter [ "installCodexCli" ] ''
+    installs_dir="$HOME/.local/share/mise/installs/node"
+    if [ -d "$installs_dir" ]; then
+      for node_prefix in "$installs_dir"/*; do
+        # 실제 버전 디렉토리만 — lts/24/latest 등 symlink 별칭은 같은 실체를 가리키므로 skip(중복 uninstall 방지).
+        { [ -d "$node_prefix" ] && [ ! -L "$node_prefix" ]; } || continue
+        [ -d "$node_prefix/lib/node_modules/@openai/codex" ] || continue
+        npm_bin="$node_prefix/bin/npm"
+        [ -x "$npm_bin" ] || continue
+        # mise node의 npm은 `exec node "$npm_cli"` 형태 bash 래퍼다(node로 직접 실행하면 파싱 실패).
+        # 래퍼가 PATH에서 node와 mise(reshim)를 찾으므로 둘을 PATH 앞에 두고 npm을 직접 실행한다.
+        echo "Removing manually-installed npm global @openai/codex under $node_prefix"
+        $DRY_RUN_CMD env PATH="$node_prefix/bin:${pkgs.mise}/bin:$PATH" "$npm_bin" uninstall -g @openai/codex \
+          || echo "Warning: manual codex cleanup failed under $node_prefix (non-fatal)"
+      done
+    fi
+  '';
 
   # ─── 프로젝트 심볼릭 링크 (activation script) ───
   # 이전 시도(5ef4e67)의 sync-codex-from-claude.sh 로직을 Nix activation으로 이식

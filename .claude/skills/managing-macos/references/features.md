@@ -339,7 +339,6 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 
 | 앱             | 용도                       |
 | -------------- | -------------------------- |
-| Codex          | AI 코딩 에이전트           |
 | Raycast        | 런처 (Spotlight 대체)      |
 | Rectangle      | 창 관리                    |
 | Hammerspoon    | 키보드 리매핑/자동화       |
@@ -429,7 +428,7 @@ brew install --cask --adopt docker-desktop:
 brew install --cask --adopt docker-desktop
 
 # 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, vscode 제외)
-for cask in codex ghostty raycast rectangle hammerspoon homerow docker-desktop fork monitorcontrol; do
+for cask in ghostty raycast rectangle hammerspoon homerow docker-desktop fork monitorcontrol; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
 

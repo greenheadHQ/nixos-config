@@ -12,7 +12,7 @@ mise를 사용한 Node.js, pnpm 등 런타임 버전 관리 가이드.
 ## 목적과 범위
 
 런타임 버전 선택, shims 경로, SSH 비대화형 셸 이슈를 안정적으로 운영하는 절차를 다룬다.
-macOS에서는 Homebrew로 mise를 설치하고, NixOS에서는 `pkgs.mise`를 사용한다.
+macOS·NixOS 모두 `pkgs.mise`(nix, `libraries/packages.nix`의 shared)로 설치한다. 과거 macOS에서 Homebrew로 mise를 수동 설치했다면 PATH 경합을 피하기 위해 `brew uninstall mise`를 권장한다.
 
 ## 빠른 참조
 
@@ -20,7 +20,7 @@ macOS에서는 Homebrew로 mise를 설치하고, NixOS에서는 `pkgs.mise`를 �
 
 | 항목 | macOS | NixOS |
 |------|-------|-------|
-| mise 설치 | Homebrew | `libraries/packages.nix` (nixosOnly) |
+| mise 설치 | `libraries/packages.nix` (shared, nix) | `libraries/packages.nix` (shared, nix) |
 | 소스 빌드 | 기본값 사용 | `MISE_ALL_COMPILE=0` 환경변수로 비활성화 |
 | Node 빌드 | 기본값 사용 | `MISE_NODE_COMPILE=0` 환경변수로 비활성화 |
 | 환경변수 위치 | - | `modules/shared/programs/shell/nixos.nix` |
@@ -56,7 +56,7 @@ mise trust
 |------|------|
 | `modules/shared/programs/shell/default.nix` | zsh mise 활성화 (shims + activate) |
 | `modules/shared/programs/shell/nixos.nix` | NixOS 환경변수 (`MISE_ALL_COMPILE=0`, `MISE_NODE_COMPILE=0`) |
-| `libraries/packages.nix` | `pkgs.mise` 패키지 설치 (nixosOnly) |
+| `libraries/packages.nix` | `pkgs.mise` 패키지 설치 (shared — macOS+NixOS 공통) |
 
 ## 셸 활성화 구조
 
