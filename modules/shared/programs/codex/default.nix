@@ -193,8 +193,11 @@ in
         # activation의 제한된 PATH에는 둘 다 없어 node는 'exec: node: not found', mise는
         # 'mise: command not found'(reshim 단계 exit 127 → install 전체 실패)로 깨진다.
         # mise-managed node bin과 mise bin을 함께 PATH 앞에 보강한다(cleanupManualNodeCodex와 동일 의도).
-        node_bin="$("$mise_bin" where node 2>/dev/null)/bin"
-        [ -d "$node_bin" ] && export PATH="$node_bin:${pkgs.mise}/bin:$PATH"
+        # `mise where node`가 빈 문자열을 반환하면(비정상 mise 상태) 빈 값에 "/bin"이 붙어
+        # node_dir이 비어도 "/bin"이 PATH 앞에 삽입될 수 있다. node_dir을 먼저 받아
+        # 비어있지 않을 때만 보강해 시스템 /bin이 PATH를 오염시키는 것을 방지한다.
+        node_dir="$("$mise_bin" where node 2>/dev/null)"
+        [ -n "$node_dir" ] && [ -d "$node_dir/bin" ] && export PATH="$node_dir/bin:${pkgs.mise}/bin:$PATH"
         # config 등록 + installed:true인 backend만 "이미 관리됨"으로 판정한다.
         # length>0만 보면 config 등록 후 install 실패한 [{installed:false}] 상태에 속아 영구 미설치로 고착된다.
         if "$mise_bin" ls -g --current --json npm:@openai/codex 2>/dev/null \
