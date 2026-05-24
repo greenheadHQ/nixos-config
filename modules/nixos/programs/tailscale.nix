@@ -20,8 +20,13 @@ let
           sudo "$ts" serve status
           ;;
         off | reset)
+          # 주의: `tailscale serve reset`은 helper가 만든 preview만이 아니라
+          # 이 노드의 "전체" serve config를 초기화한다. 현재 설정을 먼저 보여줘
+          # 의도치 않은 다른 serve 설정 삭제를 사용자가 인지하게 한다.
+          echo "현재 serve 설정 (reset 대상 — 이 노드의 모든 serve):" >&2
+          sudo "$ts" serve status 2>/dev/null || true
           sudo "$ts" serve reset
-          echo "Tailscale serve 해제됨"
+          echo "Tailscale serve 전체 config가 reset됨"
           ;;
         "")
           echo "사용법: ts-serve <port> | status | off" >&2
