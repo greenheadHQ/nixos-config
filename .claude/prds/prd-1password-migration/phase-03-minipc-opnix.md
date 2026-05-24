@@ -2,7 +2,7 @@
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
 Status: Not Started
-Last Updated: 2026-05-17
+Last Updated: 2026-05-25
 
 ## Objective
 
@@ -18,7 +18,7 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
 
 ## Phase Discovery Gate
 
-- [ ] 관련 코드/파일: `modules/nixos/programs/` 하위 패턴 (caddy/smartd 등), `modules/nixos/options/homeserver.nix`, `secrets/secrets.nix` (Phase 1에서 opnix-service-account-token.age 추가), `flake.nix` (inputs)
+- [ ] 관련 코드/파일: `modules/nixos/programs/` 하위 패턴 (caddy/smartd 등), `modules/nixos/options/homeserver.nix`, `secrets/secrets.nix` (Phase 1에서 opnix-service-account-token.age 추가), `flake.nix` (inputs), `modules/shared/programs/shell/default.nix` (op_get `--account` 고정이 MiniPC OP_SERVICE_ACCOUNT_TOKEN 경로와 호환되는지 확인)
 - [ ] 관련 테스트/fixture: `tests/eval-tests.nix`, `modules/nixos/programs/smoke-test.nix`
 - [ ] 관련 docs/spec/외부 참조: https://github.com/brizzbuzz/opnix (canonical, mrjones2014/opnix는 archived), https://developer.1password.com/docs/service-accounts/use-with-1password-cli/
 - [ ] 관련 command 또는 도구: `nrs minipc`, `ssh minipc 'op vault list'`, `ssh minipc 'gh api user'`
@@ -34,7 +34,7 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
   - `nixpkgs._1password-cli`를 systemPackages에 추가 (allowUnfreePredicate 필요 시 처리)
   - `OP_SERVICE_ACCOUNT_TOKEN`을 systemd EnvironmentFile로 주입하는 패턴 (또는 brizzbuzz/opnix 모듈 import 후 옵션 설정)
   - token 파일은 agenix `config.age.secrets.opnix-service-account-token.path`
-- `modules/nixos/options/homeserver.nix`에 `homeserver.opnix.enable` mkOption 추가 (default false, MiniPC만 true)
+- `modules/nixos/options/homeserver.nix`의 `homeserver.opnix.enable` mkEnableOption은 **Phase 1에서 이미 추가됨** (보존만 확인). MiniPC `configuration.nix`에서 `enable = true`만 설정
 - MiniPC `configuration.nix`에 `homeserver.opnix.enable = true` 추가
 - **MiniPC user shell 인증 경로 (SSOT — Shell Plugin alias 단일 패턴, Phase 2b와 일관)** — systemd env는 SSH 일반 사용자 shell에 상속되지 않으므로 별도 wrapper 필수. 두 단계로 구성:
   - (1) opnix 모듈에 `environment.etc."profile.d/opnix.sh".source` 패턴으로 user shell 진입 시 `OP_SERVICE_ACCOUNT_TOKEN`을 agenix path에서 단발 export: `export OP_SERVICE_ACCOUNT_TOKEN=$(cat /run/agenix/opnix-service-account-token 2>/dev/null || true)`. 이 단계만이 token을 user shell로 가져오는 유일한 경계
@@ -61,22 +61,19 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
   - systemd service의 `After = [ "network-online.target" ]`, `Wants = [ "network-online.target" ]` (1Password SaaS 도달성 보장 — A-3와 정합)
   - `Restart = "on-failure"`, `RestartSec = 30` (SaaS 일시 outage 대응)
   - **검증**: 본 phase의 default.nix diff에서 Phase 1이 박제한 `environment.etc."opnix-service-account-expiry".source` 라인이 그대로 살아있어야 한다 (git diff로 확인 + `ssh minipc 'test -r /etc/opnix-service-account-expiry'`로 deployed 확인)
-- [ ] `modules/nixos/options/homeserver.nix`에 mkOption 추가:
-  ```nix
-  homeserver.opnix = {
-    enable = lib.mkEnableOption "Enable 1Password op CLI with service account token";
-  };
-  ```
+- [ ] `modules/nixos/options/homeserver.nix`의 `homeserver.opnix.enable` mkEnableOption은 **Phase 1에서 이미 추가됨** — 보존만 확인 (재추가 금지). Phase 3는 enable 시 활성화될 full 구현(systemd service 등)을 opnix/default.nix에 extend
 - [ ] MiniPC configuration.nix에 `homeserver.opnix.enable = true;` 추가
 - [ ] **User shell token bridge 생성** (systemd EnvironmentFile은 SSH 일반 사용자 shell에 상속되지 않으므로 필수):
   - `modules/nixos/programs/opnix/default.nix`에 `environment.etc."profile.d/opnix.sh"` 선언 추가
   - 파일 내용 (Nix string literal): `export OP_SERVICE_ACCOUNT_TOKEN=$(cat /run/agenix/opnix-service-account-token 2>/dev/null || true)`
   - 권한: mode `0444` (read-only world) — secret 자체는 agenix path가 root-only이므로 bridge 파일은 명령만 들고 있음
+  - **설계 재검토 필요** (master Open Questions 참조): `/run/agenix/opnix-service-account-token`은 root-only(0400 root)라 일반 user shell의 `cat`이 실패(token 빈 값)한다. user-readable로 풀면 SA token이 모든 user shell/subprocess에 노출되어 보안 약화. root-owned systemd wrapper가 필요한 값만 제한 권한으로 materialize하거나 op/gh wrapper가 root 경유로 읽는 방식 등으로 bridge 설계를 Phase 3 진입 시 재확정한다
   - 적용 대상: `homeserver.opnix.enable = true`일 때만 활성 (cfg.enable 게이팅)
+- [ ] **op_get MiniPC 호환성 확인**: op_get의 `--account my.1password.com` 고정(Mac 멀티계정용)이 MiniPC `OP_SERVICE_ACCOUNT_TOKEN` 인증과 충돌하는지 검증. SA token이 account를 결정하므로, 충돌 시 op_get을 `OP_SERVICE_ACCOUNT_TOKEN` 존재 시 `--account` 생략하도록 분기 (`modules/shared/programs/shell/default.nix`)
 - [ ] `nrs minipc` 빌드 + 활성화
 - [ ] `ssh minipc`로 접속 후 검증:
   - [ ] `op vault list` → Automation vault 노출 (Personal은 SA 접근 불가로 미노출 — 정상)
-  - [ ] `op item get github-pat --field token --vault Automation` → 신규 PAT 반환
+  - [ ] `op_get github-pat token` (op read 기반) → 신규 PAT 반환
 - [ ] MiniPC `~/.config/gh/hosts.yml` 백업 후 `oauth_token` 라인 제거
 - [ ] MiniPC에 Shell Plugin alias 활성화 (Phase 2b와 동일 SSOT 패턴 — GH_TOKEN env 직접 export는 사용하지 않음):
   - `ssh minipc 'op plugin init gh'` 1회 실행 (interactive — Automation vault의 `github-pat` 선택)

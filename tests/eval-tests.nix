@@ -540,6 +540,16 @@ let
       name = "Test 5e-7: homeserver.ankiSync.port가 constants 포트(27701)와 일치해야 함";
       cond = nixosCfg.homeserver.ankiSync.port == constants.network.ports.ankiSync;
     }
+    # ── 1Password vault 이름 hard pin (PRD #780) ────────────────
+    # constants.nix 변경 시 GUI vault 이름과의 정합성 회귀 감지
+    {
+      name = "Test 5e-8: constants.onePassword.vaults.personal이 \"Personal\"이어야 함";
+      cond = constants.onePassword.vaults.personal == "Personal";
+    }
+    {
+      name = "Test 5e-9: constants.onePassword.vaults.automation이 \"Automation\"이어야 함";
+      cond = constants.onePassword.vaults.automation == "Automation";
+    }
     {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
       name = "Test 5f: openssh PermitRootLogin이 'no'이어야 함";

@@ -1,6 +1,9 @@
 # agenix CLI가 사용하는 파일
 # 새 secret 추가: nix run github:ryantm/agenix -- -e new-secret.age
 # 재암호화: nix run github:ryantm/agenix -- -r
+#   주의: SA token(opnix-service-account-token.age)은 host key 전용(minipcHostOnly) recipient다.
+#   host private key가 없는 Mac에서 전체 rekey는 해당 .age 복호화에 실패하므로,
+#   MiniPC/root에서 user key와 /etc/ssh/ssh_host_ed25519_key를 둘 다 -i로 넘겨 rekey한다.
 #
 # 참고: agenix는 SSH 공개키 형식으로 암호화하면 SSH 비밀키로 복호화 가능
 # age 공개키(age1...) 형식은 age 비밀키(AGE-SECRET-KEY-...)가 필요
@@ -15,6 +18,8 @@ let
 
   # MiniPC(NixOS)에서만 필요한 서버 전용 시크릿
   minipcOnly = [ constants.sshKeys.minipc ];
+  # 부팅 의존 시크릿(SA token 등)은 host key 전용 — user 로그인 키 노출 표면과 분리
+  minipcHostOnly = [ constants.hostKeys.minipc ];
 in
 {
   # sharing-text 스킬의 수동 push 함수가 사용하는 Pushover credentials
@@ -66,4 +71,11 @@ in
 
   # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
   "pushover-system-monitor.age".publicKeys = minipcOnly;
+
+  # 1Password Service Account token (opnix가 systemd EnvironmentFile로 주입)
+  # host key 전용(minipcHostOnly)으로 user 로그인 키 노출 표면과 격리 (PRD #780 host key 복호화 계약).
+  # 부팅 시 minipc root가 /etc/ssh/ssh_host_ed25519_key로 복호화.
+  # 토큰 실제 암호화는 1Password SA 발급 후 agenix -e로 수행 (host key recipient)
+  # 실 소비(opnix module) + 90일 rotation timer는 Phase 3
+  "opnix-service-account-token.age".publicKeys = minipcHostOnly;
 }
