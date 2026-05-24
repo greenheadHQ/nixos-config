@@ -1,0 +1,31 @@
+---
+tags: [ ipad, debug, devtools, eruda, react, safari ]
+---
+iPad Safari 웹 디버깅 (관찰 기반)
+
+  iPad엔 데스크톱 DevTools가 없다 (Web Inspector는 Mac 연결 필요).
+  클라이언트 breakpoint 스텝 디버깅은 원천 불가 → "관찰 기반"으로 대체.
+  (서버사이드 breakpoint는 nvim-dap 사용 — cheat nvim/dap 참고)
+
+eruda — in-page 콘솔 / 네트워크 / 엘리먼트 (북마클릿)
+
+  Safari 북마크에 아래 URL을 저장 후, dev 페이지에서 탭하면 devtools 패널이 뜬다.
+  북마클릿이라 프로젝트 코드 비침습 — 어떤 페이지에서도 동작.
+
+  javascript:(function(){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.body.appendChild(s);s.onload=function(){eruda.init()};})();
+
+  ※ 일부 기능은 secure-context(HTTPS)에서만 정상 → ts-serve로 HTTPS 접근 권장 (cheat ipad/preview).
+
+secure-context 확인
+
+  eruda 콘솔에서:  window.isSecureContext    // true 여야 Clipboard / SW 등 동작
+
+React Query devtools (프로젝트가 통합한 경우)
+
+  dev 서버를 devtools 플래그로 실행 (프로젝트 스크립트 확인).
+  화면 플로팅 패널에서 쿼리 캐시 / 상태를 관찰.
+
+Locator (프로젝트가 @locator/runtime 통합한 경우)
+
+  dev origin에서 Option/Alt + 클릭 → 컴포넌트 소스로 점프.
+  iPad: 물리 키보드 Option + 트랙패드 클릭으로 동작 (터치만으론 제한될 수 있음).

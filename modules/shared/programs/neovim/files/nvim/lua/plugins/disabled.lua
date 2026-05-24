@@ -17,6 +17,11 @@ return {
   -- Mason을 껐으므로 이것도 불필요
   { "mason-org/mason-lspconfig.nvim", enabled = false },
 
+  -- mason-nvim-dap: Mason이 DAP 어댑터를 설치/연결 (dap.core extra가 가져옴)
+  -- js-debug는 Nix extraPackages로 제공하므로 Mason 경로 비활성화
+  -- (core.lua의 LazyVim.has("mason-nvim-dap.nvim") 체크가 자연히 skip됨)
+  { "jay-babu/mason-nvim-dap.nvim", enabled = false },
+
   -- mini.surround: LazyVim 기본 surround 플러그인 (키맵: gza, gzd, gzr)
   -- nvim-surround (editor.lua)을 대신 사용하므로 비활성화 (키맵: ys, ds, cs — 더 표준적)
   -- NOTE: mini.nvim 0.17.0 (2025-12)에서 echasnovski → nvim-mini 조직으로 이전됨

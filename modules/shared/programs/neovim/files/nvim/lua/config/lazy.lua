@@ -45,6 +45,12 @@ require("lazy").setup({
     { import = "lazyvim.plugins.extras.linting.eslint" }, -- ESLint를 LSP로 동작시킴
     { import = "lazyvim.plugins.extras.formatting.prettier" }, -- prettier 저장 시 자동 포맷
 
+    -- DAP (디버거): nvim-dap + dap-ui + virtual-text.
+    -- lang.typescript extra의 pwa-node 디버거 설정(optional=true)을 활성화한다.
+    -- js-debug 바이너리는 Nix extraPackages가 제공(default.nix의 js-debug-adapter wrapper),
+    -- mason-nvim-dap은 disabled.lua에서 비활성화 (Mason 미사용 원칙).
+    { import = "lazyvim.plugins.extras.dap.core" },
+
     -- 커스텀 플러그인: lua/plugins/ 디렉토리의 모든 .lua 파일을 자동 로드
     { import = "plugins" },
   },
