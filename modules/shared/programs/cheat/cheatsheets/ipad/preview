@@ -13,6 +13,12 @@ iPad에서 dev 서버 미리보기 (Tailscale Serve)
   ts-serve status    # 현재 노출 상태 + URL 확인
   ts-serve reset-all # 이 노드의 모든 serve config 초기화 (전역 — preview 한정 아님)
 
+보안 (dev 서버 바인딩)
+
+  이 노드는 tailscale0이 trusted interface다. dev 서버가 0.0.0.0에 바인딩하면 ts-serve의
+  HTTPS와 별개로 raw HTTP 포트가 tailnet에 직접 노출된다. dev 서버는 반드시 127.0.0.1에
+  바인딩하고, 외부 노출은 ts-serve(HTTPS)로만 하라. (Next.js: next dev -H 127.0.0.1)
+
 접근 URL
 
   https://<machine>.<tailnet>.ts.net

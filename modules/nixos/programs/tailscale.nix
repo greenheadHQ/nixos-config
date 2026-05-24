@@ -44,12 +44,21 @@ let
             echo "포트는 숫자여야 합니다: $port" >&2
             exit 1
           fi
+          # 보안: 이 노드는 tailscale0이 trusted interface다. dev 서버가 0.0.0.0(또는
+          # tailnet IP)에 바인딩하면 ts-serve의 HTTPS와 별개로 raw HTTP 포트가 tailnet에
+          # 직접 노출된다. dev 서버는 반드시 127.0.0.1에 바인딩해야 한다.
+          if command -v ss >/dev/null 2>&1; then
+            _listen=$(ss -tlnH "sport = :$port" 2>/dev/null || true)
+            if printf '%s' "$_listen" | grep -qE '0\.0\.0\.0|\[::\]|100\.'; then
+              echo "경고: 포트 $port가 0.0.0.0/tailnet IP에 listen 중 — tailnet 직접 노출. dev 서버를 127.0.0.1에 바인딩하라." >&2
+            fi
+          fi
           # serve config는 노드 전역 상태다. <port> 노출은 기존 serve를 갱신/덮어쓸 수
           # 있으므로 현재 상태를 먼저 보여줘 사용자가 인지하게 한다.
           echo "현재 serve 설정 (ts-serve <port>는 노드 serve 설정을 갱신함):" >&2
           sudo "$ts" serve status 2>/dev/null || true
           sudo "$ts" serve --bg "$port"
-          echo "노출됨: http://127.0.0.1:$port → tailnet HTTPS (URL 확인: ts-serve status)"
+          echo "노출됨: http://127.0.0.1:$port → tailnet HTTPS (dev 서버는 127.0.0.1 바인딩 권장)"
           ;;
       esac
     '';

@@ -48,15 +48,11 @@ local spec = {
 
 -- DAP (디버거): nvim-dap + dap-ui + virtual-text. lang.typescript extra의 pwa-node
 -- 디버거 설정(optional=true)을 활성화한다.
--- Linux 전용인 이유: js-debug adapter(js-debug-adapter wrapper)가 default.nix의
--- Linux-only extraPackages 블록에서만 설치된다. macOS는 VSCode로 디버깅하므로,
--- macOS에서 dap.core를 켜면 adapter 없는 DAP UI/keymap만 노출되어 PATH 계약과
--- 불일치한다. 지원 플랫폼은 Linux/macOS뿐이라 is_linux로 명시한다
--- (default.nix의 pkgs.stdenv.isLinux 조건과 의미를 맞춘다).
-local is_linux = vim.fn.has("linux") == 1
-if is_linux then
-  table.insert(spec, { import = "lazyvim.plugins.extras.dap.core" })
-end
+-- import는 공통(darwin+nixos)으로 유지한다 — dap 플러그인 pin이 공유 lazy-lock.json에
+-- 있어, macOS에서 import를 빼면 :Lazy sync가 spec 밖 항목으로 보고 pin을 제거해 lock
+-- churn이 생긴다. 실제 로드/디버깅 제한(Linux 전용)은 dap.lua에서 cond로 건다
+-- (js-debug adapter가 default.nix의 Linux-only extraPackages 전용; macOS는 VSCode 디버깅).
+table.insert(spec, { import = "lazyvim.plugins.extras.dap.core" })
 
 -- 커스텀 플러그인: lua/plugins/ 디렉토리의 모든 .lua 파일을 자동 로드
 table.insert(spec, { import = "plugins" })
