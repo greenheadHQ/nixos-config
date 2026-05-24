@@ -1,4 +1,4 @@
-# 8섹션 PR 본문 템플릿
+# 7섹션 PR 본문 템플릿
 
 ## 1. Summary
 
@@ -159,6 +159,8 @@ local heavy_packages=("anki" "mise")
 - 사람이 수동으로 검증할 수 있는 단계별 절차를 기술한다.
 - 각 단계에 기대동작을 명시한다.
 - 실패 시 진단 방법을 포함한다.
+- 리네임/값 교체 변경이면 새 값 존재뿐 아니라 old 값·아티팩트의 부재까지 확인한다 (Negative 검증).
+- 인접 기능·라우팅이 이번 변경으로 깨지지 않았는지 확인하는 regression 단계를 포함한다.
 
 ### 예시
 
@@ -185,52 +187,5 @@ local heavy_packages=("anki" "mise")
 - "동작을 확인한다"처럼 기대동작을 생략하는 것.
 - 실패 시 진단 방법을 포함하지 않는 것.
 - 정상 케이스만 나열하고 엣지 케이스를 누락하는 것.
-
-## 8. Pre-Merge E2E 테스트 가이드
-
-### 작성 규칙
-- LLM이 직접 실행하여 PR 머지 전에 검증할 수 있는 자동화된 절차를 기술한다.
-- Phase 기반 구조를 따른다: Phase 0(정적) → Phase 1-N(기능) → Phase N+1(Regression).
-- ANSI escape sequence 또는 regex metacharacter를 literal로 검증할 때는 `grep -Fq`를 사용한다.
-  예: `printf '%s' "$preview_out" | grep -Fq $'\x1b[1;36m'`
-- 상세 작성 규칙은 `references/pre-merge-guide.md` 참조.
-
-### 예시
-
-````markdown
-## Pre-Merge E2E 테스트 가이드
-
-### Phase 0: 정적 검증
-
-```bash
-# 1. blocklist 배열 존재 확인
-grep -q "heavy_packages=" modules/shared/rebuild.sh
-# 기대: exit 0
-
-# 2. old allowlist 패턴 부재 확인
-! grep -q "trivial_patterns=" modules/shared/rebuild.sh
-# 기대: exit 0 (패턴이 없어야 성공)
-```
-
-### Phase 1: 기능 검증
-
-> "pre-flight 체크가 blocklist에 등록된 패키지만 heavy로 판별하는지 확인"
-
-```bash
-# anki가 heavy로 판별되는지 확인
-nrs --dry-run 2>&1 | grep -q "heavy.*anki"
-```
-- **기대**: anki가 heavy 패키지로 감지된다.
-- **실패 시**: `heavy_packages` 배열에 "anki"가 포함되어 있는지, regex 매칭 로직이 올바른지 확인한다.
-
-### Phase 2: Regression
-
-> "기존 trivial derivation이 false positive를 발생시키지 않는지 확인"
-
-- `activation-script`, `rebuild-common.sh` 등 기존 trivial derivation에 대해 경고가 발생하지 않는지 확인한다.
-````
-
-### 흔한 실수
-- Phase 0 없이 바로 기능 검증으로 들어가는 것 — 정적 검증으로 기본 전제를 먼저 확인해야 한다.
-- Regression 검증을 생략하는 것.
-- 실패 시 진단을 포함하지 않는 것.
+- 새 값 존재만 확인하고 old 값·아티팩트 잔존 여부를 확인하지 않는 것.
+- 인접 기능 regression 검증을 누락하는 것.
