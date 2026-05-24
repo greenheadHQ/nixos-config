@@ -33,7 +33,11 @@ return {
       -- 그 값을 재사용해 목록을 두 곳에 복제하지 않는다(upstream 드리프트 방지).
       -- 아직 비어 있으면(로드 순서) 동일 목록으로 폴백한다.
       local js_filetypes = require("dap.ext.vscode").type_to_filetypes["pwa-node"]
-        or { "typescript", "javascript", "typescriptreact", "javascriptreact" }
+      -- nil뿐 아니라 빈 테이블({})도 폴백한다. lua에서 {}는 truthy라 `or`만으로는
+      -- 빈 목록이 그대로 쓰여 attach config가 하나도 안 만들어진다.
+      if not js_filetypes or vim.tbl_isempty(js_filetypes) then
+        js_filetypes = { "typescript", "javascript", "typescriptreact", "javascriptreact" }
+      end
       for _, ft in ipairs(js_filetypes) do
         dap.configurations[ft] = dap.configurations[ft] or {}
         table.insert(dap.configurations[ft], {
