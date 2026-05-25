@@ -354,6 +354,17 @@ in
           fi
         }
       ''
+
+      #─────────────────────────────────────────────────────────────────────────
+      # 1Password Shell Plugins (op plugin init gh → ~/.config/op/plugins.sh)
+      # gh = "op plugin run -- gh" alias로 wrapping — github-pat을 호출 시점에 주입 (PRD #780 Phase 2b)
+      # guard: plugins.sh 부재 시 silent skip (op plugin init 전·CI·MiniPC 등 — Mac 전용 자산)
+      #─────────────────────────────────────────────────────────────────────────
+      (lib.mkAfter ''
+        if [ -f "$HOME/.config/op/plugins.sh" ]; then
+          source "$HOME/.config/op/plugins.sh"
+        fi
+      '')
     ];
   };
 
