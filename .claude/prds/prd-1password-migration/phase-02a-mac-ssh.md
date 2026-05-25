@@ -1,7 +1,7 @@
 # Phase 2a: Mac SSH Integration
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Done (PR 대기)
+Status: Done (merged #833)
 Last Updated: 2026-05-25
 
 ## Objective
@@ -131,7 +131,7 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 - [ ] 7. Performance — ControlPersist 정책으로 Touch ID popup 빈도 사용자 수용 범위 내
 - [ ] 8. Validation — emergency fallback 실측이 phase exit gate
 - [ ] 9. Future-phase — Phase 2b/3에 SSH 관련 의존 없음 (Phase 3 ssh minipc는 본 phase의 mac-ssh key 사용)
-- [ ] 10. PRD sync — master PRD Status, Current Phase, Change Log 갱신
+- [x] 10. PRD sync — master PRD Status, Current Phase, Change Log 갱신
 
 ## Discoveries / Decisions
 
@@ -144,4 +144,4 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
-- 2026-05-25: Phase 2a 구현 완료 (PR 대기). 디바이스 키 4개(mac-ssh/iphone/ipad/emergency)를 `constants.sshDeviceKeys`로 정의하고 MiniPC authorizedKeys에 배포(nrs minipc). Mac ssh config: IdentityAgent(group container socket) + agent.toml(Automation vault 노출) + minipc-emergency Host + ControlPersist 600(ControlMaster 유지). id_ed25519 archive. 검증: `ssh minipc`=mac-ssh agent 인증(Touch ID), emergency fallback 실측(1Password quit→emergency 접속 성공→ssh minipc Permission denied→재시작 복귀), id_ed25519 처분 후 agent-only 인증. 발견: ControlPersist 영구는 무인 hang(→600 유지), agent socket은 group container 경로, agent.toml로 키 노출 명시 필수.
+- 2026-05-25: Phase 2a 구현 완료 → PR #833 squash merge. 디바이스 키 4개(mac-ssh/iphone/ipad/emergency)를 `constants.sshDeviceKeys`로 정의하고 MiniPC authorizedKeys에 배포(nrs minipc). Mac ssh config: IdentityAgent(group container socket) + agent.toml(Automation vault 노출) + minipc-emergency Host + ControlPersist 600(ControlMaster 유지). id_ed25519 archive. 검증: `ssh minipc`=mac-ssh agent 인증(Touch ID), emergency fallback 실측(1Password quit→emergency 접속 성공→ssh minipc Permission denied→재시작 복귀), id_ed25519 처분 후 agent-only 인증. merge 후 main nrs 적용 + E2E 전항목 재검증 통과. agent.toml vault를 constants 참조로 정정(SSOT). 발견: ControlPersist 영구는 무인 hang(→600 유지), agent socket은 group container 경로, agent.toml로 키 노출 명시 필수.
