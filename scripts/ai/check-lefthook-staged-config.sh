@@ -78,6 +78,9 @@ awk '
 ' "$index_file" > "$normalized_precommit"
 
 expected_precommit="$tmp_dir/pre-commit.expected"
+# 이 heredoc 블록은 lefthook.yml 의 pre-commit 섹션을 위 awk normalize(빈 줄·주석 제거)한 결과와
+# 1바이트 일치해야 한다. lefthook.yml 의 glob 을 변경하면 아래 블록도 동시에 갱신한다.
+# 의도/동기화 설명 주석은 awk 가 제거하므로 이 heredoc 안이 아니라 lefthook.yml 쪽에 둔다.
 cat > "$expected_precommit" <<'EOF'
 pre-commit:
   parallel: true
@@ -102,8 +105,23 @@ pre-commit:
       glob: "*.sh"
       run: shellcheck -S warning {staged_files}
     eval-tests:
+      glob:
+        - "*.nix"
+        - "flake.lock"
+        - "tests/run-eval-tests.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/run-eval-tests.sh
     codex-hook-fixtures:
+      glob:
+        - "modules/shared/programs/codex/**"
+        - "modules/shared/programs/claude/files/hooks/**"
+        - "modules/shared/programs/claude/files/lib/**"
+        - "modules/shared/programs/claude/files/skills/syncing-codex-harness/references/sync.sh"
+        - "tests/fixtures/codex-hooks/**"
+        - "tests/test-codex-hook-fixtures.sh"
+        - "tests/lib/**"
+        - "scripts/ai/commit-msg-pinning.sh"
+        - "scripts/ai/lib/tomlkit-bootstrap.sh"
+        - "modules/shared/scripts/codex-exec-supervised.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/test-codex-hook-fixtures.sh --no-live
     skill-noise-check:
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/check-skill-noise.sh
