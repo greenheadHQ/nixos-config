@@ -143,6 +143,8 @@ in
 
     # MCP 설정 - 양방향 수정 가능
     # chrome-devtools MCP(CDP)만 사용 — claude-in-chrome(--chrome)은 제거됨 (CIR 참조: shell/default.nix)
+    # mcp.darwin.json의 chrome-devtools env.NODE_OPTIONS(--max-old-space-size, autoConnect OOM 방어)는
+    # JSON이라 주석을 못 단다 — 값 근거·동기화 규칙은 codex files/config.darwin.toml의 동일 키 주석을 정전(canonical)으로 본다.
     ".claude/mcp.json".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/${claudeMcpFile}";
 
