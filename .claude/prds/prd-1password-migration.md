@@ -4,7 +4,7 @@
 
 - Status: In Progress
 - File Mode: Split
-- Current Phase: Phase 2a Done (PR 대기) — Phase 1·2b merged (#824·#827), Phase 3 ready (선택 대기)
+- Current Phase: Phase 3 Done (PR 대기) — Phase 1·2b merged (#824·#827), Phase 2a Done (PR 대기)
 - Active Phase File: [Phase 1](./prd-1password-migration/phase-01-foundation.md)
 - Last Updated: 2026-05-25
 - PRD File: `.claude/prds/prd-1password-migration.md`
@@ -35,8 +35,8 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 
 ## Success Criteria
 
-- SC-1: Mac과 MiniPC에서 `op item get` 명령이 `OP_SERVICE_ACCOUNT_TOKEN` (MiniPC) 또는 biometric (Mac) 으로 정상 동작한다.
-- SC-2: gh PAT가 1Password Automation vault에 보관되고, Mac/MiniPC 모두 `gh` 명령이 1Password Shell Plugin alias로 자동 인증된다. 구 PAT는 GitHub 측에서 revoked 상태이고 `~/.config/gh/hosts.yml`에 평문 oauth_token이 없다.
+- SC-1: Mac에서 `op item get`이 biometric으로 동작하고, MiniPC에서는 opnix(1Password Go SDK)가 `OP_SERVICE_ACCOUNT_TOKEN`으로 `op://` reference를 materialize한다 (op CLI 미설치 — headless에서 Go SDK가 op CLI를 대체). user-level credential을 단일 1Password 경로로 조회.
+- SC-2: gh PAT가 1Password Automation vault에 보관되고, `gh` 명령이 Mac은 1Password Shell Plugin alias로, MiniPC는 opnix가 materialize한 github-pat을 주입하는 GH_TOKEN wrapper(headless)로 자동 인증된다. 구 PAT는 GitHub 측에서 revoked 상태이고 `~/.config/gh/hosts.yml`에 평문 oauth_token이 없다.
 - SC-3: Mac SSH 호출이 1Password SSH agent로 인증된다 (Touch ID popup). 1Password 장애 시 emergency ed25519 key로 fallback 가능하다 (실측 통과).
 - SC-4: iPhone/iPad/Mac 4개 SSH key (mac/iphone/ipad/emergency)가 1Password Automation vault `ssh` tag에 inventory되고, MiniPC `authorized_keys`에 모두 등록되어 있다.
 - SC-5: macOS Passwords 앱 export CSV의 모든 password/username 항목이 1Password에 import되고, TOTP/passkey field 매트릭스가 PRD에 박제되어 있다. iCloud Keychain AutoFill이 비활성화되어 있다.
@@ -61,7 +61,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 
 - Actor: SSH로 접속한 사용자의 Claude Code session
 - Trigger: 자동화 스크립트가 `gh issue create` 호출
-- Expected outcome: 부팅 시 opnix-secrets.service가 agenix SA token을 systemd EnvironmentFile로 주입 → SSH user shell 진입 시 `/etc/profile.d/opnix.sh` bridge가 `OP_SERVICE_ACCOUNT_TOKEN`을 user env로 노출 → Shell Plugin alias `gh = op plugin run -- gh`가 호출 시점에 `op item get`으로 PAT 자동 주입 → `gh` 명령 성공. popup 없음 (headless). token 값 자체는 stdout/log에 노출되지 않음.
+- Expected outcome: 부팅 시 opnix-secrets.service(1Password Go SDK root oneshot)가 agenix SA token으로 `op://Automation/github-pat/token`을 `/run/opnix/<user>/github-pat`(tmpfs, owner=user, 0400)에 materialize → SSH user shell의 `gh` GH_TOKEN wrapper가 그 파일을 읽어 `GH_TOKEN`으로 주입 → `gh` 명령 성공. SA token은 user shell에 노출되지 않음(root oneshot 전용). popup 없음 (headless). token 값은 stdout/log에 노출되지 않음.
 
 ### Scenario 4: iPhone Termius에서 ssh minipc
 
@@ -110,7 +110,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 - FR-9: Emergency ed25519 fallback key (`emergency_ed25519`) 생성 + `~/.ssh/config` Host 분기 + MiniPC `authorized_keys` 등록 + 실측 acceptance ("1Password 데스크탑 quit 후 emergency key로 ssh minipc 성공").
 - FR-10: 디바이스별 SSH 키 4개 (`mac_ed25519` agent-managed, `iphone_ed25519`, `ipad_ed25519`, `emergency_ed25519`). 1Password Automation vault `ssh` tag에 backup copy + revocation 절차 박제. MiniPC `modules/nixos/users/<user>/authorized_keys.nix`에 declarative 등록.
 - FR-11: `op plugin init gh` 실행 후 `~/.config/op/plugins.sh`를 `programs.zsh.initContent`에 declarative source 등록 (Home Manager).
-- FR-12: `modules/nixos/programs/opnix/default.nix` 신규 작성. SA token EnvironmentFile 주입.
+- FR-12: `modules/nixos/programs/opnix/default.nix`에 opnix `services.onepassword-secrets`(1Password Go SDK root oneshot)를 설정해 SA token으로 `op://` reference를 tmpfs에 owner-scoped materialize한다. SA token을 user shell로 export하는 EnvironmentFile/profile.d 방식은 폐기(user shell 노출 방지).
 - FR-13: macOS Passwords 앱에서 sample 3개 (password-only / TOTP / passkey 항목 각 1개) 사전 export → CSV field 매트릭스 PRD에 박제 → 정책 결정 (TOTP 별도 sub-phase로 분리 여부) → 일괄 import 실행.
 - FR-14: iOS/macOS 설정에서 "AutoFill Passwords" 1Password만 활성화, iCloud Passwords 토글 해제.
 - FR-15: `managing-secrets/SKILL.md` 상단에 routing 매트릭스 (2단계: 부트 의존 → agenix / user-level → 1Password Automation) + tag convention (`system/`, `dev/`) + Automation vault sub-folder 컨벤션 명문화.
@@ -140,7 +140,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 ## Dependencies / Constraints
 
 - 1Password SaaS 가용성: opnix-secrets.service는 부팅 시 1Password API 호출. SaaS outage 시 의존 컨테이너 미기동 → A-3에 따라 컨테이너 secret은 agenix 잔존.
-- nixpkgs unfree: `_1password-cli` (Linux), Homebrew Cask `1password` (Mac) 둘 다 unfree. allowUnfreePredicate 또는 nix-darwin homebrew.casks 등록 필요.
+- nixpkgs unfree: Homebrew Cask `1password` (Mac)는 unfree (nix-darwin homebrew.casks 등록). MiniPC는 opnix Go SDK가 materialize하므로 `_1password-cli` 불필요 (op CLI 미설치).
 - agenix host key 부트 의존: opnix-service-account-token.age 복호화는 host SSH key 기반. 부트 시점 1Password 의존 없음 (순환 안전).
 - 1Password Individual 한계: Events API 없음. SA token rotation 90일 cadence가 보완책.
 
@@ -171,7 +171,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 | Phase 1: Foundation | Done (merged #824) | Mac 1Password 설치, Automation vault, gh PAT rotation, op_get helper, SA token | nrs darwin + gh API + op CLI 동작 | [phase-01-foundation.md](./prd-1password-migration/phase-01-foundation.md) |
 | Phase 2a: Mac SSH | Done (PR 대기) | IdentityAgent + emergency fallback + 디바이스별 키 inventory | ssh minipc 동작 + 1Password quit 후 fallback 실측 | [phase-02a-mac-ssh.md](./prd-1password-migration/phase-02a-mac-ssh.md) |
 | Phase 2b: Shell plugin gh | Done (merged #827) | Home Manager declarative plugin 등록 | gh pr list 동작 (biometric prompt 1회) | [phase-02b-shell-plugin-gh.md](./prd-1password-migration/phase-02b-shell-plugin-gh.md) |
-| Phase 3: MiniPC opnix | Not Started | opnix 모듈 + SA token + MiniPC gh 전환 | nrs minipc + ssh minipc 'gh pr list' 동작 | [phase-03-minipc-opnix.md](./prd-1password-migration/phase-03-minipc-opnix.md) |
+| Phase 3: MiniPC opnix | Done (PR 대기) | opnix native materialization + SA token + gh GH_TOKEN wrapper | flake check + eval-tests (merge 후 ssh minipc E2E) | [phase-03-minipc-opnix.md](./prd-1password-migration/phase-03-minipc-opnix.md) |
 | Phase 4: Apple Passwords | Not Started | CSV 매트릭스 실측, import, iCloud disable, TOTP/passkey 정책 | iOS 자동채움 1Password 우선 동작 | [phase-04-apple-passwords.md](./prd-1password-migration/phase-04-apple-passwords.md) |
 | Phase 5: Skill 리팩토링 | Not Started | managing-secrets routing 매트릭스 + inventory + queries.json | evals/queries.json 통과 + SKILL.md ≤ 250줄 | [phase-05-skill-refactor.md](./prd-1password-migration/phase-05-skill-refactor.md) |
 | Phase 6: Vaultwarden EOL | Not Started | vaultwarden-touch 파일 atomic 삭제·수정 단일 PR + rg 잔존 0건 + 6개월 백업 정책 | nrs minipc + eval-tests + rg | [phase-06-vaultwarden-eol.md](./prd-1password-migration/phase-06-vaultwarden-eol.md) |
@@ -195,11 +195,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 
 - Phase 2c (git commit signing 통합) 도입 시점과 범위는 별도 epic으로 분리할지 본 PRD에서 다룰지. 현재는 Out of Scope.
 - Phase 4의 TOTP 별도 sub-phase 범위 (서비스 카운트 N건 임계). 사전 실측 후 결정.
-- SA token user shell bridge 설계 (Phase 3): phase-03의 `/etc/profile.d/opnix.sh`가 user shell 진입 시 `/run/agenix/opnix-service-account-token`을 `cat`하지만, 해당 agenix secret은 root-only(0400 root)다. root-only면 user shell이 못 읽어 `OP_SERVICE_ACCOUNT_TOKEN`이 빈 값이 되고, user-readable로 풀면 SA token이 모든 user shell/subprocess에 노출되어 보안이 약화된다. Phase 3 진입 시 아래 후보 접근법 중 하나를 설계 검토로 택일·확정해야 한다 (root private key는 그대로 두고, 파일 권한을 약화하지 않는 방향):
-    1. systemd user service가 polkit/sudo로 제한된 scope의 토큰만 요청하도록 구성
-    2. caller를 검증하고 인가된 프로세스에만 토큰을 emit하는 wrapper binary (setuid 또는 capability 기반)
-    3. opnix 모듈이 user shell 전용 derived limited-scope credential을 생성 (1Password API가 지원하는 경우)
-  택일 후 phase-03의 user shell bridge(잠정 설계)를 확정안으로 갱신하고, 어떤 wrapper가 어디서 어떤 인가 흐름으로 토큰을 materialize하는지 명시한다.
+- SA token user shell bridge 설계 (Phase 3): **확정 (2026-05-25) — opnix native materialization** (후보 3 "opnix가 제한 권한으로 필요한 값만 materialize"의 구체화). 잠정 설계(`/etc/profile.d/opnix.sh`가 SA token을 user shell로 export + Shell Plugin alias)는 SA token을 모든 user shell/subprocess에 노출하므로 폐기. 확정안: opnix `services.onepassword-secrets`(1Password Go SDK root oneshot)가 SA token으로 github-pat만 `/run/opnix/<user>/github-pat`(tmpfs, owner=user, 0400)에 materialize하고, gh는 그 파일을 읽는 GH_TOKEN wrapper로 인증한다. SA token(agenix, host key)은 root oneshot에만 쓰여 user shell 노출 0. opnix가 tokenFile을 강제 0640 root:onepassword-secrets로 chmod하므로 agenix secret도 동일 선언 + `users`를 비워 group 멤버 0 → 실질 root-only. 상세·발견은 phase-03.
 
 ## Change Log
 
@@ -208,3 +204,4 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 - 2026-05-25: Phase 1 PR #824로 squash merge. 리뷰 반영 — agenix host key·opnix expiry 경로를 constants.nix로 중앙화, SA token user shell bridge를 잠정 설계로 마킹하고 해결 후보 3종(systemd+polkit / wrapper binary / derived credential) 나열, constants.onePassword.account hard-pin 추가. merge 후 nrs 로컬 적용 + E2E 전 항목 통과 (op_get retrieval → gh api user=greenheadHQ, op_get 함수 활성화, 에러 처리 2/127, opnix stub 비활성, flake check). Phase 2a/2b/3 진입 가능.
 - 2026-05-25: Phase 2b 구현 완료 → PR #827 squash merge. gh를 1Password Shell Plugin alias로 전환 — `shell/default.nix`에 plugins.sh file-guard source chunk + `op plugin init gh`(global default, github-pat) + nrs. `gh api user`=greenheadHQ(op plugin 경유 github-pat 주입) 검증, hosts.yml 평문 oauth_token 0건(yq 제거+백업), git history leak 0건, 구 PAT 없음 확인, keyring `gho_` unused fallback 유지 결정. merge 후 main을 nrs로 적용 + E2E 전항목 통과(type gh=alias, gh api user=greenheadHQ, hosts.yml 평문 0건, gh pr list 정상). Phase 2a/3 진입 가능.
 - 2026-05-25: Phase 2a 구현 완료 (PR 대기). Mac SSH를 1Password agent로 전환 — 디바이스 키 4개(mac-ssh/iphone/ipad/emergency, `constants.sshDeviceKeys`)를 MiniPC authorizedKeys에 배포, ssh config에 IdentityAgent(group container socket)·agent.toml(Automation vault 노출)·minipc-emergency Host·ControlPersist 600(ControlMaster 유지 — #710 analyzing-da-sessions 회귀 방지) 추가, id_ed25519 archive(agent 전용 정리). 검증: ssh minipc=mac-ssh agent 인증(Touch ID), emergency fallback 실측(1Password quit→emergency 접속→ssh minipc 실패→재시작 복귀), id_ed25519 처분 후 agent-only 인증. 발견: ControlPersist 영구는 무인 파이프 hang(→600), agent socket은 group container 경로, agent.toml로 키 노출 명시 필수. Phase 3 진입 가능.
+- 2026-05-25: Phase 3 구현 완료 (PR 대기). SA token user shell bridge를 **opnix native materialization**으로 확정(잠정 설계 폐기). brizzbuzz/opnix(v0.10.1) `services.onepassword-secrets`(Go SDK root oneshot)로 op://Automation/github-pat/token을 `/run/opnix/<user>/github-pat`(tmpfs, owner=user, 0400)에 materialize, gh는 GH_TOKEN wrapper(shell/nixos.nix)로 주입(headless라 Shell Plugin 대신). SA token(agenix, host key)은 root oneshot에만 쓰여 user shell 노출 0. 발견: opnix-secrets.service가 tokenFile을 users 옵션과 무관하게 강제 0640 root:onepassword-secrets로 chmod → 사용자 결정으로 agenix도 0640 onepassword-secrets 선언 + users 비워 실질 root-only 수용; secret key는 camelCase 강제(githubPat); parent dir은 tmpfiles 0700 user 선생성; opnix가 network-online.target after/wants + Restart=on-failure 기본 제공; _1password-cli 불필요(Go SDK). op_get MiniPC는 op CLI 미설치라 기존 guard 127(변경 없음). SA token 90일 rotation timer(opnix-rotate.nix, weekly, /etc/opnix-service-account-expiry 읽어 14일 이하 Pushover) 구현. flake check + eval-tests(보안 핀 5개) 통과. MiniPC E2E는 merge 후 main pull + nrs로 진행(Phase 1/2b 패턴).
