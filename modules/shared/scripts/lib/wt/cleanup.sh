@@ -3,12 +3,15 @@
 
 cmd_cleanup() {
   local auto=false
+  local names_filter=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --auto) auto=true ;;
+      --auto)    auto=true ;;
+      --yes|-y)  export WT_ASSUME_YES=1 ;;  # ui.sh _confirm이 소비 (cross-file)
       -h|--help) show_help; return 0 ;;
-      *) _die "알 수 없는 옵션: $1" ;;
+      -*)        _die "알 수 없는 옵션: $1" ;;
+      *)         names_filter+=("$1") ;;
     esac
     shift
   done
@@ -134,7 +137,15 @@ cmd_cleanup() {
 
   local selected_names=()
 
-  if _has_fzf; then
+  if (( ${#names_filter[@]} > 0 )); then
+    # 위치 인자로 정리 대상 지정 (대화형/비대화형 공통)
+    selected_names=("${names_filter[@]}")
+  elif ! _wt_interactive; then
+    _info "정리 가능한 worktree:"
+    local _it
+    for _it in "${items[@]}"; do _info "  $_it"; done
+    _die "비대화형: 정리할 이름을 인자로 지정하거나 --auto를 사용하세요 (예: wt cleanup <name>...)"
+  elif _has_fzf; then
     local fzf_input=""
     for ((i=0; i<${#items[@]}; i++)); do
       fzf_input+="${items[$i]}"$'\t'"${item_paths[$i]}"$'\n'

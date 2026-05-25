@@ -20,6 +20,15 @@ Environment 섹션의 `Platform` 값으로 현재 환경을 판별한다.
 
 home-manager activation 충돌 정책: macOS에서 mkOutOfStoreSymlink target이 외부 프로세스의 atomic rename으로 일반 파일이 되면 `home-manager.backupCommand`가 자가 치유한다 (regular file은 unlink + 콘솔 한 줄 echo, directory는 timestamped backup). 사이드이펙트로, symlink가 깨진 시간 동안 사용자가 home 쪽에서 의도 변경한 내용도 silent 손실될 수 있다 (예: VSCode UI에서 keybinding 추가 후 settings.json이 깨진 상태에서 한 후속 변경). 정상 symlink 흐름에서는 source 직접 수정 = git 추적이 정상 동작한다. 본 정책은 사용자 명시 동의 범위 내. 정책 본체는 `modules/darwin/home.nix`.
 
+## Worktree (wt)
+
+`wt`로 git worktree를 생성/이동/정리한다 (`.claude/worktrees/<dir>`, 현재 HEAD 기준 분기). 비대화형 셸(LLM Bash tool 등)에서는 zsh 함수 래퍼가 없어 `~/.local/bin/wt` 바이너리가 직접 실행되고 자동으로 비대화형 모드가 된다 (fzf/번호 선택/tmux attach 비활성; `WT_NONINTERACTIVE=1`로 강제 가능). 비대화형 사용 규칙:
+
+- 생성: `wt <branch>`. 기존 worktree/브랜치와 충돌하면 비대화형은 **안전하게 실패**하므로 의도를 `--if-exists=reuse|recreate|fail`로 명시한다.
+- 이동: 비대화형은 cd 불가 — 경로를 stdout으로 출력하므로 `cd "$(wt cd <name>)"`로 쓴다. 인자 없는 `wt cd`는 실패하니 이름을 지정한다.
+- 목록: `wt ls --json` (name/branch/path/pr/dirty/unpushed/current/committedAt/age 구조화 출력, jq 파싱용).
+- 정리: `wt cleanup --auto` (MERGED 자동) 또는 `wt cleanup <name>...` (이름 지정). dirty/unpushed 확인 우회는 `--yes`.
+
 ## Bash tool 환경
 
 Bash tool의 inline 스크립트는 zsh에서 실행된다. 아래 bash 전용 문법은 zsh에서 `bad substitution`으로 실패하므로 사용하지 않는다.
