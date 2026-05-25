@@ -39,7 +39,7 @@ in
     # (opnix nix/module.nix), agenix도 동일 권한으로 선언해 매 activation 권한 경합(토글)을 제거한다.
     # recipient는 minipcHostOnly(host key) — 부팅 의존 시크릿이라 user key 노출 표면과 격리.
     age.secrets.opnix-service-account-token = {
-      file = ../../../../secrets/opnix-service-account-token.age;
+      file = constants.paths.opnixServiceAccountTokenAge;
       mode = "0640";
       owner = "root";
       group = opnixGroup;
