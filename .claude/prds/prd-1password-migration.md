@@ -4,9 +4,9 @@
 
 - Status: In Progress
 - File Mode: Split
-- Current Phase: Phase 1 Done (PR 대기) — Phase 2a/2b/3 ready (선택 대기)
+- Current Phase: Phase 1 merged (PR #824) — Phase 2a/2b/3 ready (선택 대기)
 - Active Phase File: [Phase 1](./prd-1password-migration/phase-01-foundation.md)
-- Last Updated: 2026-05-24
+- Last Updated: 2026-05-25
 - PRD File: `.claude/prds/prd-1password-migration.md`
 - Issue: [#780](https://github.com/greenheadHQ/nixos-config/issues/780)
 - Purpose: Living PRD / 실행 source of truth. 여기에서 작업을 체크 off 하고, 구현 중 새 사실이 드러나면 이 문서를 갱신하고, 계획이 바뀌면 진행 전에 후속 phase를 수정한다.
@@ -168,7 +168,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 
 | Phase | Status | Objective | Validation Focus | File |
 |---|---|---|---|---|
-| Phase 1: Foundation | Done (PR 대기) | Mac 1Password 설치, Automation vault, gh PAT rotation, op_get helper, SA token | nrs darwin + gh API + op CLI 동작 | [phase-01-foundation.md](./prd-1password-migration/phase-01-foundation.md) |
+| Phase 1: Foundation | Done (merged #824) | Mac 1Password 설치, Automation vault, gh PAT rotation, op_get helper, SA token | nrs darwin + gh API + op CLI 동작 | [phase-01-foundation.md](./prd-1password-migration/phase-01-foundation.md) |
 | Phase 2a: Mac SSH | Not Started | IdentityAgent + emergency fallback + 디바이스별 키 inventory | ssh minipc 동작 + 1Password quit 후 fallback 실측 | [phase-02a-mac-ssh.md](./prd-1password-migration/phase-02a-mac-ssh.md) |
 | Phase 2b: Shell plugin gh | Not Started | Home Manager declarative plugin 등록 | gh pr list 동작 (biometric prompt 1회) | [phase-02b-shell-plugin-gh.md](./prd-1password-migration/phase-02b-shell-plugin-gh.md) |
 | Phase 3: MiniPC opnix | Not Started | opnix 모듈 + SA token + MiniPC gh 전환 | nrs minipc + ssh minipc 'gh pr list' 동작 | [phase-03-minipc-opnix.md](./prd-1password-migration/phase-03-minipc-opnix.md) |
@@ -205,3 +205,4 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 
 - 2026-05-17: Initial PRD created. grill-me 결정사항 + DA review findings 반영. 사용자 추가 결정: routing 트리를 2단계로 단순화하고 mirror 패턴 폐기, 디바이스별 SSH key 4개 (mac/iphone/ipad/emergency), iCloud Keychain AutoFill 비활성화, envScript 패턴은 다른 컨테이너에서 자연 보존.
 - 2026-05-24: Phase 1 구현 완료 (PR 대기). Mac 1Password(Homebrew Cask) 설치, Automation vault, gh PAT 발급+1Password 저장+retrieval 검증 (login greenheadHQ), op_get helper (op read secret reference + 멀티계정 --account 고정), SA token (`nixos-automation-minipc`, 전역 공유·minipc 단일 저장, host key 전용 recipient) agenix 보관, opnix stub + expiry record. 발견: 1Password Individual은 SA 자동 만료 미지원 → 정책 90일 cadence (만료 목표 2026-08-22, NFR-4 준수); op CLI 필드 조회는 op read secret reference 권장; op CLI 멀티 계정(개인+회사) 환경은 --account 고정 필요. 사용자 신규 결정: SA 운영 모델은 전역 공유 1개 (Mac은 biometric이라 SA 미사용, 실 소비처 minipc). 회사 맥북 SSH 키 분리는 별 세션 의제로 이관 (FR-10 확장 후보).
+- 2026-05-25: Phase 1 PR #824로 squash merge. 리뷰 반영 — agenix host key·opnix expiry 경로를 constants.nix로 중앙화, SA token user shell bridge를 잠정 설계로 마킹하고 해결 후보 3종(systemd+polkit / wrapper binary / derived credential) 나열, constants.onePassword.account hard-pin 추가. merge 후 nrs 로컬 적용 + E2E 전 항목 통과 (op_get retrieval → gh api user=greenheadHQ, op_get 함수 활성화, 에러 처리 2/127, opnix stub 비활성, flake check). Phase 2a/2b/3 진입 가능.

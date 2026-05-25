@@ -1,8 +1,8 @@
 # Phase 1: Foundation
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Done (PR 대기)
-Last Updated: 2026-05-24
+Status: Done (merged, PR #824)
+Last Updated: 2026-05-25
 
 ## Objective
 
@@ -132,3 +132,4 @@ Last Updated: 2026-05-24
 
 - 2026-05-17: Phase file created.
 - 2026-05-24: Phase 1 구현 완료. FR-1/2/4/5 완전 + FR-3(Phase 1 부분: 발급·저장·retrieval 검증)·FR-6(token 발급·agenix 보관) 달성. 코드 7건 + SA token agenix 보관 + expiry record. flake check 통과. hosts.yml 정리·구 PAT revoke·alias 활성은 Phase 2b, SA token EnvironmentFile·rotation timer는 Phase 3로 이관.
+- 2026-05-25: PR #824로 squash merge. 리뷰 반영(host key·opnix expiry 경로 constants 중앙화 · SA token bridge 잠정 마킹+후보 나열 · constants.onePassword.account hard-pin) 후 merge. merge된 main을 nrs로 로컬 적용 후 E2E 전 항목 통과 (op CLI 2.34.0, op_get 함수 활성화, op read retrieval → gh api user=greenheadHQ, 에러 처리 2/127, opnix stub 비활성, flake check Test 5e-8/9/10 포함). Validation Checklist의 Observability(SA Activity log)·Manual smoke(재로그인 자동 unlock) 2건은 Phase 3/사용자 후속으로 잔존.
