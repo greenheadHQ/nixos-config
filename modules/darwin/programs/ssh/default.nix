@@ -1,6 +1,5 @@
 {
   config,
-  pkgs,
   lib,
   constants,
   hostType,
@@ -8,29 +7,22 @@
 }:
 let
   homeDir = config.home.homeDirectory;
-
-  # 단일 소스: 키 이름만 정의하면 모든 곳에서 참조
-  sshKeyName = "id_ed25519";
-  sshKeyPath = "${homeDir}/.ssh/${sshKeyName}";
-
-  sshAddScript = pkgs.writeShellScript "ssh-add-keys" ''
-    if /usr/bin/ssh-add -l 2>/dev/null | grep -q "${sshKeyName}"; then
-      echo "SSH key already loaded"
-      exit 0
-    fi
-    /usr/bin/ssh-add "${sshKeyPath}" 2>&1
-  '';
+  # 1Password macOS SSH agent socket (group container 경로 — ~/.1password/agent.sock symlink는 자동생성 안 됨)
+  onePasswordAgentSock = "${homeDir}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock";
 in
 {
+  # Mac SSH는 1Password SSH agent로 인증 (PRD #780 Phase 2a).
+  # 구 id_ed25519는 1Password mac-ssh로 대체되어 archive됨 (FR-8) → identityFile/ssh-add launchd 제거.
   programs.ssh = {
     enable = true;
     # home-manager의 기본 SSH 설정 비활성화 (deprecated 경고 방지)
     enableDefaultConfig = false;
     matchBlocks = {
       "*" = {
-        identityFile = sshKeyPath;
         extraOptions = {
           AddKeysToAgent = "yes";
+          # 1Password SSH agent (group container socket — 공백 포함 경로라 quote 필요)
+          IdentityAgent = "\"${onePasswordAgentSock}\"";
         };
       };
     }
@@ -39,27 +31,31 @@ in
       "minipc" = {
         hostname = constants.network.minipcTailscaleIP;
         user = "greenhead";
-        identityFile = sshKeyPath;
         extraOptions = {
           ControlMaster = "auto";
           ControlPath = "~/.ssh/cm-%h-%p-%r";
+          # ControlPersist 600 유지 — #710 analyzing-da-sessions의 ControlMaster 다중화(K=8 worker pool)가 의존.
+          # 영구(yes)는 무인 파이프 호출에서 master가 stdout을 점유해 hang을 유발하므로, 600으로 master 자동 종료를 보장한다.
           ControlPersist = "600";
+        };
+      };
+      # 1Password 장애(데스크탑 quit/Touch ID 고장/계정 잠금) fallback (PRD #780 Phase 2a, FR-9)
+      "minipc-emergency" = {
+        hostname = constants.network.minipcTailscaleIP;
+        user = "greenhead";
+        identityFile = "${homeDir}/.ssh/emergency_ed25519";
+        extraOptions = {
+          IdentityAgent = "none"; # 1Password agent 우회 — emergency key 직접 사용
         };
       };
     };
   };
 
-  launchd.agents.ssh-add-keys = {
-    enable = true;
-    config = {
-      Label = "com.green.ssh-add-keys";
-      ProgramArguments = [ "${sshAddScript}" ];
-      RunAtLoad = true;
-      EnvironmentVariables = {
-        HOME = homeDir;
-      };
-      StandardOutPath = "${homeDir}/Library/Logs/ssh-add-keys.log";
-      StandardErrorPath = "${homeDir}/Library/Logs/ssh-add-keys.error.log";
-    };
-  };
+  # 1Password SSH agent 키 노출 설정 (PRD #780 Phase 2a)
+  # 1Password는 SSH 키를 agent에 자동 노출하지 않으므로, 노출할 vault를 agent.toml에 명시해야 한다.
+  # Automation vault의 SSH 키(mac-ssh)를 노출 → ssh가 IdentityAgent 경유로 mac-ssh 사용.
+  home.file.".config/1Password/ssh/agent.toml".text = ''
+    [[ssh-keys]]
+    vault = "Automation"
+  '';
 }

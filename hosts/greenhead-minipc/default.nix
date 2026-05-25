@@ -15,9 +15,14 @@
     ./disko.nix
   ];
 
-  # SSH 공개키 (Mac 접속용)
-  users.users.${username}.openssh.authorizedKeys.keys = [
-    constants.sshKeys.macbook
+  # SSH 공개키 — 디바이스별 4개 (PRD #780 Phase 2a)
+  # mac-ssh(1Password SSH agent) + iphone/ipad(Termius) + emergency(1Password 장애 fallback).
+  # 기존 macbook(id_ed25519)은 mac-ssh로 대체 — id_ed25519는 FR-8에서 처분.
+  users.users.${username}.openssh.authorizedKeys.keys = with constants.sshDeviceKeys; [
+    macSsh
+    iphone
+    ipad
+    emergency
   ];
 
   # Wake-on-LAN (같은 LAN 전용)
