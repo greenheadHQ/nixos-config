@@ -1,8 +1,8 @@
 # Phase 2b: Shell Plugin gh
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Not Started
-Last Updated: 2026-05-17
+Status: Done (PR 대기)
+Last Updated: 2026-05-25
 
 ## Objective
 
@@ -110,7 +110,12 @@ Last Updated: 2026-05-17
 ## Discoveries / Decisions
 
 - 확장 트리거 텍스트 (Phase 5에 박제 예정): "추가 shell plugin 도입 조건 = (a) 해당 도구 secret을 .env로 export하는 패턴 ≥ 2건 발생 OR (b) agenix 평문 노출 위험 보고 1건"
+- **op plugin 인증 모드**: `op plugin init gh`에서 github-pat(Automation) credential + "Use as global default on my system" 채택 — gh는 디렉토리 무관 범용 도구이고 LLM 자동화 cwd가 다양하므로 directory-scoped보다 global이 적합.
+- **plugins.sh declarative sourcing**: op이 안내하는 `echo "source ..." >> ~/.zshrc`는 회피 — `~/.zshrc`가 Home Manager nix store 심링크(read-only)라 직접 append 시 깨진다. `programs.zsh.initContent`에 file-guard source chunk로 declarative 등록 (`shell/default.nix`).
+- **hosts.yml 제거 후 keyring fallback**: hosts.yml 평문 oauth_token 제거 시 gh가 keyring의 구 `gho_` OAuth로 fallback한다. 단 op plugin alias가 `GH_TOKEN`(github-pat)을 우선 주입하므로 실 인증은 github-pat이고, keyring `gho_`는 unused fallback(OS 암호화, 평문 아님)이라 사용자 결정으로 유지.
+- **구 PAT 부재**: 기존 gh 인증은 OAuth(`gho_`)였고 Phase 1의 `ghp_`가 첫 PAT라 GitHub 측에 revoke할 구 PAT가 없음 (사용자 확인). FR-3 "구 PAT revoke"는 대상 없음으로 충족.
 
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
+- 2026-05-25: Phase 2b 구현 완료 (PR 대기). `shell/default.nix` initContent에 plugins.sh file-guard source chunk 추가 + `op plugin init gh`(global default, github-pat) + nrs 적용. 검증: `type gh`=alias(op plugin run -- gh), `gh api user`=greenheadHQ(op plugin 경유 github-pat 주입). hosts.yml 평문 oauth_token 0건(yq 제거+백업). git history leak 0건. 구 PAT 없음 확인, keyring `gho_` unused fallback 유지 결정. 확장 트리거는 Phase 5 reserved.
