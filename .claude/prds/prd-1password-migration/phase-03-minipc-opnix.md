@@ -1,12 +1,12 @@
 # Phase 3: MiniPC opnix
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Not Started
+Status: Not Started (설계 확정 2026-05-25 — 구현은 별도 세션 대기)
 Last Updated: 2026-05-25
 
 ## Objective
 
-MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 opnix 모듈을 도입하고, MiniPC의 `gh` CLI가 1Password Automation vault의 `github-pat` item을 op CLI 경유로 사용하게 전환한다. 부팅 시 1Password SaaS HTTPS 호출 의존성을 인지하고, 컨테이너 secret은 agenix에 영구 잔존시켜 SaaS outage 시 컨테이너 미기동을 차단한다.
+MiniPC에서 opnix system module(`services.onepassword-secrets`)이 Service Account Token으로 headless 인증해 1Password Automation vault의 `github-pat`을 user 파일로 materialize하고, MiniPC의 `gh` CLI가 `GH_TOKEN` wrapper로 그 파일을 읽어 인증하게 전환한다 (SA token은 user shell 미노출 — opnix root oneshot만 사용). 부팅 시 1Password SaaS HTTPS 호출 의존성을 인지하고, 컨테이너 secret은 agenix에 영구 잔존시켜 SaaS outage 시 컨테이너 미기동을 차단한다.
 
 ## Context From Master PRD
 
@@ -30,16 +30,15 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
 ### In Scope
 
 - `flake.nix`에 `inputs.opnix.url = "github:brizzbuzz/opnix"` 추가 + follows nixpkgs
-- `modules/nixos/programs/opnix/default.nix` 신규 작성:
-  - `nixpkgs._1password-cli`를 systemPackages에 추가 (allowUnfreePredicate 필요 시 처리)
-  - `OP_SERVICE_ACCOUNT_TOKEN`을 systemd EnvironmentFile로 주입하는 패턴 (또는 brizzbuzz/opnix 모듈 import 후 옵션 설정)
-  - token 파일은 agenix `config.age.secrets.opnix-service-account-token.path`
+- `modules/nixos/programs/opnix/default.nix` 확장 (Phase 1 stub extend):
+  - opnix flake input의 **NixOS system module**(`services.onepassword-secrets`, 1Password Go SDK 기반 root oneshot)을 imports. op CLI 래퍼가 아니므로 `nixpkgs._1password-cli` systemPackages는 materialization엔 불필요 (MiniPC에 op CLI 직접 쓸 용도 생기면 그때 별도 추가)
+  - `services.onepassword-secrets.tokenFile`을 agenix path(`config.age.secrets.opnix-service-account-token.path`, **0400 root 유지**)에 binding. ⚠️ `services.onepassword-secrets.users` 옵션은 token file을 `root:onepassword-secrets 0640`(group readable)으로 바꾸므로 **사용 금지**
+  - `services.onepassword-secrets.secrets.<name>`로 `op://Automation/github-pat/token`을 user 파일로 materialize: `path = "/run/opnix/greenhead/github-pat"`(tmpfs), `owner = "greenhead"`, `mode = "0400"`. parent dir은 systemd tmpfiles로 `0700 greenhead`
 - `modules/nixos/options/homeserver.nix`의 `homeserver.opnix.enable` mkEnableOption은 **Phase 1에서 이미 추가됨** (보존만 확인). MiniPC `configuration.nix`에서 `enable = true`만 설정
 - MiniPC `configuration.nix`에 `homeserver.opnix.enable = true` 추가
-- ⚠️ **잠정 설계 (재검토 대상)** — 아래 두 단계 user shell bridge는 master PRD Open Question(root-only agenix secret을 일반 user shell이 `cat`으로 읽지 못하는 충돌)이 먼저 해소되어야 확정된다. 같은 경고가 line 70에도 있다. Phase 3 진입 시 master Open Question에 나열한 후보 접근법 중 하나를 택일·확정한 뒤 아래 (1)(2)를 그에 맞게 갱신할 것. 현 시점의 (1)(2)는 구현 지시가 아니라 "이런 형태였다"는 출발 스케치다.
-- **MiniPC user shell 인증 경로 (SSOT — Shell Plugin alias 단일 패턴, Phase 2b와 일관)** — systemd env는 SSH 일반 사용자 shell에 상속되지 않으므로 별도 wrapper 필수. 두 단계로 구성:
-  - (1) opnix 모듈에 `environment.etc."profile.d/opnix.sh".source` 패턴으로 user shell 진입 시 `OP_SERVICE_ACCOUNT_TOKEN`을 agenix path에서 단발 export: `export OP_SERVICE_ACCOUNT_TOKEN=$(cat /run/agenix/opnix-service-account-token 2>/dev/null || true)`. 이 단계만이 token을 user shell로 가져오는 유일한 경계
-  - (2) `gh` 호출은 Phase 2b의 Shell Plugin alias 패턴을 그대로 MiniPC에 적용 — `op plugin init gh` 1회 + Home Manager `programs.zsh.initContent`에서 `~/.config/op/plugins.sh` source. `GH_TOKEN` env 직접 export 방식은 사용하지 않음 (alias가 호출 시점에 op CLI로 자동 주입)
+- **MiniPC user shell 인증 경로 (확정 — opnix native materialization, 2026-05-25 master Open Questions 해소)** — SA token을 user shell에 노출하지 않는다. opnix root oneshot이 github-pat을 user 파일로 materialize하고, gh는 GH_TOKEN wrapper로 그 파일만 읽는다:
+  - (1) **SA token user shell 미노출**: 기존 잠정 설계의 `OP_SERVICE_ACCOUNT_TOKEN` user shell export(`/etc/profile.d/opnix.sh`)는 **폐기**. SA token은 opnix root oneshot(`services.onepassword-secrets`)만 사용하고 user shell엔 진입하지 않는다.
+  - (2) **gh = GH_TOKEN wrapper** (Shell Plugin alias 폐기): Home Manager `programs.zsh.initContent`에 `gh() { GH_TOKEN="$(< /run/opnix/greenhead/github-pat)" command gh "$@"; }` wrapper 함수 등록. GH_TOKEN은 gh 공식 headless auth 경로(stored credential보다 우선). `op plugin run` Shell Plugin은 desktop app + interactive credential selection을 요구해 headless에 부적합 → 채택 안 함 (Mac Phase 2b와 다른 패턴 — headless 환경 차이로 정당)
 - MiniPC `~/.config/gh/hosts.yml`의 기존 평문 oauth_token 제거 (Phase 2b가 Mac에서 했던 정리를 MiniPC에서도 1회 수행)
 - **SA token 90일 rotation systemd timer + Pushover 알림** 구현·activation (Phase 1에서 이관). `modules/nixos/programs/opnix-rotate.nix` 신규: weekly oneshot이 Phase 1에서 생성한 `secrets/opnix-service-account-expiry.txt`를 읽어 N-14일 이하면 Pushover 알림. op CLI 의존 없음. timer는 MiniPC opnix.enable에 게이팅
 - Caddy/Tailscale 등 다른 시스템 컨테이너의 secret은 변경 없음 (A-3 박제)
@@ -56,30 +55,27 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
 - [ ] `flake.nix` inputs에 `opnix.url = "github:brizzbuzz/opnix"` 추가. follows nixpkgs 설정
 - [ ] `nix flake update opnix` 후 `nix flake check --no-build --all-systems` 통과 확인
 - [ ] `modules/nixos/programs/opnix/default.nix` 확장 (Phase 1 stub을 **extend**, `environment.etc."opnix-service-account-expiry"` 라인 **반드시 보존**):
-  - opnix flake input의 NixOS module을 imports
-  - `nixpkgs._1password-cli` systemPackages 추가
-  - SA token 파일 경로를 opnix 모듈의 token option에 binding (agenix path)
+  - opnix flake input의 **system module**(`services.onepassword-secrets`)을 imports (`programs.onepassword-secrets` Home Manager 모듈 아님 — user activation에서 tokenFile 읽어야 해 root-only SA token과 안 맞음)
+  - `services.onepassword-secrets.tokenFile`을 agenix path(`config.age.secrets.opnix-service-account-token.path`)에 binding. ⚠️ `services.onepassword-secrets.users` 옵션 **사용 금지**(token file을 `root:onepassword-secrets 0640` group readable로 바꿈 — SA token 0400 root 유지)
+  - `services.onepassword-secrets.secrets.<name>`로 `op://Automation/github-pat/token` → `/run/opnix/greenhead/github-pat`(tmpfs, owner=greenhead, mode 0400) materialize. parent dir은 systemd tmpfiles `0700 greenhead`
+  - (op CLI 래퍼가 아닌 Go SDK oneshot이므로 `nixpkgs._1password-cli` systemPackages는 materialization엔 불필요)
   - systemd service의 `After = [ "network-online.target" ]`, `Wants = [ "network-online.target" ]` (1Password SaaS 도달성 보장 — A-3와 정합)
   - `Restart = "on-failure"`, `RestartSec = 30` (SaaS 일시 outage 대응)
   - **검증**: 본 phase의 default.nix diff에서 Phase 1이 박제한 `environment.etc."opnix-service-account-expiry".source` 라인이 그대로 살아있어야 한다 (git diff로 확인 + `ssh minipc 'test -r /etc/opnix-service-account-expiry'`로 deployed 확인)
 - [ ] `modules/nixos/options/homeserver.nix`의 `homeserver.opnix.enable` mkEnableOption은 **Phase 1에서 이미 추가됨** — 보존만 확인 (재추가 금지). Phase 3는 enable 시 활성화될 full 구현(systemd service 등)을 opnix/default.nix에 extend
 - [ ] MiniPC configuration.nix에 `homeserver.opnix.enable = true;` 추가
-- [ ] **User shell token bridge 생성** (systemd EnvironmentFile은 SSH 일반 사용자 shell에 상속되지 않으므로 필수):
-  - `modules/nixos/programs/opnix/default.nix`에 `environment.etc."profile.d/opnix.sh"` 선언 추가
-  - 파일 내용 (Nix string literal): `export OP_SERVICE_ACCOUNT_TOKEN=$(cat /run/agenix/opnix-service-account-token 2>/dev/null || true)`
-  - 권한: mode `0444` (read-only world) — secret 자체는 agenix path가 root-only이므로 bridge 파일은 명령만 들고 있음
-  - **설계 재검토 필요** (master Open Questions 참조): `/run/agenix/opnix-service-account-token`은 root-only(0400 root)라 일반 user shell의 `cat`이 실패(token 빈 값)한다. user-readable로 풀면 SA token이 모든 user shell/subprocess에 노출되어 보안 약화. root-owned systemd wrapper가 필요한 값만 제한 권한으로 materialize하거나 op/gh wrapper가 root 경유로 읽는 방식 등으로 bridge 설계를 Phase 3 진입 시 재확정한다
-  - 적용 대상: `homeserver.opnix.enable = true`일 때만 활성 (cfg.enable 게이팅)
-- [ ] **op_get MiniPC 호환성 확인**: op_get의 `--account my.1password.com` 고정(Mac 멀티계정용)이 MiniPC `OP_SERVICE_ACCOUNT_TOKEN` 인증과 충돌하는지 검증. SA token이 account를 결정하므로, 충돌 시 op_get을 `OP_SERVICE_ACCOUNT_TOKEN` 존재 시 `--account` 생략하도록 분기 (`modules/shared/programs/shell/default.nix`)
+- [ ] **gh GH_TOKEN wrapper 등록** (확정 설계 — SA token user shell 미노출):
+  - Home Manager(NixOS user) `programs.zsh.initContent`에 wrapper 함수: `gh() { GH_TOKEN="$(< /run/opnix/greenhead/github-pat)" command gh "$@"; }` (파일 부재 시 GH_TOKEN 빈 값 → gh가 평소 경로로 fallback)
+  - `OP_SERVICE_ACCOUNT_TOKEN`을 user shell로 export하는 `/etc/profile.d/opnix.sh`는 **만들지 않는다**(폐기된 잠정 설계). SA token은 opnix root oneshot만 사용
+  - 적용 대상: `homeserver.opnix.enable = true`일 때만 (cfg.enable 게이팅)
+- [ ] **op_get MiniPC**: (B) opnix native에서 MiniPC gh는 op CLI를 안 쓰므로 op_get은 MiniPC에서 비활성(op CLI 미설치 → `command -v op` 실패 시 127, 기존 guard 동작). 향후 MiniPC에 op CLI를 쓸 일이 생기면 op_get의 `--account my.1password.com` 고정이 `OP_SERVICE_ACCOUNT_TOKEN` 인증과 충돌하므로(SA token이 account 결정) 그때 `OP_SERVICE_ACCOUNT_TOKEN` 존재 시 `--account` 생략 분기 추가 (`modules/shared/programs/shell/default.nix`)
 - [ ] `nrs minipc` 빌드 + 활성화
 - [ ] `ssh minipc`로 접속 후 검증:
-  - [ ] `op vault list` → Automation vault 노출 (Personal은 SA 접근 불가로 미노출 — 정상)
-  - [ ] `op_get github-pat token` (op read 기반) → 신규 PAT 반환
-- [ ] MiniPC `~/.config/gh/hosts.yml` 백업 후 `oauth_token` 라인 제거
-- [ ] MiniPC에 Shell Plugin alias 활성화 (Phase 2b와 동일 SSOT 패턴 — GH_TOKEN env 직접 export는 사용하지 않음):
-  - `ssh minipc 'op plugin init gh'` 1회 실행 (interactive — Automation vault의 `github-pat` 선택)
-  - Home Manager (NixOS user) `programs.zsh.initContent`에 `~/.config/op/plugins.sh` source guard 추가 (Phase 2b의 declarative 등록 패턴 그대로)
-  - `nrs minipc` 활성화 후 새 ssh session에서 `type gh`가 `op plugin run -- gh`로 alias됨을 확인
+  - [ ] opnix materialize 확인: `test -r /run/opnix/greenhead/github-pat`(0400 greenhead) + parent dir `0700 greenhead`. **token 값은 stdout/log에 출력 금지**
+  - [ ] opnix oneshot service active 확인 (`systemctl status`로 opnix가 만드는 unit명)
+  - [ ] **SA token user shell 미노출 검증**: `ssh minipc 'env | grep -c OP_SERVICE_ACCOUNT_TOKEN'` → 0 (user shell에 SA token env 없음)
+- [ ] MiniPC `~/.config/gh/hosts.yml` 백업 후 `oauth_token` 라인 제거 (기존 평문 정리 — 인증은 GH_TOKEN wrapper가 담당)
+- [ ] gh wrapper 검증: `nrs minipc` 활성화 후 새 ssh session에서 `type gh`가 GH_TOKEN wrapper 함수로 정의됐는지 확인 (`op plugin run -- gh` alias 아님). github-pat 파일을 GH_TOKEN으로 읽어 인증
 - [ ] `nrs minipc` 활성화
 - [ ] `ssh minipc 'gh api user'` → login=greenheadHQ 응답 확인
 - [ ] `ssh minipc 'gh pr list'` → 정상 응답
@@ -101,7 +97,7 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
 
 - [ ] Static check 통과: `nix flake check --no-build --all-systems`
 - [ ] 자동 test 추가/갱신: `tests/eval-tests.nix`에 `homeserver.opnix.enable = true` 시 systemPackages에 `_1password-cli` 존재 검증 1줄
-- [ ] API/CLI 검증: `ssh minipc 'op vault list'`, `ssh minipc 'gh api user'`, `ssh minipc 'gh pr list'`. **token 비노출 검증** (`env`/`printenv`로 token 값 출력 금지) — 대신 `ssh minipc 'env | grep -E "^OP_SERVICE_ACCOUNT_TOKEN=" >/dev/null && echo present || echo missing'`로 env에 set됐는지만 확인. 값 자체는 stdout/log에 절대 출력하지 않음
+- [ ] API/CLI 검증: `ssh minipc 'gh api user'`(login=greenheadHQ), `ssh minipc 'gh pr list'`. **SA token 비노출 검증**: `ssh minipc 'env | grep -c OP_SERVICE_ACCOUNT_TOKEN'` → 0 (user shell env에 SA token 없음 — opnix root oneshot만 사용). github-pat 파일/token 값은 stdout/log에 절대 출력하지 않음
 - [ ] Browser/UI E2E — N/A
 - [ ] Agent/dev browser check — N/A
 - [ ] Mobile/app simulator — N/A
@@ -126,7 +122,7 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
 - [ ] 3. Simplicity — opnix 모듈 + homeserver.opnix.enable 옵션 + Shell Plugin source 1줄로 최소
 - [ ] 4. Code quality — modules/nixos/programs/opnix/default.nix가 caddy/smartd 등 기존 패턴 일관
 - [ ] 5. Duplication/cleanup — MiniPC 기존 hosts.yml 평문 token 잔존 0
-- [ ] 6. Security/privacy — SA token mode 0400, EnvironmentFile 패턴, SaaS outage 시 컨테이너 영향 0 (A-3)
+- [ ] 6. Security/privacy — SA token 0400 root 유지(user shell 미노출 검증), github-pat tmpfs(`/run`) 0400 greenhead materialize, `services.onepassword-secrets.users` 미사용, SaaS outage 시 컨테이너 영향 0 (A-3)
 - [ ] 7. Performance — op CLI 호출 overhead는 캐시로 완화. 부팅 시 opnix-secrets timing 측정
 - [ ] 8. Validation — flake check + nrs + ssh op + ssh gh + 재부팅 smoke
 - [ ] 9. Future-phase — Phase 5에서 managing-secrets에 opnix 운영 절차 박제 예정 — 본 phase에서 발견된 사실 (timing, 실패 모드 등)을 Discoveries에 기록
@@ -140,3 +136,4 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
+- 2026-05-25: SA token user shell bridge 설계 확정 (구현은 별도 세션). opnix native materialization 채택 — `services.onepassword-secrets` system module(Go SDK root oneshot)이 SA token(0400 root 유지)으로 github-pat을 user 파일(`/run/opnix/greenhead/github-pat`, tmpfs 0400 greenhead) materialize, gh는 GH_TOKEN wrapper. 잠정 설계(`OP_SERVICE_ACCOUNT_TOKEN` user shell export + Shell Plugin alias) 폐기. 외부 기술 자문(codex xhigh) 교차검증: opnix는 op CLI 래퍼가 아닌 Go SDK oneshot, `services.onepassword-secrets.users` 옵션은 token을 0640 group readable로 바꿔 사용 금지, Shell Plugin은 headless 부적합. Scope·Implementation Checklist·Validation·Multi-Pass를 확정안으로 갱신.
