@@ -271,14 +271,22 @@ agents_override() {
 
   if [ -f "$override_file" ]; then
     if grep -qxF "$start_marker" "$override_file" && grep -qxF "$end_marker" "$override_file"; then
-      # Replace between markers, preserve content outside
+      # Replace between markers, preserve content outside.
+      # auto_content(멀티라인)는 -v가 아니라 환경변수+ENVIRON[]로 awk에 넘긴다: BSD awk
+      # (/usr/bin/awk — devShell 비활성 비대화형 셸의 PATH 폴백)는 -v 값의 리터럴 개행을
+      # "newline in string"으로 거부하지만, ENVIRON[] 경유는 BSD/GNU awk 모두 안전하다.
+      # 또한 local 선언과 할당을 분리해 command-substitution 실패가 local의 exit 0에 가려지지
+      # 않게 하고, awk 성공 시에만 기록한다(실패 시 빈 출력으로 사용자 custom 섹션 손실 방지).
       local new_content
-      new_content="$(awk -v start="$start_marker" -v end="$end_marker" \
-        -v replacement="$auto_content" '
-        $0 == start { print; printf "%s", replacement; skip=1; next }
+      if ! new_content="$(REPLACEMENT="$auto_content" awk \
+        -v start="$start_marker" -v end="$end_marker" '
+        $0 == start { print; printf "%s", ENVIRON["REPLACEMENT"]; skip=1; next }
         $0 == end   { skip=0; print; next }
         !skip { print }
-      ' "$override_file")"
+      ' "$override_file")"; then
+        echo "Warning: AGENTS.override.md marker replacement failed; existing file preserved" >&2
+        return 1
+      fi
       printf '%s\n' "$new_content" > "$override_file"
     else
       local legacy_preserved
