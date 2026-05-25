@@ -84,3 +84,7 @@ args = ["-y", "chrome-devtools-mcp@latest", "--autoConnect", "--channel=stable",
 
 [mcp_servers.chrome-devtools.env]
 npm_config_registry = "https://registry.npmjs.org/"
+# chrome-devtools-mcp --autoConnect의 heavy 작업(큰 스냅샷·무거운 페이지) 시 V8 old-space OOM 방어.
+# 값은 상한일 뿐 평소 점유와 무관하다. upstream 메모리 누수(ChromeDevTools/chrome-devtools-mcp#1192)는
+# 이미 수정됐으나, 단발성 OOM에 대한 안전벨트로 명시 유지한다.
+NODE_OPTIONS = "--max-old-space-size=8192"
