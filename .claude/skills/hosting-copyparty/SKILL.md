@@ -66,7 +66,7 @@ sudo copyparty-update --dry-run   # 수행 예정 작업 확인
 sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 → 재시작 → 헬스체크)
 ```
 
-- 이미지에 버전 레이블이 없으므로 GitHub latest 추적 + 이미지 digest 비교 방식
+- GitHub latest는 알림/참고용. 실제 업데이트는 Nix module의 configured image reference pull + digest 비교 방식
 - 백업 불필요 (설정은 Nix 관리, 데이터는 HDD 볼륨)
 - ERR trap에서 컨테이너 자동 복구
 - 통합 업데이트 시스템 상세: `running-containers` 스킬의 [service-update-system.md](../running-containers/references/service-update-system.md) 참조
@@ -139,8 +139,8 @@ localhost 바인딩 (Caddy 연동)
 - 캐시 위치: SSD (`/var/lib/docker-data/copyparty/hists`)
 - `th-maxsize` 옵션은 존재하지 않음 (사용 금지)
 
-이미지 태그
-- `copyparty/ac:latest` 사용 (audio/video/image 썸네일 + 트랜스코딩 포함)
+컨테이너 이미지 기준 위치
+- `modules/nixos/programs/docker/copyparty.nix`의 configured image reference 사용 (audio/video/image 썸네일 + 트랜스코딩 포함)
 - 기본 `copyparty/copyparty` 이미지는 썸네일 미지원
 
 세션 데이터 영속성

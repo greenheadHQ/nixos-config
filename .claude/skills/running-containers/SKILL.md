@@ -14,7 +14,7 @@ description: |
 
 # 컨테이너 관리 (Podman/홈서버)
 
-Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty, vaultwarden, karakeep) 운영 가이드.
+Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty, vaultwarden, karakeep, awesome-anki 등) 운영 가이드.
 Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접근한다.
 
 ## 모듈 구조 (mkOption 기반)
@@ -39,8 +39,8 @@ homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 |-----------|------|
 | `modules/nixos/options/homeserver.nix` | mkOption 정의 + 서비스 모듈 import |
 | `modules/nixos/programs/docker/runtime.nix` | Podman 런타임 공통 설정 |
-| `modules/nixos/programs/docker/<서비스>.nix` | 개별 컨테이너 정의 (immich, uptime-kuma, copyparty, vaultwarden, karakeep 등) |
-| `modules/nixos/programs/<서비스>-update/` | 버전 체크 + 업데이트 (immich, uptime-kuma, copyparty, vaultwarden, karakeep) |
+| `modules/nixos/programs/docker/<서비스>.nix` | 개별 컨테이너 정의 (immich, uptime-kuma, copyparty, vaultwarden, karakeep, awesome-anki 등) |
+| `modules/nixos/programs/<서비스>-update/` | 버전 체크 + 업데이트 (immich, uptime-kuma, copyparty, vaultwarden, karakeep 등) |
 | `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 |
 | `modules/nixos/lib/service-lib.sh` / `.nix` | 공통 셸 라이브러리 + Nix wrapper |
 | `modules/nixos/lib/mk-update-module.nix` | 업데이트 모듈 생성 헬퍼 |
@@ -65,6 +65,7 @@ Docker 서비스에서 사용하는 상수 (`libraries/constants.nix`):
 | Copyparty | `https://copyparty.greenhead.dev` | `127.0.0.1:3923` |
 | Vaultwarden | `https://vaultwarden.greenhead.dev` | `127.0.0.1:8222` |
 | Karakeep | `https://archive.greenhead.dev` | `127.0.0.1:3000` |
+| Awesome Anki | `https://anki.greenhead.dev` | `localhost:3100` |
 | Anki Sync | (Caddy 미경유) | `100.79.80.95:27701` |
 
 Caddy가 Cloudflare DNS-01 ACME로 Let's Encrypt 인증서를 자동 발급한다.
@@ -76,10 +77,10 @@ Tailscale IP (`100.79.80.95:443`)에만 바인딩되어 VPN 내부 전용이다.
 
 - OCI 백엔드 명시 필수: `runtime.nix`의 `backend = "podman"` 누락 시 Docker fallback 에러
 - immich ML OOM: CPU 버전 이미지 사용 (`release`, openvino 아님)
-- Tailscale IP 바인딩: `tailscale-wait.nix`로 60초 대기. Immich/Copyparty/Uptime Kuma/Vaultwarden은 `127.0.0.1` 바인딩 (Caddy 프록시)
-- Uptime Kuma `--network=host`: localhost 서비스 모니터링을 위해 호스트 네트워크 필수
+- Tailscale IP 바인딩: `tailscale-wait.nix`로 60초 대기. Caddy-backed localhost 서비스는 `127.0.0.1` 바인딩
+- Host network allowlist: Uptime Kuma는 localhost 서비스 모니터링 때문에, Awesome Anki는 AnkiConnect 접근 제약 때문에 `--network=host` 사용
 - Caddy HTTPS: Cloudflare DNS-01 ACME, Tailscale IP 전용 바인딩, `secrets/cloudflare-dns-api-token.age`
-- 방화벽: `trustedInterfaces = [ "tailscale0" ]` — 보안은 서비스 바인딩 주소에 의존
+- 방화벽: `trustedInterfaces = [ "tailscale0" ]`. 대부분의 웹 서비스는 localhost/service bind로 제한한다. Awesome Anki는 host-network + `0.0.0.0` 바인딩 예외라 tailnet 직접 노출을 Tailscale/방화벽 경계로 수용한다.
 - Immich DB 비밀번호: agenix `secrets/immich-db-password.age`, `POSTGRES_PASSWORD_FILE` 볼륨 마운트
 
 ## 빠른 참조
@@ -128,7 +129,7 @@ Immich: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 �
 
 Immich DB 백업: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행.
 
-Uptime Kuma/Copyparty/Karakeep: 이미지에 버전 레이블 없음 → GitHub latest 추적 + 이미지 digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
+Uptime Kuma/Copyparty/Karakeep/Vaultwarden: GitHub latest는 알림/참고용이고, 수동 업데이트는 Nix module의 configured image reference pull + digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
 Karakeep 수동 업데이트는 `--ack-bridge-risk` 플래그가 필수다 (브릿지/로그 의존성 인지 강제).
 
 Karakeep 이벤트 알림: `karakeep-notify`가 웹훅→Pushover 브리지(socat)로 아카이빙 성공/실패 알림을 전송한다.
@@ -147,7 +148,7 @@ macOS에서 `~/FolderActions/upload-immich/`에 파일을 넣으면 Immich에 �
 2. ML OOM: CPU 버전 이미지로 변경
 3. IP 바인딩 실패: `tailscale-wait.nix`가 올바르게 import 되었는지 확인
 4. DB 비밀번호 오류: `secrets/immich-db-password.age` 존재 확인, `cd secrets && nix run github:ryantm/agenix -- -r` 재암호화
-5. Uptime Kuma에서 localhost 서비스 모니터링 불가: `--network=host` 필수 (기본 브릿지에서는 `127.0.0.1` 접근 불가)
+5. Host network 서비스 확인: Uptime Kuma는 localhost 모니터링용, Awesome Anki는 AnkiConnect 접근용. Awesome Anki는 현재 `0.0.0.0` 바인딩 제한 때문에 tailnet 직접 노출을 Tailscale/방화벽 경계로 수용
 6. Caddy HTTPS 인증서 발급 실패: Cloudflare API 토큰 확인 (`sudo cat /run/caddy/env`), `systemctl status caddy-env`
 
 ## 레퍼런스

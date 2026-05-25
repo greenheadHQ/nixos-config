@@ -42,10 +42,10 @@ copyparty = {
 
 핵심 구성요소:
 - copyparty-config oneshot 서비스: agenix 시크릿에서 비밀번호 추출 → INI 설정 파일 생성
-- copyparty Podman 컨테이너: `copyparty/ac:latest` 이미지
+- copyparty Podman 컨테이너: `modules/nixos/programs/docker/copyparty.nix`의 configured image reference
 - `--entrypoint=python3`: 이미지 기본 ENTRYPOINT 오버라이드 (initcfg 볼륨 충돌 방지)
 - cmd: `["-m" "copyparty" "-c" "/cfg/config.conf"]`
-- ConditionPathExists: 설정 파일 없으면 시작 방지
+- ConditionPathExists: agenix 비밀번호 secret 없으면 시작 방지. 설정 파일 생성 문제는 `copyparty-config` 서비스 확인
 - 127.0.0.1 바인딩: Caddy 리버스 프록시가 유일한 외부 진입점
 
 ### 5. 활성화
@@ -83,7 +83,7 @@ INI 스타일, 섹션별 구성:
 
 ## Docker 이미지 정보
 
-- 이미지: `copyparty/ac:latest` (thumbnailer for audio/video/images + transcoding)
+- 이미지: `modules/nixos/programs/docker/copyparty.nix`의 configured image reference (thumbnailer for audio/video/images + transcoding)
 - 기본 포트: 3923
 - 기본 ENTRYPOINT: `python3 -m copyparty -c /z/initcfg` ← 오버라이드 필수
 - 우리 설정: `--entrypoint=python3`, cmd: `-m copyparty -c /cfg/config.conf`

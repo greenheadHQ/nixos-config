@@ -7,6 +7,9 @@ Immich, Uptime Kuma, Copyparty, Karakeep, Vaultwarden 5개 컨테이너 서비�
 - 버전 체크 (자동): 매일 GitHub Releases API로 최신 버전 확인 → Pushover 알림
 - 업데이트 (수동): `sudo <서비스>-update` 명령으로 안전한 업데이트
 
+이 문서에서 configured image reference는 `modules/nixos/programs/docker/<service>.nix`의
+`virtualisation.oci-containers.containers.<service>.image` 값을 뜻한다.
+
 ## 아키텍처
 
 ```
@@ -77,16 +80,18 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 
 ### Uptime Kuma
 
-- 현재 버전 확인: 이미지에 버전 레이블 없음 → GitHub latest만 추적
+- 자동 버전 체크: 이미지에 버전 레이블이 없어 GitHub latest 알림만 제공
+- 수동 업데이트: configured image reference를 pull하고 digest 비교. GitHub latest는 안내용으로 함께 표시
 - 알림 형태: "v2.1.0 출시됨" (현재 버전 미표시)
-- 메이저 불일치 감지: 이미지 태그 `:1`은 1.x만, GitHub latest가 2.x → 추가 안내 포함
+- 메이저 불일치 감지: configured image reference의 tag 부분 major와 GitHub latest major가 다르면 추가 안내 포함
 - 업데이트: 이미지 pull → digest 비교 → stop → SQLite 백업(`kuma.db` gzip) → start → HTTP 헬스체크
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작 (모니터링 서비스 가용성 보장)
 - Tailscale 불필요: localhost + 인터넷만 사용
 
 ### Copyparty
 
-- 현재 버전 확인: 이미지에 버전 레이블 없음 → GitHub latest만 추적
+- 자동 버전 체크: GitHub latest 알림
+- 수동 업데이트: configured image reference를 pull하고 digest 비교. GitHub latest는 안내용으로 함께 표시
 - 알림 형태: "v1.20.6 출시됨"
 - 업데이트: 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작
@@ -94,7 +99,8 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 
 ### Karakeep
 
-- 현재 버전 확인: 이미지에 버전 레이블 없음 → GitHub latest만 추적
+- 자동 버전 체크: GitHub latest 알림
+- 수동 업데이트: configured image reference를 pull하고 digest 비교. GitHub latest는 안내용으로 함께 표시
 - 알림 형태: "v0.x.y 출시됨"
 - 업데이트: 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
 - 실행 명령: `sudo karakeep-update --ack-bridge-risk` (`--ack-bridge-risk` 없이 실행 불가)
@@ -106,9 +112,10 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 
 ### Vaultwarden
 
-- 현재 버전 확인: 이미지에 버전 레이블 없음 → GitHub latest만 추적
+- 자동 버전 체크: GitHub latest 알림
+- 수동 업데이트: configured image reference를 pull하고 digest 비교. GitHub latest는 안내용으로 함께 표시
 - 알림 형태: "v1.x.y 출시됨"
-- 메이저 불일치 감지: pinned tag와 GitHub latest 간 major version 불일치 시 추가 안내 포함
+- 메이저 불일치 감지: configured image reference의 tag 부분 major와 GitHub latest major가 다르면 추가 안내 포함
 - 업데이트: 이미지 pull → digest 비교 → vaultwarden-backup 서비스 실행 → 재시작 → HTTP 헬스체크 (`/alive`)
 - 실행 명령: `sudo vaultwarden-update`
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작
@@ -167,8 +174,8 @@ cat /var/lib/<서비스>-update/last-notified-version
 
 ### 이미지 digest 변경 감지 안 됨
 
-`sudo <서비스>-update`에서 "Image unchanged" 출력 → 레지스트리에 새 이미지가 없는 것.
-GitHub에 새 릴리즈가 있더라도 이미지 빌드에 시간 소요.
+`sudo <서비스>-update`에서 "Image unchanged"가 출력되면 configured image reference의 digest가 바뀌지 않은 상태다.
+GitHub latest와 configured image reference의 tag 부분이 다르면 `modules/nixos/programs/docker/<service>.nix`의 image 값을 변경하고 `nrs`로 적용한 뒤, 다시 `sudo <서비스>-update`를 실행해 서비스별 백업/헬스체크/후속 점검 경로를 완료한다.
 
 ### 새 서비스 추가 시
 

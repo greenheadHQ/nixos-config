@@ -6,17 +6,49 @@
 - 대상 프로젝트: `/Users/green/Workspace/nixos-config`
 - 문제 유형: Codex CLI가 global(user) 스코프 스킬은 인식하지만 project 스코프(`.agents/skills`) 스킬을 안정적으로 인식하지 못함
 
-## 증상
+## 현재 운영 기준
+
+- `.agents/skills/<name>`는 `.claude/skills/<name>`를 가리키는 디렉토리 심링크다.
+- 정책 SoT는 `modules/shared/programs/codex/default.nix`, 검증 SoT는 `scripts/ai/verify-ai-compat.sh`다.
+- 스킬 노출 정책을 바꾼 뒤에는 `nrs`(또는 동등 activation)로 out-of-store symlink를 갱신한 뒤 검증한다.
+
+### 현재 검증 절차
+
+정본 판정은 `./scripts/ai/verify-ai-compat.sh` 결과를 따른다. 아래 `git status`와 `find`는 사람이 상태를 빠르게 확인하기 위한 보조 절차이며, 디렉토리 심링크 target 검증은 정본 스크립트가 수행한다.
+
+```bash
+# 1) 구조 검증
+./scripts/ai/verify-ai-compat.sh
+
+# 2) SKILL.md 도구-중립성 lint fixture 검증
+./scripts/ai/verify-ai-compat.sh --run-fixture-tests
+
+# 3) staged/untracked 포함 skill docs 변경 확인
+git status --porcelain=v1 --untracked-files=all -- .claude/skills
+
+# 4) 디렉토리 심링크 projection 빠른 확인
+find .agents/skills -mindepth 1 -maxdepth 1 -type l -exec test -d {} \; -print | wc -l
+find .agents/skills -mindepth 1 -maxdepth 1 ! -type l -print
+
+# 5) 선택: 런타임 smoke test가 필요할 때만 실행
+codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' available in this workspace?"
+```
+
+## 2026-02-08 incident 기록 (historical)
+
+아래 기록은 당시 파일-copy 임시 해결 과정을 설명한다. 현재 운영 기준은 상단 "현재 운영 기준"과 "회귀 방지 체크리스트"를 따른다.
+
+### 증상
 
 1. Codex에서 `.agents/skills/<name>/SKILL.md` 기반 스킬이 일부/전부 누락됨
 2. `verify-ai-compat.sh` 기준으로는 구조가 있어 보이는데 런타임 인식이 불안정함
 3. 별개로, 권한 승인 프롬프트가 반복적으로 나타남 (정책 기본값 영향)
 
-## 재현 조건
+### 재현 조건
 
 - `.agents/skills/*/SKILL.md`가 심링크일 때 환경에 따라 project-scope 스캔이 누락됨
 
-## 원인 분석
+### 원인 분석
 
 1. SKILL.md 투영 방식 (근본 원인)
 - 기존 투영은 `.claude/skills/<name>/SKILL.md`를 `.agents/skills/<name>/SKILL.md`로 심링크했다.
@@ -29,9 +61,11 @@
 - 승인 프롬프트 문제(`approval_policy`, `sandbox_mode`)와 Skills 발견 문제를 한 원인으로 혼동하기 쉬웠다.
 - 실제로 Skills 누락의 근본 원인은 `trust`가 아니라 `SKILL.md` 심링크였다.
 
-## 해결 내용
+### 당시 해결 내용
 
-### 1) SKILL.md 투영 정책 변경
+> 현재 정책은 하단 "2026-02-19 재검증"의 디렉토리 심링크 projection이다. 이 섹션은 당시 임시 해결 기록이며, 현재 검증 기준으로 사용하지 않는다.
+
+#### 1) SKILL.md 투영 정책 변경
 
 - 파일: `modules/shared/programs/codex/default.nix`
 - 변경: `.agents/skills/<name>/SKILL.md`를 심링크가 아니라 실파일 복사로 생성
@@ -39,15 +73,15 @@
 
 > 2026-02-19 업데이트: 이후 디렉토리 심링크로 전환됨. 하단 "2026-02-19 재검증" 섹션 참조.
 
-### 2) 검증 스크립트 기준 변경
+#### 2) 검증 스크립트 기준 변경
 
 - 파일: `scripts/ai/verify-ai-compat.sh`
-- 변경:
+- 당시 변경:
   - `SKILL.md`가 일반 파일인지 확인
   - 심링크면 실패 처리
   - 원본과 `cmp`로 내용 일치 확인
 
-### 3) 실행 정책 기본값 반영 (권한 프롬프트 대응)
+#### 3) 실행 정책 기본값 반영 (권한 프롬프트 대응)
 
 - 파일: `modules/shared/programs/codex/files/config.toml`
 - 반영 상태:
@@ -57,29 +91,12 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 ```
 
-### 4) trust 항목 정리
+#### 4) trust 항목 정리
 
 - 프로젝트별 절대경로 trust 항목은 환경 이식성(`$HOME`/OS 차이) 문제를 만들 수 있어 기본 구성에서 제거했다.
 - 필요 시 호스트별/로컬 오버라이드로만 추가한다.
 
-## 검증 절차
-
-```bash
-# 1) 구조 검증
-./scripts/ai/verify-ai-compat.sh
-
-# 2) SKILL.md 도구-중립성 lint fixture 검증
-./scripts/ai/verify-ai-compat.sh --run-fixture-tests
-
-# 3) SKILL.md 타입 검증
-find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type l | wc -l
-find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type f | wc -l
-
-# 4) 런타임 인식 검증
-codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' available in this workspace?"
-```
-
-## 2026-02-08 확인 결과
+### 확인 결과
 
 - 심링크 수: `0`
 - 일반 파일 수: `18` (2026-02-08 당시 기준)
@@ -89,7 +106,7 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
   - project 스킬 목록이 응답에 포함됨
 - 새 Git 프로젝트에서도 승인 선택지 미노출(`approval_policy = "never"`, `sandbox_mode = "danger-full-access"` 적용 후)
 
-## codex trust 관련 메모
+### codex trust 관련 메모
 
 - `codex-cli 0.122.0` 기준 `codex trust` 독립 서브커맨드는 확인되지 않았다.
 - trust 관리는 CLI 서브커맨드가 아니라 `config.toml` 프로젝트 엔트리로만 가능하다.

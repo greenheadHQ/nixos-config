@@ -16,7 +16,7 @@ macOS 관련 시스템 설정 및 Homebrew 관리입니다.
 - [키보드 단축키 (Symbolic Hotkeys)](#키보드-단축키-symbolic-hotkeys)
 - [키 바인딩 (백틱/원화)](#키-바인딩-백틱원화)
 - [폰트 관리](#폰트-관리)
-- [GUI 앱 (Homebrew Casks)](#gui-앱-homebrew-casks)
+- [Homebrew 관리](#homebrew-관리)
 - [폴더 액션 (launchd)](#폴더-액션-launchd)
 
 ---
@@ -318,11 +318,12 @@ fc-list | grep -i "JetBrains"
 fc-list | grep -i "D2Coding"
 ```
 
-## GUI 앱 (Homebrew Casks)
+## Homebrew 관리
 
 `modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다.
 
-- hostType 제한: `lib.mkIf (hostType == "personal")` — personal 호스트만 적용
+- 공통 항목: 모든 darwin 호스트에 적용
+- personal 항목: `lib.mkIf (hostType == "personal")` 블록에서 GUI 앱/Formula 관리
 - cleanup = "none": 선언되지 않은 앱을 자동 삭제하지 않음 (수동 설치 cask 보호)
 
 ### 서드파티 Tap Formula 주의사항
@@ -335,17 +336,9 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 # brews = [ "macism" ];  # ❌ homebrew/core에서 찾으려고 함 → 설치 안 됨
 ```
 
-### Cask 목록
+### Cask/Formula inventory 기준 위치
 
-| 앱             | 용도                       |
-| -------------- | -------------------------- |
-| Raycast        | 런처 (Spotlight 대체)      |
-| Rectangle      | 창 관리                    |
-| Hammerspoon    | 키보드 리매핑/자동화       |
-| Homerow        | 키보드 네비게이션          |
-| Docker Desktop | 컨테이너                   |
-| Fork           | Git GUI                    |
-| MonitorControl | 외부 모니터 밝기 조절      |
+현재 Homebrew inventory는 `modules/darwin/programs/homebrew.nix`가 기준입니다. 이 문서는 common/personal 분리 정책, adopt 절차, Nix 전환 예외만 설명하고 실제 목록은 복제하지 않습니다.
 
 ### Nix 패키지로 관리하는 GUI 앱
 
@@ -366,12 +359,12 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 
 ### 업그레이드 정책
 
-`onActivation.upgrade = true` + `greedyCasks = true` 조합으로 버전 드리프트를 방지합니다.
+personal 호스트에서는 `onActivation.upgrade = true` + `greedyCasks = true` 조합으로 버전 드리프트를 방지합니다.
 
-- upgrade = true: `nrs` 실행 시 `brew upgrade`를 자동 실행
-- greedyCasks = true: `auto_updates` 속성이 있는 cask도 `brew upgrade` 대상에 포함
+- upgrade = true: personal 호스트에서 `nrs` 실행 시 `brew upgrade`를 자동 실행
+- greedyCasks = true: personal 호스트에서 `auto_updates` 속성이 있는 cask도 `brew upgrade` 대상에 포함
 
-자체 업데이터가 있는 앱이 Homebrew와 독립적으로 버전을 변경해도, `nrs` 실행 시 Homebrew가 최신 버전으로 동기화합니다.
+자체 업데이터가 있는 앱이 Homebrew와 독립적으로 버전을 변경해도, personal 호스트에서는 `nrs` 실행 시 Homebrew가 최신 버전으로 동기화합니다.
 
 ### Homebrew 관리에서 제외한 앱
 
@@ -381,13 +374,6 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | Slack | 수동 설치 선호. 자체 업데이터에 위임. |
 
 > `cleanup = "none"`이므로 cask 목록에서 제거해도 기존 `/Applications/Figma.app`은 삭제되지 않습니다.
-
-### Brew Formula
-
-| Formula                    | 용도                              |
-| -------------------------- | --------------------------------- |
-| `laishulu/homebrew/macism` | macOS 입력 소스 전환 (Neovim 한영 전환) |
-| `sox`                      | 오디오 처리 (Claude Code /voice 모드) |
 
 ### 직접 설치 앱의 adopt 전환
 
@@ -427,10 +413,8 @@ brew install --cask --adopt docker-desktop:
 # 개별 앱 adopt
 brew install --cask --adopt docker-desktop
 
-# 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, vscode 제외)
-for cask in ghostty raycast rectangle hammerspoon homerow docker-desktop fork monitorcontrol; do
-  brew install --cask --adopt "$cask" || echo "FAILED: $cask"
-done
+# 여러 앱을 전환할 때는 modules/darwin/programs/homebrew.nix의 현재 cask id를 확인한 뒤 반복 실행
+# 예: for cask in <현재 cask id들>; do brew install --cask --adopt "$cask"; done
 
 # adopt 결과 확인
 brew list --cask

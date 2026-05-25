@@ -44,7 +44,7 @@ sudo podman logs vaultwarden
 흔한 원인:
 - 환경변수 파일 미존재 → `ConditionPathExists` 실패 → `vaultwarden-env` 서비스 확인
 - 포트 충돌 → `ss -tlnp | grep 8222`
-- 이미지 pull 실패 → `sudo podman pull vaultwarden/server:1.35.2`
+- 이미지 pull 실패 → `modules/nixos/programs/docker/vaultwarden.nix`의 configured image reference를 확인한 뒤 `sudo podman pull <image>` 실행
 
 ## 4. 백업 실패
 

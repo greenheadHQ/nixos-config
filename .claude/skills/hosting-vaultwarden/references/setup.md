@@ -3,7 +3,7 @@
 ## 컨테이너 구성
 
 ```
-이미지: vaultwarden/server:1.35.2
+이미지: `modules/nixos/programs/docker/vaultwarden.nix`의 configured image reference
 포트: 127.0.0.1:8222:80 (localhost → Caddy)
 볼륨: /var/lib/docker-data/vaultwarden/data:/data
 리소스: memory=256m, cpus=0.5
@@ -76,8 +76,8 @@ curl -sf http://localhost:8222/alive && echo "OK"
 # 1. 릴리스 노트 확인
 # https://github.com/dani-garcia/vaultwarden/releases
 
-# 2. vaultwarden.nix에서 이미지 태그 변경
-# image = "vaultwarden/server:1.35.2" → "vaultwarden/server:X.Y.Z"
+# 2. modules/nixos/programs/docker/vaultwarden.nix에서 configured image reference 변경
+# image = "vaultwarden/server:<current>" → "vaultwarden/server:X.Y.Z"
 
 # 3. 빌드 & 적용
 nrs

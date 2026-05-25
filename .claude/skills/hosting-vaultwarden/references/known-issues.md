@@ -35,10 +35,10 @@
 
 ## 이미지 버전 고정 + 업데이트 자동화
 
-- `vaultwarden/server:1.35.2` (`:latest` 미사용)
+- `modules/nixos/programs/docker/vaultwarden.nix`의 configured image reference 사용 (`:latest` 미사용)
 - 재부팅 시 예기치 않은 버전 변경 방지
 - `homeserver.vaultwardenUpdate.enable = true`로 매일 06:30 자동 버전 체크 + Pushover 알림
-- 수동 업데이트: `sudo vaultwarden-update` (pinned tag pull -> digest 비교 -> 재시작 -> 헬스체크)
+- 수동 업데이트: `sudo vaultwarden-update` (configured image reference pull -> digest 비교 -> `vaultwarden-backup.service` 실행 -> 재시작 -> `/alive` 헬스체크)
 - 통합 업데이트 시스템 상세: `running-containers` 스킬의 [../running-containers/references/service-update-system.md](../../running-containers/references/service-update-system.md) 참조
 
 ## Master Password 복구 불가

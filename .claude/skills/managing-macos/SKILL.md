@@ -1,7 +1,7 @@
 ---
 name: managing-macos
 description: |
-  Configure macOS/nix-darwin: Dock, Finder, Homebrew Cask, Folder Actions.
+  Configure macOS/nix-darwin: Dock, Finder, Homebrew, Folder Actions.
   Trigger: 'darwin-rebuild', 'shottr 설정', 'Folder Actions', 'compress-video', 'upload-immich'.
 ---
 
@@ -45,21 +45,18 @@ darwinOnly = [ ... pkgs.패키지명 ];
 | Dock | `configuration.nix` | 자동 숨김, 크기, 최근 앱 |
 | Finder | `configuration.nix` | 숨김 파일, 확장자, 네트워크 .DS_Store 방지 |
 | 키보드 | `configuration.nix` | 키 반복 속도 |
-| 트랙패드 | `configuration.nix` | 탭 클릭, 자연스러운 스크롤 |
+| 마우스/스크롤 | `configuration.nix` | 자연스러운 스크롤 비활성화 |
 
 ### Homebrew 관리
 
-`modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다 (personal 호스트만 적용).
+`modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다. 공통 Homebrew 항목은 모든 darwin 호스트에 적용되고, personal 전용 GUI 앱/Formula는 `hostType == "personal"` 블록에서 관리됩니다.
 
 ```nix
-# cleanup = "none" — 선언되지 않은 앱을 삭제하지 않음 (수동 설치 cask 보호)
-# upgrade = true + greedyCasks = true — 자체 업데이터 앱의 버전 드리프트 방지
-homebrew.casks = [
-  "ghostty" "raycast" "rectangle"
-  "hammerspoon" "homerow" "docker-desktop"
-  "fork" "monitorcontrol"
-];
-homebrew.brews = [ "laishulu/homebrew/macism" "sox" ]; # Neovim 한영 전환, 오디오 처리
+# modules/darwin/programs/homebrew.nix 구조:
+# - common block: 모든 darwin 호스트
+# - lib.mkIf (hostType == "personal"): personal 전용 GUI 앱/Formula,
+#   cleanup/upgrade/greedyCasks 정책
+# 전체 cask/formula inventory는 해당 모듈을 기준으로 확인.
 # shottr → Nix 패키지로 관리 (libraries/packages.nix darwinOnly)
 # codex → Nix 관리로 전환 (mise npm backend, modules/shared/programs/codex)
 # figma → Homebrew에서 제거 (자체 업데이터가 버전을 변경하여 adopt 시 버전 충돌)
@@ -68,7 +65,7 @@ homebrew.brews = [ "laishulu/homebrew/macism" "sox" ]; # Neovim 한영 전환, �
 
 새 Mac 세팅 시: 직접 설치된 앱은 `brew install --cask --adopt <앱>`으로 Homebrew 관리로 전환 필요.
 
-자세한 내용: [references/features.md](references/features.md#gui-앱-homebrew-casks)
+자세한 내용: [references/features.md](references/features.md#homebrew-관리)
 
 ### Shottr 선언 관리 (Nix + agenix)
 

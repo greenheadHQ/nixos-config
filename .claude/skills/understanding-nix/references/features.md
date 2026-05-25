@@ -167,8 +167,9 @@ eval-tests (E2E 보안 검증):
 - 포트 충돌 없음 (homeserver.*.port 고유성)
 - 컨테이너 포트 localhost-only (127.0.0.1: 접두사 강제)
 - extraOptions에 -p/--publish/-P 우회 노출 금지
-- --network=host allowlist 강제 (현재: uptime-kuma만)
+- --network=host allowlist 강제 (현재: uptime-kuma, awesome-anki)
 - host network 컨테이너의 listen address 검증 (UPTIME_KUMA_HOST=127.0.0.1)
+- awesome-anki host network 예외: AnkiConnect 접근 때문에 허용. 앱은 현재 0.0.0.0 바인딩 제한이 있어 Tailscale/방화벽 경계로 수용
 - Caddy virtualHost listenAddresses = Tailscale IP 전용
 - Caddy globalConfig default_bind = Tailscale IP
 - anki-sync-server address/openFirewall 검증
