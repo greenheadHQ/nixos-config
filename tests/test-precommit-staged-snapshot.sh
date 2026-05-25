@@ -385,6 +385,9 @@ test_staged_snapshot_cache_stale_lock_takeover() {
       bash ./scripts/ai/run-staged-snapshot.sh -- true ) || fail "seed snapshot run failed"
   repo_path="$(find "$dir/.cache-tmp/staged-snapshot-cache" -mindepth 1 -maxdepth 1 -type d | head -1)"
   hash="$(find "$repo_path/trees" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | head -1)"
+  # 파생 경로가 비면(레이아웃 변경 등) destructive rm 이 의도치 않은 대상을 지울 수 있으므로 가드.
+  [ -n "$repo_path" ] && [ -d "$repo_path" ] || fail "stale-lock test: cache repo_id dir not found"
+  [ -n "$hash" ] && [ -d "$repo_path/trees/$hash" ] || fail "stale-lock test: cache tree not found"
   # 완성 트리 제거 + holder 가 점유 중인 것처럼 빈 lock 디렉토리를 심는다.
   chmod -R u+w "$repo_path/trees/$hash"; rm -rf "$repo_path/trees/$hash"
   mkdir -p "$repo_path/locks/$hash"

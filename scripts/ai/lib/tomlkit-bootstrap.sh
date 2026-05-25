@@ -50,9 +50,12 @@ tomlkit_bootstrap_require() {
   # 은 checkout-index 결과라 .git 이 없어 `rev-parse --git-dir` 가 실패) 을 모두 만족할 때만이다.
   # (c) 가드가 pre-push/실제 repo/임의 경로에서 ambient STAGED_SNAPSHOT_* env 로 외부 flake 를 주입하는
   # spoof 를 막는다. cache 경로 구현 세부나 runner 의 tomlkit 전용 변수에 의존하지 않는 명시적 계약이다.
+  # (d) source root 가 실제 git checkout 일 때만 override. 환경변수가 stale/malformed 면
+  #     `nix shell <bad>#pythonWithTomlkit` 으로 hard-fail 하는 대신 repo_root 로 안전 fallback.
   local flake_root="$repo_root"
   if [ -n "${STAGED_SNAPSHOT_SOURCE_ROOT:-}" ] && [ "$repo_root" = "${STAGED_SNAPSHOT_ROOT:-}" ] \
-    && ! git -C "$repo_root" rev-parse --git-dir >/dev/null 2>&1; then
+    && ! git -C "$repo_root" rev-parse --git-dir >/dev/null 2>&1 \
+    && git -C "$STAGED_SNAPSHOT_SOURCE_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     flake_root="$STAGED_SNAPSHOT_SOURCE_ROOT"
   fi
 

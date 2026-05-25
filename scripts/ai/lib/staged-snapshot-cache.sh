@@ -43,6 +43,9 @@ STAGED_SNAPSHOT_CACHE_TTL_SECONDS="${STAGED_SNAPSHOT_CACHE_TTL_SECONDS:-3600}" #
 
 # release/wrapper 가 참조하는 상태
 _SSC_HELD_LOCK=""
+# 이번 호출이 보유한 lock 의 owner 토큰. timeout takeover 후 successor 가 같은 경로에 만든 lock 을
+# 원 builder 가 훼손하지 않도록, unlock 시 lockdir/owner 와 대조한다.
+_SSC_LOCK_TOKEN=""
 _SSC_BUILD_DIR=""
 # write-tree 키 계산과 checkout-index materialize 가 공유하는 pinned index. wrapper 가 정리한다.
 _SSC_PINNED_INDEX=""
@@ -60,6 +63,18 @@ _ssc_rm_tree() {
   [ -n "$1" ] || return 0
   chmod -R u+w "$1" 2>/dev/null || true
   rm -rf "$1" 2>/dev/null || true
+}
+
+# 자기 token 이 기록된 lock 만 해제한다. timeout takeover(rm -rf)로 successor 가 같은 경로에 새
+# lock 을 만든 경우, 원 builder 가 그 successor lock 을 rmdir 해 직렬화가 붕괴되는 것을 막는다.
+_ssc_unlock() {
+  [ -n "${_SSC_HELD_LOCK:-}" ] || return 0
+  if [ -f "$_SSC_HELD_LOCK/owner" ] \
+    && [ "$(cat "$_SSC_HELD_LOCK/owner" 2>/dev/null)" = "${_SSC_LOCK_TOKEN:-}" ]; then
+    rm -f "$_SSC_HELD_LOCK/owner" 2>/dev/null
+    rmdir "$_SSC_HELD_LOCK" 2>/dev/null || true
+  fi
+  _SSC_HELD_LOCK=""
 }
 
 # 경로 16자 해시 (per-worktree 캐시 격리 키)
@@ -135,19 +150,21 @@ _ssc_acquire() {
     if [ -f "$cache_dir/.ready" ] && [ -d "$cache_dir/worktree" ]; then
       return 0
     fi
-    if mkdir "$lockdir" 2>/dev/null; then
-      # 빌더 (lock 은 빈 디렉토리 — owner 메타 없이 mkdir/rmdir 만으로 직렬화)
+    _SSC_LOCK_TOKEN="${BASHPID:-$$}.$RANDOM.$(date +%s)"
+    if mkdir "$lockdir" 2>/dev/null && printf '%s\n' "$_SSC_LOCK_TOKEN" > "$lockdir/owner" 2>/dev/null; then
+      # 빌더. lockdir/owner 에 이번 호출 token 을 적어, 해제 시 자기 lock 만 제거한다(아래 timeout
+      # takeover 가 만든 successor lock 을 원 builder 가 rmdir 하지 않게 함 → 직렬화 붕괴 방지).
       _SSC_HELD_LOCK="$lockdir"
       _SSC_BUILD_DIR="$build_dir"
       if ! mkdir -p "$build_dir/worktree" 2>/dev/null; then
         _ssc_rm_tree "$build_dir"; _SSC_BUILD_DIR=""
-        rmdir "$lockdir" 2>/dev/null || true; _SSC_HELD_LOCK=""
+        _ssc_unlock
         _ssc_die "build dir mkdir failed: $build_dir"
         return 1
       fi
       if ! GIT_INDEX_FILE="$src_index" git -C "$repo_root" checkout-index --all --prefix="$build_dir/worktree/" 2>/dev/null; then
         _ssc_rm_tree "$build_dir"; _SSC_BUILD_DIR=""
-        rmdir "$lockdir" 2>/dev/null || true; _SSC_HELD_LOCK=""
+        _ssc_unlock
         _ssc_die "git checkout-index failed"
         return 1
       fi
@@ -160,7 +177,7 @@ _ssc_acquire() {
       # 실패하면 build 를 폐기해 .ready 없는 cache_dir 이 publish 를 영구 막는 일이 없게 한다.
       if ! : > "$build_dir/.ready" 2>/dev/null; then
         _ssc_rm_tree "$build_dir"; _SSC_BUILD_DIR=""
-        rmdir "$lockdir" 2>/dev/null || true; _SSC_HELD_LOCK=""
+        _ssc_unlock
         _ssc_die "ready marker write failed"
         return 1
       fi
@@ -177,7 +194,7 @@ _ssc_acquire() {
         _ssc_rm_tree "$build_dir"
         _SSC_BUILD_DIR=""
       fi
-      rmdir "$lockdir" 2>/dev/null || true; _SSC_HELD_LOCK=""
+      _ssc_unlock
       if [ -f "$cache_dir/.ready" ] && [ -d "$cache_dir/worktree" ]; then
         return 0
       fi
@@ -267,6 +284,9 @@ _ssc_provide_impl() {
   _ssc_acquire "$repo_root" "$trees_dir/$tree_hash" "$locks_dir/$tree_hash" \
     "$builds_dir/$tree_hash.$nonce" "$_SSC_PINNED_INDEX" || return 1
   [ -d "$trees_dir/$tree_hash/worktree" ] || { _ssc_die "cache worktree missing"; return 1; }
+  # cache hit/build 후 mtime 을 갱신(touch)해, 사용 중인 캐시가 다른 호출의 GC(mtime TTL) 대상이
+  # 되지 않게 한다. lease 추적의 경량 대체다(touch~GC 사이의 극단적 동시 race 는 알려진 한계).
+  touch "$trees_dir/$tree_hash" 2>/dev/null || true
   # shellcheck disable=SC2034  # source 한 호출자가 읽는 출력 변수
   STAGED_SNAPSHOT_CACHE_WORKTREE="$trees_dir/$tree_hash/worktree"
   return 0
@@ -278,10 +298,7 @@ staged_snapshot_cache_release() {
     _ssc_rm_tree "$_SSC_BUILD_DIR"
     _SSC_BUILD_DIR=""
   fi
-  if [ -n "${_SSC_HELD_LOCK:-}" ]; then
-    rmdir "$_SSC_HELD_LOCK" 2>/dev/null || true
-    _SSC_HELD_LOCK=""
-  fi
+  _ssc_unlock
   if [ -n "${_SSC_PINNED_INDEX:-}" ]; then
     rm -f "$_SSC_PINNED_INDEX" "$_SSC_PINNED_INDEX.lock" 2>/dev/null
     _SSC_PINNED_INDEX=""
