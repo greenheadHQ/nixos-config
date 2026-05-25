@@ -109,9 +109,22 @@ fi
 require_executable_materialized_helper "$VALIDATOR_PATH" "$validator_tmp"
 python3 "$validator_tmp" --snapshot "$snapshot" --git-dir "$abs_git_dir" --index "$temp_index"
 
+# gitleaks 런처 결정: PATH 우선(direnv 활성 인터랙티브 셸), 없으면 nix 경유(direnv
+# 미활성 비대화형 AI 에이전트/CI 셸). gitleaks는 flake devShell에만 있어, 비대화형
+# 셸에서는 PATH에 없어 이 hook이 exit 127로 커밋을 차단했다(#826). statusline-bats
+# (lefthook.yml)와 동일하게 --inputs-from으로 repo flake.lock의 nixpkgs를 재사용해
+# 임시 registry fetch와 프로젝트 pin 우회를 피한다. PATH에 있으면 nix 평가 없이 직접 실행.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks_cmd=(gitleaks)
+else
+  command -v nix >/dev/null 2>&1 \
+    || fail "gitleaks not on PATH and nix unavailable to bootstrap it (enter devShell or install gitleaks)"
+  gitleaks_cmd=(nix shell --inputs-from "$REPO_ROOT" nixpkgs#gitleaks --command gitleaks)
+fi
+
 (
   cd "$snapshot"
-  with_staged_git_env gitleaks protect --staged --source . --no-banner --redact \
+  with_staged_git_env "${gitleaks_cmd[@]}" protect --staged --source . --no-banner --redact \
     --config ./.gitleaks.toml \
     --gitleaks-ignore-path ./.gitleaksignore
 )
