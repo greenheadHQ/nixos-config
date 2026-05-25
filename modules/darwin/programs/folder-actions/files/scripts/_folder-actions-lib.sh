@@ -151,9 +151,9 @@ wait_file_stable() {
 # 때만 자동으로 일어난다. 즉 unstable 파일이 더 이상 size/mtime 변경을 일으키지
 # 않으면, 그 파일은 새 외부 이벤트(다른 파일 추가/이동)가 watch dir에 도착할
 # 때까지 잔류한다. 운영상 일시적 처리 지연이지 데이터 유실은 아니지만,
-# “자동 재시도 보장”은 launchd 계약상 성립하지 않는다 (#374 R3 C-1).
+# “자동 재시도 보장”은 launchd 계약상 성립하지 않는다 (#374).
 # 영구 보장이 필요하면 `QueueDirectories` + ready-marker 프로토콜 전환이 필요하나,
-# 이슈 본문에서 “과도한 변경, YAGNI”로 판단해 이번 스코프에서 제외했다.
+# 자동 재시도 보장 전환은 QueueDirectories/ready-marker 설계가 필요해 이번 스코프에서 제외했다.
 drain_queue() {
     local processor="$1"
     # deferred는 함수 local. 멤버십 검사는 함수 안에서 인라인으로 수행하여

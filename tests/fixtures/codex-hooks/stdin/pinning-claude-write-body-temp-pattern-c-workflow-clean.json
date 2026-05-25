@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/tmp/fixture-body/draft.md",
+    "content": "구현 완료 후 DA for_pr 로 리뷰. 그 다음 DA for_plan 으로 계획 검증."
+  }
+}

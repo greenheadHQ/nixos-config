@@ -144,6 +144,7 @@ repo_scripts=(
   "scripts/ai/run-staged-snapshot.sh"
   "scripts/ai/warn-skill-consistency.sh"
   "scripts/ai/run-gitleaks-staged-policy.sh"
+  "scripts/ai/commit-msg-pinning.sh"
   "tests/run-eval-tests.sh"
   "tests/test-codex-hook-fixtures.sh"
   "scripts/ai/check-skill-noise.sh"

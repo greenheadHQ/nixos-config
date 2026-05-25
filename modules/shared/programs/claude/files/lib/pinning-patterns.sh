@@ -33,8 +33,9 @@ PATTERN_B='\b(Correctness|CORRECTNESS|Design|DESIGN|Regression|REGRESSION|Mainta
 # stable procedural guidance (e.g. running PR-mode review later) can stay in plan /
 # handoff / PRD bodies while concrete volatile review metadata stays denied.
 # - workflow sub-pattern: DA execution mode names that legitimately appear in
-#   stable procedural guidance text. PreToolUse hard-fail records suppress these
-#   on allowed paths; diagnostic records (warn-only) still emit them.
+#   stable procedural guidance text. Path-aware warn records and PreToolUse
+#   hard-fail records suppress these on workflow-allowed paths. Raw/no-path
+#   diagnostics such as commit message scanning still emit them.
 # - volatile sub-pattern: round counter / feedback / numbered reviewer label /
 #   parallel-audit follow-up action tokens. These remain hard-fail everywhere.
 #
@@ -73,7 +74,7 @@ pinning_canonicalize_path() {
 
 # Raw traversal segment matcher. Consolidates the
 # `*'/../'* | '../'* | *'/..' | '..'` glob check used across path-aware
-# helpers and the D-1 token-delta trigger so a future tweak only updates
+# helpers and the traversal token-delta trigger so a future tweak only updates
 # this single shape. Returns 0 when the input contains a true traversal
 # segment, non-zero otherwise.
 _pinning_raw_path_has_traversal() {
@@ -180,6 +181,7 @@ pinning_should_check_path() {
     # macOS는 /tmp가 /private/tmp의 symlink, /var가 /private/var의 symlink.
     # realpath -m 등으로 canonicalize되면 /private/* 형태가 되므로 둘 다 매치 필요.
     /tmp/da-*/* | /private/tmp/da-*/*) return 1 ;;
+    /tmp/nix-shell.*/da-*/* | /private/tmp/nix-shell.*/da-*/*) return 1 ;;
     /var/folders/*/T/da-*/* | /private/var/folders/*/T/da-*/*) return 1 ;;
   esac
 
@@ -192,7 +194,7 @@ pinning_should_check_path() {
 # (PRD/plan, body temp, issue-draft) stay in lockstep.
 #
 # Args:
-#   $1 path     — already canonicalized (or raw, for the D-1 classifier) path
+#   $1 path     — already canonicalized (or raw, for the traversal classifier) path
 #   $2 category — one of "prd_or_plan", "body_temp", "issue_draft"
 #   $3 root     — required only for category="prd_or_plan" (project root for
 #                 the `.claude/{prds,plans}/*` glob). Ignored by the other
@@ -289,13 +291,13 @@ pinning_is_issue_draft_path() {
 
 # Raw-tolerant workflow policy shape classifier. Distinct from the fail-closed
 # allow predicate (pinning_allows_workflow_pattern_c_for_path): this helper
-# runs on the raw input string so the D-1 token-delta branch can route
+# runs on the raw input string so the traversal token-delta branch can route
 # traversal raw paths whose shape would have matched a workflow policy
 # category if they had been canonical. Shares the path-category glob source
 # via _pinning_path_category_glob_match. The helper is intentionally kept
 # separate from the allow predicate (single caller is OK) so the two
 # opposite responsibilities — fail-closed allow vs traversal-tolerant shape —
-# never share an interface. Used by D-1 only.
+# never share an interface. Used by the traversal token-delta branch only.
 #
 # Path lookup order:
 #   1. Raw input — catches absolute traversal like `/tmp/<x>-body/../escape.md`
@@ -304,7 +306,7 @@ pinning_is_issue_draft_path() {
 #      `./.claude/prds/../plans/foo.md` where the raw string cannot match
 #      an absolute glob anchor but the canonical result does. Mirrors the
 #      canonicalize pattern in pinning_allows_workflow_pattern_c_for_path so
-#      the D-1 branch stays in lockstep with which paths the allow predicate
+#      the traversal token-delta branch stays in lockstep with which paths the allow predicate
 #      considers part of a workflow policy category.
 _pinning_raw_path_is_workflow_policy_shape() {
   local raw="$1"
@@ -484,16 +486,6 @@ pinning_findings_records() {
   _pinning_pattern_c_records_sorted "$scan_file"
 }
 
-_pinning_findings_records_for_prd_or_plan_state() {
-  local scan_file="$1"
-  local is_prd_or_plan="${2:-}"
-  if [ -n "$is_prd_or_plan" ]; then
-    pinning_findings_records "$scan_file" | awk -F'\t' '$1 != "A"'
-  else
-    pinning_findings_records "$scan_file"
-  fi
-}
-
 _pinning_prd_or_plan_state_for_path() {
   local path="$1"
   if pinning_is_prd_or_plan_path "$path"; then
@@ -501,14 +493,20 @@ _pinning_prd_or_plan_state_for_path() {
   fi
 }
 
-# Path-aware records keep the generic TSV format. PRD/plan paths suppress only
-# category A; categories B/C remain visible there.
+# Path-aware warn records keep the generic TSV format and mirror the durable
+# output policy exceptions: PRD/plan paths suppress category A, and workflow
+# PATTERN_C tokens are suppressed only on workflow-allowed paths. Volatile
+# PATTERN_C tokens and category B remain visible.
 pinning_findings_records_for_path() {
   local scan_file="$1"
   local path="$2"
-  local is_prd_or_plan
+  local is_prd_or_plan allows_workflow
   is_prd_or_plan="$(_pinning_prd_or_plan_state_for_path "$path")"
-  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$is_prd_or_plan"
+  allows_workflow=""
+  if pinning_allows_workflow_pattern_c_for_path "$path"; then
+    allows_workflow="1"
+  fi
+  _pinning_findings_records_for_state "$scan_file" "$is_prd_or_plan" "$allows_workflow"
 }
 
 _pinning_render_records() {
@@ -536,23 +534,9 @@ pinning_findings_text() {
   pinning_findings_records "$scan_file" | _pinning_render_records
 }
 
-_pinning_findings_text_for_prd_or_plan_state() {
-  local scan_file="$1"
-  local is_prd_or_plan="${2:-}"
-  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$is_prd_or_plan" \
-    | _pinning_render_records
-}
-
 pinning_match_count() {
   local scan_file="$1"
   pinning_findings_records "$scan_file" | wc -l | tr -d ' '
-}
-
-_pinning_match_count_for_prd_or_plan_state() {
-  local scan_file="$1"
-  local is_prd_or_plan="${2:-}"
-  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$is_prd_or_plan" \
-    | wc -l | tr -d ' '
 }
 
 pinning_findings_text_for_path() {

@@ -539,9 +539,8 @@ find_candidates() {
 # 같은 초/같은 batch에 들어온 파일들의 출력 파일명 충돌 회피용 카운터.
 # drain_queue가 process substitution을 사용하므로 이 변수는 outer shell에 있고
 # process_one 호출 사이에 정상 증가한다 (라운드 간에도 단조 증가 보장).
-# macOS BSD date는 GNU `%N`(나노초)을 지원하지 않으므로 초 단위 timestamp + i를
-# 우선 정렬 키로 두고, PID + RANDOM은 카운터 뒤에 두어 lexicographic sort가
-# 처리 순서를 보존하도록 한다 (#374 R3 R-1).
+# macOS BSD date는 GNU `%N`(나노초)을 지원하지 않으므로 초 단위 timestamp 뒤에
+# 카운터, PID, RANDOM을 붙여 같은 초 안의 출력 파일명 충돌을 피한다 (#374).
 i=1
 
 process_one() {

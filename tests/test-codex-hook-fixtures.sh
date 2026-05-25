@@ -726,7 +726,7 @@ test_sync_sh_mcp_config_failfast() {
 # Codex apply_patch envelope V4A awk parser의 핵심 분기(*** Move to: rename, multi-file
 # attribution, removeonly added-line filter)를 함께 보호한다.
 test_pinning_shared_library_behavioral() {
-  local sandbox scan_file da_symlink_dir
+  local sandbox scan_file da_symlink_dir nix_shell_tmp
   sandbox=$(new_hook_sandbox)
   scan_file="$sandbox/pinning-shared-scan.txt"
   {
@@ -746,8 +746,8 @@ test_pinning_shared_library_behavioral() {
     "[7/lib] raw helper must keep PATTERN_A visible"
   assert_eq "$(pinning_match_count_for_path "$scan_file" "$sandbox/outside.md")" "3" \
     "[7/lib] outside path must keep PATTERN_A visible"
-  assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/prd.md")" "2" \
-    "[7/lib] PRD path must skip only PATTERN_A"
+  assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/prds/prd.md")" "1" \
+    "[7/lib] PRD path must skip PATTERN_A and workflow PATTERN_C"
   assert_eq "$(PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/docs/examples/.claude/prds/prd.md")" "3" \
     "[7/lib] nested PRD-looking path must not skip PATTERN_A"
   assert_eq "$(if PINNING_PROJECT_ROOT="$sandbox" pinning_should_check_path "$sandbox/.claude/prds/spec.txt"; then printf check; else printf skip; fi)" "check" \
@@ -764,7 +764,7 @@ STUB
 exit 1
 STUB
   chmod +x "$sandbox/bin-stubs/realpath" "$sandbox/bin-stubs/readlink"
-  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/plan.md")" "2" \
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/plan.md")" "1" \
     "[7/lib] PRD/plan path fallback must not require GNU realpath/readlink"
   assert_eq "$(if PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_should_check_path "$sandbox/.claude/plans/plan.yaml"; then printf check; else printf skip; fi)" "check" \
     "[7/lib] PRD/plan should_check fallback must not require durable extension"
@@ -772,9 +772,15 @@ STUB
     "[7/lib] should_check fallback must preserve self-exclude paths without GNU realpath/readlink"
   assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}"; if pinning_should_check_path "/tmp/da-test-abc/scratch.md"; then printf check; else printf skip; fi)" "skip" \
     "[7/lib] should_check fallback must preserve DA scratch whitelist without GNU realpath/readlink"
+  nix_shell_tmp=$(umask 077 && mktemp -d "/tmp/nix-shell.codex-hook-fixture.XXXXXX") \
+    || fail "[7/lib] Nix shell TMPDIR mktemp -d 실패"
+  printf '%s\n' "$nix_shell_tmp" >> "$TEST_TMP_FILE"
+  mkdir -p "$nix_shell_tmp/da-test-abc"
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}"; if pinning_should_check_path "$nix_shell_tmp/da-test-abc/scratch.md"; then printf check; else printf skip; fi)" "skip" \
+    "[7/lib] should_check fallback must preserve DA scratch whitelist under Nix devShell TMPDIR"
   mkdir -p "$sandbox/.claude/plans"
   : > "$sandbox/.claude/plans/existing.md"
-  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/existing.md")" "2" \
+  assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/existing.md")" "1" \
     "[7/lib] PRD/plan path fallback must cover existing regular files"
   mkdir -p "$sandbox/.claude/prds"
   : > "$sandbox/outside.md"

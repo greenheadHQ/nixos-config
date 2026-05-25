@@ -11,7 +11,7 @@ fi
 # 공통 helper SSOT: modules/shared/programs/claude/files/lib/hook-runtime.sh.
 # 정책: hook-runtime.sh 미발견 시 inline fallback 자체 로직 실행 (자체 동작 보존).
 
-# stdin에서 세션 정보 읽기 (Codex 0.124+ schema는 agent_id 키 없음 — issue #585 DA C-2).
+# stdin에서 세션 정보 읽기 (Codex 0.124+ schema는 agent_id 키 없음).
 # Claude 원본의 agent_id subagent guard는 Codex에서는 항상 비활성이므로 제거했다.
 # subagent UserPromptSubmit이 main으로 기록되는 한계는 #586 fixture가 측정한다 (openai/codex#16226).
 INPUT=""

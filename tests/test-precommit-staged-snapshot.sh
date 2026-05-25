@@ -96,6 +96,7 @@ EOF
   copy_file "scripts/ai/validate-gitleaks-staged-policy.py" "$dir/scripts/ai/validate-gitleaks-staged-policy.py"
   copy_file "scripts/ai/check-lefthook-staged-config.sh" "$dir/scripts/ai/check-lefthook-staged-config.sh"
   copy_file "scripts/ai/install-lefthook-hooks.sh" "$dir/scripts/ai/install-lefthook-hooks.sh"
+  copy_file "scripts/ai/commit-msg-pinning.sh" "$dir/scripts/ai/commit-msg-pinning.sh"
   copy_file "scripts/ai/warn-skill-consistency.sh" "$dir/scripts/ai/warn-skill-consistency.sh"
   copy_file "scripts/ai/check-skill-noise.sh" "$dir/scripts/ai/check-skill-noise.sh"
   copy_file "tests/run-eval-tests.sh" "$dir/tests/run-eval-tests.sh"

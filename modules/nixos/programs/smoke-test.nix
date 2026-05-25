@@ -91,7 +91,7 @@ let
       # ─── 1. Caddy 핵심 엔드포인트 헬스체크 ───
       # Tailscale IP + SNI로 직접 접근, DNS 불필요
       # -s: silent, -o /dev/null: body 버림, -w: HTTP 코드만 추출
-      # -f 없음: 4xx/5xx에서도 실제 코드를 캡처하기 위해 (DA #3)
+      # -f 없음: 4xx/5xx에서도 실제 코드를 캡처하기 위해
       for endpoint in $ENDPOINT_LIST; do
         DOMAIN="''${endpoint%%:*}"
         REST="''${endpoint#*:}"
@@ -111,7 +111,7 @@ let
 
       ${lib.optionalString config.homeserver.immichBackup.enable ''
         # immich: flat directory에 immich-db-*.dump 파일
-        # || true: 디렉토리 미존재 시 find 비정상 종료 + pipefail 방지 (DA #1)
+        # || true: 디렉토리 미존재 시 find 비정상 종료 + pipefail 방지
         LATEST_IMMICH=$(find "$BACKUP_DIR/immich" -maxdepth 1 -name "immich-db-*.dump" \
           -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
         if [ -n "$LATEST_IMMICH" ]; then
