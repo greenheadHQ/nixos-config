@@ -338,7 +338,7 @@ let
       prefix: builtins.match ".*[^[:space:]].*" prefix != null
     ) ankiConfigApi.allowedKeyPrefixes;
 
-  # opnix 1Password SA token materialization (PRD #780 Phase 3)
+  # opnix 1Password SA token materialization
   opnixCfg = nixosCfg.services.onepassword-secrets;
   opnixGithubPat = opnixCfg.secrets.githubPat;
   opnixTokenSecret = nixosCfg.age.secrets.opnix-service-account-token;
@@ -561,7 +561,7 @@ let
       name = "Test 5e-10: constants.onePassword.account가 \"my.1password.com\"이어야 함";
       cond = constants.onePassword.account == "my.1password.com";
     }
-    # ── opnix SA token materialization 보안 회귀 핀 (PRD #780 Phase 3) ──
+    # ── opnix SA token materialization 보안 회귀 핀 ──
     {
       name = "Test 5e-11: homeserver.opnix.enable 시 services.onepassword-secrets.enable이 true여야 함";
       cond = nixosCfg.homeserver.opnix.enable && opnixCfg.enable;
@@ -587,7 +587,7 @@ let
         && opnixTokenSecret.group == "onepassword-secrets";
     }
     {
-      # 사용자 보안 결정: users를 비워 onepassword-secrets group 멤버를 0으로 유지 → 실질 root-only.
+      # users를 비워 onepassword-secrets group 멤버를 0으로 유지 → 실질 root-only.
       name = "Test 5e-15: opnix users 옵션이 비어야 함 (token group readable이 일반 user로 확산 방지)";
       cond = opnixCfg.users == [ ];
     }

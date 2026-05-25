@@ -1,9 +1,9 @@
 # modules/nixos/programs/opnix-rotate.nix
-# 1Password SA token 90일 rotation 알림 (PRD #780 Phase 3, FR-6 / NFR-4)
+# 1Password SA token 90일 rotation 알림
 #
 # weekly oneshot이 /etc/opnix-service-account-expiry(opnix stub이 배포한 평문 record)를 읽어
 # 만료 14일 이하면 Pushover 알림을 보낸다. 만료일은 평문 record이므로 op CLI 의존이 없다.
-# (1Password Individual은 SA 자동 만료를 미지원 → 90일 cadence를 정책으로 운용, Phase 1 발견.)
+# (1Password Individual은 SA 자동 만료를 미지원 → 90일 cadence를 정책으로 운용.)
 # timer는 homeserver.opnix.enable에 게이팅된다.
 {
   config,
@@ -17,7 +17,7 @@ let
   pushoverCredPath = config.age.secrets.pushover-system-monitor.path;
   serviceLib = import ../lib/service-lib.nix { inherit pkgs; };
   expiryFile = "/etc/opnix-service-account-expiry";
-  warnDays = 14; # NFR-4: 90일 cadence, 만료 14일 전부터 알림
+  warnDays = 14; # 90일 cadence, 만료 14일 전부터 알림
 
   rotateCheckScript = pkgs.writeShellApplication {
     name = "opnix-rotate-check";
