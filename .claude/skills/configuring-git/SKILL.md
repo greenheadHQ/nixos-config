@@ -26,6 +26,7 @@ Home Manager 기반 Git 설정과 lazygit/delta 통합, 충돌 복구 절차를 
 | 기본 정책 | `push.autoSetupRemote=true`, `merge.conflictStyle=zdiff3` |
 | rebase 역순 | Interactive rebase에서 최신 커밋이 위로 |
 | git-cleanup | 오래된/삭제된 브랜치 정리 |
+| worktree (`wt`) | git worktree 생성/이동/정리 — 비대화형/LLM 사용법은 프로젝트 `CLAUDE.md`의 "Worktree (wt)" 참조 |
 
 ### delta 설정 확인
 

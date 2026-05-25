@@ -1362,6 +1362,108 @@ test_wt_cd_by_name_returns_target_path() {
   assert_contains "$output" "$expected_path"
 }
 
+test_wt_create_conflict_noninteractive_requires_if_exists() {
+  local sandbox home_dir repo_root output rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" feature_one
+      ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" -ne 0 ]] || fail "expected non-zero exit for noninteractive conflict"
+  assert_contains "$output" "--if-exists"
+  assert_not_contains "$output" "선택>"
+}
+
+test_wt_create_if_exists_reuse_returns_path() {
+  local sandbox home_dir repo_root output expected_path
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  expected_path="$repo_root/.claude/worktrees/feature_one"
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" --if-exists=reuse feature_one
+      ' 2>&1
+  )
+
+  assert_contains "$output" "$expected_path"
+}
+
+test_wt_ls_json_outputs_parseable_array() {
+  local sandbox home_dir repo_root output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" ls --json
+      ' 2>/dev/null
+  )
+
+  echo "$output" | jq -e 'type == "array" and any(.[]; .name == "feature_one" and (.dirty | type == "boolean") and (.unpushed | type == "boolean"))' >/dev/null \
+    || fail "wt ls --json must be a JSON array containing feature_one with boolean flags: $output"
+}
+
+test_wt_cd_noninteractive_requires_name() {
+  local sandbox home_dir repo_root output rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" cd
+      ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" -ne 0 ]] || fail "expected non-zero exit for noninteractive cd without name"
+  assert_contains "$output" "이름을 인자로"
+}
+
 test_shadow_paths_do_not_override_managed_helpers() {
   local sandbox home_dir repo_root worktree_root output
   sandbox=$(new_sandbox)
@@ -1525,12 +1627,11 @@ EOF
 }
 
 test_wt_recreate_guard_uses_physical_paths() {
-  local sandbox home_dir repo_root link_root target_path fzf_dir origin_dir output
+  local sandbox home_dir repo_root link_root target_path origin_dir output
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   repo_root="$sandbox/repo"
   link_root="$sandbox/link"
-  fzf_dir="$sandbox/fzf-bin"
   origin_dir="$sandbox/origin.git"
 
   create_git_fixture_repo "$repo_root"
@@ -1542,21 +1643,15 @@ test_wt_recreate_guard_uses_physical_paths() {
   ln -s "$repo_root" "$link_root"
   target_path="$link_root/.claude/worktrees/feature_one"
 
-  mkdir -p "$fzf_dir"
-  cat > "$fzf_dir/fzf" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '재생성\n'
-EOF
-  chmod +x "$fzf_dir/fzf"
-
   output=$(
-    HOME="$home_dir" \
-    PATH="$fzf_dir:$FIXTURE_DIR/bin:$PATH" \
-    bash -c '
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
       set -euo pipefail
       cd "'"$target_path"'"
-      "'"$home_dir/.local/bin/wt"'" feature/one
+      "'"$home_dir/.local/bin/wt"'" --if-exists=recreate feature/one
     ' 2>&1 || true
   )
 
@@ -2174,6 +2269,10 @@ run_test "rebuild-common exports public API" test_rebuild_common_exports_public_
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
 run_test "wt cd returns target path by name" test_wt_cd_by_name_returns_target_path
 run_test "wt ls lists deployed worktrees" test_wt_ls_from_deployed_layout_lists_worktrees
+run_test "wt ls --json outputs parseable array" test_wt_ls_json_outputs_parseable_array
+run_test "wt create conflict requires if-exists when noninteractive" test_wt_create_conflict_noninteractive_requires_if_exists
+run_test "wt create if-exists=reuse returns path" test_wt_create_if_exists_reuse_returns_path
+run_test "wt cd requires name when noninteractive" test_wt_cd_noninteractive_requires_name
 run_test "shadow paths do not override managed helpers" test_shadow_paths_do_not_override_managed_helpers
 run_test "wt symlink alias does not load adjacent helpers" test_wt_symlink_alias_does_not_load_adjacent_helpers
 run_test "rebuild-common symlink alias does not load adjacent helpers" test_rebuild_common_symlink_alias_does_not_load_adjacent_helpers

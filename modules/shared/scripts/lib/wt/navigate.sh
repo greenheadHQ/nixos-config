@@ -1,6 +1,37 @@
 # shellcheck shell=bash
 # ── 서브커맨드: cd / ls ─────────────────────────────────────────────────────
 
+# wt ls --json: worktree 상태를 JSON 배열로 출력 (LLM/스크립트 파싱용; stdout)
+# 필드: name, branch, path, pr, committedAt(epoch), age, dirty, unpushed, current
+_wt_ls_json() {
+  local tmp="$1" current_wt="$2"
+  shift 2
+  local worktrees=("$@")
+  command -v jq &>/dev/null || _die "--json은 jq가 필요합니다"
+
+  local objs=()
+  local wt
+  for wt in "${worktrees[@]}"; do
+    local name branch ts age pr_status dirty unpushed is_current
+    name=$(basename "$wt")
+    branch=$(_wt_branch "$wt")
+    ts=$(_wt_last_commit_ts "$wt")
+    age=$(_relative_age "$ts")
+    pr_status="NONE"
+    [[ -f "$tmp/$name.pr" ]] && pr_status=$(cat "$tmp/$name.pr")
+    dirty=false; _wt_is_dirty "$wt" && dirty=true
+    unpushed=false; _wt_has_unpushed "$wt" && unpushed=true
+    is_current=false; [[ "$wt" == "$current_wt" ]] && is_current=true
+    objs+=("$(jq -n \
+      --arg name "$name" --arg branch "$branch" --arg path "$wt" \
+      --arg pr "$pr_status" --arg age "$age" --argjson ts "${ts:-0}" \
+      --argjson dirty "$dirty" --argjson unpushed "$unpushed" \
+      --argjson current "$is_current" \
+      '{name:$name, branch:$branch, path:$path, pr:$pr, committedAt:$ts, age:$age, dirty:$dirty, unpushed:$unpushed, current:$current}')")
+  done
+  printf '%s\n' "${objs[@]}" | jq -s 'sort_by(-.committedAt)'
+}
+
 cmd_cd() {
   local git_root
   git_root=$(_get_repo_root) || _die "Git 저장소가 아닙니다"
@@ -44,12 +75,15 @@ cmd_cd() {
     # 현재 위치 저장 후 이동
     _wt_record_last_path "$git_root"
 
-    # --tmux: 세션 모드 (tmux 밖에서만)
+    # --tmux: 세션 모드 (tmux 밖 + 대화형에서만; 비대화형은 exec tmux 불가)
     if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
-      local session_name
-      session_name=$(_wt_session_name "$(basename "$last_path")")
-      _wt_tmux_session_open "$last_path" "$session_name" "false" "false"
-      return 0
+      if _wt_interactive; then
+        local session_name
+        session_name=$(_wt_session_name "$(basename "$last_path")")
+        _wt_tmux_session_open "$last_path" "$session_name" "false" "false"
+        return 0
+      fi
+      _warn "비대화형: --tmux 무시 (경로만 출력)"
     fi
 
     echo "$last_path"
@@ -72,6 +106,14 @@ cmd_cd() {
     done
     [[ -z "$target_path" ]] && _die "매치하는 worktree 없음: $search"
   else
+    # 인자 없이 호출 = 대화형 선택. 비대화형은 이름을 인자로 요구(안전 실패).
+    if ! _wt_interactive; then
+      _info "사용 가능한 worktree:"
+      local _wt
+      for _wt in "${worktrees[@]}"; do _info "  $(basename "$_wt")"; done
+      _die "비대화형: worktree 이름을 인자로 지정하세요 (예: wt cd <name>)"
+    fi
+
     # 인터랙티브 선택 (fzf + preview)
     local names=()
     for wt in "${worktrees[@]}"; do
@@ -106,12 +148,15 @@ cmd_cd() {
   # 이전 worktree 경로 저장 (wt cd - 용)
   _wt_record_last_path "$git_root"
 
-  # --tmux: 세션 attach/생성 (tmux 밖에서만)
+  # --tmux: 세션 attach/생성 (tmux 밖 + 대화형에서만; 비대화형은 exec tmux 불가)
   if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
-    local session_name
-    session_name=$(_wt_session_name "$(basename "$target_path")")
-    _wt_tmux_session_open "$target_path" "$session_name" "false" "false"
-    return 0
+    if _wt_interactive; then
+      local session_name
+      session_name=$(_wt_session_name "$(basename "$target_path")")
+      _wt_tmux_session_open "$target_path" "$session_name" "false" "false"
+      return 0
+    fi
+    _warn "비대화형: --tmux 무시 (경로만 출력)"
   fi
 
   # tmux 안이면 윈도우 전환 시도
@@ -128,6 +173,16 @@ cmd_cd() {
 }
 
 cmd_ls() {
+  local as_json=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json)    as_json=true ;;
+      -h|--help) show_help; return 0 ;;
+      *)         _die "알 수 없는 옵션: $1" ;;
+    esac
+    shift
+  done
+
   local git_root
   git_root=$(_get_repo_root) || _die "Git 저장소가 아닙니다"
 
@@ -160,6 +215,12 @@ cmd_ls() {
 
   # PR 상태 병렬 조회
   _fetch_pr_statuses "$git_root" "$_wt_ls_tmp" "${worktrees[@]}"
+
+  # --json: 구조화 출력 (LLM/스크립트 파싱용; stdout, 로그는 stderr)
+  if [[ "$as_json" == "true" ]]; then
+    _wt_ls_json "$_wt_ls_tmp" "$current_wt" "${worktrees[@]}"
+    return 0
+  fi
 
   # 데이터 수집 + 정렬 (age 기준, 최신 우선)
   local entries=()
@@ -195,24 +256,12 @@ cmd_ls() {
 
   IFS=$'\n' read -r -d '' -a sorted < <(printf '%s\n' "${entries[@]}" | sort -t'|' -k1 -rn && printf '\0') || true
 
-  if _has_gum; then
-    local header="NAME,BRANCH,AGE,PR,DIRTY"
-    local rows=""
-    for entry in "${sorted[@]}"; do
-      IFS='|' read -r _ name branch age pr dirty <<< "$entry"
-      (( ${#branch} > 25 )) && branch="${branch:0:22}..."
-      rows+="$name,$branch,$age,$pr,$dirty"$'\n'
-    done
-    gum style --bold --border double --padding "0 1" "Worktrees (${#sorted[@]})" >&2
-    echo "${header}"$'\n'"${rows%$'\n'}" | gum table --print >&2
-  else
-    _info "Worktrees (${#sorted[@]})"
-    printf "  %-30s %-25s %-5s %-12s %s\n" "NAME" "BRANCH" "AGE" "PR" "DIRTY" >&2
-    printf "  " >&2; printf '%.0s─' {1..78} >&2; echo >&2
-    for entry in "${sorted[@]}"; do
-      IFS='|' read -r _ name branch age pr dirty <<< "$entry"
-      (( ${#branch} > 25 )) && branch="${branch:0:22}..."
-      printf "  %-30s %-25s %-5s %-12s %s\n" "$name" "$branch" "$age" "$pr" "$dirty" >&2
-    done
-  fi
+  _info "Worktrees (${#sorted[@]})"
+  printf "  %-30s %-25s %-5s %-12s %s\n" "NAME" "BRANCH" "AGE" "PR" "DIRTY" >&2
+  printf "  " >&2; printf '%.0s─' {1..78} >&2; echo >&2
+  for entry in "${sorted[@]}"; do
+    IFS='|' read -r _ name branch age pr dirty <<< "$entry"
+    (( ${#branch} > 25 )) && branch="${branch:0:22}..."
+    printf "  %-30s %-25s %-5s %-12s %s\n" "$name" "$branch" "$age" "$pr" "$dirty" >&2
+  done
 }

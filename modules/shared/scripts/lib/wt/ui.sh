@@ -1,6 +1,12 @@
 # shellcheck shell=bash
 _has_fzf() { command -v fzf &>/dev/null; }
-_has_gum() { command -v gum &>/dev/null; }
+
+# 비대화형 여부: WT_NONINTERACTIVE가 set이거나 stdin이 tty가 아니면 비대화형.
+# LLM/스크립트/파이프(예: claude Bash tool)에서 fzf·read 프롬프트가 hang하거나
+# EOF로 빈 입력을 받아 의도와 다르게 자동 취소되는 것을 막는 게이트.
+_wt_interactive() {
+  [[ -z "${WT_NONINTERACTIVE:-}" ]] && [[ -t 0 ]]
+}
 
 # worktree 내부에서도 항상 main repo root를 정확히 찾음
 _get_repo_root() {
@@ -42,8 +48,7 @@ _die() {
 }
 
 # CIR: echo → printf ANSI 선택 — echo "$*"는 간결하지만 스타일링 불가.
-#   gum style은 표시 전용에는 적합하나 매 호출마다 프로세스 fork 부담.
-#   printf + 인라인 ANSI가 fork 없이 즉시 출력되어 가장 효율적.
+#   printf + 인라인 ANSI가 외부 TUI 바이너리 fork 없이 즉시 출력되어 가장 효율적.
 _info() {
   printf '\033[38;5;179m› \033[38;5;245m%s\033[0m\n' "$*" >&2
 }
@@ -52,20 +57,32 @@ _warn() {
   printf '\033[38;5;215m! \033[38;5;245m%s\033[0m\n' "$*" >&2
 }
 
-# y/N 확인 프롬프트 (gum confirm 대체)
+# y/N 확인 프롬프트
+# 비대화형: WT_ASSUME_YES(--yes로 set)면 승인, 아니면 안전하게 거부 + 안내.
 _confirm() {
   local msg="$1"
+  [[ -n "${WT_ASSUME_YES:-}" ]] && return 0
+  if ! _wt_interactive; then
+    _warn "비대화형: 확인 필요 — '$msg'. 승인하려면 --yes (또는 WT_ASSUME_YES=1)."
+    return 1
+  fi
   printf "%s (y/N): " "$msg" >&2
   local yn
   read -r yn
   [[ "$yn" =~ ^[yY] ]]
 }
 
-# 단일 선택 (fzf 사용, fallback: 번호 선택)
+# 단일 선택 (대화형 전용: fzf 또는 번호 입력)
+# 비대화형에서는 선택 불가 → 호출자가 명시 플래그로 결정해야 한다(예: create의 --if-exists).
 _choose() {
   local header="${1:-선택}"
   shift
   local options=("$@")
+
+  if ! _wt_interactive; then
+    _warn "비대화형: '$header' 선택 불가 — 명시 플래그(예: --if-exists)로 결정하세요."
+    return 1
+  fi
 
   if _has_fzf; then
     printf '%s\n' "${options[@]}" | fzf --no-multi --height ~$((${#options[@]} + 4)) \
