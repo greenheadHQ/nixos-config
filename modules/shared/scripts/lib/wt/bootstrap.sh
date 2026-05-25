@@ -25,8 +25,14 @@ _bootstrap_worktree() {
     cp -r "$src_codex" "$wt_path/.codex"
   fi
 
-  # .claude/plans/ 제거 (worktree에서는 불필요)
-  rm -rf "$wt_path/.claude/plans"
+  # .claude/plans/: tracked README.md(디렉토리 정책 문서, #756/#773)는 보존하고,
+  # 새어든 untracked/ignored transient plan buffer만 정리한다. worktree는 git
+  # checkout이라 ignored buffer(.claude/plans/*)가 따라오지 않아 평소엔 no-op이지만,
+  # 과거 `rm -rf .claude/plans`는 유일하게 checkout되는 tracked README.md까지 지워
+  # worktree마다 deleted 부산물 + `git add -A` 시 정책 문서 소실 위험을 만들었다.
+  if [ -d "$wt_path/.claude/plans" ]; then
+    git -C "$wt_path" clean -fdX -- .claude/plans >/dev/null 2>&1 || true
+  fi
 
   # Claude → Codex projection 재실행 (plugin-aware worktree bootstrap 복구)
   local script_dir codex_sync_sh=""
