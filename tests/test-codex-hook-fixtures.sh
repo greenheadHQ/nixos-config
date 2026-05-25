@@ -173,6 +173,11 @@ new_hook_sandbox() {
   cp -L "$HOOK_RUNTIME_LIB_REPO_FILE" "$sandbox/home/.codex/lib/"
   cp -L "$HOOK_RUNTIME_LIB_REPO_FILE" "$sandbox/home/.claude/lib/"
 
+  # 공유 staged-snapshot 캐시(REPO_ROOT)가 read-only(chmod a-w)이면 cp -L 사본도
+  # read-only 로 복제된다. sandbox 안에서는 mock 교체(install_mock_subscripts_with_log)
+  # 등 쓰기가 필요하므로 사본 권한을 복구한다(공유 캐시 자체는 건드리지 않는다).
+  chmod -R u+w "$sandbox"
+
   printf '%s\n' "$sandbox"
 }
 

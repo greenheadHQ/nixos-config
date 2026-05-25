@@ -18,7 +18,11 @@ cleanup() {
   local dir
   if [ -f "$TEST_TMP_FILE" ]; then
     while IFS= read -r dir; do
-      [ -n "$dir" ] && rm -rf "$dir"
+      if [ -n "$dir" ]; then
+        # 공유 스냅샷 캐시의 read-only(chmod a-w) worktree 까지 지울 수 있게 u+w 복구
+        chmod -R u+w "$dir" 2>/dev/null || true
+        rm -rf "$dir"
+      fi
     done < "$TEST_TMP_FILE"
     rm -f "$TEST_TMP_FILE"
   fi
@@ -101,6 +105,7 @@ EOF
   copy_file "tests/run-eval-tests.sh" "$dir/tests/run-eval-tests.sh"
   copy_file "tests/test-codex-hook-fixtures.sh" "$dir/tests/test-codex-hook-fixtures.sh"
   copy_file "scripts/ai/lib/tomlkit-bootstrap.sh" "$dir/scripts/ai/lib/tomlkit-bootstrap.sh"
+  copy_file "scripts/ai/lib/staged-snapshot-cache.sh" "$dir/scripts/ai/lib/staged-snapshot-cache.sh"
 
   mkdir -p "$dir/.claude/skills/existing" "$dir/.agents/skills"
   mkdir -p "$dir/modules/shared/programs/claude/files/skills/existing"
@@ -327,6 +332,71 @@ test_installer_idempotent_and_worktree_local() {
   bash -n "$hook_path"
 }
 
+# 공유 staged-snapshot 캐시: 같은 index 를 보는 호출은 checkout-index 를 1회만 수행하고
+# 결과 worktree 를 read-only 로 공유한다. TMPDIR 을 repo 안으로 격리해 캐시도 함께 정리된다.
+test_staged_snapshot_cache_hit_and_readonly() {
+  local dir log builds
+  dir="$(make_repo)"
+  printf 'cache probe\n' > "$dir/cache-probe.txt"
+  git -C "$dir" add cache-probe.txt
+  mkdir -p "$dir/.cache-tmp"
+  log="$dir/.cache-tmp/build.log"
+  : > "$log"
+  ( cd "$dir" && TMPDIR="$dir/.cache-tmp" STAGED_SNAPSHOT_CACHE_DEBUG_BUILD_LOG="$log" \
+      bash ./scripts/ai/run-staged-snapshot.sh -- true ) || fail "first snapshot run failed"
+  ( cd "$dir" && TMPDIR="$dir/.cache-tmp" STAGED_SNAPSHOT_CACHE_DEBUG_BUILD_LOG="$log" \
+      bash ./scripts/ai/run-staged-snapshot.sh -- true ) || fail "second snapshot run failed"
+  builds="$(wc -l < "$log" | tr -d ' ')"
+  [ "$builds" = "1" ] || fail "expected 1 checkout-index build after cache hit, got $builds"
+  ( cd "$dir" && TMPDIR="$dir/.cache-tmp" \
+      bash ./scripts/ai/run-staged-snapshot.sh -- bash -c 'test ! -w "$STAGED_SNAPSHOT_ROOT"' ) \
+    || fail "shared snapshot worktree must be read-only"
+}
+
+# parallel pre-commit 모사: 동시 호출이 경쟁해도 mkdir lock 직렬화로 build 는 정확히 1회.
+test_staged_snapshot_cache_concurrent_single_build() {
+  local dir log builds
+  dir="$(make_repo)"
+  printf 'concurrent probe\n' > "$dir/concurrent-probe.txt"
+  git -C "$dir" add concurrent-probe.txt
+  mkdir -p "$dir/.cache-tmp"
+  log="$dir/.cache-tmp/build.log"
+  : > "$log"
+  for _ in 1 2 3 4 5 6; do
+    ( cd "$dir" && TMPDIR="$dir/.cache-tmp" STAGED_SNAPSHOT_CACHE_DEBUG_BUILD_LOG="$log" \
+        bash ./scripts/ai/run-staged-snapshot.sh -- true ) &
+  done
+  wait
+  builds="$(wc -l < "$log" | tr -d ' ')"
+  [ "$builds" = "1" ] || fail "expected exactly 1 build under concurrency, got $builds"
+}
+
+# 멈춘/죽은 빌더의 lock(단순 버전은 owner 메타 없는 빈 디렉토리)은 대기자가 타임아웃 후 제거하고
+# 직접 빌드해 승계한다. checkout 은 다시 1회 일어난다.
+test_staged_snapshot_cache_stale_lock_takeover() {
+  local dir log repo_path hash builds
+  dir="$(make_repo)"
+  printf 'stale probe\n' > "$dir/stale-probe.txt"
+  git -C "$dir" add stale-probe.txt
+  mkdir -p "$dir/.cache-tmp"
+  log="$dir/.cache-tmp/build.log"
+  : > "$log"
+  ( cd "$dir" && TMPDIR="$dir/.cache-tmp" STAGED_SNAPSHOT_CACHE_DEBUG_BUILD_LOG="$log" \
+      bash ./scripts/ai/run-staged-snapshot.sh -- true ) || fail "seed snapshot run failed"
+  repo_path="$(find "$dir/.cache-tmp/staged-snapshot-cache" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  hash="$(find "$repo_path/trees" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | head -1)"
+  # 완성 트리 제거 + holder 가 점유 중인 것처럼 빈 lock 디렉토리를 심는다.
+  chmod -R u+w "$repo_path/trees/$hash"; rm -rf "$repo_path/trees/$hash"
+  mkdir -p "$repo_path/locks/$hash"
+  : > "$log"
+  ( cd "$dir" && TMPDIR="$dir/.cache-tmp" STAGED_SNAPSHOT_CACHE_DEBUG_BUILD_LOG="$log" \
+      STAGED_SNAPSHOT_CACHE_LOCK_TIMEOUT_SECONDS=2 \
+      bash ./scripts/ai/run-staged-snapshot.sh -- true ) || fail "stale-lock takeover run failed"
+  builds="$(wc -l < "$log" | tr -d ' ')"
+  [ "$builds" = "1" ] || fail "expected 1 rebuild after stale lock takeover, got $builds"
+  [ -d "$repo_path/trees/$hash/worktree" ] || fail "worktree not rebuilt after takeover"
+}
+
 test_ai_skills_consistency_cross_file
 test_ai_skills_consistency_without_git_metadata
 test_ai_skills_consistency_rejects_malformed_name_status_metadata
@@ -340,5 +410,8 @@ test_gitleaks_validator_tomlkit_fallback_unwraps_extend
 test_installed_guard_rejects_lefthook_drift_and_env
 test_guard_rejects_unsupported_command_shape
 test_installer_idempotent_and_worktree_local
+test_staged_snapshot_cache_hit_and_readonly
+test_staged_snapshot_cache_concurrent_single_build
+test_staged_snapshot_cache_stale_lock_takeover
 
 echo "All pre-commit staged snapshot tests passed."
