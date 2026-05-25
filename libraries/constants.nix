@@ -50,6 +50,11 @@
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
+    # agenix 복호화 identity (host private key) + opnix SA 만료 record source (PRD #780)
+    # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
+    # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.
+    agenixHostIdentityKey = "/etc/ssh/ssh_host_ed25519_key";
+    opnixServiceAccountExpirySource = ../secrets/opnix-service-account-expiry.txt;
   };
 
   # ═══════════════════════════════════════════════════════════════

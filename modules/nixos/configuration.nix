@@ -4,6 +4,7 @@
   pkgs,
   lib,
   inputs,
+  constants,
   username,
   hostname,
   ...
@@ -54,7 +55,7 @@
   # agenix가 각 .age의 recipient에 맞는 키로 복호화한다 (PRD #780 host key 분리).
   age.identityPaths = [
     "/home/${username}/.ssh/id_ed25519" # user key — 대부분의 .age
-    "/etc/ssh/ssh_host_ed25519_key" # host key — SA token (minipcHostOnly)
+    constants.paths.agenixHostIdentityKey # host key — SA token (minipcHostOnly)
   ];
 
   # 사용자

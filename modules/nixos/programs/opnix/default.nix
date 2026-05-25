@@ -5,6 +5,7 @@
 {
   config,
   lib,
+  constants,
   ...
 }:
 
@@ -16,6 +17,6 @@ in
     # 만료일 평문 배포 — Phase 3 rotation timer가 /etc/opnix-service-account-expiry를 읽음
     # source 파일: secrets/opnix-service-account-expiry.txt (ISO-8601 date 1줄, agenix 아님)
     environment.etc."opnix-service-account-expiry".source =
-      ../../../../secrets/opnix-service-account-expiry.txt;
+      constants.paths.opnixServiceAccountExpirySource;
   };
 }
