@@ -146,10 +146,17 @@ in
       share = true;
     };
 
-    # .zshenv: SSH 비대화형 세션을 위한 mise shims PATH 추가
+    # .zshenv: SSH·비대화형 세션을 위한 mise shims PATH 추가
     # (대화형 훅은 .zshrc에서 활성화)
+    # 가드는 MISE_SHELL 유무가 아니라 shims의 PATH 실재 여부로 판단한다: 부모 대화형 셸이
+    # hook 모드(`mise activate zsh`)로 MISE_SHELL을 set한 채 자식 비대화형 셸로 상속시키면,
+    # 기존 `[[ -z "$MISE_SHELL" ]]` 가드가 --shims를 스킵해 shims가 PATH에서 누락됐다.
+    # hook 모드는 도구 install bin만 PATH에 넣고 shims는 넣지 않으므로, shim으로만 노출되는
+    # mise npm backend 도구(codex 등)가 command not found가 된다(#814 mise 전환 이후
+    # codex가 shim 의존이 되며 발현).
     envExtra = ''
-      if command -v mise >/dev/null 2>&1 && [[ -z "$MISE_SHELL" ]]; then
+      if command -v mise >/dev/null 2>&1 \
+         && [[ ":$PATH:" != *":$HOME/.local/share/mise/shims:"* ]]; then
         eval "$(mise activate zsh --shims)"
       fi
 
