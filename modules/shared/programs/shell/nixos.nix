@@ -3,6 +3,7 @@
   config,
   pkgs,
   lib,
+  username,
   nixosConfigDefaultPath,
   ...
 }:
@@ -17,6 +18,21 @@ in
       # 유니코드 결합 문자 처리 (wide character 지원)
       setopt COMBINING_CHARS
     '')
+
+    # MiniPC gh 인증 — opnix가 materialize한 github-pat을 GH_TOKEN으로 주입한다.
+    # headless 환경이라 1Password Shell Plugin(desktop app + interactive 요구)은 부적합하므로
+    # 데스크탑의 op plugin alias 패턴 대신 GH_TOKEN wrapper를 쓴다.
+    # 파일 부재(부팅 직후 opnix-secrets 완료 전 / SaaS outage) 시 plain gh로 폴백해 wrapper가 깨지지 않게 한다.
+    ''
+      gh() {
+        local _ghpat=/run/opnix/${username}/github-pat
+        if [ -r "$_ghpat" ]; then
+          GH_TOKEN="$(< "$_ghpat")" command gh "$@"
+        else
+          command gh "$@"
+        fi
+      }
+    ''
   ];
 
   # NixOS용 스크립트 설치

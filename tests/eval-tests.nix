@@ -338,6 +338,12 @@ let
       prefix: builtins.match ".*[^[:space:]].*" prefix != null
     ) ankiConfigApi.allowedKeyPrefixes;
 
+  # opnix 1Password SA token materialization
+  opnixCfg = nixosCfg.services.onepassword-secrets;
+  opnixGithubPat = opnixCfg.secrets.githubPat;
+  opnixTokenSecret = nixosCfg.age.secrets.opnix-service-account-token;
+  opnixTmpfilesRules = nixosCfg.systemd.tmpfiles.rules;
+
   # Darwin sudo.extraConfig 정규화 헬퍼
   splitLines = text: builtins.filter builtins.isString (builtins.split "\n" text);
 
@@ -554,6 +560,43 @@ let
     {
       name = "Test 5e-10: constants.onePassword.account가 \"my.1password.com\"이어야 함";
       cond = constants.onePassword.account == "my.1password.com";
+    }
+    # ── opnix SA token materialization 보안 회귀 핀 ──
+    {
+      name = "Test 5e-11: homeserver.opnix.enable 시 services.onepassword-secrets.enable이 true여야 함";
+      cond = nixosCfg.homeserver.opnix.enable && opnixCfg.enable;
+    }
+    {
+      name = "Test 5e-12: opnix githubPat이 tmpfs(/run/opnix/<user>/github-pat)에 user-owned 0400으로 materialize되어야 함 (path: ${opnixGithubPat.path}, mode: ${opnixGithubPat.mode})";
+      cond =
+        builtins.match "/run/opnix/[^/]+/github-pat" opnixGithubPat.path != null
+        && opnixGithubPat.mode == "0400"
+        && opnixGithubPat.owner != "root";
+    }
+    {
+      name = "Test 5e-13: opnix githubPat reference가 op://Automation/github-pat/token이어야 함";
+      cond =
+        opnixGithubPat.reference == "op://${constants.onePassword.vaults.automation}/github-pat/token";
+    }
+    {
+      # opnix-secrets.service가 tokenFile을 0640 root:onepassword-secrets로 강제하므로 agenix도 동일 선언.
+      name = "Test 5e-14: opnix SA tokenFile(agenix)이 0640 root:onepassword-secrets여야 함 (권한 경합 제거)";
+      cond =
+        opnixTokenSecret.mode == "0640"
+        && opnixTokenSecret.owner == "root"
+        && opnixTokenSecret.group == "onepassword-secrets";
+    }
+    {
+      # users를 비워 onepassword-secrets group 멤버를 0으로 유지 → 실질 root-only.
+      name = "Test 5e-15: opnix users 옵션이 비어야 함 (token group readable이 일반 user로 확산 방지)";
+      cond = opnixCfg.users == [ ];
+    }
+    {
+      # gh wrapper(shell/nixos.nix)가 정확한 파일명에 의존 + parent dir 0700 hardening 회귀 방지.
+      name = "Test 5e-16: opnix per-user tmpfiles dir이 0700으로 pre-create되어야 함";
+      cond = builtins.any (
+        rule: builtins.match "d /run/opnix/[^ ]+ 0700 [^ ]+ users -" rule != null
+      ) opnixTmpfilesRules;
     }
     {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
