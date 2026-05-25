@@ -56,6 +56,6 @@ in
   # Automation vault의 SSH 키(mac-ssh)를 노출 → ssh가 IdentityAgent 경유로 mac-ssh 사용.
   home.file.".config/1Password/ssh/agent.toml".text = ''
     [[ssh-keys]]
-    vault = "Automation"
+    vault = "${constants.onePassword.vaults.automation}"
   '';
 }
