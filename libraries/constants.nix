@@ -50,6 +50,11 @@
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
+    # agenix 복호화 identity (host private key) + opnix SA 만료 record source (PRD #780)
+    # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
+    # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.
+    agenixHostIdentityKey = "/etc/ssh/ssh_host_ed25519_key";
+    opnixServiceAccountExpirySource = ../secrets/opnix-service-account-expiry.txt;
   };
 
   # ═══════════════════════════════════════════════════════════════
@@ -59,8 +64,17 @@
   sshKeys = {
     # MacBook Pro (greenhead-MacBookPro)
     macbook = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDN048Qg9ABnM26jU0X0w2mG9pqcrwuVrcihvDbkRVX8 greenhead-home-mac-2025-10";
-    # MiniPC (greenhead-minipc)
+    # MiniPC (greenhead-minipc) — 사용자 로그인 키 (user key)
     minipc = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN64oEThAvKkI806sMRcIXOJxiaT2A8BbqcO4DfWlirO greenhead@minipc";
+  };
+
+  # ═══════════════════════════════════════════════════════════════
+  # SSH Host 공개키 (cat /etc/ssh/ssh_host_ed25519_key.pub)
+  # 머신 고유 키(root 전용). 부팅 의존 시크릿(SA token 등) 전용 recipient.
+  # user 로그인 키(sshKeys)와 분리해 노출 표면을 최소화한다 (PRD #780 host key 기반 복호화).
+  # ═══════════════════════════════════════════════════════════════
+  hostKeys = {
+    minipc = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMq3woA41glyia2HaxsQl7JL4GfSGsmn3vJoiGFXO3Qi root@greenhead-minipc";
   };
 
   # ═══════════════════════════════════════════════════════════════
@@ -142,6 +156,21 @@
     paths = {
       # Shottr/FolderActions 공통 저장 경로 (HOME 상대경로)
       shottrDefaultFolderRelative = "FolderActions/upload-immich";
+    };
+  };
+
+  # ═══════════════════════════════════════════════════════════════
+  # 1Password vault 이름 (단일 소스)
+  # GUI에서 동일 이름으로 vault를 생성해야 op CLI가 조회 가능
+  # ═══════════════════════════════════════════════════════════════
+  onePassword = {
+    # op CLI 멀티 계정(개인+회사) 환경에서 Automation vault가 속한 개인 account 고정.
+    # my.1password.com은 개인 1Password 공통 sign-in 도메인 (개인 식별 정보 아님).
+    # MiniPC(Phase 3)는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 본 값은 Mac biometric 경로 전용.
+    account = "my.1password.com";
+    vaults = {
+      personal = "Personal"; # 1Password 기본 Personal vault (GUI 표시명)
+      automation = "Automation"; # LLM·자동화·시스템 토큰 + 디바이스 SSH key inventory
     };
   };
 

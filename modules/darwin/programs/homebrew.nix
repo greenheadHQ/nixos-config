@@ -99,6 +99,11 @@
         "docker-desktop"
         "fork"
         "monitorcontrol"
+        # 1Password 비밀번호/SSH 키/PAT 통합 (PRD #780 Phase 1)
+        # - 1password: 데스크탑 앱 (vault, SSH agent, biometric)
+        # - 1password-cli: op CLI (op_get helper + Shell Plugin 지원)
+        "1password"
+        "1password-cli"
       ];
 
       # Mac App Store 앱 (mas 필요)
