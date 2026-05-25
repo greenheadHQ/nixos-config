@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # codex-sync: Claude Code 하니스를 Codex CLI 구조로 재투영
 # 사용법:
-#   codex-sync [project-root]
+#   codex-sync [--user-mcp[=PATH]] [--trust-project] [project-root]
 
 set -euo pipefail
 
@@ -17,10 +17,14 @@ _warn() {
 _usage() {
   cat <<'EOF'
 사용법:
-  codex-sync [project-root]
+  codex-sync [--user-mcp[=PATH]] [--trust-project] [project-root]
 
 인자:
   project-root  동기화 대상 프로젝트 루트 (기본값: 현재 작업 디렉토리)
+
+옵션:
+  --user-mcp[=PATH]  user-scope MCP를 명시적으로 동기화 (기본 PATH: ~/.claude/mcp.json)
+  --trust-project    Codex 전역 config에 project trust를 명시적으로 추가
 EOF
 }
 
@@ -45,20 +49,50 @@ _canonical_project_root() {
   (cd "$input" && pwd -P)
 }
 
-main() {
-  if (( $# > 1 )); then
-    _die "인자는 최대 1개만 허용됩니다"
-  fi
+_parse_args() {
+  PROJECT_ROOT_ARG=""
+  USER_MCP_PATH=""
+  SYNC_USER_MCP=0
+  TRUST_PROJECT=0
 
-  case "${1:-}" in
-    -h|--help)
-      _usage
-      exit 0
-      ;;
-  esac
+  while (( $# > 0 )); do
+    case "$1" in
+      -h|--help)
+        _usage
+        exit 0
+        ;;
+      --user-mcp)
+        SYNC_USER_MCP=1
+        USER_MCP_PATH="$HOME/.claude/mcp.json"
+        shift
+        ;;
+      --user-mcp=*)
+        SYNC_USER_MCP=1
+        USER_MCP_PATH="${1#--user-mcp=}"
+        [[ -n "$USER_MCP_PATH" ]] || _die "--user-mcp=PATH 값이 비어 있습니다"
+        shift
+        ;;
+      --trust-project)
+        TRUST_PROJECT=1
+        shift
+        ;;
+      --*)
+        _die "알 수 없는 옵션: $1"
+        ;;
+      *)
+        [[ -z "$PROJECT_ROOT_ARG" ]] || _die "project-root는 하나만 허용됩니다"
+        PROJECT_ROOT_ARG="$1"
+        shift
+        ;;
+    esac
+  done
+}
+
+main() {
+  _parse_args "$@"
 
   local project_root sync_sh
-  project_root=$(_canonical_project_root "${1:-$PWD}")
+  project_root=$(_canonical_project_root "${PROJECT_ROOT_ARG:-$PWD}")
   sync_sh=$(_resolve_sync_sh) || _die "sync.sh를 찾을 수 없습니다 (~/.claude 또는 ~/.codex)"
 
   local -a args=()
@@ -67,15 +101,17 @@ main() {
     args+=(--local-skills-dir=.claude/skills)
   fi
 
-  if [[ -f "$HOME/.claude/mcp.json" ]]; then
-    args+=(--user-mcp="$HOME/.claude/mcp.json")
-  else
-    _warn "$HOME/.claude/mcp.json 이 없어 user-scope MCP sync를 건너뜁니다"
+  if [[ "$SYNC_USER_MCP" -eq 1 ]]; then
+    args+=(--user-mcp="$USER_MCP_PATH")
+  fi
+
+  if [[ "$TRUST_PROJECT" -eq 1 ]]; then
+    args+=(--trust-project)
   fi
 
   local plugin_lines
   plugin_lines="$(
-    PROJECT_ROOT="$project_root" python3 <<'PY'
+    PROJECT_ROOT="$project_root" "${CODEX_SYNC_PYTHON:-python3}" <<'PY'
 import json
 import os
 import sys

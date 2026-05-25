@@ -78,6 +78,8 @@ else
 fi
 SYNC_SCRIPT="$REPO_ROOT/modules/shared/programs/codex/files/sync-codex-config.py"
 SYNC_HARNESS_SH="$REPO_ROOT/modules/shared/programs/claude/files/skills/syncing-codex-harness/references/sync.sh"
+PROJECT_MCP_BEGIN_MARKER="# BEGIN codex-sync managed mcp"
+PROJECT_MCP_END_MARKER="# END codex-sync managed mcp"
 
 # ─── CLI 인자 / opt-in 모드 ───
 # Precedence: CODEX_HOOK_LIVE env가 default를 set하고, CLI 인자가 그 위에 적용된다.
@@ -580,8 +582,11 @@ PY
 _write_existing_mcp_config() {
   local target="$1"
   mkdir -p "$(dirname "$target")"
-  cat > "$target" <<'EOF'
+cat > "$target" <<'EOF'
 model = "gpt-5.5"
+
+[mcp_servers]
+inline = { command = "/tmp/inline-mcp" }
 
 [mcp_servers.existing]
 command = "/tmp/existing-mcp"
@@ -590,10 +595,28 @@ EOF
 
 _assert_existing_mcp_preserved() {
   local target="$1" scenario="$2"
+  grep -Fqx 'model = "gpt-5.5"' "$target" \
+    || fail "[$scenario] 기존 non-MCP model 설정이 보존되어야 함"
+  grep -Fq '/tmp/inline-mcp' "$target" \
+    || fail "[$scenario] 기존 parent-table inline MCP key가 보존되어야 함"
   grep -Fqx '[mcp_servers.existing]' "$target" \
     || fail "[$scenario] 기존 mcp_servers.existing 섹션이 보존되어야 함"
   grep -Fqx 'command = "/tmp/existing-mcp"' "$target" \
     || fail "[$scenario] 기존 MCP command가 보존되어야 함"
+}
+
+_assert_mode_600() {
+  local target="$1" scenario="$2"
+  python3 - "$target" "$scenario" <<'PY' || fail "[$scenario] config mode 0600 검증 실패"
+import os
+import stat
+import sys
+
+path, scenario = sys.argv[1:3]
+mode = stat.S_IMODE(os.stat(path).st_mode)
+if mode != 0o600:
+    raise SystemExit(f"[{scenario}] mode={oct(mode)}")
+PY
 }
 
 test_sync_sh_mcp_config_valid_sources() {
@@ -603,6 +626,15 @@ test_sync_sh_mcp_config_valid_sources() {
   config_file="$project_root/.codex/config.toml"
   plugin_dir="$project_root/plugin"
   mkdir -p "$project_root/.codex" "$plugin_dir"
+  _write_existing_mcp_config "$config_file"
+  cat >> "$config_file" <<'EOF'
+
+[mcp_servers.project-server]
+command = "/tmp/old-project-server"
+
+[mcp_servers.'plugin-server']
+command = "/tmp/old-plugin-server"
+EOF
 
   cat > "$project_root/.mcp.json" <<'EOF'
 {
@@ -640,6 +672,180 @@ EOF
     || fail "[valid-sources] plugin MCP command did not substitute CLAUDE_PLUGIN_ROOT"
   grep -Fqx "args = [\"--root\", \"$plugin_dir\"]" "$config_file" \
     || fail "[valid-sources] plugin MCP args did not substitute CLAUDE_PLUGIN_ROOT"
+  grep -Fqx 'model = "gpt-5.5"' "$config_file" \
+    || fail "[valid-sources] non-MCP config must be preserved"
+  grep -Fqx "$PROJECT_MCP_BEGIN_MARKER" "$config_file" \
+    || fail "[valid-sources] generated project MCP marker missing"
+  grep -Fqx "$PROJECT_MCP_END_MARKER" "$config_file" \
+    || fail "[valid-sources] generated project MCP end marker missing"
+  grep -Fqx '[mcp_servers.existing]' "$config_file" \
+    || fail "[valid-sources] unrelated project-local MCP section must be preserved"
+  grep -Fq '/tmp/inline-mcp' "$config_file" \
+    || fail "[valid-sources] unrelated project-local parent-table MCP key must be preserved"
+  grep -Fq '/tmp/old-project-server' "$config_file" \
+    && fail "[valid-sources] colliding old project MCP table must be removed"
+  grep -Fq '/tmp/old-plugin-server' "$config_file" \
+    && fail "[valid-sources] colliding old plugin MCP table must be removed"
+  _assert_mode_600 "$config_file" "valid-sources"
+}
+
+test_sync_sh_mcp_config_user_target_preserves_other_servers() {
+  local sandbox project_root config_file user_mcp
+  sandbox=$(new_hook_sandbox)
+  project_root="$sandbox/project"
+  config_file="$sandbox/codex-home/config.toml"
+  user_mcp="$sandbox/user-mcp.json"
+  mkdir -p "$project_root" "$(dirname "$config_file")"
+
+  cat > "$config_file" <<'EOF'
+model = "gpt-5.5"
+
+[mcp_servers.keep]
+command = "/tmp/keep"
+
+[mcp_servers.'replace'] # literal quoted key should still be replaced
+command = "/tmp/old"
+
+[mcp_servers.'replace'.env]
+OLD = "1"
+
+[[hooks.Stop]]
+command = "/tmp/keep-hook"
+
+[mcp_servers."bad\u005Dname"]
+command = "/tmp/old-unicode-bracket"
+EOF
+  chmod 0644 "$config_file"
+  cat > "$user_mcp" <<'EOF'
+{
+  "mcpServers": {
+    "replace": {
+      "command": "/tmp/new",
+      "env": {
+        "NEW": "1",
+        "WEIRD]KEY\n[mcp_servers.injected]": "safe"
+      }
+    },
+    "bad]name": {
+      "command": "/tmp/new-bracket"
+    },
+    "added": {
+      "command": "/tmp/added"
+    }
+  }
+}
+EOF
+
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --user-mcp="$user_mcp" \
+    --user-codex-config="$config_file" \
+    >"$sandbox/user-target.stdout" 2>"$sandbox/user-target.stderr" \
+    || fail "[user-target] user MCP target should succeed: $(cat "$sandbox/user-target.stderr" 2>/dev/null || true)"
+
+  grep -Fqx 'model = "gpt-5.5"' "$config_file" \
+    || fail "[user-target] non-MCP config must be preserved"
+  grep -Fqx '[mcp_servers.keep]' "$config_file" \
+    || fail "[user-target] unrelated existing MCP server must be preserved"
+  grep -Fqx 'command = "/tmp/keep"' "$config_file" \
+    || fail "[user-target] unrelated existing MCP command must be preserved"
+  grep -Fqx '[mcp_servers.replace]' "$config_file" \
+    || fail "[user-target] replacement MCP server missing"
+  grep -Fqx 'command = "/tmp/new"' "$config_file" \
+    || fail "[user-target] replacement MCP command missing"
+  grep -Fqx '[mcp_servers.replace.env]' "$config_file" \
+    || fail "[user-target] replacement MCP env section missing"
+  grep -Fqx 'NEW = "1"' "$config_file" \
+    || fail "[user-target] replacement MCP env missing"
+  grep -Fqx '"WEIRD]KEY\n[mcp_servers.injected]" = "safe"' "$config_file" \
+    || fail "[user-target] unusual env key must be TOML-quoted"
+  grep -Fq "[mcp_servers.'replace']" "$config_file" \
+    && fail "[user-target] literal-quoted old replacement MCP table must be removed"
+  grep -Fqx '[mcp_servers.injected]' "$config_file" \
+    && fail "[user-target] unusual env key must not inject a TOML table"
+  grep -Fq '/tmp/old' "$config_file" \
+    && fail "[user-target] old replacement MCP command must be removed"
+  grep -Fq 'OLD = "1"' "$config_file" \
+    && fail "[user-target] old replacement MCP env must be removed"
+  grep -Fqx '[mcp_servers.added]' "$config_file" \
+    || fail "[user-target] added MCP server missing"
+  grep -Fqx '[mcp_servers."bad]name"]' "$config_file" \
+    || fail "[user-target] bracket-containing MCP server missing"
+  grep -Fqx 'command = "/tmp/new-bracket"' "$config_file" \
+    || fail "[user-target] bracket-containing MCP command missing"
+  grep -Fq '/tmp/old-unicode-bracket' "$config_file" \
+    && fail "[user-target] old unicode-escaped MCP command must be removed"
+  grep -Fqx '[[hooks.Stop]]' "$config_file" \
+    || fail "[user-target] TOML array table after replaced MCP section must be preserved"
+  grep -Fqx 'command = "/tmp/keep-hook"' "$config_file" \
+    || fail "[user-target] TOML array table command must be preserved"
+  _assert_mode_600 "$config_file" "user-target"
+
+  cat > "$config_file" <<'EOF'
+model = "gpt-5.5"
+
+[mcp_servers]
+replace = { command = "/tmp/old-inline" }
+
+[mcp_servers.keep]
+command = "/tmp/keep"
+EOF
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --user-mcp="$user_mcp" \
+    --user-codex-config="$config_file" \
+    >"$sandbox/user-parent-table.stdout" 2>"$sandbox/user-parent-table.stderr" \
+    || fail "[user-parent-table] user MCP parent-table target should succeed: $(cat "$sandbox/user-parent-table.stderr" 2>/dev/null || true)"
+  grep -Fq '/tmp/old-inline' "$config_file" \
+    && fail "[user-parent-table] old parent-table replacement MCP command must be removed"
+  grep -Fqx '[mcp_servers.keep]' "$config_file" \
+    || fail "[user-parent-table] unrelated MCP server must be preserved"
+  grep -Fqx '[mcp_servers.replace]' "$config_file" \
+    || fail "[user-parent-table] replacement MCP server missing"
+
+  cat > "$config_file" <<'EOF'
+model = "gpt-5.5"
+[mcp_servers.broken
+command = "/tmp/broken"
+EOF
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --user-mcp="$user_mcp" \
+    --user-codex-config="$config_file" >"$sandbox/user-malformed-existing.stdout" 2>"$sandbox/user-malformed-existing.stderr" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[user-malformed-existing] malformed existing user config must fail safely"
+  grep -Fq "existing config TOML parse failed" "$sandbox/user-malformed-existing.stderr" \
+    || fail "[user-malformed-existing] stderr에 malformed TOML 진단이 있어야 함"
+  grep -Fqx '[mcp_servers.broken' "$config_file" \
+    || fail "[user-malformed-existing] malformed config 실패 시 원본이 보존되어야 함"
+
+  cat > "$user_mcp" <<'EOF'
+{
+  "mcpServers": {
+    "ctrl\u0000name": {
+      "command": "/tmp/ctrl\bcmd",
+      "args": ["arg\fvalue"],
+      "env": {
+        "CTRL\u007fKEY": "value\bform\f"
+      }
+    }
+  }
+}
+EOF
+  printf 'model = "gpt-5.5"\n' > "$config_file"
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --user-mcp="$user_mcp" \
+    --user-codex-config="$config_file" \
+    >"$sandbox/control-target.stdout" 2>"$sandbox/control-target.stderr" \
+    || fail "[control-target] control-character MCP target should succeed: $(cat "$sandbox/control-target.stderr" 2>/dev/null || true)"
+  python3 - "$config_file" <<'PY' || fail "[control-target] generated TOML must parse with escaped control chars"
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as f:
+    data = tomllib.load(f)
+server = data["mcp_servers"]["ctrl\0name"]
+assert server["command"] == "/tmp/ctrl\bcmd", server
+assert server["args"] == ["arg\fvalue"], server
+assert server["env"]["CTRL\x7fKEY"] == "value\bform\f", server
+PY
 }
 
 test_sync_sh_mcp_config_failfast() {
@@ -709,6 +915,311 @@ test_sync_sh_mcp_config_failfast() {
     || fail "[no-source] stderr에 source option 필수 진단이 있어야 함"
   _assert_existing_mcp_preserved "$config_file" "no-source"
 
+  cat > "$project_root/.mcp.json" <<'EOF'
+{
+  "mcpServers": {
+    "project-server": {
+      "command": "/tmp/project-server"
+    }
+  }
+}
+EOF
+  cat > "$project_root/user-mcp.json" <<'EOF'
+{
+  "mcpServers": {
+    "user-server": {
+      "command": "/tmp/user-server"
+    }
+  }
+}
+EOF
+  _write_existing_mcp_config "$config_file"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --project-mcp="$project_root/.mcp.json" \
+    --user-mcp="$project_root/user-mcp.json" \
+    --user-codex-config="$config_file" >"$sandbox/mixed-target.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[mixed-target] user target와 project target 혼합은 non-zero로 실패해야 함"
+  grep -Fq "cannot be combined" "$stderr_log" \
+    || fail "[mixed-target] stderr에 target 혼합 금지 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$config_file" "mixed-target"
+
+  _write_existing_mcp_config "$config_file"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --user-codex-config="$config_file" >"$sandbox/user-target-only.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[user-target-only] --user-codex-config without --user-mcp must fail"
+  grep -Fq "requires --user-mcp" "$stderr_log" \
+    || fail "[user-target-only] stderr에 --user-mcp 요구 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$config_file" "user-target-only"
+
+  cat > "$project_root/user-mcp.json" <<'EOF'
+{
+  "mcpServers": {
+    "replace": {
+      "command": "/tmp/new"
+    }
+  }
+}
+EOF
+  cat > "$config_file" <<'EOF'
+model = "gpt-5.5"
+mcp_servers = { replace = { command = "/tmp/old" }, keep = { command = "/tmp/keep" } }
+EOF
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --user-mcp="$project_root/user-mcp.json" \
+    --user-codex-config="$config_file" >"$sandbox/user-root-inline.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[user-root-inline] root inline mcp_servers must fail safely"
+  grep -Fq "root mcp_servers inline table cannot be safely merged" "$stderr_log" \
+    || fail "[user-root-inline] stderr에 root inline table 진단이 있어야 함"
+  grep -Fq '/tmp/keep' "$config_file" \
+    || fail "[user-root-inline] root inline table 실패 시 기존 config가 보존되어야 함"
+
+  cat > "$config_file" <<'EOF'
+model = "gpt-5.5"
+mcp_servers = { keep = { command = "/tmp/keep" } }
+EOF
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+    --project-mcp="$project_root/.mcp.json" >"$sandbox/project-root-inline.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[project-root-inline] project root inline mcp_servers must fail safely"
+  grep -Fq "root mcp_servers inline table cannot be safely merged" "$stderr_log" \
+    || fail "[project-root-inline] stderr에 root inline table 진단이 있어야 함"
+  grep -Fq '/tmp/keep' "$config_file" \
+    || fail "[project-root-inline] root inline table 실패 시 기존 config가 보존되어야 함"
+
+  cat > "$config_file" <<'EOF'
+model = "gpt-5.5"
+EOF
+  local template_owned_name
+  template_owned_name="$(python3 - "$TEMPLATE_REPO_FILE" <<'PY'
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        prefix = "[mcp_servers."
+        if line.startswith(prefix) and line.endswith("]"):
+            name = line[len(prefix):-1]
+            if "." not in name:
+                print(name.strip('"'))
+                break
+PY
+)"
+  if [ -n "$template_owned_name" ]; then
+    cat > "$project_root/template-owned-user-mcp.json" <<EOF
+{
+  "mcpServers": {
+    "$template_owned_name": {
+      "command": "/tmp/user-template-owned"
+    }
+  }
+}
+EOF
+    rc=0
+    bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+      --user-mcp="$project_root/template-owned-user-mcp.json" \
+      --user-codex-config="$config_file" >"$sandbox/template-owned-user.stdout" 2>"$stderr_log" || rc=$?
+    [[ "$rc" -ne 0 ]] || fail "[template-owned-user] template-owned MCP collision must fail safely"
+    grep -Fq "collides with template-owned MCP server names: $template_owned_name" "$stderr_log" \
+      || fail "[template-owned-user] stderr에 template-owned MCP collision 진단이 있어야 함"
+    grep -Fq '/tmp/user-template-owned' "$config_file" \
+      && fail "[template-owned-user] template-owned collision 실패 시 config가 수정되면 안 됨"
+  else
+    cat > "$project_root/template-owned-user-mcp.json" <<'EOF'
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "/tmp/user-chrome-devtools"
+    }
+  }
+}
+EOF
+    bash "$SYNC_HARNESS_SH" mcp-config "$project_root" \
+      --user-mcp="$project_root/template-owned-user-mcp.json" \
+      --user-codex-config="$config_file" >"$sandbox/template-owned-user.stdout" 2>"$stderr_log" \
+      || fail "[template-owned-user] inactive-platform MCP name should not collide on this platform: $(cat "$stderr_log" 2>/dev/null || true)"
+    grep -Fq '/tmp/user-chrome-devtools' "$config_file" \
+      || fail "[template-owned-user] non-template-owned MCP should be written"
+  fi
+
+  local symlink_project_root symlink_codex_home
+  symlink_project_root="$sandbox/symlink-project"
+  symlink_codex_home="$sandbox/symlink-codex-home"
+  mkdir -p "$symlink_project_root" "$symlink_codex_home"
+  ln -s "$symlink_codex_home" "$symlink_project_root/.codex"
+  cat > "$symlink_project_root/.mcp.json" <<'EOF'
+{
+  "mcpServers": {
+    "project-server": {
+      "command": "/tmp/project-server"
+    }
+  }
+}
+EOF
+  printf 'model = "preserve"\n' > "$symlink_codex_home/config.toml"
+  rc=0
+  bash "$SYNC_HARNESS_SH" mcp-config "$symlink_project_root" \
+    --project-mcp="$symlink_project_root/.mcp.json" >"$sandbox/symlink-project.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[symlink-project] project .codex symlink must fail safely"
+  grep -Fq "project .codex must be a project-local directory, not a symlink" "$stderr_log" \
+    || fail "[symlink-project] stderr에 .codex symlink 진단이 있어야 함"
+  grep -Fqx 'model = "preserve"' "$symlink_codex_home/config.toml" \
+    || fail "[symlink-project] symlink target config must not be overwritten"
+
+  local symlink_all_root="$sandbox/symlink-all-project"
+  local symlink_all_home="$sandbox/symlink-all-codex-home"
+  mkdir -p "$symlink_all_root/.agents" "$symlink_all_home"
+  printf 'keep-agents\n' > "$symlink_all_root/.agents/marker"
+  ln -s "$symlink_all_home" "$symlink_all_root/.codex"
+  rc=0
+  bash "$SYNC_HARNESS_SH" all "$symlink_all_root" >"$sandbox/symlink-all.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[symlink-all] sync all with project .codex symlink must fail safely"
+  grep -Fq "project .codex must be a project-local directory, not a symlink" "$stderr_log" \
+    || fail "[symlink-all] stderr에 .codex symlink 진단이 있어야 함"
+  grep -Fqx 'keep-agents' "$symlink_all_root/.agents/marker" \
+    || fail "[symlink-all] .codex preflight 실패 전에 .agents를 변경하면 안 됨"
+
+  local symlink_agents_root symlink_agents_target
+  symlink_agents_root="$sandbox/symlink-agents-project"
+  symlink_agents_target="$sandbox/symlink-agents-target"
+  mkdir -p "$symlink_agents_root" "$symlink_agents_target"
+  ln -s "$symlink_agents_target" "$symlink_agents_root/.agents"
+  rc=0
+  bash "$SYNC_HARNESS_SH" all "$symlink_agents_root" >"$sandbox/symlink-agents.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[symlink-agents] sync all with project .agents symlink must fail safely"
+  grep -Fq "project .agents must be a project-local directory, not a symlink" "$stderr_log" \
+    || fail "[symlink-agents] stderr에 .agents symlink 진단이 있어야 함"
+  [[ ! -e "$symlink_agents_target/skills" ]] \
+    || fail "[symlink-agents] .agents symlink target must not be mutated"
+  [[ ! -e "$symlink_agents_root/.codex" ]] \
+    || fail "[symlink-agents] .agents preflight 실패 전에 .codex를 생성하면 안 됨"
+
+  local init_symlink_agents_root init_symlink_agents_target
+  init_symlink_agents_root="$sandbox/init-symlink-agents-project"
+  init_symlink_agents_target="$sandbox/init-symlink-agents-target"
+  mkdir -p "$init_symlink_agents_root" "$init_symlink_agents_target"
+  ln -s "$init_symlink_agents_target" "$init_symlink_agents_root/.agents"
+  rc=0
+  bash "$SYNC_HARNESS_SH" init "$init_symlink_agents_root" \
+    >"$sandbox/init-symlink-agents.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[init-symlink-agents] init with project .agents symlink must fail safely"
+  grep -Fq "project .agents must be a project-local directory, not a symlink" "$stderr_log" \
+    || fail "[init-symlink-agents] stderr에 .agents symlink 진단이 있어야 함"
+  [[ ! -e "$init_symlink_agents_target/skills" ]] \
+    || fail "[init-symlink-agents] .agents symlink target must not be mutated"
+  [[ ! -e "$init_symlink_agents_root/.codex" ]] \
+    || fail "[init-symlink-agents] .agents preflight 실패 전에 .codex를 생성하면 안 됨"
+
+  local init_symlink_codex_root init_symlink_codex_target
+  init_symlink_codex_root="$sandbox/init-symlink-codex-project"
+  init_symlink_codex_target="$sandbox/init-symlink-codex-target"
+  mkdir -p "$init_symlink_codex_root/.agents" "$init_symlink_codex_target"
+  printf '%s\n' keep-agents > "$init_symlink_codex_root/.agents/marker"
+  ln -s "$init_symlink_codex_target" "$init_symlink_codex_root/.codex"
+  rc=0
+  bash "$SYNC_HARNESS_SH" init "$init_symlink_codex_root" \
+    >"$sandbox/init-symlink-codex.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[init-symlink-codex] init with project .codex symlink must fail safely"
+  grep -Fq "project .codex must be a project-local directory, not a symlink" "$stderr_log" \
+    || fail "[init-symlink-codex] stderr에 .codex symlink 진단이 있어야 함"
+  grep -Fqx 'keep-agents' "$init_symlink_codex_root/.agents/marker" \
+    || fail "[init-symlink-codex] .codex preflight 실패 전에 .agents를 변경하면 안 됨"
+
+  local symlink_subcommand_root symlink_subcommand_target source_skills source_agents plugin_skills
+  symlink_subcommand_root="$sandbox/symlink-subcommand-project"
+  symlink_subcommand_target="$sandbox/symlink-subcommand-target"
+  source_skills="$sandbox/source-skills"
+  plugin_skills="$sandbox/plugin-skills"
+  source_agents="$sandbox/source-agents"
+  mkdir -p \
+    "$symlink_subcommand_root" \
+    "$symlink_subcommand_target" \
+    "$source_skills/local" \
+    "$plugin_skills/plugin" \
+    "$source_agents"
+  printf '%s\n' '---' 'name: local' '---' > "$source_skills/local/SKILL.md"
+  printf '%s\n' '---' 'name: plugin' '---' > "$plugin_skills/plugin/SKILL.md"
+  printf '%s\n' 'agent' > "$source_agents/example.md"
+  ln -s "$symlink_subcommand_target" "$symlink_subcommand_root/.agents"
+
+  rc=0
+  bash "$SYNC_HARNESS_SH" project-skills "$source_skills" "$symlink_subcommand_root/.agents/skills" \
+    >"$sandbox/project-skills-symlink.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[project-skills-symlink] .agents symlink must fail safely"
+  grep -Fq "project .agents must be a project-local directory, not a symlink" "$stderr_log" \
+    || fail "[project-skills-symlink] stderr에 .agents symlink 진단이 있어야 함"
+  [[ ! -e "$symlink_subcommand_target/skills" ]] \
+    || fail "[project-skills-symlink] .agents symlink target must not be mutated"
+
+  rc=0
+  (
+    cd "$symlink_subcommand_root"
+    bash "$SYNC_HARNESS_SH" project-skills "$source_skills" ".agents/skills"
+  ) >"$sandbox/project-skills-relative-symlink.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[project-skills-relative-symlink] relative .agents symlink must fail safely"
+  grep -Fq "project .agents must be a project-local directory, not a symlink" "$stderr_log" \
+    || fail "[project-skills-relative-symlink] stderr에 .agents symlink 진단이 있어야 함"
+  [[ ! -e "$symlink_subcommand_target/skills" ]] \
+    || fail "[project-skills-relative-symlink] .agents symlink target must not be mutated"
+
+  rc=0
+  bash "$SYNC_HARNESS_SH" plugin-skills "$plugin_skills" "$symlink_subcommand_root/.agents/skills" \
+    >"$sandbox/plugin-skills-symlink.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[plugin-skills-symlink] .agents symlink must fail safely"
+  [[ ! -e "$symlink_subcommand_target/skills" ]] \
+    || fail "[plugin-skills-symlink] .agents symlink target must not be mutated"
+
+  rc=0
+  (
+    cd "$symlink_subcommand_root"
+    bash "$SYNC_HARNESS_SH" plugin-skills "$plugin_skills" ".agents/skills"
+  ) >"$sandbox/plugin-skills-relative-symlink.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[plugin-skills-relative-symlink] relative .agents symlink must fail safely"
+  [[ ! -e "$symlink_subcommand_target/skills" ]] \
+    || fail "[plugin-skills-relative-symlink] .agents symlink target must not be mutated"
+
+  rc=0
+  bash "$SYNC_HARNESS_SH" agents "$source_agents" "$symlink_subcommand_root/.agents" \
+    >"$sandbox/agents-symlink.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[agents-symlink] .agents symlink must fail safely"
+  [[ ! -e "$symlink_subcommand_target/example.md" ]] \
+    || fail "[agents-symlink] .agents symlink target must not be mutated"
+
+  rc=0
+  (
+    cd "$symlink_subcommand_root"
+    bash "$SYNC_HARNESS_SH" agents "$source_agents" ".agents"
+  ) >"$sandbox/agents-relative-symlink.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[agents-relative-symlink] relative .agents symlink must fail safely"
+  [[ ! -e "$symlink_subcommand_target/example.md" ]] \
+    || fail "[agents-relative-symlink] .agents symlink target must not be mutated"
+
+  local symlink_skills_root symlink_skills_target
+  symlink_skills_root="$sandbox/symlink-skills-project"
+  symlink_skills_target="$sandbox/symlink-skills-target"
+  mkdir -p "$symlink_skills_root/.agents" "$symlink_skills_target"
+  ln -s "$symlink_skills_target" "$symlink_skills_root/.agents/skills"
+
+  rc=0
+  bash "$SYNC_HARNESS_SH" project-skills "$source_skills" "$symlink_skills_root/.agents/skills" \
+    >"$sandbox/project-skills-child-symlink.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[project-skills-child-symlink] .agents/skills symlink must fail safely"
+  grep -Fq "project .agents target must be a project-local directory, not a symlink" "$stderr_log" \
+    || fail "[project-skills-child-symlink] stderr에 .agents/skills symlink 진단이 있어야 함"
+  [[ ! -e "$symlink_skills_target/local" ]] \
+    || fail "[project-skills-child-symlink] .agents/skills symlink target must not be mutated"
+
+  rc=0
+  (
+    cd "$symlink_skills_root"
+    bash "$SYNC_HARNESS_SH" plugin-skills "$plugin_skills" ".agents/skills"
+  ) >"$sandbox/plugin-skills-relative-child-symlink.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[plugin-skills-relative-child-symlink] relative .agents/skills symlink must fail safely"
+  [[ ! -e "$symlink_skills_target/plugin" ]] \
+    || fail "[plugin-skills-relative-child-symlink] .agents/skills symlink target must not be mutated"
+
   local all_project_root="$sandbox/all-project"
   mkdir -p "$all_project_root"
   rc=0
@@ -722,6 +1233,171 @@ test_sync_sh_mcp_config_failfast() {
     || fail "[all-missing-user] source preflight 전에 .agents를 생성하면 안 됨"
   [[ ! -e "$all_project_root/.codex" ]] \
     || fail "[all-missing-user] source preflight 전에 .codex를 생성하면 안 됨"
+
+  local stale_project_root="$sandbox/stale-project"
+  local stale_config="$stale_project_root/.codex/config.toml"
+  mkdir -p "$stale_project_root/.codex"
+  cat > "$stale_config" <<EOF
+model = "gpt-5.5"
+
+$PROJECT_MCP_BEGIN_MARKER
+[mcp_servers.stale]
+command = "/tmp/stale"
+$PROJECT_MCP_END_MARKER
+
+[mcp_servers.keep]
+command = "/tmp/keep"
+EOF
+  bash "$SYNC_HARNESS_SH" all "$stale_project_root" \
+    >"$sandbox/all-stale-project.stdout" 2>"$stderr_log" \
+    || fail "[all-stale-project] sync all should clear managed project MCP: $(cat "$stderr_log" 2>/dev/null || true)"
+  grep -Fq "[6/7] MCP config cleared (project)" "$stderr_log" \
+    || fail "[all-stale-project] stderr에 project MCP clear 진단이 있어야 함"
+  grep -Fqx 'model = "gpt-5.5"' "$stale_config" \
+    || fail "[all-stale-project] non-MCP config must be preserved while clearing MCP"
+  grep -Fq '/tmp/stale' "$stale_config" \
+    && fail "[all-stale-project] managed stale project MCP must be cleared"
+  grep -Fq "$PROJECT_MCP_BEGIN_MARKER" "$stale_config" \
+    && fail "[all-stale-project] managed MCP marker must be removed"
+  grep -Fq '/tmp/keep' "$stale_config" \
+    || fail "[all-stale-project] unmanaged project-local MCP must be preserved"
+  _assert_mode_600 "$stale_config" "all-stale-project"
+
+  local unmanaged_project_root="$sandbox/unmanaged-project"
+  local unmanaged_config="$unmanaged_project_root/.codex/config.toml"
+  mkdir -p "$unmanaged_project_root/.codex"
+  _write_existing_mcp_config "$unmanaged_config"
+  bash "$SYNC_HARNESS_SH" all "$unmanaged_project_root" \
+    >"$sandbox/all-unmanaged-project.stdout" 2>"$stderr_log" \
+    || fail "[all-unmanaged-project] sync all should preserve unmanaged project MCP: $(cat "$stderr_log" 2>/dev/null || true)"
+  grep -Fq "[6/7] MCP config: no sources found" "$stderr_log" \
+    || fail "[all-unmanaged-project] stderr에 no sources 진단이 있어야 함"
+  _assert_existing_mcp_preserved "$unmanaged_config" "all-unmanaged-project"
+
+  rc=0
+  bash "$SYNC_HARNESS_SH" all "$stale_project_root" \
+    --user-codex-config="$config_file" >"$sandbox/all-user-target-only.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[all-user-target-only] sync all --user-codex-config without --user-mcp must fail"
+  grep -Fq "requires --user-mcp" "$stderr_log" \
+    || fail "[all-user-target-only] stderr에 --user-mcp 요구 진단이 있어야 함"
+}
+
+test_sync_sh_trust_contract() {
+  local sandbox project_root codex_home stderr_log rc
+  sandbox=$(new_hook_sandbox)
+  project_root="$sandbox/project"
+  codex_home="$sandbox/codex-home"
+  stderr_log="$sandbox/sync-all.stderr"
+  mkdir -p "$project_root" "$codex_home"
+
+  CODEX_HOME="$codex_home" bash "$SYNC_HARNESS_SH" all "$project_root" \
+    >"$sandbox/all-no-trust.stdout" 2>"$stderr_log" \
+    || fail "[trust] sync all without trust should succeed: $(cat "$stderr_log" 2>/dev/null || true)"
+  [[ ! -e "$codex_home/config.toml" ]] \
+    || fail "[trust] sync all without --trust-project must not mutate global config"
+  grep -Fq "[7/7] Trust: skipped" "$stderr_log" \
+    || fail "[trust] stderr must report skipped trust"
+
+  CODEX_HOME="$codex_home" bash "$SYNC_HARNESS_SH" all "$project_root" --trust-project \
+    >"$sandbox/all-trust.stdout" 2>"$stderr_log" \
+    || fail "[trust] sync all with trust should succeed: $(cat "$stderr_log" 2>/dev/null || true)"
+  grep -Fqx "[projects.\"$project_root\"]" "$codex_home/config.toml" \
+    || fail "[trust] trusted project table missing"
+  grep -Fqx 'trust_level = "trusted"' "$codex_home/config.toml" \
+    || fail "[trust] trust_level missing"
+  _assert_mode_600 "$codex_home/config.toml" "trust"
+
+  sed 's/trust_level = "trusted"/trust_level = "untrusted"/' \
+    "$codex_home/config.toml" > "$sandbox/untrusted.toml"
+  mv "$sandbox/untrusted.toml" "$codex_home/config.toml"
+  chmod 0644 "$codex_home/config.toml"
+  CODEX_HOME="$codex_home" bash "$SYNC_HARNESS_SH" all "$project_root" --trust-project \
+    >"$sandbox/all-trust-repair.stdout" 2>"$stderr_log" \
+    || fail "[trust] sync all should repair existing project trust: $(cat "$stderr_log" 2>/dev/null || true)"
+  grep -Fqx 'trust_level = "trusted"' "$codex_home/config.toml" \
+    || fail "[trust] existing project trust_level must be repaired to trusted"
+  grep -Fq 'trust_level = "untrusted"' "$codex_home/config.toml" \
+    && fail "[trust] stale untrusted value must be removed"
+  _assert_mode_600 "$codex_home/config.toml" "trust-repair"
+
+  local other_project="$sandbox/other-project"
+  cat > "$codex_home/config.toml" <<EOF
+[projects."$project_root"] # existing trust section with comment
+
+[[hooks.Stop]]
+command = "/tmp/keep-hook"
+
+[projects."$other_project"] # adjacent section with comment
+trust_level = "untrusted"
+EOF
+  CODEX_HOME="$codex_home" bash "$SYNC_HARNESS_SH" all "$project_root" --trust-project \
+    >"$sandbox/all-trust-commented.stdout" 2>"$stderr_log" \
+    || fail "[trust] sync all should repair commented trust sections: $(cat "$stderr_log" 2>/dev/null || true)"
+  python3 - "$codex_home/config.toml" "$project_root" "$other_project" <<'PY' \
+    || fail "[trust] commented project section repair 검증 실패"
+import sys
+import tomllib
+
+path, project_root, other_project = sys.argv[1:4]
+with open(path, "rb") as f:
+    data = tomllib.load(f)
+projects = data.get("projects", {})
+assert projects.get(project_root, {}).get("trust_level") == "trusted", projects
+assert projects.get(other_project, {}).get("trust_level") == "untrusted", projects
+hooks = data.get("hooks", {}).get("Stop", [])
+assert hooks and hooks[0].get("command") == "/tmp/keep-hook", data
+PY
+  _assert_mode_600 "$codex_home/config.toml" "trust-commented"
+
+  cat > "$codex_home/config.toml" <<EOF
+projects = { "$project_root" = { trust_level = "untrusted" } }
+EOF
+  rc=0
+  CODEX_HOME="$codex_home" bash "$SYNC_HARNESS_SH" trust-project "$project_root" \
+    >"$sandbox/trust-inline-projects.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[trust-inline-projects] root inline projects table must fail safely"
+  grep -Fq "root inline projects table cannot be safely merged" "$stderr_log" \
+    || fail "[trust-inline-projects] stderr에 root inline projects 진단이 있어야 함"
+  grep -Fqx "projects = { \"$project_root\" = { trust_level = \"untrusted\" } }" "$codex_home/config.toml" \
+    || fail "[trust-inline-projects] root inline projects 실패 시 config가 보존되어야 함"
+
+  cat > "$codex_home/config.toml" <<EOF
+[projects]
+"$project_root" = { trust_level = "untrusted" }
+EOF
+  rc=0
+  CODEX_HOME="$codex_home" bash "$SYNC_HARNESS_SH" trust-project "$project_root" \
+    >"$sandbox/trust-parent-projects.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[trust-parent-projects] projects parent table entry must fail safely"
+  grep -Fq "projects parent table entry cannot be safely merged" "$stderr_log" \
+    || fail "[trust-parent-projects] stderr에 projects parent table 진단이 있어야 함"
+  grep -Fqx "\"$project_root\" = { trust_level = \"untrusted\" }" "$codex_home/config.toml" \
+    || fail "[trust-parent-projects] parent table 실패 시 config가 보존되어야 함"
+
+  cat > "$codex_home/config.toml" <<EOF
+projects."$project_root".trust_level = "untrusted"
+EOF
+  rc=0
+  CODEX_HOME="$codex_home" bash "$SYNC_HARNESS_SH" trust-project "$project_root" \
+    >"$sandbox/trust-dotted-projects.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[trust-dotted-projects] projects dotted key must fail safely"
+  grep -Fq "projects dotted key cannot be safely merged" "$stderr_log" \
+    || fail "[trust-dotted-projects] stderr에 projects dotted key 진단이 있어야 함"
+  grep -Fqx "projects.\"$project_root\".trust_level = \"untrusted\"" "$codex_home/config.toml" \
+    || fail "[trust-dotted-projects] dotted key 실패 시 config가 보존되어야 함"
+
+  cat > "$codex_home/config.toml" <<'EOF'
+[projects.broken
+trust_level = "untrusted"
+EOF
+  rc=0
+  CODEX_HOME="$codex_home" bash "$SYNC_HARNESS_SH" trust-project "$project_root" \
+    >"$sandbox/trust-malformed.stdout" 2>"$stderr_log" || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "[trust-malformed] malformed existing config must fail safely"
+  grep -Fq "existing config TOML parse failed" "$stderr_log" \
+    || fail "[trust-malformed] stderr에 malformed TOML 진단이 있어야 함"
+  grep -Fqx '[projects.broken' "$codex_home/config.toml" \
+    || fail "[trust-malformed] malformed config 실패 시 원본이 보존되어야 함"
 }
 
 # ─── 카테고리 7: pinning-alert behavioral ───
@@ -885,7 +1561,7 @@ _materialize_pinning_fixture() {
   local sandbox_sed
   sandbox_sed="$(sed_replacement_escape "$sandbox")"
   local da_sandbox da_sandbox_sed
-  da_sandbox=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/da-codex-hook-fixture.XXXXXX") \
+  da_sandbox=$(umask 077 && mktemp -d "/tmp/da-codex-hook-fixture.XXXXXX") \
     || fail "DA scratch mktemp -d 실패"
   printf '%s\n' "$da_sandbox" >> "$TEST_TMP_FILE"
   da_sandbox_sed="$(sed_replacement_escape "$da_sandbox")"
@@ -1374,8 +2050,12 @@ run_test "commit-msg pinning behavioral" \
   test_commit_msg_pinning_behavioral
 run_test "sync.sh mcp-config valid sources (#609)" \
   test_sync_sh_mcp_config_valid_sources
+run_test "sync.sh mcp-config user target preservation" \
+  test_sync_sh_mcp_config_user_target_preserves_other_servers
 run_test "sync.sh mcp-config fail-fast (#609)" \
   test_sync_sh_mcp_config_failfast
+run_test "sync.sh trust contract" \
+  test_sync_sh_trust_contract
 
 if [[ "$LIVE_MODE" == "1" ]]; then
   # invocation matrix를 programmatic env inheritance보다 먼저 실행한다 (issue #593):
