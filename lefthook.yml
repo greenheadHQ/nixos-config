@@ -28,11 +28,32 @@ pre-commit:
       glob: "*.sh"
       run: shellcheck -S warning {staged_files}
     eval-tests:
+      # glob: *.nix/flake.lock 은 평가 입력, tests/run-eval-tests.sh 는 runner 래퍼(로직 변경이 검증 동작을 바꿈).
+      # glob 변경 시 scripts/ai/check-lefthook-staged-config.sh 의 expected 블록도 함께 갱신한다 (미동기화 시 staged-config guard fail).
+      glob:
+        - "*.nix"
+        - "flake.lock"
+        - "tests/run-eval-tests.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/run-eval-tests.sh
     codex-hook-fixtures:
       # deterministic 모드 (live fixture 미실행). runner 자체가 scripts/ai/lib/tomlkit-bootstrap.sh를
       # source하여 repo-pinned pythonWithTomlkit으로 self-wrap하므로 lefthook에서 추가 nix shell
       # wrap이 불필요하다. live propagation 검증은 manual/scheduled에 위임.
+      # glob: runner 가 source/cp 하는 의존 경로 집합과 동기화 필수. 새 의존 경로가 생기면 여기와
+      # scripts/ai/check-lefthook-staged-config.sh 의 expected 블록을 함께 갱신한다 (누락 시 해당
+      # 커밋에서 이 검사가 silent skip 된다; pre-push 가 glob 없이 전체 재검증하므로 push 에서 안전망).
+      # runner 래퍼(tests/test-codex-hook-fixtures.sh) 자신도 멤버 — runner 로직 변경이 검증 동작을 바꾼다.
+      glob:
+        - "modules/shared/programs/codex/**"
+        - "modules/shared/programs/claude/files/hooks/**"
+        - "modules/shared/programs/claude/files/lib/**"
+        - "modules/shared/programs/claude/files/skills/syncing-codex-harness/references/sync.sh"
+        - "tests/fixtures/codex-hooks/**"
+        - "tests/test-codex-hook-fixtures.sh"
+        - "tests/lib/**"
+        - "scripts/ai/commit-msg-pinning.sh"
+        - "scripts/ai/lib/tomlkit-bootstrap.sh"
+        - "modules/shared/scripts/codex-exec-supervised.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/test-codex-hook-fixtures.sh --no-live
     skill-noise-check:
       # shared skill projection (modules/shared/programs/claude/files/skills) 의 LLM 노이즈 syntax
