@@ -58,12 +58,16 @@ _bootstrap_worktree() {
 _open_worktree() {
   local wt_path="$1" window_name="$2" stay="$3" run_claude="$4" use_tmux_session="${5:-false}"
 
-  # --tmux: tmux 밖에서만 세션 모드 활성화 (tmux 안이면 윈도우 모드로 fallback — 의도적 정책)
+  # --tmux: tmux 밖 + 대화형에서만 세션 모드 (tmux 안이면 윈도우 모드 fallback — 의도적 정책)
+  # 비대화형(LLM/스크립트)은 exec tmux attach 불가 → 무시하고 경로 stdout으로 fallback
   if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
-    local session_name
-    session_name=$(_wt_session_name "$window_name")
-    _wt_tmux_session_open "$wt_path" "$session_name" "$stay" "$run_claude"
-    return
+    if _wt_interactive; then
+      local session_name
+      session_name=$(_wt_session_name "$window_name")
+      _wt_tmux_session_open "$wt_path" "$session_name" "$stay" "$run_claude"
+      return
+    fi
+    _warn "비대화형: --tmux 무시 (경로 출력으로 fallback)"
   fi
 
   if [[ -n "${TMUX:-}" ]]; then

@@ -6,6 +6,7 @@ cmd_create() {
   local run_claude=false
   local use_tmux_session=false
   local branch_name=""
+  local if_exists=""
 
   # 옵션 파싱
   while [[ $# -gt 0 ]]; do
@@ -13,6 +14,8 @@ cmd_create() {
       --stay)   stay=true ;;
       --claude) run_claude=true ;;
       --tmux)   use_tmux_session=true ;;
+      --yes|-y) export WT_ASSUME_YES=1 ;;  # ui.sh _confirm이 소비 (cross-file)
+      --if-exists=*) if_exists="${1#--if-exists=}" ;;
       -h|--help) show_help; return 0 ;;
       -*)       _die "알 수 없는 옵션: $1" ;;
       *)
@@ -23,12 +26,17 @@ cmd_create() {
     shift
   done
 
-  [[ -z "$branch_name" ]] && _die "브랜치명을 지정하세요. 사용법: wt [--stay] [--claude] [--tmux] <branch>"
+  case "$if_exists" in
+    ""|reuse|recreate|fail) ;;
+    *) _die "--if-exists 값은 reuse|recreate|fail 중 하나여야 합니다 (받음: $if_exists)" ;;
+  esac
+
+  [[ -z "$branch_name" ]] && _die "브랜치명을 지정하세요. 사용법: wt [--stay] [--claude] [--tmux] [--yes] [--if-exists=reuse|recreate|fail] <branch>"
 
   local git_root
   git_root=$(_get_repo_root) || _die "Git 저장소가 아닙니다"
 
-  # 현재 브랜치 기록 (.wt-parent용)
+  # 현재 브랜치 (분기 출처 표시용)
   local parent_branch
   parent_branch=$(git branch --show-current 2>/dev/null)
   if [[ -z "$parent_branch" ]]; then
@@ -49,7 +57,7 @@ cmd_create() {
   # 기존 디렉토리 처리
   if [[ -d "$worktree_dir" ]]; then
     if [[ -f "$worktree_dir/.git" ]]; then
-      _handle_existing_worktree "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude" "$use_tmux_session"
+      _handle_existing_worktree "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude" "$use_tmux_session" "$if_exists"
       return $?
     fi
     _die "유효하지 않은 기존 디렉토리가 있습니다: $worktree_dir"
@@ -57,7 +65,7 @@ cmd_create() {
 
   # 기존 브랜치 존재 확인
   if git show-ref --verify --quiet "refs/heads/$branch_name" 2>/dev/null; then
-    _handle_existing_branch "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude" "$use_tmux_session"
+    _handle_existing_branch "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude" "$use_tmux_session" "$if_exists"
     return $?
   fi
 
@@ -65,7 +73,6 @@ cmd_create() {
   mkdir -p "$(dirname "$worktree_dir")"
   git worktree add -b "$branch_name" "$worktree_dir" >&2 || _die "worktree 생성 실패"
 
-  echo "$parent_branch" > "$worktree_dir/.wt-parent"
   _bootstrap_worktree "$worktree_dir" "$git_root"
 
   _info "worktree 생성: $branch_name (from $parent_branch)"
@@ -76,12 +83,22 @@ cmd_create() {
 
 # 기존 worktree 처리
 _handle_existing_worktree() {
-  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6" use_tmux_session="${7:-false}"
+  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6" use_tmux_session="${7:-false}" if_exists="${8:-}"
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
   local choice
-  choice=$(_choose "worktree '$branch_name'이(가) 이미 존재합니다" "기존 열기" "재생성" "취소") || return 1
+  if [[ -n "$if_exists" ]]; then
+    case "$if_exists" in
+      reuse)    choice="기존 열기" ;;
+      recreate) choice="재생성" ;;
+      fail)     _die "worktree '$branch_name'이(가) 이미 존재합니다 (--if-exists=fail)" ;;
+    esac
+  elif ! _wt_interactive; then
+    _die "worktree '$branch_name'이(가) 이미 존재합니다 — 비대화형에서는 --if-exists=reuse|recreate|fail로 명시하세요"
+  else
+    choice=$(_choose "worktree '$branch_name'이(가) 이미 존재합니다" "기존 열기" "재생성" "취소") || return 1
+  fi
 
   case "$choice" in
     "기존 열기")
@@ -131,7 +148,6 @@ _handle_existing_worktree() {
       git branch -D "$branch_name" >&2 2>/dev/null || true
 
       git worktree add -b "$branch_name" "$worktree_dir" >&2 || _die "worktree 재생성 실패"
-      echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 재생성: $branch_name (from $parent_branch)"
       _wt_record_last_path "$git_root"
@@ -146,7 +162,7 @@ _handle_existing_worktree() {
 
 # 기존 브랜치 처리 (worktree 없음)
 _handle_existing_branch() {
-  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6" use_tmux_session="${7:-false}"
+  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6" use_tmux_session="${7:-false}" if_exists="${8:-}"
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
@@ -165,13 +181,22 @@ _handle_existing_branch() {
   fi
 
   local choice
-  choice=$(_choose "브랜치 '$branch_name'이(가) 이미 존재합니다 (worktree 없음)" "기존 브랜치 사용" "새로 생성" "취소") || return 1
+  if [[ -n "$if_exists" ]]; then
+    case "$if_exists" in
+      reuse)    choice="기존 브랜치 사용" ;;
+      recreate) choice="새로 생성" ;;
+      fail)     _die "브랜치 '$branch_name'이(가) 이미 존재합니다 (--if-exists=fail)" ;;
+    esac
+  elif ! _wt_interactive; then
+    _die "브랜치 '$branch_name'이(가) 이미 존재합니다 — 비대화형에서는 --if-exists=reuse|recreate|fail로 명시하세요"
+  else
+    choice=$(_choose "브랜치 '$branch_name'이(가) 이미 존재합니다 (worktree 없음)" "기존 브랜치 사용" "새로 생성" "취소") || return 1
+  fi
 
   case "$choice" in
     "기존 브랜치 사용")
       mkdir -p "$(dirname "$worktree_dir")"
       git worktree add "$worktree_dir" "$branch_name" >&2 || _die "worktree 생성 실패"
-      echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 생성 (기존 브랜치): $branch_name"
       _wt_record_last_path "$git_root"
@@ -188,7 +213,6 @@ _handle_existing_branch() {
       git branch -D "$branch_name" >&2 2>/dev/null || true
       mkdir -p "$(dirname "$worktree_dir")"
       git worktree add -b "$branch_name" "$worktree_dir" >&2 || _die "worktree 생성 실패"
-      echo "$parent_branch" > "$worktree_dir/.wt-parent"
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 생성 (브랜치 재생성): $branch_name (from $parent_branch)"
       _wt_record_last_path "$git_root"

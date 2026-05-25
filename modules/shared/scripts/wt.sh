@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wt: Git worktree 관리 도구 (fzf TUI, tmux 통합)
-# 사용법: wt [--stay] [--claude] [--tmux] <branch> | wt cd [--tmux] [-|name] | wt ls | wt cleanup [--auto]
+# 사용법: wt [--stay|--claude|--tmux|--yes|--if-exists=MODE] <branch> | wt cd [--tmux] [-|name] | wt ls [--json] | wt cleanup [--auto|--yes] [name...]
 
 # === Change Intent Record ===
 # v1 (2025년 초~): 커스텀 wt/wt-cleanup 셸 함수 838줄 (zsh, fzf 기반)
@@ -26,6 +26,14 @@
 #    세션 이름: wt-<repo>-<dir_name> (repo별 네임스페이스 — 멀티 repo 충돌 방지)
 #    핵심 제약: 래퍼의 subshell $() 안에서 exec tmux 불가 → --tmux 감지 시 우회
 #    tmux 안에서 --tmux: 기존 윈도우 모드로 fallback (의도적 정책 — 세션 전환보다 윈도우가 워크플로우에 적합)
+# v7 (이번 변경): 비대화형(LLM/스크립트) 호환 + dead-path 가지치기
+#    배경: 비대화형 셸은 wt 함수 래퍼 없이 ~/.local/bin/wt 직행 → _confirm/_choose가 stdin EOF로
+#          자동 취소되어 create 충돌 처리·cd 선택·cleanup 선택이 막혔다.
+#    감지: _wt_interactive() = [[ -t 0 ]] && WT_NONINTERACTIVE unset. fzf/read/exec tmux 게이트.
+#    플래그: create --if-exists=reuse|recreate|fail (비대화형 충돌 기본=안전 실패) + --yes,
+#           cleanup [name...] 위치 인자 + --yes, ls --json 구조화 출력.
+#    제거: .wt-parent (write-only dead data, 읽는 코드 0곳) / gum 의존 (wt ls 표시 전용 잔재,
+#         plain printf fallback이 동등; packages.nix에서도 제거).
 
 set -euo pipefail
 
@@ -85,37 +93,47 @@ show_help() {
   cat << 'EOF'
 사용법: wt [옵션] <command|branch>
 
-Git worktree 관리 도구 (fzf TUI, tmux 통합)
+Git worktree 관리 도구 (fzf TUI, tmux 통합; 비대화형/LLM 셸 호환)
 
 서브커맨드:
   wt <branch>             현재 HEAD 기준 worktree 생성
   wt cd [name|-]          worktree로 이동 (fuzzy 검색, - = 이전)
-  wt ls                   worktree 목록 (PR 상태, age, dirty)
-  wt cleanup [--auto]     worktree 정리 (인터랙티브/자동)
+  wt ls [--json]          worktree 목록 (PR 상태, age, dirty)
+  wt cleanup [--auto]     worktree 정리 (인터랙티브/자동/이름 지정)
 
 옵션 (create):
   --stay                  tmux 윈도우를 백그라운드로 생성
   --claude                worktree 생성 후 Claude Code 자동 실행
-  --tmux                  독립 tmux 세션 생성+attach (tmux 밖에서)
+  --tmux                  독립 tmux 세션 생성+attach (tmux 밖, 대화형)
+  --if-exists=MODE        충돌 시 동작: reuse|recreate|fail (비대화형 충돌 시 필수)
+  --yes, -y               확인 프롬프트 자동 승인
 
 옵션 (cd):
-  --tmux                  worktree를 tmux 세션으로 열기 (tmux 밖에서)
+  --tmux                  worktree를 tmux 세션으로 열기 (tmux 밖, 대화형)
+
+옵션 (ls):
+  --json                  JSON 배열로 출력 (name/branch/path/pr/dirty/unpushed/...)
 
 옵션 (cleanup):
   --auto                  MERGED 상태 worktree 자동 정리
+  --yes, -y               dirty/unpushed 확인 자동 승인
+  [name...]               정리할 worktree 이름 직접 지정
+
+비대화형 (LLM/스크립트):
+  stdin이 tty가 아니거나 WT_NONINTERACTIVE=1이면 비대화형 모드.
+  fzf/번호선택/tmux attach 대신 명시 플래그·인자가 필요하다.
+  생성/이동 경로는 stdout으로 출력되므로 cd "\$(wt cd <name>)" 형태로 사용.
 
 예시:
-  wt feature-login        feature-login 브랜치 + worktree 생성
-  wt --claude fix-bug     worktree 생성 + claude 실행
-  wt --tmux feature-x     worktree 생성 + tmux 세션 attach
-  wt --tmux --claude pr   worktree + tmux 세션 + claude 실행
-  wt --tmux --stay test   tmux 세션 detached 생성
-  wt cd login             "login" 포함 worktree로 이동
-  wt cd --tmux login      worktree를 tmux 세션으로 열기
-  wt cd -                 이전 worktree로 이동
-  wt ls                   전체 worktree 상태 확인
-  wt cleanup              인터랙티브 정리
-  wt cleanup --auto       MERGED 자동 정리
+  wt feature-login              feature-login 브랜치 + worktree 생성
+  wt --if-exists=reuse feat-x   있으면 재사용, 없으면 생성 (비대화형 안전)
+  wt --claude fix-bug           worktree 생성 + claude 실행
+  wt --tmux feature-x           worktree 생성 + tmux 세션 attach
+  cd "\$(wt cd login)"           "login" worktree 경로로 이동 (비대화형)
+  wt cd -                       이전 worktree로 이동
+  wt ls --json                  worktree 상태 JSON 출력
+  wt cleanup --auto             MERGED 자동 정리
+  wt cleanup feat_x issue_3     지정 worktree 정리 (비대화형)
 EOF
 }
 
