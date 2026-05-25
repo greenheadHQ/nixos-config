@@ -195,7 +195,11 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 
 - Phase 2c (git commit signing 통합) 도입 시점과 범위는 별도 epic으로 분리할지 본 PRD에서 다룰지. 현재는 Out of Scope.
 - Phase 4의 TOTP 별도 sub-phase 범위 (서비스 카운트 N건 임계). 사전 실측 후 결정.
-- SA token user shell bridge 설계 (Phase 3): phase-03의 `/etc/profile.d/opnix.sh`가 user shell 진입 시 `/run/agenix/opnix-service-account-token`을 `cat`하지만, 해당 agenix secret은 root-only(0400 root)다. root-only면 user shell이 못 읽어 `OP_SERVICE_ACCOUNT_TOKEN`이 빈 값이 되고, user-readable로 풀면 SA token이 모든 user shell/subprocess에 노출되어 보안이 약화된다. Phase 3 진입 시 root-owned systemd wrapper가 필요한 값만 제한 권한으로 materialize하는 등으로 bridge 설계를 재확정해야 한다.
+- SA token user shell bridge 설계 (Phase 3): phase-03의 `/etc/profile.d/opnix.sh`가 user shell 진입 시 `/run/agenix/opnix-service-account-token`을 `cat`하지만, 해당 agenix secret은 root-only(0400 root)다. root-only면 user shell이 못 읽어 `OP_SERVICE_ACCOUNT_TOKEN`이 빈 값이 되고, user-readable로 풀면 SA token이 모든 user shell/subprocess에 노출되어 보안이 약화된다. Phase 3 진입 시 아래 후보 접근법 중 하나를 설계 검토로 택일·확정해야 한다 (root private key는 그대로 두고, 파일 권한을 약화하지 않는 방향):
+    1. systemd user service가 polkit/sudo로 제한된 scope의 토큰만 요청하도록 구성
+    2. caller를 검증하고 인가된 프로세스에만 토큰을 emit하는 wrapper binary (setuid 또는 capability 기반)
+    3. opnix 모듈이 user shell 전용 derived limited-scope credential을 생성 (1Password API가 지원하는 경우)
+  택일 후 phase-03의 user shell bridge(잠정 설계)를 확정안으로 갱신하고, 어떤 wrapper가 어디서 어떤 인가 흐름으로 토큰을 materialize하는지 명시한다.
 
 ## Change Log
 

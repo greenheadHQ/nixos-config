@@ -36,6 +36,7 @@ MiniPC에서 `op` CLI가 Service Account Token으로 headless 인증되도록 op
   - token 파일은 agenix `config.age.secrets.opnix-service-account-token.path`
 - `modules/nixos/options/homeserver.nix`의 `homeserver.opnix.enable` mkEnableOption은 **Phase 1에서 이미 추가됨** (보존만 확인). MiniPC `configuration.nix`에서 `enable = true`만 설정
 - MiniPC `configuration.nix`에 `homeserver.opnix.enable = true` 추가
+- ⚠️ **잠정 설계 (재검토 대상)** — 아래 두 단계 user shell bridge는 master PRD Open Question(root-only agenix secret을 일반 user shell이 `cat`으로 읽지 못하는 충돌)이 먼저 해소되어야 확정된다. 같은 경고가 line 70에도 있다. Phase 3 진입 시 master Open Question에 나열한 후보 접근법 중 하나를 택일·확정한 뒤 아래 (1)(2)를 그에 맞게 갱신할 것. 현 시점의 (1)(2)는 구현 지시가 아니라 "이런 형태였다"는 출발 스케치다.
 - **MiniPC user shell 인증 경로 (SSOT — Shell Plugin alias 단일 패턴, Phase 2b와 일관)** — systemd env는 SSH 일반 사용자 shell에 상속되지 않으므로 별도 wrapper 필수. 두 단계로 구성:
   - (1) opnix 모듈에 `environment.etc."profile.d/opnix.sh".source` 패턴으로 user shell 진입 시 `OP_SERVICE_ACCOUNT_TOKEN`을 agenix path에서 단발 export: `export OP_SERVICE_ACCOUNT_TOKEN=$(cat /run/agenix/opnix-service-account-token 2>/dev/null || true)`. 이 단계만이 token을 user shell로 가져오는 유일한 경계
   - (2) `gh` 호출은 Phase 2b의 Shell Plugin alias 패턴을 그대로 MiniPC에 적용 — `op plugin init gh` 1회 + Home Manager `programs.zsh.initContent`에서 `~/.config/op/plugins.sh` source. `GH_TOKEN` env 직접 export 방식은 사용하지 않음 (alias가 호출 시점에 op CLI로 자동 주입)
