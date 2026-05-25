@@ -108,9 +108,8 @@ Closes #115
 
 | 파일 | 변경 | 내용 |
 |------|------|------|
-| `modules/shared/rebuild.sh` | 수정 | allowlist → blocklist 로직 전환 |
-| `modules/shared/rebuild.sh` | 수정 | `heavy_packages` 배열 추가 |
-| `tests/rebuild-test.sh` | 추가 | blocklist 검증 테스트 |
+| `modules/shared/scripts/lib/rebuild/preflight.sh` | 수정 | known-heavy source build blocklist 조정 |
+| `tests/shell-script-tests.sh` | 수정 | rebuild helper deployed-layout regression 검증 |
 
 ### 핵심 코드
 
@@ -120,7 +119,7 @@ local trivial_patterns=("activation-script" "rebuild-common" ...)
 # 패턴에 매치되지 않으면 heavy로 간주 → false positive 발생
 
 # AFTER: known-heavy blocklist
-local heavy_packages=("anki" "mise")
+local heavy_packages=("mise")
 # 등록된 패키지만 heavy, 나머지는 모두 trivial → false positive 제로
 ```
 ````
@@ -170,7 +169,7 @@ local heavy_packages=("anki" "mise")
 ### 정상 동작 검증
 
 1. `nrs`를 실행한다.
-   - **기대**: pre-flight 체크가 heavy_packages에 등록된 패키지만 경고한다.
+   - **기대**: pre-flight 체크가 `heavy_packages`에 등록된 패키지만 경고한다.
    - **실패 시**: `heavy_packages` 배열 내용과 실제 derivation 이름을 비교한다.
 
 2. 새 trivial derivation이 추가된 상태에서 `nrs`를 실행한다.
@@ -179,8 +178,9 @@ local heavy_packages=("anki" "mise")
 
 ### 엣지 케이스
 
-3. `heavy_packages` 배열이 비어있는 상태에서 `nrs`를 실행한다.
-   - **기대**: pre-flight 체크가 모든 패키지를 trivial로 간주하고 경고 없이 진행한다.
+3. `heavy_packages` 배열이 비어있는 상태에서 pre-flight 검증을 실행한다.
+   - **기대**: pre-flight 체크가 detection disabled 경고를 내고 빌드를 차단하지 않는다.
+   - **실패 시**: 빈 배열 guard와 `tests/shell-script-tests.sh`의 rebuild helper fixture를 확인한다.
 ```
 
 ### 흔한 실수
