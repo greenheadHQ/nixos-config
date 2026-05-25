@@ -550,6 +550,11 @@ let
       name = "Test 5e-9: constants.onePassword.vaults.automation이 \"Automation\"이어야 함";
       cond = constants.onePassword.vaults.automation == "Automation";
     }
+    # op_get account resolution이 의존하는 account 문자열 drift 감지
+    {
+      name = "Test 5e-10: constants.onePassword.account가 \"my.1password.com\"이어야 함";
+      cond = constants.onePassword.account == "my.1password.com";
+    }
     {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
       name = "Test 5f: openssh PermitRootLogin이 'no'이어야 함";
