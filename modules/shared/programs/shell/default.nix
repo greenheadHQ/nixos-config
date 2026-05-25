@@ -4,6 +4,7 @@
   pkgs,
   lib,
   nixosConfigDefaultPath,
+  constants,
   ...
 }:
 
@@ -277,6 +278,34 @@ in
               echo "$output"
             fi
           fi
+        }
+      ''
+
+      #─────────────────────────────────────────────────────────────────────────
+      # 1Password op_get helper (PRD #780)
+      # op_get <name> <field> [<vault>] — vault 기본값은 constants.onePassword.vaults.automation
+      # macOS는 1Password 데스크탑 biometric authorization (새 터미널마다 필요; 10분 inactivity 세션·사용 시 refresh·12시간 hard limit). MiniPC는 OP_SERVICE_ACCOUNT_TOKEN
+      # (opnix가 systemd EnvironmentFile로 주입, Phase 3) 기반.
+      #─────────────────────────────────────────────────────────────────────────
+      ''
+        op_get() {
+          local name="$1"
+          local field="$2"
+          local vault="''${3:-${constants.onePassword.vaults.automation}}"
+          if [ -z "$name" ] || [ -z "$field" ]; then
+            echo "Usage: op_get <name> <field> [<vault>]" >&2
+            return 2
+          fi
+          if ! command -v op >/dev/null 2>&1; then
+            echo "Error: op CLI not found (Mac: brew install 1password-cli, MiniPC: opnix Phase 3)" >&2
+            return 127
+          fi
+          # op read: 1Password 공식 권장 secret reference URI 방식 (단일 필드 값 조회 표준 경로).
+          # password/credential 필드도 값을 그대로 반환 (item get의 기본 redact + --reveal 불필요).
+          # --account: op CLI 멀티 계정(개인+회사) 환경에서 개인 account 고정 (multiple accounts 에러 방지).
+          #   MiniPC는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 Phase 3에서 호환성 재확인.
+          # --no-newline: 후행 개행 제거 — GH_TOKEN 등 env 주입 시 정확.
+          op read --no-newline --account "${constants.onePassword.account}" "op://$vault/$name/$field"
         }
       ''
 

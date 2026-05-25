@@ -4,6 +4,7 @@
   pkgs,
   lib,
   inputs,
+  constants,
   username,
   hostname,
   ...
@@ -50,7 +51,12 @@
   };
 
   # agenix 시스템 레벨 복호화 키 (서비스 모듈 enable 여부와 무관하게 유지)
-  age.identityPaths = [ "/home/${username}/.ssh/id_ed25519" ];
+  # dual-identity: user 로그인 키(대부분의 .age) + host key(SA token 등 부팅 의존 시크릿).
+  # agenix가 각 .age의 recipient에 맞는 키로 복호화한다 (PRD #780 host key 분리).
+  age.identityPaths = [
+    "/home/${username}/.ssh/id_ed25519" # user key — 대부분의 .age
+    constants.paths.agenixHostIdentityKey # host key — SA token (minipcHostOnly)
+  ];
 
   # 사용자
   users.users.${username} = {
