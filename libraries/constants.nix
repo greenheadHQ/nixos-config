@@ -55,6 +55,8 @@
     # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.
     agenixHostIdentityKey = "/etc/ssh/ssh_host_ed25519_key";
     opnixServiceAccountExpirySource = ../secrets/opnix-service-account-expiry.txt;
+    # opnix SA token agenix secret — opnix/default.nix가 tokenFile 등록에 사용
+    opnixServiceAccountTokenAge = ../secrets/opnix-service-account-token.age;
   };
 
   # ═══════════════════════════════════════════════════════════════
