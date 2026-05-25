@@ -33,6 +33,15 @@
       inputs.home-manager.follows = "home-manager";
     };
 
+    # opnix: 1Password Service Account 기반 secret materialization (PRD #780 Phase 3)
+    # brizzbuzz/opnix가 canonical 구현 (mrjones2014/opnix는 archived).
+    # NixOS system module services.onepassword-secrets는 1Password Go SDK 기반 root oneshot
+    # (op CLI 래퍼 아님)으로 op:// reference를 tmpfs에 native materialize한다.
+    opnix = {
+      url = "github:brizzbuzz/opnix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # VSCode 확장 프로그램 관리
     nix-vscode-extensions = {
       url = "github:nix-community/nix-vscode-extensions";
@@ -152,6 +161,7 @@
             { nixpkgs.hostPlatform = systems.linux; }
             nixpkgs-shared
             inputs.agenix.nixosModules.default
+            inputs.opnix.nixosModules.default
             disko.nixosModules.disko
             home-manager.nixosModules.home-manager
             ./modules/shared/configuration.nix

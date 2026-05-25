@@ -323,11 +323,11 @@ in
       };
     };
 
-    # opnix: 1Password Service Account 기반 시크릿 주입 인프라
-    # Phase 1: stub만 (만료일 평문 record 배포). enable=true는 Phase 3에서.
-    # Phase 3에서 full 구현 (SA token EnvironmentFile, 90일 rotation timer)으로 extend.
+    # opnix: 1Password Service Account 기반 시크릿 materialization 인프라
+    # enable=true 시 services.onepassword-secrets(Go SDK root oneshot)로 op:// reference를
+    # tmpfs에 materialize하고, SA token 90일 rotation 알림 timer를 활성화한다 (Phase 3).
     opnix = {
-      enable = lib.mkEnableOption "1Password Service Account secrets injection (opnix)";
+      enable = lib.mkEnableOption "1Password Service Account secrets materialization (opnix)";
     };
   };
 
@@ -358,6 +358,7 @@ in
     ../programs/docker/awesome-anki.nix # awesome-anki 카드 분할 웹 서비스
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
-    ../programs/opnix # 1Password Service Account 시크릿 주입 (Phase 1 stub)
+    ../programs/opnix # 1Password Service Account 시크릿 materialization (Phase 3)
+    ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (Phase 3, opnix.enable 게이팅)
   ];
 }

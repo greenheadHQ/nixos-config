@@ -338,6 +338,11 @@ let
       prefix: builtins.match ".*[^[:space:]].*" prefix != null
     ) ankiConfigApi.allowedKeyPrefixes;
 
+  # opnix 1Password SA token materialization (PRD #780 Phase 3)
+  opnixCfg = nixosCfg.services.onepassword-secrets;
+  opnixGithubPat = opnixCfg.secrets.githubPat;
+  opnixTokenSecret = nixosCfg.age.secrets.opnix-service-account-token;
+
   # Darwin sudo.extraConfig 정규화 헬퍼
   splitLines = text: builtins.filter builtins.isString (builtins.split "\n" text);
 
@@ -554,6 +559,36 @@ let
     {
       name = "Test 5e-10: constants.onePassword.account가 \"my.1password.com\"이어야 함";
       cond = constants.onePassword.account == "my.1password.com";
+    }
+    # ── opnix SA token materialization 보안 회귀 핀 (PRD #780 Phase 3) ──
+    {
+      name = "Test 5e-11: homeserver.opnix.enable 시 services.onepassword-secrets.enable이 true여야 함";
+      cond = nixosCfg.homeserver.opnix.enable && opnixCfg.enable;
+    }
+    {
+      name = "Test 5e-12: opnix githubPat이 tmpfs(/run/opnix)에 user-owned 0400으로 materialize되어야 함 (path: ${opnixGithubPat.path}, mode: ${opnixGithubPat.mode})";
+      cond =
+        builtins.substring 0 11 opnixGithubPat.path == "/run/opnix/"
+        && opnixGithubPat.mode == "0400"
+        && opnixGithubPat.owner != "root";
+    }
+    {
+      name = "Test 5e-13: opnix githubPat reference가 op://Automation/github-pat/token이어야 함";
+      cond =
+        opnixGithubPat.reference == "op://${constants.onePassword.vaults.automation}/github-pat/token";
+    }
+    {
+      # opnix-secrets.service가 tokenFile을 0640 root:onepassword-secrets로 강제하므로 agenix도 동일 선언.
+      name = "Test 5e-14: opnix SA tokenFile(agenix)이 0640 root:onepassword-secrets여야 함 (권한 경합 제거)";
+      cond =
+        opnixTokenSecret.mode == "0640"
+        && opnixTokenSecret.owner == "root"
+        && opnixTokenSecret.group == "onepassword-secrets";
+    }
+    {
+      # 사용자 보안 결정: users를 비워 onepassword-secrets group 멤버를 0으로 유지 → 실질 root-only.
+      name = "Test 5e-15: opnix users 옵션이 비어야 함 (token group readable이 일반 user로 확산 방지)";
+      cond = opnixCfg.users == [ ];
     }
     {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
