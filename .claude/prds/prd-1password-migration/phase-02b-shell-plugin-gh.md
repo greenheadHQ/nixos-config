@@ -1,7 +1,7 @@
 # Phase 2b: Shell Plugin gh
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Done (PR 대기)
+Status: Done (merged, PR #827)
 Last Updated: 2026-05-25
 
 ## Objective
