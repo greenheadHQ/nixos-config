@@ -78,6 +78,19 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
+  # 디바이스별 SSH 공개키 — MiniPC authorized_keys 등록용 (PRD #780 Phase 2a)
+  # 1Password Automation vault `ssh` tag inventory와 일관. agenix recipient(sshKeys)와는 분리.
+  # private 보관: macSsh = 1Password vault(SSH agent), emergency = ~/.ssh + 1Password backup,
+  #   iphone/ipad = Termius 디바이스 keychain.
+  # ═══════════════════════════════════════════════════════════════
+  sshDeviceKeys = {
+    macSsh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGijyrxefX4n5oRJ2775QDOFtBfjPeNzjym2i7TJx9qr mac-ssh";
+    iphone = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMBwI6UCcwfwcnwHIer2GACL1S8qW7azfwGigAcngj3X iphone-ssh";
+    ipad = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFF+/kpJu3NOOFvjPZAKPqjT+IG8Q2cMKYi/YV4yR355 ipad-ssh";
+    emergency = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMM0hYpFqehy7U96Ms4348SStVue7pYbR3+B3PlGV+de emergency-fallback";
+  };
+
+  # ═══════════════════════════════════════════════════════════════
   # 컨테이너 리소스 제한
   # ═══════════════════════════════════════════════════════════════
   containers = {

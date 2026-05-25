@@ -1,8 +1,8 @@
 # Phase 2a: Mac SSH Integration
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Not Started
-Last Updated: 2026-05-17
+Status: Done (PR 대기)
+Last Updated: 2026-05-25
 
 ## Objective
 
@@ -135,8 +135,13 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 
 ## Discoveries / Decisions
 
-- ControlPersist 정책 결정 (영구 vs daemon master) — Phase 진행 중 사용자 워크플로 측정 후 박제
+- **ControlPersist 정책**: 600 유지 (영구/daemon 채택 안 함). 영구(yes)는 무인 파이프 호출(`ssh minipc | grep`, Claude Code Bash 캡처 포함)에서 master가 stdout을 점유해 hang을 유발한다. ControlMaster auto + ControlPersist 600은 #710 analyzing-da-sessions의 K=8 worker pool SSH multiplexing이 의존하므로 ControlMaster 제거 불가(제거 시 그 스킬이 fetch skip → 5분 budget 회귀).
+- **1Password agent socket 경로**: macOS는 group container 경로(`~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`)가 실제 socket. phase-02a가 가정한 `~/.1password/agent.sock` symlink는 자동 생성되지 않으므로, ssh config `IdentityAgent`에 group container 경로를 직접 지정(공백 포함이라 quote).
+- **agent.toml 필수**: 1Password SSH agent는 SSH 키를 자동 노출하지 않는다(GUI에 "SSH 키가 설정되지 않았습니다"). `~/.config/1Password/ssh/agent.toml`에 노출 vault를 명시해야 ssh-add -l에 키가 뜬다 → `vault = "Automation"`. `home.file`로 declarative 박제.
+- **useOpAgent let + 최종 cleanup**: phase-02a가 명시한 "옵션" 대신 모듈 let 상수로 구현(토글 수요 없어 YAGNI). id_ed25519 처분 시 launchd ssh-add-keys 경로 전체가 dead가 되어 useOpAgent/launchd/sshAddScript/sshKeyPath까지 함께 제거 → ssh/default.nix가 1Password agent 전용으로 단순화.
+- **id_ed25519 처분**: minipc 외 미사용 확인(github는 HTTPS git, MiniPC는 mac-ssh) → `~/.ssh/id_ed25519.archive`(chmod 000)로 mv. ssh config identityFile 제거 후 `ssh minipc`가 mac-ssh agent만으로 인증됨을 실측. darwin의 Mac 접속용 authorizedKeys(macbook 공개키)는 별개라 보존.
 
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
+- 2026-05-25: Phase 2a 구현 완료 (PR 대기). 디바이스 키 4개(mac-ssh/iphone/ipad/emergency)를 `constants.sshDeviceKeys`로 정의하고 MiniPC authorizedKeys에 배포(nrs minipc). Mac ssh config: IdentityAgent(group container socket) + agent.toml(Automation vault 노출) + minipc-emergency Host + ControlPersist 600(ControlMaster 유지). id_ed25519 archive. 검증: `ssh minipc`=mac-ssh agent 인증(Touch ID), emergency fallback 실측(1Password quit→emergency 접속 성공→ssh minipc Permission denied→재시작 복귀), id_ed25519 처분 후 agent-only 인증. 발견: ControlPersist 영구는 무인 hang(→600 유지), agent socket은 group container 경로, agent.toml로 키 노출 명시 필수.
