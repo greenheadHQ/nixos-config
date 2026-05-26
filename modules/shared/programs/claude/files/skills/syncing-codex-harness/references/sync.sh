@@ -9,7 +9,6 @@
 #   sync.sh agents-override   <project-root> [--plugin-install-path=PATH:NAME]...
 #   sync.sh mcp-config        <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]... [--user-mcp=PATH] [--user-codex-config=PATH]
 #   sync.sh trust-project     <project-root>
-#   sync.sh gitignore-check   <project-root>
 #   sync.sh all               <project-root> [--local-skills-dir=DIR] [--plugin-install-path=PATH:NAME]... [--plugin-claude-md=PATH] [--user-mcp=PATH] [--user-codex-config=PATH]
 
 set -euo pipefail
@@ -148,40 +147,6 @@ init_agents_dir() {
   # CIR: clear stale repo-local hook artifacts left behind by the retired
   # Claude-to-Codex projection path so old worktrees cannot invoke removed hooks.
   rm -f "$project_root/.codex/hooks.json" "$project_root/.codex/hooks.compatibility.json"
-}
-
-# ─── gitignore-check: check entries ───
-# All Codex projection artifacts (.agents/, .codex/, AGENTS.md, AGENTS.override.md)
-# are expected in global gitignore (see git/default.nix).
-# This function verifies they are actually ignored (via global or project gitignore).
-gitignore_check() {
-  local project_root="$1"
-  local missing=()
-  local entries=(".agents/" ".codex/" "AGENTS.md" "AGENTS.override.md")
-
-  if git -C "$project_root" rev-parse --git-dir >/dev/null 2>&1; then
-    for entry in "${entries[@]}"; do
-      if ! git -C "$project_root" check-ignore -q "$entry" 2>/dev/null; then
-        missing+=("$entry")
-      fi
-    done
-  else
-    # Fallback for non-git directories
-    local gitignore="$project_root/.gitignore"
-    if [ ! -f "$gitignore" ]; then
-      printf '%s\n' "${entries[@]}"
-      return
-    fi
-    for entry in "${entries[@]}"; do
-      if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
-        missing+=("$entry")
-      fi
-    done
-  fi
-
-  if [ ${#missing[@]} -gt 0 ]; then
-    printf '%s\n' "${missing[@]}"
-  fi
 }
 
 # ─── agents-md: create AGENTS.md ───
@@ -594,19 +559,19 @@ sync_all() {
 
   # 1. Init
   init_agents_dir "$project_root"
-  echo "[1/8] Initialized .agents/ and .codex/" >&2
+  echo "[1/7] Initialized .agents/ and .codex/" >&2
 
   # 2. AGENTS.md
   local md_result
   md_result="$(agents_md "$project_root" "$plugin_claude_md")"
-  echo "[2/8] AGENTS.md: $md_result" >&2
+  echo "[2/7] AGENTS.md: $md_result" >&2
 
   # 3. Local skills
   local local_count=0
   if [ -n "$local_skills_dir" ] && [ -d "$project_root/$local_skills_dir" ]; then
     local_count=$(project_skills "$project_root/$local_skills_dir" "$project_root/.agents/skills")
   fi
-  echo "[3/8] Local skills: $local_count" >&2
+  echo "[3/7] Local skills: $local_count" >&2
 
   # 4. Plugin skills + agents
   local plugin_skill_count=0
@@ -638,12 +603,12 @@ sync_all() {
       mcp_args+=("--plugin-mcp=$ipath/.mcp.json:$ipath:$pname")
     fi
   done
-  echo "[4/8] Plugin skills: $plugin_skill_count, Agents: $agent_count" >&2
+  echo "[4/7] Plugin skills: $plugin_skill_count, Agents: $agent_count" >&2
 
   # 5. AGENTS.override.md
   local rule_count
   rule_count=$(agents_override "$project_root" "${override_args[@]}")
-  echo "[5/8] Rules -> AGENTS.override.md: $rule_count" >&2
+  echo "[5/7] Rules -> AGENTS.override.md: $rule_count" >&2
 
   # 6. MCP config
   local project_mcp_arg=""
@@ -660,7 +625,7 @@ sync_all() {
   # project-scope sources -> <project>/.codex/config.toml
   if [ ${#project_mcp_args[@]} -gt 0 ]; then
     mcp_config "$project_root" "${project_mcp_args[@]}"
-    echo "[6/8] MCP config updated (project)" >&2
+    echo "[6/7] MCP config updated (project)" >&2
     did_mcp_update=1
   fi
 
@@ -670,31 +635,21 @@ sync_all() {
     [ -n "$user_codex_config" ] && user_mcp_args+=("--user-codex-config=$user_codex_config")
     mcp_config "$project_root" "${user_mcp_args[@]}"
     if [ ${#project_mcp_args[@]} -gt 0 ]; then
-      echo "[6b/8] MCP config updated (user)" >&2
+      echo "[6b/7] MCP config updated (user)" >&2
     else
-      echo "[6/8] MCP config updated (user)" >&2
+      echo "[6/7] MCP config updated (user)" >&2
     fi
     did_mcp_update=1
   fi
 
   if [ "$did_mcp_update" -eq 0 ]; then
-    echo "[6/8] MCP config: no sources found" >&2
+    echo "[6/7] MCP config: no sources found" >&2
   fi
 
   # 7. Trust project in global config
   local trust_result
   trust_result="$(ensure_project_trusted "$project_root")"
-  echo "[7/8] Trust: $trust_result" >&2
-
-  # 8. Gitignore check
-  local missing
-  missing="$(gitignore_check "$project_root")"
-  if [ -n "$missing" ]; then
-    echo "[8/8] Missing .gitignore entries:" >&2
-    echo "$missing" >&2
-  else
-    echo "[8/8] .gitignore OK" >&2
-  fi
+  echo "[7/7] Trust: $trust_result" >&2
 
   echo "=== Sync complete ===" >&2
 }
@@ -720,9 +675,6 @@ case "${1:-}" in
   init)
     init_agents_dir "$2"
     ;;
-  gitignore-check)
-    gitignore_check "$2"
-    ;;
   agents-md)
     agents_md "$2" "${3:-}"
     ;;
@@ -739,7 +691,7 @@ case "${1:-}" in
     sync_all "$2" "${@:3}"
     ;;
   *)
-    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|init|gitignore-check|all} ..." >&2
+    echo "Usage: sync.sh {project-skills|plugin-skills|agents|agents-md|agents-override|mcp-config|trust-project|init|all} ..." >&2
     exit 1
     ;;
 esac

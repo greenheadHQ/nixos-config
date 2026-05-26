@@ -16,7 +16,7 @@ project-root/
 │   └── <agent-name>.md          # Agent files (real copies)
 ├── .codex/
 │   └── config.toml              # MCP server config (TOML format)
-└── .gitignore                   # Should include AGENTS.md, AGENTS.override.md (.agents/, .codex/ are in global gitignore)
+└── .gitignore                   # .agents/, AGENTS.md, AGENTS.override.md are committed; .codex/ stays in global gitignore (may hold plaintext MCP secrets)
 ```
 
 ## Key Differences from Claude Code
