@@ -176,7 +176,21 @@ in
   programs.gh = {
     enable = true;
     settings = {
-      git_protocol = "ssh";
+      # GitHub 인증 프로토콜. Mac은 https(아래 darwin 전용 git insteadOf + gh PAT
+      # credential helper로 통일), NixOS(MiniPC)는 opnix/ssh 경로라 기존 ssh 유지.
+      git_protocol = if pkgs.stdenv.isDarwin then "https" else "ssh";
     };
+  };
+
+  # Mac 전용 GitHub git 인증: git@github.com SSH URL을 https로 rewrite한다.
+  # rewrite된 https remote는 gh credential helper(gh auth git-credential —
+  # programs.gh.enable이 자동 주입)로 인증된다. 이 helper는 별도 gh 프로세스로 실행돼
+  # shell의 gh wrapper(alias/함수)를 거치지 않으며, keyring의 PAT(gh auth login) 또는
+  # git 프로세스 환경에 export된 GH_TOKEN으로 토큰을 조회한다 — git이 GH_TOKEN을 직접
+  # 읽는 것이 아니다. SSH 키 등록 불필요.
+  # NixOS(MiniPC)는 opnix github-pat + 기존 ssh 경로라 제외(darwin 한정 — git
+  # credential helper에 토큰 공급원이 다름).
+  programs.git.settings.url = lib.mkIf pkgs.stdenv.isDarwin {
+    "https://github.com/".insteadOf = "git@github.com:";
   };
 }
