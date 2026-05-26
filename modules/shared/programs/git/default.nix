@@ -161,11 +161,9 @@ in
       "mise.local.toml"
       ".mise.local.toml"
 
-      # Codex CLI (syncing-codex-harness 프로젝션 산출물)
-      ".agents/"
+      # Codex CLI: .codex/config.toml은 MCP env 시크릿을 평문 담을 수 있어 글로벌 무시 유지.
+      # .agents/·AGENTS.md·AGENTS.override.md는 Codex 자동발견용으로 커밋이 기본이라 무시하지 않는다.
       ".codex/"
-      "AGENTS.md"
-      "AGENTS.override.md"
 
       # Python
       "__pycache__/"
