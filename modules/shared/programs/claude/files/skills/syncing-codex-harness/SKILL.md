@@ -24,7 +24,6 @@ Codex CLI 호환 구조(`.agents/`, `.codex/`)로 프로젝션한다.
 | 로컬 스킬만 | `bash "$SYNC_SH" project-skills "$PWD/.claude/skills" "$PWD/.agents/skills"` |
 | 프로젝트 MCP 섹션만 | 아래 "MCP 섹션 가드 예시" 참조 |
 | User-scope MCP 투영 | 아래 "MCP 섹션 가드 예시" 참조 |
-| .gitignore 점검 | `bash "$SYNC_SH" gitignore-check "$PWD"` |
 
 ### MCP 섹션 가드 예시
 
@@ -198,22 +197,19 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 진행상황이 stderr로 출력된다:
 ```text
 === syncing-codex-harness: Full Sync ===
- [1/8] Initialized .agents/ and .codex/
- [2/8] AGENTS.md: symlinked|copied|skipped
- [3/8] Local skills: N
- [4/8] Plugin skills: N, Agents: N
- [5/8] Rules -> AGENTS.override.md: N
- [6/8] MCP config updated|no sources found
- [7/8] Trust: trusted|already-trusted|skipped
- [8/8] .gitignore OK|Missing .gitignore entries: ...
+ [1/7] Initialized .agents/ and .codex/
+ [2/7] AGENTS.md: symlinked|copied|skipped
+ [3/7] Local skills: N
+ [4/7] Plugin skills: N, Agents: N
+ [5/7] Rules -> AGENTS.override.md: N
+ [6/7] MCP config updated|no sources found
+ [7/7] Trust: trusted|already-trusted|skipped
 === Sync complete ===
 ```
 
-### .gitignore 누락 처리
+### Codex 산출물의 git 추적
 
-`.agents/`와 `.codex/`는 글로벌 gitignore에서 관리된다.
-`AGENTS.md`와 `AGENTS.override.md`가 누락으로 보고되면 사용자에게 프로젝트 `.gitignore`에 추가를 제안한다.
-자동으로 수정하지 않는다.
+`.agents/`(스킬 심링크 트리), `AGENTS.md`, `AGENTS.override.md`는 Codex가 자동 발견하려면 프로젝트에 존재해야 하므로 커밋하는 것이 기본 운영 방식이다. 반면 `.codex/`는 프로젝트 MCP 설정(`config.toml`)을 담고 `mcp-config`가 `.mcp.json`의 env 시크릿을 평문 기록할 수 있어 글로벌 gitignore에서 계속 무시한다. 특정 산출물의 추적 여부를 바꾸려면 프로젝트 `.gitignore`에서 조정한다.
 
 ### User-scope MCP 투영 (Claude -> Codex)
 
@@ -253,7 +249,6 @@ fi
 | `agents-md` | AGENTS.md 생성 (심링크/복사) |
 | `agents-override` | AGENTS.override.md 생성 (마커 기반) |
 | `mcp-config` | 프로젝트/유저 대상 config.toml MCP 섹션 생성 |
-| `gitignore-check` | .gitignore 누락 확인 |
 
 상세 사용법은 `sync.sh` 상단 Usage 참조.
 
@@ -275,7 +270,6 @@ fi
 
 - `installPath` 해석 실패 시 플러그인 캐시 경로 존재 여부를 먼저 확인한다.
 - 동기화 후 스킬이 안 보이면 `.agents/skills/<name>`이 디렉토리 심링크인지 확인한다.
-- `.gitignore` 경고는 자동수정하지 않고 누락 항목을 수동 반영한다.
 - `chrome-devtools-mcp` 사용 시 동일 탭을 다른 도구(예: Claude in Chrome)와 동시 제어하지 않는다.
 
 ## 참조 문서
