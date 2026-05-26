@@ -1,8 +1,8 @@
 # Phase 4: Apple Passwords Import
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Not Started
-Last Updated: 2026-05-17
+Status: Done (GUI/실기 + 박제 완료 — PR 대기)
+Last Updated: 2026-05-26
 
 본 phase는 Phase 6 (Vaultwarden EOL)과 의존 없음 → 병렬 가능.
 
@@ -104,11 +104,11 @@ iCloud Keychain (Apple Passwords 앱)에 잔존하는 비밀번호/TOTP/passkey�
 
 ## Exit Criteria
 
-- [ ] Phase objective 달성 (CSV 매트릭스 실측 + 일괄 import + iCloud AutoFill 비활성화 + passkey 종료 조건 박제)
-- [ ] FR-13, FR-14 구현
-- [ ] passkey lazy migration 종료 조건이 calendar/Reminders에 등록되어 향후 강제 review 가능
-- [ ] **CSV 평문 처분 완료**: 모든 export CSV (sample + full)가 secure delete + Trash 비움 + Time Machine 처리됨. `find ~ -name '*assword*.csv' -mtime -7` 0건
-- [ ] Phase 6과 의존 없음 (병렬 진행 가능)
+- [x] Phase objective 달성 (CSV 매트릭스 실측 + 62개 import + iCloud AutoFill 비활성화 + passkey 처리)
+- [x] FR-13 구현 (분기 A 일괄 import). FR-14 구현 — macOS 재정의(iCloud OFF + 브라우저 extension; "1Password ON 토글"은 macOS에 부재), iOS 시스템 토글
+- [x] passkey 처리 완료 (Google 1개가 기존 1Password passkey로 충족). 원안 lazy 종료조건 + 90일 calendar는 폐기(over-engineering) — Discoveries 참조
+- [x] **CSV 평문 처분 완료**: `/bin/rm -P` secure delete + Trash 미경유 + TM 백업 미설정(N/A). `find ~ -name '*assword*.csv' -mtime -7` 0건
+- [x] Phase 6과 의존 없음 (병렬 진행 가능)
 
 ## Phase-End Multi-Pass Review
 
@@ -125,10 +125,62 @@ iCloud Keychain (Apple Passwords 앱)에 잔존하는 비밀번호/TOTP/passkey�
 
 ## Discoveries / Decisions
 
-- (Phase 4a 실측 결과 매트릭스 박제 예정)
-- (TOTP 분기 결정 박제 예정)
-- passkey lazy migration 종료 조건: 분기별 Q1/Q3 review trigger + 활성 passkey 서비스 임계 N=20
+> 아래 실측 결과가 SSOT다. 위 Implementation Checklist의 Phase 4d/4e 절차는 깨진 가정 2건(아래)에 따라 재정의되었다.
+
+### CSV field 매트릭스 (2026-05-26 실측, 전체 export 1회)
+
+macOS 26.5 Passwords 앱 "모든 암호를 파일로 내보내기"(Export All Passwords to File) CSV 헤더 6컬럼 (확정):
+
+| Field | 포함 | 비고 |
+|---|---|---|
+| Title | ✓ | |
+| URL | ✓ | |
+| Username | ✓ | 빈 값 1건 허용 |
+| Password | ✓ | 빈 값 0 |
+| Notes | ✓ | |
+| OTPAuth | ✓ | `otpauth://` URI (TOTP 설정 항목만, 없으면 빈 값) |
+
+- 레코드 68개. OTPAuth 채워진 행 4 = 고유 2서비스(OpenAI, Twitch; Twitch는 www/http/https 3중복).
+- passkey·Wi-Fi·Sign in with Apple·비소유 공유그룹은 CSV 미포함(Apple 설계). passkey는 별도 FIDO Credential Exchange 전용.
+- CSV는 평문(Apple 공식 경고).
+
+### TOTP 분기 결정 → 분기 A (일괄 import)
+
+TOTP가 otpauth로 CSV에 포함되므로 일괄 import. 단 함정: 1Password의 "Safari" importer는 password만 가져오고 TOTP를 버린다 → **generic CSV import + OTPAuth 컬럼을 `one-time password` 라벨로 매핑**해야 보존. 실측 통과(Twitch 항목 6자리 코드 주기 동작 확인).
+
+### import 결과
+
+- CSV 68개 중 사용자 선별 6건 제거 → **62개 개인 vault import 완료**.
+- green.com SSH key 항목 2건(public+private, 평문): Passwords 앱에 SSH key 저장은 부적절 + Phase 2a 1Password SSH agent와 중복 + 미사용 키 → import 제외/삭제(rotation 불필요, 사용자 확인).
+- Twitch 3중복(www/http/https)은 1개로 정리. sample 로그인 정상.
+
+### 깨진 PRD 가정 2건 (공식 출처 교차검증: Apple/1Password/FIDO)
+
+1. **macOS 1Password는 시스템 AutoFill credential provider로 등록하지 않는 설계**(1Password 공식). System Settings "자동 완성 및 암호" 목록에 1Password가 안 뜨고 `pluginkit` 0건도 정상. macOS 자동채움은 (a) 브라우저 extension, (b) Universal Autofill(System Settings > Privacy & Security > Accessibility 권한 + `Cmd+\`). → **Phase 4d의 macOS "1Password ON 토글" 가정은 성립하지 않음**. macOS는 iCloud AutoFill OFF만 수행, 1Password는 브라우저 extension이 담당. iOS/iPadOS는 시스템 토글(1Password ON, iCloud OFF) 유효.
+2. **Apple "앱으로 내보내기"는 FIDO Credential Exchange(CXP/CXF)지만 macOS 1Password는 전 버전 import 미구현**(iOS 26/iPadOS 26·Android 14+만 수신). "호환 가능한 앱 없음" 팝업은 정상 동작. → macOS에서 CXP 직접 이전 불가, CSV 경로가 정답.
+
+### passkey 결정 (P2)
+
+- Apple Passwords passkey는 Google 1개뿐. 실측 결과 **2024-09-14에 이미 1Password로 Google passkey가 등록돼 있었고 로그인 검증 통과** → passkey 마이그레이션 사실상 완료(추가 등록 불필요).
+- Apple(iCloud 키체인) Google passkey는 백업으로 잔존 유지(사용자 결정). 둘 다 동작.
+- CXP 결합안(iOS에서 passkey만 전송) 기각: FIDO CXF 선택 단위가 "로그인 항목"이라 password 동반 → CSV import분과 중복 + 이전 passkey 작동 리스크. 1개 항목엔 과함.
+
+### Phase 4e 단순화 (lazy migration 정책 폐기)
+
+passkey가 1개이고 이미 1Password에 있으므로, 원안의 "lazy migration 종료 조건(분기별 Q1/Q3 review + N=20 임계) + 90일 review calendar"는 over-engineering → **폐기**. 신규 passkey는 향후 1Password에 직접 생성하는 일상 워크플로로 충분(YAGNI).
+
+### CSV 평문 처분 (Phase 4c-cleanup)
+
+- `/bin/rm -P`(BSD 3-pass overwrite)로 secure delete. Trash 미경유.
+- **Time Machine destination 미설정 + 로컬 snapshot 0개** → CSV가 백업/snapshot에 잔존한 적 없음. PRD의 `tmutil delete`/`addexclusion` 택일은 **N/A**.
+- 종료 게이트 `find ~ -name '*assword*.csv' -mtime -7` **0건 통과**.
+
+### 환경 메모
+
+- 1Password 8.12.21 + macOS 26.5에 Universal Autofill 회귀 버그 보고(브라우저 밖 `Cmd+\` 채움 실패, beta 8.12.24 수정). 브라우저 내 채움은 extension으로 정상 → 본 Phase 진행 영향 없음.
+- 1Password import는 중복 자동 병합/스킵 안 함(append). 중복은 import 후 수동 정리 전제.
 
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
+- 2026-05-26: Phase 4 GUI/실기 완료 + 박제. 공식 출처(Apple/1Password/FIDO) 교차검증 조사로 깨진 가정 2건 규명(macOS 1Password 시스템 AutoFill 미등록 설계 / macOS CXP import 미구현). CSV 매트릭스 실측(헤더 6컬럼, 68 records, TOTP otpauth 포함 → 분기 A). generic CSV import로 62개(68−6 선별) 개인 vault 적재 + TOTP 동작 검증 + green.com SSH·Twitch 중복 정리. CSV `/bin/rm -P` secure delete + 종료 게이트 통과(TM 백업 미설정 → N/A). passkey는 기존 1Password Google passkey(2024-09)로 충족, iCloud passkey 백업 유지. Phase 4d macOS 재정의(iCloud AutoFill OFF + 브라우저 extension), iOS 시스템 토글. Phase 4e lazy 정책 폐기(passkey 1개·기존재).
