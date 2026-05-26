@@ -142,6 +142,7 @@ done < <(awk '/^[A-Za-z0-9_.-]+:/ { print $1 }' "$index_file")
 
 repo_scripts=(
   "scripts/ai/run-staged-snapshot.sh"
+  "scripts/ai/lib/staged-snapshot-cache.sh"
   "scripts/ai/warn-skill-consistency.sh"
   "scripts/ai/run-gitleaks-staged-policy.sh"
   "tests/run-eval-tests.sh"
