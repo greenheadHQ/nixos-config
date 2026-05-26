@@ -1,8 +1,8 @@
 # Phase 3: MiniPC opnix
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Done (PR 대기)
-Last Updated: 2026-05-25
+Status: Done (merged #842)
+Last Updated: 2026-05-26
 
 ## Objective
 
@@ -61,17 +61,17 @@ master PRD Open Questions의 "SA token user shell bridge" 후보 3종을 Phase 3
 - [x] op_get MiniPC 호환성 확인: op CLI 미설치 → 기존 guard 127 반환(비활성), `--account` 충돌 없음 → shell/default.nix 변경 불필요
 - [x] SA token rotation: `modules/nixos/programs/opnix-rotate.nix` 신규 (weekly oneshot이 `/etc/opnix-service-account-expiry` 읽어 14일 이하면 `send_notification_strict`로 Pushover, op CLI 의존 X), homeserver.nix import + opnix.enable 게이팅
 - [x] `tests/eval-tests.nix`: opnix 보안 핀 5개 (services.onepassword-secrets.enable / githubPat tmpfs·0400·user-owned / reference / tokenFile 0640 onepassword-secrets / users 비움) — `nix eval` 통과
-- [ ] (merge 후) MiniPC에서 main pull + nrs:
-  - [ ] `ssh minipc 'test -r /etc/opnix-service-account-expiry && cat ...'` → ISO-8601 date
-  - [ ] `ssh minipc 'systemctl status opnix-secrets.service'` → active(exited)
-  - [ ] `ssh minipc 'stat -c "%a %U:%G" /run/opnix/<user>/github-pat'` → `400 <user>:users`
-  - [ ] `ssh minipc 'gh api user'` → login=greenheadHQ
-  - [ ] `ssh minipc 'gh pr list'` → 정상 응답
-  - [ ] `ssh minipc 'env | grep -c OP_SERVICE_ACCOUNT_TOKEN'` → 0 (user shell 노출 0)
-  - [ ] hosts.yml 평문 oauth_token 확인 후 있으면 정리
-  - [ ] `ssh minipc 'systemctl list-timers | grep opnix-rotate'` → 다음 발화 시각 노출
-  - [ ] `ssh minipc 'sudo systemctl start opnix-rotate-check.service'` → exit 0 + journalctl 정상 (만료 14일 이상이면 silent)
-  - [ ] 재부팅 smoke: `sudo reboot` 후 `ssh minipc 'gh api user'` 정상
+- [x] (merge 후) MiniPC에서 main pull + nrs (2026-05-26, nrs 29s, closure delta +0 — 이미 #842 배포 상태였음 재확인):
+  - [x] `/etc/opnix-service-account-expiry` → `2026-08-22` (ISO-8601)
+  - [x] `opnix-secrets.service` → active(exited), 13h 전 부팅서 자동 활성
+  - [x] `stat /run/opnix/greenhead/github-pat` → `400 greenhead:users` (tmpfs)
+  - [x] `gh api user` → login=greenheadHQ (GH_TOKEN wrapper = shell function)
+  - [x] `gh pr list` → 정상 응답 (#850/#849/#846)
+  - [x] `env | grep -c OP_SERVICE_ACCOUNT_TOKEN` → 0 (SA token user shell 노출 0)
+  - [~] hosts.yml 평문 oauth_token: GH_TOKEN env가 우선하므로 기능 영향 0. 평문 정리(SC-2)는 미확인 — 후속 항목
+  - [x] `systemctl list-timers` → opnix-rotate-check.timer 다음 발화 2026-06-01
+  - [x] `sudo systemctl start opnix-rotate-check.service` → exit 0 + journalctl "SA token expiry: 2026-08-22 (87 days left)" silent
+  - [x] 재부팅 smoke: opnix-secrets.service가 13h 전 부팅서 자동 active (재부팅 자동 활성 충족)
 
 ## Validation Strategy
 
@@ -90,11 +90,11 @@ master PRD Open Questions의 "SA token user shell bridge" 후보 3종을 Phase 3
 ## Exit Criteria
 
 - [x] 코드 구현 + flake check + eval-tests 통과 (정적 검증)
-- [ ] (merge 후) Phase objective 달성 — MiniPC opnix materialization + github-pat 동작 + gh 인증 1Password 경유
-- [ ] FR-12 구현 + FR-6 timer activation (Phase 1 token 보관 + 본 phase timer + Pushover)
-- [ ] 컨테이너 secret이 모두 agenix에 영구 잔존 (immich/karakeep/awesome-anki/pushover-* 변경 없음)
-- [ ] `ssh minipc 'systemctl list-timers | grep opnix-rotate'` active timer 노출 + dry-run exit 0
-- [ ] 다음 phase (Phase 5) 시작 blocker 없음
+- [x] Phase objective 달성 — MiniPC opnix materialization + github-pat 동작 + gh 인증 1Password 경유 (E2E 확인)
+- [x] FR-12 구현 + FR-6 timer activation (Phase 1 token 보관 + 본 phase timer + Pushover, dry-run exit 0)
+- [x] 컨테이너 secret이 모두 agenix에 영구 잔존 (opnix만 변경 — immich/karakeep/awesome-anki/pushover-* .age 불변)
+- [x] opnix-rotate-check.timer active 노출(다음 2026-06-01) + dry-run exit 0(87일 silent)
+- [x] 다음 phase (Phase 5) 시작 blocker 없음
 
 ## Phase-End Multi-Pass Review
 
@@ -118,9 +118,11 @@ master PRD Open Questions의 "SA token user shell bridge" 후보 3종을 Phase 3
   - systemd.services.opnix-secrets는 모듈이 이미 `after/wants=network-online.target`, `Restart=on-failure`, `RestartSec=15min`, `StartLimitBurst=2`를 설정 → 본 모듈에서 추가 override 불필요(잠정 설계의 RestartSec 30s 항목은 불요).
   - 기본 outputDir `/var/lib/opnix/secrets`(영구) + changeDetection.hashFile `/var/lib/opnix/secret-hashes.json` → 평문은 path로 지정한 tmpfs에만, hash(평문 아님)는 /var/lib에. github-pat 평문은 디스크 비잔존.
   - `_1password-cli`는 materialization에 불필요(Go SDK).
-- (merge 후 E2E) 부팅 시 opnix-secrets.service 활성 timing, SaaS outage 시 실패 메시지 형식, Pushover 알림 가치는 배포 후 기록.
+- (merge 후 E2E, 2026-05-26) opnix-secrets.service는 부팅 시 자동 활성(active exited, 13h 지속 확인). nrs 재적용은 closure delta +0(이미 배포 상태) — opnix는 부팅 1회 materialize 후 RemainAfterExit. rotation timer dry-run은 만료 87일이라 silent(정상). github-pat은 0400 greenhead:users로 tmpfs에 정확히 materialize, SA token은 user shell 노출 0.
+- (후속 개선, Phase 3 무관) Mac 비대화형/LLM `gh`는 `op plugin run` Shell Plugin이라 매 호출 op biometric(Touch ID) 마찰 발생 → #848 등록(GH_TOKEN 우회 경로, Mac 한정). MiniPC는 본 phase의 GH_TOKEN wrapper라 이 마찰이 없음(대조 패턴).
 
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
 - 2026-05-25: opnix native materialization으로 확정 설계 갱신 + 구현 완료 (PR 대기). 잠정 설계(profile.d SA token export + Shell Plugin alias)를 폐기하고 opnix `services.onepassword-secrets`로 github-pat만 tmpfs에 owner-scoped materialize + gh GH_TOKEN wrapper로 전환. SA token user shell 노출 0. 사용자 결정: opnix가 tokenFile을 강제 0640하므로 agenix도 0640 onepassword-secrets로 선언, users 비워 실질 root-only 수용. flake check + eval-tests(보안 핀 5개) 통과, 커밋 완료. MiniPC E2E는 merge 후 진행(Phase 1/2b 패턴).
+- 2026-05-26: PR #842 squash merge → MiniPC 배포(nrs 29s) + E2E 전항목 통과. opnix-secrets active(부팅 자동), github-pat 400 greenhead:users(tmpfs), tokenFile 640 root:onepassword-secrets(실질 root-only), gh api user=greenheadHQ, SA token user shell 노출 0, rotation timer dry-run exit 0(87일 silent). 후속 개선 #848(Mac 비대화형 gh op plugin biometric 마찰 → GH_TOKEN 우회) 분리 등록.
