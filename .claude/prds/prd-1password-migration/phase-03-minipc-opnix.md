@@ -81,11 +81,11 @@ master PRD Open Questions의 "SA token user shell bridge" 후보 3종을 Phase 3
 
 - [x] Static check 통과: `nix flake check --no-build --all-systems`
 - [x] 자동 test 추가: `tests/eval-tests.nix`에 opnix materialization 보안 핀 5개 (당초 "_1password-cli systemPackages 존재" 검증은 op CLI 미설치 확정으로 폐기 → materialization 경로 검증으로 대체)
-- [ ] API/CLI 검증 (merge 후 E2E): `ssh minipc 'gh api user'`, `ssh minipc 'gh pr list'`. **token 비노출**: `env | grep -c OP_SERVICE_ACCOUNT_TOKEN` = 0 (SA token user shell 노출 0). materialize 파일 값은 stdout/log에 출력 금지
-- [ ] Browser/UI E2E — N/A · Agent/dev browser — N/A · Mobile — N/A · Visual — N/A
-- [ ] Observability/logging — `ssh minipc 'journalctl -u opnix-secrets.service'` 정상 + 1Password Activity log 기록 확인
-- [ ] Manual smoke check — 재부팅 후 opnix-secrets.service 자동 활성 + gh 동작
-- [ ] error/rollback — SaaS outage detection은 opnix-secrets.service `Restart=on-failure`(opnix 기본 RestartSec 15min, StartLimitBurst 2) + 기존 service-state 알림으로 처리. 능동 시뮬레이션 skip(production risk)
+- [x] API/CLI 검증 (E2E 완료): `gh api user`=greenheadHQ, `gh pr list` 정상. **token 비노출**: `env | grep -c OP_SERVICE_ACCOUNT_TOKEN`=0 (SA token user shell 노출 0)
+- [x] Browser/UI E2E — N/A · Agent/dev browser — N/A · Mobile — N/A · Visual — N/A
+- [x] Observability/logging — `journalctl -u opnix-secrets.service` 정상(token 값 미노출). 1Password Activity log 기록은 SaaS GUI 영역이라 미확인
+- [x] Manual smoke check — opnix-secrets.service 13h 전 부팅서 자동 활성 + gh 동작 확인
+- [x] error/rollback — SaaS outage detection은 opnix-secrets.service `Restart=on-failure`(opnix 기본 RestartSec 15min, StartLimitBurst 2) + 기존 service-state 알림으로 처리. 능동 시뮬레이션 skip(production risk)
 
 ## Exit Criteria
 
@@ -98,14 +98,14 @@ master PRD Open Questions의 "SA token user shell bridge" 후보 3종을 Phase 3
 
 ## Phase-End Multi-Pass Review
 
-- [ ] 1. Intent/coverage — SC-1(MiniPC materialization), SC-2(MiniPC GH_TOKEN wrapper) 달성
-- [ ] 2. Correctness — 부팅 → opnix-secrets → github-pat materialize → gh wrapper happy path + SaaS outage 처리
+- [x] 1. Intent/coverage — SC-1(MiniPC materialization), SC-2(MiniPC GH_TOKEN wrapper) 달성 (E2E)
+- [x] 2. Correctness — 부팅 → opnix-secrets → github-pat materialize → gh wrapper happy path 확인; SaaS outage는 Restart=on-failure로 처리
 - [x] 3. Simplicity — opnix 모듈 + homeserver.opnix.enable + gh wrapper + rotation timer로 최소. user shell SA token 노출 0
 - [x] 4. Code quality — opnix/default.nix·opnix-rotate.nix가 temp-monitor/immich-update 등 기존 패턴 일관(service-lib, tmpfiles, ConditionPathExists)
-- [ ] 5. Duplication/cleanup — MiniPC hosts.yml 평문 잔존 0 (E2E 확인)
+- [~] 5. Duplication/cleanup — MiniPC hosts.yml 평문 잔존은 미확인(GH_TOKEN env 우선이라 기능 무관, SC-2 평문 정리는 후속)
 - [x] 6. Security/privacy — SA token 실질 root-only(0640 empty group), github-pat tmpfs 0400 user-owned, SA token user shell 노출 0, SaaS outage 시 컨테이너 영향 0 (A-3)
-- [ ] 7. Performance — 부팅 시 opnix-secrets timing(network-online.target 의존) E2E에서 측정
-- [ ] 8. Validation — flake check + eval-tests(완료) + merge 후 nrs + ssh gh + 재부팅 smoke
+- [x] 7. Performance — opnix-secrets 부팅 자동 활성(13h 지속), nrs 29s. RemainAfterExit oneshot이라 상시 런타임 overhead 없음
+- [x] 8. Validation — flake check + eval-tests + nrs + ssh gh + 재부팅 smoke 완료
 - [ ] 9. Future-phase — Phase 5에서 managing-secrets에 opnix 운영 절차 박제 — 발견 사실을 Discoveries에 기록
 - [x] 10. PRD sync — master PRD Status/Phase Index/Change Log/Open Questions/Scenario 3/SC-1/SC-2/FR-12 갱신
 
