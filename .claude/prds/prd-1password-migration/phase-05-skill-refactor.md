@@ -2,7 +2,7 @@
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
 Status: Not Started
-Last Updated: 2026-05-17
+Last Updated: 2026-05-27
 
 ## Objective
 
@@ -24,6 +24,7 @@ Last Updated: 2026-05-17
 - [ ] 관련 command 또는 도구: skill router eval harness (있다면)
 - [ ] Phase 1-3가 완료되어 1Password 운영 패턴이 안정됨 (inventory 표 작성 가능)
 - [ ] Phase 2b에서 reserved한 "확장 트리거 텍스트" Discoveries 회수
+- [ ] Phase 2a mobile SSH follow-up 결정 상태 확인: 아래 "Phase 2a Mobile SSH Integration Policy"에 따라 분류
 
 ## Scope
 
@@ -33,6 +34,7 @@ Last Updated: 2026-05-17
 - Automation vault sub-folder 또는 tag 컨벤션 명문화 (`system/`, `dev/`, `ssh/`)
 - 통합 inventory 표 (SKILL.md inline 또는 `references/inventory.md`)
 - 1Password 운영 절차 추가: SA token rotation 5단계, Service Account 발급, vault 생성, item naming convention, `op_get` helper 사용법
+- SSH device key 운영 절차 추가(조건부): 아래 "Phase 2a Mobile SSH Integration Policy"를 따른다.
 - `evals/queries.json`은 **add-only**: 1Password 혼동 쌍을 신규 추가하고, 기존 vaultwarden 쌍 위에 `"comment": "DEPRECATED — Phase 6에서 삭제"` 표기만 추가. vaultwarden 쌍 자체의 삭제는 Phase 6 책임 (FR-17 분할 정책)
 - SKILL.md frontmatter trigger 키워드 확장: `'1password', '1Password', 'op CLI', 'opnix', 'service account token', 'Automation vault', 'biometric unlock'`
 - `NOT for Vaultwarden 비밀번호 관리자 (use hosting-vaultwarden)` line은 Phase 6에서 hosting-vaultwarden 스킬 삭제와 동시 제거 (본 phase에서는 변경하지 않음)
@@ -44,6 +46,14 @@ Last Updated: 2026-05-17
 - 새 managing-1password 스킬 신설 (NG-3)
 - hosting-vaultwarden 스킬 삭제 (Phase 6)
 - managing-secrets/evals/queries.json의 vaultwarden 쌍 완전 삭제 (Phase 6에서 처리, 본 phase에서는 1Password 쌍 신규 추가만)
+
+### Phase 2a Mobile SSH Integration Policy
+
+Phase 5는 Phase 2a mobile SSH follow-up 정책을 새로 결정하지 않는다.
+
+- 상태 판정은 Phase 2a [Closed Status Definition](./phase-02a-mac-ssh.md#closed-status-definition)을 따른다.
+- 결정 상태가 `닫힘`이면 [Phase 2a Post-Merge Remediation](./phase-02a-mac-ssh.md#post-merge-remediation-termius-mobile-key-mismatch)의 확정 절차를 SKILL.md 또는 `references/1password.md`에 반영한다.
+- 결정 상태가 `열림`이면 확정 Termius 절차 반영은 Phase 5 exit gate에서 제외하고, Phase 2a Post-Merge Remediation 링크와 follow-up tracking 위치 기록만 Phase 5 exit gate로 유지한다. 이때 tracking 위치는 master PRD Open Questions의 Phase 2a mobile SSH follow-up 항목과 Phase 2a Post-Merge Remediation anchor다. GitHub issue/#780 comment는 Phase 2a Policy Follow-Up의 Issue/PR tracking 질문이 닫히기 전까지 필수 tracking 위치가 아니다.
 
 ## Implementation Checklist
 
@@ -76,11 +86,13 @@ Last Updated: 2026-05-17
   | ... | ... | ... | ... | ... |
   | github-pat | 1Password | Automation | — | gh CLI (Mac + MiniPC) |
   | mac-ssh | 1Password | Automation | — | Mac SSH agent |
-  | iphone-ssh (backup copy) | 1Password | Automation | — | iPhone Termius (local file) |
-  | ipad-ssh (backup copy) | 1Password | Automation | — | iPad Termius (local file) |
+  | iphone-ssh (backup copy) | 1Password | Automation | — | intended iPhone Termius identity; per-device status pending/confirmed by Phase 2a remediation |
+  | ipad-ssh (backup copy) | 1Password | Automation | — | pending if included in Phase 2a remediation; otherwise not validated per Phase 2a scope decision |
   | emergency-ssh | 1Password | Automation | — | Mac fallback (~/.ssh/emergency_ed25519) |
   ```
 - [ ] SKILL.md에 1Password 운영 절차 추가 섹션 (Service Account 발급 5단계, vault 생성, item naming, `op_get` 사용법, 90일 rotation):
+- [ ] Phase 2a Mobile SSH Integration Policy 적용: 결정 상태가 `닫힘`이면 Phase 2a remediation anchor의 확정 Termius SSH 운영 절차를 추가
+- [ ] Phase 2a Mobile SSH Integration Policy 적용: 결정 상태가 `열림`이면 Phase 2a Post-Merge Remediation 링크와 master PRD Open Questions의 Phase 2a mobile SSH follow-up 항목만 tracking 위치로 기록
 - [ ] Phase 2b reserved 확장 트리거 텍스트 박제: "## Shell Plugin 확장 정책: 추가 shell plugin 도입 조건 = (a) 해당 도구 secret을 .env로 export하는 패턴 ≥ 2건 발생 OR (b) agenix 평문 노출 위험 보고 1건"
 - [ ] SKILL.md frontmatter trigger 키워드 확장 (1Password 관련 추가)
 - [ ] `evals/queries.json` 작업 (add-only):
@@ -117,6 +129,7 @@ Last Updated: 2026-05-17
 - [ ] FR-15, FR-16, FR-17 구현
 - [ ] NFR-3 (SKILL.md ≤ 250줄) 충족 또는 references/ 분할 완료
 - [ ] Phase 2b reserved 확장 트리거 텍스트 박제 완료
+- [ ] Phase 2a Mobile SSH Integration Policy 적용 결과 기록 완료
 - [ ] Phase 6 진행 시 vaultwarden 쌍 삭제만 남도록 정리됨
 
 ## Phase-End Multi-Pass Review
@@ -141,3 +154,4 @@ Last Updated: 2026-05-17
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
+- 2026-05-26: Phase 2a mobile SSH follow-up을 Phase 5 조건부 scope로 반영. Follow-up 결정이 닫혔으면 확정 Termius 운영 절차를 문서화하고, 열려 있으면 Phase 2a Post-Merge Remediation 링크와 master PRD Open Questions의 Phase 2a mobile SSH follow-up 항목만 Phase 5 exit gate로 요구한다.

@@ -1,8 +1,8 @@
 # Phase 2a: Mac SSH Integration
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Done (merged #833)
-Last Updated: 2026-05-25
+Status: Done (merged #833) + mobile follow-up open
+Last Updated: 2026-05-27
 
 ## Objective
 
@@ -18,9 +18,9 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 ## Phase Discovery Gate
 
 코드 편집 전에 재확인한다:
-- [ ] 관련 코드/파일: `modules/darwin/programs/ssh/default.nix` (특히 `sshAddScript` 16-21줄 + `launchd.agents.ssh-add-keys` 52-64줄 + `matchBlocks.minipc` ControlMaster 44-47줄), `modules/nixos/programs/ssh/default.nix` (서버측 sshd 설정), `modules/nixos/users/<user>/authorized_keys.nix` (없으면 신규 작성)
+- [ ] 관련 코드/파일: `modules/darwin/programs/ssh/default.nix` (`programs.ssh`, `matchBlocks.minipc` ControlMaster, `matchBlocks.minipc-emergency`, 1Password `agent.toml`), `modules/nixos/programs/ssh.nix` (서버측 sshd 설정), `libraries/constants.nix` (`constants.sshDeviceKeys`), `hosts/greenhead-minipc/default.nix` (MiniPC authorizedKeys consumer)
 - [ ] 관련 테스트/fixture: 없음 (manual smoke)
-- [ ] 관련 docs/spec/외부 참조: https://developer.1password.com/docs/ssh/agent/, https://developer.1password.com/docs/ssh/agent/config/, https://developer.1password.com/docs/ssh/manage-keys/
+- [ ] 관련 docs/spec/외부 참조: https://developer.1password.com/docs/ssh/agent/, https://developer.1password.com/docs/ssh/agent/config/, https://developer.1password.com/docs/ssh/manage-keys/, https://termius.com/documentation/generate-ssh-key, https://termius.com/documentation/copy-ssh-key-to-server
 - [ ] 관련 command 또는 도구: `nrs darwin`, `ssh-keygen`, `ssh -v minipc`, `ssh-add -l`, `op` CLI
 - [ ] Master PRD의 assumption A-2 (iOS Termius local key file 영구 유지)가 여전히 유효함
 - [ ] Phase 1의 Automation vault + naming convention이 완료되었음
@@ -33,54 +33,64 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 - `mac_ed25519` key 생성: 1Password GUI → New Item → SSH Key → Generate (Ed25519) → title `mac-ssh` → tag `ssh`. private key는 1Password vault 자체 보관, public key 캡처
 - `iphone_ed25519`, `ipad_ed25519` key 생성: 각각 디바이스에서 직접 ssh-keygen으로 생성 후 1Password Automation vault에 `iphone-ssh`, `ipad-ssh` item으로 backup copy 저장 (Termius는 디바이스 local file 보유)
 - `emergency_ed25519` key 생성: `ssh-keygen -t ed25519 -C "emergency-fallback" -f ~/.ssh/emergency_ed25519` (passphrase 강). 1Password Automation vault `emergency-ssh` item에 backup
-- 4개 public key를 `modules/nixos/users/<user>/authorized_keys.nix` (또는 적합한 위치)에 declarative 등록
+- 4개 public key를 `libraries/constants.nix`의 `constants.sshDeviceKeys`에 선언하고 `hosts/greenhead-minipc/default.nix`의 MiniPC authorizedKeys 목록에서 소비
 - Mac `~/.ssh/config`: 
-  - 전역 `IdentityAgent ~/.1password/agent.sock` (1Password macOS agent socket symlink — 1Password 데스크탑 앱이 자동 생성)
+  - 전역 `IdentityAgent`는 1Password group container socket(`~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`) 사용
   - `Host minipc-emergency` 분기 → `Hostname <minipc>` + `IdentityFile ~/.ssh/emergency_ed25519` + `IdentityAgent none`
 - ControlPersist 정책 결정 + 적용: 현재 600초 → 영구(`yes`) 또는 launchd으로 master daemon 띄우는 패턴 중 1개 선택 (사용자 워크플로 모니터링 후 결정)
-- `cfg.useOpAgent` 옵션 신설 + 정확한 Nix 표현 (SSOT 1개): `launchd.agents.ssh-add-keys = lib.mkIf (!cfg.useOpAgent) { ... 기존 정의 그대로 ... };` — 즉 useOpAgent=true이면 launchd agent 정의 자체가 빠짐. `.enable = ...` attribute 패턴은 사용하지 않음 (의미 충돌 방지)
+- Mac ssh module cleanup: 기존 `launchd.agents.ssh-add-keys`/`sshAddScript`/`sshKeyPath`/identityFile 경로를 제거하고, 1Password agent 전용 `programs.ssh` + `agent.toml` 구성으로 정리. 별도 `cfg.useOpAgent` 옵션은 최종 구현에서 도입하지 않음(Discoveries / Decisions 참조)
 - `~/.ssh/id_ed25519` 파일 처분: 1Password vault에 backup item으로 저장 후 file 삭제 (또는 `~/.ssh/id_ed25519.archive`로 mv + chmod 000)
 - `programs.ssh.matchBlocks."*".identityFile`가 1Password agent와 충돌하지 않게 검토 (필요 시 identityFile 라인 제거)
 
 ### Out of Scope
 
-- iPhone/iPad Termius 디바이스 자체에 새 key 등록 (사용자 GUI 작업, 본 phase에서 가이드만 제공)
+- Original Phase 2a scope에서는 iPhone/iPad Termius 디바이스 자체에 새 key 등록을 사용자 GUI 작업으로 두고 가이드만 제공했다. Post-Merge Remediation은 이 범위의 예외이며 mobile identity/import/rotation 검증을 별도 후속으로 추적한다.
 - MiniPC opnix 도입 (Phase 3)
 - Shell plugin gh (Phase 2b)
 - git commit signing 통합 (Out of Scope of full PRD)
 
+### Post-Merge Follow-Up Scope
+
+- Mobile actual connection identity는 server-side evidence로 닫는다. Canonical checklist, hardening gate, evidence format, and decision questions are in [Post-Merge Remediation](#post-merge-remediation-termius-mobile-key-mismatch).
+- iPad Termius도 동일 회귀 가능성이 있으므로 검증 범위에 포함할지 사용자 결정을 받는다.
+
 ## Implementation Checklist
 
-- [ ] 1Password 데스크탑 앱: Settings → Developer → "Use the SSH agent" ON 확인. `~/.1password/agent.sock` symlink 존재 확인 (`ls -la ~/.1password/agent.sock`)
+- [ ] 1Password 데스크탑 앱: Settings → Developer → "Use the SSH agent" ON 확인. group container socket 존재 확인: `test -S "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"`
 - [ ] 1Password GUI에서 `mac-ssh` SSH Key item 생성 (Ed25519, Generate). public key 캡처
 - [ ] 직접 emergency key 생성 (passphrase는 interactive prompt — argv/shell history 노출 방지):
   - 명령: `ssh-keygen -t ed25519 -C "emergency-fallback-$(hostname)" -f ~/.ssh/emergency_ed25519` (`-N` 인자 사용 금지)
   - ssh-keygen이 "Enter passphrase" 프롬프트로 묻고 입력 시 화면·history에 echo 안 됨
   - 별도 단계: 1Password Automation vault `emergency-ssh` item을 GUI에서 생성하여 (a) private key (`cat ~/.ssh/emergency_ed25519`), (b) public key (`cat ~/.ssh/emergency_ed25519.pub`), (c) passphrase 3개 필드를 수동 입력. 명령줄 `op` 호출 안 함 (passphrase가 argv 노출 회피)
 - [ ] iPhone Termius / iPad Termius에서 각각 ssh-keygen 생성 (디바이스별로 사용자 수동). public key 캡처 → 1Password Automation vault `iphone-ssh`, `ipad-ssh` item에 backup
-- [ ] `modules/nixos/users/<user>/authorized_keys.nix` (또는 `modules/nixos/programs/ssh/authorized_keys.nix` 등 적절 위치) 신규 또는 확장:
+- [ ] `libraries/constants.nix`의 `constants.sshDeviceKeys` 신규 또는 확장 후, `hosts/greenhead-minipc/default.nix`의 MiniPC authorizedKeys 목록이 이를 소비하는지 확인:
   ```nix
-  { ... }: {
-    users.users.<user>.openssh.authorizedKeys.keys = [
-      "ssh-ed25519 AAA... mac-ssh"
-      "ssh-ed25519 AAA... iphone-ssh"
-      "ssh-ed25519 AAA... ipad-ssh"
-      "ssh-ed25519 AAA... emergency-fallback"
-    ];
-  }
+  sshDeviceKeys = {
+    macSsh = "ssh-ed25519 AAA... mac-ssh";
+    iphone = "ssh-ed25519 AAA... iphone-ssh";
+    ipad = "ssh-ed25519 AAA... ipad-ssh";
+    emergency = "ssh-ed25519 AAA... emergency-fallback";
+  };
+
+  users.users.${username}.openssh.authorizedKeys.keys = with constants.sshDeviceKeys; [
+    macSsh
+    iphone
+    ipad
+    emergency
+  ];
   ```
 - [ ] `modules/darwin/programs/ssh/default.nix` 수정:
-  - cfg.useOpAgent 옵션 신설 (default true)
-  - `launchd.agents.ssh-add-keys = lib.mkIf (!cfg.useOpAgent) { ... 기존 정의 그대로 ... };`로 정의 전체를 wrap. useOpAgent=true이면 agent 자체가 launchd에 등록되지 않음
-  - `programs.ssh.extraConfig` 또는 `matchBlocks."*".extraOptions`에 `IdentityAgent ~/.1password/agent.sock` 추가
+  - 기존 `launchd.agents.ssh-add-keys`/`sshAddScript`/`sshKeyPath`/identityFile 경로 제거
+  - `programs.ssh.matchBlocks."*".extraOptions.IdentityAgent`에 1Password group container socket 추가
+  - `home.file.".config/1Password/ssh/agent.toml"`에 Automation vault 노출 설정
   - `matchBlocks.minipc-emergency` 신규 (Hostname=minipc, IdentityFile=~/.ssh/emergency_ed25519, IdentityAgent=none)
   - ControlPersist 정책: 사용자 워크플로 검토 후 `"yes"` (영구) 또는 launchd master daemon 패턴 중 선택. Phase Decision으로 박제
-- [ ] launchd gate 동작 검증: `nrs darwin` 후 `launchctl list | grep ssh-add-keys` 결과가 빈 행이어야 정상 (useOpAgent=true 기본값에서 agent unload됨)
+- [ ] launchd cleanup 검증: `nrs darwin` 후 `rg 'ssh-add-keys|sshAddScript|sshKeyPath' modules/darwin/programs/ssh/default.nix` 결과가 0건이어야 정상
 - [ ] `nrs darwin` 빌드 + activate
-- [ ] **MiniPC authorized_keys 배포** — `authorized_keys.nix`가 NixOS 모듈이므로 MiniPC도 rebuild해야 새 키가 deploy됨:
+- [ ] **MiniPC authorized_keys 배포** — `constants.sshDeviceKeys`와 `hosts/greenhead-minipc/default.nix`의 authorizedKeys 목록은 NixOS config이므로 MiniPC도 rebuild해야 새 키가 deploy됨:
   - [ ] `nrs minipc` 실행 (Mac에서 트리거 가능)
-  - [ ] deployed-key presence check: `ssh minipc 'wc -l ~/.ssh/authorized_keys'` 결과가 신규 키 추가만큼 증가 (예: 기존 1줄 → 4줄)
-  - [ ] 키 indices 확인: `ssh minipc 'grep -c "mac-ssh\|iphone-ssh\|ipad-ssh\|emergency-fallback" ~/.ssh/authorized_keys'` 결과 = 4
+  - [ ] deployed-key presence check: `ssh minipc 'wc -l /etc/ssh/authorized_keys.d/greenhead'` 결과가 신규 키 추가만큼 증가 (예: 기존 1줄 → 4줄)
+  - [ ] 키 indices 확인: `ssh minipc 'grep -c "mac-ssh\|iphone-ssh\|ipad-ssh\|emergency-fallback" /etc/ssh/authorized_keys.d/greenhead'` 결과 = 4
 - [ ] `~/.ssh/id_ed25519` 처분:
   - 1Password Automation vault `mac-ssh-legacy` item 생성 (backup용)
   - file을 `~/.ssh/id_ed25519.archive`로 mv + `chmod 000`
@@ -97,6 +107,7 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 ## Validation Strategy
 
 - 일반 동작은 `ssh -v minipc`와 `ssh-add -l`로 검증. 1Password 데스크탑 quit 시 강제 실패 + emergency Host로 우회 가능함을 실측. ControlMaster cache 만료 후 첫 호출에서 popup 거부 시 timeout 동작 확인 (사용자가 수동 수용 가능 시간 측정).
+- Mobile Termius 후속 검증은 [Post-Merge Remediation](#post-merge-remediation-termius-mobile-key-mismatch)의 checklist와 evidence table을 canonical gate로 따른다.
 
 ## Validation Checklist
 
@@ -116,9 +127,86 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 - [ ] Phase objective 달성 (Mac SSH가 1Password agent 인증 + emergency fallback 검증 통과 + 디바이스별 4개 key inventory 완료)
 - [ ] FR-7, FR-8, FR-9, FR-10 모두 구현
 - [ ] Emergency fallback 실측 통과 (NFR-5)
-- [ ] iPhone/iPad Termius에 본인이 생성한 key가 등록되어 `ssh minipc` 정상 동작 (사용자 manual 보고)
+- [ ] Historical mobile gate: iPhone/iPad Termius `ssh minipc` 정상 동작은 사용자 manual 보고 기준이었다. Server-side accepted fingerprint 기준으로는 닫히지 않았으므로 Post-Merge Remediation에서 추적한다.
 - [ ] `~/.ssh/id_ed25519` 평문 file 처분 완료 (archive 또는 1Password vault 이관)
 - [ ] 다음 phase (Phase 2b)를 시작하지 못하게 막는 blocker 없음
+
+## Post-Merge Remediation: Termius Mobile Key Mismatch
+
+2026-05-26에 iPhone Termius 접속 실패를 분석한 결과, iPhone Tailscale IP에서 MiniPC `sshd`까지 연결은 도달했지만 PAM 인증 실패로 종료됐다. 당시 MiniPC는 `kbdinteractiveauthentication yes` 상태였다. 또한 직전 iPhone 성공 기록의 accepted publickey fingerprint는 현재 `iphone-ssh`가 아니라 retired `macbook` key와 일치했다. 따라서 Phase 2a의 server-side key 배포 확인만으로는 충분하지 않았고, mobile actual connection identity를 server-side accepted fingerprint로 검증하는 gate가 빠진 것이 사각지대다.
+
+### Decision Gate
+
+- [ ] Remediation checklist 실행 전에 [Required Before iPhone Remediation](#required-before-iphone-remediation) 질문을 먼저 닫는다.
+- [ ] Retired `macbook` key 임시 재등록을 실제로 사용할 때만 [Fallback Only](#fallback-only-retired-macbook-key-temporary-re-registration) decision set을 먼저 닫는다.
+
+### Remediation Checklist
+
+- [ ] 현재 MiniPC 등록 fingerprint 확인: `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead`에서 `iphone-ssh`, `ipad-ssh`, `mac-ssh`, `emergency-fallback` fingerprint를 아래 fingerprint inventory table에 기록
+- [ ] MiniPC OpenSSH hardening: `modules/nixos/programs/ssh.nix`에 `services.openssh.settings.KbdInteractiveAuthentication = false` 추가 후 `nrs minipc` 적용
+- [ ] Server hardening 검증: MiniPC에서 `sudo -n sshd -T | rg '^(passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication) '` 결과가 `passwordauthentication no`, `pubkeyauthentication yes`, `kbdinteractiveauthentication no`인지 확인
+- [ ] Termius iPhone host profile 확인: host는 MiniPC Tailscale endpoint, user는 `greenhead`, auth는 key identity 중심, identity는 `iphone-ssh`
+- [ ] iPhone에서 접속 시도 후 MiniPC 로그 확인: attempt time window를 KST ISO range로 정하고 같은 range를 `journalctl -u sshd.service --since ... --until ...`에 사용
+- [ ] Evidence log extraction: `journalctl -u sshd.service --since "<KST start>" --until "<KST end>" | rg 'for <user> from <device Tailscale IP>( port|$)' | rg 'Accepted publickey|keyboard-interactive|PAM|Failed publickey'` 결과에서 해당 device IP + user의 accepted log line/time과 PAM 여부를 evidence table에 기록. `<device Tailscale IP>`와 `<user>`는 evidence table 값과 같아야 하며, iPhone 기준 known values는 `100.76.27.1`과 `greenhead`이다.
+- [ ] Mobile regression check: evidence table의 accepted fingerprint가 expected fingerprint와 일치하고, 같은 device IP + user + attempt time window에 keyboard-interactive/PAM 실패 로그가 남지 않음
+- [ ] 실패 시 분기:
+  - Publickey accepted line 없이 PAM failure가 관찰되면 host profile의 identity binding을 수정
+  - accepted publickey fingerprint가 expected fingerprint와 다르면 accepted fingerprint의 출처를 식별하고 `iphone-ssh`로 교체
+  - accepted publickey line이 없고 key mismatch가 의심되면 MiniPC 기본 sshd 로그만으로 rejected key fingerprint를 단정하지 않는다. Evidence capture는 read-only public key view/copy 또는 client verbose log만 허용한다. Termius의 `Copy SSH Key to Server` / `Export to host`처럼 server `authorized_keys`를 변경할 수 있는 flow는 진단 중 사용 금지다. Read-only public key 파일을 확보한 경우 `ssh-keygen -lf <public-key-file>`로 fingerprint화해 `Rejected/mismatched key evidence`에 기록한다. Read-only public key 또는 fingerprint를 확인할 수 없으면 해당 field를 `unavailable`로 기록하고 `iphone-ssh` import 또는 rotation 중 하나를 선택한다.
+  - `iphone-ssh` private key가 Termius에 없으면 1Password Automation vault backup에서 복구한다. 새 iPhone keypair를 생성하는 경우에는 1Password Automation vault `iphone-ssh` item의 private key, public key, fingerprint와 `constants.sshDeviceKeys.iphone`를 함께 rotate한 뒤 `nrs`를 적용하고, MiniPC authorized_keys fingerprint와 vault 기록 fingerprint가 일치하는지 대조한다. Rotation 후에는 fingerprint inventory table의 `iphone-ssh` row를 새 MiniPC deployed fingerprint로 다시 채우고, evidence table의 expected fingerprint도 갱신된 row에서 가져온다.
+- [ ] iPad도 검증 범위로 선택되면 동일 절차를 `ipad-ssh`에 반복
+- [ ] 검증 완료 후 Phase 2a Change Log와 master PRD Open Questions/Change Log를 token/secret 없이 갱신. #780 comment는 선택적 mirror로만 사용
+
+표준 복구 경로는 `iphone-ssh` backup import 또는 새 iPhone keypair rotation이다. Retired `macbook` key 임시 재등록은 두 표준 경로가 막힌 경우의 최후수단이며, 허용 시 server-side source restriction(`from=` 또는 동등한 제한), TTL/removal gate, private key 보유 위치 확인, 제거 검증이 모두 필요하다.
+
+### Closed Status Definition
+
+이 follow-up의 `닫힘` 상태는 Phase 2a Post-Merge Remediation이 canonical이다. 최소 조건은 MiniPC OpenSSH `KbdInteractiveAuthentication = false` 적용, `sudo -n sshd -T`의 `kbdinteractiveauthentication no` 검증, iPhone accepted fingerprint match, 같은 device IP + user + attempt window의 keyboard-interactive/PAM 실패 로그 부재, Required Before iPhone Remediation 결정 완료, Phase 2a/master PRD 기록 완료다. iPad를 remediation 범위에 포함하기로 결정한 경우에는 iPad accepted fingerprint match도 `닫힘` 조건에 포함한다. Policy Follow-Up 질문은 immediate recovery `닫힘`을 막지 않는다. Fallback Only decision set은 fallback을 실제로 사용하기로 선택한 경우에만 `닫힘` 조건에 포함한다.
+
+### Fingerprint Inventory Table
+
+| Key label | SHA256 fingerprint | Source command |
+|---|---|---|
+| `iphone-ssh` | TBD | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| `ipad-ssh` | TBD | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| `mac-ssh` | TBD | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| `emergency-fallback` | TBD | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+
+### Mobile Attempt Evidence Table
+
+이 표는 Phase 2a Change Log와 master PRD Open Questions/Change Log를 갱신하기 전의 canonical mobile attempt evidence 형식이다. `attempt time window`는 KST ISO range로 기록하고, 같은 범위를 `journalctl --since/--until`에 사용한다. `expected SHA256 fingerprint`는 fingerprint inventory table에서 가져오고, `accepted SHA256 fingerprint`와 `accepted log line/time`은 MiniPC `sshd` 로그에서 가져온다.
+
+| Device | User | Tailscale IP | Attempt time window | Expected key label | Expected SHA256 fingerprint | Accepted SHA256 fingerprint | Accepted log line/time | Rejected/mismatched key evidence | Keyboard-interactive/PAM observed | Result |
+|---|---|---|---|---|---|---|---|---|---|---|
+| iPhone | `greenhead` | TBD | TBD | `iphone-ssh` | TBD | TBD | TBD | TBD | TBD | TBD |
+| iPad (if in scope) | `greenhead` | TBD | TBD | `ipad-ssh` | TBD | TBD | TBD | TBD | TBD | TBD |
+
+### Questions For User Decision
+
+#### Required Before iPhone Remediation
+
+- [ ] 검증 범위: 이번 remediation 범위에서 iPhone만 닫을지, iPad Termius도 함께 포함할지?
+- [ ] `iphone-ssh` private key source: 기존 1Password Automation vault backup을 Termius에 import할지, iPhone에서 새 keypair를 생성해 1Password Automation vault `iphone-ssh` item(private key, public key, fingerprint)과 `constants.sshDeviceKeys.iphone`를 함께 rotate할지?
+- [ ] Rejected-key evidence path: Termius iOS에서 server-mutating export 없이 read-only public key/fingerprint 확인이 가능한지 사용자가 확인할지, 아니면 unavailable로 기록하고 import/rotation 경로로 바로 진행할지?
+
+#### Fallback Only: Retired `macbook` Key Temporary Re-Registration
+
+기본 복구 경로(`iphone-ssh` import 또는 rotation)가 가능하면 이 decision set은 열지 않는다.
+
+- [ ] Retired key 임시 재등록 허용 여부: old `macbook` public key 재등록을 최후수단으로 허용할지, 보안상 계속 금지하고 `iphone-ssh` import/rotation만 허용할지?
+- [ ] Retired key source restriction: MiniPC server-side 제한을 `from="<iPhone Tailscale IP>"` 또는 동등한 source restriction 중 무엇으로 둘지?
+- [ ] Retired key TTL: 임시 재등록 유지 시간을 무엇으로 둘지?
+- [ ] Retired key removal owner: 제거 실행 주체를 누구로 둘지?
+- [ ] Retired key removal verification command: 제거 검증 명령을 무엇으로 둘지? 기준은 `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead`에서 old `macbook` fingerprint absent 확인이다.
+- [ ] Retired key private-key ownership check: old `macbook` private key가 어디에 남아 있는지 확인하고, 예상 밖 보유 위치가 발견되면 임시 재등록을 중단할지?
+
+#### Policy Follow-Up (Not Blocking Immediate Recovery)
+
+- [ ] Termius host canonical target: host 값을 `constants.network.minipcTailscaleIP`의 raw Tailscale IP로 고정할지, MagicDNS/hostname을 표준으로 둘지?
+- [ ] Termius profile policy: server-side `KbdInteractiveAuthentication = false` hardening을 필수로 둔 상태에서, Termius UI에서도 keyboard-interactive 또는 password/PAM prompt를 비활성 또는 미사용으로 둘지?
+- [ ] Evidence policy: mobile SSH key rotation/revoke 때마다 MiniPC `sshd` accepted fingerprint 대조를 mandatory gate로 둘지?
+- [ ] Inventory policy: 1Password `iphone-ssh`/`ipad-ssh` item에 public fingerprint와 Termius host profile 이름을 필드로 추가해 운영 인벤토리로 삼을지?
+- [ ] Issue/PR tracking: 이 후속 remediation을 PRD 문서 변경만으로 닫을지, 별도 GitHub issue를 열어 실기기 검증 완료 전까지 추적할지?
 
 ## Phase-End Multi-Pass Review
 
@@ -140,8 +228,10 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 - **agent.toml 필수**: 1Password SSH agent는 SSH 키를 자동 노출하지 않는다(GUI에 "SSH 키가 설정되지 않았습니다"). `~/.config/1Password/ssh/agent.toml`에 노출 vault를 명시해야 ssh-add -l에 키가 뜬다 → `vault = "Automation"`. `home.file`로 declarative 박제.
 - **useOpAgent let + 최종 cleanup**: phase-02a가 명시한 "옵션" 대신 모듈 let 상수로 구현(토글 수요 없어 YAGNI). id_ed25519 처분 시 launchd ssh-add-keys 경로 전체가 dead가 되어 useOpAgent/launchd/sshAddScript/sshKeyPath까지 함께 제거 → ssh/default.nix가 1Password agent 전용으로 단순화.
 - **id_ed25519 처분**: minipc 외 미사용 확인(github는 HTTPS git, MiniPC는 mac-ssh) → `~/.ssh/id_ed25519.archive`(chmod 000)로 mv. ssh config identityFile 제거 후 `ssh minipc`가 mac-ssh agent만으로 인증됨을 실측. darwin의 Mac 접속용 authorizedKeys(macbook 공개키)는 별개라 보존.
+- **Mobile Termius validation gap**: Phase 2a closeout은 Mac agent path와 emergency fallback을 강하게 검증했지만, iPhone/iPad Termius actual connection identity가 신규 device key인지 서버 로그 fingerprint 기준으로 닫지 못했다. 이후 mobile SSH 검증은 "client success + server accepted fingerprint match"를 함께 요구한다.
 
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
 - 2026-05-25: Phase 2a 구현 완료 → PR #833 squash merge. 디바이스 키 4개(mac-ssh/iphone/ipad/emergency)를 `constants.sshDeviceKeys`로 정의하고 MiniPC authorizedKeys에 배포(nrs minipc). Mac ssh config: IdentityAgent(group container socket) + agent.toml(Automation vault 노출) + minipc-emergency Host + ControlPersist 600(ControlMaster 유지). id_ed25519 archive. 검증: `ssh minipc`=mac-ssh agent 인증(Touch ID), emergency fallback 실측(1Password quit→emergency 접속 성공→ssh minipc Permission denied→재시작 복귀), id_ed25519 처분 후 agent-only 인증. merge 후 main nrs 적용 + E2E 전항목 재검증 통과. agent.toml vault를 constants 참조로 정정(SSOT). 발견: ControlPersist 영구는 무인 hang(→600 유지), agent socket은 group container 경로, agent.toml로 키 노출 명시 필수.
+- 2026-05-26: iPhone Termius 접속 실패 후속 분석 반영. iPhone Tailscale IP에서 MiniPC `sshd`까지 연결은 도달했지만 PAM 인증 실패로 종료됐고, 당시 MiniPC는 `kbdinteractiveauthentication yes` 상태였다. 직전 iPhone 성공 기록의 accepted publickey fingerprint는 현재 `iphone-ssh`가 아니라 retired `macbook` key와 일치했다. Post-Merge Remediation checklist와 사용자 결정 질문을 추가.
