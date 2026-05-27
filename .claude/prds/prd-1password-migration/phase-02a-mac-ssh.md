@@ -38,7 +38,7 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
   - 전역 `IdentityAgent`는 1Password group container socket(`~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`) 사용
   - `Host minipc-emergency` 분기 → `Hostname <minipc>` + `IdentityFile ~/.ssh/emergency_ed25519` + `IdentityAgent none`
 - ControlPersist 정책 결정 + 적용: 현재 600초 → 영구(`yes`) 또는 launchd으로 master daemon 띄우는 패턴 중 1개 선택 (사용자 워크플로 모니터링 후 결정)
-- Mac ssh module cleanup: 기존 `launchd.agents.ssh-add-keys`/`sshAddScript`/`sshKeyPath`/identityFile 경로를 제거하고, 1Password agent 전용 `programs.ssh` + `agent.toml` 구성으로 정리. 별도 `cfg.useOpAgent` 옵션은 최종 구현에서 도입하지 않음(Discoveries / Decisions 참조)
+- Mac ssh module cleanup: 기존 `launchd.agents.ssh-add-keys`/`sshAddScript`/`sshKeyPath`/identityFile 경로를 제거하고, 1Password agent 전용 `programs.ssh` + `agent.toml` 구성으로 정리. 별도 전환 옵션은 최종 구현에서 도입하지 않음(Discoveries / Decisions 참조)
 - `~/.ssh/id_ed25519` 파일 처분: 1Password vault에 backup item으로 저장 후 file 삭제 (또는 `~/.ssh/id_ed25519.archive`로 mv + chmod 000)
 - `programs.ssh.matchBlocks."*".identityFile`가 1Password agent와 충돌하지 않게 검토 (필요 시 identityFile 라인 제거)
 
@@ -213,7 +213,7 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 - [ ] 1. Intent/coverage — SC-3, SC-4 달성
 - [ ] 2. Correctness — happy path, 1Password quit, biometric 거부, ControlMaster 만료 후 무인 호출 hang 모두 처리
 - [ ] 3. Simplicity — IdentityAgent 1줄 + emergency Host 분기로 최소 변경
-- [ ] 4. Code quality — cfg.useOpAgent 옵션 이름/default가 nix-darwin 모듈 컨벤션 일치
+- [ ] 4. Code quality — `programs.ssh`/`agent.toml` 구조가 현재 모듈과 일치하고, 제거된 ssh-add launchd 경로가 completion criteria에 남지 않음
 - [ ] 5. Duplication/cleanup — ssh-add 관련 dead code (launchd ssh-add-keys 게이트로 비활성) 정리
 - [ ] 6. Security/privacy — `~/.ssh/id_ed25519` 평문 잔존 없음. emergency key passphrase 1Password vault 보관
 - [ ] 7. Performance — ControlPersist 정책으로 Touch ID popup 빈도 사용자 수용 범위 내
@@ -226,7 +226,7 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 - **ControlPersist 정책**: 600 유지 (영구/daemon 채택 안 함). 영구(yes)는 무인 파이프 호출(`ssh minipc | grep`, Claude Code Bash 캡처 포함)에서 master가 stdout을 점유해 hang을 유발한다. ControlMaster auto + ControlPersist 600은 #710 analyzing-da-sessions의 K=8 worker pool SSH multiplexing이 의존하므로 ControlMaster 제거 불가(제거 시 그 스킬이 fetch skip → 5분 budget 회귀).
 - **1Password agent socket 경로**: macOS는 group container 경로(`~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`)가 실제 socket. phase-02a가 가정한 `~/.1password/agent.sock` symlink는 자동 생성되지 않으므로, ssh config `IdentityAgent`에 group container 경로를 직접 지정(공백 포함이라 quote).
 - **agent.toml 필수**: 1Password SSH agent는 SSH 키를 자동 노출하지 않는다(GUI에 "SSH 키가 설정되지 않았습니다"). `~/.config/1Password/ssh/agent.toml`에 노출 vault를 명시해야 ssh-add -l에 키가 뜬다 → `vault = "Automation"`. `home.file`로 declarative 박제.
-- **useOpAgent let + 최종 cleanup**: phase-02a가 명시한 "옵션" 대신 모듈 let 상수로 구현(토글 수요 없어 YAGNI). id_ed25519 처분 시 launchd ssh-add-keys 경로 전체가 dead가 되어 useOpAgent/launchd/sshAddScript/sshKeyPath까지 함께 제거 → ssh/default.nix가 1Password agent 전용으로 단순화.
+- **전환 옵션 생략 + 최종 cleanup**: phase-02a가 명시한 전환 옵션 대신 모듈 let 상수로 구현(토글 수요 없어 YAGNI). id_ed25519 처분 시 launchd ssh-add-keys 경로 전체가 dead가 되어 legacy launchd/sshAddScript/sshKeyPath 경로까지 함께 제거 → ssh/default.nix가 1Password agent 전용으로 단순화.
 - **id_ed25519 처분**: minipc 외 미사용 확인(github는 HTTPS git, MiniPC는 mac-ssh) → `~/.ssh/id_ed25519.archive`(chmod 000)로 mv. ssh config identityFile 제거 후 `ssh minipc`가 mac-ssh agent만으로 인증됨을 실측. darwin의 Mac 접속용 authorizedKeys(macbook 공개키)는 별개라 보존.
 - **Mobile Termius validation gap**: Phase 2a closeout은 Mac agent path와 emergency fallback을 강하게 검증했지만, iPhone/iPad Termius actual connection identity가 신규 device key인지 서버 로그 fingerprint 기준으로 닫지 못했다. 이후 mobile SSH 검증은 "client success + server accepted fingerprint match"를 함께 요구한다.
 
