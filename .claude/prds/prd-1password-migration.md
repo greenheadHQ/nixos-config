@@ -4,9 +4,9 @@
 
 - Status: In Progress
 - File Mode: Split
-- Current Phase: Phase 1·2a·2b·3 merged (#824·#833·#827·#842) + Phase 4 GUI/박제 완료(PR 대기) — Phase 5·6 남음
+- Current Phase: Phase 1·2a·2b·3 merged (#824·#833·#827·#842) + Phase 4 GUI/박제 완료(PR 대기) — Phase 5·6 남음 + Phase 2a mobile SSH follow-up 열림(non-blocking)
 - Active Phase File: [Phase 4](./prd-1password-migration/phase-04-apple-passwords.md)
-- Last Updated: 2026-05-26
+- Last Updated: 2026-05-27
 - PRD File: `.claude/prds/prd-1password-migration.md`
 - Issue: [#780](https://github.com/greenheadHQ/nixos-config/issues/780)
 - Purpose: Living PRD / 실행 source of truth. 여기에서 작업을 체크 off 하고, 구현 중 새 사실이 드러나면 이 문서를 갱신하고, 계획이 바뀌면 진행 전에 후속 phase를 수정한다.
@@ -68,12 +68,13 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 - Actor: 사용자 (iPhone Scriptable + Termius 워크플로)
 - Trigger: Immich 업로드 → 경로 클립보드 복사 → Termius SSH → Claude Code 전달
 - Expected outcome: iPhone Termius가 보유한 `iphone_ed25519` private key로 인증. Mac과 별개 키. MiniPC `authorized_keys`에 등록되어 있어 동작. 1Password가 down되어도 영향 없음.
+- Follow-up validation: canonical gates and evidence format live in [Phase 2a post-merge remediation](./prd-1password-migration/phase-02a-mac-ssh.md#post-merge-remediation-termius-mobile-key-mismatch).
 
 ### Scenario 5: 디바이스 분실
 
 - Actor: 사용자
 - Trigger: iPad 분실
-- Expected outcome: `modules/nixos/users/<user>/authorized_keys.nix`에서 ipad 라인 1개 제거 → `nrs minipc`. 1Password Automation vault에 백업된 `ipad_ed25519` item을 `revoked` tag. Mac/iPhone 영향 0.
+- Expected outcome: `hosts/greenhead-minipc/default.nix`의 MiniPC authorizedKeys 목록에서 iPad key를 제거하고, source value는 `libraries/constants.nix`의 `constants.sshDeviceKeys.ipad`와 대조 → `nrs minipc`. 1Password Automation vault에 백업된 `ipad_ed25519` item을 `revoked` tag. Mac/iPhone 영향 0.
 
 ### Scenario 6: SA token rotation (90일)
 
@@ -90,7 +91,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 ## Discovery Summary
 
 - Reviewed: `modules/nixos/programs/docker/vaultwarden.nix`, `modules/nixos/programs/docker/vaultwarden-backup.nix`, `modules/nixos/programs/vaultwarden-update/default.nix`, `modules/nixos/programs/caddy.nix`, `modules/nixos/programs/smoke-test.nix`, `modules/darwin/programs/ssh/default.nix`, `secrets/secrets.nix`, `libraries/constants.nix`, `tests/eval-tests.nix`, `.claude/skills/managing-secrets/SKILL.md`, `.claude/skills/hosting-vaultwarden/SKILL.md`, `.claude/skills/running-containers/references/scriptable-immich-upload.md`
-- Current system: Vaultwarden Podman 컨테이너 (`vaultwarden/server:1.35.4`, port 8222, vaultwarden.greenhead.dev, Tailscale 내부 전용, Caddy reverse proxy). 매일 04:30 KST SQLite + rsync 백업, 30일 보존. agenix `.age` 23개 (`secrets/secrets.nix`), 그중 `vaultwarden-admin-token` + `pushover-vaultwarden`이 Vaultwarden 의존. Mac SSH: `~/.ssh/id_ed25519` + `launchd.agents.ssh-add-keys` (`modules/darwin/programs/ssh/default.nix:16-21, 52-64`). `programs.gh` enable (`modules/shared/programs/git/default.nix:176`). gh 호출 빈도: MiniPC Claude Code 단일 세션 39회.
+- Discovery baseline at PRD creation (2026-05-17): Vaultwarden Podman 컨테이너 (`vaultwarden/server:1.35.4`, port 8222, vaultwarden.greenhead.dev, Tailscale 내부 전용, Caddy reverse proxy). 매일 04:30 KST SQLite + rsync 백업, 30일 보존. agenix `.age` 23개 (`secrets/secrets.nix`), 그중 `vaultwarden-admin-token` + `pushover-vaultwarden`이 Vaultwarden 의존. Mac SSH는 당시 `~/.ssh/id_ed25519` + `launchd.agents.ssh-add-keys` 경로였다. 이후 변경은 각 phase change log가 canonical이다.
 - Validation surface: `nrs` (nix-darwin/nixos-rebuild) + `nix flake check --no-build --all-systems` + `tests/eval-tests.nix` + `smoke-test.nix` + `managing-secrets/evals/queries.json`. 1Password 동작은 GUI + `op` CLI 명령 + Touch ID 응답으로 manual 검증.
 - Design implications: (a) 1Password Service Account가 Individual 플랜에서 GUI 노출됨을 사용자가 GUI 스크린샷으로 확인 (2026-05-17). (b) Mac은 Homebrew Cask `1password`, NixOS는 nixpkgs `_1password-cli`만. (c) opnix canonical은 `brizzbuzz/opnix` (mrjones2014는 archived, brizzbuzz README가 명시). (d) envScript 패턴은 vaultwarden뿐 아니라 karakeep·awesome-anki에서도 사용 중 → 별도 references 이관 불필요.
 - Confidence / gaps: Apple Passwords CSV의 TOTP/passkey 보존 여부는 Phase 4에서 sample 3개 사전 실측으로 확정한다. 1Password Individual은 Events API audit log 없음 — 구조적 한계로 vault separation + rotation cadence로 보완.
@@ -105,10 +106,10 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 - FR-4: `libraries/constants.nix`에 `onePassword.vaults.{personal, automation}` 상수를 등록한다.
 - FR-5: `op_get <name> <field> [<vault>]` helper (zsh function 또는 shell library)를 작성한다. vault 기본값은 `constants.onePassword.vaults.automation`.
 - FR-6: 1Password Service Account를 발급하고 토큰을 `secrets/opnix-service-account-token.age`로 agenix에 보관한다 (Phase 1). 90일 rotation systemd timer + Pushover 알림(만료 N-14일)은 MiniPC 시스템 구성이므로 Phase 3에서 구현·activation 검증한다.
-- FR-7: Mac `~/.ssh/config`에 `IdentityAgent ~/.1password/agent.sock` 추가. ControlPersist 정책 결정 (영구 또는 daemon master).
+- FR-7: Mac `~/.ssh/config`에 1Password group container socket(`~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`)을 `IdentityAgent`로 추가. ControlPersist 정책 결정 (영구 또는 daemon master).
 - FR-8: `launchd.agents.ssh-add-keys.enable = false` 또는 동등 게이트. `~/.ssh/id_ed25519` 처분 결정 (archive 또는 1Password vault item으로 이관 후 file 삭제).
 - FR-9: Emergency ed25519 fallback key (`emergency_ed25519`) 생성 + `~/.ssh/config` Host 분기 + MiniPC `authorized_keys` 등록 + 실측 acceptance ("1Password 데스크탑 quit 후 emergency key로 ssh minipc 성공").
-- FR-10: 디바이스별 SSH 키 4개 (`mac_ed25519` agent-managed, `iphone_ed25519`, `ipad_ed25519`, `emergency_ed25519`). 1Password Automation vault `ssh` tag에 backup copy + revocation 절차 박제. MiniPC `modules/nixos/users/<user>/authorized_keys.nix`에 declarative 등록.
+- FR-10: 디바이스별 SSH 키 4개 (`mac_ed25519` agent-managed, `iphone_ed25519`, `ipad_ed25519`, `emergency_ed25519`). 1Password Automation vault `ssh` tag에 backup copy + revocation 절차 박제. MiniPC authorized key source는 `libraries/constants.nix`의 `constants.sshDeviceKeys`와 이를 소비하는 `hosts/greenhead-minipc/default.nix`의 `users.users.${username}.openssh.authorizedKeys.keys`이다.
 - FR-11: `op plugin init gh` 실행 후 `~/.config/op/plugins.sh`를 `programs.zsh.initContent`에 declarative source 등록 (Home Manager).
 - FR-12: `modules/nixos/programs/opnix/default.nix`에 opnix `services.onepassword-secrets`(1Password Go SDK root oneshot)를 설정해 SA token으로 `op://` reference를 tmpfs에 owner-scoped materialize한다. SA token을 user shell로 export하는 EnvironmentFile/profile.d 방식은 폐기(user shell 노출 방지).
 - FR-13: macOS Passwords 앱에서 sample 3개 (password-only / TOTP / passkey 항목 각 1개) 사전 export → CSV field 매트릭스 PRD에 박제 → 정책 결정 (TOTP 별도 sub-phase로 분리 여부) → 일괄 import 실행.
@@ -146,7 +147,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 
 ## Risks / Edge Cases
 
-- iPhone/iPad SSH key file 보유 패턴은 1Password 의도와 보안 모델이 다름 (A-2). 디바이스 분실 시 즉시 `authorized_keys.nix`에서 해당 라인 revoke.
+- iPhone/iPad SSH key file 보유 패턴은 1Password 의도와 보안 모델이 다름 (A-2). 디바이스 분실 시 즉시 `hosts/greenhead-minipc/default.nix`의 authorizedKeys 소비 목록에서 해당 디바이스 key를 제거하고, `libraries/constants.nix`의 `constants.sshDeviceKeys` 값과 vault item 상태를 대조한다.
 - emergency ed25519 fallback이 일상적으로 사용되면 "emergency"가 아님. 사용 빈도 모니터링 필요 (사용자가 수동 인지).
 - Apple Passwords CSV의 TOTP/passkey 보존이 실패할 경우 TOTP는 별도 sub-phase로 분리하여 서비스별 재설정.
 - Vaultwarden 컨테이너 종료 후 2-6개월 사이 backup 모니터링 부재 (smoke-test 게이트 제거). 6개월 만료 시점 사용자 manual integrity check.
@@ -169,14 +170,14 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 | Phase | Status | Objective | Validation Focus | File |
 |---|---|---|---|---|
 | Phase 1: Foundation | Done (merged #824) | Mac 1Password 설치, Automation vault, gh PAT rotation, op_get helper, SA token | nrs darwin + gh API + op CLI 동작 | [phase-01-foundation.md](./prd-1password-migration/phase-01-foundation.md) |
-| Phase 2a: Mac SSH | Done (merged #833) | IdentityAgent + emergency fallback + 디바이스별 키 inventory | ssh minipc 동작 + 1Password quit 후 fallback 실측 | [phase-02a-mac-ssh.md](./prd-1password-migration/phase-02a-mac-ssh.md) |
+| Phase 2a: Mac SSH | Done (merged #833) + mobile follow-up open | IdentityAgent + emergency fallback + 디바이스별 키 inventory | ssh minipc 동작 + 1Password quit 후 fallback 실측 + mobile post-merge remediation gate | [phase-02a-mac-ssh.md](./prd-1password-migration/phase-02a-mac-ssh.md) |
 | Phase 2b: Shell plugin gh | Done (merged #827) | Home Manager declarative plugin 등록 | gh pr list 동작 (biometric prompt 1회) | [phase-02b-shell-plugin-gh.md](./prd-1password-migration/phase-02b-shell-plugin-gh.md) |
 | Phase 3: MiniPC opnix | Done (merged #842) | opnix native materialization + SA token + gh GH_TOKEN wrapper | nrs minipc + ssh minipc E2E 전항목 통과 | [phase-03-minipc-opnix.md](./prd-1password-migration/phase-03-minipc-opnix.md) |
 | Phase 4: Apple Passwords | Done (GUI/박제 — PR 대기) | CSV 매트릭스 실측, 62개 import, iCloud AutoFill OFF, passkey(기존 1Password) | 분기 A + TOTP 동작 + secure delete 게이트 통과 | [phase-04-apple-passwords.md](./prd-1password-migration/phase-04-apple-passwords.md) |
 | Phase 5: Skill 리팩토링 | Not Started | managing-secrets routing 매트릭스 + inventory + queries.json | evals/queries.json 통과 + SKILL.md ≤ 250줄 | [phase-05-skill-refactor.md](./prd-1password-migration/phase-05-skill-refactor.md) |
 | Phase 6: Vaultwarden EOL | Not Started | vaultwarden-touch 파일 atomic 삭제·수정 단일 PR + rg 잔존 0건 + 6개월 백업 정책 | nrs minipc + eval-tests + rg | [phase-06-vaultwarden-eol.md](./prd-1password-migration/phase-06-vaultwarden-eol.md) |
 
-의존성 그래프: Phase 1 → Phase 2a, Phase 2b, Phase 3. Phase 3 → (Phase 5 일부). Phase 4와 Phase 6은 서로 무관. Phase 5는 Phase 1-3 완료 후 시작 (1Password 운영 패턴이 안정되어야 inventory/routing 매트릭스 작성 가능).
+의존성 그래프: Phase 1 → Phase 2a, Phase 2b, Phase 3. Phase 3 → (Phase 5 일부). Phase 4와 Phase 6은 서로 무관. Phase 5는 Phase 1-3 완료 후 시작 (1Password 운영 패턴이 안정되어야 inventory/routing 매트릭스 작성 가능). Phase 2a mobile SSH follow-up은 Phase 5의 blocking dependency가 아니다. 해당 상태별 Phase 5 gate는 [Phase 5 Mobile SSH Integration Policy](./prd-1password-migration/phase-05-skill-refactor.md#phase-2a-mobile-ssh-integration-policy)가 canonical이다.
 
 ## Appendix: 최종 secrets.nix 변경 요약
 
@@ -194,6 +195,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 ## Open Questions
 
 - Phase 2c (git commit signing 통합) 도입 시점과 범위는 별도 epic으로 분리할지 본 PRD에서 다룰지. 현재는 Out of Scope.
+- Phase 2a mobile SSH follow-up: iPhone Tailscale IP에서 MiniPC `sshd`까지 연결은 도달했지만 PAM 인증 실패로 종료됐고, 당시 MiniPC는 `kbdinteractiveauthentication yes` 상태였다. 직전 iPhone 성공 기록의 accepted publickey fingerprint는 현재 등록된 `iphone-ssh`가 아니라 retired `macbook` key와 일치했다(2026-05-26). 결정 질문의 상세 SSOT는 [Phase 2a post-merge remediation](./prd-1password-migration/phase-02a-mac-ssh.md#post-merge-remediation-termius-mobile-key-mismatch)이다.
 - ~~Phase 4의 TOTP 별도 sub-phase 범위 (서비스 카운트 N건 임계)~~ **[해소 — 2026-05-26]**: CSV에 otpauth 포함(분기 A) 실측 확인 → 별도 sub-phase 불필요, generic CSV import로 일괄(OTPAuth→`one-time password` 라벨).
 - ~~SA token user shell bridge 설계 (Phase 3)~~ **[해소됨 — 2026-05-25 설계 확정, 기술 자문 교차검증]**: **opnix native materialization** 채택. opnix system module(`services.onepassword-secrets` — op CLI 래퍼가 아니라 1Password Go SDK 기반 root oneshot)이 SA token(`/run/agenix/opnix-service-account-token`, **0400 root 유지**)을 읽어 `op://Automation/github-pat/token`을 user-readable 파일(`/run/opnix/greenhead/github-pat`, tmpfs, owner=greenhead mode 0400)로 materialize한다. gh는 `GH_TOKEN` wrapper로 그 파일을 읽어 인증 → **SA token은 user shell/프로세스에 노출 0**(opnix root oneshot만 SA token 사용, user는 결과물 github-pat만 받음).
     - 기각된 후보: (1) systemd+polkit — 정책 복잡 + SA token이 여전히 user 도달, (2) wrapper binary(setuid/capability) — 보안 표면·감사 부담, (3) derived limited-scope credential — 1Password SA가 정적 JWT(AUK+SRP+keyset 직렬화)라 child token 발급 미지원.
@@ -211,3 +213,4 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 - 2026-05-26: Phase 3 PR #842 squash merge → MiniPC 배포(main pull + nrs, 29s) + E2E 전항목 통과. opnix-secrets.service active(exited, 부팅 자동 활성), github-pat materialize `/run/opnix/greenhead/github-pat`=400 greenhead:users(tmpfs), SA tokenFile=640 root:onepassword-secrets(users 비움 → 실질 root-only), gh GH_TOKEN wrapper로 `gh api user`=greenheadHQ·`gh pr list` 정상, SA token user shell 노출 0(env grep), opnix-rotate-check.timer 등록(다음 2026-06-01) + dry-run exit 0(만료 2026-08-22, 87일 → silent). Phase 4(Apple Passwords)·5(skill 리팩토링)·6(Vaultwarden EOL) 남음. 후속 개선: Mac 비대화형/LLM gh가 op Shell Plugin biometric으로 매 호출 Touch ID 마찰 → #848 등록(GH_TOKEN 우회 경로, Mac 한정). SSH ControlMaster·MiniPC GH_TOKEN wrapper는 무관 확인.
 - 2026-05-26: Phase 4 (Apple Passwords) GUI/실기 완료 + PRD 박제 (PR 대기). 외부 조사(Apple/1Password/FIDO 공식 교차검증)로 PRD 가정 2건 정정 — (1) macOS 1Password는 시스템 AutoFill provider 미등록 설계라 Phase 4d "1Password ON 토글" 불성립(iCloud AutoFill OFF + 브라우저 extension으로 재정의; iOS는 시스템 토글 유효), (2) macOS 1Password는 FIDO Credential Exchange import 미구현(iOS 26·Android 14+만 수신)이라 CXP 직접 이전 불가 → CSV 경로 확정. CSV 매트릭스 실측(헤더 Title/URL/Username/Password/Notes/OTPAuth 6컬럼, 68 records, TOTP는 OTPAuth 컬럼 otpauth로 포함 → 분기 A). generic CSV import(Safari importer는 TOTP 버림 회피, OTPAuth→one-time password 라벨)로 62개(68−6 선별) 개인 vault 적재 + TOTP 6자리 코드 동작 검증 + green.com SSH·Twitch 중복 정리. CSV `/bin/rm -P` secure delete + 종료 게이트 0건(TM 백업 미설정 → N/A). passkey는 Google 1개가 기존 1Password passkey(2024-09)로 이미 충족 → Phase 4e lazy migration 정책 + 90일 calendar 폐기(YAGNI). SC-5 달성. Phase 5·6 남음.
 - 2026-05-26: Phase 2a(#833) SSH agent 이관 후속 fix → PR #853 squash merge. 디바이스 키를 1Password agent로 이관하며 기존 GitHub 등록 키가 교체돼 GitHub 미등록 상태가 되자 `git@github.com:` remote의 SSH 인증이 `Permission denied (publickey)`로 실패(fetch/pull 차단). Mac 한정 https+gh credential helper(PAT) 경로로 통일 — `programs.gh.settings.git_protocol`을 darwin=https/nixos=ssh로 분기 + `url."https://github.com/".insteadOf="git@github.com:"`를 `pkgs.stdenv.isDarwin` 가드(`modules/shared/programs/git/default.nix`). SSH 키 GitHub 재등록 대신 gh credential helper 경로를 채택한 이유: 키 등록·관리 부담 제거 + #848 gh Touch ID 마찰 회피(SSH 경로 미사용). credential helper는 별도 gh 프로세스로 keyring PAT 또는 git 프로세스의 GH_TOKEN을 조회한다(git이 GH_TOKEN을 직접 읽지 않음 — #848 GH_TOKEN 주입이 적용되면 git transport도 무인 이득). MiniPC는 토큰 공급원이 달라(opnix github-pat) darwin 한정으로 좁힘 — 동일 통일 시 별도 설계 필요(deferred). merge 후 main nrs 적용 + E2E 전항목 통과(SSH 강제 차단 `GIT_SSH_COMMAND=false`에도 `git@github.com:` URL 연산 성공, nrs closure delta +0, insteadOf·git_protocol 활성). PRD 사각지대 보강: 그동안 SC-2가 `gh` 명령 인증만, SC-3/4·FR-10이 SSH 키를 원격 호스트 접속 용도로만 다뤄 GitHub git transport 인증 경로가 누락됐던 것을 SC-2에 명시.
+- 2026-05-26: Phase 2a(#833) SSH agent 이관 후속 사각지대 발견 — iPhone Termius 접속은 MiniPC까지 도달했으나 인증 단계에서 실패했다. MiniPC `sshd` 로그는 iPhone Tailscale IP에서 PAM 인증 실패를 반복했고, 당시 MiniPC는 `kbdinteractiveauthentication yes` 상태였다. 직전 iPhone 성공 기록의 accepted publickey fingerprint는 현재 등록된 `iphone-ssh`가 아니라 retired `macbook` key와 일치했다. Phase 2a에 mobile Termius remediation checklist와 사용자 결정 질문을 추가. 향후 closeout은 Termius actual connection identity + server-side accepted fingerprint를 동시에 확인해야 한다.
