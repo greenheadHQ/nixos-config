@@ -41,23 +41,33 @@ programs.zsh.initContent = lib.mkBefore ''
 '';
 ```
 
-해결: `.zshenv`에 mise shims 활성화 추가, `.zshrc`에 대화형 훅 유지.
+해결: `.zshenv`에 mise shims 활성화 추가, `.zshrc`에 대화형 훅 + Claude Code snapshot 보강용 shims prepend 유지. shims 경로 표현은 `libraries/constants.nix`의 `mise.shimsDirExpr`에서 SoT로 관리한다.
 
 ```nix
 # modules/shared/programs/shell/default.nix
+let
+  # constants.mise.shimsDirExpr 우선순위: MISE_DATA_DIR → XDG_DATA_HOME/mise → $HOME/.local/share/mise
+  miseShimsDecl = ''_mise_shims="${constants.mise.shimsDirExpr}"'';
+in
 programs.zsh = {
-  # .zshenv: SSH 비대화형 세션을 위한 mise shims PATH 추가
+  # .zshenv: snapshot 미경유 비대화형 세션을 위한 mise shims PATH 추가
   envExtra = ''
-    if command -v mise >/dev/null 2>&1 && [[ -z "$MISE_SHELL" ]]; then
+    ${miseShimsDecl}
+    if command -v mise >/dev/null 2>&1 \
+       && [[ ":$PATH:" != *":$_mise_shims:"* ]]; then
       eval "$(mise activate zsh --shims)"
     fi
+    unset _mise_shims
   '';
 
-  # .zshrc: 대화형 셸을 위한 전체 훅 활성화
+  # .zshrc: 대화형 훅 + Claude Code snapshot 경유 비대화형 보강용 shims prepend
   initContent = lib.mkMerge [
     (lib.mkBefore ''
       if command -v mise >/dev/null 2>&1; then
         eval "$(mise activate zsh)"
+        ${miseShimsDecl}
+        [[ ":$PATH:" != *":$_mise_shims:"* ]] && export PATH="$_mise_shims:$PATH"
+        unset _mise_shims
       fi
     '')
   ];
@@ -69,7 +79,7 @@ programs.zsh = {
 | 활성화 방식 | 용도 | 기능 |
 |-----------|------|------|
 | `mise activate zsh --shims` | 비대화형 | PATH에 shim 디렉토리만 추가 |
-| `mise activate zsh` | 대화형 | 전체 훅 (cd 시 자동 버전 전환 등) |
+| `mise activate zsh` + shims prepend | 대화형 + Claude Code snapshot 보강 | 전체 훅 (cd 시 자동 버전 전환 등) + 직후 shims를 PATH 맨 앞에 박아 snapshot 캡처 시점에 포함되도록 보장 |
 
 확인:
 
@@ -78,7 +88,9 @@ $ ssh minipc 'cd /home/greenhead/Workspace/my-project && pnpm --version'
 9.15.4
 ```
 
-참고: darwin(Mac)과 NixOS 모두 동일한 설정을 사용하므로, 이 변경은 양쪽에 영향을 줍니다. `MISE_SHELL` 환경변수 체크로 중복 활성화를 방지합니다.
+참고: darwin(Mac)과 NixOS 모두 동일한 설정을 사용하므로, 이 변경은 양쪽에 영향을 줍니다. 중복 활성화 방지는 shims 경로의 PATH 실재 여부 가드로 한다 — 과거 `MISE_SHELL` 기반 가드는 부모 대화형 셸의 `MISE_SHELL`이 자식 비대화형 셸로 상속되어 shims 활성화를 조기 스킵하는 회귀를 만들어 폐기됐다.
+
+추가 회귀 경로 — Claude Code Bash tool 비대화형 (#857): Claude Code는 세션 시작 시 interactive 셸 PATH를 `~/.claude/shell-snapshots/snapshot-zsh-*.sh`에 박제하고 Bash tool 호출마다 그 snapshot.sh를 source해 PATH를 복원한다. `mise activate zsh`(hook 모드)는 호출 끝에 `_mise_hook`을 즉시 발동시켜 install-bins를 PATH에 prepend하지만, hook 모드 정책상 shims는 prepend 안 한다 — snapshot에 install-bins는 들어가도 shim 의존 도구(mise npm backend의 codex 등)는 비대화형에서 미노출된다. `.zshrc`에서 `mise activate zsh` 직후 shims를 명시적으로 PATH에 prepend하면 snapshot에 shims가 포함되어 비대화형 호출이 동작한다. 회귀 메커니즘과 fallback 후보의 SoT는 `managing-mise/SKILL.md`의 "셸 활성화 구조" 섹션이다.
 
 ---
 
