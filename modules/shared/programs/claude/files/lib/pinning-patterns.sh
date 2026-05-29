@@ -177,13 +177,19 @@ pinning_should_check_path() {
     */skills/parallel-audit/*) return 1 ;;
     tests/fixtures/* | */tests/fixtures/*) return 1 ;;
     eval-workspace/* | */eval-workspace/*) return 1 ;;
+    # DA scratch dynamic TMPDIR shapes — host trust model. extend with caution:
+    # 새 TMPDIR scheme 추가는 정책 표면 영구 확장이라 PR review 시 명시 신호로 만든다.
     # macOS는 /tmp가 /private/tmp의 symlink, /var가 /private/var의 symlink.
     # realpath -m 등으로 canonicalize되면 /private/* 형태가 되므로 둘 다 매치 필요.
     /tmp/da-*/* | /private/tmp/da-*/*) return 1 ;;
-    # 한 단계 중첩 prefix 허용: nix develop의 /tmp/nix-shell.XXX, Claude Code Bash tool의
-    # /tmp/claude-501 등 TMPDIR이 임의 prefix를 두고 그 안에 da-* scratch를 만드는 케이스
-    # (issue #852). depth-unbounded이지만 attacker 모델이 아니라 host trust 범위라 안전.
+    # TMPDIR이 임의 prefix를 두고 그 안에 da-* scratch를 만드는 케이스 (issue #852):
+    # nix develop의 /tmp/nix-shell.<random>, Claude Code Bash tool의 /tmp/claude-<uid> 등.
+    # case glob의 `*`는 `/`를 포함하므로 본 패턴은 실제로는 depth-unbounded 매칭이다
+    # (예: /tmp/a/b/da-x/y.md도 매치). 그러나 attacker 모델이 아니라 host trust 범위
+    # (개발자 host + lefthook 단일 user)라 안전. 향후 multi-tenant CI에서 호출되면 재검토 필요.
     /tmp/*/da-*/* | /private/tmp/*/da-*/*) return 1 ;;
+    # macOS user-isolated TMPDIR (confstr _CS_DARWIN_USER_TEMP_DIR). /var/folders/<2>/<32>/T/는
+    # 표준 고정 구조라 그 안에 추가 prefix가 끼는 케이스는 미관측. 발생 시 별도 arm 추가.
     /var/folders/*/T/da-*/* | /private/var/folders/*/T/da-*/*) return 1 ;;
   esac
 
