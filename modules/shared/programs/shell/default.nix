@@ -10,6 +10,9 @@
 
 let
   sharedScriptsDir = ../../scripts;
+  # mise shims 경로 변수 선언 — envExtra/initContent 공통 SoT.
+  # 경로는 constants.mise.shimsDirExpr 우선순위(MISE_DATA_DIR → XDG_DATA_HOME/mise → $HOME/.local/share/mise).
+  miseShimsDecl = ''_mise_shims="${constants.mise.shimsDirExpr}"'';
 in
 {
   home.file.".local/bin/atuin-clean-kr" = {
@@ -146,19 +149,20 @@ in
       share = true;
     };
 
-    # .zshenv: SSH·비대화형 세션을 위한 mise shims PATH 추가
-    # (대화형 훅은 .zshrc에서 활성화)
-    # 가드는 MISE_SHELL 유무가 아니라 shims의 PATH 실재 여부로 판단한다: 부모 대화형 셸이
-    # hook 모드(`mise activate zsh`)로 MISE_SHELL을 set한 채 자식 비대화형 셸로 상속시키면,
-    # 기존 `[[ -z "$MISE_SHELL" ]]` 가드가 --shims를 스킵해 shims가 PATH에서 누락됐다.
-    # hook 모드는 도구 install bin만 PATH에 넣고 shims는 넣지 않으므로, shim으로만 노출되는
-    # mise npm backend 도구(codex 등)가 command not found가 된다(#814 mise 전환 이후
-    # codex가 shim 의존이 되며 발현).
+    # .zshenv: snapshot 미경유 비대화형 세션(SSH `zsh -c` 등)에서 mise 도구를
+    # 노출하기 위해 PATH에 shims를 보장한다. 이 경로는 .zshrc를 로드하지 않아
+    # `mise activate zsh`가 install-bins도 prepend하지 못하므로 shims가 없으면
+    # mise 도구가 노출되지 않는다.
+    # 대화형 훅 + Claude Code snapshot 경유 비대화형 보강은 .zshrc에서 처리한다.
+    # 회귀 메커니즘(MISE_SHELL 가드 폐기 / hook 모드 정책상 shims 미prepend)의
+    # SoT는 .claude/skills/managing-mise/SKILL.md "셸 활성화 구조" 섹션.
     envExtra = ''
+      ${miseShimsDecl}
       if command -v mise >/dev/null 2>&1 \
-         && [[ ":$PATH:" != *":$HOME/.local/share/mise/shims:"* ]]; then
+         && [[ ":$PATH:" != *":$_mise_shims:"* ]]; then
         eval "$(mise activate zsh --shims)"
       fi
+      unset _mise_shims
 
       # 비대화형 셸 기본값: side-by-side 비활성화
       # (대화형 셸에서는 .zshrc의 precmd 훅이 터미널 너비에 따라 동적 제어)
@@ -168,9 +172,19 @@ in
     # 공통 초기화 스크립트 (.zshrc)
     initContent = lib.mkMerge [
       (lib.mkBefore ''
-        # Mise 활성화 (대화형 셸: cd 시 자동 버전 전환 등)
+        # Mise 활성화 (대화형 셸)
+        # cd-time 자동 버전 전환은 `mise activate zsh`(hook 모드)가 처리한다.
+        # 직후 shims를 PATH에 prepend하여 Claude Code snapshot이 캡처하는
+        # interactive PATH에 shims가 포함되도록 한다.
+        # 회귀 메커니즘(snapshot baseline에 shims 누락 — hook 모드 정책상
+        # install-bins만 prepend되고 shims는 prepend 안 됨) + 위험/우려 +
+        # fallback 후보(.claude/settings.json env.PATH, login shell init 등)의
+        # SoT는 .claude/skills/managing-mise/SKILL.md "셸 활성화 구조" 섹션.
         if command -v mise >/dev/null 2>&1; then
           eval "$(mise activate zsh)"
+          ${miseShimsDecl}
+          [[ ":$PATH:" != *":$_mise_shims:"* ]] && export PATH="$_mise_shims:$PATH"
+          unset _mise_shims
         fi
 
         # tmux 내부에서 clear 시 history buffer도 함께 삭제
