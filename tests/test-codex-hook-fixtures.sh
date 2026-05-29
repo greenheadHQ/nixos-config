@@ -777,6 +777,8 @@ STUB
     "[7/lib] should_check fallback must preserve self-exclude paths without GNU realpath/readlink"
   assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}"; if pinning_should_check_path "/tmp/da-test-abc/scratch.md"; then printf check; else printf skip; fi)" "skip" \
     "[7/lib] should_check fallback must preserve DA scratch whitelist without GNU realpath/readlink"
+  assert_eq "$(if pinning_should_check_path "/tmp/nix-shell.test/da-foo/bar.md"; then printf check; else printf skip; fi)" "skip" \
+    "[7/lib] nested TMPDIR da-* scratch must hit whitelist (issue #852)"
   mkdir -p "$sandbox/.claude/plans"
   : > "$sandbox/.claude/plans/existing.md"
   assert_eq "$(PATH="$sandbox/bin-stubs:${PATH:-/usr/bin:/bin}" PINNING_PROJECT_ROOT="$sandbox" pinning_match_count_for_path "$scan_file" "$sandbox/.claude/plans/existing.md")" "2" \
