@@ -180,6 +180,10 @@ pinning_should_check_path() {
     # macOS는 /tmp가 /private/tmp의 symlink, /var가 /private/var의 symlink.
     # realpath -m 등으로 canonicalize되면 /private/* 형태가 되므로 둘 다 매치 필요.
     /tmp/da-*/* | /private/tmp/da-*/*) return 1 ;;
+    # 한 단계 중첩 prefix 허용: nix develop의 /tmp/nix-shell.XXX, Claude Code Bash tool의
+    # /tmp/claude-501 등 TMPDIR이 임의 prefix를 두고 그 안에 da-* scratch를 만드는 케이스
+    # (issue #852). depth-unbounded이지만 attacker 모델이 아니라 host trust 범위라 안전.
+    /tmp/*/da-*/* | /private/tmp/*/da-*/*) return 1 ;;
     /var/folders/*/T/da-*/* | /private/var/folders/*/T/da-*/*) return 1 ;;
   esac
 
