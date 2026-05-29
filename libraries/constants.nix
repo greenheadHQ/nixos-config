@@ -198,6 +198,18 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
+  # mise (런타임 버전 관리자) — shims 경로 SoT
+  # ═══════════════════════════════════════════════════════════════
+  # shims 디렉토리 우선순위 (mise 공식 규약):
+  #   MISE_DATA_DIR → $XDG_DATA_HOME/mise → $HOME/.local/share/mise
+  # 사용처: modules/shared/programs/shell/default.nix envExtra/initContent의 PATH 가드.
+  # shell expansion 문자열로 저장 — nix는 literal로 흘려보내고 zsh가 평가한다.
+  # 본 저장소는 MISE_DATA_DIR과 XDG_DATA_HOME 둘 다 명시 설정하지 않아 기본 경로가 사용된다.
+  mise = {
+    shimsDirExpr = "\${MISE_DATA_DIR:-\${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims";
+  };
+
+  # ═══════════════════════════════════════════════════════════════
   # 온도 모니터링 임계값
   # 하드웨어 기준: CPU crit=105°C, NVMe crit=94.8°C
   # 소프트웨어 임계값은 하드웨어 대비 ~10°C 마진으로 조기 대응

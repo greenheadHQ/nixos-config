@@ -10,6 +10,9 @@
 
 let
   sharedScriptsDir = ../../scripts;
+  # mise shims 경로 변수 선언 — envExtra/initContent 공통 SoT.
+  # 경로는 constants.mise.shimsDirExpr 우선순위(MISE_DATA_DIR → XDG_DATA_HOME/mise → $HOME/.local/share/mise).
+  miseShimsDecl = ''_mise_shims="${constants.mise.shimsDirExpr}"'';
 in
 {
   home.file.".local/bin/atuin-clean-kr" = {
@@ -148,16 +151,13 @@ in
 
     # .zshenv: snapshot 미경유 비대화형 세션(SSH `zsh -c` 등)에서 mise 도구를
     # 노출하기 위해 PATH에 shims를 보장한다. 이 경로는 .zshrc를 로드하지 않아
-    # `mise activate zsh`가 install bin도 prepend하지 못한다 — shims가 없으면
+    # `mise activate zsh`가 install-bins도 prepend하지 못하므로 shims가 없으면
     # mise 도구가 노출되지 않는다.
-    # (대화형 훅 + Claude Code snapshot 경유 비대화형 보강은 .zshrc에서 처리.)
-    # 가드는 MISE_SHELL 유무가 아니라 shims의 PATH 실재 여부로 판단한다: 부모 대화형 셸이
-    # hook 모드(`mise activate zsh`)로 MISE_SHELL을 set한 채 자식 비대화형 셸로 상속시키면,
-    # 기존 `[[ -z "$MISE_SHELL" ]]` 가드가 --shims를 스킵해 shims가 PATH에서 누락된다.
-    # shims 경로는 `MISE_DATA_DIR`(기본 `$HOME/.local/share/mise`)/`shims` 규약을 따른다.
-    # (#814 mise 전환 이후 codex가 mise npm backend로 옮겨가며 발현.)
+    # 대화형 훅 + Claude Code snapshot 경유 비대화형 보강은 .zshrc에서 처리한다.
+    # 회귀 메커니즘(MISE_SHELL 가드 폐기 / hook 모드 정책상 shims 미prepend)의
+    # SoT는 .claude/skills/managing-mise/SKILL.md "셸 활성화 구조" 섹션.
     envExtra = ''
-      _mise_shims="''${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims"
+      ${miseShimsDecl}
       if command -v mise >/dev/null 2>&1 \
          && [[ ":$PATH:" != *":$_mise_shims:"* ]]; then
         eval "$(mise activate zsh --shims)"
@@ -176,20 +176,13 @@ in
         # cd-time 자동 버전 전환은 `mise activate zsh`(hook 모드)가 처리한다.
         # 직후 shims를 PATH에 prepend하여 Claude Code snapshot이 캡처하는
         # interactive PATH에 shims가 포함되도록 한다.
-        #
-        # 이유: Claude Code Bash tool은 매 호출마다 snapshot.sh를 source해
-        # 그 시점의 interactive PATH를 비대화형 셸에서 복원한다. snapshot
-        # 캡처 시점에는 _mise_hook이 발동 전이라 install-bins도 PATH에 없는
-        # baseline이 박제된다. interactive 단계에 shims를 강제 prepend하면
-        # snapshot에 shims가 포함되어 비대화형 codex 호출이 동작한다.
-        #
-        # 위험/우려: 이 fix는 Claude Code snapshot 캡처 메커니즘에 간접
-        # 의존한다. 향후 캡처 방식 변경(예: sanitized PATH 기록) 시 회귀
-        # 재발 가능. snapshot 미경유 비대화형은 envExtra 가드가 보완한다.
-        # (#814 mise 전환: codex가 mise npm backend로 옮겨가며 shim 의존 발현.)
+        # 회귀 메커니즘(snapshot baseline에 shims 누락 — hook 모드 정책상
+        # install-bins만 prepend되고 shims는 prepend 안 됨) + 위험/우려 +
+        # fallback 후보(.claude/settings.json env.PATH, login shell init 등)의
+        # SoT는 .claude/skills/managing-mise/SKILL.md "셸 활성화 구조" 섹션.
         if command -v mise >/dev/null 2>&1; then
           eval "$(mise activate zsh)"
-          _mise_shims="''${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims"
+          ${miseShimsDecl}
           [[ ":$PATH:" != *":$_mise_shims:"* ]] && export PATH="$_mise_shims:$PATH"
           unset _mise_shims
         fi

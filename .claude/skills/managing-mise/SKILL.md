@@ -67,7 +67,12 @@ mise는 두 계층으로 활성화된다:
 | `.zshenv` | `shell/default.nix` envExtra | `mise activate zsh --shims` | snapshot 미경유 비대화형(SSH `zsh -c` 등)에서 PATH에 shim 추가 |
 | `.zshrc` | `shell/default.nix` initContent | `mise activate zsh` + shims prepend | 대화형 훅(cd-time 버전 전환) + Claude Code snapshot 경유 비대화형 보강 |
 
-중복 활성화 방지 가드는 shims 경로의 PATH 실재 여부로 판단한다 (`[[ ":$PATH:" != *":$shims:"* ]]`). 과거 `MISE_SHELL` 기반 가드는 부모 대화형 셸의 `MISE_SHELL`이 자식 비대화형 셸로 상속되어 shims 활성화를 조기 스킵하는 회귀를 만들어 폐기됐다. `.zshrc`에서 추가로 shims를 prepend하는 이유는 Claude Code 같은 도구가 세션 시작 시 interactive 셸 PATH를 snapshot으로 박제하고 비대화형 호출마다 그 PATH를 복원하기 때문이다 — snapshot 캡처 시점에는 `_mise_hook`이 발동 전이라 hook 모드의 install-bins도 PATH에 없는 baseline이 박제되므로, shim 노출 도구(mise npm backend)는 명시적 prepend 없이는 비대화형에 노출되지 않는다.
+가드와 `.zshrc` 추가 prepend의 배경:
+
+- 가드 기반: shims 경로의 PATH 실재 여부로 중복 활성화를 판단한다 (`[[ ":$PATH:" != *":$shims:"* ]]`). shims 경로 fallback은 mise 공식 우선순위 `MISE_DATA_DIR` → `$XDG_DATA_HOME/mise` → `$HOME/.local/share/mise`를 따른다 (`libraries/constants.nix`의 `mise.shimsDirExpr`이 SoT).
+- 옛 `MISE_SHELL` 가드 폐기 (#845): 부모 대화형 셸의 `MISE_SHELL`이 자식 비대화형 셸로 상속되어 shims 활성화를 조기 스킵하는 회귀를 만들어 폐기됐다.
+- `.zshrc`에서 shims prepend가 추가로 필요한 이유 (#857): Claude Code 같은 도구가 세션 시작 시 interactive 셸 PATH를 snapshot으로 박제하고 비대화형 호출마다 그 PATH를 복원한다. `mise activate zsh`(hook 모드)는 호출 끝에 `_mise_hook`을 즉시 발동시켜 install-bins를 PATH에 prepend하지만, hook 모드 정책상 shims는 PATH에 prepend하지 않는다 (shims는 `--shims` 플래그 경유에서만 PATH에 들어간다). 결과적으로 snapshot에는 install-bins는 들어가도 shims가 빠진 baseline이 박제되어, shim으로만 노출되는 도구(mise npm backend의 codex 등)는 비대화형에 미노출된다. `.zshrc`에서 shims를 명시적으로 prepend하면 snapshot에 shims도 포함되어 비대화형 호출이 동작한다.
+- 위험·우려와 fallback 후보: 이 fix는 Claude Code snapshot 캡처 메커니즘에 간접 의존한다. 향후 캡처 방식 변경(예: sanitized PATH 기록) 시 회귀 재발 가능. fallback 후보는 (a) `~/.claude/settings.json`의 `env.PATH`에 shims를 직접 prepend, (b) login shell init(`.zprofile`/`.zlogin`)에 shims 보강, (c) `command -v codex` 자가 검사를 `verify-ai-compat`에 추가하여 회귀 조기 감지.
 
 ## 핵심 절차
 
