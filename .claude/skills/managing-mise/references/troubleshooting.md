@@ -48,9 +48,12 @@ programs.zsh.initContent = lib.mkBefore ''
 programs.zsh = {
   # .zshenv: SSH 비대화형 세션을 위한 mise shims PATH 추가
   envExtra = ''
-    if command -v mise >/dev/null 2>&1 && [[ -z "$MISE_SHELL" ]]; then
+    _mise_shims="''${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims"
+    if command -v mise >/dev/null 2>&1 \
+       && [[ ":$PATH:" != *":$_mise_shims:"* ]]; then
       eval "$(mise activate zsh --shims)"
     fi
+    unset _mise_shims
   '';
 
   # .zshrc: 대화형 셸을 위한 전체 훅 활성화
@@ -78,7 +81,7 @@ $ ssh minipc 'cd /home/greenhead/Workspace/my-project && pnpm --version'
 9.15.4
 ```
 
-참고: darwin(Mac)과 NixOS 모두 동일한 설정을 사용하므로, 이 변경은 양쪽에 영향을 줍니다. `MISE_SHELL` 환경변수 체크로 중복 활성화를 방지합니다.
+참고: darwin(Mac)과 NixOS 모두 동일한 설정을 사용하므로, 이 변경은 양쪽에 영향을 줍니다. 중복 활성화 방지는 shims 경로의 PATH 실재 여부 가드로 한다 — 과거 `MISE_SHELL` 기반 가드는 부모 대화형 셸의 `MISE_SHELL`이 자식 비대화형 셸로 상속되어 shims 활성화를 조기 스킵하는 회귀를 만들어 폐기됐다.
 
 ---
 

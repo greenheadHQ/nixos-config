@@ -64,10 +64,10 @@ mise는 두 계층으로 활성화된다:
 
 | 계층 | 파일 | 명령어 | 용도 |
 |------|------|--------|------|
-| `.zshenv` | `shell/default.nix` envExtra | `mise activate zsh --shims` | 비대화형 SSH 세션 (PATH에 shim만 추가) |
-| `.zshrc` | `shell/default.nix` initContent | `mise activate zsh` | 대화형 셸 (cd 시 자동 버전 전환 등 전체 훅) |
+| `.zshenv` | `shell/default.nix` envExtra | `mise activate zsh --shims` | snapshot 미경유 비대화형(SSH `zsh -c` 등)에서 PATH에 shim 추가 |
+| `.zshrc` | `shell/default.nix` initContent | `mise activate zsh` + shims prepend | 대화형 훅(cd-time 버전 전환) + Claude Code snapshot 경유 비대화형 보강 |
 
-`MISE_SHELL` 환경변수로 중복 활성화를 방지한다.
+중복 활성화 방지 가드는 shims 경로의 PATH 실재 여부로 판단한다 (`[[ ":$PATH:" != *":$shims:"* ]]`). 과거 `MISE_SHELL` 기반 가드는 부모 대화형 셸의 `MISE_SHELL`이 자식 비대화형 셸로 상속되어 shims 활성화를 조기 스킵하는 회귀를 만들어 폐기됐다. `.zshrc`에서 추가로 shims를 prepend하는 이유는 Claude Code 같은 도구가 세션 시작 시 interactive 셸 PATH를 snapshot으로 박제하고 비대화형 호출마다 그 PATH를 복원하기 때문이다 — snapshot 캡처 시점에는 `_mise_hook`이 발동 전이라 hook 모드의 install-bins도 PATH에 없는 baseline이 박제되므로, shim 노출 도구(mise npm backend)는 명시적 prepend 없이는 비대화형에 노출되지 않는다.
 
 ## 핵심 절차
 
