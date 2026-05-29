@@ -261,8 +261,15 @@ _ssc_provide_impl() {
   [ -n "$tree_hash" ] || { _ssc_die "empty tree hash"; return 1; }
 
   # 2. 캐시 base (per-repo_id 격리 + umask 077 + 소유권 검증). 정리는 OS tmp 정책에 위임.
+  # 부모 디렉토리 symlink는 nix 2.20+ flake fetcher의 path: input 검증에서 거부된다
+  # (NixOS/nix#11941, #3513 등). macOS의 /tmp -> /private/tmp symlink가 그대로
+  # 전파되면 캐시 worktree를 path: input으로 잡는 모든 nix eval(예: tests/eval-tests.nix의
+  # builtins.getFlake (toString ./..))이 "path '//tmp' is a symlink" 에러로 깨진다.
+  # pwd -P로 캐시 base를 미리 정규화해 cwd·STAGED_SNAPSHOT_ROOT까지 자동으로 real path를 받게 한다.
   local base repo_id cache_root trees_dir builds_dir locks_dir
   base="${TMPDIR:-/tmp}"
+  base="$(cd "$base" 2>/dev/null && pwd -P)" \
+    || _ssc_die "cannot resolve TMPDIR=${TMPDIR:-/tmp}" || return 1
   base="${base%/}/staged-snapshot-cache"
   repo_id="$(printf '%s' "$repo_root" | _ssc_hash16)"
   cache_root="$base/$repo_id"
