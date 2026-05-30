@@ -21,7 +21,7 @@ pkill — 이름/속성 매칭으로 시그널 전송. pgrep과 동일 매처 + 
   pkill -USR1 PATTERN        SIGUSR1 — 앱 정의 시그널
 
 [속성 필터] (pgrep과 동일)
-  pkill -U green PATTERN     특정 사용자 소유만
+  pkill -U greenhead PATTERN     특정 사용자 소유만
   pkill -P 1234 PATTERN      특정 PPID 자식만
   pkill -g 5678 PATTERN      특정 PGID 그룹만
 

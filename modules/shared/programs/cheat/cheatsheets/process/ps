@@ -30,7 +30,7 @@ ps — 프로세스 스냅샷. top/htop과 달리 정적 출력이라 순서 안
   ps -m                      메모리(RSS) 내림차순 정렬
                              $ ps -Ao pid,%mem,command -m | head -10
 
-  ps -U green                특정 사용자 소유만
+  ps -U greenhead                특정 사용자 소유만
   ps -t ttys001              특정 tty만
 
 [Linux procps-ng]
@@ -42,7 +42,7 @@ ps — 프로세스 스냅샷. top/htop과 달리 정적 출력이라 순서 안
 
   ps --sort -size            VSZ 기준 (rss vs size 의미 다름)
 
-  ps -U green                특정 사용자 (양 플랫폼 동일)
+  ps -U greenhead                특정 사용자 (양 플랫폼 동일)
   ps -t tty1                 특정 tty (양 플랫폼 동일)
 
 [자주 쓰는 조합]

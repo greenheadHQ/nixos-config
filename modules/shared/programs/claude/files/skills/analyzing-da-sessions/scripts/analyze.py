@@ -117,8 +117,8 @@ SELECTIVE_LINE = re.compile(
 #   corpus path:     `--corpus manifest.json` 모드에서 host 분류 prefix로도 사용한다 (D-6).
 HOST_PATH_MAP = {
     "mac": {
-        "claude": "/Users/green/.claude/projects",
-        "codex": "/Users/green/.codex/sessions",
+        "claude": "/Users/greenhead/.claude/projects",
+        "codex": "/Users/greenhead/.codex/sessions",
     },
     "minipc": {
         "claude": "/home/greenhead/.claude/projects",
@@ -744,7 +744,7 @@ def _allowed_remote_path(host: str, path: str) -> bool:
     3. `posixpath.normpath`로 traversal(`../`) 정규화.
     4. `posixpath.isabs`로 relative path 폐기 (find stdout 비신뢰).
     5. `posixpath.commonpath([base_norm, path_norm]) == base_norm` boundary 비교 —
-       sibling-prefix(`/Users/green/.claude/projects-evil/...`)는 commonpath가
+       sibling-prefix(`/Users/greenhead/.claude/projects-evil/...`)는 commonpath가
        base_norm와 다르므로 거부. absolute/relative mix는 ValueError → 폐기.
     6. `path_norm != base_norm`로 base 자체 통과를 차단 (`.jsonl` 확장자 검사가
        이미 거부하지만 방어적 명시).

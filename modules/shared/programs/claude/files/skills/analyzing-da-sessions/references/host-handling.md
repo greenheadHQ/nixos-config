@@ -42,7 +42,7 @@ shell string 금지. 항상 list argv 형태로 subprocess.run 호출. 단 ssh r
 - 확장자 `.jsonl`로 종결.
 - `posixpath.normpath`로 traversal(`../`) 정규화.
 - `posixpath.isabs`로 relative path 폐기 (find stdout이 비정상으로 relative line을 내보낸 경우).
-- `posixpath.commonpath([base_norm, path_norm]) == base_norm and path_norm != base_norm` boundary 비교 — sibling-prefix(`/Users/green/.claude/projects-evil/x.jsonl`) 거부, absolute/relative mix는 ValueError로 폐기.
+- `posixpath.commonpath([base_norm, path_norm]) == base_norm and path_norm != base_norm` boundary 비교 — sibling-prefix(`/Users/greenhead/.claude/projects-evil/x.jsonl`) 거부, absolute/relative mix는 ValueError로 폐기.
 - 비교 대상 base는 `HOST_PATH_MAP[host]["claude"]` 또는 `HOST_PATH_MAP[host]["codex"]` absolute prefix.
 
 검증 실패 시 `ValueError` 또는 (find stdout 처리에서는) silently 폐기.
@@ -88,11 +88,11 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
 
 ## Command path vs validation/corpus path 역할 분리
 
-`HOST_PATH_MAP`의 absolute home prefix (`/Users/green/...`, `/home/greenhead/...`)는 SSH 명령 인자에 직접 들어가지 않는다. 명령 인자에는 host-neutral relative tilde 표현 (`~/.claude/projects`, `~/.codex/sessions`)을 사용해 host별 home directory hardcoded를 명령 구성에서 제거한다. 원격 shell이 `~`를 해당 user의 home으로 expansion한다.
+`HOST_PATH_MAP`의 absolute home prefix (`/Users/greenhead/...`, `/home/greenhead/...`)는 SSH 명령 인자에 직접 들어가지 않는다. 명령 인자에는 host-neutral relative tilde 표현 (`~/.claude/projects`, `~/.codex/sessions`)을 사용해 host별 home directory hardcoded를 명령 구성에서 제거한다. 원격 shell이 `~`를 해당 user의 home으로 expansion한다.
 
 absolute prefix는 다음 두 용도로만 사용한다:
 
-1. Validation path: `_allowed_remote_path`가 SSH find stdout (비신뢰 입력) 각 line을 검증할 때 boundary 비교 기준으로 사용한다. `posixpath.normpath` + `posixpath.commonpath([base_norm, path_norm]) == base_norm` 비교로 sibling-prefix (`/Users/green/.claude/projects-evil/...`), traversal (`../../etc/shadow`), relative path (find stdout이 비정상으로 relative line을 내보낸 경우)를 모두 거부한다.
+1. Validation path: `_allowed_remote_path`가 SSH find stdout (비신뢰 입력) 각 line을 검증할 때 boundary 비교 기준으로 사용한다. `posixpath.normpath` + `posixpath.commonpath([base_norm, path_norm]) == base_norm` 비교로 sibling-prefix (`/Users/greenhead/.claude/projects-evil/...`), traversal (`../../etc/shadow`), relative path (find stdout이 비정상으로 relative line을 내보낸 경우)를 모두 거부한다.
 2. Corpus path: `--corpus manifest.json` 모드에서 host 분류 prefix로도 사용한다 (`HOST_PATH_MAP` base prefix 순회). 미매칭 path는 silent host 배정 대신 warning만 누적한다 — 새 host 지원은 `HOST_PATH_MAP`에 명시 추가가 정답이다.
 
 이 역할 분리는 PR review thread의 `HOST_PATH_MAP` fragility 질문에 답한다 — 명령 구성에서는 hardcoded prefix를 제거하지만, 보안 경계와 corpus host inference에는 absolute prefix가 SSOT로 남는다 (host model 중앙화는 별도 PR로 분리, 본 reference의 NG-3 참조).
@@ -130,7 +130,7 @@ JSON sidecar의 `warnings` 배열에도 같은 메시지가 들어간다.
 
 | 호스트 | Claude Code base | Codex base |
 |--------|-----------------|------------|
-| mac | `/Users/green/.claude/projects/` | `/Users/green/.codex/sessions/` |
+| mac | `/Users/greenhead/.claude/projects/` | `/Users/greenhead/.codex/sessions/` |
 | minipc | `/home/greenhead/.claude/projects/` | `/home/greenhead/.codex/sessions/` |
 
 `--corpus manifest.json` 사용 시 위 표의 `HOST_PATH_MAP` base prefix를 우선 순회하여 host를 분류한다. 미매칭 path는 `warnings` 누적 후 처리에서 제외 — 새 host 지원은 `HOST_PATH_MAP` 추가가 정답이다 (silent host 배정 회피).

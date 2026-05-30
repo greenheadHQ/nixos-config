@@ -3,7 +3,7 @@
 # Thariq(Anthropic) gist 기반 — session_id, repo context 추가
 #
 # Log format (TSV): timestamp user session_id repo skill args
-# 예: 1742302800	green	abc123	nixos-config	managing-minipc	""
+# 예: 1742302800	greenhead	abc123	nixos-config	managing-minipc	""
 
 command -v jq >/dev/null 2>&1 || exit 0
 

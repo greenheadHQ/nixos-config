@@ -23,8 +23,8 @@ top — 시스템 표준 프로세스 모니터. macOS BSD와 Linux procps-ng는
   top -pid PID               특정 PID만 추적
                              $ top -pid 1234
 
-  top -user green            특정 사용자 소유만
-  top -U green               동의어
+  top -user greenhead            특정 사용자 소유만
+  top -U greenhead               동의어
 
 [Linux procps-ng]                  # NixOS / 대부분 Linux 배포판
   top                        대화형 모드 (q로 종료)

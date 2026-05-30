@@ -27,7 +27,7 @@ esac
 read -rp "2. 호스트명 (예: greenhead-MacBookPro): " hostname
 
 # 3. 사용자명
-read -rp "3. 사용자명 (예: green): " username
+read -rp "3. 사용자명 (예: greenhead): " username
 
 # 4. 호스트 유형
 echo "4. 호스트 유형을 선택하세요:"
