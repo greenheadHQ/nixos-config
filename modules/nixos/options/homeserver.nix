@@ -2,21 +2,11 @@
 # 홈서버 서비스 옵션 정의
 # mkOption/mkEnableOption으로 서비스 선언적 활성화 지원
 {
-  config,
   lib,
   constants,
-  username,
   ...
 }:
 
-let
-  # Prefix normalization/trim is enforced in the AnkiConnect patch at runtime.
-  # This type only guarantees at least one non-space character exists.
-  nonBlankString = lib.types.strMatching ".*[^[:space:]].*";
-  nonEmptyPrefixList = lib.types.addCheck (lib.types.listOf nonBlankString) (
-    prefixes: builtins.length prefixes > 0
-  );
-in
 {
   options.homeserver = {
     immich = {
@@ -84,115 +74,6 @@ in
         type = lib.types.str;
         default = "*-*-* 04:00:00";
         description = "OnCalendar time for version check";
-      };
-    };
-
-    ankiSync = {
-      enable = lib.mkEnableOption "Anki self-hosted sync server";
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = constants.network.ports.ankiSync;
-        description = "Port for Anki sync server";
-      };
-    };
-
-    ankiConnect = {
-      enable = lib.mkEnableOption "Headless Anki with AnkiConnect API";
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = constants.network.ports.ankiConnect;
-        description = "Port for AnkiConnect HTTP API";
-      };
-      profile = lib.mkOption {
-        type = lib.types.str;
-        default = "server";
-        description = "Anki profile name";
-      };
-      configApi = {
-        enable = lib.mkOption {
-          type = lib.types.bool;
-          default = true;
-          description = ''
-            Enable AnkiConnect custom config actions (`getConfig`, `setConfig`).
-            Defaults to true because awesome-anki integration depends on this API.
-            Access is constrained by Tailscale network isolation and allowedKeyPrefixes.
-          '';
-        };
-        allowedKeyPrefixes = lib.mkOption {
-          type = nonEmptyPrefixList;
-          default = [ "awesomeAnki." ];
-          description = ''
-            Allowed key prefixes for config API writes/reads.
-            Keys not matching any prefix are rejected with "config key is not allowed".
-            Must match CONFIG_API_DEFAULT_ALLOWED_PREFIXES in the AnkiConnect patch.
-          '';
-        };
-        maxValueBytes = lib.mkOption {
-          type = lib.types.ints.positive;
-          default = 65536;
-          description = ''
-            Maximum serialized UTF-8 JSON payload size per config value.
-            Values exceeding this limit are rejected with "config value exceeds size limit".
-            Must match CONFIG_API_DEFAULT_MAX_VALUE_BYTES in the AnkiConnect patch.
-          '';
-        };
-      };
-      sync = {
-        enable = lib.mkOption {
-          type = lib.types.bool;
-          default = true;
-          description = "Enable AnkiConnect <-> Sync Server auto sync.";
-        };
-        url = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = "Custom sync endpoint URL. null이면 로컬 Anki Sync Server URL을 사용.";
-        };
-        username = lib.mkOption {
-          type = lib.types.str;
-          default = username;
-          description = "Sync username used by headless Anki.";
-        };
-        onStart = lib.mkOption {
-          type = lib.types.bool;
-          default = true;
-          description = "Trigger sync once after anki-connect service starts.";
-        };
-        interval = lib.mkOption {
-          type = lib.types.str;
-          default = "5m";
-          description = "OnUnitActiveSec interval for periodic sync.";
-        };
-        maxRetries = lib.mkOption {
-          type = lib.types.ints.positive;
-          default = 3;
-          description = "Maximum retry attempts per sync run.";
-        };
-        backoffBaseSec = lib.mkOption {
-          type = lib.types.ints.positive;
-          default = 5;
-          description = "Base seconds for exponential backoff (5, 10, 20...).";
-        };
-        stateFile = lib.mkOption {
-          type = lib.types.str;
-          default = "/var/lib/anki/sync-status.json";
-          description = "Path to sync status JSON used by operational checks/UI.";
-        };
-        bootstrapFromSyncServer = lib.mkOption {
-          type = lib.types.bool;
-          default = true;
-          description = "Bootstrap AnkiConnect profile from Sync Server collection on first run.";
-        };
-        bootstrapMedia = lib.mkOption {
-          type = lib.types.bool;
-          default = true;
-          description = "Copy media directory during one-time bootstrap.";
-        };
-        bootstrapMinCollectionBytes = lib.mkOption {
-          type = lib.types.ints.unsigned;
-          default = 262144;
-          description = "Treat local collection as empty when smaller than this threshold.";
-        };
       };
     };
 
@@ -300,15 +181,6 @@ in
       enable = lib.mkEnableOption "Caddy reverse proxy with HTTPS for homeserver services";
     };
 
-    awesomeAnki = {
-      enable = lib.mkEnableOption "awesome-anki web service for Anki card splitting";
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = constants.network.ports.awesomeAnki;
-        description = "Port for awesome-anki web interface";
-      };
-    };
-
     smokeTest = {
       enable = lib.mkEnableOption "Homeserver runtime smoke test (healthcheck + backup freshness)";
       timerInterval = lib.mkOption {
@@ -341,8 +213,6 @@ in
     ../programs/immich-update # Immich 버전 체크 및 업데이트
     ../programs/uptime-kuma-update # Uptime Kuma 버전 체크 및 업데이트
     ../programs/copyparty-update # Copyparty 버전 체크 및 업데이트
-    ../programs/anki-sync-server # Anki 자체 호스팅 동기화 서버
-    ../programs/anki-connect # Headless Anki + AnkiConnect API
     ../programs/docker/copyparty.nix # Copyparty 파일 서버
     ../programs/docker/vaultwarden.nix # Vaultwarden 비밀번호 관리자
     ../programs/docker/vaultwarden-backup.nix # Vaultwarden 백업 (SQLite 안전 백업)
@@ -355,7 +225,6 @@ in
     ../programs/docker/karakeep-fallback-sync.nix # Karakeep fallback HTML 자동 재연결
     ../programs/docker/karakeep-singlefile-bridge.nix # Karakeep SingleFile 대용량 분기 브리지
     ../programs/karakeep-update # Karakeep 버전 체크 + 업데이트 알림
-    ../programs/docker/awesome-anki.nix # awesome-anki 카드 분할 웹 서비스
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
     ../programs/opnix # 1Password Service Account 시크릿 materialization

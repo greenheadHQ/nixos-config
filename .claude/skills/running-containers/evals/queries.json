@@ -9,13 +9,10 @@
   {"query": "전체 서비스 포트 매핑 확인하고 싶어", "should_trigger": true, "why": "저항적: 포트/도메인 매핑은 running-containers"},
   {"query": "서비스 업데이트 타이머 전체 확인", "should_trigger": true, "why": "저항적: 통합 업데이트 시스템은 이 스킬"},
   {"query": "constants.nix에서 컨테이너 리소스 제한 바꾸기", "should_trigger": true, "why": "저항적: 리소스 제한 상수는 컨테이너 스킬 범위"},
-  {"query": "anki 동기화 서버 상태 확인해줘", "should_trigger": false, "why": "혼동 쌍: hosting-anki"},
-  {"query": "AnkiConnect API 응답 테스트", "should_trigger": false, "why": "혼동 쌍: hosting-anki"},
   {"query": "copyparty WebDAV 연결이 안 돼", "should_trigger": false, "why": "혼동 쌍: hosting-copyparty"},
   {"query": "파일 서버에 로그인이 안 돼", "should_trigger": false, "why": "혼동 쌍: hosting-copyparty"},
   {"query": "Karakeep 웹 아카이브가 실패해", "should_trigger": false, "why": "혼동 쌍: hosting-karakeep"},
   {"query": "archive.greenhead.dev에서 CSS 렌더링이 깨져", "should_trigger": false, "why": "혼동 쌍: hosting-karakeep"},
-  {"query": "anki-sync-backup 타이머 확인", "should_trigger": false, "why": "혼동 쌍: hosting-anki"},
   {"query": "copyparty-update 실행해줘", "should_trigger": false, "why": "혼동 쌍: hosting-copyparty"},
   {"query": "karakeep-notify 웹훅 브리지 로그 확인", "should_trigger": false, "why": "혼동 쌍: hosting-karakeep"},
   {"query": "vaultwarden 백업 실패 원인 확인", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"}

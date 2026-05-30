@@ -62,7 +62,7 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 - 옵션 선언: [`modules/nixos/options/homeserver.nix`](./modules/nixos/options/homeserver.nix)
 - 활성화 위치: [`modules/nixos/configuration.nix`](./modules/nixos/configuration.nix)
 
-**서비스 카테고리**: Immich(사진), Vaultwarden(비밀번호), Karakeep(웹 아카이버/북마크), Copyparty(파일 서버), Anki(동기화 · AnkiConnect · awesome-anki), Uptime Kuma(모니터링), Caddy(HTTPS 리버스 프록시). 각 서비스별 백업/업데이트 체크/알림 서브시스템 포함.
+**서비스 카테고리**: Immich(사진), Vaultwarden(비밀번호), Karakeep(웹 아카이버/북마크), Copyparty(파일 서버), Uptime Kuma(모니터링), Caddy(HTTPS 리버스 프록시). 각 서비스별 백업/업데이트 체크/알림 서브시스템 포함.
 
 ### 상수 관리
 
@@ -186,7 +186,6 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | Vaultwarden | `hosting-vaultwarden` |
 | Karakeep | `hosting-karakeep` |
 | Copyparty | `hosting-copyparty` |
-| Anki 동기화 | `hosting-anki` |
 
 추가 참고:
 - [`CLAUDE.md`](./CLAUDE.md) — LLM 행동 규칙 (실행 환경 판별, 빌드, Bash tool 환경, 상수 관리 등)

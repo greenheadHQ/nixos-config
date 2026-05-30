@@ -37,9 +37,6 @@ let
     ]
     ++ lib.optionals config.homeserver.karakeep.enable [
       "${subdomains.karakeep}.${base}:307:/"
-    ]
-    ++ lib.optionals config.homeserver.awesomeAnki.enable [
-      "${subdomains.awesomeAnki}.${base}:200:/"
     ];
 
   smokeScript = pkgs.writeShellApplication {

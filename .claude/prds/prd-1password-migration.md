@@ -93,7 +93,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 - Reviewed: `modules/nixos/programs/docker/vaultwarden.nix`, `modules/nixos/programs/docker/vaultwarden-backup.nix`, `modules/nixos/programs/vaultwarden-update/default.nix`, `modules/nixos/programs/caddy.nix`, `modules/nixos/programs/smoke-test.nix`, `modules/darwin/programs/ssh/default.nix`, `secrets/secrets.nix`, `libraries/constants.nix`, `tests/eval-tests.nix`, `.claude/skills/managing-secrets/SKILL.md`, `.claude/skills/hosting-vaultwarden/SKILL.md`, `.claude/skills/running-containers/references/scriptable-immich-upload.md`
 - Discovery baseline at PRD creation (2026-05-17): Vaultwarden Podman 컨테이너 (`vaultwarden/server:1.35.4`, port 8222, vaultwarden.greenhead.dev, Tailscale 내부 전용, Caddy reverse proxy). 매일 04:30 KST SQLite + rsync 백업, 30일 보존. agenix `.age` 23개 (`secrets/secrets.nix`), 그중 `vaultwarden-admin-token` + `pushover-vaultwarden`이 Vaultwarden 의존. Mac SSH는 당시 `~/.ssh/id_ed25519` + `launchd.agents.ssh-add-keys` 경로였다. 이후 변경은 각 phase change log가 canonical이다.
 - Validation surface: `nrs` (nix-darwin/nixos-rebuild) + `nix flake check --no-build --all-systems` + `tests/eval-tests.nix` + `smoke-test.nix` + `managing-secrets/evals/queries.json`. 1Password 동작은 GUI + `op` CLI 명령 + Touch ID 응답으로 manual 검증.
-- Design implications: (a) 1Password Service Account가 Individual 플랜에서 GUI 노출됨을 사용자가 GUI 스크린샷으로 확인 (2026-05-17). (b) Mac은 Homebrew Cask `1password`, NixOS는 nixpkgs `_1password-cli`만. (c) opnix canonical은 `brizzbuzz/opnix` (mrjones2014는 archived, brizzbuzz README가 명시). (d) envScript 패턴은 vaultwarden뿐 아니라 karakeep·awesome-anki에서도 사용 중 → 별도 references 이관 불필요.
+- Design implications: (a) 1Password Service Account가 Individual 플랜에서 GUI 노출됨을 사용자가 GUI 스크린샷으로 확인 (2026-05-17). (b) Mac은 Homebrew Cask `1password`, NixOS는 nixpkgs `_1password-cli`만. (c) opnix canonical은 `brizzbuzz/opnix` (mrjones2014는 archived, brizzbuzz README가 명시). (d) envScript 패턴은 vaultwarden뿐 아니라 karakeep에서도 사용 중 → 별도 references 이관 불필요.
 - Confidence / gaps: Apple Passwords CSV의 TOTP/passkey 보존 여부는 Phase 4에서 sample 3개 사전 실측으로 확정한다. 1Password Individual은 Events API audit log 없음 — 구조적 한계로 vault separation + rotation cadence로 보완.
 
 ## Requirements
@@ -186,7 +186,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 | `opnix-service-account-token.age` | (없음) | publicKeys=minipcHostOnly (host key) | Phase 1 |
 | `vaultwarden-admin-token.age` | publicKeys=minipc | (삭제) | Phase 6 |
 | `pushover-vaultwarden.age` | publicKeys=minipc | (삭제) | Phase 6 |
-| 기타 21개 .age (immich/karakeep/copyparty/anki 등) | publicKeys=minipc | 변경 없음 | — |
+| 기타 .age (immich/karakeep/copyparty 등) | publicKeys=minipc | 변경 없음 | — |
 
 ## Final Multi-Pass Review After All Phases
 
