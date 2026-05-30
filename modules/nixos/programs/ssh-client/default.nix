@@ -18,7 +18,7 @@ in
       };
       "mac" = {
         hostname = constants.network.macbookTailscaleIP;
-        user = "green";
+        user = "greenhead";
         identityFile = sshKeyPath;
         extraOptions = {
           ControlMaster = "auto";

@@ -1,5 +1,5 @@
 {
-  description = "green/nixos-config - macOS & NixOS Development Environment";
+  description = "greenheadHQ/nixos-config - macOS & NixOS Development Environment";
 
   inputs = {
     # === Change Intent Record ===
@@ -108,7 +108,7 @@
             };
         in
         {
-          "greenhead-MacBookPro" = mkDarwinHost "green" "personal";
+          "greenhead-MacBookPro" = mkDarwinHost "greenhead" "personal";
           "work-MacBookPro" = mkDarwinHost "glen" "work";
         };
 

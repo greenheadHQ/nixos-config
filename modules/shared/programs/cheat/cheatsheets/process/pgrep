@@ -29,7 +29,7 @@ pgrep — 이름/속성으로 PID 검색. 출력은 PID(들). top/htop의 시각
 
 [속성 필터]
   pgrep -U UID|user          소유 UID/사용자
-                             $ pgrep -U green -l
+                             $ pgrep -U greenhead -l
                              8923 ssh
 
   pgrep -P PPID              부모 PID
@@ -40,7 +40,7 @@ pgrep — 이름/속성으로 PID 검색. 출력은 PID(들). top/htop의 시각
   pgrep -g PGID              프로세스 그룹 ID
 
 [조합]
-  pgrep -fU green "Chrome"   green 소유 + Chrome 풀 커맨드라인 매칭
+  pgrep -fU greenhead "Chrome"   greenhead 소유 + Chrome 풀 커맨드라인 매칭
 
 [매칭 함정 — "활성 상태 보기에는 보이는데 pgrep은 안 잡을 때"]
   $ pgrep -l chrome

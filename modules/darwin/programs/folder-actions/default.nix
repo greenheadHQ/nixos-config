@@ -63,7 +63,7 @@ in
     folder-action-compress-rar = {
       enable = true;
       config = {
-        Label = "com.green.folder-action.compress-rar";
+        Label = "com.greenhead.folder-action.compress-rar";
         ProgramArguments = [ "${homeDir}/.local/bin/compress-rar.sh" ];
         WatchPaths = [ "${folderActionsDir}/compress-rar" ];
         StandardOutPath = "${logsDir}/compress-rar.log";
@@ -78,7 +78,7 @@ in
     folder-action-compress-video = {
       enable = true;
       config = {
-        Label = "com.green.folder-action.compress-video";
+        Label = "com.greenhead.folder-action.compress-video";
         ProgramArguments = [ "${homeDir}/.local/bin/compress-video.sh" ];
         WatchPaths = [ "${folderActionsDir}/compress-video" ];
         StandardOutPath = "${logsDir}/compress-video.log";
@@ -93,7 +93,7 @@ in
     folder-action-rename-asset = {
       enable = true;
       config = {
-        Label = "com.green.folder-action.rename-asset";
+        Label = "com.greenhead.folder-action.rename-asset";
         ProgramArguments = [ "${homeDir}/.local/bin/rename-asset.sh" ];
         WatchPaths = [ "${folderActionsDir}/rename-asset" ];
         StandardOutPath = "${logsDir}/rename-asset.log";
@@ -105,7 +105,7 @@ in
     folder-action-convert-video-to-gif = {
       enable = true;
       config = {
-        Label = "com.green.folder-action.convert-video-to-gif";
+        Label = "com.greenhead.folder-action.convert-video-to-gif";
         ProgramArguments = [ "${homeDir}/.local/bin/convert-video-to-gif.sh" ];
         WatchPaths = [ "${folderActionsDir}/convert-video-to-gif" ];
         StandardOutPath = "${logsDir}/convert-video-to-gif.log";
@@ -120,7 +120,7 @@ in
     folder-action-upload-immich = {
       enable = true;
       config = {
-        Label = "com.green.folder-action.upload-immich";
+        Label = "com.greenhead.folder-action.upload-immich";
         ProgramArguments = [ "${homeDir}/.local/bin/upload-immich.sh" ];
         WatchPaths = [ shottrDefaultDir ];
         StandardOutPath = "${logsDir}/upload-immich.log";
