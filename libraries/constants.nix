@@ -79,12 +79,13 @@
   # 디바이스별 SSH 공개키 — MiniPC authorized_keys 등록용 (PRD #780 Phase 2a)
   # 1Password Automation vault `ssh` tag inventory와 일관. agenix recipient(sshKeys)와는 분리.
   # private 보관: macSsh = 1Password vault(SSH agent), emergency = ~/.ssh + 1Password backup,
-  #   iphone/ipad = Termius 디바이스 keychain.
+  #   mobile = Termius keychain (iPhone·iPad 공유). Termius 계정 동기화가 host의 key 지정과
+  #   표준 키 private 본체를 기기 간 복제하므로 디바이스별 격리가 성립하지 않는다 → iPhone/iPad는
+  #   단일 mobile-ssh 공유 키 사용 (PRD #780 Phase 2a mobile follow-up, #866).
   # ═══════════════════════════════════════════════════════════════
   sshDeviceKeys = {
     macSsh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGijyrxefX4n5oRJ2775QDOFtBfjPeNzjym2i7TJx9qr mac-ssh";
-    iphone = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZOWDrhEYPTD0OC0SlePYpZCWjhAvI3u2EhVq9JlzER iphone-ssh";
-    ipad = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKlky5BaXxpz468Bc4EI+a2KuSURGz8M0P9hEL37qcau ipad-ssh";
+    mobile = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZOWDrhEYPTD0OC0SlePYpZCWjhAvI3u2EhVq9JlzER mobile-ssh";
     emergency = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMM0hYpFqehy7U96Ms4348SStVue7pYbR3+B3PlGV+de emergency-fallback";
   };
 
