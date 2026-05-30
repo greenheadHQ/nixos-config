@@ -142,7 +142,7 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 
 ### Remediation Checklist
 
-- [ ] 현재 MiniPC 등록 fingerprint 확인: `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead`에서 `iphone-ssh`, `ipad-ssh`, `mac-ssh`, `emergency-fallback` fingerprint를 아래 fingerprint inventory table에 기록
+- [x] 현재 MiniPC 등록 fingerprint 확인: `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead`에서 `iphone-ssh`, `ipad-ssh`, `mac-ssh`, `emergency-fallback` fingerprint를 아래 fingerprint inventory table에 기록 (2026-05-30 완료 — retired 공유 키 row 포함)
 - [ ] MiniPC OpenSSH hardening: `modules/nixos/programs/ssh.nix`에 `services.openssh.settings.KbdInteractiveAuthentication = false` 추가 후 `nrs minipc` 적용
 - [ ] Server hardening 검증: MiniPC에서 `sudo -n sshd -T | rg '^(passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication) '` 결과가 `passwordauthentication no`, `pubkeyauthentication yes`, `kbdinteractiveauthentication no`인지 확인
 - [ ] Termius iPhone host profile 확인: host는 MiniPC Tailscale endpoint, user는 `greenhead`, auth는 key identity 중심, identity는 `iphone-ssh`
@@ -165,21 +165,34 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 
 ### Fingerprint Inventory Table
 
+Measured 2026-05-30 (MiniPC `sshd` journal 보존 시작 2026-05-02). 앞 4개 row는 현재 `/etc/ssh/authorized_keys.d/greenhead`에 배포된 키이고, 마지막 row는 authorized_keys에 더 이상 없는 retired 공유 키로 journal `Accepted publickey` 로그에서만 관측된다.
+
 | Key label | SHA256 fingerprint | Source command |
 |---|---|---|
-| `iphone-ssh` | TBD | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
-| `ipad-ssh` | TBD | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
-| `mac-ssh` | TBD | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
-| `emergency-fallback` | TBD | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| `iphone-ssh` | `SHA256:qkDVFnuurKqKIoo4jXw1vP5U/Mi2lZmhe4j7wA4PKrI` | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| `ipad-ssh` | `SHA256:rCm2oVgtJM4vvP2Ju8ybqHna5ZLTHbromuTQ2OIiDWo` | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| `mac-ssh` | `SHA256:h/M3XNgDVwUQueVTaVbiUdeGJpsfRZVQPPzYOa/CnVI` | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| `emergency-fallback` | `SHA256:Ux1iqQmI6lrCa7r48lM7fC2gbVvkgsf+PDTUfoTcOiI` | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| retired shared key (현재 미등록) | `SHA256:6RE7i26xUU6VGdFAFLxdWnF0oHiuHR5KQqUoQT8RydQ` | MiniPC `sshd` journal `Accepted publickey` — authorized_keys 부재, 마지막 accept 2026-05-25T17:37 KST |
 
 ### Mobile Attempt Evidence Table
 
 이 표는 Phase 2a Change Log와 master PRD Open Questions/Change Log를 갱신하기 전의 canonical mobile attempt evidence 형식이다. `attempt time window`는 KST ISO range로 기록하고, 같은 범위를 `journalctl --since/--until`에 사용한다. `expected SHA256 fingerprint`는 fingerprint inventory table에서 가져오고, `accepted SHA256 fingerprint`와 `accepted log line/time`은 MiniPC `sshd` 로그에서 가져온다.
 
+아래는 2026-05-30 baseline 진단 — hardening 적용 및 Termius 키 복구 **이전**, MiniPC `sshd` journal(보존 2026-05-02~) 과거 로그 분석 결과다. Termius 키 복구 후 재시도의 accepted-match evidence는 closeout 시점에 별도 row로 덮어쓴다.
+
 | Device | User | Tailscale IP | Attempt time window | Expected key label | Expected SHA256 fingerprint | Accepted SHA256 fingerprint | Accepted log line/time | Rejected/mismatched key evidence | Keyboard-interactive/PAM observed | Result |
 |---|---|---|---|---|---|---|---|---|---|---|
-| iPhone | `greenhead` | TBD | TBD | `iphone-ssh` | TBD | TBD | TBD | TBD | TBD | TBD |
-| iPad (if in scope) | `greenhead` | TBD | TBD | `ipad-ssh` | TBD | TBD | TBD | TBD | TBD | TBD |
+| iPhone | `greenhead` | `100.76.27.1` | 2026-05-26T18:29 ~ 2026-05-28T20:14 KST | `iphone-ssh` | `SHA256:qkDVFnuu…wA4PKrI` | none (Accepted publickey 라인 없음) | 없음 — 5/26·5/28 총 5회 `Disconnected from authenticating user greenhead … [preauth]` | 키 교체(#833) 이전 66회 `SHA256:6RE7…RydQ`(retired)로 accept; `iphone-ssh` accept 0회 | pubkey 거부 후 preauth 종료, PAM session 미도달 (`passwordauthentication no`) | FAIL — #833이 retired 공유 키를 authorized에서 제거한 뒤 Termius가 미교체 키 보유로 차단 |
+| iPad (if in scope) | `greenhead` | `100.114.211.7` | 마지막 성공 2026-05-24T15:37 KST; #833(2026-05-25) 이후 시도 없음 | `ipad-ssh` | `SHA256:rCm2oVgt…2OIiDWo` | `SHA256:6RE7…RydQ` (retired, 마지막 성공 기준) | `2026-05-24T15:37 Accepted publickey … SHA256:6RE7…RydQ` | `ipad-ssh` accept 0회; 전량 retired 공유 키 의존 | N/A (키 교체 후 미시도) | 키 교체 후 미접속(침묵) — 시도 시 iPhone과 동일 실패 예상 (동일 retired key 의존) |
+
+### Baseline Diagnosis (2026-05-30)
+
+근본 원인은 **클라이언트 키 미교체**로 확정된다. 서버 쪽 배포(`constants.sshDeviceKeys`의 `iphone-ssh`/`ipad-ssh`를 MiniPC authorized_keys에 등록)는 #833에서 완료됐으나, iPhone/iPad **Termius 디바이스에는 새 디바이스 키의 private key가 설치되지 않았다.** 두 디바이스는 retire된 공유 키 `SHA256:6RE7…RydQ` 하나로 인증해 왔고(Mac 150 / iPhone 66 / iPad 14회, 마지막 accept 2026-05-25T17:37 KST), #833이 이 키를 authorized_keys에서 제거하면서 iPhone이 차단됐다. `iphone-ssh`/`ipad-ssh`는 journal 전 기간에 걸쳐 **accept 0회**다.
+
+- iPhone: 2026-05-26·05-28 재시도 5회 전부 preauth 단계에서 종료 (실측).
+- iPad: 2026-05-24 이후 접속 시도 자체가 없어 "우연히 통과 중"이 아니라 침묵 상태이며, 동일 retired key 의존이므로 시도 시 동일 차단이 예상된다 → remediation 범위 포함 권장.
+- 표준 복구 경로(`iphone-ssh`/`ipad-ssh` backup import 또는 새 keypair rotation)는 디바이스 측 작업이라 이 진단으로 코드 변경 대상이 아니다. Fallback Only(retired key 임시 재등록) decision set은 표준 경로가 막힌 경우에만 연다.
 
 ### Questions For User Decision
 
@@ -206,7 +219,7 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 - [ ] Termius profile policy: server-side `KbdInteractiveAuthentication = false` hardening을 필수로 둔 상태에서, Termius UI에서도 keyboard-interactive 또는 password/PAM prompt를 비활성 또는 미사용으로 둘지?
 - [ ] Evidence policy: mobile SSH key rotation/revoke 때마다 MiniPC `sshd` accepted fingerprint 대조를 mandatory gate로 둘지?
 - [ ] Inventory policy: 1Password `iphone-ssh`/`ipad-ssh` item에 public fingerprint와 Termius host profile 이름을 필드로 추가해 운영 인벤토리로 삼을지?
-- [ ] Issue/PR tracking: 이 후속 remediation을 PRD 문서 변경만으로 닫을지, 별도 GitHub issue를 열어 실기기 검증 완료 전까지 추적할지?
+- [x] Issue/PR tracking: 별도 GitHub 추적 이슈 #866 등록 (2026-05-30). 진행/닫힘 판단의 canonical SSOT는 본 phase-02a를 유지하고, #866은 가시화용 mirror로 운영한다.
 
 ## Phase-End Multi-Pass Review
 
