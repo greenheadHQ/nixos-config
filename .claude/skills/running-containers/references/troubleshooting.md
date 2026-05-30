@@ -93,7 +93,6 @@ bind: cannot assign requested address
 | 서비스 | 이유 |
 |------|------|
 | `caddy.service` | Tailscale IP에 직접 bind |
-| `anki-sync-server.service` | Tailscale IP에 직접 bind |
 | `immich-cleanup`/`immich-version-check` 등 | 외부 네트워크 의존 작업 전 준비 대기 |
 
 공통 대기 로직은 `modules/nixos/lib/tailscale-wait.nix`를 사용합니다.
@@ -107,7 +106,6 @@ curl -I http://127.0.0.1:3002  # uptime-kuma
 
 # Tailscale IP bind 서비스 상태
 systemctl status caddy
-systemctl status anki-sync-server
 ```
 
 ### Scriptable 공유 시트에서 스크립트 실행 시 무반응

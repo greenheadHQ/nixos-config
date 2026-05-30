@@ -171,7 +171,7 @@ eval-tests (E2E 보안 검증):
 - host network 컨테이너의 listen address 검증 (UPTIME_KUMA_HOST=127.0.0.1)
 - Caddy virtualHost listenAddresses = Tailscale IP 전용
 - Caddy globalConfig default_bind = Tailscale IP
-- anki-sync-server address/openFirewall 검증
+- openssh openFirewall 검증
 - 방화벽 정책 (allowedTCPPorts=[], trustedInterfaces allowlist, 인터페이스별 포트 없음 등)
 - Tailscale CGNAT IP 범위 독립 검증 (100.64.0.0/10)
 - 수동 nftables 규칙(extraInputRules/extraForwardRules) 없음

@@ -103,14 +103,6 @@ in
         '';
       };
 
-      virtualHosts."${subdomains.awesomeAnki}.${base}" = {
-        listenAddresses = [ minipcTailscaleIP ];
-        extraConfig = ''
-          ${securityHeaders}
-          reverse_proxy localhost:${toString constants.network.ports.awesomeAnki}
-        '';
-      };
-
       virtualHosts."${subdomains.karakeep}.${base}" = {
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''

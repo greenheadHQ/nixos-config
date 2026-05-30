@@ -56,7 +56,6 @@ Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로�
 | `pushover-uptime-kuma.age` | `/run/agenix/pushover-uptime-kuma` | Uptime Kuma 업데이트 알림 |
 | `pushover-copyparty.age` | `/run/agenix/pushover-copyparty` | Copyparty 업데이트 알림 |
 | `pushover-vaultwarden.age` | `/run/agenix/pushover-vaultwarden` | Vaultwarden 업데이트 알림 |
-| `anki-sync-password.age` | `/run/agenix/anki-sync-password` | Anki Sync Server 비밀번호 |
 | `copyparty-password.age` | `/run/agenix/copyparty-password` | Copyparty 파일 서버 비밀번호 |
 | `vaultwarden-admin-token.age` | `/run/agenix/vaultwarden-admin-token` | Vaultwarden 관리자 패널 토큰 |
 | `shottr-license.age` | `~/.config/shottr/license` | Shottr 라이센스 pre-fill (`KC_LICENSE` + `KC_VAULT`) |
@@ -65,9 +64,6 @@ Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로�
 | `karakeep-meili-master-key.age` | `/run/agenix/karakeep-meili-master-key` | Karakeep Meilisearch 마스터 키 |
 | `karakeep-openai-key.age` | `/run/agenix/karakeep-openai-key` | Karakeep OpenAI API 키 |
 | `pushover-karakeep.age` | `/run/agenix/pushover-karakeep` | Karakeep 서비스 알림 (업데이트/백업/모니터) |
-| `awesome-anki-openai-key.age` | `/run/agenix/awesome-anki-openai-key` | awesome-anki OpenAI API 키 |
-| `awesome-anki-gemini-key.age` | `/run/agenix/awesome-anki-gemini-key` | awesome-anki Gemini API 키 |
-| `pushover-awesome-anki.age` | `/run/agenix/pushover-awesome-anki` | awesome-anki 서비스 알림 |
 
 상세는 `secrets/secrets.nix` 참조.
 

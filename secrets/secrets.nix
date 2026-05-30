@@ -41,9 +41,6 @@ in
   # Shottr 라이센스 키 (kc-license + kc-vault pre-fill)
   "shottr-license.age".publicKeys = allHosts;
 
-  # Anki Sync Server 비밀번호
-  "anki-sync-password.age".publicKeys = minipcOnly;
-
   # Copyparty 파일 서버 비밀번호
   "copyparty-password.age".publicKeys = minipcOnly;
 
@@ -63,11 +60,6 @@ in
   "karakeep-meili-master-key.age".publicKeys = minipcOnly;
   "karakeep-openai-key.age".publicKeys = allHosts;
   "pushover-karakeep.age".publicKeys = allHosts;
-
-  # awesome-anki (Anki 카드 분할 웹 서비스)
-  "awesome-anki-openai-key.age".publicKeys = minipcOnly;
-  "awesome-anki-gemini-key.age".publicKeys = minipcOnly;
-  "pushover-awesome-anki.age".publicKeys = minipcOnly;
 
   # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
   "pushover-system-monitor.age".publicKeys = minipcOnly;

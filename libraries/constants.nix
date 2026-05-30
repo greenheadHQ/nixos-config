@@ -15,12 +15,9 @@
       immich = 2283;
       immichMl = 3003;
       uptimeKuma = 3002;
-      ankiSync = 27701;
-      ankiConnect = 8765;
       copyparty = 3923;
       vaultwarden = 8222;
       karakeep = 3000;
-      awesomeAnki = 3100;
       caddy = 443;
     };
 
@@ -39,7 +36,6 @@
       copyparty = "copyparty";
       vaultwarden = "vaultwarden";
       karakeep = "archive";
-      awesomeAnki = "anki";
     };
   };
 
@@ -125,10 +121,6 @@
     vaultwarden = {
       memory = "256m";
       cpus = "0.5";
-    };
-    awesomeAnki = {
-      memory = "1g";
-      cpus = "1";
     };
     karakeep = {
       app = {

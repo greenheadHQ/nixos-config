@@ -82,7 +82,6 @@ Phase 5는 Phase 2a mobile SSH follow-up 정책을 새로 결정하지 않는다
   | pushover-system-monitor.age | agenix | — | /run/agenix/pushover-system-monitor | pushover-system-monitor.service |
   | immich-api-key.age | agenix | — | /run/agenix/immich-api-key | immich-server container |
   | karakeep-openai-key.age | agenix | — | /run/agenix/karakeep-openai-key | karakeep container |
-  | awesome-anki-openai-key.age | agenix | — | /run/agenix/awesome-anki-openai-key | awesome-anki container |
   | ... | ... | ... | ... | ... |
   | github-pat | 1Password | Automation | — | gh CLI (Mac + MiniPC) |
   | mac-ssh | 1Password | Automation | — | Mac SSH agent |
