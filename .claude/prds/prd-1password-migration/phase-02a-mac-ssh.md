@@ -143,8 +143,8 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 ### Remediation Checklist
 
 - [x] 현재 MiniPC 등록 fingerprint 확인: `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead`에서 `iphone-ssh`, `ipad-ssh`, `mac-ssh`, `emergency-fallback` fingerprint를 아래 fingerprint inventory table에 기록 (2026-05-30 완료 — retired 공유 키 row 포함)
-- [ ] MiniPC OpenSSH hardening: `modules/nixos/programs/ssh.nix`에 `services.openssh.settings.KbdInteractiveAuthentication = false` 추가 후 `nrs minipc` 적용
-- [ ] Server hardening 검증: MiniPC에서 `sudo -n sshd -T | rg '^(passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication) '` 결과가 `passwordauthentication no`, `pubkeyauthentication yes`, `kbdinteractiveauthentication no`인지 확인
+- [x] MiniPC OpenSSH hardening: `modules/nixos/programs/ssh.nix`에 `services.openssh.settings.KbdInteractiveAuthentication = false` 추가 후 적용 — PR #867 squash merge + MiniPC 배포(2026-05-30, `ssh minipc` → `git pull` + `nrs`)
+- [x] Server hardening 검증: `sudo -n sshd -T` 결과 `passwordauthentication no`, `pubkeyauthentication yes`, `kbdinteractiveauthentication no` 확인 (2026-05-30, 배포 직후)
 - [ ] Termius iPhone host profile 확인: host는 MiniPC Tailscale endpoint, user는 `greenhead`, auth는 key identity 중심, identity는 `iphone-ssh`
 - [ ] iPhone에서 접속 시도 후 MiniPC 로그 확인: attempt time window를 KST ISO range로 정하고 같은 range를 `journalctl -u sshd.service --since ... --until ...`에 사용
 - [ ] Evidence log extraction: `journalctl -u sshd.service --since "<KST start>" --until "<KST end>" | rg 'for <user> from <device Tailscale IP>( port|$)' | rg 'Accepted publickey|keyboard-interactive|PAM|Failed publickey'` 결과에서 해당 device IP + user의 accepted log line/time과 PAM 여부를 evidence table에 기록. `<device Tailscale IP>`와 `<user>`는 evidence table 값과 같아야 하며, iPhone 기준 known values는 `100.76.27.1`과 `greenhead`이다.
@@ -165,12 +165,12 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 
 ### Fingerprint Inventory Table
 
-Measured 2026-05-30 (MiniPC `sshd` journal 보존 시작 2026-05-02). 앞 4개 row는 현재 `/etc/ssh/authorized_keys.d/greenhead`에 배포된 키이고, 마지막 row는 authorized_keys에 더 이상 없는 retired 공유 키로 journal `Accepted publickey` 로그에서만 관측된다.
+Measured 2026-05-30 (MiniPC `sshd` journal 보존 시작 2026-05-02). `mac-ssh`/`emergency-fallback`은 배포된 키, `iphone-ssh`/`ipad-ssh`는 2026-05-30 Termius 디바이스에서 새로 생성한 **rotated 키**(배포 후 authorized_keys에 반영), 마지막 row는 authorized_keys에 더 이상 없는 retired 공유 키로 journal `Accepted publickey` 로그에서만 관측된다.
 
 | Key label | SHA256 fingerprint | Source command |
 |---|---|---|
-| `iphone-ssh` | `SHA256:qkDVFnuurKqKIoo4jXw1vP5U/Mi2lZmhe4j7wA4PKrI` | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
-| `ipad-ssh` | `SHA256:rCm2oVgtJM4vvP2Ju8ybqHna5ZLTHbromuTQ2OIiDWo` | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
+| `iphone-ssh` | `SHA256:hlE5JoF+9xFVJmw3BVN/+NC5134uDU5sv5KfdbNmq1k` | rotated 2026-05-30 (Termius 디바이스 생성, 직전 폐기 `SHA256:qkDV…wA4PKrI`); 배포 후 `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead`로 재확인 |
+| `ipad-ssh` | `SHA256:rtx6yaP26dIw0P2wQ2drV/W+IHF+keaU4eCKW4i+KoY` | rotated 2026-05-30 (Termius 디바이스 생성, 직전 폐기 `SHA256:rCm2…2OIiDWo`); 배포 후 `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead`로 재확인 |
 | `mac-ssh` | `SHA256:h/M3XNgDVwUQueVTaVbiUdeGJpsfRZVQPPzYOa/CnVI` | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
 | `emergency-fallback` | `SHA256:Ux1iqQmI6lrCa7r48lM7fC2gbVvkgsf+PDTUfoTcOiI` | `ssh-keygen -lf /etc/ssh/authorized_keys.d/greenhead` |
 | retired shared key (현재 미등록) | `SHA256:6RE7i26xUU6VGdFAFLxdWnF0oHiuHR5KQqUoQT8RydQ` | MiniPC `sshd` journal `Accepted publickey` — authorized_keys 부재, 마지막 accept 2026-05-25T17:37 KST |
@@ -198,9 +198,9 @@ Measured 2026-05-30 (MiniPC `sshd` journal 보존 시작 2026-05-02). 앞 4개 r
 
 #### Required Before iPhone Remediation
 
-- [ ] 검증 범위: 이번 remediation 범위에서 iPhone만 닫을지, iPad Termius도 함께 포함할지?
-- [ ] `iphone-ssh` private key source: 기존 1Password Automation vault backup을 Termius에 import할지, iPhone에서 새 keypair를 생성해 1Password Automation vault `iphone-ssh` item(private key, public key, fingerprint)과 `constants.sshDeviceKeys.iphone`를 함께 rotate할지?
-- [ ] Rejected-key evidence path: Termius iOS에서 server-mutating export 없이 read-only public key/fingerprint 확인이 가능한지 사용자가 확인할지, 아니면 unavailable로 기록하고 import/rotation 경로로 바로 진행할지?
+- [x] 검증 범위: **iPhone + iPad 둘 다 포함** (Baseline Diagnosis상 iPad도 동일 retired key 의존이라 시도 시 동일 차단 — 함께 rotation). 2026-05-30 결정.
+- [x] `iphone-ssh`/`ipad-ssh` private key source: **새 keypair rotation**. Automation vault 확인 결과 `iphone-ssh`/`ipad-ssh` item 부재(import 대상 없음 — vault에는 `mac-ssh`/`emergency-ssh`만 존재) → Termius 디바이스(iPhone/iPad)에서 각각 ED25519 신규 생성 후 public key를 `constants.sshDeviceKeys.iphone`/`.ipad`에 rotate. **private key는 디바이스 keychain 전용**(1Password vault·Mac 미경유, 노출 최소). 2026-05-30 결정.
+- [x] Rejected-key evidence path: server-side journal 실측으로 retired 공유 키 `SHA256:6RE7…RydQ` 의존을 확정(Baseline Diagnosis). 디바이스의 옛 key는 server-mutating 없이 read-only 확인이 불요해 `unavailable`로 두고 rotation으로 직행. 2026-05-30 결정.
 
 #### Fallback Only: Retired `macbook` Key Temporary Re-Registration
 
@@ -248,3 +248,4 @@ Measured 2026-05-30 (MiniPC `sshd` journal 보존 시작 2026-05-02). 앞 4개 r
 - 2026-05-17: Phase file created.
 - 2026-05-25: Phase 2a 구현 완료 → PR #833 squash merge. 디바이스 키 4개(mac-ssh/iphone/ipad/emergency)를 `constants.sshDeviceKeys`로 정의하고 MiniPC authorizedKeys에 배포(nrs minipc). Mac ssh config: IdentityAgent(group container socket) + agent.toml(Automation vault 노출) + minipc-emergency Host + ControlPersist 600(ControlMaster 유지). id_ed25519 archive. 검증: `ssh minipc`=mac-ssh agent 인증(Touch ID), emergency fallback 실측(1Password quit→emergency 접속 성공→ssh minipc Permission denied→재시작 복귀), id_ed25519 처분 후 agent-only 인증. merge 후 main nrs 적용 + E2E 전항목 재검증 통과. agent.toml vault를 constants 참조로 정정(SSOT). 발견: ControlPersist 영구는 무인 hang(→600 유지), agent socket은 group container 경로, agent.toml로 키 노출 명시 필수.
 - 2026-05-26: iPhone Termius 접속 실패 후속 분석 반영. iPhone Tailscale IP에서 MiniPC `sshd`까지 연결은 도달했지만 PAM 인증 실패로 종료됐고, 당시 MiniPC는 `kbdinteractiveauthentication yes` 상태였다. 직전 iPhone 성공 기록의 accepted publickey fingerprint는 현재 `iphone-ssh`가 아니라 retired `macbook` key와 일치했다. Post-Merge Remediation checklist와 사용자 결정 질문을 추가.
+- 2026-05-30: hardening + 진단 + rotation. (a) `ssh.nix`에 `KbdInteractiveAuthentication = false` 추가 → **PR #867** squash merge·MiniPC 배포(`ssh minipc` → `git pull` + `nrs`, 26s), `sudo -n sshd -T`=`kbdinteractiveauthentication no` 검증(`passwordauthentication no`·`pubkeyauthentication yes` 회귀 없음). (b) MiniPC journal 실측으로 retired 공유 키 `SHA256:6RE7…RydQ` 정체 규명 — iPhone 66·iPad 14회 accept(마지막 2026-05-25T17:37 KST), `iphone-ssh`/`ipad-ssh`는 accept 0회 → 근본원인은 클라이언트(Termius) 키 미교체. (c) Automation vault에 `iphone-ssh`/`ipad-ssh` item 부재 확인(import 불가) → Termius 디바이스(iPhone/iPad)에서 ED25519 신규 생성, `constants.sshDeviceKeys` rotate(iphone `SHA256:hlE5…q1k`, ipad `SHA256:rtx6…KoY`), private key는 디바이스 keychain 전용. iPad 범위 포함 결정. 추적 이슈 #866. 배포 후 재접속 accepted fingerprint match 검증은 closeout에서 별도 기록.

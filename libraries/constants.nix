@@ -83,8 +83,8 @@
   # ═══════════════════════════════════════════════════════════════
   sshDeviceKeys = {
     macSsh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGijyrxefX4n5oRJ2775QDOFtBfjPeNzjym2i7TJx9qr mac-ssh";
-    iphone = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMBwI6UCcwfwcnwHIer2GACL1S8qW7azfwGigAcngj3X iphone-ssh";
-    ipad = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFF+/kpJu3NOOFvjPZAKPqjT+IG8Q2cMKYi/YV4yR355 ipad-ssh";
+    iphone = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZOWDrhEYPTD0OC0SlePYpZCWjhAvI3u2EhVq9JlzER iphone-ssh";
+    ipad = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKlky5BaXxpz468Bc4EI+a2KuSURGz8M0P9hEL37qcau ipad-ssh";
     emergency = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMM0hYpFqehy7U96Ms4348SStVue7pYbR3+B3PlGV+de emergency-fallback";
   };
 
