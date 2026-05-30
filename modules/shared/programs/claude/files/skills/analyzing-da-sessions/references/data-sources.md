@@ -4,7 +4,7 @@
 
 | 호스트 | Claude Code | Codex |
 |--------|-------------|-------|
-| Mac (`/Users/green`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
+| Mac (`/Users/greenhead`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 | MiniPC (`/home/greenhead`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 
 원격 호스트는 `subprocess.run(["ssh", alias, "find", "~/.claude/projects", "-name", "*.jsonl", ...])` 고정 argv로 path 목록만 수집한 뒤, 실제 파일 내용은 `subprocess.run(["ssh", alias, "cat", path])`로 가져온다. 호스트당 SSH cat 호출은 ControlMaster 다중화 + `concurrent.futures.ThreadPoolExecutor(max_workers=SSH_FETCH_WORKERS)`로 병렬 처리한다 (host 순차 진행, host당 K=8 fetch 병렬). ControlMaster가 비활성인 호스트는 K=1 직렬 fallback이 5분 budget 안에 끝나지 않으므로 fetch 자체를 skip하고 명시적 warning을 누적한다 (사용자가 ControlMaster 활성화 누락을 즉시 인지).
@@ -53,7 +53,7 @@ INTENSITY_DIR_MARKER = re.compile(
   "snapshot_id": "pr-670-baseline",
   "captured_at": "2026-05-04T15:00:00Z",
   "files": [
-    "/Users/green/.claude/projects/.../<sessionId>.jsonl",
+    "/Users/greenhead/.claude/projects/.../<sessionId>.jsonl",
     "/home/greenhead/.codex/sessions/.../rollout-<id>.jsonl",
     "..."
   ],

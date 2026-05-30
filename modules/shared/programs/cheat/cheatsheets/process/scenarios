@@ -6,7 +6,7 @@ process 운영 시나리오 — "지금 이 상황에서 뭘 치지?" 모음.
 [1. 특정 포트 점유 프로세스 찾아 종료]
   $ lsof -i :3000                            # 누가 쓰는지 확인
   COMMAND  PID USER ... NAME
-  node    8923 green ... TCP *:3000 (LISTEN)
+  node    8923 greenhead ... TCP *:3000 (LISTEN)
   $ kill 8923                                # 정상 종료 (SIGTERM)
   $ lsof -i :3000                            # 확인 — 비었으면 OK
   # 안 죽으면:
@@ -17,9 +17,9 @@ process 운영 시나리오 — "지금 이 상황에서 뭘 치지?" 모음.
   # macOS (-r = CPU 내림차순):
   $ ps -Ao pid,user,%cpu,command -r | head -5
     PID USER  %CPU COMMAND
-  82342 green 95.3 chrome --type=renderer --enable-...
-  47829 green 42.1 node /Users/green/proj/webpack-dev-server
-  47820 green 18.7 node /Users/green/proj/jest --watch
+  82342 greenhead 95.3 chrome --type=renderer --enable-...
+  47829 greenhead 42.1 node /Users/greenhead/proj/webpack-dev-server
+  47820 greenhead 18.7 node /Users/greenhead/proj/jest --watch
    1023 root   8.2 /usr/sbin/spindump
 
   # Linux (--sort -%cpu = CPU 내림차순):
@@ -37,10 +37,10 @@ process 운영 시나리오 — "지금 이 상황에서 뭘 치지?" 모음.
   # macOS (-m = RSS 내림차순):
   $ ps -Ao pid,user,%mem,rss,command -m | head -5
     PID USER  %MEM     RSS COMMAND
-  41023 green 12.4 2031234 Discord Helper (Renderer)
-  82342 green  8.1 1326541 chrome --type=renderer ...
-  31002 green  5.2  852416 /Applications/Slack.app/Contents/...
-   1234 green  3.8  621304 node /Users/green/proj/server.js
+  41023 greenhead 12.4 2031234 Discord Helper (Renderer)
+  82342 greenhead  8.1 1326541 chrome --type=renderer ...
+  31002 greenhead  5.2  852416 /Applications/Slack.app/Contents/...
+   1234 greenhead  3.8  621304 node /Users/greenhead/proj/server.js
 
   # Linux (--sort -rss = RSS 내림차순):
   $ ps -Ao pid,user,%mem,rss,command --sort -rss | head -5
@@ -70,9 +70,9 @@ process 운영 시나리오 — "지금 이 상황에서 뭘 치지?" 모음.
   $ pkill -f "Slay the Spire"                # 풀 이름으로 종료
 
 [7. 특정 사용자 소유 프로세스 전부 정리 (logout 전)]
-  $ pgrep -U green -l                        # 확인 먼저
-  $ pkill -U green                           # 정상 종료
-  $ pkill -U green -9                        # 안 죽는 것만 강제
+  $ pgrep -U greenhead -l                        # 확인 먼저
+  $ pkill -U greenhead                           # 정상 종료
+  $ pkill -U greenhead -9                        # 안 죽는 것만 강제
 
 [8. 데몬 설정 reload (재시작 없이)]
   $ pkill -HUP nginx                         # nginx config reload

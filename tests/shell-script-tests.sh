@@ -2101,7 +2101,7 @@ EOF
 set -euo pipefail
 case "${1:-}" in
   list)
-    printf '%s\n' '-\t0\tcom.green.test-agent'
+    printf '%s\n' '-\t0\tcom.greenhead.test-agent'
     exit 0
     ;;
   bootout) exit 0 ;;

@@ -1,4 +1,4 @@
-# green/nixos-config
+# greenheadHQ/nixos-config
 
 macOS와 NixOS 개발 환경을 **nix-darwin/NixOS + Home Manager**로 선언적으로 관리하는 프로젝트입니다.
 

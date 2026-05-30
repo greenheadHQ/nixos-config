@@ -69,7 +69,7 @@ cleanup_launchd_agents() {
     local uid cleaned=0 failed=0 exit_code
     uid=$(id -u)
 
-    # 동적으로 com.green.* 에이전트 찾아서 정리
+    # 동적으로 com.green.*/com.greenhead.* 에이전트 찾아서 정리 (username 마이그레이션 전환기: dual-namespace)
     # 주의: ((++var)) 사용 필수. ((var++))는 var=0일 때 exit code 1 반환 → set -e로 스크립트 종료됨
     while IFS= read -r agent; do
         [[ -z "$agent" ]] && continue
@@ -84,14 +84,14 @@ cleanup_launchd_agents() {
                 ((++failed))
             fi
         fi
-    done < <(launchctl list 2>/dev/null | awk '/com\.green\./ {print $3}')
+    done < <(launchctl list 2>/dev/null | awk '/com\.(green|greenhead)\./ {print $3}')
 
     # plist 파일 삭제
     local plist_count
-    plist_count=$(find ~/Library/LaunchAgents -name 'com.green.*.plist' 2>/dev/null | wc -l | tr -d ' ')
+    plist_count=$(find ~/Library/LaunchAgents -name 'com.green*.plist' 2>/dev/null | wc -l | tr -d ' ')
 
     if [[ "$plist_count" -gt 0 ]]; then
-        rm -f ~/Library/LaunchAgents/com.green.*.plist
+        rm -f ~/Library/LaunchAgents/com.green*.plist
         log_info "  ✓ Removed $plist_count plist file(s)"
     fi
 

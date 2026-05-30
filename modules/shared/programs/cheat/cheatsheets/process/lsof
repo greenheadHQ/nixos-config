@@ -7,7 +7,7 @@ lsof — 열린 파일/소켓/포트를 누가 잡고 있는지 조회. "이 포
   lsof -i :PORT              특정 포트를 점유한 프로세스
                              $ lsof -i :3000
                              COMMAND  PID USER ... NAME
-                             node    8923 green ... TCP *:3000 (LISTEN)
+                             node    8923 greenhead ... TCP *:3000 (LISTEN)
 
   lsof -i tcp:PORT           TCP 한정
                              $ lsof -i tcp:80
@@ -33,8 +33,8 @@ lsof — 열린 파일/소켓/포트를 누가 잡고 있는지 조회. "이 포
   lsof +D DIR                디렉토리 하위 전체 (느릴 수 있음)
 
 [사용자/조합]
-  lsof -u green              특정 사용자 소유
-  lsof -u green -i :3000     green이 잡은 3000 포트만
+  lsof -u greenhead              특정 사용자 소유
+  lsof -u greenhead -i :3000     greenhead이 잡은 3000 포트만
 
 [삭제됐지만 열린 파일] (디스크 차지 누수)
   lsof | grep '(deleted)'    rm 됐지만 process가 fd 잡고 있어 공간 점유
