@@ -10,11 +10,11 @@
 
 ## Transient buffer 식별 기준
 
-파일명이 `<prefix>-<8hex>.md` 형식 (8자리 hex suffix) 이면 plan-mode runtime이 자동 생성한 transient plan buffer다. plan-with-questions 스킬 문서는 이 buffer를 새 SSOT plan으로 **승격하지 말라**고만 규정하고 (`modes/for_action.md:136`, `references/runtime-boundaries.md:76-78`), 정리(GC) 주체는 명시하지 않는다. 따라서 buffer는 무한 누적되는 경향이 있다 (#756 P1이 정리 정책/훅을 다룰 예정).
+파일명이 `<prefix>-<8hex>.md` 형식 (8자리 hex suffix) 이면 plan-mode runtime이 자동 생성한 transient plan buffer다. plan-with-questions 스킬 문서는 이 buffer를 새 SSOT plan으로 **승격하지 말라**고만 규정하고 (`modes/for_action.md:136`, `references/runtime-boundaries.md:76-78`), 정리(GC)는 `modules/shared/programs/claude/files/hooks/plans-gc.sh` (#756 P1) 가 SessionEnd 시 담당한다 — mtime 7일 초과 + untracked 8hex buffer만 삭제하고, canonical·tracked·최근 buffer는 보존한다. 기존 누적분은 P1 착수 시 일회성으로 정리했다.
 
 본 README 작성 시점 실측: hex 변종 누적이 가장 많은 prefix는 동일 topic의 SSOT plan canonical과 공존한다. canonical 식별은 아래 snippet 출력의 prefix 중 `<prefix>.md` (suffix 없음) 가 디렉토리에 존재하면 그것이 canonical SSOT plan이다.
 
-`-agent-<NHex>` 같은 다른 패턴 (예: `cosmic-booping-peach-agent-a1cbb08.md`) 도 일부 존재하나 2026-02-28 이후 추가 생성되지 않는 historical artifacts다 (과거 Claude Code sub-agent 산출물). 본 README의 식별 기준에 포함하지 않는다. P1에서 별도 일회성 정리 대상으로 분리한다.
+`-agent-<NHex>` 같은 다른 패턴 (suffix hex 길이 가변, 예: `...-agent-a6bbadcd76d351e67.md`) 도 일부 존재하나 2026-02-28 이후 추가 생성되지 않는 historical artifacts다 (과거 Claude Code sub-agent 산출물). 끝 8자 앞이 `-`가 아니라 hook의 8hex 정규식에 매칭되지 않으므로 지속 GC 대상이 아니며, 본 README의 식별 기준에도 포함하지 않는다. P1 착수 시 일회성으로 정리했다.
 
 ## Prefix별 hex 변종 집계 snippet
 
