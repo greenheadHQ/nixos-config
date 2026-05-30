@@ -79,7 +79,7 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 |----------------|------------|------|
 | `/` | `/mnt/data` | 읽기/쓰기/삭제/관리 |
 
-> 주의: Immich 사진(`/immich/`)이나 Anki 백업(`/backups/`)을 Copyparty에서 삭제하지 않도록 주의.
+> 주의: Immich 사진(`/immich/`)을 Copyparty에서 삭제하지 않도록 주의.
 > Copyparty에서 Immich 파일 삭제 시 Immich DB와 불일치 발생.
 
 경로별 읽기 전용 ACL 불가 이유: Copyparty는 루트 `/` -> `/data` 마운트 시 하위 경로(`/data/immich`)를

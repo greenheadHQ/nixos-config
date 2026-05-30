@@ -14,9 +14,6 @@ let
 
   # NixOS config (greenhead-minipc)
   nixosCfg = flake.nixosConfigurations.greenhead-minipc.config;
-  nixosOptions = flake.nixosConfigurations.greenhead-minipc.options;
-  ankiConfigApiMaxValueBytesDefault =
-    nixosOptions.homeserver.ankiConnect.configApi.maxValueBytes.default;
 
   # Darwin intent 검증은 여기서 직접 수행한다.
   # 범위: evaluation-safe value-level 설정만 검증.
@@ -80,7 +77,6 @@ let
   # host network allowlist — 이 목록에 없는 컨테이너가 --network=host를 사용하면 실패
   hostNetworkAllowlist = [
     "uptime-kuma"
-    "awesome-anki"
   ];
 
   # 컨테이너가 --network=host를 사용하는지 확인
@@ -331,12 +327,6 @@ let
 
   # tailscale 포트 (UDP)
   tailscalePort = nixosCfg.services.tailscale.port;
-  ankiConfigApi = nixosCfg.homeserver.ankiConnect.configApi;
-  ankiConfigApiHasPrefixes =
-    builtins.length ankiConfigApi.allowedKeyPrefixes > 0
-    && builtins.all (
-      prefix: builtins.match ".*[^[:space:]].*" prefix != null
-    ) ankiConfigApi.allowedKeyPrefixes;
 
   # opnix 1Password SA token materialization
   opnixCfg = nixosCfg.services.onepassword-secrets;
@@ -496,91 +486,46 @@ let
       cond = singleDefaultBind;
     }
     {
-      name = "Test 5a: anki-sync-server의 address가 ${minipcTailscaleIP}이어야 함 (현재: ${nixosCfg.services.anki-sync-server.address})";
-      cond = nixosCfg.services.anki-sync-server.address == minipcTailscaleIP;
-    }
-    {
       # openssh는 LAN 노출 시 brute-force 표면이 되므로, 다른 openFirewall 서비스보다 중요
-      # (anki-sync/mosh의 openFirewall은 Test 6b/6e가 이미 잡으므로 별도 테스트 불필요)
-      name = "Test 5b: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
+      # (mosh의 openFirewall은 Test 6b/6e가 이미 잡으므로 별도 테스트 불필요)
+      name = "Test 5a: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
       cond = nixosCfg.services.openssh.openFirewall == false;
-    }
-    {
-      name = "Test 5c: ankiConnect.configApi.enable 기본값이 true이어야 함";
-      cond = ankiConfigApi.enable == true;
-    }
-    {
-      name = "Test 5d: ankiConnect.configApi.allowedKeyPrefixes는 비어있지 않고 공백-only 항목이 없어야 함";
-      cond = ankiConfigApiHasPrefixes;
-    }
-    {
-      name = "Test 5e: ankiConnect.configApi.maxValueBytes가 옵션 기본값과 일치해야 함";
-      cond = ankiConfigApi.maxValueBytes == ankiConfigApiMaxValueBytesDefault;
-    }
-    # ── Nix↔Python 상수 정합성 하드 핀 ──────────────────────────
-    # Nix 옵션 기본값을 알려진 Python patch defaults에 하드 핀으로 고정.
-    # Nix 측 드리프트만 자동 감지 — Python patch 측 드리프트는 PR 리뷰로 방어.
-    {
-      name = "Test 5e-2: ankiConnect.configApi.allowedKeyPrefixes가 Python 패치 기본값 [\"awesomeAnki.\"]과 일치해야 함";
-      cond = ankiConfigApi.allowedKeyPrefixes == [ "awesomeAnki." ];
-    }
-    {
-      name = "Test 5e-3: ankiConnect.configApi.maxValueBytes가 Python 패치 기본값 65536과 일치해야 함";
-      cond = ankiConfigApi.maxValueBytes == 65536;
-    }
-    # ── 포트 매핑 고정 ──────────────────────────────────────────
-    # constants.nix 포트 상수 변경 시 회귀를 감지한다.
-    {
-      name = "Test 5e-4: constants.network.ports.ankiConnect가 8765이어야 함";
-      cond = constants.network.ports.ankiConnect == 8765;
-    }
-    {
-      name = "Test 5e-5: constants.network.ports.ankiSync가 27701이어야 함";
-      cond = constants.network.ports.ankiSync == 27701;
-    }
-    {
-      name = "Test 5e-6: homeserver.ankiConnect.port가 constants 포트(8765)와 일치해야 함";
-      cond = nixosCfg.homeserver.ankiConnect.port == constants.network.ports.ankiConnect;
-    }
-    {
-      name = "Test 5e-7: homeserver.ankiSync.port가 constants 포트(27701)와 일치해야 함";
-      cond = nixosCfg.homeserver.ankiSync.port == constants.network.ports.ankiSync;
     }
     # ── 1Password vault 이름 hard pin (PRD #780) ────────────────
     # constants.nix 변경 시 GUI vault 이름과의 정합성 회귀 감지
     {
-      name = "Test 5e-8: constants.onePassword.vaults.personal이 \"Personal\"이어야 함";
+      name = "Test 5b: constants.onePassword.vaults.personal이 \"Personal\"이어야 함";
       cond = constants.onePassword.vaults.personal == "Personal";
     }
     {
-      name = "Test 5e-9: constants.onePassword.vaults.automation이 \"Automation\"이어야 함";
+      name = "Test 5b-2: constants.onePassword.vaults.automation이 \"Automation\"이어야 함";
       cond = constants.onePassword.vaults.automation == "Automation";
     }
     # op_get account resolution이 의존하는 account 문자열 drift 감지
     {
-      name = "Test 5e-10: constants.onePassword.account가 \"my.1password.com\"이어야 함";
+      name = "Test 5b-3: constants.onePassword.account가 \"my.1password.com\"이어야 함";
       cond = constants.onePassword.account == "my.1password.com";
     }
     # ── opnix SA token materialization 보안 회귀 핀 ──
     {
-      name = "Test 5e-11: homeserver.opnix.enable 시 services.onepassword-secrets.enable이 true여야 함";
+      name = "Test 5b-4: homeserver.opnix.enable 시 services.onepassword-secrets.enable이 true여야 함";
       cond = nixosCfg.homeserver.opnix.enable && opnixCfg.enable;
     }
     {
-      name = "Test 5e-12: opnix githubPat이 tmpfs(/run/opnix/<user>/github-pat)에 user-owned 0400으로 materialize되어야 함 (path: ${opnixGithubPat.path}, mode: ${opnixGithubPat.mode})";
+      name = "Test 5b-5: opnix githubPat이 tmpfs(/run/opnix/<user>/github-pat)에 user-owned 0400으로 materialize되어야 함 (path: ${opnixGithubPat.path}, mode: ${opnixGithubPat.mode})";
       cond =
         builtins.match "/run/opnix/[^/]+/github-pat" opnixGithubPat.path != null
         && opnixGithubPat.mode == "0400"
         && opnixGithubPat.owner != "root";
     }
     {
-      name = "Test 5e-13: opnix githubPat reference가 op://Automation/github-pat/token이어야 함";
+      name = "Test 5b-6: opnix githubPat reference가 op://Automation/github-pat/token이어야 함";
       cond =
         opnixGithubPat.reference == "op://${constants.onePassword.vaults.automation}/github-pat/token";
     }
     {
       # opnix-secrets.service가 tokenFile을 0640 root:onepassword-secrets로 강제하므로 agenix도 동일 선언.
-      name = "Test 5e-14: opnix SA tokenFile(agenix)이 0640 root:onepassword-secrets여야 함 (권한 경합 제거)";
+      name = "Test 5b-7: opnix SA tokenFile(agenix)이 0640 root:onepassword-secrets여야 함 (권한 경합 제거)";
       cond =
         opnixTokenSecret.mode == "0640"
         && opnixTokenSecret.owner == "root"
@@ -588,33 +533,33 @@ let
     }
     {
       # users를 비워 onepassword-secrets group 멤버를 0으로 유지 → 실질 root-only.
-      name = "Test 5e-15: opnix users 옵션이 비어야 함 (token group readable이 일반 user로 확산 방지)";
+      name = "Test 5b-8: opnix users 옵션이 비어야 함 (token group readable이 일반 user로 확산 방지)";
       cond = opnixCfg.users == [ ];
     }
     {
       # gh wrapper(shell/nixos.nix)가 정확한 파일명에 의존 + parent dir 0700 hardening 회귀 방지.
-      name = "Test 5e-16: opnix per-user tmpfiles dir이 0700으로 pre-create되어야 함";
+      name = "Test 5b-9: opnix per-user tmpfiles dir이 0700으로 pre-create되어야 함";
       cond = builtins.any (
         rule: builtins.match "d /run/opnix/[^ ]+ 0700 [^ ]+ users -" rule != null
       ) opnixTmpfilesRules;
     }
     {
       # Codex 피드백: SSH 경화 설정은 Tailscale 경계와 독립적인 보안 레이어
-      name = "Test 5f: openssh PermitRootLogin이 'no'이어야 함";
+      name = "Test 5c: openssh PermitRootLogin이 'no'이어야 함";
       cond = nixosCfg.services.openssh.settings.PermitRootLogin == "no";
     }
     {
-      name = "Test 5g: openssh PasswordAuthentication이 false이어야 함 (공개키만 허용)";
+      name = "Test 5d: openssh PasswordAuthentication이 false이어야 함 (공개키만 허용)";
       cond = nixosCfg.services.openssh.settings.PasswordAuthentication == false;
     }
     {
       # Codex 피드백: vaultwarden 계정 생성 허용은 앱 레벨 보안 — Tailscale 경계와 독립
-      name = "Test 5h: vaultwarden SIGNUPS_ALLOWED가 'false'이어야 함 (계정 무단 생성 방지)";
+      name = "Test 5e: vaultwarden SIGNUPS_ALLOWED가 'false'이어야 함 (계정 무단 생성 방지)";
       cond = containers.vaultwarden.environment.SIGNUPS_ALLOWED == "false";
     }
     {
       # Opus 피드백: SIGNUPS_ALLOWED와 동일 보안 수준 — 계정 생성 경로 일관 차단
-      name = "Test 5h-2: vaultwarden INVITATIONS_ALLOWED가 'false'이어야 함 (초대 기반 계정 생성 방지)";
+      name = "Test 5e-2: vaultwarden INVITATIONS_ALLOWED가 'false'이어야 함 (초대 기반 계정 생성 방지)";
       cond = containers.vaultwarden.environment.INVITATIONS_ALLOWED == "false";
     }
     {

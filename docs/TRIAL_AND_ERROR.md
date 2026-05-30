@@ -1236,7 +1236,7 @@ https://ankiweb.net/shared/download/{addon_id}
 
 애드온 소스 코드를 nixos-config 저장소에 직접 포함하여 관리하는 방식.
 
-> **Note**: 당시 경로. 현재는 Anki가 NixOS-side로 이관됨 (`modules/nixos/programs/anki-*`).
+> **Note**: 당시 경로. (Anki 셀프호스팅은 이후 NixOS-side로 이관됐다가 2026-05 제거됨 — AnkiWeb 동기화 사용)
 
 ```
 modules/darwin/programs/anki/
@@ -1263,7 +1263,7 @@ pkgs.fetchFromGitHub {
 };
 ```
 
-**생성했던 파일 구조:** (historical; 현재 경로는 `modules/nixos/programs/anki-*`)
+**생성했던 파일 구조:** (historical; Anki 셀프호스팅은 이후 제거됨)
 
 ```
 modules/darwin/programs/anki/

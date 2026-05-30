@@ -16,4 +16,4 @@
 
 ## Owner
 
-managing-minipc는 NixOS MiniPC 호스트 자체 관리 owner. 본 reference는 hosting-copyparty/karakeep/vaultwarden (Podman-backed hosting 3종)이 consumer. hosting-anki는 systemd native + Tailscale IP(`http://100.79.80.95:27701/`) 패턴이라 본 SSOT 범위 외.
+managing-minipc는 NixOS MiniPC 호스트 자체 관리 owner. 본 reference는 hosting-copyparty/karakeep/vaultwarden (Podman-backed hosting 3종)이 consumer.

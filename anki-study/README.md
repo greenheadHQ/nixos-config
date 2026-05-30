@@ -61,7 +61,7 @@ anki-study/
 ## 관련 자료
 
 - [issue #711](https://github.com/greenheadHQ/nixos-config/issues/711) — 프로젝트 etcd (1.0 회고 + 2.0 정의 + Future Ideas 박제)
-- [hosting-anki 스킬](../.claude/skills/hosting-anki/SKILL.md) — Anki Sync Server + AnkiConnect (minipc) 운영
+- hosting-anki 스킬 (셀프호스팅 제거됨) — 과거 Anki Sync Server + AnkiConnect (minipc) 운영
 - 첫 세션 결과: [sessions/2026-05-10/SESSION.md](sessions/2026-05-10/SESSION.md)
 
 ## Future Ideas (현재 결정 X — issue #711 § 8 참조)

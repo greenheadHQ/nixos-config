@@ -39,8 +39,6 @@ homeserver.immichCleanup.enable = true;            # Claude Code Temp 앨범 매
 homeserver.immichUpdate.enable = true;              # Immich 버전 체크 + 업데이트 알림
 homeserver.uptimeKumaUpdate.enable = true;          # Uptime Kuma 버전 체크 + 업데이트 알림
 homeserver.copypartyUpdate.enable = true;           # Copyparty 버전 체크 + 업데이트 알림
-homeserver.ankiSync.enable = true;                  # Anki 자체 호스팅 동기화 서버
-homeserver.ankiConnect.enable = true;               # Headless Anki + AnkiConnect API
 homeserver.copyparty.enable = true;                 # 셀프호스팅 파일 서버
 homeserver.vaultwarden.enable = true;               # Vaultwarden 비밀번호 관리자
 homeserver.vaultwardenUpdate.enable = true;         # Vaultwarden 버전 체크 + 업데이트 알림
@@ -52,7 +50,6 @@ homeserver.karakeepFallbackSync.enable = true;      # fallback HTML 자동 재�
 homeserver.karakeepSinglefileBridge.enable = true;  # SingleFile 대용량 자동 분기 (링크+보관 fullPageArchive)
 homeserver.karakeepUpdate.enable = true;            # Karakeep 버전 체크 + 업데이트 알림
 homeserver.immichBackup.enable = true;              # Immich PostgreSQL 매일 백업 (HDD)
-homeserver.awesomeAnki.enable = true;               # awesome-anki 카드 분할 웹 서비스
 homeserver.reverseProxy.enable = true;              # Caddy HTTPS 리버스 프록시
 homeserver.smokeTest.enable = true;                 # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
 ```
@@ -151,7 +148,7 @@ nix eval --impure --file tests/eval-tests.nix
 - 포트 충돌: homeserver 서비스 간 포트 중복 방지
 - 컨테이너 격리: 127.0.0.1 바인딩 강제, publish 우회 방지, --network=host allowlist, host network listen address
 - Caddy 바인딩: virtualHost Tailscale IP 전용, extraConfig/bind 디렉티브 우회 방지, default_bind 다중 주소/중복 방지
-- 서비스 보안: anki-sync 바인딩, openssh openFirewall/경화, vaultwarden 계정 생성 차단
+- 서비스 보안: openssh openFirewall/경화, vaultwarden 계정 생성 차단
 - 방화벽 정책: firewall.enable, TCP/UDP 포트, trustedInterfaces, 인터페이스별 포트, 수동 규칙 인젝션 방지
 - Tailscale 설정: useRoutingFeatures 제한
 

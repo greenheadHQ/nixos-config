@@ -123,7 +123,7 @@ in
       };
     };
 
-    # 타이머 (매일 04:30 KST -- anki backup 04:00과 30분 간격)
+    # 타이머 (매일 04:30 KST)
     systemd.timers.vaultwarden-backup = {
       description = "Daily Vaultwarden backup";
       wantedBy = [ "timers.target" ];

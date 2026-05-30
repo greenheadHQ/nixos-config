@@ -8,7 +8,7 @@ description: |
   Trigger: 'podman', '컨테이너', 'container', 'OOM', 'homeserver 옵션', 'service-lib', '포트 매핑',
   '서비스 업데이트', '업데이트 타이머', 'DB 백업', 'immich-db-backup', '리소스 제한', 'Caddy',
   '리버스 프록시', 'HTTPS 인증서', '버전 체크', '서비스 상태', '서비스 포트'.
-  NOT for service-specific application workflows (use hosting-anki, hosting-copyparty,
+  NOT for service-specific application workflows (use hosting-copyparty,
   hosting-vaultwarden, hosting-karakeep).
 ---
 
@@ -65,7 +65,6 @@ Docker 서비스에서 사용하는 상수 (`libraries/constants.nix`):
 | Copyparty | `https://copyparty.greenhead.dev` | `127.0.0.1:3923` |
 | Vaultwarden | `https://vaultwarden.greenhead.dev` | `127.0.0.1:8222` |
 | Karakeep | `https://archive.greenhead.dev` | `127.0.0.1:3000` |
-| Anki Sync | (Caddy 미경유) | `100.79.80.95:27701` |
 
 Caddy가 Cloudflare DNS-01 ACME로 Let's Encrypt 인증서를 자동 발급한다.
 Tailscale IP (`100.79.80.95:443`)에만 바인딩되어 VPN 내부 전용이다.
@@ -115,7 +114,6 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 | 서비스 | systemd 서비스 | 타이머 | 백업 위치 |
 |--------|---------------|--------|-----------|
-| Anki Sync | `anki-sync-backup` | 04:00 | HDD |
 | Vaultwarden | `vaultwarden-backup` | 04:30 | HDD (`/mnt/data/backups/vaultwarden`) |
 | Karakeep | `karakeep-backup` | 05:00 | HDD (`/mnt/data/backups/karakeep`) |
 | Immich DB | `immich-db-backup` | 05:30 | HDD (`/mnt/data/backups/immich`) |
