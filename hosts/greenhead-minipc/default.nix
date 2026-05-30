@@ -15,13 +15,13 @@
     ./disko.nix
   ];
 
-  # SSH 공개키 — 디바이스별 4개 (PRD #780 Phase 2a)
-  # mac-ssh(1Password SSH agent) + iphone/ipad(Termius) + emergency(1Password 장애 fallback).
+  # SSH 공개키 — 3개 (PRD #780 Phase 2a)
+  # mac-ssh(1Password SSH agent) + mobile(iPhone·iPad 공유, Termius) + emergency(1Password 장애 fallback).
   # 기존 macbook(id_ed25519)은 mac-ssh로 대체 — id_ed25519는 FR-8에서 처분.
+  # iphone/ipad 분리 키는 Termius 계정 동기화로 격리 불가 → mobile 단일 공유 키로 통합 (#866).
   users.users.${username}.openssh.authorizedKeys.keys = with constants.sshDeviceKeys; [
     macSsh
-    iphone
-    ipad
+    mobile
     emergency
   ];
 
