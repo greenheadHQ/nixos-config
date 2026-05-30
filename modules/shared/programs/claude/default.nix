@@ -154,6 +154,8 @@ in
     # Hooks - mkOutOfStoreSymlink로 nrs 없이 즉시 반영 (소스 파일에 chmod +x 필수)
     ".claude/hooks/nrs-session-cleanup.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/nrs-session-cleanup.sh";
+    ".claude/hooks/plans-gc.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/plans-gc.sh";
     ".claude/hooks/worktree-path-guard.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/worktree-path-guard.sh";
     ".claude/hooks/session-init-icons.sh".source =
