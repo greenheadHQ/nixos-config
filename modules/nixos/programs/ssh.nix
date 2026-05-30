@@ -11,6 +11,10 @@ in
     settings = {
       PermitRootLogin = "no";
       PasswordAuthentication = false;
+      # keyboard-interactive(PAM) 인증 폴백 차단 — pubkey 전용으로 고정.
+      # pubkey 거부가 PAM 폴백으로 가려지지 않아 mobile SSH 키 mismatch가 로그에 명확히 드러난다
+      # (Phase 2a Post-Merge Remediation: Termius mobile key mismatch).
+      KbdInteractiveAuthentication = false;
       PubkeyAuthentication = true;
       X11Forwarding = false;
       AllowTcpForwarding = true; # 개발 서버 터널링용
