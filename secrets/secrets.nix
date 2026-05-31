@@ -44,16 +44,12 @@ in
   # Copyparty 파일 서버 비밀번호
   "copyparty-password.age".publicKeys = minipcOnly;
 
-  # Vaultwarden 관리자 패널 토큰
-  "vaultwarden-admin-token.age".publicKeys = minipcOnly;
-
   # Caddy HTTPS 인증서 발급용 Cloudflare DNS API 토큰
   "cloudflare-dns-api-token.age".publicKeys = minipcOnly;
 
   # 서비스 업데이트 알림용 Pushover credentials
   "pushover-uptime-kuma.age".publicKeys = minipcOnly;
   "pushover-copyparty.age".publicKeys = minipcOnly;
-  "pushover-vaultwarden.age".publicKeys = minipcOnly;
 
   # Karakeep (웹 아카이버/북마크 관리)
   "karakeep-nextauth-secret.age".publicKeys = minipcOnly;

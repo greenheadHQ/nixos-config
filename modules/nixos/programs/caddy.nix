@@ -95,14 +95,6 @@ in
         '';
       };
 
-      virtualHosts."${subdomains.vaultwarden}.${base}" = {
-        listenAddresses = [ minipcTailscaleIP ];
-        extraConfig = ''
-          ${securityHeaders}
-          reverse_proxy localhost:${toString constants.network.ports.vaultwarden}
-        '';
-      };
-
       virtualHosts."${subdomains.karakeep}.${base}" = {
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''

@@ -7,7 +7,6 @@ description: |
   're-encrypt', '/run/agenix', '1Password', '1password', 'op CLI', 'op_get', 'opnix', 'service account token', 'SA token',
   'Automation vault', 'SSH vault', 'github-pat', 'gh 무인 인증', '90일 rotation', 'op read', 'biometric unlock',
   'SSH device key', 'mobile-ssh', 'Termius'.
-  NOT for Vaultwarden 비밀번호 관리자 (use hosting-vaultwarden).
 ---
 
 # Secret 관리 (agenix)
@@ -68,7 +67,7 @@ agenix(.age 정적)와 1Password(동적 github-pat / SSH device key / SA token)�
 
 ### 통합 Secret Inventory
 
-agenix `.age` 20개(디스크 실측) + 1Password 항목(github-pat, SSH device key) + 1Password Service Account(token material은 agenix `.age` 보관)를 단일 표로 통합. 이 표는 빠른 참조용 스냅샷이며 SSOT가 아니다 — 값이 충돌하면 코드(`secrets/secrets.nix` recipient, `libraries/constants.nix` vault/sshDeviceKeys, HM home 경로는 `modules/shared/programs/secrets/default.nix` · NixOS `/run/agenix` 서비스 시크릿은 `modules/nixos/programs/` 하위 service module)을 우선한다. secret 추가/변경 시 코드를 먼저 갱신한 뒤 이 표를 동기화한다. recipient(복호화 가능 호스트)와 실제 배포 호스트는 다를 수 있다.
+agenix `.age` 18개(디스크 실측) + 1Password 항목(github-pat, SSH device key) + 1Password Service Account(token material은 agenix `.age` 보관)를 단일 표로 통합. 이 표는 빠른 참조용 스냅샷이며 SSOT가 아니다 — 값이 충돌하면 코드(`secrets/secrets.nix` recipient, `libraries/constants.nix` vault/sshDeviceKeys, HM home 경로는 `modules/shared/programs/secrets/default.nix` · NixOS `/run/agenix` 서비스 시크릿은 `modules/nixos/programs/` 하위 service module)을 우선한다. secret 추가/변경 시 코드를 먼저 갱신한 뒤 이 표를 동기화한다. recipient(복호화 가능 호스트)와 실제 배포 호스트는 다를 수 있다.
 
 | Name | Storage | Vault | 배포경로·위치 | 소비처 | recipient |
 |------|---------|-------|---------------|--------|-----------|
@@ -80,11 +79,9 @@ agenix `.age` 20개(디스크 실측) + 1Password 항목(github-pat, SSH device 
 | `pushover-folder-actions.age` | agenix | — | `~/.config/pushover/folder-actions` (Mac 전용) | macOS FolderActions (compress-video / convert-video-to-gif / rename-asset / compress-rar) 실패 알림 | macbook 단독(인라인) |
 | `shottr-license.age` | agenix | — | `~/.config/shottr/license` (Mac home, Darwin-only HM 배포) | Shottr 라이센스 (kc-license + kc-vault pre-fill) | allHosts (복호화 recipient — 배포는 Mac만) |
 | `copyparty-password.age` | agenix | — | `/run/agenix/copyparty-password` (MiniPC) | copyparty.nix passwordPath → 파일서버 비밀번호 | minipcOnly |
-| `vaultwarden-admin-token.age` | agenix | — | `/run/agenix/vaultwarden-admin-token` (MiniPC) | vaultwarden.nix adminTokenPath → 관리자 패널 토큰 | minipcOnly |
 | `cloudflare-dns-api-token.age` | agenix | — | `/run/agenix/cloudflare-dns-api-token` (MiniPC) | caddy.nix → Caddy HTTPS(DNS-01) 인증서 발급 | minipcOnly |
 | `pushover-uptime-kuma.age` | agenix | — | `/run/agenix/pushover-uptime-kuma` (MiniPC) | uptime-kuma-update 알림 | minipcOnly |
 | `pushover-copyparty.age` | agenix | — | `/run/agenix/pushover-copyparty` (MiniPC) | copyparty-update 알림 | minipcOnly |
-| `pushover-vaultwarden.age` | agenix | — | `/run/agenix/pushover-vaultwarden` (MiniPC) | vaultwarden-update + vaultwarden-backup pushoverCredPath | minipcOnly |
 | `karakeep-nextauth-secret.age` | agenix | — | `/run/agenix/karakeep-nextauth-secret` (MiniPC) | karakeep.nix nextauthSecretPath → NextAuth secret | minipcOnly |
 | `karakeep-meili-master-key.age` | agenix | — | `/run/agenix/karakeep-meili-master-key` (MiniPC) | karakeep.nix meiliMasterKeyPath → Meilisearch master key | minipcOnly |
 | `karakeep-openai-key.age` | agenix | — | `/run/agenix/karakeep-openai-key` (MiniPC) | karakeep.nix openaiKeyPath → AI 태깅 OpenAI 키 | allHosts |

@@ -1,6 +1,6 @@
 # Host Prerequisites — NixOS MiniPC (Podman-backed hosting 공유)
 
-본 reference는 hosting-{copyparty,karakeep,vaultwarden} skill (Podman-backed hosting 3종) 절차의 공통 NixOS MiniPC 호스트 환경 전제다. AI 에이전트 세션(Claude Code · Codex CLI · headless)이 어디서 실행되든 다음 의존을 충족하지 못하면 명령은 실행 불가하다.
+본 reference는 hosting-{copyparty,karakeep} skill (Podman-backed hosting 2종) 절차의 공통 NixOS MiniPC 호스트 환경 전제다. AI 에이전트 세션(Claude Code · Codex CLI · headless)이 어디서 실행되든 다음 의존을 충족하지 못하면 명령은 실행 불가하다.
 
 ## 공통 의존
 
@@ -16,4 +16,4 @@
 
 ## Owner
 
-managing-minipc는 NixOS MiniPC 호스트 자체 관리 owner. 본 reference는 hosting-copyparty/karakeep/vaultwarden (Podman-backed hosting 3종)이 consumer.
+managing-minipc는 NixOS MiniPC 호스트 자체 관리 owner. 본 reference는 hosting-copyparty/karakeep (Podman-backed hosting 2종)이 consumer.

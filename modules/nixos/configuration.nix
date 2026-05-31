@@ -100,6 +100,7 @@
     ./programs/mosh.nix
     ./programs/smartd.nix # S.M.A.R.T. 디스크 건강 모니터링 (Pushover 알림)
     ./programs/temp-monitor # lm-sensors 온도 모니터링 (5분마다, Pushover 알림)
+    ./programs/pushover-purge-reminder.nix # Backup archive 6개월 보관 만료 reminder (2026-12-01 1회성)
     ./options/homeserver.nix # Docker/Podman 기반 홈서버 서비스 (mkOption)
   ];
 
@@ -111,8 +112,6 @@
   homeserver.uptimeKumaUpdate.enable = true; # Uptime Kuma 버전 체크 + 업데이트 알림
   homeserver.copypartyUpdate.enable = true; # Copyparty 버전 체크 + 업데이트 알림
   homeserver.copyparty.enable = true; # 셀프호스팅 파일 서버
-  homeserver.vaultwarden.enable = true; # Vaultwarden 비밀번호 관리자
-  homeserver.vaultwardenUpdate.enable = true; # Vaultwarden 버전 체크 + 업데이트 알림
   homeserver.karakeep.enable = true; # Karakeep 웹 아카이버/북마크 관리 (3컨테이너)
   homeserver.karakeepBackup.enable = true; # Karakeep SQLite 매일 백업 (HDD)
   homeserver.karakeepNotify.enable = true; # Karakeep 웹훅→Pushover 브리지

@@ -16,7 +16,6 @@
       immichMl = 3003;
       uptimeKuma = 3002;
       copyparty = 3923;
-      vaultwarden = 8222;
       karakeep = 3000;
       caddy = 443;
     };
@@ -34,7 +33,6 @@
       immich = "immich";
       uptimeKuma = "uptime-kuma";
       copyparty = "copyparty";
-      vaultwarden = "vaultwarden";
       karakeep = "archive";
     };
   };
@@ -119,10 +117,6 @@
       memorySwap = "1g";
       cpus = "1";
     };
-    vaultwarden = {
-      memory = "256m";
-      cpus = "0.5";
-    };
     karakeep = {
       app = {
         memory = "2g";
@@ -178,7 +172,7 @@
     account = "my.1password.com";
     vaults = {
       personal = "Personal"; # 1Password 기본 Personal vault (GUI 표시명)
-      automation = "Automation"; # LLM·자동화·시스템 토큰 (SSH 키는 ssh vault로 분리 — #872 후속)
+      automation = "Automation"; # LLM·자동화·시스템 토큰 (SSH 키는 ssh vault로 분리 — #874)
       ssh = "SSH"; # 디바이스 SSH key(mac-ssh/emergency-ssh) 전용 — SA token blast radius에서 격리
     };
   };

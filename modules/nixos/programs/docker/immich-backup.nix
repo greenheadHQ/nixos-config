@@ -1,6 +1,6 @@
 # modules/nixos/programs/docker/immich-backup.nix
 # Immich PostgreSQL 매일 백업 (컨테이너 내부 pg_dump → HDD)
-# vaultwarden-backup.nix 패턴 기반, service-lib.sh로 Pushover 알림
+# service-lib.sh로 Pushover 알림 (oneshot systemd service + daily timer)
 # pg_dump -Fc 커스텀 포맷: 내장 압축, 선택적 복원, pg_restore --list 검증
 {
   config,
@@ -120,8 +120,7 @@ in
         ExecStart = "${backupScript}/bin/immich-db-backup";
         TimeoutSec = "1h";
         # ProtectSystem=strict 불가 — podman exec가 /run/containers/, /var/lib/containers/,
-        # /run/podman/ 등 다수의 시스템 경로에 접근 필요. vaultwarden-backup은 sqlite3만
-        # 사용하므로 strict 가능하지만, podman exec는 컨테이너 런타임 전체 접근 필요.
+        # /run/podman/ 등 다수의 시스템 경로에 접근 필요. podman exec는 컨테이너 런타임 전체 접근 필요.
         ReadWritePaths = [ backupDir ];
         PrivateTmp = true;
         NoNewPrivileges = true;
@@ -135,7 +134,7 @@ in
       };
     };
 
-    # 타이머 (매일 05:30 KST -- vaultwarden backup 04:30과 1시간 간격)
+    # 타이머 (기본 매일 05:30 KST, cfg.backupTime으로 설정)
     systemd.timers.immich-db-backup = {
       description = "Daily Immich PostgreSQL backup";
       wantedBy = [ "timers.target" ];

@@ -553,16 +553,6 @@ let
       cond = nixosCfg.services.openssh.settings.PasswordAuthentication == false;
     }
     {
-      # Codex 피드백: vaultwarden 계정 생성 허용은 앱 레벨 보안 — Tailscale 경계와 독립
-      name = "Test 5e: vaultwarden SIGNUPS_ALLOWED가 'false'이어야 함 (계정 무단 생성 방지)";
-      cond = containers.vaultwarden.environment.SIGNUPS_ALLOWED == "false";
-    }
-    {
-      # Opus 피드백: SIGNUPS_ALLOWED와 동일 보안 수준 — 계정 생성 경로 일관 차단
-      name = "Test 5e-2: vaultwarden INVITATIONS_ALLOWED가 'false'이어야 함 (초대 기반 계정 생성 방지)";
-      cond = containers.vaultwarden.environment.INVITATIONS_ALLOWED == "false";
-    }
-    {
       name = "Test 6a: networking.firewall.enable이 true이어야 함";
       cond = fw.enable;
     }

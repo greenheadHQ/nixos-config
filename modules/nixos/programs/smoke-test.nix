@@ -2,7 +2,7 @@
 # 홈서버 런타임 스모크 테스트 (curl 헬스체크 + 백업 신선도)
 # systemd timer로 주기적 실행, 실패 시 Pushover 알림
 #
-# 패턴 참조: immich-backup.nix, vaultwarden-backup.nix (service-lib.sh + Pushover)
+# 패턴 참조: immich-backup.nix (service-lib.sh + Pushover)
 {
   config,
   pkgs,
@@ -31,9 +31,6 @@ let
     ]
     ++ lib.optionals config.homeserver.copyparty.enable [
       "${subdomains.copyparty}.${base}:200:/"
-    ]
-    ++ lib.optionals config.homeserver.vaultwarden.enable [
-      "${subdomains.vaultwarden}.${base}:200:/alive"
     ]
     ++ lib.optionals config.homeserver.karakeep.enable [
       "${subdomains.karakeep}.${base}:307:/"
@@ -118,20 +115,6 @@ let
           check "Immich backup freshness (''${AGE_HOURS}h <= ''${BACKUP_MAX_AGE}h)" "$RESULT"
         else
           check "Immich backup exists" 1
-        fi
-      ''}
-
-      ${lib.optionalString config.homeserver.vaultwarden.enable ''
-        # vaultwarden: 날짜별 디렉토리의 db.sqlite3.gz
-        LATEST_VW_DIR=$(find "$BACKUP_DIR/vaultwarden" -maxdepth 1 -type d -name "20*" \
-          -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
-        if [ -n "$LATEST_VW_DIR" ] && [ -f "$LATEST_VW_DIR/db.sqlite3.gz" ]; then
-          AGE_HOURS=$(( ($(date +%s) - $(stat -c %Y "$LATEST_VW_DIR/db.sqlite3.gz")) / 3600 ))
-          RESULT=0
-          [ "$AGE_HOURS" -le "$BACKUP_MAX_AGE" ] || RESULT=1
-          check "Vaultwarden backup freshness (''${AGE_HOURS}h <= ''${BACKUP_MAX_AGE}h)" "$RESULT"
-        else
-          check "Vaultwarden backup exists" 1
         fi
       ''}
 

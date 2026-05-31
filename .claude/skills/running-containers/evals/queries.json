@@ -14,6 +14,5 @@
   {"query": "Karakeep 웹 아카이브가 실패해", "should_trigger": false, "why": "혼동 쌍: hosting-karakeep"},
   {"query": "archive.greenhead.dev에서 CSS 렌더링이 깨져", "should_trigger": false, "why": "혼동 쌍: hosting-karakeep"},
   {"query": "copyparty-update 실행해줘", "should_trigger": false, "why": "혼동 쌍: hosting-copyparty"},
-  {"query": "karakeep-notify 웹훅 브리지 로그 확인", "should_trigger": false, "why": "혼동 쌍: hosting-karakeep"},
-  {"query": "vaultwarden 백업 실패 원인 확인", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"}
+  {"query": "karakeep-notify 웹훅 브리지 로그 확인", "should_trigger": false, "why": "혼동 쌍: hosting-karakeep"}
 ]
