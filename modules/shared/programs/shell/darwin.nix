@@ -3,6 +3,7 @@
   config,
   pkgs,
   lib,
+  constants,
   ...
 }:
 
@@ -88,5 +89,53 @@ in
       # sqlite3 등이 시스템 바이너리를 shadow한다. append로 우회.
       [ -d "$ANDROID_HOME/platform-tools" ] && export PATH="$PATH:$ANDROID_HOME/platform-tools"
     ''
+
+    # ════════════════════════════════════════════════════════════════
+    # #848: 무인 에이전트 gh Touch ID 우회 (Mac 전용, PRD #780 Phase 2b 후속)
+    # c/codex 런처가 세션 시작 시 op read로 GH_TOKEN을 1회 주입(Touch ID 1회) →
+    # 세션 내 gh는 무인 작동(화면잠금/sleep 무관). 대화형 직접 gh는 op plugin biometric 유지.
+    # graceful: op read 실패/빈 값 시 GH_TOKEN 미주입 → 기존 경로 fallback(work 맥북 무해).
+    # 토큰은 env(메모리)만 — 디스크 평문 0 (Phase 2b hosts.yml 평문 제거 이득 보존).
+    # mkOrder 1600: shared default.nix의 plugins.sh source(mkAfter=1500)와 shellAliases 이후 로드.
+    # ════════════════════════════════════════════════════════════════
+    (lib.mkOrder 1600 ''
+      # gh: GH_TOKEN 있으면 직접 사용, 없으면 op plugin biometric (plugins.sh alias override).
+      unalias gh 2>/dev/null || true
+      gh() {
+        if [ -n "''${GH_TOKEN:-}" ]; then
+          command gh "$@"
+        elif [ -f "$HOME/.config/op/plugins.sh" ]; then
+          op plugin run -- gh "$@"
+        else
+          command gh "$@"
+        fi
+      }
+
+      # 에이전트 런처용 GH_TOKEN 발급 (op read, Touch ID 1회). 실패 시 빈 문자열(graceful).
+      _agent_gh_token() {
+        command -v op >/dev/null 2>&1 || return 0
+        op read --no-newline --account "${constants.onePassword.account}" \
+          "op://${constants.onePassword.vaults.automation}/github-pat/token" 2>/dev/null || true
+      }
+
+      # c(Claude Code) / codex 런처: 세션 시작 시 GH_TOKEN 주입(성공 시에만), 프로세스 한정.
+      unalias c codex 2>/dev/null || true
+      c() {
+        local _tok; _tok="$(_agent_gh_token)"
+        if [ -n "$_tok" ]; then
+          GH_TOKEN="$_tok" command claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json "$@"
+        else
+          command claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json "$@"
+        fi
+      }
+      codex() {
+        local _tok; _tok="$(_agent_gh_token)"
+        if [ -n "$_tok" ]; then
+          GH_TOKEN="$_tok" command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen "$@"
+        else
+          command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen "$@"
+        fi
+      }
+    '')
   ];
 }
