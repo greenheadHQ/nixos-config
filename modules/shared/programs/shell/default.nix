@@ -377,15 +377,11 @@ in
       ''
 
       #─────────────────────────────────────────────────────────────────────────
-      # 1Password Shell Plugins (op plugin init gh → ~/.config/op/plugins.sh)
-      # gh = "op plugin run -- gh" alias로 wrapping — github-pat을 호출 시점에 주입 (PRD #780 Phase 2b)
-      # guard: plugins.sh 부재 시 silent skip (op plugin init 전·CI·MiniPC 등 — Mac 전용 자산)
+      # 1Password Shell Plugins(op plugin init gh)의 gh alias source는 제거됨 (#872 후속, run-da F2).
+      # op plugin alias("op plugin run -- gh")는 gh-auth wrapper를 덮어 non-interactive 셸에서
+      # biometric 팝업을 유발했고(F2 회귀), plugins.sh 재생성 시 다시 회귀하므로 의존을 끊는다.
+      # gh 무인 인증은 modules/shared/programs/shell/darwin.nix의 gh-auth wrapper가 담당한다.
       #─────────────────────────────────────────────────────────────────────────
-      (lib.mkAfter ''
-        if [ -f "$HOME/.config/op/plugins.sh" ]; then
-          source "$HOME/.config/op/plugins.sh"
-        fi
-      '')
     ];
   };
 
