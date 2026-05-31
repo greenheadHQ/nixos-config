@@ -9,14 +9,12 @@
   {"query": "시크릿 관리 어떻게 하는 거야", "should_trigger": true, "why": "저항적: 시크릿 관리 = managing-secrets 스킬"},
   {"query": "Pushover 토큰 추가하려면", "should_trigger": true, "why": "저항적: Pushover 시크릿은 agenix로 관리"},
   {"query": "암호화된 값 확인하고 싶어", "should_trigger": true, "why": "저항적: 복호화 워크플로는 시크릿 스킬"},
-  {"query": "Vaultwarden 비밀번호 관리자 백업 상태 확인해줘", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "Bitwarden 클라이언트에서 로그인이 안 돼", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "vaultwarden 관리자 패널 접속 방법", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "비밀번호 관리자 서버 상태 확인", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "vaultwarden 컨테이너가 재시작됐어", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "Master Password 분실했을 때 복구 방법", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "vaultwarden 백업이 실패했다는 알림 받았어", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "iPhone에서 Bitwarden 앱 설정하기", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "ADMIN_TOKEN을 Argon2id로 변경하기", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"},
-  {"query": "vaultwarden-update 명령 실행해줘", "should_trigger": false, "why": "혼동 쌍: hosting-vaultwarden"}
+  {"query": "1Password Service Account token 발급하고 agenix에 추가하는 방법", "should_trigger": true, "why": "#872 Mac/MiniPC 격리 SA token 발급 + agenix 재암호화 절차 — managing-secrets Phase 5 신규 1Password 운영 절차 범위"},
+  {"query": "op read가 biometric prompt를 안 띄우고 무인으로 동작 안 해", "should_trigger": true, "why": "#876 Mac 무인 gh 인증(gh-pat-mac/gh-auth PATH wrapper) biometric 팝업 회귀 트러블슈팅 — Phase 5 1Password 영역"},
+  {"query": "SA token 90일 rotation 만료 알림이 안 와", "should_trigger": true, "why": "#875 opnix-rotate-mac launchd / opnix-rotate-check systemd 만료 record + warnDays=14 알림 운영 — Phase 5 1Password 운영 절차"},
+  {"query": "github-pat 캐시가 만료됐는데 gh 인증이 안 돼", "should_trigger": true, "why": "#872/#876 방식 B per-user temp 캐시(12h TTL) → SA token으로 op read 무인 발급 흐름 — managing-secrets 1Password 영역"},
+  {"query": "SSH 키를 어느 1Password vault에 넣어야 해 Automation 아니면 SSH", "should_trigger": true, "why": "#874 SSH 키 전용 SSH vault 격리(SA blast radius 축소) — Phase 5 routing matrix/vault 라우팅 범위"},
+  {"query": "opnix-service-account-token-mac.age를 재암호화하려면", "should_trigger": true, "why": "Mac 전용 SA token .age 재암호화(recipient=macbook user key) — agenix re-encrypt + 1Password SA 교차 범위, managing-secrets 핵심"},
+  {"query": "op CLI Automation vault에서 토큰 읽는 명령어", "should_trigger": true, "why": "op://Automation/github-pat/token op read 사용법 — Phase 5 op_get/op CLI 운영 절차 트리거 확장 범위"},
+  {"query": "iPhone Termius에 넣을 mobile-ssh 공유 키 rotate 방법", "should_trigger": true, "why": "#866 mobile-ssh 단일 공유 키 rotate + Termius 디바이스 해제 모델 — Phase 2a Mobile SSH Integration Policy(닫힘) 운영 절차"}
 ]
