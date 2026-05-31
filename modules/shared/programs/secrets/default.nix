@@ -4,6 +4,7 @@
   config,
   pkgs,
   lib,
+  hostType,
   ...
 }:
 
@@ -69,6 +70,16 @@
       shottr-license = {
         file = ../../../../secrets/shottr-license.age;
         path = "${config.xdg.configHome}/shottr/license";
+        mode = "0400";
+      };
+    }
+    # #872: Mac 전용 1Password Service Account token (방식 B, epic #780 Phase 2b).
+    # 셸 _gh_pat()이 이 토큰으로 github-pat을 무인 발급해 $TMPDIR 캐시에 둔다.
+    # personal 호스트에만 배포(개인 Mac 키 recipient) → work role 호스트는 미배포(agenix graceful).
+    // lib.optionalAttrs (pkgs.stdenv.isDarwin && hostType == "personal") {
+      opnix-service-account-token-mac = {
+        file = ../../../../secrets/opnix-service-account-token-mac.age;
+        path = "${config.xdg.configHome}/op/sa-token-mac";
         mode = "0400";
       };
     };
