@@ -70,4 +70,10 @@ in
   # 토큰 실제 암호화는 1Password SA 발급 후 agenix -e로 수행 (host key recipient)
   # 실 소비(opnix module) + 90일 rotation timer는 Phase 3
   "opnix-service-account-token.age".publicKeys = minipcHostOnly;
+
+  # Mac 전용 1Password Service Account token (#872, epic #780 Phase 2b)
+  # 로그인 셸 _gh_pat()이 이 SA token으로 github-pat을 per-user temp 캐시에 무인 발급 (방식 B, launchd 비의존).
+  # 개인 Mac user 로그인 키 전용 recipient — work role 호스트는 복호화 불가하여 graceful 분리.
+  # MiniPC host-key SA(위 minipcHostOnly)와 별개로 발급된 격리 SA (blast radius 분리, Automation read-only).
+  "opnix-service-account-token-mac.age".publicKeys = [ constants.sshKeys.macbook ];
 }
