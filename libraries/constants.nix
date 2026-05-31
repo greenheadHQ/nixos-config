@@ -178,7 +178,8 @@
     account = "my.1password.com";
     vaults = {
       personal = "Personal"; # 1Password 기본 Personal vault (GUI 표시명)
-      automation = "Automation"; # LLM·자동화·시스템 토큰 + 디바이스 SSH key inventory
+      automation = "Automation"; # LLM·자동화·시스템 토큰 (SSH 키는 ssh vault로 분리 — #872 후속)
+      ssh = "SSH"; # 디바이스 SSH key(mac-ssh/emergency-ssh) 전용 — SA token blast radius에서 격리
     };
   };
 
