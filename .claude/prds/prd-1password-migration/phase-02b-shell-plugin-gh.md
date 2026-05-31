@@ -1,8 +1,8 @@
 # Phase 2b: Shell Plugin gh
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Done (merged, PR #827)
-Last Updated: 2026-05-25
+Status: Done (merged, PR #827) + 무인 에이전트 gh 후속: SA→github-pat 캐시 방식 B (#872)
+Last Updated: 2026-05-31
 
 ## Objective
 
@@ -119,3 +119,4 @@ Last Updated: 2026-05-25
 
 - 2026-05-17: Phase file created.
 - 2026-05-25: Phase 2b 구현 완료 (PR 대기). `shell/default.nix` initContent에 plugins.sh file-guard source chunk 추가 + `op plugin init gh`(global default, github-pat) + nrs 적용. 검증: `type gh`=alias(op plugin run -- gh), `gh api user`=greenheadHQ(op plugin 경유 github-pat 주입). hosts.yml 평문 oauth_token 0건(yq 제거+백업). git history leak 0건. 구 PAT 없음 확인, keyring `gho_` unused fallback 유지 결정. 확장 트리거는 Phase 5 reserved.
+- 2026-05-31: 무인 에이전트 gh 후속(#872, 방식 B). Shell Plugin alias는 대화형 biometric에 적합하나 무인·다중 에이전트(동시 다수)에서 매 프로세스 Touch ID 마찰 → #848/#871(per-session op read)을 거쳐 SA token → github-pat 캐시 모델로 재설계. Mac 전용 SA token(`opnix-service-account-token-mac.age`, recipient=개인 Mac 키 단독, `personal` hostType 가드로 `work` 호스트 미배포)으로 github-pat을 per-user temp 캐시에 무인 발급, `gh`/`c`/`codex` wrapper가 GH_TOKEN으로 사용(`modules/shared/programs/shell/darwin.nix` `_gh_pat`). Touch ID 0회. 캐시 경로 per-user(`getconf DARWIN_USER_TEMP_DIR`, 0700)·12h TTL·github-pat prefix 검증으로 선점/stale/truncated 방지. 대화형 Shell Plugin biometric은 SA mint 실패 시 fallback으로 보존. SA token은 op 프로세스 env로만 전달(셸 env 미상주), 디스크 평문은 휘발 tmp의 github-pat 한정. 상세는 master PRD Change Log(2026-05-31 #872)와 추적 이슈 #872.
