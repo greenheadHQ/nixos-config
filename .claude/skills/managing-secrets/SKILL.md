@@ -55,13 +55,13 @@ agenix(.age 정적)와 1Password(동적 github-pat / SSH device key / SA token)�
 | Mac SA token (gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 사용) | agenix → 1Password SA | Automation (read-only SA) | service account token (mac) |
 | MiniPC opnix (부팅 oneshot → `/run/opnix/<user>/github-pat` materialize) | 1Password | Automation | `github-pat` (`op://Automation/github-pat/token`) |
 | MiniPC SA token (opnix tokenFile, host key 복호화) | agenix → 1Password SA | Automation (read-only SA) | service account token (minipc) |
-| Mac SSH agent + MiniPC authorized_keys 등록 (`mac-ssh`) | 1Password | SSH | ssh device key — #874 격리 |
-| Emergency fallback SSH (`~/.ssh/emergency_ed25519` + backup copy) | 1Password | SSH | ssh device key (`emergency-ssh`) — #874 격리 |
-| iPhone/iPad (Termius 공유 단일 키) | Termius keychain | — | ssh device key (`mobile-ssh`) — #866 단일 공유 키, 1Password 미보관 |
+| Mac SSH agent + MiniPC authorized_keys 등록 (`mac-ssh`) | 1Password | SSH | ssh device key — SSH vault 격리 |
+| Emergency fallback SSH (`~/.ssh/emergency_ed25519` + backup copy) | 1Password | SSH | ssh device key (`emergency-ssh`) — SSH vault 격리 |
+| iPhone/iPad (Termius 공유 단일 키) | Termius keychain | — | ssh device key (`mobile-ssh`) — 단일 공유 키, 1Password 미보관 |
 | agenix .age 시크릿 (Mac+MiniPC home / MiniPC service) | agenix | — | recipient group (allHosts / minipcOnly / minipcHostOnly / macbook) |
 
 핵심 원칙:
-- SA token = Automation read-only → SSH vault 접근 불가. blast radius를 github-pat 한정으로 축소(#874).
+- SA token = Automation read-only → SSH vault 접근 불가. blast radius를 github-pat 한정으로 축소.
 - agenix는 recipient group으로 호스트 노출을 통제: `allHosts` / `minipcOnly`(서비스) / `minipcHostOnly`(host key 전용 부팅 의존) / `macbook`(Mac user 키 단독).
 - 1Password 운영 절차 본문(SA 발급 / rotation / op CLI / gh 무인 / SSH device key)은 [references/1password.md](references/1password.md) 참조.
 
@@ -88,11 +88,11 @@ agenix `.age` 18개(디스크 실측) + 1Password 항목(github-pat, SSH device 
 | `pushover-karakeep.age` | agenix | — | `/run/agenix/pushover-karakeep` (MiniPC) | karakeep-update·notify·singlefile-bridge·backup·fallback-sync·log-monitor (다중 모듈 merge) | allHosts |
 | `pushover-system-monitor.age` | agenix | — | `/run/agenix/pushover-system-monitor` (MiniPC) | smartd·temp-monitor·smoke-test·opnix-rotate(MiniPC) 하드웨어/SMART/온도/SA rotation 알림 (다중 모듈 merge) | minipcOnly |
 | `opnix-service-account-token.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `/run/agenix/opnix-service-account-token` (`root:onepassword-secrets`, 0640, MiniPC) | opnix tokenFile → 부팅 oneshot이 `op://Automation/github-pat/token`을 `/run/opnix/<user>/github-pat` tmpfs로 materialize → nixos.nix gh wrapper가 GH_TOKEN 소비 | minipcHostOnly (host key 복호화) |
-| `opnix-service-account-token-mac.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `~/.config/op/sa-token-mac` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | darwin.nix gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 `op read op://Automation/github-pat/token` → temp 캐시 → gh-auth/c/codex 런처가 GH_TOKEN 주입. MiniPC host-key SA와 별개 격리 SA(#872) | macbook (Mac user 로그인 키 단독, work role 미배포) |
+| `opnix-service-account-token-mac.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `~/.config/op/sa-token-mac` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | darwin.nix gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 `op read op://Automation/github-pat/token` → temp 캐시 → gh-auth/c/codex 런처가 GH_TOKEN 주입. MiniPC host-key SA와 별개 격리 SA | macbook (Mac user 로그인 키 단독, work role 미배포) |
 | `github-pat` (1Password 항목) | 1Password | Automation | `op://Automation/github-pat/token` | Mac: gh-pat-mac이 SA token으로 `op read` → temp 캐시. MiniPC: opnix가 tmpfs로 materialize. SA token이 읽는 실제 PAT 항목 | — |
-| `mac-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (comment `mac-ssh`, `constants.sshDeviceKeys.macSsh`) | Mac SSH agent(agent.toml이 SSH vault 노출) + MiniPC authorized_keys 등록. #874로 Automation→SSH vault 격리 | — |
-| `mobile-ssh` (디바이스 키) | Termius keychain | — | Termius keychain 보관 (iPhone·iPad 동기화 공유); 공개키만 `constants.sshDeviceKeys.mobile` | iPhone/iPad Termius 공유 단일 키(#866, 디바이스별 격리 불성립). MiniPC authorized_keys 등록용. 1Password 미보관 | — |
-| `emergency-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (backup copy; ssh key comment `emergency-fallback`); 운영 키는 `~/.ssh/emergency_ed25519` (`IdentityAgent=none` 독립 fallback) | 긴급 fallback SSH 접속. 1Password backup copy가 SSH vault 보관. #874로 Automation→SSH vault 격리 | — |
+| `mac-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (comment `mac-ssh`, `constants.sshDeviceKeys.macSsh`) | Mac SSH agent(agent.toml이 SSH vault 노출) + MiniPC authorized_keys 등록. Automation→SSH vault 격리 | — |
+| `mobile-ssh` (디바이스 키) | Termius keychain | — | Termius keychain 보관 (iPhone·iPad 동기화 공유); 공개키만 `constants.sshDeviceKeys.mobile` | iPhone/iPad Termius 공유 단일 키(디바이스별 격리 불성립). MiniPC authorized_keys 등록용. 1Password 미보관 | — |
+| `emergency-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (backup copy; ssh key comment `emergency-fallback`); 운영 키는 `~/.ssh/emergency_ed25519` (`IdentityAgent=none` 독립 fallback) | 긴급 fallback SSH 접속. 1Password backup copy가 SSH vault 보관. Automation→SSH vault 격리 | — |
 | SA token (mac) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token-mac.age`로 암호화되어 `~/.config/op/sa-token-mac` 배포 | Mac gh-pat-mac이 github-pat 발급 시 사용. blast radius=Automation read-only(SSH vault 접근 불가). 90일 cadence rotation (만료 record†) | — |
 | SA token (minipc) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token.age`로 암호화되어 `/run/agenix/opnix-service-account-token` 배포 | MiniPC opnix가 github-pat materialize 시 사용. blast radius=Automation read-only. 90일 cadence rotation (만료 record†). Mac SA와 별개 발급 격리 SA | — |
 
@@ -154,7 +154,7 @@ HM activation이 `~/.config/shottr/license`에서 값을 읽어 `defaults write 
 
 ## Shell Plugin 확장 정책
 
-추가 shell plugin 도입 조건 = (a) 도구 secret을 `.env`로 export하는 패턴이 2건 이상 OR (b) agenix 평문 노출 위험 보고 1건. 둘 중 하나를 충족할 때만 새 shell plugin을 도입한다 (SSOT: epic #780 확장 트리거 기준).
+추가 shell plugin 도입 조건 = (a) 도구 secret을 `.env`로 export하는 패턴이 2건 이상 OR (b) agenix 평문 노출 위험 보고 1건. 둘 중 하나를 충족할 때만 새 shell plugin을 도입한다 (SSOT: 확장 트리거 기준).
 
 ## 레퍼런스
 

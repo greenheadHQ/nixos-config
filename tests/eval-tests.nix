@@ -491,7 +491,7 @@ let
       name = "Test 5a: openssh.openFirewall이 false이어야 함 (true이면 LAN에서 SSH 접근 가능)";
       cond = nixosCfg.services.openssh.openFirewall == false;
     }
-    # ── 1Password vault 이름 hard pin (PRD #780) ────────────────
+    # ── 1Password vault 이름 hard pin ────────────────
     # constants.nix 변경 시 GUI vault 이름과의 정합성 회귀 감지
     {
       name = "Test 5b: constants.onePassword.vaults.personal이 \"Personal\"이어야 함";
