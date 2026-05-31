@@ -77,7 +77,7 @@
 
   # ═══════════════════════════════════════════════════════════════
   # 디바이스별 SSH 공개키 — MiniPC authorized_keys 등록용 (PRD #780 Phase 2a)
-  # 1Password Automation vault `ssh` tag inventory와 일관. agenix recipient(sshKeys)와는 분리.
+  # 1Password SSH vault inventory(#874로 Automation에서 분리)와 일관. agenix recipient(sshKeys)와는 분리.
   # private 보관: macSsh = 1Password vault(SSH agent), emergency = ~/.ssh + 1Password backup,
   #   mobile = Termius keychain (iPhone·iPad 공유). Termius 계정 동기화가 host의 key 지정과
   #   표준 키 private 본체를 기기 간 복제하므로 디바이스별 격리가 성립하지 않는다 → iPhone/iPad는

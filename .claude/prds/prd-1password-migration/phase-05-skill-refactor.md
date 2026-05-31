@@ -35,7 +35,7 @@ Last Updated: 2026-05-27
 - 통합 inventory 표 (SKILL.md inline 또는 `references/inventory.md`)
 - 1Password 운영 절차 추가: SA token rotation 5단계, Service Account 발급, vault 생성, item naming convention, `op_get` helper 사용법
 - SSH device key 운영 절차 추가(조건부): 아래 "Phase 2a Mobile SSH Integration Policy"를 따른다.
-- `evals/queries.json`은 **add-only**: 1Password 혼동 쌍을 신규 추가하고, 기존 vaultwarden 쌍 위에 `"comment": "DEPRECATED — Phase 6에서 삭제"` 표기만 추가. vaultwarden 쌍 자체의 삭제는 Phase 6 책임 (FR-17 분할 정책)
+- `evals/queries.json`: 1Password 혼동/포함 쌍을 신규 추가. vaultwarden negative 쌍은 **Phase 5에서 제거**(소유자 결정 — 1Password 마이그레이션 스킬의 초점 정리, hosting-vaultwarden 자체 evals가 positive 검증을 커버). 당초 add-only(Phase 6 삭제) 계획에서 변경됨 — Phase Change Log 2026-06-01 참조
 - SKILL.md frontmatter trigger 키워드 확장: `'1password', '1Password', 'op CLI', 'opnix', 'service account token', 'Automation vault', 'biometric unlock'`
 - `NOT for Vaultwarden 비밀번호 관리자 (use hosting-vaultwarden)` line은 Phase 6에서 hosting-vaultwarden 스킬 삭제와 동시 제거 (본 phase에서는 변경하지 않음)
 - Phase 2b에서 reserved한 확장 트리거 텍스트 박제: "추가 shell plugin 도입 조건 = (a) 해당 도구 secret을 .env로 export하는 패턴 ≥ 2건 발생 OR (b) agenix 평문 노출 위험 보고 1건"
@@ -45,7 +45,7 @@ Last Updated: 2026-05-27
 
 - 새 managing-1password 스킬 신설 (NG-3)
 - hosting-vaultwarden 스킬 삭제 (Phase 6)
-- managing-secrets/evals/queries.json의 vaultwarden 쌍 완전 삭제 (Phase 6에서 처리, 본 phase에서는 1Password 쌍 신규 추가만)
+- (변경됨) vaultwarden 쌍은 Phase 5에서 제거함 — Phase Change Log 2026-06-01 참조. Phase 6 잔여 작업은 hosting-vaultwarden 스킬 삭제 + 잔여 dead reference 정리
 
 ### Phase 2a Mobile SSH Integration Policy
 
@@ -96,7 +96,7 @@ Phase 5는 Phase 2a mobile SSH follow-up 정책을 새로 결정하지 않는다
 - [ ] SKILL.md frontmatter trigger 키워드 확장 (1Password 관련 추가)
 - [ ] `evals/queries.json` 작업 (add-only):
   - [ ] 1Password 혼동 쌍 신규 추가 (예: "Service Account 발급 절차" `should_trigger=true`, "1Password Master Password 분실 복구" `should_trigger=true`, "op CLI biometric prompt 안 뜸" `should_trigger=true`)
-  - [ ] 기존 vaultwarden 혼동 쌍 항목에 `"comment": "DEPRECATED — Phase 6 vaultwarden 삭제 시 함께 제거"` 필드 1개 추가 (삭제 X)
+  - [x] vaultwarden negative 쌍 제거 (소유자 결정 — 당초 comment marker 계획에서 변경, Phase Change Log 2026-06-01)
   - [ ] 신규 추가 후 eval harness 실행 (있다면) — 모든 항목 통과 확인
 - [ ] SKILL.md 줄수 재측정: 250줄 이하 확인. 초과 시 references/ 분할 트리거:
   - `references/agenix.md` 신규 (agenix-only 워크플로: re-encrypt, host 추가, secrets.nix 패턴)
@@ -129,28 +129,29 @@ Phase 5는 Phase 2a mobile SSH follow-up 정책을 새로 결정하지 않는다
 - [ ] NFR-3 (SKILL.md ≤ 250줄) 충족 또는 references/ 분할 완료
 - [ ] Phase 2b reserved 확장 트리거 텍스트 박제 완료
 - [ ] Phase 2a Mobile SSH Integration Policy 적용 결과 기록 완료
-- [ ] Phase 6 진행 시 vaultwarden 쌍 삭제만 남도록 정리됨
+- [x] vaultwarden negative 쌍 Phase 5에서 제거 (Phase 6 잔여 = hosting-vaultwarden 스킬/dead reference 정리)
 
 ## Phase-End Multi-Pass Review
 
 - [ ] 1. Intent/coverage — SC-7 달성
-- [ ] 2. Correctness — routing 매트릭스가 모든 case (system / user / mixed)를 cover. inventory 표가 23개 .age + 1Password 항목 모두 포함
+- [ ] 2. Correctness — routing 매트릭스가 모든 case (system / user / mixed)를 cover. inventory 표가 20개 .age(실측 — 당초 PRD의 23개는 STALE) + 1Password 항목 모두 포함
 - [ ] 3. Simplicity — SKILL.md 줄수 250 이하 유지. 분할 시 references/ 2개로 한정
 - [ ] 4. Code quality — markdown 표 형식 일관, trigger 키워드 sorted/dedup
 - [ ] 5. Duplication/cleanup — vaultwarden 관련 dead reference는 Phase 6에서 처리. 본 phase에서 reverse polarity 신규 쌍 우선 추가
 - [ ] 6. Security/privacy — inventory 표에 평문 token 누출 0. 1Password vault item 이름만 노출
 - [ ] 7. Performance — SKILL.md 줄수 측정 후 분할 필요성 결정
 - [ ] 8. Validation — eval harness 또는 manual LLM query 검증
-- [ ] 9. Future-phase — Phase 6에서 vaultwarden 쌍 + hosting-vaultwarden 삭제 작업이 본 phase 산출물에 의존 (deprecation marker)
+- [ ] 9. Future-phase — Phase 6 hosting-vaultwarden 스킬 삭제 (vaultwarden eval 쌍은 Phase 5에서 제거 완료 — deprecation marker 미사용)
 - [ ] 10. PRD sync — master PRD Status, Current Phase, Change Log 갱신
 
 ## Discoveries / Decisions
 
-- SKILL.md baseline 줄수: (측정 후 박제)
-- 분할 트리거 발동 여부 (250줄 초과 시 references/ 분할 결정)
-- 신규 trigger 키워드 충돌 조사 결과
+- SKILL.md 줄수: baseline 125줄 → 최종 166줄 (≤250 충족)
+- 분할: 250줄 미만이라 routing matrix + inventory는 SKILL.md inline 유지. 운영 절차만 `references/1password.md`로 분리 (`references/agenix.md`는 기존 troubleshooting.md/workflows.md가 커버하므로 신설하지 않음)
+- 신규 trigger 키워드 충돌 조사: `rg -l "trigger.*1[Pp]assword" .claude/skills/ --glob '!**/managing-secrets/**'` → 0건
 
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
 - 2026-05-26: Phase 2a mobile SSH follow-up을 Phase 5 조건부 scope로 반영. Follow-up 결정이 닫혔으면 확정 Termius 운영 절차를 문서화하고, 열려 있으면 Phase 2a Post-Merge Remediation 링크와 master PRD Open Questions의 Phase 2a mobile SSH follow-up 항목만 Phase 5 exit gate로 요구한다.
+- 2026-06-01: Phase 5 구현 완료 (PR #878). routing 매트릭스 + 통합 inventory(.age 20개 + 1Password 항목) + `references/1password.md` 운영 절차 + frontmatter trigger 확장 + Shell Plugin 확장 정책 박제. 결정 변경: vaultwarden negative 쌍을 당초 add-only(Phase 6 삭제) 대신 Phase 5에서 제거 — 1Password 마이그레이션 스킬의 초점 정리, hosting-vaultwarden 자체 evals/queries.json이 positive 검증을 커버. 독립 검증(설계·코드 비판적 리뷰 + 전수 감사)으로 STALE 교정 반영: mobile-ssh=Termius keychain(1Password 미보관), shottr-license=Darwin-only HM 배포, SA token material=agenix `.age`(vault item은 github-pat), emergency 1Password item 이름=emergency-ssh(ssh key comment는 emergency-fallback). PRD 당초 예시의 `.age 23개`는 실측 20개로 정정.
