@@ -100,6 +100,7 @@ in
         ../shared/programs/yazi # TUI 파일 매니저
 
         # macOS 전용
+        ./programs/opnix-rotate.nix # Mac SA token 90일 rotation 만료 알림 (#872 후속)
         ./programs/hammerspoon
         ./programs/vscode
         ./programs/folder-actions
