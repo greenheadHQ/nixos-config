@@ -3,7 +3,7 @@
 #
 # 2026-12-01 09:00 KST에 oneshot이 발화하여 중립 경로의 backup archive 보관
 # 만료를 Pushover로 알린다. 운영자가 manual integrity check 후 purge를 검토한다.
-# (epic #780 Phase 6 — 셀프호스팅 비밀번호 관리자 서비스 EOL 시 백업을 중립
+# (epic #780 — 셀프호스팅 비밀번호 관리자 서비스 EOL 시 백업을 중립
 #  경로로 archive하고 6개월 후 정리 검토 알림. 메시지/경로에 특정 서비스 브랜드명을
 #  남기지 않아 repo 잔존 게이트를 통과하도록 중립 표현(password-manager)을 쓴다.)
 {

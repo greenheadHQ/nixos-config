@@ -74,12 +74,12 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
-  # 디바이스별 SSH 공개키 — MiniPC authorized_keys 등록용 (PRD #780 Phase 2a)
+  # 디바이스별 SSH 공개키 — MiniPC authorized_keys 등록용 (PRD #780)
   # 1Password SSH vault inventory(#874로 Automation에서 분리)와 일관. agenix recipient(sshKeys)와는 분리.
   # private 보관: macSsh = 1Password vault(SSH agent), emergency = ~/.ssh + 1Password backup,
   #   mobile = Termius keychain (iPhone·iPad 공유). Termius 계정 동기화가 host의 key 지정과
   #   표준 키 private 본체를 기기 간 복제하므로 디바이스별 격리가 성립하지 않는다 → iPhone/iPad는
-  #   단일 mobile-ssh 공유 키 사용 (PRD #780 Phase 2a mobile follow-up, #866).
+  #   단일 mobile-ssh 공유 키 사용 (PRD #780 mobile follow-up, #866).
   # ═══════════════════════════════════════════════════════════════
   sshDeviceKeys = {
     macSsh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGijyrxefX4n5oRJ2775QDOFtBfjPeNzjym2i7TJx9qr mac-ssh";
@@ -168,7 +168,7 @@
   onePassword = {
     # op CLI 멀티 계정(개인+회사) 환경에서 Automation vault가 속한 개인 account 고정.
     # my.1password.com은 개인 1Password 공통 sign-in 도메인 (개인 식별 정보 아님).
-    # MiniPC(Phase 3)는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 본 값은 Mac biometric 경로 전용.
+    # MiniPC는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 본 값은 Mac biometric 경로 전용.
     account = "my.1password.com";
     vaults = {
       personal = "Personal"; # 1Password 기본 Personal vault (GUI 표시명)

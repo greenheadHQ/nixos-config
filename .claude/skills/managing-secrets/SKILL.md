@@ -154,7 +154,7 @@ HM activation이 `~/.config/shottr/license`에서 값을 읽어 `defaults write 
 
 ## Shell Plugin 확장 정책
 
-추가 shell plugin 도입 조건 = (a) 도구 secret을 `.env`로 export하는 패턴이 2건 이상 OR (b) agenix 평문 노출 위험 보고 1건. 둘 중 하나를 충족할 때만 새 shell plugin을 도입한다 (SSOT: epic #780 Phase 2b 확장 트리거 기준).
+추가 shell plugin 도입 조건 = (a) 도구 secret을 `.env`로 export하는 패턴이 2건 이상 OR (b) agenix 평문 노출 위험 보고 1건. 둘 중 하나를 충족할 때만 새 shell plugin을 도입한다 (SSOT: epic #780 확장 트리거 기준).
 
 ## 레퍼런스
 
