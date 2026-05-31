@@ -51,11 +51,13 @@ in
     };
   };
 
-  # 1Password SSH agent 키 노출 설정 (PRD #780 Phase 2a)
+  # 1Password SSH agent 키 노출 설정 (PRD #780 Phase 2a, #872 후속 P4: SSH 키 vault 분리)
   # 1Password는 SSH 키를 agent에 자동 노출하지 않으므로, 노출할 vault를 agent.toml에 명시해야 한다.
-  # Automation vault의 SSH 키(mac-ssh)를 노출 → ssh가 IdentityAgent 경유로 mac-ssh 사용.
+  # SSH 키(mac-ssh/emergency-ssh)는 ssh 전용 vault에 격리되어 있다 — SA token(Automation read-only)은
+  # 이 vault에 접근할 수 없어 SA blast radius가 github-pat 한정으로 축소된다(P4 검증: SA op read 차단).
+  # emergency_ed25519(파일, IdentityAgent=none 우회)는 본 설정과 무관한 독립 fallback이다.
   home.file.".config/1Password/ssh/agent.toml".text = ''
     [[ssh-keys]]
-    vault = "${constants.onePassword.vaults.automation}"
+    vault = "${constants.onePassword.vaults.ssh}"
   '';
 }
