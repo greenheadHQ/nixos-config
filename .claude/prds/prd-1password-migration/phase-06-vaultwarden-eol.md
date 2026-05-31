@@ -1,8 +1,8 @@
 # Phase 6: Vaultwarden EOL
 
 Parent PRD: [PRD: Bitwarden(Vaultwarden) → 1Password 마이그레이션 + LLM 주도 개발 생태계](../prd-1password-migration.md)
-Status: Not Started
-Last Updated: 2026-05-17
+Status: Complete
+Last Updated: 2026-06-01
 
 본 phase는 Phase 4 (Apple Passwords)와 의존 없음 → 병렬 가능.
 
@@ -130,11 +130,11 @@ Last Updated: 2026-05-17
 
 ## Exit Criteria
 
-- [ ] Phase objective 달성 (atomic 삭제 + cross-reference cleanup + rg 잔존 0건 + 백업 archive + 6개월 reminder)
-- [ ] FR-18, FR-19, FR-20 구현
-- [ ] NFR-1 (atomic PR), NFR-2 (rg 잔존 0건) 충족
-- [ ] `nrs minipc` + eval-tests 모두 통과
-- [ ] Issue #780 진행 comment + close
+- [x] Phase objective 달성 (atomic 삭제 + cross-reference cleanup + rg 잔존 0건 + 백업 archive + 6개월 reminder)
+- [x] FR-18, FR-19, FR-20 구현
+- [x] NFR-1 (atomic PR), NFR-2 (rg 잔존 0건 — 단 진짜 게이트는 `rg -i --hidden`, Discoveries 참조) 충족
+- [x] `nrs minipc`(= MiniPC 로컬 nixos-rebuild) + eval-tests + smoke-test 모두 통과
+- [x] Issue #780 진행 comment + close (PR Closes #780/#879)
 
 ## Phase-End Multi-Pass Review
 
@@ -151,11 +151,14 @@ Last Updated: 2026-05-17
 
 ## Discoveries / Decisions
 
-- 백업 archive 디렉토리 명명: `/mnt/data/backups/archives/password-manager-<shutdown-date>` (중립 표현 — `<shutdown-date>`는 본 phase 실행일 ISO-8601로 치환. archive 단계에서 결정 후 본 Discoveries에 박제)
-- `<purge-date>` = `<shutdown-date>` + 6개월 (reminder timer가 같은 값 참조)
-- 6개월 purge reminder 일시: `<purge-date>` 09:00 KST (archive 단계에서 결정한 값으로 치환 후 본 Discoveries에 박제)
-- mk-update-module 추상화는 vaultwarden-update를 직접 참조하지 않음을 재확인 (copyparty/karakeep 호출자 잔존 → 모듈 유지)
+- 백업 archive 디렉토리: `/mnt/data/backups/archives/password-manager-2026-06-01` (2026-06-01 실행, 날짜별 스냅샷 보존 + `PURGE_AFTER_2026-12-01.txt` 마커)
+- `<shutdown-date>` = 2026-06-01, `<purge-date>` = 2026-12-01 (reminder timer가 같은 값 참조)
+- 6개월 purge reminder: 2026-12-01 09:00 KST — `pushover-purge-reminder.nix` systemd timer 신설(OnCalendar 1회성 + Persistent=true). nrs 후 `systemctl list-timers`로 `NEXT Tue 2026-12-01 09:00 KST` 등록 확인. PRD가 가정한 `pushover-system-monitor.nix`는 미존재 → 신규 모듈 + `configuration.nix` import로 구현(`opnix-rotate.nix` 패턴 계승, `pushover-system-monitor.age` 공유 merge).
+- mk-update-module 추상화는 vaultwarden-update를 직접 참조하지 않음을 재확인 (copyparty/karakeep/uptime-kuma 호출자 잔존 → 모듈 유지)
+- **★ Acceptance gate 결함 (중요, 향후 잔존 게이트에 반영)**: 본 PRD/Objective가 명시한 `rg -w vaultwarden --glob '!.claude/prds/**' .`는 두 false-0 결함이 있다. (a) `--hidden` 부재 → `.claude/` 스킬 디렉토리(hosting-vaultwarden 등)를 검색하지 못함, (b) `-w` word boundary → 한글 조사 결합형("Vaultwarden은")과 vaultwarden 단어 없는 카운트("5개 컨테이너", ".age 20개")를 놓침. 진짜 게이트는 **`rg -i --hidden vaultwarden --glob '!.claude/prds/**' --glob '!.git/**' .`**. 적대적 DA 리뷰(8 세부 도메인)와 병렬 전수조사(6 bundle)가 이 결함으로 놓칠 뻔한 5곳을 추가로 잡아 0건 달성.
+- eval-tests 삭제 대상은 PRD가 말한 "Test 5h/5h-2"가 아니라 실제 **Test 5e/5e-2**였다 (PRD 라인번호 stale → rg 실측으로 교정).
 
 ## Phase Change Log
 
 - 2026-05-17: Phase file created.
+- 2026-06-01: Phase 6 완료. atomic 삭제(코드 모듈 3 + agenix `.age` 2 + hosting-vaultwarden 스킬) + cross-ref cleanup(managing-minipc/running-containers/managing-secrets) + `pushover-purge-reminder.nix` 신설. MiniPC 컨테이너/타이머 중지 + 백업 중립 archive(`password-manager-2026-06-01` + PURGE 마커) + nrs 배포(16 vaultwarden units 제거, reminder timer 등록 확인). 적대적 DA 리뷰(8 도메인) + 병렬 전수조사(6 bundle)로 acceptance gate 결함 보정 5곳 추가 수정. `rg -i --hidden` 잔존 0 + nix flake check + eval-tests + smoke-test 통과. Phase 5 잔여 후속 ①(constants 주석 #874) + ②(managing-secrets eval negative 가드 2쌍) 동봉. PR(Closes #879/#780).
