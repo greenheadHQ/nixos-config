@@ -692,7 +692,7 @@ fi
 
 log "업로드 시작: ${media_count}개 (${readable_size})"
 
-upload_output=$(bunx @immich/cli upload \
+upload_output=$(bun x @immich/cli upload \
     --album-name "Desktop Upload" \
     --delete \
     --concurrency 2 \
