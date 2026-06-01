@@ -9,12 +9,12 @@ description: |
   '서비스 업데이트', '업데이트 타이머', 'DB 백업', 'immich-db-backup', '리소스 제한', 'Caddy',
   '리버스 프록시', 'HTTPS 인증서', '버전 체크', '서비스 상태', '서비스 포트'.
   NOT for service-specific application workflows (use hosting-copyparty,
-  hosting-vaultwarden, hosting-karakeep).
+  hosting-karakeep).
 ---
 
 # 컨테이너 관리 (Podman/홈서버)
 
-Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty, vaultwarden, karakeep) 운영 가이드.
+Podman 컨테이너 및 홈서버 서비스 (immich, uptime-kuma, copyparty, karakeep) 운영 가이드.
 Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접근한다.
 
 ## 모듈 구조 (mkOption 기반)
@@ -26,7 +26,6 @@ Caddy HTTPS 리버스 프록시를 통해 `*.greenhead.dev` 도메인으로 접�
 homeserver.immich.enable = true;              # 사진 백업
 homeserver.uptimeKuma.enable = true;          # 모니터링
 homeserver.copyparty.enable = true;           # 파일 서버
-homeserver.vaultwarden.enable = true;         # 비밀번호 관리자
 homeserver.karakeep.enable = true;            # 웹 아카이버
 homeserver.immichBackup.enable = true;        # Immich DB 백업
 homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
@@ -39,8 +38,8 @@ homeserver.reverseProxy.enable = true;        # Caddy HTTPS 리버스 프록시
 |-----------|------|
 | `modules/nixos/options/homeserver.nix` | mkOption 정의 + 서비스 모듈 import |
 | `modules/nixos/programs/docker/runtime.nix` | Podman 런타임 공통 설정 |
-| `modules/nixos/programs/docker/<서비스>.nix` | 개별 컨테이너 정의 (immich, uptime-kuma, copyparty, vaultwarden, karakeep 등) |
-| `modules/nixos/programs/<서비스>-update/` | 버전 체크 + 업데이트 (immich, uptime-kuma, copyparty, vaultwarden, karakeep) |
+| `modules/nixos/programs/docker/<서비스>.nix` | 개별 컨테이너 정의 (immich, uptime-kuma, copyparty, karakeep 등) |
+| `modules/nixos/programs/<서비스>-update/` | 버전 체크 + 업데이트 (immich, uptime-kuma, copyparty, karakeep) |
 | `modules/nixos/programs/caddy.nix` | Caddy HTTPS 리버스 프록시 |
 | `modules/nixos/lib/service-lib.sh` / `.nix` | 공통 셸 라이브러리 + Nix wrapper |
 | `modules/nixos/lib/mk-update-module.nix` | 업데이트 모듈 생성 헬퍼 |
@@ -63,7 +62,6 @@ Docker 서비스에서 사용하는 상수 (`libraries/constants.nix`):
 | Immich | `https://immich.greenhead.dev` | `127.0.0.1:2283` |
 | Uptime Kuma | `https://uptime-kuma.greenhead.dev` | `127.0.0.1:3002` |
 | Copyparty | `https://copyparty.greenhead.dev` | `127.0.0.1:3923` |
-| Vaultwarden | `https://vaultwarden.greenhead.dev` | `127.0.0.1:8222` |
 | Karakeep | `https://archive.greenhead.dev` | `127.0.0.1:3000` |
 
 Caddy가 Cloudflare DNS-01 ACME로 Let's Encrypt 인증서를 자동 발급한다.
@@ -75,7 +73,7 @@ Tailscale IP (`100.79.80.95:443`)에만 바인딩되어 VPN 내부 전용이다.
 
 - OCI 백엔드 명시 필수: `runtime.nix`의 `backend = "podman"` 누락 시 Docker fallback 에러
 - immich ML OOM: CPU 버전 이미지 사용 (`release`, openvino 아님)
-- Tailscale IP 바인딩: `tailscale-wait.nix`로 60초 대기. Immich/Copyparty/Uptime Kuma/Vaultwarden은 `127.0.0.1` 바인딩 (Caddy 프록시)
+- Tailscale IP 바인딩: `tailscale-wait.nix`로 60초 대기. Immich/Copyparty/Uptime Kuma는 `127.0.0.1` 바인딩 (Caddy 프록시)
 - Uptime Kuma `--network=host`: localhost 서비스 모니터링을 위해 호스트 네트워크 필수
 - Caddy HTTPS: Cloudflare DNS-01 ACME, Tailscale IP 전용 바인딩, `secrets/cloudflare-dns-api-token.age`
 - 방화벽: `trustedInterfaces = [ "tailscale0" ]` — 보안은 서비스 바인딩 주소에 의존
@@ -100,7 +98,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 ### 통합 서비스 업데이트 시스템
 
-5개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라:
+4개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라:
 
 | 서비스 | 버전 체크 (자동) | 수동 업데이트 | 타이머 |
 |--------|-----------------|--------------|--------|
@@ -108,19 +106,17 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 | Uptime Kuma | `uptime-kuma-version-check` | `sudo uptime-kuma-update` | 03:30 |
 | Copyparty | `copyparty-version-check` | `sudo copyparty-update` | 04:00 |
 | Karakeep | `karakeep-version-check` | `sudo karakeep-update --ack-bridge-risk` | 06:00 |
-| Vaultwarden | `vaultwarden-version-check` | `sudo vaultwarden-update` | 06:30 |
 
 백업 타이머:
 
 | 서비스 | systemd 서비스 | 타이머 | 백업 위치 |
 |--------|---------------|--------|-----------|
-| Vaultwarden | `vaultwarden-backup` | 04:30 | HDD (`/mnt/data/backups/vaultwarden`) |
 | Karakeep | `karakeep-backup` | 05:00 | HDD (`/mnt/data/backups/karakeep`) |
 | Immich DB | `immich-db-backup` | 05:30 | HDD (`/mnt/data/backups/immich`) |
 
 공통 라이브러리 함수: `send_notification`, `fetch_github_release`, `get_image_digest`, `check_watchdog`, `check_initial_run`, `record_success`, `http_health_check`
 
-서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`, `pushover-karakeep`, `pushover-vaultwarden`).
+서비스별 Pushover 토큰 독립 운영 (agenix: `pushover-immich`, `pushover-uptime-kuma`, `pushover-copyparty`, `pushover-karakeep`).
 
 Immich: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 알림. 상세: [references/immich-update.md](references/immich-update.md)
 

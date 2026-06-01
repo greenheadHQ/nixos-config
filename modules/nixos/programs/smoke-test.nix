@@ -2,7 +2,7 @@
 # 홈서버 런타임 스모크 테스트 (curl 헬스체크 + 백업 신선도)
 # systemd timer로 주기적 실행, 실패 시 Pushover 알림
 #
-# 패턴 참조: immich-backup.nix, vaultwarden-backup.nix (service-lib.sh + Pushover)
+# 패턴 참조: immich-backup.nix (service-lib.sh + Pushover)
 {
   config,
   pkgs,
@@ -31,9 +31,6 @@ let
     ]
     ++ lib.optionals config.homeserver.copyparty.enable [
       "${subdomains.copyparty}.${base}:200:/"
-    ]
-    ++ lib.optionals config.homeserver.vaultwarden.enable [
-      "${subdomains.vaultwarden}.${base}:200:/alive"
     ]
     ++ lib.optionals config.homeserver.karakeep.enable [
       "${subdomains.karakeep}.${base}:307:/"
@@ -88,7 +85,7 @@ let
       # ─── 1. Caddy 핵심 엔드포인트 헬스체크 ───
       # Tailscale IP + SNI로 직접 접근, DNS 불필요
       # -s: silent, -o /dev/null: body 버림, -w: HTTP 코드만 추출
-      # -f 없음: 4xx/5xx에서도 실제 코드를 캡처하기 위해 (DA #3)
+      # -f 없음: 4xx/5xx에서도 실제 코드를 캡처하기 위해
       for endpoint in $ENDPOINT_LIST; do
         DOMAIN="''${endpoint%%:*}"
         REST="''${endpoint#*:}"
@@ -108,7 +105,7 @@ let
 
       ${lib.optionalString config.homeserver.immichBackup.enable ''
         # immich: flat directory에 immich-db-*.dump 파일
-        # || true: 디렉토리 미존재 시 find 비정상 종료 + pipefail 방지 (DA #1)
+        # || true: 디렉토리 미존재 시 find 비정상 종료 + pipefail 방지
         LATEST_IMMICH=$(find "$BACKUP_DIR/immich" -maxdepth 1 -name "immich-db-*.dump" \
           -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
         if [ -n "$LATEST_IMMICH" ]; then
@@ -118,20 +115,6 @@ let
           check "Immich backup freshness (''${AGE_HOURS}h <= ''${BACKUP_MAX_AGE}h)" "$RESULT"
         else
           check "Immich backup exists" 1
-        fi
-      ''}
-
-      ${lib.optionalString config.homeserver.vaultwarden.enable ''
-        # vaultwarden: 날짜별 디렉토리의 db.sqlite3.gz
-        LATEST_VW_DIR=$(find "$BACKUP_DIR/vaultwarden" -maxdepth 1 -type d -name "20*" \
-          -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
-        if [ -n "$LATEST_VW_DIR" ] && [ -f "$LATEST_VW_DIR/db.sqlite3.gz" ]; then
-          AGE_HOURS=$(( ($(date +%s) - $(stat -c %Y "$LATEST_VW_DIR/db.sqlite3.gz")) / 3600 ))
-          RESULT=0
-          [ "$AGE_HOURS" -le "$BACKUP_MAX_AGE" ] || RESULT=1
-          check "Vaultwarden backup freshness (''${AGE_HOURS}h <= ''${BACKUP_MAX_AGE}h)" "$RESULT"
-        else
-          check "Vaultwarden backup exists" 1
         fi
       ''}
 

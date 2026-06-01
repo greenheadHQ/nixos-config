@@ -84,7 +84,7 @@ bind: cannot assign requested address
 
 현재 상태 (2026-02 기준):
 
-- Immich/Uptime Kuma/Copyparty/Vaultwarden은 `127.0.0.1` 바인딩으로 전환됨
+- Immich/Uptime Kuma/Copyparty는 `127.0.0.1` 바인딩으로 전환됨
 - 외부 접근은 Caddy가 Tailscale IP(`443`)에서 reverse proxy
 - 따라서 위 컨테이너들은 더 이상 Tailscale IP 직접 바인딩 실패를 겪지 않음
 

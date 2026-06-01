@@ -44,16 +44,12 @@ in
   # Copyparty 파일 서버 비밀번호
   "copyparty-password.age".publicKeys = minipcOnly;
 
-  # Vaultwarden 관리자 패널 토큰
-  "vaultwarden-admin-token.age".publicKeys = minipcOnly;
-
   # Caddy HTTPS 인증서 발급용 Cloudflare DNS API 토큰
   "cloudflare-dns-api-token.age".publicKeys = minipcOnly;
 
   # 서비스 업데이트 알림용 Pushover credentials
   "pushover-uptime-kuma.age".publicKeys = minipcOnly;
   "pushover-copyparty.age".publicKeys = minipcOnly;
-  "pushover-vaultwarden.age".publicKeys = minipcOnly;
 
   # Karakeep (웹 아카이버/북마크 관리)
   "karakeep-nextauth-secret.age".publicKeys = minipcOnly;
@@ -65,13 +61,13 @@ in
   "pushover-system-monitor.age".publicKeys = minipcOnly;
 
   # 1Password Service Account token (opnix가 systemd EnvironmentFile로 주입)
-  # host key 전용(minipcHostOnly)으로 user 로그인 키 노출 표면과 격리 (PRD #780 host key 복호화 계약).
+  # host key 전용(minipcHostOnly)으로 user 로그인 키 노출 표면과 격리 (host key 복호화 계약).
   # 부팅 시 minipc root가 /etc/ssh/ssh_host_ed25519_key로 복호화.
   # 토큰 실제 암호화는 1Password SA 발급 후 agenix -e로 수행 (host key recipient)
-  # 실 소비(opnix module) + 90일 rotation timer는 Phase 3
+  # 실 소비(opnix module) + 90일 rotation timer 포함
   "opnix-service-account-token.age".publicKeys = minipcHostOnly;
 
-  # Mac 전용 1Password Service Account token (#872, epic #780 Phase 2b)
+  # Mac 전용 1Password Service Account token
   # 로그인 셸의 gh-pat-mac이 이 SA token으로 github-pat을 per-user temp 캐시에 무인 발급 (방식 B, launchd 비의존).
   # 개인 Mac user 로그인 키 전용 recipient — work role 호스트는 복호화 불가하여 graceful 분리.
   # MiniPC host-key SA(위 minipcHostOnly)와 별개로 발급된 격리 SA (blast radius 분리, Automation read-only).
