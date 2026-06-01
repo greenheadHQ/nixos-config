@@ -2,7 +2,7 @@
 
 ## 개요
 
-Immich, Uptime Kuma, Copyparty, Karakeep, Vaultwarden 5개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라.
+Immich, Uptime Kuma, Copyparty, Karakeep 4개 컨테이너 서비스가 `service-lib.sh` 공통 라이브러리를 공유하는 업데이트 인프라.
 
 - 버전 체크 (자동): 매일 GitHub Releases API로 최신 버전 확인 → Pushover 알림
 - 업데이트 (수동): `sudo <서비스>-update` 명령으로 안전한 업데이트
@@ -30,19 +30,15 @@ modules/nixos/programs/
 │   ├── default.nix           ← mk-update-module.nix 사용
 │   └── files/
 │       └── update-script.sh  ← 수동 업데이트
-├── karakeep-update/
-│   ├── default.nix           ← mk-update-module.nix 사용
-│   └── files/
-│       └── update-script.sh  ← 수동 업데이트
-└── vaultwarden-update/
+└── karakeep-update/
     ├── default.nix           ← mk-update-module.nix 사용
     └── files/
-        └── update-script.sh  ← 수동 업데이트 (백업 서비스 연동)
+        └── update-script.sh  ← 수동 업데이트
 ```
 
 ### mk-update-module.nix
 
-Copyparty, Uptime Kuma, Karakeep, Vaultwarden 등 GitHub Releases 기반 서비스의 공통 패턴을 추출한 헬퍼. 서비스명, GitHub 레포, 시크릿 등을 파라미터로 전달하면 systemd service/timer, tmpfiles, agenix 시크릿, update 래퍼를 자동 생성.
+Copyparty, Uptime Kuma, Karakeep 등 GitHub Releases 기반 서비스의 공통 패턴을 추출한 헬퍼. 서비스명, GitHub 레포, 시크릿 등을 파라미터로 전달하면 systemd service/timer, tmpfiles, agenix 시크릿, update 래퍼를 자동 생성.
 
 Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 독자 구현 유지.
 
@@ -104,17 +100,6 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 - ⚠️ fallback 자동 재연결 점검: `karakeep-fallback-sync`가 URL 추출/매칭을 사용하므로, 업데이트 후 `journalctl -u karakeep-fallback-sync`로 재연결 성공/보류 로그 확인 필요.
 - ⚠️ SingleFile 대용량 분기 점검: `karakeep-singlefile-bridge`가 `/api/v1/bookmarks/singlefile`를 우회 처리하므로, 업데이트 후 `systemctl status karakeep-singlefile-bridge` 및 `journalctl -u karakeep-singlefile-bridge` 확인 필요.
 
-### Vaultwarden
-
-- 현재 버전 확인: 이미지에 버전 레이블 없음 → GitHub latest만 추적
-- 알림 형태: "v1.x.y 출시됨"
-- 메이저 불일치 감지: pinned tag와 GitHub latest 간 major version 불일치 시 추가 안내 포함
-- 업데이트: 이미지 pull → digest 비교 → vaultwarden-backup 서비스 실행 → 재시작 → HTTP 헬스체크 (`/alive`)
-- 실행 명령: `sudo vaultwarden-update`
-- ERR trap 복구: 실패 시 컨테이너 자동 재시작
-- Tailscale 불필요: localhost + 인터넷만 사용
-- ⚠️ 업데이트 전 자동 백업: `vaultwarden-backup.service`가 업데이트 스크립트 내에서 자동 실행됨. 백업 실패 시 업데이트 중단.
-
 ## 타이머 분산
 
 | 서비스 | OnCalendar | RandomizedDelaySec |
@@ -123,7 +108,6 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 | Uptime Kuma | `*-*-* 03:30:00` | 5m |
 | Copyparty | `*-*-* 04:00:00` | 5m |
 | Karakeep | `*-*-* 06:00:00` | 5m |
-| Vaultwarden | `*-*-* 06:30:00` | 5m |
 
 ## agenix 시크릿
 
@@ -133,7 +117,6 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 | `pushover-uptime-kuma` | `uptime-kuma-update/default.nix` | Uptime Kuma 업데이트 알림 |
 | `pushover-copyparty` | `copyparty-update/default.nix` | Copyparty 업데이트 알림 |
 | `pushover-karakeep` | `karakeep-update/default.nix` | Karakeep 업데이트 알림 |
-| `pushover-vaultwarden` | `vaultwarden-update/default.nix` | Vaultwarden 업데이트 알림 |
 
 `age.identityPaths`는 `immich.nix`에서 이미 정의. 새 모듈에서 중복 정의 금지.
 

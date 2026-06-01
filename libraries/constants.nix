@@ -16,7 +16,6 @@
       immichMl = 3003;
       uptimeKuma = 3002;
       copyparty = 3923;
-      vaultwarden = 8222;
       karakeep = 3000;
       caddy = 443;
     };
@@ -34,7 +33,6 @@
       immich = "immich";
       uptimeKuma = "uptime-kuma";
       copyparty = "copyparty";
-      vaultwarden = "vaultwarden";
       karakeep = "archive";
     };
   };
@@ -46,7 +44,7 @@
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
-    # agenix 복호화 identity (host private key) + opnix SA 만료 record source (PRD #780)
+    # agenix 복호화 identity (host private key) + opnix SA 만료 record source
     # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
     # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.
     agenixHostIdentityKey = "/etc/ssh/ssh_host_ed25519_key";
@@ -69,19 +67,19 @@
   # ═══════════════════════════════════════════════════════════════
   # SSH Host 공개키 (cat /etc/ssh/ssh_host_ed25519_key.pub)
   # 머신 고유 키(root 전용). 부팅 의존 시크릿(SA token 등) 전용 recipient.
-  # user 로그인 키(sshKeys)와 분리해 노출 표면을 최소화한다 (PRD #780 host key 기반 복호화).
+  # user 로그인 키(sshKeys)와 분리해 노출 표면을 최소화한다 (host key 기반 복호화).
   # ═══════════════════════════════════════════════════════════════
   hostKeys = {
     minipc = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMq3woA41glyia2HaxsQl7JL4GfSGsmn3vJoiGFXO3Qi root@greenhead-minipc";
   };
 
   # ═══════════════════════════════════════════════════════════════
-  # 디바이스별 SSH 공개키 — MiniPC authorized_keys 등록용 (PRD #780 Phase 2a)
-  # 1Password SSH vault inventory(#874로 Automation에서 분리)와 일관. agenix recipient(sshKeys)와는 분리.
+  # 디바이스별 SSH 공개키 — MiniPC authorized_keys 등록용
+  # 1Password SSH vault inventory(Automation에서 분리)와 일관. agenix recipient(sshKeys)와는 분리.
   # private 보관: macSsh = 1Password vault(SSH agent), emergency = ~/.ssh + 1Password backup,
   #   mobile = Termius keychain (iPhone·iPad 공유). Termius 계정 동기화가 host의 key 지정과
   #   표준 키 private 본체를 기기 간 복제하므로 디바이스별 격리가 성립하지 않는다 → iPhone/iPad는
-  #   단일 mobile-ssh 공유 키 사용 (PRD #780 Phase 2a mobile follow-up, #866).
+  #   단일 mobile-ssh 공유 키 사용 (mobile follow-up).
   # ═══════════════════════════════════════════════════════════════
   sshDeviceKeys = {
     macSsh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGijyrxefX4n5oRJ2775QDOFtBfjPeNzjym2i7TJx9qr mac-ssh";
@@ -118,10 +116,6 @@
       memory = "1g";
       memorySwap = "1g";
       cpus = "1";
-    };
-    vaultwarden = {
-      memory = "256m";
-      cpus = "0.5";
     };
     karakeep = {
       app = {
@@ -174,11 +168,11 @@
   onePassword = {
     # op CLI 멀티 계정(개인+회사) 환경에서 Automation vault가 속한 개인 account 고정.
     # my.1password.com은 개인 1Password 공통 sign-in 도메인 (개인 식별 정보 아님).
-    # MiniPC(Phase 3)는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 본 값은 Mac biometric 경로 전용.
+    # MiniPC는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 본 값은 Mac biometric 경로 전용.
     account = "my.1password.com";
     vaults = {
       personal = "Personal"; # 1Password 기본 Personal vault (GUI 표시명)
-      automation = "Automation"; # LLM·자동화·시스템 토큰 (SSH 키는 ssh vault로 분리 — #872 후속)
+      automation = "Automation"; # LLM·자동화·시스템 토큰 (SSH 키는 ssh vault로 분리)
       ssh = "SSH"; # 디바이스 SSH key(mac-ssh/emergency-ssh) 전용 — SA token blast radius에서 격리
     };
   };
