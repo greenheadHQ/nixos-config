@@ -34,6 +34,19 @@
 #    duti가 -50을 반환할 수 있다. set -eu 환경에서 첫 실패가 darwin-rebuild를 exit 2로 종료
 #    시키므로, set_handler/register_public_uti helper로 실패를 카운터로 흡수 + public UTI
 #    실패는 즉시 보이게 분리. (Zed 모듈에서 같은 패턴이 작동했으므로 그대로 이식.)
+#
+# === Change Intent Record (LaunchServices stale 정정) ===
+# example-statusline E2E 테스트 중 사용자 macOS 에서 statusline 의 vscode:// 클릭이
+# Finder 등 fallback 핸들러로 dispatch 되는 증상 발견. macOS LaunchServices DB 가 nix store
+# 의 VSCode .app bundle URL scheme handler 정보를 어느 시점에 stale 처리하면서
+# CFBundleURLTypes 의 vscode:// scheme 매핑이 사라진 상태였다.
+#
+# 9) Home Manager Apps trampoline 갱신 후 lsregister -f 로 VSCode .app bundle 을
+#    LaunchServices DB 에 강제 재등록한다. duti (파일 UTI 매핑, CIR 8) 와 별개 영역이며
+#    .app 의 Info.plist CFBundleURLTypes 를 LS DB 에 fresh 로 반영해 vscode:// 클릭의
+#    dispatch 를 VSCode 로 고정한다. nix VSCode 업데이트나 macOS LS DB reset 후에도 자동
+#    복구되어 영구 fix 역할. activation 실패는 set -eu 종료를 회피하려 || true 로 흡수
+#    하되 사용자 가시 메시지로 원인 식별 가능하도록 분기를 명시한다.
 {
   config,
   pkgs,
@@ -242,6 +255,33 @@ in
       echo "VSCode default settings applied with warnings ($public_uti_failed public UTI registration failed)."
     else
       echo "VSCode default settings applied."
+    fi
+  '';
+
+  # CIR 9 — macOS LaunchServices DB 가 nix store 의 VSCode .app bundle URL scheme handler
+  # 정보를 stale 처리하면서 vscode:// 클릭이 fallback (Finder / Shortcuts / PushRelay 등) 로
+  # dispatch 되던 결함을 자동 정정. Home Manager Apps trampoline 이 만들어진 다음
+  # (writeBoundary 이후) lsregister -f 로 VSCode .app bundle 을 LS DB 에 강제 재등록한다.
+  # duti (파일 UTI 매핑, setVSCodeAsDefaultEditor) 와 별개 영역 — lsregister 는 .app 의
+  # Info.plist CFBundleURLTypes (URL scheme handler) 등록을 trigger 한다.
+  home.activation.refreshVSCodeLaunchServices = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    echo "Refreshing VSCode LaunchServices registration..."
+
+    vscode_app="$HOME/Applications/Home Manager Apps/Visual Studio Code.app"
+    lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+
+    if [ ! -e "$vscode_app" ]; then
+      echo "  ⚠️  Home Manager Apps trampoline 'Visual Studio Code.app' 부재 — vscode:// scheme handler 등록 skip"
+    elif [ ! -x "$lsregister" ]; then
+      echo "  ⚠️  lsregister binary 부재 ($lsregister) — vscode:// scheme handler 등록 skip"
+    else
+      # set -eu 활성 darwin-rebuild 환경에서 lsregister 비정상 종료가 전체 activation 을 exit 2 로
+      # 끊지 않도록 || true 로 흡수. stderr 는 보존하여 실패 원인 가시.
+      if "$lsregister" -f "$vscode_app" 2>&1; then
+        echo "  ✓ vscode:// scheme handler 등록 완료"
+      else
+        echo "  ⚠️  lsregister -f 실패 — vscode:// 클릭이 fallback 핸들러로 dispatch 될 수 있음"
+      fi
     fi
   '';
 }
