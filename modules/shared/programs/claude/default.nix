@@ -5,6 +5,7 @@
   pkgs,
   lib,
   nixosConfigPath,
+  hostType,
   ...
 }:
 
@@ -138,8 +139,12 @@ in
     #   주의: enabledPlugins를 settings.json에서 직접 편집하면 유령 플러그인 발생
     #   (UI에 표시되나 토글/삭제 불가). 해결: 유령 항목 재추가 후 CLI로 삭제.
     #   플러그인 관리는 반드시 `claude plugin install/uninstall` CLI로 수행할 것.
-    ".claude/settings.json".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/settings.json";
+    # hostType "work" 에서는 이 항목을 nix 관리에서 제외한다 — 해당 host 는 settings.json
+    #   (statusLine 포함) 을 외부에서 직접 관리하므로, nix activation 이 덮어쓰지 않도록
+    #   mkIf 로 비활성화해 파일을 mutable 상태로 둔다. 그 외 hostType 은 기존대로 관리.
+    ".claude/settings.json" = lib.mkIf (hostType != "work") {
+      source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/settings.json";
+    };
 
     # MCP 설정 - 양방향 수정 가능
     # chrome-devtools MCP(CDP)만 사용 — claude-in-chrome(--chrome)은 제거됨 (CIR 참조: shell/default.nix)
