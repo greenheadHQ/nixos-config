@@ -35,6 +35,15 @@ _collect_worktrees() {
   done < <(find "$wt_base" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | sort -z)
 }
 
+# worktree gitdir 유효성 — 손상(stale/orphaned)이면 0(true).
+# .git 파일이 존재하지 않는 gitdir을 가리키면(예: 사용자명 마이그레이션 잔재) 모든
+# `git -C "$wt"`가 fatal(exit 128)을 낸다. _collect_worktrees는 .git 파일 존재만
+# 검사하므로 이런 손상 worktree까지 수집하는데, 무가드 git 호출이 set -e/pipefail로
+# 폭사하기 전에(예: _wt_last_commit_msg) 이 헬퍼로 걸러낸다 (#883).
+_wt_is_broken() {
+  ! git -C "$1" rev-parse --git-dir >/dev/null 2>&1
+}
+
 # worktree의 브랜치명
 _wt_branch() {
   local b
@@ -112,8 +121,14 @@ _wt_pr_status() {
 }
 
 # 마지막 커밋 메시지 (한 줄)
+# 자매 함수 _wt_branch(|| true)·_wt_last_commit_ts(|| echo "0")와 일관되게 git 실패를
+# 흡수한다. git을 먼저 변수로 받아(|| msg="") 파이프라인 밖으로 빼므로, 손상/detached
+# worktree에서 git이 fatal(128)을 내도 pipefail이 그 128을 채택해 set -e로 폭사하는
+# 경로가 사라진다 (#883: bare assignment + pipefail + stale worktree 폭사).
 _wt_last_commit_msg() {
-  git -C "$1" log -1 --format='%s' 2>/dev/null | cut -c1-60
+  local msg
+  msg=$(git -C "$1" log -1 --format='%s' 2>/dev/null) || msg=""
+  printf '%s' "$msg" | cut -c1-60
 }
 
 # ── PR 상태 병렬 조회 ────────────────────────────────────────────────────────
