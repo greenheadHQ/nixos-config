@@ -13,6 +13,14 @@
 
 setup() {
   STATUSLINE="${BATS_TEST_DIRNAME}/../statusline.sh"
+  # tmux SSH 폴백 격리: bats 를 실제 tmux 세션 안에서 실행해도 비-SSH 케이스가
+  # `tmux show-environment SSH_CONNECTION` 폴백으로 SSH branch 에 오염되지 않도록
+  # fake tmux(빈 출력)를 PATH 앞에 둔다. SSH 케이스는 SSH_CONNECTION 을 직접 주입해
+  # 폴백을 타지 않으므로 영향이 없다.
+  FAKE_BIN="$BATS_TEST_TMPDIR/fakebin"
+  mkdir -p "$FAKE_BIN"
+  printf '#!/bin/sh\nexit 0\n' > "$FAKE_BIN/tmux"
+  chmod +x "$FAKE_BIN/tmux"
   # resets_at 을 실행 시점 기준 미래로 동적 생성. 절대값 timestamp 를 박으면 시간이
   # 지나며 stale 되어 statusline.sh 의 `remaining > 0` 가드가 `→ remaining` 출력을
   # 건너뛰고 detail=4 검증이 무력화된다.
@@ -53,7 +61,7 @@ EOF
 run_statusline_with_input() {
   local stdin="$1"
   shift
-  printf '%s' "$stdin" | env -u CLAUDE_STATUSLINE_COLUMNS -u COLUMNS -u SSH_CONNECTION "$@" bash "$STATUSLINE" 2>/dev/null
+  printf '%s' "$stdin" | env -u CLAUDE_STATUSLINE_COLUMNS -u COLUMNS -u SSH_CONNECTION PATH="$FAKE_BIN:$PATH" "$@" bash "$STATUSLINE" 2>/dev/null
 }
 
 # setup 의 MOCK_JSON 을 stdin 으로 쓰는 thin wrapper. 대부분의 케이스가 이 경로.
@@ -214,6 +222,28 @@ EOF
   reset_count=$(echo "$plain" | grep -oE '\([0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}\)' | wc -l)
   [ "$reset_count" -eq 2 ] \
     || { echo "expected detail=4 in SSH branch too; got reset_count=$reset_count plain=$plain" >&2; false; }
+}
+
+# SSH 평문 URL: Jira 아이콘 URL 이 OSC 8 hyperlink 가 아니라 평문 URL 로 출력돼야
+# SSH 클라이언트(Termius 등)의 URL regex 감지에 걸린다. sidecar 아이콘 + transcript
+# 가 valid 해야 SIDECAR_IO_ENABLED 가 켜지므로 fake HOME 으로 projects 경계를 만든다.
+@test "SSH renders Jira icon as plain URL (no OSC 8)" {
+  local fake_home="$BATS_TEST_TMPDIR/home"
+  local sid="abc12345-def6-7890-abcd-ef1234567890"
+  mkdir -p "$fake_home/.claude/projects/proj" "$fake_home/.claude/status-icons"
+  local tr="$fake_home/.claude/projects/proj/$sid.jsonl"
+  printf '{}\n' > "$tr"
+  printf '{"jira":{"url":"https://ex.atlassian.net/browse/PROJ-1","label":"PROJ-1"}}\n' \
+    > "$fake_home/.claude/status-icons/$sid.json"
+  local stdin
+  stdin=$(printf '{"session_id":"%s","transcript_path":"%s","cwd":"/tmp","rate_limits":{"five_hour":{"used_percentage":5}}}' "$sid" "$tr")
+  run run_statusline_with_input "$stdin" SSH_CONNECTION=192.168.1.1 HOME="$fake_home" SESSION_STATE_DIR="$fake_home/.claude/status-icons"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'https://ex.atlassian.net/browse/PROJ-1' \
+    || { echo "expected plain Jira URL in SSH branch; got: $output" >&2; false; }
+  if printf '%s' "$output" | grep -q $'\x1b]8;;'; then
+    echo "expected NO OSC 8 sequence in SSH plain mode; got: $output" >&2; false
+  fi
 }
 
 # SSH 0% gauge edge: pct=0 일 때 core 가 literal " " (공백) 으로 치환되어 `▏ ▕` 가
