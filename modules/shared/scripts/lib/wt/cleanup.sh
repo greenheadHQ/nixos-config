@@ -53,10 +53,24 @@ cmd_cleanup() {
   local item_dirty=()
   local item_unpushed=()
   local merged_indices=()
+  local broken_count=0
 
   local idx=0
   for wt in "${worktrees[@]}"; do
     [[ "$wt" == "$current_wt" ]] && continue
+
+    # 손상(stale) worktree 가드 (#883): gitdir이 무효하면(예: 사용자명 마이그레이션
+    # 잔재로 .git이 죽은 gitdir을 가리킴) 아래 _wt_last_commit_msg 등 무가드 git 호출이
+    # set -e/pipefail로 폭사한다. 정리 후보에서 제외하고 경고만 남긴다 (사용자 정책:
+    # 경고 + 정리 제외 — 자동 삭제 시 미커밋 작업물 손실 위험이라 보수적으로 건너뜀).
+    if _wt_is_broken "$wt"; then
+      # 경로에 작은따옴표/공백이 있어도 사용자가 그대로 복붙할 수 있도록 %q로 인용.
+      local _safe_wt
+      printf -v _safe_wt '%q' "$wt"
+      _warn "손상된 worktree 건너뜀: $(basename "$wt") (gitdir 무효 — 수동 정리: rm -rf ${_safe_wt} 후 git worktree prune)"
+      broken_count=$((broken_count + 1))
+      continue
+    fi
 
     local name branch ts age pr_status dirty_flag unpushed_flag last_msg
     name=$(basename "$wt")
@@ -104,7 +118,12 @@ cmd_cleanup() {
 
   if [[ "$auto" == "true" ]]; then
     if (( ${#merged_indices[@]} == 0 )); then
-      _info "자동 정리 대상 (MERGED)이 없습니다"
+      # 손상 카운트를 late-auto(아래)·name-filter 요약과 일관되게 노출 (#883 broken-only 경로).
+      if (( broken_count > 0 )); then
+        _info "자동 정리 대상 (MERGED)이 없습니다 (손상 ${broken_count}개 건너뜀)"
+      else
+        _info "자동 정리 대상 (MERGED)이 없습니다"
+      fi
       return 0
     fi
 
@@ -131,7 +150,11 @@ cmd_cleanup() {
     done
 
     git worktree prune 2>/dev/null || true
-    _info "자동 정리 완료"
+    if (( broken_count > 0 )); then
+      _info "자동 정리 완료 (손상 ${broken_count}개 건너뜀)"
+    else
+      _info "자동 정리 완료"
+    fi
     return 0
   fi
 
@@ -197,7 +220,12 @@ cmd_cleanup() {
         break
       fi
     done
-    (( found_idx < 0 )) && continue
+    if (( found_idx < 0 )); then
+      # items에 없음: 존재하지 않거나, 손상되어 제외됐거나(위 경고), 현재 worktree.
+      # 과거엔 silent continue라 "정리 완료: 0개"만 떠 진단이 어려웠다 (#883).
+      _warn "정리 대상 아님: $sel_name (존재하지 않거나, 손상되어 제외됐거나, 현재 worktree)"
+      continue
+    fi
 
     local wt_path="${item_paths[$found_idx]}"
     local branch="${item_branches[$found_idx]}"
@@ -219,5 +247,9 @@ cmd_cleanup() {
   done
 
   git worktree prune 2>/dev/null || true
-  _info "정리 완료: ${removed}개 삭제"
+  if (( broken_count > 0 )); then
+    _info "정리 완료: ${removed}개 삭제 (손상 ${broken_count}개 건너뜀)"
+  else
+    _info "정리 완료: ${removed}개 삭제"
+  fi
 }
