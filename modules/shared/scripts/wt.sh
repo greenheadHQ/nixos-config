@@ -124,6 +124,11 @@ Git worktree 관리 도구 (fzf TUI, tmux 통합; 비대화형/LLM 셸 호환)
   fzf/번호선택/tmux attach 대신 명시 플래그·인자가 필요하다.
   생성/이동 경로는 stdout으로 출력되므로 cd "\$(wt cd <name>)" 형태로 사용.
 
+Codex:
+  worktree 생성/재생성 bootstrap은 해당 worktree를 Codex 전역 config에 trust한다.
+  일반 codex-sync의 trust 변경은 --trust-project opt-in이지만, wt는 생성한
+  worktree를 즉시 사용할 수 있게 하는 runtime mutation 소유 경로다.
+
 예시:
   wt feature-login              feature-login 브랜치 + worktree 생성
   wt --if-exists=reuse feat-x   있으면 재사용, 없으면 생성 (비대화형 안전)

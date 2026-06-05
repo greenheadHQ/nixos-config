@@ -42,7 +42,7 @@ fi
 ```
 
 > 추가 동작 노트:
-> - `mcp-config`는 source 옵션 (`--project-mcp` / `--plugin-mcp` / `--user-mcp`) 중 적어도 하나가 필요하다. source 없이 호출하거나 source path 파일이 없으면 `sync.sh`가 non-zero로 종료하며 기존 `[mcp_servers.*]` 섹션을 건드리지 않는다. `--plugin-mcp`는 `PATH:INSTALL_PATH:NAME` 형식이어야 한다.
+> - `mcp-config`는 source 옵션 (`--project-mcp` / `--plugin-mcp` / `--user-mcp`) 중 적어도 하나가 필요하다. 예외적으로 `--clear-project-mcp`는 managed project MCP 블록만 제거하는 명시적 no-source 작업이다. source 없이 호출하거나 source path 파일이 없으면 `sync.sh`가 non-zero로 종료하며 기존 `[mcp_servers.*]` 섹션을 건드리지 않는다. `--plugin-mcp`는 `PATH:INSTALL_PATH:NAME` 형식이어야 한다.
 > - `all` 경로는 인자 조립 시점에 `[ -f .mcp.json ]` 가드를 두어 이 문제를 피한다.
 > - `project-skills`는 `<source-skills-dir> <target-skills-dir>` 두 인자를 모두 명시해야 한다. `sync.sh`는 `set -u` 아래에서 동작하므로 한 인자만 넘기면 즉시 `unbound variable`로 실패하고 종료한다 (투영이 0개로 끝나는 게 아니라 실행 자체가 멈춘다).
 > - `set -e` 가드 패턴 (단일 SoT): 위 if 가드 형태가 본 SKILL의 표준이다. 이전 `test -f X && cmd` 형태는 standalone statement 위치(함수/스크립트 마지막 또는 단독 실행)에서 false 평가 시 exit 1을 propagate해 `set -e` caller를 abort시킨다. `if` 조건 *내부*의 `[ ... ] && [ ... ]`은 단일 평가식이므로 안전하며 본 가이드의 금지 대상이 아니다.
@@ -120,23 +120,37 @@ else:
 - `installPath` 디렉토리 미존재 -> 경고 후 건너뛰기 (플러그인 캐시 stale)
 - 매칭 실패 -> 경고 후 건너뛰기
 
-## Step 3: 전체 재생성 (Full Regeneration)
+## Step 3: projection 재계산
 
 Step 1-2에서 감지/해석한 결과를 `sync.sh all` 서브커맨드에 인자로 전달한다.
 
-> Note: `sync.sh all`은 항상 전체 재생성을 수행한다. `.agents/`는 매번 삭제 후 재생성되고,
-> 프로젝트-로컬 `.codex/config.toml`은 `[mcp_servers.*]` 섹션만 교체된다 (사용자 설정 보존).
+> Note: `sync.sh all`은 projection 산출물을 다시 계산한다. `.agents/`는 매번 삭제 후 재생성되고,
+> 프로젝트-로컬 `.codex/config.toml`은 project/plugin source에서 생성한 managed MCP 블록만 갱신한다.
+> 같은 이름의 기존 MCP entry는 교체하지만, managed marker 밖의 project-local MCP는 보존한다.
+> user-scope MCP와 project/plugin MCP는 같은 `mcp-config` 호출에서 섞지 않는다.
+> `sync.sh all`은 둘을 인자로 받을 수 있지만 내부에서 target별 `mcp-config` 호출로 분리한다.
+> project/plugin MCP source가 더 이상 없으면 managed MCP 블록만 stale projection으로 보고 제거한다.
 > 변경이 없어도 재실행해도 안전하다 (멱등).
 > retired Codex hooks projection에서 남긴 `.codex/hooks.json`과
 > `.codex/hooks.compatibility.json` 잔재는 초기화 단계에서 명시적으로 삭제한다.
 
 ### 계약 참고: user-scope `sync.sh` vs activation writer
 
-이 스킬의 `sync.sh`는 기본적으로 repo-local `$PWD/.codex/config.toml`의
-`[mcp_servers.*]` 섹션만 LLM 요청에 따라 교체/보존하는 멱등 runner이다. 또한
-`--user-mcp`가 지정되면 예외적으로 **`~/.codex/config.toml`의 `[mcp_servers.*]` 섹션만**
-함께 교체한다 (`references/sync.sh`의 mcp-config target 참조). 두 경우 모두
-`[mcp_servers.*]` 외의 설정은 건드리지 않는다.
+이 스킬의 `sync.sh`는 target별 소유권을 분리한다.
+
+- project/plugin target: `$PWD/.codex/config.toml`의 codex-sync managed MCP 블록을
+  project/plugin source 기준으로 갱신한다. 같은 이름의 기존 MCP entry는 교체하지만,
+  managed marker 밖의 project-local MCP는 보존한다. root inline table
+  (`mcp_servers = { ... }`)은 안전 병합 범위 밖이므로 fail-fast한다.
+- user target: `--user-mcp`가 명시된 경우에만 `~/.codex/config.toml`
+  (또는 `--user-codex-config`)을 수정한다. user source에 들어 있는 MCP server name만 교체하고,
+  다른 `[mcp_servers.*]` 및 non-MCP 설정은 보존한다. root inline table
+  (`mcp_servers = { ... }`)은 안전 병합 범위 밖이므로 fail-fast한다. 현재 플랫폼에서
+  활성화되는 Codex config template이 선언한 MCP server name과 충돌하면
+  activation-owned leaf를 덮지 않도록 fail-fast한다.
+- 두 target은 같은 `mcp-config` 호출에서 섞지 않는다. project/plugin source와 `--user-mcp`를 함께 넘기면 fail-fast한다.
+- project target write 전 `.codex`가 symlink 또는 non-directory이면 fail-fast한다.
+- config write는 같은 디렉터리 tempfile + mode `0600` + atomic rename으로 수행한다.
 
 반면 Home Manager activation이 관리하는 `~/.codex/config.toml`의 그 외 모든 키
 (`model`, `approval_policy`, `[features]`, `[plugins.*]` 등)는 별개 계약이며, 이 스킬이
@@ -144,17 +158,17 @@ Step 1-2에서 감지/해석한 결과를 `sync.sh all` 서브커맨드에 인�
 
 | 축 | user-scope `sync.sh` (이 스킬) | activation writer `sync-codex-config.py` |
 |----|-------------------------------|-------------------------------------------|
-| 관리 대상 | `$PWD/.codex/config.toml` (프로젝트 로컬, 항상). 옵션 `--user-mcp`가 주어지면 `~/.codex/config.toml`도 포함하지만 **`[mcp_servers.*]` 섹션만**. | `~/.codex/config.toml` (전역, Home Manager). `[mcp_servers.*]`를 포함한 모든 template-declared leaf 전체. |
+| 관리 대상 | `$PWD/.codex/config.toml` (project/plugin target). 옵션 `--user-mcp`가 주어지면 별도 호출로 `~/.codex/config.toml`의 source-provided MCP server names만. | `~/.codex/config.toml` (전역, Home Manager). `[mcp_servers.*]`를 포함한 모든 template-declared leaf 전체. |
 | 진입점 | LLM이 이 SKILL 지시에 따라 수동 호출 | `home.activation.syncCodexConfig` (매 activation 시 자동) + `nrs` NO_CHANGES 분기에서 `repair_codex_config_drift_no_changes` (NO_CHANGES drift 자동 복원 follow-up) |
-| 교체 범위 | `[mcp_servers.*]` 섹션만 (그 외 사용자 설정 완전 보존) | template이 선언한 모든 leaf (재귀, leaf 단위). 그 외 top-level 키 + `[projects.*]` + template에 없는 `[mcp_servers.<이름>]` + 선언 테이블 안의 sibling leaf는 모두 preserve |
-| 쓰기 방식 | 전체 재생성 (idempotent) | atomic tempfile + `os.replace`, mode 0600 |
-| malformed input 대응 | 경고 후 넘어감 | `<target>.bad-<ts>`로 quarantine 후 template에서 재생성 |
+| 교체 범위 | project/plugin target은 managed MCP 블록 + 같은 이름의 기존 entry만 교체하고 root inline MCP table은 fail-fast. user target은 user source에 있는 MCP server names만 교체하고 나머지는 보존하되, template-owned MCP name 충돌과 root inline MCP table은 fail-fast. | template이 선언한 모든 leaf (재귀, leaf 단위). 그 외 top-level 키 + `[projects.*]` + template에 없는 `[mcp_servers.<이름>]` + 선언 테이블 안의 sibling leaf는 모두 preserve |
+| 쓰기 방식 | atomic tempfile + rename, mode 0600 | atomic tempfile + `os.replace`, mode 0600 |
+| malformed input 대응 | fail-fast before write, 기존 config 보존 | `<target>.bad-<ts>`로 quarantine 후 template에서 재생성 |
 | 검증 축 | 없음 (운영자가 수동 확인) | `sync-codex-config.py check` + `verify-ai-compat.sh`의 `template ↔ live drift 검증` 섹션 (writer와 `_walk_template_leaves` 공유) |
 
 두 계약은 축이 다르다: activation writer가 `~/.codex/config.toml`의 base state
-(repo-managed leaf 전체)를 유지하고, user-scope `sync.sh`는 `$PWD/.codex/config.toml`
-전체를 소유하며 `--user-mcp` 옵션이 있을 때만 `~/.codex/config.toml`의
-`[mcp_servers.*]` 섹션에도 한정적으로 MCP 항목을 덧씌운다.
+(repo-managed leaf 전체)를 유지하고, user-scope `sync.sh`는 명시적으로 전달된
+user MCP server names만 덮어쓴다. Home Manager template-owned MCP name과 같은 이름을
+user source에 넣으면 `sync.sh`가 fail-fast한다.
 
 ### 인자 구성
 
@@ -176,9 +190,9 @@ fi
 # PLUGIN_NAME: plugin-key에서 @ 앞부분 (e.g. "sample-plugin")
 ARGS+=(--plugin-install-path="$INSTALL_PATH:$PLUGIN_NAME")
 
-# user-scope MCP까지 함께 투영하고 싶을 때 (선택)
+# user-scope MCP는 명시적으로 요청받은 경우에만 함께 투영한다 (선택, 별도 target).
 # 빠른 참조의 "MCP 섹션 가드 예시"와 동일한 source 파일 존재 가드 정책 적용.
-if [ -f "$HOME/.claude/mcp.json" ]; then
+if [ "${SYNC_USER_MCP:-0}" = "1" ] && [ -f "$HOME/.claude/mcp.json" ]; then
   ARGS+=(--user-mcp="$HOME/.claude/mcp.json")
 fi
 
@@ -195,14 +209,15 @@ bash "$SYNC_SH" all "$PWD" "${ARGS[@]}"
 ```
 
 진행상황이 stderr로 출력된다:
-```text
+ ```text
 === syncing-codex-harness: Full Sync ===
  [1/7] Initialized .agents/ and .codex/
  [2/7] AGENTS.md: symlinked|copied|skipped
  [3/7] Local skills: N
  [4/7] Plugin skills: N, Agents: N
  [5/7] Rules -> AGENTS.override.md: N
- [6/7] MCP config updated|no sources found
+ [6/7] MCP config updated (project)|cleared (project)|updated (user)|MCP config: no sources found
+ [6b/7] MCP config updated (user)   # project target과 user target이 모두 갱신될 때만
  [7/7] Trust: trusted|already-trusted|skipped
 === Sync complete ===
 ```
@@ -249,6 +264,7 @@ fi
 | `agents-md` | AGENTS.md 생성 (심링크/복사) |
 | `agents-override` | AGENTS.override.md 생성 (마커 기반) |
 | `mcp-config` | 프로젝트/유저 대상 config.toml MCP 섹션 생성 |
+| `trust-project` | Codex 전역 config에 project trust 추가/수리 (`all --trust-project`의 단일 단계) |
 
 상세 사용법은 `sync.sh` 상단 Usage 참조.
 
@@ -262,7 +278,7 @@ fi
 | 플러그인 캐시 경로 미존재 | 경고 후 건너뛰기 |
 | 스킬 이름 충돌 (로컬 vs 플러그인) | 플러그인 스킬에 `{plugin-name}--` 접두사 |
 | AGENTS.override.md 사용자 커스텀 보존 | 마커 외부 내용 유지 |
-| `.codex/config.toml` 기존 설정 보존 | Step 3 "계약 참고: user-scope `sync.sh` vs activation writer" 표를 단일 진실 원천으로 참조. `[mcp_servers.*]` 섹션만 교체하며 그 외 키는 보존. |
+| `.codex/config.toml` 기존 설정 보존 | Step 3 "계약 참고: user-scope `sync.sh` vs activation writer" 표를 단일 진실 원천으로 참조. project/plugin target은 managed MCP 블록과 같은 이름의 entry만 교체, user target은 source-provided MCP server names만 교체. |
 | `~/.claude/mcp.json` 형식 차이 | `mcpServers` 래퍼 유무 모두 허용 |
 | Worktree 경로 | `$PWD`로 매칭 |
 

@@ -1600,7 +1600,7 @@ test_wt_create_creates_worktree_without_shadow_codex_sync() {
   cat > "$home_dir/.local/bin/codex-sync" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'managed\n' >> "${CODEX_SYNC_MARKER:?}"
+printf 'managed:%s\n' "$*" >> "${CODEX_SYNC_MARKER:?}"
 exit 0
 EOF
   chmod +x "$home_dir/.local/bin/codex-sync"
@@ -1613,7 +1613,7 @@ EOF
   cat > "$fallback_dir/codex-sync" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'fallback\n' >> "${CODEX_SYNC_MARKER:?}"
+printf 'fallback:%s\n' "$*" >> "${CODEX_SYNC_MARKER:?}"
 exit 0
 EOF
   chmod +x "$fallback_dir/codex-sync"
@@ -1635,7 +1635,134 @@ EOF
   assert_contains "$output" "$new_worktree"
   assert_not_contains "$output" "SHADOW_CODEX_SYNC"
   assert_contains "$(cat "$marker_file")" "managed"
+  assert_contains "$(cat "$marker_file")" "--trust-project"
+  assert_contains "$(cat "$marker_file")" "$new_worktree"
   assert_not_contains "$(cat "$marker_file")" "fallback"
+}
+
+test_wt_create_skips_symlinked_codex_source() {
+  local sandbox home_dir repo_root codex_target marker_file output new_worktree
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  codex_target="$sandbox/codex-target"
+  marker_file="$sandbox/codex-sync-marker"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  cat > "$home_dir/.local/bin/codex-sync" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'managed:%s\n' "$*" >> "${CODEX_SYNC_MARKER:?}"
+exit 0
+EOF
+  chmod +x "$home_dir/.local/bin/codex-sync"
+
+  mkdir -p "$codex_target"
+  printf 'external\n' > "$codex_target/config.toml"
+  ln -s "$codex_target" "$repo_root/.codex"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      CODEX_SYNC_MARKER="$marker_file" \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" feature-symlink-codex
+      ' 2>&1
+  )
+
+  new_worktree="$repo_root/.claude/worktrees/feature-symlink-codex"
+  [[ -d "$new_worktree" ]] || fail "expected worktree directory to exist: $new_worktree"
+  assert_contains "$output" "원본 .codex가 symlink라 worktree 복사를 건너뜁니다"
+  assert_contains "$(cat "$marker_file")" "managed"
+  assert_contains "$(cat "$marker_file")" "--trust-project"
+  assert_contains "$(cat "$marker_file")" "$new_worktree"
+  [[ ! -L "$new_worktree/.codex" ]] \
+    || fail "symlinked source .codex must not be copied as a symlink into new worktree"
+  if [[ -f "$new_worktree/.codex/config.toml" ]]; then
+    assert_not_contains "$(cat "$new_worktree/.codex/config.toml")" "external"
+  fi
+}
+
+test_codex_sync_wrapper_opt_in_flags() {
+  local sandbox home_dir project_root marker_file output custom_mcp python_shim rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  project_root="$sandbox/project"
+  marker_file="$sandbox/codex-sync-args"
+  custom_mcp="$sandbox/custom-mcp.json"
+  python_shim="$sandbox/python3"
+  mkdir -p \
+    "$home_dir/.claude/skills/syncing-codex-harness/references" \
+    "$project_root" \
+    "$(dirname "$custom_mcp")"
+
+  cat > "$home_dir/.claude/skills/syncing-codex-harness/references/sync.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  printf '<%s>\n' "$arg"
+done >> "${CODEX_SYNC_MARKER:?}"
+EOF
+  chmod +x "$home_dir/.claude/skills/syncing-codex-harness/references/sync.sh"
+  cat > "$python_shim" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '<python>\n' >> "${CODEX_SYNC_MARKER:?}"
+exec python3 "$@"
+EOF
+  chmod +x "$python_shim"
+
+  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
+    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" "$project_root"
+  output="$(cat "$marker_file")"
+  assert_contains "$output" "<python>"
+  assert_contains "$output" "<all>"
+  assert_contains "$output" "<$project_root>"
+  assert_not_contains "$output" "--user-mcp"
+  assert_not_contains "$output" "--trust-project"
+
+  : > "$marker_file"
+  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
+    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" --trust-project --user-mcp "$project_root"
+  output="$(cat "$marker_file")"
+  assert_contains "$output" "<--trust-project>"
+  assert_contains "$output" "<--user-mcp=$home_dir/.claude/mcp.json>"
+  assert_contains "$output" "<$project_root>"
+
+  : > "$marker_file"
+  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
+    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" --user-mcp="$custom_mcp" "$project_root"
+  output="$(cat "$marker_file")"
+  assert_contains "$output" "<--user-mcp=$custom_mcp>"
+
+  rc=0
+  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
+    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" --unknown "$project_root" >/dev/null 2>&1 || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "codex-sync unknown option must fail"
+
+  rc=0
+  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
+    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" "$project_root" "$sandbox/other" >/dev/null 2>&1 || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "codex-sync multiple project roots must fail"
+
+  assert_contains "$(cat "$REPO_ROOT/modules/shared/programs/shell/default.nix")" "CODEX_SYNC_PYTHON"
+  assert_contains "$(cat "$REPO_ROOT/modules/shared/programs/shell/default.nix")" 'exec "${pkgs.bash}/bin/bash" "${rawScript}" "$@"'
+}
+
+test_codex_activation_agents_symlink_guard_static() {
+  local content
+  content="$(cat "$REPO_ROOT/modules/shared/programs/codex/default.nix")"
+  assert_contains "$content" 'Refusing to project Codex skills through .agents symlink'
+  assert_contains "$content" 'Refusing to project Codex skills because .agents is not a directory'
+  assert_contains "$content" 'Refusing to project Codex skills through .agents/skills symlink'
+  assert_contains "$content" 'Refusing to project Codex skills because .agents/skills is not a directory'
+  assert_contains "$content" 'mkdir -p "$TARGET_SKILLS"'
 }
 
 test_wt_recreate_guard_uses_physical_paths() {
@@ -2420,6 +2547,9 @@ run_test "shadow paths do not override managed helpers" test_shadow_paths_do_not
 run_test "wt symlink alias does not load adjacent helpers" test_wt_symlink_alias_does_not_load_adjacent_helpers
 run_test "rebuild-common symlink alias does not load adjacent helpers" test_rebuild_common_symlink_alias_does_not_load_adjacent_helpers
 run_test "wt create uses managed codex-sync path" test_wt_create_creates_worktree_without_shadow_codex_sync
+run_test "wt create skips symlinked codex source" test_wt_create_skips_symlinked_codex_source
+run_test "codex-sync wrapper opt-in flags" test_codex_sync_wrapper_opt_in_flags
+run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "wt recreate guard uses physical paths" test_wt_recreate_guard_uses_physical_paths
 run_test "wt cleanup auto removes merged worktree" test_wt_cleanup_auto_removes_merged_worktree
 run_test "wt cleanup auto skips dirty merged worktree" test_wt_cleanup_auto_skips_dirty_merged_worktree

@@ -20,7 +20,9 @@ _bootstrap_worktree() {
 
   # .codex/ 디렉토리 복사 (기존 제거 후 복사 — 중첩 방지)
   local src_codex="$git_root/.codex"
-  if [[ -d "$src_codex" ]]; then
+  if [[ -L "$src_codex" ]]; then
+    _warn "원본 .codex가 symlink라 worktree 복사를 건너뜁니다"
+  elif [[ -d "$src_codex" ]]; then
     rm -rf "$wt_path/.codex"
     cp -r "$src_codex" "$wt_path/.codex"
   fi
@@ -50,9 +52,9 @@ _bootstrap_worktree() {
 
   if [[ -n "$codex_sync_sh" ]]; then
     if [[ "$codex_sync_sh" == "$repo_local_sync_sh" ]]; then
-      bash "$codex_sync_sh" "$wt_path" || _warn "codex-sync 실패 — 수동으로 'codex-sync $wt_path'를 실행하세요"
-    elif ! "$codex_sync_sh" "$wt_path"; then
-      _warn "codex-sync 실패 — 수동으로 'codex-sync $wt_path'를 실행하세요"
+      bash "$codex_sync_sh" --trust-project "$wt_path" || _warn "codex-sync 실패 — 수동으로 'codex-sync --trust-project $wt_path'를 실행하세요"
+    elif ! "$codex_sync_sh" --trust-project "$wt_path"; then
+      _warn "codex-sync 실패 — 수동으로 'codex-sync --trust-project $wt_path'를 실행하세요"
     fi
   else
     _warn "codex-sync 스크립트를 찾지 못해 Codex projection을 건너뜁니다"

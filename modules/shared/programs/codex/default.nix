@@ -245,6 +245,23 @@ in
     SOURCE_SKILLS="$PROJECT_DIR/.claude/skills"
     TARGET_SKILLS="$PROJECT_DIR/.agents/skills"
 
+    if [ -L "$PROJECT_DIR/.agents" ]; then
+      echo "Refusing to project Codex skills through .agents symlink: $PROJECT_DIR/.agents" >&2
+      exit 1
+    fi
+    if [ -e "$PROJECT_DIR/.agents" ] && [ ! -d "$PROJECT_DIR/.agents" ]; then
+      echo "Refusing to project Codex skills because .agents is not a directory: $PROJECT_DIR/.agents" >&2
+      exit 1
+    fi
+    if [ -L "$TARGET_SKILLS" ]; then
+      echo "Refusing to project Codex skills through .agents/skills symlink: $TARGET_SKILLS" >&2
+      exit 1
+    fi
+    if [ -e "$TARGET_SKILLS" ] && [ ! -d "$TARGET_SKILLS" ]; then
+      echo "Refusing to project Codex skills because .agents/skills is not a directory: $TARGET_SKILLS" >&2
+      exit 1
+    fi
+
     # ── AGENTS.md → CLAUDE.md 심링크 ──
     if [ ! -L "$PROJECT_DIR/AGENTS.md" ] || [ "$(readlink "$PROJECT_DIR/AGENTS.md")" != "CLAUDE.md" ]; then
       $DRY_RUN_CMD ln -sfn "CLAUDE.md" "$PROJECT_DIR/AGENTS.md"

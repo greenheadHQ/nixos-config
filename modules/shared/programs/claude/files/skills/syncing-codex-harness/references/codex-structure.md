@@ -28,8 +28,8 @@ project-root/
 | Skill invoke | `/skill-name` | `$skill-name` |
 | Agents dir | `.claude/agents/` | `.agents/*.md` |
 | MCP config | `.mcp.json` (JSON) | `.codex/config.toml` (TOML) |
-| Rules | `rules/*.md` (markdown AI guidelines) | `rules/*.rules` (Starlark execution policy) |
-| Plugins | Supported | Not supported |
+| Plugin rules | `rules/*.md` (markdown AI guidelines) | `AGENTS.override.md` generated block |
+| Plugins | Native plugin UI surfaces | No native plugin UI; `sync.sh` projects selected installed plugin assets |
 | Hooks | `settings.json`의 `hooks` | Not projected |
 
 ## Critical: Directory-Level Symlinks Only
@@ -43,7 +43,7 @@ See: `runbook-codex-compat.md`
 - `allowed-tools` frontmatter from SKILL.md has no Codex equivalent. This metadata is present in projected SKILL.md files but silently ignored by Codex CLI.
 - Claude Code rules with `alwaysApply: false` are included in AGENTS.override.md but will always be applied (Codex has no conditional rule application). Rules with `alwaysApply: true` behave identically.
 - This repo does not project Claude hook declarations into Codex. Any repo-local `.codex/hooks*.json` files are treated as stale leftovers and should be removed.
-- Plugins remain unsupported in Codex.
+- Codex has no native plugin UI equivalent; this harness projects selected installed plugin assets into Codex-compatible files.
 
 ## Global vs Project Scope
 

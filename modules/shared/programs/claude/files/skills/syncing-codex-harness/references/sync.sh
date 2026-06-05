@@ -7,13 +7,88 @@
 #   sync.sh agents            <source-agents-dir> <target-agents-dir>
 #   sync.sh agents-md         <project-root> [plugin-claude-md-path]
 #   sync.sh agents-override   <project-root> [--plugin-install-path=PATH:NAME]...
-#   sync.sh mcp-config        <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]... [--user-mcp=PATH] [--user-codex-config=PATH]
+#   sync.sh mcp-config        <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]... [--user-mcp=PATH] [--user-codex-config=PATH] [--clear-project-mcp]
 #   sync.sh trust-project     <project-root>
-#   sync.sh all               <project-root> [--local-skills-dir=DIR] [--plugin-install-path=PATH:NAME]... [--plugin-claude-md=PATH] [--user-mcp=PATH] [--user-codex-config=PATH]
+#   sync.sh all               <project-root> [--local-skills-dir=DIR] [--plugin-install-path=PATH:NAME]... [--plugin-claude-md=PATH] [--user-mcp=PATH] [--user-codex-config=PATH] [--trust-project]
 
 set -euo pipefail
 
 # Requires UTF-8 locale for correct multibyte handling (${var:0:N})
+
+PROJECT_MCP_BEGIN_MARKER="# BEGIN codex-sync managed mcp"
+PROJECT_MCP_END_MARKER="# END codex-sync managed mcp"
+CODEX_SYNC_PYTHON="${CODEX_SYNC_PYTHON:-python3}"
+
+ensure_project_codex_dir() {
+  local project_root="$1"
+  local codex_dir="$project_root/.codex"
+  if [ -L "$codex_dir" ]; then
+    echo "sync.sh: project .codex must be a project-local directory, not a symlink: $codex_dir" >&2
+    return 1
+  fi
+  if [ -e "$codex_dir" ] && [ ! -d "$codex_dir" ]; then
+    echo "sync.sh: project .codex must be a directory: $codex_dir" >&2
+    return 1
+  fi
+  mkdir -p "$codex_dir"
+}
+
+ensure_project_agents_path() {
+  local project_root="$1"
+  local agents_dir="$project_root/.agents"
+  if [ -L "$agents_dir" ]; then
+    echo "sync.sh: project .agents must be a project-local directory, not a symlink: $agents_dir" >&2
+    return 1
+  fi
+  if [ -e "$agents_dir" ] && [ ! -d "$agents_dir" ]; then
+    echo "sync.sh: project .agents must be a directory: $agents_dir" >&2
+    return 1
+  fi
+}
+
+ensure_project_agents_target_path() {
+  local target="$1"
+  if [ -L "$target" ]; then
+    echo "sync.sh: project .agents target must be a project-local directory, not a symlink: $target" >&2
+    return 1
+  fi
+  if [ -e "$target" ] && [ ! -d "$target" ]; then
+    echo "sync.sh: project .agents target must be a directory: $target" >&2
+    return 1
+  fi
+}
+
+project_root_from_agents_target() {
+  local target="$1"
+  case "$target" in
+    .agents)
+      pwd -P
+      return 0
+      ;;
+    .agents/*)
+      pwd -P
+      return 0
+      ;;
+    */.agents)
+      printf '%s\n' "${target%/.agents}"
+      return 0
+      ;;
+    */.agents/*)
+      printf '%s\n' "${target%%/.agents/*}"
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+ensure_target_agents_path() {
+  local target="$1"
+  local project_root
+  if project_root="$(project_root_from_agents_target "$target")"; then
+    ensure_project_agents_path "$project_root" || return 1
+    ensure_project_agents_target_path "$target"
+  fi
+}
 
 # ─── project-skills: project local skills projection ───
 # Codex CLI는 디렉토리 심링크를 따라감 (PR #8801)
@@ -31,6 +106,7 @@ project_skills() {
   local source_dir="$1"
   local target_dir="$2"
   local count=0
+  ensure_target_agents_path "$target_dir" || return 1
 
   # 상대경로 계산: target_dir(.agents/skills) → source_dir(.claude/skills)
   local project_root
@@ -73,6 +149,7 @@ plugin_skills() {
   local source_dir="$1"
   local target_dir="$2"
   local plugin_name="${3:-}"
+  ensure_target_agents_path "$target_dir" || return 1
 
   if [ ! -d "$source_dir" ]; then
     echo "Warning: Plugin skills directory not found: $source_dir" >&2
@@ -120,6 +197,7 @@ copy_agents() {
   local source_dir="$1"
   local target_dir="$2"
   local count=0
+  ensure_target_agents_path "$target_dir" || return 1
 
   if [ ! -d "$source_dir" ]; then
     echo "Warning: Agents directory not found: $source_dir" >&2
@@ -141,9 +219,10 @@ copy_agents() {
 # ─── init: clean .agents/ and prepare ───
 init_agents_dir() {
   local project_root="$1"
+  ensure_project_agents_path "$project_root"
+  ensure_project_codex_dir "$project_root"
   rm -rf "$project_root/.agents/"
   mkdir -p "$project_root/.agents/skills"
-  mkdir -p "$project_root/.codex"
   # CIR: clear stale repo-local hook artifacts left behind by the retired
   # Claude-to-Codex projection path so old worktrees cannot invoke removed hooks.
   rm -f "$project_root/.codex/hooks.json" "$project_root/.codex/hooks.compatibility.json"
@@ -314,18 +393,36 @@ mcp_config() {
   local user_mcp=""
   local user_mcp_set=0
   local user_codex_config=""
+  local clear_project_mcp=0
   for arg in "$@"; do
     case "$arg" in
       --project-mcp=*) project_mcp="${arg#--project-mcp=}"; project_mcp_set=1 ;;
       --plugin-mcp=*)  plugin_mcps+=("${arg#--plugin-mcp=}") ;;
       --user-mcp=*) user_mcp="${arg#--user-mcp=}"; user_mcp_set=1 ;;
       --user-codex-config=*) user_codex_config="${arg#--user-codex-config=}" ;;
+      --clear-project-mcp) clear_project_mcp=1 ;;
+      *)
+        echo "sync.sh mcp-config: unknown option: $arg" >&2
+        return 1
+        ;;
     esac
   done
 
-  if [ "$project_mcp_set" -eq 0 ] && [ "$user_mcp_set" -eq 0 ] && [ "${#plugin_mcps[@]}" -eq 0 ]; then
+  if [ "$user_mcp_set" -eq 0 ] && [ -n "$user_codex_config" ]; then
+    echo "sync.sh mcp-config: --user-codex-config requires --user-mcp" >&2
+    return 1
+  fi
+  if [ "$clear_project_mcp" -eq 1 ] && { [ "$project_mcp_set" -eq 1 ] || [ "$user_mcp_set" -eq 1 ] || [ "${#plugin_mcps[@]}" -gt 0 ]; }; then
+    echo "sync.sh mcp-config: --clear-project-mcp cannot be combined with source options" >&2
+    return 1
+  fi
+  if [ "$project_mcp_set" -eq 0 ] && [ "$user_mcp_set" -eq 0 ] && [ "${#plugin_mcps[@]}" -eq 0 ] && [ "$clear_project_mcp" -eq 0 ]; then
     echo "sync.sh mcp-config: at least one source option (--project-mcp/--plugin-mcp/--user-mcp) required" >&2
-    echo "Usage: sync.sh mcp-config <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]... [--user-mcp=PATH] [--user-codex-config=PATH]" >&2
+    echo "Usage: sync.sh mcp-config <project-root> [--project-mcp=PATH] [--plugin-mcp=PATH:INSTALL_PATH:NAME]... [--user-mcp=PATH] [--user-codex-config=PATH] [--clear-project-mcp]" >&2
+    return 1
+  fi
+  if [ "$user_mcp_set" -eq 1 ] && { [ "$project_mcp_set" -eq 1 ] || [ "${#plugin_mcps[@]}" -gt 0 ]; }; then
+    echo "sync.sh mcp-config: --user-mcp cannot be combined with --project-mcp/--plugin-mcp; run separate target-specific calls" >&2
     return 1
   fi
   if [ "$project_mcp_set" -eq 1 ] && [ ! -f "$project_mcp" ]; then
@@ -358,8 +455,8 @@ mcp_config() {
 
   if [ -n "$user_mcp" ]; then
     config_file="${user_codex_config:-${CODEX_HOME:-$HOME/.codex}/config.toml}"
-  elif [ -n "$user_codex_config" ]; then
-    config_file="$user_codex_config"
+  else
+    ensure_project_codex_dir "$project_root" || return 1
   fi
 
   mkdir -p "$(dirname "$config_file")"
@@ -367,6 +464,18 @@ mcp_config() {
   # Pass args via environment
   local env_args=()
   env_args+=("CONFIG_FILE=$config_file")
+  env_args+=("PROJECT_MCP_BEGIN_MARKER=$PROJECT_MCP_BEGIN_MARKER")
+  env_args+=("PROJECT_MCP_END_MARKER=$PROJECT_MCP_END_MARKER")
+  if [ -n "$user_mcp" ]; then
+    env_args+=("MCP_TARGET_MODE=user")
+    local script_dir harness_root
+    script_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    harness_root="$(cd "$script_dir/../../../../../.." && pwd -P)"
+    env_args+=("HARNESS_ROOT=$harness_root")
+  else
+    env_args+=("MCP_TARGET_MODE=project")
+  fi
+  [ "$clear_project_mcp" -eq 1 ] && env_args+=("MCP_CLEAR_PROJECT=1")
   [ -n "$project_mcp" ] && env_args+=("PROJECT_MCP=$project_mcp")
   [ -n "$user_mcp" ] && env_args+=("USER_MCP=$user_mcp")
   local idx=0
@@ -377,22 +486,199 @@ mcp_config() {
     idx=$((idx + 1))
   done
 
-  local mcp_toml
-  mcp_toml="$(env "${env_args[@]}" python3 << 'PYEOF'
-import json, os, sys
+  env "${env_args[@]}" "$CODEX_SYNC_PYTHON" << 'PYEOF'
+import json
+import os
+import re
+import tempfile
+
+PROJECT_MCP_BEGIN_MARKER = os.environ.get("PROJECT_MCP_BEGIN_MARKER", "# BEGIN codex-sync managed mcp")
+PROJECT_MCP_END_MARKER = os.environ.get("PROJECT_MCP_END_MARKER", "# END codex-sync managed mcp")
 
 def toml_escape_value(s):
-    s = s.replace('\\', '\\\\')
-    s = s.replace('"', '\\"')
-    s = s.replace('\n', '\\n')
-    s = s.replace('\r', '\\r')
-    s = s.replace('\t', '\\t')
-    return s
+    out = []
+    for ch in str(s):
+        code = ord(ch)
+        if ch == '\\':
+            out.append('\\\\')
+        elif ch == '"':
+            out.append('\\"')
+        elif ch == '\b':
+            out.append('\\b')
+        elif ch == '\f':
+            out.append('\\f')
+        elif ch == '\n':
+            out.append('\\n')
+        elif ch == '\r':
+            out.append('\\r')
+        elif ch == '\t':
+            out.append('\\t')
+        elif code < 0x20 or code == 0x7F:
+            out.append(f'\\u{code:04X}')
+        else:
+            out.append(ch)
+    return ''.join(out)
 
 def toml_key(name):
-    if '.' in name or '"' in name or ' ' in name:
-        return '"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    return name
+    if re.match(r'^[A-Za-z0-9_-]+$', name):
+        return name
+    return '"' + toml_escape_value(name) + '"'
+
+def decode_toml_basic_escape(inner, index):
+    esc = inner[index]
+    simple = {'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t', '"': '"', '\\': '\\'}
+    if esc in simple:
+        return simple[esc], index + 1
+    if esc in ('u', 'U'):
+        length = 4 if esc == 'u' else 8
+        hex_digits = inner[index + 1:index + 1 + length]
+        if len(hex_digits) != length or not re.match(r'^[0-9A-Fa-f]+$', hex_digits):
+            return None, index
+        try:
+            return chr(int(hex_digits, 16)), index + 1 + length
+        except ValueError:
+            return None, index
+    return None, index
+
+def parse_toml_dotted_path(inner):
+    inner = inner.strip()
+    if not inner:
+        return None
+    parts = []
+    i = 0
+    while i < len(inner):
+        while i < len(inner) and inner[i].isspace():
+            i += 1
+        if i >= len(inner):
+            return None
+        if inner[i] in ("'", '"'):
+            quote = inner[i]
+            i += 1
+            buf = []
+            while i < len(inner):
+                ch = inner[i]
+                if ch == quote:
+                    i += 1
+                    break
+                if quote == '"' and ch == '\\':
+                    i += 1
+                    if i >= len(inner):
+                        return None
+                    decoded, next_i = decode_toml_basic_escape(inner, i)
+                    if decoded is None:
+                        return None
+                    buf.append(decoded)
+                    i = next_i
+                    continue
+                buf.append(ch)
+                i += 1
+            else:
+                return None
+            parts.append(''.join(buf))
+        else:
+            start = i
+            while i < len(inner) and inner[i] not in '. \t':
+                i += 1
+            part = inner[start:i]
+            if not part:
+                return None
+            parts.append(part)
+        while i < len(inner) and inner[i].isspace():
+            i += 1
+        if i == len(inner):
+            break
+        if inner[i] != '.':
+            return None
+        i += 1
+    return parts
+
+def parse_toml_section_path(line):
+    stripped = line.strip()
+    if stripped.startswith('[['):
+        end = find_toml_array_section_end(stripped)
+        if end is None:
+            return None
+        trailer = stripped[end + 2:].strip()
+        if trailer and not trailer.startswith('#'):
+            return None
+        return parse_toml_dotted_path(stripped[2:end])
+    if not stripped.startswith('['):
+        return None
+    end = find_toml_section_end(stripped)
+    if end is None:
+        return None
+    trailer = stripped[end + 1:].strip()
+    if trailer and not trailer.startswith('#'):
+        return None
+    return parse_toml_dotted_path(stripped[1:end])
+
+def find_toml_section_end(stripped):
+    quote = None
+    i = 1
+    while i < len(stripped):
+        ch = stripped[i]
+        if quote == '"':
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+        elif quote == "'":
+            if ch == "'":
+                quote = None
+        else:
+            if ch in ("'", '"'):
+                quote = ch
+            elif ch == ']':
+                return i
+        i += 1
+    return None
+
+def find_toml_array_section_end(stripped):
+    quote = None
+    i = 2
+    while i < len(stripped) - 1:
+        ch = stripped[i]
+        if quote == '"':
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+        elif quote == "'":
+            if ch == "'":
+                quote = None
+        else:
+            if ch in ("'", '"'):
+                quote = ch
+            elif ch == ']' and stripped[i + 1] == ']':
+                return i
+        i += 1
+    return None
+
+def parse_toml_key_path(line):
+    quote = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote == '"':
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+        elif quote == "'":
+            if ch == "'":
+                quote = None
+        else:
+            if ch in ("'", '"'):
+                quote = ch
+            elif ch == '#':
+                return None
+            elif ch == '=':
+                return parse_toml_dotted_path(line[:i])
+        i += 1
+    return None
 
 def load_mcp(path, install_path=None):
     with open(path) as f:
@@ -413,6 +699,17 @@ def load_mcp(path, install_path=None):
         result[name] = json.loads(cfg_str)
     return result
 
+def resolved_server_map(all_servers):
+    name_counts = {}
+    for name, _, _ in all_servers:
+        name_counts[name] = name_counts.get(name, 0) + 1
+
+    resolved = {}
+    for name, cfg, prefix in all_servers:
+        final_name = (prefix + '--' + name) if (name_counts[name] > 1 and prefix) else name
+        resolved[final_name] = cfg
+    return resolved
+
 def server_to_toml(name, cfg):
     key = toml_key(name)
     lines = [f'\n[mcp_servers.{key}]']
@@ -426,80 +723,227 @@ def server_to_toml(name, cfg):
     if 'env' in cfg:
         lines.append(f'\n[mcp_servers.{key}.env]')
         for k, v in cfg['env'].items():
-            lines.append(f'{k} = "{toml_escape_value(str(v))}"')
+            lines.append(f'{toml_key(str(k))} = "{toml_escape_value(str(v))}"')
     return '\n'.join(lines)
 
-def replace_mcp_sections(existing_toml, new_mcp_toml):
+def render_mcp_toml(resolved_servers):
+    return '\n'.join(server_to_toml(name, cfg) for name, cfg in resolved_servers.items())
+
+def strip_project_managed_mcp(existing_toml):
     lines = existing_toml.splitlines()
     result = []
-    in_mcp = False  # True while inside [mcp_servers.*] section (skips lines)
+    in_block = False
+    found = False
+    for line in lines:
+        marker = line.strip()
+        if marker == PROJECT_MCP_BEGIN_MARKER:
+            if in_block:
+                raise SystemExit("sync.sh mcp-config: nested project MCP managed marker")
+            in_block = True
+            found = True
+            continue
+        if marker == PROJECT_MCP_END_MARKER:
+            if not in_block:
+                raise SystemExit("sync.sh mcp-config: unmatched project MCP managed marker")
+            in_block = False
+            continue
+        if not in_block:
+            result.append(line)
+    if in_block:
+        raise SystemExit("sync.sh mcp-config: unterminated project MCP managed marker")
+    return '\n'.join(result).rstrip(), found
+
+def render_project_managed_mcp(new_mcp_toml):
+    body = new_mcp_toml.strip()
+    if not body:
+        return ''
+    return f'{PROJECT_MCP_BEGIN_MARKER}\n{body}\n{PROJECT_MCP_END_MARKER}'
+
+def append_toml_block(existing_toml, block):
+    cleaned = existing_toml.rstrip()
+    block = block.strip()
+    if block:
+        return (cleaned + '\n\n' if cleaned else '') + block + '\n'
+    return cleaned + ('\n' if cleaned else '')
+
+def replace_mcp_sections(existing_toml, new_mcp_toml, replace_names=None, reject_root_inline=False):
+    replace_names = set(replace_names) if replace_names is not None else None
+    lines = existing_toml.splitlines()
+    result = []
+    skip_section = False
+    current_section = []
     for line in lines:
         stripped = line.lstrip()
-        if stripped.startswith('['):
-            in_mcp = stripped.startswith('[mcp_servers.')
-        if not in_mcp:
+        section_path = parse_toml_section_path(stripped)
+        if section_path is not None:
+            current_section = section_path
+            skip_section = False
+            if section_path and section_path[0] == 'mcp_servers':
+                skip_section = replace_names is None or (len(section_path) >= 2 and section_path[1] in replace_names)
+            if not skip_section:
+                result.append(line)
+            continue
+
+        key_path = parse_toml_key_path(stripped)
+        skip_line = skip_section
+        if key_path:
+            if replace_names is None and key_path[0] == 'mcp_servers':
+                skip_line = True
+            elif replace_names is not None:
+                if key_path[0] == 'mcp_servers':
+                    if len(key_path) == 1 and reject_root_inline:
+                        raise SystemExit("sync.sh mcp-config: root mcp_servers inline table cannot be safely merged")
+                    skip_line = len(key_path) == 1 or (len(key_path) >= 2 and key_path[1] in replace_names)
+                elif current_section == ['mcp_servers'] and key_path[0] in replace_names:
+                    skip_line = True
+        if not skip_line:
             result.append(line)
     cleaned = '\n'.join(result).rstrip()
     if new_mcp_toml.strip():
         return cleaned + '\n' + new_mcp_toml + '\n'
     return cleaned + '\n'
 
-# Collect all servers: (name, cfg, prefix)
+def write_atomic(config_path, content):
+    parent = os.path.dirname(config_path) or '.'
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=parent, prefix='.config.toml.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(content)
+        os.chmod(tmp_name, 0o600)
+        os.replace(tmp_name, config_path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+def load_toml_doc(content, label):
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        try:
+            import tomlkit
+        except ModuleNotFoundError:
+            raise SystemExit(f"sync.sh mcp-config: Python 3.11+ tomllib or tomlkit is required to validate {label}")
+        try:
+            return tomlkit.parse(content)
+        except Exception as exc:
+            raise SystemExit(f"sync.sh mcp-config: {label} TOML parse failed: {exc}")
+    try:
+        return tomllib.loads(content)
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(f"sync.sh mcp-config: {label} TOML parse failed: {exc}")
+
+def template_owned_mcp_names(harness_root):
+    if not harness_root:
+        return set()
+    template_dir = os.path.join(harness_root, "programs", "codex", "files")
+    if not os.path.isdir(template_dir):
+        raise SystemExit("sync.sh mcp-config: cannot locate Codex config templates for user MCP ownership check")
+    active_template = "config.darwin.toml" if sys_platform() == "Darwin" else "config.toml"
+    template_paths = [os.path.join(template_dir, active_template)]
+    path = template_paths[0]
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        try:
+            import tomlkit
+        except ModuleNotFoundError:
+            raise SystemExit("sync.sh mcp-config: Python 3.11+ tomllib or tomlkit is required for user MCP ownership check")
+        try:
+            with open(path, encoding='utf-8') as f:
+                template = tomlkit.parse(f.read())
+        except OSError:
+            raise SystemExit(f"sync.sh mcp-config: cannot read Codex config template for user MCP ownership check: {path}")
+        except Exception as exc:
+            raise SystemExit(f"sync.sh mcp-config: Codex config template parse failed for user MCP ownership check: {path}: {exc}")
+        mcps = template.get('mcp_servers', {})
+        if not isinstance(mcps, dict):
+            return set()
+        return set(str(name) for name in mcps.keys())
+    try:
+        with open(path, 'rb') as f:
+            template = tomllib.load(f)
+    except OSError:
+        raise SystemExit(f"sync.sh mcp-config: cannot read Codex config template for user MCP ownership check: {path}")
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(f"sync.sh mcp-config: Codex config template parse failed for user MCP ownership check: {path}: {exc}")
+    mcps = template.get('mcp_servers', {})
+    if not isinstance(mcps, dict):
+        return set()
+    return set(str(name) for name in mcps.keys())
+
+def sys_platform():
+    return os.uname().sysname
+
+target_mode = os.environ.get('MCP_TARGET_MODE', 'project')
+clear_project = os.environ.get('MCP_CLEAR_PROJECT') == '1'
 all_servers = []
 
-project_mcp = os.environ.get('PROJECT_MCP', '')
-if project_mcp and os.path.isfile(project_mcp):
-    for name, cfg in load_mcp(project_mcp).items():
-        all_servers.append((name, cfg, ''))
-
 user_mcp = os.environ.get('USER_MCP', '')
-if user_mcp and os.path.isfile(user_mcp):
+if target_mode == 'user':
     for name, cfg in load_mcp(user_mcp).items():
         all_servers.append((name, cfg, ''))
+else:
+    project_mcp = os.environ.get('PROJECT_MCP', '')
+    if project_mcp and os.path.isfile(project_mcp):
+        for name, cfg in load_mcp(project_mcp).items():
+            all_servers.append((name, cfg, ''))
 
-i = 0
-while True:
-    mcp_path = os.environ.get(f'PLUGIN_MCP_PATH_{i}', '')
-    if not mcp_path:
-        break
-    ipath = os.environ.get(f'PLUGIN_MCP_INSTALL_{i}', '')
-    pname = os.environ.get(f'PLUGIN_MCP_NAME_{i}', '')
-    if not ipath or not pname:
-        sys.exit(f"sync.sh mcp-config: malformed normalized plugin MCP source at index {i}")
-    if not os.path.isfile(mcp_path):
-        sys.exit(f"sync.sh mcp-config: --plugin-mcp source missing after validation: {mcp_path}")
-    for name, cfg in load_mcp(mcp_path, ipath).items():
-        all_servers.append((name, cfg, pname))
-    i += 1
+    i = 0
+    while True:
+        mcp_path = os.environ.get(f'PLUGIN_MCP_PATH_{i}', '')
+        if not mcp_path:
+            break
+        ipath = os.environ.get(f'PLUGIN_MCP_INSTALL_{i}', '')
+        pname = os.environ.get(f'PLUGIN_MCP_NAME_{i}', '')
+        if not ipath or not pname:
+            raise SystemExit(f"sync.sh mcp-config: malformed normalized plugin MCP source at index {i}")
+        if not os.path.isfile(mcp_path):
+            raise SystemExit(f"sync.sh mcp-config: --plugin-mcp source missing after validation: {mcp_path}")
+        for name, cfg in load_mcp(mcp_path, ipath).items():
+            all_servers.append((name, cfg, pname))
+        i += 1
 
-# Collision-based prefixing: only prefix when names collide
-name_counts = {}
-for name, _, _ in all_servers:
-    name_counts[name] = name_counts.get(name, 0) + 1
-
-toml_parts = []
-# final_name 충돌 시 마지막 소스를 우선 적용하여 TOML 중복 섹션을 방지
-resolved_servers = {}
-for name, cfg, prefix in all_servers:
-    final_name = (prefix + '--' + name) if (name_counts[name] > 1 and prefix) else name
-    resolved_servers[final_name] = cfg
-
-for final_name, cfg in resolved_servers.items():
-    toml_parts.append(server_to_toml(final_name, cfg))
-
-new_mcp = '\n'.join(toml_parts)
+resolved_servers = resolved_server_map(all_servers)
+if target_mode == 'user':
+    collisions = sorted(set(resolved_servers.keys()) & template_owned_mcp_names(os.environ.get('HARNESS_ROOT', '')))
+    if collisions:
+        raise SystemExit(
+            "sync.sh mcp-config: --user-mcp collides with template-owned MCP server names: "
+            + ", ".join(collisions)
+        )
+new_mcp = render_mcp_toml(resolved_servers)
 
 config_path = os.environ.get('CONFIG_FILE', '')
-if config_path and os.path.isfile(config_path):
+if clear_project:
+    if not config_path or not os.path.isfile(config_path):
+        raise SystemExit(0)
     with open(config_path) as f:
         existing = f.read()
-    print(replace_mcp_sections(existing, new_mcp))
+    load_toml_doc(existing, "existing config")
+    cleaned, _ = strip_project_managed_mcp(existing)
+    rendered = append_toml_block(cleaned, '')
+elif config_path and os.path.isfile(config_path):
+    with open(config_path) as f:
+        existing = f.read()
+    load_toml_doc(existing, "existing config")
+    replace_names = resolved_servers.keys()
+    if target_mode == 'user':
+        rendered = replace_mcp_sections(existing, new_mcp, replace_names, reject_root_inline=True)
+    else:
+        cleaned, _ = strip_project_managed_mcp(existing)
+        pruned = replace_mcp_sections(cleaned, '', replace_names, reject_root_inline=True)
+        rendered = append_toml_block(pruned, render_project_managed_mcp(new_mcp))
 else:
-    print(new_mcp)
+    rendered = new_mcp + ('\n' if new_mcp.strip() else '')
+    if target_mode == 'project':
+        rendered = append_toml_block('', render_project_managed_mcp(new_mcp))
+load_toml_doc(rendered, "rendered config")
+write_atomic(config_path, rendered)
 PYEOF
-  )"
-
-  printf '%s\n' "$mcp_toml" > "$config_file"
 }
 
 # ─── trust-project: ensure project is trusted in global config.toml ───
@@ -509,23 +953,298 @@ ensure_project_trusted() {
   local global_config="$codex_home/config.toml"
   mkdir -p "$codex_home"
 
-  PROJECT_ROOT="$project_root" GLOBAL_CONFIG="$global_config" python3 << 'PYEOF'
-import os, sys
+  PROJECT_ROOT="$project_root" GLOBAL_CONFIG="$global_config" "$CODEX_SYNC_PYTHON" << 'PYEOF'
+import os
+import re
+import stat
+import sys
+import tempfile
 
 project_path = os.environ["PROJECT_ROOT"].rstrip("/")
 config_path = os.environ["GLOBAL_CONFIG"]
 
+def toml_escape_value(s):
+    out = []
+    for ch in str(s):
+        code = ord(ch)
+        if ch == '\\':
+            out.append('\\\\')
+        elif ch == '"':
+            out.append('\\"')
+        elif ch == '\b':
+            out.append('\\b')
+        elif ch == '\f':
+            out.append('\\f')
+        elif ch == '\n':
+            out.append('\\n')
+        elif ch == '\r':
+            out.append('\\r')
+        elif ch == '\t':
+            out.append('\\t')
+        elif code < 0x20 or code == 0x7F:
+            out.append(f'\\u{code:04X}')
+        else:
+            out.append(ch)
+    return ''.join(out)
+
+def toml_key(name):
+    if re.match(r'^[A-Za-z0-9_-]+$', name):
+        return name
+    return '"' + toml_escape_value(name) + '"'
+
+def decode_toml_basic_escape(inner, index):
+    esc = inner[index]
+    simple = {'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t', '"': '"', '\\': '\\'}
+    if esc in simple:
+        return simple[esc], index + 1
+    if esc in ('u', 'U'):
+        length = 4 if esc == 'u' else 8
+        hex_digits = inner[index + 1:index + 1 + length]
+        if len(hex_digits) != length or not re.match(r'^[0-9A-Fa-f]+$', hex_digits):
+            return None, index
+        try:
+            return chr(int(hex_digits, 16)), index + 1 + length
+        except ValueError:
+            return None, index
+    return None, index
+
+def parse_toml_dotted_path(inner):
+    inner = inner.strip()
+    if not inner:
+        return None
+    parts = []
+    i = 0
+    while i < len(inner):
+        while i < len(inner) and inner[i].isspace():
+            i += 1
+        if i >= len(inner):
+            return None
+        if inner[i] in ("'", '"'):
+            quote = inner[i]
+            i += 1
+            buf = []
+            while i < len(inner):
+                ch = inner[i]
+                if ch == quote:
+                    i += 1
+                    break
+                if quote == '"' and ch == '\\':
+                    i += 1
+                    if i >= len(inner):
+                        return None
+                    decoded, next_i = decode_toml_basic_escape(inner, i)
+                    if decoded is None:
+                        return None
+                    buf.append(decoded)
+                    i = next_i
+                    continue
+                buf.append(ch)
+                i += 1
+            else:
+                return None
+            parts.append(''.join(buf))
+        else:
+            start = i
+            while i < len(inner) and inner[i] not in '. \t':
+                i += 1
+            part = inner[start:i]
+            if not part:
+                return None
+            parts.append(part)
+        while i < len(inner) and inner[i].isspace():
+            i += 1
+        if i == len(inner):
+            break
+        if inner[i] != '.':
+            return None
+        i += 1
+    return parts
+
+def find_toml_section_end(stripped):
+    quote = None
+    i = 1
+    while i < len(stripped):
+        ch = stripped[i]
+        if quote == '"':
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+        elif quote == "'":
+            if ch == "'":
+                quote = None
+        else:
+            if ch in ("'", '"'):
+                quote = ch
+            elif ch == ']':
+                return i
+        i += 1
+    return None
+
+def find_toml_array_section_end(stripped):
+    quote = None
+    i = 2
+    while i < len(stripped) - 1:
+        ch = stripped[i]
+        if quote == '"':
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+        elif quote == "'":
+            if ch == "'":
+                quote = None
+        else:
+            if ch in ("'", '"'):
+                quote = ch
+            elif ch == ']' and stripped[i + 1] == ']':
+                return i
+        i += 1
+    return None
+
+def parse_toml_section_path(line):
+    stripped = line.strip()
+    if stripped.startswith('[['):
+        end = find_toml_array_section_end(stripped)
+        if end is None:
+            return None
+        trailer = stripped[end + 2:].strip()
+        if trailer and not trailer.startswith('#'):
+            return None
+        return parse_toml_dotted_path(stripped[2:end])
+    if not stripped.startswith('['):
+        return None
+    end = find_toml_section_end(stripped)
+    if end is None:
+        return None
+    trailer = stripped[end + 1:].strip()
+    if trailer and not trailer.startswith('#'):
+        return None
+    return parse_toml_dotted_path(stripped[1:end])
+
+def parse_toml_key_path(line):
+    quote = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote == '"':
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+        elif quote == "'":
+            if ch == "'":
+                quote = None
+        else:
+            if ch in ("'", '"'):
+                quote = ch
+            elif ch == '#':
+                return None
+            elif ch == '=':
+                return parse_toml_dotted_path(line[:i])
+        i += 1
+    return None
+
+def write_atomic(path, content):
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=parent, prefix=".config.toml.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.chmod(tmp_name, 0o600)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+def load_toml_doc(content, label):
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        try:
+            import tomlkit
+        except ModuleNotFoundError:
+            raise SystemExit(f"sync.sh trust-project: Python 3.11+ tomllib or tomlkit is required to validate {label}")
+        try:
+            return tomlkit.parse(content)
+        except Exception as exc:
+            raise SystemExit(f"sync.sh trust-project: {label} TOML parse failed: {exc}")
+    try:
+        return tomllib.loads(content)
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(f"sync.sh trust-project: {label} TOML parse failed: {exc}")
+
+header = f'[projects.{toml_key(project_path)}]'
 content = ""
 if os.path.isfile(config_path):
     with open(config_path) as f:
         content = f.read()
+    load_toml_doc(content, "existing config")
 
-if f'[projects."{project_path}"]' in content:
-    print("already-trusted")
+lines = content.splitlines()
+section_start = None
+section_end = len(lines)
+for idx, line in enumerate(lines):
+    section_path = parse_toml_section_path(line)
+    if section_path is not None:
+        if section_path == ['projects', project_path]:
+            section_start = idx
+            section_end = len(lines)
+            continue
+        if section_start is not None:
+            section_end = idx
+            break
+
+if section_start is None:
+    current_section = []
+    for line in lines:
+        section_path = parse_toml_section_path(line)
+        if section_path is not None:
+            current_section = section_path
+            continue
+        key_path = parse_toml_key_path(line.lstrip())
+        if key_path == ['projects']:
+            raise SystemExit("sync.sh trust-project: root inline projects table cannot be safely merged")
+        if len(key_path or []) >= 2 and key_path[0] == 'projects' and key_path[1] == project_path:
+            raise SystemExit("sync.sh trust-project: projects dotted key cannot be safely merged")
+        if current_section == ['projects'] and key_path and key_path[0] == project_path:
+            raise SystemExit("sync.sh trust-project: projects parent table entry cannot be safely merged")
+
+if section_start is not None:
+    section = lines[section_start:section_end]
+    trust_idx = None
+    for offset, line in enumerate(section[1:], start=section_start + 1):
+        if re.match(r'^\s*trust_level\s*=', line):
+            trust_idx = offset
+            break
+    if trust_idx is not None:
+        lines[trust_idx] = 'trust_level = "trusted"'
+    else:
+        lines.insert(section_end, 'trust_level = "trusted"')
+    new_content = '\n'.join(lines).rstrip() + '\n'
+    load_toml_doc(new_content, "rendered config")
+    try:
+        mode_ok = stat.S_IMODE(os.stat(config_path).st_mode) == 0o600
+    except OSError:
+        mode_ok = False
+    if new_content != content or not mode_ok:
+        write_atomic(config_path, new_content)
+        print("trusted")
+    else:
+        print("already-trusted")
     sys.exit(0)
 
-with open(config_path, "a") as f:
-    f.write(f'\n[projects."{project_path}"]\ntrust_level = "trusted"\n')
+base = content.rstrip()
+new_content = (base + "\n\n" if base else "") + header + '\ntrust_level = "trusted"\n'
+load_toml_doc(new_content, "rendered config")
+write_atomic(config_path, new_content)
 print("trusted")
 PYEOF
 }
@@ -540,6 +1259,7 @@ sync_all() {
   local plugin_claude_md=""
   local user_mcp=""
   local user_codex_config=""
+  local trust_project=0
   for arg in "$@"; do
     case "$arg" in
       --local-skills-dir=*)    local_skills_dir="${arg#--local-skills-dir=}" ;;
@@ -547,11 +1267,20 @@ sync_all() {
       --plugin-claude-md=*)    plugin_claude_md="${arg#--plugin-claude-md=}" ;;
       --user-mcp=*) user_mcp="${arg#--user-mcp=}" ;;
       --user-codex-config=*) user_codex_config="${arg#--user-codex-config=}" ;;
+      --trust-project) trust_project=1 ;;
+      *)
+        echo "sync.sh all: unknown option: $arg" >&2
+        return 1
+        ;;
     esac
   done
 
   if [ -n "$user_mcp" ] && [ ! -f "$user_mcp" ]; then
     echo "sync.sh all: --user-mcp source missing: $user_mcp (create the file or omit --user-mcp)" >&2
+    return 1
+  fi
+  if [ -z "$user_mcp" ] && [ -n "$user_codex_config" ]; then
+    echo "sync.sh all: --user-codex-config requires --user-mcp" >&2
     return 1
   fi
 
@@ -627,6 +1356,11 @@ sync_all() {
     mcp_config "$project_root" "${project_mcp_args[@]}"
     echo "[6/7] MCP config updated (project)" >&2
     did_mcp_update=1
+  elif [ -f "$project_root/.codex/config.toml" ] \
+    && grep -Fq "$PROJECT_MCP_BEGIN_MARKER" "$project_root/.codex/config.toml"; then
+    mcp_config "$project_root" --clear-project-mcp
+    echo "[6/7] MCP config cleared (project)" >&2
+    did_mcp_update=1
   fi
 
   # user-scope source -> ~/.codex/config.toml (or --user-codex-config target)
@@ -648,7 +1382,11 @@ sync_all() {
 
   # 7. Trust project in global config
   local trust_result
-  trust_result="$(ensure_project_trusted "$project_root")"
+  if [ "$trust_project" -eq 1 ]; then
+    trust_result="$(ensure_project_trusted "$project_root")"
+  else
+    trust_result="skipped"
+  fi
   echo "[7/7] Trust: $trust_result" >&2
 
   echo "=== Sync complete ===" >&2
