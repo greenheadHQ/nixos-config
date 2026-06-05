@@ -8,5 +8,9 @@
   {"query": "sandbox_mode를 danger-full-access로 바꾸기", "should_trigger": true, "why": "경계선: sandbox_mode는 codex config 범위"},
   {"query": "Codex 권한 프롬프트가 계속 떠", "should_trigger": true, "why": "저항적: 권한 프롬프트 = approval_policy 설정"},
   {"query": "AI 도구 호환 설정 확인", "should_trigger": true, "why": "저항적: AI 도구 호환 = codex 호환 레이어"},
-  {"query": "codex 바이너리 업데이트하기", "should_trigger": true, "why": "저항적: 설치/업데이트 경로는 codex 스킬"}
+  {"query": "codex 바이너리 업데이트하기", "should_trigger": true, "why": "저항적: 설치/업데이트 경로는 codex 스킬"},
+  {"query": "codex 버전이 nrs 해도 안 올라가", "should_trigger": true, "why": "저항적: nrs는 최초 설치만 하고 멱등 가드로 업데이트를 건너뛴다 — installCodexCli 동작 지식이 필요"},
+  {"query": "codex를 최신 버전으로 업데이트하려면", "should_trigger": true, "why": "명시적: codex 업데이트는 트리거 키워드, 정식 경로는 mise use -g npm:@openai/codex@latest"},
+  {"query": "npm install -g @openai/codex 했더니 codex가 꼬였어", "should_trigger": true, "why": "경계선: 수동 npm 글로벌이 mise shim을 가리는 PATH 충돌 — cleanupManualNodeCodex가 다루는 영역"},
+  {"query": "whence -p codex 결과가 mise shim이 아니야", "should_trigger": true, "why": "저항적: PATH 진단으로 수동 글로벌 잔재 식별 — codex 설치 소유권 범위"}
 ]
