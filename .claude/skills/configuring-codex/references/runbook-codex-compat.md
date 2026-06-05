@@ -194,8 +194,9 @@ whence -p codex   # PATH 첫 매치 경로 (node/<ver>/bin이면 수동 글로�
 type -a codex     # 모든 후보
 ```
 
-`codex`는 `command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen` 셸 alias로 래핑되어
-있으므로, 바이너리 자체 경로는 `whence -p codex`로 확인한다.
+`codex`는 셸 alias로 래핑되어 있다 — Linux는 안내 `echo`를 `>&2`로 먼저 출력한 뒤
+`command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen`를 실행하고, macOS는 선행 echo 없이
+같은 `command codex …`를 실행한다. 따라서 바이너리 자체 경로는 `whence -p codex`로 확인한다.
 
 ## 참고 문서
 
