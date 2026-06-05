@@ -69,9 +69,9 @@ SKILL.md는 이 둘 위의 운영 절차를 서술한다.
 
 `installCodexCli`는 멱등 가드가 있어 최초 설치만 하고 버전은 자동 갱신하지 않는다.
 가드는 `mise ls -g --current --json npm:@openai/codex`에서
-`installed == true`인 엔트리가 존재하면 `mise use -g npm:@openai/codex`를 skip한다
-(default.nix:203-210). `length > 0` 단독이 아니라 `select(.installed == true)`로 거르는 것은
-config 등록 후 설치 실패한 `[{installed:false}]` 상태에 속지 않기 위함이다(default.nix:201-202 주석).
+`installed == true`인 엔트리가 존재하면 `mise use -g npm:@openai/codex`를 skip한다.
+`length > 0` 단독이 아니라 `select(.installed == true)`로 거르는 것은
+config 등록 후 설치 실패한 `[{installed:false}]` 상태에 속지 않기 위함이다(`installCodexCli` 가드 주석 참조).
 즉 `nrs` 후 검증만으로 버전이 올라가리라 기대하면 안 된다 — 자동 업데이트 없음이 의도다.
 
 정식 업데이트(수동 절차):
@@ -86,8 +86,8 @@ hash -r && codex --version
 
 `npm install -g @openai/codex` 금지:
 node 글로벌(`~/.local/share/mise/installs/node/<ver>/bin`)에 깔리면 PATH상 mise backend bin보다
-우선이라 backend shim을 가린다. 다음 `nrs`의 `cleanupManualNodeCodex`(default.nix:221-237)가
-각 node 버전 prefix의 npm으로 `env PATH="$node_prefix/bin:mise/bin:$PATH" "$npm_bin" uninstall -g @openai/codex`를
+우선이라 backend shim을 가린다. 다음 `nrs`의 `cleanupManualNodeCodex`가
+각 node 버전 prefix의 npm으로 `env PATH="$node_prefix/bin:${pkgs.mise}/bin:$PATH" "$npm_bin" uninstall -g @openai/codex`를
 반복 호출해 수동 글로벌을 제거하므로, 구버전으로 롤백된 것처럼 보인다.
 (`lts`/`24`/`latest` 같은 symlink 별칭 디렉토리는 `[ ! -L ]` 가드로 제외해 중복 uninstall을 막는다.)
 
@@ -109,7 +109,7 @@ Codex CLI는 디렉토리 심링크를 따라가지만 파일 심링크는 무�
 
 ## 실행 정책 / Trust 메모
 
-`codex-cli 0.122.0` 기준으로 `codex trust` 독립 서브커맨드는 확인되지 않았다.  
+`codex-cli 0.137.0` 기준으로 `codex trust` 독립 서브커맨드는 확인되지 않았다.  
 권한 프롬프트 동작은 전역 실행 정책으로 제어한다.
 
 ```toml
