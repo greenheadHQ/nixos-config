@@ -14,8 +14,8 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 ## 작성 기준
 
-- 확인 날짜: 2026-04-21
-- 확인 버전: codex-cli 0.122.0
+- 확인 날짜: 2026-06-05
+- 확인 버전: codex-cli 0.137.0
 - 재검증: `codex --version && ./scripts/ai/verify-ai-compat.sh`
 
 ## 목적과 범위
@@ -60,9 +60,46 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 
 ## 설치/업데이트 경로
 
-Codex CLI 바이너리 설치/업데이트는 `modules/shared/programs/codex/default.nix`의
-`home.activation.installCodexCli`에서 관리한다. 운영 절차는 `nrs` 적용 후
-`codex --version`과 `./scripts/ai/verify-ai-compat.sh`로 검증한다.
+Codex CLI 바이너리는 mise npm backend(`npm:@openai/codex`)로 설치한다.
+SoT는 레이어별로 갈린다 — 버전 핀의 SoT는 `~/.config/mise/config.toml`의 `[tools]`
+(`"npm:@openai/codex" = "latest"`, `node = "lts"`)이고, 설치/정리 코드 동작의 SoT는
+`modules/shared/programs/codex/default.nix`의 activation 3종
+(`cleanupLegacyCodexCli`, `installCodexCli`, `cleanupManualNodeCodex`)이다.
+SKILL.md는 이 둘 위의 운영 절차를 서술한다.
+
+`installCodexCli`는 멱등 가드가 있어 최초 설치만 하고 버전은 자동 갱신하지 않는다.
+가드는 `mise ls -g --current --json npm:@openai/codex`에서
+`installed == true`인 엔트리가 존재하면 `mise use -g npm:@openai/codex`를 skip한다
+(default.nix:203-210). `length > 0` 단독이 아니라 `select(.installed == true)`로 거르는 것은
+config 등록 후 설치 실패한 `[{installed:false}]` 상태에 속지 않기 위함이다(default.nix:201-202 주석).
+즉 `nrs` 후 검증만으로 버전이 올라가리라 기대하면 안 된다 — 자동 업데이트 없음이 의도다.
+
+정식 업데이트(수동 절차):
+
+```bash
+mise use -g npm:@openai/codex@latest
+hash -r && codex --version
+```
+
+`@latest`를 명시한 호출은 사용자 수동 절차이며 default.nix 코드에 그대로 존재하는 호출은 아니다
+(코드의 설치 호출은 버전 무지정 `mise use -g npm:@openai/codex`).
+
+`npm install -g @openai/codex` 금지:
+node 글로벌(`~/.local/share/mise/installs/node/<ver>/bin`)에 깔리면 PATH상 mise backend bin보다
+우선이라 backend shim을 가린다. 다음 `nrs`의 `cleanupManualNodeCodex`(default.nix:221-237)가
+각 node 버전 prefix의 npm으로 `env PATH="$node_prefix/bin:mise/bin:$PATH" "$npm_bin" uninstall -g @openai/codex`를
+반복 호출해 수동 글로벌을 제거하므로, 구버전으로 롤백된 것처럼 보인다.
+(`lts`/`24`/`latest` 같은 symlink 별칭 디렉토리는 `[ ! -L ]` 가드로 제외해 중복 uninstall을 막는다.)
+
+진단 — 두 codex 공존이 의심되면 PATH 첫 매치를 확인한다:
+
+```bash
+whence -p codex   # PATH 첫 매치 경로
+type -a codex     # 모든 후보 (node/<ver>/bin이 mise backend bin보다 앞이면 수동 글로벌 잔재)
+```
+
+검증: `hash -r && codex --version`, `./scripts/ai/verify-ai-compat.sh`.
+비대화형 셸에서 codex shim 미노출 문제는 `managing-mise`의 셸 활성화 구조를 참조한다.
 
 ## 진단 우선순위 (중요)
 
@@ -88,6 +125,7 @@ sandbox_mode = "danger-full-access"
 - 권한 프롬프트 반복: `~/.codex/config.toml`의 `approval_policy`, `sandbox_mode`를 확인한다.
 - AGENTS 불일치: 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크를 복구한다.
 - 활성화 누락: `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`로 재검증한다.
+- codex 업데이트가 안 됨 / `npm install -g`가 안 먹힘: `installCodexCli` 멱등 가드로 `nrs`는 최초 설치만 하므로 정식 업데이트는 `mise use -g npm:@openai/codex@latest` 후 `hash -r`로 한다. `npm install -g @openai/codex`는 `cleanupManualNodeCodex`가 제거하므로 사용하지 않는다 (`whence -p codex`로 PATH 잔재 확인).
 
 ## 투영 아키텍처
 
