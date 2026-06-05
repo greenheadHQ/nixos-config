@@ -235,10 +235,22 @@ fi
 
 # ============================================================
 # Section 4: SSH 감지
-#   SSH 세션에서는 OSC 8 hyperlink 클릭 불가 → URL 비활성, 텍스트만
+#   SSH 세션(Termius 등)에서는 OSC 8 클릭 불가 (클라이언트 미지원 + Claude Code Ink 유실).
+#   → Jira/Slack/Figma는 평문 URL로 출력(print_icon SSH 분기)해 클라이언트 URL regex 감지에 맡긴다.
+#   감지: SSH_CONNECTION 직접 + tmux 세션 환경 폴백(tmux attach 대응).
 # ============================================================
 IS_SSH=false
 [ -n "$SSH_CONNECTION" ] && IS_SSH=true
+# tmux attach 폴백: SSH 밖에서 시작한 tmux에 SSH로 attach하면, 이미 떠 있던 pane의
+# 프로세스는 갱신된 SSH_CONNECTION을 물려받지 못한다 (fork 모델 — update-environment는
+# 새 pane에만 주입). tmux 세션 환경을 조회해 보강한다. 값이 있을 때(SSH_CONNECTION=?*)만
+# SSH로 판정 — 로컬 클라이언트 재attach 시 tmux가 남기는 제거표시(-SSH_CONNECTION)는
+# 배제해, 데스크톱 재attach 시 OSC 8 동작으로 자동 복귀한다.
+if ! $IS_SSH && command -v tmux >/dev/null 2>&1; then
+  case "$(tmux show-environment SSH_CONNECTION 2>/dev/null)" in
+    SSH_CONNECTION=?*) IS_SSH=true ;;
+  esac
+fi
 
 CACHE_GUIDE_URL="https://github.com/greenheadHQ/nixos-config/blob/main/modules/shared/programs/claude/files/docs/cache-guide.md"
 $IS_SSH && CACHE_GUIDE_URL=""
@@ -647,8 +659,18 @@ print_icon() {
   local label=$4
   url=$(sanitize_osc8_url "$url")
   $LINE_HAS_OUTPUT && printf '  '
-  if [ -n "$url" ]; then
-    # OSC 8 hyperlink: escape sequence는 %b, URL은 %s, label은 %s
+  if [ -n "$url" ] && $IS_SSH; then
+    # SSH(Termius 등): OSC 8 미지원 + Claude Code Ink 유실로 하이퍼링크 클릭 불가.
+    # 평문 URL을 라벨 뒤에 출력해 SSH 클라이언트의 URL regex 감지에 맡긴다.
+    # url은 위에서 sanitize_osc8_url을 거친 값 — control 문자가 있으면 통째로 비워지고,
+    # 빈 값이면 위 `[ -n "$url" ]` 가드에서 이 분기에 진입하지 못한다. 즉 여기 도달한 url은
+    # control 문자가 없음이 보장되어 escape 주입 방어가 유지된다.
+    printf '%b' "\e[${color}m${emoji} "
+    printf '%s' "$label"
+    printf '%b' "\e[0m "
+    printf '%s' "$url"
+  elif [ -n "$url" ]; then
+    # OSC 8 hyperlink (로컬 터미널): escape sequence는 %b, URL은 %s, label은 %s
     printf '%b' "\e[4;${color}m\e]8;;"
     printf '%s' "$url"
     printf '%b' "\a${emoji} "
@@ -799,13 +821,15 @@ render_rate_window() {
 
 # L1: /set-icons (Jira → Slack → Figma → Memo) — 조건부 라인
 begin_line
-if [ -n "$JIRA_URL" ] && [ -n "$JIRA_LABEL" ] && ! $IS_SSH; then
+# SSH(Termius 등)에서도 출력한다: print_icon이 SSH 분기에서 평문 URL로 렌더한다.
+# cwd/Plan/Memory/Memo/Cache는 SSH일 때 호출부에서 url=""로 넘겨 평문화 대상에서 빠진다.
+if [ -n "$JIRA_URL" ] && [ -n "$JIRA_LABEL" ]; then
   print_icon "33" "$JIRA_URL" "\xe2\x9a\xa1" "$JIRA_LABEL"
 fi
-if [ -n "$SLACK_URL" ] && [ -n "$SLACK_LABEL" ] && ! $IS_SSH; then
+if [ -n "$SLACK_URL" ] && [ -n "$SLACK_LABEL" ]; then
   print_icon "35" "$SLACK_URL" "\xf0\x9f\x92\xac" "$SLACK_LABEL"
 fi
-if [ -n "$FIGMA_URL" ] && [ -n "$FIGMA_LABEL" ] && ! $IS_SSH; then
+if [ -n "$FIGMA_URL" ] && [ -n "$FIGMA_LABEL" ]; then
   print_icon "31" "$FIGMA_URL" "\xf0\x9f\x8e\xa8" "$FIGMA_LABEL"
 fi
 if [ -n "$MEMO_PATH" ] && [ -f "$MEMO_PATH" ]; then
