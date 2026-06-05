@@ -19,6 +19,8 @@
 | 빌드 | `tree-sitter` | nvim-treesitter 파서 컴파일 CLI |
 | 빌드 | `gcc` | tree-sitter 파서 컴파일 (Linux 전용) |
 | 빌드 | `nodejs` | LSP 런타임 의존성 |
+| DAP | `vscode-js-debug` | JS/TS 디버거 (Node/Next.js 서버사이드, Linux 전용) |
+| DAP | `js-debug-adapter` (wrapper) | nixpkgs `js-debug`를 LazyVim 기대 이름 `js-debug-adapter`로 노출 (Linux 전용) |
 
 > `ripgrep`, `fd`, `fzf`, `lazygit`은 `libraries/packages.nix`에서 이미 설치됨 — 중복 추가 금지
 
@@ -37,3 +39,4 @@
 - `lang.tailwind` — tailwindcss LSP
 - `linting.eslint` — ESLint LSP
 - `formatting.prettier` — prettier 통합
+- `dap.core` — nvim-dap + dap-ui. import는 공통(darwin+nixos)이라 공유 lazy-lock pin을 보존하고, 로드/adapter 사용은 Linux 전용(dap.lua의 cond). 키맵/사용법: `cheat nvim/dap`

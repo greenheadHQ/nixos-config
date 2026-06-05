@@ -63,6 +63,14 @@ in
       # macOS는 clang이 이미 있어 tree-sitter 파서 컴파일이 가능합니다.
       ++ lib.optionals pkgs.stdenv.isLinux [
         gcc # tree-sitter 파서 컴파일 (NixOS 전용 — macOS는 clang 사용)
+
+        # ── DAP (디버거 어댑터) ──
+        # iPad↔NixOS 원격 서버 디버깅용. Linux 전용 (macOS는 VSCode로 디버깅).
+        vscode-js-debug # JS/TS DAP 디버거 (Node/Next.js 서버사이드)
+        # LazyVim lang.typescript extra는 PATH의 'js-debug-adapter'를 기대하나
+        # nixpkgs vscode-js-debug는 'js-debug' 바이너리를 제공 → 이름을 맞추는 wrapper.
+        # 플러그인 코드/로드 순서 변경 없이 adapter command를 충족한다.
+        (writeShellScriptBin "js-debug-adapter" ''exec ${vscode-js-debug}/bin/js-debug "$@"'')
       ];
   };
 
