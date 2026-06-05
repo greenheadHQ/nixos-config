@@ -32,6 +32,8 @@ Termius(iOS)에서 SSH로 Codex CLI를 실행하면 응답 완료 후에도 위�
 
 ## ripgrep glob 패턴이 작동하지 않음
 
+> 현재 상태(2026-05): 이 항목은 archived troubleshooting 기록이다. 아래 원인 분석은 당시 재현된 실패 모드 중 하나이며, 모든 empty result의 canonical 원인으로 취급하지 않는다. 또한 관련 파일로 적힌 `pane-search.sh`는 현재 repo에 없고, active tmux note/search tooling은 `modules/shared/programs/tmux/files/scripts/`와 tmux-thumbs 설정을 기준으로 확인한다.
+
 ### 증상
 ripgrep에서 `-g '!directory/**'` 형태의 제외 glob을 사용했으나, 예상과 다르게 **모든 파일이 검색되지 않거나** 제외가 적용되지 않음.
 
@@ -42,7 +44,7 @@ rg --glob '!_archive/**' --glob '!_trash/**' "pattern" ~/.tmux/pane-notes
 # 결과: 아무것도 출력되지 않음 (모든 파일이 제외됨)
 ```
 
-### 원인
+### 당시 원인
 
 1. **포함 glob 누락**: 제외 glob(`!...`)만 사용하면 ripgrep이 "어떤 파일도 포함 조건을 만족하지 않음"으로 해석하여 모든 파일을 제외함
    - ripgrep GUIDE.md: *"the presence of at least one non-blacklist glob will institute a requirement that every file searched must match at least one glob"*
@@ -93,6 +95,6 @@ whitelisting ./notes/file.md: Whitelist(IgnoreMatch(Override(Glob(...))))
 - [GitHub Issue #691: Exclusion globbing does not work with double quotes](https://github.com/BurntSushi/ripgrep/issues/691)
 
 ### 관련 파일
-- `modules/shared/programs/tmux/files/scripts/pane-search.sh`
+- Historical: `modules/shared/programs/tmux/files/scripts/pane-search.sh` (현재 repo에는 없음)
 
 ---
