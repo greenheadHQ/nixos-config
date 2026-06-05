@@ -10,7 +10,11 @@ nvim-dap: JS/TS 서버사이드 디버깅 (Node/Next.js)
 
   1. 프로젝트에서 inspector 켜고 dev 서버 실행:
        node --inspect=127.0.0.1:9229 ...
-       # Next.js: NODE_OPTIONS='--inspect=127.0.0.1:9229' <dev 스크립트>
+       # Next.js: package.json 에 debug script 를 두고 실행한다. NODE_OPTIONS 를
+       #   `pnpm dev` 등 패키지매니저 wrapper 앞에 붙이면 inspector 가 wrapper
+       #   프로세스에 붙거나 9229 포트 충돌로 실패하므로 next 를 직접 띄운다:
+       #     "dev:debug": "NODE_OPTIONS='--inspect=127.0.0.1:9229' next dev"
+       #   → pnpm dev:debug  (또는 셸에서 NODE_OPTIONS=... next dev 직접 실행)
   2. nvim에서 <leader>db 로 breakpoint 설정
   3. <leader>dc (continue) → "Attach to :9229 (--inspect)" 선택
   4. 실제 요청을 보내 해당 코드 경로 실행 → breakpoint 정지
