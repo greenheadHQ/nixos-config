@@ -13,6 +13,8 @@ let
   # mise shims 경로 변수 선언 — envExtra/initContent 공통 SoT.
   # 경로는 constants.mise.shimsDirExpr 우선순위(MISE_DATA_DIR → XDG_DATA_HOME/mise → $HOME/.local/share/mise).
   miseShimsDecl = ''_mise_shims="${constants.mise.shimsDirExpr}"'';
+  pythonWithTomlkit =
+    (import ../../../../libraries/python-runtimes.nix { inherit pkgs; }).pythonWithTomlkit;
 in
 {
   home.file.".local/bin/atuin-clean-kr" = {
@@ -32,7 +34,15 @@ in
     recursive = true;
   };
   home.file.".local/bin/codex-sync" = {
-    source = "${sharedScriptsDir}/codex-sync.sh";
+    source =
+      let
+        rawScript = "${sharedScriptsDir}/codex-sync.sh";
+        wrapper = pkgs.writeShellScript "codex-sync-wrapper" ''
+          export CODEX_SYNC_PYTHON="${pythonWithTomlkit}/bin/python3"
+          exec "${pkgs.bash}/bin/bash" "${rawScript}" "$@"
+        '';
+      in
+      wrapper;
     executable = true;
   };
   # codex exec hang supervisor (issue #593): Nix wrapper가 absolute store path env var를 set한 후

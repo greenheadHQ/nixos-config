@@ -102,57 +102,41 @@ Write target:
 - project-scope: `.codex/config.toml`
 - user-scope: `~/.codex/config.toml` (or the path specified via `--user-codex-config`)
 
-If file exists: replace only `[mcp_servers.*]` sections, preserve other settings.
-If file doesn't exist: create with MCP sections only.
+Project/plugin source and user source are target-specific and must not be mixed
+in one `mcp-config` call.
+
+- project-scope: update the codex-sync managed MCP block from project/plugin sources,
+  and replace existing entries with the same server names. Preserve unmanaged
+  project-local MCP entries outside the marker block. Root inline
+  `mcp_servers = { ... }` tables fail fast because they cannot be safely merged
+  with the line-oriented writer.
+- user-scope: replace only the server names present in `--user-mcp`, preserving other
+  `[mcp_servers.*]` sections and non-MCP settings. Root inline
+  `mcp_servers = { ... }` tables fail fast because they cannot be safely merged
+  with the line-oriented writer. Names declared by the active platform Codex
+  config template are activation-owned and fail fast on collision.
+- write via same-directory tempfile, mode `0600`, and atomic rename.
 
 ## TOML Encoding
 
 Values must be properly escaped for TOML basic strings (double-quoted):
 
-```python
-def toml_escape_value(s):
-    """Escape a string value for TOML basic string (double-quoted)."""
-    s = s.replace('\\', '\\\\')   # backslash first
-    s = s.replace('"', '\\"')
-    s = s.replace('\n', '\\n')
-    s = s.replace('\r', '\\r')
-    s = s.replace('\t', '\\t')
-    return s
-
-def toml_key(name):
-    """Quote a TOML key if it contains dots or special chars."""
-    if '.' in name or '"' in name or ' ' in name:
-        return '"' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    return name
-```
-
-Apply `toml_escape_value()` to all string values: `command`, `url`, each `args` element, each `env` value.
-Apply `toml_key()` to server names in section headers (e.g., `[mcp_servers.{toml_key(name)}]`).
+Apply TOML basic-string escaping to all string values: `command`, `url`, each
+`args` element, and each `env` value. Server names in section headers must be
+rendered through the helper in `sync.sh`; do not duplicate its quoting logic in
+this reference.
 
 ## Existing config.toml Preservation
 
-When `.codex/config.toml` already exists with non-MCP settings, only the `[mcp_servers.*]` sections should be replaced. Use line-by-line parsing to strip existing MCP sections, then append new ones:
-
-```python
-def replace_mcp_sections(existing_toml: str, new_mcp_toml: str) -> str:
-    lines = existing_toml.splitlines()
-    result = []
-    in_mcp = False  # True while inside [mcp_servers.*] section (skips lines)
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith('['):
-            in_mcp = stripped.startswith('[mcp_servers.')
-        if not in_mcp:
-            result.append(line)
-    cleaned = '\n'.join(result).rstrip()
-    if new_mcp_toml.strip():
-        return cleaned + '\n' + new_mcp_toml + '\n'
-    return cleaned + '\n'
-```
+The canonical merge/write contract lives in `../SKILL.md` under
+"계약 참고: user-scope `sync.sh` vs activation writer". Keep this reference
+summary aligned with that section rather than duplicating implementation
+pseudocode here.
 
 ## Merging Multiple Sources
 
-When both project and plugin MCP configs exist, merge all servers into a single target config.
+When both project and plugin MCP configs exist, merge all servers into a single project target config.
 If server names conflict, prefix plugin servers with `{plugin-name}--`.
 
-User MCP (`--user-mcp`) is merged the same way and can target user config directly.
+User MCP (`--user-mcp`) is a separate user target operation. It is not combined
+with project/plugin sources.
