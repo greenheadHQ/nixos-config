@@ -26,28 +26,39 @@ end
 -- prepend = 목록 맨 앞에 추가 → lazy.nvim이 다른 플러그인보다 먼저 로드됨
 vim.opt.rtp:prepend(lazypath)
 
+-- ── spec: 어떤 플러그인을 설치할지 정의 ──
+-- LazyVim 코어: 기본 플러그인 세트 (snacks.picker, treesitter, lsp, blink.cmp 등)를 한번에 가져옴
+-- colorscheme: LazyVim에게 catppuccin을 테마로 사용하라고 지정 (기본값은 tokyonight)
+-- 이 설정이 없으면 colorscheme.lua에서 catppuccin을 설치해도 tokyonight가 적용됨
+--
+-- LazyVim extras: 특정 언어/도구 지원을 선택적으로 활성화
+-- 각 extra는 해당 언어의 LSP, 포매터, 린터, treesitter 파서 등을 자동 설정함
+local spec = {
+  { "LazyVim/LazyVim", import = "lazyvim.plugins", opts = { colorscheme = "catppuccin" } },
+
+  { import = "lazyvim.plugins.extras.lang.typescript" }, -- vtsls (TS/JS LSP) + TS 전용 도구
+  { import = "lazyvim.plugins.extras.lang.nix" }, -- nil (Nix LSP) + nixfmt + statix
+  { import = "lazyvim.plugins.extras.lang.json" }, -- jsonls (JSON LSP) + schemastore
+  { import = "lazyvim.plugins.extras.lang.yaml" }, -- yamlls (YAML LSP) + schemastore
+  { import = "lazyvim.plugins.extras.lang.markdown" }, -- Markdown LSP + 미리보기 (marksman → markdown-oxide로 대체, lsp.lua 참고)
+  { import = "lazyvim.plugins.extras.lang.tailwind" }, -- tailwindcss LSP + 색상 미리보기
+  { import = "lazyvim.plugins.extras.linting.eslint" }, -- ESLint를 LSP로 동작시킴
+  { import = "lazyvim.plugins.extras.formatting.prettier" }, -- prettier 저장 시 자동 포맷
+}
+
+-- DAP (디버거): nvim-dap + dap-ui + virtual-text. lang.typescript extra의 pwa-node
+-- 디버거 설정(optional=true)을 활성화한다.
+-- import는 공통(darwin+nixos)으로 유지한다 — dap 플러그인 pin이 공유 lazy-lock.json에
+-- 있어, macOS에서 import를 빼면 :Lazy sync가 spec 밖 항목으로 보고 pin을 제거해 lock
+-- churn이 생긴다. 실제 로드/디버깅 제한(Linux 전용)은 dap.lua에서 cond로 건다
+-- (js-debug adapter가 default.nix의 Linux-only extraPackages 전용; macOS는 VSCode 디버깅).
+table.insert(spec, { import = "lazyvim.plugins.extras.dap.core" })
+
+-- 커스텀 플러그인: lua/plugins/ 디렉토리의 모든 .lua 파일을 자동 로드
+table.insert(spec, { import = "plugins" })
+
 require("lazy").setup({
-  -- ── spec: 어떤 플러그인을 설치할지 정의 ──
-  spec = {
-    -- LazyVim 코어: 기본 플러그인 세트 (snacks.picker, treesitter, lsp, blink.cmp 등)를 한번에 가져옴
-    -- colorscheme: LazyVim에게 catppuccin을 테마로 사용하라고 지정 (기본값은 tokyonight)
-    -- 이 설정이 없으면 colorscheme.lua에서 catppuccin을 설치해도 tokyonight가 적용됨
-    { "LazyVim/LazyVim", import = "lazyvim.plugins", opts = { colorscheme = "catppuccin" } },
-
-    -- LazyVim extras: 특정 언어/도구 지원을 선택적으로 활성화
-    -- 각 extra는 해당 언어의 LSP, 포매터, 린터, treesitter 파서 등을 자동 설정함
-    { import = "lazyvim.plugins.extras.lang.typescript" }, -- vtsls (TS/JS LSP) + TS 전용 도구
-    { import = "lazyvim.plugins.extras.lang.nix" }, -- nil (Nix LSP) + nixfmt + statix
-    { import = "lazyvim.plugins.extras.lang.json" }, -- jsonls (JSON LSP) + schemastore
-    { import = "lazyvim.plugins.extras.lang.yaml" }, -- yamlls (YAML LSP) + schemastore
-    { import = "lazyvim.plugins.extras.lang.markdown" }, -- Markdown LSP + 미리보기 (marksman → markdown-oxide로 대체, lsp.lua 참고)
-    { import = "lazyvim.plugins.extras.lang.tailwind" }, -- tailwindcss LSP + 색상 미리보기
-    { import = "lazyvim.plugins.extras.linting.eslint" }, -- ESLint를 LSP로 동작시킴
-    { import = "lazyvim.plugins.extras.formatting.prettier" }, -- prettier 저장 시 자동 포맷
-
-    -- 커스텀 플러그인: lua/plugins/ 디렉토리의 모든 .lua 파일을 자동 로드
-    { import = "plugins" },
-  },
+  spec = spec,
 
   -- ── defaults: 플러그인 기본 동작 설정 ──
   defaults = {

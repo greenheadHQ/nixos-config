@@ -1,0 +1,39 @@
+---
+tags: [ ipad, tailscale, serve, preview, dev, https ]
+---
+iPad에서 dev 서버 미리보기 (Tailscale Serve)
+
+  로컬 dev 서버를 tailnet 내부 HTTPS로 노출 → iPad Safari에서 접근.
+  HTTPS라 secure-context 충족 (Clipboard / cookie / Service Worker 정상 동작).
+  특정 프로젝트 비종속 — dev 포트만 넘기면 됨 (NixOS miniPC에서 실행).
+
+사용
+
+  ts-serve 4200      # http://127.0.0.1:4200 을 tailnet HTTPS로 노출
+  ts-serve status    # 현재 노출 상태 + URL 확인
+  ts-serve reset-all # 이 노드의 모든 serve config 초기화 (전역 — preview 한정 아님)
+
+보안 (dev 서버 바인딩)
+
+  이 노드는 tailscale0이 trusted interface다. dev 서버가 0.0.0.0에 바인딩하면 ts-serve의
+  HTTPS와 별개로 raw HTTP 포트가 tailnet에 직접 노출된다. dev 서버는 반드시 127.0.0.1에
+  바인딩하고, 외부 노출은 ts-serve(HTTPS)로만 하라. (Next.js: next dev -H 127.0.0.1)
+
+접근 URL
+
+  https://<machine>.<tailnet>.ts.net
+  (정확한 도메인은 `ts-serve status` 또는 `tailscale status` 로 확인)
+
+사전조건 (최초 1회 — Tailscale admin 콘솔)
+
+  - MagicDNS 활성화
+  - HTTPS Certificates 활성화
+  미설정 시 HTTPS serve 실패.
+
+Next.js 등 dev origin 검증이 있는 프레임워크
+
+  cross-origin 경고/차단(특히 HMR) 시 next.config.js 에 추가:
+    allowedDevOrigins: ["<machine>.<tailnet>.ts.net"]
+  HMR websocket이 안 붙으면 이 설정부터 확인.
+
+주의: ts.net FQDN은 공개 CT log에 기록됨 (tailnet 내부 전용이나 머신명은 노출).
