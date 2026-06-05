@@ -321,7 +321,7 @@ cp ~/.local/share/atuin/key ~/.local/share/atuin/key.backup-$(date +%Y%m%d)
 ## Atuin daemon 불안정 (deprecated)
 
 > 발생 시점: 2026-01-14
-> 해결: daemon 비활성화, launchd로 대체
+> 해결: daemon 비활성화, atuin 내장 auto_sync로 대체
 
 증상: daemon 프로세스가 불안정하게 동작. exit code 1로 반복 종료되거나, 실행 중이지만 sync를 수행하지 않음.
 

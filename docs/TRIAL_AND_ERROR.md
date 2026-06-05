@@ -578,6 +578,8 @@ nix store diff-closures /run/current-system ./result
 >
 > Atuin 동기화 상태를 모니터링하는 시스템을 구현하면서 발견한 중요한 사실들과 시행착오를 기록합니다.
 
+> 현재 상태(2026-05): 이 섹션의 daemon/launchd 동기화 결론은 뒤쪽 `2026-01-14: Atuin 모니터링 시스템 대청소` 섹션으로 superseded됐다. 현재 설정의 기준은 `modules/shared/programs/shell/default.nix`의 `sync.records = true`와 `auto_sync = true`이며, 별도 주기 sync는 현재 권장 상태가 아니다.
+
 ### 목표
 
 1. Hammerspoon 메뉴바에 🐢 아이콘으로 동기화 상태 표시
@@ -1337,6 +1339,8 @@ Anki 애드온의 Nix 선언적 관리는 **현실적으로 어려움**. AnkiWeb
 ---
 
 ## 2026-01-14: Atuin Watchdog 개선 및 Daemon 비활성화
+
+> 현재 상태(2026-05): 이 섹션의 launchd 주기 sync 아키텍처도 뒤쪽 `2026-01-14: Atuin 모니터링 시스템 대청소` 섹션으로 superseded됐다. historical debugging context로만 읽고, 현재 운영 기준은 `sync.records = true`와 `auto_sync = true`로 본다.
 
 ### 배경
 

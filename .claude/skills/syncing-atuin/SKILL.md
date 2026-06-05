@@ -19,7 +19,8 @@ Atuin 동기화 상태 점검, 한글 히스토리 정리, encryption key 문제
 Atuin v1 API deprecated
 - `atuin status` 명령어가 4XX 에러 반환 가능
 - v2 API 사용 중, `last_sync_time` 파일이 CLI sync에서 자동 업데이트되지 않음
-- 동기화 자체는 정상 작동
+- 실제 동기화 상태는 `atuin doctor`의 `last_sync`로 확인
+- 현재 설정은 `sync.records = true`와 `auto_sync = true` 기준
 
 `atuin history delete` 서브커맨드 미존재 (v18.13.3)
 - `atuin history` 하위에 `delete` 명령어가 없음
@@ -49,11 +50,11 @@ atuin-clean-kr
 ### 상태 확인
 
 ```bash
-# 동기화 상태 (4XX 에러 발생 가능)
-atuin status
+# 실제 동기화 상태 (권장)
+atuin doctor 2>&1 | grep -o '"last_sync": "[^"]*"'
 
-# 마지막 동기화 시간 확인
-cat ~/.local/share/atuin/last_sync_time
+# v1 status endpoint 확인용 (4XX 에러 발생 가능)
+atuin status
 
 # 수동 동기화
 atuin sync
@@ -65,12 +66,12 @@ atuin sync
 |------|------|
 | `~/.config/atuin/config.toml` | Atuin 설정 |
 | `~/.local/share/atuin/` | 데이터 디렉토리 |
-| `~/.local/share/atuin/last_sync_time` | 마지막 동기화 타임스탬프 |
+| `~/.local/share/atuin/last_sync_time` | legacy/display-debug용 타임스탬프. CLI sync v2 기준 실제 동기화 판정에는 쓰지 않음 |
 
 ## 핵심 절차
 
-1. `atuin status`/`atuin sync`로 동기화 자체를 확인한다.
-2. `last_sync_time`과 DB 상태를 확인해 표시 이슈와 실제 동기화 이슈를 분리한다.
+1. `atuin doctor`의 `last_sync`로 실제 동기화 상태를 확인한다.
+2. `atuin status` 4XX와 `last_sync_time` 지연은 표시/legacy 이슈로 분리하고, 필요할 때만 DB 상태를 확인한다.
 3. 한글 히스토리 렌더링 문제는 `atuin-clean-kr`로 정리한다.
 4. 계정 이동 시 encryption key 불일치를 복구가 아닌 재초기화 대상으로 처리한다 (재초기화 시 로컬 히스토리 삭제, 마이그레이션 불가).
 

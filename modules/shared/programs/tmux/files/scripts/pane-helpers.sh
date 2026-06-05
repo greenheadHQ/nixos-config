@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 통합 헬퍼 스크립트 (pane-link, pane-search 공용)
+# 통합 헬퍼 스크립트 (Pane Notepad 공용)
 # fzf에서 직접 호출 가능한 함수들
 set -euo pipefail
 
