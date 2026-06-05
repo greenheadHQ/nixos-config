@@ -104,7 +104,7 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 5. `configuring-codex` 스킬 문서와 실제 구현(`default.nix`, verify script) 간 불일치 여부 점검
 6. pre-commit `ai-skills-consistency` 훅 확인 (관련 staged 변경 시 fail, 긴급 우회: `SKIP_AI_SKILL_CHECK=1`)
 7. `installCodexCli` 멱등 가드(`mise ls -g --current --json npm:@openai/codex`의 `installed == true` 판정)가 살아있어 `nrs`가 codex 버전을 자동 업데이트하지 않는지 확인
-8. `cleanupManualNodeCodex`(default.nix:221-237)가 수동 `npm install -g @openai/codex` 잔재를 제거하는지 확인 — 수동 글로벌이 PATH상 mise shim을 가려 "codex 업데이트가 안 되는 것처럼" 보이는 회귀의 근원
+8. `cleanupManualNodeCodex`가 수동 `npm install -g @openai/codex` 잔재를 제거하는지 확인 — 수동 글로벌이 PATH상 mise shim을 가려 "codex 업데이트가 안 되는 것처럼" 보이는 회귀의 근원
 
 ## 2026-05-02 업데이트: SKILL.md 도구-중립성 lint
 
@@ -169,9 +169,9 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
 
 - SoT는 `~/.config/mise/config.toml`의 `[tools]` 항목: `"npm:@openai/codex" = "latest"`, `node = "lts"`.
 - 멱등 가드: `installCodexCli`는 `mise ls -g --current --json npm:@openai/codex`에서 `installed == true`인
-  엔트리가 있으면 `mise use -g npm:@openai/codex`를 skip한다(default.nix:203-210).
+  엔트리가 있으면 `mise use -g npm:@openai/codex`를 skip한다.
   `length > 0` 단독이 아니라 `select(.installed == true)`로 거르는 것은 config 등록 후 설치 실패한
-  `[{installed:false}]` 상태에 속지 않기 위함이다(default.nix:201-202 주석).
+  `[{installed:false}]` 상태에 속지 않기 위함이다(`installCodexCli` 가드 주석).
 - 따라서 `nrs`는 codex 버전을 자동 업데이트하지 않는다. 정식 업데이트는 수동 절차다:
 
 ```bash
@@ -182,8 +182,8 @@ hash -r && codex --version
 ### `npm install -g @openai/codex` 금지
 
 수동 글로벌은 `~/.local/share/mise/installs/node/<ver>/bin`에 깔려 PATH상 mise backend bin보다 우선이라
-backend shim을 가린다. 다음 `nrs`의 `cleanupManualNodeCodex`(default.nix:221-237)가 각 node 버전
-prefix의 npm으로 `env PATH="$node_prefix/bin:mise/bin:$PATH" "$npm_bin" uninstall -g @openai/codex`를
+backend shim을 가린다. 다음 `nrs`의 `cleanupManualNodeCodex`가 각 node 버전
+prefix의 npm으로 `env PATH="$node_prefix/bin:${pkgs.mise}/bin:$PATH" "$npm_bin" uninstall -g @openai/codex`를
 반복 호출해 수동 글로벌을 제거하므로, 사용자가 "codex가 구버전으로 롤백됐다"고 느끼는 회귀가 발생한다.
 `lts`/`24`/`latest` 같은 symlink 별칭 디렉토리는 `[ ! -L ]` 가드로 제외해 중복 uninstall을 막는다.
 
@@ -194,8 +194,9 @@ whence -p codex   # PATH 첫 매치 경로 (node/<ver>/bin이면 수동 글로�
 type -a codex     # 모든 후보
 ```
 
-`codex`는 `command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen` 셸 alias로 래핑되어
-있으므로, 바이너리 자체 경로는 `whence -p codex`로 확인한다.
+`codex`는 셸 alias로 래핑되어 있다 — Linux는 안내 `echo`를 `>&2`로 먼저 출력한 뒤
+`command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen`를 실행하고, macOS는 선행 echo 없이
+같은 `command codex …`를 실행한다. 따라서 바이너리 자체 경로는 `whence -p codex`로 확인한다.
 
 ## 참고 문서
 
