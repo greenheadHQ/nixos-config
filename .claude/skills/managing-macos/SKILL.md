@@ -66,7 +66,7 @@ homebrew.brews = [ "laishulu/homebrew/macism" "sox" ]; # Neovim 한영 전환, �
 # slack → Homebrew에서 제거 (수동 설치 선호, 자체 업데이터에 위임)
 ```
 
-새 Mac 세팅 시: 직접 설치된 앱은 `brew install --cask --adopt <앱>`으로 Homebrew 관리로 전환 필요.
+새 Mac 세팅 시: `nrs`가 cask 설치 때 자동으로 adopt를 시도하며, 번들 버전 충돌 등으로 실패할 때만 `brew install --cask --adopt <앱>`을 수동 실행.
 
 자세한 내용: [references/features.md](references/features.md#gui-앱-homebrew-casks)
 

@@ -415,7 +415,8 @@ Error: It seems there is already an App at '/Applications/Raycast.app'
 
 brew install --cask --adopt raycast:
   1. Raycast 다운로드
-  2. /Applications/Raycast.app 이미 있음 → 기존 앱은 그대로 두고 source와 번들 버전 비교(백업 안 함)
+  2. /Applications/Raycast.app 이미 있음 → 기존 앱을 그대로 채택, 백업 안 함
+     (Raycast는 auto_updates cask라 버전 비교 생략; auto_updates 아닌 cask만 source와 번들 버전 비교)
   3. Homebrew 메타데이터에 "raycast는 내가 관리 중"으로 등록
   4. 이후 brew upgrade raycast로 업데이트 가능
 ```
