@@ -1,0 +1,15 @@
+{
+  "_comment": "Codex CLI 버전 핀 (#890). update-codex가 version/tag/hash를 OpenAI 최신 stable 릴리스로 자동 갱신한다. platforms와 asset 키는 정적 설정(타깃 triple↔릴리스 asset 이름 매핑)이라 손으로 관리한다 — 새 플랫폼 추가나 upstream asset 이름 변경 시에만 편집. flake.nix의 systems(aarch64-darwin, x86_64-linux)와 일치시킨다.",
+  "version": "0.137.0",
+  "tag": "rust-v0.137.0",
+  "platforms": {
+    "aarch64-darwin": {
+      "asset": "codex-aarch64-apple-darwin.tar.gz",
+      "hash": "sha256-Yo0ieLH6KkZ0UmNfL9Wq7umN5KlPKvBgMeR5DaaEQEY="
+    },
+    "x86_64-linux": {
+      "asset": "codex-x86_64-unknown-linux-musl.tar.gz",
+      "hash": "sha256-2W6IMTuVWX6cu4cE9tsW27gcBxQrCM+2KEeatDNpaTE="
+    }
+  }
+}

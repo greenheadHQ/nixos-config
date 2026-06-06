@@ -695,6 +695,42 @@ else
 fi
 
 echo ""
+echo "=== Codex 바이너리 PATH resolve 확인 ==="
+
+# 회귀 가드 (#890): codex는 declarative nix overlay(nix profile/store)로 설치된다. mise npm
+# backend에서 이관된 뒤로, 잔존 mise codex shim이 PATH 앞에서 codex(nix profile)를 shadow하면 안 된다 —
+# config 미등록 dangling shim 호출은 mise version resolve(fork 폭주, os error 35)를 재유발한다.
+# 의존처(codex-exec-supervised, shell의 codex/codex-apps 런처, codex-fan-out)가 전부
+# command -v codex에 의존하므로 이 셸 컨텍스트에서 codex가 nix 경로로 resolve되는지 검증한다.
+# 주의: mise shim은 그 자체가 nix mise 바이너리로의 symlink라 readlink -f 결과가 nix store가 되어
+# shim을 못 거른다. 따라서 command -v가 돌려준 첫 PATH 매치 경로 자체로 mise/node 잔재를 판정하고,
+# 그 외에는 readlink -f 타깃이 -codex- store path인지로 codex overlay를 확인한다.
+# command -v는 바이너리를 실행하지 않고 PATH lookup만 하므로 fork 폭주를 유발하지 않는다.
+if codex_path="$(command -v codex 2>/dev/null)" && [ -n "$codex_path" ]; then
+  case "$codex_path" in
+    */mise/shims/*)
+      fail "codex가 mise shim으로 resolve됨 ($codex_path) — 잔존 shim이 codex(nix profile)를 shadow (#890). '~/.local/share/mise/shims/codex' 제거 후 nrs"
+      ;;
+    */installs/node/*)
+      fail "codex가 mise node 글로벌로 resolve됨 ($codex_path) — 수동 npm 글로벌이 codex(nix profile)를 shadow (cleanupManualNodeCodex 확인)"
+      ;;
+    *)
+      codex_resolved="$(readlink -f "$codex_path" 2>/dev/null || echo "$codex_path")"
+      case "$codex_resolved" in
+        /nix/store/*-codex-*)
+          pass "codex PATH resolve 정상 (nix overlay): $codex_path"
+          ;;
+        *)
+          warn "codex가 nix overlay가 아닌 경로로 resolve됨 ($codex_path → $codex_resolved) — brew/수동 설치 잔재 가능"
+          ;;
+      esac
+      ;;
+  esac
+else
+  warn "codex가 PATH에서 resolve되지 않음 — codex(nix overlay) 미활성(nrs 전) 또는 비대화형 노출 회귀 가능"
+fi
+
+echo ""
 echo "=== AGENTS.md 심링크 확인 ==="
 
 if [ -L "$REPO_ROOT/AGENTS.md" ]; then

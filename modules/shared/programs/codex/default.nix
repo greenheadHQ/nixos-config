@@ -1,7 +1,9 @@
 # Codex CLI 설정 (공통)
-# 바이너리: macOS/NixOS 공통 — mise npm backend(npm:@openai/codex)로 설치 관리.
-#   버전 pinning 없음(@latest) + 자동 업데이트 없음(멱등 가드로 재호출 차단).
-#   설치/정리: home.activation.{cleanupLegacyCodexCli, installCodexCli, cleanupManualNodeCodex}.
+# 바이너리: macOS/NixOS 공통 — declarative nix overlay(modules/shared/programs/codex/package.nix,
+#   libraries/packages.nix shared 경유)로 설치. OpenAI 공식 GitHub 릴리스 prebuilt를 codex-pin.json에
+#   핀하고 `update-codex`로 최신화한다 (#890; nixpkgs lag·제3자 flake 없이 최신 추적).
+#   정리 activation: home.activation.{cleanupLegacyCodexCli, cleanupMiseCodexShim, cleanupManualNodeCodex}
+#   — 과거 GitHub ELF/brew cask + mise npm backend 잔재가 PATH에서 codex(nix profile)를 shadow하는 것을 막는 방어.
 # Claude Code 스킬을 Codex에서도 사용할 수 있도록 심볼릭 링크 관리
 # trust는 런타임 mutation(사용자 승인, 디렉토리당 1회)이 SoT. template은 trust를
 # 하드코딩하지 않으며, ~/.codex/config.toml은 activation의 syncCodexConfig가
@@ -131,10 +133,11 @@ in
       "$config_dir/config.toml"
   '';
 
-  # ─── Codex CLI 설치 (mise npm backend — macOS + NixOS 공통) ───
-  # nix(GitHub 바이너리)/brew cask 대신 mise npm backend(npm:@openai/codex)로 통일한다.
-  # 3단계 DAG: 레거시 정리 → 설치 → 수동 npm 잔재 정리. 전부 non-fatal로,
-  # mise/node 부재나 네트워크 실패가 nrs(home-manager activation) 전체를 깨지 않게 한다.
+  # ─── Codex CLI 설치/정리 (declarative nix overlay — macOS + NixOS 공통) ───
+  # 바이너리 자체는 nix overlay(package.nix, libraries/packages.nix shared 경유)가 nix profile로 설치한다 (#890).
+  # 아래 activation은 과거 설치 방식의 잔재가 PATH에서 codex(nix profile)를 shadow하지 못하게 정리만 한다.
+  # 3단계 DAG: 레거시(ELF/brew) 정리 → mise codex 잔재(shim/install) 정리 → 수동 npm 잔재 정리.
+  # 전부 non-fatal로, 외부 도구 부재가 nrs(home-manager activation) 전체를 깨지 않게 한다.
 
   # (1) 레거시 Codex CLI 정리
   #   - NixOS: ~/.local/bin/codex (과거 GitHub releases ELF; HM 미추적 regular file)
@@ -155,70 +158,46 @@ in
       # brew 부재 시 아래 -x 가드로 no-op.
       brew_bin="/opt/homebrew/bin/brew"
       if [ -x "$brew_bin" ] && "$brew_bin" list --cask codex >/dev/null 2>&1; then
-        echo "Uninstalling Homebrew cask codex (migrated to mise npm backend)"
+        echo "Uninstalling Homebrew cask codex (migrated to declarative nix overlay)"
         $DRY_RUN_CMD "$brew_bin" uninstall --cask codex \
           || echo "Warning: 'brew uninstall --cask codex' failed (non-fatal)"
       fi
     ''
   );
 
-  # (2) mise npm backend로 Codex CLI 설치
-  #   - node 보장: 글로벌 node가 없을 때만 mise use -g node@lts. node는 npm backend 전반의
-  #     공통 선행조건이지만, 현재 npm backend 도구가 codex 하나뿐이라 별도 ensureMiseNode 모듈로
-  #     분리하지 않고 여기서 보장한다(YAGNI). npm backend 도구가 늘면 그때 공통 activation으로 분리.
-  #     node@lts: 버전을 pin하지 않고 최초 설치 시점의 최신 LTS를 받는다. 이후에는 그 버전이 유지되며
-  #     사용자가 명시적으로 mise upgrade 하기 전까지 자동 갱신되지 않는다(자동 추적이 아니라 1회 고정).
-  #     NixOS는 소스 빌드 회피를 위해 prebuilt 강제(MISE_*_COMPILE=0; shell/nixos.nix와 동일 의도).
-  #   - 멱등 가드: command -v codex / mise which codex 는 수동 npm·legacy 바이너리에 속으므로 쓰지 않고,
-  #     mise config 등록 + 실제 installed된 backend(mise ls --json의 installed:true)로 판정한다.
-  #     기존 사용자의 수동 npm 글로벌 codex는 config 미등록이라 가드에 안 잡히므로, 마이그레이션
-  #     최초 1회는 @latest로 설치되어 버전 점프가 생길 수 있다(의도된 전환; 이후 nrs는 가드로 skip).
-  home.activation.installCodexCli = lib.hm.dag.entryAfter [ "cleanupLegacyCodexCli" ] ''
-    mise_bin="${pkgs.mise}/bin/mise"
-    if [ ! -x "$mise_bin" ]; then
-      echo "Warning: mise not found; skipping Codex CLI install (non-fatal)"
-    else
-      # NixOS는 mise의 node 소스 빌드를 막고 prebuilt를 강제한다(shell/nixos.nix와 동일 의도). macOS는 불필요.
-      ${lib.optionalString pkgs.stdenv.isLinux "export MISE_NODE_COMPILE=0 MISE_ALL_COMPILE=0"}
-      # 글로벌 node 보장. mise which는 로컬 .mise.toml에도 반응하므로 -g --current로 글로벌만 확인한다.
-      node_ok=1
-      if ! "$mise_bin" ls -g --current node 2>/dev/null | grep -q .; then
-        echo "Installing node@lts via mise (Codex CLI dependency)..."
-        $DRY_RUN_CMD "$mise_bin" use -g node@lts \
-          || { node_ok=0; echo "Warning: 'mise use -g node@lts' failed; skipping Codex CLI install (non-fatal)"; }
-      fi
-      if [ "$node_ok" = 1 ]; then
-        # mise npm backend 설치는 내부적으로 npm 래퍼를 호출하는데, 이 래퍼는 두 외부 명령을 PATH에서
-        # 찾는다: (1) node 실행(exec node), (2) 설치 후 reshim 단계의 'mise reshim'. home-manager
-        # activation의 제한된 PATH에는 둘 다 없어 node는 'exec: node: not found', mise는
-        # 'mise: command not found'(reshim 단계 exit 127 → install 전체 실패)로 깨진다.
-        # mise-managed node bin과 mise bin을 함께 PATH 앞에 보강한다(cleanupManualNodeCodex와 동일 의도).
-        # `mise where node`가 빈 문자열을 반환하면(비정상 mise 상태) 빈 값에 "/bin"이 붙어
-        # node_dir이 비어도 "/bin"이 PATH 앞에 삽입될 수 있다. node_dir을 먼저 받아
-        # 비어있지 않을 때만 보강해 시스템 /bin이 PATH를 오염시키는 것을 방지한다.
-        node_dir="$("$mise_bin" where node 2>/dev/null)"
-        [ -n "$node_dir" ] && [ -d "$node_dir/bin" ] && export PATH="$node_dir/bin:${pkgs.mise}/bin:$PATH"
-        # config 등록 + installed:true인 backend만 "이미 관리됨"으로 판정한다.
-        # length>0만 보면 config 등록 후 install 실패한 [{installed:false}] 상태에 속아 영구 미설치로 고착된다.
-        if "$mise_bin" ls -g --current --json npm:@openai/codex 2>/dev/null \
-            | ${pkgs.jq}/bin/jq -e '[.[] | select(.installed == true)] | length > 0' >/dev/null 2>&1; then
-          echo "Codex CLI already managed by mise npm backend"
-        else
-          echo "Installing Codex CLI via mise npm backend (npm:@openai/codex)..."
-          $DRY_RUN_CMD "$mise_bin" use -g npm:@openai/codex \
-            || echo "Warning: Codex CLI install via mise skipped (non-fatal)"
-        fi
-      fi
+  # (2) mise npm backend codex 잔재 정리 (멱등 — #890 이관)
+  #   과거 `mise use -g npm:@openai/codex`로 깔린 shim/install 트리를 파일시스템에서 직접 제거한다.
+  #   shell/default.nix의 .zshrc가 mise shims dir을 PATH 맨 앞에 prepend하므로(대화형·Claude
+  #   Bash tool snapshot 모두), 잔존 codex shim이 남으면 PATH 후순위인 codex(nix profile)를
+  #   shadow한다. 게다가 config(~/.config/mise/config.toml) 미등록 dangling shim 호출은
+  #   mise version resolve(fork 폭주, os error 35)를 재유발한다 — 본 이관이 탈출하려는 실패 모드.
+  #   따라서 mise 명령을 일절 호출하지 않고 순수 rm만 한다(mise resolve 자체가 폭주원이므로).
+  #   config.toml의 [tools]."npm:@openai/codex" entry 제거는 nix 비관리 runtime SoT라 마이그레이션
+  #   수동 단계로 둔다(activation이 사용자 mise config를 편집하지 않음). 설치본 trail
+  #   (MISE_DATA_DIR 커스텀 환경은 경로가 다를 수 있으나 이 프로젝트 범위 밖):
+  #     ~/.local/share/mise/shims/codex                  (shim — PATH shadow의 직접 원인)
+  #     ~/.local/share/mise/installs/npm-openai-codex/    (backend 설치 트리)
+  home.activation.cleanupMiseCodexShim = lib.hm.dag.entryAfter [ "cleanupLegacyCodexCli" ] ''
+    mise_data_dir="$HOME/.local/share/mise"
+    codex_shim="$mise_data_dir/shims/codex"
+    if [ -e "$codex_shim" ] || [ -L "$codex_shim" ]; then
+      echo "Removing stale mise codex shim at $codex_shim (migrated to nix overlay, #890)"
+      $DRY_RUN_CMD rm -f "$codex_shim"
+    fi
+    codex_install="$mise_data_dir/installs/npm-openai-codex"
+    if [ -e "$codex_install" ]; then
+      echo "Removing stale mise codex backend install at $codex_install (migrated to nix overlay, #890)"
+      $DRY_RUN_CMD rm -rf "$codex_install"
     fi
   '';
 
-  # (3) mise node 글로벌의 수동 npm @openai/codex 잔재 제거 (일회성 마이그레이션)
-  #   전환 전 수동 `npm install -g @openai/codex`로 깔린 잔재를 정리한다. mise npm backend 정착
-  #   이후에는 재발생하지 않으므로 한동안 멱등 no-op으로 남는다(향후 제거 가능).
-  #   PATH상 node/<ver>/bin이 mise shims보다 우선이라, 남기면 backend shim을 가린다.
-  #   node 버전이 동적이라 mise 기본 data dir의 installs 트리를 스캔한다(MISE_DATA_DIR 커스텀
-  #   환경은 경로가 달라질 수 있으나 이 프로젝트 범위 밖).
-  home.activation.cleanupManualNodeCodex = lib.hm.dag.entryAfter [ "installCodexCli" ] ''
+  # (3) mise node 글로벌의 수동 npm @openai/codex 잔재 제거 (멱등 방어)
+  #   사용자가 수동 `npm install -g @openai/codex`로 깐 잔재를 정리한다. node는 mise에 남으므로
+  #   (codex만 부분 폐기, #890) 이 잔재는 계속 발생할 수 있어 멱등 방어로 유지한다.
+  #   PATH상 node/<ver>/bin(mise hook이 install-bin을 prepend)이 nix profile보다 앞이면
+  #   codex(nix profile)를 shadow하므로 정리한다. node 버전이 동적이라 mise 기본 data dir의 installs
+  #   트리를 스캔한다(MISE_DATA_DIR 커스텀 환경은 경로가 달라질 수 있으나 이 프로젝트 범위 밖).
+  home.activation.cleanupManualNodeCodex = lib.hm.dag.entryAfter [ "cleanupMiseCodexShim" ] ''
     installs_dir="$HOME/.local/share/mise/installs/node"
     if [ -d "$installs_dir" ]; then
       for node_prefix in "$installs_dir"/*; do
