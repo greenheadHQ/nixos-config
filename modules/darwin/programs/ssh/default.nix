@@ -7,8 +7,8 @@
 }:
 let
   homeDir = config.home.homeDirectory;
-  # 1Password macOS SSH agent socket (group container 경로 — ~/.1password/agent.sock symlink는 자동생성 안 됨)
-  onePasswordAgentSock = "${homeDir}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock";
+  # 1Password macOS SSH agent socket (단일 소스: constants.onePassword.agentSocketRelPath)
+  onePasswordAgentSock = "${homeDir}/${constants.onePassword.agentSocketRelPath}";
 in
 {
   # Mac SSH는 1Password SSH agent로 인증 (PRD #780 Phase 2a).
@@ -31,7 +31,11 @@ in
       "minipc" = {
         hostname = constants.network.minipcTailscaleIP;
         user = "greenhead";
+        # mac-ssh 공개키로 고정 + IdentitiesOnly — agent의 mac-ssh 키만 제시한다.
+        # 구 id_rsa/id_ecdsa 등 무차별 키 시도(서버 로그 오염·MaxAuthTries lockout 위험)를 차단한다.
+        identityFile = "${homeDir}/.ssh/mac-ssh.pub";
         extraOptions = {
+          IdentitiesOnly = "yes";
           ControlMaster = "auto";
           ControlPath = "~/.ssh/cm-%h-%p-%r";
           # ControlPersist 600 유지 — #710 analyzing-da-sessions의 ControlMaster 다중화(K=8 worker pool)가 의존.
@@ -46,6 +50,7 @@ in
         identityFile = "${homeDir}/.ssh/emergency_ed25519";
         extraOptions = {
           IdentityAgent = "none"; # 1Password agent 우회 — emergency key 직접 사용
+          IdentitiesOnly = "yes"; # emergency_ed25519만 제시
         };
       };
     };
@@ -60,4 +65,27 @@ in
     [[ssh-keys]]
     vault = "${constants.onePassword.vaults.ssh}"
   '';
+
+  # minipc IdentityFile 고정용 mac-ssh 공개키 (개인키는 1Password agent 보관).
+  # IdentitiesOnly=yes와 함께 agent의 mac-ssh 키만 제시하게 한다(무차별 키 시도 차단).
+  home.file.".ssh/mac-ssh.pub".text = "${constants.sshDeviceKeys.macSsh}\n";
+
+  # 1Password 로그인 자동 기동 (minipc SSH 회귀 예방, PRD #780 Phase 2a 후속)
+  # 근본 원인: Mac SSH 인증을 1Password agent(mac-ssh)로 이관(FR-8)한 뒤, 1Password 데스크탑이
+  # 미실행/quit이면 agent socket이 죽어 mac-ssh 키를 제공하지 못한다. 그러면 ssh가 구 로컬 키로
+  # 폴백 → 서버에서 퇴출된 키라 "Permission denied (publickey)"로 전면 차단된다.
+  # 로그인 시 1Password를 백그라운드(-g 포커스 유지, -j hidden, --silent 메인창 억제)로 기동해
+  # agent socket 생존을 보장한다(잠금은 ssh 시 Touch ID 프롬프트로 해제). open은 멱등이라 이미
+  # 실행 중이면 무해. 미설치/실패는 non-fatal(로그만). 수동 quit 등 잔여 케이스는 shell의 ssh
+  # preflight 래퍼(modules/shared/programs/shell/darwin.nix)가 안전망으로 처리한다.
+  launchd.agents.onepassword-autostart = lib.mkIf (hostType == "personal") {
+    enable = true;
+    config = {
+      # 절대경로 open + 공유 기동 인자 (단일 소스: constants.onePassword.openArgs)
+      ProgramArguments = [ "/usr/bin/open" ] ++ constants.onePassword.openArgs;
+      RunAtLoad = true; # 로그인(agent 로드) 시 1회 — KeepAlive 불필요(open은 즉시 종료)
+      StandardOutPath = "${homeDir}/Library/Logs/onepassword-autostart.log";
+      StandardErrorPath = "${homeDir}/Library/Logs/onepassword-autostart.log";
+    };
+  };
 }

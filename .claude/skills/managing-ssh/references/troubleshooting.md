@@ -6,6 +6,7 @@
 
 > 발생 시점: 2026-01-15
 > 해결: launchd agent + nrs 자동 로드
+> Phase 2a(#833) 이후 갱신: macOS SSH 인증은 1Password SSH agent(IdentityAgent)로 전환되었고, 아래의 `ssh-add-keys` launchd agent와 로컬 `~/.ssh/id_ed25519`는 제거(archive)되었다. 현재 SSH 키는 1Password가 제공하며, 로그인 시 자동 기동(`launchd.agents.onepassword-autostart`)으로 agent socket 생존을 보장한다. 아래 내용은 전환 전 이력으로 남겨둔다.
 
 증상: 재부팅 후 `nrs` 또는 `darwin-rebuild switch` 실행 시 GitHub SSH fetch 실패.
 
@@ -63,6 +64,42 @@ cat ~/Library/Logs/ssh-add-keys.log
 macOS의 `AddKeysToAgent yes` 설정은 SSH를 처음 사용할 때 키를 agent에 로드합니다. 재부팅 후 바로 SSH 작업을 하면 키가 로드되지 않은 상태일 수 있습니다.
 
 > 참고: SSH 키 자동 로드는 launchd agent에서 처리됩니다.
+
+---
+
+### Mac에서 `ssh minipc`가 1Password preflight로 차단됨
+
+> 발생 맥락: 1Password SSH agent 전환(Phase 2a) 후속
+
+증상: `ssh minipc` 실행 시 아래 안내가 뜨고 접속이 지연/차단됨.
+
+```text
+⚠️  ssh minipc 차단: 1Password SSH agent에 mac-ssh 키가 없습니다.
+   원인: 1Password 데스크탑이 미실행/잠금 상태 → mac-ssh 키 미제공.
+```
+
+원인: macOS의 minipc 인증은 1Password agent의 `mac-ssh` 키에 의존한다(구 로컬 `id_ed25519`는 서버 authorized_keys에서 제거됨). 1Password 데스크탑이 미실행/잠금이면 agent가 키를 제공하지 못해, ssh가 구 키로 폴백하다 `Permission denied (publickey)`로 차단된다.
+
+shell의 `ssh()` preflight 래퍼(`modules/shared/programs/shell/darwin.nix`)가 `ssh -G`의 effective IdentityAgent로 minipc를 식별해 원인·복구를 안내하고, 1Password를 자동 기동한 뒤 agent 복구를 최대 15초 대기한다.
+
+해결:
+
+1. 1Password 데스크탑을 Touch ID/마스터 비밀번호로 잠금 해제 (Settings → Developer → "Use the SSH agent" 확인)
+2. 평시엔 로그인 자동 기동(`launchd.agents.onepassword-autostart`)이 socket을 살려두므로, 이 상황은 1Password를 수동 종료(quit)했거나 크래시한 경우에만 발생한다.
+
+즉시 접속이 필요하면 1Password와 무관한 emergency 경로를 쓴다:
+
+```bash
+# IdentityAgent=none, ~/.ssh/emergency_ed25519 사용 (passphrase 직접 입력)
+ssh minipc-emergency
+```
+
+확인:
+
+```bash
+# 1Password agent에 mac-ssh 키가 보이는지
+SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" ssh-add -L | grep mac-ssh
+```
 
 ---
 
