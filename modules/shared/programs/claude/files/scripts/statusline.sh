@@ -598,7 +598,7 @@ fi
 # canonicalize 이전 시점).
 HEAVY_CACHE_HIT=false
 if [ -n "$HEAVY_STATE" ] && [ -f "${HEAVY_STATE}.vars" ] && [ -f "$HEAVY_STATE" ]; then
-  HEAVY_MTIME=$(stat -f %m "$HEAVY_STATE" 2>/dev/null || stat -c %Y "$HEAVY_STATE" 2>/dev/null || echo 0)
+  HEAVY_MTIME=$(/usr/bin/stat -f %m "$HEAVY_STATE" 2>/dev/null || stat -c %Y "$HEAVY_STATE" 2>/dev/null || echo 0)
   if [ -n "$HEAVY_MTIME" ] && [ "$((NOW - HEAVY_MTIME))" -lt "$HEAVY_TTL" ] 2>/dev/null; then
     # source 안전: 변수 사전 초기화로 키 누락 시 미정의 참조 방지.
     # shellcheck disable=SC1090
