@@ -53,10 +53,10 @@ darwinOnly = [ ... pkgs.패키지명 ];
 
 ```nix
 # cleanup = "none" — 선언되지 않은 앱을 삭제하지 않음 (수동 설치 cask 보호)
-# upgrade = true + greedyCasks = true — 자체 업데이터 앱의 버전 드리프트 방지
+# upgrade = true + greedyCasks = false — 자체 업데이터 cask는 brew upgrade 강제 대상에서 제외
 homebrew.casks = [
   "ghostty" "raycast" "rectangle"
-  "hammerspoon" "homerow" "docker-desktop"
+  "hammerspoon" "homerow"
   "fork" "monitorcontrol"
 ];
 homebrew.brews = [ "laishulu/homebrew/macism" "sox" ]; # Neovim 한영 전환, 오디오 처리

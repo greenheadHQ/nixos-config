@@ -343,7 +343,6 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | Rectangle      | 창 관리                    |
 | Hammerspoon    | 키보드 리매핑/자동화       |
 | Homerow        | 키보드 네비게이션          |
-| Docker Desktop | 컨테이너                   |
 | Fork           | Git GUI                    |
 | MonitorControl | 외부 모니터 밝기 조절      |
 
@@ -361,22 +360,22 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | 앱      | 사유 |
 | ------- | ---- |
 | Ghostty | `pkgs.ghostty-bin`은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음. Ghostty.app은 Homebrew Cask로만 설치 가능. |
-| Docker Desktop | nixpkgs에 macOS용 패키지 없음 (CLI만 존재) |
 | Fork    | 상용 Git GUI, nixpkgs에 없음 |
 
 ### 업그레이드 정책
 
-`onActivation.upgrade = true` + `greedyCasks = true` 조합으로 버전 드리프트를 방지합니다.
+`onActivation.upgrade = true` + `greedyCasks = false` 조합입니다.
 
-- upgrade = true: `nrs` 실행 시 `brew upgrade`를 자동 실행
-- greedyCasks = true: `auto_updates` 속성이 있는 cask도 `brew upgrade` 대상에 포함
+- upgrade = true: `nrs` 실행 시 자체 업데이터가 없는 cask와 formula를 `brew upgrade`
+- greedyCasks = false: `auto_updates` 속성이 있는 cask(1Password 등)는 `brew upgrade` 강제 대상에서 제외
 
-자체 업데이터가 있는 앱이 Homebrew와 독립적으로 버전을 변경해도, `nrs` 실행 시 Homebrew가 최신 버전으로 동기화합니다.
+자체 업데이터가 있는 앱은 그 업데이터가 최신을 유지하므로, `nrs` 실행마다 대용량 cask(.dmg)를 재다운로드하지 않습니다.
 
 ### Homebrew 관리에서 제외한 앱
 
 | 앱 | 사유 |
 | --- | --- |
+| Docker Desktop | 자체 업데이터가 강력하고 선언적 관리 이점이 없음. greedyCasks 시절 `nrs` activation마다 대용량 .dmg를 재다운로드하던 주원인. 수동 설치·자체 업데이트 위임. |
 | Figma | 자체 업데이터가 적극적으로 버전을 변경하여 Homebrew 관리 버전과 불일치. adopt 시 버전 차이로 설치 거부됨. 자체 업데이터에 위임. |
 | Slack | 수동 설치 선호. 자체 업데이터에 위임. |
 
@@ -398,7 +397,7 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 Homebrew Cask는 `/Applications`에 동일 앱이 이미 존재하면 `brew install`을 거부합니다:
 
 ```text
-Error: It seems there is already an App at '/Applications/Docker.app'
+Error: It seems there is already an App at '/Applications/Raycast.app'
 ```
 
 `--adopt` 없이는 두 가지 선택지뿐입니다:
@@ -408,15 +407,15 @@ Error: It seems there is already an App at '/Applications/Docker.app'
 `--adopt`는 세 번째 선택지를 제공합니다:
 
 ```text
-일반 brew install --cask docker-desktop:
-  1. Docker Desktop 다운로드
-  2. /Applications/Docker.app 이미 있음 → 에러, 중단
+일반 brew install --cask raycast:
+  1. Raycast 다운로드
+  2. /Applications/Raycast.app 이미 있음 → 에러, 중단
 
-brew install --cask --adopt docker-desktop:
-  1. Docker Desktop 다운로드
-  2. /Applications/Docker.app 이미 있음 → 기존 앱을 Caskroom으로 이동(백업)
-  3. Homebrew 메타데이터에 "docker-desktop은 내가 관리 중"으로 등록
-  4. 이후 brew upgrade docker-desktop으로 업데이트 가능
+brew install --cask --adopt raycast:
+  1. Raycast 다운로드
+  2. /Applications/Raycast.app 이미 있음 → 기존 앱을 Caskroom으로 이동(백업)
+  3. Homebrew 메타데이터에 "raycast는 내가 관리 중"으로 등록
+  4. 이후 brew upgrade raycast로 업데이트 가능
 ```
 
 기존 앱을 삭제하지 않으므로 설정/로그인 상태가 보존됩니다. adopt 후 `nrs`를 실행하면 homebrew.nix 선언과 실제 설치 상태가 일치합니다.
@@ -425,10 +424,10 @@ brew install --cask --adopt docker-desktop:
 
 ```bash
 # 개별 앱 adopt
-brew install --cask --adopt docker-desktop
+brew install --cask --adopt raycast
 
 # 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, vscode 제외)
-for cask in ghostty raycast rectangle hammerspoon homerow docker-desktop fork monitorcontrol; do
+for cask in ghostty raycast rectangle hammerspoon homerow fork monitorcontrol; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
 

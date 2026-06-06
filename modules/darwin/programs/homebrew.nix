@@ -62,7 +62,7 @@
       #
       # nix-darwin은 이 목록을 기반으로 `brew install --cask <앱>`을 실행한다.
       # 그런데 Homebrew Cask는 /Applications에 동일 앱이 이미 존재하면 설치를 거부한다:
-      #   Error: It seems there is already an App at '/Applications/Docker.app'
+      #   Error: It seems there is already an App at '/Applications/Raycast.app'
       #
       # 이때 선택지는 3가지:
       #   1) 기존 앱 삭제 후 brew install → 앱 설정/로그인 상태 유실 위험
