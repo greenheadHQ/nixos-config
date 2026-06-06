@@ -232,6 +232,25 @@ end
 hs.hotkey.bind({"ctrl", "alt", "cmd"}, "c", prepareChromeAutoConnect)
 
 --------------------------------------------------------------------------------
+-- claude-fork URL 핸들러: statusline 의 🆔 session-id 클릭 시
+-- 'cd <cwd> && c --resume <SID> --fork-session' 을 클립보드에 복사
+--------------------------------------------------------------------------------
+-- statusline.sh 가 session-id 를 hammerspoon://claude-fork?cmd=<percent-encoded>
+-- OSC 8 하이퍼링크로 출력한다. 클릭하면 Hammerspoon 이 이 핸들러를 호출하고,
+-- params.cmd (hs.urlevent 가 자동 urldecode 한 명령)를 클립보드에 넣는다.
+-- claude --resume --fork-session 은 세션이 시작된 cwd 에서 실행해야 하므로
+-- 명령 앞에 cd 가 포함되어 있다. 사용자는 붙여넣어 실행한다.
+hs.urlevent.bind("claude-fork", function(eventName, params)
+    local cmd = params and params.cmd
+    if not cmd or cmd == "" then
+        hs.notify.new({title="claude-fork", informativeText="❌ 복사할 명령이 없습니다"}):send()
+        return
+    end
+    hs.pasteboard.setContents(cmd)
+    hs.notify.new({title="세션 fork 명령 복사됨", informativeText=cmd}):send()
+end)
+
+--------------------------------------------------------------------------------
 -- 설정 로드 완료 알림
 --------------------------------------------------------------------------------
 

@@ -2,7 +2,7 @@
 # Codex 0.124+ Stop hook single entry point.
 #
 # Codex는 같은 이벤트의 multiple command를 concurrent 실행하므로,
-# Claude의 Stop hook 배열 ordering(record-last-stop first)을 보장하려면
+# 원하는 순차 ordering(record-last-stop first)을 보장하려면
 # inline [[hooks.Stop]]에 dispatcher 1개만 등록하고 dispatcher가 sub-script를 순차 호출한다.
 #
 # Ordering rationale:

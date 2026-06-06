@@ -122,7 +122,7 @@ Last Updated: 2026-05-25
 - **SA 만료 정책**: 1Password Individual 플랜은 SA token 자동 만료(expiration) 옵션 미지원 (Business/Teams 전용). 따라서 정책 cadence로 운영 — 90일(NFR-4 준수), 만료 목표일 **2026-08-22**를 `secrets/opnix-service-account-expiry.txt`에 평문 record (Phase 3 timer가 N-14일 Pushover 알림에 사용).
 - **1Password Individual 발견**: SA 발급 wizard "환경 액세스" 단계가 빈 목록 — Business/Teams의 환경 라벨 분류 기능으로 SA 권한·동작과 무관, 선택 없이 통과.
 - **op CLI 필드 조회 방식**: `op item get --field`는 password 필드를 기본 redact해 `--reveal`이 필요하나(redact된 안내가 stdout 오염→401), 1Password 공식 권장은 `op read` secret reference URI다. `op_get`은 `op read --no-newline "op://vault/item/field"` 채택 (--reveal 불필요).
-- **op CLI 멀티 계정**: op CLI에 개인(my.1password.com) + 회사(zaritalk) 계정이 함께 로그인되면 `op read`/`op item get` 모두 account 모호("multiple accounts") → `--account`(개인 계정 my.1password.com)로 고정. constants.onePassword.account에 박제. MiniPC(Phase 3)는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 호환성 별도 확인.
+- **op CLI 멀티 계정**: op CLI에 개인(my.1password.com) + 별도 조직 계정이 함께 로그인되면 `op read`/`op item get` 모두 account 모호("multiple accounts") → `--account`(개인 계정 my.1password.com)로 고정. constants.onePassword.account에 박제. MiniPC(Phase 3)는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 호환성 별도 확인.
 - **github-pat item 필드**: API Credential 템플릿 기본 "자격 증명" 대신 커스텀 `token` 라벨 필드 채택 (`op_get github-pat token` 매칭). 만료일+취득일 필드 추가 (1Password Watchtower 만료 알림 활용).
 - **SSH agent 다이얼로그**: 1Password "Use the SSH agent" 토글 시 `~/.ssh/config` 자동편집 거부 — nix-darwin이 declarative 관리하므로 충돌. IdentityAgent 추가는 Phase 2a 책임.
 - **회사 맥북 SSH 키 공유**: 개인 맥북 SSH 키가 회사 맥북에 사본 존재. 회사 맥북은 Tailnet 미멤버라 minipc 직접 접근은 차단되나, agenix `allHosts` 시크릿은 복호화 가능. work_mac 5번째 키 분리는 별 세션 grill-me 의제로 이관 (PRD FR-10 확장 후보).

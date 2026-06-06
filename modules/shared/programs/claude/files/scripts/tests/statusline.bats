@@ -38,12 +38,6 @@ setup() {
   "rate_limits": {
     "five_hour": {"used_percentage": 6, "resets_at": $five_h},
     "seven_day": {"used_percentage": 82, "resets_at": $seven_d}
-  },
-  "context_window": {
-    "current_usage": {
-      "cache_read_input_tokens": 8000,
-      "cache_creation_input_tokens": 2000
-    }
   }
 }
 EOF
@@ -169,12 +163,6 @@ strip_ansi() {
   "rate_limits": {
     "five_hour": {"used_percentage": 6, "resets_at": $five_h},
     "seven_day": {"used_percentage": 82, "resets_at": $seven_d}
-  },
-  "context_window": {
-    "current_usage": {
-      "cache_read_input_tokens": 8000,
-      "cache_creation_input_tokens": 2000
-    }
   }
 }
 EOF
@@ -376,11 +364,11 @@ EOF
     || { echo "expected filled=8 bar '████████░░ 82%' for 7d in non-SSH; got: $plain" >&2; false; }
 }
 
-# L3 worktree branch line: 폴더명 basename 과 branch 가 exact match 면 L2 의
-# "<메인 repo>:<폴더명>" 표기가 이미 같은 토큰을 담고 있어 동일 토큰 중복이라
-# L3 라인째 생략한다. cwd=/tmp (basename=tmp) + worktree.branch=tmp fixture.
+# worktree dir==branch: plugin 은 basename-hide 가드가 없어 폴더명과 branch 가
+# 같아도 branch 를 L2 에 인라인으로 표시한다(별도 L3 라인 없음). 입력은
+# cwd=/tmp (basename=tmp) + workspace.git_branch=tmp.
 # macOS 에서 /tmp 는 /private/tmp symlink 지만 basename 은 동일하게 tmp.
-@test "worktree dir==branch hides L3 branch line" {
+@test "worktree dir==branch still shows inline 🌿 (no basename-hide guard)" {
   local now five_h seven_d
   now=$(date +%s)
   five_h=$((now + 5 * 3600))
@@ -392,41 +380,7 @@ EOF
   "transcript_path": "/tmp/nonexistent.jsonl",
   "cwd": "/tmp",
   "model": {"display_name": "test"},
-  "workspace": {"current_dir": "/tmp", "git_worktree": "/tmp"},
-  "worktree": {"branch": "tmp"},
-  "rate_limits": {
-    "five_hour": {"used_percentage": 6, "resets_at": $five_h},
-    "seven_day": {"used_percentage": 82, "resets_at": $seven_d}
-  }
-}
-EOF
-)
-  run run_statusline_with_input "$stdin_json"
-  [ "$status" -eq 0 ]
-  local plain
-  plain=$(echo "$output" | strip_ansi)
-  if echo "$plain" | grep -qF '🌿'; then
-    echo "expected no 🌿 branch icon when worktree dir==branch (tmp); leaked: $plain" >&2
-    false
-  fi
-}
-
-# Negative: dir!=branch 면 L3 가 살아 있어 🌿 가 정확히 1번 + branch 라벨 출력.
-# 새 가드가 mismatch 케이스까지 잘못 차단하면 fail.
-@test "worktree dir!=branch keeps L3 branch line" {
-  local now five_h seven_d
-  now=$(date +%s)
-  five_h=$((now + 5 * 3600))
-  seven_d=$((now + 5 * 86400))
-  local stdin_json
-  stdin_json=$(cat <<EOF
-{
-  "session_id": "abc12345-def6-7890-abcd-ef1234567890",
-  "transcript_path": "/tmp/nonexistent.jsonl",
-  "cwd": "/tmp",
-  "model": {"display_name": "test"},
-  "workspace": {"current_dir": "/tmp", "git_worktree": "/tmp"},
-  "worktree": {"branch": "feat-foo"},
+  "workspace": {"current_dir": "/tmp", "git_worktree": "/tmp", "git_branch": "tmp"},
   "rate_limits": {
     "five_hour": {"used_percentage": 6, "resets_at": $five_h},
     "seven_day": {"used_percentage": 82, "resets_at": $seven_d}
@@ -440,18 +394,52 @@ EOF
   plain=$(echo "$output" | strip_ansi)
   branch_count=$(echo "$plain" | grep -oF '🌿' | wc -l | tr -d ' ')
   [ "$branch_count" -eq 1 ] \
-    || { echo "expected exactly 1 🌿 (L3 branch) when dir!=branch; got count=$branch_count plain=$plain" >&2; false; }
+    || { echo "expected exactly 1 🌿 inline branch even when dir==branch (plugin has no basename-hide guard); got count=$branch_count plain=$plain" >&2; false; }
+  echo "$plain" | grep -qF 'tmp' \
+    || { echo "expected branch label 'tmp' in output; got: $plain" >&2; false; }
+}
+
+# dir!=branch 면 worktree branch 가 L2 에 인라인으로 정확히 1번 + branch 라벨 출력된다.
+# plugin 은 worktree 를 main repo 처럼 단일 라인 인라인 표시한다 (별도 L3 라인/basename-hide
+# 가드 없음). branch 가 누락되거나 2번 이상 새면 fail.
+@test "worktree dir!=branch shows inline 🌿 branch" {
+  local now five_h seven_d
+  now=$(date +%s)
+  five_h=$((now + 5 * 3600))
+  seven_d=$((now + 5 * 86400))
+  local stdin_json
+  stdin_json=$(cat <<EOF
+{
+  "session_id": "abc12345-def6-7890-abcd-ef1234567890",
+  "transcript_path": "/tmp/nonexistent.jsonl",
+  "cwd": "/tmp",
+  "model": {"display_name": "test"},
+  "workspace": {"current_dir": "/tmp", "git_worktree": "/tmp", "git_branch": "feat-foo"},
+  "rate_limits": {
+    "five_hour": {"used_percentage": 6, "resets_at": $five_h},
+    "seven_day": {"used_percentage": 82, "resets_at": $seven_d}
+  }
+}
+EOF
+)
+  run run_statusline_with_input "$stdin_json"
+  [ "$status" -eq 0 ]
+  local plain
+  plain=$(echo "$output" | strip_ansi)
+  branch_count=$(echo "$plain" | grep -oF '🌿' | wc -l | tr -d ' ')
+  [ "$branch_count" -eq 1 ] \
+    || { echo "expected exactly 1 🌿 inline branch when dir!=branch; got count=$branch_count plain=$plain" >&2; false; }
   echo "$plain" | grep -qF 'feat-foo' \
     || { echo "expected branch label 'feat-foo' in output; got: $plain" >&2; false; }
 }
 
-# CWD_RESOLVED 부재 회귀 가드: 구문 검증 실패로 CWD_RESOLVED=""이면 WORKTREE_BASENAME=""
-# 이라 GIT_BRANCH와 일치할 수 없어 L3 생략 가드가 자연스럽게 비활성된다. L3 가드 블록
-# 주석이 약속한 동작을 박제해 L3가 의도치 않게 숨겨지는 회귀를 막는다. cwd를
-# 상대경로(="tmp")로 보내면 validate_cwd_syntax 의 절대경로 가드(case "$cwd" in /*) ;;
-# *) return ;; esac)에 걸려 CWD_VALID="" → CWD_RESOLVED="" 이 자연 유도된다 (상대경로는
-# raw fallback 대상도 아니다).
-@test "worktree with non-canonical cwd keeps L3 branch line (guard disabled)" {
+# cwd 구문 검증과 branch 표시의 독립성 회귀 가드: plugin 은 worktree branch 를 stdin 의
+# workspace.git_branch(=WORKTREE_BRANCH)에서 직접 읽으므로, cwd 가 비-canonical 이어도
+# git_branch 가 있으면 GIT_BRANCH 가 설정되어 branch 가 인라인 표시된다. cwd 를 상대경로
+# (="tmp")로 보내면 validate_cwd_syntax 의 절대경로 가드(case "$cwd" in /*) ;; *) return ;;
+# esac)에 걸려 CWD_VALID="" → CWD_RESOLVED="" 이 자연 유도된다 (상대경로는 raw fallback
+# 대상도 아니다). 그래도 branch 표시는 영향받지 않아야 한다.
+@test "worktree with non-canonical cwd still shows inline 🌿 (branch from git_branch)" {
   local now five_h seven_d
   now=$(date +%s)
   five_h=$((now + 5 * 3600))
@@ -463,8 +451,7 @@ EOF
   "transcript_path": "/tmp/nonexistent.jsonl",
   "cwd": "tmp",
   "model": {"display_name": "test"},
-  "workspace": {"current_dir": "tmp", "git_worktree": "tmp"},
-  "worktree": {"branch": "tmp"},
+  "workspace": {"current_dir": "tmp", "git_worktree": "tmp", "git_branch": "tmp"},
   "rate_limits": {
     "five_hour": {"used_percentage": 6, "resets_at": $five_h},
     "seven_day": {"used_percentage": 82, "resets_at": $seven_d}
@@ -478,7 +465,7 @@ EOF
   plain=$(echo "$output" | strip_ansi)
   branch_count=$(echo "$plain" | grep -oF '🌿' | wc -l | tr -d ' ')
   [ "$branch_count" -eq 1 ] \
-    || { echo "expected exactly 1 🌿 (L3 branch) when CWD_RESOLVED=\"\" (guard disabled); got count=$branch_count plain=$plain" >&2; false; }
+    || { echo "expected exactly 1 🌿 inline branch when CWD_RESOLVED=\"\"; got count=$branch_count plain=$plain" >&2; false; }
   echo "$plain" | grep -qF 'tmp' \
     || { echo "expected branch label 'tmp' in output; got: $plain" >&2; false; }
 }
@@ -543,7 +530,7 @@ EOF
 # plan을 세운 적 없는 무관한 세션에 다른 세션의 plan을 상속시켜 false
 # positive를 유발했으므로 제거됐다. 아래 케이스는 가짜 HOME 아래
 # $HOME/.claude/projects/<dir>/ 구조를 만들어 TRANSCRIPT_VALID 신뢰 경계를
-# 통과시킨 뒤 plan 분기를 직접 검사한다. plan 토큰은 아이콘 label "Plan"으로
+# 통과시킨 뒤 plan 분기를 직접 검사한다. plan 토큰은 아이콘 label "플랜"으로
 # 식별한다 (strip_ansi가 OSC 8 hyperlink를 제거해도 label은 남는다).
 
 # 가짜 HOME + canonical transcript dir + plan .md 생성.
@@ -598,8 +585,8 @@ _run_plan() {
   [ "$status" -eq 0 ]
   local plain
   plain=$(echo "$output" | strip_ansi)
-  if echo "$plain" | grep -qF 'Plan'; then
-    echo "expected NO Plan icon from project-level state alone (v5 removed project fallback); got: $plain" >&2
+  if echo "$plain" | grep -qF '플랜'; then
+    echo "expected NO 플랜 icon from project-level state alone (v5 removed project fallback); got: $plain" >&2
     false
   fi
   # 복사본도 생성되지 않아야 한다 (v3 복사본 로직 제거 확인)
@@ -617,8 +604,8 @@ _run_plan() {
   [ "$status" -eq 0 ]
   local plain
   plain=$(echo "$output" | strip_ansi)
-  echo "$plain" | grep -qF 'Plan' \
-    || { echo "expected Plan icon from transcript planFilePath; got: $plain" >&2; false; }
+  echo "$plain" | grep -qF '플랜' \
+    || { echo "expected 플랜 icon from transcript planFilePath; got: $plain" >&2; false; }
 }
 
 @test "plan: session-level state restores Plan when transcript lacks it" {
@@ -632,8 +619,8 @@ _run_plan() {
   [ "$status" -eq 0 ]
   local plain
   plain=$(echo "$output" | strip_ansi)
-  echo "$plain" | grep -qF 'Plan' \
-    || { echo "expected Plan icon restored from session-level state; got: $plain" >&2; false; }
+  echo "$plain" | grep -qF '플랜' \
+    || { echo "expected 플랜 icon restored from session-level state; got: $plain" >&2; false; }
 }
 
 @test "plan: invalid session_id does NOT restore shared unknown state" {
@@ -656,8 +643,81 @@ _run_plan() {
   [ "$status" -eq 0 ]
   local plain
   plain=$(echo "$output" | strip_ansi)
-  if echo "$plain" | grep -qF 'Plan'; then
-    echo "expected NO Plan icon with invalid session_id (unknown state must not be restored); got: $plain" >&2
+  if echo "$plain" | grep -qF '플랜'; then
+    echo "expected NO 플랜 icon with invalid session_id (unknown state must not be restored); got: $plain" >&2
     false
   fi
+}
+
+# session-id 전용 줄: 항상 전체 id를 🆔 prefix와 함께 rate 바로 위(rate는 최하단)에
+# 단독 출력한다. 이 줄에는 session-id 외 어떤 정보 아이콘도 병렬 출력되지 않아야 한다.
+@test "session-id renders on its own line directly above rate with 🆔 prefix" {
+  local now five_h
+  now=$(date +%s)
+  five_h=$((now + 5 * 3600))
+  local sid="abc12345-def6-7890-abcd-ef1234567890"
+  local stdin_json
+  stdin_json=$(cat <<EOF
+{
+  "session_id": "$sid",
+  "transcript_path": "/tmp/nonexistent.jsonl",
+  "cwd": "/tmp",
+  "workspace": {"git_branch": "main"},
+  "rate_limits": {
+    "five_hour": {"used_percentage": 23, "resets_at": $five_h}
+  }
+}
+EOF
+)
+  run run_statusline_with_input "$stdin_json"
+  [ "$status" -eq 0 ]
+  local plain
+  plain=$(echo "$output" | strip_ansi)
+  # 🆔 prefix + 전체(축약 없는) session-id
+  echo "$plain" | grep -qF "🆔 $sid" \
+    || { echo "expected 🆔 prefix + full session-id; got: $plain" >&2; false; }
+  # 전용 줄: 🆔 라인에 다른 정보 아이콘이 병렬 출력되지 않음
+  local sid_line
+  sid_line=$(echo "$plain" | grep -F '🆔')
+  if echo "$sid_line" | grep -qE '📁|🌿|📝|🧠|⚡|💬|🎨|📓'; then
+    echo "session-id line must contain ONLY session-id, no other icons; got: $sid_line" >&2
+    false
+  fi
+  # rate(L_N)는 항상 session-id 줄보다 아래(최하단)
+  local sid_lineno rate_lineno
+  sid_lineno=$(echo "$plain" | grep -nF '🆔' | head -1 | cut -d: -f1)
+  rate_lineno=$(echo "$plain" | grep -nF '5h' | head -1 | cut -d: -f1)
+  [ -n "$sid_lineno" ] && [ -n "$rate_lineno" ] && [ "$rate_lineno" -gt "$sid_lineno" ] \
+    || { echo "rate must render below session-id line (sid=$sid_lineno rate=$rate_lineno); got: $plain" >&2; false; }
+}
+
+# worktree branch 입력 schema 호환: 렌더러는 .workspace.git_branch 우선, 없으면
+# .worktree.branch(공식 statusLine 계약 필드)로 fallback 한다. legacy/공식 schema
+# (.worktree.branch 만 있는 입력)에서도 branch 가 인라인 표시되어야 한다.
+@test "worktree branch from .worktree.branch schema also renders inline 🌿" {
+  local now five_h seven_d
+  now=$(date +%s)
+  five_h=$((now + 5 * 3600))
+  seven_d=$((now + 5 * 86400))
+  local stdin_json
+  stdin_json=$(cat <<EOF
+{
+  "session_id": "abc12345-def6-7890-abcd-ef1234567890",
+  "transcript_path": "/tmp/nonexistent.jsonl",
+  "cwd": "/tmp",
+  "workspace": {"current_dir": "/tmp", "git_worktree": "/tmp"},
+  "worktree": {"branch": "feat-legacy"},
+  "rate_limits": {
+    "five_hour": {"used_percentage": 6, "resets_at": $five_h},
+    "seven_day": {"used_percentage": 82, "resets_at": $seven_d}
+  }
+}
+EOF
+)
+  run run_statusline_with_input "$stdin_json"
+  [ "$status" -eq 0 ]
+  local plain
+  plain=$(echo "$output" | strip_ansi)
+  echo "$plain" | grep -qF 'feat-legacy' \
+    || { echo "expected branch from .worktree.branch schema fallback; got: $plain" >&2; false; }
 }

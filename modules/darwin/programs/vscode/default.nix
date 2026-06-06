@@ -36,7 +36,7 @@
 #    실패는 즉시 보이게 분리. (Zed 모듈에서 같은 패턴이 작동했으므로 그대로 이식.)
 #
 # === Change Intent Record (LaunchServices stale 정정) ===
-# zaritalk-statusline E2E 테스트 중 사용자 macOS 에서 statusline 의 vscode:// 클릭이
+# statusline 의 vscode:// 클릭 동작 점검 중 사용자 macOS 에서 그 클릭이
 # Finder 등 fallback 핸들러로 dispatch 되는 증상 발견. macOS LaunchServices DB 가 nix store
 # 의 VSCode .app bundle URL scheme handler 정보를 어느 시점에 stale 처리하면서
 # CFBundleURLTypes 의 vscode:// scheme 매핑이 사라진 상태였다.
