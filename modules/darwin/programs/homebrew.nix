@@ -73,7 +73,7 @@
       # 따라서 nrs 실행 전에 직접 설치된 앱을 --adopt로 전환해야 한다:
       #   brew install --cask --adopt raycast 1password ...
       #
-      # adopt 후에는 nrs(darwin-rebuild)가 해당 cask를 정상적으로 인식하여 에러 없이 통과한다.
+      # adopt 후에는 nrs가 해당 cask를 정상적으로 인식하여 에러 없이 통과한다.
       # cleanup="none"이므로 미adopt 앱이 남아있어도 삭제되지는 않지만,
       # brew가 해당 앱의 존재를 모르므로 업데이트/관리가 불가능한 상태로 남는다.
       #
