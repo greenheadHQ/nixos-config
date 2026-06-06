@@ -33,17 +33,17 @@
       # 선언되지 않은 앱 정리
       onActivation = {
         autoUpdate = true;
-        upgrade = true; # 선언된 모든 패키지를 최신 버전으로 업그레이드
+        upgrade = true; # brew upgrade 활성화 — auto_updates cask 포함 여부는 아래 greedyCasks 정책을 따름
         cleanup = "none"; # 선언되지 않은 앱을 자동 삭제하지 않음
       };
 
       # [업그레이드 정책]
-      # upgrade=true + greedyCasks=true 조합:
-      # - upgrade=true: nrs 실행 시 brew upgrade를 자동 실행
-      # - greedyCasks=true: auto_updates가 있는 cask도 brew upgrade 대상에 포함
-      # 자체 업데이터가 있는 앱이 Homebrew와 독립적으로 버전을 변경해도
-      # nrs 실행 시 Homebrew가 최신 버전으로 동기화하여 버전 드리프트를 방지한다.
-      greedyCasks = true;
+      # upgrade=true: nrs 실행 시 자체 업데이터가 없는 cask와 formula를 brew upgrade.
+      # greedyCasks=false: auto_updates가 있는 cask(1Password 등)는 brew upgrade 대상에서 제외한다.
+      #   해당 앱은 자체 업데이터가 최신을 유지하므로, nrs activation마다 대용량 .dmg를
+      #   재다운로드할 이유가 없다 (greedyCasks=true 시절 Docker Desktop 등 수백 MB를 매번 재다운로드했다).
+      #   cask 목록 등재 = 설치 보장은 그대로이며, 강제 동기화만 끈다.
+      greedyCasks = false;
 
       # Homebrew Tap (서드파티 저장소)
       taps = [
@@ -60,20 +60,18 @@
       #
       # [adopt 가이드] 새 Mac 또는 직접 설치된 앱이 있는 경우
       #
-      # nix-darwin은 이 목록을 기반으로 `brew install --cask <앱>`을 실행한다.
-      # 그런데 Homebrew Cask는 /Applications에 동일 앱이 이미 존재하면 설치를 거부한다:
-      #   Error: It seems there is already an App at '/Applications/Docker.app'
+      # nix-darwin은 이 목록으로 `brew bundle`을 실행하고, brew bundle은 cask 설치 시
+      # `--force`가 없으면 `--adopt`를 자동으로 붙인다 (Homebrew bundle/cask.rb).
+      # 따라서 /Applications에 동일 앱이 이미 있어도 대개 자동 adopt되어 에러 없이 통과한다 —
+      # 기존 앱을 삭제·백업하지 않고 Homebrew 관리로 등록한다.
+      # (auto_updates cask[Raycast·1Password 등]는 버전 비교 없이 기존 앱을 채택하고,
+      #  그 외 cask만 source와 번들 버전을 비교한다 — Homebrew cask/artifact/moved.rb)
       #
-      # 이때 선택지는 3가지:
-      #   1) 기존 앱 삭제 후 brew install → 앱 설정/로그인 상태 유실 위험
+      # 단 기존 앱과 source의 번들 버전이 다르면 adopt가 거부될 수 있다. 이때는:
+      #   1) 기존 앱을 최신으로 맞춘 뒤 다시 nrs → 버전 일치로 자동 adopt
       #   2) 이 목록에서 해당 cask 제거 → 선언적 관리 포기
-      #   3) brew install --cask --adopt → 기존 앱을 삭제하지 않고 Homebrew가
-      #      "내가 설치한 것"으로 인식하도록 등록만 수행. 이후 brew upgrade로 관리 가능.
+      #   3) 수동으로 먼저 전환: brew install --cask --adopt raycast 1password ...
       #
-      # 따라서 nrs 실행 전에 직접 설치된 앱을 --adopt로 전환해야 한다:
-      #   brew install --cask --adopt docker-desktop raycast ...
-      #
-      # adopt 후에는 nrs(darwin-rebuild)가 해당 cask를 정상적으로 인식하여 에러 없이 통과한다.
       # cleanup="none"이므로 미adopt 앱이 남아있어도 삭제되지는 않지만,
       # brew가 해당 앱의 존재를 모르므로 업데이트/관리가 불가능한 상태로 남는다.
       #
@@ -81,9 +79,11 @@
       # shottr → libraries/packages.nix darwinOnly로 이동 (pkgs.shottr가 macOS .app 번들 포함)
       #
       # [Nix 전환이 불가능한 앱]
-      # docker-desktop: Docker Desktop은 nixpkgs에 macOS용 패키지 없음 (CLI만 존재)
       # fork: 상용 Git GUI, nixpkgs에 없음
       # [Homebrew에서 제거한 앱]
+      # docker-desktop: 자체 업데이터가 강력하고 이 프로젝트에서 선언적 관리 이점이 없음.
+      #        greedyCasks 시절 nrs activation마다 Docker.dmg(수백 MB)를 재다운로드하던 주원인.
+      #        기존 /Applications/Docker.app은 cleanup="none"이라 유지되며 자체 업데이트에 위임.
       # figma: 자체 업데이터가 적극적으로 버전을 변경하여 Homebrew가 관리하는 버전과 불일치 발생.
       #        adopt 시 버전 불일치로 설치 거부됨. 자체 업데이터에 위임.
       # slack: 수동 설치 선호. 자체 업데이터에 위임.
@@ -96,7 +96,6 @@
         "rectangle"
         "hammerspoon"
         "homerow"
-        "docker-desktop"
         "fork"
         "monitorcontrol"
         # 1Password 비밀번호/SSH 키/PAT 통합 (PRD #780 Phase 1)
