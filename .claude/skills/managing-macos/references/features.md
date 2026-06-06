@@ -345,6 +345,8 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | Homerow        | 키보드 네비게이션          |
 | Fork           | Git GUI                    |
 | MonitorControl | 외부 모니터 밝기 조절      |
+| 1Password      | 비밀번호/SSH 키/PAT 관리   |
+| 1Password CLI  | `op` CLI (1password-cli cask) |
 
 ### Nix 패키지로 관리하는 GUI 앱
 
@@ -390,11 +392,11 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 
 ### 직접 설치 앱의 adopt 전환
 
-기존에 `/Applications`에 직접 설치된 앱을 Homebrew Cask 관리로 전환하려면 `--adopt` 플래그를 사용합니다.
+`nrs`(brew bundle)는 cask 설치 시 `--force`가 없으면 `--adopt`를 자동으로 추가하므로(`Homebrew bundle/cask.rb`), 직접 설치된 앱도 대개 자동으로 adopt됩니다. 아래는 자동 adopt가 실패하는 경우(번들 버전 충돌 등)나 동작을 이해할 때 참고용입니다.
 
-`--adopt`가 필요한 이유:
+`--adopt`가 하는 일:
 
-Homebrew Cask는 `/Applications`에 동일 앱이 이미 존재하면 `brew install`을 거부합니다:
+Homebrew Cask는 `/Applications`에 동일 앱이 이미 존재하면 `--adopt` 없는 `brew install`을 거부합니다:
 
 ```text
 Error: It seems there is already an App at '/Applications/Raycast.app'
@@ -413,7 +415,7 @@ Error: It seems there is already an App at '/Applications/Raycast.app'
 
 brew install --cask --adopt raycast:
   1. Raycast 다운로드
-  2. /Applications/Raycast.app 이미 있음 → 기존 앱을 Caskroom으로 이동(백업)
+  2. /Applications/Raycast.app 이미 있음 → 기존 앱은 그대로 두고 source와 번들 버전 비교(백업 안 함)
   3. Homebrew 메타데이터에 "raycast는 내가 관리 중"으로 등록
   4. 이후 brew upgrade raycast로 업데이트 가능
 ```
@@ -427,7 +429,7 @@ brew install --cask --adopt raycast:
 brew install --cask --adopt raycast
 
 # 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, vscode 제외)
-for cask in ghostty raycast rectangle hammerspoon homerow fork monitorcontrol; do
+for cask in ghostty raycast rectangle hammerspoon homerow fork monitorcontrol 1password 1password-cli; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
 

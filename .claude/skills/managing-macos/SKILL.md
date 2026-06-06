@@ -57,7 +57,7 @@ darwinOnly = [ ... pkgs.패키지명 ];
 homebrew.casks = [
   "ghostty" "raycast" "rectangle"
   "hammerspoon" "homerow"
-  "fork" "monitorcontrol"
+  "fork" "monitorcontrol" "1password" "1password-cli"
 ];
 homebrew.brews = [ "laishulu/homebrew/macism" "sox" ]; # Neovim 한영 전환, 오디오 처리
 # shottr → Nix 패키지로 관리 (libraries/packages.nix darwinOnly)
