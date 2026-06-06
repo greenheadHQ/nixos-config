@@ -61,7 +61,7 @@ homebrew.casks = [
 ];
 homebrew.brews = [ "laishulu/homebrew/macism" "sox" ]; # Neovim 한영 전환, 오디오 처리
 # shottr → Nix 패키지로 관리 (libraries/packages.nix darwinOnly)
-# codex → Nix 관리로 전환 (mise npm backend, modules/shared/programs/codex)
+# codex → Nix 관리로 전환 (nix overlay, modules/shared/programs/codex)
 # figma → Homebrew에서 제거 (자체 업데이터가 버전을 변경하여 adopt 시 버전 충돌)
 # slack → Homebrew에서 제거 (수동 설치 선호, 자체 업데이터에 위임)
 ```

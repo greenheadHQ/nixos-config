@@ -103,8 +103,8 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 4. `codex exec`로 project-scope 스킬 1개 이상 런타임 확인
 5. `configuring-codex` 스킬 문서와 실제 구현(`default.nix`, verify script) 간 불일치 여부 점검
 6. pre-commit `ai-skills-consistency` 훅 확인 (관련 staged 변경 시 fail, 긴급 우회: `SKIP_AI_SKILL_CHECK=1`)
-7. `installCodexCli` 멱등 가드(`mise ls -g --current --json npm:@openai/codex`의 `installed == true` 판정)가 살아있어 `nrs`가 codex 버전을 자동 업데이트하지 않는지 확인
-8. `cleanupManualNodeCodex`가 수동 `npm install -g @openai/codex` 잔재를 제거하는지 확인 — 수동 글로벌이 PATH상 mise shim을 가려 "codex 업데이트가 안 되는 것처럼" 보이는 회귀의 근원
+7. `command -v codex`가 nix profile/store 경로로 resolve되는지 확인 — mise shims 경로면 잔존 shim이 codex(nix profile)를 shadow하는 회귀(#890)이며, `verify-ai-compat.sh`의 codex PATH resolve 가드가 자동 검사한다
+8. `cleanupManualNodeCodex`가 수동 `npm install -g @openai/codex` 잔재를 제거하는지 확인 — node가 mise에 남으므로 수동 글로벌이 PATH상 codex(nix profile)를 가리는 회귀의 근원
 
 ## 2026-05-02 업데이트: SKILL.md 도구-중립성 lint
 
@@ -155,42 +155,55 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
 - `.agents/skills/<name>` → `../../.claude/skills/<name>` 디렉토리 심링크
 - `verify-ai-compat.sh`, `warn-skill-consistency.sh`에서 디렉토리 심링크 기준 검증
 
-## 2026-06-05 업데이트: codex 바이너리 mise npm backend 운영
+## 2026-06-06 업데이트: codex 바이너리 nix overlay 이관 (#890)
 
-### activation DAG (3단계)
+> 2026-06-05의 "mise npm backend 운영" 절을 대체한다. mise shim 활성화가 비대화형 PATH에서
+> fragile해 PATH 회귀(#815/#821/#823/#845/#858)와 fork 폭주(os error 35)가 반복되어, codex를
+> mise에서 떼고 declarative nix overlay로 이관했다. node per-project 전환은 mise에 유지(부분 폐기).
 
-`modules/shared/programs/codex/default.nix`의 home.activation 3종이 codex 바이너리 lifecycle을 관리한다.
+### 설치 + 정리 activation
 
-1. `cleanupLegacyCodexCli` — 과거 설치 방식(GitHub ELF/brew cask) 잔재 정리
-2. `installCodexCli` — 멱등 가드 후 `mise use -g npm:@openai/codex` (최초 1회, 버전 무지정)
-3. `cleanupManualNodeCodex` — 수동 `npm install -g @openai/codex` 잔재 제거
+- 설치: nix overlay(`modules/shared/programs/codex/package.nix`, `libraries/packages.nix`의 `shared`
+  경유) — macOS+NixOS 공통 nix profile/store. OpenAI 공식 GitHub 릴리스 prebuilt를 직접 핀한다
+  (`codex-pin.json`). nixpkgs lag·제3자 flake 없이 최신 추적이 목적이며, codex-rs는 정적 단일
+  바이너리라 fetch+install만 한다(컴파일·patchelf 없음). 최신화는 `update-codex` 한 줄.
+- 정리 activation 3종(`default.nix`) — codex를 설치하지 않고, 과거 설치 방식 잔재가 PATH에서
+  codex(nix profile)를 shadow하지 못하게 정리만 한다:
+  1. `cleanupLegacyCodexCli` — 과거 GitHub ELF(NixOS)/brew cask(macOS) 잔재 정리
+  2. `cleanupMiseCodexShim` — mise npm backend 잔재(`shims/codex`·`installs/npm-openai-codex/`) 멱등 제거.
+     mise 명령을 호출하지 않고 순수 rm (dangling shim의 mise resolve가 fork 폭주원). config.toml entry 제거는 수동.
+  3. `cleanupManualNodeCodex` — 수동 `npm install -g @openai/codex` 잔재 제거 (node가 mise에 남아 유효)
 
-### SoT와 정식 업데이트
+### SoT와 업데이트
 
-- SoT는 `~/.config/mise/config.toml`의 `[tools]` 항목: `"npm:@openai/codex" = "latest"`, `node = "lts"`.
-- 멱등 가드: `installCodexCli`는 `mise ls -g --current --json npm:@openai/codex`에서 `installed == true`인
-  엔트리가 있으면 `mise use -g npm:@openai/codex`를 skip한다.
-  `length > 0` 단독이 아니라 `select(.installed == true)`로 거르는 것은 config 등록 후 설치 실패한
-  `[{installed:false}]` 상태에 속지 않기 위함이다(`installCodexCli` 가드 주석).
-- 따라서 `nrs`는 codex 버전을 자동 업데이트하지 않는다. 정식 업데이트는 수동 절차다:
+- 버전 SoT: `modules/shared/programs/codex/codex-pin.json` (version/tag + flake systems 2개
+  (aarch64-darwin·x86_64-linux)의 asset/hash). 업데이트는 `update-codex`(최신 stable 조회 →
+  해시 prefetch → 핀 갱신 → nrs; `--pre`로 alpha 포함). platforms/asset 키는 정적 설정이라 손으로 관리.
+- overlay는 OpenAI 릴리스를 직핀하므로 lag이 사실상 없다(직핀 최신). config 템플릿 feature floor
+  (현재 0.124+)는 항상 충족. 갱신 후 `codex-pin.json` 변경을 커밋한다.
+- runtime `~/.config/mise/config.toml`의 `[tools]."npm:@openai/codex"` entry는 nix 비관리 SoT라
+  이관 시 직접 텍스트 편집으로 제거한다(mise 명령 금지). `node`/`gitleaks` entry는 보존.
 
-```bash
-mise use -g npm:@openai/codex@latest
-hash -r && codex --version
-```
+### 운영 주의 (nix overlay)
+
+- fetch 실패가 nrs를 막는다: codex는 `home.packages` 빌드 입력이라, fresh 빌드(post-GC 또는 핀 bump)에서
+  GitHub 릴리스 fetch가 실패하면 `nrs`가 실패한다(과거 mise activation은 non-fatal이었음). `fetchurl`은
+  hash로 캐시되므로 정상 시 재fetch는 없다.
+- update-codex는 항상 메인 repo 대상: `@flakePath@`가 메인 체크아웃으로 고정되어, worktree에서
+  `update-codex`를 실행해도 메인 repo의 `codex-pin.json`을 갱신·빌드한다(`nfu`와 동일 패턴).
 
 ### `npm install -g @openai/codex` 금지
 
-수동 글로벌은 `~/.local/share/mise/installs/node/<ver>/bin`에 깔려 PATH상 mise backend bin보다 우선이라
-backend shim을 가린다. 다음 `nrs`의 `cleanupManualNodeCodex`가 각 node 버전
+node가 mise에 남으므로 수동 글로벌이 `~/.local/share/mise/installs/node/<ver>/bin`에 깔리면
+PATH상 nix profile보다 앞서 codex를 가린다. `cleanupManualNodeCodex`가 각 node 버전
 prefix의 npm으로 `env PATH="$node_prefix/bin:${pkgs.mise}/bin:$PATH" "$npm_bin" uninstall -g @openai/codex`를
-반복 호출해 수동 글로벌을 제거하므로, 사용자가 "codex가 구버전으로 롤백됐다"고 느끼는 회귀가 발생한다.
+반복 호출해 제거하므로, codex가 사라지거나 꼬인 것처럼 보인다.
 `lts`/`24`/`latest` 같은 symlink 별칭 디렉토리는 `[ ! -L ]` 가드로 제외해 중복 uninstall을 막는다.
 
 ### 진단
 
 ```bash
-whence -p codex   # PATH 첫 매치 경로 (node/<ver>/bin이면 수동 글로벌 잔재)
+whence -p codex   # PATH 첫 매치 (nix profile/store여야 정상; mise shims면 잔존 shim 회귀, node/<ver>/bin이면 수동 글로벌 잔재)
 type -a codex     # 모든 후보
 ```
 

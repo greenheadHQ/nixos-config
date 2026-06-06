@@ -74,6 +74,13 @@ in
     };
     executable = true;
   };
+  # codex 최신화 (#890): OpenAI 공식 릴리스 핀(codex-pin.json)을 최신 stable로 bump + nrs.
+  home.file.".local/bin/update-codex" = {
+    source = pkgs.replaceVars "${sharedScriptsDir}/update-codex.sh" {
+      flakePath = nixosConfigDefaultPath;
+    };
+    executable = true;
+  };
 
   # Shell 함수 라이브러리 (source로 로딩)
   # replaceVars: @flakePath@ → nixosConfigDefaultPath (항상 메인 레포 경로)

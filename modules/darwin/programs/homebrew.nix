@@ -87,7 +87,7 @@
       # figma: 자체 업데이터가 적극적으로 버전을 변경하여 Homebrew가 관리하는 버전과 불일치 발생.
       #        adopt 시 버전 불일치로 설치 거부됨. 자체 업데이터에 위임.
       # slack: 수동 설치 선호. 자체 업데이터에 위임.
-      # codex: mise npm backend(@openai/codex)로 전환 — modules/shared/programs/codex/default.nix.
+      # codex: declarative nix overlay로 전환 — modules/shared/programs/codex/default.nix (#890).
       #        cleanup="none"이라 cask 목록 제거만으론 미삭제되므로 codex activation의
       #        cleanupLegacyCodexCli가 `brew uninstall --cask codex`로 정리한다.
       #

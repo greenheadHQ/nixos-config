@@ -15,6 +15,9 @@
 !.agents/
 .codex/
 
+# update-codex 원자적 핀 교체용 임시 파일 (EXIT trap 정리; SIGKILL 시 잔류 방어, #890)
+modules/shared/programs/codex/.codex-pin.*
+
 # Codex sync 부산물 (.agents/ 심링크 경유로 .claude/에 생성되는 파일)
 .claude/skills/*/agents/
 .claude/skills/*/references/references

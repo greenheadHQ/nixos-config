@@ -12,7 +12,11 @@
     pkgs.ripgrep # grep 대체 (빠른 텍스트 검색)
 
     # 개발 도구
-    pkgs.mise # 런타임 버전 관리 (node/pnpm; codex npm backend도 의존). macOS는 nix mise 사용 — 과거 수동 brew mise와 PATH 경합 시 brew uninstall 권장
+    # Codex CLI (declarative; #890에서 mise npm backend → nix overlay 이관). OpenAI 공식 GitHub
+    # 릴리스 prebuilt 바이너리를 직접 핀 — nixpkgs lag·제3자 flake 없이 최신 추적. 정의/버전 핀은
+    # modules/shared/programs/codex/{package.nix,codex-pin.json}. 최신화: `update-codex`.
+    (import ../modules/shared/programs/codex/package.nix { inherit pkgs; })
+    pkgs.mise # 런타임 버전 관리 (node/pnpm per-project 전환). macOS는 nix mise 사용 — 과거 수동 brew mise와 PATH 경합 시 brew uninstall 권장
     pkgs.shellcheck # 쉘 스크립트 린터
 
     # TUI 도구
