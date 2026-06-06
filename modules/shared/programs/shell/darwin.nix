@@ -4,6 +4,7 @@
   pkgs,
   lib,
   constants,
+  hostType,
   ...
 }:
 
@@ -53,6 +54,12 @@ let
     fi
     exec ${pkgs.gh}/bin/gh "$@"
   '';
+
+  # ssh() preflight 단일 소스 주입 (constants 기반 — socket/키/기동인자 중복 제거)
+  opAgentSock = "$HOME/${constants.onePassword.agentSocketRelPath}"; # zsh가 런타임에 $HOME 확장
+  macSshKeyB64 = lib.elemAt (lib.splitString " " constants.sshDeviceKeys.macSsh) 1; # 공개키 가운데 base64 (nix가 split)
+  opLaunchCmd = "/usr/bin/open ${lib.escapeShellArgs constants.onePassword.openArgs}"; # 1Password 백그라운드 기동(절대경로)
+  minipcHostIP = constants.network.minipcTailscaleIP; # ssh -G effective hostname 판정 기준
 in
 {
   # macOS용 스크립트 설치
@@ -142,6 +149,59 @@ in
       # sqlite3 등이 시스템 바이너리를 shadow한다. append로 우회.
       [ -d "$ANDROID_HOME/platform-tools" ] && export PATH="$PATH:$ANDROID_HOME/platform-tools"
     ''
+
+    # ════════════════════════════════════════════════════════════════
+    # ssh minipc preflight (1Password agent 안전망, PRD #780 Phase 2a 후속)
+    # minipc 인증은 1Password agent의 mac-ssh 키에 의존한다(구 로컬 id_ed25519는 서버에서 퇴출).
+    # 1Password가 미실행/잠금이면 agent가 mac-ssh를 못 줘 ssh가 구 키로 폴백→Permission denied가
+    # 난다. 그 순간 원인·복구를 안내하고 1Password를 자동 기동한 뒤 agent 복구를 짧게 대기한다.
+    # 평시엔 launchd 자동 기동(modules/darwin/programs/ssh)이 socket을 살려두므로 이 경로는
+    # 수동 quit/크래시 등 잔여 케이스 전용이다. interactive 셸 전용(non-interactive 자동화는
+    # 이 맥락을 아는 호출자가 쓰고, GUI open 팝업이 부적절하므로 raw ssh로 통과).
+    # personal 전용 — minipc matchBlock/launchd와 스코프 일치(work Mac은 Tailnet 미소속이라 무관).
+    # 대상 판정은 전부 `ssh -G "$@"`에 위임한다 — 수동 옵션 파싱은 ssh의 방대한 옵션 공간(메타모드·
+    # user@host·-W·포트·alias·remote command)을 못 따라가 미탐·오탐이 난다. ssh -G는 -O/-W/-G 등과도
+    # 충돌 없이 effective config를 출력한다(실측). preflight는 effective IdentityAgent가 1Password
+    # socket과 정확히 일치할 때만 — none(emergency)·빈값·다른 agent 명시·타호스트는 raw ssh로 통과한다.
+    # 활성 ControlMaster면 통과(multiplex/worker pool 재사용 보존)하되, "$@"를 -O check에 직접 넘기면
+    # -W/-O와 충돌하므로 effective ControlPath만 -S로 쓴다. 키 매칭은 macSsh base64(단일 소스, nix split).
+    # ════════════════════════════════════════════════════════════════
+    (lib.optionalString (hostType == "personal") ''
+      ssh() {
+        local _cfg _host _ident _cpath
+        _cfg=$(command ssh -G "$@" 2>/dev/null)
+        _host=$(print -r -- "$_cfg" | awk 'tolower($1)=="hostname"{print $2; exit}')
+        # IdentityAgent 전체 값(공백 포함 경로)을 추출해 1Password socket과 정확 비교한다.
+        _ident=$(print -r -- "$_cfg" | awk 'tolower($1)=="identityagent"{sub(/^[^ ]+[ ]+/, ""); print; exit}')
+        if [[ "$_host" == "${minipcHostIP}" && "$_ident" == "${opAgentSock}" ]]; then
+          # 현재 호출의 effective ControlPath에 활성 master가 있으면 새 인증 불필요 → 통과.
+          # 사용자 "$@"를 -O check에 직접 넘기면 -W/-O와 충돌하므로 effective ControlPath만 -S로 쓴다.
+          _cpath=$(print -r -- "$_cfg" | awk 'tolower($1)=="controlpath"{sub(/^[^ ]+[ ]+/, ""); print; exit}')
+          local _sock="${opAgentSock}" _b64="${macSshKeyB64}"
+          if { [[ -z "$_cpath" || "$_cpath" == none ]] || ! command ssh -O check -S "$_cpath" "${minipcHostIP}" 2>/dev/null; } \
+            && ! SSH_AUTH_SOCK="$_sock" ssh-add -L 2>/dev/null | grep -qF "$_b64"; then
+            # Touch ID 잠금 해제 대기 상한(초) — interactive shell을 오래 막지 않도록. tries = timeout / interval.
+            local _poll_interval=0.5 _timeout_seconds=15
+            local _max_tries=$(( _timeout_seconds / _poll_interval ))
+            print -u2 "⚠️  ssh minipc 차단: 1Password SSH agent에 mac-ssh 키가 없습니다."
+            print -u2 "   원인: 1Password 데스크탑이 미실행/잠금 상태 → mac-ssh 키 미제공."
+            print -u2 "   조치: 1Password를 기동합니다 — Touch ID로 잠금 해제하세요."
+            print -u2 "   대안: 즉시 접속이 필요하면  ssh minipc-emergency  (passphrase 직접 입력)."
+            ${opLaunchCmd} 2>/dev/null
+            local _i=0
+            while ! SSH_AUTH_SOCK="$_sock" ssh-add -L 2>/dev/null | grep -qF "$_b64"; do
+              if (( ++_i > _max_tries )); then
+                print -u2 "   ✗ agent 복구 대기 초과(''${_timeout_seconds}s). 잠금 해제 후 재시도하거나 ssh minipc-emergency 사용."
+                return 1
+              fi
+              sleep $_poll_interval
+            done
+            print -u2 "   ✓ agent 복구됨 — 접속합니다."
+          fi
+        fi
+        command ssh "$@"
+      }
+    '')
 
     # ════════════════════════════════════════════════════════════════
     # #872(+후속): 무인 에이전트 gh 인증 (Mac 전용, 방식 B — SA token → github-pat 캐시)

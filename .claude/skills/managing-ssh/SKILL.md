@@ -20,9 +20,14 @@ sudo에서 SSH_AUTH_SOCK 유실
 - `sudo` 실행 시 환경변수가 초기화되어 SSH 키 인증 실패
 - 해결: `sudo -E` 또는 sudoers에서 `SSH_AUTH_SOCK` 유지 설정
 
-재부팅 후 SSH 키 미로드
+재부팅 후 SSH 키 미로드 (NixOS/GitHub 맥락)
 - launchd agent로 자동 로드 설정되어 있지만 실패할 수 있음
 - 수동 로드: `ssh-add $HOME/.ssh/id_ed25519`
+
+macOS에서 `ssh minipc` preflight 차단 (1Password agent)
+- Phase 2a 후 macOS SSH는 1Password agent(mac-ssh)로 인증 — 로컬 id_ed25519는 archive됨
+- 1Password 데스크탑 미실행/잠금 시 `ssh()` preflight가 안내·자동 기동·최대 15초 대기
+- 해결: 1Password 잠금 해제. 즉시 접속은 `ssh minipc-emergency` (passphrase). 상세: references/troubleshooting.md
 
 NixOS에서 SSH 키 자동 로드 방식 혼동
 - NixOS는 launchd가 아니라 `services.ssh-agent` + `programs.keychain`으로 키 로드

@@ -162,8 +162,8 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
-  # 1Password vault 이름 (단일 소스)
-  # GUI에서 동일 이름으로 vault를 생성해야 op CLI가 조회 가능
+  # 1Password 설정 (단일 소스): account, vault 이름, SSH agent socket, autostart 인자
+  # vault는 GUI에서 동일 이름으로 생성해야 op CLI가 조회 가능
   # ═══════════════════════════════════════════════════════════════
   onePassword = {
     # op CLI 멀티 계정(개인+회사) 환경에서 Automation vault가 속한 개인 account 고정.
@@ -175,6 +175,21 @@
       automation = "Automation"; # LLM·자동화·시스템 토큰 (SSH 키는 ssh vault로 분리)
       ssh = "SSH"; # 디바이스 SSH key(mac-ssh/emergency-ssh) 전용 — SA token blast radius에서 격리
     };
+    # 1Password macOS SSH agent socket — home 기준 상대 경로 (단일 소스).
+    # nix: "${homeDir}/${agentSocketRelPath}", shell: "$HOME/${agentSocketRelPath}".
+    # ~/.1password/agent.sock symlink는 자동생성되지 않아 group container 경로를 직접 쓴다.
+    # 사용처: ssh IdentityAgent(modules/darwin/programs/ssh) + ssh() preflight(shell/darwin.nix).
+    agentSocketRelPath = "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock";
+    # 1Password 백그라운드 기동 인자 (단일 소스). -g 포커스 유지, -j hidden, --silent 메인창 억제.
+    # launchd 자동 기동은 [ "/usr/bin/open" ] ++ openArgs (절대경로), shell preflight 복구는
+    # `open ${escapeShellArgs openArgs}`로 공유한다 — flag 변경 시 한 곳만 고친다.
+    openArgs = [
+      "-gj"
+      "-a"
+      "1Password"
+      "--args"
+      "--silent"
+    ];
   };
 
   # ═══════════════════════════════════════════════════════════════
