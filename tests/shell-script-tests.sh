@@ -1701,6 +1701,10 @@ test_codex_sync_wrapper_opt_in_flags() {
     "$home_dir/.claude/skills/syncing-codex-harness/references" \
     "$project_root" \
     "$(dirname "$custom_mcp")"
+  # codex-sync.sh는 project-root를 _canonical_project_root()의 (cd && pwd -P)로 정규화한다.
+  # macOS의 $TMPDIR(/var/folders → /private/var)·/tmp(→ /private/tmp) 심링크 때문에
+  # 정규화 전/후 경로가 어긋나므로, 기대값도 동일하게 정규화해 플랫폼 간 일치시킨다.
+  project_root="$(cd "$project_root" && pwd -P)"
 
   cat > "$home_dir/.claude/skills/syncing-codex-harness/references/sync.sh" <<'EOF'
 #!/usr/bin/env bash
