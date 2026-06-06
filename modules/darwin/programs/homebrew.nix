@@ -33,7 +33,7 @@
       # 선언되지 않은 앱 정리
       onActivation = {
         autoUpdate = true;
-        upgrade = true; # 선언된 모든 패키지를 최신 버전으로 업그레이드
+        upgrade = true; # brew upgrade 활성화 — auto_updates cask 포함 여부는 아래 greedyCasks 정책을 따름
         cleanup = "none"; # 선언되지 않은 앱을 자동 삭제하지 않음
       };
 

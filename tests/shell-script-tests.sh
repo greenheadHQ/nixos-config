@@ -1690,7 +1690,7 @@ EOF
 }
 
 test_codex_sync_wrapper_opt_in_flags() {
-  local sandbox home_dir project_root marker_file output custom_mcp python_shim rc
+  local sandbox home_dir project_root expected_root marker_file output custom_mcp python_shim rc
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   project_root="$sandbox/project"
@@ -1701,10 +1701,10 @@ test_codex_sync_wrapper_opt_in_flags() {
     "$home_dir/.claude/skills/syncing-codex-harness/references" \
     "$project_root" \
     "$(dirname "$custom_mcp")"
-  # codex-sync.sh는 project-root를 _canonical_project_root()의 (cd && pwd -P)로 정규화한다.
-  # macOS의 $TMPDIR(/var/folders → /private/var)·/tmp(→ /private/tmp) 심링크 때문에
-  # 정규화 전/후 경로가 어긋나므로, 기대값도 동일하게 정규화해 플랫폼 간 일치시킨다.
-  project_root="$(cd "$project_root" && pwd -P)"
+  # codex-sync.sh는 project-root 입력을 _canonical_project_root()의 (cd && pwd -P)로 정규화한다.
+  # 입력(project_root)은 비정규화 그대로 두어 macOS $TMPDIR(/var/folders → /private/var)·
+  # /tmp(→ /private/tmp) 심링크 입력 정규화 동작 자체를 회귀 검증하고, 기대값만 정규화해 비교한다.
+  expected_root="$(cd "$project_root" && pwd -P)"
 
   cat > "$home_dir/.claude/skills/syncing-codex-harness/references/sync.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -1727,7 +1727,7 @@ EOF
   output="$(cat "$marker_file")"
   assert_contains "$output" "<python>"
   assert_contains "$output" "<all>"
-  assert_contains "$output" "<$project_root>"
+  assert_contains "$output" "<$expected_root>"
   assert_not_contains "$output" "--user-mcp"
   assert_not_contains "$output" "--trust-project"
 
@@ -1737,7 +1737,7 @@ EOF
   output="$(cat "$marker_file")"
   assert_contains "$output" "<--trust-project>"
   assert_contains "$output" "<--user-mcp=$home_dir/.claude/mcp.json>"
-  assert_contains "$output" "<$project_root>"
+  assert_contains "$output" "<$expected_root>"
 
   : > "$marker_file"
   HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
