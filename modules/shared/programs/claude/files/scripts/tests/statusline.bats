@@ -320,11 +320,11 @@ EOF
 )
   # HOME override 로 lib 의 SESSION_STATE_DIR (=\$HOME/.claude/status-icons) 와
   # statusline.sh 의 transcript canonical 경계(\$HOME/.claude/projects) 를 fake HOME
-  # 으로 redirect. statusline.sh 는 HEAVY_CACHE_DIR 와 CACHE_TTL_DIR 에서 XDG_*
-  # 변수를 직접 참조하므로(`${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-\$HOME/.local/state}/...}`,
-  # `${XDG_DATA_HOME:-\$HOME/.local/share}/...`), 부모 shell 의 XDG_* 가 set 이면
-  # 실제 시스템 경로로 leak 되어 테스트 부산물이 host 에 남고 다음 run 의 cached
-  # vars 가 오염될 수 있다. 4 개 모두 fake_home 하위로 pin.
+  # 으로 redirect. statusline.sh 는 HEAVY_CACHE_DIR 에서 XDG_* 변수를 직접
+  # 참조하므로(`${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-\$HOME/.local/state}/...}`),
+  # 부모 shell 의 XDG_* 가 set 이면 실제 시스템 경로로 leak 되어 테스트 부산물이
+  # host 에 남고 다음 run 의 cached vars 가 오염될 수 있다. 관련 XDG_* 를 모두
+  # fake_home 하위로 pin.
   run run_statusline_with_input "$stdin_json" \
     HOME="$fake_home" \
     XDG_CONFIG_HOME="$fake_home/.config" \
@@ -558,7 +558,7 @@ EOF
 }
 
 # plan fixture 실행 helper: HOME + XDG_* 를 모두 PLAN_HOME 하위로 pin 한다.
-# statusline.sh 는 HEAVY_CACHE_DIR/CACHE_TTL_DIR 에서 XDG_* 를 직접 참조하므로
+# statusline.sh 는 HEAVY_CACHE_DIR 에서 XDG_* 를 직접 참조하므로
 # (sidecar test 와 동일 사유), HOME 만 override 하면 부모 shell 의 XDG_* 가 set 일 때
 # heavy/cache 파일이 실제 시스템 경로로 leak 되어 호스트를 오염시키고 다음 run 의
 # cached vars 가 stale 해져 비결정적이 된다. PLAN_HOME 은 BATS_TEST_TMPDIR 하위라
