@@ -2,8 +2,8 @@
 # hook-runtime.sh — claude/codex hook 공통 helper 라이브러리.
 # 정책 출처: https://github.com/greenheadHQ/nixos-config/issues/759
 #
-# 본 라이브러리는 claude/codex 양 트리의 논리 hook 4종 (pinning-alert, pinning-guard,
-# record-last-stop, record-prompt-submit) 의 8개 구현 use-site 에서 사용한다. 런타임별
+# 본 라이브러리는 pinning-alert, pinning-guard (claude/codex 양 트리) 와 record-last-stop,
+# record-prompt-submit (codex 트리) 의 구현 use-site 에서 사용한다. 런타임별
 # 전용 로직 (CLAUDECODE/CODEX_PROGRAMMATIC 가드, agent_id 가드, apply_patch envelope
 # dispatch) 은 각 hook 본문에 inline 유지한다.
 #
@@ -16,8 +16,6 @@
 # USED-BY:
 #   claude/files/hooks/pinning-alert.sh         # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/pinning-guard.sh         # via $HOOK_RUNTIME_LIB
-#   claude/files/hooks/record-last-stop.sh      # via $HOOK_RUNTIME_LIB
-#   claude/files/hooks/record-prompt-submit.sh  # via $HOOK_RUNTIME_LIB
 #   codex/files/hooks/pinning-alert.sh          # via $HOOK_RUNTIME_LIB
 #   codex/files/hooks/pinning-guard.sh          # via $HOOK_RUNTIME_LIB
 #   codex/files/hooks/record-last-stop.sh       # via $HOOK_RUNTIME_LIB

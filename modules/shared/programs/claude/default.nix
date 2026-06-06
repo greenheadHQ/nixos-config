@@ -183,11 +183,6 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/session-state.sh";
     ".claude/lib/hook-runtime.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/hook-runtime.sh";
-    # Cache TTL tracking hooks
-    ".claude/hooks/record-last-stop.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-last-stop.sh";
-    ".claude/hooks/record-prompt-submit.sh".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/record-prompt-submit.sh";
 
     # hs.notify contentImage용 아이콘 (Claude.app에서 추출한 128x128 PNG, macOS 전용)
     ".claude/assets/notification-icon.png" = lib.mkIf pkgs.stdenv.isDarwin {

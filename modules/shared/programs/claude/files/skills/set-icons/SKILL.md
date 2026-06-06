@@ -169,12 +169,10 @@ marker 관리는 전적으로 Stop hook의 책임이다 — SessionStart hook은
 3. memo 키 소실: `jq -n`으로 새 JSON 생성 시 기존 키가 사라짐 → 반드시 기존 파일을 입력으로 사용
 4. 아이콘 순서/라인 변경 불가: 순서와 라인 배치는 `statusline.sh`에 하드코딩
    - L1 (link icons 그룹): Jira → Slack → Figma → Memo. 조건부 라인 (모두 미설정 시 라인 자체 생략)
-   - L2 (context 라인):
-     - 비-git cwd: cwd (📁) 단독
-     - git 메인 repo: cwd (📁) + branch (🌿)
-     - git 워크트리: cwd (📁) 단독
-   - L3 (워크트리만): branch (🌿)
-   - L_M (heavy state 그룹): Plan (📝) → Memory (🧠) → Cache TTL (⏱). Memo는 L1으로 이동, Plan/Memory는 L_M 유지
+   - L2 (context 라인): cwd (📁) + branch (🌿) + branch 동기화 상태(ahead/behind/dirty).
+     워크트리도 main repo 처럼 같은 줄에 branch 를 인라인 표시한다 (별도 L3 라인 없음).
+   - L_M (heavy state 그룹): Plan (📝) → Memory (🧠). Memo는 L1으로 이동.
+   - L_SID: session-id (🆔) 전용 줄 — 이 줄에는 session-id 외 어떤 아이콘도 병렬 출력하지 않는다.
    - L_N: 5h/7d Rate Limits (SSH 분기는 vertical bracket `▏…▕` 게이지로 압축)
 5. SessionStart hook 동작 (source별):
    - 지원 source는 `startup`, `clear`, `resume`, `compact` 네 가지. 그 외 source는 hook이 즉시 `exit 0`로 skip한다 (sidecar/memo는 생성하지 않음).

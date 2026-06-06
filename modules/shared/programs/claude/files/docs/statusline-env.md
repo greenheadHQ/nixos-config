@@ -76,13 +76,6 @@ leading-zero 차단 사유: bash 산술 (`$((COLS - 40))`) 이 `0NNN` 형식을 
 해석한다 (`0140` → 96). canonical decimal 만 허용해 호출부 정수 연산 오염을
 방지한다. 폭으로 `70` 을 명시하려면 leading-zero 없이 `70` 으로 입력하라.
 
-(`CLAUDE_CACHE_TTL` 의 가드는 `[ -gt 0 ]` 만 적용되어 본 폭 가드보다 느슨하다.
-폭과 TTL 의 입력 신뢰 모델이 다르기 때문이다.)
-
-## 관련 환경 변수
-
-- `CLAUDE_CACHE_TTL` — cache TTL 강제. 자세한 내용은 [`cache-guide.md`](./cache-guide.md) 참조.
-
 ## 레퍼런스
 
 - nixos-config issue #734 — v2.1.139 폭 측정 회귀 분석 및 fix.

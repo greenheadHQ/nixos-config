@@ -2,7 +2,7 @@
 set -euo pipefail
 # Codex-only divergence from Claude hook: skip programmatic/nested codex sessions
 # to avoid duplicate notifications + statusline TTL contamination.
-# Keep in sync with ~/.claude/hooks/record-last-stop.sh (issue #585).
+# Codex 전용 hook — Claude 쪽 동일 hook 은 statusline Cache TTL 기능 제거로 삭제됨 (issue #585).
 if [ "${CLAUDECODE:-}" = "1" ] || [ "${CODEX_PROGRAMMATIC:-}" = "1" ]; then
   exit 0
 fi

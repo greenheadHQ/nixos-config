@@ -89,25 +89,10 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/record-prompt-submit.sh"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/record-last-stop.sh"
-          },
           {
             "type": "command",
             "command": "~/.claude/hooks/record-last-session.sh"

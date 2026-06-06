@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# SC2034: 본 파일의 상수는 source되는 hook과 statusline에서만 참조한다.
+# SC2034: 본 파일의 상수는 source되는 hook에서만 참조한다.
 # 정적 분석은 직접 사용처를 보지 못해 false positive로 unused를 보고하므로
 # 파일 전체에 대해 disable한다.
 #
-# Session state shared helpers — SessionStart hook(session-init-icons.sh), Stop
-# hook(record-last-session.sh), statusline.sh(validate_session_id 정책)가
-# 공유하는 상수·함수의 SSOT. 한쪽에서 변경하면 lineage 복원/sidecar I/O가
-# silently 어긋나는 위험을 코드 레벨에서 차단한다.
+# Session state shared helpers — SessionStart hook(session-init-icons.sh)과 Stop
+# hook(record-last-session.sh)이 공유하는 상수·함수의 SSOT. 한쪽에서 변경하면
+# lineage 복원/sidecar I/O가 silently 어긋나는 위험을 코드 레벨에서 차단한다.
 #
 # USED-BY:
 #   claude/files/hooks/session-init-icons.sh    # via $SESSION_STATE_LIB
 #   claude/files/hooks/record-last-session.sh   # via $SESSION_STATE_LIB
-#   claude/files/scripts/statusline.sh          # via $SESSION_STATE_LIB (validate_session_id 정책)
 #
 # scripts/ai/verify-ai-compat.sh 가 본 USED-BY 선언과 실제 source 호출 일치를 oracle로 검증.
 #
@@ -71,7 +69,7 @@ marker_path_for_cwd() {
 
 # session_id가 sidecar/marker 파일명에 안전한지 검사 (0=safe, 1=unsafe).
 # 정책: allowlist `[A-Za-z0-9._-]` only + `..` 시퀀스 차단(path traversal 방어).
-# 본 검증의 SSOT — hook과 statusline은 모두 이 함수를 source해서 호출한다.
+# hook들의 session_id 검증 SSOT — 모두 이 함수를 source해서 호출한다.
 is_safe_session_id() {
   case "$1" in
     "") return 1 ;;

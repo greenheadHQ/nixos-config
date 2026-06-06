@@ -92,9 +92,9 @@ API_KEY = "sk-xxx"
 For plugin MCP configs, replace all occurrences of `${CLAUDE_PLUGIN_ROOT}` with the plugin's absolute `installPath`.
 
 Example:
-- installPath: `/Users/glen/.claude/plugins/cache/example-plugins/example-front/1.5.2`
+- installPath: `/Users/example/.claude/plugins/cache/example-marketplace/example-plugin/1.5.2`
 - Before: `"${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"`
-- After: `"/Users/glen/.claude/plugins/cache/example-plugins/example-front/1.5.2/mcp-server/dist/index.js"`
+- After: `"/Users/example/.claude/plugins/cache/example-marketplace/example-plugin/1.5.2/mcp-server/dist/index.js"`
 
 ## Output File
 
