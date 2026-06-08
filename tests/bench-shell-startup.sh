@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# 셸 startup 측정 — opt-in 수동 벤치 (lefthook/CI 미배선).
+# 셸 startup 측정 — opt-in 재현용(repro) 벤치. 회귀 게이트가 아니다 (lefthook/CI 미배선).
 #
-# 레퍼런스 "Life is too short for a slow terminal"의 핵심 처방(측정)을 위한 도구.
+# 레퍼런스 "Life is too short for a slow terminal"의 핵심 처방(측정)을 재현하는 도구.
 # 절대 ms가 시스템 부하(관찰자 효과)로 크게 흔들려 hard-gate(pre-push/CI 차단)에는
 # 부적합하다 — min/구조적 비교 위주로 해석한다. 회귀의 결정론적 lock은
-# tests/eval-tests.nix의 구조 불변식(Test D10~D12)이 담당한다.
+# tests/eval-tests.nix의 구조 불변식(Test D10~D11)이 담당하며, 이 스크립트는 게이트 책임을 지지 않는다.
 #
 # 사용: bash tests/bench-shell-startup.sh
 #
