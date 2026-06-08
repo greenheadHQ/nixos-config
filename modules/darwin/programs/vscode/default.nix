@@ -140,7 +140,12 @@ in
           aaron-bond.better-comments
 
           # Git
-          eamodio.gitlens
+          # GitLens는 release(-release) variant로 고정한다. open-vsx/marketplace의 latest는
+          # 날짜 버전(예: 2026.5.171822) pre-release를 가리키는데, pre-release 빌드는 만료
+          # 기한이 내장되어 만료 시 current-line blame 등 전 기능이 잠기고 만료 팝업이
+          # VSCode 재시작마다 반복된다. -release는 pre-release를 제외한 정식 릴리스(17.x)를
+          # 받으므로 만료 회귀가 없다. (무료 범위: current line blame/hover/status bar blame.)
+          pkgs.open-vsx-release.eamodio.gitlens
           github.vscode-pull-request-github
 
           # 언어
