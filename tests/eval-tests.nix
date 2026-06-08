@@ -411,7 +411,8 @@ let
         }
         # 셸 startup 최적화 회귀 lock — modules/darwin/configuration.nix.
         # 타이밍이 아닌 config-level 불변식만 검증(결정론적, 부하 무관).
-        # (D9는 루프 밖 글로벌 테스트라 여기서는 D8 다음 D10부터 이어진다.)
+        # D-넘버는 per-host 루프와 글로벌 리스트가 공유하는 단일 시퀀스다. 글로벌 불변식(D9
+        # unexpected-host)은 메인 tests 리스트에 있으므로, per-host 루프는 D8 다음 D10부터 이어진다.
         {
           name = "Test D10 ${hostName}: 시스템 compinit 중복 제거 — enableGlobalCompInit이 false여야 함";
           cond = hasHost && cfg.programs.zsh.enableGlobalCompInit == false;
@@ -419,6 +420,25 @@ let
         {
           name = "Test D11 ${hostName}: 사문 promptinit 제거 — promptInit이 빈 문자열이어야 함 (Starship이 프롬프트를 덮어씀)";
           cond = hasHost && cfg.programs.zsh.promptInit == "";
+        }
+        {
+          # D10이 시스템 compinit을 제거하므로 사용자 compinit이 유일 정본이 되어야 한다.
+          # 부정 불변식(D10)과 긍정 불변식(이 테스트)을 한 쌍으로 잠가, 향후 home-manager 쪽
+          # 변경(enableCompletion=false 등)이 단일-정본 추상화를 침묵으로 깨는 것을 방지한다.
+          name = "Test D12 ${hostName}: 시스템 compinit 제거의 짝 — 사용자(home-manager) compinit이 단일 정본으로 존재해야 함";
+          cond =
+            hasHost
+            && (
+              let
+                hmZsh = cfg.home-manager.users.${cfg.system.primaryUser}.programs.zsh;
+              in
+              # enableCompletion이 켜져 있고 completionInit에 compinit 호출이 있는지 함께 검증한다.
+              # (builtins.match는 전체-문자열 앵커라 .* 래핑 필요; 멀티라인 대비 newline 평탄화)
+              hmZsh.enableCompletion
+              &&
+                builtins.match ".*compinit.*" (builtins.replaceStrings [ "\n" ] [ " " ] hmZsh.completionInit)
+                != null
+            );
         }
       ]
     ) expectedDarwinHosts

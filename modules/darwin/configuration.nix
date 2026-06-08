@@ -128,7 +128,8 @@ in
   #   (1) 이중 compinit: 시스템 /etc/zshrc의 compinit + 사용자 ~/.zshrc(home-manager)의 compinit이
   #       셸당 둘 다 실행되어, 두 compinit이 같은 ~/.zcompdump를 두고 매 셸 콜드 재빌드(fpath 전수
   #       감사)를 반복했다. 이게 startup의 지배적 비용이었다.
-  #   (2) prompt suse: promptinit 테마는 Starship이 PROMPT/precmd를 전부 덮어써 100% 사문(dead work).
+  #   (2) prompt suse(= nix-darwin programs.zsh.promptInit 기본 테마): Starship이 PROMPT/precmd를
+  #       전부 덮어써 100% 사문(dead work).
   # enableGlobalCompInit=false: 시스템 compinit을 제거해 사용자 compinit(home-manager 기본 full
   #   compinit)을 단일 정본으로 만든다. 이중→단일로 콜드 재빌드 반복이 사라지고, 단일 compinit은
   #   ~/.zcompdump가 신선하면 로드만(재빌드 안 함)·fpath 변경 시 자동 재빌드하며 compaudit(보안감사)도
@@ -136,8 +137,11 @@ in
   #   (사용자 .zshrc가 fpath 구성 후 자체 compinit 실행).
   # promptInit="": Starship이 덮어쓰는 prompt suse 테마 로드를 제거(프롬프트 동작 불변).
   # Trade-off: 시스템 compinit 제거로, 사용자 ~/.zshrc를 source하지 않는 셸(sudo -i/su - root 등)은
-  #   completion이 미초기화된다(single-user macOS라 영향 낮음). enableBashCompletion(기본 true)은
-  #   유지 — nvm/bun completion의 bash `complete` 호환. 본 옵션은 darwin 전용(NixOS는 별도 호스트).
+  #   compinit이 0회 실행된다. 이때 유지된 시스템 bashcompinit(enableBashCompletion 기본 true)이
+  #   compinit 없이 남아, 그런 셸에서 시스템 레벨 `complete` 호출 시 compdef 미정의 에러가 날 수
+  #   있다(single-user macOS·root에 ~/.zshrc 부재라 실현 가능성은 낮음). enableBashCompletion을
+  #   유지하는 이유는 정상 사용자 세션의 nvm/bun completion(bash `complete`) 호환이다. 본 옵션은
+  #   darwin 전용(NixOS는 별도 호스트).
   programs.zsh.enableGlobalCompInit = false;
   programs.zsh.promptInit = "";
 
