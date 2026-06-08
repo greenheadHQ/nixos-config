@@ -423,8 +423,13 @@ let
         }
         {
           # D10이 시스템 compinit을 제거하므로 사용자 compinit이 유일 정본이 되어야 한다.
-          # 부정 불변식(D10)과 긍정 불변식(이 테스트)을 한 쌍으로 잠가, 향후 home-manager 쪽
-          # 변경(enableCompletion=false 등)이 단일-정본 추상화를 침묵으로 깨는 것을 방지한다.
+          # 부정 불변식(D10)과 긍정 불변식(이 테스트)을 한 쌍으로 잠가 단일-정본 추상화를 보호한다.
+          # 검증 대상 enableCompletion/completionInit은 이 repo가 명시 설정하지 않고 home-manager
+          # 업스트림 기본값(enableCompletion=true, completionInit="autoload -U compinit && compinit")에
+          # 의존한다 — repo를 grep해도 설정이 안 나오는 이유다. enableGlobalCompInit=false로 시스템
+          # compinit을 제거했기에 이 기본값이 유일 compinit이 되며, 깨지면(enableCompletion=false /
+          # oh-my-zsh·prezto 도입 / 업스트림 변경) darwin 전 셸 completion이 전면 사망한다 → 그 회귀를
+          # 조기 감지하려고 framework 기본값을 의도적으로 잠근다.
           name = "Test D12 ${hostName}: 시스템 compinit 제거의 짝 — 사용자(home-manager) compinit이 단일 정본으로 존재해야 함";
           cond =
             hasHost
@@ -433,7 +438,9 @@ let
                 hmZsh = cfg.home-manager.users.${cfg.system.primaryUser}.programs.zsh;
               in
               # enableCompletion이 켜져 있고 completionInit에 compinit 호출이 있는지 함께 검증한다.
-              # (builtins.match는 전체-문자열 앵커라 .* 래핑 필요; 멀티라인 대비 newline 평탄화)
+              # builtins.match는 전체-문자열 앵커(부분 매치 아님)라 .* 래핑이 필요하고, POSIX ERE의 `.`은
+              # newline을 매치하지 않아 completionInit이 멀티라인이면 전체 매치가 실패하므로 newline을
+              # 공백으로 평탄화한다(현 HM 기본값은 단일 라인이라 평탄화는 방어적 no-op).
               hmZsh.enableCompletion
               &&
                 builtins.match ".*compinit.*" (builtins.replaceStrings [ "\n" ] [ " " ] hmZsh.completionInit)
