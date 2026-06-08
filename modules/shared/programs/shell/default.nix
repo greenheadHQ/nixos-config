@@ -150,6 +150,22 @@ in
   # Zsh 설정 (공통)
   programs.zsh = {
     enable = true;
+
+    # compinit 캐싱 — nix-darwin enableGlobalCompInit=false(시스템 compinit 제거, modules/darwin/
+    # configuration.nix)로 사용자 compinit이 단일 정본이 된 뒤, 매 인터랙티브 셸의 zcompdump 콜드
+    # 재빌드(fpath 전수 감사)를 -C(보안감사 skip + 덤프 재사용)로 대체한다. fpath가 전부 nix
+    # store(root 소유·immutable)라 compaudit은 순수 오버헤드 → -C 안전. 덤프 부재 시(nrs 직후
+    # 첫 셸)에만 full 빌드하며, 새 도구 completion 정확성은 home.activation.invalidateZcompdump
+    # (nrs마다 1회 재빌드)가 보장한다.
+    completionInit = ''
+      autoload -Uz compinit
+      if [[ -s ''${ZDOTDIR:-$HOME}/.zcompdump ]]; then
+        compinit -C
+      else
+        compinit
+      fi
+    '';
+
     autosuggestion = {
       enable = true;
       highlight = "fg=#808080";
@@ -401,6 +417,15 @@ in
       #─────────────────────────────────────────────────────────────────────────
     ];
   };
+
+  # nrs(home-manager activation)마다 zcompdump를 무효화 → 위 completionInit의 -C 캐시가 항상
+  # 최신 completion으로 1회 재빌드된다. 이 repo는 도구를 nrs로만 추가하므로, nrs 후 첫 인터랙티브
+  # 셸이 zcompdump를 재빌드하고 이후 셸은 -C로 캐시 로드한다. 함께 정리: 과거 중단된 빌드가 남긴
+  # host-specific 임시 덤프(.zcompdump.<host>.<pid>)와 zwc 컴파일 캐시. 이로써 새 도구 completion
+  # 정확성과 startup 속도를 양립시킨다.
+  home.activation.invalidateZcompdump = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD rm -f "$HOME/.zcompdump" "$HOME"/.zcompdump.*
+  '';
 
   # Starship 프롬프트
   programs.starship = {

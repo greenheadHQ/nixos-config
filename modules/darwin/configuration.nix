@@ -122,6 +122,20 @@ in
   # zsh 활성화 (darwin-rebuild PATH 설정에 필수)
   programs.zsh.enable = true;
 
+  # 셸 startup 최적화 — nix-darwin /etc/zshrc가 매 인터랙티브 셸에 emit하는 중복/사문 작업 제거.
+  # === Change Intent Record ===
+  # 측정(고부하 darwin 호스트, min 지표)으로 다음 두 비용을 확인:
+  #   (1) 이중 compinit: /etc/zshrc의 시스템 compinit + 사용자 ~/.zshrc(home-manager)의 compinit이
+  #       셸당 각각 실행되어 compinit이 2회 돌고, 매 셸 zcompdump를 콜드 재빌드(fpath 전수 감사)했다.
+  #   (2) prompt suse: promptinit 테마(~32ms)는 Starship이 PROMPT/precmd를 전부 덮어써 100% 사문.
+  # enableGlobalCompInit=false: 시스템 compinit을 제거해 사용자 compinit을 단일 정본으로 만든다.
+  #   nix-darwin 옵션 doc이 "custom fpath + custom compinit을 두면 끄라"고 명시한 바로 그 케이스
+  #   (사용자 .zshrc가 fpath 구성 후 자체 compinit 실행). completion 동작은 사용자 compinit이 보존.
+  # promptInit="": Starship이 덮어쓰는 prompt suse 테마 로드를 제거(프롬프트 동작 불변).
+  # 사용자 compinit의 -C 캐싱 + nrs 시 zcompdump 무효화는 modules/shared/programs/shell/default.nix.
+  programs.zsh.enableGlobalCompInit = false;
+  programs.zsh.promptInit = "";
+
   # macOS 시스템 기본값
   system.defaults = {
     # Dock 설정

@@ -409,6 +409,28 @@ let
           name = "Test D8 ${hostName}: 자연 스크롤이 비활성화되어야 함";
           cond = hasHost && cfg.system.defaults.NSGlobalDomain."com.apple.swipescrolldirection" == false;
         }
+        # 셸 startup 최적화 회귀 lock — modules/darwin/configuration.nix + shell/default.nix.
+        # 타이밍이 아닌 config-level 불변식만 검증(결정론적, 부하 무관).
+        {
+          name = "Test D10 ${hostName}: 시스템 compinit 중복 제거 — enableGlobalCompInit이 false여야 함";
+          cond = hasHost && cfg.programs.zsh.enableGlobalCompInit == false;
+        }
+        {
+          name = "Test D11 ${hostName}: 사문 promptinit 제거 — promptInit이 빈 문자열이어야 함 (Starship이 프롬프트를 덮어씀)";
+          cond = hasHost && cfg.programs.zsh.promptInit == "";
+        }
+        {
+          name = "Test D12 ${hostName}: 사용자 compinit이 -C 캐싱 fast-path를 써야 함 (콜드 재빌드 회피)";
+          cond =
+            hasHost
+            && (
+              let
+                hmUser = builtins.head (builtins.attrNames cfg.home-manager.users);
+                completionInit = cfg.home-manager.users.${hmUser}.programs.zsh.completionInit;
+              in
+              builtins.match ".*compinit -C.*" (builtins.replaceStrings [ "\n" ] [ " " ] completionInit) != null
+            );
+        }
       ]
     ) expectedDarwinHosts
   );
