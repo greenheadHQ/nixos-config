@@ -283,15 +283,18 @@ in
       #─────────────────────────────────────────────────────────────────────────
       ''
         wt() {
-          # 비대화형 셸에서는 wrapper를 우회하고 바이너리에 위임한다.
-          # Claude Code 같은 LLM 하네스는 대화형 셸의 snapshot을 비대화형 셸에
-          # 주입하므로 "비대화형엔 wrapper가 없다"는 가정이 성립하지 않는다.
-          # wrapper의 cd 분기는 경로를 stdout에 내지 않아(직접 cd가 목적)
-          # `cd "$(wt cd <name>)"` 비대화형 계약이 조용히 깨진다 — zsh에서
-          # `cd ""`는 no-op 성공이라 잘못된 디렉토리에서 후속 명령이 실행된다.
-          # 게이트 기준은 바이너리의 _wt_interactive와 동일 (WT_NONINTERACTIVE
-          # 또는 stdin 비TTY).
-          if [[ -n "''${WT_NONINTERACTIVE:-}" ]] || [[ ! -t 0 ]]; then
+          # 비대화형/캡처 컨텍스트에서는 wrapper를 우회하고 바이너리에 위임한다.
+          # (1) Claude Code 같은 LLM 하네스는 대화형 셸의 snapshot을 비대화형 셸에
+          #     주입하므로 "비대화형엔 wrapper가 없다"는 가정이 성립하지 않는다.
+          # (2) wrapper의 cd 분기는 경로를 stdout에 내지 않아(직접 cd가 목적)
+          #     `cd "$(wt cd <name>)"` 계약이 조용히 깨진다 — zsh에서 `cd ""`는
+          #     no-op 성공이라 잘못된 디렉토리에서 후속 명령이 실행된다.
+          # (3) stdout 비TTY 검사: 대화형 셸이라도 $(...)/파이프로 stdout이 캡처되면
+          #     호출자가 출력을 원하는 것이므로 wrapper의 직접-cd UX 대신 바이너리의
+          #     경로 출력 계약을 따른다.
+          # 게이트 기준 = 바이너리의 _wt_interactive(WT_NONINTERACTIVE 또는 stdin
+          # 비TTY) + stdout 비TTY.
+          if [[ -n "''${WT_NONINTERACTIVE:-}" ]] || [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
             command wt "$@"
             return $?
           fi

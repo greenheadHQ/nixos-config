@@ -105,11 +105,18 @@ _open_worktree() {
     fi
   else
     # tmux 밖 또는 비대화형: 경로 stdout 출력 (래퍼가 cd)
-    [[ "$run_claude" == "true" ]] && _info "경고: --claude는 tmux 세션 안에서만 동작합니다"
-    if [[ "$stay" == "true" ]]; then
-      # --stay: 현재 디렉토리 유지, 경로만 안내
+    if [[ "$run_claude" == "true" ]]; then
+      if [[ -n "${TMUX:-}" ]]; then
+        _info "경고: --claude는 비대화형에서 정책상 무시됩니다 (tmux UI 비활성)"
+      else
+        _info "경고: --claude는 tmux 세션 안에서만 동작합니다"
+      fi
+    fi
+    if [[ "$stay" == "true" ]] && _wt_interactive; then
+      # --stay (대화형): 현재 디렉토리 유지, 경로만 안내 — stdout에 내면 래퍼가 cd해버린다
       _info "worktree 경로: $wt_path"
     else
+      # 비대화형은 --stay여도 stdout 경로 출력 계약을 지킨다 (래퍼는 self-gate로 우회됨)
       echo "$wt_path"
     fi
   fi
