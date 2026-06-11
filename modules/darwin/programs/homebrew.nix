@@ -111,4 +111,37 @@
       # };
     })
   ];
+
+  # ── Homebrew tap trust ──────────────────────────────────────
+  # Homebrew는 third-party tap의 formula/cask 로드 시 명시적 trust를 기본 요구한다
+  # (HOMEBREW_REQUIRE_TAP_TRUST default: true — env_config.rb). trust 미등록 tap의
+  # formula가 brew bundle 대상이면 "Refusing to load formula ..."로 activation이 실패한다.
+  # opt-out(HOMEBREW_NO_REQUIRE_TAP_TRUST)은 "will be removed in a later release"라 비채택.
+  #
+  # brew bundle(activationScripts.homebrew)보다 먼저 실행되는 extraActivation에서
+  # 선언된 taps를 brew trust로 등록한다 — 이 목록에 tap을 선언하는 행위 자체를
+  # 신뢰 의사 표명으로 간주한다. trust.json은 additive로만 관리한다: 선언 해제된
+  # tap을 untrust로 회수하지 않는다 (cleanup = "none"과 동일한 보수성. 수동 trust한
+  # tap을 activation이 임의 회수하지 않기 위함).
+  #
+  # 실행 형태는 nix-darwin의 brew bundle 호출과 동일하게 맞춘다 (sudo --user --set-home):
+  # brew는 root 실행을 거부하고, trust.json 경로가 $HOME 기준(~/.homebrew/trust.json,
+  # sudo env_reset으로 XDG_CONFIG_HOME 미전파)이므로 bundle이 읽는 파일과 일치해야 한다.
+  # trust 서브커맨드가 없는 구버전 Homebrew에서는 감지 후 no-op (멱등: 재등록 시
+  # "Already trusted" 출력, exit 0).
+  system.activationScripts.extraActivation.text =
+    let
+      cfg = config.homebrew;
+      tapNames = map (tap: tap.name) cfg.taps;
+      brewTrust = ''PATH="${cfg.prefix}/bin:$PATH" sudo --preserve-env=PATH --user=${lib.escapeShellArg cfg.user} --set-home "${cfg.prefix}/bin/brew" trust'';
+    in
+    lib.mkIf (cfg.enable && tapNames != [ ]) ''
+      # Homebrew tap trust — brew bundle 이전에 선언 tap 신뢰 등록
+      if [ -f "${cfg.prefix}/bin/brew" ]; then
+        if ${brewTrust} --help >/dev/null 2>&1; then
+          echo >&2 "Trusting declared Homebrew taps..."
+          ${brewTrust} --tap ${lib.escapeShellArgs tapNames}
+        fi
+      fi
+    '';
 }
