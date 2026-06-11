@@ -118,8 +118,9 @@
   # formula가 brew bundle 대상이면 "Refusing to load formula ..."로 activation이 실패한다.
   # opt-out(HOMEBREW_NO_REQUIRE_TAP_TRUST)은 "will be removed in a later release"라 비채택.
   #
-  # brew bundle(activationScripts.homebrew)보다 먼저 실행되는 extraActivation에서
-  # 선언된 taps를 brew trust로 등록한다 — 이 목록에 tap을 선언하는 행위 자체를
+  # nix-darwin의 homebrew activation slot(activationScripts.homebrew.text)에 mkBefore로
+  # prepend하여, groups/users 이후라는 기존 brew 실행 순서 계약을 유지하면서 bundle보다
+  # 먼저 선언된 taps를 brew trust로 등록한다 — 이 목록에 tap을 선언하는 행위 자체를
   # 신뢰 의사 표명으로 간주한다. trust.json은 additive로만 관리한다: 선언 해제된
   # tap을 untrust로 회수하지 않는다 (cleanup = "none"과 동일한 보수성. 수동 trust한
   # tap을 activation이 임의 회수하지 않기 위함).
@@ -131,26 +132,41 @@
   # 위치를 바꾸는 경우에도 두 단계가 같은 trust.json을 보도록 env 구성을 bundle과 맞춘다.
   # trust 서브커맨드가 없는 구버전 Homebrew에서는 감지 후 no-op (멱등: 재등록 시
   # "Already trusted" 출력, exit 0).
-  system.activationScripts.extraActivation.text =
+  system.activationScripts.homebrew.text =
     let
       cfg = config.homebrew;
-      # custom remote tap(clone_target)의 trust principal은 이름이 아니라 remote URL이다 —
-      # Homebrew Tap#matches_reference?는 user/repo reference를 default GitHub remote에만
-      # 매칭하므로, 이름으로 trust하면 custom remote tap은 trusted로 매칭되지 않는다.
-      trustTargets = map (tap: if tap.clone_target != null then tap.clone_target else tap.name) cfg.taps;
+      # trust principal 결정 — 항상 remote URL 형태로 넘긴다:
+      # - clone_target tap: 그 URL 자체가 principal (Homebrew Tap#matches_reference?는
+      #   user/repo reference를 default GitHub remote에만 매칭).
+      # - 일반 tap: 선언이 의미하는 default GitHub remote URL을 명시적으로 trust한다.
+      #   이름으로 trust하면 brew trust가 설치된 tap의 "현재" remote를 principal로
+      #   저장하므로(Trust.trust_name → Tap#reference), 로컬에서 remote가 drift된 tap을
+      #   조용히 신뢰하게 된다. URL은 remote_to_reference가 canonical name으로 정규화해
+      #   선언 의도를 고정하고, drift된 tap은 bundle 단계에서 untrusted로 fail-loud한다.
+      defaultRemote =
+        name:
+        let
+          parts = lib.splitString "/" name;
+        in
+        "https://github.com/${lib.elemAt parts 0}/homebrew-${lib.elemAt parts 1}";
+      trustTargets = map (
+        tap: if tap.clone_target != null then tap.clone_target else defaultRemote tap.name
+      ) cfg.taps;
       # bundle의 brewBundleCmd와 동일한 env 구성 (HOMEBREW_NO_AUTO_UPDATE + extraEnv)
       trustEnv =
         lib.optional (!cfg.onActivation.autoUpdate) "HOMEBREW_NO_AUTO_UPDATE=1"
         ++ lib.mapAttrsToList (k: v: "${k}=${lib.escapeShellArg v}") cfg.onActivation.extraEnv;
       brewTrust = ''PATH="${cfg.prefix}/bin:$PATH" sudo --preserve-env=PATH --user=${lib.escapeShellArg cfg.user} --set-home env ${lib.concatStringsSep " " trustEnv} "${cfg.prefix}/bin/brew" trust'';
     in
-    lib.mkIf (cfg.enable && trustTargets != [ ]) ''
-      # Homebrew tap trust — brew bundle 이전에 선언 tap 신뢰 등록
-      if [ -f "${cfg.prefix}/bin/brew" ]; then
-        if ${brewTrust} --help >/dev/null 2>&1; then
-          echo >&2 "Trusting declared Homebrew taps..."
-          ${brewTrust} --tap ${lib.escapeShellArgs trustTargets}
+    lib.mkIf (cfg.enable && trustTargets != [ ]) (
+      lib.mkBefore ''
+        # Homebrew tap trust — brew bundle 이전에 선언 tap 신뢰 등록
+        if [ -f "${cfg.prefix}/bin/brew" ]; then
+          if ${brewTrust} --help >/dev/null 2>&1; then
+            echo >&2 "Trusting declared Homebrew taps..."
+            ${brewTrust} --tap ${lib.escapeShellArgs trustTargets}
+          fi
         fi
-      fi
-    '';
+      ''
+    );
 }
