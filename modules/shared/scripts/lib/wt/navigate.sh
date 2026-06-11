@@ -159,8 +159,12 @@ cmd_cd() {
     _warn "비대화형: --tmux 무시 (경로만 출력)"
   fi
 
-  # tmux 안이면 윈도우 전환 시도
-  if [[ -n "${TMUX:-}" ]]; then
+  # tmux 안이면 윈도우 전환 시도 (대화형 한정 — 정책은 _wt_tmux_ui_allowed가 소유).
+  # 비대화형 호출(LLM/스크립트)은 "경로를 stdout으로 출력" 계약을 지켜야 하고,
+  # 사용자 tmux 화면을 임의로 전환하는 부수효과도 내면 안 된다. 전환 성공 시 경로
+  # 출력 없이 return 0이라 `cd "$(wt cd <name>)"`가 빈 문자열을 받는다
+  # (zsh의 `cd ""`는 no-op 성공).
+  if _wt_tmux_ui_allowed; then
     local window_id
     if window_id=$(_wt_find_tmux_window "$target_path"); then
       tmux select-window -t "$window_id"

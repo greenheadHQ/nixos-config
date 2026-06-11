@@ -1,4 +1,13 @@
 # shellcheck shell=bash
+# tmux UI 부수효과(윈도우 생성/전환) 허용 여부 — 단일 정책 경계.
+# 비대화형(LLM/스크립트) 호출은 사용자 tmux 화면을 임의로 바꾸지 않고
+# "경로를 stdout으로 출력" 계약을 지켜야 한다 (CLAUDE.md Worktree 섹션).
+# cd/create/reuse 등 tmux 윈도우 전환·생성이 가능한 모든 경로는 이 함수로
+# 게이트한다 — 호출자별 가드 복제로 정책 누락이 생기는 것을 막는다.
+_wt_tmux_ui_allowed() {
+  [[ -n "${TMUX:-}" ]] && _wt_interactive
+}
+
 # worktree 디렉토리에 해당하는 tmux 윈도우 찾기
 # tmux 안/밖 모두 동작 — 서버 실행 여부만 확인
 _wt_find_tmux_window() {

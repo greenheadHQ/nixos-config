@@ -58,9 +58,9 @@ wt — Git worktree 관리 (fzf TUI, tmux 통합)
   wt cd <name>              해당 경로로 cd
   wt ls / wt cleanup        동일하게 동작
 
-[.wt-parent]
-  부모 브랜치를 worktree 루트에 기록 (gitignore됨)
-  확인: cat .claude/worktrees/<name>/.wt-parent
+[.wt-last / wt cd -]
+  마지막 worktree 경로를 .claude/worktrees/.wt-last에 기록
+  wt cd -                   이전 worktree로 이동 (cd -, git checkout - 패턴)
 
 Tip
 - wt ls로 상태 확인 → wt cleanup으로 MERGED 일괄 정리가 기본 워크플로우

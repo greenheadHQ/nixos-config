@@ -34,6 +34,13 @@
 #           cleanup [name...] 위치 인자 + --yes, ls --json 구조화 출력.
 #    제거: .wt-parent (write-only dead data, 읽는 코드 0곳) / gum 의존 (wt ls 표시 전용 잔재,
 #         plain printf fallback이 동등; packages.nix에서도 제거).
+# v8: 비대화형 stdout 계약 강화 — "비대화형 셸은 래퍼 없이 직행"(v7 전제)이 깨짐을 확인.
+#    배경: LLM 하네스(Claude Code)가 대화형 셸 snapshot을 비대화형 셸에 주입해 zsh 래퍼가
+#          존재할 수 있다. 래퍼 cd 분기는 경로를 출력하지 않아 cd "$(wt cd <name>)"가 빈
+#          문자열을 받고, zsh의 `cd ""` no-op 성공으로 잘못된 디렉토리에서 후속 명령이 실행됐다.
+#    수정: 래퍼 self-gate(WT_NONINTERACTIVE/stdin 비TTY/stdout 비TTY → 바이너리 passthrough),
+#          tmux UI 부수효과(윈도우 생성/전환)는 _wt_tmux_ui_allowed 단일 정책으로 대화형 한정,
+#          --stay도 비대화형에서는 stdout 경로 출력.
 
 set -euo pipefail
 
@@ -121,8 +128,8 @@ Git worktree 관리 도구 (fzf TUI, tmux 통합; 비대화형/LLM 셸 호환)
 
 비대화형 (LLM/스크립트):
   stdin이 tty가 아니거나 WT_NONINTERACTIVE=1이면 비대화형 모드.
-  fzf/번호선택/tmux attach 대신 명시 플래그·인자가 필요하다.
-  생성/이동 경로는 stdout으로 출력되므로 cd "\$(wt cd <name>)" 형태로 사용.
+  fzf/번호선택/tmux attach/tmux 윈도우 생성·전환 대신 명시 플래그·인자가 필요하다.
+  생성/이동 경로는 stdout으로 출력되므로 cd "\$(wt cd <name>)" 형태로 사용 (--stay 포함).
 
 Codex:
   worktree 생성/재생성 bootstrap은 해당 worktree를 Codex 전역 config에 trust한다.
