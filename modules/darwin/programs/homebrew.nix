@@ -48,20 +48,24 @@ let
     in
     if m == null then null else "${owner}/${repo}";
 
+  # Homebrew Bundle dsl.rb의 HOMEBREW_TAP_ARGS_REGEX와 동일한 tap name 형식.
+  # 캡처 순서: [ owner homebrew-접두(optional) repo ]. downcase된 입력에 적용한다.
+  tapNameRegex = "([a-z0-9_-]+)/(homebrew-)?([a-z0-9_-]+)";
+
   # 선언된 tap 이름을 Homebrew Bundle sanitize_tap_name(dsl.rb의
   # HOMEBREW_TAP_ARGS_REGEX)과 동일하게 canonical name으로 정규화한다:
   # downcase 후 repo 부분의 선택적 leading "homebrew-" 제거.
   # bundle은 "user/homebrew-repo" 선언을 "user/repo" tap으로 처리하므로,
   # trust 측 계산도 같은 identity를 기준으로 해야 한다. 반환값은 lowercase다.
+  # 형식 불일치 name은 null — 아래 assertions가 eval 시점에 거부한다.
   sanitizeTapName =
     name:
     let
-      # 캡처 순서: [ owner homebrew-접두(optional) repo ]
-      m = builtins.match "([a-z0-9_-]+)/(homebrew-)?([a-z0-9_-]+)" (lib.toLower name);
+      m = builtins.match tapNameRegex (lib.toLower name);
       owner = builtins.elemAt m 0;
       repo = builtins.elemAt m 2;
     in
-    if m == null then lib.toLower name else "${owner}/${repo}";
+    if m == null then null else "${owner}/${repo}";
 
   # trust principal 결정 — 항상 remote URL 형태로 넘긴다:
   # - clone_target tap: 그 URL 자체가 principal (Homebrew Tap#matches_reference?는
@@ -71,45 +75,70 @@ let
   #   저장하므로(Trust.trust_name → Tap#reference), 로컬에서 remote가 drift된 tap을
   #   조용히 신뢰하게 된다. URL은 remote_to_reference가 canonical name으로 정규화해
   #   선언 의도를 고정하고, drift된 tap은 bundle 단계에서 untrusted로 fail-loud한다.
+  # 형식 불일치 name은 null 전파 (assertions가 거부) — elemAt 범위 오류 같은
+  # 불친절한 eval 에러 대신 명확한 assertion 메시지가 먼저 도달하도록 total 함수로 둔다.
   defaultRemote =
     name:
     let
-      parts = lib.splitString "/" (sanitizeTapName name);
+      sanitized = sanitizeTapName name;
+      parts = lib.splitString "/" sanitized;
       owner = lib.elemAt parts 0;
       repo = lib.elemAt parts 1;
     in
-    "https://github.com/${owner}/homebrew-${repo}";
-  trustTargets = map (
-    tap: if tap.clone_target != null then tap.clone_target else defaultRemote tap.name
-  ) cfg.taps;
+    if sanitized == null then null else "https://github.com/${owner}/homebrew-${repo}";
+  trustTargets = lib.filter (t: t != null) (
+    map (tap: if tap.clone_target != null then tap.clone_target else defaultRemote tap.name) cfg.taps
+  );
 
   # trust 명령의 env는 "그 직후 trust.json을 읽는 소비자"와 정확히 일치해야 한다 —
   # XDG_CONFIG_HOME류 변수가 trust store 위치 자체를 바꾸기 때문이다. nix-darwin은
   # bundle에는 extraEnv를 적용하지만 cleanup check에는 HOMEBREW_NO_AUTO_UPDATE=1만
   # 하드코딩하므로, prelude도 소비자별로 env를 달리 구성한다.
+  #
+  # trust 서브커맨드 존재는 프로세스 기동(--help probe, ruby ~1초) 대신 cmd 파일로
+  # 감지한다. Homebrew repository layout이 두 가지다: Apple Silicon은 prefix가 곧
+  # repo(/opt/homebrew/Library/...), Intel은 prefix/Homebrew가 repo
+  # (/usr/local/Homebrew/Library/...).
+  #
+  # updateBeforeTrust: trust를 모르는 구버전 brew + autoUpdate 구성에서는 직후
+  # bundle이 auto-update로 brew를 갱신한 뒤 trust 강제가 켜져 거부된다 (이번 회귀의
+  # 원인 경로와 동일 구조). 그 경우 trust 등록 전에 먼저 update해 1회성 실패를
+  # 제거한다. cleanup check prelude는 구버전 brew가 trust를 강제하지 않아 불필요.
   mkTrustScript =
-    env:
+    {
+      env,
+      updateBeforeTrust ? false,
+    }:
     let
-      brewTrust = ''PATH="${cfg.prefix}/bin:$PATH" sudo --preserve-env=PATH --user=${lib.escapeShellArg cfg.user} --set-home env ${lib.concatStringsSep " " env} "${cfg.prefix}/bin/brew" trust'';
+      runBrew = ''PATH="${cfg.prefix}/bin:$PATH" sudo --preserve-env=PATH --user=${lib.escapeShellArg cfg.user} --set-home env ${lib.concatStringsSep " " env} "${cfg.prefix}/bin/brew"'';
+      trustCmdExists = ''{ [ -f "${cfg.prefix}/Library/Homebrew/cmd/trust.rb" ] || [ -f "${cfg.prefix}/Homebrew/Library/Homebrew/cmd/trust.rb" ]; }'';
     in
     ''
       # Homebrew tap trust — brew bundle/cleanup 이전에 선언 tap 신뢰 등록
       if [ -f "${cfg.prefix}/bin/brew" ]; then
-        if ${brewTrust} --help >/dev/null 2>&1; then
+        ${lib.optionalString updateBeforeTrust ''
+          if ! ${trustCmdExists}; then
+            echo >&2 "brew trust unavailable — updating Homebrew first..."
+            ${runBrew} update || true
+          fi
+        ''}
+        if ${trustCmdExists}; then
           echo >&2 "Trusting declared Homebrew taps..."
-          ${brewTrust} --tap ${lib.escapeShellArgs trustTargets}
+          ${runBrew} trust --tap ${lib.escapeShellArgs trustTargets}
         fi
       fi
     '';
 
   trustEnabled = cfg.enable && trustTargets != [ ];
   # bundle용: brewBundleCmd와 동일한 env 구성 (HOMEBREW_NO_AUTO_UPDATE + extraEnv)
-  bundleTrustScript = mkTrustScript (
-    lib.optional (!cfg.onActivation.autoUpdate) "HOMEBREW_NO_AUTO_UPDATE=1"
-    ++ lib.mapAttrsToList (k: v: "${k}=${lib.escapeShellArg v}") cfg.onActivation.extraEnv
-  );
+  bundleTrustScript = mkTrustScript {
+    env =
+      lib.optional (!cfg.onActivation.autoUpdate) "HOMEBREW_NO_AUTO_UPDATE=1"
+      ++ lib.mapAttrsToList (k: v: "${k}=${lib.escapeShellArg v}") cfg.onActivation.extraEnv;
+    updateBeforeTrust = cfg.onActivation.autoUpdate;
+  };
   # cleanup check용: nix-darwin cleanup check의 hardcoded env와 동일하게 구성
-  checkTrustScript = mkTrustScript [ "HOMEBREW_NO_AUTO_UPDATE=1" ];
+  checkTrustScript = mkTrustScript { env = [ "HOMEBREW_NO_AUTO_UPDATE=1" ]; };
 in
 {
   homebrew = lib.mkMerge [
@@ -214,26 +243,43 @@ in
     })
   ];
 
-  # clone_target이 GitHub 기본형 URL인데 canonical name이 선언명과 다른 alias 구성은
-  # brew trust가 URL을 canonical name으로 정규화해 저장하므로 URL principal이 보존되지
-  # 않고, 설치된 custom remote tap은 name reference 매칭을 거부당해 trust 등록 후에도
-  # untrusted로 남는다. 런타임 silent 실패 대신 eval 시점에 거부한다.
-  assertions = map (tap: {
-    assertion =
-      tap.clone_target == null
-      || (
-        let
-          canonical = canonicalGitHubName tap.clone_target;
-        in
-        # canonicalGitHubName과 sanitizeTapName 모두 lowercase를 반환한다
-        canonical == null || canonical == sanitizeTapName tap.name
-      );
-    message = ''
-      homebrew.taps: "${tap.name}"의 clone_target(${toString tap.clone_target})은
-      GitHub 기본형 URL이라 brew trust가 canonical name으로 정규화해 저장하는데,
-      선언된 tap 이름과 달라 설치된 tap에 trust가 매칭되지 않는다. tap 이름을
-      canonical name으로 선언하거나 GitHub 기본형이 아닌 remote를 사용하라.'';
-  }) cfg.taps;
+  # tap 선언 형식/조합을 eval 시점에 거부한다 (런타임 silent 실패 방지).
+  # homebrew.enable=false인 host는 trust hook이 비활성이므로 검사하지 않는다
+  # (nix-darwin homebrew activation 자체도 mkIf cfg.enable로 게이트됨).
+  #
+  # 1) name 형식: Bundle HOMEBREW_TAP_ARGS_REGEX 불일치 name(슬래시 없음, 3개
+  #    세그먼트 등)은 trust principal 계산이 불가능하고, 묵인하면 의도하지 않은
+  #    principal을 조용히 trust하거나 불친절한 eval 에러가 난다.
+  # 2) clone_target alias: GitHub 기본형 URL인데 canonical name이 선언명과 다르면
+  #    brew trust가 URL을 canonical name으로 정규화해 저장하므로 URL principal이
+  #    보존되지 않고, 설치된 custom remote tap은 name reference 매칭을 거부당해
+  #    trust 등록 후에도 untrusted로 남는다.
+  assertions = lib.concatMap (tap: [
+    {
+      assertion = !cfg.enable || builtins.match tapNameRegex (lib.toLower tap.name) != null;
+      message = ''
+        homebrew.taps: "${tap.name}"은 Homebrew Bundle의 tap name 형식
+        (user/repo 또는 user/homebrew-repo)이 아니라 trust principal을
+        계산할 수 없다. user/repo 형식으로 선언하라.'';
+    }
+    {
+      assertion =
+        !cfg.enable
+        || tap.clone_target == null
+        || (
+          let
+            canonical = canonicalGitHubName tap.clone_target;
+          in
+          # canonicalGitHubName과 sanitizeTapName 모두 lowercase를 반환한다
+          canonical == null || canonical == sanitizeTapName tap.name
+        );
+      message = ''
+        homebrew.taps: "${tap.name}"의 clone_target(${toString tap.clone_target})은
+        GitHub 기본형 URL이라 brew trust가 canonical name으로 정규화해 저장하는데,
+        선언된 tap 이름과 달라 설치된 tap에 trust가 매칭되지 않는다. tap 이름을
+        canonical name으로 선언하거나 GitHub 기본형이 아닌 remote를 사용하라.'';
+    }
+  ]) cfg.taps;
 
   # nix-darwin의 homebrew activation slot(activationScripts.homebrew.text)에 mkBefore로
   # prepend하여, groups/users 이후라는 기존 brew 실행 순서 계약을 유지하면서 bundle보다
