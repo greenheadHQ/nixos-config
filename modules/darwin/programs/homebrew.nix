@@ -41,9 +41,27 @@ let
       lowered = lib.toLower (lib.trim url);
       noSlash = builtins.match "(.*[^/])/*" lowered;
       stripped = lib.removeSuffix ".git" (if noSlash == null then lowered else builtins.elemAt noSlash 0);
+      # 캡처 순서: [ scheme userinfo owner repo ]
       m = builtins.match "([a-z][a-z0-9+.-]*://)?([^@/]+@)?github\\.com[:/]([^/]+)/homebrew-(.+)" stripped;
+      owner = builtins.elemAt m 2;
+      repo = builtins.elemAt m 3;
     in
-    if m == null then null else "${builtins.elemAt m 2}/${builtins.elemAt m 3}";
+    if m == null then null else "${owner}/${repo}";
+
+  # 선언된 tap 이름을 Homebrew Bundle sanitize_tap_name(dsl.rb의
+  # HOMEBREW_TAP_ARGS_REGEX)과 동일하게 canonical name으로 정규화한다:
+  # downcase 후 repo 부분의 선택적 leading "homebrew-" 제거.
+  # bundle은 "user/homebrew-repo" 선언을 "user/repo" tap으로 처리하므로,
+  # trust 측 계산도 같은 identity를 기준으로 해야 한다. 반환값은 lowercase다.
+  sanitizeTapName =
+    name:
+    let
+      # 캡처 순서: [ owner homebrew-접두(optional) repo ]
+      m = builtins.match "([a-z0-9_-]+)/(homebrew-)?([a-z0-9_-]+)" (lib.toLower name);
+      owner = builtins.elemAt m 0;
+      repo = builtins.elemAt m 2;
+    in
+    if m == null then lib.toLower name else "${owner}/${repo}";
 
   # trust principal 결정 — 항상 remote URL 형태로 넘긴다:
   # - clone_target tap: 그 URL 자체가 principal (Homebrew Tap#matches_reference?는
@@ -56,9 +74,11 @@ let
   defaultRemote =
     name:
     let
-      parts = lib.splitString "/" name;
+      parts = lib.splitString "/" (sanitizeTapName name);
+      owner = lib.elemAt parts 0;
+      repo = lib.elemAt parts 1;
     in
-    "https://github.com/${lib.elemAt parts 0}/homebrew-${lib.elemAt parts 1}";
+    "https://github.com/${owner}/homebrew-${repo}";
   trustTargets = map (
     tap: if tap.clone_target != null then tap.clone_target else defaultRemote tap.name
   ) cfg.taps;
@@ -205,7 +225,8 @@ in
         let
           canonical = canonicalGitHubName tap.clone_target;
         in
-        canonical == null || lib.toLower canonical == lib.toLower tap.name
+        # canonicalGitHubName과 sanitizeTapName 모두 lowercase를 반환한다
+        canonical == null || canonical == sanitizeTapName tap.name
       );
     message = ''
       homebrew.taps: "${tap.name}"의 clone_target(${toString tap.clone_target})은
