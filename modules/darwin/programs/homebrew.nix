@@ -124,23 +124,32 @@
   # tap을 untrust로 회수하지 않는다 (cleanup = "none"과 동일한 보수성. 수동 trust한
   # tap을 activation이 임의 회수하지 않기 위함).
   #
-  # 실행 형태는 nix-darwin의 brew bundle 호출과 동일하게 맞춘다 (sudo --user --set-home):
-  # brew는 root 실행을 거부하고, trust.json 경로가 $HOME 기준(~/.homebrew/trust.json,
-  # sudo env_reset으로 XDG_CONFIG_HOME 미전파)이므로 bundle이 읽는 파일과 일치해야 한다.
+  # 실행 형태는 nix-darwin의 brew bundle 호출과 동일하게 맞춘다 (sudo --user --set-home
+  # + 동일 env): brew는 root 실행을 거부하고, trust.json 경로가 $HOME 기준
+  # (~/.homebrew/trust.json, sudo env_reset으로 XDG_CONFIG_HOME 미전파)이므로 bundle이
+  # 읽는 파일과 일치해야 한다. extraEnv가 HOMEBREW_USER_CONFIG_HOME처럼 trust store
+  # 위치를 바꾸는 경우에도 두 단계가 같은 trust.json을 보도록 env 구성을 bundle과 맞춘다.
   # trust 서브커맨드가 없는 구버전 Homebrew에서는 감지 후 no-op (멱등: 재등록 시
   # "Already trusted" 출력, exit 0).
   system.activationScripts.extraActivation.text =
     let
       cfg = config.homebrew;
-      tapNames = map (tap: tap.name) cfg.taps;
-      brewTrust = ''PATH="${cfg.prefix}/bin:$PATH" sudo --preserve-env=PATH --user=${lib.escapeShellArg cfg.user} --set-home "${cfg.prefix}/bin/brew" trust'';
+      # custom remote tap(clone_target)의 trust principal은 이름이 아니라 remote URL이다 —
+      # Homebrew Tap#matches_reference?는 user/repo reference를 default GitHub remote에만
+      # 매칭하므로, 이름으로 trust하면 custom remote tap은 trusted로 매칭되지 않는다.
+      trustTargets = map (tap: if tap.clone_target != null then tap.clone_target else tap.name) cfg.taps;
+      # bundle의 brewBundleCmd와 동일한 env 구성 (HOMEBREW_NO_AUTO_UPDATE + extraEnv)
+      trustEnv =
+        lib.optional (!cfg.onActivation.autoUpdate) "HOMEBREW_NO_AUTO_UPDATE=1"
+        ++ lib.mapAttrsToList (k: v: "${k}=${lib.escapeShellArg v}") cfg.onActivation.extraEnv;
+      brewTrust = ''PATH="${cfg.prefix}/bin:$PATH" sudo --preserve-env=PATH --user=${lib.escapeShellArg cfg.user} --set-home env ${lib.concatStringsSep " " trustEnv} "${cfg.prefix}/bin/brew" trust'';
     in
-    lib.mkIf (cfg.enable && tapNames != [ ]) ''
+    lib.mkIf (cfg.enable && trustTargets != [ ]) ''
       # Homebrew tap trust — brew bundle 이전에 선언 tap 신뢰 등록
       if [ -f "${cfg.prefix}/bin/brew" ]; then
         if ${brewTrust} --help >/dev/null 2>&1; then
           echo >&2 "Trusting declared Homebrew taps..."
-          ${brewTrust} --tap ${lib.escapeShellArgs tapNames}
+          ${brewTrust} --tap ${lib.escapeShellArgs trustTargets}
         fi
       fi
     '';
