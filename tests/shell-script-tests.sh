@@ -1526,6 +1526,54 @@ STUB
   [[ ! -f "$marker" ]] || fail "noninteractive wt cd must not call tmux select-window"
 }
 
+# 비대화형 + TMUX 환경: create/reuse 경로(_open_worktree)도 동일 정책
+# (_wt_tmux_ui_allowed)을 따라야 한다 — tmux 윈도우 생성/전환 없이 경로를
+# stdout으로 출력한다.
+test_wt_create_reuse_noninteractive_in_tmux_prints_path() {
+  local sandbox home_dir repo_root output expected_path stub_dir marker
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubbin"
+  marker="$sandbox/tmux-ui-called"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  expected_path="$repo_root/.claude/worktrees/feature_one"
+
+  # tmux stub: select-window/new-window 호출 시 marker를 남겨 미호출을 검증한다.
+  mkdir -p "$stub_dir"
+  cat > "$stub_dir/tmux" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-sessions) exit 0 ;;
+  list-panes)    printf '@1 %s\n' "${TMUX_STUB_PANE_PATH:?}" ;;
+  select-window|new-window) touch "${TMUX_STUB_MARKER:?}" ;;
+  *)             exit 0 ;;
+esac
+STUB
+  chmod +x "$stub_dir/tmux"
+
+  output=$(
+    TMUX="$sandbox/fake-tmux-socket,1234,0" \
+    TMUX_STUB_PANE_PATH="$expected_path" \
+    TMUX_STUB_MARKER="$marker" \
+    HOME="$home_dir" \
+    PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" --if-exists=reuse feature_one
+    ' 2>&1
+  )
+
+  assert_contains "$output" "$expected_path"
+  [[ ! -f "$marker" ]] || fail "noninteractive wt create/reuse must not touch tmux windows"
+}
+
 test_shadow_paths_do_not_override_managed_helpers() {
   local sandbox home_dir repo_root worktree_root output
   sandbox=$(new_sandbox)
@@ -2598,6 +2646,7 @@ run_test "wt create conflict requires if-exists when noninteractive" test_wt_cre
 run_test "wt create if-exists=reuse returns path" test_wt_create_if_exists_reuse_returns_path
 run_test "wt cd requires name when noninteractive" test_wt_cd_noninteractive_requires_name
 run_test "wt cd prints path in tmux when noninteractive" test_wt_cd_noninteractive_in_tmux_prints_path
+run_test "wt create/reuse prints path in tmux when noninteractive" test_wt_create_reuse_noninteractive_in_tmux_prints_path
 run_test "shadow paths do not override managed helpers" test_shadow_paths_do_not_override_managed_helpers
 run_test "wt symlink alias does not load adjacent helpers" test_wt_symlink_alias_does_not_load_adjacent_helpers
 run_test "rebuild-common symlink alias does not load adjacent helpers" test_rebuild_common_symlink_alias_does_not_load_adjacent_helpers

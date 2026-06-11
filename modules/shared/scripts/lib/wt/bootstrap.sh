@@ -78,7 +78,9 @@ _open_worktree() {
     _warn "비대화형: --tmux 무시 (경로 출력으로 fallback)"
   fi
 
-  if [[ -n "${TMUX:-}" ]]; then
+  # tmux 윈도우 생성/전환은 대화형 한정 (정책: _wt_tmux_ui_allowed) — 비대화형
+  # create/reuse는 tmux 화면을 건드리지 않고 아래 else의 경로 stdout 출력을 따른다.
+  if _wt_tmux_ui_allowed; then
     local window_id open_rc=0
     window_id=$(_wt_tmux_open "$wt_path" "$window_name" "$stay") || open_rc=$?
 
@@ -102,7 +104,7 @@ _open_worktree() {
       fi
     fi
   else
-    # tmux 밖: 경로 stdout 출력 (래퍼가 cd)
+    # tmux 밖 또는 비대화형: 경로 stdout 출력 (래퍼가 cd)
     [[ "$run_claude" == "true" ]] && _info "경고: --claude는 tmux 세션 안에서만 동작합니다"
     if [[ "$stay" == "true" ]]; then
       # --stay: 현재 디렉토리 유지, 경로만 안내
