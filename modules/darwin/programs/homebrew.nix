@@ -33,11 +33,15 @@ let
   # github.com 기본형 URL을 canonical "owner/repo" tap 이름으로 정규화한다
   # (Homebrew Tap.remote_to_reference와 동일 의도 — scheme://, user@, SCP 콜론,
   # .git, trailing slash 변형 흡수). GitHub 기본형(homebrew-* repo)이 아니면 null.
+  # 정규화 순서는 Homebrew Tap.normalize_remote와 동일: strip → downcase →
+  # trailing slash 전체 제거 → .git 제거. 반환값은 lowercase다.
   canonicalGitHubName =
     url:
     let
-      stripped = lib.removeSuffix ".git" (lib.removeSuffix "/" url);
-      m = builtins.match "([A-Za-z][A-Za-z0-9+.-]*://)?([^@/]+@)?github\\.com[:/]([^/]+)/homebrew-(.+)" stripped;
+      lowered = lib.toLower (lib.trim url);
+      noSlash = builtins.match "(.*[^/])/*" lowered;
+      stripped = lib.removeSuffix ".git" (if noSlash == null then lowered else builtins.elemAt noSlash 0);
+      m = builtins.match "([a-z][a-z0-9+.-]*://)?([^@/]+@)?github\\.com[:/]([^/]+)/homebrew-(.+)" stripped;
     in
     if m == null then null else "${builtins.elemAt m 2}/${builtins.elemAt m 3}";
 
@@ -59,22 +63,33 @@ let
     tap: if tap.clone_target != null then tap.clone_target else defaultRemote tap.name
   ) cfg.taps;
 
-  # bundle의 brewBundleCmd와 동일한 env 구성 (HOMEBREW_NO_AUTO_UPDATE + extraEnv)
-  trustEnv =
-    lib.optional (!cfg.onActivation.autoUpdate) "HOMEBREW_NO_AUTO_UPDATE=1"
-    ++ lib.mapAttrsToList (k: v: "${k}=${lib.escapeShellArg v}") cfg.onActivation.extraEnv;
-  brewTrust = ''PATH="${cfg.prefix}/bin:$PATH" sudo --preserve-env=PATH --user=${lib.escapeShellArg cfg.user} --set-home env ${lib.concatStringsSep " " trustEnv} "${cfg.prefix}/bin/brew" trust'';
+  # trust 명령의 env는 "그 직후 trust.json을 읽는 소비자"와 정확히 일치해야 한다 —
+  # XDG_CONFIG_HOME류 변수가 trust store 위치 자체를 바꾸기 때문이다. nix-darwin은
+  # bundle에는 extraEnv를 적용하지만 cleanup check에는 HOMEBREW_NO_AUTO_UPDATE=1만
+  # 하드코딩하므로, prelude도 소비자별로 env를 달리 구성한다.
+  mkTrustScript =
+    env:
+    let
+      brewTrust = ''PATH="${cfg.prefix}/bin:$PATH" sudo --preserve-env=PATH --user=${lib.escapeShellArg cfg.user} --set-home env ${lib.concatStringsSep " " env} "${cfg.prefix}/bin/brew" trust'';
+    in
+    ''
+      # Homebrew tap trust — brew bundle/cleanup 이전에 선언 tap 신뢰 등록
+      if [ -f "${cfg.prefix}/bin/brew" ]; then
+        if ${brewTrust} --help >/dev/null 2>&1; then
+          echo >&2 "Trusting declared Homebrew taps..."
+          ${brewTrust} --tap ${lib.escapeShellArgs trustTargets}
+        fi
+      fi
+    '';
 
   trustEnabled = cfg.enable && trustTargets != [ ];
-  trustScript = ''
-    # Homebrew tap trust — brew bundle/cleanup 이전에 선언 tap 신뢰 등록
-    if [ -f "${cfg.prefix}/bin/brew" ]; then
-      if ${brewTrust} --help >/dev/null 2>&1; then
-        echo >&2 "Trusting declared Homebrew taps..."
-        ${brewTrust} --tap ${lib.escapeShellArgs trustTargets}
-      fi
-    fi
-  '';
+  # bundle용: brewBundleCmd와 동일한 env 구성 (HOMEBREW_NO_AUTO_UPDATE + extraEnv)
+  bundleTrustScript = mkTrustScript (
+    lib.optional (!cfg.onActivation.autoUpdate) "HOMEBREW_NO_AUTO_UPDATE=1"
+    ++ lib.mapAttrsToList (k: v: "${k}=${lib.escapeShellArg v}") cfg.onActivation.extraEnv
+  );
+  # cleanup check용: nix-darwin cleanup check의 hardcoded env와 동일하게 구성
+  checkTrustScript = mkTrustScript [ "HOMEBREW_NO_AUTO_UPDATE=1" ];
 in
 {
   homebrew = lib.mkMerge [
@@ -202,7 +217,7 @@ in
   # nix-darwin의 homebrew activation slot(activationScripts.homebrew.text)에 mkBefore로
   # prepend하여, groups/users 이후라는 기존 brew 실행 순서 계약을 유지하면서 bundle보다
   # 먼저 trust를 등록한다.
-  system.activationScripts.homebrew.text = lib.mkIf trustEnabled (lib.mkBefore trustScript);
+  system.activationScripts.homebrew.text = lib.mkIf trustEnabled (lib.mkBefore bundleTrustScript);
 
   # cleanup = "check"는 checks 단계(activation 순서상 homebrew slot보다 앞)에서
   # brew bundle cleanup을 실행해 formula를 로드하므로(nix-darwin homebrew 모듈이
@@ -210,6 +225,6 @@ in
   # darwin-rebuild check 모드에서도 trust 등록이 수행되는 부수효과가 있으나,
   # 멱등·additive·선언 의도 범위 내 쓰기라 수용한다.
   system.checks.text = lib.mkIf (trustEnabled && cfg.onActivation.cleanup == "check") (
-    lib.mkBefore trustScript
+    lib.mkBefore checkTrustScript
   );
 }
