@@ -11,11 +11,7 @@
   },
   "includeCoAuthoredBy": false,
   "permissions": {
-    "deny": [
-      "Bash(rm -rf /)",
-      "Bash(rm -rf ~)",
-      "Bash(npm *)"
-    ],
+    "deny": ["Bash(rm -rf /)", "Bash(rm -rf ~)"],
     "additionalDirectories": [
       "~/Desktop",
       "~/Downloads",
@@ -165,7 +161,7 @@
   "showClearContextOnPlanAccept": true,
   "autoUpdatesChannel": "latest",
   "plansDirectory": "./.claude/plans",
-  "autoMemoryEnabled": false,
+  "autoMemoryEnabled": true,
   "showThinkingSummaries": true,
   "skipDangerousModePermissionPrompt": true,
   "verbose": true,
