@@ -1,4 +1,4 @@
 model = "gpt-5.5"
 
-[mcp_servers.chrome-devtools]
+[mcp_servers.example-mcp]
 command = "npx"

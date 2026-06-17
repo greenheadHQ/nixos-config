@@ -69,8 +69,8 @@ HOOK_REPO_DIR="$REPO_ROOT/modules/shared/programs/codex/files/hooks"
 PINNING_LIB_REPO_FILE="$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh"
 HOOK_RUNTIME_LIB_REPO_FILE="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh"
 # verify-ai-compat의 _TEMPLATE 분기와 동일하게 host platform에 맞는 template을 sync-preservation
-# 검증에 사용한다. Darwin은 mcp_servers.chrome-devtools 같은 platform-specific managed leaves를
-# 추가로 가지므로 platform-agnostic 검증은 부족하다.
+# 검증에 사용한다. Darwin은 platform별로 다른 managed leaves를 가질 수 있으므로
+# platform-agnostic 검증만으로는 부족하다.
 if [ "$(uname -s)" = "Darwin" ]; then
   TEMPLATE_REPO_FILE="$REPO_ROOT/modules/shared/programs/codex/files/config.darwin.toml"
 else
@@ -1030,8 +1030,8 @@ EOF
     cat > "$project_root/template-owned-user-mcp.json" <<'EOF'
 {
   "mcpServers": {
-    "chrome-devtools": {
-      "command": "/tmp/user-chrome-devtools"
+    "example-mcp": {
+      "command": "/tmp/user-example-mcp"
     }
   }
 }
@@ -1040,7 +1040,7 @@ EOF
       --user-mcp="$project_root/template-owned-user-mcp.json" \
       --user-codex-config="$config_file" >"$sandbox/template-owned-user.stdout" 2>"$stderr_log" \
       || fail "[template-owned-user] inactive-platform MCP name should not collide on this platform: $(cat "$stderr_log" 2>/dev/null || true)"
-    grep -Fq '/tmp/user-chrome-devtools' "$config_file" \
+    grep -Fq '/tmp/user-example-mcp' "$config_file" \
       || fail "[template-owned-user] non-template-owned MCP should be written"
   fi
 

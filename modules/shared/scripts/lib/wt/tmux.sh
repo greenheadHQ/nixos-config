@@ -132,7 +132,7 @@ _wt_tmux_session_open() {
   if [[ "$run_claude" == "true" ]]; then
     tmux new-session -d -s "$session_name" -c "$wt_path"
     tmux send-keys -t "=$session_name" \
-      "claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json" Enter
+      "claude --dangerously-skip-permissions" Enter
     if [[ "$stay" == "true" ]]; then
       _info "tmux 세션 생성 (detached): $session_name"
       _info "접속: tmux attach -t $session_name"

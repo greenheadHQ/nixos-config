@@ -223,9 +223,9 @@ in
       c() {
         local _tok; _tok="$(gh-pat-mac)"
         if [ -n "$_tok" ]; then
-          GH_TOKEN="$_tok" command claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json "$@"
+          GH_TOKEN="$_tok" command claude --dangerously-skip-permissions "$@"
         else
-          command claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json "$@"
+          command claude --dangerously-skip-permissions "$@"
         fi
       }
       codex() {

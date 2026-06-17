@@ -8,7 +8,7 @@
 
 ## T1: Harness 인벤토리 검증
 
-목적: init 이벤트에서 skills, tools, MCP, plugins 수가 기대치와 일치하는지 확인
+목적: init 이벤트에서 skills, tools 수가 기대치 이상인지 확인 (MCP·plugins는 표시만, 판정 제외)
 
 비용: ~$0.07 | 위치: 로컬
 
@@ -47,12 +47,12 @@ echo "Skills: $SKILLS, Tools: $TOOLS, MCP: $MCP, Plugins: $PLUGINS"
 PASS=true
 [ "$SKILLS" -lt 10 ] && echo "FAIL: Skills too few ($SKILLS < 10)" && PASS=false
 [ "$TOOLS" -lt 10 ] && echo "FAIL: Tools too few ($TOOLS < 10)" && PASS=false
-[ "$MCP" -lt 1 ] && echo "FAIL: No MCP servers" && PASS=false
+# MCP 서버 0개는 정상이다 (이 저장소는 관리 MCP 서버를 두지 않는다) — MCP 개수 단언 없음
 
 $PASS && echo "T1: PASS" || echo "T1: FAIL"
 ```
 
-판정 로직: Skills >= 10, Tools >= 10, MCP >= 1이면 PASS. 정확한 기대값은 nrs 직후 한 번 측정하여 기준선으로 사용.
+판정 로직: Skills >= 10, Tools >= 10이면 PASS (MCP 개수는 판정에서 제외 — 0개 정상). 정확한 기대값은 nrs 직후 한 번 측정하여 기준선으로 사용.
 
 ## T2: 스킬 트리거 Spot Check
 
@@ -159,6 +159,15 @@ $PASS && echo "T3: PASS" || echo "T3: FAIL"
 ```bash
 #!/usr/bin/env bash
 # T4: MCP Server Verification
+MCP_CONFIG="$HOME/.claude/mcp.json"
+if [ ! -f "$MCP_CONFIG" ]; then
+  # 이 저장소는 관리 MCP 서버를 두지 않으므로 ~/.claude/mcp.json 부재가 정상이다.
+  # 사용자가 수동으로 MCP를 등록한 경우에만 의미가 있는 테스트다.
+  # (부재 시 claude 호출 없이 즉시 SKIP — 불필요한 비용/지연 회피)
+  echo "T4: SKIP (관리 MCP 없음 — ~/.claude/mcp.json 부재)"
+  exit 0
+fi
+
 RESULT=$(echo "ok" | claude -p --output-format json 2>/dev/null)
 
 MCP_SERVERS=$(echo "$RESULT" | python3 -c "
@@ -167,12 +176,6 @@ data = json.loads(sys.stdin.read())
 init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
 for s in init.get('mcp_servers', []):
     print(s)")
-
-MCP_CONFIG="$HOME/.claude/mcp.json"
-if [ ! -f "$MCP_CONFIG" ]; then
-  echo "FAIL: mcp.json not found"
-  exit 1
-fi
 
 EXPECTED_SERVERS=$(python3 -c "
 import json
@@ -195,7 +198,7 @@ done <<< "$EXPECTED_SERVERS"
 $PASS && echo "T4: PASS" || echo "T4: FAIL"
 ```
 
-판정 로직: mcp.json의 모든 서버 이름이 init mcp_servers에 존재하면 PASS.
+판정 로직: ~/.claude/mcp.json이 없으면 SKIP(관리 MCP 없음이 정상). 있으면 mcp.json의 모든 서버 이름이 init mcp_servers에 존재하면 PASS.
 
 ## T5: 권한 모델 검증
 
@@ -368,18 +371,18 @@ $PASS && echo "T8: PASS" || echo "T8: FAIL"
 
 | 테스트 | 비용 | 실행 조건 | 비고 |
 |--------|------|-----------|------|
-| T1 | ~$0.07 | `nrs` 후 자동 실행 권장 | init 이벤트 1회로 T1+T2+T4 커버 가능 |
+| T1 | ~$0.07 | `nrs` 후 자동 실행 권장 | init 이벤트 1회로 T1+T2 커버 (T4는 관리 MCP 있을 때만) |
 | T2 | ~$0 | T1의 init 재사용 | 추가 API 호출 불필요 |
 | T3 | $0 | 파일 시스템 검사만 | API 호출 없음 |
-| T4 | ~$0 | T1의 init 재사용 | 추가 API 호출 불필요 |
+| T4 | ~$0 | 관리 MCP 있을 때만 (없으면 즉시 SKIP) | mcp.json 존재 시 T1의 init 재사용 |
 | T5 | ~$0.14 | 권한 설정 변경 시 | 2회 호출 |
 | T6 | ~$0.07 | SSH 설정 변경 시 | 크로스머신 필요 |
 | T7 | ~$0.14 | 세션 관련 변경 시 | 2회 호출 |
 | T8 | ~$0.14 | CI/자동화 도입 시 | 2회 동시 호출 |
 
-최적화: T1, T2, T4는 동일한 init 이벤트를 재사용하므로, 한 번의 `claude -p --output-format json` 호출 결과를 파일에 저장하고 3개 테스트에서 공유한다:
+최적화: T1, T2(그리고 관리 MCP가 있는 경우 T4)는 동일한 init 이벤트를 재사용하므로, 한 번의 `claude -p --output-format json` 호출 결과를 파일에 저장하고 공유한다:
 
 ```bash
 echo "ok" | claude -p --output-format json > /tmp/harness-init.json 2>/dev/null
-# T1, T2, T4에서 /tmp/harness-init.json을 읽어서 판정
+# T1, T2(그리고 mcp.json이 있으면 T4)에서 /tmp/harness-init.json을 읽어서 판정
 ```
