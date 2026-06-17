@@ -66,28 +66,3 @@ command = "$HOME/.codex/hooks/pinning-guard.sh"
 type = "command"
 command = "$HOME/.codex/hooks/pinning-alert.sh"
 
-[plugins."github@openai-curated"]
-enabled = true
-
-[plugins."figma@openai-curated"]
-enabled = true
-
-[plugins."slack@openai-curated"]
-enabled = true
-
-[plugins."notion@openai-curated"]
-enabled = true
-
-[mcp_servers.chrome-devtools]
-command = "npx"
-args = ["-y", "chrome-devtools-mcp@latest", "--autoConnect", "--channel=stable", "--no-usage-statistics"]
-
-[mcp_servers.chrome-devtools.env]
-npm_config_registry = "https://registry.npmjs.org/"
-# chrome-devtools-mcp --autoConnect의 heavy 작업(큰 스냅샷·무거운 페이지) 시 V8 old-space OOM 방어.
-# 8192MB(=8GB)는 점유가 아닌 상한이며, host RAM(32GB)의 25% 내에서 무거운 힙 스냅샷까지 여유를 두고 선정한다
-# (4096MB로도 단발 OOM 방어엔 충분하나 여유분으로 8192MB 채택). NODE_OPTIONS는 npx install 단계를 포함한
-# npx 프로세스 트리 전체에 상속되지만, 상한일 뿐이라 동작상 부작용은 없다. upstream 메모리 누수
-# (ChromeDevTools/chrome-devtools-mcp#1192)는 이미 수정됐으나, 단발성 OOM 안전벨트로 명시 유지한다.
-# 동일 값이 Claude용 mcp.darwin.json env에도 중복 존재한다 — 한쪽 변경 시 반드시 양쪽을 함께 수정한다.
-NODE_OPTIONS = "--max-old-space-size=8192"
