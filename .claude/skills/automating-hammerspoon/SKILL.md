@@ -54,7 +54,6 @@ Ghostty 새 인스턴스 문제
 | `modules/darwin/programs/hammerspoon/default.nix` | Nix 모듈 (파일 배포 선언) |
 | `modules/darwin/programs/hammerspoon/files/init.lua` | Hammerspoon 메인 설정 (소스) |
 | `modules/darwin/programs/hammerspoon/files/foundation_remapping.lua` | Caps Lock → F18 리매핑 (소스) |
-| `modules/darwin/programs/hammerspoon/files/ensure-chrome-autoconnect.sh` | Chrome DevTools MCP 자동연결 (소스) |
 | `~/Library/LaunchAgents/` | launchd 사용자 에이전트 |
 
 ### launchd 디버깅

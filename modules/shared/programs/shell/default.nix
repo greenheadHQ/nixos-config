@@ -109,17 +109,20 @@ in
     # broot: tree 스타일 출력
     bt = "br -c :pt";
 
-    # Claude Code (권한 스킵 + MCP 설정)
+    # Claude Code (권한 스킵)
     # === Change Intent Record ===
     # v1: --chrome(Claude in Chrome) 기본 활성화 — 브라우저 자동화를 항상 사용하려 했고,
     #     당시 chrome-devtools MCP를 적극 활용하지 않았음
-    # v2 (PR #74 이후, 이번 변경): --chrome 제거 — PR #74에서 chrome-devtools MCP
-    #     autoConnect 전략이 확립된 이후 적극 활용하게 되면서, Claude in Chrome과
-    #     동일 탭 제어가 경합. chrome-devtools가 응답 속도도 빠르고
-    #     MCP 서버로 유연하게 on/off 가능하여 --chrome 불필요.
-    #     trade-off: Claude in Chrome 전용 편의 기능(gif_creator 등)을 잃지만,
-    #               chrome-devtools MCP가 동등 이상의 기능을 더 유연하게 제공.
-    c = "claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json";
+    # v2 (PR #74): --chrome 제거 — PR #74에서 chrome-devtools MCP autoConnect 전략이
+    #     확립된 이후 적극 활용하게 되면서, Claude in Chrome과 동일 탭 제어가 경합.
+    #     chrome-devtools가 응답 속도도 빠르고 MCP 서버로 유연하게 on/off 가능하여 --chrome 불필요.
+    # v3 (이번 변경): chrome-devtools MCP 및 --mcp-config 플래그 제거.
+    #     이유: (1) 사용 빈도가 낮고, 브라우저 자동화가 필요하면 playwright-cli로 대체.
+    #           (2) chrome-devtools-mcp는 Claude Code에 내장되어 활성화 토글만으로 사용 가능하므로
+    #               nix로 별도 관리(MCP 서버 등록)할 필요가 없음.
+    #     이로써 프로젝트가 관리하는 MCP 서버가 0개가 되어, mcp.json/mcp.darwin.json과
+    #     ~/.claude/mcp.json 심링크 배치도 함께 제거됨 (claude/default.nix 참조).
+    c = "claude --dangerously-skip-permissions";
 
     # Codex CLI 위험 모드 단축 (사용자 요청)
     # Linux MiniPC: apps feature 를 template 에서 비활성화해 fast startup 보장 (#772).

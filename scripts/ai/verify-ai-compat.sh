@@ -949,7 +949,7 @@ fi
 # ─── template ↔ live drift 검증 ───
 # sync-codex-config.py의 `check` 서브커맨드에게 drift 계산을 위임한다. writer와
 # 동일한 `_walk_template_leaves` iterator를 쓰므로 ownership policy drift가 구조적으로
-# 차단된다. 플랫폼별 하드코딩(예: [mcp_servers.chrome-devtools] Darwin 전용) 없이,
+# 차단된다. 플랫폼별 하드코딩(예: 특정 [mcp_servers.*] 항목) 없이,
 # 해당 플랫폼의 template 파일에 선언된 leaf만 자동으로 검증된다.
 echo ""
 echo "=== template ↔ live drift 검증 ==="

@@ -98,7 +98,7 @@ _open_worktree() {
     if [[ "$run_claude" == "true" ]] && [[ -n "${window_id:-}" ]]; then
       if (( open_rc == 0 )); then
         tmux send-keys -t "$window_id" \
-          "claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp.json" Enter
+          "claude --dangerously-skip-permissions" Enter
       else
         _info "기존 윈도우 — --claude 스킵 (실행 중인 프로세스 보호)"
       fi

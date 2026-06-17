@@ -10,11 +10,8 @@
 }:
 
 let
-  claudeDir = ./files;
   # mkOutOfStoreSymlink용 절대 경로 (양방향 수정 가능)
   claudeFilesPath = "${nixosConfigPath}/modules/shared/programs/claude/files";
-  # macOS에서는 chrome-devtools-mcp를 user-scope MCP로 사용, NixOS는 빈 설정 유지
-  claudeMcpFile = if pkgs.stdenv.isDarwin then "mcp.darwin.json" else "mcp.json";
   jqBin = "${pkgs.jq}/bin/jq";
 in
 {
@@ -145,13 +142,6 @@ in
     ".claude/settings.json" = lib.mkIf (hostType != "work") {
       source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/settings.json";
     };
-
-    # MCP 설정 - 양방향 수정 가능
-    # chrome-devtools MCP(CDP)만 사용 — claude-in-chrome(--chrome)은 제거됨 (CIR 참조: shell/default.nix)
-    # mcp.darwin.json의 chrome-devtools env.NODE_OPTIONS(--max-old-space-size, autoConnect OOM 방어)는
-    # JSON이라 주석을 못 단다 — 값 근거·동기화 규칙은 codex files/config.darwin.toml의 동일 키 주석을 정전(canonical)으로 본다.
-    ".claude/mcp.json".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/${claudeMcpFile}";
 
     # User-scope 지침 - 양방향 수정 가능
     ".claude/CLAUDE.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";

@@ -46,8 +46,8 @@ pgrep — 이름/속성으로 PID 검색. 출력은 PID(들). top/htop의 시각
   $ pgrep -l chrome
   972 chrome_crashpad        ← 15자에서 잘린 결과 (원본: chrome_crashpad_handler)
   2786 chrome-native-h       ← 동일하게 15자에서 잘림
-  3301 node ...              ← chrome-devtools-mcp 스크립트는 실제 실행 파일이
-                               `node`라서 `chrome`으로는 매칭 안 됨
+  3301 node ...              ← node로 실행되는 도구는 실제 실행 파일이 `node`라서
+                               도구 이름(예: `chrome`)으로는 매칭 안 됨
   # Google Chrome 계열은 아예 안 보임 — 대문자 `Chrome` 이라 소문자 `chrome` 매칭 실패
 
   원리:

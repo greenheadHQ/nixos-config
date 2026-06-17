@@ -45,7 +45,7 @@ upstream `playmoreai/agent-skills` 의 `prd/SKILL.md` Validation Policy 섹션�
 - 쓰지 않는 순간: 서버/DB/CLI 변경만으로 재현 가능한 risk.
 
 ### 6. Agent/dev browser checks
-- 대상: browser-capable skill(예: playwright-cli, chrome-devtools MCP)로 수행하는 exploratory 또는 scripted 검증.
+- 대상: browser-capable skill(예: playwright-cli)로 수행하는 exploratory 또는 scripted 검증.
 - 쓰는 순간: UI 동작을 agent가 자동으로 확인 가능하고, E2E suite 구축은 과도한 비용일 때.
 - 쓰지 않는 순간: flaky한 탐색만으로 핵심 risk를 '확인'했다고 주장할 때.
 
