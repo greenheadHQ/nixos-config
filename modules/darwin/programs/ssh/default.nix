@@ -15,43 +15,37 @@ in
   # 구 id_ed25519는 1Password mac-ssh로 대체되어 archive됨 (FR-8) → identityFile/ssh-add launchd 제거.
   programs.ssh = {
     enable = true;
-    # home-manager의 기본 SSH 설정 비활성화 (deprecated 경고 방지)
+    # home-manager의 기본 SSH 설정 비활성화
     enableDefaultConfig = false;
-    matchBlocks = {
+    settings = {
       "*" = {
-        extraOptions = {
-          AddKeysToAgent = "yes";
-          # 1Password SSH agent (group container socket — 공백 포함 경로라 quote 필요)
-          IdentityAgent = "\"${onePasswordAgentSock}\"";
-        };
+        AddKeysToAgent = "yes";
+        # 1Password SSH agent (group container socket — 공백 포함 경로라 quote 필요)
+        IdentityAgent = "\"${onePasswordAgentSock}\"";
       };
     }
     // lib.optionalAttrs (hostType == "personal") {
       # MiniPC는 Tailscale IP 전용 — work Mac(Tailnet 미소속)에서는 접속 불가
       "minipc" = {
-        hostname = constants.network.minipcTailscaleIP;
-        user = "greenhead";
+        HostName = constants.network.minipcTailscaleIP;
+        User = "greenhead";
         # mac-ssh 공개키로 고정 + IdentitiesOnly — agent의 mac-ssh 키만 제시한다.
         # 구 id_rsa/id_ecdsa 등 무차별 키 시도(서버 로그 오염·MaxAuthTries lockout 위험)를 차단한다.
-        identityFile = "${homeDir}/.ssh/mac-ssh.pub";
-        extraOptions = {
-          IdentitiesOnly = "yes";
-          ControlMaster = "auto";
-          ControlPath = "~/.ssh/cm-%h-%p-%r";
-          # ControlPersist 600 유지 — #710 analyzing-da-sessions의 ControlMaster 다중화(K=8 worker pool)가 의존.
-          # 영구(yes)는 무인 파이프 호출에서 master가 stdout을 점유해 hang을 유발하므로, 600으로 master 자동 종료를 보장한다.
-          ControlPersist = "600";
-        };
+        IdentityFile = "${homeDir}/.ssh/mac-ssh.pub";
+        IdentitiesOnly = "yes";
+        ControlMaster = "auto";
+        ControlPath = "~/.ssh/cm-%h-%p-%r";
+        # ControlPersist 600 유지 — #710 analyzing-da-sessions의 ControlMaster 다중화(K=8 worker pool)가 의존.
+        # 영구(yes)는 무인 파이프 호출에서 master가 stdout을 점유해 hang을 유발하므로, 600으로 master 자동 종료를 보장한다.
+        ControlPersist = "600";
       };
       # 1Password 장애(데스크탑 quit/Touch ID 고장/계정 잠금) fallback (PRD #780 Phase 2a, FR-9)
       "minipc-emergency" = {
-        hostname = constants.network.minipcTailscaleIP;
-        user = "greenhead";
-        identityFile = "${homeDir}/.ssh/emergency_ed25519";
-        extraOptions = {
-          IdentityAgent = "none"; # 1Password agent 우회 — emergency key 직접 사용
-          IdentitiesOnly = "yes"; # emergency_ed25519만 제시
-        };
+        HostName = constants.network.minipcTailscaleIP;
+        User = "greenhead";
+        IdentityFile = "${homeDir}/.ssh/emergency_ed25519";
+        IdentityAgent = "none"; # 1Password agent 우회 — emergency key 직접 사용
+        IdentitiesOnly = "yes"; # emergency_ed25519만 제시
       };
     };
   };
