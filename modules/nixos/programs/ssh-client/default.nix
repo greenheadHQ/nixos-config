@@ -7,24 +7,20 @@ in
 {
   programs.ssh = {
     enable = true;
-    # home-manager의 기본 SSH 설정 비활성화 (deprecated 경고 방지)
+    # home-manager의 기본 SSH 설정 비활성화
     enableDefaultConfig = false;
-    matchBlocks = {
+    settings = {
       "*" = {
-        identityFile = sshKeyPath;
-        extraOptions = {
-          AddKeysToAgent = "yes";
-        };
+        IdentityFile = sshKeyPath;
+        AddKeysToAgent = "yes";
       };
       "mac" = {
-        hostname = constants.network.macbookTailscaleIP;
-        user = "greenhead";
-        identityFile = sshKeyPath;
-        extraOptions = {
-          ControlMaster = "auto";
-          ControlPath = "~/.ssh/cm-%h-%p-%r";
-          ControlPersist = "600";
-        };
+        HostName = constants.network.macbookTailscaleIP;
+        User = "greenhead";
+        IdentityFile = sshKeyPath;
+        ControlMaster = "auto";
+        ControlPath = "~/.ssh/cm-%h-%p-%r";
+        ControlPersist = "600";
       };
     };
   };
