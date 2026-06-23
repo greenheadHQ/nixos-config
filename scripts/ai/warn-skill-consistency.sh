@@ -24,6 +24,11 @@ list_skill_dirs() {
   find "$base" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -exec basename {} \; | sort
 }
 
+list_projected_shared_skill_dirs() {
+  local base="$1"
+  list_skill_dirs "$base" | grep -Ev '^wt-plugin--' || true
+}
+
 is_true() {
   local val="${1:-}"
   val="${val,,}"
@@ -138,13 +143,13 @@ if [ "$has_source" -eq 1 ] && [ "$has_projected" -eq 1 ]; then
     [ -n "$missing" ] || continue
     warn "투영 누락: .agents/skills/$missing"
     warnings=$((warnings + 1))
-  done < <(comm -23 <(list_skill_dirs "$SOURCE_SKILLS_DIR") <(list_skill_dirs "$PROJECTED_SKILLS_DIR"))
+  done < <(comm -23 <(list_skill_dirs "$SOURCE_SKILLS_DIR") <(list_projected_shared_skill_dirs "$PROJECTED_SKILLS_DIR"))
 
   while IFS= read -r orphan; do
     [ -n "$orphan" ] || continue
     warn "고아 투영: .agents/skills/$orphan (원본 .claude/skills 없음)"
     warnings=$((warnings + 1))
-  done < <(comm -13 <(list_skill_dirs "$SOURCE_SKILLS_DIR") <(list_skill_dirs "$PROJECTED_SKILLS_DIR"))
+  done < <(comm -13 <(list_skill_dirs "$SOURCE_SKILLS_DIR") <(list_projected_shared_skill_dirs "$PROJECTED_SKILLS_DIR"))
 
   while IFS= read -r skill_name; do
     [ -n "$skill_name" ] || continue

@@ -76,7 +76,6 @@ EXPECTED_SKILLS=(
   "using-claude-p"
   "using-codex-exec"
   "create-issue"
-  "syncing-codex-harness"
 )
 
 PASS=true

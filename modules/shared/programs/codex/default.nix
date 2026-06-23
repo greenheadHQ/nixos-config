@@ -48,7 +48,6 @@ let
     "playwright-cli"
     "review-pr-feedback"
     "run-da"
-    "syncing-codex-harness"
     "write-handoff"
   ];
 

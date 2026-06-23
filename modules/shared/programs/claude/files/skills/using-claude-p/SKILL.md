@@ -27,7 +27,7 @@ Claude Code의 `-p`/`--print` 모드(비대화형/headless)를 정확하게 사�
 | `claude -p` 비대화형 실행 | 대화형 TUI 사용법 |
 | `--output-format json` 파싱 | Claude Code hooks/plugins 설정 |
 | harness 셀프테스트 (T1~T8) | Codex CLI 실행 → `using-codex-exec` |
-| SSH 경유 크로스머신 실행 | harness 동기화 → `syncing-codex-harness` |
+| SSH 경유 크로스머신 실행 | Codex settings/skill projection (repo 정책/검증 스크립트 참조) |
 | 숨겨진 동작 | Python/TS SDK (별도 스킬 분리 대상) |
 | 세션 체이닝 (`--resume`) | |
 

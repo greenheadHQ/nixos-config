@@ -47,7 +47,6 @@ pre-commit:
         - "modules/shared/programs/codex/**"
         - "modules/shared/programs/claude/files/hooks/**"
         - "modules/shared/programs/claude/files/lib/**"
-        - "modules/shared/programs/claude/files/skills/syncing-codex-harness/references/sync.sh"
         - "tests/fixtures/codex-hooks/**"
         - "tests/test-codex-hook-fixtures.sh"
         - "tests/lib/**"

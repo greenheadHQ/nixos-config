@@ -183,10 +183,6 @@ in
     ".claude/skills/analyzing-da-sessions".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/analyzing-da-sessions";
 
-    # syncing-codex-harness 스킬 (user-scope)
-    ".claude/skills/syncing-codex-harness".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";
-
     # create-issue 스킬 (user-scope)
     ".claude/skills/create-issue".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-issue";

@@ -13,10 +13,7 @@ _bootstrap_worktree() {
   # .claude/settings.local.json 복사 (파일 단위)
   local src_settings="$git_root/.claude/settings.local.json"
   local dst_claude_dir="$wt_path/.claude"
-  if [[ -f "$src_settings" ]]; then
-    mkdir -p "$dst_claude_dir"
-    cp "$src_settings" "$dst_claude_dir/settings.local.json"
-  fi
+  _wt_prepare_claude_settings "$src_settings" "$dst_claude_dir"
 
   # .codex/ 디렉토리 복사 (기존 제거 후 복사 — 중첩 방지)
   local src_codex="$git_root/.codex"
@@ -25,6 +22,11 @@ _bootstrap_worktree() {
   elif [[ -d "$src_codex" ]]; then
     rm -rf "$wt_path/.codex"
     cp -r "$src_codex" "$wt_path/.codex"
+    _wt_sanitize_copied_codex_config "$wt_path/.codex/config.toml" \
+      || {
+        _warn "worktree .codex/config.toml 정리 실패 — 복사된 config를 제거하고 계속합니다"
+        rm -rf -- "$wt_path/.codex/config.toml"
+      }
   fi
 
   # .claude/plans/: tracked README.md(디렉토리 정책 문서, #756/#773)는 보존하고,
@@ -36,30 +38,127 @@ _bootstrap_worktree() {
     git -C "$wt_path" clean -fdX -- .claude/plans >/dev/null 2>&1 || true
   fi
 
-  # Claude → Codex projection 재실행 (plugin-aware worktree bootstrap 복구)
-  local script_dir codex_sync_sh=""
-  script_dir="${WT_SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-  local repo_local_sync_sh="$script_dir/codex-sync.sh"
-  local deployed_sync_bin="$script_dir/codex-sync"
+  _wt_trust_codex_project "$wt_path"
+  _wt_inherit_claude_local_plugins "$wt_path" "$git_root"
+}
 
-  if [[ -x "$deployed_sync_bin" ]]; then
-    codex_sync_sh="$deployed_sync_bin"
-  elif [[ -f "$repo_local_sync_sh" ]]; then
-    codex_sync_sh="$repo_local_sync_sh"
-  else
-    codex_sync_sh="$(command -v codex-sync 2>/dev/null || true)"
+_wt_prepare_claude_settings() {
+  local src_settings="$1"
+  local dst_claude_dir="$2"
+  local dst_settings="$dst_claude_dir/settings.local.json"
+
+  if [[ -L "$dst_claude_dir" || ( -e "$dst_claude_dir" && ! -d "$dst_claude_dir" ) ]]; then
+    _die "worktree .claude가 regular directory가 아니라 bootstrap 중단"
   fi
 
-  if [[ -n "$codex_sync_sh" ]]; then
-    if [[ "$codex_sync_sh" == "$repo_local_sync_sh" ]]; then
-      bash "$codex_sync_sh" --trust-project "$wt_path" || _warn "codex-sync 실패 — 수동으로 'codex-sync --trust-project $wt_path'를 실행하세요"
-    elif ! "$codex_sync_sh" --trust-project "$wt_path"; then
-      _warn "codex-sync 실패 — 수동으로 'codex-sync --trust-project $wt_path'를 실행하세요"
-    fi
-  else
-    _warn "codex-sync 스크립트를 찾지 못해 Codex projection을 건너뜁니다"
+  if [[ -L "$src_settings" ]]; then
+    _warn "원본 .claude/settings.local.json이 symlink라 worktree 복사를 건너뜁니다"
+    [[ -e "$dst_settings" || -L "$dst_settings" ]] && _wt_remove_claude_settings_file "$dst_settings"
+  elif [[ -f "$src_settings" ]]; then
+    mkdir -p "$dst_claude_dir"
+    _wt_remove_claude_settings_file "$dst_settings"
+    cp "$src_settings" "$dst_settings"
+  elif [[ -e "$dst_settings" || -L "$dst_settings" ]]; then
+    _wt_remove_claude_settings_file "$dst_settings"
   fi
 }
+
+_wt_remove_claude_settings_file() {
+  local settings_file="$1"
+  if [[ -d "$settings_file" && ! -L "$settings_file" ]]; then
+    _die "worktree .claude/settings.local.json이 directory라 bootstrap 중단"
+  fi
+  rm -f "$settings_file" || _die "worktree .claude/settings.local.json 제거 실패"
+}
+
+_wt_sanitize_copied_codex_config() {
+  local config_file="$1"
+  local helper
+
+  helper=$(_wt_codex_trust_helper) \
+    || _die "Codex trust helper를 찾지 못해 copied Codex config 정리 불가"
+
+  local python_bin="${WT_PYTHON:-python3}"
+  "$python_bin" "$helper" sanitize-copied-codex-config "$config_file"
+}
+
+_wt_codex_trust_helper() {
+  local helper="${WT_LIB_DIR:-}/codex-trust.py"
+  [[ -f "$helper" ]] || return 1
+  printf '%s\n' "$helper"
+}
+
+_wt_codex_config() {
+  printf '%s\n' "${CODEX_HOME:-$HOME/.codex}/config.toml"
+}
+
+_wt_trust_codex_project() {
+  local wt_path="$1"
+  local helper
+
+  helper=$(_wt_codex_trust_helper) \
+    || _die "Codex trust helper를 찾지 못해 project trust 등록 불가"
+
+  local python_bin="${WT_PYTHON:-python3}"
+  "$python_bin" "$helper" trust-project \
+    --config "$(_wt_codex_config)" \
+    "$wt_path" \
+    || _warn "Codex project trust 등록 실패 — Codex에서 worktree 신뢰를 다시 물을 수 있습니다"
+}
+
+_wt_plugin_manifest_helper() {
+  local helper="${WT_LIB_DIR:-}/plugin-manifest.py"
+  [[ -f "$helper" ]] || return 1
+  printf '%s\n' "$helper"
+}
+
+_wt_require_state_helpers() {
+  _wt_codex_trust_helper >/dev/null \
+    || _die "Codex trust helper를 찾지 못해 wt 상태 변경 불가"
+  _wt_plugin_manifest_helper >/dev/null \
+    || _die "Claude plugin manifest helper를 찾지 못해 wt 상태 변경 불가"
+}
+
+_wt_claude_plugin_manifest() {
+  printf '%s\n' "$HOME/.claude/plugins/installed_plugins.json"
+}
+
+_wt_inherit_claude_local_plugins() {
+  local wt_path="$1"
+  local git_root="$2"
+  local helper
+
+  helper=$(_wt_plugin_manifest_helper) \
+    || _die "Claude plugin manifest helper를 찾지 못해 local plugin inheritance 불가"
+
+  local python_bin="${WT_PYTHON:-python3}"
+  "$python_bin" "$helper" inherit-local \
+    --settings "$git_root/.claude/settings.local.json" \
+    --manifest "$(_wt_claude_plugin_manifest)" \
+    --source-root "$git_root" \
+    --target-root "$wt_path" \
+    || _warn "Claude local plugin inheritance 실패 — manifest를 변경하지 않았습니다"
+}
+
+_wt_remove_claude_local_plugins_for_worktree() {
+  local wt_path="$1"
+  local canonical_wt_path="${2:-$wt_path}"
+  local helper
+
+  helper=$(_wt_plugin_manifest_helper) \
+    || _die "Claude plugin manifest helper를 찾지 못해 local plugin cleanup 불가"
+
+  local python_bin="${WT_PYTHON:-python3}"
+  "$python_bin" "$helper" remove-local \
+    --manifest "$(_wt_claude_plugin_manifest)" \
+    --target-root "$wt_path" \
+    --target-root-before-removal "$canonical_wt_path" \
+    || {
+      _warn "Claude local plugin cleanup 실패 — manifest를 변경하지 않았습니다"
+      return 1
+    }
+}
+
 
 # ── worktree 열기 (tmux 또는 stdout) ─────────────────────────────────────────
 
@@ -142,6 +241,8 @@ _remove_worktree() {
     return 1
   fi
 
+  _wt_require_state_helpers
+
   # tmux 윈도우 닫기 (실패해도 worktree는 삭제)
   _wt_tmux_close "$wt_path" || true
 
@@ -152,6 +253,10 @@ _remove_worktree() {
     _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
     return 1
   }
+
+  local canonical_wt_path
+  canonical_wt_path="$(cd "$wt_path" && pwd -P)" || canonical_wt_path="$wt_path"
+  _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
 
   # worktree 제거
   git -C "$git_root" worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path"

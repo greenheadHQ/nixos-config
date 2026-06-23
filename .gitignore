@@ -13,6 +13,7 @@
 !AGENTS.md
 !AGENTS.override.md
 !.agents/
+.agents/skills/wt-plugin--*
 .codex/
 
 # update-codex 원자적 핀 교체용 임시 파일 (EXIT trap 정리; SIGKILL 시 잔류 방어, #890)

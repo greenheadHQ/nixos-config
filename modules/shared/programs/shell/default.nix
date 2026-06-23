@@ -10,11 +10,11 @@
 
 let
   sharedScriptsDir = ../../scripts;
+  pythonWithTomlkit =
+    (import ../../../../libraries/python-runtimes.nix { inherit pkgs; }).pythonWithTomlkit;
   # mise shims 경로 변수 선언 — envExtra/initContent 공통 SoT.
   # 경로는 constants.mise.shimsDirExpr 우선순위(MISE_DATA_DIR → XDG_DATA_HOME/mise → $HOME/.local/share/mise).
   miseShimsDecl = ''_mise_shims="${constants.mise.shimsDirExpr}"'';
-  pythonWithTomlkit =
-    (import ../../../../libraries/python-runtimes.nix { inherit pkgs; }).pythonWithTomlkit;
 in
 {
   home.file.".local/bin/atuin-clean-kr" = {
@@ -25,25 +25,24 @@ in
     source = "${sharedScriptsDir}/git-cleanup.sh";
     executable = true;
   };
-  home.file.".local/bin/wt" = {
+  home.file.".local/bin/.wt-real" = {
     source = "${sharedScriptsDir}/wt.sh";
     executable = true;
   };
+  home.file.".local/bin/wt" =
+    let
+      wrapper = pkgs.writeShellScript "wt-wrapper" ''
+        export WT_PYTHON="${pythonWithTomlkit}/bin/python3"
+        exec "${config.home.homeDirectory}/.local/bin/.wt-real" "$@"
+      '';
+    in
+    {
+      source = wrapper;
+      executable = true;
+    };
   home.file.".local/lib/wt" = {
     source = "${sharedScriptsDir}/lib/wt";
     recursive = true;
-  };
-  home.file.".local/bin/codex-sync" = {
-    source =
-      let
-        rawScript = "${sharedScriptsDir}/codex-sync.sh";
-        wrapper = pkgs.writeShellScript "codex-sync-wrapper" ''
-          export CODEX_SYNC_PYTHON="${pythonWithTomlkit}/bin/python3"
-          exec "${pkgs.bash}/bin/bash" "${rawScript}" "$@"
-        '';
-      in
-      wrapper;
-    executable = true;
   };
   # codex exec hang supervisor (issue #593): Nix wrapper가 absolute store path env var를 set한 후
   # raw script를 exec한다. raw script는 CODEX_EXEC_TIMEOUT_BIN/CODEX_EXEC_SETSID_BIN 우선 사용.

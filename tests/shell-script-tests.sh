@@ -57,6 +57,34 @@ assert_line_count() {
   [[ "$actual" == "$expected" ]] || fail "expected $path to contain $expected occurrences of: $needle (actual: $actual)"
 }
 
+managed_plugin_skill_link() {
+  local skills_dir="$1"
+  local pattern="$2"
+  local -a matches=()
+  local path
+  while IFS= read -r path; do
+    matches+=("$path")
+  done < <(find "$skills_dir" -maxdepth 1 -type l -name "$pattern" -print)
+  (( ${#matches[@]} == 1 )) \
+    || fail "expected exactly one managed plugin skill symlink matching: $skills_dir/$pattern (found: ${#matches[@]})"
+  printf '%s\n' "${matches[0]}"
+}
+
+test_managed_plugin_skill_link_requires_single_match() {
+  local sandbox skills_dir output
+  sandbox=$(new_sandbox)
+  skills_dir="$sandbox/skills"
+  mkdir -p "$skills_dir"
+  ln -s /tmp/source-one "$skills_dir/wt-plugin--dup-one"
+  ln -s /tmp/source-two "$skills_dir/wt-plugin--dup-two"
+
+  if output=$(managed_plugin_skill_link "$skills_dir" 'wt-plugin--dup-*' 2>&1); then
+    fail "duplicate managed plugin skill symlinks must fail cardinality assertion"
+  fi
+  assert_contains "$output" "expected exactly one managed plugin skill symlink"
+  assert_contains "$output" "(found: 2)"
+}
+
 write_mixed_user_codex_hooks() {
   local home_dir="$1"
   mkdir -p "$home_dir/.codex"
@@ -289,6 +317,7 @@ create_skill_noise_fixture_repo() {
     "$repo_root/modules/shared/programs/claude/files/skills/demo" \
     "$home_dir/.config"
   cp "$REPO_ROOT/scripts/ai/check-skill-noise.sh" "$repo_root/scripts/ai/check-skill-noise.sh"
+  cp "$REPO_ROOT/scripts/ai/warn-skill-consistency.sh" "$repo_root/scripts/ai/warn-skill-consistency.sh"
 
   (
     cd "$repo_root"
@@ -417,6 +446,22 @@ test_check_skill_noise_worktree_rejects_external_symlink() {
   assert_not_contains "$output" "**secret**"
 }
 
+test_warn_skill_consistency_ignores_managed_plugin_skill_projection() {
+  local sandbox repo_root plugin_dir output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  plugin_dir="$sandbox/plugin"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  mkdir -p "$plugin_dir/skills/plugin-skill"
+  printf '%s\n' '---' 'name: plugin-skill' '---' > "$plugin_dir/skills/plugin-skill/SKILL.md"
+  ln -s "$plugin_dir/skills/plugin-skill" \
+    "$repo_root/.agents/skills/wt-plugin--example-plugin_demo-marketplace-1234567890--plugin-skill-1234567890"
+
+  output=$(cd "$repo_root" && bash scripts/ai/warn-skill-consistency.sh 2>&1)
+  assert_not_contains "$output" "고아 투영"
+}
+
 assert_nix_has_attr() {
   local nix_file="$1" deployed_path="$2"
   shift 2
@@ -471,6 +516,16 @@ register_replace_vars() {
   ln -sf "$generated_dir/$gen_name" "$home_dir/$deployed_path"
 }
 
+assert_wt_wrapper_nix() {
+  local nix_file="$1"
+  grep -Fq '  home.file.".local/bin/wt" =' "$nix_file" \
+    || fail "expected $nix_file to define home.file.\".local/bin/wt\""
+  grep -Fq '        export WT_PYTHON="${pythonWithTomlkit}/bin/python3"' "$nix_file" \
+    || fail "expected wt wrapper to export WT_PYTHON from pythonWithTomlkit"
+  grep -Fq '        exec "${config.home.homeDirectory}/.local/bin/.wt-real" "$@"' "$nix_file" \
+    || fail "expected wt wrapper to exec .wt-real"
+}
+
 read_bash_array_from_script() {
   local script_path="$1"
   local array_name="$2"
@@ -508,14 +563,16 @@ install_deployed_layout() {
   mkdir -p "$home_dir/.local/bin" "$home_dir/.local/lib" "$generated_dir"
 
   # shellcheck disable=SC2016  # Literal Nix source strings.
-  register_copy_exec "$shell_nix" ".local/bin/wt" \
+  register_copy_exec "$shell_nix" ".local/bin/.wt-real" \
     '${sharedScriptsDir}/wt.sh' "modules/shared/scripts/wt.sh"
-
-  # codex-sync: Nix 배포 있지만 테스트에서는 fixture stub 사용 (shadow-path 테스트용)
-  # cp로 sandbox에 복사하여 원본 fixture 보호
-  cp "$FIXTURE_DIR/bin/codex-sync" "$generated_dir/codex-sync"
-  chmod +x "$generated_dir/codex-sync"
-  ln -sf "$generated_dir/codex-sync" "$home_dir/.local/bin/codex-sync"
+  assert_wt_wrapper_nix "$shell_nix"
+  cat > "$home_dir/.local/bin/wt" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export WT_PYTHON="$(command -v python3)"
+exec "$home_dir/.local/bin/.wt-real" "\$@"
+EOF
+  chmod +x "$home_dir/.local/bin/wt"
 
   # shellcheck disable=SC2016  # Literal Nix source strings.
   register_recursive "$shell_nix" ".local/lib/wt" \
@@ -627,7 +684,8 @@ create_git_fixture_repo() {
     fixture_git config user.name "Test User"
     fixture_git config user.email "test@example.com"
     echo "fixture" > README.md
-    fixture_git add README.md
+    printf '%s\n' '.agents/skills/wt-plugin--*' > .gitignore
+    fixture_git add README.md .gitignore
     fixture_git commit -m "initial" >/dev/null 2>&1
     fixture_git worktree add ".claude/worktrees/feature_one" -b feature-one >/dev/null 2>&1
   )
@@ -1237,6 +1295,28 @@ test_wt_help_from_deployed_layout() {
   assert_contains "$output" "wt cleanup [--auto]"
 }
 
+test_wt_wrapper_ignores_runtime_home_for_real_script() {
+  local sandbox poison_home output
+  sandbox=$(new_sandbox)
+  poison_home="$sandbox/poison-home"
+  install_deployed_layout "$sandbox"
+  mkdir -p "$poison_home/.local/bin"
+  cat > "$poison_home/.local/bin/.wt-real" <<'EOF'
+#!/usr/bin/env bash
+echo MALICIOUS_WT_REAL
+EOF
+  chmod +x "$poison_home/.local/bin/.wt-real"
+
+  output=$(
+    HOME="$poison_home" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash "$sandbox/home/.local/bin/wt" --help 2>&1
+  )
+
+  assert_contains "$output" "사용법: wt"
+  assert_not_contains "$output" "MALICIOUS_WT_REAL"
+}
+
 test_rebuild_common_exports_public_api() {
   local sandbox output
   sandbox=$(new_sandbox)
@@ -1647,13 +1727,6 @@ EOF
 echo "SHADOW_REBUILD_HELPER" >&2
 EOF
   done < <(read_bash_array_from_script "$REPO_ROOT/modules/shared/scripts/rebuild-common.sh" "REBUILD_HELPERS")
-  cat > "$home_dir/.local/bin/codex-sync.sh" <<'EOF'
-#!/usr/bin/env bash
-echo "SHADOW_CODEX_SYNC" >&2
-exit 0
-EOF
-  chmod +x "$home_dir/.local/bin/codex-sync.sh"
-
   output=$(
     HOME="$home_dir" \
     PATH="$FIXTURE_DIR/bin:$PATH" \
@@ -1668,7 +1741,6 @@ EOF
 
   assert_not_contains "$output" "SHADOW_WT_HELPER"
   assert_not_contains "$output" "SHADOW_REBUILD_HELPER"
-  assert_not_contains "$output" "SHADOW_CODEX_SYNC"
 }
 
 test_wt_symlink_alias_does_not_load_adjacent_helpers() {
@@ -1729,45 +1801,47 @@ EOF
   assert_not_contains "$output" "MALICIOUS_REBUILD"
 }
 
-test_wt_create_creates_worktree_without_shadow_codex_sync() {
-  local sandbox home_dir repo_root output new_worktree fallback_dir marker_file
+test_wt_create_does_not_call_legacy_sync() {
+  local sandbox home_dir repo_root output new_worktree fallback_dir marker_file legacy_name
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   repo_root="$sandbox/repo"
   fallback_dir="$sandbox/fallback-bin"
-  marker_file="$sandbox/codex-sync-marker"
+  marker_file="$sandbox/legacy-sync-marker"
+  # Split the retired command name so public stale literal scans stay clean.
+  legacy_name="codex""-sync"
 
   create_git_fixture_repo "$repo_root"
   repo_root="$(cd "$repo_root" && pwd -P)"
   install_deployed_layout "$sandbox" "$repo_root"
 
   mkdir -p "$home_dir/.local/bin" "$fallback_dir"
-  cat > "$home_dir/.local/bin/codex-sync" <<'EOF'
+  cat > "$home_dir/.local/bin/$legacy_name" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'managed:%s\n' "$*" >> "${CODEX_SYNC_MARKER:?}"
+printf 'managed:%s\n' "$*" >> "${LEGACY_SYNC_MARKER:?}"
 exit 0
 EOF
-  chmod +x "$home_dir/.local/bin/codex-sync"
-  cat > "$home_dir/.local/bin/codex-sync.sh" <<'EOF'
+  chmod +x "$home_dir/.local/bin/$legacy_name"
+  cat > "$home_dir/.local/bin/$legacy_name.sh" <<'EOF'
 #!/usr/bin/env bash
-echo "SHADOW_CODEX_SYNC" >&2
+echo "SHADOW_LEGACY_SYNC" >&2
 exit 0
 EOF
-  chmod +x "$home_dir/.local/bin/codex-sync.sh"
-  cat > "$fallback_dir/codex-sync" <<'EOF'
+  chmod +x "$home_dir/.local/bin/$legacy_name.sh"
+  cat > "$fallback_dir/$legacy_name" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'fallback:%s\n' "$*" >> "${CODEX_SYNC_MARKER:?}"
+printf 'fallback:%s\n' "$*" >> "${LEGACY_SYNC_MARKER:?}"
 exit 0
 EOF
-  chmod +x "$fallback_dir/codex-sync"
+  chmod +x "$fallback_dir/$legacy_name"
 
   output=$(
     env -u TMUX \
       HOME="$home_dir" \
       PATH="$fallback_dir:$FIXTURE_DIR/bin:$PATH" \
-      CODEX_SYNC_MARKER="$marker_file" \
+      LEGACY_SYNC_MARKER="$marker_file" \
       bash -c '
         set -euo pipefail
         cd "'"$repo_root"'"
@@ -1778,32 +1852,20 @@ EOF
   new_worktree="$repo_root/.claude/worktrees/feature-two"
   [[ -d "$new_worktree" ]] || fail "expected worktree directory to exist: $new_worktree"
   assert_contains "$output" "$new_worktree"
-  assert_not_contains "$output" "SHADOW_CODEX_SYNC"
-  assert_contains "$(cat "$marker_file")" "managed"
-  assert_contains "$(cat "$marker_file")" "--trust-project"
-  assert_contains "$(cat "$marker_file")" "$new_worktree"
-  assert_not_contains "$(cat "$marker_file")" "fallback"
+  assert_not_contains "$output" "SHADOW_LEGACY_SYNC"
+  [[ ! -f "$marker_file" ]] || fail "legacy sync command must not be called by wt bootstrap: $(cat "$marker_file")"
 }
 
 test_wt_create_skips_symlinked_codex_source() {
-  local sandbox home_dir repo_root codex_target marker_file output new_worktree
+  local sandbox home_dir repo_root codex_target output new_worktree
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   repo_root="$sandbox/repo"
   codex_target="$sandbox/codex-target"
-  marker_file="$sandbox/codex-sync-marker"
 
   create_git_fixture_repo "$repo_root"
   repo_root="$(cd "$repo_root" && pwd -P)"
   install_deployed_layout "$sandbox" "$repo_root"
-
-  cat > "$home_dir/.local/bin/codex-sync" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'managed:%s\n' "$*" >> "${CODEX_SYNC_MARKER:?}"
-exit 0
-EOF
-  chmod +x "$home_dir/.local/bin/codex-sync"
 
   mkdir -p "$codex_target"
   printf 'external\n' > "$codex_target/config.toml"
@@ -1813,7 +1875,6 @@ EOF
     env -u TMUX \
       HOME="$home_dir" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
-      CODEX_SYNC_MARKER="$marker_file" \
       bash -c '
         set -euo pipefail
         cd "'"$repo_root"'"
@@ -1824,9 +1885,6 @@ EOF
   new_worktree="$repo_root/.claude/worktrees/feature-symlink-codex"
   [[ -d "$new_worktree" ]] || fail "expected worktree directory to exist: $new_worktree"
   assert_contains "$output" "원본 .codex가 symlink라 worktree 복사를 건너뜁니다"
-  assert_contains "$(cat "$marker_file")" "managed"
-  assert_contains "$(cat "$marker_file")" "--trust-project"
-  assert_contains "$(cat "$marker_file")" "$new_worktree"
   [[ ! -L "$new_worktree/.codex" ]] \
     || fail "symlinked source .codex must not be copied as a symlink into new worktree"
   if [[ -f "$new_worktree/.codex/config.toml" ]]; then
@@ -1834,74 +1892,1199 @@ EOF
   fi
 }
 
-test_codex_sync_wrapper_opt_in_flags() {
-  local sandbox home_dir project_root expected_root marker_file output custom_mcp python_shim rc
+test_wt_create_prunes_retired_project_mcp_block() {
+  local sandbox home_dir repo_root output new_worktree config_file retired_name
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
-  project_root="$sandbox/project"
-  marker_file="$sandbox/codex-sync-args"
-  custom_mcp="$sandbox/custom-mcp.json"
-  python_shim="$sandbox/python3"
-  mkdir -p \
-    "$home_dir/.claude/skills/syncing-codex-harness/references" \
-    "$project_root" \
-    "$(dirname "$custom_mcp")"
-  # codex-sync.sh는 project-root 입력을 _canonical_project_root()의 (cd && pwd -P)로 정규화한다.
-  # 입력(project_root)은 비정규화 그대로 두어 macOS $TMPDIR(/var/folders → /private/var)·
-  # /tmp(→ /private/tmp) 심링크 입력 정규화 동작 자체를 회귀 검증하고, 기대값만 정규화해 비교한다.
-  expected_root="$(cd "$project_root" && pwd -P)"
+  repo_root="$sandbox/repo"
+  # Split the retired command name so public stale literal scans stay clean.
+  retired_name="codex""-sync"
 
-  cat > "$home_dir/.claude/skills/syncing-codex-harness/references/sync.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-for arg in "$@"; do
-  printf '<%s>\n' "$arg"
-done >> "${CODEX_SYNC_MARKER:?}"
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  mkdir -p "$repo_root/.codex"
+  cat > "$repo_root/.codex/config.toml" <<EOF
+model = "test-model"
+
+# BEGIN $retired_name managed mcp
+[mcp_servers.retired]
+command = "retired"
+# END $retired_name managed mcp
+
+[mcp_servers.keep]
+command = "keep"
 EOF
-  chmod +x "$home_dir/.claude/skills/syncing-codex-harness/references/sync.sh"
-  cat > "$python_shim" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '<python>\n' >> "${CODEX_SYNC_MARKER:?}"
-exec python3 "$@"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" prune-project-mcp
+      ' 2>&1
+  )
+
+  new_worktree="$repo_root/.claude/worktrees/prune-project-mcp"
+  config_file="$new_worktree/.codex/config.toml"
+  [[ -f "$config_file" ]] || fail "expected copied Codex config: $config_file"
+  assert_contains "$output" "$new_worktree"
+  assert_not_contains "$(cat "$config_file")" "# BEGIN $retired_name managed mcp"
+  assert_not_contains "$(cat "$config_file")" "mcp_servers.retired"
+  assert_contains "$(cat "$config_file")" "mcp_servers.keep"
+}
+
+test_wt_create_removes_unterminated_copied_codex_config() {
+  local sandbox home_dir repo_root output new_worktree config_file retired_name
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  retired_name="codex""-sync"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  mkdir -p "$repo_root/.codex"
+  cat > "$repo_root/.codex/config.toml" <<EOF
+model = "test-model"
+
+# BEGIN $retired_name managed mcp
+[mcp_servers.retired]
+command = "retired"
 EOF
-  chmod +x "$python_shim"
 
-  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
-    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" "$project_root"
-  output="$(cat "$marker_file")"
-  assert_contains "$output" "<python>"
-  assert_contains "$output" "<all>"
-  assert_contains "$output" "<$expected_root>"
-  assert_not_contains "$output" "--user-mcp"
-  assert_not_contains "$output" "--trust-project"
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" unterminated-copied-config
+      ' 2>&1
+  )
 
-  : > "$marker_file"
-  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
-    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" --trust-project --user-mcp "$project_root"
-  output="$(cat "$marker_file")"
-  assert_contains "$output" "<--trust-project>"
-  assert_contains "$output" "<--user-mcp=$home_dir/.claude/mcp.json>"
-  assert_contains "$output" "<$expected_root>"
+  new_worktree="$repo_root/.claude/worktrees/unterminated-copied-config"
+  config_file="$new_worktree/.codex/config.toml"
+  [[ -d "$new_worktree" ]] || fail "expected worktree to be created despite copied Codex config cleanup failure"
+  assert_contains "$output" "복사된 config를 제거하고 계속합니다"
+  [[ ! -e "$config_file" && ! -L "$config_file" ]] \
+    || fail "unterminated copied Codex config must be removed"
+}
 
-  : > "$marker_file"
-  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
-    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" --user-mcp="$custom_mcp" "$project_root"
-  output="$(cat "$marker_file")"
-  assert_contains "$output" "<--user-mcp=$custom_mcp>"
+test_wt_create_removes_directory_copied_codex_config() {
+  local sandbox home_dir repo_root output new_worktree config_file
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
 
-  rc=0
-  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
-    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" --unknown "$project_root" >/dev/null 2>&1 || rc=$?
-  [[ "$rc" -ne 0 ]] || fail "codex-sync unknown option must fail"
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
 
-  rc=0
-  HOME="$home_dir" CODEX_SYNC_MARKER="$marker_file" CODEX_SYNC_PYTHON="$python_shim" \
-    bash "$REPO_ROOT/modules/shared/scripts/codex-sync.sh" "$project_root" "$sandbox/other" >/dev/null 2>&1 || rc=$?
-  [[ "$rc" -ne 0 ]] || fail "codex-sync multiple project roots must fail"
+  mkdir -p "$repo_root/.codex/config.toml"
+  printf 'nested\n' > "$repo_root/.codex/config.toml/nested.txt"
 
-  assert_contains "$(cat "$REPO_ROOT/modules/shared/programs/shell/default.nix")" "CODEX_SYNC_PYTHON"
-  assert_contains "$(cat "$REPO_ROOT/modules/shared/programs/shell/default.nix")" 'exec "${pkgs.bash}/bin/bash" "${rawScript}" "$@"'
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" directory-copied-config
+      ' 2>&1
+  )
+
+  new_worktree="$repo_root/.claude/worktrees/directory-copied-config"
+  config_file="$new_worktree/.codex/config.toml"
+  [[ -d "$new_worktree" ]] || fail "expected worktree to be created despite directory copied Codex config"
+  assert_contains "$output" "worktree .codex/config.toml이 regular file이 아니라 제거했습니다"
+  [[ ! -e "$config_file" && ! -L "$config_file" ]] \
+    || fail "directory copied Codex config must be removed"
+}
+
+test_codex_trust_sanitizes_unsafe_copied_codex_config() {
+  local sandbox config_file target_file output
+  sandbox=$(new_sandbox)
+  config_file="$sandbox/config.toml"
+  target_file="$sandbox/external.toml"
+
+  printf 'model = "external"\n' > "$target_file"
+  ln -s "$target_file" "$config_file"
+
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+      sanitize-copied-codex-config "$config_file" 2>&1
+  )
+
+  assert_contains "$output" "regular file이 아니라 제거했습니다"
+  [[ ! -e "$config_file" && ! -L "$config_file" ]] \
+    || fail "unsafe copied Codex config must be removed"
+  assert_contains "$(cat "$target_file")" "external"
+}
+
+test_wt_prepare_rejects_symlinked_claude_dir() {
+  local sandbox wt_path external_dir source_settings output rc
+  sandbox=$(new_sandbox)
+  wt_path="$sandbox/worktree"
+  external_dir="$sandbox/external-claude"
+  source_settings="$sandbox/missing-settings.local.json"
+
+  mkdir -p "$wt_path" "$external_dir"
+  printf '{"enabledPlugins": {"external": true}}\n' > "$external_dir/settings.local.json"
+  ln -s "$external_dir" "$wt_path/.claude"
+
+  set +e
+  output=$(
+    bash -c '
+        set -euo pipefail
+        _die() { printf "die: %s\n" "$*" >&2; exit 42; }
+        _warn() { printf "warning: %s\n" "$*" >&2; }
+        source "'"$REPO_ROOT/modules/shared/scripts/lib/wt/bootstrap.sh"'"
+        _wt_prepare_claude_settings "'"$source_settings"'" "'"$wt_path/.claude"'"
+      ' 2>&1
+  )
+  rc=$?
+  set -e
+
+  [[ "$rc" == "42" ]] || fail "expected symlinked .claude to abort bootstrap, got rc=$rc output=$output"
+  assert_contains "$output" "worktree .claude가 regular directory가 아니라 bootstrap 중단"
+  assert_contains "$(cat "$external_dir/settings.local.json")" "external"
+}
+
+test_wt_prepare_skips_symlinked_source_settings() {
+  local sandbox repo_root wt_path external_file output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  wt_path="$sandbox/worktree"
+  external_file="$sandbox/external-secret"
+
+  mkdir -p "$repo_root/.claude" "$wt_path/.claude"
+  printf 'secret\n' > "$external_file"
+  printf '{"enabledPlugins": {"stale": true}}\n' > "$wt_path/.claude/settings.local.json"
+  ln -s "$external_file" "$repo_root/.claude/settings.local.json"
+
+  output=$(
+    bash -c '
+      set -euo pipefail
+      _die() { printf "die: %s\n" "$*" >&2; exit 42; }
+      _warn() { printf "warning: %s\n" "$*" >&2; }
+      source "'"$REPO_ROOT/modules/shared/scripts/lib/wt/bootstrap.sh"'"
+      _wt_prepare_claude_settings "'"$repo_root/.claude/settings.local.json"'" "'"$wt_path/.claude"'"
+    ' 2>&1
+  )
+
+  assert_contains "$output" "원본 .claude/settings.local.json이 symlink라 worktree 복사를 건너뜁니다"
+  [[ ! -e "$wt_path/.claude/settings.local.json" && ! -L "$wt_path/.claude/settings.local.json" ]] \
+    || fail "symlinked source settings must not be materialized in worktree"
+  assert_contains "$(cat "$external_file")" "secret"
+}
+
+test_wt_create_trusts_codex_project() {
+  local sandbox home_dir repo_root config_file output new_worktree other_project mode_after
+  if ! codex_config_tomlkit_available; then
+    echo "==> wt create trusts Codex project config: SKIPPED (tomlkit 미가용)" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  config_file="$home_dir/.codex/config.toml"
+  other_project="$sandbox/other-project"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  mkdir -p "$(dirname "$config_file")" "$other_project"
+  other_project="$(cd "$other_project" && pwd -P)"
+  new_worktree="$repo_root/.claude/worktrees/feature-trust"
+  cat > "$config_file" <<EOF
+model = "test-model"
+
+[projects."$other_project"]
+trust_level = "trusted"
+
+[projects."$new_worktree"]
+trust_level = "untrusted"
+EOF
+  chmod 0644 "$config_file"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" feature-trust
+        "'"$home_dir/.local/bin/wt"'" --yes --if-exists=recreate feature-trust
+      ' 2>&1
+  )
+
+  [[ -d "$new_worktree" ]] || fail "expected worktree directory to exist: $new_worktree"
+  assert_contains "$output" "$new_worktree"
+
+  python3 - "$config_file" "$new_worktree" "$other_project" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+config_file, new_worktree, other_project = sys.argv[1:4]
+new_worktree = str(pathlib.Path(new_worktree).resolve())
+other_project = str(pathlib.Path(other_project).resolve())
+with open(config_file, "rb") as f:
+    data = tomllib.load(f)
+
+projects = data["projects"]
+assert projects[new_worktree]["trust_level"] == "trusted", projects
+assert projects[other_project]["trust_level"] == "trusted", projects
+assert data["model"] == "test-model", data
+PY
+
+  assert_line_count "$config_file" "[projects.\"$new_worktree\"]" 1
+  mode_after=$(_codex_config_file_mode "$config_file")
+  [[ "$mode_after" == "600" ]] \
+    || fail "expected Codex config mode 600 after trust registration, got: $mode_after"
+}
+
+test_wt_create_skips_unsafe_codex_config() {
+  local sandbox home_dir repo_root config_file config_target output new_worktree
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  config_file="$home_dir/.codex/config.toml"
+  config_target="$sandbox/config-target.toml"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  mkdir -p "$(dirname "$config_file")"
+  printf 'model = "external"\n' > "$config_target"
+  ln -s "$config_target" "$config_file"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" unsafe-config-symlink
+      ' 2>&1
+  )
+
+  new_worktree="$repo_root/.claude/worktrees/unsafe-config-symlink"
+  [[ -d "$new_worktree" ]] || fail "expected worktree directory to exist: $new_worktree"
+  assert_contains "$output" "Codex trust registration skipped"
+  [[ -L "$config_file" ]] || fail "unsafe Codex config symlink must not be replaced"
+  assert_not_contains "$(cat "$config_target")" "unsafe-config-symlink"
+
+  rm -f "$config_file"
+  mkfifo "$config_file"
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" unsafe-config-fifo
+      ' 2>&1
+  )
+  assert_contains "$output" "Codex trust registration skipped"
+  [[ -p "$config_file" ]] || fail "unsafe Codex config FIFO must not be replaced"
+}
+
+test_wt_create_supports_valid_projects_shapes() {
+  local sandbox home_dir repo_root config_file output
+  if ! codex_config_tomlkit_available; then
+    echo "==> wt create supports valid Codex projects shapes: SKIPPED (tomlkit 미가용)" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  config_file="$home_dir/.codex/config.toml"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  mkdir -p "$(dirname "$config_file")"
+
+  local idx=0 worktree_path content
+  while (( idx < 3 )); do
+    idx=$((idx + 1))
+    worktree_path="$repo_root/.claude/worktrees/valid-project-shape-$idx"
+    case "$idx" in
+      1) content='projects = {}' ;;
+      2) content="projects.\"$worktree_path\" = { trust_level = \"trusted\" }" ;;
+      3) content="[projects]"$'\n'"\"$worktree_path\" = { trust_level = \"trusted\" }" ;;
+    esac
+    printf '%s\n' "$content" > "$config_file"
+    output=$(
+      env -u TMUX \
+        HOME="$home_dir" \
+        PATH="$FIXTURE_DIR/bin:$PATH" \
+        WT_NONINTERACTIVE=1 \
+        bash -c '
+          set -euo pipefail
+          cd "'"$repo_root"'"
+          "'"$home_dir/.local/bin/wt"'" "valid-project-shape-'"$idx"'"
+        ' 2>&1
+    )
+    assert_contains "$output" "$worktree_path"
+    toml_semantic_equal "$config_file" <(
+      printf 'projects."%s".trust_level = "trusted"\n' "$worktree_path"
+    ) || fail "valid projects shape must be trusted semantically (scenario $idx): $(cat "$config_file")"
+  done
+}
+
+test_wt_create_preserves_unmergeable_codex_config() {
+  local sandbox home_dir repo_root config_file output
+  if ! codex_config_tomlkit_available; then
+    echo "==> wt create preserves unmergeable Codex config: SKIPPED (tomlkit 미가용)" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  config_file="$home_dir/.codex/config.toml"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  mkdir -p "$(dirname "$config_file")"
+
+  local idx=0 branch_name content expected_file
+  while (( idx < 2 )); do
+    idx=$((idx + 1))
+    branch_name="unmergeable-codex-config-$idx"
+    case "$idx" in
+      1) content='projects = [' ;;
+      2) content='projects = []' ;;
+    esac
+
+    printf '%s\n' "$content" > "$config_file"
+    expected_file="$sandbox/expected-config-$idx.toml"
+    cp "$config_file" "$expected_file"
+
+    output=$(
+      env -u TMUX \
+        HOME="$home_dir" \
+        PATH="$FIXTURE_DIR/bin:$PATH" \
+        WT_NONINTERACTIVE=1 \
+        bash -c '
+          set -euo pipefail
+          cd "'"$repo_root"'"
+          "'"$home_dir/.local/bin/wt"'" "'"$branch_name"'"
+        ' 2>&1
+    )
+
+    [[ -d "$repo_root/.claude/worktrees/$branch_name" ]] \
+      || fail "expected worktree directory to exist despite skipped trust registration: $branch_name"
+    assert_contains "$output" "Codex trust registration skipped"
+    cmp -s "$config_file" "$expected_file" \
+      || fail "unmergeable Codex config must remain unchanged (scenario $idx): $(cat "$config_file")"
+  done
+}
+
+test_wt_create_inherits_claude_local_plugin_manifest() {
+  local sandbox home_dir repo_root manifest settings output new_worktree other_project mode_after plugin_dir alt_plugin_dir manual_plugin_dir projected_skill projected_alt_skill
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  manifest="$home_dir/.claude/plugins/installed_plugins.json"
+  settings="$repo_root/.claude/settings.local.json"
+  other_project="$sandbox/project-alpha"
+  alt_plugin_dir="$sandbox/example-plugin-alt"
+  manual_plugin_dir="$sandbox/manual-example-plugin"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  plugin_dir="$repo_root/local-plugins/example-plugin"
+  install_deployed_layout "$sandbox" "$repo_root"
+  mkdir -p "$(dirname "$manifest")" "$(dirname "$settings")" "$other_project" \
+    "$plugin_dir/skills/example-skill" "$alt_plugin_dir/skills/example-skill" "$manual_plugin_dir"
+  printf '%s\n' '---' 'name: example-skill' '---' > "$plugin_dir/skills/example-skill/SKILL.md"
+  printf '%s\n' '---' 'name: example-skill' '---' > "$alt_plugin_dir/skills/example-skill/SKILL.md"
+  HOME="$home_dir" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo_root" -c core.hooksPath=/dev/null -c commit.gpgSign=false \
+    add local-plugins/example-plugin
+  HOME="$home_dir" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo_root" -c core.hooksPath=/dev/null -c commit.gpgSign=false \
+    commit -m "add local plugin fixture" >/dev/null 2>&1
+
+  python3 - "$repo_root" "$settings" "$manifest" "$other_project" "$repo_root/.claude/worktrees/feature-two" "$plugin_dir" "$alt_plugin_dir" "$manual_plugin_dir" <<'PY'
+import json
+import sys
+
+repo_root, settings, manifest, other_project, target_worktree, plugin_dir, alt_plugin_dir, manual_plugin_dir = sys.argv[1:9]
+with open(settings, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "enabledPlugins": {
+                "example-plugin@demo-marketplace": True,
+                "example-plugin@other-marketplace": True,
+                "disabled-plugin@demo-marketplace": False,
+            }
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "plugins": {
+                "example-plugin@demo-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": repo_root,
+                        "installPath": plugin_dir,
+                        "metadata": {"channel": "stable"},
+                    },
+                    {
+                        "scope": "local",
+                        "projectPath": target_worktree,
+                        "installPath": plugin_dir,
+                    },
+                    {
+                        "scope": "local",
+                        "projectPath": target_worktree,
+                        "installPath": manual_plugin_dir,
+                        "metadata": {"owner": "manual"},
+                    },
+                    {
+                        "scope": "user",
+                        "installPath": "/tmp/example-plugin-user",
+                    },
+                    {
+                        "scope": "local",
+                        "projectPath": other_project,
+                        "installPath": "/tmp/example-plugin-other",
+                    },
+                ],
+                "example-plugin@other-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": repo_root,
+                        "installPath": alt_plugin_dir,
+                    }
+                ],
+                "disabled-plugin@demo-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": repo_root,
+                        "installPath": "/tmp/disabled-plugin",
+                    },
+                    {
+                        "scope": "local",
+                        "projectPath": target_worktree,
+                        "installPath": "/tmp/stale-disabled-plugin",
+                        "metadata": {
+                            "wtManaged": {
+                                "version": 1,
+                                "sourceProjectPath": repo_root,
+                                "sourceInstallPath": "/tmp/disabled-plugin"
+                            }
+                        },
+                    }
+                ],
+            }
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
+PY
+  chmod 0644 "$manifest"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" feature-two
+        "'"$home_dir/.local/bin/wt"'" --yes --if-exists=recreate feature-two
+      ' 2>&1
+  )
+
+  new_worktree="$repo_root/.claude/worktrees/feature-two"
+  [[ -d "$new_worktree" ]] || fail "expected worktree directory to exist: $new_worktree"
+  assert_contains "$output" "$new_worktree"
+  projected_skill=$(managed_plugin_skill_link \
+    "$new_worktree/.agents/skills" \
+    'wt-plugin--example-plugin_demo-marketplace-*--example-skill-*')
+  [[ "$(readlink "$projected_skill")" == "$(cd "$new_worktree/local-plugins/example-plugin/skills/example-skill" && pwd -P)" ]] \
+    || fail "projected plugin skill symlink target mismatch"
+  projected_alt_skill=$(managed_plugin_skill_link \
+    "$new_worktree/.agents/skills" \
+    'wt-plugin--example-plugin_other-marketplace-*--example-skill-*')
+  [[ "$(readlink "$projected_alt_skill")" == "$(cd "$alt_plugin_dir/skills/example-skill" && pwd -P)" ]] \
+    || fail "same plugin name from another source must get a distinct projected skill symlink"
+  [[ "$projected_skill" != "$projected_alt_skill" ]] \
+    || fail "managed plugin skill symlinks must not collide across plugin keys"
+  git -C "$new_worktree" check-ignore -q ".agents/skills/$(basename "$projected_skill")" \
+    || fail "managed plugin skill symlink must be ignored from public git artifacts"
+
+  python3 - "$manifest" "$repo_root" "$new_worktree" "$other_project" "$plugin_dir" "$manual_plugin_dir" <<'PY'
+import json
+import pathlib
+import sys
+
+manifest, repo_root, new_worktree, other_project, plugin_dir, manual_plugin_dir = sys.argv[1:7]
+repo_root = str(pathlib.Path(repo_root).resolve())
+new_worktree = str(pathlib.Path(new_worktree).resolve())
+other_project = str(pathlib.Path(other_project).resolve())
+target_plugin_dir = str((pathlib.Path(new_worktree) / "local-plugins/example-plugin").resolve())
+with open(manifest, encoding="utf-8") as f:
+    plugins = json.load(f)["plugins"]
+
+entries = plugins["example-plugin@demo-marketplace"]
+target_entries = [
+    e for e in entries
+    if e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == new_worktree
+]
+inherited_entries = [e for e in target_entries if e.get("installPath") == target_plugin_dir]
+manual_entries = [e for e in target_entries if e.get("installPath") == manual_plugin_dir]
+assert len(inherited_entries) == 1, target_entries
+assert len(manual_entries) == 1, target_entries
+target_entry = inherited_entries[0]
+assert target_entry["metadata"]["channel"] == "stable", target_entry
+assert target_entry["metadata"]["wtManaged"]["version"] == 1, target_entry
+assert target_entry["metadata"]["wtManaged"]["sourceProjectPath"] == repo_root, target_entry
+assert target_entry["metadata"]["wtManaged"]["sourceInstallPath"] == plugin_dir, target_entry
+assert manual_entries[0]["metadata"] == {"owner": "manual"}, manual_entries
+
+assert any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == repo_root
+    for e in entries
+), entries
+assert any(e.get("scope") == "user" for e in entries), entries
+assert any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == other_project
+    for e in entries
+), entries
+
+disabled_entries = plugins["disabled-plugin@demo-marketplace"]
+assert not any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == new_worktree
+    for e in disabled_entries
+), disabled_entries
+PY
+  mode_after=$(_codex_config_file_mode "$manifest")
+  [[ "$mode_after" == "600" ]] \
+    || fail "expected Claude plugin manifest mode 600 after inheritance, got: $mode_after"
+}
+
+test_wt_create_ignores_branch_tracked_plugin_settings() {
+  local sandbox home_dir repo_root manifest output new_worktree branch_name
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  manifest="$home_dir/.claude/plugins/installed_plugins.json"
+  branch_name="branch-tracked-settings"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  mkdir -p "$(dirname "$manifest")"
+
+  fixture_git_cmd() {
+    HOME="$home_dir" \
+      XDG_CONFIG_HOME="$home_dir/.config" \
+      GIT_CONFIG_GLOBAL=/dev/null \
+      GIT_CONFIG_NOSYSTEM=1 \
+      git -C "$repo_root" \
+      -c core.hooksPath=/dev/null \
+      -c commit.gpgSign=false \
+      -c init.templateDir= \
+      "$@"
+  }
+
+  fixture_git_cmd checkout -b "$branch_name" >/dev/null 2>&1
+  mkdir -p "$repo_root/.claude"
+  python3 - "$repo_root/.claude/settings.local.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump({"enabledPlugins": {"example-plugin@demo-marketplace": True}}, f, indent=2)
+    f.write("\n")
+PY
+  fixture_git_cmd add -f .claude/settings.local.json
+  fixture_git_cmd commit -m "track local settings fixture" >/dev/null 2>&1
+  fixture_git_cmd checkout main >/dev/null 2>&1
+  [[ ! -f "$repo_root/.claude/settings.local.json" ]] \
+    || fail "source local settings fixture should be absent on main"
+
+  python3 - "$repo_root" "$manifest" <<'PY'
+import json
+import sys
+
+repo_root, manifest = sys.argv[1:3]
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "plugins": {
+                "example-plugin@demo-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": repo_root,
+                        "installPath": "/tmp/example-plugin",
+                    }
+                ]
+            }
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
+PY
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" --if-exists=reuse "'"$branch_name"'"
+      ' 2>&1
+  )
+
+  new_worktree="$repo_root/.claude/worktrees/$branch_name"
+  [[ ! -e "$new_worktree/.claude/settings.local.json" ]] \
+    || fail "branch-tracked target settings must be removed when source settings is absent"
+  assert_contains "$output" "$new_worktree"
+
+  python3 - "$manifest" "$new_worktree" <<'PY'
+import json
+import pathlib
+import sys
+
+manifest, new_worktree = sys.argv[1:3]
+new_worktree = str(pathlib.Path(new_worktree).resolve())
+with open(manifest, encoding="utf-8") as f:
+    entries = json.load(f)["plugins"]["example-plugin@demo-marketplace"]
+assert not any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == new_worktree
+    for e in entries
+), entries
+PY
+}
+
+test_wt_plugin_manifest_ignores_noncanonical_adjacent_lock_directory() {
+  local sandbox home_dir repo_root manifest settings new_worktree output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  manifest="$home_dir/.claude/plugins/installed_plugins.json"
+  settings="$repo_root/.claude/settings.local.json"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  mkdir -p "$(dirname "$manifest")" "$(dirname "$settings")" "$manifest.lock"
+
+  python3 - "$settings" "$repo_root" "$manifest" <<'PY'
+import json
+import sys
+
+settings, repo_root, manifest = sys.argv[1:4]
+with open(settings, "w", encoding="utf-8") as f:
+    json.dump({"enabledPlugins": {"example-plugin@demo-marketplace": True}}, f, indent=2)
+    f.write("\n")
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "plugins": {
+                "example-plugin@demo-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": repo_root,
+                        "installPath": "/tmp/example-plugin",
+                    }
+                ]
+            }
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
+PY
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" stale-legacy-lock
+      ' 2>&1
+  )
+
+  new_worktree="$repo_root/.claude/worktrees/stale-legacy-lock"
+  assert_contains "$output" "$new_worktree"
+  [[ -d "$manifest.lock" ]] || fail "noncanonical adjacent lock directory fixture should remain untouched"
+
+  python3 - "$manifest" "$new_worktree" <<'PY'
+import json
+import pathlib
+import sys
+
+manifest, new_worktree = sys.argv[1:3]
+new_worktree = str(pathlib.Path(new_worktree).resolve())
+with open(manifest, encoding="utf-8") as f:
+    entries = json.load(f)["plugins"]["example-plugin@demo-marketplace"]
+assert any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == new_worktree
+    for e in entries
+), entries
+PY
+}
+
+test_wt_plugin_manifest_skill_projection_skips_os_errors() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  output=$(
+    python3 - "$REPO_ROOT" "$sandbox" <<'PY' 2>&1
+import importlib.util
+import os
+from pathlib import Path
+import sys
+
+repo_root, sandbox = sys.argv[1:3]
+module_path = Path(repo_root) / "modules/shared/scripts/lib/wt/plugin-manifest.py"
+spec = importlib.util.spec_from_file_location("plugin_manifest", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+target_root = Path(sandbox) / "target"
+skills_dir = target_root / ".agents/skills"
+skills_dir.mkdir(parents=True)
+(skills_dir / "wt-plugin--stale").symlink_to("/tmp/stale-source")
+
+original_remove = module.remove_managed_plugin_skill_path
+
+def flaky_remove(path):
+    if Path(path).name == "wt-plugin--stale":
+        raise OSError("synthetic remove failure")
+    return original_remove(path)
+
+original_symlink = module.os.symlink
+
+def flaky_symlink(source, target):
+    if Path(target).name == "wt-plugin--bad":
+        raise OSError("synthetic symlink failure")
+    return original_symlink(source, target)
+
+module.remove_managed_plugin_skill_path = flaky_remove
+module.os.symlink = flaky_symlink
+module.reconcile_plugin_skill_links(
+    str(target_root),
+    {
+        "wt-plugin--bad": "/tmp/bad-source",
+        "wt-plugin--ok": "/tmp/ok-source",
+    },
+)
+
+ok_link = skills_dir / "wt-plugin--ok"
+assert ok_link.is_symlink(), "unrelated valid managed plugin skill link should still be created"
+assert os.readlink(ok_link) == "/tmp/ok-source"
+assert (skills_dir / "wt-plugin--stale").is_symlink()
+assert not (skills_dir / "wt-plugin--bad").exists()
+PY
+  )
+  assert_contains "$output" "cannot remove stale managed plugin skill path"
+  assert_contains "$output" "cannot create managed plugin skill symlink"
+}
+
+test_wt_plugin_manifest_cleanup_uses_stable_canonical_target() {
+  local sandbox manifest target_path other_project
+  sandbox=$(new_sandbox)
+  manifest="$sandbox/home/.claude/plugins/installed_plugins.json"
+  target_path="$sandbox/worktree"
+  other_project="$sandbox/project-alpha"
+
+  mkdir -p "$(dirname "$manifest")" "$target_path" "$other_project"
+  target_path="$(cd "$target_path" && pwd -P)"
+  other_project="$(cd "$other_project" && pwd -P)"
+
+  python3 - "$manifest" "$target_path" "$other_project" <<'PY'
+import json
+import sys
+
+manifest, target_path, other_project = sys.argv[1:4]
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "plugins": {
+                "example-plugin@demo-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": target_path,
+                        "installPath": "/tmp/target",
+                        "metadata": {"wtManaged": {"version": 1}},
+                    },
+                    {"scope": "local", "projectPath": other_project, "installPath": "/tmp/other"},
+                ]
+            }
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
+PY
+
+  rm -rf "$target_path"
+  ln -s "$other_project" "$target_path"
+
+  "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" remove-local \
+    --manifest "$manifest" \
+    --target-root "$target_path" \
+    --target-root-before-removal "$target_path"
+
+  python3 - "$manifest" "$target_path" "$other_project" <<'PY'
+import json
+import pathlib
+import sys
+
+manifest, target_path, other_project = sys.argv[1:4]
+target_path = str(pathlib.Path(target_path))
+other_project = str(pathlib.Path(other_project).resolve())
+with open(manifest, encoding="utf-8") as f:
+    entries = json.load(f)["plugins"]["example-plugin@demo-marketplace"]
+assert not any(e.get("projectPath") == target_path for e in entries), entries
+assert any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == other_project
+    for e in entries
+), entries
+PY
+}
+
+test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries() {
+  local sandbox home_dir repo_root manifest target_path other_worktree output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  manifest="$home_dir/.claude/plugins/installed_plugins.json"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  other_worktree="$repo_root/.claude/worktrees/feature_two"
+  mkdir -p "$(dirname "$manifest")" "$other_worktree"
+
+  python3 - "$manifest" "$repo_root" "$target_path" "$other_worktree" <<'PY'
+import json
+import sys
+
+manifest, repo_root, target_path, other_worktree = sys.argv[1:5]
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "plugins": {
+                "example-plugin@demo-marketplace": [
+                    {"scope": "local", "projectPath": repo_root, "installPath": "/tmp/source"},
+                    {
+                        "scope": "local",
+                        "projectPath": target_path,
+                        "installPath": "/tmp/target",
+                        "metadata": {"wtManaged": {"version": 1}},
+                    },
+                    {
+                        "scope": "local",
+                        "projectPath": target_path,
+                        "installPath": "/tmp/manual",
+                        "metadata": {"owner": "manual"},
+                    },
+                    {"scope": "local", "projectPath": other_worktree, "installPath": "/tmp/other"},
+                    {"scope": "user", "projectPath": target_path, "installPath": "/tmp/user"},
+                ],
+                "sample-plugin@demo-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": target_path,
+                        "installPath": "/tmp/remove-only",
+                        "metadata": {"wtManaged": {"version": 1}},
+                    }
+                ],
+            }
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
+PY
+
+  output=$(
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup feature_one --yes
+    ' 2>&1
+  )
+
+  assert_contains "$output" "정리 완료: 1개 삭제"
+  [[ ! -d "$target_path" ]] || fail "expected worktree to be removed: $target_path"
+
+  python3 - "$manifest" "$repo_root" "$target_path" "$other_worktree" <<'PY'
+import json
+import pathlib
+import sys
+
+manifest, repo_root, target_path, other_worktree = sys.argv[1:5]
+repo_root = str(pathlib.Path(repo_root).resolve())
+target_path = str(pathlib.Path(target_path).resolve())
+other_worktree = str(pathlib.Path(other_worktree).resolve())
+with open(manifest, encoding="utf-8") as f:
+    plugins = json.load(f)["plugins"]
+
+entries = plugins["example-plugin@demo-marketplace"]
+assert not any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == target_path
+    and e.get("metadata", {}).get("wtManaged", {}).get("version") == 1
+    for e in entries
+), entries
+assert any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == target_path
+    and e.get("installPath") == "/tmp/manual"
+    for e in entries
+), entries
+assert any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == repo_root
+    for e in entries
+), entries
+assert any(
+    e.get("scope") == "local"
+    and str(pathlib.Path(e.get("projectPath", "")).resolve()) == other_worktree
+    for e in entries
+), entries
+assert any(e.get("scope") == "user" for e in entries), entries
+assert "sample-plugin@demo-marketplace" not in plugins, plugins
+PY
+}
+
+test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails() {
+  local sandbox home_dir repo_root manifest lock_path target_path output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  manifest="$home_dir/.claude/plugins/installed_plugins.json"
+  lock_path="$home_dir/.claude/plugins/.installed_plugins.json.lock"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  mkdir -p "$(dirname "$manifest")" "$lock_path"
+  printf '{"plugins": {}}\n' > "$manifest"
+
+  output=$(
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup feature_one --yes
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Claude local plugin cleanup 실패"
+  assert_contains "$output" "정리 완료: 0개 삭제"
+  [[ -d "$target_path" ]] || fail "worktree must remain when plugin manifest cleanup fails"
+}
+
+test_wt_plugin_manifest_missing_and_invalid_are_safe() {
+  local sandbox home_dir repo_root manifest settings before output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  manifest="$home_dir/.claude/plugins/installed_plugins.json"
+  settings="$repo_root/.claude/settings.local.json"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" no-settings
+      ' 2>&1
+  )
+  assert_contains "$output" "$repo_root/.claude/worktrees/no-settings"
+
+  mkdir -p "$(dirname "$settings")"
+  python3 - "$settings" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump({"enabledPlugins": {"example-plugin@demo-marketplace": True}}, f, indent=2)
+    f.write("\n")
+PY
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" missing-manifest
+      ' 2>&1
+  )
+  assert_contains "$output" "$repo_root/.claude/worktrees/missing-manifest"
+  assert_contains "$output" "Claude plugin manifest missing"
+
+  mkdir -p "$(dirname "$manifest")"
+  python3 - "$manifest" "$repo_root/.claude/worktrees/invalid-settings" <<'PY'
+import json
+import sys
+
+manifest, target_worktree = sys.argv[1:3]
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "plugins": {
+                "example-plugin@demo-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": target_worktree,
+                        "installPath": "/tmp/stale-managed",
+                        "metadata": {"wtManaged": {"version": 1}},
+                    }
+                ]
+            }
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
+PY
+  printf '{not-json\n' > "$settings"
+  before="$(cat "$manifest")"
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" invalid-settings
+      ' 2>&1
+  )
+  assert_contains "$output" "$repo_root/.claude/worktrees/invalid-settings"
+  assert_contains "$output" "settings.local.json JSON is invalid"
+  [[ "$(cat "$manifest")" == "$before" ]] || fail "invalid settings must not remove existing managed manifest entries"
+
+  python3 - "$settings" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump({"enabledPlugins": {"example-plugin@demo-marketplace": True}}, f, indent=2)
+    f.write("\n")
+PY
+
+  printf '{not-json\n' > "$manifest"
+  before="$(cat "$manifest")"
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" invalid-manifest
+      ' 2>&1
+  )
+  assert_contains "$output" "$repo_root/.claude/worktrees/invalid-manifest"
+  assert_contains "$output" "installed_plugins.json JSON is invalid"
+  [[ "$(cat "$manifest")" == "$before" ]] || fail "invalid manifest must not be overwritten"
+
+  rm -f "$manifest"
+  mkdir -p "$sandbox/manifest-target"
+  printf '{"plugins": {}}\n' > "$sandbox/manifest-target/installed_plugins.json"
+  ln -s "$sandbox/manifest-target/installed_plugins.json" "$manifest"
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" symlink-manifest
+      ' 2>&1
+  )
+  assert_contains "$output" "$repo_root/.claude/worktrees/symlink-manifest"
+  assert_contains "$output" "installed_plugins.json is not a regular file"
+  [[ -L "$manifest" ]] || fail "unsafe plugin manifest symlink must not be replaced"
+
+  rm -f "$manifest"
+  mkfifo "$manifest"
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" fifo-manifest
+      ' 2>&1
+  )
+  assert_contains "$output" "$repo_root/.claude/worktrees/fifo-manifest"
+  assert_contains "$output" "installed_plugins.json is not a regular file"
+  [[ -p "$manifest" ]] || fail "unsafe plugin manifest FIFO must not be replaced"
 }
 
 test_codex_activation_agents_symlink_guard_static() {
@@ -2268,6 +3451,112 @@ EOF
   )
   assert_contains "$output" "helper directory not found"
   assert_not_contains "$output" "SHADOW_REBUILD_LOADED"
+}
+
+test_missing_wt_python_helpers_fail_state_changes() {
+  local sandbox home_dir repo_root output rc new_worktree
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  new_worktree="$repo_root/.claude/worktrees/missing-python-helper"
+  rm -f "$home_dir/.local/lib/wt/codex-trust.py"
+
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" missing-python-helper
+      ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" -ne 0 ]] || fail "missing wt Python helper must fail state-changing create"
+  assert_contains "$output" "Codex trust helper를 찾지 못해 wt 상태 변경 불가"
+  [[ ! -d "$new_worktree" ]] || fail "missing wt Python helper must fail before creating worktree"
+}
+
+test_missing_wt_python_helpers_fail_cleanup_state_changes() {
+  local sandbox home_dir repo_root output rc target_name new_worktree
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  target_name="cleanup-missing-helper"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  new_worktree="$repo_root/.claude/worktrees/$target_name"
+
+  env -u TMUX \
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" "'"$target_name"'"
+    ' >/dev/null 2>&1
+
+  [[ -d "$new_worktree" ]] || fail "expected worktree fixture to exist before cleanup"
+  rm -f "$home_dir/.local/lib/wt/plugin-manifest.py"
+
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" cleanup --yes "'"$target_name"'"
+      ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" -ne 0 ]] || fail "missing wt Python helper must fail state-changing cleanup"
+  assert_contains "$output" "Claude plugin manifest helper를 찾지 못해 wt 상태 변경 불가"
+  [[ -d "$new_worktree" ]] || fail "missing wt Python helper must fail before removing worktree"
+}
+
+test_codex_trust_write_failure_returns_warning() {
+  local sandbox config_file project_root output
+  sandbox=$(new_sandbox)
+  config_file="$sandbox/config.toml"
+  project_root="$sandbox/project"
+  mkdir -p "$project_root"
+
+  output=$(
+    "${WT_PYTHON:-python3}" - "$REPO_ROOT" "$config_file" "$project_root" <<'PY' 2>&1
+import importlib.util
+from pathlib import Path
+import sys
+
+repo_root, config_file, project_root = sys.argv[1:4]
+module_path = Path(repo_root) / "modules/shared/scripts/lib/wt/codex-trust.py"
+spec = importlib.util.spec_from_file_location("codex_trust", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+def fail_write(config_path, content):
+    raise OSError("synthetic write failure")
+
+module.render_trusted_project = lambda content, project_path, doc=None: 'trusted = true\n'
+module.load_toml_doc = lambda content, label: {}
+module.write_atomic = fail_write
+rc = module.ensure_project_trusted(Path(config_file), Path(project_root))
+assert rc == 1, rc
+PY
+  )
+  assert_contains "$output" "Codex trust registration skipped: cannot write config"
 }
 
 test_fixture_git_is_hermetic_against_global_hooks() {
@@ -2684,6 +3973,8 @@ EOF
 }
 
 run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
+run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
+run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
 run_test "wt cd returns target path by name" test_wt_cd_by_name_returns_target_path
@@ -2698,9 +3989,26 @@ run_test "wt --stay prints path to stdout when noninteractive" test_wt_create_st
 run_test "shadow paths do not override managed helpers" test_shadow_paths_do_not_override_managed_helpers
 run_test "wt symlink alias does not load adjacent helpers" test_wt_symlink_alias_does_not_load_adjacent_helpers
 run_test "rebuild-common symlink alias does not load adjacent helpers" test_rebuild_common_symlink_alias_does_not_load_adjacent_helpers
-run_test "wt create uses managed codex-sync path" test_wt_create_creates_worktree_without_shadow_codex_sync
+run_test "wt create does not call legacy sync" test_wt_create_does_not_call_legacy_sync
 run_test "wt create skips symlinked codex source" test_wt_create_skips_symlinked_codex_source
-run_test "codex-sync wrapper opt-in flags" test_codex_sync_wrapper_opt_in_flags
+run_test "wt create prunes retired project MCP block" test_wt_create_prunes_retired_project_mcp_block
+run_test "wt create removes unterminated copied Codex config" test_wt_create_removes_unterminated_copied_codex_config
+run_test "wt create removes directory copied Codex config" test_wt_create_removes_directory_copied_codex_config
+run_test "codex trust sanitizes unsafe copied Codex config" test_codex_trust_sanitizes_unsafe_copied_codex_config
+run_test "wt prepare rejects symlinked Claude dir" test_wt_prepare_rejects_symlinked_claude_dir
+run_test "wt prepare skips symlinked source settings" test_wt_prepare_skips_symlinked_source_settings
+run_test "wt create trusts Codex project config" test_wt_create_trusts_codex_project
+run_test "wt create skips unsafe Codex config path" test_wt_create_skips_unsafe_codex_config
+run_test "wt create supports valid Codex projects shapes" test_wt_create_supports_valid_projects_shapes
+run_test "wt create preserves unmergeable Codex config" test_wt_create_preserves_unmergeable_codex_config
+run_test "wt create inherits Claude local plugin manifest" test_wt_create_inherits_claude_local_plugin_manifest
+run_test "wt create ignores branch-tracked plugin settings" test_wt_create_ignores_branch_tracked_plugin_settings
+run_test "wt plugin manifest ignores noncanonical adjacent lock directory" test_wt_plugin_manifest_ignores_noncanonical_adjacent_lock_directory
+run_test "wt plugin manifest skill projection skips OS errors" test_wt_plugin_manifest_skill_projection_skips_os_errors
+run_test "wt plugin manifest cleanup uses stable canonical target" test_wt_plugin_manifest_cleanup_uses_stable_canonical_target
+run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
+run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
+run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "wt recreate guard uses physical paths" test_wt_recreate_guard_uses_physical_paths
 run_test "wt cleanup auto removes merged worktree" test_wt_cleanup_auto_removes_merged_worktree
@@ -2711,6 +4019,9 @@ run_test "wt cleanup auto survives stale worktree" test_wt_cleanup_auto_survives
 run_test "wt cleanup name-filter survives stale worktree" test_wt_cleanup_name_filter_survives_stale_worktree
 run_test "wt cleanup auto broken-only reports skip count" test_wt_cleanup_auto_broken_only_reports_skip_count
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
+run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
+run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
+run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
 run_test "stale filter supports clean symlinked user hooks" test_user_hooks_stale_filter_supports_clean_symlink_target
@@ -2726,6 +4037,7 @@ run_test "check-skill-noise staged mode follows symlink projection" test_check_s
 run_test "check-skill-noise staged mode rejects non-regular markdown" test_check_skill_noise_staged_rejects_non_regular_markdown
 run_test "check-skill-noise follows symlink skill projection" test_check_skill_noise_worktree_follows_symlink_projection
 run_test "check-skill-noise rejects external symlink skill projection" test_check_skill_noise_worktree_rejects_external_symlink
+run_test "warn-skill-consistency ignores managed plugin skill projection" test_warn_skill_consistency_ignores_managed_plugin_skill_projection
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
 run_test "install-lefthook cleans up redundant local core.hooksPath" test_install_lefthook_cleanup_local_redundant

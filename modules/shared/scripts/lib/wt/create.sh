@@ -70,6 +70,7 @@ cmd_create() {
   fi
 
   # 새 worktree 생성 (현재 HEAD 기준)
+  _wt_require_state_helpers
   mkdir -p "$(dirname "$worktree_dir")"
   git worktree add -b "$branch_name" "$worktree_dir" >&2 || _die "worktree 생성 실패"
 
@@ -106,6 +107,8 @@ _handle_existing_worktree() {
       _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     "재생성")
+      _wt_require_state_helpers
+
       # unpushed/dirty 경고
       local warnings=()
       _wt_is_dirty "$worktree_dir" && warnings+=("uncommitted 변경사항이 있습니다")
@@ -143,6 +146,10 @@ _handle_existing_worktree() {
         _info "세션을 종료한 뒤 다시 시도하세요"
         return 1
       }
+      local canonical_worktree_dir
+      canonical_worktree_dir="$(cd "$worktree_dir" && pwd -P)" || canonical_worktree_dir="$worktree_dir"
+      _wt_remove_claude_local_plugins_for_worktree "$worktree_dir" "$canonical_worktree_dir" \
+        || _die "Claude local plugin manifest cleanup 실패 — 재생성 중단"
       git worktree remove --force "$worktree_dir" 2>/dev/null || rm -rf "$worktree_dir"
       git worktree prune 2>/dev/null || true
       git branch -D "$branch_name" >&2 2>/dev/null || true
@@ -195,6 +202,7 @@ _handle_existing_branch() {
 
   case "$choice" in
     "기존 브랜치 사용")
+      _wt_require_state_helpers
       mkdir -p "$(dirname "$worktree_dir")"
       git worktree add "$worktree_dir" "$branch_name" >&2 || _die "worktree 생성 실패"
       _bootstrap_worktree "$worktree_dir" "$git_root"
@@ -203,6 +211,8 @@ _handle_existing_branch() {
       _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
       ;;
     "새로 생성")
+      _wt_require_state_helpers
+
       # 커밋 유실 경고: 현재 HEAD에서 도달 불가능한 커밋이 있으면 확인
       local ahead_count
       ahead_count=$(git rev-list --count "HEAD..$branch_name" 2>/dev/null) || true
