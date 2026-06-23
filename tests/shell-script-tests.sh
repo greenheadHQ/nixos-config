@@ -553,6 +553,19 @@ symlink_helper_dir() {
   done < <(find "$source_dir" -type f | sort)
 }
 
+install_fixture_git_global_ignore() {
+  local home_dir="$1"
+  local ignore_file="$home_dir/.config/git/ignore"
+  local git_nix="$REPO_ROOT/modules/shared/programs/git/default.nix"
+
+  grep -Fq '      ".agents/skills/wt-plugin--*"' "$git_nix" \
+    || fail "expected global git ignore to include wt-managed plugin skill projections"
+  mkdir -p "$(dirname "$ignore_file")"
+  if ! grep -qxF '.agents/skills/wt-plugin--*' "$ignore_file" 2>/dev/null; then
+    printf '%s\n' '.agents/skills/wt-plugin--*' >> "$ignore_file"
+  fi
+}
+
 install_deployed_layout() {
   local sandbox="$1"
   local flake_path="${2:-$REPO_ROOT}"
@@ -561,6 +574,7 @@ install_deployed_layout() {
   local shell_nix="$REPO_ROOT/modules/shared/programs/shell/default.nix"
 
   mkdir -p "$home_dir/.local/bin" "$home_dir/.local/lib" "$generated_dir"
+  install_fixture_git_global_ignore "$home_dir"
 
   # shellcheck disable=SC2016  # Literal Nix source strings.
   register_copy_exec "$shell_nix" ".local/bin/.wt-real" \
@@ -684,8 +698,7 @@ create_git_fixture_repo() {
     fixture_git config user.name "Test User"
     fixture_git config user.email "test@example.com"
     echo "fixture" > README.md
-    printf '%s\n' '.agents/skills/wt-plugin--*' > .gitignore
-    fixture_git add README.md .gitignore
+    fixture_git add README.md
     fixture_git commit -m "initial" >/dev/null 2>&1
     fixture_git worktree add ".claude/worktrees/feature_one" -b feature-one >/dev/null 2>&1
   )
@@ -2441,7 +2454,8 @@ PY
     || fail "same plugin name from another source must get a distinct projected skill symlink"
   [[ "$projected_skill" != "$projected_alt_skill" ]] \
     || fail "managed plugin skill symlinks must not collide across plugin keys"
-  git -C "$new_worktree" check-ignore -q ".agents/skills/$(basename "$projected_skill")" \
+  HOME="$home_dir" XDG_CONFIG_HOME="$home_dir/.config" \
+    git -C "$new_worktree" check-ignore -q ".agents/skills/$(basename "$projected_skill")" \
     || fail "managed plugin skill symlink must be ignored from public git artifacts"
 
   python3 - "$manifest" "$repo_root" "$new_worktree" "$other_project" "$plugin_dir" "$manual_plugin_dir" <<'PY'

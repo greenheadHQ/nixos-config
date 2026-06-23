@@ -156,6 +156,7 @@ in
       # wt 워크트리 관리
       ".wt-parent"
       ".wt-last"
+      ".agents/skills/wt-plugin--*"
 
       # mise (프로젝트별 로컬 설정, dotfile 버전 포함)
       "mise.local.toml"
