@@ -5,7 +5,7 @@ description: |
   Trigger: 'Codex 설정', 'codex 스킬 인식', 'AGENTS.md 심링크', '.agents/skills 심링크', 'verify-ai-compat',
   'codex 권한', 'codex 업데이트', 'AI 도구 호환', 'codex 바이너리', 'approval_policy', 'sandbox_mode',
   'Codex 권한 프롬프트'.
-  NOT for harness 동기화 (use syncing-codex-harness). NOT for codex exec 실행 (use using-codex-exec).
+  NOT for codex exec 실행 (use using-codex-exec).
 ---
 
 # Codex CLI 설정
@@ -171,7 +171,7 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex'
 
 ## 관련 스킬
 
-- `syncing-codex-harness`: 다른 프로젝트에서 Codex 하네스 동기화 시 사용
+- `using-codex-exec`: Codex exec 실행 래퍼와 headless 실행 경로를 다룰 때 사용
 
 ## 레퍼런스
 

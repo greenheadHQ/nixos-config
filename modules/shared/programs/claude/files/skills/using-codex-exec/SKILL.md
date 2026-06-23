@@ -3,7 +3,7 @@ name: using-codex-exec
 description: |
   Run Codex CLI non-interactive (codex exec, codex review).
   Trigger: 'codex exec', 'codex 실행', '비대화형 codex', 'codex review', '--yolo'.
-  NOT for harness 동기화 (use syncing-codex-harness). NOT for claude -p (use using-claude-p).
+  NOT for Codex settings/skill projection. NOT for claude -p (use using-claude-p).
 ---
 
 # Codex Exec 사용
@@ -29,7 +29,7 @@ CLI 버전이 바뀌면 플래그/동작이 달라질 수 있으므로, 실행 �
 | `codex exec` 비대화형 실행 | Codex 세션의 기본 subagent fan-out (`run-da`, `parallel-audit`) |
 | `codex exec review` 코드 리뷰 | 대화형 TUI 사용법 |
 | `codex exec resume` 세션 재개 | Codex 설정 파일 전체 관리 |
-| stdin/파일 기반 프롬프트 전달 | Claude 하네스 투영 → `syncing-codex-harness` |
+| stdin/파일 기반 프롬프트 전달 | Codex settings/skill projection (repo 정책/검증 스크립트 참조) |
 | 결과 저장 및 자동화 출력 | |
 
 ## 의사결정 트리

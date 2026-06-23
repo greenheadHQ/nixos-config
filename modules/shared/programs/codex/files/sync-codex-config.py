@@ -525,7 +525,7 @@ def _sync_lock(target_path: Path) -> Iterator[None]:
     ``~/.codex/config.toml`` 본체에 대해 하는 quarantine 정책과 별개).
 
     Scope 한정: same-host, advisory, file-descriptor based. 같은 lockfile 을 acquire
-    하지 않는 외부 writer (codex CLI 의 trust append, ``sync.sh --user-mcp`` 등) 와의
+    하지 않는 외부 writer (codex CLI 의 trust append, direct MCP config edits 등) 와의
     race 는 별개 follow-up (#511 코멘트 #4) 영역이다.
     """
     lock_path = target_path.parent / ".sync-codex.lock"
@@ -641,7 +641,7 @@ def write_atomic(target_path: Path, serialized: str) -> None:
 def cmd_sync(template_path: Path, target_path: Path) -> int:
     _require_tomlkit()
     # advisory lock 으로 activation + NO_CHANGES repair 호출 간 race 차단.
-    # 외부 writer (codex CLI append, sync.sh --user-mcp) 와의 race 는 별개 follow-up.
+    # 외부 writer (codex CLI append, direct MCP config edits) 와의 race 는 별개 follow-up.
     with _sync_lock(target_path):
         return _cmd_sync_locked(template_path, target_path)
 

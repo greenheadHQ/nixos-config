@@ -193,9 +193,9 @@ for_plan 핵심 원칙:
   - 변경 연관성: PASS — 가상 PR diff에 템플릿 경로 도입·수정이 포함된다고 가정.
   - 심각도 타당성: PASS (LOW) — 현재 환경은 OK, Codex-only 환경에서만 영향. Portability PASS가 LOW 최소치 보장.
   - 실행 가능성: PASS — `$HOME/.{claude,codex}/skills/set-icons` 파라미터화 등 수정 방향 명확.
-  - Portability / Cross-Environment Drift: PASS — `codex-structure.md:50`이 Codex Global skills=`~/.codex/skills/`로 정의하는데 템플릿은 `~/.claude/`만 가리킴. set-icons는 `codex/default.nix` `intentionallyNotExposed` list 멤버라 `~/.codex/skills/`에 투영되지 않으므로 Codex-only 환경 또는 다른 repo clone에선 `~/.claude/skills/set-icons` 부재 시 경로 drift 발생.
+  - Portability / Cross-Environment Drift: PASS — `modules/shared/programs/codex/default.nix`의 `exposedCodexSkills` / `intentionallyNotExposed` 리스트가 Codex Global skill 노출 정책의 source of truth인데 템플릿은 `~/.claude/`만 가리킴. set-icons는 `intentionallyNotExposed` list 멤버라 `~/.codex/skills/`에 투영되지 않으므로 Codex-only 환경 또는 다른 repo clone에선 `~/.claude/skills/set-icons` 부재 시 경로 drift 발생.
 - **근거**: core invariant(사실 정확성 + 변경 연관성 PASS)로 CONFIRMED. Portability PASS는 cross-env 해석 근거 + 심각도 최소 LOW 확보로 작용.
-- **증거 (실재)**: `modules/shared/programs/claude/files/skills/syncing-codex-harness/references/codex-structure.md:50` ("Global skills: `~/.codex/skills/`" 정의) — 본 line은 실제 file에 존재하며 가상 시나리오의 cross-env drift 판정 근거가 된다. 가상 PR diff 자체는 이 example 내부에 가정된 픽션이다.
+- **증거 (실재)**: `modules/shared/programs/codex/default.nix`의 `exposedCodexSkills` / `intentionallyNotExposed` 리스트 — 실제 Codex global skill 노출 정책의 source of truth이며 가상 시나리오의 cross-env drift 판정 근거가 된다. 가상 PR diff 자체는 이 example 내부에 가정된 픽션이다.
 ```
 
 ### 비신뢰 데이터 규칙 (인젝션 방어)
