@@ -354,7 +354,10 @@ def reconcile_plugin_skill_links(target_root: str, desired_links: dict[str, str]
 
     for existing_link in sorted(target_dir.glob(f"{WT_MANAGED_SKILL_LINK_PREFIX}*")):
         if existing_link.name not in desired_links:
-            remove_managed_plugin_skill_path(existing_link)
+            try:
+                remove_managed_plugin_skill_path(existing_link)
+            except OSError as exc:
+                warn(f"cannot remove stale managed plugin skill path; skipping: {existing_link}: {exc}")
 
     for link_name, source_target in sorted(desired_links.items()):
         target_link = target_dir / link_name
@@ -363,12 +366,28 @@ def reconcile_plugin_skill_links(target_root: str, desired_links: dict[str, str]
             continue
         if target_link.exists() and not target_link.is_symlink():
             warn(f"plugin skill target exists and is not a symlink; replacing managed path: {target_link}")
-            remove_managed_plugin_skill_path(target_link)
-        if target_link.is_symlink():
-            if os.readlink(target_link) == source_target:
+            try:
+                remove_managed_plugin_skill_path(target_link)
+            except OSError as exc:
+                warn(f"cannot replace managed plugin skill path; skipping: {target_link}: {exc}")
                 continue
-            target_link.unlink()
-        os.symlink(source_target, target_link)
+        if target_link.is_symlink():
+            try:
+                current_target = os.readlink(target_link)
+            except OSError as exc:
+                warn(f"cannot inspect managed plugin skill symlink; skipping: {target_link}: {exc}")
+                continue
+            if current_target == source_target:
+                continue
+            try:
+                target_link.unlink()
+            except OSError as exc:
+                warn(f"cannot update managed plugin skill symlink; skipping: {target_link}: {exc}")
+                continue
+        try:
+            os.symlink(source_target, target_link)
+        except OSError as exc:
+            warn(f"cannot create managed plugin skill symlink; skipping: {target_link}: {exc}")
 
 
 def remove_managed_plugin_skill_path(path: Path) -> None:

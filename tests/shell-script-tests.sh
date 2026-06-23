@@ -60,10 +60,29 @@ assert_line_count() {
 managed_plugin_skill_link() {
   local skills_dir="$1"
   local pattern="$2"
-  local result
-  result=$(find "$skills_dir" -maxdepth 1 -type l -name "$pattern" -print -quit)
-  [[ -n "$result" ]] || fail "expected managed plugin skill symlink matching: $skills_dir/$pattern"
-  printf '%s\n' "$result"
+  local -a matches=()
+  local path
+  while IFS= read -r path; do
+    matches+=("$path")
+  done < <(find "$skills_dir" -maxdepth 1 -type l -name "$pattern" -print)
+  (( ${#matches[@]} == 1 )) \
+    || fail "expected exactly one managed plugin skill symlink matching: $skills_dir/$pattern (found: ${#matches[@]})"
+  printf '%s\n' "${matches[0]}"
+}
+
+test_managed_plugin_skill_link_requires_single_match() {
+  local sandbox skills_dir output
+  sandbox=$(new_sandbox)
+  skills_dir="$sandbox/skills"
+  mkdir -p "$skills_dir"
+  ln -s /tmp/source-one "$skills_dir/wt-plugin--dup-one"
+  ln -s /tmp/source-two "$skills_dir/wt-plugin--dup-two"
+
+  if output=$(managed_plugin_skill_link "$skills_dir" 'wt-plugin--dup-*' 2>&1); then
+    fail "duplicate managed plugin skill symlinks must fail cardinality assertion"
+  fi
+  assert_contains "$output" "expected exactly one managed plugin skill symlink"
+  assert_contains "$output" "(found: 2)"
 }
 
 write_mixed_user_codex_hooks() {
@@ -1987,7 +2006,7 @@ test_wt_create_removes_directory_copied_codex_config() {
   new_worktree="$repo_root/.claude/worktrees/directory-copied-config"
   config_file="$new_worktree/.codex/config.toml"
   [[ -d "$new_worktree" ]] || fail "expected worktree to be created despite directory copied Codex config"
-  assert_contains "$output" "복사된 config를 제거하고 계속합니다"
+  assert_contains "$output" "worktree .codex/config.toml이 regular file이 아니라 제거했습니다"
   [[ ! -e "$config_file" && ! -L "$config_file" ]] \
     || fail "directory copied Codex config must be removed"
 }
@@ -2492,7 +2511,19 @@ test_wt_create_ignores_branch_tracked_plugin_settings() {
   install_deployed_layout "$sandbox" "$repo_root"
   mkdir -p "$(dirname "$manifest")"
 
-  git -C "$repo_root" checkout -b "$branch_name" >/dev/null 2>&1
+  fixture_git_cmd() {
+    HOME="$home_dir" \
+      XDG_CONFIG_HOME="$home_dir/.config" \
+      GIT_CONFIG_GLOBAL=/dev/null \
+      GIT_CONFIG_NOSYSTEM=1 \
+      git -C "$repo_root" \
+      -c core.hooksPath=/dev/null \
+      -c commit.gpgSign=false \
+      -c init.templateDir= \
+      "$@"
+  }
+
+  fixture_git_cmd checkout -b "$branch_name" >/dev/null 2>&1
   mkdir -p "$repo_root/.claude"
   python3 - "$repo_root/.claude/settings.local.json" <<'PY'
 import json
@@ -2502,9 +2533,9 @@ with open(sys.argv[1], "w", encoding="utf-8") as f:
     json.dump({"enabledPlugins": {"example-plugin@demo-marketplace": True}}, f, indent=2)
     f.write("\n")
 PY
-  git -C "$repo_root" add -f .claude/settings.local.json
-  git -C "$repo_root" commit -m "track local settings fixture" >/dev/null 2>&1
-  git -C "$repo_root" checkout main >/dev/null 2>&1
+  fixture_git_cmd add -f .claude/settings.local.json
+  fixture_git_cmd commit -m "track local settings fixture" >/dev/null 2>&1
+  fixture_git_cmd checkout main >/dev/null 2>&1
   [[ ! -f "$repo_root/.claude/settings.local.json" ]] \
     || fail "source local settings fixture should be absent on main"
 
@@ -2637,6 +2668,64 @@ assert any(
     for e in entries
 ), entries
 PY
+}
+
+test_wt_plugin_manifest_skill_projection_skips_os_errors() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+
+  output=$(
+    python3 - "$REPO_ROOT" "$sandbox" <<'PY' 2>&1
+import importlib.util
+import os
+from pathlib import Path
+import sys
+
+repo_root, sandbox = sys.argv[1:3]
+module_path = Path(repo_root) / "modules/shared/scripts/lib/wt/plugin-manifest.py"
+spec = importlib.util.spec_from_file_location("plugin_manifest", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+target_root = Path(sandbox) / "target"
+skills_dir = target_root / ".agents/skills"
+skills_dir.mkdir(parents=True)
+(skills_dir / "wt-plugin--stale").symlink_to("/tmp/stale-source")
+
+original_remove = module.remove_managed_plugin_skill_path
+
+def flaky_remove(path):
+    if Path(path).name == "wt-plugin--stale":
+        raise OSError("synthetic remove failure")
+    return original_remove(path)
+
+original_symlink = module.os.symlink
+
+def flaky_symlink(source, target):
+    if Path(target).name == "wt-plugin--bad":
+        raise OSError("synthetic symlink failure")
+    return original_symlink(source, target)
+
+module.remove_managed_plugin_skill_path = flaky_remove
+module.os.symlink = flaky_symlink
+module.reconcile_plugin_skill_links(
+    str(target_root),
+    {
+        "wt-plugin--bad": "/tmp/bad-source",
+        "wt-plugin--ok": "/tmp/ok-source",
+    },
+)
+
+ok_link = skills_dir / "wt-plugin--ok"
+assert ok_link.is_symlink(), "unrelated valid managed plugin skill link should still be created"
+assert os.readlink(ok_link) == "/tmp/ok-source"
+assert (skills_dir / "wt-plugin--stale").is_symlink()
+assert not (skills_dir / "wt-plugin--bad").exists()
+PY
+  )
+  assert_contains "$output" "cannot remove stale managed plugin skill path"
+  assert_contains "$output" "cannot create managed plugin skill symlink"
 }
 
 test_wt_plugin_manifest_cleanup_uses_stable_canonical_target() {
@@ -3437,6 +3526,39 @@ test_missing_wt_python_helpers_fail_cleanup_state_changes() {
   [[ -d "$new_worktree" ]] || fail "missing wt Python helper must fail before removing worktree"
 }
 
+test_codex_trust_write_failure_returns_warning() {
+  local sandbox config_file project_root output
+  sandbox=$(new_sandbox)
+  config_file="$sandbox/config.toml"
+  project_root="$sandbox/project"
+  mkdir -p "$project_root"
+
+  output=$(
+    "${WT_PYTHON:-python3}" - "$REPO_ROOT" "$config_file" "$project_root" <<'PY' 2>&1
+import importlib.util
+from pathlib import Path
+import sys
+
+repo_root, config_file, project_root = sys.argv[1:4]
+module_path = Path(repo_root) / "modules/shared/scripts/lib/wt/codex-trust.py"
+spec = importlib.util.spec_from_file_location("codex_trust", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+def fail_write(config_path, content):
+    raise OSError("synthetic write failure")
+
+module.render_trusted_project = lambda content, project_path, doc=None: 'trusted = true\n'
+module.load_toml_doc = lambda content, label: {}
+module.write_atomic = fail_write
+rc = module.ensure_project_trusted(Path(config_file), Path(project_root))
+assert rc == 1, rc
+PY
+  )
+  assert_contains "$output" "Codex trust registration skipped: cannot write config"
+}
+
 test_fixture_git_is_hermetic_against_global_hooks() {
   local sandbox repo_root hook_dir global_config hook_marker
   sandbox=$(new_sandbox)
@@ -3852,6 +3974,7 @@ EOF
 
 run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
+run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
 run_test "wt cd returns target path by name" test_wt_cd_by_name_returns_target_path
@@ -3881,6 +4004,7 @@ run_test "wt create preserves unmergeable Codex config" test_wt_create_preserves
 run_test "wt create inherits Claude local plugin manifest" test_wt_create_inherits_claude_local_plugin_manifest
 run_test "wt create ignores branch-tracked plugin settings" test_wt_create_ignores_branch_tracked_plugin_settings
 run_test "wt plugin manifest ignores noncanonical adjacent lock directory" test_wt_plugin_manifest_ignores_noncanonical_adjacent_lock_directory
+run_test "wt plugin manifest skill projection skips OS errors" test_wt_plugin_manifest_skill_projection_skips_os_errors
 run_test "wt plugin manifest cleanup uses stable canonical target" test_wt_plugin_manifest_cleanup_uses_stable_canonical_target
 run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
@@ -3897,6 +4021,7 @@ run_test "wt cleanup auto broken-only reports skip count" test_wt_cleanup_auto_b
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
+run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
 run_test "stale filter supports clean symlinked user hooks" test_user_hooks_stale_filter_supports_clean_symlink_target

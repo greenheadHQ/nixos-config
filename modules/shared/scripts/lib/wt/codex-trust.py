@@ -8,6 +8,7 @@ import contextlib
 import fcntl
 import os
 from pathlib import Path
+import shutil
 import stat
 import sys
 import tempfile
@@ -153,7 +154,10 @@ def sanitize_copied_codex_config(config_path: Path) -> int:
 
     if not stat.S_ISREG(st.st_mode):
         try:
-            config_path.unlink()
+            if stat.S_ISDIR(st.st_mode):
+                shutil.rmtree(config_path)
+            else:
+                config_path.unlink()
         except OSError as exc:
             warn(f"retired Codex project MCP block cleanup failed: cannot remove {config_path}: {exc}")
             return 1
@@ -245,7 +249,10 @@ def ensure_project_trusted(config_path: Path, project_root: Path) -> int:
             rendered = render_trusted_project(content, project_path, doc)
             load_toml_doc(rendered, "rendered config")
             if rendered != content or not is_regular_mode_600(config_path):
-                write_atomic(config_path, rendered)
+                try:
+                    write_atomic(config_path, rendered)
+                except OSError as exc:
+                    raise RuntimeError(f"cannot write config {config_path}: {exc}") from exc
     except RuntimeError as exc:
         warn(f"Codex trust registration skipped: {exc}")
         return 1
