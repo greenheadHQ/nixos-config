@@ -108,5 +108,6 @@ pre-push:
       # PATH 와 무관하게 동작하게 한다. `--inputs-from .` 는 repo flake.lock 의
       # nixpkgs 입력을 재사용하여 `nix shell .#pythonWithTomlkit` 패턴과 동일하게
       # 프로젝트 pin 을 우회하지 않게 한다. pre-commit allowlist guard 우회를
-      # 위해 pre-push 에 배치. bats 호출은 ~1초로 짧아 비용 미미.
-      run: nix shell --inputs-from . nixpkgs#bats --command bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
+      # 위해 pre-push 에 배치. bats 호출은 ~1초로 짧아 비용 미미. Codex 같은
+      # 비대화형 셸은 TERM 을 안 줄 수 있으므로 Bats/tput 용 기본 TERM 을 주입한다.
+      run: env TERM="${TERM:-xterm-256color}" nix shell --inputs-from . nixpkgs#bats --command bats modules/shared/programs/claude/files/scripts/tests/statusline.bats

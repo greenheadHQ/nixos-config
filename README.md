@@ -118,6 +118,7 @@ pre-commit 정책:
 - `shell-script-tests` — 배포 레이아웃 fixture 테스트. tomlkit bootstrap wrapper [`tests/run-shell-script-tests.sh`](./tests/run-shell-script-tests.sh)가 [`tests/shell-script-tests.sh`](./tests/shell-script-tests.sh)를 호출.
 - `codex-hook-fixtures` — Codex 0.124+ stable hook 회귀 차단 deterministic fixture (`--no-live`) ([`tests/test-codex-hook-fixtures.sh`](./tests/test-codex-hook-fixtures.sh))
 - `flake-check` — `nix flake check --no-build --all-systems`
+- `statusline-bats` — statusline 폭 fallback / SSH 렌더링 Bats 테스트. 비대화형 hook은 Bats/tput용 기본 `TERM`을 주입한다.
 
 `ai-skills-consistency` 훅 동작 ([`scripts/ai/warn-skill-consistency.sh`](./scripts/ai/warn-skill-consistency.sh)):
 - **일반 커밋**: 불일치 감지 시 경고만 출력 (차단 없음)
