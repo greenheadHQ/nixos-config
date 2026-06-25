@@ -17,7 +17,7 @@
 | Step 5 (Arbiter) | for_plan 조립 (계획 원문 포함) | for_pr 조립 (diff 컨텍스트 포함) — [`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 "프롬프트 조립 > for_pr 모드" 참조. for_pr에서는 계획 원문 대신 diff 또는 변경 컨텍스트를 포함 |
 | Step 5 자동 반영 | "자동으로 계획에 반영한다" | "자동으로 코드에 반영하고 커밋한다" (CONFIRMED_ISSUE + HIGH/MEDIUM/LOW). 메인 에이전트가 single-writer로 코드 수정 + commit ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의) |
 | Step 6 | 동일 (새 라운드, 새 `DA_DIR`) | 동일 |
-| Step 7 | CLEAR까지 반복 | CLEAR까지 반복 |
+| Step 7 | CLEAR까지 반복 (protocol.md "최대 라운드 수" 적용: 상한 + 추세 기반 조기 중단) | 동일 |
 | Step 8 | (없음) | push — 최종 승인 후 push한다 (네트워크/auth 정책 의존 — [`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조) |
 
 ## 공통 절차 (for_plan과 동일)

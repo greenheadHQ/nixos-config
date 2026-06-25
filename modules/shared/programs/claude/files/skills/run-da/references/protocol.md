@@ -147,15 +147,17 @@ Selective consistency 서브런 카운팅: selective consistency의 N=3 재판�
 
 ### 최대 라운드 수
 
-명시적 제한은 두지 않되, 5회 outer round 이후에도 CLEAR에 도달하지 못하면
-사용자에게 현황을 보고하고 계속 진행 여부를 확인한다. selective consistency 서브런은 outer round 카운트에 포함하지 않는다.
+명시적 상한은 5 outer round다. 5회 이후에도 CLEAR에 도달하지 못하면
+사용자에게 현황을 보고하고 계속 진행 여부를 확인한다(자동 무한 진행 금지). selective consistency 서브런은 outer round 카운트에 포함하지 않는다.
+
+추세 기반 조기 중단: 신규 confirmed finding(직전 outer round에 없던 confirmed — 동일성은 3회 반복 규칙과 같은 "세부 관점 + 위치(파일:줄 또는 계획 항목 번호)" 기준) 수가 직전 대비 감소하지 않는(동수 포함) outer round가 2회 연속이면(따라서 최소 outer round 3부터 평가 가능하며, R1·단일 라운드는 미발동), 5회 상한 전이라도 비수렴으로 간주해 즉시 현황을 사용자에게 보고하고 계속 여부를 확인한다(질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다). 매 라운드의 수정이 새 리뷰 표면을 만들어 finding이 수렴하지 않는 경우(활성 changeset에 반복 리뷰)가 대표 사례다 — 이때는 표면을 다듬어 finding을 닫으려 하기보다 changeset 동결 또는 변경 범위 축소를 우선 검토한다. "3회 반복 규칙"이 동일 지적의 반복을 잡는다면, 이 규칙은 매 라운드 다른 새 finding이 끊이지 않는 비수렴을 잡는다.
 
 ## 라운드 요약 기록
 
 각 라운드 종료 시 DA 발견 수와 Arbiter 판정 결과를 요약한다:
 
 ```text
-Round N 요약: DA 발견 X건 → Arbiter: CONFIRMED Y건, NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
+Round N 요약: DA 발견 X건 → Arbiter: CONFIRMED Y건(신규 Y'건 — 직전 라운드에 없던 관점+위치), NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
 bundle별: Correctness 2건(SECURITY 1, HALLUCINATION 1), Regression CLEAR, ...
 ```
 

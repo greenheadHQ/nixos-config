@@ -96,4 +96,4 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR
 
 ## Step 7: CLEAR까지 반복
 
-선택된 review unit 전부 CLEAR를 반환할 때까지 Step 2-6을 반복한다.
+선택된 review unit 전부 CLEAR를 반환할 때까지 Step 2-6을 반복한다. 단 [`../references/protocol.md`](../references/protocol.md)의 "최대 라운드 수"(상한 + 추세 기반 조기 중단)를 적용한다 — CLEAR 도달 전에 상한 또는 추세 기반 조기 중단 조건이 충족되면 사용자에게 보고하고 종료/계속을 결정한다(질문 도구 미지원 런타임은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 자동 전이를 따른다).
