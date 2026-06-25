@@ -22,7 +22,7 @@ codex exec 경로(Claude Code 세션 · headless 세션)는 [`arbiter-scaling.md
 
 | 역할 | 허용 | 금지 |
 |------|------|------|
-| DA reviewer | 읽기, 검색, out-of-repo private scratch PoC (`mktemp -d`, `umask 077`) | tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열 |
+| DA reviewer | 읽기, 검색, out-of-repo private scratch PoC (`mktemp -d`, `umask 077`) — 단 정적으로 판정 가능한 관점은 PoC 대신 파일:줄 인용만 ([`da-domains.md`](da-domains.md) 공통 프롬프트의 "정적 판정" 규칙) | tracked write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열 |
 | Arbiter | 읽기 전용 검증 | 모든 write, scratch PoC, main-agent-only command |
 | Auditor (`parallel-audit`) | 읽기 전용 검증 | 모든 write, scratch PoC, main-agent-only command |
 | 메인 에이전트 | tracked write, external write, main-agent-only command, explicit delegation, Review Intensity 인라인 판정 (모든 룰 평가 표 + first-match 채택) | Arbiter 판정 대체, DA reviewer finding 직접 판정 |

@@ -72,10 +72,13 @@
 {FOCUS_TARGETS}
 
 Self-verification을 위해 nested `codex exec` 또는 `codex-exec-supervised`를 호출하지 마라.
+정적으로 판정 가능한 관점(예: CLEAN_CODE, READABILITY, 다수의 HALLUCINATION/CONSISTENCY 질문)은 PoC를 수행하지 말고 파일:줄·코드 인용과 문서 근거로만 답하라. "코드를 읽으면 답이 나오는" 질문을 런타임 재현으로 바꾸지 마라 — 런타임 재현은 비용일 뿐 아니라, 재현물을 잘못 작성하면 원본과 반대 결론을 낼 정확성 위험이 있다.
 codex exec fallback 경로처럼 read-only sandbox에서 실행 중이면 파일 증거, 문서 인용, diff 확인만 사용하라.
-PoC가 필요하고 현재 런타임이 out-of-repo write를 허용하면 `umask 077` 아래에서 `mktemp -d`로 만든 repo 밖 private scratch 디렉토리에서만 수행하라.
+PoC는 정적 근거만으로 판정이 불가능한 경우에 한해서만 수행한다. 현재 런타임이 out-of-repo write를 허용하더라도 먼저 "이 질문이 정적으로 답 가능한가"를 자문하고, 가능하면 PoC 대신 인용으로 답하라. PoC가 정말 필요하면 `umask 077` 아래에서 `mktemp -d`로 만든 repo 밖 private scratch 디렉토리에서만 수행한다.
 tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-only command, host mutation은 explicit delegation 없이는 금지다.
 위 규칙을 위반했거나 금지된 작업이 필요하면 finding 대신 `VIOLATION` 형식으로 반환하라.
+
+작업이 의도적으로 제거·축소·교체하는 동작은 regression/side-effect가 아니다. 변경 의도(diff가 향하는 방향)와 일치하는 동작 소멸은 위반으로 보고하지 마라. 제거가 의도인지 diff/컨텍스트로 불확실하면 위반으로 단정하지 말고 그 불확실성을 finding에 명시하라.
 
 다른 bundle({OTHER_BUNDLES})의 우려는 언급하지 마라.
 문제가 없으면 CLEAR를 반환하라.
@@ -89,7 +92,7 @@ tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-
 |-----------------|----------|----------|----------|
 | Correctness | `HALLUCINATION`, `SECURITY` | "이 변경이 실제로 존재하는 동작인가, 그리고 안전한가?"를 검증하라 | 존재하지 않는 API/CLI 플래그/경로, 잘못된 시그니처/인자, trust boundary 오판, 인증/인가 우회, 입력 검증 부재, 과도한 네트워크 노출 |
 | Design | `YAGNI`, `NGMI` | "지금 필요하지 않은 복잡성을 만들거나, 구조적 막다른 길을 만들지 않는가?"를 판단하라 | 사용처 없는 인터페이스/추상화, 미래 대비 과설계, 가정 붕괴 시 전면 재작성 필요한 구조, 잘못된 책임 분리, 확장 경로 차단된 데이터/모듈 경계 |
-| Regression | `SIDE_EFFECT`, `CONSISTENCY` | "기존 동작이나 프로젝트 관례를 조용히 깨지 않는가?"를 추적하라 | 공유 상태의 암묵적 변경, 인터페이스 계약 변경, 환경 변수/경로/포트 변경, import/export 파급, 네이밍/디렉토리/설정 규칙 위반, 기존 패턴 무시 재구현 |
+| Regression | `SIDE_EFFECT`, `CONSISTENCY` | "기존 동작이나 프로젝트 관례를 의도치 않게 조용히 깨지 않는가?"를 추적하라 (의도된 제거·축소는 위반 아님) | 공유 상태의 암묵적 변경, 인터페이스 계약 변경, 환경 변수/경로/포트 변경, import/export 파급, 네이밍/디렉토리/설정 규칙 위반, 기존 패턴 무시 재구현 |
 | Maintainability | `READABILITY`, `CLEAN_CODE` | "다음 개발자(LLM 포함)가 이 변경을 빠르게 이해하고 안전하게 수정할 수 있는가?"를 판단하라 | 함수/변수명과 동작 불일치, why 주석 부재, 복잡한 제어 흐름, 복사-붙여넣기 중복, 매직넘버/매직스트링, 죽은 코드, 방치된 TODO/HACK |
 
 ## 명시적 exhaustive override 매핑
