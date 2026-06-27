@@ -199,10 +199,6 @@ in
     ".claude/skills/set-icons".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/set-icons";
 
-    # grill-me 스킬 (user-scope)
-    ".claude/skills/grill-me".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/grill-me";
-
     # run-da 스킬 (user-scope)
     ".claude/skills/run-da".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/run-da";

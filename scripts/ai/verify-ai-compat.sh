@@ -21,7 +21,6 @@ EXPECTED_EXPOSED=(
   analyzing-da-sessions
   create-issue
   create-pr
-  grill-me
   parallel-audit
   playwright-cli
   review-pr-feedback
