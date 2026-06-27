@@ -1083,6 +1083,56 @@ sys.exit(0)
 PY
 }
 
+test_codex_config_merge_template_into_unit() {
+  # sync-codex-config.py merge_template_into 함수 단위 characterization (이슈 #915).
+  # 기존 sync-preservation(시나리오 A-F)은 sync 명령 subprocess 통합 검증이고, 본
+  # 테스트는 함수를 직접 호출해 "template leaf override + template 미선언 키 보존 +
+  # 변경 leaf 카운트 + 동일 값 no-op(0)" 계약을 단위로 박제한다. tomlkit 필요(등록부 게이팅).
+  local output
+  output=$(
+    python3 - "$CODEX_CONFIG_SCRIPT" <<'PY' 2>&1
+import importlib.util, sys, tomlkit
+spec = importlib.util.spec_from_file_location("sync_codex_config", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+dest = tomlkit.parse('a = 1\nkeep = "user"\n\n[nested]\nx = 1\nuseronly = 2\n')
+tmpl = tomlkit.parse('a = 2\n\n[nested]\nx = 9\n')
+changed = m.merge_template_into(dest, tmpl)
+assert changed == 2, f"changed={changed}"
+assert dest["a"] == 2, "template overrides top-level scalar"
+assert dest["keep"] == "user", "template-undeclared key preserved"
+assert dest["nested"]["x"] == 9, "template overrides nested leaf"
+assert dest["nested"]["useronly"] == 2, "nested undeclared key preserved"
+assert m.merge_template_into(tomlkit.parse('a = 2\n'), tomlkit.parse('a = 2\n')) == 0, "equal value is no-op"
+print("MERGE_OK")
+PY
+  )
+  assert_contains "$output" "MERGE_OK"
+}
+
+test_codex_config_collect_drift_unit() {
+  # sync-codex-config.py collect_drift 함수 단위 characterization (이슈 #915).
+  # template이 선언한 leaf가 target에 없으면 missing_leaf, 값이 다르면 value_mismatch
+  # reason을 내는 계약을 단위로 박제한다.
+  local output
+  output=$(
+    python3 - "$CODEX_CONFIG_SCRIPT" <<'PY' 2>&1
+import importlib.util, sys, tomlkit
+spec = importlib.util.spec_from_file_location("sync_codex_config", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+# tmpl이 선언한 b.c가 target에 없음 → missing_leaf
+d = m.collect_drift(tomlkit.parse('a = 1\n[b]\nc = 2\n'), tomlkit.parse('a = 1\n'))
+assert ("b.c", "missing_leaf") in {(x["path"], x["reason"]) for x in d}, d
+# 값 불일치 → value_mismatch
+d2 = m.collect_drift(tomlkit.parse('a = 1\n'), tomlkit.parse('a = 2\n'))
+assert ("a", "value_mismatch") in {(x["path"], x["reason"]) for x in d2}, d2
+print("DRIFT_OK")
+PY
+  )
+  assert_contains "$output" "DRIFT_OK"
+}
+
 test_codex_config_sync_fixtures() {
   local scenario sandbox template existing expected actual rc
   for scenario in sync_basic_merge sync_malformed_root sync_malformed_toml_quarantine sync_quoted_dotted_key; do
@@ -1417,6 +1467,95 @@ test_detect_worktree_uses_current_worktree_path() {
 
   assert_contains "$output" "flake=$worktree_root"
   assert_contains "$output" "is_main=false"
+}
+
+# ─── rebuild/common.sh extract_oos_entries characterization (이슈 #915) ───
+# extract_oos_entries는 tests/ 전체에 직접 참조가 없던 검증된 미커버 갭이다.
+# 두 입력형태("ref:path" git show / 파일시스템 경로)와 주석 라인 무시 · trailing
+# comment strip · 중복 제거(sort -u) · 매치 없음/파일 부재 시 exit 0 동작을 현재
+# 구현 기준으로 박제한다. 함수만 직접 source하므로 tomlkit/배포 레이아웃 불필요.
+extract_oos_git_isolated() {
+  # GIT_CONFIG_GLOBAL/NOSYSTEM은 config 파일만 무력화하므로 git 기본 excludesFile
+  # ($XDG_CONFIG_HOME/git/ignore → $HOME/.config/git/ignore)은 여전히 읽힌다. 사용자
+  # 전역 ignore의 `*.nix` 같은 패턴이 fixture의 `git add oos.nix`를 silent 실패시키지
+  # 않도록 excludesFile을 /dev/null로 고정한다 (HOME/XDG 격리 헬퍼와 동등한 hermeticity).
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -c core.hooksPath=/dev/null -c commit.gpgSign=false -c init.templateDir= \
+    -c core.excludesFile=/dev/null \
+    -c user.email=oos@test -c user.name=oos "$@"
+}
+
+test_extract_oos_entries_filesystem_input() {
+  local sandbox nix_file output common_sh count
+  sandbox=$(new_sandbox)
+  common_sh="$REPO_ROOT/modules/shared/scripts/lib/rebuild/common.sh"
+  nix_file="$sandbox/oos.nix"
+  cat > "$nix_file" <<'NIX'
+{
+  b = config.lib.file.mkOutOfStoreSymlink "/path/b";
+  a = lib.mkOutOfStoreSymlink "/path/a"; # trailing comment
+  # commented = config.lib.file.mkOutOfStoreSymlink "/path/c";
+  dup = config.lib.file.mkOutOfStoreSymlink "/path/b";
+  plain = "no symlink";
+}
+NIX
+  output=$(
+    GREEN='' YELLOW='' RED='' NC='' FLAKE_PATH="$sandbox" \
+    bash -c 'set -euo pipefail; source "$1"; extract_oos_entries "$2"' _ "$common_sh" "$nix_file"
+  )
+  assert_contains "$output" '"/path/a"'
+  assert_contains "$output" '"/path/b"'
+  assert_not_contains "$output" '/path/c'          # 주석 라인은 무시된다
+  assert_not_contains "$output" 'no symlink'        # mkOutOfStoreSymlink 없는 라인 무시
+  assert_not_contains "$output" 'trailing comment'  # trailing comment는 strip된다
+  # 중복 항목(dup)은 sort -u로 제거되어 "/path/b"는 정확히 1회만 출력된다
+  count=$(printf '%s\n' "$output" | grep -Fc '"/path/b"')
+  [[ "$count" == "1" ]] || fail "expected '/path/b' exactly once (sort -u), got: $count"
+}
+
+test_extract_oos_entries_git_show_input() {
+  local sandbox nix_file output common_sh
+  sandbox=$(new_sandbox)
+  common_sh="$REPO_ROOT/modules/shared/scripts/lib/rebuild/common.sh"
+  mkdir -p "$sandbox/repo"
+  nix_file="$sandbox/repo/oos.nix"
+  cat > "$nix_file" <<'NIX'
+{
+  z = config.lib.file.mkOutOfStoreSymlink "/git/z";
+  # skip = config.lib.file.mkOutOfStoreSymlink "/git/skip";
+}
+NIX
+  (
+    cd "$sandbox/repo"
+    extract_oos_git_isolated init -q
+    extract_oos_git_isolated add oos.nix
+    extract_oos_git_isolated commit -qm init
+  )
+  output=$(
+    GREEN='' YELLOW='' RED='' NC='' FLAKE_PATH="$sandbox/repo" \
+    bash -c 'set -euo pipefail; source "$1"; extract_oos_entries "$2"' _ "$common_sh" "HEAD:oos.nix"
+  )
+  assert_contains "$output" '"/git/z"'
+  assert_not_contains "$output" '/git/skip'   # 주석 라인은 git show 입력에서도 무시
+}
+
+test_extract_oos_entries_empty_and_absent_exit_zero() {
+  local sandbox common_sh result
+  sandbox=$(new_sandbox)
+  common_sh="$REPO_ROOT/modules/shared/scripts/lib/rebuild/common.sh"
+  printf '{ x = 1; }\n' > "$sandbox/empty.nix"
+  result=$(
+    GREEN='' YELLOW='' RED='' NC='' FLAKE_PATH="$sandbox" \
+    bash -c '
+      set -euo pipefail
+      source "$1"
+      out=$(extract_oos_entries "$2"); printf "empty=[%s] rc=%s\n" "$out" "$?"
+      out=$(extract_oos_entries "/nonexistent.nix"); printf "absent=[%s] rc=%s\n" "$out" "$?"
+    ' _ "$common_sh" "$sandbox/empty.nix"
+  )
+  # 매치 없음과 파일 부재 모두 빈 출력 + exit 0 (set -euo pipefail 하 nrs abort 방지)
+  assert_contains "$result" "empty=[] rc=0"
+  assert_contains "$result" "absent=[] rc=0"
 }
 
 test_wt_ls_from_deployed_layout_lists_worktrees() {
@@ -4038,6 +4177,9 @@ run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_
 run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
+run_test "extract_oos_entries filesystem input" test_extract_oos_entries_filesystem_input
+run_test "extract_oos_entries git show input" test_extract_oos_entries_git_show_input
+run_test "extract_oos_entries empty and absent exit zero" test_extract_oos_entries_empty_and_absent_exit_zero
 run_test "stale filter supports clean symlinked user hooks" test_user_hooks_stale_filter_supports_clean_symlink_target
 run_test "stale filter detects symlinked stale user hooks" test_user_hooks_stale_filter_detects_symlink_target_stale_entries
 run_test "stale filter ignores stale path mentions" test_user_hooks_stale_filter_ignores_stale_path_mentions
@@ -4070,6 +4212,8 @@ if codex_config_tomlkit_available; then
   run_test "codex-config sync rewrites on symlink" test_codex_config_sync_rejects_symlink
   run_test "codex-config bare 2-arg compat" test_codex_config_bare_sync_compat
   run_test "codex-config check fixtures" test_codex_config_check_fixtures
+  run_test "codex-config merge_template_into unit" test_codex_config_merge_template_into_unit
+  run_test "codex-config collect_drift unit" test_codex_config_collect_drift_unit
 else
   echo "==> codex-config fixtures: SKIPPED (tomlkit 미가용; 'nix shell .#pythonWithTomlkit --command bash tests/run-shell-script-tests.sh'로 전건 실행 권장; pre-push hook은 자동 wrap됨)" >&2
 fi
