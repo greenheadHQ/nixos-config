@@ -86,6 +86,8 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 
 [`lefthook.yml`](./lefthook.yml)로 pre-commit/pre-push 훅 관리.
 
+**통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도, 이 명령으로 pre-push 게이트와 테스트 드라이버를 재검증할 수 있다. 단 pre-commit의 staged 스냅샷 정책(`gitleaks` · `nixfmt` · `shellcheck` · skill-noise)은 staged index 기준이라 working-tree 러너 범위 밖이며 커밋 시점 게이트로 별도 적용된다.
+
 **pre-commit** (병렬):
 - `lefthook-guard-self-check` — 메인 repo `.git/hooks/pre-commit`에 staged-config guard marker 부재 시 commit fail-fast (인접 worktree의 lefthook install 덮어쓰기 회귀 방지 layer)
 - `ai-skills-consistency` — staged snapshot 기준 `.claude/skills`, `.agents/skills`, `modules/shared/programs/codex` 구조 일관성
@@ -162,6 +164,9 @@ sudo --preserve-env=SSH_AUTH_SOCK nix run nix-darwin -- switch --flake .
 
 # 6. 이후 설정 적용
 nrs
+
+# 7. 전체 검증 (push 전·온보딩 시 권장)
+bash tests/run-all-tests.sh
 ```
 
 ### 새 호스트 추가 / MiniPC 설치
