@@ -92,7 +92,7 @@ if [ "$TOOL_NAME" = "Edit" ] && [ "$SCAN_MODE" = "document" ]; then
   OLD_STRIPPED=$(_strip_fences < "$FILE_PATH")
   # [WHY_EXCLUDE] exclusion 패턴은 SCAN_INPUT 검사와 동일하게 적용하여 일관성 유지
   OLD_LINE_COUNT=$(printf '%s' "$OLD_STRIPPED" | grep -E '[0-9]+줄|[0-9]+ lines' | \
-    grep -vE '[0-9]+줄[[:space:]]*(이내|이하|미만|이상|설명|요약|제한)' | grep -c '.' || true)
+    grep -vE '[0-9]+줄[[:space:]]*(이내|이하|미만|이상|설명|요약|제한)|(이내|이하|미만|이상|설명|요약|제한)[[:space:]]*[0-9]+줄' | grep -c '.' || true)
   OLD_FILE_COUNT=$(printf '%s' "$OLD_STRIPPED" | grep -E '[0-9]+개 파일|[0-9]+곳' | \
     grep -vE '[1-9]-[1-9]개 파일' | grep -c '.' || true)
   OLD_PATH_COUNT=$(printf '%s' "$OLD_STRIPPED" | grep -oE '\.claude/skills/[a-z0-9_-]+' | sort -u | wc -l | tr -d ' ')
@@ -103,7 +103,7 @@ WARNINGS=""
 # [WHY] 줄 수는 코드 수정 시 즉시 변경됨 → wc -l로 동적 확인 가능
 # [WHY_EXCLUDE] "N줄 이내/이하/설명" 등은 작성 규칙 표현이지 코드 상태 하드코딩이 아님
 NEW_LINE_COUNT=$(printf '%s' "$SCAN_INPUT" | grep -E '[0-9]+줄|[0-9]+ lines' | \
-  grep -vE '[0-9]+줄[[:space:]]*(이내|이하|미만|이상|설명|요약|제한)' | grep -c '.' || true)
+  grep -vE '[0-9]+줄[[:space:]]*(이내|이하|미만|이상|설명|요약|제한)|(이내|이하|미만|이상|설명|요약|제한)[[:space:]]*[0-9]+줄' | grep -c '.' || true)
 [ "$NEW_LINE_COUNT" -gt "$OLD_LINE_COUNT" ] && \
   WARNINGS="${WARNINGS}줄 수 하드코딩. "
 
