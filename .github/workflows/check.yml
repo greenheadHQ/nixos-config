@@ -1,0 +1,43 @@
+name: check
+
+# 로컬 lefthook 훅과 독립적인 선택적 2차 안전망(강제 머지 게이트가 아니다). 로컬 훅을
+# 우회(git commit --no-verify / LEFTHOOK=0)했거나 fresh clone에서 훅 설치 전인 변경도 PR
+# 시점에 동일 검증으로 한 번 더 거른다. 단일 메인테이너 + PR 기반 워크플로라 과도한 게이트는
+# 의도적으로 피하고, 검증 명령은 lefthook.yml / tests/run-all-tests.sh와 동일한 것을 재사용한다.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix (flakes enabled)
+        uses: DeterminateSystems/nix-installer-action@main
+
+      # --inputs-from . 로 repo flake.lock에 핀된 nixpkgs의 nixfmt/shellcheck를 쓴다(devShell·로컬
+      # lefthook 훅과 동일 store path). floating registry(nixpkgs# 단독)는 unstable 채널을 해석해
+      # 로컬과 도구 버전이 어긋나면 통과 코드가 CI에서만 실패하는 드리프트를 만들므로 피한다.
+      - name: nixfmt --check (전체 .nix)
+        run: |
+          nix shell --inputs-from . nixpkgs#nixfmt --command \
+            bash -c 'find . -name "*.nix" -not -path "./.git/*" -print0 | xargs -0 -r nixfmt --check'
+
+      - name: shellcheck (전체 .sh)
+        run: |
+          nix shell --inputs-from . nixpkgs#shellcheck --command \
+            bash -c 'find . -name "*.sh" -not -path "./.git/*" -print0 | xargs -0 -r shellcheck -S warning'
+
+      # 통합 검증: tests/run-all-tests.sh가 flake-check(nix flake check --no-build --all-systems)와
+      # 전 테스트 드라이버를 순차 실행한다(#913에서 도입한 단일 진입점 재사용 — CI가 검증 명령을
+      # 중복 정의하지 않는다). 환경/도구 미가용 드라이버는 스크립트가 SKIP으로 집계한다.
+      - name: 통합 검증 (run-all-tests.sh)
+        run: bash tests/run-all-tests.sh
