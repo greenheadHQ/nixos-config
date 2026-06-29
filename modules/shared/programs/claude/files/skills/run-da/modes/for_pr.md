@@ -25,6 +25,7 @@
 다음은 `for_plan`과 100% 동일하다. 본문은 [`./for_plan.md`](./for_plan.md)를 SSOT로 한다:
 
 - Step 0 본문: Review Intensity 판단 절차 ([`../references/intensity-procedure.md`](../references/intensity-procedure.md)).
+- Step 1 본문 (의사결정 컨텍스트 팩 수집): 제거·단순화·되돌림·리팩터 또는 왕복 핫스팟이면 [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A를 for_plan Step 1과 동일하게 수행한다 (입력만 계획 대신 `git diff main...HEAD`). 수집한 팩은 Step 2 reviewer·Step 5 Arbiter 프롬프트에 selective propagation으로 주입.
 - Step 2 본문 (Codex 세션 경로): `spawn_agent`/`wait_agent`/`close_agent` lifecycle, batch 규칙, conservative wait, fresh modifier, selective propagation.
 - Step 2 본문 (codex exec 경로): 임시 디렉토리, stdout `DA_DIR` 리터럴 재설정, prompt 파일 guard, `cat | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe (Layer 1, [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) role별 명령 표가 SSOT), `&+wait` 금지, Claude Code 병렬 / headless serial foreground 구분, [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 공통 주의(셸 호출 간 변수 유실).
 - Step 3 본문: VIOLATION 처리, 결과 파일 검증, 실패 unit 재실행.

@@ -74,6 +74,7 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
 - 참고 레퍼런스 식별자: 관련 PR/이슈/외부 링크는 안정 식별자(PR 번호 `#N`, 이슈 번호 `#N`, 또는 머지된 commit SHA)를 사용한다. 본인 PR의 mid-flight commit hash 또는 squash 전 partial hash chain은 박제 금지 — squash 후 dangling 위험. "관련 PR 참조" 식의 모호한 레퍼런스도 금지.
 - DA 피드백 분리: DA 피드백 루프 결과는 PR 본문이 아닌 별도 코멘트로 분리한다. PR 본문에는 최종 결론만 반영한다.
 - CIR 없는 PR: 단순 변경(타이포 수정, 버전 업데이트 등)은 CIR/ADR 섹션을 "해당 없음 — 단순 변경"으로 간소화한다. 무리하게 의사결정 이력을 만들어내지 않는다.
+- 제거/되돌림 결정의 근거 보존: 변경이 기존 코드/정책을 제거·되돌리는 것이면, CIR에 "무엇을 왜 제거하며, 그것이 과거에 의도적으로 도입된 것이면 도입 근거·출처(PR#/commit/issue#)"를 명시한다. 비자명한 방어 로직·트레이드오프 선택은 코드 옆 인라인 `# CIR:` 주석으로 "왜 이렇게 했는지(제거 시 주의)"를 남긴다 — 미래 세션의 의사결정·회귀 조사가 읽을 신호 품질을 높인다 ([`../run-da/references/decision-regression-audit.md`](../run-da/references/decision-regression-audit.md)).
 - 도구-중립 기술 (Codex / Claude Code / headless 공통): 특정 AI 에이전트 전용 도구명을 본문에 하드코딩하지 않는다. "gh pr create를 실행한다"가 아니라 "PR을 생성한다"처럼 행동 의도로 기술한다. 단, 참조/예시에서의 CLI 명령(`gh pr create` 등)은 예외로 허용한다.
 - PR 본문 박제 금지 항목: 라운드 번호(`Round N`), DA finding ID(예: `Correctness-1`, `CORR-2`), partial commit hash chain, 워크트리 절대경로.
   - 변경 의도(why)는 자연어 설명으로 표현한다. lefthook commit-msg hook은 라운드 번호/DA finding ID/DA 키워드만 warn-only로 감지한다. partial commit hash chain은 CLAUDE.md `Durable output pinning policy`의 prose 가이드로 직접 점검하고, 워크트리 절대경로는 본 가이드 자체에서 PR 본문 작성 시 자연어 설명·repo-relative 경로로 대체하여 점검한다. PR 본문도 동일 정책을 따른다.

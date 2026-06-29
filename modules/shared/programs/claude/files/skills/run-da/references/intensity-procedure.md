@@ -54,6 +54,8 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
 
 5. 결과 보고 — 판정(SKIP/LITE/FULL)과 위 체크리스트를 plan/대화에 명시 기록한다. SKIP일 경우 사용자 승인 절차로 진입.
 
+6. 조사 발동 게이트 (first-match 8-룰 표와 독립) — `GATE-REMOVAL-SIMPLIFY`(제거·단순화·되돌림·리팩터 또는 왕복 핫스팟, [`intensity-rules.md`](intensity-rules.md))가 매치되면 위 SKIP/LITE/FULL 단계와 무관하게 의사결정·회귀 컨텍스트 조사를 fail-closed로 발동한다(SKIP이어서 reviewer fan-out이 없으면 메인이 직접 degraded 수행). 매치되지 않으면 Intensity 단계에 연동한다. 절차·소스는 [`decision-regression-audit.md`](decision-regression-audit.md)가 SSOT다.
+
 ### 자동 호출자 handoff
 
 자동 호출자가 preflight gate에서 이 체크리스트를 먼저 적용한 경우, `/run-da`에 handoff를 전달할 수 있다. handoff schema와 freshness fields는 자동 호출자 측 문서가 정의한다.
@@ -73,7 +75,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    - 변경 내용 요약
    - SKIP 판단 근거 (위 체크리스트 표 인용)
    - "DA를 생략해도 괜찮겠습니까?"
-2. 사용자가 승인하면 DA를 생략하고 해당 모드(for_plan/for_pr)를 종료하여 상위 워크플로로 복귀한다.
+2. 사용자가 승인하면 DA reviewer fan-out을 생략한다. 단 `GATE-REMOVAL-SIMPLIFY`가 매치된 경우, 의사결정·회귀 컨텍스트 조사([`decision-regression-audit.md`](decision-regression-audit.md) Step A·B·D)는 메인이 직접(degraded) 수행한 뒤 종료한다(SKIP에서도 fail-closed). 게이트 미매치면 그대로 해당 모드(for_plan/for_pr)를 종료하여 상위 워크플로로 복귀한다.
 3. 사용자가 거부하면 LITE 또는 FULL로 승격하여 DA를 진행한다. 자동 호출자 handoff에 이미 `SKIP rejected`가 기록되어 있고 freshness validation을 통과한 경우에만 같은 질문을 반복하지 않고 이 승격 경로로 바로 진입한다.
 
 질문 도구를 호출할 수 없는 런타임에서는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 섹션을 따른다 (자동 LITE 승격 등).
