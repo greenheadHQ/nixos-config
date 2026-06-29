@@ -183,6 +183,10 @@
     opnix = {
       enable = lib.mkEnableOption "1Password Service Account secrets materialization (opnix)";
     };
+
+    codexRemoteControl = {
+      enable = lib.mkEnableOption "Codex mobile remote-control app-server regression guard";
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -208,5 +212,6 @@
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
     ../programs/opnix # 1Password Service Account 시크릿 materialization
     ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)
+    ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지
   ];
 }

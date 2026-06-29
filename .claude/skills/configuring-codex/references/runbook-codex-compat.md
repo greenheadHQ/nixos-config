@@ -105,6 +105,7 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 6. pre-commit `ai-skills-consistency` 훅 확인 (관련 staged 변경 시 fail, 긴급 우회: `SKIP_AI_SKILL_CHECK=1`)
 7. `command -v codex`가 nix profile/store 경로로 resolve되는지 확인 — mise shims 경로면 잔존 shim이 codex(nix profile)를 shadow하는 회귀(#890)이며, `verify-ai-compat.sh`의 codex PATH resolve 가드가 자동 검사한다
 8. `cleanupManualNodeCodex`가 수동 `npm install -g @openai/codex` 잔재를 제거하는지 확인 — node가 mise에 남으므로 수동 글로벌이 PATH상 codex(nix profile)를 가리는 회귀의 근원
+9. NixOS MiniPC remote-control standalone은 `~/.codex/packages/standalone/current/` 아래 app-server payload로만 허용한다. `~/.local/bin/codex`가 이 standalone을 가리키면 일반 Codex CLI를 shadow하는 회귀다.
 
 ## 2026-05-02 업데이트: SKILL.md 도구-중립성 lint
 
@@ -205,11 +206,35 @@ prefix의 npm으로 `env PATH="$node_prefix/bin:${pkgs.mise}/bin:$PATH" "$npm_bi
 ```bash
 whence -p codex   # PATH 첫 매치 (nix profile/store여야 정상; mise shims면 잔존 shim 회귀, node/<ver>/bin이면 수동 글로벌 잔재)
 type -a codex     # 모든 후보
+readlink -f ~/.codex/packages/standalone/current/bin/codex  # Codex App remote-control standalone payload
 ```
 
 `codex`는 셸 alias로 래핑되어 있다 — Linux는 안내 `echo`를 `>&2`로 먼저 출력한 뒤
 `command codex --dangerously-bypass-approvals-and-sandbox --no-alt-screen`를 실행하고, macOS는 선행 echo 없이
 같은 `command codex …`를 실행한다. 따라서 바이너리 자체 경로는 `whence -p codex`로 확인한다.
+
+### 2026-06-29 업데이트: remote-control standalone 예외
+
+ChatGPT mobile Codex sync를 위한 app-server는 일반 CLI와 별도의 standalone package layout을 사용한다.
+이 payload는 `modules/shared/programs/codex/codex-pin.json`의 pinned `standalonePackage` asset/hash에서
+동기화하며, systemd `codex-remote-control-ensure.service`가
+`~/.codex/packages/standalone/releases/<version>-x86_64-unknown-linux-musl/`와 `current` symlink를 관리한다.
+
+경계:
+- 일반 `command -v codex`는 계속 Nix-managed profile/store 경로여야 한다.
+- `~/.local/bin/codex`가 standalone을 가리키는 symlink이면 PATH shadow 회귀이므로 제거 대상이다.
+- `update-codex`는 CLI asset hash와 standalone package hash를 함께 갱신한다.
+- timer는 `codex doctor`를 실행하지 않는다. 대신 `ensure-running`이 pinned standalone 동기화,
+  ChatGPT auth 확인, daemon/start 상태 확인, 버전 drift 재시작, stale socket 정리, 그리고 같은 사용자 +
+  legacy app-server per-process 증거가 있는 경우에만 stale PID repair를 수행한다.
+
+운영 확인:
+
+```bash
+systemctl status codex-remote-control-ensure.service codex-remote-control-ensure.timer
+journalctl -u codex-remote-control-ensure.service -n 80 --no-pager
+jq '{exitCode,lastAction,lastRepairReason,authMode,normalCodexResolved,managedCodexVersion,appServerVersion,remoteControlEnabled}' /var/lib/codex-remote-control/status.json
+```
 
 ## 참고 문서
 

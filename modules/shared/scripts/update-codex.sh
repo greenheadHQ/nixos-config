@@ -3,8 +3,9 @@
 #
 # codex는 declarative nix overlay(modules/shared/programs/codex/package.nix)로 설치되며 버전은
 # codex-pin.json에 핀된다. 이 스크립트는 OpenAI GitHub 릴리스에서 최신 stable(rust-vX.Y.Z)을
-# 찾아 핀된 플랫폼들의 해시를 prefetch해 핀을 갱신하고 nrs로 적용한다. nixpkgs lag·제3자 flake
-# 없이 "한 줄로 최신"을 받기 위한 경로.
+# 찾아 핀된 플랫폼들의 CLI asset 해시와, 선언된 경우 Codex App remote-control standalone package
+# 해시를 함께 prefetch해 핀을 갱신하고 nrs로 적용한다. nixpkgs lag·제3자 flake 없이 "한 줄로
+# 최신"을 받기 위한 경로.
 #
 # 사용법:
 #   update-codex            # 최신 stable로 핀 갱신 + nrs
@@ -97,6 +98,19 @@ for plat in $(jq -r '.platforms | keys[]' "$PIN"); do
   }
   echo "$h"
   jq --arg p "$plat" --arg h "$h" '.platforms[$p].hash=$h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
+
+  standalone_asset="$(jq -r --arg p "$plat" '.platforms[$p].standalonePackage.asset // empty' "$PIN")"
+  if [ -n "$standalone_asset" ]; then
+    printf '  prefetch %-44s' "$standalone_asset"
+    standalone_hash="$(nix store prefetch-file --json "$base/$standalone_asset" 2>/dev/null | jq -r '.hash')" || {
+      echo "FAIL"
+      echo "update-codex: $standalone_asset prefetch 실패 — 릴리스에 standalone package asset이 없거나 네트워크 오류" >&2
+      exit 1
+    }
+    echo "$standalone_hash"
+    jq --arg p "$plat" --arg h "$standalone_hash" \
+      '.platforms[$p].standalonePackage.hash=$h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
+  fi
 done
 jq --arg v "$ver" --arg t "$tag" '.version=$v | .tag=$t' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
 mv "$tmp" "$PIN"
