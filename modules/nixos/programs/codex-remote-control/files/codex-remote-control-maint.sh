@@ -190,10 +190,20 @@ sync_standalone_package() {
     return "$RC_STANDALONE_PACKAGE_MISSING"
   }
 
-  mkdir -p "$STANDALONE_ROOT/releases"
+  mkdir -p "$STANDALONE_ROOT/releases" || {
+    LAST_REPAIR_REASON="standalone-sync-failed:mkdir-releases"
+    return 1
+  }
   local staging
-  staging="$(mktemp -d "$STANDALONE_ROOT/releases/.staging-${DESIRED_VERSION}.XXXXXX")"
-  tar -xzf "$STANDALONE_PACKAGE" -C "$staging"
+  staging="$(mktemp -d "$STANDALONE_ROOT/releases/.staging-${DESIRED_VERSION}.XXXXXX")" || {
+    LAST_REPAIR_REASON="standalone-sync-failed:mktemp"
+    return 1
+  }
+  tar -xzf "$STANDALONE_PACKAGE" -C "$staging" || {
+    rm -rf "$staging"
+    LAST_REPAIR_REASON="standalone-sync-failed:extract"
+    return 1
+  }
   if [ ! -x "$staging/bin/codex" ]; then
     rm -rf "$staging"
     LAST_REPAIR_REASON="standalone-package-missing-bin-codex"
@@ -208,34 +218,64 @@ sync_standalone_package() {
     return "$RC_STANDALONE_PACKAGE_VERSION_MISMATCH"
   fi
 
-  chmod -R u+rwX,go-rwx "$staging"
-  ln -sfn bin/codex "$staging/codex"
-  rm -rf "$STANDALONE_RELEASE_DIR"
-  mv "$staging" "$STANDALONE_RELEASE_DIR"
+  chmod -R u+rwX,go-rwx "$staging" || {
+    rm -rf "$staging"
+    LAST_REPAIR_REASON="standalone-sync-failed:chmod"
+    return 1
+  }
+  ln -sfn bin/codex "$staging/codex" || {
+    rm -rf "$staging"
+    LAST_REPAIR_REASON="standalone-sync-failed:release-link"
+    return 1
+  }
+  rm -rf "$STANDALONE_RELEASE_DIR" || {
+    rm -rf "$staging"
+    LAST_REPAIR_REASON="standalone-sync-failed:remove-old-release"
+    return 1
+  }
+  mv "$staging" "$STANDALONE_RELEASE_DIR" || {
+    rm -rf "$staging"
+    LAST_REPAIR_REASON="standalone-sync-failed:move-release"
+    return 1
+  }
 
   if [ -e "$STANDALONE_CURRENT" ] && [ ! -L "$STANDALONE_CURRENT" ]; then
-    rm -rf "$STANDALONE_CURRENT"
+    rm -rf "$STANDALONE_CURRENT" || {
+      LAST_REPAIR_REASON="standalone-sync-failed:remove-current"
+      return 1
+    }
   fi
-  ln -sfn "$STANDALONE_RELEASE_DIR" "$STANDALONE_ROOT/.current.tmp"
-  mv -Tf "$STANDALONE_ROOT/.current.tmp" "$STANDALONE_CURRENT"
+  ln -sfn "$STANDALONE_RELEASE_DIR" "$STANDALONE_ROOT/.current.tmp" || {
+    LAST_REPAIR_REASON="standalone-sync-failed:current-link"
+    return 1
+  }
+  mv -Tf "$STANDALONE_ROOT/.current.tmp" "$STANDALONE_CURRENT" || {
+    rm -f "$STANDALONE_ROOT/.current.tmp"
+    LAST_REPAIR_REASON="standalone-sync-failed:current-swap"
+    return 1
+  }
   STANDALONE_VERSION="$DESIRED_VERSION"
   LAST_ACTION="synced-standalone-package"
 }
 
 capture_login_status() {
-  LOGIN_STATUS="$("$CODEX_OPERATOR" login status 2>&1 || true)"
-  case "$LOGIN_STATUS" in
+  local raw_status
+  raw_status="$("$CODEX_OPERATOR" login status 2>&1 || true)"
+  case "$raw_status" in
     *"Logged in using ChatGPT"*)
       AUTH_MODE="chatgpt"
+      LOGIN_STATUS="$AUTH_MODE"
       return 0
       ;;
     *"API key"* | *"api key"* | *"API_KEY"*)
       AUTH_MODE="api-key"
+      LOGIN_STATUS="$AUTH_MODE"
       LAST_REPAIR_REASON="auth-not-chatgpt"
       return "$RC_AUTH_API_KEY"
       ;;
     *)
       AUTH_MODE="unknown"
+      LOGIN_STATUS="$AUTH_MODE"
       LAST_REPAIR_REASON="auth-status-not-chatgpt"
       return "$RC_AUTH_NOT_CHATGPT"
       ;;
@@ -530,6 +570,7 @@ ensure_running_core() {
   sync_standalone_package || return $?
   capture_login_status || return $?
 
+  local daemon_rc=0
   if capture_daemon_version; then
     if [ "$MANAGED_CODEX_VERSION" != "$DESIRED_VERSION" ] || [ "$APP_SERVER_VERSION" != "$DESIRED_VERSION" ]; then
       LAST_REPAIR_REASON="daemon-version-drift:${MANAGED_CODEX_VERSION}/${APP_SERVER_VERSION}"
@@ -556,6 +597,11 @@ ensure_running_core() {
       return 0
     fi
   else
+    daemon_rc=$?
+    if [ "$daemon_rc" -eq "$RC_DAEMON_MALFORMED_JSON" ]; then
+      LAST_REPAIR_REASON="daemon-version-malformed-json"
+      return "$daemon_rc"
+    fi
     if contains_unmanaged_error "$DAEMON_STDERR"; then
       repair_unmanaged_core || return $?
     fi

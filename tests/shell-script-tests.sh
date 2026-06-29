@@ -63,13 +63,16 @@ run_test "codex activation .agents symlink guard static" test_codex_activation_a
 if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
   run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json
+  run_test "codex remote-control ensure-running rejects malformed daemon JSON" test_codex_remote_control_ensure_running_rejects_malformed_daemon_json
   run_test "codex remote-control starts when daemon absent" test_codex_remote_control_ensure_running_starts_when_absent
   run_test "codex remote-control rejects stale start versions" test_codex_remote_control_rejects_stale_start_versions
   run_test "codex remote-control auth failure is non-destructive" test_codex_remote_control_auth_failure_is_non_destructive
+  run_test "codex remote-control login status is sanitized" test_codex_remote_control_login_status_is_sanitized
   run_test "codex remote-control missing operator reason is preserved" test_codex_remote_control_missing_operator_reason_is_preserved
   run_test "codex remote-control removes standalone PATH shadow" test_codex_remote_control_removes_standalone_path_shadow
   run_test "codex remote-control rejects direct standalone PATH shadow" test_codex_remote_control_rejects_direct_standalone_path_shadow
   run_test "codex remote-control rejects non-Nix PATH shadow" test_codex_remote_control_rejects_non_nix_path_shadow
+  run_test "codex remote-control sync failure is not marked successful" test_codex_remote_control_sync_failure_is_not_marked_successful
   run_test "codex remote-control lock failure does not run core action" test_codex_remote_control_lock_failure_does_not_run_core_action
   run_test "codex remote-control repair kills proven stale process" test_codex_remote_control_repair_kills_proven_stale_unmanaged_process
   run_test "codex remote-control repair refuses socket cleanup when PID remains" test_codex_remote_control_repair_refuses_socket_cleanup_when_pid_remains

@@ -132,6 +132,20 @@ test_codex_remote_control_probe_marks_malformed_daemon_json() {
     || fail "probe did not mark malformed daemon JSON: $out"
 }
 
+test_codex_remote_control_ensure_running_rejects_malformed_daemon_json() {
+  local sandbox status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+
+  if FAKE_DAEMON_MALFORMED=1 _codex_rc_env bash "$(_codex_rc_script)" ensure-running; then
+    fail "ensure-running should fail on malformed daemon JSON"
+  fi
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.daemonStatus == "malformed-json" and .lastRepairReason == "daemon-version-malformed-json" and .exitCode == 40' <<<"$status" >/dev/null \
+    || fail "malformed daemon JSON was not recorded as unhealthy: $status"
+  assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control start --json'
+}
+
 test_codex_remote_control_ensure_running_starts_when_absent() {
   local sandbox status
   sandbox="$(new_sandbox)"
@@ -172,6 +186,18 @@ test_codex_remote_control_auth_failure_is_non_destructive() {
   jq -e '.authMode == "api-key" and .exitCode != 0' <<<"$status" >/dev/null \
     || fail "auth failure status not recorded: $status"
   assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control start --json'
+}
+
+test_codex_remote_control_login_status_is_sanitized() {
+  local sandbox status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+
+  FAKE_LOGIN_STATUS='Logged in using ChatGPT as private@example.com' _codex_rc_env bash "$(_codex_rc_script)" ensure-running
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.authMode == "chatgpt" and .loginStatus == "chatgpt"' <<<"$status" >/dev/null \
+    || fail "loginStatus should contain only sanitized auth mode: $status"
+  assert_not_contains "$status" 'private@example.com'
 }
 
 test_codex_remote_control_missing_operator_reason_is_preserved() {
@@ -233,6 +259,20 @@ test_codex_remote_control_rejects_non_nix_path_shadow() {
   status="$(cat "$COD_RC_STATE/status.json")"
   jq -e '(.lastRepairReason | startswith("normal-codex-not-nix-managed:")) and .exitCode == 21' <<<"$status" >/dev/null \
     || fail "non-Nix PATH shadow was not recorded: $status"
+}
+
+test_codex_remote_control_sync_failure_is_not_marked_successful() {
+  local sandbox bad_release status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  bad_release="$sandbox/missing-parent/release"
+
+  if STANDALONE_RELEASE_DIR="$bad_release" _codex_rc_env bash "$(_codex_rc_script)" ensure-standalone 2>/dev/null; then
+    fail "ensure-standalone should fail when release move cannot complete"
+  fi
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.lastRepairReason == "standalone-sync-failed:move-release" and .lastAction != "synced-standalone-package" and .exitCode != 0' <<<"$status" >/dev/null \
+    || fail "failed standalone sync was incorrectly marked successful: $status"
 }
 
 test_codex_remote_control_lock_failure_does_not_run_core_action() {
