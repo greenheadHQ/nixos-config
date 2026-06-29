@@ -676,6 +676,30 @@ else
   warn "codex가 PATH에서 resolve되지 않음 — codex(nix overlay) 미활성(nrs 전) 또는 비대화형 노출 회귀 가능"
 fi
 
+standalone_codex="$HOME/.codex/packages/standalone/current/bin/codex"
+standalone_root="$HOME/.codex/packages/standalone"
+if [ -e "$standalone_codex" ] || [ -L "$standalone_codex" ]; then
+  standalone_resolved="$(readlink -f "$standalone_codex" 2>/dev/null || echo "$standalone_codex")"
+  case "$standalone_resolved" in
+    "$standalone_root"/releases/*/bin/codex)
+      pass "Codex App remote-control standalone 경로 정상: $standalone_codex → $standalone_resolved"
+      ;;
+    *)
+      fail "Codex App remote-control standalone이 관리 경로 밖을 가리킴: $standalone_codex → $standalone_resolved"
+      ;;
+  esac
+fi
+
+legacy_local_codex="$HOME/.local/bin/codex"
+if [ -L "$legacy_local_codex" ]; then
+  legacy_local_resolved="$(readlink -f "$legacy_local_codex" 2>/dev/null || echo "$legacy_local_codex")"
+  case "$legacy_local_resolved" in
+    "$standalone_root"/*)
+      fail "\$HOME/.local/bin/codex가 Codex App standalone을 PATH shadow함: $legacy_local_codex → $legacy_local_resolved"
+      ;;
+  esac
+fi
+
 echo ""
 echo "=== AGENTS.md 심링크 확인 ==="
 

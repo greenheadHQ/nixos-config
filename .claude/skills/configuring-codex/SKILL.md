@@ -74,6 +74,10 @@ darwin=signed macho)라 소스 컴파일·patchelf 없이 fetch + install만 하
   `cleanupMiseCodexShim`, `cleanupManualNodeCodex`). 이들은 codex를 설치하지 않고, 과거 설치 방식
   (GitHub ELF/brew cask, mise npm backend shim, 수동 npm 글로벌) 잔재가 PATH에서 codex(nix profile)를
   shadow하지 못하게 정리만 한다.
+- NixOS MiniPC의 Codex App mobile remote-control은 예외적으로 별도 standalone package를
+  `~/.codex/packages/standalone/current/` 아래에 둔다. 이 standalone은 app-server payload 전용이며,
+  일반 `command -v codex`를 shadow하면 안 된다. 특히 `~/.local/bin/codex -> ~/.codex/packages/standalone/...`
+  symlink는 회귀로 취급하고 `codex-remote-control-ensure.service`/`verify-ai-compat.sh`가 제거 또는 실패 처리한다.
 
 업데이트(한 줄로 최신 stable):
 
@@ -107,6 +111,7 @@ node는 mise에 남으므로(codex만 부분 폐기, #890) 수동 글로벌이 `
 ```bash
 whence -p codex   # PATH 첫 매치 (nix profile/store여야 정상; mise shims 경로면 잔존 shim 회귀)
 type -a codex     # 모든 후보 (node/<ver>/bin이 앞이면 수동 글로벌 잔재)
+readlink -f ~/.codex/packages/standalone/current/bin/codex  # remote-control standalone 예외 경로
 ```
 
 검증: `codex --version`, `./scripts/ai/verify-ai-compat.sh`(codex PATH resolve 가드 포함).

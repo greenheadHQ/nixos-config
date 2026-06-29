@@ -123,4 +123,5 @@
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
   homeserver.smokeTest.enable = true; # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
   homeserver.opnix.enable = true; # 1Password SA token materialization + gh 인증
+  homeserver.codexRemoteControl.enable = true; # Codex mobile remote-control app-server 회귀 방지
 }
