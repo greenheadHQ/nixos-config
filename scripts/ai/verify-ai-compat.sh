@@ -643,6 +643,8 @@ fi
 echo ""
 echo "=== Codex 바이너리 PATH resolve 확인 ==="
 
+standalone_root="$HOME/.codex/packages/standalone"
+
 # 회귀 가드 (#890): codex는 declarative nix overlay(nix profile/store)로 설치된다. mise npm
 # backend에서 이관된 뒤로, 잔존 mise codex shim이 PATH 앞에서 codex(nix profile)를 shadow하면 안 된다 —
 # config 미등록 dangling shim 호출은 mise version resolve(fork 폭주, os error 35)를 재유발한다.
@@ -663,6 +665,9 @@ if codex_path="$(command -v codex 2>/dev/null)" && [ -n "$codex_path" ]; then
     *)
       codex_resolved="$(readlink -f "$codex_path" 2>/dev/null || echo "$codex_path")"
       case "$codex_resolved" in
+        "$standalone_root"/*)
+          fail "codex가 Codex App standalone으로 resolve됨 ($codex_path → $codex_resolved) — remote-control payload가 일반 CLI PATH를 shadow함"
+          ;;
         /nix/store/*-codex-*)
           pass "codex PATH resolve 정상 (nix overlay): $codex_path"
           ;;
@@ -677,7 +682,6 @@ else
 fi
 
 standalone_codex="$HOME/.codex/packages/standalone/current/bin/codex"
-standalone_root="$HOME/.codex/packages/standalone"
 if [ -e "$standalone_codex" ] || [ -L "$standalone_codex" ]; then
   standalone_resolved="$(readlink -f "$standalone_codex" 2>/dev/null || echo "$standalone_codex")"
   case "$standalone_resolved" in

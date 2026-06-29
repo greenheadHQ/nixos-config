@@ -37,6 +37,7 @@ readonly RC_REMOTE_START_NOT_CONNECTED=50
 readonly RC_REMOTE_START_MALFORMED_JSON=51
 readonly RC_REMOTE_START_FAILED=52
 readonly RC_REMOTE_STOP_FAILED=53
+readonly RC_REMOTE_START_VERSION_DRIFT=54
 readonly RC_SOCKET_CLEANUP_REFUSED=60
 readonly RC_UNMANAGED_WITHOUT_STALE_PROOF=61
 readonly RC_UNMANAGED=75
@@ -81,9 +82,18 @@ mkdir_state() {
 }
 
 with_lock() {
-  mkdir_state
-  exec 9>"$LOCK_FILE"
-  flock 9
+  mkdir_state || {
+    LAST_REPAIR_REASON="state-dir-unavailable"
+    return 1
+  }
+  exec 9>"$LOCK_FILE" || {
+    LAST_REPAIR_REASON="lock-open-failed"
+    return 1
+  }
+  flock 9 || {
+    LAST_REPAIR_REASON="lock-acquire-failed"
+    return 1
+  }
   "$@"
 }
 
@@ -268,6 +278,10 @@ contains_unmanaged_error() {
   esac
 }
 
+remote_start_versions_current() {
+  [ "$MANAGED_CODEX_VERSION" = "$DESIRED_VERSION" ] && [ "$APP_SERVER_VERSION" = "$DESIRED_VERSION" ]
+}
+
 remote_start() {
   local out
   local err
@@ -281,6 +295,11 @@ remote_start() {
       APP_SERVER_VERSION="$(jq -r '.daemon.appServerVersion // .appServerVersion // ""' <<<"$out")"
       DAEMON_STATUS="$(jq -r '.daemon.status // .status // "unknown"' <<<"$out")"
       if jq -e '(.remoteControlEnabled == true) or (.status == "connected")' >/dev/null 2>&1 <<<"$out"; then
+        if ! remote_start_versions_current; then
+          REMOTE_CONTROL_ENABLED="false"
+          LAST_REPAIR_REASON="remote-control-start-version-drift:${MANAGED_CODEX_VERSION:-missing}/${APP_SERVER_VERSION:-missing}"
+          return "$RC_REMOTE_START_VERSION_DRIFT"
+        fi
         REMOTE_CONTROL_ENABLED="true"
         return 0
       fi
@@ -386,14 +405,63 @@ is_stale_unmanaged_line() {
   is_known_legacy_codex_cmd "$CMD_FIELD"
 }
 
+pid_is_numeric() {
+  case "$1" in
+    "" | *[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+remove_pid_from_fixture() {
+  local pid="$1"
+  [ -n "$CODEX_REMOTE_CONTROL_PS_FILE" ] && [ -f "$CODEX_REMOTE_CONTROL_PS_FILE" ] || return 0
+  local tmp
+  tmp="$(mktemp)"
+  awk -v pid="$pid" '$1 != pid' "$CODEX_REMOTE_CONTROL_PS_FILE" >"$tmp"
+  mv "$tmp" "$CODEX_REMOTE_CONTROL_PS_FILE"
+}
+
+current_pid_matches_stale_proof() {
+  local pid="$1"
+  pid_is_numeric "$pid" || return 1
+
+  # Fixture mode uses fake PIDs; production revalidates live /proc state below.
+  [ -z "$KILL_LOG" ] || return 0
+  [ -r "/proc/$pid/status" ] && [ -r "/proc/$pid/cmdline" ] || return 1
+
+  local current_uid
+  local pid_uid
+  local current_cmd
+  current_uid="$(id -u)"
+  pid_uid="$(awk '/^Uid:/{print $2; exit}' "/proc/$pid/status" 2>/dev/null || true)"
+  [ "$pid_uid" = "$current_uid" ] || return 1
+
+  current_cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
+  [ -n "$current_cmd" ] || return 1
+  is_app_server_line "$current_cmd" || return 1
+  is_managed_standalone_cmd "$current_cmd" && return 1
+  is_known_legacy_codex_cmd "$current_cmd"
+}
+
 kill_pid() {
   local pid="$1"
+  current_pid_matches_stale_proof "$pid" || {
+    LAST_REPAIR_REASON="stale-pid-revalidation-failed:$pid"
+    return "$RC_UNMANAGED_WITHOUT_STALE_PROOF"
+  }
   if [ -n "$KILL_LOG" ]; then
     printf '%s\n' "$pid" >>"$KILL_LOG"
+    remove_pid_from_fixture "$pid"
   else
     kill "$pid" 2>/dev/null || true
     sleep 1
-    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+    if kill -0 "$pid" 2>/dev/null; then
+      current_pid_matches_stale_proof "$pid" || {
+        LAST_REPAIR_REASON="stale-pid-revalidation-failed-before-kill9:$pid"
+        return "$RC_UNMANAGED_WITHOUT_STALE_PROOF"
+      }
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
   fi
 }
 
@@ -411,8 +479,8 @@ app_server_pid_exists() {
 }
 
 cleanup_socket_files() {
-  local mode="${1:-$SOCKET_CLEANUP_NO_PID_REQUIRED}"
-  if [ "$mode" != "$SOCKET_CLEANUP_AFTER_VERIFIED_KILL" ] && app_server_pid_exists; then
+  : "${1:-$SOCKET_CLEANUP_NO_PID_REQUIRED}"
+  if app_server_pid_exists; then
     LAST_REPAIR_REASON="refusing-socket-cleanup-while-app-server-pid-exists"
     return "$RC_SOCKET_CLEANUP_REFUSED"
   fi
@@ -436,7 +504,7 @@ repair_unmanaged_core() {
     [ -n "$line" ] || continue
     if is_stale_unmanaged_line "$line"; then
       parse_pid_line "$line"
-      kill_pid "$PID_FIELD"
+      kill_pid "$PID_FIELD" || return $?
       killed=$((killed + 1))
     fi
   done <<<"$PID_EVIDENCE"
@@ -493,13 +561,14 @@ ensure_running_core() {
     fi
   fi
 
-  if ! remote_start; then
-    local rc=$?
-    if [ "$rc" -eq "$RC_UNMANAGED" ]; then
+  local start_rc=0
+  remote_start || start_rc=$?
+  if [ "$start_rc" -ne 0 ]; then
+    if [ "$start_rc" -eq "$RC_UNMANAGED" ]; then
       repair_unmanaged_core || return $?
       remote_start || return $?
     else
-      return "$rc"
+      return "$start_rc"
     fi
   fi
   set_last_action_if_none "remote-control-healthy"
@@ -509,8 +578,16 @@ collect_probe() {
   resolve_operator_cli
   resolve_normal_codex
   check_standalone_version
-  capture_login_status || true
-  capture_daemon_version || true
+  if [ -n "$OPERATOR_CLI" ]; then
+    capture_login_status || true
+    capture_daemon_version || true
+  fi
+}
+
+collect_probe_preserving_reason() {
+  local previous_reason="$LAST_REPAIR_REASON"
+  collect_probe
+  [ -z "$previous_reason" ] || LAST_REPAIR_REASON="$previous_reason"
 }
 
 status_json() {
@@ -558,10 +635,13 @@ status_json() {
 
 write_status() {
   local exit_code="${1:-0}"
-  mkdir_state
+  mkdir_state || return $?
   local tmp
-  tmp="$(mktemp "$STATE_DIR/status.XXXXXX")"
-  status_json "$exit_code" >"$tmp"
+  tmp="$(mktemp "$STATE_DIR/status.XXXXXX")" || return $?
+  status_json "$exit_code" >"$tmp" || {
+    rm -f "$tmp"
+    return 1
+  }
   mv "$tmp" "$STATUS_FILE"
 }
 
@@ -626,7 +706,11 @@ cmd_health_json() {
 cmd_ensure_standalone() {
   local rc=0
   with_lock sync_standalone_package || rc=$?
-  collect_probe
+  if [ "$rc" -eq 0 ]; then
+    collect_probe
+  else
+    collect_probe_preserving_reason
+  fi
   write_status "$rc" || true
   return "$rc"
 }
@@ -634,7 +718,11 @@ cmd_ensure_standalone() {
 cmd_repair_unmanaged() {
   local rc=0
   with_lock repair_unmanaged_core || rc=$?
-  collect_probe
+  if [ "$rc" -eq 0 ]; then
+    collect_probe
+  else
+    collect_probe_preserving_reason
+  fi
   write_status "$rc" || true
   return "$rc"
 }
@@ -642,7 +730,9 @@ cmd_repair_unmanaged() {
 cmd_ensure_running() {
   local rc=0
   with_lock ensure_running_core || rc=$?
-  collect_probe
+  if [ "$rc" -ne 0 ]; then
+    collect_probe_preserving_reason
+  fi
   write_status "$rc" || true
   load_alerting
   send_alerts "$rc" || true

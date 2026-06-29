@@ -38,6 +38,7 @@ let
       coreutils
       curl
       findutils
+      gawk
       gnugrep
       gnused
       gnutar

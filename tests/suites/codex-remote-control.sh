@@ -93,17 +93,22 @@ _codex_rc_setup() {
 }
 
 _codex_rc_env() {
+  local state_dir="${STATE_DIR:-$COD_RC_STATE}"
+  local codex_operator="${CODEX_OPERATOR:-$COD_RC_FAKE_BIN/codex}"
+  local normal_codex_name="${NORMAL_CODEX_NAME:-$COD_RC_NORMAL}"
+  local path_value="${CODEX_RC_PATH:-$COD_RC_FAKE_BIN:$PATH}"
+
   env \
     HOME="$COD_RC_HOME" \
     CODEX_HOME="$COD_RC_HOME/.codex" \
-    STATE_DIR="$COD_RC_STATE" \
+    STATE_DIR="$state_dir" \
     DESIRED_VERSION="0.142.4" \
     STANDALONE_PACKAGE="$COD_RC_PKG" \
     STANDALONE_TRIPLE="x86_64-unknown-linux-musl" \
-    CODEX_OPERATOR="$COD_RC_FAKE_BIN/codex" \
-    NORMAL_CODEX_NAME="$COD_RC_NORMAL" \
+    CODEX_OPERATOR="$codex_operator" \
+    NORMAL_CODEX_NAME="$normal_codex_name" \
     FAKE_CODEX_LOG="$COD_RC_LOG" \
-    PATH="$COD_RC_FAKE_BIN:$PATH" \
+    PATH="$path_value" \
     "$@"
 }
 
@@ -140,6 +145,21 @@ test_codex_remote_control_ensure_running_starts_when_absent() {
     || fail "ensure-running did not invoke remote-control start"
 }
 
+test_codex_remote_control_rejects_stale_start_versions() {
+  local sandbox status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+
+  if FAKE_DAEMON_RC=1 \
+    FAKE_START_JSON='{"mode":"daemon","status":"connected","serverName":"greenhead-minipc","daemon":{"status":"started","managedCodexVersion":"0.133.0","appServerVersion":"0.133.0"}}' \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running; then
+    fail "ensure-running should reject connected start output with stale versions"
+  fi
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.remoteControlEnabled == false and (.lastRepairReason | startswith("remote-control-start-version-drift:0.133.0/0.133.0")) and .exitCode != 0' <<<"$status" >/dev/null \
+    || fail "stale start versions were not recorded as unhealthy: $status"
+}
+
 test_codex_remote_control_auth_failure_is_non_destructive() {
   local sandbox status
   sandbox="$(new_sandbox)"
@@ -152,6 +172,19 @@ test_codex_remote_control_auth_failure_is_non_destructive() {
   jq -e '.authMode == "api-key" and .exitCode != 0' <<<"$status" >/dev/null \
     || fail "auth failure status not recorded: $status"
   assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control start --json'
+}
+
+test_codex_remote_control_missing_operator_reason_is_preserved() {
+  local sandbox status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+
+  if CODEX_OPERATOR="$sandbox/missing-codex" _codex_rc_env bash "$(_codex_rc_script)" ensure-running; then
+    fail "ensure-running should fail when operator codex is missing"
+  fi
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.lastRepairReason == "operator-codex-not-found" and .exitCode == 25' <<<"$status" >/dev/null \
+    || fail "missing operator reason was not preserved: $status"
 }
 
 test_codex_remote_control_removes_standalone_path_shadow() {
@@ -169,6 +202,52 @@ test_codex_remote_control_removes_standalone_path_shadow() {
     || fail "standalone PATH shadow symlink was not removed"
 }
 
+test_codex_remote_control_rejects_direct_standalone_path_shadow() {
+  local sandbox status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  _codex_rc_env bash "$(_codex_rc_script)" ensure-standalone
+
+  if NORMAL_CODEX_NAME=codex \
+    CODEX_RC_PATH="$COD_RC_HOME/.codex/packages/standalone/current/bin:$COD_RC_FAKE_BIN:$PATH" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-standalone; then
+    fail "ensure-standalone should fail when normal codex resolves to standalone"
+  fi
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.lastRepairReason == "normal-codex-resolves-to-standalone" and .exitCode == 20' <<<"$status" >/dev/null \
+    || fail "direct standalone PATH shadow was not recorded: $status"
+}
+
+test_codex_remote_control_rejects_non_nix_path_shadow() {
+  local sandbox non_nix_bin status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  non_nix_bin="$sandbox/non-nix"
+  mkdir -p "$non_nix_bin"
+  cp "$COD_RC_FAKE_BIN/codex" "$non_nix_bin/codex"
+
+  if NORMAL_CODEX_NAME=codex CODEX_RC_PATH="$non_nix_bin:$COD_RC_FAKE_BIN:$PATH" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-standalone; then
+    fail "ensure-standalone should fail when normal codex resolves to non-Nix path"
+  fi
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '(.lastRepairReason | startswith("normal-codex-not-nix-managed:")) and .exitCode == 21' <<<"$status" >/dev/null \
+    || fail "non-Nix PATH shadow was not recorded: $status"
+}
+
+test_codex_remote_control_lock_failure_does_not_run_core_action() {
+  local sandbox bad_state
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  bad_state="$sandbox/not-a-directory"
+  : > "$bad_state"
+
+  if STATE_DIR="$bad_state" _codex_rc_env bash "$(_codex_rc_script)" ensure-running 2>/dev/null; then
+    fail "ensure-running should fail when state dir cannot be created"
+  fi
+  assert_not_contains "$(cat "$COD_RC_LOG" 2>/dev/null || true)" 'remote-control start --json'
+}
+
 test_codex_remote_control_repair_kills_proven_stale_unmanaged_process() {
   local sandbox ps_file kill_log socket_file user
   sandbox="$(new_sandbox)"
@@ -184,6 +263,28 @@ test_codex_remote_control_repair_kills_proven_stale_unmanaged_process() {
   CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" KILL_LOG="$kill_log" _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged
   assert_file_contains "$kill_log" "12345"
   [ ! -e "$socket_file" ] || fail "socket should be removed after verified stale kill"
+}
+
+test_codex_remote_control_repair_refuses_socket_cleanup_when_pid_remains() {
+  local sandbox ps_file kill_log socket_file user
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  user="$(id -un)"
+  ps_file="$sandbox/ps.txt"
+  kill_log="$sandbox/kill.log"
+  socket_file="$COD_RC_HOME/.codex/app-server-control/app-server-control.sock"
+  mkdir -p "$(dirname "$socket_file")"
+  : > "$socket_file"
+  {
+    printf '12345 %s /home/%s/.local/share/mise/installs/npm-openai-codex/latest/bin/codex app-server --listen unix:///tmp/stale.sock\n' "$user" "$user"
+    printf '23456 %s %s/bin/codex app-server --listen unix:///tmp/current.sock\n' "$user" "$COD_RC_HOME/.codex/packages/standalone/current"
+  } > "$ps_file"
+
+  if CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" KILL_LOG="$kill_log" _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged; then
+    fail "repair-unmanaged should refuse socket cleanup while another app-server PID remains"
+  fi
+  assert_file_contains "$kill_log" "12345"
+  [ -e "$socket_file" ] || fail "socket should be preserved while current app-server PID remains"
 }
 
 test_codex_remote_control_repair_does_not_kill_without_stale_proof() {

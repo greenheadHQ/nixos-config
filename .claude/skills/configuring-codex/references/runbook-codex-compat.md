@@ -224,7 +224,17 @@ ChatGPT mobile Codex sync를 위한 app-server는 일반 CLI와 별도의 standa
 - 일반 `command -v codex`는 계속 Nix-managed profile/store 경로여야 한다.
 - `~/.local/bin/codex`가 standalone을 가리키는 symlink이면 PATH shadow 회귀이므로 제거 대상이다.
 - `update-codex`는 CLI asset hash와 standalone package hash를 함께 갱신한다.
-- timer는 `codex doctor`를 실행하지 않고, auth/status/start 경로만 가볍게 확인한다.
+- timer는 `codex doctor`를 실행하지 않는다. 대신 `ensure-running`이 pinned standalone 동기화,
+  ChatGPT auth 확인, daemon/start 상태 확인, 버전 drift 재시작, stale socket 정리, 그리고 같은 사용자 +
+  legacy app-server per-process 증거가 있는 경우에만 stale PID repair를 수행한다.
+
+운영 확인:
+
+```bash
+systemctl status codex-remote-control-ensure.service codex-remote-control-ensure.timer
+journalctl -u codex-remote-control-ensure.service -n 80 --no-pager
+jq '{exitCode,lastAction,lastRepairReason,authMode,normalCodexResolved,managedCodexVersion,appServerVersion,remoteControlEnabled}' /var/lib/codex-remote-control/status.json
+```
 
 ## 참고 문서
 

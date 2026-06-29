@@ -60,15 +60,25 @@ run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
-run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
-run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json
-run_test "codex remote-control starts when daemon absent" test_codex_remote_control_ensure_running_starts_when_absent
-run_test "codex remote-control auth failure is non-destructive" test_codex_remote_control_auth_failure_is_non_destructive
-run_test "codex remote-control removes standalone PATH shadow" test_codex_remote_control_removes_standalone_path_shadow
-run_test "codex remote-control repair kills proven stale process" test_codex_remote_control_repair_kills_proven_stale_unmanaged_process
-run_test "codex remote-control repair refuses unproven stale process" test_codex_remote_control_repair_does_not_kill_without_stale_proof
-run_test "codex remote-control repair refuses version-drift-only kill" test_codex_remote_control_repair_does_not_kill_on_version_drift_only
-run_test "codex remote-control cleans sockets only when no PID after drift" test_codex_remote_control_socket_cleanup_when_no_pid_after_drift
+if [ "$(uname -s)" = "Linux" ]; then
+  run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
+  run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json
+  run_test "codex remote-control starts when daemon absent" test_codex_remote_control_ensure_running_starts_when_absent
+  run_test "codex remote-control rejects stale start versions" test_codex_remote_control_rejects_stale_start_versions
+  run_test "codex remote-control auth failure is non-destructive" test_codex_remote_control_auth_failure_is_non_destructive
+  run_test "codex remote-control missing operator reason is preserved" test_codex_remote_control_missing_operator_reason_is_preserved
+  run_test "codex remote-control removes standalone PATH shadow" test_codex_remote_control_removes_standalone_path_shadow
+  run_test "codex remote-control rejects direct standalone PATH shadow" test_codex_remote_control_rejects_direct_standalone_path_shadow
+  run_test "codex remote-control rejects non-Nix PATH shadow" test_codex_remote_control_rejects_non_nix_path_shadow
+  run_test "codex remote-control lock failure does not run core action" test_codex_remote_control_lock_failure_does_not_run_core_action
+  run_test "codex remote-control repair kills proven stale process" test_codex_remote_control_repair_kills_proven_stale_unmanaged_process
+  run_test "codex remote-control repair refuses socket cleanup when PID remains" test_codex_remote_control_repair_refuses_socket_cleanup_when_pid_remains
+  run_test "codex remote-control repair refuses unproven stale process" test_codex_remote_control_repair_does_not_kill_without_stale_proof
+  run_test "codex remote-control repair refuses version-drift-only kill" test_codex_remote_control_repair_does_not_kill_on_version_drift_only
+  run_test "codex remote-control cleans sockets only when no PID after drift" test_codex_remote_control_socket_cleanup_when_no_pid_after_drift
+else
+  echo "==> codex remote-control fixtures: SKIPPED (Linux/NixOS-only service script)" >&2
+fi
 run_test "wt recreate guard uses physical paths" test_wt_recreate_guard_uses_physical_paths
 run_test "wt cleanup auto removes merged worktree" test_wt_cleanup_auto_removes_merged_worktree
 run_test "wt cleanup auto skips dirty merged worktree" test_wt_cleanup_auto_skips_dirty_merged_worktree
