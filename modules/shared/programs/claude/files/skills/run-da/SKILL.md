@@ -82,6 +82,7 @@ Review Intensity 판단을 건너뛰고 exhaustive override를 실행한다.
 | Arbiter 스케일링 + 실행 계약 (+ Review Intensity 인라인 체크리스트 실행 계약) | [`references/arbiter-scaling.md`](references/arbiter-scaling.md) |
 | Selective consistency 정책 (vote-shape + offline kappa) | [`references/stability-measurement.md`](references/stability-measurement.md) |
 | Validation-path catalog | [`references/validation-paths.md`](references/validation-paths.md) |
+| 의사결정·회귀 컨텍스트 조사 (decision regression / 시계열 / 제거 오판 / cross-layer 속성) | [`references/decision-regression-audit.md`](references/decision-regression-audit.md) |
 
 ## 용어 정책
 
@@ -122,6 +123,7 @@ Review Intensity 판단을 건너뛰고 exhaustive override를 실행한다.
 5. CONFIRMED_ISSUE 자동 반영 — Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동 반영. CRITICAL 심각도는 진행 차단.
 6. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO/`split` 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
 7. Fresh perspective 보장 — 매 라운드마다 새 reviewer/Arbiter 실행 단위 (Codex: 새 native subagent thread, codex exec: 새 `codex exec` 프로세스).
+8. 의사결정·회귀 컨텍스트 조사 — 제거/단순화/되돌림/리팩터 변경이거나 git상 왕복 핫스팟 파일이면 Review Intensity와 무관하게 fail-closed로 과거 의사결정(commit/PR/issue + 있으면 CIR/ADR·로컬 세션 로그)을 조사해 회귀 재도입을 점검한다. 메인이 "의사결정 컨텍스트 팩"을 수집·주입하고 reviewer/Arbiter가 read-only 보강한다. git으로 버전관리되는 모든 저장소에서 동작하며 기록 관습에 의존하지 않는다 ([`references/decision-regression-audit.md`](references/decision-regression-audit.md)).
 
 ## 주의사항
 

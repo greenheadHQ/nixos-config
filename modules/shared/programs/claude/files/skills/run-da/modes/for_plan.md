@@ -7,13 +7,15 @@
 [`../references/intensity-procedure.md`](../references/intensity-procedure.md)의 판단 실행 절차를 따른다.
 
 - `full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(8개 세부 도메인)로 진입한다.
-- SKIP → SKIP 절차를 따른다. 승인 시 for_plan을 종료한다.
+- SKIP → SKIP 절차를 따른다. 단 `GATE-REMOVAL-SIMPLIFY`([`../references/intensity-rules.md`](../references/intensity-rules.md))가 매치되면 SKIP이어도 종료 전에 메인이 Step 1의 의사결정 컨텍스트 팩 + degraded 조사([`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A·B·D)를 수행한다. 게이트 미매치 SKIP만 승인 시 for_plan을 종료한다.
 - LITE → LITE 절차에 따라 실행할 reviewer bundle을 선택한다.
 - FULL → 4 reviewer bundles를 실행한다.
 
-## Step 1: 계획 내용 수집
+## Step 1: 계획 내용 수집 + 의사결정 컨텍스트 팩
 
 현재 계획 파일 또는 대화 컨텍스트에서 계획 내용을 수집한다.
+
+계획이 제거·단순화·되돌림·리팩터 방향이거나 변경 대상이 git상 왕복 핫스팟이면, [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md)의 발동 조건에 따라 "의사결정 컨텍스트 팩"(해당 문서 Step A)을 수집한다 — 메인이 commit/PR/issue(+있으면 CIR/ADR·로컬 세션 로그)에서 과거 결정·되돌림 이력을 추려, Step 2의 reviewer 프롬프트와 Step 5의 Arbiter 프롬프트에 selective propagation으로 주입한다. 그 외 변경은 Review Intensity에 연동한다(FULL=전체 조사, LITE=경량, SKIP=생략).
 
 ## Step 2: reviewer bundle 병렬 실행
 

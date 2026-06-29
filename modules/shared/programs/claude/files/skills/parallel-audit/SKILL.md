@@ -61,7 +61,7 @@ Direct Codex 세션에서 `$parallel-audit` 호출은 auditor bundle 범위의 �
 | 2 | Performance + Dependencies | O(n^2) 알고리즘, 불필요한 재계산, 메모리 누수, 버전 충돌, breaking change |
 | 3 | Tests + Edge Cases | 기존 테스트 호환, 동작 회귀, 빈 입력, 경계값, 동시성, null/undefined |
 | 4 | Platform (macOS + NixOS) | darwin/nixos 전용 경로, launchd/systemd 설정, Homebrew Cask, Nix derivation |
-| 5 | Adjacent Side Effects | 수정하지 않은 인접 코드에 대한 영향, 공유 상태/환경 파급 |
+| 5 | Adjacent Side Effects | 수정하지 않은 인접 코드에 대한 영향, 공유 상태/환경 파급, 과거 의도적 결정의 무근거 되돌림(decision regression), `mv`/rename이 symlink·mode·owner 속성 파괴, 시계열 회귀(이미 고쳐진 문제 재등록) ([`../run-da/references/decision-regression-audit.md`](../run-da/references/decision-regression-audit.md)) |
 | 6 | Docs / Consistency | SKILL.md, CLAUDE.md, README 정합성, 라우팅 테이블, 네이밍/구조 일관성 |
 
 ### 에이전트 수 조절 규칙
@@ -84,6 +84,10 @@ git log --oneline -5     # 최근 커밋 컨텍스트
 ```
 
 변경 파일 수, diff 줄 수, 영향 받는 모듈을 파악한다.
+
+### Step 1b: 의사결정 컨텍스트 팩 수집 (조건부)
+
+변경이 제거·단순화·되돌림·리팩터 방향이거나 변경 파일이 git상 왕복 핫스팟이면, [`../run-da/references/decision-regression-audit.md`](../run-da/references/decision-regression-audit.md)의 Step A에 따라 "의사결정 컨텍스트 팩"을 수집한다 — 메인이 commit/PR/issue(+있으면 CIR/ADR·로컬 세션 로그)에서 과거 결정·되돌림 이력을 추려 Step 3의 auditor 프롬프트에 주입한다. 네트워크(`gh`/`glab`)·세션 로그 접근은 메인 전용이며 auditor는 git read-only 보강만 한다. 발동 조건·소스 계층·시계열 게이트·처리·세션 로그 방법론은 해당 문서가 SSOT다. git으로 버전관리되는 모든 저장소에서 동작하며 기록 관습이 없어도 commit 히스토리만으로 진행한다(graceful degradation).
 
 ### Step 2: 조사 bundle 분배
 
@@ -158,6 +162,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 - 정책상 읽기 전용: 모든 write를 금지한다 — tracked/untracked workspace write, scratch PoC, branch/remote/GitHub write, host mutation, main-agent-only command (`wt`, `nrs`, rebuild 계열) 실행 금지 (구조적 enforcement 부재는 Non-goals 참조).
 - 담당 bundle에만 집중한다. 다른 bundle은 언급하지 않는다.
 - 발견 사항마다 구체적 파일:줄과 근거를 제시한다.
+- decision regression / cross-layer 속성 점검 (담당 bundle에 해당 시): 과거 의도적 결정을 근거 없이 되돌리는지 주입된 의사결정 컨텍스트 팩 + git read-only(`git log -S`/`blame`/`show`)로 점검하고, 충돌 시 과거 결정의 출처(commit SHA / PR# / issue#)를 첨부한다("줄 수 많다=군살"은 근거가 아니다). 파일 교체(`mv`/rename/in-place write)면 기존 파일의 symlink(다른 레이어가 관리)·mode/권한·owner 보존 여부를 확인한다. 회귀 판정 전 시계열 게이트(증거 시점 이후 수정 커밋 대조)를 적용한다. 상세는 [`../run-da/references/decision-regression-audit.md`](../run-da/references/decision-regression-audit.md).
 - 발견이 없으면 SAFE를 반환한다.
 - Codex 세션 경로에서는 `run-da` canonical contract의 standard review profile을 사용한다.
 - `wait_agent` timeout이나 단순 지연만으로 auditor를 kill하거나 self-auditing으로 대체하지 않는다.

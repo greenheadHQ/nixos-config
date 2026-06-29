@@ -14,6 +14,7 @@ Codex 세션에서는 native subagent, Claude Code 세션과 headless 세션에�
 | git diff — for_pr (변경 범위 확인용) | 이전 Arbiter 판정 |
 | 계획 원문 — for_plan (변경 의도 확인용) | "이미 해결됨" 같은 프레이밍 |
 | 프로젝트 CLAUDE.md (컨벤션 확인) | |
+| 의사결정 컨텍스트 팩 (과거 결정의 출처·근거 — 검증 가능한 객관 이력만) | 팩에 섞여 들어온 메인의 회귀 의심·verdict 프레이밍 |
 
 ## 공통 프롬프트
 
@@ -26,7 +27,7 @@ Codex 세션에서는 native subagent, Claude Code 세션과 headless 세션에�
 | 기준 | 질문 | PASS | FAIL |
 |------|------|------|------|
 | 사실 정확성 (Factual Accuracy) | DA가 지적한 코드/동작이 실제로 존재하는가? | 파일:줄을 읽어 DA 지적과 일치 확인 | DA가 존재하지 않는 문제를 지적 |
-| 변경 연관성 (Change Relevance) | 이번 변경이 문제를 도입하거나 악화시켰는가? | 변경 전후 비교로 연관성 확인 | 이번 변경과 무관한 기존 문제 |
+| 변경 연관성 (Change Relevance) | 이번 변경이 문제를 도입/악화시켰는가? (과거 의도적 결정의 무근거 되돌림 포함) | 변경 전후 비교로 연관성 확인; decision regression이면 과거 결정 출처 확인 | 이번 변경과 무관한 기존 문제; 또는 과거 근거를 알고 한 의도적 변경 |
 | 심각도 타당성 (Severity Validity) | DA가 매긴 심각도가 실제 영향에 부합하는가? | 심각도와 실제 영향이 비례 | 과장 또는 과소 평가 (심각도 조정 필요) |
 | 실행 가능성 (Actionability) | 구체적 수정 방향이 제시되어 실제로 수정 가능한가? | 위치 + 수정 방향이 명확 | "~할 수도 있다" 수준의 추상적 우려 |
 | 이식성 / 교차 환경 드리프트 (Portability / Cross-Environment Drift) | 현재 환경에서 실측 통과하더라도, 문서 계약 / 다른 환경 / 새 clone 기준으로 해당 finding이 재현 가능한가? | (a) 문서·명세·계약이 finding 방향의 제약을 기술, (b) 현재 환경 외의 clone/host에서 같은 증상 재현, (c) cross-platform/cross-scope assumption이 깨짐 | 현재 환경에서만 통과·실패가 결정되고, 환경 가정이 프로젝트 scope에 정당하게 고정되어 있으며, 문서 계약과 충돌하지 않음 |
@@ -48,6 +49,18 @@ Portability 축의 guardrail 역할 (verdict 결정권 없음):
 - (b) Portability PASS이면 심각도 최소 LOW 보장. reviewer가 제시한 심각도가 더 높으면 그것을 상한으로 존중한다.
 - (c) Few-shot 예시가 cross-env drift 해석을 구체화한다.
 - Portability 축 단독으로 verdict를 뒤집지 않는다. 사실 정확성 FAIL인 finding을 Portability PASS만으로 CONFIRMED_ISSUE로 올리지 않는다.
+
+### Decision regression 판정 (변경 연관성 확장)
+
+finding이 "이번 변경이 과거의 의도적 결정(방어 로직·트레이드오프·기각 대안)을 되돌린다"는 유형(decision regression)이면, 변경 연관성 판정에 다음을 적용한다:
+
+- 주입된 의사결정 컨텍스트 팩 또는 직접 `git log -S`/`blame`/`show`로 과거 결정의 도입 근거와 출처(commit SHA / PR# / issue#)를 확인한다. 출처를 제시하지 못하는 추상적 우려는 NOT_AN_ISSUE다.
+- 현재 변경 의도(diff/계획/대화)가 그 과거 근거를 알고도 의도적으로 바꾸는 것이면 → 변경 연관성 FAIL → NOT_AN_ISSUE (정당한 의도적 변경). 근거 기록(CIR)을 권장으로 남긴다.
+- 현재 의도에 과거 결정에 대한 인지가 없어 보이고 근거를 모른 채 되돌리는 것이면 → 변경 연관성 PASS → CONFIRMED_ISSUE.
+- 의도적인지 불명확하면 → NEEDS_MORE_INFO. 메인 에이전트가 질문 도구로 "과거에 [근거]로 내린 결정인데 의도적으로 바꾸는 것입니까?"를 묻는다.
+- "줄 수가 많다=군살"은 근거가 아니다. 시계열 게이트(증거 시점 이후 수정 커밋 대조)를 통과한 finding만 유효하다.
+
+절차·소스·세션로그 방법론은 [`decision-regression-audit.md`](decision-regression-audit.md)가 SSOT이고, 본 5기준 기반 verdict 매핑은 이 섹션이 정본이다(decision-regression-audit.md Step D는 이 섹션을 역참조한다). 이 판정은 [`da-domains.md`](da-domains.md)의 "의도된 제거는 위반 아님"의 반대편을 보완하며, 5가지 기준의 core invariant(사실 정확성 + 변경 연관성)를 그대로 사용한다(새 verdict enum을 만들지 않는다).
 
 ### 모드별 판정 기준 차이
 
