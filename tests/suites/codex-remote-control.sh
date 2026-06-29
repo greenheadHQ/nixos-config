@@ -204,6 +204,21 @@ test_codex_remote_control_repair_does_not_kill_without_stale_proof() {
   [ -e "$socket_file" ] || fail "socket should be preserved while app-server PID exists without stale proof"
 }
 
+test_codex_remote_control_repair_does_not_kill_on_version_drift_only() {
+  local sandbox ps_file kill_log user
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  user="$(id -un)"
+  ps_file="$sandbox/ps.txt"
+  kill_log="$sandbox/kill.log"
+  printf '88888 %s /opt/codex/bin/codex app-server --listen unix:///tmp/unknown.sock\n' "$user" > "$ps_file"
+
+  if APP_SERVER_VERSION="0.133.0" CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" KILL_LOG="$kill_log" _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged; then
+    fail "repair-unmanaged should fail when only global version drift points at an unknown app-server PID"
+  fi
+  [ ! -e "$kill_log" ] || fail "version drift alone should not kill an unknown app-server PID"
+}
+
 test_codex_remote_control_socket_cleanup_when_no_pid_after_drift() {
   local sandbox ps_file socket_file status
   sandbox="$(new_sandbox)"

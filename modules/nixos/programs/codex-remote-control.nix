@@ -84,12 +84,13 @@ in
         TimeoutSec = "120";
         ExecStart = "${maintenanceCli}/bin/codex-remote-control-maint ensure-running";
         LoadCredential = [ "pushover-system-monitor:${pushoverCredPath}" ];
+        KillMode = "process";
 
         # The maintenance service mutates only the Codex app-server package/state and its own status.
-        # The spawned app-server inherits this namespace, so broaden only if future Codex remote sessions
-        # prove they need workspace writes from the daemon itself.
+        # Codex remote-control app-server can serve sessions that write under ~/Workspace, so do not
+        # mount $HOME read-only here. The shell code still limits its own mutations to codexHome/stateDir.
         ProtectSystem = "strict";
-        ProtectHome = "read-only";
+        ProtectHome = false;
         ReadWritePaths = [
           codexHome
           stateDir

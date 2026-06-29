@@ -22,7 +22,28 @@ SERVICE_LIB="${SERVICE_LIB:-}"
 CODEX_REMOTE_CONTROL_PS_FILE="${CODEX_REMOTE_CONTROL_PS_FILE:-}"
 KILL_LOG="${KILL_LOG:-}"
 
-LAST_ACTION="none"
+readonly ACTION_NONE="none"
+readonly RC_NORMAL_CODEX_STANDALONE=20
+readonly RC_NORMAL_CODEX_NOT_NIX=21
+readonly RC_STANDALONE_PACKAGE_MISSING=22
+readonly RC_STANDALONE_PACKAGE_MISSING_BIN=23
+readonly RC_STANDALONE_PACKAGE_VERSION_MISMATCH=24
+readonly RC_OPERATOR_CODEX_NOT_FOUND=25
+readonly RC_AUTH_API_KEY=30
+readonly RC_AUTH_NOT_CHATGPT=31
+readonly RC_DAEMON_MALFORMED_JSON=40
+readonly RC_DAEMON_NOT_RUNNING=41
+readonly RC_REMOTE_START_NOT_CONNECTED=50
+readonly RC_REMOTE_START_MALFORMED_JSON=51
+readonly RC_REMOTE_START_FAILED=52
+readonly RC_REMOTE_STOP_FAILED=53
+readonly RC_SOCKET_CLEANUP_REFUSED=60
+readonly RC_UNMANAGED_WITHOUT_STALE_PROOF=61
+readonly RC_UNMANAGED=75
+readonly SOCKET_CLEANUP_AFTER_VERIFIED_KILL="after-verified-kill"
+readonly SOCKET_CLEANUP_NO_PID_REQUIRED="no-pid-required"
+
+LAST_ACTION="$ACTION_NONE"
 LAST_REPAIR_REASON=""
 OPERATOR_CLI=""
 OPERATOR_CLI_RESOLVED=""
@@ -43,6 +64,11 @@ DAEMON_STDERR=""
 die() {
   echo "ERROR: $*" >&2
   return 1
+}
+
+set_last_action_if_none() {
+  local action="$1"
+  [ "$LAST_ACTION" != "$ACTION_NONE" ] || LAST_ACTION="$action"
 }
 
 require_config() {
@@ -123,7 +149,7 @@ ensure_path_invariant() {
   resolve_normal_codex
   if [ -n "$NORMAL_CODEX_RESOLVED" ] && path_under "$NORMAL_CODEX_RESOLVED" "$STANDALONE_ROOT"; then
     LAST_REPAIR_REASON="normal-codex-resolves-to-standalone"
-    return 20
+    return "$RC_NORMAL_CODEX_STANDALONE"
   fi
   case "$NORMAL_CODEX_RESOLVED" in
     /nix/store/*-codex-* | /etc/profiles/per-user/*/bin/codex | /run/current-system/sw/bin/codex | "")
@@ -131,7 +157,7 @@ ensure_path_invariant() {
       ;;
     *)
       LAST_REPAIR_REASON="normal-codex-not-nix-managed:$NORMAL_CODEX_PATH->$NORMAL_CODEX_RESOLVED"
-      return 21
+      return "$RC_NORMAL_CODEX_NOT_NIX"
       ;;
   esac
 }
@@ -145,13 +171,13 @@ sync_standalone_package() {
     && [ -x "$STANDALONE_RELEASE_DIR/bin/codex" ] \
     && [ -L "$STANDALONE_CURRENT" ]; then
     [ -L "$STANDALONE_RELEASE_DIR/codex" ] || ln -sfn bin/codex "$STANDALONE_RELEASE_DIR/codex"
-    LAST_ACTION="${LAST_ACTION:-standalone-already-current}"
+    set_last_action_if_none "standalone-already-current"
     return 0
   fi
 
   [ -f "$STANDALONE_PACKAGE" ] || {
     LAST_REPAIR_REASON="standalone-package-missing:$STANDALONE_PACKAGE"
-    return 22
+    return "$RC_STANDALONE_PACKAGE_MISSING"
   }
 
   mkdir -p "$STANDALONE_ROOT/releases"
@@ -161,7 +187,7 @@ sync_standalone_package() {
   if [ ! -x "$staging/bin/codex" ]; then
     rm -rf "$staging"
     LAST_REPAIR_REASON="standalone-package-missing-bin-codex"
-    return 23
+    return "$RC_STANDALONE_PACKAGE_MISSING_BIN"
   fi
 
   local extracted_version
@@ -169,7 +195,7 @@ sync_standalone_package() {
   if [ "$extracted_version" != "$DESIRED_VERSION" ]; then
     rm -rf "$staging"
     LAST_REPAIR_REASON="standalone-package-version-mismatch:$extracted_version"
-    return 24
+    return "$RC_STANDALONE_PACKAGE_VERSION_MISMATCH"
   fi
 
   chmod -R u+rwX,go-rwx "$staging"
@@ -196,12 +222,12 @@ capture_login_status() {
     *"API key"* | *"api key"* | *"API_KEY"*)
       AUTH_MODE="api-key"
       LAST_REPAIR_REASON="auth-not-chatgpt"
-      return 30
+      return "$RC_AUTH_API_KEY"
       ;;
     *)
       AUTH_MODE="unknown"
       LAST_REPAIR_REASON="auth-status-not-chatgpt"
-      return 31
+      return "$RC_AUTH_NOT_CHATGPT"
       ;;
   esac
 }
@@ -221,13 +247,13 @@ capture_daemon_version() {
     fi
     DAEMON_STATUS="malformed-json"
     DAEMON_STDERR="$out"
-    return 40
+    return "$RC_DAEMON_MALFORMED_JSON"
   fi
 
   DAEMON_STDERR="$(cat "$err")"
   rm -f "$err"
   DAEMON_STATUS="not-running"
-  return 41
+  return "$RC_DAEMON_NOT_RUNNING"
 }
 
 contains_unmanaged_error() {
@@ -260,11 +286,11 @@ remote_start() {
       fi
       REMOTE_CONTROL_ENABLED="false"
       LAST_REPAIR_REASON="remote-control-start-not-connected"
-      return 50
+      return "$RC_REMOTE_START_NOT_CONNECTED"
     fi
     REMOTE_CONTROL_ENABLED="false"
     LAST_REPAIR_REASON="remote-control-start-malformed-json"
-    return 51
+    return "$RC_REMOTE_START_MALFORMED_JSON"
   fi
 
   START_STDERR="$(cat "$err")"
@@ -272,10 +298,10 @@ remote_start() {
   REMOTE_CONTROL_ENABLED="false"
   if contains_unmanaged_error "$START_STDERR"; then
     LAST_REPAIR_REASON="remote-control-start-unmanaged"
-    return 75
+    return "$RC_UNMANAGED"
   fi
   LAST_REPAIR_REASON="remote-control-start-failed"
-  return 52
+  return "$RC_REMOTE_START_FAILED"
 }
 
 remote_stop() {
@@ -290,10 +316,10 @@ remote_stop() {
   rm -f "$err"
   if contains_unmanaged_error "$out"; then
     LAST_REPAIR_REASON="remote-control-stop-unmanaged"
-    return 75
+    return "$RC_UNMANAGED"
   fi
   LAST_REPAIR_REASON="remote-control-stop-failed"
-  return 53
+  return "$RC_REMOTE_STOP_FAILED"
 }
 
 collect_pid_evidence() {
@@ -326,25 +352,38 @@ is_app_server_line() {
   esac
 }
 
-is_stale_unmanaged_line() {
+is_same_user_app_server_line() {
   local line="$1"
   local current_user
   current_user="$(id -un)"
   parse_pid_line "$line"
   [ "$USER_FIELD" = "$current_user" ] || return 1
-  is_app_server_line "$CMD_FIELD" || return 1
-  if text_mentions_path "$CMD_FIELD" "$STANDALONE_ROOT"; then
-    return 1
-  fi
-  case "$CMD_FIELD" in
+  is_app_server_line "$CMD_FIELD"
+}
+
+is_managed_standalone_cmd() {
+  local cmd="$1"
+  text_mentions_path "$cmd" "$STANDALONE_ROOT"
+}
+
+is_known_legacy_codex_cmd() {
+  local cmd="$1"
+  case "$cmd" in
     *"/.local/share/mise/installs/npm-openai-codex/"* | *"npm-openai-codex"* | *"/.local/share/mise/installs/node/"* | *"/vendor/"*"unknown-linux-musl/bin/codex app-server"*)
       return 0
       ;;
   esac
-  if [ -n "$APP_SERVER_VERSION" ] && [ "$APP_SERVER_VERSION" != "$DESIRED_VERSION" ]; then
-    return 0
-  fi
   return 1
+}
+
+is_stale_unmanaged_line() {
+  local line="$1"
+  is_same_user_app_server_line "$line" || return 1
+  is_managed_standalone_cmd "$CMD_FIELD" && return 1
+
+  # Kill safety requires per-process evidence. Global daemon version drift is not
+  # enough to prove that an arbitrary same-user app-server PID is stale.
+  is_known_legacy_codex_cmd "$CMD_FIELD"
 }
 
 kill_pid() {
@@ -372,10 +411,10 @@ app_server_pid_exists() {
 }
 
 cleanup_socket_files() {
-  local mode="${1:-no-pid-required}"
-  if [ "$mode" != "after-verified-kill" ] && app_server_pid_exists; then
+  local mode="${1:-$SOCKET_CLEANUP_NO_PID_REQUIRED}"
+  if [ "$mode" != "$SOCKET_CLEANUP_AFTER_VERIFIED_KILL" ] && app_server_pid_exists; then
     LAST_REPAIR_REASON="refusing-socket-cleanup-while-app-server-pid-exists"
-    return 60
+    return "$RC_SOCKET_CLEANUP_REFUSED"
   fi
 
   rm -f \
@@ -404,10 +443,10 @@ repair_unmanaged_core() {
 
   if [ "$killed" -eq 0 ]; then
     LAST_REPAIR_REASON="unmanaged-error-without-stale-pid-proof"
-    return 61
+    return "$RC_UNMANAGED_WITHOUT_STALE_PROOF"
   fi
 
-  cleanup_socket_files after-verified-kill || return $?
+  cleanup_socket_files "$SOCKET_CLEANUP_AFTER_VERIFIED_KILL" || return $?
   LAST_REPAIR_REASON="killed-stale-unmanaged-app-server:$killed"
   LAST_ACTION="repaired-unmanaged-app-server"
 }
@@ -417,7 +456,7 @@ ensure_running_core() {
   resolve_operator_cli
   [ -n "$OPERATOR_CLI" ] || {
     LAST_REPAIR_REASON="operator-codex-not-found"
-    return 25
+    return "$RC_OPERATOR_CODEX_NOT_FOUND"
   }
 
   sync_standalone_package || return $?
@@ -429,16 +468,16 @@ ensure_running_core() {
       local stop_rc=0
       remote_stop || stop_rc=$?
       if [ "$stop_rc" -ne 0 ]; then
-        if [ "$stop_rc" -eq 75 ]; then
+        if [ "$stop_rc" -eq "$RC_UNMANAGED" ]; then
           repair_unmanaged_core || return $?
         else
           return "$stop_rc"
         fi
       fi
-      cleanup_socket_files no-pid-required || return $?
+      cleanup_socket_files "$SOCKET_CLEANUP_NO_PID_REQUIRED" || return $?
       remote_start || {
         local rc=$?
-        if [ "$rc" -eq 75 ]; then
+        if [ "$rc" -eq "$RC_UNMANAGED" ]; then
           repair_unmanaged_core || return $?
           remote_start || return $?
         else
@@ -456,14 +495,14 @@ ensure_running_core() {
 
   if ! remote_start; then
     local rc=$?
-    if [ "$rc" -eq 75 ]; then
+    if [ "$rc" -eq "$RC_UNMANAGED" ]; then
       repair_unmanaged_core || return $?
       remote_start || return $?
     else
       return "$rc"
     fi
   fi
-  [ "$LAST_ACTION" != "none" ] || LAST_ACTION="remote-control-healthy"
+  set_last_action_if_none "remote-control-healthy"
 }
 
 collect_probe() {
