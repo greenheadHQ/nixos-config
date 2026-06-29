@@ -87,9 +87,9 @@ in
         KillMode = "process";
 
         # The maintenance service mutates only the Codex app-server package/state and its own status.
-        # Codex remote-control app-server can serve sessions that write under ~/Workspace, so do not
-        # mount $HOME read-only here. The shell code still limits its own mutations to codexHome/stateDir.
-        ProtectSystem = "strict";
+        # Codex remote-control app-server can serve sessions that write under ~/Workspace. Keep
+        # /usr, /boot, /efi, and /etc read-only, but do not make the whole home tree read-only.
+        ProtectSystem = "full";
         ProtectHome = false;
         ReadWritePaths = [
           codexHome
