@@ -35,7 +35,6 @@ from typing import Any
 
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 DEFAULT_SESSION = "codex-pair-bg"
-HELPER_MARKER = "issuing-codex-pairing-code\n"
 CLIENT_NAME = "issuing-codex-pairing-code"
 CLIENT_VERSION = "1.0.0"
 MOCK_EXPIRES_AT = 1893456000
@@ -54,7 +53,6 @@ class RuntimePaths:
     root: Path
     socket_path: Path
     log_path: Path
-    marker_path: Path
     session_name: str
 
 
@@ -156,17 +154,10 @@ def make_private_runtime_paths() -> RuntimePaths:
     if stat.S_IMODE(st.st_mode) & 0o077:
         root.chmod(0o700)
 
-    marker_path = root / ".owner"
-    if marker_path.exists() and marker_path.read_text(encoding="utf-8") != HELPER_MARKER:
-        raise PairingError(f"runtime directory marker mismatch: {root}")
-    marker_path.write_text(HELPER_MARKER, encoding="utf-8")
-    marker_path.chmod(0o600)
-
     return RuntimePaths(
         root=root,
         socket_path=root / "app.sock",
         log_path=root / "app-server.log",
-        marker_path=marker_path,
         session_name=session_name,
     )
 
@@ -211,7 +202,6 @@ def ensure_helper_app_server(codex_binary: Path, paths: RuntimePaths, timeout: f
             "app-server",
             "--listen",
             shlex.quote(listen_arg),
-            "--analytics-default-enabled",
             f"2>{shlex.quote(str(paths.log_path))}",
         ]
     )
@@ -495,13 +485,14 @@ def build_mock_result() -> PairingResult:
 
 
 def print_result(result: PairingResult, as_json: bool) -> None:
+    expires_at_kst = format_expiry_kst(result.expires_at)
     if as_json:
         print(
             json.dumps(
                 {
                     "manualPairingCode": result.manual_pairing_code,
                     "expiresAt": result.expires_at,
-                    "expiresAtKst": format_expiry_kst(result.expires_at),
+                    "expiresAtKst": expires_at_kst,
                     "cleanup": result.cleanup_command,
                 },
                 separators=(",", ":"),
@@ -510,12 +501,13 @@ def print_result(result: PairingResult, as_json: bool) -> None:
         return
 
     print(f"Code: {result.manual_pairing_code}")
-    print(f"Expires: {format_expiry_kst(result.expires_at)}")
+    print(f"Expires: {expires_at_kst}")
     print(f"Cleanup: {result.cleanup_command}")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    cleanup_command: str | None = None
     try:
         ensure_consent(args)
         ensure_live_platform_allowed(args.mock)
@@ -535,6 +527,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except PairingError as error:
         print(f"error: {redact_pairing_payload(str(error))}", file=sys.stderr)
+        if cleanup_command is not None:
+            print(f"Cleanup: {cleanup_command}", file=sys.stderr)
         return 1
 
 

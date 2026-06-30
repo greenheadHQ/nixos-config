@@ -145,7 +145,7 @@ class PairingCodeHelperTests(unittest.TestCase):
         self.assertNotIn("env-123", redacted)
         self.assertNotIn("ABCD-1234", redacted)
 
-    def test_runtime_dir_is_private_and_marked(self) -> None:
+    def test_runtime_dir_is_private(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             runtime_parent = Path(tmp) / "runtime-parent"
             with mock.patch.dict(os.environ, {"CODEX_PAIRING_RUNTIME_DIR": str(runtime_parent)}):
@@ -153,10 +153,6 @@ class PairingCodeHelperTests(unittest.TestCase):
             self.assertEqual(paths.root.parent, runtime_parent)
             self.assertTrue(paths.session_name.startswith("codex-pair-bg-"))
             self.assertTrue(paths.root.name.startswith("codex-pairing-code-"))
-            self.assertEqual(
-                paths.marker_path.read_text(encoding="utf-8"),
-                issue_pairing_code.HELPER_MARKER,
-            )
             self.assertEqual(paths.root.stat().st_mode & 0o077, 0)
 
     def test_existing_tmux_session_fails_closed_before_socket_wait(self) -> None:
@@ -165,7 +161,6 @@ class PairingCodeHelperTests(unittest.TestCase):
                 root=Path(tmp),
                 socket_path=Path(tmp) / "app.sock",
                 log_path=Path(tmp) / "app-server.log",
-                marker_path=Path(tmp) / ".owner",
                 session_name="codex-pair-bg-existing",
             )
             with mock.patch.object(issue_pairing_code.shutil, "which", return_value="/usr/bin/tmux"):
@@ -174,6 +169,56 @@ class PairingCodeHelperTests(unittest.TestCase):
                         with self.assertRaises(issue_pairing_code.PairingError):
                             issue_pairing_code.ensure_helper_app_server(Path("/bin/codex"), paths, 1)
         wait.assert_not_called()
+
+    def test_app_server_command_does_not_enable_analytics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = issue_pairing_code.RuntimePaths(
+                root=Path(tmp),
+                socket_path=Path(tmp) / "app.sock",
+                log_path=Path(tmp) / "app-server.log",
+                session_name="codex-pair-bg-command",
+            )
+            completed = mock.Mock(returncode=0, stderr="")
+            with mock.patch.object(issue_pairing_code.shutil, "which", return_value="/usr/bin/tmux"):
+                with mock.patch.object(issue_pairing_code, "_tmux_has_session", return_value=False):
+                    with mock.patch.object(issue_pairing_code, "_wait_for_socket"):
+                        with mock.patch.object(
+                            issue_pairing_code.subprocess, "run", return_value=completed
+                        ) as run:
+                            issue_pairing_code.ensure_helper_app_server(
+                                Path("/bin/codex"), paths, 1
+                            )
+            command = run.call_args.args[0][-1]
+        self.assertNotIn("--analytics-default-enabled", command)
+
+    def test_live_failure_after_runtime_creation_prints_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = issue_pairing_code.RuntimePaths(
+                root=Path(tmp),
+                socket_path=Path(tmp) / "app.sock",
+                log_path=Path(tmp) / "app-server.log",
+                session_name="codex-pair-bg-failure",
+            )
+            with mock.patch.object(issue_pairing_code.platform, "system", return_value="Darwin"):
+                with mock.patch.object(
+                    issue_pairing_code, "select_codex_binary", return_value=Path("/bin/codex")
+                ):
+                    with mock.patch.object(
+                        issue_pairing_code, "make_private_runtime_paths", return_value=paths
+                    ):
+                        with mock.patch.object(issue_pairing_code, "ensure_helper_app_server"):
+                            with mock.patch.object(
+                                issue_pairing_code,
+                                "issue_pairing_code",
+                                side_effect=issue_pairing_code.PairingError("rpc failed"),
+                            ):
+                                rc, stdout, stderr = _run_main_capture(
+                                    ["--user-requested-code"]
+                                )
+        self.assertEqual(rc, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("error: rpc failed", stderr)
+        self.assertIn("Cleanup: tmux kill-session -t codex-pair-bg-failure; rm -rf ", stderr)
 
     def test_mock_result_is_deterministic(self) -> None:
         first = issue_pairing_code.build_mock_result()
@@ -284,10 +329,15 @@ def _header_value(request: str, name: str) -> str:
 
 
 def _run_main_silent(argv: list[str]) -> int:
+    return _run_main_capture(argv)[0]
+
+
+def _run_main_capture(argv: list[str]) -> tuple[int, str, str]:
     stdout = io.StringIO()
     stderr = io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        return issue_pairing_code.main(argv)
+        rc = issue_pairing_code.main(argv)
+    return rc, stdout.getvalue(), stderr.getvalue()
 
 
 class _FakeWs:
