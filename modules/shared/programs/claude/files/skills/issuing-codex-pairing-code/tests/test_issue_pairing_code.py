@@ -138,15 +138,25 @@ class PairingCodeHelperTests(unittest.TestCase):
             '{"manualPairingCode":"MH67-9LKZ","pairingCode":"secret",'
             '"environmentId":"env-123","pairingToken":"tok-secret",'
             '"authToken":"auth-secret","accessToken":"access-secret",'
-            '"CODEX_API_KEY":"sk-abcdefghijklmnopqrstuvwxyz",'
-            '"Authorization":"Bearer very-secret-token","other":"ABCD-1234"}'
+            '"CODEX_API_KEY":"sk-abcdefghijklmnopqrstuvwxyz","api_key":"api-secret",'
+            '"x-api-key":"x-secret",'
+            '"Authorization":"Bearer very-secret-token","other":"ABCD-1234"} '
+            "token=plain-token key=plain-key secret:plain-secret"
         )
         redacted = issue_pairing_code.redact_pairing_payload(raw)
         self.assertNotIn("MH67-9LKZ", redacted)
-        self.assertNotIn("secret", redacted)
+        self.assertNotIn('"pairingCode":"secret"', redacted)
+        self.assertNotIn("tok-secret", redacted)
+        self.assertNotIn("auth-secret", redacted)
+        self.assertNotIn("access-secret", redacted)
+        self.assertNotIn("api-secret", redacted)
+        self.assertNotIn("x-secret", redacted)
         self.assertNotIn("env-123", redacted)
         self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz", redacted)
         self.assertNotIn("very-secret-token", redacted)
+        self.assertNotIn("plain-token", redacted)
+        self.assertNotIn("plain-key", redacted)
+        self.assertNotIn("plain-secret", redacted)
         self.assertNotIn("ABCD-1234", redacted)
 
     def test_runtime_dir_is_private(self) -> None:

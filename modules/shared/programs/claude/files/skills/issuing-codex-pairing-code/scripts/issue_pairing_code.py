@@ -41,12 +41,18 @@ MOCK_EXPIRES_AT = 1893456000
 CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4}\b")
 SECRET_KEY_RE = re.compile(
     r'("(?:(?:manual)?pairingCode|environmentId|'
-    r'(?:access|auth|bearer|refresh|remote[_-]?control|api|pairing)?'
-    r'(?:Token|Key|Secret)|authorization|CODEX_API_KEY)"\s*:\s*")[^"]+(")',
+    r'[A-Za-z0-9_-]*(?:token|secret)[A-Za-z0-9_-]*|'
+    r'[A-Za-z0-9_-]*api[_-]?key[A-Za-z0-9_-]*|'
+    r'key|authorization|CODEX_API_KEY)"\s*:\s*")[^"]+(")',
     re.IGNORECASE,
 )
 BEARER_TOKEN_RE = re.compile(r"\bBearer\s+[-._~+/A-Za-z0-9]+=*", re.IGNORECASE)
 OPENAI_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b")
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"\b([A-Za-z0-9_-]*(?:token|secret|api[_-]?key|key)[A-Za-z0-9_-]*"
+    r"\s*[:=]\s*)([^\s,;]+)",
+    re.IGNORECASE,
+)
 
 
 class PairingError(RuntimeError):
@@ -542,6 +548,7 @@ def redact_pairing_payload(value: str) -> str:
     redacted = SECRET_KEY_RE.sub(r"\1[REDACTED]\2", value)
     redacted = BEARER_TOKEN_RE.sub("Bearer [REDACTED]", redacted)
     redacted = OPENAI_KEY_RE.sub("[REDACTED-API-KEY]", redacted)
+    redacted = SECRET_ASSIGNMENT_RE.sub(r"\1[REDACTED]", redacted)
     return CODE_RE.sub("[PAIRING-CODE]", redacted)
 
 
