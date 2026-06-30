@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue Codex Pairing Code"
+  short_description: "Issue a Codex pairing code on request."
+  default_prompt: "Use $issuing-codex-pairing-code to issue a Codex remote-control computer pairing code."
