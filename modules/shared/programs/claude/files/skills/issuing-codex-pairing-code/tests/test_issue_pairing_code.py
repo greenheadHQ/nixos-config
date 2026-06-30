@@ -94,10 +94,11 @@ class PairingCodeHelperTests(unittest.TestCase):
 
             thread = threading.Thread(target=server)
             thread.start()
-            ready.wait(2)
+            self.assertTrue(ready.wait(2), "server did not start in time")
             with issue_pairing_code.WsUnixClient(socket_path, 2):
                 pass
             thread.join(2)
+            self.assertFalse(thread.is_alive(), "server thread did not exit")
         self.assertNotIn("Sec-WebSocket-Extensions", captured["request"])
 
     def test_invalid_websocket_accept_is_rejected(self) -> None:
@@ -127,11 +128,12 @@ class PairingCodeHelperTests(unittest.TestCase):
 
             thread = threading.Thread(target=server)
             thread.start()
-            ready.wait(2)
+            self.assertTrue(ready.wait(2), "server did not start in time")
             with self.assertRaises(issue_pairing_code.PairingError):
                 with issue_pairing_code.WsUnixClient(socket_path, 2):
                     pass
             thread.join(2)
+            self.assertFalse(thread.is_alive(), "server thread did not exit")
 
     def test_redaction_removes_codes_and_secret_fields(self) -> None:
         raw = (
@@ -242,12 +244,12 @@ class PairingCodeHelperTests(unittest.TestCase):
         self.assertEqual(first.expires_at, issue_pairing_code.MOCK_EXPIRES_AT)
 
     def test_json_rpc_rejects_malformed_json(self) -> None:
-        rpc = issue_pairing_code.JsonRpcClient(_FakeWs(["not-json"]))
+        rpc = issue_pairing_code.JsonRpcClient(_FakeWs(["not-json"]), 1)
         with self.assertRaises(issue_pairing_code.PairingError):
             rpc.request("remoteControl/pairing/start", {"manualCode": True})
 
     def test_json_rpc_rejects_non_object_response(self) -> None:
-        rpc = issue_pairing_code.JsonRpcClient(_FakeWs(["[]"]))
+        rpc = issue_pairing_code.JsonRpcClient(_FakeWs(["[]"]), 1)
         with self.assertRaises(issue_pairing_code.PairingError):
             rpc.request("remoteControl/pairing/start", {"manualCode": True})
 
@@ -264,7 +266,7 @@ class PairingCodeHelperTests(unittest.TestCase):
                 },
             }
         )
-        rpc = issue_pairing_code.JsonRpcClient(_FakeWs([response]))
+        rpc = issue_pairing_code.JsonRpcClient(_FakeWs([response]), 1)
         with self.assertRaises(issue_pairing_code.PairingError) as caught:
             rpc.request("remoteControl/pairing/start", {"manualCode": True})
         message = str(caught.exception)
@@ -280,9 +282,21 @@ class PairingCodeHelperTests(unittest.TestCase):
                     json.dumps({"jsonrpc": "2.0", "id": 999, "result": {"ignored": True}}),
                     json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}),
                 ]
-            )
+            ),
+            1,
         )
         self.assertEqual(rpc.request("initialize"), {"ok": True})
+
+    def test_json_rpc_overall_deadline_rejects_endless_mismatched_ids(self) -> None:
+        rpc = issue_pairing_code.JsonRpcClient(
+            _FakeWs([json.dumps({"jsonrpc": "2.0", "id": 999, "result": {}})]),
+            1,
+        )
+        with mock.patch.object(
+            issue_pairing_code.time, "monotonic", side_effect=[0.0, 0.5, 1.1]
+        ):
+            with self.assertRaisesRegex(issue_pairing_code.PairingError, "timed out after 1s"):
+                rpc.request("initialize")
 
     def test_format_expiry_rejects_malformed_string(self) -> None:
         with self.assertRaises(issue_pairing_code.PairingError):
@@ -364,11 +378,12 @@ class PairingCodeHelperTests(unittest.TestCase):
 
             thread = threading.Thread(target=server)
             thread.start()
-            ready.wait(2)
+            self.assertTrue(ready.wait(2), "server did not start in time")
             result = issue_pairing_code.issue_pairing_code(
                 socket_path, 2, "tmux kill-session -t codex-pair-bg"
             )
             thread.join(2)
+            self.assertFalse(thread.is_alive(), "server thread did not exit")
 
         self.assertEqual(result.manual_pairing_code, "MOCK-0000")
         self.assertEqual(result.expires_at, 1893456000)
@@ -393,13 +408,7 @@ class PairingCodeHelperTests(unittest.TestCase):
     def test_protocol_check_accepts_manual_code_schema(self) -> None:
         def generate_schema(args: list[str], **_kwargs: object) -> mock.Mock:
             out_dir = Path(args[args.index("--out") + 1])
-            schema_dir = out_dir / "v2"
-            schema_dir.mkdir(parents=True)
-            (schema_dir / "RemoteControlPairingStartResponse.ts").write_text(
-                "export type RemoteControlPairingStartResponse = "
-                "{ manualPairingCode: string; expiresAt: number };\n",
-                encoding="utf-8",
-            )
+            _write_valid_protocol_schema(out_dir)
             return mock.Mock(returncode=0, stdout="", stderr="")
 
         with mock.patch.object(
@@ -410,11 +419,9 @@ class PairingCodeHelperTests(unittest.TestCase):
     def test_protocol_check_rejects_missing_manual_code_schema(self) -> None:
         def generate_schema(args: list[str], **_kwargs: object) -> mock.Mock:
             out_dir = Path(args[args.index("--out") + 1])
-            schema_dir = out_dir / "v2"
-            schema_dir.mkdir(parents=True)
-            (schema_dir / "RemoteControlPairingStartResponse.ts").write_text(
-                "export type RemoteControlPairingStartResponse = { expiresAt: number };\n",
-                encoding="utf-8",
+            _write_valid_protocol_schema(
+                out_dir,
+                response="export type RemoteControlPairingStartResponse = { expiresAt: number };\n",
             )
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -422,6 +429,22 @@ class PairingCodeHelperTests(unittest.TestCase):
             issue_pairing_code.subprocess, "run", side_effect=generate_schema
         ):
             with self.assertRaisesRegex(issue_pairing_code.PairingError, "manualPairingCode"):
+                issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"), 1)
+
+    def test_protocol_check_rejects_missing_pairing_start_method(self) -> None:
+        def generate_schema(args: list[str], **_kwargs: object) -> mock.Mock:
+            out_dir = Path(args[args.index("--out") + 1])
+            _write_valid_protocol_schema(
+                out_dir,
+                client_request='export type ClientRequest = { "method": "initialize" } | '
+                '{ "method": "remoteControl/enable" };\n',
+            )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(
+            issue_pairing_code.subprocess, "run", side_effect=generate_schema
+        ):
+            with self.assertRaisesRegex(issue_pairing_code.PairingError, "remoteControl/pairing/start"):
                 issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"), 1)
 
     def test_protocol_check_timeout_is_pairing_error(self) -> None:
@@ -479,10 +502,66 @@ class _FakeWs:
     def send_text(self, _text: str) -> None:
         pass
 
-    def receive_text(self) -> str:
+    def receive_text(self, deadline: float | None = None) -> str:
+        _ = deadline
         if not self.responses:
             raise issue_pairing_code.PairingError("no fake response left")
+        if len(self.responses) == 1:
+            return self.responses[0]
         return self.responses.pop(0)
+
+
+def _write_valid_protocol_schema(
+    out_dir: Path,
+    *,
+    client_request: str | None = None,
+    response: str | None = None,
+) -> None:
+    v2 = out_dir / "v2"
+    v2.mkdir(parents=True)
+    (out_dir / "ClientRequest.ts").write_text(
+        client_request
+        or (
+            'export type ClientRequest = { "method": "initialize" } | '
+            '{ "method": "remoteControl/enable" } | '
+            '{ "method": "remoteControl/pairing/start" };\n'
+        ),
+        encoding="utf-8",
+    )
+    (out_dir / "ClientNotification.ts").write_text(
+        'export type ClientNotification = { "method": "initialized" };\n',
+        encoding="utf-8",
+    )
+    (out_dir / "ClientInfo.ts").write_text(
+        "export type ClientInfo = { name: string, title: string | null, version: string };\n",
+        encoding="utf-8",
+    )
+    (out_dir / "InitializeParams.ts").write_text(
+        "export type InitializeParams = { clientInfo: ClientInfo, "
+        "capabilities: InitializeCapabilities | null };\n",
+        encoding="utf-8",
+    )
+    (out_dir / "InitializeCapabilities.ts").write_text(
+        "export type InitializeCapabilities = { experimentalApi: boolean, "
+        "requestAttestation: boolean };\n",
+        encoding="utf-8",
+    )
+    (v2 / "RemoteControlEnableParams.ts").write_text(
+        "export type RemoteControlEnableParams = { ephemeral?: boolean };\n",
+        encoding="utf-8",
+    )
+    (v2 / "RemoteControlPairingStartParams.ts").write_text(
+        "export type RemoteControlPairingStartParams = { manualCode?: boolean };\n",
+        encoding="utf-8",
+    )
+    (v2 / "RemoteControlPairingStartResponse.ts").write_text(
+        response
+        or (
+            "export type RemoteControlPairingStartResponse = "
+            "{ manualPairingCode: string, expiresAt: number };\n"
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
