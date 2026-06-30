@@ -147,15 +147,53 @@ class PairingCodeHelperTests(unittest.TestCase):
 
     def test_runtime_dir_is_private_and_marked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            runtime = Path(tmp) / "runtime"
-            with mock.patch.dict(os.environ, {"CODEX_PAIRING_RUNTIME_DIR": str(runtime)}):
-                paths = issue_pairing_code.make_private_runtime_paths("codex-pair-bg")
-            self.assertEqual(paths.root, runtime)
+            runtime_parent = Path(tmp) / "runtime-parent"
+            with mock.patch.dict(os.environ, {"CODEX_PAIRING_RUNTIME_DIR": str(runtime_parent)}):
+                paths = issue_pairing_code.make_private_runtime_paths()
+            self.assertEqual(paths.root.parent, runtime_parent)
+            self.assertTrue(paths.session_name.startswith("codex-pair-bg-"))
+            self.assertTrue(paths.root.name.startswith("codex-pairing-code-"))
             self.assertEqual(
                 paths.marker_path.read_text(encoding="utf-8"),
                 issue_pairing_code.HELPER_MARKER,
             )
             self.assertEqual(paths.root.stat().st_mode & 0o077, 0)
+
+    def test_existing_tmux_session_fails_closed_before_socket_wait(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = issue_pairing_code.RuntimePaths(
+                root=Path(tmp),
+                socket_path=Path(tmp) / "app.sock",
+                log_path=Path(tmp) / "app-server.log",
+                marker_path=Path(tmp) / ".owner",
+                session_name="codex-pair-bg-existing",
+            )
+            with mock.patch.object(issue_pairing_code.shutil, "which", return_value="/usr/bin/tmux"):
+                with mock.patch.object(issue_pairing_code, "_tmux_has_session", return_value=True):
+                    with mock.patch.object(issue_pairing_code, "_wait_for_socket") as wait:
+                        with self.assertRaises(issue_pairing_code.PairingError):
+                            issue_pairing_code.ensure_helper_app_server(Path("/bin/codex"), paths, 1)
+        wait.assert_not_called()
+
+    def test_mock_result_is_deterministic(self) -> None:
+        first = issue_pairing_code.build_mock_result()
+        second = issue_pairing_code.build_mock_result()
+        self.assertEqual(first, second)
+        self.assertEqual(first.expires_at, issue_pairing_code.MOCK_EXPIRES_AT)
+
+    def test_json_rpc_rejects_malformed_json(self) -> None:
+        rpc = issue_pairing_code.JsonRpcClient(_FakeWs(["not-json"]))
+        with self.assertRaises(issue_pairing_code.PairingError):
+            rpc.request("remoteControl/pairing/start", {"manualCode": True})
+
+    def test_json_rpc_rejects_non_object_response(self) -> None:
+        rpc = issue_pairing_code.JsonRpcClient(_FakeWs(["[]"]))
+        with self.assertRaises(issue_pairing_code.PairingError):
+            rpc.request("remoteControl/pairing/start", {"manualCode": True})
+
+    def test_format_expiry_rejects_malformed_string(self) -> None:
+        with self.assertRaises(issue_pairing_code.PairingError):
+            issue_pairing_code.format_expiry_kst("not-a-date")
 
     def test_rpc_sequence_extracts_manual_code_and_expiry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -250,6 +288,19 @@ def _run_main_silent(argv: list[str]) -> int:
     stderr = io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         return issue_pairing_code.main(argv)
+
+
+class _FakeWs:
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = responses
+
+    def send_text(self, _text: str) -> None:
+        pass
+
+    def receive_text(self) -> str:
+        if not self.responses:
+            raise issue_pairing_code.PairingError("no fake response left")
+        return self.responses.pop(0)
 
 
 if __name__ == "__main__":

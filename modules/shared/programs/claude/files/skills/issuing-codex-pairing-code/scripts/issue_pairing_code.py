@@ -38,6 +38,7 @@ DEFAULT_SESSION = "codex-pair-bg"
 HELPER_MARKER = "issuing-codex-pairing-code\n"
 CLIENT_NAME = "issuing-codex-pairing-code"
 CLIENT_VERSION = "1.0.0"
+MOCK_EXPIRES_AT = 1893456000
 CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4}\b")
 SECRET_KEY_RE = re.compile(
     r'("(?:manualPairingCode|pairingCode|environmentId)"\s*:\s*")[^"]+(")'
@@ -89,11 +90,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=10.0,
         help="Timeout in seconds for app-server startup and RPC waits.",
     )
-    parser.add_argument(
-        "--session",
-        default=DEFAULT_SESSION,
-        help=f"Helper-owned tmux session name. Default: {DEFAULT_SESSION}",
-    )
     return parser.parse_args(argv)
 
 
@@ -139,17 +135,18 @@ def select_codex_binary() -> Path:
     )
 
 
-def make_private_runtime_paths(session_name: str) -> RuntimePaths:
+def make_private_runtime_paths() -> RuntimePaths:
+    session_name = f"{DEFAULT_SESSION}-{os.getpid()}-{secrets.token_hex(4)}"
     runtime_override = os.environ.get("CODEX_PAIRING_RUNTIME_DIR")
     if runtime_override:
-        root = Path(runtime_override).expanduser()
+        base = Path(runtime_override).expanduser()
     else:
         base = Path("/private/tmp") if platform.system() == "Darwin" else Path(tempfile.gettempdir())
-        root = base / f"codex-pairing-code-{os.getuid()}"
 
     old_umask = os.umask(0o077)
     try:
-        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        base.mkdir(mode=0o700, parents=True, exist_ok=True)
+        root = Path(tempfile.mkdtemp(prefix="codex-pairing-code-", dir=str(base)))
     finally:
         os.umask(old_umask)
 
@@ -164,10 +161,6 @@ def make_private_runtime_paths(session_name: str) -> RuntimePaths:
         raise PairingError(f"runtime directory marker mismatch: {root}")
     marker_path.write_text(HELPER_MARKER, encoding="utf-8")
     marker_path.chmod(0o600)
-
-    safe_session = re.sub(r"[^A-Za-z0-9_.-]", "-", session_name)
-    if safe_session != session_name or not safe_session:
-        raise PairingError("tmux session name contains unsupported characters")
 
     return RuntimePaths(
         root=root,
@@ -203,8 +196,10 @@ def ensure_helper_app_server(codex_binary: Path, paths: RuntimePaths, timeout: f
         raise PairingError("tmux is required to keep the helper-owned app-server alive")
 
     if _tmux_has_session(paths.session_name):
-        _wait_for_socket(paths.socket_path, timeout)
-        return
+        raise PairingError(
+            "helper tmux session already exists; clean it up before retrying: "
+            f"tmux kill-session -t {paths.session_name}"
+        )
 
     if paths.socket_path.exists():
         paths.socket_path.unlink()
@@ -272,7 +267,10 @@ def _encode_ws_frame(payload: bytes, opcode: int = 0x1, mask: bool = True) -> by
 def _recv_exact(sock: socket.socket, size: int) -> bytes:
     chunks = bytearray()
     while len(chunks) < size:
-        chunk = sock.recv(size - len(chunks))
+        try:
+            chunk = sock.recv(size - len(chunks))
+        except OSError as error:
+            raise PairingError(f"WebSocket receive failed: {error}") from error
         if not chunk:
             raise PairingError("connection closed while reading WebSocket frame")
         chunks.extend(chunk)
@@ -329,6 +327,12 @@ class WsUnixClient:
             response = self._read_http_response(sock)
             self._verify_handshake(response, key)
             self.sock = sock
+        except PairingError:
+            sock.close()
+            raise
+        except OSError as error:
+            sock.close()
+            raise PairingError(f"WebSocket connection failed: {error}") from error
         except Exception:
             sock.close()
             raise
@@ -360,7 +364,10 @@ class WsUnixClient:
     def send_text(self, text: str) -> None:
         if self.sock is None:
             raise PairingError("WebSocket is not connected")
-        self.sock.sendall(_encode_ws_frame(text.encode("utf-8"), opcode=0x1, mask=True))
+        try:
+            self.sock.sendall(_encode_ws_frame(text.encode("utf-8"), opcode=0x1, mask=True))
+        except OSError as error:
+            raise PairingError(f"WebSocket send failed: {error}") from error
 
     def receive_text(self) -> str:
         if self.sock is None:
@@ -368,7 +375,10 @@ class WsUnixClient:
         while True:
             opcode, payload = _read_ws_frame(self.sock)
             if opcode == 0x1:
-                return payload.decode("utf-8")
+                try:
+                    return payload.decode("utf-8")
+                except UnicodeDecodeError as error:
+                    raise PairingError("WebSocket text frame is not valid UTF-8") from error
             if opcode == 0x8:
                 raise PairingError("WebSocket closed by app-server")
             if opcode == 0x9:
@@ -402,7 +412,12 @@ class JsonRpcClient:
         self.ws.send_text(json.dumps(message, separators=(",", ":")))
         while True:
             raw = self.ws.receive_text()
-            response = json.loads(raw)
+            try:
+                response = json.loads(raw)
+            except json.JSONDecodeError as error:
+                raise PairingError("JSON-RPC response is not valid JSON") from error
+            if not isinstance(response, dict):
+                raise PairingError("JSON-RPC response is not an object")
             if response.get("id") != request_id:
                 continue
             if "error" in response:
@@ -448,7 +463,10 @@ def format_expiry_kst(expires_at: Any) -> str:
         if expires_at.isdigit():
             timestamp = int(expires_at)
         else:
-            parsed = dt.datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            try:
+                parsed = dt.datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            except ValueError as error:
+                raise PairingError("expiresAt string is not a valid timestamp") from error
             return parsed.astimezone(kst).strftime("%Y-%m-%d %H:%M:%S %Z")
     elif isinstance(expires_at, (int, float)):
         timestamp = float(expires_at)
@@ -457,7 +475,10 @@ def format_expiry_kst(expires_at: Any) -> str:
 
     if timestamp > 10_000_000_000:
         timestamp = timestamp / 1000
-    return dt.datetime.fromtimestamp(timestamp, tz=kst).strftime("%Y-%m-%d %H:%M:%S %Z")
+    try:
+        return dt.datetime.fromtimestamp(timestamp, tz=kst).strftime("%Y-%m-%d %H:%M:%S %Z")
+    except (OSError, OverflowError, ValueError) as error:
+        raise PairingError("expiresAt value is out of supported range") from error
 
 
 def redact_pairing_payload(value: str) -> str:
@@ -466,11 +487,10 @@ def redact_pairing_payload(value: str) -> str:
 
 
 def build_mock_result() -> PairingResult:
-    expires_at = int(time.time()) + 600
     return PairingResult(
         manual_pairing_code="MOCK-0000",
-        expires_at=expires_at,
-        cleanup_command=f"tmux kill-session -t {DEFAULT_SESSION}",
+        expires_at=MOCK_EXPIRES_AT,
+        cleanup_command="true # mock mode has no live session",
     )
 
 
@@ -504,8 +524,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         codex_binary = select_codex_binary()
-        paths = make_private_runtime_paths(args.session)
-        cleanup_command = f"tmux kill-session -t {paths.session_name}"
+        paths = make_private_runtime_paths()
+        cleanup_command = (
+            f"tmux kill-session -t {shlex.quote(paths.session_name)}; "
+            f"rm -rf {shlex.quote(str(paths.root))}"
+        )
         ensure_helper_app_server(codex_binary, paths, args.timeout)
         result = issue_pairing_code(paths.socket_path, args.timeout, cleanup_command)
         print_result(result, args.json)

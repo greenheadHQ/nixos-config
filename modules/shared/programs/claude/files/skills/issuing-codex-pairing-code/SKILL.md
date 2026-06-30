@@ -21,10 +21,10 @@ python3 scripts/issue_pairing_code.py --user-requested-code
 
 4. Share only the `Code`, `Expires`, and `Cleanup` lines with the user.
    - Do not store raw pairing codes, raw pairing tokens, full JSON-RPC payloads, or full helper output in committed files, progress notes, PR text, or issue comments.
-5. Leave cleanup under user control unless they ask you to clean up:
+5. Leave cleanup under user control unless they ask you to clean up. Use the exact `Cleanup` line printed by the helper; it includes the unique tmux session and private runtime directory for that issuance.
 
 ```bash
-tmux kill-session -t codex-pair-bg
+tmux kill-session -t codex-pair-bg-...; rm -rf /private/tmp/codex-pairing-code-...
 ```
 
 ## Guardrails
