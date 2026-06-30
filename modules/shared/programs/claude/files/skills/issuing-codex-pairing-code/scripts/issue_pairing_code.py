@@ -40,8 +40,13 @@ CLIENT_VERSION = "1.0.0"
 MOCK_EXPIRES_AT = 1893456000
 CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4}\b")
 SECRET_KEY_RE = re.compile(
-    r'("(?:manualPairingCode|pairingCode|environmentId)"\s*:\s*")[^"]+(")'
+    r'("(?:(?:manual)?pairingCode|environmentId|'
+    r'(?:access|auth|bearer|refresh|remote[_-]?control|api|pairing)?'
+    r'(?:Token|Key|Secret)|authorization|CODEX_API_KEY)"\s*:\s*")[^"]+(")',
+    re.IGNORECASE,
 )
+BEARER_TOKEN_RE = re.compile(r"\bBearer\s+[-._~+/A-Za-z0-9]+=*", re.IGNORECASE)
+OPENAI_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b")
 
 
 class PairingError(RuntimeError):
@@ -133,9 +138,31 @@ def select_codex_binary() -> Path:
     )
 
 
-def ensure_pairing_start_returns_manual_code(codex_binary: Path) -> None:
+def run_checked(
+    command: list[str],
+    *,
+    timeout: float,
+    stdout: Any = subprocess.PIPE,
+    stderr: Any = subprocess.PIPE,
+    text: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            command,
+            text=text,
+            stdout=stdout,
+            stderr=stderr,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        program = Path(command[0]).name if command else "command"
+        raise PairingError(f"{program} timed out after {timeout:g}s") from error
+
+
+def ensure_pairing_start_returns_manual_code(codex_binary: Path, timeout: float) -> None:
     with tempfile.TemporaryDirectory(prefix="codex-pairing-protocol-") as tmp:
-        result = subprocess.run(
+        result = run_checked(
             [
                 str(codex_binary),
                 "app-server",
@@ -143,11 +170,9 @@ def ensure_pairing_start_returns_manual_code(codex_binary: Path) -> None:
                 "--out",
                 tmp,
             ],
-            text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=10,
-            check=False,
+            timeout=timeout,
         )
         if result.returncode != 0:
             message = result.stderr.strip() or result.stdout.strip()
@@ -206,11 +231,11 @@ def make_private_runtime_paths() -> RuntimePaths:
 
 
 def _tmux_has_session(session_name: str) -> bool:
-    result = subprocess.run(
+    result = run_checked(
         ["tmux", "has-session", "-t", session_name],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        check=False,
+        timeout=2,
     )
     return result.returncode == 0
 
@@ -248,12 +273,11 @@ def ensure_helper_app_server(codex_binary: Path, paths: RuntimePaths, timeout: f
             f"2>{shlex.quote(str(paths.log_path))}",
         ]
     )
-    result = subprocess.run(
+    result = run_checked(
         ["tmux", "new-session", "-d", "-s", paths.session_name, command],
-        text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        check=False,
+        timeout=timeout,
     )
     if result.returncode != 0:
         raise PairingError(redact_pairing_payload(result.stderr.strip() or "tmux failed"))
@@ -516,6 +540,8 @@ def format_expiry_kst(expires_at: Any) -> str:
 
 def redact_pairing_payload(value: str) -> str:
     redacted = SECRET_KEY_RE.sub(r"\1[REDACTED]\2", value)
+    redacted = BEARER_TOKEN_RE.sub("Bearer [REDACTED]", redacted)
+    redacted = OPENAI_KEY_RE.sub("[REDACTED-API-KEY]", redacted)
     return CODE_RE.sub("[PAIRING-CODE]", redacted)
 
 
@@ -559,7 +585,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         codex_binary = select_codex_binary()
-        ensure_pairing_start_returns_manual_code(codex_binary)
+        ensure_pairing_start_returns_manual_code(codex_binary, args.timeout)
         paths = make_private_runtime_paths()
         cleanup_command = (
             f"tmux kill-session -t {shlex.quote(paths.session_name)}; "

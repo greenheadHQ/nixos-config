@@ -136,12 +136,17 @@ class PairingCodeHelperTests(unittest.TestCase):
     def test_redaction_removes_codes_and_secret_fields(self) -> None:
         raw = (
             '{"manualPairingCode":"MH67-9LKZ","pairingCode":"secret",'
-            '"environmentId":"env-123","other":"ABCD-1234"}'
+            '"environmentId":"env-123","pairingToken":"tok-secret",'
+            '"authToken":"auth-secret","accessToken":"access-secret",'
+            '"CODEX_API_KEY":"sk-abcdefghijklmnopqrstuvwxyz",'
+            '"Authorization":"Bearer very-secret-token","other":"ABCD-1234"}'
         )
         redacted = issue_pairing_code.redact_pairing_payload(raw)
         self.assertNotIn("MH67-9LKZ", redacted)
         self.assertNotIn("secret", redacted)
         self.assertNotIn("env-123", redacted)
+        self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz", redacted)
+        self.assertNotIn("very-secret-token", redacted)
         self.assertNotIn("ABCD-1234", redacted)
 
     def test_runtime_dir_is_private(self) -> None:
@@ -236,9 +241,65 @@ class PairingCodeHelperTests(unittest.TestCase):
         with self.assertRaises(issue_pairing_code.PairingError):
             rpc.request("remoteControl/pairing/start", {"manualCode": True})
 
+    def test_json_rpc_error_is_redacted(self) -> None:
+        response = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {
+                    "message": "failed",
+                    "manualPairingCode": "MH67-9LKZ",
+                    "pairingToken": "tok-secret",
+                    "Authorization": "Bearer very-secret-token",
+                },
+            }
+        )
+        rpc = issue_pairing_code.JsonRpcClient(_FakeWs([response]))
+        with self.assertRaises(issue_pairing_code.PairingError) as caught:
+            rpc.request("remoteControl/pairing/start", {"manualCode": True})
+        message = str(caught.exception)
+        self.assertNotIn("MH67-9LKZ", message)
+        self.assertNotIn("tok-secret", message)
+        self.assertNotIn("very-secret-token", message)
+        self.assertIn("[REDACTED]", message)
+
+    def test_json_rpc_ignores_mismatched_id_before_success(self) -> None:
+        rpc = issue_pairing_code.JsonRpcClient(
+            _FakeWs(
+                [
+                    json.dumps({"jsonrpc": "2.0", "id": 999, "result": {"ignored": True}}),
+                    json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}),
+                ]
+            )
+        )
+        self.assertEqual(rpc.request("initialize"), {"ok": True})
+
     def test_format_expiry_rejects_malformed_string(self) -> None:
         with self.assertRaises(issue_pairing_code.PairingError):
             issue_pairing_code.format_expiry_kst("not-a-date")
+
+    def test_format_expiry_kst_supported_inputs(self) -> None:
+        cases = [
+            (1893456000, "2030-01-01 09:00:00 KST"),
+            (1893456000000, "2030-01-01 09:00:00 KST"),
+            ("1893456000", "2030-01-01 09:00:00 KST"),
+            ("2030-01-01T00:00:00Z", "2030-01-01 09:00:00 KST"),
+        ]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(issue_pairing_code.format_expiry_kst(value), expected)
+
+    def test_format_expiry_rejects_unsupported_and_out_of_range_values(self) -> None:
+        with self.assertRaises(issue_pairing_code.PairingError):
+            issue_pairing_code.format_expiry_kst([])
+        with self.assertRaises(issue_pairing_code.PairingError):
+            issue_pairing_code.format_expiry_kst(float("inf"))
+
+    def test_mock_json_includes_expected_expiry_kst(self) -> None:
+        rc, stdout, _stderr = _run_main_capture(["--mock", "--json"])
+        self.assertEqual(rc, 0)
+        payload = json.loads(stdout)
+        self.assertEqual(payload["expiresAtKst"], "2030-01-01 09:00:00 KST")
 
     def test_rpc_sequence_extracts_manual_code_and_expiry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -334,7 +395,7 @@ class PairingCodeHelperTests(unittest.TestCase):
         with mock.patch.object(
             issue_pairing_code.subprocess, "run", side_effect=generate_schema
         ):
-            issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"))
+            issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"), 1)
 
     def test_protocol_check_rejects_missing_manual_code_schema(self) -> None:
         def generate_schema(args: list[str], **_kwargs: object) -> mock.Mock:
@@ -351,7 +412,16 @@ class PairingCodeHelperTests(unittest.TestCase):
             issue_pairing_code.subprocess, "run", side_effect=generate_schema
         ):
             with self.assertRaisesRegex(issue_pairing_code.PairingError, "manualPairingCode"):
-                issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"))
+                issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"), 1)
+
+    def test_protocol_check_timeout_is_pairing_error(self) -> None:
+        with mock.patch.object(
+            issue_pairing_code.subprocess,
+            "run",
+            side_effect=issue_pairing_code.subprocess.TimeoutExpired("codex", 1),
+        ):
+            with self.assertRaisesRegex(issue_pairing_code.PairingError, "timed out"):
+                issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"), 1)
 
     def test_protocol_check_failure_prevents_runtime_creation(self) -> None:
         with mock.patch.object(issue_pairing_code.platform, "system", return_value="Darwin"):
