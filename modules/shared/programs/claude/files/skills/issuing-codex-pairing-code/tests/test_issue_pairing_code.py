@@ -203,18 +203,19 @@ class PairingCodeHelperTests(unittest.TestCase):
                 with mock.patch.object(
                     issue_pairing_code, "select_codex_binary", return_value=Path("/bin/codex")
                 ):
-                    with mock.patch.object(
-                        issue_pairing_code, "make_private_runtime_paths", return_value=paths
-                    ):
-                        with mock.patch.object(issue_pairing_code, "ensure_helper_app_server"):
-                            with mock.patch.object(
-                                issue_pairing_code,
-                                "issue_pairing_code",
-                                side_effect=issue_pairing_code.PairingError("rpc failed"),
-                            ):
-                                rc, stdout, stderr = _run_main_capture(
-                                    ["--user-requested-code"]
-                                )
+                    with mock.patch.object(issue_pairing_code, "ensure_pairing_start_returns_manual_code"):
+                        with mock.patch.object(
+                            issue_pairing_code, "make_private_runtime_paths", return_value=paths
+                        ):
+                            with mock.patch.object(issue_pairing_code, "ensure_helper_app_server"):
+                                with mock.patch.object(
+                                    issue_pairing_code,
+                                    "issue_pairing_code",
+                                    side_effect=issue_pairing_code.PairingError("rpc failed"),
+                                ):
+                                    rc, stdout, stderr = _run_main_capture(
+                                        ["--user-requested-code"]
+                                    )
         self.assertEqual(rc, 1)
         self.assertEqual(stdout, "")
         self.assertIn("error: rpc failed", stderr)
@@ -318,6 +319,58 @@ class PairingCodeHelperTests(unittest.TestCase):
             binary.chmod(0o700)
             with mock.patch.dict(os.environ, {"CODEX_PAIRING_CODEX_BIN": str(binary)}):
                 self.assertEqual(issue_pairing_code.select_codex_binary(), binary)
+
+    def test_protocol_check_accepts_manual_code_schema(self) -> None:
+        def generate_schema(args: list[str], **_kwargs: object) -> mock.Mock:
+            out_dir = Path(args[args.index("--out") + 1])
+            schema_dir = out_dir / "v2"
+            schema_dir.mkdir(parents=True)
+            (schema_dir / "RemoteControlPairingStartResponse.ts").write_text(
+                "export type RemoteControlPairingStartResponse = "
+                "{ manualPairingCode: string; expiresAt: number };\n",
+                encoding="utf-8",
+            )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(
+            issue_pairing_code.subprocess, "run", side_effect=generate_schema
+        ):
+            issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"))
+
+    def test_protocol_check_rejects_missing_manual_code_schema(self) -> None:
+        def generate_schema(args: list[str], **_kwargs: object) -> mock.Mock:
+            out_dir = Path(args[args.index("--out") + 1])
+            schema_dir = out_dir / "v2"
+            schema_dir.mkdir(parents=True)
+            (schema_dir / "RemoteControlPairingStartResponse.ts").write_text(
+                "export type RemoteControlPairingStartResponse = { expiresAt: number };\n",
+                encoding="utf-8",
+            )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(
+            issue_pairing_code.subprocess, "run", side_effect=generate_schema
+        ):
+            with self.assertRaisesRegex(issue_pairing_code.PairingError, "manualPairingCode"):
+                issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"))
+
+    def test_protocol_check_failure_prevents_runtime_creation(self) -> None:
+        with mock.patch.object(issue_pairing_code.platform, "system", return_value="Darwin"):
+            with mock.patch.object(
+                issue_pairing_code, "select_codex_binary", return_value=Path("/bin/codex")
+            ):
+                with mock.patch.object(
+                    issue_pairing_code,
+                    "ensure_pairing_start_returns_manual_code",
+                    side_effect=issue_pairing_code.PairingError("protocol drift"),
+                ):
+                    with mock.patch.object(issue_pairing_code, "make_private_runtime_paths") as paths:
+                        rc, stdout, stderr = _run_main_capture(["--user-requested-code"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("error: protocol drift", stderr)
+        self.assertNotIn("Cleanup:", stderr)
+        paths.assert_not_called()
 
 
 def _header_value(request: str, name: str) -> str:

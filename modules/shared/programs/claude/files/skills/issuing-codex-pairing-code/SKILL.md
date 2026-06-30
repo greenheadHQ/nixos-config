@@ -21,6 +21,7 @@ python3 scripts/issue_pairing_code.py --user-requested-code
 
 4. Share only the `Code`, `Expires`, and `Cleanup` lines with the user.
    - Do not store raw pairing codes, raw pairing tokens, full JSON-RPC payloads, or full helper output in committed files, progress notes, PR text, or issue comments.
+   - If the helper reports that the local Codex app-server protocol does not expose `manualPairingCode`, state that no live code was issued because the helper failed before starting app-server.
 5. Leave cleanup under user control unless they ask you to clean up. Use the exact `Cleanup` line printed by the helper; it includes the unique tmux session and private runtime directory for that issuance.
 
 ```bash
@@ -31,6 +32,7 @@ tmux kill-session -t codex-pair-bg-...; rm -rf /private/tmp/codex-pairing-code-.
 
 - Live issuance is Darwin/macOS only.
 - The helper must fail before binary lookup, socket discovery, tmux spawn, or RPC on non-Darwin live runs.
+- The helper must fail before socket discovery, tmux spawn, or RPC when the local Codex app-server protocol does not expose a manual pairing-code response field.
 - The helper uses only a helper-owned private runtime directory and tmux session by default.
 - Do not automatically discover or reuse ambient Codex app-server sockets.
 - Do not use Computer Use, browser UI automation, SSH, launchd/systemd installation, persistent daemon setup, or scheduler cleanup for this flow.

@@ -80,7 +80,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Print machine-readable output with only the manual code and expiry.",
+        help="Print machine-readable output with the manual code, expiry, and cleanup command.",
     )
     parser.add_argument(
         "--timeout",
@@ -131,6 +131,49 @@ def select_codex_binary() -> Path:
     raise PairingError(
         "could not find an executable Codex binary; set CODEX_PAIRING_CODEX_BIN"
     )
+
+
+def ensure_pairing_start_returns_manual_code(codex_binary: Path) -> None:
+    with tempfile.TemporaryDirectory(prefix="codex-pairing-protocol-") as tmp:
+        result = subprocess.run(
+            [
+                str(codex_binary),
+                "app-server",
+                "generate-ts",
+                "--out",
+                tmp,
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip() or result.stdout.strip()
+            raise PairingError(
+                "could not verify Codex app-server pairing protocol before live issuance: "
+                + redact_pairing_payload(message or "generate-ts failed")
+            )
+
+        response_files = list(Path(tmp).rglob("RemoteControlPairingStartResponse.ts"))
+        if not response_files:
+            raise PairingError(
+                "Codex app-server protocol does not expose "
+                "RemoteControlPairingStartResponse; refusing live issuance before "
+                "starting app-server"
+            )
+
+        response_schema = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in response_files
+        )
+        if "manualPairingCode" not in response_schema:
+            raise PairingError(
+                "Codex app-server protocol does not expose manualPairingCode in "
+                "RemoteControlPairingStartResponse; refusing live issuance before "
+                "starting app-server"
+            )
 
 
 def make_private_runtime_paths() -> RuntimePaths:
@@ -516,6 +559,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         codex_binary = select_codex_binary()
+        ensure_pairing_start_returns_manual_code(codex_binary)
         paths = make_private_runtime_paths()
         cleanup_command = (
             f"tmux kill-session -t {shlex.quote(paths.session_name)}; "
