@@ -1,0 +1,13 @@
+model = "gpt-5.5"
+
+[[hooks.PreToolUse]]
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/pinning-guard.sh"
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/_stop-dispatcher.sh"

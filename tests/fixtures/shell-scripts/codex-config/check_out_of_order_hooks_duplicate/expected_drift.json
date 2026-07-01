@@ -1,0 +1,58 @@
+{
+  "target_state": "present",
+  "drift": [
+    {
+      "actual": "old-model",
+      "expected": "gpt-5.5",
+      "path": "model",
+      "reason": "value_mismatch"
+    },
+    {
+      "actual": [
+        {
+          "hooks": [
+            {
+              "command": "/tmp/user-pretooluse-old.sh",
+              "type": "command"
+            }
+          ]
+        },
+        {
+          "hooks": [
+            {
+              "command": "/tmp/user-pretooluse-duplicate.sh",
+              "type": "command"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "hooks": [
+            {
+              "command": "$HOME/.codex/hooks/pinning-guard.sh",
+              "type": "command"
+            }
+          ]
+        }
+      ],
+      "path": "hooks.PreToolUse",
+      "reason": "value_mismatch"
+    },
+    {
+      "actual": null,
+      "expected": [
+        {
+          "hooks": [
+            {
+              "command": "$HOME/.codex/hooks/_stop-dispatcher.sh",
+              "type": "command"
+            }
+          ]
+        }
+      ],
+      "path": "hooks.Stop",
+      "reason": "missing_leaf"
+    }
+  ]
+}

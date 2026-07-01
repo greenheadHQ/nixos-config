@@ -10,9 +10,8 @@
 CODEX_CONFIG_SCRIPT="$REPO_ROOT/modules/shared/programs/codex/files/sync-codex-config.py"
 CODEX_CONFIG_FIXTURE_DIR="$FIXTURE_DIR/codex-config"
 json_semantic_equal() {
-  # $1 = actual JSON string, $2 = expected JSON path.
-  # expected는 {"target_state":..,"drift":[...]} 부분 집합만 검증 (template/target 경로는 runtime 값이라 비교 제외).
-  python3 - "$1" "$2" <<'PY'
+  # $1 = actual JSON string, $2 = expected JSON path, $3 = expected template path, $4 = expected target path.
+  python3 - "$1" "$2" "$3" "$4" <<'PY'
 import sys, json
 try:
     actual = json.loads(sys.argv[1])
@@ -25,7 +24,23 @@ try:
 except Exception as e:
     print(f"expected JSON read error: {e}", file=sys.stderr)
     sys.exit(2)
-for key in expected:
+actual_keys = set(actual)
+required_keys = {"template", "target", "target_state", "drift"}
+if actual_keys != required_keys:
+    print(f"actual top-level keys mismatch: expected={sorted(required_keys)!r} actual={sorted(actual_keys)!r}", file=sys.stderr)
+    sys.exit(1)
+expected_keys = set(expected)
+fixture_keys = {"target_state", "drift"}
+if expected_keys != fixture_keys:
+    print(f"expected fixture keys mismatch: expected={sorted(fixture_keys)!r} actual={sorted(expected_keys)!r}", file=sys.stderr)
+    sys.exit(2)
+if actual["template"] != sys.argv[3]:
+    print(f"template path mismatch: expected={sys.argv[3]!r} actual={actual['template']!r}", file=sys.stderr)
+    sys.exit(1)
+if actual["target"] != sys.argv[4]:
+    print(f"target path mismatch: expected={sys.argv[4]!r} actual={actual['target']!r}", file=sys.stderr)
+    sys.exit(1)
+for key in ("target_state", "drift"):
     if actual.get(key) != expected[key]:
         print(f"mismatch on '{key}': expected={expected[key]!r} actual={actual.get(key)!r}", file=sys.stderr)
         sys.exit(1)
@@ -83,9 +98,34 @@ PY
   assert_contains "$output" "DRIFT_OK"
 }
 
+test_codex_config_repair_semantic_parse_is_lazy_unit() {
+  # tomllib semantic fallback은 tomlkit이 hooks 루트 접근에 실패하는 rare path에서만
+  # 사용한다. 정상 target에서는 activation/check마다 이중 parse를 하지 않는다.
+  local output
+  output=$(
+    python3 - "$CODEX_CONFIG_SCRIPT" <<'PY' 2>&1
+import importlib.util, sys, tomlkit
+spec = importlib.util.spec_from_file_location("sync_codex_config", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+def fail_parse(_text):
+    raise AssertionError("semantic fallback parser should not run on accessible hooks root")
+
+m._parse_plain_toml_best_effort = fail_parse
+doc = tomlkit.parse('[hooks.state."runtime"]\nenabled = true\n')
+m.repair_out_of_order_hooks_root(doc, None, log_message="unused")
+assert doc["hooks"]["state"]["runtime"]["enabled"] is True
+print("LAZY_REPAIR_OK")
+PY
+  )
+  assert_contains "$output" "LAZY_REPAIR_OK"
+}
+
 test_codex_config_sync_fixtures() {
   local scenario sandbox template existing expected actual rc
-  for scenario in sync_basic_merge sync_malformed_root sync_malformed_toml_quarantine sync_quoted_dotted_key; do
+  for scenario in sync_basic_merge sync_malformed_root sync_malformed_toml_quarantine \
+                  sync_quoted_dotted_key sync_out_of_order_hooks_duplicate \
+                  sync_target_absent sync_hooks_scalar_template_event; do
     local dir="$CODEX_CONFIG_FIXTURE_DIR/$scenario"
     [[ -d "$dir" ]] || fail "sync fixture missing: $dir"
     sandbox=$(new_sandbox)
@@ -241,7 +281,8 @@ test_codex_config_check_fixtures() {
   for scenario in check_match check_value_mismatch check_missing_leaf check_type_mismatch \
                   check_target_missing check_template_missing check_template_parse_error \
                   check_quoted_dotted_key_match check_quoted_dotted_key_value_mismatch \
-                  check_empty_template; do
+                  check_empty_template check_out_of_order_hooks_duplicate \
+                  check_target_malformed_toml; do
     dir="$CODEX_CONFIG_FIXTURE_DIR/$scenario"
     [[ -d "$dir" ]] || fail "check fixture missing: $dir"
     sandbox=$(new_sandbox)
@@ -273,7 +314,7 @@ test_codex_config_check_fixtures() {
       local stdout_content
       stdout_content="$(cat "$actual_stdout")"
       [[ -n "$stdout_content" ]] || fail "check($scenario): stdout empty (expected JSON)"
-      json_semantic_equal "$stdout_content" "$dir/expected_drift.json" \
+      json_semantic_equal "$stdout_content" "$dir/expected_drift.json" "$template" "$target_path" \
         || fail "check($scenario): JSON mismatch"
     fi
 
@@ -283,5 +324,54 @@ test_codex_config_check_fixtures() {
       assert_contains "$(cat "$actual_stderr")" "$needle"
       [[ ! -s "$actual_stdout" ]] || fail "check($scenario): expected empty stdout on EXIT_ERROR, got: $(cat "$actual_stdout")"
     fi
+  done
+}
+
+test_codex_config_check_rejects_invalid_utf8_target() {
+  local template sandbox target_path actual_stdout actual_stderr rc
+  template="$CODEX_CONFIG_FIXTURE_DIR/check_match/template.toml"
+  sandbox=$(new_sandbox)
+  target_path="$sandbox/target.toml"
+  actual_stdout="$sandbox/stdout"
+  actual_stderr="$sandbox/stderr"
+
+  printf '\377' >"$target_path"
+
+  rc=0
+  python3 "$CODEX_CONFIG_SCRIPT" check "$template" "$target_path" \
+    >"$actual_stdout" 2>"$actual_stderr" || rc=$?
+
+  [[ "$rc" == "2" ]] \
+    || fail "check invalid UTF-8: expected exit 2, got $rc. stderr: $(cat "$actual_stderr")"
+  assert_contains "$(cat "$actual_stderr")" "target not valid UTF-8"
+  [[ ! -s "$actual_stdout" ]] \
+    || fail "check invalid UTF-8: expected empty stdout, got: $(cat "$actual_stdout")"
+}
+
+test_codex_config_check_rejects_nonregular_target() {
+  local template kind sandbox target_path actual_stdout actual_stderr rc
+  template="$CODEX_CONFIG_FIXTURE_DIR/check_match/template.toml"
+  for kind in directory fifo; do
+    sandbox=$(new_sandbox)
+    target_path="$sandbox/target.toml"
+    actual_stdout="$sandbox/stdout"
+    actual_stderr="$sandbox/stderr"
+
+    if [[ "$kind" == "directory" ]]; then
+      mkdir "$target_path"
+    else
+      command -v mkfifo >/dev/null 2>&1 || continue
+      mkfifo "$target_path"
+    fi
+
+    rc=0
+    python3 "$CODEX_CONFIG_SCRIPT" check "$template" "$target_path" \
+      >"$actual_stdout" 2>"$actual_stderr" || rc=$?
+
+    [[ "$rc" == "2" ]] \
+      || fail "check non-regular $kind: expected exit 2, got $rc. stderr: $(cat "$actual_stderr")"
+    assert_contains "$(cat "$actual_stderr")" "target is not a regular file"
+    [[ ! -s "$actual_stdout" ]] \
+      || fail "check non-regular $kind: expected empty stdout, got: $(cat "$actual_stdout")"
   done
 }

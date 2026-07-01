@@ -1,0 +1,16 @@
+model = "gpt-5.5"
+
+[hooks.state."/tmp/config.toml:template:0:0"]
+enabled = false
+
+[[hooks.PreToolUse]]
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/pinning-guard.sh"
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/_stop-dispatcher.sh"

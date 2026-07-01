@@ -1,0 +1,5 @@
+[[hooks.PreToolUse]]
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/pinning-guard.sh"

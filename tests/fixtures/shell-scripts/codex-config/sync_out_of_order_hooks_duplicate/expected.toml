@@ -1,0 +1,28 @@
+model = "gpt-5.5"
+
+[mcp_servers.user]
+command = "/tmp/user-mcp.sh"
+
+[hooks.state."/tmp/config.toml:pre_tool_use:0:0"]
+enabled = true
+
+[hooks.state."/tmp/config.toml:template:0:0"]
+enabled = false
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "/tmp/user-sessionstart-preserved.sh"
+
+[[hooks.PreToolUse]]
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/pinning-guard.sh"
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/_stop-dispatcher.sh"

@@ -15,7 +15,9 @@ OWNERSHIP POLICY (recursive, leaf-level)
   template on each activation, and compared by `check` mode.
 * User-owned: everything the template does NOT declare at the same path —
   sibling leaves inside the same table, and any top-level key absent from the
-  template (`[projects.*]`, future Codex CLI tables). Preserved verbatim.
+  template (`[projects.*]`, future Codex CLI tables). Preserved semantically;
+  the rare out-of-order `hooks` repair may normalize that subtree while keeping
+  user-owned values.
 
 On a same-path conflict the template ALWAYS wins. Checker and writer share the
 `_walk_template_leaves` iterator so their ownership judgement cannot drift.
@@ -100,6 +102,7 @@ import re
 import stat
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import Any, Iterator, NoReturn, Optional
 
@@ -138,10 +141,14 @@ def die(msg: str, code: int = EXIT_ERROR) -> NoReturn:
 
 try:
     import tomlkit
+    from tomlkit.exceptions import TOMLKitError
 except ImportError:
     # lazy: tomlkit은 sync/check 실제 실행 시점에만 필요하다. argparse만 쓰는 `--help`는
     # tomlkit 없이도 docstring을 출력할 수 있어야 한다.
     tomlkit = None
+
+    class TOMLKitError(Exception):
+        pass
 
 
 def _require_tomlkit() -> None:
@@ -163,11 +170,25 @@ def load_required_toml(path: Path):
         die(f"template not valid UTF-8 ({path}): {e}")
     try:
         return tomlkit.parse(text)
-    except Exception as e:
+    except TOMLKitError as e:
         die(f"template parse failed ({path}): {e}")
 
 
-def load_optional_toml(path: Path, *, quarantine: bool):
+def _parse_plain_toml_best_effort(text: str) -> Optional[dict]:
+    """Best-effort semantic view for tomlkit-hostile hooks repair.
+
+    The caller owns hardened file reading and authoritative tomlkit parse errors.
+    This fallback is only used to rebuild a valid TOML `hooks` root when tomlkit's
+    round-trip container cannot expose it.
+    """
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def load_optional_toml_with_semantic(path: Path, *, quarantine: bool):
     # errno 정책 요약 (단일 정의: _SELF_HEAL_ERRNOS / _UNREADABLE_REGULAR_ERRNOS).
     # 아래 분류는 path.read_bytes() 가 실패한 경우에만 적용된다. 읽기 가능한 symlink/regular
     # 파일은 정상 read 흐름을 타고, 읽기 가능한 symlink 의 regular file 치환은 이후
@@ -200,7 +221,7 @@ def load_optional_toml(path: Path, *, quarantine: bool):
                 )
         else:
             log(f"existing {path} {reason}; regenerating from template")
-        return tomlkit.document()
+        return tomlkit.document(), None
 
     # TOCTOU-safe single-fd inspection + read: symlink 를 follow 한 referent 까지
     # regular file 인지 확인하고 같은 fd 로 read 해야 path re-lookup race 가 사라진다.
@@ -225,7 +246,7 @@ def load_optional_toml(path: Path, *, quarantine: bool):
             parts.append(buf)
         raw = b"".join(parts)
     except FileNotFoundError:
-        return tomlkit.document()
+        return tomlkit.document(), None
     except OSError as e:
         tag = _errno_tag(e)
         if e.errno in _SELF_HEAL_ERRNOS:
@@ -262,12 +283,17 @@ def load_optional_toml(path: Path, *, quarantine: bool):
     except UnicodeDecodeError as e:
         return _quarantine(f"not valid UTF-8 ({e})")
     try:
-        return tomlkit.parse(text)
-    except Exception as e:
+        return tomlkit.parse(text), text
+    except TOMLKitError as e:
         return _quarantine(f"TOML parse failed ({e})")
 
 
-def load_target_for_check(path: Path):
+def load_optional_toml(path: Path, *, quarantine: bool):
+    parsed, _semantic_text = load_optional_toml_with_semantic(path, quarantine=quarantine)
+    return parsed
+
+
+def load_target_for_check_with_semantic(path: Path):
     # check 모드 전용. target 부재는 target_state="missing"으로 처리 (drift 아님).
     # 읽기 실패(EACCES 등)와 TOML/UTF-8 파싱 실패는 EXIT_ERROR (writer처럼 quarantine하지 않음).
     # TOCTOU-safe: load_optional_toml 과 동일하게 fd 기반 single open + fstat + read 로
@@ -288,7 +314,7 @@ def load_target_for_check(path: Path):
             parts.append(buf)
         data = b"".join(parts)
     except FileNotFoundError:
-        return None
+        return None, None
     except OSError as e:
         tag = _errno_tag(e)
         # Unix socket 등 non-regular entry 는 open 이 ENXIO 로 실패할 수 있다. load_optional_toml
@@ -313,9 +339,14 @@ def load_target_for_check(path: Path):
     except UnicodeDecodeError as e:
         die(f"target not valid UTF-8 ({path}): {e}")
     try:
-        return tomlkit.parse(text)
-    except Exception as e:
+        return tomlkit.parse(text), text
+    except TOMLKitError as e:
         die(f"target parse failed ({path}): {e}")
+
+
+def load_target_for_check(path: Path):
+    target, _semantic_text = load_target_for_check_with_semantic(path)
+    return target
 
 
 def as_table_or_warn(value, *, where: str) -> Optional[dict]:
@@ -390,6 +421,67 @@ def _set_at_path(doc, path_segments: tuple[str, ...], value) -> None:
             cur[part] = tomlkit.table()
         cur = cur[part]
     cur[path_segments[-1]] = copy.deepcopy(value)
+
+
+def _to_tomlkit(value):
+    if isinstance(value, dict):
+        table = tomlkit.table()
+        for key, item in value.items():
+            table[key] = _to_tomlkit(item)
+        return table
+    if isinstance(value, list):
+        return [_to_tomlkit(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _tomlkit_key_already_present(exc: Exception) -> bool:
+    return exc.__class__.__name__ == "KeyAlreadyPresent"
+
+
+def _needs_hooks_root_repair(doc) -> bool:
+    try:
+        if "hooks" not in doc:
+            return False
+        doc["hooks"]
+        return False
+    except Exception as exc:
+        if _tomlkit_key_already_present(exc):
+            return True
+        raise
+
+
+def repair_out_of_order_hooks_root(result, semantic_text: Optional[str], *, log_message: str) -> None:
+    """Rebuild a tomlkit-hostile hooks root without deciding ownership.
+
+    tomlkit can parse valid TOML where the same hooks event array appears in
+    separate out-of-order groups, but later access to the parent `hooks` table can
+    fail while constructing an OutOfOrderTableProxy.  On that rare shape we
+    lazily parse the same safely-read text with the stdlib parser and rebuild
+    only the `hooks` root from that semantic view.  The existing leaf-level
+    ownership policy remains centralized in merge_template_into() and
+    collect_drift().
+    """
+    if not _needs_hooks_root_repair(result):
+        return
+    if semantic_text is None:
+        die("hooks table is not accessible and semantic fallback is unavailable")
+    plain_existing = _parse_plain_toml_best_effort(semantic_text)
+    if plain_existing is None:
+        die("hooks table is not accessible and semantic fallback parse failed")
+
+    plain_hooks = plain_existing.get("hooks")
+    if not isinstance(plain_hooks, dict):
+        del result["hooks"]
+        return
+
+    rebuilt = tomlkit.table()
+    for key, value in plain_hooks.items():
+        rebuilt[key] = _to_tomlkit(value)
+
+    del result["hooks"]
+    if rebuilt:
+        result["hooks"] = rebuilt
+    log(log_message)
 
 
 _BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -648,7 +740,7 @@ def cmd_sync(template_path: Path, target_path: Path) -> int:
 
 def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
     template = load_required_toml(template_path)
-    existing = load_optional_toml(target_path, quarantine=True)
+    existing, semantic_text = load_optional_toml_with_semantic(target_path, quarantine=True)
 
     if template.get("projects") is not None:
         # template이 projects를 선언하면 정책 위반이라 경고만 남기고 무시.
@@ -657,6 +749,11 @@ def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
 
     result = copy.deepcopy(existing)
     repair_reserved_roots(result)
+    repair_out_of_order_hooks_root(
+        result,
+        semantic_text,
+        log_message="repaired out-of-order hooks table before template merge",
+    )
 
     template_clone = copy.deepcopy(template)
     if "projects" in template_clone:
@@ -693,7 +790,7 @@ def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
 def cmd_check(template_path: Path, target_path: Path) -> int:
     _require_tomlkit()
     template = load_required_toml(template_path)
-    target = load_target_for_check(target_path)
+    target, semantic_text = load_target_for_check_with_semantic(target_path)
 
     if target is None:
         output = {
@@ -709,6 +806,12 @@ def cmd_check(template_path: Path, target_path: Path) -> int:
     template_clone = copy.deepcopy(template)
     if "projects" in template_clone:
         del template_clone["projects"]
+
+    repair_out_of_order_hooks_root(
+        target,
+        semantic_text,
+        log_message="normalized out-of-order hooks table in memory for drift check",
+    )
 
     drift = collect_drift(template_clone, target)
     output = {
