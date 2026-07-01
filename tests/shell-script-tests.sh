@@ -78,6 +78,9 @@ if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control repair refuses socket cleanup when PID remains" test_codex_remote_control_repair_refuses_socket_cleanup_when_pid_remains
   run_test "codex remote-control repair refuses unproven stale process" test_codex_remote_control_repair_does_not_kill_without_stale_proof
   run_test "codex remote-control repair refuses version-drift-only kill" test_codex_remote_control_repair_does_not_kill_on_version_drift_only
+  run_test "codex remote-control repair preserves current managed app-server" test_codex_remote_control_repair_preserves_current_managed_app_server
+  run_test "codex remote-control repair reaps stale deleted managed app-server" test_codex_remote_control_repair_kills_stale_deleted_managed_app_server
+  run_test "codex remote-control repair reaps superseded managed app-server" test_codex_remote_control_repair_kills_stale_superseded_managed_app_server
   run_test "codex remote-control cleans sockets only when no PID after drift" test_codex_remote_control_socket_cleanup_when_no_pid_after_drift
 else
   echo "==> codex remote-control fixtures: SKIPPED (Linux/NixOS-only service script)" >&2

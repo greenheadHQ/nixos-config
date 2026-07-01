@@ -360,6 +360,78 @@ test_codex_remote_control_repair_does_not_kill_on_version_drift_only() {
   [ ! -e "$kill_log" ] || fail "version drift alone should not kill an unknown app-server PID"
 }
 
+test_codex_remote_control_repair_preserves_current_managed_app_server() {
+  local sandbox ps_file exe_file kill_log socket_file user standalone_root release_dir
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  user="$(id -un)"
+  ps_file="$sandbox/ps.txt"
+  exe_file="$sandbox/exe.txt"
+  kill_log="$sandbox/kill.log"
+  socket_file="$COD_RC_HOME/.codex/app-server-control/app-server-control.sock"
+  standalone_root="$COD_RC_HOME/.codex/packages/standalone"
+  release_dir="$standalone_root/releases/0.142.4-x86_64-unknown-linux-musl"
+  mkdir -p "$(dirname "$socket_file")"
+  : > "$socket_file"
+  printf '55555 %s %s/current/codex app-server daemon pid-update-loop\n' "$user" "$standalone_root" > "$ps_file"
+  printf '55555 %s/bin/codex\n' "$release_dir" > "$exe_file"
+
+  if CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" CODEX_REMOTE_CONTROL_EXE_FILE="$exe_file" KILL_LOG="$kill_log" \
+    _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged; then
+    fail "repair-unmanaged should not kill a managed app-server still running the current release"
+  fi
+  [ ! -e "$kill_log" ] || fail "current managed app-server must not be killed"
+  [ -e "$socket_file" ] || fail "socket must be preserved while current managed app-server runs"
+}
+
+test_codex_remote_control_repair_kills_stale_deleted_managed_app_server() {
+  local sandbox ps_file exe_file kill_log socket_file user standalone_root old_release
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  user="$(id -un)"
+  ps_file="$sandbox/ps.txt"
+  exe_file="$sandbox/exe.txt"
+  kill_log="$sandbox/kill.log"
+  socket_file="$COD_RC_HOME/.codex/app-server-control/app-server-control.sock"
+  standalone_root="$COD_RC_HOME/.codex/packages/standalone"
+  old_release="$standalone_root/releases/0.142.3-x86_64-unknown-linux-musl"
+  mkdir -p "$(dirname "$socket_file")"
+  : > "$socket_file"
+  # cmdline mentions the managed `current` path, but /proc/$pid/exe resolves to a
+  # deleted old release — the exact incident that previously exited 60.
+  printf '4000136 %s %s/current/codex app-server daemon pid-update-loop\n' "$user" "$standalone_root" > "$ps_file"
+  printf '4000136 %s/bin/codex (deleted)\n' "$old_release" > "$exe_file"
+
+  CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" CODEX_REMOTE_CONTROL_EXE_FILE="$exe_file" KILL_LOG="$kill_log" \
+    _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged
+  assert_file_contains "$kill_log" "4000136"
+  [ ! -e "$socket_file" ] || fail "socket should be removed after reaping a stale deleted managed app-server"
+}
+
+test_codex_remote_control_repair_kills_stale_superseded_managed_app_server() {
+  local sandbox ps_file exe_file kill_log socket_file user standalone_root old_release
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  user="$(id -un)"
+  ps_file="$sandbox/ps.txt"
+  exe_file="$sandbox/exe.txt"
+  kill_log="$sandbox/kill.log"
+  socket_file="$COD_RC_HOME/.codex/app-server-control/app-server-control.sock"
+  standalone_root="$COD_RC_HOME/.codex/packages/standalone"
+  old_release="$standalone_root/releases/0.142.3-x86_64-unknown-linux-musl"
+  mkdir -p "$(dirname "$socket_file")"
+  : > "$socket_file"
+  # `current` moved to the desired release but the old release still exists; the
+  # running process's executable proves it is superseded.
+  printf '4000200 %s %s/current/codex app-server --listen unix:///tmp/current.sock\n' "$user" "$standalone_root" > "$ps_file"
+  printf '4000200 %s/bin/codex\n' "$old_release" > "$exe_file"
+
+  CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" CODEX_REMOTE_CONTROL_EXE_FILE="$exe_file" KILL_LOG="$kill_log" \
+    _codex_rc_env bash "$(_codex_rc_script)" repair-unmanaged
+  assert_file_contains "$kill_log" "4000200"
+  [ ! -e "$socket_file" ] || fail "socket should be removed after reaping a superseded managed app-server"
+}
+
 test_codex_remote_control_socket_cleanup_when_no_pid_after_drift() {
   local sandbox ps_file socket_file status
   sandbox="$(new_sandbox)"

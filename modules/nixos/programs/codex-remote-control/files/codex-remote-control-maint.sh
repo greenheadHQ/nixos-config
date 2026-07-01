@@ -20,6 +20,7 @@ ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
 PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
 CODEX_REMOTE_CONTROL_PS_FILE="${CODEX_REMOTE_CONTROL_PS_FILE:-}"
+CODEX_REMOTE_CONTROL_EXE_FILE="${CODEX_REMOTE_CONTROL_EXE_FILE:-}"
 KILL_LOG="${KILL_LOG:-}"
 
 readonly ACTION_NONE="none"
@@ -435,14 +436,74 @@ is_known_legacy_codex_cmd() {
   return 1
 }
 
-is_stale_unmanaged_line() {
-  local line="$1"
-  is_same_user_app_server_line "$line" || return 1
-  is_managed_standalone_cmd "$CMD_FIELD" && return 1
+# Resolve a PID's actual executable path. The kernel records /proc/$pid/exe at
+# exec() time, so the `current` symlink can be re-pointed afterward without
+# changing an already-running process's executable. A deleted executable is
+# reported with a trailing " (deleted)" marker. Tests inject a PID-to-exe
+# mapping file (one "<pid> <exe path>" line per PID) via CODEX_REMOTE_CONTROL_EXE_FILE.
+pid_exe_path() {
+  local pid="$1"
+  if [ -n "$CODEX_REMOTE_CONTROL_EXE_FILE" ]; then
+    [ -f "$CODEX_REMOTE_CONTROL_EXE_FILE" ] || return 0
+    awk -v pid="$pid" '$1 == pid { sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); print; exit }' \
+      "$CODEX_REMOTE_CONTROL_EXE_FILE" 2>/dev/null || true
+  else
+    readlink "/proc/$pid/exe" 2>/dev/null || true
+  fi
+}
+
+# Decide whether an executable path proves a managed-standalone process is stale.
+# It is stale only when the executable clearly originates from the managed
+# standalone tree yet is no longer the desired release: either the binary was
+# deleted (the `current` symlink moved and the old release was removed) or it
+# still lives under an older release directory. Unknown/empty paths are never
+# treated as stale — per-process proof stays required.
+exe_indicates_stale_standalone() {
+  local exe="$1"
+  local clean="$exe"
+  local is_deleted=0
+  case "$exe" in
+    *" (deleted)")
+      clean="${exe% (deleted)}"
+      is_deleted=1
+      ;;
+  esac
+  # Only reason about executables that belong to the managed standalone tree.
+  path_under "$clean" "$STANDALONE_ROOT" || return 1
+  # A deleted managed binary can never be the live desired release.
+  [ "$is_deleted" -eq 1 ] && return 0
+  # A still-present binary under the desired release directory is current.
+  path_under "$clean" "$STANDALONE_RELEASE_DIR" && return 1
+  # Otherwise it runs a superseded release even though `current` has moved on.
+  return 0
+}
+
+# Classify an app-server process — identified by its command line and PID — as
+# stale (return 0) or not (non-zero). Shared by is_stale_unmanaged_line (ps/
+# fixture evidence path) and current_pid_matches_stale_proof (production /proc
+# revalidation before kill) so both paths classify identically; extend the rule
+# here, in one place, rather than in either caller.
+classify_stale_by_cmd_and_pid() {
+  local cmd="$1"
+  local pid="$2"
+  if is_managed_standalone_cmd "$cmd"; then
+    # A managed standalone command line usually means the current release, but
+    # `current` is a symlink: an already-running process can keep executing an
+    # old, since-removed release after `current` moved. Only per-process /proc
+    # executable evidence — not global version drift — can prove that case.
+    exe_indicates_stale_standalone "$(pid_exe_path "$pid")"
+    return $?
+  fi
 
   # Kill safety requires per-process evidence. Global daemon version drift is not
   # enough to prove that an arbitrary same-user app-server PID is stale.
-  is_known_legacy_codex_cmd "$CMD_FIELD"
+  is_known_legacy_codex_cmd "$cmd"
+}
+
+is_stale_unmanaged_line() {
+  local line="$1"
+  is_same_user_app_server_line "$line" || return 1
+  classify_stale_by_cmd_and_pid "$CMD_FIELD" "$PID_FIELD"
 }
 
 pid_is_numeric() {
@@ -479,8 +540,7 @@ current_pid_matches_stale_proof() {
   current_cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
   [ -n "$current_cmd" ] || return 1
   is_app_server_line "$current_cmd" || return 1
-  is_managed_standalone_cmd "$current_cmd" && return 1
-  is_known_legacy_codex_cmd "$current_cmd"
+  classify_stale_by_cmd_and_pid "$current_cmd" "$pid"
 }
 
 kill_pid() {
