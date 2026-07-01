@@ -1,5 +1,8 @@
 model = "gpt-5.5"
 
+[hooks.state."/tmp/config.toml:template:0:0"]
+enabled = false
+
 [[hooks.PreToolUse]]
 
 [[hooks.PreToolUse.hooks]]

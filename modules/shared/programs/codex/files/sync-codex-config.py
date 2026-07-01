@@ -446,15 +446,15 @@ def _needs_hooks_root_repair(doc) -> bool:
         raise
 
 
-def repair_out_of_order_hooks_root(result, template, plain_existing: Optional[dict]) -> None:
-    """Rebuild a tomlkit-hostile hooks root while preserving user-owned hook keys.
+def repair_out_of_order_hooks_root(result, plain_existing: Optional[dict], *, log_message: str) -> None:
+    """Rebuild a tomlkit-hostile hooks root without deciding ownership.
 
     tomlkit can parse valid TOML where the same hooks event array appears in
     separate out-of-order groups, but later access to the parent `hooks` table can
-    fail while constructing an OutOfOrderTableProxy.  The sync policy already says
-    template-declared events are template-owned, so on that rare shape we rebuild
-    only the `hooks` root from the stdlib parser's semantic view: undeclared hook
-    keys survive, declared event arrays are left for merge_template_into().
+    fail while constructing an OutOfOrderTableProxy.  On that rare shape we
+    rebuild only the `hooks` root from the stdlib parser's semantic view.  The
+    existing leaf-level ownership policy remains centralized in
+    merge_template_into() and collect_drift().
     """
     if not _needs_hooks_root_repair(result):
         return
@@ -466,19 +466,14 @@ def repair_out_of_order_hooks_root(result, template, plain_existing: Optional[di
         del result["hooks"]
         return
 
-    template_hooks = template.get("hooks")
-    template_owned = set(template_hooks.keys()) if _is_table(template_hooks) else set()
-
     rebuilt = tomlkit.table()
     for key, value in plain_hooks.items():
-        if key in template_owned:
-            continue
         rebuilt[key] = _to_tomlkit(value)
 
     del result["hooks"]
     if rebuilt:
         result["hooks"] = rebuilt
-    log("repaired out-of-order hooks table")
+    log(log_message)
 
 
 _BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -746,7 +741,11 @@ def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
 
     result = copy.deepcopy(existing)
     repair_reserved_roots(result)
-    repair_out_of_order_hooks_root(result, template, plain_existing)
+    repair_out_of_order_hooks_root(
+        result,
+        plain_existing,
+        log_message="repaired out-of-order hooks table before template merge",
+    )
 
     template_clone = copy.deepcopy(template)
     if "projects" in template_clone:
@@ -800,7 +799,11 @@ def cmd_check(template_path: Path, target_path: Path) -> int:
     if "projects" in template_clone:
         del template_clone["projects"]
 
-    repair_out_of_order_hooks_root(target, template_clone, plain_target)
+    repair_out_of_order_hooks_root(
+        target,
+        plain_target,
+        log_message="normalized out-of-order hooks table in memory for drift check",
+    )
 
     drift = collect_drift(template_clone, target)
     output = {

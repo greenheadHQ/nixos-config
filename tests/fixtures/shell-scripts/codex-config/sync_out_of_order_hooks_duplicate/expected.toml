@@ -6,6 +6,9 @@ command = "/tmp/user-mcp.sh"
 [hooks.state."/tmp/config.toml:pre_tool_use:0:0"]
 enabled = true
 
+[hooks.state."/tmp/config.toml:template:0:0"]
+enabled = false
+
 [[hooks.SessionStart]]
 
 [[hooks.SessionStart.hooks]]
