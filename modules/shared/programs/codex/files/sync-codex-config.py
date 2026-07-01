@@ -141,10 +141,14 @@ def die(msg: str, code: int = EXIT_ERROR) -> NoReturn:
 
 try:
     import tomlkit
+    from tomlkit.exceptions import TOMLKitError
 except ImportError:
     # lazy: tomlkit은 sync/check 실제 실행 시점에만 필요하다. argparse만 쓰는 `--help`는
     # tomlkit 없이도 docstring을 출력할 수 있어야 한다.
     tomlkit = None
+
+    class TOMLKitError(Exception):
+        pass
 
 
 def _require_tomlkit() -> None:
@@ -166,7 +170,7 @@ def load_required_toml(path: Path):
         die(f"template not valid UTF-8 ({path}): {e}")
     try:
         return tomlkit.parse(text)
-    except Exception as e:
+    except TOMLKitError as e:
         die(f"template parse failed ({path}): {e}")
 
 
@@ -280,7 +284,7 @@ def load_optional_toml_with_semantic(path: Path, *, quarantine: bool):
         return _quarantine(f"not valid UTF-8 ({e})")
     try:
         return tomlkit.parse(text), text
-    except Exception as e:
+    except TOMLKitError as e:
         return _quarantine(f"TOML parse failed ({e})")
 
 
@@ -336,7 +340,7 @@ def load_target_for_check_with_semantic(path: Path):
         die(f"target not valid UTF-8 ({path}): {e}")
     try:
         return tomlkit.parse(text), text
-    except Exception as e:
+    except TOMLKitError as e:
         die(f"target parse failed ({path}): {e}")
 
 
