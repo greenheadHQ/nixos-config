@@ -71,17 +71,39 @@ hook_load_lib() {
 # TMPDIR fallback: ${TMPDIR:-/tmp} 는 TMPDIR 이 unset/empty 일 때만 /tmp 로 fallback 한다.
 # 그러나 codex 가 자식 프로세스에 상속시키는 ~/.codex/tmp/... 세션 임시경로처럼 TMPDIR 이
 # "set 이지만 이미 삭제됐거나 쓰기 불가" 인 경우 (set-but-unusable) 는 fallback 되지 않아
-# `mktemp -d "$TMPDIR/..."` 가 부모 부재로 실패한다. pinning-guard 는 이 실패를 fail-closed 로
-# 처리해 Bash/Edit/Write/apply_patch 전 명령을 차단하므로, 여기서 base 가 실제 사용 가능한
-# 디렉토리인지 확인하고 아니면 /tmp 로 fallback 해 가용성 회귀를 막는다. mktemp 가 새 격리
+# `mktemp -d "$TMPDIR/..."` 가 부모 부재로 실패한다. systemd private tmp가 삭제된 mount처럼
+# `/tmp` 자체가 stat 가능하지만 생성은 실패하는 경우도 있으므로, 후보 디렉토리는 실제 mktemp
+# 성공까지 확인한다. pinning-guard 는 이 실패를 fail-closed 로 처리해 Bash/Edit/Write/apply_patch
+# 전 명령을 차단하므로, 여기서 usable 후보를 찾아 가용성 회귀를 막는다. mktemp 가 새 격리
 # 디렉토리를 만드는 것은 동일하므로 pinning 검사의 보안 경계는 그대로 유지된다.
 hook_init_scan_dir() {
   local prefix="${1:-hook-scan}"
-  local base="${TMPDIR:-/tmp}"
-  if [ ! -d "$base" ] || [ ! -w "$base" ]; then
-    base=/tmp
+  local requested_base="${TMPDIR:-}"
+  local cache_base=""
+  local base out
+
+  if [ -n "${XDG_CACHE_HOME:-}" ]; then
+    cache_base="$XDG_CACHE_HOME/codex-hooks/tmp"
+  elif [ -n "${HOME:-}" ]; then
+    cache_base="$HOME/.cache/codex-hooks/tmp"
   fi
-  mktemp -d "$base/${prefix}-XXXXXX"
+
+  for base in "$requested_base" /tmp /var/tmp "${XDG_RUNTIME_DIR:-}" "$cache_base"; do
+    [ -n "$base" ] || continue
+    if [ ! -d "$base" ]; then
+      if [ -n "$cache_base" ] && [ "$base" = "$cache_base" ]; then
+        mkdir -p "$base" 2>/dev/null || continue
+      else
+        continue
+      fi
+    fi
+    [ -w "$base" ] || continue
+    if out=$(mktemp -d "$base/${prefix}-XXXXXX" 2>/dev/null); then
+      printf '%s\n' "$out"
+      return 0
+    fi
+  done
+  return 1
 }
 
 # hook_parse_tool_name
