@@ -15,7 +15,9 @@ OWNERSHIP POLICY (recursive, leaf-level)
   template on each activation, and compared by `check` mode.
 * User-owned: everything the template does NOT declare at the same path —
   sibling leaves inside the same table, and any top-level key absent from the
-  template (`[projects.*]`, future Codex CLI tables). Preserved verbatim.
+  template (`[projects.*]`, future Codex CLI tables). Preserved semantically;
+  the rare out-of-order `hooks` repair may normalize that subtree while keeping
+  user-owned values.
 
 On a same-path conflict the template ALWAYS wins. Checker and writer share the
 `_walk_template_leaves` iterator so their ownership judgement cannot drift.
