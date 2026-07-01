@@ -135,6 +135,7 @@ if codex_config_tomlkit_available; then
   run_test "codex-config check fixtures" test_codex_config_check_fixtures
   run_test "codex-config merge_template_into unit" test_codex_config_merge_template_into_unit
   run_test "codex-config collect_drift unit" test_codex_config_collect_drift_unit
+  run_test "codex-config repair semantic parse lazy unit" test_codex_config_repair_semantic_parse_is_lazy_unit
 else
   echo "==> codex-config fixtures: SKIPPED (tomlkit 미가용; 'nix shell .#pythonWithTomlkit --command bash tests/run-shell-script-tests.sh'로 전건 실행 권장; pre-push hook은 자동 wrap됨)" >&2
 fi

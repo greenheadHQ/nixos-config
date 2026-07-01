@@ -276,15 +276,14 @@ def load_optional_toml_with_semantic(path: Path, *, quarantine: bool):
         text = raw.decode("utf-8")
     except UnicodeDecodeError as e:
         return _quarantine(f"not valid UTF-8 ({e})")
-    plain = _parse_plain_toml_best_effort(text)
     try:
-        return tomlkit.parse(text), plain
+        return tomlkit.parse(text), text
     except Exception as e:
         return _quarantine(f"TOML parse failed ({e})")
 
 
 def load_optional_toml(path: Path, *, quarantine: bool):
-    parsed, _plain = load_optional_toml_with_semantic(path, quarantine=quarantine)
+    parsed, _semantic_text = load_optional_toml_with_semantic(path, quarantine=quarantine)
     return parsed
 
 
@@ -333,15 +332,14 @@ def load_target_for_check_with_semantic(path: Path):
         text = data.decode("utf-8")
     except UnicodeDecodeError as e:
         die(f"target not valid UTF-8 ({path}): {e}")
-    plain = _parse_plain_toml_best_effort(text)
     try:
-        return tomlkit.parse(text), plain
+        return tomlkit.parse(text), text
     except Exception as e:
         die(f"target parse failed ({path}): {e}")
 
 
 def load_target_for_check(path: Path):
-    target, _plain = load_target_for_check_with_semantic(path)
+    target, _semantic_text = load_target_for_check_with_semantic(path)
     return target
 
 
@@ -446,20 +444,24 @@ def _needs_hooks_root_repair(doc) -> bool:
         raise
 
 
-def repair_out_of_order_hooks_root(result, plain_existing: Optional[dict], *, log_message: str) -> None:
+def repair_out_of_order_hooks_root(result, semantic_text: Optional[str], *, log_message: str) -> None:
     """Rebuild a tomlkit-hostile hooks root without deciding ownership.
 
     tomlkit can parse valid TOML where the same hooks event array appears in
     separate out-of-order groups, but later access to the parent `hooks` table can
     fail while constructing an OutOfOrderTableProxy.  On that rare shape we
-    rebuild only the `hooks` root from the stdlib parser's semantic view.  The
-    existing leaf-level ownership policy remains centralized in
-    merge_template_into() and collect_drift().
+    lazily parse the same safely-read text with the stdlib parser and rebuild
+    only the `hooks` root from that semantic view.  The existing leaf-level
+    ownership policy remains centralized in merge_template_into() and
+    collect_drift().
     """
     if not _needs_hooks_root_repair(result):
         return
-    if plain_existing is None:
+    if semantic_text is None:
         die("hooks table is not accessible and semantic fallback is unavailable")
+    plain_existing = _parse_plain_toml_best_effort(semantic_text)
+    if plain_existing is None:
+        die("hooks table is not accessible and semantic fallback parse failed")
 
     plain_hooks = plain_existing.get("hooks")
     if not isinstance(plain_hooks, dict):
@@ -732,7 +734,7 @@ def cmd_sync(template_path: Path, target_path: Path) -> int:
 
 def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
     template = load_required_toml(template_path)
-    existing, plain_existing = load_optional_toml_with_semantic(target_path, quarantine=True)
+    existing, semantic_text = load_optional_toml_with_semantic(target_path, quarantine=True)
 
     if template.get("projects") is not None:
         # template이 projects를 선언하면 정책 위반이라 경고만 남기고 무시.
@@ -743,7 +745,7 @@ def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
     repair_reserved_roots(result)
     repair_out_of_order_hooks_root(
         result,
-        plain_existing,
+        semantic_text,
         log_message="repaired out-of-order hooks table before template merge",
     )
 
@@ -782,7 +784,7 @@ def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
 def cmd_check(template_path: Path, target_path: Path) -> int:
     _require_tomlkit()
     template = load_required_toml(template_path)
-    target, plain_target = load_target_for_check_with_semantic(target_path)
+    target, semantic_text = load_target_for_check_with_semantic(target_path)
 
     if target is None:
         output = {
@@ -801,7 +803,7 @@ def cmd_check(template_path: Path, target_path: Path) -> int:
 
     repair_out_of_order_hooks_root(
         target,
-        plain_target,
+        semantic_text,
         log_message="normalized out-of-order hooks table in memory for drift check",
     )
 

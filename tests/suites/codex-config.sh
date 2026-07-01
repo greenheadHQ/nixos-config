@@ -83,6 +83,29 @@ PY
   assert_contains "$output" "DRIFT_OK"
 }
 
+test_codex_config_repair_semantic_parse_is_lazy_unit() {
+  # tomllib semantic fallback은 tomlkit이 hooks 루트 접근에 실패하는 rare path에서만
+  # 사용한다. 정상 target에서는 activation/check마다 이중 parse를 하지 않는다.
+  local output
+  output=$(
+    python3 - "$CODEX_CONFIG_SCRIPT" <<'PY' 2>&1
+import importlib.util, sys, tomlkit
+spec = importlib.util.spec_from_file_location("sync_codex_config", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+def fail_parse(_text):
+    raise AssertionError("semantic fallback parser should not run on accessible hooks root")
+
+m._parse_plain_toml_best_effort = fail_parse
+doc = tomlkit.parse('[hooks.state."runtime"]\nenabled = true\n')
+m.repair_out_of_order_hooks_root(doc, None, log_message="unused")
+assert doc["hooks"]["state"]["runtime"]["enabled"] is True
+print("LAZY_REPAIR_OK")
+PY
+  )
+  assert_contains "$output" "LAZY_REPAIR_OK"
+}
+
 test_codex_config_sync_fixtures() {
   local scenario sandbox template existing expected actual rc
   for scenario in sync_basic_merge sync_malformed_root sync_malformed_toml_quarantine sync_quoted_dotted_key sync_out_of_order_hooks_duplicate; do
