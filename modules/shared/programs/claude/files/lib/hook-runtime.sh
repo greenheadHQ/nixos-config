@@ -67,9 +67,21 @@ hook_load_lib() {
 #
 # stdout: 생성된 디렉토리 path.
 # exit code: 0 (성공) / 1 (실패).
+#
+# TMPDIR fallback: ${TMPDIR:-/tmp} 는 TMPDIR 이 unset/empty 일 때만 /tmp 로 fallback 한다.
+# 그러나 codex 가 자식 프로세스에 상속시키는 ~/.codex/tmp/... 세션 임시경로처럼 TMPDIR 이
+# "set 이지만 이미 삭제됐거나 쓰기 불가" 인 경우 (set-but-unusable) 는 fallback 되지 않아
+# `mktemp -d "$TMPDIR/..."` 가 부모 부재로 실패한다. pinning-guard 는 이 실패를 fail-closed 로
+# 처리해 Bash/Edit/Write/apply_patch 전 명령을 차단하므로, 여기서 base 가 실제 사용 가능한
+# 디렉토리인지 확인하고 아니면 /tmp 로 fallback 해 가용성 회귀를 막는다. mktemp 가 새 격리
+# 디렉토리를 만드는 것은 동일하므로 pinning 검사의 보안 경계는 그대로 유지된다.
 hook_init_scan_dir() {
   local prefix="${1:-hook-scan}"
-  mktemp -d "${TMPDIR:-/tmp}/${prefix}-XXXXXX"
+  local base="${TMPDIR:-/tmp}"
+  if [ ! -d "$base" ] || [ ! -w "$base" ]; then
+    base=/tmp
+  fi
+  mktemp -d "$base/${prefix}-XXXXXX"
 }
 
 # hook_parse_tool_name
