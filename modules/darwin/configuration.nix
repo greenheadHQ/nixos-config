@@ -239,7 +239,7 @@ in
     #   184: 스크린샷 도구모음
     #
     # parameters: [ ASCII/keyCode, virtualKeyCode, modifierFlags ]
-    #   modifierFlags: Shift+Cmd=1179648, Ctrl+Shift+Cmd=1441792, Fn=8388608, Opt+Cmd=1572864
+    #   modifierFlags: Shift+Cmd=1179648, Ctrl+Shift+Cmd=1441792, Opt=524288, Fn=8388608, Opt+Cmd=1572864
 
     # --- 스크린샷 (Shottr 연동) ---
     # Shottr 호환: disabled 항목에 반드시 value 블록을 포함해야 macOS WindowServer가
@@ -323,10 +323,17 @@ in
         }
       }'
 
-    # --- Spotlight (Raycast 사용으로 비활성화) ---
-    # 64: Spotlight 검색 (⌘Space) — 비활성화
+    # --- Spotlight ---
+    # 64: Spotlight 검색 (⌥Space) — 활성화 (Raycast 장애 시 fallback)
     ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
-      "64" '${mkDisabledNoValue}'
+      "64" '${
+        mkHotkey {
+          enabled = true;
+          ascii = 32;
+          keyCode = 49;
+          modifiers = 524288;
+        }
+      }'
     # 65: Finder 검색 윈도우 (⌥⌘Space) — 활성화
     ${asUser} defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add \
       "65" '${

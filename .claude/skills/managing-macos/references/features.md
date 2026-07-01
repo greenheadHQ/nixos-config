@@ -228,10 +228,10 @@ Staleness 방지: `rebuild-common.sh`의 `@flakePath@`는 `nixosConfigDefaultPat
 
 Spotlight 설정:
 
-| ID  | 단축키  | 기능               | 상태                    |
-| --- | ------- | ------------------ | ----------------------- |
-| 64  | ⌘Space  | Spotlight 검색     | 비활성화 (Raycast 사용) |
-| 65  | ⌥⌘Space | Finder 검색 윈도우 | 활성화                  |
+| ID  | 단축키  | 기능               | 상태                             |
+| --- | ------- | ------------------ | -------------------------------- |
+| 64  | ⌥Space  | Spotlight 검색     | 활성화 (Raycast 장애 시 fallback) |
+| 65  | ⌥⌘Space | Finder 검색 윈도우 | 활성화                           |
 
 Mission Control 설정:
 
