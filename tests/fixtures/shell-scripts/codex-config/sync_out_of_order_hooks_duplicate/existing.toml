@@ -1,0 +1,25 @@
+model = "old-model"
+
+[[hooks.PreToolUse]]
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/tmp/user-pretooluse-old.sh"
+
+[mcp_servers.user]
+command = "/tmp/user-mcp.sh"
+
+[hooks.state."/tmp/config.toml:pre_tool_use:0:0"]
+enabled = true
+
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "/tmp/user-sessionstart-preserved.sh"
+
+[[hooks.PreToolUse]]
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/tmp/user-pretooluse-duplicate.sh"

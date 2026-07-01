@@ -100,6 +100,7 @@ import re
 import stat
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import Any, Iterator, NoReturn, Optional
 
@@ -392,6 +393,77 @@ def _set_at_path(doc, path_segments: tuple[str, ...], value) -> None:
     cur[path_segments[-1]] = copy.deepcopy(value)
 
 
+def _to_tomlkit(value):
+    if isinstance(value, dict):
+        table = tomlkit.table()
+        for key, item in value.items():
+            table[key] = _to_tomlkit(item)
+        return table
+    if isinstance(value, list):
+        return [_to_tomlkit(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _load_plain_toml(path: Path) -> Optional[dict]:
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except (FileNotFoundError, OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _tomlkit_key_already_present(exc: Exception) -> bool:
+    return exc.__class__.__name__ == "KeyAlreadyPresent"
+
+
+def _needs_hooks_root_repair(doc) -> bool:
+    try:
+        if "hooks" not in doc:
+            return False
+        doc["hooks"]
+        return False
+    except Exception as exc:
+        if _tomlkit_key_already_present(exc):
+            return True
+        raise
+
+
+def repair_out_of_order_hooks_root(result, template, plain_existing: Optional[dict]) -> None:
+    """Rebuild a tomlkit-hostile hooks root while preserving user-owned hook keys.
+
+    tomlkit can parse valid TOML where the same hooks event array appears in
+    separate out-of-order groups, but later access to the parent `hooks` table can
+    fail while constructing an OutOfOrderTableProxy.  The sync policy already says
+    template-declared events are template-owned, so on that rare shape we rebuild
+    only the `hooks` root from the stdlib parser's semantic view: undeclared hook
+    keys survive, declared event arrays are left for merge_template_into().
+    """
+    if not _needs_hooks_root_repair(result):
+        return
+    if plain_existing is None:
+        raise RuntimeError("hooks table is not accessible and semantic fallback is unavailable")
+
+    plain_hooks = plain_existing.get("hooks")
+    if not isinstance(plain_hooks, dict):
+        del result["hooks"]
+        return
+
+    template_hooks = template.get("hooks")
+    template_owned = set(template_hooks.keys()) if _is_table(template_hooks) else set()
+
+    rebuilt = tomlkit.table()
+    for key, value in plain_hooks.items():
+        if key in template_owned:
+            continue
+        rebuilt[key] = _to_tomlkit(value)
+
+    del result["hooks"]
+    if rebuilt:
+        result["hooks"] = rebuilt
+    log("repaired out-of-order hooks table before template merge")
+
+
 _BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -648,6 +720,7 @@ def cmd_sync(template_path: Path, target_path: Path) -> int:
 
 def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
     template = load_required_toml(template_path)
+    plain_existing = _load_plain_toml(target_path)
     existing = load_optional_toml(target_path, quarantine=True)
 
     if template.get("projects") is not None:
@@ -657,6 +730,7 @@ def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
 
     result = copy.deepcopy(existing)
     repair_reserved_roots(result)
+    repair_out_of_order_hooks_root(result, template, plain_existing)
 
     template_clone = copy.deepcopy(template)
     if "projects" in template_clone:

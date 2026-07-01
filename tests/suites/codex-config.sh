@@ -85,7 +85,7 @@ PY
 
 test_codex_config_sync_fixtures() {
   local scenario sandbox template existing expected actual rc
-  for scenario in sync_basic_merge sync_malformed_root sync_malformed_toml_quarantine sync_quoted_dotted_key; do
+  for scenario in sync_basic_merge sync_malformed_root sync_malformed_toml_quarantine sync_quoted_dotted_key sync_out_of_order_hooks_duplicate; do
     local dir="$CODEX_CONFIG_FIXTURE_DIR/$scenario"
     [[ -d "$dir" ]] || fail "sync fixture missing: $dir"
     sandbox=$(new_sandbox)
