@@ -19,6 +19,7 @@
   011이 이 테스트의 기대값을 갱신해야 함)
 - **Category**: tests
 - **Planned at**: commit `fb2a8aa6`, 2026-07-02
+- **Issue**: https://github.com/greenheadHQ/nixos-config/issues/952
 
 ## Why this matters
 

@@ -17,6 +17,7 @@
 - **Depends on**: none (plan 005 spike 보고서가 먼저 있으면 유지보수 창 절에서 참조)
 - **Category**: direction
 - **Planned at**: commit `fb2a8aa6`, 2026-07-02
+- **Issue**: https://github.com/greenheadHQ/nixos-config/issues/953
 
 ## Why this matters
 

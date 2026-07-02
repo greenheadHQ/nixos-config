@@ -21,6 +21,7 @@
 - **Depends on**: none (Plan 001과 파일 겹침 없음 — 001은 문서만)
 - **Category**: tests
 - **Planned at**: commit `fb2a8aa6`, 2026-07-02
+- **Issue**: https://github.com/greenheadHQ/nixos-config/issues/941
 
 ## Why this matters
 

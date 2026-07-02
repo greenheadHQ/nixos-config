@@ -19,6 +19,7 @@
   사용 — 둘 다 DONE 후 착수)
 - **Category**: direction
 - **Planned at**: commit `fb2a8aa6`, 2026-07-02
+- **Issue**: https://github.com/greenheadHQ/nixos-config/issues/954
 
 ## Why this matters
 

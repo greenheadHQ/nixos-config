@@ -17,6 +17,7 @@
 - **Depends on**: plans/007-maint-flock-timeout.md (같은 파일·같은 suite를 만지므로 먼저 머지 권장 — soft)
 - **Category**: tests
 - **Planned at**: commit `fb2a8aa6`, 2026-07-02
+- **Issue**: https://github.com/greenheadHQ/nixos-config/issues/946
 
 ## Why this matters
 

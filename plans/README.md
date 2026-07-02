@@ -3,8 +3,9 @@
 improve 스킬이 2026-07-02 (commit `fb2a8aa6`) 기준 전 저장소 감사(standard 깊이:
 correctness/security very thorough, 나머지 카테고리 medium)에서 생성했다.
 최초 leverage 상위 5건(001–005)에 더해, 운영자 지시로 backlog 전체와
-direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic GitHub 이슈의
-sub-issue로 등록된다 (Issue 열).
+direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
+[#937](https://github.com/greenheadHQ/nixos-config/issues/937)의 sub-issue로
+등록되어 있다 (Issue 열).
 
 각 executor: plan 파일을 끝까지 읽고 시작하고, STOP conditions를 존중하고,
 끝나면 자기 행의 Status를 갱신한다.
@@ -13,24 +14,24 @@ sub-issue로 등록된다 (Issue 열).
 
 | Plan | Title | Priority | Effort | Depends on | Issue | Status |
 |------|-------|----------|--------|------------|-------|--------|
-| 001 | Immich DB 재해복구 문서를 백업 이원 구조에 맞게 정정 | P1 | S | — | — | TODO |
-| 002 | karakeep webhook 브리지 비특권·sandbox·인증 하드닝 | P1 | M | — | — | TODO |
-| 003 | log-monitor 상태/큐 재작성 same-fs 원자적 교체 | P1 | S | — | — | TODO |
-| 004 | 백업 스크립트 추출 + 특성화 테스트 | P2 | M | — | — | TODO |
-| 005 | Immich DB(pgvecto-rs) 마이그레이션 spike (조사 전용) | P2 | M | — | — | TODO |
-| 006 | gitleaks `.local.md` 전면 예외 제거 → gitignore 대체 | P2 | S | — | — | TODO |
-| 007 | codex-remote-control-maint flock 타임아웃 부여 | P2 | S | — | — | TODO |
-| 008 | 완료 PRD 상태 정정 + 아카이브 관례 적용 | P3 | S | — | — | TODO |
-| 009 | maint sync/알림 상태전이 특성화 테스트 | P3 | S | 007 (soft) | — | TODO |
-| 010 | verify-ai-compat lint 엔진 분리 + host-state 테스트 | P2 | M | — | — | TODO |
-| 011 | Pushover 전송 플랫폼 공용 헬퍼 통합 | P3 | M | — | — | TODO |
-| 012 | claude 훅 hook-runtime 파서 채택 확대 | P3 | M | — | — | TODO |
-| 013 | Karakeep 파이프라인 헬퍼(fallback-sync·bridge) 테스트 | P3 | M | — | — | TODO |
-| 014 | Karakeep CSP 전면 제거를 아카이브 경로로 한정 | P3 | M | — | — | TODO |
-| 015 | folder-actions 공유 lib 특성화 테스트 (1단계) | P3 | L | 011 (soft) | — | TODO |
-| 016 | 홈서버 백업/복구 자세 설계 spike | P2 | M | — | — | TODO |
-| 017 | 유지보수 창 3작업 묶음 실행 계획서 | P3 | S | 005, 016 (hard) | — | TODO |
-| 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | — | TODO |
+| 001 | Immich DB 재해복구 문서를 백업 이원 구조에 맞게 정정 | P1 | S | — | #938 | TODO |
+| 002 | karakeep webhook 브리지 비특권·sandbox·인증 하드닝 | P1 | M | — | #939 | TODO |
+| 003 | log-monitor 상태/큐 재작성 same-fs 원자적 교체 | P1 | S | — | #940 | TODO |
+| 004 | 백업 스크립트 추출 + 특성화 테스트 | P2 | M | — | #941 | TODO |
+| 005 | Immich DB(pgvecto-rs) 마이그레이션 spike (조사 전용) | P2 | M | — | #942 | TODO |
+| 006 | gitleaks `.local.md` 전면 예외 제거 → gitignore 대체 | P2 | S | — | #943 | TODO |
+| 007 | codex-remote-control-maint flock 타임아웃 부여 | P2 | S | — | #944 | TODO |
+| 008 | 완료 PRD 상태 정정 + 아카이브 관례 적용 | P3 | S | — | #945 | TODO |
+| 009 | maint sync/알림 상태전이 특성화 테스트 | P3 | S | 007 (soft) | #946 | TODO |
+| 010 | verify-ai-compat lint 엔진 분리 + host-state 테스트 | P2 | M | — | #947 | TODO |
+| 011 | Pushover 전송 플랫폼 공용 헬퍼 통합 | P3 | M | — | #948 | TODO |
+| 012 | claude 훅 hook-runtime 파서 채택 확대 | P3 | M | — | #949 | TODO |
+| 013 | Karakeep 파이프라인 헬퍼(fallback-sync·bridge) 테스트 | P3 | M | — | #950 | TODO |
+| 014 | Karakeep CSP 전면 제거를 아카이브 경로로 한정 | P3 | M | — | #951 | TODO |
+| 015 | folder-actions 공유 lib 특성화 테스트 (1단계) | P3 | L | 011 (soft) | #952 | TODO |
+| 016 | 홈서버 백업/복구 자세 설계 spike | P2 | M | — | #953 | TODO |
+| 017 | 유지보수 창 3작업 묶음 실행 계획서 | P3 | S | 005, 016 (hard) | #954 | TODO |
+| 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | #955 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

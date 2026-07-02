@@ -17,6 +17,7 @@
 - **Depends on**: none
 - **Category**: tech-debt
 - **Planned at**: commit `fb2a8aa6`, 2026-07-02
+- **Issue**: https://github.com/greenheadHQ/nixos-config/issues/949
 
 ## Why this matters
 
