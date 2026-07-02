@@ -14,7 +14,7 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 
 | Plan | Title | Priority | Effort | Depends on | Issue | Status |
 |------|-------|----------|--------|------------|-------|--------|
-| 001 | Immich DB 재해복구 문서를 백업 이원 구조에 맞게 정정 | P1 | S | — | #938 | TODO |
+| 001 | Immich DB 재해복구 문서를 백업 이원 구조에 맞게 정정 | P1 | S | — | #938 | DONE |
 | 002 | karakeep webhook 브리지 비특권·sandbox·인증 하드닝 | P1 | M | — | #939 | TODO |
 | 003 | log-monitor 상태/큐 재작성 same-fs 원자적 교체 | P1 | S | — | #940 | DONE |
 | 004 | 백업 스크립트 추출 + 특성화 테스트 | P2 | M | — | #941 | TODO |
