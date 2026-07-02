@@ -57,7 +57,7 @@ should_notify_url() {
     return 1
   fi
 
-  tmp=$(mktemp)
+  tmp=$(mktemp -p "$(dirname "$NOTIFY_STATE_FILE")")
   awk -F '\t' -v key="$url" '$1 != key { print }' "$NOTIFY_STATE_FILE" > "$tmp"
   printf "%s\t%s\n" "$url" "$now" >> "$tmp"
   mv "$tmp" "$NOTIFY_STATE_FILE"
@@ -87,7 +87,7 @@ enqueue_failed_url() {
   fi
 
   printf "%s\n" "$failed_url" >> "$FAILED_URL_QUEUE_FILE" || rc=1
-  tmp=$(mktemp)
+  tmp=$(mktemp -p "$(dirname "$FAILED_URL_QUEUE_FILE")")
   if [ "$rc" -eq 0 ]; then
     if ! tail -n "$FAILED_URL_QUEUE_MAX" "$FAILED_URL_QUEUE_FILE" > "$tmp"; then
       rc=1
