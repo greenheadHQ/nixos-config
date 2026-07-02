@@ -32,6 +32,15 @@
       };
     };
 
+    immichOriginalsMirror = {
+      enable = lib.mkEnableOption "Immich originals daily rsync mirror to HDD";
+      mirrorTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 04:30:00";
+        description = "OnCalendar time for daily originals mirror";
+      };
+    };
+
     uptimeKuma = {
       enable = lib.mkEnableOption "Uptime Kuma monitoring service";
       port = lib.mkOption {
@@ -201,6 +210,7 @@
     ../programs/copyparty-update # Copyparty 버전 체크 및 업데이트
     ../programs/docker/copyparty.nix # Copyparty 파일 서버
     ../programs/docker/immich-backup.nix # Immich PostgreSQL 매일 백업
+    ../programs/docker/immich-originals-mirror.nix # Immich 원본 사진/영상 HDD 일일 미러
     ../programs/docker/karakeep.nix # Karakeep 웹 아카이버/북마크 관리 (3컨테이너)
     ../programs/docker/karakeep-backup.nix # Karakeep SQLite 매일 백업
     ../programs/docker/karakeep-notify.nix # Karakeep 웹훅→Pushover 브리지
