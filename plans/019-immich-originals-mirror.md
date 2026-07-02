@@ -17,7 +17,7 @@
 - **Depends on**: none (plan 004의 테스트 인프라가 있으면 좋으나 hard 아님)
 - **Category**: bug (데이터 보존 결함 시정)
 - **Planned at**: commit `6a1ef4ef`, 2026-07-02
-- **Issue**: (등록 시 기입)
+- **Issue**: https://github.com/greenheadHQ/nixos-config/issues/961
 
 ## Why this matters
 

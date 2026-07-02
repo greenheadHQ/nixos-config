@@ -32,8 +32,8 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 | 016 | 홈서버 백업/복구 자세 설계 spike | P2 | M | — | #953 | DONE |
 | 017 | 유지보수 창 3작업 묶음 실행 계획서 | P3 | S | 005, 016 (hard) | #954 | DONE |
 | 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | #955 | TODO |
-| 019 | Immich 원본 사진 HDD 일일 미러 (016 추천 A 구현) | P1 | M | — | — | TODO |
-| 020 | 소용량 데이터 restic→R2 오프사이트 백업 (016 추천 B 구현) | P2 | M-L | 운영자 사전 준비 (R2/1Password) | — | TODO |
+| 019 | Immich 원본 사진 HDD 일일 미러 (016 추천 A 구현) | P1 | M | — | #961 | TODO |
+| 020 | 소용량 데이터 restic→R2 오프사이트 백업 (016 추천 B 구현) | P2 | M-L | 운영자 사전 준비 (R2/1Password) | #962 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

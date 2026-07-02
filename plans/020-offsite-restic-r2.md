@@ -18,7 +18,7 @@
 - **Depends on**: **운영자 선행 절차 (아래 "운영자 사전 준비" — 미완이면 착수 불가)**
 - **Category**: enhancement (백업 자세 — 016 추천 (B) 구현)
 - **Planned at**: commit `6a1ef4ef`, 2026-07-02
-- **Issue**: (등록 시 기입)
+- **Issue**: https://github.com/greenheadHQ/nixos-config/issues/962
 
 ## Why this matters
 
