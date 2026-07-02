@@ -135,7 +135,7 @@ in
     # Machine Learning (CPU 버전 - 안정성 우선)
     # ═══════════════════════════════════════════════════════════════
     virtualisation.oci-containers.containers.immich-ml = {
-      image = "ghcr.io/immich-app/immich-machine-learning:v2.6.1";
+      image = "ghcr.io/immich-app/immich-machine-learning:v3.0.0";
       autoStart = true;
       volumes = [ "${dockerData}/immich/ml-cache:/cache" ];
       environment = {
@@ -155,7 +155,7 @@ in
     # DB_PASSWORD_FILE: Immich 공식 지원 환경변수
     # 시크릿 파일을 볼륨 마운트하여 컨테이너 내부에서 읽음
     virtualisation.oci-containers.containers.immich-server = {
-      image = "ghcr.io/immich-app/immich-server:v2.6.1";
+      image = "ghcr.io/immich-app/immich-server:v3.0.0";
       autoStart = true;
       ports = [ "127.0.0.1:${toString cfg.port}:2283" ];
       volumes = [
