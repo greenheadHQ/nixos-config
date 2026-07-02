@@ -60,6 +60,7 @@ let
   macSshKeyB64 = lib.elemAt (lib.splitString " " constants.sshDeviceKeys.macSsh) 1; # 공개키 가운데 base64 (nix가 split)
   opLaunchCmd = "/usr/bin/open ${lib.escapeShellArgs constants.onePassword.openArgs}"; # 1Password 백그라운드 기동(절대경로)
   minipcHostIP = constants.network.minipcTailscaleIP; # ssh -G effective hostname 판정 기준
+  emergencyHost = "minipc-emergency"; # ssh config host alias(modules/darwin/programs/ssh) — 1Password 장애 fallback 안내 단일 소스
 in
 {
   # macOS용 스크립트 설치
@@ -174,11 +175,16 @@ in
         # IdentityAgent 전체 값(공백 포함 경로)을 추출해 1Password socket과 정확 비교한다.
         _ident=$(print -r -- "$_cfg" | awk 'tolower($1)=="identityagent"{sub(/^[^ ]+[ ]+/, ""); print; exit}')
         if [[ "$_host" == "${minipcHostIP}" && "$_ident" == "${opAgentSock}" ]]; then
-          # 현재 호출의 effective ControlPath에 활성 master가 있으면 새 인증 불필요 → 통과.
+          # 현재 호출의 effective ControlPath에 활성 master가 있으면 새 인증(서명)이 불필요하다.
           # 사용자 "$@"를 -O check에 직접 넘기면 -W/-O와 충돌하므로 effective ControlPath만 -S로 쓴다.
+          # master 활성 여부를 1회 계산해 preflight와 후처리 진단이 공유한다(-O check 중복 호출 방지).
           _cpath=$(print -r -- "$_cfg" | awk 'tolower($1)=="controlpath"{sub(/^[^ ]+[ ]+/, ""); print; exit}')
           local _sock="${opAgentSock}" _b64="${macSshKeyB64}"
-          if { [[ -z "$_cpath" || "$_cpath" == none ]] || ! command ssh -O check -S "$_cpath" "${minipcHostIP}" 2>/dev/null; } \
+          local _master_active=0
+          if [[ -n "$_cpath" && "$_cpath" != none ]] && command ssh -O check -S "$_cpath" "${minipcHostIP}" 2>/dev/null; then
+            _master_active=1
+          fi
+          if (( ! _master_active )) \
             && ! SSH_AUTH_SOCK="$_sock" ssh-add -L 2>/dev/null | grep -qF "$_b64"; then
             # Touch ID 잠금 해제 대기 상한(초) — interactive shell을 오래 막지 않도록. tries = timeout / interval.
             local _poll_interval=0.5 _timeout_seconds=15
@@ -186,17 +192,40 @@ in
             print -u2 "⚠️  ssh minipc 차단: 1Password SSH agent에 mac-ssh 키가 없습니다."
             print -u2 "   원인: 1Password 데스크탑이 미실행/잠금 상태 → mac-ssh 키 미제공."
             print -u2 "   조치: 1Password를 기동합니다 — Touch ID로 잠금 해제하세요."
-            print -u2 "   대안: 즉시 접속이 필요하면  ssh minipc-emergency  (passphrase 직접 입력)."
+            print -u2 "   대안: 즉시 접속이 필요하면  ssh ${emergencyHost}  (passphrase 직접 입력)."
             ${opLaunchCmd} 2>/dev/null
             local _i=0
             while ! SSH_AUTH_SOCK="$_sock" ssh-add -L 2>/dev/null | grep -qF "$_b64"; do
               if (( ++_i > _max_tries )); then
-                print -u2 "   ✗ agent 복구 대기 초과(''${_timeout_seconds}s). 잠금 해제 후 재시도하거나 ssh minipc-emergency 사용."
+                print -u2 "   ✗ agent 복구 대기 초과(''${_timeout_seconds}s). 잠금 해제 후 재시도하거나 ssh ${emergencyHost} 사용."
                 return 1
               fi
               sleep $_poll_interval
             done
             print -u2 "   ✓ agent 복구됨 — 접속합니다."
+          fi
+
+          # ── 후처리 진단(신규): agent 목록엔 있으나 sign만 실패하는 사각지대 안내 ──
+          # 1Password가 "목록은 제공하나 서명(sign)에만 실패"하는 상태(앱 잠금/hang, 서명 승인
+          # 미처리)에서 ssh minipc가 실패하면, raw ssh의 에러만으로는 원인이 1Password인지 알기
+          # 어렵다. 여기에 원인 후보와 복구 경로를 덧붙인다.
+          #
+          # 설계: stderr를 캡처하지 않는다. command ssh를 원본 그대로 실행하므로 hang(procsubst/
+          # ControlPersist master fd 상속)·원격 stderr multiplex 오탐·실시간성 손실·임시파일이
+          # 구조적으로 없다(캡처 기반 접근이 반복 회귀를 낸 뒤의 단순화). 다만 stderr를 읽지 않으므로
+          # "서명 실패"를 단정하지 않고 원인 후보를 제시한다. ssh 클라이언트 레벨 실패(exit 255: 연결·
+          # 인증 계열)에만 발화하며, 원격 명령의 정상 실패는 그 명령의 exit code(≠255)로 전파되어
+          # 여기 걸리지 않는다. master 재사용(_master_active) 경로는 서명이 없어 제외한다.
+          if (( ! _master_active )); then
+            local _rc
+            command ssh "$@"
+            _rc=$?
+            if (( _rc == 255 )); then
+              print -u2 "✗ ssh minipc 실패(exit 255 — 원인은 위 stderr 참조)."
+              print -u2 "   1Password SSH agent 서명 실패라면: 1Password 완전 재시작(Cmd+Q → 재실행 → Touch ID 잠금 해제) 후 재시도."
+              print -u2 "   그래도 안 되면(서버측 키 문제 등): ssh ${emergencyHost}  (passphrase 직접 입력)."
+            fi
+            return $_rc
           fi
         fi
         command ssh "$@"
