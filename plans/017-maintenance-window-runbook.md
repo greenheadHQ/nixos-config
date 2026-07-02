@@ -230,10 +230,12 @@
 - **작업 C (#917 실경로 검증)**: **미실행** — 시작 조건 미충족(update-orchestrator
   미구현; #917 리팩토링 자체가 선행). #917 구현 후 별도 창(또는 저위험이라
   단독 창)에서 실행.
-- **부수 발견**: agenix `immich-api-key`가 Immich에서 401(Invalid API key) —
-  스마트 검색 API 호출 검증은 DB 레벨 벡터 검색으로 대체 충족. 이 키의 소비자
-  실태 확인·재발급은 별도 후속(`/api/server/version`은 무인증이라 version-check
-  무영향).
+- **부수 발견 (정정: 오탐)**: 창 중 스마트 검색 API가 401을 반환했으나, 원인은
+  검증 방식 오류였다 — agenix `immich-api-key`는 `IMMICH_API_KEY=<값>` 셸 할당
+  형식(소비자들이 `source`로 로드)인데 파일 전체를 raw 키로 헤더에 넣었던 것.
+  올바른 로드로 재검증 시 smart-search·albums 모두 200 (v3에서 확인). 키 유효,
+  immich-cleanup도 정상 동작 중(직전 실행 Success/Failed: 0). 재발급 불필요.
+  교훈: agenix 시크릿 검증 시 소비자와 동일한 로드 방식을 쓸 것.
 - **후속**: 안정화(수일) 후 경량 태그 `16-vectorchord0.4.3` 재전환 검토(선택,
   005 §1.3).
 - **연장 작업 — Immich 서버 v3.0.0 업그레이드 (같은 날, 운영자 승인)**: breaking
