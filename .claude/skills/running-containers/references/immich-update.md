@@ -81,16 +81,30 @@ Immich 서버가 `127.0.0.1`에만 바인딩되어 있으므로, Tailscale IP로
 
 ## DB 백업/복원
 
+Immich DB 백업은 두 계층으로 나뉜다. disko 재설치는 NVMe(`/dev/nvme0n1`)만 포맷하고 HDD(`/dev/sda`)는 보존하므로(`hosts/greenhead-minipc/disko.nix`), 재해복구 시점에 살아남는 것은 HDD에 쌓인 일일 백업뿐이다.
+
+| 계층 | 포맷 | 위치 | 보관 | 재설치 시 | 복원 방법 |
+|------|------|------|------|-----------|-----------|
+| 일일 백업 | `pg_dump -Fc` 커스텀 포맷 `.dump` | `/mnt/data/backups/immich/` (HDD) | 기본 30일 (`homeserver.immichBackup.retentionDays`) | 생존 | `pg_restore` 필요 |
+| 업데이트 직전 백업 | `pg_dump \| gzip` 평문 SQL `.sql.gz` | `/var/lib/immich-update/backups/` (SSD) | 7일 | 소멸 | `gunzip \| psql` |
+
+> `.dump`(커스텀 포맷)와 `.sql.gz`(평문 SQL)는 복원 명령이 서로 다르다. 아래 절차를 파일 종류에 맞게 골라 쓴다.
+
 ### 백업 위치
 
 ```
-/var/lib/immich-update/backups/
+/var/lib/immich-update/backups/        # SSD - 업데이트 직전 (.sql.gz, 7일, 재설치 시 소멸)
 ├── backup-20260206-030000.sql.gz
 ├── backup-20260207-030000.sql.gz
 └── ...
+
+/mnt/data/backups/immich/              # HDD - 일일 (.dump, 재설치 후에도 생존)
+├── immich-db-2026-02-06_030000.dump
+├── immich-db-2026-02-07_030000.dump
+└── ...
 ```
 
-### 수동 복원
+### 수동 복원 — 업데이트 직전 백업 (`.sql.gz`)
 
 ```bash
 # 1. Immich 서비스 중지
@@ -102,6 +116,26 @@ gunzip -c /var/lib/immich-update/backups/backup-YYYYMMDD-HHMMSS.sql.gz | \
 
 # 3. 서비스 재시작
 sudo systemctl start podman-immich-server.service
+```
+
+### 재해복구 복원 — 일일 백업 (`.dump`)
+
+> 주의: `gunzip`/`psql`로는 `.dump`를 복원할 수 없다 (pg_dump 커스텀 포맷은 gzip도 평문 SQL도 아니다). 반드시 `pg_restore`를 사용한다.
+
+```bash
+# 0. 복원 전 TOC 확인 (읽기 전용 — 파일이 유효한 pg_dump 커스텀 포맷인지)
+sudo podman exec -i immich-postgres pg_restore --list \
+  < /mnt/data/backups/immich/immich-db-YYYY-MM-DD_HHMMSS.dump | head
+
+# 1. Immich 서비스 중지 (DB 쓰기 차단)
+sudo systemctl stop podman-immich-server.service podman-immich-machine-learning.service
+
+# 2. 복원 (--clean --if-exists: 기존 오브젝트 드롭 후 재생성)
+sudo podman exec -i immich-postgres pg_restore -U immich -d immich --clean --if-exists \
+  < /mnt/data/backups/immich/immich-db-YYYY-MM-DD_HHMMSS.dump
+
+# 3. 서비스 재시작
+sudo systemctl start podman-immich-server.service podman-immich-machine-learning.service
 ```
 
 ## 트러블슈팅
