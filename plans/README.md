@@ -30,7 +30,7 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 | 014 | Karakeep CSP 전면 제거를 아카이브 경로로 한정 | P3 | M | — | #951 | TODO |
 | 015 | folder-actions 공유 lib 특성화 테스트 (1단계) | P3 | L | 011 (soft) | #952 | TODO |
 | 016 | 홈서버 백업/복구 자세 설계 spike | P2 | M | — | #953 | DONE |
-| 017 | 유지보수 창 3작업 묶음 실행 계획서 | P3 | S | 005, 016 (hard) | #954 | TODO |
+| 017 | 유지보수 창 3작업 묶음 실행 계획서 | P3 | S | 005, 016 (hard) | #954 | DONE |
 | 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | #955 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
