@@ -199,3 +199,41 @@
 - 원본 105G의 SSD 밖 사본은 필수 사전 게이트로 창 시작 전에 확보된다
   (표준 경로: plan 019). 미러의 지속 운영(타이머 정상 동작·Pushover 실패 알림)
   이 창 이후에도 유지되는지는 정기 점검 대상이다.
+
+## 창 실행 기록 — 1회차 (2026-07-02)
+
+- **필수 사전 게이트**: 충족 — plan 019 적용 + 초회 미러 완료(105G, 파일 수
+  22,741 양측 일치, 소요 약 28분).
+- **작업 A (복원 드릴)**: 전부 성공.
+  - 드릴 A: premigration `.dump`(TOC 496 entries)를 임시 DB `drill_restore`로
+    복원 — exit 0, `asset` 12,303행·`user` 1행 확인 후 정리. 소요 수 분.
+    참고: Immich v2.x 스키마는 단수형 테이블명(`asset`/`user`) — 016 드릴 정의의
+    복수형 표기는 스키마 확인으로 대체 충족.
+  - 드릴 B: 019 미러에서 무작위 5개 sha256 전부 일치(mp4/DNG/png/xmp).
+  - 드릴 C: 임시 사본 재암호화 후 사용자 키·host 키 양쪽 왕복 복호화 성공
+    (age는 flake 핀 nixpkgs에서 — PATH에는 agenix 래퍼만 존재).
+- **작업 B (DB 마이그레이션)**: 성공 — 당일 Immich v3.0.0 GA(절벽 도달 실측)로
+  긴급성 확정 후 실행.
+  - 공식 정합 태그 `ghcr.io/immich-app/postgres:16-vectorchord0.4.3-pgvectors0.2.0`
+    사용 (005 보고서의 `[UNVERIFIED]` 버전 정합 리스크는 공식 문서의
+    0.2.0 전용 태그 확인으로 해소 — upgrading#migrating-to-vectorchord).
+  - 리허설: postgres 볼륨(559M) 정지-사본으로 전환 이미지 기동 검증 — 정상
+    shutdown 인식, vchord 0.4.3 available 확인 후 실행 결정.
+  - 실측: 서비스 중지→물리 사본(`postgres-preswap`)→nrs 전환→서버 자동
+    마이그레이션(VectorChord 확장 생성 + clip/face 인덱스 재구성 약 3초 +
+    migrations) — **총 다운타임 약 1분**.
+  - 검증: 헬스 200(v2.6.1) / `\dx`에 vchord 0.4.3·구 vectors 확장 제거 /
+    `smart_search.embedding`=vector(512), `clip_index`=vchordrq, 임베딩
+    11,787개 보존, 코사인 검색 쿼리 정상 / 일일 백업 1회 실행+새 `.dump` TOC 통과.
+  - 롤백 재료 잔존: `premigration-20260702-233725.dump`(HDD) +
+    `postgres-preswap` 물리 사본(SSD, 559M — 안정화 확인 후 삭제 예정).
+- **작업 C (#917 실경로 검증)**: **미실행** — 시작 조건 미충족(update-orchestrator
+  미구현; #917 리팩토링 자체가 선행). #917 구현 후 별도 창(또는 저위험이라
+  단독 창)에서 실행.
+- **부수 발견**: agenix `immich-api-key`가 Immich에서 401(Invalid API key) —
+  스마트 검색 API 호출 검증은 DB 레벨 벡터 검색으로 대체 충족. 이 키의 소비자
+  실태 확인·재발급은 별도 후속(`/api/server/version`은 무인증이라 version-check
+  무영향).
+- **후속**: 안정화(수일) 후 경량 태그 `16-vectorchord0.4.3` 재전환 검토(선택,
+  005 §1.3). Immich 서버의 v3.0 메이저 업그레이드는 이제 DB 관문이 풀렸으나
+  별도 판단(릴리즈 노트 breaking changes 검토 후).
