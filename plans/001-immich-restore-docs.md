@@ -172,14 +172,14 @@ sudo podman exec -i immich-postgres pg_restore --list \
   < /mnt/data/backups/immich/immich-db-YYYY-MM-DD_HHMMSS.dump | head
 
 # 1. Immich 서비스 중지 (DB 쓰기 차단)
-sudo systemctl stop podman-immich-server.service podman-immich-machine-learning.service
+sudo systemctl stop podman-immich-server.service podman-immich-ml.service
 
 # 2. 복원 (--clean --if-exists: 기존 오브젝트 드롭 후 재생성)
 sudo podman exec -i immich-postgres pg_restore -U immich -d immich --clean --if-exists \
   < /mnt/data/backups/immich/immich-db-YYYY-MM-DD_HHMMSS.dump
 
 # 3. 서비스 재시작
-sudo systemctl start podman-immich-server.service podman-immich-machine-learning.service
+sudo systemctl start podman-immich-server.service podman-immich-ml.service
 ```
 
    절차 앞에 한 줄 경고를 넣는다: "`gunzip`/`psql`로는 `.dump`를 복원할 수 없다
