@@ -40,9 +40,9 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 | 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | #955 | TODO |
 | 019 | Immich 원본 사진 HDD 일일 미러 (016 추천 A 구현) | P1 | M | — | #961 | DONE (nrs 적용 + 초회 미러 완료 2026-07-02 — 창 사전 게이트 충족) |
 | 020 | 소용량 데이터 restic→R2 오프사이트 백업 (016 추천 B 구현) | P2 | M-L | 운영자 사전 준비 (R2/1Password) | #962 | TODO |
-| 021 | pinning-guard `--body-file` 파일 내용 스캔 | P1 | M | — | #684 | TODO |
-| 022 | using-codex-exec 문서 codex-cli 0.142.5 현행화 | P1 | M | — | #861 | TODO |
-| 023 | worktree-path-guard sibling worktree 오탐 제거 | P2 | S | — | #935 | TODO |
+| 021 | pinning-guard `--body-file` 파일 내용 스캔 | P1 | M | — | #684 | DONE (PR #966) |
+| 022 | using-codex-exec 문서 codex-cli 0.142.5 현행화 | P1 | M | — | #861 | DONE (PR #967) |
+| 023 | worktree-path-guard sibling worktree 오탐 제거 | P2 | S | — | #935 | DONE (PR #968) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
