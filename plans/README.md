@@ -7,6 +7,12 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 [#937](https://github.com/greenheadHQ/nixos-config/issues/937)의 sub-issue로
 등록되어 있다 (Issue 열).
 
+021–023은 2026-07-03 (commit `79530cec`) 이슈 백로그 전수조사에서 승격됐다.
+같은 전수조사에서 열린 이슈 84건 중 38건을 close했고(판정 근거·재개 조건은
+각 이슈의 close 코멘트에 기록), 잔여 유효 이슈 31건은 본문을 improve 형식
+(Current state 재검증 / Remaining work / Verification / Boundaries)으로
+재작성했다 — 재감사 시 GitHub 열린 이슈 본문이 최신 판정이다.
+
 각 executor: plan 파일을 끝까지 읽고 시작하고, STOP conditions를 존중하고,
 끝나면 자기 행의 Status를 갱신한다.
 
@@ -34,6 +40,9 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 | 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | #955 | TODO |
 | 019 | Immich 원본 사진 HDD 일일 미러 (016 추천 A 구현) | P1 | M | — | #961 | DONE (nrs 적용 + 초회 미러 완료 2026-07-02 — 창 사전 게이트 충족) |
 | 020 | 소용량 데이터 restic→R2 오프사이트 백업 (016 추천 B 구현) | P2 | M-L | 운영자 사전 준비 (R2/1Password) | #962 | TODO |
+| 021 | pinning-guard `--body-file` 파일 내용 스캔 | P1 | M | — | #684 | TODO |
+| 022 | using-codex-exec 문서 codex-cli 0.142.5 현행화 | P1 | M | — | #861 | TODO |
+| 023 | worktree-path-guard sibling worktree 오탐 제거 | P2 | S | — | #935 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -57,6 +66,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   020은 **운영자 사전 준비**(R2 버킷/토큰 + 1Password 항목) 완료 전 착수 불가.
   017 runbook의 "사전 게이트"는 019의 머지·적용·초회 미러 완료를 전제한다 —
   019는 유지보수 창 실행 전에 처리되는 것이 이상적.
+
+## Dependency notes (021–023)
+
+- 021–023은 상호 독립이며 001–020과도 파일이 겹치지 않는다.
+- 021과 023은 둘 다 Claude 훅을 만지지만 대상 파일이 다르다
+  (pinning-guard vs worktree-path-guard) — 순서 무관.
 
 ## Findings considered and rejected (재감사 방지)
 
