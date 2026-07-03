@@ -717,3 +717,72 @@ pinning_guard_findings_text_for_path() {
   pinning_guard_findings_records_for_path "$old_scan_file" "$new_scan_file" "$path" \
     | _pinning_render_records
 }
+
+# ─── Bash --body-file / -F(--field) file-forwarding path extraction (plan 021 / issue #684) ───
+# The Bash branch of pinning-guard.sh only scans the command string itself, so
+# durable-text-producing commands that forward the body via a file
+# (`gh pr create --body-file /tmp/b.md`, `gh api ... -F body=@/tmp/b.md`) pass
+# unscanned. This extracts the referenced file path(s) from the command text so
+# callers can rescan the file contents too.
+#
+# Not a full shell parser — a conservative (over-matching allowed) scan of a
+# fixed flag inventory. Quoted values (single/double) have the quotes
+# stripped; a quoted value containing whitespace is not supported (the
+# command is naively split on whitespace first). Callers must treat a
+# nonexistent "path" as a parse false-positive, not a scan target (the
+# underlying shell command would fail on it anyway).
+#
+# Runs entirely in awk (no shell array/glob surface) so this stays safely
+# sourceable from both bash (production hooks) and zsh (drift-check tooling).
+#
+# Matched shapes:
+#   --body-file <path> / --body-file=<path>        (gh pr/issue)
+#   --file <path> / --file=<path>                   (git commit)
+#   -F <value> / --field <value>                    where <value> has no '=':
+#     treated as a bare path (git commit -F <path>, or gh pr/issue's -F
+#     shorthand for --body-file).
+#   -F <value> / --field <value>                    where <value> is
+#     `key=@<path>`: gh api's file-forwarding field shape — path is the part
+#     after '@'. A `key=value` value with no '@' is not a file reference and
+#     is skipped.
+pinning_extract_body_file_paths() {
+  local cmd="${1:-}"
+  [ -n "$cmd" ] || return 0
+  printf '%s\n' "$cmd" | awk -v sq="'" -v dq='"' '
+    function strip_quotes(v,    n, first, last) {
+      n = length(v)
+      if (n < 2) return v
+      first = substr(v, 1, 1)
+      last = substr(v, n, 1)
+      if ((first == dq && last == dq) || (first == sq && last == sq)) {
+        return substr(v, 2, n - 2)
+      }
+      return v
+    }
+    function emit_field_or_path(v,    at) {
+      if (index(v, "=") == 0) {
+        print strip_quotes(v)
+        return
+      }
+      at = index(v, "=@")
+      if (at > 0) print substr(v, at + 2)
+    }
+    {
+      n = split($0, words, /[ \t]+/)
+      i = 1
+      while (i <= n) {
+        w = words[i]
+        if (w == "--body-file" || w == "--file") {
+          if (i + 1 <= n) { print strip_quotes(words[i + 1]); i++ }
+        } else if (w ~ /^--body-file=/) {
+          sub(/^--body-file=/, "", w); print strip_quotes(w)
+        } else if (w ~ /^--file=/) {
+          sub(/^--file=/, "", w); print strip_quotes(w)
+        } else if (w == "-F" || w == "--field") {
+          if (i + 1 <= n) { emit_field_or_path(strip_quotes(words[i + 1])); i++ }
+        }
+        i++
+      }
+    }
+  '
+}

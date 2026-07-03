@@ -1,0 +1,6 @@
+{
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr create --title t --body-file /tmp/fixture-pinning/missing-body.md"
+  }
+}

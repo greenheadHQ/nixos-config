@@ -743,11 +743,13 @@ _materialize_pinning_fixture() {
     "__SANDBOX_EXISTING_PINNED_MD__"
     "__SANDBOX_EXISTING_PRD_MD__"
     "__SANDBOX_EXISTING_PLAN_MD__"
+    "__SANDBOX_BODY_FILE__"
   )
   local paths=(
     "$sandbox/existing-pinned.md"
     "$sandbox/fixture-pinning/.claude/prds/existing.md"
     "$sandbox/fixture-pinning/.claude/plans/existing.md"
+    "$sandbox/fixture-pinning/body-file.md"
   )
   local sed_args=(
     -e "s#/tmp/da-test-abc/#${da_sandbox_sed}/#g"
