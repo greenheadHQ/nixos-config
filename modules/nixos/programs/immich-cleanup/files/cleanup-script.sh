@@ -28,6 +28,8 @@ trap 'send_notification "Immich Cleanup" "오류 발생: 스크립트 실패" 0'
 
 PAGE_SIZE=1000
 UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+CURL_CONNECT_TIMEOUT=10
+CURL_MAX_TIME=60
 
 fetch_album_asset_ids() {
   local album_id="$1"
@@ -44,7 +46,10 @@ fetch_album_asset_ids() {
         '{albumIds: [$albumId], page: $page, size: $size, withDeleted: false}'
     )
 
-    search_response=$(curl -sf -X POST -H "x-api-key: $API_KEY" \
+    search_response=$(curl -sf \
+      --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+      --max-time "$CURL_MAX_TIME" \
+      -X POST -H "x-api-key: $API_KEY" \
       -H "Content-Type: application/json" \
       -d "$search_body" \
       "$IMMICH_URL/api/search/metadata") || {
@@ -90,7 +95,11 @@ fetch_album_asset_ids() {
 
 # 앨범 ID 조회
 echo "Looking for album: $ALBUM_NAME"
-ALBUMS_RESPONSE=$(curl -sf -H "x-api-key: $API_KEY" "$IMMICH_URL/api/albums") || {
+ALBUMS_RESPONSE=$(curl -sf \
+  --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+  --max-time "$CURL_MAX_TIME" \
+  -H "x-api-key: $API_KEY" \
+  "$IMMICH_URL/api/albums") || {
   echo "Failed to fetch albums from Immich API"
   send_notification "Immich Cleanup" "Immich API 연결 실패" 0
   exit 1
@@ -125,7 +134,10 @@ for ASSET_ID in "${ASSET_IDS[@]}"; do
   if [ -n "$ASSET_ID" ]; then
     echo "Deleting asset: $ASSET_ID"
     DELETE_BODY=$(jq -n --arg id "$ASSET_ID" '{ids: [$id], force: true}')
-    if curl -sf -X DELETE -H "x-api-key: $API_KEY" \
+    if curl -sf \
+      --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+      --max-time "$CURL_MAX_TIME" \
+      -X DELETE -H "x-api-key: $API_KEY" \
       -H "Content-Type: application/json" \
       -d "$DELETE_BODY" \
       "$IMMICH_URL/api/assets" > /dev/null; then

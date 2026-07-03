@@ -35,7 +35,10 @@ while [ "$#" -gt 0 ]; do
       body="$2"
       shift 2
       ;;
-    -H|-sf|--proto|--max-time|--form-string)
+    -sf|-fsS|-s|-f)
+      shift
+      ;;
+    -H|--proto|--connect-timeout|--max-time|--form-string)
       shift
       if [ "$#" -gt 0 ] && [[ "$1" != -* ]] && [[ "$1" != http* ]]; then
         shift
