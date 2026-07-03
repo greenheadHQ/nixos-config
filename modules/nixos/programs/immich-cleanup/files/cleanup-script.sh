@@ -26,6 +26,68 @@ source "$PUSHOVER_CRED_FILE"
 # 에러 발생 시 알림 전송
 trap 'send_notification "Immich Cleanup" "오류 발생: 스크립트 실패" 0' ERR
 
+PAGE_SIZE=1000
+UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+fetch_album_asset_ids() {
+  local album_id="$1"
+  local page=1
+  local search_body search_response next_page asset_id
+  ASSET_IDS=()
+
+  while true; do
+    search_body=$(
+      jq -n \
+        --arg albumId "$album_id" \
+        --argjson page "$page" \
+        --argjson size "$PAGE_SIZE" \
+        '{albumIds: [$albumId], page: $page, size: $size, withDeleted: false}'
+    )
+
+    search_response=$(curl -sf -X POST -H "x-api-key: $API_KEY" \
+      -H "Content-Type: application/json" \
+      -d "$search_body" \
+      "$IMMICH_URL/api/search/metadata") || {
+      echo "Failed to search album assets"
+      send_notification "Immich Cleanup" "앨범 asset 조회 실패" 0
+      exit 1
+    }
+
+    if ! echo "$search_response" | jq -e '.assets.items | type == "array"' > /dev/null; then
+      echo "Unexpected search response: .assets.items is not an array"
+      send_notification "Immich Cleanup" "앨범 asset 응답 형식 오류" 0
+      exit 1
+    fi
+
+    if ! echo "$search_response" | jq -e --arg uuid "$UUID_RE" 'all(.assets.items[]?; (.id | type == "string" and test($uuid)))' > /dev/null; then
+      echo "Unexpected search response: asset id is not a UUID string"
+      send_notification "Immich Cleanup" "앨범 asset ID 응답 형식 오류" 0
+      exit 1
+    fi
+
+    while IFS= read -r asset_id; do
+      ASSET_IDS+=("$asset_id")
+    done < <(echo "$search_response" | jq -r '.assets.items[].id')
+
+    if ! echo "$search_response" | jq -e '(.assets | has("nextPage")) and (.assets.nextPage == null or (.assets.nextPage | type == "string"))' > /dev/null; then
+      echo "Unexpected search response: .assets.nextPage is not null or a string"
+      send_notification "Immich Cleanup" "앨범 asset 페이지 응답 형식 오류" 0
+      exit 1
+    fi
+
+    if echo "$search_response" | jq -e '.assets.nextPage == null' > /dev/null; then
+      break
+    fi
+    next_page=$(echo "$search_response" | jq -r '.assets.nextPage')
+    if [[ ! "$next_page" =~ ^[1-9][0-9]*$ ]]; then
+      echo "Unexpected search response: .assets.nextPage is not a positive integer string"
+      send_notification "Immich Cleanup" "앨범 asset 페이지 응답 형식 오류" 0
+      exit 1
+    fi
+    page="$next_page"
+  done
+}
+
 # 앨범 ID 조회
 echo "Looking for album: $ALBUM_NAME"
 ALBUMS_RESPONSE=$(curl -sf -H "x-api-key: $API_KEY" "$IMMICH_URL/api/albums") || {
@@ -44,34 +106,28 @@ fi
 
 echo "Found album ID: $ALBUM_ID"
 
-# 앨범 내 asset ID 목록 조회
-ALBUM_RESPONSE=$(curl -sf -H "x-api-key: $API_KEY" "$IMMICH_URL/api/albums/$ALBUM_ID") || {
-  echo "Failed to fetch album details"
-  send_notification "Immich Cleanup" "앨범 상세 조회 실패" 0
-  exit 1
-}
+fetch_album_asset_ids "$ALBUM_ID"
 
-ASSET_IDS=$(echo "$ALBUM_RESPONSE" | jq -r '.assets[].id')
-
-if [ -z "$ASSET_IDS" ]; then
+if [ "${#ASSET_IDS[@]}" -eq 0 ]; then
   echo "No assets in album. Nothing to cleanup."
   send_notification "Immich Cleanup" "삭제할 이미지가 없습니다"
   exit 0
 fi
 
-TOTAL_COUNT=$(echo "$ASSET_IDS" | wc -l)
+TOTAL_COUNT="${#ASSET_IDS[@]}"
 echo "Found $TOTAL_COUNT assets to delete"
 
 # 각 asset 삭제 (force=true로 휴지통 우회)
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 
-while IFS= read -r ASSET_ID; do
+for ASSET_ID in "${ASSET_IDS[@]}"; do
   if [ -n "$ASSET_ID" ]; then
     echo "Deleting asset: $ASSET_ID"
+    DELETE_BODY=$(jq -n --arg id "$ASSET_ID" '{ids: [$id], force: true}')
     if curl -sf -X DELETE -H "x-api-key: $API_KEY" \
       -H "Content-Type: application/json" \
-      -d "{\"ids\":[\"$ASSET_ID\"],\"force\":true}" \
+      -d "$DELETE_BODY" \
       "$IMMICH_URL/api/assets" > /dev/null; then
       SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     else
@@ -79,7 +135,7 @@ while IFS= read -r ASSET_ID; do
       FAIL_COUNT=$((FAIL_COUNT + 1))
     fi
   fi
-done <<< "$ASSET_IDS"
+done
 
 echo "Cleanup completed. Success: $SUCCESS_COUNT, Failed: $FAIL_COUNT"
 
