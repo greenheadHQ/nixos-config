@@ -126,6 +126,10 @@ run_test "install-lefthook pins worktree-local hooks path in worktree mode" test
 run_test "fragile-hardcoding-guard line count word order independent" test_fragile_hardcoding_guard_line_count_word_order_independent
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
+run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
+run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
+run_test "immich cleanup rejects invalid asset id" test_immich_cleanup_v3_rejects_invalid_asset_id
+run_test "immich cleanup rejects invalid nextPage" test_immich_cleanup_v3_rejects_invalid_next_page
 run_test "hook_init_scan_dir falls back when TMPDIR missing" test_hook_init_scan_dir_falls_back_when_tmpdir_missing
 run_test "hook_init_scan_dir falls back when TMPDIR unwritable" test_hook_init_scan_dir_falls_back_when_tmpdir_unwritable
 run_test "hook_init_scan_dir falls back when system tmp unusable" test_hook_init_scan_dir_falls_back_to_user_cache_when_system_tmp_unusable
