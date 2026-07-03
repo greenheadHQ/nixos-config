@@ -40,6 +40,9 @@ EXPECTED_POST_TOOL_USE_PINNING_COMMAND='$HOME/.codex/hooks/pinning-alert.sh'
 # 본 배열 순서는 dispatcher 호출 순서이며 fixture ordering 검증의 expected.
 EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh)
 
+# ~/.codex/lib/에 배치되는 managed library artifact. source 대상이므로 executable을 요구하지 않는다.
+EXPECTED_CODEX_MANAGED_LIB_ARTIFACTS=(hook-runtime.sh pinning-patterns.sh)
+
 # live programmatic env inheritance fixture에서 codex-exec-supervised 호출 timeout (hang 방어).
 LIVE_CODEX_TIMEOUT_SECONDS=30
 

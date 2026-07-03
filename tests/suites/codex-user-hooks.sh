@@ -70,6 +70,61 @@ assert_symlinked_user_codex_hooks_preserved() {
   assert_contains "$(cat "$home_dir/dotfiles/codex/hooks.json")" "session-init-icons.sh"
 }
 
+test_verify_ai_compat_codex_artifact_contract_static() {
+  local verifier expectations codex_rebuild_helper verifier_content expectations_content
+  verifier="$REPO_ROOT/scripts/ai/verify-ai-compat.sh"
+  expectations="$REPO_ROOT/tests/lib/codex-hook-expectations.sh"
+  codex_rebuild_helper="$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex.sh"
+  verifier_content="$(cat "$verifier")"
+  expectations_content="$(cat "$expectations")"
+
+  assert_contains "$verifier_content" '_check_hook_executable ".codex/hooks/record-prompt-submit.sh"'
+  assert_contains "$verifier_content" '_check_hook_executable ".codex/hooks/_stop-dispatcher.sh"'
+  assert_contains "$verifier_content" 'for _sub in "${EXPECTED_DISPATCHER_SUB_SCRIPTS[@]}"; do'
+  assert_contains "$expectations_content" 'EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh)'
+  assert_contains "$verifier_content" '_check_hook_executable ".codex/hooks/pinning-alert.sh"'
+  assert_contains "$verifier_content" '_check_hook_executable ".codex/hooks/pinning-guard.sh"'
+
+  assert_contains "$verifier_content" '_check_readable_symlink_suffix ".codex/lib/pinning-patterns.sh" "$_pinning_lib_suffix"'
+  assert_contains "$verifier_content" '_check_readable_symlink_suffix ".codex/lib/hook-runtime.sh" "$_hook_runtime_lib_suffix"'
+  assert_not_contains "$verifier_content" '_check_hook_executable ".codex/lib/'
+  assert_not_contains "$verifier_content" '_check_executable_symlink_suffix ".codex/lib/'
+
+  # shellcheck source=../../tests/lib/codex-hook-expectations.sh
+  source "$expectations"
+  # shellcheck source=../../modules/shared/scripts/lib/rebuild/codex.sh
+  source "$codex_rebuild_helper"
+
+  local command_prefix expected_hooks actual_hooks rel expected_hooks_text actual_hooks_text
+  command_prefix='$HOME/.codex/hooks/'
+  expected_hooks=(
+    "${EXPECTED_USER_PROMPT_COMMAND#"$command_prefix"}"
+    "${EXPECTED_STOP_DISPATCHER_COMMAND#"$command_prefix"}"
+    "${EXPECTED_DISPATCHER_SUB_SCRIPTS[@]}"
+    "${EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND#"$command_prefix"}"
+    "${EXPECTED_POST_TOOL_USE_PINNING_COMMAND#"$command_prefix"}"
+  )
+  actual_hooks=()
+  for rel in "${CODEX_MANAGED_HOOK_ARTIFACTS[@]}"; do
+    actual_hooks+=("${rel#hooks/}")
+  done
+  expected_hooks_text="$(printf '%s\n' "${expected_hooks[@]}" | sort)"
+  actual_hooks_text="$(printf '%s\n' "${actual_hooks[@]}" | sort)"
+  [[ "$actual_hooks_text" == "$expected_hooks_text" ]] || \
+    fail "codex managed hook artifact list drift: actual=[$actual_hooks_text] expected=[$expected_hooks_text]"
+
+  local expected_libs actual_libs expected_libs_text actual_libs_text
+  expected_libs=("${EXPECTED_CODEX_MANAGED_LIB_ARTIFACTS[@]}")
+  actual_libs=()
+  for rel in "${CODEX_MANAGED_LIB_ARTIFACTS[@]}"; do
+    actual_libs+=("${rel#lib/}")
+  done
+  expected_libs_text="$(printf '%s\n' "${expected_libs[@]}" | sort)"
+  actual_libs_text="$(printf '%s\n' "${actual_libs[@]}" | sort)"
+  [[ "$actual_libs_text" == "$expected_libs_text" ]] || \
+    fail "codex managed lib artifact list drift: actual=[$actual_libs_text] expected=[$expected_libs_text]"
+}
+
 test_user_hooks_stale_filter_supports_clean_symlink_target() {
   local sandbox home_dir count
   sandbox=$(new_sandbox)

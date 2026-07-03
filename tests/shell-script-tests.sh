@@ -102,6 +102,7 @@ run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
 run_test "extract_oos_entries filesystem input" test_extract_oos_entries_filesystem_input
 run_test "extract_oos_entries git show input" test_extract_oos_entries_git_show_input
 run_test "extract_oos_entries empty and absent exit zero" test_extract_oos_entries_empty_and_absent_exit_zero
+run_test "verify-ai-compat Codex artifact contract static" test_verify_ai_compat_codex_artifact_contract_static
 run_test "stale filter supports clean symlinked user hooks" test_user_hooks_stale_filter_supports_clean_symlink_target
 run_test "stale filter detects symlinked stale user hooks" test_user_hooks_stale_filter_detects_symlink_target_stale_entries
 run_test "stale filter ignores stale path mentions" test_user_hooks_stale_filter_ignores_stale_path_mentions
@@ -118,6 +119,7 @@ run_test "check-skill-noise rejects external symlink skill projection" test_chec
 run_test "warn-skill-consistency ignores managed plugin skill projection" test_warn_skill_consistency_ignores_managed_plugin_skill_projection
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
+run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "install-lefthook cleans up redundant local core.hooksPath" test_install_lefthook_cleanup_local_redundant
 run_test "install-lefthook preserves custom local core.hooksPath" test_install_lefthook_preserves_custom_local
 run_test "install-lefthook is silent on clean state" test_install_lefthook_silent_on_clean_state

@@ -47,6 +47,12 @@ install_rebuild_common_compat_shims() {
     declare -F repair_codex_config_drift_no_changes >/dev/null || repair_codex_config_drift_no_changes() {
         return 0
     }
+    declare -F codex_managed_artifacts_missing >/dev/null || codex_managed_artifacts_missing() {
+        return 1
+    }
+    declare -F codex_log_managed_artifacts_missing >/dev/null || codex_log_managed_artifacts_missing() {
+        return 0
+    }
 }
 
 install_rebuild_common_compat_shims
@@ -88,11 +94,16 @@ main() {
     preflight_source_build_check
     preview_changes "preview" "Changes to be applied:"
     if [[ "$NO_CHANGES" == true && "$FORCE_FLAG" != true ]]; then
-        echo ""
-        log_info "✅ No changes to apply. Skipping rebuild."
-        maybe_relink_or_restore
-        repair_codex_config_drift_no_changes
-        return 0
+        if codex_managed_artifacts_missing; then
+            echo ""
+            codex_log_managed_artifacts_missing
+        else
+            echo ""
+            log_info "✅ No changes to apply. Skipping rebuild."
+            maybe_relink_or_restore
+            repair_codex_config_drift_no_changes
+            return 0
+        fi
     fi
     worktree_symlink_guard
     acquire_rebuild_lock
