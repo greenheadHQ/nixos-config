@@ -47,7 +47,9 @@
 - Public caller-visible rebuild state:
   `FLAKE_PATH`, `OFFLINE_FLAG`, `NO_CHANGES`, `FORCE_FLAG`, `CORES_FLAG`, `UNINSTALLED_CASKS`
 - Internal rebuild state:
-  `MAIN_FLAKE_PATH`, `NRS_LOCK_ACQUIRED`, `NRS_LOCK_REENTRY`, `NRS_LOCK_SWITCH_SUCCESS`
+  `MAIN_FLAKE_PATH`, `NRS_LOCK_ACQUIRED`, `NRS_LOCK_REENTRY`, `NRS_LOCK_SWITCH_SUCCESS`,
+  `CODEX_MANAGED_HOOK_ARTIFACTS`, `CODEX_MANAGED_LIB_ARTIFACTS`,
+  `CODEX_MISSING_MANAGED_ARTIFACTS`
 - Caller는 underscored helper와 internal rebuild state를 직접 참조하지 않는다.
 
 ## wt Contract

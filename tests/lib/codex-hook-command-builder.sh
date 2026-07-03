@@ -35,6 +35,8 @@ expected_codex_hook_command() {
       printf '%s' "t=\"$target_home\"; if [ -x \"\$t\" ]; then exec \"\$t\"; fi; printf '%s\\n' '[codex-hook] target missing or not executable: $target_label. Impact: hook skipped to avoid raw 127.' 'Action: run nrs --force, then ./scripts/ai/verify-ai-compat.sh.' >&2; exit 0"
       ;;
     blocking)
+      # Blocking policy is currently PreToolUse-only. If another blocking hook
+      # event is added, extend this branch instead of generalizing unused input.
       local reason json
       reason="Codex managed hook target is missing or not executable: $target_label. Impact: edit is denied until the hook is restored. Action: run nrs --force, then ./scripts/ai/verify-ai-compat.sh."
       json='{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"'"$reason"'"}}'

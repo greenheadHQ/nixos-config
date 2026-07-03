@@ -52,6 +52,8 @@ codex_managed_artifacts_missing() {
     [[ "${#CODEX_MISSING_MANAGED_ARTIFACTS[@]}" -gt 0 ]]
 }
 
+# Call only after codex_managed_artifacts_missing has populated
+# CODEX_MISSING_MANAGED_ARTIFACTS for the current filesystem state.
 codex_log_managed_artifacts_missing() {
     log_warn "⚠️  Codex hook/lib artifact missing; running activation instead of no-change skip."
     log_warn "   Cause: one or more Nix-managed ~/.codex hook/lib files are absent."

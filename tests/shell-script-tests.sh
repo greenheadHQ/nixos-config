@@ -99,6 +99,7 @@ run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_
 run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
+run_test "nixos nrs no-change activates when Codex artifact missing" test_nixos_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "extract_oos_entries filesystem input" test_extract_oos_entries_filesystem_input
 run_test "extract_oos_entries git show input" test_extract_oos_entries_git_show_input
 run_test "extract_oos_entries empty and absent exit zero" test_extract_oos_entries_empty_and_absent_exit_zero

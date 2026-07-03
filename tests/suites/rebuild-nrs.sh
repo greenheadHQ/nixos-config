@@ -301,6 +301,85 @@ EOF
   [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected nixos nrs to remove retired hooks.compatibility.json"
   assert_user_codex_hooks_pruned "$home_dir"
 }
+
+test_nixos_nrs_no_changes_activates_when_codex_artifact_missing() {
+  local sandbox home_dir repo_root stub_dir output current_target switch_log
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stub-bin"
+  current_target="$sandbox/current-system"
+  switch_log="$sandbox/nixos-switch.log"
+
+  mkdir -p "$repo_root" "$stub_dir" "$home_dir/.local/bin" "$current_target"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_platform_nrs_entrypoint "$sandbox" nixos
+  install_codex_managed_artifact_fixture "$home_dir"
+  rm -f "$home_dir/.codex/hooks/pinning-alert.sh"
+
+  cat > "$stub_dir/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+"$@"
+EOF
+  cat > "$stub_dir/nixos-rebuild" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  build)
+    ln -sfn "${NIXOS_CURRENT_SYSTEM:?}" ./result
+    ;;
+  switch)
+    printf 'switch\n' >> "${NIXOS_SWITCH_LOG:?}"
+    ;;
+  *)
+    echo "unexpected nixos-rebuild subcommand: $1" >&2
+    exit 1
+    ;;
+esac
+EOF
+  cat > "$stub_dir/nvd" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "stub nvd diff"
+EOF
+  local real_readlink
+  real_readlink="$(command -v readlink)"
+  cat > "$stub_dir/readlink" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "/run/current-system" ]]; then
+  printf '%s\n' "\${NIXOS_CURRENT_SYSTEM:?}"
+else
+  "$real_readlink" "\$@"
+fi
+EOF
+  cat > "$home_dir/.local/bin/nrs-relink" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  chmod +x "$stub_dir/sudo" "$stub_dir/nixos-rebuild" "$stub_dir/nvd" "$stub_dir/readlink" "$home_dir/.local/bin/nrs-relink"
+
+  output=$(
+    HOME="$home_dir" \
+    PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
+    NIXOS_CURRENT_SYSTEM="$current_target" \
+    NIXOS_SWITCH_LOG="$switch_log" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/nrs"'" --offline
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Codex hook/lib artifact missing"
+  assert_contains "$output" '$HOME/.codex/hooks/pinning-alert.sh'
+  assert_contains "$output" "Applying changes (offline)"
+  assert_not_contains "$output" "Skipping rebuild"
+  [[ -s "$switch_log" ]] || fail "expected no-change nrs to run nixos-rebuild switch when Codex artifact is missing"
+}
+
 test_darwin_nrs_offline_force_smoke() {
   local sandbox home_dir repo_root stub_dir output result_target current_target
   sandbox=$(new_sandbox)
