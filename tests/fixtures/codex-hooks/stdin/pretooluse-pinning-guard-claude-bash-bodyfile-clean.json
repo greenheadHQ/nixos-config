@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "This body is a stable, plain-language description with no volatile tokens.",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr create --title t --body-file __SANDBOX_BODY_FILE__"
+  }
+}

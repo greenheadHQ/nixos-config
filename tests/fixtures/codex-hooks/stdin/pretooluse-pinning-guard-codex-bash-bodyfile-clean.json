@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "This is a stable body with no volatile session metadata.",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr create --title t --body-file __SANDBOX_BODY_FILE__"
+  }
+}

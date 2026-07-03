@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "Correctness-8 needs a stable rewrite before merge",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh pr create --title t --body-file __SANDBOX_BODY_FILE__"
+  }
+}

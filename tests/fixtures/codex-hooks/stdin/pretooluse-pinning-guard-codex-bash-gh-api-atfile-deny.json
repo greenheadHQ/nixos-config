@@ -1,0 +1,7 @@
+{
+  "_fixture_existing_content": "Round 33 body content needs a stable rewrite",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "gh api repos/O/R/pulls/42/comments -F body=@__SANDBOX_BODY_FILE__"
+  }
+}

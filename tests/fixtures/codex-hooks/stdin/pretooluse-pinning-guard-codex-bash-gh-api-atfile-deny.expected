@@ -1,0 +1,4 @@
+[pinning-guard] Bash on __SANDBOX_BODY_FILE__ (via --body-file) contains volatile review/session metadata:
+  - Round counter 박제: 'Round N'
+         1: Round 33
+Use stable identifiers or plain natural-language context before retrying.
