@@ -16,6 +16,7 @@
 #   preflight_cask_conflict_check, rebuild_is_main_flake,
 #   prepare_worktree_symlinks_for_rebuild, maybe_relink_or_restore,
 #   preview_changes, cleanup_build_artifacts,
+#   codex_managed_artifacts_missing, codex_log_managed_artifacts_missing,
 #   repair_codex_config_drift_no_changes
 #
 # caller-facing 출력 변수:
@@ -27,7 +28,9 @@
 #   UNINSTALLED_CASKS - preflight_cask_conflict_check에서 제거한 cask 목록 (복구용)
 #
 # internal helper state:
-#   MAIN_FLAKE_PATH, NRS_LOCK_ACQUIRED, NRS_LOCK_REENTRY, NRS_LOCK_SWITCH_SUCCESS
+#   MAIN_FLAKE_PATH, NRS_LOCK_ACQUIRED, NRS_LOCK_REENTRY, NRS_LOCK_SWITCH_SUCCESS,
+#   CODEX_MANAGED_HOOK_ARTIFACTS, CODEX_MANAGED_LIB_ARTIFACTS,
+#   CODEX_MISSING_MANAGED_ARTIFACTS
 
 # fail-fast: REBUILD_CMD 미설정 시 즉시 실패
 if [[ -z "${REBUILD_CMD:-}" ]]; then

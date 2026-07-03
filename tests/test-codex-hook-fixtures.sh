@@ -2,11 +2,12 @@
 # tests/test-codex-hook-fixtures.sh
 # Codex 0.124+ stable hook 회귀 차단 fixture runner.
 #
-# 9 카테고리 (7 deterministic + 2 live opt-in subsets):
+# 10 카테고리 (8 deterministic + 2 live opt-in subsets):
 #   1. stdin schema baseline 0.124       — fixtures/codex-hooks/stdin/{userpromptsubmit-codex-0.124,stop-codex-0.124,stop-no-last-message}.json
 #   2. dispatcher ordering / failure recovery — runner 내부 mock subscript
 #   3. noise-guard env 변형              — runner 내부 helper (4 env 조합)
 #   4. sync-codex-config.py preservation — fixtures/codex-hooks/sync-preservation/*.toml
+#   4b. inline shim command contract — template byte match + missing/delegation policy
 #   5. programmatic env inheritance (live opt-in) — CODEX_HOOK_LIVE=1 / --live
 #   5b. codex exec invocation matrix (live opt-in, must-pass-only) — issue #593 supervised wrapper 회귀 차단
 #       (--live 시 invocation matrix를 programmatic env inheritance보다 먼저 실행)
@@ -572,6 +573,193 @@ all_commands = [h.get("command", "") for entry in pre for h in entry.get("hooks"
 assert all("USER-PRETOOLUSE-LOST" not in c for c in all_commands), \
     f"user marker still present: {all_commands}"
 PY
+}
+
+# ─── 카테고리 4b: inline shim command contract ───
+_codex_command_for_top_level_hook() {
+  case "$1" in
+    record-prompt-submit.sh) printf '%s' "$EXPECTED_USER_PROMPT_COMMAND" ;;
+    _stop-dispatcher.sh) printf '%s' "$EXPECTED_STOP_DISPATCHER_COMMAND" ;;
+    pinning-guard.sh) printf '%s' "$EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND" ;;
+    pinning-alert.sh) printf '%s' "$EXPECTED_POST_TOOL_USE_PINNING_COMMAND" ;;
+    *) fail "[4b] unknown top-level hook: $1" ;;
+  esac
+}
+
+_codex_policy_for_top_level_hook() {
+  case "$1" in
+    record-prompt-submit.sh|_stop-dispatcher.sh|pinning-alert.sh) printf '%s' advisory ;;
+    pinning-guard.sh) printf '%s' blocking ;;
+    *) fail "[4b] unknown top-level hook: $1" ;;
+  esac
+}
+
+_run_codex_shim_command() {
+  # $1=sandbox, $2=command string, stdin inherited from caller.
+  # This intentionally uses POSIX sh to pin the inline command to sh-compatible syntax.
+  local sandbox="$1" command="$2"
+  _exec_with_sandbox_env "$sandbox" "" sh -c "$command"
+}
+
+_install_shim_path_lookup_tripwires() {
+  local sandbox="$1" name
+  for name in printf '['; do
+    cat > "$sandbox/bin-stubs/$name" <<'EOF'
+#!/usr/bin/env sh
+echo "unexpected PATH lookup from inline shim" >&2
+exit 86
+EOF
+    chmod +x "$sandbox/bin-stubs/$name"
+  done
+}
+
+test_template_hook_commands_match_builder() {
+  local template check_script
+  check_script='import sys, tomllib
+
+template_path = sys.argv[1]
+expected = {
+    "UserPromptSubmit": sys.argv[2],
+    "Stop": sys.argv[3],
+    "PreToolUse": sys.argv[4],
+    "PostToolUse": sys.argv[5],
+}
+direct_commands = {
+    "UserPromptSubmit": "$HOME/.codex/hooks/record-prompt-submit.sh",
+    "Stop": "$HOME/.codex/hooks/_stop-dispatcher.sh",
+    "PreToolUse": "$HOME/.codex/hooks/pinning-guard.sh",
+    "PostToolUse": "$HOME/.codex/hooks/pinning-alert.sh",
+}
+
+with open(template_path, "rb") as f:
+    data = tomllib.load(f)
+
+hooks = data.get("hooks", {})
+for event, expected_command in expected.items():
+    entries = hooks.get(event, [])
+    assert isinstance(entries, list) and len(entries) == 1, f"{event}: entry count={len(entries)}"
+    inner = entries[0].get("hooks", [])
+    assert isinstance(inner, list) and len(inner) == 1, f"{event}: inner count={len(inner)}"
+    command = inner[0].get("command", "")
+    assert command == expected_command, f"{event}: command={command!r} expected={expected_command!r}"
+    assert command != direct_commands[event], f"{event}: direct command regression"
+'
+  for template in \
+    "$REPO_ROOT/modules/shared/programs/codex/files/config.toml" \
+    "$REPO_ROOT/modules/shared/programs/codex/files/config.darwin.toml"; do
+    if ! python3 -c "$check_script" "$template" \
+      "$EXPECTED_USER_PROMPT_COMMAND" \
+      "$EXPECTED_STOP_DISPATCHER_COMMAND" \
+      "$EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND" \
+      "$EXPECTED_POST_TOOL_USE_PINNING_COMMAND"; then
+      fail "[4b] template command drift: $template"
+    fi
+  done
+}
+
+_assert_advisory_shim_skip() {
+  local hook="$1" stdout_log="$2" stderr_log="$3" context="$4"
+  if [ -s "$stdout_log" ]; then
+    fail "[4b/$context/$hook] advisory missing path must keep stdout empty, got: $(head -20 "$stdout_log")"
+  fi
+  local expected="$stderr_log.expected"
+  {
+    printf '%s\n' "[codex-hook] target missing or not executable: ~/.codex/hooks/$hook. Impact: hook skipped to avoid raw 127."
+    printf '%s\n' "Action: run nrs --force, then ./scripts/ai/verify-ai-compat.sh."
+  } > "$expected"
+  if ! diff -u "$expected" "$stderr_log" >/dev/null 2>&1; then
+    local diff_out
+    diff_out=$(diff -u "$expected" "$stderr_log" 2>&1 | head -40 || true)
+    fail "[4b/$context/$hook] advisory stderr drift:
+$diff_out"
+  fi
+}
+
+_assert_blocking_shim_deny() {
+  local hook="$1" stdout_log="$2" stderr_log="$3" context="$4"
+  local event decision reason expected_reason
+  if [ -s "$stderr_log" ]; then
+    fail "[4b/$context/$hook] blocking missing path must keep stderr empty, got: $(head -20 "$stderr_log")"
+  fi
+  event="$(jq -r '.hookSpecificOutput.hookEventName // empty' "$stdout_log" 2>/dev/null)" \
+    || fail "[4b/$context/$hook] blocking stdout JSON parse failed"
+  decision="$(jq -r '.hookSpecificOutput.permissionDecision // empty' "$stdout_log" 2>/dev/null)" \
+    || fail "[4b/$context/$hook] blocking stdout JSON parse failed"
+  reason="$(jq -r '.hookSpecificOutput.permissionDecisionReason // empty' "$stdout_log" 2>/dev/null)" \
+    || fail "[4b/$context/$hook] blocking stdout JSON parse failed"
+  expected_reason="Codex managed hook target is missing or not executable: ~/.codex/hooks/$hook. Impact: edit is denied until the hook is restored. Action: run nrs --force, then ./scripts/ai/verify-ai-compat.sh."
+  assert_eq "$event" "PreToolUse" "[4b/$context/$hook] hook event mismatch"
+  assert_eq "$decision" "deny" "[4b/$context/$hook] permission decision mismatch"
+  assert_eq "$reason" "$expected_reason" "[4b/$context/$hook] permission reason mismatch"
+}
+
+test_inline_shim_target_missing_and_non_executable_policy() {
+  local hook policy command sandbox target stdout_log stderr_log exit_code context
+  for hook in record-prompt-submit.sh _stop-dispatcher.sh pinning-guard.sh pinning-alert.sh; do
+    policy="$(_codex_policy_for_top_level_hook "$hook")"
+    command="$(_codex_command_for_top_level_hook "$hook")"
+    for context in missing non-executable; do
+      sandbox=$(new_hook_sandbox)
+      _install_shim_path_lookup_tripwires "$sandbox"
+      target="$sandbox/home/.codex/hooks/$hook"
+      stdout_log="$sandbox/shim-$context-stdout.log"
+      stderr_log="$sandbox/shim-$context-stderr.log"
+      case "$context" in
+        missing)
+          rm -f "$target"
+          ;;
+        non-executable)
+          rm -f "$target"
+          printf '%s\n' '#!/usr/bin/env sh' 'exit 99' > "$target"
+          chmod 0644 "$target"
+          ;;
+        *) fail "[4b] unknown context: $context" ;;
+      esac
+
+      if _run_codex_shim_command "$sandbox" "$command" >"$stdout_log" 2>"$stderr_log"; then
+        exit_code=0
+      else
+        exit_code=$?
+      fi
+      assert_eq "$exit_code" "0" "[4b/$context/$hook] shim must exit 0 without raw 127"
+
+      case "$policy" in
+        advisory) _assert_advisory_shim_skip "$hook" "$stdout_log" "$stderr_log" "$context" ;;
+        blocking) _assert_blocking_shim_deny "$hook" "$stdout_log" "$stderr_log" "$context" ;;
+        *) fail "[4b] unknown policy: $policy" ;;
+      esac
+    done
+  done
+}
+
+test_inline_shim_delegates_existing_targets_transparently() {
+  local hook command sandbox target stdout_log stderr_log exit_code
+  for hook in record-prompt-submit.sh _stop-dispatcher.sh pinning-guard.sh pinning-alert.sh; do
+    command="$(_codex_command_for_top_level_hook "$hook")"
+    sandbox=$(new_hook_sandbox)
+    _install_shim_path_lookup_tripwires "$sandbox"
+    target="$sandbox/home/.codex/hooks/$hook"
+    stdout_log="$sandbox/shim-delegate-stdout.log"
+    stderr_log="$sandbox/shim-delegate-stderr.log"
+
+    cat > "$target" <<EOF
+#!/usr/bin/env sh
+printf '%s\n' 'stdout:$hook'
+printf '%s\n' 'stderr:$hook' >&2
+exit 7
+EOF
+    chmod +x "$target"
+
+    if _run_codex_shim_command "$sandbox" "$command" >"$stdout_log" 2>"$stderr_log"; then
+      exit_code=0
+    else
+      exit_code=$?
+    fi
+
+    assert_eq "$exit_code" "7" "[4b/delegate/$hook] shim must preserve target exit code"
+    assert_eq "$(cat "$stdout_log")" "stdout:$hook" "[4b/delegate/$hook] shim must preserve target stdout"
+    assert_eq "$(cat "$stderr_log")" "stderr:$hook" "[4b/delegate/$hook] shim must preserve target stderr"
+  done
 }
 
 # ─── 카테고리 7: pinning-alert behavioral ───
@@ -1213,6 +1401,12 @@ run_test "noise-guard env variants (cleanup unguarded)" \
   test_noise_guard_env_variants_with_cleanup_unguarded
 run_test "sync-codex-config preservation scenarios A/B/C/D/E/F" \
   test_sync_preservation_scenarios
+run_test "template hook commands match inline shim builder" \
+  test_template_hook_commands_match_builder
+run_test "inline shim target missing/non-executable policy" \
+  test_inline_shim_target_missing_and_non_executable_policy
+run_test "inline shim delegates existing targets transparently" \
+  test_inline_shim_delegates_existing_targets_transparently
 
 run_test "pinning shared library behavioral" \
   test_pinning_shared_library_behavioral

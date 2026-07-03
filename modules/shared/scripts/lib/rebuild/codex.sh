@@ -1,12 +1,12 @@
 # shellcheck shell=bash
 #───────────────────────────────────────────────────────────────────────────────
-# codex.sh — NO_CHANGES 경로 전용 ~/.codex/config.toml drift 자동 복구
+# codex.sh — NO_CHANGES 경로 전용 Codex 복구 helper
 #
 # 호출 위치: modules/{darwin,nixos}/scripts/nrs.sh 의 NO_CHANGES 분기에서만.
 #   post-rebuild 경로에서는 home.activation.syncCodexConfig 가 이미 같은
 #   sync-codex-config.py 를 돌리므로 여기서 중복 호출하지 않는다.
 #
-# 부수효과:
+# repair_codex_config_drift_no_changes 부수효과:
 #   - `nix shell "$FLAKE_PATH#pythonWithTomlkit" --command` 1회 평가 (~150ms 실측)
 #   - `python3 sync-codex-config.py sync <template> $HOME/.codex/config.toml` 실행
 #   - 실제 drift가 있을 때만 ~/.codex/config.toml 재작성.
@@ -24,6 +24,50 @@
 #   현재는 정책을 재기술한다. 향후 양쪽을 공용 bootstrap helper 로 통합할 여지가
 #   있으나 이번 범위에서는 YAGNI.
 #───────────────────────────────────────────────────────────────────────────────
+
+CODEX_MANAGED_HOOK_ARTIFACTS=(
+    hooks/record-prompt-submit.sh
+    hooks/_stop-dispatcher.sh
+    hooks/record-last-stop.sh
+    hooks/nrs-session-cleanup.sh
+    hooks/pinning-guard.sh
+    hooks/pinning-alert.sh
+)
+CODEX_MANAGED_LIB_ARTIFACTS=(
+    lib/hook-runtime.sh
+    lib/pinning-patterns.sh
+)
+CODEX_MISSING_MANAGED_ARTIFACTS=()
+
+codex_managed_artifacts_missing() {
+    local codex_home="${1:-$HOME/.codex}"
+    local rel
+    CODEX_MISSING_MANAGED_ARTIFACTS=()
+
+    for rel in "${CODEX_MANAGED_HOOK_ARTIFACTS[@]}" "${CODEX_MANAGED_LIB_ARTIFACTS[@]}"; do
+        [[ -e "$codex_home/$rel" ]] && continue
+        CODEX_MISSING_MANAGED_ARTIFACTS+=("$codex_home/$rel")
+    done
+
+    [[ "${#CODEX_MISSING_MANAGED_ARTIFACTS[@]}" -gt 0 ]]
+}
+
+# Call only after codex_managed_artifacts_missing has populated
+# CODEX_MISSING_MANAGED_ARTIFACTS for the current filesystem state.
+codex_log_managed_artifacts_missing() {
+    log_warn "⚠️  Codex hook/lib artifact missing; running activation instead of no-change skip."
+    log_warn "   Cause: one or more Nix-managed ~/.codex hook/lib files are absent."
+    log_warn "   Action: activation will recreate them now; if they remain missing, run 'nrs --force' and then './scripts/ai/verify-ai-compat.sh'."
+
+    local path label
+    for path in "${CODEX_MISSING_MANAGED_ARTIFACTS[@]}"; do
+        label="$path"
+        if [[ "$label" == "$HOME/"* ]]; then
+            label="\$HOME/${label#"$HOME/"}"
+        fi
+        echo "   - $label"
+    done
+}
 
 repair_codex_config_drift_no_changes() {
     # FLAKE_PATH 는 rebuild-common.sh 가 caller 진입점에서 채우는 contract 변수다.

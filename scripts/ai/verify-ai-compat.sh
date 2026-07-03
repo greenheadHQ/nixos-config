@@ -1140,7 +1140,7 @@ echo "=== Codex active hooks 검사 ==="
 #      same-event multiple command를 concurrent 실행하므로 ordering 보장을 dispatcher에 위임한다.
 #   3) ~/.codex/config.toml의 [[hooks.PostToolUse]]에 expected pinning-alert managed command가 포함되어 있는지.
 #      issue #603에서 PostToolUse도 template-owned event로 전환되었다 (warn-only pinning alert).
-#   4) UserPromptSubmit / Stop / PostToolUse expected command가 가리키는 hook + dispatcher 사본 + 3 sub-script + pinning-alert 실재
+#   4) expected command shim이 위임하는 Codex hook artifact 6개 + shared lib 2개 실재
 #   5) tests/test-codex-hook-fixtures.sh deterministic 모드 통과 (live fixture 미실행)
 # fail() 한 건이라도 발생하면 errors++ → exit 1 (FAIL gate).
 
