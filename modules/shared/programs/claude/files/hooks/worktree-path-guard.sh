@@ -21,6 +21,9 @@ COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 
 WORKTREE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 MAIN_REPO=$(cd "$COMMON_DIR/.." 2>/dev/null && pwd) || exit 0
+# 저장소 관례상 worktree는 모두 $MAIN_REPO/.claude/worktrees/ 아래에 생성된다(wt 스크립트).
+# 이 컨테이너 밖에 수동으로 만든 worktree는 관례를 벗어난 것이므로 아래 예외의 보호 대상이 아니다.
+WORKTREES_CONTAINER="$MAIN_REPO/.claude/worktrees"
 
 # 대상 파일의 실제 경로 확인 (심링크 해석)
 RESOLVED=$(readlink -f "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
@@ -47,6 +50,7 @@ _is_main_repo_path() {
   local p="$1"
   [[ "$p" != "$MAIN_REPO"/* ]] && return 1
   [[ "$p" == "$WORKTREE_ROOT"/* ]] && return 1
+  [[ "$p" == "$WORKTREES_CONTAINER"/* ]] && return 1
   return 0
 }
 
