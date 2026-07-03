@@ -19,7 +19,7 @@ PROMPT
 
 ```bash
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
-cat /tmp/codex-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/codex-result.md 2>&1
+cat /tmp/codex-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o /tmp/codex-result.md 2>&1
 cat /tmp/codex-result.md
 ```
 
@@ -27,7 +27,7 @@ cat /tmp/codex-result.md
 - `-o`: 마지막 에이전트 메시지를 파일로 저장. 루프 연동 시 필수.
 - `2>&1`: stderr도 함께 캡처하여 실패 원인 추적에 활용.
 - stdin pipe 패턴 (`cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -`): pipe EOF가 stdin을 자동으로 닫아, Claude Code Bash tool의 background 전환 시 stdin hang을 구조적으로 방지한다. `< /dev/null`은 pipe가 대체하므로 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다 ([known-issues.md §14](known-issues.md)). marker는 codex 프로세스에 적용한다 (issue #585).
-- 인라인 프롬프트(`codex exec --full-auto "..."`)는 짧은 질의에만 사용.
+- 인라인 프롬프트(`codex exec -s workspace-write "..."`)는 짧은 질의에만 사용.
 
 ## 패턴 2: 코드 리뷰 — scope flag만 사용 (커스텀 지시 불필요)
 
@@ -36,7 +36,7 @@ cat /tmp/codex-result.md
 ### 브랜치 비교
 
 ```bash
-env CODEX_PROGRAMMATIC=1 codex exec review --base main --full-auto > /tmp/review.md 2>&1
+env CODEX_PROGRAMMATIC=1 codex exec review --base main > /tmp/review.md 2>&1
 ```
 
 현재 브랜치를 `main`과 비교하여 리뷰한다.
@@ -44,7 +44,7 @@ env CODEX_PROGRAMMATIC=1 codex exec review --base main --full-auto > /tmp/review
 ### 미커밋 변경
 
 ```bash
-env CODEX_PROGRAMMATIC=1 codex exec review --uncommitted --full-auto > /tmp/review.md 2>&1
+env CODEX_PROGRAMMATIC=1 codex exec review --uncommitted > /tmp/review.md 2>&1
 ```
 
 staged/unstaged/untracked 변경을 함께 리뷰한다. 커밋 전 self-review에 적합.
@@ -52,23 +52,23 @@ staged/unstaged/untracked 변경을 함께 리뷰한다. 커밋 전 self-review�
 ### 특정 커밋
 
 ```bash
-env CODEX_PROGRAMMATIC=1 codex exec review --commit abc1234 --full-auto > /tmp/review.md 2>&1
-env CODEX_PROGRAMMATIC=1 codex exec review --commit abc1234 --title "Fix sandbox leak" --full-auto > /tmp/review.md 2>&1
+env CODEX_PROGRAMMATIC=1 codex exec review --commit abc1234 > /tmp/review.md 2>&1
+env CODEX_PROGRAMMATIC=1 codex exec review --commit abc1234 --title "Fix sandbox leak" > /tmp/review.md 2>&1
 ```
 
 `--title`은 `--commit`과 함께 사용하여 리뷰 요약에 커밋 제목을 표시한다.
 
 ### 주의사항
 
-- `-o` review 미지원: `-o`는 review --help에 표시되지만 빈 파일을 생성한다(`Warning: no last agent message; wrote empty content`). `> file 2>&1`이 유일한 워크어라운드.
+- `-o`도 사용 가능: 0.142.5에서 review의 `-o` 빈 파일 생성 upstream bug(#12502)가 해소되어, `-o`와 stdout 리다이렉트(`> file 2>&1`) 둘 다 사용할 수 있다 (재확인: 2026-07-03, known-issues.md §2).
 - PROMPT 금지: scope flag과 PROMPT은 상호 배타. 자세한 내용은 SKILL.md 호환성 매트릭스 참조.
 
-## 패턴 2b: stdin PROMPT로 review (`-o` 대신 `> redirect` 사용)
+## 패턴 2b: stdin PROMPT로 review
 
 scope flag 없이 PROMPT을 stdin으로 전달하여 review를 실행한다.
 
 ```bash
-cat prompt.md | env CODEX_PROGRAMMATIC=1 codex exec review - --full-auto > /tmp/result.md 2>&1
+cat prompt.md | env CODEX_PROGRAMMATIC=1 codex exec review - > /tmp/result.md 2>&1
 ```
 
 > ⚠️ scope flag 미사용: PROMPT 사용 시 scope flag(`--uncommitted`/`--base`/`--commit`)와
@@ -101,7 +101,7 @@ EOF
 2. scope flag으로 리뷰를 실행한다:
 
 ```bash
-env CODEX_PROGRAMMATIC=1 codex exec review --base main --full-auto > /tmp/review.md 2>&1
+env CODEX_PROGRAMMATIC=1 codex exec review --base main > /tmp/review.md 2>&1
 ```
 
 ### 전역 정책 (모든 프로젝트에 적용)
@@ -137,7 +137,7 @@ PROMPT
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
 ```bash
-cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/review-result.md - 2>&1
+cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o /tmp/review-result.md - 2>&1
 cat /tmp/review-result.md
 ```
 
@@ -153,12 +153,12 @@ PROMPT
 ```
 
 ```bash
-cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/review-result.md - 2>&1
+cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o /tmp/review-result.md - 2>&1
 ```
 
 ### 장점
 
-- `-o`로 결과 저장 가능 (review 서브커맨드에서는 빈 파일 생성되므로 exec 전용).
+- `-o`로 결과 저장 가능 (0.142.5부터는 review 서브커맨드에서도 `-o`가 정상 동작하므로, 이 장점은 상대적으로 작아졌다 — patterns.md §패턴 2 주의사항 참조).
 - 프롬프트 내용을 완전히 자유롭게 구성 가능.
 - `--output-schema`와 조합하여 구조화된 JSON 출력도 가능.
 
@@ -192,7 +192,7 @@ PROMPT
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. DA 루프에서는 stdin pipe(`cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -`)를 사용한다.
 
 ```bash
-cat /tmp/da-round1.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/da-round1-result.md \
+cat /tmp/da-round1.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o /tmp/da-round1-result.md \
   - 2>/tmp/da-round1-stderr.log
 cat /tmp/da-round1-result.md
 ```
@@ -214,7 +214,7 @@ PROMPT
 ```
 
 ```bash
-cat /tmp/da-round2.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/da-round2-result.md \
+cat /tmp/da-round2.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o /tmp/da-round2-result.md \
   - 2>/tmp/da-round2-stderr.log
 ```
 
@@ -262,18 +262,18 @@ PROMPT
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
 ```bash
-cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto --output-schema /tmp/review-schema.json \
+cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --output-schema /tmp/review-schema.json \
   -o /tmp/review-structured.json - 2>&1
 ```
 
-주의: `--output-schema`는 exec 전용. review 서브커맨드에서 사용 불가.
+주의: `--output-schema`는 0.142.5부터 exec뿐 아니라 review/resume에서도 지원된다 (재확인: 2026-07-03, `codex exec review --help`). 이전에는 exec 전용이었다.
 
 ## 패턴 7: JSONL 이벤트 스트림
 
 자동화 파서와 연결하거나 실행 과정을 기록할 때 사용한다.
 
 ```bash
-cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto --json > /tmp/events.jsonl
+cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --json > /tmp/events.jsonl
 ```
 
 주요 이벤트 타입:
@@ -283,7 +283,7 @@ cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto --json > /t
 최종 요약문을 파일로도 보존하려면 `-o`를 별도로 함께 사용한다:
 
 ```bash
-cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto --json -o /tmp/result.md > /tmp/events.jsonl
+cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --json -o /tmp/result.md > /tmp/events.jsonl
 ```
 
 ## 패턴 8: 스모크 테스트
@@ -299,7 +299,7 @@ PROMPT
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([known-issues.md §11](known-issues.md) 하위 항목).
 
 ```bash
-cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/smoke-result.md 2>&1
+cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o /tmp/smoke-result.md 2>&1
 cat /tmp/smoke-result.md
 ```
 
@@ -316,7 +316,7 @@ cat /tmp/smoke-result.md
 | 프롬프트 | 완전 자유 제어 | diff 컨텍스트 내장 |
 | 대상 | 범용 작업 | 코드 리뷰 특화 |
 | diff 스코핑 | 수동 (heredoc 등) | 자동 (--uncommitted/--base/--commit) |
-| `-o` 동작 | 정상 | 빈 파일 생성 (review에서 미지원) |
+| `-o` 동작 | 정상 | 정상 (0.142.5 — upstream bug #12502 해소, 재확인: 2026-07-03) |
 
 ## 빠른 참조 표
 
@@ -324,12 +324,12 @@ cat /tmp/smoke-result.md
 
 | 상황 | 패턴 | 명령 요약 |
 |------|------|-----------|
-| 일반 실행 | 1 | `cat prompt \| env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o result` |
-| 리뷰 (기본) | 2 | `env CODEX_PROGRAMMATIC=1 codex exec review --base main --full-auto > result` |
-| 리뷰 (stdin PROMPT) | 2b | `cat prompt \| env CODEX_PROGRAMMATIC=1 codex exec review - --full-auto > result` |
+| 일반 실행 | 1 | `cat prompt \| env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o result` |
+| 리뷰 (기본) | 2 | `env CODEX_PROGRAMMATIC=1 codex exec review --base main > result` |
+| 리뷰 (stdin PROMPT) | 2b | `cat prompt \| env CODEX_PROGRAMMATIC=1 codex exec review - > result` |
 | 리뷰 + 커스텀 지시 (영구) | 3 | AGENTS.md 작성 후 `env CODEX_PROGRAMMATIC=1 codex exec review --base` |
-| 리뷰 + 커스텀 지시 (1회) | 4 | `cat diff+지시 \| env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o result -` |
+| 리뷰 + 커스텀 지시 (1회) | 4 | `cat diff+지시 \| env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o result -` |
 | 피드백 루프 | 5 | 라운드별 prompt → `env CODEX_PROGRAMMATIC=1 codex exec -o` → 분석 → 반복 |
 | 구조화 출력 | 6 | `env CODEX_PROGRAMMATIC=1 codex exec --output-schema schema.json -o result` |
-| JSONL 스트림 | 7 | `env CODEX_PROGRAMMATIC=1 codex exec --full-auto --json > events.jsonl` |
+| JSONL 스트림 | 7 | `env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --json > events.jsonl` |
 | 환경 점검 | 8 | 최소 프롬프트로 `env CODEX_PROGRAMMATIC=1 codex exec` 스모크 테스트 |

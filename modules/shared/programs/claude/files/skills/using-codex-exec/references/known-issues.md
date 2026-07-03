@@ -99,14 +99,18 @@ pub commit: Option<String>,
 재검증 방법: 아래 명령이 에러 없이 실행되면 제약이 해소된 것이다:
 
 ```bash
-echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - --base main --full-auto 2>&1 | head -5
+echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - --base main 2>&1 | head -5
 ```
 
-### 2. review `-o` upstream bug — 빈 파일 생성
+재확인: 2026-07-03, codex-cli 0.142.5 — 위 명령은 여전히 `error: the argument '[PROMPT]' cannot be used with '--base <BRANCH>'`로 실패한다. 4개 변형(PROMPT/--base/--uncommitted/--commit) 모두 clap `conflicts_with_all`로 상호 배타가 유지됨. 제약 미해소.
 
-심각도: 높음
+### 2. review `-o` upstream bug — 빈 파일 생성 (0.142.5에서 해소됨)
 
-관찰된 동작: `-o` 사용 시 `Warning: no last agent message; wrote empty content` 출력, 0바이트 파일 생성 (v0.114.0에서 직접 재현)
+심각도: 높음 (해소 전 기준 — 버전 하한 판단 근거로 보존)
+
+0.142.5에서 해소됨 (재확인: 2026-07-03). 실제 uncommitted diff가 있는 상태에서 `codex exec review --uncommitted -o <file>`을 실행한 결과, `Warning: no last agent message` 경고 없이 파일에 리뷰 내용이 정상 기록됨을 확인했다. 아래는 해소 전(v0.104.0~v0.115.0-alpha) 증상의 기록이다.
+
+관찰된 동작 (해소 전): `-o` 사용 시 `Warning: no last agent message; wrote empty content` 출력, 0바이트 파일 생성 (v0.114.0에서 직접 재현)
 
 참고: `-o`(`--output-last-message`)는 `codex exec review --help`에 표시되므로 CLI 파서는 인자를 수용한다. 문제는 `ReviewTask::run()`이 None을 반환하여 빈 파일이 생성되는 것이다.
 
@@ -117,26 +121,28 @@ echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - --base main --full-au
 | [#12502](https://github.com/openai/codex/issues/12502) | OPEN (2026-02-22~) | review `-o` 빈 파일 생성 보고 |
 | [#14335](https://github.com/openai/codex/issues/14335) | OPEN (2026-03-11~) | 동일 증상 재보고 |
 
-영향 범위: v0.104.0 ~ v0.115.0-alpha (직접 검증 기준)
+영향 범위: v0.104.0 ~ v0.115.0-alpha (직접 검증 기준). 0.142.5는 영향 범위 밖 (해소 확인).
 
-재현:
+재현 (해소 전, 역사적 기록):
 
 ```bash
-echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - --full-auto -o /tmp/test.md 2>&1
-# → 0바이트 파일 + "Warning: no last agent message; wrote empty content"
+echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - -o /tmp/test.md 2>&1
+# v0.114.0 기준: 0바이트 파일 + "Warning: no last agent message; wrote empty content"
 ```
 
-워크어라운드: stdout 리다이렉트로 대체한다:
+워크어라운드 (해소 전 필요했던 방법, 0.142.5에서는 불필요하지만 유지해도 무방): stdout 리다이렉트로 대체한다:
 
 ```bash
-env CODEX_PROGRAMMATIC=1 codex exec review --base main --full-auto > /tmp/review-result.md 2>&1
+env CODEX_PROGRAMMATIC=1 codex exec review --base main > /tmp/review-result.md 2>&1
 ```
 
 재검증 방법: 아래 명령으로 `-o`가 비어있지 않은 파일을 생성하면 수정된 것이다:
 
 ```bash
-echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - --full-auto -o /tmp/test.md 2>&1 && [ -s /tmp/test.md ] && echo "FIXED" || echo "STILL BROKEN"
+echo "modified" >> file.txt && echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review --uncommitted -o /tmp/test.md 2>&1 && [ -s /tmp/test.md ] && echo "FIXED" || echo "STILL BROKEN"
 ```
+
+2026-07-03 실측 결과: 실제 uncommitted diff가 있는 저장소에서 위 재검증 명령이 `FIXED`를 반환함 (`codex exec review --uncommitted -o <file>`로 직접 재현, PROMPT 없이 scope flag만 사용). `echo "test" | ... review - -o ...`처럼 PROMPT를 stdin으로 줄 경우 diff가 없으면 "There are no ... changes to review" 메시지가 정상 저장되는 것으로 대체되므로, 리그레션 확인 시 실제 diff가 있는 상태에서 재현해야 한다.
 
 ### 3. review가 working-tree 변경을 잘못 포함
 
@@ -167,9 +173,11 @@ echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - --full-auto -o /tmp/t
 
 ### 5. `unexpected argument '--approval-mode' found`
 
-원인: `codex exec`는 `--approval-mode` 플래그를 받지 않는다.
+원인: `codex exec`는 `--approval-mode` 플래그를 받지 않는다. exec/review/resume은 headless 실행이라 승인 프롬프트 자체가 없고, 승인 관련 CLI 플래그는 애초에 존재하지 않는다 (승인은 항상 `never`로 고정 — 재확인: 2026-07-03, 0.142.5, `--ignore-user-config`로 CLI 기본값 직접 확인).
 
-해결: 자동 실행이 필요하면 `--full-auto`를 사용한다. 세밀한 승인/샌드박스 조정은 `-c key=value`로 처리한다.
+해결: 세밀한 샌드박스 조정이 필요하면 exec에서 `-s, --sandbox <MODE>`를 사용한다 (review/resume은 `-s` 미지원 — config.toml의 `sandbox_mode`를 따른다). 그 외 조정은 `-c key=value`로 처리한다.
+
+과거 버전에는 승인 자동화 + `--sandbox workspace-write`를 한 번에 지정하는 단축 플래그가 있었으나, 0.142.5 `codex exec --help` / `codex exec review --help` / `codex exec resume --help` 어디에도 나타나지 않는다 (완전히 제거됨). 문서/스크립트에 그 이름이 남아 있으면 `-s workspace-write`로 치환한다.
 
 ### 6. 결과 파일이 비어 있음 (`-o` 사용 시)
 
@@ -200,7 +208,7 @@ echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - --full-auto -o /tmp/t
    ```
 2. 인라인 프롬프트로 비교 실행한다:
    ```bash
-   codex exec --full-auto "짧은 스모크 테스트"
+   codex exec -s workspace-write "짧은 스모크 테스트"
    ```
 
 ### 8. Git 저장소 체크 실패
@@ -266,7 +274,7 @@ PROMPT
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 (§11 하위 항목).
 
 ```bash
-cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex exec --full-auto -o /tmp/smoke-result.md 2>&1
+cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o /tmp/smoke-result.md 2>&1
 cat /tmp/smoke-result.md
 ```
 
@@ -381,14 +389,14 @@ echo "PID: $!"
 
 관찰된 동작: 특정 Bash tool sandbox 구성에서 heredoc과 codex exec를 같은 호출에 체이닝하면 hang이 발생한다. 정확한 메커니즘은 미확정이나, heredoc이 stdin 상태에 영향을 주어 후속 codex exec가 추가 입력을 기다리는 것으로 추정된다. `run_in_background` 환경에서만 발생하며, 일반 터미널에서는 재현되지 않는다.
 
-재현 (codex-cli v0.118.0, 2026-04-01 확인):
+재현 (codex-cli v0.118.0, 2026-04-01 확인. 원 재현에는 당시 존재하던 자동실행 플래그를 사용했으나 0.142.5에서 제거되어 아래는 `-s workspace-write`로 치환한 등가 명령이다 — 버그는 stdin/heredoc 상호작용이 원인이라 이 치환으로 재현 조건이 바뀌지 않는다):
 
 HANG — heredoc 체이닝 (같은 Bash 호출):
 ```bash
 (umask 077; TDIR=$(mktemp -d /tmp/test-XXXXXX) && cat > "$TDIR/prompt.md" <<'EOF'
 테스트 프롬프트
 EOF
-codex exec --full-auto --ephemeral -o "$TDIR/result.md" "$(cat "$TDIR/prompt.md")")
+codex exec -s workspace-write --ephemeral -o "$TDIR/result.md" "$(cat "$TDIR/prompt.md")")
 # → 무한 대기
 ```
 
@@ -447,9 +455,9 @@ cat "$TDIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 
 근본 원인: Claude Code Bash tool이 병렬 실행 시 background 전환하면서 stdin이 적절히 닫히지 않음. codex exec는 인자로 프롬프트를 받아도 stdin이 열려있으면 추가 입력을 기다림.
 
-해결: 모든 codex exec 호출에 `< /dev/null`을 추가하여 stdin을 즉시 EOF로 만든다.
+해결: 모든 codex exec 호출에 `< /dev/null`을 추가하여 stdin을 즉시 EOF로 만든다. (아래 명령의 샌드박스 플래그는 §13 최초 기록 당시의 자동실행 플래그를 0.142.5 제거 이후 등가 표기인 `-s workspace-write`로 치환한 것 — stdin EOF 해결 패턴 자체와는 무관하다.)
 ```bash
-codex exec --full-auto --ephemeral -o "$DIR/result.md" "$(cat prompt.md)" < /dev/null
+codex exec -s workspace-write --ephemeral -o "$DIR/result.md" "$(cat prompt.md)" < /dev/null
 ```
 
 참고: Codex 공식 플러그인의 background 작업은 `stdio: "ignore"`로 stdin/stdout/stderr를 모두 /dev/null로 리다이렉트한다 (동일 효과).
@@ -467,7 +475,7 @@ codex exec --full-auto --ephemeral -o "$DIR/result.md" "$(cat prompt.md)" < /dev
 ```bash
 # §13의 < /dev/null 패턴을 대체:
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
-cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec --full-auto --ephemeral \
+cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --ephemeral \
   -o "$DIR/result.md" \
   - \
   2>"$DIR/stderr.log"
@@ -525,7 +533,7 @@ variant legend (issue #593 PoC 8 variant + wrapper 적용 분류):
 | 시나리오 | HOME | CODEX_HOME | hooks 등록 | sandbox | stdin | 결과 (Mac 0.128, supervised wrapper 미적용) | wrapper 적용 후 기대 |
 |----------|------|-----------|-----------|---------|-------|--------|--------|
 | `host_home_no_override_stdin_pipe_pass` | host | host | 없음 (host config inline) | read-only | `</dev/null` 또는 pipe | OK 12s, hook fired, "PONG" | OK (wrapper grace 무관 — 이미 정상) |
-| `raw_override_inline_toml_hang` | host/sandbox | host/sandbox | `-c hooks.<event>` override | full-auto/read-only | host inherited 또는 pipe | HANG (timeout 못 죽임) | wrapper의 setsid+kill-after로 timeout 안에 정리되어 PASS |
+| `raw_override_inline_toml_hang` | host/sandbox | host/sandbox | `-c hooks.<event>` override | workspace-write(당시 자동실행 플래그)/read-only | host inherited 또는 pipe | HANG (timeout 못 죽임) | wrapper의 setsid+kill-after로 timeout 안에 정리되어 PASS |
 | `isolated_codex_home_overrideless_retired_self_injection` | sandbox | sandbox | ephemeral config.toml | read-only | inherited | HANG/marker unset in retired PR #595 self-injection assertion | Retired historical context (#634) — local fixture now validates caller-supplied `CODEX_PROGRAMMATIC=1` inheritance with supervised wrapper + stdin pipe EOF |
 
 Retired historical context (#634): `tests/test-codex-hook-fixtures.sh`의 기존 PR #595 self-injection assertion은 `CODEX_HOME=$sandbox/codex-home` + ephemeral config.toml + inherited stdin + raw `codex exec`에서 mac 0.128 marker unset/hang 계열 실패를 보였다. #634에서 fixture 계약을 local supported path로 정렬했다: programmatic caller가 `CODEX_PROGRAMMATIC=1`을 codex 프로세스에 붙이고, live fixture는 `codex-exec-supervised` + stdin pipe EOF + sandbox `CODEX_HOME` hook config로 이 marker가 hook subprocess까지 상속되는지만 검증한다. managed hook early-exit 자체는 deterministic noise-guard fixture가 검증한다.
