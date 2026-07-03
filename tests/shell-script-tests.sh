@@ -125,6 +125,11 @@ run_test "install-lefthook serializes concurrent invocations" test_install_lefth
 run_test "install-lefthook pins worktree-local hooks path in worktree mode" test_install_lefthook_worktree_mode_pins_local_hooks_path
 run_test "fragile-hardcoding-guard line count word order independent" test_fragile_hardcoding_guard_line_count_word_order_independent
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved
+run_test "worktree-path-guard main repo session always allows" test_worktree_path_guard_main_repo_session_always_allows
+run_test "worktree-path-guard denies main repo file from worktree" test_worktree_path_guard_denies_main_repo_file_from_worktree
+run_test "worktree-path-guard allows own worktree file" test_worktree_path_guard_allows_own_worktree_file
+run_test "worktree-path-guard allows sibling worktree file" test_worktree_path_guard_allows_sibling_worktree_file
+run_test "worktree-path-guard allows main repo plan path exception" test_worktree_path_guard_allows_main_repo_plan_path_exception
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
