@@ -47,22 +47,22 @@ default_mode_request_user_input = true
 
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
-command = "$HOME/.codex/hooks/record-prompt-submit.sh"
+command = "t=\"$HOME/.codex/hooks/record-prompt-submit.sh\"; if [ -x \"$t\" ]; then exec \"$t\"; fi; printf '%s\\n' '[codex-hook] target missing or not executable: ~/.codex/hooks/record-prompt-submit.sh. Impact: hook skipped to avoid raw 127.' 'Action: run nrs --force, then ./scripts/ai/verify-ai-compat.sh.' >&2; exit 0"
 
 [[hooks.Stop]]
 
 [[hooks.Stop.hooks]]
 type = "command"
-command = "$HOME/.codex/hooks/_stop-dispatcher.sh"
+command = "t=\"$HOME/.codex/hooks/_stop-dispatcher.sh\"; if [ -x \"$t\" ]; then exec \"$t\"; fi; printf '%s\\n' '[codex-hook] target missing or not executable: ~/.codex/hooks/_stop-dispatcher.sh. Impact: hook skipped to avoid raw 127.' 'Action: run nrs --force, then ./scripts/ai/verify-ai-compat.sh.' >&2; exit 0"
 
 [[hooks.PreToolUse]]
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = "$HOME/.codex/hooks/pinning-guard.sh"
+command = "t=\"$HOME/.codex/hooks/pinning-guard.sh\"; if [ -x \"$t\" ]; then exec \"$t\"; fi; printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Codex managed hook target is missing or not executable: ~/.codex/hooks/pinning-guard.sh. Impact: edit is denied until the hook is restored. Action: run nrs --force, then ./scripts/ai/verify-ai-compat.sh.\"}}'; exit 0"
 
 [[hooks.PostToolUse]]
 
 [[hooks.PostToolUse.hooks]]
 type = "command"
-command = "$HOME/.codex/hooks/pinning-alert.sh"
+command = "t=\"$HOME/.codex/hooks/pinning-alert.sh\"; if [ -x \"$t\" ]; then exec \"$t\"; fi; printf '%s\\n' '[codex-hook] target missing or not executable: ~/.codex/hooks/pinning-alert.sh. Impact: hook skipped to avoid raw 127.' 'Action: run nrs --force, then ./scripts/ai/verify-ai-compat.sh.' >&2; exit 0"

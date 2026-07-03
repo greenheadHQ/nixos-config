@@ -95,15 +95,8 @@ test_verify_ai_compat_codex_artifact_contract_static() {
   # shellcheck source=../../modules/shared/scripts/lib/rebuild/codex.sh
   source "$codex_rebuild_helper"
 
-  local command_prefix expected_hooks actual_hooks rel expected_hooks_text actual_hooks_text
-  command_prefix='$HOME/.codex/hooks/'
-  expected_hooks=(
-    "${EXPECTED_USER_PROMPT_COMMAND#"$command_prefix"}"
-    "${EXPECTED_STOP_DISPATCHER_COMMAND#"$command_prefix"}"
-    "${EXPECTED_DISPATCHER_SUB_SCRIPTS[@]}"
-    "${EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND#"$command_prefix"}"
-    "${EXPECTED_POST_TOOL_USE_PINNING_COMMAND#"$command_prefix"}"
-  )
+  local expected_hooks actual_hooks rel expected_hooks_text actual_hooks_text
+  expected_hooks=("${EXPECTED_CODEX_MANAGED_HOOK_ARTIFACTS[@]}")
   actual_hooks=()
   for rel in "${CODEX_MANAGED_HOOK_ARTIFACTS[@]}"; do
     actual_hooks+=("${rel#hooks/}")

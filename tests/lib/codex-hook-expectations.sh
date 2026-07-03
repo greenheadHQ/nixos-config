@@ -16,29 +16,42 @@
 # shellcheck disable=SC2034
 # (모든 상수가 source caller 측에서만 소비되므로 SC2034 unused 경고를 비활성화한다.)
 
+_CODEX_HOOK_EXPECTATIONS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=codex-hook-command-builder.sh
+. "$_CODEX_HOOK_EXPECTATIONS_DIR/codex-hook-command-builder.sh"
+
 # stdin schema 기준 라벨 (verbose 표시용)
 CODEX_HOOK_SCHEMA_BASELINE="0.124"
 
-# ~/.codex/config.toml의 [[hooks.UserPromptSubmit.hooks]] command. 절대 path는 codex CLI가
-# `$HOME` 변수 expansion을 처리하므로 fixture/verifier는 string match로 비교한다.
-EXPECTED_USER_PROMPT_COMMAND='$HOME/.codex/hooks/record-prompt-submit.sh'
+# ~/.codex/config.toml의 [[hooks.UserPromptSubmit.hooks]] command.
+EXPECTED_USER_PROMPT_COMMAND="$(expected_codex_hook_command advisory ".codex/hooks/record-prompt-submit.sh")"
 
 # ~/.codex/config.toml의 [[hooks.Stop.hooks]] command — 단일 dispatcher.
-EXPECTED_STOP_DISPATCHER_COMMAND='$HOME/.codex/hooks/_stop-dispatcher.sh'
+EXPECTED_STOP_DISPATCHER_COMMAND="$(expected_codex_hook_command advisory ".codex/hooks/_stop-dispatcher.sh")"
 
 # ~/.codex/config.toml의 [[hooks.PreToolUse.hooks]] command — issue #587에서 등록.
-# shellcheck disable=SC2016  # $HOME intentionally unexpanded: literal string match against config.toml
-EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND='$HOME/.codex/hooks/pinning-guard.sh'
+EXPECTED_PRE_TOOL_USE_PINNING_GUARD_COMMAND="$(expected_codex_hook_command blocking ".codex/hooks/pinning-guard.sh")"
 
 # ~/.codex/config.toml의 [[hooks.PostToolUse.hooks]] command — issue #603에서 등록.
 # Codex 0.125 PostToolUse stdin은 apply_patch envelope을 `tool_input.command`로 전달하므로
 # hook이 V4A patch text에서 영향 파일과 추가 라인을 직접 파싱한다 (자세한 schema는
 # modules/shared/programs/codex/files/hooks/pinning-alert.sh 헤더 주석 참조).
-EXPECTED_POST_TOOL_USE_PINNING_COMMAND='$HOME/.codex/hooks/pinning-alert.sh'
+EXPECTED_POST_TOOL_USE_PINNING_COMMAND="$(expected_codex_hook_command advisory ".codex/hooks/pinning-alert.sh")"
 
 # dispatcher가 호출하는 sub-script. ordering은 record-last-stop → nrs-session-cleanup.
 # 본 배열 순서는 dispatcher 호출 순서이며 fixture ordering 검증의 expected.
 EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh)
+
+# ~/.codex/hooks/에 배치되는 managed hook artifact 전체. Top-level command 4개와
+# dispatcher child 2개를 함께 포함한다.
+EXPECTED_CODEX_MANAGED_HOOK_ARTIFACTS=(
+  record-prompt-submit.sh
+  _stop-dispatcher.sh
+  record-last-stop.sh
+  nrs-session-cleanup.sh
+  pinning-guard.sh
+  pinning-alert.sh
+)
 
 # ~/.codex/lib/에 배치되는 managed library artifact. source 대상이므로 executable을 요구하지 않는다.
 EXPECTED_CODEX_MANAGED_LIB_ARTIFACTS=(hook-runtime.sh pinning-patterns.sh)
