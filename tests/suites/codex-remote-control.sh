@@ -79,6 +79,39 @@ EOS
   chmod +x "$bin_dir/codex"
 }
 
+_codex_rc_make_alerting() {
+  local sandbox="$1"
+  COD_RC_ALERT_LOG="$sandbox/alerts.log"
+  COD_RC_SERVICE_LIB="$sandbox/service-lib.sh"
+  COD_RC_PUSHOVER_CRED="$sandbox/pushover.env"
+
+  cat > "$COD_RC_SERVICE_LIB" <<'EOS'
+send_notification() {
+  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$ALERT_LOG"
+}
+EOS
+  printf '%s\n' \
+    'PUSHOVER_TOKEN=test-token' \
+    'PUSHOVER_USER=test-user' \
+    > "$COD_RC_PUSHOVER_CRED"
+}
+
+_codex_rc_assert_alert_count() {
+  local needle="$1"
+  local expected="$2"
+  local actual
+
+  actual="$(
+    if [ -f "$COD_RC_ALERT_LOG" ]; then
+      awk -v needle="$needle" 'index($0, needle) { count++ } END { print count + 0 }' "$COD_RC_ALERT_LOG"
+    else
+      printf '0\n'
+    fi
+  )"
+  [ "$actual" = "$expected" ] \
+    || fail "expected $expected alert(s) containing '$needle' in $COD_RC_ALERT_LOG, got $actual"
+}
+
 _codex_rc_setup() {
   local sandbox="$1"
   COD_RC_HOME="$sandbox/home"
@@ -478,4 +511,162 @@ test_codex_remote_control_socket_cleanup_when_no_pid_after_drift() {
   [ ! -e "$socket_file" ] || fail "socket should be removed when no app-server PID exists during drift restart"
   jq -e '.lastAction == "restarted-version-drift" and .exitCode == 0' <<<"$status" >/dev/null \
     || fail "drift restart status not recorded: $status"
+}
+
+test_codex_remote_control_alert_recovery_after_failure() {
+  local sandbox state
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  _codex_rc_make_alerting "$sandbox"
+  printf 'failed\n' > "$COD_RC_STATE/last-health-state"
+
+  ALERT_LOG="$COD_RC_ALERT_LOG" \
+    SERVICE_LIB="$COD_RC_SERVICE_LIB" \
+    PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running
+
+  state="$(cat "$COD_RC_STATE/last-health-state")"
+  [ "$state" = "healthy" ] || fail "recovery should update health state to healthy, got: $state"
+  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 1
+  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
+}
+
+test_codex_remote_control_alert_success_without_failure_is_quiet() {
+  local sandbox state
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  _codex_rc_make_alerting "$sandbox"
+
+  ALERT_LOG="$COD_RC_ALERT_LOG" \
+    SERVICE_LIB="$COD_RC_SERVICE_LIB" \
+    PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running
+
+  state="$(cat "$COD_RC_STATE/last-health-state")"
+  [ "$state" = "healthy" ] || fail "healthy run should write healthy state, got: $state"
+  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
+  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
+}
+
+test_codex_remote_control_alert_failure_sets_failed_and_cools_down() {
+  local sandbox first_last second_last state
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  _codex_rc_make_alerting "$sandbox"
+  printf 'healthy\n' > "$COD_RC_STATE/last-health-state"
+
+  if FAKE_DAEMON_MALFORMED=1 \
+    ALERT_LOG="$COD_RC_ALERT_LOG" \
+    SERVICE_LIB="$COD_RC_SERVICE_LIB" \
+    PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running 2>/dev/null; then
+    fail "ensure-running should fail for malformed daemon JSON"
+  fi
+
+  state="$(cat "$COD_RC_STATE/last-health-state")"
+  [ "$state" = "failed" ] || fail "failed run should write failed state, got: $state"
+  [ -s "$COD_RC_STATE/last-failure-alert" ] || fail "failed run should record last failure alert timestamp"
+  first_last="$(cat "$COD_RC_STATE/last-failure-alert")"
+  _codex_rc_assert_alert_count "Codex Remote Control Failed" 1
+
+  if FAKE_DAEMON_MALFORMED=1 \
+    ALERT_LOG="$COD_RC_ALERT_LOG" \
+    SERVICE_LIB="$COD_RC_SERVICE_LIB" \
+    PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running 2>/dev/null; then
+    fail "ensure-running should keep failing for malformed daemon JSON"
+  fi
+
+  state="$(cat "$COD_RC_STATE/last-health-state")"
+  second_last="$(cat "$COD_RC_STATE/last-failure-alert")"
+  [ "$state" = "failed" ] || fail "repeated failure should keep failed state, got: $state"
+  [ "$second_last" = "$first_last" ] || fail "cooldown should not rewrite last failure alert timestamp"
+  _codex_rc_assert_alert_count "Codex Remote Control Failed" 1
+  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
+}
+
+test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state() {
+  local sandbox state
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  _codex_rc_make_alerting "$sandbox"
+  printf 'healthy\n' > "$COD_RC_STATE/last-health-state"
+
+  if FAKE_DAEMON_MALFORMED=1 \
+    ALERT_LOG="$COD_RC_ALERT_LOG" \
+    SERVICE_LIB="$COD_RC_SERVICE_LIB" \
+    PUSHOVER_CRED_FILE="$sandbox/missing-pushover.env" \
+    CREDENTIALS_DIRECTORY='' \
+    PUSHOVER_TOKEN='' \
+    PUSHOVER_USER='' \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running 2>/dev/null; then
+    fail "ensure-running should fail for malformed daemon JSON"
+  fi
+
+  state="$(cat "$COD_RC_STATE/last-health-state")"
+  [ "$state" = "healthy" ] || fail "missing Pushover token should leave health state unchanged, got: $state"
+  [ ! -e "$COD_RC_STATE/last-failure-alert" ] || fail "missing Pushover token should not write failure alert timestamp"
+  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
+  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
+}
+
+test_codex_remote_control_sync_standalone_package_success_links_current_release() {
+  local sandbox release_dir status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  release_dir="$COD_RC_HOME/.codex/packages/standalone/releases/0.142.4-x86_64-unknown-linux-musl"
+
+  _codex_rc_env bash "$(_codex_rc_script)" ensure-standalone
+
+  [ -L "$COD_RC_HOME/.codex/packages/standalone/current" ] \
+    || fail "standalone current should be a symlink"
+  [ "$(readlink "$COD_RC_HOME/.codex/packages/standalone/current")" = "$release_dir" ] \
+    || fail "standalone current should point at desired release"
+  [ -x "$release_dir/bin/codex" ] || fail "synced release should contain executable bin/codex"
+  [ -L "$release_dir/codex" ] || fail "synced release should include compatibility codex symlink"
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.lastAction == "synced-standalone-package" and .standaloneVersion == "0.142.4" and .exitCode == 0' <<<"$status" >/dev/null \
+    || fail "successful standalone sync was not recorded: $status"
+}
+
+test_codex_remote_control_sync_extract_failure_propagates_status() {
+  local sandbox bad_package status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  bad_package="$sandbox/not-a-tarball.tar.gz"
+  printf 'not a tarball\n' > "$bad_package"
+
+  if COD_RC_PKG="$bad_package" _codex_rc_env bash "$(_codex_rc_script)" ensure-standalone 2>/dev/null; then
+    fail "ensure-standalone should fail when package extraction fails"
+  fi
+
+  [ ! -e "$COD_RC_HOME/.codex/packages/standalone/current" ] \
+    || fail "failed standalone sync should not publish current release"
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.lastRepairReason == "standalone-sync-failed:extract" and .lastAction != "synced-standalone-package" and .exitCode == 1' <<<"$status" >/dev/null \
+    || fail "standalone extract failure was not propagated: $status"
+}
+
+test_codex_remote_control_sync_records_login_status_success_and_api_key_paths() {
+  local sandbox good_log good_status bad_log bad_status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+
+  _codex_rc_env bash "$(_codex_rc_script)" ensure-running
+  good_log="$COD_RC_LOG"
+  good_status="$(cat "$COD_RC_STATE/status.json")"
+  assert_file_contains "$good_log" "login status"
+  jq -e '.authMode == "chatgpt" and .loginStatus == "chatgpt" and .exitCode == 0' <<<"$good_status" >/dev/null \
+    || fail "ChatGPT login status was not recorded: $good_status"
+
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  if FAKE_LOGIN_STATUS='Logged in using API key' _codex_rc_env bash "$(_codex_rc_script)" ensure-running; then
+    fail "ensure-running should fail for API-key auth"
+  fi
+  bad_log="$COD_RC_LOG"
+  bad_status="$(cat "$COD_RC_STATE/status.json")"
+  assert_file_contains "$bad_log" "login status"
+  jq -e '.authMode == "api-key" and .loginStatus == "api-key" and .lastRepairReason == "auth-not-chatgpt" and .exitCode == 30' <<<"$bad_status" >/dev/null \
+    || fail "API-key login status was not recorded as unhealthy: $bad_status"
 }
