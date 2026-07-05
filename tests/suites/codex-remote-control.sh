@@ -288,6 +288,35 @@ test_codex_remote_control_lock_failure_does_not_run_core_action() {
   assert_not_contains "$(cat "$COD_RC_LOG" 2>/dev/null || true)" 'remote-control start --json'
 }
 
+test_codex_remote_control_lock_acquire_timeout_is_recorded() {
+  local sandbox ready lock_holder status
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  ready="$sandbox/lock-ready"
+
+  flock "$COD_RC_STATE/maintenance.lock" bash -c 'touch "$1"; sleep 5' _ "$ready" &
+  lock_holder=$!
+  for _ in {1..50}; do
+    [ ! -e "$ready" ] || break
+    kill -0 "$lock_holder" 2>/dev/null || fail "lock holder exited before acquiring lock"
+    sleep 0.1
+  done
+  [ -e "$ready" ] || fail "lock holder did not acquire lock"
+
+  if MAINT_LOCK_TIMEOUT_SECONDS=1 _codex_rc_env bash "$(_codex_rc_script)" ensure-running 2>/dev/null; then
+    kill "$lock_holder" 2>/dev/null || true
+    wait "$lock_holder" 2>/dev/null || true
+    fail "ensure-running should fail when maintenance lock acquisition times out"
+  fi
+  kill "$lock_holder" 2>/dev/null || true
+  wait "$lock_holder" 2>/dev/null || true
+
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.lastRepairReason == "lock-acquire-timeout" and .exitCode != 0' <<<"$status" >/dev/null \
+    || fail "lock timeout was not recorded as unhealthy: $status"
+  assert_not_contains "$(cat "$COD_RC_LOG" 2>/dev/null || true)" 'remote-control start --json'
+}
+
 test_codex_remote_control_repair_kills_proven_stale_unmanaged_process() {
   local sandbox ps_file kill_log socket_file user
   sandbox="$(new_sandbox)"
