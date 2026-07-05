@@ -63,15 +63,37 @@ in
       serviceConfig = {
         Type = "simple";
         ExecStart = "${pkgs.socat}/bin/socat TCP-LISTEN:${toString cfg.webhookPort},reuseaddr,fork EXEC:${webhookBridgeScript}/bin/karakeep-webhook-bridge";
+        DynamicUser = true;
+        LoadCredential = [
+          "pushover:${pushoverCredPath}"
+        ]
+        ++ lib.optionals (cfg.webhookTokenFile != null) [
+          "webhook-token:${cfg.webhookTokenFile}"
+        ];
         Restart = "on-failure";
         RestartSec = "5s";
+        ProtectSystem = "strict";
+        ProtectHome = true;
         PrivateTmp = true;
+        PrivateDevices = true;
         NoNewPrivileges = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+        ];
+        RestrictNamespaces = true;
+        LockPersonality = true;
       };
 
       environment = {
-        PUSHOVER_CRED_FILE = pushoverCredPath;
+        PUSHOVER_CRED_FILE = "%d/pushover";
         SERVICE_LIB = "${serviceLib}";
+      }
+      // lib.optionalAttrs (cfg.webhookTokenFile != null) {
+        WEBHOOK_TOKEN_FILE = "%d/webhook-token";
       };
     };
   };
