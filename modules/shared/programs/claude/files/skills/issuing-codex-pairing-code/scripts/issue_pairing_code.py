@@ -450,6 +450,7 @@ class WsUnixClient:
     def connect(self) -> None:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(self.timeout)
+        deadline = time.monotonic() + self.timeout
         try:
             sock.connect(str(self.socket_path))
             key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
@@ -463,8 +464,9 @@ class WsUnixClient:
                 "\r\n"
             )
             sock.sendall(request.encode("ascii"))
-            response = self._read_http_response(sock)
+            response = self._read_http_response(sock, deadline)
             self._verify_handshake(response, key)
+            sock.settimeout(self.timeout)
             self.sock = sock
         except PairingError:
             sock.close()
@@ -476,9 +478,16 @@ class WsUnixClient:
             sock.close()
             raise
 
-    def _read_http_response(self, sock: socket.socket) -> str:
+    def _read_http_response(self, sock: socket.socket, deadline: float) -> str:
+        # per-recv timeout만으로는 서버가 timeout보다 짧은 간격으로 바이트를
+        # 흘리면 handshake 전체가 --timeout을 초과할 수 있다. recv마다 남은
+        # 시간으로 재설정해 handshake 전체를 하나의 deadline에 묶는다.
         data = bytearray()
         while b"\r\n\r\n" not in data:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise PairingError("WebSocket handshake timed out")
+            sock.settimeout(remaining)
             chunk = sock.recv(4096)
             if not chunk:
                 raise PairingError("connection closed during WebSocket handshake")

@@ -12,6 +12,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -134,6 +135,46 @@ class PairingCodeHelperTests(unittest.TestCase):
                     pass
             thread.join(2)
             self.assertFalse(thread.is_alive(), "server thread did not exit")
+
+    def test_handshake_enforces_overall_deadline(self) -> None:
+        # 서버가 per-recv timeout보다 짧은 간격으로 바이트를 흘리는 drip-feed:
+        # recv마다 윈도우가 리셋되면 handshake가 --timeout을 무한히 초과한다.
+        with tempfile.TemporaryDirectory() as tmp:
+            socket_path = Path(tmp) / "app.sock"
+            ready = threading.Event()
+            stop = threading.Event()
+
+            def server() -> None:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
+                    srv.bind(str(socket_path))
+                    srv.listen(1)
+                    ready.set()
+                    conn, _ = srv.accept()
+                    with conn:
+                        request = b""
+                        while b"\r\n\r\n" not in request:
+                            request += conn.recv(4096)
+                        while not stop.is_set():
+                            try:
+                                conn.sendall(b"H")
+                            except OSError:
+                                break
+                            stop.wait(0.1)
+
+            thread = threading.Thread(target=server)
+            thread.start()
+            self.assertTrue(ready.wait(2), "server did not start in time")
+            started = time.monotonic()
+            try:
+                with self.assertRaises(issue_pairing_code.PairingError):
+                    with issue_pairing_code.WsUnixClient(socket_path, 0.5):
+                        pass
+                elapsed = time.monotonic() - started
+            finally:
+                stop.set()
+            thread.join(2)
+            self.assertFalse(thread.is_alive(), "server thread did not exit")
+        self.assertLess(elapsed, 5, "handshake was not bounded by a shared deadline")
 
     def test_redaction_removes_codes_and_secret_fields(self) -> None:
         raw = (
