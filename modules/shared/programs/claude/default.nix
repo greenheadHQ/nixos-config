@@ -211,6 +211,10 @@ in
     ".claude/skills/create-pr".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-pr";
 
+    # issuing-codex-pairing-code 스킬 (user-scope)
+    ".claude/skills/issuing-codex-pairing-code".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/issuing-codex-pairing-code";
+
     # write-handoff 스킬 (user-scope)
     ".claude/skills/write-handoff".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/write-handoff";

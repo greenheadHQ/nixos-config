@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue Codex Pairing Code"
+  short_description: "Issue a Codex pairing code only when the latest user message explicitly asks for one."
+  default_prompt: "Use $issuing-codex-pairing-code only when the latest user message explicitly asks to issue or share a Codex remote-control computer pairing code."
