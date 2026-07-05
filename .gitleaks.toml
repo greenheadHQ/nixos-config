@@ -6,5 +6,4 @@ useDefault = true
 [allowlist]
 paths = [
   '''flake\.lock''',
-  '''\.local\.md''',
 ]
