@@ -329,6 +329,7 @@ class PairingCodeHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             socket_path = Path(tmp) / "app.sock"
             seen_methods: list[str] = []
+            seen_params: dict[str, object] = {}
             ready = threading.Event()
 
             def server() -> None:
@@ -358,6 +359,7 @@ class PairingCodeHelperTests(unittest.TestCase):
                                 break
                             message = json.loads(payload.decode("utf-8"))
                             seen_methods.append(message["method"])
+                            seen_params[message["method"]] = message.get("params")
                             if "id" not in message:
                                 continue
                             if message["method"] == "remoteControl/pairing/start":
@@ -396,6 +398,12 @@ class PairingCodeHelperTests(unittest.TestCase):
                 "remoteControl/pairing/start",
             ],
         )
+        initialize_params = seen_params["initialize"]
+        assert isinstance(initialize_params, dict)
+        self.assertIs(initialize_params["capabilities"]["experimentalApi"], True)
+        enable_params = seen_params["remoteControl/enable"]
+        assert isinstance(enable_params, dict)
+        self.assertIs(enable_params["ephemeral"], True)
 
     def test_binary_selection_honors_env_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -415,6 +423,23 @@ class PairingCodeHelperTests(unittest.TestCase):
             issue_pairing_code.subprocess, "run", side_effect=generate_schema
         ):
             issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"), 1)
+
+    def test_protocol_check_requests_experimental_surface(self) -> None:
+        # pairing API는 experimental이라 --experimental 없는 generate-ts 출력에서는
+        # 필터링된다. 플래그가 빠지면 지원 버전에서도 항상 fail closed된다.
+        captured_args: list[str] = []
+
+        def generate_schema(args: list[str], **_kwargs: object) -> mock.Mock:
+            captured_args.extend(args)
+            out_dir = Path(args[args.index("--out") + 1])
+            _write_valid_protocol_schema(out_dir)
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(
+            issue_pairing_code.subprocess, "run", side_effect=generate_schema
+        ):
+            issue_pairing_code.ensure_pairing_start_returns_manual_code(Path("/bin/codex"), 1)
+        self.assertIn("--experimental", captured_args)
 
     def test_protocol_check_rejects_missing_manual_code_schema(self) -> None:
         def generate_schema(args: list[str], **_kwargs: object) -> mock.Mock:
@@ -517,6 +542,7 @@ def _write_valid_protocol_schema(
     client_request: str | None = None,
     response: str | None = None,
 ) -> None:
+    # 픽스처 형태는 codex 0.142.5 `generate-ts --experimental` 실측 출력 기준.
     v2 = out_dir / "v2"
     v2.mkdir(parents=True)
     (out_dir / "ClientRequest.ts").write_text(
@@ -528,37 +554,20 @@ def _write_valid_protocol_schema(
         ),
         encoding="utf-8",
     )
-    (out_dir / "ClientNotification.ts").write_text(
-        'export type ClientNotification = { "method": "initialized" };\n',
-        encoding="utf-8",
-    )
-    (out_dir / "ClientInfo.ts").write_text(
-        "export type ClientInfo = { name: string, title: string | null, version: string };\n",
-        encoding="utf-8",
-    )
-    (out_dir / "InitializeParams.ts").write_text(
-        "export type InitializeParams = { clientInfo: ClientInfo, "
-        "capabilities: InitializeCapabilities | null };\n",
-        encoding="utf-8",
-    )
-    (out_dir / "InitializeCapabilities.ts").write_text(
-        "export type InitializeCapabilities = { experimentalApi: boolean, "
-        "requestAttestation: boolean };\n",
-        encoding="utf-8",
-    )
     (v2 / "RemoteControlEnableParams.ts").write_text(
-        "export type RemoteControlEnableParams = { ephemeral?: boolean };\n",
+        "export type RemoteControlEnableParams = { ephemeral?: boolean, };\n",
         encoding="utf-8",
     )
     (v2 / "RemoteControlPairingStartParams.ts").write_text(
-        "export type RemoteControlPairingStartParams = { manualCode?: boolean };\n",
+        "export type RemoteControlPairingStartParams = { manualCode?: boolean, };\n",
         encoding="utf-8",
     )
     (v2 / "RemoteControlPairingStartResponse.ts").write_text(
         response
         or (
             "export type RemoteControlPairingStartResponse = "
-            "{ manualPairingCode: string, expiresAt: number };\n"
+            "{ pairingCode: string, manualPairingCode: string | null, "
+            "environmentId: string, expiresAt: bigint, };\n"
         ),
         encoding="utf-8",
     )

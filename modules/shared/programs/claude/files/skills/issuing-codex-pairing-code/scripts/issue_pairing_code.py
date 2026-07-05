@@ -171,12 +171,16 @@ def run_checked(
 
 
 def ensure_pairing_start_returns_manual_code(codex_binary: Path, timeout: float) -> None:
+    # remoteControl/pairing/* 은 experimental API라 --experimental 없이는
+    # generate-ts 출력에서 필터링된다 (stable-only가 기본). 플래그 없이 검사하면
+    # 기능이 실존하는 버전에서도 항상 fail closed된다.
     with tempfile.TemporaryDirectory(prefix="codex-pairing-protocol-") as tmp:
         result = run_checked(
             [
                 str(codex_binary),
                 "app-server",
                 "generate-ts",
+                "--experimental",
                 "--out",
                 tmp,
             ],
@@ -191,21 +195,12 @@ def ensure_pairing_start_returns_manual_code(codex_binary: Path, timeout: float)
                 + redact_pairing_payload(message or "generate-ts failed")
             )
 
+        # needle은 pairing 계약의 핵심(메서드 노출 + 요청/응답 필드)으로 한정한다.
+        # 그 밖의 타입/필드 검사는 ts-rs 출력 포맷에 결합되어, pairing과 무관한
+        # 포맷 변화만으로 false negative(부당한 fail closed)를 만든다.
         generated_root = Path(tmp)
         client_request_schema = _read_protocol_schema(
             generated_root, "ClientRequest.ts", "ClientRequest"
-        )
-        client_notification_schema = _read_protocol_schema(
-            generated_root, "ClientNotification.ts", "ClientNotification"
-        )
-        client_info_schema = _read_protocol_schema(
-            generated_root, "ClientInfo.ts", "ClientInfo"
-        )
-        initialize_schema = _read_protocol_schema(
-            generated_root, "InitializeParams.ts", "InitializeParams"
-        )
-        capabilities_schema = _read_protocol_schema(
-            generated_root, "InitializeCapabilities.ts", "InitializeCapabilities"
         )
         enable_params_schema = _read_protocol_schema(
             generated_root, "RemoteControlEnableParams.ts", "RemoteControlEnableParams"
@@ -224,12 +219,6 @@ def ensure_pairing_start_returns_manual_code(codex_binary: Path, timeout: float)
         for schema, needle, type_name, requirement in (
             (
                 client_request_schema,
-                f'"method": "{INITIALIZE_METHOD}"',
-                "ClientRequest",
-                INITIALIZE_METHOD,
-            ),
-            (
-                client_request_schema,
                 f'"method": "{REMOTE_CONTROL_ENABLE_METHOD}"',
                 "ClientRequest",
                 REMOTE_CONTROL_ENABLE_METHOD,
@@ -241,36 +230,8 @@ def ensure_pairing_start_returns_manual_code(codex_binary: Path, timeout: float)
                 PAIRING_START_METHOD,
             ),
             (
-                client_notification_schema,
-                f'"method": "{INITIALIZED_NOTIFICATION_METHOD}"',
-                "ClientNotification",
-                INITIALIZED_NOTIFICATION_METHOD,
-            ),
-            (client_info_schema, "name: string", "ClientInfo", "client name"),
-            (client_info_schema, "title: string | null", "ClientInfo", "client title"),
-            (client_info_schema, "version: string", "ClientInfo", "client version"),
-            (initialize_schema, "clientInfo: ClientInfo", "InitializeParams", "clientInfo"),
-            (
-                initialize_schema,
-                "capabilities: InitializeCapabilities",
-                "InitializeParams",
-                "capabilities",
-            ),
-            (
-                capabilities_schema,
-                "experimentalApi: boolean",
-                "InitializeCapabilities",
-                "experimentalApi",
-            ),
-            (
-                capabilities_schema,
-                "requestAttestation: boolean",
-                "InitializeCapabilities",
-                "requestAttestation",
-            ),
-            (
                 enable_params_schema,
-                "ephemeral?: boolean",
+                "ephemeral",
                 "RemoteControlEnableParams",
                 "ephemeral",
             ),
@@ -300,7 +261,8 @@ def _read_protocol_schema(root: Path, filename: str, type_name: str) -> str:
     files = list(root.rglob(filename))
     if not files:
         raise PairingError(
-            f"Codex app-server protocol does not expose {type_name}; "
+            f"Codex app-server protocol does not expose {type_name} "
+            "(checked with generate-ts --experimental); "
             "refusing live issuance before starting app-server"
         )
     return "\n".join(
@@ -315,8 +277,9 @@ def _ensure_schema_contains(
     if needle not in schema:
         raise PairingError(
             "Codex app-server protocol does not expose "
-            f"{requirement} in {type_name}; refusing live issuance before "
-            "starting app-server"
+            f"{requirement} in {type_name} "
+            "(checked with generate-ts --experimental); "
+            "refusing live issuance before starting app-server"
         )
 
 
@@ -634,8 +597,10 @@ def issue_pairing_code(socket_path: Path, timeout: float, cleanup_command: str) 
         rpc.request(
             INITIALIZE_METHOD,
             {
+                # remoteControl/pairing/* 은 experimental capability opt-in이 없으면
+                # -32600 "requires experimentalApi capability"로 거부된다 (0.142.5 실측).
                 "capabilities": {
-                    "experimentalApi": False,
+                    "experimentalApi": True,
                     "requestAttestation": False,
                 },
                 "clientInfo": {

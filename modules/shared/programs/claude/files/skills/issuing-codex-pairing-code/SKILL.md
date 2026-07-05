@@ -21,8 +21,9 @@ python3 scripts/issue_pairing_code.py --user-requested-code
 
 4. Share only the `Code`, `Expires`, and `Cleanup` lines with the user.
    - Do not store raw pairing codes, raw pairing tokens, full JSON-RPC payloads, or full helper output in committed files, progress notes, PR text, or issue comments.
-   - If the helper reports that the local Codex app-server protocol does not expose `manualPairingCode`, state that no live code was issued because the helper failed before starting app-server.
+   - If the helper reports that the local Codex app-server protocol does not expose `manualPairingCode`, state that no live code was issued because the helper failed before starting app-server. The pairing API is an experimental Codex surface (the helper checks `generate-ts --experimental` output and opts in via `capabilities.experimentalApi`), so this failure means the installed Codex build dropped or renamed the pairing API.
 5. Leave cleanup under user control unless they ask you to clean up. Use the exact `Cleanup` line printed by the helper; it includes the unique tmux session and private runtime directory for that issuance.
+   - After the device pairs, remote control keeps flowing through this helper-owned app-server, so the tmux session must stay alive while the user wants remote control; running the `Cleanup` line also disconnects remote control.
 
 ```bash
 tmux kill-session -t codex-pair-bg-...; rm -rf /private/tmp/codex-pairing-code-...
