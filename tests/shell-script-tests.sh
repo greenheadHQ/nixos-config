@@ -129,6 +129,7 @@ run_test "install-lefthook pins worktree-local hooks path in worktree mode" test
 run_test "webhook-bridge crawled payload sends notification" test_webhook_bridge_crawled_payload_sends_notification
 run_test "webhook-bridge non-crawled payload skips notification" test_webhook_bridge_non_crawled_payload_skips_notification
 run_test "webhook-bridge invalid JSON keeps 200 without notification" test_webhook_bridge_invalid_json_keeps_200_without_notification
+run_test "webhook-bridge matching token sends notification" test_webhook_bridge_matching_token_sends_notification
 run_test "webhook-bridge wrong token keeps 200 and warns" test_webhook_bridge_wrong_token_keeps_200_and_warns
 run_test "fragile-hardcoding-guard line count word order independent" test_fragile_hardcoding_guard_line_count_word_order_independent
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved

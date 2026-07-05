@@ -26,28 +26,21 @@ _webhook_bridge_run() {
 
   content_length=${#body}
 
+  local -a env_vars=(
+    PUSHOVER_CRED_FILE="$sandbox/pushover"
+    SERVICE_LIB="$sandbox/service-lib"
+    WEBHOOK_TEST_MARKER="$sandbox/notification-marker"
+  )
   if [ -n "$token_file" ]; then
-    {
-      printf 'POST / HTTP/1.1\r\n'
-      printf '%s' "$headers"
-      printf 'Content-Length: %s\r\n\r\n' "$content_length"
-      printf '%s' "$body"
-    } | PUSHOVER_CRED_FILE="$sandbox/pushover" \
-      SERVICE_LIB="$sandbox/service-lib" \
-      WEBHOOK_TEST_MARKER="$sandbox/notification-marker" \
-      WEBHOOK_TOKEN_FILE="$token_file" \
-      bash "$_webhook_bridge_script" > "$stdout_path" 2> "$stderr_path"
-  else
-    {
-      printf 'POST / HTTP/1.1\r\n'
-      printf '%s' "$headers"
-      printf 'Content-Length: %s\r\n\r\n' "$content_length"
-      printf '%s' "$body"
-    } | PUSHOVER_CRED_FILE="$sandbox/pushover" \
-      SERVICE_LIB="$sandbox/service-lib" \
-      WEBHOOK_TEST_MARKER="$sandbox/notification-marker" \
-      bash "$_webhook_bridge_script" > "$stdout_path" 2> "$stderr_path"
+    env_vars+=(WEBHOOK_TOKEN_FILE="$token_file")
   fi
+
+  {
+    printf 'POST / HTTP/1.1\r\n'
+    printf '%s' "$headers"
+    printf 'Content-Length: %s\r\n\r\n' "$content_length"
+    printf '%s' "$body"
+  } | env "${env_vars[@]}" bash "$_webhook_bridge_script" > "$stdout_path" 2> "$stderr_path"
 }
 
 test_webhook_bridge_crawled_payload_sends_notification() {
@@ -93,6 +86,24 @@ test_webhook_bridge_invalid_json_keeps_200_without_notification() {
   output=$(cat "$stdout_path")
   assert_contains "$output" "HTTP/1.1 200 OK"
   [ ! -e "$marker" ] || fail "expected webhook bridge to skip invalid JSON notification"
+}
+
+test_webhook_bridge_matching_token_sends_notification() {
+  local sandbox stdout_path stderr_path marker output token_file
+  sandbox=$(new_sandbox)
+  _webhook_bridge_prepare_sandbox "$sandbox"
+  stdout_path="$sandbox/stdout"
+  stderr_path="$sandbox/stderr"
+  marker="$sandbox/notification-marker"
+  token_file="$sandbox/webhook-token"
+  # 트레일링 뉴라인 포함 — 브리지의 토큰 정규화(tr -d '\r\n') 경로까지 검증한다.
+  printf 'expected-token\n' > "$token_file"
+
+  _webhook_bridge_run "$sandbox" $'Authorization: Bearer expected-token\r\n' '{"operation":"crawled","url":"https://example.com/path"}' "$token_file" "$stdout_path" "$stderr_path"
+
+  output=$(cat "$stdout_path")
+  assert_contains "$output" "HTTP/1.1 200 OK"
+  [ -f "$marker" ] || fail "expected webhook bridge to send notification for matching token"
 }
 
 test_webhook_bridge_wrong_token_keeps_200_and_warns() {
