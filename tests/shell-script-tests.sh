@@ -83,6 +83,13 @@ if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control repair reaps stale deleted managed app-server" test_codex_remote_control_repair_kills_stale_deleted_managed_app_server
   run_test "codex remote-control repair reaps superseded managed app-server" test_codex_remote_control_repair_kills_stale_superseded_managed_app_server
   run_test "codex remote-control cleans sockets only when no PID after drift" test_codex_remote_control_socket_cleanup_when_no_pid_after_drift
+  run_test "codex remote-control alert recovers after failure" test_codex_remote_control_alert_recovery_after_failure
+  run_test "codex remote-control alert stays quiet on healthy success" test_codex_remote_control_alert_success_without_failure_is_quiet
+  run_test "codex remote-control alert failure cooldown is stateful" test_codex_remote_control_alert_failure_sets_failed_and_cools_down
+  run_test "codex remote-control alert missing token does not mutate state" test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state
+  run_test "codex remote-control sync links current standalone release" test_codex_remote_control_sync_standalone_package_success_links_current_release
+  run_test "codex remote-control sync extract failure propagates status" test_codex_remote_control_sync_extract_failure_propagates_status
+  run_test "codex remote-control sync records login status paths" test_codex_remote_control_sync_records_login_status_success_and_api_key_paths
 else
   echo "==> codex remote-control fixtures: SKIPPED (Linux/NixOS-only service script)" >&2
 fi
