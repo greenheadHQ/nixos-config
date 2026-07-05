@@ -16,6 +16,7 @@ STANDALONE_CURRENT="${STANDALONE_CURRENT:-$STANDALONE_ROOT/current}"
 STANDALONE_BIN="$STANDALONE_CURRENT/bin/codex"
 STATUS_FILE="$STATE_DIR/status.json"
 LOCK_FILE="$STATE_DIR/maintenance.lock"
+MAINT_LOCK_TIMEOUT_SECONDS="${MAINT_LOCK_TIMEOUT_SECONDS:-120}"
 ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
 PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
@@ -91,8 +92,8 @@ with_lock() {
     LAST_REPAIR_REASON="lock-open-failed"
     return 1
   }
-  flock 9 || {
-    LAST_REPAIR_REASON="lock-acquire-failed"
+  flock --timeout "$MAINT_LOCK_TIMEOUT_SECONDS" 9 || {
+    LAST_REPAIR_REASON="lock-acquire-timeout"
     return 1
   }
   "$@"

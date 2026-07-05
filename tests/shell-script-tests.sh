@@ -74,6 +74,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control rejects non-Nix PATH shadow" test_codex_remote_control_rejects_non_nix_path_shadow
   run_test "codex remote-control sync failure is not marked successful" test_codex_remote_control_sync_failure_is_not_marked_successful
   run_test "codex remote-control lock failure does not run core action" test_codex_remote_control_lock_failure_does_not_run_core_action
+  run_test "codex remote-control lock acquisition timeout is recorded" test_codex_remote_control_lock_acquire_timeout_is_recorded
   run_test "codex remote-control repair kills proven stale process" test_codex_remote_control_repair_kills_proven_stale_unmanaged_process
   run_test "codex remote-control repair refuses socket cleanup when PID remains" test_codex_remote_control_repair_refuses_socket_cleanup_when_pid_remains
   run_test "codex remote-control repair refuses unproven stale process" test_codex_remote_control_repair_does_not_kill_without_stale_proof
