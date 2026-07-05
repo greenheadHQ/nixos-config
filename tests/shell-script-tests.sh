@@ -131,6 +131,12 @@ run_test "webhook-bridge non-crawled payload skips notification" test_webhook_br
 run_test "webhook-bridge invalid JSON keeps 200 without notification" test_webhook_bridge_invalid_json_keeps_200_without_notification
 run_test "webhook-bridge matching token sends notification" test_webhook_bridge_matching_token_sends_notification
 run_test "webhook-bridge wrong token keeps 200 and warns" test_webhook_bridge_wrong_token_keeps_200_and_warns
+run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
+run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
+run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir
+run_test "karakeep backup happy path dated dir" test_karakeep_backup_happy_path_dated_dir
+run_test "karakeep backup missing db exits nonzero" test_karakeep_backup_missing_db_exits_nonzero
+run_test "karakeep backup retention scopes to backup dir" test_karakeep_backup_retention_scopes_to_backup_dir
 run_test "fragile-hardcoding-guard line count word order independent" test_fragile_hardcoding_guard_line_count_word_order_independent
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved
 run_test "worktree-path-guard main repo session always allows" test_worktree_path_guard_main_repo_session_always_allows
