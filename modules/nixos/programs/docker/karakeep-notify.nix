@@ -24,6 +24,13 @@ let
       curl
       gnused
     ];
+    # CIR: 기본 bashOptions는 errexit를 주입해, 비-JSON body에서 jq(exit 5)가
+    # command substitution 할당을 죽여 HTTP 200 응답 전에 핸들러가 종료된다.
+    # 이 핸들러는 "항상 200 + set -e 미사용"이 결정 사항(#919)이므로 errexit를 뺀다.
+    bashOptions = [
+      "nounset"
+      "pipefail"
+    ];
     text = builtins.readFile ./karakeep-notify/files/webhook-bridge.sh;
   };
 in
