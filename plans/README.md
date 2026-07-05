@@ -23,7 +23,7 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 | 001 | Immich DB 재해복구 문서를 백업 이원 구조에 맞게 정정 | P1 | S | — | #938 | DONE |
 | 002 | karakeep webhook 브리지 비특권·sandbox·인증 하드닝 | P1 | M | — | #939 | DONE (PR #971, nrs 적용 + E2E 검증 완료 2026-07-05 — AF_UNIX 불필요 실측, 200 계약 후속 수정 PR #972 포함. 토큰 활성화는 선택적 운영자 후속) |
 | 003 | log-monitor 상태/큐 재작성 same-fs 원자적 교체 | P1 | S | — | #940 | DONE |
-| 004 | 백업 스크립트 추출 + 특성화 테스트 | P2 | M | — | #941 | TODO |
+| 004 | 백업 스크립트 추출 + 특성화 테스트 | P2 | M | — | #941 | DONE (실 배포 `nrs` + 실경로 1회 확인은 운영자 후속) |
 | 005 | Immich DB(pgvecto-rs) 마이그레이션 spike (조사 전용) | P2 | M | — | #942 | DONE |
 | 006 | gitleaks `.local.md` 전면 예외 제거 → gitignore 대체 | P2 | S | — | #943 | TODO |
 | 007 | codex-remote-control-maint flock 타임아웃 부여 | P2 | S | — | #944 | DONE (실 배포 `nrs`는 운영자 후속) |
