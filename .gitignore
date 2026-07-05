@@ -40,3 +40,6 @@ oauth-state.json
 
 # anchoring-bias baseline measurements (스크립트로 동적 산출, repo에 수치 저장 안 함)
 .claude/metrics/
+
+# 로컬 전용 메모 (시크릿 포함 가능 — 추적 금지. gitleaks 스캔 예외는 두지 않는다)
+*.local.md

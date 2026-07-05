@@ -25,7 +25,7 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 | 003 | log-monitor 상태/큐 재작성 same-fs 원자적 교체 | P1 | S | — | #940 | DONE |
 | 004 | 백업 스크립트 추출 + 특성화 테스트 | P2 | M | — | #941 | DONE (PR #980, nrs 적용 + 실 백업 2종 E2E 완료 2026-07-05) |
 | 005 | Immich DB(pgvecto-rs) 마이그레이션 spike (조사 전용) | P2 | M | — | #942 | DONE |
-| 006 | gitleaks `.local.md` 전면 예외 제거 → gitignore 대체 | P2 | S | — | #943 | TODO |
+| 006 | gitleaks `.local.md` 전면 예외 제거 → gitignore 대체 | P2 | S | — | #943 | DONE |
 | 007 | codex-remote-control-maint flock 타임아웃 부여 | P2 | S | — | #944 | DONE (PR #979, nrs 적용 + 락 타임아웃 실측 완료 2026-07-05) |
 | 008 | 완료 PRD 상태 정정 + 아카이브 관례 적용 | P3 | S | — | #945 | TODO |
 | 009 | maint sync/알림 상태전이 특성화 테스트 | P3 | S | 007 (soft) | #946 | TODO |
