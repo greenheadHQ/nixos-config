@@ -134,6 +134,11 @@
         default = 9999;
         description = "Local port for webhook receiver";
       };
+      webhookTokenFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Optional file containing the expected Karakeep webhook bearer token";
+      };
     };
 
     karakeepLogMonitor = {

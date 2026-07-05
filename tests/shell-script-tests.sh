@@ -126,6 +126,11 @@ run_test "install-lefthook preserves custom local core.hooksPath" test_install_l
 run_test "install-lefthook is silent on clean state" test_install_lefthook_silent_on_clean_state
 run_test "install-lefthook serializes concurrent invocations" test_install_lefthook_concurrent_install_serializes
 run_test "install-lefthook pins worktree-local hooks path in worktree mode" test_install_lefthook_worktree_mode_pins_local_hooks_path
+run_test "webhook-bridge crawled payload sends notification" test_webhook_bridge_crawled_payload_sends_notification
+run_test "webhook-bridge non-crawled payload skips notification" test_webhook_bridge_non_crawled_payload_skips_notification
+run_test "webhook-bridge invalid JSON keeps 200 without notification" test_webhook_bridge_invalid_json_keeps_200_without_notification
+run_test "webhook-bridge matching token sends notification" test_webhook_bridge_matching_token_sends_notification
+run_test "webhook-bridge wrong token keeps 200 and warns" test_webhook_bridge_wrong_token_keeps_200_and_warns
 run_test "fragile-hardcoding-guard line count word order independent" test_fragile_hardcoding_guard_line_count_word_order_independent
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved
 run_test "worktree-path-guard main repo session always allows" test_worktree_path_guard_main_repo_session_always_allows
