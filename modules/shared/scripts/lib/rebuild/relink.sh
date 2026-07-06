@@ -25,6 +25,14 @@ rebuild_is_main_flake() {
     [[ "$FLAKE_PATH" == "$MAIN_FLAKE_PATH" ]]
 }
 
+_nrs_should_skip_worktree_relink() {
+    [[ "${NRS_ALLOW_WORKTREE_RELINK:-}" == "1" ]] && return 1
+    [[ ! -t 0 ]] && return 0
+    [[ "${CODEX_PROGRAMMATIC:-}" == "1" ]] && return 0
+    [[ "${CLAUDECODE:-}" == "1" ]] && return 0
+    return 1
+}
+
 prepare_worktree_symlinks_for_rebuild() {
     log_info "🔗 Removing worktree symlinks before rebuild..."
     _remove_worktree_symlinks "$FLAKE_PATH/" "worktree" || true
@@ -38,6 +46,19 @@ prepare_worktree_symlinks_for_rebuild() {
 #───────────────────────────────────────────────────────────────────────────────
 maybe_relink_or_restore() {
     if ! rebuild_is_main_flake; then
+        # === Change Intent Record ===
+        # v6 (#996): 비대화형/에이전트 worktree nrs에서 post-switch relink가
+        #    $HOME의 OOS 심링크를 리뷰 전 worktree로 전환해 host 활성본과 tracked file을
+        #    교차 오염시키는 사고가 실측됨(2026-07-06).
+        #    채택: stdin 비TTY 또는 기존 에이전트 신호(CODEX_PROGRAMMATIC/CLAUDECODE)면
+        #    relink만 skip하고 nrs 흐름은 계속 진행. 명시 opt-in
+        #    NRS_ALLOW_WORKTREE_RELINK=1은 기존 동작을 유지한다.
+        #    trade-off: 파이프/자동화에서 의도적 worktree relink가 필요하면 env opt-in이
+        #              필요하지만, 대화형 TTY 사용자의 기존 워크플로는 변경하지 않는다.
+        if _nrs_should_skip_worktree_relink; then
+            log_info "🔗 Skipping worktree relink in non-interactive/agent context (set NRS_ALLOW_WORKTREE_RELINK=1 to allow)."
+            return 0
+        fi
         log_info "🔗 Relinking symlinks to worktree..."
         "$HOME/.local/bin/nrs-relink" relink || log_warn "⚠️  nrs-relink failed (non-fatal)"
     else
