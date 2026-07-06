@@ -40,17 +40,17 @@ PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)(OPEN) 머지
 | 005 | Immich DB(pgvecto-rs) 마이그레이션 spike (조사 전용) | P2 | M | — | #942 | DONE |
 | 006 | gitleaks `.local.md` 전면 예외 제거 → gitignore 대체 | P2 | S | — | #943 | DONE (PR #981 — 전후 히스토리 스캔 차집합 0건 확인, 배포 불필요) |
 | 007 | codex-remote-control-maint flock 타임아웃 부여 | P2 | S | — | #944 | DONE (PR #979, nrs 적용 + 락 타임아웃 실측 완료 2026-07-05) |
-| 008 | 완료 PRD 상태 정정 + 아카이브 관례 적용 | P3 | S | — | #945 | TODO |
+| 008 | 완료 PRD 상태 정정 + 아카이브 관례 적용 | P3 | S | — | #945 | DONE (PR #990) |
 | 009 | maint sync/알림 상태전이 특성화 테스트 | P3 | S | 007 (soft) | #946 | DONE (PR #982 — 테스트 전용, 배포 불필요) |
-| 010 | verify-ai-compat lint 엔진 분리 + host-state 테스트 | P2 | M | — | #947 | TODO (2026-07-06 reconcile: 라인 번호 현행화) |
-| 011 | Pushover 전송 플랫폼 공용 헬퍼 통합 | P3 | M | — | #948 | TODO |
-| 012 | claude 훅 hook-runtime 파서 채택 확대 | P3 | M | — | #949 | TODO |
-| 013 | Karakeep 파이프라인 헬퍼(fallback-sync·bridge) 테스트 | P3 | M | — | #950 | TODO |
-| 014 | Karakeep CSP 전면 제거를 아카이브 경로로 한정 | P3 | M | — | #951 | TODO |
+| 010 | verify-ai-compat lint 엔진 분리 + host-state 테스트 | P2 | M | — | #947 | DONE (PR #987 — lint 분리만. host-state 테스트는 실행문 인터리브 구조 실측으로 scope 축소, 별도 이슈로 강등) |
+| 011 | Pushover 전송 플랫폼 공용 헬퍼 통합 | P3 | M | — | #948 | DONE (PR #988 — 운영자 후속: 양 플랫폼 nrs + 알림 1회 실측) |
+| 012 | claude 훅 hook-runtime 파서 채택 확대 | P3 | M | — | #949 | DONE (PR #985) |
+| 013 | Karakeep 파이프라인 헬퍼(fallback-sync·bridge) 테스트 | P3 | M | — | #950 | DONE (PR #989 — 전체실행+stub 방식, 대상 무수정) |
+| 014 | Karakeep CSP 전면 제거를 아카이브 경로로 한정 | P3 | M | — | #951 | DONE (PR #991 — 운영자 후속: nrs + 아카이브 렌더링·CSP 헤더 실측) |
 | 015 | folder-actions 공유 lib 특성화 테스트 (1단계) | P3 | L | 011 (soft) | #952 | TODO |
 | 016 | 홈서버 백업/복구 자세 설계 spike | P2 | M | — | #953 | DONE |
 | 017 | 유지보수 창 3작업 묶음 실행 계획서 | P3 | S | 005, 016 (hard) | #954 | DONE |
-| 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | #955 | TODO |
+| 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | #955 | DONE (PR #992 — 판정: 조건부, 현시점 추출 가치 낮음) |
 | 019 | Immich 원본 사진 HDD 일일 미러 (016 추천 A 구현) | P1 | M | — | #961 | DONE (nrs 적용 + 초회 미러 완료 2026-07-02 — 창 사전 게이트 충족) |
 | 020 | 소용량 데이터 restic→R2 오프사이트 백업 (016 추천 B 구현) | P2 | M-L | 운영자 사전 준비 (R2/1Password) | #962 | TODO |
 | 021 | pinning-guard `--body-file` 파일 내용 스캔 | P1 | M | — | #684 | DONE (PR #966) |

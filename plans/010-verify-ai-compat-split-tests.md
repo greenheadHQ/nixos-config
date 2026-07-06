@@ -126,6 +126,17 @@ lint 엔진 구간(대략 `_skill_neutral_lint`부터 `run_skill_neutral_fixture
 
 ### Step 3: host-state 검증부 fixture 테스트 작성
 
+**scope 축소 (2026-07-06 supervisor 판정)**: 이 Step은 이번 plan에서 제외한다.
+executor 실측 결과 `verify-ai-compat.sh`의 최상위 실행 문장이 함수 정의
+사이에 6곳 이상 흩어져 있어(인자 처리 `:90`, 본 검사 `:233`, lint 실행
+`:653-665`, `_check_hook_executable` 정의 직후 호출 `:935-941`,
+`_check_executable_symlink_suffix` 호출 `:970`, `verify_used_by_oracle` 호출
+`:1203-1205`) 승인된 최소 가드(연속 1~3블록)로는 source-safe화가 불가능하고,
+구조 재배열은 게이트 스크립트의 동작 불변을 훼손할 위험이 크다. host-state
+검증부 테스트는 "검증 로직의 함수/실행 분리 재편"을 전제로 하는 별도
+이슈로 강등한다 (이슈 등록은 supervisor 후속). Step 1~2(lint 엔진 분리)만으로
+이 plan을 완결한다.
+
 `tests/suites/verify-ai-compat.sh`(신규, 기존 suite 구조 준수)에서
 `_check_hook_executable`/`_check_executable_symlink_suffix`/`verify_used_by_oracle`
 를 조작된 임시 디렉토리로 구동해 pass/fail 양방향을 assert한다:
@@ -166,7 +177,8 @@ suffix 규칙의 정탐 보존).
   동일 (main repo에서는 exit 0과 동치; 워크트리에서는 동일한 "대상 불일치"
   집합까지 허용 — supervisor가 머지 후 main에서 exit 0을 최종 확인)
 - [ ] `bash scripts/ai/verify-ai-compat.sh --run-fixture-tests` → exit 0
-- [ ] `nix shell .#pythonWithTomlkit --command env _TOMLKIT_BOOTSTRAP_READY=1 bash tests/run-shell-script-tests.sh` → exit 0 (신규 suite 포함)
+- [ ] `nix shell .#pythonWithTomlkit --command env _TOMLKIT_BOOTSTRAP_READY=1 bash tests/run-shell-script-tests.sh` → exit 0
+- [ ] ~~신규 host-state suite~~ (Step 3 scope 축소로 이번 범위 제외 — 별도 이슈)
 - [ ] `bash tests/run-all-tests.sh` → exit 0
 - [ ] `plans/README.md` 상태 행 갱신
 
