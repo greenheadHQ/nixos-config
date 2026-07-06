@@ -57,6 +57,15 @@ case "$*" in
       echo "${FAKE_START_ERR:-start failed}" >&2
       exit "$FAKE_START_RC"
     fi
+    if [ -n "${FAKE_START_DAEMON_FD_FILE:-}" ]; then
+      # 실제 codex remote-control start처럼 장기 실행 데몬을 detach로 남긴다.
+      # 데몬은 자기 fd 테이블을 기록해 부모(maint 스크립트)의 lock fd 상속 여부를 노출한다.
+      (
+        ls -l "/proc/$BASHPID/fd/" > "$FAKE_START_DAEMON_FD_FILE" 2>&1
+        sleep 5
+      ) &
+      disown
+    fi
     if [ -n "${FAKE_START_JSON:-}" ]; then
       printf '%s\n' "$FAKE_START_JSON"
     else
@@ -348,6 +357,29 @@ test_codex_remote_control_lock_acquire_timeout_is_recorded() {
   jq -e '.lastRepairReason == "lock-acquire-timeout" and .exitCode != 0' <<<"$status" >/dev/null \
     || fail "lock timeout was not recorded as unhealthy: $status"
   assert_not_contains "$(cat "$COD_RC_LOG" 2>/dev/null || true)" 'remote-control start --json'
+}
+
+test_codex_remote_control_spawned_daemon_does_not_inherit_lock_fd() {
+  local sandbox fd_file
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  fd_file="$sandbox/daemon-fds.txt"
+
+  FAKE_START_DAEMON_FD_FILE="$fd_file" _codex_rc_env bash "$(_codex_rc_script)" ensure-running >/dev/null 2>&1 \
+    || fail "ensure-running should succeed on the healthy fixture path"
+
+  local _i
+  for _i in {1..50}; do
+    [ ! -s "$fd_file" ] || break
+    sleep 0.1
+  done
+  [ -s "$fd_file" ] || fail "fake daemon did not record its fd table"
+
+  # 데몬이 lock fd를 상속하면 maint 스크립트 종료 후에도 flock이 유지되어
+  # 이후 모든 타이머 실행이 lock-acquire-timeout으로 실패한다 (2026-07 실장애).
+  assert_not_contains "$(cat "$fd_file")" 'maintenance.lock'
+  flock --timeout 1 --exclusive "$COD_RC_STATE/maintenance.lock" -c true \
+    || fail "maintenance lock still held after ensure-running exited (fd leaked to spawned daemon)"
 }
 
 test_codex_remote_control_repair_kills_proven_stale_unmanaged_process() {

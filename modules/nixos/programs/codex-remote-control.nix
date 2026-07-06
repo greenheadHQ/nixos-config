@@ -82,7 +82,10 @@ in
         User = username;
         Group = "users";
         WorkingDirectory = homeDir;
-        TimeoutSec = "120";
+        # maint 스크립트의 flock 대기(MAINT_LOCK_TIMEOUT_SECONDS=120)보다 커야
+        # lock-acquire-timeout 실패 경로가 status.json 기록과 Pushover 알림까지
+        # 완주한다. 120으로 동률이면 SIGTERM과 레이스해 알림이 소실될 수 있다.
+        TimeoutSec = "300";
         ExecStart = "${maintenanceCli}/bin/codex-remote-control-maint ensure-running";
         LoadCredential = [ "pushover-system-monitor:${pushoverCredPath}" ];
         KillMode = "process";
