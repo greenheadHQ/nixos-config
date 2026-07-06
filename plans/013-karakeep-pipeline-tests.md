@@ -58,10 +58,14 @@ SingleFile 업로드를 Karakeep API로 중계, multipart 파싱·재시도·알
 207: format_created_at()       219: parse_ifexists_mode()
 ```
 
-- 이 저장소의 pytest 선례: EPIC #912의 #915가 "Python characterization
-  레이어"를 도입했다 — `tests/` 아래에서 pytest가 어떻게 배선돼 있는지
-  (`grep -rn "pytest" tests/ lefthook.yml`) 확인하고 같은 방식을 따른다.
-  루트에 `.pytest_cache/`가 존재하므로 pytest 실행 선례가 있다.
+- 이 저장소의 pytest 선례 (2026-07-06 executor 실측으로 정정): pytest는
+  저장소 `tests/`·lefthook·CI 게이트에 **배선돼 있지 않다** (grep 0건).
+  실제 선례는 **스킬-로컬 방식**이다 —
+  `modules/shared/programs/claude/files/skills/analyzing-da-sessions/tests/`
+  (conftest.py가 `sys.path.insert`로 대상 스크립트 디렉토리를 주입,
+  fixtures/ 동봉). 실행은 ad-hoc: `pytest <tests dir>` 또는 devShell에
+  pytest가 없으면 `nix run nixpkgs#python3Packages.pytest -- <tests dir>`.
+  이 plan도 같은 방식을 따른다 — 게이트 배선을 새로 발명하지 않는다.
 - 셸 suite 컨벤션: `tests/suites/*.sh` (정의 전용) + `tests/lib/test-common.sh`.
 - **테스트 대상에서 제외**: `log-monitor.sh` (plan 003이 수정 중 — 그 plan이
   테스트를 YAGNI로 스코프 아웃한 판단을 존중), `webhook-bridge.sh`
@@ -79,7 +83,10 @@ SingleFile 업로드를 Karakeep API로 중계, multipart 파싱·재시도·알
 
 **In scope**:
 - `tests/suites/karakeep-fallback-sync.sh` (신규 — 셸 함수 특성화)
-- singlefile-bridge용 pytest 파일 (신규 — 위치는 기존 pytest 배선을 따름)
+- singlefile-bridge용 pytest 파일 (신규 —
+  `modules/nixos/programs/docker/karakeep-singlefile-bridge/tests/`에
+  analyzing-da-sessions 선례처럼 소스 옆 배치: conftest.py가
+  `../files`를 sys.path에 주입해 `singlefile-bridge.py`를 import)
 
 **Out of scope** (do NOT touch):
 - `fallback-sync.sh`·`singlefile-bridge.py` **동작 변경 일절**. 테스트를 위해
@@ -115,7 +122,12 @@ source-unsafe하면 함수 구동이 가능한 다른 방법을 발명하지 말
 
 ### Step 2: singlefile-bridge pytest 특성화
 
-기존 pytest 배선 방식(Step 0 확인 결과)에 맞춰 순수 함수부터:
+스킬-로컬 선례(`analyzing-da-sessions/tests/`의 conftest.py 패턴)를 따라
+소스 옆 `tests/` 디렉토리를 만들고, 순수 함수부터:
+
+주의: `singlefile-bridge.py`는 하이픈 포함 파일명이라 일반 import가 안 된다 —
+conftest.py에서 `importlib`로 로드하거나 선례가 쓰는 방식(sys.path 주입 후
+로드 가능한 형태)을 확인해 동작 변경 없이 import하라. 대상 파일 수정은 금지.
 
 1. `sanitize_filename` — 경로 구분자/특수문자 입력의 현행 출력 박제.
 2. `extract_boundary`/`parse_content_disposition`/`parse_multipart_body` —
@@ -125,13 +137,14 @@ source-unsafe하면 함수 구동이 가능한 다른 방법을 발명하지 말
 5. `run_curl`/`send_pushover`는 subprocess/network 경계라 mock 비용이 크면
    이번 범위에서 제외하고 그 사실을 suite 주석에 명시 (silent cap 금지).
 
-**Verify**: pytest 실행 (기존 배선 명령) → 신규 테스트 전부 통과.
+**Verify**: `nix run nixpkgs#python3Packages.pytest -- modules/nixos/programs/docker/karakeep-singlefile-bridge/tests/`
+→ 신규 테스트 전부 통과 (devShell에 pytest가 있으면 `pytest <dir>`도 가능).
 
 ### Step 3: 전체 게이트
 
-**Verify**: `bash tests/run-all-tests.sh` → 전부 통과/SKIP (pytest가
-run-all-tests에 배선돼 있지 않다면, 신규 pytest를 어떻게 게이트에 태울지 —
-기존 #915 테스트가 태워진 방식 그대로 — 확인하고 동일하게).
+**Verify**: `bash tests/run-all-tests.sh` → 전부 통과/SKIP. pytest는 기존
+선례(analyzing-da-sessions)와 동일하게 게이트 밖 ad-hoc 실행으로 남긴다 —
+run-all-tests/lefthook에 배선하지 마라 (관례 변경은 이 plan 범위 밖).
 
 ## Test plan
 
@@ -140,7 +153,7 @@ Steps 1-2가 test plan이다.
 ## Done criteria
 
 - [ ] `grep -rl "fallback-sync" tests/` → 1건 이상 (참조 0건 해소)
-- [ ] `grep -rl "singlefile" tests/` → 1건 이상
+- [ ] `ls modules/nixos/programs/docker/karakeep-singlefile-bridge/tests/test_*.py` → 1건 이상
 - [ ] 신규 테스트 전부 통과 (suite + pytest)
 - [ ] `bash tests/run-all-tests.sh` → exit 0
 - [ ] 대상 스크립트 2개의 diff 없음 (`git diff --stat`에 tests/만)
@@ -150,8 +163,10 @@ Steps 1-2가 test plan이다.
 
 - `fallback-sync.sh`가 source-unsafe하고(로드 즉시 메인 로직 실행) 기존
   suite에 우회 선례가 없다 — 대상을 고치지 말고 보고.
-- 기존 pytest 배선이 없거나(grep 0건) #915의 방식이 식별되지 않는다 —
-  새 테스트 러너를 발명하지 말고 발견 내용을 보고.
+- 스킬-로컬 pytest 선례(analyzing-da-sessions/tests/의 conftest 패턴)가
+  singlefile-bridge에 적용 불가능한 구조적 이유가 발견된다 — 새 방식을
+  발명하지 말고 그 이유를 보고. (저장소 게이트에 pytest 배선이 없는 것은
+  2026-07-06 확인된 정상 상태이므로 STOP 사유가 아니다.)
 - 특성화 중 현행 동작이 명백한 버그로 보인다 — 기대값 박제를 멈추고 보고.
 
 ## Maintenance notes

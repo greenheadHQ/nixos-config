@@ -106,11 +106,17 @@ timeout, 실패 로깅)을 바꿀 때 여러 곳을 lockstep 수정해야 하고
 위치에 `pushover.sh`를 만든다. 인터페이스 (인자 기반, env 전제 없음):
 
 ```bash
-# pushover_send <cred_file> <title> <message> <priority>
+# pushover_send <cred_file> <title> <message> <priority> [sound]
 # cred_file: PUSHOVER_TOKEN/PUSHOVER_USER를 export하는 셸 파일
+# sound: 선택 5번째 인자 — 주어지면 --form-string "sound=<값>"을 추가 전송,
+#        생략하면 sound 필드 자체를 보내지 않음 (기존 4필드 사본들과 동일)
 # 반환: 전송 성공 0, cred 부재/전송 실패 1 (호출부가 || true로 정책 결정)
 pushover_send() { ... }
 ```
+
+(2026-07-06 executor 실측 반영: `upload-immich.sh`의 `send_notification`은
+`sound` 4번째 인자를 항상 전송한다 — 기본 `"none"`, 실패 알림은 `"falling"`.
+선택 인자 없이는 이 사본이 수렴되지 않아 인터페이스를 위처럼 확장했다.)
 
 내부는 기존 사본들의 공통형(`curl --form-string token/user/title/message/priority`,
 `--max-time` 포함 여부는 사본들을 비교해 가장 방어적인 형태로)을 따른다.
@@ -124,6 +130,12 @@ pushover_send() { ... }
 어떻게 구성하는지 따름)하고 curl 블록을 `pushover_send` 호출로 교체한다.
 전환 순서: ① `_folder-actions-lib.sh` ② `upload-immich.sh` ③ `smartd.nix`
 ④ `opnix-rotate.nix` ⑤ `shell/default.nix`의 `push`.
+
+②의 주의: `upload-immich.sh`는 호출부들이 `send_notification "제목" "메시지"
+"priority" "sound"` 형태로 sound 정책("none"/"falling")을 쓰고 있다 —
+`pushover_send`의 5번째 인자로 그대로 전달해 기존 알림 정책(우선순위·소리)을
+바이트 단위로 보존하라. 나머지 4곳은 sound 인자 없이 전환한다 (기존에도
+sound 필드를 보내지 않았으므로).
 
 각 전환 후 **Verify**: `bash tests/run-eval-tests.sh` → 통과 (nix 파일 전환 시),
 `shellcheck` (셸 파일 전환 시).

@@ -103,7 +103,14 @@ pass가 되도록 망가져도 통합 테스트(`tests/run-all-tests.sh`)가 통
 `bash scripts/ai/verify-ai-compat.sh > /tmp/before.out 2>&1; echo "exit=$?"` 와
 `--run-fixture-tests` 실행 결과를 저장한다 (동작 불변 검증의 oracle).
 
-**Verify**: 두 실행 모두 exit 0 (아니면 현재 리포가 이미 검증 실패 상태 — STOP).
+**Verify**: 두 실행 모두 exit 0. **워크트리 실행 예외** (2026-07-06 실측):
+git worktree에서 실행하면 host-state 검사가 `$HOME` 심링크의 대상(main repo
+경로)과 REPO_ROOT(워크트리 경로)를 비교해 "`[FAIL] 노출 대상 불일치`" 및
+"`대상 불일치`" 계열 오류 11건이 나온다 — 이는 워크트리 환경의 알려진
+특성이므로 STOP이 아니다. 이 경우 그 출력을 그대로 before.out 기준으로 삼고,
+이후 단계의 oracle은 "before/after 출력 diff 동일성"이다. **불일치 계열 외의
+오류가 하나라도 섞여 있으면 STOP.** `--run-fixture-tests`는 환경 무관하게
+exit 0이어야 한다 (아니면 STOP).
 
 ### Step 2: lint 엔진을 scripts/ai/lib/skill-neutral-lint.sh로 추출
 
@@ -149,7 +156,9 @@ suffix 규칙의 정탐 보존).
 
 - [ ] `test -f scripts/ai/lib/skill-neutral-lint.sh` → exit 0
 - [ ] `grep -n "source.*skill-neutral-lint" scripts/ai/verify-ai-compat.sh` → 1건
-- [ ] `bash scripts/ai/verify-ai-compat.sh` → exit 0 (출력 전후 동일)
+- [ ] `bash scripts/ai/verify-ai-compat.sh` → 출력이 Step 1의 before.out과
+  동일 (main repo에서는 exit 0과 동치; 워크트리에서는 동일한 "대상 불일치"
+  집합까지 허용 — supervisor가 머지 후 main에서 exit 0을 최종 확인)
 - [ ] `bash scripts/ai/verify-ai-compat.sh --run-fixture-tests` → exit 0
 - [ ] `nix shell .#pythonWithTomlkit --command env _TOMLKIT_BOOTSTRAP_READY=1 bash tests/run-shell-script-tests.sh` → exit 0 (신규 suite 포함)
 - [ ] `bash tests/run-all-tests.sh` → exit 0
@@ -157,7 +166,8 @@ suffix 규칙의 정탐 보존).
 
 ## STOP conditions
 
-- Step 1의 기준 실행이 exit 0이 아니다.
+- Step 1의 기준 실행이 exit 0이 아니고, 그 실패가 Step 1에 명시된 워크트리
+  "대상 불일치" 계열만으로 설명되지 않는다.
 - lint 엔진과 host-state 검증부의 경계가 얽혀 있어(상호 함수 호출) 분리가
   의미 변경 없이는 불가능하다 — 얽힌 지점을 보고.
 - Step 3에서 source-safe하지 않음이 확인됨 (위 명시된 대로 보고).
