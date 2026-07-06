@@ -543,3 +543,46 @@ Retired historical context (#634): `tests/test-codex-hook-fixtures.sh`의 기존
 실증 (Mac codex 0.128): `read_prompt_from_stdin(StdinPromptBehavior::OptionalAppend)` source line + npm wrapper spawn 시 detach 부재 직접 검증. 외부 보고 4종(gstack #1034/#1045, codex_sdk, oh-my-codex #1449)이 stdin EOF fix path를 일관되게 제시.
 
 발견 세션: PR #588 Phase 4 머지 후 retry hang (issue #593, 2026-04-29 발생).
+
+### 16. NixOS bwrap 의존
+
+심각도: 높음 — Linux `read-only` / `workspace-write` sandbox의 구조적 강제 전제
+
+증상:
+
+NixOS에서 system `bwrap`이 PATH에 없으면 `codex exec -s read-only` / `-s workspace-write`가
+bubblewrap 의존 경로를 밟는다. 보고된 즉시 panic 문구:
+
+```
+bubblewrap is unavailable: no system bwrap was found on PATH
+```
+
+재확인: 2026-07-06, codex-cli 0.142.5, 현재 MiniPC PATH에 system `bwrap` 없음.
+이 환경에서는 위 panic 대신 다음 warning 후 bundled bubblewrap fallback으로 진행됨을 확인했다:
+
+```
+warning: Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.
+```
+
+해결: NixOS 공통 시스템 패키지에 `bubblewrap`을 설치한다. 배포 전 임시 실측은 아래처럼
+`nix shell`로 PATH에 bwrap을 주입해 수행한다:
+
+```bash
+nix shell nixpkgs#bubblewrap --command env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write "짧은 sandbox smoke test"
+```
+
+배포 전 실측 매트릭스 (2026-07-06, codex-cli 0.142.5, `nixpkgs#bubblewrap` = 0.11.2):
+
+| tier | 읽기 (`modules/nixos/configuration.nix`) | 워크트리 쓰기 | 워크트리 밖 `/tmp` 쓰기 | 네트워크 (`curl -I --max-time 5 https://example.com`) | stderr sandbox 표기 |
+|------|------|------|------|------|------|
+| `read-only` | OK | BLOCKED | BLOCKED | BLOCKED | `sandbox: read-only` |
+| `workspace-write` | OK | OK | OK | BLOCKED | `sandbox: workspace-write [workdir, /tmp, $TMPDIR]` |
+| `danger-full-access` | OK | OK | OK | OK | `sandbox: danger-full-access` |
+| config 기본값 (`-s` 생략) | OK | OK | OK | OK | `sandbox: danger-full-access` |
+
+주의:
+- `workspace-write`는 이름과 달리 `/tmp`와 `$TMPDIR`도 writable root로 열었다. 일반 `$HOME` 경로
+  쓰기 차단은 이 세션의 "워크트리 밖 쓰기 시도는 `/tmp` 또는 워크트리 내부만 사용" 제한 때문에
+  직접 시도하지 않았다.
+- `read-only` / `workspace-write`에서는 네트워크가 차단되었고, `danger-full-access` 및 config 기본값에서는 허용되었다.
+- `~/.codex/config.toml`의 `sandbox_mode = "danger-full-access"` 기본값은 이 이슈에서 변경하지 않는다.
