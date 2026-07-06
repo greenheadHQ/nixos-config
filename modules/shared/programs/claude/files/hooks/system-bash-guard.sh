@@ -7,8 +7,13 @@
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+[ -f "$HOOK_RUNTIME_LIB" ] || exit 0
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
 INPUT=$(cat)
-TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+TOOL_NAME=$(printf '%s' "$INPUT" | hook_parse_tool_name)
 
 _deny() {
   # [WHY] 공식 최신 PreToolUse 스펙: hookSpecificOutput.permissionDecision
@@ -21,7 +26,7 @@ _deny() {
 
 case "$TOOL_NAME" in
   Bash)
-    CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+    CMD=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.command // empty')
     # [WHY] 명령 세그먼트 시작(라인 시작, `;`, `&&`, `||`, `|`, `(`) 뒤에서
     # `/bin/bash`가 실행되는 케이스만 매치. `grep /bin/bash README`나
     # `test -x /bin/bash` 같은 문자열 언급은 통과.
@@ -32,15 +37,15 @@ case "$TOOL_NAME" in
     fi
     ;;
   Write)
-    CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // empty' 2>/dev/null)
+    CONTENT=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.content // empty')
     if printf '%s' "$CONTENT" | grep -Eq '^#!/bin/bash([[:space:]]|$)'; then
       _deny "[system-bash-guard] Write content의 shebang이 #!/bin/bash입니다. macOS /bin/bash는 3.2 (GPLv3 legacy)로 bash 4+ 기능이 실패합니다. 대안: #!/usr/bin/env bash (호출 환경 PATH를 통해 bash가 해석됨; launchd/systemd처럼 PATH가 통제된 컨텍스트에서는 해당 agent의 PATH에 Nix bash 경로가 포함되는지 별도 확인 필요)."
     fi
     ;;
   Edit)
-    FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
-    OLD_STR=$(printf '%s' "$INPUT" | jq -r '.tool_input.old_string // empty' 2>/dev/null)
-    NEW_STR=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null)
+    FILE_PATH=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.file_path // empty')
+    OLD_STR=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.old_string // empty')
+    NEW_STR=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.new_string // empty')
     # [WHY] new_string만 검사하면 partial 치환(예: old="/usr/bin/env bash",
     # new="/bin/bash")이 post-edit shebang을 #!/bin/bash로 만들어도 우회된다.
     # old_string을 new_string으로 치환한 전체 결과에서 검사하여 bypass를 차단.

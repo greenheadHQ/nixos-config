@@ -7,17 +7,22 @@
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+[ -f "$HOOK_RUNTIME_LIB" ] || exit 0
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
 INPUT=$(cat)
 
 # 서브에이전트 내부 호출은 제외
-AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || true)
+AGENT_ID=$(printf '%s' "$INPUT" | hook_parse_json_path '.agent_id // empty')
 [ -n "$AGENT_ID" ] && exit 0
 
-SKILL=$(printf '%s' "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
+SKILL=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.skill // empty')
 [ -z "$SKILL" ] && exit 0
 
-ARGS=$(printf '%s' "$INPUT" | jq -r '.tool_input.args // ""' 2>/dev/null)
-SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)
+ARGS=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.args // ""')
+SESSION_ID=$(printf '%s' "$INPUT" | hook_parse_session_id)
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || true)
 
 # 로그 파일 owner-only 권한 (민감 args 보호)

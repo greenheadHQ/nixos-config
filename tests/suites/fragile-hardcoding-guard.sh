@@ -11,7 +11,15 @@ _fragile_guard_decision() {
   # $1 = SKILL.md content. 가드의 stdout(+stderr)을 반환한다(deny JSON 또는 빈 출력).
   local content="$1"
   printf '{"tool_name":"Write","tool_input":{"file_path":"repo/modules/x/claude/files/skills/demo/SKILL.md","content":"%s"}}' "$content" | \
-    bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/fragile-hardcoding-guard.sh" 2>&1
+    env HOOK_RUNTIME_LIB="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh" \
+      bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/fragile-hardcoding-guard.sh" 2>&1
+}
+
+_fragile_guard_raw() {
+  local input="$1"
+  printf '%s' "$input" | \
+    env HOOK_RUNTIME_LIB="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh" \
+      bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/fragile-hardcoding-guard.sh" 2>&1
 }
 
 test_fragile_hardcoding_guard_line_count_word_order_independent() {
@@ -32,4 +40,27 @@ test_fragile_hardcoding_guard_line_count_true_positive_preserved() {
   # 정탐 보존: 제외 키워드가 전혀 없는 순수 "N줄" 하드코딩은 어순 무관화 이후에도 deny된다.
   out=$(_fragile_guard_decision "이 문서는 120줄로 구성된다")
   assert_contains "$out" '"permissionDecision": "deny"'
+}
+
+test_fragile_hardcoding_guard_edit_true_positive_preserved() {
+  local sandbox file input out
+  sandbox=$(new_sandbox)
+  file="$sandbox/repo/modules/x/claude/files/skills/demo/SKILL.md"
+  mkdir -p "$(dirname "$file")"
+  printf '%s\n' "기존 본문" > "$file"
+  input=$(jq -n \
+    --arg path "$file" \
+    --arg old "기존 본문" \
+    --arg new "이 문서는 120줄로 구성된다" \
+    '{tool_name:"Edit",tool_input:{file_path:$path,old_string:$old,new_string:$new}}')
+  out=$(_fragile_guard_raw "$input")
+  assert_contains "$out" '"permissionDecision": "deny"'
+}
+
+test_fragile_hardcoding_guard_empty_and_malformed_input_noop() {
+  local out
+  out=$(_fragile_guard_raw "")
+  [[ -z "$out" ]] || fail "expected empty stdin to noop, got: $out"
+  out=$(_fragile_guard_raw '{"tool_name":')
+  [[ -z "$out" ]] || fail "expected malformed JSON to noop, got: $out"
 }

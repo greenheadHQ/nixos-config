@@ -10,8 +10,13 @@
 NRS_LOCK_FILE="/tmp/nrs-state"
 [[ ! -f "$NRS_LOCK_FILE" ]] && exit 0
 
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+[ -f "$HOOK_RUNTIME_LIB" ] || exit 0
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
 INPUT=$(cat)
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+CWD=$(printf '%s' "$INPUT" | hook_parse_json_path '.cwd // empty')
 [[ -z "$CWD" ]] && exit 0
 
 # CWD에서 git toplevel 추출 → lock worktree와 비교

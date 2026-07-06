@@ -47,10 +47,18 @@ _wpg_setup_fixture() {
 _wpg_decision() {
   # $1 = 훅을 실행할 cwd, $2 = tool_input.file_path, $3 = tool_name(기본 Edit).
   local cwd="$1" file_path="$2" tool_name="${3:-Edit}"
+  local input
+  input=$(printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool_name" "$file_path")
+  _wpg_raw "$cwd" "$input"
+}
+
+_wpg_raw() {
+  local cwd="$1" input="$2"
   (
     cd "$cwd" && \
-    printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool_name" "$file_path" | \
-      bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/worktree-path-guard.sh" 2>&1
+    printf '%s' "$input" | \
+      env HOOK_RUNTIME_LIB="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh" \
+        bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/worktree-path-guard.sh" 2>&1
   )
 }
 
@@ -97,4 +105,14 @@ test_worktree_path_guard_allows_main_repo_plan_path_exception() {
   main_root=$(_wpg_setup_fixture "$sandbox")
   out=$(_wpg_decision "$main_root/.claude/worktrees/a" "$main_root/.claude/plans/x.md")
   [[ -z "$out" ]] || fail "expected main repo plan path exception to allow, got: $out"
+}
+
+test_worktree_path_guard_empty_and_malformed_input_noop() {
+  local sandbox main_root out
+  sandbox=$(new_sandbox)
+  main_root=$(_wpg_setup_fixture "$sandbox")
+  out=$(_wpg_raw "$main_root/.claude/worktrees/a" "")
+  [[ -z "$out" ]] || fail "expected empty stdin to noop, got: $out"
+  out=$(_wpg_raw "$main_root/.claude/worktrees/a" '{"tool_name":')
+  [[ -z "$out" ]] || fail "expected malformed JSON to noop, got: $out"
 }

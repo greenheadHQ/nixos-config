@@ -29,6 +29,11 @@ fi
 # shellcheck source=../lib/session-state.sh disable=SC1091
 . "$SESSION_STATE_LIB"
 
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+[ -f "$HOOK_RUNTIME_LIB" ] || exit 0
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
 # jq 필수 — 없으면 graceful skip
 if ! command -v jq >/dev/null 2>&1; then
   exit 0
@@ -44,10 +49,10 @@ if [ -z "$INPUT" ]; then
   exit 0
 fi
 
-SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null) || true
-TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null) || true
-SOURCE=$(printf '%s' "$INPUT" | jq -r '.source // empty' 2>/dev/null) || true
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+SESSION_ID=$(printf '%s' "$INPUT" | hook_parse_session_id)
+TRANSCRIPT=$(printf '%s' "$INPUT" | hook_parse_json_path '.transcript_path // empty')
+SOURCE=$(printf '%s' "$INPUT" | hook_parse_json_path '.source // empty')
+CWD=$(printf '%s' "$INPUT" | hook_parse_json_path '.cwd // empty')
 
 # session_id resolution — statusline.sh와 동일 fallback (D-8)
 # stdin.session_id 우선, 비어있으면 transcript basename — 단, transcript는

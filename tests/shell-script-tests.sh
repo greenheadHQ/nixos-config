@@ -148,11 +148,25 @@ run_test "karakeep backup missing db exits nonzero" test_karakeep_backup_missing
 run_test "karakeep backup retention scopes to backup dir" test_karakeep_backup_retention_scopes_to_backup_dir
 run_test "fragile-hardcoding-guard line count word order independent" test_fragile_hardcoding_guard_line_count_word_order_independent
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved
+run_test "fragile-hardcoding-guard edit true positive preserved" test_fragile_hardcoding_guard_edit_true_positive_preserved
+run_test "fragile-hardcoding-guard empty and malformed input noop" test_fragile_hardcoding_guard_empty_and_malformed_input_noop
+run_test "log-skill normal input logs usage" test_log_skill_hook_normal_input_logs_usage
+run_test "log-skill empty malformed and subagent noop" test_log_skill_hook_empty_malformed_and_subagent_noop
+run_test "nrs-session-cleanup empty malformed and nonrepo noop" test_nrs_session_cleanup_hook_empty_malformed_and_nonrepo_input_noop
+run_test "plans-gc removes old transient buffer" test_plans_gc_hook_removes_old_transient_buffer
+run_test "plans-gc empty and malformed input noop" test_plans_gc_hook_empty_and_malformed_input_noop
+run_test "record-last-session normal input writes marker" test_record_last_session_hook_normal_input_writes_marker
+run_test "record-last-session empty malformed and subagent noop" test_record_last_session_hook_empty_malformed_and_subagent_noop
+run_test "session-init-icons startup creates state and context" test_session_init_icons_hook_startup_creates_state_and_context
+run_test "session-init-icons empty and malformed input noop" test_session_init_icons_hook_empty_and_malformed_input_noop
+run_test "system-bash-guard denies bash write and edit patterns" test_system_bash_guard_hook_denies_bash_write_and_edit_patterns
+run_test "system-bash-guard empty and malformed input noop" test_system_bash_guard_hook_empty_and_malformed_input_noop
 run_test "worktree-path-guard main repo session always allows" test_worktree_path_guard_main_repo_session_always_allows
 run_test "worktree-path-guard denies main repo file from worktree" test_worktree_path_guard_denies_main_repo_file_from_worktree
 run_test "worktree-path-guard allows own worktree file" test_worktree_path_guard_allows_own_worktree_file
 run_test "worktree-path-guard allows sibling worktree file" test_worktree_path_guard_allows_sibling_worktree_file
 run_test "worktree-path-guard allows main repo plan path exception" test_worktree_path_guard_allows_main_repo_plan_path_exception
+run_test "worktree-path-guard empty and malformed input noop" test_worktree_path_guard_empty_and_malformed_input_noop
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
@@ -162,6 +176,8 @@ run_test "hook_init_scan_dir falls back when TMPDIR missing" test_hook_init_scan
 run_test "hook_init_scan_dir falls back when TMPDIR unwritable" test_hook_init_scan_dir_falls_back_when_tmpdir_unwritable
 run_test "hook_init_scan_dir falls back when system tmp unusable" test_hook_init_scan_dir_falls_back_to_user_cache_when_system_tmp_unusable
 run_test "hook_init_scan_dir uses valid TMPDIR" test_hook_init_scan_dir_uses_valid_tmpdir
+run_test "hook_parse_json_path preserves filter defaults" test_hook_parse_json_path_preserves_filter_defaults
+run_test "hook_parse_json_path malformed input returns empty success" test_hook_parse_json_path_malformed_input_returns_empty_success
 run_test "pinning-guard survives set-but-unusable TMPDIR (e2e)" test_pinning_guard_survives_unusable_tmpdir
 
 # codex-config fixture는 tomlkit이 필요하다. lefthook pre-push는 `nix shell` wrap으로

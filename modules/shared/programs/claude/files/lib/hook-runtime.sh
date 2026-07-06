@@ -2,13 +2,9 @@
 # hook-runtime.sh — claude/codex hook 공통 helper 라이브러리.
 # 정책 출처: https://github.com/greenheadHQ/nixos-config/issues/759
 #
-# 본 라이브러리는 pinning-alert, pinning-guard (claude/codex 양 트리) 와 record-last-stop,
-# record-prompt-submit (codex 트리) 의 구현 use-site 에서 사용한다. 런타임별
-# 전용 로직 (CLAUDECODE/CODEX_PROGRAMMATIC 가드, agent_id 가드, apply_patch envelope
-# dispatch) 은 각 hook 본문에 inline 유지한다.
-#
-# 비대상: nrs-session-cleanup (claude/codex 양쪽) — 자체 NRS_LOCK_FILE cleanup 로직만
-# 사용하며 lib 의존성 없음.
+# 본 라이브러리는 claude/codex hook 구현 use-site 에서 사용한다. 런타임별 전용 로직
+# (CLAUDECODE/CODEX_PROGRAMMATIC 가드, agent_id 가드, apply_patch envelope dispatch) 은
+# 각 hook 본문에 inline 유지한다.
 #
 # 호출자는 본 lib 의 실패 정책 (fail-closed / warn-only / inline fallback) 을 결정한다.
 # `hook_load_lib` 는 정책 결정권 없이 stdout 으로 path 또는 빈 문자열을 반환한다.
@@ -16,6 +12,14 @@
 # USED-BY:
 #   claude/files/hooks/pinning-alert.sh         # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/pinning-guard.sh         # via $HOOK_RUNTIME_LIB
+#   claude/files/hooks/fragile-hardcoding-guard.sh # via $HOOK_RUNTIME_LIB
+#   claude/files/hooks/log-skill.sh             # via $HOOK_RUNTIME_LIB
+#   claude/files/hooks/nrs-session-cleanup.sh   # via $HOOK_RUNTIME_LIB
+#   claude/files/hooks/plans-gc.sh              # via $HOOK_RUNTIME_LIB
+#   claude/files/hooks/record-last-session.sh   # via $HOOK_RUNTIME_LIB
+#   claude/files/hooks/session-init-icons.sh    # via $HOOK_RUNTIME_LIB
+#   claude/files/hooks/system-bash-guard.sh     # via $HOOK_RUNTIME_LIB
+#   claude/files/hooks/worktree-path-guard.sh   # via $HOOK_RUNTIME_LIB
 #   codex/files/hooks/pinning-alert.sh          # via $HOOK_RUNTIME_LIB
 #   codex/files/hooks/pinning-guard.sh          # via $HOOK_RUNTIME_LIB
 #   codex/files/hooks/record-last-stop.sh       # via $HOOK_RUNTIME_LIB
@@ -106,6 +110,19 @@ hook_init_scan_dir() {
   return 1
 }
 
+# hook_parse_json_path <jq_filter>
+#
+# stdin 으로 받은 JSON 에서 caller 가 지정한 jq filter 를 추출. 기존 hook inline
+# parsing 의 jq filter 를 그대로 전달해 기본값/fallback 의미를 보존한다.
+#
+# stdin: hook stdin JSON
+# stdout: 추출 값 또는 filter 가 정한 기본값. jq 파싱 실패 시 빈 문자열.
+# exit code: 항상 0.
+hook_parse_json_path() {
+  local jq_filter="$1"
+  jq -r "$jq_filter" 2>/dev/null || true
+}
+
 # hook_parse_tool_name
 #
 # stdin 으로 받은 JSON 에서 .tool_name 추출. jq 사용.
@@ -114,7 +131,7 @@ hook_init_scan_dir() {
 # stdout: tool_name 값 또는 빈 문자열.
 # exit code: 항상 0 (jq 파싱 실패 시에도 빈 문자열 + 0).
 hook_parse_tool_name() {
-  jq -r '.tool_name // empty' 2>/dev/null || true
+  hook_parse_json_path '.tool_name // empty'
 }
 
 # hook_parse_session_id
@@ -125,5 +142,5 @@ hook_parse_tool_name() {
 # stdout: session_id 값 또는 빈 문자열.
 # exit code: 항상 0.
 hook_parse_session_id() {
-  jq -r '.session_id // empty' 2>/dev/null || true
+  hook_parse_json_path '.session_id // empty'
 }

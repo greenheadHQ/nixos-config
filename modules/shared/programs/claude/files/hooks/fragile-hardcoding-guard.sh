@@ -5,6 +5,11 @@
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+[ -f "$HOOK_RUNTIME_LIB" ] || exit 0
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
 # [WHY] fence strip을 document 모드의 SCAN_INPUT과 delta 검사의 OLD_STRIPPED
 # 양쪽에서 사용하므로 함수로 추출. Markdown spec 기준 0-3칸 들여쓰기 + 3개 이상 backtick.
 _strip_fences() {
@@ -23,11 +28,11 @@ _strip_fences() {
 }
 
 INPUT=$(cat)
-TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+TOOL_NAME=$(printf '%s' "$INPUT" | hook_parse_tool_name)
 
 case "$TOOL_NAME" in Edit|Write) ;; *) exit 0 ;; esac
 
-FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+FILE_PATH=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.file_path // empty')
 [ -z "$FILE_PATH" ] && exit 0
 
 # [WHY] SKILL.md body와 references/는 LLM이 생성/수정하는 스킬 콘텐츠.
@@ -45,10 +50,10 @@ esac
 # SCAN_MODE: document=전체 문서(fence strip 가능), fragment=조각(fence strip 불가).
 SCAN_MODE="document"
 if [ "$TOOL_NAME" = "Write" ]; then
-  CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // empty' 2>/dev/null)
+  CONTENT=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.content // empty')
 else
-  OLD_STR=$(printf '%s' "$INPUT" | jq -r '.tool_input.old_string // empty' 2>/dev/null)
-  NEW_STR=$(printf '%s' "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null)
+  OLD_STR=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.old_string // empty')
+  NEW_STR=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.new_string // empty')
   if [ -n "$OLD_STR" ] && [ -f "$FILE_PATH" ]; then
     # [WHY] awk ENVIRON + index() + substr()로 순수 문자열 치환.
     # -v 대신 ENVIRON을 사용하여 C-style escape 변환을 방지.

@@ -25,8 +25,13 @@ GC_AGE_DAYS=7
 # 정의한 SSOT 기준). unquoted 변수로 bash regex 매칭 (quote 시 literal 매칭됨).
 HEX_RE='-[0-9a-f]{8}\.md$'
 
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+[ -f "$HOOK_RUNTIME_LIB" ] || exit 0
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
 INPUT=$(cat)
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+CWD=$(printf '%s' "$INPUT" | hook_parse_json_path '.cwd // empty')
 [[ -z "$CWD" ]] && exit 0
 
 GIT_TOPLEVEL=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || exit 0

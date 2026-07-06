@@ -16,6 +16,29 @@ _hook_runtime_lib_path() {
   printf '%s' "$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh"
 }
 
+test_hook_parse_json_path_preserves_filter_defaults() {
+  local lib out
+  lib="$(_hook_runtime_lib_path)"
+  out=$(printf '%s' '{"tool_input":{"args":null,"file_path":"demo.txt"}}' \
+    | HOOK_RT_LIB="$lib" bash -c '. "$HOOK_RT_LIB"; hook_parse_json_path ".tool_input.args // \"fallback\""') \
+    || fail "hook_parse_json_path must exit 0 for valid JSON"
+  [[ "$out" == "fallback" ]] || fail "expected jq filter default to be preserved, got: $out"
+
+  out=$(printf '%s' '{"tool_input":{"file_path":"demo.txt"}}' \
+    | HOOK_RT_LIB="$lib" bash -c '. "$HOOK_RT_LIB"; hook_parse_json_path ".tool_input.file_path // empty"') \
+    || fail "hook_parse_json_path must extract nested field"
+  [[ "$out" == "demo.txt" ]] || fail "expected nested field extraction, got: $out"
+}
+
+test_hook_parse_json_path_malformed_input_returns_empty_success() {
+  local lib out
+  lib="$(_hook_runtime_lib_path)"
+  out=$(printf '%s' '{"tool_name":' \
+    | HOOK_RT_LIB="$lib" bash -c '. "$HOOK_RT_LIB"; hook_parse_tool_name') \
+    || fail "hook_parse_tool_name must exit 0 for malformed JSON"
+  [[ -z "$out" ]] || fail "expected malformed JSON to parse as empty, got: $out"
+}
+
 # 존재하지 않는 TMPDIR (codex dangling ~/.codex/tmp/... 재현) → fallback + 성공.
 test_hook_init_scan_dir_falls_back_when_tmpdir_missing() {
   local sandbox out lib

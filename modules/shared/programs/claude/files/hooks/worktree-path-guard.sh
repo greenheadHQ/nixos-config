@@ -2,8 +2,13 @@
 # Claude Code PreToolUse hook: worktree path guard
 # worktree에서 실행 중일 때 main repo 파일을 Edit/Write하면 차단하고 worktree 경로를 안내
 
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+[ -f "$HOOK_RUNTIME_LIB" ] || exit 0
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name')
+TOOL_NAME=$(printf '%s' "$INPUT" | hook_parse_tool_name)
 
 # Edit, Write만 감시
 case "$TOOL_NAME" in
@@ -11,7 +16,7 @@ case "$TOOL_NAME" in
   *) exit 0 ;;
 esac
 
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+FILE_PATH=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.file_path // empty')
 [[ -z "$FILE_PATH" ]] && exit 0
 
 # worktree 감지: git-dir ≠ git-common-dir
