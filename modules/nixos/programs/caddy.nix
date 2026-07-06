@@ -99,28 +99,29 @@ in
         listenAddresses = [ minipcTailscaleIP ];
         extraConfig = ''
           ${securityHeaders}
-          # CSP 헤더 제거: Karakeep iframe 내 SingleFile HTML의 CSS 렌더링 차단 방지
-          # Tailscale VPN 전용이므로 XSS 위험 무시 가능
-          # ref: https://github.com/karakeep-app/karakeep/issues/1977
-          header -Content-Security-Policy
-          header -Content-Security-Policy-Report-Only
-          ${
-            if singlefileBridgeCfg.enable then
-              ''
-                route {
+          route {
+            @karakeepArchiveAssets path /api/assets/*
+            handle @karakeepArchiveAssets {
+              # CSP는 아카이브 자산 경로에서만 제거 (렌더링 호환) -- 앱 셸은 표준 CSP 유지.
+              # 이전에는 vhost 전체 제거였음. ref: https://github.com/karakeep-app/karakeep/issues/1977
+              header -Content-Security-Policy
+              header -Content-Security-Policy-Report-Only
+              reverse_proxy localhost:${toString constants.network.ports.karakeep}
+            }
+            ${
+              if singlefileBridgeCfg.enable then
+                ''
                   @singlefile path /api/v1/bookmarks/singlefile*
                   handle @singlefile {
                     reverse_proxy localhost:${toString singlefileBridgeCfg.port}
                   }
-                  handle {
-                    reverse_proxy localhost:${toString constants.network.ports.karakeep}
-                  }
-                }
-              ''
-            else
-              ''
-                reverse_proxy localhost:${toString constants.network.ports.karakeep}
-              ''
+                ''
+              else
+                ""
+            }
+            handle {
+              reverse_proxy localhost:${toString constants.network.ports.karakeep}
+            }
           }
         '';
       };
