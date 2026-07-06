@@ -44,6 +44,9 @@ in
     source = "${sharedScriptsDir}/lib/wt";
     recursive = true;
   };
+  home.file.".local/lib/pushover.sh" = {
+    source = "${sharedScriptsDir}/lib/pushover.sh";
+  };
   # codex exec hang supervisor (issue #593): Nix wrapper가 absolute store path env var를 set한 후
   # raw script를 exec한다. raw script는 CODEX_EXEC_TIMEOUT_BIN/CODEX_EXEC_SETSID_BIN 우선 사용.
   # 이로써 wrapper subprocess + codex exec 자식 shell의 PATH를 건드리지 않아 user PATH(BSD
@@ -387,6 +390,13 @@ in
             echo "Error: Pushover credentials not found" >&2
             return 1
           fi
+          local helper="$HOME/.local/lib/pushover.sh"
+          if [ ! -r "$helper" ]; then
+            echo "Error: Pushover helper not found" >&2
+            return 1
+          fi
+          source "$helper"
+
           local PUSHOVER_TOKEN="" PUSHOVER_USER=""
           source "$cred"
           [ -n "''${PUSHOVER_TOKEN:-}" ] && [ -n "''${PUSHOVER_USER:-}" ] || {
@@ -394,18 +404,10 @@ in
             return 1
           }
 
-          local response
-          if response=$(curl --fail-with-body --show-error --silent --max-time 10 -X POST \
-            -H "Content-Type: application/x-www-form-urlencoded; charset=utf-8" \
-            --data-urlencode "token=$PUSHOVER_TOKEN" \
-            --data-urlencode "user=$PUSHOVER_USER" \
-            --data-urlencode "title=📋 텍스트 공유 (''${#text}자)" \
-            --data-urlencode "message=$text" \
-            https://api.pushover.net/1/messages.json); then
+          if pushover_send "$cred" "📋 텍스트 공유 (''${#text}자)" "$text" 0; then
             echo "✓ Pushover 전송 (''${#text}자)"
           else
             echo "Error: Pushover 전송 실패" >&2
-            [ -n "$response" ] && echo "$response" >&2
             return 1
           fi
         }

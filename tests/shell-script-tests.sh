@@ -140,6 +140,10 @@ run_test "webhook-bridge non-crawled payload skips notification" test_webhook_br
 run_test "webhook-bridge invalid JSON keeps 200 without notification" test_webhook_bridge_invalid_json_keeps_200_without_notification
 run_test "webhook-bridge matching token sends notification" test_webhook_bridge_matching_token_sends_notification
 run_test "webhook-bridge wrong token keeps 200 and warns" test_webhook_bridge_wrong_token_keeps_200_and_warns
+run_test "pushover helper missing credential skips curl" test_pushover_send_missing_cred_returns_1_without_curl
+run_test "pushover helper sends expected fields" test_pushover_send_success_passes_expected_fields
+run_test "pushover helper passes optional sound" test_pushover_send_passes_optional_sound
+run_test "pushover helper curl failure returns nonzero" test_pushover_send_curl_failure_returns_1
 run_test "immich backup happy path creates dump atomically" test_immich_backup_happy_path_creates_dump_atomically
 run_test "immich backup integrity failure exits nonzero" test_immich_backup_integrity_failure_exits_nonzero
 run_test "immich backup retention deletes only old dumps in dir" test_immich_backup_retention_deletes_only_old_dumps_in_dir

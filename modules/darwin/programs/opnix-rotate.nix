@@ -17,6 +17,7 @@
 let
   expiryPath = "${config.xdg.configHome}/op/sa-expiry-mac";
   pushoverPath = "${config.xdg.configHome}/pushover/share";
+  pushoverHelper = ../../shared/scripts/lib/pushover.sh;
   warnDays = 14; # 90일 cadence, 만료 14일 전부터 알림
 
   rotateCheckScript = pkgs.writeShellApplication {
@@ -28,6 +29,9 @@ let
     text = ''
       EXPIRY_FILE="${expiryPath}"
       PUSHOVER_FILE="${pushoverPath}"
+
+      # shellcheck source=/dev/null
+      source "${pushoverHelper}"
 
       # record/자격증명 부재 → non-fatal (미배포 등). 알림 없이 종료.
       [ -r "$EXPIRY_FILE" ] || { echo "expiry record 없음 — skip" >&2; exit 0; }
@@ -68,11 +72,7 @@ let
         prio=0
       fi
 
-      if curl -s --max-time 20 \
-           -F "token=$PUSHOVER_TOKEN" -F "user=$PUSHOVER_USER" \
-           -F "title=1Password Mac SA token rotation needed" \
-           -F "message=$msg" -F "priority=$prio" \
-           https://api.pushover.net/1/messages.json >/dev/null; then
+      if pushover_send "$PUSHOVER_FILE" "1Password Mac SA token rotation needed" "$msg" "$prio"; then
         echo "Pushover rotation alert sent ($days_left days left)"
       else
         echo "WARNING: Pushover send failed" >&2
