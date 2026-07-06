@@ -116,6 +116,10 @@ run_test "extract_oos_entries filesystem input" test_extract_oos_entries_filesys
 run_test "extract_oos_entries git show input" test_extract_oos_entries_git_show_input
 run_test "extract_oos_entries empty and absent exit zero" test_extract_oos_entries_empty_and_absent_exit_zero
 run_test "verify-ai-compat Codex artifact contract static" test_verify_ai_compat_codex_artifact_contract_static
+run_test "verify-ai-compat host-state positive fixture" test_verify_ai_compat_host_state_positive_fixture
+run_test "verify-ai-compat host-state detects non-executable hook" test_verify_ai_compat_host_state_detects_non_executable_hook
+run_test "verify-ai-compat host-state detects bad symlink targets" test_verify_ai_compat_host_state_detects_bad_symlink_targets
+run_test "verify-ai-compat host-state detects removed oracle reference" test_verify_ai_compat_host_state_detects_removed_oracle_reference
 run_test "stale filter supports clean symlinked user hooks" test_user_hooks_stale_filter_supports_clean_symlink_target
 run_test "stale filter detects symlinked stale user hooks" test_user_hooks_stale_filter_detects_symlink_target_stale_entries
 run_test "stale filter ignores stale path mentions" test_user_hooks_stale_filter_ignores_stale_path_mentions
