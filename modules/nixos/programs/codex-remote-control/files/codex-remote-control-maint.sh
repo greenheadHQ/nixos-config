@@ -96,7 +96,12 @@ with_lock() {
     LAST_REPAIR_REASON="lock-acquire-timeout"
     return 1
   }
-  "$@"
+  # fd 9는 이 셸이 락을 유지하는 동안만 살아야 한다. 리다이렉트 없이 실행하면
+  # codex remote-control start가 detach하는 app-server 데몬이 fd 9를 상속해
+  # 스크립트 종료 후에도 락을 영구 점유하고, 이후 모든 타이머 실행이
+  # lock-acquire-timeout으로 실패한다. 9>&-는 명령 스코프에서만 fd 9를 닫으므로
+  # (bash가 원본 fd를 CLOEXEC 임시 fd로 보존) 이 셸의 락은 유지된다.
+  "$@" 9>&-
 }
 
 path_under() {
