@@ -27,6 +27,9 @@ run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignor
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
+run_test "worktree relink skips non-TTY without opt-in" test_worktree_relink_skips_non_tty_without_opt_in
+run_test "worktree relink opt-in allows non-TTY" test_worktree_relink_opt_in_allows_non_tty
+run_test "main relink restore ignores non-TTY guard" test_main_relink_restore_ignores_non_tty_guard
 run_test "wt cd returns target path by name" test_wt_cd_by_name_returns_target_path
 run_test "wt ls lists deployed worktrees" test_wt_ls_from_deployed_layout_lists_worktrees
 run_test "wt ls --json outputs parseable array" test_wt_ls_json_outputs_parseable_array

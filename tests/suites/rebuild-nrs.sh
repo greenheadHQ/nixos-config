@@ -132,6 +132,18 @@ install_platform_nrs_entrypoint() {
     *) fail "unknown platform for nrs entrypoint: $platform" ;;
   esac
 }
+
+install_recording_nrs_relink() {
+  local home_dir="$1"
+  mkdir -p "$home_dir/.local/bin"
+  cat > "$home_dir/.local/bin/nrs-relink" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${NRS_RELINK_LOG:?}"
+EOF
+  chmod +x "$home_dir/.local/bin/nrs-relink"
+}
+
 test_rebuild_common_exports_public_api() {
   local sandbox output
   sandbox=$(new_sandbox)
@@ -226,6 +238,104 @@ test_detect_worktree_uses_current_worktree_path() {
   assert_contains "$output" "flake=$worktree_root"
   assert_contains "$output" "is_main=false"
 }
+
+test_worktree_relink_skips_non_tty_without_opt_in() {
+  local sandbox home_dir repo_root worktree_root output relink_log
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  relink_log="$sandbox/nrs-relink.log"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  worktree_root="$repo_root/.claude/worktrees/feature_one"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_recording_nrs_relink "$home_dir"
+
+  output=$(
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    NRS_RELINK_LOG="$relink_log" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$worktree_root"'"
+      REBUILD_CMD="nixos-rebuild"
+      source "'"$home_dir/.local/lib/rebuild-common.sh"'"
+      maybe_relink_or_restore
+    ' </dev/null 2>&1
+  )
+
+  assert_contains "$output" "Skipping worktree relink in non-interactive/agent context"
+  assert_not_contains "$output" "Relinking symlinks to worktree"
+  [[ ! -s "$relink_log" ]] || fail "expected non-TTY worktree relink to skip nrs-relink"
+}
+
+test_worktree_relink_opt_in_allows_non_tty() {
+  local sandbox home_dir repo_root worktree_root output relink_log
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  relink_log="$sandbox/nrs-relink.log"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  worktree_root="$repo_root/.claude/worktrees/feature_one"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_recording_nrs_relink "$home_dir"
+
+  output=$(
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    NRS_RELINK_LOG="$relink_log" \
+    NRS_ALLOW_WORKTREE_RELINK=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$worktree_root"'"
+      REBUILD_CMD="nixos-rebuild"
+      source "'"$home_dir/.local/lib/rebuild-common.sh"'"
+      maybe_relink_or_restore
+    ' </dev/null 2>&1
+  )
+
+  assert_contains "$output" "Relinking symlinks to worktree"
+  assert_not_contains "$output" "Skipping worktree relink"
+  assert_file_contains "$relink_log" "relink"
+}
+
+test_main_relink_restore_ignores_non_tty_guard() {
+  local sandbox home_dir repo_root worktree_root output relink_log
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  relink_log="$sandbox/nrs-relink.log"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  worktree_root="$repo_root/.claude/worktrees/feature_one"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_recording_nrs_relink "$home_dir"
+
+  mkdir -p "$home_dir/.claude" "$worktree_root"
+  ln -sf "$worktree_root/CLAUDE.md" "$home_dir/.claude/CLAUDE.md"
+
+  output=$(
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    NRS_RELINK_LOG="$relink_log" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      REBUILD_CMD="nixos-rebuild"
+      source "'"$home_dir/.local/lib/rebuild-common.sh"'"
+      maybe_relink_or_restore
+    ' </dev/null 2>&1
+  )
+
+  assert_contains "$output" "Restoring symlinks to nix store chain"
+  assert_not_contains "$output" "Skipping worktree relink"
+  assert_file_contains "$relink_log" "restore"
+}
+
 test_nixos_nrs_offline_force_smoke() {
   local sandbox home_dir repo_root stub_dir output result_target
   sandbox=$(new_sandbox)
