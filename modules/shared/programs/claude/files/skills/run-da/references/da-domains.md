@@ -3,7 +3,7 @@
 기본 FULL path는 4개 reviewer bundle을 사용한다. 각 bundle은 두 개의 세부 도메인을 묶어
 중복 fan-out을 줄이고, 각 finding에는 실제로 문제를 포착한 세부 관점을 함께 표기한다.
 
-명시적 exhaustive override(`run-da ... full`)가 필요할 때만 bundle을 세부 도메인 단위로 확장한다.
+명시적 exhaustive override(`run-da ... MAX`)가 필요할 때만 bundle을 세부 도메인 단위로 확장한다.
 
 ## 공통 출력 형식
 
@@ -98,12 +98,13 @@ tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-
 
 ## 명시적 exhaustive override 매핑
 
-`run-da ... full`은 기본 bundle fan-out을 세부 도메인으로 확장한다. 이 경로는
+`run-da ... MAX`는 기본 bundle fan-out을 세부 도메인으로 확장한다. 이 경로는
 기본값이 아니라 exhaustive override이며, reviewer 수를 늘리는 대신 recall을 우선한다.
+`NGMI`와 `CLEAN_CODE` 관점은 기본 FULL bundle 내부에 남지만, 독립 exhaustive review unit에서는 제외한다.
 
 | reviewer bundle | exhaustive override로 확장되는 세부 도메인 |
 |-----------------|------------------------------------------|
 | Correctness | `HALLUCINATION`, `SECURITY` |
-| Design | `YAGNI`, `NGMI` |
+| Design | `YAGNI` |
 | Regression | `SIDE_EFFECT`, `CONSISTENCY` |
-| Maintainability | `READABILITY`, `CLEAN_CODE` |
+| Maintainability | `READABILITY` |

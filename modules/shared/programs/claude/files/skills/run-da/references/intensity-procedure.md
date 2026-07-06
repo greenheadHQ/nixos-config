@@ -6,7 +6,7 @@ Review Intensity 판정은 메인 LLM이 인라인으로 8 룰 체크리스트�
 
 기본 진입점은 `/run-da` 호출 직후다. 예외적으로 문서화된 자동 호출자는 같은 절차를 `/run-da` 호출 직전에 적용할 수 있다. 자동 호출자가 만든 handoff가 유효하면 `/run-da`는 그 체크리스트 결과를 재사용하고, handoff가 없거나 stale이면 현재 입력으로 이 절차를 다시 수행한다.
 
-`full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(8개 세부 도메인)로 직행한다.
+`MAX` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(6개 세부 도메인)로 직행한다.
 
 ## 3단계
 
@@ -16,8 +16,8 @@ Review Intensity 판정은 메인 LLM이 인라인으로 8 룰 체크리스트�
 | LITE | Correctness 필수 + 관련 reviewer bundles | 불필요 | 필요한 bundle만 선택 실행 |
 | FULL | 4 reviewer bundles | 불필요 | 4 reviewer bundle 기본 리뷰 |
 
-`full` modifier는 위 표의 FULL과 다르다. 자동 FULL은 4 reviewer bundle이고,
-modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 진입한다.
+`MAX` modifier는 위 표의 FULL과 다르다. 자동 FULL은 4 reviewer bundle이고,
+modifier `MAX`는 Review Intensity를 건너뛰고 exhaustive 6-domain path로 진입한다.
 
 ## 인라인 체크리스트 절차 (강제)
 
@@ -34,7 +34,7 @@ modifier `full`은 Review Intensity를 건너뛰고 exhaustive 8-domain path로 
    ```text
    | 룰 ID | 매치/미매치/불확실 | 입력 근거 |
    |-------|--------------------|-----------|
-   | RULE-FULL-MODIFIER | 미매치 | (modifier 인자 없음) |
+   | RULE-MAX-MODIFIER | 미매치 | (modifier 인자 없음) |
    | RULE-SECURITY | 매치 | secrets.nix 권한 mode 변경 |
    | RULE-MODULE-SERVICE | 미매치 | 기존 모듈 내부 수정 |
    | RULE-CONFIG-DEPENDENCY | 미매치 | (해당 변경 없음) |

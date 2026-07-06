@@ -6,7 +6,7 @@
 
 [`../references/intensity-procedure.md`](../references/intensity-procedure.md)의 판단 실행 절차를 따른다.
 
-- `full` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(8개 세부 도메인)로 진입한다.
+- `MAX` modifier가 있으면 이 단계를 건너뛰고 exhaustive override(6개 세부 도메인)로 진입한다.
 - SKIP → SKIP 절차를 따른다. 단 `GATE-REMOVAL-SIMPLIFY`([`../references/intensity-rules.md`](../references/intensity-rules.md))가 매치되면 SKIP이어도 종료 전에 메인이 Step 1의 의사결정 컨텍스트 팩 + degraded 조사([`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A·B·D)를 수행한다. 게이트 미매치 SKIP만 승인 시 for_plan을 종료한다.
 - LITE → LITE 절차에 따라 실행할 reviewer bundle을 선택한다.
 - FULL → 4 reviewer bundles를 실행한다.
@@ -63,7 +63,7 @@
 
 - Codex 세션 경로: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
 - Codex 세션 경로: `VIOLATION` 처리 규칙은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
-- codex exec 경로: 선택된 review unit(FULL 기본 4개, LITE는 선택한 수, explicit exhaustive는 8개) 전부 실행(Claude Code는 병렬, headless는 serial) 완료 후, 각 `$DA_DIR/$UNIT-result.md` 패턴의 결과 파일을 파일 읽기 도구로 명시적으로 읽어 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
+- codex exec 경로: 선택된 review unit(FULL 기본 4개, LITE는 선택한 수, explicit exhaustive는 6개) 전부 실행(Claude Code는 병렬, headless는 serial) 완료 후, 각 `$DA_DIR/$UNIT-result.md` 패턴의 결과 파일을 파일 읽기 도구로 명시적으로 읽어 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
 - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 
 ## Step 4: ALL CLEAR 또는 Arbiter 진입

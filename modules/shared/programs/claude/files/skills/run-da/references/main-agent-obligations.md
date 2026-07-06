@@ -24,7 +24,7 @@
 - 사용자 전건 보고: 모든 Arbiter 판정 결과(CONFIRMED_ISSUE, NOT_AN_ISSUE, NEEDS_MORE_INFO)를 사용자에게 보고한다. NEEDS_MORE_INFO·`split` 항목은 아래 "사용자 질문 시 맥락 설명 의무"의 5요소를 갖춘 질문 도구 호출로 처리한다.
 - Conservative wait: Codex 세션 경로에서 `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다. (Review Intensity는 인라인 체크리스트라 wait 대상 아님.)
 - Fresh perspective 보장: 매 라운드마다 새 reviewer/Arbiter 실행 단위를 사용한다 (Codex 세션: 새 native subagent thread, codex exec 경로: 새 `codex exec` 프로세스). `fresh` modifier 사용 시 이전 라운드 맥락도 완전히 차단한다.
-- Selective propagation 기본값: Arbiter/후속 reviewer에게는 unique findings, conflicting findings, high-severity findings, user decision required findings만 전달한다. raw transcript 전체, CLEAR 결과, 중복 low-signal finding의 all-to-all broadcast는 금지한다. `full` modifier는 propagation이 아니라 fan-out만 확장한다.
+- Selective propagation 기본값: Arbiter/후속 reviewer에게는 unique findings, conflicting findings, high-severity findings, user decision required findings만 전달한다. raw transcript 전체, CLEAR 결과, 중복 low-signal finding의 all-to-all broadcast는 금지한다. `MAX` modifier는 propagation이 아니라 fan-out만 확장한다.
 - 프롬프트 조향 금지: 후속 라운드 DA/Arbiter 프롬프트에 이전 라운드의 판정 결과를 포함하지 않는다. 이전 라운드 결과를 "이미 해결된 사안"으로 프레이밍하는 것도 금지한다.
 
 ## 정책 / 계약 / 상태 흐름 (link only)
