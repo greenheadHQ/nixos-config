@@ -6,7 +6,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 
 | DA 결과 | Arbiter 판정 | stability_status | 메인 에이전트 행동 | 사용자 보고 |
 |---------|-------------|------------------|-------------------|-----------|
-| finding 있음 | CONFIRMED_ISSUE | N/A / stable (+ low_confidence_warning=false) | 자동 수정 (CRITICAL은 진행 차단) | 수정 필요 테이블 |
+| finding 있음 | CONFIRMED_ISSUE | N/A / stable (+ low_confidence_warning=false) | pending write queue에 추가. write phase에서 일괄 수정 (CRITICAL은 다음 round 진행 차단) | 수정 필요 테이블 |
 | finding 있음 | NOT_AN_ISSUE | N/A / stable (+ low_confidence_warning=false) | 반영 불필요 | 무해 테이블 |
 | finding 있음 | NEEDS_MORE_INFO | N/A / stable | 사용자 판단 대기 | 질문 도구 |
 | finding 있음 | 임의 | N/A / stable + low_confidence_warning=true | fail-closed 승격 (질문 도구 호출) | 질문 도구 + LOW confidence 이력 |
@@ -34,9 +34,22 @@ stability_status 의미, selective consistency 트리거, `unknown` sentinel 정
 3. Arbiter 에이전트가 각 finding을 5가지 기준으로 독립 검증한다 ([arbiter-prompt.md](arbiter-prompt.md)). Portability는 verdict 결정권 없는 guardrail이다.
 4. first-pass Arbiter 결과가 selective consistency trigger 조건([stability-measurement.md](stability-measurement.md) 참조)에 매치되면 N=3 재판정을 실행하고 vote-shape로 stability_status를 결정한다. 자세한 상태 전이는 아래 "Selective consistency 상태 전이" 참조.
 5. 메인 에이전트는 사용자에게 전건 보고한다 (vote-shape가 있으면 함께 보고).
-6. CONFIRMED_ISSUE + (stability_status=N/A 또는 stable) 항목을 자동 수정한다 (CRITICAL은 즉시, 진행 차단).
-7. NEEDS_MORE_INFO 또는 stability_status=split 항목은 사용자 판단을 요청한다.
+6. CONFIRMED_ISSUE + (stability_status=N/A 또는 stable) 항목을 pending write queue에 추가한다. CRITICAL은 진행 차단 항목으로 표시하되 review phase 중 즉시 patch하지 않는다.
+7. NEEDS_MORE_INFO 또는 stability_status=split 항목은 사용자 판단을 요청한다. 사용자가 수용한 항목만 pending write queue에 추가한다.
 8. stability_status=fragmented 항목은 BLOCKED 상태로 기록하고 자동 수정하지 않는다 (아래 섹션 참조).
+9. Arbiter 상태 전이와 필요한 사용자 판단이 끝난 뒤 write phase로 넘어가 pending write queue를 batch로 반영한다.
+
+### 라운드 read/write 분리
+
+각 outer round는 frozen changeset을 대상으로 한 review phase와, Arbiter 판정 후의 write phase를 분리한다.
+
+- changeset 동결: outer round 시작 시 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`와 현재 workspace 상태가 frozen changeset이다.
+- review phase 범위: reviewer 실행, reviewer 결과 수집, Arbiter 실행, selective consistency N=3, vote-shape 집계, 전건 보고, 질문 도구 판단 수집까지다.
+- review phase 중 patch 금지: 이 구간에는 active changeset을 바꾸는 patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. check-only formatter나 diff-only generator처럼 파일 변경이 없으면 허용한다. delegated reviewer/Arbiter의 read-only/no-write 경계는 [`hardening-contract.md`](hardening-contract.md)가 정본이다.
+- 일괄 수정: CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목은 pending write queue에 모아 write phase에서 메인 에이전트가 batch로 반영한다. 정상 confirmed finding 반영을 막는 규칙이 아니라 반영 시점을 라운드 밖으로 옮기는 규칙이다.
+- CRITICAL 기본값: CRITICAL finding만 즉시 중단/수정하는 예외는 기본 절차에 두지 않는다. CRITICAL은 다음 outer round 진입을 차단하고, 현재 round의 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 반영한다.
+- 새 changeset: write phase 후 다음 outer round를 시작하면 "새 changeset" 리뷰로 명시한다. 이전 round의 frozen changeset과 write phase batch delta를 round summary에 기록해 추세 기반 조기 중단의 신규 confirmed finding 계산 기준을 분리한다.
+- `parallel-audit`와의 용어 정합: `run-da`는 read/write phase를 가진 반복 개선 루프이고, `parallel-audit`는 같은 changeset을 일회성 read-only로 검증하는 전수조사다. 전수조사는 "`SAFE`까지" 자동 반복 재발사하지 않는다.
 
 ### Arbiter 출력 요건
 
@@ -54,7 +67,7 @@ first-pass Arbiter 결과가 trigger 조건에 매치되면 동일 입력으로 
 
 | stability_status | majority verdict | low_confidence_warning | 메인 에이전트 행동 |
 |------------------|------------------|------------------------|-------------------|
-| `stable` (3:0) | unanimous verdict | `false` | 기존 경로 (CONFIRMED→수정, NOT_AN_ISSUE→무해, NEEDS_MORE_INFO→질문 도구) |
+| `stable` (3:0) | unanimous verdict | `false` | 기존 경로 (CONFIRMED→pending write queue, NOT_AN_ISSUE→무해, NEEDS_MORE_INFO→질문 도구) |
 | `stable` (3:0) | unanimous verdict | `true` | fail-closed 승격: NEEDS_MORE_INFO 경로로 사용자 판단 요청. unanimous이어도 어떤 Arbiter가 LOW confidence를 보고했으면 기존 "LOW confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 승격" 계약을 유지한다. fleiss-kappa.py 출력의 `low_confidence_warning`/`min_confidence` 필드로 전달된다. |
 | `split` (2:1) | majority verdict (정보 표시) | any | NEEDS_MORE_INFO 경로로 사용자 판단 요청. vote-shape와 minority verdict도 함께 보고. |
 | `fragmented` (1:1:1) | — | any | BLOCKED. 질문 도구 지원 런타임: 사용자에게 판단 요청 (비유법 설명 포함). 질문 도구 미지원 런타임: 자동 승격 금지, 중단 보고 후 명시적 rerun 전에는 재개하지 않음. |
@@ -125,7 +138,7 @@ DA 에이전트가 위반을 지적할 때 반드시 다음 중 하나를 제시
 
 ### Arbiter 검증 후 수정 의무
 
-Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 때:
+write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 때:
 
 - 수정 전 해당 위치(for_pr: 파일:줄 / for_plan: 관련 파일 또는 계획 항목)를 직접 확인한다 (수정 작업의 일부).
 - 수정한 코드/계획의 diff를 명시한다.
@@ -150,7 +163,7 @@ Selective consistency 서브런 카운팅: selective consistency의 N=3 재판�
 명시적 상한은 5 outer round다. 5회 이후에도 CLEAR에 도달하지 못하면
 사용자에게 현황을 보고하고 계속 진행 여부를 확인한다(자동 무한 진행 금지). selective consistency 서브런은 outer round 카운트에 포함하지 않는다.
 
-추세 기반 조기 중단: 신규 confirmed finding(직전 outer round에 없던 confirmed — 동일성은 3회 반복 규칙과 같은 "세부 관점 + 위치(파일:줄 또는 계획 항목 번호)" 기준) 수가 직전 대비 감소하지 않는(동수 포함) outer round가 2회 연속이면(따라서 최소 outer round 3부터 평가 가능하며, R1·단일 라운드는 미발동), 5회 상한 전이라도 비수렴으로 간주해 즉시 현황을 사용자에게 보고하고 계속 여부를 확인한다(질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다). 매 라운드의 수정이 새 리뷰 표면을 만들어 finding이 수렴하지 않는 경우(활성 changeset에 반복 리뷰)가 대표 사례다 — 이때는 표면을 다듬어 finding을 닫으려 하기보다 changeset 동결 또는 변경 범위 축소를 우선 검토한다. "3회 반복 규칙"이 동일 지적의 반복을 잡는다면, 이 규칙은 매 라운드 다른 새 finding이 끊이지 않는 비수렴을 잡는다.
+추세 기반 조기 중단: 신규 confirmed finding(직전 outer round에 없던 confirmed — 동일성은 3회 반복 규칙과 같은 "세부 관점 + 위치(파일:줄 또는 계획 항목 번호)" 기준) 수가 직전 대비 감소하지 않는(동수 포함) outer round가 2회 연속이면(따라서 최소 outer round 3부터 평가 가능하며, R1·단일 라운드는 미발동), 5회 상한 전이라도 비수렴으로 간주해 즉시 현황을 사용자에게 보고하고 계속 여부를 확인한다(질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다). CLEAR까지 반복은 상한/조기중단/read-write 분리 규칙을 함께 적용한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 수렴하지 않는 경우가 대표 사례다 — 이때는 라운드 중 표면을 계속 다듬어 finding을 닫으려 하기보다 changeset 동결 유지, batch 범위 축소, 또는 변경 범위 축소를 우선 검토한다. "3회 반복 규칙"이 동일 지적의 반복을 잡는다면, 이 규칙은 매 라운드 다른 새 finding이 끊이지 않는 비수렴을 잡는다.
 
 ## 라운드 요약 기록
 
@@ -159,6 +172,7 @@ Selective consistency 서브런 카운팅: selective consistency의 N=3 재판�
 ```text
 Round N 요약: DA 발견 X건 → Arbiter: CONFIRMED Y건(신규 Y'건 — 직전 라운드에 없던 관점+위치), NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
 bundle별: Correctness 2건(SECURITY 1, HALLUCINATION 1), Regression CLEAR, ...
+changeset: frozen=<계획 원문/commit range/diff 기준>, write_phase=<수정 파일/계획 항목/diffstat/generated output 유무>, next=<R(N+1) 새 changeset 여부>
 ```
 
 selective consistency가 발동한 라운드는 추가 라인으로 stability_status 분포를 명시한다:
@@ -197,6 +211,7 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 <summary>Round details</summary>
 
 ### Round 1
+- changeset: frozen=main...HEAD@abc1234, write_phase=none, next=R2 new changeset after batch fix
 - Correctness: 3건 (`HALLUCINATION` CONFIRMED 1, `SECURITY` CONFIRMED 1, `SECURITY` NOT_AN_ISSUE 1)
 - Design: CLEAR
 - Regression: 1건 (`SIDE_EFFECT` NEEDS_MORE_INFO 1) → 사용자 판단: 수용 → R2에서 fixed

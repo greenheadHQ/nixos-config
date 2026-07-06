@@ -106,10 +106,10 @@ for_plan 핵심 원칙:
 
 | DA 심각도 | Arbiter CONFIRMED_ISSUE 시 메인 에이전트 행동 |
 |----------|----------------------------------------------|
-| CRITICAL | 진행 차단 — 이 finding이 해결될 때까지 다음 라운드 불가 |
-| HIGH | 수정 필수 — 반드시 수정, 라운드 내 해결 |
-| MEDIUM | 수정 권장 — 자동 수정 |
-| LOW | 선택적 — 자동 수정 |
+| CRITICAL | 진행 차단 — review phase 중 즉시 patch하지 않고 write phase 첫 batch 항목으로 수정. 해결될 때까지 다음 라운드 불가 |
+| HIGH | 수정 필수 — pending write queue에 추가하고 write phase에서 batch 수정 |
+| MEDIUM | 수정 권장 — pending write queue에 추가하고 write phase에서 batch 수정 |
+| LOW | 선택적 — pending write queue에 추가하고 write phase에서 batch 수정 |
 
 ### Few-shot 교정 예시
 

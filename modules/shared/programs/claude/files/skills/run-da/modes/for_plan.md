@@ -17,6 +17,16 @@
 
 계획이 제거·단순화·되돌림·리팩터 방향이거나 변경 대상이 git상 왕복 핫스팟이면, [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md)의 발동 조건에 따라 "의사결정 컨텍스트 팩"(해당 문서 Step A)을 수집한다 — 메인이 commit/PR/issue(+있으면 CIR/ADR·로컬 세션 로그)에서 과거 결정·되돌림 이력을 추려, Step 2의 reviewer 프롬프트와 Step 5의 Arbiter 프롬프트에 selective propagation으로 주입한다. 그 외 변경은 Review Intensity에 연동한다(FULL=전체 조사, LITE=경량, SKIP=생략).
 
+## Outer round phase model: changeset 동결 + read/write 분리
+
+각 outer round는 `changeset 동결 → review phase → write phase` 순서로 진행한다.
+
+- changeset 동결: Step 2 진입 전에 이번 라운드의 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`와 현재 workspace 상태가 frozen changeset이다.
+- review phase: Step 2 reviewer fan-out부터 Step 5e 상태 전이와 사용자 전건 보고까지다. 이 구간에는 메인 에이전트와 delegated reviewer/Arbiter 모두 active changeset을 바꾸지 않는다. patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. formatter/generator는 check/diff-only 모드처럼 파일 변경이 없을 때만 허용한다.
+- write phase: 한 라운드의 Arbiter 판정과 필요한 사용자 판단이 끝난 뒤에만 시작한다. CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목을 queue에 모아 메인 에이전트가 batch로 반영한다.
+- CRITICAL 기본값: CRITICAL도 review phase 중 즉시 patch하지 않는다. 해당 라운드의 Arbiter 판정이 닫힌 뒤 write phase 첫 항목으로 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다.
+- 새 changeset 선언: write phase가 끝나면 다음 라운드는 "새 changeset" 리뷰로 명시하고, round summary에 batch 변경 범위(수정한 계획/파일, generated output 유무, diffstat)를 기록한다.
+
 ## Step 2: reviewer bundle 병렬 실행
 
 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 병렬 실행한다. 런타임별 도구 매핑은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 참조.
@@ -82,14 +92,22 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR
 
 결과를 수집하여 사용자에게 전건 보고한다 (vote-shape/low_confidence_warning이 있으면 함께 보고):
 
-- CONFIRMED_ISSUE + CRITICAL + (N/A 또는 stable) + `low_confidence_warning=false`: 진행 차단 (현재 라운드 중단 → 즉시 수정 → 수정 확인 후 다음 라운드 진행).
-- CONFIRMED_ISSUE + HIGH/MEDIUM/LOW + (N/A 또는 stable) + `low_confidence_warning=false`: 자동으로 계획에 반영한다.
+- CONFIRMED_ISSUE + CRITICAL + (N/A 또는 stable) + `low_confidence_warning=false`: 진행 차단. review phase 중 patch 금지 원칙을 유지하고, Arbiter 판정이 닫힌 뒤 write phase의 첫 batch 항목으로 계획에 반영한다. 해결 전에는 다음 outer round로 진행하지 않는다.
+- CONFIRMED_ISSUE + HIGH/MEDIUM/LOW + (N/A 또는 stable) + `low_confidence_warning=false`: pending write queue에 추가하고, Step 6 write phase에서 계획에 일괄 수정한다.
 - NOT_AN_ISSUE + (N/A 또는 stable) + `low_confidence_warning=false`: 보고만 (반영 불필요).
-- NEEDS_MORE_INFO 또는 `stability_status=split`: 질문 도구로 사용자 판단을 요청한다 (vote-shape와 minority verdict도 함께 보고).
+- NEEDS_MORE_INFO 또는 `stability_status=split`: 질문 도구로 사용자 판단을 요청한다 (vote-shape와 minority verdict도 함께 보고). 사용자가 수용한 항목만 pending write queue에 추가한다.
 - 임의 verdict + (N/A 또는 stable) + `low_confidence_warning=true`: fail-closed 승격 — 질문 도구로 사용자 판단 요청 (unanimous/단일 Arbiter라도 LOW confidence 이력이 있으면 기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약을 유지).
 - `stability_status=fragmented` 또는 `partial_failure=true`: BLOCKED — 질문 도구 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).
 
-## Step 6: 반영 후 새 라운드
+## Step 6: write phase — 일괄 수정 후 새 changeset 선언
+
+pending write queue가 있으면 메인 에이전트가 single-writer로 일괄 수정한다.
+
+- 수정 전 해당 위치(for_plan: 관련 파일 또는 계획 항목)를 직접 확인한다.
+- CONFIRMED_ISSUE와 사용자가 수용한 항목을 batch로 반영한다. CRITICAL은 batch 첫 순서로 처리하되, review phase 중 즉시 patch하는 예외는 두지 않는다.
+- 수정한 계획/관련 파일의 diff를 명시하고, 각 finding이 해결됐는지 확인한다.
+- formatter/generator가 필요하면 write phase에서만 실행하고, generated output 변경 범위를 summary에 기록한다.
+- batch가 끝나면 다음 outer round의 검토 대상이 되는 새 changeset을 선언한다.
 
 반영 후 동일 선택 review unit을 새 reviewer 실행 단위로 재실행한다.
 
@@ -98,4 +116,4 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR
 
 ## Step 7: CLEAR까지 반복
 
-선택된 review unit 전부 CLEAR를 반환할 때까지 Step 2-6을 반복한다. 단 [`../references/protocol.md`](../references/protocol.md)의 "최대 라운드 수"(상한 + 추세 기반 조기 중단)를 적용한다 — CLEAR 도달 전에 상한 또는 추세 기반 조기 중단 조건이 충족되면 사용자에게 보고하고 종료/계속을 결정한다(질문 도구 미지원 런타임은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 자동 전이를 따른다).
+선택된 review unit 전부 CLEAR를 반환할 때까지 Step 2-6을 반복한다. CLEAR까지 반복 규칙은 [`../references/protocol.md`](../references/protocol.md)의 "최대 라운드 수"(상한 + 추세 기반 조기 중단)와 read/write 분리를 함께 적용한다. 각 반복에서 Step 2-5는 frozen changeset에 대한 read-only review phase이고, Step 6만 batch write phase다. CLEAR 도달 전에 상한 또는 추세 기반 조기 중단 조건이 충족되면 사용자에게 보고하고 종료/계속을 결정한다(질문 도구 미지원 런타임은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 자동 전이를 따른다).

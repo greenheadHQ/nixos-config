@@ -148,7 +148,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 2. Single-writer / main-agent-only — tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 메인 에이전트 소유. DA reviewer/Arbiter는 위임 금지 ([`references/hardening-contract.md`](references/hardening-contract.md) 역할별 경계). Review Intensity 인라인 판정은 메인 에이전트의 정상 경로다.
 3. Conservative wait — `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다. (Review Intensity는 인라인 체크리스트라 wait 대상 아님.)
 4. PoC 의무화 — DA가 위반을 지적하면 구체적 파일:줄 또는 계획 항목 번호를 제시. 증거 없는 추상적 우려는 Arbiter가 NOT_AN_ISSUE로 판정한다.
-5. CONFIRMED_ISSUE 자동 반영 — Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동 반영. CRITICAL 심각도는 진행 차단.
+5. CONFIRMED_ISSUE 자동 반영 — Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동 반영하되, review phase 중 patch/edit/apply_patch, write-mode formatter, generated output 변경은 금지한다. confirmed 항목은 write phase에서 batch로 반영하며, CRITICAL 심각도는 다음 outer round 진행 차단 후 write phase 첫 항목으로 처리한다.
 6. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO/`split` 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
 7. Fresh perspective 보장 — 매 라운드마다 새 reviewer/Arbiter 실행 단위 (Codex: 새 native subagent thread, codex exec: 새 `codex exec` 프로세스).
 8. 의사결정·회귀 컨텍스트 조사 — 제거/단순화/되돌림/리팩터 변경이거나 git상 왕복 핫스팟 파일이면 Review Intensity와 무관하게 fail-closed로 과거 의사결정(commit/PR/issue + 있으면 CIR/ADR·로컬 세션 로그)을 조사해 회귀 재도입을 점검한다. 메인이 "의사결정 컨텍스트 팩"을 수집·주입하고 reviewer/Arbiter가 read-only 보강한다. git으로 버전관리되는 모든 저장소에서 동작하며 기록 관습에 의존하지 않는다 ([`references/decision-regression-audit.md`](references/decision-regression-audit.md)).

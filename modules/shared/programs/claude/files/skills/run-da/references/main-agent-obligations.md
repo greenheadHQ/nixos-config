@@ -20,7 +20,7 @@
 
 - Review Intensity 인라인 체크리스트: 직접 `/run-da` 호출 진입 시 메인 에이전트는 [`intensity-rules.md`](intensity-rules.md)의 모든 룰을 평가한 표를 plan/대화에 남기고(short-circuit 금지) first-match 룰 단계를 채택해 SKIP/LITE/FULL 판정을 결정한다. 문서화된 자동 호출자의 preflight handoff를 수신한 경우에는 freshness를 검증해 유효하면 재사용하고, 누락/형식 오류/stale이면 현재 입력으로 체크리스트를 다시 적용한다. 자유 추론 금지. fail-closed rule group 매치/불확실 또는 룰 ID+근거 미명시 시 강한 검토 fail-closed. 절차 SSOT는 [`intensity-procedure.md`](intensity-procedure.md).
 - Arbiter 독립 판정 보존: DA findings는 독립 Arbiter 에이전트가 판정한다. 메인 에이전트는 Arbiter 판정을 대체하지 않는다. 메인 에이전트는 CONFIRMED_ISSUE 항목의 수정만 담당한다.
-- CONFIRMED_ISSUE 자동 반영: Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동으로 반영한다. CRITICAL 심각도는 진행을 차단하고 즉시 수정한다. 상태 전이별 행동의 정본은 [`protocol.md`](protocol.md)의 "DA → Arbiter → Main Agent 상태 흐름"이다.
+- CONFIRMED_ISSUE 자동 반영: Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동으로 반영하되, review phase 중에는 patch/edit/apply_patch, write-mode formatter, generated output 변경을 금지한다. 항목은 pending write queue에 모아 write phase에서 batch로 반영한다. CRITICAL 심각도는 다음 outer round 진행을 차단하고 write phase 첫 항목으로 수정한다. 상태 전이별 행동의 정본은 [`protocol.md`](protocol.md)의 "DA → Arbiter → Main Agent 상태 흐름"이다.
 - 사용자 전건 보고: 모든 Arbiter 판정 결과(CONFIRMED_ISSUE, NOT_AN_ISSUE, NEEDS_MORE_INFO)를 사용자에게 보고한다. NEEDS_MORE_INFO·`split` 항목은 아래 "사용자 질문 시 맥락 설명 의무"의 5요소를 갖춘 질문 도구 호출로 처리한다.
 - Conservative wait: Codex 세션 경로에서 `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다. (Review Intensity는 인라인 체크리스트라 wait 대상 아님.)
 - Fresh perspective 보장: 매 라운드마다 새 reviewer/Arbiter 실행 단위를 사용한다 (Codex 세션: 새 native subagent thread, codex exec 경로: 새 `codex exec` 프로세스). `fresh` modifier 사용 시 이전 라운드 맥락도 완전히 차단한다.
@@ -32,7 +32,7 @@
 본 파일은 아래 정책의 SSOT가 아니다. 변경은 정본 파일에서 한다.
 
 - Single-writer / main-agent-only / 역할별 경계 / VIOLATION 처리 / Delegation fallback: [`hardening-contract.md`](hardening-contract.md) (`Codex 세션 하드닝 계약` SSOT).
-- PoC 의무화 / Arbiter 판정 프로토콜 / DA → Arbiter 상태 흐름 / 무한 루프 방지(3회 반복) / 탈출 조건(전 unit CLEAR) / PR 코멘트 형식: [`protocol.md`](protocol.md) (protocol SSOT).
+- PoC 의무화 / Arbiter 판정 프로토콜 / DA → Arbiter 상태 흐름 / read-write 분리 / 무한 루프 방지(3회 반복) / 탈출 조건(전 unit CLEAR) / PR 코멘트 형식: [`protocol.md`](protocol.md) (protocol SSOT).
 - Selective consistency trigger / vote-shape / threshold: [`stability-measurement.md`](stability-measurement.md) SSOT, 상태 전이는 [`protocol.md`](protocol.md), 실행 계약은 [`arbiter-scaling.md`](arbiter-scaling.md).
 
 ## 사용자 질문 시 맥락 설명 의무
@@ -60,7 +60,7 @@
 
 본 섹션은 메인 에이전트가 수정 시 직접 수행할 검증만 정의한다.
 
-- CONFIRMED_ISSUE 항목을 수정할 때, 해당 위치(파일:줄 또는 계획 항목)를 확인하는 것은 수정 작업의 일부로 수행한다.
+- CONFIRMED_ISSUE 항목을 write phase에서 batch 수정할 때, 해당 위치(파일:줄 또는 계획 항목)를 확인하는 것은 수정 작업의 일부로 수행한다.
 - 수정 결과가 finding을 해결하는지 확인한다.
 
 DA 에이전트 출력 요건과 Arbiter 검증 의무(5가지 판정 기준 등)는 본 파일이 정본이 아니다:
