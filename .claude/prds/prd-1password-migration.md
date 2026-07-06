@@ -2,11 +2,11 @@
 
 ## Document Status
 
-- Status: In Progress
+- Status: Complete
 - File Mode: Split
-- Current Phase: Phase 1·2a·2b·3 merged (#824·#833·#827·#842) + Phase 5 merged (#878) + Phase 6 완료 (PR Closes #780/#879) + Phase 2a mobile SSH follow-up closeout (#866) — Phase 4 GUI/박제 완료(PR 대기)만 잔여
+- Current Phase: 전 Phase 종결 (Phase 4 PR #856 merged 2026-05-26, epic #780 CLOSED)
 - Active Phase File: [Phase 4](./prd-1password-migration/phase-04-apple-passwords.md)
-- Last Updated: 2026-06-01
+- Last Updated: 2026-07-06
 - PRD File: `.claude/prds/prd-1password-migration.md`
 - Issue: [#780](https://github.com/greenheadHQ/nixos-config/issues/780)
 - Purpose: Living PRD / 실행 source of truth. 여기에서 작업을 체크 off 하고, 구현 중 새 사실이 드러나면 이 문서를 갱신하고, 계획이 바뀌면 진행 전에 후속 phase를 수정한다.
@@ -173,7 +173,7 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 | Phase 2a: Mac SSH | Done (merged #833) + mobile follow-up: mobile 공유 키 통합 (#866) | IdentityAgent + emergency fallback + mobile-ssh 공유 키 | ssh minipc 동작 + 1Password quit 후 fallback 실측 + mobile 재접속 fingerprint 검증 | [phase-02a-mac-ssh.md](./prd-1password-migration/phase-02a-mac-ssh.md) |
 | Phase 2b: Shell plugin gh | Done (merged #827) + 무인 에이전트 gh: SA→github-pat 캐시 (#872) | Home Manager declarative plugin 등록 + 무인 자동화 방식 B | gh pr list 동작 (biometric) + 무인 gh Touch ID 0회 | [phase-02b-shell-plugin-gh.md](./prd-1password-migration/phase-02b-shell-plugin-gh.md) |
 | Phase 3: MiniPC opnix | Done (merged #842) | opnix native materialization + SA token + gh GH_TOKEN wrapper | nrs minipc + ssh minipc E2E 전항목 통과 | [phase-03-minipc-opnix.md](./prd-1password-migration/phase-03-minipc-opnix.md) |
-| Phase 4: Apple Passwords | Done (GUI/박제 — PR 대기) | CSV 매트릭스 실측, 62개 import, iCloud AutoFill OFF, passkey(기존 1Password) | 분기 A + TOTP 동작 + secure delete 게이트 통과 | [phase-04-apple-passwords.md](./prd-1password-migration/phase-04-apple-passwords.md) |
+| Phase 4: Apple Passwords | Done (#856 merged) | CSV 매트릭스 실측, 62개 import, iCloud AutoFill OFF, passkey(기존 1Password) | 분기 A + TOTP 동작 + secure delete 게이트 통과 | [phase-04-apple-passwords.md](./prd-1password-migration/phase-04-apple-passwords.md) |
 | Phase 5: Skill 리팩토링 | Done (merged #878) | managing-secrets routing 매트릭스 + inventory + queries.json | evals/queries.json 통과 + SKILL.md ≤ 250줄 | [phase-05-skill-refactor.md](./prd-1password-migration/phase-05-skill-refactor.md) |
 | Phase 6: Vaultwarden EOL | Done (PR Closes #780/#879) | vaultwarden-touch 파일 atomic 삭제·수정 단일 PR + rg 잔존 0건 + 6개월 백업 정책 | nrs minipc + eval-tests + rg | [phase-06-vaultwarden-eol.md](./prd-1password-migration/phase-06-vaultwarden-eol.md) |
 
