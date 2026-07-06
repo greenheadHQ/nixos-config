@@ -10,7 +10,7 @@ description: |
 
 이 문서는 `codex exec` / `codex exec review`를 직접 호출하는 절차를 다룬다.
 이 스킬은 다음 경로에서 참조된다:
-- Claude Code 세션: `run-da`, `parallel-audit` 등의 fan-out 시 기본 경로 (codex exec subprocess)
+- Claude Code 세션: `run-da`(audit 모드 포함) 등의 fan-out 시 기본 경로 (codex exec subprocess)
 - headless 세션: CI, `codex exec` subprocess 등에서의 codex exec 직접 실행 (`claude -p` 자체의 사용법은 using-claude-p 스킬 참조)
 - Codex 세션: fan-out은 native subagent가 기본이므로, 이 스킬은 사용자의 명시적 `codex exec` 요청에만 적용
 
@@ -26,7 +26,7 @@ CLI 버전이 바뀌면 플래그/동작이 달라질 수 있으므로, 실행 �
 
 | 포함 | 제외 |
 |------|------|
-| `codex exec` 비대화형 실행 | Codex 세션의 기본 subagent fan-out (`run-da`, `parallel-audit`) |
+| `codex exec` 비대화형 실행 | Codex 세션의 기본 subagent fan-out (`run-da` — audit 모드 포함) |
 | `codex exec review` 코드 리뷰 | 대화형 TUI 사용법 |
 | `codex exec resume` 세션 재개 | Codex 설정 파일 전체 관리 |
 | stdin/파일 기반 프롬프트 전달 | Codex settings/skill projection (repo 정책/검증 스크립트 참조) |
@@ -230,7 +230,7 @@ env CODEX_PROGRAMMATIC=1 codex exec resume --last --all    # cwd 필터 해제�
 3. CODEX_API_KEY는 exec 전용: interactive TUI와 VS Code extension에서는 무시됨. OPENAI_API_KEY는 auth 체인에 미참여 (TUI prefill 전용). 우선순위: CODEX_API_KEY > ephemeral tokens > auth.json (상세: [known-issues.md](references/known-issues.md) 워크트리 참고)
 4. ephemeral 세션 resume 불가: `--ephemeral`으로 실행한 세션은 파일 미저장되어 `No saved session found` 에러 발생
 5. `codex review` (top-level) vs `codex exec review`: 전자는 `-m`, `--json`, `-o`, `--output-schema`, `--ephemeral`, `-s/--sandbox` 등 미지원 (재확인: 2026-07-03, `codex review --help`). 비대화형 자동화에는 반드시 `codex exec review` 사용
-6. Bash tool sandbox에서 `&` + `$!` 미작동: Claude Code의 Bash tool에서 background process PID 캡처(`$!`)가 리터럴 문자열로 반환됨. shell-level 병렬 대신 여러 병렬 Bash tool 호출 (예: codex exec 경로의 `run-da`/`parallel-audit`) + `cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -` stdin pipe를 사용한다. 이 제약은 Codex 세션의 native subagent 경로에는 적용되지 않는다. 상세: [known-issues.md](references/known-issues.md) §11
+6. Bash tool sandbox에서 `&` + `$!` 미작동: Claude Code의 Bash tool에서 background process PID 캡처(`$!`)가 리터럴 문자열로 반환됨. shell-level 병렬 대신 여러 병렬 Bash tool 호출 (예: codex exec 경로의 `run-da` — audit 모드 포함) + `cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -` stdin pipe를 사용한다. 이 제약은 Codex 세션의 native subagent 경로에는 적용되지 않는다. 상세: [known-issues.md](references/known-issues.md) §11
 7. stdin pipe로 stdin hang 방지: Claude Code Bash tool에서 병렬 호출 시 codex exec가 background로 자동 전환되면, stdin이 닫히지 않아 `Reading additional input from stdin...`에서 hang이 발생한다. `cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -` stdin pipe를 사용하면 pipe EOF가 stdin을 구조적으로 닫아 hang을 방지한다: `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --ephemeral -o "$DIR/result.md" - 2>"$DIR/stderr.log"`. 인라인 인자 `"$(cat file)"`와 `< /dev/null`은 사용하지 않는다. 상세: [known-issues.md](references/known-issues.md) §14
 
 ## 모델 사용 원칙

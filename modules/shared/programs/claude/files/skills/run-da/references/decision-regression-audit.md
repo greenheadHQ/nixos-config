@@ -1,10 +1,10 @@
 # 의사결정·회귀 컨텍스트 조사 (Decision-Regression Audit)
 
-이 문서가 "새 세션이 과거 의사결정을 모르고 회귀를 재도입"하는 것을 막기 위한 컨텍스트 조사 절차의 단일 진실 원천(SSOT)이다. `run-da`(reviewer/Arbiter)와 `parallel-audit`(auditor)이 모두 이 문서를 참조한다.
+이 문서가 "새 세션이 과거 의사결정을 모르고 회귀를 재도입"하는 것을 막기 위한 컨텍스트 조사 절차의 단일 진실 원천(SSOT)이다. `run-da`의 reviewer/Arbiter(for_plan/for_pr)와 auditor(audit 모드)가 모두 이 문서를 참조한다.
 
 SSOT 경계 (중복 방지): 본 문서는 절차·소스 계층·세션 로그 방법론의 정본이다. 단 (a) 발동 조건(어떤 변경에 조사를 강제할지)은 [`intensity-rules.md`](intensity-rules.md)의 `GATE-REMOVAL-SIMPLIFY`가, (b) 5기준 기반 verdict 매핑은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정"이 각각 정본이다. 본 문서는 이들 정본을 복제(verbatim 또는 규범적 재서술)하지 않으며, 탐색을 돕는 1줄 요지와 링크만 둔다. 또한 reviewer/auditor에게 주입되는 프롬프트 본문([`da-domains.md`](da-domains.md) 공통 프롬프트 등)은 self-containment를 위해 핵심 지시를 의도적으로 재서술할 수 있다(중복 허용 예외).
 
-Owner: `run-da`. Dependent: `parallel-audit`. (validation-path catalog와 동일한 owner+링크 모델)
+Owner: `run-da` — for_plan/for_pr(reviewer/Arbiter)와 audit 모드(auditor)가 함께 사용한다. (validation-path catalog와 동일한 owner+링크 모델)
 
 ## 문제 정의
 
@@ -21,7 +21,7 @@ Owner: `run-da`. Dependent: `parallel-audit`. (validation-path catalog와 동일
 | 3 | 제거/단순화 = 군살 오판 | 코드/문구를 덜어내는 변경에서 그 코드의 방어 의도를 못 읽음 | "줄 수가 많다=불필요" 추론, 도입 근거 미확인 |
 | 4 | cross-layer 속성 회귀 | `mv`/rename/in-place write가 기존 파일의 보존돼야 할 속성을 silently 파괴 | symlink(다른 레이어가 관리)·mode/권한·owner 손실 |
 
-범위 1·3은 보통 같은 변경에서 함께 나타난다(제거 방향 변경이 도입 근거를 모르면 decision regression). 범위 2는 세션 로그/이슈 기반 진단의 정확도 게이트다. 범위 4는 git 히스토리 없이 diff만으로 탐지되는 보조 차원으로, parallel-audit bundle 5와 auditor 프롬프트의 속성 보존 점검이 주로 담당하되 run-da SIDE_EFFECT도 점검한다.
+범위 1·3은 보통 같은 변경에서 함께 나타난다(제거 방향 변경이 도입 근거를 모르면 decision regression). 범위 2는 세션 로그/이슈 기반 진단의 정확도 게이트다. 범위 4는 git 히스토리 없이 diff만으로 탐지되는 보조 차원으로, audit 모드 bundle 5와 auditor 프롬프트의 속성 보존 점검이 주로 담당하되 for_plan/for_pr의 SIDE_EFFECT 관점도 점검한다.
 
 ## 발동 조건
 

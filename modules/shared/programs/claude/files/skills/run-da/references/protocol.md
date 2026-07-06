@@ -51,7 +51,7 @@ stability_status 의미, selective consistency 트리거, `unknown` sentinel 정
 - 일괄 수정: CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목은 pending write queue에 모아 write phase에서 메인 에이전트가 batch로 반영한다. 정상 confirmed finding 반영을 막는 규칙이 아니라 반영 시점을 라운드 밖으로 옮기는 규칙이다.
 - CRITICAL 기본값: CRITICAL finding만 즉시 중단/수정하는 예외는 기본 절차에 두지 않는다. CRITICAL은 다음 outer round 진입을 차단하고, 현재 round의 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 반영한다.
 - 새 changeset: write phase 후 다음 outer round를 시작하면 "새 changeset" 리뷰로 명시한다. 이전 round의 frozen changeset과 write phase batch delta를 round summary에 기록해 추세 기반 조기 중단의 신규 confirmed finding 계산 기준을 분리한다.
-- `parallel-audit`와의 용어 정합: `run-da`는 read/write phase를 가진 반복 개선 루프이고, `parallel-audit`는 같은 changeset을 일회성 read-only로 검증하는 전수조사다. 전수조사는 "`SAFE`까지" 자동 반복 재발사하지 않는다.
+- audit 모드와의 용어 정합: for_plan/for_pr는 read/write phase를 가진 반복 개선 루프이고, audit 모드는 같은 changeset을 일회성 read-only로 검증하는 감사다. 감사는 "`SAFE`까지" 자동 반복 재발사하지 않는다.
 
 ### Arbiter 출력 요건
 

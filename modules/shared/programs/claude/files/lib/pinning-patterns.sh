@@ -174,7 +174,6 @@ pinning_should_check_path() {
     */lib/pinning-patterns.sh) return 1 ;;
     scripts/ai/commit-msg-pinning.sh | */scripts/ai/commit-msg-pinning.sh) return 1 ;;
     */skills/run-da/*) return 1 ;;
-    */skills/parallel-audit/*) return 1 ;;
     tests/fixtures/* | */tests/fixtures/*) return 1 ;;
     eval-workspace/* | */eval-workspace/*) return 1 ;;
     # DA scratch dynamic TMPDIR shapes — host trust model. extend with caution:

@@ -176,7 +176,7 @@ EOF
 ### DA 피드백 (권장)
 
 구현 완료 후, `/run-da for_pr` 스킬을 실행하여 코드 품질을 검증하고,
-필요하면 `/parallel-audit`로 전수조사를 수행한 뒤 `/create-pr` 스킬로 PR을 생성한다.
+필요하면 `/run-da audit`로 사이드이펙트/회귀 감사를 수행한 뒤 `/create-pr` 스킬로 PR을 생성한다.
 ````
 
 ## 커밋 메시지 템플릿
@@ -213,7 +213,7 @@ EOF
    - frontmatter 유효성 (name, description, Triggers)
    - 본문 구조 (Purpose → 빠른참조 → 핵심절차 → 참조)
    - `references/` 링크 유효성
-2. (선택) **`/parallel-audit`** — 다중 스킬 영향·광범위 사이드이펙트·고위험 변경일 때만 추가로 전수조사.
+2. (선택) **`/run-da audit`** — 다중 스킬 영향·광범위 사이드이펙트·고위험 변경일 때만 추가로 사이드이펙트/회귀 감사를 실행.
 ```
 
 ## 모범 패턴 (Issue #252 기반)

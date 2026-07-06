@@ -4,7 +4,7 @@ argument-hint: "\"주제\" [에이전트수]"
 description: |
   codex exec 기반 병렬 fan-out. Agent tool 대신 사용하여 fan-in cache miss를 방지한다.
   Trigger: 'codex fan-out', 'codex 에이전트', 'fan-out 실행'.
-  NOT for DA (use run-da). NOT for 전수조사 (use parallel-audit).
+  NOT for DA (use run-da). NOT for 사이드이펙트/회귀 감사 (use run-da audit).
 ---
 
 # codex exec 병렬 fan-out

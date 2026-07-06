@@ -44,7 +44,6 @@ let
     "create-issue"
     "create-pr"
     "issuing-codex-pairing-code"
-    "parallel-audit"
     "playwright-cli"
     "review-pr-feedback"
     "run-da"
