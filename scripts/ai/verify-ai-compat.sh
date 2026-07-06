@@ -11,6 +11,12 @@ TARGET_SKILLS_DIR="$REPO_ROOT/.agents/skills"
 SHARED_SKILLS_DIR="$REPO_ROOT/modules/shared/programs/claude/files/skills"
 CODEX_GLOBAL_SKILLS_DIR="$HOME/.codex/skills"
 CLAUDE_GLOBAL_SKILLS_DIR="$HOME/.claude/skills"
+REPO_ROOT_REAL="$(readlink -f "$REPO_ROOT" 2>/dev/null || printf '%s' "$REPO_ROOT")"
+GIT_COMMON_DIR="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+MAIN_REPO_ROOT=""
+if [ -n "$GIT_COMMON_DIR" ]; then
+  MAIN_REPO_ROOT="$(cd "$GIT_COMMON_DIR/.." 2>/dev/null && pwd -P || true)"
+fi
 
 # shellcheck source=/dev/null
 . "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
@@ -84,6 +90,48 @@ in_list() {
   for item in "$@"; do
     [ "$item" = "$needle" ] && return 0
   done
+  return 1
+}
+
+resolved_target_matches_repo_suffix() {
+  local resolved="$1"
+  local expected="$2"
+  local expected_suffix="$3"
+
+  [ -n "$resolved" ] || return 1
+  [ -n "$expected" ] || return 1
+
+  if [ "$resolved" = "$expected" ]; then
+    return 0
+  fi
+
+  case "$resolved" in
+    */"$expected_suffix") ;;
+    *) return 1 ;;
+  esac
+
+  case "$resolved" in
+    /nix/store/*/"$expected_suffix")
+      return 0
+      ;;
+  esac
+
+  if [ -n "$MAIN_REPO_ROOT" ]; then
+    case "$resolved" in
+      "$MAIN_REPO_ROOT/$expected_suffix"|"$MAIN_REPO_ROOT/.claude/worktrees/"*/"$expected_suffix")
+        return 0
+        ;;
+    esac
+  fi
+
+  if [ -n "$REPO_ROOT_REAL" ]; then
+    case "$resolved" in
+      "$REPO_ROOT_REAL/$expected_suffix")
+        return 0
+        ;;
+    esac
+  fi
+
   return 1
 }
 
@@ -605,8 +653,9 @@ else
       # Canonical target 검증: readlink -f 결과가 shared source에 도달해야 함
       resolved="$(readlink -f "$exposed_path" 2>/dev/null || true)"
       expected_real="$(readlink -f "$skill_dir" 2>/dev/null || true)"
-      if [ -z "$resolved" ] || [ "$resolved" != "$expected_real" ]; then
-        fail "노출 대상 불일치: $skill_name (actual=$resolved expected=$expected_real)"
+      expected_suffix="modules/shared/programs/claude/files/skills/$skill_name"
+      if ! resolved_target_matches_repo_suffix "$resolved" "$expected_real" "$expected_suffix"; then
+        fail "노출 대상 불일치: $skill_name (actual=$resolved expected=$expected_real expected_suffix=*/$expected_suffix)"
         continue
       fi
       pass "shared 노출 정상: $skill_name"
@@ -676,8 +725,9 @@ verify_codex_helper() {
   local resolved expected
   resolved="$(readlink -f "$helper_path" 2>/dev/null || true)"
   expected="$(readlink -f "$helper_source" 2>/dev/null || true)"
-  if [ -z "$resolved" ] || [ "$resolved" != "$expected" ]; then
-    fail "$helper_path 대상 불일치: actual=$resolved expected=$expected"
+  local expected_suffix="modules/shared/programs/claude/files/scripts/$helper"
+  if ! resolved_target_matches_repo_suffix "$resolved" "$expected" "$expected_suffix"; then
+    fail "$helper_path 대상 불일치: actual=$resolved expected=$expected expected_suffix=*/$expected_suffix"
   else
     pass "Codex helper 정상: $helper"
   fi
@@ -697,8 +747,9 @@ verify_claude_helper() {
   local resolved expected
   resolved="$(readlink -f "$helper_path" 2>/dev/null || true)"
   expected="$(readlink -f "$helper_source" 2>/dev/null || true)"
-  if [ -z "$resolved" ] || [ "$resolved" != "$expected" ]; then
-    fail "$helper_path 대상 불일치: actual=$resolved expected=$expected"
+  local expected_suffix="modules/shared/programs/claude/files/scripts/$helper"
+  if ! resolved_target_matches_repo_suffix "$resolved" "$expected" "$expected_suffix"; then
+    fail "$helper_path 대상 불일치: actual=$resolved expected=$expected expected_suffix=*/$expected_suffix"
   else
     pass "Claude helper 정상: $helper"
   fi
