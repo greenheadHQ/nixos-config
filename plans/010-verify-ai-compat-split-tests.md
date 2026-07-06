@@ -135,10 +135,16 @@ lint 엔진 구간(대략 `_skill_neutral_lint`부터 `run_skill_neutral_fixture
 3. 잘못된/깨진 심링크 → fail 감지.
 4. oracle 미사용 상태(참조 제거된 사본) → fail 감지.
 
-함수들을 source로 불러올 수 있는지 먼저 확인하고, `verify-ai-compat.sh`가
-source-safe하지 않으면(로드 시 즉시 검증 실행) **스크립트를 고치지 말고**
-그 사실과 함께 가능한 대안(예: 함수 구간만 `sed`로 추출해 로드하는 방식의
-취약성)을 보고한다 — source-safe화가 필요하면 별도 승인 후 진행.
+함수들을 source로 불러올 수 있는지 먼저 확인한다. **supervisor 승인
+(2026-07-06)**: `verify-ai-compat.sh`는 source-unsafe로 실측 확인됐다
+(source 시 즉시 검증 실행). 다음 조건의 최소 source-safe화를 승인한다 —
+검증 구동부(함수 정의가 아닌 실행 문장들)를
+`if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then … fi` 가드로 감싼다. 가드 안
+내용은 한 글자도 바꾸지 않는다(들여쓰기 조정만 허용). 이 저장소 선례:
+`modules/shared/scripts/wt.sh`, `modules/shared/scripts/rebuild-common.sh`.
+가드 추가 후 일반 실행 출력이 Step 1의 before.out과 동일함을 diff로 증명해야
+한다. 단, 실행 문장이 파일 전반에 흩어져 있어 소수(1~3개)의 연속 블록
+가드로 처리되지 않는 구조라면 — 재배열하지 말고 STOP 후 구조를 보고하라.
 
 **Verify**: suite 실행에서 신규 테스트 통과.
 
@@ -170,7 +176,8 @@ suffix 규칙의 정탐 보존).
   "대상 불일치" 계열만으로 설명되지 않는다.
 - lint 엔진과 host-state 검증부의 경계가 얽혀 있어(상호 함수 호출) 분리가
   의미 변경 없이는 불가능하다 — 얽힌 지점을 보고.
-- Step 3에서 source-safe하지 않음이 확인됨 (위 명시된 대로 보고).
+- Step 3의 source-safe화가 승인된 최소 형태(연속 블록 1~3개의 BASH_SOURCE
+  가드, 내용 무변경)로 불가능하다 — 재배열하지 말고 구조를 보고.
 - pre-commit `ai-skills-consistency`가 차단한다 — 우회 금지, 원인 보고.
 
 ## Maintenance notes

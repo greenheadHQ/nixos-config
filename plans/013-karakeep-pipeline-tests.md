@@ -104,19 +104,23 @@ SingleFile 업로드를 Karakeep API로 중계, multipart 파싱·재시도·알
 
 ### Step 1: fallback-sync 셸 함수 특성화
 
-`fallback-sync.sh`가 source-safe한지 확인한다 (파일 하단에 즉시 실행부가
-있는지 — 있으면 어떤 가드가 있는지). source 가능하면
-`tests/suites/karakeep-fallback-sync.sh`에서 함수 단위로:
+**방식 확정 (2026-07-06 supervisor 재판정)**: `fallback-sync.sh`는
+source-unsafe로 실측 확인됐다 (상단에서 `$PUSHOVER_CRED_FILE`·`$SERVICE_LIB`
+즉시 source + 필수 env 체크 + 상태 파일/flock 초기화, 하단 main 블록에
+BASH_SOURCE 가드 없음). 함수 단위 source 대신 **이 저장소의 확립된 선례인
+`tests/suites/backup-scripts.sh` 방식(스크립트 전체 실행 + stub/fixture)**을
+따른다: fixture 임시 디렉토리에 cred 파일(가짜 값)·SERVICE_LIB 스텁
+(`send_notification`을 기록만 하는 함수로)·큐/상태 파일을 만들고, `curl`
+스텁을 PATH 앞에 두고, 필수 env를 세팅해 `tests/suites/karakeep-fallback-sync.sh`에서
+스크립트 전체를 구동한 뒤 상태 파일과 스텁 기록을 assert한다. 시나리오:
 
-1. `normalize_url`/`normalize_url_loose`/`shorten_url` — 대표 입력 3~4개의
-   현행 출력 박제 (쿼리스트링/트레일링 슬래시/프로토콜 변형).
-2. `remove_queue_url` — sandbox 큐 파일에서 대상 URL만 제거되고 나머지 보존,
-   결과 파일이 `STATE_DIR` 안 임시 파일 경유로 교체됨.
-3. `gc_*_state` — 오래된 항목(타임스탬프 조작)만 제거되고 최신 항목 보존.
-4. `should_notify_key`/`record_unmatched_notified` — dedup 왕복.
+1. 큐의 URL과 후보 파일이 URL 정규화(트레일링 슬래시/쿼리 변형)로 매칭되는
+   케이스 — 업로드 스텁 성공 시 큐에서 해당 URL만 제거되고 나머지 보존.
+2. 업로드 실패(curl 스텁 비0 exit) — 큐 보존 + 실패 카운트 상태 반영.
+3. 오래된 타임스탬프의 상태 파일 fixture — 실행 후 gc로 오래된 항목만 제거.
+4. 같은 미매칭 입력 2회 실행 — 알림 스텁 기록이 1회뿐 (dedup 왕복).
 
-source-unsafe하면 함수 구동이 가능한 다른 방법을 발명하지 말고 STOP 조건을
-따른다.
+케이스별 기대값은 현행 동작의 박제다 — 실행해 관찰한 값을 그대로 assert.
 
 **Verify**: suite 실행에서 신규 테스트 통과.
 
@@ -161,8 +165,10 @@ Steps 1-2가 test plan이다.
 
 ## STOP conditions
 
-- `fallback-sync.sh`가 source-unsafe하고(로드 즉시 메인 로직 실행) 기존
-  suite에 우회 선례가 없다 — 대상을 고치지 말고 보고.
+- 전체 실행 방식(backup-scripts.sh 선례)으로도 fixture 봉쇄가 안 되는 외부
+  의존이 발견된다(예: 스텁 불가능한 절대경로 바이너리 호출) — 대상을 고치지
+  말고 그 의존을 보고. (source-unsafe 자체는 2026-07-06 확인된 전제이므로
+  STOP 사유가 아니다.)
 - 스킬-로컬 pytest 선례(analyzing-da-sessions/tests/의 conftest 패턴)가
   singlefile-bridge에 적용 불가능한 구조적 이유가 발견된다 — 새 방식을
   발명하지 말고 그 이유를 보고. (저장소 게이트에 pytest 배선이 없는 것은
