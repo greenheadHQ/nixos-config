@@ -12,6 +12,7 @@ LOCK_TTL_SECONDS=2700
 LOCK_CORRUPT_TTL_SECONDS=$((LOCK_TTL_SECONDS * 2))
 IMMICH_CREDENTIALS="$HOME/.config/immich/api-key"
 PUSHOVER_CREDENTIALS="$HOME/.config/pushover/immich"
+PUSHOVER_HELPER="$HOME/.local/lib/pushover.sh"
 
 CURRENT_UID=$(/usr/bin/id -u)
 CURRENT_PID="$$"
@@ -64,14 +65,11 @@ send_notification() {
     local priority="${3:-"-1"}"
     local sound="${4:-"none"}"
 
-    curl -sf --max-time 10 \
-        --form-string "token=${PUSHOVER_TOKEN}" \
-        --form-string "user=${PUSHOVER_USER}" \
-        --form-string "title=${title}" \
-        --form-string "message=${message}" \
-        --form-string "priority=${priority}" \
-        --form-string "sound=${sound}" \
-        https://api.pushover.net/1/messages.json > /dev/null 2>&1 || true
+    [ -r "$PUSHOVER_HELPER" ] || return 0
+    # shellcheck disable=SC1090
+    source "$PUSHOVER_HELPER" 2>/dev/null || return 0
+
+    pushover_send "$PUSHOVER_CREDENTIALS" "$title" "$message" "$priority" "$sound" || true
 }
 
 now_epoch() {

@@ -16,6 +16,7 @@
 
 # Pushover credential 경로는 agenix 고정 path로 hard-code (override 금지).
 PUSHOVER_CREDENTIALS="$HOME/.config/pushover/folder-actions"
+PUSHOVER_HELPER="$HOME/.local/lib/pushover.sh"
 
 # 실패 격리 sibling 경로 — watch root 밖이므로 launchd WatchPaths 추가 wakeup 없음.
 # 사용자 복구 절차는 .claude/skills/managing-macos/references/features.md 참조.
@@ -29,24 +30,19 @@ notify_failure() {
     # credential 부재는 silent skip (agenix 미배포 창 호환).
     [ -f "$PUSHOVER_CREDENTIALS" ] || return 0
 
-    # source 실패는 추적 가능하도록 경고만 남기고 알림 생략.
-    # shellcheck disable=SC1090
-    if ! source "$PUSHOVER_CREDENTIALS" 2>/dev/null; then
-        log_warn "notify_failure: PUSHOVER_CREDENTIALS source 실패: $PUSHOVER_CREDENTIALS"
-        return 0
-    fi
-    if [ -z "${PUSHOVER_TOKEN:-}" ] || [ -z "${PUSHOVER_USER:-}" ]; then
-        log_warn "notify_failure: PUSHOVER_TOKEN/USER 미설정"
+    if [ ! -r "$PUSHOVER_HELPER" ]; then
+        log_warn "notify_failure: Pushover helper 없음: $PUSHOVER_HELPER"
         return 0
     fi
 
-    if ! /usr/bin/curl -sf --max-time 10 \
-            --form-string "token=${PUSHOVER_TOKEN}" \
-            --form-string "user=${PUSHOVER_USER}" \
-            --form-string "title=${title}" \
-            --form-string "message=${message}" \
-            --form-string "priority=${priority}" \
-            https://api.pushover.net/1/messages.json > /dev/null 2>&1; then
+    # source 실패는 추적 가능하도록 경고만 남기고 알림 생략.
+    # shellcheck disable=SC1090
+    if ! source "$PUSHOVER_HELPER" 2>/dev/null; then
+        log_warn "notify_failure: Pushover helper source 실패: $PUSHOVER_HELPER"
+        return 0
+    fi
+
+    if ! pushover_send "$PUSHOVER_CREDENTIALS" "$title" "$message" "$priority"; then
         log_warn "notify_failure: Pushover API 호출 실패 (네트워크/credential 확인)"
     fi
     return 0

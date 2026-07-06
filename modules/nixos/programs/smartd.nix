@@ -10,6 +10,7 @@
 
 let
   pushoverCredPath = config.age.secrets.pushover-system-monitor.path;
+  pushoverHelper = ../../shared/scripts/lib/pushover.sh;
 
   # smartd 알림 스크립트 (smartd가 -M exec로 호출)
   # 중요: smartd에 non-zero 반환 금지 — 전체를 ( ... ) || true로 래핑
@@ -27,6 +28,9 @@ let
         DEVICE="''${SMARTD_DEVICE:-unknown}"
         FAILTYPE="''${SMARTD_FAILTYPE:-unknown}"
         MESSAGE="''${SMARTD_MESSAGE:-No message}"
+
+        # shellcheck source=/dev/null
+        source "${pushoverHelper}"
 
         # 시크릿 파일 로드
         CRED_FILE="${pushoverCredPath}"
@@ -55,13 +59,7 @@ let
       Device: $DEVICE
       $MESSAGE"
 
-        curl -sf --proto =https --max-time 10 \
-          --form-string "token=$PUSHOVER_TOKEN" \
-          --form-string "user=$PUSHOVER_USER" \
-          --form-string "title=$TITLE" \
-          --form-string "message=$BODY" \
-          --form-string "priority=$PRIORITY" \
-          https://api.pushover.net/1/messages.json > /dev/null 2>&1
+        pushover_send "$CRED_FILE" "$TITLE" "$BODY" "$PRIORITY" || true
       ) || true
     '';
   };
