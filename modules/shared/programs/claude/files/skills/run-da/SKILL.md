@@ -1,12 +1,13 @@
 ---
 name: run-da
-argument-hint: "[for_plan|for_pr|both] [MAX] [fresh]"
+argument-hint: "[for_plan|for_pr|both|audit] [MAX] [fresh]"
 description: |
-  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both. Modifier: MAX, fresh.
+  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both, audit. Modifier: MAX, fresh.
   Trigger: 'DA', '피드백 루프', 'YAGNI 리뷰', '코드 리뷰 루프', 'run-da',
-  'HALLUCINATION 관점에서 코드 검증', '설계 검토', '코드 품질 리뷰', '간단한 변경 DA 필요 여부', 'DA 필요', 'DA 생략'.
+  'HALLUCINATION 관점에서 코드 검증', '설계 검토', '코드 품질 리뷰', '간단한 변경 DA 필요 여부', 'DA 필요', 'DA 생략',
+  '사이드이펙트 조사', '회귀 조사', '회귀 감사', '병렬 감사'.
   Also trigger when the user asks whether a simple change can skip DA; this skill owns the SKIP/LITE/FULL decision path.
-  NOT for PR/AI review-comment HALLUCINATION classification (use review-pr-feedback). NOT for PR 코멘트 (use review-pr-feedback). NOT for 전수조사 (use parallel-audit). NOT for DA session log/statistics/verdict 분포 정량 분석 (use analyzing-da-sessions, 사용자 명시 호출 전용).
+  NOT for PR/AI review-comment HALLUCINATION classification (use review-pr-feedback). NOT for PR 코멘트 (use review-pr-feedback). NOT for 일반 전수조사/코드베이스 조사 (스킬 없이 직접 수행). NOT for DA session log/statistics/verdict 분포 정량 분석 (use analyzing-da-sessions, 사용자 명시 호출 전용).
 ---
 
 # Devil's Advocate 피드백 루프
@@ -53,6 +54,7 @@ SKIP이어도 질문 도구 승인 전에는 완료가 아니며, 이 gate가 �
 | `for_plan` | 계획 단계 DA 1회 — 계획 파일 또는 대화 컨텍스트 대상 ([`modes/for_plan.md`](modes/for_plan.md)) |
 | `for_pr` | 구현 후 코드 DA 1회 — git diff 대상 ([`modes/for_pr.md`](modes/for_pr.md)) |
 | `both` | for_plan 전체 → 사용자의 계획 승인 → 구현 → 1차 커밋 → for_pr 전체 → 최종 커밋 후 push + PR 생성. 각 단계의 실행 강도는 Review Intensity에 따라 독립적으로 결정 |
+| `audit` | 일회성 사이드이펙트/회귀 감사 — 6 auditor bundle 병렬, Review Intensity 우회, 1 round 보고 후 종료 ([`modes/audit.md`](modes/audit.md)) |
 | *(비어있음)* | 사용자에게 모드 선택을 질문한다 |
 
 ### `MAX` modifier
@@ -69,6 +71,8 @@ Review Intensity 판단을 건너뛰고 exhaustive override를 실행한다.
 자동 판정의 FULL도 여전히 강한 기본 검토다. 차이는 fan-out뿐이다:
 - 자동 `FULL` = `Correctness`, `Design`, `Regression`, `Maintainability` 4 bundle
 - `MAX` modifier = 위 bundle을 6개 세부 도메인으로 확장한 exhaustive override
+
+`audit` 모드에서 `MAX`는 기본 6 auditor bundle을 10개 세부 관점으로 확장한다. audit는 Review Intensity를 항상 우회하므로 `MAX`의 의미는 fan-out 확장뿐이다 ([`modes/audit.md`](modes/audit.md) 참조).
 
 ### `fresh` modifier
 
@@ -106,6 +110,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 | `for_plan` | [`modes/for_plan.md`](modes/for_plan.md), [`references/intensity-procedure.md`](references/intensity-procedure.md) | mode 확정 후 Step 0 실행 시 |
 | `for_pr` | [`modes/for_pr.md`](modes/for_pr.md), [`modes/for_plan.md`](modes/for_plan.md), [`references/intensity-procedure.md`](references/intensity-procedure.md) | mode 확정 후 Step 0 실행 시. `for_pr`은 delta 문서이므로 `for_plan` 공통 절차도 함께 읽는다 |
 | `both` | [`modes/for_plan.md`](modes/for_plan.md) → 사용자 계획 승인 후 [`modes/for_pr.md`](modes/for_pr.md) + [`modes/for_plan.md`](modes/for_plan.md) | 각 phase 진입 직전에만 해당 mode 문서를 읽는다 |
+| `audit` | [`modes/audit.md`](modes/audit.md) | mode 확정 후 즉시. Review Intensity 우회이므로 `intensity-procedure.md`는 읽지 않는다 |
 | `fresh` modifier | 이 `SKILL.md`; 후속 라운드 propagation 조립 시 [`references/protocol.md`](references/protocol.md), ledger suppression이 필요하면 [`references/dismissal-ledger.md`](references/dismissal-ledger.md) | preflight에서는 추가 reference 없음. 이전 라운드 맥락과 selective propagation을 모두 끊어야 하는 시점에만 protocol을 확인한다. current changeset에 valid ledger가 있을 때만 dismissal-ledger를 확인한다 |
 | `MAX` modifier | 선택 mode 문서, [`references/da-domains.md`](references/da-domains.md) | Review Intensity를 건너뛰고 exhaustive 6-domain fan-out 조립 직전. `intensity-procedure.md`는 읽지 않는다 |
 | LITE/FULL reviewer fan-out | [`references/da-domains.md`](references/da-domains.md), [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/hardening-contract.md`](references/hardening-contract.md) | Step 2에서 실제 reviewer prompt/런타임을 조립할 때 |
