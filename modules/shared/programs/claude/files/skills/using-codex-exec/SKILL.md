@@ -159,6 +159,9 @@ error: the argument '--base <BRANCH>' cannot be used with '--uncommitted'
 
 ## 표준 실행 절차
 
+NixOS에서 `-s read-only` / `-s workspace-write`를 구조적으로 강제하려면 `bubblewrap`이
+PATH에 있어야 한다. bwrap 의존성, 임시 우회, tier별 실측은 [known-issues.md §16](references/known-issues.md#16-nixos-bwrap-의존)을 참조한다.
+
 ### 일반 exec
 
 프롬프트를 파일로 작성하고, stdin 파이프로 전달하며, `-o`로 결과를 저장한다:

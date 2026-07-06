@@ -76,6 +76,7 @@
     git
     curl
     nvd
+    bubblewrap # Codex CLI Linux sandbox (read-only/workspace-write)
   ];
 
   # Zsh 활성화
