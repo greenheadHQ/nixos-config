@@ -155,7 +155,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 1. Review Intensity는 메인 LLM 인라인 체크리스트다 — 메인 LLM이 모든 룰을 평가한 표를 기록하고 first-match로 단계를 채택한다. 자유 추론 금지. fail-closed rule group(보안/모듈/설정·의존성) 매치/불확실 시 강한 검토 fail-closed ([`references/intensity-procedure.md`](references/intensity-procedure.md)).
 2. Single-writer / main-agent-only — tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 메인 에이전트 소유. DA reviewer/Arbiter는 위임 금지 ([`references/hardening-contract.md`](references/hardening-contract.md) 역할별 경계). Review Intensity 인라인 판정은 메인 에이전트의 정상 경로다.
-3. Conservative wait — `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다. (Review Intensity는 인라인 체크리스트라 wait 대상 아님.)
+3. Conservative wait — `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다.
 4. PoC 의무화 — DA가 위반을 지적하면 구체적 파일:줄 또는 계획 항목 번호를 제시. 증거 없는 추상적 우려는 Arbiter가 NOT_AN_ISSUE로 판정한다.
 5. CONFIRMED_ISSUE 자동 반영 — Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동 반영하되, review phase 중 patch/edit/apply_patch, write-mode formatter, generated output 변경은 금지한다. confirmed 항목은 write phase에서 batch로 반영하며, CRITICAL 심각도는 다음 outer round 진행 차단 후 write phase 첫 항목으로 처리한다.
 6. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO/`split` 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
@@ -167,7 +167,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
 - Codex 세션 경로에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
-- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑). Review Intensity는 별도 process가 아니라 메인 LLM 인라인 체크리스트.
+- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑).
 - codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행되어 코드/계획 write를 read-only sandbox로 구조적으로 차단한다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
@@ -177,7 +177,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 이 스킬이 구조적으로 보장하지 않는 경계. 수용 가능한 근사로 운영하되, 구조적 enforcement는 별도 follow-up 범위다.
 
-1. `spawn_agent` per-child read-only sandbox 부재: Codex `spawn_agent` API는 자식 에이전트에 read-only sandbox를 구조적으로 강제할 수 없다 (codex-cli 0.124.0 기준 `--ignore-user-config`, `--ephemeral`, `--sandbox` 전역 옵션만 존재, per-child flag 없음). reviewer/Arbiter의 "읽기 전용" 경계는 프롬프트 지시 + 사후 diff 점검으로만 운영한다. 자식이 구조적으로 write를 못 하게 막지는 않는다. (Review Intensity는 spawn 대상이 아니므로 본 한계가 적용되지 않는다.)
+1. `spawn_agent` per-child read-only sandbox 부재: Codex `spawn_agent` API는 자식 에이전트에 read-only sandbox를 구조적으로 강제할 수 없다 (codex-cli 0.124.0 기준 `--ignore-user-config`, `--ephemeral`, `--sandbox` 전역 옵션만 존재, per-child flag 없음). reviewer/Arbiter의 "읽기 전용" 경계는 프롬프트 지시 + 사후 diff 점검으로만 운영한다. 자식이 구조적으로 write를 못 하게 막지는 않는다.
 
    연관 한계 (project config MCP 차단 불가): `--ignore-user-config`는 `$CODEX_HOME/config.toml` 로드만 차단하고, **cwd 기반 project config (`.codex/config.toml`의 `[mcp_servers.*]`)는 차단하지 않는다**. 현재 worktree에 project-scoped MCP connector가 있으면, Delegation fallback subprocess가 repo root에서 실행될 때 그 surface가 reviewer/Arbiter에게 남을 수 있다. 완전 차단이 필요하면 `codex exec -C <non-repo-scratch-dir>`로 cwd를 project config 없는 디렉토리로 이동시키는 별도 Non-goal 범위 follow-up이 필요하다.
 2. push / PR / comment 작성은 네트워크·auth 정책 의존: `for_pr` 마지막 단계 `push`, `both` 마지막 단계 `push + PR 생성`, PR 코멘트 게시 형식은 네트워크 가능 환경 + GitHub auth 전제. `sandbox_mode=danger-full-access` 또는 GitHub 커넥터 경로에서만 자동 실행한다. 다른 샌드박스 모드에서는 해당 단계를 명시적 사용자 승인 후 수행하거나, 메인 에이전트가 사용자에게 위임한다.
