@@ -6,7 +6,7 @@
 > report. When done, update the status row in `plans/README.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat fb2a8aa6..HEAD -- scripts/ai/verify-ai-compat.sh scripts/ai/lib/ tests/`
+> `git diff --stat a6bbf637..HEAD -- scripts/ai/verify-ai-compat.sh scripts/ai/lib/ tests/`
 > 변경이 있으면 "Current state"와 대조하고, 불일치 시 STOP.
 
 ## Status
@@ -16,12 +16,14 @@
 - **Risk**: MED (커밋 게이트 스크립트의 동작 불변 리팩토링)
 - **Depends on**: none
 - **Category**: tech-debt
-- **Planned at**: commit `fb2a8aa6`, 2026-07-02
+- **Planned at**: commit `fb2a8aa6`, 2026-07-02 (reconcile 재검증: `a6bbf637`,
+  2026-07-06 — 커밋 `09fffbee`의 EXPECTED_EXPOSED 1줄 삽입으로 라인 번호 +1
+  shift, finding 자체는 불변. Current state를 현행화함)
 - **Issue**: https://github.com/greenheadHQ/nixos-config/issues/947
 
 ## Why this matters
 
-`scripts/ai/verify-ai-compat.sh`(1620줄)는 AI 도구 호환성의 안전 게이트다 —
+`scripts/ai/verify-ai-compat.sh`(1621줄)는 AI 도구 호환성의 안전 게이트다 —
 pre-commit `ai-skills-consistency` 훅이 `scripts/ai/warn-skill-consistency.sh:109`
 경유로 호출하고, 사용자도 수동 재검증에 쓴다. 문제는 두 가지다. ① 파일의 약
 절반이 자체 완결적인 skill-neutral-lint 엔진(자체 fixture self-test 포함)인데
@@ -36,25 +38,26 @@ pass가 되도록 망가져도 통합 테스트(`tests/run-all-tests.sh`)가 통
 - `scripts/ai/verify-ai-compat.sh` — 함수 배치 (grep 실측):
 
 ```
- 229: _skill_neutral_lint()               ← lint 엔진 시작
- 583: run_skill_neutral_fixture_tests()   ← lint 자체 self-test (--run-fixture-tests)
-1046: verify_codex_helper()               ← host-state 검증부 시작
-1064: verify_codex_helper "fleiss-kappa.py"
-1067: verify_claude_helper()
-1085: verify_claude_helper "fleiss-kappa.py"
-1285: _check_hook_executable()
-1313: _check_hook_executable ".codex/hooks/record-prompt-submit.sh"   (외 다수 호출)
-1321: _check_executable_symlink_suffix()
-1437: verify_used_by_oracle()
-1581: verify_used_by_oracle "$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh" "pinning-patterns.sh"
+ 230: _skill_neutral_lint()               ← lint 엔진 시작
+ 584: run_skill_neutral_fixture_tests()   ← lint 자체 self-test (--run-fixture-tests)
+1047: verify_codex_helper()               ← host-state 검증부 시작
+1065: verify_codex_helper "fleiss-kappa.py"
+1068: verify_claude_helper()
+1086: verify_claude_helper "fleiss-kappa.py"
+1286: _check_hook_executable()
+1314: _check_hook_executable ".codex/hooks/record-prompt-submit.sh"   (외 다수 호출)
+1322: _check_executable_symlink_suffix()
+1438: verify_used_by_oracle()
+1582: verify_used_by_oracle "$REPO_ROOT/modules/shared/programs/claude/files/lib/pinning-patterns.sh" "pinning-patterns.sh"
 ```
 
 - 호출처: `scripts/ai/warn-skill-consistency.sh:109`가
   `scripts/ai/verify-ai-compat.sh | ...` 형태로 실행 (pre-commit 훅 경로).
   `tests/run-all-tests.sh`·lefthook.yml·CI에는 직접 참조 없음 (grep 실측).
-- `tests/`의 "verify-ai-compat" 참조 3건은 전부 주석 (oracle/fixture 공유 명시):
+- `tests/`의 "verify-ai-compat" 참조는 주석(oracle/fixture 공유 명시:
   `tests/lib/codex-hook-expectations.sh:6`, `tests/fixtures/codex-hooks/README.md:120`,
-  `tests/test-codex-hook-fixtures.sh:60`.
+  `tests/test-codex-hook-fixtures.sh:39`·`:61`·`:71`)과 기대-사유 문자열 리터럴
+  (`tests/test-codex-hook-fixtures.sh:668`·`:690`)뿐 — 실행 호출은 없음.
 - 기존 공유 lib 위치: `scripts/ai/lib/` (예: `tomlkit-bootstrap.sh`) — 분리
   파일의 자연스러운 배치처.
 - README.md의 검증 절이 `verify-ai-compat.sh --run-fixture-tests`(lint fixture만

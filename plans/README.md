@@ -13,6 +13,19 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 (Current state 재검증 / Remaining work / Verification / Boundaries)으로
 재작성했다 — 재감사 시 GitHub 열린 이슈 본문이 최신 판정이다.
 
+**Reconcile 2026-07-06 (commit `a6bbf637`)**: DONE 전 건 spot-check 통과 —
+002(비특권 유저·sandbox 실배포 유지), 003(same-fs mktemp), 006(gitleaks
+`.local.md` 예외 부재 + gitignore 대체), 007(flock 타임아웃), 019(미러 타이머
+당일 04:31 정상 실행), 021–023(머지 커밋 확인). TODO 9건 drift check:
+010만 drift(커밋 `09fffbee`의 1줄 삽입으로 라인 번호 +1 shift — plan 파일
+현행화 완료, finding 불변), 나머지 8건(008·011·012·013·014·015·018·020)은
+NO DRIFT — 대상 파일 미변경 또는 plan이 명시적으로 예상한 변경(020의 019
+착륙, 018의 스냅샷 이동)뿐. epic [#903](https://github.com/greenheadHQ/nixos-config/issues/903)
+하위 이슈(#904·#905·#907·#911)는 run-da/parallel-audit 디렉토리가 2026-07-03
+재검증 이후 미변경이라 이슈 본문이 그대로 최신 판정이다. Anki plans 024–027은
+PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)(OPEN) 머지
+대기 중 — 머지 전까지 본 인덱스에 미반영이 정상.
+
 각 executor: plan 파일을 끝까지 읽고 시작하고, STOP conditions를 존중하고,
 끝나면 자기 행의 Status를 갱신한다.
 
@@ -29,7 +42,7 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 | 007 | codex-remote-control-maint flock 타임아웃 부여 | P2 | S | — | #944 | DONE (PR #979, nrs 적용 + 락 타임아웃 실측 완료 2026-07-05) |
 | 008 | 완료 PRD 상태 정정 + 아카이브 관례 적용 | P3 | S | — | #945 | TODO |
 | 009 | maint sync/알림 상태전이 특성화 테스트 | P3 | S | 007 (soft) | #946 | DONE (PR #982 — 테스트 전용, 배포 불필요) |
-| 010 | verify-ai-compat lint 엔진 분리 + host-state 테스트 | P2 | M | — | #947 | TODO |
+| 010 | verify-ai-compat lint 엔진 분리 + host-state 테스트 | P2 | M | — | #947 | TODO (2026-07-06 reconcile: 라인 번호 현행화) |
 | 011 | Pushover 전송 플랫폼 공용 헬퍼 통합 | P3 | M | — | #948 | TODO |
 | 012 | claude 훅 hook-runtime 파서 채택 확대 | P3 | M | — | #949 | TODO |
 | 013 | Karakeep 파이프라인 헬퍼(fallback-sync·bridge) 테스트 | P3 | M | — | #950 | TODO |
