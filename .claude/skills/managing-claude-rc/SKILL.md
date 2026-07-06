@@ -15,7 +15,7 @@ bridge 서버의 운영 가이드. NixOS(MiniPC) 전용 — macOS/darwin 배포�
 
 ## 기전 (3계층)
 
-```
+```text
 tmux 세션 "claude-rc" (detached 상시 구동)
  └─ claude-rc 래퍼 (modules/nixos/scripts/claude-rc.sh)
      ├─ 재시작 루프: 비정상 종료 시 exponential backoff로 자동 재시작

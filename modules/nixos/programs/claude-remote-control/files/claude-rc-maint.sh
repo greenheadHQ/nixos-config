@@ -331,7 +331,9 @@ cmd_ensure() {
     # 단일 finalizer: 어떤 분기도 이 경로를 우회하지 않는다
     # (recovered/failure 알림 상태 전이가 모든 실행에서 평가되도록).
     write_status "$rc" || true
-    load_alerting
+    # source되는 credential/lib 파일이 malformed여도 (source가 && 리스트의
+    # 마지막 명령이라 set -e 발동) finalizer가 send_alerts 전에 죽지 않게 guard.
+    load_alerting || true
     send_alerts "$rc" || true
     return "$rc"
 }
