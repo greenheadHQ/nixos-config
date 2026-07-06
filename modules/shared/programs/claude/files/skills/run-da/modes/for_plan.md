@@ -17,11 +17,13 @@
 
 계획이 제거·단순화·되돌림·리팩터 방향이거나 변경 대상이 git상 왕복 핫스팟이면, [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md)의 발동 조건에 따라 "의사결정 컨텍스트 팩"(해당 문서 Step A)을 수집한다 — 메인이 commit/PR/issue(+있으면 CIR/ADR·로컬 세션 로그)에서 과거 결정·되돌림 이력을 추려, Step 2의 reviewer 프롬프트와 Step 5의 Arbiter 프롬프트에 selective propagation으로 주입한다. 그 외 변경은 Review Intensity에 연동한다(FULL=전체 조사, LITE=경량, SKIP=생략).
 
+`fresh` 반복 세션에서 local dismissal ledger가 있으면, changeset freeze 직후 current changeset key와 일치하는 valid entry만 읽는다. ledger entry는 Step 2 reviewer prompt에 넣지 않고, Step 3 결과 수집 후 Arbiter 진입 전 exact match suppression에만 사용한다. 세부 key/schema/invalidation 규칙은 [`../references/dismissal-ledger.md`](../references/dismissal-ledger.md)를 따른다.
+
 ## Outer round phase model: changeset 동결 + read/write 분리
 
 각 outer round는 `changeset 동결 → review phase → write phase` 순서로 진행한다.
 
-- changeset 동결: Step 2 진입 전에 이번 라운드의 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`와 현재 workspace 상태가 frozen changeset이다.
+- changeset 동결: Step 2 진입 전에 이번 라운드의 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`와 현재 workspace 상태가 frozen changeset이다. dismissal ledger를 사용할 때도 이 frozen changeset key와 exact match하는 entry만 valid하다.
 - review phase: Step 2 reviewer fan-out부터 Step 5e 상태 전이와 사용자 전건 보고까지다. 이 구간에는 메인 에이전트와 delegated reviewer/Arbiter 모두 active changeset을 바꾸지 않는다. patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. formatter/generator는 check/diff-only 모드처럼 파일 변경이 없을 때만 허용한다.
 - write phase: 한 라운드의 Arbiter 판정과 필요한 사용자 판단이 끝난 뒤에만 시작한다. CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목을 queue에 모아 메인 에이전트가 batch로 반영한다.
 - CRITICAL 기본값: CRITICAL도 review phase 중 즉시 patch하지 않는다. 해당 라운드의 Arbiter 판정이 닫힌 뒤 write phase 첫 항목으로 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다.
@@ -75,6 +77,7 @@
 - Codex 세션 경로: `VIOLATION` 처리 규칙은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
 - codex exec 경로: 선택된 review unit(FULL 기본 4개, LITE는 선택한 수, explicit exhaustive는 6개) 전부 실행(Claude Code는 병렬, headless는 serial) 완료 후, 각 `$DA_DIR/$UNIT-result.md` 패턴의 결과 파일을 파일 읽기 도구로 명시적으로 읽어 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
 - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
+- `fresh` 반복 세션에서 valid dismissal ledger가 있으면, reviewer finding별 dismissal key를 계산해 exact match 항목만 `dismissed_suppressed`로 분류한다. suppress된 항목은 Arbiter 입력, 신규 finding 계산, pending write queue에 포함하지 않는다. match하지 않는 항목은 평소처럼 Step 5 Arbiter로 보낸다.
 
 ## Step 4: ALL CLEAR 또는 Arbiter 진입
 
@@ -94,7 +97,7 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR
 
 - CONFIRMED_ISSUE + CRITICAL + (N/A 또는 stable) + `low_confidence_warning=false`: 진행 차단. review phase 중 patch 금지 원칙을 유지하고, Arbiter 판정이 닫힌 뒤 write phase의 첫 batch 항목으로 계획에 반영한다. 해결 전에는 다음 outer round로 진행하지 않는다.
 - CONFIRMED_ISSUE + HIGH/MEDIUM/LOW + (N/A 또는 stable) + `low_confidence_warning=false`: pending write queue에 추가하고, Step 6 write phase에서 계획에 일괄 수정한다.
-- NOT_AN_ISSUE + (N/A 또는 stable) + `low_confidence_warning=false`: 보고만 (반영 불필요).
+- NOT_AN_ISSUE + (N/A 또는 stable) + `low_confidence_warning=false`: 보고만 (반영 불필요). eligible 항목은 사용자 전건 보고 후 local ignored dismissal ledger에 기록한다.
 - NEEDS_MORE_INFO 또는 `stability_status=split`: 질문 도구로 사용자 판단을 요청한다 (vote-shape와 minority verdict도 함께 보고). 사용자가 수용한 항목만 pending write queue에 추가한다.
 - 임의 verdict + (N/A 또는 stable) + `low_confidence_warning=true`: fail-closed 승격 — 질문 도구로 사용자 판단 요청 (unanimous/단일 Arbiter라도 LOW confidence 이력이 있으면 기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약을 유지).
 - `stability_status=fragmented` 또는 `partial_failure=true`: BLOCKED — 질문 도구 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).

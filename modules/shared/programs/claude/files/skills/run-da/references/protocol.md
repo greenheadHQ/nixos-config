@@ -7,7 +7,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | DA 결과 | Arbiter 판정 | stability_status | 메인 에이전트 행동 | 사용자 보고 |
 |---------|-------------|------------------|-------------------|-----------|
 | finding 있음 | CONFIRMED_ISSUE | N/A / stable (+ low_confidence_warning=false) | pending write queue에 추가. write phase에서 일괄 수정 (CRITICAL은 다음 round 진행 차단) | 수정 필요 테이블 |
-| finding 있음 | NOT_AN_ISSUE | N/A / stable (+ low_confidence_warning=false) | 반영 불필요 | 무해 테이블 |
+| finding 있음 | NOT_AN_ISSUE | N/A / stable (+ low_confidence_warning=false) | 반영 불필요. eligible 항목은 dismissal ledger에 기록 | 무해 테이블 |
 | finding 있음 | NEEDS_MORE_INFO | N/A / stable | 사용자 판단 대기 | 질문 도구 |
 | finding 있음 | 임의 | N/A / stable + low_confidence_warning=true | fail-closed 승격 (질문 도구 호출) | 질문 도구 + LOW confidence 이력 |
 | finding 있음 | (majority verdict) | split | 사용자 판단 대기 (NEEDS_MORE_INFO 경로) | 질문 도구 + vote-shape |
@@ -37,7 +37,8 @@ stability_status 의미, selective consistency 트리거, `unknown` sentinel 정
 6. CONFIRMED_ISSUE + (stability_status=N/A 또는 stable) 항목을 pending write queue에 추가한다. CRITICAL은 진행 차단 항목으로 표시하되 review phase 중 즉시 patch하지 않는다.
 7. NEEDS_MORE_INFO 또는 stability_status=split 항목은 사용자 판단을 요청한다. 사용자가 수용한 항목만 pending write queue에 추가한다.
 8. stability_status=fragmented 항목은 BLOCKED 상태로 기록하고 자동 수정하지 않는다 (아래 섹션 참조).
-9. Arbiter 상태 전이와 필요한 사용자 판단이 끝난 뒤 write phase로 넘어가 pending write queue를 batch로 반영한다.
+9. NOT_AN_ISSUE 또는 사용자가 명시적으로 제외한 eligible 항목은 [`dismissal-ledger.md`](dismissal-ledger.md)에 따라 local ignored dismissal ledger에 기록한다. 이 기록은 active changeset 수정이나 pending write queue가 아니다.
+10. Arbiter 상태 전이와 필요한 사용자 판단이 끝난 뒤 write phase로 넘어가 pending write queue를 batch로 반영한다.
 
 ### 라운드 read/write 분리
 
@@ -46,6 +47,7 @@ stability_status 의미, selective consistency 트리거, `unknown` sentinel 정
 - changeset 동결: outer round 시작 시 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`와 현재 workspace 상태가 frozen changeset이다.
 - review phase 범위: reviewer 실행, reviewer 결과 수집, Arbiter 실행, selective consistency N=3, vote-shape 집계, 전건 보고, 질문 도구 판단 수집까지다.
 - review phase 중 patch 금지: 이 구간에는 active changeset을 바꾸는 patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. check-only formatter나 diff-only generator처럼 파일 변경이 없으면 허용한다. delegated reviewer/Arbiter의 read-only/no-write 경계는 [`hardening-contract.md`](hardening-contract.md)가 정본이다.
+- dismissal ledger 기록: Arbiter 상태 전이와 사용자 전건 보고가 끝난 직후 메인 에이전트가 쓰는 local ignored review metadata다. write phase 산출물이 아니며 pending write queue에 넣지 않는다. ledger write가 tracked diff를 만들면 기록하지 않고 NOTES에 남긴다. 세부 규칙은 [`dismissal-ledger.md`](dismissal-ledger.md)가 정본이다.
 - 일괄 수정: CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목은 pending write queue에 모아 write phase에서 메인 에이전트가 batch로 반영한다. 정상 confirmed finding 반영을 막는 규칙이 아니라 반영 시점을 라운드 밖으로 옮기는 규칙이다.
 - CRITICAL 기본값: CRITICAL finding만 즉시 중단/수정하는 예외는 기본 절차에 두지 않는다. CRITICAL은 다음 outer round 진입을 차단하고, 현재 round의 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 반영한다.
 - 새 changeset: write phase 후 다음 outer round를 시작하면 "새 changeset" 리뷰로 명시한다. 이전 round의 frozen changeset과 write phase batch delta를 round summary에 기록해 추세 기반 조기 중단의 신규 confirmed finding 계산 기준을 분리한다.
@@ -98,7 +100,7 @@ Threshold 숫자는 이 문서에서 재서술하지 않는다. `STABLE_MIN`/`ES
 - Arbiter 입력: reviewer 원문 전체가 아니라, 위 규칙으로 추린 escalated finding set만 전달한다.
 - 후속 reviewer 입력: 다음 라운드에서도 raw transcript 전체를 브로드캐스트하지 않는다.
   열려 있는 finding 중 해당 bundle에 실질적으로 관련된 항목만 전달한다.
-- `fresh` modifier: selective propagation조차 끊는다. 이전 라운드 맥락을 전달하지 않는다.
+- `fresh` modifier: selective propagation조차 끊는다. 이전 라운드 맥락을 전달하지 않는다. 단, current changeset에 valid dismissal ledger가 있으면 메인 에이전트가 reviewer 결과 수집 후 Arbiter 입력 전 exact match suppression을 수행할 수 있다. 이때도 reviewer prompt에는 이전 finding 본문/이전 reasoning/transcript를 전달하지 않는다.
 - `MAX` modifier: reviewer fan-out만 exhaustive로 확장할 뿐, propagation 기본값은 여전히 selective다.
 
 ## 합리화 방지 (Rationalization Prevention)
@@ -155,6 +157,7 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
    - 수용: 지적대로 수정한다.
    - 제외 + 근거 기록: 기술적 근거를 CIR로 남기고 현재 루프에서 제외한다.
    - 보류: 별도 이슈로 등록하고 현재 루프에서 제외한다.
+3. 사용자가 "제외 + 근거 기록"을 선택하면 dismissal ledger에 `USER_EXCLUDED`로 기록할 수 있다. 단 `NEEDS_MORE_INFO`를 자동 기각으로 저장하지 말고, 사용자의 명시 결정과 기술적 근거, 적용 scope가 있을 때만 기록한다.
 
 Selective consistency 서브런 카운팅: selective consistency의 N=3 재판정은 동일 outer round 내부의 서브런이다. 3회 반복 규칙과 최대 라운드 카운트에 포함하지 않는다. 즉, outer round 1에서 N=3 재판정을 수행해도 outer round 카운트는 1에 머문다.
 
@@ -173,6 +176,7 @@ Selective consistency 서브런 카운팅: selective consistency의 N=3 재판�
 Round N 요약: DA 발견 X건 → Arbiter: CONFIRMED Y건(신규 Y'건 — 직전 라운드에 없던 관점+위치), NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
 bundle별: Correctness 2건(SECURITY 1, HALLUCINATION 1), Regression CLEAR, ...
 changeset: frozen=<계획 원문/commit range/diff 기준>, write_phase=<수정 파일/계획 항목/diffstat/generated output 유무>, next=<R(N+1) 새 changeset 여부>
+dismissal_ledger: recorded=<NOT_AN_ISSUE/USER_EXCLUDED 기록 수>, suppressed=<fresh exact match로 새 finding에서 제외한 수>, stale_ignored=<stale ledger로 무시한 수>
 ```
 
 selective consistency가 발동한 라운드는 추가 라인으로 stability_status 분포를 명시한다:
