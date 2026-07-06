@@ -1,6 +1,8 @@
 # Review Intensity 판단 절차 (메인 LLM 인라인 체크리스트)
 
 Review Intensity 판단의 실행 절차. 판단 알고리즘 규칙 SSOT는 [`intensity-rules.md`](intensity-rules.md)다.
+`/run-da` 진입 preflight에서 mode 선택과 기본 판정에 필요한 최소 룰은 [`../SKILL.md`](../SKILL.md)의 compact 표에 inline되어 있다.
+이 문서는 preflight 필수 reference가 아니며, 선택된 mode의 Step 0을 실제 실행하거나 handoff/fixture replay 세부가 필요할 때 lazy load한다.
 
 Review Intensity 판정은 메인 LLM이 인라인으로 8 룰 체크리스트를 기계적으로 적용한다. 별도 독립 process(codex exec / native subagent)를 띄우지 않는다. 메인 LLM은 룰을 자유롭게 추론해서는 안 되고, [`intensity-rules.md`](intensity-rules.md)의 룰 1-8을 순서대로 평가해 결과 표를 plan/대화에 남겨야 한다.
 
