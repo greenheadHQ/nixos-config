@@ -13,6 +13,7 @@ SKIP/LITE/FULL 절차(실행 방법)와 fail-closed 규칙은 [`intensity-proced
 [`intensity-procedure.md`](intensity-procedure.md)의 인라인 체크리스트 절차는 모든 룰을 평가한 표를 plan/대화에 기록한 뒤(증거 의무), 아래 룰을 순서대로 비교하여 먼저 매치된 룰의 단계를 채택한다 (판정 결정 단계는 first-match). 즉 표 작성은 short-circuit 없음, 단계 결정은 first-match — 두 단계는 순서가 분리되어 있다.
 
 각 룰에는 안정적 ID를 부여하여 다른 문서에서 룰 번호 대신 ID 또는 ID 그룹으로 참조한다.
+이 표를 변경하면 [`../SKILL.md`](../SKILL.md)의 preflight compact 표도 같은 자구로 함께 갱신한다.
 
 | ID | 조건 | 채택 단계 |
 |----|------|----------|
