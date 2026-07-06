@@ -15,7 +15,7 @@
 | Step 3 | 동일 | 동일 ([`./for_plan.md`](./for_plan.md#step-3-reviewer-결과-수신--종합-리포트)) |
 | Step 4 | 동일 (ALL CLEAR) | 동일 |
 | Step 5 (Arbiter) | for_plan 조립 (계획 원문 포함) | for_pr 조립 (diff 컨텍스트 포함) — [`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 "프롬프트 조립 > for_pr 모드" 참조. for_pr에서는 계획 원문 대신 diff 또는 변경 컨텍스트를 포함 |
-| Step 5 상태 전이 | CONFIRMED_ISSUE를 pending write queue에 추가 | 동일. review phase 중 patch 금지, formatter write 금지, generated output 변경 금지. 코드 수정/commit은 Step 6 write phase 전까지 금지 |
+| Step 5 상태 전이 | CONFIRMED_ISSUE를 pending write queue에 추가, eligible NOT_AN_ISSUE/사용자 제외는 dismissal ledger에 기록 | 동일. review phase 중 patch 금지, formatter write 금지, generated output 변경 금지. 코드 수정/commit은 Step 6 write phase 전까지 금지. dismissal ledger 기록은 tracked diff가 아닌 local ignored review metadata로만 허용 |
 | Step 6 write phase | 계획/관련 파일을 batch로 수정하고 새 changeset 선언 | 코드 변경을 batch로 반영하고 커밋한다. 메인 에이전트가 single-writer로 코드 수정 + commit ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의). 반영 후 새 changeset(diff/commit range)을 선언하고 변경 범위를 round summary에 기록 |
 | Step 7 | CLEAR까지 반복 (protocol.md "최대 라운드 수" 적용: 상한 + 추세 기반 조기 중단 + read/write 분리) | 동일 |
 | Step 8 | (없음) | push — 최종 승인 후 push한다 (네트워크/auth 정책 의존 — [`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조) |
@@ -25,10 +25,10 @@
 다음은 `for_plan`과 100% 동일하다. 본문은 [`./for_plan.md`](./for_plan.md)를 SSOT로 한다:
 
 - Step 0 본문: Review Intensity 판단 절차 ([`../references/intensity-procedure.md`](../references/intensity-procedure.md)).
-- Step 1 본문 (의사결정 컨텍스트 팩 수집): 제거·단순화·되돌림·리팩터 또는 왕복 핫스팟이면 [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A를 for_plan Step 1과 동일하게 수행한다 (입력만 계획 대신 `git diff main...HEAD`). 수집한 팩은 Step 2 reviewer·Step 5 Arbiter 프롬프트에 selective propagation으로 주입.
+- Step 1 본문 (의사결정 컨텍스트 팩 수집 + dismissal ledger load): 제거·단순화·되돌림·리팩터 또는 왕복 핫스팟이면 [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A를 for_plan Step 1과 동일하게 수행한다 (입력만 계획 대신 `git diff main...HEAD`). 수집한 팩은 Step 2 reviewer·Step 5 Arbiter 프롬프트에 selective propagation으로 주입. `fresh` 반복 세션의 dismissal ledger load는 frozen `git diff main...HEAD` + workspace review surface hash와 exact match할 때만 유효하다.
 - Step 2 본문 (Codex 세션 경로): `spawn_agent`/`wait_agent`/`close_agent` lifecycle, batch 규칙, conservative wait, fresh modifier, selective propagation.
 - Step 2 본문 (codex exec 경로): 임시 디렉토리, stdout `DA_DIR` 리터럴 재설정, prompt 파일 guard, `cat | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe (Layer 1, [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) role별 명령 표가 SSOT), `&+wait` 금지, Claude Code 병렬 / headless serial foreground 구분, [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 공통 주의(셸 호출 간 변수 유실).
-- Step 3 본문: VIOLATION 처리, 결과 파일 검증, 실패 unit 재실행.
+- Step 3 본문: VIOLATION 처리, 결과 파일 검증, 실패 unit 재실행, `fresh` dismissal ledger exact match suppression.
 - Step 5 (5a~5e): Arbiter 호출, selective consistency trigger 검사, N=3 재판정, vote-shape 집계, 상태 전이 적용. 상태 전이 구조(N/A·stable·split·fragmented 분기, NEEDS_MORE_INFO 사용자 판단 요청, fragmented BLOCKED)는 for_plan과 동일하다. CONFIRMED_ISSUE는 review phase 중 수정하지 않고 pending write queue로만 이동한다.
 - Step 6: write phase batch 반영, 새 reviewer 실행 단위, 새 `DA_DIR`. for_pr은 batch 코드 수정 후 commit까지 수행하고, 다음 라운드를 새 changeset으로 선언한다.
 - Step 7: CLEAR 탈출 조건. CLEAR까지 반복은 상한/조기중단/read-write 분리 규칙을 함께 적용한다.

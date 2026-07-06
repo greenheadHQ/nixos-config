@@ -76,14 +76,16 @@ Review Intensity 판단을 건너뛰고 exhaustive override를 실행한다.
 |------|----------|-------------|
 | DA 프롬프트 | 이전 라운드 결과 요약 포함 가능 | 코드/계획 + 프로젝트 컨텍스트만 전달. 이전 라운드 언급 금지 |
 | 편향 | 이전 발견에 anchoring 가능 | 매 라운드 완전 독립 리뷰 |
-| 무한 루프 위험 | 낮음 (이전 맥락으로 중복 감소) | 높음 (동일 지적 반복 가능 → 반복 감지 규칙으로 대응) |
+| 무한 루프 위험 | 낮음 (이전 맥락으로 중복 감소) | 높음 (동일 지적 반복 가능 → 반복 감지 + dismissal ledger exact match로 대응) |
 
 `fresh` 사용 시 메인 에이전트는 DA 에이전트 프롬프트에 다음을 포함하지 않는다:
 - 이전 라운드의 발견 사항
 - 이전 라운드에서 수용/기각된 지적 내역
 - "이번에는 다른 관점에서 봐주세요" 등 이전 라운드를 암시하는 표현
 
-메인 에이전트는 finding의 세부 관점 + 위치(파일:줄 또는 계획 항목 번호) 조합으로 라운드 간 반복 감지를 수행한다.
+예외: current changeset에 대해 valid dismissal ledger가 있으면 메인 에이전트는 [`references/dismissal-ledger.md`](references/dismissal-ledger.md)의 exact match 절차로 동일 지적을 suppress할 수 있다. 이때도 DA reviewer에게 이전 finding 본문, Arbiter reasoning, 이전 라운드 transcript를 전달하지 않는다. 런타임상 주입이 필요한 정보는 ledger key, scope, `dismissed: NOT_AN_ISSUE|USER_EXCLUDED` 결론뿐이다.
+
+메인 에이전트는 finding의 세부 관점 + 위치(파일:줄 또는 계획 항목 번호) 조합으로 라운드 간 반복 감지를 수행하고, `fresh` 반복 세션에서는 dismissal ledger key가 모두 일치하는 동일 지적만 새 finding에서 제외한다.
 
 ## 빠른 참조와 lazy loading
 
@@ -102,7 +104,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 | `for_plan` | [`modes/for_plan.md`](modes/for_plan.md), [`references/intensity-procedure.md`](references/intensity-procedure.md) | mode 확정 후 Step 0 실행 시 |
 | `for_pr` | [`modes/for_pr.md`](modes/for_pr.md), [`modes/for_plan.md`](modes/for_plan.md), [`references/intensity-procedure.md`](references/intensity-procedure.md) | mode 확정 후 Step 0 실행 시. `for_pr`은 delta 문서이므로 `for_plan` 공통 절차도 함께 읽는다 |
 | `both` | [`modes/for_plan.md`](modes/for_plan.md) → 사용자 계획 승인 후 [`modes/for_pr.md`](modes/for_pr.md) + [`modes/for_plan.md`](modes/for_plan.md) | 각 phase 진입 직전에만 해당 mode 문서를 읽는다 |
-| `fresh` modifier | 이 `SKILL.md`; 후속 라운드 propagation 조립 시 [`references/protocol.md`](references/protocol.md) | preflight에서는 추가 reference 없음. 이전 라운드 맥락과 selective propagation을 모두 끊어야 하는 시점에만 protocol을 확인한다 |
+| `fresh` modifier | 이 `SKILL.md`; 후속 라운드 propagation 조립 시 [`references/protocol.md`](references/protocol.md), ledger suppression이 필요하면 [`references/dismissal-ledger.md`](references/dismissal-ledger.md) | preflight에서는 추가 reference 없음. 이전 라운드 맥락과 selective propagation을 모두 끊어야 하는 시점에만 protocol을 확인한다. current changeset에 valid ledger가 있을 때만 dismissal-ledger를 확인한다 |
 | `MAX` modifier | 선택 mode 문서, [`references/da-domains.md`](references/da-domains.md) | Review Intensity를 건너뛰고 exhaustive 6-domain fan-out 조립 직전. `intensity-procedure.md`는 읽지 않는다 |
 | LITE/FULL reviewer fan-out | [`references/da-domains.md`](references/da-domains.md), [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/hardening-contract.md`](references/hardening-contract.md) | Step 2에서 실제 reviewer prompt/런타임을 조립할 때 |
 | codex exec fallback 또는 literal 재사용 위험 | [`../using-codex-exec/references/known-issues.md`](../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | native delegation이 거부되거나 codex exec 경로를 실제로 사용할 때 |
@@ -152,6 +154,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 6. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO/`split` 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
 7. Fresh perspective 보장 — 매 라운드마다 새 reviewer/Arbiter 실행 단위 (Codex: 새 native subagent thread, codex exec: 새 `codex exec` 프로세스).
 8. 의사결정·회귀 컨텍스트 조사 — 제거/단순화/되돌림/리팩터 변경이거나 git상 왕복 핫스팟 파일이면 Review Intensity와 무관하게 fail-closed로 과거 의사결정(commit/PR/issue + 있으면 CIR/ADR·로컬 세션 로그)을 조사해 회귀 재도입을 점검한다. 메인이 "의사결정 컨텍스트 팩"을 수집·주입하고 reviewer/Arbiter가 read-only 보강한다. git으로 버전관리되는 모든 저장소에서 동작하며 기록 관습에 의존하지 않는다 ([`references/decision-regression-audit.md`](references/decision-regression-audit.md)).
+9. Dismissal ledger는 exact match만 suppress — `fresh` anti-anchoring을 위해 이전 finding 본문/이전 transcript는 주입하지 않는다. Arbiter `NOT_AN_ISSUE` 또는 사용자 명시 제외 중 eligible 항목만 ignored local ledger에 기록하고, `NEEDS_MORE_INFO`는 자동 기각으로 저장하지 않는다 ([`references/dismissal-ledger.md`](references/dismissal-ledger.md)).
 
 ## 주의사항
 
