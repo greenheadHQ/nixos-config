@@ -126,4 +126,9 @@
   homeserver.smokeTest.enable = true; # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
   homeserver.opnix.enable = true; # 1Password SA token materialization + gh 인증
   homeserver.codexRemoteControl.enable = true; # Codex mobile remote-control app-server 회귀 방지
+  homeserver.claudeRemoteControl = {
+    enable = true; # Claude Code RC bridge version-drift 감시 (30분 timer)
+    capacity = 10; # 현행 운영값 — 자동 재시작 시 이 값으로 유지된다
+    name = "미니피시";
+  };
 }

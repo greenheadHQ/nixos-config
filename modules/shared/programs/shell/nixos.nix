@@ -46,11 +46,16 @@ in
     executable = true;
   };
 
+  # store 패키지로 배선 — NixOS systemd 모듈(claude-remote-control.nix)의
+  # claude-rc-maint가 같은 표현식을 같은 인자로 평가해 동일 산출물을 CLAUDE_RC_BIN
+  # 절대경로로 호출한다 (HM activation 산출물에 시스템 서비스가 의존하지 않도록).
   home.file.".local/bin/claude-rc" = {
-    source = pkgs.replaceVars "${nixosScriptsDir}/claude-rc.sh" {
-      flakePath = nixosConfigDefaultPath;
-    };
-    executable = true;
+    source = "${
+      import ../../../nixos/lib/claude-rc-package.nix {
+        inherit pkgs;
+        flakePath = nixosConfigDefaultPath;
+      }
+    }/bin/claude-rc";
   };
 
   # NixOS: mise prebuilt 바이너리 사용 (소스 빌드 방지)

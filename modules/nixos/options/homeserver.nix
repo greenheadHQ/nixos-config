@@ -201,6 +201,42 @@
     codexRemoteControl = {
       enable = lib.mkEnableOption "Codex mobile remote-control app-server regression guard";
     };
+
+    claudeRemoteControl = {
+      enable = lib.mkEnableOption "Claude Code Remote Control bridge version-drift guard";
+
+      # bridge 시작 옵션 — maint의 자동 재시작이 이 값들을 명시 전달한다.
+      # 선언하지 않으면 재시작 시 래퍼 기본값으로 조용히 되돌아가는 회귀가 생긴다.
+      permissionMode = lib.mkOption {
+        type = lib.types.enum [
+          "acceptEdits"
+          "bypassPermissions"
+          "default"
+          "dontAsk"
+          "plan"
+        ];
+        default = "bypassPermissions";
+        description = "Permission mode for bridge-spawned sessions";
+      };
+
+      capacity = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 5;
+        description = "Max concurrent remote sessions";
+      };
+
+      name = lib.mkOption {
+        type = lib.types.str;
+        default = "minipc";
+        description = "Bridge name shown in claude.ai / mobile app";
+      };
+
+      idleThresholdMinutes = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 30;
+        description = "Transcript inactivity window before a session counts as idle (restart gate)";
+      };
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -228,5 +264,6 @@
     ../programs/opnix # 1Password Service Account 시크릿 materialization
     ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지
+    ../programs/claude-remote-control.nix # Claude Code RC bridge version-drift 감시
   ];
 }
