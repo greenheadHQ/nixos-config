@@ -72,16 +72,19 @@ run_driver "codex-hook-fixtures" bash tests/test-codex-hook-fixtures.sh --no-liv
 #    실행되는 거부 경계 검증이 핵심이므로 PASS 집계는 유효).
 run_driver "codex-exec-supervised" bash tests/test-codex-exec-supervised.sh
 
-# 5) flake-check — 전 시스템 flake 평가 게이트(repo 전역). eval-tests의 선택적 평가가 강제하지
+# 5) skill-doc-sync — run-da 문서군의 manual sync contract 4쌍을 검증한다.
+run_driver "skill-doc-sync" bash tests/test-skill-doc-sync.sh
+
+# 6) flake-check — 전 시스템 flake 평가 게이트(repo 전역). eval-tests의 선택적 평가가 강제하지
 #    않는 darwin/nixos configuration toplevel 평가 오류까지 검출하므로 커버리지가 고유하다.
 run_driver "flake-check" nix flake check --no-build --all-systems
 
-# 6) statusline-bats — statusline Bats 테스트. nixpkgs#bats를 nix shell로 제공하고 TERM을 주입한다.
+# 7) statusline-bats — statusline Bats 테스트. nixpkgs#bats를 nix shell로 제공하고 TERM을 주입한다.
 run_driver "statusline-bats" \
   env TERM="${TERM:-xterm-256color}" nix shell --inputs-from . nixpkgs#bats --command \
   bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
 
-# 7) precommit-staged-snapshot — 어느 훅에도 연결되지 않은 수동 전용 드라이버를 통합에 포함한다.
+# 8) precommit-staged-snapshot — 어느 훅에도 연결되지 않은 수동 전용 드라이버를 통합에 포함한다.
 #    devShell 전체 도구(git/jq 등)를 요구하며, 미가용 시 스크립트가 자체적으로 "SKIP: ... not found"
 #    출력 + exit 0 처리하므로(tests/test-precommit-staged-snapshot.sh) 통합에 포함해도 환경 부재 시
 #    실패하지 않고, 위 run_driver가 이를 SKIP으로 분류한다.
