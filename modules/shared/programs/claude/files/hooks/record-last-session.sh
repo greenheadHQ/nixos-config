@@ -23,6 +23,11 @@ fi
 # shellcheck source=../lib/session-state.sh disable=SC1091
 . "$SESSION_STATE_LIB"
 
+HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
+[ -f "$HOOK_RUNTIME_LIB" ] || exit 0
+# shellcheck source=../lib/hook-runtime.sh
+. "$HOOK_RUNTIME_LIB"
+
 if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
@@ -37,11 +42,11 @@ if [ -z "$INPUT" ]; then
 fi
 
 # subagent 내부 Stop은 무시 (메인 턴만 추적)
-AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null) || true
+AGENT_ID=$(printf '%s' "$INPUT" | hook_parse_json_path '.agent_id // empty')
 [ -n "$AGENT_ID" ] && exit 0
 
-SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null) || true
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+SESSION_ID=$(printf '%s' "$INPUT" | hook_parse_session_id)
+CWD=$(printf '%s' "$INPUT" | hook_parse_json_path '.cwd // empty')
 
 if [ -z "$SESSION_ID" ] || [ -z "$CWD" ]; then
   exit 0
