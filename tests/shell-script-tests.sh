@@ -144,6 +144,12 @@ run_test "pushover helper missing credential skips curl" test_pushover_send_miss
 run_test "pushover helper sends expected fields" test_pushover_send_success_passes_expected_fields
 run_test "pushover helper passes optional sound" test_pushover_send_passes_optional_sound
 run_test "pushover helper curl failure returns nonzero" test_pushover_send_curl_failure_returns_1
+run_test "folder-actions lib source has no side effects" test_folder_actions_lib_source_is_side_effect_free
+run_test "folder-actions notify_failure uses Pushover helper boundary" test_folder_actions_notify_failure_uses_pushover_helper_boundary
+run_test "folder-actions drain_queue processes rescanned files in order" test_folder_actions_drain_queue_processes_rescanned_files_in_order
+run_test "folder-actions drain_queue defers unstable files" test_folder_actions_drain_queue_defers_unstable_files
+run_test "folder-actions quarantine_or_abort branches" test_folder_actions_quarantine_or_abort_branches
+run_test "upload-immich missing credential branch is quiet" test_upload_immich_missing_credential_branch_is_quiet_or_skipped
 run_test "karakeep fallback-sync success removes only matched queue URL" test_karakeep_fallback_sync_success_removes_only_matched_queue_url
 run_test "karakeep fallback-sync upload failure preserves queue" test_karakeep_fallback_sync_upload_failure_preserves_queue_and_records_notify_state
 run_test "karakeep fallback-sync GC removes expired state" test_karakeep_fallback_sync_gc_removes_only_expired_state_entries
