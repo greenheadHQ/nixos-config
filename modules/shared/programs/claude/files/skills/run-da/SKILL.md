@@ -1,8 +1,8 @@
 ---
 name: run-da
-argument-hint: "[for_plan|for_pr|both] [full] [fresh]"
+argument-hint: "[for_plan|for_pr|both] [MAX] [fresh]"
 description: |
-  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both. Modifier: full, fresh.
+  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both. Modifier: MAX, fresh.
   Trigger: 'DA', '피드백 루프', 'YAGNI 리뷰', '코드 리뷰 루프', 'run-da',
   'HALLUCINATION 관점에서 코드 검증', '설계 검토', '코드 품질 리뷰', '간단한 변경 DA 필요 여부', 'DA 필요', 'DA 생략'.
   Also trigger when the user asks whether a simple change can skip DA; this skill owns the SKIP/LITE/FULL decision path.
@@ -12,7 +12,7 @@ description: |
 # Devil's Advocate 피드백 루프
 
 기본 경로는 4개 reviewer bundle을 변경 규모에 맞게 병렬 실행하여 계획/코드를 엄격 리뷰한다.
-명시적 exhaustive override가 필요할 때만 `run-da ... full`로 8개 세부 도메인까지 확장한다.
+명시적 exhaustive override가 필요할 때만 `run-da ... MAX`로 6개 세부 도메인까지 확장한다.
 
 주의: Review Intensity 판단은 메인 LLM의 인라인 체크리스트다 (자유 추론 금지)
 
@@ -32,20 +32,20 @@ Review Intensity 판단은 메인 LLM이 [`references/intensity-rules.md`](refer
 | `both` | for_plan 전체 → 사용자의 계획 승인 → 구현 → 1차 커밋 → for_pr 전체 → 최종 커밋 후 push + PR 생성. 각 단계의 실행 강도는 Review Intensity에 따라 독립적으로 결정 |
 | *(비어있음)* | 사용자에게 모드 선택을 질문한다 |
 
-### `full` modifier
+### `MAX` modifier
 
-모드 뒤에 `full`을 추가하면 (예: `for_pr full`, `both full fresh`)
+모드 뒤에 `MAX`를 추가하면 (예: `for_pr MAX`, `both MAX fresh`)
 Review Intensity 판단을 건너뛰고 exhaustive override를 실행한다.
 
-| 구분 | 기본 동작 | `full` 동작 |
+| 구분 | 기본 동작 | `MAX` 동작 |
 |------|----------|------------|
-| 경중 판단 | 자동 수행 (SKIP/LITE/FULL) | 건너뜀 → exhaustive FULL 강제 |
-| fan-out | 판단 결과에 따라 0 / 선택 bundle / 4 reviewer bundles | 항상 8개 세부 도메인 |
+| 경중 판단 | 자동 수행 (SKIP/LITE/FULL) | 건너뜀 → exhaustive override 강제 |
+| fan-out | 판단 결과에 따라 0 / 선택 bundle / 4 reviewer bundles | 항상 6개 세부 도메인 |
 | 사용 시점 | 일반 | 사용자 명시적 exhaustive 요청, recall 민감도가 높은 변경, 예외적 고위험 diff |
 
 자동 판정의 FULL도 여전히 강한 기본 검토다. 차이는 fan-out뿐이다:
 - 자동 `FULL` = `Correctness`, `Design`, `Regression`, `Maintainability` 4 bundle
-- `full` modifier = 위 bundle을 8개 세부 도메인으로 확장한 exhaustive override
+- `MAX` modifier = 위 bundle을 6개 세부 도메인으로 확장한 exhaustive override
 
 ### `fresh` modifier
 
@@ -107,8 +107,9 @@ Review Intensity 판단을 건너뛰고 exhaustive override를 실행한다.
 기본 FULL path는 위 4개 reviewer bundle을 사용한다. 각 finding은 bundle 이름 아래에서
 세부 관점(`HALLUCINATION`, `SECURITY` 등)을 함께 표기한다.
 
-명시적 exhaustive override(`run-da ... full`)는 위 bundle을 다음 8개 세부 도메인으로 확장한다:
-`YAGNI`, `NGMI`, `HALLUCINATION`, `SECURITY`, `SIDE_EFFECT`, `CONSISTENCY`, `READABILITY`, `CLEAN_CODE`.
+명시적 exhaustive override(`run-da ... MAX`)는 위 bundle을 다음 6개 세부 도메인으로 확장한다:
+`HALLUCINATION`, `SECURITY`, `YAGNI`, `SIDE_EFFECT`, `CONSISTENCY`, `READABILITY`.
+`NGMI`와 `CLEAN_CODE` 관점은 기본 FULL bundle 내부에는 유지하되, 독립 exhaustive review unit으로는 띄우지 않는다.
 
 상세 프롬프트 템플릿과 출력 형식은 [`references/da-domains.md`](references/da-domains.md) 참조.
 

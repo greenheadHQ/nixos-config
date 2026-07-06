@@ -5,7 +5,7 @@ SKIP/LITE/FULL 절차(실행 방법)와 fail-closed 규칙은 [`intensity-proced
 
 해석 규칙:
 - 여기서 FULL은 4 reviewer bundle 기본 리뷰를 뜻하며, 기본 fan-out은 4 reviewer bundle이다.
-- 명시적 `full` modifier는 Review Intensity를 건너뛰고 exhaustive override(8개 세부 도메인)로 진입한다.
+- 명시적 `MAX` modifier는 Review Intensity를 건너뛰고 exhaustive override(6개 세부 도메인)로 진입한다.
 - policy-file 변경을 더 공격적으로 downscale하는 실험은 P1 범위다. 이번 P0에서는 현재 FULL safety rule을 유지한다.
 
 ## 판단 알고리즘
@@ -16,7 +16,7 @@ SKIP/LITE/FULL 절차(실행 방법)와 fail-closed 규칙은 [`intensity-proced
 
 | ID | 조건 | 채택 단계 |
 |----|------|----------|
-| `RULE-FULL-MODIFIER` | `full` modifier 인자가 존재 | FULL (Intensity 우회 + exhaustive override) |
+| `RULE-MAX-MODIFIER` | `MAX` modifier 인자가 존재 | MAX (Intensity 우회 + exhaustive override) |
 | `RULE-SECURITY` | 보안 관련 변경 (인증, 권한, 시크릿, 네트워크 노출, TLS, systemd 보안 옵션 삭제/완화, 파일 권한 mode 변경) | FULL |
 | `RULE-MODULE-SERVICE` | 새 모듈/서비스 추가, 서비스 enable 토글(enable=false→true 포함), 아키텍처/인터페이스 변경 | FULL |
 | `RULE-CONFIG-DEPENDENCY` | 설정/포트/환경변수/의존성/리소스 제한(메모리·CPU·타임아웃)/시스템 파라미터(커널·watchdog·부트) 변경 | FULL |

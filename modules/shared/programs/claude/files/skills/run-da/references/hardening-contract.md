@@ -51,7 +51,7 @@ Codex 세션에서 `spawn_agent`가 정책상 거부되면(예: `multi_agent=fal
 
 "같은 에이전트 컨텍스트 serial" 금지 — 메인 에이전트가 reviewer/Arbiter 프롬프트를 자기 컨텍스트에서 순차 실행하는 것은 위 "역할별 경계" 표의 메인 에이전트 금지 항목(`Arbiter 판정 대체`, `DA reviewer finding 직접 판정`)을 위반한다. fresh 독립 실행 단위를 유지해야 한다. Review Intensity는 본 금지의 예외다 — 검토 강도 판정은 메인 에이전트가 8 룰 체크리스트를 인라인으로 적용하는 것이 정상 경로이며, 별도 독립 process를 띄우지 않는다.
 
-자동 우회 금지 — `spawn_agent` 거부는 정책 의사표시다. `codex exec --full-auto`(workspace-write)로 조용히 우회하면 reviewer/Arbiter의 no-write 경계가 구조적으로 보장되지 않는다. 자동 subprocess fallback을 허용하기 전에 사용자 승인을 얻고, 실행 시 read-only sandbox를 강제한다 (명령 상세는 위 SSOT). (Review Intensity는 spawn 대상이 아니므로 본 fallback 절차에 포함되지 않는다.)
+자동 우회 금지 — `spawn_agent` 거부는 정책 의사표시다. `codex exec -s workspace-write`로 조용히 우회하면 reviewer/Arbiter의 no-write 경계가 구조적으로 보장되지 않는다. 자동 subprocess fallback을 허용하기 전에 사용자 승인을 얻고, 실행 시 read-only sandbox를 강제한다 (명령 상세는 위 SSOT). (Review Intensity는 spawn 대상이 아니므로 본 fallback 절차에 포함되지 않는다.)
 
 1. BLOCKED + 사용자 승인 대기 (기본): `spawn_agent` 거부 감지 시 현재 DA 라운드 중단, 사용자에게 "delegation 거부 감지 — codex exec subprocess fallback 승인?"을 보고한다. 승인 수단은 런타임별로 다음과 같이 취한다:
    - 질문 도구 지원 런타임 (Claude Code 세션, Codex 세션): 질문 도구로 즉시 승인 요청. 승인 시 같은 턴에서 바로 fallback 단계 진행.

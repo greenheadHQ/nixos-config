@@ -86,7 +86,7 @@ Threshold 숫자는 이 문서에서 재서술하지 않는다. `STABLE_MIN`/`ES
 - 후속 reviewer 입력: 다음 라운드에서도 raw transcript 전체를 브로드캐스트하지 않는다.
   열려 있는 finding 중 해당 bundle에 실질적으로 관련된 항목만 전달한다.
 - `fresh` modifier: selective propagation조차 끊는다. 이전 라운드 맥락을 전달하지 않는다.
-- `full` modifier: reviewer fan-out만 exhaustive로 확장할 뿐, propagation 기본값은 여전히 selective다.
+- `MAX` modifier: reviewer fan-out만 exhaustive로 확장할 뿐, propagation 기본값은 여전히 selective다.
 
 ## 합리화 방지 (Rationalization Prevention)
 
