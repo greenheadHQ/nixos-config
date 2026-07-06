@@ -113,6 +113,8 @@ if [ -z "$_DA_SID" ]; then
     _DA_SID="$(printf '%s' "$PWD" | shasum | head -c 8)"
   fi
 fi
+# 이전 실행 잔재 정리 (같은 세션 네임스페이스의 고아 baseline/DA_DIR)
+rm -rf /tmp/da-${_DA_SID}-audit-*(N)
 BASELINE_FILE=$(mktemp /tmp/da-${_DA_SID}-audit-baseline-XXXXXX)
 [ -f "$BASELINE_FILE" ] || { echo "missing BASELINE_FILE=$BASELINE_FILE"; exit 1; }
 # Sentinel header로 clean workspace의 0-byte baseline과 truncate-to-empty tamper를 구분한다
@@ -242,6 +244,8 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 ### Step 5: 종합 리포트 생성
 
 아래 "결과 형식"에 따라 종합 리포트를 사용자에게 제시한다.
+
+리포트 제시 후 `rm -rf "$DA_DIR"`로 이번 실행의 임시 디렉토리를 삭제한다 (`BASELINE_FILE`은 Step 4에서 이미 삭제됨). BLOCKED (VIOLATION)로 중단된 경우에는 진단 보존을 위해 삭제하지 않는다.
 
 ## 결과 형식
 

@@ -46,7 +46,9 @@ SKIP이어도 질문 도구 승인 전에는 완료가 아니며, 이 gate가 �
 
 ## 모드
 
-| `$ARGUMENTS` | 동작 |
+스킬 호출 인자의 첫 토큰이 모드다. 이후 토큰은 `MAX`/`fresh` modifier로 해석한다.
+
+| 모드 (호출 인자 첫 토큰) | 동작 |
 |--------------|------|
 | `for_plan` | 계획 단계 DA 1회 — 계획 파일 또는 대화 컨텍스트 대상 ([`modes/for_plan.md`](modes/for_plan.md)) |
 | `for_pr` | 구현 후 코드 DA 1회 — git diff 대상 ([`modes/for_pr.md`](modes/for_pr.md)) |
