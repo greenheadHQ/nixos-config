@@ -47,7 +47,7 @@ PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)(OPEN) 머지
 | 012 | claude 훅 hook-runtime 파서 채택 확대 | P3 | M | — | #949 | DONE (PR #985) |
 | 013 | Karakeep 파이프라인 헬퍼(fallback-sync·bridge) 테스트 | P3 | M | — | #950 | DONE (PR #989 — 전체실행+stub 방식, 대상 무수정) |
 | 014 | Karakeep CSP 전면 제거를 아카이브 경로로 한정 | P3 | M | — | #951 | DONE (PR #991 — 운영자 후속: nrs + 아카이브 렌더링·CSP 헤더 실측) |
-| 015 | folder-actions 공유 lib 특성화 테스트 (1단계) | P3 | L | 011 (soft) | #952 | TODO |
+| 015 | folder-actions 공유 lib 특성화 테스트 (1단계) | P3 | L | 011 (soft) | #952 | DONE (PR #998 — Darwin 전용 케이스는 Linux 러너 SKIP, Mac 실행은 운영자 선택) |
 | 016 | 홈서버 백업/복구 자세 설계 spike | P2 | M | — | #953 | DONE |
 | 017 | 유지보수 창 3작업 묶음 실행 계획서 | P3 | S | 005, 016 (hard) | #954 | DONE |
 | 018 | 하네스 추출 가능성 판정 spike | P3 | M | — | #955 | DONE (PR #992 — 판정: 조건부, 현시점 추출 가치 낮음) |
