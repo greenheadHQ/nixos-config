@@ -142,6 +142,71 @@ EOF
   assert_contains "$output" "excessive empty lines 1 건 잔존"
 }
 
+test_check_skill_noise_description_length_thresholds() {
+  local sandbox repo_root output warn_desc fail_desc
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  warn_desc="$(printf '%*s' 901 '' | tr ' ' a)"
+  printf -- '---\nname: demo\ndescription: %s\n---\nclean\n' "$warn_desc" \
+    > "$repo_root/.claude/skills/demo/SKILL.md"
+
+  output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh .claude/skills 2>&1)
+  assert_contains "$output" "[WARN]"
+  assert_contains "$output" "description 901자"
+  assert_contains "$output" "[PASS]"
+
+  fail_desc="$(printf '%*s' 1100 '' | tr ' ' a)"
+  printf -- '---\nname: demo\ndescription: |\n  %s\n---\nclean\n' "$fail_desc" \
+    > "$repo_root/.claude/skills/demo/SKILL.md"
+
+  if output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh .claude/skills 2>&1); then
+    fail "expected over-limit skill description to fail"
+  fi
+  assert_contains "$output" "[FAIL] demo/SKILL.md: description 1100자"
+  assert_contains "$output" "description=1"
+}
+
+test_check_skill_noise_multiline_bold_respects_protection() {
+  local sandbox repo_root output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  create_skill_noise_fixture_repo "$repo_root"
+
+  cat > "$repo_root/.claude/skills/demo/SKILL.md" <<'EOF'
+inline code keeps `**literal
+span**`
+
+```text
+**literal
+span**
+```
+EOF
+
+  output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh .claude/skills 2>&1)
+  assert_contains "$output" "[PASS]"
+
+  cat > "$repo_root/.claude/skills/demo/SKILL.md" <<'EOF'
+Intro **not
+
+bold** outro
+EOF
+
+  output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh .claude/skills 2>&1)
+  assert_contains "$output" "[PASS]"
+
+  cat > "$repo_root/.claude/skills/demo/SKILL.md" <<'EOF'
+Intro **two
+line** outro
+EOF
+
+  if output=$(cd "$repo_root" && bash scripts/ai/check-skill-noise.sh .claude/skills 2>&1); then
+    fail "expected unprotected multi-line bold to fail"
+  fi
+  assert_contains "$output" "bold 1 건 잔존"
+}
+
 test_check_skill_noise_worktree_rejects_external_symlink() {
   local sandbox repo_root external_dir output
   sandbox=$(new_sandbox)

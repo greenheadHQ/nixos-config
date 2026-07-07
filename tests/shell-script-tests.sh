@@ -132,6 +132,8 @@ run_test "check-skill-noise staged mode normalizes CRLF" test_check_skill_noise_
 run_test "check-skill-noise staged mode follows symlink projection" test_check_skill_noise_staged_follows_symlink_projection
 run_test "check-skill-noise staged mode rejects non-regular markdown" test_check_skill_noise_staged_rejects_non_regular_markdown
 run_test "check-skill-noise follows symlink skill projection" test_check_skill_noise_worktree_follows_symlink_projection
+run_test "check-skill-noise checks description length thresholds" test_check_skill_noise_description_length_thresholds
+run_test "check-skill-noise detects multi-line bold" test_check_skill_noise_multiline_bold_respects_protection
 run_test "check-skill-noise rejects external symlink skill projection" test_check_skill_noise_worktree_rejects_external_symlink
 run_test "warn-skill-consistency ignores managed plugin skill projection" test_warn_skill_consistency_ignores_managed_plugin_skill_projection
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
