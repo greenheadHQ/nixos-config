@@ -44,11 +44,11 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 ### Codex 세션 경로
 
 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`, `close_agent`)을 사용할 수 있으면
-Arbiter도 이를 기본 경로로 사용한다. (Review Intensity는 fan-out이 아니라 메인 LLM 인라인 체크리스트이므로 별도 경로가 없다.)
+Arbiter도 이를 기본 경로로 사용한다.
 
-- 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로 사용한다. (Review Intensity는 메인 LLM 인라인 체크리스트라 subagent가 적용되지 않는다.)
+- 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로 사용한다.
 - 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt/result 파일을 기본 경로로 요구하지 않는다.
-- Arbiter는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다. (Review Intensity는 메인 LLM 인라인 체크리스트라 본 계약이 적용되지 않는다.)
+- Arbiter는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다.
 - 결과는 `wait_agent`로 수신하고, timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 결과를 파싱한 뒤 completed thread를 `close_agent`로 닫는다.
 - completed thread는 `close_agent` 전까지 open-thread slot을 계속 점유한다.
   current session cap을 넘기는 fan-out/retry 전에 먼저 닫는다.
@@ -83,7 +83,7 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 - 각 review unit은 독립 subprocess (fresh 판정 경계는 프로세스 경계로 보존).
 - 사용자 승인 후에만 실행 ([`hardening-contract.md`](hardening-contract.md) "Delegation fallback" 섹션 참조).
 
-role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정한 뒤 guard와 함께 실행한다. standard/strong profile의 model/effort 값은 literal로 고정한다. profile 이름·의미의 SSOT는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 불릿이며, 값이 바뀌면 아래 literal도 함께 갱신해야 한다 (문서-코드 manual sync contract — selective consistency harness와 동일한 패턴). 현재 effort 매핑: `medium` = standard profile (reviewer/auditor), `high` = strong profile (Arbiter), `xhigh` = `config.toml` `model_reasoning_effort` 기본값 (보존; Arbiter 호출 경로에서만 `-c`로 `high`로 다운그레이드). Review Intensity는 메인 LLM 인라인 체크리스트이므로 매핑 대상이 아니다.
+role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정한 뒤 guard와 함께 실행한다. standard/strong profile의 model/effort 값은 literal로 고정한다. profile 이름·의미의 SSOT는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 불릿이며, 값이 바뀌면 아래 literal도 함께 갱신해야 한다 (문서-코드 manual sync contract — selective consistency harness와 동일한 패턴). 현재 effort 매핑: `medium` = standard profile (reviewer/auditor), `high` = strong profile (Arbiter), `xhigh` = `config.toml` `model_reasoning_effort` 기본값 (보존; Arbiter 호출 경로에서만 `-c`로 `high`로 다운그레이드).
 
 reviewer / Auditor (standard profile):
 
@@ -101,8 +101,6 @@ cat "$DA_DIR/$UNIT.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbo
   -c model="gpt-5.5" -c model_reasoning_effort="medium" \
   -o "$DA_DIR/$UNIT-result.md" - 2>"$DA_DIR/$UNIT-stderr.log"
 ```
-
-Review Intensity는 fan-out 명령이 없다 — 메인 LLM 인라인 체크리스트(`intensity-rules.md`의 8 룰 기계적 적용)이므로 별도 subprocess 명령이 적용되지 않는다. 절차는 [`intensity-procedure.md`](intensity-procedure.md) SSOT.
 
 Arbiter (strong profile):
 
@@ -124,7 +122,7 @@ Degraded mode 계약 (fallback 경로 한정): `--sandbox read-only` 강제로 �
 
 ### Codex 세션 경로
 
-1. Arbiter용 fresh subagent는 strong review profile로 띄운다. (Review Intensity는 메인 LLM 인라인 체크리스트이므로 별도 subagent를 띄우지 않는다.)
+1. Arbiter용 fresh subagent는 strong review profile로 띄운다.
 2. 프롬프트에는 관련 reference 문서를 직접 읽고, review-only/no-write contract를 따르며, 파일을 수정하지 말라고 명시한다.
 3. `wait_agent`로 결과를 받는다. timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다.
 4. 결과 파싱 후 completed thread를 `close_agent`로 닫는다.

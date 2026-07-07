@@ -1,12 +1,13 @@
 ---
 name: run-da
-argument-hint: "[for_plan|for_pr|both] [MAX] [fresh]"
+argument-hint: "[for_plan|for_pr|both|audit] [MAX] [fresh]"
 description: |
-  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both. Modifier: MAX, fresh.
+  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both, audit. Modifier: MAX, fresh.
   Trigger: 'DA', '피드백 루프', 'YAGNI 리뷰', '코드 리뷰 루프', 'run-da',
-  'HALLUCINATION 관점에서 코드 검증', '설계 검토', '코드 품질 리뷰', '간단한 변경 DA 필요 여부', 'DA 필요', 'DA 생략'.
+  'HALLUCINATION 관점에서 코드 검증', '설계 검토', '코드 품질 리뷰', '간단한 변경 DA 필요 여부', 'DA 필요', 'DA 생략',
+  '사이드이펙트 조사', '회귀 조사', '회귀 감사', '병렬 감사'.
   Also trigger when the user asks whether a simple change can skip DA; this skill owns the SKIP/LITE/FULL decision path.
-  NOT for PR/AI review-comment HALLUCINATION classification (use review-pr-feedback). NOT for PR 코멘트 (use review-pr-feedback). NOT for 전수조사 (use parallel-audit). NOT for DA session log/statistics/verdict 분포 정량 분석 (use analyzing-da-sessions, 사용자 명시 호출 전용).
+  NOT for PR/AI review-comment HALLUCINATION classification (use review-pr-feedback). NOT for PR 코멘트 (use review-pr-feedback). NOT for 일반 전수조사/코드베이스 조사 (스킬 없이 직접 수행). NOT for DA session log/statistics/verdict 분포 정량 분석 (use analyzing-da-sessions, 사용자 명시 호출 전용).
 ---
 
 # Devil's Advocate 피드백 루프
@@ -46,11 +47,14 @@ SKIP이어도 질문 도구 승인 전에는 완료가 아니며, 이 gate가 �
 
 ## 모드
 
-| `$ARGUMENTS` | 동작 |
+스킬 호출 인자의 첫 토큰이 모드다. 이후 토큰은 `MAX`/`fresh` modifier로 해석한다.
+
+| 모드 (호출 인자 첫 토큰) | 동작 |
 |--------------|------|
 | `for_plan` | 계획 단계 DA 1회 — 계획 파일 또는 대화 컨텍스트 대상 ([`modes/for_plan.md`](modes/for_plan.md)) |
 | `for_pr` | 구현 후 코드 DA 1회 — git diff 대상 ([`modes/for_pr.md`](modes/for_pr.md)) |
 | `both` | for_plan 전체 → 사용자의 계획 승인 → 구현 → 1차 커밋 → for_pr 전체 → 최종 커밋 후 push + PR 생성. 각 단계의 실행 강도는 Review Intensity에 따라 독립적으로 결정 |
+| `audit` | 일회성 사이드이펙트/회귀 감사 — 6 auditor bundle 병렬, Review Intensity 우회, 1 round 보고 후 종료 ([`modes/audit.md`](modes/audit.md)) |
 | *(비어있음)* | 사용자에게 모드 선택을 질문한다 |
 
 ### `MAX` modifier
@@ -67,6 +71,8 @@ Review Intensity 판단을 건너뛰고 exhaustive override를 실행한다.
 자동 판정의 FULL도 여전히 강한 기본 검토다. 차이는 fan-out뿐이다:
 - 자동 `FULL` = `Correctness`, `Design`, `Regression`, `Maintainability` 4 bundle
 - `MAX` modifier = 위 bundle을 6개 세부 도메인으로 확장한 exhaustive override
+
+`audit` 모드에서 `MAX`는 기본 6 auditor bundle을 10개 세부 관점으로 확장한다. audit는 Review Intensity를 항상 우회하므로 `MAX`의 의미는 fan-out 확장뿐이다 ([`modes/audit.md`](modes/audit.md) 참조).
 
 ### `fresh` modifier
 
@@ -104,6 +110,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 | `for_plan` | [`modes/for_plan.md`](modes/for_plan.md), [`references/intensity-procedure.md`](references/intensity-procedure.md) | mode 확정 후 Step 0 실행 시 |
 | `for_pr` | [`modes/for_pr.md`](modes/for_pr.md), [`modes/for_plan.md`](modes/for_plan.md), [`references/intensity-procedure.md`](references/intensity-procedure.md) | mode 확정 후 Step 0 실행 시. `for_pr`은 delta 문서이므로 `for_plan` 공통 절차도 함께 읽는다 |
 | `both` | [`modes/for_plan.md`](modes/for_plan.md) → 사용자 계획 승인 후 [`modes/for_pr.md`](modes/for_pr.md) + [`modes/for_plan.md`](modes/for_plan.md) | 각 phase 진입 직전에만 해당 mode 문서를 읽는다 |
+| `audit` | [`modes/audit.md`](modes/audit.md) | mode 확정 후 즉시. Review Intensity 우회이므로 `intensity-procedure.md`는 읽지 않는다 |
 | `fresh` modifier | 이 `SKILL.md`; 후속 라운드 propagation 조립 시 [`references/protocol.md`](references/protocol.md), ledger suppression이 필요하면 [`references/dismissal-ledger.md`](references/dismissal-ledger.md) | preflight에서는 추가 reference 없음. 이전 라운드 맥락과 selective propagation을 모두 끊어야 하는 시점에만 protocol을 확인한다. current changeset에 valid ledger가 있을 때만 dismissal-ledger를 확인한다 |
 | `MAX` modifier | 선택 mode 문서, [`references/da-domains.md`](references/da-domains.md) | Review Intensity를 건너뛰고 exhaustive 6-domain fan-out 조립 직전. `intensity-procedure.md`는 읽지 않는다 |
 | LITE/FULL reviewer fan-out | [`references/da-domains.md`](references/da-domains.md), [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/hardening-contract.md`](references/hardening-contract.md) | Step 2에서 실제 reviewer prompt/런타임을 조립할 때 |
@@ -148,7 +155,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 1. Review Intensity는 메인 LLM 인라인 체크리스트다 — 메인 LLM이 모든 룰을 평가한 표를 기록하고 first-match로 단계를 채택한다. 자유 추론 금지. fail-closed rule group(보안/모듈/설정·의존성) 매치/불확실 시 강한 검토 fail-closed ([`references/intensity-procedure.md`](references/intensity-procedure.md)).
 2. Single-writer / main-agent-only — tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 메인 에이전트 소유. DA reviewer/Arbiter는 위임 금지 ([`references/hardening-contract.md`](references/hardening-contract.md) 역할별 경계). Review Intensity 인라인 판정은 메인 에이전트의 정상 경로다.
-3. Conservative wait — `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다. (Review Intensity는 인라인 체크리스트라 wait 대상 아님.)
+3. Conservative wait — `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다.
 4. PoC 의무화 — DA가 위반을 지적하면 구체적 파일:줄 또는 계획 항목 번호를 제시. 증거 없는 추상적 우려는 Arbiter가 NOT_AN_ISSUE로 판정한다.
 5. CONFIRMED_ISSUE 자동 반영 — Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동 반영하되, review phase 중 patch/edit/apply_patch, write-mode formatter, generated output 변경은 금지한다. confirmed 항목은 write phase에서 batch로 반영하며, CRITICAL 심각도는 다음 outer round 진행 차단 후 write phase 첫 항목으로 처리한다.
 6. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO/`split` 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
@@ -160,7 +167,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
 - Codex 세션 경로에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
-- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑). Review Intensity는 별도 process가 아니라 메인 LLM 인라인 체크리스트.
+- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑).
 - codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행되어 코드/계획 write를 read-only sandbox로 구조적으로 차단한다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
@@ -170,7 +177,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 이 스킬이 구조적으로 보장하지 않는 경계. 수용 가능한 근사로 운영하되, 구조적 enforcement는 별도 follow-up 범위다.
 
-1. `spawn_agent` per-child read-only sandbox 부재: Codex `spawn_agent` API는 자식 에이전트에 read-only sandbox를 구조적으로 강제할 수 없다 (codex-cli 0.124.0 기준 `--ignore-user-config`, `--ephemeral`, `--sandbox` 전역 옵션만 존재, per-child flag 없음). reviewer/Arbiter의 "읽기 전용" 경계는 프롬프트 지시 + 사후 diff 점검으로만 운영한다. 자식이 구조적으로 write를 못 하게 막지는 않는다. (Review Intensity는 spawn 대상이 아니므로 본 한계가 적용되지 않는다.)
+1. `spawn_agent` per-child read-only sandbox 부재: Codex `spawn_agent` API는 자식 에이전트에 read-only sandbox를 구조적으로 강제할 수 없다 (codex-cli 0.124.0 기준 `--ignore-user-config`, `--ephemeral`, `--sandbox` 전역 옵션만 존재, per-child flag 없음). reviewer/Arbiter의 "읽기 전용" 경계는 프롬프트 지시 + 사후 diff 점검으로만 운영한다. 자식이 구조적으로 write를 못 하게 막지는 않는다.
 
    연관 한계 (project config MCP 차단 불가): `--ignore-user-config`는 `$CODEX_HOME/config.toml` 로드만 차단하고, **cwd 기반 project config (`.codex/config.toml`의 `[mcp_servers.*]`)는 차단하지 않는다**. 현재 worktree에 project-scoped MCP connector가 있으면, Delegation fallback subprocess가 repo root에서 실행될 때 그 surface가 reviewer/Arbiter에게 남을 수 있다. 완전 차단이 필요하면 `codex exec -C <non-repo-scratch-dir>`로 cwd를 project config 없는 디렉토리로 이동시키는 별도 Non-goal 범위 follow-up이 필요하다.
 2. push / PR / comment 작성은 네트워크·auth 정책 의존: `for_pr` 마지막 단계 `push`, `both` 마지막 단계 `push + PR 생성`, PR 코멘트 게시 형식은 네트워크 가능 환경 + GitHub auth 전제. `sandbox_mode=danger-full-access` 또는 GitHub 커넥터 경로에서만 자동 실행한다. 다른 샌드박스 모드에서는 해당 단계를 명시적 사용자 승인 후 수행하거나, 메인 에이전트가 사용자에게 위임한다.

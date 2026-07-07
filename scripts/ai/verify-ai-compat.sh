@@ -11,10 +11,12 @@ TARGET_SKILLS_DIR="$REPO_ROOT/.agents/skills"
 SHARED_SKILLS_DIR="$REPO_ROOT/modules/shared/programs/claude/files/skills"
 CODEX_GLOBAL_SKILLS_DIR="$HOME/.codex/skills"
 CLAUDE_GLOBAL_SKILLS_DIR="$HOME/.claude/skills"
+# shellcheck disable=SC2034  # sourced lib(scripts/ai/lib/host-state-checks.sh)가 소비하는 전역
 REPO_ROOT_REAL="$(readlink -f "$REPO_ROOT" 2>/dev/null || printf '%s' "$REPO_ROOT")"
 GIT_COMMON_DIR="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
 MAIN_REPO_ROOT=""
 if [ -n "$GIT_COMMON_DIR" ]; then
+  # shellcheck disable=SC2034  # sourced lib(scripts/ai/lib/host-state-checks.sh)가 소비하는 전역
   MAIN_REPO_ROOT="$(cd "$GIT_COMMON_DIR/.." 2>/dev/null && pwd -P || true)"
 fi
 
@@ -28,7 +30,6 @@ EXPECTED_EXPOSED=(
   create-issue
   create-pr
   issuing-codex-pairing-code
-  parallel-audit
   playwright-cli
   review-pr-feedback
   run-da
@@ -377,34 +378,29 @@ require_contract_text \
   "runtime mapping pointer to authorization contract"
 
 require_contract_text \
-  "modules/shared/programs/claude/files/skills/parallel-audit/SKILL.md" \
-  '$parallel-audit' \
-  "parallel-audit invocation anchor"
+  "modules/shared/programs/claude/files/skills/run-da/modes/audit.md" \
+  '$run-da audit' \
+  "run-da audit invocation anchor"
 
 require_contract_text \
-  "modules/shared/programs/claude/files/skills/parallel-audit/SKILL.md" \
+  "modules/shared/programs/claude/files/skills/run-da/modes/audit.md" \
   "auditor bundle 범위" \
-  "parallel-audit auditor bundle authorization scope"
+  "run-da audit auditor bundle authorization scope"
 
 require_contract_text \
-  "modules/shared/programs/claude/files/skills/parallel-audit/SKILL.md" \
+  "modules/shared/programs/claude/files/skills/run-da/modes/audit.md" \
   "explicit delegation" \
-  "parallel-audit explicit delegation anchor"
+  "run-da audit explicit delegation anchor"
 
 require_contract_text \
-  "modules/shared/programs/claude/files/skills/parallel-audit/SKILL.md" \
+  "modules/shared/programs/claude/files/skills/run-da/modes/audit.md" \
   "hardening-contract.md#skill-internal-fan-out-authorization" \
-  "parallel-audit hardening contract pointer"
+  "run-da audit hardening contract pointer"
 
 require_contract_text \
   "AGENTS.override.md" \
   '$run-da' \
   "AGENTS.override mentions run-da"
-
-require_contract_text \
-  "AGENTS.override.md" \
-  '$parallel-audit' \
-  "AGENTS.override mentions parallel-audit"
 
 require_contract_text \
   "AGENTS.override.md" \

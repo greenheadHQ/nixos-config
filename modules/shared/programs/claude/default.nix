@@ -219,10 +219,6 @@ in
     ".claude/skills/write-handoff".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/write-handoff";
 
-    # parallel-audit 스킬 (user-scope)
-    ".claude/skills/parallel-audit".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/parallel-audit";
-
     # playwright-cli 스킬 (user-scope)
     ".claude/skills/playwright-cli".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/playwright-cli";
