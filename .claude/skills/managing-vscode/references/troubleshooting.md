@@ -71,6 +71,22 @@ mdls -name kMDItemCFBundleIdentifier ~/Applications/Home\ Manager\ Apps/Visual\ 
 # 불일치 시 modules/darwin/programs/vscode/default.nix의 vscodeBundleId 수정
 ```
 
+### vscode:// 링크 클릭이 VSCode가 아닌 Finder로 열림
+
+증상: statusline 등에서 `vscode://` 링크를 클릭했는데 VSCode가 열리지 않고 Finder나 다른 fallback 핸들러가 실행됨.
+
+원인: macOS LaunchServices DB의 VSCode URL scheme handler 등록이 stale 상태. 파일 확장자 기본 앱 매핑(`duti`)과 별개로, `.app` bundle의 `CFBundleURLTypes` 재등록이 필요함.
+
+해결: `modules/darwin/programs/vscode/default.nix`의 `home.activation.refreshVSCodeLaunchServices`가 `nrs` 시 Home Manager Apps trampoline을 `lsregister -f`로 재등록합니다.
+
+진단:
+
+```bash
+rg -n "refreshVSCodeLaunchServices|lsregister" modules/darwin/programs/vscode/default.nix
+```
+
+수동 확인 후에도 계속 Finder로 빠지면 `nrs`를 재실행하고 VSCode 앱이 `~/Applications/Home Manager Apps/Visual Studio Code.app`에 존재하는지 확인합니다.
+
 ### darwin-rebuild 시 setupLaunchAgents에서 멈춤
 
 `nrs` 실행 시 `Activating setVSCodeAsDefaultEditor` 후 `setupLaunchAgents`에서 멈추는 경우:

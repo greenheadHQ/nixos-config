@@ -64,8 +64,9 @@ rm -rf .git/rr-cache
 | `modules/shared/programs/git/default.nix` | Git + delta 설정 |
 | `modules/shared/programs/shell/default.nix` | 동적 side-by-side 제어 (.zshenv + precmd) |
 | `modules/shared/programs/lazygit/default.nix` | lazygit 설정 (delta pager 통합) |
-| `$HOME/.gitconfig` | 생성된 Git/delta 설정 (Nix 관리) |
-| `~/Library/Application Support/lazygit/config.yml` | 생성된 lazygit 설정 (Nix 관리, macOS) |
+| `~/.config/git/config` | 생성된 Git/delta 설정 (Home Manager 관리) |
+| `$HOME/.gitconfig` | 수동 Git 설정 위치 (존재하면 HM 설정과 병합되어 충돌 가능) |
+| `~/Library/Application Support/lazygit/config.yml` (macOS) / `~/.config/lazygit/config.yml` (Linux) | 생성된 lazygit 설정 (Nix 관리) |
 
 ## 핵심 절차
 

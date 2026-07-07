@@ -36,11 +36,11 @@ Prefix: `Ctrl+b`
 | 단축키       | 기능                             |
 | ------------ | -------------------------------- |
 | `prefix + r` | 설정 리로드 (`~/.config/tmux/tmux.conf`) |
-| `prefix + a` | 도움말 (사용 가능한 단축키 표시) |
+| `prefix + C` | cheatsheet 팝업                  |
 | `prefix + s` | 세션 선택                        |
 | `prefix + ,` | 창 이름 변경                     |
 | `prefix + $` | 세션 이름 변경                   |
-| `prefix + P` | Pane 제목 설정                   |
+| `prefix + I` | Pane 제목 설정                   |
 
 ---
 
@@ -209,4 +209,3 @@ tmux attach -t session-name
 # 세션 분리 (tmux 내에서)
 prefix + d
 ```
-

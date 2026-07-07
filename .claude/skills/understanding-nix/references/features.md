@@ -159,22 +159,22 @@ regexes = [
 
 > 주의: 실제 키를 `...EXAMPLE` 형태로 위장하면 탐지를 우회할 수 있으므로, PR 리뷰 시 주의가 필요합니다.
 
-eval-tests (E2E 보안 검증):
+eval-tests (E2E 보안/intent 검증):
 
 `nix eval --impure --file tests/eval-tests.nix`로 최종 NixOS config 속성을 직접 검사합니다. Nix lazy evaluation 덕분에 ~1.2초에 완료됩니다.
 
-검증 항목 (20개):
-- 포트 충돌 없음 (homeserver.*.port 고유성)
-- 컨테이너 포트 localhost-only (127.0.0.1: 접두사 강제)
-- extraOptions에 -p/--publish/-P 우회 노출 금지
-- --network=host allowlist 강제 (현재: uptime-kuma만)
-- host network 컨테이너의 listen address 검증 (UPTIME_KUMA_HOST=127.0.0.1)
-- Caddy virtualHost listenAddresses = Tailscale IP 전용
-- Caddy globalConfig default_bind = Tailscale IP
-- openssh openFirewall 검증
-- 방화벽 정책 (allowedTCPPorts=[], trustedInterfaces allowlist, 인터페이스별 포트 없음 등)
-- Tailscale CGNAT IP 범위 독립 검증 (100.64.0.0/10)
-- 수동 nftables 규칙(extraInputRules/extraForwardRules) 없음
+주요 검증 카테고리:
+- NixOS 네트워크 노출 경계: homeserver 포트 충돌, 컨테이너 localhost 바인딩, publish 우회, host network allowlist
+- Caddy/Tailscale 경계: virtualHost listenAddresses, default_bind, bind 우회, subdomain vhost 완전성
+- SSH/방화벽 경화: openssh 설정, trustedInterfaces, TCP/UDP 포트, 인터페이스별 포트, 수동 규칙 인젝션
+- 1Password/opnix materialization: vault/account 상수, SA token 권한, tmpfs secret 경로
+- Darwin intent: expected host, sudo/Touch ID, Dock/keyboard 설정, zsh compinit 단일 정본
+
+현행 전체 테스트는 `tests/eval-tests.nix`가 정본입니다. 건수와 세부 항목은 문서에 복사하지 않고 이 파일에서 확인합니다.
+
+```bash
+rg -n 'name = "Test' tests/eval-tests.nix
+```
 
 ```bash
 # 직접 실행
@@ -241,51 +241,39 @@ NixOS 전용 alias:
 | `nrh`         | 최근 10개 세대 히스토리 (`nix-env` alias) |
 | `nrh-all`     | 전체 세대 히스토리 (`nix-env` alias) |
 
-`nrs` / `nrs --offline` 동작 흐름 (macOS 전용):
+`nrs` / `nrs --offline` 공통 동작:
 
 ```
-1. darwin-rebuild build + nvd diff (미리보기)
+1. 플랫폼별 rebuild build + nvd diff (미리보기)
    └── 빌드 실패 시 즉시 종료 (에러 처리)
 
-2. NO_CHANGES 판정 (store 경로 비교)
-   ├── 변경 없음 (NO_CHANGES=true) → 스킵 + --force 힌트 출력 후 종료
-   │   └── nrs --force 사용 시 스킵 우회 → 3번부터 계속 실행
+2. 공통 preview_changes()에서 NO_CHANGES 판정 (./result와 /run/current-system store 경로 비교)
+   ├── 변경 없음 (NO_CHANGES=true) → activation/switch 스킵
+   │   └── nrs --force 사용 시 스킵 우회
    └── 변경 있음 (NO_CHANGES=false) → 계속 실행
 
-3. launchd 에이전트 정리 (setupLaunchAgents 멈춤 방지)
-   └── com.green.* 에이전트 동적 탐색 → bootout + plist 삭제
+3. worktree symlink guard/relink 준비
+   └── 워크트리 빌드 시 out-of-store symlink 충돌을 피하도록 restore/relink 흐름 사용
 
-4. darwin-rebuild switch 실행
-   └── --offline 플래그 (nrs --offline만)
+4. 플랫폼별 switch 실행
+   └── macOS: darwin-rebuild switch
+   └── NixOS: nixos-rebuild switch (exit code 4는 transient unit failure로 경고 처리)
 
-5. Hammerspoon 완전 재시작 (HOME 오염 방지)
-   └── killall → sleep 1 → open -a Hammerspoon
-
-6. 빌드 아티팩트 정리
+5. 빌드 아티팩트 정리
    └── ./result* 심볼릭 링크 삭제
 ```
 
-`nrs` / `nrs --offline` 동작 흐름 (NixOS 전용):
+플랫폼별 추가 처리:
 
-```
-1. 외부 패키지 버전 갱신 (update_external_packages)
-   └── fetchurl 기반 패키지 업데이트 (--offline 시 스킵)
-
-2. nixos-rebuild build + nvd diff (미리보기)
-   └── 빌드 실패 시 즉시 종료 (에러 처리)
-
-3. nixos-rebuild switch 실행
-   └── --offline 플래그 (nrs --offline만)
-   └── exit code 4 (일시적 unit 실패)는 경고만 출력 후 계속
-
-4. 빌드 아티팩트 정리
-   └── ./result* 심볼릭 링크 삭제
-```
+- macOS: switch 전 launchd agent 정리, cask conflict preflight, switch 후 Hammerspoon 재시작
+- NixOS: 소스 빌드 preflight, rebuild lock, switch 후 relink/restore
+- worktree relink의 운영 전제는 repo 루트 `CLAUDE.md`의 빌드 절과 `modules/shared/scripts/lib/rebuild/relink.sh`를 기준으로 한다.
 
 구현:
 
 - macOS 스크립트: `modules/darwin/scripts/nrs.sh`, `modules/darwin/scripts/nrp.sh`, `modules/darwin/scripts/nrh.sh`
 - NixOS 스크립트: `modules/nixos/scripts/nrs.sh`, `modules/nixos/scripts/nrp.sh`
+- 공통 preview/NO_CHANGES 판정: `modules/shared/scripts/lib/rebuild/preview.sh`
 - 설치 위치: `~/.local/bin/nrs`, `~/.local/bin/nrp` (macOS는 `~/.local/bin/nrh` 추가)
 - PATH에 `~/.local/bin`이 포함되어 직접 실행 가능 (`nrs`, `nrs --offline`)
 
