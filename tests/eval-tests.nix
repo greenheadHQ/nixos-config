@@ -436,11 +436,50 @@ let
   opnixGithubPatPathMatch = builtins.match "/run/opnix/([^/]+)/github-pat" opnixGithubPat.path;
   opnixGithubPatExpectedOwner =
     if opnixGithubPatPathMatch == null then null else builtins.elemAt opnixGithubPatPathMatch 0;
+  opnixTossClientId = opnixCfg.secrets.tossClientId;
+  opnixTossClientSecret = opnixCfg.secrets.tossClientSecret;
   opnixTokenSecret = nixosCfg.age.secrets.opnix-service-account-token;
   opnixTmpfilesRules = nixosCfg.systemd.tmpfiles.rules;
+  opnixMaterializedUser = opnixGithubPat.owner;
+  tossAuthScript = builtins.readFile ../modules/shared/scripts/lib/toss/auth.sh;
+  isUserOwnedOpnixSecret =
+    secret: fileName:
+    secret.path == "/run/opnix/${opnixMaterializedUser}/${fileName}"
+    && secret.owner == opnixMaterializedUser
+    && secret.group == "users"
+    && secret.mode == "0400";
 
   # Darwin sudo.extraConfig 정규화 헬퍼
   splitLines = text: builtins.filter builtins.isString (builtins.split "\n" text);
+
+  tossAuthLines = splitLines tossAuthScript;
+  extractTossOpFallback =
+    varName:
+    let
+      prefix = "${varName}=\"\${${varName}:-";
+      suffix = "}\"";
+      prefixLen = builtins.stringLength prefix;
+      suffixLen = builtins.stringLength suffix;
+      matchingLines = builtins.filter (
+        line:
+        let
+          lineLen = builtins.stringLength line;
+        in
+        lineLen >= prefixLen + suffixLen
+        && builtins.substring 0 prefixLen line == prefix
+        && builtins.substring (lineLen - suffixLen) suffixLen line == suffix
+      ) tossAuthLines;
+      line =
+        if builtins.length matchingLines == 1 then
+          builtins.elemAt matchingLines 0
+        else
+          builtins.throw "auth.sh ${varName} fallback line must exist exactly once";
+      lineLen = builtins.stringLength line;
+    in
+    builtins.substring prefixLen (lineLen - prefixLen - suffixLen) line;
+
+  expectedTossClientIdRef = "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientIdField}";
+  expectedTossClientSecretRef = "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientSecretField}";
 
   isBlankLine = line: builtins.match "[[:space:]]*" line != null;
   isKnownDarwinSudoMetadataLine =
@@ -831,6 +870,19 @@ let
       name = "Test 5b-3: constants.onePassword.account가 \"my.1password.com\"이어야 함";
       cond = constants.onePassword.account == "my.1password.com";
     }
+    {
+      name = "Test 5b-3a: constants.onePassword.tossOpenApi item/field 좌표가 토스증권 Open API와 일치해야 함";
+      cond =
+        constants.onePassword.tossOpenApi.itemName == "토스증권 Open API"
+        && constants.onePassword.tossOpenApi.clientIdField == "자격 증명"
+        && constants.onePassword.tossOpenApi.clientSecretField == "Secret Key";
+    }
+    {
+      name = "Test 5b-3b: auth.sh Toss op reference fallback이 constants.onePassword.tossOpenApi SSOT와 일치해야 함";
+      cond =
+        extractTossOpFallback "TOSS_OP_CLIENT_ID_REF" == expectedTossClientIdRef
+        && extractTossOpFallback "TOSS_OP_CLIENT_SECRET_REF" == expectedTossClientSecretRef;
+    }
     # ── opnix SA token materialization 보안 회귀 핀 ──
     {
       name = "Test 5b-4: homeserver.opnix.enable 시 services.onepassword-secrets.enable이 true여야 함";
@@ -848,6 +900,22 @@ let
       name = "Test 5b-6: opnix githubPat reference가 op://Automation/github-pat/token이어야 함";
       cond =
         opnixGithubPat.reference == "op://${constants.onePassword.vaults.automation}/github-pat/token";
+    }
+    {
+      name = "Test 5b-6a: opnix Toss credentials가 /run/opnix/<user>/toss-client-*에 user-owned 0400으로 materialize되어야 함";
+      cond =
+        nixosCfg.homeserver.toss.enable
+        && isUserOwnedOpnixSecret opnixTossClientId "toss-client-id"
+        && isUserOwnedOpnixSecret opnixTossClientSecret "toss-client-secret";
+    }
+    {
+      name = "Test 5b-6b: opnix Toss references가 Automation vault의 토스증권 Open API item field와 일치해야 함";
+      cond =
+        opnixTossClientId.reference
+        == "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientIdField}"
+        &&
+          opnixTossClientSecret.reference
+          == "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientSecretField}";
     }
     {
       # opnix-secrets.service가 tokenFile을 0640 root:onepassword-secrets로 강제하므로 agenix도 동일 선언.

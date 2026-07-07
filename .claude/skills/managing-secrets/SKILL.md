@@ -47,13 +47,15 @@ Secret 형식은 shell 변수 (`KEY=value`)로, 사용처에서 `source`로 로�
 
 ### Routing Matrix (사용주체 × Storage × Vault × Tag)
 
-agenix(.age 정적)와 1Password(동적 github-pat / SSH device key / SA token)가 공존한다. 사용주체별 라우팅:
+agenix(.age 정적)와 1Password(동적 github-pat / 토스증권 OpenAPI credential / SSH device key / SA token)가 공존한다. 사용주체별 라우팅:
 
 | 사용주체 | Storage | Vault | Tag / 식별자 |
 |----------|---------|-------|--------------|
 | Mac 무인 gh 인증 (gh-pat-mac → github-pat 캐시) | 1Password | Automation | `github-pat` (`op://Automation/github-pat/token`) |
+| Mac toss CLI token 발급 | 1Password | Automation | `토스증권 Open API` (`op://Automation/토스증권 Open API/자격 증명`, `op://Automation/토스증권 Open API/Secret Key`) |
 | Mac SA token (gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 사용) | agenix → 1Password SA | Automation (read-only SA) | service account token (mac) |
 | MiniPC opnix (부팅 oneshot → `/run/opnix/<user>/github-pat` materialize) | 1Password | Automation | `github-pat` (`op://Automation/github-pat/token`) |
+| MiniPC toss CLI opnix materialize | 1Password | Automation | `토스증권 Open API` → `/run/opnix/<user>/toss-client-id`, `/run/opnix/<user>/toss-client-secret` |
 | MiniPC SA token (opnix tokenFile, host key 복호화) | agenix → 1Password SA | Automation (read-only SA) | service account token (minipc) |
 | Mac SSH agent + MiniPC authorized_keys 등록 (`mac-ssh`) | 1Password | SSH | ssh device key — SSH vault 격리 |
 | Emergency fallback SSH (`~/.ssh/emergency_ed25519` + backup copy) | 1Password | SSH | ssh device key (`emergency-ssh`) — SSH vault 격리 |
@@ -61,13 +63,13 @@ agenix(.age 정적)와 1Password(동적 github-pat / SSH device key / SA token)�
 | agenix .age 시크릿 (Mac+MiniPC home / MiniPC service) | agenix | — | recipient group (allHosts / minipcOnly / minipcHostOnly / macbook) |
 
 핵심 원칙:
-- SA token = Automation read-only → SSH vault 접근 불가. blast radius를 github-pat 한정으로 축소.
+- SA token = Automation read-only → SSH vault 접근 불가. blast radius는 기존 github-pat 한정에서 github-pat + 토스증권 OpenAPI credential로 의도적으로 확장했다. 전용 vault+전용 SA 분리는 후속 이슈 #1044 범위다.
 - agenix는 recipient group으로 호스트 노출을 통제: `allHosts` / `minipcOnly`(서비스) / `minipcHostOnly`(host key 전용 부팅 의존) / `macbook`(Mac user 키 단독).
 - 1Password 운영 절차 본문(SA 발급 / rotation / op CLI / gh 무인 / SSH device key)은 [references/1password.md](references/1password.md) 참조.
 
 ### 통합 Secret Inventory
 
-agenix `.age` 18개(디스크 실측) + 1Password 항목(github-pat, SSH device key) + 1Password Service Account(token material은 agenix `.age` 보관)를 단일 표로 통합. 이 표는 빠른 참조용 스냅샷이며 SSOT가 아니다 — 값이 충돌하면 코드(`secrets/secrets.nix` recipient, `libraries/constants.nix` vault/sshDeviceKeys, HM home 경로는 `modules/shared/programs/secrets/default.nix` · NixOS `/run/agenix` 서비스 시크릿은 `modules/nixos/programs/` 하위 service module)을 우선한다. secret 추가/변경 시 코드를 먼저 갱신한 뒤 이 표를 동기화한다. recipient(복호화 가능 호스트)와 실제 배포 호스트는 다를 수 있다.
+agenix `.age` 18개(디스크 실측) + 1Password 항목(github-pat, 토스증권 OpenAPI credential, SSH device key) + 1Password Service Account(token material은 agenix `.age` 보관)를 단일 표로 통합. 이 표는 빠른 참조용 스냅샷이며 SSOT가 아니다 — 값이 충돌하면 코드(`secrets/secrets.nix` recipient, `libraries/constants.nix` vault/sshDeviceKeys, HM home 경로는 `modules/shared/programs/secrets/default.nix` · NixOS `/run/agenix` 서비스 시크릿은 `modules/nixos/programs/` 하위 service module)을 우선한다. secret 추가/변경 시 코드를 먼저 갱신한 뒤 이 표를 동기화한다. recipient(복호화 가능 호스트)와 실제 배포 호스트는 다를 수 있다.
 
 | Name | Storage | Vault | 배포경로·위치 | 소비처 | recipient |
 |------|---------|-------|---------------|--------|-----------|
@@ -87,14 +89,15 @@ agenix `.age` 18개(디스크 실측) + 1Password 항목(github-pat, SSH device 
 | `karakeep-openai-key.age` | agenix | — | `/run/agenix/karakeep-openai-key` (MiniPC) | karakeep.nix openaiKeyPath → AI 태깅 OpenAI 키 | allHosts |
 | `pushover-karakeep.age` | agenix | — | `/run/agenix/pushover-karakeep` (MiniPC) | karakeep-update·notify·singlefile-bridge·backup·fallback-sync·log-monitor (다중 모듈 merge) | allHosts |
 | `pushover-system-monitor.age` | agenix | — | `/run/agenix/pushover-system-monitor` (MiniPC) | smartd·temp-monitor·smoke-test·opnix-rotate(MiniPC) 하드웨어/SMART/온도/SA rotation 알림 (다중 모듈 merge) | minipcOnly |
-| `opnix-service-account-token.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `/run/agenix/opnix-service-account-token` (`root:onepassword-secrets`, 0640, MiniPC) | opnix tokenFile → 부팅 oneshot이 `op://Automation/github-pat/token`을 `/run/opnix/<user>/github-pat` tmpfs로 materialize → nixos.nix gh wrapper가 GH_TOKEN 소비 | minipcHostOnly (host key 복호화) |
-| `opnix-service-account-token-mac.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `~/.config/op/sa-token-mac` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | darwin.nix gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 `op read op://Automation/github-pat/token` → temp 캐시 → gh-auth/c/codex 런처가 GH_TOKEN 주입. MiniPC host-key SA와 별개 격리 SA | macbook (Mac user 로그인 키 단독, work role 미배포) |
+| `opnix-service-account-token.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `/run/agenix/opnix-service-account-token` (`root:onepassword-secrets`, 0640, MiniPC) | opnix tokenFile → 부팅 oneshot이 `op://Automation/github-pat/token`을 `/run/opnix/<user>/github-pat`으로, 토스 credential을 `/run/opnix/<user>/toss-client-{id,secret}`로 materialize | minipcHostOnly (host key 복호화) |
+| `opnix-service-account-token-mac.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `~/.config/op/sa-token-mac` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | darwin.nix gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 github-pat을 temp 캐시해 gh-auth/c/codex 런처에 GH_TOKEN 주입. toss CLI도 같은 SA token으로 토스 credential을 토큰 발급 시점에 op read. MiniPC host-key SA와 별개 격리 SA | macbook (Mac user 로그인 키 단독, work role 미배포) |
 | `github-pat` (1Password 항목) | 1Password | Automation | `op://Automation/github-pat/token` | Mac: gh-pat-mac이 SA token으로 `op read` → temp 캐시. MiniPC: opnix가 tmpfs로 materialize. SA token이 읽는 실제 PAT 항목 | — |
+| `토스증권 Open API` (1Password 항목) | 1Password | Automation | Mac: SA token으로 `op read` at token issuance. MiniPC: opnix가 `/run/opnix/<user>/toss-client-id` 및 `/run/opnix/<user>/toss-client-secret`로 materialize | toss CLI OAuth2 client credentials. client_id=`자격 증명`, client_secret=`Secret Key`. 기존 Automation SA blast radius를 의도적으로 확장했으며 전용 vault+SA 분리는 #1044 후속 | — |
 | `mac-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (comment `mac-ssh`, `constants.sshDeviceKeys.macSsh`) | Mac SSH agent(agent.toml이 SSH vault 노출) + MiniPC authorized_keys 등록. Automation→SSH vault 격리 | — |
 | `mobile-ssh` (디바이스 키) | Termius keychain | — | Termius keychain 보관 (iPhone·iPad 동기화 공유); 공개키만 `constants.sshDeviceKeys.mobile` | iPhone/iPad Termius 공유 단일 키(디바이스별 격리 불성립). MiniPC authorized_keys 등록용. 1Password 미보관 | — |
 | `emergency-ssh` (1Password 항목) | 1Password | SSH | SSH vault item (backup copy; ssh key comment `emergency-fallback`); 운영 키는 `~/.ssh/emergency_ed25519` (`IdentityAgent=none` 독립 fallback) | 긴급 fallback SSH 접속. 1Password backup copy가 SSH vault 보관. Automation→SSH vault 격리 | — |
-| SA token (mac) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token-mac.age`로 암호화되어 `~/.config/op/sa-token-mac` 배포 | Mac gh-pat-mac이 github-pat 발급 시 사용. blast radius=Automation read-only(SSH vault 접근 불가). 90일 cadence rotation (만료 record†) | — |
-| SA token (minipc) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token.age`로 암호화되어 `/run/agenix/opnix-service-account-token` 배포 | MiniPC opnix가 github-pat materialize 시 사용. blast radius=Automation read-only. 90일 cadence rotation (만료 record†). Mac SA와 별개 발급 격리 SA | — |
+| SA token (mac) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token-mac.age`로 암호화되어 `~/.config/op/sa-token-mac` 배포 | Mac gh-pat-mac이 github-pat 발급 시 사용하고, toss CLI가 토스 credential을 읽을 때도 사용. blast radius=Automation read-only(github-pat + 토스증권 OpenAPI credential, SSH vault 접근 불가). 90일 cadence rotation (만료 record†) | — |
+| SA token (minipc) | 1Password | Automation (read-only) | 1Password Service Account; token은 `opnix-service-account-token.age`로 암호화되어 `/run/agenix/opnix-service-account-token` 배포 | MiniPC opnix가 github-pat 및 토스 credential materialize 시 사용. blast radius=Automation read-only(github-pat + 토스증권 OpenAPI credential). 90일 cadence rotation (만료 record†). Mac SA와 별개 발급 격리 SA | — |
 
 † `secrets/opnix-service-account-expiry.txt`(MiniPC) / `secrets/opnix-service-account-expiry-mac.txt`(Mac)는 평문 ISO date record(.age 아님). 1Password Individual SA 자동 만료 미지원 + op CLI 만료 조회 미지원 대체. rotation 운영은 [references/1password.md](references/1password.md) 참조.
 

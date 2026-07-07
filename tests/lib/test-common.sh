@@ -79,8 +79,20 @@ register_copy_exec() {
     "    source = \"$nix_source_expr\";" \
     "    executable = true;"
   local gen_name; gen_name="$(basename "$deployed_path")"
+  mkdir -p "$home_dir/$(dirname "$deployed_path")"
   cp "$REPO_ROOT/$repo_source" "$generated_dir/$gen_name"
   chmod +x "$generated_dir/$gen_name"
+  ln -sf "$generated_dir/$gen_name" "$home_dir/$deployed_path"
+}
+
+register_copy_file() {
+  local nix_file="$1" deployed_path="$2" nix_source_expr="$3" repo_source="$4"
+  # shellcheck disable=SC2016  # Literal Nix source string.
+  assert_nix_has_attr "$nix_file" "$deployed_path" \
+    "    source = \"$nix_source_expr\";"
+  local gen_name; gen_name="$(basename "$deployed_path")"
+  mkdir -p "$home_dir/$(dirname "$deployed_path")"
+  cp "$REPO_ROOT/$repo_source" "$generated_dir/$gen_name"
   ln -sf "$generated_dir/$gen_name" "$home_dir/$deployed_path"
 }
 
@@ -112,6 +124,18 @@ assert_wt_wrapper_nix() {
     || fail "expected wt wrapper to export WT_PYTHON from pythonWithTomlkit"
   grep -Fq '        exec "${config.home.homeDirectory}/.local/bin/.wt-real" "$@"' "$nix_file" \
     || fail "expected wt wrapper to exec .wt-real"
+}
+
+assert_toss_wrapper_nix() {
+  local nix_file="$1"
+  grep -Fq '  home.file.".local/bin/toss" =' "$nix_file" \
+    || fail "expected $nix_file to define home.file.\".local/bin/toss\""
+  grep -Fq '        export TOSS_OP_CLIENT_ID_REF=${lib.escapeShellArg tossClientIdRef}' "$nix_file" \
+    || fail "expected toss wrapper to export TOSS_OP_CLIENT_ID_REF"
+  grep -Fq '        export TOSS_OP_CLIENT_SECRET_REF=${lib.escapeShellArg tossClientSecretRef}' "$nix_file" \
+    || fail "expected toss wrapper to export TOSS_OP_CLIENT_SECRET_REF"
+  grep -Fq '        exec "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"' "$nix_file" \
+    || fail "expected toss wrapper to exec .toss-real"
 }
 symlink_helper_dir() {
   local source_dir="$1"
@@ -162,6 +186,19 @@ EOF
   chmod +x "$home_dir/.local/bin/wt"
 
   # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_copy_exec "$shell_nix" ".local/bin/.toss-real" \
+    '${sharedScriptsDir}/toss.sh' "modules/shared/scripts/toss.sh"
+  assert_toss_wrapper_nix "$shell_nix"
+  cat > "$home_dir/.local/bin/toss" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export TOSS_OP_CLIENT_ID_REF='op://test/toss/client-id'
+export TOSS_OP_CLIENT_SECRET_REF='op://test/toss/client-secret'
+exec "$home_dir/.local/bin/.toss-real" "\$@"
+EOF
+  chmod +x "$home_dir/.local/bin/toss"
+
+  # shellcheck disable=SC2016  # Literal Nix source strings.
   register_recursive "$shell_nix" ".local/lib/wt" \
     '${sharedScriptsDir}/lib/wt' "modules/shared/scripts/lib/wt"
 
@@ -175,8 +212,22 @@ EOF
   register_recursive "$shell_nix" ".local/lib/rebuild" \
     '${sharedScriptsDir}/lib/rebuild' "modules/shared/scripts/lib/rebuild"
 
-  # cross-cutting: recursive 배포가 정확히 2개
-  assert_line_count "$shell_nix" '    recursive = true;' 2
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_recursive "$shell_nix" ".local/lib/toss" \
+    '${sharedScriptsDir}/lib/toss' "modules/shared/scripts/lib/toss"
+
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_copy_file "$shell_nix" ".local/lib/file-lock.sh" \
+    '${sharedScriptsDir}/lib/file-lock.sh' "modules/shared/scripts/lib/file-lock.sh"
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_copy_file "$shell_nix" ".local/lib/pushover.sh" \
+    '${sharedScriptsDir}/lib/pushover.sh' "modules/shared/scripts/lib/pushover.sh"
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  register_copy_file "$shell_nix" ".local/share/toss/endpoints.json" \
+    '${sharedScriptsDir}/toss/endpoints.json' "modules/shared/scripts/toss/endpoints.json"
+
+  # cross-cutting: recursive 배포가 정확히 3개 (wt, rebuild, toss)
+  assert_line_count "$shell_nix" '    recursive = true;' 3
 }
 create_git_fixture_repo() {
   local repo_root="$1"

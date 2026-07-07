@@ -1,0 +1,276 @@
+{
+  "schema_version": "1",
+  "source_openapi_version": "1.2.2",
+  "endpoints": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/conditional-orders/{conditionalOrderId}",
+      "operationId": "cancelConditionalOrder",
+      "requiresAccount": true,
+      "rateLimitGroup": "CONDITIONAL_ORDER",
+      "pathRegex": "^/api/v1/conditional-orders/[^/]+$",
+      "isKnownOrderMutation": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/accounts",
+      "operationId": "getAccounts",
+      "requiresAccount": false,
+      "rateLimitGroup": "ACCOUNT",
+      "pathRegex": "^/api/v1/accounts$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/buying-power",
+      "operationId": "getBuyingPower",
+      "requiresAccount": true,
+      "rateLimitGroup": "ORDER_INFO",
+      "pathRegex": "^/api/v1/buying-power$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/candles",
+      "operationId": "getCandles",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_DATA_CHART",
+      "pathRegex": "^/api/v1/candles$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/commissions",
+      "operationId": "getCommissions",
+      "requiresAccount": true,
+      "rateLimitGroup": "ORDER_INFO",
+      "pathRegex": "^/api/v1/commissions$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/conditional-orders",
+      "operationId": "getConditionalOrders",
+      "requiresAccount": true,
+      "rateLimitGroup": "CONDITIONAL_ORDER_HISTORY",
+      "pathRegex": "^/api/v1/conditional-orders$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/conditional-orders/{conditionalOrderId}",
+      "operationId": "getConditionalOrder",
+      "requiresAccount": true,
+      "rateLimitGroup": "CONDITIONAL_ORDER_HISTORY",
+      "pathRegex": "^/api/v1/conditional-orders/[^/]+$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/exchange-rate",
+      "operationId": "getExchangeRate",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_INFO",
+      "pathRegex": "^/api/v1/exchange-rate$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/holdings",
+      "operationId": "getHoldings",
+      "requiresAccount": true,
+      "rateLimitGroup": "ASSET",
+      "pathRegex": "^/api/v1/holdings$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/market-calendar/KR",
+      "operationId": "getKrMarketCalendar",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_INFO",
+      "pathRegex": "^/api/v1/market-calendar/KR$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/market-calendar/US",
+      "operationId": "getUsMarketCalendar",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_INFO",
+      "pathRegex": "^/api/v1/market-calendar/US$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/market-indicators/prices",
+      "operationId": "getMarketIndicatorPrices",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_INDICATOR",
+      "pathRegex": "^/api/v1/market-indicators/prices$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/market-indicators/{symbol}/candles",
+      "operationId": "getMarketIndicatorCandles",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_INDICATOR_CHART",
+      "pathRegex": "^/api/v1/market-indicators/[^/]+/candles$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/market-indicators/{symbol}/investor-trading",
+      "operationId": "getMarketIndicatorInvestorTrading",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_INDICATOR",
+      "pathRegex": "^/api/v1/market-indicators/[^/]+/investor-trading$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orderbook",
+      "operationId": "getOrderbook",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_DATA",
+      "pathRegex": "^/api/v1/orderbook$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orders",
+      "operationId": "getOrders",
+      "requiresAccount": true,
+      "rateLimitGroup": "ORDER_HISTORY",
+      "pathRegex": "^/api/v1/orders$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orders/{orderId}",
+      "operationId": "getOrder",
+      "requiresAccount": true,
+      "rateLimitGroup": "ORDER_HISTORY",
+      "pathRegex": "^/api/v1/orders/[^/]+$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/price-limits",
+      "operationId": "getPriceLimit",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_DATA",
+      "pathRegex": "^/api/v1/price-limits$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/prices",
+      "operationId": "getPrices",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_DATA",
+      "pathRegex": "^/api/v1/prices$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/rankings",
+      "operationId": "getRankings",
+      "requiresAccount": false,
+      "rateLimitGroup": "RANKING",
+      "pathRegex": "^/api/v1/rankings$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sellable-quantity",
+      "operationId": "getSellableQuantity",
+      "requiresAccount": true,
+      "rateLimitGroup": "ORDER_INFO",
+      "pathRegex": "^/api/v1/sellable-quantity$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/stocks",
+      "operationId": "getStocks",
+      "requiresAccount": false,
+      "rateLimitGroup": "STOCK",
+      "pathRegex": "^/api/v1/stocks$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/stocks/{symbol}/warnings",
+      "operationId": "getStockWarnings",
+      "requiresAccount": false,
+      "rateLimitGroup": "STOCK",
+      "pathRegex": "^/api/v1/stocks/[^/]+/warnings$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/trades",
+      "operationId": "getTrades",
+      "requiresAccount": false,
+      "rateLimitGroup": "MARKET_DATA",
+      "pathRegex": "^/api/v1/trades$",
+      "isKnownOrderMutation": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/conditional-orders",
+      "operationId": "createConditionalOrder",
+      "requiresAccount": true,
+      "rateLimitGroup": "CONDITIONAL_ORDER",
+      "pathRegex": "^/api/v1/conditional-orders$",
+      "isKnownOrderMutation": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/conditional-orders/{conditionalOrderId}/modify",
+      "operationId": "modifyConditionalOrder",
+      "requiresAccount": true,
+      "rateLimitGroup": "CONDITIONAL_ORDER",
+      "pathRegex": "^/api/v1/conditional-orders/[^/]+/modify$",
+      "isKnownOrderMutation": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders",
+      "operationId": "createOrder",
+      "requiresAccount": true,
+      "rateLimitGroup": "ORDER",
+      "pathRegex": "^/api/v1/orders$",
+      "isKnownOrderMutation": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{orderId}/cancel",
+      "operationId": "cancelOrder",
+      "requiresAccount": true,
+      "rateLimitGroup": "ORDER",
+      "pathRegex": "^/api/v1/orders/[^/]+/cancel$",
+      "isKnownOrderMutation": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{orderId}/modify",
+      "operationId": "modifyOrder",
+      "requiresAccount": true,
+      "rateLimitGroup": "ORDER",
+      "pathRegex": "^/api/v1/orders/[^/]+/modify$",
+      "isKnownOrderMutation": true
+    },
+    {
+      "method": "POST",
+      "path": "/oauth2/token",
+      "operationId": "issueOAuth2Token",
+      "requiresAccount": false,
+      "rateLimitGroup": "AUTH",
+      "pathRegex": "^/oauth2/token$",
+      "isKnownOrderMutation": false
+    }
+  ]
+}

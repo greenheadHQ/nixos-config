@@ -1,6 +1,6 @@
 # 1Password 운영 (SA 발급 / rotation / op CLI / gh 무인 / SSH device key)
 
-agenix(.age 정적 시크릿)와 별개로, 1Password를 동적 시크릿(github-pat) / SSH device key / Service Account(SA) token의 저장소로 사용한다. 본 문서는 1Password 운영 절차 본문을 담당하며, routing matrix와 통합 inventory는 SKILL.md에 있다.
+agenix(.age 정적 시크릿)와 별개로, 1Password를 동적 시크릿(github-pat, 토스증권 OpenAPI credential) / SSH device key / Service Account(SA) token의 저장소로 사용한다. 본 문서는 1Password 운영 절차 본문을 담당하며, routing matrix와 통합 inventory는 SKILL.md에 있다.
 
 평문 금지: SA token / PAT(`ghp_`, `github_pat_`) / SSH private key / 공개키 본체는 이 문서에 포함하지 않는다. item 이름·vault·경로·comment 식별자만 기록한다.
 
@@ -8,9 +8,9 @@ agenix(.age 정적 시크릿)와 별개로, 1Password를 동적 시크릿(github
 
 vault 라우팅(Automation / SSH / Personal)의 정본은 SKILL.md의 Routing Matrix다. 여기서는 1Password에 실제 보관되는 항목과 SA 접근 경계만 정리한다.
 
-- `Automation` vault item: `github-pat`. (1Password Service Account는 Automation read-only로 `github-pat`을 읽는 주체이며, SA token material 자체는 agenix `.age`에 보관된다 — vault item 아님.)
+- `Automation` vault item: `github-pat`, `토스증권 Open API`. (1Password Service Account는 Automation read-only로 이 항목들을 읽는 주체이며, SA token material 자체는 agenix `.age`에 보관된다 — vault item 아님.)
 - `SSH` vault(#874로 Automation에서 격리): `mac-ssh`(SSH agent), `emergency-ssh` backup copy(ssh key comment는 `emergency-fallback`). `mobile-ssh`는 1Password가 아니라 Termius keychain에 보관되므로 SSH vault에 없다.
-- SA token(Automation read-only)은 SSH vault 접근 불가 → blast radius가 github-pat 한정으로 축소된다(#874).
+- SA token(Automation read-only)은 SSH vault 접근 불가 → blast radius는 기존 github-pat 한정에서 github-pat + 토스증권 OpenAPI credential로 의도적으로 확장되었다. 전용 vault+전용 SA 분리는 후속 이슈 #1044 범위다.
 
 SSOT: `libraries/constants.nix`의 `onePassword.vaults` / `onePassword.account` / `sshDeviceKeys`.
 
@@ -20,7 +20,7 @@ SSOT: `libraries/constants.nix`의 `onePassword.vaults` / `onePassword.account` 
 
 - MiniPC SA token → `opnix-service-account-token.age`로 agenix 재암호화 (recipient=`minipcHostOnly`, host key `/etc/ssh/ssh_host_ed25519_key`) → `/run/agenix/opnix-service-account-token` (`root:onepassword-secrets`, `0640`).
 - Mac SA token → `opnix-service-account-token-mac.age`로 재암호화 (recipient=`[constants.sshKeys.macbook]`, Mac user 키 단독, work role 미배포) → `~/.config/op/sa-token-mac` (`0400`, `isDarwin && hostType==personal` 한정).
-- SA는 SSH vault 접근 불가 → SA `op read` 대상은 `op://Automation/github-pat/token` 한정.
+- SA는 SSH vault 접근 불가 → SA `op read` 대상은 `op://Automation/github-pat/token` 및 토스증권 OpenAPI credential이다. 이 경계 확장은 의도적이며, 전용 vault+전용 SA 분리는 #1044 후속이다.
 
 host key recipient(`minipcHostOnly`) .age의 rekey는 host private key가 없는 Mac에서 실패하므로, MiniPC/root에서 user key와 host key를 둘 다 `-i`로 넘겨 rekey한다 (secrets.nix 헤더 주석 참조).
 
@@ -65,8 +65,8 @@ SSOT: `modules/shared/programs/shell/darwin.nix`.
 ## op CLI / op read — vault·item 라우팅
 
 - Mac: `onePassword.account` = 개인 sign-in 도메인이 biometric unlock 경로 전용 account로 고정 (멀티 계정 환경).
-- MiniPC: op CLI를 직접 쓰지 않고 opnix(Go SDK)가 `op://Automation/github-pat`을 `/run/opnix/<user>/github-pat`으로 materialize한다(`OP_SERVICE_ACCOUNT_TOKEN`이 account 결정). 아래 라우팅은 Mac/수동 op CLI 경로 기준.
-- 라우팅: 자동화/시스템 토큰 = `Automation` vault(`github-pat` 등), 디바이스 SSH 키 = `SSH` vault(`mac-ssh`/`emergency-ssh`; `mobile-ssh`는 Termius keychain이라 제외), 개인 항목 = `Personal` vault. SA(Automation read-only)는 SSH vault `op read` 차단.
+- MiniPC: op CLI를 직접 쓰지 않고 opnix(Go SDK)가 `op://Automation/github-pat`을 `/run/opnix/<user>/github-pat`으로, 토스 credential을 `/run/opnix/<user>/toss-client-{id,secret}`으로 materialize한다(`OP_SERVICE_ACCOUNT_TOKEN`이 account 결정). 아래 라우팅은 Mac/수동 op CLI 경로 기준.
+- 라우팅: 자동화/시스템 토큰 = `Automation` vault(`github-pat`, `토스증권 Open API` 등), 디바이스 SSH 키 = `SSH` vault(`mac-ssh`/`emergency-ssh`; `mobile-ssh`는 Termius keychain이라 제외), 개인 항목 = `Personal` vault. SA(Automation read-only)는 SSH vault `op read` 차단.
 
 ### op_get 해석 순서 (SA-first, 무인 폴백)
 
@@ -81,6 +81,15 @@ SA 경로(1·2단계)는 서브셸에서 `OP_CONNECT_HOST`/`OP_CONNECT_TOKEN`을
 회귀 핀: `tests/eval-tests.nix` Test D18 (SA 경로 상수 배선 + `OP_GET_BIOMETRIC` opt-in 마커).
 
 SSOT: `libraries/constants.nix`(onePassword), `modules/shared/programs/shell/default.nix`(op_get), `modules/shared/programs/shell/darwin.nix`(gh 무인).
+
+### 토스증권 OpenAPI credential routing
+
+- Mac toss CLI: `~/.config/op/sa-token-mac`을 op 자식 프로세스 env로만 전달해 `op://Automation/토스증권 Open API/자격 증명`(client_id)과 `op://Automation/토스증권 Open API/Secret Key`(client_secret)를 토큰 발급 시점에만 읽는다. SA 경로의 Connect env 제거 계약(위 op_get 3단계)을 따르므로 `OP_CONNECT_HOST`/`OP_CONNECT_TOKEN`을 상속하지 않는다.
+- MiniPC toss CLI: `modules/nixos/programs/toss/default.nix`가 opnix로 `/run/opnix/<user>/toss-client-id` 및 `/run/opnix/<user>/toss-client-secret`을 user-owned 0400으로 materialize한다.
+- client_secret은 영속 캐시하지 않는다. toss access token만 재부팅 휘발 runtime 경로에 0600으로 캐시한다.
+- 이 항목은 Automation vault 경계 확장이다. 현재는 문서화로 수용하고, 전용 vault+SA 분리는 #1044 후속으로 남긴다.
+
+SSOT: `libraries/constants.nix`(onePassword), `modules/shared/programs/shell/darwin.nix`, `modules/nixos/programs/toss/default.nix`, `modules/shared/scripts/lib/toss/auth.sh`.
 
 ## SSH device key 운영 (#866 닫힘 — mobile-ssh 단일 공유 키)
 

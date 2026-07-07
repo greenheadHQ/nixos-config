@@ -16,6 +16,9 @@ let
   # 경로는 constants.mise.shimsDirExpr 우선순위(MISE_DATA_DIR → XDG_DATA_HOME/mise → $HOME/.local/share/mise).
   miseShimsDecl = ''_mise_shims="${constants.mise.shimsDirExpr}"'';
   fzfZleGuard = ''[[ -n "$TTY" && $options[zle] = on ]]'';
+  tossOpenApi = constants.onePassword.tossOpenApi;
+  tossClientIdRef = "op://${constants.onePassword.vaults.automation}/${tossOpenApi.itemName}/${tossOpenApi.clientIdField}";
+  tossClientSecretRef = "op://${constants.onePassword.vaults.automation}/${tossOpenApi.itemName}/${tossOpenApi.clientSecretField}";
 in
 {
   home.file.".local/bin/atuin-clean-kr" = {
@@ -41,12 +44,38 @@ in
       source = wrapper;
       executable = true;
     };
+  home.file.".local/bin/.toss-real" = {
+    source = "${sharedScriptsDir}/toss.sh";
+    executable = true;
+  };
+  home.file.".local/bin/toss" =
+    let
+      wrapper = pkgs.writeShellScript "toss-wrapper" ''
+        export TOSS_OP_CLIENT_ID_REF=${lib.escapeShellArg tossClientIdRef}
+        export TOSS_OP_CLIENT_SECRET_REF=${lib.escapeShellArg tossClientSecretRef}
+        exec "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"
+      '';
+    in
+    {
+      source = wrapper;
+      executable = true;
+    };
   home.file.".local/lib/wt" = {
     source = "${sharedScriptsDir}/lib/wt";
     recursive = true;
   };
+  home.file.".local/lib/toss" = {
+    source = "${sharedScriptsDir}/lib/toss";
+    recursive = true;
+  };
+  home.file.".local/lib/file-lock.sh" = {
+    source = "${sharedScriptsDir}/lib/file-lock.sh";
+  };
   home.file.".local/lib/pushover.sh" = {
     source = "${sharedScriptsDir}/lib/pushover.sh";
+  };
+  home.file.".local/share/toss/endpoints.json" = {
+    source = "${sharedScriptsDir}/toss/endpoints.json";
   };
   # codex exec hang supervisor (issue #593): Nix wrapper가 absolute store path env var를 set한 후
   # raw script를 exec한다. raw script는 CODEX_EXEC_TIMEOUT_BIN/CODEX_EXEC_SETSID_BIN 우선 사용.

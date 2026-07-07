@@ -355,11 +355,24 @@ def iter_worktree_markdown_files(root):
     return sorted(files, key=lambda p: str(p))
 
 
+def is_vendor_reference_markdown(rel):
+    # references/vendor/ = 외부 vendor 문서, 우리 노이즈 규칙 대상 아님.
+    return "/references/vendor/" in f"/{rel.as_posix()}"
+
+
 def worktree_items():
-    md_files = iter_worktree_markdown_files(base)
-    if not md_files:
+    all_md_files = iter_worktree_markdown_files(base)
+    if not all_md_files:
         print(f"[FAIL] {base} 하위에 *.md 파일이 0 개 — skill projection 깨짐 또는 잘못된 SKILLS_DIR.", file=sys.stderr)
         sys.exit(1)
+    md_files = []
+    for f in all_md_files:
+        try:
+            rel = f.relative_to(base)
+        except ValueError:
+            rel = f
+        if not is_vendor_reference_markdown(rel):
+            md_files.append(f)
     items = []
     for f in md_files:
         try:
@@ -433,9 +446,13 @@ def staged_items():
         print(result.stderr, file=sys.stderr, end="")
         sys.exit(1)
 
-    rel_paths = sorted(p for p in result.stdout.splitlines() if p.endswith(".md"))
-    if not rel_paths:
+    all_rel_paths = sorted(p for p in result.stdout.splitlines() if p.endswith(".md"))
+    if not all_rel_paths:
         print("[PASS] staged markdown 변경 0 건")
+        sys.exit(0)
+    rel_paths = [p for p in all_rel_paths if not is_vendor_reference_markdown(Path(p))]
+    if not rel_paths:
+        print("[PASS] staged markdown 검사 대상 0 건 (vendor 제외)")
         sys.exit(0)
 
     items = []

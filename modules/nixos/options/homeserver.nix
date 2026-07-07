@@ -248,6 +248,10 @@
       enable = lib.mkEnableOption "1Password Service Account secrets materialization (opnix)";
     };
 
+    toss = {
+      enable = lib.mkEnableOption "Toss Securities OpenAPI credential materialization";
+    };
+
     codexRemoteControl = {
       enable = lib.mkEnableOption "Codex mobile remote-control app-server regression guard";
     };
@@ -316,6 +320,7 @@
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
     ../programs/da-weekly-report # DA 세션 주간 리포트 timer
     ../programs/opnix # 1Password Service Account 시크릿 materialization
+    ../programs/toss # 토스증권 OpenAPI opnix 자격 증명 materialization
     ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지
     ../programs/claude-remote-control.nix # Claude Code RC bridge version-drift 감시

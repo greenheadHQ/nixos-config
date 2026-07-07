@@ -194,6 +194,13 @@ run_test "webhook-bridge non-crawled payload skips notification" test_webhook_br
 run_test "webhook-bridge invalid JSON keeps 200 without notification" test_webhook_bridge_invalid_json_keeps_200_without_notification
 run_test "webhook-bridge matching token sends notification" test_webhook_bridge_matching_token_sends_notification
 run_test "webhook-bridge wrong token keeps 200 and warns" test_webhook_bridge_wrong_token_keeps_200_and_warns
+run_test "toss api records JSON response ledger" test_toss_api_records_json_response_ledger
+run_test "toss api records scalar JSON response ledger" test_toss_api_records_scalar_json_response_ledger
+run_test "toss api records non-JSON response ledger" test_toss_api_records_non_json_response_ledger
+run_test "toss api rejects auth endpoints" test_toss_api_rejects_auth_endpoint
+run_test "toss api dry-run works without token" test_toss_api_dry_run_without_token_uses_deployed_layout
+run_test "toss api retries once after 401" test_toss_api_retries_once_after_401
+run_test "toss api refreshes env override after 401" test_toss_api_env_override_401_force_refresh_uses_credentials
 run_test "pushover helper missing credential skips curl" test_pushover_send_missing_cred_returns_1_without_curl
 run_test "pushover helper sends expected fields" test_pushover_send_success_passes_expected_fields
 run_test "pushover helper passes optional sound" test_pushover_send_passes_optional_sound

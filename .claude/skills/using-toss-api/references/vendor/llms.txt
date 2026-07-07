@@ -1,0 +1,30 @@
+﻿# 토스증권 Open API 가이드
+
+> 토스증권 Open API 문서를 외부 LLM과 AI coding agent가 직접 읽기 위한 안내 파일입니다. 검색엔진 크롤링 유도를 위한 sitemap은 제공하지 않습니다.
+
+토스증권 Open API는 국내(KRX) 및 미국 주식의 시세, 종목정보, 환율, 시장정보, 계좌, 보유주식, 주문 기능을 제공하는 REST API입니다.
+
+모든 API는 OAuth 2.0 Client Credentials Grant로 발급받은 access token을 사용합니다. 계좌, 자산, 주문 관련 API는 `Authorization: Bearer {access_token}` 외에 `X-Tossinvest-Account` 헤더가 필요합니다.
+
+Base API server: `https://openapi.tossinvest.com`
+
+## Source of Truth
+
+- [Overview Markdown](https://openapi.tossinvest.com/openapi-docs/overview.md): Human-readable overview, quick start, endpoint groups, rate limits, and error model.
+- [OpenAPI Markdown](https://openapi.tossinvest.com/openapi-docs/latest/api-reference/README.md): Markdown-converted API reference for LLM and AI coding agent consumption.
+- [OpenAPI JSON](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json): Canonical server-owned OpenAPI 3.0 document. Use this as the source of truth for endpoints, schemas, request/response examples, authentication, errors, and rate limits.
+
+## Human Documentation
+
+- [Interactive API Reference](/docs): Browser-based API reference.
+
+## API Coverage
+
+The following list is for quick orientation only. The OpenAPI JSON above is always the source of truth for available APIs and their exact behavior.
+
+- Auth: OAuth2 token issuance and JWKS.
+- Market Data: orderbook, prices, trades, price limits, candles.
+- Stock Info: stock master data and stock warnings.
+- Market Info: exchange rate and KR/US market calendar.
+- Account and Asset: accounts and holdings.
+- Order: create, modify, cancel, list, detail, buying power, sellable quantity, commissions.

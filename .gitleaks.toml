@@ -6,4 +6,5 @@ useDefault = true
 [allowlist]
 paths = [
   '''flake\.lock''',
+  '''\.claude/skills/[^/]+/references/vendor/''',
 ]

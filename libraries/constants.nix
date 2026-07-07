@@ -179,6 +179,13 @@
       automation = "Automation"; # LLM·자동화·시스템 토큰 (SSH 키는 ssh vault로 분리)
       ssh = "SSH"; # 디바이스 SSH key(mac-ssh/emergency-ssh) 전용 — SA token blast radius에서 격리
     };
+    # 토스증권 Open API credential 좌표 (Mac op CLI + MiniPC opnix 공유 SSOT).
+    # API base URL 등 토스 런타임 값은 modules/shared/scripts/lib/toss/auth.sh에 둔다.
+    tossOpenApi = {
+      itemName = "토스증권 Open API";
+      clientIdField = "자격 증명";
+      clientSecretField = "Secret Key";
+    };
     # 1Password macOS SSH agent socket — home 기준 상대 경로 (단일 소스).
     # nix: "${homeDir}/${agentSocketRelPath}", shell: "$HOME/${agentSocketRelPath}".
     # ~/.1password/agent.sock symlink는 자동생성되지 않아 group container 경로를 직접 쓴다.
