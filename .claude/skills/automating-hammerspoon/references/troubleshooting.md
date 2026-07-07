@@ -221,11 +221,11 @@ end)
 
 ### 한글 입력소스에서 Ctrl/Opt 단축키가 동작하지 않음
 
-증상: Claude Code 2.1.0+ 사용 시, 한글 입력소스에서 Ctrl+C, Ctrl+U, Opt+B 등의 단축키가 동작하지 않음. 영문 입력소스로 전환하면 정상 동작.
+증상: Claude Code 2.1.0+ 사용 시, 한글 입력소스에서 Ctrl+C, Ctrl+U, Ctrl+S, Ctrl+V, Opt+B, Opt+D 등의 단축키가 동작하지 않음. 영문 입력소스로 전환하면 정상 동작.
 
 원인: Claude Code 2.1.0이 enhanced keyboard 모드(CSI u)를 적극 활용하면서 발생하는 문제입니다.
 
-| 환경 | Ctrl 단축키 | Opt+B/F |
+| 환경 | Ctrl 단축키 | Opt 단축키 |
 |------|------------|---------|
 | Terminal.app | ✅ 입력소스 무관 | ❌ 한글일 때 문제 |
 | Ghostty + Claude Code | ❌ 영문일 때만 | ❌ 영문일 때만 |
@@ -246,40 +246,11 @@ Claude Code가 enhanced keyboard 모드 활성화 → Ghostty keybind 우회됨 
 
 Hammerspoon이 키 입력을 시스템 레벨에서 가로채서 영어로 전환 후 키를 다시 전달합니다. Claude Code보다 먼저 처리되므로 확실히 동작합니다.
 
-설정 파일: `modules/darwin/programs/hammerspoon/files/init.lua`
+현행 처리 키 목록은 `references/hotkeys.md`에만 유지합니다. 정본 배열과 실제 분기 로직은 `modules/darwin/programs/hammerspoon/files/init.lua`에서 확인합니다.
 
-```lua
--- Ghostty 전용: Ctrl 키 조합
-local ghosttyCtrlKeys = {'c', 'u', 'k', 'w', 'a', 'e', 'l', 'f'}
-
-for _, key in ipairs(ghosttyCtrlKeys) do
-    local bind
-    bind = hs.hotkey.bind({'ctrl'}, key, function()
-        if isGhostty() then
-            convertToEngAndSendKey(bind, {'ctrl'}, key)
-        else
-            bind:disable()
-            hs.eventtap.keyStroke({'ctrl'}, key)
-            bind:enable()
-        end
-    end)
-end
-
--- 모든 터미널: Opt 키 조합
-local terminalOptKeys = {'b', 'f'}
-
-for _, key in ipairs(terminalOptKeys) do
-    local bind
-    bind = hs.hotkey.bind({'alt'}, key, function()
-        if isTerminalApp() then
-            convertToEngAndSendKey(bind, {'alt'}, key)
-        else
-            bind:disable()
-            hs.eventtap.keyStroke({'alt'}, key)
-            bind:enable()
-        end
-    end)
-end
+```bash
+grep -n "ghosttyCtrlKeys" modules/darwin/programs/hammerspoon/files/init.lua
+grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 ```
 
 검증:
@@ -292,15 +263,15 @@ hs -c 'print(hs.application.frontmostApplication():bundleID())'
 # Ghostty에서 한글 입력소스로 테스트
 # 1. claude 실행
 # 2. Ctrl+C → 정상 중단되어야 함
-# 3. Ctrl+U → 줄 삭제되어야 함
-# 4. Opt+B/F → 단어 이동되어야 함
+# 3. Ctrl+U/S/V/Z 등 → 해당 Ctrl 동작이 전달되어야 함
+# 4. Opt 단축키 → 단어 이동/삭제 동작이 전달되어야 함
 ```
 
 주의사항:
 
 | 항목 | 설명 |
 |------|------|
-| Ghostty 외 앱 | Ctrl 키는 원래 동작 유지 (VS Code에서 Ctrl+C는 복사) |
+| Ghostty 외 앱 | Ctrl+V/Z/S 등 확장된 Ctrl 키도 원래 앱 동작으로 재전달 |
 | 터미널 외 앱 | Opt 키는 원래 동작 유지 (브라우저에서 특수문자 입력) |
 | 입력소스 전환 | 메뉴바 아이콘이 잠깐 깜빡일 수 있음 (기능 문제 없음) |
 

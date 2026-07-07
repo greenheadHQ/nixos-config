@@ -303,7 +303,7 @@ macOS/일부 Linux 환경에서 UTF-8 한글 문자열의 정렬 시 locale 설�
 
 ### 증상
 
-- `prefix + e`(노트 편집) 또는 `prefix + v`(노트 보기) 시 popup에서 `nvim: command not found`, `bat: command not found` 에러 발생
+- `prefix + n`(노트 편집) 또는 `prefix + v`(노트 보기) 시 popup에서 `nvim: command not found`, `bat: command not found` 에러 발생
 - 일반 tmux pane에서는 `nvim`, `bat` 모두 정상 동작하지만, `display-popup`에서만 실패
 
 ### 원인

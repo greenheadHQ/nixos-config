@@ -14,7 +14,7 @@
 - [ESLint 진단 중복](#eslint-진단-중복)
 - [macOS에서 nrs 빌드가 수십 분 멈춤 (LLVM 소스 빌드)](#macos에서-nrs-빌드가-수십-분-멈춤-llvm-소스-빌드)
 - [marksman이 Swift 소스 빌드를 트리거 (빌드 실패)](#marksman이-swift-소스-빌드를-트리거-빌드-실패)
-- [indent-blankline setup 함수 호출 실패](#indent-blankline-setup-함수-호출-실패)
+- [indent-blankline은 disabled 상태](#indent-blankline은-disabled-상태)
 - [tree-sitter CLI 누락 (파서 컴파일 불가)](#tree-sitter-cli-누락-파서-컴파일-불가)
 - [mini.surround 조직 이름 변경 경고](#minisurround-조직-이름-변경-경고)
 - [which-key 사용법](#which-key-사용법)
@@ -207,26 +207,16 @@ marksman = { enabled = false },
 
 교훈: extraPackages 추가 시 `nix path-info -r nixpkgs#패키지명 | grep -ci swift` 등으로 무거운 의존성 체인이 없는지 사전 확인할 것.
 
-## indent-blankline setup 함수 호출 실패
+## indent-blankline은 disabled 상태
 
-```
-Error: You are trying to call the setup function of indent-blankline...
-Take a look at the GitHub wiki for instructions on how to migrate.
-```
+현행 구성은 `indent-blankline.nvim`을 직접 설정하지 않습니다. `modules/shared/programs/neovim/files/nvim/lua/plugins/disabled.lua`에서 비활성화하고, LazyVim v14+의 `snacks.indent`를 사용합니다.
 
-원인: indent-blankline v3에서 모듈 이름이 `indent_blankline` → `ibl`로 변경됨. lazy.nvim이 플러그인명에서 모듈명을 추론하면 `indent-blankline`을 호출 → v2 호환 에러 발생.
-
-해결: ui.lua의 플러그인 spec에 `main = "ibl"` 명시.
-
-```lua
-{
-  "lukas-reineke/indent-blankline.nvim",
-  main = "ibl",  -- v3 필수: 모듈명 명시
-  opts = { ... },
-}
+```bash
+grep -n "indent-blankline" modules/shared/programs/neovim/files/nvim/lua/plugins/disabled.lua
+rg -n "snacks.nvim|indent" modules/shared/programs/neovim/files/nvim/lua/plugins
 ```
 
-참고: LazyVim 코어가 `main = "ibl"`을 설정하더라도, 커스텀 spec에서 명시적으로 지정하는 것이 안전함.
+따라서 `main = "ibl"`을 추가하는 방식의 해결책은 현재 구성에 맞지 않습니다. indent 관련 문제가 있으면 `snacks.nvim` 설정과 LazyVim 기본 동작을 먼저 확인합니다.
 
 ## tree-sitter CLI 누락 (파서 컴파일 불가)
 

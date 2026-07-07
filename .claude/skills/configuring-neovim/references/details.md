@@ -25,8 +25,8 @@ mini.nvim 0.17.0 (2025-12)에서 `echasnovski` → `nvim-mini` 조직으로 이�
 ## 모바일 최적화 (iPad Termius)
 
 - `jk` → Esc (Insert 모드) — 소프트웨어 키보드 UX
-- 100컬럼 미만: `relativenumber=false`, `wrap=true`, 좁은 neo-tree
-- telescope `flex` 레이아웃: 좁은 화면에서 수직 전환
+- 100컬럼 미만: `autocmds.lua`에서 `relativenumber=false`, `wrap=true` 등으로 폭 기반 UI 조정
+- snacks.picker 레이아웃: `editor.lua`에서 100컬럼 미만은 `vertical`, 그 이상은 `default` preset으로 전환
 
 ## 클립보드 전략
 

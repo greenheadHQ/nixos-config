@@ -13,7 +13,6 @@ Nix(Home Manager `programs.vscode` 모듈)로 VSCode 확장을 선언적으로 �
 | usernamehw.errorlens | 인라인 에러 표시 |
 | streetsidesoftware.code-spell-checker | 맞춤법 검사 |
 | aaron-bond.better-comments | 주석 하이라이팅 |
-| eamodio.gitlens | Git 기록/blame |
 | github.vscode-pull-request-github | GitHub PR 통합 |
 | jnoortheen.nix-ide | Nix 언어 지원 (nixd LSP) |
 | buenon.scratchpads | 스크래치패드 |
@@ -32,6 +31,12 @@ Nix(Home Manager `programs.vscode` 모듈)로 VSCode 확장을 선언적으로 �
 | atommaterial.a-file-icon-vscode | 파일 아이콘 |
 | mermaidchart.vscode-mermaid-chart | Mermaid 다이어그램 미리보기 |
 
+### Open-VSX release pin
+
+| 확장 ID | Nix attr | 설명 |
+|---------|----------|------|
+| eamodio.gitlens | `pkgs.open-vsx-release.eamodio.gitlens` | Git 기록/blame. 일반 `open-vsx` latest의 pre-release 만료 시 current-line blame 잠김과 재시작 팝업 회귀가 있어 release variant로 고정 |
+
 ## 확장 추가/제거 방법
 
 ### 1. 설정 파일 수정
@@ -45,6 +50,10 @@ profiles.default = {
       # 여기에 open-vsx 확장 추가
       dbaeumer.vscode-eslint
     ])
+    ++ [
+      # pre-release를 피해야 하는 확장은 release variant 사용
+      pkgs.open-vsx-release.eamodio.gitlens
+    ]
     ++ (with pkgs.vscode-marketplace; [
       # 여기에 marketplace 확장 추가
       ms-vscode.vscode-typescript-next
@@ -66,12 +75,14 @@ nrs
 
 | 소스 | 용도 | 예시 |
 |------|------|------|
-| `open-vsx` | 오픈소스 확장 (대부분) | ESLint, Prettier, GitLens |
+| `open-vsx` | 오픈소스 확장 (대부분) | ESLint, Prettier |
+| `open-vsx-release` | pre-release 만료 회귀를 피해야 하는 Open-VSX 확장 | GitLens |
 | `vscode-marketplace` | MS 전용/open-vsx에 없는 확장 | TypeScript, C# |
 
 선택 방법:
 1. 먼저 https://open-vsx.org 에서 검색
-2. 없으면 https://marketplace.visualstudio.com 사용
+2. pre-release 만료나 기능 잠김 회귀가 있는 확장은 `pkgs.open-vsx-release` variant 사용
+3. 없으면 https://marketplace.visualstudio.com 사용
 
 ## 확장 ID 찾는 방법
 
@@ -105,6 +116,8 @@ flake.lock (버전 고정)
 nix-vscode-extensions flake
     ↓
 pkgs.open-vsx / pkgs.vscode-marketplace (overlay)
+    ↓
+필요 시 pkgs.open-vsx-release로 release variant 고정
     ↓
 modules/darwin/programs/vscode/default.nix
     ↓

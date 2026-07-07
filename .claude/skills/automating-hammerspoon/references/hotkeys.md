@@ -23,20 +23,36 @@ Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작
 
 해결 방식: Hammerspoon이 시스템 레벨에서 키 입력을 가로채서 영어로 전환 후 키 전달
 
+정본 확인:
+
+```bash
+grep -n "ghosttyCtrlKeys" modules/darwin/programs/hammerspoon/files/init.lua
+grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
+```
+
 ### Ghostty 전용 (Ctrl 키)
 
-| 단축키   | 기능                   |
-| -------- | ---------------------- |
-| `Ctrl+C` | 프로세스 종료 (SIGINT) |
-| `Ctrl+U` | 줄 삭제                |
-| `Ctrl+K` | 커서 뒤 삭제           |
-| `Ctrl+W` | 단어 삭제              |
-| `Ctrl+A` | 줄 처음으로            |
-| `Ctrl+E` | 줄 끝으로              |
-| `Ctrl+L` | 화면 지우기            |
-| `Ctrl+F` | 앞으로 이동            |
+| 단축키 | 동작 |
+|--------|------|
+| `Ctrl+C` | 영어 전환 후 원래 Ctrl+C 전달 |
+| `Ctrl+U` | 영어 전환 후 원래 Ctrl+U 전달 |
+| `Ctrl+K` | 영어 전환 후 원래 Ctrl+K 전달 |
+| `Ctrl+W` | 영어 전환 후 원래 Ctrl+W 전달 |
+| `Ctrl+A` | 영어 전환 후 원래 Ctrl+A 전달 |
+| `Ctrl+E` | 영어 전환 후 원래 Ctrl+E 전달 |
+| `Ctrl+L` | 영어 전환 후 원래 Ctrl+L 전달 |
+| `Ctrl+F` | 영어 전환 후 원래 Ctrl+F 전달 |
+| `Ctrl+S` | 영어 전환 후 원래 Ctrl+S 전달 |
+| `Ctrl+V` | 영어 전환 후 원래 Ctrl+V 전달 |
+| `Ctrl+Z` | 영어 전환 후 원래 Ctrl+Z 전달 |
+| `Ctrl+D` | 영어 전환 후 원래 Ctrl+D 전달 |
+| `Ctrl+R` | 영어 전환 후 원래 Ctrl+R 전달 |
+| `Ctrl+G` | 영어 전환 후 원래 Ctrl+G 전달 |
+| `Ctrl+O` | 영어 전환 후 원래 Ctrl+O 전달 |
+| `Ctrl+T` | 영어 전환 후 원래 Ctrl+T 전달 |
+| `Ctrl+Y` | 영어 전환 후 원래 Ctrl+Y 전달 |
 
-> Ghostty 외 앱에서는 원래 동작을 유지합니다 (예: VS Code에서 Ctrl+C는 복사).
+> Ghostty 외 앱에서는 Ctrl+V/Z/S 등 확장된 처리 키도 원래 앱 동작으로 재전달됩니다.
 
 ### 모든 터미널 앱 (Opt 키)
 
@@ -44,6 +60,7 @@ Claude Code 2.1.0+에서 한글 입력소스일 때 Ctrl/Opt 단축키가 동작
 | ------- | ---------------- |
 | `Opt+B` | 단어 뒤로 이동   |
 | `Opt+F` | 단어 앞으로 이동 |
+| `Opt+D` | 단어 삭제        |
 
 > 터미널 앱: Ghostty, Terminal.app, Warp, iTerm2
 

@@ -42,7 +42,7 @@ modules/shared/programs/neovim/
         │   ├── keymaps.lua          # 커스텀 키맵 (jk→Esc)
         │   └── autocmds.lua         # 모바일 화면 감지, FocusGained 한글 IM 전환
         └── plugins/
-            ├── disabled.lua         # Mason (mason-org/), mini.surround (nvim-mini/), tokyonight.nvim, indent-blankline.nvim, neo-tree.nvim 비활성화
+            ├── disabled.lua         # Mason (mason-org/), mason-nvim-dap.nvim, mini.surround (nvim-mini/), tokyonight.nvim, indent-blankline.nvim, neo-tree.nvim 비활성화
             ├── colorscheme.lua      # Catppuccin Mocha
             ├── lsp.lua              # 추가 LSP (cssls, html)
             ├── dap.lua              # nvim-dap JS/TS attach (--inspect 9229, Linux cond)
