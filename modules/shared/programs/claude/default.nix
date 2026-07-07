@@ -211,6 +211,10 @@ in
     ".claude/skills/create-pr".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-pr";
 
+    # finish-pr 스킬 (user-scope)
+    ".claude/skills/finish-pr".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/finish-pr";
+
     # issuing-codex-pairing-code 스킬 (user-scope)
     ".claude/skills/issuing-codex-pairing-code".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/issuing-codex-pairing-code";

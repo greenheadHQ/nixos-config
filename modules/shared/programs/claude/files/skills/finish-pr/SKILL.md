@@ -1,0 +1,98 @@
+---
+name: finish-pr
+argument-hint: "[pr-number|pr-url|branch]"
+description: |
+  PR 머지 후 종결 절차를 수행한다. 대상 PR 확인, CI 상태 확인, squash merge, main pull 후 로컬 실측 검증, PR 후속 코멘트, 관련 이슈 동기화, 산출물 위생 점검, worktree cleanup까지 다룬다.
+  Trigger: '머지해줘', 'squash merge', '머지 후 정리', 'PR 마무리', 'PR 종결', 'finish-pr'.
+  NOT for PR 생성 (use create-pr). NOT for PR 코멘트 처리 (use review-pr-feedback).
+---
+
+# PR 종결
+
+사용자 인자로 PR 번호, PR URL, 또는 브랜치 힌트를 수신하면 그 값을 우선하고, 없으면 현재 브랜치에서 대상 PR을 추론한다.
+
+## 원칙
+
+- 현재 레포의 `CLAUDE.md`, `AGENTS.md`, 스킬 문서, 빌드 관례가 이 스킬보다 우선한다.
+- STOP 지점에 도달하면 이후 GitHub 쓰기, 이슈 close, 워크트리 정리를 진행하지 않고 사용자에게 원인과 다음 선택지를 보고한다.
+- GitHub 본문이 길거나 셸 해석 문자가 섞이면 임시 파일과 `--body-file`을 사용한다.
+- 검증 실패도 숨기지 않는다. 이미 머지된 뒤 검증이 실패하면 실패 명령, 핵심 stderr/stdout, 재현 조건을 PR 코멘트로 남긴 뒤 STOP한다.
+
+## 절차
+
+### 1. 대상 PR 확인 + CI 상태 확인
+
+1. 대상 PR을 확정한다. 인자가 없으면 `gh pr view --json number,url,headRefName,baseRefName,state,isDraft,mergeStateStatus,reviewDecision,statusCheckRollup,body,commits`로 현재 브랜치의 PR을 확인한다.
+2. base가 의도한 기본 브랜치인지, PR이 open 상태인지, draft가 아닌지 확인한다.
+3. CI와 review 상태를 확인한다. 미완료 check가 있으면 대기하거나 사용자에게 현재 상태를 보고한다. 실패 check, merge conflict, required review 미승인은 STOP한다.
+
+Skip 조건:
+- PR이 이미 merge된 상태면 squash merge 단계는 건너뛰고, 머지된 main을 최신화한 뒤 로컬 검증부터 진행한다.
+- 사용자가 CI 실패를 알고도 강행하라고 한 경우에도 required gate를 우회하지 않는다. 가능한 우회가 정책상 허용되는지 먼저 보고한다.
+
+### 2. squash merge
+
+1. `gh pr merge <pr> --squash`로 squash merge한다.
+2. merge 실패, 충돌, 미승인, 권한 오류가 나면 STOP하고 원문 오류를 요약해 보고한다.
+3. merge 성공 후 PR 번호, URL, merge 결과 메시지, squash commit SHA를 가능한 범위에서 기록해 둔다.
+
+Skip 조건:
+- 이미 merge된 PR이면 이 단계는 건너뛴다.
+- 사용자가 merge 방식 변경을 명시하지 않는 한 squash를 유지한다.
+
+### 3. main pull + 로컬 실측 검증
+
+1. 현재 레포 관례에 맞는 main checkout 또는 main worktree로 이동해 기본 브랜치를 최신화한다.
+2. 로컬 검증 명령은 레포 컨텍스트에 위임한다. 이 레포 기본값은 main pull 후 `nrs`를 실행하고, 변경 영향 범위에 맞는 실측을 추가하는 것이다.
+3. 영향 범위별 실측 예시:
+   - 스킬 또는 AI 호환성 변경: 해당 스킬을 읽어 트리거/경계가 맞는지 확인하고, `./scripts/ai/check-skill-noise.sh`, 필요한 경우 `./scripts/ai/verify-ai-compat.sh`를 실행한다.
+   - 서비스 또는 컨테이너 변경: 해당 서비스의 상태, 로그, 포트, healthcheck를 확인한다.
+   - 에디터, shell, macOS/NixOS 설정 변경: 관련 CLI 동작 또는 설정 반영 여부를 직접 확인한다.
+4. 실행한 명령, exit code, 핵심 결과를 PR 후속 코멘트용으로 기록한다.
+
+Skip 조건:
+- 문서 전용이나 주석 전용처럼 runtime 실측이 무의미한 변경은 레포의 최소 검증으로 축소하고 축소 사유를 기록한다.
+- `nrs`가 명백히 불필요한 레포에서는 해당 레포의 빌드/테스트 관례를 따른다.
+- 검증이 환경 제약으로 불가능하면 대체 확인을 수행하고, 불가능한 항목과 이유를 PR 코멘트에 명시한다.
+
+### 4. PR 후속 코멘트로 검증 결과 박제
+
+1. PR에 후속 코멘트를 남긴다. 포함 항목:
+   - merge 결과와 main 최신화 여부
+   - 실행한 검증 명령
+   - 성공/실패 요약
+   - 실패 시 원문 오류의 핵심 부분과 다음 조치
+2. 검증 실패 시 코멘트를 남긴 뒤 STOP한다. 관련 이슈 close와 워크트리 정리는 하지 않는다.
+
+Skip 조건:
+- GitHub API 장애로 코멘트 게시가 실패하면 로컬에 본문을 남기고 사용자에게 재시도 명령을 보고한다.
+
+### 5. 관련 이슈 동기화
+
+1. PR 본문, 커밋 메시지, 브랜치명에서 참조 이슈를 수집한다.
+2. `gh issue list --search`로 제목, 브랜치 키워드, 주요 변경 키워드를 검색해 누락된 관련 이슈를 확인한다.
+3. 완료된 이슈는 근거 코멘트를 남긴 뒤 close한다. 부분 진행 이슈는 close하지 않고 현재 상태와 남은 작업을 코멘트로 갱신한다.
+4. close 사유에는 머지된 PR 번호, 로컬 검증 결과, 완료로 판단한 근거를 포함한다.
+
+Skip 조건:
+- 관련 이슈가 없으면 없음으로 기록하고 넘어간다.
+- 검증 실패, 범위 불명확, 일부 미완료가 있으면 close하지 않는다.
+- 이슈가 다른 repo에 속할 수 있으면 URL 또는 repo를 재확인한 뒤 진행한다.
+
+### 6. 산출물 위생 점검
+
+1. 선택 단계로 머지된 diff를 훑어 코드/문서에 남은 프로세스 메타데이터, 임시 이슈 번호, 라운드 번호, finding ID, dangling partial hash, 작업용 절대경로를 확인한다.
+2. 발견하면 이번 PR 후속 정리로 처리할지 별도 이슈/PR로 남길지 제안한다.
+
+Skip 조건:
+- 바이너리, lockfile, 단순 버전 핀처럼 사람이 읽는 산출물이 아닌 변경은 이 단계를 생략할 수 있다.
+
+### 7. 워크트리 정리
+
+1. `CLAUDE.md`의 비대화형 `wt` 규칙을 따른다.
+2. 현재 작업이 완료됐고 dirty/unpushed 변경이 없으면 `wt cleanup <name>` 또는 `wt cleanup --auto`로 정리한다.
+3. dirty 또는 unpushed 상태가 있으면 STOP하고 어떤 파일/커밋 때문에 정리하지 않았는지 보고한다. 사용자 승인 없이 `--yes`로 우회하지 않는다.
+
+Skip 조건:
+- worktree 기반 작업이 아니면 정리할 대상이 없다고 보고하고 생략한다.
+- 사용자가 보존을 요청한 worktree는 정리하지 않는다.

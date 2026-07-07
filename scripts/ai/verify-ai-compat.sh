@@ -29,6 +29,7 @@ EXPECTED_EXPOSED=(
   analyzing-da-sessions
   create-issue
   create-pr
+  finish-pr
   issuing-codex-pairing-code
   playwright-cli
   review-pr-feedback
