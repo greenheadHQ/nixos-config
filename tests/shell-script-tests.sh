@@ -138,6 +138,9 @@ run_test "check-skill-noise rejects external symlink skill projection" test_chec
 run_test "warn-skill-consistency ignores managed plugin skill projection" test_warn_skill_consistency_ignores_managed_plugin_skill_projection
 run_test "warn-skill-stale-identifiers detects residual skill doc" test_warn_skill_stale_identifiers_detects_residual_skill_doc
 run_test "warn-skill-stale-identifiers clean pass stays quiet" test_warn_skill_stale_identifiers_clean_pass_stays_quiet
+run_test "skill-usage-report aggregates sample TSV" test_skill_usage_report_aggregates_sample_tsv
+run_test "skill-usage-report --since filters sample TSV" test_skill_usage_report_since_filters_sample_tsv
+run_test "skill-usage-report missing log errors" test_skill_usage_report_missing_log_errors
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
