@@ -165,16 +165,25 @@ Selective consistency 서브런 카운팅: selective consistency의 N=3 재판�
 명시적 상한은 5 outer round다. 5회 이후에도 CLEAR에 도달하지 못하면
 사용자에게 현황을 보고하고 계속 진행 여부를 확인한다(자동 무한 진행 금지). selective consistency 서브런은 outer round 카운트에 포함하지 않는다.
 
-추세 기반 조기 중단: 신규 confirmed finding(직전 outer round에 없던 confirmed — 동일성은 3회 반복 규칙과 같은 "세부 관점 + 위치(파일:줄 또는 계획 항목 번호)" 기준) 수가 직전 대비 감소하지 않는(동수 포함) outer round가 2회 연속이면(따라서 최소 outer round 3부터 평가 가능하며, R1·단일 라운드는 미발동), 5회 상한 전이라도 비수렴으로 간주해 즉시 현황을 사용자에게 보고하고 계속 여부를 확인한다(질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다). CLEAR까지 반복은 상한/조기중단/read-write 분리 규칙을 함께 적용한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 수렴하지 않는 경우가 대표 사례다 — 이때는 라운드 중 표면을 계속 다듬어 finding을 닫으려 하기보다 changeset 동결 유지, batch 범위 축소, 또는 변경 범위 축소를 우선 검토한다. "3회 반복 규칙"이 동일 지적의 반복을 잡는다면, 이 규칙은 매 라운드 다른 새 finding이 끊이지 않는 비수렴을 잡는다.
+라운드 한계효용 판정: 각 outer round 종료 시 직전 outer round 대비 신규 finding 수를 집계한다. 동일성은 3회 반복 규칙과 같은 "세부 관점 + 위치(파일:줄 또는 계획 항목 번호)" 기준을 사용하고, valid dismissal ledger exact match로 suppress된 항목은 새 finding 계산에서 제외한다. 첫 outer round는 비교 대상이 없으므로 전체 finding 수를 신규 finding 수로 기록하되, 연속 저효용 판정은 다음 outer round부터 평가한다.
+
+- 신규 finding 0건: 새 정보가 없으므로 수렴으로 판정하고 루프 종료를 제안한다. 반복되는 동일 지적이 남아 있으면 3회 반복 규칙 또는 기존 사용자 판단 경로로 닫는다.
+- 신규 finding 1~2건: 낮은 신규 정보량으로 기록한다. 이 상태가 2 outer round 연속이면, 다음 round를 시작하기 전에 사용자에게 현재 비용 대비 추가 기대효과를 보고하고 계속/종료를 질문 도구로 확인한다.
+- 신규 finding 3건 이상: 한계효용 저하로 보지 않는다. 단 아래 비수렴 추세 또는 5회 상한 조건은 별도로 적용한다.
+
+위 판정은 5회 상한 전의 조기 수렴·한계효용 장치다. 5회 상한은 그대로 유지되며, 5회 이후 CLEAR에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
+
+비수렴 추세 조기 중단: 신규 confirmed finding(직전 outer round에 없던 confirmed — 동일성은 3회 반복 규칙과 같은 기준) 수가 직전 대비 감소하지 않는 outer round가 2회 연속이면(따라서 최소 outer round 3부터 평가 가능하며, R1·단일 라운드는 미발동), 5회 상한 전이라도 비수렴으로 간주해 즉시 현황을 사용자에게 보고하고 계속 여부를 확인한다. CLEAR까지 반복은 상한/한계효용/비수렴 조기중단/read-write 분리 규칙을 함께 적용한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 수렴하지 않는 경우가 대표 사례다 — 이때는 라운드 중 표면을 계속 다듬어 finding을 닫으려 하기보다 changeset 동결 유지, batch 범위 축소, 또는 변경 범위 축소를 우선 검토한다. "3회 반복 규칙"이 동일 지적의 반복을 잡는다면, 이 규칙은 매 라운드 다른 새 confirmed finding이 끊이지 않는 비수렴을 잡는다.
 
 ## 라운드 요약 기록
 
-각 라운드 종료 시 DA 발견 수와 Arbiter 판정 결과를 요약한다:
+각 라운드 종료 시 DA 발견 수, 신규 finding 수, Arbiter 판정 결과, 한계효용 판정을 요약한다:
 
 ```text
-Round N 요약: DA 발견 X건 → Arbiter: CONFIRMED Y건(신규 Y'건 — 직전 라운드에 없던 관점+위치), NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
+Round N 요약: DA 발견 X건(신규 X'건 — 직전 라운드에 없던 관점+위치) → Arbiter: CONFIRMED Y건(신규 confirmed Y'건), NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
 bundle별: Correctness 2건(SECURITY 1, HALLUCINATION 1), Regression CLEAR, ...
 changeset: frozen=<계획 원문/commit range/diff 기준>, write_phase=<수정 파일/계획 항목/diffstat/generated output 유무>, next=<R(N+1) 새 changeset 여부>
+marginal_utility: new_findings=<X'건>, low_new_streak=<연속 횟수>, decision=<continue|stop_proposed|asked_user|unconverged>
 dismissal_ledger: recorded=<NOT_AN_ISSUE/USER_EXCLUDED 기록 수>, suppressed=<fresh exact match로 새 finding에서 제외한 수>, stale_ignored=<stale ledger로 무시한 수>
 ```
 
@@ -193,6 +202,8 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 1. 선택된 reviewer 모두 CLEAR: 실행된 모든 reviewer bundle 또는 세부 도메인에서 위반 미발견 (`NOT_RUN` 제외).
 2. 미처리 항목 0건: NEEDS_MORE_INFO 상태의 finding이 없다.
 3. NOT_AN_ISSUE/제외 항목 근거 완비: Arbiter가 NOT_AN_ISSUE로 판정하거나 사용자가 제외한 항목에 모두 근거가 있다.
+
+위 조건은 정상 ALL CLEAR 탈출이다. 최대 라운드 수 섹션의 신규 0건 수렴, 한계효용 저하, 비수렴 추세, 5회 상한은 CLEAR 전에도 사용자 판단 또는 자동 종료 규칙으로 루프를 멈출 수 있는 조기 종료 경로다.
 
 ## PR 코멘트 게시 형식
 

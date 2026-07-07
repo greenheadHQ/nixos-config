@@ -14,7 +14,16 @@
 
 Skill-internal fan-out authorization: Direct Codex 세션에서 fan-out 스킬 호출이 내부 native subagent fan-out에 대한 explicit delegation으로 취급되는 권한 계약은 [`hardening-contract.md`](hardening-contract.md#skill-internal-fan-out-authorization)가 정본이다. 이 파일은 해당 권한을 실제 런타임 도구 binding으로만 연결한다.
 
-plain-text 재개 ≠ 질문 도구 — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 승인, 3회 반복 판정, 5회 라운드 초과, 추세 기반 조기 중단, fresh 모드 반복 감지)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 자동 상태 전이 경로(arbiter-scaling.md)로 처리한다.
+plain-text 재개 ≠ 질문 도구 — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 승인, 3회 반복 판정, 라운드 한계효용 저하, 5회 라운드 초과, 추세 기반 조기 중단, fresh 모드 반복 감지)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 자동 상태 전이 경로(arbiter-scaling.md)로 처리한다.
+
+## fan-out 진행 보고 규약
+
+fan-out 진행 가시성의 정본은 이 절이다. 메인 에이전트는 완료 이벤트를 기다리는 동안 사용자가 hang으로 오해하지 않도록, 런타임 이벤트에 반응하는 짧은 상태 보고를 남긴다.
+
+- 발사 직후: 어떤 역할을 몇 개 발사했는지와 완료 알림으로 재개된다는 사실을 한 줄로 보고한다. 예: reviewer 4개 백그라운드 발사, 완료 알림 대기.
+- 각 완료 이벤트 수신 시: 누적 완료 수와 전체 수를 한 줄로 보고한다. 예: reviewer 2/4 완료. 모든 결과가 모이기 전에도 이벤트를 받을 때마다 카운트를 갱신한다.
+- 이 보고는 sleep/poll 루프를 도입하는 근거가 아니다. 결과 수집은 위 런타임 매핑 표의 완료 이벤트, foreground 종료, 결과 파일 읽기 경로만 따른다.
+- headless serial foreground 경로는 백그라운드 완료 알림이 없으므로 각 subprocess 종료 직후 같은 카운트 형식으로 보고한다.
 
 review profile 매핑 (fan-out 대상 역할별, `agent=` 미지정 기본값):
 
