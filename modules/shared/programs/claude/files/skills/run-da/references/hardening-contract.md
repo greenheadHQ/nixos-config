@@ -10,8 +10,8 @@ codex exec 경로(Claude Code 세션 · headless 세션)는 [`arbiter-scaling.md
 
 | 용어 | 뜻 | 우선순위 |
 |------|-----|---------|
-| strong review profile | Arbiter spawn의 강한 리뷰 설정 (model/effort literal은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 불릿이 단일 소스) | Arbiter spawn 기본값 |
-| standard review profile | reviewer/auditor spawn의 기본 리뷰 설정 ([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑 불릿이 단일 소스) | DA spawn 기본값 |
+| strong review profile | Arbiter spawn의 강한 리뷰 설정 (role별 effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 표가 단일 소스) | Arbiter spawn 기본값 |
+| standard review profile | reviewer/auditor spawn의 기본 리뷰 설정 ([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑 표가 단일 소스) | DA spawn 기본값 |
 | conservative wait | `wait_agent` timeout이나 단순 지연은 실패 신호가 아니다. 명시적 agent failure, documented violation, 최종 응답 파싱 실패 전에는 kill/self-auditing 대체를 금지한다. 검토 강도 인라인 판정에는 적용되지 않는다 (메인 에이전트의 동기 체크리스트). | 조급한 조기 종료보다 우선 |
 | single-writer | tracked workspace write, 최종 파일 수정, branch mutation, commit/push, GitHub comment/issue/PR write는 메인 에이전트 소유다. explicit delegation만 예외다 | generic PoC 허용보다 우선 |
 | main-agent-only commands | `wt`, `nrs`, rebuild 계열과 host/repo 상태를 바꾸는 동급 명령은 direct fan-out subagent가 실행하지 않는다 | lock-sensitive convenience보다 우선 |
@@ -35,7 +35,7 @@ Direct Codex 세션에서 사용자가 `$run-da`, `$run-da audit`처럼 fan-out 
 
 이 권한은 delegated reviewer/auditor/Arbiter의 read-only/no-write 경계를 약화하지 않는다. tracked workspace write, branch mutation, commit/push, GitHub write, `wt`, `nrs`, rebuild 계열 명령은 별도 explicit delegation 없이는 계속 메인 에이전트 전용이다.
 
-이 권한은 native subagent 경로에만 적용된다. Skill invocation itself does not authorize `codex-exec-supervised` fallback. `codex-exec-supervised` fallback은 아래 Delegation fallback 절차에 따라 native delegation 거부/미지원 사유 기록과 별도 사용자 승인을 받은 뒤에만 사용한다.
+이 권한은 native subagent 경로에만 적용된다. Skill invocation itself does not authorize `codex-exec-supervised` fallback. 단, 사용자가 `agent=codex-*`를 호출 인자로 지정한 경우는 fallback이 아니라 해당 호출의 codex exec 경로 선택이다. `codex-exec-supervised` fallback은 아래 Delegation fallback 절차에 따라 native delegation 거부/미지원 사유 기록과 별도 사용자 승인을 받은 뒤에만 사용한다.
 
 ## `VIOLATION` 공통 처리
 
@@ -56,7 +56,7 @@ Codex 세션에서 `spawn_agent`가 정책상 거부되면(예: `multi_agent=fal
 1. BLOCKED + 사용자 승인 대기 (기본): `spawn_agent` 거부 감지 시 현재 DA 라운드 중단, 사용자에게 "delegation 거부 감지 — codex exec subprocess fallback 승인?"을 보고한다. 승인 수단은 런타임별로 다음과 같이 취한다:
    - 질문 도구 지원 런타임 (Claude Code 세션, Codex 세션): 질문 도구로 즉시 승인 요청. 승인 시 같은 턴에서 바로 fallback 단계 진행.
    - 질문 도구 미지원 런타임 (headless 세션 등): plain-text로 상황 보고 후 DA 루프 종료한다. 사용자는 새 메시지에서 "fallback 진행"으로 명시 승인하거나 `run-da <mode>`를 다시 실행하여 새 라운드로 재개한다 (이전 라운드 상태는 복원하지 않음, 깨끗한 fresh round로 시작). 명시 승인 없이 자동 재개하지 않는다.
-2. codex exec subprocess fallback (사용자 승인 후에만): [`arbiter-scaling.md`](arbiter-scaling.md)의 "Codex delegation-denied fallback" 섹션이 정의한 role별 Layer 1 명령(standard profile = `model="gpt-5.5"`+medium, strong profile = `model="gpt-5.5"`+high)을 그대로 사용한다 — 실제 명령 literal과 플래그(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` + role별 model/effort pin)는 `arbiter-scaling.md`의 role별 명령 표가 SSOT다. user config의 MCP/plugin/connector surface 차단을 위해 `--ignore-user-config`가 필수이고, user/project execpolicy `.rules`의 mutation allow rule(예: `git push`) 차단을 위해 `--ignore-rules`가 필수다. cwd 기반 project config (`.codex/config.toml`)는 차단하지 못하므로 한계는 [`SKILL.md` Non-goals](../SKILL.md#non-goals) #1 참조. 각 unit은 독립 subprocess.
+2. codex exec subprocess fallback (사용자 승인 후에만): [`arbiter-scaling.md`](arbiter-scaling.md)의 "Codex delegation-denied fallback" 섹션이 정의한 role별 Layer 1 명령을 그대로 사용한다. 실제 명령 literal과 플래그(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` + role별 또는 `agent=` resolved effort)는 `arbiter-scaling.md`의 role별 명령 표가 SSOT다. 모델명은 pin하지 않는다. user config의 MCP/plugin/connector surface 차단을 위해 `--ignore-user-config`가 필수이고, user/project execpolicy `.rules`의 mutation allow rule(예: `git push`) 차단을 위해 `--ignore-rules`가 필수다. cwd 기반 project config (`.codex/config.toml`)는 차단하지 못하므로 한계는 [`SKILL.md` Non-goals](../SKILL.md#non-goals) #1 참조. 각 unit은 독립 subprocess.
 
    Project-scoped MCP 차단 한계 (caveat — `--ignore-user-config`는 부분적 차단): `--ignore-user-config`는 `$CODEX_HOME/config.toml` 로드만 차단하고, **cwd 기반 project config (`.codex/config.toml`의 `[mcp_servers.*]`)는 차단하지 않는다**. 현재 worktree에 project-scoped MCP connector가 있으면, fallback subprocess가 repo root에서 실행될 때 그 surface가 reviewer/Arbiter에게 남는다. 완전 차단이 필요하면 `codex exec -C <non-repo-scratch-dir>`로 cwd를 project config 없는 디렉토리로 이동시키는 별도 follow-up이 필요하다 (run-da [`SKILL.md` Non-goals](../SKILL.md#non-goals) 1번 항목과 동일 내용).
 

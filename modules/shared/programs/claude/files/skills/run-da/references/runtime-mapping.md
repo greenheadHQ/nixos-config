@@ -8,7 +8,7 @@
 |------|-----------|------------------|---------------|
 | 사용자에게 질문 (blocking tool call) | `request_user_input` | `AskUserQuestion` 도구 | 미지원 (자동 전이 적용) |
 | fan-out 실행 (기본) | `spawn_agent` → `wait_agent` → `close_agent` (delegation 허용 시) | `Bash tool` + `run_in_background: true`로 `codex exec` subprocess 병렬 발사 (codex exec 사전점검 성공 시 기본) | `codex exec` subprocess를 serial foreground로 순차 실행 (완료 알림/`&+wait` 없음) |
-| fan-out 실행 (fallback) | codex exec subprocess (아래 "Delegation fallback" + `arbiter-scaling.md` 실행 계약) | `Agent` tool + `run_in_background: true` (codex exec 사전점검 실패 시 — "Claude Code 세션 fallback 세부 정보" 섹션) | — |
+| fan-out 실행 (fallback) | codex exec subprocess (아래 "Delegation fallback" + `arbiter-scaling.md` 실행 계약) | `Agent` tool + `run_in_background: true` (codex exec 사전점검 실패 원인 고지 후 사용자가 Claude 경로 진행을 확인한 경우만) | — |
 | 결과 수집 | `wait_agent` 반환값, 또는 `exec_command`로 `cat`/`sed` 셸 읽기 | `Read` 도구 | `cat`/`sed` via shell |
 | 파일 읽기 | `exec_command`로 `cat`/`sed`/`rg` | `Read` 도구 | `cat`/`sed`/`rg` |
 
@@ -16,9 +16,21 @@ Skill-internal fan-out authorization: Direct Codex 세션에서 fan-out 스킬 �
 
 plain-text 재개 ≠ 질문 도구 — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 승인, 3회 반복 판정, 5회 라운드 초과, 추세 기반 조기 중단, fresh 모드 반복 감지)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 자동 상태 전이 경로(arbiter-scaling.md)로 처리한다.
 
-review profile 매핑 (fan-out 대상 역할별):
-- Arbiter (strong review profile) — Codex: `model="gpt-5.5"`, `reasoning_effort="high"`. Claude Code: `model: "opus"`.
-- reviewer / auditor (standard review profile) — Codex: `model="gpt-5.5"`, `reasoning_effort="medium"`. Claude Code: `model: "sonnet"`.
+review profile 매핑 (fan-out 대상 역할별, `agent=` 미지정 기본값):
+
+| profile | 대상 | 모델 선택 | codex exec effort |
+|---------|------|-----------|-------------------|
+| `strong` | Arbiter | 세션/런타임 기본 모델 상속 | `high` |
+| `standard` | reviewer / auditor | 세션/런타임 기본 모델 상속 | `medium` |
+
+호출 인자 `agent=`가 지정되면 위 기본 profile보다 우선한다. 적용 범위는 해당 호출의 reviewer/auditor와 Arbiter 전체다.
+
+| agent 값 | 실행 경로 | effort / 모델 처리 |
+|----------|-----------|--------------------|
+| `agent=codex-xhigh` | codex exec | `xhigh` reasoning effort. 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
+| `agent=codex-high` | codex exec | `high` reasoning effort. 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
+| `agent=codex-medium` | codex exec | `medium` reasoning effort. 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
+| `agent=claude` | Claude Code `Agent` tool | Claude Code 세션 모델을 상속한다. 특정 모델명을 지정하지 않는다 |
 
 Review Intensity는 fan-out 대상이 아니다 — 메인 LLM 인라인 체크리스트(`intensity-rules.md`의 8 룰 기계적 적용)이므로 별도 review profile이 적용되지 않는다. 절차는 [`intensity-procedure.md`](intensity-procedure.md) SSOT.
 
@@ -48,7 +60,7 @@ Review Intensity는 fan-out 대상이 아니다 — 메인 LLM 인라인 체크�
   zsh `(N)` qualifier로 매칭 파일 없을 때 오류를 방지한다. legacy glob(NS 없음)은 전환기 고아 디렉토리 정리용이다.
 - 결과 파일 참조: `$DA_DIR`, `$ARBITER_DIR` 변수로 정확히 참조한다. `/tmp/da-*` 와일드카드 glob 금지 — 이전 실행의 결과가 섞인다. (Intensity는 메인 LLM 인라인 체크리스트라 별도 임시 디렉토리를 만들지 않는다.)
 - 셸 호출 간 변수 유지 (모든 런타임 공통): 위 공통 주의 참조. 런타임 종류와 무관하게 셸 호출마다 별도 shell이 생성되므로 `mktemp -d` 결과를 stdout으로 출력해 메인 에이전트가 다음 호출에서 리터럴로 재사용하거나 단일 shell에 체이닝한다. 상세 패턴은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "셸 호출 변수 유실 방지" 참조.
-- stdin pipe로 프롬프트 전달 (Layer 1 supervised wrapper): 모든 programmatic codex exec 호출은 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral -c model="gpt-5.5" -c model_reasoning_effort="..." -o "$DIR/result.md" -` 형태의 Layer 1 supervised wrapper 호출을 사용한다 (raw `codex exec` 직접 호출은 user-interactive 전용이며 SKILL 내 programmatic 경로에서는 사용하지 않는다). `--ignore-rules`는 user/project execpolicy `.rules` 파일을 차단해 read-only sandbox로 막을 수 없는 network/system mutation 명령(예: `git push`, `aws ec2 describe`)이 reviewer/auditor에서 실행되지 않게 한다. pipe EOF가 stdin을 자동으로 닫아 background 전환 시 stdin hang을 구조적으로 방지한다. `< /dev/null`은 pipe가 대체하므로 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. `CODEX_PROGRAMMATIC=1` env assignment는 pipeline 우측 codex 프로세스에 적용되어야 한다 (issue #585). wrapper 상세는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 참조.
+- stdin pipe로 프롬프트 전달 (Layer 1 supervised wrapper): 모든 programmatic codex exec 호출은 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" -o "$DIR/result.md" -` 형태의 Layer 1 supervised wrapper 호출을 사용한다 (raw `codex exec` 직접 호출은 user-interactive 전용이며 SKILL 내 programmatic 경로에서는 사용하지 않는다). 모델명은 고정하지 않고, `$RUN_DA_CODEX_EFFORT`만 기본 role profile 또는 `agent=` 인자에서 결정한다. `--ignore-rules`는 user/project execpolicy `.rules` 파일을 차단해 read-only sandbox로 막을 수 없는 network/system mutation 명령(예: `git push`, `aws ec2 describe`)이 reviewer/auditor에서 실행되지 않게 한다. pipe EOF가 stdin을 자동으로 닫아 background 전환 시 stdin hang을 구조적으로 방지한다. `< /dev/null`은 pipe가 대체하므로 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. `CODEX_PROGRAMMATIC=1` env assignment는 pipeline 우측 codex 프로세스에 적용되어야 한다 (issue #585). wrapper 상세는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 참조.
 - Arbiter는 foreground 실행 (단일 exec): 결과를 즉시 확인한다. reviewer만 병렬 실행 (런타임별 병렬 실행 매커니즘은 위 표 참조).
 
 ### literal 재사용 시 random suffix 환각 금지 (issue #632)
@@ -57,7 +69,7 @@ Generic codex exec split-call rule은 [`using-codex-exec/references/known-issues
 
 ## Claude Code 세션 fallback 세부 정보
 
-Claude Code 세션에서 codex exec 사전점검이 실패했을 때 legacy fallback으로 대체하는 경로의 Claude-Code-고유 lifecycle이다. review profile 매핑은 위 표 참조.
+Claude Code 세션에서 codex exec 사전점검이 실패했을 때는 legacy fallback으로 조용히 대체하지 않는다. 메인 에이전트는 실패 원인을 사용자에게 고지하고, 대안으로 Claude Code 서브에이전트 경로 진행 또는 중단을 확인받는다. 아래는 사용자가 Claude 경로 진행을 확인했거나 `agent=claude`를 명시한 경우의 Claude-Code-고유 lifecycle이다. 모델은 Claude Code 세션 모델을 상속한다.
 
 | 항목 | Claude Code fallback |
 |------|----------------------|
