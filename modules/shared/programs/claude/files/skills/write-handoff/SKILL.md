@@ -221,7 +221,7 @@ gh issue comment <number> --body-file <path-to-guide.md>
 
 - 출력 위치는 항상 현재 작업 디렉토리(cwd)이다. 이슈 URL의 repo root나 홈 디렉토리로 바꾸지 않는다.
 - 파일명은 `HANDOFF-<주제-슬러그>.local.md`이다. 동일 파일명이 이미 있으면 더 구체적인 slug를 사용해 덮어쓰기를 피한다.
-- `.gitignore:45`의 `*.local.md` 규칙에 자동 매칭되므로 repo 추적 오염을 만들지 않는다고 산출물 또는 최종 보고에 명시한다.
+- 루트 `.gitignore`의 `*.local.md` 규칙에 자동 매칭되므로 repo 추적 오염을 만들지 않는다고 산출물 또는 최종 보고에 명시한다.
 - `gh issue comment`, review/thread/issue resolve, `/create-issue` Step 6류 후속 연계는 스킵한다. 로컬 모드는 게시 경로만 바꾸는 것이 아니라, 이슈 경유 없이 새 세션 첫 프롬프트를 남기는 출력 경로이다.
 
 ## 복잡도별 분기
