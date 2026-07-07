@@ -35,6 +35,7 @@ let
   bridgeCapacity = 8; # work-MacBookPro 수동 운영 실측값 승계
   bridgePermissionMode = "bypassPermissions";
   idleThresholdMinutes = 30;
+  alertCooldownSeconds = 1800;
 
   # NixOS HM 배선(shell/nixos.nix)과 같은 표현식 — flakePath/defaultName만 darwin 값.
   claudeRcPkg = import ../../nixos/lib/claude-rc-package.nix {
@@ -65,7 +66,7 @@ in
         SERVICE_LIB = "${serviceLib}";
         PUSHOVER_CRED_FILE = pushoverCredPath;
         IDLE_THRESHOLD_MINUTES = toString idleThresholdMinutes;
-        ALERT_COOLDOWN_SECONDS = "1800";
+        ALERT_COOLDOWN_SECONDS = toString alertCooldownSeconds;
         CLAUDE_RC_PERMISSION_MODE = bridgePermissionMode;
         CLAUDE_RC_CAPACITY = toString bridgeCapacity;
         CLAUDE_RC_NAME = bridgeName;

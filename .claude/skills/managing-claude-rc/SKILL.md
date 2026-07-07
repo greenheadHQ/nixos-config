@@ -61,7 +61,10 @@ NixOS는 `homeserver.claudeRemoteControl.enable = true` 시 systemd timer가 부
 
 판정 흐름:
 1. tmux 세션 부재/stale → bridge 시작 (부팅/로그인 후 자동 복구 겸함)
-2. 실행 중 bridge 바이너리 버전 vs `readlink -f ~/.local/bin/claude` 비교.
+2. 실행 중 bridge 바이너리 버전 vs claude launcher(`~/.local/bin/claude`)가 가리키는
+   최신 버전 비교. desired 버전 조회(maint의 `desired_claude_version`)는 GNU coreutils
+   `readlink -f`를 쓰며, maint 패키지의 runtimeInputs가 두 플랫폼 모두 nix coreutils로
+   해석하므로 macOS BSD `readlink`에 의존하지 않는다.
    실행 바이너리 경로 조회는 `pid_exe_path` 플랫폼 분기 — Linux `/proc/PID/exe`,
    macOS `lsof -a -p PID -d txt -Fn` 첫 항목 (macOS는 삭제된 바이너리에 `(deleted)`
    suffix가 없지만 버전이 파일명이라 문자열 비교로 drift가 감지된다)
