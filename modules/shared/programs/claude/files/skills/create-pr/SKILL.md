@@ -5,6 +5,7 @@ description: |
   Create structured PR. Default: create new PR. Args: update (existing PR body).
   Trigger: 'PR 만들어줘', 'PR 생성', 'PR 올려', 'create PR', 'PR 업데이트', 'Human Test'.
   NOT for DA (use run-da). NOT for PR 코멘트 (use review-pr-feedback).
+  NOT for 머지 후 종결 절차 (use finish-pr).
 ---
 
 # 상세 PR 작성
