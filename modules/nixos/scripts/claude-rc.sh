@@ -17,7 +17,7 @@ set -euo pipefail
 #───────────────────────────────────────────────────────────────────────────────
 WORK_DIR="@flakePath@"
 TMUX_SESSION="claude-rc"
-RC_NAME="minipc"
+RC_NAME="@defaultName@"
 RC_PERMISSION_MODE="bypassPermissions"
 RC_SPAWN="worktree"
 RC_CAPACITY=5
@@ -53,7 +53,7 @@ bridge 서버(`claude remote-control`)를 tmux 세션 안에서 상시 구동한
   --permission-mode <mode>   스폰 세션 권한 모드 (default: bypassPermissions)
                              acceptEdits|bypassPermissions|default|dontAsk|plan
   --capacity <N>             동시 세션 수 (default: 5)
-  --name <name>              claude.ai/앱에 표시되는 이름 (default: minipc)
+  --name <name>              claude.ai/앱에 표시되는 이름 (default: @defaultName@)
   --help                     이 도움말 출력
 
 세션 수명주기 경고 (--stop / 재시작 시):
@@ -70,8 +70,8 @@ bridge 서버(`claude remote-control`)를 tmux 세션 안에서 상시 구동한
   요청은 모두 미구현 상태로 종결되어 이 workaround는 계속 필요하다.
 
 자동 재시작 (버전 drift 감시):
-  NixOS에서는 systemd timer(claude-rc-ensure)가 30분마다 claude-rc-maint를 실행해
-  bridge 바이너리가 구버전이면 idle 시점에 자동 재시작한다.
+  NixOS는 systemd timer, macOS는 launchd agent(모두 claude-rc-ensure)가 30분마다
+  claude-rc-maint를 실행해 bridge 바이너리가 구버전이면 idle 시점에 자동 재시작한다.
   상태 확인: cat ~/.local/state/claude-rc/status.json
   상세: .claude/skills/managing-claude-rc/SKILL.md
 EOF

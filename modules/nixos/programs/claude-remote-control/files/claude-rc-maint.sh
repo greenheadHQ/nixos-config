@@ -2,10 +2,12 @@
 # claude-rc-maint: Claude Code Remote Control bridge의 version-drift 감시 엔진.
 #
 # 사용자 래퍼(claude-rc)와 책임을 분리한 maintenance 전용 스크립트로,
-# systemd timer(claude-rc-ensure)가 주기 실행한다. codex-remote-control-maint.sh 골격 차용.
+# NixOS는 systemd timer(claude-rc-ensure), macOS는 launchd agent가 주기 실행한다.
+# codex-remote-control-maint.sh 골격 차용.
 #
-# 동작: 실행 중 bridge 바이너리(/proc/PID/exe)와 claude launcher가 가리키는
-# 최신 버전을 비교해 drift가 있으면 — 활성 원격 세션이 없을 때만 — bridge를 재시작한다.
+# 동작: 실행 중 bridge 바이너리(pid_exe_path — Linux /proc, macOS lsof)와 claude
+# launcher가 가리키는 최신 버전을 비교해 drift가 있으면 — 활성 원격 세션이 없을
+# 때만 — bridge를 재시작한다.
 # bridge 재시작은 활성 세션을 tombstone시키므로 idle 게이트가 핵심 안전장치다.
 set -euo pipefail
 
@@ -21,12 +23,14 @@ MAINT_LOCK_TIMEOUT_SECONDS="${MAINT_LOCK_TIMEOUT_SECONDS:-120}"
 ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
 PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
-# bridge 시작 옵션 — NixOS 모듈(homeserver.claudeRemoteControl.*)이 주입한다.
-# maint가 명시 전달하지 않으면 자동 재시작 시 래퍼 기본값으로 조용히 되돌아가므로
-# (예: capacity 10 → 5) 반드시 전량 전달한다.
+# bridge 시작 옵션 — 배선 모듈(NixOS homeserver.claudeRemoteControl.* / darwin
+# claude-remote-control.nix)이 주입한다. maint가 명시 전달하지 않으면 자동 재시작 시
+# 래퍼 기본값으로 조용히 되돌아가므로 (예: capacity 10 → 5) 반드시 전량 전달한다.
 CLAUDE_RC_PERMISSION_MODE="${CLAUDE_RC_PERMISSION_MODE:-bypassPermissions}"
 CLAUDE_RC_CAPACITY="${CLAUDE_RC_CAPACITY:-5}"
 CLAUDE_RC_NAME="${CLAUDE_RC_NAME:-minipc}"
+# 알림 메시지의 머신 식별자 (recovered 알림 본문에 사용)
+CLAUDE_RC_ALERT_HOST="${CLAUDE_RC_ALERT_HOST:-greenhead-minipc}"
 
 #───────────────────────────────────────────────────────────────────────────────
 # upstream 의존 selector — Claude Code CLI/spawn process shape 또는 transcript
@@ -81,12 +85,28 @@ bridge_session_alive() {
     [ "$rc_active" = "CLAUDE_RC_ACTIVE=1" ]
 }
 
+# 플랫폼별 실행 바이너리 경로 조회.
+# - Linux: /proc/PID/exe. 삭제된 바이너리는 " (deleted)" suffix가 붙는다.
+# - Darwin: /proc이 없어 lsof의 첫 txt(code segment) 항목을 쓴다. 실행 파일이
+#   항상 첫 txt로 나열되고(-F 필드 출력은 경로 공백 안전; 실측 work-MacBookPro),
+#   ps -o comm=은 argv[0] 기반이라 symlink 경유 실행 시 실경로를 잃는다.
+#   삭제된 바이너리도 suffix 없이 원경로가 그대로 나오지만, 버전이 파일명이라
+#   desired와의 문자열 비교로 drift가 감지되므로 (deleted) 표식 없이도 충분하다.
+pid_exe_path() {
+    local pid="$1"
+    case "$(uname -s)" in
+        Darwin) lsof -a -p "$pid" -d txt -Fn 2>/dev/null | awk '/^n/ {print substr($0, 2); exit}' ;;
+        *) readlink "/proc/$pid/exe" 2>/dev/null ;;
+    esac
+}
+
 # 첫 번째 유효 bridge PID를 출력. 유효 = exe가 claude versions 디렉토리 아래.
 find_bridge_pid() {
     local pid exe
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
-        exe=$(readlink "/proc/$pid/exe" 2>/dev/null) || continue
+        exe=$(pid_exe_path "$pid") || continue
+        [ -n "$exe" ] || continue
         case "${exe% (deleted)}" in
             "$VERSIONS_DIR"/*) echo "$pid"; return 0 ;;
         esac
@@ -94,11 +114,12 @@ find_bridge_pid() {
     return 1
 }
 
-# /proc/PID/exe 기준 실행 중 버전. 바이너리가 삭제된 구버전이면 "deleted"를 붙여
-# 호출측이 drift로 취급하게 한다.
+# pid_exe_path 기준 실행 중 버전. 바이너리가 삭제된 구버전이면 "deleted"를 붙여
+# 호출측이 drift로 취급하게 한다 (Linux 전용 신호 — Darwin 주석은 pid_exe_path 참조).
 pid_exe_version() {
     local pid="$1" exe
-    exe=$(readlink "/proc/$pid/exe" 2>/dev/null) || return 1
+    exe=$(pid_exe_path "$pid") || return 1
+    [ -n "$exe" ] || return 1
     case "$exe" in
         *" (deleted)") echo "$(basename "${exe% (deleted)}") (deleted)" ;;
         *) basename "$exe" ;;
@@ -137,11 +158,12 @@ count_recent_bridge_transcripts() {
 }
 
 # bridge가 스폰한 세션 프로세스 수 (transcript 명명에 비의존인 2차 신호).
-# pgrep -c는 매치 0일 때도 "0"을 출력하며 rc=1이므로, || echo를 쓰면 "0"이
-# 이중 출력된다 — 캡처 후 실패 시 대입으로 처리한다.
+# pgrep -c는 GNU procps 전용이라 macOS BSD pgrep에서 usage 에러(rc=2)가 난다
+# (실측) — PID 출력을 wc -l로 세는 플랫폼 중립 방식을 쓴다. 매치 0이면
+# pgrep rc=1 → pipefail로 대입이 실패하므로 실패 시 대입으로 0 처리한다.
 count_bridge_session_procs() {
     local count
-    count=$(pgrep -u "$(id -u)" -c -f "$BRIDGE_CHILD_PROCESS_PATTERN" 2>/dev/null) || count=0
+    count=$(pgrep -u "$(id -u)" -f "$BRIDGE_CHILD_PROCESS_PATTERN" 2>/dev/null | wc -l) || count=0
     echo "$count"
 }
 
@@ -249,7 +271,7 @@ send_alerts() {
     if [ "$exit_code" -eq 0 ]; then
         if [ "$previous" = "failed" ]; then
             send_notification "Claude RC Recovered" \
-                "greenhead-minipc claude-rc bridge is healthy (${RUNNING_VERSION:-unknown})." 0
+                "${CLAUDE_RC_ALERT_HOST} claude-rc bridge is healthy (${RUNNING_VERSION:-unknown})." 0
         fi
         echo "healthy" >"$state_file"
         return 0
@@ -346,7 +368,7 @@ env:
   CLAUDE_RC_BIN, CLAUDE_BIN, STATE_DIR, TMUX_SESSION,
   IDLE_THRESHOLD_MINUTES (default 30), MAINT_LOCK_TIMEOUT_SECONDS (default 120),
   ALERT_COOLDOWN_SECONDS (default 1800), PUSHOVER_CRED_FILE, SERVICE_LIB,
-  CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_CAPACITY, CLAUDE_RC_NAME
+  CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_CAPACITY, CLAUDE_RC_NAME, CLAUDE_RC_ALERT_HOST
 
 상태 확인: cat $STATE_DIR/status.json (기본 ~/.local/state/claude-rc/status.json)
 EOF

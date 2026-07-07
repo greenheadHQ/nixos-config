@@ -101,6 +101,7 @@ in
 
         # macOS 전용
         ./programs/opnix-rotate.nix # Mac SA token 90일 rotation 만료 알림 (#872 후속)
+        ./programs/claude-remote-control.nix # claude-rc 래퍼 + version-drift launchd 감시 (#1007)
         ./programs/hammerspoon
         ./programs/vscode
         ./programs/folder-actions

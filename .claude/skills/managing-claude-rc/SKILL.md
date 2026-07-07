@@ -10,8 +10,16 @@ description: |
 
 # Claude Code Remote Control (claude-rc) 관리
 
-Claude 모바일 앱/claude.ai에서 MiniPC의 Claude Code 세션을 원격 조종하는
-bridge 서버의 운영 가이드. NixOS(MiniPC) 전용 — macOS/darwin 배포는 별도 이슈 범위.
+Claude 모바일 앱/claude.ai에서 이 flake가 관리하는 머신의 Claude Code 세션을
+원격 조종하는 bridge 서버의 운영 가이드.
+
+| 플랫폼 | 래퍼 | 자동 재시작 (ensure) | Pushover 알림 | 배선 모듈 |
+|--------|------|---------------------|---------------|-----------|
+| NixOS (MiniPC) | `~/.local/bin/claude-rc` | systemd timer 30분 | `pushover-system-monitor.age` (minipcOnly) | `modules/nixos/programs/claude-remote-control.nix` |
+| macOS (MacBook, personal/work) | `~/.local/bin/claude-rc` | launchd agent 30분 (`StartInterval`) | `pushover-share.age` (양쪽 맥북 복호화 가능) | `modules/darwin/programs/claude-remote-control.nix` |
+
+운영 옵션 선언 위치: NixOS는 `homeserver.claudeRemoteControl.*` 옵션, darwin은
+모듈 내 hostType 분기 상수 (`bridgeName`/`bridgeCapacity` 등 — 옵션화는 수요 시).
 
 ## 기전 (3계층)
 
@@ -42,18 +50,24 @@ tmux 세션 "claude-rc" (detached 상시 구동)
 | `claude-rc --cleanup` | 서버 종료 + worktree prune + orphan 디렉토리 삭제 |
 
 옵션: `--permission-mode <mode>`, `--capacity <N>`, `--name <name>`.
-수동 실행 시에도 **NixOS 선언값(`homeserver.claudeRemoteControl.*`)과 일치시켜야**
-자동 재시작 후 동작이 달라지지 않는다.
+수동 실행 시에도 **배선 모듈의 선언값(NixOS `homeserver.claudeRemoteControl.*` /
+darwin 모듈 상수)과 일치시켜야** 자동 재시작 후 동작이 달라지지 않는다.
 
-## 자동 재시작 (claude-rc-ensure timer)
+## 자동 재시작 (claude-rc-ensure)
 
-`homeserver.claudeRemoteControl.enable = true` 시 systemd timer가 부팅 2분 후 +
-30분마다 `claude-rc-maint ensure`를 실행한다
-(`modules/nixos/programs/claude-remote-control.nix`).
+NixOS는 `homeserver.claudeRemoteControl.enable = true` 시 systemd timer가 부팅 2분 후 +
+30분마다, macOS는 launchd agent(`StartInterval = 1800` + `RunAtLoad`)가 로그인 시 +
+30분마다 `claude-rc-maint ensure`를 실행한다.
 
 판정 흐름:
-1. tmux 세션 부재/stale → bridge 시작 (부팅 후 자동 복구 겸함)
-2. 실행 중 bridge의 `/proc/PID/exe` 버전 vs `readlink -f ~/.local/bin/claude` 비교
+1. tmux 세션 부재/stale → bridge 시작 (부팅/로그인 후 자동 복구 겸함)
+2. 실행 중 bridge 바이너리 버전 vs claude launcher(`~/.local/bin/claude`)가 가리키는
+   최신 버전 비교. desired 버전 조회(maint의 `desired_claude_version`)는 GNU coreutils
+   `readlink -f`를 쓰며, maint 패키지의 runtimeInputs가 두 플랫폼 모두 nix coreutils로
+   해석하므로 macOS BSD `readlink`에 의존하지 않는다.
+   실행 바이너리 경로 조회는 `pid_exe_path` 플랫폼 분기 — Linux `/proc/PID/exe`,
+   macOS `lsof -a -p PID -d txt -Fn` 첫 항목 (macOS는 삭제된 바이너리에 `(deleted)`
+   suffix가 없지만 버전이 파일명이라 문자열 비교로 drift가 감지된다)
 3. drift 없음 → healthy
 4. drift 있음 → idle 게이트:
    - 최근 `IDLE_THRESHOLD_MINUTES`(기본 30분) 내 활동한 bridge transcript가 있으면 유예
@@ -62,12 +76,14 @@ tmux 세션 "claude-rc" (detached 상시 구동)
    - 둘 다 아니면 재시작 (`restarted-version-drift`)
 5. 모든 경로에서 status 기록 + Pushover 알림 (상태 전이 기반, cooldown 30분)
 
-운영 옵션(permissionMode/capacity/name)은 nix 옵션으로 선언되어 재시작 시 보존된다:
-`hosts` 설정은 `modules/nixos/configuration.nix`의 `homeserver.claudeRemoteControl` 블록.
+운영 옵션(permissionMode/capacity/name)은 선언되어 재시작 시 보존된다:
+NixOS는 `modules/nixos/configuration.nix`의 `homeserver.claudeRemoteControl` 블록,
+darwin은 `modules/darwin/programs/claude-remote-control.nix`의 상수.
 
-Pushover fallback: 크리덴셜(`pushover-system-monitor.age`, minipcOnly)이 없는 호스트에서
-maint를 수동 실행하면 알림만 스킵되고 ensure 본체는 정상 동작한다.
-systemd 유닛은 `ConditionPathExists`로 credential 부재 시 조용히 skip된다 (agenix 장애 신호).
+Pushover fallback: 크리덴셜이 없거나 읽을 수 없는 호스트에서 maint를 실행하면
+알림만 스킵되고 ensure 본체는 정상 동작한다.
+NixOS systemd 유닛은 `ConditionPathExists`로 credential 부재 시 조용히 skip된다
+(agenix 장애 신호). darwin launchd agent는 조건 없이 실행되고 fallback에 의존한다.
 
 ## 세션 수명주기 (중요)
 
@@ -84,19 +100,31 @@ systemd 유닛은 `ConditionPathExists`로 credential 부재 시 조용히 skip�
 
 ## 트러블슈팅
 
+공통:
+
 ```bash
-# ensure 상태/이력
-cat ~/.local/state/claude-rc/status.json
+cat ~/.local/state/claude-rc/status.json                    # ensure 상태
+tmux has-session -t claude-rc && tmux attach -t claude-rc   # 래퍼 로그 확인
+pgrep -fl 'claude remote-control'                           # bridge 프로세스
+```
+
+NixOS (MiniPC):
+
+```bash
 journalctl -u claude-rc-ensure --since -2d
 systemctl list-timers claude-rc-ensure
+readlink /proc/<PID>/exe          # 실행 중 바이너리 버전
+systemctl start claude-rc-ensure  # 수동 ensure (drift 즉시 확인)
+```
 
-# bridge 실체 확인
-tmux has-session -t claude-rc && tmux attach -t claude-rc   # 래퍼 로그 확인
-pgrep -af 'claude remote-control'
-readlink /proc/<PID>/exe    # 실행 중 바이너리 버전
+macOS (맥북):
 
-# 수동 ensure (drift 즉시 확인)
-systemctl start claude-rc-ensure
+```bash
+launchctl list | grep claude-rc                                # agent 로드 확인
+launchctl print "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"  # 상세 (마지막 exit 등)
+tail -50 ~/Library/Logs/claude-rc-ensure.log                   # ensure 실행 로그
+lsof -a -p <PID> -d txt -Fn | head -2                          # 실행 중 바이너리 경로 (/proc 대체)
+launchctl kickstart "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"  # 수동 ensure
 ```
 
 | 증상 | 원인/조치 |
@@ -104,7 +132,8 @@ systemctl start claude-rc-ensure
 | status.json `action: deferred-active-sessions` | 활성 세션 존재 — 정상 유예. 다음 주기 재시도 |
 | `action: deferred-unknown-activity` | transcript 명명 규칙 drift 의심 — `claude-rc-maint.sh`의 `BRIDGE_TRANSCRIPT_GLOBS` 갱신 검토 |
 | `action: no-bridge-process` | 래퍼 backoff 루프가 재시작 중 — 지속되면 `tmux attach -t claude-rc`로 루프 로그 확인 |
-| unit이 실행 안 됨 (Condition failed) | `/run/agenix/pushover-system-monitor` 부재 — agenix 상태 확인 |
+| unit이 실행 안 됨 (Condition failed, NixOS) | `/run/agenix/pushover-system-monitor` 부재 — agenix 상태 확인 |
+| macOS에서 알림이 안 옴 | `~/.config/pushover/share` 복호화 확인 (agenix HM) — 부재 시 알림만 스킵되는 정상 fallback |
 | capacity 꽉 참 (앱에서 새 세션 불가) | idle 프로세스가 슬롯 점유 — 앱에서 "세션 종료" 또는 `claude-rc --cleanup` |
 | 모바일 세션이 응답 없음 (기록만 보임) | tombstone — 위 재개 경로 사용 |
 
@@ -112,6 +141,8 @@ systemctl start claude-rc-ensure
 
 - 래퍼: `modules/nixos/scripts/claude-rc.sh` (store 패키지: `modules/nixos/lib/claude-rc-package.nix`)
 - maint 엔진: `modules/nixos/programs/claude-remote-control/files/claude-rc-maint.sh`
-- systemd 모듈: `modules/nixos/programs/claude-remote-control.nix`
-- 옵션: `modules/nixos/options/homeserver.nix` (`claudeRemoteControl.*`)
-- HM 배선: `modules/shared/programs/shell/nixos.nix`
+  (패키징: `modules/nixos/lib/claude-rc-maint-package.nix` — runtimeInputs 플랫폼 분기)
+- systemd 모듈 (NixOS): `modules/nixos/programs/claude-remote-control.nix`
+- launchd 모듈 (darwin): `modules/darwin/programs/claude-remote-control.nix` (래퍼 배선 포함)
+- 옵션 (NixOS): `modules/nixos/options/homeserver.nix` (`claudeRemoteControl.*`)
+- HM 배선 (NixOS): `modules/shared/programs/shell/nixos.nix`
