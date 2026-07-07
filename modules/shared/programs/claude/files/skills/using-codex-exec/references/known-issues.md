@@ -586,3 +586,24 @@ nix shell nixpkgs#bubblewrap --command env CODEX_PROGRAMMATIC=1 codex exec -s wo
   직접 시도하지 않았다.
 - `read-only` / `workspace-write`에서는 네트워크가 차단되었고, `danger-full-access` 및 config 기본값에서는 허용되었다.
 - `~/.codex/config.toml`의 `sandbox_mode = "danger-full-access"` 기본값은 이 이슈에서 변경하지 않는다.
+
+### 17. exec auth chain 우선순위와 login status 한계
+
+심각도: 정보 — scratch `CODEX_HOME`이나 `--ignore-user-config`를 쓰는 자동화에서 auth 경계를 오해하면 `Not logged in` 또는 의도치 않은 계정 사용으로 실패한다.
+
+운영 계약: `codex exec` 경로의 auth 우선순위는 `CODEX_API_KEY > ephemeral tokens > auth.json`이다. `OPENAI_API_KEY`는 exec auth chain에 참여하지 않으며, interactive TUI에서 API key 입력을 보조하는 prefill로만 취급한다.
+
+현재 CLI에서 실측 가능한 경계:
+- `codex exec --help` (codex-cli 0.142.5, 2026-07-07)는 `--ignore-user-config`를 "`$CODEX_HOME/config.toml`은 로드하지 않지만 auth는 `CODEX_HOME`을 계속 사용"하는 플래그로 설명한다. 따라서 이 플래그는 MCP/config 표면 차단용이지 auth 차단용이 아니다.
+- 빈 scratch `CODEX_HOME`에서 `codex login status`는 `Not logged in`을 반환했고, 같은 조건에 더미 `OPENAI_API_KEY`를 추가해도 결과는 바뀌지 않았다. host `CODEX_HOME`에서는 `Logged in using ChatGPT`가 반환되어, `auth.json`/저장된 ChatGPT token 계열은 `CODEX_HOME`에 묶여 있음을 확인했다.
+- `CODEX_API_KEY`는 exec 전용 경로이므로 `codex login status`만으로 우선순위 전체를 검증하지 않는다. scratch `CODEX_HOME`을 쓰는 automation은 `CODEX_API_KEY`를 명시적으로 전달하거나, 필요한 경우 기존 `auth.json`을 scratch `CODEX_HOME`으로 복사한 뒤 `codex login status`로 저장 auth 존재만 확인한다.
+
+재검증:
+
+```bash
+codex exec --help | rg -- '--ignore-user-config|auth still uses'
+tmp=$(mktemp -d /tmp/codex-auth-check-XXXXXX)
+CODEX_HOME="$tmp" codex login status
+CODEX_HOME="$tmp" OPENAI_API_KEY=sk-dummy codex login status
+rm -rf "$tmp"
+```

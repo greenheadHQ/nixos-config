@@ -78,7 +78,7 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
 - 제거/되돌림 결정의 근거 보존: 변경이 기존 코드/정책을 제거·되돌리는 것이면, CIR에 "무엇을 왜 제거하며, 그것이 과거에 의도적으로 도입된 것이면 도입 근거·출처(PR#/commit/issue#)"를 명시한다. 비자명한 방어 로직·트레이드오프 선택은 코드 옆 인라인 `# CIR:` 주석으로 "왜 이렇게 했는지(제거 시 주의)"를 남긴다 — 미래 세션의 의사결정·회귀 조사가 읽을 신호 품질을 높인다 ([`../run-da/references/decision-regression-audit.md`](../run-da/references/decision-regression-audit.md)).
 - 도구-중립 기술 (Codex / Claude Code / headless 공통): 특정 AI 에이전트 전용 도구명을 본문에 하드코딩하지 않는다. "gh pr create를 실행한다"가 아니라 "PR을 생성한다"처럼 행동 의도로 기술한다. 단, 참조/예시에서의 CLI 명령(`gh pr create` 등)은 예외로 허용한다.
 - PR 본문 박제 금지 항목: 라운드 번호(`Round N`), DA finding ID(예: `Correctness-1`, `CORR-2`), partial commit hash chain, 워크트리 절대경로.
-  - 변경 의도(why)는 자연어 설명으로 표현한다. lefthook commit-msg hook은 라운드 번호/DA finding ID/DA 키워드만 warn-only로 감지한다. partial commit hash chain은 CLAUDE.md `Durable output pinning policy`의 prose 가이드로 직접 점검하고, 워크트리 절대경로는 본 가이드 자체에서 PR 본문 작성 시 자연어 설명·repo-relative 경로로 대체하여 점검한다. PR 본문도 동일 정책을 따른다.
+  - 변경 의도(why)는 자연어 설명으로 표현한다. lefthook commit-msg hook은 라운드 번호/DA finding ID/DA 키워드만 warn-only로 감지한다. partial commit hash chain 감지 패턴의 실존 SSOT는 [`../../lib/pinning-patterns.sh`](../../lib/pinning-patterns.sh)이며, PR 본문 작성 시에는 본 가이드의 prose 규칙으로 직접 점검한다. 워크트리 절대경로는 본 가이드 자체에서 자연어 설명·repo-relative 경로로 대체하여 점검한다. PR 본문도 동일 정책을 따른다.
 
 ## 참조 자료
 

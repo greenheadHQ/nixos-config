@@ -227,7 +227,7 @@ env CODEX_PROGRAMMATIC=1 codex exec resume --last --all    # cwd 필터 해제�
 
 1. `--search`는 exec에서 미동작: `error: unexpected argument '--search' found`. 대안: `-c web_search=live` (재확인: 2026-07-03, 0.142.5에서도 동일)
 2. 과거 자동 실행 플래그(승인 자동화 + `--sandbox workspace-write`를 함께 지정하던 단축 플래그)는 0.142.5에서 완전히 제거됨: 그 이름 그대로 호출하면 `error: unexpected argument ... found`. exec에서는 `-s workspace-write`로 명시한다. 재확인 결과 이 조합은 config.toml의 `sandbox_mode`를 조용히 override하지 않는다 — 명시한 `-s` 값이 그대로 적용된다 (2026-07-03 실측: `-s read-only` 지정 시 config.toml이 `danger-full-access`여도 실제로 `read-only`로 실행됨).
-3. CODEX_API_KEY는 exec 전용: interactive TUI와 VS Code extension에서는 무시됨. OPENAI_API_KEY는 auth 체인에 미참여 (TUI prefill 전용). 우선순위: CODEX_API_KEY > ephemeral tokens > auth.json (상세: [known-issues.md](references/known-issues.md) 워크트리 참고)
+3. CODEX_API_KEY는 exec 전용: interactive TUI와 VS Code extension에서는 무시됨. OPENAI_API_KEY는 auth 체인에 미참여 (TUI prefill 전용). 우선순위: CODEX_API_KEY > ephemeral tokens > auth.json (상세: [known-issues.md §17](references/known-issues.md#17-exec-auth-chain-우선순위와-login-status-한계))
 4. ephemeral 세션 resume 불가: `--ephemeral`으로 실행한 세션은 파일 미저장되어 `No saved session found` 에러 발생
 5. `codex review` (top-level) vs `codex exec review`: 전자는 `-m`, `--json`, `-o`, `--output-schema`, `--ephemeral`, `-s/--sandbox` 등 미지원 (재확인: 2026-07-03, `codex review --help`). 비대화형 자동화에는 반드시 `codex exec review` 사용
 6. Bash tool sandbox에서 `&` + `$!` 미작동: Claude Code의 Bash tool에서 background process PID 캡처(`$!`)가 리터럴 문자열로 반환됨. shell-level 병렬 대신 여러 병렬 Bash tool 호출 (예: codex exec 경로의 `run-da` — audit 모드 포함) + `cat file | env CODEX_PROGRAMMATIC=1 codex exec ... -` stdin pipe를 사용한다. 이 제약은 Codex 세션의 native subagent 경로에는 적용되지 않는다. 상세: [known-issues.md](references/known-issues.md) §11
