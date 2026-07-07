@@ -1,6 +1,12 @@
 # Mode: for_plan
 
-계획 단계 DA 1회 — 계획 파일 또는 대화 컨텍스트 대상.
+계획 단계 DA 1회 — 구현 계획 또는 실행 근거 문서 대상.
+
+## 대상 정의
+
+for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니라 이슈/PRD 본문처럼 이후 실행의 근거가 될 문서를 포함한다.
+
+문서 대상일 때는 구현 가능성 외에도 자기완결성, 근거를 실제로 측정·확인할 수 있는지, 스코프 경계와 제외 범위가 명확한지를 검토한다. 문서 QA는 기존 reviewer bundle의 관점으로 수행하며 새 reviewer나 별도 단계를 만들지 않는다.
 
 ## Step 0: Review Intensity 판단
 
@@ -13,7 +19,9 @@
 
 ## Step 1: 계획 내용 수집 + 의사결정 컨텍스트 팩
 
-현재 계획 파일 또는 대화 컨텍스트에서 계획 내용을 수집한다.
+현재 계획 파일, 실행 근거 문서, 또는 대화 컨텍스트에서 검토 대상 내용을 수집한다.
+
+검토 시작 자문 항목: 이 계획이나 문서가 제안하는 변경 규모·복잡도가 원래 pain point의 크기에 비례하는가, 더 작은 해법이 있는가. 판정 결과는 DA 보고에 포함한다. 불비례하다고 판단되면 finding으로 제기하고 축소 대안을 함께 제시한다.
 
 계획이 제거·단순화·되돌림·리팩터 방향이거나 변경 대상이 git상 왕복 핫스팟이면, [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md)의 발동 조건에 따라 "의사결정 컨텍스트 팩"(해당 문서 Step A)을 수집한다 — 메인이 commit/PR/issue(+있으면 CIR/ADR·로컬 세션 로그)에서 과거 결정·되돌림 이력을 추려, Step 2의 reviewer 프롬프트와 Step 5의 Arbiter 프롬프트에 selective propagation으로 주입한다. 그 외 변경은 Review Intensity에 연동한다(FULL=전체 조사, LITE=경량, SKIP=생략).
 
@@ -120,4 +128,4 @@ pending write queue가 있으면 메인 에이전트가 single-writer로 일괄 
 
 ## Step 7: CLEAR까지 반복
 
-선택된 review unit 전부 CLEAR를 반환할 때까지 Step 2-6을 반복한다. CLEAR까지 반복 규칙은 [`../references/protocol.md`](../references/protocol.md)의 "최대 라운드 수"(상한 + 추세 기반 조기 중단)와 read/write 분리를 함께 적용한다. 각 반복에서 Step 2-5는 frozen changeset에 대한 read-only review phase이고, Step 6만 batch write phase다. CLEAR 도달 전에 상한 또는 추세 기반 조기 중단 조건이 충족되면 사용자에게 보고하고 종료/계속을 결정한다(질문 도구 미지원 런타임은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 자동 전이를 따른다).
+선택된 review unit 전부 CLEAR를 반환할 때까지 Step 2-6을 반복한다. CLEAR까지 반복 규칙은 [`../references/protocol.md`](../references/protocol.md)의 "최대 라운드 수"(상한 + 한계효용 + 비수렴 조기중단)와 read/write 분리를 함께 적용한다. 각 반복에서 Step 2-5는 frozen changeset에 대한 read-only review phase이고, Step 6만 batch write phase다. CLEAR 도달 전에 상한, 한계효용 저하, 비수렴 조기중단 조건이 충족되면 사용자에게 보고하고 종료/계속을 결정한다(질문 도구 미지원 런타임은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 자동 전이를 따른다).
