@@ -1,0 +1,10 @@
+[
+  {"query": "열린 이슈 전수 평가해서 다음 작업 추천해줘", "should_trigger": true, "why": "명시적: 열린 이슈 백로그 평가와 착수 추천은 triage-issues 범위"},
+  {"query": "priority high 이슈 중 공수 대비 효용 좋은 순서로 정리", "should_trigger": true, "why": "범위 힌트 포함: 라벨 기반 이슈 triage와 착수 후보 선별"},
+  {"query": "stale 이슈랑 YAGNI close 후보를 골라줘", "should_trigger": true, "why": "명시적: stale/YAGNI 판정과 close 후보 제안은 triage-issues 범위"},
+  {"query": "다음에 착수할 이슈 top 3 추천", "should_trigger": true, "why": "명시적: 다음 작업 추천은 이슈 백로그 triage"},
+  {"query": "이 버그 내용으로 GitHub 이슈 만들어줘", "should_trigger": false, "why": "혼동 쌍: 새 이슈 등록은 create-issue 범위"},
+  {"query": "todo 등록하고 priority 라벨 붙여줘", "should_trigger": false, "why": "혼동 쌍: 이슈 생성과 라벨 자동 결정은 create-issue 범위"},
+  {"query": "머지된 PR의 관련 이슈를 close하고 PR 마무리해줘", "should_trigger": false, "why": "혼동 쌍: 머지 직후 관련 이슈 동기화는 finish-pr 범위"},
+  {"query": "squash merge 후 검증 결과 남기고 이슈 동기화", "should_trigger": false, "why": "혼동 쌍: PR 종결 절차의 일부이므로 finish-pr 범위"}
+]
