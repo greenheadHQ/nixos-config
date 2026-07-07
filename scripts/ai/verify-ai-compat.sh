@@ -3,6 +3,15 @@
 # 사용: `./scripts/ai/verify-ai-compat.sh` 또는 devShell에서 `verify-ai-compat`
 # tomlkit 미가용 환경에서는 자동으로 `nix shell .#pythonWithTomlkit --command bash "$0"`로
 # 재실행된다 (아래 tomlkit self-wrap 섹션 참조).
+#
+# 스킬 제거/개명 퇴역 체크리스트:
+# - 소스 디렉토리 삭제/이동: modules/shared/programs/claude/files/skills/ 또는 .claude/skills/
+# - modules/shared/programs/claude/default.nix 배선 항목 제거
+# - modules/shared/programs/codex/default.nix exposedCodexSkills/intentionallyNotExposed 항목 제거
+# - 이 스크립트의 EXPECTED_* 목록에서 제거하고 RETIRED_SHARED_SKILLS에 등록
+# - 전 스킬 코퍼스에서 스킬명 cross-reference grep (NOT-for, 산문 참조)
+# - 전 스킬 evals/queries.json에서 혼동쌍 잔존 grep
+# - nrs로 홈 디렉터리 심링크 정리 반영
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -93,6 +102,57 @@ in_list() {
     [ "$item" = "$needle" ] && return 0
   done
   return 1
+}
+
+# 현존 스킬 문서/evals만 검사한다. verify-ai-compat.sh 자기 자신과 이 검사 코드의
+# RETIRED_SHARED_SKILLS 리터럴은 의도적으로 스캔 범위 밖이다.
+list_skill_reference_files() {
+  local root="$1"
+  [ -d "$root" ] || return 0
+
+  find "$root" \
+    \( -path '*/SKILL.md' -o -path '*/references/*.md' -o -path '*/evals/queries.json' \) \
+    -type f -print
+}
+
+verify_retired_shared_skill_references() {
+  local candidate_list match_file skill_name candidate match_count match grep_rc
+
+  candidate_list="$(mktemp "${TMPDIR:-/tmp}/verify-ai-retired-skill-ref-files.XXXXXX")"
+  match_file="$(mktemp "${TMPDIR:-/tmp}/verify-ai-retired-skill-refs.XXXXXX")"
+  list_skill_reference_files "$SOURCE_SKILLS_DIR" >"$candidate_list"
+  list_skill_reference_files "$SHARED_SKILLS_DIR" >>"$candidate_list"
+  sort -u -o "$candidate_list" "$candidate_list"
+
+  for skill_name in "${RETIRED_SHARED_SKILLS[@]}"; do
+    : >"$match_file"
+    while IFS= read -r candidate; do
+      [ -n "$candidate" ] || continue
+      if grep -nFH -- "$skill_name" "$candidate" >>"$match_file"; then
+        :
+      else
+        grep_rc=$?
+        if [ "$grep_rc" -gt 1 ]; then
+          fail "retired shared 스킬 참조 검사 grep 실패: ${candidate#"$REPO_ROOT"/} (rc=$grep_rc)"
+        fi
+      fi
+    done <"$candidate_list"
+
+    if [ -s "$match_file" ]; then
+      match_count="$(wc -l <"$match_file" | tr -d '[:space:]')"
+      # 문서에는 "과거 X 스킬은 제거" 같은 이력 서술도 남을 수 있어,
+      # retired 배포 잔재와 달리 우선 warn-only로 두고 사람이 의도를 판정한다.
+      warn "retired shared 스킬 문서/evals 참조 잔존: $skill_name (${match_count}건)"
+      while IFS= read -r match; do
+        match="${match#"$REPO_ROOT"/}"
+        echo "    $match" >&2
+      done <"$match_file"
+    else
+      pass "retired shared 스킬 문서/evals 참조 없음: $skill_name"
+    fi
+  done
+
+  rm -f "$candidate_list" "$match_file"
 }
 
 # shellcheck disable=SC1091  # source file은 repo 내부 고정 경로
@@ -654,6 +714,11 @@ for retired_executable in "${RETIRED_EXECUTABLES[@]}"; do
     pass "retired executable 잔재 없음: $retired_label"
   fi
 done
+
+echo ""
+echo "=== Retired 스킬 문서/evals 잔존 참조 확인 ==="
+
+verify_retired_shared_skill_references
 
 echo ""
 echo "=== SKILL.md 도구-중립성 lint ==="
