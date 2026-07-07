@@ -19,6 +19,8 @@ pre-commit:
         fi
     ai-skills-consistency:
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-consistency.sh
+    ai-skill-stale-identifiers:
+      run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-stale-identifiers.sh
     gitleaks:
       run: bash ./scripts/ai/run-gitleaks-staged-policy.sh
     nixfmt:
