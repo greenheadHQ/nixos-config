@@ -5,6 +5,38 @@
 > 항목 번호(#1, #23 등)는 최초 발견 순서를 유지하며, 카테고리별로 그룹화되어 있다.
 > 번호 순서대로가 아닌 카테고리순으로 정렬되어 있으므로, 특정 번호를 찾으려면 페이지 검색을 사용한다.
 
+## 2026-07-08 재검증 상태 (Claude Code v2.1.202)
+
+- 재검증 명령: `claude --version && claude --help && claude -p --help`
+- 네트워크 차단 sandbox에서는 실제 `claude -p` 호출이 필요한 항목을 재실행하지 않았다. 해당 항목은 "재검증 미수행 (v2.1.202 기준 서술 유지)"로 표시한다.
+
+| 항목 | 판정 |
+|------|------|
+| #1 | `--allowed-tools` variadic help 표기 확인. 인라인 프롬프트 파싱 버그는 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #23 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #24 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #39 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #40 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #36/#35 | `--allowed-tools` help 표기 확인. 패턴 매칭 의미는 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #6 | `--output-format` choices 확인. help의 `json` 설명은 `single result`로 변경됨. 실제 JSON shape는 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #17 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #22 | `--debug`, `--verbose`, `--debug-file` help 표기 확인. stderr 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #2/#18/#19 | `--max-turns`가 v2.1.202 help에도 미표시임을 확인. 실제 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #4 | `--max-budget-usd` help 표기 확인. exit/subtype 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #20 | `--cwd`가 v2.1.202 help에 없음을 확인 |
+| #21 | `--output-file`/`-o`가 v2.1.202 help에 없음을 확인 |
+| #3 | permission 관련 help 표기 확인. 도구 거부/exit 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #7 | `--permission-mode bypassPermissions` help 선택지 확인 |
+| #12/#25/#26/#27 | `--disable-hooks`가 v2.1.202 help에 없음을 확인. hooks 결정 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #33 | `--permission-prompt-tool`이 v2.1.202 help에 없음을 확인. 숨은 플래그 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #5 | `--tools`, `--mcp-config`, `--strict-mcp-config` help 표기와 `--mcp-servers`/`--no-mcp` 부재 확인. MCP 잔존 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #13 | `--disable-slash-commands` help 표기 확인. 실제 응답 문구는 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #38 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #28/#29/#37/#30 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #8/#9/#14 | `--resume`, `--append-system-prompt` help 표기 확인. 실제 context/override 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #15/#16/#32 | 문서 내 SSH/shell 논리만 유지. CLI 실행 재검증 대상 아님 |
+| #10/#11/#31/#34 | 재검증 미수행 또는 문서 서술 유지 (v2.1.202 기준) |
+
 ## 목차
 
 - [입력 (Input)](#입력-input)
@@ -40,7 +72,7 @@ echo "" | claude -p          # 빈 줄 전송 → hang (무한 대기, 출력 �
 claude -p ""                 # 빈 문자열 인수 → 에러, exit 1
 ```
 
-⚠️ `echo "" | claude -p`는 "유효 입력"이 아니라 무한 대기 상태에 빠진다 (v2.1.76 실측; v2.1.116 재검증 미수행). 두 패턴 모두 사용하지 않는다.
+⚠️ `echo "" | claude -p`는 "유효 입력"이 아니라 무한 대기 상태에 빠진다 (v2.1.76 실측; v2.1.202 실제 `claude -p` 재검증 미수행, 서술 유지). 두 패턴 모두 사용하지 않는다.
 
 ### #24. 인라인 인수만 쓸 때 stdin이 tty면 EOF 대기하며 hang
 
@@ -75,7 +107,7 @@ echo "먼저 .env 파일에서 MY_TOKEN을 읽은 뒤 사용하라" | claude -p 
 
 ⚠️ 보안 주의: `VAR=val command` 형태는 셸 히스토리와 `/proc/<pid>/environ`에 credential이 노출된다. 프로덕션에서는 secrets manager 또는 `read -s VAR && VAR="$VAR" claude -p ...` 패턴을 사용하라. `.env` + `--dangerously-skip-permissions` 조합은 에이전트가 파일 내 모든 secret을 읽고 임의 명령으로 외부 전송할 수 있으므로, 신뢰할 수 없는 환경에서는 사용하지 마라.
 
-v2.1.81 실측 (v2.1.116 재검증 미수행). `CLAUDE_CODE_MAX_RETRIES`, `ANTHROPIC_API_KEY` 등 Claude Code 내장 환경변수는 정상 인식됨.
+v2.1.81 실측 (v2.1.202 실제 `claude -p` 재검증 미수행, 서술 유지). `CLAUDE_CODE_MAX_RETRIES`, `ANTHROPIC_API_KEY` 등 Claude Code 내장 환경변수는 정상 인식됨.
 
 ### #40. stdin 파이프 대용량 입력 정상 동작 확인
 
@@ -86,7 +118,7 @@ SKILL.md + 에이전트 지시서 + 참조 파일 다수를 합산한 대용량 
 cat skill.md agent.md references.md | claude -p --output-format text > result.md
 ```
 
-⚠️ 극단적 상한은 미확인. CLI → Node.js 런타임 → API context window로 이어지는 다층 파이프라인 중 어느 레이어에서 상한이 걸리는지 미검증. 프로덕션 파이프라인에서는 적절한 청킹 전략을 병행하라. v2.1.81 실측.
+⚠️ 극단적 상한은 미확인. CLI → Node.js 런타임 → API context window로 이어지는 다층 파이프라인 중 어느 레이어에서 상한이 걸리는지 미검증. 프로덕션 파이프라인에서는 적절한 청킹 전략을 병행하라. v2.1.81 실측 (v2.1.202 실제 `claude -p` 재검증 미수행, 서술 유지).
 
 ### #36. `allowed-tools` 패턴에서 공백이 중요
 
@@ -175,7 +207,7 @@ echo "아주 긴 에세이를 5000단어로 써줘" | claude -p --max-budget-usd
 
 ### #18. `--max-turns`는 `--help`에 표시되지 않는 숨겨진 플래그
 
-`claude -p --help` 출력에 `--max-turns`가 없지만 실제로 동작한다. ⚠️ `CLAUDE_CODE_MAX_TURNS` 환경변수는 v2.1.76 바이너리에 존재하지 않음 (실측 + 소스 분석으로 확인). CLI flag `--max-turns`가 유일한 제어 수단이다.
+`claude --help`/`claude -p --help` v2.1.202 출력에도 `--max-turns`가 없지만, 기존 실측에서는 실제로 동작했다. ⚠️ `CLAUDE_CODE_MAX_TURNS` 환경변수는 v2.1.76 바이너리에 존재하지 않음 (실측 + 소스 분석으로 확인). CLI flag `--max-turns`가 유일한 제어 수단이라는 서술은 실제 `claude -p` 재검증 미수행 (v2.1.202 기준 서술 유지).
 
 ### #19. `--max-turns` 도달 시 `is_error: false`
 
@@ -183,7 +215,7 @@ result subtype은 `error_max_turns`이지만 `is_error: false` — 에러가 아
 
 ### #20. `--cwd` 플래그 존재하지 않음
 
-작업 디렉토리를 변경하려면 `cd dir && claude -p` 패턴이 유일한 방법.
+작업 디렉토리를 변경하려면 `cd dir && claude -p` 패턴이 유일한 방법. `--cwd`는 v2.1.202 `claude --help`/`claude -p --help`에도 없다.
 
 ```bash
 # ❌ 존재하지 않음
@@ -195,7 +227,7 @@ cd /path/to/project && echo "prompt" | claude -p
 
 ### #21. `--output-file` / `-o` 플래그 존재하지 않음
 
-shell redirect를 사용해야 한다.
+shell redirect를 사용해야 한다. `--output-file`/`-o`는 v2.1.202 `claude --help`/`claude -p --help`에도 없다.
 
 ```bash
 # ❌ 존재하지 않음
@@ -218,7 +250,7 @@ echo "ls /tmp 실행해줘" | claude -p; echo "EXIT: $?"
 
 도구를 못 썼는데도 에러가 아닌 정상 종료. 실패를 감지하려면 출력 내용을 파싱해야 한다.
 
-⚠️ `--dangerously-skip-permissions` + `--allowed-tools` 상호작용: `--dangerously-skip-permissions`는 `--allowed-tools` 제한을 완전히 무시한다. `--allowed-tools "Read"`로 Bash를 제한하더라도 `--dangerously-skip-permissions`가 있으면 Bash가 제한 없이 사용 가능하다. 도구를 실제로 제한하려면 `--dangerously-skip-permissions` 없이 `--allowed-tools`를 단독 사용하라. v2.1.81 실측.
+⚠️ `--dangerously-skip-permissions` + `--allowed-tools` 상호작용: `--dangerously-skip-permissions`는 `--allowed-tools` 제한을 완전히 무시한다. `--allowed-tools "Read"`로 Bash를 제한하더라도 `--dangerously-skip-permissions`가 있으면 Bash가 제한 없이 사용 가능하다. 도구를 실제로 제한하려면 `--dangerously-skip-permissions` 없이 `--allowed-tools`를 단독 사용하라. v2.1.81 실측 (v2.1.202 실제 `claude -p` 재검증 미수행, 서술 유지).
 
 ### #7. `--permission-mode bypassPermissions` = `--dangerously-skip-permissions`
 
@@ -229,19 +261,19 @@ echo "ls /tmp | head -2" | claude -p --permission-mode bypassPermissions
 
 ### #12/25. `--dangerously-skip-permissions`는 hooks의 block을 무시하지 않음
 
-Permission prompt만 건너뛰고, hooks 자체는 호출된다. 단, `bypassPermissions` 모드에서는 hooks의 결정이 passthrough로 무시된다 (#26 참조). ⚠️ `--disable-hooks` 플래그는 v2.1.76에 존재하지 않음.
+Permission prompt만 건너뛰고, hooks 자체는 호출된다. 단, `bypassPermissions` 모드에서는 hooks의 결정이 passthrough로 무시된다 (#26 참조). ⚠️ `--disable-hooks` 플래그는 v2.1.202 `claude --help`/`claude -p --help`에도 존재하지 않음.
 
 ### #26. `bypassPermissions` 모드에서 hooks는 호출되지만 결정이 passthrough로 무시됨
 
 hooks 자체는 실행되지만, hooks의 allow/deny/block 결정이 결과에 반영되지 않는다. 이는 #12/25와 일관됨: `--dangerously-skip-permissions`(= `bypassPermissions`)는 permission prompt를 건너뛰고, hooks 결정도 무시한다.
 
-### #27. `default` 모드에서 hooks의 allow/deny/block 결정은 정상 반영됨
+### #27. 권한 모드 생략 시 hooks의 allow/deny/block 결정은 정상 반영됨
 
-비대화형 모드에서도 `default` 퍼미션 모드를 사용하면 hooks의 결정이 존중된다.
+비대화형 모드에서도 `--permission-mode`를 생략한 기본 동작에서는 hooks의 결정이 존중된다. v2.1.202 help의 `--permission-mode` 선택지에는 `default`가 없으므로, 기존 "default 모드" 표현은 플래그 생략 상태로 해석한다.
 
 ### #33. `--permission-prompt-tool`로 MCP 도구에 퍼미션 처리 위임 가능
 
-비대화형 모드에서 인터랙티브 권한 프롬프트를 MCP 도구에 위임할 수 있다. 자체 퍼미션 UI가 있는 CI/CD 시스템에 유용.
+비대화형 모드에서 인터랙티브 권한 프롬프트를 MCP 도구에 위임할 수 있다. 자체 퍼미션 UI가 있는 CI/CD 시스템에 유용. `--permission-prompt-tool`은 v2.1.202 `claude --help`/`claude -p --help`에 표시되지 않으며, 실제 `claude -p` 재검증 미수행 (v2.1.202 기준 서술 유지).
 
 ---
 
@@ -254,9 +286,9 @@ echo "현재 디렉토리의 파일 목록을 보여줘" | claude -p --tools ""
 # "Figma 관련 MCP 도구만 사용할 수 있는 상태입니다."
 ```
 
-⚠️ `--mcp-servers ""` / `--no-mcp` 플래그는 v2.1.76에 존재하지 않음. MCP 도구를 비활성화하는 공식 방법은 `claude -p --help` 출력을 확인한다.
+⚠️ `--mcp-servers ""` / `--no-mcp` 플래그는 v2.1.202 `claude --help`/`claude -p --help`에도 존재하지 않음. `--mcp-config`와 `--strict-mcp-config`는 help에 있으나, 빈 MCP 구성으로 전체 비활성화하는 패턴은 별도 재검증 필요.
 
-⚠️ 역방향도 성립: `--allowed-tools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 초기화되지 않으면 사용 불가. `--allowed-tools`는 허용 목록이지, 서버 활성화 지시가 아니다. MCP 서버 초기화는 `.mcp.json` 또는 `settings.json`의 MCP 설정에 의존한다 (`.mcp.json`에 미등록이거나 서버 프로세스가 init 단계에서 연결 실패한 경우 "미활성"). `--strict-mcp-config`로 특정 MCP 설정만 로드하는 것도 가능하다 (v2.1.81+). v2.1.81 실측.
+⚠️ 역방향도 성립: `--allowed-tools "mcp__server__tool"`에 MCP 도구명을 명시해도 해당 MCP 서버가 세션에서 초기화되지 않으면 사용 불가. `--allowed-tools`는 허용 목록이지, 서버 활성화 지시가 아니다. MCP 서버 초기화는 `.mcp.json` 또는 `settings.json`의 MCP 설정에 의존한다 (`.mcp.json`에 미등록이거나 서버 프로세스가 init 단계에서 연결 실패한 경우 "미활성"). `--strict-mcp-config`로 특정 MCP 설정만 로드하는 것도 가능하다 (v2.1.202 help 확인). MCP 초기화 동작은 v2.1.81 실측 (v2.1.202 실제 `claude -p` 재검증 미수행, 서술 유지).
 
 ### #13. `--disable-slash-commands`로 스킬 비활성화 시 "Unknown skill"
 
@@ -286,7 +318,7 @@ cat skill-content.md agent-instructions.md | claude -p --output-format text > re
 # Claude Code 대화형 모드에서 /plugins 또는 재설치 명령 실행
 ```
 
-⚠️ 이 동작은 Claude Code의 내부 플러그인 인덱싱 메커니즘에 의존하며, 향후 버전에서 변경될 수 있다. v2.1.81 실측. 상세 우회 패턴: [patterns.md](patterns.md) 패턴 9 참조.
+⚠️ 이 동작은 Claude Code의 내부 플러그인 인덱싱 메커니즘에 의존하며, 향후 버전에서 변경될 수 있다. v2.1.81 실측 (v2.1.202 실제 `claude -p` 재검증 미수행, 서술 유지). 상세 우회 패턴: [patterns.md](patterns.md) 패턴 9 참조.
 
 ### #35. `allowed-tools` 패턴 공백 의미 차이
 
@@ -427,7 +459,7 @@ wait
 
 ## 참고
 
-- 확인 날짜: 2026-04-21
-- 확인 버전: Claude Code v2.1.116
+- 확인 날짜: 2026-07-08
+- 확인 버전: Claude Code v2.1.202
 - 확인 범위: 문서 메타데이터/핵심 항목 기준이며, 각 항목의 재검증 상태는 본문 주석(예: "재검증 미수행")을 따른다.
-- 재검증: `claude --version` 출력과 비교 후, 변경된 항목이 있으면 갱신한다
+- 재검증: `claude --version && claude --help && claude -p --help` 출력과 비교 후, 변경된 항목이 있으면 갱신한다
