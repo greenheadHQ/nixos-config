@@ -20,6 +20,10 @@
 
 set -euo pipefail
 
+# Claude Code description 상한 1024자 실측 기준, 상한 변경 시 갱신.
+DESCRIPTION_WARN_CHARS=900
+DESCRIPTION_FAIL_CHARS=1024
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MODE="worktree"
 if [[ "${1:-}" == "--staged" ]]; then
@@ -38,7 +42,7 @@ fi
 
 SKILLS_DIR_ABS="$(cd "$SKILLS_DIR" && pwd)"
 
-python3 - "$MODE" "$REPO_ROOT" "$SKILLS_DIR_ABS" <<'PY'
+python3 - "$MODE" "$REPO_ROOT" "$SKILLS_DIR_ABS" "$DESCRIPTION_WARN_CHARS" "$DESCRIPTION_FAIL_CHARS" <<'PY'
 import bisect
 import os
 import re
@@ -49,6 +53,8 @@ from pathlib import Path
 mode = sys.argv[1]
 repo_root = Path(sys.argv[2]).resolve()
 base = Path(sys.argv[3])
+description_warn_chars = int(sys.argv[4])
+description_fail_chars = int(sys.argv[5])
 
 
 def fail(message):
@@ -80,6 +86,86 @@ def resolve_inside_repo(path, label):
 
 def normalize_newlines(text):
     return text.replace('\r\n', '\n').replace('\r', '\n')
+
+
+def frontmatter_lines(text):
+    lines = text.split('\n')
+    if not lines or lines[0] != '---':
+        return None
+    for idx in range(1, len(lines)):
+        if lines[idx] == '---':
+            return lines[1:idx]
+    return None
+
+
+def _leading_spaces(line):
+    return len(line) - len(line.lstrip(' '))
+
+
+def _block_scalar_value(lines, start_idx, indicator):
+    style = indicator[0]
+    block_lines = []
+    block_indent = None
+    for raw in lines[start_idx + 1:]:
+        if raw.strip() == '':
+            block_lines.append('')
+            continue
+        indent = _leading_spaces(raw)
+        if block_indent is None and indent == 0:
+            break
+        if block_indent is None:
+            block_indent = indent
+        if indent < block_indent:
+            break
+        block_lines.append(raw[block_indent:])
+    if style == '>':
+        folded = []
+        pending_blank = False
+        for line in block_lines:
+            if line == '':
+                folded.append('\n')
+                pending_blank = True
+            else:
+                if folded and not pending_blank:
+                    folded.append(' ')
+                folded.append(line)
+                pending_blank = False
+        return ''.join(folded)
+    return '\n'.join(block_lines)
+
+
+def frontmatter_scalar(lines, key):
+    if lines is None:
+        return None
+    key_pattern = re.compile(rf'^{re.escape(key)}:\s*(.*)$')
+    block_pattern = re.compile(r'^([|>])[-+]?(?:\d+)?(?:\s+#.*)?$')
+    for idx, line in enumerate(lines):
+        if line.startswith((' ', '\t', '-')):
+            continue
+        m = key_pattern.match(line)
+        if not m:
+            continue
+        value = m.group(1).strip()
+        block_match = block_pattern.match(value)
+        if block_match:
+            return _block_scalar_value(lines, idx, block_match.group(1))
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            return value[1:-1]
+        return value
+    return None
+
+
+def skill_description_meta(rel, text):
+    if Path(rel).name != "SKILL.md":
+        return None
+    frontmatter = frontmatter_lines(text)
+    description = frontmatter_scalar(frontmatter, "description")
+    if description is None:
+        return None
+    name = frontmatter_scalar(frontmatter, "name")
+    if not name:
+        name = Path(rel).parent.name
+    return name, description
 
 def tokenize_fences(text):
     # CommonMark fenced code block: opening fence 가 있으면 같은 character + 같거나 더 긴 length 의
@@ -199,7 +285,7 @@ def count_bold_outside(text):
     starts = [s for s, e in spans]
     count = 0
     locations = []
-    for m in re.finditer(r'\*\*[^*\n]+\*\*', text):
+    for m in re.finditer(r'\*\*(?:(?!\n[ \t]*\n)[^*])+\*\*', text):
         # bold 매치 전체가 같은 span 안에 contained 되어야 protected.
         contained = False
         if spans:
@@ -381,11 +467,32 @@ else:
 
 total_bold = 0
 total_empty = 0
+total_description_fail = 0
+description_total_chars = 0
+description_max_name = ""
+description_max_chars = 0
 has_failures = False
 for rel, text in md_items:
     bc, blocs = count_bold_outside(text)
     ec, elocs = count_excessive_empty_outside(text)
-    if bc > 0 or ec > 0:
+    description_meta = skill_description_meta(rel, text)
+    dc = 0
+    if description_meta is not None:
+        skill_name, description = description_meta
+        desc_len = len(description)
+        description_total_chars += desc_len
+        if desc_len > description_max_chars:
+            description_max_name = skill_name
+            description_max_chars = desc_len
+        if desc_len > description_fail_chars:
+            dc = 1
+            total_description_fail += 1
+        elif desc_len >= description_warn_chars:
+            print(
+                f"[WARN] {rel}: description {desc_len}자 "
+                f"(warn {description_warn_chars}자, fail > {description_fail_chars}자)"
+            )
+    if bc > 0 or ec > 0 or dc > 0:
         has_failures = True
         if bc > 0:
             print(f"[FAIL] {rel}: bold {bc} 건 잔존")
@@ -395,12 +502,24 @@ for rel, text in md_items:
             print(f"[FAIL] {rel}: excessive empty lines {ec} 건 잔존")
             for ln, nl in elocs[:5]:
                 print(f"        L{ln}: {nl} consecutive newlines")
+        if dc > 0:
+            print(
+                f"[FAIL] {rel}: description {desc_len}자 "
+                f"(fail > {description_fail_chars}자)"
+            )
         total_bold += bc
         total_empty += ec
 
 if has_failures:
-    print(f"\n[FAIL] TOTAL bold={total_bold}, excessive_empty={total_empty}")
+    print(
+        f"\n[FAIL] TOTAL bold={total_bold}, excessive_empty={total_empty}, "
+        f"description={total_description_fail}"
+    )
     sys.exit(1)
 
 print("[PASS] bold + excessive empty lines 잔존 0 건 (보호 컨텍스트 외)")
+print(
+    f"[INFO] description 총량 {description_total_chars}자 "
+    f"(최대 {description_max_name or '없음'} {description_max_chars}자)"
+)
 PY

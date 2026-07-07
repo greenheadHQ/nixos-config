@@ -50,8 +50,8 @@ tmux 세션 "claude-rc" (detached 상시 구동)
 | `claude-rc --cleanup` | 서버 종료 + worktree prune + orphan 디렉토리 삭제 |
 
 옵션: `--permission-mode <mode>`, `--capacity <N>`, `--name <name>`.
-수동 실행 시에도 **배선 모듈의 선언값(NixOS `homeserver.claudeRemoteControl.*` /
-darwin 모듈 상수)과 일치시켜야** 자동 재시작 후 동작이 달라지지 않는다.
+수동 실행 시에도 배선 모듈의 선언값(NixOS `homeserver.claudeRemoteControl.*` /
+darwin 모듈 상수)과 일치시켜야 자동 재시작 후 동작이 달라지지 않는다.
 
 ## 자동 재시작 (claude-rc-ensure)
 
