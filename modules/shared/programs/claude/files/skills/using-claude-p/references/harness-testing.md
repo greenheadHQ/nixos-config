@@ -2,8 +2,10 @@
 
 `claude -p --output-format json`의 init 이벤트를 활용하여 harness 구성요소를 자동 검증한다.
 
-- 확인 날짜: 2026-04-21
-- 확인 버전: Claude Code v2.1.116
+- 확인 날짜: 2026-07-08
+- 확인 버전: Claude Code v2.1.202
+- 재검증: `claude --version && claude --help && claude -p --help`
+- 확인 범위: CLI help와 스탬프만 재검증. T1~T8 실제 `claude -p` 실행은 네트워크 차단 sandbox에서 미수행
 - 비용: 각 테스트 ~$0.07 (1-turn, 최소 프롬프트)
 
 ## T1: Harness 인벤토리 검증

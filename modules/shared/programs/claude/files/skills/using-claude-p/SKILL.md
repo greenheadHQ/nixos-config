@@ -16,9 +16,9 @@ Claude Code의 `-p`/`--print` 모드(비대화형/headless)를 정확하게 사�
 
 ## 작성 기준
 
-- 확인 날짜: 2026-04-21
-- 확인 버전: Claude Code v2.1.116
-- 재검증: `claude --version && claude -p --help`
+- 확인 날짜: 2026-07-08
+- 확인 버전: Claude Code v2.1.202
+- 재검증: `claude --version && claude --help && claude -p --help`
 
 ## 범위
 
@@ -45,7 +45,7 @@ claude -p 실행이 필요한가?
 │  └─ NO → 기본 실행 (권한 플래그 불필요)
 │
 ├─ 출력을 프로그래밍적으로 파싱할 필요가 있나?
-│  ├─ YES → --output-format json (JSON 배열)
+│  ├─ YES → --output-format json (v2.1.202 help: single result, 기존 JSON 배열 실측은 재검증 미수행)
 │  │         또는 --output-format stream-json (JSONL)
 │  └─ NO → 기본 text 출력
 │
