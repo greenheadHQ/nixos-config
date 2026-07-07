@@ -171,7 +171,7 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
 | Step 5-B `SUBISSUE_STATUS=FAILED_ID_LOOKUP` | — | 진행 | `SUBISSUE_STATUS` 토큰을 최종 응답에 포함, 재시도 명령 명시 |
 | Step 5-B `SUBISSUE_STATUS=FAILED_POST` | — | 진행 | 동일 |
 
-`SUBISSUE_STATUS`의 전달 경로는 `/create-issue`의 최종 응답(사용자에게 출력되는 마지막 메시지) 에 명시하는 것으로 scope을 닫는다. `/write-handoff` 계약은 `[issue-number or URL]`만 받으므로 `SUBISSUE_STATUS`는 handoff body에 전달되지 않는다 — 운영자는 `/create-issue` 최종 응답의 토큰을 보고 재시도 여부를 판단한다.
+`SUBISSUE_STATUS`의 전달 경로는 `/create-issue`의 최종 응답(사용자에게 출력되는 마지막 메시지) 에 명시하는 것으로 scope을 닫는다. Step 6의 `/write-handoff` 호출은 `<ISSUE_URL>`만 전달하므로 `SUBISSUE_STATUS`는 handoff body에 전달되지 않는다 — 운영자는 `/create-issue` 최종 응답의 토큰을 보고 재시도 여부를 판단한다.
 
 #### Step 5-A — 이슈 등록
 
