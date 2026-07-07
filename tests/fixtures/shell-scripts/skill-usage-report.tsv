@@ -1,0 +1,6 @@
+1767225600	tester	sid-a	nixos-config	managing-minipc	boot
+1767355200	tester	sid-b	nixos-config	run-da	
+1769934600	tester	sid-c	nixos-config	managing-minipc	check
+1770147900	tester	sid-d	nixos-config	configuring-codex	docs
+1770147900	tester	sid-e	nixos-config	run-da	both
+not-a-timestamp	tester	sid-f	nixos-config	ignored-skill	ignored

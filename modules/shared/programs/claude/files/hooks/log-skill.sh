@@ -3,6 +3,7 @@
 # Thariq(Anthropic) gist 기반 — session_id, repo context 추가
 #
 # Log format (TSV): timestamp user session_id repo skill args
+# scripts/ai/skill-usage-report.sh consumes this column order; update both files together.
 # 예: 1742302800	greenhead	abc123	nixos-config	managing-minipc	""
 
 command -v jq >/dev/null 2>&1 || exit 0
@@ -10,6 +11,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"
 [ -f "$HOOK_RUNTIME_LIB" ] || exit 0
 # shellcheck source=../lib/hook-runtime.sh
+# shellcheck disable=SC1091
 . "$HOOK_RUNTIME_LIB"
 
 INPUT=$(cat)
@@ -27,10 +29,11 @@ REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || tr
 
 # 로그 파일 owner-only 권한 (민감 args 보호)
 umask 077
+SKILL_USAGE_LOG="${SKILL_USAGE_LOG:-$HOME/.claude/skill-usage.log}"
 
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
   "$(date -u +%s)" "$USER" "${SESSION_ID:-unknown}" \
   "${REPO:-unknown}" "$SKILL" "$ARGS" \
-  >> "$HOME/.claude/skill-usage.log" 2>/dev/null || true
+  >> "$SKILL_USAGE_LOG" 2>/dev/null || true
 
 exit 0
