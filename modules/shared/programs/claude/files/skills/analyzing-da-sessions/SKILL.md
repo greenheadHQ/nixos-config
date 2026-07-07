@@ -31,7 +31,7 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 /analyzing-da-sessions --hosts mac
 /analyzing-da-sessions --hosts minipc
 
-# pinned corpus 모드 (PR #670 회귀 게이트 검증용)
+# pinned corpus 모드 (PR #670 회귀 게이트 검증용; 미생성 — 별도 follow-up에서 capture)
 /analyzing-da-sessions --corpus references/pr-670-baseline.json
 
 # JSON sidecar 위치 명시 (영구 저장 의도)

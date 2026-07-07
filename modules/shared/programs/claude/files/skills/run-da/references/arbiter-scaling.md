@@ -207,17 +207,17 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
    (a) 기본 경로 + config 차단 (권장, 간단):
    - `CODEX_HOME`을 그대로 두어 기본 auth chain(`auth.json` 등)을 유지한다.
-   - codex exec 호출에 `--ignore-user-config`를 추가하여 사용자 `config.toml`(MCP 서버 포함) 로딩을 차단한다. `using-codex-exec/SKILL.md:113`에 기록된 대로 이 플래그는 config만 차단하고 auth는 유지한다.
+   - codex exec 호출에 `--ignore-user-config`를 추가하여 사용자 `config.toml`(MCP 서버 포함) 로딩을 차단한다. [`using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md)의 `--ignore-user-config` 옵션 설명처럼 이 플래그는 config만 차단하고 auth는 유지한다.
    - 주의: `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 `model` / `model_reasoning_effort` 등 user config 설정을 함께 제거한다. Arbiter는 strong review profile(high)을 유지해야 하므로 `-c model="gpt-5.5"`와 `-c model_reasoning_effort="high"`를 명시적으로 재지정한다 (defensive explicit pin — config.toml default가 차단되므로).
    - 부작용: `~/.codex/sessions` 기반 세션이 생성되므로 동시 N=3 실행 시 세션 파일 경합이 발생할 수 있다. `--ephemeral`로 session 저장 자체를 회피한다.
 
    (b) scratch CODEX_HOME + auth 복사 (세션 충돌 완전 분리가 필요할 때):
    - `CODEX_HOME=$(mktemp -d /tmp/codex-home-${_DA_SID}-selective-XXXXXX)`로 사용자 홈과 격리된 scratch 설정 디렉토리 생성.
    - auth 자격을 함께 전달한다. 세 가지 방식 중 하나:
-     - 환경변수 `CODEX_API_KEY`가 이미 설정되어 있으면 그것이 사용됨 (auth chain 우선순위 `CODEX_API_KEY > ephemeral tokens > auth.json`, `using-codex-exec/SKILL.md:214` 참조). 이 경우 추가 조치 불필요.
+     - 환경변수 `CODEX_API_KEY`가 이미 설정되어 있으면 그것이 사용됨 (auth chain 우선순위 `CODEX_API_KEY > ephemeral tokens > auth.json`, [`using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md#17-exec-auth-chain-우선순위와-login-status-한계) 참조). 이 경우 추가 조치 불필요.
      - 그렇지 않으면 `cp ~/.codex/auth.json "$CODEX_HOME/"`로 기존 auth.json을 scratch로 복사.
      - 둘 다 불가능하면 scratch CODEX_HOME에서 `codex login status`가 `Not logged in`으로 실패하므로 방식 (a)로 돌아간다.
-   - 최소 `$CODEX_HOME/config.toml`을 작성하되 `[mcp_servers.<name>]` 테이블(실제 Codex TOML 스키마, `modules/shared/programs/codex/files/config.darwin.toml:34` 참조)을 포함하지 않는다. 또는 TOML 파서로 기존 config를 복사한 뒤 `mcp_servers` 테이블 전체를 삭제한다. (참고: `[[mcp_servers]]` array-of-table 문법은 현재 Codex가 사용하지 않으므로 혼동 방지를 위해 `[mcp_servers.*]` 정확 표기를 사용한다.)
+   - 최소 `$CODEX_HOME/config.toml`을 작성하되 `[mcp_servers.<name>]` 테이블(실제 Codex TOML 스키마는 [`sync-codex-config.py`](../../../../../codex/files/sync-codex-config.py)의 user-owned `mcp_servers` 보존 정책과 [`scenario-D-mcp-servers-coexist.toml`](../../../../../../../../tests/fixtures/codex-hooks/sync-preservation/scenario-D-mcp-servers-coexist.toml) fixture로 확인)을 포함하지 않는다. 또는 TOML 파서로 기존 config를 복사한 뒤 `mcp_servers` 테이블 전체를 삭제한다. (참고: `[[mcp_servers]]` array-of-table 문법은 현재 Codex가 사용하지 않으므로 혼동 방지를 위해 `[mcp_servers.*]` 정확 표기를 사용한다.)
    - 모델/효과 옵션은 필수로 명시적으로 지정한다: `-c model="gpt-5.5"`와 `-c model_reasoning_effort="high"`. scratch `CODEX_HOME`이므로 user config default가 적용되지 않아 호출 시점 기본값 의존이 불가하다.
 3. Claude Code 세션: `run_in_background: true`로 3개를 병렬 발사 후 완료 알림을 기다린다 (sleep/poll 금지). headless 세션: 3개 프로세스를 serial foreground로 순차 실행한다 (각 종료 확인 후 다음). 결과 파일 경로는 두 경로 모두 `/tmp/da-${_DA_SID}-arbiter-selective-<round>/arbiter-{1,2,3}-result.md`로 라운드별 분리.
 4. 수집 후 세션 scope의 `fleiss-kappa.py`(Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py`)에 `arbiter-1-result.md arbiter-2-result.md arbiter-3-result.md`를 인자로 전달하여 vote-shape를 얻는다. `--offline` 플래그는 배포 후 kappa 관찰 목적일 때만 부가한다.
@@ -295,7 +295,7 @@ DA 에이전트/Arbiter와 달리, Review Intensity는 별도 subprocess/subagen
 | 입력 | diff 전체 또는 계획 전체 | `git diff --stat` 또는 계획 파일 목록 |
 | 출력 | findings/verdicts (markdown + VERDICT_JSON) | 체크리스트 표 + SKIP/LITE/FULL 판정 + 근거 |
 | 참조 | da-domains.md, arbiter-prompt.md | intensity-rules.md |
-| 실패 시 | NEEDS_MORE_INFO 승격 | FULL 강제 (체크리스트 미작성, 룰 2-4 매치/불확실 포함) |
+| 실패 시 | NEEDS_MORE_INFO 승격 | FULL 강제 (체크리스트 미작성, fail-closed rule group 매치/불확실 포함) |
 
 - 절차 SSOT는 [`intensity-procedure.md`](intensity-procedure.md)의 "인라인 체크리스트 절차".
 - 메인 LLM은 자유 추론 금지. 모든 룰을 평가한 표(매치/미매치/불확실 + 근거)를 plan/대화에 남기지 않으면 SKIP/LITE 판정 자체가 무효이며 강한 검토로 fail-closed.
