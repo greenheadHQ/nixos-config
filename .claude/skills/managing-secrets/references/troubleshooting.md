@@ -151,7 +151,7 @@ tail -20 ~/Library/Logs/agenix/stderr
 rm -rf "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/<broken-gen-number>"
 
 # agenix agent 재시작
-launchctl kickstart -k "gui/$(id -u)/com.green.activate-agenix"
+launchctl kickstart -k "gui/$(id -u)/org.nix-community.home.activate-agenix"
 ```
 
 예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다.

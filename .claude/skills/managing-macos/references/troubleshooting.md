@@ -292,20 +292,21 @@ sleep 1                                        # 1초 대기
 # 1. 멈춘 darwin-rebuild를 Ctrl+C로 중단
 
 # 2. 에이전트 수동 정리 (sudo 없이 실행!)
-launchctl bootout gui/$(id -u)/com.green.folder-action.compress-rar 2>/dev/null
-launchctl bootout gui/$(id -u)/com.green.folder-action.compress-video 2>/dev/null
-launchctl bootout gui/$(id -u)/com.green.folder-action.convert-video-to-gif 2>/dev/null
-launchctl bootout gui/$(id -u)/com.green.folder-action.rename-asset 2>/dev/null
+launchctl bootout gui/$(id -u)/com.greenhead.folder-action.compress-rar 2>/dev/null
+launchctl bootout gui/$(id -u)/com.greenhead.folder-action.compress-video 2>/dev/null
+launchctl bootout gui/$(id -u)/com.greenhead.folder-action.convert-video-to-gif 2>/dev/null
+launchctl bootout gui/$(id -u)/com.greenhead.folder-action.rename-asset 2>/dev/null
+launchctl bootout gui/$(id -u)/com.greenhead.folder-action.upload-immich 2>/dev/null
 
 # 3. plist 파일 삭제
-rm -f ~/Library/LaunchAgents/com.green.*.plist
+rm -f ~/Library/LaunchAgents/com.greenhead.folder-action.*.plist
 
 # 4. 2-3초 대기 후 재시도
 sleep 3
 sudo darwin-rebuild switch --flake ~/Workspace/nixos-config
 ```
 
-예방: `nrs` alias 사용 시 자동으로 에이전트를 정리합니다.
+예방: `nrs` alias 사용 시 자동으로 에이전트를 정리합니다. `nrs` 정리는 `com.green.*`와 `com.greenhead.*`를 모두 동적으로 처리하므로, 위 수동 절차는 `nrs` 자체가 실패할 때만 사용합니다.
 
 ---
 
@@ -348,7 +349,7 @@ restart_hammerspoon() {
 
 ```bash
 # 등록된 에이전트 확인
-launchctl list | grep com.green
+launchctl list | grep com.greenhead
 
 # 로그 확인
 cat ~/Library/Logs/folder-actions/*.log
