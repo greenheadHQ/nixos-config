@@ -9,7 +9,7 @@ description: |
 
 # LLM 이행 가이드 작성
 
-`$ARGUMENTS`로 이슈 번호(예: `#123`, `123`) 또는 이슈 URL을 수신한다.
+스킬 호출 인자로 이슈 번호(예: `#123`, `123`) 또는 이슈 URL을 수신한다.
 해당 이슈를 분석하여 LLM이 자율적으로 처음부터 끝까지 작업을 수행할 수 있는
 Phase 기반 이행 가이드를 작성하고, 이슈 코멘트로 게시한다.
 
@@ -52,8 +52,8 @@ Phase 기반 이행 가이드를 작성하고, 이슈 코멘트로 게시한다.
 
 ### Step 1: 이슈 내용 읽기 + 컨텍스트 확보
 
-`$ARGUMENTS`가 비어있으면 런타임 도구 매핑 표의 질문 도구로 이슈 번호 또는 URL을 요청한다.
-`$ARGUMENTS`에서 이슈 번호 또는 URL을 파싱한다.
+수신한 인자가 비어있으면 런타임 도구 매핑 표의 질문 도구로 이슈 번호 또는 URL을 요청한다.
+수신한 인자에서 이슈 번호 또는 URL을 파싱한다.
 
 ```bash
 # 이슈 번호인 경우
@@ -63,7 +63,7 @@ gh issue view <number> --json title,body,labels,assignees,comments
 gh issue view <url> --json title,body,labels,assignees,comments
 ```
 
-bare 번호 입력 시 cwd 확인 필수: `$ARGUMENTS`가 `123`, `#123` 같은 bare 번호이고 `gh repo view --json nameWithOwner -q .nameWithOwner`로 확인한 cwd repo가 handoff 대상 repo와 다를 가능성이 있으면, 질문 도구로 사용자에게 이슈 URL(`https://github.com/owner/repo/issues/N` 형태)을 재확인받은 뒤 그 URL로 `gh issue view`를 재실행한다. 확인 없이 진행하면 cwd repo의 동일 번호 이슈에 잘못 코멘트가 게시될 수 있다.
+bare 번호 입력 시 cwd 확인 필수: 전달된 값이 `123`, `#123` 같은 bare 번호이고 `gh repo view --json nameWithOwner -q .nameWithOwner`로 확인한 cwd repo가 handoff 대상 repo와 다를 가능성이 있으면, 질문 도구로 사용자에게 이슈 URL(`https://github.com/owner/repo/issues/N` 형태)을 재확인받은 뒤 그 URL로 `gh issue view`를 재실행한다. 확인 없이 진행하면 cwd repo의 동일 번호 이슈에 잘못 코멘트가 게시될 수 있다.
 
 이슈 본문, 라벨, 기존 코멘트를 분석하여 작업 범위를 파악한다.
 

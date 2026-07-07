@@ -9,7 +9,7 @@ description: |
 
 # 이슈 등록
 
-`$ARGUMENTS`를 이슈 제목, 설명, 또는 작업 내용으로 수신한다.
+스킬 호출 인자로 이슈 제목, 설명, 또는 작업 내용을 수신한다.
 텍스트가 제공되면 이슈 제목/설명으로 사용하고,
 비어있으면 대화 컨텍스트에서 이슈 내용을 추출한다.
 
@@ -62,11 +62,11 @@ REPO="${OWNER_REPO##*/}"
 
 ### Step 0 — `--parent` 파싱 + pre-check (옵션 지정 시)
 
-`$ARGUMENTS`가 `--parent` 또는 `--parent=<값>` 토큰을 포함하면 Step 1 본문에 진입하기 전에 이 단계를 수행한다. 두 토큰 모두 없으면 이 단계를 건너뛰고 기존 동작을 유지한다.
+수신한 인자가 `--parent` 또는 `--parent=<값>` 토큰을 포함하면 Step 1 본문에 진입하기 전에 이 단계를 수행한다. 두 토큰 모두 없으면 이 단계를 건너뛰고 기존 동작을 유지한다.
 
 파싱 규칙 (fail-closed):
 
-- 토큰 스캔 순서: `$ARGUMENTS`를 왼쪽부터 shell-like tokenize 후 스캔한다. 첫 standalone `--` 토큰을 만나면 그 이후 토큰은 모두 옵션 검색 대상에서 제외하고 제목/본문으로 취급한다 (escape). 이 규칙은 아래 `--parent` 옵션 검색보다 먼저 적용된다.
+- 토큰 스캔 순서: 수신한 인자를 왼쪽부터 shell-like tokenize 후 스캔한다. 첫 standalone `--` 토큰을 만나면 그 이후 토큰은 모두 옵션 검색 대상에서 제외하고 제목/본문으로 취급한다 (escape). 이 규칙은 아래 `--parent` 옵션 검색보다 먼저 적용된다.
 - `--parent=<값>` 또는 `--parent <값>` 형식만 옵션으로 인식한다. 위치는 자유(standalone `--` 앞이라면 어디든).
 - `--parent` 또는 `--parent=` 를 옵션 토큰으로 만난 뒤 값이 아래 값 패턴 중 어디에도 매칭되지 않거나 값이 없으면 `ERROR: --parent 값 누락 또는 유효하지 않음` 출력 후 `exit 1`. 사용자 오타로 인한 silent parent 연결 누락을 막기 위한 fail-closed 경계.
 - `--parent` 옵션은 최대 1회만 허용한다. 2회 이상 발견되면 `ERROR: --parent 중복 지정` 출력 후 `exit 1`. first-wins/last-wins 해석 모호성 제거.
@@ -83,7 +83,7 @@ REPO="${OWNER_REPO##*/}"
 
 파싱 결과 표 (기준 알고리즘 재현용):
 
-| 입력 `$ARGUMENTS` | `PARENT_NUM` | Step 1로 전달될 자유 텍스트 | 비고 |
+| 입력 인자 | `PARENT_NUM` | Step 1로 전달될 자유 텍스트 | 비고 |
 |-------------------|--------------|-----------------------------|------|
 | `"버그 제목"` | (unset) | `"버그 제목"` | 기존 동작 (Step 0 skip) |
 | `"제목" --parent 539` | `539` | `"제목"` | 숫자 값 매칭 |
@@ -112,7 +112,7 @@ fi
 
 성공 시 `PARENT_NUM`을 Step 5-B에서 재사용한다. parent가 `closed` 상태여도 차단하지 않는다 (v1 YAGNI 범위).
 
-Step 0 완료 후 나머지 `$ARGUMENTS`(=`--parent`/값 토큰 제거 후의 자유 텍스트)가 Step 1 본문의 title/description 경로로 흐른다.
+Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트가 Step 1 본문의 title/description 경로로 흐른다.
 
 ### Step 1 — 코드베이스 탐색
 
@@ -135,7 +135,7 @@ Step 0 완료 후 나머지 `$ARGUMENTS`(=`--parent`/값 토큰 제거 후의 �
 
 선택 섹션 (판단 기준에 따라 포함):
 - PoC / Reproduction: 재현이 중요한 주장(버그 리포트 등)에 6필드 포함 — `환경 / 입력 / 절차 / 기대 결과 / 실제 결과 / 성공 기준` (체크리스트 C1)
-- Related Commits: `$ARGUMENTS` 또는 대화 컨텍스트에 커밋 해시가 언급되었거나, Step 1(c)에서 직접 관련 커밋을 발견한 경우
+- Related Commits: 수신한 인자 또는 대화 컨텍스트에 커밋 해시가 언급되었거나, Step 1(c)에서 직접 관련 커밋을 발견한 경우
 - Affected Files: 변경 대상 파일이 여러 개인 경우 (테이블 형식)
 - Notes: 추가 참고사항(제약사항, 관련 이슈 번호, YAGNI 판단 근거 등)이 있는 경우
 
