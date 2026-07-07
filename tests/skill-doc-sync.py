@@ -39,6 +39,8 @@ EXPECTED_RULE_IDS = {
 EXPECTED_CONSTANTS = {"STABLE_MIN", "ESCALATE_MIN"}
 EXPECTED_PROFILES = {"strong", "standard"}
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
+EXPECTED_AGENT_ARGS = {"agent=codex-xhigh", "agent=codex-high", "agent=codex-medium", "agent=claude"}
+FORBIDDEN_MODEL_LITERALS = ("gpt-5", "opus", "sonnet")
 
 
 class CheckFailure(Exception):
@@ -127,12 +129,11 @@ def check_kappa_constants() -> None:
 def extract_runtime_profiles() -> dict[str, dict[str, str]]:
     profiles = {}
     pattern = re.compile(
-        r"^- .*?\((strong|standard) review profile\).*?"
-        r'Codex:\s*`model="([^"]+)"`,\s*`reasoning_effort="([^"]+)"`',
+        r"^\|\s*`(strong|standard)`\s*\|[^|]+\|[^|]+\|\s*`(medium|high|xhigh)`\s*\|",
         re.M,
     )
-    for profile, model, effort in pattern.findall(read_text(RUNTIME_MAPPING)):
-        profiles[profile] = {"model": model, "effort": effort}
+    for profile, effort in pattern.findall(read_text(RUNTIME_MAPPING)):
+        profiles[profile] = {"effort": effort}
 
     found = set(profiles)
     if found != EXPECTED_PROFILES:
@@ -150,40 +151,71 @@ def fenced_block_after(text: str, label: str) -> str:
     return match.group(1)
 
 
-def extract_command_profile(block: str, label: str) -> dict[str, str]:
-    models = re.findall(r'-c\s+model="([^"]+)"', block)
-    efforts = re.findall(r'-c\s+model_reasoning_effort="([^"]+)"', block)
-    details = []
-    if len(models) != 1:
-        details.append(f"{label}: expected exactly one model literal, got {models}")
-    if len(efforts) != 1:
-        details.append(f"{label}: expected exactly one model_reasoning_effort literal, got {efforts}")
-    if details:
-        raise CheckFailure("\n".join(details))
-    return {"model": models[0], "effort": efforts[0]}
+def extract_arbiter_profile_efforts() -> dict[str, dict[str, str]]:
+    profiles = {}
+    pattern = re.compile(r"^\|\s*`(standard|strong)`\s*\|\s*`(medium|high|xhigh)`\s*\|", re.M)
+    for profile, effort in pattern.findall(read_text(ARBITER_SCALING)):
+        profiles[profile] = {"effort": effort}
+
+    found = set(profiles)
+    if found != EXPECTED_PROFILES:
+        raise CheckFailure(
+            f"{ARBITER_SCALING}: expected profiles {sorted(EXPECTED_PROFILES)}, got {sorted(found)}"
+        )
+    return profiles
 
 
-def check_profile_literals() -> None:
+def check_profile_efforts() -> None:
     runtime_profiles = extract_runtime_profiles()
-    arbiter_text = read_text(ARBITER_SCALING)
-    command_profiles = {
-        "standard": extract_command_profile(
-            fenced_block_after(arbiter_text, "reviewer / Auditor (standard profile)"),
-            "reviewer / Auditor (standard profile)",
-        ),
-        "strong": extract_command_profile(
-            fenced_block_after(arbiter_text, "Arbiter (strong profile)"),
-            "Arbiter (strong profile)",
-        ),
-    }
+    arbiter_profiles = extract_arbiter_profile_efforts()
 
-    if runtime_profiles != command_profiles:
-        details = ["review profile literal mismatch:"]
+    if runtime_profiles != arbiter_profiles:
+        details = ["review profile effort mismatch:"]
         for profile in sorted(EXPECTED_PROFILES):
             details.append(
                 f"  {profile}: {RUNTIME_MAPPING}={runtime_profiles[profile]}, "
-                f"{ARBITER_SCALING}={command_profiles[profile]}"
+                f"{ARBITER_SCALING}={arbiter_profiles[profile]}"
             )
+        raise CheckFailure("\n".join(details))
+
+
+def check_codex_command_contract() -> None:
+    arbiter_text = read_text(ARBITER_SCALING)
+    details = []
+    for label in ("reviewer / Auditor (standard profile)", "Arbiter (strong profile)"):
+        block = fenced_block_after(arbiter_text, label)
+        if "-c model=" in block:
+            details.append(f"{label}: command block must not pin a model literal")
+        if '-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"' not in block:
+            details.append(f"{label}: missing RUN_DA_CODEX_EFFORT effort pin")
+        if 'RUN_DA_CODEX_EFFORT:?missing RUN_DA_CODEX_EFFORT' not in block:
+            details.append(f"{label}: missing RUN_DA_CODEX_EFFORT guard")
+
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
+def extract_agent_args(path: Path) -> set[str]:
+    values = set(re.findall(r"`(agent=(?:codex-xhigh|codex-high|codex-medium|claude))`", read_text(path)))
+    if values != EXPECTED_AGENT_ARGS:
+        raise CheckFailure(f"{path}: expected agent args {sorted(EXPECTED_AGENT_ARGS)}, got {sorted(values)}")
+    return values
+
+
+def check_agent_args() -> None:
+    extract_agent_args(SKILL)
+    extract_agent_args(RUNTIME_MAPPING)
+
+
+def check_no_hardcoded_model_literals() -> None:
+    root = Path("modules/shared/programs/claude/files/skills/run-da")
+    details = []
+    for path in sorted(root.rglob("*.md")):
+        text = read_text(path)
+        for literal in FORBIDDEN_MODEL_LITERALS:
+            if literal in text:
+                details.append(f"{path}: forbidden model literal {literal!r}")
+    if details:
         raise CheckFailure("\n".join(details))
 
 
@@ -246,7 +278,10 @@ def main() -> int:
     checks = (
         ("intensity rules", check_intensity_rules),
         ("kappa constants", check_kappa_constants),
-        ("review profile literals", check_profile_literals),
+        ("review profile efforts", check_profile_efforts),
+        ("codex command contract", check_codex_command_contract),
+        ("agent args", check_agent_args),
+        ("no hardcoded model literals", check_no_hardcoded_model_literals),
         ("reviewer bundle subdomains", check_bundle_subdomains),
     )
 

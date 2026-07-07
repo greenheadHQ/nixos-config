@@ -17,6 +17,7 @@ audit 모드는 preflight 체크리스트를 건너뛴다 — 감사 자체가 �
 | open thread cap | current session의 `agents.max_threads` (unset 기본 6) |
 | `MAX` modifier | 기본 6 bundle을 10개 세부 관점으로 확장 (exhaustive override) |
 | `fresh` modifier | audit 모드 부적용 — 라운드 반복이 없으므로 해석하지 않는다 |
+| `agent=` 실행 프로파일 | 호출 단위 실행 경로/effort override. 정본은 [`../SKILL.md`](../SKILL.md). 예: `run-da audit agent=codex-high` |
 | trailing 자유 텍스트 | `audit` (및 `MAX`) 토큰 뒤 나머지 인자 전체를 메인 에이전트의 우선순위 판단 컨텍스트로 보존 (Step 1 `git diff` 결과와 결합) |
 | 정수 에이전트 수 인자 | 폐지 — fan-out 크기는 기본 6 bundle / `MAX` 10 관점으로만 결정한다 |
 | 에이전트 권한 | 읽기 전용. codex exec 경로(Claude Code/headless)는 Layer 1(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules`)으로 구조적 강제. Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영 (Non-goals 참조) |
@@ -40,7 +41,7 @@ auditor-specific delta: audit 모드의 fan-out 대상은 auditor다 (standard r
 | 경로 | 조건 |
 |------|------|
 | Codex 세션 | Codex CLI가 호스트 — native subagent fan-out (delegation 허용 시). delegation-denied fallback은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 "Delegation fallback" 참조 |
-| Claude Code 세션 | Claude Code가 호스트 — codex exec 기본 (사전점검: `command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check` 모두 성공해야 한다. wrapper `--check`는 setsid/timeout/codex 의존성을 자체 검증하고 OK 시 exit 0, 부재 시 exit 127을 반환한다 — codex exec를 호출하지 않으므로 사전점검 비용이 작다). codex 또는 wrapper 미가용/capability probe 실패 시 Claude Code fallback (아래 Step 3c) |
+| Claude Code 세션 | Claude Code가 호스트 — codex exec 기본 (사전점검: `command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check` 모두 성공해야 한다. wrapper `--check`는 setsid/timeout/codex 의존성을 자체 검증하고 OK 시 exit 0, 부재 시 exit 127을 반환한다 — codex exec를 호출하지 않으므로 사전점검 비용이 작다). codex 또는 wrapper 미가용/capability probe 실패 시 Claude Code fallback으로 자동 대체하지 않고 실패 원인과 대안(Claude 경로 진행 / 중단)을 사용자에게 확인한다 |
 | headless 세션 | CI, `claude -p`, `codex exec` subprocess |
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다.
@@ -176,13 +177,13 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
   [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
   [ -f "$DA_DIR/$UNIT.md" ] || { echo "missing prompt=$DA_DIR/$UNIT.md"; exit 1; }
   ```
-  `--ignore-user-config`/`--ignore-rules`/model-effort pins/`CODEX_PROGRAMMATIC=1` placement 등 command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령이 SSOT다.
+  `--ignore-user-config`/`--ignore-rules`/effort resolution/`CODEX_PROGRAMMATIC=1` placement 등 command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령이 SSOT다.
 - 세션 네임스페이스(`$_DA_SID`)와 stdin pipe 패턴은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "codex exec 경로 위생 규칙"을 따른다.
 - 임시 prompt/result 파일, stderr/result 검증, 백그라운드 실행 제어, stdin pipe 경쟁, heredoc hang 제약은 [/using-codex-exec 스킬](../../using-codex-exec/SKILL.md)과 [known-issues.md](../../using-codex-exec/references/known-issues.md)를 따른다.
 
-### Step 3c: Claude Code fallback (codex 미가용 시)
+### Step 3c: Claude Code fallback (사용자 확인 후)
 
-- 위 표 사전점검(`command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check`) 실패 또는 codex exec 실행 실패 시에만 진입한다.
+- 위 표 사전점검(`command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check`) 실패 또는 codex exec 실행 실패의 원인을 사용자에게 고지하고, 사용자가 Claude 경로 진행을 확인했거나 `agent=claude`를 명시한 경우에만 진입한다.
 - bundle별 병렬 실행을 수행한다. 실행 binding 상세(Claude Code 고유 fallback lifecycle, 완료 알림 수신, thread 관리)는 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "Claude Code 세션 fallback 세부 정보" 섹션을 참조한다.
 - 프롬프트에 read-only/no-write 범위를 명시한다.
 - 완료 알림 수신 후 결과를 집계하고, `RECOVERABLE VIOLATION`/`STATEFUL VIOLATION` 분류 규칙은 Step 4와 동일하게 적용한다.
