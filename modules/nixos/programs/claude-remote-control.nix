@@ -28,22 +28,8 @@ let
     flakePath = nixosConfigDefaultPath;
   };
 
-  maintenanceCli = pkgs.writeShellApplication {
-    name = "claude-rc-maint";
-    runtimeInputs = with pkgs; [
-      coreutils
-      findutils
-      gawk
-      gnugrep
-      gnused
-      jq
-      procps
-      tmux
-      util-linux # flock
-      curl # service-lib send_notification
-    ];
-    text = builtins.readFile ./claude-remote-control/files/claude-rc-maint.sh;
-  };
+  # darwin launchd 모듈과 공유하는 패키징 (runtimeInputs 플랫폼 분기 포함).
+  maintenanceCli = import ../lib/claude-rc-maint-package.nix { inherit pkgs; };
 in
 {
   config = lib.mkIf cfg.enable {
