@@ -2,68 +2,44 @@
 
 ## SSH/인증 관련
 
-### 재부팅 후 SSH 키가 ssh-agent에 로드되지 않음
+### 재부팅 후 nix-daemon이 GitHub SSH 키를 찾지 못함
 
 > 발생 시점: 2026-01-15
-> 해결: launchd agent + nrs 자동 로드
-> Phase 2a(#833) 이후 갱신: macOS SSH 인증은 1Password SSH agent(IdentityAgent)로 전환되었고, 아래의 `ssh-add-keys` launchd agent와 로컬 `~/.ssh/id_ed25519`는 제거(archive)되었다. 현재 SSH 키는 1Password가 제공하며, 로그인 시 자동 기동(`launchd.agents.onepassword-autostart`)으로 agent socket 생존을 보장한다. 아래 내용은 전환 전 이력으로 남겨둔다.
+> 현행 기준: macOS의 `ssh minipc` 인증은 1Password SSH agent가 담당한다. GitHub/nix-daemon용 로컬 `~/.ssh/id_ed25519` 점검은 이 항목에서 다루되, macOS 1Password agent 구성은 `modules/darwin/programs/ssh/default.nix`와 `references/tailscale.md`의 "SSH 키 자동 로드 (macOS)"를 기준으로 본다.
 
-증상: 재부팅 후 `nrs` 또는 `darwin-rebuild switch` 실행 시 GitHub SSH fetch 실패.
+증상: 재부팅 후 `nrs` 실행 중 GitHub SSH fetch 실패.
 
 ```
 error: Failed to fetch git repository ssh://git@github.com/... : git@github.com: Permission denied (publickey).
 ```
 
-원인: macOS의 `ssh-agent`는 재부팅 시 SSH 키를 자동으로 로드하지 않습니다.
+원인: nix-daemon은 별도 프로세스로 실행되어 macOS Keychain에 직접 접근하지 못한다. GitHub fetch에 로컬 `~/.ssh/id_ed25519`가 필요한 경우, 해당 키가 현재 SSH agent 경로에서 보이는지 먼저 확인해야 한다. 이는 1Password `mac-ssh` 키로 `minipc`에 접속하는 현행 macOS SSH 구성과 별도 맥락이다.
 
 ```bash
 # 재부팅 후 확인
 $ ssh-add -l
-The agent has no identities.  # ← 키가 없음!
+The agent has no identities.  # GitHub용 로컬 키가 agent에 없음
 
-# 일반 ssh 명령은 작동 (macOS Keychain 직접 참조)
+# 일반 GitHub SSH 인증 확인
 $ ssh -T git@github.com
 Hi greenheadHQ! You've successfully authenticated...
 ```
 
-nix-daemon은 별도 프로세스로 실행되어 Keychain에 직접 접근하지 못하고, `ssh-agent`만 사용합니다.
+해결:
 
-해결: 두 가지 방법으로 자동화
-
-1. launchd agent (`com.green.ssh-add-keys`): 로그인 시 자동으로 `ssh-add` 실행
-2. nrs: darwin-rebuild 전에 키 로드 여부 확인
-
-설정 파일: `modules/darwin/programs/ssh/default.nix`
-
-```nix
-# launchd agent - 로그인 시 SSH 키 자동 로드
-launchd.agents.ssh-add-keys = {
-  enable = true;
-  config = {
-    Label = "com.green.ssh-add-keys";
-    ProgramArguments = [ "${sshAddScript}" ];
-    RunAtLoad = true;
-    EnvironmentVariables = { HOME = homeDir; };
-  };
-};
-```
+1. `nrs`로 실행한다. 직접 `darwin-rebuild`를 실행하지 않는다.
+2. GitHub fetch가 실패하면 `ssh-add -l`과 `ssh -T git@github.com`으로 현재 agent에 GitHub용 로컬 키가 보이는지 확인한다.
+3. 로컬 `~/.ssh/id_ed25519`를 계속 쓰는 GitHub/nix-daemon 경로라면 필요한 세션에서 `ssh-add ~/.ssh/id_ed25519`로 키를 로드한 뒤 다시 시도한다.
+4. `ssh minipc` 실패는 이 항목이 아니라 아래 "Mac에서 `ssh minipc`가 1Password preflight로 차단됨" 섹션을 따른다.
 
 확인 방법:
 
 ```bash
-# SSH agent에 키 로드 확인
 ssh-add -l
-
-# launchd agent 상태 확인
-launchctl list | grep ssh-add
-
-# 로그 확인
-cat ~/Library/Logs/ssh-add-keys.log
+ssh -T git@github.com
 ```
 
-macOS의 `AddKeysToAgent yes` 설정은 SSH를 처음 사용할 때 키를 agent에 로드합니다. 재부팅 후 바로 SSH 작업을 하면 키가 로드되지 않은 상태일 수 있습니다.
-
-> 참고: SSH 키 자동 로드는 launchd agent에서 처리됩니다.
+이력: 과거 `com.green.ssh-add-keys` launchd agent가 로그인 시 `ssh-add ~/.ssh/id_ed25519`를 실행했으나, 1Password SSH agent 전환 후 제거/archived 되었다.
 
 ---
 

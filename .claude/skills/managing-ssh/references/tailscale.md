@@ -16,39 +16,61 @@ SSH 키 자동 로드와 Tailscale VPN 관련 설정입니다.
 
 ## SSH 키 자동 로드 (macOS)
 
-macOS는 launchd agent로 로그인 시 SSH 키를 자동 로드합니다.
+macOS는 로컬 `id_ed25519`를 `ssh-add`로 자동 로드하지 않고, 1Password SSH agent를 `IdentityAgent`로 사용합니다. 현행 구성은 `modules/darwin/programs/ssh/default.nix`와 `libraries/constants.nix`가 단일 소스입니다.
 
 아키텍처:
 
 ```
 macOS 로그인
     │
-    └──▶ com.green.ssh-add-keys (launchd agent)
-            └──▶ ssh-add ~/.ssh/id_ed25519
+    └──▶ launchd.agents.onepassword-autostart
+            └──▶ 1Password 데스크탑 기동
+                    └──▶ 1Password SSH agent socket
+                            └──▶ ssh minipc → mac-ssh 키로 인증
 ```
 
 컴포넌트:
 
 | 컴포넌트 | 역할 |
 | -------- | ---- |
-| `programs.ssh` | `~/.ssh/config` 생성 (`AddKeysToAgent=yes`, `IdentityFile`) |
-| `launchd.agents.ssh-add-keys` | 로그인 시 SSH 키 자동 로드 |
+| `programs.ssh.settings."*".IdentityAgent` | 1Password agent socket 사용 (`constants.onePassword.agentSocketRelPath`) |
+| `programs.ssh.settings."minipc"` | Tailscale IP, `User = "greenhead"`, `IdentityFile = ~/.ssh/mac-ssh.pub`, `IdentitiesOnly = yes` |
+| `programs.ssh.settings."minipc-emergency"` | 1Password 우회 fallback (`IdentityAgent = none`, `~/.ssh/emergency_ed25519`) |
+| `home.file.".config/1Password/ssh/agent.toml"` | SSH vault를 1Password agent에 노출 (`constants.onePassword.vaults.ssh`) |
+| `home.file.".ssh/mac-ssh.pub"` | `constants.sshDeviceKeys.macSsh` 공개키 배포 |
+| `launchd.agents.onepassword-autostart` | 로그인 시 1Password 백그라운드 기동 |
 
 생성되는 `~/.ssh/config`:
 
 ```text
 Host *
-  IdentityFile /Users/<user>/.ssh/id_ed25519
   AddKeysToAgent yes
+  IdentityAgent <home>/<constants.onePassword.agentSocketRelPath>
+
+Host minipc
+  HostName <constants.network.minipcTailscaleIP>
+  User greenhead
+  IdentityFile ~/.ssh/mac-ssh.pub
+  IdentitiesOnly yes
+
+Host minipc-emergency
+  HostName <constants.network.minipcTailscaleIP>
+  User greenhead
+  IdentityFile ~/.ssh/emergency_ed25519
+  IdentityAgent none
+  IdentitiesOnly yes
 ```
 
 확인 방법:
 
 ```bash
-ssh-add -l
-launchctl list | grep ssh-add
-cat ~/Library/Logs/ssh-add-keys.log
+ssh minipc
+ssh minipc-emergency
 ```
+
+`ssh minipc`에서 1Password agent가 `mac-ssh` 키를 제공하지 못하면 shell의 `ssh()` preflight가 1Password 기동과 잠금 해제를 안내한다. 상세 진단은 `references/troubleshooting.md`의 "Mac에서 `ssh minipc`가 1Password preflight로 차단됨" 섹션을 따른다.
+
+이력: 과거 `com.green.ssh-add-keys` launchd agent가 `ssh-add ~/.ssh/id_ed25519`를 실행하던 구성은 1Password SSH agent 전환 후 제거/archived 되었다.
 
 ## SSH 키 자동 로드 (NixOS)
 
@@ -101,7 +123,7 @@ networking.firewall = {
 
 | 항목 | 설명 |
 |------|------|
-| VPN 접근 | MiniPC는 Tailscale IP(`100.79.80.95`)로 접근 |
+| VPN 접근 | MiniPC는 `constants.network.minipcTailscaleIP`로 접근 |
 | Routing 기능 | `useRoutingFeatures = "server"` |
 | 방화벽 | `tailscale0` 전체 신뢰 + Tailscale UDP 포트 허용 |
 | TCP 포트 개방 | per-interface `allowedTCPPorts` 규칙은 사용하지 않음 |
@@ -112,15 +134,15 @@ networking.firewall = {
 # macOS → MiniPC
 ssh minipc
 # 또는
-ssh greenhead@100.79.80.95
+ssh greenhead@<minipc Tailscale IP>
 
 # MiniPC → macOS
 ssh mac
 # 또는
-ssh green@100.65.50.98
+ssh greenhead@<macbook Tailscale IP>
 
 # 불안정한 네트워크에서 mosh
-mosh greenhead@100.79.80.95 -- tmux attach -t main
+mosh greenhead@<minipc Tailscale IP> -- tmux attach -t main
 ```
 
 양방향 SSH 요약:
