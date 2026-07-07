@@ -38,18 +38,42 @@ usage() {
     cat <<'EOF'
 claude-rc: Claude Code Remote Control tmux wrapper
 
+Claude 모바일 앱/claude.ai에서 이 머신의 Claude Code 세션을 원격 조종하는
+bridge 서버(`claude remote-control`)를 tmux 세션 안에서 상시 구동한다.
+구조: tmux 세션 "claude-rc" → 이 래퍼의 재시작 루프(backoff) → claude remote-control
+
 사용법:
   claude-rc                              서버 시작 (tmux attach)
   claude-rc --detach                     서버 시작 (백그라운드)
   claude-rc --attach                     기존 세션 접속
-  claude-rc --stop                       서버 종료
+  claude-rc --stop                       서버 종료 (아래 "세션 수명주기 경고" 참조)
   claude-rc --cleanup                    zombie 세션 + stale worktree 정리
 
 옵션:
-  --permission-mode <mode>   권한 모드 (default: bypassPermissions)
+  --permission-mode <mode>   스폰 세션 권한 모드 (default: bypassPermissions)
+                             acceptEdits|bypassPermissions|default|dontAsk|plan
   --capacity <N>             동시 세션 수 (default: 5)
-  --name <name>              세션 이름 (default: minipc)
+  --name <name>              claude.ai/앱에 표시되는 이름 (default: minipc)
   --help                     이 도움말 출력
+
+세션 수명주기 경고 (--stop / 재시작 시):
+  bridge가 죽으면 활성 원격 세션은 모바일 앱에서 이어쓸 수 없게 된다
+  (기록은 보이지만 프롬프트가 무시되는 tombstone 상태).
+  대화 기록 자체는 보존된다:
+    - 로컬 transcript: ~/.claude/projects/<프로젝트 디렉토리>/<uuid>.jsonl
+    - 재개: 해당 worktree에서 `claude --resume <uuid>`,
+      또는 (claude 2.1.200+) `claude remote-control --session-id <cse_...>`
+
+--cleanup 배경 (upstream workaround):
+  upstream의 "disconnect ≠ end session" 설계로 세션 프로세스가 종료되지 않아
+  capacity 슬롯이 영구 점유될 수 있다. 세션 revoke(#28917)와 idle timeout(#32050)
+  요청은 모두 미구현 상태로 종결되어 이 workaround는 계속 필요하다.
+
+자동 재시작 (버전 drift 감시):
+  NixOS에서는 systemd timer(claude-rc-ensure)가 30분마다 claude-rc-maint를 실행해
+  bridge 바이너리가 구버전이면 idle 시점에 자동 재시작한다.
+  상태 확인: cat ~/.local/state/claude-rc/status.json
+  상세: .claude/skills/managing-claude-rc/SKILL.md
 EOF
 }
 
