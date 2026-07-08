@@ -1,59 +1,32 @@
 #!/usr/bin/env bash
-# claude-rc-maint: Claude Code Remote Control bridge의 version-drift 감시 엔진.
+# claude-rc-maint: Claude Code Remote Control headless multi-instance ensure.
 #
-# 사용자 래퍼(claude-rc)와 책임을 분리한 maintenance 전용 스크립트로,
-# NixOS는 systemd timer(claude-rc-ensure), macOS는 launchd agent가 주기 실행한다.
-# codex-remote-control-maint.sh 골격 차용.
+# This file is packaged by concatenating modules/nixos/scripts/claude-rc-lib.sh
+# before it.
 #
-# 동작: 실행 중 bridge 바이너리(pid_exe_path — Linux /proc, macOS lsof)와 claude
-# launcher가 가리키는 최신 버전을 비교해 drift가 있으면 — 활성 원격 세션이 없을
-# 때만 — bridge를 재시작한다.
-# bridge 재시작은 활성 세션을 tombstone시키므로 idle 게이트가 핵심 안전장치다.
+# NixOS systemd timer and macOS launchd run `claude-rc-maint ensure`
+# periodically. The script seeds declared instances, starts dead servers, and
+# restarts version-drifted servers when that will not tombstone active worktree
+# sessions.
 set -euo pipefail
 
-#───────────────────────────────────────────────────────────────────────────────
-# env 파라미터 (systemd unit이 주입, 수동 실행 시 기본값)
-#───────────────────────────────────────────────────────────────────────────────
-CLAUDE_RC_BIN="${CLAUDE_RC_BIN:-$HOME/.local/bin/claude-rc}"
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
-STATE_DIR="${STATE_DIR:-$HOME/.local/state/claude-rc}"
-TMUX_SESSION="${TMUX_SESSION:-claude-rc}"
 IDLE_THRESHOLD_MINUTES="${IDLE_THRESHOLD_MINUTES:-30}"
 MAINT_LOCK_TIMEOUT_SECONDS="${MAINT_LOCK_TIMEOUT_SECONDS:-120}"
 ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
 PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
-# bridge 시작 옵션 — 배선 모듈(NixOS homeserver.claudeRemoteControl.* / darwin
-# claude-remote-control.nix)이 주입한다. maint가 명시 전달하지 않으면 자동 재시작 시
-# 래퍼 기본값으로 조용히 되돌아가므로 (예: capacity 10 → 5) 반드시 전량 전달한다.
+CLAUDE_RC_DECLARED_INSTANCES="${CLAUDE_RC_DECLARED_INSTANCES:-}"
 CLAUDE_RC_PERMISSION_MODE="${CLAUDE_RC_PERMISSION_MODE:-bypassPermissions}"
-CLAUDE_RC_CAPACITY="${CLAUDE_RC_CAPACITY:-5}"
-CLAUDE_RC_NAME="${CLAUDE_RC_NAME:-minipc}"
-# 알림 메시지의 머신 식별자 (recovered 알림 본문에 사용)
-CLAUDE_RC_ALERT_HOST="${CLAUDE_RC_ALERT_HOST:-greenhead-minipc}"
+CLAUDE_RC_ALERT_HOST="${CLAUDE_RC_ALERT_HOST:-$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo claude-rc)}"
 
-#───────────────────────────────────────────────────────────────────────────────
-# upstream 의존 selector — Claude Code CLI/spawn process shape 또는 transcript
-# 프로젝트 디렉토리 명명 규칙이 바뀌면 아래 3개를 함께 갱신한다.
-#───────────────────────────────────────────────────────────────────────────────
-BRIDGE_PROCESS_PATTERN='claude remote-control'
-# 스폰 세션의 argv[0]은 versions 디렉토리 절대경로라 "claude "가 나타나지 않는다
-# (실측: /home/.../claude/versions/2.1.169 --print --sdk-url ...). --sdk-url 자체로
-# 식별하되, ERE [-]로 시작해 pgrep이 패턴을 옵션으로 오해하지 않게 한다.
-BRIDGE_CHILD_PROCESS_PATTERN='[-]-sdk-url'
-# transcript 프로젝트 디렉토리 glob. 경로의 비영숫자([._/])는 하이픈으로
-# 정규화되어 저장되므로 underscore 변형은 나타나지 않는다 (실측 확인).
-BRIDGE_TRANSCRIPT_GLOBS=('*bridge-cse-*' '*bridge-session-*')
-
-VERSIONS_DIR="$HOME/.local/share/claude/versions"
 PROJECTS_DIR="$HOME/.claude/projects"
 
-ACTION="none"
-RUNNING_VERSION=""
 DESIRED_VERSION=""
-RECENT_TRANSCRIPT_COUNT=0
+GLOBAL_ACTION="none"
+RESULTS_FILE=""
 
-log_info()  { echo "[claude-rc-maint] $*"; }
+log_info() { echo "[claude-rc-maint] $*"; }
 log_error() { echo "[claude-rc-maint] ERROR: $*" >&2; }
 
 #───────────────────────────────────────────────────────────────────────────────
@@ -61,186 +34,450 @@ log_error() { echo "[claude-rc-maint] ERROR: $*" >&2; }
 #───────────────────────────────────────────────────────────────────────────────
 with_lock() {
     mkdir -p "$STATE_DIR"
+    if ! command -v flock >/dev/null 2>&1; then
+        GLOBAL_ACTION="flock-missing"
+        log_error "required command not found in PATH: flock"
+        return 1
+    fi
     exec 9>"$STATE_DIR/ensure.lock"
     if ! flock --timeout "$MAINT_LOCK_TIMEOUT_SECONDS" 9; then
-        ACTION="lock-acquire-timeout"
+        GLOBAL_ACTION="lock-acquire-timeout"
         return 1
     fi
     # fd 9는 이 셸이 락을 유지하는 동안만 살아야 한다. 9>&- 없이 실행하면
-    # detach되는 tmux server/bridge가 fd 9를 상속해 락을 영구 점유하고
+    # detach되는 headless bridge가 fd 9를 상속해 락을 영구 점유하고
     # 이후 모든 타이머 실행이 lock-acquire-timeout으로 실패한다
     # (codex-remote-control-maint.sh의 PR #983과 동일 근거).
     "$@" 9>&-
 }
 
-#───────────────────────────────────────────────────────────────────────────────
-# bridge 세션/프로세스 판정
-#───────────────────────────────────────────────────────────────────────────────
-bridge_session_alive() {
-    tmux has-session -t "$TMUX_SESSION" 2>/dev/null || return 1
-    # 조회 실패(변수 없음 포함) = stale — 래퍼 is_session_stale과 동일 판정.
-    # systemd oneshot은 tmux 클라이언트 밖에서 실행되므로 -t 타깃 명시가 필수다.
-    local rc_active
-    rc_active=$(tmux show-environment -t "$TMUX_SESSION" CLAUDE_RC_ACTIVE 2>/dev/null) || return 1
-    [ "$rc_active" = "CLAUDE_RC_ACTIVE=1" ]
+reconcile_declared_instance_unlocked() {
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
+    local tmp capacity_json registered_at
+    capacity_json="null"
+    if [ -n "$capacity" ]; then
+        capacity_json="$capacity"
+    fi
+    registered_at=$(iso_timestamp)
+    init_instances_file
+    tmp=$(mktemp "$STATE_DIR/instances.XXXXXX") || return 1
+    jq \
+        --arg path "$path" \
+        --arg spawn "$spawn" \
+        --arg permissionMode "$permission_mode" \
+        --arg registeredAt "$registered_at" \
+        --argjson capacity "$capacity_json" \
+        'if (.version == 1 and (.instances | type) == "object") then . else {version: 1, instances: {}} end
+         | if (.instances | has($path)) then
+             .instances[$path] = (.instances[$path] + {
+               spawn: $spawn,
+               capacity: $capacity,
+               permissionMode: $permissionMode,
+               registeredAt: (.instances[$path].registeredAt // $registeredAt),
+               source: "declared"
+             })
+           else .instances[$path] = {
+             spawn: $spawn,
+             capacity: $capacity,
+             permissionMode: $permissionMode,
+             registeredAt: $registeredAt,
+             source: "declared"
+           }
+           end' \
+        "$INSTANCES_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
+    mv "$tmp" "$INSTANCES_FILE"
 }
 
-# 플랫폼별 실행 바이너리 경로 조회.
-# - Linux: /proc/PID/exe. 삭제된 바이너리는 " (deleted)" suffix가 붙는다.
-# - Darwin: /proc이 없어 lsof의 첫 txt(code segment) 항목을 쓴다. 실행 파일이
-#   항상 첫 txt로 나열되고(-F 필드 출력은 경로 공백 안전; 실측 work-MacBookPro),
-#   ps -o comm=은 argv[0] 기반이라 symlink 경유 실행 시 실경로를 잃는다.
-#   삭제된 바이너리도 suffix 없이 원경로가 그대로 나오지만, 버전이 파일명이라
-#   desired와의 문자열 비교로 drift가 감지되므로 (deleted) 표식 없이도 충분하다.
-pid_exe_path() {
-    local pid="$1"
-    case "$(uname -s)" in
-        Darwin) lsof -a -p "$pid" -d txt -Fn 2>/dev/null | awk '/^n/ {print substr($0, 2); exit}' ;;
-        *) readlink "/proc/$pid/exe" 2>/dev/null ;;
-    esac
+seed_declared_instances() {
+    local payload item path spawn capacity permission_mode
+    payload="$CLAUDE_RC_DECLARED_INSTANCES"
+    if [ -z "${payload//[[:space:]]/}" ]; then
+        return 0
+    fi
+    if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$payload"; then
+        GLOBAL_ACTION="declared-instances-invalid"
+        log_error "CLAUDE_RC_DECLARED_INSTANCES must be a JSON array"
+        return 1
+    fi
+
+    while IFS= read -r item; do
+        [ -n "$item" ] || continue
+        path=$(jq -r '.path // empty' <<<"$item")
+        spawn=$(jq -r '.spawn // "worktree"' <<<"$item")
+        capacity=$(jq -r 'if (.capacity // null) == null then "" else (.capacity | tostring) end' <<<"$item")
+        permission_mode=$(jq -r --arg fallback "$CLAUDE_RC_PERMISSION_MODE" '.permissionMode // $fallback' <<<"$item")
+
+        if [ -z "$path" ] || [[ "$path" != /* ]]; then
+            GLOBAL_ACTION="declared-instances-invalid"
+            log_error "declared instance path must be absolute: ${path:-<empty>}"
+            return 1
+        fi
+        if [ -d "$path" ]; then
+            path=$(canonical_existing_path "$path")
+        fi
+        if ! validate_spawn "$spawn"; then
+            GLOBAL_ACTION="declared-instances-invalid"
+            log_error "invalid declared spawn for $path: $spawn"
+            return 1
+        fi
+        if [ -n "$capacity" ] && ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
+            GLOBAL_ACTION="declared-instances-invalid"
+            log_error "invalid declared capacity for $path: $capacity"
+            return 1
+        fi
+        if ! validate_permission_mode "$permission_mode"; then
+            GLOBAL_ACTION="declared-instances-invalid"
+            log_error "invalid declared permissionMode for $path: $permission_mode"
+            return 1
+        fi
+        # Declared paths are authoritative desired state. If a manual start
+        # temporarily uses different options, the next ensure reconciles the
+        # registry back to the declaration and treats the manual change as an
+        # experiment.
+        # cmd_ensure runs this subtree under `|| rc=$?`, which disables set -e,
+        # so a reconcile failure (mktemp/jq) must be propagated explicitly or
+        # the declared instance is silently never registered nor ensured.
+        if ! with_instances_lock reconcile_declared_instance_unlocked "$path" "$spawn" "$capacity" "$permission_mode"; then
+            GLOBAL_ACTION="declared-instances-invalid"
+            log_error "failed to reconcile declared instance: $path"
+            return 1
+        fi
+    done < <(jq -c '.[]' <<<"$payload")
 }
 
-# 첫 번째 유효 bridge PID를 출력. 유효 = exe가 claude versions 디렉토리 아래.
-find_bridge_pid() {
-    local pid exe
-    while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        exe=$(pid_exe_path "$pid") || continue
-        [ -n "$exe" ] || continue
-        case "${exe% (deleted)}" in
-            "$VERSIONS_DIR"/*) echo "$pid"; return 0 ;;
-        esac
-    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
-    return 1
-}
-
-# pid_exe_path 기준 실행 중 버전. 바이너리가 삭제된 구버전이면 "deleted"를 붙여
-# 호출측이 drift로 취급하게 한다 (Linux 전용 신호 — Darwin 주석은 pid_exe_path 참조).
-pid_exe_version() {
-    local pid="$1" exe
-    exe=$(pid_exe_path "$pid") || return 1
-    [ -n "$exe" ] || return 1
-    case "$exe" in
-        *" (deleted)") echo "$(basename "${exe% (deleted)}") (deleted)" ;;
-        *) basename "$exe" ;;
-    esac
+record_instance_result() {
+    local path="$1" running_version="$2" desired_version="$3" action="$4"
+    jq -n -c \
+        --arg path "$path" \
+        --arg runningVersion "$running_version" \
+        --arg desiredVersion "$desired_version" \
+        --arg action "$action" \
+        '{path: $path, runningVersion: $runningVersion, desiredVersion: $desiredVersion, action: $action}' \
+        >>"$RESULTS_FILE"
 }
 
 desired_claude_version() {
-    basename "$(readlink -f "$CLAUDE_BIN")"
+    local resolved
+    # readlink 실패가 빈 문자열 + exit 0으로 새면 DESIRED_VERSION=""가 되어
+    # 모든 실행 버전이 drift로 보이고 재시작이 반복된다 — 실패를 명시 전파해
+    # ensure_core의 desired-version-unresolvable 경로가 받게 한다.
+    resolved=$(readlink -f "$CLAUDE_BIN") || return 1
+    [ -n "$resolved" ] || return 1
+    basename "$resolved"
 }
 
-#───────────────────────────────────────────────────────────────────────────────
-# 활성 세션 판정 (restart 게이트)
-#───────────────────────────────────────────────────────────────────────────────
-# 허용 glob에 매치되는 transcript 프로젝트 디렉토리 수 (명명 규칙 유효성 신호)
+normalized_instance_prefix() {
+    local path="$1"
+    printf '%s' "$path" | sed 's/[^[:alnum:]]/-/g'
+}
+
+worktree_transcript_prefix() {
+    local instance_path="$1"
+    # Worktree spawn transcripts use the normalized absolute worktree path.
+    # Since spawned worktrees live under <instance>/.claude/worktrees/<name>,
+    # their project dirs always begin with:
+    # <normalized instance path>--claude-worktrees-
+    # Matching that prefix excludes the instance root transcript dir, which can
+    # be updated by unrelated local/same-dir sessions and must not defer a
+    # worktree drift restart.
+    printf '%s--claude-worktrees-' "$(normalized_instance_prefix "$instance_path")"
+}
+
 count_matching_transcript_dirs() {
-    local total=0 glob
+    local instance_path="$1" prefix
     [ -d "$PROJECTS_DIR" ] || { echo 0; return; }
-    for glob in "${BRIDGE_TRANSCRIPT_GLOBS[@]}"; do
-        total=$((total + $(find "$PROJECTS_DIR" -maxdepth 1 -type d -name "$glob" 2>/dev/null | wc -l)))
-    done
+    prefix=$(worktree_transcript_prefix "$instance_path")
+    find "$PROJECTS_DIR" -maxdepth 1 -type d -name "${prefix}*" 2>/dev/null | wc -l
+}
+
+count_recent_instance_transcripts() {
+    local instance_path="$1" prefix total=0 dir count
+    [ -d "$PROJECTS_DIR" ] || { echo 0; return; }
+    prefix=$(worktree_transcript_prefix "$instance_path")
+    while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        count=$(find "$dir" -maxdepth 1 -name '*.jsonl' -mmin "-$IDLE_THRESHOLD_MINUTES" 2>/dev/null | wc -l)
+        total=$((total + count))
+    done < <(find "$PROJECTS_DIR" -maxdepth 1 -type d -name "${prefix}*" 2>/dev/null)
     echo "$total"
 }
 
-# 최근 활동한 bridge transcript 파일 수. transcript file은 세션의 proxy이며
-# 측정 단위(파일)를 이름에 그대로 노출한다.
-count_recent_bridge_transcripts() {
-    local total=0 glob dir
-    [ -d "$PROJECTS_DIR" ] || { echo 0; return; }
-    for glob in "${BRIDGE_TRANSCRIPT_GLOBS[@]}"; do
-        while IFS= read -r dir; do
-            [ -n "$dir" ] || continue
-            total=$((total + $(find "$dir" -maxdepth 1 -name '*.jsonl' -mmin "-$IDLE_THRESHOLD_MINUTES" 2>/dev/null | wc -l)))
-        done < <(find "$PROJECTS_DIR" -maxdepth 1 -type d -name "$glob" 2>/dev/null)
-    done
-    echo "$total"
-}
-
-# bridge가 스폰한 세션 프로세스 수 (transcript 명명에 비의존인 2차 신호).
-# pgrep -c는 GNU procps 전용이라 macOS BSD pgrep에서 usage 에러(rc=2)가 난다
-# (실측) — PID 출력을 wc -l로 세는 플랫폼 중립 방식을 쓴다. 매치 0이면
-# pgrep rc=1 → pipefail로 대입이 실패하므로 실패 시 대입으로 0 처리한다.
-count_bridge_session_procs() {
-    local count
-    count=$(pgrep -u "$(id -u)" -f "$BRIDGE_CHILD_PROCESS_PATTERN" 2>/dev/null | wc -l) || count=0
-    echo "$count"
-}
-
-# 재시작이 안전한지 판정. 반환: 0=안전, 1=defer(활동 중), 2=defer(판정 불가)
 restart_gate() {
-    RECENT_TRANSCRIPT_COUNT=$(count_recent_bridge_transcripts)
-    local session_procs
-    session_procs=$(count_bridge_session_procs)
+    local instance_path="$1" recent_count session_procs transcript_dir_count
+    recent_count=$(count_recent_instance_transcripts "$instance_path")
+    session_procs=$(count_worktree_session_procs "$instance_path")
 
-    if [ "$RECENT_TRANSCRIPT_COUNT" -gt 0 ]; then
-        return 1 # 최근 활동 세션 존재 — 재시작하면 tombstone
+    if [ "$recent_count" -gt 0 ]; then
+        return 1
     fi
     if [ "$session_procs" -eq 0 ]; then
-        return 0 # 세션 프로세스 자체가 없음 — 재시작 안전
+        return 0
     fi
-    # 세션 프로세스는 있는데 최근 transcript가 없는 경우:
-    # 허용 glob 매치 디렉토리가 존재하면 명명 규칙이 현재도 유효하다는 증거이므로
-    # idle 세션으로 판단해 재시작하고, 매치가 0이면 upstream 명명 규칙 drift
-    # 가능성이 있어 보수적으로 유예한다 (tombstone 재시작 직행 방지).
-    if [ "$(count_matching_transcript_dirs)" -gt 0 ]; then
+    transcript_dir_count=$(count_matching_transcript_dirs "$instance_path")
+    if [ "$transcript_dir_count" -gt 0 ]; then
         return 0
     fi
     return 2
 }
 
-#───────────────────────────────────────────────────────────────────────────────
-# bridge 시작/재시작
-#───────────────────────────────────────────────────────────────────────────────
-# systemd LoadCredential의 CREDENTIALS_DIRECTORY와 Pushover env가 장기 실행
-# tmux server → bridge → 스폰 세션 트리로 상속되지 않도록 항상 env를 정리해 시작한다.
-start_bridge() {
-    env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
-        "$CLAUDE_RC_BIN" --detach \
-        --permission-mode "$CLAUDE_RC_PERMISSION_MODE" \
-        --capacity "$CLAUDE_RC_CAPACITY" \
-        --name "$CLAUDE_RC_NAME"
-    # tmux server가 이 maint 유닛 환경에서 새로 떴을 경우 global env에 복사된
-    # credential 경로를 제거한다 (이미 없으면 no-op).
-    tmux set-environment -gu CREDENTIALS_DIRECTORY 2>/dev/null || true
-    tmux set-environment -gu PUSHOVER_CRED_FILE 2>/dev/null || true
+restart_server() {
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4" pid lock_path
+    lock_path=$(lock_path_for_path "$path")
+    if pid=$(find_server_pid_for_path "$path"); then
+        kill -TERM "$pid" 2>/dev/null || true
+        wait_until_server_stops "$pid" || return 1
+    elif ! lock_is_free "$lock_path"; then
+        return 1
+    fi
+
+    if ! lock_is_free "$lock_path"; then
+        return 1
+    fi
+    if has_unmanaged_server_for_path "$path"; then
+        return 2
+    fi
+    start_server "$path" "$spawn" "$capacity" "$permission_mode"
+    sleep 2
+    if lock_is_free "$lock_path"; then
+        return 1
+    fi
 }
 
-restart_bridge() {
-    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-    start_bridge
+handle_restart_result() {
+    local path="$1" mode="$2" running_version="$3" restart_rc="$4" action
+    if [ "$restart_rc" -eq 0 ]; then
+        action="restarted-version-drift"
+        log_info "restarted ${mode} drift: $path (${running_version} -> ${DESIRED_VERSION})"
+        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+        return 0
+    fi
+    if [ "$restart_rc" -eq 2 ]; then
+        action="unmanaged-server-present"
+        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+        log_error "unmanaged same-cwd server present after stop: $path"
+        return 1
+    fi
+    action="restart-failed"
+    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+    return 1
 }
 
-#───────────────────────────────────────────────────────────────────────────────
-# 상태 기록 + 알림
-#───────────────────────────────────────────────────────────────────────────────
+capture_started_version() {
+    local path="$1" pid
+    if pid=$(find_server_pid_for_path "$path"); then
+        pid_exe_version "$pid" 2>/dev/null || true
+    fi
+}
+
+validate_instance_config() {
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
+    local action
+
+    if ! validate_spawn "$spawn"; then
+        action="invalid-spawn"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        return 1
+    fi
+    if [ -n "$capacity" ] && ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
+        action="invalid-capacity"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        return 1
+    fi
+    if ! validate_permission_mode "$permission_mode"; then
+        action="invalid-permission-mode"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        return 1
+    fi
+}
+
+start_missing_instance() {
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
+    local action lock_path started_version
+    lock_path=$(lock_path_for_path "$path")
+    # A wrapper-bypassed plain CLI server in the same cwd does not hold our
+    # lock. Starting another server here permanently creates an undeletable
+    # ghost environment, so ensure must share the wrapper's cwd guard.
+    if has_unmanaged_server_for_path "$path"; then
+        action="unmanaged-server-present"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        log_error "unmanaged same-cwd server present: $path"
+        return 1
+    fi
+    start_server "$path" "$spawn" "$capacity" "$permission_mode"
+    sleep 2
+    if lock_is_free "$lock_path"; then
+        action="start-failed"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        log_error "start failed: $path"
+        return 1
+    fi
+    started_version=$(capture_started_version "$path")
+    action="started"
+    record_instance_result "$path" "$started_version" "$DESIRED_VERSION" "$action"
+    log_info "started: $path"
+}
+
+handle_running_instance() {
+    local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4"
+    local pid running_version action
+    if ! pid=$(find_server_pid_for_path "$path"); then
+        action="no-server-process"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        log_error "lock held but server process not found: $path"
+        return 1
+    fi
+
+    if ! running_version=$(pid_exe_version "$pid"); then
+        action="running-version-unresolvable"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        return 1
+    fi
+
+    if [ "$running_version" = "$DESIRED_VERSION" ]; then
+        action="healthy"
+        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+        return 0
+    fi
+
+    handle_drift "$path" "$desired_spawn" "$capacity" "$permission_mode" "$pid" "$running_version"
+}
+
+handle_drift() {
+    local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4" pid="$5" running_version="$6"
+    local effective_spawn gate_rc restart_rc action
+    # Registry spawn is desired state and may differ from the already-running
+    # server after declaration changes or temporary manual override starts.
+    # Restart safety depends on the effective mode of the running process. If
+    # argv parsing fails, apply the conservative worktree gate.
+    if ! effective_spawn=$(pid_spawn_mode "$pid"); then
+        effective_spawn="worktree"
+        log_info "running spawn unknown; applying worktree drift gate: $path"
+    fi
+
+    case "$effective_spawn" in
+        same-dir)
+            # Live measurement confirmed same-dir spawned sessions reconnect to
+            # the restarted server, so version drift can be corrected eagerly.
+            restart_rc=0
+            restart_server "$path" "$desired_spawn" "$capacity" "$permission_mode" || restart_rc=$?
+            handle_restart_result "$path" "same-dir" "$running_version" "$restart_rc"
+            ;;
+        worktree)
+            gate_rc=0
+            restart_gate "$path" || gate_rc=$?
+            case "$gate_rc" in
+                0)
+                    restart_rc=0
+                    restart_server "$path" "$desired_spawn" "$capacity" "$permission_mode" || restart_rc=$?
+                    handle_restart_result "$path" "worktree" "$running_version" "$restart_rc"
+                    ;;
+                1)
+                    action="deferred-active-sessions"
+                    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+                    log_info "deferred active worktree sessions: $path"
+                    return 0
+                    ;;
+                2)
+                    action="deferred-unknown-activity"
+                    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+                    log_info "deferred unknown worktree activity: $path"
+                    return 0
+                    ;;
+                *)
+                    action="restart-gate-failed"
+                    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            action="invalid-spawn"
+            record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+            return 1
+            ;;
+    esac
+}
+
+process_instance() {
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
+    local lock_path action
+
+    if [ ! -d "$path" ]; then
+        action="path-missing"
+        log_info "path missing: $path"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        return 0
+    fi
+
+    validate_instance_config "$path" "$spawn" "$capacity" "$permission_mode" || return 1
+
+    ensure_instance_dir "$path"
+    lock_path=$(lock_path_for_path "$path")
+    if lock_is_free "$lock_path"; then
+        start_missing_instance "$path" "$spawn" "$capacity" "$permission_mode"
+    else
+        handle_running_instance "$path" "$spawn" "$capacity" "$permission_mode"
+    fi
+}
+
+ensure_core() {
+    local entries rc path spawn capacity permission_mode
+    GLOBAL_ACTION="running"
+
+    seed_declared_instances || return 1
+
+    if ! DESIRED_VERSION=$(desired_claude_version); then
+        GLOBAL_ACTION="desired-version-unresolvable"
+        return 1
+    fi
+
+    if ! entries=$(with_instances_lock emit_instances_tsv_unlocked); then
+        GLOBAL_ACTION="instances-read-failed"
+        return 1
+    fi
+    if [ -z "$entries" ]; then
+        GLOBAL_ACTION="no-instances"
+        log_info "no registered instances"
+        return 0
+    fi
+
+    rc=0
+    while IFS=$'\t' read -r path spawn capacity permission_mode; do
+        [ -n "$path" ] || continue
+        [ "$capacity" = "$TSV_NULL" ] && capacity=""
+        process_instance "$path" "$spawn" "$capacity" "$permission_mode" || rc=1
+    done <<<"$entries"
+
+    if [ "$rc" -eq 0 ]; then
+        GLOBAL_ACTION="completed"
+    else
+        GLOBAL_ACTION="failed"
+    fi
+    return "$rc"
+}
+
 write_status() {
-    local exit_code="${1:-0}"
+    local exit_code="${1:-0}" tmp
     mkdir -p "$STATE_DIR"
-    local tmp
     tmp=$(mktemp "$STATE_DIR/status.XXXXXX") || return 1
-    jq -n \
-        --arg timestamp "$(date -Is)" \
-        --arg runningVersion "$RUNNING_VERSION" \
-        --arg desiredVersion "$DESIRED_VERSION" \
-        --arg action "$ACTION" \
-        --argjson recentTranscriptCount "$RECENT_TRANSCRIPT_COUNT" \
+    jq -s \
+        --arg timestamp "$(iso_timestamp)" \
+        --arg action "$GLOBAL_ACTION" \
         --argjson exitCode "$exit_code" \
         '{
           timestamp: $timestamp,
-          runningVersion: $runningVersion,
-          desiredVersion: $desiredVersion,
+          exitCode: $exitCode,
           action: $action,
-          recentTranscriptCount: $recentTranscriptCount,
-          exitCode: $exitCode
-        }' >"$tmp" || { rm -f "$tmp"; return 1; }
+          instances: .
+        }' "$RESULTS_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
     mv "$tmp" "$STATE_DIR/status.json"
 }
 
 load_alerting() {
     # shellcheck source=/dev/null
     [ -n "$SERVICE_LIB" ] && [ -f "$SERVICE_LIB" ] && source "$SERVICE_LIB"
-    local cred="$PUSHOVER_CRED_FILE"
+    local cred
+    cred="$PUSHOVER_CRED_FILE"
     if [ -z "$cred" ] && [ -n "${CREDENTIALS_DIRECTORY:-}" ]; then
         cred="$CREDENTIALS_DIRECTORY/pushover-system-monitor"
     fi
@@ -250,105 +487,88 @@ load_alerting() {
     fi
 }
 
+is_failure_action() {
+    case "$1" in
+        path-missing|started|healthy|restarted-version-drift|deferred-active-sessions|deferred-unknown-activity)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+failed_instance_summary() {
+    if [ ! -s "$RESULTS_FILE" ]; then
+        printf 'action=%s' "$GLOBAL_ACTION"
+        return
+    fi
+    local summary line path action
+    summary=""
+    while IFS=$'\t' read -r path action; do
+        [ -n "$path" ] || continue
+        if is_failure_action "$action"; then
+            line="$path: $action"
+            if [ -n "$summary" ]; then
+                summary="${summary}; ${line}"
+            else
+                summary="$line"
+            fi
+        fi
+    done < <(jq -r '[.path, .action] | @tsv' "$RESULTS_FILE")
+    if [ -n "$summary" ]; then
+        printf '%s' "$summary"
+    else
+        printf 'action=%s' "$GLOBAL_ACTION"
+    fi
+}
+
 send_alerts() {
     local exit_code="$1"
-    # graceful fallback: 크리덴셜/서비스 lib이 없는 호스트(예: work-MacBookPro는
-    # pushover-system-monitor.age가 minipcOnly 암호화라 복호화 불가)에서 수동
-    # 실행해도 알림만 스킵하고 ensure 본체는 정상 동작한다.
+    # graceful fallback: hosts without credentials or service-lib skip
+    # notification only; ensure itself still runs and records status.
     if ! command -v send_notification >/dev/null 2>&1 \
         || [ -z "${PUSHOVER_TOKEN:-}" ] || [ -z "${PUSHOVER_USER:-}" ]; then
         log_info "알림 스킵 (Pushover 크리덴셜/서비스 lib 없음)"
         return 0
     fi
 
-    local now state_file last_failure_file previous
+    local now state_file last_failure_file previous last summary
     now=$(date +%s)
     state_file="$STATE_DIR/last-health-state"
     last_failure_file="$STATE_DIR/last-failure-alert"
     previous="unknown"
-    [ -f "$state_file" ] && previous=$(cat "$state_file" 2>/dev/null || echo unknown)
+    if [ -f "$state_file" ]; then
+        previous=$(cat "$state_file" 2>/dev/null || echo unknown)
+    fi
 
     if [ "$exit_code" -eq 0 ]; then
         if [ "$previous" = "failed" ]; then
             send_notification "Claude RC Recovered" \
-                "${CLAUDE_RC_ALERT_HOST} claude-rc bridge is healthy (${RUNNING_VERSION:-unknown})." 0
+                "${CLAUDE_RC_ALERT_HOST} claude-rc ensure is healthy (desired=${DESIRED_VERSION:-unknown})." 0
         fi
         echo "healthy" >"$state_file"
         return 0
     fi
 
-    local last=0
-    [ -f "$last_failure_file" ] && last=$(cat "$last_failure_file" 2>/dev/null || echo 0)
+    last=0
+    if [ -f "$last_failure_file" ]; then
+        last=$(cat "$last_failure_file" 2>/dev/null || echo 0)
+    fi
     if [ $((now - last)) -ge "$ALERT_COOLDOWN_SECONDS" ]; then
+        summary=$(failed_instance_summary)
         send_notification "Claude RC Ensure Failed" \
-            "exit=${exit_code}, action=${ACTION}, running=${RUNNING_VERSION:-unknown}, desired=${DESIRED_VERSION:-unknown}" 0
+            "exit=${exit_code}, action=${GLOBAL_ACTION}, failed=${summary}, desired=${DESIRED_VERSION:-unknown}" 0
         echo "$now" >"$last_failure_file"
     fi
     echo "failed" >"$state_file"
 }
 
-#───────────────────────────────────────────────────────────────────────────────
-# ensure 본체 (조기 exit 없음 — action만 설정하고 cmd_ensure의 finalizer가 마무리)
-#───────────────────────────────────────────────────────────────────────────────
-ensure_core() {
-    DESIRED_VERSION=$(desired_claude_version) || {
-        ACTION="desired-version-unresolvable"
-        return 1
-    }
-
-    if ! bridge_session_alive; then
-        # tmux 세션 부재/stale — 부팅 후 자동 시작 겸 자가 복구
-        start_bridge
-        ACTION="started"
-        log_info "bridge 시작됨 (session absent/stale)"
-        return 0
-    fi
-
-    local pid
-    if ! pid=$(find_bridge_pid); then
-        # 세션은 살아있는데 bridge 프로세스가 없음 — 래퍼 루프가 backoff 재시작
-        # 중일 수 있으므로 maint는 개입하지 않는다 (다음 주기 재확인).
-        ACTION="no-bridge-process"
-        log_info "bridge 프로세스 없음 — 래퍼 루프에 위임 (다음 주기 재확인)"
-        return 0
-    fi
-
-    RUNNING_VERSION=$(pid_exe_version "$pid") || {
-        ACTION="running-version-unresolvable"
-        return 1
-    }
-
-    if [ "$RUNNING_VERSION" = "$DESIRED_VERSION" ]; then
-        ACTION="healthy"
-        return 0
-    fi
-
-    # version drift — 활성 세션 게이트 통과 시에만 재시작
-    local gate_rc=0
-    restart_gate || gate_rc=$?
-    case "$gate_rc" in
-        0)
-            restart_bridge
-            ACTION="restarted-version-drift"
-            log_info "재시작: ${RUNNING_VERSION} → ${DESIRED_VERSION}"
-            ;;
-        1)
-            ACTION="deferred-active-sessions"
-            log_info "drift 감지했으나 활성 세션 ${RECENT_TRANSCRIPT_COUNT}건 — 유예"
-            ;;
-        2)
-            ACTION="deferred-unknown-activity"
-            log_info "drift 감지했으나 활동 판정 불가 (transcript 명명 drift 의심) — 유예"
-            ;;
-    esac
-    return 0
-}
-
-#───────────────────────────────────────────────────────────────────────────────
-# 서브커맨드
-#───────────────────────────────────────────────────────────────────────────────
 cmd_ensure() {
-    local rc=0
+    local rc
+    rc=0
+    mkdir -p "$STATE_DIR"
+    RESULTS_FILE=$(mktemp "$STATE_DIR/results.XXXXXX") || return 1
     with_lock ensure_core || rc=$?
     # 단일 finalizer: 어떤 분기도 이 경로를 우회하지 않는다
     # (recovered/failure 알림 상태 전이가 모든 실행에서 평가되도록).
@@ -357,6 +577,7 @@ cmd_ensure() {
     # 마지막 명령이라 set -e 발동) finalizer가 send_alerts 전에 죽지 않게 guard.
     load_alerting || true
     send_alerts "$rc" || true
+    rm -f "$RESULTS_FILE"
     return "$rc"
 }
 
@@ -365,19 +586,24 @@ usage() {
 Usage: claude-rc-maint ensure
 
 env:
-  CLAUDE_RC_BIN, CLAUDE_BIN, STATE_DIR, TMUX_SESSION,
+  CLAUDE_BIN, STATE_DIR, CLAUDE_RC_DECLARED_INSTANCES,
   IDLE_THRESHOLD_MINUTES (default 30), MAINT_LOCK_TIMEOUT_SECONDS (default 120),
   ALERT_COOLDOWN_SECONDS (default 1800), PUSHOVER_CRED_FILE, SERVICE_LIB,
-  CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_CAPACITY, CLAUDE_RC_NAME, CLAUDE_RC_ALERT_HOST
+  CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_ALERT_HOST
 
-상태 확인: cat $STATE_DIR/status.json (기본 ~/.local/state/claude-rc/status.json)
+CLAUDE_RC_DECLARED_INSTANCES:
+  JSON array, for example:
+  [{"path":"/path/to/project","spawn":"worktree","capacity":null}]
+
+Status:
+  cat $STATE_DIR/status.json (default ~/.local/state/claude-rc/status.json)
 EOF
 }
 
 main() {
     case "${1:-}" in
         ensure) cmd_ensure ;;
-        -h | --help | help) usage ;;
+        -h|--help|help) usage ;;
         *)
             usage
             return 2
@@ -385,4 +611,6 @@ main() {
     esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

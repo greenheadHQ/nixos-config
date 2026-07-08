@@ -127,8 +127,7 @@
   homeserver.opnix.enable = true; # 1Password SA token materialization + gh 인증
   homeserver.codexRemoteControl.enable = true; # Codex mobile remote-control app-server 회귀 방지
   homeserver.claudeRemoteControl = {
-    enable = true; # Claude Code RC bridge version-drift 감시 (30분 timer)
+    enable = true; # 선언 인스턴스(nixos-config) 상시 유지 + version-drift 감시 (30분 timer)
     capacity = 10; # 현행 운영값 — 자동 재시작 시 이 값으로 유지된다
-    name = "miniPC";
   };
 }

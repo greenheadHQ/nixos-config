@@ -1,9 +1,9 @@
-# Claude Code Remote Control bridge의 version-drift 감시 (greenhead-minipc).
+# Claude Code Remote Control bridge의 headless multi-instance ensure.
 #
-# bridge(claude remote-control)는 tmux 안에서 상시 구동되며 시작 시점 바이너리로
-# 고정된다. claude launcher(~/.local/bin/claude)는 자체 업데이터가 최신으로 굴리므로
-# 방치하면 bridge만 구버전에 남는다 (실측: 23개 릴리스 drift). 이 모듈은 30분 timer로
-# claude-rc-maint를 실행해 drift를 감지하고, 활성 원격 세션이 없을 때만 재시작한다.
+# bridge(claude remote-control)는 시작 시점 바이너리로 고정된다.
+# claude launcher(~/.local/bin/claude)는 자체 업데이터가 최신으로 굴리므로
+# 방치하면 bridge만 구버전에 남는다. 이 모듈은 30분 timer로 claude-rc-maint를
+# 실행해 선언 인스턴스를 유지하고, drift된 전체 인스턴스를 안전한 시점에 재시작한다.
 {
   config,
   pkgs,
@@ -21,15 +21,17 @@ let
   pushoverCredPath = config.age.secrets.pushover-system-monitor.path;
   serviceLib = import ../lib/service-lib.nix { inherit pkgs; };
 
-  # HM 배선(modules/shared/programs/shell/nixos.nix)과 같은 인자로 평가되어
-  # 동일 store path를 공유한다.
-  claudeRcPkg = import ../lib/claude-rc-package.nix {
-    inherit pkgs;
-    flakePath = nixosConfigDefaultPath;
-  };
-
   # darwin launchd 모듈과 공유하는 패키징 (runtimeInputs 플랫폼 분기 포함).
   maintenanceCli = import ../lib/claude-rc-maint-package.nix { inherit pkgs; };
+
+  declaredInstances = builtins.toJSON [
+    {
+      path = nixosConfigDefaultPath;
+      spawn = cfg.spawn;
+      capacity = cfg.capacity;
+      permissionMode = cfg.permissionMode;
+    }
+  ];
 in
 {
   config = lib.mkIf cfg.enable {
@@ -67,12 +69,13 @@ in
         TimeoutSec = "300";
         ExecStart = "${maintenanceCli}/bin/claude-rc-maint ensure";
         LoadCredential = [ "pushover-system-monitor:${pushoverCredPath}" ];
-        # oneshot 종료 시 cgroup 정리가 방금 시작한 tmux server/bridge를
+        # oneshot 종료 시 cgroup 정리가 방금 스폰한 headless 서버를
         # 죽이지 않도록 main process만 kill 대상으로 한다.
         KillMode = "process";
 
-        # tmux 소켓(/tmp/tmux-<uid>/)에 접근해야 하므로 PrivateTmp는 쓸 수 없고,
-        # bridge/state가 홈 아래이므로 ProtectHome도 쓸 수 없다.
+        # headless 서버와 상태/로그/worktree가 사용자 홈 아래에서 동작하므로
+        # ProtectHome은 쓸 수 없다. PrivateTmp도 사용자 세션과 다른 /tmp view를
+        # 만들 수 있어 보수적으로 쓰지 않는다.
         ProtectSystem = "full";
         NoNewPrivileges = true;
         ProtectKernelTunables = true;
@@ -84,16 +87,13 @@ in
       environment = {
         HOME = homeDir;
         STATE_DIR = stateDir;
-        CLAUDE_RC_BIN = "${claudeRcPkg}/bin/claude-rc";
+        CLAUDE_RC_DECLARED_INSTANCES = declaredInstances;
         SERVICE_LIB = "${serviceLib}";
         IDLE_THRESHOLD_MINUTES = toString cfg.idleThresholdMinutes;
         ALERT_COOLDOWN_SECONDS = "1800";
-        # 자동 재시작이 운영 옵션을 래퍼 기본값으로 되돌리지 않도록 명시 주입.
-        CLAUDE_RC_PERMISSION_MODE = cfg.permissionMode;
-        CLAUDE_RC_CAPACITY = toString cfg.capacity;
-        CLAUDE_RC_NAME = cfg.name;
+        CLAUDE_RC_ALERT_HOST = config.networking.hostName;
         # writeShellApplication runtimeInputs가 앞에 붙는다. 이 tail은 자체 업데이터가
-        # 관리하는 claude launcher(~/.local/bin/claude)와 claude-rc 내부의 bare
+        # 관리하는 claude launcher(~/.local/bin/claude)와 maint/래퍼 내부의 bare
         # `claude` 호출을 해석하기 위해 필요하다 (codex 모듈 PATH 주석과 동일 패턴).
         PATH = lib.mkForce "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";
       };

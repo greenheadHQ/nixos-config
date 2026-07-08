@@ -203,10 +203,19 @@
     };
 
     claudeRemoteControl = {
-      enable = lib.mkEnableOption "Claude Code Remote Control bridge version-drift guard";
+      enable = lib.mkEnableOption "Claude Code Remote Control 선언 인스턴스(nixos-config)의 상시 유지 + 전체 인스턴스 version-drift 감시";
 
-      # bridge 시작 옵션 — maint의 자동 재시작이 이 값들을 명시 전달한다.
-      # 선언하지 않으면 재시작 시 래퍼 기본값으로 조용히 되돌아가는 회귀가 생긴다.
+      # 선언 인스턴스 시작 옵션 — maint가 instances.json에 없는 선언 항목을
+      # 시드하고, 죽었거나 drift된 서버를 재기동할 때 이 값을 보존한다.
+      spawn = lib.mkOption {
+        type = lib.types.enum [
+          "worktree"
+          "same-dir"
+        ];
+        default = "worktree";
+        description = "Spawn mode for remote sessions; worktree sessions tombstone if their server restarts while active";
+      };
+
       permissionMode = lib.mkOption {
         type = lib.types.enum [
           "acceptEdits"
@@ -220,15 +229,9 @@
       };
 
       capacity = lib.mkOption {
-        type = lib.types.ints.positive;
-        default = 5;
-        description = "Max concurrent remote sessions";
-      };
-
-      name = lib.mkOption {
-        type = lib.types.str;
-        default = "minipc";
-        description = "Bridge name shown in claude.ai / mobile app";
+        type = lib.types.nullOr lib.types.ints.positive;
+        default = null;
+        description = "Max concurrent remote sessions; null omits --capacity and uses the upstream default";
       };
 
       idleThresholdMinutes = lib.mkOption {
