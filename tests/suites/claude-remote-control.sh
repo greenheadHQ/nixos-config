@@ -156,6 +156,9 @@ _claude_rc_run_maint() {
       FAKE_CLAUDE_HOLD_FILE="${CLAUDE_RC_HOLD_FILE:-}" \
       FAKE_UNMANAGED_CWD="${FAKE_UNMANAGED_CWD:-}" \
       FAKE_UNMANAGED_EXE="${FAKE_UNMANAGED_EXE:-}" \
+      FAKE_SERVER_CWD="${FAKE_SERVER_CWD:-}" \
+      FAKE_SERVER_EXE="${FAKE_SERVER_EXE:-}" \
+      FAKE_SERVER_COMMAND="${FAKE_SERVER_COMMAND:-}" \
       "$@"
   )
 }
@@ -255,6 +258,44 @@ _claude_rc_install_no_process_mocks() {
 exit 1
 EOS
   chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep"
+}
+
+_claude_rc_install_running_server_mocks() {
+  cat > "$CLAUDE_RC_FAKE_BIN/pgrep" <<'EOS'
+#!/usr/bin/env bash
+case "$*" in
+  *"claude remote-control"*) echo 6262 ;;
+  *) exit 1 ;;
+esac
+EOS
+  cat > "$CLAUDE_RC_FAKE_BIN/lsof" <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+args=" $* "
+case "$args" in
+  *"cwd"*)
+    printf 'p6262\nn%s\n' "$FAKE_SERVER_CWD"
+    ;;
+  *"txt"*)
+    printf 'p6262\nn%s\n' "$FAKE_SERVER_EXE"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOS
+  cat > "$CLAUDE_RC_FAKE_BIN/ps" <<'EOS'
+#!/usr/bin/env bash
+printf '%s\n' "${FAKE_SERVER_COMMAND:-claude remote-control}"
+EOS
+  chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof" "$CLAUDE_RC_FAKE_BIN/ps"
+}
+
+_claude_rc_make_recent_worktree_transcript() {
+  local repo="$1" prefix
+  prefix="$(printf '%s' "$repo" | sed 's/[^[:alnum:]]/-/g')"
+  mkdir -p "$CLAUDE_RC_HOME/.claude/projects/${prefix}--claude-worktrees-bridge-cse-1"
+  : > "$CLAUDE_RC_HOME/.claude/projects/${prefix}--claude-worktrees-bridge-cse-1/session.jsonl"
 }
 
 test_claude_remote_control_start_requires_git_repo() {
@@ -471,6 +512,20 @@ test_claude_remote_control_stop_preserves_registration_when_lock_held_without_pi
     || fail "held-lock stop must preserve registration: $status"
 }
 
+test_claude_remote_control_stop_path_removes_missing_registered_instance() {
+  local sandbox stale_path status
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_install_no_process_mocks
+  stale_path="$sandbox/missing-project"
+  _claude_rc_write_instance "$stale_path" "worktree" "null" "bypassPermissions" "manual"
+
+  _claude_rc_run "$sandbox" bash "$(_claude_rc_wrapper_script)" stop "$stale_path" >/dev/null
+  status="$(cat "$CLAUDE_RC_STATE/instances.json")"
+  jq -e --arg path "$stale_path" '(.instances | has($path)) | not' <<<"$status" >/dev/null \
+    || fail "stop <path> should remove missing stale registration: $status"
+}
+
 test_claude_remote_control_slug_uses_hash_for_same_basename() {
   local sandbox repo_a repo_b slug_a slug_b status
   sandbox="$(_claude_rc_new_sandbox)"
@@ -572,6 +627,53 @@ test_claude_remote_control_maint_reconciles_declared_instances() {
     and .instances[$path].permissionMode == "plan"
     and .instances[$declared].source == "declared"
   ' <<<"$status" >/dev/null || fail "undeclared manual instance should remain untouched: $status"
+}
+
+test_claude_remote_control_maint_uses_effective_spawn_for_drift_gate() {
+  local sandbox repo slug lock_path lock_pid status command
+
+  for command in \
+    "claude remote-control --spawn worktree --permission-mode bypassPermissions" \
+    "claude remote-control --permission-mode bypassPermissions"
+  do
+    sandbox="$(_claude_rc_new_sandbox)"
+    _claude_rc_setup "$sandbox"
+    _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
+    _claude_rc_install_running_server_mocks
+    repo="$sandbox/repo"
+    _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+    _claude_rc_write_instance "$repo" "same-dir" "null" "bypassPermissions" "manual"
+    _claude_rc_make_recent_worktree_transcript "$repo"
+    slug="$(_claude_rc_slug "$repo")"
+    mkdir -p "$CLAUDE_RC_STATE/$slug"
+    lock_path="$CLAUDE_RC_STATE/$slug/lock"
+
+    "$CLAUDE_RC_FAKE_BIN/flock" "$lock_path" sleep 30 &
+    lock_pid=$!
+    for _ in {1..30}; do
+      if ! "$CLAUDE_RC_FAKE_BIN/flock" -n "$lock_path" true; then
+        break
+      fi
+      sleep 0.1
+    done
+    if "$CLAUDE_RC_FAKE_BIN/flock" -n "$lock_path" true; then
+      kill "$lock_pid" 2>/dev/null || true
+      wait "$lock_pid" 2>/dev/null || true
+      fail "test failed to acquire synthetic lock"
+    fi
+
+    FAKE_SERVER_CWD="$repo" \
+    FAKE_SERVER_EXE="$CLAUDE_RC_FAKE_BIN/claude-old" \
+    FAKE_SERVER_COMMAND="$command" \
+      _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null
+    kill "$lock_pid" 2>/dev/null || true
+    wait "$lock_pid" 2>/dev/null || true
+    status="$(cat "$CLAUDE_RC_STATE/status.json")"
+    jq -e '
+      .action == "completed"
+      and .instances[0].action == "deferred-active-sessions"
+    ' <<<"$status" >/dev/null || fail "effective spawn drift gate mismatch for [$command]: $status"
+  done
 }
 
 test_claude_remote_control_maint_rejects_invalid_declared_instances() {

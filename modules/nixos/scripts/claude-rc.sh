@@ -15,6 +15,7 @@ RC_SPAWN_SET=false
 RC_CAPACITY_SET=false
 RC_PERMISSION_MODE_SET=false
 FORCE=false
+STOP_PATH=""
 
 log_info() { echo "[claude-rc] $*"; }
 log_warn() { echo "[claude-rc] WARN: $*" >&2; }
@@ -26,7 +27,7 @@ claude-rc: Claude Code Remote Control headless multi-instance wrapper
 
 Usage:
   claude-rc [start] [--spawn worktree|same-dir] [--capacity N] [--permission-mode MODE]
-  claude-rc stop [--force]
+  claude-rc stop [path] [--force]
   claude-rc ls
   claude-rc cleanup
   claude-rc --help
@@ -68,54 +69,29 @@ current_git_root() {
     printf '%s\n' "$root"
 }
 
-warn_if_start_options_ignored() {
-    local path="$1" registered reg_spawn reg_capacity reg_permission_mode
-    local -a diffs=()
-    if [ "$RC_SPAWN_SET" != true ] && [ "$RC_CAPACITY_SET" != true ] && [ "$RC_PERMISSION_MODE_SET" != true ]; then
-        return 0
+stop_target_path() {
+    if [ -z "$STOP_PATH" ]; then
+        current_git_root
+        return
     fi
-    [ -f "$INSTANCES_FILE" ] || return 0
-
-    registered=$(jq -r --arg path "$path" --arg tsv_null "$TSV_NULL" '
-        if (.version == 1 and (.instances | type) == "object" and (.instances | has($path))) then
-          .instances[$path]
-          | [
-              (.spawn // ""),
-              (if (.capacity // null) == null then $tsv_null else (.capacity | tostring) end),
-              (.permissionMode // "")
-            ]
-          | @tsv
-        else
-          empty
-        end
-    ' "$INSTANCES_FILE")
-    [ -n "$registered" ] || return 0
-
-    IFS=$'\t' read -r reg_spawn reg_capacity reg_permission_mode <<<"$registered"
-    [ "$reg_capacity" = "$TSV_NULL" ] && reg_capacity=""
-    if [ "$RC_SPAWN_SET" = true ] && [ "$RC_SPAWN" != "$reg_spawn" ]; then
-        diffs+=("spawn: running=${reg_spawn:-<unset>}, requested=$RC_SPAWN")
+    if [[ "$STOP_PATH" != /* ]]; then
+        log_error "stop path must be absolute: $STOP_PATH"
+        exit 1
     fi
-    if [ "$RC_CAPACITY_SET" = true ] && [ "$RC_CAPACITY" != "$reg_capacity" ]; then
-        diffs+=("capacity: running=${reg_capacity:-<omitted>}, requested=$RC_CAPACITY")
-    fi
-    if [ "$RC_PERMISSION_MODE_SET" = true ] && [ "$RC_PERMISSION_MODE" != "$reg_permission_mode" ]; then
-        diffs+=("permission-mode: running=${reg_permission_mode:-<unset>}, requested=$RC_PERMISSION_MODE")
-    fi
-
-    if [ "${#diffs[@]}" -gt 0 ]; then
-        log_warn "실행 중인 서버에는 반영되지 않음 — 변경하려면 claude-rc stop 후 재기동"
-        printf '[claude-rc] WARN: %s\n' "${diffs[@]}" >&2
+    if [ -d "$STOP_PATH" ]; then
+        canonical_existing_path "$STOP_PATH"
+    else
+        printf '%s\n' "$STOP_PATH"
     fi
 }
 
-declared_instance_options_tsv() {
-    local path="$1"
+instance_options_tsv() {
+    local path="$1" source_filter="${2:-}"
     [ -f "$INSTANCES_FILE" ] || return 0
-    jq -r --arg path "$path" --arg tsv_null "$TSV_NULL" '
-        if (.version == 1 and (.instances | type) == "object" and (.instances | has($path))
-            and (.instances[$path].source == "declared")) then
+    jq -r --arg path "$path" --arg sourceFilter "$source_filter" --arg tsv_null "$TSV_NULL" '
+        if (.version == 1 and (.instances | type) == "object" and (.instances | has($path))) then
           .instances[$path]
+          | select($sourceFilter == "" or (.source == $sourceFilter))
           | [
               (.spawn // "worktree"),
               (if (.capacity // null) == null then $tsv_null else (.capacity | tostring) end),
@@ -128,28 +104,53 @@ declared_instance_options_tsv() {
     ' "$INSTANCES_FILE"
 }
 
+start_option_diffs() {
+    local reference_label="$1" options_tsv="$2"
+    local ref_spawn ref_capacity ref_permission_mode
+    [ -n "$options_tsv" ] || return 0
+    IFS=$'\t' read -r ref_spawn ref_capacity ref_permission_mode <<<"$options_tsv"
+    [ "$ref_capacity" = "$TSV_NULL" ] && ref_capacity=""
+
+    if [ "$RC_SPAWN_SET" = true ] && [ "$RC_SPAWN" != "$ref_spawn" ]; then
+        printf 'spawn: %s=%s, requested=%s\n' "$reference_label" "${ref_spawn:-<unset>}" "$RC_SPAWN"
+    fi
+    if [ "$RC_CAPACITY_SET" = true ] && [ "$RC_CAPACITY" != "$ref_capacity" ]; then
+        printf 'capacity: %s=%s, requested=%s\n' "$reference_label" "${ref_capacity:-<omitted>}" "$RC_CAPACITY"
+    fi
+    if [ "$RC_PERMISSION_MODE_SET" = true ] && [ "$RC_PERMISSION_MODE" != "$ref_permission_mode" ]; then
+        printf 'permission-mode: %s=%s, requested=%s\n' "$reference_label" "${ref_permission_mode:-<unset>}" "$RC_PERMISSION_MODE"
+    fi
+}
+
+warn_for_start_option_diffs() {
+    local reference_label="$1" options_tsv="$2" message="$3"
+    local diffs line
+    if [ "$RC_SPAWN_SET" != true ] && [ "$RC_CAPACITY_SET" != true ] && [ "$RC_PERMISSION_MODE_SET" != true ]; then
+        return 0
+    fi
+    diffs=$(start_option_diffs "$reference_label" "$options_tsv")
+    [ -n "$diffs" ] || return 0
+    log_warn "$message"
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        printf '[claude-rc] WARN: %s\n' "$line" >&2
+    done <<<"$diffs"
+}
+
+warn_if_start_options_ignored() {
+    local registered
+    registered=$(instance_options_tsv "$1")
+    if [ -n "$registered" ]; then
+        warn_for_start_option_diffs "running" "$registered" "실행 중인 서버에는 반영되지 않음 — 변경하려면 claude-rc stop 후 재기동"
+    fi
+}
+
+declared_instance_options_tsv() {
+    instance_options_tsv "$1" "declared"
+}
+
 warn_if_declared_start_options_differ() {
-    local declared="$1" declared_spawn declared_capacity declared_permission_mode
-    local -a diffs=()
-    [ -n "$declared" ] || return 0
-
-    IFS=$'\t' read -r declared_spawn declared_capacity declared_permission_mode <<<"$declared"
-    [ "$declared_capacity" = "$TSV_NULL" ] && declared_capacity=""
-
-    if [ "$RC_SPAWN_SET" = true ] && [ "$RC_SPAWN" != "$declared_spawn" ]; then
-        diffs+=("spawn: declared=${declared_spawn:-<unset>}, requested=$RC_SPAWN")
-    fi
-    if [ "$RC_CAPACITY_SET" = true ] && [ "$RC_CAPACITY" != "$declared_capacity" ]; then
-        diffs+=("capacity: declared=${declared_capacity:-<omitted>}, requested=$RC_CAPACITY")
-    fi
-    if [ "$RC_PERMISSION_MODE_SET" = true ] && [ "$RC_PERMISSION_MODE" != "$declared_permission_mode" ]; then
-        diffs+=("permission-mode: declared=${declared_permission_mode:-<unset>}, requested=$RC_PERMISSION_MODE")
-    fi
-
-    if [ "${#diffs[@]}" -gt 0 ]; then
-        log_warn "이 경로는 Nix 선언 관리 대상 — 다음 ensure에서 선언값으로 복원됨"
-        printf '[claude-rc] WARN: %s\n' "${diffs[@]}" >&2
-    fi
+    warn_for_start_option_diffs "declared" "$1" "이 경로는 Nix 선언 관리 대상 — 다음 ensure에서 선언값으로 복원됨"
 }
 
 parse_args() {
@@ -206,9 +207,14 @@ parse_args() {
                 exit 0
                 ;;
             *)
-                log_error "Unknown option: $1"
-                usage
-                exit 1
+                if [ "$ACTION" = "stop" ] && [ -z "$STOP_PATH" ]; then
+                    STOP_PATH="$1"
+                    shift
+                else
+                    log_error "Unknown option: $1"
+                    usage
+                    exit 1
+                fi
                 ;;
         esac
     done
@@ -270,7 +276,7 @@ do_start() {
 do_stop() {
     require_common_cmds
     local instance_path session_count pid lock_path
-    instance_path=$(current_git_root)
+    instance_path=$(stop_target_path)
     ensure_instance_dir "$instance_path"
     lock_path=$(lock_path_for_path "$instance_path")
 

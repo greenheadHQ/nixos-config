@@ -37,7 +37,7 @@ Claude 모바일 앱/claude.ai에서 이 flake가 관리하는 머신의 Claude 
 | 명령 | 동작 |
 |------|------|
 | `claude-rc` / `claude-rc start` | 현재 git top-level 디렉토리 인스턴스 시작 및 `instances.json` 등록 |
-| `claude-rc stop` | 현재 인스턴스 서버 종료 및 등록 해제. worktree 세션 존재 시 `--force` 필요 |
+| `claude-rc stop [path]` | 현재 또는 지정 절대경로 인스턴스 서버 종료 및 등록 해제. worktree 세션 존재 시 `--force` 필요 |
 | `claude-rc ls` | 등록 인스턴스, 실행 여부, PID, 버전, spawn, source, 로그 경로 출력 |
 | `claude-rc cleanup` | 현재 인스턴스의 orphan `.claude/worktrees/*` 디렉토리만 삭제 |
 
@@ -117,8 +117,12 @@ ensure 판정 흐름:
 3. lock이 비어 있으면 서버를 headless로 시작한다.
 4. 살아 있으면 실행 중 바이너리 버전과 desired Claude launcher 버전을 비교한다.
 5. drift가 없으면 `healthy`.
-6. drift + `spawn=same-dir`이면 즉시 재시작한다.
-7. drift + `spawn=worktree`이면 idle gate를 통과할 때만 재시작한다.
+6. drift가 있으면 실행 중 서버 argv의 effective spawn을 실측한다.
+7. effective `spawn=same-dir`이면 즉시 재시작한다.
+8. effective `spawn=worktree` 또는 파싱 불가이면 idle gate를 통과할 때만 재시작한다.
+
+registry의 `spawn`은 desired state이며 부활/재기동 옵션으로만 쓴다. 재시작 안전성은
+이미 실행 중인 프로세스의 실제 spawn 모드가 결정한다.
 
 worktree idle gate:
 
@@ -201,7 +205,7 @@ launchctl kickstart "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"
 | status action | 의미 / 조치 |
 |---------------|-------------|
 | `no-instances` | 등록된 인스턴스 없음. `claude-rc start` 또는 선언 env 확인 |
-| `path-missing` | 등록 경로가 없음. 등록은 유지되며 알림 대상 아님. stale 등록이면 아래 flock+jq 예시로 제거 |
+| `path-missing` | 등록 경로가 없음. 등록은 유지되며 알림 대상 아님. stale 등록이면 `claude-rc stop /path/to/project`로 제거 |
 | `started` | 죽은 인스턴스를 시작함 |
 | `healthy` | 실행 버전과 desired 버전 일치 |
 | `restarted-version-drift` | version drift 재시작 완료 |
@@ -213,19 +217,6 @@ launchctl kickstart "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"
 | `running-version-unresolvable` | 실행 바이너리 경로 조회 실패. `lsof`/`/proc` 접근 확인 |
 | `declared-instances-invalid` | `CLAUDE_RC_DECLARED_INSTANCES` JSON/경로/spawn/capacity 오류 |
 | `lock-acquire-timeout` | ensure 중복 실행 또는 lock fd 누수 의심 |
-
-stale 등록 수동 제거:
-
-```bash
-STATE_DIR="${STATE_DIR:-$HOME/.local/state/claude-rc}"
-path="/path/to/project"
-(
-  flock 8
-  tmp=$(mktemp "$STATE_DIR/instances.XXXXXX")
-  jq --arg path "$path" 'del(.instances[$path])' "$STATE_DIR/instances.json" >"$tmp"
-  mv "$tmp" "$STATE_DIR/instances.json"
-) 8>"$STATE_DIR/instances.json.lock"
-```
 
 증상별 조치:
 

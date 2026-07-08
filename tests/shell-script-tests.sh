@@ -76,9 +76,11 @@ run_test "claude remote-control rejects unmanaged same-cwd server" test_claude_r
 run_test "claude remote-control maint rejects unmanaged same-cwd server" test_claude_remote_control_maint_rejects_unmanaged_same_cwd_server
 run_test "claude remote-control stop gates worktree sessions" test_claude_remote_control_stop_blocks_worktree_sessions_and_force_unregisters
 run_test "claude remote-control stop preserves held-lock registration" test_claude_remote_control_stop_preserves_registration_when_lock_held_without_pid
+run_test "claude remote-control stop path removes stale registration" test_claude_remote_control_stop_path_removes_missing_registered_instance
 run_test "claude remote-control slug separates same basenames" test_claude_remote_control_slug_uses_hash_for_same_basename
 run_test "claude remote-control cleanup removes only orphan worktrees" test_claude_remote_control_cleanup_removes_only_orphan_worktrees
 run_test "claude remote-control maint reconciles declarations" test_claude_remote_control_maint_reconciles_declared_instances
+run_test "claude remote-control maint gates drift by effective spawn" test_claude_remote_control_maint_uses_effective_spawn_for_drift_gate
 run_test "claude remote-control maint rejects invalid declarations" test_claude_remote_control_maint_rejects_invalid_declared_instances
 run_test "claude remote-control transcript gate scopes to worktrees" test_claude_remote_control_transcript_gate_scopes_to_worktree_dirs
 run_test "claude remote-control maint writes status schema" test_claude_remote_control_maint_status_schema

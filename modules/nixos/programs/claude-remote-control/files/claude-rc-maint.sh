@@ -256,16 +256,9 @@ capture_started_version() {
     fi
 }
 
-process_instance() {
+validate_instance_config() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
-    local lock_path pid running_version action gate_rc started_version restart_rc
-
-    if [ ! -d "$path" ]; then
-        action="path-missing"
-        log_info "path missing: $path"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
-        return 0
-    fi
+    local action
 
     if ! validate_spawn "$spawn"; then
         action="invalid-spawn"
@@ -282,34 +275,38 @@ process_instance() {
         record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
         return 1
     fi
+}
 
-    ensure_instance_dir "$path"
+start_missing_instance() {
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
+    local action lock_path started_version
     lock_path=$(lock_path_for_path "$path")
-    if lock_is_free "$lock_path"; then
-        # A wrapper-bypassed plain CLI server in the same cwd does not hold our
-        # lock. Starting another server here permanently creates an undeletable
-        # ghost environment, so ensure must share the wrapper's cwd guard.
-        if has_unmanaged_server_for_path "$path"; then
-            action="unmanaged-server-present"
-            record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
-            log_error "unmanaged same-cwd server present: $path"
-            return 1
-        fi
-        start_server "$path" "$spawn" "$capacity" "$permission_mode"
-        sleep 2
-        if lock_is_free "$lock_path"; then
-            action="start-failed"
-            record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
-            log_error "start failed: $path"
-            return 1
-        fi
-        started_version=$(capture_started_version "$path")
-        action="started"
-        record_instance_result "$path" "$started_version" "$DESIRED_VERSION" "$action"
-        log_info "started: $path"
-        return 0
+    # A wrapper-bypassed plain CLI server in the same cwd does not hold our
+    # lock. Starting another server here permanently creates an undeletable
+    # ghost environment, so ensure must share the wrapper's cwd guard.
+    if has_unmanaged_server_for_path "$path"; then
+        action="unmanaged-server-present"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        log_error "unmanaged same-cwd server present: $path"
+        return 1
     fi
+    start_server "$path" "$spawn" "$capacity" "$permission_mode"
+    sleep 2
+    if lock_is_free "$lock_path"; then
+        action="start-failed"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        log_error "start failed: $path"
+        return 1
+    fi
+    started_version=$(capture_started_version "$path")
+    action="started"
+    record_instance_result "$path" "$started_version" "$DESIRED_VERSION" "$action"
+    log_info "started: $path"
+}
 
+handle_running_instance() {
+    local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4"
+    local pid running_version action
     if ! pid=$(find_server_pid_for_path "$path"); then
         action="no-server-process"
         record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
@@ -329,12 +326,27 @@ process_instance() {
         return 0
     fi
 
-    case "$spawn" in
+    handle_drift "$path" "$desired_spawn" "$capacity" "$permission_mode" "$pid" "$running_version"
+}
+
+handle_drift() {
+    local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4" pid="$5" running_version="$6"
+    local effective_spawn gate_rc restart_rc action
+    # Registry spawn is desired state and may differ from the already-running
+    # server after declaration changes or temporary manual override starts.
+    # Restart safety depends on the effective mode of the running process. If
+    # argv parsing fails, apply the conservative worktree gate.
+    if ! effective_spawn=$(pid_spawn_mode "$pid"); then
+        effective_spawn="worktree"
+        log_info "running spawn unknown; applying worktree drift gate: $path"
+    fi
+
+    case "$effective_spawn" in
         same-dir)
             # Live measurement confirmed same-dir spawned sessions reconnect to
             # the restarted server, so version drift can be corrected eagerly.
             restart_rc=0
-            restart_server "$path" "$spawn" "$capacity" "$permission_mode" || restart_rc=$?
+            restart_server "$path" "$desired_spawn" "$capacity" "$permission_mode" || restart_rc=$?
             handle_restart_result "$path" "same-dir" "$running_version" "$restart_rc"
             ;;
         worktree)
@@ -343,7 +355,7 @@ process_instance() {
             case "$gate_rc" in
                 0)
                     restart_rc=0
-                    restart_server "$path" "$spawn" "$capacity" "$permission_mode" || restart_rc=$?
+                    restart_server "$path" "$desired_spawn" "$capacity" "$permission_mode" || restart_rc=$?
                     handle_restart_result "$path" "worktree" "$running_version" "$restart_rc"
                     ;;
                 1)
@@ -371,6 +383,28 @@ process_instance() {
             return 1
             ;;
     esac
+}
+
+process_instance() {
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
+    local lock_path action
+
+    if [ ! -d "$path" ]; then
+        action="path-missing"
+        log_info "path missing: $path"
+        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        return 0
+    fi
+
+    validate_instance_config "$path" "$spawn" "$capacity" "$permission_mode" || return 1
+
+    ensure_instance_dir "$path"
+    lock_path=$(lock_path_for_path "$path")
+    if lock_is_free "$lock_path"; then
+        start_missing_instance "$path" "$spawn" "$capacity" "$permission_mode"
+    else
+        handle_running_instance "$path" "$spawn" "$capacity" "$permission_mode"
+    fi
 }
 
 ensure_core() {

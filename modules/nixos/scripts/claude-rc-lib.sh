@@ -208,6 +208,34 @@ pid_exe_version() {
     esac
 }
 
+pid_spawn_mode() {
+    local pid="$1" command mode i
+    local -a argv
+    command=$(ps -o command= -p "$pid" 2>/dev/null) || return 1
+    [ -n "$command" ] || return 1
+    read -r -a argv <<<"$command"
+    for ((i = 0; i < ${#argv[@]}; i++)); do
+        case "${argv[$i]}" in
+            --spawn)
+                if [ $((i + 1)) -lt "${#argv[@]}" ]; then
+                    mode="${argv[$((i + 1))]}"
+                    validate_spawn "$mode" || return 1
+                    printf '%s\n' "$mode"
+                    return 0
+                fi
+                return 1
+                ;;
+            --spawn=*)
+                mode="${argv[$i]#--spawn=}"
+                validate_spawn "$mode" || return 1
+                printf '%s\n' "$mode"
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
 same_cwd_as_path() {
     local pid="$1" path="$2" cwd target
     cwd=$(pid_cwd "$pid") || return 1
@@ -239,16 +267,7 @@ find_server_pid_for_path() {
 }
 
 has_unmanaged_server_for_path() {
-    local path="$1" pid
-    while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        same_cwd_as_path "$pid" "$path" || continue
-        if is_flock_process "$pid"; then
-            continue
-        fi
-        return 0
-    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
-    return 1
+    find_server_pid_for_path "$1" >/dev/null
 }
 
 count_worktree_session_procs() {
@@ -268,11 +287,17 @@ count_worktree_session_procs() {
 start_server() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
     local instance_dir lock_path log_path
+    local -a args
     instance_dir=$(instance_dir_for_path "$path")
     lock_path="$instance_dir/lock"
     log_path="$instance_dir/server.log"
     mkdir -p "$instance_dir"
     rotate_log_if_needed "$log_path"
+    args=(claude remote-control --spawn "$spawn" --permission-mode "$permission_mode")
+    if [ -n "$capacity" ]; then
+        args+=(--capacity "$capacity")
+    fi
+    args+=(--no-create-session-in-dir)
 
     # macOS does not ship setsid. The outer background subshell exits after
     # spawning the inner one, so the server is re-parented and survives terminal,
@@ -283,20 +308,8 @@ start_server() {
         (
             trap '' HUP
             exec </dev/null >>"$log_path" 2>&1
-            if [ -n "$capacity" ]; then
-                exec env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
-                    flock -n "$lock_path" claude remote-control \
-                    --spawn "$spawn" \
-                    --permission-mode "$permission_mode" \
-                    --capacity "$capacity" \
-                    --no-create-session-in-dir
-            else
-                exec env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
-                    flock -n "$lock_path" claude remote-control \
-                    --spawn "$spawn" \
-                    --permission-mode "$permission_mode" \
-                    --no-create-session-in-dir
-            fi
+            exec env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
+                flock -n "$lock_path" "${args[@]}"
         ) &
     ) &
 }
