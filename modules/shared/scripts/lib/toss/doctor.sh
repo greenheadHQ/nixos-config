@@ -88,9 +88,10 @@ toss_doctor_check_credentials() {
     return 0
   fi
 
-  local user_name="${USER:-$(id -un)}"
-  local id_file="${TOSS_CLIENT_ID_FILE:-/run/opnix/$user_name/toss-client-id}"
-  local secret_file="${TOSS_CLIENT_SECRET_FILE:-/run/opnix/$user_name/toss-client-secret}"
+  local user_name id_file secret_file
+  user_name="$(toss_opnix_user_name)"
+  id_file="$(toss_opnix_client_id_file "$user_name")"
+  secret_file="$(toss_opnix_client_secret_file "$user_name")"
   if [ -r "$id_file" ] && [ -r "$secret_file" ]; then
     echo "credentials: ok (opnix files readable)"
   else

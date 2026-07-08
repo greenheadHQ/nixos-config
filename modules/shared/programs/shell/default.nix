@@ -19,6 +19,8 @@ let
   tossOpenApi = constants.onePassword.tossOpenApi;
   tossClientIdRef = "op://${constants.onePassword.vaults.automation}/${tossOpenApi.itemName}/${tossOpenApi.clientIdField}";
   tossClientSecretRef = "op://${constants.onePassword.vaults.automation}/${tossOpenApi.itemName}/${tossOpenApi.clientSecretField}";
+  tossClientIdFile = "/run/opnix/${config.home.username}/${tossOpenApi.opnixClientIdFileName}";
+  tossClientSecretFile = "/run/opnix/${config.home.username}/${tossOpenApi.opnixClientSecretFileName}";
 in
 {
   home.file.".local/bin/atuin-clean-kr" = {
@@ -53,6 +55,8 @@ in
       wrapper = pkgs.writeShellScript "toss-wrapper" ''
         export TOSS_OP_CLIENT_ID_REF=${lib.escapeShellArg tossClientIdRef}
         export TOSS_OP_CLIENT_SECRET_REF=${lib.escapeShellArg tossClientSecretRef}
+        export TOSS_CLIENT_ID_FILE=${lib.escapeShellArg tossClientIdFile}
+        export TOSS_CLIENT_SECRET_FILE=${lib.escapeShellArg tossClientSecretFile}
         exec "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"
       '';
     in

@@ -152,6 +152,5 @@ All URIs are relative to *https://openapi.tossinvest.com*
 
 - **Type**: OAuth
 - **Flow**: application
-- **Authorization URL**: 
+- **Authorization URL**:
 - **Scopes**: N/A
-

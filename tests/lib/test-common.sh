@@ -134,6 +134,10 @@ assert_toss_wrapper_nix() {
     || fail "expected toss wrapper to export TOSS_OP_CLIENT_ID_REF"
   grep -Fq '        export TOSS_OP_CLIENT_SECRET_REF=${lib.escapeShellArg tossClientSecretRef}' "$nix_file" \
     || fail "expected toss wrapper to export TOSS_OP_CLIENT_SECRET_REF"
+  grep -Fq '        export TOSS_CLIENT_ID_FILE=${lib.escapeShellArg tossClientIdFile}' "$nix_file" \
+    || fail "expected toss wrapper to export TOSS_CLIENT_ID_FILE"
+  grep -Fq '        export TOSS_CLIENT_SECRET_FILE=${lib.escapeShellArg tossClientSecretFile}' "$nix_file" \
+    || fail "expected toss wrapper to export TOSS_CLIENT_SECRET_FILE"
   grep -Fq '        exec "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"' "$nix_file" \
     || fail "expected toss wrapper to exec .toss-real"
 }
@@ -194,6 +198,8 @@ EOF
 set -euo pipefail
 export TOSS_OP_CLIENT_ID_REF='op://test/toss/client-id'
 export TOSS_OP_CLIENT_SECRET_REF='op://test/toss/client-secret'
+export TOSS_CLIENT_ID_FILE='$sandbox/client-id'
+export TOSS_CLIENT_SECRET_FILE='$sandbox/client-secret'
 exec "$home_dir/.local/bin/.toss-real" "\$@"
 EOF
   chmod +x "$home_dir/.local/bin/toss"

@@ -129,7 +129,7 @@
     trackingIssueNumber = 1067; # 리포트 누적 그릇 (연 1회 로테이션 — 이슈 본문 운영 원칙 참조)
   };
   homeserver.opnix.enable = true; # 1Password SA token materialization + gh 인증
-  homeserver.toss.enable = true; # 토스증권 OpenAPI 자격 증명 materialization
+  homeserver.toss.enable = false; # 전용 vault/SA 분리(#1044) 전까지는 off — Automation SA blast radius가 토스 credential(주문 access token 발급용)까지 즉시 확장되는 것을 막는다. Mac은 SA token op read 경로라 별개로 동작. #1044 완료 후 true로.
   homeserver.codexRemoteControl.enable = true; # Codex mobile remote-control app-server 회귀 방지
   homeserver.claudeRemoteControl = {
     enable = true; # 선언 인스턴스(nixos-config) 상시 유지 + version-drift 감시 (30분 timer)

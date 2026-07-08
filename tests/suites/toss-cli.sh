@@ -85,6 +85,14 @@ case "${TOSS_TEST_RESPONSE_KIND:-json}" in
     fi
     printf '{"ok":true}' > "$output_path"
     ;;
+  retry-nested-invalid-token)
+    if [ "$api_count" = "1" ]; then
+      printf '{"error":"invalid_token","nested":{"code":"still_valid"}}' > "$output_path"
+      printf '200'
+      exit 0
+    fi
+    printf '{"ok":true}' > "$output_path"
+    ;;
   *)
     echo "unknown TOSS_TEST_RESPONSE_KIND" >&2
     exit 98
@@ -305,4 +313,108 @@ EOF_OP
   assert_not_contains "$argv_log" "expired-env-token"
   assert_not_contains "$argv_log" "fresh-token"
   assert_not_contains "$argv_log" "mock-client-secret"
+}
+
+test_toss_api_retries_on_nested_invalid_token_body() {
+  local sandbox runtime_dir future token_file api_calls first_auth final_fresh_auth
+  sandbox=$(new_sandbox)
+  runtime_dir="$sandbox/runtime"
+  token_file="$runtime_dir/toss/token.json"
+  future=$(( $(date +%s) + 7200 ))
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+  cat > "$sandbox/bin/op" <<'EOF_OP'
+#!/usr/bin/env bash
+set -euo pipefail
+ref=""
+for arg in "$@"; do
+  ref="$arg"
+done
+case "$ref" in
+  *client-id) printf 'mock-client-id' ;;
+  *client-secret) printf 'mock-client-secret' ;;
+  *) printf 'mock-op-value' ;;
+esac
+EOF_OP
+  chmod +x "$sandbox/bin/op"
+  mkdir -p "$(dirname "$token_file")"
+  printf 'mock-sa-token' > "$sandbox/sa-token"
+  jq -cn \
+    --argjson expires_at "$future" \
+    '{access_token:"old-token", token_type:"Bearer", issued_at:0, expires_at:$expires_at, expires_in:7200}' \
+    > "$token_file"
+  printf 'mock-client-id' > "$sandbox/client-id"
+  printf 'mock-client-secret' > "$sandbox/client-secret"
+
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_RUNTIME_DIR="$runtime_dir" \
+    TOSS_OP_SA_TOKEN_FILE="$sandbox/sa-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND="retry-nested-invalid-token" \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_TEST_CURL_CONFIG_LOG="$sandbox/curl.config.log" \
+    TOSS_TEST_API_COUNT_FILE="$sandbox/api.count" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout"
+
+  api_calls="$(cat "$sandbox/api.count")"
+  [ "$api_calls" = "2" ] || fail "expected nested invalid_token body to trigger one retry, got api calls: $api_calls"
+  first_auth="$(grep -Fxc 'header = "Authorization: Bearer old-token"' "$sandbox/curl.config.log" || true)"
+  final_fresh_auth="$(grep -Fxc 'header = "Authorization: Bearer fresh-token"' "$sandbox/curl.config" || true)"
+  [ "$first_auth" = "1" ] || fail "expected initial request to use cached old token"
+  [ "$final_fresh_auth" = "1" ] || fail "expected retried request to use refreshed token"
+}
+
+test_toss_endpoint_metadata_fail_closed_order_path_mutations() {
+  local sandbox input output
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  cat > "$input" <<'JSON'
+{
+  "info": {"version": "test"},
+  "paths": {
+    "/api/v1/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "description": "**Rate Limits Group**: `ORDER_HISTORY`"
+      },
+      "post": {
+        "operationId": "createOrderWithDriftedGroup",
+        "description": "**Rate Limits Group**: `OTHER`"
+      }
+    },
+    "/api/v1/conditional-orders/{conditionalOrderId}": {
+      "patch": {
+        "operationId": "patchConditionalOrderWithDriftedGroup",
+        "description": "**Rate Limits Group**: `OTHER`"
+      }
+    },
+    "/api/v1/orderbook": {
+      "delete": {
+        "operationId": "deleteOrderbookShouldNotMatchOrderPath",
+        "description": "**Rate Limits Group**: `OTHER`"
+      }
+    },
+    "/api/v1/positions": {
+      "post": {
+        "operationId": "postPositionShouldNotMatchOrderPath",
+        "description": "**Rate Limits Group**: `OTHER`"
+      }
+    }
+  }
+}
+JSON
+
+  bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output"
+  jq -e '
+    def endpoint($method; $path):
+      first(.endpoints[] | select(.method == $method and .path == $path));
+    (endpoint("POST"; "/api/v1/orders").isKnownOrderMutation == true)
+    and (endpoint("PATCH"; "/api/v1/conditional-orders/{conditionalOrderId}").isKnownOrderMutation == true)
+    and (endpoint("GET"; "/api/v1/orders").isKnownOrderMutation == false)
+    and (endpoint("DELETE"; "/api/v1/orderbook").isKnownOrderMutation == false)
+    and (endpoint("POST"; "/api/v1/positions").isKnownOrderMutation == false)
+  ' "$output" >/dev/null || fail "expected fail-closed order-path mutation classification"
 }

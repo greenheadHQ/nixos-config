@@ -10,6 +10,23 @@ TOSS_TOKEN_LOCK_TIMEOUT_SECONDS="${TOSS_TOKEN_LOCK_TIMEOUT_SECONDS:-30}"
 TOSS_OP_CLIENT_ID_REF="${TOSS_OP_CLIENT_ID_REF:-op://Automation/토스증권 Open API/자격 증명}"
 TOSS_OP_CLIENT_SECRET_REF="${TOSS_OP_CLIENT_SECRET_REF:-op://Automation/토스증권 Open API/Secret Key}"
 
+# Home Manager 배포 CLI는 libraries/constants.nix의
+# onePassword.tossOpenApi.opnix*FileName에서 TOSS_CLIENT_*_FILE을 env로 주입한다.
+# 아래 fallback은 repo checkout 직접 실행/테스트용 기존 동작 보존 경로다.
+toss_opnix_user_name() {
+  printf '%s\n' "${USER:-$(id -un)}"
+}
+
+toss_opnix_client_id_file() {
+  local user_name="${1:-$(toss_opnix_user_name)}"
+  printf '%s\n' "${TOSS_CLIENT_ID_FILE:-/run/opnix/$user_name/toss-client-id}"
+}
+
+toss_opnix_client_secret_file() {
+  local user_name="${1:-$(toss_opnix_user_name)}"
+  printf '%s\n' "${TOSS_CLIENT_SECRET_FILE:-/run/opnix/$user_name/toss-client-secret}"
+}
+
 toss_is_darwin() {
   [ "$(uname -s)" = "Darwin" ]
 }
@@ -141,9 +158,10 @@ toss_read_credentials_from_op() {
 }
 
 toss_read_credentials_from_opnix() {
-  local user_name="${USER:-$(id -un)}"
-  local id_file="${TOSS_CLIENT_ID_FILE:-/run/opnix/$user_name/toss-client-id}"
-  local secret_file="${TOSS_CLIENT_SECRET_FILE:-/run/opnix/$user_name/toss-client-secret}"
+  local user_name id_file secret_file
+  user_name="$(toss_opnix_user_name)"
+  id_file="$(toss_opnix_client_id_file "$user_name")"
+  secret_file="$(toss_opnix_client_secret_file "$user_name")"
 
   if [ ! -r "$id_file" ] || [ ! -r "$secret_file" ]; then
     echo "error: Toss opnix credential files are not readable" >&2

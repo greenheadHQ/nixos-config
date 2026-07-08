@@ -436,11 +436,13 @@ let
   opnixGithubPatPathMatch = builtins.match "/run/opnix/([^/]+)/github-pat" opnixGithubPat.path;
   opnixGithubPatExpectedOwner =
     if opnixGithubPatPathMatch == null then null else builtins.elemAt opnixGithubPatPathMatch 0;
-  opnixTossClientId = opnixCfg.secrets.tossClientId;
-  opnixTossClientSecret = opnixCfg.secrets.tossClientSecret;
+  opnixTossClientId = if opnixCfg.secrets ? tossClientId then opnixCfg.secrets.tossClientId else null;
+  opnixTossClientSecret =
+    if opnixCfg.secrets ? tossClientSecret then opnixCfg.secrets.tossClientSecret else null;
   opnixTokenSecret = nixosCfg.age.secrets.opnix-service-account-token;
   opnixTmpfilesRules = nixosCfg.systemd.tmpfiles.rules;
   opnixMaterializedUser = opnixGithubPat.owner;
+  tossSecretsMaterialized = opnixTossClientId != null && opnixTossClientSecret != null;
   tossAuthScript = builtins.readFile ../modules/shared/scripts/lib/toss/auth.sh;
   isUserOwnedOpnixSecret =
     secret: fileName:
@@ -875,7 +877,9 @@ let
       cond =
         constants.onePassword.tossOpenApi.itemName == "토스증권 Open API"
         && constants.onePassword.tossOpenApi.clientIdField == "자격 증명"
-        && constants.onePassword.tossOpenApi.clientSecretField == "Secret Key";
+        && constants.onePassword.tossOpenApi.clientSecretField == "Secret Key"
+        && constants.onePassword.tossOpenApi.opnixClientIdFileName == "toss-client-id"
+        && constants.onePassword.tossOpenApi.opnixClientSecretFileName == "toss-client-secret";
     }
     {
       name = "Test 5b-3b: auth.sh Toss op reference fallback이 constants.onePassword.tossOpenApi SSOT와 일치해야 함";
@@ -902,20 +906,26 @@ let
         opnixGithubPat.reference == "op://${constants.onePassword.vaults.automation}/github-pat/token";
     }
     {
-      name = "Test 5b-6a: opnix Toss credentials가 /run/opnix/<user>/toss-client-*에 user-owned 0400으로 materialize되어야 함";
-      cond =
-        nixosCfg.homeserver.toss.enable
-        && isUserOwnedOpnixSecret opnixTossClientId "toss-client-id"
-        && isUserOwnedOpnixSecret opnixTossClientSecret "toss-client-secret";
+      name = "Test 5b-6a: #1044 전까지 homeserver.toss.enable=false이고 Toss opnix credentials가 materialize되지 않아야 함";
+      cond = !nixosCfg.homeserver.toss.enable && !tossSecretsMaterialized;
     }
     {
       name = "Test 5b-6b: opnix Toss references가 Automation vault의 토스증권 Open API item field와 일치해야 함";
       cond =
-        opnixTossClientId.reference
-        == "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientIdField}"
-        &&
-          opnixTossClientSecret.reference
-          == "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientSecretField}";
+        if nixosCfg.homeserver.toss.enable then
+          tossSecretsMaterialized
+          && isUserOwnedOpnixSecret opnixTossClientId constants.onePassword.tossOpenApi.opnixClientIdFileName
+          && isUserOwnedOpnixSecret opnixTossClientSecret constants.onePassword.tossOpenApi.opnixClientSecretFileName
+          && (
+            opnixTossClientId.reference
+            == "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientIdField}"
+          )
+          && (
+            opnixTossClientSecret.reference
+            == "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientSecretField}"
+          )
+        else
+          !tossSecretsMaterialized;
     }
     {
       # opnix-secrets.service가 tokenFile을 0640 root:onepassword-secrets로 강제하므로 agenix도 동일 선언.

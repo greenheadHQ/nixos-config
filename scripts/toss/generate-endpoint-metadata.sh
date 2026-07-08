@@ -22,8 +22,10 @@ trap 'rm -f "$tmp_path"' EXIT
 # Local policy: parse a terminal "**Rate Limits Group**: `...`" marker from
 # each operation description. If the marker is missing, emit null.
 #
-# isKnownOrderMutation is a local derived policy: mutation methods
-# (POST/PUT/PATCH/DELETE) in ORDER or CONDITIONAL_ORDER rate-limit groups.
+# isKnownOrderMutation is a local derived policy. It is true when either:
+# - rateLimitGroup is ORDER or CONDITIONAL_ORDER, or
+# - fail-closed: mutation method (POST/PUT/PATCH/DELETE) targets an
+#   /orders or /conditional-orders path, regardless of rateLimitGroup drift.
 #
 # Phase B CLI safety remains separate: requiresOrderSafeguards =
 # isKnownOrderMutation OR metadataStatus=unknown. This metadata file only
@@ -88,9 +90,15 @@ jq '
       | .group
     ) catch null;
 
-  def is_known_order_mutation($method; $rate_limit_group):
-    ((["POST", "PUT", "PATCH", "DELETE"] | index($method)) != null)
-    and ((["ORDER", "CONDITIONAL_ORDER"] | index($rate_limit_group // "")) != null);
+  def is_mutation_method($method):
+    (["POST", "PUT", "PATCH", "DELETE"] | index($method)) != null;
+
+  def is_order_path($path):
+    $path | test("(^|/)(orders|conditional-orders)(/|$)");
+
+  def is_known_order_mutation($method; $path; $rate_limit_group):
+    ((["ORDER", "CONDITIONAL_ORDER"] | index($rate_limit_group // "")) != null)
+    or (is_mutation_method($method) and is_order_path($path));
 
   . as $root
   | {
@@ -114,7 +122,7 @@ jq '
             requiresAccount: requires_account($root; $path_item; $operation),
             rateLimitGroup: $rate_limit_group,
             pathRegex: path_regex($path_entry.key),
-            isKnownOrderMutation: is_known_order_mutation($method; $rate_limit_group)
+            isKnownOrderMutation: is_known_order_mutation($method; $path_entry.key; $rate_limit_group)
           }
       ] | sort_by(.method, .path))
     }

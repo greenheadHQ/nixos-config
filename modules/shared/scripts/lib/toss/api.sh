@@ -7,6 +7,29 @@ usage: toss api <METHOD> <PATH> [--account ACCOUNT_SEQ] [--data JSON] [--dry-run
 EOF
 }
 
+toss_restore_trap() {
+  local signal="$1"
+  local saved_trap="$2"
+
+  if [ -n "$saved_trap" ]; then
+    eval "$saved_trap"
+  else
+    trap - "$signal"
+  fi
+}
+
+toss_api_tmp_dir_cleanup() {
+  local tmp_dir="$1"
+  local old_exit_trap="$2"
+  local old_int_trap="$3"
+  local old_term_trap="$4"
+
+  rm -rf "$tmp_dir"
+  toss_restore_trap EXIT "$old_exit_trap"
+  toss_restore_trap INT "$old_int_trap"
+  toss_restore_trap TERM "$old_term_trap"
+}
+
 toss_metadata_bool() {
   local metadata="$1"
   local key="$2"
@@ -154,10 +177,8 @@ toss_response_is_invalid_token() {
   [ "$http_status" = "401" ] && return 0
   [ -s "$response_file" ] || return 1
   jq -e '
-    .. | objects
-    | (.error? // .code? // empty)
-    | tostring
-    | test("invalid_token"; "i")
+    [.. | objects | (.error? // .code? // empty) | tostring]
+    | any(test("invalid_token"; "i"))
   ' "$response_file" >/dev/null 2>&1
 }
 
@@ -385,7 +406,7 @@ toss_notify_safeguarded_api_success_for_context() {
   toss_notify_safeguarded_api_success "$no_notify" "$method" "$path" "$account_seq" "$http_status"
 }
 
-toss_api_execute() (
+toss_api_execute() {
   local method="$1"
   local path="$2"
   local account_arg="$3"
@@ -414,12 +435,19 @@ toss_api_execute() (
   fi
 
   local tmp_dir response_file call_result http_status curl_exit rc
+  local old_exit_trap old_int_trap old_term_trap
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/toss-api.XXXXXX")"
+  old_exit_trap="$(trap -p EXIT)"
+  old_int_trap="$(trap -p INT)"
+  old_term_trap="$(trap -p TERM)"
+  trap 'toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"' EXIT
+  trap 'toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"; exit 130' INT
+  trap 'toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"; exit 143' TERM
   response_file="$tmp_dir/response.json"
 
   call_result="$(toss_call_with_single_token_retry "$method" "$url" "$account_seq" "$body_json" "$response_file")" || {
     rc=$?
-    rm -rf "$tmp_dir"
+    toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"
     return "$rc"
   }
   http_status="$(toss_call_result_http_status "$call_result")"
@@ -437,9 +465,9 @@ toss_api_execute() (
   else
     rc=$?
   fi
-  rm -rf "$tmp_dir"
+  toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"
   return "$rc"
-)
+}
 
 toss_cmd_api() {
   if [ "$#" -lt 2 ]; then

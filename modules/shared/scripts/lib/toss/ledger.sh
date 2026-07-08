@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+toss_ledger_warn_write_failed() {
+  local reason="$1"
+  echo "warning: toss ledger write failed ($reason); audit entry not recorded" >&2
+}
+
 toss_state_root() {
   local state_dir="${TOSS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}}"
   case "$state_dir" in
@@ -19,7 +24,7 @@ toss_ledger_file() {
   fi
 
   local state_root
-  state_root="$(toss_state_root)"
+  state_root="$(toss_state_root)" || return 1
   printf '%s/toss/orders.jsonl\n' "$state_root"
 }
 
@@ -27,10 +32,10 @@ toss_ledger_prepare() {
   local file="$1"
   local dir
   dir="$(dirname "$file")"
-  ( umask 077; mkdir -p "$dir" )
+  ( umask 077; mkdir -p "$dir" ) || return 1
   chmod 700 "$dir" 2>/dev/null || true
   if [ ! -e "$file" ]; then
-    ( umask 077; : >"$file" )
+    ( umask 077; : >"$file" ) || return 1
   fi
   chmod 600 "$file" 2>/dev/null || true
 }
@@ -113,10 +118,13 @@ toss_ledger_append_unlocked() {
 toss_ledger_append_record() {
   local record="$1"
   local file lock_file
-  file="$(toss_ledger_file)" || return 0
-  toss_ledger_prepare "$file" || return 0
+  file="$(toss_ledger_file)" || { toss_ledger_warn_write_failed "resolve ledger file"; return 0; }
+  toss_ledger_prepare "$file" || { toss_ledger_warn_write_failed "prepare ledger file"; return 0; }
   lock_file="${file}.lock"
-  with_file_lock "$lock_file" "${TOSS_LEDGER_LOCK_TIMEOUT_SECONDS:-5}" toss_ledger_append_unlocked "$file" "$record" || return 0
+  with_file_lock "$lock_file" "${TOSS_LEDGER_LOCK_TIMEOUT_SECONDS:-5}" toss_ledger_append_unlocked "$file" "$record" || {
+    toss_ledger_warn_write_failed "append with file lock"
+    return 0
+  }
 }
 
 toss_ledger_record() {
@@ -124,7 +132,7 @@ toss_ledger_record() {
 
   local record
 
-  record="$(toss_ledger_build_record "$input")" || return 0
+  record="$(toss_ledger_build_record "$input")" || { toss_ledger_warn_write_failed "build ledger record"; return 0; }
 
   toss_ledger_append_record "$record"
 }

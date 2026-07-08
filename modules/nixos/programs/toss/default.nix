@@ -15,13 +15,14 @@ let
   vault = constants.onePassword.vaults.automation;
   tossOpenApi = constants.onePassword.tossOpenApi;
   opReference = field: "op://${vault}/${tossOpenApi.itemName}/${field}";
+  opnixPath = fileName: "/run/opnix/${username}/${fileName}";
 in
 {
   config = lib.mkIf (opnixCfg.enable && tossCfg.enable) {
     services.onepassword-secrets.secrets = {
       tossClientId = {
         reference = opReference tossOpenApi.clientIdField;
-        path = "/run/opnix/${username}/toss-client-id";
+        path = opnixPath tossOpenApi.opnixClientIdFileName;
         owner = username;
         group = "users";
         mode = "0400";
@@ -29,7 +30,7 @@ in
 
       tossClientSecret = {
         reference = opReference tossOpenApi.clientSecretField;
-        path = "/run/opnix/${username}/toss-client-secret";
+        path = opnixPath tossOpenApi.opnixClientSecretFileName;
         owner = username;
         group = "users";
         mode = "0400";

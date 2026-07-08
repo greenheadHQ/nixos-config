@@ -185,6 +185,9 @@
       itemName = "토스증권 Open API";
       clientIdField = "자격 증명";
       clientSecretField = "Secret Key";
+      # MiniPC opnix materialization filenames. Full paths are /run/opnix/<user>/<fileName>.
+      opnixClientIdFileName = "toss-client-id";
+      opnixClientSecretFileName = "toss-client-secret";
     };
     # 1Password macOS SSH agent socket — home 기준 상대 경로 (단일 소스).
     # nix: "${homeDir}/${agentSocketRelPath}", shell: "$HOME/${agentSocketRelPath}".

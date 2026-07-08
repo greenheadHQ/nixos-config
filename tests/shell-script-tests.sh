@@ -201,6 +201,8 @@ run_test "toss api rejects auth endpoints" test_toss_api_rejects_auth_endpoint
 run_test "toss api dry-run works without token" test_toss_api_dry_run_without_token_uses_deployed_layout
 run_test "toss api retries once after 401" test_toss_api_retries_once_after_401
 run_test "toss api refreshes env override after 401" test_toss_api_env_override_401_force_refresh_uses_credentials
+run_test "toss api retries on nested invalid_token body" test_toss_api_retries_on_nested_invalid_token_body
+run_test "toss endpoint metadata fail-closes order-path mutations" test_toss_endpoint_metadata_fail_closed_order_path_mutations
 run_test "pushover helper missing credential skips curl" test_pushover_send_missing_cred_returns_1_without_curl
 run_test "pushover helper sends expected fields" test_pushover_send_success_passes_expected_fields
 run_test "pushover helper passes optional sound" test_pushover_send_passes_optional_sound
