@@ -134,7 +134,14 @@ seed_declared_instances() {
         # temporarily uses different options, the next ensure reconciles the
         # registry back to the declaration and treats the manual change as an
         # experiment.
-        with_instances_lock reconcile_declared_instance_unlocked "$path" "$spawn" "$capacity" "$permission_mode"
+        # cmd_ensure runs this subtree under `|| rc=$?`, which disables set -e,
+        # so a reconcile failure (mktemp/jq) must be propagated explicitly or
+        # the declared instance is silently never registered nor ensured.
+        if ! with_instances_lock reconcile_declared_instance_unlocked "$path" "$spawn" "$capacity" "$permission_mode"; then
+            GLOBAL_ACTION="declared-instances-invalid"
+            log_error "failed to reconcile declared instance: $path"
+            return 1
+        fi
     done < <(jq -c '.[]' <<<"$payload")
 }
 
@@ -150,7 +157,13 @@ record_instance_result() {
 }
 
 desired_claude_version() {
-    basename "$(readlink -f "$CLAUDE_BIN")"
+    local resolved
+    # readlink 실패가 빈 문자열 + exit 0으로 새면 DESIRED_VERSION=""가 되어
+    # 모든 실행 버전이 drift로 보이고 재시작이 반복된다 — 실패를 명시 전파해
+    # ensure_core의 desired-version-unresolvable 경로가 받게 한다.
+    resolved=$(readlink -f "$CLAUDE_BIN") || return 1
+    [ -n "$resolved" ] || return 1
+    basename "$resolved"
 }
 
 normalized_instance_prefix() {
