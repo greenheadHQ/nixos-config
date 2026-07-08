@@ -76,10 +76,17 @@ EOS
   chmod +x "$bin_dir/claude"
 }
 
+# fake readlink는 desired_claude_version의 `readlink -f`만 조작한다. 그 외 호출은
+# 실제 도구로 passthrough해야 한다 — Linux의 pid_exe_path는 `readlink /proc/PID/exe`
+# (옵션 없음)를 쓰므로, 여기서 exit 1로 막으면 Linux에서만 실행 버전 조회가 실패해
+# running-version-unresolvable 오탐이 난다 (macOS는 lsof 경로라 안 걸리는 플랫폼 비대칭).
 _claude_rc_make_fake_readlink() {
-  local bin_dir="$1"
-  cat > "$bin_dir/readlink" <<'EOS'
-#!/usr/bin/env bash
+  local bin_dir="$1" real_readlink
+  # 생성 시점 PATH에는 fake-bin이 없으므로 실제 readlink가 잡힌다.
+  real_readlink="$(command -v readlink)" || fail "required test tool not found: readlink"
+  {
+    printf '#!/usr/bin/env bash\nREAL_READLINK=%q\n' "$real_readlink"
+    cat <<'EOS'
 set -euo pipefail
 if [ "${1:-}" = "-f" ]; then
   shift
@@ -89,8 +96,9 @@ if [ "${1:-}" = "-f" ]; then
   esac
   exit 0
 fi
-exit 1
+exec "$REAL_READLINK" "$@"
 EOS
+  } > "$bin_dir/readlink"
   chmod +x "$bin_dir/readlink"
 }
 
