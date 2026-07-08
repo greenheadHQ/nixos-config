@@ -65,15 +65,16 @@ tomlkit_bootstrap_require() {
   # (2) nix 가용 → repo-pinned runtime으로 재실행 (hermetic 강제). 스크립트 자체는 self_path
   #     (snapshot 경로 가능)에서 계속 실행하고, flake root 만 실제 repo 로 고정한다.
   if command -v nix >/dev/null 2>&1; then
-    echo "  test runtime bootstrap: nix shell --inputs-from ${flake_root} ${flake_root}#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils --command bash $self_path" >&2
+    echo "  test runtime bootstrap: nix shell --inputs-from ${flake_root} ${flake_root}#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof --command bash $self_path" >&2
     export _TOMLKIT_BOOTSTRAP_READY=1
-    # pythonWithTomlkit(tomlkit) 외에 GNU coreutils/findutils 를 함께 얹어, 테스트 fixture 가
+    # pythonWithTomlkit(tomlkit) 외에 GNU coreutils/findutils 와 lsof 를 함께 얹어, 테스트 fixture 가
     # GNU 전용 확장(`touch -d '40 days ago'`, `find -printf`)에 의존해도 devShell 밖(BSD 시스템
-    # 도구 우선) 셸에서 hermetic 하게 통과하도록 한다 (#1009). lefthook pre-push / run-all-tests /
-    # 수동 실행 모두 이 단일 self-wrap 을 경유하므로 여기 한 곳이 세 경로를 커버한다.
+    # 도구 우선) 셸에서 hermetic 하게 통과하도록 한다 (#1009). claude-rc(#1052)도 require_cmd lsof 를
+    # 도입했고, lsof 는 NixOS 시스템 프로파일 PATH 에 항상 있지 않으므로 lefthook pre-push /
+    # run-all-tests / 수동 실행 모두 이 단일 self-wrap 을 경유해 세 경로의 runtime 을 맞춘다.
     # `--inputs-from ${flake_root}` 로 nixpkgs# 를 repo flake.lock 의 nixpkgs 에 pin 하여 임시
     # registry fetch 를 피한다(statusline-bats 의 `nix shell --inputs-from . nixpkgs#bats` 와 동일 패턴).
-    exec nix shell --inputs-from "${flake_root}" "${flake_root}#pythonWithTomlkit" nixpkgs#coreutils nixpkgs#findutils --command bash "$self_path" "$@"
+    exec nix shell --inputs-from "${flake_root}" "${flake_root}#pythonWithTomlkit" nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof --command bash "$self_path" "$@"
   fi
 
   # (3) nix 부재 fallback — ambient python3에 tomlkit이 있으면 경고 후 진행

@@ -102,10 +102,12 @@ pre-push:
       # coreutils/findutils를 PATH에 얹어 실행한다(#1009: devShell 밖 BSD 도구로 karakeep fixture
       # 실패). devShell은 건드리지 않아 direnv/bare python3 해석 영향이 없다. `--inputs-from .`로
       # nixpkgs#를 repo flake.lock에 pin해 임시 registry fetch를 피한다(statusline-bats와 동일 패턴).
+      # claude-rc(#1052)가 require_cmd lsof를 도입했고 lsof는 NixOS 시스템 프로파일/CI PATH에
+      # 항상 있지 않으므로 nixpkgs#lsof도 명시 제공한다(#1009와 동일 패턴).
       # `_TOMLKIT_BOOTSTRAP_READY=1`로 run-shell-script-tests.sh 내부 tomlkit-bootstrap.sh의 중첩
       # `nix shell` re-exec을 막는다(이 wrap이 이미 동일 hermetic 런타임을 제공). 테스트 병렬 실행은
       # 러너 자체(tests/lib/parallel-harness.sh job-pool)가 담당하므로 여기서 추가 배선은 없다.
-      run: nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
+      run: nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
     codex-hook-fixtures:
       # pre-commit에 이미 동일 명령이 있지만 push 직전 재검증해 stale state 회귀 차단.
       # runner self-bootstrap이라 추가 nix shell wrap 불필요. live propagation은 attach하지 않음.
