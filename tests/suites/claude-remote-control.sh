@@ -105,9 +105,13 @@ _claude_rc_find_tool() {
   printf '%s\n' "$found"
 }
 
-_claude_rc_link_tool_if_missing() {
+# fake-bin은 테스트가 절대경로("$CLAUDE_RC_FAKE_BIN/<tool>")로 참조하는 자기완결
+# 도구 디렉토리다. PATH에 도구가 있어도 링크를 생략하면(구현 초기 버그) macOS
+# devShell(flock 부재 → 링크 생성)에서는 통과하고 Linux CI(util-linux flock이
+# PATH에 존재 → 링크 미생성)에서만 "No such file or directory"로 깨진다.
+# 따라서 발견 경로와 무관하게 항상 링크한다.
+_claude_rc_link_tool() {
   local name="$1" found
-  command -v "$name" >/dev/null 2>&1 && return 0
   found="$(_claude_rc_find_tool "$name")" || fail "required test tool not found: $name"
   ln -sf "$found" "$CLAUDE_RC_FAKE_BIN/$name"
 }
@@ -121,7 +125,7 @@ _claude_rc_setup() {
   CLAUDE_RC_HOLD_FILE="$sandbox/hold-server"
   mkdir -p "$CLAUDE_RC_HOME" "$CLAUDE_RC_STATE" "$CLAUDE_RC_FAKE_BIN"
   _claude_rc_make_fake_claude "$CLAUDE_RC_FAKE_BIN"
-  _claude_rc_link_tool_if_missing flock
+  _claude_rc_link_tool flock
 }
 
 _claude_rc_run() {
