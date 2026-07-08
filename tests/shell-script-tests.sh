@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# SC2034: REPO_ROOT/FIXTURE_DIR/TEST_TMP_FILE는 source된 스위트가 사용. SC1090: 스위트 동적 디스커버리.
-# shellcheck disable=SC2034,SC1090
+# SC2034: REPO_ROOT/FIXTURE_DIR/TEST_TMP_FILE는 source된 스위트가 사용. SC1090/SC1091: 동적/상대 source.
+# shellcheck disable=SC2034,SC1090,SC1091
 # tests/shell-script-tests.sh
 # 배포 레이아웃 기준 shell script fixture 테스트
 set -euo pipefail
@@ -68,6 +68,17 @@ run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
+run_test "claude remote-control start requires git repo" test_claude_remote_control_start_requires_git_repo
+run_test "claude remote-control start registers manual instance" test_claude_remote_control_start_registers_manual_instance
+run_test "claude remote-control start warns on ignored options" test_claude_remote_control_start_warns_when_running_options_differ
+run_test "claude remote-control rejects unmanaged same-cwd server" test_claude_remote_control_start_rejects_unmanaged_same_cwd_server
+run_test "claude remote-control stop gates worktree sessions" test_claude_remote_control_stop_blocks_worktree_sessions_and_force_unregisters
+run_test "claude remote-control slug separates same basenames" test_claude_remote_control_slug_uses_hash_for_same_basename
+run_test "claude remote-control cleanup removes only orphan worktrees" test_claude_remote_control_cleanup_removes_only_orphan_worktrees
+run_test "claude remote-control maint seeds declarations" test_claude_remote_control_maint_seeds_declared_instances_without_overwrite
+run_test "claude remote-control maint rejects invalid declarations" test_claude_remote_control_maint_rejects_invalid_declared_instances
+run_test "claude remote-control transcript gate scopes to worktrees" test_claude_remote_control_transcript_gate_scopes_to_worktree_dirs
+run_test "claude remote-control maint writes status schema" test_claude_remote_control_maint_status_schema
 if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
   run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json

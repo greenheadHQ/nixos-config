@@ -1,148 +1,220 @@
 ---
 name: managing-claude-rc
 description: |
-  Manage Claude Code Remote Control bridge (claude-rc): 기전, 세션 수명주기, 자동 재시작, 트러블슈팅.
+  Manage Claude Code Remote Control bridge (claude-rc): headless multi-instance,
+  instance lifecycle, version drift ensure, tombstone recovery, troubleshooting.
   Trigger: 'claude-rc', 'remote control', '리모트 컨트롤', 'bridge 서버', '모바일 세션',
   'claude-rc-ensure', 'claude-rc-maint', '세션 tombstone', 'bridge 재시작'.
   NOT for Codex remote control (use configuring-codex / issuing-codex-pairing-code).
-  NOT for tmux 일반 설정 (use managing-tmux).
 ---
 
 # Claude Code Remote Control (claude-rc) 관리
 
 Claude 모바일 앱/claude.ai에서 이 flake가 관리하는 머신의 Claude Code 세션을
-원격 조종하는 bridge 서버의 운영 가이드.
+원격 조종하는 `claude remote-control` 서버 운영 가이드.
 
-| 플랫폼 | 래퍼 | 자동 재시작 (ensure) | Pushover 알림 | 배선 모듈 |
-|--------|------|---------------------|---------------|-----------|
-| NixOS (MiniPC) | `~/.local/bin/claude-rc` | systemd timer 30분 | `pushover-system-monitor.age` (minipcOnly) | `modules/nixos/programs/claude-remote-control.nix` |
-| macOS (MacBook, personal/work) | `~/.local/bin/claude-rc` | launchd agent 30분 (`StartInterval`) | `pushover-share.age` (양쪽 맥북 복호화 가능) | `modules/darwin/programs/claude-remote-control.nix` |
+## 개요
 
-운영 옵션 선언 위치: NixOS는 `homeserver.claudeRemoteControl.*` 옵션, darwin은
-모듈 내 hostType 분기 상수 (`bridgeName`/`bridgeCapacity` 등 — 옵션화는 수요 시).
-
-## 기전 (3계층)
+`claude-rc`는 headless multi-instance 래퍼다. 인스턴스는 디렉토리 단위이며,
+각 디렉토리에서 서버 1개가 해당 claude.ai 환경 1개를 담당한다.
 
 ```text
-tmux 세션 "claude-rc" (detached 상시 구동)
- └─ claude-rc 래퍼 (modules/nixos/scripts/claude-rc.sh)
-     ├─ 재시작 루프: 비정상 종료 시 exponential backoff로 자동 재시작
-     ├─ stale 감지: tmux 환경변수 CLAUDE_RC_ACTIVE
-     └─ claude remote-control --spawn worktree --no-create-session-in-dir ...
-         └─ 모바일에서 새 세션 요청 시:
-             .claude/worktrees/bridge-cse_<세션ID> git worktree 생성 (locked) 후
-             `claude --print --sdk-url https://api.anthropic.com/v1/code/sessions/cse_...`
-             자식 프로세스 스폰 (outbound 연결만 사용, 인바운드 포트 없음)
+사용자/ensure
+  └─ claude-rc / claude-rc-maint
+      ├─ STATE_DIR/instances.json 동적 등록
+      ├─ STATE_DIR/<slug>/lock 중복 기동 방지
+      └─ cd /path/to/project && claude remote-control --spawn <mode> ...
 ```
 
-- transcript는 `~/.claude/projects/<정규화된 경로>/<uuid>.jsonl`에 기록된다.
-  프로젝트 디렉토리명은 경로의 비영숫자가 하이픈으로 정규화된다
-  (예: `bridge-cse_01AB...` worktree → `...--claude-worktrees-bridge-cse-01AB...`).
+- `STATE_DIR` 기본값: `~/.local/state/claude-rc`
+- slug: `basename(절대경로)-sha256(절대경로)앞8자`
+- 서버 프로세스가 `<slug>/lock`을 `flock`으로 직접 보유한다. lock 생사가 서버 생사다.
+- 래퍼를 우회한 순정 CLI 기동은 lock을 보유하지 않으므로, 래퍼는 실행 중
+  `claude remote-control` 프로세스의 cwd까지 검사한다.
 
-## 사용자 래퍼 (claude-rc)
+## 사용자 래퍼
 
 | 명령 | 동작 |
 |------|------|
-| `claude-rc` | 서버 시작 + tmux attach |
-| `claude-rc --detach` | 서버 시작 (백그라운드) |
-| `claude-rc --attach` | 기존 세션 접속 |
-| `claude-rc --stop` | 서버 종료 (활성 세션 tombstone — 아래 수명주기 참조) |
-| `claude-rc --cleanup` | 서버 종료 + worktree prune + orphan 디렉토리 삭제 |
+| `claude-rc` / `claude-rc start` | 현재 git top-level 디렉토리 인스턴스 시작 및 `instances.json` 등록 |
+| `claude-rc stop` | 현재 인스턴스 서버 종료 및 등록 해제. worktree 세션 존재 시 `--force` 필요 |
+| `claude-rc ls` | 등록 인스턴스, 실행 여부, PID, 버전, spawn, source, 로그 경로 출력 |
+| `claude-rc cleanup` | 현재 인스턴스의 orphan `.claude/worktrees/*` 디렉토리만 삭제 |
 
-옵션: `--permission-mode <mode>`, `--capacity <N>`, `--name <name>`.
-수동 실행 시에도 배선 모듈의 선언값(NixOS `homeserver.claudeRemoteControl.*` /
-darwin 모듈 상수)과 일치시켜야 자동 재시작 후 동작이 달라지지 않는다.
+옵션:
 
-## 자동 재시작 (claude-rc-ensure)
+| 옵션 | 기본 | 설명 |
+|------|------|------|
+| `--spawn worktree\|same-dir` | `worktree` | 원격 세션 스폰 방식 |
+| `--capacity N` | 미전달 | 동시 세션 수. 미전달 시 upstream 기본값 사용 |
+| `--permission-mode MODE` | `bypassPermissions` | `acceptEdits`, `bypassPermissions`, `default`, `dontAsk`, `plan` |
+| `--force` | false | `stop`에서 worktree 세션 tombstone 가드 우회 |
 
-NixOS는 `homeserver.claudeRemoteControl.enable = true` 시 systemd timer가 부팅 2분 후 +
-30분마다, macOS는 launchd agent(`StartInterval = 1800` + `RunAtLoad`)가 로그인 시 +
-30분마다 `claude-rc-maint ensure`를 실행한다.
+이미 실행 중인 인스턴스에 다른 옵션으로 `start`하면 옵션은 반영되지 않는다.
+변경하려면 `claude-rc stop` 후 다시 시작한다.
 
-판정 흐름:
-1. tmux 세션 부재/stale → bridge 시작 (부팅/로그인 후 자동 복구 겸함)
-2. 실행 중 bridge 바이너리 버전 vs claude launcher(`~/.local/bin/claude`)가 가리키는
-   최신 버전 비교. desired 버전 조회(maint의 `desired_claude_version`)는 GNU coreutils
-   `readlink -f`를 쓰며, maint 패키지의 runtimeInputs가 두 플랫폼 모두 nix coreutils로
-   해석하므로 macOS BSD `readlink`에 의존하지 않는다.
-   실행 바이너리 경로 조회는 `pid_exe_path` 플랫폼 분기 — Linux `/proc/PID/exe`,
-   macOS `lsof -a -p PID -d txt -Fn` 첫 항목 (macOS는 삭제된 바이너리에 `(deleted)`
-   suffix가 없지만 버전이 파일명이라 문자열 비교로 drift가 감지된다)
-3. drift 없음 → healthy
-4. drift 있음 → idle 게이트:
-   - 최근 `IDLE_THRESHOLD_MINUTES`(기본 30분) 내 활동한 bridge transcript가 있으면 유예
-   - 스폰 세션 프로세스가 있는데 transcript 명명 규칙 매치가 전혀 없으면
-     판정 불가로 보수적 유예 (`deferred-unknown-activity`)
-   - 둘 다 아니면 재시작 (`restarted-version-drift`)
-5. 모든 경로에서 status 기록 + Pushover 알림 (상태 전이 기반, cooldown 30분)
+## 상태 레이아웃
 
-운영 옵션(permissionMode/capacity/name)은 선언되어 재시작 시 보존된다:
-NixOS는 `modules/nixos/configuration.nix`의 `homeserver.claudeRemoteControl` 블록,
-darwin은 `modules/darwin/programs/claude-remote-control.nix`의 상수.
+```text
+~/.local/state/claude-rc/
+  instances.json
+  instances.json.lock
+  ensure.lock
+  status.json
+  <slug>/
+    lock
+    server.log
+    server.log.1
+```
 
-Pushover fallback: 크리덴셜이 없거나 읽을 수 없는 호스트에서 maint를 실행하면
-알림만 스킵되고 ensure 본체는 정상 동작한다.
-NixOS systemd 유닛은 `ConditionPathExists`로 credential 부재 시 조용히 skip된다
-(agenix 장애 신호). darwin launchd agent는 조건 없이 실행되고 fallback에 의존한다.
+`instances.json` schema v1:
 
-## 세션 수명주기 (중요)
+```json
+{
+  "version": 1,
+  "instances": {
+    "/path/to/project": {
+      "spawn": "worktree",
+      "capacity": null,
+      "permissionMode": "bypassPermissions",
+      "registeredAt": "2026-07-08T12:00:00+09:00",
+      "source": "manual"
+    }
+  }
+}
+```
 
-- disconnect ≠ end session: 모바일 앱 연결을 끊어도 세션 프로세스는 계속 살아
-  capacity 슬롯을 점유한다. upstream에 세션 age-out이 없다 (#60568 — schema에
-  sessionTimeoutSeconds만 있고 미배선; #28917 revoke, #32050 idle timeout 모두
-  미구현 stale 종결). → `--cleanup` workaround가 계속 필요한 근거.
-- bridge 재시작 = 활성 세션 tombstone: 앱에서 기록은 보이지만 프롬프트가
-  조용히 무시된다. 대화 기록은 보존된다:
-  - 로컬 재개: 해당 worktree에서 `claude --resume <uuid>`
-  - 원격 재개 (claude 2.1.200+): `claude remote-control --session-id <cse_...>`
-    (spawn 플래그와 병용 불가 — 세션 전용 프로세스로 떠야 함)
-- 알려진 upstream 버그: 스폰 세션이 UI 선택 모델을 무시할 수 있음 (#74049, OPEN).
+- `source=manual`: `claude-rc start`가 등록
+- `source=declared`: `claude-rc-maint ensure`가 Nix 선언에서 시드
+- `server.log`: 서버 stdout/stderr. 5MB 초과 시 1세대 rotate
+- `status.json`: 마지막 ensure 실행 결과. top-level timestamp/exitCode/action과
+  인스턴스별 `{path,runningVersion,desiredVersion,action}` 배열을 기록한다.
+
+## 자동화
+
+| 플랫폼 | 자동화 | 선언 위치 |
+|--------|--------|-----------|
+| NixOS | systemd timer `claude-rc-ensure` 30분 주기 | `homeserver.claudeRemoteControl.*` |
+| macOS | launchd agent `claude-rc-ensure` 30분 주기 | `modules/darwin/programs/claude-remote-control.nix` 상수 |
+
+`CLAUDE_RC_DECLARED_INSTANCES`는 JSON 배열이다.
+
+```json
+[
+  {
+    "path": "/path/to/project",
+    "spawn": "worktree",
+    "capacity": null,
+    "permissionMode": "bypassPermissions"
+  }
+]
+```
+
+ensure 판정 흐름:
+
+1. 선언 인스턴스가 `instances.json`에 없으면 `source=declared`로 추가한다.
+2. 인스턴스 경로가 없으면 `path-missing`으로 기록하고 등록은 유지한다.
+3. lock이 비어 있으면 서버를 headless로 시작한다.
+4. 살아 있으면 실행 중 바이너리 버전과 desired Claude launcher 버전을 비교한다.
+5. drift가 없으면 `healthy`.
+6. drift + `spawn=same-dir`이면 즉시 재시작한다.
+7. drift + `spawn=worktree`이면 idle gate를 통과할 때만 재시작한다.
+
+worktree idle gate:
+
+- 최근 `IDLE_THRESHOLD_MINUTES` 내 transcript가 있으면 `deferred-active-sessions`
+- `--sdk-url` 세션 프로세스는 있는데 worktree transcript 디렉토리 명명 매치가 0이면
+  `deferred-unknown-activity`
+- 둘 다 아니면 `restarted-version-drift`
+
+transcript 매칭은 `<정규화된 인스턴스 경로>--claude-worktrees-*`만 본다.
+인스턴스 root transcript는 로컬/same-dir 세션 활동일 수 있어 worktree drift gate에
+포함하지 않는다.
+
+## 환경과 세션 수명주기
+
+실측 기준: Claude Code v2.1.204.
+
+- 서버 1개 = claude.ai 환경 1개.
+- 환경은 디렉토리 경로 기준으로 서버측에 보존되고, 재시작하면 같은 환경을 회수한다.
+- 환경 표시명은 upstream이 호스트명 + 디렉토리 basename으로 정한다.
+- 같은 디렉토리에 서버 2개가 동시에 뜨면 두 번째가 새 환경을 만든다. 이후 하나만
+  회수되고 나머지는 삭제 불가능한 유령 환경으로 영구 잔존한다. 세션 0개여도 목록에
+  남고 삭제 UI가 없으며, 죽은 환경이 온라인으로 보일 수 있다.
+- 중복 기동 방지는 래퍼의 `flock` + cwd 실측 가드가 유일한 방어다.
+- same-dir 스폰 세션은 서버 재시작 후 자동 재연결된다. 같은 세션 ID가 재스폰된다.
+- worktree 스폰 세션만 tombstone된다. 재시작 후 재스폰되지 않고 원격 메시지가 로컬에
+  도달하지 않는 hang 상태가 된다.
+- tombstone 복구: 해당 worktree에서 `claude remote-control --session-id <cse_...>`를
+  실행하면 pending 프롬프트까지 처리된다.
+- 복구 프로세스도 cwd 기준 환경을 하나 등록한다. worktree 경로가 환경 이름으로 목록에
+  추가되는 오염 부작용이 있으므로 필요한 경우에만 쓴다.
+- claude.ai/모바일 앱 환경 상세의 "N 중 M" 탭에는 "세션 종료" UI가 있어 capacity 슬롯을
+  직접 해제할 수 있다.
+- 서버는 네트워크 약 10분 단절 시 자기 종료한다. 30분 ensure가 부활을 담당한다.
+- 서버 종료 시 정상 종료와 kill 모두 자식 세션 프로세스를 함께 정리한다.
 
 ## 트러블슈팅
 
 공통:
 
 ```bash
-cat ~/.local/state/claude-rc/status.json                    # ensure 상태
-tmux has-session -t claude-rc && tmux attach -t claude-rc   # 래퍼 로그 확인
-pgrep -fl 'claude remote-control'                           # bridge 프로세스
+claude-rc ls
+cat ~/.local/state/claude-rc/status.json
+tail -50 ~/.local/state/claude-rc/<slug>/server.log
+pgrep -fl 'claude remote-control'
 ```
 
-NixOS (MiniPC):
+NixOS:
 
 ```bash
 journalctl -u claude-rc-ensure --since -2d
 systemctl list-timers claude-rc-ensure
-readlink /proc/<PID>/exe          # 실행 중 바이너리 버전
-systemctl start claude-rc-ensure  # 수동 ensure (drift 즉시 확인)
+systemctl start claude-rc-ensure
 ```
 
-macOS (맥북):
+macOS:
 
 ```bash
-launchctl list | grep claude-rc                                # agent 로드 확인
-launchctl print "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"  # 상세 (마지막 exit 등)
-tail -50 ~/Library/Logs/claude-rc-ensure.log                   # ensure 실행 로그
-lsof -a -p <PID> -d txt -Fn | head -2                          # 실행 중 바이너리 경로 (/proc 대체)
-launchctl kickstart "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"  # 수동 ensure
+launchctl list | grep claude-rc
+launchctl print "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"
+tail -50 ~/Library/Logs/claude-rc-ensure.log
+launchctl kickstart "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"
 ```
 
-| 증상 | 원인/조치 |
-|------|----------|
-| status.json `action: deferred-active-sessions` | 활성 세션 존재 — 정상 유예. 다음 주기 재시도 |
-| `action: deferred-unknown-activity` | transcript 명명 규칙 drift 의심 — `claude-rc-maint.sh`의 `BRIDGE_TRANSCRIPT_GLOBS` 갱신 검토 |
-| `action: no-bridge-process` | 래퍼 backoff 루프가 재시작 중 — 지속되면 `tmux attach -t claude-rc`로 루프 로그 확인 |
-| unit이 실행 안 됨 (Condition failed, NixOS) | `/run/agenix/pushover-system-monitor` 부재 — agenix 상태 확인 |
-| macOS에서 알림이 안 옴 | `~/.config/pushover/share` 복호화 확인 (agenix HM) — 부재 시 알림만 스킵되는 정상 fallback |
-| capacity 꽉 참 (앱에서 새 세션 불가) | idle 프로세스가 슬롯 점유 — 앱에서 "세션 종료" 또는 `claude-rc --cleanup` |
-| 모바일 세션이 응답 없음 (기록만 보임) | tombstone — 위 재개 경로 사용 |
+| status action | 의미 / 조치 |
+|---------------|-------------|
+| `no-instances` | 등록된 인스턴스 없음. `claude-rc start` 또는 선언 env 확인 |
+| `path-missing` | 등록 경로가 없음. 등록은 유지되며 알림 대상 아님 |
+| `started` | 죽은 인스턴스를 시작함 |
+| `healthy` | 실행 버전과 desired 버전 일치 |
+| `restarted-version-drift` | version drift 재시작 완료 |
+| `deferred-active-sessions` | worktree 세션 활동 감지로 재시작 유예 |
+| `deferred-unknown-activity` | 세션 프로세스는 있으나 transcript 명명 매치가 없어 보수 유예 |
+| `start-failed` / `restart-failed` | `<slug>/server.log` 확인 |
+| `no-server-process` | lock은 잡혔지만 cwd가 같은 서버 PID를 못 찾음. stale lock 또는 프로세스 shape 확인 |
+| `running-version-unresolvable` | 실행 바이너리 경로 조회 실패. `lsof`/`/proc` 접근 확인 |
+| `declared-instances-invalid` | `CLAUDE_RC_DECLARED_INSTANCES` JSON/경로/spawn/capacity 오류 |
+| `lock-acquire-timeout` | ensure 중복 실행 또는 lock fd 누수 의심 |
+
+증상별 조치:
+
+| 증상 | 조치 |
+|------|------|
+| `claude-rc start`가 "이미 실행 중" 출력 | 정상 멱등. 옵션 변경은 `claude-rc stop` 후 재시작 |
+| "same-dir claude remote-control process already exists" | 래퍼 우회 기동 감지. 기존 순정 서버 종료 후 래퍼로 시작 |
+| worktree 세션이 응답 없음 | tombstone 가능성. 해당 worktree에서 `claude remote-control --session-id <cse_...>` |
+| capacity 부족 | claude.ai/모바일 앱 환경 상세의 "세션 종료" UI로 슬롯 해제 |
+| 서버가 주기적으로 사라짐 | 네트워크 단절 자기 종료 가능. 다음 ensure 주기와 `server.log` 확인 |
 
 ## 관련 파일
 
-- 래퍼: `modules/nixos/scripts/claude-rc.sh` (store 패키지: `modules/nixos/lib/claude-rc-package.nix`)
+- 래퍼: `modules/nixos/scripts/claude-rc.sh`
+- 래퍼 패키지: `modules/nixos/lib/claude-rc-package.nix`
 - maint 엔진: `modules/nixos/programs/claude-remote-control/files/claude-rc-maint.sh`
-  (패키징: `modules/nixos/lib/claude-rc-maint-package.nix` — runtimeInputs 플랫폼 분기)
-- systemd 모듈 (NixOS): `modules/nixos/programs/claude-remote-control.nix`
-- launchd 모듈 (darwin): `modules/darwin/programs/claude-remote-control.nix` (래퍼 배선 포함)
-- 옵션 (NixOS): `modules/nixos/options/homeserver.nix` (`claudeRemoteControl.*`)
-- HM 배선 (NixOS): `modules/shared/programs/shell/nixos.nix`
+- maint 패키지: `modules/nixos/lib/claude-rc-maint-package.nix`
+- NixOS systemd 배선: `modules/nixos/programs/claude-remote-control.nix`
+- macOS launchd 배선: `modules/darwin/programs/claude-remote-control.nix`
+- NixOS 옵션: `modules/nixos/options/homeserver.nix`
+- NixOS Home Manager 래퍼 링크: `modules/shared/programs/shell/nixos.nix`
+- 테스트: `tests/suites/claude-remote-control.sh`

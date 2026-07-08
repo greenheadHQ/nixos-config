@@ -1,23 +1,21 @@
 # modules/darwin/programs/claude-remote-control.nix
-# Claude Code Remote Control bridge의 macOS(darwin) 배선 (#1007)
+# Claude Code Remote Control bridge의 macOS(darwin) headless 배선
 #
-# MiniPC의 systemd 버전(modules/nixos/programs/claude-remote-control.nix)의 launchd
+# NixOS systemd 버전(modules/nixos/programs/claude-remote-control.nix)의 launchd
 # 이식판. 래퍼(~/.local/bin/claude-rc) 설치와 30분 주기 version-drift 감시
-# (claude-rc-ensure launchd agent)를 한 모듈에 응집한다 — bridge 이름/capacity가
-# 래퍼 기본값과 maint env 양쪽에 일관되게 흘러야 하기 때문.
+# (claude-rc-ensure launchd agent)를 한 모듈에 응집한다.
 #
 # NixOS와의 차이:
-#   - 옵션 네임스페이스 없음: darwin에는 homeserver.*가 없어 hostType 분기 상수로
-#     시작한다 (opnix-rotate.nix 관례, 옵션화는 수요 생기면 도입 — YAGNI).
-#   - Pushover: minipcOnly인 pushover-system-monitor.age 대신 shared secrets의
-#     pushover-share.age(~/.config/pushover/share, 양쪽 맥북 복호화 가능)를 쓴다.
+#   - 옵션 네임스페이스 없음: darwin에는 homeserver.*가 없어 선언 인스턴스
+#     상수를 모듈 안에 둔다 (옵션화는 수요 생기면 도입 — YAGNI).
+#   - Pushover: NixOS 전용 pushover-system-monitor.age 대신 shared secrets의
+#     pushover-share.age(~/.config/pushover/share)를 쓴다.
 #     파일 형식(PUSHOVER_TOKEN/PUSHOVER_USER env)은 maint의 source 인터페이스와 동일.
 #     복호화 전(agenix 미완료)이면 maint의 graceful fallback이 알림만 스킵한다.
 #   - Persistent 미대응: launchd StartInterval은 놓친 실행을 다음 주기로 수용.
 {
   config,
   pkgs,
-  hostType,
   nixosConfigDefaultPath,
   ...
 }:
@@ -29,20 +27,23 @@ let
   pushoverCredPath = "${config.xdg.configHome}/pushover/share";
   serviceLib = import ../../nixos/lib/service-lib.nix { inherit pkgs; };
 
-  # bridge 운영 상수 — NixOS의 homeserver.claudeRemoteControl.* 대응.
-  # 자동 재시작이 이 값들을 명시 전달해야 래퍼 기본값으로 되돌아가는 회귀가 없다.
-  bridgeName = if hostType == "work" then "work-MacBook" else "MacBook";
-  bridgeCapacity = 8; # work-MacBookPro 수동 운영 실측값 승계
+  # 선언 인스턴스 운영 상수 — NixOS의 homeserver.claudeRemoteControl.* 대응.
+  bridgeSpawn = "worktree";
+  bridgeCapacity = null;
   bridgePermissionMode = "bypassPermissions";
   idleThresholdMinutes = 30;
   alertCooldownSeconds = 1800;
+  declaredInstances = builtins.toJSON [
+    {
+      path = nixosConfigDefaultPath;
+      spawn = bridgeSpawn;
+      capacity = bridgeCapacity;
+      permissionMode = bridgePermissionMode;
+    }
+  ];
 
-  # NixOS HM 배선(shell/nixos.nix)과 같은 표현식 — flakePath/defaultName만 darwin 값.
-  claudeRcPkg = import ../../nixos/lib/claude-rc-package.nix {
-    inherit pkgs;
-    flakePath = nixosConfigDefaultPath;
-    defaultName = bridgeName;
-  };
+  # NixOS HM 배선(shell/nixos.nix)과 같은 래퍼 패키지.
+  claudeRcPkg = import ../../nixos/lib/claude-rc-package.nix { inherit pkgs; };
   maintenanceCli = import ../../nixos/lib/claude-rc-maint-package.nix { inherit pkgs; };
 in
 {
@@ -59,20 +60,20 @@ in
       # (OnBootSec=2m 대응 — ensure가 bridge 부재 시 시작하므로 부팅 후 자동 구동).
       StartInterval = 1800;
       RunAtLoad = true;
+      # launchd는 job 종료 시 같은 process group의 잔여 프로세스를 정리한다.
+      # maint가 double-fork로 headless 서버를 re-parent해도 process group은 유지될 수
+      # 있으므로, ensure가 방금 띄운 서버를 같이 죽이지 않게 한다.
+      AbandonProcessGroup = true;
       EnvironmentVariables = {
         HOME = homeDir;
         STATE_DIR = stateDir;
-        CLAUDE_RC_BIN = "${claudeRcPkg}/bin/claude-rc";
+        CLAUDE_RC_DECLARED_INSTANCES = declaredInstances;
         SERVICE_LIB = "${serviceLib}";
         PUSHOVER_CRED_FILE = pushoverCredPath;
         IDLE_THRESHOLD_MINUTES = toString idleThresholdMinutes;
         ALERT_COOLDOWN_SECONDS = toString alertCooldownSeconds;
-        CLAUDE_RC_PERMISSION_MODE = bridgePermissionMode;
-        CLAUDE_RC_CAPACITY = toString bridgeCapacity;
-        CLAUDE_RC_NAME = bridgeName;
-        CLAUDE_RC_ALERT_HOST = bridgeName;
         # writeShellApplication runtimeInputs가 앞에 붙는다. 이 tail은
-        # ~/.local/bin(claude launcher + claude-rc 내부 bare `claude` 호출),
+        # ~/.local/bin(claude launcher + maint/래퍼 내부 bare `claude` 호출),
         # nix 프로필, 그리고 /usr/bin(시스템 pgrep — darwin은 procps 미지원이라
         # maint 패키징이 시스템 바이너리에 의존)을 해석하기 위해 필요하다.
         PATH = "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin";
