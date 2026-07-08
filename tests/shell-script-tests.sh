@@ -72,10 +72,11 @@ run_test "claude remote-control start requires git repo" test_claude_remote_cont
 run_test "claude remote-control start registers manual instance" test_claude_remote_control_start_registers_manual_instance
 run_test "claude remote-control start warns on ignored options" test_claude_remote_control_start_warns_when_running_options_differ
 run_test "claude remote-control rejects unmanaged same-cwd server" test_claude_remote_control_start_rejects_unmanaged_same_cwd_server
+run_test "claude remote-control maint rejects unmanaged same-cwd server" test_claude_remote_control_maint_rejects_unmanaged_same_cwd_server
 run_test "claude remote-control stop gates worktree sessions" test_claude_remote_control_stop_blocks_worktree_sessions_and_force_unregisters
 run_test "claude remote-control slug separates same basenames" test_claude_remote_control_slug_uses_hash_for_same_basename
 run_test "claude remote-control cleanup removes only orphan worktrees" test_claude_remote_control_cleanup_removes_only_orphan_worktrees
-run_test "claude remote-control maint seeds declarations" test_claude_remote_control_maint_seeds_declared_instances_without_overwrite
+run_test "claude remote-control maint reconciles declarations" test_claude_remote_control_maint_reconciles_declared_instances
 run_test "claude remote-control maint rejects invalid declarations" test_claude_remote_control_maint_rejects_invalid_declared_instances
 run_test "claude remote-control transcript gate scopes to worktrees" test_claude_remote_control_transcript_gate_scopes_to_worktree_dirs
 run_test "claude remote-control maint writes status schema" test_claude_remote_control_maint_status_schema

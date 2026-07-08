@@ -29,5 +29,6 @@ pkgs.writeShellApplication {
       lsof
       # pgrep은 nixpkgs 대체가 없어 호출측 PATH의 /usr/bin/pgrep으로 fallthrough.
     ];
-  text = builtins.readFile ../scripts/claude-rc.sh;
+  text =
+    builtins.readFile ../scripts/claude-rc-lib.sh + "\n" + builtins.readFile ../scripts/claude-rc.sh;
 }

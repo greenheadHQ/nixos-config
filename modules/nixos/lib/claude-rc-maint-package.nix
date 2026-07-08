@@ -30,5 +30,8 @@ pkgs.writeShellApplication {
       flock
       lsof
     ];
-  text = builtins.readFile ../programs/claude-remote-control/files/claude-rc-maint.sh;
+  text =
+    builtins.readFile ../scripts/claude-rc-lib.sh
+    + "\n"
+    + builtins.readFile ../programs/claude-remote-control/files/claude-rc-maint.sh;
 }

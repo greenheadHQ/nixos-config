@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # claude-rc-maint: Claude Code Remote Control headless multi-instance ensure.
 #
+# This file is packaged by concatenating modules/nixos/scripts/claude-rc-lib.sh
+# before it.
+#
 # NixOS systemd timer and macOS launchd run `claude-rc-maint ensure`
 # periodically. The script seeds declared instances, starts dead servers, and
 # restarts version-drifted servers when that will not tombstone active worktree
@@ -8,9 +11,6 @@
 set -euo pipefail
 
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
-STATE_DIR="${STATE_DIR:-$HOME/.local/state/claude-rc}"
-INSTANCES_FILE="$STATE_DIR/instances.json"
-INSTANCES_LOCK="$STATE_DIR/instances.json.lock"
 IDLE_THRESHOLD_MINUTES="${IDLE_THRESHOLD_MINUTES:-30}"
 MAINT_LOCK_TIMEOUT_SECONDS="${MAINT_LOCK_TIMEOUT_SECONDS:-120}"
 ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
@@ -20,14 +20,7 @@ CLAUDE_RC_DECLARED_INSTANCES="${CLAUDE_RC_DECLARED_INSTANCES:-}"
 CLAUDE_RC_PERMISSION_MODE="${CLAUDE_RC_PERMISSION_MODE:-bypassPermissions}"
 CLAUDE_RC_ALERT_HOST="${CLAUDE_RC_ALERT_HOST:-$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo claude-rc)}"
 
-LOG_MAX_BYTES=$((5 * 1024 * 1024))
 PROJECTS_DIR="$HOME/.claude/projects"
-BRIDGE_PROCESS_PATTERN='claude remote-control'
-# Spawned session argv may be the versioned Claude binary path, so --sdk-url is
-# the stable selector. The leading [-] avoids pgrep treating the pattern as an
-# option.
-BRIDGE_CHILD_PROCESS_PATTERN='[-]-sdk-url'
-TSV_NULL='__CLAUDE_RC_NULL__'
 
 DESIRED_VERSION=""
 GLOBAL_ACTION="none"
@@ -35,12 +28,6 @@ RESULTS_FILE=""
 
 log_info() { echo "[claude-rc-maint] $*"; }
 log_error() { echo "[claude-rc-maint] ERROR: $*" >&2; }
-
-iso_timestamp() {
-    local ts
-    ts=$(date '+%Y-%m-%dT%H:%M:%S%z')
-    printf '%s:%s\n' "${ts%??}" "${ts: -2}"
-}
 
 #───────────────────────────────────────────────────────────────────────────────
 # flock 직렬화 (수동 실행과 timer의 동시 실행 방지)
@@ -64,99 +51,7 @@ with_lock() {
     "$@" 9>&-
 }
 
-with_instances_lock() {
-    mkdir -p "$STATE_DIR"
-    (
-        flock 8
-        "$@"
-    ) 8>"$INSTANCES_LOCK"
-}
-
-sha256_hex() {
-    local value="$1"
-    if command -v shasum >/dev/null 2>&1; then
-        printf '%s' "$value" | shasum -a 256 | awk '{print $1}'
-        return
-    fi
-    if command -v sha256sum >/dev/null 2>&1; then
-        printf '%s' "$value" | sha256sum | awk '{print $1}'
-        return
-    fi
-    log_error "required command not found in PATH: shasum or sha256sum"
-    return 1
-}
-
-canonical_existing_path() {
-    local path="$1"
-    (cd "$path" 2>/dev/null && pwd -P)
-}
-
-slug_for_path() {
-    local path="$1" base digest
-    base=$(basename "$path")
-    digest=$(sha256_hex "$path")
-    printf '%s-%s\n' "$base" "${digest:0:8}"
-}
-
-instance_dir_for_path() {
-    local path="$1" slug
-    slug=$(slug_for_path "$path")
-    printf '%s/%s\n' "$STATE_DIR" "$slug"
-}
-
-lock_path_for_path() {
-    local path="$1"
-    printf '%s/lock\n' "$(instance_dir_for_path "$path")"
-}
-
-log_path_for_path() {
-    local path="$1"
-    printf '%s/server.log\n' "$(instance_dir_for_path "$path")"
-}
-
-ensure_instance_dir() {
-    local path="$1"
-    mkdir -p "$(instance_dir_for_path "$path")"
-}
-
-lock_is_free() {
-    local lock_path="$1"
-    flock -n "$lock_path" true
-}
-
-rotate_log_if_needed() {
-    local log_path="$1" size
-    if [ ! -f "$log_path" ]; then
-        return 0
-    fi
-    size=$(wc -c <"$log_path" | tr -d '[:space:]')
-    if [ "${size:-0}" -gt "$LOG_MAX_BYTES" ]; then
-        mv -f "$log_path" "$log_path.1"
-    fi
-}
-
-init_instances_file() {
-    mkdir -p "$STATE_DIR"
-    if [ ! -f "$INSTANCES_FILE" ]; then
-        printf '{"version":1,"instances":{}}\n' >"$INSTANCES_FILE"
-    fi
-}
-
-validate_permission_mode() {
-    case "$1" in
-        acceptEdits|bypassPermissions|default|dontAsk|plan) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-validate_spawn() {
-    case "$1" in
-        worktree|same-dir) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-upsert_declared_if_absent_unlocked() {
+reconcile_declared_instance_unlocked() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
     local tmp capacity_json registered_at
     capacity_json="null"
@@ -173,7 +68,18 @@ upsert_declared_if_absent_unlocked() {
         --arg registeredAt "$registered_at" \
         --argjson capacity "$capacity_json" \
         'if (.version == 1 and (.instances | type) == "object") then . else {version: 1, instances: {}} end
-         | if (.instances | has($path)) then .
+         | if (.instances | has($path)) then
+             if (.instances[$path].source // "manual") == "declared" then
+               .instances[$path] = (.instances[$path] + {
+                 spawn: $spawn,
+                 capacity: $capacity,
+                 permissionMode: $permissionMode,
+                 registeredAt: (.instances[$path].registeredAt // $registeredAt),
+                 source: "declared"
+               })
+             else
+               .
+             end
            else .instances[$path] = {
              spawn: $spawn,
              capacity: $capacity,
@@ -228,24 +134,10 @@ seed_declared_instances() {
             log_error "invalid declared permissionMode for $path: $permission_mode"
             return 1
         fi
-        with_instances_lock upsert_declared_if_absent_unlocked "$path" "$spawn" "$capacity" "$permission_mode"
+        # Manual registrations are user intent and win over declarations with
+        # the same path. Declared entries are reconciled to the current Nix env.
+        with_instances_lock reconcile_declared_instance_unlocked "$path" "$spawn" "$capacity" "$permission_mode"
     done < <(jq -c '.[]' <<<"$payload")
-}
-
-emit_instances_tsv_unlocked() {
-    init_instances_file
-    jq -r --arg tsv_null "$TSV_NULL" '
-        if (.version == 1 and (.instances | type) == "object") then .instances else {} end
-        | to_entries[]
-        | [
-            .key,
-            (.value.spawn // "worktree"),
-            (if (.value.capacity // null) == null then $tsv_null else (.value.capacity | tostring) end),
-            (.value.permissionMode // "bypassPermissions"),
-            (.value.source // "unknown")
-          ]
-        | @tsv
-    ' "$INSTANCES_FILE"
 }
 
 record_instance_result() {
@@ -259,84 +151,8 @@ record_instance_result() {
         >>"$RESULTS_FILE"
 }
 
-# 플랫폼별 실행 바이너리 경로 조회.
-# - Linux: /proc/PID/exe. 삭제된 바이너리는 " (deleted)" suffix가 붙는다.
-# - Darwin: /proc이 없어 lsof의 첫 txt(code segment) 항목을 쓴다. 실행 파일이
-#   항상 첫 txt로 나열되고(-F 필드 출력은 경로 공백 안전; 실측), ps -o comm=은
-#   argv[0] 기반이라 symlink 경유 실행 시 실경로를 잃는다.
-#   삭제된 바이너리도 suffix 없이 원경로가 그대로 나오지만, 버전이 파일명이라
-#   desired와의 문자열 비교로 drift가 감지되므로 (deleted) 표식 없이도 충분하다.
-pid_exe_path() {
-    local pid="$1"
-    case "$(uname -s)" in
-        Darwin) lsof -a -p "$pid" -d txt -Fn 2>/dev/null | awk '/^n/ {print substr($0, 2); exit}' ;;
-        *) readlink "/proc/$pid/exe" 2>/dev/null ;;
-    esac
-}
-
-# pid_exe_path 기준 실행 중 버전. 바이너리가 삭제된 구버전이면 "deleted"를 붙여
-# 호출측이 drift로 취급하게 한다 (Linux 전용 신호 — Darwin 주석은 pid_exe_path 참조).
-pid_exe_version() {
-    local pid="$1" exe
-    exe=$(pid_exe_path "$pid") || return 1
-    [ -n "$exe" ] || return 1
-    case "$exe" in
-        *" (deleted)") echo "$(basename "${exe% (deleted)}") (deleted)" ;;
-        *) basename "$exe" ;;
-    esac
-}
-
 desired_claude_version() {
     basename "$(readlink -f "$CLAUDE_BIN")"
-}
-
-pid_cwd() {
-    local pid="$1"
-    lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | awk '/^n/ {print substr($0, 2); exit}'
-}
-
-same_cwd_as_path() {
-    local pid="$1" path="$2" cwd target
-    cwd=$(pid_cwd "$pid") || return 1
-    [ -n "$cwd" ] || return 1
-    target=$(canonical_existing_path "$path") || return 1
-    [ "$cwd" = "$target" ]
-}
-
-is_flock_process() {
-    local pid="$1" exe base
-    exe=$(pid_exe_path "$pid") || return 1
-    [ -n "$exe" ] || return 1
-    base=$(basename "${exe% (deleted)}")
-    [ "$base" = "flock" ]
-}
-
-find_server_pid_for_path() {
-    local path="$1" pid
-    while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        same_cwd_as_path "$pid" "$path" || continue
-        if is_flock_process "$pid"; then
-            continue
-        fi
-        echo "$pid"
-        return 0
-    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
-    return 1
-}
-
-count_worktree_session_procs() {
-    local instance_path="$1" wt_root pid cwd count=0
-    wt_root="$instance_path/.claude/worktrees/"
-    # pgrep -c is not portable to macOS BSD pgrep, so count PID lines manually.
-    while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        cwd=$(pid_cwd "$pid") || continue
-        case "$cwd" in
-            "$wt_root"*) count=$((count + 1)) ;;
-        esac
-    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_CHILD_PROCESS_PATTERN" 2>/dev/null || true)
-    echo "$count"
 }
 
 normalized_instance_prefix() {
@@ -393,53 +209,6 @@ restart_gate() {
     return 2
 }
 
-start_server() {
-    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
-    local instance_dir lock_path log_path
-    instance_dir=$(instance_dir_for_path "$path")
-    lock_path="$instance_dir/lock"
-    log_path="$instance_dir/server.log"
-    mkdir -p "$instance_dir"
-    rotate_log_if_needed "$log_path"
-
-    # macOS does not ship setsid. The outer background subshell exits after
-    # spawning the inner one, so the server is re-parented and survives terminal,
-    # systemd oneshot (KillMode=process), and launchd agent exit. stdin/logs are
-    # detached, and SIGHUP is ignored before exec for terminal-close survival.
-    (
-        cd "$path" || exit 1
-        (
-            trap '' HUP
-            exec </dev/null >>"$log_path" 2>&1
-            if [ -n "$capacity" ]; then
-                exec env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
-                    flock -n "$lock_path" claude remote-control \
-                    --spawn "$spawn" \
-                    --permission-mode "$permission_mode" \
-                    --capacity "$capacity" \
-                    --no-create-session-in-dir
-            else
-                exec env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
-                    flock -n "$lock_path" claude remote-control \
-                    --spawn "$spawn" \
-                    --permission-mode "$permission_mode" \
-                    --no-create-session-in-dir
-            fi
-        ) &
-    ) &
-}
-
-wait_until_server_stops() {
-    local pid="$1"
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
-        if ! kill -0 "$pid" 2>/dev/null; then
-            return 0
-        fi
-        sleep 1
-    done
-    return 1
-}
-
 restart_server() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4" pid lock_path
     lock_path=$(lock_path_for_path "$path")
@@ -452,6 +221,9 @@ restart_server() {
 
     if ! lock_is_free "$lock_path"; then
         return 1
+    fi
+    if has_unmanaged_server_for_path "$path"; then
+        return 2
     fi
     start_server "$path" "$spawn" "$capacity" "$permission_mode"
     sleep 2
@@ -468,9 +240,8 @@ capture_started_version() {
 }
 
 process_instance() {
-    local path="$1" spawn="$2" capacity="$3" permission_mode="$4" source="$5"
-    local lock_path pid running_version action gate_rc started_version
-    : "$source"
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
+    local lock_path pid running_version action gate_rc started_version restart_rc
 
     if [ ! -d "$path" ]; then
         action="path-missing"
@@ -498,6 +269,15 @@ process_instance() {
     ensure_instance_dir "$path"
     lock_path=$(lock_path_for_path "$path")
     if lock_is_free "$lock_path"; then
+        # A wrapper-bypassed plain CLI server in the same cwd does not hold our
+        # lock. Starting another server here permanently creates an undeletable
+        # ghost environment, so ensure must share the wrapper's cwd guard.
+        if has_unmanaged_server_for_path "$path"; then
+            action="unmanaged-server-present"
+            record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+            log_error "unmanaged same-cwd server present: $path"
+            return 1
+        fi
         start_server "$path" "$spawn" "$capacity" "$permission_mode"
         sleep 2
         if lock_is_free "$lock_path"; then
@@ -536,11 +316,19 @@ process_instance() {
         same-dir)
             # Live measurement confirmed same-dir spawned sessions reconnect to
             # the restarted server, so version drift can be corrected eagerly.
-            if restart_server "$path" "$spawn" "$capacity" "$permission_mode"; then
+            restart_rc=0
+            restart_server "$path" "$spawn" "$capacity" "$permission_mode" || restart_rc=$?
+            if [ "$restart_rc" -eq 0 ]; then
                 action="restarted-version-drift"
                 log_info "restarted same-dir drift: $path (${running_version} -> ${DESIRED_VERSION})"
                 record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
                 return 0
+            fi
+            if [ "$restart_rc" -eq 2 ]; then
+                action="unmanaged-server-present"
+                record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+                log_error "unmanaged same-cwd server present after stop: $path"
+                return 1
             fi
             action="restart-failed"
             record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
@@ -551,11 +339,19 @@ process_instance() {
             restart_gate "$path" || gate_rc=$?
             case "$gate_rc" in
                 0)
-                    if restart_server "$path" "$spawn" "$capacity" "$permission_mode"; then
+                    restart_rc=0
+                    restart_server "$path" "$spawn" "$capacity" "$permission_mode" || restart_rc=$?
+                    if [ "$restart_rc" -eq 0 ]; then
                         action="restarted-version-drift"
                         log_info "restarted worktree drift: $path (${running_version} -> ${DESIRED_VERSION})"
                         record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
                         return 0
+                    fi
+                    if [ "$restart_rc" -eq 2 ]; then
+                        action="unmanaged-server-present"
+                        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+                        log_error "unmanaged same-cwd server present after stop: $path"
+                        return 1
                     fi
                     action="restart-failed"
                     record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
@@ -589,7 +385,7 @@ process_instance() {
 }
 
 ensure_core() {
-    local entries rc path spawn capacity permission_mode source
+    local entries rc path spawn capacity permission_mode
     GLOBAL_ACTION="running"
 
     seed_declared_instances || return 1
@@ -610,10 +406,10 @@ ensure_core() {
     fi
 
     rc=0
-    while IFS=$'\t' read -r path spawn capacity permission_mode source; do
+    while IFS=$'\t' read -r path spawn capacity permission_mode; do
         [ -n "$path" ] || continue
         [ "$capacity" = "$TSV_NULL" ] && capacity=""
-        process_instance "$path" "$spawn" "$capacity" "$permission_mode" "$source" || rc=1
+        process_instance "$path" "$spawn" "$capacity" "$permission_mode" || rc=1
     done <<<"$entries"
 
     if [ "$rc" -eq 0 ]; then
@@ -668,7 +464,7 @@ failed_instance_summary() {
               | ["start-failed", "restart-failed", "no-server-process",
                  "running-version-unresolvable", "invalid-spawn",
                  "invalid-capacity", "invalid-permission-mode",
-                 "restart-gate-failed"] | index($action))
+                 "restart-gate-failed", "unmanaged-server-present"] | index($action))
           | "\(.path): \(.action)"
         ]
         | if length == 0 then "" else join("; ") end

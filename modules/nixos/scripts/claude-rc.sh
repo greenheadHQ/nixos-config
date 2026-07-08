@@ -1,22 +1,11 @@
 #!/usr/bin/env bash
 # claude-rc: Claude Code Remote Control headless multi-instance wrapper.
 #
-# Runtime dependencies are resolved from the user's PATH: claude, flock, git,
-# jq, lsof, pgrep, shasum or sha256sum. The wrapper intentionally has no Nix
-# runtimeInputs yet; the packaging changes are handled in the next phase.
+# This file is packaged by concatenating modules/nixos/scripts/claude-rc-lib.sh
+# before it. The Nix package provides flock/jq/lsof/pgrep/etc.; claude itself is
+# resolved from the caller's PATH tail so the user's launcher can self-update.
 
 set -euo pipefail
-
-STATE_DIR="${STATE_DIR:-$HOME/.local/state/claude-rc}"
-INSTANCES_FILE="$STATE_DIR/instances.json"
-INSTANCES_LOCK="$STATE_DIR/instances.json.lock"
-LOG_MAX_BYTES=$((5 * 1024 * 1024))
-BRIDGE_PROCESS_PATTERN='claude remote-control'
-# Spawned session argv may be the versioned Claude binary path, so --sdk-url is
-# the stable selector. The leading [-] avoids pgrep treating the pattern as an
-# option.
-BRIDGE_CHILD_PROCESS_PATTERN='[-]-sdk-url'
-TSV_NULL='__CLAUDE_RC_NULL__'
 
 ACTION="start"
 RC_SPAWN="worktree"
@@ -30,12 +19,6 @@ FORCE=false
 log_info() { echo "[claude-rc] $*"; }
 log_warn() { echo "[claude-rc] WARN: $*" >&2; }
 log_error() { echo "[claude-rc] ERROR: $*" >&2; }
-
-iso_timestamp() {
-    local ts
-    ts=$(date '+%Y-%m-%dT%H:%M:%S%z')
-    printf '%s:%s\n' "${ts%??}" "${ts: -2}"
-}
 
 usage() {
     cat <<'EOF'
@@ -76,20 +59,6 @@ require_common_cmds() {
     require_cmd pgrep
 }
 
-sha256_hex() {
-    local value="$1"
-    if command -v shasum >/dev/null 2>&1; then
-        printf '%s' "$value" | shasum -a 256 | awk '{print $1}'
-        return
-    fi
-    if command -v sha256sum >/dev/null 2>&1; then
-        printf '%s' "$value" | sha256sum | awk '{print $1}'
-        return
-    fi
-    log_error "required command not found in PATH: shasum or sha256sum"
-    exit 1
-}
-
 current_git_root() {
     local root
     if ! root=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null); then
@@ -97,117 +66,6 @@ current_git_root() {
         exit 1
     fi
     printf '%s\n' "$root"
-}
-
-canonical_existing_path() {
-    local path="$1"
-    (cd "$path" 2>/dev/null && pwd -P)
-}
-
-slug_for_path() {
-    local path="$1" base digest
-    base=$(basename "$path")
-    digest=$(sha256_hex "$path")
-    printf '%s-%s\n' "$base" "${digest:0:8}"
-}
-
-instance_dir_for_path() {
-    local path="$1" slug
-    slug=$(slug_for_path "$path")
-    printf '%s/%s\n' "$STATE_DIR" "$slug"
-}
-
-lock_path_for_path() {
-    local path="$1"
-    printf '%s/lock\n' "$(instance_dir_for_path "$path")"
-}
-
-log_path_for_path() {
-    local path="$1"
-    printf '%s/server.log\n' "$(instance_dir_for_path "$path")"
-}
-
-ensure_instance_dir() {
-    local path="$1"
-    mkdir -p "$(instance_dir_for_path "$path")"
-}
-
-lock_is_free() {
-    local lock_path="$1"
-    flock -n "$lock_path" true
-}
-
-rotate_log_if_needed() {
-    local log_path="$1" size
-    if [ ! -f "$log_path" ]; then
-        return 0
-    fi
-    size=$(wc -c <"$log_path" | tr -d '[:space:]')
-    if [ "${size:-0}" -gt "$LOG_MAX_BYTES" ]; then
-        mv -f "$log_path" "$log_path.1"
-    fi
-}
-
-init_instances_file() {
-    mkdir -p "$STATE_DIR"
-    if [ ! -f "$INSTANCES_FILE" ]; then
-        printf '{"version":1,"instances":{}}\n' >"$INSTANCES_FILE"
-    fi
-}
-
-with_instances_lock() {
-    mkdir -p "$STATE_DIR"
-    exec 8>"$INSTANCES_LOCK"
-    flock 8
-    "$@"
-}
-
-upsert_instance_unlocked() {
-    local path="$1" spawn="$2" capacity="$3" permission_mode="$4" source="$5"
-    local tmp capacity_json registered_at
-    capacity_json="null"
-    if [ -n "$capacity" ]; then
-        capacity_json="$capacity"
-    fi
-    registered_at=$(iso_timestamp)
-    init_instances_file
-    tmp=$(mktemp "$STATE_DIR/instances.XXXXXX") || return 1
-    jq \
-        --arg path "$path" \
-        --arg spawn "$spawn" \
-        --arg permissionMode "$permission_mode" \
-        --arg registeredAt "$registered_at" \
-        --arg source "$source" \
-        --argjson capacity "$capacity_json" \
-        'if (.version == 1 and (.instances | type) == "object") then . else {version: 1, instances: {}} end
-         | .instances[$path] = {
-             spawn: $spawn,
-             capacity: $capacity,
-             permissionMode: $permissionMode,
-             registeredAt: $registeredAt,
-             source: $source
-           }' \
-        "$INSTANCES_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
-    mv "$tmp" "$INSTANCES_FILE"
-}
-
-upsert_instance() {
-    with_instances_lock upsert_instance_unlocked "$@"
-}
-
-remove_instance_unlocked() {
-    local path="$1" tmp
-    init_instances_file
-    tmp=$(mktemp "$STATE_DIR/instances.XXXXXX") || return 1
-    jq --arg path "$path" \
-        'if (.version == 1 and (.instances | type) == "object") then . else {version: 1, instances: {}} end
-         | del(.instances[$path])' \
-        "$INSTANCES_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
-    mv "$tmp" "$INSTANCES_FILE"
-}
-
-remove_instance() {
-    with_instances_lock remove_instance_unlocked "$@"
 }
 
 warn_if_start_options_ignored() {
@@ -251,133 +109,6 @@ warn_if_start_options_ignored() {
     fi
 }
 
-pid_cwd() {
-    local pid="$1"
-    lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | awk '/^n/ {print substr($0, 2); exit}'
-}
-
-pid_exe_path() {
-    local pid="$1"
-    case "$(uname -s)" in
-        Darwin) lsof -a -p "$pid" -d txt -Fn 2>/dev/null | awk '/^n/ {print substr($0, 2); exit}' ;;
-        *) readlink "/proc/$pid/exe" 2>/dev/null ;;
-    esac
-}
-
-pid_exe_version() {
-    local pid="$1" exe
-    exe=$(pid_exe_path "$pid") || return 1
-    [ -n "$exe" ] || return 1
-    case "$exe" in
-        *" (deleted)") echo "$(basename "${exe% (deleted)}") (deleted)" ;;
-        *) basename "$exe" ;;
-    esac
-}
-
-same_cwd_as_path() {
-    local pid="$1" path="$2" cwd target
-    cwd=$(pid_cwd "$pid") || return 1
-    [ -n "$cwd" ] || return 1
-    target=$(canonical_existing_path "$path") || return 1
-    [ "$cwd" = "$target" ]
-}
-
-is_flock_process() {
-    local pid="$1" exe base
-    exe=$(pid_exe_path "$pid") || return 1
-    [ -n "$exe" ] || return 1
-    base=$(basename "${exe% (deleted)}")
-    [ "$base" = "flock" ]
-}
-
-find_server_pid_for_path() {
-    local path="$1" pid
-    while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        same_cwd_as_path "$pid" "$path" || continue
-        if is_flock_process "$pid"; then
-            continue
-        fi
-        echo "$pid"
-        return 0
-    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
-    return 1
-}
-
-has_unmanaged_server_for_path() {
-    local path="$1" pid
-    while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        same_cwd_as_path "$pid" "$path" || continue
-        if is_flock_process "$pid"; then
-            continue
-        fi
-        return 0
-    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
-    return 1
-}
-
-count_worktree_session_procs() {
-    local instance_path="$1" wt_root pid cwd count=0
-    wt_root="$instance_path/.claude/worktrees/"
-    # pgrep -c is not portable to macOS BSD pgrep, so count PID lines manually.
-    while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        cwd=$(pid_cwd "$pid") || continue
-        case "$cwd" in
-            "$wt_root"*) count=$((count + 1)) ;;
-        esac
-    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_CHILD_PROCESS_PATTERN" 2>/dev/null || true)
-    echo "$count"
-}
-
-start_server() {
-    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
-    local instance_dir lock_path log_path
-    instance_dir=$(instance_dir_for_path "$path")
-    lock_path="$instance_dir/lock"
-    log_path="$instance_dir/server.log"
-    mkdir -p "$instance_dir"
-    rotate_log_if_needed "$log_path"
-
-    # macOS does not ship setsid. The outer background subshell exits after
-    # spawning the inner one, so the server is re-parented and survives terminal,
-    # systemd oneshot (KillMode=process), and launchd agent exit. stdin/logs are
-    # detached, and SIGHUP is ignored before exec for terminal-close survival.
-    (
-        cd "$path" || exit 1
-        (
-            trap '' HUP
-            exec </dev/null >>"$log_path" 2>&1
-            if [ -n "$capacity" ]; then
-                exec env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
-                    flock -n "$lock_path" claude remote-control \
-                    --spawn "$spawn" \
-                    --permission-mode "$permission_mode" \
-                    --capacity "$capacity" \
-                    --no-create-session-in-dir
-            else
-                exec env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
-                    flock -n "$lock_path" claude remote-control \
-                    --spawn "$spawn" \
-                    --permission-mode "$permission_mode" \
-                    --no-create-session-in-dir
-            fi
-        ) &
-    ) &
-}
-
-wait_until_server_stops() {
-    local pid="$1"
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
-        if ! kill -0 "$pid" 2>/dev/null; then
-            return 0
-        fi
-        sleep 1
-    done
-    return 1
-}
-
 parse_args() {
     if [ $# -gt 0 ]; then
         case "$1" in
@@ -404,10 +135,7 @@ parse_args() {
         case "$1" in
             --spawn)
                 [ $# -ge 2 ] || { log_error "$1 requires an argument"; exit 1; }
-                case "$2" in
-                    worktree|same-dir) ;;
-                    *) log_error "Invalid spawn mode: $2"; exit 1 ;;
-                esac
+                validate_spawn "$2" || { log_error "Invalid spawn mode: $2"; exit 1; }
                 RC_SPAWN="$2"
                 RC_SPAWN_SET=true
                 shift 2
@@ -421,10 +149,7 @@ parse_args() {
                 ;;
             --permission-mode)
                 [ $# -ge 2 ] || { log_error "$1 requires an argument"; exit 1; }
-                case "$2" in
-                    acceptEdits|bypassPermissions|default|dontAsk|plan) ;;
-                    *) log_error "Invalid permission mode: $2"; exit 1 ;;
-                esac
+                validate_permission_mode "$2" || { log_error "Invalid permission mode: $2"; exit 1; }
                 RC_PERMISSION_MODE="$2"
                 RC_PERMISSION_MODE_SET=true
                 shift 2

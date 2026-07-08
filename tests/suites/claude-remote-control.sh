@@ -3,11 +3,22 @@
 # shellcheck disable=SC2154,SC2164
 
 _claude_rc_wrapper_script() {
-  printf '%s\n' "$REPO_ROOT/modules/nixos/scripts/claude-rc.sh"
+  _claude_rc_concat_script "$REPO_ROOT/modules/nixos/scripts/claude-rc.sh"
 }
 
 _claude_rc_maint_script() {
-  printf '%s\n' "$REPO_ROOT/modules/nixos/programs/claude-remote-control/files/claude-rc-maint.sh"
+  _claude_rc_concat_script "$REPO_ROOT/modules/nixos/programs/claude-remote-control/files/claude-rc-maint.sh"
+}
+
+_claude_rc_concat_script() {
+  local body="$1" sandbox out
+  sandbox="$(new_sandbox)"
+  out="$sandbox/$(basename "$body")"
+  cat "$REPO_ROOT/modules/nixos/scripts/claude-rc-lib.sh" > "$out"
+  printf '\n' >> "$out"
+  cat "$body" >> "$out"
+  chmod +x "$out"
+  printf '%s\n' "$out"
 }
 
 _claude_rc_sha256() {
@@ -143,6 +154,8 @@ _claude_rc_run_maint() {
       PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
       FAKE_CLAUDE_LOG="$CLAUDE_RC_LOG" \
       FAKE_CLAUDE_HOLD_FILE="${CLAUDE_RC_HOLD_FILE:-}" \
+      FAKE_UNMANAGED_CWD="${FAKE_UNMANAGED_CWD:-}" \
+      FAKE_UNMANAGED_EXE="${FAKE_UNMANAGED_EXE:-}" \
       "$@"
   )
 }
@@ -315,6 +328,31 @@ test_claude_remote_control_start_rejects_unmanaged_same_cwd_server() {
   [ ! -f "$CLAUDE_RC_STATE/instances.json" ] || fail "unmanaged rejection must not register instance"
 }
 
+test_claude_remote_control_maint_rejects_unmanaged_same_cwd_server() {
+  local sandbox repo status rc
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  _claude_rc_write_instance "$repo" "worktree" "null" "bypassPermissions" "manual"
+  _claude_rc_install_unmanaged_process_mocks
+
+  rc=0
+  FAKE_UNMANAGED_CWD="$repo"
+  FAKE_UNMANAGED_EXE="$CLAUDE_RC_FAKE_BIN/claude"
+  _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>&1 || rc=$?
+  unset FAKE_UNMANAGED_CWD FAKE_UNMANAGED_EXE
+  [ "$rc" -ne 0 ] || fail "maint should fail when unmanaged same-cwd server exists"
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '
+    .action == "failed"
+    and .exitCode != 0
+    and .instances[0].action == "unmanaged-server-present"
+  ' <<<"$status" >/dev/null || fail "unmanaged status mismatch: $status"
+  [ ! -s "$CLAUDE_RC_LOG" ] || fail "maint unmanaged guard must not start claude: $(cat "$CLAUDE_RC_LOG")"
+}
+
 test_claude_remote_control_stop_blocks_worktree_sessions_and_force_unregisters() {
   local sandbox repo child_dir out rc status dead_repo
   sandbox="$(_claude_rc_new_sandbox)"
@@ -398,8 +436,8 @@ test_claude_remote_control_cleanup_removes_only_orphan_worktrees() {
   [ ! -e "$orphan_dir" ] || fail "orphan worktree dir should be removed"
 }
 
-test_claude_remote_control_maint_seeds_declared_instances_without_overwrite() {
-  local sandbox declared_path payload status
+test_claude_remote_control_maint_reconciles_declared_instances() {
+  local sandbox declared_path manual_path payload status registered_at
   sandbox="$(_claude_rc_new_sandbox)"
   _claude_rc_setup "$sandbox"
   _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
@@ -414,16 +452,33 @@ test_claude_remote_control_maint_seeds_declared_instances_without_overwrite() {
     and .instances[$path].capacity == null
     and .instances[$path].permissionMode == "bypassPermissions"
   ' <<<"$status" >/dev/null || fail "declared seed schema mismatch: $status"
+  registered_at="$(jq -r --arg path "$declared_path" '.instances[$path].registeredAt' <<<"$status")"
 
   payload="$(jq -n -c --arg path "$declared_path" '[{path: $path, spawn: "same-dir", capacity: 9, permissionMode: "plan"}]')"
   CLAUDE_RC_DECLARED_INSTANCES="$payload" _claude_rc_run_maint "$sandbox" bash "$(_claude_rc_maint_script)" ensure >/dev/null
   status="$(cat "$CLAUDE_RC_STATE/instances.json")"
-  jq -e --arg path "$declared_path" '
+  jq -e --arg path "$declared_path" --arg registeredAt "$registered_at" '
     .instances[$path].source == "declared"
+    and .instances[$path].spawn == "same-dir"
+    and .instances[$path].capacity == 9
+    and .instances[$path].permissionMode == "plan"
+    and .instances[$path].registeredAt == $registeredAt
+  ' <<<"$status" >/dev/null || fail "declared instance should reconcile to current declaration: $status"
+
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
+  manual_path="$sandbox/manual-project"
+  _claude_rc_write_instance "$manual_path" "worktree" "null" "bypassPermissions" "manual"
+  payload="$(jq -n -c --arg path "$manual_path" '[{path: $path, spawn: "same-dir", capacity: 9, permissionMode: "plan"}]')"
+  CLAUDE_RC_DECLARED_INSTANCES="$payload" _claude_rc_run_maint "$sandbox" bash "$(_claude_rc_maint_script)" ensure >/dev/null
+  status="$(cat "$CLAUDE_RC_STATE/instances.json")"
+  jq -e --arg path "$manual_path" '
+    .instances[$path].source == "manual"
     and .instances[$path].spawn == "worktree"
     and .instances[$path].capacity == null
     and .instances[$path].permissionMode == "bypassPermissions"
-  ' <<<"$status" >/dev/null || fail "declared seed should not overwrite existing instance: $status"
+  ' <<<"$status" >/dev/null || fail "manual instance should win over declaration: $status"
 }
 
 test_claude_remote_control_maint_rejects_invalid_declared_instances() {
