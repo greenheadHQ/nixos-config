@@ -69,17 +69,13 @@ reconcile_declared_instance_unlocked() {
         --argjson capacity "$capacity_json" \
         'if (.version == 1 and (.instances | type) == "object") then . else {version: 1, instances: {}} end
          | if (.instances | has($path)) then
-             if (.instances[$path].source // "manual") == "declared" then
-               .instances[$path] = (.instances[$path] + {
-                 spawn: $spawn,
-                 capacity: $capacity,
-                 permissionMode: $permissionMode,
-                 registeredAt: (.instances[$path].registeredAt // $registeredAt),
-                 source: "declared"
-               })
-             else
-               .
-             end
+             .instances[$path] = (.instances[$path] + {
+               spawn: $spawn,
+               capacity: $capacity,
+               permissionMode: $permissionMode,
+               registeredAt: (.instances[$path].registeredAt // $registeredAt),
+               source: "declared"
+             })
            else .instances[$path] = {
              spawn: $spawn,
              capacity: $capacity,
@@ -134,8 +130,10 @@ seed_declared_instances() {
             log_error "invalid declared permissionMode for $path: $permission_mode"
             return 1
         fi
-        # Manual registrations are user intent and win over declarations with
-        # the same path. Declared entries are reconciled to the current Nix env.
+        # Declared paths are authoritative desired state. If a manual start
+        # temporarily uses different options, the next ensure reconciles the
+        # registry back to the declaration and treats the manual change as an
+        # experiment.
         with_instances_lock reconcile_declared_instance_unlocked "$path" "$spawn" "$capacity" "$permission_mode"
     done < <(jq -c '.[]' <<<"$payload")
 }
@@ -232,6 +230,25 @@ restart_server() {
     fi
 }
 
+handle_restart_result() {
+    local path="$1" mode="$2" running_version="$3" restart_rc="$4" action
+    if [ "$restart_rc" -eq 0 ]; then
+        action="restarted-version-drift"
+        log_info "restarted ${mode} drift: $path (${running_version} -> ${DESIRED_VERSION})"
+        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+        return 0
+    fi
+    if [ "$restart_rc" -eq 2 ]; then
+        action="unmanaged-server-present"
+        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+        log_error "unmanaged same-cwd server present after stop: $path"
+        return 1
+    fi
+    action="restart-failed"
+    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+    return 1
+}
+
 capture_started_version() {
     local path="$1" pid
     if pid=$(find_server_pid_for_path "$path"); then
@@ -318,21 +335,7 @@ process_instance() {
             # the restarted server, so version drift can be corrected eagerly.
             restart_rc=0
             restart_server "$path" "$spawn" "$capacity" "$permission_mode" || restart_rc=$?
-            if [ "$restart_rc" -eq 0 ]; then
-                action="restarted-version-drift"
-                log_info "restarted same-dir drift: $path (${running_version} -> ${DESIRED_VERSION})"
-                record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
-                return 0
-            fi
-            if [ "$restart_rc" -eq 2 ]; then
-                action="unmanaged-server-present"
-                record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
-                log_error "unmanaged same-cwd server present after stop: $path"
-                return 1
-            fi
-            action="restart-failed"
-            record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
-            return 1
+            handle_restart_result "$path" "same-dir" "$running_version" "$restart_rc"
             ;;
         worktree)
             gate_rc=0
@@ -341,21 +344,7 @@ process_instance() {
                 0)
                     restart_rc=0
                     restart_server "$path" "$spawn" "$capacity" "$permission_mode" || restart_rc=$?
-                    if [ "$restart_rc" -eq 0 ]; then
-                        action="restarted-version-drift"
-                        log_info "restarted worktree drift: $path (${running_version} -> ${DESIRED_VERSION})"
-                        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
-                        return 0
-                    fi
-                    if [ "$restart_rc" -eq 2 ]; then
-                        action="unmanaged-server-present"
-                        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
-                        log_error "unmanaged same-cwd server present after stop: $path"
-                        return 1
-                    fi
-                    action="restart-failed"
-                    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
-                    return 1
+                    handle_restart_result "$path" "worktree" "$running_version" "$restart_rc"
                     ;;
                 1)
                     action="deferred-active-sessions"
@@ -451,24 +440,35 @@ load_alerting() {
     fi
 }
 
+is_failure_action() {
+    case "$1" in
+        path-missing|started|healthy|restarted-version-drift|deferred-active-sessions|deferred-unknown-activity)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
 failed_instance_summary() {
     if [ ! -s "$RESULTS_FILE" ]; then
         printf 'action=%s' "$GLOBAL_ACTION"
         return
     fi
-    local summary
-    summary=$(jq -r '
-        [
-          .[]
-          | select(.action as $action
-              | ["start-failed", "restart-failed", "no-server-process",
-                 "running-version-unresolvable", "invalid-spawn",
-                 "invalid-capacity", "invalid-permission-mode",
-                 "restart-gate-failed", "unmanaged-server-present"] | index($action))
-          | "\(.path): \(.action)"
-        ]
-        | if length == 0 then "" else join("; ") end
-    ' "$RESULTS_FILE")
+    local summary line path action
+    summary=""
+    while IFS=$'\t' read -r path action; do
+        [ -n "$path" ] || continue
+        if is_failure_action "$action"; then
+            line="$path: $action"
+            if [ -n "$summary" ]; then
+                summary="${summary}; ${line}"
+            else
+                summary="$line"
+            fi
+        fi
+    done < <(jq -r '[.path, .action] | @tsv' "$RESULTS_FILE")
     if [ -n "$summary" ]; then
         printf '%s' "$summary"
     else
@@ -564,4 +564,6 @@ main() {
     esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

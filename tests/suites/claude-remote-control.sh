@@ -249,6 +249,14 @@ EOS
   chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof"
 }
 
+_claude_rc_install_no_process_mocks() {
+  cat > "$CLAUDE_RC_FAKE_BIN/pgrep" <<'EOS'
+#!/usr/bin/env bash
+exit 1
+EOS
+  chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep"
+}
+
 test_claude_remote_control_start_requires_git_repo() {
   local sandbox out rc
   sandbox="$(_claude_rc_new_sandbox)"
@@ -306,6 +314,37 @@ test_claude_remote_control_start_warns_when_running_options_differ() {
   assert_contains "$(cat "$err")" "spawn: running=worktree, requested=same-dir"
   assert_contains "$(cat "$err")" "capacity: running=<omitted>, requested=7"
   assert_contains "$(cat "$err")" "permission-mode: running=bypassPermissions, requested=plan"
+
+  _claude_rc_release_server "$repo"
+}
+
+test_claude_remote_control_start_warns_and_preserves_declared_registry() {
+  local sandbox repo err status log
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  _claude_rc_write_instance "$repo" "worktree" "null" "bypassPermissions" "declared"
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  err="$sandbox/start.err"
+  _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start \
+    --spawn same-dir --capacity 7 --permission-mode plan >/dev/null 2> "$err"
+
+  assert_contains "$(cat "$err")" "이 경로는 Nix 선언 관리 대상"
+  assert_contains "$(cat "$err")" "spawn: declared=worktree, requested=same-dir"
+  assert_contains "$(cat "$err")" "capacity: declared=<omitted>, requested=7"
+  assert_contains "$(cat "$err")" "permission-mode: declared=bypassPermissions, requested=plan"
+
+  log="$(cat "$CLAUDE_RC_LOG")"
+  assert_contains "$log" "remote-control --spawn same-dir --permission-mode plan --capacity 7 --no-create-session-in-dir"
+  status="$(cat "$CLAUDE_RC_STATE/instances.json")"
+  jq -e --arg path "$repo" '
+    .instances[$path].source == "declared"
+    and .instances[$path].spawn == "worktree"
+    and .instances[$path].capacity == null
+    and .instances[$path].permissionMode == "bypassPermissions"
+  ' <<<"$status" >/dev/null || fail "declared start should preserve registry entry: $status"
 
   _claude_rc_release_server "$repo"
 }
@@ -395,6 +434,43 @@ test_claude_remote_control_stop_blocks_worktree_sessions_and_force_unregisters()
     || fail "dead server stop should only unregister: $status"
 }
 
+test_claude_remote_control_stop_preserves_registration_when_lock_held_without_pid() {
+  local sandbox repo slug lock_path lock_pid out rc status
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_install_no_process_mocks
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  _claude_rc_write_instance "$repo" "worktree" "null" "bypassPermissions" "manual"
+  slug="$(_claude_rc_slug "$repo")"
+  mkdir -p "$CLAUDE_RC_STATE/$slug"
+  lock_path="$CLAUDE_RC_STATE/$slug/lock"
+
+  "$CLAUDE_RC_FAKE_BIN/flock" "$lock_path" sleep 30 &
+  lock_pid=$!
+  for _ in {1..30}; do
+    if ! "$CLAUDE_RC_FAKE_BIN/flock" -n "$lock_path" true; then
+      break
+    fi
+    sleep 0.1
+  done
+  if "$CLAUDE_RC_FAKE_BIN/flock" -n "$lock_path" true; then
+    kill "$lock_pid" 2>/dev/null || true
+    wait "$lock_pid" 2>/dev/null || true
+    fail "test failed to acquire synthetic lock"
+  fi
+
+  rc=0
+  out="$(_claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" stop --force 2>&1)" || rc=$?
+  kill "$lock_pid" 2>/dev/null || true
+  wait "$lock_pid" 2>/dev/null || true
+  [ "$rc" -eq 1 ] || fail "stop should fail on held lock without PID, got $rc: $out"
+  assert_contains "$out" "no-server-process"
+  status="$(cat "$CLAUDE_RC_STATE/instances.json")"
+  jq -e --arg path "$repo" '.instances | has($path)' <<<"$status" >/dev/null \
+    || fail "held-lock stop must preserve registration: $status"
+}
+
 test_claude_remote_control_slug_uses_hash_for_same_basename() {
   local sandbox repo_a repo_b slug_a slug_b status
   sandbox="$(_claude_rc_new_sandbox)"
@@ -469,16 +545,33 @@ test_claude_remote_control_maint_reconciles_declared_instances() {
   _claude_rc_setup "$sandbox"
   _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
   manual_path="$sandbox/manual-project"
-  _claude_rc_write_instance "$manual_path" "worktree" "null" "bypassPermissions" "manual"
-  payload="$(jq -n -c --arg path "$manual_path" '[{path: $path, spawn: "same-dir", capacity: 9, permissionMode: "plan"}]')"
+  _claude_rc_write_instance "$manual_path" "same-dir" "9" "plan" "manual"
+  payload="$(jq -n -c --arg path "$manual_path" '[{path: $path, spawn: "worktree", capacity: null, permissionMode: "bypassPermissions"}]')"
   CLAUDE_RC_DECLARED_INSTANCES="$payload" _claude_rc_run_maint "$sandbox" bash "$(_claude_rc_maint_script)" ensure >/dev/null
   status="$(cat "$CLAUDE_RC_STATE/instances.json")"
   jq -e --arg path "$manual_path" '
-    .instances[$path].source == "manual"
+    .instances[$path].source == "declared"
     and .instances[$path].spawn == "worktree"
     and .instances[$path].capacity == null
     and .instances[$path].permissionMode == "bypassPermissions"
-  ' <<<"$status" >/dev/null || fail "manual instance should win over declaration: $status"
+  ' <<<"$status" >/dev/null || fail "declared path should override manual registry entry: $status"
+
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
+  manual_path="$sandbox/manual-project"
+  declared_path="$sandbox/declared-project"
+  _claude_rc_write_instance "$manual_path" "same-dir" "9" "plan" "manual"
+  payload="$(jq -n -c --arg path "$declared_path" '[{path: $path, spawn: "worktree", capacity: null, permissionMode: "bypassPermissions"}]')"
+  CLAUDE_RC_DECLARED_INSTANCES="$payload" _claude_rc_run_maint "$sandbox" bash "$(_claude_rc_maint_script)" ensure >/dev/null
+  status="$(cat "$CLAUDE_RC_STATE/instances.json")"
+  jq -e --arg path "$manual_path" --arg declared "$declared_path" '
+    .instances[$path].source == "manual"
+    and .instances[$path].spawn == "same-dir"
+    and .instances[$path].capacity == 9
+    and .instances[$path].permissionMode == "plan"
+    and .instances[$declared].source == "declared"
+  ' <<<"$status" >/dev/null || fail "undeclared manual instance should remain untouched: $status"
 }
 
 test_claude_remote_control_maint_rejects_invalid_declared_instances() {
@@ -532,8 +625,7 @@ test_claude_remote_control_transcript_gate_scopes_to_worktree_dirs() {
   _claude_rc_setup "$sandbox"
   repo="$sandbox/repo"
   _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
-  copy="$sandbox/maint-sourceable.sh"
-  sed '$d' "$(_claude_rc_maint_script)" > "$copy"
+  copy="$(_claude_rc_maint_script)"
   cat > "$CLAUDE_RC_FAKE_BIN/pgrep" <<'EOS'
 #!/usr/bin/env bash
 exit 1

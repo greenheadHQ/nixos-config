@@ -109,6 +109,49 @@ warn_if_start_options_ignored() {
     fi
 }
 
+declared_instance_options_tsv() {
+    local path="$1"
+    [ -f "$INSTANCES_FILE" ] || return 0
+    jq -r --arg path "$path" --arg tsv_null "$TSV_NULL" '
+        if (.version == 1 and (.instances | type) == "object" and (.instances | has($path))
+            and (.instances[$path].source == "declared")) then
+          .instances[$path]
+          | [
+              (.spawn // "worktree"),
+              (if (.capacity // null) == null then $tsv_null else (.capacity | tostring) end),
+              (.permissionMode // "bypassPermissions")
+            ]
+          | @tsv
+        else
+          empty
+        end
+    ' "$INSTANCES_FILE"
+}
+
+warn_if_declared_start_options_differ() {
+    local declared="$1" declared_spawn declared_capacity declared_permission_mode
+    local -a diffs=()
+    [ -n "$declared" ] || return 0
+
+    IFS=$'\t' read -r declared_spawn declared_capacity declared_permission_mode <<<"$declared"
+    [ "$declared_capacity" = "$TSV_NULL" ] && declared_capacity=""
+
+    if [ "$RC_SPAWN_SET" = true ] && [ "$RC_SPAWN" != "$declared_spawn" ]; then
+        diffs+=("spawn: declared=${declared_spawn:-<unset>}, requested=$RC_SPAWN")
+    fi
+    if [ "$RC_CAPACITY_SET" = true ] && [ "$RC_CAPACITY" != "$declared_capacity" ]; then
+        diffs+=("capacity: declared=${declared_capacity:-<omitted>}, requested=$RC_CAPACITY")
+    fi
+    if [ "$RC_PERMISSION_MODE_SET" = true ] && [ "$RC_PERMISSION_MODE" != "$declared_permission_mode" ]; then
+        diffs+=("permission-mode: declared=${declared_permission_mode:-<unset>}, requested=$RC_PERMISSION_MODE")
+    fi
+
+    if [ "${#diffs[@]}" -gt 0 ]; then
+        log_warn "이 경로는 Nix 선언 관리 대상 — 다음 ensure에서 선언값으로 복원됨"
+        printf '[claude-rc] WARN: %s\n' "${diffs[@]}" >&2
+    fi
+}
+
 parse_args() {
     if [ $# -gt 0 ]; then
         case "$1" in
@@ -174,11 +217,12 @@ parse_args() {
 do_start() {
     require_common_cmds
     require_cmd claude
-    local instance_path lock_path log_path env_line
+    local instance_path lock_path log_path env_line declared_options
     instance_path=$(current_git_root)
     ensure_instance_dir "$instance_path"
     lock_path=$(lock_path_for_path "$instance_path")
     log_path=$(log_path_for_path "$instance_path")
+    declared_options=$(declared_instance_options_tsv "$instance_path")
 
     if ! lock_is_free "$lock_path"; then
         log_info "이미 실행 중: $instance_path"
@@ -196,6 +240,7 @@ do_start() {
         exit 1
     fi
 
+    warn_if_declared_start_options_differ "$declared_options"
     start_server "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE"
     sleep 2
 
@@ -207,7 +252,11 @@ do_start() {
         exit 1
     fi
 
-    upsert_instance "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE" "manual"
+    if [ -z "$declared_options" ]; then
+        upsert_instance "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE" "manual"
+    else
+        log_info "declared registry entry preserved: $instance_path"
+    fi
     log_info "서버 시작됨: $instance_path"
     log_info "log: $log_path"
     env_line=$(grep 'environment=' "$log_path" 2>/dev/null | tail -n 1 || true)
@@ -220,9 +269,10 @@ do_start() {
 
 do_stop() {
     require_common_cmds
-    local instance_path session_count pid
+    local instance_path session_count pid lock_path
     instance_path=$(current_git_root)
     ensure_instance_dir "$instance_path"
+    lock_path=$(lock_path_for_path "$instance_path")
 
     session_count=$(count_worktree_session_procs "$instance_path")
     if [ "$session_count" -gt 0 ] && [ "$FORCE" != true ]; then
@@ -240,6 +290,11 @@ do_stop() {
         fi
         log_info "서버 종료됨"
     else
+        if ! lock_is_free "$lock_path"; then
+            log_error "lock은 잡혔지만 cwd가 같은 서버 PID를 찾지 못함"
+            log_error "maint의 no-server-process와 같은 이상 상태이므로 등록을 보존함"
+            exit 1
+        fi
         log_info "서버가 이미 죽어 있음 — 등록만 해제"
     fi
 
@@ -341,4 +396,6 @@ main() {
     esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

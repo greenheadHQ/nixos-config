@@ -154,6 +154,22 @@ transcript 매칭은 `<정규화된 인스턴스 경로>--claude-worktrees-*`만
 - 서버는 네트워크 약 10분 단절 시 자기 종료한다. 30분 ensure가 부활을 담당한다.
 - 서버 종료 시 정상 종료와 kill 모두 자식 세션 프로세스를 함께 정리한다.
 
+## 기존 tmux bridge에서 마이그레이션
+
+구 tmux 기반 bridge가 같은 디렉토리에서 아직 떠 있으면 새 `claude-rc-maint`는
+`unmanaged-server-present`로 기동을 거부한다. 같은 디렉토리에 두 번째 서버를 띄우면
+삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다.
+
+절차:
+
+```bash
+tmux kill-session -t claude-rc
+claude-rc start
+```
+
+선언 인스턴스는 수동 `claude-rc start` 대신 다음 ensure 주기에 자동 기동시켜도 된다.
+같은 디렉토리 경로이므로 기존 claude.ai 환경을 회수한다.
+
 ## 트러블슈팅
 
 공통:
@@ -185,17 +201,31 @@ launchctl kickstart "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"
 | status action | 의미 / 조치 |
 |---------------|-------------|
 | `no-instances` | 등록된 인스턴스 없음. `claude-rc start` 또는 선언 env 확인 |
-| `path-missing` | 등록 경로가 없음. 등록은 유지되며 알림 대상 아님 |
+| `path-missing` | 등록 경로가 없음. 등록은 유지되며 알림 대상 아님. stale 등록이면 아래 flock+jq 예시로 제거 |
 | `started` | 죽은 인스턴스를 시작함 |
 | `healthy` | 실행 버전과 desired 버전 일치 |
 | `restarted-version-drift` | version drift 재시작 완료 |
 | `deferred-active-sessions` | worktree 세션 활동 감지로 재시작 유예 |
 | `deferred-unknown-activity` | 세션 프로세스는 있으나 transcript 명명 매치가 없어 보수 유예 |
 | `start-failed` / `restart-failed` | `<slug>/server.log` 확인 |
+| `unmanaged-server-present` | 같은 cwd의 unmanaged 서버 감지. legacy tmux bridge 잔존 포함. 기존 서버 종료 후 `claude-rc start` 또는 다음 ensure |
 | `no-server-process` | lock은 잡혔지만 cwd가 같은 서버 PID를 못 찾음. stale lock 또는 프로세스 shape 확인 |
 | `running-version-unresolvable` | 실행 바이너리 경로 조회 실패. `lsof`/`/proc` 접근 확인 |
 | `declared-instances-invalid` | `CLAUDE_RC_DECLARED_INSTANCES` JSON/경로/spawn/capacity 오류 |
 | `lock-acquire-timeout` | ensure 중복 실행 또는 lock fd 누수 의심 |
+
+stale 등록 수동 제거:
+
+```bash
+STATE_DIR="${STATE_DIR:-$HOME/.local/state/claude-rc}"
+path="/path/to/project"
+(
+  flock 8
+  tmp=$(mktemp "$STATE_DIR/instances.XXXXXX")
+  jq --arg path "$path" 'del(.instances[$path])' "$STATE_DIR/instances.json" >"$tmp"
+  mv "$tmp" "$STATE_DIR/instances.json"
+) 8>"$STATE_DIR/instances.json.lock"
+```
 
 증상별 조치:
 
