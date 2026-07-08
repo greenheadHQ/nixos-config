@@ -39,7 +39,7 @@ Claude 모바일 앱/claude.ai에서 이 flake가 관리하는 머신의 Claude 
 | `claude-rc` / `claude-rc start` | 현재 git top-level 디렉토리 인스턴스 시작 및 `instances.json` 등록 |
 | `claude-rc stop [path]` | 현재 또는 지정 절대경로 인스턴스 서버 종료 및 등록 해제. worktree 세션 존재 시 `--force` 필요 |
 | `claude-rc ls` | 등록 인스턴스, 실행 여부, PID, 버전, spawn, source, 로그 경로 출력 |
-| `claude-rc cleanup` | 현재 인스턴스의 orphan `.claude/worktrees/*` 디렉토리만 삭제 |
+| `claude-rc cleanup` | git worktree 등록이 끊긴 `.claude/worktrees/*` 잔해만 삭제. 등록된 worktree는 죽은 세션의 것이라도 비대상 — `wt cleanup` 사용 |
 
 옵션:
 
@@ -227,6 +227,7 @@ launchctl kickstart "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"
 | worktree 세션이 응답 없음 | tombstone 가능성. 해당 worktree에서 `claude remote-control --session-id <cse_...>` |
 | capacity 부족 | claude.ai/모바일 앱 환경 상세의 "세션 종료" UI로 슬롯 해제 |
 | 서버가 주기적으로 사라짐 | 네트워크 단절 자기 종료 가능. 다음 ensure 주기와 `server.log` 확인 |
+| 죽은 bridge 세션의 worktree/브랜치 잔존 | `claude-rc cleanup`은 git 등록된 worktree를 지우지 않는다. `wt ls`로 이름·dirty/unpushed 확인 후 `wt cleanup <name> [--yes]`로 정리 |
 
 ## 관련 파일
 
