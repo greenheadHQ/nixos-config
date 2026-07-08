@@ -56,10 +56,11 @@ run_driver() {
 run_driver "eval-tests" bash tests/run-eval-tests.sh
 
 # 2) shell-script-tests — 배포 레이아웃 fixture. runner가 repo-pinned pythonWithTomlkit으로
-#    self-wrap하지만, 미가용 환경 대비 명시적으로 nix shell wrap + _TOMLKIT_BOOTSTRAP_READY=1로
-#    중첩 nix shell 재실행을 방지한다(lefthook pre-push와 동일).
+#    self-wrap하지만, 명시적으로 nix shell wrap + GNU coreutils/findutils(karakeep/backup fixture의
+#    `touch -d`/`find -printf` 의존, #1009) + _TOMLKIT_BOOTSTRAP_READY=1(중첩 nix shell 방지)로
+#    실행한다(lefthook pre-push와 동일). `--inputs-from .`로 nixpkgs#를 flake.lock에 pin한다.
 run_driver "shell-script-tests" \
-  nix shell .#pythonWithTomlkit --command env _TOMLKIT_BOOTSTRAP_READY=1 \
+  nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils --command env _TOMLKIT_BOOTSTRAP_READY=1 \
   bash tests/run-shell-script-tests.sh
 
 # 3) codex-hook-fixtures — Codex stable hook 회귀 차단 결정적 fixture. --no-live, Python stdlib only.
