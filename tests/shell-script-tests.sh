@@ -16,6 +16,11 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY
 unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_IMPLICIT_WORK_TREE
 
 . "$SCRIPT_DIR/lib/test-common.sh"
+# run_test 를 job-pool 병렬 실행으로 override (test-common 의 순차 run_test 뒤에 source).
+# suites 는 test-common 을 재source 하지 않으므로(정의 전용) override 가 유지된다. 모든 run_test
+# 등록 후 파일 끝의 parallel_barrier 로 수집한다. TEST_JOBS=1 이면 기존 순차 동작으로 폴백한다.
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib/parallel-harness.sh"
 
 # 도메인 스위트(정의 전용) find 디스커버리 — tests/suites/ 한정(기존 test-*.sh 하네스 자동 제외)
 while IFS= read -r -d '' _suite; do
@@ -219,3 +224,7 @@ if codex_config_tomlkit_available; then
 else
   echo "==> codex-config fixtures: SKIPPED (tomlkit 미가용; 'nix shell .#pythonWithTomlkit --command bash tests/run-shell-script-tests.sh'로 전건 실행 권장; pre-push hook은 자동 wrap됨)" >&2
 fi
+
+# 병렬 큐잉된 모든 run_test 를 대기·집계한다(TEST_JOBS=1 순차 모드면 no-op). 실패가 하나라도 있으면
+# non-zero 로 종료해 run-shell-script-tests.sh 의 "All shell script tests passed" 출력과 pre-push 통과를 막는다.
+parallel_barrier

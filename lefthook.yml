@@ -87,15 +87,23 @@ commit-msg:
       run: '[ -f ./scripts/ai/commit-msg-pinning.sh ] && bash ./scripts/ai/commit-msg-pinning.sh {1} || true'
 
 pre-push:
+  # 4개 command(shell-script-tests·codex-hook-fixtures·flake-check·statusline-bats)를 병렬 실행한다.
+  # 각 command는 독립적이고 read-only 검증이라 순서 의존이 없다. 러너 자체 병렬화(job-pool)와
+  # over-subscribe되지만 대부분 I/O 바운드(git/파일/nix eval)라 경합이 흡수되어, 순차 합보다 크게
+  # 빠르다(실측: 순차 합 ~82s → 병렬 wall-clock ~42s). 러너 병렬화 + GNU 보장(#1009) 전까지는
+  # pre-push가 ~175s 걸리고 karakeep fixture 실패로 push가 차단됐다 — 이 변경으로 둘 다 해소된다.
+  parallel: true
   commands:
     shell-script-tests:
-      # nix shell wrap: codex-config fixture가 tomlkit을 필요로 하므로, repo-pinned
-      # packages.${system}.pythonWithTomlkit(flake.nix)를 PATH에 얹어 실행. devShell은
-      # 건드리지 않아 direnv/bare python3 해석 영향이 없고, nixpkgs# 임시 registry
-      # fetch 대신 flake input에 고정된 store path를 재사용해 오버헤드도 최소화.
-      # `_TOMLKIT_BOOTSTRAP_READY=1` env를 명시적으로 넘겨, `tests/run-shell-script-tests.sh`
-      # 내부의 tomlkit-bootstrap.sh가 중첩 `nix shell ...`을 다시 exec하지 않도록 한다.
-      run: nix shell .#pythonWithTomlkit --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
+      # nix shell wrap: codex-config fixture의 tomlkit + karakeep/backup fixture의 GNU 전용 확장
+      # (`touch -d '40 days ago'`, `find -printf`)을 위해 repo-pinned pythonWithTomlkit + GNU
+      # coreutils/findutils를 PATH에 얹어 실행한다(#1009: devShell 밖 BSD 도구로 karakeep fixture
+      # 실패). devShell은 건드리지 않아 direnv/bare python3 해석 영향이 없다. `--inputs-from .`로
+      # nixpkgs#를 repo flake.lock에 pin해 임시 registry fetch를 피한다(statusline-bats와 동일 패턴).
+      # `_TOMLKIT_BOOTSTRAP_READY=1`로 run-shell-script-tests.sh 내부 tomlkit-bootstrap.sh의 중첩
+      # `nix shell` re-exec을 막는다(이 wrap이 이미 동일 hermetic 런타임을 제공). 테스트 병렬 실행은
+      # 러너 자체(tests/lib/parallel-harness.sh job-pool)가 담당하므로 여기서 추가 배선은 없다.
+      run: nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
     codex-hook-fixtures:
       # pre-commit에 이미 동일 명령이 있지만 push 직전 재검증해 stale state 회귀 차단.
       # runner self-bootstrap이라 추가 nix shell wrap 불필요. live propagation은 attach하지 않음.
