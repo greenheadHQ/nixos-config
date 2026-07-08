@@ -273,6 +273,15 @@ EOS
 }
 
 _claude_rc_install_running_server_mocks() {
+  # 이 mock 세트는 실존하지 않는 가짜 pid(6262)를 서버로 흉내낸다. 실행 바이너리
+  # 조회의 Linux 분기(readlink /proc/PID/exe)는 커널 경로라 mock이 불가능하므로,
+  # fake uname으로 Darwin 분기(lsof — 아래 mock이 커버)를 강제해 이 mock 세트가
+  # 플랫폼과 무관하게 동작하게 한다. 없으면 Linux CI에서만 실행 버전 조회가
+  # 실패해 running-version-unresolvable 오탐이 난다.
+  cat > "$CLAUDE_RC_FAKE_BIN/uname" <<'EOS'
+#!/usr/bin/env bash
+echo Darwin
+EOS
   cat > "$CLAUDE_RC_FAKE_BIN/pgrep" <<'EOS'
 #!/usr/bin/env bash
 case "$*" in
@@ -300,7 +309,7 @@ EOS
 #!/usr/bin/env bash
 printf '%s\n' "${FAKE_SERVER_COMMAND:-claude remote-control}"
 EOS
-  chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof" "$CLAUDE_RC_FAKE_BIN/ps"
+  chmod +x "$CLAUDE_RC_FAKE_BIN/uname" "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof" "$CLAUDE_RC_FAKE_BIN/ps"
 }
 
 _claude_rc_make_recent_worktree_transcript() {
