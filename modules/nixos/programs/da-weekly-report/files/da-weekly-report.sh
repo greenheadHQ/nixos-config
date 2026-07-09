@@ -206,11 +206,14 @@ cat "$DRAFT_JSON" >> "$COMMENTARY_INPUT"
 
 if command -v codex-exec-supervised >/dev/null 2>&1; then
   set +e
+  # --skip-git-repo-check: scratch cwd는 의도적으로 git repo 밖이다 (secret/repo 접근 격리).
+  # 이 플래그가 없으면 codex가 untrusted directory로 거부한다 (systemd 실측에서 확인).
   cat "$COMMENTARY_INPUT" | env -u GH_TOKEN -u GITHUB_TOKEN CODEX_PROGRAMMATIC=1 codex-exec-supervised \
     --sandbox read-only \
     --ignore-user-config \
     --ignore-rules \
     --ephemeral \
+    --skip-git-repo-check \
     -c model_reasoning_effort=xhigh \
     -C "$SCRATCH_DIR" \
     -o "$COMMENTARY_OUT" \
