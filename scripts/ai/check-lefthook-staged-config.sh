@@ -87,11 +87,26 @@ pre-commit:
   commands:
     lefthook-guard-self-check:
       run: |
-        hook_path="$(git rev-parse --path-format=absolute --git-path hooks/pre-commit)"
-        if [ ! -f "$hook_path" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$hook_path"; then
-          echo "lefthook-guard-self-check: staged-config guard missing from $hook_path." >&2
-          echo "  Cause: another worktree's 'lefthook install' likely overwrote the shared hook." >&2
-          echo "  Fix:   re-run 'direnv reload' or 'bash scripts/ai/install-lefthook-hooks.sh' in the current worktree." >&2
+        hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
+        pre_commit="$hooks_dir/pre-commit"
+        problem=""
+        if [ ! -f "$pre_commit" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$pre_commit"; then
+          problem="staged-config guard block missing from $pre_commit"
+        else
+          for hook_name in pre-commit commit-msg pre-push; do
+            hook_path="$hooks_dir/$hook_name"
+            [ -f "$hook_path" ] || continue
+            if ! grep -F -- "--no-auto-install" "$hook_path" | grep -Fq 'call_lefthook run '; then
+              problem="--no-auto-install missing from the lefthook call in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
+              break
+            fi
+          done
+        fi
+        if [ -n "$problem" ]; then
+          echo "lefthook-guard-self-check: $problem" >&2
+          echo "  Cause: lefthook's implicit auto-sync regenerated the hooks (happens on the first run after lefthook.yml changes)," >&2
+          echo "         or another worktree's raw 'lefthook install' overwrote the shared hook." >&2
+          echo "  Fix:   bash scripts/ai/install-lefthook-hooks.sh   (or 'direnv reload') in the current worktree, then retry." >&2
           exit 1
         fi
     ai-skills-consistency:

@@ -61,9 +61,10 @@ run_driver "eval-tests" bash tests/run-eval-tests.sh
 #    `touch -d`/`find -printf` 의존, #1009) + _TOMLKIT_BOOTSTRAP_READY=1(중첩 nix shell 방지)로
 #    실행한다(lefthook pre-push와 동일). `--inputs-from .`로 nixpkgs#를 flake.lock에 pin한다.
 #    claude-rc(#1052)가 require_cmd lsof를 도입했고 lsof는 NixOS 시스템 프로파일/CI PATH에
-#    항상 있지 않으므로 nixpkgs#lsof도 명시 제공한다(#1009와 동일 패턴).
+#    항상 있지 않으므로 nixpkgs#lsof도 명시 제공한다(#1009와 동일 패턴). lefthook auto-sync
+#    end-to-end 테스트는 stub이 아닌 실제 lefthook을 요구하므로 nixpkgs#lefthook도 얹는다.
 run_driver "shell-script-tests" \
-  nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof --command env _TOMLKIT_BOOTSTRAP_READY=1 \
+  nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof nixpkgs#lefthook --command env _TOMLKIT_BOOTSTRAP_READY=1 \
   bash tests/run-shell-script-tests.sh
 
 # 3) codex-hook-fixtures — Codex stable hook 회귀 차단 결정적 fixture. --no-live, Python stdlib only.

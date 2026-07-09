@@ -33,6 +33,18 @@ set -euo pipefail
 BEGIN_MARKER="# BEGIN nixos-config lefthook staged-config guard"
 END_MARKER="# END nixos-config lefthook staged-config guard"
 
+# `lefthook run`은 lefthook.checksum(해시 + config mtime)이 현재 lefthook.yml과
+# 어긋나면 hook 파일 전체를 암묵적으로 재설치한다 ("sync hooks: ✔️ (...)"). 그 재설치는
+# 순수 lefthook 템플릿을 쓰므로 inject_staged_guard가 넣은 guard 블록이 조용히 사라지고,
+# 바로 그 실행의 lefthook-guard-self-check가 자기가 방금 잃은 guard를 발견해 commit을
+# 차단한다 (= lefthook.yml이 바뀐 뒤 첫 commit은 항상 실패). hook 하나에서 sync가 나면
+# pre-commit/commit-msg/pre-push가 한꺼번에 재생성되므로 세 hook 모두 차단해야 한다.
+# LEFTHOOK_* env로는 끌 수 없고 `lefthook run --no-auto-install`이 유일한 차단 수단이라,
+# 설치된 모든 hook의 lefthook 호출부에 이 플래그를 주입한다. checksum 최신화는 아래
+# run_lefthook_install이 전담하므로 자동 재설치를 잃어도 손해가 없다.
+# 플래그 존재 재확인: `lefthook run --help | grep -- --no-auto-install` (lefthook 2.1.5 기준).
+NO_AUTO_INSTALL_FLAG="--no-auto-install"
+
 # 30 minutes — install itself runs in ~150ms; this guards against hung child
 # processes (NFS lock issues, OS bugs) rather than normal contention. Matches the
 # convention from modules/shared/scripts/lib/rebuild/locks.sh:198.
@@ -289,6 +301,80 @@ PY
   fi
 }
 
+disable_lefthook_auto_install() {
+  # 설치된 모든 lefthook hook의 `call_lefthook run "<hook>" "$@"` 호출부에
+  # NO_AUTO_INSTALL_FLAG를 주입한다 (배경은 상수 정의부 주석 참조).
+  #
+  # `--git-path hooks`는 core.hooksPath를 반영하므로 lefthook이 실제로 hook을 쓴 위치와
+  # 일치한다 ($git_dir/hooks와 다를 수 있다 — 사용자가 core.hooksPath를 재정의한 경우).
+  # inject_staged_guard가 hook을 찾는 방식과 같은 해석 경로를 쓴다.
+  local hook_file resolved_hooks_dir
+  resolved_hooks_dir="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path hooks)"
+  local -a hook_files=()
+  for hook_file in "$resolved_hooks_dir"/*; do
+    [ -f "$hook_file" ] || continue
+    # lefthook이 기존 hook을 밀어낼 때 남기는 백업본은 실행되지 않으므로 건드리지 않는다.
+    case "$hook_file" in *.old) continue ;; esac
+    grep -Fq 'call_lefthook run ' "$hook_file" || continue
+    hook_files+=("$hook_file")
+  done
+  if [ "${#hook_files[@]}" -eq 0 ]; then
+    fail "no lefthook-generated hooks found under $resolved_hooks_dir"
+  fi
+
+  # 200>&- closes the lock fd in the python child (same reason as run_lefthook_install).
+  python3 - "$NO_AUTO_INSTALL_FLAG" "${hook_files[@]}" 200>&- <<'PY'
+from __future__ import annotations
+
+from pathlib import Path
+import os
+import sys
+import tempfile
+
+flag = sys.argv[1]
+call_prefix = 'call_lefthook run "'
+call_suffix = '"$@"'
+
+for raw_path in sys.argv[2:]:
+    hook_path = Path(raw_path)
+    lines = hook_path.read_text(encoding="utf-8").splitlines()
+
+    changed = False
+    patched: list[str] = []
+    for line in lines:
+        if line.startswith(call_prefix) and line.endswith(call_suffix) and flag not in line:
+            line = f"{line[: -len(call_suffix)]}{flag} {call_suffix}"
+            changed = True
+        patched.append(line)
+
+    if not changed:
+        continue
+
+    # Atomic replace: a hook process already executing this file keeps reading the
+    # old inode. An in-place truncate+write would corrupt a running `sh` mid-read.
+    mode = hook_path.stat().st_mode
+    fd, tmp_name = tempfile.mkstemp(dir=str(hook_path.parent), prefix=f"{hook_path.name}.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(patched) + "\n")
+        os.chmod(tmp_name, mode)
+        os.replace(tmp_name, hook_path)
+    except BaseException:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+        raise
+PY
+
+  # Defense in depth: lefthook이 hook 템플릿의 호출부 형태를 바꾸면 위 치환이 조용히
+  # no-op가 되고, 다음 auto-sync가 guard를 다시 지운다. 그 실패를 install 시점으로 당긴다.
+  for hook_file in "${hook_files[@]}"; do
+    bash -n "$hook_file"
+    if ! grep -F -- "$NO_AUTO_INSTALL_FLAG" "$hook_file" | grep -Fq 'call_lefthook run '; then
+      fail "auto-install suppression failed: $NO_AUTO_INSTALL_FLAG missing from lefthook call in $hook_file"
+    fi
+  done
+}
+
 if is_main_repo; then
   cleanup_main_redundant_hooks_path
 else
@@ -297,3 +383,4 @@ fi
 acquire_install_lock
 run_lefthook_install
 inject_staged_guard
+disable_lefthook_auto_install
