@@ -183,6 +183,7 @@ _claude_rc_run_maint() {
       FAKE_SERVER_COMMAND="${FAKE_SERVER_COMMAND:-}" \
       FAKE_ORPHAN_PID="${FAKE_ORPHAN_PID:-}" \
       FAKE_ORPHAN_CWD="${FAKE_ORPHAN_CWD:-}" \
+      FAKE_ORPHAN_EXE="${FAKE_ORPHAN_EXE:-}" \
       FAKE_ORPHAN_PPID="${FAKE_ORPHAN_PPID:-}" \
       "$@"
   )
@@ -238,6 +239,8 @@ _claude_rc_write_instance() {
 }
 
 _claude_rc_install_unmanaged_process_mocks() {
+  # Force the Darwin pid_exe_path branch so this fake PID's txt path is fully
+  # controlled by the lsof mock, matching the running-server mock strategy.
   cat > "$CLAUDE_RC_FAKE_BIN/uname" <<'EOS'
 #!/usr/bin/env bash
 echo Darwin
@@ -293,6 +296,10 @@ EOS
 }
 
 _claude_rc_install_orphan_session_mocks() {
+  cat > "$CLAUDE_RC_FAKE_BIN/uname" <<'EOS'
+#!/usr/bin/env bash
+echo Darwin
+EOS
   cat > "$CLAUDE_RC_FAKE_BIN/pgrep" <<'EOS'
 #!/usr/bin/env bash
 case "$*" in
@@ -308,6 +315,10 @@ EOS
 set -euo pipefail
 args=" $* "
 case "$args" in
+  *" -p ${FAKE_ORPHAN_PID:-__none__} "*"txt"*)
+    [ -n "${FAKE_ORPHAN_EXE:-}" ] || exit 1
+    printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_EXE"
+    ;;
   *" -p ${FAKE_ORPHAN_PID:-__none__} "*"cwd"*)
     printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_CWD"
     ;;
@@ -323,7 +334,7 @@ case "$*" in
   *) exit 1 ;;
 esac
 EOS
-  chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof" "$CLAUDE_RC_FAKE_BIN/ps"
+  chmod +x "$CLAUDE_RC_FAKE_BIN/uname" "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof" "$CLAUDE_RC_FAKE_BIN/ps"
 }
 
 _claude_rc_install_no_process_mocks() {
@@ -882,7 +893,7 @@ EOS
 }
 
 test_claude_remote_control_maint_reaps_orphan_sessions_before_start() {
-  local sandbox repo orphan_dir term_mark orphan_pid out status rc
+  local sandbox repo orphan_dir term_mark orphan_pid out status rc non_versioned_reaped
   sandbox="$(_claude_rc_new_sandbox)"
   _claude_rc_setup "$sandbox"
   _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
@@ -906,6 +917,7 @@ test_claude_remote_control_maint_reaps_orphan_sessions_before_start() {
   rc=0
   FAKE_ORPHAN_PID="$orphan_pid" \
   FAKE_ORPHAN_CWD="$orphan_dir" \
+  FAKE_ORPHAN_EXE="$CLAUDE_RC_VERSIONS/claude-session" \
   FAKE_ORPHAN_PPID=1 \
     out="$(_claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure 2>&1)" || rc=$?
 
@@ -924,6 +936,50 @@ test_claude_remote_control_maint_reaps_orphan_sessions_before_start() {
     .action == "completed"
     and .instances[0].action == "started"
   ' <<<"$status" >/dev/null || fail "orphan reap should continue into started status: $status"
+
+  _claude_rc_release_server "$repo"
+
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
+  repo="$sandbox/repo"
+  orphan_dir="$repo/.claude/worktrees/non-versioned-session"
+  term_mark="$sandbox/non-versioned.term"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  mkdir -p "$orphan_dir"
+  _claude_rc_write_instance "$repo" "worktree" "null" "bypassPermissions" "manual"
+  _claude_rc_install_orphan_session_mocks
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  bash -c '
+    set -euo pipefail
+    cd "$1"
+    trap '\''printf term >"$2"; exit 0'\'' TERM
+    while :; do sleep 0.1; done
+  ' _ "$orphan_dir" "$term_mark" &
+  orphan_pid=$!
+
+  rc=0
+  FAKE_ORPHAN_PID="$orphan_pid" \
+  FAKE_ORPHAN_CWD="$orphan_dir" \
+  FAKE_ORPHAN_EXE="$sandbox/outside/not-claude" \
+  FAKE_ORPHAN_PPID=1 \
+    out="$(_claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure 2>&1)" || rc=$?
+
+  sleep 0.3
+  non_versioned_reaped=false
+  [ -f "$term_mark" ] && non_versioned_reaped=true
+  kill "$orphan_pid" 2>/dev/null || true
+  wait "$orphan_pid" 2>/dev/null || true
+
+  [ "$rc" -eq 0 ] || fail "maint should continue when non-versioned sdk-url process is ignored, got $rc: $out"
+  assert_not_contains "$out" "reaped"
+  [ "$non_versioned_reaped" = false ] || fail "non-versioned --sdk-url process must not be reaped"
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '
+    .action == "completed"
+    and .instances[0].action == "started"
+  ' <<<"$status" >/dev/null || fail "ignored non-versioned process should still allow start: $status"
 
   _claude_rc_release_server "$repo"
 }

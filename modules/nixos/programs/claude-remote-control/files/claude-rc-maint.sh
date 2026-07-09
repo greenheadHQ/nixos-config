@@ -595,6 +595,7 @@ Usage: claude-rc-maint ensure
 
 env:
   CLAUDE_BIN, STATE_DIR, CLAUDE_RC_DECLARED_INSTANCES,
+  VERSIONS_DIR (default ~/.local/share/claude/versions; exe boundary for server/session PID detection),
   IDLE_THRESHOLD_MINUTES (default 30), MAINT_LOCK_TIMEOUT_SECONDS (default 120),
   ALERT_COOLDOWN_SECONDS (default 1800), PUSHOVER_CRED_FILE, SERVICE_LIB,
   CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_ALERT_HOST

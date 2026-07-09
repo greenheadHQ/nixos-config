@@ -14,6 +14,8 @@ BRIDGE_PROCESS_PATTERN='claude remote-control'
 # the stable selector. The leading [-] avoids pgrep treating the pattern as an
 # option.
 BRIDGE_CHILD_PROCESS_PATTERN='[-]-sdk-url'
+ORPHAN_REAP_TERM_ATTEMPTS=5
+ORPHAN_REAP_TERM_SLEEP_SECONDS=0.2
 TSV_NULL='__CLAUDE_RC_NULL__'
 
 iso_timestamp() {
@@ -321,14 +323,20 @@ session_cwd_is_in_instance_scope() {
 
 is_orphan_session_proc_for_path() {
     local pid="$1" instance_path="$2" ppid
+    # Spawned session processes run as the versioned Claude binary. Keep the
+    # same executable boundary as server PID detection so an unrelated
+    # --sdk-url argv match is never a reap target.
+    is_claude_versions_exe_process "$pid" || return 1
     session_cwd_is_in_instance_scope "$pid" "$instance_path" || return 1
     ppid=$(pid_parent_pid "$pid") || return 1
     case "$ppid" in
         ''|*[!0-9]*) return 1 ;;
     esac
+    # The confirmed orphan shape is SIGKILL re-parenting to init. A ppid > 1
+    # non-server parent is not proven orphaned, so do not broaden this helper
+    # beyond the case its name describes.
     [ "$ppid" -le 1 ] && return 0
-    is_claude_versions_exe_process "$ppid" && return 1
-    return 0
+    return 1
 }
 
 find_orphan_session_pids_for_path() {
@@ -342,8 +350,8 @@ find_orphan_session_pids_for_path() {
 }
 
 reap_orphan_session_procs_for_path() {
-    local instance_path="$1" pid initial_count _
-    local -a pids remaining
+    local instance_path="$1" pid initial_count attempt
+    local -a pids term_pids remaining
     pids=()
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
@@ -355,25 +363,41 @@ reap_orphan_session_procs_for_path() {
         return 0
     fi
 
-    initial_count="${#pids[@]}"
+    term_pids=()
     for pid in "${pids[@]}"; do
+        # PIDs can exit and be reused between discovery and signal delivery;
+        # kill -0 only proves existence, not that this is still the same
+        # orphan session, so re-run the full predicate before signaling.
+        is_orphan_session_proc_for_path "$pid" "$instance_path" || continue
         kill -TERM "$pid" 2>/dev/null || true
+        term_pids+=("$pid")
     done
 
-    remaining=("${pids[@]}")
-    for _ in 1 2 3 4 5; do
+    if [ "${#term_pids[@]}" -eq 0 ]; then
+        echo 0
+        return 0
+    fi
+
+    initial_count="${#term_pids[@]}"
+    remaining=("${term_pids[@]}")
+    # Give cooperative session processes about 1s to handle SIGTERM before
+    # escalating to SIGKILL.
+    for ((attempt = 0; attempt < ORPHAN_REAP_TERM_ATTEMPTS; attempt++)); do
         remaining=()
-        for pid in "${pids[@]}"; do
+        for pid in "${term_pids[@]}"; do
             if kill -0 "$pid" 2>/dev/null; then
                 remaining+=("$pid")
             fi
         done
         [ "${#remaining[@]}" -gt 0 ] || break
-        pids=("${remaining[@]}")
-        sleep 0.2
+        term_pids=("${remaining[@]}")
+        sleep "$ORPHAN_REAP_TERM_SLEEP_SECONDS"
     done
 
     for pid in "${remaining[@]}"; do
+        # Revalidate again after the grace window; a recycled PID must not
+        # receive the terminal SIGKILL.
+        is_orphan_session_proc_for_path "$pid" "$instance_path" || continue
         kill -KILL "$pid" 2>/dev/null || true
     done
 
