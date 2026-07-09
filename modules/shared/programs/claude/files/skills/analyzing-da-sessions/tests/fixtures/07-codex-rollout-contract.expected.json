@@ -1,0 +1,36 @@
+{
+  "description": "Codex rollout payload.* 형식: VERDICT_JSON + dir marker 파싱 계약",
+  "expected_verdict_records": [
+    {
+      "jsonl_line_no": 1,
+      "payload_traversal_path": "$.payload.content[0].text",
+      "block_index": 0,
+      "block_kind": "first_pass",
+      "finding_id": "Design-2",
+      "verdict": "NOT_AN_ISSUE",
+      "confidence": "HIGH",
+      "source": "verdict_json",
+      "source_confidence": "high",
+      "severity": "MEDIUM",
+      "bundle": "Design",
+      "perspective": "Design",
+      "location_identity": "modules/bar.nix:34",
+      "payload_hash": "__NON_NULL__",
+      "finding_fingerprint": "__NON_NULL__"
+    }
+  ],
+  "expected_aggregate": {
+    "M-2": {
+      "n": 1,
+      "distribution": {
+        "NOT_AN_ISSUE": 1
+      }
+    },
+    "M-6": {
+      "coverage": {
+        "eligible_records": 1,
+        "missing_persistence_components": 0
+      }
+    }
+  }
+}

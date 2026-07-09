@@ -9,8 +9,9 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 | M-1 | 검토 강도 verdict 분포 | Intensity marker 출현 세션 분모 위에서 인라인 체크리스트 출력의 SKIP/LITE/FULL 카운트 | `extract_intensity_verdicts` |
 | M-2 | 판정자 verdict 분포 | Arbiter marker 출현 세션 분모 위에서 4-tier fallback으로 회수된 verdict의 CONFIRMED_ISSUE/NOT_AN_ISSUE/NEEDS_MORE_INFO 카운트 | `extract_strict_verdicts` + `extract_unmarked_json_verdicts` + `extract_kv_verdicts` + `extract_nl_summary` (아래 4-tier 섹션) |
 | M-3 | reviewer 묶음별 confirmed-rate | M-2 결과를 finding_id의 reviewer 묶음 prefix(correctness/design/regression/maintainability)로 그룹핑 → 각 묶음의 CONFIRMED_ISSUE 비율 | `get_bundle` + `BUNDLE_MAP` (아래 bundle normalize 섹션) |
-| M-4 | 동일 세션 max severity 전이 | 같은 세션 내 round N → N+1 confirmed finding 집합의 max severity 전이 매트릭스 | `find_severity_for_finding` + `severity_rank` + `compute_severity_transitions` (아래 severity 섹션) |
+| M-4 | 동일 세션 max severity 전이 | 같은 세션 내 result block N → N+1 confirmed finding 집합의 max severity 전이 매트릭스 | `VerdictRecord.block_index` + `find_severity_for_finding` + `severity_rank` + `compute_severity_transitions` (아래 severity 섹션) |
 | M-5 | selective consistency stability_status 분포 | round summary `selective:` 라인 카운트 (stable/split/fragmented). 부재 시 unavailable. | `resolve_stability_status_from_round_summary` (아래 StabilitySource 섹션) |
+| M-6 | persistence_key 비수렴 지표 | 동일 `(perspective, location_identity, finding_fingerprint)`가 서로 다른 result block에 반복되는 횟수 분포 + 세션별 top offenders | `compute_persistence_metrics` |
 
 참고: `analyze.py`의 함수/상수 이름이 본 문서의 source SoT다. 임시 스크립트(`/tmp/extraction-v2.py` 등)는 historical reference이며 정식 SoT가 아니다.
 
@@ -38,11 +39,68 @@ keyword 분모 금지: 본문에 `arbiter` 단어가 있다고 분모에 포함�
 | 4 | `kv` | medium | `**판정**: VERDICT` (Arbiter 결과 헤더 window 안만) |
 | 5 (session-only) | `nl_summary` | low | `CONFIRMED N건` / `Arbiter 검증 결과 N건` — finding-level 분포에는 미포함 |
 
-각 verdict record에 다음 필드를 부여한다:
-- `source`: `verdict_json` / `md_header` / `json_unmarked` / `kv` / `nl_summary` 중 하나
-- `source_confidence`: `high` / `medium` / `low`
+각 finding-level record는 아래 `VerdictRecord` 중간 모델로 정규화한다. 기존 소비자 하위호환을 위해
+`analyze_session()["verdicts"]`는 여전히 `list[dict]`이지만, dict 내용은 `VerdictRecord` 필드를
+그대로 담는다.
+
+| 기존 필드 | 유지 여부 | 신규 모델 매핑 |
+|-----------|-----------|----------------|
+| `finding_id` | 유지 | Arbiter/legacy finding ID 원문 |
+| `verdict` | 유지 + validation | `CONFIRMED_ISSUE` / `NOT_AN_ISSUE` / `NEEDS_MORE_INFO` 외 값은 record 제외 + diagnostic |
+| `confidence` | 의미 고정 | Arbiter 판정 신뢰도 (`HIGH`/`MEDIUM`/`LOW`/`N/A`) |
+| `source_confidence` | 유지 | extraction tier 신뢰도 (`high`/`medium`/`low`), `confidence`와 별개 |
+| `source` | 유지 | `verdict_json` / `md_header` / `json_unmarked` / `kv` |
+| `bundle` | 유지 | `get_bundle(finding_id)` 결과 |
+
+추가 필드:
+
+| 필드 | 의미 |
+|------|------|
+| `session_path` | 분석한 JSONL 파일 path |
+| `jsonl_line_no` | JSONL line 번호, 1부터 시작 |
+| `payload_traversal_path` | string payload까지의 JSON traversal path (`$.message...`, `$.payload...`) |
+| `payload_hash` | payload string 원문 SHA-256 |
+| `block_index` | 같은 세션 안 result block index, 0부터 시작 |
+| `block_kind` | `first_pass` / `selective` / `summary` |
+| `severity` | finding block 인접 `**심각도**` 라벨 |
+| `perspective` | finding ID 또는 finding block의 관점 |
+| `location_identity` | finding block의 위치 식별자 (`path:line` 등) |
+| `finding_fingerprint` | finding 요약 정규화 텍스트 SHA-256 |
+| `stability_status` | VERDICT_JSON 필드 보존. 개별 Arbiter 출력은 보통 `N/A` |
+| `canonical_verdict_hash` | canonical verdict object hash. verdict 단위 dedupe key 입력 |
 
 aggregate 결과의 `metrics["M-2"]["source_distribution"]` 필드에 source별 추출률을 출력해 low-confidence fallback 비율을 가시화한다.
+
+### VerdictRecord derivation table
+
+| 파생값 | 정의 |
+|--------|------|
+| `payload_hash` 입력 | JSONL decode 후 추출한 string payload 원문. newline/공백을 재정규화하지 않고 UTF-8 replacement encoding으로 SHA-256 계산 |
+| `jsonl_line_no` | 파일 첫 줄을 1로 하는 물리 line 번호 |
+| `payload_traversal_path` | JSON root `$`에서 dict key는 `.key`, list index는 `[n]`로 표기. Claude Code는 보통 `$.message.content[...]`, Codex rollout은 `$.payload.*` 경로가 된다 |
+| `block_index` | 같은 line 또는 직전 result line의 다음 line에 있는 verdict group은 같은 block. 중간에 non-result line이 끼면 새 block |
+| `block_kind` | payload text에 `selective:`/`selective consistency`/`fleiss-kappa`가 있으면 `selective`, round summary marker가 있으면 `summary`, 그 외 `first_pass` |
+| verdict dedupe key | `(session_path, jsonl_line_no, payload_traversal_path, finding_id, source, canonical_verdict_hash)` |
+| `payload_hash` 역할 | 동일 payload 재방문 방지용 pre-parse key. 한 payload가 여러 finding의 VERDICT_JSON을 담는 것은 정상이라 record dedupe key로 단독 사용 금지 |
+| excluded match 보관 | `VerdictRecord`가 아니라 `ExtractionDiagnostic` sidecar (`diagnostics.sessions[].exclusions`) |
+
+### ExtractionDiagnostic
+
+템플릿 제외, invalid verdict, parse failure, persistence component 추출 실패는 verdict가 아니다.
+따라서 `VerdictRecord`에 pseudo-record로 섞지 않고 `ExtractionDiagnostic` 목록에만 보관한다.
+JSON sidecar의 `diagnostics.summary`와 `diagnostics.sessions[]`가 소비한다.
+
+문서/템플릿 제외 조건:
+
+- outer fenced example 안의 VERDICT_JSON 예시
+- placeholder 문자열 (`"{finding ID 원문}"` 등)
+- enum union 문자열 (`CONFIRMED_ISSUE | NOT_AN_ISSUE`)
+- 한국어 `또는` 패턴
+- Arbiter 프롬프트 템플릿 문맥
+
+수치 라벨 주의: "parse failure raw 61건"은 Phase 0 최초 실측의 원시 parse failure 수이고,
+"exclusion fixture 62건"은 live corpus 재측정 시점의 템플릿 exclusion capture 수다. 두 값은
+서로 다른 측정 시점/분류 기준이며 `u1-exclusion-manifest.json`에 별도 필드로 남긴다.
 
 ### JSONL decode 의무
 
@@ -66,14 +124,42 @@ def extract_text_payloads(obj, accumulator):
 
 ## severity 추출 + 전이 매트릭스 (M-4)
 
-`analyze.py`의 `find_severity_for_finding` + `compute_severity_transitions`가 SoT다. 알고리즘 요약:
+`analyze.py`의 `VerdictRecord.block_index` + `find_severity_for_finding` +
+`compute_severity_transitions`가 SoT다. 알고리즘 요약:
 
 - `SEV_LINE` 정규식이 `**심각도**: <라벨>` 패턴을 추출한다.
 - `severity_rank`는 `SEVERITY_RANK` 상수 (`CRITICAL=4`, `HIGH=3`, `MEDIUM=2`, `LOW=1`) 매핑.
-- 같은 세션 내 round N의 confirmed finding 집합 max severity와 round N+1 confirmed finding 집합 max severity의 (from, to) 쌍을 카운트한다.
+- 같은 세션 내 result block N의 confirmed finding 집합 max severity와 block N+1 confirmed finding 집합 max severity의 (from, to) 쌍을 카운트한다.
 - severity 라벨이 finding 본문에서 추출되지 않은 경우 rank 0으로 처리하여 `NONE → ...` 전이로 분류.
+- round key는 `(session_path, block_index)`다. 기존 "finding_id가 재등장하면 새 round" 휴리스틱은 폐기한다.
 
-수치 변경 시 `SEVERITY_RANK` 상수만 수정한다 — 본 문서는 의도만 기록한다.
+수치 변경 시 `SEVERITY_RANK` 상수만 수정한다 — 본 문서는 의도만 기록한다. v1 첫 리포트는
+result block 기반 새 baseline이며, 이전 휴리스틱 기반 M-4 수치와 직접 비교하지 않는다.
+
+## persistence_key 비수렴 지표 (M-6)
+
+`persistence_key = (perspective, location_identity, finding_fingerprint)`다. 이는
+`run-da/references/dismissal-ledger.md`의 dismissal key에서 세션 경계를 넘는 정량 분석에
+부적합한 필드를 뺀 lossful grouping key다.
+
+| dismissal ledger 필드 | persistence_key 포함 | 사유 |
+|-----------------------|----------------------|------|
+| `changeset_key` | 제외 | 세션 간 시계열 비교에서는 changeset 경계가 달라질 수 있어 지속성 분석을 끊는다 |
+| `review_unit` | 제외 | reviewer bundle 개편 시 시계열이 단절된다 |
+| `perspective` | 포함 | 같은 위치라도 관점이 다르면 다른 failure mode |
+| `location_identity` | 포함 | 지속 여부의 위치 축 |
+| `finding_fingerprint` | 포함 | 같은 관점+위치라도 요약 fingerprint가 다르면 다른 finding |
+| `scope` | 제외 | ledger suppression 범위용 필드라 corpus 시계열 grouping에 부적합 |
+
+키 원천은 Arbiter VERDICT_JSON schema가 아니라 DA reviewer finding block 텍스트다. schema 확장은
+v1 범위 밖이다. 세 component가 모두 non-null인 record만 M-6이 소비한다. 하나라도 null이면
+metric에서 제외하고 `ExtractionDiagnostic(match_kind=missing_persistence_component)`와
+`metrics["M-6"]["coverage"]["missing_persistence_components"]`에 집계한다.
+
+출력:
+
+- `key_block_count_distribution`: 동일 persistence_key가 걸친 서로 다른 result block 수의 분포
+- `top_offenders_by_session`: 세션별 반복 key 상위 5개
 
 ## StabilitySource resolver (M-5, v1)
 

@@ -277,6 +277,12 @@ for_plan 핵심 원칙:
 
 실제 Arbiter 출력 시에는 inner JSON 블록 하나만 3-backtick fence로 내보내면 된다 (outer text fence는 이 문서의 예시용 wrapping이다).
 
+형식 변경 의무: `<!-- verdict-json:start -->` / `<!-- verdict-json:end -->` delimiter,
+inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 바꾸면
+`modules/shared/programs/claude/files/skills/analyzing-da-sessions/tests/fixtures/`의
+계약 fixture와 expected JSON을 같은 변경에서 갱신한다. Claude Code 세션 형식과 Codex rollout
+형식 fixture가 둘 다 통과해야 한다.
+
 필드 의미:
 - `schema_version`: VERDICT_JSON 스키마 버전. additive 필드 추가는 기존 버전 내 호환, breaking 변경 시 major 증가. 현재 `1.0`.
 - `finding_id`: DA reviewer finding의 원본 ID (예: `Correctness-1`, `SECURITY-2`).

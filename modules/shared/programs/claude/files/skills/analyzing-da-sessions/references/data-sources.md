@@ -15,11 +15,31 @@
 
 ### Claude Code (`~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`)
 
-각 line은 `{ "type": "user" | "assistant" | "tool_use_result" | ..., "uuid": "...", "timestamp": "...", "message": { ... } }` 형태의 단일 JSON object. 측정 알고리즘은 JSON parse → string payload 추출 → regex 적용 순서로 동작한다 (raw blob regex 금지).
+각 line은 `{ "type": "user" | "assistant" | "tool_use_result" | ..., "uuid": "...", "timestamp": "...", "message": { ... } }` 형태의 단일 JSON object. 측정 알고리즘은 JSON parse → string payload 추출 → regex 적용 순서로 동작한다 (raw blob regex 금지). `payload_traversal_path`는 보통 `$.message.content[...]` 또는 `$.message.content` 형태다.
 
 ### Codex (`~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ISO>-<id>.jsonl`)
 
-Codex CLI rollout 형식. 각 line은 별도 JSON object이며, `payload` 필드 또는 `content` 배열 안에 모델 출력 텍스트가 포함된다.
+Codex CLI rollout 형식. 각 line은 별도 JSON object이며, `payload` 필드 또는 `content` 배열 안에 모델 출력 텍스트가 포함된다. `payload_traversal_path`는 Codex wrapper 경계를 보존하기 위해 `$.payload.*` 형태를 그대로 기록한다.
+
+## payload traversal path
+
+`analyze.py`는 기존 string-only walker와 별도로 path-aware walker를 사용한다.
+
+| JSON node | path 표기 |
+|-----------|-----------|
+| root | `$` |
+| dict key | `.key` |
+| list item | `[index]` |
+
+예:
+
+| 세션 형식 | payload path 예 |
+|-----------|-----------------|
+| Claude Code | `$.message.content[0].text` |
+| Codex rollout | `$.payload.content[0].text` |
+
+이 path는 `VerdictRecord` dedupe key의 일부다. 같은 payload hash라도 서로 다른 traversal path에서
+나온 record는 별도 provenance로 남긴다.
 
 ## arbiter marker
 
@@ -68,6 +88,7 @@ INTENSITY_DIR_MARKER = re.compile(
 - `files`는 절대 경로 list. 호출 시 host 매핑은 path prefix로 자동 분류. v1 `analyze.py --corpus`는 `files` + `snapshot_id`만 소비한다.
 - `captured_metric_summary`는 baseline 값 — 향후 ±5% 비교 도구가 `--corpus` 결과와 함께 비교할 때 사용. v1 `analyze.py`는 이 필드를 직접 비교하지 않으므로 manifest 안에 보존만 된다.
 - manifest.json 생성 (capture)은 v1 `analyze.py`의 책임 범위가 아니다 — 별도 capture step (외부 스크립트 또는 follow-up 모드)에서 생성한 후 본 Skill 호출 시 `--corpus`로 입력한다.
+- host별 home prefix가 기본값과 다른 corpus는 `--host-home host=/abs/home`으로 `HOST_PATH_MAP` base를 override할 수 있다. 이 override는 validation/corpus prefix 계산에만 쓰이며 SSH command path는 계속 `~/.claude/projects`, `~/.codex/sessions`를 사용한다.
 
 ## subagent 폴더 제외 사유
 

@@ -1,0 +1,35 @@
+# 문서/프롬프트 템플릿 exclusion fixture.
+
+````text
+<!-- verdict-json:start -->
+```json
+{"schema_version":"1.0","finding_id":"SECURITY-1","verdict":"CONFIRMED_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+````
+
+<!-- verdict-json:start -->
+```json
+{"schema_version":"1.0","finding_id":"{finding ID 원문}","verdict":"CONFIRMED_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+
+<!-- verdict-json:start -->
+```json
+{"schema_version":"1.0","finding_id":"Design-1","verdict":"CONFIRMED_ISSUE" | "NOT_AN_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+
+<!-- verdict-json:start -->
+```json
+{"schema_version":"1.0","finding_id":"Regression-1","verdict":"CONFIRMED_ISSUE" 또는 "NOT_AN_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+
+## Arbiter 프롬프트 템플릿
+
+<!-- verdict-json:start -->
+```json
+{"schema_version":"1.0","finding_id":"Maintainability-1","verdict":"NEEDS_MORE_INFO","confidence":"N/A","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->

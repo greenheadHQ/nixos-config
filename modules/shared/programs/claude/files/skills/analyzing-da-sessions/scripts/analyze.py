@@ -32,6 +32,7 @@ import argparse
 import concurrent.futures
 import datetime
 import glob
+import hashlib
 import json
 import os
 import platform
@@ -40,6 +41,7 @@ import re
 import subprocess
 import sys
 from collections import Counter, defaultdict
+from dataclasses import asdict, dataclass
 from typing import Any, Iterable
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +52,8 @@ VALID_HOSTS = {"mac", "minipc"}
 
 VERDICT_CATEGORIES = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
 INTENSITY_VERDICTS = ("FULL", "LITE", "SKIP")
+VERDICT_SOURCES = ("verdict_json", "md_header", "json_unmarked", "kv")
+BLOCK_KINDS = ("first_pass", "selective", "summary")
 
 # 4-tier fallback patterns
 ARBITER_DIR_MARKER = re.compile(r"/tmp/da-[a-fA-F0-9]+-arbiter-(?!XXXXXX\b)[A-Za-z0-9]+")
@@ -144,6 +148,136 @@ def current_host() -> str:
     return "minipc"
 
 
+@dataclass
+class PayloadContext:
+    """VERDICT_JSON record provenance.
+
+    `extract_*` 함수는 기존 list[dict] 계약을 유지하지만, analyze_session 경로에서는
+    이 context를 붙여 VerdictRecord 필드를 완성한다.
+    """
+
+    session_path: str | None = None
+    jsonl_line_no: int | None = None
+    payload_traversal_path: str | None = None
+    payload_hash: str | None = None
+    block_index: int | None = None
+    block_kind: str = "first_pass"
+
+
+@dataclass
+class VerdictRecord:
+    """Validated finding-level verdict.
+
+    기존 dict 소비자 호환을 위해 `to_dict()`로 반환한다. 기존 필드
+    finding_id/verdict/confidence/source_confidence/source/bundle은 그대로 유지하고,
+    측정 재현성에 필요한 provenance와 persistence 입력 필드를 추가한다.
+    """
+
+    session_path: str | None
+    jsonl_line_no: int | None
+    payload_traversal_path: str | None
+    payload_hash: str | None
+    block_index: int | None
+    block_kind: str
+    finding_id: str
+    verdict: str
+    confidence: str
+    source_confidence: str
+    severity: str | None
+    source: str
+    bundle: str | None
+    perspective: str | None
+    location_identity: str | None
+    finding_fingerprint: str | None
+    stability_status: str
+    canonical_verdict_hash: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class ExtractionDiagnostic:
+    """Extraction sidecar entry. Exclusions/invalid/parse failures are not verdicts."""
+
+    session_path: str | None
+    jsonl_line_no: int | None
+    payload_traversal_path: str | None
+    payload_hash: str | None
+    block_index: int | None
+    match_kind: str
+    classification_reason: str
+    source: str | None = None
+    finding_id: str | None = None
+    verdict: str | None = None
+    snippet: str | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+
+
+def canonical_json_hash(obj: Any) -> str:
+    encoded = json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha256_text(encoded)
+
+
+def text_snippet(text: str, limit: int = 160) -> str:
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
+def diagnostic_to_dict(item: ExtractionDiagnostic | dict | str) -> dict:
+    if isinstance(item, ExtractionDiagnostic):
+        return item.to_dict()
+    if isinstance(item, dict):
+        return item
+    return {
+        "session_path": None,
+        "jsonl_line_no": None,
+        "payload_traversal_path": None,
+        "payload_hash": None,
+        "block_index": None,
+        "match_kind": "parse_failure",
+        "classification_reason": str(item),
+        "source": None,
+        "finding_id": None,
+        "verdict": None,
+        "snippet": None,
+    }
+
+
+def add_diagnostic(
+    diagnostics: list | None,
+    context: PayloadContext | None,
+    match_kind: str,
+    classification_reason: str,
+    *,
+    source: str | None = None,
+    finding_id: str | None = None,
+    verdict: str | None = None,
+    snippet: str | None = None,
+) -> None:
+    if diagnostics is None:
+        return
+    ctx = context or PayloadContext()
+    diagnostics.append(ExtractionDiagnostic(
+        session_path=ctx.session_path,
+        jsonl_line_no=ctx.jsonl_line_no,
+        payload_traversal_path=ctx.payload_traversal_path,
+        payload_hash=ctx.payload_hash,
+        block_index=ctx.block_index,
+        match_kind=match_kind,
+        classification_reason=classification_reason,
+        source=source,
+        finding_id=finding_id,
+        verdict=verdict,
+        snippet=snippet,
+    ))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. jsonl payload walker
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,6 +292,113 @@ def extract_text_payloads(obj: Any, accumulator: list) -> None:
     elif isinstance(obj, list):
         for v in obj:
             extract_text_payloads(v, accumulator)
+
+
+def extract_text_payloads_with_paths(
+    obj: Any,
+    accumulator: list[tuple[str, str]],
+    path: str = "$",
+) -> None:
+    """JSONL record에서 string payload와 traversal path를 함께 추출."""
+    if isinstance(obj, str):
+        accumulator.append((path, obj))
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            child_path = f"{path}.{key}"
+            extract_text_payloads_with_paths(value, accumulator, child_path)
+    elif isinstance(obj, list):
+        for idx, value in enumerate(obj):
+            extract_text_payloads_with_paths(value, accumulator, f"{path}[{idx}]")
+
+
+def in_long_outer_fence(text: str, pos: int) -> bool:
+    """4개 이상 backtick fence 안쪽인지 확인한다.
+
+    run-da 문서는 outer 4-backtick example 안에 실제 3-backtick VERDICT_JSON 예시를
+    넣는다. 내부 3-backtick은 분석 대상이지만 outer example 안이면 측정에서 제외한다.
+    """
+    open_len: int | None = None
+    for line in text[:pos].splitlines():
+        m = re.match(r"^\s*(`{4,}|~{4,})", line)
+        if not m:
+            continue
+        fence_len = len(m.group(1))
+        if open_len is None:
+            open_len = fence_len
+        elif fence_len >= open_len:
+            open_len = None
+    return open_len is not None
+
+
+def in_any_code_fence(text: str, pos: int) -> bool:
+    open_fence: tuple[str, int] | None = None
+    for line in text[:pos].splitlines():
+        m = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if not m:
+            continue
+        marker = m.group(1)
+        char = marker[0]
+        length = len(marker)
+        if open_fence is None:
+            open_fence = (char, length)
+        elif char == open_fence[0] and length >= open_fence[1]:
+            open_fence = None
+    return open_fence is not None
+
+
+def inside_verdict_json_marker(text: str, start: int, end: int) -> bool:
+    """Fenced JSON block이 이미 strict VERDICT_JSON delimiter 안에 있는지 확인."""
+    marker_start = text.rfind("<!-- verdict-json:start -->", 0, start)
+    marker_end_before = text.rfind("<!-- verdict-json:end -->", 0, start)
+    if marker_start == -1 or marker_end_before > marker_start:
+        return False
+    marker_end_after = text.find("<!-- verdict-json:end -->", end)
+    return marker_end_after != -1
+
+
+def classify_template_exclusion(
+    text: str,
+    start: int,
+    end: int,
+    body: str,
+    match_kind: str,
+) -> str | None:
+    """문서/프롬프트 템플릿 예시의 VERDICT_JSON false positive를 분류."""
+    context_start = max(0, start - 1200)
+    context_before = text[context_start:start]
+    if in_long_outer_fence(text, start):
+        return "outer_fenced_example"
+    if re.search(r'"\{[^"{}\n]{1,80}\}"', body):
+        return "placeholder_template"
+    if re.search(r"(CONFIRMED_ISSUE|NOT_AN_ISSUE|NEEDS_MORE_INFO)\"?\s*\|\s*", body):
+        return "union_string_template"
+    if re.search(r"(HIGH|MEDIUM|LOW|N/A)\"?\s*\|\s*", body):
+        return "union_string_template"
+    if " 또는 " in body or " / " in body and "CONFIRMED_ISSUE" in body:
+        return "or_pattern_template"
+    template_markers = (
+        "Arbiter 프롬프트 템플릿",
+        "기계 파싱용 VERDICT_JSON 블록",
+        "예시 블록",
+        "Few-shot 교정 예시",
+        "가상 예시",
+        "실제 Arbiter 출력 시",
+        "공통 프롬프트",
+    )
+    if any(marker in context_before for marker in template_markers):
+        return "arbiter_prompt_template_context"
+    if match_kind == "json_unmarked" and "schema_version" in body and "{finding ID" in body:
+        return "arbiter_prompt_template_context"
+    return None
+
+
+def infer_block_kind(text: str) -> str:
+    lowered = text.lower()
+    if "selective:" in lowered or "selective consistency" in lowered or "fleiss-kappa" in lowered:
+        return "selective"
+    if "round summary" in lowered or "라운드 요약" in text:
+        return "summary"
+    return "first_pass"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,60 +418,307 @@ def get_bundle(finding_id: str | None) -> str | None:
     return None
 
 
+def get_perspective(finding_id: str | None, text: str = "") -> str | None:
+    """ledger key의 perspective 후보를 finding_id 또는 finding block에서 추출."""
+    if finding_id:
+        m = FINDING_ID_LEGACY.search(finding_id)
+        if m:
+            return m.group(1).upper()
+        m = FINDING_ID_NORMALIZE.search(finding_id)
+        if m:
+            return m.group(1)
+    pm = re.search(
+        r"(?:관점|perspective)\s*[:：]\s*`?([A-Z][A-Z_]+|Correctness|Design|Regression|Maintainability)`?",
+        text,
+        re.I,
+    )
+    if pm:
+        value = pm.group(1)
+        return value.upper() if "_" in value else value
+    return None
+
+
+def finding_context_window(text: str, finding_id: str) -> str:
+    """finding_id 주변 markdown block을 잘라 persistence 입력 추출에 사용."""
+    if not finding_id:
+        return text[:2000]
+    m = re.search(re.escape(finding_id), text)
+    if not m:
+        return text[:2000]
+    start = text.rfind("\n###", 0, m.start())
+    if start == -1:
+        start = max(0, m.start() - 800)
+    next_header = text.find("\n###", m.end())
+    if next_header == -1:
+        next_header = min(len(text), m.end() + 1800)
+    return text[start:next_header]
+
+
+def extract_location_identity(block: str) -> str | None:
+    patterns = (
+        r"(?:\*\*)?(?:위치|Location|파일|경로)(?:\*\*)?\s*[:：]\s*`?([^`\n]+)`?",
+        r"`?([A-Za-z0-9_./-]+\.(?:nix|py|sh|md|lua|ts|tsx|js|json|ya?ml|toml):\d+)`?",
+    )
+    for pattern in patterns:
+        m = re.search(pattern, block, re.I)
+        if not m:
+            continue
+        value = m.group(1).strip()
+        value = re.split(r"\s+[—-]\s+|\s{2,}", value, maxsplit=1)[0].strip()
+        return value.strip("` ")
+    return None
+
+
+def extract_finding_summary(block: str) -> str | None:
+    patterns = (
+        r"(?:\*\*)?(?:문제|요약|Summary|Finding|Issue)(?:\*\*)?\s*[:：]\s*(.+)",
+        r"^-\s+(.+)",
+    )
+    excluded_prefixes = (
+        "**판정**",
+        "**신뢰도**",
+        "**기준 평가**",
+        "**stability_status**",
+        "**근거**",
+        "**증거**",
+    )
+    for pattern in patterns:
+        for m in re.finditer(pattern, block, re.I | re.M):
+            value = m.group(1).strip()
+            if not value or any(value.startswith(prefix) for prefix in excluded_prefixes):
+                continue
+            if "CONFIRMED_ISSUE" in value or "NOT_AN_ISSUE" in value or "NEEDS_MORE_INFO" in value:
+                continue
+            return value.strip("` ")
+    return None
+
+
+def normalize_fingerprint_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def derive_persistence_fields(text: str, finding_id: str) -> dict:
+    block = finding_context_window(text, finding_id)
+    perspective = get_perspective(finding_id, block)
+    location_identity = extract_location_identity(block)
+    summary = extract_finding_summary(block)
+    finding_fingerprint = sha256_text(normalize_fingerprint_text(summary)) if summary else None
+    return {
+        "perspective": perspective,
+        "location_identity": location_identity,
+        "finding_fingerprint": finding_fingerprint,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. verdict parser pipeline (4-tier fallback)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def extract_strict_verdicts(text: str, parse_failures: list | None = None) -> list[dict]:
+def make_verdict_record(
+    item: dict,
+    text: str,
+    source: str,
+    source_confidence: str,
+    context: PayloadContext | None = None,
+    diagnostics: list | None = None,
+) -> dict | None:
+    """Validated VerdictRecord dict를 만든다. invalid verdict는 diagnostic으로 분리."""
+    ctx = context or PayloadContext()
+    verdict = item.get("verdict", "")
+    finding_id = item.get("finding_id", "")
+    if finding_id is None:
+        finding_id = ""
+    finding_id = str(finding_id)
+    if verdict not in VERDICT_CATEGORIES:
+        add_diagnostic(
+            diagnostics,
+            ctx,
+            "invalid_verdict",
+            "verdict enum validation failed",
+            source=source,
+            finding_id=finding_id,
+            verdict=str(verdict),
+            snippet=text_snippet(json.dumps(item, ensure_ascii=False)),
+        )
+        return None
+
+    persistence = derive_persistence_fields(text, finding_id)
+    missing_components = [
+        key for key in ("perspective", "location_identity", "finding_fingerprint")
+        if not persistence.get(key)
+    ]
+    if missing_components:
+        add_diagnostic(
+            diagnostics,
+            ctx,
+            "missing_persistence_component",
+            "persistence_key component extraction failed: " + ",".join(missing_components),
+            source=source,
+            finding_id=finding_id,
+            verdict=verdict,
+            snippet=text_snippet(finding_context_window(text, finding_id)),
+        )
+
+    block_kind = ctx.block_kind if ctx.block_kind in BLOCK_KINDS else "first_pass"
+    confidence = item.get("confidence", "N/A")
+    stability_status = item.get("stability_status", "N/A")
+    canonical_source = {
+        "schema_version": item.get("schema_version", "1.0"),
+        "finding_id": finding_id,
+        "verdict": verdict,
+        "confidence": confidence,
+        "stability_status": stability_status,
+        "axes": item.get("axes", {}),
+    }
+    record = VerdictRecord(
+        session_path=ctx.session_path,
+        jsonl_line_no=ctx.jsonl_line_no,
+        payload_traversal_path=ctx.payload_traversal_path,
+        payload_hash=ctx.payload_hash,
+        block_index=ctx.block_index,
+        block_kind=block_kind,
+        finding_id=finding_id,
+        verdict=verdict,
+        confidence=str(confidence),
+        source_confidence=source_confidence,
+        severity=find_severity_for_finding(text, finding_id),
+        source=source,
+        bundle=get_bundle(finding_id),
+        perspective=persistence.get("perspective"),
+        location_identity=persistence.get("location_identity"),
+        finding_fingerprint=persistence.get("finding_fingerprint"),
+        stability_status=str(stability_status),
+        canonical_verdict_hash=canonical_json_hash(canonical_source),
+    )
+    return record.to_dict()
+
+
+def extract_strict_verdicts(
+    text: str,
+    parse_failures: list | None = None,
+    diagnostics: list | None = None,
+    context: PayloadContext | None = None,
+) -> list[dict]:
     """Tier 1 (VERDICT_JSON marker)을 우선 적용, finding_id 단위로 Tier 2 (### header)
     fallback. 같은 finding_id가 두 source에 모두 있으면 Tier 1만 채택해 중복 카운트를 차단한다.
     parse_failures가 주어지면 JSON parse 실패를 silent swallow 대신 누적한다.
     """
     verdicts = []
     seen_finding_ids: set[str] = set()
+    ctx = context or PayloadContext()
     for m in VERDICT_JSON_BLOCK.finditer(text):
+        exclusion = classify_template_exclusion(
+            text, m.start(), m.end(), m.group(1), "verdict_json"
+        )
+        if exclusion:
+            add_diagnostic(
+                diagnostics,
+                ctx,
+                "exclusion",
+                exclusion,
+                source="verdict_json",
+                snippet=text_snippet(m.group(0)),
+            )
+            continue
         try:
             v = json.loads(m.group(1))
         except Exception as e:
+            msg = f"verdict_json parse error: {type(e).__name__}: {text_snippet(m.group(1), 80)}"
             if parse_failures is not None:
-                snippet = m.group(1)[:80].replace("\n", " ")
-                parse_failures.append(f"verdict_json parse error: {type(e).__name__}: {snippet}")
+                parse_failures.append(msg)
+            add_diagnostic(
+                diagnostics,
+                ctx,
+                "parse_failure",
+                msg,
+                source="verdict_json",
+                snippet=text_snippet(m.group(1)),
+            )
             continue
-        finding_id = v.get("finding_id", "")
-        verdicts.append({
-            "finding_id": finding_id,
-            "verdict": v.get("verdict", ""),
-            "confidence": v.get("confidence", "N/A"),
-            "stability_status": v.get("stability_status", "N/A"),
-            "bundle": get_bundle(finding_id),
-            "source": "verdict_json",
-            "source_confidence": "high",
-        })
+        if not isinstance(v, dict):
+            add_diagnostic(
+                diagnostics,
+                ctx,
+                "invalid_json_type",
+                f"verdict_json root must be object, got {type(v).__name__}",
+                source="verdict_json",
+                snippet=text_snippet(m.group(1)),
+            )
+            continue
+        record = make_verdict_record(v, text, "verdict_json", "high", ctx, diagnostics)
+        if record is None:
+            continue
+        verdicts.append(record)
+        finding_id = record.get("finding_id", "")
         if finding_id:
             seen_finding_ids.add(finding_id)
     for m in HUMAN_VERDICT_HEADER.finditer(text):
+        if in_any_code_fence(text, m.start()):
+            add_diagnostic(
+                diagnostics,
+                ctx,
+                "exclusion",
+                "markdown_header_inside_fenced_example",
+                source="md_header",
+                finding_id=m.group(1),
+                verdict=m.group(2),
+                snippet=text_snippet(m.group(0)),
+            )
+            continue
+        exclusion = classify_template_exclusion(text, m.start(), m.end(), m.group(0), "md_header")
+        if exclusion:
+            add_diagnostic(
+                diagnostics,
+                ctx,
+                "exclusion",
+                exclusion,
+                source="md_header",
+                finding_id=m.group(1),
+                verdict=m.group(2),
+                snippet=text_snippet(m.group(0)),
+            )
+            continue
         finding_id = m.group(1)
         # Tier 1에서 이미 회수된 finding은 skip (4-tier fallback 의무 — 중복 카운트 차단)
         if finding_id in seen_finding_ids:
             continue
-        verdicts.append({
+        record = make_verdict_record({
             "finding_id": finding_id,
             "verdict": m.group(2),
             "confidence": "N/A",
             "stability_status": "N/A",
-            "bundle": get_bundle(finding_id),
-            "source": "md_header",
-            "source_confidence": "high",
-        })
-        seen_finding_ids.add(finding_id)
+        }, text, "md_header", "high", ctx, diagnostics)
+        if record is None:
+            continue
+        verdicts.append(record)
+        if finding_id:
+            seen_finding_ids.add(finding_id)
     return verdicts
 
 
-def extract_unmarked_json_verdicts(text: str) -> list[dict]:
+def extract_unmarked_json_verdicts(
+    text: str,
+    diagnostics: list | None = None,
+    context: PayloadContext | None = None,
+) -> list[dict]:
     """Tier 3: marker 없는 fenced JSON array/object에서 verdict 회수."""
     verdicts = []
+    ctx = context or PayloadContext()
     for m in FENCED_JSON_BLOCK.finditer(text):
+        if inside_verdict_json_marker(text, m.start(), m.end()):
+            continue
         body = m.group(1)
+        exclusion = classify_template_exclusion(text, m.start(), m.end(), body, "json_unmarked")
+        if exclusion:
+            add_diagnostic(
+                diagnostics,
+                ctx,
+                "exclusion",
+                exclusion,
+                source="json_unmarked",
+                snippet=text_snippet(m.group(0)),
+            )
+            continue
         try:
             obj = json.loads(body)
         except Exception:
@@ -238,24 +726,30 @@ def extract_unmarked_json_verdicts(text: str) -> list[dict]:
         items = obj if isinstance(obj, list) else [obj]
         for item in items:
             if not isinstance(item, dict):
+                add_diagnostic(
+                    diagnostics,
+                    ctx,
+                    "invalid_json_type",
+                    f"json_unmarked item must be object, got {type(item).__name__}",
+                    source="json_unmarked",
+                    snippet=text_snippet(body),
+                )
                 continue
-            v = item.get("verdict")
-            if v in VERDICT_CATEGORIES:
-                verdicts.append({
-                    "finding_id": item.get("finding_id", ""),
-                    "verdict": v,
-                    "confidence": item.get("confidence", "N/A"),
-                    "stability_status": item.get("stability_status", "N/A"),
-                    "bundle": get_bundle(item.get("finding_id", "")),
-                    "source": "json_unmarked",
-                    "source_confidence": "high",
-                })
+            record = make_verdict_record(item, text, "json_unmarked", "high", ctx, diagnostics)
+            if record is not None:
+                verdicts.append(record)
     return verdicts
 
 
-def extract_kv_verdicts(text: str, arbiter_window_only: bool = True) -> list[dict]:
+def extract_kv_verdicts(
+    text: str,
+    arbiter_window_only: bool = True,
+    diagnostics: list | None = None,
+    context: PayloadContext | None = None,
+) -> list[dict]:
     """Tier 4: KV `**판정**: VERDICT`. Arbiter 결과 헤더 window 안만."""
     verdicts = []
+    ctx = context or PayloadContext()
     if arbiter_window_only:
         for m in re.finditer(r"##\s+Arbiter\s+검증\s+결과", text):
             start = m.end()
@@ -265,15 +759,40 @@ def extract_kv_verdicts(text: str, arbiter_window_only: bool = True) -> list[dic
             if nxt:
                 window = window[: nxt.start()]
             for vm in VERDICT_KV.finditer(window):
-                verdicts.append({
+                absolute_start = start + vm.start()
+                if in_any_code_fence(text, absolute_start):
+                    add_diagnostic(
+                        diagnostics,
+                        ctx,
+                        "exclusion",
+                        "kv_inside_fenced_example",
+                        source="kv",
+                        verdict=vm.group(1),
+                        snippet=text_snippet(vm.group(0)),
+                    )
+                    continue
+                exclusion = classify_template_exclusion(
+                    text, absolute_start, start + vm.end(), vm.group(0), "kv"
+                )
+                if exclusion:
+                    add_diagnostic(
+                        diagnostics,
+                        ctx,
+                        "exclusion",
+                        exclusion,
+                        source="kv",
+                        verdict=vm.group(1),
+                        snippet=text_snippet(vm.group(0)),
+                    )
+                    continue
+                record = make_verdict_record({
                     "finding_id": "",
                     "verdict": vm.group(1),
                     "confidence": "N/A",
                     "stability_status": "N/A",
-                    "bundle": None,
-                    "source": "kv",
-                    "source_confidence": "medium",
-                })
+                }, text, "kv", "medium", ctx, diagnostics)
+                if record is not None:
+                    verdicts.append(record)
     return verdicts
 
 
@@ -346,6 +865,72 @@ def compute_severity_transitions(
     return transitions
 
 
+def compute_persistence_metrics(sessions: list[dict]) -> dict:
+    """동일 persistence_key가 여러 result block에 걸쳐 반복되는 정도를 계산."""
+    key_blocks: dict[tuple, set] = defaultdict(set)
+    key_verdicts: dict[tuple, Counter] = defaultdict(Counter)
+    session_key_blocks: dict[str, dict[tuple, set]] = defaultdict(lambda: defaultdict(set))
+    missing_components = 0
+    eligible_records = 0
+
+    for s in sessions:
+        path = s.get("path")
+        for record in s.get("verdicts", []):
+            components = (
+                record.get("perspective"),
+                record.get("location_identity"),
+                record.get("finding_fingerprint"),
+            )
+            if not all(components):
+                missing_components += 1
+                continue
+            block_index = record.get("block_index")
+            if block_index is None:
+                missing_components += 1
+                continue
+            eligible_records += 1
+            key = components
+            block_key = (path, block_index)
+            key_blocks[key].add(block_key)
+            key_verdicts[key][record.get("verdict")] += 1
+            session_key_blocks[path][key].add(block_index)
+
+    distribution: Counter = Counter()
+    for blocks in key_blocks.values():
+        block_count = len(blocks)
+        if block_count > 1:
+            distribution[str(block_count)] += 1
+
+    top_offenders_by_session: dict[str, list[dict]] = {}
+    for path, per_key in session_key_blocks.items():
+        offenders = []
+        for key, blocks in per_key.items():
+            if len(blocks) <= 1:
+                continue
+            offenders.append({
+                "persistence_key": {
+                    "perspective": key[0],
+                    "location_identity": key[1],
+                    "finding_fingerprint": key[2],
+                },
+                "block_count": len(blocks),
+                "blocks": sorted(blocks),
+                "verdicts": dict(key_verdicts[key]),
+            })
+        offenders.sort(key=lambda item: (-item["block_count"], item["persistence_key"]["location_identity"]))
+        if offenders:
+            top_offenders_by_session[path] = offenders[:5]
+
+    return {
+        "key_block_count_distribution": dict(distribution),
+        "top_offenders_by_session": top_offenders_by_session,
+        "coverage": {
+            "eligible_records": eligible_records,
+            "missing_persistence_components": missing_components,
+        },
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. stability source resolver (M-5, plan D-10)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -381,17 +966,50 @@ def analyze_session(path: str) -> dict | None:
     nl_estimated = 0
     full_text = []
     parse_failures: list[str] = []
+    diagnostics: list[ExtractionDiagnostic] = []
+    seen_payload_hashes: set[str] = set()
+    seen_record_keys: set[tuple] = set()
+    current_block_index = -1
+    last_result_line_no: int | None = None
+
+    def predicted_block_index(line_no: int) -> int:
+        if last_result_line_no is not None and line_no <= last_result_line_no + 1:
+            return current_block_index
+        return current_block_index + 1
+
+    def append_records(records: list[dict], line_no: int, block_index: int) -> None:
+        nonlocal current_block_index, last_result_line_no
+        for record in records:
+            key = (
+                record.get("session_path"),
+                record.get("jsonl_line_no"),
+                record.get("payload_traversal_path"),
+                record.get("finding_id"),
+                record.get("source"),
+                record.get("canonical_verdict_hash"),
+            )
+            if key in seen_record_keys:
+                continue
+            seen_record_keys.add(key)
+            all_verdicts.append(record)
+        if records:
+            current_block_index = block_index
+            last_result_line_no = line_no
 
     try:
         with open(path, "r", errors="replace") as fp:
-            for line in fp:
+            for line_no, line in enumerate(fp, start=1):
                 try:
                     obj = json.loads(line)
                 except Exception:
                     continue
-                payloads: list[str] = []
-                extract_text_payloads(obj, payloads)
-                for text in payloads:
+                payloads: list[tuple[str, str]] = []
+                extract_text_payloads_with_paths(obj, payloads)
+                for payload_path, text in payloads:
+                    payload_hash = sha256_text(text)
+                    if payload_hash in seen_payload_hashes:
+                        continue
+                    seen_payload_hashes.add(payload_hash)
                     full_text.append(text)
                     if ARBITER_DIR_MARKER.search(text):
                         has_arbiter_marker = True
@@ -400,29 +1018,42 @@ def analyze_session(path: str) -> dict | None:
 
                     intensity_verdicts.extend(extract_intensity_verdicts(text))
 
-                    sv = extract_strict_verdicts(text, parse_failures)
+                    ctx = PayloadContext(
+                        session_path=path,
+                        jsonl_line_no=line_no,
+                        payload_traversal_path=payload_path,
+                        payload_hash=payload_hash,
+                        block_index=predicted_block_index(line_no),
+                        block_kind=infer_block_kind(text),
+                    )
+
+                    before_diag = len(diagnostics)
+                    sv = extract_strict_verdicts(text, parse_failures, diagnostics, ctx)
                     if sv:
-                        all_verdicts.extend(sv)
+                        append_records(sv, line_no, ctx.block_index or 0)
                         continue
-                    uj = extract_unmarked_json_verdicts(text)
+                    uj = extract_unmarked_json_verdicts(text, diagnostics, ctx)
                     if uj:
-                        all_verdicts.extend(uj)
+                        append_records(uj, line_no, ctx.block_index or 0)
                         continue
-                    kv = extract_kv_verdicts(text, arbiter_window_only=True)
+                    kv = extract_kv_verdicts(text, arbiter_window_only=True, diagnostics=diagnostics, context=ctx)
                     if kv:
-                        all_verdicts.extend(kv)
+                        append_records(kv, line_no, ctx.block_index or 0)
                         continue
                     has_signal, est = extract_nl_summary(text)
                     if has_signal:
                         nl_signal_only = True
                         nl_estimated = max(nl_estimated, est)
+                    if len(diagnostics) > before_diag:
+                        current_block_index = ctx.block_index or 0
+                        last_result_line_no = line_no
     except Exception:
         return None
 
     text_blob = "\n".join(full_text)
     # severity 라벨링 — finding_id 인접 window에서 수집
     for v in all_verdicts:
-        if v.get("verdict") == "CONFIRMED_ISSUE" and v.get("finding_id"):
+        if v.get("verdict") == "CONFIRMED_ISSUE" and v.get("finding_id") and not v.get("severity"):
             sev = find_severity_for_finding(text_blob, v["finding_id"])
             if sev:
                 v["severity"] = sev
@@ -437,6 +1068,7 @@ def analyze_session(path: str) -> dict | None:
         "nl_estimated_count": nl_estimated,
         "round_summary_stability": resolve_stability_status_from_round_summary(text_blob),
         "parse_failures": parse_failures,
+        "diagnostics": [d.to_dict() for d in diagnostics],
     }
 
 
@@ -445,19 +1077,39 @@ def build_aggregate(
     hosts: list[str],
     corpus_label: str,
     warnings: list[str],
+    json_sidecar_path: str | None = None,
 ) -> dict:
     """모든 세션 분석 결과를 통합 aggregate 객체로 빌드."""
     arbiter_marker_sessions = [s for s in sessions if s and s["has_arbiter_marker"]]
     intensity_marker_sessions = [s for s in sessions if s and s["has_intensity_marker"]]
 
-    # parse_failures (verdict_json JSON parse error 등)를 warnings에 누적해 silent swallow 차단
-    parse_failure_total = 0
+    diagnostics_by_session = []
+    diagnostic_counter: Counter = Counter()
     for s in sessions:
-        if s and s.get("parse_failures"):
-            parse_failure_total += len(s["parse_failures"])
-    if parse_failure_total > 0:
+        if not s:
+            continue
+        session_diagnostics = [diagnostic_to_dict(d) for d in s.get("diagnostics", [])]
+        for d in session_diagnostics:
+            diagnostic_counter[d.get("match_kind", "unknown")] += 1
+        if s.get("parse_failures") or session_diagnostics:
+            diagnostics_by_session.append({
+                "path": s.get("path"),
+                "parse_failures": list(s.get("parse_failures", [])),
+                "exclusions": [
+                    d for d in session_diagnostics
+                    if d.get("match_kind") == "exclusion"
+                ],
+                "invalid_verdicts": [
+                    d for d in session_diagnostics
+                    if d.get("match_kind") == "invalid_verdict"
+                ],
+                "diagnostics": session_diagnostics,
+            })
+    diagnostic_total = sum(diagnostic_counter.values())
+    if diagnostic_total > 0:
+        sidecar_hint = json_sidecar_path or "(JSON sidecar path unavailable)"
         warnings.append(
-            f"verdict_json parse failures: {parse_failure_total}건 — diagnostics는 session-level parse_failures 참조"
+            f"extraction diagnostics: {diagnostic_total}건 — JSON sidecar {sidecar_hint}의 diagnostics 참조"
         )
 
     # M-1: 검토 강도 verdict 분포
@@ -473,7 +1125,7 @@ def build_aggregate(
     source_counter: dict = defaultdict(lambda: {"count": 0, "confidence": ""})
     for s in arbiter_marker_sessions:
         for v in s["verdicts"]:
-            if v["source"] in ("verdict_json", "md_header", "json_unmarked", "kv"):
+            if v.get("source") in VERDICT_SOURCES and v.get("verdict") in VERDICT_CATEGORIES:
                 m2_counter[v["verdict"]] += 1
                 src = v["source"]
                 source_counter[src]["count"] += 1
@@ -485,6 +1137,8 @@ def build_aggregate(
     bundle_confirmed: Counter = Counter()
     for s in arbiter_marker_sessions:
         for v in s["verdicts"]:
+            if v.get("verdict") not in VERDICT_CATEGORIES:
+                continue
             b = v.get("bundle")
             if not b:
                 continue
@@ -504,26 +1158,15 @@ def build_aggregate(
     # M-4: severity transition (per-session round 그룹핑)
     transitions: Counter = Counter()
     for s in arbiter_marker_sessions:
-        # 라운드 분리: arbiter marker 등장 횟수로 라운드 추정 (단순 휴리스틱).
-        # session 안의 verdict 목록을 인접 그룹으로 나누어 round로 간주.
-        verdicts = [v for v in s["verdicts"] if v["source"] in ("verdict_json", "md_header")]
-        if len(verdicts) < 2:
-            continue
-        # 단순화: finding_id 중복 등장 시 새 round로 간주
-        rounds: list[list[dict]] = []
-        seen_ids: set = set()
-        cur: list[dict] = []
-        for v in verdicts:
-            fid = v.get("finding_id", "")
-            if fid in seen_ids and cur:
-                rounds.append(cur)
-                cur = []
-                seen_ids = set()
-            cur.append(v)
-            if fid:
-                seen_ids.add(fid)
-        if cur:
-            rounds.append(cur)
+        by_block: dict[int, list[dict]] = defaultdict(list)
+        for v in s["verdicts"]:
+            if v.get("source") not in VERDICT_SOURCES:
+                continue
+            block_index = v.get("block_index")
+            if block_index is None:
+                continue
+            by_block[int(block_index)].append(v)
+        rounds = [by_block[i] for i in sorted(by_block)]
         if len(rounds) >= 2:
             transitions += compute_severity_transitions(rounds)
 
@@ -544,6 +1187,7 @@ def build_aggregate(
     intensity_full_zero_rate = (
         len(full_zero) / len(full_sessions) if full_sessions else 0.0
     )
+    persistence_metrics = compute_persistence_metrics(arbiter_marker_sessions)
 
     return {
         "schema_version": "1.0",
@@ -576,15 +1220,28 @@ def build_aggregate(
                 "source_distribution": dict(source_counter),
             },
             "M-3": {"by_bundle": m3},
-            "M-4": {"transition_matrix": {f"{a}->{b}": c for (a, b), c in transitions.items()}},
+            "M-4": {
+                "round_key": "(session_path, block_index)",
+                "baseline_note": "v1부터 result block 기반 새 baseline이며 이전 finding_id 재등장 휴리스틱 수치와 단절된다.",
+                "transition_matrix": {f"{a}->{b}": c for (a, b), c in transitions.items()},
+            },
             "M-5": {
                 "source": m5_source,
                 "n": m5_n,
                 "distribution": dict(m5_counter),
             },
+            "M-6": {
+                "name": "persistence_key non-convergence",
+                "persistence_key": "(perspective, location_identity, finding_fingerprint)",
+                **persistence_metrics,
+            },
         },
         "derived": {
             "intensity_full_finding_zero_rate": round(intensity_full_zero_rate, 3),
+        },
+        "diagnostics": {
+            "summary": dict(diagnostic_counter),
+            "sessions": diagnostics_by_session,
         },
         "warnings": warnings,
     }
@@ -660,6 +1317,9 @@ def render_markdown(agg: dict) -> str:
     m4 = agg["metrics"]["M-4"]
     out.append("## M-4: 동일 세션 max severity 전이 매트릭스")
     out.append("")
+    out.append(f"- round key: `{m4['round_key']}`")
+    out.append(f"- baseline: {m4['baseline_note']}")
+    out.append("")
     if m4["transition_matrix"]:
         out.append("| from -> to | count |")
         out.append("|------------|-------|")
@@ -680,6 +1340,25 @@ def render_markdown(agg: dict) -> str:
             out.append(f"| {k} | {v} |")
     else:
         out.append("(M-5 source unavailable)")
+    out.append("")
+
+    # M-6
+    m6 = agg["metrics"]["M-6"]
+    out.append("## M-6: persistence_key 비수렴 지표")
+    out.append("")
+    out.append(f"- key: `{m6['persistence_key']}`")
+    out.append(
+        f"- coverage: eligible {m6['coverage']['eligible_records']}, "
+        f"missing {m6['coverage']['missing_persistence_components']}"
+    )
+    if m6["key_block_count_distribution"]:
+        out.append("")
+        out.append("| block_count | key count |")
+        out.append("|-------------|-----------|")
+        for k, v in sorted(m6["key_block_count_distribution"].items(), key=lambda item: int(item[0])):
+            out.append(f"| {k} | {v} |")
+    else:
+        out.append("- repeated persistence_key 없음")
     out.append("")
 
     # Derived
@@ -944,6 +1623,44 @@ def parse_json_arg(s: str) -> str:
     return s
 
 
+def parse_host_home_arg(s: str) -> list[tuple[str, str]]:
+    """--host-home host=/abs/home[,host=/abs/home] 형식 파싱."""
+    pairs = []
+    for item in s.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise argparse.ArgumentTypeError(
+                "--host-home expects host=/abs/home"
+            )
+        host, home = item.split("=", 1)
+        host = host.strip()
+        home = home.strip()
+        if host not in VALID_HOSTS:
+            raise argparse.ArgumentTypeError(
+                f"invalid host in --host-home: {host!r}. valid: {sorted(VALID_HOSTS)}"
+            )
+        if not posixpath.isabs(home):
+            raise argparse.ArgumentTypeError(
+                f"--host-home for {host} must be absolute: {home!r}"
+            )
+        if any(c in home for c in "\n\r\t;|&$`(){}[]<>*?\"'\\"):
+            raise argparse.ArgumentTypeError(
+                f"--host-home for {host} contains disallowed shell metacharacter"
+            )
+        pairs.append((host, posixpath.normpath(home)))
+    return pairs
+
+
+def apply_host_home_overrides(overrides: Iterable[tuple[str, str]]) -> None:
+    for host, home in overrides:
+        HOST_PATH_MAP[host] = {
+            "claude": posixpath.join(home, ".claude/projects"),
+            "codex": posixpath.join(home, ".codex/sessions"),
+        }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="analyze.py",
@@ -967,10 +1684,24 @@ def main() -> int:
         default=None,
         help="JSON sidecar output path (default: /tmp/analyze-da-sessions-<ISO>.json)",
     )
+    parser.add_argument(
+        "--host-home",
+        type=parse_host_home_arg,
+        action="append",
+        default=[],
+        help="override host home prefix, repeatable: host=/abs/home[,host=/abs/home]",
+    )
     args = parser.parse_args()
 
     warnings: list[str] = []
     cur_host = current_host()
+    apply_host_home_overrides(pair for group in args.host_home for pair in group)
+
+    if args.json:
+        json_path = args.json
+    else:
+        ts = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+        json_path = f"/tmp/analyze-da-sessions-{ts}.json"
 
     # 파일 수집
     if args.corpus:
@@ -1074,17 +1805,12 @@ def main() -> int:
             warnings.extend(local_warnings)
 
     # aggregate
-    agg = build_aggregate(sessions, args.hosts, corpus_label, warnings)
+    agg = build_aggregate(sessions, args.hosts, corpus_label, warnings, json_path)
 
     # 출력: markdown stdout
     print(render_markdown(agg))
 
     # 출력: JSON sidecar
-    if args.json:
-        json_path = args.json
-    else:
-        ts = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-        json_path = f"/tmp/analyze-da-sessions-{ts}.json"
     try:
         with open(json_path, "w") as fp:
             fp.write(render_json(agg))

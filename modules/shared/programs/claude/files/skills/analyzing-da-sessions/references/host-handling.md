@@ -97,6 +97,13 @@ absolute prefix는 다음 두 용도로만 사용한다:
 
 이 역할 분리는 PR review thread의 `HOST_PATH_MAP` fragility 질문에 답한다 — 명령 구성에서는 hardcoded prefix를 제거하지만, 보안 경계와 corpus host inference에는 absolute prefix가 SSOT로 남는다 (host model 중앙화는 별도 PR로 분리, 본 reference의 NG-3 참조).
 
+`--host-home host=/abs/home`은 위 absolute prefix의 optional override다. override 후
+`HOST_PATH_MAP[host]["claude"] = /abs/home/.claude/projects`,
+`HOST_PATH_MAP[host]["codex"] = /abs/home/.codex/sessions`로 재계산한다. SSH command path는
+계속 `~/.claude/projects` / `~/.codex/sessions`를 사용하므로, override는 validation/corpus
+boundary에만 영향을 준다. host 값은 `{mac,minipc}` whitelist를 유지하고 home 값은 absolute
+path여야 한다.
+
 ## remote command allowlist
 
 원격 호스트에서 실행 가능한 명령은 다음으로 제한:

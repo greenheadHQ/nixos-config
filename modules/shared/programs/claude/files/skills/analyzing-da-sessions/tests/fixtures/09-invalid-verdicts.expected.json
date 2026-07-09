@@ -1,0 +1,13 @@
+{
+  "description": "invalid verdict validation + strict dict guard",
+  "strict_count": 0,
+  "unmarked_count": 0,
+  "kv_count": 0,
+  "nl_signal": false,
+  "finding_level_count": 0,
+  "expected_verdict_records": [],
+  "expected_diagnostics": [
+    {"match_kind": "invalid_verdict", "source": "verdict_json", "verdict": "REGISTER"},
+    {"match_kind": "invalid_json_type", "source": "verdict_json", "classification_reason": "verdict_json root must be object, got list"}
+  ]
+}

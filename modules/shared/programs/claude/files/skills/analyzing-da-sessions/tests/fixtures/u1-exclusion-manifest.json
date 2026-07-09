@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "purpose": "live corpus exclusion fixture regeneration manifest; pytest uses sanitized fixtures only",
+  "phase0_parse_failure_raw_count": 61,
+  "exclusion_fixture_count_at_capture": 62,
+  "captured_at": "2026-07-09",
+  "regeneration_script": "modules/shared/programs/claude/files/skills/analyzing-da-sessions/scripts/analyze.py --json out=<path>",
+  "refresh_criteria": [
+    "run-da VERDICT_JSON template wording changes",
+    "arbiter-prompt.md changes the machine block delimiter or enum examples",
+    "live corpus remeasurement changes the exclusion class set"
+  ],
+  "entries": [
+    {
+      "session_file": "sanitized:08-template-exclusions.txt",
+      "jsonl_line": null,
+      "match_kind": "verdict_json",
+      "classification_reason": "outer_fenced_example"
+    },
+    {
+      "session_file": "sanitized:08-template-exclusions.txt",
+      "jsonl_line": null,
+      "match_kind": "verdict_json",
+      "classification_reason": "placeholder_template"
+    },
+    {
+      "session_file": "sanitized:08-template-exclusions.txt",
+      "jsonl_line": null,
+      "match_kind": "verdict_json",
+      "classification_reason": "union_string_template"
+    },
+    {
+      "session_file": "sanitized:08-template-exclusions.txt",
+      "jsonl_line": null,
+      "match_kind": "verdict_json",
+      "classification_reason": "or_pattern_template"
+    },
+    {
+      "session_file": "sanitized:08-template-exclusions.txt",
+      "jsonl_line": null,
+      "match_kind": "verdict_json",
+      "classification_reason": "arbiter_prompt_template_context"
+    }
+  ],
+  "notes": "61 is the original Phase 0 raw parse-failure count. 62 is the later live exclusion-fixture capture count after corpus drift; they are intentionally separate labels."
+}

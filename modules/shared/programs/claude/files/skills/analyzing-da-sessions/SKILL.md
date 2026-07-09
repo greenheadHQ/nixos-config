@@ -4,7 +4,7 @@ disable-model-invocation: true
 description: |
   사용자가 `/analyzing-da-sessions` 슬래시 명령으로 명시 호출했을 때만 DA 세션 로그 정량 통계를 측정한다.
   자연어 trigger 매칭은 사용하지 않는다 — 자연어로 측정을 원하더라도 사용자가 명시 호출해야 한다.
-argument-hint: "[--hosts mac,minipc] [--corpus <manifest.json>] [--json out=<path>]"
+argument-hint: "[--hosts mac,minipc] [--corpus <manifest.json>] [--json out=<path>] [--host-home host=/abs/home]"
 ---
 
 # DA 세션 정량 분석
@@ -19,7 +19,7 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 | jsonl 데이터 소스 + manifest.json 스키마 | [`references/data-sources.md`](references/data-sources.md) |
 | 출력 형식 (markdown + JSON spec, GitHub Mermaid 안전 subset) | [`references/output-format.md`](references/output-format.md) |
 | `--hosts` 인자 + SSH whitelist + partial result 처리 | [`references/host-handling.md`](references/host-handling.md) |
-| pytest 회귀 검증 fixture 5종 | [`tests/`](tests/) |
+| pytest 회귀 검증 fixture | [`tests/`](tests/) |
 
 ## 호출 예시
 
@@ -46,7 +46,8 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 | M-2 | 판정자 verdict 분포 | Arbiter VERDICT_JSON `verdict` 카운트 (CONFIRMED_ISSUE / NOT_AN_ISSUE / NEEDS_MORE_INFO) |
 | M-3 | reviewer 묶음별 confirmed-rate | 4 reviewer 묶음(correctness / design / regression / maintainability) 각각의 CONFIRMED_ISSUE 비율 |
 | M-4 | 동일 세션 max severity 전이 | 같은 세션 내 round N → N+1 confirmed finding 집합의 max severity 전이 매트릭스 |
-| M-5 | selective consistency stability_status 분포 | `fleiss-kappa.py` aggregate envelope의 `per_finding[].stability_status` 카운트 (stable / split / fragmented / unknown / N/A) |
+| M-5 | selective consistency stability_status 분포 | round summary `selective:` 라인의 stable / split / fragmented 카운트 |
+| M-6 | persistence_key 비수렴 지표 | 같은 관점+위치+finding fingerprint가 여러 result block에 반복되는지 측정 |
 
 각 metric의 산식과 source는 [`references/algorithm.md`](references/algorithm.md)가 단일 진실 원천이다.
 
@@ -73,19 +74,11 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 
 ## 회귀 검증
 
-algorithm fixture 5종 (`tests/fixtures/01-skill-doc.txt`, `02-xxxxxx-template.txt`, `03-json-unmarked.txt`, `04-kv-arbiter-window.txt`, `05-nl-summary-dedup.txt`)은 pytest로 자동 검증한다:
+algorithm fixture 5종과 run-da 계약 fixture는 pytest로 자동 검증한다:
 
 ```bash
-# Repo root 기준 절대 경로 호출 (호환성)
-pytest modules/shared/programs/claude/files/skills/analyzing-da-sessions/tests/
-
-# 또는 ad-hoc nix run (devShell pytest 부재 시)
-nix run nixpkgs#python3Packages.pytest -- \
-  modules/shared/programs/claude/files/skills/analyzing-da-sessions/tests/
-
-# 또는 cd 후 호출
-cd modules/shared/programs/claude/files/skills/analyzing-da-sessions
-pytest tests/
+# Repo root 기준, lefthook pre-push와 동일 driver
+bash tests/run-analyzing-da-sessions-tests.sh
 ```
 
 ## 주의사항

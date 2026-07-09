@@ -1,4 +1,7 @@
-"""algorithm fixture 5종 회귀 검증 — analyzing-da-sessions 정식화 (plan D-3)."""
+"""algorithm + run-da contract fixture 회귀 검증 — analyzing-da-sessions."""
+import json
+import os
+
 import pytest
 
 from conftest import load_fixture_pair
@@ -10,6 +13,13 @@ FIXTURE_NAMES = [
     "03-json-unmarked",
     "04-kv-arbiter-window",
     "05-nl-summary-dedup",
+    "08-template-exclusions",
+    "09-invalid-verdicts",
+]
+
+CONTRACT_FIXTURE_NAMES = [
+    "06-claude-contract",
+    "07-codex-rollout-contract",
 ]
 
 
@@ -44,6 +54,90 @@ def test_extraction_count(fixtures_dir, analyze_module, fixture_name):
     assert len(finding_level) == expected.get("finding_level_count", 0), (
         f"finding-level total mismatch in {fixture_name}"
     )
+
+
+def assert_partial_dict(actual, expected):
+    for key, expected_value in expected.items():
+        if expected_value == "__NON_NULL__":
+            assert actual.get(key) not in (None, ""), f"{key} should be non-null"
+        else:
+            assert actual.get(key) == expected_value, (
+                f"{key} mismatch: got {actual.get(key)!r}, expected {expected_value!r}"
+            )
+
+
+@pytest.mark.parametrize("fixture_name", ["08-template-exclusions", "09-invalid-verdicts"])
+def test_extraction_diagnostics(fixtures_dir, analyze_module, fixture_name):
+    """템플릿 제외/invalid verdict는 VerdictRecord가 아니라 diagnostic으로 남긴다."""
+    text, expected = load_fixture_pair(fixtures_dir, fixture_name)
+    diagnostics = []
+    parse_failures = []
+
+    records = analyze_module.extract_strict_verdicts(
+        text,
+        parse_failures=parse_failures,
+        diagnostics=diagnostics,
+        context=analyze_module.PayloadContext(
+            session_path=f"fixture:{fixture_name}",
+            jsonl_line_no=1,
+            payload_traversal_path="$.text",
+            payload_hash=analyze_module.sha256_text(text),
+            block_index=0,
+            block_kind="first_pass",
+        ),
+    )
+
+    assert records == expected["expected_verdict_records"]
+    assert parse_failures == []
+    actual = [d.to_dict() if hasattr(d, "to_dict") else d for d in diagnostics]
+    assert len(actual) == len(expected["expected_diagnostics"])
+    for actual_diag, expected_diag in zip(actual, expected["expected_diagnostics"]):
+        assert_partial_dict(actual_diag, expected_diag)
+
+
+def test_exclusion_manifest_count_labels(fixtures_dir):
+    """Phase 0 raw parse failure 61건과 exclusion fixture 62건 라벨을 분리 고정."""
+    with open(os.path.join(fixtures_dir, "u1-exclusion-manifest.json"), "r") as fp:
+        manifest = json.load(fp)
+
+    assert manifest["phase0_parse_failure_raw_count"] == 61
+    assert manifest["exclusion_fixture_count_at_capture"] == 62
+    assert manifest["phase0_parse_failure_raw_count"] != manifest["exclusion_fixture_count_at_capture"]
+
+
+@pytest.mark.parametrize("fixture_name", CONTRACT_FIXTURE_NAMES)
+def test_verdict_record_contract(fixtures_dir, analyze_module, tmp_path, fixture_name):
+    """run-da 산출 형식과 analyze.py VerdictRecord 중간 모델의 정합 검증."""
+    text, expected = load_fixture_pair(fixtures_dir, fixture_name)
+    session_path = tmp_path / f"{fixture_name}.jsonl"
+    session_path.write_text(text)
+
+    result = analyze_module.analyze_session(str(session_path))
+    assert result is not None
+    assert result["has_arbiter_marker"] is True
+
+    records = result["verdicts"]
+    assert len(records) == len(expected["expected_verdict_records"])
+    for actual, expected_record in zip(records, expected["expected_verdict_records"]):
+        assert actual["session_path"] == str(session_path)
+        assert_partial_dict(actual, expected_record)
+
+    warnings = []
+    aggregate = analyze_module.build_aggregate(
+        [result],
+        ["minipc"],
+        f"fixture:{fixture_name}",
+        warnings,
+        "/tmp/analyze-da-sessions-fixture.json",
+    )
+    expected_aggregate = expected["expected_aggregate"]
+    for metric_id, metric_expected in expected_aggregate.items():
+        actual_metric = aggregate["metrics"][metric_id]
+        for key, expected_value in metric_expected.items():
+            if isinstance(expected_value, dict):
+                assert expected_value.items() <= actual_metric[key].items()
+            else:
+                assert actual_metric[key] == expected_value
 
 
 def test_arbiter_marker_filter(analyze_module):
@@ -149,6 +243,23 @@ def test_allowed_remote_path_boundary_check(analyze_module):
     assert analyze_module._allowed_remote_path(
         "minipc", "/Users/greenhead/.claude/projects/x.jsonl"
     ) is False
+
+
+def test_host_home_override(analyze_module):
+    """--host-home override는 validation/corpus base prefix를 갱신한다."""
+    original = {host: paths.copy() for host, paths in analyze_module.HOST_PATH_MAP.items()}
+    try:
+        overrides = analyze_module.parse_host_home_arg("mac=/tmp/example-home")
+        analyze_module.apply_host_home_overrides(overrides)
+        assert analyze_module._allowed_remote_path(
+            "mac", "/tmp/example-home/.claude/projects/a.jsonl"
+        ) is True
+        assert analyze_module._allowed_remote_path(
+            "mac", "/Users/greenhead/.claude/projects/a.jsonl"
+        ) is False
+    finally:
+        analyze_module.HOST_PATH_MAP.clear()
+        analyze_module.HOST_PATH_MAP.update(original)
 
 
 def test_analyze_remote_session_partial_fetch_result(analyze_module, monkeypatch):
