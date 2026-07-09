@@ -262,6 +262,122 @@ def test_host_home_override(analyze_module):
         analyze_module.HOST_PATH_MAP.update(original)
 
 
+def test_claude_session_traceability(analyze_module, tmp_path):
+    """Claude Code top-level cwd/gitBranch/sessionId와 PR/issue grep을 sidecar meta에 남긴다."""
+    session_path = tmp_path / "claude-session.jsonl"
+    session_path.write_text(
+        json.dumps({
+            "type": "assistant",
+            "cwd": "/repo",
+            "gitBranch": "issue_1064",
+            "sessionId": "claude-session-1",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "PR #77에서 issue #1064를 확인했다."}
+                ]
+            },
+        })
+        + "\n"
+    )
+
+    result = analyze_module.analyze_session(str(session_path))
+
+    meta = result["session_meta"]
+    assert meta["format"] == "claude"
+    assert meta["cwd"] == "/repo"
+    assert meta["git_branch"] == "issue_1064"
+    assert meta["session_id"] == "claude-session-1"
+    assert meta["complete"] is True
+    assert meta["references"]["prs"] == ["77"]
+    assert meta["references"]["issues"] == ["1064"]
+
+
+def test_codex_session_traceability_payload_precedes_rollout_fallback(analyze_module, tmp_path):
+    """Codex payload.cwd/payload.git.branch/payload.id를 우선하고 파일명/date fallback을 기록한다."""
+    session_dir = tmp_path / "2026" / "07" / "09"
+    session_dir.mkdir(parents=True)
+    session_path = session_dir / "rollout-2026-07-09T00-00-00-fallbackid.jsonl"
+    session_path.write_text(
+        json.dumps({
+            "payload": {
+                "id": "payloadid",
+                "cwd": "/repo",
+                "git": {"branch": "issue_1064"},
+                "content": [{"type": "output_text", "text": "issue #1064"}],
+            }
+        })
+        + "\n"
+    )
+
+    result = analyze_module.analyze_session(str(session_path))
+
+    meta = result["session_meta"]
+    assert meta["format"] == "codex"
+    assert meta["cwd"] == "/repo"
+    assert meta["git_branch"] == "issue_1064"
+    assert meta["session_id"] == "payloadid"
+    assert meta["rollout_date"] == "2026-07-09"
+    assert "rollout_filename.session_id" not in meta["fallback_fields"]
+    assert "rollout_directory.date" in meta["fallback_fields"]
+    assert meta["complete"] is True
+
+    fallback_path = session_dir / "rollout-2026-07-09T00-00-00-id-with-hyphen.jsonl"
+    fallback_path.write_text(
+        json.dumps({
+            "payload": {
+                "cwd": "/repo",
+                "git": {"branch": "issue_1064"},
+                "content": [{"type": "output_text", "text": "fallback id only"}],
+            }
+        })
+        + "\n"
+    )
+
+    fallback_result = analyze_module.analyze_session(str(fallback_path))
+    fallback_meta = fallback_result["session_meta"]
+    assert fallback_meta["session_id"] == "id-with-hyphen"
+    assert "rollout_filename.session_id" in fallback_meta["fallback_fields"]
+
+
+def test_traceability_coverage_in_aggregate(analyze_module, tmp_path):
+    """aggregate sidecar는 traceability coverage를 1급 섹션으로 제공한다."""
+    claude_path = tmp_path / "claude.jsonl"
+    claude_path.write_text(
+        json.dumps({
+            "cwd": "/repo",
+            "gitBranch": "main",
+            "sessionId": "s1",
+            "message": {"content": "no metrics"},
+        })
+        + "\n"
+    )
+    unknown_path = tmp_path / "unknown.jsonl"
+    unknown_path.write_text(json.dumps({"message": {"content": "no meta"}}) + "\n")
+
+    sessions = [
+        analyze_module.analyze_session(str(claude_path)),
+        analyze_module.analyze_session(str(unknown_path)),
+    ]
+    warnings = []
+    aggregate = analyze_module.build_aggregate(
+        sessions,
+        ["minipc"],
+        "fixture:traceability",
+        warnings,
+        "/tmp/analyze-da-sessions-traceability.json",
+    )
+
+    coverage = aggregate["traceability"]["coverage"]
+    assert coverage["sessions_total"] == 2
+    assert coverage["complete_sessions"] == 1
+    assert coverage["unknown_format_sessions"] == 1
+    assert coverage["field_presence"] == {
+        "cwd": 1,
+        "git_branch": 1,
+        "session_id": 1,
+    }
+
+
 def test_analyze_remote_session_partial_fetch_result(analyze_module, monkeypatch):
     """`analyze_remote_session()`이 SSH cat 실패 시 None + warning, 성공 시 분석 dict를
     반환하는 partial result 단위 계약을 검증한다.

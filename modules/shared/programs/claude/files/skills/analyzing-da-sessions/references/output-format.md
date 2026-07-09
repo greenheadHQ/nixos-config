@@ -178,6 +178,33 @@ JSON sidecar: /tmp/analyze-da-sessions-<ISO>.json (또는 --json out= 명시 경
 
 `warnings`에는 SSH 실패(host별 timeout/binary 부재/nonzero rc), `verdict_json parse failures` 누적, manifest.json read 실패 등 partial result 사유를 기록한다. v1 `analyze.py`는 `partial_failure_count`라는 별도 필드를 emit하지 않는다 — partial 사유는 모두 top-level `warnings` 배열에 자연어로 누적된다.
 
+## Weekly report JSON schema v1
+
+주간 자동화의 canonical output은 `modules/nixos/programs/da-weekly-report/files/weekly_report.py`
+docstring의 schema example이 SSOT다. top-level key는 다음으로 고정한다:
+
+```json
+{
+  "schema_version": 1,
+  "week": {"id": "2026-W28", "start": "...", "end": "...", "tz": "Asia/Seoul"},
+  "analysis": {},
+  "health": {},
+  "coverage": {},
+  "traceability": {},
+  "deltas": {},
+  "commentary": {"text": null, "failure_reason": "best-effort failure reason"},
+  "provenance": {"analysis_sidecar_path": "...", "publish_log_path": "..."}
+}
+```
+
+`analysis`는 `analyze.py` sidecar의 stable subset만 정규화해서 담는다. 원본 sidecar는
+embed하지 않고 `provenance.analysis_sidecar_path`로만 참조한다. `coverage`는 weekly JSON의
+유일한 coverage SSOT이며, renderer/delta는 sidecar diagnostics를 직접 읽지 않는다.
+
+delta 입력 glob은 state directory의 `weekly-????-W??.json`만 사용한다. publish 기록
+`weekly-<ISO주차>-publish.json`과 draft 파일은 glob 구조상 제외된다. publish 성공/실패/skip은
+core schema에 넣지 않고 append-only publish log만 SSOT로 삼는다.
+
 ## GitHub Mermaid 안전 subset
 
 PR comment / 이슈 본문에 markdown 그대로 붙여넣을 때 사용 가능한 syntax만 사용한다:

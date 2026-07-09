@@ -133,11 +133,16 @@ markdown stdout 출력에는 footer에 warnings 섹션이 추가된다:
 
 JSON sidecar의 `warnings` 배열에도 같은 메시지가 들어간다.
 
-## Mac/MiniPC 경로 매핑
+## Mac/MiniPC 경로 매핑 기본값
 
 | 호스트 | Claude Code base | Codex base |
 |--------|-----------------|------------|
 | mac | `/Users/greenhead/.claude/projects/` | `/Users/greenhead/.codex/sessions/` |
 | minipc | `/home/greenhead/.claude/projects/` | `/home/greenhead/.codex/sessions/` |
+
+위 표는 현재 배포 사용자(`greenhead`) 기준 하위호환 기본값이다. username migration을 고려한
+자동 실행 환경에서는 하드코딩하지 않고 `--host-home mac=/Users/<username>,minipc=/home/<username>`을
+명시 전달한다. 이 값은 validation/corpus prefix와 traceability host inference에만 쓰이며,
+SSH command path는 계속 `~/.claude/projects` / `~/.codex/sessions`다.
 
 `--corpus manifest.json` 사용 시 위 표의 `HOST_PATH_MAP` base prefix를 우선 순회하여 host를 분류한다. 미매칭 path는 `warnings` 누적 후 처리에서 제외 — 새 host 지원은 `HOST_PATH_MAP` 추가가 정답이다 (silent host 배정 회피).

@@ -17,9 +17,24 @@
 
 각 line은 `{ "type": "user" | "assistant" | "tool_use_result" | ..., "uuid": "...", "timestamp": "...", "message": { ... } }` 형태의 단일 JSON object. 측정 알고리즘은 JSON parse → string payload 추출 → regex 적용 순서로 동작한다 (raw blob regex 금지). `payload_traversal_path`는 보통 `$.message.content[...]` 또는 `$.message.content` 형태다.
 
+세션 소스 추적성은 top-level `cwd`, `gitBranch`, `sessionId`를 primary source로 사용한다.
+세 필드 중 하나라도 부재하면 해당 필드만 `missing_fields`에 남기고 세션 분석은 계속한다.
+
 ### Codex (`~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ISO>-<id>.jsonl`)
 
 Codex CLI rollout 형식. 각 line은 별도 JSON object이며, `payload` 필드 또는 `content` 배열 안에 모델 출력 텍스트가 포함된다. `payload_traversal_path`는 Codex wrapper 경계를 보존하기 위해 `$.payload.*` 형태를 그대로 기록한다.
+
+세션 소스 추적성은 `payload.cwd`, `payload.git.branch`, `payload.id`를 primary source로
+사용한다. `payload.id`가 부재하면 rollout 파일명(`rollout-<ISO>-<id>.jsonl`)에서
+`session_id`를 best-effort로 보강하고, 디렉터리 `/<YYYY>/<MM>/<DD>/`에서 `rollout_date`를
+보강한다. primary `payload.id`가 뒤늦게 발견되면 파일명 fallback보다 우선한다.
+
+### unknown / partial format
+
+Claude top-level 필드도 Codex payload 필드도 없고 rollout 파일명도 아닌 세션은
+`format: "unknown"`으로 남긴다. 이는 오류가 아니며 `traceability.coverage`의
+`unknown_format_sessions`와 `missing_fields` 카운트로만 표시한다. PR/issue 번호 grep은
+본문 string payload에서 best-effort로 수행하며, 실패 시 빈 배열이다.
 
 ## payload traversal path
 
@@ -89,6 +104,7 @@ INTENSITY_DIR_MARKER = re.compile(
 - `captured_metric_summary`는 baseline 값 — 향후 ±5% 비교 도구가 `--corpus` 결과와 함께 비교할 때 사용. v1 `analyze.py`는 이 필드를 직접 비교하지 않으므로 manifest 안에 보존만 된다.
 - manifest.json 생성 (capture)은 v1 `analyze.py`의 책임 범위가 아니다 — 별도 capture step (외부 스크립트 또는 follow-up 모드)에서 생성한 후 본 Skill 호출 시 `--corpus`로 입력한다.
 - host별 home prefix가 기본값과 다른 corpus는 `--host-home host=/abs/home`으로 `HOST_PATH_MAP` base를 override할 수 있다. 이 override는 validation/corpus prefix 계산에만 쓰이며 SSH command path는 계속 `~/.claude/projects`, `~/.codex/sessions`를 사용한다.
+- 주간 리포트 cron/systemd 호출부는 username에서 `mac=/Users/<username>,minipc=/home/<username>`을 유도해 `--host-home`을 명시 전달한다. 기본값은 현재 배포값(`greenhead`)과의 하위호환용이다.
 
 ## subagent 폴더 제외 사유
 

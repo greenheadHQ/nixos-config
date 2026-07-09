@@ -113,6 +113,17 @@ SELECTIVE_LINE = re.compile(
     re.I,
 )
 
+# Session source traceability (S2-9)
+ROLLOUT_FILENAME = re.compile(r"^rollout-(?P<body>.+)\.jsonl$")
+ROLLOUT_BODY = re.compile(
+    r"^(?P<iso>\d{4}-\d{2}-\d{2}T\d{2}(?::\d{2}:\d{2}|-\d{2}-\d{2})"
+    r"(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)-(?P<id>.+)$"
+)
+ROLLOUT_DIR_DATE = re.compile(r"/(?P<year>\d{4})/(?P<month>\d{2})/(?P<day>\d{2})/")
+PR_REF = re.compile(r"\b(?:PR|pull request)\s*#?(\d+)(?!\d)", re.I)
+ISSUE_REF = re.compile(r"\b(?:issue|이슈)\s*#?(\d+)(?!\d)", re.I)
+BARE_NUMBER_REF = re.compile(r"(?<![\w/])#(\d+)(?!\d)")
+
 # Host path mapping —
 #   command path:    SSH 명령 인자는 `~/.claude/projects` 등 relative tilde 표현을 사용한다
 #                    (remote shell이 expansion). 본 map은 명령 인자에 직접 들어가지 않는다.
@@ -247,6 +258,150 @@ def diagnostic_to_dict(item: ExtractionDiagnostic | dict | str) -> dict:
         "verdict": None,
         "snippet": None,
     }
+
+
+def infer_host_for_path(path: str | None) -> str | None:
+    """HOST_PATH_MAP prefix 기준으로 세션 path의 host를 추정한다."""
+    if not path:
+        return None
+    for host, paths in HOST_PATH_MAP.items():
+        for base in (paths.get("claude", ""), paths.get("codex", "")):
+            if base and (path == base or path.startswith(base + os.sep)):
+                return host
+    return None
+
+
+def new_session_traceability(path: str | None) -> dict:
+    """세션 단위 소스 추적성 sidecar skeleton."""
+    meta = {
+        "path": path,
+        "host": infer_host_for_path(path),
+        "format": "unknown",
+        "cwd": None,
+        "git_branch": None,
+        "session_id": None,
+        "rollout_date": None,
+        "source_fields": [],
+        "fallback_fields": [],
+        "missing_fields": [],
+        "references": {
+            "prs": [],
+            "issues": [],
+            "bare_numbers": [],
+        },
+    }
+    apply_codex_rollout_filename_fallback(meta)
+    return meta
+
+
+def _set_meta_field(meta: dict, field: str, value: Any, source: str) -> None:
+    if value in (None, ""):
+        return
+    existing = meta.get(field)
+    fallback_key = "rollout_filename.session_id"
+    can_replace_fallback = (
+        field == "session_id"
+        and existing not in (None, "")
+        and fallback_key in meta.get("fallback_fields", [])
+        and source != fallback_key
+    )
+    if existing not in (None, "") and not can_replace_fallback:
+        return
+    meta[field] = str(value)
+    if can_replace_fallback:
+        meta["fallback_fields"] = [
+            item for item in meta.get("fallback_fields", []) if item != fallback_key
+        ]
+    if source not in meta["source_fields"]:
+        meta["source_fields"].append(source)
+
+
+def _get_nested(obj: Any, path: tuple[str, ...]) -> Any:
+    cur = obj
+    for key in path:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(key)
+    return cur
+
+
+def apply_codex_rollout_filename_fallback(meta: dict) -> None:
+    """Codex rollout path에서 session id/date를 best-effort로 보강한다."""
+    path = meta.get("path")
+    if not path:
+        return
+    basename = os.path.basename(path)
+    m = ROLLOUT_FILENAME.match(basename)
+    if not m:
+        return
+    if meta.get("format") == "unknown":
+        meta["format"] = "codex"
+    if not meta.get("session_id"):
+        body = m.group("body")
+        body_match = ROLLOUT_BODY.match(body)
+        if body_match:
+            meta["session_id"] = body_match.group("id")
+        else:
+            meta["session_id"] = body.rsplit("-", 1)[-1]
+        meta["fallback_fields"].append("rollout_filename.session_id")
+    dm = ROLLOUT_DIR_DATE.search(path)
+    if dm and not meta.get("rollout_date"):
+        meta["rollout_date"] = (
+            f"{dm.group('year')}-{dm.group('month')}-{dm.group('day')}"
+        )
+        meta["fallback_fields"].append("rollout_directory.date")
+
+
+def update_session_traceability_from_obj(meta: dict, obj: Any) -> None:
+    """Claude/Codex JSONL object의 세션 메타 필드를 fail-soft로 추출한다."""
+    if not isinstance(obj, dict):
+        return
+
+    if any(key in obj for key in ("cwd", "gitBranch", "sessionId")):
+        meta["format"] = "claude"
+        _set_meta_field(meta, "cwd", obj.get("cwd"), "claude.cwd")
+        _set_meta_field(meta, "git_branch", obj.get("gitBranch"), "claude.gitBranch")
+        _set_meta_field(meta, "session_id", obj.get("sessionId"), "claude.sessionId")
+
+    payload = obj.get("payload")
+    if isinstance(payload, dict) and any(
+        key in payload for key in ("cwd", "git", "id")
+    ):
+        if meta.get("format") == "unknown":
+            meta["format"] = "codex"
+        _set_meta_field(meta, "cwd", payload.get("cwd"), "codex.payload.cwd")
+        _set_meta_field(
+            meta,
+            "git_branch",
+            _get_nested(payload, ("git", "branch")),
+            "codex.payload.git.branch",
+        )
+        _set_meta_field(meta, "session_id", payload.get("id"), "codex.payload.id")
+
+    apply_codex_rollout_filename_fallback(meta)
+
+
+def extract_issue_references(text: str) -> dict:
+    """세션 본문에서 PR/issue 번호를 best-effort로 수집한다."""
+    prs = {m.group(1) for m in PR_REF.finditer(text)}
+    issues = {m.group(1) for m in ISSUE_REF.finditer(text)}
+    bare = {m.group(1) for m in BARE_NUMBER_REF.finditer(text)}
+    return {
+        "prs": sorted(prs, key=int)[:20],
+        "issues": sorted(issues, key=int)[:20],
+        "bare_numbers": sorted(bare - prs - issues, key=int)[:20],
+    }
+
+
+def finalize_session_traceability(meta: dict, text_blob: str) -> dict:
+    """coverage 계산에 쓰기 쉬운 traceability dict로 마감한다."""
+    required = ("cwd", "git_branch", "session_id")
+    meta["references"] = extract_issue_references(text_blob)
+    meta["source_fields"] = sorted(set(meta.get("source_fields", [])))
+    meta["fallback_fields"] = sorted(set(meta.get("fallback_fields", [])))
+    meta["missing_fields"] = [field for field in required if not meta.get(field)]
+    meta["complete"] = not meta["missing_fields"] and meta.get("format") != "unknown"
+    return meta
 
 
 def add_diagnostic(
@@ -956,8 +1111,9 @@ def resolve_stability_status_from_round_summary(text: str) -> Counter:
 # 7. aggregate builder
 # ─────────────────────────────────────────────────────────────────────────────
 
-def analyze_session(path: str) -> dict | None:
+def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
     """단일 jsonl 세션 분석. 모든 metric 입력을 추출하여 dict로 반환."""
+    session_path = logical_path or path
     has_arbiter_marker = False
     has_intensity_marker = False
     intensity_verdicts: list[str] = []
@@ -971,6 +1127,7 @@ def analyze_session(path: str) -> dict | None:
     seen_record_keys: set[tuple] = set()
     current_block_index = -1
     last_result_line_no: int | None = None
+    session_traceability = new_session_traceability(session_path)
 
     def predicted_block_index(line_no: int) -> int:
         if last_result_line_no is not None and line_no <= last_result_line_no + 1:
@@ -1003,6 +1160,7 @@ def analyze_session(path: str) -> dict | None:
                     obj = json.loads(line)
                 except Exception:
                     continue
+                update_session_traceability_from_obj(session_traceability, obj)
                 payloads: list[tuple[str, str]] = []
                 extract_text_payloads_with_paths(obj, payloads)
                 for payload_path, text in payloads:
@@ -1019,7 +1177,7 @@ def analyze_session(path: str) -> dict | None:
                     intensity_verdicts.extend(extract_intensity_verdicts(text))
 
                     ctx = PayloadContext(
-                        session_path=path,
+                        session_path=session_path,
                         jsonl_line_no=line_no,
                         payload_traversal_path=payload_path,
                         payload_hash=payload_hash,
@@ -1051,6 +1209,7 @@ def analyze_session(path: str) -> dict | None:
         return None
 
     text_blob = "\n".join(full_text)
+    session_traceability = finalize_session_traceability(session_traceability, text_blob)
     # severity 라벨링 — finding_id 인접 window에서 수집
     for v in all_verdicts:
         if v.get("verdict") == "CONFIRMED_ISSUE" and v.get("finding_id") and not v.get("severity"):
@@ -1059,7 +1218,7 @@ def analyze_session(path: str) -> dict | None:
                 v["severity"] = sev
 
     return {
-        "path": path,
+        "path": session_path,
         "has_arbiter_marker": has_arbiter_marker,
         "has_intensity_marker": has_intensity_marker,
         "intensity_verdicts": intensity_verdicts,
@@ -1069,6 +1228,7 @@ def analyze_session(path: str) -> dict | None:
         "round_summary_stability": resolve_stability_status_from_round_summary(text_blob),
         "parse_failures": parse_failures,
         "diagnostics": [d.to_dict() for d in diagnostics],
+        "session_meta": session_traceability,
     }
 
 
@@ -1085,9 +1245,30 @@ def build_aggregate(
 
     diagnostics_by_session = []
     diagnostic_counter: Counter = Counter()
+    traceability_sessions = []
+    traceability_format_counter: Counter = Counter()
+    traceability_host_counter: Counter = Counter()
+    traceability_field_counter: Counter = Counter()
+    traceability_fallback_counter: Counter = Counter()
+    traceability_missing_counter: Counter = Counter()
+    traceability_complete = 0
     for s in sessions:
         if not s:
             continue
+        session_meta = s.get("session_meta") or new_session_traceability(s.get("path"))
+        traceability_sessions.append(session_meta)
+        traceability_format_counter[session_meta.get("format", "unknown")] += 1
+        traceability_host_counter[session_meta.get("host") or "unknown"] += 1
+        if session_meta.get("complete"):
+            traceability_complete += 1
+        for field in ("cwd", "git_branch", "session_id"):
+            if session_meta.get(field):
+                traceability_field_counter[field] += 1
+        for field in session_meta.get("fallback_fields", []):
+            traceability_fallback_counter[field] += 1
+        for field in session_meta.get("missing_fields", []):
+            traceability_missing_counter[field] += 1
+
         session_diagnostics = [diagnostic_to_dict(d) for d in s.get("diagnostics", [])]
         for d in session_diagnostics:
             diagnostic_counter[d.get("match_kind", "unknown")] += 1
@@ -1242,6 +1423,19 @@ def build_aggregate(
         "diagnostics": {
             "summary": dict(diagnostic_counter),
             "sessions": diagnostics_by_session,
+        },
+        "traceability": {
+            "coverage": {
+                "sessions_total": len([s for s in sessions if s]),
+                "complete_sessions": traceability_complete,
+                "unknown_format_sessions": traceability_format_counter.get("unknown", 0),
+                "format_distribution": dict(traceability_format_counter),
+                "host_distribution": dict(traceability_host_counter),
+                "field_presence": dict(traceability_field_counter),
+                "missing_fields": dict(traceability_missing_counter),
+                "fallback_fields": dict(traceability_fallback_counter),
+            },
+            "sessions": traceability_sessions,
         },
         "warnings": warnings,
     }
@@ -1594,7 +1788,7 @@ def analyze_remote_session(host: str, path: str, warnings: list[str]) -> dict | 
         tf.write(content)
         tmp_path = tf.name
     try:
-        return analyze_session(tmp_path)
+        return analyze_session(tmp_path, logical_path=path)
     finally:
         try:
             os.unlink(tmp_path)
@@ -1723,14 +1917,7 @@ def main() -> int:
         for f in all_files:
             if "/subagents/" in f:
                 continue
-            matched_host = None
-            for host_alias, host_paths in HOST_PATH_MAP.items():
-                for base in (host_paths.get("claude", ""), host_paths.get("codex", "")):
-                    if base and f.startswith(base + os.sep):
-                        matched_host = host_alias
-                        break
-                if matched_host is not None:
-                    break
+            matched_host = infer_host_for_path(f)
             if matched_host is None:
                 warnings.append(f"corpus host unclassified (HOST_PATH_MAP 미일치): {f}")
             elif matched_host in args.hosts:

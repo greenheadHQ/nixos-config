@@ -17,6 +17,37 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 
 이슈 #671 본문 PHASE-EXTENDED 6번째 metric "FULL 후 finding 0건 분석"은 v1 measure list에 포함하지 않는다. 본 문서의 derived statistic 섹션에서 비율로 보고한다.
 
+## run-da 건강 지표 (health_formula_version: 1)
+
+주간 리포트 파이프라인(`modules/nixos/programs/da-weekly-report/files/weekly_report.py`)은
+`analyze.py` sidecar와 별도로 git 기반 건강 지표를 수집한다. 산식 변경 시
+`health_formula_version`을 증가시키고, 주간 리포트에 baseline 단절을 명시한다.
+
+| 지표 | 산식 (v1) |
+|------|-----------|
+| 문서 크기 | `git -C "$REPO_ROOT" ls-tree -r HEAD --name-only -- modules/shared/programs/claude/files/skills/run-da/` 결과 중 `*.md` 파일을 세고, `/evals/` path segment가 있는 파일은 제외한다. 라인 수는 `git show HEAD:<path>` 내용 기준 총 line count 합계다. |
+| drift 수리 커밋 빈도 | `git -C "$REPO_ROOT" log --since=<KST 주 시작> --until=<KST 주 끝> --first-parent main --format='%H%x00%s%x00%B%x1e' -- modules/shared/programs/claude/files/skills/run-da/`를 record 단위로 파싱한다. subject가 `/fix|refactor|chore/i`에 매치하고, subject+body가 `/drift|참조|사본|dangling|동기화|SSOT/i`에 매치하는 commit 수다. `--oneline` 금지 — body 매칭을 위해 `%B`를 포함한다. |
+| 규칙 수 | run-da `SKILL.md`의 `## 핵심 invariants` 번호 항목 수 + `## 주의사항` bullet 수 + `## Non-goals` 번호 항목 수. 개별 카운트와 total을 병기한다. |
+
+week boundary는 KST 월요일 00:00부터 다음 월요일 00:00까지다. merge commit은
+`--first-parent main` 흐름에서 대표한다.
+
+## Session source traceability (S2-9)
+
+`analyze.py`는 verdict record 자체의 finding-level provenance와 별개로 세션 단위
+`traceability` sidecar를 emit한다. 알 수 없는 포맷이나 필드 부재는 오류가 아니라 coverage
+카운트로만 남긴다.
+
+| 포맷 | primary extraction | fallback |
+|------|--------------------|----------|
+| Claude Code jsonl | top-level `cwd`, `gitBranch`, `sessionId` | 없음. 부재 시 `missing_fields`에 기록 |
+| Codex rollout jsonl | `payload.cwd`, `payload.git.branch`, `payload.id` | path basename `rollout-<ISO>-<id>.jsonl`에서 `session_id`, path directory `/<YYYY>/<MM>/<DD>/`에서 `rollout_date` |
+| unknown | primary field 미검출 + rollout filename 미매칭 | 링크/branch/session id 미표기, `unknown_format_sessions` 증가 |
+
+세션 본문 내 `PR #N`, `issue #N`, bare `#N` grep은 best-effort다. 실패하거나 없으면 빈
+배열로 둔다. 주간 리포트는 sidecar의 `traceability.coverage`를 1급 coverage로 승격하고,
+렌더링용 세션 목록은 stable subset만 사용한다.
+
 ## 분모 정의 (의무)
 
 | metric | 분모 |
