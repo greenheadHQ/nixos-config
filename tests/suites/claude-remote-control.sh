@@ -185,6 +185,7 @@ _claude_rc_run_maint() {
       FAKE_ORPHAN_CWD="${FAKE_ORPHAN_CWD:-}" \
       FAKE_ORPHAN_EXE="${FAKE_ORPHAN_EXE:-}" \
       FAKE_ORPHAN_PPID="${FAKE_ORPHAN_PPID:-}" \
+      FAKE_ORPHAN_COMMAND="${FAKE_ORPHAN_COMMAND:-}" \
       "$@"
   )
 }
@@ -331,6 +332,8 @@ EOS
 #!/usr/bin/env bash
 case "$*" in
   *"ppid="*) echo "${FAKE_ORPHAN_PPID:-1}" ;;
+  # pid_is_session_proc의 signal 직전 argv 재확인이 조회하는 command= 응답.
+  *"command="*) echo "${FAKE_ORPHAN_COMMAND:-/path/to/versions/2.0.0 --print --sdk-url https://example.invalid}" ;;
   *) exit 1 ;;
 esac
 EOS
