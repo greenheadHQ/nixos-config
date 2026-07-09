@@ -5,6 +5,7 @@
 # script by the Nix package expressions, so it must not run command logic.
 
 STATE_DIR="${STATE_DIR:-$HOME/.local/state/claude-rc}"
+VERSIONS_DIR="${VERSIONS_DIR:-$HOME/.local/share/claude/versions}"
 INSTANCES_FILE="$STATE_DIR/instances.json"
 INSTANCES_LOCK="$STATE_DIR/instances.json.lock"
 LOG_MAX_BYTES=$((5 * 1024 * 1024))
@@ -13,6 +14,8 @@ BRIDGE_PROCESS_PATTERN='claude remote-control'
 # the stable selector. The leading [-] avoids pgrep treating the pattern as an
 # option.
 BRIDGE_CHILD_PROCESS_PATTERN='[-]-sdk-url'
+ORPHAN_REAP_TERM_ATTEMPTS=5
+ORPHAN_REAP_TERM_SLEEP_SECONDS=0.2
 TSV_NULL='__CLAUDE_RC_NULL__'
 
 iso_timestamp() {
@@ -252,6 +255,18 @@ is_flock_process() {
     [ "$base" = "flock" ]
 }
 
+is_claude_versions_exe_process() {
+    local pid="$1" exe versions_dir
+    exe=$(pid_exe_path "$pid") || return 1
+    [ -n "$exe" ] || return 1
+    versions_dir="${VERSIONS_DIR%/}"
+    [ -n "$versions_dir" ] || return 1
+    case "${exe% (deleted)}" in
+        "$versions_dir"/*) return 0 ;;
+    esac
+    return 1
+}
+
 find_server_pid_for_path() {
     local path="$1" pid
     while IFS= read -r pid; do
@@ -260,6 +275,10 @@ find_server_pid_for_path() {
         if is_flock_process "$pid"; then
             continue
         fi
+        # pgrep -f is only argv substring matching. A long-lived unrelated
+        # script can contain "claude remote-control" in argv and share the cwd,
+        # so require the actual executable to be the versioned Claude binary.
+        is_claude_versions_exe_process "$pid" || continue
         echo "$pid"
         return 0
     done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
@@ -282,6 +301,122 @@ count_worktree_session_procs() {
         esac
     done < <(pgrep -u "$(id -u)" -f "$BRIDGE_CHILD_PROCESS_PATTERN" 2>/dev/null || true)
     echo "$count"
+}
+
+pid_parent_pid() {
+    local pid="$1"
+    ps -o ppid= -p "$pid" 2>/dev/null | awk '{print $1; exit}'
+}
+
+session_cwd_is_in_instance_scope() {
+    local pid="$1" instance_path="$2" cwd target wt_root
+    cwd=$(pid_cwd "$pid") || return 1
+    [ -n "$cwd" ] || return 1
+    target=$(canonical_existing_path "$instance_path") || return 1
+    wt_root="$target/.claude/worktrees/"
+    # The instance root itself is in scope because same-dir spawned sessions
+    # run at the instance root; only worktree sessions live under wt_root.
+    [ "$cwd" = "$target" ] && return 0
+    case "$cwd" in
+        "$wt_root"*) return 0 ;;
+    esac
+    return 1
+}
+
+pid_is_session_proc() {
+    local pid="$1" command
+    command=$(ps -o command= -p "$pid" 2>/dev/null) || return 1
+    case "$command" in
+        *--sdk-url*) return 0 ;;
+    esac
+    return 1
+}
+
+is_orphan_session_proc_for_path() {
+    local pid="$1" instance_path="$2" ppid
+    # The --sdk-url argv selector is rechecked here (not only at pgrep
+    # discovery) so a recycled PID that is no longer a session process fails
+    # this predicate before any signal is sent.
+    pid_is_session_proc "$pid" || return 1
+    # Spawned session processes run as the versioned Claude binary. Keep the
+    # same executable boundary as server PID detection so an unrelated
+    # --sdk-url argv match is never a reap target.
+    is_claude_versions_exe_process "$pid" || return 1
+    session_cwd_is_in_instance_scope "$pid" "$instance_path" || return 1
+    ppid=$(pid_parent_pid "$pid") || return 1
+    case "$ppid" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    # The confirmed orphan shape is SIGKILL re-parenting to init. A ppid > 1
+    # non-server parent is not proven orphaned, so do not broaden this helper
+    # beyond the case its name describes.
+    [ "$ppid" -le 1 ] && return 0
+    return 1
+}
+
+find_orphan_session_pids_for_path() {
+    local instance_path="$1" pid
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        if is_orphan_session_proc_for_path "$pid" "$instance_path"; then
+            echo "$pid"
+        fi
+    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_CHILD_PROCESS_PATTERN" 2>/dev/null || true)
+}
+
+reap_orphan_session_procs_for_path() {
+    local instance_path="$1" pid initial_count attempt
+    local -a pids term_pids remaining
+    pids=()
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        pids+=("$pid")
+    done < <(find_orphan_session_pids_for_path "$instance_path")
+
+    if [ "${#pids[@]}" -eq 0 ]; then
+        echo 0
+        return 0
+    fi
+
+    term_pids=()
+    for pid in "${pids[@]}"; do
+        # PIDs can exit and be reused between discovery and signal delivery;
+        # kill -0 only proves existence, not that this is still the same
+        # orphan session, so re-run the full predicate before signaling.
+        is_orphan_session_proc_for_path "$pid" "$instance_path" || continue
+        kill -TERM "$pid" 2>/dev/null || true
+        term_pids+=("$pid")
+    done
+
+    if [ "${#term_pids[@]}" -eq 0 ]; then
+        echo 0
+        return 0
+    fi
+
+    initial_count="${#term_pids[@]}"
+    remaining=("${term_pids[@]}")
+    # Give cooperative session processes about 1s to handle SIGTERM before
+    # escalating to SIGKILL.
+    for ((attempt = 0; attempt < ORPHAN_REAP_TERM_ATTEMPTS; attempt++)); do
+        remaining=()
+        for pid in "${term_pids[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                remaining+=("$pid")
+            fi
+        done
+        [ "${#remaining[@]}" -gt 0 ] || break
+        term_pids=("${remaining[@]}")
+        sleep "$ORPHAN_REAP_TERM_SLEEP_SECONDS"
+    done
+
+    for pid in "${remaining[@]}"; do
+        # Revalidate again after the grace window; a recycled PID must not
+        # receive the terminal SIGKILL.
+        is_orphan_session_proc_for_path "$pid" "$instance_path" || continue
+        kill -KILL "$pid" 2>/dev/null || true
+    done
+
+    echo "$initial_count"
 }
 
 start_server() {

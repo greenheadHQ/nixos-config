@@ -292,7 +292,7 @@ validate_instance_config() {
 
 start_missing_instance() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
-    local action lock_path started_version
+    local action lock_path reaped started_version
     lock_path=$(lock_path_for_path "$path")
     # A wrapper-bypassed plain CLI server in the same cwd does not hold our
     # lock. Starting another server here permanently creates an undeletable
@@ -302,6 +302,14 @@ start_missing_instance() {
         record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
         log_error "unmanaged same-cwd server present: $path"
         return 1
+    fi
+    # SIGKILLed servers can leave --sdk-url session children re-parented to
+    # init. They are not remote-control servers and do not match the unmanaged
+    # server guard above; preserving them only keeps broken, unreachable
+    # sessions around, so reap them before the replacement server starts.
+    reaped=$(reap_orphan_session_procs_for_path "$path") || reaped=0
+    if [ "$reaped" -gt 0 ]; then
+        log_info "reaped ${reaped} orphan session process(es): $path"
     fi
     start_server "$path" "$spawn" "$capacity" "$permission_mode"
     sleep 2
@@ -587,6 +595,7 @@ Usage: claude-rc-maint ensure
 
 env:
   CLAUDE_BIN, STATE_DIR, CLAUDE_RC_DECLARED_INSTANCES,
+  VERSIONS_DIR (default ~/.local/share/claude/versions; exe boundary for server/session PID detection),
   IDLE_THRESHOLD_MINUTES (default 30), MAINT_LOCK_TIMEOUT_SECONDS (default 120),
   ALERT_COOLDOWN_SECONDS (default 1800), PUSHOVER_CRED_FILE, SERVICE_LIB,
   CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_ALERT_HOST
