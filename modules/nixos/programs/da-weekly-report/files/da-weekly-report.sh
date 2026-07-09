@@ -5,6 +5,7 @@
 # 이 파일 자체는 user-scope 계약만 가정한다: HOME 아래 상태/SSH/Pushover 설정을 사용하고,
 # GitHub 토큰은 gh 호출 한 줄에만 셸 할당으로 주입한다. set -x 금지.
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WEEKLY_REPORT_PY="${WEEKLY_REPORT_PY:-$SCRIPT_DIR/weekly_report.py}"
@@ -25,7 +26,8 @@ PUSHOVER_HELPER="${PUSHOVER_HELPER:-$HOME/.local/lib/pushover.sh}"
 TRACKING_ISSUE_NUMBER="${TRACKING_ISSUE_NUMBER:-}"
 DEADLINE_HOUR="${DEADLINE_HOUR:-14}"
 
-mkdir -p "$STATE_DIR"
+install -d -m 700 "$STATE_DIR"
+chmod 700 "$STATE_DIR"
 
 trim() {
   local value="$1"
@@ -76,85 +78,63 @@ deadline_reached() {
   esac
 }
 
-send_remote_sleep_alert() {
-  local helper="$PUSHOVER_HELPER"
-  local cred="$PUSHOVER_SHARE_CRED"
-  local body="MacBook이 잠들어 있습니다. 깨우면 다음 정시 시도에 포함됩니다"
+PUSHOVER_SEND_REASON=""
 
+send_pushover_fail_soft() {
+  local helper="$1"
+  local cred="$2"
+  local title="$3"
+  local body="$4"
+  local priority="$5"
+  local status
+  PUSHOVER_SEND_REASON=""
+
+  # da-weekly-report/reminder는 별도 writeShellApplication 산출물이라 공통
+  # store lib wiring 대신 entrypoint별 작은 fail-soft wrapper를 둔다.
   if [ ! -r "$helper" ]; then
-    echo "WARN: Pushover helper not readable: $helper" >&2
-    return 0
+    PUSHOVER_SEND_REASON="helper not readable: $helper"
+    echo "WARN: Pushover $PUSHOVER_SEND_REASON" >&2
+    return 2
   fi
   if [ ! -r "$cred" ]; then
-    echo "WARN: Pushover credential not readable: $cred" >&2
-    return 0
+    PUSHOVER_SEND_REASON="credential not readable: $cred"
+    echo "WARN: Pushover $PUSHOVER_SEND_REASON" >&2
+    return 2
   fi
 
   # shellcheck disable=SC1090
-  source "$helper"
+  if ! source "$helper"; then
+    PUSHOVER_SEND_REASON="helper source failed: $helper"
+    echo "WARN: Pushover $PUSHOVER_SEND_REASON" >&2
+    return 2
+  fi
   if ! declare -F pushover_send >/dev/null 2>&1; then
-    echo "WARN: pushover_send function not found" >&2
-    return 0
+    PUSHOVER_SEND_REASON="pushover_send function not found"
+    echo "WARN: $PUSHOVER_SEND_REASON" >&2
+    return 2
   fi
 
   set +e
-  pushover_send "$cred" "DA weekly remote host sleeping" "$body" 0
-  local status=$?
+  pushover_send "$cred" "$title" "$body" "$priority"
+  status=$?
   set -e
   if [ "$status" -ne 0 ]; then
-    echo "WARN: pushover_send exited $status" >&2
+    PUSHOVER_SEND_REASON="pushover_send exited $status"
+    echo "WARN: $PUSHOVER_SEND_REASON" >&2
+    return 1
   fi
   return 0
 }
 
-commentary_contains_file_secret() {
-  local secret_file="$1"
-  local commentary_file="$2"
-  local secret_value=""
+send_remote_sleep_alert() {
+  local body="MacBook이 잠들어 있습니다. 깨우면 다음 정시 시도에 포함됩니다"
 
-  [ -r "$secret_file" ] || return 1
-  [ -s "$commentary_file" ] || return 1
-  IFS= read -r secret_value < "$secret_file" || return 1
-  secret_value="$(trim "$secret_value")"
-  if [ -n "$secret_value" ] && grep -Fq -- "$secret_value" "$commentary_file"; then
-    secret_value=""
-    return 0
-  fi
-  secret_value=""
-  return 1
-}
-
-commentary_contains_pushover_secret() (
-  local cred_file="$1"
-  local commentary_file="$2"
-  local secret_value=""
-
-  [ -r "$cred_file" ] || return 1
-  [ -s "$commentary_file" ] || return 1
-  # shellcheck disable=SC1090
-  source "$cred_file" 2>/dev/null || return 1
-  for secret_value in "${PUSHOVER_TOKEN:-}" "${PUSHOVER_USER:-}"; do
-    if [ -n "$secret_value" ] && grep -Fq -- "$secret_value" "$commentary_file"; then
-      secret_value=""
-      return 0
-    fi
-  done
-  secret_value=""
-  return 1
-)
-
-sanitize_commentary_output() {
-  [ -s "$COMMENTARY_OUT" ] || return 0
-
-  # Same-UID subprocesses can still read user secret files; nested bwrap isolation made
-  # Codex initialization fail in measurement. This gate blocks the public publish path
-  # by comparing literal secret values before commentary is accepted.
-  if commentary_contains_file_secret "$GH_PAT_PATH" "$COMMENTARY_OUT" \
-    || commentary_contains_pushover_secret "$PUSHOVER_SHARE_CRED" "$COMMENTARY_OUT"; then
-    rm -f "$COMMENTARY_OUT"
-    COMMENTARY_ERROR="sanitize gate: secret-like content"
-    return 1
-  fi
+  send_pushover_fail_soft \
+    "$PUSHOVER_HELPER" \
+    "$PUSHOVER_SHARE_CRED" \
+    "DA weekly remote host sleeping" \
+    "$body" \
+    0 || true
   return 0
 }
 
@@ -225,35 +205,30 @@ publish_github() {
 }
 
 publish_pushover() {
-  local pushover_cred pushover_helper push_body push_status
-  pushover_helper="$PUSHOVER_HELPER"
-  pushover_cred="$PUSHOVER_SHARE_CRED"
-  if [ ! -r "$pushover_helper" ]; then
-    publish_record "pushover" "skipped" "helper not readable: $pushover_helper"
-  elif [ ! -r "$pushover_cred" ]; then
-    publish_record "pushover" "skipped" "credential not readable: $pushover_cred"
-  else
-    # shellcheck disable=SC1090
-    source "$pushover_helper"
-    if ! declare -F pushover_send >/dev/null 2>&1; then
-      publish_record "pushover" "skipped" "pushover_send function not found"
-    else
-      push_body="$(python3 "$WEEKLY_REPORT_PY" notification --report-json "$REPORT_JSON")"
-      if [ -n "$COMMENT_URL" ]; then
-        push_body="${push_body}
+  local push_body push_status
+  push_body="$(python3 "$WEEKLY_REPORT_PY" notification --report-json "$REPORT_JSON")"
+  if [ -n "$COMMENT_URL" ]; then
+    push_body="${push_body}
 GitHub: $COMMENT_URL"
-      fi
-      set +e
-      pushover_send "$pushover_cred" "DA weekly $WEEK_ID" "$push_body" 0
-      push_status=$?
-      set -e
-      if [ "$push_status" -eq 0 ]; then
-        publish_record "pushover" "success" "notification sent" "$COMMENT_URL"
-      else
-        publish_record "pushover" "failed" "pushover_send exited $push_status"
-      fi
-    fi
   fi
+
+  set +e
+  send_pushover_fail_soft "$PUSHOVER_HELPER" "$PUSHOVER_SHARE_CRED" "DA weekly $WEEK_ID" "$push_body" 0
+  push_status=$?
+  set -e
+  case "$push_status" in
+    0) publish_record "pushover" "success" "notification sent" "$COMMENT_URL" ;;
+    1) publish_record "pushover" "failed" "$PUSHOVER_SEND_REASON" ;;
+    *) publish_record "pushover" "skipped" "$PUSHOVER_SEND_REASON" ;;
+  esac
+}
+
+configure_publish_targets() {
+  PUBLISH_TARGETS=()
+  if [ -n "$TRACKING_ISSUE_NUMBER" ]; then
+    PUBLISH_TARGETS+=(github)
+  fi
+  PUBLISH_TARGETS+=(pushover)
 }
 
 publish_selected_targets() {
@@ -277,7 +252,7 @@ REPORT_MD="$STATE_DIR/weekly-$WEEK_ID.md"
 PUBLISH_LOG="$STATE_DIR/weekly-$WEEK_ID-publish.json"
 COMMENTARY_OUT="$STATE_DIR/weekly-$WEEK_ID-commentary.txt"
 ATTEMPT_STATE="$(python3 "$WEEKLY_REPORT_PY" attempt-state-path --state-dir "$STATE_DIR" --week-id "$WEEK_ID")"
-PUBLISH_TARGETS=(github pushover)
+configure_publish_targets
 
 echo "== DA weekly report $WEEK_ID =="
 echo "repo: $REPO_ROOT"
@@ -360,6 +335,7 @@ if [ ! -s "$ANALYSIS_JSON" ]; then
   echo "ERROR: analyze.py did not produce sidecar: $ANALYSIS_JSON" >&2
   exit 1
 fi
+chmod 600 "$ANALYSIS_JSON" "$ANALYSIS_MD"
 
 # 2. 해설 입력용 draft JSON. final glob(weekly-????-W??.json)에 걸리지 않는 이름을 쓴다.
 python3 "$WEEKLY_REPORT_PY" build \
@@ -417,7 +393,7 @@ if command -v codex-exec-supervised >/dev/null 2>&1; then
   elif [ ! -s "$COMMENTARY_OUT" ]; then
     COMMENTARY_ERROR="codex-exec-supervised produced empty commentary"
   else
-    sanitize_commentary_output || true
+    chmod 600 "$COMMENTARY_OUT"
   fi
 else
   COMMENTARY_ERROR="codex-exec-supervised not found"
@@ -430,6 +406,8 @@ FINALIZE_ARGS=(
   --input-json "$DRAFT_JSON"
   --output-json "$REPORT_JSON"
   --output-md "$REPORT_MD"
+  --secret-source "$GH_PAT_PATH"
+  --secret-source "$PUSHOVER_SHARE_CRED"
 )
 if [ -n "$COMMENTARY_ERROR" ]; then
   FINALIZE_ARGS+=(--commentary-error "$COMMENTARY_ERROR")

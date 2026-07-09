@@ -59,6 +59,41 @@ def test_extraction_count(fixtures_dir, analyze_module, fixture_name):
     )
 
 
+def test_kv_same_verdict_repeats_are_counted_in_session_and_aggregate(
+    fixtures_dir,
+    analyze_module,
+    tmp_path,
+):
+    """KV fallback dedupe keeps occurrence identity for repeated verdict values."""
+    text, _ = load_fixture_pair(fixtures_dir, "04-kv-arbiter-window")
+    session_path = tmp_path / "kv-repeat.jsonl"
+    session_path.write_text(json.dumps({"text": text}, ensure_ascii=False) + "\n")
+
+    result = analyze_module.analyze_session(str(session_path))
+
+    assert result is not None
+    records = result["verdicts"]
+    assert [record["verdict"] for record in records] == [
+        "CONFIRMED_ISSUE",
+        "NOT_AN_ISSUE",
+        "CONFIRMED_ISSUE",
+    ]
+    assert len({record["match_offset"] for record in records}) == 3
+
+    warnings = []
+    aggregate = analyze_module.build_aggregate(
+        [result],
+        ["minipc"],
+        "fixture:kv-repeat",
+        warnings,
+        "/tmp/analyze-da-sessions-kv-repeat.json",
+    )
+    m2 = aggregate["metrics"]["M-2"]
+    assert m2["n"] == 3
+    assert m2["distribution"] == {"CONFIRMED_ISSUE": 2, "NOT_AN_ISSUE": 1}
+    assert m2["source_distribution"]["kv"] == {"count": 3, "confidence": "medium"}
+
+
 def assert_partial_dict(actual, expected):
     for key, expected_value in expected.items():
         if expected_value == "__NON_NULL__":

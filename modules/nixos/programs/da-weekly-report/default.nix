@@ -84,13 +84,14 @@ in
         WorkingDirectory = nixosConfigDefaultPath;
         TimeoutSec = "3600";
         ExecStart = "${reportScript}/bin/da-weekly-report";
+        UMask = "0077";
 
         # 이 서비스는 사용자 SSH config/ControlMaster, ~/.codex/config.toml,
         # ~/.config/pushover/share, ~/.local/lib/pushover.sh, home state를 읽고 쓴다.
         # 따라서 ProtectHome 계열 hardening은 적용하지 않는다. LLM commentary subprocess도
         # 같은 UID라 user-readable secret 파일 접근 자체는 완전히 막지 못한다. nested bwrap
-        # 격리는 Codex 초기화 실패가 실측되어 기각했고, da-weekly-report.sh의 literal secret
-        # sanitize gate로 공개 코멘트/알림 발행 경로를 차단한다.
+        # 격리는 Codex 초기화 실패가 실측되어 기각했고, weekly_report.py finalize의 literal
+        # secret sanitize gate로 공개 코멘트/알림 발행 경로를 차단한다.
         ProtectSystem = "full";
         ProtectHome = false;
         PrivateTmp = true;
@@ -134,6 +135,7 @@ in
         User = username;
         Group = "users";
         ExecStart = "${reminderScript}/bin/da-weekly-reminder";
+        UMask = "0077";
 
         # user-scope Pushover helper/credential을 읽어야 하므로 ProtectHome은 끈다.
         ProtectSystem = "full";

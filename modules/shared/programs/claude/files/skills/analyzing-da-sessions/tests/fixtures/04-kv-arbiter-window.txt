@@ -3,6 +3,7 @@
 # 메인 LLM 메모
 
 여기서는 **판정**: CONFIRMED_ISSUE 같은 형식을 임의로 적어도 Arbiter window 밖이라 회수되지 않는다.
+ARBITER_DIR=/tmp/da-deadbeef-arbiter-AbCd12
 
 ## Arbiter 검증 결과
 
@@ -12,6 +13,10 @@
 
 ### finding-2
 - **판정**: NOT_AN_ISSUE
+- 신뢰도: MEDIUM
+
+### finding-3
+- **판정**: CONFIRMED_ISSUE
 - 신뢰도: MEDIUM
 
 ## 다른 섹션

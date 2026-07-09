@@ -314,19 +314,24 @@ def test_pending_publish_targets_uses_latest_status_per_target(weekly_report_mod
 
     weekly_report_module.append_publish_record(path, {"target": "github", "status": "failed"})
     weekly_report_module.append_publish_record(path, {"target": "pushover", "status": "success"})
+    weekly_report_module.append_publish_record(path, {"target": "matrix", "status": "skipped"})
 
     assert weekly_report_module.latest_publish_statuses(path) == {
         "github": "failed",
+        "matrix": "skipped",
         "pushover": "success",
     }
-    assert weekly_report_module.pending_publish_targets(path, ["github", "pushover"]) == ["github"]
+    assert weekly_report_module.pending_publish_targets(
+        path,
+        ["github", "pushover", "matrix", "missing"],
+    ) == ["github", "missing"]
 
     weekly_report_module.append_publish_record(path, {"target": "github", "status": "success"})
 
     assert weekly_report_module.pending_publish_targets(path, ["github", "pushover"]) == []
 
 
-def test_pending_publish_targets_command_prints_missing_or_failed_targets(
+def test_pending_publish_targets_command_skips_terminal_statuses(
     weekly_report_module,
     tmp_path,
     capsys,
@@ -343,7 +348,7 @@ def test_pending_publish_targets_command_prints_missing_or_failed_targets(
     ])
 
     assert rc == 0
-    assert capsys.readouterr().out.splitlines() == ["github", "pushover"]
+    assert capsys.readouterr().out.splitlines() == ["pushover"]
 
 
 def test_finalize_injects_commentary_without_recomputing_report(weekly_report_module, tmp_path):
@@ -374,3 +379,48 @@ def test_finalize_injects_commentary_without_recomputing_report(weekly_report_mo
     assert final["commentary"] == {"text": "해설 본문", "failure_reason": None}
     assert final["provenance"]["report_json_path"] == str(final_path.resolve())
     assert "해설 본문" in final_md.read_text()
+
+
+def test_finalize_discards_commentary_containing_secret_values(
+    weekly_report_module,
+    tmp_path,
+):
+    draft = build_report(weekly_report_module)
+    draft_path = tmp_path / "weekly-2026-W28.draft.json"
+    final_path = tmp_path / "weekly-2026-W28.json"
+    final_md = tmp_path / "weekly-2026-W28.md"
+    commentary = tmp_path / "commentary.txt"
+    gh_pat = tmp_path / "github-pat"
+    pushover_cred = tmp_path / "pushover-share"
+    draft_path.write_text(json.dumps(draft), encoding="utf-8")
+    gh_pat.write_text("ghp_plain_secret\n", encoding="utf-8")
+    pushover_cred.write_text(
+        "PUSHOVER_TOKEN='pushover token secret'\nPUSHOVER_USER='pushover user secret'\n",
+        encoding="utf-8",
+    )
+    commentary.write_text("요약 중 pushover token secret 노출", encoding="utf-8")
+
+    rc = weekly_report_module.main([
+        "finalize",
+        "--input-json",
+        str(draft_path),
+        "--output-json",
+        str(final_path),
+        "--output-md",
+        str(final_md),
+        "--commentary-file",
+        str(commentary),
+        "--secret-source",
+        str(gh_pat),
+        "--secret-source",
+        str(pushover_cred),
+    ])
+
+    assert rc == 0
+    final = json.loads(final_path.read_text())
+    assert final["commentary"] == {
+        "text": None,
+        "failure_reason": "sanitize gate: secret-like content",
+    }
+    assert not commentary.exists()
+    assert "sanitize gate: secret-like content" in final_md.read_text()

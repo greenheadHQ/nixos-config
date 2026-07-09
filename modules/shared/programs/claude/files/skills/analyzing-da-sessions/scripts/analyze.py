@@ -48,7 +48,7 @@ import tempfile
 import threading
 import time
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Iterable
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -184,6 +184,7 @@ class PayloadContext:
     payload_hash: str | None = None
     block_index: int | None = None
     block_kind: str = "first_pass"
+    match_offset: int | None = None
 
 
 @dataclass
@@ -242,6 +243,7 @@ class VerdictRecord:
     payload_hash: str | None
     block_index: int | None
     block_kind: str
+    match_offset: int | None
     finding_id: str
     verdict: str
     confidence: str
@@ -580,7 +582,7 @@ def classify_template_exclusion(
         return "union_string_template"
     if re.search(r"(HIGH|MEDIUM|LOW|N/A)\"?\s*\|\s*", body):
         return "union_string_template"
-    if " 또는 " in body or " / " in body and "CONFIRMED_ISSUE" in body:
+    if " 또는 " in body or (" / " in body and "CONFIRMED_ISSUE" in body):
         return "or_pattern_template"
     template_markers = (
         "Arbiter 프롬프트 템플릿",
@@ -783,6 +785,7 @@ def make_verdict_record(
         payload_hash=ctx.payload_hash,
         block_index=ctx.block_index,
         block_kind=block_kind,
+        match_offset=ctx.match_offset,
         finding_id=finding_id,
         verdict=verdict,
         confidence=str(confidence),
@@ -991,12 +994,19 @@ def extract_kv_verdicts(
                         snippet=text_snippet(vm.group(0)),
                     )
                     continue
-                record = make_verdict_record({
-                    "finding_id": "",
-                    "verdict": vm.group(1),
-                    "confidence": "N/A",
-                    "stability_status": "N/A",
-                }, text, "kv", "medium", ctx, diagnostics)
+                record = make_verdict_record(
+                    {
+                        "finding_id": "",
+                        "verdict": vm.group(1),
+                        "confidence": "N/A",
+                        "stability_status": "N/A",
+                    },
+                    text,
+                    "kv",
+                    "medium",
+                    replace(ctx, match_offset=absolute_start),
+                    diagnostics,
+                )
                 if record is not None:
                     verdicts.append(record)
     return verdicts
@@ -1196,6 +1206,7 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
                 record.get("payload_traversal_path"),
                 record.get("finding_id"),
                 record.get("source"),
+                record.get("match_offset"),
                 record.get("canonical_verdict_hash"),
             )
             if key in seen_record_keys:

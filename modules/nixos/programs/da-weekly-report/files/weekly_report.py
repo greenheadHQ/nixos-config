@@ -1,58 +1,8 @@
 #!/usr/bin/env python3
 """da-weekly-report weekly JSON assembler, delta calculator, and renderer.
 
-Weekly report JSON schema v1 example:
-
-```json
-{
-  "schema_version": 1,
-  "week": {"id": "2026-W28", "start": "2026-07-06T00:00:00+09:00", "end": "2026-07-13T00:00:00+09:00", "tz": "Asia/Seoul"},
-  "analysis": {
-    "captured_at": "2026-07-09T12:00:00+00:00",
-    "hosts": ["mac", "minipc"],
-    "corpus": "live",
-    "session_counts": {"total": 10, "arbiter_marker_sessions": 4, "intensity_marker_sessions": 3},
-    "metrics": {
-      "M-1": {"n": 3, "distribution": {"FULL": 2}, "percentages": {"FULL": 66.7}},
-      "M-2": {"n": 7, "distribution": {"CONFIRMED_ISSUE": 5}, "percentages": {"CONFIRMED_ISSUE": 71.4}, "source_distribution": {"verdict_json": {"count": 7, "confidence": "high"}}},
-      "M-3": {"by_bundle": {"Correctness": {"total": 2, "confirmed": 1, "confirmed_rate": 0.5}}},
-      "M-4": {"transition_matrix": {"HIGH->LOW": 1}},
-      "M-5": {"source": "round_summary_fallback", "n": 2, "distribution": {"stable": 2}},
-      "M-6": {"coverage": {"eligible_records": 5, "missing_persistence_components": 1}, "key_block_count_distribution": {"2": 1}}
-    },
-    "derived": {"intensity_full_finding_zero_rate": 0.25},
-    "warnings": []
-  },
-  "health": {
-    "health_formula_version": 1,
-    "document_size": {"markdown_file_count": 12, "total_line_count": 3456},
-    "drift_repair_commits": {"count": 1, "commit_hashes": ["abc123"]},
-    "rule_counts": {"core_invariants_numbered": 8, "cautions_bullets": 5, "non_goals_numbered": 3, "total": 16}
-  },
-  "coverage": {
-    "partial": false,
-    "diagnostics": {"parse_failure_count": 0, "exclusion_count": 0, "invalid_verdict_count": 0},
-    "marker_missing_rates": {"arbiter_marker_missing_rate": 0.6, "intensity_marker_missing_rate": 0.7},
-    "m5_source_distribution": {"round_summary_fallback": 1},
-    "host_collection": {"mac": {"status": "ok"}, "minipc": {"status": "ok"}}
-  },
-  "traceability": {
-    "coverage": {"sessions_total": 10, "complete_sessions": 8, "unknown_format_sessions": 1},
-    "sessions": [{"path": "/home/user/.codex/sessions/2026/07/09/rollout-x-y.jsonl", "format": "codex", "cwd": "/repo", "git_branch": "issue_1064", "session_id": "y"}],
-    "omitted_session_count": 0
-  },
-  "deltas": {
-    "previous_reports": [{"path": "/state/weekly-2026-W27.json", "week_id": "2026-W27"}],
-    "items": [{"metric": "analysis.metrics.M-2.percentages.CONFIRMED_ISSUE", "unit": "%p", "current": 71.4, "comparisons": [{"week_id": "2026-W27", "previous": 70.0, "delta": 1.4}]}]
-  },
-  "commentary": {"text": null, "failure_reason": "codex-exec-supervised not found"},
-  "provenance": {
-    "analysis_sidecar_path": "/state/analyze-2026-W28.json",
-    "publish_log_path": "/state/weekly-2026-W28-publish.json",
-    "generated_at": "2026-07-09T03:00:00+00:00"
-  }
-}
-```
+The canonical report schema is documented in
+`modules/shared/programs/claude/files/skills/analyzing-da-sessions/references/output-format.md`.
 
 Only `weekly-????-W??.json` files are delta inputs. `*-publish.json` is an
 append-only publish log and is structurally excluded from the delta glob.
@@ -66,6 +16,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -82,6 +33,15 @@ WEEKLY_REPORT_RE = re.compile(r"^weekly-\d{4}-W\d{2}\.json$")
 DRIFT_SUBJECT_RE = re.compile(r"(fix|refactor|chore)", re.I)
 DRIFT_BODY_RE = re.compile(r"(drift|참조|사본|dangling|동기화|SSOT)", re.I)
 REMOTE_PREFLIGHT_ALERT_KEY = "remote_preflight_alert_attempted"
+RETRYABLE_PUBLISH_STATUSES = {"failed"}
+SECRET_ASSIGNMENT_NAMES = {
+    "GH_PAT",
+    "GH_TOKEN",
+    "GITHUB_PAT",
+    "GITHUB_TOKEN",
+    "PUSHOVER_TOKEN",
+    "PUSHOVER_USER",
+}
 
 
 def utc_now_iso() -> str:
@@ -164,10 +124,12 @@ def claim_attempt_state_key(
         return False
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    with open(target, "a", encoding="utf-8") as fp:
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as fp:
         if existing_text and not existing_text.endswith("\n"):
             fp.write("\n")
         fp.write(f"{key}={value or utc_now_iso()}\n")
+    target.chmod(0o600)
     return True
 
 
@@ -180,8 +142,12 @@ def atomic_write_text(path: str | os.PathLike[str], text: str) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(f".{target.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fp:
+        fp.write(text)
+    tmp.chmod(0o600)
     os.replace(tmp, target)
+    target.chmod(0o600)
 
 
 def atomic_write_json(path: str | os.PathLike[str], obj: dict) -> None:
@@ -593,6 +559,90 @@ def commentary_object(text: str | None, failure_reason: str | None) -> dict:
     return {"text": None, "failure_reason": failure_reason or "commentary unavailable"}
 
 
+def shell_assignment_value(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if stripped.startswith("export "):
+        stripped = stripped.removeprefix("export ").strip()
+    if "=" not in stripped:
+        return None
+    try:
+        parts = shlex.split(stripped, comments=True, posix=True)
+    except ValueError:
+        parts = [stripped]
+    if len(parts) != 1 or "=" not in parts[0]:
+        return None
+    key, value = parts[0].split("=", 1)
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
+        return None
+    return key, value
+
+
+def secret_values_from_text(text: str) -> list[str]:
+    values: list[str] = []
+    saw_assignment = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        assignment = shell_assignment_value(line)
+        if assignment is None:
+            continue
+        saw_assignment = True
+        key, value = assignment
+        if key in SECRET_ASSIGNMENT_NAMES and value:
+            values.append(value)
+    if not saw_assignment:
+        first_line = text.splitlines()[0].strip() if text.splitlines() else ""
+        if first_line:
+            values.append(first_line)
+    return values
+
+
+def load_secret_values(paths: list[str]) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        if not raw_path:
+            continue
+        try:
+            text = Path(raw_path).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for value in secret_values_from_text(text):
+            if value and value not in seen:
+                values.append(value)
+                seen.add(value)
+    return values
+
+
+def commentary_contains_secret(text: str, secret_values: list[str]) -> bool:
+    return any(secret_value in text for secret_value in secret_values)
+
+
+def read_sanitized_commentary(
+    commentary_file: str | None,
+    commentary_error: str | None,
+    secret_source_paths: list[str],
+) -> tuple[str | None, str | None]:
+    commentary_text = None
+    effective_error = commentary_error
+    if commentary_file:
+        try:
+            commentary_text = Path(commentary_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            return None, f"commentary file read failed: {exc}"
+        if commentary_text and commentary_contains_secret(
+            commentary_text,
+            load_secret_values(secret_source_paths),
+        ):
+            try:
+                Path(commentary_file).unlink()
+            except OSError:
+                pass
+            return None, "sanitize gate: secret-like content"
+    return commentary_text, effective_error
+
+
 def build_weekly_report(
     sidecar: dict,
     health: dict,
@@ -880,8 +930,10 @@ def append_publish_record(path: str, record: dict) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {**record, "recorded_at": utc_now_iso()}
-    with open(target, "a", encoding="utf-8") as fp:
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as fp:
         fp.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    target.chmod(0o600)
 
 
 def latest_publish_statuses(path: str | os.PathLike[str]) -> dict[str, str]:
@@ -911,7 +963,12 @@ def pending_publish_targets(
     targets: list[str] | tuple[str, ...],
 ) -> list[str]:
     latest = latest_publish_statuses(path)
-    return [target for target in targets if latest.get(target) != "success"]
+    pending = []
+    for target in targets:
+        status = latest.get(target)
+        if status is None or status in RETRYABLE_PUBLISH_STATUSES:
+            pending.append(target)
+    return pending
 
 
 def notification_body(report: dict) -> str:
@@ -969,13 +1026,11 @@ def command_build(args: argparse.Namespace) -> int:
 
 def command_finalize(args: argparse.Namespace) -> int:
     report = load_json(args.input_json)
-    commentary_text = None
-    commentary_error = args.commentary_error
-    if args.commentary_file:
-        try:
-            commentary_text = Path(args.commentary_file).read_text(encoding="utf-8")
-        except OSError as exc:
-            commentary_error = f"commentary file read failed: {exc}"
+    commentary_text, commentary_error = read_sanitized_commentary(
+        args.commentary_file,
+        args.commentary_error,
+        args.secret_source or [],
+    )
     report["commentary"] = commentary_object(commentary_text, commentary_error)
     provenance = report.setdefault("provenance", {})
     provenance["report_json_path"] = os.path.abspath(args.output_json)
@@ -1078,6 +1133,11 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument("--output-md", required=True)
     finalize.add_argument("--commentary-file")
     finalize.add_argument("--commentary-error")
+    finalize.add_argument(
+        "--secret-source",
+        action="append",
+        help="file containing literal secret values that must not appear in commentary",
+    )
     finalize.set_defaults(func=command_finalize)
 
     publish = sub.add_parser("publish-record")
