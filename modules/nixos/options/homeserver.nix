@@ -191,6 +191,20 @@
       };
     };
 
+    daWeeklyReport = {
+      enable = lib.mkEnableOption "DA session weekly report timer";
+      reportTime = lib.mkOption {
+        type = lib.types.str;
+        default = "Mon *-*-* 09:00:00 Asia/Seoul";
+        description = "OnCalendar time for weekly DA report generation";
+      };
+      trackingIssueNumber = lib.mkOption {
+        type = lib.types.nullOr lib.types.ints.positive;
+        default = null;
+        description = "GitHub issue number to comment on; null skips GitHub publishing";
+      };
+    };
+
     # opnix: 1Password Service Account 기반 시크릿 materialization 인프라
     # enable=true 시 services.onepassword-secrets(Go SDK root oneshot)로 op:// reference를
     # tmpfs에 materialize하고, SA token 90일 rotation 알림 timer를 활성화한다.
@@ -264,6 +278,7 @@
     ../programs/karakeep-update # Karakeep 버전 체크 + 업데이트 알림
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
+    ../programs/da-weekly-report # DA 세션 주간 리포트 timer
     ../programs/opnix # 1Password Service Account 시크릿 materialization
     ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지

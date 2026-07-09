@@ -36,6 +36,30 @@ Claude top-level 필드도 Codex payload 필드도 없고 rollout 파일명도 �
 `unknown_format_sessions`와 `missing_fields` 카운트로만 표시한다. PR/issue 번호 grep은
 본문 string payload에서 best-effort로 수행하며, 실패 시 빈 배열이다.
 
+## 소스 추적성 필드 계약
+
+`analyze.py`는 세션별 `session_meta`를 `traceability.sessions[]`에 그대로 보존하고,
+aggregate coverage를 `traceability.coverage`에 둔다.
+
+| 필드 | 계약 |
+|------|------|
+| `path` | 분석한 logical session path. 원격 파일은 원격 absolute path를 유지한다. |
+| `host` | `HOST_PATH_MAP` base prefix로 추론한 host. 미분류는 `null`/`unknown` coverage로 남긴다. |
+| `format` | `claude`, `codex`, `unknown` 중 하나. rollout filename fallback이 매치되면 `codex`. |
+| `cwd` | Claude top-level `cwd` 또는 Codex `payload.cwd`. |
+| `git_branch` | Claude `gitBranch` 또는 Codex `payload.git.branch`. |
+| `session_id` | Claude `sessionId`, Codex `payload.id`, fallback `rollout-<ISO>-<id>.jsonl`의 `<id>`. |
+| `rollout_date` | Codex rollout directory `/<YYYY>/<MM>/<DD>/` fallback. |
+| `source_fields` | primary extraction에 성공한 원천 필드 목록. |
+| `fallback_fields` | filename/date fallback으로 보강한 필드 목록. |
+| `missing_fields` | `cwd`, `git_branch`, `session_id` 중 최종 부재 필드. |
+| `complete` | 필수 3필드가 있고 format이 `unknown`이 아니면 true. |
+| `references` | PR/issue/bare number best-effort grep 결과. |
+
+`traceability.coverage`는 `sessions_total`, `complete_sessions`,
+`unknown_format_sessions`, `format_distribution`, `host_distribution`,
+`field_presence`, `missing_fields`, `fallback_fields`를 포함한다.
+
 ## payload traversal path
 
 `analyze.py`는 기존 string-only walker와 별도로 path-aware walker를 사용한다.
@@ -105,6 +129,21 @@ INTENSITY_DIR_MARKER = re.compile(
 - manifest.json 생성 (capture)은 v1 `analyze.py`의 책임 범위가 아니다 — 별도 capture step (외부 스크립트 또는 follow-up 모드)에서 생성한 후 본 Skill 호출 시 `--corpus`로 입력한다.
 - host별 home prefix가 기본값과 다른 corpus는 `--host-home host=/abs/home`으로 `HOST_PATH_MAP` base를 override할 수 있다. 이 override는 validation/corpus prefix 계산에만 쓰이며 SSH command path는 계속 `~/.claude/projects`, `~/.codex/sessions`를 사용한다.
 - 주간 리포트 cron/systemd 호출부는 username에서 `mac=/Users/<username>,minipc=/home/<username>`을 유도해 `--host-home`을 명시 전달한다. 기본값은 현재 배포값(`greenhead`)과의 하위호환용이다.
+
+## `HOST_PATH_MAP` override 계약
+
+`--host-home host=/abs/home[,host=/abs/home]`은 `HOST_PATH_MAP`의 absolute home prefix만
+재계산한다:
+
+```text
+HOST_PATH_MAP[host]["claude"] = /abs/home/.claude/projects
+HOST_PATH_MAP[host]["codex"] = /abs/home/.codex/sessions
+```
+
+적용 범위는 validation/corpus host inference/traceability host inference다. 원격 SSH command
+path는 계속 `~/.claude/projects`, `~/.codex/sessions`를 사용한다. 따라서 username migration
+환경에서도 command construction은 host-neutral이고, 보안 boundary만 배포 사용자 홈으로
+파라미터화된다.
 
 ## subagent 폴더 제외 사유
 

@@ -133,6 +133,24 @@ markdown stdout 출력에는 footer에 warnings 섹션이 추가된다:
 
 JSON sidecar의 `warnings` 배열에도 같은 메시지가 들어간다.
 
+## cron/systemd 주간 리포트 경로
+
+NixOS 자동 실행은 Skill slash-command 호출이 아니라 system service
+`da-weekly-report.service`가 `analyze.py`를 직접 실행하는 경로다. 실행 주체는
+`User = username`, `Group = "users"`이고, `HOME=/home/<username>`을 명시한다. 따라서 SSH
+alias `mac`, ControlMaster socket, `~/.codex/config.toml`, Pushover user credential은
+interactive user-scope와 같은 파일을 사용한다.
+
+systemd 호출부는 `--host-home mac=/Users/<username>,minipc=/home/<username>`을 항상 전달한다.
+이 값은 `HOST_PATH_MAP` validation/corpus/traceability prefix만 바꾸며, SSH command path는
+계속 `~/.claude/projects`, `~/.codex/sessions`다.
+
+Mac 수집 실패 또는 ControlMaster 비활성은 weekly pipeline의 hard fail이 아니다. `analyze.py`는
+해당 host warning을 sidecar에 남기고, `da-weekly-report.sh`는 sidecar가 존재하면 weekly
+JSON/markdown을 계속 생성한다. `weekly_report.py`는 이를 `coverage.partial = true`와
+`coverage.host_collection.mac.status = "partial"`로 승격한다. 주간 markdown의
+커버리지/신뢰도 표와 warnings 섹션이 "Mac 미수집"에 해당하는 host warning을 노출한다.
+
 ## Mac/MiniPC 경로 매핑 기본값
 
 | 호스트 | Claude Code base | Codex base |

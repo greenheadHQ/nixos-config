@@ -2,7 +2,7 @@
 
 PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형태로 영속화한다. 분모 정정 + 4-tier fallback + source/confidence 라벨링이 v1 기본 계약이다.
 
-## Metric Catalog (M-1 ~ M-5)
+## Metric Catalog (M-1 ~ M-6)
 
 | ID | metric 이름 | 산식 | source (analyze.py) |
 |----|------------|------|---------------------|
@@ -31,6 +31,27 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 
 week boundary는 KST 월요일 00:00부터 다음 월요일 00:00까지다. merge commit은
 `--first-parent main` 흐름에서 대표한다.
+
+## Weekly coverage 지표
+
+`weekly_report.py`는 `analyze.py` sidecar의 diagnostics/traceability와 health collection
+결과를 `coverage` top-level object로 정규화한다. renderer와 delta 계산은 이 weekly
+coverage object를 읽으며, sidecar diagnostics를 직접 재해석하지 않는다.
+
+| 필드 | 산식 / 의미 |
+|------|-------------|
+| `partial` | `analyze.py` warnings, health warnings, 또는 analyze exit code non-zero 중 하나라도 있으면 `true`. SSH 실패가 있어도 sidecar가 있으면 weekly report는 partial로 발행된다. |
+| `analyze_exit_code` | `da-weekly-report.sh`가 캡처한 `analyze.py` 종료 코드. sidecar 부재만 hard fail이다. |
+| `diagnostics.parse_failure_count` | sidecar `diagnostics.summary.parse_failure` 값. |
+| `diagnostics.exclusion_count` | sidecar `diagnostics.summary.exclusion` 값. 템플릿/placeholder 제외 카운트다. |
+| `diagnostics.invalid_verdict_count` | sidecar `diagnostics.summary.invalid_verdict` 값. |
+| `diagnostics.missing_persistence_component_count` | sidecar `diagnostics.summary.missing_persistence_component` 값. M-6 coverage와 같은 원천이다. |
+| `diagnostic_rates.*_per_session` | 해당 diagnostic count / `session_counts.total`. total 0이면 0.0. |
+| `marker_missing_rates` | `(total_sessions - marker_sessions) / total_sessions`. Arbiter/Intensity marker 각각 계산한다. |
+| `m2_source_distribution` | sidecar `metrics.M-2.source_distribution` pass-through. |
+| `m5_source_distribution` | sidecar `metrics.M-5.source` 값을 단일 key distribution으로 승격 (`{"round_summary_fallback": 1}` 등). |
+| `host_collection` | sidecar `traceability.coverage.host_distribution`과 warnings prefix(`host <name>:`)를 결합한 host별 상태. warning이 있으면 `partial`, 분석 세션 0이고 warning도 없으면 `unknown`, 그 외 `ok`. |
+| `warnings` / `health_warnings` | 분석 단계 warnings와 git 기반 health 수집 warnings를 분리 보존한다. |
 
 ## Session source traceability (S2-9)
 
@@ -217,7 +238,7 @@ PR #670 정정 코멘트에서 식별된 v2 알고리즘 회수 실패 MiniPC �
 
 ## derived statistics
 
-위 5 metric 외에 출력에 포함되는 보조 statistic:
+M-1~M-6 외에 출력에 포함되는 보조 statistic:
 
 - `intensity_full_finding_zero_rate`: M-1 결과가 FULL인 세션 중 finding 0건 (CLEAR) 세션 비율. 이슈 #671 본문 PHASE-EXTENDED 6번째 항목에 대응. M-1과 M-2 결과 cross-join으로 계산.
 - `metrics["M-2"]["source_distribution"]`: 4-tier fallback 각 source의 추출률 (high vs medium vs low confidence 비율).
