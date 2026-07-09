@@ -33,15 +33,21 @@ import concurrent.futures
 import datetime
 import glob
 import hashlib
+import io
 import json
 import os
 import platform
 import posixpath
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
+import threading
+import time
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -147,9 +153,13 @@ SEVERITY_LOOKBEHIND_CHARS = 200  # finding_id 등장 위치 기준 앞쪽 탐색
 SEVERITY_LOOKAHEAD_CHARS = 1000  # finding_id 등장 위치 기준 뒤쪽 탐색 범위
 SSH_FIND_TIMEOUT_SECONDS = 60  # 원격 호스트의 find 명령 timeout
 SSH_CAT_TIMEOUT_SECONDS = 120  # 원격 호스트의 cat 명령 timeout
+SSH_TAR_TIMEOUT_SECONDS = 300  # 원격 호스트의 tar batch stream timeout
+SSH_HOST_FETCH_BUDGET_SECONDS = 300  # host별 remote find + fetch 전체 wall-clock budget
 FLEISS_KAPPA_TIMEOUT_SECONDS = 60  # fleiss-kappa.py helper 호출 timeout (현재 v1에서는 미사용)
 SSH_FETCH_WORKERS = 8  # 원격 호스트당 동시 SSH cat worker 수 (host 순차 처리, host당 K=8 병렬)
-SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10  # ssh -O check / ssh true preflight timeout
+SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10  # ssh preflight / ControlMaster check timeout
+
+REMOTE_PATH_FORBIDDEN_CHARS = set(" \n\r\t;|&$`(){}[]<>*?\"'\\")
 
 
 def current_host() -> str:
@@ -173,6 +183,47 @@ class PayloadContext:
     payload_hash: str | None = None
     block_index: int | None = None
     block_kind: str = "first_pass"
+
+
+@dataclass
+class HostFetchBudget:
+    """원격 host 하나의 find + fetch 전체 wall-clock budget."""
+
+    host: str
+    deadline: float
+    warning_emitted: bool = False
+    warning_lock: threading.Lock = field(
+        default_factory=threading.Lock,
+        repr=False,
+        compare=False,
+    )
+
+    @classmethod
+    def start(cls, host: str) -> "HostFetchBudget":
+        _validate_host(host)
+        return cls(host=host, deadline=time.monotonic() + SSH_HOST_FETCH_BUDGET_SECONDS)
+
+    def remaining_seconds(self) -> float:
+        return self.deadline - time.monotonic()
+
+    def expired(self) -> bool:
+        return self.remaining_seconds() <= 0
+
+    def timeout_for(self, requested_seconds: float) -> tuple[float | None, bool]:
+        """요청 timeout을 host budget 잔여 시간으로 clamp한다."""
+        remaining = self.remaining_seconds()
+        if remaining <= 0:
+            return None, True
+        return min(requested_seconds, remaining), remaining < requested_seconds
+
+    def warn_exceeded(self, warnings: list[str]) -> None:
+        with self.warning_lock:
+            if self.warning_emitted:
+                return
+            warnings.append(
+                f"host {self.host}: fetch budget 초과 (절전/무응답 가능성) — partial result"
+            )
+            self.warning_emitted = True
 
 
 @dataclass
@@ -1605,6 +1656,14 @@ def collect_local_files(host: str) -> list[str]:
     return files
 
 
+def _remote_path_has_disallowed_chars(path: str) -> bool:
+    """remote shell/tar list 경계에서 금지할 제어문자와 shell metacharacter 검사."""
+    return any(
+        c in REMOTE_PATH_FORBIDDEN_CHARS or ord(c) < 32 or ord(c) == 127
+        for c in path
+    )
+
+
 def _allowed_remote_path(host: str, path: str) -> bool:
     """원격 path가 정확한 base prefix 아래의 안전한 .jsonl 경로인지 확인.
 
@@ -1625,7 +1684,7 @@ def _allowed_remote_path(host: str, path: str) -> bool:
     if not isinstance(path, str) or not path:
         return False
     # 제어문자 / shell metacharacter / space 거부
-    if any(c in path for c in " \n\r\t;|&$`(){}[]<>*?\"'\\"):
+    if _remote_path_has_disallowed_chars(path):
         return False
     if not path.endswith(".jsonl"):
         return False
@@ -1655,7 +1714,165 @@ def _validate_remote_path(host: str, path: str) -> None:
         raise ValueError(f"disallowed remote path for host {host}: {path!r}")
 
 
-def collect_remote_files(host: str, warnings: list[str]) -> list[str]:
+def _build_remote_tar_argv(host: str) -> list[str]:
+    """remote tar batch fetch argv. GNU tar/bsdtar 공통 옵션만 사용한다."""
+    _validate_host(host)
+    return ["ssh", host, "tar", "-C", "/", "-cf", "-", "-T", "-"]
+
+
+def _prepare_remote_tar_entries(
+    host: str,
+    paths: Iterable[str],
+    warnings: list[str],
+) -> list[tuple[str, str]]:
+    """remote absolute path를 검증하고 `tar -C /` 기준 상대 path로 변환한다.
+
+    반환 tuple은 `(logical_absolute_path, tar_relative_path)`이다. `tar -T -`는
+    newline-delimited list만 지원하므로 개행 포함 path는 fallback에서도 제외한다.
+    """
+    _validate_host(host)
+    entries: list[tuple[str, str]] = []
+    for path in paths:
+        if not isinstance(path, str):
+            warnings.append(
+                f"host {host}: remote tar path excluded by validation: {path!r}"
+            )
+            continue
+        if "\n" in path or "\r" in path:
+            warnings.append(
+                f"host {host}: remote tar path excluded because it contains newline: {path!r}"
+            )
+            continue
+        if not _allowed_remote_path(host, path):
+            warnings.append(
+                f"host {host}: remote tar path excluded by validation: {path!r}"
+            )
+            continue
+        path_norm = posixpath.normpath(path)
+        entries.append((path_norm, path_norm.removeprefix("/")))
+    return entries
+
+
+def _build_remote_tar_stdin(entries: Iterable[tuple[str, str]]) -> bytes:
+    """`tar -T -`에 넘길 newline-delimited relative path list."""
+    lines = [relative_path for _, relative_path in entries]
+    if not lines:
+        return b""
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _normalize_tar_member_name(name: str) -> str | None:
+    """tar member path를 tempdir 내부 상대 path로 정규화한다."""
+    if not isinstance(name, str) or not name:
+        return None
+    if _remote_path_has_disallowed_chars(name):
+        return None
+    name_norm = posixpath.normpath(name)
+    if name_norm in ("", ".") or posixpath.isabs(name_norm):
+        return None
+    if name_norm == ".." or name_norm.startswith("../") or "/../" in name_norm:
+        return None
+    return name_norm
+
+
+def _extract_tar_stream_to_dir(
+    host: str,
+    tar_stream: Any,
+    entries: list[tuple[str, str]],
+    dest_dir: str,
+    warnings: list[str],
+) -> bool:
+    """remote tar stream을 tempdir에 추출한다. 실패 시 False로 fallback을 유도한다."""
+    expected_rel_paths = {relative_path for _, relative_path in entries}
+    extracted_rel_paths: set[str] = set()
+    dest_root = os.path.abspath(dest_dir)
+
+    try:
+        with tarfile.open(fileobj=tar_stream, mode="r:*") as tf:
+            for member in tf:
+                member_rel = _normalize_tar_member_name(member.name)
+                if member_rel not in expected_rel_paths:
+                    warnings.append(
+                        f"host {host}: tar member skipped by validation: {member.name!r}"
+                    )
+                    continue
+                if not member.isfile():
+                    warnings.append(
+                        f"host {host}: tar member is not a regular file: {member.name!r}"
+                    )
+                    continue
+                source = tf.extractfile(member)
+                if source is None:
+                    warnings.append(
+                        f"host {host}: tar member could not be read: {member.name!r}"
+                    )
+                    continue
+
+                dest_path = os.path.abspath(os.path.join(dest_dir, *member_rel.split("/")))
+                try:
+                    if os.path.commonpath([dest_root, dest_path]) != dest_root:
+                        warnings.append(
+                            f"host {host}: tar member escaped tempdir: {member.name!r}"
+                        )
+                        continue
+                except ValueError:
+                    warnings.append(
+                        f"host {host}: tar member escaped tempdir: {member.name!r}"
+                    )
+                    continue
+
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                with open(dest_path, "wb") as fp:
+                    shutil.copyfileobj(source, fp)
+                extracted_rel_paths.add(member_rel)
+    except tarfile.TarError as e:
+        warnings.append(
+            f"host {host}: ssh tar stream could not be read ({type(e).__name__}: {e})"
+            " — falling back to per-file cat"
+        )
+        return False
+
+    if not extracted_rel_paths and entries:
+        warnings.append(
+            f"host {host}: ssh tar produced no extractable files — falling back to per-file cat"
+        )
+        return False
+
+    missing = sorted(expected_rel_paths - extracted_rel_paths)
+    for relative_path in missing:
+        warnings.append(
+            f"host {host}: tar extract missing {relative_path} — partial result"
+        )
+    return True
+
+
+def _extract_tar_bytes_to_dir(
+    host: str,
+    tar_bytes: bytes,
+    entries: list[tuple[str, str]],
+    dest_dir: str,
+    warnings: list[str],
+) -> bool:
+    """bytes-backed wrapper for unit checks around tar extraction."""
+    if not tar_bytes:
+        warnings.append(
+            f"host {host}: ssh tar produced empty stream — falling back to per-file cat"
+        )
+        return False
+    return _extract_tar_stream_to_dir(
+        host,
+        io.BytesIO(tar_bytes),
+        entries,
+        dest_dir,
+        warnings,
+    )
+
+
+def collect_remote_files(
+    host: str,
+    warnings: list[str],
+    budget: HostFetchBudget | None = None,
+) -> list[str]:
     """원격 호스트에서 jsonl 파일 path glob (subprocess.run 고정 argv).
 
     SSH 명령 인자에는 host-neutral relative tilde 표현 (`~/.claude/projects`,
@@ -1670,6 +1887,14 @@ def collect_remote_files(host: str, warnings: list[str]) -> list[str]:
     _validate_host(host)
     all_files: list[str] = []
     for base in ("~/.claude/projects", "~/.codex/sessions"):
+        budget_limited = False
+        timeout = SSH_FIND_TIMEOUT_SECONDS
+        if budget is not None:
+            timeout_value, budget_limited = budget.timeout_for(SSH_FIND_TIMEOUT_SECONDS)
+            if timeout_value is None:
+                budget.warn_exceeded(warnings)
+                break
+            timeout = timeout_value
         try:
             # SSH는 argv를 single string으로 합쳐 원격 shell에 전달하므로
             # `*.jsonl`을 single-quote로 감싸 원격 glob expansion을 차단한다.
@@ -1677,12 +1902,15 @@ def collect_remote_files(host: str, warnings: list[str]) -> list[str]:
                 ["ssh", host, "find", base, "-type", "f", "-name", "'*.jsonl'"],
                 capture_output=True,
                 text=True,
-                timeout=SSH_FIND_TIMEOUT_SECONDS,
+                timeout=timeout,
             )
             if proc.returncode != 0:
                 warnings.append(
                     f"host {host}: ssh find failed (rc={proc.returncode}) for {base}"
                 )
+                if budget is not None and budget.expired():
+                    budget.warn_exceeded(warnings)
+                    break
                 continue
             for line in proc.stdout.splitlines():
                 if "/subagents/" in line:
@@ -1690,30 +1918,55 @@ def collect_remote_files(host: str, warnings: list[str]) -> list[str]:
                 if not _allowed_remote_path(host, line):
                     continue
                 all_files.append(line)
+            if budget is not None and budget.expired():
+                budget.warn_exceeded(warnings)
+                break
         except subprocess.TimeoutExpired:
+            if budget_limited or (budget is not None and budget.expired()):
+                budget.warn_exceeded(warnings)
+                break
             warnings.append(f"host {host}: ssh find timeout for {base} — partial result")
         except FileNotFoundError:
             warnings.append(f"host {host}: ssh binary not found — partial result")
+            break
     return all_files
 
 
-def fetch_remote_file(host: str, path: str, warnings: list[str]) -> str | None:
+def fetch_remote_file(
+    host: str,
+    path: str,
+    warnings: list[str],
+    budget: HostFetchBudget | None = None,
+) -> str | None:
     """원격 jsonl 내용 가져오기. SSH 실패는 warnings 누적 + None 반환 (partial result)."""
     _validate_host(host)
     _validate_remote_path(host, path)
+    budget_limited = False
+    timeout = SSH_CAT_TIMEOUT_SECONDS
+    if budget is not None:
+        timeout_value, budget_limited = budget.timeout_for(SSH_CAT_TIMEOUT_SECONDS)
+        if timeout_value is None:
+            budget.warn_exceeded(warnings)
+            return None
+        timeout = timeout_value
     try:
         proc = subprocess.run(
             ["ssh", host, "cat", path],
             capture_output=True,
             text=True,
-            timeout=SSH_CAT_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        warnings.append(f"host {host}: ssh cat timeout for {path} — partial result")
+        if budget_limited or (budget is not None and budget.expired()):
+            budget.warn_exceeded(warnings)
+        else:
+            warnings.append(f"host {host}: ssh cat timeout for {path} — partial result")
         return None
     except FileNotFoundError:
         warnings.append(f"host {host}: ssh binary not found — partial result")
         return None
+    if budget is not None and budget.expired():
+        budget.warn_exceeded(warnings)
     if proc.returncode != 0:
         warnings.append(
             f"host {host}: ssh cat failed (rc={proc.returncode}) for {path} — partial result"
@@ -1722,68 +1975,206 @@ def fetch_remote_file(host: str, path: str, warnings: list[str]) -> str | None:
     return proc.stdout
 
 
-def check_controlmaster_active(host: str, warnings: list[str]) -> bool:
-    """ControlMaster master socket이 활성인지 확인. 비활성이면 master 생성을 1회 시도 후 재확인.
+def _stderr_snippet(stderr: bytes) -> str:
+    return stderr.decode("utf-8", "replace").strip()[:200]
 
-    `ssh -O check <host>`는 master 부재 시 실패한다. 따라서 실패 시 일반 `ssh <host> true`로
-    master 생성 시도 후 다시 `-O check`로 확인하는 2단계 sequence로 구성한다.
 
-    반환값이 False이면 caller가 해당 host fetch를 skip한다 (fail-fast).
+def _fetch_remote_files_tar_to_dir(
+    host: str,
+    entries: list[tuple[str, str]],
+    dest_dir: str,
+    warnings: list[str],
+    budget: HostFetchBudget | None = None,
+) -> bool:
+    """원격 파일 묶음을 단일 tar stream으로 가져와 tempdir에 추출한다."""
+    _validate_host(host)
+    if not entries:
+        return True
+
+    budget_limited = False
+    timeout = SSH_TAR_TIMEOUT_SECONDS
+    if budget is not None:
+        timeout_value, budget_limited = budget.timeout_for(SSH_TAR_TIMEOUT_SECONDS)
+        if timeout_value is None:
+            budget.warn_exceeded(warnings)
+            return False
+        timeout = timeout_value
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f"remote-{host}-",
+            suffix=".tar",
+            dir=dest_dir,
+        ) as archive_fp:
+            proc = subprocess.run(
+                _build_remote_tar_argv(host),
+                input=_build_remote_tar_stdin(entries),
+                stdout=archive_fp,
+                stderr=subprocess.PIPE,
+                timeout=timeout,
+            )
+            archive_fp.flush()
+            archive_size = archive_fp.tell()
+
+            if proc.returncode != 0:
+                detail = _stderr_snippet(proc.stderr)
+                suffix = f": {detail}" if detail else ""
+                warnings.append(
+                    f"host {host}: ssh tar failed (rc={proc.returncode}){suffix}"
+                    " — falling back to per-file cat"
+                )
+                return False
+
+            if archive_size == 0:
+                warnings.append(
+                    f"host {host}: ssh tar produced empty stream — falling back to per-file cat"
+                )
+                return False
+
+            archive_fp.seek(0)
+            return _extract_tar_stream_to_dir(host, archive_fp, entries, dest_dir, warnings)
+    except subprocess.TimeoutExpired:
+        if budget_limited or (budget is not None and budget.expired()):
+            budget.warn_exceeded(warnings)
+        else:
+            warnings.append(
+                f"host {host}: ssh tar timeout — falling back to per-file cat"
+            )
+        return False
+    except FileNotFoundError:
+        warnings.append(
+            f"host {host}: ssh binary not found during tar fetch — falling back to per-file cat"
+        )
+        return False
+
+
+def analyze_remote_sessions_via_tar(
+    host: str,
+    entries: list[tuple[str, str]],
+    warnings: list[str],
+    budget: HostFetchBudget | None = None,
+) -> list[dict] | None:
+    """remote jsonl 목록을 tar batch로 fetch 후 로컬 tempdir에서 분석한다.
+
+    반환값이 None이면 caller가 기존 per-file cat fallback을 실행한다.
     """
+    _validate_host(host)
+    if not entries:
+        return []
+
+    with tempfile.TemporaryDirectory(prefix=f"analyze-da-sessions-{host}-") as tmp_dir:
+        if not _fetch_remote_files_tar_to_dir(host, entries, tmp_dir, warnings, budget):
+            return None
+
+        sessions: list[dict] = []
+        for logical_path, relative_path in entries:
+            local_path = os.path.join(tmp_dir, *relative_path.split("/"))
+            if not os.path.isfile(local_path):
+                warnings.append(
+                    f"host {host}: tar extracted file missing for {logical_path} — partial result"
+                )
+                continue
+            result = analyze_session(local_path, logical_path=logical_path)
+            if result is not None:
+                sessions.append(result)
+        return sessions
+
+
+def check_remote_host_preflight(host: str, warnings: list[str]) -> bool:
+    """원격 host가 실제로 응답하는지 저비용으로 확인한다."""
     _validate_host(host)
     try:
         proc = subprocess.run(
-            ["ssh", "-O", "check", host],
+            [
+                "ssh",
+                "-o",
+                f"ConnectTimeout={SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS}",
+                host,
+                "true",
+            ],
             capture_output=True,
             text=True,
             timeout=SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS,
         )
         if proc.returncode == 0:
             return True
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    # master 부재로 추정 — `ssh true`로 master 생성 시도
-    try:
-        gen = subprocess.run(
-            ["ssh", host, "true"],
-            capture_output=True,
-            text=True,
-            timeout=SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS,
-        )
-        if gen.returncode != 0:
-            warnings.append(
-                f"host {host}: ssh true (ControlMaster 생성 시도) 실패 (rc={gen.returncode}) — fetch skip"
-            )
-            return False
-    except (subprocess.TimeoutExpired, FileNotFoundError):
         warnings.append(
-            f"host {host}: ssh true 시간 초과 또는 binary 부재 — fetch skip"
+            f"host {host}: ssh preflight failed (rc={proc.returncode}) — fetch skip, partial result"
         )
         return False
-    # 재확인
+    except subprocess.TimeoutExpired:
+        warnings.append(
+            f"host {host}: ssh preflight timeout (절전/무응답 가능성) — fetch skip, partial result"
+        )
+        return False
+    except FileNotFoundError:
+        warnings.append(
+            f"host {host}: ssh binary not found during preflight — partial result"
+        )
+        return False
+
+
+def check_controlmaster_active(
+    host: str,
+    warnings: list[str],
+    preflight_already_ok: bool = False,
+    budget: HostFetchBudget | None = None,
+) -> bool:
+    """ControlMaster master socket이 활성인지 확인한다.
+
+    mux socket 존재만으로 원격 생존을 판단하지 않기 위해, caller가 이미 확인하지 않은
+    경우에는 `ssh -o ConnectTimeout=10 <host> true` preflight를 먼저 수행한다.
+    반환값이 False이면 caller가 해당 host fetch를 skip한다 (fail-fast).
+    """
+    _validate_host(host)
+    if not preflight_already_ok and not check_remote_host_preflight(host, warnings):
+        return False
+
+    budget_limited = False
+    timeout = SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS
+    if budget is not None:
+        timeout_value, budget_limited = budget.timeout_for(
+            SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS
+        )
+        if timeout_value is None:
+            budget.warn_exceeded(warnings)
+            return False
+        timeout = timeout_value
+
     try:
-        re_check = subprocess.run(
+        proc = subprocess.run(
             ["ssh", "-O", "check", host],
             capture_output=True,
             text=True,
-            timeout=SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
-        if re_check.returncode == 0:
+        if budget is not None and budget.expired():
+            budget.warn_exceeded(warnings)
+            return False
+        if proc.returncode == 0:
             return True
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except subprocess.TimeoutExpired:
+        if budget_limited or (budget is not None and budget.expired()):
+            budget.warn_exceeded(warnings)
+            return False
+    except FileNotFoundError:
         pass
     warnings.append(
-        f"host {host}: ControlMaster 재확인 실패 — fetch skip"
+        f"host {host}: ControlMaster 확인 실패 — fetch skip, partial result"
     )
     return False
 
 
-def analyze_remote_session(host: str, path: str, warnings: list[str]) -> dict | None:
+def analyze_remote_session(
+    host: str,
+    path: str,
+    warnings: list[str],
+    budget: HostFetchBudget | None = None,
+) -> dict | None:
     """원격 jsonl을 fetch하여 임시 파일에 쓰고 analyze_session 호출."""
-    content = fetch_remote_file(host, path, warnings)
+    content = fetch_remote_file(host, path, warnings, budget)
     if content is None or not content:
         return None
-    import tempfile
     with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as tf:
         tf.write(content)
         tmp_path = tf.name
@@ -1889,6 +2280,8 @@ def main() -> int:
 
     warnings: list[str] = []
     cur_host = current_host()
+    host_budgets: dict[str, HostFetchBudget] = {}
+    remote_preflight_ok: set[str] = set()
     apply_host_home_overrides(pair for group in args.host_home for pair in group)
 
     if args.json:
@@ -1929,7 +2322,13 @@ def main() -> int:
             if host == cur_host:
                 files_by_host[host] = collect_local_files(host)
             else:
-                files_by_host[host] = collect_remote_files(host, warnings)
+                if not check_remote_host_preflight(host, warnings):
+                    files_by_host[host] = []
+                    continue
+                remote_preflight_ok.add(host)
+                budget = HostFetchBudget.start(host)
+                host_budgets[host] = budget
+                files_by_host[host] = collect_remote_files(host, warnings, budget)
         corpus_label = "live"
 
     # 분석 — host 순차 처리, remote host는 ControlMaster preflight 후 worker pool dispatch.
@@ -1952,29 +2351,73 @@ def main() -> int:
         if not files:
             continue
 
+        budget = host_budgets.get(host)
+        if budget is not None and budget.expired():
+            budget.warn_exceeded(warnings)
+            continue
+
         # remote: ControlMaster preflight + worker pool.
         # ControlMaster 비활성이면 K=1 강등이 5526 파일 직렬 fetch ≈ 37분으로 5분 timeout
         # 안에 끝나기 어려우므로 fail-fast로 host 전체 fetch를 skip하고 명시적 warning을
         # 누적한다. 사용자가 ControlMaster 활성화 (mac nrs 등) 누락을 즉시 인지할 수 있다.
-        cm_active = check_controlmaster_active(host, warnings)
+        cm_active = check_controlmaster_active(
+            host,
+            warnings,
+            preflight_already_ok=host in remote_preflight_ok,
+            budget=budget,
+        )
         if not cm_active:
+            if budget is not None and budget.warning_emitted:
+                continue
             warnings.append(
                 f"host {host}: ControlMaster 비활성으로 fetch skip — 활성화 후 재실행 필요"
                 f" (직렬 fallback은 5분 budget 안에 완료 불가능). minipc는 nrs, mac은 사용자 수동 nrs."
             )
             continue
+        if budget is None:
+            budget = HostFetchBudget.start(host)
+            host_budgets[host] = budget
+        if budget.expired():
+            budget.warn_exceeded(warnings)
+            continue
+
+        tar_entries = _prepare_remote_tar_entries(host, files, warnings)
+        if not tar_entries:
+            continue
+
+        try:
+            tar_sessions = analyze_remote_sessions_via_tar(
+                host,
+                tar_entries,
+                warnings,
+                budget,
+            )
+        except Exception as e:
+            warnings.append(
+                f"host {host}: ssh tar batch exception ({type(e).__name__}: {e})"
+                " — falling back to per-file cat"
+            )
+            tar_sessions = None
+        if tar_sessions is not None:
+            sessions.extend(tar_sessions)
+            continue
+        if budget.warning_emitted or budget.expired():
+            budget.warn_exceeded(warnings)
+            continue
+
+        fallback_files = [logical_path for logical_path, _ in tar_entries]
 
         # remote_warnings는 worker별로 분리 수집 후 main thread에서 path 순으로 merge.
         # CPython GIL이 list.append를 atomic하게 보장하지만 worker 간 순서가 비결정적이므로
         # 별도 list로 받아 deterministic ordering을 강제한다.
         def _fetch_one(p: str) -> tuple[str, dict | None, list[str]]:
             local_warnings: list[str] = []
-            res = analyze_remote_session(host, p, local_warnings)
+            res = analyze_remote_session(host, p, local_warnings, budget)
             return (p, res, local_warnings)
 
         host_results: list[tuple[str, dict | None, list[str]]] = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=SSH_FETCH_WORKERS) as executor:
-            futures = {executor.submit(_fetch_one, p): p for p in files}
+            futures = {executor.submit(_fetch_one, p): p for p in fallback_files}
             for fut in concurrent.futures.as_completed(futures):
                 try:
                     host_results.append(fut.result())

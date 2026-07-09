@@ -21,8 +21,89 @@ HOSTS="${HOSTS:-mac,minipc}"
 HOST_HOME="${HOST_HOME:-mac=/Users/$USERNAME_FOR_PATHS,minipc=/home/$USERNAME_FOR_PATHS}"
 GH_PAT_PATH="${GH_PAT_PATH:-/run/opnix/$USERNAME_FOR_PATHS/github-pat}"
 TRACKING_ISSUE_NUMBER="${TRACKING_ISSUE_NUMBER:-}"
+DEADLINE_HOUR="${DEADLINE_HOUR:-14}"
 
 mkdir -p "$STATE_DIR"
+
+trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+current_collection_host() {
+  case "$(uname -s)" in
+    Darwin) printf '%s\n' "mac" ;;
+    *) printf '%s\n' "minipc" ;;
+  esac
+}
+
+collect_remote_hosts() {
+  local current_host="$1"
+  local item host
+  local -a host_items=()
+  REMOTE_HOSTS=()
+  IFS=',' read -r -a host_items <<< "$HOSTS"
+  for item in "${host_items[@]}"; do
+    host="$(trim "$item")"
+    if [ -n "$host" ] && [ "$host" != "$current_host" ]; then
+      REMOTE_HOSTS+=("$host")
+    fi
+  done
+}
+
+join_by_comma() {
+  local IFS=,
+  printf '%s' "$*"
+}
+
+deadline_reached() {
+  local status
+  set +e
+  python3 "$WEEKLY_REPORT_PY" deadline-reached --deadline-hour "$DEADLINE_HOUR"
+  status=$?
+  set -e
+  case "$status" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *)
+      echo "ERROR: deadline check failed with exit $status" >&2
+      exit "$status"
+      ;;
+  esac
+}
+
+send_remote_sleep_alert() {
+  local helper="$HOME/.local/lib/pushover.sh"
+  local cred="$HOME/.config/pushover/share"
+  local body="MacBook이 잠들어 있습니다. 깨우면 다음 정시 시도에 포함됩니다"
+
+  if [ ! -r "$helper" ]; then
+    echo "WARN: Pushover helper not readable: $helper" >&2
+    return 0
+  fi
+  if [ ! -r "$cred" ]; then
+    echo "WARN: Pushover credential not readable: $cred" >&2
+    return 0
+  fi
+
+  # shellcheck disable=SC1090
+  source "$helper"
+  if ! declare -F pushover_send >/dev/null 2>&1; then
+    echo "WARN: pushover_send function not found" >&2
+    return 0
+  fi
+
+  set +e
+  pushover_send "$cred" "DA weekly remote host sleeping" "$body" 0
+  local status=$?
+  set -e
+  if [ "$status" -ne 0 ]; then
+    echo "WARN: pushover_send exited $status" >&2
+  fi
+  return 0
+}
 
 WEEK_ID="$(python3 "$WEEKLY_REPORT_PY" week-id)"
 ANALYSIS_JSON="$STATE_DIR/analyze-$WEEK_ID.json"
@@ -33,10 +114,59 @@ REPORT_JSON="$STATE_DIR/weekly-$WEEK_ID.json"
 REPORT_MD="$STATE_DIR/weekly-$WEEK_ID.md"
 PUBLISH_LOG="$STATE_DIR/weekly-$WEEK_ID-publish.json"
 COMMENTARY_OUT="$STATE_DIR/weekly-$WEEK_ID-commentary.txt"
+ATTEMPT_STATE="$(python3 "$WEEKLY_REPORT_PY" attempt-state-path --state-dir "$STATE_DIR" --week-id "$WEEK_ID")"
 
 echo "== DA weekly report $WEEK_ID =="
 echo "repo: $REPO_ROOT"
 echo "state: $STATE_DIR"
+
+if [ -s "$REPORT_JSON" ]; then
+  echo "already published: $REPORT_JSON"
+  exit 0
+fi
+
+CURRENT_HOST="$(current_collection_host)"
+collect_remote_hosts "$CURRENT_HOST"
+if [ "${#REMOTE_HOSTS[@]}" -gt 0 ]; then
+  echo "remote preflight hosts: $(join_by_comma "${REMOTE_HOSTS[@]}")"
+else
+  echo "remote preflight hosts: none"
+fi
+
+UNREACHABLE_HOSTS=()
+for host in "${REMOTE_HOSTS[@]}"; do
+  if ssh -o ConnectTimeout=10 -o BatchMode=yes "$host" true >/dev/null 2>&1; then
+    echo "remote host alive: $host"
+  else
+    echo "remote host unreachable: $host"
+    UNREACHABLE_HOSTS+=("$host")
+  fi
+done
+
+if [ "${#UNREACHABLE_HOSTS[@]}" -gt 0 ]; then
+  if deadline_reached; then
+    echo "deadline reached at hour $DEADLINE_HOUR; proceeding with partial collection"
+  else
+    echo "deadline not reached; waiting for next scheduled attempt"
+    set +e
+    python3 "$WEEKLY_REPORT_PY" claim-attempt-alert --state-file "$ATTEMPT_STATE"
+    CLAIM_STATUS=$?
+    set -e
+    case "$CLAIM_STATUS" in
+      0)
+        send_remote_sleep_alert
+        ;;
+      1)
+        echo "remote sleep alert already claimed for $WEEK_ID"
+        ;;
+      *)
+        echo "ERROR: attempt alert state update failed with exit $CLAIM_STATUS" >&2
+        exit "$CLAIM_STATUS"
+        ;;
+    esac
+    exit 0
+  fi
+fi
 
 # 1. analyze.py 실행. non-zero라도 sidecar가 있으면 partial로 계속 진행한다.
 set +e

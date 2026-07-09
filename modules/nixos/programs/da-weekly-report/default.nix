@@ -1,5 +1,5 @@
 # modules/nixos/programs/da-weekly-report/default.nix
-# DA 세션 주간 리포트 자동 발행 timer.
+# DA 세션 주간 리포트 자동 발행 retry window + 사전 리마인더 timer.
 {
   config,
   pkgs,
@@ -32,20 +32,33 @@ let
     text = builtins.readFile ./files/da-weekly-report.sh;
   };
 
-  baseEnvironment = {
+  reminderScript = pkgs.writeShellApplication {
+    name = "da-weekly-reminder";
+    runtimeInputs = with pkgs; [
+      curl
+      coreutils
+    ];
+    text = builtins.readFile ./files/da-weekly-reminder.sh;
+  };
+
+  commonEnvironment = {
     HOME = homeDir;
     USER = username;
     DA_WEEKLY_USERNAME = username;
-    REPO_ROOT = nixosConfigDefaultPath;
     STATE_DIR = stateDir;
+    # writeShellApplication runtimeInputs가 앞에 붙는다. 이 tail은 Home Manager가
+    # 관리하는 user-scope codex/codex-exec-supervised wrapper를 해석하기 위해 필요하다.
+    PATH = lib.mkForce "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";
+  };
+
+  reportEnvironment = commonEnvironment // {
+    REPO_ROOT = nixosConfigDefaultPath;
     HOSTS = "mac,minipc";
     HOST_HOME = "mac=/Users/${username},minipc=${homeDir}";
     GH_PAT_PATH = ghPatPath;
     WEEKLY_REPORT_PY = "${weeklyReportPy}";
     ANALYZE_PY = "${analyzePy}";
-    # writeShellApplication runtimeInputs가 앞에 붙는다. 이 tail은 Home Manager가
-    # 관리하는 user-scope codex/codex-exec-supervised wrapper를 해석하기 위해 필요하다.
-    PATH = lib.mkForce "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";
+    DEADLINE_HOUR = toString cfg.deadlineHour;
   };
 in
 {
@@ -84,18 +97,59 @@ in
       };
 
       environment =
-        baseEnvironment
+        reportEnvironment
         // lib.optionalAttrs (cfg.trackingIssueNumber != null) {
           TRACKING_ISSUE_NUMBER = toString cfg.trackingIssueNumber;
         };
     };
 
     systemd.timers.da-weekly-report = {
-      description = "Weekly DA report generation";
+      description = "Weekly DA report generation retry window";
       wantedBy = [ "timers.target" ];
 
       timerConfig = {
-        OnCalendar = cfg.reportTime;
+        # 사용자 기상 시각이 08~11시로 흔들리고 MacBook 절전 시 SSH가 무응답이므로
+        # 월요일 09~14시 정시마다 재시도한다. 14시는 partial 확정 마감이다.
+        OnCalendar = cfg.attemptCalendar;
+        Persistent = true;
+      };
+    };
+
+    systemd.services.da-weekly-reminder = {
+      description = "Send DA weekly report preflight reminder";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+
+      unitConfig = {
+        ConditionPathExists = [ homeDir ];
+      };
+
+      serviceConfig = {
+        Type = "oneshot";
+        User = username;
+        Group = "users";
+        ExecStart = "${reminderScript}/bin/da-weekly-reminder";
+
+        # user-scope Pushover helper/credential을 읽어야 하므로 ProtectHome은 끈다.
+        ProtectSystem = "full";
+        ProtectHome = false;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+        ProtectKernelTunables = true;
+        ProtectControlGroups = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+      };
+
+      environment = commonEnvironment;
+    };
+
+    systemd.timers.da-weekly-reminder = {
+      description = "Weekly DA report Sunday reminder";
+      wantedBy = [ "timers.target" ];
+
+      timerConfig = {
+        OnCalendar = cfg.reminderCalendar;
         Persistent = true;
       };
     };

@@ -193,10 +193,20 @@
 
     daWeeklyReport = {
       enable = lib.mkEnableOption "DA session weekly report timer";
-      reportTime = lib.mkOption {
+      attemptCalendar = lib.mkOption {
         type = lib.types.str;
-        default = "Mon *-*-* 09:00:00 Asia/Seoul";
-        description = "OnCalendar time for weekly DA report generation";
+        default = "Mon *-*-* 09..14:00:00 Asia/Seoul";
+        description = "OnCalendar retry window for weekly DA report generation attempts";
+      };
+      reminderCalendar = lib.mkOption {
+        type = lib.types.str;
+        default = "Sun *-*-* 22:00:00 Asia/Seoul";
+        description = "OnCalendar time for the pre-report Pushover reminder";
+      };
+      deadlineHour = lib.mkOption {
+        type = lib.types.ints.between 0 23;
+        default = 14;
+        description = "Asia/Seoul hour at which the weekly retry window finalizes partial publication";
       };
       trackingIssueNumber = lib.mkOption {
         type = lib.types.nullOr lib.types.ints.positive;

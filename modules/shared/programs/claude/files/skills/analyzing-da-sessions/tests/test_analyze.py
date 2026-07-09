@@ -1,6 +1,9 @@
 """algorithm + run-da contract fixture 회귀 검증 — analyzing-da-sessions."""
+import io
 import json
 import os
+import subprocess
+import tarfile
 
 import pytest
 
@@ -245,6 +248,283 @@ def test_allowed_remote_path_boundary_check(analyze_module):
     ) is False
 
 
+def test_remote_tar_argv_uses_portable_stdin_list(analyze_module):
+    """원격 tar는 GNU tar/bsdtar 공통 옵션으로 stdin path list를 받는다."""
+    assert analyze_module._build_remote_tar_argv("mac") == [
+        "ssh",
+        "mac",
+        "tar",
+        "-C",
+        "/",
+        "-cf",
+        "-",
+        "-T",
+        "-",
+    ]
+
+
+def test_remote_tar_entries_revalidate_and_relative_paths(analyze_module):
+    """tar list 직전에도 HOST_PATH_MAP boundary 검증 후 -C / 기준 상대화한다."""
+    warnings: list[str] = []
+
+    entries = analyze_module._prepare_remote_tar_entries(
+        "mac",
+        [
+            "/Users/greenhead/.claude/projects/a/sess.jsonl",
+            "/Users/greenhead/.codex/sessions/2026/07/09/rollout-x.jsonl",
+            "/Users/greenhead/.claude/projects-evil/nope.jsonl",
+            "/Users/greenhead/.claude/projects/has space.jsonl",
+        ],
+        warnings,
+    )
+
+    assert entries == [
+        (
+            "/Users/greenhead/.claude/projects/a/sess.jsonl",
+            "Users/greenhead/.claude/projects/a/sess.jsonl",
+        ),
+        (
+            "/Users/greenhead/.codex/sessions/2026/07/09/rollout-x.jsonl",
+            "Users/greenhead/.codex/sessions/2026/07/09/rollout-x.jsonl",
+        ),
+    ]
+    assert sum("remote tar path excluded by validation" in w for w in warnings) == 2
+
+
+def test_remote_tar_entries_exclude_newline_paths_with_warning(analyze_module):
+    """tar -T는 newline 구분이므로 개행 포함 path는 제외하고 warning을 남긴다."""
+    warnings: list[str] = []
+
+    entries = analyze_module._prepare_remote_tar_entries(
+        "mac",
+        [
+            "/Users/greenhead/.claude/projects/ok.jsonl",
+            "/Users/greenhead/.claude/projects/bad\nname.jsonl",
+        ],
+        warnings,
+    )
+
+    assert entries == [
+        (
+            "/Users/greenhead/.claude/projects/ok.jsonl",
+            "Users/greenhead/.claude/projects/ok.jsonl",
+        )
+    ]
+    assert any("contains newline" in w for w in warnings)
+
+
+def test_remote_tar_stdin_is_newline_delimited(analyze_module):
+    """tar -T - 입력은 상대 path newline list이며 마지막 newline을 포함한다."""
+    entries = [
+        (
+            "/Users/greenhead/.claude/projects/a.jsonl",
+            "Users/greenhead/.claude/projects/a.jsonl",
+        ),
+        (
+            "/Users/greenhead/.codex/sessions/rollout-x.jsonl",
+            "Users/greenhead/.codex/sessions/rollout-x.jsonl",
+        ),
+    ]
+
+    assert analyze_module._build_remote_tar_stdin(entries) == (
+        b"Users/greenhead/.claude/projects/a.jsonl\n"
+        b"Users/greenhead/.codex/sessions/rollout-x.jsonl\n"
+    )
+
+
+def test_remote_tar_extracts_expected_members(analyze_module, tmp_path):
+    """remote tar stdout은 검증된 member만 tempdir에 추출한다."""
+    entries = [
+        (
+            "/Users/greenhead/.claude/projects/a.jsonl",
+            "Users/greenhead/.claude/projects/a.jsonl",
+        )
+    ]
+    payload = b'{"type":"user","uuid":"x","timestamp":"2026-07-09"}\n'
+    tar_buffer = io.BytesIO()
+    with tarfile.open(fileobj=tar_buffer, mode="w") as tf:
+        info = tarfile.TarInfo(entries[0][1])
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+
+    warnings: list[str] = []
+
+    assert analyze_module._extract_tar_bytes_to_dir(
+        "mac",
+        tar_buffer.getvalue(),
+        entries,
+        str(tmp_path),
+        warnings,
+    ) is True
+    extracted_path = tmp_path / "Users/greenhead/.claude/projects/a.jsonl"
+    assert extracted_path.read_bytes() == payload
+    assert warnings == []
+
+
+def test_remote_tar_fetch_fallbacks_on_nonzero_exit(analyze_module, monkeypatch, tmp_path):
+    """tar command nonzero exit은 per-file cat fallback 신호를 반환한다."""
+    entries = [
+        (
+            "/Users/greenhead/.claude/projects/a.jsonl",
+            "Users/greenhead/.claude/projects/a.jsonl",
+        )
+    ]
+    warnings: list[str] = []
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args[0], returncode=2, stderr=b"tar failed")
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    assert analyze_module._fetch_remote_files_tar_to_dir(
+        "mac",
+        entries,
+        str(tmp_path),
+        warnings,
+    ) is False
+    assert any("ssh tar failed" in w and "falling back to per-file cat" in w for w in warnings)
+
+
+def test_remote_tar_fetch_fallbacks_on_empty_stream(analyze_module, monkeypatch, tmp_path):
+    """tar command 0 exit이라도 stdout archive가 비어 있으면 fallback한다."""
+    entries = [
+        (
+            "/Users/greenhead/.claude/projects/a.jsonl",
+            "Users/greenhead/.claude/projects/a.jsonl",
+        )
+    ]
+    warnings: list[str] = []
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stderr=b"")
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    assert analyze_module._fetch_remote_files_tar_to_dir(
+        "mac",
+        entries,
+        str(tmp_path),
+        warnings,
+    ) is False
+    assert any("empty stream" in w and "falling back to per-file cat" in w for w in warnings)
+
+
+def test_remote_host_preflight_uses_connect_timeout_and_fast_fails(analyze_module, monkeypatch):
+    """preflight 실패는 find/tar/cat 전에 host partial로 fast-fail한다."""
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, returncode=255, stdout="", stderr="offline")
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+    warnings: list[str] = []
+
+    assert analyze_module.check_remote_host_preflight("mac", warnings) is False
+    assert calls == [
+        (
+            [
+                "ssh",
+                "-o",
+                f"ConnectTimeout={analyze_module.SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS}",
+                "mac",
+                "true",
+            ],
+            {
+                "capture_output": True,
+                "text": True,
+                "timeout": analyze_module.SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS,
+            },
+        )
+    ]
+    assert any("ssh preflight failed" in w and "partial result" in w for w in warnings)
+
+
+def test_host_fetch_budget_clamps_find_and_stops_after_budget_timeout(
+    analyze_module,
+    monkeypatch,
+):
+    """host budget 만료는 남은 find를 중단하고 partial warning으로 표시한다."""
+    now = {"value": 0.0}
+    monkeypatch.setattr(analyze_module.time, "monotonic", lambda: now["value"])
+    budget = analyze_module.HostFetchBudget(host="mac", deadline=5.0)
+    warnings: list[str] = []
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs["timeout"]))
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    assert analyze_module.SSH_HOST_FETCH_BUDGET_SECONDS == 300
+    assert analyze_module.collect_remote_files("mac", warnings, budget) == []
+    assert calls == [
+        (
+            [
+                "ssh",
+                "mac",
+                "find",
+                "~/.claude/projects",
+                "-type",
+                "f",
+                "-name",
+                "'*.jsonl'",
+            ],
+            5.0,
+        )
+    ]
+    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+
+
+def test_controlmaster_check_uses_remaining_host_budget(analyze_module, monkeypatch):
+    """find 이후 ControlMaster 확인도 host budget 잔여 시간으로 제한한다."""
+    monkeypatch.setattr(analyze_module.time, "monotonic", lambda: 0.0)
+    budget = analyze_module.HostFetchBudget(host="mac", deadline=3.0)
+    warnings: list[str] = []
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs["timeout"]))
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    assert analyze_module.check_controlmaster_active(
+        "mac",
+        warnings,
+        preflight_already_ok=True,
+        budget=budget,
+    ) is False
+    assert calls == [(["ssh", "-O", "check", "mac"], 3.0)]
+    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+
+
+def test_fetch_remote_file_skips_when_host_budget_already_expired(
+    analyze_module,
+    monkeypatch,
+):
+    """budget 소진 후 fallback cat은 새 SSH subprocess를 시작하지 않는다."""
+    monkeypatch.setattr(analyze_module.time, "monotonic", lambda: 10.0)
+    budget = analyze_module.HostFetchBudget(host="mac", deadline=5.0)
+    warnings: list[str] = []
+
+    def fake_run(*args, **kwargs):
+        raise AssertionError("ssh cat should not run after host budget expires")
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    result = analyze_module.fetch_remote_file(
+        "mac",
+        "/Users/greenhead/.claude/projects/a.jsonl",
+        warnings,
+        budget,
+    )
+
+    assert result is None
+    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+
+
 def test_host_home_override(analyze_module):
     """--host-home override는 validation/corpus base prefix를 갱신한다."""
     original = {host: paths.copy() for host, paths in analyze_module.HOST_PATH_MAP.items()}
@@ -393,7 +673,7 @@ def test_analyze_remote_session_partial_fetch_result(analyze_module, monkeypatch
     fail_path = "/Users/greenhead/.claude/projects/fail.jsonl"
     ok_path = "/Users/greenhead/.claude/projects/ok.jsonl"
 
-    def fake_fetch(host, path, w):
+    def fake_fetch(host, path, w, budget=None):
         if path == fail_path:
             w.append(f"host {host}: ssh cat failed for {path}")
             return None

@@ -81,6 +81,7 @@ RUN_DA_SKILL_PATH = RUN_DA_PATH + "SKILL.md"
 WEEKLY_REPORT_RE = re.compile(r"^weekly-\d{4}-W\d{2}\.json$")
 DRIFT_SUBJECT_RE = re.compile(r"(fix|refactor|chore)", re.I)
 DRIFT_BODY_RE = re.compile(r"(drift|참조|사본|dangling|동기화|SSOT)", re.I)
+REMOTE_PREFLIGHT_ALERT_KEY = "remote_preflight_alert_attempted"
 
 
 def utc_now_iso() -> str:
@@ -109,6 +110,65 @@ def week_id_for(start: dt.datetime) -> str:
 
 def report_filename(week_id: str) -> str:
     return f"weekly-{week_id}.json"
+
+
+def attempt_state_filename(week_id: str) -> str:
+    return f"attempt-{week_id}.state"
+
+
+def attempt_state_path(state_dir: str | os.PathLike[str], week_id: str) -> str:
+    return str(Path(state_dir) / attempt_state_filename(week_id))
+
+
+def validate_deadline_hour(deadline_hour: int) -> int:
+    if not 0 <= deadline_hour <= 23:
+        raise ValueError("deadline hour must be between 0 and 23")
+    return deadline_hour
+
+
+def deadline_reached_at(now: dt.datetime, deadline_hour: int) -> bool:
+    validate_deadline_hour(deadline_hour)
+    return now.astimezone(KST).hour >= deadline_hour
+
+
+def parse_attempt_state(text: str) -> dict[str, str]:
+    state = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        state[key.strip()] = value.strip()
+    return state
+
+
+def load_attempt_state(path: str | os.PathLike[str]) -> dict[str, str]:
+    try:
+        return parse_attempt_state(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+
+
+def claim_attempt_state_key(
+    path: str | os.PathLike[str],
+    key: str = REMOTE_PREFLIGHT_ALERT_KEY,
+    value: str | None = None,
+) -> bool:
+    target = Path(path)
+    try:
+        existing_text = target.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        existing_text = ""
+
+    if key in parse_attempt_state(existing_text):
+        return False
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "a", encoding="utf-8") as fp:
+        if existing_text and not existing_text.endswith("\n"):
+            fp.write("\n")
+        fp.write(f"{key}={value or utc_now_iso()}\n")
+    return True
 
 
 def load_json(path: str | os.PathLike[str]) -> dict:
@@ -917,6 +977,30 @@ def command_week_id(_: argparse.Namespace) -> int:
     return 0
 
 
+def command_attempt_state_path(args: argparse.Namespace) -> int:
+    print(attempt_state_path(args.state_dir, args.week_id))
+    return 0
+
+
+def command_deadline_reached(args: argparse.Namespace) -> int:
+    try:
+        deadline_hour = validate_deadline_hour(args.deadline_hour)
+        now = parse_datetime(args.now) if args.now else dt.datetime.now(KST)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return 0 if deadline_reached_at(now, deadline_hour) else 1
+
+
+def command_claim_attempt_alert(args: argparse.Namespace) -> int:
+    try:
+        claimed = claim_attempt_state_key(args.state_file)
+    except OSError as exc:
+        print(f"ERROR: attempt state update failed: {exc}", file=sys.stderr)
+        return 2
+    return 0 if claimed else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Assemble DA weekly report JSON and markdown")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -960,6 +1044,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     week_id = sub.add_parser("week-id")
     week_id.set_defaults(func=command_week_id)
+
+    attempt_state = sub.add_parser("attempt-state-path")
+    attempt_state.add_argument("--state-dir", required=True)
+    attempt_state.add_argument("--week-id", required=True)
+    attempt_state.set_defaults(func=command_attempt_state_path)
+
+    deadline = sub.add_parser("deadline-reached")
+    deadline.add_argument("--deadline-hour", type=int, required=True)
+    deadline.add_argument("--now")
+    deadline.set_defaults(func=command_deadline_reached)
+
+    claim_alert = sub.add_parser("claim-attempt-alert")
+    claim_alert.add_argument("--state-file", required=True)
+    claim_alert.set_defaults(func=command_claim_attempt_alert)
 
     return parser
 

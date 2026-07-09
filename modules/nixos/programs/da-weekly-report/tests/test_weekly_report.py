@@ -192,6 +192,60 @@ def test_previous_report_glob_excludes_publish_json(weekly_report_module, tmp_pa
     ]
 
 
+def test_attempt_state_path_uses_iso_week_id(weekly_report_module, tmp_path):
+    start = dt.datetime(2026, 7, 6, tzinfo=weekly_report_module.KST)
+    week_id = weekly_report_module.week_id_for(start)
+
+    assert week_id == "2026-W28"
+    assert weekly_report_module.attempt_state_filename(week_id) == "attempt-2026-W28.state"
+    assert weekly_report_module.attempt_state_path(tmp_path, week_id) == str(
+        tmp_path / "attempt-2026-W28.state"
+    )
+
+
+def test_deadline_reached_uses_kst_hour(weekly_report_module):
+    before_deadline = dt.datetime(2026, 7, 13, 4, 59, tzinfo=dt.timezone.utc)
+    at_deadline = dt.datetime(2026, 7, 13, 5, 0, tzinfo=dt.timezone.utc)
+
+    assert weekly_report_module.deadline_reached_at(before_deadline, 14) is False
+    assert weekly_report_module.deadline_reached_at(at_deadline, 14) is True
+
+
+def test_deadline_reached_command_statuses(weekly_report_module):
+    assert weekly_report_module.main([
+        "deadline-reached",
+        "--deadline-hour",
+        "14",
+        "--now",
+        "2026-07-13T13:59:00+09:00",
+    ]) == 1
+    assert weekly_report_module.main([
+        "deadline-reached",
+        "--deadline-hour",
+        "14",
+        "--now",
+        "2026-07-13T14:00:00+09:00",
+    ]) == 0
+
+
+def test_claim_attempt_alert_only_claims_once(weekly_report_module, tmp_path):
+    state_file = tmp_path / "attempt-2026-W28.state"
+
+    assert weekly_report_module.main([
+        "claim-attempt-alert",
+        "--state-file",
+        str(state_file),
+    ]) == 0
+    assert weekly_report_module.main([
+        "claim-attempt-alert",
+        "--state-file",
+        str(state_file),
+    ]) == 1
+
+    state = weekly_report_module.load_attempt_state(state_file)
+    assert set(state) == {weekly_report_module.REMOTE_PREFLIGHT_ALERT_KEY}
+
+
 def test_build_weekly_report_schema_and_deltas(weekly_report_module):
     previous = build_report(weekly_report_module)
     previous["week"]["id"] = "2026-W27"
