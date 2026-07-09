@@ -506,7 +506,8 @@ def build_traceability(
     def session_score(item: dict) -> tuple[int, str]:
         refs = item.get("references", {})
         ref_count = sum(len(refs.get(key, [])) for key in ("prs", "issues", "bare_numbers"))
-        return (1 if ref_count else 0, item.get("path") or "")
+        # limit 초과 시 참조가 실제로 많은 세션을 유지한다 (path는 tie-breaker).
+        return (ref_count, item.get("path") or "")
 
     selected = sorted(sessions, key=session_score, reverse=True)[:limit]
     stable_sessions = []
@@ -1089,6 +1090,11 @@ def notification_body(report: dict) -> str:
 
 def command_build(args: argparse.Namespace) -> int:
     sidecar = load_json(args.analysis_sidecar)
+    if bool(args.week_start) != bool(args.week_end):
+        # 하나만 지정된 채 조용히 기본 주로 대체되면 의도치 않은 주 경계로
+        # 리포트가 생성된다 — 부분 지정은 명시적 에러로 fail-fast.
+        print("ERROR: --week-start and --week-end must be provided together", file=sys.stderr)
+        return 2
     if args.week_start and args.week_end:
         week_start = parse_datetime(args.week_start)
         week_end = parse_datetime(args.week_end)

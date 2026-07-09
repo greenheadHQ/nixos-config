@@ -204,6 +204,13 @@ marker 없는 JSON array 안에서 같은 verdict가 반복된다.
     for records in by_source.values():
         assert len({record["match_offset"] for record in records}) == 2
 
+    # 반복 occurrence가 첫 위치의 persistence 필드를 공유하면 M-6이 서로 다른
+    # finding을 "동일 finding 지속"으로 오분류한다 — 위치별 구분을 고정한다.
+    header_locations = {record["location_identity"] for record in by_source["md_header"]}
+    assert header_locations == {"header.py:1", "header.py:2"}
+    header_fingerprints = {record["finding_fingerprint"] for record in by_source["md_header"]}
+    assert len(header_fingerprints) == 2
+
 
 def test_unmarked_json_without_verdict_key_is_ignored(
     analyze_module,

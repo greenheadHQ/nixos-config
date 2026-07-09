@@ -122,6 +122,11 @@ in
         ProtectControlGroups = true;
         RestrictSUIDSGID = true;
         LockPersonality = true;
+        ProtectClock = true;
+        RestrictRealtime = true;
+        # RestrictNamespaces는 켜지 않는다 — codex-exec-supervised의 sandbox가
+        # bubblewrap(user namespace)에 의존한다. MemoryDenyWriteExecute/
+        # SystemCallFilter도 python·ssh·gh subprocess 표면 대비 검증 비용이 커서 보류.
       };
 
       environment =
@@ -168,6 +173,11 @@ in
         ProtectControlGroups = true;
         RestrictSUIDSGID = true;
         LockPersonality = true;
+        ProtectClock = true;
+        RestrictRealtime = true;
+        # RestrictNamespaces는 켜지 않는다 — codex-exec-supervised의 sandbox가
+        # bubblewrap(user namespace)에 의존한다. MemoryDenyWriteExecute/
+        # SystemCallFilter도 python·ssh·gh subprocess 표면 대비 검증 비용이 커서 보류.
       };
 
       environment = commonEnvironment;

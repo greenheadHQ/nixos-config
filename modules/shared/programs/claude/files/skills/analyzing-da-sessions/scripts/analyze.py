@@ -635,13 +635,7 @@ def get_perspective(finding_id: str | None, text: str = "") -> str | None:
     return None
 
 
-def finding_context_window(text: str, finding_id: str) -> str:
-    """finding_id 주변 markdown block을 잘라 persistence 입력 추출에 사용."""
-    if not finding_id:
-        return text[:2000]
-    m = re.search(re.escape(finding_id), text)
-    if not m:
-        return text[:2000]
+def _window_around_match(text: str, m: re.Match) -> str:
     start = text.rfind("\n###", 0, m.start())
     if start == -1:
         start = max(0, m.start() - 800)
@@ -649,6 +643,38 @@ def finding_context_window(text: str, finding_id: str) -> str:
     if next_header == -1:
         next_header = min(len(text), m.end() + 1800)
     return text[start:next_header]
+
+
+def finding_context_windows(text: str, finding_id: str, match_offset: int | None = None) -> list[str]:
+    """finding_id 주변 markdown block 후보들을 우선순위 순으로 반환한다.
+
+    같은 payload 안에서 동일 finding_id가 서로 다른 위치로 반복될 때 모든 record가
+    첫 occurrence의 location/fingerprint를 공유하면 persistence_key가 오염된다
+    (M-6 정확성). match_offset이 주어지면 근접 순으로 정렬하되, VERDICT_JSON 내부
+    문자열보다 markdown 헤더(###) 라인의 occurrence를 우선한다. 실제 Arbiter 출력은
+    서술 블록(위치 포함)과 판정 블록(위치 없음)이 분리되므로, 호출자는 후보를
+    순회하며 location이 추출되는 첫 block을 채택한다.
+    """
+    if not finding_id:
+        return [text[:2000]]
+    candidates = list(re.finditer(re.escape(finding_id), text))
+    if not candidates:
+        return [text[:2000]]
+    header_candidates = []
+    for candidate in candidates:
+        line_start = text.rfind("\n", 0, candidate.start()) + 1
+        if text.startswith("###", line_start):
+            header_candidates.append(candidate)
+    pool = header_candidates or candidates
+    if match_offset is not None:
+        pool = sorted(pool, key=lambda c: abs(c.start() - match_offset))
+    return [_window_around_match(text, c) for c in pool]
+
+
+def finding_context_window(text: str, finding_id: str, match_offset: int | None = None) -> str:
+    """단일 block이 필요한 호출자용 — 최우선 후보를 반환한다."""
+    windows = finding_context_windows(text, finding_id, match_offset)
+    return windows[0]
 
 
 def extract_location_identity(block: str) -> str | None:
@@ -694,10 +720,19 @@ def normalize_fingerprint_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
-def derive_persistence_fields(text: str, finding_id: str) -> dict:
-    block = finding_context_window(text, finding_id)
+def derive_persistence_fields(text: str, finding_id: str, match_offset: int | None = None) -> dict:
+    blocks = finding_context_windows(text, finding_id, match_offset)
+    # 근접 후보가 위치 없는 판정 블록(### ID — VERDICT)일 수 있으므로,
+    # location이 추출되는 첫 후보를 채택한다 (없으면 최우선 후보 유지).
+    block = blocks[0]
+    location_identity = None
+    for candidate in blocks:
+        candidate_location = extract_location_identity(candidate)
+        if candidate_location:
+            block = candidate
+            location_identity = candidate_location
+            break
     perspective = get_perspective(finding_id, block)
-    location_identity = extract_location_identity(block)
     summary = extract_finding_summary(block)
     finding_fingerprint = sha256_text(normalize_fingerprint_text(summary)) if summary else None
     return {
@@ -739,7 +774,7 @@ def make_verdict_record(
         )
         return None
 
-    persistence = derive_persistence_fields(text, finding_id)
+    persistence = derive_persistence_fields(text, finding_id, ctx.match_offset)
     missing_components = [
         key for key in ("perspective", "location_identity", "finding_fingerprint")
         if not persistence.get(key)
@@ -1348,13 +1383,13 @@ def build_aggregate(
         traceability_host_counter[session_meta.get("host") or "unknown"] += 1
         if session_meta.get("complete"):
             traceability_complete += 1
-        for field in ("cwd", "git_branch", "session_id"):
-            if session_meta.get(field):
-                traceability_field_counter[field] += 1
-        for field in session_meta.get("fallback_fields", []):
-            traceability_fallback_counter[field] += 1
-        for field in session_meta.get("missing_fields", []):
-            traceability_missing_counter[field] += 1
+        for field_name in ("cwd", "git_branch", "session_id"):
+            if session_meta.get(field_name):
+                traceability_field_counter[field_name] += 1
+        for field_name in session_meta.get("fallback_fields", []):
+            traceability_fallback_counter[field_name] += 1
+        for field_name in session_meta.get("missing_fields", []):
+            traceability_missing_counter[field_name] += 1
 
         session_diagnostics = [diagnostic_to_dict(d) for d in s.get("diagnostics", [])]
         for d in session_diagnostics:
