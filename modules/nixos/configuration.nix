@@ -124,7 +124,10 @@
   homeserver.immichOriginalsMirror.enable = true; # Immich 원본 사진/영상 HDD 일일 미러
   homeserver.reverseProxy.enable = true; # Caddy HTTPS 리버스 프록시
   homeserver.smokeTest.enable = true; # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
-  homeserver.daWeeklyReport.enable = true; # DA 세션 주간 리포트 timer (GitHub issue 미설정 시 comment skip)
+  homeserver.daWeeklyReport = {
+    enable = true; # DA 세션 주간 리포트 timer
+    trackingIssueNumber = 1067; # 리포트 누적 그릇 (연 1회 로테이션 — 이슈 본문 운영 원칙 참조)
+  };
   homeserver.opnix.enable = true; # 1Password SA token materialization + gh 인증
   homeserver.codexRemoteControl.enable = true; # Codex mobile remote-control app-server 회귀 방지
   homeserver.claudeRemoteControl = {
