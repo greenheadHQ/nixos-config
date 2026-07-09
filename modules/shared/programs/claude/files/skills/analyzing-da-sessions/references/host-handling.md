@@ -91,8 +91,12 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
 
 원격 host는 파일 수집을 시작하기 전에 저비용 생존 확인을 먼저 수행한다.
 
-- preflight command는 `ssh -o ConnectTimeout=10 <alias> true`이며, subprocess timeout도
-  `SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10`을 사용한다.
+- Python 수집 preflight command는 `ssh -o ConnectTimeout=10 <alias> true`이며,
+  subprocess timeout도 `SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10`을 사용한다.
+  `BatchMode=yes`는 붙이지 않는다. 아래 cron retry-window shell preflight는
+  `BatchMode=yes`를 붙이고 별도 subprocess timeout 없이 SSH `ConnectTimeout`에 의존한다.
+  언어/실행 경계가 달라 통합하지 않으며, 한쪽 timeout/BatchMode 계약을 바꿀 때는
+  `analyze.py`, `da-weekly-report.sh`, 본 문서를 함께 갱신한다.
 - preflight 실패/timeout/binary 부재는 해당 host를 즉시 partial 처리하고, `find`, `tar`,
   `cat` fetch를 시도하지 않는다.
 - ControlMaster mux socket 존재만으로 생존 판정하지 않는다. mux가 살아 있어도 상대 Mac이
@@ -190,12 +194,27 @@ systemd 호출부는 `--host-home mac=/Users/<username>,minipc=/home/<username>`
 09:00~14:00 KST 매시 발행을 시도한다.
 
 `da-weekly-report.sh`는 시작 시 이번 주 final core JSON(`weekly-<ISO-week>.json`)이 이미
-있으면 즉시 성공 종료한다. 아직 없으면 `HOSTS`에서 현재 host를 제외해 remote host 목록을
+있으면 분석/렌더는 건너뛰지만 publish log를 읽어 target별 마지막 status가 `success`가 아닌
+target(`github`, `pushover`)만 재시도한다. publish target이 모두 성공 상태일 때만 즉시 성공
+종료한다. 아직 final core JSON이 없으면 `HOSTS`에서 현재 host를 제외해 remote host 목록을
 만들고, 각 remote host에 `ssh -o ConnectTimeout=10 -o BatchMode=yes <host> true` preflight를
-1회 수행한다. remote host가 무응답이고 현재 KST hour가 `DEADLINE_HOUR`(기본 14) 전이면
-`attempt-<ISO-week>.state`에 알림 claim을 남긴 첫 실패에만 Pushover sleep alert를 보낸 뒤
-exit 0으로 다음 정시 발화를 기다린다. 이미 claim된 주차의 추가 실패는 조용히 성공 종료한다.
-14시 마감 발화에서는 preflight 실패가 있어도 pipeline을 계속 진행한다.
+1회 수행한다. shell preflight는 `BatchMode=yes`를 붙이고 Python `check_remote_host_preflight`
+와 달리 별도 subprocess timeout이 없다. 이 차이는 intentional dual implementation 계약이며,
+한쪽 timeout/BatchMode를 바꿀 때는 양쪽 callsite 주석과 본 문서를 함께 갱신한다. remote host가
+무응답이고 현재 KST hour가 `DEADLINE_HOUR`(기본 14) 전이면 `attempt-<ISO-week>.state`에 알림
+claim을 남긴 첫 실패에만 Pushover sleep alert를 보낸 뒤 exit 0으로 다음 정시 발화를 기다린다.
+이미 claim된 주차의 추가 실패는 조용히 성공 종료한다. 14시 마감 발화에서는 preflight 실패가
+있어도 pipeline을 계속 진행한다.
+
+LLM commentary subprocess는 scratch cwd, read-only sandbox, `--ignore-user-config`,
+`--ignore-rules`, `--ephemeral`, secret 관련 env unset으로 실행한다. 단 같은 UID 프로세스가
+user-readable secret 파일 자체를 읽는 것은 이 경계만으로 막을 수 없다. nested bwrap 격리는
+Codex 초기화 실패가 실측되어 채택하지 않았고, 대신 commentary 출력 사용 전
+`/run/opnix/<user>/github-pat`와 `~/.config/pushover/share`의 literal secret value를
+`grep -F`로 대조해 공개 코멘트/알림 발행 경로를 차단한다. match되면 commentary를 폐기하고
+`failure_reason = "sanitize gate: secret-like content"`로 fail-soft 처리한다. 잔여 리스크:
+secret과 동일하지 않은 파생 표현, 빈 값, 아직 gate에 등록되지 않은 새 credential 파일은 값
+대조로 잡지 못한다.
 
 Mac 수집 실패 또는 ControlMaster 비활성은 weekly pipeline의 hard fail이 아니다. 마감 발화
 또는 직접 실행에서 `analyze.py`는 해당 host warning을 sidecar에 남기고, `da-weekly-report.sh`는

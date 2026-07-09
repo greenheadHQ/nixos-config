@@ -133,7 +133,7 @@ aggregate 결과의 `metrics["M-2"]["source_distribution"]` 필드에 source별 
 | `block_index` | 같은 line 또는 직전 result line의 다음 line에 있는 verdict group은 같은 block. 중간에 non-result line이 끼면 새 block |
 | `block_kind` | payload text에 `selective:`/`selective consistency`/`fleiss-kappa`가 있으면 `selective`, round summary marker가 있으면 `summary`, 그 외 `first_pass` |
 | verdict dedupe key | `(session_path, jsonl_line_no, payload_traversal_path, finding_id, source, canonical_verdict_hash)` |
-| `payload_hash` 역할 | 동일 payload 재방문 방지용 pre-parse key. 한 payload가 여러 finding의 VERDICT_JSON을 담는 것은 정상이라 record dedupe key로 단독 사용 금지 |
+| `payload_hash` 역할 | `payload_traversal_path`와 함께 동일 payload 재방문 방지용 pre-parse key. 같은 hash라도 서로 다른 traversal path면 별도 provenance로 보존한다. 한 payload가 여러 finding의 VERDICT_JSON을 담는 것은 정상이라 record dedupe key로 단독 사용 금지 |
 | excluded match 보관 | `VerdictRecord`가 아니라 `ExtractionDiagnostic` sidecar (`diagnostics.sessions[].exclusions`) |
 
 ### ExtractionDiagnostic
@@ -159,15 +159,15 @@ JSON sidecar의 `diagnostics.summary`와 `diagnostics.sessions[]`가 소비한�
 raw blob에 직접 regex를 적용하지 않는다. JSONL parse → string payload extraction → regex 적용 순서를 강제한다.
 
 ```python
-def extract_text_payloads(obj, accumulator):
+def extract_text_payloads_with_paths(obj, accumulator, path="$"):
     if isinstance(obj, str):
-        accumulator.append(obj)
+        accumulator.append((path, obj))
     elif isinstance(obj, dict):
-        for v in obj.values():
-            extract_text_payloads(v, accumulator)
+        for key, value in obj.items():
+            extract_text_payloads_with_paths(value, accumulator, f"{path}.{key}")
     elif isinstance(obj, list):
-        for v in obj:
-            extract_text_payloads(v, accumulator)
+        for idx, value in enumerate(obj):
+            extract_text_payloads_with_paths(value, accumulator, f"{path}[{idx}]")
 ```
 
 ## reviewer 묶음 normalize (M-3)

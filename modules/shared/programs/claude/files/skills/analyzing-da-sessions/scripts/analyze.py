@@ -6,7 +6,8 @@ PR #670 정정 코멘트의 알고리즘 (분모 정정 + 4-tier fallback + sour
 
 Internal boundary:
   - constants/enums          — VERDICT_CATEGORIES, INTENSITY_VERDICTS, BUNDLE_MAP, regex 등
-  - jsonl payload walker     — extract_text_payloads
+  - jsonl payload walker     — extract_text_payloads_with_paths
+                                (extract_text_payloads는 string-only compatibility wrapper)
   - finding_id normalizer    — get_bundle
   - verdict parser pipeline  — extract_strict_verdicts, extract_unmarked_json_verdicts,
                                 extract_kv_verdicts, extract_nl_summary, extract_intensity_verdicts
@@ -488,18 +489,6 @@ def add_diagnostic(
 # 2. jsonl payload walker
 # ─────────────────────────────────────────────────────────────────────────────
 
-def extract_text_payloads(obj: Any, accumulator: list) -> None:
-    """JSONL record에서 string payload만 추출 (raw blob regex 금지)."""
-    if isinstance(obj, str):
-        accumulator.append(obj)
-    elif isinstance(obj, dict):
-        for v in obj.values():
-            extract_text_payloads(v, accumulator)
-    elif isinstance(obj, list):
-        for v in obj:
-            extract_text_payloads(v, accumulator)
-
-
 def extract_text_payloads_with_paths(
     obj: Any,
     accumulator: list[tuple[str, str]],
@@ -515,6 +504,17 @@ def extract_text_payloads_with_paths(
     elif isinstance(obj, list):
         for idx, value in enumerate(obj):
             extract_text_payloads_with_paths(value, accumulator, f"{path}[{idx}]")
+
+
+def extract_text_payloads(obj: Any, accumulator: list) -> None:
+    """Compatibility wrapper for legacy string-only callers.
+
+    New extraction boundaries must use extract_text_payloads_with_paths() so
+    payload_traversal_path participates in provenance and pre-parse skip keys.
+    """
+    payloads: list[tuple[str, str]] = []
+    extract_text_payloads_with_paths(obj, payloads)
+    accumulator.extend(text for _, text in payloads)
 
 
 def in_long_outer_fence(text: str, pos: int) -> bool:
@@ -1174,7 +1174,7 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
     full_text = []
     parse_failures: list[str] = []
     diagnostics: list[ExtractionDiagnostic] = []
-    seen_payload_hashes: set[str] = set()
+    seen_payload_keys: set[tuple[str, str]] = set()
     seen_record_keys: set[tuple] = set()
     current_block_index = -1
     last_result_line_no: int | None = None
@@ -1188,6 +1188,8 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
     def append_records(records: list[dict], line_no: int, block_index: int) -> None:
         nonlocal current_block_index, last_result_line_no
         for record in records:
+            # VerdictRecord dedupe SSOT. The pre-parse payload key only prevents
+            # revisiting the exact same string at the exact same traversal path.
             key = (
                 record.get("session_path"),
                 record.get("jsonl_line_no"),
@@ -1216,9 +1218,10 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
                 extract_text_payloads_with_paths(obj, payloads)
                 for payload_path, text in payloads:
                     payload_hash = sha256_text(text)
-                    if payload_hash in seen_payload_hashes:
+                    payload_key = (payload_hash, payload_path)
+                    if payload_key in seen_payload_keys:
                         continue
-                    seen_payload_hashes.add(payload_hash)
+                    seen_payload_keys.add(payload_key)
                     full_text.append(text)
                     if ARBITER_DIR_MARKER.search(text):
                         has_arbiter_marker = True
@@ -2081,7 +2084,13 @@ def analyze_remote_sessions_via_tar(
 
 
 def check_remote_host_preflight(host: str, warnings: list[str]) -> bool:
-    """원격 host가 실제로 응답하는지 저비용으로 확인한다."""
+    """원격 host가 실제로 응답하는지 저비용으로 확인한다.
+
+    Python fetch preflight uses ConnectTimeout plus a subprocess timeout and
+    deliberately does not pass BatchMode=yes. The weekly shell retry-window
+    preflight uses BatchMode=yes and no separate subprocess timeout; update
+    both callsite comments and host-handling.md if either contract changes.
+    """
     _validate_host(host)
     try:
         proc = subprocess.run(

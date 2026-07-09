@@ -46,6 +46,8 @@ let
     USER = username;
     DA_WEEKLY_USERNAME = username;
     STATE_DIR = stateDir;
+    PUSHOVER_SHARE_CRED = "${homeDir}/.config/pushover/share";
+    PUSHOVER_HELPER = "${homeDir}/.local/lib/pushover.sh";
     # writeShellApplication runtimeInputs가 앞에 붙는다. 이 tail은 Home Manager가
     # 관리하는 user-scope codex/codex-exec-supervised wrapper를 해석하기 위해 필요하다.
     PATH = lib.mkForce "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";
@@ -85,7 +87,10 @@ in
 
         # 이 서비스는 사용자 SSH config/ControlMaster, ~/.codex/config.toml,
         # ~/.config/pushover/share, ~/.local/lib/pushover.sh, home state를 읽고 쓴다.
-        # 따라서 ProtectHome 계열 hardening은 적용하지 않는다.
+        # 따라서 ProtectHome 계열 hardening은 적용하지 않는다. LLM commentary subprocess도
+        # 같은 UID라 user-readable secret 파일 접근 자체는 완전히 막지 못한다. nested bwrap
+        # 격리는 Codex 초기화 실패가 실측되어 기각했고, da-weekly-report.sh의 literal secret
+        # sanitize gate로 공개 코멘트/알림 발행 경로를 차단한다.
         ProtectSystem = "full";
         ProtectHome = false;
         PrivateTmp = true;

@@ -7,7 +7,9 @@
 | Mac (`/Users/greenhead`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 | MiniPC (`/home/greenhead`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 
-원격 호스트는 `subprocess.run(["ssh", alias, "find", "~/.claude/projects", "-name", "*.jsonl", ...])` 고정 argv로 path 목록만 수집한 뒤, 실제 파일 내용은 `subprocess.run(["ssh", alias, "cat", path])`로 가져온다. 호스트당 SSH cat 호출은 ControlMaster 다중화 + `concurrent.futures.ThreadPoolExecutor(max_workers=SSH_FETCH_WORKERS)`로 병렬 처리한다 (host 순차 진행, host당 K=8 fetch 병렬). ControlMaster가 비활성인 호스트는 K=1 직렬 fallback이 5분 budget 안에 끝나지 않으므로 fetch 자체를 skip하고 명시적 warning을 누적한다 (사용자가 ControlMaster 활성화 누락을 즉시 인지).
+원격 호스트는 `subprocess.run(["ssh", alias, "find", "~/.claude/projects", "-name", "*.jsonl", ...])` 고정 argv로 path 목록만 수집한 뒤, 검증된 목록을 우선 단일 tar batch stream으로 가져온다. tar command는 `ssh <alias> tar -C / -cf - -T -`이고 file list는 stdin으로만 전달한다. tar batch가 timeout/nonzero/empty stream/tar 해석 실패 등으로 실패하면 검증을 통과한 path에 한해 기존 per-file `ssh <alias> cat <path>` worker pool로 fallback한다. 세부 실패 조건과 budget 처리는 [host-handling.md](host-handling.md)의 "fetch 전략: tar batch 우선 + per-file cat fallback"을 따른다.
+
+호스트당 fallback SSH cat 호출은 ControlMaster 다중화 + `concurrent.futures.ThreadPoolExecutor(max_workers=SSH_FETCH_WORKERS)`로 병렬 처리한다 (host 순차 진행, host당 K=8 fetch 병렬). ControlMaster가 비활성인 호스트는 K=1 직렬 fallback이 5분 budget 안에 끝나지 않으므로 fetch 자체를 skip하고 명시적 warning을 누적한다 (사용자가 ControlMaster 활성화 누락을 즉시 인지).
 
 `/subagents/` 하위 jsonl은 분석에서 제외한다 (parent session에서 spawn된 보조 에이전트의 자체 산출물이 아닌 wrapper output이라 verdict 중복 카운트 위험).
 
@@ -62,7 +64,7 @@ aggregate coverage를 `traceability.coverage`에 둔다.
 
 ## payload traversal path
 
-`analyze.py`는 기존 string-only walker와 별도로 path-aware walker를 사용한다.
+`analyze.py`는 path-aware walker를 string payload 추출 경계로 사용한다. legacy string-only helper는 compatibility wrapper일 뿐이며 새 추출 경로의 SoT가 아니다.
 
 | JSON node | path 표기 |
 |-----------|-----------|
@@ -77,8 +79,7 @@ aggregate coverage를 `traceability.coverage`에 둔다.
 | Claude Code | `$.message.content[0].text` |
 | Codex rollout | `$.payload.content[0].text` |
 
-이 path는 `VerdictRecord` dedupe key의 일부다. 같은 payload hash라도 서로 다른 traversal path에서
-나온 record는 별도 provenance로 남긴다.
+이 path는 pre-parse skip key와 `VerdictRecord` dedupe key의 일부다. 같은 payload hash라도 서로 다른 traversal path에서 나온 record는 별도 provenance로 남긴다.
 
 ## arbiter marker
 

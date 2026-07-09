@@ -751,11 +751,15 @@ def render_markdown(report: dict) -> str:
 
     out.append("## M-4: 동일 세션 max severity 전이")
     out.append("")
+    m4 = metrics["M-4"]
+    out.append(f"round key: `{esc(m4.get('round_key'))}`")
+    out.append(f"baseline: {esc(m4.get('baseline_note'))}")
+    out.append("")
     out.append("| transition | count |")
     out.append("|------------|-------|")
-    for transition, count in sorted(metrics["M-4"].get("transition_matrix", {}).items()):
+    for transition, count in sorted(m4.get("transition_matrix", {}).items()):
         out.append(f"| {esc(transition)} | {count} |")
-    if not metrics["M-4"].get("transition_matrix"):
+    if not m4.get("transition_matrix"):
         out.append("| 없음 | 0 |")
     out.append("")
 
@@ -880,6 +884,36 @@ def append_publish_record(path: str, record: dict) -> None:
         fp.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def latest_publish_statuses(path: str | os.PathLike[str]) -> dict[str, str]:
+    """Return the last valid status for each publish target in an append-only JSONL log."""
+    statuses: dict[str, str] = {}
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return statuses
+
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        target = record.get("target")
+        status = record.get("status")
+        if isinstance(target, str) and isinstance(status, str):
+            statuses[target] = status
+    return statuses
+
+
+def pending_publish_targets(
+    path: str | os.PathLike[str],
+    targets: list[str] | tuple[str, ...],
+) -> list[str]:
+    latest = latest_publish_statuses(path)
+    return [target for target in targets if latest.get(target) != "success"]
+
+
 def notification_body(report: dict) -> str:
     analysis = report["analysis"]
     metrics = analysis["metrics"]
@@ -965,6 +999,25 @@ def command_publish_record(args: argparse.Namespace) -> int:
     return 0
 
 
+def parse_target_list(value: str) -> list[str]:
+    targets: list[str] = []
+    seen: set[str] = set()
+    for raw in value.split(","):
+        target = raw.strip()
+        if not target or target in seen:
+            continue
+        targets.append(target)
+        seen.add(target)
+    return targets
+
+
+def command_pending_publish_targets(args: argparse.Namespace) -> int:
+    targets = parse_target_list(args.targets)
+    for target in pending_publish_targets(args.publish_log, targets):
+        print(target)
+    return 0
+
+
 def command_notification(args: argparse.Namespace) -> int:
     report = load_json(args.report_json)
     print(notification_body(report))
@@ -1037,6 +1090,15 @@ def build_parser() -> argparse.ArgumentParser:
     publish.add_argument("--report-json")
     publish.add_argument("--report-md")
     publish.set_defaults(func=command_publish_record)
+
+    pending = sub.add_parser("pending-publish-targets")
+    pending.add_argument("--publish-log", required=True)
+    pending.add_argument(
+        "--targets",
+        required=True,
+        help="comma-separated publish target list",
+    )
+    pending.set_defaults(func=command_pending_publish_targets)
 
     notify = sub.add_parser("notification")
     notify.add_argument("--report-json", required=True)

@@ -294,6 +294,8 @@ def test_render_markdown_uses_only_pie_mermaid_and_json_view(weekly_report_modul
     assert "## 소스 추적 링크" in markdown
     assert "issue:1064" in markdown
     assert "해설 없음: codex unavailable" in markdown
+    assert "round key: `(session_path, block_index)`" in markdown
+    assert "baseline: baseline" in markdown
 
 
 def test_publish_record_is_append_only_json_lines(weekly_report_module, tmp_path):
@@ -305,6 +307,43 @@ def test_publish_record_is_append_only_json_lines(weekly_report_module, tmp_path
     lines = path.read_text().splitlines()
     assert len(lines) == 2
     assert [json.loads(line)["target"] for line in lines] == ["github", "pushover"]
+
+
+def test_pending_publish_targets_uses_latest_status_per_target(weekly_report_module, tmp_path):
+    path = tmp_path / "weekly-2026-W28-publish.json"
+
+    weekly_report_module.append_publish_record(path, {"target": "github", "status": "failed"})
+    weekly_report_module.append_publish_record(path, {"target": "pushover", "status": "success"})
+
+    assert weekly_report_module.latest_publish_statuses(path) == {
+        "github": "failed",
+        "pushover": "success",
+    }
+    assert weekly_report_module.pending_publish_targets(path, ["github", "pushover"]) == ["github"]
+
+    weekly_report_module.append_publish_record(path, {"target": "github", "status": "success"})
+
+    assert weekly_report_module.pending_publish_targets(path, ["github", "pushover"]) == []
+
+
+def test_pending_publish_targets_command_prints_missing_or_failed_targets(
+    weekly_report_module,
+    tmp_path,
+    capsys,
+):
+    path = tmp_path / "weekly-2026-W28-publish.json"
+    weekly_report_module.append_publish_record(path, {"target": "github", "status": "skipped"})
+
+    rc = weekly_report_module.main([
+        "pending-publish-targets",
+        "--publish-log",
+        str(path),
+        "--targets",
+        "github,pushover",
+    ])
+
+    assert rc == 0
+    assert capsys.readouterr().out.splitlines() == ["github", "pushover"]
 
 
 def test_finalize_injects_commentary_without_recomputing_report(weekly_report_module, tmp_path):

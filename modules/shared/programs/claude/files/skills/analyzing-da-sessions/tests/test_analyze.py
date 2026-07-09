@@ -98,6 +98,33 @@ def test_extraction_diagnostics(fixtures_dir, analyze_module, fixture_name):
         assert_partial_dict(actual_diag, expected_diag)
 
 
+def test_same_payload_hash_at_different_paths_is_not_preparse_deduped(
+    analyze_module,
+    tmp_path,
+):
+    """Pre-parse skip key must preserve traversal-path identity."""
+    payload = """### Correctness-1 — CONFIRMED_ISSUE
+**심각도**: HIGH
+**위치**: `foo.py:1`
+**문제**: 동일 payload가 다른 JSON path에 존재한다.
+<!-- verdict-json:start -->
+```json
+{"finding_id":"Correctness-1","verdict":"CONFIRMED_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+"""
+    session_path = tmp_path / "same-payload-different-paths.jsonl"
+    session_path.write_text(json.dumps({"first": payload, "second": payload}) + "\n")
+
+    result = analyze_module.analyze_session(str(session_path))
+
+    assert result is not None
+    records = result["verdicts"]
+    assert len(records) == 2
+    assert {record["payload_traversal_path"] for record in records} == {"$.first", "$.second"}
+    assert len({record["payload_hash"] for record in records}) == 1
+
+
 def test_exclusion_manifest_count_labels(fixtures_dir):
     """Phase 0 raw parse failure 61건과 exclusion fixture 62건 라벨을 분리 고정."""
     with open(os.path.join(fixtures_dir, "u1-exclusion-manifest.json"), "r") as fp:
