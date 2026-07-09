@@ -95,7 +95,10 @@ pre-commit:
         else
           for hook_name in pre-commit commit-msg pre-push; do
             hook_path="$hooks_dir/$hook_name"
-            [ -f "$hook_path" ] || continue
+            if [ ! -f "$hook_path" ]; then
+              problem="hook file missing: $hook_path (auto-install is disabled, so lefthook will not recreate it)"
+              break
+            fi
             expected_call='call_lefthook run "'"$hook_name"'" --no-auto-install "$@"'
             if ! grep -Fxq -- "$expected_call" "$hook_path"; then
               problem="expected exact lefthook call [$expected_call] in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"

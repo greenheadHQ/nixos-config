@@ -22,6 +22,20 @@ LEFTHOOK_NO_AUTO_INSTALL_FLAG=$(sed -n 's/^NO_AUTO_INSTALL_FLAG="\(.*\)"$/\1/p' 
 [[ -n "$LEFTHOOK_GUARD_END_MARKER" ]] || fail "could not extract END_MARKER from install-lefthook-hooks.sh"
 [[ -n "$LEFTHOOK_NO_AUTO_INSTALL_FLAG" ]] || fail "could not extract NO_AUTO_INSTALL_FLAG from install-lefthook-hooks.sh"
 
+extract_self_check_run_body() {
+  # lefthook.yml의 <top-level hook>.commands.lefthook-guard-self-check 의 `run: |` 본문만 뽑는다.
+  local top="$1"
+  awk -v want="${top}:" '
+    $0 == want { in_top = 1; next }
+    in_top && /^[^[:space:]#]/ { exit }
+    in_top && /^    lefthook-guard-self-check:$/ { in_cmd = 1; next }
+    in_cmd && /^    [^[:space:]]/ { exit }
+    in_cmd && /^      run: \|$/ { in_run = 1; next }
+    in_run && /^      [^[:space:]]/ { exit }
+    in_run { print }
+  ' "$REPO_ROOT/lefthook.yml"
+}
+
 assert_hook_call_line() {
   # 설치된 hook의 lefthook 호출부가 정확히 기대 형태인지 확인한다. 완전 일치로 비교하므로
   # 플래그 누락뿐 아니라 중복 주입(비-idempotent 회귀)도 함께 잡힌다.
@@ -84,9 +98,10 @@ YML
   cat > "$stub_dir/lefthook" <<'STUB'
 #!/usr/bin/env bash
 # stub for install-lefthook-hooks shell tests: emulate `lefthook install` by writing
-# a minimal pre-commit hook that contains the `call_lefthook run "pre-commit" "$@"`
-# marker expected by inject_staged_guard. The stub also tolerates --force (worktree
-# mode passes it). Silent on success to mirror the real CLI output we strip.
+# every configured hook (pre-commit/commit-msg/pre-push), each containing the
+# `call_lefthook run "<hook>" "$@"` marker expected by inject_staged_guard and
+# disable_lefthook_auto_install. The stub also tolerates --force (worktree mode
+# passes it). Silent on success to mirror the real CLI output we strip.
 set -euo pipefail
 case "${1:-}" in
   install)
@@ -458,6 +473,61 @@ test_install_lefthook_refuses_symlinked_hook() {
   [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail on a symlinked hook; output: $INSTALL_LEFTHOOK_OUTPUT"
   assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "refusing to patch symlinked hook"
   [[ -L "$hooks_dir/pre-push" ]] || fail "symlinked hook must be left in place, not replaced"
+}
+
+test_install_lefthook_refuses_symlinked_pre_commit() {
+  # pre-commit은 disable_lefthook_auto_install보다 먼저 도는 inject_staged_guard가 in-place로
+  # 다시 쓴다. 그쪽 경로에서도 symlink target을 따라 쓰지 않고 거부하는지 확인한다.
+  local sandbox repo_root stub_dir hooks_dir target before
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "warm-up install failed: $INSTALL_LEFTHOOK_OUTPUT"
+
+  hooks_dir="$repo_root/.git/hooks"
+  target="$sandbox/external-pre-commit"
+  printf '#!/bin/sh\ncall_lefthook run "pre-commit" "$@"\n' > "$target"
+  chmod +x "$target"
+  before=$(cat "$target")
+  rm -f "$hooks_dir/pre-commit"
+  ln -s "$target" "$hooks_dir/pre-commit"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail on a symlinked pre-commit; output: $INSTALL_LEFTHOOK_OUTPUT"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "refusing to patch symlinked hook"
+  [[ -L "$hooks_dir/pre-commit" ]] || fail "symlinked pre-commit must be left in place, not replaced"
+  [[ "$(cat "$target")" == "$before" ]] || fail "external symlink target must not be modified"
+}
+
+test_lefthook_self_check_hook_list_matches_config() {
+  # self-check가 순회하는 hook 목록은 lefthook.yml이 정의한 hook 집합과 같아야 한다.
+  # auto-install을 껐으므로 목록이 어긋나면 설치되지 않은 hook의 게이트가 조용히 사라진다.
+  local from_config from_self_check
+  from_config=$(awk '/^[A-Za-z0-9_.-]+:/ { sub(/:$/, "", $1); printf "%s%s", sep, $1; sep = " " }' "$REPO_ROOT/lefthook.yml")
+  from_self_check=$(extract_self_check_run_body "pre-commit" | sed -n 's/^ *for hook_name in \(.*\); do$/\1/p')
+
+  [[ -n "$from_self_check" ]] || fail "could not extract the hook list from lefthook.yml self-check"
+  [[ "$from_config" == "$from_self_check" ]] \
+    || fail "hook list drift: lefthook.yml self-check iterates [$from_self_check], but lefthook.yml defines [$from_config]"
+}
+
+test_lefthook_self_check_bodies_stay_in_sync() {
+  # commit-msg의 self-check는 pre-commit 본문의 수동 복제다 (staged files가 0인 --allow-empty
+  # 경로를 막기 위해 존재). 두 본문이 의도치 않게 갈라지면 한쪽 게이트만 강화되는 사고가 나므로,
+  # 유일하게 허용된 차이(에러 prefix의 " (commit-msg)")만 정규화한 뒤 완전 일치를 요구한다.
+  local pre_body msg_body
+  pre_body=$(extract_self_check_run_body "pre-commit")
+  msg_body=$(extract_self_check_run_body "commit-msg" | sed 's/lefthook-guard-self-check (commit-msg):/lefthook-guard-self-check:/')
+
+  [[ -n "$pre_body" ]] || fail "could not extract pre-commit lefthook-guard-self-check run body"
+  [[ -n "$msg_body" ]] || fail "could not extract commit-msg lefthook-guard-self-check run body"
+  if [[ "$pre_body" != "$msg_body" ]]; then
+    fail "lefthook.yml self-check bodies diverged (only the ' (commit-msg)' error prefix may differ):
+$(diff <(printf '%s\n' "$pre_body") <(printf '%s\n' "$msg_body") || true)"
+  fi
 }
 
 lefthook_make_checksum_stale() {

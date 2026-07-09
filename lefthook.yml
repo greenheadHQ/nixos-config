@@ -5,11 +5,13 @@ pre-commit:
       # 회귀 방지 layer: install-lefthook-hooks.sh가 hook에 주입한 두 가지가 살아있는지
       # commit-time에 fail-fast로 확인한다.
       #   (1) staged-config guard 블록 (pre-commit)
-      #   (2) lefthook 호출부의 --no-auto-install 플래그 (설치된 모든 hook)
+      #   (2) 설치된 hook 세 개의 존재와, 각 lefthook 호출부의 --no-auto-install 플래그
       # 둘이 사라지는 경로는 두 가지다. 첫째, `lefthook run`은 lefthook.checksum이 stale하면
       # hook 전체를 암묵 재설치해(sync hooks) guard를 지운다 — (2)가 이 경로를 원천 차단하므로
       # (2)의 부재는 곧 다음 commit의 guard 소실을 뜻해 여기서 함께 막는다. 둘째, 인접
       # worktree의 raw `lefthook install`이 worktree-local 격리 없이 공유 hook을 덮어쓴다.
+      # auto-install을 끈 이상 hook 파일이 없어도 lefthook이 되살려 주지 않는다. 없는 hook을
+      # 건너뛰면 그 hook의 게이트가 조용히 사라지므로, 누락 자체를 fail-fast로 잡는다.
       # parallel: true이지만 어느 command든 fail이면 commit이 차단되므로 순서는 무관.
       run: |
         hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
@@ -20,7 +22,12 @@ pre-commit:
         else
           for hook_name in pre-commit commit-msg pre-push; do
             hook_path="$hooks_dir/$hook_name"
-            [ -f "$hook_path" ] || continue
+            if [ ! -f "$hook_path" ]; then
+              problem="hook file missing: $hook_path (auto-install is disabled, so lefthook will not recreate it)"
+              break
+            fi
+            # `"$@"`는 이 sh 블록에서 인자가 없어 빈 문자열로 확장된다. 기대 라인 전체를
+            # 작은따옴표로 조립해 리터럴 `"$@"`를 보존한다.
             expected_call='call_lefthook run "'"$hook_name"'" --no-auto-install "$@"'
             if ! grep -Fxq -- "$expected_call" "$hook_path"; then
               problem="expected exact lefthook call [$expected_call] in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
@@ -102,7 +109,12 @@ commit-msg:
         else
           for hook_name in pre-commit commit-msg pre-push; do
             hook_path="$hooks_dir/$hook_name"
-            [ -f "$hook_path" ] || continue
+            if [ ! -f "$hook_path" ]; then
+              problem="hook file missing: $hook_path (auto-install is disabled, so lefthook will not recreate it)"
+              break
+            fi
+            # `"$@"`는 이 sh 블록에서 인자가 없어 빈 문자열로 확장된다. 기대 라인 전체를
+            # 작은따옴표로 조립해 리터럴 `"$@"`를 보존한다.
             expected_call='call_lefthook run "'"$hook_name"'" --no-auto-install "$@"'
             if ! grep -Fxq -- "$expected_call" "$hook_path"; then
               problem="expected exact lefthook call [$expected_call] in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"

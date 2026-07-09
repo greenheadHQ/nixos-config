@@ -47,6 +47,7 @@ END_MARKER="# END nixos-config lefthook staged-config guard"
 # 플래그 존재 재확인: `lefthook run --help | grep -- --no-auto-install` (lefthook 2.1.5 기준).
 NO_AUTO_INSTALL_FLAG="--no-auto-install"
 
+
 # 30 minutes — install itself runs in ~150ms; this guards against hung child
 # processes (NFS lock issues, OS bugs) rather than normal contention. Matches the
 # convention from modules/shared/scripts/lib/rebuild/locks.sh:198.
@@ -187,8 +188,17 @@ run_lefthook_install() {
 
 inject_staged_guard() {
   local hook_path
-  hook_path="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
+  # `--git-path hooks/pre-commit`은 마지막 구성요소의 symlink까지 해석해 target 경로를 돌려준다
+  # (실측). 그 경로로는 아래 `-L` 검사가 무력해지고 python도 target을 직접 연다. 디렉토리만
+  # 해석시키고 파일명을 직접 붙여 symlink를 보존한다 — disable_lefthook_auto_install과 같은 방식.
+  hook_path="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path hooks)/pre-commit"
   [ -f "$hook_path" ] || fail "generated pre-commit hook not found: $hook_path"
+  # 아래 python은 write_text로 제자리 갱신하므로 symlink를 만나면 그 target을 따라 쓴다.
+  # disable_lefthook_auto_install이 같은 이유로 symlink를 거부하는데, 이쪽이 먼저 실행되므로
+  # 여기서도 막지 않으면 방어가 반쪽이 된다.
+  if [ -L "$hook_path" ]; then
+    fail "refusing to patch symlinked hook (write would follow the link): $hook_path"
+  fi
 
   # 200>&- closes the lock fd in the python child for the same reason as run_lefthook_install.
   python3 - "$hook_path" "$BEGIN_MARKER" "$END_MARKER" 200>&- <<'PY'
@@ -396,6 +406,19 @@ PY
       fail "auto-install suppression failed: expected exact call line [$expected_call] in $hook_file"
     fi
   done
+
+  # lefthook.yml이 정의한 hook이 하나라도 설치되지 않았다면, auto-install을 끈 지금은 아무도
+  # 되살려 주지 않는다. commit-time self-check가 같은 목록을 fail-fast로 확인하므로, 그 실패를
+  # install 시점으로 당겨 원인을 분명히 남긴다. 기대 목록은 대상 repo의 lefthook.yml에서
+  # 도출한다 — 하드코딩하면 다른 hook 집합을 쓰는 저장소/픽스처에서 거짓 실패가 난다.
+  # top-level 키 파싱은 check-lefthook-staged-config.sh의 allowed_top_level 검사와 같은 방식이다.
+  if [ -f "$repo_root/lefthook.yml" ]; then
+    for hook_name in $(awk '/^[A-Za-z0-9_.-]+:/ { sub(/:$/, "", $1); print $1 }' "$repo_root/lefthook.yml"); do
+      if [ ! -f "$resolved_hooks_dir/$hook_name" ]; then
+        fail "expected hook not installed: $resolved_hooks_dir/$hook_name (lefthook.yml defines it; check 'lefthook install' output)"
+      fi
+    done
+  fi
 }
 
 if is_main_repo; then
