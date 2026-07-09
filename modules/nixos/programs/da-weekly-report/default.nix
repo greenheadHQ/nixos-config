@@ -17,6 +17,17 @@ let
   ghPatPath = "/run/opnix/${username}/github-pat";
   weeklyReportPy = ./files/weekly_report.py;
   analyzePy = ../../../shared/programs/claude/files/skills/analyzing-da-sessions/scripts/analyze.py;
+  formatHour =
+    hour:
+    let
+      text = toString hour;
+    in
+    if hour < 10 then "0${text}" else text;
+  retryWindowCalendar =
+    let
+      window = cfg.retryWindow;
+    in
+    "${window.weekday} *-*-* ${formatHour window.startHour}..${formatHour window.deadlineHour}:00:00 ${window.timezone}";
 
   reportScript = pkgs.writeShellApplication {
     name = "da-weekly-report";
@@ -61,11 +72,19 @@ let
     GH_PAT_PATH = ghPatPath;
     WEEKLY_REPORT_PY = "${weeklyReportPy}";
     ANALYZE_PY = "${analyzePy}";
-    DEADLINE_HOUR = toString cfg.deadlineHour;
+    DEADLINE_HOUR = toString cfg.retryWindow.deadlineHour;
+    DEADLINE_TIMEZONE = cfg.retryWindow.timezone;
   };
 in
 {
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.retryWindow.startHour <= cfg.retryWindow.deadlineHour;
+        message = "homeserver.daWeeklyReport.retryWindow.startHour must be <= deadlineHour";
+      }
+    ];
+
     systemd.services.da-weekly-report = {
       description = "Generate and publish DA weekly report";
       after = [ "network-online.target" ];
@@ -116,8 +135,8 @@ in
 
       timerConfig = {
         # 사용자 기상 시각이 08~11시로 흔들리고 MacBook 절전 시 SSH가 무응답이므로
-        # 월요일 09~14시 정시마다 재시도한다. 14시는 partial 확정 마감이다.
-        OnCalendar = cfg.attemptCalendar;
+        # 기본 retryWindow는 월요일 09~14시 정시마다 재시도한다. deadlineHour는 partial 확정 마감이다.
+        OnCalendar = retryWindowCalendar;
         Persistent = true;
       };
     };

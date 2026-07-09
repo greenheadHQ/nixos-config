@@ -160,6 +160,40 @@ def test_same_payload_hash_at_different_paths_is_not_preparse_deduped(
     assert len({record["payload_hash"] for record in records}) == 1
 
 
+def test_same_payload_hash_at_same_path_on_different_lines_is_not_preparse_deduped(
+    analyze_module,
+    tmp_path,
+):
+    """Pre-parse skip key must preserve JSONL line identity."""
+    payload = """### Correctness-1 — CONFIRMED_ISSUE
+**심각도**: HIGH
+**위치**: `foo.py:1`
+**문제**: 동일 payload가 다음 JSONL line에도 반복된다.
+<!-- verdict-json:start -->
+```json
+{"finding_id":"Correctness-1","verdict":"CONFIRMED_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+"""
+    session_path = tmp_path / "same-payload-same-path-different-lines.jsonl"
+    session_path.write_text(
+        json.dumps({"text": payload}) + "\n" + json.dumps({"text": payload}) + "\n"
+    )
+
+    result = analyze_module.analyze_session(str(session_path))
+
+    assert result is not None
+    records = result["verdicts"]
+    assert len(records) == 2
+    assert [record["jsonl_line_no"] for record in records] == [1, 2]
+    assert {record["payload_traversal_path"] for record in records} == {"$.text"}
+    assert len({record["payload_hash"] for record in records}) == 1
+
+
+def test_extract_text_payloads_legacy_wrapper_is_removed(analyze_module):
+    assert not hasattr(analyze_module, "extract_text_payloads")
+
+
 def test_exclusion_manifest_count_labels(fixtures_dir):
     """Phase 0 raw parse failure 61건과 exclusion fixture 62건 라벨을 분리 고정."""
     with open(os.path.join(fixtures_dir, "u1-exclusion-manifest.json"), "r") as fp:
@@ -602,6 +636,11 @@ def test_host_home_override(analyze_module):
     finally:
         analyze_module.HOST_PATH_MAP.clear()
         analyze_module.HOST_PATH_MAP.update(original)
+
+
+def test_host_home_override_reuses_remote_path_forbidden_chars(analyze_module):
+    with pytest.raises(Exception, match="disallowed shell metacharacter"):
+        analyze_module.parse_host_home_arg("mac=/tmp/example home")
 
 
 def test_claude_session_traceability(analyze_module, tmp_path):

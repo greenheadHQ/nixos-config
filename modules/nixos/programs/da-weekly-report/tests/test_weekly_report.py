@@ -211,6 +211,22 @@ def test_deadline_reached_uses_kst_hour(weekly_report_module):
     assert weekly_report_module.deadline_reached_at(at_deadline, 14) is True
 
 
+def test_deadline_reached_uses_configured_timezone(weekly_report_module):
+    before_utc_deadline = dt.datetime(2026, 7, 13, 13, 59, tzinfo=dt.timezone.utc)
+    at_utc_deadline = dt.datetime(2026, 7, 13, 14, 0, tzinfo=dt.timezone.utc)
+
+    assert weekly_report_module.deadline_reached_at(
+        before_utc_deadline,
+        14,
+        "UTC",
+    ) is False
+    assert weekly_report_module.deadline_reached_at(
+        at_utc_deadline,
+        14,
+        "UTC",
+    ) is True
+
+
 def test_deadline_reached_command_statuses(weekly_report_module):
     assert weekly_report_module.main([
         "deadline-reached",
@@ -225,6 +241,24 @@ def test_deadline_reached_command_statuses(weekly_report_module):
         "14",
         "--now",
         "2026-07-13T14:00:00+09:00",
+    ]) == 0
+    assert weekly_report_module.main([
+        "deadline-reached",
+        "--deadline-hour",
+        "14",
+        "--timezone",
+        "UTC",
+        "--now",
+        "2026-07-13T13:59:00+00:00",
+    ]) == 1
+    assert weekly_report_module.main([
+        "deadline-reached",
+        "--deadline-hour",
+        "14",
+        "--timezone",
+        "UTC",
+        "--now",
+        "2026-07-13T14:00:00+00:00",
     ]) == 0
 
 
@@ -331,6 +365,22 @@ def test_pending_publish_targets_uses_latest_status_per_target(weekly_report_mod
     assert weekly_report_module.pending_publish_targets(path, ["github", "pushover"]) == []
 
 
+def test_pending_publish_targets_retries_blocked_but_skipped_is_terminal(
+    weekly_report_module,
+    tmp_path,
+):
+    path = tmp_path / "weekly-2026-W28-publish.json"
+
+    weekly_report_module.append_publish_record(path, {"target": "github", "status": "blocked"})
+    weekly_report_module.append_publish_record(path, {"target": "matrix", "status": "skipped"})
+    weekly_report_module.append_publish_record(path, {"target": "pushover", "status": "success"})
+
+    assert weekly_report_module.pending_publish_targets(
+        path,
+        ["github", "matrix", "pushover", "missing"],
+    ) == ["github", "missing"]
+
+
 def test_pending_publish_targets_command_skips_terminal_statuses(
     weekly_report_module,
     tmp_path,
@@ -349,6 +399,65 @@ def test_pending_publish_targets_command_skips_terminal_statuses(
 
     assert rc == 0
     assert capsys.readouterr().out.splitlines() == ["pushover"]
+
+
+def test_publish_record_command_accepts_blocked_status(weekly_report_module, tmp_path):
+    path = tmp_path / "weekly-2026-W28-publish.json"
+
+    rc = weekly_report_module.main([
+        "publish-record",
+        "--publish-log",
+        str(path),
+        "--week-id",
+        "2026-W28",
+        "--target",
+        "github",
+        "--status",
+        "blocked",
+        "--message",
+        "GH token path not readable",
+    ])
+
+    assert rc == 0
+    assert weekly_report_module.latest_publish_statuses(path) == {"github": "blocked"}
+
+
+def test_build_command_allows_omitting_output_markdown(
+    weekly_report_module,
+    tmp_path,
+    monkeypatch,
+):
+    sidecar_path = tmp_path / "analyze-2026-W28.json"
+    output_json = tmp_path / "weekly-2026-W28.draft.json"
+    publish_log = tmp_path / "weekly-2026-W28-publish.json"
+    sidecar_path.write_text(json.dumps(sample_sidecar()), encoding="utf-8")
+    monkeypatch.setattr(
+        weekly_report_module,
+        "collect_health_metrics",
+        lambda *args: sample_health(),
+    )
+
+    rc = weekly_report_module.main([
+        "build",
+        "--analysis-sidecar",
+        str(sidecar_path),
+        "--state-dir",
+        str(tmp_path),
+        "--repo-root",
+        "/repo",
+        "--output-json",
+        str(output_json),
+        "--publish-log-path",
+        str(publish_log),
+        "--week-start",
+        "2026-07-06T00:00:00+09:00",
+        "--week-end",
+        "2026-07-13T00:00:00+09:00",
+    ])
+
+    assert rc == 0
+    report = json.loads(output_json.read_text())
+    assert report["provenance"]["report_markdown_path"] is None
 
 
 def test_finalize_injects_commentary_without_recomputing_report(weekly_report_module, tmp_path):

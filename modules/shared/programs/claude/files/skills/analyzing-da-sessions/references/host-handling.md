@@ -194,11 +194,12 @@ systemd 호출부는 `--host-home mac=/Users/<username>,minipc=/home/<username>`
 09:00~14:00 KST 매시 발행을 시도한다.
 
 `da-weekly-report.sh`는 시작 시 이번 주 final core JSON(`weekly-<ISO-week>.json`)이 이미
-있으면 분석/렌더는 건너뛰지만 publish log를 읽어 target별 마지막 status가 `success`가 아닌
-target(`github`, `pushover`)만 재시도한다. publish target이 모두 성공 상태일 때만 즉시 성공
-종료한다. 아직 final core JSON이 없으면 `HOSTS`에서 현재 host를 제외해 remote host 목록을
-만들고, 각 remote host에 `ssh -o ConnectTimeout=10 -o BatchMode=yes <host> true` preflight를
-1회 수행한다. shell preflight는 `BatchMode=yes`를 붙이고 Python `check_remote_host_preflight`
+있으면 분석/렌더는 건너뛰지만 publish log를 읽어 target별 마지막 status가 미기록이거나
+`failed`/`blocked`인 target(`github`, `pushover`)만 재시도한다. `success`/`skipped`는
+terminal status이며 재시도하지 않는다. 아직 final core JSON이 없으면 `HOSTS`에서 현재 host를
+제외해 remote host 목록을 만들고, 각 remote host에
+`ssh -o ConnectTimeout=10 -o BatchMode=yes <host> true` preflight를 1회 수행한다. shell
+preflight는 `BatchMode=yes`를 붙이고 Python `check_remote_host_preflight`
 와 달리 별도 subprocess timeout이 없다. 이 차이는 intentional dual implementation 계약이며,
 한쪽 timeout/BatchMode를 바꿀 때는 양쪽 callsite 주석과 본 문서를 함께 갱신한다. remote host가
 무응답이고 현재 KST hour가 `DEADLINE_HOUR`(기본 14) 전이면 `attempt-<ISO-week>.state`에 알림

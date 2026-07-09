@@ -132,8 +132,8 @@ aggregate 결과의 `metrics["M-2"]["source_distribution"]` 필드에 source별 
 | `payload_traversal_path` | JSON root `$`에서 dict key는 `.key`, list index는 `[n]`로 표기. Claude Code는 보통 `$.message.content[...]`, Codex rollout은 `$.payload.*` 경로가 된다 |
 | `block_index` | 같은 line 또는 직전 result line의 다음 line에 있는 verdict group은 같은 block. 중간에 non-result line이 끼면 새 block |
 | `block_kind` | payload text에 `selective:`/`selective consistency`/`fleiss-kappa`가 있으면 `selective`, round summary marker가 있으면 `summary`, 그 외 `first_pass` |
-| verdict dedupe key | `(session_path, jsonl_line_no, payload_traversal_path, finding_id, source, canonical_verdict_hash)` |
-| `payload_hash` 역할 | `payload_traversal_path`와 함께 동일 payload 재방문 방지용 pre-parse key. 같은 hash라도 서로 다른 traversal path면 별도 provenance로 보존한다. 한 payload가 여러 finding의 VERDICT_JSON을 담는 것은 정상이라 record dedupe key로 단독 사용 금지 |
+| verdict dedupe key | `(session_path, jsonl_line_no, payload_traversal_path, finding_id, source, match_offset, canonical_verdict_hash)` |
+| `payload_hash` 역할 | `jsonl_line_no`, `payload_traversal_path`와 함께 동일 payload 재방문 방지용 pre-parse key. 같은 hash라도 서로 다른 JSONL line 또는 traversal path면 별도 provenance로 보존한다. 한 payload가 여러 finding의 VERDICT_JSON을 담는 것은 정상이라 record dedupe key로 단독 사용 금지 |
 | excluded match 보관 | `VerdictRecord`가 아니라 `ExtractionDiagnostic` sidecar (`diagnostics.sessions[].exclusions`) |
 
 ### ExtractionDiagnostic

@@ -19,6 +19,7 @@ import re
 import shlex
 import subprocess
 import sys
+import zoneinfo
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,8 @@ WEEKLY_REPORT_RE = re.compile(r"^weekly-\d{4}-W\d{2}\.json$")
 DRIFT_SUBJECT_RE = re.compile(r"(fix|refactor|chore)", re.I)
 DRIFT_BODY_RE = re.compile(r"(drift|참조|사본|dangling|동기화|SSOT)", re.I)
 REMOTE_PREFLIGHT_ALERT_KEY = "remote_preflight_alert_attempted"
-RETRYABLE_PUBLISH_STATUSES = {"failed"}
+RETRYABLE_PUBLISH_STATUSES = {"failed", "blocked"}
+TRACEABILITY_RENDER_SESSION_LIMIT = 50
 SECRET_ASSIGNMENT_NAMES = {
     "GH_PAT",
     "GH_TOKEN",
@@ -48,11 +50,20 @@ def utc_now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
-def parse_datetime(value: str) -> dt.datetime:
+def parse_datetime(value: str, default_tz: dt.tzinfo = KST) -> dt.datetime:
     parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=KST)
+        parsed = parsed.replace(tzinfo=default_tz)
     return parsed
+
+
+def timezone_for_name(timezone_name: str) -> dt.tzinfo:
+    if timezone_name == KST_NAME:
+        return KST
+    try:
+        return zoneinfo.ZoneInfo(timezone_name)
+    except zoneinfo.ZoneInfoNotFoundError as exc:
+        raise ValueError(f"unknown timezone: {timezone_name}") from exc
 
 
 def default_week_bounds(now: dt.datetime | None = None) -> tuple[dt.datetime, dt.datetime]:
@@ -86,9 +97,13 @@ def validate_deadline_hour(deadline_hour: int) -> int:
     return deadline_hour
 
 
-def deadline_reached_at(now: dt.datetime, deadline_hour: int) -> bool:
+def deadline_reached_at(
+    now: dt.datetime,
+    deadline_hour: int,
+    timezone_name: str = KST_NAME,
+) -> bool:
     validate_deadline_hour(deadline_hour)
-    return now.astimezone(KST).hour >= deadline_hour
+    return now.astimezone(timezone_for_name(timezone_name)).hour >= deadline_hour
 
 
 def parse_attempt_state(text: str) -> dict[str, str]:
@@ -431,9 +446,14 @@ def build_coverage(sidecar: dict, health: dict, analyze_exit_code: int) -> dict:
     }
 
 
-def build_traceability(sidecar: dict, limit: int = 50) -> dict:
+def build_traceability(
+    sidecar: dict,
+    limit: int = TRACEABILITY_RENDER_SESSION_LIMIT,
+) -> dict:
+    # Keep rendered comments compact while preserving the most link-rich sessions.
     raw = sidecar.get("traceability", {})
     sessions = raw.get("sessions", [])
+
     def session_score(item: dict) -> tuple[int, str]:
         refs = item.get("references", {})
         ref_count = sum(len(refs.get(key, [])) for key in ("prs", "issues", "bare_numbers"))
@@ -1003,7 +1023,7 @@ def command_build(args: argparse.Namespace) -> int:
         "publish_log_path": os.path.abspath(args.publish_log_path),
         "repo_root": os.path.abspath(args.repo_root),
         "report_json_path": os.path.abspath(args.output_json),
-        "report_markdown_path": os.path.abspath(args.output_md),
+        "report_markdown_path": os.path.abspath(args.output_md) if args.output_md else None,
     }
     report = build_weekly_report(
         sidecar=sidecar,
@@ -1017,7 +1037,8 @@ def command_build(args: argparse.Namespace) -> int:
         analyze_exit_code=args.analyze_exit_code,
     )
     atomic_write_json(args.output_json, report)
-    atomic_write_text(args.output_md, render_markdown(report) + "\n")
+    if args.output_md:
+        atomic_write_text(args.output_md, render_markdown(report) + "\n")
     return 0
 
 
@@ -1090,11 +1111,12 @@ def command_attempt_state_path(args: argparse.Namespace) -> int:
 def command_deadline_reached(args: argparse.Namespace) -> int:
     try:
         deadline_hour = validate_deadline_hour(args.deadline_hour)
-        now = parse_datetime(args.now) if args.now else dt.datetime.now(KST)
+        timezone = timezone_for_name(args.timezone)
+        now = parse_datetime(args.now, timezone) if args.now else dt.datetime.now(timezone)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    return 0 if deadline_reached_at(now, deadline_hour) else 1
+    return 0 if deadline_reached_at(now, deadline_hour, args.timezone) else 1
 
 
 def command_claim_attempt_alert(args: argparse.Namespace) -> int:
@@ -1115,7 +1137,7 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--state-dir", required=True)
     build.add_argument("--repo-root", required=True)
     build.add_argument("--output-json", required=True)
-    build.add_argument("--output-md", required=True)
+    build.add_argument("--output-md")
     build.add_argument("--publish-log-path", required=True)
     build.add_argument("--week-start")
     build.add_argument("--week-end")
@@ -1140,7 +1162,11 @@ def build_parser() -> argparse.ArgumentParser:
     publish.add_argument("--publish-log", required=True)
     publish.add_argument("--week-id", required=True)
     publish.add_argument("--target", required=True)
-    publish.add_argument("--status", required=True, choices=["success", "failed", "skipped"])
+    publish.add_argument(
+        "--status",
+        required=True,
+        choices=["success", "failed", "blocked", "skipped"],
+    )
     publish.add_argument("--message", default="")
     publish.add_argument("--url")
     publish.add_argument("--report-json")
@@ -1170,6 +1196,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     deadline = sub.add_parser("deadline-reached")
     deadline.add_argument("--deadline-hour", type=int, required=True)
+    deadline.add_argument("--timezone", default=KST_NAME)
     deadline.add_argument("--now")
     deadline.set_defaults(func=command_deadline_reached)
 

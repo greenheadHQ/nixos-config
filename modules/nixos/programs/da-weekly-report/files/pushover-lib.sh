@@ -2,7 +2,7 @@
 # da-weekly-report/da-weekly-reminder 공통 Pushover fail-soft 전송 헬퍼.
 # 두 entrypoint가 PUSHOVER_LIB env(store 경로, default.nix가 주입)로 source한다 —
 # 실패 분류(WARN 사유)가 두 경로에서 drift하지 않도록 단일 소스로 유지한다.
-# 반환: 0=성공, 1=전송 실패(재시도 의미 있음), 2=환경 결손(helper/credential 부재 — skip 계열).
+# 반환: 0=성공, 1=전송 실패(재시도 의미 있음), 2=환경 결손(helper/credential 부재 — blocked).
 
 PUSHOVER_SEND_REASON=""
 

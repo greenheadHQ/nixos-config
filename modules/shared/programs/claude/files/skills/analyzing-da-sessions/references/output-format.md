@@ -310,9 +310,13 @@ Weekly markdown 구성은 다음 순서다: header table, 핵심 수치 요약, 
 M-1~M-6, 건강 지표 추이, 전주 delta, 소스 추적 링크, LLM 해설, warnings. Mermaid는
 M-1/M-2 `pie`만 사용한다.
 
+렌더링용 `traceability.sessions` stable subset은 기본 50개로 제한한다. 이는 GitHub comment
+길이 폭증을 막기 위한 상한이며, 초과분은 `omitted_session_count`에 집계한다.
+
 delta 입력 glob은 state directory의 `weekly-????-W??.json`만 사용한다. publish 기록
-`weekly-<ISO주차>-publish.json`과 draft 파일은 glob 구조상 제외된다. publish 성공/실패/skip은
-core schema에 넣지 않고 append-only publish log만 SSOT로 삼는다.
+`weekly-<ISO주차>-publish.json`과 draft 파일은 glob 구조상 제외된다. publish
+`success`/`failed`/`blocked`/`skipped`는 core schema에 넣지 않고 append-only publish log만
+SSOT로 삼는다.
 
 ## GitHub Mermaid 안전 subset
 

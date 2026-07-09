@@ -25,6 +25,7 @@ PUSHOVER_SHARE_CRED="${PUSHOVER_SHARE_CRED:-$HOME/.config/pushover/share}"
 PUSHOVER_HELPER="${PUSHOVER_HELPER:-$HOME/.local/lib/pushover.sh}"
 TRACKING_ISSUE_NUMBER="${TRACKING_ISSUE_NUMBER:-}"
 DEADLINE_HOUR="${DEADLINE_HOUR:-14}"
+DEADLINE_TIMEZONE="${DEADLINE_TIMEZONE:-Asia/Seoul}"
 
 install -d -m 700 "$STATE_DIR"
 chmod 700 "$STATE_DIR"
@@ -65,7 +66,9 @@ join_by_comma() {
 deadline_reached() {
   local status
   set +e
-  python3 "$WEEKLY_REPORT_PY" deadline-reached --deadline-hour "$DEADLINE_HOUR"
+  python3 "$WEEKLY_REPORT_PY" deadline-reached \
+    --deadline-hour "$DEADLINE_HOUR" \
+    --timezone "$DEADLINE_TIMEZONE"
   status=$?
   set -e
   case "$status" in
@@ -138,9 +141,9 @@ publish_github() {
   if [ -z "$TRACKING_ISSUE_NUMBER" ]; then
     publish_record "github" "skipped" "TRACKING_ISSUE_NUMBER not set"
   elif [ ! -r "$GH_PAT_PATH" ]; then
-    publish_record "github" "skipped" "GH token path not readable: $GH_PAT_PATH"
+    publish_record "github" "blocked" "GH token path not readable: $GH_PAT_PATH"
   elif ! command -v gh >/dev/null 2>&1; then
-    publish_record "github" "skipped" "gh command not found"
+    publish_record "github" "blocked" "gh command not found"
   else
     gh_stdout="$STATE_DIR/weekly-$WEEK_ID-gh.out"
     gh_stderr="$STATE_DIR/weekly-$WEEK_ID-gh.err"
@@ -175,7 +178,7 @@ GitHub: $COMMENT_URL"
   case "$push_status" in
     0) publish_record "pushover" "success" "notification sent" "$COMMENT_URL" ;;
     1) publish_record "pushover" "failed" "$PUSHOVER_SEND_REASON" ;;
-    *) publish_record "pushover" "skipped" "$PUSHOVER_SEND_REASON" ;;
+    *) publish_record "pushover" "blocked" "$PUSHOVER_SEND_REASON" ;;
   esac
 }
 
@@ -202,7 +205,6 @@ WEEK_ID="$(python3 "$WEEKLY_REPORT_PY" week-id)"
 ANALYSIS_JSON="$STATE_DIR/analyze-$WEEK_ID.json"
 ANALYSIS_MD="$STATE_DIR/analyze-$WEEK_ID.md"
 DRAFT_JSON="$STATE_DIR/weekly-$WEEK_ID.draft.json"
-DRAFT_MD="$STATE_DIR/weekly-$WEEK_ID.draft.md"
 REPORT_JSON="$STATE_DIR/weekly-$WEEK_ID.json"
 REPORT_MD="$STATE_DIR/weekly-$WEEK_ID.md"
 PUBLISH_LOG="$STATE_DIR/weekly-$WEEK_ID-publish.json"
@@ -218,7 +220,7 @@ if [ -s "$REPORT_JSON" ]; then
   echo "final report exists: $REPORT_JSON"
   load_pending_publish_targets
   if [ "${#PENDING_TARGETS[@]}" -eq 0 ]; then
-    echo "publish targets already successful"
+    echo "publish targets already terminal"
     exit 0
   fi
   echo "retrying publish targets: $(join_by_comma "${PENDING_TARGETS[@]}")"
@@ -299,7 +301,6 @@ python3 "$WEEKLY_REPORT_PY" build \
   --state-dir "$STATE_DIR" \
   --repo-root "$REPO_ROOT" \
   --output-json "$DRAFT_JSON" \
-  --output-md "$DRAFT_MD" \
   --publish-log-path "$PUBLISH_LOG" \
   --commentary-error "LLM commentary pending" \
   --analyze-exit-code "$ANALYZE_STATUS"
@@ -372,7 +373,7 @@ else
 fi
 python3 "$WEEKLY_REPORT_PY" "${FINALIZE_ARGS[@]}"
 
-rm -f "$DRAFT_JSON" "$DRAFT_MD"
+rm -f "$DRAFT_JSON"
 
 COMMENT_URL=""
 publish_selected_targets "${PUBLISH_TARGETS[@]}"

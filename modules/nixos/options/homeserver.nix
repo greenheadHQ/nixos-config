@@ -193,20 +193,46 @@
 
     daWeeklyReport = {
       enable = lib.mkEnableOption "DA session weekly report timer";
-      attemptCalendar = lib.mkOption {
-        type = lib.types.str;
-        default = "Mon *-*-* 09..14:00:00 Asia/Seoul";
-        description = "OnCalendar retry window for weekly DA report generation attempts";
+      retryWindow = lib.mkOption {
+        type = lib.types.submodule {
+          options = {
+            weekday = lib.mkOption {
+              type = lib.types.enum [
+                "Mon"
+                "Tue"
+                "Wed"
+                "Thu"
+                "Fri"
+                "Sat"
+                "Sun"
+              ];
+              default = "Mon";
+              description = "Weekday for weekly DA report generation attempts";
+            };
+            startHour = lib.mkOption {
+              type = lib.types.ints.between 0 23;
+              default = 9;
+              description = "First local hour included in the retry window";
+            };
+            deadlineHour = lib.mkOption {
+              type = lib.types.ints.between 0 23;
+              default = 14;
+              description = "Local hour at which the retry window finalizes partial publication";
+            };
+            timezone = lib.mkOption {
+              type = lib.types.str;
+              default = "Asia/Seoul";
+              description = "Timezone used by the weekly DA report retry window";
+            };
+          };
+        };
+        default = { };
+        description = "Structured retry window used to derive both OnCalendar and DEADLINE_HOUR";
       };
       reminderCalendar = lib.mkOption {
         type = lib.types.str;
         default = "Sun *-*-* 22:00:00 Asia/Seoul";
         description = "OnCalendar time for the pre-report Pushover reminder";
-      };
-      deadlineHour = lib.mkOption {
-        type = lib.types.ints.between 0 23;
-        default = 14;
-        description = "Asia/Seoul hour at which the weekly retry window finalizes partial publication";
       };
       trackingIssueNumber = lib.mkOption {
         type = lib.types.nullOr lib.types.ints.positive;

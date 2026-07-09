@@ -7,7 +7,6 @@ PR #670 정정 코멘트의 알고리즘 (분모 정정 + 4-tier fallback + sour
 Internal boundary:
   - constants/enums          — VERDICT_CATEGORIES, INTENSITY_VERDICTS, BUNDLE_MAP, regex 등
   - jsonl payload walker     — extract_text_payloads_with_paths
-                                (extract_text_payloads는 string-only compatibility wrapper)
   - finding_id normalizer    — get_bundle
   - verdict parser pipeline  — extract_strict_verdicts, extract_unmarked_json_verdicts,
                                 extract_kv_verdicts, extract_nl_summary, extract_intensity_verdicts
@@ -507,17 +506,6 @@ def extract_text_payloads_with_paths(
     elif isinstance(obj, list):
         for idx, value in enumerate(obj):
             extract_text_payloads_with_paths(value, accumulator, f"{path}[{idx}]")
-
-
-def extract_text_payloads(obj: Any, accumulator: list) -> None:
-    """Compatibility wrapper for legacy string-only callers.
-
-    New extraction boundaries must use extract_text_payloads_with_paths() so
-    payload_traversal_path participates in provenance and pre-parse skip keys.
-    """
-    payloads: list[tuple[str, str]] = []
-    extract_text_payloads_with_paths(obj, payloads)
-    accumulator.extend(text for _, text in payloads)
 
 
 def in_long_outer_fence(text: str, pos: int) -> bool:
@@ -1185,7 +1173,7 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
     full_text = []
     parse_failures: list[str] = []
     diagnostics: list[ExtractionDiagnostic] = []
-    seen_payload_keys: set[tuple[str, str]] = set()
+    seen_payload_keys: set[tuple[str, int, str]] = set()
     seen_record_keys: set[tuple] = set()
     current_block_index = -1
     last_result_line_no: int | None = None
@@ -1230,7 +1218,7 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
                 extract_text_payloads_with_paths(obj, payloads)
                 for payload_path, text in payloads:
                     payload_hash = sha256_text(text)
-                    payload_key = (payload_hash, payload_path)
+                    payload_key = (payload_hash, line_no, payload_path)
                     if payload_key in seen_payload_keys:
                         continue
                     seen_payload_keys.add(payload_key)
@@ -2251,7 +2239,7 @@ def parse_host_home_arg(s: str) -> list[tuple[str, str]]:
             raise argparse.ArgumentTypeError(
                 f"--host-home for {host} must be absolute: {home!r}"
             )
-        if any(c in home for c in "\n\r\t;|&$`(){}[]<>*?\"'\\"):
+        if _remote_path_has_disallowed_chars(home):
             raise argparse.ArgumentTypeError(
                 f"--host-home for {host} contains disallowed shell metacharacter"
             )
