@@ -930,3 +930,23 @@ def test_analyze_remote_session_partial_fetch_result(analyze_module, monkeypatch
     assert any("ssh cat failed" in w for w in warnings), (
         "failed fetch should accumulate a warning"
     )
+
+
+def test_find_severity_prefers_ahead_across_all_occurrences(analyze_module):
+    """근접 occurrence(판정 블록)의 behind에 앞 finding severity가 있어도,
+    다른 occurrence(서술 블록)의 ahead 정답을 먼저 채택해야 한다 (2-pass)."""
+    text = (
+        "### Other-9\n"
+        "**심각도**: LOW\n"
+        "**위치**: `other.py:9`\n\n"
+        "### Target-1 — CONFIRMED_ISSUE\n"
+        "- **판정**: CONFIRMED_ISSUE\n\n"
+        + "필러 문단.\n" * 160  # 판정 블록의 lookahead(1000자) 밖으로 서술 블록을 밀어낸다
+        + "### Target-1\n"
+        "**심각도**: HIGH\n"
+        "**위치**: `target.py:1`\n"
+    )
+    # match_offset = 판정 블록 occurrence 위치 (근접 1순위가 판정 블록이 되게)
+    verdict_offset = text.index("Target-1 — CONFIRMED_ISSUE")
+    severity = analyze_module.find_severity_for_finding(text, "Target-1", verdict_offset)
+    assert severity == "HIGH"

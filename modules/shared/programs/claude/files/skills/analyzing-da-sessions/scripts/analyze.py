@@ -1123,13 +1123,16 @@ def find_severity_for_finding(
     if match_offset is not None:
         occurrences.sort(key=lambda m: abs(m.start() - match_offset))
     # finding_id 등장 위치의 앞뒤 window에서 severity 라벨 검색.
-    # severity 줄은 finding 헤더 뒤에 오는 구조이므로 lookahead 구간을 먼저 본다 —
-    # lookbehind를 먼저 검색하면 window에 들어온 앞 블록의 severity를 오채택한다.
+    # severity 줄은 finding 헤더 뒤에 오는 구조이므로 2-pass로 본다: 모든 occurrence의
+    # lookahead를 먼저 전수 확인하고, 전부 없을 때만 behind fallback. occurrence별로
+    # (ahead→behind)를 섞으면 근접 1순위(판정 블록, 심각도 없음)의 behind에 걸린
+    # 앞 finding의 severity가 2순위(서술 블록)의 정답 ahead보다 먼저 오채택된다.
     for m in occurrences:
         ahead = text_blob[m.end():min(len(text_blob), m.end() + SEVERITY_LOOKAHEAD_CHARS)]
         sm = SEV_LINE.search(ahead)
         if sm:
             return sm.group(1).upper()
+    for m in occurrences:
         behind = text_blob[max(0, m.start() - SEVERITY_LOOKBEHIND_CHARS):m.start()]
         behind_matches = list(SEV_LINE.finditer(behind))
         if behind_matches:
