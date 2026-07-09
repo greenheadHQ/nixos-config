@@ -314,6 +314,8 @@ session_cwd_is_in_instance_scope() {
     [ -n "$cwd" ] || return 1
     target=$(canonical_existing_path "$instance_path") || return 1
     wt_root="$target/.claude/worktrees/"
+    # The instance root itself is in scope because same-dir spawned sessions
+    # run at the instance root; only worktree sessions live under wt_root.
     [ "$cwd" = "$target" ] && return 0
     case "$cwd" in
         "$wt_root"*) return 0 ;;
@@ -321,8 +323,21 @@ session_cwd_is_in_instance_scope() {
     return 1
 }
 
+pid_is_session_proc() {
+    local pid="$1" command
+    command=$(ps -o command= -p "$pid" 2>/dev/null) || return 1
+    case "$command" in
+        *--sdk-url*) return 0 ;;
+    esac
+    return 1
+}
+
 is_orphan_session_proc_for_path() {
     local pid="$1" instance_path="$2" ppid
+    # The --sdk-url argv selector is rechecked here (not only at pgrep
+    # discovery) so a recycled PID that is no longer a session process fails
+    # this predicate before any signal is sent.
+    pid_is_session_proc "$pid" || return 1
     # Spawned session processes run as the versioned Claude binary. Keep the
     # same executable boundary as server PID detection so an unrelated
     # --sdk-url argv match is never a reap target.
