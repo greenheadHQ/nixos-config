@@ -76,8 +76,6 @@ let
     WINDOW_START_HOUR = toString cfg.retryWindow.startHour;
     WINDOW_DEADLINE_HOUR = toString cfg.retryWindow.deadlineHour;
     WINDOW_TIMEZONE = cfg.retryWindow.timezone;
-    DEADLINE_HOUR = toString cfg.retryWindow.deadlineHour;
-    DEADLINE_TIMEZONE = cfg.retryWindow.timezone;
   };
 in
 {

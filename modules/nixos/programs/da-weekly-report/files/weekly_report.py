@@ -1031,8 +1031,10 @@ def latest_publish_records(path: str | os.PathLike[str]) -> dict[str, dict[str, 
                     "message",
                     "url",
                     "week_id",
-                    "report_json",
-                    "report_md",
+                    # writer(command_publish_record)가 기록하는 필드명과 동일해야 한다
+                    # — reader/writer 어휘가 갈리면 --format json 출력에서 경로가 탈락한다.
+                    "report_json_path",
+                    "report_markdown_path",
                 )
                 if key in record
             }

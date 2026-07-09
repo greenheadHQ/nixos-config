@@ -227,7 +227,7 @@
           };
         };
         default = { };
-        description = "Structured retry window used to derive both OnCalendar and DEADLINE_HOUR";
+        description = "Structured retry window used to derive both OnCalendar and the WINDOW_* service environment";
       };
       reminderCalendar = lib.mkOption {
         type = lib.types.str;
