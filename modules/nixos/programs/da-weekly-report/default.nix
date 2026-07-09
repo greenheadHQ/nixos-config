@@ -26,7 +26,6 @@ let
       openssh
       gh
       curl
-      jq
       coreutils
     ];
     text = builtins.readFile ./files/da-weekly-report.sh;
@@ -48,6 +47,8 @@ let
     STATE_DIR = stateDir;
     PUSHOVER_SHARE_CRED = "${homeDir}/.config/pushover/share";
     PUSHOVER_HELPER = "${homeDir}/.local/lib/pushover.sh";
+    # 공통 fail-soft 전송 헬퍼 — 두 entrypoint가 같은 store 파일을 source한다 (drift 방지).
+    PUSHOVER_LIB = "${./files/pushover-lib.sh}";
     # writeShellApplication runtimeInputs가 앞에 붙는다. 이 tail은 Home Manager가
     # 관리하는 user-scope codex/codex-exec-supervised wrapper를 해석하기 위해 필요하다.
     PATH = lib.mkForce "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";

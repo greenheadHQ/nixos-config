@@ -16,8 +16,9 @@ Internal boundary:
   - aggregate builder        — analyze_session, build_aggregate
   - markdown renderer        — render_markdown
   - json renderer            — render_json
-  - host handling            — collect_local_files, collect_remote_files, fetch_remote_file,
-                                analyze_remote_session, _validate_host, _validate_remote_path
+  - host handling            — collect_local_files + 원격 수집(생존 preflight → tar batch 우선,
+                                per-file cat fallback, host budget clamp). 함수 나열 대신
+                                정책·경계는 references/host-handling.md가 SSOT.
 
 CLI:
   --hosts <comma list>     default: mac,minipc. whitelist {mac, minipc} reject-fast.

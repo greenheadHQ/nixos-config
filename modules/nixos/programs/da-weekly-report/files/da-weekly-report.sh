@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # DA 주간 리포트 파이프라인 진입점.
 #
-# systemd 모듈은 다음 과제에서 이 스크립트를 writeShellApplication으로 감싼다.
+# default.nix의 systemd 모듈이 이 스크립트를 writeShellApplication으로 감싸 실행한다.
 # 이 파일 자체는 user-scope 계약만 가정한다: HOME 아래 상태/SSH/Pushover 설정을 사용하고,
 # GitHub 토큰은 gh 호출 한 줄에만 셸 할당으로 주입한다. set -x 금지.
 set -euo pipefail
@@ -78,53 +78,9 @@ deadline_reached() {
   esac
 }
 
-PUSHOVER_SEND_REASON=""
-
-send_pushover_fail_soft() {
-  local helper="$1"
-  local cred="$2"
-  local title="$3"
-  local body="$4"
-  local priority="$5"
-  local status
-  PUSHOVER_SEND_REASON=""
-
-  # da-weekly-report/reminder는 별도 writeShellApplication 산출물이라 공통
-  # store lib wiring 대신 entrypoint별 작은 fail-soft wrapper를 둔다.
-  if [ ! -r "$helper" ]; then
-    PUSHOVER_SEND_REASON="helper not readable: $helper"
-    echo "WARN: Pushover $PUSHOVER_SEND_REASON" >&2
-    return 2
-  fi
-  if [ ! -r "$cred" ]; then
-    PUSHOVER_SEND_REASON="credential not readable: $cred"
-    echo "WARN: Pushover $PUSHOVER_SEND_REASON" >&2
-    return 2
-  fi
-
-  # shellcheck disable=SC1090
-  if ! source "$helper"; then
-    PUSHOVER_SEND_REASON="helper source failed: $helper"
-    echo "WARN: Pushover $PUSHOVER_SEND_REASON" >&2
-    return 2
-  fi
-  if ! declare -F pushover_send >/dev/null 2>&1; then
-    PUSHOVER_SEND_REASON="pushover_send function not found"
-    echo "WARN: $PUSHOVER_SEND_REASON" >&2
-    return 2
-  fi
-
-  set +e
-  pushover_send "$cred" "$title" "$body" "$priority"
-  status=$?
-  set -e
-  if [ "$status" -ne 0 ]; then
-    PUSHOVER_SEND_REASON="pushover_send exited $status"
-    echo "WARN: $PUSHOVER_SEND_REASON" >&2
-    return 1
-  fi
-  return 0
-}
+# 공통 fail-soft 전송 헬퍼 (reminder와 공유 — drift 방지 단일 소스).
+# shellcheck disable=SC1090
+source "${PUSHOVER_LIB:-$SCRIPT_DIR/pushover-lib.sh}"
 
 send_remote_sleep_alert() {
   local body="MacBook이 잠들어 있습니다. 깨우면 다음 정시 시도에 포함됩니다"

@@ -995,12 +995,9 @@ def command_build(args: argparse.Namespace) -> int:
     health = collect_health_metrics(args.repo_root, week_start, week_end)
     previous_paths = previous_report_paths(args.state_dir, current_week_id=week_id)
     previous_reports = load_previous_reports(previous_paths)
+    # build는 draft-only다. commentary 주입은 sanitize 게이트를 소유한 finalize가
+    # 유일한 경로 — build에 commentary 입력을 열면 게이트를 우회하는 CLI 표면이 된다.
     commentary_text = None
-    if args.commentary_file:
-        try:
-            commentary_text = Path(args.commentary_file).read_text(encoding="utf-8")
-        except OSError as exc:
-            args.commentary_error = f"commentary file read failed: {exc}"
     provenance = {
         "analysis_sidecar_path": os.path.abspath(args.analysis_sidecar),
         "publish_log_path": os.path.abspath(args.publish_log_path),
@@ -1122,7 +1119,6 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--publish-log-path", required=True)
     build.add_argument("--week-start")
     build.add_argument("--week-end")
-    build.add_argument("--commentary-file")
     build.add_argument("--commentary-error")
     build.add_argument("--analyze-exit-code", type=int, default=0)
     build.set_defaults(func=command_build)
