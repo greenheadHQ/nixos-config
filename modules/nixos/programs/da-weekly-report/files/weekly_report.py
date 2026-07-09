@@ -36,6 +36,15 @@ DRIFT_BODY_RE = re.compile(r"(drift|참조|사본|dangling|동기화|SSOT)", re.
 REMOTE_PREFLIGHT_ALERT_KEY = "remote_preflight_alert_attempted"
 RETRYABLE_PUBLISH_STATUSES = {"failed", "blocked"}
 TRACEABILITY_RENDER_SESSION_LIMIT = 50
+WEEKDAY_INDEX = {
+    "Mon": 0,
+    "Tue": 1,
+    "Wed": 2,
+    "Thu": 3,
+    "Fri": 4,
+    "Sat": 5,
+    "Sun": 6,
+}
 SECRET_ASSIGNMENT_NAMES = {
     "GH_PAT",
     "GH_TOKEN",
@@ -97,13 +106,53 @@ def validate_deadline_hour(deadline_hour: int) -> int:
     return deadline_hour
 
 
+def validate_start_hour(start_hour: int) -> int:
+    if not 0 <= start_hour <= 23:
+        raise ValueError("start hour must be between 0 and 23")
+    return start_hour
+
+
+def validate_window_weekday(weekday: str) -> str:
+    if weekday not in WEEKDAY_INDEX:
+        raise ValueError(f"window weekday must be one of: {', '.join(WEEKDAY_INDEX)}")
+    return weekday
+
+
+def validate_retry_window(start_hour: int, deadline_hour: int) -> tuple[int, int]:
+    start_hour = validate_start_hour(start_hour)
+    deadline_hour = validate_deadline_hour(deadline_hour)
+    if start_hour > deadline_hour:
+        raise ValueError("start hour must be <= deadline hour")
+    return start_hour, deadline_hour
+
+
 def deadline_reached_at(
     now: dt.datetime,
     deadline_hour: int,
     timezone_name: str = KST_NAME,
+    *,
+    window_weekday: str = "Mon",
+    start_hour: int = 0,
 ) -> bool:
-    validate_deadline_hour(deadline_hour)
-    return now.astimezone(timezone_for_name(timezone_name)).hour >= deadline_hour
+    start_hour, deadline_hour = validate_retry_window(start_hour, deadline_hour)
+    weekday_index = WEEKDAY_INDEX[validate_window_weekday(window_weekday)]
+    timezone = timezone_for_name(timezone_name)
+    local_now = now.astimezone(timezone)
+    week_start = local_now.date() - dt.timedelta(days=local_now.weekday())
+    window_date = week_start + dt.timedelta(days=weekday_index)
+    window_start_at = dt.datetime.combine(
+        window_date,
+        dt.time(hour=start_hour),
+        tzinfo=timezone,
+    )
+    deadline_at = dt.datetime.combine(
+        window_date,
+        dt.time(hour=deadline_hour),
+        tzinfo=timezone,
+    )
+    if local_now < window_start_at:
+        return False
+    return local_now >= deadline_at
 
 
 def parse_attempt_state(text: str) -> dict[str, str]:
@@ -956,13 +1005,13 @@ def append_publish_record(path: str, record: dict) -> None:
     target.chmod(0o600)
 
 
-def latest_publish_statuses(path: str | os.PathLike[str]) -> dict[str, str]:
-    """Return the last valid status for each publish target in an append-only JSONL log."""
-    statuses: dict[str, str] = {}
+def latest_publish_records(path: str | os.PathLike[str]) -> dict[str, dict[str, Any]]:
+    """Return the latest stable publish record fields per target from an append-only log."""
+    records: dict[str, dict[str, Any]] = {}
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
     except FileNotFoundError:
-        return statuses
+        return records
 
     for line in lines:
         if not line.strip():
@@ -974,21 +1023,53 @@ def latest_publish_statuses(path: str | os.PathLike[str]) -> dict[str, str]:
         target = record.get("target")
         status = record.get("status")
         if isinstance(target, str) and isinstance(status, str):
-            statuses[target] = status
-    return statuses
+            records[target] = {
+                key: record[key]
+                for key in (
+                    "target",
+                    "status",
+                    "message",
+                    "url",
+                    "week_id",
+                    "report_json",
+                    "report_md",
+                )
+                if key in record
+            }
+    return records
+
+
+def latest_publish_statuses(path: str | os.PathLike[str]) -> dict[str, str]:
+    """Return the last valid status for each publish target in an append-only JSONL log."""
+    return {
+        target: str(record["status"])
+        for target, record in latest_publish_records(path).items()
+    }
+
+
+def publish_target_records(
+    path: str | os.PathLike[str],
+    targets: list[str] | tuple[str, ...],
+) -> list[dict[str, Any]]:
+    latest = latest_publish_records(path)
+    records = []
+    for target in targets:
+        latest_record = latest.get(target, {"target": target})
+        status = latest_record.get("status")
+        pending = status is None or status in RETRYABLE_PUBLISH_STATUSES
+        records.append({**latest_record, "target": target, "pending": pending})
+    return records
 
 
 def pending_publish_targets(
     path: str | os.PathLike[str],
     targets: list[str] | tuple[str, ...],
 ) -> list[str]:
-    latest = latest_publish_statuses(path)
-    pending = []
-    for target in targets:
-        status = latest.get(target)
-        if status is None or status in RETRYABLE_PUBLISH_STATUSES:
-            pending.append(target)
-    return pending
+    return [
+        str(record["target"])
+        for record in publish_target_records(path, targets)
+        if record["pending"]
+    ]
 
 
 def notification_body(report: dict) -> str:
@@ -1086,8 +1167,21 @@ def parse_target_list(value: str) -> list[str]:
 
 def command_pending_publish_targets(args: argparse.Namespace) -> int:
     targets = parse_target_list(args.targets)
-    for target in pending_publish_targets(args.publish_log, targets):
-        print(target)
+    records = publish_target_records(args.publish_log, targets)
+    if args.format == "json":
+        print(json.dumps(records, ensure_ascii=False, sort_keys=True))
+    elif args.format == "tsv":
+        for record in records:
+            print("\t".join([
+                str(record["target"]),
+                "1" if record["pending"] else "0",
+                str(record.get("status") or ""),
+                str(record.get("url") or ""),
+            ]))
+    else:
+        for record in records:
+            if record["pending"]:
+                print(record["target"])
     return 0
 
 
@@ -1110,13 +1204,20 @@ def command_attempt_state_path(args: argparse.Namespace) -> int:
 
 def command_deadline_reached(args: argparse.Namespace) -> int:
     try:
-        deadline_hour = validate_deadline_hour(args.deadline_hour)
+        start_hour, deadline_hour = validate_retry_window(args.start_hour, args.deadline_hour)
+        window_weekday = validate_window_weekday(args.window_weekday)
         timezone = timezone_for_name(args.timezone)
         now = parse_datetime(args.now, timezone) if args.now else dt.datetime.now(timezone)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    return 0 if deadline_reached_at(now, deadline_hour, args.timezone) else 1
+    return 0 if deadline_reached_at(
+        now,
+        deadline_hour,
+        args.timezone,
+        window_weekday=window_weekday,
+        start_hour=start_hour,
+    ) else 1
 
 
 def command_claim_attempt_alert(args: argparse.Namespace) -> int:
@@ -1180,6 +1281,11 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="comma-separated publish target list",
     )
+    pending.add_argument(
+        "--format",
+        choices=["names", "tsv", "json"],
+        default="names",
+    )
     pending.set_defaults(func=command_pending_publish_targets)
 
     notify = sub.add_parser("notification")
@@ -1195,6 +1301,8 @@ def build_parser() -> argparse.ArgumentParser:
     attempt_state.set_defaults(func=command_attempt_state_path)
 
     deadline = sub.add_parser("deadline-reached")
+    deadline.add_argument("--window-weekday", default="Mon")
+    deadline.add_argument("--start-hour", type=int, default=0)
     deadline.add_argument("--deadline-hour", type=int, required=True)
     deadline.add_argument("--timezone", default=KST_NAME)
     deadline.add_argument("--now")

@@ -262,6 +262,41 @@ def test_deadline_reached_command_statuses(weekly_report_module):
     ]) == 0
 
 
+def test_deadline_reached_tuesday_catchup_after_monday_window(
+    weekly_report_module,
+):
+    before_configured_weekday = dt.datetime(2026, 7, 13, 15, 0, tzinfo=weekly_report_module.KST)
+    tuesday_morning = dt.datetime(2026, 7, 14, 9, 0, tzinfo=weekly_report_module.KST)
+
+    assert weekly_report_module.deadline_reached_at(
+        before_configured_weekday,
+        14,
+        "Asia/Seoul",
+        window_weekday="Tue",
+        start_hour=9,
+    ) is False
+    assert weekly_report_module.deadline_reached_at(
+        tuesday_morning,
+        14,
+        "Asia/Seoul",
+        window_weekday="Mon",
+        start_hour=9,
+    ) is True
+    assert weekly_report_module.main([
+        "deadline-reached",
+        "--window-weekday",
+        "Mon",
+        "--start-hour",
+        "9",
+        "--deadline-hour",
+        "14",
+        "--timezone",
+        "Asia/Seoul",
+        "--now",
+        "2026-07-14T09:00:00+09:00",
+    ]) == 0
+
+
 def test_claim_attempt_alert_only_claims_once(weekly_report_module, tmp_path):
     state_file = tmp_path / "attempt-2026-W28.state"
 
@@ -346,10 +381,29 @@ def test_publish_record_is_append_only_json_lines(weekly_report_module, tmp_path
 def test_pending_publish_targets_uses_latest_status_per_target(weekly_report_module, tmp_path):
     path = tmp_path / "weekly-2026-W28-publish.json"
 
-    weekly_report_module.append_publish_record(path, {"target": "github", "status": "failed"})
-    weekly_report_module.append_publish_record(path, {"target": "pushover", "status": "success"})
+    weekly_report_module.append_publish_record(
+        path,
+        {"target": "github", "status": "failed", "url": "https://example.invalid/old"},
+    )
+    weekly_report_module.append_publish_record(
+        path,
+        {"target": "pushover", "status": "success", "url": "https://example.invalid/comment"},
+    )
     weekly_report_module.append_publish_record(path, {"target": "matrix", "status": "skipped"})
 
+    assert weekly_report_module.latest_publish_records(path) == {
+        "github": {
+            "target": "github",
+            "status": "failed",
+            "url": "https://example.invalid/old",
+        },
+        "matrix": {"target": "matrix", "status": "skipped"},
+        "pushover": {
+            "target": "pushover",
+            "status": "success",
+            "url": "https://example.invalid/comment",
+        },
+    }
     assert weekly_report_module.latest_publish_statuses(path) == {
         "github": "failed",
         "matrix": "skipped",
@@ -363,6 +417,39 @@ def test_pending_publish_targets_uses_latest_status_per_target(weekly_report_mod
     weekly_report_module.append_publish_record(path, {"target": "github", "status": "success"})
 
     assert weekly_report_module.pending_publish_targets(path, ["github", "pushover"]) == []
+
+
+def test_pending_publish_targets_command_can_emit_latest_records_for_retry_url(
+    weekly_report_module,
+    tmp_path,
+    capsys,
+):
+    path = tmp_path / "weekly-2026-W28-publish.json"
+    weekly_report_module.append_publish_record(
+        path,
+        {
+            "target": "github",
+            "status": "success",
+            "url": "https://github.com/org/repo/issues/1#issuecomment-1",
+        },
+    )
+    weekly_report_module.append_publish_record(path, {"target": "pushover", "status": "failed"})
+
+    rc = weekly_report_module.main([
+        "pending-publish-targets",
+        "--publish-log",
+        str(path),
+        "--targets",
+        "github,pushover",
+        "--format",
+        "tsv",
+    ])
+
+    assert rc == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "github\t0\tsuccess\thttps://github.com/org/repo/issues/1#issuecomment-1",
+        "pushover\t1\tfailed\t",
+    ]
 
 
 def test_pending_publish_targets_retries_blocked_but_skipped_is_terminal(

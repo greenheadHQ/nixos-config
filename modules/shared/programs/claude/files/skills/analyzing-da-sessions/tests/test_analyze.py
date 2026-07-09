@@ -94,6 +94,133 @@ def test_kv_same_verdict_repeats_are_counted_in_session_and_aggregate(
     assert m2["source_distribution"]["kv"] == {"count": 3, "confidence": "medium"}
 
 
+def test_diagnostic_only_payload_does_not_advance_result_block_fsm(
+    analyze_module,
+    tmp_path,
+):
+    """Diagnostic-only payloads keep diagnostic context but do not join verdict blocks."""
+    first_verdict = """### Correctness-1 — CONFIRMED_ISSUE
+**심각도**: HIGH
+**위치**: `foo.py:1`
+**문제**: 첫 번째 실제 verdict.
+<!-- verdict-json:start -->
+```json
+{"finding_id":"Correctness-1","verdict":"CONFIRMED_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+"""
+    diagnostic_only = """<!-- verdict-json:start -->
+```json
+{"finding_id":"Correctness-2","verdict":"REGISTER","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+"""
+    second_verdict = """### Correctness-3 — NOT_AN_ISSUE
+**심각도**: MEDIUM
+**위치**: `bar.py:2`
+**문제**: diagnostic-only line 뒤의 두 번째 실제 verdict.
+<!-- verdict-json:start -->
+```json
+{"finding_id":"Correctness-3","verdict":"NOT_AN_ISSUE","confidence":"MEDIUM","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+"""
+    session_path = tmp_path / "diagnostic-only-between-verdicts.jsonl"
+    session_path.write_text(
+        json.dumps({"text": first_verdict}, ensure_ascii=False) + "\n"
+        + json.dumps({"text": diagnostic_only}, ensure_ascii=False) + "\n"
+        + json.dumps({"text": second_verdict}, ensure_ascii=False) + "\n"
+    )
+
+    result = analyze_module.analyze_session(str(session_path))
+
+    assert result is not None
+    assert [record["finding_id"] for record in result["verdicts"]] == [
+        "Correctness-1",
+        "Correctness-3",
+    ]
+    assert [record["block_index"] for record in result["verdicts"]] == [0, 1]
+    assert [diagnostic["block_index"] for diagnostic in result["diagnostics"]] == [0]
+    assert result["diagnostics"][0]["match_kind"] == "invalid_verdict"
+
+
+def test_non_kv_repeated_verdicts_keep_match_offsets(
+    analyze_module,
+    tmp_path,
+):
+    """Strict/header/unmarked paths preserve repeated identical findings in one payload."""
+    strict_payload = """### Correctness-1 — CONFIRMED_ISSUE
+**심각도**: HIGH
+**위치**: `strict.py:1`
+**문제**: strict repeated.
+<!-- verdict-json:start -->
+```json
+{"finding_id":"Correctness-1","verdict":"CONFIRMED_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+<!-- verdict-json:start -->
+```json
+{"finding_id":"Correctness-1","verdict":"CONFIRMED_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+"""
+    header_payload = """### Design-2 — NOT_AN_ISSUE
+**심각도**: MEDIUM
+**위치**: `header.py:1`
+**문제**: header repeated first.
+
+### Design-2 — NOT_AN_ISSUE
+**심각도**: MEDIUM
+**위치**: `header.py:2`
+**문제**: header repeated second.
+"""
+    unmarked_payload = """# Legacy JSON-only result
+marker 없는 JSON array 안에서 같은 verdict가 반복된다.
+```json
+[
+  {"finding_id":"Regression-3","verdict":"NEEDS_MORE_INFO","confidence":"N/A","stability_status":"N/A"},
+  {"finding_id":"Regression-3","verdict":"NEEDS_MORE_INFO","confidence":"N/A","stability_status":"N/A"}
+]
+```
+"""
+    session_path = tmp_path / "non-kv-repeated.jsonl"
+    session_path.write_text(
+        json.dumps({"text": strict_payload}, ensure_ascii=False) + "\n"
+        + json.dumps({"text": header_payload}, ensure_ascii=False) + "\n"
+        + json.dumps({"text": unmarked_payload}, ensure_ascii=False) + "\n"
+    )
+
+    result = analyze_module.analyze_session(str(session_path))
+
+    assert result is not None
+    by_source = {}
+    for record in result["verdicts"]:
+        by_source.setdefault(record["source"], []).append(record)
+    assert {source: len(records) for source, records in by_source.items()} == {
+        "verdict_json": 2,
+        "md_header": 2,
+        "json_unmarked": 2,
+    }
+    for records in by_source.values():
+        assert len({record["match_offset"] for record in records}) == 2
+
+
+def test_unmarked_json_without_verdict_key_is_ignored(
+    analyze_module,
+):
+    diagnostics = []
+    text = """일반 JSON 예시는 verdict extraction 대상이 아니다.
+```json
+{"title":"not a verdict", "items":[1, 2, 3]}
+```
+"""
+
+    records = analyze_module.extract_unmarked_json_verdicts(text, diagnostics=diagnostics)
+
+    assert records == []
+    assert diagnostics == []
+
+
 def assert_partial_dict(actual, expected):
     for key, expected_value in expected.items():
         if expected_value == "__NON_NULL__":

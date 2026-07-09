@@ -202,10 +202,11 @@ terminal status이며 재시도하지 않는다. 아직 final core JSON이 없�
 preflight는 `BatchMode=yes`를 붙이고 Python `check_remote_host_preflight`
 와 달리 별도 subprocess timeout이 없다. 이 차이는 intentional dual implementation 계약이며,
 한쪽 timeout/BatchMode를 바꿀 때는 양쪽 callsite 주석과 본 문서를 함께 갱신한다. remote host가
-무응답이고 현재 KST hour가 `DEADLINE_HOUR`(기본 14) 전이면 `attempt-<ISO-week>.state`에 알림
-claim을 남긴 첫 실패에만 Pushover sleep alert를 보낸 뒤 exit 0으로 다음 정시 발화를 기다린다.
-이미 claim된 주차의 추가 실패는 조용히 성공 종료한다. 14시 마감 발화에서는 preflight 실패가
-있어도 pipeline을 계속 진행한다.
+무응답이고 `WINDOW_WEEKDAY`/`WINDOW_START_HOUR`/`WINDOW_DEADLINE_HOUR`/`WINDOW_TIMEZONE`
+기준 retry deadline 전이면 `attempt-<ISO-week>.state`에 알림 claim을 남긴 첫 실패에만 Pushover
+sleep alert를 보낸 뒤 exit 0으로 다음 정시 발화를 기다린다. 이미 claim된 주차의 추가 실패는
+조용히 성공 종료한다. configured weekday의 deadline 이후 발화와 Persistent catch-up 발화에서는
+preflight 실패가 있어도 pipeline을 계속 진행한다.
 
 LLM commentary subprocess는 scratch cwd, read-only sandbox, `--ignore-user-config`,
 `--ignore-rules`, `--ephemeral`, secret 관련 env unset으로 실행한다. 단 같은 UID 프로세스가

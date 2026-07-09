@@ -802,16 +802,17 @@ def extract_strict_verdicts(
     parse_failures가 주어지면 JSON parse 실패를 silent swallow 대신 누적한다.
     """
     verdicts = []
-    seen_finding_ids: set[str] = set()
+    strict_finding_ids: set[str] = set()
     ctx = context or PayloadContext()
     for m in VERDICT_JSON_BLOCK.finditer(text):
+        match_ctx = replace(ctx, match_offset=m.start())
         exclusion = classify_template_exclusion(
             text, m.start(), m.end(), m.group(1), "verdict_json"
         )
         if exclusion:
             add_diagnostic(
                 diagnostics,
-                ctx,
+                match_ctx,
                 "exclusion",
                 exclusion,
                 source="verdict_json",
@@ -826,7 +827,7 @@ def extract_strict_verdicts(
                 parse_failures.append(msg)
             add_diagnostic(
                 diagnostics,
-                ctx,
+                match_ctx,
                 "parse_failure",
                 msg,
                 source="verdict_json",
@@ -836,25 +837,26 @@ def extract_strict_verdicts(
         if not isinstance(v, dict):
             add_diagnostic(
                 diagnostics,
-                ctx,
+                match_ctx,
                 "invalid_json_type",
                 f"verdict_json root must be object, got {type(v).__name__}",
                 source="verdict_json",
                 snippet=text_snippet(m.group(1)),
             )
             continue
-        record = make_verdict_record(v, text, "verdict_json", "high", ctx, diagnostics)
+        record = make_verdict_record(v, text, "verdict_json", "high", match_ctx, diagnostics)
         if record is None:
             continue
         verdicts.append(record)
         finding_id = record.get("finding_id", "")
         if finding_id:
-            seen_finding_ids.add(finding_id)
+            strict_finding_ids.add(finding_id)
     for m in HUMAN_VERDICT_HEADER.finditer(text):
+        match_ctx = replace(ctx, match_offset=m.start())
         if in_any_code_fence(text, m.start()):
             add_diagnostic(
                 diagnostics,
-                ctx,
+                match_ctx,
                 "exclusion",
                 "markdown_header_inside_fenced_example",
                 source="md_header",
@@ -867,7 +869,7 @@ def extract_strict_verdicts(
         if exclusion:
             add_diagnostic(
                 diagnostics,
-                ctx,
+                match_ctx,
                 "exclusion",
                 exclusion,
                 source="md_header",
@@ -878,20 +880,51 @@ def extract_strict_verdicts(
             continue
         finding_id = m.group(1)
         # Tier 1에서 이미 회수된 finding은 skip (4-tier fallback 의무 — 중복 카운트 차단)
-        if finding_id in seen_finding_ids:
+        if finding_id in strict_finding_ids:
             continue
         record = make_verdict_record({
             "finding_id": finding_id,
             "verdict": m.group(2),
             "confidence": "N/A",
             "stability_status": "N/A",
-        }, text, "md_header", "high", ctx, diagnostics)
+        }, text, "md_header", "high", match_ctx, diagnostics)
         if record is None:
             continue
         verdicts.append(record)
-        if finding_id:
-            seen_finding_ids.add(finding_id)
     return verdicts
+
+
+def json_items_with_offsets(body: str) -> list[tuple[Any, int]]:
+    """Return top-level JSON object/array items with their offset inside body."""
+    decoder = json.JSONDecoder()
+    idx = 0
+    end = len(body)
+    while idx < end and body[idx].isspace():
+        idx += 1
+    if idx >= end:
+        return []
+    if body[idx] != "[":
+        item, _ = decoder.raw_decode(body, idx)
+        return [(item, idx)]
+
+    idx += 1
+    items = []
+    while True:
+        while idx < end and body[idx].isspace():
+            idx += 1
+        if idx < end and body[idx] == "]":
+            return items
+        item_offset = idx
+        item, idx = decoder.raw_decode(body, idx)
+        items.append((item, item_offset))
+        while idx < end and body[idx].isspace():
+            idx += 1
+        if idx < end and body[idx] == ",":
+            idx += 1
+            continue
+        if idx < end and body[idx] == "]":
+            return items
+        return items
 
 
 def extract_unmarked_json_verdicts(
@@ -903,6 +936,7 @@ def extract_unmarked_json_verdicts(
     verdicts = []
     ctx = context or PayloadContext()
     for m in FENCED_JSON_BLOCK.finditer(text):
+        match_ctx = replace(ctx, match_offset=m.start())
         if inside_verdict_json_marker(text, m.start(), m.end()):
             continue
         body = m.group(1)
@@ -910,7 +944,7 @@ def extract_unmarked_json_verdicts(
         if exclusion:
             add_diagnostic(
                 diagnostics,
-                ctx,
+                match_ctx,
                 "exclusion",
                 exclusion,
                 source="json_unmarked",
@@ -918,22 +952,25 @@ def extract_unmarked_json_verdicts(
             )
             continue
         try:
-            obj = json.loads(body)
+            item_offsets = json_items_with_offsets(body)
         except Exception:
             continue
-        items = obj if isinstance(obj, list) else [obj]
-        for item in items:
+        body_start = m.start(1)
+        for item, item_offset in item_offsets:
+            item_ctx = replace(ctx, match_offset=body_start + item_offset)
             if not isinstance(item, dict):
                 add_diagnostic(
                     diagnostics,
-                    ctx,
+                    item_ctx,
                     "invalid_json_type",
                     f"json_unmarked item must be object, got {type(item).__name__}",
                     source="json_unmarked",
                     snippet=text_snippet(body),
                 )
                 continue
-            record = make_verdict_record(item, text, "json_unmarked", "high", ctx, diagnostics)
+            if "verdict" not in item:
+                continue
+            record = make_verdict_record(item, text, "json_unmarked", "high", item_ctx, diagnostics)
             if record is not None:
                 verdicts.append(record)
     return verdicts
@@ -1239,7 +1276,6 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
                         block_kind=infer_block_kind(text),
                     )
 
-                    before_diag = len(diagnostics)
                     sv = extract_strict_verdicts(text, parse_failures, diagnostics, ctx)
                     if sv:
                         append_records(sv, line_no, ctx.block_index or 0)
@@ -1256,9 +1292,6 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
                     if has_signal:
                         nl_signal_only = True
                         nl_estimated = max(nl_estimated, est)
-                    if len(diagnostics) > before_diag:
-                        current_block_index = ctx.block_index or 0
-                        last_result_line_no = line_no
     except Exception:
         return None
 

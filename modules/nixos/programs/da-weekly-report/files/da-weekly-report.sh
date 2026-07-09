@@ -24,8 +24,10 @@ GH_PAT_PATH="${GH_PAT_PATH:-/run/opnix/$USERNAME_FOR_PATHS/github-pat}"
 PUSHOVER_SHARE_CRED="${PUSHOVER_SHARE_CRED:-$HOME/.config/pushover/share}"
 PUSHOVER_HELPER="${PUSHOVER_HELPER:-$HOME/.local/lib/pushover.sh}"
 TRACKING_ISSUE_NUMBER="${TRACKING_ISSUE_NUMBER:-}"
-DEADLINE_HOUR="${DEADLINE_HOUR:-14}"
-DEADLINE_TIMEZONE="${DEADLINE_TIMEZONE:-Asia/Seoul}"
+WINDOW_WEEKDAY="${WINDOW_WEEKDAY:-Mon}"
+WINDOW_START_HOUR="${WINDOW_START_HOUR:-9}"
+WINDOW_DEADLINE_HOUR="${WINDOW_DEADLINE_HOUR:-${DEADLINE_HOUR:-14}}"
+WINDOW_TIMEZONE="${WINDOW_TIMEZONE:-${DEADLINE_TIMEZONE:-Asia/Seoul}}"
 
 install -d -m 700 "$STATE_DIR"
 chmod 700 "$STATE_DIR"
@@ -67,8 +69,10 @@ deadline_reached() {
   local status
   set +e
   python3 "$WEEKLY_REPORT_PY" deadline-reached \
-    --deadline-hour "$DEADLINE_HOUR" \
-    --timezone "$DEADLINE_TIMEZONE"
+    --window-weekday "$WINDOW_WEEKDAY" \
+    --start-hour "$WINDOW_START_HOUR" \
+    --deadline-hour "$WINDOW_DEADLINE_HOUR" \
+    --timezone "$WINDOW_TIMEZONE"
   status=$?
   set -e
   case "$status" in
@@ -98,13 +102,15 @@ send_remote_sleep_alert() {
 }
 
 load_pending_publish_targets() {
-  local output status target
+  local output status target pending latest_status latest_url
   PENDING_TARGETS=()
+  COMMENT_URL="${COMMENT_URL-}"
 
   set +e
   output="$(python3 "$WEEKLY_REPORT_PY" pending-publish-targets \
     --publish-log "$PUBLISH_LOG" \
-    --targets "$(join_by_comma "${PUBLISH_TARGETS[@]}")")"
+    --targets "$(join_by_comma "${PUBLISH_TARGETS[@]}")" \
+    --format tsv)"
   status=$?
   set -e
   if [ "$status" -ne 0 ]; then
@@ -112,9 +118,14 @@ load_pending_publish_targets() {
     exit "$status"
   fi
 
-  while IFS= read -r target; do
+  while IFS=$'\t' read -r target pending latest_status latest_url; do
     if [ -n "$target" ]; then
-      PENDING_TARGETS+=("$target")
+      if [ "$target" = "github" ] && [ "$latest_status" = "success" ] && [ -n "$latest_url" ]; then
+        COMMENT_URL="$latest_url"
+      fi
+      if [ "$pending" = "1" ]; then
+        PENDING_TARGETS+=("$target")
+      fi
     fi
   done <<< "$output"
 }
@@ -138,9 +149,8 @@ publish_record() {
 publish_github() {
   local gh_status gh_stderr gh_stdout
   COMMENT_URL=""
-  if [ -z "$TRACKING_ISSUE_NUMBER" ]; then
-    publish_record "github" "skipped" "TRACKING_ISSUE_NUMBER not set"
-  elif [ ! -r "$GH_PAT_PATH" ]; then
+  # configure_publish_targets is the single place that schedules github targets.
+  if [ ! -r "$GH_PAT_PATH" ]; then
     publish_record "github" "blocked" "GH token path not readable: $GH_PAT_PATH"
   elif ! command -v gh >/dev/null 2>&1; then
     publish_record "github" "blocked" "gh command not found"
@@ -218,13 +228,13 @@ echo "state: $STATE_DIR"
 
 if [ -s "$REPORT_JSON" ]; then
   echo "final report exists: $REPORT_JSON"
+  COMMENT_URL=""
   load_pending_publish_targets
   if [ "${#PENDING_TARGETS[@]}" -eq 0 ]; then
     echo "publish targets already terminal"
     exit 0
   fi
   echo "retrying publish targets: $(join_by_comma "${PENDING_TARGETS[@]}")"
-  COMMENT_URL=""
   publish_selected_targets "${PENDING_TARGETS[@]}"
   echo "report: $REPORT_JSON"
   echo "markdown: $REPORT_MD"
@@ -256,7 +266,7 @@ done
 
 if [ "${#UNREACHABLE_HOSTS[@]}" -gt 0 ]; then
   if deadline_reached; then
-    echo "deadline reached at hour $DEADLINE_HOUR; proceeding with partial collection"
+    echo "deadline reached for $WINDOW_WEEKDAY $WINDOW_START_HOUR..$WINDOW_DEADLINE_HOUR $WINDOW_TIMEZONE; proceeding with partial collection"
   else
     echo "deadline not reached; waiting for next scheduled attempt"
     set +e
@@ -329,7 +339,6 @@ if command -v codex-exec-supervised >/dev/null 2>&1; then
     -u PUSHOVER_TOKEN \
     -u PUSHOVER_USER \
     -u PUSHOVER_FILE \
-    -u PUSHOVER_CRED \
     -u PUSHOVER_CRED_FILE \
     -u PUSHOVER_SHARE_CRED \
     -u PUSHOVER_HELPER \

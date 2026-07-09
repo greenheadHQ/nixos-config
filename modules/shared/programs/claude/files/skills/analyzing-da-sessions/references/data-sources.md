@@ -64,7 +64,7 @@ aggregate coverage를 `traceability.coverage`에 둔다.
 
 ## payload traversal path
 
-`analyze.py`는 path-aware walker를 string payload 추출 경계로 사용한다. legacy string-only helper는 compatibility wrapper일 뿐이며 새 추출 경로의 SoT가 아니다.
+`analyze.py`는 path-aware walker만 string payload 추출 경계의 SoT로 사용한다. legacy string-only helper는 제거됐으며 새 추출 경로는 traversal path를 항상 보존한다.
 
 | JSON node | path 표기 |
 |-----------|-----------|
