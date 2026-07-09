@@ -1,0 +1,13 @@
+<!-- verdict-json:start -->
+```json
+{"schema_version":"1.0","finding_id":"SECURITY-9","verdict":"REGISTER","confidence":"HIGH","stability_status":"N/A"}
+```
+<!-- verdict-json:end -->
+
+<!-- verdict-json:start -->
+```json
+[
+  {"schema_version":"1.0","finding_id":"Design-9","verdict":"CONFIRMED_ISSUE","confidence":"HIGH","stability_status":"N/A"}
+]
+```
+<!-- verdict-json:end -->

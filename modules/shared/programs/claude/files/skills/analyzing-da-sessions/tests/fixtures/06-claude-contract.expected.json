@@ -1,0 +1,55 @@
+{
+  "description": "Claude Code 세션 형식: VERDICT_JSON + dir marker + block_index/M-4/M-6 계약",
+  "expected_verdict_records": [
+    {
+      "jsonl_line_no": 1,
+      "payload_traversal_path": "$.message.content[0].text",
+      "block_index": 0,
+      "block_kind": "first_pass",
+      "finding_id": "SECURITY-1",
+      "verdict": "CONFIRMED_ISSUE",
+      "confidence": "HIGH",
+      "source": "verdict_json",
+      "source_confidence": "high",
+      "severity": "HIGH",
+      "bundle": "Correctness",
+      "perspective": "SECURITY",
+      "location_identity": "modules/foo.nix:12",
+      "payload_hash": "__NON_NULL__",
+      "finding_fingerprint": "__NON_NULL__"
+    },
+    {
+      "jsonl_line_no": 3,
+      "payload_traversal_path": "$.message.content[0].text",
+      "block_index": 1,
+      "block_kind": "first_pass",
+      "finding_id": "SECURITY-1",
+      "verdict": "CONFIRMED_ISSUE",
+      "confidence": "MEDIUM",
+      "severity": "LOW",
+      "location_identity": "modules/foo.nix:12"
+    }
+  ],
+  "expected_aggregate": {
+    "M-2": {
+      "n": 2,
+      "distribution": {
+        "CONFIRMED_ISSUE": 2
+      }
+    },
+    "M-4": {
+      "transition_matrix": {
+        "HIGH->LOW": 1
+      }
+    },
+    "M-6": {
+      "key_block_count_distribution": {
+        "2": 1
+      },
+      "coverage": {
+        "eligible_records": 2,
+        "missing_persistence_components": 0
+      }
+    }
+  }
+}

@@ -6,7 +6,8 @@
 # 단일 진입점을 재사용해 중복 정의를 피한다.
 #
 # 커버리지 경계: 이 진입점은 pre-push 게이트(shell-script-tests · codex-hook-fixtures ·
-#   flake-check · statusline-bats) + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
+#   analyzing-da-sessions-tests · flake-check · statusline-bats) + da-weekly-report-tests
+#   + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
 #   드라이버(codex-exec-supervised · precommit-staged-snapshot)를 포함한다. 벤치마크
 #   tests/bench-shell-startup.sh는 회귀 게이트가 아니라 측정 도구이므로(자체 헤더에 명시) 제외한다.
 #   pre-commit의 staged 스냅샷 정책(gitleaks · nixfmt · shellcheck · skill-noise)은 staged index
@@ -78,16 +79,24 @@ run_driver "codex-exec-supervised" bash tests/test-codex-exec-supervised.sh
 # 5) skill-doc-sync — run-da 문서군의 manual sync contract 4쌍을 검증한다.
 run_driver "skill-doc-sync" bash tests/test-skill-doc-sync.sh
 
-# 6) flake-check — 전 시스템 flake 평가 게이트(repo 전역). eval-tests의 선택적 평가가 강제하지
+# 6) analyzing-da-sessions-tests — run-da VERDICT_JSON/dir marker와 analyze.py 추출 계약을
+#    hermetic pytest fixture로 검증한다. 호출 방식은 lefthook.yml pre-push 항목과 동일하게
+#    tests/run-analyzing-da-sessions-tests.sh driver를 거친다.
+run_driver "analyzing-da-sessions-tests" bash tests/run-analyzing-da-sessions-tests.sh
+
+# 7) da-weekly-report-tests — weekly JSON schema/delta/render 순수 함수 계약을 검증한다.
+run_driver "da-weekly-report-tests" bash tests/run-da-weekly-report-tests.sh
+
+# 8) flake-check — 전 시스템 flake 평가 게이트(repo 전역). eval-tests의 선택적 평가가 강제하지
 #    않는 darwin/nixos configuration toplevel 평가 오류까지 검출하므로 커버리지가 고유하다.
 run_driver "flake-check" nix flake check --no-build --all-systems
 
-# 7) statusline-bats — statusline Bats 테스트. nixpkgs#bats를 nix shell로 제공하고 TERM을 주입한다.
+# 9) statusline-bats — statusline Bats 테스트. nixpkgs#bats를 nix shell로 제공하고 TERM을 주입한다.
 run_driver "statusline-bats" \
   env TERM="${TERM:-xterm-256color}" nix shell --inputs-from . nixpkgs#bats --command \
   bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
 
-# 8) precommit-staged-snapshot — 어느 훅에도 연결되지 않은 수동 전용 드라이버를 통합에 포함한다.
+# 10) precommit-staged-snapshot — 어느 훅에도 연결되지 않은 수동 전용 드라이버를 통합에 포함한다.
 #    devShell 전체 도구(git/jq 등)를 요구하며, 미가용 시 스크립트가 자체적으로 "SKIP: ... not found"
 #    출력 + exit 0 처리하므로(tests/test-precommit-staged-snapshot.sh) 통합에 포함해도 환경 부재 시
 #    실패하지 않고, 위 run_driver가 이를 SKIP으로 분류한다.

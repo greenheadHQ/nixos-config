@@ -1,0 +1,16 @@
+{
+  "description": "문서 예시/프롬프트 템플릿 VERDICT_JSON exclusion 계약",
+  "strict_count": 0,
+  "unmarked_count": 0,
+  "kv_count": 0,
+  "nl_signal": false,
+  "finding_level_count": 0,
+  "expected_verdict_records": [],
+  "expected_diagnostics": [
+    {"match_kind": "exclusion", "source": "verdict_json", "classification_reason": "outer_fenced_example"},
+    {"match_kind": "exclusion", "source": "verdict_json", "classification_reason": "placeholder_template"},
+    {"match_kind": "exclusion", "source": "verdict_json", "classification_reason": "union_string_template"},
+    {"match_kind": "exclusion", "source": "verdict_json", "classification_reason": "or_pattern_template"},
+    {"match_kind": "exclusion", "source": "verdict_json", "classification_reason": "arbiter_prompt_template_context"}
+  ]
+}

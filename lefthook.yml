@@ -89,7 +89,7 @@ commit-msg:
       run: '[ -f ./scripts/ai/commit-msg-pinning.sh ] && bash ./scripts/ai/commit-msg-pinning.sh {1} || true'
 
 pre-push:
-  # 4개 command(shell-script-tests·codex-hook-fixtures·flake-check·statusline-bats)를 병렬 실행한다.
+  # 5개 command(shell-script-tests·codex-hook-fixtures·analyzing-da-sessions-tests·flake-check·statusline-bats)를 병렬 실행한다.
   # 각 command는 독립적이고 read-only 검증이라 순서 의존이 없다. 러너 자체 병렬화(job-pool)와
   # over-subscribe되지만 대부분 I/O 바운드(git/파일/nix eval)라 경합이 흡수되어, 순차 합보다 크게
   # 빠르다(실측: 순차 합 ~82s → 병렬 wall-clock ~42s). 러너 병렬화 + GNU 보장(#1009) 전까지는
@@ -112,6 +112,11 @@ pre-push:
       # pre-commit에 이미 동일 명령이 있지만 push 직전 재검증해 stale state 회귀 차단.
       # runner self-bootstrap이라 추가 nix shell wrap 불필요. live propagation은 attach하지 않음.
       run: bash ./tests/test-codex-hook-fixtures.sh --no-live
+    analyzing-da-sessions-tests:
+      # run-da VERDICT_JSON/dir marker 형식과 analyze.py 추출 계약을 hermetic pytest fixture로 검증한다.
+      # driver가 `nix run --inputs-from . nixpkgs#python3Packages.pytest`를 호출하므로
+      # pytest 런타임은 repo flake.lock에 pin되고 pythonWithTomlkit 스코프를 확장하지 않는다.
+      run: bash ./tests/run-analyzing-da-sessions-tests.sh
     flake-check:
       run: nix flake check --no-build --all-systems
     statusline-bats:

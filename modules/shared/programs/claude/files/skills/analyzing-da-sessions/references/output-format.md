@@ -167,16 +167,156 @@ JSON sidecar: /tmp/analyze-da-sessions-<ISO>.json (또는 --json out= 명시 경
       "source": "round_summary_fallback",
       "n": 51,
       "distribution": {"stable": 42, "split": 7, "fragmented": 2}
+    },
+    "M-6": {
+      "name": "persistence_key non-convergence",
+      "persistence_key": "(perspective, location_identity, finding_fingerprint)",
+      "key_block_count_distribution": {"2": 3},
+      "top_offenders_by_session": {
+        "/home/greenhead/.codex/sessions/.../rollout-abc.jsonl": [
+          {
+            "persistence_key": {
+              "perspective": "Correctness",
+              "location_identity": "modules/foo.nix:42",
+              "finding_fingerprint": "sha256..."
+            },
+            "block_count": 2,
+            "blocks": [0, 1],
+            "verdicts": {"CONFIRMED_ISSUE": 2}
+          }
+        ]
+      },
+      "coverage": {"eligible_records": 120, "missing_persistence_components": 8}
     }
   },
   "derived": {
     "intensity_full_finding_zero_rate": 0.274
   },
+  "diagnostics": {
+    "summary": {"parse_failure": 1, "exclusion": 3, "invalid_verdict": 1, "missing_persistence_component": 8},
+    "sessions": [
+      {
+        "path": "/home/greenhead/.claude/projects/.../session.jsonl",
+        "parse_failures": ["JSON parse failed at verdict-json block"],
+        "exclusions": [{"match_kind": "exclusion", "classification_reason": "placeholder verdict"}],
+        "invalid_verdicts": [{"match_kind": "invalid_verdict", "verdict": "MAYBE"}],
+        "diagnostics": []
+      }
+    ]
+  },
+  "traceability": {
+    "coverage": {
+      "sessions_total": 10,
+      "complete_sessions": 8,
+      "unknown_format_sessions": 1,
+      "format_distribution": {"claude": 4, "codex": 5, "unknown": 1},
+      "host_distribution": {"mac": 5, "minipc": 5},
+      "field_presence": {"cwd": 9, "git_branch": 8, "session_id": 9},
+      "missing_fields": {"git_branch": 2},
+      "fallback_fields": {"rollout_filename.session_id": 1}
+    },
+    "sessions": []
+  },
   "warnings": []
 }
 ```
 
-`warnings`에는 SSH 실패(host별 timeout/binary 부재/nonzero rc), `verdict_json parse failures` 누적, manifest.json read 실패 등 partial result 사유를 기록한다. v1 `analyze.py`는 `partial_failure_count`라는 별도 필드를 emit하지 않는다 — partial 사유는 모두 top-level `warnings` 배열에 자연어로 누적된다.
+`diagnostics.summary`는 parse failure / exclusion / invalid verdict / missing persistence component
+카운트의 SSOT다. `diagnostics.sessions[]`는 session별 `parse_failures`, `exclusions`,
+`invalid_verdicts`, 전체 `diagnostics` 목록을 담는다. `warnings`에는 SSH 실패(host별
+timeout/binary 부재/nonzero rc), manifest.json read 실패, extraction diagnostics 존재 알림 등
+partial result 사유를 기록한다. v1 `analyze.py`는 `partial_failure_count`라는 별도 필드를
+emit하지 않는다.
+
+## Weekly report JSON schema v1
+
+주간 자동화의 canonical output은 `modules/nixos/programs/da-weekly-report/files/weekly_report.py`가
+생성하는 `weekly-????-W??.json`이다. top-level key는 다음으로 고정한다:
+
+```json
+{
+  "schema_version": 1,
+  "week": {"id": "2026-W28", "start": "2026-07-06T00:00:00+09:00", "end": "2026-07-13T00:00:00+09:00", "tz": "Asia/Seoul"},
+  "analysis": {
+    "sidecar_schema_version": "1.0",
+    "captured_at": "2026-07-09T03:00:00+00:00",
+    "hosts": ["mac", "minipc"],
+    "corpus": "live",
+    "session_counts": {"total": 10, "arbiter_marker_sessions": 4, "intensity_marker_sessions": 3},
+    "metrics": {
+      "M-1": {"denominator": "intensity_marker_sessions", "n": 3, "distribution": {"FULL": 2}, "percentages": {"FULL": 66.7}},
+      "M-2": {"denominator": "arbiter_marker_sessions_findings_high_medium", "n": 7, "distribution": {"CONFIRMED_ISSUE": 5}, "percentages": {"CONFIRMED_ISSUE": 71.4}, "source_distribution": {"verdict_json": {"count": 7, "confidence": "high"}}},
+      "M-3": {"by_bundle": {"Correctness": {"total": 2, "confirmed": 1, "confirmed_rate": 0.5}}},
+      "M-4": {"round_key": "(session_path, block_index)", "baseline_note": "v1부터 result block 기반 새 baseline", "transition_matrix": {"HIGH->LOW": 1}},
+      "M-5": {"source": "round_summary_fallback", "n": 2, "distribution": {"stable": 2}},
+      "M-6": {"name": "persistence_key non-convergence", "persistence_key": "(perspective, location_identity, finding_fingerprint)", "key_block_count_distribution": {"2": 1}, "coverage": {"eligible_records": 5, "missing_persistence_components": 1}}
+    },
+    "derived": {"intensity_full_finding_zero_rate": 0.25},
+    "warnings": []
+  },
+  "health": {
+    "health_formula_version": 1,
+    "formula_break": null,
+    "run_da_path": "modules/shared/programs/claude/files/skills/run-da/",
+    "document_size": {"markdown_file_count": 12, "total_line_count": 3456, "files": []},
+    "drift_repair_commits": {"count": 1, "commit_hashes": ["abc123"], "commits": [], "since": "...", "until": "...", "branch": "main", "first_parent": true},
+    "rule_counts": {"core_invariants_numbered": 8, "cautions_bullets": 5, "non_goals_numbered": 3, "total": 16},
+    "warnings": []
+  },
+  "coverage": {
+    "partial": false,
+    "analyze_exit_code": 0,
+    "diagnostics": {
+      "parse_failure_count": 0,
+      "exclusion_count": 0,
+      "invalid_verdict_count": 0,
+      "missing_persistence_component_count": 1,
+      "all": {}
+    },
+    "diagnostic_rates": {"parse_failures_per_session": 0.0, "exclusions_per_session": 0.0},
+    "marker_missing_rates": {"arbiter_marker_missing_rate": 0.6, "intensity_marker_missing_rate": 0.7},
+    "m2_source_distribution": {"verdict_json": {"count": 7, "confidence": "high"}},
+    "m5_source_distribution": {"round_summary_fallback": 1},
+    "host_collection": {"mac": {"status": "ok", "analyzed_sessions": 5, "warnings": []}, "minipc": {"status": "ok", "analyzed_sessions": 5, "warnings": []}},
+    "warnings": [],
+    "health_warnings": []
+  },
+  "traceability": {
+    "coverage": {"sessions_total": 10, "complete_sessions": 8, "unknown_format_sessions": 1},
+    "sessions": [{"path": "/home/user/.codex/sessions/2026/07/09/rollout-x-y.jsonl", "host": "minipc", "format": "codex", "cwd": "/repo", "git_branch": "issue_1064", "session_id": "y", "references": {"prs": [], "issues": ["1064"], "bare_numbers": []}}],
+    "omitted_session_count": 0
+  },
+  "deltas": {
+    "previous_reports": [{"path": "/state/weekly-2026-W27.json", "week_id": "2026-W27"}],
+    "items": [{"metric": "analysis.metrics.M-2.percentages.CONFIRMED_ISSUE", "unit": "%p", "current": 71.4, "comparisons": [{"week_id": "2026-W27", "previous": 70.0, "delta": 1.4}]}]
+  },
+  "commentary": {"text": null, "failure_reason": "codex-exec-supervised not found"},
+  "provenance": {
+    "analysis_sidecar_path": "/state/analyze-2026-W28.json",
+    "publish_log_path": "/state/weekly-2026-W28-publish.json",
+    "repo_root": "/home/greenhead/Workspace/nixos-config",
+    "report_json_path": "/state/weekly-2026-W28.json",
+    "report_markdown_path": "/state/weekly-2026-W28.md",
+    "generated_at": "2026-07-09T03:00:00+00:00"
+  }
+}
+```
+
+`analysis`는 `analyze.py` sidecar의 stable subset만 정규화해서 담는다. 원본 sidecar는
+embed하지 않고 `provenance.analysis_sidecar_path`로만 참조한다. `coverage`는 weekly JSON의
+유일한 coverage SSOT이며, renderer/delta는 sidecar diagnostics를 직접 읽지 않는다.
+
+Weekly markdown 구성은 다음 순서다: header table, 핵심 수치 요약, 커버리지/신뢰도,
+M-1~M-6, 건강 지표 추이, 전주 delta, 소스 추적 링크, LLM 해설, warnings. Mermaid는
+M-1/M-2 `pie`만 사용한다.
+
+렌더링용 `traceability.sessions` stable subset은 기본 50개로 제한한다. 이는 GitHub comment
+길이 폭증을 막기 위한 상한이며, 초과분은 `omitted_session_count`에 집계한다.
+
+delta 입력 glob은 state directory의 `weekly-????-W??.json`만 사용한다. publish 기록
+`weekly-<ISO주차>-publish.json`과 draft 파일은 glob 구조상 제외된다. publish
+`success`/`failed`/`blocked`/`skipped`는 core schema에 넣지 않고 append-only publish log만
+SSOT로 삼는다.
 
 ## GitHub Mermaid 안전 subset
 
