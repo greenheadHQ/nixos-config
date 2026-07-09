@@ -56,10 +56,14 @@ _claude_rc_make_repo() {
 }
 
 _claude_rc_make_fake_claude() {
-  local bin_dir="$1"
-  mkdir -p "$bin_dir"
-  cat > "$bin_dir/claude" <<'EOS'
-#!/usr/bin/env bash
+  local bin_dir="$1" versions_dir="$2" bash_bin
+  mkdir -p "$bin_dir" "$versions_dir"
+  bash_bin="$versions_dir/bash"
+  cp "$(command -v bash)" "$bash_bin" || fail "failed to copy bash into fake VERSIONS_DIR"
+  chmod +x "$bash_bin"
+  {
+    printf '#!%s\n' "$bash_bin"
+    cat <<'EOS'
 set -euo pipefail
 printf '%s\t%s\n' "$PWD" "$*" >> "${FAKE_CLAUDE_LOG:-/dev/null}"
 if [ "${FAKE_CLAUDE_RC:-0}" != "0" ]; then
@@ -73,6 +77,7 @@ if [ -n "${FAKE_CLAUDE_HOLD_FILE:-}" ]; then
   done
 fi
 EOS
+  } > "$bin_dir/claude"
   chmod +x "$bin_dir/claude"
 }
 
@@ -129,10 +134,13 @@ _claude_rc_setup() {
   CLAUDE_RC_HOME="$sandbox/home"
   CLAUDE_RC_STATE="$sandbox/state"
   CLAUDE_RC_FAKE_BIN="$sandbox/fake-bin"
+  CLAUDE_RC_VERSIONS="$sandbox/versions"
+  CLAUDE_RC_SERVER_EXE="$CLAUDE_RC_VERSIONS/claude-server"
   CLAUDE_RC_LOG="$sandbox/claude.log"
   CLAUDE_RC_HOLD_FILE="$sandbox/hold-server"
-  mkdir -p "$CLAUDE_RC_HOME" "$CLAUDE_RC_STATE" "$CLAUDE_RC_FAKE_BIN"
-  _claude_rc_make_fake_claude "$CLAUDE_RC_FAKE_BIN"
+  mkdir -p "$CLAUDE_RC_HOME" "$CLAUDE_RC_STATE" "$CLAUDE_RC_FAKE_BIN" "$CLAUDE_RC_VERSIONS"
+  _claude_rc_make_fake_claude "$CLAUDE_RC_FAKE_BIN" "$CLAUDE_RC_VERSIONS"
+  cp "$CLAUDE_RC_VERSIONS/bash" "$CLAUDE_RC_SERVER_EXE"
   _claude_rc_link_tool flock
 }
 
@@ -144,6 +152,7 @@ _claude_rc_run() {
     env \
       HOME="$CLAUDE_RC_HOME" \
       STATE_DIR="$CLAUDE_RC_STATE" \
+      VERSIONS_DIR="$CLAUDE_RC_VERSIONS" \
       PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
       FAKE_CLAUDE_LOG="$CLAUDE_RC_LOG" \
       FAKE_CLAUDE_HOLD_FILE="${CLAUDE_RC_HOLD_FILE:-}" \
@@ -162,6 +171,7 @@ _claude_rc_run_maint() {
     env \
       HOME="$CLAUDE_RC_HOME" \
       STATE_DIR="$CLAUDE_RC_STATE" \
+      VERSIONS_DIR="$CLAUDE_RC_VERSIONS" \
       CLAUDE_BIN="$CLAUDE_RC_FAKE_BIN/claude-new" \
       PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
       FAKE_CLAUDE_LOG="$CLAUDE_RC_LOG" \
@@ -171,6 +181,9 @@ _claude_rc_run_maint() {
       FAKE_SERVER_CWD="${FAKE_SERVER_CWD:-}" \
       FAKE_SERVER_EXE="${FAKE_SERVER_EXE:-}" \
       FAKE_SERVER_COMMAND="${FAKE_SERVER_COMMAND:-}" \
+      FAKE_ORPHAN_PID="${FAKE_ORPHAN_PID:-}" \
+      FAKE_ORPHAN_CWD="${FAKE_ORPHAN_CWD:-}" \
+      FAKE_ORPHAN_PPID="${FAKE_ORPHAN_PPID:-}" \
       "$@"
   )
 }
@@ -195,6 +208,17 @@ _claude_rc_release_server() {
   _claude_rc_wait_lock_free "$lock_path" || fail "server lock remained held: $lock_path"
 }
 
+_claude_rc_wait_fake_claude_log() {
+  local needle="${1:-remote-control}" _i
+  for _i in {1..50}; do
+    if [ -f "$CLAUDE_RC_LOG" ] && grep -F -- "$needle" "$CLAUDE_RC_LOG" >/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 _claude_rc_write_instance() {
   local path="$1" spawn="$2" capacity_json="$3" permission_mode="$4" source="$5"
   mkdir -p "$CLAUDE_RC_STATE"
@@ -214,6 +238,10 @@ _claude_rc_write_instance() {
 }
 
 _claude_rc_install_unmanaged_process_mocks() {
+  cat > "$CLAUDE_RC_FAKE_BIN/uname" <<'EOS'
+#!/usr/bin/env bash
+echo Darwin
+EOS
   cat > "$CLAUDE_RC_FAKE_BIN/pgrep" <<'EOS'
 #!/usr/bin/env bash
 case "$*" in
@@ -237,7 +265,7 @@ case "$args" in
     ;;
 esac
 EOS
-  chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof"
+  chmod +x "$CLAUDE_RC_FAKE_BIN/uname" "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof"
 }
 
 _claude_rc_install_child_process_mocks() {
@@ -262,6 +290,40 @@ case "$args" in
 esac
 EOS
   chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof"
+}
+
+_claude_rc_install_orphan_session_mocks() {
+  cat > "$CLAUDE_RC_FAKE_BIN/pgrep" <<'EOS'
+#!/usr/bin/env bash
+case "$*" in
+  *"[-]-sdk-url"*)
+    [ -n "${FAKE_ORPHAN_PID:-}" ] || exit 1
+    echo "$FAKE_ORPHAN_PID"
+    ;;
+  *) exit 1 ;;
+esac
+EOS
+  cat > "$CLAUDE_RC_FAKE_BIN/lsof" <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+args=" $* "
+case "$args" in
+  *" -p ${FAKE_ORPHAN_PID:-__none__} "*"cwd"*)
+    printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_CWD"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOS
+  cat > "$CLAUDE_RC_FAKE_BIN/ps" <<'EOS'
+#!/usr/bin/env bash
+case "$*" in
+  *"ppid="*) echo "${FAKE_ORPHAN_PPID:-1}" ;;
+  *) exit 1 ;;
+esac
+EOS
+  chmod +x "$CLAUDE_RC_FAKE_BIN/pgrep" "$CLAUDE_RC_FAKE_BIN/lsof" "$CLAUDE_RC_FAKE_BIN/ps"
 }
 
 _claude_rc_install_no_process_mocks() {
@@ -392,6 +454,8 @@ test_claude_remote_control_start_warns_and_preserves_declared_registry() {
   err="$sandbox/start.err"
   _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start \
     --spawn same-dir --capacity 7 --permission-mode plan >/dev/null 2> "$err"
+  _claude_rc_wait_fake_claude_log "remote-control --spawn same-dir" \
+    || fail "fake claude log did not appear before assertion"
 
   assert_contains "$(cat "$err")" "이 경로는 Nix 선언 관리 대상"
   assert_contains "$(cat "$err")" "spawn: declared=worktree, requested=same-dir"
@@ -421,12 +485,46 @@ test_claude_remote_control_start_rejects_unmanaged_same_cwd_server() {
 
   rc=0
   FAKE_UNMANAGED_CWD="$repo"
-  FAKE_UNMANAGED_EXE="$sandbox/bin/claude"
+  FAKE_UNMANAGED_EXE="$CLAUDE_RC_SERVER_EXE"
   out="$(_claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start 2>&1)" || rc=$?
   unset FAKE_UNMANAGED_CWD FAKE_UNMANAGED_EXE
   [ "$rc" -eq 1 ] || fail "unmanaged same-cwd server should be rejected, got $rc: $out"
   assert_contains "$out" "refusing duplicate start"
   [ ! -f "$CLAUDE_RC_STATE/instances.json" ] || fail "unmanaged rejection must not register instance"
+}
+
+test_claude_remote_control_ignores_argv_only_remote_control_match() {
+  local sandbox repo copy out rc status
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  _claude_rc_install_unmanaged_process_mocks
+  copy="$(_claude_rc_wrapper_script)"
+
+  rc=0
+  FAKE_UNMANAGED_CWD="$repo" \
+  FAKE_UNMANAGED_EXE="$sandbox/outside/rogue" \
+    out="$(_claude_rc_run "$repo" bash -c '
+      set -euo pipefail
+      # shellcheck source=/dev/null
+      . "$1"
+      find_server_pid_for_path "$2"
+    ' _ "$copy" "$repo" 2>&1)" || rc=$?
+  [ "$rc" -eq 1 ] || fail "argv-only remote-control match should not resolve as server, got rc=$rc out=$out"
+
+  : > "$CLAUDE_RC_HOLD_FILE"
+  rc=0
+  FAKE_UNMANAGED_CWD="$repo" \
+  FAKE_UNMANAGED_EXE="$sandbox/outside/rogue" \
+    out="$(_claude_rc_run "$repo" bash "$copy" start 2>&1)" || rc=$?
+  [ "$rc" -eq 0 ] || fail "argv-only remote-control match should not trip unmanaged guard, got $rc: $out"
+  assert_contains "$out" "서버 시작됨"
+  status="$(cat "$CLAUDE_RC_STATE/instances.json")"
+  jq -e --arg path "$repo" '.instances | has($path)' <<<"$status" >/dev/null \
+    || fail "start should register when only argv matches remote-control: $status"
+
+  _claude_rc_release_server "$repo"
 }
 
 test_claude_remote_control_maint_rejects_unmanaged_same_cwd_server() {
@@ -441,7 +539,7 @@ test_claude_remote_control_maint_rejects_unmanaged_same_cwd_server() {
 
   rc=0
   FAKE_UNMANAGED_CWD="$repo"
-  FAKE_UNMANAGED_EXE="$CLAUDE_RC_FAKE_BIN/claude"
+  FAKE_UNMANAGED_EXE="$CLAUDE_RC_SERVER_EXE"
   _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>&1 || rc=$?
   unset FAKE_UNMANAGED_CWD FAKE_UNMANAGED_EXE
   [ "$rc" -ne 0 ] || fail "maint should fail when unmanaged same-cwd server exists"
@@ -481,6 +579,8 @@ test_claude_remote_control_stop_blocks_worktree_sessions_and_force_unregisters()
   _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
   : > "$CLAUDE_RC_HOLD_FILE"
   _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start >/dev/null
+  _claude_rc_wait_fake_claude_log "remote-control --spawn worktree" \
+    || fail "fake claude log did not appear before stop"
   _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" stop --force >/dev/null
   status="$(cat "$CLAUDE_RC_STATE/instances.json")"
   jq -e --arg path "$repo" '(.instances | has($path)) | not' <<<"$status" >/dev/null \
@@ -684,7 +784,7 @@ test_claude_remote_control_maint_uses_effective_spawn_for_drift_gate() {
     fi
 
     FAKE_SERVER_CWD="$repo" \
-    FAKE_SERVER_EXE="$CLAUDE_RC_FAKE_BIN/claude-old" \
+    FAKE_SERVER_EXE="$CLAUDE_RC_VERSIONS/claude-old" \
     FAKE_SERVER_COMMAND="$command" \
       _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null
     kill "$lock_pid" 2>/dev/null || true
@@ -781,6 +881,53 @@ EOS
     || fail "transcript gate scope mismatch: $out"
 }
 
+test_claude_remote_control_maint_reaps_orphan_sessions_before_start() {
+  local sandbox repo orphan_dir term_mark orphan_pid out status rc
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_make_fake_readlink "$CLAUDE_RC_FAKE_BIN"
+  repo="$sandbox/repo"
+  orphan_dir="$repo/.claude/worktrees/orphan-session"
+  term_mark="$sandbox/orphan.term"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  mkdir -p "$orphan_dir"
+  _claude_rc_write_instance "$repo" "worktree" "null" "bypassPermissions" "manual"
+  _claude_rc_install_orphan_session_mocks
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  bash -c '
+    set -euo pipefail
+    cd "$1"
+    trap '\''printf term >"$2"; exit 0'\'' TERM
+    while :; do sleep 0.1; done
+  ' _ "$orphan_dir" "$term_mark" &
+  orphan_pid=$!
+
+  rc=0
+  FAKE_ORPHAN_PID="$orphan_pid" \
+  FAKE_ORPHAN_CWD="$orphan_dir" \
+  FAKE_ORPHAN_PPID=1 \
+    out="$(_claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure 2>&1)" || rc=$?
+
+  for _ in {1..20}; do
+    [ -f "$term_mark" ] && break
+    sleep 0.1
+  done
+  kill "$orphan_pid" 2>/dev/null || true
+  wait "$orphan_pid" 2>/dev/null || true
+
+  [ "$rc" -eq 0 ] || fail "maint should continue after orphan reap, got $rc: $out"
+  assert_contains "$out" "reaped 1 orphan session process(es)"
+  [ -f "$term_mark" ] || fail "orphan session did not receive SIGTERM before start"
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '
+    .action == "completed"
+    and .instances[0].action == "started"
+  ' <<<"$status" >/dev/null || fail "orphan reap should continue into started status: $status"
+
+  _claude_rc_release_server "$repo"
+}
+
 test_claude_remote_control_maint_status_schema() {
   local sandbox repo status log
   sandbox="$(_claude_rc_new_sandbox)"
@@ -792,6 +939,8 @@ test_claude_remote_control_maint_status_schema() {
   : > "$CLAUDE_RC_HOLD_FILE"
 
   _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null
+  _claude_rc_wait_fake_claude_log "remote-control --spawn worktree" \
+    || fail "fake claude log did not appear before status assertion"
   status="$(cat "$CLAUDE_RC_STATE/status.json")"
   jq -e '
     (.timestamp | type == "string")

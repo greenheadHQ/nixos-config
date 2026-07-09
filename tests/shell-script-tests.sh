@@ -73,6 +73,7 @@ run_test "claude remote-control start registers manual instance" test_claude_rem
 run_test "claude remote-control start warns on ignored options" test_claude_remote_control_start_warns_when_running_options_differ
 run_test "claude remote-control start preserves declared registry" test_claude_remote_control_start_warns_and_preserves_declared_registry
 run_test "claude remote-control rejects unmanaged same-cwd server" test_claude_remote_control_start_rejects_unmanaged_same_cwd_server
+run_test "claude remote-control ignores argv-only remote-control match" test_claude_remote_control_ignores_argv_only_remote_control_match
 run_test "claude remote-control maint rejects unmanaged same-cwd server" test_claude_remote_control_maint_rejects_unmanaged_same_cwd_server
 run_test "claude remote-control stop gates worktree sessions" test_claude_remote_control_stop_blocks_worktree_sessions_and_force_unregisters
 run_test "claude remote-control stop preserves held-lock registration" test_claude_remote_control_stop_preserves_registration_when_lock_held_without_pid
@@ -83,6 +84,7 @@ run_test "claude remote-control maint reconciles declarations" test_claude_remot
 run_test "claude remote-control maint gates drift by effective spawn" test_claude_remote_control_maint_uses_effective_spawn_for_drift_gate
 run_test "claude remote-control maint rejects invalid declarations" test_claude_remote_control_maint_rejects_invalid_declared_instances
 run_test "claude remote-control transcript gate scopes to worktrees" test_claude_remote_control_transcript_gate_scopes_to_worktree_dirs
+run_test "claude remote-control maint reaps orphan sessions before start" test_claude_remote_control_maint_reaps_orphan_sessions_before_start
 run_test "claude remote-control maint writes status schema" test_claude_remote_control_maint_status_schema
 if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
