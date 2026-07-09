@@ -176,6 +176,7 @@ run_test "install-lefthook injects --no-auto-install into every hook" test_insta
 run_test "install-lefthook --no-auto-install injection is idempotent" test_install_lefthook_no_auto_install_injection_is_idempotent
 run_test "install-lefthook leaves .old backup hooks untouched" test_install_lefthook_leaves_old_backup_hooks_untouched
 run_test "install-lefthook fails when lefthook call shape changes" test_install_lefthook_fails_when_lefthook_call_shape_changes
+run_test "install-lefthook refuses to patch a symlinked hook" test_install_lefthook_refuses_symlinked_hook
 run_test "lefthook auto-sync cannot drop the staged-config guard" test_lefthook_auto_sync_cannot_drop_guard_end_to_end
 run_test "webhook-bridge crawled payload sends notification" test_webhook_bridge_crawled_payload_sends_notification
 run_test "webhook-bridge non-crawled payload skips notification" test_webhook_bridge_non_crawled_payload_skips_notification

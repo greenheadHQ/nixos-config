@@ -89,7 +89,7 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 **통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도, 이 명령으로 pre-push 게이트와 테스트 드라이버를 재검증할 수 있다. 단 pre-commit의 staged 스냅샷 정책(`gitleaks` · `nixfmt` · `shellcheck` · skill-noise)은 staged index 기준이라 working-tree 러너 범위 밖이며 커밋 시점 게이트로 별도 적용된다.
 
 **pre-commit** (병렬):
-- `lefthook-guard-self-check` — 메인 repo `.git/hooks/pre-commit`에 staged-config guard marker 부재 시 commit fail-fast (인접 worktree의 lefthook install 덮어쓰기 회귀 방지 layer)
+- `lefthook-guard-self-check` — 설치된 hook에서 (1) `.git/hooks/pre-commit`의 staged-config guard marker, (2) 세 hook(`pre-commit`/`commit-msg`/`pre-push`) lefthook 호출부의 `--no-auto-install` 플래그가 사라지면 commit fail-fast. lefthook의 암묵 auto-sync(`lefthook.yml` 변경 후 첫 실행)와 인접 worktree의 `lefthook install` 덮어쓰기, 두 회귀 경로를 함께 막는다
 - `ai-skills-consistency` — staged snapshot 기준 `.claude/skills`, `.agents/skills`, `modules/shared/programs/codex` 구조 일관성
 - `gitleaks` — staged policy/config 기준 시크릿 유출 방지
 - `nixfmt` — Nix 포매팅 검증
@@ -102,7 +102,7 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 pre-commit 정책:
 - whole-repo / whole-corpus hook은 [`scripts/ai/run-staged-snapshot.sh`](./scripts/ai/run-staged-snapshot.sh)를 통해 staged index snapshot에서 실행한다.
 - `gitleaks`는 [`scripts/ai/run-gitleaks-staged-policy.sh`](./scripts/ai/run-gitleaks-staged-policy.sh)를 통해 copied temp index, staged snapshot worktree, staged `.gitleaks.toml` / `.gitleaksignore`만 사용한다.
-- installed `git commit` 경로는 [`scripts/ai/install-lefthook-hooks.sh`](./scripts/ai/install-lefthook-hooks.sh)가 메인 repo에서는 git default hook path(`.git/hooks`)에, 워크트리에서는 worktree-local hook path(`.git/worktrees/<name>/hooks`)에 pre-Lefthook guard를 주입한다. 이 guard는 `lefthook.yml`과 repo-local hook scripts의 index/working-tree drift, unsupported Lefthook merged config surface, `LEFTHOOK_CONFIG` / `LEFTHOOK_BIN` / `LEFTHOOK_EXCLUDE`를 차단한다. 인접 worktree의 `lefthook install`이 메인 hook을 덮어써서 guard가 사라지는 경우는 `lefthook-guard-self-check` command가 commit-time에 fail-fast로 차단한다.
+- installed `git commit` 경로는 [`scripts/ai/install-lefthook-hooks.sh`](./scripts/ai/install-lefthook-hooks.sh)가 메인 repo에서는 git default hook path(`.git/hooks`)에, 워크트리에서는 worktree-local hook path(`.git/worktrees/<name>/hooks`)에 pre-Lefthook guard를 주입한다. 이 guard는 `lefthook.yml`과 repo-local hook scripts의 index/working-tree drift, unsupported Lefthook merged config surface, `LEFTHOOK_CONFIG` / `LEFTHOOK_BIN` / `LEFTHOOK_EXCLUDE`를 차단한다. 같은 스크립트가 설치된 모든 hook의 lefthook 호출부에 `--no-auto-install`을 주입한다 — `lefthook run`은 `lefthook.checksum`이 stale하면 hook을 암묵 재설치(`sync hooks`)하면서 이 guard를 지우기 때문이다(그래서 `lefthook.yml`을 바꾼 뒤 첫 commit이 실패했다). hook checksum 갱신은 이 스크립트의 `lefthook install`이 전담하므로 자동 재설치를 잃어도 손해가 없다. guard 블록이나 플래그가 사라지는 경우(암묵 auto-sync, 또는 인접 worktree의 `lefthook install` 덮어쓰기)는 `lefthook-guard-self-check` command가 commit-time에 fail-fast로 차단한다.
 - 표준 우회인 `git commit --no-verify`와 `LEFTHOOK=0`은 여전히 hook을 실행하지 않는다.
 - 직접 스크립트 실행은 pre-commit staged snapshot 경로와 동일하지 않다.
 

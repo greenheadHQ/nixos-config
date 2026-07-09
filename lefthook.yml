@@ -21,8 +21,9 @@ pre-commit:
           for hook_name in pre-commit commit-msg pre-push; do
             hook_path="$hooks_dir/$hook_name"
             [ -f "$hook_path" ] || continue
-            if ! grep -F -- "--no-auto-install" "$hook_path" | grep -Fq 'call_lefthook run '; then
-              problem="--no-auto-install missing from the lefthook call in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
+            expected_call='call_lefthook run "'"$hook_name"'" --no-auto-install "$@"'
+            if ! grep -Fxq -- "$expected_call" "$hook_path"; then
+              problem="expected exact lefthook call [$expected_call] in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
               break
             fi
           done
@@ -102,8 +103,9 @@ commit-msg:
           for hook_name in pre-commit commit-msg pre-push; do
             hook_path="$hooks_dir/$hook_name"
             [ -f "$hook_path" ] || continue
-            if ! grep -F -- "--no-auto-install" "$hook_path" | grep -Fq 'call_lefthook run '; then
-              problem="--no-auto-install missing from the lefthook call in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
+            expected_call='call_lefthook run "'"$hook_name"'" --no-auto-install "$@"'
+            if ! grep -Fxq -- "$expected_call" "$hook_path"; then
+              problem="expected exact lefthook call [$expected_call] in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
               break
             fi
           done

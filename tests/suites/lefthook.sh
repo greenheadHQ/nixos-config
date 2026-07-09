@@ -3,11 +3,14 @@
 # SC2154: 공통 변수는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
 # shellcheck disable=SC2154,SC2164
 # ─── install-lefthook-hooks fixture helpers ───
-# 실제 lefthook은 stub으로 대체한다. 우리 검증 대상은 install-lefthook-hooks.sh의
+# 대부분의 테스트에서 실제 lefthook은 stub으로 대체한다. 우리 검증 대상은 install-lefthook-hooks.sh의
 # cleanup_main_redundant_hooks_path / apply_worktree_local_hooks_config /
-# acquire_install_lock / run_lefthook_install / inject_staged_guard 동작이고,
-# lefthook 자체의 install 로직은 별도 신뢰 영역이다. stub은 install 명령 호출 시
-# `call_lefthook run "pre-commit" "$@"` 라인을 포함한 minimal pre-commit 파일만 작성한다.
+# acquire_install_lock / run_lefthook_install / inject_staged_guard /
+# disable_lefthook_auto_install 동작이고, lefthook 자체의 install 로직은 별도 신뢰 영역이다.
+# stub은 install 명령 호출 시 설정된 hook(pre-commit/commit-msg/pre-push)을 모두 생성하며,
+# 각 파일은 `call_lefthook run "<hook>" "$@"` 라인을 포함한다.
+# 예외: test_lefthook_auto_sync_cannot_drop_guard_end_to_end는 auto-sync 동작 자체를 확인해야
+# 하므로 stub 없이 실제 lefthook 바이너리를 사용한다.
 
 # Marker 리터럴을 install-lefthook-hooks.sh에서 한 번만 정의하고 테스트가
 # 그 정의를 sed로 추출해 사용한다. install 스크립트에서 marker를 바꿔도
@@ -390,6 +393,10 @@ test_install_lefthook_leaves_old_backup_hooks_untouched() {
 test_install_lefthook_fails_when_lefthook_call_shape_changes() {
   # 상류 lefthook이 hook 템플릿의 호출부 형태를 바꾸면 플래그 주입이 조용한 no-op가 되고,
   # 다음 auto-sync가 guard를 다시 지운다. 그 실패를 install 시점으로 당겼는지 검증한다.
+  #
+  # 이 fixture의 hook에는 플래그와 `call_lefthook run `을 한 줄에 모두 담은 decoy 주석이 있다.
+  # "파일 어딘가에 플래그가 있는가" 식의 느슨한 검사는 이 주석만으로 통과해버리므로, 검증이
+  # 실행 라인 자체를 정확히 대조하는지까지 함께 못박는다.
   local sandbox repo_root stub_dir
   sandbox=$(new_sandbox)
   repo_root="$sandbox/repo"
@@ -405,7 +412,11 @@ case "${1:-}" in
     cd "$(git rev-parse --show-toplevel)"
     hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
     mkdir -p "$hooks_dir"
-    printf '#!/bin/sh\ncall_lefthook run "pre-commit" "$@" # upstream template drift\n' > "$hooks_dir/pre-commit"
+    {
+      printf '#!/bin/sh\n'
+      printf '# decoy: call_lefthook run "pre-commit" --no-auto-install "$@"\n'
+      printf 'call_lefthook run "pre-commit" "$@" # upstream template drift\n'
+    } > "$hooks_dir/pre-commit"
     chmod +x "$hooks_dir/pre-commit"
     ;;
   *)
@@ -419,6 +430,34 @@ STUB
   run_install_lefthook_capture "$repo_root" "$stub_dir"
   [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail when the lefthook call shape changes; output: $INSTALL_LEFTHOOK_OUTPUT"
   assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "auto-install suppression failed"
+}
+
+test_install_lefthook_refuses_symlinked_hook() {
+  # 패치는 rename으로 교체하므로 symlink hook을 만나면 링크 자체가 일반 파일로 바뀌어
+  # 다른 레이어의 관리 경계가 조용히 끊긴다. 삼키지 말고 세우는지 확인한다.
+  local sandbox repo_root stub_dir hooks_dir target
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  # warm-up으로 hook을 만든 뒤 pre-push만 외부 파일을 가리키는 symlink로 바꾼다. stub의
+  # `> "$hooks_dir/pre-push"`는 symlink를 따라가 target에 쓰므로 링크 자체는 살아남고,
+  # 그 상태로 다음 install이 돌면 disable_lefthook_auto_install이 symlink를 만난다.
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "warm-up install failed: $INSTALL_LEFTHOOK_OUTPUT"
+
+  hooks_dir="$repo_root/.git/hooks"
+  target="$sandbox/external-pre-push"
+  printf '#!/bin/sh\ncall_lefthook run "pre-push" "$@"\n' > "$target"
+  chmod +x "$target"
+  rm -f "$hooks_dir/pre-push"
+  ln -s "$target" "$hooks_dir/pre-push"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail on a symlinked hook; output: $INSTALL_LEFTHOOK_OUTPUT"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "refusing to patch symlinked hook"
+  [[ -L "$hooks_dir/pre-push" ]] || fail "symlinked hook must be left in place, not replaced"
 }
 
 lefthook_make_checksum_stale() {

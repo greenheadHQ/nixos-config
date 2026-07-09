@@ -21,11 +21,13 @@
 #
 # Source-of-truth scope: this script governs lefthook install + guard injection for
 # the main repo and every worktree whose flake.nix shellHook calls
-# `bash ./scripts/ai/install-lefthook-hooks.sh`. Worktrees with inline shellHook
-# implementations (`.claude/worktrees/issue_587/flake.nix` 등 8개) are outside this
-# scope and tracked as NG-1 (follow-up consolidation candidate). The lefthook.yml
-# `lefthook-guard-self-check` job is a second-layer regression defense that catches
-# silent guard removal by any worktree at commit-time.
+# `bash ./scripts/ai/install-lefthook-hooks.sh`. Worktrees whose shellHook still calls
+# `lefthook install` inline are outside this scope and tracked as NG-1 (issue #789).
+# Enumerate the current ones instead of trusting a hard-coded count — that number went
+# stale before:
+#   rg -l 'git config --unset-all --local core\.hooksPath' .claude/worktrees/*/flake.nix
+# The lefthook.yml `lefthook-guard-self-check` job is a second-layer regression defense
+# that catches silent guard removal by any worktree at commit-time.
 set -euo pipefail
 
 # Marker constants — kept on dedicated lines so tests/shell-script-tests.sh can
@@ -316,6 +318,12 @@ disable_lefthook_auto_install() {
     # lefthook이 기존 hook을 밀어낼 때 남기는 백업본은 실행되지 않으므로 건드리지 않는다.
     case "$hook_file" in *.old) continue ;; esac
     grep -Fq 'call_lefthook run ' "$hook_file" || continue
+    # 아래 python 블록은 rename으로 교체하므로 symlink였다면 링크 자체가 일반 파일로 바뀐다
+    # (다른 레이어가 hook을 symlink로 관리한다면 그 경계가 조용히 끊긴다). lefthook install은
+    # 일반 파일을 쓰므로 여기서 symlink를 만나는 것은 예상 밖 상태다 — 삼키지 말고 세운다.
+    if [ -L "$hook_file" ]; then
+      fail "refusing to patch symlinked hook (rename would replace the link): $hook_file"
+    fi
     hook_files+=("$hook_file")
   done
   if [ "${#hook_files[@]}" -eq 0 ]; then
@@ -337,6 +345,12 @@ call_suffix = '"$@"'
 
 for raw_path in sys.argv[2:]:
     hook_path = Path(raw_path)
+    # 호출부의 symlink 검사와 여기 사이의 TOCTOU를 좁힌다. rename은 링크를 따라가지 않고
+    # directory entry를 갈아끼우므로, symlink를 만나면 교체하지 않고 세운다.
+    st = hook_path.lstat()
+    if os.path.islink(hook_path):
+        raise SystemExit(f"install-lefthook-hooks: refusing to patch symlinked hook: {hook_path}")
+
     lines = hook_path.read_text(encoding="utf-8").splitlines()
 
     changed = False
@@ -352,12 +366,14 @@ for raw_path in sys.argv[2:]:
 
     # Atomic replace: a hook process already executing this file keeps reading the
     # old inode. An in-place truncate+write would corrupt a running `sh` mid-read.
-    mode = hook_path.stat().st_mode
+    # mkstemp는 0600 + 현재 uid/gid로 만들므로 원본의 mode와 owner를 명시적으로 옮긴다.
+    # 소유자가 달라 chown할 권한이 없으면 조용히 owner를 바꾸지 말고 실패한다.
     fd, tmp_name = tempfile.mkstemp(dir=str(hook_path.parent), prefix=f"{hook_path.name}.")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write("\n".join(patched) + "\n")
-        os.chmod(tmp_name, mode)
+        os.chmod(tmp_name, st.st_mode)
+        os.chown(tmp_name, st.st_uid, st.st_gid)
         os.replace(tmp_name, hook_path)
     except BaseException:
         if os.path.exists(tmp_name):
@@ -367,10 +383,17 @@ PY
 
   # Defense in depth: lefthook이 hook 템플릿의 호출부 형태를 바꾸면 위 치환이 조용히
   # no-op가 되고, 다음 auto-sync가 guard를 다시 지운다. 그 실패를 install 시점으로 당긴다.
+  #
+  # 실행 라인을 통째로 정확히 대조한다. "플래그가 파일 어딘가에 있다"는 느슨한 검사는
+  # 주석 한 줄이 두 문자열을 함께 담기만 해도 통과해, 정작 실행 호출부에 플래그가 없는
+  # 상태를 미탐한다. 패턴 안의 `"$@"`가 확장되지 않도록 작은따옴표로 감싼다.
+  local hook_name expected_call
   for hook_file in "${hook_files[@]}"; do
     bash -n "$hook_file"
-    if ! grep -F -- "$NO_AUTO_INSTALL_FLAG" "$hook_file" | grep -Fq 'call_lefthook run '; then
-      fail "auto-install suppression failed: $NO_AUTO_INSTALL_FLAG missing from lefthook call in $hook_file"
+    hook_name="$(basename "$hook_file")"
+    expected_call='call_lefthook run "'"$hook_name"'" '"$NO_AUTO_INSTALL_FLAG"' "$@"'
+    if ! grep -Fxq -- "$expected_call" "$hook_file"; then
+      fail "auto-install suppression failed: expected exact call line [$expected_call] in $hook_file"
     fi
   done
 }
