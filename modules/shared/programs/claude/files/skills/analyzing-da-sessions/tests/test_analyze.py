@@ -170,7 +170,7 @@ def test_non_kv_repeated_verdicts_keep_match_offsets(
 **문제**: header repeated first.
 
 ### Design-2 — NOT_AN_ISSUE
-**심각도**: MEDIUM
+**심각도**: HIGH
 **위치**: `header.py:2`
 **문제**: header repeated second.
 """
@@ -210,6 +210,10 @@ marker 없는 JSON array 안에서 같은 verdict가 반복된다.
     assert header_locations == {"header.py:1", "header.py:2"}
     header_fingerprints = {record["finding_fingerprint"] for record in by_source["md_header"]}
     assert len(header_fingerprints) == 2
+    # severity도 occurrence별로 구분되어야 한다 — 첫 occurrence의 severity를
+    # 물려받으면 M-4 전이가 틀어진다.
+    header_severities = {record["severity"] for record in by_source["md_header"]}
+    assert header_severities == {"MEDIUM", "HIGH"}
 
 
 def test_unmarked_json_without_verdict_key_is_ignored(

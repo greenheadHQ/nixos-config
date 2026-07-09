@@ -788,7 +788,7 @@ def make_verdict_record(
             source=source,
             finding_id=finding_id,
             verdict=verdict,
-            snippet=text_snippet(finding_context_window(text, finding_id)),
+            snippet=text_snippet(finding_context_window(text, finding_id, ctx.match_offset)),
         )
 
     block_kind = ctx.block_kind if ctx.block_kind in BLOCK_KINDS else "first_pass"
@@ -814,7 +814,7 @@ def make_verdict_record(
         verdict=verdict,
         confidence=str(confidence),
         source_confidence=source_confidence,
-        severity=find_severity_for_finding(text, finding_id),
+        severity=find_severity_for_finding(text, finding_id, ctx.match_offset),
         source=source,
         bundle=get_bundle(finding_id),
         perspective=persistence.get("perspective"),
@@ -1105,18 +1105,36 @@ def severity_label(rank: int) -> str:
     return "NONE"
 
 
-def find_severity_for_finding(text_blob: str, finding_id: str) -> str | None:
-    """analyze-da-sessions.py 패턴: finding header 인접 영역에서 severity 라벨 추출."""
+def find_severity_for_finding(
+    text_blob: str,
+    finding_id: str,
+    match_offset: int | None = None,
+) -> str | None:
+    """analyze-da-sessions.py 패턴: finding header 인접 영역에서 severity 라벨 추출.
+
+    match_offset이 주어지면 근접 occurrence부터 순회한다 — 같은 payload 안에서
+    동일 finding_id가 다른 severity로 반복될 때 뒤 record가 앞선 severity를
+    물려받아 M-4 전이가 틀어지는 것을 막는다. 주의: match_offset은 호출한 text와
+    같은 좌표계여야 한다 (payload 단위 호출 전용 — 세션 blob fallback에는 넘기지 않음).
+    """
     if not finding_id:
         return None
-    # finding_id 등장 위치의 앞뒤 window에서 severity 라벨 검색
-    for m in re.finditer(re.escape(finding_id), text_blob):
-        start = max(0, m.start() - SEVERITY_LOOKBEHIND_CHARS)
-        end = min(len(text_blob), m.end() + SEVERITY_LOOKAHEAD_CHARS)
-        window = text_blob[start:end]
-        sm = SEV_LINE.search(window)
+    occurrences = list(re.finditer(re.escape(finding_id), text_blob))
+    if match_offset is not None:
+        occurrences.sort(key=lambda m: abs(m.start() - match_offset))
+    # finding_id 등장 위치의 앞뒤 window에서 severity 라벨 검색.
+    # severity 줄은 finding 헤더 뒤에 오는 구조이므로 lookahead 구간을 먼저 본다 —
+    # lookbehind를 먼저 검색하면 window에 들어온 앞 블록의 severity를 오채택한다.
+    for m in occurrences:
+        ahead = text_blob[m.end():min(len(text_blob), m.end() + SEVERITY_LOOKAHEAD_CHARS)]
+        sm = SEV_LINE.search(ahead)
         if sm:
             return sm.group(1).upper()
+        behind = text_blob[max(0, m.start() - SEVERITY_LOOKBEHIND_CHARS):m.start()]
+        behind_matches = list(SEV_LINE.finditer(behind))
+        if behind_matches:
+            # lookbehind에서는 occurrence에 가장 가까운 (마지막) 매치를 채택한다.
+            return behind_matches[-1].group(1).upper()
     return None
 
 
