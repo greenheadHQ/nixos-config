@@ -326,20 +326,22 @@ disable_lefthook_auto_install() {
   # `--git-path hooks`는 core.hooksPath를 반영하므로 lefthook이 실제로 hook을 쓴 위치와
   # 일치한다 ($git_dir/hooks와 다를 수 있다 — 사용자가 core.hooksPath를 재정의한 경우).
   # inject_staged_guard가 hook을 찾는 방식과 같은 해석 경로를 쓴다.
-  # 패치 대상은 lefthook.yml이 정의한 hook뿐이다. 디렉토리를 훑어 `call_lefthook run`이 든 파일을
-  # 전부 편입하면, 설정에 없는 남의 hook까지 우리 관리 대상으로 끌어들이고 basename 기반 검증이
-  # 그 파일에서 실패해 install 전체를 막는다. preflight·패치·검증이 같은 집합을 본다.
+  #
+  # 패치 대상은 "lefthook이 만든 모든 hook"이지 "지금 lefthook.yml에 있는 hook"이 아니다.
+  # `lefthook install`은 설정에서 빠진 hook 파일을 지우지 않으므로, 과거에 설정돼 있던 hook이
+  # 플래그 없이 남는다. git은 그 hook도 실행하고(예: pre-commit 다음의 prepare-commit-msg),
+  # 그 안의 `call_lefthook run`이 auto-install을 발동시켜 guard와 플래그를 통째로 지운다.
+  # 실측: `.git/hooks/prepare-commit-msg`(현 lefthook.yml에 없음) 하나로 재현된다.
+  # 반대로 설치 여부 검증(아래)은 configured_hooks에만 적용한다 — 설정 밖 hook의 부재는 정상이다.
   local hook_file hook_name resolved_hooks_dir
   resolved_hooks_dir="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path hooks)"
   local -a hook_files=()
-  for hook_name in $(configured_hooks); do
-    hook_file="$resolved_hooks_dir/$hook_name"
-    # lefthook.yml이 정의한 hook이 하나라도 설치되지 않았다면, auto-install을 끈 지금은 아무도
-    # 되살려 주지 않는다. commit-time self-check가 같은 목록을 fail-fast로 확인하므로, 그 실패를
-    # install 시점으로 당겨 원인을 분명히 남긴다.
-    if [ ! -f "$hook_file" ]; then
-      fail "expected hook not installed: $hook_file (lefthook.yml defines it; check 'lefthook install' output)"
-    fi
+  for hook_file in "$resolved_hooks_dir"/*; do
+    [ -f "$hook_file" ] || continue
+    # lefthook이 기존 hook을 밀어낼 때 남기는 백업본은 git이 실행하지 않으므로 건드리지 않는다.
+    case "$hook_file" in *.old) continue ;; esac
+    # lefthook이 생성한 hook만 고른다. 남이 만든 hook에는 이 호출부가 없다.
+    grep -Fq 'call_lefthook run ' "$hook_file" || continue
     # 아래 python 블록은 rename으로 교체하므로 symlink였다면 링크 자체가 일반 파일로 바뀐다
     # (다른 레이어가 hook을 symlink로 관리한다면 그 경계가 조용히 끊긴다). install 전 preflight가
     # 이미 걸렀어야 하지만, 그 사이의 TOCTOU를 여기서 한 번 더 막는다.
@@ -348,8 +350,18 @@ disable_lefthook_auto_install() {
     fi
     hook_files+=("$hook_file")
   done
+
+  # lefthook.yml이 정의한 hook이 하나라도 설치되지 않았다면, auto-install을 끈 지금은 아무도
+  # 되살려 주지 않는다. commit-time self-check가 같은 목록을 fail-fast로 확인하므로, 그 실패를
+  # install 시점으로 당겨 원인을 분명히 남긴다.
+  for hook_name in $(configured_hooks); do
+    if [ ! -f "$resolved_hooks_dir/$hook_name" ]; then
+      fail "expected hook not installed: $resolved_hooks_dir/$hook_name (lefthook.yml defines it; check 'lefthook install' output)"
+    fi
+  done
+
   if [ "${#hook_files[@]}" -eq 0 ]; then
-    fail "no hooks configured in $repo_root/lefthook.yml"
+    fail "no lefthook-generated hooks found under $resolved_hooks_dir"
   fi
 
   # 200>&- closes the lock fd in the python child (same reason as run_lefthook_install).
