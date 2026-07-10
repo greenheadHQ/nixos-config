@@ -23,8 +23,10 @@ toss_write_private_tempfile() {
   chmod 600 "$file" 2>/dev/null || true
 }
 
+# 민감값(Authorization 헤더 등)이 외부 프로세스 argv(ps 노출면)에 오르지 않도록
+# jq에는 stdin으로만 전달한다. shell 함수 인자는 프로세스 argv가 아니므로 안전.
 toss_curl_config_quote() {
-  jq -Rn -r --arg value "$1" '$value | @json'
+  printf '%s' "$1" | jq -Rs -r '@json'
 }
 
 toss_curl_config_append() {

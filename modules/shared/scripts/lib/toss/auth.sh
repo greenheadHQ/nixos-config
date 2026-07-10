@@ -181,7 +181,8 @@ toss_read_client_credentials() {
 }
 
 toss_urlencode() {
-  jq -rn --arg value "$1" '$value | @uri'
+  # client_secret이 jq argv(ps 노출면)에 오르지 않도록 stdin으로 전달한다.
+  printf '%s' "$1" | jq -Rs -r '@uri'
 }
 
 toss_request_access_token() (
@@ -197,7 +198,8 @@ toss_request_access_token() (
   toss_curl_config_append "$config_file" "data-binary" "@$body_file"
   toss_curl_config_append "$config_file" "url" "$TOSS_API_BASE_URL/oauth2/token"
 
-  curl -sS --proto =https --max-time 20 -K "$config_file"
+  # -q는 첫 인자여야 사용자 기본 .curlrc(proxy/insecure/추가 url 등)를 차단한다.
+  curl -q -g -sS --proto =https --max-time 20 -K "$config_file"
 )
 
 toss_issue_token_locked() {
@@ -238,14 +240,14 @@ toss_issue_token_locked() {
   now="$(date +%s)"
   expires_at=$((now + expires_in))
 
+  # access token은 jq argv(ps 노출면)에 오르지 않도록 stdin으로 전달한다.
   token_json="$(
-    jq -cn \
-      --arg access_token "$access_token" \
+    printf '%s' "$access_token" | jq -cRs \
       --argjson issued_at "$now" \
       --argjson expires_at "$expires_at" \
       --argjson expires_in "$expires_in" \
       '{
-        access_token: $access_token,
+        access_token: .,
         token_type: "Bearer",
         issued_at: $issued_at,
         expires_at: $expires_at,
@@ -255,6 +257,33 @@ toss_issue_token_locked() {
 
   toss_write_private_file "$(toss_token_cache_file)" "$token_json"
   printf '%s\n' "$access_token"
+}
+
+# 401 이후 token 갱신 CAS: Toss는 client당 유효 token이 하나뿐이라(재발급 시 기존 무효화)
+# 동시 401 처리에서 무조건 delete+재발급하면 다른 프로세스가 방금 갱신한 token을 다시
+# 무효화하는 ping-pong이 생긴다. lock 안에서 "실패한 token == 현재 cache token"일 때만
+# 재발급하고, 이미 다른 token으로 갱신돼 있으면 그 token을 재사용한다.
+# 호스트 간(Mac/MiniPC) 동시성은 lock을 공유하지 않아 이 CAS 밖이며, MiniPC 활성화(#1044) 시
+# 별도 client 분리로 다룬다.
+toss_refresh_token_cas_locked() {
+  local failed_token="$1"
+  local cached
+  cached="$(toss_read_cached_token 2>/dev/null || true)"
+  if [ -n "$cached" ] && [ "$cached" != "$failed_token" ]; then
+    printf '%s\n' "$cached"
+    return 0
+  fi
+  toss_delete_token_cache
+  toss_issue_token_locked 1
+}
+
+toss_refresh_token_after_auth_failure() {
+  local failed_token="$1"
+  local runtime_dir lock_file
+  runtime_dir="$(toss_runtime_dir)"
+  toss_secure_mkdir "$runtime_dir"
+  lock_file="$(toss_token_lock_file)"
+  with_file_lock "$lock_file" "$TOSS_TOKEN_LOCK_TIMEOUT_SECONDS" toss_refresh_token_cas_locked "$failed_token"
 }
 
 toss_get_access_token() {
@@ -316,10 +345,9 @@ toss_write_default_account() {
   now="$(date +%s)"
   local content
   content="$(
-    jq -cn \
-      --arg accountSeq "$account_seq" \
+    printf '%s' "$account_seq" | jq -cRs \
       --argjson cachedAt "$now" \
-      '{accountSeq: $accountSeq, cachedAt: $cachedAt}'
+      '{accountSeq: ., cachedAt: $cachedAt}'
   )"
   toss_write_private_file "$(toss_default_account_file)" "$content"
 }

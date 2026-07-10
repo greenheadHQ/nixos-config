@@ -59,6 +59,11 @@ if [[ "$url" == */oauth2/token ]]; then
 fi
 output_path="$(awk -F ' = ' '$1 == "output" { print $2 }' "$config_file" | jq -r .)"
 
+dump_header="$(awk -F ' = ' '$1 == "dump-header" { print $2 }' "$config_file" | jq -r .)"
+if [ -n "$dump_header" ] && [ "${TOSS_TEST_RATE_LIMIT_HEADERS:-0}" = "1" ]; then
+  printf 'HTTP/1.1 200 OK\r\nX-RateLimit-Limit: 10\r\nX-RateLimit-Remaining: 9\r\nRetry-After: 1\r\nX-Secret-Header: nope\r\n\r\n' > "$dump_header"
+fi
+
 if [ -n "${TOSS_TEST_API_COUNT_FILE:-}" ]; then
   api_count="$(cat "$TOSS_TEST_API_COUNT_FILE" 2>/dev/null || printf '0')"
   api_count=$((api_count + 1))
@@ -76,6 +81,9 @@ case "${TOSS_TEST_RESPONSE_KIND:-json}" in
     ;;
   html)
     printf '<html>client_secret=HIDDEN access_token=SECRET</html>' > "$output_path"
+    ;;
+  multi-json)
+    printf '1\n2' > "$output_path"
     ;;
   retry-401)
     if [ "$api_count" = "1" ]; then
@@ -417,4 +425,276 @@ JSON
     and (endpoint("DELETE"; "/api/v1/orderbook").isKnownOrderMutation == false)
     and (endpoint("POST"; "/api/v1/positions").isKnownOrderMutation == false)
   ' "$output" >/dev/null || fail "expected fail-closed order-path mutation classification"
+}
+
+test_toss_api_rejects_non_origin_relative_path() {
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+
+  set +e
+  HOME="$sandbox/home" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    "$(_toss_cli_script "$sandbox")" api POST 'api/v1/orders' --data '{}' > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" = "2" ] || fail "expected non-origin-relative path rejection rc=2, got: $rc"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "origin-relative"
+}
+
+test_toss_api_curl_blocks_curlrc_and_globbing() {
+  local sandbox argv_line
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_TEST_CURL_ARGV_LOG="$sandbox/curl.argv" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout"
+
+  argv_line="$(head -1 "$sandbox/curl.argv")"
+  case "$argv_line" in
+    "-q -g "*) ;;
+    *) fail "expected curl argv to start with '-q -g' (curlrc/glob off), got: $argv_line" ;;
+  esac
+}
+
+test_toss_api_401_reuses_token_refreshed_by_other_process() {
+  local sandbox runtime_dir future token_file api_calls token_requests reused_auth
+  sandbox=$(new_sandbox)
+  runtime_dir="$sandbox/runtime"
+  token_file="$runtime_dir/toss/token.json"
+  future=$(( $(date +%s) + 7200 ))
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+  mkdir -p "$(dirname "$token_file")"
+  jq -cn \
+    --argjson expires_at "$future" \
+    '{access_token:"other-token", token_type:"Bearer", issued_at:0, expires_at:$expires_at, expires_in:7200}' \
+    > "$token_file"
+
+  # 초기 호출은 env override token으로 401을 받는다. cache에는 이미 다른 프로세스가
+  # 갱신한 유효 token이 있으므로 CAS는 재발급 없이 그 token을 재사용해야 한다.
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_API_BASE_URL="https://openapi.tossinvest.com" \
+    TOSS_ACCESS_TOKEN="expired-env-token" \
+    TOSS_RUNTIME_DIR="$runtime_dir" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND="retry-401" \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_TEST_CURL_CONFIG_LOG="$sandbox/curl.config.log" \
+    TOSS_TEST_API_COUNT_FILE="$sandbox/api.count" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout"
+
+  api_calls="$(cat "$sandbox/api.count")"
+  [ "$api_calls" = "2" ] || fail "expected exactly one retry after 401, got api calls: $api_calls"
+  token_requests="$(grep -Fxc 'url = "https://openapi.tossinvest.com/oauth2/token"' "$sandbox/curl.config.log" || true)"
+  [ "$token_requests" = "0" ] || fail "expected CAS to reuse concurrently refreshed token without reissue, got token requests: $token_requests"
+  reused_auth="$(grep -Fxc 'header = "Authorization: Bearer other-token"' "$sandbox/curl.config.log" || true)"
+  [ "$reused_auth" = "1" ] || fail "expected retry to reuse cached token refreshed by other process"
+}
+
+test_toss_ledger_records_multi_json_response_as_raw() {
+  local sandbox response_body
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  _run_toss_order_api_fixture "$sandbox" multi-json "$sandbox/stdout"
+
+  response_body="$(jq -c '.response.body' "$sandbox/orders.jsonl")"
+  assert_contains "$response_body" '"parseableJson":false'
+  [ "$(jq -r '.response.body.raw' "$sandbox/orders.jsonl")" = "$(printf '1\n2')" ] \
+    || fail "expected multi-JSON response to be recorded as raw wrapper, got: $response_body"
+}
+
+test_toss_ledger_append_preserves_existing_records() {
+  local sandbox line_count first_line
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+  printf '{"sentinel":true}\n' > "$sandbox/orders.jsonl"
+
+  _run_toss_order_api_fixture "$sandbox" json "$sandbox/stdout"
+
+  line_count="$(wc -l < "$sandbox/orders.jsonl" | tr -d ' ')"
+  [ "$line_count" = "2" ] || fail "expected append to preserve existing ledger records, got $line_count lines"
+  first_line="$(head -1 "$sandbox/orders.jsonl")"
+  [ "$first_line" = '{"sentinel":true}' ] || fail "expected first ledger record to survive, got: $first_line"
+}
+
+test_toss_ledger_sanitizes_query_string_in_path() {
+  local sandbox recorded_path
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST '/api/v1/orders?access_token=QUERYSECRET' --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout"
+
+  recorded_path="$(jq -r '.request.path' "$sandbox/orders.jsonl")"
+  [ "$recorded_path" = '/api/v1/orders?<redacted>' ] \
+    || fail "expected ledger path query to be sanitized, got: $recorded_path"
+  assert_not_contains "$(cat "$sandbox/orders.jsonl")" "QUERYSECRET"
+}
+
+test_toss_notify_failure_warns_and_records_status() {
+  local sandbox stderr notify_status
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_PUSHOVER_HELPER="$sandbox/nonexistent-pushover.sh" \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout" 2> "$sandbox/stderr"
+
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "notification not sent"
+  notify_status="$(jq -r 'select(.phase == "notify") | .notificationStatus' "$sandbox/orders.jsonl")"
+  [ "$notify_status" = "failed-helper-missing" ] \
+    || fail "expected notify failure status in ledger, got: $notify_status"
+}
+
+test_toss_notify_sent_uses_sanitized_path_and_records_status() {
+  local sandbox pushover_log notify_status
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+  pushover_log="$sandbox/pushover.log"
+  cat > "$sandbox/pushover-stub.sh" <<'EOF_PUSHOVER'
+pushover_send() {
+  printf '%s|%s\n' "$2" "$3" >> "${TOSS_TEST_PUSHOVER_LOG:?}"
+  return 0
+}
+EOF_PUSHOVER
+  printf 'PUSHOVER_TOKEN=t\nPUSHOVER_USER=u\n' > "$sandbox/pushover-cred"
+
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_PUSHOVER_HELPER="$sandbox/pushover-stub.sh" \
+    TOSS_PUSHOVER_CRED_FILE="$sandbox/pushover-cred" \
+    TOSS_TEST_PUSHOVER_LOG="$pushover_log" \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST '/api/v1/orders?access_token=SECRETQ' --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout"
+
+  assert_contains "$(cat "$pushover_log")" '/api/v1/orders?<redacted>'
+  assert_not_contains "$(cat "$pushover_log")" "SECRETQ"
+  notify_status="$(jq -r 'select(.phase == "notify") | .notificationStatus' "$sandbox/orders.jsonl")"
+  [ "$notify_status" = "sent" ] || fail "expected notify sent status in ledger, got: $notify_status"
+}
+
+test_toss_api_emits_whitelisted_rate_limit_headers() {
+  local sandbox stderr ledger_headers
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_RATE_LIMIT_HEADERS=1 \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout" 2> "$sandbox/stderr"
+
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "toss-rate-limit: X-RateLimit-Limit: 10"
+  assert_contains "$stderr" "toss-rate-limit: Retry-After: 1"
+  assert_not_contains "$stderr" "X-Secret-Header"
+  ledger_headers="$(jq -c '.response.rateLimitHeaders' "$sandbox/orders.jsonl")"
+  assert_contains "$ledger_headers" "X-RateLimit-Remaining: 9"
+  assert_not_contains "$ledger_headers" "X-Secret-Header"
+}
+
+_write_toss_tailscale_stub() {
+  local dir="$1"
+  local payload="$2"
+  cat > "$dir/tailscale" <<EOF_TS
+#!/usr/bin/env bash
+printf '%s' '$payload'
+EOF_TS
+  chmod +x "$dir/tailscale"
+}
+
+test_toss_preflight_blocks_active_exit_node() {
+  [ "$(uname -s)" = "Darwin" ] || return 0
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+  _write_toss_tailscale_stub "$sandbox/bin" '{"ExitNodeStatus":{"ID":"x","Online":true},"Self":{"ExitNode":false}}'
+
+  set +e
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" != "0" ] || fail "expected active exit node to block safeguarded call"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "exit node appears to be ON"
+}
+
+test_toss_preflight_fails_closed_on_unknown_exit_node_state() {
+  [ "$(uname -s)" = "Darwin" ] || return 0
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+  _write_toss_tailscale_stub "$sandbox/bin" 'not-json-at-all'
+
+  set +e
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" != "0" ] || fail "expected unknown exit-node state to fail closed for safeguarded call"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "fail-closed"
 }

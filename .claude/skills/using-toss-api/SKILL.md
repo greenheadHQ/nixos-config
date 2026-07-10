@@ -39,7 +39,7 @@ description: |
 
 ## Rate Limit
 
-SoT는 OpenAPI operation description의 Rate Limits Group과 실제 응답의 `X-RateLimit-Limit` 헤더다. 429 응답에서는 `Retry-After`를 우선한다.
+SoT는 OpenAPI operation description의 Rate Limits Group과 실제 응답의 `X-RateLimit-Limit` 헤더다. 429 응답에서는 `Retry-After`를 우선한다. `toss api`는 응답의 `X-RateLimit-*`/`Retry-After` 헤더를 stderr에 `toss-rate-limit:` prefix로 출력하고, 주문 계열 호출이면 원장 레코드의 `response.rateLimitHeaders`에도 남긴다.
 
 대표값은 overview 문서 기준으로만 참고한다.
 

@@ -203,6 +203,17 @@ run_test "toss api retries once after 401" test_toss_api_retries_once_after_401
 run_test "toss api refreshes env override after 401" test_toss_api_env_override_401_force_refresh_uses_credentials
 run_test "toss api retries on nested invalid_token body" test_toss_api_retries_on_nested_invalid_token_body
 run_test "toss endpoint metadata fail-closes order-path mutations" test_toss_endpoint_metadata_fail_closed_order_path_mutations
+run_test "toss api rejects non-origin-relative path" test_toss_api_rejects_non_origin_relative_path
+run_test "toss api curl blocks curlrc and globbing" test_toss_api_curl_blocks_curlrc_and_globbing
+run_test "toss api 401 reuses token refreshed by other process" test_toss_api_401_reuses_token_refreshed_by_other_process
+run_test "toss ledger records multi-JSON response as raw" test_toss_ledger_records_multi_json_response_as_raw
+run_test "toss ledger append preserves existing records" test_toss_ledger_append_preserves_existing_records
+run_test "toss ledger sanitizes query string in path" test_toss_ledger_sanitizes_query_string_in_path
+run_test "toss notify failure warns and records status" test_toss_notify_failure_warns_and_records_status
+run_test "toss notify sent uses sanitized path and records status" test_toss_notify_sent_uses_sanitized_path_and_records_status
+run_test "toss api emits whitelisted rate-limit headers" test_toss_api_emits_whitelisted_rate_limit_headers
+run_test "toss preflight blocks active exit node" test_toss_preflight_blocks_active_exit_node
+run_test "toss preflight fails closed on unknown exit-node state" test_toss_preflight_fails_closed_on_unknown_exit_node_state
 run_test "pushover helper missing credential skips curl" test_pushover_send_missing_cred_returns_1_without_curl
 run_test "pushover helper sends expected fields" test_pushover_send_success_passes_expected_fields
 run_test "pushover helper passes optional sound" test_pushover_send_passes_optional_sound

@@ -60,8 +60,9 @@ toss_ledger_raw_response_max_chars() {
 toss_ledger_response_body_json() {
   local response_body="$1"
 
-  if jq -e . <<<"$response_body" >/dev/null 2>&1 \
-    || jq -e 'type == "null" or type == "boolean"' <<<"$response_body" >/dev/null 2>&1; then
+  # `jq -e .`는 여러 JSON 값 stream(`1\n2`)에도 성공해 downstream 단일 문서 소비가
+  # 깨지므로, 정확히 JSON 값 하나일 때만 parseable로 취급한다 (null/boolean 포함).
+  if printf '%s' "$response_body" | jq -es 'length == 1' >/dev/null 2>&1; then
     jq -c . <<<"$response_body"
     return 0
   fi
@@ -69,14 +70,14 @@ toss_ledger_response_body_json() {
   local max_chars
   max_chars="$(toss_ledger_raw_response_max_chars)"
 
-  jq -cn \
-    --arg raw "$response_body" \
+  # 응답 원문이 jq argv(ps 노출면)에 오르지 않도록 stdin으로 전달한다.
+  printf '%s' "$response_body" | jq -cRs \
     --argjson max "$max_chars" '
       def redact_raw:
         gsub("(?<prefix>authorization:[[:space:]]*bearer[[:space:]]+)[^[:space:]<>\"=,]+"; "\(.prefix)<redacted>"; "i")
         | gsub("(?<prefix>\"?(access[_-]?token|client[_-]?secret|secret|password)\"?[[:space:]]*[:=][[:space:]]*\"?)[^\"&<>,[:space:]]+"; "\(.prefix)<redacted>"; "i");
 
-      ($raw | redact_raw) as $redacted
+      (. | redact_raw) as $redacted
       | {
           raw: ($redacted[:$max]),
           parseableJson: false,
@@ -94,13 +95,13 @@ toss_api_dry_run_output() {
   local redacted_body
   redacted_body="$(jq -c . <<<"$body_json" | toss_ledger_redact_json 2>/dev/null || echo 'null')"
 
-  jq -n \
+  # 주문 body가 jq argv(ps 노출면)에 오르지 않도록 stdin JSON stream으로 전달한다.
+  printf '%s\n%s\n' "$metadata" "$redacted_body" | jq -s \
     --arg method "$method" \
     --arg url "$url" \
-    --arg accountSeq "$account_seq" \
-    --argjson metadata "$metadata" \
-    --argjson body "$redacted_body" '
-      {
+    --arg accountSeq "$account_seq" '
+      .[0] as $metadata | .[1] as $body
+      | {
         dryRun: true,
         method: $method,
         url: $url,
@@ -139,6 +140,7 @@ toss_api_call_once() (
   toss_curl_config_append "$config_file" "header" "Authorization: Bearer $token"
   toss_curl_config_append "$config_file" "header" "Accept: application/json"
   toss_curl_config_append "$config_file" "output" "$response_file"
+  toss_curl_config_append "$config_file" "dump-header" "$response_file.headers"
   toss_curl_config_append "$config_file" "write-out" "%{http_code}"
   toss_curl_config_append "$config_file" "url" "$url"
   if [ -n "$account_seq" ]; then
@@ -153,7 +155,8 @@ toss_api_call_once() (
 
   local status curl_rc
   set +e
-  status="$(curl -sS --proto =https --max-time "${TOSS_CURL_MAX_TIME_SECONDS:-30}" -K "$config_file")"
+  # -q(첫 인자)는 사용자 기본 .curlrc 개입을, -g는 URL glob({a,b} → 다중 실요청 확장)을 차단한다.
+  status="$(curl -q -g -sS --proto =https --max-time "${TOSS_CURL_MAX_TIME_SECONDS:-30}" -K "$config_file")"
   curl_rc=$?
   set -e
 
@@ -249,18 +252,21 @@ toss_api_request_context() {
   local metadata="$4"
   local body_json="$5"
 
-  jq -cn \
+  # request_context는 ledger/알림 전용이므로 path의 query를 여기서 sanitize한다
+  # (실제 요청 URL은 raw path로 별도 구성). body는 jq argv에 오르지 않게 stdin으로.
+  local sanitized_path
+  sanitized_path="$(toss_ledger_sanitized_path "$path")"
+
+  printf '%s\n%s\n' "$metadata" "$body_json" | jq -cs \
     --arg method "$method" \
-    --arg path "$path" \
-    --arg accountSeq "$account_seq" \
-    --argjson metadata "$metadata" \
-    --argjson body "$body_json" '
+    --arg path "$sanitized_path" \
+    --arg accountSeq "$account_seq" '
       {
         method: $method,
         path: $path,
         accountSeq: (if $accountSeq == "" then null else $accountSeq end),
-        metadata: $metadata,
-        body: $body
+        metadata: .[0],
+        body: .[1]
       }
     '
 }
@@ -272,27 +278,29 @@ toss_ledger_record_input() {
   local response_body="$4"
   local http_status="${5:-}"
   local curl_exit="${6:-}"
+  local rate_limit_headers="${7:-}"
   local response_body_json
 
   response_body_json="$(toss_ledger_response_body_json "$response_body")" || {
     response_body_json='{"raw":"<unrecordable response body>","parseableJson":false,"truncated":true}'
   }
 
-  jq -cn \
+  # 요청/응답 문서가 jq argv(ps 노출면)에 오르지 않도록 stdin JSON stream으로 전달한다.
+  printf '%s\n%s\n' "$request_context" "$response_body_json" | jq -cs \
     --arg phase "$phase" \
     --arg dryRun "$dry_run" \
-    --argjson request "$request_context" \
-    --argjson responseBody "$response_body_json" \
     --arg httpStatus "$http_status" \
-    --arg curlExit "$curl_exit" '
+    --arg curlExit "$curl_exit" \
+    --arg rateLimitHeaders "$rate_limit_headers" '
       {
         phase: $phase,
         dryRun: ($dryRun == "1"),
-        request: $request,
+        request: .[0],
         response: {
           httpStatus: (if $httpStatus == "" then null else $httpStatus end),
           curlExit: (if $curlExit == "" then null else ($curlExit | tonumber) end),
-          body: $responseBody
+          rateLimitHeaders: (if $rateLimitHeaders == "" then null else ($rateLimitHeaders | split("\n")) end),
+          body: .[1]
         }
       }
     '
@@ -302,7 +310,10 @@ toss_record_dry_run_ledger() {
   local request_context="$1"
   local record_input
 
-  record_input="$(toss_ledger_record_input "dry-run" "1" "$request_context" "null")" || return 0
+  record_input="$(toss_ledger_record_input "dry-run" "1" "$request_context" "null")" || {
+    toss_ledger_warn_write_failed "build dry-run record input"
+    return 0
+  }
   toss_ledger_record "$record_input"
 }
 
@@ -311,9 +322,13 @@ toss_record_response_ledger() {
   local response_body="$2"
   local http_status="$3"
   local curl_exit="$4"
+  local rate_limit_headers="${5:-}"
   local record_input
 
-  record_input="$(toss_ledger_record_input "response" "0" "$request_context" "$response_body" "$http_status" "$curl_exit")" || return 0
+  record_input="$(toss_ledger_record_input "response" "0" "$request_context" "$response_body" "$http_status" "$curl_exit" "$rate_limit_headers")" || {
+    toss_ledger_warn_write_failed "build response record input"
+    return 0
+  }
   toss_ledger_record "$record_input"
 }
 
@@ -349,8 +364,8 @@ toss_call_with_single_token_retry() {
   curl_exit="$(toss_call_result_curl_exit "$call_result")"
 
   if toss_response_is_invalid_token "$http_status" "$response_file"; then
-    toss_delete_token_cache
-    token="$(toss_get_access_token 1)"
+    # CAS 갱신: 다른 프로세스가 이미 갱신한 token을 재삭제·재발급(상호 무효화)하지 않는다.
+    token="$(toss_refresh_token_after_auth_failure "$token")"
     : >"$response_file"
     call_result="$(toss_api_call_once "$method" "$url" "$token" "$account_seq" "$body_json" "$response_file")"
     http_status="$(toss_call_result_http_status "$call_result")"
@@ -358,6 +373,24 @@ toss_call_with_single_token_retry() {
   fi
 
   printf '%s\n' "$call_result"
+}
+
+# 운영 가이드(스킬)는 rate-limit 판단의 SoT로 실제 응답 헤더를 지정한다.
+# 민감 header 혼입을 막기 위해 X-RateLimit-*와 Retry-After만 whitelist로 선별한다.
+toss_rate_limit_headers_from_file() {
+  local header_file="$1"
+  [ -r "$header_file" ] || return 0
+  { grep -iE '^(x-ratelimit-[a-z0-9-]+|retry-after):' "$header_file" 2>/dev/null || true; } | tr -d '\r'
+}
+
+toss_emit_rate_limit_headers() {
+  local headers="$1"
+  [ -n "$headers" ] || return 0
+  local line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "toss-rate-limit: $line" >&2
+  done <<<"$headers"
 }
 
 toss_response_body_or_null() {
@@ -414,6 +447,16 @@ toss_api_execute() {
   local dry_run="$5"
   local no_notify="$6"
 
+  # origin-relative 강제: 선행 '/' 없는 PATH는 base URL과 결합 시 userinfo(@) 등으로
+  # 호스트가 바뀔 수 있고, curl glob과 결합하면 의도치 않은 다중 요청이 된다.
+  case "$path" in
+    /*) ;;
+    *)
+      echo "error: toss api PATH must be origin-relative and start with '/': $path" >&2
+      return 2
+      ;;
+  esac
+
   local metadata
   metadata="$(toss_metadata_lookup "$method" "$path")"
   if toss_api_is_auth_endpoint "$metadata" "$path"; then
@@ -426,7 +469,7 @@ toss_api_execute() {
   account_seq="$(toss_resolve_account "$metadata" "$account_arg")" || return 1
   request_context="$(toss_api_request_context "$method" "$path" "$account_seq" "$metadata" "$body_json")"
 
-  toss_preflight_network_context "$requires_order_safeguards" "$dry_run"
+  toss_preflight_network_context "$requires_order_safeguards" "$dry_run" || return 1
 
   local url="$TOSS_API_BASE_URL$path"
   if [ "$dry_run" = "1" ]; then
@@ -453,10 +496,14 @@ toss_api_execute() {
   http_status="$(toss_call_result_http_status "$call_result")"
   curl_exit="$(toss_call_result_curl_exit "$call_result")"
 
+  local rate_limit_headers
+  rate_limit_headers="$(toss_rate_limit_headers_from_file "$response_file.headers")"
+  toss_emit_rate_limit_headers "$rate_limit_headers"
+
   local response_body
   response_body="$(toss_response_body_or_null "$response_file")"
   if [ "$requires_order_safeguards" = "1" ]; then
-    toss_record_response_ledger "$request_context" "$response_body" "$http_status" "$curl_exit"
+    toss_record_response_ledger "$request_context" "$response_body" "$http_status" "$curl_exit" "$rate_limit_headers"
   fi
 
   if toss_emit_response "$response_file" "$http_status" "$curl_exit"; then

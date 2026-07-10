@@ -65,7 +65,7 @@ SSOT: `modules/shared/programs/shell/darwin.nix`.
 ## op CLI / op read — vault·item 라우팅
 
 - Mac: `onePassword.account` = 개인 sign-in 도메인이 biometric unlock 경로 전용 account로 고정 (멀티 계정 환경).
-- MiniPC: op CLI를 직접 쓰지 않고 opnix(Go SDK)가 `op://Automation/github-pat`을 `/run/opnix/<user>/github-pat`으로, 토스 credential을 `/run/opnix/<user>/toss-client-{id,secret}`으로 materialize한다(`OP_SERVICE_ACCOUNT_TOKEN`이 account 결정). 아래 라우팅은 Mac/수동 op CLI 경로 기준.
+- MiniPC: op CLI를 직접 쓰지 않고 opnix(Go SDK)가 `op://Automation/github-pat`을 `/run/opnix/<user>/github-pat`으로 materialize한다(`OP_SERVICE_ACCOUNT_TOKEN`이 account 결정). 토스 credential(`/run/opnix/<user>/toss-client-{id,secret}`)은 모듈만 준비된 상태로, #1044(전용 vault/SA 분리) 전까지 `homeserver.toss.enable = false`라 materialize되지 않는다. 아래 라우팅은 Mac/수동 op CLI 경로 기준.
 - 라우팅: 자동화/시스템 토큰 = `Automation` vault(`github-pat`, `토스증권 Open API` 등), 디바이스 SSH 키 = `SSH` vault(`mac-ssh`/`emergency-ssh`; `mobile-ssh`는 Termius keychain이라 제외), 개인 항목 = `Personal` vault. SA(Automation read-only)는 SSH vault `op read` 차단.
 
 ### op_get 해석 순서 (SA-first, 무인 폴백)
@@ -85,7 +85,7 @@ SSOT: `libraries/constants.nix`(onePassword), `modules/shared/programs/shell/def
 ### 토스증권 OpenAPI credential routing
 
 - Mac toss CLI: `~/.config/op/sa-token-mac`을 op 자식 프로세스 env로만 전달해 `op://Automation/토스증권 Open API/자격 증명`(client_id)과 `op://Automation/토스증권 Open API/Secret Key`(client_secret)를 토큰 발급 시점에만 읽는다. SA 경로의 Connect env 제거 계약(위 op_get 3단계)을 따르므로 `OP_CONNECT_HOST`/`OP_CONNECT_TOKEN`을 상속하지 않는다.
-- MiniPC toss CLI: `modules/nixos/programs/toss/default.nix`가 opnix로 `/run/opnix/<user>/toss-client-id` 및 `/run/opnix/<user>/toss-client-secret`을 user-owned 0400으로 materialize한다.
+- MiniPC toss CLI: `modules/nixos/programs/toss/default.nix`가 opnix로 `/run/opnix/<user>/toss-client-id` 및 `/run/opnix/<user>/toss-client-secret`을 user-owned 0400으로 materialize하도록 준비되어 있으나, #1044(전용 vault/SA 분리) 전까지 `homeserver.toss.enable = false`로 비활성이다. 활성화 전에는 opnix credential 파일이 없어 MiniPC에서 toss token 발급이 실패한다.
 - client_secret은 영속 캐시하지 않는다. toss access token만 재부팅 휘발 runtime 경로에 0600으로 캐시한다.
 - 이 항목은 Automation vault 경계 확장이다. 현재는 문서화로 수용하고, 전용 vault+SA 분리는 #1044 후속으로 남긴다.
 
