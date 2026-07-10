@@ -232,7 +232,8 @@ cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   > /tmp/stdout.log 2> /tmp/stderr.log
 # PIPESTATUS는 다음 명령에서 리셋되므로 배열을 먼저 스냅샷한다. cat 실패(프롬프트 파일 부재)도 판정에 포함.
 pipe_rcs=("${PIPESTATUS[@]}")   # zsh는 ("${pipestatus[@]}") — 인덱스가 1부터
-[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ] && test -s /tmp/result.md
+[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ] && test -s /tmp/result.md \
+  && ! grep -q "ERROR:" /tmp/stderr.log   # 성공 계약 조건 2 (CLI 오류의 ERROR: prefix 검사)
 ```
 
 사용자가 literal raw 실행을 요청한 1회성 수동 진단에서는 인라인 프롬프트도 가능하다:
@@ -256,8 +257,13 @@ env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
 # env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit <sha> ... (동일 형태)
 
 review_rc=$?
-[ "$review_rc" -eq 0 ] && test -s /tmp/review.md
+[ "$review_rc" -eq 0 ] && test -s /tmp/review.md \
+  && ! grep -q "ERROR:" /tmp/review-stderr.log
 ```
+
+stderr 검사는 성공 계약 조건 2의 구현이다 — usage limit·sandbox panic 등 CLI 오류는
+`ERROR:` prefix로 출력된다 (진행 로그·배너에는 이 prefix가 없다). stderr에는 최종 메시지
+사본도 남으므로, 본문에 우연히 `ERROR:`가 포함되면 보수적으로 실패 처리하고 직접 확인한다.
 
 review 결과 저장에는 `-o`(`--output-last-message`)와 stdout이 모두 동작한다
 (재확인: 2026-07-10, 0.144.1). upstream #12502는 open이지만 로컬에서는 stderr 회귀가
@@ -296,6 +302,7 @@ resume_rc=$?
 # silent fallback 검증: 반환된 session id가 요청한 세션과 일치해야 하며, 최종 판정에 연결한다.
 [ "$resume_rc" -eq 0 ] \
   && grep -Fq "session id: $SESSION" /tmp/resume-stderr.log \
+  && ! grep -q "ERROR:" /tmp/resume-stderr.log \
   && test -s /tmp/resume-result.md
 # 위 판정 실패, 또는 응답(/tmp/resume-result.md)이 원 세션의 context를 잇지 않으면 재개 실패로 처리한다.
 ```
@@ -312,7 +319,8 @@ session id·응답 context 확인을 포함하는 이유다. 불일치하거나 
 프로세스 exit만으로 업무 성공을 판정하지 않는다. 아래 네 조건을 모두 확인한다.
 
 1. wrapper/CLI exit가 0이다.
-2. stderr에 timeout, usage limit, sandbox denial, unsupported model 오류가 없다.
+2. stderr에 timeout, usage limit, sandbox denial, unsupported model 오류가 없다
+   (구현: `! grep -q "ERROR:" <stderr>` — CLI 오류는 `ERROR:` prefix로 출력되고 진행 로그·배너에는 없다).
 3. 기대 산출물이 존재하고 비어 있지 않다: `test -s "$RESULT"`.
 4. 반복 라운드라면 직전 결과 대비 새 finding·수정·판정 같은 진척 delta가 있다.
 
