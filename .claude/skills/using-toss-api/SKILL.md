@@ -60,7 +60,7 @@ SoT는 OpenAPI operation description의 Rate Limits Group과 실제 응답의 `X
 
 ## toss CLI 사용법
 
-CLI는 구현되어 운영 기준으로 사용한다. 실제 API 호출을 수반하는 항목은 네트워크 가능한 환경에서 스모크 테스트 후 결과를 확정한다.
+CLI는 구현되어 운영 기준으로 사용한다. 실제 API 호출을 수반하는 항목은 네트워크 가능한 환경에서 스모크 테스트 후 결과를 확정한다. 단, 스모크 테스트는 read-only endpoint 또는 `--dry-run`으로만 수행한다 — 주문 계열 mutation은 실계좌 주문이므로(함정 3: sandbox 없음) 사용자의 별도 명시 승인 없이 실행하지 않는다.
 
 ### `toss token [--force]`
 
