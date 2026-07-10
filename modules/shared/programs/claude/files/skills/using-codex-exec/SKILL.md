@@ -207,7 +207,10 @@ bundled fallback과 nested bwrap 기각 결과는 [known-issues.md §16](referen
 
 ### 일반 exec — Claude Code·headless 자동화
 
-프롬프트를 파일로 작성하고, stdin 파이프로 전달하며, `-o`로 결과를 저장한다:
+프롬프트를 파일로 작성하고, stdin 파이프로 전달하며, `-o`로 결과를 저장한다.
+아래 고정 `/tmp` 경로는 단일 수동 실행 데모다 — 동시/병렬 실행은 결과·로그를 서로 덮어쓰므로
+세션별 네임스페이스 디렉토리로 격리한다 ([known-issues.md §12](references/known-issues.md#12-동시-다중-세션-간-tmpda--경쟁-상태);
+경로 격리 시 임의 suffix의 literal 재사용 규칙은 [#632 절](references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)을 따른다):
 
 ```bash
 cat > /tmp/prompt.md <<'PROMPT'
@@ -236,13 +239,20 @@ env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write "git diff 기준으로 �
 
 ### 코드 리뷰 — scope flag만 사용 (Claude Code·headless 자동화)
 
+아래 세 명령은 순차 실행하는 파이프라인이 아니라 scope별 택일 대안이다.
+선택한 하나만 실행하고, 실행 전 결과 파일을 초기화하며, 종료 후 성공 계약을 검증한다:
+
 ```bash
+rm -f /tmp/review.md   # 이전 실행의 잔존 결과로 인한 오판 방지
+
+# 셋 중 하나를 선택:
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
   -o /tmp/review.md > /tmp/review-stdout.log 2> /tmp/review-stderr.log
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --uncommitted \
-  -o /tmp/review.md > /tmp/review-stdout.log 2> /tmp/review-stderr.log
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit <sha> \
-  -o /tmp/review.md > /tmp/review-stdout.log 2> /tmp/review-stderr.log
+# env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --uncommitted ... (동일 형태)
+# env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit <sha> ... (동일 형태)
+
+review_rc=$?
+[ "$review_rc" -eq 0 ] && test -s /tmp/review.md
 ```
 
 review 결과 저장에는 `-o`(`--output-last-message`)와 stdout이 모두 동작한다
@@ -273,16 +283,23 @@ scope flag으로 review를 실행하면 지시가 자동 적용된다.
 Claude Code/headless의 programmatic 재개는 supervised 경로를 사용한다:
 
 ```bash
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised resume --last          # 마지막 세션 재개
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised resume <session-id>    # 특정 세션 재개
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised resume --last --all    # cwd 필터 해제하여 전체 세션 중 최신 재개
+rm -f /tmp/resume-result.md
+env CODEX_PROGRAMMATIC=1 codex-exec-supervised resume <session-id> \
+  -o /tmp/resume-result.md > /tmp/resume-stdout.log 2> /tmp/resume-stderr.log
+resume_rc=$?
+
+# silent fallback 검증: exit 0만으로 재개 성공을 판정하지 않는다 (아래 설명 참조).
+grep -m1 "session id:" /tmp/resume-stderr.log   # 의도한 세션 id와 일치하는지 확인
+[ "$resume_rc" -eq 0 ] && test -s /tmp/resume-result.md
+# 응답 내용(/tmp/resume-result.md)이 원 세션의 context를 실제로 잇는지도 확인한다.
 ```
 
+변형: `resume --last` (같은 cwd의 마지막 세션), `resume --last --all` (cwd 필터 해제).
 사용자가 요청한 1회성 수동 진단은 alias를 피하도록 raw `command codex exec resume --last`를 사용할 수 있다.
 
 `--ephemeral` 세션은 저장되지 않는다. 0.144.1에서 저장 세션이 없는 cwd의
-`resume --last`는 오류 대신 새 session id로 조용히 시작해 exit 0을 반환했다. resume 성공 여부를
-exit code만으로 판정하지 말고 stderr banner의 session id와 응답 context가 원 세션과 이어지는지 확인한다.
+`resume --last`는 오류 대신 새 session id로 조용히 시작해 exit 0을 반환했다 — 위 예제가
+session id·응답 context 확인을 포함하는 이유다. 불일치하거나 결과가 비면 재개 실패로 처리한다.
 
 ## 성공 계약
 
