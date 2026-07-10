@@ -293,17 +293,20 @@ git worktree 환경에서 `codex exec`를 실행할 때:
 
 ```bash
 cat > /tmp/smoke.md <<'PROMPT'
-현재 작업 디렉토리에서 가장 중요한 리스크 1개만 한 줄로 답한다.
+현재 작업 디렉토리에서 가장 중요한 리스크 1개만 한 줄로 답한 뒤, 마지막 줄에 SMOKE_DONE만 출력한다.
 PROMPT
 ```
 
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 (§11 하위 항목).
 
 ```bash
+rm -f /tmp/smoke-result.md   # 이전 실행의 non-empty 잔존 결과로 인한 오판 방지
+set -o pipefail
 cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/smoke-result.md - \
   > /tmp/smoke.stdout 2> /tmp/smoke.stderr
-test -s /tmp/smoke-result.md
+smoke_rc=${PIPESTATUS[1]}   # zsh는 $pipestatus[2]
+[ "$smoke_rc" -eq 0 ] && test -s /tmp/smoke-result.md && grep -q "SMOKE_DONE" /tmp/smoke-result.md
 ```
 
 wrapper exit 0, non-empty 결과, 기대한 완료 표식이 모두 확인되면 통과다. fan-out은 이 스모크를

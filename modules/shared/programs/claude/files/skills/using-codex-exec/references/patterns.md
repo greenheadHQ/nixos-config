@@ -48,6 +48,7 @@ test "$codex_rc" -eq 0 && test -s /tmp/codex-result.md
 ```bash
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
   -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
+test -s /tmp/review.md
 ```
 
 현재 브랜치를 `main`과 비교하여 리뷰한다.
@@ -57,6 +58,7 @@ env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
 ```bash
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --uncommitted \
   -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
+test -s /tmp/review.md
 ```
 
 staged/unstaged/untracked 변경을 함께 리뷰한다. 커밋 전 self-review에 적합.
@@ -68,6 +70,7 @@ env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit abc1234 \
   -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit abc1234 --title "Fix sandbox leak" \
   -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
+test -s /tmp/review.md
 ```
 
 `--title`은 `--commit`과 함께 사용하여 리뷰 요약에 커밋 제목을 표시한다.
@@ -85,6 +88,7 @@ scope flag 없이 PROMPT을 stdin으로 전달하여 review를 실행한다.
 ```bash
 cat prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised review \
   -o /tmp/result.md - > /tmp/result.stdout 2> /tmp/result.stderr
+test -s /tmp/result.md
 ```
 
 > ⚠️ scope flag 미사용: PROMPT 사용 시 scope flag(`--uncommitted`/`--base`/`--commit`)와
@@ -119,6 +123,7 @@ EOF
 ```bash
 env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
   -o /tmp/review.md > /tmp/review.stdout 2> /tmp/review.stderr
+test -s /tmp/review.md
 ```
 
 ### 전역 정책 (모든 프로젝트에 적용)
@@ -177,6 +182,7 @@ PROMPT
 cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/review-result.md - \
   > /tmp/review.stdout 2> /tmp/review.stderr
+test -s /tmp/review-result.md
 ```
 
 ### 장점
@@ -217,7 +223,7 @@ PROMPT
 ```bash
 cat /tmp/da-round1.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write -o /tmp/da-round1-result.md \
   - > /tmp/da-round1-stdout.log 2>/tmp/da-round1-stderr.log
-cat /tmp/da-round1-result.md
+test -s /tmp/da-round1-result.md && cat /tmp/da-round1-result.md
 ```
 
 ### 후속 라운드
@@ -239,6 +245,7 @@ PROMPT
 ```bash
 cat /tmp/da-round2.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write -o /tmp/da-round2-result.md \
   - > /tmp/da-round2-stdout.log 2>/tmp/da-round2-stderr.log
+test -s /tmp/da-round2-result.md
 ```
 
 핵심: 매 라운드마다 `-o`로 결과를 파일 저장하여 이력을 보존한다.
@@ -316,6 +323,7 @@ cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write --json -o /tmp/result.md - \
   > /tmp/events.jsonl 2> /tmp/events.stderr
+test -s /tmp/result.md
 ```
 
 ## 패턴 8: 스모크 테스트

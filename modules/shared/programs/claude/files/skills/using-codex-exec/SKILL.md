@@ -219,10 +219,13 @@ PROMPT
 
 ```bash
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
+rm -f /tmp/result.md   # 이전 실행의 non-empty 잔존 결과로 인한 오판 방지
+set -o pipefail
 cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/result.md - \
   > /tmp/stdout.log 2> /tmp/stderr.log
-test -s /tmp/result.md
+codex_rc=${PIPESTATUS[1]}   # zsh는 $pipestatus[2]
+[ "$codex_rc" -eq 0 ] && test -s /tmp/result.md
 ```
 
 사용자가 literal raw 실행을 요청한 1회성 수동 진단에서는 인라인 프롬프트도 가능하다:

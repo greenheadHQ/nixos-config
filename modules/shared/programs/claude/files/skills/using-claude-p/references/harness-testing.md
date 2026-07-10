@@ -25,43 +25,22 @@ set -o pipefail
 echo "ok" | claude -p --output-format json > /tmp/harness-init.json 2> /tmp/harness-init.stderr
 CLAUDE_RC=${PIPESTATUS[1]}
 test "$CLAUDE_RC" -eq 0 && test -s /tmp/harness-init.json || exit 1
-RESULT=$(< /tmp/harness-init.json)
 
-SKILLS=$(echo "$RESULT" | python3 -c "
+# 파싱은 한 번으로 통합한다. system 이벤트 부재/JSON 오류 시 python이 non-zero로 죽고
+# || 가드가 즉시 FAIL 처리하므로, 빈 변수로 후속 판정이 오염되지 않는다.
+INV=$(python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 items = data if isinstance(data, list) else [data]
 init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
-print(len(init.get('skills', [])))")
-
-TOOLS=$(echo "$RESULT" | python3 -c "
-import sys, json
-data = json.loads(sys.stdin.read())
-items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
-print(len(init.get('tools', [])))")
-
-MCP=$(echo "$RESULT" | python3 -c "
-import sys, json
-data = json.loads(sys.stdin.read())
-items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
-print(len(init.get('mcp_servers', [])))")
-
-PLUGINS=$(echo "$RESULT" | python3 -c "
-import sys, json
-data = json.loads(sys.stdin.read())
-items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
-print(len(init.get('plugins', [])))")
-
-RESULT_OK=$(echo "$RESULT" | python3 -c "
-import sys, json
-data = json.loads(sys.stdin.read())
-items = data if isinstance(data, list) else [data]
 results = [d for d in items if isinstance(d, dict) and d.get('type')=='result']
 ok = bool(results) and results[-1].get('subtype') == 'success' and not results[-1].get('is_error', False)
-print('yes' if ok else 'no')")
+print(len(init.get('skills', [])))
+print(len(init.get('tools', [])))
+print(len(init.get('mcp_servers', [])))
+print(len(init.get('plugins', [])))
+print('yes' if ok else 'no')" < /tmp/harness-init.json) || { echo "T1: FAIL (JSON parse or missing system event)"; exit 1; }
+{ read -r SKILLS; read -r TOOLS; read -r MCP; read -r PLUGINS; read -r RESULT_OK; } <<< "$INV"
 
 echo "Skills: $SKILLS, Tools: $TOOLS, MCP: $MCP, Plugins: $PLUGINS"
 
@@ -303,7 +282,8 @@ else
 fi
 
 set -o pipefail
-echo "hostname을 실행하고 결과만 출력해" | ssh "$REMOTE" 'claude -p --dangerously-skip-permissions' \
+# outer timeout: 원격 hang 시 무기한 대기 방지 (SSH_RC 124 = timeout 발동; macOS는 coreutils timeout 필요)
+echo "hostname을 실행하고 결과만 출력해" | timeout "${SSH_TIMEOUT:-900}" ssh "$REMOTE" 'claude -p --dangerously-skip-permissions' \
   > /tmp/t6-remote.txt 2> /tmp/t6-remote.stderr
 SSH_RC=${PIPESTATUS[1]}
 RESULT=$(< /tmp/t6-remote.txt)
@@ -339,14 +319,18 @@ set -o pipefail
 echo "나의 비밀 코드는 ${SECRET}이야. 확인했으면 '확인'이라고만 답해." | claude -p --output-format json \
   > /tmp/t7-first.json 2> /tmp/t7-first.stderr
 T7_FIRST_RC=${PIPESTATUS[1]}
+# 성공 계약: exit 0 + session_id만으로 부족하다. result/success까지 검증해야
+# 실패한 첫 세션을 resume 대상으로 쓰는 오판을 막는다 (assert 실패 → non-zero → SESSION_ID 빈 값).
 SESSION_ID=$(python3 -c "
 import sys, json; data=json.loads(sys.stdin.read()); items=data if isinstance(data,list) else [data]
+results=[d for d in items if isinstance(d,dict) and d.get('type')=='result']
+assert results and results[-1].get('subtype')=='success' and not results[-1].get('is_error', False), 'first call result is not successful'
 for item in items:
     if isinstance(item, dict) and item.get('type')=='system':
         print(item['session_id']); break" < /tmp/t7-first.json)
 
 if [ "$T7_FIRST_RC" -ne 0 ] || [ -z "$SESSION_ID" ]; then
-  echo "  ✗ Failed to extract session_id"
+  echo "  ✗ First call did not succeed (result/success or session_id missing)"
   echo "T7: FAIL"
   exit 1
 fi
