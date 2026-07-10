@@ -84,12 +84,12 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 
 ## 검증 / 훅
 
-[`lefthook.yml`](./lefthook.yml)로 pre-commit/pre-push 훅 관리.
+[`lefthook.yml`](./lefthook.yml)로 pre-commit/commit-msg/pre-push 훅 관리.
 
 **통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도, 이 명령으로 pre-push 게이트와 테스트 드라이버를 재검증할 수 있다. 단 pre-commit의 staged 스냅샷 정책(`gitleaks` · `nixfmt` · `shellcheck` · skill-noise)은 staged index 기준이라 working-tree 러너 범위 밖이며 커밋 시점 게이트로 별도 적용된다.
 
 **pre-commit** (병렬):
-- `lefthook-guard-self-check` — 설치된 hook에서 (1) `.git/hooks/pre-commit`의 staged-config guard marker, (2) 세 hook(`pre-commit`/`commit-msg`/`pre-push`) lefthook 호출부의 `--no-auto-install` 플래그가 사라지면 commit fail-fast. lefthook의 암묵 auto-sync(`lefthook.yml` 변경 후 첫 실행)와 인접 worktree의 `lefthook install` 덮어쓰기, 두 회귀 경로를 함께 막는다
+- `lefthook-guard-self-check` — 현재 worktree에서 Git이 해석한 hooks 경로(`git rev-parse --git-path hooks`)를 기준으로, (1) `pre-commit`의 staged-config guard marker, (2) 세 hook(`pre-commit`/`commit-msg`/`pre-push`)의 설치 여부와 lefthook 호출부의 `--no-auto-install` 플래그가 사라지면 commit fail-fast. lefthook의 암묵 auto-sync(`lefthook.yml` 변경 후 첫 실행)와 인접 worktree의 `lefthook install` 덮어쓰기, 두 회귀 경로를 함께 막는다
 - `ai-skills-consistency` — staged snapshot 기준 `.claude/skills`, `.agents/skills`, `modules/shared/programs/codex` 구조 일관성
 - `gitleaks` — staged policy/config 기준 시크릿 유출 방지
 - `nixfmt` — Nix 포매팅 검증
@@ -107,6 +107,7 @@ pre-commit 정책:
 - 직접 스크립트 실행은 pre-commit staged snapshot 경로와 동일하지 않다.
 
 **commit-msg**:
+- `lefthook-guard-self-check` — pre-commit self-check의 복제. `git commit --allow-empty`처럼 staged files가 0이라 pre-commit command가 skip되는 경로까지 차단한다
 - `pinning` — commit message LLM 박제 패턴 감지 (warn-only) ([`scripts/ai/commit-msg-pinning.sh`](./scripts/ai/commit-msg-pinning.sh))
 
 **LLM durable-output pinning guard layers**:

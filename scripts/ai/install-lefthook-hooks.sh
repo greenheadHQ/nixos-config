@@ -411,14 +411,33 @@ PY
   # 되살려 주지 않는다. commit-time self-check가 같은 목록을 fail-fast로 확인하므로, 그 실패를
   # install 시점으로 당겨 원인을 분명히 남긴다. 기대 목록은 대상 repo의 lefthook.yml에서
   # 도출한다 — 하드코딩하면 다른 hook 집합을 쓰는 저장소/픽스처에서 거짓 실패가 난다.
-  # top-level 키 파싱은 check-lefthook-staged-config.sh의 allowed_top_level 검사와 같은 방식이다.
-  if [ -f "$repo_root/lefthook.yml" ]; then
-    for hook_name in $(awk '/^[A-Za-z0-9_.-]+:/ { sub(/:$/, "", $1); print $1 }' "$repo_root/lefthook.yml"); do
-      if [ ! -f "$resolved_hooks_dir/$hook_name" ]; then
-        fail "expected hook not installed: $resolved_hooks_dir/$hook_name (lefthook.yml defines it; check 'lefthook install' output)"
-      fi
-    done
-  fi
+  for hook_name in $(configured_hooks); do
+    if [ ! -f "$resolved_hooks_dir/$hook_name" ]; then
+      fail "expected hook not installed: $resolved_hooks_dir/$hook_name (lefthook.yml defines it; check 'lefthook install' output)"
+    fi
+  done
+}
+
+configured_hooks() {
+  # lefthook.yml이 정의한 top-level hook 이름. 파싱 방식은 check-lefthook-staged-config.sh의
+  # allowed_top_level 검사와 같다. 설정 파일이 없으면 아무것도 출력하지 않는다.
+  [ -f "$repo_root/lefthook.yml" ] || return 0
+  awk '/^[A-Za-z0-9_.-]+:/ { sub(/:$/, "", $1); print $1 }' "$repo_root/lefthook.yml"
+}
+
+refuse_symlinked_hooks() {
+  # `lefthook install`은 configured hook을 `>` 리다이렉션처럼 제자리에 쓰므로 symlink를 만나면
+  # 링크를 따라가 외부 target을 덮어쓴다. 그 뒤의 inject_staged_guard / disable_lefthook_auto_install
+  # 거부는 이미 늦다. install 전에 세워서 남의 파일을 건드리지 않는다.
+  # (install 이후의 거부는 TOCTOU 방어로 그대로 유지한다.)
+  local hooks_dir_now hook_name
+  hooks_dir_now="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path hooks)"
+  [ -d "$hooks_dir_now" ] || return 0
+  for hook_name in $(configured_hooks); do
+    if [ -L "$hooks_dir_now/$hook_name" ]; then
+      fail "refusing to install over a symlinked hook (lefthook install would write through the link): $hooks_dir_now/$hook_name"
+    fi
+  done
 }
 
 if is_main_repo; then
@@ -427,6 +446,7 @@ else
   apply_worktree_local_hooks_config
 fi
 acquire_install_lock
+refuse_symlinked_hooks
 run_lefthook_install
 inject_staged_guard
 disable_lefthook_auto_install
