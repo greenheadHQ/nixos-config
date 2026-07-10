@@ -280,6 +280,8 @@ scope flag으로 review를 실행하면 지시가 자동 적용된다.
 (지시 파일 우선순위: [references/patterns.md](references/patterns.md) 패턴 3 참조)
 
 재검증 미수행 (0.142.5 기준 서술 유지): AGENTS instruction의 실제 적용과 우선순위.
+재검증 방법: 임시 repo의 `AGENTS.md`에 고유 marker 지시(예: "리뷰 결과 첫 줄에 AGENTS_APPLIED를 출력")를 넣고
+`codex exec review --uncommitted`를 실행해 결과에 marker가 반영되는지 확인한다.
 
 방법 B — exec 우회 (1회성 지시, 최대 유연성)
 
@@ -368,6 +370,7 @@ breaker로 중단하고 같은 호출을 증식시키지 않는다. fan-out은 �
 
 실행 후:
 - CLI/wrapper exit 보존 및 확인
+- stderr에 `ERROR:` prefix가 없는지 확인 (성공 계약 조건 2)
 - 결과 파일이 비어 있지 않은지 확인 (`test -s "$RESULT"`)
 - 빈 결과 시 stderr 로그부터 확인
 - 반복 작업이면 직전 결과 대비 진척 delta 확인
