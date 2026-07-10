@@ -2,19 +2,44 @@ pre-commit:
   parallel: true
   commands:
     lefthook-guard-self-check:
-      # 회귀 방지 layer: 인접 worktree의 `lefthook install`이 (worktree-local 격리 없이)
-      # 메인 .git/hooks/pre-commit을 덮어쓰면서 staged-config guard를 silently 제거하는
-      # 시나리오를 commit-time에 fail-fast로 잡는다. install-lefthook-hooks.sh가
-      # 호출되는 worktree는 자기 worktree-local hook에 격리되어 안전하지만, 메인 repo
-      # hook은 8개 inline shellHook worktree(NG-1)의 매 direnv 진입으로 덮어써질 수
-      # 있다. 본 check가 메인에서 commit 시도 시 guard 부재를 발견하고 차단한다.
+      # 회귀 방지 layer: install-lefthook-hooks.sh가 hook에 주입한 두 가지가 살아있는지
+      # commit-time에 fail-fast로 확인한다.
+      #   (1) staged-config guard 블록 (pre-commit)
+      #   (2) 설치된 hook 세 개의 존재와, 각 lefthook 호출부의 --no-auto-install 플래그
+      # 둘이 사라지는 경로는 두 가지다. 첫째, `lefthook run`은 lefthook.checksum이 stale하면
+      # hook 전체를 암묵 재설치해(sync hooks) guard를 지운다 — (2)가 이 경로를 원천 차단하므로
+      # (2)의 부재는 곧 다음 commit의 guard 소실을 뜻해 여기서 함께 막는다. 둘째, 인접
+      # worktree의 raw `lefthook install`이 worktree-local 격리 없이 공유 hook을 덮어쓴다.
+      # auto-install을 끈 이상 hook 파일이 없어도 lefthook이 되살려 주지 않는다. 없는 hook을
+      # 건너뛰면 그 hook의 게이트가 조용히 사라지므로, 누락 자체를 fail-fast로 잡는다.
       # parallel: true이지만 어느 command든 fail이면 commit이 차단되므로 순서는 무관.
       run: |
-        hook_path="$(git rev-parse --path-format=absolute --git-path hooks/pre-commit)"
-        if [ ! -f "$hook_path" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$hook_path"; then
-          echo "lefthook-guard-self-check: staged-config guard missing from $hook_path." >&2
-          echo "  Cause: another worktree's 'lefthook install' likely overwrote the shared hook." >&2
-          echo "  Fix:   re-run 'direnv reload' or 'bash scripts/ai/install-lefthook-hooks.sh' in the current worktree." >&2
+        hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
+        pre_commit="$hooks_dir/pre-commit"
+        problem=""
+        if [ ! -f "$pre_commit" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$pre_commit"; then
+          problem="staged-config guard block missing from $pre_commit"
+        else
+          for hook_name in pre-commit commit-msg pre-push; do
+            hook_path="$hooks_dir/$hook_name"
+            if [ ! -f "$hook_path" ]; then
+              problem="hook file missing: $hook_path (auto-install is disabled, so lefthook will not recreate it)"
+              break
+            fi
+            # `"$@"`는 이 sh 블록에서 인자가 없어 빈 문자열로 확장된다. 기대 라인 전체를
+            # 작은따옴표로 조립해 리터럴 `"$@"`를 보존한다.
+            expected_call='call_lefthook run "'"$hook_name"'" --no-auto-install "$@"'
+            if ! grep -Fxq -- "$expected_call" "$hook_path"; then
+              problem="expected exact lefthook call [$expected_call] in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
+              break
+            fi
+          done
+        fi
+        if [ -n "$problem" ]; then
+          echo "lefthook-guard-self-check: $problem" >&2
+          echo "  Cause: lefthook's implicit auto-sync regenerated the hooks (happens on the first run after lefthook.yml changes)," >&2
+          echo "         or another worktree's raw 'lefthook install' overwrote the shared hook." >&2
+          echo "  Fix:   bash scripts/ai/install-lefthook-hooks.sh   (or 'direnv reload') in the current worktree, then retry." >&2
           exit 1
         fi
     ai-skills-consistency:
@@ -76,11 +101,32 @@ commit-msg:
       # staged files"로 무력화한다. commit-msg hook은 staged files와 무관하게 항상
       # 실행되므로, 이 layer가 staged-files-가-0인 경로의 우회 시나리오까지 차단한다.
       run: |
-        hook_path="$(git rev-parse --path-format=absolute --git-path hooks/pre-commit)"
-        if [ ! -f "$hook_path" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$hook_path"; then
-          echo "lefthook-guard-self-check (commit-msg): staged-config guard missing from $hook_path." >&2
-          echo "  Cause: another worktree's 'lefthook install' likely overwrote the shared hook." >&2
-          echo "  Fix:   re-run 'direnv reload' or 'bash scripts/ai/install-lefthook-hooks.sh' in the current worktree." >&2
+        hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
+        pre_commit="$hooks_dir/pre-commit"
+        problem=""
+        if [ ! -f "$pre_commit" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$pre_commit"; then
+          problem="staged-config guard block missing from $pre_commit"
+        else
+          for hook_name in pre-commit commit-msg pre-push; do
+            hook_path="$hooks_dir/$hook_name"
+            if [ ! -f "$hook_path" ]; then
+              problem="hook file missing: $hook_path (auto-install is disabled, so lefthook will not recreate it)"
+              break
+            fi
+            # `"$@"`는 이 sh 블록에서 인자가 없어 빈 문자열로 확장된다. 기대 라인 전체를
+            # 작은따옴표로 조립해 리터럴 `"$@"`를 보존한다.
+            expected_call='call_lefthook run "'"$hook_name"'" --no-auto-install "$@"'
+            if ! grep -Fxq -- "$expected_call" "$hook_path"; then
+              problem="expected exact lefthook call [$expected_call] in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
+              break
+            fi
+          done
+        fi
+        if [ -n "$problem" ]; then
+          echo "lefthook-guard-self-check (commit-msg): $problem" >&2
+          echo "  Cause: lefthook's implicit auto-sync regenerated the hooks (happens on the first run after lefthook.yml changes)," >&2
+          echo "         or another worktree's raw 'lefthook install' overwrote the shared hook." >&2
+          echo "  Fix:   bash scripts/ai/install-lefthook-hooks.sh   (or 'direnv reload') in the current worktree, then retry." >&2
           exit 1
         fi
     pinning:
@@ -103,11 +149,13 @@ pre-push:
       # 실패). devShell은 건드리지 않아 direnv/bare python3 해석 영향이 없다. `--inputs-from .`로
       # nixpkgs#를 repo flake.lock에 pin해 임시 registry fetch를 피한다(statusline-bats와 동일 패턴).
       # claude-rc(#1052)가 require_cmd lsof를 도입했고 lsof는 NixOS 시스템 프로파일/CI PATH에
-      # 항상 있지 않으므로 nixpkgs#lsof도 명시 제공한다(#1009와 동일 패턴).
+      # 항상 있지 않으므로 nixpkgs#lsof도 명시 제공한다(#1009와 동일 패턴). lefthook auto-sync
+      # end-to-end 테스트는 stub이 아닌 실제 lefthook을 요구하는데, hook이 lefthook을 nix store
+      # 절대경로로 호출하면 자식 PATH에 lefthook이 없다. 같은 이유로 nixpkgs#lefthook도 얹는다.
       # `_TOMLKIT_BOOTSTRAP_READY=1`로 run-shell-script-tests.sh 내부 tomlkit-bootstrap.sh의 중첩
       # `nix shell` re-exec을 막는다(이 wrap이 이미 동일 hermetic 런타임을 제공). 테스트 병렬 실행은
       # 러너 자체(tests/lib/parallel-harness.sh job-pool)가 담당하므로 여기서 추가 배선은 없다.
-      run: nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
+      run: nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof nixpkgs#lefthook --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
     codex-hook-fixtures:
       # pre-commit에 이미 동일 명령이 있지만 push 직전 재검증해 stale state 회귀 차단.
       # runner self-bootstrap이라 추가 nix shell wrap 불필요. live propagation은 attach하지 않음.

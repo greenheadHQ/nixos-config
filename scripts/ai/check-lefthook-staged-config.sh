@@ -87,11 +87,30 @@ pre-commit:
   commands:
     lefthook-guard-self-check:
       run: |
-        hook_path="$(git rev-parse --path-format=absolute --git-path hooks/pre-commit)"
-        if [ ! -f "$hook_path" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$hook_path"; then
-          echo "lefthook-guard-self-check: staged-config guard missing from $hook_path." >&2
-          echo "  Cause: another worktree's 'lefthook install' likely overwrote the shared hook." >&2
-          echo "  Fix:   re-run 'direnv reload' or 'bash scripts/ai/install-lefthook-hooks.sh' in the current worktree." >&2
+        hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
+        pre_commit="$hooks_dir/pre-commit"
+        problem=""
+        if [ ! -f "$pre_commit" ] || ! grep -Fq "# BEGIN nixos-config lefthook staged-config guard" "$pre_commit"; then
+          problem="staged-config guard block missing from $pre_commit"
+        else
+          for hook_name in pre-commit commit-msg pre-push; do
+            hook_path="$hooks_dir/$hook_name"
+            if [ ! -f "$hook_path" ]; then
+              problem="hook file missing: $hook_path (auto-install is disabled, so lefthook will not recreate it)"
+              break
+            fi
+            expected_call='call_lefthook run "'"$hook_name"'" --no-auto-install "$@"'
+            if ! grep -Fxq -- "$expected_call" "$hook_path"; then
+              problem="expected exact lefthook call [$expected_call] in $hook_path (lefthook's next auto-sync would silently drop the staged-config guard)"
+              break
+            fi
+          done
+        fi
+        if [ -n "$problem" ]; then
+          echo "lefthook-guard-self-check: $problem" >&2
+          echo "  Cause: lefthook's implicit auto-sync regenerated the hooks (happens on the first run after lefthook.yml changes)," >&2
+          echo "         or another worktree's raw 'lefthook install' overwrote the shared hook." >&2
+          echo "  Fix:   bash scripts/ai/install-lefthook-hooks.sh   (or 'direnv reload') in the current worktree, then retry." >&2
           exit 1
         fi
     ai-skills-consistency:
@@ -150,6 +169,10 @@ repo_scripts=(
   "tests/run-eval-tests.sh"
   "tests/test-codex-hook-fixtures.sh"
   "scripts/ai/check-skill-noise.sh"
+  # lefthook-guard-self-check가 검사하는 `--no-auto-install` 주입은 이 installer가 수행한다.
+  # hook 설정과 allowlist만 staged되고 installer 변경이 빠지면 그 계약이 조용히 깨지므로,
+  # PR #750의 helper script drift 경계를 installer까지 넓힌다.
+  "scripts/ai/install-lefthook-hooks.sh"
 )
 
 for path in "${repo_scripts[@]}"; do

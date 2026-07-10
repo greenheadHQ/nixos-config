@@ -3,19 +3,62 @@
 # SC2154: 공통 변수는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
 # shellcheck disable=SC2154,SC2164
 # ─── install-lefthook-hooks fixture helpers ───
-# 실제 lefthook은 stub으로 대체한다. 우리 검증 대상은 install-lefthook-hooks.sh의
+# 대부분의 테스트에서 실제 lefthook은 stub으로 대체한다. 우리 검증 대상은 install-lefthook-hooks.sh의
 # cleanup_main_redundant_hooks_path / apply_worktree_local_hooks_config /
-# acquire_install_lock / run_lefthook_install / inject_staged_guard 동작이고,
-# lefthook 자체의 install 로직은 별도 신뢰 영역이다. stub은 install 명령 호출 시
-# `call_lefthook run "pre-commit" "$@"` 라인을 포함한 minimal pre-commit 파일만 작성한다.
+# acquire_install_lock / require_canonical_lefthook_config / refuse_symlinked_hooks /
+# run_lefthook_install / inject_staged_guard / disable_lefthook_auto_install 동작이고,
+# lefthook 자체의 install 로직은 별도 신뢰 영역이다.
+# stub은 install 명령 호출 시 설정된 hook(pre-commit/commit-msg/pre-push)을 모두 생성하며,
+# 각 파일은 `call_lefthook run "<hook>" "$@"` 라인을 포함한다.
+# 예외: test_lefthook_auto_sync_cannot_drop_guard_end_to_end는 auto-sync 동작 자체를 확인해야
+# 하므로 stub 없이 실제 lefthook 바이너리를 사용한다.
 
 # Marker 리터럴을 install-lefthook-hooks.sh에서 한 번만 정의하고 테스트가
 # 그 정의를 sed로 추출해 사용한다. install 스크립트에서 marker를 바꿔도
 # 테스트가 그 변경을 자동으로 따라간다 (silent fail 방지).
 LEFTHOOK_GUARD_BEGIN_MARKER=$(sed -n 's/^BEGIN_MARKER="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
 LEFTHOOK_GUARD_END_MARKER=$(sed -n 's/^END_MARKER="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
+LEFTHOOK_NO_AUTO_INSTALL_FLAG=$(sed -n 's/^NO_AUTO_INSTALL_FLAG="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
+LEFTHOOK_GIT_HOOK_NAMES=$(sed -n 's/^GIT_HOOK_NAMES="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
 [[ -n "$LEFTHOOK_GUARD_BEGIN_MARKER" ]] || fail "could not extract BEGIN_MARKER from install-lefthook-hooks.sh"
 [[ -n "$LEFTHOOK_GUARD_END_MARKER" ]] || fail "could not extract END_MARKER from install-lefthook-hooks.sh"
+[[ -n "$LEFTHOOK_NO_AUTO_INSTALL_FLAG" ]] || fail "could not extract NO_AUTO_INSTALL_FLAG from install-lefthook-hooks.sh"
+[[ -n "$LEFTHOOK_GIT_HOOK_NAMES" ]] || fail "could not extract GIT_HOOK_NAMES from install-lefthook-hooks.sh"
+
+lefthook_config_hook_names() {
+  # installer의 configured_hooks와 같은 방식으로 lefthook.yml에서 hook 이름만 뽑는다
+  # (전역 옵션 키 제외). GIT_HOOK_NAMES는 installer에서 추출해 재사용한다.
+  awk -v known=" $LEFTHOOK_GIT_HOOK_NAMES " '
+    /^[A-Za-z0-9_.-]+:/ {
+      name = $1
+      sub(/:$/, "", name)
+      if (index(known, " " name " ") > 0) { printf "%s%s", sep, name; sep = " " }
+    }
+  ' "$1"
+}
+
+extract_self_check_run_body() {
+  # lefthook.yml의 <top-level hook>.commands.lefthook-guard-self-check 의 `run: |` 본문만 뽑는다.
+  local top="$1"
+  awk -v want="${top}:" '
+    $0 == want { in_top = 1; next }
+    in_top && /^[^[:space:]#]/ { exit }
+    in_top && /^    lefthook-guard-self-check:$/ { in_cmd = 1; next }
+    in_cmd && /^    [^[:space:]]/ { exit }
+    in_cmd && /^      run: \|$/ { in_run = 1; next }
+    in_run && /^      [^[:space:]]/ { exit }
+    in_run { print }
+  ' "$REPO_ROOT/lefthook.yml"
+}
+
+assert_hook_call_line() {
+  # 설치된 hook의 lefthook 호출부가 정확히 기대 형태인지 확인한다. 완전 일치로 비교하므로
+  # 플래그 누락뿐 아니라 중복 주입(비-idempotent 회귀)도 함께 잡힌다.
+  local hook_path="$1" hook_name="$2" expected actual
+  expected="call_lefthook run \"${hook_name}\" ${LEFTHOOK_NO_AUTO_INSTALL_FLAG} \"\$@\""
+  actual=$(grep -F 'call_lefthook run ' "$hook_path" || true)
+  [[ "$actual" == "$expected" ]] || fail "hook $hook_path: expected call line [$expected], got [$actual]"
+}
 
 install_lefthook_git_isolation() {
   # skill_noise_git의 7개 격리 옵션과 동일하게 사용자 시스템 git/global config 영향 차단:
@@ -47,6 +90,58 @@ install_lefthook_isolated_git() {
     "$@"
 }
 
+write_install_lefthook_fixture_config() {
+  # installer는 lefthook.yml의 top-level 키에서 기대 hook 목록을 도출한다. 실제 저장소와 같은
+  # 세 hook을 정의해, "설정된 hook이 전부 설치됐는가" 검증이 fixture에서도 성립하게 한다.
+  cat > "$1/lefthook.yml" <<'YML'
+pre-commit:
+  jobs:
+    - name: noop
+      run: "true"
+commit-msg:
+  jobs:
+    - name: noop
+      run: "true"
+pre-push:
+  jobs:
+    - name: noop
+      run: "true"
+YML
+}
+
+write_install_lefthook_stub() {
+  # 두 fixture 생성기가 공유하는 lefthook stub. install 동작을 한 곳에서만 정의해
+  # 호출 형태나 hook 집합을 바꿀 때 한쪽만 고치는 사고를 막는다.
+  # 실제 CLI처럼 lefthook.yml에서 hook 이름을 읽되, 전역 옵션 키(`colors` 등)는 건너뛴다.
+  cat > "$1/lefthook" <<STUB
+#!/usr/bin/env bash
+# stub for install-lefthook-hooks shell tests: emulate \`lefthook install\` by writing every
+# hook configured in lefthook.yml, each containing the \`call_lefthook run "<hook>" "\$@"\`
+# marker expected by inject_staged_guard and disable_lefthook_auto_install. Hook names come
+# from the config (like the real CLI) and global option keys are skipped, so fixtures and
+# assertions cannot drift apart. The stub also tolerates --force (worktree mode passes it).
+# Silent on success to mirror the real CLI output we strip.
+set -euo pipefail
+known=" $LEFTHOOK_GIT_HOOK_NAMES "
+case "\${1:-}" in
+  install)
+    cd "\$(git rev-parse --show-toplevel)"
+    hooks_dir="\$(git rev-parse --path-format=absolute --git-path hooks)"
+    mkdir -p "\$hooks_dir"
+    for hook in \$(awk -v known="\$known" '/^[A-Za-z0-9_.-]+:/ { name = \$1; sub(/:\$/, "", name); if (index(known, " " name " ") > 0) print name }' lefthook.yml); do
+      printf '#!/bin/sh\ncall_lefthook run "%s" "\$@"\n' "\$hook" > "\$hooks_dir/\$hook"
+      chmod +x "\$hooks_dir/\$hook"
+    done
+    ;;
+  *)
+    echo "stub lefthook: unsupported command: \${1:-}" >&2
+    exit 1
+    ;;
+esac
+STUB
+  chmod +x "$1/lefthook"
+}
+
 create_install_lefthook_fixture() {
   # 메인 repo 모드 fixture: git init된 단일 repo (git_dir == git_common_dir).
   # is_main_repo가 true로 평가되어 cleanup_main_redundant_hooks_path 분기 검증.
@@ -58,40 +153,11 @@ create_install_lefthook_fixture() {
   install_lefthook_isolated_git "$repo_root" init >/dev/null 2>&1
   install_lefthook_isolated_git "$repo_root" config user.name "Test User"
   install_lefthook_isolated_git "$repo_root" config user.email "test@example.com"
-  cat > "$repo_root/lefthook.yml" <<'YML'
-pre-commit:
-  jobs:
-    - name: noop
-      run: "true"
-YML
+  write_install_lefthook_fixture_config "$repo_root"
   install_lefthook_isolated_git "$repo_root" add lefthook.yml
   install_lefthook_isolated_git "$repo_root" commit -m "initial" >/dev/null 2>&1
 
-  cat > "$stub_dir/lefthook" <<'STUB'
-#!/usr/bin/env bash
-# stub for install-lefthook-hooks shell tests: emulate `lefthook install` by writing
-# a minimal pre-commit hook that contains the `call_lefthook run "pre-commit" "$@"`
-# marker expected by inject_staged_guard. The stub also tolerates --force (worktree
-# mode passes it). Silent on success to mirror the real CLI output we strip.
-set -euo pipefail
-case "${1:-}" in
-  install)
-    cd "$(git rev-parse --show-toplevel)"
-    hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
-    mkdir -p "$hooks_dir"
-    cat > "$hooks_dir/pre-commit" <<'HOOK'
-#!/bin/sh
-call_lefthook run "pre-commit" "$@"
-HOOK
-    chmod +x "$hooks_dir/pre-commit"
-    ;;
-  *)
-    echo "stub lefthook: unsupported command: ${1:-}" >&2
-    exit 1
-    ;;
-esac
-STUB
-  chmod +x "$stub_dir/lefthook"
+  write_install_lefthook_stub "$stub_dir"
 }
 
 create_install_lefthook_worktree_fixture() {
@@ -106,37 +172,12 @@ create_install_lefthook_worktree_fixture() {
   install_lefthook_isolated_git "$main_root" init -b main >/dev/null 2>&1
   install_lefthook_isolated_git "$main_root" config user.name "Test User"
   install_lefthook_isolated_git "$main_root" config user.email "test@example.com"
-  cat > "$main_root/lefthook.yml" <<'YML'
-pre-commit:
-  jobs:
-    - name: noop
-      run: "true"
-YML
+  write_install_lefthook_fixture_config "$main_root"
   install_lefthook_isolated_git "$main_root" add lefthook.yml
   install_lefthook_isolated_git "$main_root" commit -m "initial" >/dev/null 2>&1
   install_lefthook_isolated_git "$main_root" worktree add -b feature "$worktree_root" >/dev/null 2>&1
 
-  cat > "$stub_dir/lefthook" <<'STUB'
-#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  install)
-    cd "$(git rev-parse --show-toplevel)"
-    hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
-    mkdir -p "$hooks_dir"
-    cat > "$hooks_dir/pre-commit" <<'HOOK'
-#!/bin/sh
-call_lefthook run "pre-commit" "$@"
-HOOK
-    chmod +x "$hooks_dir/pre-commit"
-    ;;
-  *)
-    echo "stub lefthook: unsupported command: ${1:-}" >&2
-    exit 1
-    ;;
-esac
-STUB
-  chmod +x "$stub_dir/lefthook"
+  write_install_lefthook_stub "$stub_dir"
 }
 
 run_install_lefthook_capture() {
@@ -309,4 +350,351 @@ test_install_lefthook_worktree_mode_pins_local_hooks_path() {
 
   # 격리 검증 (content level): 메인 pre-commit의 sentinel이 그대로 보존되어야 함
   grep -Fq "$sentinel" "$main_hooks/pre-commit" || fail "main repo hooks should be isolated from worktree install; sentinel '$sentinel' missing from $main_hooks/pre-commit"
+}
+
+test_install_lefthook_injects_no_auto_install_into_every_hook() {
+  # `lefthook run`의 암묵 auto-sync는 hook 하나에서 발동해도 설치된 hook을 모두 재생성하며
+  # staged-config guard를 지운다. 따라서 guard가 없는 commit-msg/pre-push도 차단해야 한다.
+  local sandbox repo_root stub_dir hooks_dir hook_name
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "install failed: $INSTALL_LEFTHOOK_OUTPUT"
+
+  hooks_dir="$repo_root/.git/hooks"
+  for hook_name in pre-commit commit-msg pre-push; do
+    assert_hook_call_line "$hooks_dir/$hook_name" "$hook_name"
+  done
+
+  # guard 블록 자체는 pre-commit 전용 — 다른 hook으로 새지 않아야 한다.
+  grep -Fq "$LEFTHOOK_GUARD_BEGIN_MARKER" "$hooks_dir/pre-commit" || fail "guard marker missing from pre-commit"
+  for hook_name in commit-msg pre-push; do
+    ! grep -Fq "$LEFTHOOK_GUARD_BEGIN_MARKER" "$hooks_dir/$hook_name" \
+      || fail "guard marker unexpectedly injected into $hook_name"
+  done
+}
+
+test_install_lefthook_no_auto_install_injection_is_idempotent() {
+  # 매 direnv 진입마다 재실행되므로 플래그가 누적되면 안 된다. assert_hook_call_line은
+  # 완전 일치 비교라 중복 주입(`--no-auto-install --no-auto-install`)을 잡는다.
+  local sandbox repo_root stub_dir
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "first install failed: $INSTALL_LEFTHOOK_OUTPUT"
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "second install failed: $INSTALL_LEFTHOOK_OUTPUT"
+
+  assert_hook_call_line "$repo_root/.git/hooks/pre-commit" "pre-commit"
+}
+
+test_install_lefthook_leaves_old_backup_hooks_untouched() {
+  # lefthook은 밀려난 기존 hook을 `<name>.old`로 남긴다. 실행되지 않는 파일이므로
+  # 패치 대상에서 제외한다 (되살렸을 때 원본 그대로여야 한다).
+  local sandbox repo_root stub_dir backup before after
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  mkdir -p "$repo_root/.git/hooks"
+  backup="$repo_root/.git/hooks/pre-commit.old"
+  printf '#!/bin/sh\ncall_lefthook run "pre-commit" "$@"\n' > "$backup"
+  before=$(cat "$backup")
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "install failed: $INSTALL_LEFTHOOK_OUTPUT"
+
+  after=$(cat "$backup")
+  [[ "$before" == "$after" ]] || fail "expected $backup to stay untouched; got: $after"
+}
+
+write_drifting_lefthook_stub() {
+  # 정상 stub과 같은 hook 집합을 만들되, pre-commit만 body_file 내용으로 덮어써 호출부를
+  # 흐트러뜨린다. 나머지 hook은 정상이라 검증이 pre-commit에서만 걸린다.
+  # body를 stub 소스에 리터럴로 심으면 stub 실행 시 `"$@"`/`${VAR}`가 확장돼 버리므로,
+  # 파일 경로만 넘기고 그대로 복사한다.
+  local stub_dir="$1" body_file="$2"
+  cat > "$stub_dir/lefthook" <<STUB
+#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  install)
+    cd "\$(git rev-parse --show-toplevel)"
+    hooks_dir="\$(git rev-parse --path-format=absolute --git-path hooks)"
+    mkdir -p "\$hooks_dir"
+    for hook in \$(awk '/^[A-Za-z0-9_.-]+:/ { sub(/:\$/, "", \$1); print \$1 }' lefthook.yml); do
+      printf '#!/bin/sh\ncall_lefthook run "%s" "\$@"\n' "\$hook" > "\$hooks_dir/\$hook"
+      chmod +x "\$hooks_dir/\$hook"
+    done
+    cp "$body_file" "\$hooks_dir/pre-commit"
+    chmod +x "\$hooks_dir/pre-commit"
+    ;;
+  *)
+    echo "stub lefthook: unsupported command: \${1:-}" >&2
+    exit 1
+    ;;
+esac
+STUB
+  chmod +x "$stub_dir/lefthook"
+}
+
+test_install_lefthook_fails_when_lefthook_call_shape_changes() {
+  # 상류 lefthook이 hook 템플릿의 호출부 형태를 바꾸면 플래그 주입이 조용한 no-op가 되고,
+  # 다음 auto-sync가 guard를 다시 지운다. 그 실패를 install 시점으로 당겼는지 검증한다.
+  #
+  # 이 fixture의 hook에는 플래그와 `call_lefthook run `을 한 줄에 모두 담은 decoy 주석이 있다.
+  # "파일 어딘가에 플래그가 있는가" 식의 느슨한 검사는 이 주석만으로 통과해버리므로, 검증이
+  # 실행 라인 자체를 정확히 대조하는지까지 함께 못박는다.
+  local sandbox repo_root stub_dir
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  # 호출부는 하나지만 `"$@"`로 끝나지 않아 주입이 no-op가 된다. decoy 주석에는 플래그만 있어
+  # "파일 어딘가에 플래그가 있는가" 식의 느슨한 검사라면 통과해버린다.
+  cat > "$sandbox/drift-body" <<'BODY'
+#!/bin/sh
+# decoy: --no-auto-install appears here, but not on the call line
+call_lefthook run "pre-commit" "$@" # upstream template drift
+BODY
+  write_drifting_lefthook_stub "$stub_dir" "$sandbox/drift-body"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail when the lefthook call shape changes; output: $INSTALL_LEFTHOOK_OUTPUT"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "expected exact call line"
+}
+
+test_install_lefthook_fails_on_unpatched_second_call() {
+  # 기대 라인 하나의 존재만 확인하면, 같은 hook에 패치되지 않은 두 번째 호출이 남아 있어도
+  # 통과해 그 경로에서 auto-install이 계속 살아 있다. 호출부가 정확히 하나인지도 세는지 본다.
+  local sandbox repo_root stub_dir
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  # 첫 호출은 column 0이라 패치되지만, 들여쓴 둘째 호출은 주입 대상이 아니라 그대로 남는다.
+  cat > "$sandbox/second-call-body" <<'BODY'
+#!/bin/sh
+call_lefthook run "pre-commit" "$@"
+if [ -n "${EXTRA:-}" ]; then
+  call_lefthook run "pre-commit" "$@"
+fi
+BODY
+  write_drifting_lefthook_stub "$stub_dir" "$sandbox/second-call-body"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail when a second, unpatched lefthook call remains; output: $INSTALL_LEFTHOOK_OUTPUT"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "expected exactly one 'call_lefthook run' line"
+}
+
+test_install_lefthook_rejects_foreign_lefthook_config() {
+  # `lefthook install`은 LEFTHOOK_CONFIG가 가리키는 설정을 쓰는데 preflight는 저장소의
+  # lefthook.yml만 읽는다. 두 경로가 갈라진 채 상태를 바꾸지 않는지 확인한다.
+  local sandbox repo_root stub_dir home_dir rc out
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  home_dir="$sandbox/home"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+  printf 'post-commit:\n  jobs:\n    - name: noop\n      run: "true"\n' > "$sandbox/other-lefthook.yml"
+
+  rc=0
+  out=$(
+    cd "$repo_root"
+    export HOME="$home_dir"
+    export XDG_CONFIG_HOME="$home_dir/.config"
+    export GIT_CONFIG_GLOBAL=/dev/null
+    export GIT_CONFIG_NOSYSTEM=1
+    export PATH="$stub_dir:$PATH"
+    export LEFTHOOK_CONFIG="$sandbox/other-lefthook.yml"
+    bash "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh" 2>&1
+  ) || rc=$?
+
+  [[ "$rc" != "0" ]] || fail "expected install to fail with a foreign LEFTHOOK_CONFIG; output: $out"
+  assert_contains "$out" "LEFTHOOK_CONFIG must point to"
+  [[ ! -f "$repo_root/.git/hooks/pre-commit" ]] || fail "no hook should be written when LEFTHOOK_CONFIG is rejected"
+}
+
+assert_symlinked_hook_refused_before_install() {
+  # symlink hook은 `lefthook install`이 링크를 따라가 외부 target을 덮어쓰기 전에 거부되어야
+  # 한다. target에는 stub이 쓸 내용과 다른 sentinel을 넣어, 선행 write가 있었다면 반드시
+  # 드러나게 한다 (내용이 우연히 같으면 이 검증은 아무것도 잡지 못한다).
+  local sandbox="$1" repo_root="$2" stub_dir="$3" hook_name="$4"
+  local hooks_dir target sentinel
+  hooks_dir="$repo_root/.git/hooks"
+  target="$sandbox/external-$hook_name"
+  sentinel="SENTINEL_${hook_name}_must_survive"
+  printf '#!/bin/sh\n# %s\nexit 0\n' "$sentinel" > "$target"
+  chmod +x "$target"
+  mkdir -p "$hooks_dir"
+  rm -f "$hooks_dir/$hook_name"
+  ln -s "$target" "$hooks_dir/$hook_name"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail on a symlinked $hook_name; output: $INSTALL_LEFTHOOK_OUTPUT"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "refusing to install over a symlinked hook"
+  [[ -L "$hooks_dir/$hook_name" ]] || fail "symlinked $hook_name must be left in place, not replaced"
+  grep -Fq "$sentinel" "$target" || fail "external symlink target was written through before the refusal: $target"
+}
+
+test_install_lefthook_refuses_symlinked_hook() {
+  # `lefthook install`은 configured hook을 제자리에 쓰므로 symlink를 만나면 링크를 따라
+  # 외부 target을 덮어쓴다. install 전 preflight가 이를 막는지 확인한다.
+  local sandbox repo_root stub_dir
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  assert_symlinked_hook_refused_before_install "$sandbox" "$repo_root" "$stub_dir" "pre-push"
+}
+
+test_install_lefthook_refuses_symlinked_pre_commit() {
+  # pre-commit은 inject_staged_guard가 in-place로 다시 쓰는 경로이기도 하다. preflight가
+  # install 전에 세우므로 guard 주입도 외부 target에 닿지 않아야 한다.
+  local sandbox repo_root stub_dir
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  assert_symlinked_hook_refused_before_install "$sandbox" "$repo_root" "$stub_dir" "pre-commit"
+  if grep -Fq "$LEFTHOOK_GUARD_BEGIN_MARKER" "$sandbox/external-pre-commit"; then
+    fail "staged-config guard must not be injected into the external symlink target"
+  fi
+}
+
+test_lefthook_self_check_hook_list_matches_config() {
+  # self-check가 순회하는 hook 목록은 lefthook.yml이 정의한 hook 집합과 같아야 한다.
+  # auto-install을 껐으므로 목록이 어긋나면 설치되지 않은 hook의 게이트가 조용히 사라진다.
+  local from_config from_self_check
+  from_config=$(lefthook_config_hook_names "$REPO_ROOT/lefthook.yml")
+  from_self_check=$(extract_self_check_run_body "pre-commit" | sed -n 's/^ *for hook_name in \(.*\); do$/\1/p')
+
+  [[ -n "$from_self_check" ]] || fail "could not extract the hook list from lefthook.yml self-check"
+  [[ "$from_config" == "$from_self_check" ]] \
+    || fail "hook list drift: lefthook.yml self-check iterates [$from_self_check], but lefthook.yml defines [$from_config]"
+}
+
+test_install_lefthook_ignores_global_config_keys() {
+  # lefthook.yml의 top-level에는 hook 외에 전역 옵션(`colors`, `skip_output` 등)도 올 수 있다.
+  # 그것을 hook 이름으로 오인하면 `.git/hooks/colors`를 찾다가 install이 막힌다.
+  local sandbox repo_root stub_dir
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  # 기존 fixture config 앞에 전역 옵션 키를 얹는다.
+  {
+    printf 'colors: false\nmin_version: 2.0.0\nskip_output:\n  - meta\n'
+    cat "$repo_root/lefthook.yml"
+  } > "$repo_root/lefthook.yml.new"
+  mv "$repo_root/lefthook.yml.new" "$repo_root/lefthook.yml"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] \
+    || fail "global lefthook.yml keys must not be treated as hooks; output: $INSTALL_LEFTHOOK_OUTPUT"
+  [[ ! -e "$repo_root/.git/hooks/colors" ]] || fail "a global config key was installed as a hook file"
+  assert_hook_call_line "$repo_root/.git/hooks/pre-commit" "pre-commit"
+}
+
+test_lefthook_self_check_bodies_stay_in_sync() {
+  # commit-msg의 self-check는 pre-commit 본문의 수동 복제다 (staged files가 0인 --allow-empty
+  # 경로를 막기 위해 존재). 두 본문이 의도치 않게 갈라지면 한쪽 게이트만 강화되는 사고가 나므로,
+  # 유일하게 허용된 차이(에러 prefix의 " (commit-msg)")만 정규화한 뒤 완전 일치를 요구한다.
+  local pre_body msg_body
+  pre_body=$(extract_self_check_run_body "pre-commit")
+  msg_body=$(extract_self_check_run_body "commit-msg" | sed 's/lefthook-guard-self-check (commit-msg):/lefthook-guard-self-check:/')
+
+  [[ -n "$pre_body" ]] || fail "could not extract pre-commit lefthook-guard-self-check run body"
+  [[ -n "$msg_body" ]] || fail "could not extract commit-msg lefthook-guard-self-check run body"
+  if [[ "$pre_body" != "$msg_body" ]]; then
+    fail "lefthook.yml self-check bodies diverged (only the ' (commit-msg)' error prefix may differ):
+$(diff <(printf '%s\n' "$pre_body") <(printf '%s\n' "$msg_body") || true)"
+  fi
+}
+
+lefthook_make_checksum_stale() {
+  # 실측(lefthook 2.1.5): auto-sync는 저장된 해시가 현재 config와 다르고 **동시에** config
+  # mtime이 저장된 timestamp보다 새로울 때만 발동한다. 둘 중 하나만으로는 재설치되지 않는다.
+  local repo_root="$1" checksum
+  checksum="$repo_root/.git/info/lefthook.checksum"
+  [[ -f "$checksum" ]] || fail "expected lefthook.checksum to exist after install: $checksum"
+  printf 'deadbeefdeadbeefdeadbeefdeadbeef 1\n' > "$checksum"
+  touch "$repo_root/lefthook.yml"
+}
+
+lefthook_exec_hook() {
+  # 실제 hook 파일을 git이 실행하듯 돌린다. `lefthook run`을 직접 부르면 우리가 hook에 주입한
+  # --no-auto-install을 우회하게 되어 검증이 성립하지 않는다.
+  local repo_root="$1" hook_path="$2" home_dir
+  home_dir="$(dirname "$repo_root")/home"
+  (
+    cd "$repo_root"
+    export HOME="$home_dir"
+    export XDG_CONFIG_HOME="$home_dir/.config"
+    export GIT_CONFIG_GLOBAL=/dev/null
+    export GIT_CONFIG_NOSYSTEM=1
+    sh "$hook_path"
+  ) >/dev/null 2>&1
+}
+
+test_lefthook_auto_sync_cannot_drop_guard_end_to_end() {
+  # stub이 아닌 실제 lefthook으로, checksum이 stale한 상태에서 hook을 실행해도 guard가
+  # 살아남는지 확인한다. 대조군(플래그를 뗀 hook)이 실제로 guard를 잃는 것도 함께 보여,
+  # 이 테스트가 "lefthook이 원래 sync를 안 해서" 통과하는 착시가 아님을 보장한다.
+  # 수동 재현: `git commit` 직후 `.git/hooks/pre-commit`에서 guard 마커가 사라지는지 확인.
+  local sandbox repo_root stub_dir hook_path tmp_hook
+  if ! command -v lefthook >/dev/null 2>&1; then
+    fail "real lefthook binary not found on PATH; this suite runs inside the nix devShell"
+  fi
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"  # stub_dir는 PATH에 넣지 않는다
+
+  lefthook_install_real() {
+    (
+      cd "$repo_root"
+      export HOME="$sandbox/home"
+      export XDG_CONFIG_HOME="$sandbox/home/.config"
+      export GIT_CONFIG_GLOBAL=/dev/null
+      export GIT_CONFIG_NOSYSTEM=1
+      bash "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh"
+    ) >/dev/null 2>&1 || fail "real-lefthook install failed"
+  }
+
+  hook_path="$repo_root/.git/hooks/pre-commit"
+
+  # ── 대조군: 플래그를 제거하면 auto-sync가 guard를 지운다 ──
+  lefthook_install_real
+  grep -Fq "$LEFTHOOK_GUARD_BEGIN_MARKER" "$hook_path" || fail "guard missing right after install"
+  tmp_hook="$sandbox/hook.stripped"
+  sed "s| ${LEFTHOOK_NO_AUTO_INSTALL_FLAG} | |" "$hook_path" > "$tmp_hook"
+  cat "$tmp_hook" > "$hook_path"
+  chmod +x "$hook_path"
+  lefthook_make_checksum_stale "$repo_root"
+  lefthook_exec_hook "$repo_root" "$hook_path"
+  if grep -Fq "$LEFTHOOK_GUARD_BEGIN_MARKER" "$hook_path"; then
+    fail "control group: lefthook no longer auto-syncs on a stale checksum — the --no-auto-install injection may now be unnecessary; re-verify with 'lefthook run --help'"
+  fi
+
+  # ── 실험군: 플래그가 붙은 정상 hook은 같은 조건에서 guard를 지키다 ──
+  lefthook_install_real
+  assert_hook_call_line "$hook_path" "pre-commit"
+  lefthook_make_checksum_stale "$repo_root"
+  lefthook_exec_hook "$repo_root" "$hook_path"
+  grep -Fq "$LEFTHOOK_GUARD_BEGIN_MARKER" "$hook_path" \
+    || fail "auto-sync dropped the staged-config guard despite $LEFTHOOK_NO_AUTO_INSTALL_FLAG"
+  assert_hook_call_line "$hook_path" "pre-commit"
 }
