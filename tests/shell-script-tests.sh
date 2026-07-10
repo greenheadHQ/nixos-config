@@ -175,6 +175,10 @@ run_test "install-lefthook pins worktree-local hooks path in worktree mode" test
 run_test "install-lefthook injects --no-auto-install into every hook" test_install_lefthook_injects_no_auto_install_into_every_hook
 run_test "install-lefthook --no-auto-install injection is idempotent" test_install_lefthook_no_auto_install_injection_is_idempotent
 run_test "install-lefthook patches a stale unconfigured hook" test_install_lefthook_patches_stale_unconfigured_hook
+run_test "install-lefthook rejects a broken hook and keeps configured-hook flags" test_install_lefthook_rejects_hook_without_call_lefthook_definition
+run_test "install-lefthook warns but survives a broken post-* hook" test_install_lefthook_warns_but_survives_a_broken_post_hook
+run_test "install-lefthook exit-status-ignoring hooks are real git hooks" test_install_lefthook_exit_status_ignoring_hooks_are_known_git_hooks
+run_test "install-lefthook premise: bash -n accepts an undefined function call" test_install_lefthook_premise_bash_n_accepts_undefined_function_call
 run_test "install-lefthook leaves .old backup hooks untouched" test_install_lefthook_leaves_old_backup_hooks_untouched
 run_test "install-lefthook fails when lefthook call shape changes" test_install_lefthook_fails_when_lefthook_call_shape_changes
 run_test "install-lefthook fails on an unpatched second lefthook call" test_install_lefthook_fails_on_unpatched_second_call

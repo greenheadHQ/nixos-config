@@ -54,6 +54,24 @@ NO_AUTO_INSTALL_FLAG="--no-auto-install"
 # 한 줄로 유지한다 — tests/suites/lefthook.sh가 sed로 추출해 실제 hook 이름 판별에 재사용한다.
 GIT_HOOK_NAMES="applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit prepare-commit-msg commit-msg post-commit pre-rebase post-checkout post-merge pre-push pre-receive update proc-receive post-receive post-update reference-transaction push-to-checkout pre-auto-gc post-rewrite sendemail-validate fsmonitor-watchman p4-changelist p4-prepare-changelist p4-post-changelist p4-pre-submit post-index-change"
 
+# 위 목록 중 git이 exit status를 무시하는 hook. 이 hook이 깨져 exit 127로 죽어도 그 명령은 그대로
+# 성공하므로, installer는 실패 대신 경고만 낸다 — 아무것도 막지 못하는 파일 하나 때문에 direnv
+# 진입까지 막을 이유가 없다.
+#
+# 편입 기준 (`man githooks`, git 2.54): 그 항목이 "cannot affect the outcome of ..." 또는 "does not
+# affect the outcome" 서술을 갖고, **그 문장에 exit status 예외절이 붙지 않을 것.** 예외절이 붙는
+# 대표가 `post-checkout`이다 — "cannot affect the outcome of git switch or git checkout, *other than
+# that the hook's exit status becomes the exit status of these two commands*". 그래서 제외한다
+# (실측: 깨진 post-checkout에서 `git worktree add`가 exit 127을 낸다 — `wt`가 반쯤 만들어진 워크트리를
+# 남기고 죽는다). 아래 목록은 이 기준을 문서 전문에 기계적으로 적용한 결과다.
+#
+# 문서에 exit status 서술이 아예 없으면 넣지 않는다 (fail-closed). `post-rewrite`와 `post-index-change`가
+# 그렇다 — 실측으로는 무시되지만 문서 근거가 없어 단정하지 않는다.
+#
+# 기준은 "문서 근거가 있는가"이지 "이 저장소가 쓰는가"가 아니다. 이 집합은 git의 계약을 그대로 옮긴
+# 것이어야 하므로, 서버측 hook(post-update, post-receive)과 git-p4 hook(p4-post-changelist)도 포함한다.
+GIT_HOOK_NAMES_IGNORING_EXIT_STATUS="post-applypatch post-commit post-merge post-update post-receive p4-post-changelist"
+
 # 30 minutes — install itself runs in ~150ms; this guards against hung child
 # processes (NFS lock issues, OS bugs) rather than normal contention. Matches the
 # convention from modules/shared/scripts/lib/rebuild/locks.sh:198.
@@ -434,6 +452,40 @@ PY
     expected_call='call_lefthook run "'"$hook_name"'" '"$NO_AUTO_INSTALL_FLAG"' "$@"'
     if ! grep -Fxq -- "$expected_call" "$hook_file"; then
       fail "auto-install suppression failed: expected exact call line [$expected_call] in $hook_file"
+    fi
+    # (3) `call_lefthook()` 정의가 있어야 한다. 위 검사 셋 중 어느 것도 이것을 보지 않는다 —
+    # 정의되지 않은 함수를 부르는 문장은 셸 문법상 합법이라 `bash -n`을 통과하고(실측: exit 0),
+    # 호출부 형태만 맞으면 call_count·expected_call도 통과한다. 그런 hook은 git이 실행하는 순간
+    # `call_lefthook: command not found`로 exit 127을 내며 죽는다. 이 검사가 없으면 installer는
+    # 커밋을 막는 hook을 남겨 둔 채 성공을 보고한다 (#1073).
+    #
+    # 이 검사를 여기(python 패치 이후)에 두는 것이 중요하다. 앞으로 옮기는 두 대안은 서로 다른
+    # 이유로 더 나쁘다.
+    #   - 수집 루프(패치 이전, install 이후): 그 시점엔 run_lefthook_install이 configured hook을
+    #     순정 템플릿으로 다시 써서 `--no-auto-install`이 없는 상태다. 거기서 죽으면 플래그가 없는
+    #     채로 남고, lefthook.yml의 lefthook-guard-self-check가 그것을 커밋 차단으로 판정한다.
+    #   - run_lefthook_install 이전 preflight: `fail`이 즉시 exit하므로 install이 아예 돌지 않는다.
+    #     그러면 깨진 configured hook을 install이 다시 써서 고칠 기회를 빼앗는다 (실측: lefthook은
+    #     그 파일을 <name>.old로 밀고 새로 써서 preamble을 복구한다 — 단 <name>.old가 이미 있으면
+    #     rename에 실패해 그 복구도 죽는다). 그 hook은 깨진 채 남고 커밋이 계속 막힌다.
+    # 여기서는 패치가 끝나 플래그가 살아 있고, configured hook은 install이 이미 고친 뒤다.
+    #
+    # 이 배치를 지키는 것은 이 주석뿐이다. 아래 테스트는 검사를 preflight로 옮겨도 통과한다 —
+    # 1회차 install이 심은 플래그가 그대로 남아 "실패 후에도 플래그가 살아 있다"는 단언이 성립한다.
+    #
+    # expected_call 뒤에 두는 것도 의도다. 주석에서 `call_lefthook run `을 언급할 뿐인 남의 hook은
+    # 그 검사에서 먼저 걸려, "정의가 없다"는 엉뚱한 진단을 받지 않는다.
+    if ! grep -Eq '^[[:space:]]*call_lefthook[[:space:]]*\(\)' "$hook_file"; then
+      case " $GIT_HOOK_NAMES_IGNORING_EXIT_STATUS " in
+        *" $hook_name "*)
+          # git이 이 hook의 exit status를 무시하므로 커밋·push는 막히지 않는다. 알리되 멈추지 않는다.
+          echo "install-lefthook-hooks: warning: $hook_file has no call_lefthook() definition and dies with exit 127 when git runs it." >&2
+          echo "  git ignores this hook's exit status, so commits still work. Delete the file if lefthook.yml no longer defines this hook." >&2
+          ;;
+        *)
+          fail "broken hook: no call_lefthook() definition (git would fail it with exit 127; delete the file if lefthook.yml no longer defines this hook): $hook_file"
+          ;;
+      esac
     fi
   done
 }
