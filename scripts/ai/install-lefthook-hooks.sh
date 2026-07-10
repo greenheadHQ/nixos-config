@@ -49,6 +49,11 @@ END_MARKER="# END nixos-config lefthook staged-config guard"
 # 플래그 존재 재확인: `lefthook run --help | grep -- --no-auto-install` (lefthook 2.1.5 기준).
 NO_AUTO_INSTALL_FLAG="--no-auto-install"
 
+# git이 인정하는 hook 이름. configured_hooks가 lefthook.yml의 top-level 키에서 hook만 골라낼 때
+# 쓴다 (전역 옵션 키를 hook으로 오인하지 않도록). 목록 출처: `man githooks` (git 2.x).
+# 한 줄로 유지한다 — tests/suites/lefthook.sh가 sed로 추출해 실제 hook 이름 판별에 재사용한다.
+GIT_HOOK_NAMES="applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit prepare-commit-msg commit-msg post-commit pre-rebase post-checkout post-merge pre-push pre-receive update proc-receive post-receive post-update reference-transaction push-to-checkout pre-auto-gc post-rewrite sendemail-validate fsmonitor-watchman p4-changelist p4-prepare-changelist p4-post-changelist p4-pre-submit post-index-change"
+
 
 # 30 minutes — install itself runs in ~150ms; this guards against hung child
 # processes (NFS lock issues, OS bugs) rather than normal contention. Matches the
@@ -441,11 +446,20 @@ require_canonical_lefthook_config() {
 }
 
 configured_hooks() {
-  # lefthook.yml이 정의한 top-level hook 이름. 파싱 방식은 check-lefthook-staged-config.sh의
-  # allowed_top_level 검사와 같다. 설정 파일이 없으면 아무것도 출력하지 않는다.
+  # lefthook.yml이 정의한 top-level 키 중 실제 git hook 이름만 고른다. lefthook config의
+  # top-level에는 hook 외에 전역 옵션(`colors`, `skip_output`, `min_version`, `remotes` 등)도
+  # 올 수 있는데, 그것을 hook으로 오인하면 아래 호출부가 `.git/hooks/colors`를 찾다가
+  # "expected hook not installed"로 install을 막아 버린다 (실측: `colors: false` 한 줄로 재현).
+  # 현재 저장소는 세 hook만 쓰지만, 전역 옵션을 추가하는 순간 direnv 진입이 깨지는 잠복 결함이었다.
   # require_canonical_lefthook_config가 LEFTHOOK_CONFIG를 이 파일로 고정해 둔다.
   [ -f "$repo_root/lefthook.yml" ] || return 0
-  awk '/^[A-Za-z0-9_.-]+:/ { sub(/:$/, "", $1); print $1 }' "$repo_root/lefthook.yml"
+  awk -v known=" $GIT_HOOK_NAMES " '
+    /^[A-Za-z0-9_.-]+:/ {
+      name = $1
+      sub(/:$/, "", name)
+      if (index(known, " " name " ") > 0) print name
+    }
+  ' "$repo_root/lefthook.yml"
 }
 
 refuse_symlinked_hooks() {

@@ -19,9 +19,23 @@
 LEFTHOOK_GUARD_BEGIN_MARKER=$(sed -n 's/^BEGIN_MARKER="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
 LEFTHOOK_GUARD_END_MARKER=$(sed -n 's/^END_MARKER="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
 LEFTHOOK_NO_AUTO_INSTALL_FLAG=$(sed -n 's/^NO_AUTO_INSTALL_FLAG="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
+LEFTHOOK_GIT_HOOK_NAMES=$(sed -n 's/^GIT_HOOK_NAMES="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
 [[ -n "$LEFTHOOK_GUARD_BEGIN_MARKER" ]] || fail "could not extract BEGIN_MARKER from install-lefthook-hooks.sh"
 [[ -n "$LEFTHOOK_GUARD_END_MARKER" ]] || fail "could not extract END_MARKER from install-lefthook-hooks.sh"
 [[ -n "$LEFTHOOK_NO_AUTO_INSTALL_FLAG" ]] || fail "could not extract NO_AUTO_INSTALL_FLAG from install-lefthook-hooks.sh"
+[[ -n "$LEFTHOOK_GIT_HOOK_NAMES" ]] || fail "could not extract GIT_HOOK_NAMES from install-lefthook-hooks.sh"
+
+lefthook_config_hook_names() {
+  # installer의 configured_hooks와 같은 방식으로 lefthook.yml에서 hook 이름만 뽑는다
+  # (전역 옵션 키 제외). GIT_HOOK_NAMES는 installer에서 추출해 재사용한다.
+  awk -v known=" $LEFTHOOK_GIT_HOOK_NAMES " '
+    /^[A-Za-z0-9_.-]+:/ {
+      name = $1
+      sub(/:$/, "", name)
+      if (index(known, " " name " ") > 0) { printf "%s%s", sep, name; sep = " " }
+    }
+  ' "$1"
+}
 
 extract_self_check_run_body() {
   # lefthook.yml의 <top-level hook>.commands.lefthook-guard-self-check 의 `run: |` 본문만 뽑는다.
@@ -98,27 +112,29 @@ YML
 write_install_lefthook_stub() {
   # 두 fixture 생성기가 공유하는 lefthook stub. install 동작을 한 곳에서만 정의해
   # 호출 형태나 hook 집합을 바꿀 때 한쪽만 고치는 사고를 막는다.
-  cat > "$1/lefthook" <<'STUB'
+  # 실제 CLI처럼 lefthook.yml에서 hook 이름을 읽되, 전역 옵션 키(`colors` 등)는 건너뛴다.
+  cat > "$1/lefthook" <<STUB
 #!/usr/bin/env bash
-# stub for install-lefthook-hooks shell tests: emulate `lefthook install` by writing every
-# hook configured in lefthook.yml, each containing the `call_lefthook run "<hook>" "$@"`
+# stub for install-lefthook-hooks shell tests: emulate \`lefthook install\` by writing every
+# hook configured in lefthook.yml, each containing the \`call_lefthook run "<hook>" "\$@"\`
 # marker expected by inject_staged_guard and disable_lefthook_auto_install. Hook names come
-# from the config (like the real CLI), so fixtures and assertions cannot drift apart.
-# The stub also tolerates --force (worktree mode passes it). Silent on success to mirror
-# the real CLI output we strip.
+# from the config (like the real CLI) and global option keys are skipped, so fixtures and
+# assertions cannot drift apart. The stub also tolerates --force (worktree mode passes it).
+# Silent on success to mirror the real CLI output we strip.
 set -euo pipefail
-case "${1:-}" in
+known=" $LEFTHOOK_GIT_HOOK_NAMES "
+case "\${1:-}" in
   install)
-    cd "$(git rev-parse --show-toplevel)"
-    hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
-    mkdir -p "$hooks_dir"
-    for hook in $(awk '/^[A-Za-z0-9_.-]+:/ { sub(/:$/, "", $1); print $1 }' lefthook.yml); do
-      printf '#!/bin/sh\ncall_lefthook run "%s" "$@"\n' "$hook" > "$hooks_dir/$hook"
-      chmod +x "$hooks_dir/$hook"
+    cd "\$(git rev-parse --show-toplevel)"
+    hooks_dir="\$(git rev-parse --path-format=absolute --git-path hooks)"
+    mkdir -p "\$hooks_dir"
+    for hook in \$(awk -v known="\$known" '/^[A-Za-z0-9_.-]+:/ { name = \$1; sub(/:\$/, "", name); if (index(known, " " name " ") > 0) print name }' lefthook.yml); do
+      printf '#!/bin/sh\ncall_lefthook run "%s" "\$@"\n' "\$hook" > "\$hooks_dir/\$hook"
+      chmod +x "\$hooks_dir/\$hook"
     done
     ;;
   *)
-    echo "stub lefthook: unsupported command: ${1:-}" >&2
+    echo "stub lefthook: unsupported command: \${1:-}" >&2
     exit 1
     ;;
 esac
@@ -561,12 +577,35 @@ test_lefthook_self_check_hook_list_matches_config() {
   # self-check가 순회하는 hook 목록은 lefthook.yml이 정의한 hook 집합과 같아야 한다.
   # auto-install을 껐으므로 목록이 어긋나면 설치되지 않은 hook의 게이트가 조용히 사라진다.
   local from_config from_self_check
-  from_config=$(awk '/^[A-Za-z0-9_.-]+:/ { sub(/:$/, "", $1); printf "%s%s", sep, $1; sep = " " }' "$REPO_ROOT/lefthook.yml")
+  from_config=$(lefthook_config_hook_names "$REPO_ROOT/lefthook.yml")
   from_self_check=$(extract_self_check_run_body "pre-commit" | sed -n 's/^ *for hook_name in \(.*\); do$/\1/p')
 
   [[ -n "$from_self_check" ]] || fail "could not extract the hook list from lefthook.yml self-check"
   [[ "$from_config" == "$from_self_check" ]] \
     || fail "hook list drift: lefthook.yml self-check iterates [$from_self_check], but lefthook.yml defines [$from_config]"
+}
+
+test_install_lefthook_ignores_global_config_keys() {
+  # lefthook.yml의 top-level에는 hook 외에 전역 옵션(`colors`, `skip_output` 등)도 올 수 있다.
+  # 그것을 hook 이름으로 오인하면 `.git/hooks/colors`를 찾다가 install이 막힌다.
+  local sandbox repo_root stub_dir
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  # 기존 fixture config 앞에 전역 옵션 키를 얹는다.
+  {
+    printf 'colors: false\nmin_version: 2.0.0\nskip_output:\n  - meta\n'
+    cat "$repo_root/lefthook.yml"
+  } > "$repo_root/lefthook.yml.new"
+  mv "$repo_root/lefthook.yml.new" "$repo_root/lefthook.yml"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] \
+    || fail "global lefthook.yml keys must not be treated as hooks; output: $INSTALL_LEFTHOOK_OUTPUT"
+  [[ ! -e "$repo_root/.git/hooks/colors" ]] || fail "a global config key was installed as a hook file"
+  assert_hook_call_line "$repo_root/.git/hooks/pre-commit" "pre-commit"
 }
 
 test_lefthook_self_check_bodies_stay_in_sync() {
