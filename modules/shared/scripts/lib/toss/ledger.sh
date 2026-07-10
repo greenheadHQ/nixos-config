@@ -84,8 +84,10 @@ toss_ledger_build_record() {
 
   local now request_json response_json
   now="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-  request_json="$(jq -c '.request.body // null' <<<"$input" | toss_ledger_redact_json 2>/dev/null || echo 'null')"
-  response_json="$(jq -c '.response.body // null' <<<"$input" | toss_ledger_redact_json 2>/dev/null || echo 'null')"
+  # `// null`은 jq에서 false도 fallback으로 취급해 정상 JSON boolean false를 null로
+  # 강등시킨다. 필드가 없으면 jq가 자연히 null을 내므로 alternative를 쓰지 않는다.
+  request_json="$(jq -c '.request.body' <<<"$input" | toss_ledger_redact_json 2>/dev/null || echo 'null')"
+  response_json="$(jq -c '.response.body' <<<"$input" | toss_ledger_redact_json 2>/dev/null || echo 'null')"
 
   # 주문 body/응답이 jq argv(ps 노출면)에 오르지 않도록 stdin JSON stream으로 전달한다.
   printf '%s\n%s\n%s\n' "$input" "$request_json" "$response_json" | jq -cs \
@@ -93,6 +95,7 @@ toss_ledger_build_record() {
       .[0] as $input | .[1] as $request | .[2] as $response_body
       | {
         timestamp: $ts,
+        invocationId: $input.request.invocationId,
         phase: $input.phase,
         dryRun: ($input.dryRun == true),
         request: {
@@ -103,6 +106,7 @@ toss_ledger_build_record() {
           matchedPath: $input.request.metadata.matchedPath,
           operationId: $input.request.metadata.operationId,
           requiresOrderSafeguards: $input.request.metadata.requiresOrderSafeguards,
+          bodyProvided: ($input.request.bodyProvided == true),
           body: $request
         },
         response: {
@@ -123,10 +127,14 @@ toss_ledger_build_record() {
 
 # 안전장치 대상 호출의 성공 알림(보상 통제) 결과를 원장에 남긴다.
 # 알림 실패가 조용히 유실되면 운영자가 미전송을 모르므로 sent/failed-*를 기록한다.
+# invocationId·accountSeq를 response record와 공유해, 동일 method/path 주문이 동시
+# 실행돼도 어느 호출의 알림 결과인지 상관지을 수 있다.
 toss_ledger_record_notification() {
   local method="$1"
   local path="$2"
   local status="$3"
+  local invocation_id="${4:-}"
+  local account_seq="${5:-}"
   local now record
 
   now="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -136,7 +144,19 @@ toss_ledger_record_notification() {
       --arg method "$method" \
       --arg path "$path" \
       --arg status "$status" \
-      '{timestamp: $ts, phase: "notify", notificationStatus: $status, request: {method: $method, path: $path}}'
+      --arg invocationId "$invocation_id" \
+      --arg accountSeq "$account_seq" \
+      '{
+        timestamp: $ts,
+        invocationId: (if $invocationId == "" then null else $invocationId end),
+        phase: "notify",
+        notificationStatus: $status,
+        request: {
+          method: $method,
+          path: $path,
+          accountSeq: (if $accountSeq == "" then null else $accountSeq end)
+        }
+      }'
   )" || {
     toss_ledger_warn_write_failed "build notification record"
     return 0

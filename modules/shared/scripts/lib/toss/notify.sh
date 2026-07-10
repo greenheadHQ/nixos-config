@@ -26,6 +26,7 @@ toss_notify_safeguarded_api_success() {
   local path="$3"
   local account_seq="$4"
   local http_status="$5"
+  local invocation_id="${6:-}"
 
   toss_notify_enabled "$no_notify" || return 0
 
@@ -35,19 +36,19 @@ toss_notify_safeguarded_api_success() {
 
   if [ ! -r "$helper" ]; then
     toss_notify_warn_not_sent "pushover helper not readable: $helper"
-    toss_ledger_record_notification "$method" "$path" "failed-helper-missing"
+    toss_ledger_record_notification "$method" "$path" "failed-helper-missing" "$invocation_id" "$account_seq"
     return 0
   fi
   if [ ! -r "$cred_file" ]; then
     toss_notify_warn_not_sent "pushover credential file not readable: $cred_file"
-    toss_ledger_record_notification "$method" "$path" "failed-credentials-missing"
+    toss_ledger_record_notification "$method" "$path" "failed-credentials-missing" "$invocation_id" "$account_seq"
     return 0
   fi
 
   # shellcheck source=/dev/null
   if ! source "$helper" 2>/dev/null; then
     toss_notify_warn_not_sent "failed to source pushover helper: $helper"
-    toss_ledger_record_notification "$method" "$path" "failed-helper-source"
+    toss_ledger_record_notification "$method" "$path" "failed-helper-source" "$invocation_id" "$account_seq"
     return 0
   fi
 
@@ -59,10 +60,10 @@ toss_notify_safeguarded_api_success() {
   fi
 
   if pushover_send "$cred_file" "Toss safeguarded API success" "$message" 0; then
-    toss_ledger_record_notification "$method" "$path" "sent"
+    toss_ledger_record_notification "$method" "$path" "sent" "$invocation_id" "$account_seq"
   else
     toss_notify_warn_not_sent "pushover_send failed"
-    toss_ledger_record_notification "$method" "$path" "failed-send"
+    toss_ledger_record_notification "$method" "$path" "failed-send" "$invocation_id" "$account_seq"
   fi
   return 0
 }

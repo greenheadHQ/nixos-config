@@ -42,9 +42,13 @@ toss_metadata_value() {
   jq -r --arg key "$key" '.[$key] // empty' <<<"$metadata"
 }
 
+# `jq -c .`는 JSON 값 0개(공백)와 2개 이상인 stream도 성공 처리하므로, 정확히 값 1개일
+# 때만 통과시킨다. 값 2개를 허용하면 live data-binary에는 두 문서가 전송되는데
+# request context/dry-run/ledger에는 첫 문서만 남아 감사 흔적과 실제 전송이 어긋난다.
 toss_validate_json_body() {
   local raw="$1"
-  jq -c . <<<"$raw"
+  printf '%s' "$raw" | jq -es 'length == 1' >/dev/null 2>&1 || return 1
+  printf '%s' "$raw" | jq -cs '.[0]'
 }
 
 toss_ledger_raw_response_max_chars() {
@@ -88,29 +92,34 @@ toss_ledger_response_body_json() {
 
 toss_api_dry_run_output() {
   local method="$1"
-  local url="$2"
+  local display_url="$2"
   local metadata="$3"
   local account_seq="$4"
   local body_json="$5"
-  local redacted_body
+  local body_provided="$6"
+  local redacted_body url_json
   redacted_body="$(jq -c . <<<"$body_json" | toss_ledger_redact_json 2>/dev/null || echo 'null')"
+  url_json="$(printf '%s' "$display_url" | jq -Rs .)"
 
-  # 주문 body가 jq argv(ps 노출면)에 오르지 않도록 stdin JSON stream으로 전달한다.
-  printf '%s\n%s\n' "$metadata" "$redacted_body" | jq -s \
+  # display_url은 query가 sanitize된 표시용 URL이다 (실제 요청 URL과 별개).
+  # url·body 모두 jq argv(ps 노출면)에 오르지 않도록 stdin JSON stream으로 전달한다.
+  printf '%s\n%s\n%s\n' "$metadata" "$redacted_body" "$url_json" | jq -s \
     --arg method "$method" \
-    --arg url "$url" \
-    --arg accountSeq "$account_seq" '
-      .[0] as $metadata | .[1] as $body
+    --arg accountSeq "$account_seq" \
+    --arg bodyProvided "$body_provided" '
+      .[0] as $metadata | .[1] as $body | .[2] as $displayUrl
+      | ($bodyProvided == "1") as $hasBody
       | {
         dryRun: true,
         method: $method,
-        url: $url,
+        url: $displayUrl,
         headers: (
           ["Authorization: <redacted>", "Accept: application/json"]
           + (if $accountSeq == "" then [] else ["X-Tossinvest-Account: <redacted>"] end)
-          + (if $body == null then [] else ["Content-Type: application/json"] end)
+          + (if $hasBody then ["Content-Type: application/json"] else [] end)
         ),
-        body: $body,
+        bodyProvided: $hasBody,
+        body: (if $hasBody then $body else null end),
         metadata: {
           status: $metadata.metadataStatus,
           matchedPath: $metadata.matchedPath,
@@ -129,7 +138,8 @@ toss_api_call_once() (
   local token="$3"
   local account_seq="$4"
   local body_json="$5"
-  local response_file="$6"
+  local body_provided="$6"
+  local response_file="$7"
 
   local config_file body_file
   body_file=""
@@ -146,7 +156,8 @@ toss_api_call_once() (
   if [ -n "$account_seq" ]; then
     toss_curl_config_append "$config_file" "header" "X-Tossinvest-Account: $account_seq"
   fi
-  if [ "$body_json" != "null" ]; then
+  # 명시적 `--data null`(body_json="null", body_provided=1)과 body 미제공을 구분한다.
+  if [ "$body_provided" = "1" ]; then
     body_file="$(toss_private_tmpfile "toss-api-body")"
     toss_write_private_tempfile "$body_file" "$body_json"
     toss_curl_config_append "$config_file" "header" "Content-Type: application/json"
@@ -174,14 +185,25 @@ toss_call_result_curl_exit() {
   jq -er '.curlExit | tostring' <<<"$1"
 }
 
+# 재시도는 같은 요청(주문 mutation 포함)을 재전송하므로 side effect가 이미 성공한
+# 2xx 응답에는 절대 트리거되면 안 된다 (이중 주문). vendored OpenAPI 기준으로도
+# 인증 실패는 401 UNAUTHORIZED이고 body code는 `invalid-token`/`expired-token`이며,
+# `invalid_token`(underscore)은 WWW-Authenticate 헤더의 error 파라미터 표기다.
+# 따라서 2xx는 즉시 제외하고, 401은 status로, 그 외 non-2xx(400/403 등 거부 응답,
+# side effect 없음)는 body code로 판정한다.
 toss_response_is_invalid_token() {
   local http_status="$1"
   local response_file="$2"
+
+  case "$http_status" in
+    2??) return 1 ;;
+  esac
+
   [ "$http_status" = "401" ] && return 0
   [ -s "$response_file" ] || return 1
   jq -e '
     [.. | objects | (.error? // .code? // empty) | tostring]
-    | any(test("invalid_token"; "i"))
+    | any(test("(invalid|expired)[-_]token"; "i"))
   ' "$response_file" >/dev/null 2>&1
 }
 
@@ -245,12 +267,21 @@ toss_api_reject_auth_endpoint() {
   return 2
 }
 
+# 한 번의 toss api 호출을 식별하는 correlation ID. response record와 notify record가
+# 같은 값을 공유해야 동일 method/path 주문이 동시 실행돼도 어느 주문의 알림 실패인지
+# 판별할 수 있다. 감사 흔적 상관용이며 보안 강도를 요구하지 않는다.
+toss_new_invocation_id() {
+  printf '%s-%s-%s\n' "$(date -u '+%Y%m%dT%H%M%SZ')" "$$" "${RANDOM:-0}${RANDOM:-0}"
+}
+
 toss_api_request_context() {
   local method="$1"
   local path="$2"
   local account_seq="$3"
   local metadata="$4"
   local body_json="$5"
+  local body_provided="$6"
+  local invocation_id="$7"
 
   # request_context는 ledger/알림 전용이므로 path의 query를 여기서 sanitize한다
   # (실제 요청 URL은 raw path로 별도 구성). body는 jq argv에 오르지 않게 stdin으로.
@@ -260,13 +291,17 @@ toss_api_request_context() {
   printf '%s\n%s\n' "$metadata" "$body_json" | jq -cs \
     --arg method "$method" \
     --arg path "$sanitized_path" \
-    --arg accountSeq "$account_seq" '
+    --arg accountSeq "$account_seq" \
+    --arg bodyProvided "$body_provided" \
+    --arg invocationId "$invocation_id" '
       {
+        invocationId: $invocationId,
         method: $method,
         path: $path,
         accountSeq: (if $accountSeq == "" then null else $accountSeq end),
         metadata: .[0],
-        body: .[1]
+        bodyProvided: ($bodyProvided == "1"),
+        body: (if $bodyProvided == "1" then .[1] else null end)
       }
     '
 }
@@ -333,18 +368,25 @@ toss_record_response_ledger() {
 }
 
 toss_api_handle_dry_run() {
-  local url="$1"
-  local requires_order_safeguards="$2"
-  local request_context="$3"
-  local method path account_seq metadata body_json
+  local requires_order_safeguards="$1"
+  local request_context="$2"
+  local method path account_seq metadata body_json body_provided display_url
 
   method="$(jq -r '.method' <<<"$request_context")"
+  # context의 path는 이미 query가 sanitize되어 있으므로 dry-run 표시 URL에도
+  # raw query secret이 실리지 않는다 (실제 요청 URL은 별도 raw path로 구성).
   path="$(jq -r '.path' <<<"$request_context")"
   account_seq="$(jq -r '.accountSeq // ""' <<<"$request_context")"
   metadata="$(jq -c '.metadata' <<<"$request_context")"
   body_json="$(jq -c '.body' <<<"$request_context")"
+  if jq -e '.bodyProvided == true' <<<"$request_context" >/dev/null 2>&1; then
+    body_provided=1
+  else
+    body_provided=0
+  fi
+  display_url="$TOSS_API_BASE_URL$path"
 
-  toss_api_dry_run_output "$method" "$url" "$metadata" "$account_seq" "$body_json"
+  toss_api_dry_run_output "$method" "$display_url" "$metadata" "$account_seq" "$body_json" "$body_provided"
   if [ "$requires_order_safeguards" = "1" ]; then
     toss_record_dry_run_ledger "$request_context"
   fi
@@ -355,21 +397,20 @@ toss_call_with_single_token_retry() {
   local url="$2"
   local account_seq="$3"
   local body_json="$4"
-  local response_file="$5"
-  local token call_result http_status curl_exit
+  local body_provided="$5"
+  local response_file="$6"
+  local token call_result http_status
 
   token="$(toss_get_access_token 0)"
-  call_result="$(toss_api_call_once "$method" "$url" "$token" "$account_seq" "$body_json" "$response_file")"
+  call_result="$(toss_api_call_once "$method" "$url" "$token" "$account_seq" "$body_json" "$body_provided" "$response_file")"
   http_status="$(toss_call_result_http_status "$call_result")"
-  curl_exit="$(toss_call_result_curl_exit "$call_result")"
 
   if toss_response_is_invalid_token "$http_status" "$response_file"; then
     # CAS 갱신: 다른 프로세스가 이미 갱신한 token을 재삭제·재발급(상호 무효화)하지 않는다.
     token="$(toss_refresh_token_after_auth_failure "$token")"
     : >"$response_file"
-    call_result="$(toss_api_call_once "$method" "$url" "$token" "$account_seq" "$body_json" "$response_file")"
-    http_status="$(toss_call_result_http_status "$call_result")"
-    curl_exit="$(toss_call_result_curl_exit "$call_result")"
+    rm -f "$response_file.headers" 2>/dev/null || true
+    call_result="$(toss_api_call_once "$method" "$url" "$token" "$account_seq" "$body_json" "$body_provided" "$response_file")"
   fi
 
   printf '%s\n' "$call_result"
@@ -430,13 +471,14 @@ toss_notify_safeguarded_api_success_for_context() {
   local requires_order_safeguards="$2"
   local no_notify="$3"
   local http_status="$4"
-  local method path account_seq
+  local method path account_seq invocation_id
 
   [ "$requires_order_safeguards" = "1" ] || return 0
   method="$(jq -r '.method' <<<"$request_context")"
   path="$(jq -r '.path' <<<"$request_context")"
   account_seq="$(jq -r '.accountSeq // ""' <<<"$request_context")"
-  toss_notify_safeguarded_api_success "$no_notify" "$method" "$path" "$account_seq" "$http_status"
+  invocation_id="$(jq -r '.invocationId // ""' <<<"$request_context")"
+  toss_notify_safeguarded_api_success "$no_notify" "$method" "$path" "$account_seq" "$http_status" "$invocation_id"
 }
 
 toss_api_execute() {
@@ -444,8 +486,9 @@ toss_api_execute() {
   local path="$2"
   local account_arg="$3"
   local body_json="$4"
-  local dry_run="$5"
-  local no_notify="$6"
+  local body_provided="$5"
+  local dry_run="$6"
+  local no_notify="$7"
 
   # origin-relative 강제: 선행 '/' 없는 PATH는 base URL과 결합 시 userinfo(@) 등으로
   # 호스트가 바뀔 수 있고, curl glob과 결합하면 의도치 않은 다중 요청이 된다.
@@ -464,16 +507,17 @@ toss_api_execute() {
     return 2
   fi
 
-  local requires_order_safeguards account_seq request_context
+  local requires_order_safeguards account_seq request_context invocation_id
   requires_order_safeguards="$(toss_api_requires_order_safeguards "$metadata")"
   account_seq="$(toss_resolve_account "$metadata" "$account_arg")" || return 1
-  request_context="$(toss_api_request_context "$method" "$path" "$account_seq" "$metadata" "$body_json")"
+  invocation_id="$(toss_new_invocation_id)"
+  request_context="$(toss_api_request_context "$method" "$path" "$account_seq" "$metadata" "$body_json" "$body_provided" "$invocation_id")"
 
   toss_preflight_network_context "$requires_order_safeguards" "$dry_run" || return 1
 
   local url="$TOSS_API_BASE_URL$path"
   if [ "$dry_run" = "1" ]; then
-    toss_api_handle_dry_run "$url" "$requires_order_safeguards" "$request_context"
+    toss_api_handle_dry_run "$requires_order_safeguards" "$request_context"
     return 0
   fi
 
@@ -488,7 +532,7 @@ toss_api_execute() {
   trap 'toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"; exit 143' TERM
   response_file="$tmp_dir/response.json"
 
-  call_result="$(toss_call_with_single_token_retry "$method" "$url" "$account_seq" "$body_json" "$response_file")" || {
+  call_result="$(toss_call_with_single_token_retry "$method" "$url" "$account_seq" "$body_json" "$body_provided" "$response_file")" || {
     rc=$?
     toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"
     return "$rc"
@@ -529,6 +573,7 @@ toss_cmd_api() {
 
   local account_arg=""
   local data_arg=""
+  local body_provided=0
   local dry_run=0
   local no_notify=0
 
@@ -542,6 +587,7 @@ toss_cmd_api() {
       --data)
         [ "$#" -ge 2 ] || { echo "error: --data requires a JSON value" >&2; return 2; }
         data_arg="$2"
+        body_provided=1
         shift 2
         ;;
       --dry-run)
@@ -564,14 +610,14 @@ toss_cmd_api() {
   done
 
   local body_json="null"
-  if [ -n "$data_arg" ]; then
+  if [ "$body_provided" = "1" ]; then
     body_json="$(toss_validate_json_body "$data_arg")" || {
-      echo "error: --data must be valid JSON" >&2
+      echo "error: --data must be exactly one valid JSON value" >&2
       return 2
     }
   fi
 
-  toss_api_execute "$method" "$path" "$account_arg" "$body_json" "$dry_run" "$no_notify"
+  toss_api_execute "$method" "$path" "$account_arg" "$body_json" "$body_provided" "$dry_run" "$no_notify"
 }
 
 toss_cmd_accounts() {
@@ -589,7 +635,7 @@ toss_cmd_accounts() {
   fi
 
   local response
-  response="$(toss_api_execute "GET" "/api/v1/accounts" "" "null" "0" "1")"
+  response="$(toss_api_execute "GET" "/api/v1/accounts" "" "null" "0" "0" "1")"
   printf '%s\n' "$response"
 
   local account_seq

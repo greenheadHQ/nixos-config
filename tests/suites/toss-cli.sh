@@ -85,6 +85,9 @@ case "${TOSS_TEST_RESPONSE_KIND:-json}" in
   multi-json)
     printf '1\n2' > "$output_path"
     ;;
+  false-body)
+    printf 'false' > "$output_path"
+    ;;
   retry-401)
     if [ "$api_count" = "1" ]; then
       printf '{"error":"invalid_token"}' > "$output_path"
@@ -94,12 +97,17 @@ case "${TOSS_TEST_RESPONSE_KIND:-json}" in
     printf '{"ok":true}' > "$output_path"
     ;;
   retry-nested-invalid-token)
+    # 인증 실패는 non-2xx(여기선 403)로 오고, body code는 vendored 스펙 표기인 hyphen형.
     if [ "$api_count" = "1" ]; then
-      printf '{"error":"invalid_token","nested":{"code":"still_valid"}}' > "$output_path"
-      printf '200'
+      printf '{"error":{"code":"some-error"},"nested":{"code":"invalid-token"}}' > "$output_path"
+      printf '403'
       exit 0
     fi
     printf '{"ok":true}' > "$output_path"
+    ;;
+  ok-200-with-invalid-token-body)
+    # 2xx는 side effect가 이미 성공했으므로 body에 invalid_token이 있어도 재시도 금지.
+    printf '{"ok":true,"error":"invalid_token","nested":{"code":"invalid-token"}}' > "$output_path"
     ;;
   *)
     echo "unknown TOSS_TEST_RESPONSE_KIND" >&2
@@ -124,6 +132,23 @@ _run_toss_order_api_fixture() {
     TOSS_NOTIFY=0 \
     TOSS_TEST_RESPONSE_KIND="$response_kind" \
     TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$stdout_path"
+}
+
+_run_toss_order_api_fixture_with_count() {
+  local sandbox="$1"
+  local response_kind="$2"
+  local stdout_path="$3"
+
+  HOME="$sandbox/home" \
+  PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND="$response_kind" \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_TEST_API_COUNT_FILE="$sandbox/api.count" \
     TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
     "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$stdout_path"
 }
@@ -672,6 +697,125 @@ test_toss_preflight_blocks_active_exit_node() {
   [ "$rc" != "0" ] || fail "expected active exit node to block safeguarded call"
   stderr="$(cat "$sandbox/stderr")"
   assert_contains "$stderr" "exit node appears to be ON"
+}
+
+test_toss_api_does_not_retry_on_2xx_invalid_token_body() {
+  local sandbox api_calls
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # 200 응답은 주문 side effect가 이미 성공한 상태다. body에 invalid_token substring이
+  # 있다고 같은 POST를 재전송하면 이중 주문이 된다.
+  _run_toss_order_api_fixture_with_count "$sandbox" ok-200-with-invalid-token-body "$sandbox/stdout"
+
+  api_calls="$(cat "$sandbox/api.count")"
+  [ "$api_calls" = "1" ] || fail "expected no retry on 2xx invalid_token body (double-order risk), got api calls: $api_calls"
+}
+
+test_toss_api_rejects_multi_document_data() {
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  set +e
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 \
+      --data "$(printf '{"quantity":1}\n{"quantity":999}')" > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" = "2" ] || fail "expected multi-document --data rejection rc=2, got: $rc"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "exactly one valid JSON value"
+  [ ! -e "$sandbox/curl.config" ] || fail "multi-document --data must be rejected before any request"
+}
+
+test_toss_api_dry_run_distinguishes_explicit_null_body() {
+  local sandbox with_null without_body
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+
+  HOME="$sandbox/home" TOSS_NOTIFY=0 \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data null --dry-run > "$sandbox/with-null"
+  HOME="$sandbox/home" TOSS_NOTIFY=0 \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --dry-run > "$sandbox/without-body"
+
+  with_null="$(jq -c '{bodyProvided, body, hasContentType: (.headers | index("Content-Type: application/json") != null)}' "$sandbox/with-null")"
+  without_body="$(jq -c '{bodyProvided, body, hasContentType: (.headers | index("Content-Type: application/json") != null)}' "$sandbox/without-body")"
+
+  [ "$with_null" = '{"bodyProvided":true,"body":null,"hasContentType":true}' ] \
+    || fail "expected explicit --data null to be sent as a body, got: $with_null"
+  [ "$without_body" = '{"bodyProvided":false,"body":null,"hasContentType":false}' ] \
+    || fail "expected omitted body to send no Content-Type, got: $without_body"
+}
+
+test_toss_api_dry_run_sanitizes_query_in_url() {
+  local sandbox url
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+
+  HOME="$sandbox/home" TOSS_NOTIFY=0 \
+    "$(_toss_cli_script "$sandbox")" api POST '/api/v1/orders?access_token=QUERYSECRET' --account ACC123 --dry-run > "$sandbox/stdout"
+
+  url="$(jq -r '.url' "$sandbox/stdout")"
+  assert_contains "$url" '/api/v1/orders?<redacted>'
+  assert_not_contains "$(cat "$sandbox/stdout")" "QUERYSECRET"
+}
+
+test_toss_ledger_preserves_boolean_false_bodies() {
+  local sandbox request_body response_body
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND=false-body \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data false > "$sandbox/stdout"
+
+  request_body="$(jq -c '.request.body' "$sandbox/orders.jsonl")"
+  response_body="$(jq -c '.response.body' "$sandbox/orders.jsonl")"
+  [ "$request_body" = "false" ] || fail "expected JSON false request body to survive the ledger, got: $request_body"
+  [ "$response_body" = "false" ] || fail "expected JSON false response body to survive the ledger, got: $response_body"
+}
+
+test_toss_notify_record_shares_invocation_id_with_response() {
+  local sandbox response_id notify_id
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_PUSHOVER_HELPER="$sandbox/nonexistent-pushover.sh" \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930"}' > "$sandbox/stdout" 2>/dev/null
+
+  response_id="$(jq -r 'select(.phase == "response") | .invocationId' "$sandbox/orders.jsonl")"
+  notify_id="$(jq -r 'select(.phase == "notify") | .invocationId' "$sandbox/orders.jsonl")"
+  [ -n "$response_id" ] && [ "$response_id" != "null" ] || fail "expected response record to carry an invocationId"
+  [ "$response_id" = "$notify_id" ] \
+    || fail "expected notify record to share the response invocationId ($response_id vs $notify_id)"
+  [ "$(jq -r 'select(.phase == "notify") | .request.accountSeq' "$sandbox/orders.jsonl")" = "ACC123" ] \
+    || fail "expected notify record to carry accountSeq for correlation"
 }
 
 test_toss_preflight_fails_closed_on_unknown_exit_node_state() {

@@ -62,6 +62,8 @@ SoT는 OpenAPI operation description의 Rate Limits Group과 실제 응답의 `X
 
 CLI는 구현되어 운영 기준으로 사용한다. 실제 API 호출을 수반하는 항목은 네트워크 가능한 환경에서 스모크 테스트 후 결과를 확정한다. 단, 스모크 테스트는 read-only endpoint 또는 `--dry-run`으로만 수행한다 — 주문 계열 mutation은 실계좌 주문이므로(함정 3: sandbox 없음) 사용자의 별도 명시 승인 없이 실행하지 않는다.
 
+운영 가능 host는 현재 Mac뿐이다 (SA token으로 credential을 `op read`). MiniPC는 `programs/toss` 모듈이 준비되어 있으나 #1044(전용 vault/SA 분리) 전까지 `homeserver.toss.enable = false`라 opnix credential이 materialize되지 않으므로, MiniPC에서 `toss token`·`toss api`는 credential 부재로 실패한다. MiniPC에서는 이 절차를 실행하지 않는다.
+
 ### `toss token [--force]`
 
 access token을 발급하고 휘발성 runtime 경로에 0600으로 캐시한다. 만료 60분 전이면 재발급한다. `--force`는 캐시를 무시하고 재발급한다.
@@ -83,7 +85,7 @@ access token을 발급하고 휘발성 runtime 경로에 0600으로 캐시한다
 
 ### `toss doctor`
 
-진단 명령이다. Tailscale exit node 상태, 출발지 IP와 whitelist 일치, `op` 접근, token 유효성을 점검한다. VPN을 자동 해제하지는 않는다.
+side-effect 없는 오프라인 진단 명령이다. Tailscale exit node 상태, 출발지 공인 IP(콘솔 whitelist와 육안 비교), credential 파일·`op` 실행 파일의 존재(presence), token 캐시의 로컬 만료 여부(locally-unexpired)를 점검한다. `op` 실제 접근 권한이나 서버측 token 유효성은 검사하지 않으므로, SA가 revoke되었거나 다른 호스트의 재발급으로 캐시 token이 무효화된 상태도 `present`/`locally-unexpired`로 표시된다. 실제 검증은 `toss token --force` 또는 첫 API 호출로 확인한다. VPN을 자동 해제하지는 않는다.
 
 ## 유지보수 레시피: docs-refresh
 

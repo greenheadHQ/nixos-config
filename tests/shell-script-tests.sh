@@ -212,12 +212,19 @@ run_test "toss ledger sanitizes query string in path" test_toss_ledger_sanitizes
 run_test "toss notify failure warns and records status" test_toss_notify_failure_warns_and_records_status
 run_test "toss notify sent uses sanitized path and records status" test_toss_notify_sent_uses_sanitized_path_and_records_status
 run_test "toss api emits whitelisted rate-limit headers" test_toss_api_emits_whitelisted_rate_limit_headers
+run_test "toss api does not retry on 2xx invalid_token body" test_toss_api_does_not_retry_on_2xx_invalid_token_body
+run_test "toss api rejects multi-document --data" test_toss_api_rejects_multi_document_data
+run_test "toss api dry-run distinguishes explicit null body" test_toss_api_dry_run_distinguishes_explicit_null_body
+run_test "toss api dry-run sanitizes query in url" test_toss_api_dry_run_sanitizes_query_in_url
+run_test "toss ledger preserves boolean false bodies" test_toss_ledger_preserves_boolean_false_bodies
+run_test "toss notify record shares invocation id" test_toss_notify_record_shares_invocation_id_with_response
 run_test "toss preflight blocks active exit node" test_toss_preflight_blocks_active_exit_node
 run_test "toss preflight fails closed on unknown exit-node state" test_toss_preflight_fails_closed_on_unknown_exit_node_state
 run_test "pushover helper missing credential skips curl" test_pushover_send_missing_cred_returns_1_without_curl
 run_test "pushover helper sends expected fields" test_pushover_send_success_passes_expected_fields
 run_test "pushover helper passes optional sound" test_pushover_send_passes_optional_sound
 run_test "pushover helper curl failure returns nonzero" test_pushover_send_curl_failure_returns_1
+run_test "pushover helper escapes curl config metacharacters" test_pushover_send_escapes_curl_config_metacharacters
 run_test "folder-actions lib source has no side effects" test_folder_actions_lib_source_is_side_effect_free
 run_test "folder-actions notify_failure uses Pushover helper boundary" test_folder_actions_notify_failure_uses_pushover_helper_boundary
 run_test "folder-actions drain_queue processes rescanned files in order" test_folder_actions_drain_queue_processes_rescanned_files_in_order
