@@ -10,9 +10,10 @@ Codex 세션에서 `spawn_agent` / `wait_agent` / `close_agent`로 오케스트�
 실패 시 아래 명령으로 환경을 먼저 확인한다:
 
 ```bash
-codex --version
-codex exec --help
-codex exec review --help
+command -v codex
+command codex --version
+command codex exec --help
+command codex exec review --help
 pwd
 git rev-parse --show-toplevel
 ```
@@ -20,6 +21,26 @@ git rev-parse --show-toplevel
 - CLI 버전/옵션 존재 여부 확인
 - 저장소 루트 밖에서 실행 중인지 확인
 - 워크트리(worktree) 환경이면 `git rev-parse --git-dir`로 git 디렉토리 경로 확인
+- 비대화형 PATH에서 `command -v codex`가 실패하면 곧바로 미설치로 단정하지 않는다.
+  programmatic 경로는 `command -v codex-exec-supervised` →
+  `codex-exec-supervised --check` → 확인된 Codex 절대경로 순으로 진단한다.
+
+오류 기록은 stdout, stderr, `-o` 결과, exit code를 분리한다. JSON/JSONL parser 앞에
+`2>&1`를 두지 않고, pipeline은 `set -o pipefail`과 zsh `pipestatus`로 Codex exit를 보존한다.
+`| head`, `| tail`, 뒤이은 `; echo $?`는 원래 exit를 가릴 수 있다.
+
+| 오류 분류 | 재시도 정책 | 관측 출처 |
+|----------|-------------|----------|
+| PATH/의존성 exit 127 | 경로·wrapper `--check` 후에만 재실행 | 실전 재발 사례 7건 + wrapper smoke |
+| 부모 sandbox denial | 소유권 변경 금지, §18 분기 | 실전 재발 사례 6건 |
+| timeout exit 124/137 | 자식 정리 확인 후 fresh retry 최대 1회 | 실전 재발 사례 |
+| usage limit | fail-fast. 신규 세션 재시도 금지 | 실전 재발 사례; 2026-07-10 재확인 |
+| unsupported model | `-m` 제거 후 fresh retry 최대 1회 | 통제 smoke에서 관측 |
+| exit 0 + `-o` 미생성 | 실패 처리, stderr·라우팅·session id 조사 | 실전 재발 사례 5건 |
+
+SSH/원격 장기 실행은 약 10분 무출력 뒤 완료된 실측이 있으므로 무출력만으로 중단이라 단정하지
+않는다. 반대로 프로세스 생존만으로 정상이라 단정하지도 않는다. outer timeout을 두고 종료 후
+`test -s "$RESULT"`로 산출물을 검증한다.
 
 ---
 
@@ -84,7 +105,7 @@ pub commit: Option<String>,
 
 | 이슈/PR | 상태 | 설명 |
 |---------|------|------|
-| [#7825](https://github.com/openai/codex/issues/7825) | OPEN (2025-12-10~) | PROMPT + scope flag 조합 기능 요청. 커뮤니티 확인됨. |
+| [#7825](https://github.com/openai/codex/issues/7825) | CLOSED AS NOT PLANNED (2026-03-29) | 이슈는 종결됐지만 0.144.1 runtime 제약은 유지. |
 | [#11903](https://github.com/openai/codex/pull/11903) | CLOSED (미머지, 2026-02-16) | `additional_instructions: Option<String>`을 `ReviewRequest`에 추가하는 PR. `ReviewTarget` 해석 후 비어있지 않은 추가 지시를 append하는 구현. invitation-only 기여 정책으로 close됨. |
 | [#6432](https://github.com/openai/codex/issues/6432) | OPEN (2025-11-09~) | headless review 전체 제안. `custom [PROMPT\|-]` preset 포함. 부분 구현 상태. |
 
@@ -98,51 +119,38 @@ pub commit: Option<String>,
 
 재검증 방법: 아래 명령이 에러 없이 실행되면 제약이 해소된 것이다:
 
-```bash
-echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - --base main 2>&1 | head -5
+```zsh
+set -o pipefail
+printf 'test\n' | env CODEX_PROGRAMMATIC=1 codex exec review - --base main \
+  > /tmp/review-conflict.stdout 2> /tmp/review-conflict.stderr
+codex_rc=$pipestatus[2]
 ```
 
-재확인: 2026-07-03, codex-cli 0.142.5 — 위 명령은 여전히 `error: the argument '[PROMPT]' cannot be used with '--base <BRANCH>'`로 실패한다. 4개 변형(PROMPT/--base/--uncommitted/--commit) 모두 clap `conflicts_with_all`로 상호 배타가 유지됨. 제약 미해소.
+재확인: 2026-07-10, codex-cli 0.144.1 — 여섯 pairwise 조합이 모두 clap exit 2로
+실패했다. 이슈 상태와 runtime 제약을 분리한다. 관측 출처: 통제 smoke.
 
 ### 2. review `-o` upstream bug — 빈 파일 생성 (0.142.5에서 해소됨)
 
 심각도: 높음 (해소 전 기준 — 버전 하한 판단 근거로 보존)
 
-0.142.5에서 해소됨 (재확인: 2026-07-03). 실제 uncommitted diff가 있는 상태에서 `codex exec review --uncommitted -o <file>`을 실행한 결과, `Warning: no last agent message` 경고 없이 파일에 리뷰 내용이 정상 기록됨을 확인했다. 아래는 해소 전(v0.104.0~v0.115.0-alpha) 증상의 기록이다.
+0.144.1에서 `-o`와 stdout 모두 정상이다 (재확인: 2026-07-10). 실제 버그가 있는 diff에
+`review --uncommitted -o`를 실행해 두 채널에 동일 review가 기록되고 `-o` 파일이 non-empty임을
+확인했다. stderr에는 진행 로그와 사본이 있었으며, upstream [#12502](https://github.com/openai/codex/issues/12502)는
+여전히 open이지만 보고 내용은 “review가 stdout 대신 stderr로 감”이다. 로컬 0.144.1에서는 그 회귀도
+재현되지 않았다. upstream 상태와 로컬 판정을 분리한다. 관측 출처: 통제 smoke.
 
-관찰된 동작 (해소 전): `-o` 사용 시 `Warning: no last agent message; wrote empty content` 출력, 0바이트 파일 생성 (v0.114.0에서 직접 재현)
+해소 전 역사: v0.104.0~v0.115.0-alpha에서는 `Warning: no last agent message; wrote empty content`와
+0바이트 `-o` 파일을 직접 재현했다. 이 기록은 버전 하한 판단용으로만 보존한다.
 
-참고: `-o`(`--output-last-message`)는 `codex exec review --help`에 표시되므로 CLI 파서는 인자를 수용한다. 문제는 `ReviewTask::run()`이 None을 반환하여 빈 파일이 생성되는 것이다.
-
-관련 GitHub Issues:
-
-| 이슈 | 상태 | 설명 |
-|------|------|------|
-| [#12502](https://github.com/openai/codex/issues/12502) | OPEN (2026-02-22~) | review `-o` 빈 파일 생성 보고 |
-| [#14335](https://github.com/openai/codex/issues/14335) | OPEN (2026-03-11~) | 동일 증상 재보고 |
-
-영향 범위: v0.104.0 ~ v0.115.0-alpha (직접 검증 기준). 0.142.5는 영향 범위 밖 (해소 확인).
-
-재현 (해소 전, 역사적 기록):
+재검증 방법: 실제 diff가 있는 저장소에서 stdout/stderr/result를 분리한 뒤 두 결과를 확인한다.
 
 ```bash
-echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review - -o /tmp/test.md 2>&1
-# v0.114.0 기준: 0바이트 파일 + "Warning: no last agent message; wrote empty content"
+env CODEX_PROGRAMMATIC=1 codex exec review --uncommitted \
+  -o /tmp/review-result.md \
+  > /tmp/review.stdout 2> /tmp/review.stderr
+rc=$?
+test "$rc" -eq 0 && test -s /tmp/review-result.md && test -s /tmp/review.stdout
 ```
-
-워크어라운드 (해소 전 필요했던 방법, 0.142.5에서는 불필요하지만 유지해도 무방): stdout 리다이렉트로 대체한다:
-
-```bash
-env CODEX_PROGRAMMATIC=1 codex exec review --base main > /tmp/review-result.md 2>&1
-```
-
-재검증 방법: 아래 명령으로 `-o`가 비어있지 않은 파일을 생성하면 수정된 것이다:
-
-```bash
-echo "modified" >> file.txt && echo "test" | env CODEX_PROGRAMMATIC=1 codex exec review --uncommitted -o /tmp/test.md 2>&1 && [ -s /tmp/test.md ] && echo "FIXED" || echo "STILL BROKEN"
-```
-
-2026-07-03 실측 결과: 실제 uncommitted diff가 있는 저장소에서 위 재검증 명령이 `FIXED`를 반환함 (`codex exec review --uncommitted -o <file>`로 직접 재현, PROMPT 없이 scope flag만 사용). `echo "test" | ... review - -o ...`처럼 PROMPT를 stdin으로 줄 경우 diff가 없으면 "There are no ... changes to review" 메시지가 정상 저장되는 것으로 대체되므로, 리그레션 확인 시 실제 diff가 있는 상태에서 재현해야 한다.
 
 ### 3. review가 working-tree 변경을 잘못 포함
 
@@ -155,6 +163,8 @@ echo "modified" >> file.txt && echo "test" | env CODEX_PROGRAMMATIC=1 codex exec
 대안:
 - 리뷰 전 워킹트리를 깨끗한 상태로 만든다 (`git stash`).
 - 리뷰 결과를 실제 diff와 대조하여 검증한다.
+
+재검증 미수행 (codex-cli 0.142.5 기준 서술 유지): `--base`의 working-tree 포함 여부.
 
 ### 4. exec review가 공식 CLI reference에 미문서화
 
@@ -173,11 +183,14 @@ echo "modified" >> file.txt && echo "test" | env CODEX_PROGRAMMATIC=1 codex exec
 
 ### 5. `unexpected argument '--approval-mode' found`
 
-원인: `codex exec`는 `--approval-mode` 플래그를 받지 않는다. exec/review/resume은 headless 실행이라 승인 프롬프트 자체가 없고, 승인 관련 CLI 플래그는 애초에 존재하지 않는다 (승인은 항상 `never`로 고정 — 재확인: 2026-07-03, 0.142.5, `--ignore-user-config`로 CLI 기본값 직접 확인).
+원인: `codex exec`는 `--approval-mode` 플래그를 받지 않는다. exec/review/resume의 공개
+surface에 승인 관련 CLI 플래그가 없다. approval `never` 고정 동작은 재검증 미수행
+(0.142.5 기준 서술 유지).
 
 해결: 세밀한 샌드박스 조정이 필요하면 exec에서 `-s, --sandbox <MODE>`를 사용한다 (review/resume은 `-s` 미지원 — config.toml의 `sandbox_mode`를 따른다). 그 외 조정은 `-c key=value`로 처리한다.
 
-과거 버전에는 승인 자동화 + `--sandbox workspace-write`를 한 번에 지정하는 단축 플래그가 있었으나, 0.142.5 `codex exec --help` / `codex exec review --help` / `codex exec resume --help` 어디에도 나타나지 않는다 (완전히 제거됨). 문서/스크립트에 그 이름이 남아 있으면 `-s workspace-write`로 치환한다.
+과거 승인 자동화 + workspace-write 단축 플래그 `--full-auto`는 0.144.1 help에 없지만 hidden parser가
+수용하며 deprecation warning을 낸다. 새 문서/스크립트는 `-s workspace-write`를 사용한다.
 
 ### 6. 결과 파일이 비어 있음 (`-o` 사용 시)
 
@@ -186,14 +199,17 @@ echo "modified" >> file.txt && echo "test" | env CODEX_PROGRAMMATIC=1 codex exec
 원인:
 - 실행이 중간 실패하여 마지막 에이전트 메시지가 없을 수 있다.
 - `Warning: no last agent message; wrote empty content` 경고가 stderr에 출력된다.
-- review 서브커맨드에서 `-o` 사용 시: upstream bug #12502로 항상 빈 파일 생성. §2 참조.
+- exit 0이어도 업무 산출물이 생성되지 않은 실전 사례가 있다.
+- review `-o`의 과거 빈 파일 증상은 0.144.1에서 해소됨. §2 참조.
 
 해결:
-1. `2>&1`로 stderr를 함께 캡처한다.
-2. review에서는 `-o` 대신 stdout 리다이렉트(`> file 2>&1`)를 사용한다.
+1. stdout, stderr, `-o` 결과를 별도 파일로 캡처한다.
+2. `test -s "$RESULT"`를 통과하지 못하면 exit 0이어도 실패로 처리한다.
 3. 프롬프트 파일 내용이 비어 있지 않은지 확인한다.
 4. 상위 오류(`model is not supported` 등)를 먼저 해결한다.
 5. 최소 프롬프트(패턴 8 스모크 테스트)로 재현 범위를 줄인다.
+
+관측 출처: exit 0 + 산출물 누락은 실전 재발 사례 5건. review `-o` 해소는 통제 smoke.
 
 ### 7. stdin 입력이 멈춘 것처럼 보임
 
@@ -208,8 +224,12 @@ echo "modified" >> file.txt && echo "test" | env CODEX_PROGRAMMATIC=1 codex exec
    ```
 2. 인라인 프롬프트로 비교 실행한다:
    ```bash
-   codex exec -s workspace-write "짧은 스모크 테스트"
+   command codex exec -s workspace-write "짧은 스모크 테스트"
    ```
+
+`Reading additional input from stdin...` banner 자체는 stdin append 경로 진입 표시다. hang은 banner,
+무진척, 결과 미생성이 함께 나타날 때 판정한다. PROMPT와 piped stdin 병용은 0.144.1에서
+`<stdin>` 블록 append로 정상 완료될 수 있다.
 
 ### 8. Git 저장소 체크 실패
 
@@ -236,6 +256,8 @@ ERROR: {"detail":"The '<model>' model is not supported when using Codex with a C
 1. `-m`을 제거하고 기본 모델(`~/.codex/config.toml`)로 재시도한다.
 2. 동일 오류 반복 시 `codex exec --help`와 계정 모델 접근 정책을 확인한다.
 
+재검증 미수행 (codex-cli 0.142.5 기준 서술 유지): unsupported-model runtime response.
+
 ### 10. `Model metadata ... not found` 경고
 
 증상:
@@ -248,6 +270,8 @@ warning: Model metadata for `<model>` not found. Defaulting to fallback metadata
 
 해결: `-m`을 제거하거나 `config.toml`의 기본 모델로 되돌린다.
 
+재검증 미수행 (codex-cli 0.142.5 기준 서술 유지): model metadata warning runtime response.
+
 ---
 
 ## 워크트리(Worktree) 환경 참고사항
@@ -259,6 +283,8 @@ git worktree 환경에서 `codex exec`를 실행할 때:
 - detached HEAD 주의: worktree가 detached HEAD 상태이면 브랜치 기반 비교가 실패할 수 있다. `git branch --show-current`로 브랜치 상태를 확인한다.
 - Codex App의 worktree 버그는 codex exec와 무관하다: Codex App(GUI)에는 다수의 worktree 관련 버그(cross-worktree writes, UI freeze 등)가 보고되어 있으나, 이는 CLI exec 실행에 영향을 주지 않는다.
 
+재검증 미수행 (codex-cli 0.142.5 기준 서술 유지): worktree/`--base`/detached HEAD runtime.
+
 ---
 
 ## 재현 가능한 최소 실행으로 복구
@@ -267,18 +293,26 @@ git worktree 환경에서 `codex exec`를 실행할 때:
 
 ```bash
 cat > /tmp/smoke.md <<'PROMPT'
-현재 작업 디렉토리에서 가장 중요한 리스크 1개만 한 줄로 답한다.
+현재 작업 디렉토리에서 가장 중요한 리스크 1개만 한 줄로 답한 뒤, 마지막 줄에 SMOKE_DONE만 출력한다.
 PROMPT
 ```
 
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 (§11 하위 항목).
 
 ```bash
-cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write -o /tmp/smoke-result.md 2>&1
-cat /tmp/smoke-result.md
+rm -f /tmp/smoke-result.md   # 이전 실행의 non-empty 잔존 결과로 인한 오판 방지
+set -o pipefail
+cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+  -s workspace-write -o /tmp/smoke-result.md - \
+  > /tmp/smoke.stdout 2> /tmp/smoke.stderr
+# PIPESTATUS는 다음 명령에서 리셋되므로 배열을 먼저 스냅샷한다 (cat 실패도 판정에 포함).
+pipe_rcs=("${PIPESTATUS[@]}")   # zsh는 ("${pipestatus[@]}") — 인덱스가 1부터
+[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ] \
+  && test -s /tmp/smoke-result.md && grep -q "SMOKE_DONE" /tmp/smoke-result.md
 ```
 
-통과하면 기존 복잡한 프롬프트로 단계적으로 복귀한다.
+wrapper exit 0, non-empty 결과, 기대한 완료 표식이 모두 확인되면 통과다. fan-out은 이 스모크를
+한 번 통과한 뒤 시작한다. 통과하면 기존 복잡한 프롬프트로 단계적으로 복귀한다.
 실패하면 §0 공통 진단부터 다시 시작한다.
 
 ---
@@ -286,6 +320,9 @@ cat /tmp/smoke-result.md
 ### 11. Claude Code Bash tool sandbox 제약
 
 심각도: 치명적 — Bash tool에서 codex exec 병렬 실행 시 반드시 적용
+
+현재 재검증 미수행 (codex-cli 0.142.5 기준 서술 유지). 아래 날짜·버전별 관측을 역사적
+실전 사례로 보존한다.
 
 관찰된 동작 (2026-03-29 재현):
 
@@ -336,7 +373,7 @@ Codex 세션의 native subagent 경로와 일반 터미널에는 이 제약을 �
    # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
    cat "$DA_DIR/domain.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
      --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-     -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+     -c model_reasoning_effort="medium" \
      -o "$DA_DIR/domain-result.md" \
      - \
      2>"$DA_DIR/domain-stderr.log"
@@ -355,7 +392,7 @@ Background 대안 — 다수 병렬 실행 시 LLM 블로킹 방지:
     # Bash tool 호출 시 run_in_background: true 파라미터 사용
     cat "$DA_DIR/domain.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
       --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-      -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+      -c model_reasoning_effort="medium" \
       -o "$DA_DIR/domain-result.md" \
       - \
       2>"$DA_DIR/domain-stderr.log"
@@ -389,14 +426,16 @@ echo "PID: $!"
 
 관찰된 동작: 특정 Bash tool sandbox 구성에서 heredoc과 codex exec를 같은 호출에 체이닝하면 hang이 발생한다. 정확한 메커니즘은 미확정이나, heredoc이 stdin 상태에 영향을 주어 후속 codex exec가 추가 입력을 기다리는 것으로 추정된다. `run_in_background` 환경에서만 발생하며, 일반 터미널에서는 재현되지 않는다.
 
-재현 (codex-cli v0.118.0, 2026-04-01 확인. 원 재현에는 당시 존재하던 자동실행 플래그를 사용했으나 0.142.5에서 제거되어 아래는 `-s workspace-write`로 치환한 등가 명령이다 — 버그는 stdin/heredoc 상호작용이 원인이라 이 치환으로 재현 조건이 바뀌지 않는다):
+재현 (codex-cli v0.118.0, 2026-04-01 확인. 원 재현에는 당시 자동실행 단축 플래그를
+사용했으나 현재 공개 surface에서는 숨겨지고 deprecated되었으므로 아래는 `-s workspace-write`로
+치환한 등가 명령이다 — 버그는 stdin/heredoc 상호작용이 원인이라 재현 조건은 바뀌지 않는다):
 
 HANG — heredoc 체이닝 (같은 Bash 호출):
 ```bash
 (umask 077; TDIR=$(mktemp -d /tmp/test-XXXXXX) && cat > "$TDIR/prompt.md" <<'EOF'
 테스트 프롬프트
 EOF
-codex exec -s workspace-write --ephemeral -o "$TDIR/result.md" "$(cat "$TDIR/prompt.md")")
+command codex exec -s workspace-write --ephemeral -o "$TDIR/result.md" "$(cat "$TDIR/prompt.md")")
 # → 무한 대기
 ```
 
@@ -421,7 +460,7 @@ TDIR=/tmp/test-a1b2c3
 [ -f "$TDIR/prompt.md" ] || { echo "missing prompt=$TDIR/prompt.md"; exit 1; }
 cat "$TDIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-  -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+  -c model_reasoning_effort="medium" \
   -o "$TDIR/result.md" \
   - \
   2>"$TDIR/stderr.log"
@@ -455,12 +494,18 @@ cat "$TDIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 
 근본 원인: Claude Code Bash tool이 병렬 실행 시 background 전환하면서 stdin이 적절히 닫히지 않음. codex exec는 인자로 프롬프트를 받아도 stdin이 열려있으면 추가 입력을 기다림.
 
-해결: 모든 codex exec 호출에 `< /dev/null`을 추가하여 stdin을 즉시 EOF로 만든다. (아래 명령의 샌드박스 플래그는 §13 최초 기록 당시의 자동실행 플래그를 0.142.5 제거 이후 등가 표기인 `-s workspace-write`로 치환한 것 — stdin EOF 해결 패턴 자체와는 무관하다.)
+해결: 모든 codex exec 호출에 `< /dev/null`을 추가하여 stdin을 즉시 EOF로 만든다. (아래 명령의
+샌드박스 플래그는 §13 최초 기록 당시의 자동실행 단축 플래그를 현재 공개 표기인
+`-s workspace-write`로 치환한 것 — stdin EOF 해결 패턴 자체와는 무관하다.)
 ```bash
-codex exec -s workspace-write --ephemeral -o "$DIR/result.md" "$(cat prompt.md)" < /dev/null
+command codex exec -s workspace-write --ephemeral -o "$DIR/result.md" "$(cat prompt.md)" < /dev/null
 ```
 
 참고: Codex 공식 플러그인의 background 작업은 `stdio: "ignore"`로 stdin/stdout/stderr를 모두 /dev/null로 리다이렉트한다 (동일 효과).
+
+관련 upstream: [#20919](https://github.com/openai/codex/issues/20919) (non-TTY stdin hang),
+[#19945](https://github.com/openai/codex/issues/19945) (TTY 분리 + 긴 prompt silent crash, 0.124 회귀).
+관측 출처: 실전 재발 사례. 현재 semantic 재검증 미수행 (v0.142.5 기준 서술 유지).
 
 ### 14. stdin pipe로 §13의 stdin hang을 구조적 해결
 
@@ -475,7 +520,7 @@ codex exec -s workspace-write --ephemeral -o "$DIR/result.md" "$(cat prompt.md)"
 ```bash
 # §13의 < /dev/null 패턴을 대체:
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
-cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --ephemeral \
+cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write --ephemeral \
   -o "$DIR/result.md" \
   - \
   2>"$DIR/stderr.log"
@@ -490,6 +535,10 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --
 
 발견 세션: #443 PR 작업 중 DA for_pr R4 (2026-04-11). Correctness reviewer가 대규모 diff 포함 프롬프트에서 hang.
 
+관련 upstream: [#20919](https://github.com/openai/codex/issues/20919) (non-TTY stdin hang),
+[#19945](https://github.com/openai/codex/issues/19945) (TTY 분리 + 긴 prompt silent crash, 0.124 회귀).
+관측 출처: 실전 재발 사례. 현재 semantic 재검증 미수행 (v0.142.5 기준 서술 유지).
+
 ### 15. `codex-exec-supervised` wrapper로 §14 위에 process group/timeout 한계 보강 (issue #593)
 
 심각도: 보강 패턴 — §14 stdin pipe + supervised wrapper로 inline TOML override + npm wrapper detach 부재 한계까지 차단
@@ -498,6 +547,10 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --
 
 1. `-c hooks.<event>='[...]'` inline TOML override — Mac codex 0.128 8 PoC variant 중 vH(host HOME + no override + stdin pipe + read-only)만 OK, override 포함 vA-G + vJ 모두 hang. Agent D source 분석은 `-c` parse/merge 정상이지만 override shape가 hook engine MatcherGroup 등록 실패 가능성을 시사 (정밀 위치 [UNVERIFIED]).
 2. npm wrapper(@openai/codex) detach/process group 부재 — `codex-cli/bin/codex.js`의 `spawn(binaryPath, args, {stdio:"inherit", env})`은 `detached:true`도, process group 생성도 없다. SIGINT/SIGTERM/SIGHUP은 forward되지만 SIGKILL은 forward 불가. `timeout` 단독은 wrapper PID만 죽여 native binary가 잔존할 수 있다.
+
+후속 5-variant 실측에서도 `-c hooks.*` inline override 제거 시 12초 안에 성공하고 override
+포함 시 hang했다. `Reading additional input...` banner만으로 hang을 판정하지 말고 banner + 무진척 +
+`-o` 결과 미생성을 함께 확인한다. 관측 출처: 통제 smoke.
 
 외부 evidence:
 - [gstack#1034](https://github.com/garrytan/gstack/issues/1034) — Claude Code Bash 비대화형 세션에서 argv prompt + 열린 stdin → EOF 대기. macOS, codex v0.121. fix: `</dev/null`.
@@ -512,7 +565,6 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec -s workspace-write --
 # §14 stdin pipe + §15 supervised wrapper 결합 (Layer 1 — 모든 programmatic 호출 공통)
 cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-  -c model="gpt-5.5" \
   -c model_reasoning_effort="medium" \
   -o "$DIR/result.md" \
   - \
@@ -586,12 +638,16 @@ nix shell nixpkgs#bubblewrap --command env CODEX_PROGRAMMATIC=1 codex exec -s wo
   직접 시도하지 않았다.
 - `read-only` / `workspace-write`에서는 네트워크가 차단되었고, `danger-full-access` 및 config 기본값에서는 허용되었다.
 - `~/.codex/config.toml`의 `sandbox_mode = "danger-full-access"` 기본값은 이 이슈에서 변경하지 않는다.
+- bwrap 안에서 Codex를 다시 실행하는 nested bwrap 우회는 초기화 실패로 기각됨
+  (2026-07-09 실측). fan-out 전에 패턴 8 스모크를 1회 통과시킨다.
 
 ### 17. exec auth chain 우선순위와 login status 한계
 
 심각도: 정보 — scratch `CODEX_HOME`이나 `--ignore-user-config`를 쓰는 자동화에서 auth 경계를 오해하면 `Not logged in` 또는 의도치 않은 계정 사용으로 실패한다.
 
 운영 계약: `codex exec` 경로의 auth 우선순위는 `CODEX_API_KEY > ephemeral tokens > auth.json`이다. `OPENAI_API_KEY`는 exec auth chain에 참여하지 않으며, interactive TUI에서 API key 입력을 보조하는 prefill로만 취급한다.
+
+전체 credential matrix는 재검증 미수행 (codex-cli 0.142.5 기준 서술 유지).
 
 현재 CLI에서 실측 가능한 경계:
 - `codex exec --help` (codex-cli 0.142.5, 2026-07-07)는 `--ignore-user-config`를 "`$CODEX_HOME/config.toml`은 로드하지 않지만 auth는 `CODEX_HOME`을 계속 사용"하는 플래그로 설명한다. 따라서 이 플래그는 MCP/config 표면 차단용이지 auth 차단용이 아니다.
@@ -601,9 +657,28 @@ nix shell nixpkgs#bubblewrap --command env CODEX_PROGRAMMATIC=1 codex exec -s wo
 재검증:
 
 ```bash
-codex exec --help | rg -- '--ignore-user-config|auth still uses'
+command codex exec --help | rg -- '--ignore-user-config|auth still uses'
 tmp=$(mktemp -d /tmp/codex-auth-check-XXXXXX)
-CODEX_HOME="$tmp" codex login status
-CODEX_HOME="$tmp" OPENAI_API_KEY=sk-dummy codex login status
+env CODEX_HOME="$tmp" codex login status
+env CODEX_HOME="$tmp" OPENAI_API_KEY=sk-dummy codex login status
 rm -rf "$tmp"
 ```
+
+### 18. 중첩 Codex session 파일 쓰기 거부와 `sudo chown` 오진
+
+심각도: 높음 — nested `codex exec`가 부모 sandbox 안에서 session 파일을 만들 때 발생
+
+증상: CLI가 session 디렉토리 쓰기 실패 뒤 `sudo chown` 계열 소유권 수정을 제안할 수 있다.
+중첩 실행 6회 실측에서는 실제 소유권 문제가 아니라 부모 Codex sandbox의 write denial이었다.
+관측 출처: 실전 재발 사례.
+
+진단 분기:
+
+1. `id`와 `ls -ld "$CODEX_HOME" "$CODEX_HOME/sessions"`로 실제 owner/mode를 기록한다.
+2. Direct Codex 세션 안의 nested 호출인지, 대상 경로가 부모 sandbox writable root 밖인지 확인한다.
+3. 동일 사용자·동일 경로가 부모 sandbox 밖의 허용된 수동 진단에서 쓰기 가능하면 sandbox denial로
+   판정하고 native subagent 또는 승인된 supervised 경로로 라우팅한다.
+4. 실제 owner 불일치가 독립적으로 확인될 때만 사용자에게 별도 복구 작업을 보고한다.
+
+CLI 제안만 보고 `sudo chown`을 실행하지 않는다. 소유권 변경은 host mutation이며 부모 sandbox
+denial을 해결하지 못하고 정상 파일의 owner를 훼손할 수 있다.

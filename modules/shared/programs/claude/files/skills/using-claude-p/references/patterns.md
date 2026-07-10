@@ -2,6 +2,10 @@
 
 각 패턴은 Claude Code 세션 안팎에서 동일하게 재현 가능한 순수 셸 명령으로 작성한다.
 
+JSON/JSONL 호출은 stdout, stderr, 업무 산출물을 분리한다. parser 앞 `2>&1`, 판정 pipeline의
+`head`/`tail`, 원 exit를 가리는 후속 `echo $?`를 금지한다. pipeline은 `set -o pipefail`과 zsh
+`pipestatus`로 Claude exit를 즉시 보존한다.
+
 ## 패턴 1: 기본 사용 — 인라인 프롬프트 / stdin pipe
 
 가장 기본적인 실행. 단순 질의에 사용한다.
@@ -24,22 +28,23 @@ cat /tmp/prompt.md | claude -p
 - 긴 프롬프트는 파일로 작성 후 stdin pipe로 전달
 - ⚠️ `--allowed-tools` 사용 시 인라인 프롬프트가 도구 이름으로 먹힘 → stdin 필수 ([gotchas.md](gotchas.md) #1)
 
-## 패턴 2: 도구 실행 — 권한 우회
+## 패턴 2: 도구 실행 — 제한 여부 선택
 
-도구 사용이 필요한 경우 `--dangerously-skip-permissions` 필수 (비대화형에서는 TTY가 없어 권한 프롬프트 불가).
+도구 제한이 필요 없을 때만 `--dangerously-skip-permissions`를 단독 사용한다.
 
 ```bash
 echo "hostname 명령을 실행하고 결과만 보고해" | claude -p --dangerously-skip-permissions
 # → greenhead-MacBookPro.local
 ```
 
-도구를 제한하려면 `--allowed-tools`를 조합한다:
+도구를 제한하려면 skip-permissions 없이 variadic flag 뒤 prompt를 stdin으로 전달한다.
 
 ```bash
-echo "ls /tmp | head -2를 실행해" | claude -p --dangerously-skip-permissions --allowed-tools "Bash,Read"
+echo "ls /tmp | head -2를 실행해" | claude -p --allowed-tools "Bash,Read"
 ```
 
 주의:
+- `--dangerously-skip-permissions`와 `--allowed-tools` 병용은 allowlist를 구조적으로 무효화하므로 금지
 - `--max-turns 1`이면 도구 실행 불가 (최소 2턴 필요, [gotchas.md](gotchas.md) #2)
 - 도구 거부 시 exit code는 여전히 0 ([gotchas.md](gotchas.md) #3)
 - `--tools ""`로 빌트인 비활성화해도 MCP는 남아있음 ([gotchas.md](gotchas.md) #5)
@@ -48,27 +53,33 @@ echo "ls /tmp | head -2를 실행해" | claude -p --dangerously-skip-permissions
 
 `--output-format json`의 init 이벤트에 전체 harness 정보가 포함된다. 스킬, 도구, MCP, 플러그인 전수 검사에 핵심.
 
-```bash
-echo "ok" | claude -p --output-format json | python3 -c "
+```zsh
+set -o pipefail
+echo "ok" | claude -p --output-format json > /tmp/claude-init.json 2> /tmp/claude-init.stderr
+claude_rc=$pipestatus[2]
+# 검증 실패가 후속 파싱을 막도록 && 게이트로 연결한다 (실패해도 다음 줄이 실행되는 단독 test 금지)
+[ "$claude_rc" -eq 0 ] && test -s /tmp/claude-init.json && python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
+items = data if isinstance(data, list) else [data]
+init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
 print(f'Session: {init[\"session_id\"]}')
 print(f'Skills: {len(init.get(\"skills\", []))}')
 print(f'Tools: {len(init.get(\"tools\", []))}')
 print(f'MCP servers: {len(init.get(\"mcp_servers\", []))}')
-print(f'Plugins: {len(init.get(\"plugins\", []))}')"
+print(f'Plugins: {len(init.get(\"plugins\", []))}')" < /tmp/claude-init.json
 ```
 
 스킬 이름만 추출:
 
 ```bash
-echo "ok" | claude -p --output-format json | python3 -c "
+python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
+items = data if isinstance(data, list) else [data]
+init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
 for s in sorted(init.get('skills', [])):
-    print(f'  {s}')"
+    print(f'  {s}')" < /tmp/claude-init.json
 ```
 
 이 패턴이 harness 셀프테스트 T1의 기반이다. [harness-testing.md](harness-testing.md) T1 참조.
@@ -79,14 +90,16 @@ for s in sorted(init.get('skills', [])):
 
 ```bash
 # 1단계: 첫 호출 — session_id 추출
-SESSION_ID=$(echo "나의 비밀 코드는 XRAY42야" | claude -p --output-format json | python3 -c "
-import sys, json; data=json.loads(sys.stdin.read())
-for item in data:
+echo "나의 비밀 코드는 XRAY42야" | claude -p --output-format json \
+  > /tmp/claude-session.json 2> /tmp/claude-session.stderr
+SESSION_ID=$(python3 -c "
+import sys, json; data=json.loads(sys.stdin.read()); items=data if isinstance(data,list) else [data]
+for item in items:
     if isinstance(item, dict) and item.get('type')=='system':
-        print(item['session_id']); break")
-
-# 2단계: 후속 호출 — 이전 세션 이어가기
-echo "내 비밀 코드가 뭐였어?" | claude -p --resume "$SESSION_ID"
+        print(item['session_id']); break" < /tmp/claude-session.json)
+# 2단계: 후속 호출 — SESSION_ID 검증을 && 게이트로 연결 (빈 값이면 resume을 실행하지 않는다)
+test -n "$SESSION_ID" && \
+  echo "내 비밀 코드가 뭐였어?" | claude -p --resume "$SESSION_ID"
 # → "XRAY42"라고 말씀하셨습니다
 ```
 
@@ -94,6 +107,9 @@ echo "내 비밀 코드가 뭐였어?" | claude -p --resume "$SESSION_ID"
 - 다단계 작업을 여러 `-p` 호출로 분할
 - 첫 호출에서 컨텍스트 설정 → 후속 호출에서 실행
 - 스테이트풀한 검증 시나리오
+
+`--resume` help surface는 2.1.206에서 확인했지만 context chaining runtime은 재검증 미수행
+(v2.1.202 기준 서술 유지).
 
 ## 패턴 5: SSH 경유 크로스머신
 
@@ -114,14 +130,20 @@ cat > /tmp/remote-prompt.md <<'PROMPT'
 hostname과 uptime을 실행하고 결과를 보고한다.
 PROMPT
 
-cat /tmp/remote-prompt.md | ssh minipc 'claude -p --dangerously-skip-permissions'
+# outer timeout으로 원격 hang 시 무기한 대기를 방지한다 (exit 124 = timeout; macOS는 coreutils timeout 필요)
+cat /tmp/remote-prompt.md | timeout 900 ssh minipc 'claude -p --dangerously-skip-permissions' \
+  > /tmp/remote-result.txt 2> /tmp/remote-result.stderr
+test -s /tmp/remote-result.txt
 ```
 
 ### 주의사항
 
 - SSH non-login shell에서 alias(`c`)가 로드되지 않음 → `claude` full path 사용 필수
 - 3중 중첩 quote를 시도하지 말 것 → 반드시 stdin pipe 패턴 사용
-- MiniPC sshd 180초 무응답 시 연결 해제 → 장시간 실행 시 `ssh -o ServerAliveInterval=30` 추가
+- MiniPC sshd 180초 무응답 시 연결 해제 → `ssh -o ServerAliveInterval=30` 추가
+- outer timeout은 위 "파일 기반 프롬프트" 예제처럼 호출자가 직접 적용한다 — "기본 패턴"의 최소 예제에는 포함되어 있지 않다.
+- 무출력 약 10분 뒤 완료된 실측이 있다. 무출력만으로 중단하지 않는다.
+- 프로세스 생존만으로 정상이라 판정하지 않고 완료 후 `test -s`로 기대 산출물을 확인한다.
 - 자세한 gotchas: [gotchas.md](gotchas.md) #15, #16, #32
 
 ## 패턴 6: pipe chain — 출력을 다음 입력으로
@@ -136,6 +158,8 @@ echo "3+7의 결과만 숫자로" | claude -p | xargs -I{} sh -c 'echo "{}에 5�
 주의:
 - 중간 출력이 예상과 다를 수 있으므로, 결과 형식을 명확히 지시해야 한다 ("숫자로만", "JSON으로만" 등)
 - 각 호출은 독립 세션이다 (컨텍스트 공유 없음). 컨텍스트 유지가 필요하면 패턴 4 (세션 체이닝) 사용
+- pipe chain runtime은 재검증 미수행 (v2.1.202 기준 서술 유지).
+- 위 직결 예제는 빠른 실험 전용이다. 업무 성공 판정이 필요하면 이 패턴 대신 각 호출의 출력을 파일로 분리하고 exit·기대 marker를 검증한다 (SKILL.md 셸 transport 계약 참조).
 
 ## 패턴 7: 동시 실행
 
@@ -153,34 +177,46 @@ wait
 - 다른 프롬프트를 동시에 평가
 - CI에서 독립적인 검증 작업 병렬화
 
+재검증 미수행 (v2.1.202 기준 서술 유지): 같은 directory 동시 실행 안정성과
+`--no-session-persistence`의 충돌 방지 효과.
+
 ## 패턴 8: JSON 결과 파싱
 
 `--output-format json` 출력에서 필요한 정보를 추출하는 패턴.
 
 ### 텍스트 응답 추출
 
-```bash
-echo "2+3" | claude -p --output-format json | python3 -c "
+```zsh
+set -o pipefail
+echo "2+3" | claude -p --output-format json > /tmp/claude-result.json 2> /tmp/claude-result.stderr
+claude_rc=$pipestatus[2]
+python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-result = [d for d in data if d.get('type')=='result'][0]
-print(result['result'])"
+items = data if isinstance(data, list) else [data]
+result = [d for d in items if isinstance(d, dict) and d.get('type')=='result'][0]
+if result.get('subtype') != 'success' or result.get('is_error', False):
+    raise SystemExit('result event is not a successful task result')
+print(result.get('result', ''))" < /tmp/claude-result.json
+test "$claude_rc" -eq 0
 # → 5
 ```
 
 ### result subtype 확인
 
 ```bash
-echo "prompt" | claude -p --output-format json | python3 -c "
+python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-result = [d for d in data if d.get('type')=='result'][0]
+items = data if isinstance(data, list) else [data]
+result = [d for d in items if isinstance(d, dict) and d.get('type')=='result'][0]
 print(f'subtype: {result.get(\"subtype\")}')
-print(f'is_error: {result.get(\"is_error\", False)}')"
+print(f'is_error: {result.get(\"is_error\", False)}')" < /tmp/claude-result.json
 ```
 
-subtype 종류: `success`, `error_max_turns`, `error_max_budget_usd`, `error_during_execution` 등 6종.
-⚠️ `success`와 `error_during_execution`만 exit code가 다르다 (나머지는 모두 0). [gotchas.md](gotchas.md) #29 참조.
+정상 성공 경로는 2.1.206에서 top-level 4-event 배열, `subtype=success`, `is_error=false`,
+exit 0이었다. auth 실패 경로는 `subtype=success`, `is_error=true`, exit 1도 가능하다. subtype
+목록과 exit mapping을 exhaustive 계약으로 사용하지 않는다. [gotchas.md](gotchas.md) #29 참조.
 
 ### stream-json (JSONL) 파싱
 
@@ -194,6 +230,8 @@ done
 # Event: rate_limit_event
 # Event: result
 ```
+
+stream-json wire shape는 재검증 미수행 (v2.1.202 기준 서술 유지). parser는 stderr를 섞지 않는다.
 
 ## 패턴 9: 미설치 플러그인 스킬을 stdin 주입으로 우회
 
@@ -243,6 +281,7 @@ esac
 cat "${CAT_FILES[@]}" \
   | MY_TOKEN="xxx" claude -p --output-format text --dangerously-skip-permissions \
   > /tmp/result.md 2>/tmp/stderr.txt
+test -s /tmp/result.md
 ```
 
 ### 주의사항
@@ -259,6 +298,64 @@ cat "${CAT_FILES[@]}" \
 cat untrusted-skill.md | claude -p --allowed-tools "Read,Grep,Glob" --output-format text
 ```
 
+대용량 stdin·plugin indexing runtime은 재검증 미수행 (v2.1.202 기준 서술 유지).
+
+## 패턴 10: JSON Schema 구조화 출력
+
+```bash
+SCHEMA='{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]}'
+set -o pipefail
+echo "현재 변경을 한 문장으로 요약해" | claude -p \
+  --output-format json --json-schema "$SCHEMA" \
+  > /tmp/structured.json 2> /tmp/structured.stderr
+claude_rc=${PIPESTATUS[1]}
+[ "$claude_rc" -eq 0 ] && test -s /tmp/structured.json && python3 -c "
+import sys, json
+data = json.loads(sys.stdin.read())
+items = data if isinstance(data, list) else [data]
+results = [d for d in items if isinstance(d, dict) and d.get('type')=='result']
+assert results and results[-1].get('subtype')=='success' and not results[-1].get('is_error', False), 'result is not successful'
+print('structured output OK')" < /tmp/structured.json
+```
+
+`--json-schema`는 2.1.206 help에 있고, 무효 schema가 모델 호출 전에 즉시 실패하는 동작은
+v2.1.205에서 실측했다. 성공 payload의 세부 필드는 고정하지 말고 패턴 8처럼 `type=result`를 찾는다.
+
+## 패턴 11: `--bare` 격리 실행
+
+```bash
+test -n "$ANTHROPIC_API_KEY" || echo "FAIL: API key required for --bare"
+set -o pipefail
+echo "주입한 prompt만 사용해 한 줄로 답해" | \
+  env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" claude -p --bare --output-format json \
+  > /tmp/bare.json 2> /tmp/bare.stderr
+claude_rc=${PIPESTATUS[1]}
+# json 출력이므로 test -s만으로는 부족하다 — 패턴 8과 동일하게 result/success까지 파싱해 판정한다.
+[ "$claude_rc" -eq 0 ] && test -s /tmp/bare.json
+```
+
+`--bare`는 hooks, LSP, plugin sync, attribution, auto-memory, background prefetch, keychain read,
+CLAUDE.md auto-discovery를 skip하고 `CLAUDE_CODE_SIMPLE=1`을 설정한다. auth는 API key 또는
+settings `apiKeyHelper` 경로가 필요하며, skills는 계속 resolve된다 (2.1.206 help).
+
+## 패턴 12: session ID 고정·fork
+
+```bash
+SESSION_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
+set -o pipefail
+echo "첫 단계" | claude -p --session-id "$SESSION_ID" \
+  > /tmp/session-first.txt 2> /tmp/session-first.stderr
+# 첫 호출의 exit·산출물 검증을 통과해야만 fork를 실행한다 (text 출력이므로 result 이벤트 검증은 불가)
+[ "${PIPESTATUS[1]}" -eq 0 ] && test -s /tmp/session-first.txt && \
+echo "이전 context에서 새 session으로 분기해" | \
+  claude -p --resume "$SESSION_ID" --fork-session \
+  > /tmp/session-fork.txt 2> /tmp/session-fork.stderr
+[ "${PIPESTATUS[1]}" -eq 0 ] && test -s /tmp/session-fork.txt
+```
+
+`--session-id`의 UUID 요구와 `--fork-session` surface는 2.1.206 help에서 확인했다. 실제 context
+round-trip은 재검증 미수행 (v2.1.202 기준 서술 유지).
+
 ---
 
 ## 빠른 참조 표
@@ -274,3 +371,6 @@ cat untrusted-skill.md | claude -p --allowed-tools "Read,Grep,Glob" --output-for
 | 병렬 실행 | 7 | `claude -p ... &` + `--no-session-persistence` |
 | 결과 파싱 | 8 | `--output-format json` → python3 파싱 |
 | 미설치 스킬 stdin 주입 | 9 | `cat SKILL.md agent.md \| claude -p` |
+| 구조화 출력 | 10 | `--json-schema` + JSON event parser |
+| 최소화 실행 | 11 | API key/helper + `--bare` |
+| session 고정·분기 | 12 | `--session-id` / `--fork-session` |
