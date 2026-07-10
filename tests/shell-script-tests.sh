@@ -174,6 +174,7 @@ run_test "install-lefthook serializes concurrent invocations" test_install_lefth
 run_test "install-lefthook pins worktree-local hooks path in worktree mode" test_install_lefthook_worktree_mode_pins_local_hooks_path
 run_test "install-lefthook injects --no-auto-install into every hook" test_install_lefthook_injects_no_auto_install_into_every_hook
 run_test "install-lefthook --no-auto-install injection is idempotent" test_install_lefthook_no_auto_install_injection_is_idempotent
+run_test "install-lefthook patches a stale unconfigured hook" test_install_lefthook_patches_stale_unconfigured_hook
 run_test "install-lefthook leaves .old backup hooks untouched" test_install_lefthook_leaves_old_backup_hooks_untouched
 run_test "install-lefthook fails when lefthook call shape changes" test_install_lefthook_fails_when_lefthook_call_shape_changes
 run_test "install-lefthook fails on an unpatched second lefthook call" test_install_lefthook_fails_on_unpatched_second_call

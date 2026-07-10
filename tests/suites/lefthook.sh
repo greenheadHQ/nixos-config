@@ -394,6 +394,32 @@ test_install_lefthook_no_auto_install_injection_is_idempotent() {
   assert_hook_call_line "$repo_root/.git/hooks/pre-commit" "pre-commit"
 }
 
+test_install_lefthook_patches_stale_unconfigured_hook() {
+  # `lefthook install`은 설정에서 빠진 hook 파일을 지우지 않는다. 그렇게 남은 hook의
+  # `call_lefthook run` 호출부에 플래그가 없으면, git이 그 hook을 실행할 때(예: pre-commit
+  # 다음의 prepare-commit-msg) auto-install이 발동해 guard와 플래그를 통째로 지운다.
+  # 설정에 없더라도 lefthook이 만든 hook이면 패치 대상이어야 한다.
+  local sandbox repo_root stub_dir hooks_dir stale
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  # 과거 설정에 있다가 빠진 hook을 흉내낸다 (lefthook이 남긴 그대로, 플래그 없음).
+  hooks_dir="$repo_root/.git/hooks"
+  mkdir -p "$hooks_dir"
+  stale="$hooks_dir/prepare-commit-msg"
+  printf '#!/bin/sh\ncall_lefthook run "prepare-commit-msg" "$@"\n' > "$stale"
+  chmod +x "$stale"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "install must not fail on a stale unconfigured hook; output: $INSTALL_LEFTHOOK_OUTPUT"
+
+  # 설정에 없어도 lefthook이 만든 hook이면 플래그가 주입되어 auto-install 우회로가 닫힌다.
+  assert_hook_call_line "$stale" "prepare-commit-msg"
+  assert_hook_call_line "$hooks_dir/pre-commit" "pre-commit"
+}
+
 test_install_lefthook_leaves_old_backup_hooks_untouched() {
   # lefthook은 밀려난 기존 hook을 `<name>.old`로 남긴다. 실행되지 않는 파일이므로
   # 패치 대상에서 제외한다 (되살렸을 때 원본 그대로여야 한다).
