@@ -9,7 +9,8 @@
 # run_lefthook_install / inject_staged_guard / disable_lefthook_auto_install 동작이고,
 # lefthook 자체의 install 로직은 별도 신뢰 영역이다.
 # stub은 install 명령 호출 시 설정된 hook(pre-commit/commit-msg/pre-push)을 모두 생성하며,
-# 각 파일은 `call_lefthook run "<hook>" "$@"` 라인을 포함한다.
+# 각 파일은 `call_lefthook()` preamble과 `call_lefthook run "<hook>" "$@"` 호출부를 함께 포함한다
+# (installer가 그 둘을 함께 요구한다 — #1073).
 # 예외: test_lefthook_auto_sync_cannot_drop_guard_end_to_end는 auto-sync 동작 자체를 확인해야
 # 하므로 stub 없이 실제 lefthook 바이너리를 사용한다.
 
@@ -20,10 +21,36 @@ LEFTHOOK_GUARD_BEGIN_MARKER=$(sed -n 's/^BEGIN_MARKER="\(.*\)"$/\1/p' "$REPO_ROO
 LEFTHOOK_GUARD_END_MARKER=$(sed -n 's/^END_MARKER="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
 LEFTHOOK_NO_AUTO_INSTALL_FLAG=$(sed -n 's/^NO_AUTO_INSTALL_FLAG="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
 LEFTHOOK_GIT_HOOK_NAMES=$(sed -n 's/^GIT_HOOK_NAMES="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
+LEFTHOOK_GIT_HOOK_NAMES_IGNORING_EXIT_STATUS=$(sed -n 's/^GIT_HOOK_NAMES_IGNORING_EXIT_STATUS="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh")
 [[ -n "$LEFTHOOK_GUARD_BEGIN_MARKER" ]] || fail "could not extract BEGIN_MARKER from install-lefthook-hooks.sh"
 [[ -n "$LEFTHOOK_GUARD_END_MARKER" ]] || fail "could not extract END_MARKER from install-lefthook-hooks.sh"
 [[ -n "$LEFTHOOK_NO_AUTO_INSTALL_FLAG" ]] || fail "could not extract NO_AUTO_INSTALL_FLAG from install-lefthook-hooks.sh"
 [[ -n "$LEFTHOOK_GIT_HOOK_NAMES" ]] || fail "could not extract GIT_HOOK_NAMES from install-lefthook-hooks.sh"
+[[ -n "$LEFTHOOK_GIT_HOOK_NAMES_IGNORING_EXIT_STATUS" ]] \
+  || fail "could not extract GIT_HOOK_NAMES_IGNORING_EXIT_STATUS from install-lefthook-hooks.sh"
+
+# fixture가 만드는 hook 형태의 유일한 소유점 (printf 포맷).
+#
+# installer는 `call_lefthook()` 정의와 `call_lefthook run` 호출부를 함께 요구하므로
+# (hook_defines_call_lefthook, #1073), preamble이 빠진 fixture는 "깨진 hook"으로 거부된다.
+# 정상 hook을 만드는 곳이 stub 둘 + 파일 밖 fixture 하나로 셋인데, 각자 형태를 들고 있으면
+# 한쪽만 고쳤을 때 조용히 갈라진다. 아래 조각에서만 정의하고 나머지는 전부 파생시킨다.
+#
+# 실제 lefthook 산출물의 골격(shebang → 빈 줄 → ... → `call_lefthook()` 정의 → 호출부)을 따르되,
+# 검사에 무관한 LEFTHOOK_VERBOSE/LEFTHOOK=0 블록은 재현하지 않는다.
+#
+# **불변식: 이 포맷들에는 `%s`(hook 이름) 외의 `%`를 넣지 마라.** 같은 문자열이 두 가지 방식으로
+# 소비되기 때문이다 — `lefthook_hook_preamble`은 `printf '%b'`의 피연산자로(포맷 해석 없음),
+# `write_lefthook_*`와 두 stub은 `printf "$FORMAT"`의 포맷으로(해석 있음) 쓴다. `%`를 하나라도
+# 넣으면 `%b` 경로만 원문을 보존하고 나머지는 조용히 문자를 먹으며, 뒤따르는 `%s`가 인자를 잃어
+# hook 이름까지 빈 문자열이 된다 (실측). 종료코드는 0이라 아무도 알아채지 못한다.
+LEFTHOOK_STUB_HOOK_SHEBANG_FORMAT='#!/bin/sh\n'
+LEFTHOOK_STUB_HOOK_PREAMBLE_FORMAT="$LEFTHOOK_STUB_HOOK_SHEBANG_FORMAT"'\ncall_lefthook()\n{\n  lefthook "$@"\n}\n\n'
+# `%s`는 hook 이름.
+LEFTHOOK_STUB_HOOK_CALL_FORMAT='call_lefthook run "%s" "$@"\n'
+# 정상 hook = preamble + 호출부. 깨진 hook = shebang + 호출부 (preamble의 부재가 핵심).
+LEFTHOOK_STUB_HOOK_FORMAT="$LEFTHOOK_STUB_HOOK_PREAMBLE_FORMAT$LEFTHOOK_STUB_HOOK_CALL_FORMAT"
+LEFTHOOK_STUB_HOOK_BROKEN_FORMAT="$LEFTHOOK_STUB_HOOK_SHEBANG_FORMAT$LEFTHOOK_STUB_HOOK_CALL_FORMAT"
 
 lefthook_config_hook_names() {
   # installer의 configured_hooks와 같은 방식으로 lefthook.yml에서 hook 이름만 뽑는다
@@ -58,6 +85,38 @@ assert_hook_call_line() {
   expected="call_lefthook run \"${hook_name}\" ${LEFTHOOK_NO_AUTO_INSTALL_FLAG} \"\$@\""
   actual=$(grep -F 'call_lefthook run ' "$hook_path" || true)
   [[ "$actual" == "$expected" ]] || fail "hook $hook_path: expected call line [$expected], got [$actual]"
+}
+
+lefthook_hook_preamble() {
+  # LEFTHOOK_STUB_HOOK_PREAMBLE_FORMAT을 그대로 풀어 stdout으로 낸다. 호출부의 *형태*를 시험하는
+  # fixture는 그 뒤에 자기 body를 이어 붙인다 — preamble이 없으면 "깨진 hook" 판정이 먼저 발동해
+  # 엉뚱한 이유로 실패하기 때문이다 (#1073).
+  # preamble 단독은 치환할 인자가 없으므로 `%b`로 백슬래시 이스케이프만 푼다 (SC2059 회피).
+  # 전체 포맷 쪽은 hook 이름 `%s` 치환이 필요해 `%b`를 쓸 수 없다 — 두 경로가 갈리는 지점이며,
+  # 그래서 상수에 `%`를 넣으면 안 된다 (상수 정의부의 불변식 참조).
+  printf '%b' "$LEFTHOOK_STUB_HOOK_PREAMBLE_FORMAT"
+}
+
+write_lefthook_generated_hook() {
+  # lefthook이 남긴 그대로의 hook: preamble + 호출부, 플래그 없음.
+  # 플래그를 일부러 넣지 않는다 — 주입 대상이 되는 것이 이 헬퍼를 쓰는 테스트의 관심사다.
+  # 호출처가 하나뿐이지만 write_lefthook_hook_missing_preamble과 대칭을 이뤄 "정상/깨짐" 두 형태를
+  # 나란히 소유한다. 둘 중 하나만 헬퍼로 두면 다음 사람이 짝을 놓친다.
+  local hook_path="$1" hook_name="$2"
+  # shellcheck disable=SC2059  # 포맷은 신뢰된 상수, hook 이름이 유일한 인자다.
+  printf "$LEFTHOOK_STUB_HOOK_FORMAT" "$hook_name" > "$hook_path"
+  chmod +x "$hook_path"
+}
+
+write_lefthook_hook_missing_preamble() {
+  # 호출부만 있고 `call_lefthook()` 정의가 없는 hook. preamble의 부재가 이 fixture의 존재 이유다
+  # — installer의 사후 검증이 거부해야 하는 대상이자, `bash -n`이 문법 오류로 보지 않는다는 전제의
+  # 표본이다. 호출부 형태는 위 정상 형태와 같은 상수에서 파생된다.
+  # 실제 lefthook의 `.old` 백업은 rename 산물이라 실행 권한을 유지하므로 여기서도 chmod +x 한다.
+  local hook_path="$1" hook_name="$2"
+  # shellcheck disable=SC2059  # 포맷은 신뢰된 상수, hook 이름이 유일한 인자다.
+  printf "$LEFTHOOK_STUB_HOOK_BROKEN_FORMAT" "$hook_name" > "$hook_path"
+  chmod +x "$hook_path"
 }
 
 install_lefthook_git_isolation() {
@@ -113,13 +172,15 @@ write_install_lefthook_stub() {
   # 두 fixture 생성기가 공유하는 lefthook stub. install 동작을 한 곳에서만 정의해
   # 호출 형태나 hook 집합을 바꿀 때 한쪽만 고치는 사고를 막는다.
   # 실제 CLI처럼 lefthook.yml에서 hook 이름을 읽되, 전역 옵션 키(`colors` 등)는 건너뛴다.
+  # 생성하는 hook의 형태는 LEFTHOOK_STUB_HOOK_FORMAT이 단독으로 정한다 (preamble + 호출부).
   cat > "$1/lefthook" <<STUB
 #!/usr/bin/env bash
 # stub for install-lefthook-hooks shell tests: emulate \`lefthook install\` by writing every
-# hook configured in lefthook.yml, each containing the \`call_lefthook run "<hook>" "\$@"\`
-# marker expected by inject_staged_guard and disable_lefthook_auto_install. Hook names come
-# from the config (like the real CLI) and global option keys are skipped, so fixtures and
-# assertions cannot drift apart. The stub also tolerates --force (worktree mode passes it).
+# hook configured in lefthook.yml, each containing the \`call_lefthook()\` preamble and the
+# \`call_lefthook run "<hook>" "\$@"\` marker expected by inject_staged_guard and
+# disable_lefthook_auto_install. Hook names come from the config (like the real CLI) and global
+# option keys are skipped, so fixtures and assertions cannot drift apart. The stub also
+# tolerates --force (worktree mode passes it).
 # Silent on success to mirror the real CLI output we strip.
 set -euo pipefail
 known=" $LEFTHOOK_GIT_HOOK_NAMES "
@@ -129,7 +190,7 @@ case "\${1:-}" in
     hooks_dir="\$(git rev-parse --path-format=absolute --git-path hooks)"
     mkdir -p "\$hooks_dir"
     for hook in \$(awk -v known="\$known" '/^[A-Za-z0-9_.-]+:/ { name = \$1; sub(/:\$/, "", name); if (index(known, " " name " ") > 0) print name }' lefthook.yml); do
-      printf '#!/bin/sh\ncall_lefthook run "%s" "\$@"\n' "\$hook" > "\$hooks_dir/\$hook"
+      printf '$LEFTHOOK_STUB_HOOK_FORMAT' "\$hook" > "\$hooks_dir/\$hook"
       chmod +x "\$hooks_dir/\$hook"
     done
     ;;
@@ -409,8 +470,7 @@ test_install_lefthook_patches_stale_unconfigured_hook() {
   hooks_dir="$repo_root/.git/hooks"
   mkdir -p "$hooks_dir"
   stale="$hooks_dir/prepare-commit-msg"
-  printf '#!/bin/sh\ncall_lefthook run "prepare-commit-msg" "$@"\n' > "$stale"
-  chmod +x "$stale"
+  write_lefthook_generated_hook "$stale" "prepare-commit-msg"
 
   run_install_lefthook_capture "$repo_root" "$stub_dir"
   [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "install must not fail on a stale unconfigured hook; output: $INSTALL_LEFTHOOK_OUTPUT"
@@ -420,9 +480,115 @@ test_install_lefthook_patches_stale_unconfigured_hook() {
   assert_hook_call_line "$hooks_dir/pre-commit" "pre-commit"
 }
 
+test_install_lefthook_rejects_hook_without_call_lefthook_definition() {
+  # 호출부만 있고 preamble(`call_lefthook()` 정의)이 없는 hook은 실행 즉시 exit 127로 죽어
+  # 그 이벤트의 모든 커밋을 막는다. 그런데 `bash -n`은 문법만 보므로 이런 파일도 통과시킨다.
+  # installer가 정의의 부재를 직접 확인하지 않으면, 깨진 hook에 플래그를 주입한 뒤 성공을
+  # 보고하고 커밋 전면 차단 상태를 그대로 남긴다 (#1073에서 실제로 발생).
+  #
+  # 이 테스트는 동시에, installer가 실패하더라도 이미 설치된 hook의 `--no-auto-install`이
+  # 살아 있음을 확인한다. 정의 검사는 python 패치 **이후**에 돈다 — 앞으로 옮기면
+  # run_lefthook_install이 세 hook을 순정 템플릿으로 다시 써서 플래그를 지운 직후에 죽고,
+  # commit-time self-check가 그 상태를 커밋 차단으로 판정한다.
+  local sandbox repo_root stub_dir hooks_dir broken
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  # 1회차: 정상 설치로 세 hook에 플래그를 심는다.
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "first install failed: $INSTALL_LEFTHOOK_OUTPUT"
+
+  # `prepare-commit-msg`는 git이 exit status를 존중하는 hook이라 깨지면 커밋을 막는다.
+  # 그래서 installer는 경고가 아니라 실패로 알려야 한다.
+  hooks_dir="$repo_root/.git/hooks"
+  broken="$hooks_dir/prepare-commit-msg"
+  write_lefthook_hook_missing_preamble "$broken" "prepare-commit-msg"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] \
+    || fail "install must fail on a hook that calls call_lefthook without defining it; output: $INSTALL_LEFTHOOK_OUTPUT"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "no call_lefthook() definition"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "$broken"
+
+  # 실패했어도 configured hook의 플래그는 손상되지 않아야 한다.
+  local hook_name checked=0
+  for hook_name in $(lefthook_config_hook_names "$repo_root/lefthook.yml"); do
+    assert_hook_call_line "$hooks_dir/$hook_name" "$hook_name"
+    checked=$((checked + 1))
+  done
+  # 3 = write_install_lefthook_fixture_config가 정의하는 hook 수 (pre-commit/commit-msg/pre-push).
+  # 개수를 단언해 위 루프가 조용히 0회 도는 것을 막는다.
+  [[ "$checked" -eq 3 ]] || fail "expected to check 3 configured hooks, checked $checked"
+}
+
+test_install_lefthook_warns_but_survives_a_broken_post_hook() {
+  # git은 `post-*` 계열 hook의 exit status를 무시한다. 그런 hook이 깨져 exit 127로 죽어도 커밋과
+  # push는 그대로 진행되므로, installer는 실패가 아니라 경고를 낸다 — 커밋을 한 건도 막지 못하는
+  # 파일 하나 때문에 direnv 진입까지 막을 이유가 없다 (main도 이 경우 rc=0이었다).
+  local sandbox repo_root stub_dir broken
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] || fail "first install failed: $INSTALL_LEFTHOOK_OUTPUT"
+
+  broken="$repo_root/.git/hooks/post-commit"
+  write_lefthook_hook_missing_preamble "$broken" "post-commit"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" == "0" ]] \
+    || fail "install must not fail on a broken hook whose exit status git ignores; output: $INSTALL_LEFTHOOK_OUTPUT"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "warning:"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "$broken"
+}
+
+test_install_lefthook_exit_status_ignoring_hooks_are_known_git_hooks() {
+  # 경고 경로는 hook 이름을 GIT_HOOK_NAMES_IGNORING_EXIT_STATUS와 대조해 고른다. 그 목록에 git이
+  # 모르는 이름이 들어가면 그 항목은 영원히 매치되지 않아 조용히 죽은 원소가 되고, 반대로 오타가
+  # 나면 fail이 걸려야 할 hook이 경고로 새어 나간다. 부분집합 관계를 단언해 둘 다 막는다.
+  local ignored known
+  for ignored in $LEFTHOOK_GIT_HOOK_NAMES_IGNORING_EXIT_STATUS; do
+    local found=0
+    for known in $LEFTHOOK_GIT_HOOK_NAMES; do
+      [[ "$ignored" == "$known" ]] && { found=1; break; }
+    done
+    [[ "$found" -eq 1 ]] \
+      || fail "GIT_HOOK_NAMES_IGNORING_EXIT_STATUS contains '$ignored', which is not a git hook name in GIT_HOOK_NAMES"
+  done
+
+  # `post-checkout`은 이름만 보면 이 집합에 속할 것 같지만, git 문서는 그 hook의 exit status가
+  # `git checkout`/`git switch`의 exit status가 된다고 명시한다. 실수로 다시 들어가는 것을 막는다.
+  for ignored in $LEFTHOOK_GIT_HOOK_NAMES_IGNORING_EXIT_STATUS; do
+    [[ "$ignored" != "post-checkout" ]] \
+      || fail "post-checkout must not be treated as exit-status-ignoring: its exit status becomes git checkout's"
+  done
+}
+
+test_install_lefthook_premise_bash_n_accepts_undefined_function_call() {
+  # 위 테스트들이 방어하는 전제를 못박는다: `bash -n`은 정의되지 않은 함수 호출을 문법 오류로
+  # 보지 않는다. 이 전제가 성립하기 때문에 installer가 정의 존재를 따로 확인해야 한다.
+  # bash가 언젠가 이것을 잡기 시작하면 이 테스트가 실패하고, 그때 별도 검사의 필요성을 재검토한다.
+  # hook 이름 인자는 `bash -n` 결과에 영향이 없으므로 임의 값이어도 무방하다.
+  local sandbox probe
+  sandbox=$(new_sandbox)
+  probe="$sandbox/probe.sh"
+  write_lefthook_hook_missing_preamble "$probe" "prepare-commit-msg"
+
+  bash -n "$probe" \
+    || fail "bash -n now rejects an undefined function call; revisit hook_defines_call_lefthook"
+}
+
 test_install_lefthook_leaves_old_backup_hooks_untouched() {
   # lefthook은 밀려난 기존 hook을 `<name>.old`로 남긴다. 실행되지 않는 파일이므로
   # 패치 대상에서 제외한다 (되살렸을 때 원본 그대로여야 한다).
+  # 이 fixture는 preamble이 없어도 된다 — `.old`는 패치 대상 선정에서 확장자로 걸러지므로 정의 검사에
+  # 닿지 않는다. 여기서는 "손대지 않는다"만이 관심사다.
+  # 헬퍼가 실행 권한을 붙이는 것도 의도다. 실제 lefthook의 `.old`는 rename 산물이라 원본 hook의
+  # mode를 그대로 물려받는다.
   local sandbox repo_root stub_dir backup before after
   sandbox=$(new_sandbox)
   repo_root="$sandbox/repo"
@@ -431,7 +597,7 @@ test_install_lefthook_leaves_old_backup_hooks_untouched() {
 
   mkdir -p "$repo_root/.git/hooks"
   backup="$repo_root/.git/hooks/pre-commit.old"
-  printf '#!/bin/sh\ncall_lefthook run "pre-commit" "$@"\n' > "$backup"
+  write_lefthook_hook_missing_preamble "$backup" "pre-commit"
   before=$(cat "$backup")
 
   run_install_lefthook_capture "$repo_root" "$stub_dir"
@@ -443,7 +609,9 @@ test_install_lefthook_leaves_old_backup_hooks_untouched() {
 
 write_drifting_lefthook_stub() {
   # 정상 stub과 같은 hook 집합을 만들되, pre-commit만 body_file 내용으로 덮어써 호출부를
-  # 흐트러뜨린다. 나머지 hook은 정상이라 검증이 pre-commit에서만 걸린다.
+  # 흐트러뜨린다. 나머지 hook은 정상이라 검증이 pre-commit에서만 걸린다 — 그러려면 나머지 hook도
+  # LEFTHOOK_STUB_HOOK_FORMAT의 preamble을 갖춰야 한다. 갖추지 않으면 "깨진 hook" 판정이
+  # 다른 hook에서 먼저 발동해 이 fixture가 겨냥한 검증 지점에 닿지 못한다 (#1073).
   # body를 stub 소스에 리터럴로 심으면 stub 실행 시 `"$@"`/`${VAR}`가 확장돼 버리므로,
   # 파일 경로만 넘기고 그대로 복사한다.
   local stub_dir="$1" body_file="$2"
@@ -456,7 +624,7 @@ case "\${1:-}" in
     hooks_dir="\$(git rev-parse --path-format=absolute --git-path hooks)"
     mkdir -p "\$hooks_dir"
     for hook in \$(awk '/^[A-Za-z0-9_.-]+:/ { sub(/:\$/, "", \$1); print \$1 }' lefthook.yml); do
-      printf '#!/bin/sh\ncall_lefthook run "%s" "\$@"\n' "\$hook" > "\$hooks_dir/\$hook"
+      printf '$LEFTHOOK_STUB_HOOK_FORMAT' "\$hook" > "\$hooks_dir/\$hook"
       chmod +x "\$hooks_dir/\$hook"
     done
     cp "$body_file" "\$hooks_dir/pre-commit"
@@ -486,11 +654,14 @@ test_install_lefthook_fails_when_lefthook_call_shape_changes() {
 
   # 호출부는 하나지만 `"$@"`로 끝나지 않아 주입이 no-op가 된다. decoy 주석에는 플래그만 있어
   # "파일 어딘가에 플래그가 있는가" 식의 느슨한 검사라면 통과해버린다.
-  cat > "$sandbox/drift-body" <<'BODY'
-#!/bin/sh
+  # preamble을 갖춰야 "깨진 hook" 판정이 아니라 호출부 형태 검증까지 도달한다 (#1073).
+  {
+    lefthook_hook_preamble
+    cat <<'BODY'
 # decoy: --no-auto-install appears here, but not on the call line
 call_lefthook run "pre-commit" "$@" # upstream template drift
 BODY
+  } > "$sandbox/drift-body"
   write_drifting_lefthook_stub "$stub_dir" "$sandbox/drift-body"
 
   run_install_lefthook_capture "$repo_root" "$stub_dir"
@@ -508,13 +679,16 @@ test_install_lefthook_fails_on_unpatched_second_call() {
   create_install_lefthook_fixture "$repo_root" "$stub_dir"
 
   # 첫 호출은 column 0이라 패치되지만, 들여쓴 둘째 호출은 주입 대상이 아니라 그대로 남는다.
-  cat > "$sandbox/second-call-body" <<'BODY'
-#!/bin/sh
+  # preamble을 갖춰야 "깨진 hook" 판정이 아니라 호출부 개수 검증까지 도달한다 (#1073).
+  {
+    lefthook_hook_preamble
+    cat <<'BODY'
 call_lefthook run "pre-commit" "$@"
 if [ -n "${EXTRA:-}" ]; then
   call_lefthook run "pre-commit" "$@"
 fi
 BODY
+  } > "$sandbox/second-call-body"
   write_drifting_lefthook_stub "$stub_dir" "$sandbox/second-call-body"
 
   run_install_lefthook_capture "$repo_root" "$stub_dir"

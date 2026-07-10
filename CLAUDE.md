@@ -29,6 +29,8 @@ home-manager activation 충돌 정책: macOS에서 mkOutOfStoreSymlink target이
 - 목록: `wt ls --json` (name/branch/path/pr/dirty/unpushed/current/committedAt/age 구조화 출력, jq 파싱용).
 - 정리: `wt cleanup --auto` (MERGED 자동) 또는 `wt cleanup <name>...` (이름 지정). dirty/unpushed 확인 우회는 `--yes`.
 
+**워크트리에서 git hook 파일을 직접 쓰지 않는다.** direnv/`nrs`가 그 워크트리의 `core.hooksPath`를 고정하기 전에는 `git rev-parse --git-path hooks`가 **메인 repo의 `.git/hooks`** 로 해석된다. 그 경로에 쓰면 메인 repo의 hook을 덮어써 이후 모든 커밋이 막힐 수 있다 (#1073에서 관측된 경로). hook 동작을 확인해야 하면 `tests/suites/lefthook.sh`의 격리 fixture(`create_install_lefthook_fixture`)를 쓴다. 이미 덮어썼다면 그 hook 파일을 지운 뒤 direnv를 다시 진입한다 — `lefthook.yml`이 정의하는 hook은 `lefthook install`이 다시 쓴다. 다만 `<hook>.old`가 이미 있으면 lefthook이 백업 rename에 실패해 install이 죽으므로, 그때는 `<hook>`과 `<hook>.old`를 함께 지운다.
+
 ## Bash tool 환경
 
 Bash tool의 inline 스크립트는 zsh에서 실행된다. 아래 bash 전용 문법은 zsh에서 `bad substitution`으로 실패하므로 사용하지 않는다.
