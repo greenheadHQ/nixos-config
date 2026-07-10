@@ -2,11 +2,15 @@
 
 `claude -p --output-format json`의 init 이벤트를 활용하여 harness 구성요소를 자동 검증한다.
 
-- 확인 날짜: 2026-07-08
-- 확인 버전: Claude Code v2.1.202
+- 확인 날짜: 2026-07-10
+- 확인 버전: Claude Code v2.1.206
 - 재검증: `claude --version && claude --help && claude -p --help`
-- 확인 범위: CLI help와 스탬프만 재검증. T1~T8 실제 `claude -p` 실행은 네트워크 차단 sandbox에서 미수행
-- 비용: 각 테스트 ~$0.07 (1-turn, 최소 프롬프트)
+- 확인 범위: 인증된 JSON 성공 probe에서 4-event 배열과 init key를 재확인. T1~T8 전체는 재검증 미수행 (v2.1.202 기준 서술 유지)
+- 비용: 각 테스트 ~$0.07 (v2.1.202 기준 서술 유지; 현재 비용 재검증 미수행)
+
+공통 성공 계약: Claude exit 0, `result/success` + `is_error=false`, 기대 산출물 `test -s`, 기대
+marker를 모두 확인한다. JSON stdout, stderr, 업무 산출물을 분리하고 parser 앞에 `2>&1`을 두지 않는다.
+반복 테스트는 직전 결과 대비 진척 delta가 없으면 circuit breaker로 중단한다.
 
 ## T1: Harness 인벤토리 검증
 
@@ -17,36 +21,53 @@
 ```bash
 #!/usr/bin/env bash
 # T1: Harness Inventory Check
-RESULT=$(echo "ok" | claude -p --output-format json 2>/dev/null)
+set -o pipefail
+echo "ok" | claude -p --output-format json > /tmp/harness-init.json 2> /tmp/harness-init.stderr
+CLAUDE_RC=${PIPESTATUS[1]}
+test "$CLAUDE_RC" -eq 0 && test -s /tmp/harness-init.json || exit 1
+RESULT=$(< /tmp/harness-init.json)
 
 SKILLS=$(echo "$RESULT" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
+items = data if isinstance(data, list) else [data]
+init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
 print(len(init.get('skills', [])))")
 
 TOOLS=$(echo "$RESULT" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
+items = data if isinstance(data, list) else [data]
+init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
 print(len(init.get('tools', [])))")
 
 MCP=$(echo "$RESULT" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
+items = data if isinstance(data, list) else [data]
+init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
 print(len(init.get('mcp_servers', [])))")
 
 PLUGINS=$(echo "$RESULT" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
+items = data if isinstance(data, list) else [data]
+init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
 print(len(init.get('plugins', [])))")
+
+RESULT_OK=$(echo "$RESULT" | python3 -c "
+import sys, json
+data = json.loads(sys.stdin.read())
+items = data if isinstance(data, list) else [data]
+results = [d for d in items if isinstance(d, dict) and d.get('type')=='result']
+ok = bool(results) and results[-1].get('subtype') == 'success' and not results[-1].get('is_error', False)
+print('yes' if ok else 'no')")
 
 echo "Skills: $SKILLS, Tools: $TOOLS, MCP: $MCP, Plugins: $PLUGINS"
 
 # 판정 기준 (기대값은 환경에 따라 조정)
 PASS=true
+[ "$RESULT_OK" != "yes" ] && echo "FAIL: result event is not successful" && PASS=false
 [ "$SKILLS" -lt 10 ] && echo "FAIL: Skills too few ($SKILLS < 10)" && PASS=false
 [ "$TOOLS" -lt 10 ] && echo "FAIL: Tools too few ($TOOLS < 10)" && PASS=false
 # MCP 서버 0개는 정상이다 (이 저장소는 관리 MCP 서버를 두지 않는다) — MCP 개수 단언 없음
@@ -65,12 +86,14 @@ $PASS && echo "T1: PASS" || echo "T1: FAIL"
 ```bash
 #!/usr/bin/env bash
 # T2: Skill Trigger Spot Check
-RESULT=$(echo "ok" | claude -p --output-format json 2>/dev/null)
+test -s /tmp/harness-init.json || { echo "T2: FAIL (run T1 first)"; exit 1; }
+RESULT=$(< /tmp/harness-init.json)
 
 SKILL_LIST=$(echo "$RESULT" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
+items = data if isinstance(data, list) else [data]
+init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
 for s in init.get('skills', []):
     print(s)")
 
@@ -169,12 +192,14 @@ if [ ! -f "$MCP_CONFIG" ]; then
   exit 0
 fi
 
-RESULT=$(echo "ok" | claude -p --output-format json 2>/dev/null)
+test -s /tmp/harness-init.json || { echo "T4: FAIL (run T1 first)"; exit 1; }
+RESULT=$(< /tmp/harness-init.json)
 
 MCP_SERVERS=$(echo "$RESULT" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-init = [d for d in data if isinstance(d, dict) and d.get('type')=='system'][0]
+items = data if isinstance(data, list) else [data]
+init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
 for s in init.get('mcp_servers', []):
     print(s)")
 
@@ -211,20 +236,24 @@ $PASS && echo "T4: PASS" || echo "T4: FAIL"
 #!/usr/bin/env bash
 # T5: Permission Model Check
 PASS=true
+set -o pipefail
 
 # 5a: 권한 없이 도구 사용 → 도구 미실행 (exit 0이지만 도구 못 씀)
-RESULT_NO_PERM=$(echo "ls /tmp | head -1을 실행하고 결과만 출력해" | claude -p --output-format json 2>/dev/null)
-HAS_TOOL_USE=$(echo "$RESULT_NO_PERM" | python3 -c "
+echo "ls /tmp | head -1을 실행하고 결과만 출력해" | claude -p --output-format json \
+  > /tmp/t5-no-perm.json 2> /tmp/t5-no-perm.stderr
+T5A_RC=${PIPESTATUS[1]}
+HAS_TOOL_USE=$(python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-for d in data:
+items = data if isinstance(data, list) else [data]
+for d in items:
     if isinstance(d, dict) and d.get('type')=='assistant':
         for block in d.get('message', {}).get('content', []):
             if isinstance(block, dict) and block.get('type')=='tool_use':
                 print('yes'); exit()
-print('no')" 2>/dev/null)
+print('no')" < /tmp/t5-no-perm.json)
 
-if [ "$HAS_TOOL_USE" = "no" ]; then
+if [ "$T5A_RC" -eq 0 ] && [ "$HAS_TOOL_USE" = "no" ]; then
   echo "  ✓ 5a: Tool blocked without permissions"
 else
   echo "  ✗ 5a: Tool should be blocked without permissions"
@@ -232,14 +261,18 @@ else
 fi
 
 # 5b: 권한 우회 → 도구 실행 성공
-RESULT_WITH_PERM=$(echo "echo T5_CHECK를 Bash로 실행하고 결과만 출력해" | claude -p --dangerously-skip-permissions --output-format json 2>/dev/null)
-HAS_RESULT=$(echo "$RESULT_WITH_PERM" | python3 -c "
+echo "echo T5_CHECK를 Bash로 실행하고 결과만 출력해" | claude -p --dangerously-skip-permissions --output-format json \
+  > /tmp/t5-with-perm.json 2> /tmp/t5-with-perm.stderr
+T5B_RC=${PIPESTATUS[1]}
+HAS_RESULT=$(python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
-result = [d for d in data if d.get('type')=='result'][0]
-print('yes' if 'T5_CHECK' in result.get('result', '') else 'no')" 2>/dev/null)
+items = data if isinstance(data, list) else [data]
+result = [d for d in items if isinstance(d, dict) and d.get('type')=='result'][0]
+ok = result.get('subtype') == 'success' and not result.get('is_error', False)
+print('yes' if ok and 'T5_CHECK' in result.get('result', '') else 'no')" < /tmp/t5-with-perm.json)
 
-if [ "$HAS_RESULT" = "yes" ]; then
+if [ "$T5B_RC" -eq 0 ] && [ "$HAS_RESULT" = "yes" ]; then
   echo "  ✓ 5b: Tool allowed with --dangerously-skip-permissions"
 else
   echo "  ✗ 5b: Tool should work with --dangerously-skip-permissions"
@@ -269,9 +302,13 @@ else
   EXPECTED_HOST="greenhead-MacBookPro"
 fi
 
-RESULT=$(echo "hostname을 실행하고 결과만 출력해" | ssh "$REMOTE" 'claude -p --dangerously-skip-permissions' 2>/dev/null)
+set -o pipefail
+echo "hostname을 실행하고 결과만 출력해" | ssh "$REMOTE" 'claude -p --dangerously-skip-permissions' \
+  > /tmp/t6-remote.txt 2> /tmp/t6-remote.stderr
+SSH_RC=${PIPESTATUS[1]}
+RESULT=$(< /tmp/t6-remote.txt)
 
-if echo "$RESULT" | grep -qi "$EXPECTED_HOST"; then
+if [ "$SSH_RC" -eq 0 ] && test -s /tmp/t6-remote.txt && grep -qi "$EXPECTED_HOST" /tmp/t6-remote.txt; then
   echo "  ✓ Remote hostname: $RESULT"
   echo "T6: PASS"
 else
@@ -283,6 +320,8 @@ fi
 판정 로직: 원격 hostname이 기대값과 일치하면 PASS.
 
 > 이 테스트는 SSH 연결이 가능한 환경에서만 실행한다. SSH 연결 실패 시 별도 진단.
+> 무출력 약 10분 뒤 완료된 사례가 있으므로 outer timeout을 두되 무출력만으로 중단하지 않는다.
+> 종료 뒤 기대 결과 파일/marker를 검증한다.
 
 ## T7: 세션 체이닝
 
@@ -294,15 +333,19 @@ fi
 #!/usr/bin/env bash
 # T7: Session Chaining
 SECRET="T7_$(date +%s)"
+set -o pipefail
 
 # 1단계: 비밀 코드 설정 + session_id 추출
-SESSION_ID=$(echo "나의 비밀 코드는 ${SECRET}이야. 확인했으면 '확인'이라고만 답해." | claude -p --output-format json 2>/dev/null | python3 -c "
-import sys, json; data=json.loads(sys.stdin.read())
-for item in data:
+echo "나의 비밀 코드는 ${SECRET}이야. 확인했으면 '확인'이라고만 답해." | claude -p --output-format json \
+  > /tmp/t7-first.json 2> /tmp/t7-first.stderr
+T7_FIRST_RC=${PIPESTATUS[1]}
+SESSION_ID=$(python3 -c "
+import sys, json; data=json.loads(sys.stdin.read()); items=data if isinstance(data,list) else [data]
+for item in items:
     if isinstance(item, dict) and item.get('type')=='system':
-        print(item['session_id']); break")
+        print(item['session_id']); break" < /tmp/t7-first.json)
 
-if [ -z "$SESSION_ID" ]; then
+if [ "$T7_FIRST_RC" -ne 0 ] || [ -z "$SESSION_ID" ]; then
   echo "  ✗ Failed to extract session_id"
   echo "T7: FAIL"
   exit 1
@@ -310,9 +353,12 @@ fi
 echo "  Session: $SESSION_ID"
 
 # 2단계: resume으로 이전 컨텍스트 조회
-RECALL=$(echo "내 비밀 코드가 뭐였어? 코드만 답해." | claude -p --resume "$SESSION_ID" 2>/dev/null)
+echo "내 비밀 코드가 뭐였어? 코드만 답해." | claude -p --resume "$SESSION_ID" \
+  > /tmp/t7-recall.txt 2> /tmp/t7-recall.stderr
+T7_RECALL_RC=${PIPESTATUS[1]}
+RECALL=$(< /tmp/t7-recall.txt)
 
-if echo "$RECALL" | grep -q "$SECRET"; then
+if [ "$T7_RECALL_RC" -eq 0 ] && test -s /tmp/t7-recall.txt && grep -q "$SECRET" /tmp/t7-recall.txt; then
   echo "  ✓ Session recalled: $SECRET"
   echo "T7: PASS"
 else
@@ -334,10 +380,12 @@ fi
 # T8: Concurrent Execution
 TMPDIR=$(mktemp -d)
 
-echo "echo T8_PROC1" | claude -p --dangerously-skip-permissions --no-session-persistence > "$TMPDIR/proc1.txt" 2>&1 &
+echo "echo T8_PROC1" | claude -p --dangerously-skip-permissions --no-session-persistence \
+  > "$TMPDIR/proc1.txt" 2> "$TMPDIR/proc1.stderr" &
 PID1=$!
 
-echo "echo T8_PROC2" | claude -p --dangerously-skip-permissions --no-session-persistence > "$TMPDIR/proc2.txt" 2>&1 &
+echo "echo T8_PROC2" | claude -p --dangerously-skip-permissions --no-session-persistence \
+  > "$TMPDIR/proc2.txt" 2> "$TMPDIR/proc2.stderr" &
 PID2=$!
 
 wait $PID1
@@ -366,6 +414,9 @@ $PASS && echo "T8: PASS" || echo "T8: FAIL"
 
 판정 로직: 두 프로세스 모두 exit 0이고 각각의 출력에 기대 문자열이 포함되면 PASS.
 
+동시 실행 안정성과 `--no-session-persistence`의 충돌 방지 효과는 재검증 미수행
+(v2.1.202 기준 서술 유지).
+
 ---
 
 ## 실행 전략
@@ -384,6 +435,7 @@ $PASS && echo "T8: PASS" || echo "T8: FAIL"
 최적화: T1, T2(그리고 관리 MCP가 있는 경우 T4)는 동일한 init 이벤트를 재사용하므로, 한 번의 `claude -p --output-format json` 호출 결과를 파일에 저장하고 공유한다:
 
 ```bash
-echo "ok" | claude -p --output-format json > /tmp/harness-init.json 2>/dev/null
+echo "ok" | claude -p --output-format json \
+  > /tmp/harness-init.json 2> /tmp/harness-init.stderr
 # T1, T2(그리고 mcp.json이 있으면 T4)에서 /tmp/harness-init.json을 읽어서 판정
 ```
