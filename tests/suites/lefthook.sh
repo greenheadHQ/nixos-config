@@ -5,8 +5,9 @@
 # ─── install-lefthook-hooks fixture helpers ───
 # 대부분의 테스트에서 실제 lefthook은 stub으로 대체한다. 우리 검증 대상은 install-lefthook-hooks.sh의
 # cleanup_main_redundant_hooks_path / apply_worktree_local_hooks_config /
-# acquire_install_lock / run_lefthook_install / inject_staged_guard /
-# disable_lefthook_auto_install 동작이고, lefthook 자체의 install 로직은 별도 신뢰 영역이다.
+# acquire_install_lock / require_canonical_lefthook_config / refuse_symlinked_hooks /
+# run_lefthook_install / inject_staged_guard / disable_lefthook_auto_install 동작이고,
+# lefthook 자체의 install 로직은 별도 신뢰 영역이다.
 # stub은 install 명령 호출 시 설정된 hook(pre-commit/commit-msg/pre-push)을 모두 생성하며,
 # 각 파일은 `call_lefthook run "<hook>" "$@"` 라인을 포함한다.
 # 예외: test_lefthook_auto_sync_cannot_drop_guard_end_to_end는 auto-sync 동작 자체를 확인해야
@@ -398,6 +399,36 @@ test_install_lefthook_leaves_old_backup_hooks_untouched() {
   [[ "$before" == "$after" ]] || fail "expected $backup to stay untouched; got: $after"
 }
 
+write_drifting_lefthook_stub() {
+  # 정상 stub과 같은 hook 집합을 만들되, pre-commit만 body_file 내용으로 덮어써 호출부를
+  # 흐트러뜨린다. 나머지 hook은 정상이라 검증이 pre-commit에서만 걸린다.
+  # body를 stub 소스에 리터럴로 심으면 stub 실행 시 `"$@"`/`${VAR}`가 확장돼 버리므로,
+  # 파일 경로만 넘기고 그대로 복사한다.
+  local stub_dir="$1" body_file="$2"
+  cat > "$stub_dir/lefthook" <<STUB
+#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  install)
+    cd "\$(git rev-parse --show-toplevel)"
+    hooks_dir="\$(git rev-parse --path-format=absolute --git-path hooks)"
+    mkdir -p "\$hooks_dir"
+    for hook in \$(awk '/^[A-Za-z0-9_.-]+:/ { sub(/:\$/, "", \$1); print \$1 }' lefthook.yml); do
+      printf '#!/bin/sh\ncall_lefthook run "%s" "\$@"\n' "\$hook" > "\$hooks_dir/\$hook"
+      chmod +x "\$hooks_dir/\$hook"
+    done
+    cp "$body_file" "\$hooks_dir/pre-commit"
+    chmod +x "\$hooks_dir/pre-commit"
+    ;;
+  *)
+    echo "stub lefthook: unsupported command: \${1:-}" >&2
+    exit 1
+    ;;
+esac
+STUB
+  chmod +x "$stub_dir/lefthook"
+}
+
 test_install_lefthook_fails_when_lefthook_call_shape_changes() {
   # 상류 lefthook이 hook 템플릿의 호출부 형태를 바꾸면 플래그 주입이 조용한 no-op가 되고,
   # 다음 auto-sync가 guard를 다시 지운다. 그 실패를 install 시점으로 당겼는지 검증한다.
@@ -411,33 +442,70 @@ test_install_lefthook_fails_when_lefthook_call_shape_changes() {
   stub_dir="$sandbox/stubs"
   create_install_lefthook_fixture "$repo_root" "$stub_dir"
 
-  # inject_staged_guard의 부분 문자열 매칭은 통과하지만 호출부가 `"$@"`로 끝나지 않는 형태.
-  cat > "$stub_dir/lefthook" <<'STUB'
-#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  install)
-    cd "$(git rev-parse --show-toplevel)"
-    hooks_dir="$(git rev-parse --path-format=absolute --git-path hooks)"
-    mkdir -p "$hooks_dir"
-    {
-      printf '#!/bin/sh\n'
-      printf '# decoy: call_lefthook run "pre-commit" --no-auto-install "$@"\n'
-      printf 'call_lefthook run "pre-commit" "$@" # upstream template drift\n'
-    } > "$hooks_dir/pre-commit"
-    chmod +x "$hooks_dir/pre-commit"
-    ;;
-  *)
-    echo "stub lefthook: unsupported command: ${1:-}" >&2
-    exit 1
-    ;;
-esac
-STUB
-  chmod +x "$stub_dir/lefthook"
+  # 호출부는 하나지만 `"$@"`로 끝나지 않아 주입이 no-op가 된다. decoy 주석에는 플래그만 있어
+  # "파일 어딘가에 플래그가 있는가" 식의 느슨한 검사라면 통과해버린다.
+  cat > "$sandbox/drift-body" <<'BODY'
+#!/bin/sh
+# decoy: --no-auto-install appears here, but not on the call line
+call_lefthook run "pre-commit" "$@" # upstream template drift
+BODY
+  write_drifting_lefthook_stub "$stub_dir" "$sandbox/drift-body"
 
   run_install_lefthook_capture "$repo_root" "$stub_dir"
   [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail when the lefthook call shape changes; output: $INSTALL_LEFTHOOK_OUTPUT"
-  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "auto-install suppression failed"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "expected exact call line"
+}
+
+test_install_lefthook_fails_on_unpatched_second_call() {
+  # 기대 라인 하나의 존재만 확인하면, 같은 hook에 패치되지 않은 두 번째 호출이 남아 있어도
+  # 통과해 그 경로에서 auto-install이 계속 살아 있다. 호출부가 정확히 하나인지도 세는지 본다.
+  local sandbox repo_root stub_dir
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+
+  # 첫 호출은 column 0이라 패치되지만, 들여쓴 둘째 호출은 주입 대상이 아니라 그대로 남는다.
+  cat > "$sandbox/second-call-body" <<'BODY'
+#!/bin/sh
+call_lefthook run "pre-commit" "$@"
+if [ -n "${EXTRA:-}" ]; then
+  call_lefthook run "pre-commit" "$@"
+fi
+BODY
+  write_drifting_lefthook_stub "$stub_dir" "$sandbox/second-call-body"
+
+  run_install_lefthook_capture "$repo_root" "$stub_dir"
+  [[ "$INSTALL_LEFTHOOK_RC" != "0" ]] || fail "expected install to fail when a second, unpatched lefthook call remains; output: $INSTALL_LEFTHOOK_OUTPUT"
+  assert_contains "$INSTALL_LEFTHOOK_OUTPUT" "expected exactly one 'call_lefthook run' line"
+}
+
+test_install_lefthook_rejects_foreign_lefthook_config() {
+  # `lefthook install`은 LEFTHOOK_CONFIG가 가리키는 설정을 쓰는데 preflight는 저장소의
+  # lefthook.yml만 읽는다. 두 경로가 갈라진 채 상태를 바꾸지 않는지 확인한다.
+  local sandbox repo_root stub_dir home_dir rc out
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stubs"
+  home_dir="$sandbox/home"
+  create_install_lefthook_fixture "$repo_root" "$stub_dir"
+  printf 'post-commit:\n  jobs:\n    - name: noop\n      run: "true"\n' > "$sandbox/other-lefthook.yml"
+
+  rc=0
+  out=$(
+    cd "$repo_root"
+    export HOME="$home_dir"
+    export XDG_CONFIG_HOME="$home_dir/.config"
+    export GIT_CONFIG_GLOBAL=/dev/null
+    export GIT_CONFIG_NOSYSTEM=1
+    export PATH="$stub_dir:$PATH"
+    export LEFTHOOK_CONFIG="$sandbox/other-lefthook.yml"
+    bash "$REPO_ROOT/scripts/ai/install-lefthook-hooks.sh" 2>&1
+  ) || rc=$?
+
+  [[ "$rc" != "0" ]] || fail "expected install to fail with a foreign LEFTHOOK_CONFIG; output: $out"
+  assert_contains "$out" "LEFTHOOK_CONFIG must point to"
+  [[ ! -f "$repo_root/.git/hooks/pre-commit" ]] || fail "no hook should be written when LEFTHOOK_CONFIG is rejected"
 }
 
 assert_symlinked_hook_refused_before_install() {

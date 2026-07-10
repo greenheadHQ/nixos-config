@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Install Lefthook (worktree-local in worktrees, default in main) and inject the staged-config guard.
+# Install Lefthook (worktree-local in worktrees, default in main), refuse symlinked hooks before
+# `lefthook install` can write through them, inject the staged-config guard, and suppress
+# lefthook's implicit auto-install on every configured hook.
 #
 # Design split — main repo vs. worktree (preserves PR #750's worktree-local design):
 #
@@ -320,24 +322,30 @@ disable_lefthook_auto_install() {
   # `--git-path hooks`는 core.hooksPath를 반영하므로 lefthook이 실제로 hook을 쓴 위치와
   # 일치한다 ($git_dir/hooks와 다를 수 있다 — 사용자가 core.hooksPath를 재정의한 경우).
   # inject_staged_guard가 hook을 찾는 방식과 같은 해석 경로를 쓴다.
-  local hook_file resolved_hooks_dir
+  # 패치 대상은 lefthook.yml이 정의한 hook뿐이다. 디렉토리를 훑어 `call_lefthook run`이 든 파일을
+  # 전부 편입하면, 설정에 없는 남의 hook까지 우리 관리 대상으로 끌어들이고 basename 기반 검증이
+  # 그 파일에서 실패해 install 전체를 막는다. preflight·패치·검증이 같은 집합을 본다.
+  local hook_file hook_name resolved_hooks_dir
   resolved_hooks_dir="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path hooks)"
   local -a hook_files=()
-  for hook_file in "$resolved_hooks_dir"/*; do
-    [ -f "$hook_file" ] || continue
-    # lefthook이 기존 hook을 밀어낼 때 남기는 백업본은 실행되지 않으므로 건드리지 않는다.
-    case "$hook_file" in *.old) continue ;; esac
-    grep -Fq 'call_lefthook run ' "$hook_file" || continue
+  for hook_name in $(configured_hooks); do
+    hook_file="$resolved_hooks_dir/$hook_name"
+    # lefthook.yml이 정의한 hook이 하나라도 설치되지 않았다면, auto-install을 끈 지금은 아무도
+    # 되살려 주지 않는다. commit-time self-check가 같은 목록을 fail-fast로 확인하므로, 그 실패를
+    # install 시점으로 당겨 원인을 분명히 남긴다.
+    if [ ! -f "$hook_file" ]; then
+      fail "expected hook not installed: $hook_file (lefthook.yml defines it; check 'lefthook install' output)"
+    fi
     # 아래 python 블록은 rename으로 교체하므로 symlink였다면 링크 자체가 일반 파일로 바뀐다
-    # (다른 레이어가 hook을 symlink로 관리한다면 그 경계가 조용히 끊긴다). lefthook install은
-    # 일반 파일을 쓰므로 여기서 symlink를 만나는 것은 예상 밖 상태다 — 삼키지 말고 세운다.
+    # (다른 레이어가 hook을 symlink로 관리한다면 그 경계가 조용히 끊긴다). install 전 preflight가
+    # 이미 걸렀어야 하지만, 그 사이의 TOCTOU를 여기서 한 번 더 막는다.
     if [ -L "$hook_file" ]; then
       fail "refusing to patch symlinked hook (rename would replace the link): $hook_file"
     fi
     hook_files+=("$hook_file")
   done
   if [ "${#hook_files[@]}" -eq 0 ]; then
-    fail "no lefthook-generated hooks found under $resolved_hooks_dir"
+    fail "no hooks configured in $repo_root/lefthook.yml"
   fi
 
   # 200>&- closes the lock fd in the python child (same reason as run_lefthook_install).
@@ -394,33 +402,48 @@ PY
   # Defense in depth: lefthook이 hook 템플릿의 호출부 형태를 바꾸면 위 치환이 조용히
   # no-op가 되고, 다음 auto-sync가 guard를 다시 지운다. 그 실패를 install 시점으로 당긴다.
   #
-  # 실행 라인을 통째로 정확히 대조한다. "플래그가 파일 어딘가에 있다"는 느슨한 검사는
-  # 주석 한 줄이 두 문자열을 함께 담기만 해도 통과해, 정작 실행 호출부에 플래그가 없는
-  # 상태를 미탐한다. 패턴 안의 `"$@"`가 확장되지 않도록 작은따옴표로 감싼다.
-  local hook_name expected_call
+  # 두 가지를 함께 본다. (1) `call_lefthook run` 호출부가 정확히 하나여야 한다 — 기대 라인의
+  # 존재만 확인하면, 같은 hook에 패치되지 않은 두 번째 호출(들여쓰기·후행 구문 등)이 남아 있어도
+  # 통과해 그 경로에서 auto-install이 계속 살아 있다. (2) 그 한 줄이 기대값과 완전히 같아야 한다 —
+  # "플래그가 파일 어딘가에 있다"는 느슨한 검사는 주석 한 줄만으로 통과한다.
+  # 패턴 안의 `"$@"`가 확장되지 않도록 작은따옴표로 감싼다.
+  local expected_call call_count
   for hook_file in "${hook_files[@]}"; do
     bash -n "$hook_file"
     hook_name="$(basename "$hook_file")"
+    call_count="$(grep -Fc 'call_lefthook run ' "$hook_file" || true)"
+    if [ "$call_count" != "1" ]; then
+      fail "auto-install suppression failed: expected exactly one 'call_lefthook run' line in $hook_file, found $call_count"
+    fi
     expected_call='call_lefthook run "'"$hook_name"'" '"$NO_AUTO_INSTALL_FLAG"' "$@"'
     if ! grep -Fxq -- "$expected_call" "$hook_file"; then
       fail "auto-install suppression failed: expected exact call line [$expected_call] in $hook_file"
     fi
   done
+}
 
-  # lefthook.yml이 정의한 hook이 하나라도 설치되지 않았다면, auto-install을 끈 지금은 아무도
-  # 되살려 주지 않는다. commit-time self-check가 같은 목록을 fail-fast로 확인하므로, 그 실패를
-  # install 시점으로 당겨 원인을 분명히 남긴다. 기대 목록은 대상 repo의 lefthook.yml에서
-  # 도출한다 — 하드코딩하면 다른 hook 집합을 쓰는 저장소/픽스처에서 거짓 실패가 난다.
-  for hook_name in $(configured_hooks); do
-    if [ ! -f "$resolved_hooks_dir/$hook_name" ]; then
-      fail "expected hook not installed: $resolved_hooks_dir/$hook_name (lefthook.yml defines it; check 'lefthook install' output)"
-    fi
-  done
+require_canonical_lefthook_config() {
+  # `lefthook install`은 LEFTHOOK_CONFIG가 가리키는 설정을 쓴다. 반면 아래 configured_hooks와
+  # symlink preflight는 저장소의 lefthook.yml만 읽는다. 둘이 갈라지면 대체 설정에만 있는 hook이
+  # 사전 검사를 통과하지 못한 채 install 대상이 되어, 그 hook이 symlink일 때 외부 target을
+  # 덮어쓴다. 상태를 바꾸기 전에 두 경로가 같은 설정을 보게 강제한다.
+  # (hook 실행 시점의 동일한 차단은 inject_staged_guard가 주입하는 guard 블록이 담당한다.)
+  [ -n "${LEFTHOOK_CONFIG:-}" ] || return 0
+  local expected config_dir config_base config_abs
+  expected="$(cd "$repo_root" && pwd -P)/lefthook.yml"
+  config_dir="$(dirname "$LEFTHOOK_CONFIG")"
+  config_base="$(basename "$LEFTHOOK_CONFIG")"
+  config_abs="$(cd "$config_dir" 2>/dev/null && pwd -P)/$config_base" \
+    || fail "invalid LEFTHOOK_CONFIG: $LEFTHOOK_CONFIG"
+  if [ "$config_abs" != "$expected" ]; then
+    fail "LEFTHOOK_CONFIG must point to $expected (got $config_abs); the installer's preflight only knows the canonical config"
+  fi
 }
 
 configured_hooks() {
   # lefthook.yml이 정의한 top-level hook 이름. 파싱 방식은 check-lefthook-staged-config.sh의
   # allowed_top_level 검사와 같다. 설정 파일이 없으면 아무것도 출력하지 않는다.
+  # require_canonical_lefthook_config가 LEFTHOOK_CONFIG를 이 파일로 고정해 둔다.
   [ -f "$repo_root/lefthook.yml" ] || return 0
   awk '/^[A-Za-z0-9_.-]+:/ { sub(/:$/, "", $1); print $1 }' "$repo_root/lefthook.yml"
 }
@@ -446,6 +469,7 @@ else
   apply_worktree_local_hooks_config
 fi
 acquire_install_lock
+require_canonical_lefthook_config
 refuse_symlinked_hooks
 run_lefthook_install
 inject_staged_guard

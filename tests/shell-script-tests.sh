@@ -176,8 +176,10 @@ run_test "install-lefthook injects --no-auto-install into every hook" test_insta
 run_test "install-lefthook --no-auto-install injection is idempotent" test_install_lefthook_no_auto_install_injection_is_idempotent
 run_test "install-lefthook leaves .old backup hooks untouched" test_install_lefthook_leaves_old_backup_hooks_untouched
 run_test "install-lefthook fails when lefthook call shape changes" test_install_lefthook_fails_when_lefthook_call_shape_changes
-run_test "install-lefthook refuses to patch a symlinked hook" test_install_lefthook_refuses_symlinked_hook
-run_test "install-lefthook refuses to patch a symlinked pre-commit" test_install_lefthook_refuses_symlinked_pre_commit
+run_test "install-lefthook fails on an unpatched second lefthook call" test_install_lefthook_fails_on_unpatched_second_call
+run_test "install-lefthook rejects a foreign LEFTHOOK_CONFIG" test_install_lefthook_rejects_foreign_lefthook_config
+run_test "install-lefthook refuses to install over a symlinked hook" test_install_lefthook_refuses_symlinked_hook
+run_test "install-lefthook refuses to install over a symlinked pre-commit" test_install_lefthook_refuses_symlinked_pre_commit
 run_test "lefthook.yml self-check hook list matches config" test_lefthook_self_check_hook_list_matches_config
 run_test "lefthook.yml self-check bodies stay in sync" test_lefthook_self_check_bodies_stay_in_sync
 run_test "lefthook auto-sync cannot drop the staged-config guard" test_lefthook_auto_sync_cannot_drop_guard_end_to_end
