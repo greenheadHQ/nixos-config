@@ -305,8 +305,10 @@ set -o pipefail
 cat /tmp/smoke.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/smoke-result.md - \
   > /tmp/smoke.stdout 2> /tmp/smoke.stderr
-smoke_rc=${PIPESTATUS[1]}   # zsh는 $pipestatus[2]
-[ "$smoke_rc" -eq 0 ] && test -s /tmp/smoke-result.md && grep -q "SMOKE_DONE" /tmp/smoke-result.md
+# PIPESTATUS는 다음 명령에서 리셋되므로 배열을 먼저 스냅샷한다 (cat 실패도 판정에 포함).
+pipe_rcs=("${PIPESTATUS[@]}")   # zsh는 ("${pipestatus[@]}") — 인덱스가 1부터
+[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ] \
+  && test -s /tmp/smoke-result.md && grep -q "SMOKE_DONE" /tmp/smoke-result.md
 ```
 
 wrapper exit 0, non-empty 결과, 기대한 완료 표식이 모두 확인되면 통과다. fan-out은 이 스모크를

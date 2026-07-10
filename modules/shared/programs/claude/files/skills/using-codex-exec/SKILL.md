@@ -191,6 +191,9 @@ PROMPT 인자와 piped stdin을 함께 주면 stdin 내용이 `<stdin>` 블록�
   stderr를 합치면 파싱이 깨진다.
 - pipeline에는 `set -o pipefail`을 적용한다. zsh에서 Codex 자체 exit가 필요하면 pipeline 직후
   `codex_rc=$pipestatus[2]`로 보존한다.
+- 좌측 명령(`cat` 등)의 실패까지 판정에 포함하려면 pipeline 직후 배열을 먼저 스냅샷한다
+  (`pipe_rcs=("${PIPESTATUS[@]}")`; zsh는 `("${pipestatus[@]}")`) — `$?`나 개별 원소를 나중에
+  읽으면 그 사이 명령이 PIPESTATUS를 리셋한다.
 - `| head`, `| tail`, 뒤이은 `; echo $?`는 원래 exit를 가릴 수 있으므로 판정 경로에 두지 않는다.
 
 ```zsh
@@ -227,8 +230,9 @@ set -o pipefail
 cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o /tmp/result.md - \
   > /tmp/stdout.log 2> /tmp/stderr.log
-codex_rc=${PIPESTATUS[1]}   # zsh는 $pipestatus[2]
-[ "$codex_rc" -eq 0 ] && test -s /tmp/result.md
+# PIPESTATUS는 다음 명령에서 리셋되므로 배열을 먼저 스냅샷한다. cat 실패(프롬프트 파일 부재)도 판정에 포함.
+pipe_rcs=("${PIPESTATUS[@]}")   # zsh는 ("${pipestatus[@]}") — 인덱스가 1부터
+[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ] && test -s /tmp/result.md
 ```
 
 사용자가 literal raw 실행을 요청한 1회성 수동 진단에서는 인라인 프롬프트도 가능하다:
@@ -283,15 +287,17 @@ scope flag으로 review를 실행하면 지시가 자동 적용된다.
 Claude Code/headless의 programmatic 재개는 supervised 경로를 사용한다:
 
 ```bash
+SESSION="<session-id>"   # 재개할 세션 id
 rm -f /tmp/resume-result.md
-env CODEX_PROGRAMMATIC=1 codex-exec-supervised resume <session-id> \
+env CODEX_PROGRAMMATIC=1 codex-exec-supervised resume "$SESSION" \
   -o /tmp/resume-result.md > /tmp/resume-stdout.log 2> /tmp/resume-stderr.log
 resume_rc=$?
 
-# silent fallback 검증: exit 0만으로 재개 성공을 판정하지 않는다 (아래 설명 참조).
-grep -m1 "session id:" /tmp/resume-stderr.log   # 의도한 세션 id와 일치하는지 확인
-[ "$resume_rc" -eq 0 ] && test -s /tmp/resume-result.md
-# 응답 내용(/tmp/resume-result.md)이 원 세션의 context를 실제로 잇는지도 확인한다.
+# silent fallback 검증: 반환된 session id가 요청한 세션과 일치해야 하며, 최종 판정에 연결한다.
+[ "$resume_rc" -eq 0 ] \
+  && grep -Fq "session id: $SESSION" /tmp/resume-stderr.log \
+  && test -s /tmp/resume-result.md
+# 위 판정 실패, 또는 응답(/tmp/resume-result.md)이 원 세션의 context를 잇지 않으면 재개 실패로 처리한다.
 ```
 
 변형: `resume --last` (같은 cwd의 마지막 세션), `resume --last --all` (cwd 필터 해제).
