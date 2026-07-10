@@ -54,7 +54,6 @@ NO_AUTO_INSTALL_FLAG="--no-auto-install"
 # 한 줄로 유지한다 — tests/suites/lefthook.sh가 sed로 추출해 실제 hook 이름 판별에 재사용한다.
 GIT_HOOK_NAMES="applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit prepare-commit-msg commit-msg post-commit pre-rebase post-checkout post-merge pre-push pre-receive update proc-receive post-receive post-update reference-transaction push-to-checkout pre-auto-gc post-rewrite sendemail-validate fsmonitor-watchman p4-changelist p4-prepare-changelist p4-post-changelist p4-pre-submit post-index-change"
 
-
 # 30 minutes — install itself runs in ~150ms; this guards against hung child
 # processes (NFS lock issues, OS bugs) rather than normal contention. Matches the
 # convention from modules/shared/scripts/lib/rebuild/locks.sh:198.
