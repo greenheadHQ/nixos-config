@@ -42,13 +42,15 @@ toss_metadata_value() {
   jq -r --arg key "$key" '.[$key] // empty' <<<"$metadata"
 }
 
-# jq는 표준 JSON을 초과하는 확장을 조용히 다른 값으로 바꾼다: NaN→null,
-# Infinity→1.79e308, +1/01→1, 그리고 값 0개(공백)·2개 이상 stream도 통과시킨다.
-# 금융 요청 body가 이렇게 왜곡·이중화되면 안 되므로, 표준 JSON 파서(python3)로
-# 먼저 "정확히 표준 JSON 값 하나"임을 검증한다 (다중 문서는 Extra data로 거부,
-# NaN/Infinity는 parse_constant로 거부, +1/01은 JSONDecodeError). 검증 통과 후에만
-# jq로 정규화한다. python3는 --data(주문 경로) 전용 의존이며, 부재 시 fail-closed.
-toss_strict_json_single_value() {
+# jq는 표준 JSON을 초과하는 확장을 조용히 다른 값으로 바꾸고(NaN→null, Infinity→큰수,
+# +1/01→1, 값 0개·2개 이상 stream 통과), jq≤1.6에서는 2^53 초과 정수까지 손실시킨다.
+# 금융 요청 body가 이렇게 왜곡·이중화되면 안 되므로, 검증과 정규화를 모두 표준 JSON
+# 파서(python3)로 통일한다: "정확히 표준 JSON 값 하나"만 통과(다중 문서=Extra data 거부,
+# NaN/Infinity=parse_constant 거부, +1/01=JSONDecodeError 거부)시키고, 큰 정수를 임의
+# 정밀도 int로 보존한 채 compact JSON으로 재직렬화한다. 정규화 출력이 downstream(실제
+# 전송 body·ledger·dry-run)의 단일 SoT다. python3는 --data(주문 경로) 전용 의존이며
+# 부재 시 fail-closed. rc: 0=정규화 값 stdout, 1=비표준/다중, 2=python3 부재.
+toss_normalize_json_single_value() {
   command -v python3 >/dev/null 2>&1 || return 2
   python3 -c '
 import sys, json
@@ -56,24 +58,24 @@ def _reject_constant(_):
     raise ValueError("non-finite JSON constant")
 data = sys.stdin.read()
 try:
-    json.loads(data, parse_constant=_reject_constant)
+    obj = json.loads(data, parse_constant=_reject_constant)
 except ValueError:
     sys.exit(1)
-sys.exit(0)
+json.dump(obj, sys.stdout, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
 '
 }
 
 toss_validate_json_body() {
   local raw="$1"
-  local rc
-  printf '%s' "$raw" | toss_strict_json_single_value
+  local normalized rc
+  normalized="$(printf '%s' "$raw" | toss_normalize_json_single_value)"
   rc=$?
   if [ "$rc" = "2" ]; then
     echo "error: python3 is required to validate --data as strict JSON" >&2
     return 1
   fi
   [ "$rc" = "0" ] || return 1
-  printf '%s' "$raw" | jq -cs '.[0]'
+  printf '%s' "$normalized"
 }
 
 toss_ledger_raw_response_max_chars() {

@@ -382,6 +382,22 @@ test_toss_api_does_not_retry_on_transport_failure() {
   [ "$api_calls" = "1" ] || fail "expected no retry on transport failure, got api calls: $api_calls"
 }
 
+test_toss_api_preserves_large_integer_data() {
+  local sandbox quantity
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+
+  # 2^53(9007199254740992) 초과 정수는 jq≤1.6 정규화에서 손실된다. python 정규화로
+  # 통일했으므로 --data의 큰 정수가 전송/표시 경로에서 보존되어야 한다.
+  HOME="$sandbox/home" TOSS_NOTIFY=0 \
+    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 \
+      --data '{"quantity":9007199254740993}' --dry-run > "$sandbox/stdout"
+
+  quantity="$(jq -r '.body.quantity' "$sandbox/stdout")"
+  [ "$quantity" = "9007199254740993" ] \
+    || fail "expected large integer to be preserved through normalization, got: $quantity"
+}
+
 test_toss_api_rejects_non_standard_json_numbers() {
   local sandbox v rc stderr
   sandbox=$(new_sandbox)
