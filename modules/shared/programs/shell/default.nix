@@ -15,6 +15,7 @@ let
   # mise shims 경로 변수 선언 — envExtra/initContent 공통 SoT.
   # 경로는 constants.mise.shimsDirExpr 우선순위(MISE_DATA_DIR → XDG_DATA_HOME/mise → $HOME/.local/share/mise).
   miseShimsDecl = ''_mise_shims="${constants.mise.shimsDirExpr}"'';
+  fzfZleGuard = ''[[ -n "$TTY" && $options[zle] = on ]]'';
 in
 {
   home.file.".local/bin/atuin-clean-kr" = {
@@ -237,17 +238,28 @@ in
         precmd_functions+=(_repair_claude_symlinks)
       '')
 
+      # CIR: Home Manager only checks the zle option, but `zsh -i -c` keeps it
+      # enabled even without a shell TTY. Keep HM's order while guarding the
+      # generated fzf code at zsh's actual TTY-backed ZLE boundary (#862).
+      (lib.mkOrder 910 ''
+        if ${fzfZleGuard}; then
+          source <(${lib.getExe config.programs.fzf.package} --zsh)
+        fi
+      '')
+
       #─────────────────────────────────────────────────────────────────────────
       # fzf 키바인딩 재설정 (fzf zsh integration 로드 후 실행)
       #─────────────────────────────────────────────────────────────────────────
       (lib.mkAfter ''
-        # fzf Alt+C → Ctrl+G (한글 IME 호환: Alt 조합은 한글 입력소스에서 IME가 가로챔)
-        bindkey -rM emacs '\ec'
-        bindkey -rM vicmd '\ec'
-        bindkey -rM viins '\ec'
-        bindkey -M emacs '\C-g' fzf-cd-widget
-        bindkey -M vicmd '\C-g' fzf-cd-widget
-        bindkey -M viins '\C-g' fzf-cd-widget
+        if ${fzfZleGuard}; then
+          # fzf Alt+C → Ctrl+G (한글 IME 호환: Alt 조합은 한글 입력소스에서 IME가 가로챔)
+          bindkey -rM emacs '\ec'
+          bindkey -rM vicmd '\ec'
+          bindkey -rM viins '\ec'
+          bindkey -M emacs '\C-g' fzf-cd-widget
+          bindkey -M vicmd '\C-g' fzf-cd-widget
+          bindkey -M viins '\C-g' fzf-cd-widget
+        fi
       '')
 
       #─────────────────────────────────────────────────────────────────────────
@@ -257,7 +269,9 @@ in
       # → _ftb_orig_widget에 fzf-completion이 저장 (**<Tab> 폴백 보존)
       #─────────────────────────────────────────────────────────────────────────
       (lib.mkAfter ''
-        source ${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh
+        if ${fzfZleGuard}; then
+          source ${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh
+        fi
 
         # === Change Intent Record ===
         # v1 (PR #188): LLM 추천으로 tab:accept 설정 — Tab 2-tap 빠른 확정 흐름
@@ -454,7 +468,7 @@ in
   # FZF
   programs.fzf = {
     enable = true;
-    enableZshIntegration = true;
+    enableZshIntegration = false;
     defaultCommand = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
     fileWidgetCommand = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
     changeDirWidgetCommand = "${lib.getExe pkgs.fd} --type d --strip-cwd-prefix --exclude .git";
