@@ -8,7 +8,7 @@ P0 기본값은 항상 단일 강한 Arbiter 1개다.
 `run-da`의 reviewer fan-out을 4 bundle로 줄이더라도, Arbiter는 기본적으로 늘리지 않는다.
 비용을 늘려 여러 Arbiter를 붙이기보다, 한 명의 강한 Arbiter가 selective escalation set을 판정하는 구조를 유지한다.
 
-`agent=` 실행 프로파일 인자가 지정되면 해당 호출의 reviewer/auditor와 Arbiter 전체에 그 값이 우선한다. 인자가 없을 때만 role별 기본값을 사용한다: reviewer/auditor는 standard profile effort, Arbiter는 strong profile effort를 따른다. 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑이 정본이다.
+`agent=` 실행 프로파일 인자가 지정되면 해당 호출의 reviewer/auditor와 Arbiter 전체에 그 값이 우선한다. 사용자 지정 실행 파라미터(model/effort/tier — 정의는 `run-da/SKILL.md`)가 지정되면 그 값이 다시 `agent=`보다 우선한다. 인자가 없을 때만 role별 기본값을 사용한다: reviewer/auditor는 standard profile effort, Arbiter는 strong profile effort를 따른다. 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑이 정본이다.
 
 ## v1: 단순 스케일링
 
@@ -41,6 +41,23 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 - 상태 전이는 [`protocol.md`](protocol.md)의 "Selective consistency 상태 전이" 섹션.
 - N=3 실행 세부는 아래 "Selective consistency N=3 실행 계약" 섹션.
 
+## 사용자 지정 실행 파라미터 (model / effort / service_tier)
+
+사용자가 명시 지정한 model/effort/service_tier를 codex exec 실행 단위에 주입하는 실행 계약의 SSOT다. 개념 정의(자연어 채널, 해석 규칙, 우선순위, 경로 제약)는 `run-da/SKILL.md`의 같은 이름 섹션을 따른다.
+
+| env | 의미 | 값 출처 (축별 provenance) |
+|-----|------|---------------------------|
+| `RUN_DA_CODEX_EFFORT` | resolved reasoning effort | 기본 role profile, `agent=` 인자, 또는 사용자 명시 effort |
+| `RUN_DA_CODEX_MODEL` | 사용자 명시 model. 미지정 시 unset — 스킬은 모델을 pin하지 않는다 | 사용자 명시 지정만. 이 env를 설정하는 행위 자체가 "사용자가 model을 명시했다"는 선언이다 — 명시 없이 설정하면 계약 위반 |
+| `RUN_DA_CODEX_TIER` | 사용자 명시 service_tier. 미지정 시 unset | 사용자 명시 지정만. 설정 행위 = 명시 선언 (model과 동일) |
+| `RUN_DA_USER_EFFORT_OVERRIDE` | 사용자가 effort 값을 명시 지정했음을 표시 (`1`). 기본 profile 밖 effort 값의 통과 관문 | 사용자가 effort를 명시 지정했을 때만 메인 에이전트가 설정. model/tier만 지정된 호출에서 설정하면 계약 위반 — 축별 provenance를 하나의 표식으로 뭉개지 않는다 |
+
+- effort guard: 기본 profile 값(`medium|high|xhigh`)은 즉시 통과한다. 그 외 소문자 영문 값은 `RUN_DA_USER_EFFORT_OVERRIDE=1`(effort 축 전용 관문 — model/tier 지정 여부와 무관)일 때만 통과한다 — 스킬은 값 집합을 예단하지 않고 codex에 위임하며, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다 (조용한 대체/하향 금지).
+- model/tier 주입: 각 role 명령 안의 `_DA_MODEL_TIER_OVERRIDES` 조립 루프가 unset이 아닌 값만 shell-safe 문자 검증(영숫자 `._-`) 후 `-c model=...` / `-c service_tier=...` config override 인자로 추가한다. effort는 모든 호출의 필수 인자이므로 이 배열이 아니라 고정 `-c model_reasoning_effort=`로 별도 주입한다. 미지정 시 빈 배열이라 기존 기본 계약과 동일하게 동작한다.
+- ambient 유입 차단: 위 env들은 role 명령과 같은 단일 셸 호출 안에서 caller가 그 호출을 위해 설정한다 (셸 호출 간 env 비공유 — [`runtime-mapping.md`](runtime-mapping.md) 공통 주의). 이전 호출·세션에서 상속된 ambient 값을 재사용하지 않으며, 명시되지 않은 축의 env는 설정하지 않는다.
+- 조립 루프 복제 이유: 세 role command block(reviewer/Auditor 템플릿, Arbiter 템플릿, first-pass Arbiter 실행 절차)은 각각 단일 셸 호출로 self-contained해야 하므로 같은 effort guard·조립 루프를 블록마다 복제한다. 세 사본의 동일성은 sync 테스트(`tests/skill-doc-sync.py`의 exec override copies 검사)가 정규화 비교로 강제한다.
+- `--ignore-user-config`와의 관계: user config 차단(MCP surface 차단 목적)은 유지된다. 이 채널은 config 파일이 아니라 사용자 명시 입력값만 `-c`로 재주입한다.
+
 ## 실행 계약 (런타임 분기)
 
 ### Codex 세션 경로
@@ -65,7 +82,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
 - `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
-- 모델명은 명시하지 않는다. `RUN_DA_CODEX_EFFORT`를 role별 기본 profile 또는 `agent=` 인자에서 결정한 뒤 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`만 명시한다.
+- 모델명·service_tier는 스킬이 pin하지 않는다. `RUN_DA_CODEX_EFFORT`를 role별 기본 profile, `agent=` 인자, 또는 사용자 명시 effort에서 결정한 뒤 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`를 명시하고, 사용자 명시 model/tier가 있으면 `_DA_MODEL_TIER_OVERRIDES`로 추가 주입한다 (위 "사용자 지정 실행 파라미터" 섹션).
 - Arbiter는 인자 미지정 시 strong review profile effort를 사용한다. `agent=codex-*`가 지정되면 Arbiter도 reviewer/auditor와 같은 effort override를 적용한다.
 - 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라" 명시
 - `--ephemeral`로 세션 히스토리 오염 방지
@@ -79,20 +96,20 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 
 공통:
 - `--sandbox read-only` + `--ignore-user-config` + `--ignore-rules`를 함께 강제한다. `--sandbox read-only`는 model-generated shell command의 파일시스템 쓰기만 막고, user `config.toml`의 MCP server/plugin/connector 로딩은 차단하지 못한다. `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 user MCP/plugin/connector surface를 차단하지만, cwd 기반 project config (`.codex/config.toml`의 `[mcp_servers.*]`)는 차단하지 못한다. 현재 worktree에 project-scoped MCP connector가 있을 때의 project-config 한계는 `run-da/SKILL.md` Non-goals #1이 canonical이다. `--ignore-rules`는 user/project execpolicy `.rules` 파일을 차단해 read-only sandbox로 막을 수 없는 network/system mutation 명령(예: `git push`, `aws ec2 describe`)이 reviewer/auditor에서 실행되지 않게 한다.
-- `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 `model_reasoning_effort`도 차단하므로 role별 표의 `RUN_DA_CODEX_EFFORT` guard와 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"` 명시가 필수다. 모델명은 pin하지 않는다.
+- `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 `model_reasoning_effort`도 차단하므로 role별 표의 `RUN_DA_CODEX_EFFORT` guard와 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"` 명시가 필수다. 모델명·service_tier는 스킬이 pin하지 않으며, 사용자 명시 지정이 있을 때만 `_DA_MODEL_TIER_OVERRIDES`로 주입한다 (위 "사용자 지정 실행 파라미터" 섹션).
 - `--ephemeral`로 세션 히스토리 오염 방지.
 - `exec_command`를 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... - 2>stderr.log` 형태로 stdin pipe 전달.
 - 각 review unit은 독립 subprocess (fresh 판정 경계는 프로세스 경계로 보존).
 - 사용자 승인 후에만 실행 ([`hardening-contract.md`](hardening-contract.md) "Delegation fallback" 섹션 참조).
 
-role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정하고, `RUN_DA_CODEX_EFFORT`를 profile resolution 결과로 설정한 뒤 guard와 함께 실행한다. 모델명은 literal로 고정하지 않는다. 기본 role effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 표가 SSOT다.
+role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정하고, `RUN_DA_CODEX_EFFORT`를 profile resolution 결과로 설정한 뒤(사용자가 model/tier를 명시했으면 `RUN_DA_CODEX_MODEL`/`RUN_DA_CODEX_TIER`를, effort를 명시했으면 `RUN_DA_USER_EFFORT_OVERRIDE=1`을 — 각 축은 명시된 경우에만) guard와 함께 실행한다. 모델명은 literal로 고정하지 않는다. 기본 role effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 표가 SSOT다.
 
 | profile | 기본 `RUN_DA_CODEX_EFFORT` |
 |---------|----------------------------|
 | `standard` | `medium` |
 | `strong` | `high` |
 
-`agent=codex-xhigh`, `agent=codex-high`, `agent=codex-medium`이 지정되면 위 기본값 대신 각각 `xhigh`, `high`, `medium`을 reviewer/auditor와 Arbiter 전체에 사용한다.
+`agent=codex-xhigh`, `agent=codex-high`, `agent=codex-medium`이 지정되면 위 기본값 대신 각각 `xhigh`, `high`, `medium`을 reviewer/auditor와 Arbiter 전체에 사용한다. 사용자 명시 effort는 이보다 다시 우선한다 (위 "사용자 지정 실행 파라미터" 섹션).
 
 reviewer / Auditor (standard profile):
 
@@ -106,26 +123,57 @@ case "$UNIT" in
 esac
 case "$RUN_DA_CODEX_EFFORT" in
   medium|high|xhigh) ;;
-  *) echo "invalid RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT"; exit 1 ;;
+  *[!abcdefghijklmnopqrstuvwxyz]*)
+    echo "invalid RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT"; exit 1 ;;
+  *)
+    [ "${RUN_DA_USER_EFFORT_OVERRIDE:-}" = "1" ] || {
+      echo "non-default RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT requires RUN_DA_USER_EFFORT_OVERRIDE=1"; exit 1; } ;;
 esac
+# 사용자 지정 실행 파라미터 조립 — 미지정 시 빈 배열 (기본 계약과 동일. "사용자 지정 실행 파라미터" 섹션)
+_DA_MODEL_TIER_OVERRIDES=()
+for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"; do
+  case "${_kv#*=}" in
+    "") ;;
+    *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*)
+      echo "invalid $_kv"; exit 1 ;;
+    *) _DA_MODEL_TIER_OVERRIDES+=(-c "$_kv") ;;
+  esac
+done
 [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
 [ -f "$DA_DIR/$UNIT.md" ] || { echo "missing prompt=$DA_DIR/$UNIT.md"; exit 1; }
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
 cat "$DA_DIR/$UNIT.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-  -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" \
+  -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$DA_DIR/$UNIT-result.md" - 2>"$DA_DIR/$UNIT-stderr.log"
 ```
 
 Arbiter (strong profile):
 
 ```bash
+: "${ARBITER_DIR:?missing ARBITER_DIR}"
 : "${RUN_DA_CODEX_EFFORT:?missing RUN_DA_CODEX_EFFORT}"
 case "$RUN_DA_CODEX_EFFORT" in
   medium|high|xhigh) ;;
-  *) echo "invalid RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT"; exit 1 ;;
+  *[!abcdefghijklmnopqrstuvwxyz]*)
+    echo "invalid RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT"; exit 1 ;;
+  *)
+    [ "${RUN_DA_USER_EFFORT_OVERRIDE:-}" = "1" ] || {
+      echo "non-default RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT requires RUN_DA_USER_EFFORT_OVERRIDE=1"; exit 1; } ;;
 esac
+# 사용자 지정 실행 파라미터 조립 — 미지정 시 빈 배열 (기본 계약과 동일. "사용자 지정 실행 파라미터" 섹션)
+_DA_MODEL_TIER_OVERRIDES=()
+for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"; do
+  case "${_kv#*=}" in
+    "") ;;
+    *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*)
+      echo "invalid $_kv"; exit 1 ;;
+    *) _DA_MODEL_TIER_OVERRIDES+=(-c "$_kv") ;;
+  esac
+done
+[ -d "$ARBITER_DIR" ] || { echo "missing ARBITER_DIR=$ARBITER_DIR"; exit 1; }
+[ -f "$ARBITER_DIR/arbiter-prompt.md" ] || { echo "missing prompt=$ARBITER_DIR/arbiter-prompt.md"; exit 1; }
 cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-  -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" \
+  -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$ARBITER_DIR/arbiter-result.md" - 2>"$ARBITER_DIR/arbiter-stderr.log"
 ```
 
@@ -164,15 +212,29 @@ PROMPT
 [ -f "$ARBITER_DIR/arbiter-prompt.md" ] || { echo "ARBITER_FAILED: missing prompt=$ARBITER_DIR/arbiter-prompt.md"; exit 1; }
 
 # 3. codex exec 실행 (foreground)
-# RUN_DA_CODEX_EFFORT는 role별 기본 profile 또는 agent= 인자에서 결정한다.
+# RUN_DA_CODEX_EFFORT는 role별 기본 profile, agent= 인자, 또는 사용자 명시 effort에서 결정한다.
 RUN_DA_CODEX_EFFORT="${RUN_DA_CODEX_EFFORT:-high}"
 case "$RUN_DA_CODEX_EFFORT" in
   medium|high|xhigh) ;;
-  *) echo "ARBITER_FAILED: invalid RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT"; exit 1 ;;
+  *[!abcdefghijklmnopqrstuvwxyz]*)
+    echo "ARBITER_FAILED: invalid RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT"; exit 1 ;;
+  *)
+    [ "${RUN_DA_USER_EFFORT_OVERRIDE:-}" = "1" ] || {
+      echo "ARBITER_FAILED: non-default RUN_DA_CODEX_EFFORT=$RUN_DA_CODEX_EFFORT requires RUN_DA_USER_EFFORT_OVERRIDE=1"; exit 1; } ;;
 esac
+# 사용자 지정 실행 파라미터 조립 — 미지정 시 빈 배열 (기본 계약과 동일. "사용자 지정 실행 파라미터" 섹션)
+_DA_MODEL_TIER_OVERRIDES=()
+for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"; do
+  case "${_kv#*=}" in
+    "") ;;
+    *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*)
+      echo "ARBITER_FAILED: invalid $_kv"; exit 1 ;;
+    *) _DA_MODEL_TIER_OVERRIDES+=(-c "$_kv") ;;
+  esac
+done
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
 cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-  -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" \
+  -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$ARBITER_DIR/arbiter-result.md" \
   - \
   2>"$ARBITER_DIR/arbiter-stderr.log"
@@ -225,12 +287,12 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 - headless 세션: serial foreground로 3개 프로세스를 순차 실행한다 (완료 알림/`&+wait` 없음, 각 프로세스 종료 후 다음 프로세스 기동). 결과 파일 경로·환경 격리 방식은 아래와 동일하게 적용하되, 실행 방식만 serial로 바꾼다.
 
 1. 동일 Arbiter 프롬프트 파일을 3번 실행하기 위해 3개의 `codex exec` 프로세스를 기동한다 (Claude Code: background, headless: serial foreground). reviewer fan-out과 달리 Arbiter N=3 자체는 모두 같은 프롬프트다(프롬프트 조향 금지, 독립 판정 원칙).
-2. 환경 격리 — first-pass Arbiter와 selective consistency N=3 모두 같은 resolved effort를 사용한다. 인자 미지정 시 strong review profile 기본 effort는 `high`이며, `agent=codex-*`가 지정되면 그 effort가 N=3에도 그대로 적용된다. selective consistency N=3은 외부 표면과 충돌을 줄이기 위해 다음 두 방식 중 하나를 선택한다:
+2. 환경 격리 — first-pass Arbiter와 selective consistency N=3 모두 같은 resolved effort를 사용한다. 인자 미지정 시 strong review profile 기본 effort는 `high`이며, `agent=codex-*`가 지정되면 그 effort가 N=3에도 그대로 적용된다. 사용자 지정 실행 파라미터(model/effort/tier)도 first-pass와 동일하게 N=3에 그대로 적용된다. selective consistency N=3은 외부 표면과 충돌을 줄이기 위해 다음 두 방식 중 하나를 선택한다:
 
    (a) 기본 경로 + config 차단 (권장, 간단):
    - `CODEX_HOME`을 그대로 두어 기본 auth chain(`auth.json` 등)을 유지한다.
    - codex exec 호출에 `--ignore-user-config`를 추가하여 사용자 `config.toml`(MCP 서버 포함) 로딩을 차단한다. [`using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md)의 `--ignore-user-config` 옵션 설명처럼 이 플래그는 config만 차단하고 auth는 유지한다.
-   - 주의: `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 `model_reasoning_effort` 등 user config 설정을 함께 제거한다. Arbiter는 resolved effort를 유지해야 하므로 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`를 명시적으로 재지정한다. 모델명은 pin하지 않는다.
+   - 주의: `--ignore-user-config`는 `$CODEX_HOME/config.toml`의 `model_reasoning_effort` 등 user config 설정을 함께 제거한다. Arbiter는 resolved effort를 유지해야 하므로 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`를 명시적으로 재지정한다. 모델명·service_tier는 스킬이 pin하지 않으며, 사용자 명시 지정이 있을 때만 `_DA_MODEL_TIER_OVERRIDES`로 주입한다.
    - 부작용: `~/.codex/sessions` 기반 세션이 생성되므로 동시 N=3 실행 시 세션 파일 경합이 발생할 수 있다. `--ephemeral`로 session 저장 자체를 회피한다.
 
    (b) scratch CODEX_HOME + auth 복사 (세션 충돌 완전 분리가 필요할 때):
@@ -240,7 +302,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
      - 그렇지 않으면 `cp ~/.codex/auth.json "$CODEX_HOME/"`로 기존 auth.json을 scratch로 복사.
      - 둘 다 불가능하면 scratch CODEX_HOME에서 `codex login status`가 `Not logged in`으로 실패하므로 방식 (a)로 돌아간다.
    - 최소 `$CODEX_HOME/config.toml`을 작성하되 `[mcp_servers.<name>]` 테이블(실제 Codex TOML 스키마는 [`sync-codex-config.py`](../../../../../codex/files/sync-codex-config.py)의 user-owned `mcp_servers` 보존 정책과 [`scenario-D-mcp-servers-coexist.toml`](../../../../../../../../tests/fixtures/codex-hooks/sync-preservation/scenario-D-mcp-servers-coexist.toml) fixture로 확인)을 포함하지 않는다. 또는 TOML 파서로 기존 config를 복사한 뒤 `mcp_servers` 테이블 전체를 삭제한다. (참고: `[[mcp_servers]]` array-of-table 문법은 현재 Codex가 사용하지 않으므로 혼동 방지를 위해 `[mcp_servers.*]` 정확 표기를 사용한다.)
-   - effort 옵션은 필수로 명시적으로 지정한다: `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`. scratch `CODEX_HOME`이므로 user config default가 적용되지 않아 호출 시점 기본값 의존이 불가하다. 모델명은 pin하지 않는다.
+   - effort 옵션은 필수로 명시적으로 지정한다: `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`. scratch `CODEX_HOME`이므로 user config default가 적용되지 않아 호출 시점 기본값 의존이 불가하다. 모델명·service_tier는 스킬이 pin하지 않으며, 사용자 명시 지정이 있을 때만 `_DA_MODEL_TIER_OVERRIDES`로 주입한다.
 3. Claude Code 세션: `run_in_background: true`로 3개를 병렬 발사 후 완료 알림을 기다린다 (sleep/poll 금지). headless 세션: 3개 프로세스를 serial foreground로 순차 실행한다 (각 종료 확인 후 다음). 결과 파일 경로는 두 경로 모두 `/tmp/da-${_DA_SID}-arbiter-selective-<round>/arbiter-{1,2,3}-result.md`로 라운드별 분리.
 4. 수집 후 세션 scope의 `fleiss-kappa.py`(Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py`)에 `arbiter-1-result.md arbiter-2-result.md arbiter-3-result.md`를 인자로 전달하여 vote-shape를 얻는다. `--offline` 플래그는 배포 후 kappa 관찰 목적일 때만 부가한다.
 

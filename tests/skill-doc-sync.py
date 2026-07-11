@@ -190,7 +190,85 @@ def check_codex_command_contract() -> None:
             details.append(f"{label}: missing RUN_DA_CODEX_EFFORT effort pin")
         if 'RUN_DA_CODEX_EFFORT:?missing RUN_DA_CODEX_EFFORT' not in block:
             details.append(f"{label}: missing RUN_DA_CODEX_EFFORT guard")
+        if '"${_DA_MODEL_TIER_OVERRIDES[@]}"' not in block:
+            details.append(f"{label}: missing _DA_MODEL_TIER_OVERRIDES injection point")
+        if "RUN_DA_USER_EFFORT_OVERRIDE" not in block:
+            details.append(f"{label}: missing RUN_DA_USER_EFFORT_OVERRIDE gate for non-default effort")
 
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
+USER_EXEC_ENV_VARS = ("RUN_DA_CODEX_MODEL", "RUN_DA_CODEX_TIER", "RUN_DA_USER_EFFORT_OVERRIDE")
+
+# Canonical override assembly loop (normalized): all three role command blocks in
+# arbiter-scaling.md must carry this exact loop so no default/literal model can slip
+# into the indirect `-c "$_kv"` injection path.
+EXPECTED_OVERRIDE_LOOP = (
+    '_DA_MODEL_TIER_OVERRIDES=() '
+    'for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"; do '
+    'case "${_kv#*=}" in '
+    '"") ;; '
+    '*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*) '
+    'echo "invalid $_kv"; exit 1 ;; '
+    '*) _DA_MODEL_TIER_OVERRIDES+=(-c "$_kv") ;; '
+    'esac '
+    'done'
+)
+EXEC_OVERRIDE_COPIES = 3
+
+
+def _normalize_fragment(text: str) -> str:
+    text = text.replace("ARBITER_FAILED: ", "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def check_exec_override_copies() -> None:
+    details = []
+    text = read_text(ARBITER_SCALING)
+    loops = re.findall(r"_DA_MODEL_TIER_OVERRIDES=\(\)\nfor _kv in .*?\ndone", text, re.S)
+    if len(loops) != EXEC_OVERRIDE_COPIES:
+        details.append(
+            f"{ARBITER_SCALING}: expected {EXEC_OVERRIDE_COPIES} override assembly loops, got {len(loops)}"
+        )
+    for i, loop in enumerate(loops, 1):
+        if _normalize_fragment(loop) != EXPECTED_OVERRIDE_LOOP:
+            details.append(f"{ARBITER_SCALING}: override assembly loop #{i} deviates from canonical form")
+    guards = re.findall(r'case "\$RUN_DA_CODEX_EFFORT" in.*?esac', text, re.S)
+    if len(guards) != EXEC_OVERRIDE_COPIES:
+        details.append(
+            f"{ARBITER_SCALING}: expected {EXEC_OVERRIDE_COPIES} effort guards, got {len(guards)}"
+        )
+    for i, guard in enumerate(guards, 1):
+        if "RUN_DA_USER_EFFORT_OVERRIDE" not in guard:
+            details.append(f"{ARBITER_SCALING}: effort guard #{i} missing RUN_DA_USER_EFFORT_OVERRIDE gate")
+    if len({_normalize_fragment(g) for g in guards}) > 1:
+        details.append(f"{ARBITER_SCALING}: effort guards diverge across role command blocks")
+    injections = re.findall(
+        r'-c model_reasoning_effort="\$RUN_DA_CODEX_EFFORT" "\$\{_DA_MODEL_TIER_OVERRIDES\[@\]\}"',
+        text,
+    )
+    if len(injections) != EXEC_OVERRIDE_COPIES:
+        details.append(
+            f"{ARBITER_SCALING}: expected {EXEC_OVERRIDE_COPIES} override injection points "
+            f"on codex command lines, got {len(injections)}"
+        )
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
+def check_user_exec_params() -> None:
+    details = []
+    arbiter_text = read_text(ARBITER_SCALING)
+    for var in USER_EXEC_ENV_VARS:
+        if var not in arbiter_text:
+            details.append(f"{ARBITER_SCALING}: missing user exec env {var}")
+    if "## 사용자 지정 실행 파라미터" not in arbiter_text:
+        details.append(f"{ARBITER_SCALING}: missing user exec params section")
+    if "### 사용자 지정 실행 파라미터" not in read_text(SKILL):
+        details.append(f"{SKILL}: missing user exec params section")
+    if "_DA_MODEL_TIER_OVERRIDES" not in read_text(RUNTIME_MAPPING):
+        details.append(f"{RUNTIME_MAPPING}: missing _DA_MODEL_TIER_OVERRIDES in canonical command")
     if details:
         raise CheckFailure("\n".join(details))
 
@@ -280,6 +358,8 @@ def main() -> int:
         ("kappa constants", check_kappa_constants),
         ("review profile efforts", check_profile_efforts),
         ("codex command contract", check_codex_command_contract),
+        ("user exec params", check_user_exec_params),
+        ("exec override copies", check_exec_override_copies),
         ("agent args", check_agent_args),
         ("no hardcoded model literals", check_no_hardcoded_model_literals),
         ("reviewer bundle subdomains", check_bundle_subdomains),

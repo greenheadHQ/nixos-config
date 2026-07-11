@@ -40,7 +40,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 ## Step 2: reviewer bundle 병렬 실행
 
 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 병렬 실행한다. 런타임별 도구 매핑은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 참조.
-호출 단위 실행 프로파일은 [`../SKILL.md`](../SKILL.md)의 `agent=` 정의가 정본이다. 예: `run-da for_plan agent=codex-high`.
+호출 단위 실행 프로파일과 사용자 지정 실행 파라미터(model/effort/tier)는 [`../SKILL.md`](../SKILL.md)의 정의가 정본이다. 예: `run-da for_plan agent=codex-high`.
 
 ### Codex 세션 경로
 
@@ -86,6 +86,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 - Codex 세션 경로: `VIOLATION` 처리 규칙은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
 - codex exec 경로: 선택된 review unit(FULL 기본 4개, LITE는 선택한 수, explicit exhaustive는 6개) 전부 실행(Claude Code는 병렬, headless는 serial) 완료 후, 각 `$DA_DIR/$UNIT-result.md` 패턴의 결과 파일을 파일 읽기 도구로 명시적으로 읽어 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
 - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
+- 재실행 전 실패 분류 (사용자 지정 실행 파라미터가 있는 호출): 실패한 unit의 실행 호출 출력과 `$DA_DIR/$UNIT-stderr.log`를 함께 읽어 값 거부(unsupported/invalid model·effort·tier, config override 거부)나 usage/quota 거부인지 확인한다. 두 채널을 모두 봐야 한다 — shell-safe guard 거부(`invalid ...` 메시지)는 codex 실행 전 로컬 검증이라 stderr 로그가 아닌 실행 호출의 stdout에 나타나므로, stderr 로그가 비어 있다는 이유로 일시 실패로 오인하지 않는다. 이런 결정적 거부는 재실행으로 해소되지 않으므로 재실행하지 않고, 거부 원문을 사용자에게 그대로 보고한 뒤 중단한다 (`run-da/SKILL.md` 값 유효성 계약 — 조용한 대체/하향 금지). 일시적 실행 실패만 재실행 대상이다.
 - `fresh` 반복 세션에서 valid dismissal ledger가 있으면, reviewer finding별 dismissal key를 계산해 exact match 항목만 `dismissed_suppressed`로 분류한다. suppress된 항목은 Arbiter 입력, 신규 finding 계산, pending write queue에 포함하지 않는다. match하지 않는 항목은 평소처럼 Step 5 Arbiter로 보낸다.
 
 ## Step 4: ALL CLEAR 또는 Arbiter 진입

@@ -17,7 +17,7 @@ audit 모드는 preflight 체크리스트를 건너뛴다 — 감사 자체가 �
 | open thread cap | current session의 `agents.max_threads` (unset 기본 6) |
 | `MAX` modifier | 기본 6 bundle을 10개 세부 관점으로 확장 (exhaustive override) |
 | `fresh` modifier | audit 모드 부적용 — 라운드 반복이 없으므로 해석하지 않는다 |
-| `agent=` 실행 프로파일 | 호출 단위 실행 경로/effort override. 정본은 [`../SKILL.md`](../SKILL.md). 예: `run-da audit agent=codex-high` |
+| `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: `run-da audit agent=codex-high` |
 | trailing 자유 텍스트 | `audit` (및 `MAX`) 토큰 뒤 나머지 인자 전체를 메인 에이전트의 우선순위 판단 컨텍스트로 보존 (Step 1 `git diff` 결과와 결합) |
 | 정수 에이전트 수 인자 | 폐지 — fan-out 크기는 기본 6 bundle / `MAX` 10 관점으로만 결정한다 |
 | 에이전트 권한 | 읽기 전용. codex exec 경로(Claude Code/headless)는 Layer 1(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules`)으로 구조적 강제. Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영 (Non-goals 참조) |
