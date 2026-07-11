@@ -331,6 +331,9 @@ let
   # opnix 1Password SA token materialization
   opnixCfg = nixosCfg.services.onepassword-secrets;
   opnixGithubPat = opnixCfg.secrets.githubPat;
+  opnixGithubPatPathMatch = builtins.match "/run/opnix/([^/]+)/github-pat" opnixGithubPat.path;
+  opnixGithubPatExpectedOwner =
+    if opnixGithubPatPathMatch == null then null else builtins.elemAt opnixGithubPatPathMatch 0;
   opnixTokenSecret = nixosCfg.age.secrets.opnix-service-account-token;
   opnixTmpfilesRules = nixosCfg.systemd.tmpfiles.rules;
 
@@ -550,11 +553,12 @@ let
       cond = nixosCfg.homeserver.opnix.enable && opnixCfg.enable;
     }
     {
-      name = "Test 5b-5: opnix githubPat이 tmpfs(/run/opnix/<user>/github-pat)에 user-owned 0400으로 materialize되어야 함 (path: ${opnixGithubPat.path}, mode: ${opnixGithubPat.mode})";
+      name = "Test 5b-5: opnix githubPat이 tmpfs(/run/opnix/<user>/github-pat)에 matching-user-owned 0400으로 materialize되어야 함 (path: ${opnixGithubPat.path}, mode: ${opnixGithubPat.mode}, owner: ${opnixGithubPat.owner})";
       cond =
-        builtins.match "/run/opnix/[^/]+/github-pat" opnixGithubPat.path != null
+        opnixGithubPatPathMatch != null
         && opnixGithubPat.mode == "0400"
-        && opnixGithubPat.owner != "root";
+        && opnixGithubPat.owner != "root"
+        && opnixGithubPat.owner == opnixGithubPatExpectedOwner;
     }
     {
       name = "Test 5b-6: opnix githubPat reference가 op://Automation/github-pat/token이어야 함";
