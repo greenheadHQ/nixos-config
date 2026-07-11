@@ -73,6 +73,7 @@
 ## implementation-notes.md 최소 섹션
 
 ```md
+<!-- owner: finding-unknowns -->
 # Implementation Notes
 ## 계획 스냅샷
 - <계획 버전/artifact 링크/날짜>
@@ -86,12 +87,12 @@
 - <명령/테스트/수동 확인> — 결과
 ```
 
-수명 규칙은 SKILL.md 국면 2의 소실 방지 불변식을 따른다. PR 리뷰 루프에서 발견된 실버그·설계 반전도 Deviations 대상이다 — PR 본문 CIR을 직접 갱신한다.
+1행의 owner header는 provenance 표식이다 — create-pr 흡수 계약이 이 header와 untracked 여부를 확인한 뒤에만 흡수·삭제하므로, 파일 생성 시 반드시 포함한다. 수명 규칙은 SKILL.md 국면 2의 소실 방지 불변식을 따른다. PR 리뷰 루프에서 발견된 실버그·설계 반전도 Deviations 대상이다 — review-pr-feedback의 CIR 동기화 단계가 PR 본문 CIR을 갱신한다.
 
 ## 퀴즈 출제 규칙 (finish-pr 게이트가 사용)
 
 - 목적: 사용자가 변경의 동작을 이해했는지 확인 — 코드 diff 눈도장이 아니라 "이 입력이면 무슨 일이 일어나나"를 묻는다.
-- 출제: AskUserQuestion으로 변경 규모에 따라 3~5문항. 각 문항은 PR 본문(설명자료)만 읽어도 답할 수 있어야 한다 — 본문에 없는 지식을 묻게 되면 퀴즈가 아니라 본문의 결함이므로 본문을 먼저 보강한다.
+- 출제: 질문 도구로 총 3~5문항(변경 규모 비례)을 한 문항씩 답을 기다려 순차 출제한다. 질문 도구는 blocking tool call이어야 하며 plain-text 질문으로 퇴행하지 않는다 — 런타임별 binding(Claude=AskUserQuestion, Codex=request_user_input)은 [run-da의 런타임 도구 매핑](../../run-da/references/runtime-mapping.md#런타임-도구-매핑)이 정본. 각 문항은 PR 본문(설명자료)만 읽어도 답할 수 있어야 한다 — 본문에 없는 지식을 묻게 되면 퀴즈가 아니라 본문의 결함이므로 본문을 먼저 보강한다.
 - 좋은 문항 소재: 경계 조건에서의 동작, 실패 시 폴백, 남아 있는 가정 라벨, Deviations가 생긴 이유, 이 변경이 통제하지 못하는 것.
 - 오답이면: 해당 부분을 설명하고 그 주제로 재출제한다. 전 문항 정답이 통과다.
 - 통과 또는 명시적 스킵(사유 기록) 전에는 머지하지 않는다 — 게이트 자체는 finish-pr 절차가 소유한다.

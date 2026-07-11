@@ -45,7 +45,7 @@ description: |
 
 ## 국면 2 — 구현 중
 
-- 워크트리 루트에 `implementation-notes.md`를 유지한다 (최소 섹션: [references/tactics.md](references/tactics.md)). 아무리 계획해도 unknown unknowns는 구현 깊숙한 곳에서 나타난다 — 그것이 정상이며, 기록이 방법론의 산출물이다.
+- 워크트리 루트에 `implementation-notes.md`를 유지한다 (1행은 owner header, 최소 섹션: [references/tactics.md](references/tactics.md)). 아무리 계획해도 unknown unknowns는 구현 깊숙한 곳에서 나타난다 — 그것이 정상이며, 기록이 방법론의 산출물이다.
 - 계획 이탈 시: 저위험·국소적이면 보수적 선택 → Deviations 기록 → 계속. 아키텍처·데이터 마이그레이션·보안·비용·사용자 대면 동작이 바뀌면 멈추고 질문한다.
 - 영토(실측·공식 문서)가 계획과 모순되면 영토를 신뢰하고 계획을 갱신한다.
 - 소실 방지 불변식: 이 파일은 커밋 대상이 아니다. 대신 `create-pr`이 PR 본문에 Decisions/Deviations를 흡수했음을 확인하기 전까지 삭제·이동하지 않는다. 임시 디렉토리로 옮기는 것도 이동이다. 흡수가 확인된 뒤에는 파일을 삭제한다 — 남겨두면 워크트리 정리(`finish-pr`)가 dirty 상태로 중단되고, 이후 발견되는 미지는 PR 본문 CIR을 직접 갱신하므로 파일이 더 필요하지 않다.
@@ -54,7 +54,7 @@ description: |
 
 - 설명자료 — `create-pr`의 7섹션 본문이 설명자료다 (별도 산출물 불필요). 구현 노트의 Decisions/Deviations 흡수는 create-pr 절차가 수행한다.
 - 퀴즈 — 머지 전 퀴즈 게이트는 `finish-pr`이 소유한다. 출제 규칙은 [references/tactics.md](references/tactics.md). 이 국면에서 에이전트의 책임은 퀴즈를 출제할 수 있는 상태(노트가 PR 본문에 흡수됨)를 유지하는 것이다.
-- 리뷰 루프도 영토다: PR 리뷰(`review-pr-feedback`)에서 실버그·설계 반전이 발견되면 그것도 미지 발견이다 — PR 본문의 CIR/Deviations를 갱신한다. 방법론은 PR 초안에서 끝나지 않고 머지에서 끝난다.
+- 리뷰 루프도 영토다: PR 리뷰(`review-pr-feedback`)에서 실버그·설계 반전이 발견되면 그것도 미지 발견이다 — `review-pr-feedback`의 CIR 동기화 단계가 resolve 전에 PR 본문의 CIR/Deviations를 갱신한다. 방법론은 PR 초안에서 끝나지 않고 머지에서 끝난다.
 
 ## 하네스 매핑
 
