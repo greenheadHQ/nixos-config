@@ -4,7 +4,7 @@
 
 `for_pr`은 `for_plan`과 7-step 구조가 동일하다. 입력(diff vs 계획), 임시 디렉토리 prefix, write phase의 코드 수정+커밋 방식, Step 8 push만 다르다. 동일 절차는 [`./for_plan.md`](./for_plan.md)를 참조하고, 본 파일은 차이점만 step 번호별로 명시한다.
 
-호출 단위 실행 프로파일은 [`../SKILL.md`](../SKILL.md)의 `agent=` 정의가 정본이다. 예: `run-da for_pr agent=codex-xhigh`.
+호출 단위 실행 프로파일과 사용자 지정 실행 파라미터(model/effort/tier)는 [`../SKILL.md`](../SKILL.md)의 정의가 정본이다. 예: `run-da for_pr agent=codex-xhigh`.
 
 ## Step 번호별 delta (vs for_plan)
 

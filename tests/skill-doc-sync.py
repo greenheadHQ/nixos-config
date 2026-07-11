@@ -190,7 +190,30 @@ def check_codex_command_contract() -> None:
             details.append(f"{label}: missing RUN_DA_CODEX_EFFORT effort pin")
         if 'RUN_DA_CODEX_EFFORT:?missing RUN_DA_CODEX_EFFORT' not in block:
             details.append(f"{label}: missing RUN_DA_CODEX_EFFORT guard")
+        if '"${_DA_EXEC_OVERRIDES[@]}"' not in block:
+            details.append(f"{label}: missing _DA_EXEC_OVERRIDES injection point")
+        if "RUN_DA_USER_EXEC_OVERRIDE" not in block:
+            details.append(f"{label}: missing RUN_DA_USER_EXEC_OVERRIDE gate for non-default effort")
 
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
+USER_EXEC_ENV_VARS = ("RUN_DA_CODEX_MODEL", "RUN_DA_CODEX_TIER", "RUN_DA_USER_EXEC_OVERRIDE")
+
+
+def check_user_exec_params() -> None:
+    details = []
+    arbiter_text = read_text(ARBITER_SCALING)
+    for var in USER_EXEC_ENV_VARS:
+        if var not in arbiter_text:
+            details.append(f"{ARBITER_SCALING}: missing user exec env {var}")
+    if "## 사용자 지정 실행 파라미터" not in arbiter_text:
+        details.append(f"{ARBITER_SCALING}: missing user exec params section")
+    if "### 사용자 지정 실행 파라미터" not in read_text(SKILL):
+        details.append(f"{SKILL}: missing user exec params section")
+    if "_DA_EXEC_OVERRIDES" not in read_text(RUNTIME_MAPPING):
+        details.append(f"{RUNTIME_MAPPING}: missing _DA_EXEC_OVERRIDES in canonical command")
     if details:
         raise CheckFailure("\n".join(details))
 
@@ -280,6 +303,7 @@ def main() -> int:
         ("kappa constants", check_kappa_constants),
         ("review profile efforts", check_profile_efforts),
         ("codex command contract", check_codex_command_contract),
+        ("user exec params", check_user_exec_params),
         ("agent args", check_agent_args),
         ("no hardcoded model literals", check_no_hardcoded_model_literals),
         ("reviewer bundle subdomains", check_bundle_subdomains),

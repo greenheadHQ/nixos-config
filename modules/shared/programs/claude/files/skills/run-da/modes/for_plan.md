@@ -40,7 +40,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 ## Step 2: reviewer bundle 병렬 실행
 
 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 병렬 실행한다. 런타임별 도구 매핑은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 참조.
-호출 단위 실행 프로파일은 [`../SKILL.md`](../SKILL.md)의 `agent=` 정의가 정본이다. 예: `run-da for_plan agent=codex-high`.
+호출 단위 실행 프로파일과 사용자 지정 실행 파라미터(model/effort/tier)는 [`../SKILL.md`](../SKILL.md)의 정의가 정본이다. 예: `run-da for_plan agent=codex-high`.
 
 ### Codex 세션 경로
 

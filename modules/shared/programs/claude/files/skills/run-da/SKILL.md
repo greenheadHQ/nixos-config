@@ -1,8 +1,8 @@
 ---
 name: run-da
-argument-hint: "[for_plan|for_pr|both|audit] [MAX] [fresh] [agent=codex-xhigh|codex-high|codex-medium|claude]"
+argument-hint: "[for_plan|for_pr|both|audit] [MAX] [fresh] [agent=codex-xhigh|codex-high|codex-medium|claude] [model=<m>] [effort=<e>] [tier=<t>]"
 description: |
-  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both, audit. Modifier: MAX, fresh, agent=<profile>.
+  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, both, audit. Modifier: MAX, fresh, agent=<profile>, 사용자 지정 model/effort/tier (key=value 또는 자연어 지정).
   Trigger: 'DA', '피드백 루프', 'YAGNI 리뷰', '코드 리뷰 루프', 'run-da',
   'HALLUCINATION 관점에서 코드 검증', '설계 검토', '코드 품질 리뷰', '간단한 변경 DA 필요 여부', 'DA 필요', 'DA 생략',
   '사이드이펙트 조사', '회귀 조사', '회귀 감사', '병렬 감사'.
@@ -47,7 +47,7 @@ SKIP이어도 질문 도구 승인 전에는 완료가 아니며, 이 gate가 �
 
 ## 모드
 
-스킬 호출 인자의 첫 토큰이 모드다. 이후 토큰은 `MAX`/`fresh` modifier와 `agent=` 실행 프로파일 인자로 해석한다.
+스킬 호출 인자의 첫 토큰이 모드다. 이후 토큰은 `MAX`/`fresh` modifier, `agent=` 실행 프로파일 인자, 사용자 지정 실행 파라미터(`model=`/`effort=`/`tier=` 또는 같은 의미의 자연어 지정)로 해석한다.
 
 | 모드 (호출 인자 첫 토큰) | 동작 |
 |--------------|------|
@@ -72,6 +72,23 @@ SKIP이어도 질문 도구 승인 전에는 완료가 아니며, 이 gate가 �
 `agent=codex-*`는 호출자가 codex exec 경로를 명시적으로 선택한 것이다. codex 사전점검이 실패하면 Claude 경로로 자동 대체하지 않고, 실패 원인과 대안(Claude 경로 진행 또는 중단)을 사용자에게 고지한 뒤 확인을 받아야 한다.
 
 `agent=claude`는 Claude Code 세션에서만 실행 가능한 경로다. 현재 런타임에서 Claude Code 서브에이전트 경로를 사용할 수 없으면 다른 경로로 조용히 대체하지 않고 사용자에게 고지한다.
+
+### 사용자 지정 실행 파라미터 (model / effort / tier)
+
+사용자는 codex exec 경로의 model, reasoning effort, service_tier를 호출 단위로 지정할 수 있다.
+`model=<값>` `effort=<값>` `tier=<값>` 토큰과 같은 의미의 자연어 지정(예: "reviewer를 이 모델로, fast tier로 돌려줘")은 동등한 채널이다 — 메인 LLM이 사용자가 명시한 값을 세 축으로 해석한다.
+
+| 규칙 | 내용 |
+|------|------|
+| 해석 (환각 금지) | 사용자가 명시한 축만 채운다. 명시가 없는 축을 추론으로 채우지 않는다 — 그 축은 기본 정책을 따른다 |
+| 적용 범위 | 해당 호출의 reviewer/auditor와 Arbiter 전체. 해당 호출에만 적용 (설정 파일 없음, `agent=`와 동일) |
+| 우선순위 | `effort` 명시는 `agent=codex-*`의 effort보다 우선한다 (더 구체적인 지정 우선) |
+| 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 조용한 대체/하향 금지 |
+| 경로 제약 | codex exec 경로 전용이다. `agent=claude`와 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다 |
+
+모델명 박제 금지 원칙과의 관계: 이 채널의 값은 사용자 입력에서만 온다. 스킬 문서·기본값·예시에 특정 모델명을 두지 않는 원칙(sync 테스트의 모델 literal 잔존 게이트)은 그대로 유지된다.
+
+실행 계약(env 변수, shell-safe 검증, 주입 위치)은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다.
 
 ### `MAX` modifier
 
@@ -129,7 +146,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 | `audit` | [`modes/audit.md`](modes/audit.md) | mode 확정 후 즉시. Review Intensity 우회이므로 `intensity-procedure.md`는 읽지 않는다 |
 | `fresh` modifier | 이 `SKILL.md`; 후속 라운드 propagation 조립 시 [`references/protocol.md`](references/protocol.md), ledger suppression이 필요하면 [`references/dismissal-ledger.md`](references/dismissal-ledger.md) | preflight에서는 추가 reference 없음. 이전 라운드 맥락과 selective propagation을 모두 끊어야 하는 시점에만 protocol을 확인한다. current changeset에 valid ledger가 있을 때만 dismissal-ledger를 확인한다 |
 | `MAX` modifier | 선택 mode 문서, [`references/da-domains.md`](references/da-domains.md) | Review Intensity를 건너뛰고 exhaustive 6-domain fan-out 조립 직전. `intensity-procedure.md`는 읽지 않는다 |
-| `agent=` 실행 프로파일 | 이 `SKILL.md`; 실제 경로/effort 조립 시 [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | preflight에서는 값 검증만 한다. fan-out 실행 단위 조립 직전에 런타임 매핑과 role별 command 계약을 확인한다 |
+| `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 이 `SKILL.md`; 실제 경로/effort/override 조립 시 [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | preflight에서는 값 해석과 shell-safe 검증만 한다. fan-out 실행 단위 조립 직전에 런타임 매핑과 role별 command 계약을 확인한다 |
 | LITE/FULL reviewer fan-out | [`references/da-domains.md`](references/da-domains.md), [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/hardening-contract.md`](references/hardening-contract.md) | Step 2에서 실제 reviewer prompt/런타임을 조립할 때 |
 | codex exec fallback 또는 literal 재사용 위험 | [`../using-codex-exec/references/known-issues.md`](../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | native delegation이 거부되거나 codex exec 경로를 실제로 사용할 때 |
 | findings ≥ 1로 first-pass Arbiter 진입 | [`references/arbiter-prompt.md`](references/arbiter-prompt.md), [`references/protocol.md`](references/protocol.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | Step 5a에서 Arbiter prompt/실행 계약을 조립할 때 |
@@ -184,8 +201,8 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
 - Codex 세션 경로에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
-- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. `agent=`가 지정되면 해당 호출에서는 그 실행 프로파일이 reviewer/auditor와 Arbiter 전체에 우선한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑).
-- codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행되어 코드/계획 write를 read-only sandbox로 구조적으로 차단한다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명은 고정하지 않고, reasoning effort만 기본 role profile 또는 `agent=` 인자에서 결정한다. 프롬프트에서도 수정 금지를 명시한다.
+- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. `agent=` 또는 사용자 지정 실행 파라미터가 지정되면 해당 호출에서는 그 값이 reviewer/auditor와 Arbiter 전체에 우선한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑).
+- codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행되어 코드/계획 write를 read-only sandbox로 구조적으로 차단한다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명·service_tier는 스킬이 고정하지 않는다 — 사용자가 명시 지정한 값만 `-c` config override로 주입하고(사용자 지정 실행 파라미터), 미지정 시 reasoning effort만 기본 role profile 또는 `agent=` 인자에서 결정한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
 - 피드백 루프 결과는 PR 코멘트로 게시하여 이력을 보존한다 ([`references/protocol.md`](references/protocol.md) 참조).
