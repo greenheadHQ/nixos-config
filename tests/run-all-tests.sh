@@ -2,12 +2,12 @@
 # tests/run-all-tests.sh — 통합 검증 진입점
 #
 # 저장소의 모든 테스트 드라이버 + flake 평가 게이트를 한 번에 순차 실행한다. push 전(로컬
-# 훅 우회 여부와 무관하게 재검증)과 신규 머신 온보딩 시 실행을 권장한다. 향후 원격 CI도 이
+# 훅 우회 여부와 무관하게 재검증)과 신규 머신 온보딩 시 실행을 권장한다. required CI도 이
 # 단일 진입점을 재사용해 중복 정의를 피한다.
 #
-# 커버리지 경계: 이 진입점은 pre-push 게이트(shell-script-tests · codex-hook-fixtures ·
-#   analyzing-da-sessions-tests · flake-check · statusline-bats) + da-weekly-report-tests
-#   + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
+# 커버리지 경계: required CI의 전체 회귀(shell-script-tests · codex-hook-fixtures 포함)와
+#   pre-push의 3개 조건부 게이트(analyzing-da-sessions-tests · flake-check · statusline-bats),
+#   da-weekly-report-tests + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
 #   드라이버(codex-exec-supervised · precommit-staged-snapshot)를 포함한다. 벤치마크
 #   tests/bench-shell-startup.sh는 회귀 게이트가 아니라 측정 도구이므로(자체 헤더에 명시) 제외한다.
 #   pre-commit의 staged 스냅샷 정책(gitleaks · nixfmt · shellcheck · skill-noise)은 staged index
@@ -17,8 +17,8 @@
 #   확보한 뒤, 끝에서 통과/SKIP/실패를 구분 요약하고 하나라도 실패하면 non-zero로 종료한다.
 #
 # 런타임 의존성: devShell이 사전 빌드한 prePushRuntime profile을 shell/pytest/Bats 드라이버가
-#   공유하고, profile이 없으면 같은 flake package의 nix shell fallback을 쓴다. 각 호출 방식은
-#   lefthook.yml의 해당 항목과 동일하게 유지한다(이 파일이 그 단일 진입점).
+#   공유하고, profile이 없으면 같은 flake package의 nix shell fallback을 쓴다. pre-push에 남은
+#   pytest/Bats 호출은 lefthook.yml과 동일하게 유지하고, shell 전체 회귀는 required CI가 담당한다.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,8 +56,9 @@ run_driver() {
 # 1) eval-tests — Nix 평가(E2E 설정 검증, 선택적 lazy 평가). wrap 불필요.
 run_driver "eval-tests" bash tests/run-eval-tests.sh
 
-# 2) shell-script-tests — prePushRuntime이 tomlkit + GNU coreutils/findutils(#1009) + lsof(#1052)
-#    + 실제 lefthook을 함께 제공한다. runner 내부 bootstrap은 READY guard로 중첩 wrap을 피한다.
+# 2) shell-script-tests — required CI/수동 전체 회귀. prePushRuntime이 tomlkit + GNU
+#    coreutils/findutils(#1009) + lsof(#1052) + 실제 lefthook을 함께 제공한다. runner 내부
+#    bootstrap은 READY guard로 중첩 wrap을 피한다.
 run_driver "shell-script-tests" \
   bash scripts/ai/test-runtime-profile.sh run "$REPO_ROOT" -- bash tests/run-shell-script-tests.sh
 

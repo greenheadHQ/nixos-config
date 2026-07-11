@@ -119,11 +119,10 @@ pre-commit 정책:
 
 **pre-push**:
 - devShell 진입 시 [`scripts/ai/test-runtime-profile.sh`](./scripts/ai/test-runtime-profile.sh)가 worktree별 `prePushRuntime` GC-root를 content stamp 기반으로 사전 빌드한다. hook은 이 PATH를 공유하고 profile 부재/stale 시 동일 flake package로 폴백한다.
-- `shell-script-tests` — `.sh`/shell fixture/runtime 정의 push에만 배포 레이아웃 fixture를 실행한다.
 - `analyzing-da-sessions-tests` — analyzing-da-sessions/run-da 계약 변경에만 pytest fixture를 실행한다.
 - `flake-check` — `.nix`/`flake.lock` push에만 `nix flake check --no-build --all-systems`를 실행한다.
 - `statusline-bats` — statusline 소스/테스트 push에만 Bats fixture를 실행하고 비대화형 hook에 기본 `TERM`을 주입한다.
-- Codex hook fixture는 관련 staged 변경의 pre-commit과 모든 PR의 required CI에서 검증한다. 삭제 파일 등 Lefthook `push_files` 필터의 사각지대도 required CI가 보완한다.
+- 전체 shell fixture와 Codex hook fixture는 모든 PR의 required CI에서 검증하고, Codex fixture는 관련 staged 변경의 pre-commit에서도 실행한다. 삭제 파일 등 Lefthook `push_files` 필터의 사각지대도 required CI가 보완한다. 수동 push 전 전체 로컬 검증이 필요하면 `bash tests/run-all-tests.sh`를 실행한다.
 
 `ai-skills-consistency` 훅 동작 ([`scripts/ai/warn-skill-consistency.sh`](./scripts/ai/warn-skill-consistency.sh)):
 - **일반 커밋**: 불일치 감지 시 경고만 출력 (차단 없음)

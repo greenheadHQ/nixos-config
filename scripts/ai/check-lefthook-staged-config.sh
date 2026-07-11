@@ -172,14 +172,6 @@ cat > "$expected_prepush" <<'EOF'
 pre-push:
   parallel: true
   commands:
-    shell-script-tests:
-      glob:
-        - "*.sh"
-        - "tests/fixtures/shell-scripts/**"
-        - "flake.lock"
-        - "flake.nix"
-        - "libraries/python-runtimes.nix"
-      run: bash ./scripts/ai/test-runtime-profile.sh run "$PWD" -- bash ./tests/run-shell-script-tests.sh
     analyzing-da-sessions-tests:
       glob:
         - "modules/shared/programs/claude/files/skills/analyzing-da-sessions/**"
