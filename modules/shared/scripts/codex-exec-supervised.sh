@@ -19,7 +19,7 @@
 #
 # 사용 (Layer 1 supervised contract — programmatic 호출의 canonical pattern):
 #   cat prompt.md | codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-#     -c model="gpt-5.5" -c model_reasoning_effort="medium" -o result.md -
+#     -c model_reasoning_effort="medium" -o result.md -
 #
 # wrapper 자체 capability probe (사전점검용 — codex exec를 호출하지 않고 의존성만 검증):
 #   codex-exec-supervised --check  # 모든 dependency(setsid/timeout/codex) 가용 시 exit 0, 부재 시 127

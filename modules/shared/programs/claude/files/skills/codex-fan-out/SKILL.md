@@ -109,7 +109,6 @@ echo "FO_DIR=$FO_DIR"
    # marker must apply to `codex`, not `cat` (issue #585 / epic #584).
    # CODEX_PROGRAMMATIC=1은 Codex 0.124+ user-level hooks의 early-exit guard 신호.
    cat "$FO_DIR/agent-1.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
-     -c model="gpt-5.5" \
      -c model_reasoning_effort="high" \
      -o "$FO_DIR/agent-1-result.md" \
      - \
