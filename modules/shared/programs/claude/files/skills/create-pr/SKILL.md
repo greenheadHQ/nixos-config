@@ -59,6 +59,7 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
 4. ADR 테이블 구성: 검토한 대안들을 비교 테이블로 정리한다. 대안이 1개뿐이면 ADR 섹션을 간소화한다.
 5. 7섹션 템플릿 작성: [references/pr-template.md](references/pr-template.md)의 템플릿에 따라 전체 PR 본문을 작성한다.
 6. PR 생성: `gh pr create --title "<제목>" --body "<본문>"`으로 PR을 생성한다. 제목은 70자 미만, conventional commit 형식을 따른다.
+7. 구현 노트 정리: 3단계에서 `implementation-notes.md`를 흡수한 경우, PR 생성 성공과 본문 CIR 반영을 확인한 뒤에만 그 파일을 삭제한다 (남겨두면 finish-pr의 워크트리 정리가 dirty로 중단됨). PR 생성이 실패하면 파일을 보존하고 중단한다.
 
 ### 기존 PR 업데이트 (`update`)
 
@@ -68,6 +69,7 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
 2. 누락 섹션 탐지: 7섹션 중 빠진 섹션을 식별한다.
 3. 부실 섹션 강화: 있지만 내용이 부실한 섹션(예: Summary만 있고 CIR 없음)을 보강한다. 커밋 히스토리, 코드 변경, 대화 컨텍스트에서 추가 정보를 수집한다. 워크트리에 `implementation-notes.md`가 있으면 새 PR 생성 절차와 동일하게 Decisions/Deviations를 CIR로 흡수한다.
 4. 업데이트 적용: `gh pr edit <number> --body "<새 본문>"`으로 PR 본문을 업데이트한다.
+5. 구현 노트 정리: `implementation-notes.md`를 흡수한 경우 새 PR 생성 절차의 구현 노트 정리 단계와 동일하게, 업데이트 성공 확인 후에만 삭제하고 실패 시 보존한다.
 
 ## 주의사항
 
