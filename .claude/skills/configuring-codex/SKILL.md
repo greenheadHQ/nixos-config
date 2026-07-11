@@ -5,7 +5,7 @@ description: |
   Trigger: 'Codex 설정', 'codex 스킬 인식', 'AGENTS.md 심링크', '.agents/skills 심링크', 'verify-ai-compat',
   'codex 권한', 'codex 업데이트', 'AI 도구 호환', 'codex 바이너리', 'approval_policy', 'sandbox_mode',
   'Codex 권한 프롬프트'.
-  NOT for codex exec 실행 (use using-codex-exec).
+  NOT for codex exec 실행. Direct Codex는 native subagent를 우선하며, Claude/headless subprocess 계약은 아래 런타임 SoT를 참조.
 ---
 
 # Codex CLI 설정
@@ -14,8 +14,8 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 ## 작성 기준
 
-- 확인 날짜: 2026-07-08
-- 확인 버전: codex-cli 0.142.5 (codex-pin.json/runtime 일치; nix overlay — OpenAI 공식 릴리스 직핀; #890에서 mise npm backend → nix 이관)
+- 확인 날짜: 2026-07-11
+- 확인 버전: codex-cli 0.144.1 (codex-pin.json/runtime 일치; nix overlay — OpenAI 공식 릴리스 직핀; #890에서 mise npm backend → nix 이관)
 - 재검증: `jq -r .version modules/shared/programs/codex/codex-pin.json && codex --version && codex --help`
 
 ## 목적과 범위
@@ -31,8 +31,26 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 1. `.agents/skills/*`이 디렉토리 심링크인지 확인 (`ls -la .agents/skills/`)
 2. 프로젝트 루트 `AGENTS.md -> CLAUDE.md` 심링크 확인 (git-tracked)
 3. `./scripts/ai/verify-ai-compat.sh` 실행
-4. `codex exec`로 런타임에서 스킬 이름이 보이는지 확인
+4. 문서화된 runtime recognition 검사로 `codex exec`에서 스킬 이름이 보이는지 확인
 5. 권한 프롬프트 이슈는 `approval_policy`, `sandbox_mode` 설정으로 분리 진단
+
+## 런타임 라우팅과 노출 경계
+
+| 세션 | 기본 실행 경로 |
+|------|----------------|
+| Direct Codex | native subagent. `using-codex-exec`와 `codex-fan-out`은 자기 참조 방지를 위해 의도적으로 노출하지 않으며 직접 호출 대상이 아니다. |
+| Claude Code | `codex exec` subprocess. `using-codex-exec`와 `codex-fan-out`은 이 경로를 위한 adapter 문서다. |
+| headless | `codex exec` subprocess를 foreground serial로 실행한다. |
+
+세션별 binding은 [runtime mapping](../../../modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md)이 정본이다.
+Direct Codex에서 native delegation이 거부되었을 때의 별도 승인 fallback은
+[hardening contract](../../../modules/shared/programs/claude/files/skills/run-da/references/hardening-contract.md)를 참조하며,
+이 문서에서 fallback 설계를 복제하지 않는다.
+
+Shared skill 노출 정책의 SoT는
+[`default.nix`](../../../modules/shared/programs/codex/default.nix)의 `exposedCodexSkills`와
+`intentionallyNotExposed`다. [`verify-ai-compat.sh`](../../../scripts/ai/verify-ai-compat.sh)는
+그 목록과 project directory projection을 독립적으로 감사하는 oracle이다.
 
 ## `request_user_input` Default Mode 활성화
 
@@ -50,10 +68,10 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 
 ## 핵심 파일
 
-- `modules/shared/programs/codex/default.nix` — 설정 및 스킬 투영
+- `modules/shared/programs/codex/default.nix` — 설정, shared skill 노출 정책 SoT, project 스킬 투영
 - `modules/shared/programs/codex/files/config.toml` — 실행 정책/모델 설정 (NixOS)
 - `modules/shared/programs/codex/files/config.darwin.toml` — macOS 전용 설정 (user-scope MCP 포함)
-- `scripts/ai/verify-ai-compat.sh` — 구조 검증
+- `scripts/ai/verify-ai-compat.sh` — 노출 정책 및 directory projection 독립 감사 oracle
 - `modules/shared/programs/claude/files/CLAUDE.md` — 글로벌 라우팅/지침
 - `.claude/skills/*` (원본)
 - `.agents/skills/*` (Codex 발견용 투영)
@@ -125,7 +143,7 @@ Codex CLI는 디렉토리 심링크를 따라가지만 파일 심링크는 무�
 
 ## 실행 정책 / Trust 메모
 
-`codex-cli 0.142.5` 기준으로 `codex --help`에 `codex trust` 독립 서브커맨드는 확인되지 않았다.
+`codex-cli 0.144.1` 기준으로 `codex --help`에 `codex trust` 독립 서브커맨드는 확인되지 않았다.
 권한 프롬프트 동작은 전역 실행 정책으로 제어한다.
 
 ```toml
@@ -133,7 +151,8 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 ```
 
-`trust_level` 프로젝트 엔트리는 경로별 세부 제어가 필요할 때만 추가한다.
+프로젝트 trust의 SoT는 사용자 승인에 의한 디렉토리별 runtime mutation이다. Nix template은
+trust를 하드코딩하지 않고 runtime-owned `config.toml`의 `[projects.*]` 엔트리를 보존한다.
 
 ## 트러블슈팅 / FAQ
 
@@ -174,9 +193,10 @@ done
 codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex' available in this workspace?"
 ```
 
-## 관련 스킬
+## 관련 계약
 
-- `using-codex-exec`: Codex exec 실행 래퍼와 headless 실행 경로를 다룰 때 사용
+- 세션별 실행 binding: [runtime mapping](../../../modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md)
+- Direct Codex 권한 및 fallback 경계: [hardening contract](../../../modules/shared/programs/claude/files/skills/run-da/references/hardening-contract.md)
 
 ## 레퍼런스
 
