@@ -33,7 +33,7 @@ Skip 조건:
 ### 2. 퀴즈 게이트 (finding-unknowns 방법론 적용 작업)
 
 1. 이 PR이 finding-unknowns 방법론 적용 작업인지 판별한다. 1차 신호는 PR 본문의 durable marker `<!-- methodology: finding-unknowns -->`다 (기록 주체·정본: create-pr 흡수 계약 — 별도 세션에서도 남는 유일한 신호). 보조 신호는 세션·메모리 컨텍스트의 방법론 적용 선언, 워크트리에 남은 `implementation-notes.md`이며, 보조 신호만으로 판별할 때는 일반 PR 오탐에 주의한다.
-2. 해당되면 머지 전에 변경의 동작 이해를 확인하는 퀴즈를 질문 도구로 출제한다 (런타임별 질문 도구 binding: [run-da의 런타임 도구 매핑](../run-da/references/runtime-mapping.md#런타임-도구-매핑) — blocking tool call 필수, plain-text 질문으로 퇴행 금지). 출제 규칙의 SoT는 finding-unknowns 스킬의 `references/tactics.md` — 요지: 변경 규모에 따라 총 3~5문항을 한 문항씩 답을 기다려 순차 출제하고, 모든 문항은 PR 본문만 읽어도 답할 수 있어야 하며, 오답이면 설명 후 그 주제로 재출제한다.
+2. 해당되면 머지 전에 변경의 동작 이해를 확인하는 퀴즈를 질문 도구로 출제한다 — blocking 도구 호출로 한 문항씩 답을 기다리고, plain-text로 묻고 지나가거나 답을 가정하고 진행하지 않는다. 출제 규칙의 SoT는 finding-unknowns 스킬의 `references/tactics.md` — 요지: 변경 규모에 따라 총 3~5문항을 한 문항씩 답을 기다려 순차 출제하고, 모든 문항은 PR 본문만 읽어도 답할 수 있어야 하며, 오답이면 설명 후 그 주제로 재출제한다.
 3. 전 문항 정답이 통과다. 통과 전에는 squash merge를 진행하지 않는다.
 4. 퀴즈 통과 직후 merge 대상을 다시 고정한다: `gh pr view --json headRefOid,body,statusCheckRollup,reviewDecision,mergeStateStatus`를 재조회하고, 퀴즈 시작 시점 대비 head 또는 본문이 바뀌었으면 바뀐 내용 기준으로 퀴즈를 다시 시작한다 (이전 head에 대한 통과로 새 head를 머지하지 않는다). 재확정한 `headRefOid`를 3단계 merge에 전달한다.
 
