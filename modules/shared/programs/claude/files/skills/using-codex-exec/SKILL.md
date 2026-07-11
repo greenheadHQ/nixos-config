@@ -348,6 +348,7 @@ breaker로 중단하고 같은 호출을 증식시키지 않는다. fan-out은 �
 6. Bash tool sandbox에서 `&` + `$!` 미작동: Claude Code의 Bash tool에서 background process PID 캡처(`$!`)가 리터럴 문자열로 반환됨. shell-level 병렬 대신 여러 병렬 Bash tool 호출 + supervised stdin pipe를 사용한다. 이 제약은 Codex 세션의 native subagent 경로에는 적용되지 않는다. 재검증 미수행 (0.142.5 기준 서술 유지; 상세: [known-issues.md](references/known-issues.md) §11)
 7. stdin pipe로 stdin hang 방지: `cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -`로 EOF를 보장한다. `Reading additional input...` banner 하나만으로 hang이라 단정하지 말고, banner + 무진척 + 결과 미생성을 함께 확인한다. 상세: [known-issues.md](references/known-issues.md) §14
 8. `-c hooks.*` inline override는 stdin과 독립적으로 hang을 유발한 실측 축이다. programmatic 호출에서 제거하고 [known-issues.md §15](references/known-issues.md#15-codex-exec-supervised-wrapper로-14-위에-process-grouptimeout-한계-보강-issue-593)의 supervisor·timeout 계약을 적용한다.
+9. codex exec `--json`은 multi-agent spawn/child 이벤트를 노출하지 않는다 (관측성 한계, 0.144.1). `collaboration.spawn_agent`는 실제로 작동해 child를 생성·실행하지만, 공개 `--json`에는 `tool:"wait"` 이벤트만 보이고 그 `receiver_thread_ids`가 `[]`다 — 이를 spawn 실패로 오판하지 마라 (child가 이미 실행됐을 수 있어 재시도 시 중복 실행). 실제 spawn 여부는 `~/.codex/sessions`의 persisted rollout(`spawn_agent`/`sub_agent_activity`/`inter_agent_communication_metadata`)으로 확인한다. 상세: [known-issues.md §19](references/known-issues.md#19-codex-exec---json이-multi-agent-spawnchild-이벤트를-노출하지-않음-관측성-한계)
 
 ## 모델 사용 원칙
 
@@ -392,6 +393,7 @@ breaker로 중단하고 같은 호출을 증식시키지 않는다. fan-out은 �
 | 실패 원인 미확인 후 반복 재시도 | 동일 에러 반복 | known-issues.md 진단 절차 |
 | 긴 루프에서 결과 파일 저장 생략 | 결과 유실 | `-o` 또는 리다이렉트 필수 사용 |
 | child가 같은 collector/fan-out을 다시 생성 | 무한 자기증식 | 오케스트레이션은 부모 1계층에서만 수행 |
+| 공개 exec `--json`의 빈 `receiver_thread_ids`를 spawn 실패로 판정 | `wait` 이벤트 필드일 뿐 — child는 실행됐을 수 있어 오판·중복 실행 | persisted rollout에서 `spawn_agent` 확인 ([known-issues.md §19](references/known-issues.md#19-codex-exec---json이-multi-agent-spawnchild-이벤트를-노출하지-않음-관측성-한계)) |
 
 ## 참조
 
