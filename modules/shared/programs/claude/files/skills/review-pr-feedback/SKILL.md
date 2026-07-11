@@ -150,6 +150,14 @@ actionable로 분류된 각 피드백을 다음 7개 기준으로 검증한다.
 - conventional commit 형식을 따른다 (예: `fix(module): address PR feedback`).
 - 반영할 피드백이 여러 영역에 걸쳐 있으면 논리적으로 분리하여 복수 커밋으로 나눈다.
 
+### Step 5.5: 방법론 PR의 CIR 동기화 (finding-unknowns)
+
+PR 본문에 durable marker `<!-- methodology: finding-unknowns -->`가 있고(기록 주체·정본: create-pr 흡수 계약) 이번 run이 새 CIR 기록을 만들었다면, Step 6의 답글·resolve 전에 PR 본문의 CIR/Deviations를 동기화한다 — create-pr의 `update` 절차를 수행하는 handoff이며, 본문 전면 재작성이 아니라 CIR/Deviations 증분 갱신이다. "새 CIR 기록"은 코드에 반영한 실버그·설계 반전만이 아니라, `DESIGN_TRADEOFF`/`TECHNICAL_DISAGREEMENT`/`SCOPE_DEFERRAL` 기각이 남긴 설계 결정과 이관된 미지(분리 이슈 #N)도 포함한다 — 코드 무변경이 skip 기준이 아니다. 이 동기화를 건너뛰면 이후 finish-pr 퀴즈가 stale한 본문을 기준으로 출제된다.
+
+Skip 조건:
+- marker가 없는 일반 PR이면 해당 없음.
+- 이번 run에서 새 CIR 기록(반영·기각·이관 어느 쪽에서도)이 전혀 발생하지 않은 경우에만 건너뛴다.
+
 ### Step 6: 답글 + resolve
 
 모든 피드백(반영 여부 무관)에 대해 사유를 담은 답글/follow-up을 남기고 review thread는 resolve한다.
