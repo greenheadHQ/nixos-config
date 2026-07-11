@@ -92,12 +92,32 @@ sandbox_mode = "danger-full-access"
 
 # 3) directory symlink 검증
 for d in .agents/skills/*; do
-  [ -L "$d" ] && echo "OK: $(basename "$d") -> $(readlink "$d")" || echo "FAIL: $(basename "$d")"
+  name="$(basename "$d")"
+  target="$(readlink "$d" 2>/dev/null || true)"
+  expected="../../.claude/skills/$name"
+  if [ -d ".claude/skills/$name" ]; then
+    target_ok=false
+    [ "$target" = "$expected" ] && target_ok=true
+  else
+    target_ok=false
+    [[ "$target" = /* ]] && target_ok=true
+  fi
+  if [ -L "$d" ] && [ -d "$d" ] && [ -f "$d/SKILL.md" ] && $target_ok; then
+    echo "OK: $name -> $target"
+  else
+    echo "FAIL: $name"
+  fi
 done
 
 # 4) pin/runtime 버전 일치 검증
-codex --version
-jq -r .version modules/shared/programs/codex/codex-pin.json
+runtime_version="$(codex --version | awk 'NF { print $NF; exit }')"
+pin_version="$(jq -r .version modules/shared/programs/codex/codex-pin.json)"
+if [ -z "$runtime_version" ] || [ -z "$pin_version" ] || [ "$pin_version" = null ] ||
+   [ "$runtime_version" != "$pin_version" ]; then
+  echo "FAIL: runtime=$runtime_version pin=$pin_version" >&2
+  exit 1
+fi
+echo "OK: runtime=$runtime_version pin=$pin_version"
 
 # 5) 런타임 인식 검증
 codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex' available in this workspace?"
