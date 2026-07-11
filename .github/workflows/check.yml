@@ -17,10 +17,10 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install Nix (flakes enabled)
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       # --inputs-from . 로 repo flake.lock에 핀된 nixpkgs의 nixfmt/shellcheck를 쓴다(devShell·로컬
       # lefthook 훅과 동일 store path). floating registry(nixpkgs# 단독)는 unstable 채널을 해석해

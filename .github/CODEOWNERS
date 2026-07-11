@@ -1,0 +1,3 @@
+# The required CI workflow is the merge safety net. Keep both the workflow and
+# this ownership rule behind an explicit repository-owner review.
+/.github/ @greenheadHQ

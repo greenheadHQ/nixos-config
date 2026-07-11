@@ -1390,8 +1390,8 @@ EOF
 # TEST_JOBS=1 이면 순차 폴백. harness 의 run_test 는 $1 을 라벨로 받아 시그니처가 동일하다.
 # --live 모드의 두 live fixture(invocation matrix → programmatic env inheritance)는 순서 계약이
 # 있으므로(#647/#593: issue #593 wrapper/process-group 회귀 신호를 먼저 확보) 병렬화하지 않고
-# 순차로 강제한다. deterministic(--no-live; lefthook pre-commit/pre-push 경로)만 job-pool 병렬로
-# 실행한다. LIVE_MODE 판정은 위 CLI 파싱에서 이미 끝났다.
+# 순차로 강제한다. deterministic(--no-live; lefthook pre-commit + required CI 경로)만 job-pool
+# 병렬로 실행한다. LIVE_MODE 판정은 위 CLI 파싱에서 이미 끝났다.
 # shellcheck disable=SC2034  # TEST_JOBS 는 바로 아래 source 하는 parallel-harness.sh 가 읽는다.
 [ "$LIVE_MODE" = "1" ] && TEST_JOBS=1
 # shellcheck disable=SC1091
@@ -1439,6 +1439,6 @@ else
 fi
 
 # 병렬 큐잉된 모든 run_test 를 대기·집계한다(TEST_JOBS=1 순차면 no-op). 실패가 하나라도 있으면
-# non-zero 로 종료해 아래 성공 메시지 출력과 pre-commit/pre-push 통과를 막는다.
+# non-zero 로 종료해 아래 성공 메시지 출력과 pre-commit/required CI 통과를 막는다.
 parallel_barrier
 echo "All codex hook fixture tests passed."

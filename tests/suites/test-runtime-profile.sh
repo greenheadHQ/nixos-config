@@ -71,6 +71,19 @@ EOF
   chmod +x "$bin_dir/nix"
 }
 
+_test_runtime_profile_expect_prepare_failure() {
+  local dir="$1" runtime="$2" fake_bin="$3" log="$4" expected="$5"
+  local output status
+  set +e
+  output="$(PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
+    timeout 5 bash "$(_test_runtime_profile_script)" prepare "$dir" 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail "unsafe profile path unexpectedly succeeded"
+  [ "$status" -ne 124 ] || fail "unsafe profile path blocked instead of failing fast"
+  assert_contains "$output" "$expected"
+}
+
 test_runtime_profile_build_cache_and_content_invalidation() (
   local dir runtime fake_bin log script
   dir="$(mktemp -d "${TMPDIR:-/tmp}/test-runtime-profile.XXXXXX")"
@@ -131,6 +144,44 @@ test_runtime_profile_failed_rebuild_preserves_last_good() (
   [ "$(cat "$dir/.direnv/pre-push-runtime.stamp")" != "$old_stamp" ] || fail "retry did not publish new stamp"
 )
 
+test_runtime_profile_rejects_unsafe_lock_and_stamp_nodes() (
+  local dir runtime fake_bin log common_dir lock_path stamp_path external_stamp
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/test-runtime-profile-paths.XXXXXX")"
+  trap 'rm -rf "$dir"' EXIT
+  runtime="$dir/runtime"
+  fake_bin="$dir/fake-bin"
+  log="$dir/nix.log"
+  _test_runtime_profile_make_repo "$dir"
+  _test_runtime_profile_make_runtime "$runtime"
+  _test_runtime_profile_make_fake_nix "$fake_bin"
+  : > "$log"
+
+  common_dir="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir)"
+  lock_path="$common_dir/info/pre-push-runtime.lock.d"
+  mkdir -p "$common_dir/info" "$dir/external-lock"
+  ln -s "$dir/external-lock" "$lock_path"
+  _test_runtime_profile_expect_prepare_failure \
+    "$dir" "$runtime" "$fake_bin" "$log" "refusing unsafe lock path"
+  [ ! -s "$log" ] || fail "unsafe lock symlink invoked nix"
+
+  rm -f "$lock_path"
+  mkfifo "$lock_path"
+  _test_runtime_profile_expect_prepare_failure \
+    "$dir" "$runtime" "$fake_bin" "$log" "refusing unsafe lock path"
+  [ ! -s "$log" ] || fail "unsafe lock FIFO invoked nix"
+
+  rm -f "$lock_path"
+  stamp_path="$dir/.direnv/pre-push-runtime.stamp"
+  external_stamp="$dir/external-stamp"
+  mkdir -p "$dir/.direnv"
+  printf 'do-not-overwrite\n' > "$external_stamp"
+  ln -s "$external_stamp" "$stamp_path"
+  _test_runtime_profile_expect_prepare_failure \
+    "$dir" "$runtime" "$fake_bin" "$log" "refusing unsafe stamp path"
+  [ "$(cat "$external_stamp")" = "do-not-overwrite" ] || fail "unsafe stamp target was modified"
+  [ ! -s "$log" ] || fail "unsafe stamp symlink invoked nix"
+)
+
 test_runtime_profile_concurrent_prepare_builds_once() (
   local dir runtime fake_bin log script first_pid second_pid
   dir="$(mktemp -d "${TMPDIR:-/tmp}/test-runtime-profile-race.XXXXXX")"
@@ -178,9 +229,9 @@ test_runtime_profile_run_uses_current_and_falls_back_when_stale() (
   [ ! -s "$log" ] || fail "current profile unexpectedly invoked nix"
 
   printf '# stale\n' >> "$dir/flake.nix"
-  output="$(PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
-    bash "$script" run "$dir" -- bash -c 'printf "%s" "${_TOMLKIT_BOOTSTRAP_READY:-}"')"
-  [ "$output" = "1" ] || fail "fallback did not provide READY contract"
+  output="$(PATH="$fake_bin:$PATH" TMPDIR="$dir/tmp/" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
+    bash "$script" run "$dir" -- bash -c 'printf "%s|%s" "$TMPDIR" "${_TOMLKIT_BOOTSTRAP_READY:-}"')"
+  [ "$output" = "$dir/tmp|1" ] || fail "fallback TMPDIR/READY contract drifted: $output"
   [ "$(cat "$log")" = "shell" ] || fail "stale profile must use exactly one nix shell fallback"
 )
 

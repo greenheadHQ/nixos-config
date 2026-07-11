@@ -249,13 +249,14 @@ run_test "hook_parse_json_path malformed input returns empty success" test_hook_
 run_test "pinning-guard survives set-but-unusable TMPDIR (e2e)" test_pinning_guard_survives_unusable_tmpdir
 run_test "test runtime profile caches and invalidates by content" test_runtime_profile_build_cache_and_content_invalidation
 run_test "test runtime profile preserves last-good on failed rebuild" test_runtime_profile_failed_rebuild_preserves_last_good
+run_test "test runtime profile rejects unsafe lock and stamp nodes" test_runtime_profile_rejects_unsafe_lock_and_stamp_nodes
 run_test "test runtime profile serializes concurrent prepare" test_runtime_profile_concurrent_prepare_builds_once
 run_test "test runtime profile uses current and falls back when stale" test_runtime_profile_run_uses_current_and_falls_back_when_stale
 run_test "tomlkit bootstrap reuses validated snapshot source profile" test_tomlkit_bootstrap_uses_validated_snapshot_source_profile
 
-# codex-config fixture는 tomlkit이 필요하다. lefthook pre-push는 prePushRuntime profile로
-# 항상 tomlkit을 제공하지만, 사용자가 직접 실행할 때는 미가용일 수 있다. 미가용이면
-# codex-config 섹션만 skip + 안내 (기본 shell suite 진입은 유지).
+# codex-config fixture는 tomlkit이 필요하다. required CI의 run-all-tests는 prePushRuntime
+# profile로 항상 tomlkit을 제공하지만, 사용자가 직접 실행할 때는 미가용일 수 있다. 미가용이면
+# codex-config 섹션만 skip + profile runner 안내 (기본 shell suite 진입은 유지).
 if codex_config_tomlkit_available; then
   run_test "codex-config sync fixtures" test_codex_config_sync_fixtures
   run_test "codex-config sync no-op preserves bytes" test_codex_config_sync_noop_preserves_bytes
@@ -269,9 +270,9 @@ if codex_config_tomlkit_available; then
   run_test "codex-config collect_drift unit" test_codex_config_collect_drift_unit
   run_test "codex-config repair semantic parse lazy unit" test_codex_config_repair_semantic_parse_is_lazy_unit
 else
-  echo "==> codex-config fixtures: SKIPPED (tomlkit 미가용; 'bash scripts/ai/test-runtime-profile.sh run \"$REPO_ROOT\" -- bash tests/run-shell-script-tests.sh'로 전건 실행 권장; pre-push hook은 자동 wrap됨)" >&2
+  echo "==> codex-config fixtures: SKIPPED (tomlkit 미가용; 'bash scripts/ai/test-runtime-profile.sh run \"$REPO_ROOT\" -- bash tests/run-shell-script-tests.sh'로 전건 실행 권장)" >&2
 fi
 
 # 병렬 큐잉된 모든 run_test 를 대기·집계한다(TEST_JOBS=1 순차 모드면 no-op). 실패가 하나라도 있으면
-# non-zero 로 종료해 run-shell-script-tests.sh 의 "All shell script tests passed" 출력과 pre-push 통과를 막는다.
+# non-zero 로 종료해 run-shell-script-tests.sh의 성공 출력과 required CI/수동 통합 검증 통과를 막는다.
 parallel_barrier

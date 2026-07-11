@@ -62,11 +62,23 @@ test_runtime_profile_is_current() {
   local profile stamp_file expected_stamp actual_stamp
   profile="$(test_runtime_profile_path "$repo_root")"
   stamp_file="$(test_runtime_profile_stamp_path "$repo_root")"
-  [ -f "$stamp_file" ] || return 1
+  [ -f "$stamp_file" ] && [ ! -L "$stamp_file" ] || return 1
   expected_stamp="$(test_runtime_profile_fingerprint "$repo_root")" || return 1
   actual_stamp="$(cat "$stamp_file" 2>/dev/null)" || return 1
   [ "$actual_stamp" = "$expected_stamp" ] || return 1
   test_runtime_profile_validate "$profile"
+}
+
+_test_runtime_profile_normalize_tmpdir() {
+  # macOS launchd의 TMPDIR은 보통 trailing slash를 갖는다. 기존 nix shell은 이를
+  # 정규화하므로 current profile과 fallback 모두 같은 canonical-path 계약을 제공한다.
+  case "${TMPDIR:-}" in
+    "" | /) ;;
+    */)
+      TMPDIR="${TMPDIR%/}"
+      export TMPDIR
+      ;;
+  esac
 }
 
 test_runtime_profile_activate() {
@@ -75,39 +87,41 @@ test_runtime_profile_activate() {
   test_runtime_profile_is_current "$repo_root" || return 1
   profile="$(test_runtime_profile_path "$repo_root")"
   export PATH="$profile/bin:$PATH"
-  # macOS launchd의 TMPDIR은 보통 trailing slash를 갖는다. 기존 nix shell은 이를
-  # 정규화했으므로 profile 경로도 같은 계약을 유지해 git의 canonical path와 비교가 어긋나지 않게 한다.
-  case "${TMPDIR:-}" in
-    "" | /) ;;
-    */)
-      TMPDIR="${TMPDIR%/}"
-      export TMPDIR
-      ;;
-  esac
+  _test_runtime_profile_normalize_tmpdir
   export _TOMLKIT_BOOTSTRAP_READY=1
 }
 
 _test_runtime_profile_acquire_lock() {
   local repo_root="$1"
-  local git_common_dir lock_file lock_dir timeout_seconds
+  local git_common_dir lock_path lock_parent timeout_seconds
   git_common_dir="$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || {
     echo "test-runtime-profile: git common dir lookup failed: $repo_root" >&2
     return 1
   }
-  lock_file="$git_common_dir/info/pre-push-runtime.lock"
-  lock_dir="$(dirname "$lock_file")"
-  [ -L "$lock_dir" ] && {
-    echo "test-runtime-profile: refusing symlinked lock directory: $lock_dir" >&2
+  lock_path="$git_common_dir/info/pre-push-runtime.lock.d"
+  lock_parent="$(dirname "$lock_path")"
+  [ -L "$lock_parent" ] && {
+    echo "test-runtime-profile: refusing symlinked lock parent: $lock_parent" >&2
     return 1
   }
-  mkdir -p "$lock_dir"
+  mkdir -p "$lock_parent"
+  if ! mkdir "$lock_path" 2>/dev/null; then
+    [ -d "$lock_path" ] && [ ! -L "$lock_path" ] || {
+      echo "test-runtime-profile: refusing unsafe lock path: $lock_path" >&2
+      return 1
+    }
+  fi
   timeout_seconds="${TEST_RUNTIME_PROFILE_LOCK_TIMEOUT_SECONDS:-120}"
-  exec 201>"$lock_file"
+  # Bash 3.2 호환 때문에 redirection은 literal FD를 써야 한다. 이 FD는 prepare subshell이
+  # 소유하며, subshell 종료까지 열려 있어 build + stamp publish 전체를 직렬화한다.
+  local lock_fd=201
+  # trailing slash forces directory resolution: a raced-in FIFO/regular file fails instead of blocking.
+  exec 201<"$lock_path/"
   if command -v flock >/dev/null 2>&1; then
-    flock --timeout "$timeout_seconds" 201 \
+    flock --timeout "$timeout_seconds" "$lock_fd" \
       || { echo "test-runtime-profile: lock timed out after ${timeout_seconds}s (flock)" >&2; return 1; }
   elif command -v lockf >/dev/null 2>&1; then
-    lockf -s -t "$timeout_seconds" 201 \
+    lockf -s -t "$timeout_seconds" "$lock_fd" \
       || { echo "test-runtime-profile: lock timed out after ${timeout_seconds}s (lockf)" >&2; return 1; }
   else
     echo "test-runtime-profile: neither flock nor lockf is available" >&2
@@ -138,6 +152,10 @@ test_runtime_profile_prepare() (
     return 1
   }
   mkdir -p "$repo_root/.direnv"
+  if [ -L "$stamp_file" ] || { [ -e "$stamp_file" ] && [ ! -f "$stamp_file" ]; }; then
+    echo "test-runtime-profile: refusing unsafe stamp path: $stamp_file" >&2
+    return 1
+  fi
   expected_stamp="$(test_runtime_profile_fingerprint "$repo_root")"
   if [ -L "$profile" ]; then
     old_target="$(readlink "$profile")"
@@ -154,7 +172,7 @@ test_runtime_profile_prepare() (
     return 1
   fi
 
-  stamp_tmp="${stamp_file}.tmp.${BASHPID:-$$}"
+  stamp_tmp="$(mktemp "$repo_root/.direnv/.pre-push-runtime.stamp.XXXXXX")"
   trap 'rm -f "$stamp_tmp"' EXIT
   printf '%s\n' "$expected_stamp" > "$stamp_tmp"
   mv -f "$stamp_tmp" "$stamp_file"
@@ -182,6 +200,7 @@ test_runtime_profile_run() {
     return 1
   }
   echo "test-runtime-profile: current profile unavailable; using nix shell fallback" >&2
+  _test_runtime_profile_normalize_tmpdir
   export _TOMLKIT_BOOTSTRAP_READY=1
   exec nix shell --no-write-lock-file "$repo_root#prePushRuntime" --command "$@"
 }
