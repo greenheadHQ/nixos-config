@@ -62,11 +62,12 @@ REPO="${OWNER_REPO##*/}"
 
 ### Step 0 — `--parent` 파싱 + pre-check (옵션 지정 시)
 
-수신한 인자가 `--parent` 또는 `--parent=<값>` 토큰을 포함하면 Step 1 본문에 진입하기 전에 이 단계를 수행한다. 두 토큰 모두 없으면 이 단계를 건너뛰고 기존 동작을 유지한다.
+수신한 인자를 shell-like tokenize한 뒤 첫 standalone `--` 이전에 `--parent`, `--parent=<값>`, `—parent`, 또는 `—parent=<값>` 토큰이 있으면 Step 1 본문에 진입하기 전에 이 단계를 수행한다. 이 범위에 네 형태가 모두 없으면 이 단계를 건너뛰고 기존 동작을 유지한다.
 
 파싱 규칙 (fail-closed):
 
 - 토큰 스캔 순서: 수신한 인자를 왼쪽부터 shell-like tokenize 후 스캔한다. 첫 standalone `--` 토큰을 만나면 그 이후 토큰은 모두 옵션 검색 대상에서 제외하고 제목/본문으로 취급한다 (escape). 이 규칙은 아래 `--parent` 옵션 검색보다 먼저 적용된다.
+- 옵션 검색 범위에서 U+2014 em dash `—`를 쓴 토큰이 정확히 `—parent`이거나 `—parent=<값>` 형식이면 `ERROR: —parent는 모바일 자동 치환 가능성이 있습니다. ASCII --parent를 사용하세요` 출력 후 `exit 1`. `foo—parent` 같은 부분 문자열, en dash `–parent`, 일반 산문은 감지하지 않는다.
 - `--parent=<값>` 또는 `--parent <값>` 형식만 옵션으로 인식한다. 위치는 자유(standalone `--` 앞이라면 어디든).
 - `--parent` 또는 `--parent=` 를 옵션 토큰으로 만난 뒤 값이 아래 값 패턴 중 어디에도 매칭되지 않거나 값이 없으면 `ERROR: --parent 값 누락 또는 유효하지 않음` 출력 후 `exit 1`. 사용자 오타로 인한 silent parent 연결 누락을 막기 위한 fail-closed 경계.
 - `--parent` 옵션은 최대 1회만 허용한다. 2회 이상 발견되면 `ERROR: --parent 중복 지정` 출력 후 `exit 1`. first-wins/last-wins 해석 모호성 제거.
@@ -92,8 +93,11 @@ REPO="${OWNER_REPO##*/}"
 | `--parent 539abc "제목"` | — | — | exit 1 (값 패턴 불일치, 오타 방지) |
 | `"제목" --parent` | — | — | exit 1 (값 누락) |
 | `--parent 539 --parent 540 "제목"` | — | — | exit 1 (중복 지정) |
+| `—parent 539` | — | — | exit 1 (em dash 자동 치환 감지, ASCII `--parent` 안내) |
+| `—parent=539` | — | — | exit 1 (em dash 자동 치환 감지, ASCII `--parent` 안내) |
 | `-- "--parent 문서화 이슈"` | (unset) | `"--parent 문서화 이슈"` | escape로 literal 보존 |
 | `"제목" -- --parent 539` | (unset) | `"제목" --parent 539` | standalone `--` 이후는 옵션 검색 제외 |
+| `-- —parent 539` | (unset) | `—parent 539` | escape로 literal 보존, 옵션 검색 없음 |
 
 Pre-check (존재 확인 + object shape 검증, PR 배제):
 
