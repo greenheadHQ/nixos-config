@@ -708,7 +708,8 @@ child 2개가 생성돼 각자 응답을 부모에 전달, `wait_agent`가 `time
 output이 기록된다. 이름은 세 층위로 다르다: 모델-facing tool 이름은 `collaboration.spawn_agent`(다른 협업 tool도
 같은 `collaboration.*` namespace), 공개 `--json` event label은 축약된 `tool:"wait"`, persisted rollout JSONL의
 `function_call`은 `name`이 `collaboration.` prefix 없이 `spawn_agent`이고 `namespace`가 별도로 `collaboration`이다.
-아래 probe의 grep 리터럴(`"name":"spawn_agent"`)이 이 세 번째 형태를 노린다. 비대화형에서 spawn/진행을 판정하려면
+아래 probe는 이 세 번째 형태를 jq로 파싱한다(`.payload.name == "spawn_agent"`를 세고, 공개 `--json`은 `.item.receiver_thread_ids`를
+추출) — grep 리터럴은 JSON 공백/직렬화 차이에 취약하므로 쓰지 않는다. 비대화형에서 spawn/진행을 판정하려면
 공개 `--json`이 아니라 이 rollout을 파싱하거나 최종 산출물로 판정한다.
 
 재검증 (stdout/stderr/exit 분리, persisted rollout 대조):
@@ -723,16 +724,16 @@ for eff in ultra high; do   # 두 effort 모두 같은 관측성 한계를 보�
     -c model_reasoning_effort="$eff" - > "$TMP/$eff.jsonl" 2> "$TMP/$eff.err"
   rc=$pipestatus[2]   # zsh 파이프 2번째(codex). bash에서는 이 펜스를 bash로 바꾸고 ${PIPESTATUS[1]} 사용
   tid=$(head -1 "$TMP/$eff.jsonl" | jq -r '.thread_id')
-  pub=$(grep -o 'receiver_thread_ids":\[[^]]*\]' "$TMP/$eff.jsonl" | head -1)   # 공개 --json: wait 필드(빈 값 기대)
+  pub=$(jq -R 'fromjson? | select(.item.receiver_thread_ids != null) | .item.receiver_thread_ids' "$TMP/$eff.jsonl" 2>/dev/null | head -1)   # 공개 --json: wait 이벤트의 배열(빈 값 기대)
   roll=$(find "$HOME/.codex/sessions" -name "*$tid*" 2>/dev/null | head -1)
   if [ -z "$roll" ]; then roll=notfound; spawns=0
-  else spawns=$(grep -c '"name":"spawn_agent"' "$roll" 2>/dev/null); : "${spawns:=0}"; fi
+  else spawns=$(jq -R 'fromjson? | select(.payload.type=="function_call" and .payload.name=="spawn_agent")' "$roll" 2>/dev/null | jq -s 'length'); : "${spawns:=0}"; fi
   printf '%s: rc=%s public_receiver=%s roll=%s persisted_spawn_agent_calls=%s\n' \
     "$eff" "$rc" "${pub:-none}" "$roll" "$spawns"
 done
 ```
 
-기대: 각 effort에서 `rc=0`, `public_receiver`는 빈 `receiver_thread_ids":[]`, `roll`은 실제 경로,
+기대: 각 effort에서 `rc=0`, `public_receiver`는 빈 배열 `[]`, `roll`은 실제 경로,
 `persisted_spawn_agent_calls`가 1 이상 — 공개 필드가 비어도 persisted에 `spawn_agent` 호출이 있으면 이 한계가
 재현된 것이다. 진단: `features list`에 `multi_agent`가 `stable`/`true`로 나오지 않으면 probe 전제가 깨진 것이고,
 `roll=notfound`면 `tid` 추출/`find` 경로 문제(probe 인프라 실패)이며, `roll`은 있는데 `spawns=0`이면 이 한계가
