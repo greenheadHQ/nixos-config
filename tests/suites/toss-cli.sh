@@ -96,14 +96,16 @@ case "${TOSS_TEST_RESPONSE_KIND:-json}" in
     fi
     printf '{"ok":true}' > "$output_path"
     ;;
-  retry-nested-invalid-token)
-    # 인증 실패는 non-2xx(여기선 403)로 오고, body code는 vendored 스펙 표기인 hyphen형.
-    if [ "$api_count" = "1" ]; then
-      printf '{"error":{"code":"some-error"},"nested":{"code":"invalid-token"}}' > "$output_path"
-      printf '403'
-      exit 0
-    fi
-    printf '{"ok":true}' > "$output_path"
+  non2xx-token-body)
+    # 5xx는 서버가 주문을 반영한 뒤 응답했을 수 있으므로, token-like body여도 재시도 금지.
+    printf '{"error":{"code":"invalid-token"}}' > "$output_path"
+    printf '500'
+    exit 0
+    ;;
+  transport-failure)
+    # curl 전송/연결 실패(exit≠0, http_status 000): 응답만 유실됐을 수 있어 재시도 금지.
+    printf '000'
+    exit 7
     ;;
   ok-200-with-invalid-token-body)
     # 2xx는 side effect가 이미 성공했으므로 body에 invalid_token이 있어도 재시도 금지.
@@ -348,55 +350,113 @@ EOF_OP
   assert_not_contains "$argv_log" "mock-client-secret"
 }
 
-test_toss_api_retries_on_nested_invalid_token_body() {
-  local sandbox runtime_dir future token_file api_calls first_auth final_fresh_auth
+test_toss_api_does_not_retry_on_non_2xx_token_body() {
+  local sandbox api_calls
   sandbox=$(new_sandbox)
-  runtime_dir="$sandbox/runtime"
-  token_file="$runtime_dir/toss/token.json"
-  future=$(( $(date +%s) + 7200 ))
   _prepare_toss_cli_sandbox "$sandbox"
   _write_toss_api_curl_stub "$sandbox/bin"
-  cat > "$sandbox/bin/op" <<'EOF_OP'
-#!/usr/bin/env bash
-set -euo pipefail
-ref=""
-for arg in "$@"; do
-  ref="$arg"
-done
-case "$ref" in
-  *client-id) printf 'mock-client-id' ;;
-  *client-secret) printf 'mock-client-secret' ;;
-  *) printf 'mock-op-value' ;;
-esac
-EOF_OP
-  chmod +x "$sandbox/bin/op"
-  mkdir -p "$(dirname "$token_file")"
-  printf 'mock-sa-token' > "$sandbox/sa-token"
-  jq -cn \
-    --argjson expires_at "$future" \
-    '{access_token:"old-token", token_type:"Bearer", issued_at:0, expires_at:$expires_at, expires_in:7200}' \
-    > "$token_file"
-  printf 'mock-client-id' > "$sandbox/client-id"
-  printf 'mock-client-secret' > "$sandbox/client-secret"
 
-  HOME="$sandbox/home" \
-    PATH="$sandbox/bin:$PATH" \
-    TOSS_RUNTIME_DIR="$runtime_dir" \
-    TOSS_OP_SA_TOKEN_FILE="$sandbox/sa-token" \
-    TOSS_SKIP_PREFLIGHT=1 \
-    TOSS_NOTIFY=0 \
-    TOSS_TEST_RESPONSE_KIND="retry-nested-invalid-token" \
-    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
-    TOSS_TEST_CURL_CONFIG_LOG="$sandbox/curl.config.log" \
-    TOSS_TEST_API_COUNT_FILE="$sandbox/api.count" \
-    "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout"
+  # 5xx는 서버가 주문을 반영한 뒤 응답했을 수 있으므로, body에 invalid-token이 있어도
+  # 같은 POST를 재전송하면 이중 주문 위험이 있다. 정확히 1회 호출이어야 한다.
+  set +e
+  _run_toss_order_api_fixture_with_count "$sandbox" non2xx-token-body "$sandbox/stdout"
+  set -e
 
   api_calls="$(cat "$sandbox/api.count")"
-  [ "$api_calls" = "2" ] || fail "expected nested invalid_token body to trigger one retry, got api calls: $api_calls"
-  first_auth="$(grep -Fxc 'header = "Authorization: Bearer old-token"' "$sandbox/curl.config.log" || true)"
-  final_fresh_auth="$(grep -Fxc 'header = "Authorization: Bearer fresh-token"' "$sandbox/curl.config" || true)"
-  [ "$first_auth" = "1" ] || fail "expected initial request to use cached old token"
-  [ "$final_fresh_auth" = "1" ] || fail "expected retried request to use refreshed token"
+  [ "$api_calls" = "1" ] || fail "expected no retry on non-2xx token-like body (double-order risk), got api calls: $api_calls"
+}
+
+test_toss_api_does_not_retry_on_transport_failure() {
+  local sandbox api_calls
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # curl 전송 실패(exit≠0, http_status 000)는 서버 도달 후 응답만 유실됐을 수 있으므로
+  # 재시도 금지. http_status가 우연히 000이어도 완결된 401이 아니면 재시도하지 않는다.
+  set +e
+  _run_toss_order_api_fixture_with_count "$sandbox" transport-failure "$sandbox/stdout"
+  set -e
+
+  api_calls="$(cat "$sandbox/api.count")"
+  [ "$api_calls" = "1" ] || fail "expected no retry on transport failure, got api calls: $api_calls"
+}
+
+test_toss_api_rejects_non_standard_json_numbers() {
+  local sandbox v rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # jq는 NaN→null, Infinity→큰수, +1/01→1로 조용히 바꾼다. 금융 body가 왜곡되지
+  # 않도록 요청 전에 rc 2로 거부되고 curl config도 만들어지지 않아야 한다.
+  for v in '{"quantity":NaN}' 'Infinity' '+1' '01'; do
+    rm -f "$sandbox/curl.config"
+    set +e
+    HOME="$sandbox/home" \
+      PATH="$sandbox/bin:$PATH" \
+      TOSS_ACCESS_TOKEN="mock-token" \
+      TOSS_SKIP_PREFLIGHT=1 \
+      TOSS_NOTIFY=0 \
+      TOSS_TEST_RESPONSE_KIND=json \
+      TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+      TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+      "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data "$v" > "$sandbox/stdout" 2> "$sandbox/stderr"
+    rc=$?
+    set -e
+    [ "$rc" = "2" ] || fail "expected non-standard JSON '$v' to be rejected rc=2, got: $rc"
+    [ ! -e "$sandbox/curl.config" ] || fail "non-standard JSON '$v' must be rejected before any request"
+  done
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "exactly one valid JSON value"
+}
+
+test_toss_api_rejects_dot_segment_path() {
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # /api/../oauth2/token은 metadata unknown + auth guard를 통과하지만 curl이
+  # /oauth2/token으로 정규화해 금지된 token endpoint에 도달한다. 입력 단계에서 거부.
+  set +e
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api GET '/api/../oauth2/token' --account ACC123 > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" = "2" ] || fail "expected dot-segment path rejection rc=2, got: $rc"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "'.'/'..' segments"
+  [ ! -e "$sandbox/curl.config" ] || fail "dot-segment path must be rejected before any request"
+}
+
+test_toss_api_auth_reject_sanitizes_query_secret() {
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+
+  # 요청 전 거부 경로도 토큰/시크릿 출력 금지 계약을 지켜야 한다.
+  set +e
+  HOME="$sandbox/home" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    "$(_toss_cli_script "$sandbox")" api POST '/oauth2/token?client_secret=SPEC_SENTINEL' --data '{}' > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" = "2" ] || fail "expected auth endpoint rejection rc=2, got: $rc"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "does not call Toss auth endpoints"
+  assert_contains "$stderr" "?<redacted>"
+  assert_not_contains "$stderr" "SPEC_SENTINEL"
 }
 
 test_toss_endpoint_metadata_fail_closed_order_path_mutations() {

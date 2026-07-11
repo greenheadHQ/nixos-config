@@ -42,12 +42,37 @@ toss_metadata_value() {
   jq -r --arg key "$key" '.[$key] // empty' <<<"$metadata"
 }
 
-# `jq -c .`는 JSON 값 0개(공백)와 2개 이상인 stream도 성공 처리하므로, 정확히 값 1개일
-# 때만 통과시킨다. 값 2개를 허용하면 live data-binary에는 두 문서가 전송되는데
-# request context/dry-run/ledger에는 첫 문서만 남아 감사 흔적과 실제 전송이 어긋난다.
+# jq는 표준 JSON을 초과하는 확장을 조용히 다른 값으로 바꾼다: NaN→null,
+# Infinity→1.79e308, +1/01→1, 그리고 값 0개(공백)·2개 이상 stream도 통과시킨다.
+# 금융 요청 body가 이렇게 왜곡·이중화되면 안 되므로, 표준 JSON 파서(python3)로
+# 먼저 "정확히 표준 JSON 값 하나"임을 검증한다 (다중 문서는 Extra data로 거부,
+# NaN/Infinity는 parse_constant로 거부, +1/01은 JSONDecodeError). 검증 통과 후에만
+# jq로 정규화한다. python3는 --data(주문 경로) 전용 의존이며, 부재 시 fail-closed.
+toss_strict_json_single_value() {
+  command -v python3 >/dev/null 2>&1 || return 2
+  python3 -c '
+import sys, json
+def _reject_constant(_):
+    raise ValueError("non-finite JSON constant")
+data = sys.stdin.read()
+try:
+    json.loads(data, parse_constant=_reject_constant)
+except ValueError:
+    sys.exit(1)
+sys.exit(0)
+'
+}
+
 toss_validate_json_body() {
   local raw="$1"
-  printf '%s' "$raw" | jq -es 'length == 1' >/dev/null 2>&1 || return 1
+  local rc
+  printf '%s' "$raw" | toss_strict_json_single_value
+  rc=$?
+  if [ "$rc" = "2" ]; then
+    echo "error: python3 is required to validate --data as strict JSON" >&2
+    return 1
+  fi
+  [ "$rc" = "0" ] || return 1
   printf '%s' "$raw" | jq -cs '.[0]'
 }
 
@@ -185,26 +210,21 @@ toss_call_result_curl_exit() {
   jq -er '.curlExit | tostring' <<<"$1"
 }
 
-# 재시도는 같은 요청(주문 mutation 포함)을 재전송하므로 side effect가 이미 성공한
-# 2xx 응답에는 절대 트리거되면 안 된다 (이중 주문). vendored OpenAPI 기준으로도
-# 인증 실패는 401 UNAUTHORIZED이고 body code는 `invalid-token`/`expired-token`이며,
-# `invalid_token`(underscore)은 WWW-Authenticate 헤더의 error 파라미터 표기다.
-# 따라서 2xx는 즉시 제외하고, 401은 status로, 그 외 non-2xx(400/403 등 거부 응답,
-# side effect 없음)는 body code로 판정한다.
+# 재시도는 같은 요청(주문 mutation 포함)을 재전송하므로, side effect가 이미 반영됐을
+# 수 있는 응답에는 절대 트리거되면 안 된다 (이중 주문). vendored OpenAPI는 인증 실패를
+# 오직 401 UNAUTHORIZED로만 정의하므로(body code `invalid-token`/`expired-token`),
+# 재시도는 **완결된 HTTP 401**로만 좁힌다:
+#   - 2xx: side effect 성공 → 재시도 금지
+#   - 4xx(≠401)/5xx: 서버가 주문을 반영한 뒤 응답한 경우를 배제할 수 없음 → 재시도 금지
+#   - curlExit≠0(전송/연결 실패, http_status가 000/빈값): 서버 도달 후 응답만 유실됐을
+#     수 있음 → 재시도 금지 (401 판정은 전송이 완결됐을 때만 의미)
+# body code substring 기반 재시도는 이 안전 경계를 넘으므로 사용하지 않는다.
 toss_response_is_invalid_token() {
   local http_status="$1"
-  local response_file="$2"
+  local curl_exit="$2"
 
-  case "$http_status" in
-    2??) return 1 ;;
-  esac
-
-  [ "$http_status" = "401" ] && return 0
-  [ -s "$response_file" ] || return 1
-  jq -e '
-    [.. | objects | (.error? // .code? // empty) | tostring]
-    | any(test("(invalid|expired)[-_]token"; "i"))
-  ' "$response_file" >/dev/null 2>&1
+  [ "$curl_exit" = "0" ] || return 1
+  [ "$http_status" = "401" ]
 }
 
 toss_resolve_account() {
@@ -262,9 +282,28 @@ toss_api_is_auth_endpoint() {
 toss_api_reject_auth_endpoint() {
   local path="$1"
 
-  echo "error: toss api does not call Toss auth endpoints: $path" >&2
+  # 요청 전 거부 경로도 토큰/시크릿 출력 금지 계약을 지켜야 하므로, path의 query를
+  # sanitize한 값만 출력한다 (?client_secret=... 같은 값이 stderr로 새지 않도록).
+  echo "error: toss api does not call Toss auth endpoints: $(toss_ledger_sanitized_path "$path")" >&2
   echo "hint: issue or refresh tokens with 'toss token'" >&2
   return 2
+}
+
+# curl은 `/api/../oauth2/token`을 `/oauth2/token`으로 정규화하므로, dot-segment가
+# 있으면 metadata unknown + auth guard를 통과해 금지된 token endpoint에 도달할 수 있다.
+# 서버측 정규화 여지까지 감안해 입력 단계에서 dot-segment(인코딩 변형 포함)를 거부한다.
+toss_api_path_has_dot_segment() {
+  local path="$1"
+  local path_without_query="${path%%\?*}"
+  local lowered
+  # %2e(.)·%2f(/) 인코딩 변형을 소문자로 정규화해 함께 검사한다.
+  lowered="$(printf '%s' "$path_without_query" | tr '[:upper:]' '[:lower:]')"
+  lowered="${lowered//%2e/.}"
+  lowered="${lowered//%2f//}"
+  case "/$lowered/" in
+    */../*|*/./*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # 한 번의 toss api 호출을 식별하는 correlation ID. response record와 notify record가
@@ -399,13 +438,14 @@ toss_call_with_single_token_retry() {
   local body_json="$4"
   local body_provided="$5"
   local response_file="$6"
-  local token call_result http_status
+  local token call_result http_status curl_exit
 
   token="$(toss_get_access_token 0)"
   call_result="$(toss_api_call_once "$method" "$url" "$token" "$account_seq" "$body_json" "$body_provided" "$response_file")"
   http_status="$(toss_call_result_http_status "$call_result")"
+  curl_exit="$(toss_call_result_curl_exit "$call_result")"
 
-  if toss_response_is_invalid_token "$http_status" "$response_file"; then
+  if toss_response_is_invalid_token "$http_status" "$curl_exit"; then
     # CAS 갱신: 다른 프로세스가 이미 갱신한 token을 재삭제·재발급(상호 무효화)하지 않는다.
     token="$(toss_refresh_token_after_auth_failure "$token")"
     : >"$response_file"
@@ -495,10 +535,17 @@ toss_api_execute() {
   case "$path" in
     /*) ;;
     *)
-      echo "error: toss api PATH must be origin-relative and start with '/': $path" >&2
+      echo "error: toss api PATH must be origin-relative and start with '/': $(toss_ledger_sanitized_path "$path")" >&2
       return 2
       ;;
   esac
+
+  # dot-segment 거부: curl/서버 정규화로 auth guard를 우회해 token endpoint에 도달하는
+  # 경로를 metadata·auth 검사 전에 입력 단계에서 차단한다.
+  if toss_api_path_has_dot_segment "$path"; then
+    echo "error: toss api PATH must not contain '.'/'..' segments: $(toss_ledger_sanitized_path "$path")" >&2
+    return 2
+  fi
 
   local metadata
   metadata="$(toss_metadata_lookup "$method" "$path")"

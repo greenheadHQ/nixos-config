@@ -201,7 +201,11 @@ run_test "toss api rejects auth endpoints" test_toss_api_rejects_auth_endpoint
 run_test "toss api dry-run works without token" test_toss_api_dry_run_without_token_uses_deployed_layout
 run_test "toss api retries once after 401" test_toss_api_retries_once_after_401
 run_test "toss api refreshes env override after 401" test_toss_api_env_override_401_force_refresh_uses_credentials
-run_test "toss api retries on nested invalid_token body" test_toss_api_retries_on_nested_invalid_token_body
+run_test "toss api does not retry on non-2xx token body" test_toss_api_does_not_retry_on_non_2xx_token_body
+run_test "toss api does not retry on transport failure" test_toss_api_does_not_retry_on_transport_failure
+run_test "toss api rejects non-standard JSON numbers" test_toss_api_rejects_non_standard_json_numbers
+run_test "toss api rejects dot-segment path" test_toss_api_rejects_dot_segment_path
+run_test "toss api auth reject sanitizes query secret" test_toss_api_auth_reject_sanitizes_query_secret
 run_test "toss endpoint metadata fail-closes order-path mutations" test_toss_endpoint_metadata_fail_closed_order_path_mutations
 run_test "toss api rejects non-origin-relative path" test_toss_api_rejects_non_origin_relative_path
 run_test "toss api curl blocks curlrc and globbing" test_toss_api_curl_blocks_curlrc_and_globbing

@@ -27,7 +27,7 @@ description: |
 - 토큰 만료: `expires_in=86400`초, 즉 24시간
 - refresh token은 없다. 만료 또는 강제 갱신 시 같은 token endpoint로 재발급한다.
 - client당 유효 access token은 1개다. Mac과 miniPC가 같은 client를 쓰면 한쪽에서 재발급한 순간 다른 쪽 토큰은 즉시 무효화된다.
-- CLI는 401 또는 `invalid_token`을 받으면 캐시를 폐기하고 1회만 강제 재발급 후 재시도한다.
+- CLI는 완결된 HTTP 401을 받으면 token lock 안에서 CAS로 회복한다: 다른 프로세스가 이미 갱신한 token이 cache에 있으면 그것을 재사용하고, 실패 token이 여전히 현재 cache일 때만 폐기·1회 재발급 후 재시도한다 (client당 유효 token 1개 제약을 안전하게 다루기 위함). 2xx·기타 non-2xx·전송 실패에는 재시도하지 않는다(이중 주문 방지).
 
 토큰과 client secret은 출력, 로그, 영속 파일, 부모 셸 export에 남기지 않는다. 시크릿 배선 자체는 `managing-secrets` 범위다.
 
@@ -85,7 +85,7 @@ access token을 발급하고 휘발성 runtime 경로에 0600으로 캐시한다
 
 ### `toss doctor`
 
-side-effect 없는 오프라인 진단 명령이다. Tailscale exit node 상태, 출발지 공인 IP(콘솔 whitelist와 육안 비교), credential 파일·`op` 실행 파일의 존재(presence), token 캐시의 로컬 만료 여부(locally-unexpired)를 점검한다. `op` 실제 접근 권한이나 서버측 token 유효성은 검사하지 않으므로, SA가 revoke되었거나 다른 호스트의 재발급으로 캐시 token이 무효화된 상태도 `present`/`locally-unexpired`로 표시된다. 실제 검증은 `toss token --force` 또는 첫 API 호출로 확인한다. VPN을 자동 해제하지는 않는다.
+로컬 진단 명령이다 — Toss API를 호출하거나 credential을 변경하지 않는다. 다만 출발지 공인 IP 확인에는 네트워크 접근이 필요하므로 완전한 오프라인 실행은 아니다. Tailscale exit node 상태, 출발지 공인 IP(콘솔 whitelist와 육안 비교), credential 파일·`op` 실행 파일의 존재(presence), token 캐시의 로컬 만료 여부(locally-unexpired)를 점검한다. `op` 실제 접근 권한이나 서버측 token 유효성은 검사하지 않으므로, SA가 revoke되었거나 다른 호스트의 재발급으로 캐시 token이 무효화된 상태도 `present`/`locally-unexpired`로 표시된다. 실제 검증은 `toss token --force` 또는 첫 API 호출로 확인한다. VPN을 자동 해제하지는 않는다.
 
 ## 유지보수 레시피: docs-refresh
 
