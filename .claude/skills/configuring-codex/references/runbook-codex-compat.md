@@ -6,6 +6,25 @@
 - 대상 프로젝트: `/Users/green/Workspace/nixos-config`
 - 문제 유형: Codex CLI가 global(user) 스코프 스킬은 인식하지만 project 스코프(`.agents/skills`) 스킬을 안정적으로 인식하지 못함
 
+> 이 문서의 2026-02-08 해결 내용과 확인 결과는 당시 장애의 historical record다.
+> 현재 운영 계약은 아래 재검증 섹션과 2026-02-19 이후 업데이트를 따른다.
+
+## 2026-07-11 재검증: 현재 운영 계약
+
+- Direct Codex의 기본 fan-out은 native subagent다. `using-codex-exec`와 `codex-fan-out`은
+  자기 참조 방지를 위해 Direct Codex에 의도적으로 노출하지 않으며 직접 호출 대상이 아니다.
+- Claude Code는 `codex exec` subprocess, headless는 foreground serial subprocess 경로를 사용한다.
+  세션별 binding의 정본은 [runtime mapping](../../../../modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md),
+  Direct Codex delegation fallback의 권한 계약은 [hardening contract](../../../../modules/shared/programs/claude/files/skills/run-da/references/hardening-contract.md)다.
+- Shared skill 노출 정책의 SoT는 [`default.nix`](../../../../modules/shared/programs/codex/default.nix)의
+  `exposedCodexSkills`와 `intentionallyNotExposed`다.
+  [`verify-ai-compat.sh`](../../../../scripts/ai/verify-ai-compat.sh)는 이 정책과 project directory projection을
+  독립적으로 감사하는 oracle이다.
+- Project projection은 `.agents/skills/<name>` directory symlink 단위다. repo-local target은
+  `../../.claude/skills/<name>`이어야 하고 투영된 `SKILL.md`에 접근 가능해야 한다. 레거시 실디렉토리,
+  누락·대상 불일치·고아 entry는 실패하며, 접근 가능한 `SKILL.md`를 가진 절대 target plugin symlink는 허용한다.
+- 실측 `codex-cli 0.144.1`과 `codex-pin.json`의 `0.144.1`이 일치한다.
+
 ## 증상
 
 1. Codex에서 `.agents/skills/<name>/SKILL.md` 기반 스킬이 일부/전부 누락됨
@@ -71,12 +90,17 @@ sandbox_mode = "danger-full-access"
 # 2) SKILL.md 도구-중립성 lint fixture 검증
 ./scripts/ai/verify-ai-compat.sh --run-fixture-tests
 
-# 3) SKILL.md 타입 검증
-find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type l | wc -l
-find .agents/skills -mindepth 2 -maxdepth 2 -name SKILL.md -type f | wc -l
+# 3) directory symlink 검증
+for d in .agents/skills/*; do
+  [ -L "$d" ] && echo "OK: $(basename "$d") -> $(readlink "$d")" || echo "FAIL: $(basename "$d")"
+done
 
-# 4) 런타임 인식 검증
-codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' available in this workspace?"
+# 4) pin/runtime 버전 일치 검증
+codex --version
+jq -r .version modules/shared/programs/codex/codex-pin.json
+
+# 5) 런타임 인식 검증
+codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex' available in this workspace?"
 ```
 
 ## 2026-02-08 확인 결과
@@ -91,8 +115,9 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'managing-secrets' 
 
 ## codex trust 관련 메모
 
-- `codex-cli 0.142.5` 기준 `codex --help`에 `codex trust` 독립 서브커맨드는 확인되지 않았다.
-- trust 관리는 CLI 서브커맨드가 아니라 `config.toml` 프로젝트 엔트리로만 가능하다.
+- `codex-cli 0.144.1` 기준 `codex --help`에 `codex trust` 독립 서브커맨드는 확인되지 않았다.
+- 프로젝트 trust의 SoT는 사용자 승인에 의한 디렉토리별 runtime mutation이다. Nix template은 trust를
+  하드코딩하지 않고 runtime-owned `config.toml`의 `[projects.*]` 엔트리를 보존한다.
 - 본 케이스에서 Skills 누락의 근본 원인으로는 확인되지 않았다(심링크 이슈가 근본 원인).
 
 ## 회귀 방지 체크리스트
