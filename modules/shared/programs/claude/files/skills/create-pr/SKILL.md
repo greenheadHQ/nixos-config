@@ -55,7 +55,7 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
 
 1. 변경 분석: `git diff main...HEAD`와 커밋 히스토리(`git log main..HEAD --oneline`)를 분석하여 변경 범위를 파악한다.
 2. 연관 이슈 탐색: 커밋 메시지, 브랜치명, 변경 내용에서 이슈 번호를 추출한다. 관련 이슈가 있으면 Summary에 `Closes #N`을 포함한다.
-3. CIR 수집: 코드 인라인 주석(`# CIR:`, `# === Change Intent Record ===`)과 커밋 메시지에서 의사결정 이력을 추출한다. 현재 대화 컨텍스트에서도 방향 전환/대안 거부 이력을 수집한다.
+3. CIR 수집: 코드 인라인 주석(`# CIR:`, `# === Change Intent Record ===`)과 커밋 메시지에서 의사결정 이력을 추출한다. 현재 대화 컨텍스트에서도 방향 전환/대안 거부 이력을 수집한다. 워크트리에 `implementation-notes.md`가 있으면(finding-unknowns 방법론 적용 작업) Decisions/Deviations/새로 발견된 미지를 CIR의 1차 소스로 흡수한다 — 흡수 완료를 보고하기 전까지 그 파일을 삭제·이동하지 않는다 (수명 규칙 SoT: finding-unknowns 스킬).
 4. ADR 테이블 구성: 검토한 대안들을 비교 테이블로 정리한다. 대안이 1개뿐이면 ADR 섹션을 간소화한다.
 5. 7섹션 템플릿 작성: [references/pr-template.md](references/pr-template.md)의 템플릿에 따라 전체 PR 본문을 작성한다.
 6. PR 생성: `gh pr create --title "<제목>" --body "<본문>"`으로 PR을 생성한다. 제목은 70자 미만, conventional commit 형식을 따른다.
@@ -66,7 +66,7 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
 
 1. 현재 PR 확인: `gh pr view --json body,title,number`로 현재 PR 본문을 가져온다.
 2. 누락 섹션 탐지: 7섹션 중 빠진 섹션을 식별한다.
-3. 부실 섹션 강화: 있지만 내용이 부실한 섹션(예: Summary만 있고 CIR 없음)을 보강한다. 커밋 히스토리, 코드 변경, 대화 컨텍스트에서 추가 정보를 수집한다.
+3. 부실 섹션 강화: 있지만 내용이 부실한 섹션(예: Summary만 있고 CIR 없음)을 보강한다. 커밋 히스토리, 코드 변경, 대화 컨텍스트에서 추가 정보를 수집한다. 워크트리에 `implementation-notes.md`가 있으면 새 PR 생성 절차와 동일하게 Decisions/Deviations를 CIR로 흡수한다.
 4. 업데이트 적용: `gh pr edit <number> --body "<새 본문>"`으로 PR 본문을 업데이트한다.
 
 ## 주의사항

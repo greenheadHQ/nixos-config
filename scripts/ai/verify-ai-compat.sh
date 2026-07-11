@@ -50,6 +50,7 @@ SHARED_EXPOSURE_EXCLUDE=(
   using-claude-p
   using-codex-exec
   codex-fan-out
+  finding-unknowns
 )
 # Split retired names so the public stale-reference scan scope can stay
 # zero-match while this verifier still checks deployed residue.
@@ -61,13 +62,15 @@ RETIRED_EXECUTABLES=(
 )
 
 # SKILL.md tool-neutral lint has its own exclusion policy. It currently matches
-# the shared exposure exclusions because these four skills are legacy adapters,
-# but future exposure-only exclusions must be added deliberately.
+# the shared exposure exclusions (legacy adapters + Claude-harness-only
+# orchestrators), but future exposure-only exclusions must be added deliberately.
 SKILL_NEUTRAL_LINT_EXCLUDE=(
   set-icons
   using-claude-p
   using-codex-exec
   codex-fan-out
+  # finding-unknowns: Claude 하네스 전용 오케스트레이터 — AskUserQuestion 퀴즈 출제 규칙을 명시적으로 소유
+  finding-unknowns
 )
 
 errors=0

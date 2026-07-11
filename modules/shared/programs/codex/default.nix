@@ -65,6 +65,9 @@ let
     # codex-fan-out: Codex 세션은 native subagent fan-out이 기본 경로이므로 자기 참조가 된다.
     # 이 스킬은 Claude/headless 세션에서 codex exec subprocess를 구동하는 패턴용.
     "codex-fan-out"
+    # finding-unknowns: Claude 하네스 전용 오케스트레이터 — grilling/prototype/run-da/create-pr/finish-pr
+    # 조합과 AskUserQuestion 인터뷰·퀴즈에 결합되어 있어 Codex 단독 세션에선 의미가 없다.
+    "finding-unknowns"
   ];
 
   mkCodexSkillEntry = name: {

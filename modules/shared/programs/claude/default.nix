@@ -231,6 +231,10 @@ in
     ".claude/skills/codex-fan-out".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/codex-fan-out";
 
+    # finding-unknowns 스킬 (user-scope)
+    ".claude/skills/finding-unknowns".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/finding-unknowns";
+
     # Statusline script - 양방향 수정 가능
     # 인접 디렉토리 정책: `scripts/tests/` 는 repo 검증 전용이라
     # mkOutOfStoreSymlink로 home 에 노출하지 않는다. bats 단위 테스트는 devShell
