@@ -83,7 +83,7 @@ SKIP이어도 질문 도구 승인 전에는 완료가 아니며, 이 gate가 �
 | 해석 (환각 금지) | 사용자가 명시한 축만 채운다. 명시가 없는 축을 추론으로 채우지 않는다 — 그 축은 기본 정책을 따른다 |
 | 적용 범위 | 해당 호출의 reviewer/auditor와 Arbiter 전체. 해당 호출에만 적용 (설정 파일 없음, `agent=`와 동일) |
 | 우선순위 | `effort` 명시는 `agent=codex-*`의 effort보다 우선한다 (더 구체적인 지정 우선) |
-| 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 조용한 대체/하향 금지 |
+| 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증(구체 규칙과 실행 주체는 arbiter-scaling.md의 role command guard)만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 값 거부는 재실행으로 해소되지 않으므로 자동 재시도하지 않는다. 조용한 대체/하향 금지 |
 | 경로 제약 | codex exec 경로 전용이다. `agent=claude`와 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다 |
 
 모델명 박제 금지 원칙과의 관계: 이 채널의 값은 사용자 입력에서만 온다. 스킬 문서·기본값·예시에 특정 모델명을 두지 않는 원칙(sync 테스트의 모델 literal 잔존 게이트)은 그대로 유지된다.
@@ -146,7 +146,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 | `audit` | [`modes/audit.md`](modes/audit.md) | mode 확정 후 즉시. Review Intensity 우회이므로 `intensity-procedure.md`는 읽지 않는다 |
 | `fresh` modifier | 이 `SKILL.md`; 후속 라운드 propagation 조립 시 [`references/protocol.md`](references/protocol.md), ledger suppression이 필요하면 [`references/dismissal-ledger.md`](references/dismissal-ledger.md) | preflight에서는 추가 reference 없음. 이전 라운드 맥락과 selective propagation을 모두 끊어야 하는 시점에만 protocol을 확인한다. current changeset에 valid ledger가 있을 때만 dismissal-ledger를 확인한다 |
 | `MAX` modifier | 선택 mode 문서, [`references/da-domains.md`](references/da-domains.md) | Review Intensity를 건너뛰고 exhaustive 6-domain fan-out 조립 직전. `intensity-procedure.md`는 읽지 않는다 |
-| `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 이 `SKILL.md`; 실제 경로/effort/override 조립 시 [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | preflight에서는 값 해석과 shell-safe 검증만 한다. fan-out 실행 단위 조립 직전에 런타임 매핑과 role별 command 계약을 확인한다 |
+| `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 이 `SKILL.md`; 실제 경로/effort/override 조립 시 [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | preflight에서는 값 해석만 한다. shell-safe 검증은 fan-out 실행 단위 조립 시 role command block의 guard가 수행한다 (검증 규칙 SSOT: arbiter-scaling.md). 조립 직전에 런타임 매핑과 role별 command 계약을 확인한다 |
 | LITE/FULL reviewer fan-out | [`references/da-domains.md`](references/da-domains.md), [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/hardening-contract.md`](references/hardening-contract.md) | Step 2에서 실제 reviewer prompt/런타임을 조립할 때 |
 | codex exec fallback 또는 literal 재사용 위험 | [`../using-codex-exec/references/known-issues.md`](../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | native delegation이 거부되거나 codex exec 경로를 실제로 사용할 때 |
 | findings ≥ 1로 first-pass Arbiter 진입 | [`references/arbiter-prompt.md`](references/arbiter-prompt.md), [`references/protocol.md`](references/protocol.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | Step 5a에서 Arbiter prompt/실행 계약을 조립할 때 |
@@ -201,7 +201,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
 - Codex 세션 경로에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
-- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. `agent=` 또는 사용자 지정 실행 파라미터가 지정되면 해당 호출에서는 그 값이 reviewer/auditor와 Arbiter 전체에 우선한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑).
+- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. `agent=`가 지정되면 해당 호출에서는 그 실행 프로파일이 reviewer/auditor와 Arbiter 전체에 우선한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑). 사용자 지정 실행 파라미터는 codex exec 경로 전용이므로 native subagent 경로에는 적용되지 않으며, 경로 제약 규칙(위 사용자 지정 실행 파라미터 섹션)에 따라 codex exec 경로로 전환된 호출에서만 우선 적용된다.
 - codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행되어 코드/계획 write를 read-only sandbox로 구조적으로 차단한다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명·service_tier는 스킬이 고정하지 않는다 — 사용자가 명시 지정한 값만 `-c` config override로 주입하고(사용자 지정 실행 파라미터), 미지정 시 reasoning effort만 기본 role profile 또는 `agent=` 인자에서 결정한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
