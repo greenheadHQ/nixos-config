@@ -3,7 +3,7 @@
 # Shell script fixture 테스트 실행기.
 # 테스트 런타임 bootstrap 정책은 scripts/ai/lib/tomlkit-bootstrap.sh 단일 소스에서 관리한다.
 # 수동 실행(`bash tests/run-shell-script-tests.sh`)과 lefthook pre-push 경로가 동일한 hermetic
-# runtime(flake-pinned `.#pythonWithTomlkit` + GNU coreutils/findutils, #1009)을 쓰도록 강제한다.
+# runtime(flake-pinned `.#prePushRuntime` profile + GNU coreutils/findutils, #1009)을 쓰도록 강제한다.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

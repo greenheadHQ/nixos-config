@@ -68,7 +68,7 @@ pre-commit:
       # wrap이 불필요하다. live propagation 검증은 manual/scheduled에 위임.
       # glob: runner 가 source/cp 하는 의존 경로 집합과 동기화 필수. 새 의존 경로가 생기면 여기와
       # scripts/ai/check-lefthook-staged-config.sh 의 expected 블록을 함께 갱신한다 (누락 시 해당
-      # 커밋에서 이 검사가 silent skip 된다; pre-push 가 glob 없이 전체 재검증하므로 push 에서 안전망).
+      # 커밋에서 이 검사가 silent skip 된다; main의 required `check` CI가 전체 fixture를 재검증한다).
       # runner 래퍼(tests/test-codex-hook-fixtures.sh) 자신도 멤버 — runner 로직 변경이 검증 동작을 바꾼다.
       glob:
         - "modules/shared/programs/codex/**"
@@ -79,6 +79,7 @@ pre-commit:
         - "tests/lib/**"
         - "scripts/ai/commit-msg-pinning.sh"
         - "scripts/ai/lib/tomlkit-bootstrap.sh"
+        - "scripts/ai/test-runtime-profile.sh"
         - "modules/shared/scripts/codex-exec-supervised.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/test-codex-hook-fixtures.sh --no-live
     skill-noise-check:
@@ -135,44 +136,37 @@ commit-msg:
       run: '[ -f ./scripts/ai/commit-msg-pinning.sh ] && bash ./scripts/ai/commit-msg-pinning.sh {1} || true'
 
 pre-push:
-  # 5개 command(shell-script-tests·codex-hook-fixtures·analyzing-da-sessions-tests·flake-check·statusline-bats)를 병렬 실행한다.
-  # 각 command는 독립적이고 read-only 검증이라 순서 의존이 없다. 러너 자체 병렬화(job-pool)와
-  # over-subscribe되지만 대부분 I/O 바운드(git/파일/nix eval)라 경합이 흡수되어, 순차 합보다 크게
-  # 빠르다(실측: 순차 합 ~82s → 병렬 wall-clock ~42s). 러너 병렬화 + GNU 보장(#1009) 전까지는
-  # pre-push가 ~175s 걸리고 karakeep fixture 실패로 push가 차단됐다 — 이 변경으로 둘 다 해소된다.
+  # CIR: #1045는 required CI가 없어서 모든 검증을 매 push마다 재실행했다. #1090에서 main의
+  # `check`를 required로 승격했으므로, push_files와 관련된 4개 command만 실행하고 전체 회귀는
+  # CI의 run-all-tests가 담당한다. Lefthook 2.1.5는 glob-only pre-push command를 {push_files}로
+  # 필터링하며, 삭제된 파일 등 로컬 필터의 사각지대도 required CI가 보완한다.
   parallel: true
   commands:
     shell-script-tests:
-      # nix shell wrap: codex-config fixture의 tomlkit + karakeep/backup fixture의 GNU 전용 확장
-      # (`touch -d '40 days ago'`, `find -printf`)을 위해 repo-pinned pythonWithTomlkit + GNU
-      # coreutils/findutils를 PATH에 얹어 실행한다(#1009: devShell 밖 BSD 도구로 karakeep fixture
-      # 실패). devShell은 건드리지 않아 direnv/bare python3 해석 영향이 없다. `--inputs-from .`로
-      # nixpkgs#를 repo flake.lock에 pin해 임시 registry fetch를 피한다(statusline-bats와 동일 패턴).
-      # claude-rc(#1052)가 require_cmd lsof를 도입했고 lsof는 NixOS 시스템 프로파일/CI PATH에
-      # 항상 있지 않으므로 nixpkgs#lsof도 명시 제공한다(#1009와 동일 패턴). lefthook auto-sync
-      # end-to-end 테스트는 stub이 아닌 실제 lefthook을 요구하는데, hook이 lefthook을 nix store
-      # 절대경로로 호출하면 자식 PATH에 lefthook이 없다. 같은 이유로 nixpkgs#lefthook도 얹는다.
-      # `_TOMLKIT_BOOTSTRAP_READY=1`로 run-shell-script-tests.sh 내부 tomlkit-bootstrap.sh의 중첩
-      # `nix shell` re-exec을 막는다(이 wrap이 이미 동일 hermetic 런타임을 제공). 테스트 병렬 실행은
-      # 러너 자체(tests/lib/parallel-harness.sh job-pool)가 담당하므로 여기서 추가 배선은 없다.
-      run: nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof nixpkgs#lefthook --command env _TOMLKIT_BOOTSTRAP_READY=1 bash ./tests/run-shell-script-tests.sh
-    codex-hook-fixtures:
-      # pre-commit에 이미 동일 명령이 있지만 push 직전 재검증해 stale state 회귀 차단.
-      # runner self-bootstrap이라 추가 nix shell wrap 불필요. live propagation은 attach하지 않음.
-      run: bash ./tests/test-codex-hook-fixtures.sh --no-live
+      glob:
+        - "*.sh"
+        - "tests/fixtures/shell-scripts/**"
+        - "flake.lock"
+        - "flake.nix"
+        - "libraries/python-runtimes.nix"
+      # prebuilt profile이 tomlkit + GNU coreutils/findutils(#1009) + lsof(#1052) + 실제
+      # lefthook을 제공한다. profile이 없으면 동일 flake package의 nix shell로 안전 폴백한다.
+      run: bash ./scripts/ai/test-runtime-profile.sh run "$PWD" -- bash ./tests/run-shell-script-tests.sh
     analyzing-da-sessions-tests:
-      # run-da VERDICT_JSON/dir marker 형식과 analyze.py 추출 계약을 hermetic pytest fixture로 검증한다.
-      # driver가 `nix run --inputs-from . nixpkgs#python3Packages.pytest`를 호출하므로
-      # pytest 런타임은 repo flake.lock에 pin되고 pythonWithTomlkit 스코프를 확장하지 않는다.
+      glob:
+        - "modules/shared/programs/claude/files/skills/analyzing-da-sessions/**"
+        - "modules/shared/programs/claude/files/skills/run-da/**"
+        - "tests/run-analyzing-da-sessions-tests.sh"
+      # run-da VERDICT_JSON/dir marker와 analyze.py 추출 계약을 profile의 pytest로 검증한다.
       run: bash ./tests/run-analyzing-da-sessions-tests.sh
     flake-check:
+      glob:
+        - "*.nix"
+        - "flake.lock"
       run: nix flake check --no-build --all-systems
     statusline-bats:
-      # statusline.sh 폭 측정 fallback chain 회귀 검증. git hook PATH 는 devShell
-      # buildInputs 를 보장하지 않으므로 `nix shell` wrap 으로 hook 실행 환경
-      # PATH 와 무관하게 동작하게 한다. `--inputs-from .` 는 repo flake.lock 의
-      # nixpkgs 입력을 재사용하여 `nix shell .#pythonWithTomlkit` 패턴과 동일하게
-      # 프로젝트 pin 을 우회하지 않게 한다. pre-commit allowlist guard 우회를
-      # 위해 pre-push 에 배치. bats 호출은 ~1초로 짧아 비용 미미. Codex 같은
-      # 비대화형 셸은 TERM 을 안 줄 수 있으므로 Bats/tput 용 기본 TERM 을 주입한다.
-      run: env TERM="${TERM:-xterm-256color}" nix shell --inputs-from . nixpkgs#bats --command bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
+      glob:
+        - "modules/shared/programs/claude/files/scripts/statusline.sh"
+        - "modules/shared/programs/claude/files/scripts/tests/statusline.bats"
+      # profile의 Bats를 사용하고 비대화형 hook에는 Bats/tput용 기본 TERM을 주입한다.
+      run: bash ./scripts/ai/test-runtime-profile.sh run "$PWD" -- env TERM="${TERM:-xterm-256color}" bats modules/shared/programs/claude/files/scripts/tests/statusline.bats

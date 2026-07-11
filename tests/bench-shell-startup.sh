@@ -10,7 +10,7 @@
 # 사용: bash tests/bench-shell-startup.sh
 #
 # hyperfine은 프로젝트 flake.lock의 nixpkgs pin에서 주입한다(레지스트리 fetch·pin 우회 없음;
-# pre-push statusline-bats의 `nix shell --inputs-from .` 패턴과 동일).
+# profile fallback과 같은 `nix shell --inputs-from .` pinning 패턴).
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"

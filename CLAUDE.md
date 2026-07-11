@@ -50,7 +50,7 @@ Bash tool의 inline 스크립트는 zsh에서 실행된다. 아래 bash 전용 �
 
 현재 확인된 사례:
 - (GNU 우선 환경에서 BSD 문법이 필요한 경우) 파일 mtime epoch — GNU `stat -c %Y file` vs macOS BSD `/usr/bin/stat -f %m file`. 시스템 도구를 절대경로로 호출한다.
-- (BSD 우선 환경에서 GNU 문법이 필요한 경우) 테스트 fixture의 GNU 전용 옵션 `touch -d '40 days ago'`·`find -printf` — devShell 밖(direnv 비활성) 훅/CI 셸에서는 BSD 도구가 잡혀 실패하므로, 테스트 런타임 wrap에서 `nixpkgs#coreutils`/`nixpkgs#findutils`를 명시 제공한다 (#1009; `scripts/ai/lib/tomlkit-bootstrap.sh` self-wrap + `lefthook.yml`/`tests/run-all-tests.sh` 의 shell-script-tests wrap).
+- (BSD 우선 환경에서 GNU 문법이 필요한 경우) 테스트 fixture의 GNU 전용 옵션 `touch -d '40 days ago'`·`find -printf` — devShell 밖(direnv 비활성) 훅/CI 셸에서는 BSD 도구가 잡혀 실패하므로, `prePushRuntime` profile에서 `coreutils`/`findutils`를 명시 제공한다 (#1009; `scripts/ai/test-runtime-profile.sh` + `tomlkit-bootstrap.sh` fallback).
 
 같은 종류의 GNU/BSD 옵션 충돌이 새로 발견되면 같은 단락에 케이스를 추가한다.
 

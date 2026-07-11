@@ -1,9 +1,8 @@
 name: check
 
-# 로컬 lefthook 훅과 독립적인 선택적 2차 안전망(강제 머지 게이트가 아니다). 로컬 훅을
-# 우회(git commit --no-verify / LEFTHOOK=0)했거나 fresh clone에서 훅 설치 전인 변경도 PR
-# 시점에 동일 검증으로 한 번 더 거른다. 단일 메인테이너 + PR 기반 워크플로라 과도한 게이트는
-# 의도적으로 피하고, 검증 명령은 lefthook.yml / tests/run-all-tests.sh와 동일한 것을 재사용한다.
+# 로컬 lefthook 훅과 독립적인 required merge gate. 로컬 훅을 우회(git commit --no-verify /
+# LEFTHOOK=0)했거나 fresh clone에서 훅 설치 전인 변경도 PR 시점에 동일 검증으로 거른다.
+# `check` job 이름은 main branch protection이 요구하는 외부 ABI이므로 함께 갱신하지 않고 바꾸지 않는다.
 on:
   pull_request:
 
@@ -36,8 +35,9 @@ jobs:
           nix shell --inputs-from . nixpkgs#shellcheck --command \
             bash -c 'find . -name "*.sh" -not -path "./.git/*" -print0 | xargs -0 -r shellcheck -S warning'
 
-      # 통합 검증: tests/run-all-tests.sh가 flake-check(nix flake check --no-build --all-systems)와
+      # 통합 검증: devShell이 모든 driver 도구와 prePushRuntime profile을 준비한 뒤,
+      # tests/run-all-tests.sh가 flake-check(nix flake check --no-build --all-systems)와
       # 전 테스트 드라이버를 순차 실행한다(#913에서 도입한 단일 진입점 재사용 — CI가 검증 명령을
       # 중복 정의하지 않는다). 환경/도구 미가용 드라이버는 스크립트가 SKIP으로 집계한다.
       - name: 통합 검증 (run-all-tests.sh)
-        run: bash tests/run-all-tests.sh
+        run: CI=1 nix develop --command bash tests/run-all-tests.sh

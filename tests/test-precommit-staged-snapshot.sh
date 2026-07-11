@@ -105,6 +105,7 @@ EOF
   copy_file "tests/run-eval-tests.sh" "$dir/tests/run-eval-tests.sh"
   copy_file "tests/test-codex-hook-fixtures.sh" "$dir/tests/test-codex-hook-fixtures.sh"
   copy_file "scripts/ai/lib/tomlkit-bootstrap.sh" "$dir/scripts/ai/lib/tomlkit-bootstrap.sh"
+  copy_file "scripts/ai/test-runtime-profile.sh" "$dir/scripts/ai/test-runtime-profile.sh"
   copy_file "scripts/ai/lib/staged-snapshot-cache.sh" "$dir/scripts/ai/lib/staged-snapshot-cache.sh"
 
   mkdir -p "$dir/.claude/skills/existing" "$dir/.agents/skills"
@@ -316,6 +317,17 @@ test_guard_rejects_unsupported_command_shape() {
   assert_fail_contains "unsupported pre-commit" git -C "$dir" commit -qm unsupported
 }
 
+test_guard_rejects_unsupported_pre_push_shape() {
+  local dir
+  dir="$(make_repo)"
+  perl -0pi -e 's#        - "modules/shared/programs/claude/files/scripts/tests/statusline\.bats"#        - "README.md"#' "$dir/lefthook.yml"
+  git -C "$dir" add lefthook.yml
+  (cd "$dir" && bash ./scripts/ai/install-lefthook-hooks.sh)
+  printf 'change\n' > "$dir/change.txt"
+  git -C "$dir" add change.txt
+  assert_fail_contains "unsupported pre-push" git -C "$dir" commit -qm unsupported-pre-push
+}
+
 test_installer_idempotent_and_worktree_local() {
   local dir hook_path hook_dir
   dir="$(make_repo)"
@@ -412,6 +424,7 @@ test_gitleaks_rejects_policy_symlink
 test_gitleaks_validator_tomlkit_fallback_unwraps_extend
 test_installed_guard_rejects_lefthook_drift_and_env
 test_guard_rejects_unsupported_command_shape
+test_guard_rejects_unsupported_pre_push_shape
 test_installer_idempotent_and_worktree_local
 test_staged_snapshot_cache_hit_and_readonly
 test_staged_snapshot_cache_concurrent_single_build

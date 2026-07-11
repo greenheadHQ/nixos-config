@@ -48,7 +48,7 @@ done
 # sync-preservation 시나리오는 sync-codex-config.py를 통해 tomlkit을 요구한다. 직접 실행과
 # lefthook 경로의 runtime 일관성을 위해 tests/run-shell-script-tests.sh와 동일하게
 # scripts/ai/lib/tomlkit-bootstrap.sh를 source하여 repo-pinned pythonWithTomlkit으로 self-wrap한다.
-# `_TOMLKIT_BOOTSTRAP_READY=1`이 이미 set이면 즉시 반환되므로 lefthook 안에서 중첩 nix shell이 발생하지 않는다.
+# `_TOMLKIT_BOOTSTRAP_READY=1`이 이미 set이면 즉시 반환되므로 profile runner 안에서 중첩 nix shell이 발생하지 않는다.
 # bootstrap이 exec로 프로세스를 교체할 수 있으므로 sandbox tracking 임시 파일은 그 이후에 생성한다.
 # shellcheck disable=SC1091  # source file은 repo 내부 고정 경로
 . "$REPO_ROOT/scripts/ai/lib/tomlkit-bootstrap.sh"
@@ -458,7 +458,7 @@ test_sync_preservation_scenarios() {
   # tomlkit이 없으면 sync-codex-config.py가 sync 모드에서 fail하므로 sync-preservation 카테고리가
   # 누락된 상태로 "All passed"가 출력될 위험이 있다. hard fail로 회귀 차단.
   if ! python3 -c 'import tomlkit' >/dev/null 2>&1; then
-    fail "tomlkit 미가용 — pre-commit/pre-push hook 또는 'nix shell .#pythonWithTomlkit' 환경에서 실행 필요"
+    fail "tomlkit 미가용 — pre-commit/profile runner 또는 'nix shell .#pythonWithTomlkit' 환경에서 실행 필요"
   fi
 
   local target

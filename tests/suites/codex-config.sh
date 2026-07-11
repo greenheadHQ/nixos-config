@@ -5,7 +5,7 @@
 # ─── codex-config fixture helpers ───
 # sync-codex-config.py의 sync/check 계약을 fixture 기반으로 고정.
 # tomlkit 의존이 필요하므로 lefthook 밖 직접 실행 시에는 tomlkit import 가능 여부에 따라
-# 조건부로 돌린다. lefthook pre-push는 repo-pinned `nix shell .#pythonWithTomlkit --command`로
+# 조건부로 돌린다. lefthook pre-push는 repo-pinned `prePushRuntime` profile로
 # wrap 되어 항상 가용.
 CODEX_CONFIG_SCRIPT="$REPO_ROOT/modules/shared/programs/codex/files/sync-codex-config.py"
 CODEX_CONFIG_FIXTURE_DIR="$FIXTURE_DIR/codex-config"

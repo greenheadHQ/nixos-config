@@ -83,6 +83,25 @@
         linux = "x86_64-linux";
       };
 
+      # pre-push/CI가 공유하는 단일 hermetic runtime. 각 command가 개별 `nix shell`을
+      # 평가하지 않도록 하나의 buildEnv로 묶고, devShell 진입 시 worktree-local GC-root로
+      # 사전 빌드한다. pythonWithTomlkit 자체는 activation과 store path를 계속 공유한다.
+      mkPrePushRuntime =
+        { pkgs, pythonWithTomlkit }:
+        pkgs.buildEnv {
+          name = "nixos-config-pre-push-runtime";
+          pathsToLink = [ "/bin" ];
+          paths = [
+            pythonWithTomlkit
+            pkgs.python3Packages.pytest
+            pkgs.coreutils
+            pkgs.findutils
+            pkgs.lsof
+            pkgs.lefthook
+            pkgs.bats
+          ];
+        };
+
       # 워크스페이스 디렉토리명 (~/Workspace/nixos-config)
       # 단일 관리 포인트: 여기만 변경하면 nixosConfigPath + rebuild-common.sh FLAKE_PATH 자동 반영
       workspaceDir = "Workspace";
@@ -223,6 +242,11 @@
               inputs.agenix.packages.${system}.default
             ];
             shellHook = ''
+              # Push 경로의 반복 Nix eval을 direnv 진입 시 1회로 이동한다. 실패해도
+              # hook 실행 시 nix shell fallback이 있으므로 devShell 자체는 계속 연다.
+              if ! bash ./scripts/ai/test-runtime-profile.sh prepare "$PWD"; then
+                echo "warning: pre-push runtime profile prebuild failed; hooks will use nix shell fallback" >&2
+              fi
               bash ./scripts/ai/install-lefthook-hooks.sh
             '';
           };
@@ -230,8 +254,8 @@
       );
 
       # test/verifier 래핑용 tomlkit 포함 python3.
-      # pre-push hook(lefthook.yml)과 verify-ai-compat이 `nix shell .#pythonWithTomlkit --command`로
-      # 호출한다. devShell에도 포함되어 있어 install-lefthook-hooks.sh가 shellHook에서 같은
+      # prePushRuntime과 verify-ai-compat fallback이 이 output을 공유한다. devShell에도 포함되어
+      # 있어 install-lefthook-hooks.sh가 shellHook에서 같은
       # interpreter를 사용하고, direnv 환경의 python3도 tomlkit 포함 버전으로 resolve된다.
       # 정의는 `libraries/python-runtimes.nix` 단일 소스이며, activation(`codex/default.nix`)도
       # 같은 파일을 import해 동일 store path를 공유한다.
@@ -240,9 +264,14 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           pythonRuntimes = import ./libraries/python-runtimes.nix { inherit pkgs; };
+          prePushRuntime = mkPrePushRuntime {
+            inherit pkgs;
+            inherit (pythonRuntimes) pythonWithTomlkit;
+          };
         in
         {
           inherit (pythonRuntimes) pythonWithTomlkit;
+          inherit prePushRuntime;
         }
       );
     };
