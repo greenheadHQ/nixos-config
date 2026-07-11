@@ -244,6 +244,15 @@ def check_exec_override_copies() -> None:
             details.append(f"{ARBITER_SCALING}: effort guard #{i} missing RUN_DA_USER_EFFORT_OVERRIDE gate")
     if len({_normalize_fragment(g) for g in guards}) > 1:
         details.append(f"{ARBITER_SCALING}: effort guards diverge across role command blocks")
+    injections = re.findall(
+        r'-c model_reasoning_effort="\$RUN_DA_CODEX_EFFORT" "\$\{_DA_MODEL_TIER_OVERRIDES\[@\]\}"',
+        text,
+    )
+    if len(injections) != EXEC_OVERRIDE_COPIES:
+        details.append(
+            f"{ARBITER_SCALING}: expected {EXEC_OVERRIDE_COPIES} override injection points "
+            f"on codex command lines, got {len(injections)}"
+        )
     if details:
         raise CheckFailure("\n".join(details))
 

@@ -150,6 +150,7 @@ cat "$DA_DIR/$UNIT.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbo
 Arbiter (strong profile):
 
 ```bash
+: "${ARBITER_DIR:?missing ARBITER_DIR}"
 : "${RUN_DA_CODEX_EFFORT:?missing RUN_DA_CODEX_EFFORT}"
 case "$RUN_DA_CODEX_EFFORT" in
   medium|high|xhigh) ;;
@@ -169,6 +170,8 @@ for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"
     *) _DA_MODEL_TIER_OVERRIDES+=(-c "$_kv") ;;
   esac
 done
+[ -d "$ARBITER_DIR" ] || { echo "missing ARBITER_DIR=$ARBITER_DIR"; exit 1; }
+[ -f "$ARBITER_DIR/arbiter-prompt.md" ] || { echo "missing prompt=$ARBITER_DIR/arbiter-prompt.md"; exit 1; }
 cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
   -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$ARBITER_DIR/arbiter-result.md" - 2>"$ARBITER_DIR/arbiter-stderr.log"
