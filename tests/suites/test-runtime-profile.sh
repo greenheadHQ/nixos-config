@@ -2,6 +2,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # REPO_ROOT는 aggregator가 제공한다.
 
+# production command contract를 fake runtime fixture도 그대로 사용한다.
+# shellcheck disable=SC1091
+. "$REPO_ROOT/scripts/ai/test-runtime-profile.sh"
+
 _test_runtime_profile_script() {
   printf '%s/scripts/ai/test-runtime-profile.sh' "$REPO_ROOT"
 }
@@ -21,10 +25,10 @@ _test_runtime_profile_make_runtime() {
   local runtime="$1"
   local command_name
   mkdir -p "$runtime/bin"
-  for command_name in python3 touch find lsof lefthook bats pytest; do
+  while IFS= read -r command_name; do
     printf '#!/usr/bin/env bash\nexit 0\n' > "$runtime/bin/$command_name"
     chmod +x "$runtime/bin/$command_name"
-  done
+  done < <(test_runtime_profile_required_commands)
 }
 
 _test_runtime_profile_make_fake_nix() {
@@ -163,12 +167,13 @@ test_runtime_profile_run_uses_current_and_falls_back_when_stale() (
   canonical_dir="$(git -C "$dir" rev-parse --show-toplevel)"
   _test_runtime_profile_make_runtime "$runtime"
   _test_runtime_profile_make_fake_nix "$fake_bin"
+  mkdir -p "$dir/tmp"
   : > "$log"
   PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" bash "$script" prepare "$dir"
   : > "$log"
 
-  output="$(PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
-    bash "$script" run "$dir" -- bash -c 'printf "%s|%s" "${PATH%%:*}" "${_TOMLKIT_BOOTSTRAP_READY:-}"')"
+  output="$(PATH="$fake_bin:$PATH" TMPDIR="$dir/tmp/" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
+    bash "$script" run "$dir" -- bash -c 'case "$TMPDIR" in */) exit 97;; esac; printf "%s|%s" "${PATH%%:*}" "${_TOMLKIT_BOOTSTRAP_READY:-}"')"
   [ "$output" = "$canonical_dir/.direnv/pre-push-runtime/bin|1" ] || fail "current profile was not activated: $output"
   [ ! -s "$log" ] || fail "current profile unexpectedly invoked nix"
 

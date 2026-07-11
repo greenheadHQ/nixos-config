@@ -21,6 +21,10 @@ _TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS=(
   pytest
 )
 
+test_runtime_profile_required_commands() {
+  printf '%s\n' "${_TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS[@]}"
+}
+
 test_runtime_profile_path() {
   printf '%s/.direnv/pre-push-runtime' "$1"
 }
@@ -71,6 +75,15 @@ test_runtime_profile_activate() {
   test_runtime_profile_is_current "$repo_root" || return 1
   profile="$(test_runtime_profile_path "$repo_root")"
   export PATH="$profile/bin:$PATH"
+  # macOS launchd의 TMPDIR은 보통 trailing slash를 갖는다. 기존 nix shell은 이를
+  # 정규화했으므로 profile 경로도 같은 계약을 유지해 git의 canonical path와 비교가 어긋나지 않게 한다.
+  case "${TMPDIR:-}" in
+    "" | /) ;;
+    */)
+      TMPDIR="${TMPDIR%/}"
+      export TMPDIR
+      ;;
+  esac
   export _TOMLKIT_BOOTSTRAP_READY=1
 }
 
