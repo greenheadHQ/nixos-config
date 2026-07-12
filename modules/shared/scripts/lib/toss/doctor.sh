@@ -103,7 +103,8 @@ toss_doctor_check_public_ip() {
 # 출력 문구는 실제 보장 수준(present / locally-unexpired)까지만 주장한다.
 toss_doctor_check_credentials() {
   if toss_is_darwin; then
-    local sa_file="${TOSS_OP_SA_TOKEN_FILE:-$HOME/.config/op/sa-token-mac}"
+    local sa_file
+    sa_file="$(toss_sa_token_file)"
     if [ -r "$sa_file" ] && command -v op >/dev/null 2>&1; then
       echo "credentials: present (op + SA token file; op access not verified)"
     elif [ -r "$sa_file" ]; then

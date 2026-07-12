@@ -214,6 +214,9 @@ run_test "toss endpoint metadata fails on path item ref" test_toss_endpoint_meta
 run_test "toss endpoint metadata fails on shortcut broken ref" test_toss_endpoint_metadata_fails_on_shortcut_broken_ref
 run_test "toss endpoint metadata account header case-insensitive" test_toss_endpoint_metadata_account_header_case_insensitive
 run_test "toss endpoint metadata fails on broken ref after account true" test_toss_endpoint_metadata_fails_on_broken_ref_after_account_true
+run_test "toss endpoint metadata keeps marker-missing operation" test_toss_endpoint_metadata_keeps_marker_missing_operation
+run_test "toss endpoint metadata fails on cross-component ref" test_toss_endpoint_metadata_fails_on_cross_component_ref
+run_test "toss metadata override cannot disable order safeguards" test_toss_metadata_override_cannot_disable_order_safeguards
 run_test "toss api rejects untrusted base URL" test_toss_api_rejects_untrusted_base_url
 run_test "toss api dry-run rejects untrusted base URL" test_toss_api_dry_run_rejects_untrusted_base_url
 run_test "toss api rejects base URL with path suffix" test_toss_api_rejects_base_url_with_path_suffix

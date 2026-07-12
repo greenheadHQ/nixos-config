@@ -23,6 +23,17 @@ toss_metadata_lookup() {
   method="$(printf '%s' "$method" | tr '[:lower:]' '[:upper:]')"
   file="$(toss_metadata_file)"
 
+  # requiresOrderSafeguards runtime hard floor: metadata의 isKnownOrderMutation을 신뢰하되,
+  # order-path(/orders·/conditional-orders) + mutation method(POST/PUT/PATCH/DELETE)이면
+  # metadata와 무관하게 항상 safeguard를 켠다. TOSS_ENDPOINTS_FILE로 분류표를 변조해
+  # 주문 mutation의 원장/알림/preflight를 조용히 끄는 우회를 이 floor로 차단한다.
+  # generate-endpoint-metadata.sh의 is_known_order_mutation order-path 규칙과 동형.
+  local safeguard_floor='
+    def is_order_path($p): $p | test("(^|/)(orders|conditional-orders)(/|$)");
+    def is_mutation_method($m): (["POST","PUT","PATCH","DELETE"] | index($m)) != null;
+    def order_safeguard_floor($m; $p): is_mutation_method($m) and is_order_path($p);
+  '
+
   local found
   found="$(
     jq -c --arg method "$method" --arg path "$path" '
@@ -31,13 +42,14 @@ toss_metadata_lookup() {
   )"
 
   if [ -n "$found" ]; then
-    jq -c '
+    jq -c --arg method "$method" --arg path "$path" "
+      $safeguard_floor
       . + {
-        metadataStatus: "exact",
+        metadataStatus: \"exact\",
         matchedPath: .path,
-        requiresOrderSafeguards: (.isKnownOrderMutation == true)
+        requiresOrderSafeguards: ((.isKnownOrderMutation == true) or order_safeguard_floor(\$method; \$path))
       }
-    ' <<<"$found"
+    " <<<"$found"
     return 0
   fi
 
@@ -53,13 +65,14 @@ toss_metadata_lookup() {
   )"
 
   if [ -n "$found" ]; then
-    jq -c '
+    jq -c --arg method "$method" --arg path "$path" "
+      $safeguard_floor
       . + {
-        metadataStatus: "template",
+        metadataStatus: \"template\",
         matchedPath: .path,
-        requiresOrderSafeguards: (.isKnownOrderMutation == true)
+        requiresOrderSafeguards: ((.isKnownOrderMutation == true) or order_safeguard_floor(\$method; \$path))
       }
-    ' <<<"$found"
+    " <<<"$found"
     return 0
   fi
 

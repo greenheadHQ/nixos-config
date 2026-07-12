@@ -74,11 +74,19 @@ jq '
     if $depth <= 0 then
       error("parameter $ref chain too deep or cyclic")
     elif (($param["$ref"] // null) != null) then
-      (resolve_ref($root; $param["$ref"])) as $resolved
-      | if ($resolved | type) != "object" then
-          error("unresolved parameter $ref: \($param["$ref"])")
+      ($param["$ref"]) as $ref
+      # 각 hop은 반드시 #/components/parameters/ 아래를 가리켜야 한다. name+in shape가
+      # 겹치는 다른 OAS object(예: apiKey Security Scheme {type,name,in})로 새면 terminal
+      # shape 검증을 우회하므로, ref target namespace 자체를 parameters로 제한한다.
+      | if ($ref | startswith("#/components/parameters/")) then
+          (resolve_ref($root; $ref)) as $resolved
+          | if ($resolved | type) != "object" then
+              error("unresolved parameter $ref: \($ref)")
+            else
+              resolve_parameter_ref($root; $resolved; $depth - 1)
+            end
         else
-          resolve_parameter_ref($root; $resolved; $depth - 1)
+          error("parameter $ref must target #/components/parameters/: \($ref)")
         end
     else
       $param
@@ -106,12 +114,15 @@ jq '
     | map(resolved_parameter($root; .))
     | any(is_account_parameter(.));
 
+  # capture는 no-match에서 error가 아니라 empty stream을 내므로, `... as $rate_limit_group`이
+  # 그 operation의 endpoint object 전체를 조용히 drop한다. `// null`로 empty도 null로 복구해
+  # marker/description 없는 유효 operation이 endpoint 누락으로 번지지 않게 한다.
   def rate_limit_group($operation):
-    try (
+    (try (
       ($operation.description // "")
       | capture("\\*\\*Rate Limits Group\\*\\*:\\s*`(?<group>[^`]+)`\\s*$"; "m")
       | .group
-    ) catch null;
+    ) catch null) // null;
 
   def is_mutation_method($method):
     (["POST", "PUT", "PATCH", "DELETE"] | index($method)) != null;

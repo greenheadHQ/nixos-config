@@ -57,11 +57,30 @@ in
         export TOSS_OP_CLIENT_SECRET_REF=${lib.escapeShellArg tossClientSecretRef}
         export TOSS_CLIENT_ID_FILE=${lib.escapeShellArg tossClientIdFile}
         export TOSS_CLIENT_SECRET_FILE=${lib.escapeShellArg tossClientSecretFile}
+        # Mac SA token 파일 경로. 실제 producer(secrets/default.nix)의
+        # ${"$"}{config.xdg.configHome}/op/sa-token-mac을 주입해 auth/doctor 하드코딩 fallback과
+        # producer가 어긋나지 않게 한다.
+        export TOSS_OP_SA_TOKEN_FILE=${lib.escapeShellArg "${config.xdg.configHome}/op/sa-token-mac"}
         # --data strict 검증·정규화는 python3에 의존한다. ambient PATH의 python3는
         # mise shim으로 resolve되어 주문/dry-run이 hang할 수 있으므로(wt의 WT_PYTHON과
         # 동일 위험), Nix store 절대경로를 선언적으로 pin한다.
         export TOSS_PYTHON="${pythonWithTomlkit}/bin/python3"
-        exec "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"
+        # credential/token을 다루는 toolchain(curl·op·jq 등)이 ambient PATH의 fake로 교체되면
+        # exact-origin pin도 destination을 보장하지 못하므로(threat model은 ambient caller 불신),
+        # 신뢰 Nix store 도구를 PATH 선두에 두고 pinned bash로 raw script를 실행한다.
+        export PATH=${
+          lib.makeBinPath [
+            pkgs.curl
+            pkgs._1password-cli
+            pkgs.jq
+            pkgs.coreutils
+            pkgs.gnugrep
+            pkgs.gnused
+            pkgs.gawk
+            pkgs.bash
+          ]
+        }:"$PATH"
+        exec "${pkgs.bash}/bin/bash" "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"
       '';
     in
     {

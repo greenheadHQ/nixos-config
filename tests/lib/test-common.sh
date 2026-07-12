@@ -140,8 +140,12 @@ assert_toss_wrapper_nix() {
     || fail "expected toss wrapper to export TOSS_CLIENT_SECRET_FILE"
   grep -Fq '        export TOSS_PYTHON="${pythonWithTomlkit}/bin/python3"' "$nix_file" \
     || fail "expected toss wrapper to pin TOSS_PYTHON from pythonWithTomlkit"
-  grep -Fq '        exec "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"' "$nix_file" \
-    || fail "expected toss wrapper to exec .toss-real"
+  grep -Fq '        export TOSS_OP_SA_TOKEN_FILE=${lib.escapeShellArg "${config.xdg.configHome}/op/sa-token-mac"}' "$nix_file" \
+    || fail "expected toss wrapper to inject TOSS_OP_SA_TOKEN_FILE from xdg.configHome"
+  grep -Fq '            pkgs._1password-cli' "$nix_file" \
+    || fail "expected toss wrapper to pin _1password-cli in PATH toolchain"
+  grep -Fq '        exec "${pkgs.bash}/bin/bash" "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"' "$nix_file" \
+    || fail "expected toss wrapper to exec .toss-real via pinned bash"
 }
 
 # --data 검증·정규화용 python3. ambient PATH의 mise shim python은 config-trust 에러로

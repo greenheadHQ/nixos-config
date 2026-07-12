@@ -622,6 +622,67 @@ JSON
   [ ! -s "$output" ] || fail "generator must not write metadata when a later ref is broken"
 }
 
+test_toss_endpoint_metadata_keeps_marker_missing_operation() {
+  local sandbox input output
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  # rate-limit marker/description이 없는 유효 operation은 drop되지 않고 rateLimitGroup:null로
+  # 유지되어야 한다 (jq capture no-match의 empty stream이 endpoint를 조용히 삭제하던 문제).
+  cat > "$input" <<'JSON'
+{"info": {"version": "test"}, "paths": {"/api/v1/new": {"get": {"operationId": "getNew"}}}}
+JSON
+
+  bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output"
+  [ "$(jq '.endpoints | length' "$output")" = "1" ] \
+    || fail "expected marker-missing operation to be kept, not dropped"
+  [ "$(jq -r '.endpoints[0].rateLimitGroup' "$output")" = "null" ] \
+    || fail "expected marker-missing operation to have rateLimitGroup:null"
+}
+
+test_toss_endpoint_metadata_fails_on_cross_component_ref() {
+  local sandbox input output rc
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  # parameter ref가 #/components/parameters/ 밖(여기선 apiKey Security Scheme)을 가리키면,
+  # terminal shape(name+in)이 겹쳐도 generation을 실패시켜야 한다.
+  cat > "$input" <<'JSON'
+{"info": {"version": "test"},
+ "components": {"parameters": {"Alias": {"$ref": "#/components/securitySchemes/Other"}},
+   "securitySchemes": {"Other": {"type": "apiKey", "name": "X-Other", "in": "header"}}},
+ "paths": {"/api/v1/w": {"get": {"operationId": "w", "description": "**Rate Limits Group**: `ASSET`",
+   "parameters": [{"$ref": "#/components/parameters/Alias"}]}}}}
+JSON
+
+  set +e
+  bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" != "0" ] || fail "expected cross-component (non-parameters) ref to fail, got rc=$rc"
+  [ ! -s "$output" ] || fail "generator must not write metadata for a cross-component parameter ref"
+}
+
+test_toss_metadata_override_cannot_disable_order_safeguards() {
+  local sandbox metadata safeguards
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+
+  # TOSS_ENDPOINTS_FILE로 주문 endpoint의 isKnownOrderMutation을 false로 변조해도,
+  # order-path mutation runtime hard floor가 requiresOrderSafeguards를 켜야 한다 (보상 통제 우회 차단).
+  cat > "$sandbox/evil-endpoints.json" <<'JSON'
+{"schema_version": "1", "endpoints": [
+  {"method": "POST", "path": "/api/v1/orders", "operationId": "x", "requiresAccount": true,
+   "rateLimitGroup": "OTHER", "pathRegex": "^/api/v1/orders$", "isKnownOrderMutation": false}]}
+JSON
+
+  metadata="$(HOME="$sandbox/home" TOSS_ENDPOINTS_FILE="$sandbox/evil-endpoints.json" \
+    bash "$REPO_ROOT/modules/shared/scripts/lib/toss/metadata.sh" POST /api/v1/orders 2>/dev/null)"
+  safeguards="$(jq -r '.requiresOrderSafeguards' <<<"$metadata")"
+  [ "$safeguards" = "true" ] \
+    || fail "expected order-path mutation hard floor to force requiresOrderSafeguards=true, got: $safeguards"
+}
+
 test_toss_api_dry_run_rejects_untrusted_base_url() {
   local sandbox rc
   sandbox=$(new_sandbox)

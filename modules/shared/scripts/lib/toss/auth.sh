@@ -155,8 +155,17 @@ toss_delete_token_cache() {
   rm -f "$file" 2>/dev/null || true
 }
 
+# Mac SA token 파일 경로. 실제 producer는 secrets/default.nix의
+# `${config.xdg.configHome}/op/sa-token-mac`이며 배포 wrapper가 그 값을 TOSS_OP_SA_TOKEN_FILE로
+# 주입한다. repo-direct/doctor fallback은 XDG_CONFIG_HOME을 반영해 producer와 동기화한다
+# (auth·doctor 공통 helper로 경로 SoT 중복 제거).
+toss_sa_token_file() {
+  printf '%s\n' "${TOSS_OP_SA_TOKEN_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/op/sa-token-mac}"
+}
+
 toss_read_credentials_from_op() {
-  local sa_file="${TOSS_OP_SA_TOKEN_FILE:-$HOME/.config/op/sa-token-mac}"
+  local sa_file
+  sa_file="$(toss_sa_token_file)"
   if [ ! -r "$sa_file" ]; then
     echo "error: Toss 1Password service-account token file is not readable: $sa_file" >&2
     return 1

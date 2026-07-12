@@ -22,9 +22,13 @@ let
   # tokenFile이 0640이어도 group으로 읽을 수 있는 user가 없어 실질 root-only다.
   opnixGroup = "onepassword-secrets";
 
+  # opnix materialization root. Toss producer/wrapper와 이 generic producer가 같은
+  # constants.paths.opnixRuntimeRoot에서 조합해야 SoT가 성립한다 (root 변경 시 tmpfiles
+  # 생성 경로와 소비자 경로가 함께 이동).
+  opnixRoot = constants.paths.opnixRuntimeRoot;
   # gh PAT를 materialize할 tmpfs 경로 (재부팅 시 휘발 — 평문이 디스크에 영구 잔존하지 않음).
   # user shell의 gh wrapper(shell/nixos.nix)가 GH_TOKEN으로 읽는다.
-  ghPatPath = "/run/opnix/${username}/github-pat";
+  ghPatPath = "${opnixRoot}/${username}/github-pat";
 in
 {
   config = lib.mkIf cfg.enable {
@@ -64,8 +68,8 @@ in
     # opnix processor는 parent를 0755 root로 MkdirAll하지만 이미 존재하면 no-op이므로,
     # tmpfiles가 먼저 0700 ${username}으로 만들어 두면 권한이 보존된다.
     systemd.tmpfiles.rules = [
-      "d /run/opnix 0755 root root -"
-      "d /run/opnix/${username} 0700 ${username} users -"
+      "d ${opnixRoot} 0755 root root -"
+      "d ${opnixRoot}/${username} 0700 ${username} users -"
     ];
   };
 }

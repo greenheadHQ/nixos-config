@@ -51,9 +51,10 @@
     opnixServiceAccountExpirySource = ../secrets/opnix-service-account-expiry.txt;
     # opnix SA token agenix secret — opnix/default.nix가 tokenFile 등록에 사용
     opnixServiceAccountTokenAge = ../secrets/opnix-service-account-token.age;
-    # opnix materialization root. per-user 경로는 "${opnixRuntimeRoot}/<user>/<fileName>".
-    # 토스 credential의 materialization path(모듈)와 wrapper credential path(shell)가
-    # 이 한 값에서 조합되도록 하는 SoT (root 변경 시 drift 방지).
+    # opnix materialization root (generic producer + 모든 소비자 공통 SoT). per-user 경로는
+    # "${opnixRuntimeRoot}/<user>/<fileName>". generic producer(programs/opnix/default.nix의
+    # github-pat + tmpfiles root)와 토스 producer/wrapper·repo-direct fallback이 모두 이 값에서
+    # 조합해야 root 변경 시 producer tmpfiles와 소비자 경로가 함께 이동한다 (drift 방지).
     opnixRuntimeRoot = "/run/opnix";
   };
 
