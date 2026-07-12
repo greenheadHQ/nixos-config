@@ -483,6 +483,22 @@ let
   expectedTossClientIdRef = "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientIdField}";
   expectedTossClientSecretRef = "op://${constants.onePassword.vaults.automation}/${constants.onePassword.tossOpenApi.itemName}/${constants.onePassword.tossOpenApi.clientSecretField}";
 
+  # auth.sh는 shell이라 constants를 직접 못 읽으므로 opnix path fallback을 하드코딩한다.
+  # constants.paths.opnixRuntimeRoot/filename SoT 변경 시 이 fallback도 함께 갱신되도록,
+  # 조합 문자열이 auth.sh에 실제 포함되는지 검증한다 (op reference fallback drift 핀과 동형).
+  hasInfix =
+    needle: hay:
+    let
+      needleLen = builtins.stringLength needle;
+      hayLen = builtins.stringLength hay;
+    in
+    hayLen >= needleLen
+    && builtins.any (i: builtins.substring i needleLen hay == needle) (
+      builtins.genList (i: i) (hayLen - needleLen + 1)
+    );
+  expectedTossClientIdFileFallback = "${constants.paths.opnixRuntimeRoot}/$user_name/${constants.onePassword.tossOpenApi.opnixClientIdFileName}";
+  expectedTossClientSecretFileFallback = "${constants.paths.opnixRuntimeRoot}/$user_name/${constants.onePassword.tossOpenApi.opnixClientSecretFileName}";
+
   isBlankLine = line: builtins.match "[[:space:]]*" line != null;
   isKnownDarwinSudoMetadataLine =
     line:
@@ -886,6 +902,12 @@ let
       cond =
         extractTossOpFallback "TOSS_OP_CLIENT_ID_REF" == expectedTossClientIdRef
         && extractTossOpFallback "TOSS_OP_CLIENT_SECRET_REF" == expectedTossClientSecretRef;
+    }
+    {
+      name = "Test 5b-3c: auth.sh opnix credential path fallback이 constants.paths.opnixRuntimeRoot + filename SSOT와 일치해야 함";
+      cond =
+        hasInfix expectedTossClientIdFileFallback tossAuthScript
+        && hasInfix expectedTossClientSecretFileFallback tossAuthScript;
     }
     # ── opnix SA token materialization 보안 회귀 핀 ──
     {

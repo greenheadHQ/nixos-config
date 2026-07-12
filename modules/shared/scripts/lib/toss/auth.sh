@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TOSS_API_BASE_URL="${TOSS_API_BASE_URL:-https://openapi.tossinvest.com}"
 TOSS_TOKEN_REFRESH_MARGIN_SECONDS="${TOSS_TOKEN_REFRESH_MARGIN_SECONDS:-3600}"
 TOSS_TOKEN_LOCK_TIMEOUT_SECONDS="${TOSS_TOKEN_LOCK_TIMEOUT_SECONDS:-30}"
 
@@ -13,7 +12,10 @@ TOSS_TOKEN_LOCK_TIMEOUT_SECONDS="${TOSS_TOKEN_LOCK_TIMEOUT_SECONDS:-30}"
 # raw PATH `/token`이 `/oauth2/token`으로 합성되고, escape hatch는 같은 ambient caller가
 # pin을 해제하는 우회로가 되므로 둘 다 두지 않는다. 테스트는 curl stub이라 비공식 origin이
 # 필요 없으므로 모두 이 공식 base URL을 쓴다.
+# 공식 origin literal은 여기 한 곳에서만 정의하고 TOSS_API_BASE_URL 기본값을 여기서
+# 파생한다 (중복 정의 시 origin 변경 때 한쪽만 갱신되면 기본 invocation이 스스로 거부됨).
 TOSS_TRUSTED_API_BASE_URL="https://openapi.tossinvest.com"
+TOSS_API_BASE_URL="${TOSS_API_BASE_URL:-$TOSS_TRUSTED_API_BASE_URL}"
 
 toss_require_trusted_base_url() {
   if [ "$TOSS_API_BASE_URL" != "$TOSS_TRUSTED_API_BASE_URL" ]; then
@@ -29,8 +31,10 @@ TOSS_OP_CLIENT_ID_REF="${TOSS_OP_CLIENT_ID_REF:-op://Automation/토스증권 Ope
 TOSS_OP_CLIENT_SECRET_REF="${TOSS_OP_CLIENT_SECRET_REF:-op://Automation/토스증권 Open API/Secret Key}"
 
 # Home Manager 배포 CLI는 libraries/constants.nix의
-# onePassword.tossOpenApi.opnix*FileName에서 TOSS_CLIENT_*_FILE을 env로 주입한다.
-# 아래 fallback은 repo checkout 직접 실행/테스트용 기존 동작 보존 경로다.
+# onePassword.tossOpenApi.opnix*FileName + paths.opnixRuntimeRoot에서 TOSS_CLIENT_*_FILE을
+# env로 주입한다. 아래 fallback은 repo checkout 직접 실행/doctor용 기존 동작 보존 경로이며,
+# constants SoT(opnixRuntimeRoot + filename)와의 동기화는 tests/eval-tests.nix(Test 5b-3c)가
+# 강제한다 — root/filename 변경 시 이 fallback도 함께 갱신하지 않으면 eval-tests가 실패한다.
 toss_opnix_user_name() {
   printf '%s\n' "${USER:-$(id -un)}"
 }

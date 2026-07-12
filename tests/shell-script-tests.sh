@@ -211,7 +211,11 @@ run_test "toss endpoint metadata fail-closes order-path mutations" test_toss_end
 run_test "toss endpoint metadata fails on unresolved ref" test_toss_endpoint_metadata_fails_on_unresolved_ref
 run_test "toss endpoint metadata resolves chained ref" test_toss_endpoint_metadata_resolves_chained_ref
 run_test "toss endpoint metadata fails on path item ref" test_toss_endpoint_metadata_fails_on_path_item_ref
+run_test "toss endpoint metadata fails on shortcut broken ref" test_toss_endpoint_metadata_fails_on_shortcut_broken_ref
+run_test "toss endpoint metadata account header case-insensitive" test_toss_endpoint_metadata_account_header_case_insensitive
+run_test "toss endpoint metadata fails on broken ref after account true" test_toss_endpoint_metadata_fails_on_broken_ref_after_account_true
 run_test "toss api rejects untrusted base URL" test_toss_api_rejects_untrusted_base_url
+run_test "toss api dry-run rejects untrusted base URL" test_toss_api_dry_run_rejects_untrusted_base_url
 run_test "toss api rejects base URL with path suffix" test_toss_api_rejects_base_url_with_path_suffix
 run_test "toss api rejects empty slash segment path" test_toss_api_rejects_empty_slash_segment_path
 run_test "toss api rejects percent-encoded path" test_toss_api_rejects_percent_encoded_path

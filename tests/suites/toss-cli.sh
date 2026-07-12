@@ -560,6 +560,87 @@ JSON
   [ ! -s "$output" ] || fail "generator must not write metadata when a ref is unresolved"
 }
 
+test_toss_endpoint_metadata_fails_on_shortcut_broken_ref() {
+  local sandbox input output rc
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  # raw `$ref == AccountSeq` shortcut을 제거했으므로, AccountSeq component가 없으면
+  # (fixture처럼) generation이 실패해야 한다 (shortcut이 통과시키면 안 됨).
+  cat > "$input" <<'JSON'
+{"info": {"version": "test"},
+ "paths": {"/api/v1/x": {"get": {"operationId": "x", "description": "**Rate Limits Group**: `ASSET`",
+   "parameters": [{"$ref": "#/components/parameters/AccountSeq"}]}}}}
+JSON
+
+  set +e
+  bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" != "0" ] || fail "expected generator to fail on shortcut broken ref, got rc=$rc"
+  [ ! -s "$output" ] || fail "generator must not write metadata for a broken AccountSeq shortcut ref"
+}
+
+test_toss_endpoint_metadata_account_header_case_insensitive() {
+  local sandbox input output
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  # RFC 9110 field name은 case-insensitive이므로 lowercase inline header도 requiresAccount=true.
+  cat > "$input" <<'JSON'
+{"info": {"version": "test"},
+ "paths": {"/api/v1/y": {"get": {"operationId": "y", "description": "**Rate Limits Group**: `ASSET`",
+   "parameters": [{"name": "x-tossinvest-account", "in": "header", "required": true}]}}}}
+JSON
+
+  bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output"
+  [ "$(jq -r '.endpoints[0].requiresAccount' "$output")" = "true" ] \
+    || fail "expected case-insensitive account header to yield requiresAccount=true"
+}
+
+test_toss_endpoint_metadata_fails_on_broken_ref_after_account_true() {
+  local sandbox input output rc
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  # 첫 parameter가 account(true)여도 뒤의 broken ref를 평가해야 한다 (any short-circuit 제거).
+  cat > "$input" <<'JSON'
+{"info": {"version": "test"},
+ "components": {"parameters": {"Acc": {"name": "X-Tossinvest-Account", "in": "header"}}},
+ "paths": {"/api/v1/z": {"get": {"operationId": "z", "description": "**Rate Limits Group**: `ASSET`",
+   "parameters": [
+     {"$ref": "#/components/parameters/Acc"},
+     {"$ref": "#/components/parameters/DoesNotExist"}
+   ]}}}}
+JSON
+
+  set +e
+  bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" != "0" ] || fail "expected broken ref after account=true to still fail (no short-circuit), got rc=$rc"
+  [ ! -s "$output" ] || fail "generator must not write metadata when a later ref is broken"
+}
+
+test_toss_api_dry_run_rejects_untrusted_base_url() {
+  local sandbox rc
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+
+  # dry-run은 실제 호출 구성을 검증하는 경로이므로, untrusted base의 dry-run도
+  # non-network exact-origin 검증에서 거부되어야 한다 (evil URL을 출력하면 안 됨).
+  set +e
+  HOME="$sandbox/home" \
+    TOSS_API_BASE_URL="https://evil.invalid" \
+    TOSS_NOTIFY=0 \
+    "$(_toss_cli_script "$sandbox")" api GET /api/v1/accounts --dry-run > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" != "0" ] || fail "expected untrusted base URL dry-run to be rejected"
+  assert_not_contains "$(cat "$sandbox/stdout")" "evil.invalid"
+}
+
 test_toss_api_rejects_untrusted_base_url() {
   local sandbox rc stderr
   sandbox=$(new_sandbox)

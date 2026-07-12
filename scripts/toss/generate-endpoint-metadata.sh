@@ -84,19 +84,27 @@ jq '
       $param
     end;
 
+  # 완전 해소 후 terminal이 Parameter Object(name+in 필수)인지까지 검증한다. chain이
+  # Schema 등 Parameter가 아닌 object로 끝나면 generation을 실패시킨다 (account 판정이
+  # 조용히 false가 되는 것을 막는다).
   def resolved_parameter($root; $param):
-    resolve_parameter_ref($root; $param; 16);
+    (resolve_parameter_ref($root; $param; 16)) as $r
+    | if (($r.name // null) != null and ($r.in // null) != null) then $r
+      else error("resolved parameter is not a Parameter Object (missing name/in): \($param)")
+      end;
 
-  def account_parameter($root; $param):
-    (($param["$ref"] // "") == "#/components/parameters/AccountSeq")
-    or (
-      resolved_parameter($root; $param)
-      | ((.name // "") == "X-Tossinvest-Account" and (.in // "") == "header")
-    );
+  # HTTP field name은 RFC 9110 §5.1에 따라 case-insensitive이므로 name을 소문자로 비교한다.
+  def is_account_parameter($resolved):
+    ((($resolved.name // "") | ascii_downcase) == "x-tossinvest-account")
+    and (($resolved.in // "") == "header");
 
+  # raw `$ref` 문자열 shortcut(단축 평가)과 any(...)의 short-circuit을 모두 제거한다:
+  # 전체 parameter 배열을 **먼저** 재귀 resolve·terminal shape 검증(broken/self-cycle/
+  # wrong-object이면 여기서 error)한 뒤, 그 결과로 account 여부를 계산한다.
   def requires_account($root; $path_item; $operation):
     (($path_item.parameters // []) + ($operation.parameters // []))
-    | any(account_parameter($root; .));
+    | map(resolved_parameter($root; .))
+    | any(is_account_parameter(.));
 
   def rate_limit_group($operation):
     try (

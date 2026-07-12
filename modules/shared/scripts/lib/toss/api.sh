@@ -606,6 +606,11 @@ toss_api_execute() {
   invocation_id="$(toss_new_invocation_id)"
   request_context="$(toss_api_request_context "$method" "$path" "$account_seq" "$metadata" "$body_json" "$body_provided" "$invocation_id")"
 
+  # origin 고정은 credential/network 접근과 무관한 문자열 검증이므로 dry-run 앞에서 수행한다
+  # — dry-run이 untrusted base로 실제 호출 구성(URL)을 출력하지 않도록, 요청 구성 단계에서
+  # 함께 거부한다. Bearer token 전송 전 confused-deputy 차단이자 dry-run 구성 검증이다.
+  toss_require_trusted_base_url || return 1
+
   toss_preflight_network_context "$requires_order_safeguards" "$dry_run" || return 1
 
   local url="$TOSS_API_BASE_URL$path"
@@ -613,9 +618,6 @@ toss_api_execute() {
     toss_api_handle_dry_run "$requires_order_safeguards" "$request_context"
     return 0
   fi
-
-  # Bearer access token을 전송하기 전에 origin을 공식 호스트로 고정한다 (confused-deputy 차단).
-  toss_require_trusted_base_url || return 1
 
   local tmp_dir response_file call_result http_status curl_exit rc
   local old_exit_trap old_int_trap old_term_trap
