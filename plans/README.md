@@ -64,7 +64,7 @@ reconcile 당시 PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)
 | 021 | pinning-guard `--body-file` 파일 내용 스캔 | P1 | M | — | #684 | DONE (PR #966) |
 | 022 | using-codex-exec 문서 codex-cli 0.142.5 현행화 | P1 | M | — | #861 | DONE (PR #967) |
 | 023 | worktree-path-guard sibling worktree 오탐 제거 | P2 | S | — | #935 | DONE (PR #968) |
-| 024 | Anki를 AnkiWeb 동기화로 실제 전환 (5/30 결정 이행) | P1 | S | — | #974 | TODO |
+| 024 | Anki를 AnkiWeb 동기화로 실제 전환 (5/30 결정 이행) | P1 | S | — | #974 | DONE (2026-07-12 이행 — 외부 사본 minipc·해시 일치, 서버는 2025-12-24 스냅샷임을 temp 프로필 실측 확증 후 Upload, prefs syncKey=SET 검증. 감사 "미사용" 결론 정정은 evidence 문서 서두 참조) |
 | 025 | 601장 백로그 재시작 프로토콜 (상한·정렬·2주 게이트) | P1 | S-M | 024 (soft) | #975 | TODO |
 | 026 | Anki 애드온·문서 drift·인프라 잔재 일괄 정리 | P2 | S | 024 (soft) | #976 | TODO |
 | 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | TODO |
