@@ -44,10 +44,13 @@
 
 ```bash
 python3 - <<'EOF'
-import sqlite3, pickle, shutil, os, tempfile
+import sqlite3, pickle, os, tempfile
 src = os.path.expanduser("~/Library/Application Support/Anki2/prefs21.db")
 tmp = os.path.join(tempfile.mkdtemp(), "prefs21.db")
-shutil.copy(src, tmp)  # Anki 실행 중 잠금 회피: 사본으로 읽기
+# 파일 복사(shutil.copy)는 Anki 실행 중 불일치 스냅샷 위험 — SQLite backup API로 일관 사본
+s, d = sqlite3.connect(src), sqlite3.connect(tmp)
+s.backup(d)
+s.close(); d.close()
 db = sqlite3.connect(tmp)
 for name, blob in db.execute("select cast(name as text), data from profiles"):
     if name == "_global": continue
@@ -66,7 +69,7 @@ EOF
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
 | sync 상태 확인 | 위 "현재 상태 재확인" 스크립트 | Step별 기대값 참조 |
-| 안전 사본 무결성 | `python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).testzip()" <colpkg 경로>` | 출력 없음(None), exit 0 |
+| 안전 사본 무결성 | `python3 -c "import zipfile,sys; bad=zipfile.ZipFile(sys.argv[1]).testzip(); print('OK' if bad is None else f'CORRUPT: {bad}'); sys.exit(0 if bad is None else 1)" <colpkg 경로>` | `OK` + exit 0 (손상 시 `CORRUPT: <member>` + exit 1 — `testzip()`은 예외 없이 반환값으로만 알리므로 exit status 반영 필수) |
 | Anki 실행 여부 | `pgrep -x Anki >/dev/null && echo RUNNING \|\| echo STOPPED` | 문맥별 |
 | AnkiConnect로 컬렉션 확인 | `curl -s localhost:8765 -X POST -d '{"action":"getNumCardsReviewedToday","version":6}'` | `{"result": <숫자>, "error": null}` (Anki 실행 중일 때) |
 
@@ -95,7 +98,8 @@ EOF
 1. 운영자에게 Anki 종료를 요청한다 (`pgrep -x Anki` → STOPPED 확인).
 2. 최신 자동 백업을 복사한다:
    ```bash
-   B=$(ls -t ~/Library/Application\ Support/Anki2/greenheadHQ/backups/*.colpkg | head -1)
+   B=$(ls -t ~/Library/Application\ Support/Anki2/greenheadHQ/backups/*.colpkg 2>/dev/null | head -1)
+   [ -n "$B" ] && [ -f "$B" ] || { echo "ERROR: .colpkg 자동 백업 없음 — 사본 없이 sync 진행 금지 (STOP)"; exit 1; }
    cp "$B" ~/Desktop/anki-pre-ankiweb-cutover.colpkg
    ```
    주의: 자동 `.colpkg` 백업은 **미디어 미포함**이다. 미디어 폴더도 함께 보존:
@@ -105,7 +109,7 @@ EOF
 3. 두 파일을 Mac 외 위치(iCloud Drive, 외장 디스크, 또는 `scp`로 minipc 등)로
    복사한다. 위치는 운영자가 지정.
 
-**Verify**: colpkg 무결성 명령 exit 0 + `tar -tzf …tar.gz | wc -l` → 1232 내외 +
+**Verify**: colpkg 무결성 명령 `OK` + exit 0 + `tar -tzf …tar.gz | wc -l` → 1232 내외 +
 운영자가 외부 위치 복사 완료를 확인.
 
 ### Step 2 (운영자): AnkiWeb 계정 확인/생성
@@ -136,6 +140,11 @@ EOF
 
 **Verify** (운영자): sync 완료 후 ankiweb.net 웹에서 덱 6개 이상과 카드 수가
 로컬과 일치하게 보임 (예: "[책] 모던 자바스크립트 Deep Dive" 505장 계열).
+**미디어도 완료 기준에 포함**: 데스크톱 sync 표시가 idle(미디어 전송 중 아님)로
+돌아온 뒤, ankiweb.net에서 이미지 포함 카드 1장 이상을 열어 이미지가 렌더링되는지
+확인. 미디어 1,232개의 개수 완전 대조는 AnkiWeb UI가 제공하지 않으므로,
+데스크톱 `도구 > 미디어 확인`의 누락 보고가 이행 전과 동일한지로 갈음하고
+결과를 기록한다.
 
 ### Step 4 (에이전트): 이행 상태 최종 검증
 
@@ -161,7 +170,10 @@ Step 4 prefs 상태 3필드 일치.
 - [ ] 외부 위치에 `anki-pre-ankiweb-cutover.colpkg` + 미디어 tar 사본 존재 (운영자 확인)
 - [ ] prefs 재확인 스크립트 출력: `syncKey=SET syncUser=SET customSyncUrl='' syncMedia=True`
 - [ ] ankiweb.net 웹에서 로컬과 동일한 덱 구조·카드 수 확인 (운영자 보고)
+- [ ] 미디어 sync 완료: 데스크톱 sync idle + 웹에서 이미지 포함 카드 렌더링 확인 (운영자 보고)
 - [ ] syncKey/계정 비밀번호 등 자격증명 값이 어떤 산출물에도 기록되지 않음
+- [ ] epic #973에 후속 코멘트 기록: "독립 오프사이트 백업은 여전히 부재 — Step 1의
+      외부 사본은 일회성이며 지속 백업이 아님. 필요성 재판단 시 plan 020 스택 재사용"
 - [ ] `plans/README.md` 024 행 status 갱신
 
 ## STOP conditions

@@ -130,9 +130,11 @@ prefs21.db의 옛 경로(`/Users/green/*`)·`last_loaded_profile_name='test'`는
    ```markdown
    ## 운영 전제 (2026-07-05 기준)
 
-   - 데스크톱 Anki 26.5, 프로필 `greenheadHQ` 단일. 동기화는 AnkiWeb
-     (plans/024 이행 — 이행 전이라면 무동기화 상태이니 주의).
-   - 백업: Anki 로컬 자동 .colpkg + AnkiWeb 서버본. 독립 오프사이트 백업 없음.
+   - 데스크톱 Anki 26.5, 프로필 `greenheadHQ` 단일.
+   - 동기화: plans/024 이행 **전** = 무동기화(로컬 단독) / 이행·검증 **후** =
+     AnkiWeb. 현재 어느 쪽인지는 `plans/README.md`의 024 status 행이 판정 기준.
+   - 백업: Anki 로컬 자동 .colpkg (같은 디스크). AnkiWeb 서버본은 024 완료·검증
+     후에만 존재. 독립 오프사이트 백업은 시점 무관 **없음**.
    - 복습 운영 규칙은 `plans/025-anki-restart-protocol.md` Step 2가 SSOT.
    ```
 
@@ -168,13 +170,17 @@ Anki 브라우저에서 검색: `deck:"🚧 일시중단::[책] 모던 리액트
 ### Step 5 (에이전트, Part C): minipc 심링크 제거
 
 ```bash
-ssh minipc 'ls -la /var/lib/anki-sync-server; readlink /var/lib/anki-sync-server'
+ssh minipc 'test -L /var/lib/anki-sync-server && readlink /var/lib/anki-sync-server'
+# 기대: private/anki-sync-server — 심링크가 아니거나 target이 다르면 STOP
+ssh minipc 'sudo find /var/lib/private/anki-sync-server -mindepth 1 -print -quit 2>/dev/null | grep -q . && echo NOT-EMPTY || echo EMPTY'
 ```
 
-출력이 Current state와 일치(빈 심링크)하면:
+`EMPTY`일 때만 삭제한다 (`NOT-EMPTY`면 STOP — 감사 시점 이후 데이터가 생긴
+것이므로 내용 보고 먼저). 삭제는 `rm -rf`가 아니라 `rmdir`로 — 비어 있지
+않으면 실패하는 것 자체가 마지막 안전장치다:
 
 ```bash
-ssh minipc 'sudo rm /var/lib/anki-sync-server && sudo rm -rf /var/lib/private/anki-sync-server'
+ssh minipc 'sudo rm /var/lib/anki-sync-server && sudo rmdir /var/lib/private/anki-sync-server'
 ```
 
 (sudo 비밀번호가 필요해 비대화형으로 실패하면 운영자에게 명령을 전달하고 실행을

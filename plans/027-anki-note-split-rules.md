@@ -115,9 +115,17 @@ plan 025 재시작 후 첫 깃발이 쌓인 시점에 (보통 1~2주 뒤):
    운영자 승인 → 반영.
 3. 처리 결과(원본 nid, 새 노트 수, 승인/반려 내역)를 보고.
 
-**Verify**: `findNotes "tag:split-from-original"` → 새 노트 nid ≥ 1개.
-원본 노트의 카드가 suspended 상태 (`findCards "nid:<원본nid>"` 후
-`cardsInfo`에서 queue=-1).
+**Verify** (이번 배치 기준 — 전역 `tag:split-from-original` 검색은 과거 배치가
+하나만 있어도 통과하므로 판정 기준으로 쓰지 않는다):
+
+1. `addNotes`가 반환한 새 nid 목록을 기록하고, 각 새 nid가
+   `findNotes "nid:<새nid>"`로 조회됨을 확인.
+2. 각 원본 nid에 대해 두 가지 모두 확인 — 재실행/부분 실패를 이 두 검사가 잡는다:
+   - `findCards "nid:<원본nid>"` 후 `cardsInfo`에서 queue=-1 (suspend됨)
+   - `findNotes "nid:<원본nid> flag:1"` → 빈 배열 (깃발 해제됨)
+3. New cards/day를 임시 상향(0→5)했다면 시범 새 카드 소화 직후 **0으로 원복**하고
+   `getDeckConfig`로 `new.perDay == 0` 확인 (plan 025의 백로그 소진 전 신규
+   유입 금지 유지).
 
 ### Step 3 (운영자): 절차 확정
 
@@ -135,7 +143,8 @@ plan 025 재시작 후 첫 깃발이 쌓인 시점에 (보통 1~2주 뒤):
 
 - [ ] `anki-study/CARD_MAINTENANCE.md` 존재, Step 1의 규칙 1~5 전부 포함
 - [ ] `bash tests/run-all-tests.sh` FAILED 0
-- [ ] 시범 배치 1회 완료: `tag:split-from-original` 노트 ≥ 1, 해당 원본 suspended·깃발 해제
+- [ ] 시범 배치 1회 완료: 이번 배치의 새 nid 존재 + 각 원본 suspended(queue=-1) + 각 원본 `flag:1` 검색 결과 0건
+- [ ] New cards/day 임시 상향분 0 원복 (`getDeckConfig`로 확인; 상향하지 않았다면 해당 없음)
 - [ ] 원본 노트 삭제 0건 (절차 전체에서)
 - [ ] 운영자의 절차 확정 답변 기록
 - [ ] `plans/README.md` 027 행 갱신
@@ -159,4 +168,7 @@ plan 025 재시작 후 첫 깃발이 쌓인 시점에 (보통 1~2주 뒤):
   plan 026에서 이 애드온은 "건드리지 않음" 목록에 있음을 유지할 것.
 - FSRS 관점: 분할된 새 노트는 new 카드로 들어간다 — plan 025의 New cards/day
   상한(백로그 소진 전 0)에 걸리므로, 시범 배치 시기에 상한이 0이면 새 카드
-  소화를 위해 일시적으로 5로 올리는 것을 운영자에게 안내.
+  소화를 위해 일시적으로 5로 올리는 것을 운영자에게 안내. **상향은 반드시
+  시범 새 카드 소화 직후 0으로 원복하고 `getDeckConfig`로 확인한다** — 원복
+  없이 방치하면 plan 025가 금지한 백로그 소진 전 신규 유입이 계속된다
+  (Step 2 Verify 3항이 게이트).

@@ -48,10 +48,21 @@
 **백로그 재확인** (에이전트 — Anki 실행 중일 때, 사본 기반 대안은 evidence 문서 참조):
 
 ```bash
-for q in '"deck:*" is:due -is:suspended' '"deck:*" is:new -is:suspended -"deck:🚧 일시중단::*"'; do
-  curl -s localhost:8765 -X POST -d "{\"action\":\"findCards\",\"version\":6,\"params\":{\"query\":\"$q\"}}" \
-    | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d['result']) if d['error'] is None else f'ERROR: {d[\"error\"]}')"
-done
+# 검색어에 큰따옴표가 포함되므로 shell 보간으로 JSON을 조립하면 parse error가 난다
+# — json.dumps로 payload를 직렬화한다.
+python3 - <<'EOF'
+import json, urllib.request
+def count(query):
+    payload = json.dumps({"action": "findCards", "version": 6,
+                          "params": {"query": query}}).encode()
+    r = json.load(urllib.request.urlopen(
+        urllib.request.Request("http://localhost:8765", payload)))
+    if r["error"] is not None:
+        raise SystemExit(f"ERROR: {r['error']}")
+    return len(r["result"])
+print("연체 review:", count('"deck:*" is:due -is:suspended'))
+print("대기 new:", count('"deck:*" is:new -is:suspended -"deck:🚧 일시중단::*"'))
+EOF
 ```
 
 기대(2026-07-05 기준): 첫 줄 ~601, 둘째 줄 ~64. AnkiConnect 연결 실패 시
@@ -91,9 +102,15 @@ Anki 데스크톱 → 아무 활성 덱의 톱니바퀴 → 옵션("기본" pres
    Maximum reviews/day = **40** (601장 ÷ 40 ≈ 15일 + 신규 due 합류분을
    고려하면 약 3~4주에 백로그 소진. 하루 40장 × 카드당 평균 ~30초면 20분 내외
    — 비대 노트가 많아 실제는 더 걸릴 수 있음을 감안한 보수값).
-2. **Display Order > Review sort order** = **Descending retrievability**
-   (기억이 아직 살아 있는 카드부터 구제 — FSRS 백로그 소화의 권장 정렬.
-   완전히 잊은 카드는 어차피 relearn이므로 뒤로 미뤄도 손실이 없다).
+2. **Display Order > Review sort order** = **Descending retrievability**.
+   **주의 — Anki 공식 문서의 대규모 백로그 권장은 반대 방향이다**
+   (Ascending retrievability = relative overdueness의 FSRS 대응,
+   <https://docs.ankiweb.net/deck-options.html#review-sort-order>).
+   본 프로토콜은 의도적으로 공식 권장과 다른 trade-off를 택한다:
+   중앙값 205일 백로그에서는 회상확률이 낮은 카드의 망각이 이미 고정된 반면,
+   아직 기억나는 카드는 미룰수록 추가로 잊는다 — 잔존 기억 구제와 초반 성공
+   경험(재진입 장벽 최소화)을 우선한다. 재개 후 세션 Again률이 지속적으로
+   높으면(체감 절반 이상) Ascending 전환을 재검토한다.
 3. 나머지 설정(learning steps 1m/10m, FSRS 파라미터)은 그대로 둔다 —
    2026-07-05 최적화본이다.
 
@@ -129,8 +146,22 @@ Anki 데스크톱 → 아무 활성 덱의 톱니바퀴 → 옵션("기본" pres
 2주 뒤 아무 세션에서나 이 plan을 다시 열어:
 
 ```bash
-curl -s localhost:8765 -X POST -d '{"action":"getNumCardsReviewedByDay","version":6}' \
-  | python3 -c "import json,sys; d=json.load(sys.stdin)['result']; recent=d[:14]; print(f'{sum(1 for _,n in recent if n>0)}/14일 학습, 총 {sum(n for _,n in recent)}장')"
+# getNumCardsReviewedByDay는 리뷰가 있었던 날짜만 반환한다(GROUP BY day) —
+# 응답 앞 14행은 "최근 14일"이 아니라 "최근 학습일 14개"이므로,
+# 달력 기준 최근 14일 창을 만들어 누락일을 0으로 채워 판정한다.
+python3 - <<'EOF'
+import json, urllib.request, datetime
+payload = json.dumps({"action": "getNumCardsReviewedByDay", "version": 6}).encode()
+r = json.load(urllib.request.urlopen(
+    urllib.request.Request("http://localhost:8765", payload)))
+if r["error"] is not None:
+    raise SystemExit(f"ERROR: {r['error']}")
+by_day = dict(r["result"])
+today = datetime.date.today()
+window = [(today - datetime.timedelta(days=i)).isoformat() for i in range(14)]
+studied = sum(1 for day in window if by_day.get(day, 0) > 0)
+print(f"{studied}/14일 학습, 총 {sum(by_day.get(day, 0) for day in window)}장")
+EOF
 ```
 
 - 10/14일 이상 → Step 2 규칙 6의 재검토를 운영자에게 제안. 이 plan DONE.
