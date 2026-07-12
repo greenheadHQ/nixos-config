@@ -52,13 +52,19 @@ toss_ledger_sanitized_path() {
   fi
 }
 
-toss_ledger_redact_json() {
-  jq -c '
+# 민감값 raw-string redaction jq def (SoT). ledger.sh의 object redaction과 api.sh의
+# non-JSON 응답 redaction(toss_ledger_response_body_json)이 모두 이 단일 정의를 재사용한다
+# — 두 곳에 복제하면 한쪽 개선이 반영 안 돼 토큰 노출 drift가 생긴다(DA finding). toss.sh
+# 로더가 ledger.sh를 api.sh보다 먼저 source하므로 api.sh에서 이 변수를 참조할 수 있다.
+TOSS_RAW_REDACT_JQ_DEF='
     def redact_raw_string:
       gsub("(?<prefix>authorization:[[:space:]]*bearer[[:space:]]+)[^[:space:]<>\"=,]+"; "\(.prefix)<redacted>"; "i")
       | gsub("(?<prefix>authorization[[:space:]]*=[[:space:]]*\"?bearer[[:space:]]+)[^\"&<>,[:space:]]+"; "\(.prefix)<redacted>"; "i")
       | gsub("(?<prefix>\"?(access[_-]?token|client[_-]?secret|secret|password)\"?[[:space:]]*[:=][[:space:]]*\"?)[^\"&<>,[:space:]]+"; "\(.prefix)<redacted>"; "i");
+'
 
+toss_ledger_redact_json() {
+  jq -c "$TOSS_RAW_REDACT_JQ_DEF"'
     def redact:
       if type == "object" then
         with_entries(

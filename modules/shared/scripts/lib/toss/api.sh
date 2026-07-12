@@ -125,13 +125,11 @@ toss_ledger_response_body_json() {
   max_chars="$(toss_ledger_raw_response_max_chars)"
 
   # 응답 원문이 jq argv(ps 노출면)에 오르지 않도록 stdin으로 전달한다.
+  # raw-string redaction 규칙은 ledger.sh의 TOSS_RAW_REDACT_JQ_DEF(SoT)를 재사용한다
+  # (예전엔 여기에 복제돼 authorization `=` config 형태 gsub이 누락된 drift가 있었다).
   printf '%s' "$response_body" | jq -cRs \
-    --argjson max "$max_chars" '
-      def redact_raw:
-        gsub("(?<prefix>authorization:[[:space:]]*bearer[[:space:]]+)[^[:space:]<>\"=,]+"; "\(.prefix)<redacted>"; "i")
-        | gsub("(?<prefix>\"?(access[_-]?token|client[_-]?secret|secret|password)\"?[[:space:]]*[:=][[:space:]]*\"?)[^\"&<>,[:space:]]+"; "\(.prefix)<redacted>"; "i");
-
-      (. | redact_raw) as $redacted
+    --argjson max "$max_chars" "$TOSS_RAW_REDACT_JQ_DEF"'
+      (. | redact_raw_string) as $redacted
       | {
           raw: ($redacted[:$max]),
           parseableJson: false,
