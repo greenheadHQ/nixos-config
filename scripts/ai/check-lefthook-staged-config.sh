@@ -141,6 +141,7 @@ pre-commit:
         - "tests/lib/**"
         - "scripts/ai/commit-msg-pinning.sh"
         - "scripts/ai/lib/tomlkit-bootstrap.sh"
+        - "scripts/ai/test-runtime-profile.sh"
         - "modules/shared/scripts/codex-exec-supervised.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/test-codex-hook-fixtures.sh --no-live
     skill-noise-check:
@@ -151,6 +152,47 @@ EOF
 
 if ! diff -u "$expected_precommit" "$normalized_precommit" >&2; then
   fail "unsupported pre-commit Lefthook command shape; update guard allowlist with hook changes"
+fi
+
+normalized_prepush="$tmp_dir/pre-push.normalized"
+awk '
+  /^pre-push:/ { in_block = 1 }
+  in_block && /^[^[:space:]#][^:]*:/ && $0 !~ /^pre-push:/ { exit }
+  in_block {
+    if ($0 ~ /^[[:space:]]*$/) next
+    if ($0 ~ /^[[:space:]]*#/) next
+    print
+  }
+' "$index_file" > "$normalized_prepush"
+
+expected_prepush="$tmp_dir/pre-push.expected"
+# P2의 push_files glob은 required CI와 함께 로컬 검증 범위를 결정하는 안전 경계다. pre-commit
+# expected와 마찬가지로 주석/빈 줄을 제외한 staged pre-push 블록 전체를 exact match한다.
+cat > "$expected_prepush" <<'EOF'
+pre-push:
+  parallel: false
+  commands:
+    analyzing-da-sessions-tests:
+      glob:
+        - "modules/shared/programs/claude/files/skills/analyzing-da-sessions/**"
+        - "modules/shared/programs/claude/files/skills/run-da/**"
+        - "tests/run-analyzing-da-sessions-tests.sh"
+      run: bash ./tests/run-analyzing-da-sessions-tests.sh
+    flake-check:
+      glob:
+        - "*.nix"
+        - "flake.lock"
+      run: nix flake check --no-build --all-systems
+    statusline-bats:
+      glob:
+        - "modules/shared/programs/claude/files/scripts/statusline.sh"
+        - "modules/shared/programs/claude/files/scripts/tests/statusline.bats"
+        - "scripts/ai/test-runtime-profile.sh"
+      run: bash ./scripts/ai/test-runtime-profile.sh run "$PWD" -- env TERM="${TERM:-xterm-256color}" bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
+EOF
+
+if ! diff -u "$expected_prepush" "$normalized_prepush" >&2; then
+  fail "unsupported pre-push Lefthook command shape; update guard allowlist with hook changes"
 fi
 
 allowed_top_level='^(pre-commit|commit-msg|pre-push):$'
@@ -169,6 +211,7 @@ repo_scripts=(
   "tests/run-eval-tests.sh"
   "tests/test-codex-hook-fixtures.sh"
   "scripts/ai/check-skill-noise.sh"
+  "scripts/ai/test-runtime-profile.sh"
   # lefthook-guard-self-check가 검사하는 `--no-auto-install` 주입은 이 installer가 수행한다.
   # hook 설정과 allowlist만 staged되고 installer 변경이 빠지면 그 계약이 조용히 깨지므로,
   # PR #750의 helper script drift 경계를 installer까지 넓힌다.

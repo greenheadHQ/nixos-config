@@ -238,19 +238,19 @@ test_upload_immich_missing_credential_branch_is_quiet_or_skipped() (
   )
 
   if [ "$(uname -s)" != "Darwin" ]; then
-    echo "==> upload-immich missing credentials: SKIPPED (macOS absolute command contract; runner=$(uname -s))" >&2
+    echo "N/A: upload-immich missing credentials uses a macOS absolute command contract (runner=$(uname -s))" >&2
     return 0
   fi
 
   for path in "${required[@]}"; do
     if [ ! -x "$path" ]; then
-      echo "==> upload-immich missing credentials: SKIPPED (missing $path before credential branch)" >&2
+      echo "SKIP: upload-immich missing credentials requires $path before credential branch" >&2
       return 0
     fi
   done
 
   if [ -e /tmp/upload-immich.lock.d ] || [ -e /tmp/upload-immich.lock ]; then
-    echo "==> upload-immich missing credentials: SKIPPED (real lock path already exists)" >&2
+    echo "SKIP: upload-immich missing credentials cannot run while the real lock path exists" >&2
     return 0
   fi
 

@@ -86,7 +86,7 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 
 [`lefthook.yml`](./lefthook.yml)로 pre-commit/commit-msg/pre-push 훅 관리.
 
-**통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도, 이 명령으로 pre-push 게이트와 테스트 드라이버를 재검증할 수 있다. 단 pre-commit의 staged 스냅샷 정책(`gitleaks` · `nixfmt` · `shellcheck` · skill-noise)은 staged index 기준이라 working-tree 러너 범위 밖이며 커밋 시점 게이트로 별도 적용된다.
+**통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · skill-doc-sync · analyzing-da-sessions-tests · da-weekly-report-tests · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도 전체 테스트를 재검증한다. PR에서는 main branch protection의 required `check` job이 devShell 안에서 이 명령을 실행하며 canonical `SKIP:` marker도 실패로 처리한다. 단독 사용 저장소인 main의 merge gate는 최신 base 재검증(`strict`)이 적용된 required `check`이며 별도 리뷰 승인을 요구하지 않는다.
 
 **pre-commit** (병렬):
 - `lefthook-guard-self-check` — 현재 worktree에서 Git이 해석한 hooks 경로(`git rev-parse --git-path hooks`)를 기준으로, (1) `pre-commit`의 staged-config guard marker, (2) 세 hook(`pre-commit`/`commit-msg`/`pre-push`)의 설치 여부와 lefthook 호출부의 `--no-auto-install` 플래그가 사라지면 commit fail-fast. lefthook의 암묵 auto-sync(`lefthook.yml` 변경 후 첫 실행)와 인접 worktree의 `lefthook install` 덮어쓰기, 두 회귀 경로를 함께 막는다
@@ -118,10 +118,11 @@ pre-commit 정책:
 - Codex config ownership: `hooks.PreToolUse` is now template-owned like `UserPromptSubmit`, `Stop`, and `PostToolUse`; add user hooks under events not declared by the template unless `sync-codex-config.py` is changed.
 
 **pre-push**:
-- `shell-script-tests` — 배포 레이아웃 fixture 테스트. tomlkit bootstrap wrapper [`tests/run-shell-script-tests.sh`](./tests/run-shell-script-tests.sh)가 [`tests/shell-script-tests.sh`](./tests/shell-script-tests.sh)를 호출.
-- `codex-hook-fixtures` — Codex 0.124+ stable hook 회귀 차단 deterministic fixture (`--no-live`) ([`tests/test-codex-hook-fixtures.sh`](./tests/test-codex-hook-fixtures.sh))
-- `flake-check` — `nix flake check --no-build --all-systems`
-- `statusline-bats` — statusline 폭 fallback / SSH 렌더링 Bats 테스트. 비대화형 hook은 Bats/tput용 기본 `TERM`을 주입한다.
+- devShell 진입 시 [`scripts/ai/test-runtime-profile.sh`](./scripts/ai/test-runtime-profile.sh)가 worktree별 `prePushRuntime` GC-root를 content stamp 기반으로 사전 빌드한다. hook은 이 PATH를 공유하고 profile 부재/stale 시 common-dir lock 아래에서 동일 flake package를 검증·준비한 뒤에만 실행한다.
+- `analyzing-da-sessions-tests` — analyzing-da-sessions/run-da 계약 변경에만 pytest fixture를 실행한다.
+- `flake-check` — `.nix`/`flake.lock` push에만 `nix flake check --no-build --all-systems`를 실행한다.
+- `statusline-bats` — statusline 소스/테스트 push에만 Bats fixture를 실행하고 비대화형 hook에 기본 `TERM`을 주입한다.
+- 전체 shell fixture와 Codex hook fixture는 모든 PR의 required CI에서 검증하고, Codex fixture는 관련 staged 변경의 pre-commit에서도 실행한다. 삭제 파일 등 Lefthook `push_files` 필터의 사각지대도 required CI가 보완한다. 수동 push 전 전체 로컬 검증이 필요하면 `bash tests/run-all-tests.sh`를 실행한다.
 
 `ai-skills-consistency` 훅 동작 ([`scripts/ai/warn-skill-consistency.sh`](./scripts/ai/warn-skill-consistency.sh)):
 - **일반 커밋**: 불일치 감지 시 경고만 출력 (차단 없음)

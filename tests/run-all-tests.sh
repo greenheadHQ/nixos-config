@@ -2,12 +2,12 @@
 # tests/run-all-tests.sh — 통합 검증 진입점
 #
 # 저장소의 모든 테스트 드라이버 + flake 평가 게이트를 한 번에 순차 실행한다. push 전(로컬
-# 훅 우회 여부와 무관하게 재검증)과 신규 머신 온보딩 시 실행을 권장한다. 향후 원격 CI도 이
+# 훅 우회 여부와 무관하게 재검증)과 신규 머신 온보딩 시 실행을 권장한다. required CI도 이
 # 단일 진입점을 재사용해 중복 정의를 피한다.
 #
-# 커버리지 경계: 이 진입점은 pre-push 게이트(shell-script-tests · codex-hook-fixtures ·
-#   analyzing-da-sessions-tests · flake-check · statusline-bats) + da-weekly-report-tests
-#   + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
+# 커버리지 경계: required CI의 전체 회귀(shell-script-tests · codex-hook-fixtures 포함)와
+#   pre-push의 3개 조건부 게이트(analyzing-da-sessions-tests · flake-check · statusline-bats),
+#   da-weekly-report-tests + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
 #   드라이버(codex-exec-supervised · precommit-staged-snapshot)를 포함한다. 벤치마크
 #   tests/bench-shell-startup.sh는 회귀 게이트가 아니라 측정 도구이므로(자체 헤더에 명시) 제외한다.
 #   pre-commit의 staged 스냅샷 정책(gitleaks · nixfmt · shellcheck · skill-noise)은 staged index
@@ -16,9 +16,10 @@
 # 실패 정책: set -e 미사용 — 한 드라이버가 실패해도 나머지를 계속 실행하여 전체 그림을
 #   확보한 뒤, 끝에서 통과/SKIP/실패를 구분 요약하고 하나라도 실패하면 non-zero로 종료한다.
 #
-# 런타임 의존성: 드라이버마다 다르다(일부는 `nix shell` wrap 필요). 각 호출 방식은
-#   lefthook.yml의 해당 항목과 동일하게 유지한다(이 파일이 그 단일 진입점). 호출 방식을
-#   바꿀 때는 lefthook.yml과 함께 갱신한다.
+# 런타임 의존성: devShell이 사전 빌드한 prePushRuntime profile을 shell/pytest/Bats 드라이버가
+#   공유하고, profile이 없으면 common-dir lock 아래에서 같은 flake package를 검증·준비한다.
+#   pre-push에 남은 pytest/Bats 호출은 lefthook.yml과 동일하게 유지하고, shell 전체 회귀는
+#   required CI가 담당한다.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,8 +31,9 @@ SKIPPED=()
 FAILED=()
 
 # 드라이버를 실행하고 통과/SKIP/실패로 분류한다. SKIP은 드라이버가 환경/도구 미가용 시
-# stdout/stderr에 "SKIP:" 마커를 출력하고 exit 0으로 종료하는 경우(예: precommit-staged-snapshot)
-# 를 가리키며, 미실행을 통과로 오인하지 않도록 요약에서 별도로 집계한다.
+# stdout/stderr에 canonical "SKIP:" 마커를 출력하고 exit 0으로 종료하는 경우(예:
+# precommit-staged-snapshot)를 가리킨다. nested parallel fixture도 이 marker를 상위 로그로
+# 전파하며, 플랫폼상 적용 불가능한 테스트는 "N/A:"로 구분해 미실행을 PASS로 오인하지 않는다.
 run_driver() {
   local name="$1"
   shift
@@ -39,7 +41,7 @@ run_driver() {
   log="$(mktemp "${TMPDIR:-/tmp}/run-all-tests.XXXXXX")"
   printf '\n━━━ %s ━━━\n' "$name"
   if "$@" 2>&1 | tee "$log"; then
-    if grep -q 'SKIP:' "$log"; then
+    if grep -q '^SKIP:' "$log"; then
       printf '⊘ %s (skipped — 환경/도구 미가용)\n' "$name"
       SKIPPED+=("$name")
     else
@@ -56,25 +58,18 @@ run_driver() {
 # 1) eval-tests — Nix 평가(E2E 설정 검증, 선택적 lazy 평가). wrap 불필요.
 run_driver "eval-tests" bash tests/run-eval-tests.sh
 
-# 2) shell-script-tests — 배포 레이아웃 fixture. runner가 repo-pinned pythonWithTomlkit으로
-#    self-wrap하지만, 명시적으로 nix shell wrap + GNU coreutils/findutils(karakeep/backup fixture의
-#    `touch -d`/`find -printf` 의존, #1009) + _TOMLKIT_BOOTSTRAP_READY=1(중첩 nix shell 방지)로
-#    실행한다(lefthook pre-push와 동일). `--inputs-from .`로 nixpkgs#를 flake.lock에 pin한다.
-#    claude-rc(#1052)가 require_cmd lsof를 도입했고 lsof는 NixOS 시스템 프로파일/CI PATH에
-#    항상 있지 않으므로 nixpkgs#lsof도 명시 제공한다(#1009와 동일 패턴). lefthook auto-sync
-#    end-to-end 테스트는 stub이 아닌 실제 lefthook을 요구하므로 nixpkgs#lefthook도 얹는다.
+# 2) shell-script-tests — required CI/수동 전체 회귀. prePushRuntime이 tomlkit + GNU
+#    coreutils/findutils(#1009) + lsof(#1052) + 실제 lefthook을 함께 제공한다. runner 내부
+#    bootstrap은 READY guard로 중첩 wrap을 피한다.
 run_driver "shell-script-tests" \
-  nix shell --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof nixpkgs#lefthook --command env _TOMLKIT_BOOTSTRAP_READY=1 \
-  bash tests/run-shell-script-tests.sh
+  bash scripts/ai/test-runtime-profile.sh run "$REPO_ROOT" -- bash tests/run-shell-script-tests.sh
 
 # 3) codex-hook-fixtures — Codex stable hook 회귀 차단 결정적 fixture. --no-live, Python stdlib only.
 run_driver "codex-hook-fixtures" bash tests/test-codex-hook-fixtures.sh --no-live
 
 # 4) codex-exec-supervised — codex-exec-supervised wrapper의 env validation 경계(타임아웃 cap/양수/
-#    non-numeric) 단위 검증. invalid-env 케이스는 codex/setsid/timeout 부재 환경에서도 실행되어
-#    핵심 거부 경계를 항상 검증한다. valid-env 케이스는 deps 부재 시 "WARN" + exit 0으로
-#    capability-skip된다("SKIP:" 마커가 아니므로 SKIP 집계엔 잡히지 않고 PASS로 표기되나, 항상
-#    실행되는 거부 경계 검증이 핵심이므로 PASS 집계는 유효).
+#    non-numeric) 단위 검증. hermetic dependency stub을 사용해 valid-env 3건과 invalid-env 4건을
+#    host의 codex/setsid/timeout 설치 여부와 무관하게 모두 실행한다.
 run_driver "codex-exec-supervised" bash tests/test-codex-exec-supervised.sh
 
 # 5) skill-doc-sync — run-da 문서군의 manual sync contract 4쌍을 검증한다.
@@ -92,9 +87,10 @@ run_driver "da-weekly-report-tests" bash tests/run-da-weekly-report-tests.sh
 #    않는 darwin/nixos configuration toplevel 평가 오류까지 검출하므로 커버리지가 고유하다.
 run_driver "flake-check" nix flake check --no-build --all-systems
 
-# 9) statusline-bats — statusline Bats 테스트. nixpkgs#bats를 nix shell로 제공하고 TERM을 주입한다.
+# 9) statusline-bats — prePushRuntime의 Bats를 사용하고 비대화형 환경에 TERM을 주입한다.
 run_driver "statusline-bats" \
-  env TERM="${TERM:-xterm-256color}" nix shell --inputs-from . nixpkgs#bats --command \
+  bash scripts/ai/test-runtime-profile.sh run "$REPO_ROOT" -- \
+  env TERM="${TERM:-xterm-256color}" \
   bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
 
 # 10) precommit-staged-snapshot — 어느 훅에도 연결되지 않은 수동 전용 드라이버를 통합에 포함한다.
@@ -107,6 +103,10 @@ printf '\n━━━ 요약 ━━━\n'
 printf '통과 %d · SKIP %d · 실패 %d\n' "${#PASSED[@]}" "${#SKIPPED[@]}" "${#FAILED[@]}"
 if (( ${#SKIPPED[@]} )); then
   printf '⊘ SKIP(미실행): %s\n' "${SKIPPED[*]}"
+fi
+if [ -n "${CI:-}" ] && (( ${#SKIPPED[@]} )); then
+  printf '✗ CI에서는 검증 SKIP을 허용하지 않음: %s\n' "${SKIPPED[*]}"
+  exit 1
 fi
 if (( ${#FAILED[@]} )); then
   printf '✗ 실패: %s\n' "${FAILED[*]}"
