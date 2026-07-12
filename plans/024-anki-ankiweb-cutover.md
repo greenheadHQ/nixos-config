@@ -46,18 +46,21 @@
 python3 - <<'EOF'
 import sqlite3, pickle, os, tempfile
 src = os.path.expanduser("~/Library/Application Support/Anki2/prefs21.db")
-tmp = os.path.join(tempfile.mkdtemp(), "prefs21.db")
-# 파일 복사(shutil.copy)는 Anki 실행 중 불일치 스냅샷 위험 — SQLite backup API로 일관 사본
-s, d = sqlite3.connect(src), sqlite3.connect(tmp)
-s.backup(d)
-s.close(); d.close()
-db = sqlite3.connect(tmp)
-for name, blob in db.execute("select cast(name as text), data from profiles"):
-    if name == "_global": continue
-    d = pickle.loads(blob)
-    print(f"profile={name} syncKey={'SET' if d.get('syncKey') else 'NONE'} "
-          f"syncUser={'SET' if d.get('syncUser') else 'NONE'} "
-          f"customSyncUrl={d.get('customSyncUrl')!r} syncMedia={d.get('syncMedia')}")
+# TemporaryDirectory 컨텍스트: syncKey가 담긴 사본이 블록 종료 시 반드시 삭제된다.
+# 파일 복사(shutil.copy)는 Anki 실행 중 불일치 스냅샷 위험 — SQLite backup API로 일관 사본.
+with tempfile.TemporaryDirectory() as td:
+    tmp = os.path.join(td, "prefs21.db")
+    s, d = sqlite3.connect(src), sqlite3.connect(tmp)
+    s.backup(d)
+    s.close(); d.close()
+    db = sqlite3.connect(tmp)
+    for name, blob in db.execute("select cast(name as text), data from profiles"):
+        if name == "_global": continue
+        p = pickle.loads(blob)
+        print(f"profile={name} syncKey={'SET' if p.get('syncKey') else 'NONE'} "
+              f"syncUser={'SET' if p.get('syncUser') else 'NONE'} "
+              f"customSyncUrl={p.get('customSyncUrl')!r} syncMedia={p.get('syncMedia')}")
+    db.close()
 EOF
 ```
 
@@ -98,19 +101,26 @@ EOF
 1. 운영자에게 Anki 종료를 요청한다 (`pgrep -x Anki` → STOPPED 확인).
 2. 최신 자동 백업을 복사한다:
    ```bash
+   set -euo pipefail   # 어느 단계든 실패하면 즉시 중단 (실패-폐쇄)
    B=$(ls -t ~/Library/Application\ Support/Anki2/greenheadHQ/backups/*.colpkg 2>/dev/null | head -1)
    [ -n "$B" ] && [ -f "$B" ] || { echo "ERROR: .colpkg 자동 백업 없음 — 사본 없이 sync 진행 금지 (STOP)"; exit 1; }
    cp "$B" ~/Desktop/anki-pre-ankiweb-cutover.colpkg
    ```
-   주의: 자동 `.colpkg` 백업은 **미디어 미포함**이다. 미디어 폴더도 함께 보존:
+   주의: 자동 `.colpkg` 백업은 **미디어 미포함**이다. 미디어 폴더도 함께 보존
+   (같은 셸 세션에서 이어서 — `set -euo pipefail` 유지):
    ```bash
    tar -czf ~/Desktop/anki-media-pre-cutover.tar.gz -C ~/Library/Application\ Support/Anki2/greenheadHQ collection.media
+   tar -tzf ~/Desktop/anki-media-pre-cutover.tar.gz >/dev/null   # 아카이브 자체 무결성 (실패 시 즉시 중단)
+   shasum -a 256 ~/Desktop/anki-pre-ankiweb-cutover.colpkg ~/Desktop/anki-media-pre-cutover.tar.gz
    ```
 3. 두 파일을 Mac 외 위치(iCloud Drive, 외장 디스크, 또는 `scp`로 minipc 등)로
-   복사한다. 위치는 운영자가 지정.
+   복사한다. 위치는 운영자가 지정. **복사 후 외부 위치 파일의 크기와 SHA-256이
+   위 `shasum` 출력과 일치함을 운영자가 확인·기록한다** (불일치 = 손상 사본 —
+   sync 진행 금지).
 
-**Verify**: colpkg 무결성 명령 `OK` + exit 0 + `tar -tzf …tar.gz | wc -l` → 1232 내외 +
-운영자가 외부 위치 복사 완료를 확인.
+**Verify**: colpkg 무결성 명령 `OK` + exit 0 + (`set -euo pipefail` 상태에서)
+`tar -tzf …tar.gz | wc -l` → 1232 내외 + 외부 위치 사본의 크기·SHA-256 일치를
+운영자가 확인.
 
 ### Step 2 (운영자): AnkiWeb 계정 확인/생성
 
