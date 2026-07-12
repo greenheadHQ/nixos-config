@@ -65,17 +65,27 @@ jq '
     | $root
     | getpath($path);
 
-  def resolved_parameter($root; $param):
-    if (($param["$ref"] // null) != null) then
-      # broken/external ref는 getpath가 null을 반환해 조용히 통과하면 account-required
-      # endpoint가 account-free로 잘못 생성된다. resolve 결과가 object가 아니면 실패시킨다.
+  # parameter $ref를 완전히 해소한다. 단일 object로 끝나지 않는 모든 형태를 fail-closed로
+  # 막는다: (a) broken/external ref는 getpath가 null을 반환하므로 object가 아니면 실패,
+  # (b) chained ref(AccountAlias -> $ref AccountSeq)는 첫 resolve가 다시 Reference Object라
+  #     재귀로 계속 해소, (c) cyclic ref는 depth 한도로 차단. 조용히 통과하면 account-required
+  #     endpoint가 account-free로 잘못 생성된다.
+  def resolve_parameter_ref($root; $param; $depth):
+    if $depth <= 0 then
+      error("parameter $ref chain too deep or cyclic")
+    elif (($param["$ref"] // null) != null) then
       (resolve_ref($root; $param["$ref"])) as $resolved
-      | if ($resolved | type) == "object" then $resolved
-        else error("unresolved parameter $ref: \($param["$ref"])")
+      | if ($resolved | type) != "object" then
+          error("unresolved parameter $ref: \($param["$ref"])")
+        else
+          resolve_parameter_ref($root; $resolved; $depth - 1)
         end
     else
       $param
     end;
+
+  def resolved_parameter($root; $param):
+    resolve_parameter_ref($root; $param; 16);
 
   def account_parameter($root; $param):
     (($param["$ref"] // "") == "#/components/parameters/AccountSeq")
@@ -113,6 +123,11 @@ jq '
         .paths
         | to_entries[] as $path_entry
         | $path_entry.value as $path_item
+        # Path Item $ref(OAS 3.0.3 허용)는 operation iteration이 조용히 무시해 endpoint를
+        # 누락시킨다. 지원하지 않으므로 fail-closed로 실패시킨다 (현재 스펙엔 없음).
+        | (if ($path_item["$ref"] // null) != null then
+             error("unsupported Path Item $ref at \($path_entry.key): \($path_item["$ref"])")
+           else . end)
         | $path_item
         | to_entries[]
         | select(.key as $method | operation_methods | index($method) != null)

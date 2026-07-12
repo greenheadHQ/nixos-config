@@ -8,31 +8,17 @@ TOSS_TOKEN_LOCK_TIMEOUT_SECONDS="${TOSS_TOKEN_LOCK_TIMEOUT_SECONDS:-30}"
 # confused-deputy 방지: 이 CLI는 LLM에 1Password credential authority를 위임하는 경로다.
 # TOSS_API_BASE_URL은 ambient env로 override 가능하므로, 검증 없이는 caller가 destination만
 # 정해 client secret/access token(bearer)을 임의 host로 빼돌릴 수 있다(--proto =https는 scheme만
-# 제한, host는 pin 안 함). credential/token을 전송하는 모든 경로 진입 전에 origin을 공식
-# 호스트로 고정한다. 격리 테스트가 mock origin을 써야 하면 TOSS_ALLOW_INSECURE_BASE_URL=1로 opt-in.
-TOSS_TRUSTED_API_HOST="openapi.tossinvest.com"
+# 제한, host는 pin 안 함). credential/token을 전송하는 모든 경로 진입 전에 base URL을 공식
+# origin과 **정확히 일치**시킨다 — host-only 비교는 `.../oauth2` 같은 path 접미사를 허용해
+# raw PATH `/token`이 `/oauth2/token`으로 합성되고, escape hatch는 같은 ambient caller가
+# pin을 해제하는 우회로가 되므로 둘 다 두지 않는다. 테스트는 curl stub이라 비공식 origin이
+# 필요 없으므로 모두 이 공식 base URL을 쓴다.
+TOSS_TRUSTED_API_BASE_URL="https://openapi.tossinvest.com"
 
 toss_require_trusted_base_url() {
-  [ "${TOSS_ALLOW_INSECURE_BASE_URL:-0}" != "1" ] || return 0
-
-  local url="$TOSS_API_BASE_URL"
-  case "$url" in
-    https://*) ;;
-    *)
-      echo "error: TOSS_API_BASE_URL must use https for credential/token transmission" >&2
-      return 1
-      ;;
-  esac
-
-  # scheme 제거 → userinfo(@)·port·path 제거 후 host만 추출
-  local hostport="${url#*://}"
-  hostport="${hostport%%/*}"
-  hostport="${hostport##*@}"
-  local host="${hostport%%:*}"
-
-  if [ "$host" != "$TOSS_TRUSTED_API_HOST" ]; then
-    echo "error: TOSS_API_BASE_URL host is not the trusted Toss origin ($TOSS_TRUSTED_API_HOST): $host" >&2
-    echo "hint: credential/token transmission is pinned to the official origin; set TOSS_ALLOW_INSECURE_BASE_URL=1 only for isolated tests" >&2
+  if [ "$TOSS_API_BASE_URL" != "$TOSS_TRUSTED_API_BASE_URL" ]; then
+    echo "error: TOSS_API_BASE_URL must be exactly the official Toss origin ($TOSS_TRUSTED_API_BASE_URL)" >&2
+    echo "hint: credential/token transmission is pinned to the official origin; base URL override is not permitted" >&2
     return 1
   fi
 }

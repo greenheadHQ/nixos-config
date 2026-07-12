@@ -19,8 +19,8 @@ let
   tossOpenApi = constants.onePassword.tossOpenApi;
   tossClientIdRef = "op://${constants.onePassword.vaults.automation}/${tossOpenApi.itemName}/${tossOpenApi.clientIdField}";
   tossClientSecretRef = "op://${constants.onePassword.vaults.automation}/${tossOpenApi.itemName}/${tossOpenApi.clientSecretField}";
-  tossClientIdFile = "/run/opnix/${config.home.username}/${tossOpenApi.opnixClientIdFileName}";
-  tossClientSecretFile = "/run/opnix/${config.home.username}/${tossOpenApi.opnixClientSecretFileName}";
+  tossClientIdFile = "${constants.paths.opnixRuntimeRoot}/${config.home.username}/${tossOpenApi.opnixClientIdFileName}";
+  tossClientSecretFile = "${constants.paths.opnixRuntimeRoot}/${config.home.username}/${tossOpenApi.opnixClientSecretFileName}";
 in
 {
   home.file.".local/bin/atuin-clean-kr" = {

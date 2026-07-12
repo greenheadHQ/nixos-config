@@ -15,7 +15,7 @@ let
   vault = constants.onePassword.vaults.automation;
   tossOpenApi = constants.onePassword.tossOpenApi;
   opReference = field: "op://${vault}/${tossOpenApi.itemName}/${field}";
-  opnixPath = fileName: "/run/opnix/${username}/${fileName}";
+  opnixPath = fileName: "${constants.paths.opnixRuntimeRoot}/${username}/${fileName}";
 in
 {
   config = lib.mkIf (opnixCfg.enable && tossCfg.enable) {

@@ -109,7 +109,7 @@ git diff -- .claude/skills/using-toss-api/references/vendor modules/shared/scrip
 
 - endpoint 추가/삭제와 `operationId` 변경
 - `requiresAccount`, `rateLimitGroup`, `isKnownOrderMutation` 변화
-- template path의 `pathRegex`, `pathParamNames` 변화
+- template path의 `pathRegex` 변화
 - 이 `SKILL.md`의 요약이 stale해졌는지 여부
 
 ## 엔드포인트 탐색 jq 레시피

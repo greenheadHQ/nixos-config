@@ -565,6 +565,16 @@ toss_api_execute() {
       ;;
   esac
 
+  # 빈 path segment(`//`) 거부: `//oauth2/token`은 origin-relative(`/*`)를 통과하지만
+  # auth 판정(`/oauth2/*`)엔 안 맞는데, 서버는 이를 `/oauth2/token`으로 라우팅해 auth guard를
+  # 우회한다. 연속 슬래시는 정상 endpoint에 없으므로 fail-closed로 거부한다 (query 앞부분만).
+  case "${path%%\?*}" in
+    *//*)
+      echo "error: toss api PATH must not contain empty '//' segments: $(toss_ledger_sanitized_path "$path")" >&2
+      return 2
+      ;;
+  esac
+
   # percent-encoding 거부: `/%6fauth2/token`·`/oauth%32/token` 등은 raw 문자열 auth 판정을
   # 통과하지만 서버가 RFC 3986 unreserved 문자를 decode해 실제 token endpoint로 라우팅한다.
   # 공식 endpoints.json path는 모두 percent-encoding이 없으므로, path segment의 '%'를

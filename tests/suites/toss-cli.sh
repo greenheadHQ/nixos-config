@@ -582,30 +582,109 @@ test_toss_api_rejects_untrusted_base_url() {
 
   [ "$rc" != "0" ] || fail "expected untrusted TOSS_API_BASE_URL to be rejected"
   stderr="$(cat "$sandbox/stderr")"
-  assert_contains "$stderr" "trusted Toss origin"
+  assert_contains "$stderr" "exactly the official Toss origin"
   [ ! -e "$sandbox/curl.config" ] || fail "untrusted base URL must be rejected before any request"
 }
 
-test_toss_api_allows_insecure_base_url_with_optin() {
-  local sandbox
+test_toss_api_rejects_base_url_with_path_suffix() {
+  local sandbox rc
   sandbox=$(new_sandbox)
   _prepare_toss_cli_sandbox "$sandbox"
   _write_toss_api_curl_stub "$sandbox/bin"
 
-  # 격리 테스트 escape hatch: 명시적 opt-in이면 mock origin을 허용한다.
+  # host-only 비교는 `.../oauth2` path 접미사를 허용해 raw PATH `/token`이 `/oauth2/token`으로
+  # 합성된다. exact base 비교로 path/port가 붙은 base를 거부해야 한다.
+  set +e
   HOME="$sandbox/home" \
     PATH="$sandbox/bin:$PATH" \
-    TOSS_API_BASE_URL="https://mock.test.invalid" \
-    TOSS_ALLOW_INSECURE_BASE_URL=1 \
+    TOSS_API_BASE_URL="https://openapi.tossinvest.com/oauth2" \
     TOSS_ACCESS_TOKEN="mock-token" \
     TOSS_SKIP_PREFLIGHT=1 \
     TOSS_NOTIFY=0 \
-    TOSS_TEST_RESPONSE_KIND=json \
     TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
     TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
-    "$(_toss_cli_script "$sandbox")" api GET /api/v1/orders --account ACC123 > "$sandbox/stdout"
+    "$(_toss_cli_script "$sandbox")" api GET '/token' --account ACC123 > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
 
-  [ -e "$sandbox/curl.config" ] || fail "insecure base URL opt-in should allow the request"
+  [ "$rc" != "0" ] || fail "expected base URL with path suffix to be rejected"
+  [ ! -e "$sandbox/curl.config" ] || fail "base URL with path suffix must be rejected before any request"
+}
+
+test_toss_api_rejects_empty_slash_segment_path() {
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # //oauth2/token 은 origin-relative(/*)를 통과하지만 서버는 /oauth2/token으로 라우팅해
+  # auth guard를 우회한다. 빈 '//' segment를 입력 단계에서 거부한다.
+  set +e
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api GET '//oauth2/token' --account ACC123 > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" = "2" ] || fail "expected empty '//' segment rejection rc=2, got: $rc"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "empty '//' segments"
+  [ ! -e "$sandbox/curl.config" ] || fail "empty '//' segment path must be rejected before any request"
+}
+
+test_toss_endpoint_metadata_resolves_chained_ref() {
+  local sandbox input output
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  # AccountAlias -> $ref AccountSeq chain은 재귀 resolve되어 requiresAccount=true여야 한다
+  # (첫 resolve가 다시 Reference Object라 type==object만으론 부족).
+  cat > "$input" <<'JSON'
+{
+  "info": {"version": "test"},
+  "components": {"parameters": {
+    "AccountAlias": {"$ref": "#/components/parameters/AccountSeq"},
+    "AccountSeq": {"name": "X-Tossinvest-Account", "in": "header"}
+  }},
+  "paths": {
+    "/api/v1/holdings": {
+      "get": {
+        "operationId": "listHoldings",
+        "description": "**Rate Limits Group**: `ASSET`",
+        "parameters": [{"$ref": "#/components/parameters/AccountAlias"}]
+      }
+    }
+  }
+}
+JSON
+
+  bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output"
+  [ "$(jq -r '.endpoints[0].requiresAccount' "$output")" = "true" ] \
+    || fail "expected chained AccountSeq ref to resolve to requiresAccount=true"
+}
+
+test_toss_endpoint_metadata_fails_on_path_item_ref() {
+  local sandbox input output rc stderr
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  # Path Item $ref는 operation iteration이 조용히 무시해 endpoint를 누락시킨다 → 실패해야 한다.
+  cat > "$input" <<'JSON'
+{"info": {"version": "test"}, "paths": {"/api/v1/y": {"$ref": "#/components/x"}}}
+JSON
+
+  set +e
+  stderr="$(bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output" 2>&1 >/dev/null)"
+  rc=$?
+  set -e
+  [ "$rc" != "0" ] || fail "expected generator to fail on Path Item \$ref, got rc=$rc"
+  assert_contains "$stderr" "Path Item \$ref"
+  [ ! -s "$output" ] || fail "generator must not write metadata when a Path Item ref is present"
 }
 
 test_toss_api_rejects_percent_encoded_path() {
