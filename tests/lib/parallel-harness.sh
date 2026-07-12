@@ -78,9 +78,7 @@ parallel_barrier() {
     if [ "$status" = "PASS" ]; then
       pass=$((pass + 1))
       echo "==> $name"
-      if grep -Eq '^(SKIP:|N/A:)' "$_PH_RESULT_DIR/$seq.out" 2>/dev/null; then
-        grep -E '^(SKIP:|N/A:)' "$_PH_RESULT_DIR/$seq.out"
-      fi
+      grep -E '^(SKIP:|N/A:)' "$_PH_RESULT_DIR/$seq.out" 2>/dev/null || true
     else
       # status 파일 부재(=job 이 비정상 종료해 기록조차 못 함)도 FAIL 로 취급한다(fail-closed).
       fail=$((fail + 1))
