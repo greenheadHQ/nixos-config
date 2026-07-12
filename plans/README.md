@@ -13,6 +13,14 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 (Current state 재검증 / Remaining work / Verification / Boundaries)으로
 재작성했다 — 재감사 시 GitHub 열린 이슈 본문이 최신 판정이다.
 
+024–027은 2026-07-05 (commit `a19daba3`) **Anki 환경 전수조사**에서 생성됐다
+(대상: repo가 아니라 로컬 Anki 26.5 프로필 `greenheadHQ` + 관련 문서/잔재).
+조사 근거는 `plans/anki-audit-evidence/2026-07-05-audit.md`에 보존. 이 4건은
+운영자 GUI 절차 + 에이전트 검증 혼합 runbook이며, epic
+[#973](https://github.com/greenheadHQ/nixos-config/issues/973)의 sub-issue로
+등록되어 있다 (Issue 열). 4건 모두 운영자가 plan 승격을 직접 선택했고,
+방향 결정(AnkiWeb 이행, anki-study 보류)도 운영자 답변으로 확정됐다.
+
 **Reconcile 2026-07-06 (commit `a6bbf637`)**: DONE 전 건 spot-check 통과 —
 002(비특권 유저·sandbox 실배포 유지), 003(same-fs mktemp), 006(gitleaks
 `.local.md` 예외 부재 + gitignore 대체), 007(flock 타임아웃), 019(미러 타이머
@@ -23,8 +31,8 @@ NO DRIFT — 대상 파일 미변경 또는 plan이 명시적으로 예상한 �
 착륙, 018의 스냅샷 이동)뿐. epic [#903](https://github.com/greenheadHQ/nixos-config/issues/903)
 하위 이슈(#904·#905·#907·#911)는 run-da/parallel-audit 디렉토리가 2026-07-03
 재검증 이후 미변경이라 이슈 본문이 그대로 최신 판정이다. Anki plans 024–027은
-PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)(OPEN) 머지
-대기 중 — 머지 전까지 본 인덱스에 미반영이 정상.
+reconcile 당시 PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)
+머지 대기 중이었고, 그 머지로 본 인덱스에 반영됐다.
 
 각 executor: plan 파일을 끝까지 읽고 시작하고, STOP conditions를 존중하고,
 끝나면 자기 행의 Status를 갱신한다.
@@ -56,6 +64,10 @@ PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)(OPEN) 머지
 | 021 | pinning-guard `--body-file` 파일 내용 스캔 | P1 | M | — | #684 | DONE (PR #966) |
 | 022 | using-codex-exec 문서 codex-cli 0.142.5 현행화 | P1 | M | — | #861 | DONE (PR #967) |
 | 023 | worktree-path-guard sibling worktree 오탐 제거 | P2 | S | — | #935 | DONE (PR #968) |
+| 024 | Anki를 AnkiWeb 동기화로 실제 전환 (5/30 결정 이행) | P1 | S | — | #974 | DONE (2026-07-12 이행 — 외부 사본 minipc·해시 일치, 서버는 2025-12-24 스냅샷임을 temp 프로필 실측 확증 후 Upload, prefs syncKey=SET 검증. 감사 "미사용" 결론 정정은 evidence 문서 서두 참조) |
+| 025 | 601장 백로그 재시작 프로토콜 (상한·정렬·2주 게이트) | P1 | S-M | 024 (soft) | #975 | TODO |
+| 026 | Anki 애드온·문서 drift·인프라 잔재 일괄 정리 | P2 | S | 024 (soft) | #976 | TODO |
+| 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -86,6 +98,19 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 021과 023은 둘 다 Claude 훅을 만지지만 대상 파일이 다르다
   (pinning-guard vs worktree-path-guard) — 순서 무관.
 
+## Dependency notes (024–027, Anki)
+
+- 실행 권장 순서: **024 → 025 → 026 → 027**. 024(데이터 안전망)가 모든 Anki
+  상태 변경에 선행하는 것이 안전하나, hard 의존은 027→025뿐이다
+  (025 규칙 3의 깃발 큐가 027의 입력).
+- 025의 "2주 게이트"(14일 중 10일 학습)가 통과하기 전에는 anki-study v2 재개와
+  `🚧 일시중단` 덱 해제를 **논의하지 않는다** — 2026-07-05 운영자 결정
+  ("보류 — 복습 습관 먼저").
+- 024~027은 001–023과 파일이 겹치지 않는다 (026·027이 `anki-study/` 문서를
+  만지는 것이 유일한 repo 접점).
+- Anki 오프사이트 독립 백업(.colpkg→restic→R2)은 plan으로 승격하지 않았다 —
+  AnkiWeb 이행(024) 후 필요성이 남으면 020 스택 재사용으로 별도 승격.
+
 ## Findings considered and rejected (재감사 방지)
 
 - **nrs 락이 "같은 worktree + 죽은 PID"를 re-entry로 취급 (locks.sh)**: by-design.
@@ -109,3 +134,18 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   로컬 문서(`.git/info/exclude`) — dead doc 아님.
 - **flake 입력 lag**: nixpkgs/home-manager 등 전부 2026-06월분으로 신선 —
   finding 없음.
+
+### Anki 전수조사 기각분 (2026-07-05, 상세: `plans/anki-audit-evidence/2026-07-05-audit.md`)
+
+- **age 시크릿 4종의 git 히스토리 잔존** (PR #863에서 삭제된
+  `anki-sync-password.age` 등): agenix 모델 자체가 암호문의 git 저장을 전제 —
+  age 개인키 유출 없이 복호화 불가, rotation 불요.
+- **AnkiConnect apiKey 미설정**: `127.0.0.1:8765` loopback 한정 bind + 단독 사용
+  Mac — 과잉 방어. 유지(리스크는 evidence 문서에 기록).
+- **미디어 정리** (고아 10개 1.4MB, 실질 누락 2건): 조치 가치 없음.
+- **prefs21.db 옛 경로/프로필명 직접 수정**: pickle 손상 위험 대비 이득 없음 —
+  GUI 사용 중 자연 갱신.
+- **미사용 notetype 8종·collection config `awesomeAnki.*` 키 제거**: 무해한
+  데이터, 조작 위험이 이득보다 큼 — 보류.
+- **self-host sync server 재구축**: 2026-05-30 제거 결정 유지가 운영자 답변으로
+  재확인됨 (AnkiWeb 이행 선택).
