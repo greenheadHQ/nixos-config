@@ -17,8 +17,9 @@
 #   확보한 뒤, 끝에서 통과/SKIP/실패를 구분 요약하고 하나라도 실패하면 non-zero로 종료한다.
 #
 # 런타임 의존성: devShell이 사전 빌드한 prePushRuntime profile을 shell/pytest/Bats 드라이버가
-#   공유하고, profile이 없으면 같은 flake package의 nix shell fallback을 쓴다. pre-push에 남은
-#   pytest/Bats 호출은 lefthook.yml과 동일하게 유지하고, shell 전체 회귀는 required CI가 담당한다.
+#   공유하고, profile이 없으면 common-dir lock 아래에서 같은 flake package를 검증·준비한다.
+#   pre-push에 남은 pytest/Bats 호출은 lefthook.yml과 동일하게 유지하고, shell 전체 회귀는
+#   required CI가 담당한다.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,8 +31,9 @@ SKIPPED=()
 FAILED=()
 
 # 드라이버를 실행하고 통과/SKIP/실패로 분류한다. SKIP은 드라이버가 환경/도구 미가용 시
-# stdout/stderr에 "SKIP:" 마커를 출력하고 exit 0으로 종료하는 경우(예: precommit-staged-snapshot)
-# 를 가리키며, 미실행을 통과로 오인하지 않도록 요약에서 별도로 집계한다.
+# stdout/stderr에 canonical "SKIP:" 마커를 출력하고 exit 0으로 종료하는 경우(예:
+# precommit-staged-snapshot)를 가리킨다. nested parallel fixture도 이 marker를 상위 로그로
+# 전파하며, 플랫폼상 적용 불가능한 테스트는 "N/A:"로 구분해 미실행을 PASS로 오인하지 않는다.
 run_driver() {
   local name="$1"
   shift
@@ -39,7 +41,7 @@ run_driver() {
   log="$(mktemp "${TMPDIR:-/tmp}/run-all-tests.XXXXXX")"
   printf '\n━━━ %s ━━━\n' "$name"
   if "$@" 2>&1 | tee "$log"; then
-    if grep -q 'SKIP:' "$log"; then
+    if grep -q '^SKIP:' "$log"; then
       printf '⊘ %s (skipped — 환경/도구 미가용)\n' "$name"
       SKIPPED+=("$name")
     else
@@ -66,10 +68,8 @@ run_driver "shell-script-tests" \
 run_driver "codex-hook-fixtures" bash tests/test-codex-hook-fixtures.sh --no-live
 
 # 4) codex-exec-supervised — codex-exec-supervised wrapper의 env validation 경계(타임아웃 cap/양수/
-#    non-numeric) 단위 검증. invalid-env 케이스는 codex/setsid/timeout 부재 환경에서도 실행되어
-#    핵심 거부 경계를 항상 검증한다. valid-env 케이스는 deps 부재 시 "WARN" + exit 0으로
-#    capability-skip된다("SKIP:" 마커가 아니므로 SKIP 집계엔 잡히지 않고 PASS로 표기되나, 항상
-#    실행되는 거부 경계 검증이 핵심이므로 PASS 집계는 유효).
+#    non-numeric) 단위 검증. hermetic dependency stub을 사용해 valid-env 3건과 invalid-env 4건을
+#    host의 codex/setsid/timeout 설치 여부와 무관하게 모두 실행한다.
 run_driver "codex-exec-supervised" bash tests/test-codex-exec-supervised.sh
 
 # 5) skill-doc-sync — run-da 문서군의 manual sync contract 4쌍을 검증한다.

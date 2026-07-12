@@ -10,6 +10,8 @@
 #   보장한다 — 이 경우 run_test 는 기존과 동일하게 즉시 실행하고 첫 실패에서 set -e 로 중단한다.
 # 출력: 병렬 모드는 각 테스트의 stdout/stderr 를 per-test 파일에 모으고, barrier 에서 등록 순서대로
 #   일괄 출력한다(결정적). 통과는 "==> name", 실패는 그 출력 전체를 들여쓰기해 함께 보여준다.
+#   성공한 테스트 안의 canonical `SKIP:` marker는 상위 통합 runner가 coverage gap을 집계할 수 있게
+#   그대로 전파한다. 플랫폼상 적용 불가능한 `N/A:`도 관찰 가능하게 전파하되 SKIP과 구분한다.
 # 격리: 각 job 은 독립 subshell 이라 실패가 다른 job 에 전파되지 않으며, 실패가 하나라도 있으면
 #   parallel_barrier 가 non-zero 로 종료한다(aggregator 의 set -e 가 이를 최종 실패로 전파).
 
@@ -76,6 +78,9 @@ parallel_barrier() {
     if [ "$status" = "PASS" ]; then
       pass=$((pass + 1))
       echo "==> $name"
+      if grep -Eq '^(SKIP:|N/A:)' "$_PH_RESULT_DIR/$seq.out" 2>/dev/null; then
+        grep -E '^(SKIP:|N/A:)' "$_PH_RESULT_DIR/$seq.out"
+      fi
     else
       # status 파일 부재(=job 이 비정상 종료해 기록조차 못 함)도 FAIL 로 취급한다(fail-closed).
       fail=$((fail + 1))

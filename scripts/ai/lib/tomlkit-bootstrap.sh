@@ -11,7 +11,8 @@
 #      prePushRuntime runner가 hermetic PATH를 이미 제공했거나, 자체
 #      스크립트가 이전에 self-wrap으로 재진입한 경우다.
 #   2) current worktree profile이 있으면 그 PATH를 활성화한다. profile은 flake.lock + runtime
-#      정의 content stamp까지 일치해야 하며, staged snapshot은 검증된 source root의 profile을 쓴다.
+#      정의 content stamp까지 일치해야 하며, staged snapshot은 세 runtime 입력이 source root와
+#      byte-identical할 때만 검증된 source profile을 재사용한다.
 #   3) profile이 없거나 stale이면 ambient `python3`/GNU 도구 유무와 **무관하게** repo-pinned `nix shell
 #      --inputs-from . .#pythonWithTomlkit nixpkgs#coreutils nixpkgs#findutils nixpkgs#lsof
 #      nixpkgs#lefthook --command bash "$0" ...`로 재실행한다. host 에 우연히 tomlkit 이 있거나
@@ -31,12 +32,23 @@
 # tomlkit_bootstrap_require는 재실행이 필요하면 `exec`으로 교체되어 돌아오지 않는다.
 # 교체 없이 반환됐다면 이후 코드에서 `python3 -c 'import tomlkit'`를 전제해도 안전하다.
 
+_tomlkit_bootstrap_runtime_inputs_match() {
+  local left_root="$1"
+  local right_root="$2"
+  local path
+  for path in flake.lock flake.nix libraries/python-runtimes.nix; do
+    [ -f "$left_root/$path" ] && [ -f "$right_root/$path" ] || return 1
+    cmp -s "$left_root/$path" "$right_root/$path" || return 1
+  done
+}
+
 tomlkit_bootstrap_require() {
   local repo_root="$1"
   local self_path="$2"
   shift 2
 
-  # (1) 이미 tomlkit-ready 환경이면 즉시 반환
+  # (1) 이미 tomlkit-ready 환경이면 즉시 반환. staged-snapshot runner는 source profile에서
+  # 상속된 READY를 consumer 경계에서 unset해 아래 fingerprint 검증을 반드시 다시 거친다.
   if [ -n "${_TOMLKIT_BOOTSTRAP_READY:-}" ]; then
     return 0
   fi
@@ -45,9 +57,8 @@ tomlkit_bootstrap_require() {
   # 경로다. 그대로 `nix shell <snapshot>#pythonWithTomlkit` 하면 snapshot 트리 전체가 nix
   # store 로 복사·평가된다 (E2E 실측 ~42s). run-staged-snapshot.sh 가 STAGED_SNAPSHOT_SOURCE_ROOT
   # 로 실제 repo 경로를 넘기면 그 flake 를 쓴다.
-  # pythonWithTomlkit 은 검사 대상이 아니라 tomlkit 포함 interpreter 일 뿐이라 안전하며,
-  # flake.nix / libraries/python-runtimes.nix 의 staged 변경 검증은 eval-tests(glob: *.nix)가
-  # 책임진다.
+  # source profile fast path는 snapshot의 runtime 입력 3개가 source와 같을 때만 안전하다.
+  # 부분 staging으로 입력이 달라지면 snapshot flake를 사용해 커밋될 내용과 실행 runtime을 맞춘다.
   # override 는 staged-snapshot consumer 안에서 실행될 때만 적용한다. run-staged-snapshot.sh 는
   # cwd 를 공유 캐시 worktree 로 바꾸면서 STAGED_SNAPSHOT_ROOT(worktree)와 STAGED_SNAPSHOT_SOURCE_ROOT
   # (실제 repo)를 generic context 로 함께 export 한다. 조건은 (a) STAGED_SNAPSHOT_SOURCE_ROOT 존재,
@@ -61,7 +72,11 @@ tomlkit_bootstrap_require() {
   if [ -n "${STAGED_SNAPSHOT_SOURCE_ROOT:-}" ] && [ "$repo_root" = "${STAGED_SNAPSHOT_ROOT:-}" ] \
     && ! git -C "$repo_root" rev-parse --git-dir >/dev/null 2>&1 \
     && git -C "$STAGED_SNAPSHOT_SOURCE_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    flake_root="$STAGED_SNAPSHOT_SOURCE_ROOT"
+    if _tomlkit_bootstrap_runtime_inputs_match "$repo_root" "$STAGED_SNAPSHOT_SOURCE_ROOT"; then
+      flake_root="$STAGED_SNAPSHOT_SOURCE_ROOT"
+    else
+      echo "  test runtime bootstrap: staged runtime inputs differ; using snapshot flake $repo_root" >&2
+    fi
   fi
 
   # (2) devShell이 사전 빌드한 current runtime profile을 우선 재사용한다. staged snapshot에서는

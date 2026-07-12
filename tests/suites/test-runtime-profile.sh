@@ -206,7 +206,7 @@ test_runtime_profile_concurrent_prepare_builds_once() (
   [ "$(wc -l < "$log" | tr -d ' ')" = "1" ] || fail "concurrent prepare must invoke nix exactly once"
 )
 
-test_runtime_profile_run_uses_current_and_falls_back_when_stale() (
+test_runtime_profile_run_uses_current_and_prepares_when_stale() (
   local dir canonical_dir runtime fake_bin log script output
   dir="$(mktemp -d "${TMPDIR:-/tmp}/test-runtime-profile-run.XXXXXX")"
   trap 'rm -rf "$dir"' EXIT
@@ -231,8 +231,59 @@ test_runtime_profile_run_uses_current_and_falls_back_when_stale() (
   printf '# stale\n' >> "$dir/flake.nix"
   output="$(PATH="$fake_bin:$PATH" TMPDIR="$dir/tmp/" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
     bash "$script" run "$dir" -- bash -c 'printf "%s|%s" "$TMPDIR" "${_TOMLKIT_BOOTSTRAP_READY:-}"')"
-  [ "$output" = "$dir/tmp|1" ] || fail "fallback TMPDIR/READY contract drifted: $output"
-  [ "$(cat "$log")" = "shell" ] || fail "stale profile must use exactly one nix shell fallback"
+  [ "$output" = "$dir/tmp|1" ] || fail "on-demand prepare TMPDIR/READY contract drifted: $output"
+  [ "$(cat "$log")" = "build" ] || fail "stale profile must prepare exactly one validated runtime"
+)
+
+test_runtime_profile_run_rejects_invalid_prepared_runtime() (
+  local dir runtime fake_bin log script output status
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/test-runtime-profile-invalid.XXXXXX")"
+  trap 'rm -rf "$dir"' EXIT
+  runtime="$dir/runtime"
+  fake_bin="$dir/fake-bin"
+  log="$dir/nix.log"
+  script="$(_test_runtime_profile_script)"
+  _test_runtime_profile_make_repo "$dir"
+  _test_runtime_profile_make_runtime "$runtime"
+  _test_runtime_profile_make_fake_nix "$fake_bin"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$runtime/bin/python3"
+  chmod +x "$runtime/bin/python3"
+  : > "$log"
+
+  set +e
+  output="$(PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
+    bash "$script" run "$dir" -- bash -c 'printf "consumer-ran|%s" "${_TOMLKIT_BOOTSTRAP_READY:-}"' 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail "invalid prepared runtime unexpectedly executed consumer"
+  assert_contains "$output" "runtime validation failed (required commands or tomlkit)"
+  assert_not_contains "$output" "consumer-ran"
+  [ ! -e "$dir/.direnv/pre-push-runtime" ] || fail "invalid prepared runtime profile was not removed"
+)
+
+test_runtime_profile_concurrent_run_prepares_once() (
+  local dir runtime fake_bin log script first_pid second_pid
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/test-runtime-profile-run-race.XXXXXX")"
+  trap 'rm -rf "$dir"' EXIT
+  runtime="$dir/runtime"
+  fake_bin="$dir/fake-bin"
+  log="$dir/nix.log"
+  script="$(_test_runtime_profile_script)"
+  _test_runtime_profile_make_repo "$dir"
+  _test_runtime_profile_make_runtime "$runtime"
+  _test_runtime_profile_make_fake_nix "$fake_bin"
+  : > "$log"
+
+  PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" FAKE_NIX_SLEEP=0.5 \
+    bash "$script" run "$dir" -- true &
+  first_pid=$!
+  PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" FAKE_NIX_SLEEP=0.5 \
+    bash "$script" run "$dir" -- true &
+  second_pid=$!
+  wait "$first_pid"
+  wait "$second_pid"
+  [ "$(wc -l < "$log" | tr -d ' ')" = "1" ] || fail "concurrent run must build exactly once"
+  [ "$(cat "$log")" = "build" ] || fail "concurrent run bypassed validated profile preparation"
 )
 
 test_tomlkit_bootstrap_uses_validated_snapshot_source_profile() (
@@ -245,20 +296,65 @@ test_tomlkit_bootstrap_uses_validated_snapshot_source_profile() (
   fake_bin="$dir/fake-bin"
   log="$dir/nix.log"
   script="$(_test_runtime_profile_script)"
-  mkdir -p "$source" "$snapshot/scripts/ai/lib"
+  mkdir -p "$source" "$snapshot/scripts/ai/lib" "$snapshot/libraries"
   _test_runtime_profile_make_repo "$source"
   _test_runtime_profile_make_runtime "$runtime"
   _test_runtime_profile_make_fake_nix "$fake_bin"
   cp "$REPO_ROOT/scripts/ai/test-runtime-profile.sh" "$snapshot/scripts/ai/test-runtime-profile.sh"
   cp "$REPO_ROOT/scripts/ai/lib/tomlkit-bootstrap.sh" "$snapshot/scripts/ai/lib/tomlkit-bootstrap.sh"
+  cp "$source/flake.lock" "$snapshot/flake.lock"
+  cp "$source/flake.nix" "$snapshot/flake.nix"
+  cp "$source/libraries/python-runtimes.nix" "$snapshot/libraries/python-runtimes.nix"
   : > "$snapshot/consumer.sh"
   : > "$log"
   PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" bash "$script" prepare "$source"
   : > "$log"
 
-  PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
+  env -u _TOMLKIT_BOOTSTRAP_READY \
+    PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
     STAGED_SNAPSHOT_ROOT="$snapshot" STAGED_SNAPSHOT_SOURCE_ROOT="$source" \
     bash -c 'set -euo pipefail; source "$1/scripts/ai/lib/tomlkit-bootstrap.sh"; tomlkit_bootstrap_require "$1" "$1/consumer.sh"; test "${PATH%%:*}" = "$2/.direnv/pre-push-runtime/bin"' \
-    _ "$snapshot" "$source"
+    _ "$snapshot" "$source" || fail "matching staged runtime inputs did not reuse source profile"
   [ ! -s "$log" ] || fail "validated snapshot source profile unexpectedly invoked nix"
+)
+
+test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile() (
+  local dir source snapshot runtime fake_bin log script changed_path output
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/test-runtime-profile-snapshot-mismatch.XXXXXX")"
+  trap 'rm -rf "$dir"' EXIT
+  source="$dir/source"
+  snapshot="$dir/snapshot"
+  runtime="$dir/runtime"
+  fake_bin="$dir/fake-bin"
+  log="$dir/nix.log"
+  script="$(_test_runtime_profile_script)"
+  mkdir -p "$source"
+  _test_runtime_profile_make_repo "$source"
+  _test_runtime_profile_make_runtime "$runtime"
+  _test_runtime_profile_make_fake_nix "$fake_bin"
+  PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
+    bash "$script" prepare "$source" || fail "failed to prepare source profile for mismatch fixture"
+  test_runtime_profile_is_current "$source" || fail "mismatch fixture source profile is not current"
+
+  for changed_path in flake.lock flake.nix libraries/python-runtimes.nix; do
+    rm -rf "$snapshot"
+    mkdir -p "$snapshot/scripts/ai/lib" "$snapshot/libraries"
+    cp "$REPO_ROOT/scripts/ai/test-runtime-profile.sh" "$snapshot/scripts/ai/test-runtime-profile.sh"
+    cp "$REPO_ROOT/scripts/ai/lib/tomlkit-bootstrap.sh" "$snapshot/scripts/ai/lib/tomlkit-bootstrap.sh"
+    cp "$source/flake.lock" "$snapshot/flake.lock"
+    cp "$source/flake.nix" "$snapshot/flake.nix"
+    cp "$source/libraries/python-runtimes.nix" "$snapshot/libraries/python-runtimes.nix"
+    printf ' \n' >> "$snapshot/$changed_path"
+    : > "$snapshot/consumer.sh"
+    : > "$log"
+
+    output="$(env -u _TOMLKIT_BOOTSTRAP_READY \
+      PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" \
+      STAGED_SNAPSHOT_ROOT="$snapshot" STAGED_SNAPSHOT_SOURCE_ROOT="$source" \
+      bash -c 'set -euo pipefail; source "$1/scripts/ai/lib/tomlkit-bootstrap.sh"; tomlkit_bootstrap_require "$1" "$1/consumer.sh"' \
+      _ "$snapshot" 2>&1)" || fail "mismatched staged input did not fall back to snapshot runtime: $changed_path"
+    assert_contains "$output" "staged runtime inputs differ; using snapshot flake $snapshot"
+    assert_contains "$output" "nix shell --inputs-from $snapshot"
+    [ "$(cat "$log")" = "shell" ] || fail "mismatched staged input reused source profile: $changed_path"
+  done
 )

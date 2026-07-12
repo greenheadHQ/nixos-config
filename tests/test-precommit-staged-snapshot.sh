@@ -363,6 +363,9 @@ test_staged_snapshot_cache_hit_and_readonly() {
   ( cd "$dir" && TMPDIR="$dir/.cache-tmp" \
       bash ./scripts/ai/run-staged-snapshot.sh -- bash -c 'test ! -w "$STAGED_SNAPSHOT_ROOT"' ) \
     || fail "shared snapshot worktree must be read-only"
+  ( cd "$dir" && TMPDIR="$dir/.cache-tmp" _TOMLKIT_BOOTSTRAP_READY=1 \
+      bash ./scripts/ai/run-staged-snapshot.sh -- bash -c 'test -z "${_TOMLKIT_BOOTSTRAP_READY:-}"' ) \
+    || fail "staged snapshot must clear source-profile READY before consumer execution"
 }
 
 # parallel pre-commit 모사: 동시 호출이 경쟁해도 mkdir lock 직렬화로 build 는 정확히 1회.

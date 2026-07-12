@@ -72,6 +72,10 @@ unset_repo_git_env() {
   # 것을, 소비자(tomlkit-bootstrap 등)가 이 값을 읽어 실제 repo flake 를 쓰게 함으로써 막는다.
   # runner 는 소비자별 전용 변수를 두지 않고 generic source root 만 노출한다.
   export STAGED_SNAPSHOT_SOURCE_ROOT="$REPO_ROOT"
+  # 상위 profile runner의 READY는 source checkout만 검증한 상태다. snapshot consumer가 세 runtime
+  # 입력의 동일성을 다시 확인하도록 staged 실행 경계에서 제거한다. bootstrap self-wrap이 설정한
+  # READY는 이 runner를 재진입하지 않으므로 그대로 유지된다.
+  unset _TOMLKIT_BOOTSTRAP_READY
   cd "$snapshot"
   "$@"
 )

@@ -292,7 +292,7 @@ test_wt_prepare_skips_symlinked_source_settings() {
 test_wt_create_trusts_codex_project() {
   local sandbox home_dir repo_root config_file output new_worktree other_project mode_after
   if ! codex_config_tomlkit_available; then
-    echo "==> wt create trusts Codex project config: SKIPPED (tomlkit 미가용)" >&2
+    echo "SKIP: wt create trusts Codex project config requires tomlkit" >&2
     return 0
   fi
 
@@ -411,7 +411,7 @@ test_wt_create_skips_unsafe_codex_config() {
 test_wt_create_supports_valid_projects_shapes() {
   local sandbox home_dir repo_root config_file output
   if ! codex_config_tomlkit_available; then
-    echo "==> wt create supports valid Codex projects shapes: SKIPPED (tomlkit 미가용)" >&2
+    echo "SKIP: wt create supports valid Codex projects shapes requires tomlkit" >&2
     return 0
   fi
 
@@ -456,7 +456,7 @@ test_wt_create_supports_valid_projects_shapes() {
 test_wt_create_preserves_unmergeable_codex_config() {
   local sandbox home_dir repo_root config_file output
   if ! codex_config_tomlkit_available; then
-    echo "==> wt create preserves unmergeable Codex config: SKIPPED (tomlkit 미가용)" >&2
+    echo "SKIP: wt create preserves unmergeable Codex config requires tomlkit" >&2
     return 0
   fi
 

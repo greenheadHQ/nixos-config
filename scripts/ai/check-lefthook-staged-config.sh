@@ -170,7 +170,7 @@ expected_prepush="$tmp_dir/pre-push.expected"
 # expected와 마찬가지로 주석/빈 줄을 제외한 staged pre-push 블록 전체를 exact match한다.
 cat > "$expected_prepush" <<'EOF'
 pre-push:
-  parallel: true
+  parallel: false
   commands:
     analyzing-da-sessions-tests:
       glob:

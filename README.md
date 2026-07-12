@@ -86,7 +86,7 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 
 [`lefthook.yml`](./lefthook.yml)로 pre-commit/commit-msg/pre-push 훅 관리.
 
-**통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · skill-doc-sync · analyzing-da-sessions-tests · da-weekly-report-tests · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도 전체 테스트를 재검증한다. PR에서는 main branch protection의 required `check` job이 devShell 안에서 이 명령을 실행하며 SKIP도 실패로 처리한다. main은 최신 base 재검증(`strict`)과 한 명의 승인·CODEOWNER review를 요구하며, [`.github/CODEOWNERS`](./.github/CODEOWNERS)가 required workflow와 ownership 규칙 자체를 저장소 소유자에게 귀속한다. 개인 소유·단독 관리자 저장소이므로 소유자는 관리자 우회 trust anchor이고, 비관리자 write collaborator는 required workflow를 자가 수정해 병합할 수 없다.
+**통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · skill-doc-sync · analyzing-da-sessions-tests · da-weekly-report-tests · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도 전체 테스트를 재검증한다. PR에서는 main branch protection의 required `check` job이 devShell 안에서 이 명령을 실행하며 canonical `SKIP:` marker도 실패로 처리한다. 단독 사용 저장소인 main의 merge gate는 최신 base 재검증(`strict`)이 적용된 required `check`이며 별도 리뷰 승인을 요구하지 않는다.
 
 **pre-commit** (병렬):
 - `lefthook-guard-self-check` — 현재 worktree에서 Git이 해석한 hooks 경로(`git rev-parse --git-path hooks`)를 기준으로, (1) `pre-commit`의 staged-config guard marker, (2) 세 hook(`pre-commit`/`commit-msg`/`pre-push`)의 설치 여부와 lefthook 호출부의 `--no-auto-install` 플래그가 사라지면 commit fail-fast. lefthook의 암묵 auto-sync(`lefthook.yml` 변경 후 첫 실행)와 인접 worktree의 `lefthook install` 덮어쓰기, 두 회귀 경로를 함께 막는다
@@ -118,7 +118,7 @@ pre-commit 정책:
 - Codex config ownership: `hooks.PreToolUse` is now template-owned like `UserPromptSubmit`, `Stop`, and `PostToolUse`; add user hooks under events not declared by the template unless `sync-codex-config.py` is changed.
 
 **pre-push**:
-- devShell 진입 시 [`scripts/ai/test-runtime-profile.sh`](./scripts/ai/test-runtime-profile.sh)가 worktree별 `prePushRuntime` GC-root를 content stamp 기반으로 사전 빌드한다. hook은 이 PATH를 공유하고 profile 부재/stale 시 동일 flake package로 폴백한다.
+- devShell 진입 시 [`scripts/ai/test-runtime-profile.sh`](./scripts/ai/test-runtime-profile.sh)가 worktree별 `prePushRuntime` GC-root를 content stamp 기반으로 사전 빌드한다. hook은 이 PATH를 공유하고 profile 부재/stale 시 common-dir lock 아래에서 동일 flake package를 검증·준비한 뒤에만 실행한다.
 - `analyzing-da-sessions-tests` — analyzing-da-sessions/run-da 계약 변경에만 pytest fixture를 실행한다.
 - `flake-check` — `.nix`/`flake.lock` push에만 `nix flake check --no-build --all-systems`를 실행한다.
 - `statusline-bats` — statusline 소스/테스트 push에만 Bats fixture를 실행하고 비대화형 hook에 기본 `TERM`을 주입한다.

@@ -8,9 +8,9 @@
 # out-link는 worktree의 .direnv 아래에 두어 worktree 수명과 함께 정리하고, Git 공용
 # 디렉토리 lock으로 여러 worktree/direnv의 동시 Nix eval을 직렬화한다.
 #
-# `run`은 current profile을 PATH에 올려 명령을 실행한다. profile이 없거나 stale이면 같은
-# flake package를 `nix shell`로 실행해, 최적화가 준비되지 않은 fresh clone에서도 기존의
-# hermetic fail-safe를 유지한다.
+# `run`은 current profile을 PATH에 올려 명령을 실행한다. profile이 없거나 stale이면 common-dir
+# lock 아래에서 같은 flake package를 prepare한 뒤 검증된 profile만 활성화한다. 검증 실패를
+# `_TOMLKIT_BOOTSTRAP_READY`로 덮지 않고 hard-fail해 fresh clone에서도 hermetic 계약을 유지한다.
 
 _TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS=(
   python3
@@ -72,7 +72,7 @@ test_runtime_profile_is_current() {
 
 _test_runtime_profile_normalize_tmpdir() {
   # macOS launchd의 TMPDIR은 보통 trailing slash를 갖는다. 기존 nix shell은 이를
-  # 정규화하므로 current profile과 fallback 모두 같은 canonical-path 계약을 제공한다.
+  # 정규화하므로 current profile과 on-demand prepare 모두 같은 canonical-path 계약을 제공한다.
   case "${TMPDIR:-}" in
     "" | /) ;;
     */)
@@ -169,7 +169,7 @@ test_runtime_profile_prepare() (
   if ! test_runtime_profile_validate "$profile"; then
     rm -f "$profile"
     [ -n "$old_target" ] && ln -s "$old_target" "$profile"
-    echo "test-runtime-profile: built profile is missing required commands" >&2
+    echo "test-runtime-profile: runtime validation failed (required commands or tomlkit)" >&2
     return 1
   fi
 
@@ -200,10 +200,16 @@ test_runtime_profile_run() {
     echo "test-runtime-profile: current profile and nix are both unavailable" >&2
     return 1
   }
-  echo "test-runtime-profile: current profile unavailable; using nix shell fallback" >&2
-  _test_runtime_profile_normalize_tmpdir
-  export _TOMLKIT_BOOTSTRAP_READY=1
-  exec nix shell --no-write-lock-file "$repo_root#prePushRuntime" --command "$@"
+  echo "test-runtime-profile: current profile unavailable; preparing validated profile" >&2
+  test_runtime_profile_prepare "$repo_root" || {
+    echo "test-runtime-profile: failed to prepare validated runtime profile" >&2
+    return 1
+  }
+  test_runtime_profile_activate "$repo_root" || {
+    echo "test-runtime-profile: prepared runtime profile failed validation" >&2
+    return 1
+  }
+  exec "$@"
 }
 
 test_runtime_profile_main() {

@@ -242,10 +242,10 @@
               inputs.agenix.packages.${system}.default
             ];
             shellHook = ''
-              # Push 경로의 반복 Nix eval을 direnv 진입 시 1회로 이동한다. 실패해도
-              # hook 실행 시 nix shell fallback이 있으므로 devShell 자체는 계속 연다.
+              # Push 경로의 반복 Nix eval을 direnv 진입 시 1회로 이동한다. 실패해도 devShell
+              # 자체는 계속 열되, hook은 common-dir lock 아래에서 검증된 profile을 다시 준비한다.
               if ! bash ./scripts/ai/test-runtime-profile.sh prepare "$PWD"; then
-                echo "warning: pre-push runtime profile prebuild failed; hooks will use nix shell fallback" >&2
+                echo "warning: pre-push runtime profile prebuild failed; hooks will retry validated preparation on demand" >&2
               fi
               bash ./scripts/ai/install-lefthook-hooks.sh
             '';

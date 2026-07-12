@@ -118,7 +118,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control sync extract failure propagates status" test_codex_remote_control_sync_extract_failure_propagates_status
   run_test "codex remote-control sync records login status paths" test_codex_remote_control_sync_records_login_status_success_and_api_key_paths
 else
-  echo "==> codex remote-control fixtures: SKIPPED (Linux/NixOS-only service script)" >&2
+  echo "N/A: codex remote-control fixtures require Linux/NixOS service scripts" >&2
 fi
 run_test "wt recreate guard uses physical paths" test_wt_recreate_guard_uses_physical_paths
 run_test "wt cleanup auto removes merged worktree" test_wt_cleanup_auto_removes_merged_worktree
@@ -247,12 +247,16 @@ run_test "hook_init_scan_dir uses valid TMPDIR" test_hook_init_scan_dir_uses_val
 run_test "hook_parse_json_path preserves filter defaults" test_hook_parse_json_path_preserves_filter_defaults
 run_test "hook_parse_json_path malformed input returns empty success" test_hook_parse_json_path_malformed_input_returns_empty_success
 run_test "pinning-guard survives set-but-unusable TMPDIR (e2e)" test_pinning_guard_survives_unusable_tmpdir
+run_test "parallel harness propagates coverage markers" test_parallel_harness_propagates_coverage_markers
 run_test "test runtime profile caches and invalidates by content" test_runtime_profile_build_cache_and_content_invalidation
 run_test "test runtime profile preserves last-good on failed rebuild" test_runtime_profile_failed_rebuild_preserves_last_good
 run_test "test runtime profile rejects unsafe lock and stamp nodes" test_runtime_profile_rejects_unsafe_lock_and_stamp_nodes
 run_test "test runtime profile serializes concurrent prepare" test_runtime_profile_concurrent_prepare_builds_once
-run_test "test runtime profile uses current and falls back when stale" test_runtime_profile_run_uses_current_and_falls_back_when_stale
+run_test "test runtime profile uses current and prepares when stale" test_runtime_profile_run_uses_current_and_prepares_when_stale
+run_test "test runtime profile rejects invalid prepared runtime" test_runtime_profile_run_rejects_invalid_prepared_runtime
+run_test "test runtime profile concurrent run prepares once" test_runtime_profile_concurrent_run_prepares_once
 run_test "tomlkit bootstrap reuses validated snapshot source profile" test_tomlkit_bootstrap_uses_validated_snapshot_source_profile
+run_test "tomlkit bootstrap rejects mismatched snapshot source profile" test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile
 
 # codex-config fixture는 tomlkit이 필요하다. required CI의 run-all-tests는 prePushRuntime
 # profile로 항상 tomlkit을 제공하지만, 사용자가 직접 실행할 때는 미가용일 수 있다. 미가용이면
@@ -270,7 +274,7 @@ if codex_config_tomlkit_available; then
   run_test "codex-config collect_drift unit" test_codex_config_collect_drift_unit
   run_test "codex-config repair semantic parse lazy unit" test_codex_config_repair_semantic_parse_is_lazy_unit
 else
-  echo "==> codex-config fixtures: SKIPPED (tomlkit 미가용; 'bash scripts/ai/test-runtime-profile.sh run \"$REPO_ROOT\" -- bash tests/run-shell-script-tests.sh'로 전건 실행 권장)" >&2
+  echo "SKIP: codex-config fixtures require tomlkit; run 'bash scripts/ai/test-runtime-profile.sh run \"$REPO_ROOT\" -- bash tests/run-shell-script-tests.sh'" >&2
 fi
 
 # 병렬 큐잉된 모든 run_test 를 대기·집계한다(TEST_JOBS=1 순차 모드면 no-op). 실패가 하나라도 있으면
