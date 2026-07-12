@@ -138,8 +138,27 @@ assert_toss_wrapper_nix() {
     || fail "expected toss wrapper to export TOSS_CLIENT_ID_FILE"
   grep -Fq '        export TOSS_CLIENT_SECRET_FILE=${lib.escapeShellArg tossClientSecretFile}' "$nix_file" \
     || fail "expected toss wrapper to export TOSS_CLIENT_SECRET_FILE"
+  grep -Fq '        export TOSS_PYTHON="${pythonWithTomlkit}/bin/python3"' "$nix_file" \
+    || fail "expected toss wrapper to pin TOSS_PYTHON from pythonWithTomlkit"
   grep -Fq '        exec "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"' "$nix_file" \
     || fail "expected toss wrapper to exec .toss-real"
+}
+
+# --data 검증·정규화용 python3. ambient PATH의 mise shim python은 config-trust 에러로
+# 실패하므로(리뷰에서 확인된 운영 host hang과 동일 원인), mise shim을 제외한 python3를
+# 고르고 없으면 시스템 python으로 fallback한다 (배포 wrapper의 TOSS_PYTHON pin과 동형).
+toss_test_python3() {
+  local p
+  while IFS= read -r p; do
+    case "$p" in
+      *mise*) continue ;;
+      *) [ -x "$p" ] && { printf '%s\n' "$p"; return 0; } ;;
+    esac
+  done < <(type -aP python3 2>/dev/null)
+  for p in /usr/bin/python3 /bin/python3; do
+    [ -x "$p" ] && { printf '%s\n' "$p"; return 0; }
+  done
+  command -v python3
 }
 symlink_helper_dir() {
   local source_dir="$1"
@@ -200,6 +219,7 @@ export TOSS_OP_CLIENT_ID_REF='op://test/toss/client-id'
 export TOSS_OP_CLIENT_SECRET_REF='op://test/toss/client-secret'
 export TOSS_CLIENT_ID_FILE='$sandbox/client-id'
 export TOSS_CLIENT_SECRET_FILE='$sandbox/client-secret'
+export TOSS_PYTHON="\${TOSS_PYTHON:-$(toss_test_python3)}"
 exec "$home_dir/.local/bin/.toss-real" "\$@"
 EOF
   chmod +x "$home_dir/.local/bin/toss"

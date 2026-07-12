@@ -57,6 +57,10 @@ in
         export TOSS_OP_CLIENT_SECRET_REF=${lib.escapeShellArg tossClientSecretRef}
         export TOSS_CLIENT_ID_FILE=${lib.escapeShellArg tossClientIdFile}
         export TOSS_CLIENT_SECRET_FILE=${lib.escapeShellArg tossClientSecretFile}
+        # --data strict 검증·정규화는 python3에 의존한다. ambient PATH의 python3는
+        # mise shim으로 resolve되어 주문/dry-run이 hang할 수 있으므로(wt의 WT_PYTHON과
+        # 동일 위험), Nix store 절대경로를 선언적으로 pin한다.
+        export TOSS_PYTHON="${pythonWithTomlkit}/bin/python3"
         exec "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"
       '';
     in

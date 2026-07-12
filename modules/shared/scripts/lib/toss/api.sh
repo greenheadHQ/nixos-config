@@ -51,17 +51,40 @@ toss_metadata_value() {
 # 전송 body·ledger·dry-run)의 단일 SoT다. python3는 --data(주문 경로) 전용 의존이며
 # 부재 시 fail-closed. rc: 0=정규화 값 stdout, 1=비표준/다중, 2=python3 부재.
 toss_normalize_json_single_value() {
-  command -v python3 >/dev/null 2>&1 || return 2
-  python3 -c '
+  # 배포 wrapper는 TOSS_PYTHON에 Nix store 절대경로를 주입한다(ambient PATH의 mise shim
+  # python이 dry-run을 hang시키는 것을 방지). repo 직접 실행/테스트는 python3로 fallback.
+  local py="${TOSS_PYTHON:-python3}"
+  command -v "$py" >/dev/null 2>&1 || return 2
+  "$py" -c '
 import sys, json
+from decimal import Decimal
 def _reject_constant(_):
     raise ValueError("non-finite JSON constant")
+# 정수는 임의정밀도 int로, 소수는 Decimal로 파싱해 원래 numeric lexeme를 보존한다
+# (json.loads 기본 float는 2^53 초과 정수·긴 소수를 IEEE754로 손실시킨다). 표준 인코더는
+# Decimal을 numeric으로 못 내므로 직접 compact 직렬화한다(json.dump와 동일 표현 유지).
+def _dump(o):
+    if isinstance(o, bool):
+        return "true" if o else "false"
+    if o is None:
+        return "null"
+    if isinstance(o, Decimal):
+        return str(o)
+    if isinstance(o, int):
+        return str(o)
+    if isinstance(o, str):
+        return json.dumps(o, ensure_ascii=False)
+    if isinstance(o, list):
+        return "[" + ",".join(_dump(v) for v in o) + "]"
+    if isinstance(o, dict):
+        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + _dump(v) for k, v in o.items()) + "}"
+    raise ValueError("unexpected JSON type")
 data = sys.stdin.read()
 try:
-    obj = json.loads(data, parse_constant=_reject_constant)
+    obj = json.loads(data, parse_constant=_reject_constant, parse_float=Decimal)
 except ValueError:
     sys.exit(1)
-json.dump(obj, sys.stdout, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+sys.stdout.write(_dump(obj))
 '
 }
 
@@ -71,7 +94,7 @@ toss_validate_json_body() {
   normalized="$(printf '%s' "$raw" | toss_normalize_json_single_value)"
   rc=$?
   if [ "$rc" = "2" ]; then
-    echo "error: python3 is required to validate --data as strict JSON" >&2
+    echo "error: python3 (TOSS_PYTHON) is required to validate --data as strict JSON" >&2
     return 1
   fi
   [ "$rc" = "0" ] || return 1
@@ -542,6 +565,17 @@ toss_api_execute() {
       ;;
   esac
 
+  # percent-encoding 거부: `/%6fauth2/token`·`/oauth%32/token` 등은 raw 문자열 auth 판정을
+  # 통과하지만 서버가 RFC 3986 unreserved 문자를 decode해 실제 token endpoint로 라우팅한다.
+  # 공식 endpoints.json path는 모두 percent-encoding이 없으므로, path segment의 '%'를
+  # fail-closed로 거부한다 (query의 '%'는 정상이므로 query 앞부분만 검사).
+  case "${path%%\?*}" in
+    *%*)
+      echo "error: toss api PATH must not contain percent-encoding: $(toss_ledger_sanitized_path "$path")" >&2
+      return 2
+      ;;
+  esac
+
   # dot-segment 거부: curl/서버 정규화로 auth guard를 우회해 token endpoint에 도달하는
   # 경로를 metadata·auth 검사 전에 입력 단계에서 차단한다.
   if toss_api_path_has_dot_segment "$path"; then
@@ -569,6 +603,9 @@ toss_api_execute() {
     toss_api_handle_dry_run "$requires_order_safeguards" "$request_context"
     return 0
   fi
+
+  # Bearer access token을 전송하기 전에 origin을 공식 호스트로 고정한다 (confused-deputy 차단).
+  toss_require_trusted_base_url || return 1
 
   local tmp_dir response_file call_result http_status curl_exit rc
   local old_exit_trap old_int_trap old_term_trap

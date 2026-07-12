@@ -67,7 +67,12 @@ jq '
 
   def resolved_parameter($root; $param):
     if (($param["$ref"] // null) != null) then
-      try resolve_ref($root; $param["$ref"]) catch $param
+      # broken/external ref는 getpath가 null을 반환해 조용히 통과하면 account-required
+      # endpoint가 account-free로 잘못 생성된다. resolve 결과가 object가 아니면 실패시킨다.
+      (resolve_ref($root; $param["$ref"])) as $resolved
+      | if ($resolved | type) == "object" then $resolved
+        else error("unresolved parameter $ref: \($param["$ref"])")
+        end
     else
       $param
     end;

@@ -528,6 +528,130 @@ JSON
   ' "$output" >/dev/null || fail "expected fail-closed order-path mutation classification"
 }
 
+test_toss_endpoint_metadata_fails_on_unresolved_ref() {
+  local sandbox input output rc stderr
+  sandbox=$(new_sandbox)
+  input="$sandbox/openapi.json"
+  output="$sandbox/endpoints.json"
+  # AccountSeq ref를 존재하지 않는 이름으로 바꾸면(docs-refresh의 broken/external ref),
+  # account-required endpoint가 조용히 account-free로 생성돼선 안 된다 — generator 실패.
+  cat > "$input" <<'JSON'
+{
+  "info": {"version": "test"},
+  "components": {"parameters": {"AccountSeq": {"name": "X-Tossinvest-Account", "in": "header"}}},
+  "paths": {
+    "/api/v1/holdings": {
+      "get": {
+        "operationId": "listHoldings",
+        "description": "**Rate Limits Group**: `ASSET`",
+        "parameters": [{"$ref": "#/components/parameters/AccountSeqTypo"}]
+      }
+    }
+  }
+}
+JSON
+
+  set +e
+  stderr="$(bash "$REPO_ROOT/scripts/toss/generate-endpoint-metadata.sh" "$input" "$output" 2>&1 >/dev/null)"
+  rc=$?
+  set -e
+  [ "$rc" != "0" ] || fail "expected generator to fail on unresolved parameter \$ref, got rc=$rc"
+  assert_contains "$stderr" "unresolved parameter"
+  [ ! -s "$output" ] || fail "generator must not write metadata when a ref is unresolved"
+}
+
+test_toss_api_rejects_untrusted_base_url() {
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # confused-deputy 차단: bearer token을 비공식 host로 보내려 하면 전송 전에 거부.
+  set +e
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_API_BASE_URL="https://evil.invalid" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api GET /api/v1/orders --account ACC123 > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" != "0" ] || fail "expected untrusted TOSS_API_BASE_URL to be rejected"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "trusted Toss origin"
+  [ ! -e "$sandbox/curl.config" ] || fail "untrusted base URL must be rejected before any request"
+}
+
+test_toss_api_allows_insecure_base_url_with_optin() {
+  local sandbox
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # 격리 테스트 escape hatch: 명시적 opt-in이면 mock origin을 허용한다.
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_API_BASE_URL="https://mock.test.invalid" \
+    TOSS_ALLOW_INSECURE_BASE_URL=1 \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_RESPONSE_KIND=json \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api GET /api/v1/orders --account ACC123 > "$sandbox/stdout"
+
+  [ -e "$sandbox/curl.config" ] || fail "insecure base URL opt-in should allow the request"
+}
+
+test_toss_api_rejects_percent_encoded_path() {
+  local sandbox rc stderr
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # /%6fauth2/token 은 raw 문자열 auth 판정을 통과하지만 서버가 decode해 token endpoint로
+  # 라우팅된다. path segment의 percent-encoding은 입력 단계에서 거부한다.
+  set +e
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    TOSS_ACCESS_TOKEN="mock-token" \
+    TOSS_SKIP_PREFLIGHT=1 \
+    TOSS_NOTIFY=0 \
+    TOSS_TEST_CURL_CONFIG="$sandbox/curl.config" \
+    TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
+    "$(_toss_cli_script "$sandbox")" api GET '/%6fauth2/token' --account ACC123 > "$sandbox/stdout" 2> "$sandbox/stderr"
+  rc=$?
+  set -e
+
+  [ "$rc" = "2" ] || fail "expected percent-encoded path rejection rc=2, got: $rc"
+  stderr="$(cat "$sandbox/stderr")"
+  assert_contains "$stderr" "percent-encoding"
+  [ ! -e "$sandbox/curl.config" ] || fail "percent-encoded path must be rejected before any request"
+}
+
+test_toss_normalize_preserves_decimal_lexeme() {
+  local sandbox out
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+
+  # 정규화가 전송 body의 단일 SoT이므로, 소수 lexeme가 float 손실 없이 보존되어야 한다.
+  # json.dump 기본 float는 이 값을 1234567890.1234567로 손실시킨다 (Decimal 파싱으로 방지).
+  out="$(
+    TOSS_PYTHON="$(toss_test_python3)" bash -c '
+      set +e
+      source "$1" 2>/dev/null
+      printf "%s" "{\"quantity\":1234567890.12345678901234567890}" | toss_normalize_json_single_value
+    ' _ "$sandbox/home/.local/lib/toss/api.sh"
+  )"
+  [ "$out" = '{"quantity":1234567890.12345678901234567890}' ] \
+    || fail "expected decimal lexeme to be preserved, got: $out"
+}
+
 test_toss_api_rejects_non_origin_relative_path() {
   local sandbox rc stderr
   sandbox=$(new_sandbox)

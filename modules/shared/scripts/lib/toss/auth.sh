@@ -4,6 +4,38 @@ set -euo pipefail
 TOSS_API_BASE_URL="${TOSS_API_BASE_URL:-https://openapi.tossinvest.com}"
 TOSS_TOKEN_REFRESH_MARGIN_SECONDS="${TOSS_TOKEN_REFRESH_MARGIN_SECONDS:-3600}"
 TOSS_TOKEN_LOCK_TIMEOUT_SECONDS="${TOSS_TOKEN_LOCK_TIMEOUT_SECONDS:-30}"
+
+# confused-deputy 방지: 이 CLI는 LLM에 1Password credential authority를 위임하는 경로다.
+# TOSS_API_BASE_URL은 ambient env로 override 가능하므로, 검증 없이는 caller가 destination만
+# 정해 client secret/access token(bearer)을 임의 host로 빼돌릴 수 있다(--proto =https는 scheme만
+# 제한, host는 pin 안 함). credential/token을 전송하는 모든 경로 진입 전에 origin을 공식
+# 호스트로 고정한다. 격리 테스트가 mock origin을 써야 하면 TOSS_ALLOW_INSECURE_BASE_URL=1로 opt-in.
+TOSS_TRUSTED_API_HOST="openapi.tossinvest.com"
+
+toss_require_trusted_base_url() {
+  [ "${TOSS_ALLOW_INSECURE_BASE_URL:-0}" != "1" ] || return 0
+
+  local url="$TOSS_API_BASE_URL"
+  case "$url" in
+    https://*) ;;
+    *)
+      echo "error: TOSS_API_BASE_URL must use https for credential/token transmission" >&2
+      return 1
+      ;;
+  esac
+
+  # scheme 제거 → userinfo(@)·port·path 제거 후 host만 추출
+  local hostport="${url#*://}"
+  hostport="${hostport%%/*}"
+  hostport="${hostport##*@}"
+  local host="${hostport%%:*}"
+
+  if [ "$host" != "$TOSS_TRUSTED_API_HOST" ]; then
+    echo "error: TOSS_API_BASE_URL host is not the trusted Toss origin ($TOSS_TRUSTED_API_HOST): $host" >&2
+    echo "hint: credential/token transmission is pinned to the official origin; set TOSS_ALLOW_INSECURE_BASE_URL=1 only for isolated tests" >&2
+    return 1
+  fi
+}
 # Home Manager 배포 CLI는 libraries/constants.nix의 onePassword.tossOpenApi에서
 # 이 값을 env로 주입한다. 아래 fallback은 repo checkout에서 직접 실행할 때의 기존 동작 보존용이며,
 # constants SSOT와 tests/eval-tests.nix 회귀 테스트로 동기화를 강제한다.
@@ -207,6 +239,9 @@ toss_issue_token_locked() {
   if [ "$force" != "1" ]; then
     toss_read_cached_token && return 0
   fi
+
+  # client secret을 전송하기 전에 origin을 공식 호스트로 고정한다 (confused-deputy 차단).
+  toss_require_trusted_base_url || return 1
 
   local credentials client_id client_secret
   credentials="$(toss_read_client_credentials)"

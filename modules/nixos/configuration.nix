@@ -129,7 +129,7 @@
     trackingIssueNumber = 1067; # 리포트 누적 그릇 (연 1회 로테이션 — 이슈 본문 운영 원칙 참조)
   };
   homeserver.opnix.enable = true; # 1Password SA token materialization + gh 인증
-  homeserver.toss.enable = false; # 전용 vault/SA 분리(#1044) 전까지는 off — Automation SA blast radius가 토스 credential(주문 access token 발급용)까지 즉시 확장되는 것을 막는다. Mac은 SA token op read 경로라 별개로 동작. #1044 완료 후 true로.
+  homeserver.toss.enable = false; # #1044 전까지 off. 이 게이트는 MiniPC 로컬 opnix materialization/런타임 사용만 생략한다 — Automation SA의 vault read ACL은 이미 github-pat+토스로 확장됐고(managing-secrets 참조) SA token 탈취 시 이 값이 false여도 토스 item을 읽을 수 있다. SA blast radius 원복은 #1044(전용 vault/SA 분리)에서. Mac은 SA token op read 경로라 별개로 동작.
   homeserver.codexRemoteControl.enable = true; # Codex mobile remote-control app-server 회귀 방지
   homeserver.claudeRemoteControl = {
     enable = true; # 선언 인스턴스(nixos-config) 상시 유지 + version-drift 감시 (30분 timer)

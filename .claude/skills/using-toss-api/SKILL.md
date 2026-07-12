@@ -98,7 +98,7 @@ curl -fsSL https://openapi.tossinvest.com/openapi-docs/overview.md \
   -o .claude/skills/using-toss-api/references/vendor/overview.md
 curl -fsSL https://openapi.tossinvest.com/openapi-docs/latest/api-reference/README.md \
   -o .claude/skills/using-toss-api/references/vendor/api-reference.md
-curl -fsSL https://openapi.tossinvest.com/llms.txt \
+curl -fsSL https://developers.tossinvest.com/llms.txt \
   -o .claude/skills/using-toss-api/references/vendor/llms.txt
 
 scripts/toss/generate-endpoint-metadata.sh

@@ -208,6 +208,11 @@ run_test "toss api preserves large integer data" test_toss_api_preserves_large_i
 run_test "toss api rejects dot-segment path" test_toss_api_rejects_dot_segment_path
 run_test "toss api auth reject sanitizes query secret" test_toss_api_auth_reject_sanitizes_query_secret
 run_test "toss endpoint metadata fail-closes order-path mutations" test_toss_endpoint_metadata_fail_closed_order_path_mutations
+run_test "toss endpoint metadata fails on unresolved ref" test_toss_endpoint_metadata_fails_on_unresolved_ref
+run_test "toss api rejects untrusted base URL" test_toss_api_rejects_untrusted_base_url
+run_test "toss api allows insecure base URL with opt-in" test_toss_api_allows_insecure_base_url_with_optin
+run_test "toss api rejects percent-encoded path" test_toss_api_rejects_percent_encoded_path
+run_test "toss normalize preserves decimal lexeme" test_toss_normalize_preserves_decimal_lexeme
 run_test "toss api rejects non-origin-relative path" test_toss_api_rejects_non_origin_relative_path
 run_test "toss api curl blocks curlrc and globbing" test_toss_api_curl_blocks_curlrc_and_globbing
 run_test "toss api 401 reuses token refreshed by other process" test_toss_api_401_reuses_token_refreshed_by_other_process
