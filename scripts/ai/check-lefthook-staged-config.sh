@@ -187,6 +187,7 @@ pre-push:
       glob:
         - "modules/shared/programs/claude/files/scripts/statusline.sh"
         - "modules/shared/programs/claude/files/scripts/tests/statusline.bats"
+        - "scripts/ai/test-runtime-profile.sh"
       run: bash ./scripts/ai/test-runtime-profile.sh run "$PWD" -- env TERM="${TERM:-xterm-256color}" bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
 EOF
 

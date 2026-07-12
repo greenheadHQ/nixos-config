@@ -159,5 +159,6 @@ pre-push:
       glob:
         - "modules/shared/programs/claude/files/scripts/statusline.sh"
         - "modules/shared/programs/claude/files/scripts/tests/statusline.bats"
+        - "scripts/ai/test-runtime-profile.sh"
       # profile의 Bats를 사용하고 비대화형 hook에는 Bats/tput용 기본 TERM을 주입한다.
       run: bash ./scripts/ai/test-runtime-profile.sh run "$PWD" -- env TERM="${TERM:-xterm-256color}" bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
