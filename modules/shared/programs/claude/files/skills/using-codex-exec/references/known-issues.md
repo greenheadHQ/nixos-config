@@ -682,3 +682,63 @@ rm -rf "$tmp"
 
 CLI 제안만 보고 `sudo chown`을 실행하지 않는다. 소유권 변경은 host mutation이며 부모 sandbox
 denial을 해결하지 못하고 정상 파일의 owner를 훼손할 수 있다.
+
+### 19. codex exec `--json`이 multi-agent spawn/child 이벤트를 노출하지 않음 (관측성 한계)
+
+심각도: 중간 — 공개 `--json`만 보면 spawn이 실패한 것으로 오판해, 이미 실행된 child 작업을 중복 실행할 수 있다
+
+- 확인: 2026-07-11, codex-cli 0.144.1 (아래 모델·child 이름 등 관측값은 실행마다 다를 수 있다)
+- 재검증: 아래 probe. 공개 `--json`의 `receiver_thread_ids`가 `[]`여도 persisted rollout에는
+  `spawn_agent` 호출이 기록됨을 확인한다.
+
+사실 vs 한계: `codex exec`에서 multi-agent(`collaboration.spawn_agent`)는 정상 작동한다 — reasoning effort와
+무관하게, 모델이 `spawn_agent`를 호출하면 child agent가 실제로 생성·실행되고 부모에게 결과를 전달한다(실측에서
+child 2개가 생성돼 각자 응답을 부모에 전달, `wait_agent`가 `timed_out:false`로 종료). 그러나 `codex exec --json`
+이벤트 stream(공개 stdout)은 이 spawn/child 이벤트를 노출하지 않는다. 공개 `--json`에는 최종 `collab_tool_call`
+(event label `tool:"wait"`)과 `agent_message`만 보이고, 그 wait 이벤트의 `receiver_thread_ids`는 `[]`다. 이 빈
+값은 wait 이벤트에 붙은 필드일 뿐 spawn 성공/실패와 무관하다.
+
+오판 주의: 공개 `--json`의 빈 `receiver_thread_ids`를 "spawn 실패"로 해석하지 마라. child가 이미 실행됐을 수
+있으므로 재시도하면 작업이 중복 실행된다. 반대로 모델의 "spawned" 자기보고는 실제 spawn과 일치할 수 있고, 공개
+`--json`의 빈 필드가 그 반증이 되지 않는다. 실제 spawn 여부는 아래 persisted rollout으로만 판정한다.
+
+실제 확인 경로 — persisted rollout session: codex는 `--ephemeral`이 아니면 세션마다
+`~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl`에 전체 이벤트를 저장한다. 여기엔 공개 `--json`에 없는
+`spawn_agent` `function_call`, `sub_agent_activity`, `inter_agent_communication_metadata`, `wait_agent`
+output이 기록된다. 이름은 세 층위로 다르다: 모델-facing tool 이름은 `collaboration.spawn_agent`(다른 협업 tool도
+같은 `collaboration.*` namespace), 공개 `--json` event label은 축약된 `tool:"wait"`, persisted rollout JSONL의
+`function_call`은 `name`이 `collaboration.` prefix 없이 `spawn_agent`이고 `namespace`가 별도로 `collaboration`이다.
+아래 probe는 이 세 번째 형태를 jq로 파싱한다(`.payload.name == "spawn_agent"`를 세고, 공개 `--json`은 `.item.receiver_thread_ids`를
+추출) — grep 리터럴은 JSON 공백/직렬화 차이에 취약하므로 쓰지 않는다. 비대화형에서 spawn/진행을 판정하려면
+공개 `--json`이 아니라 이 rollout을 파싱하거나 최종 산출물로 판정한다.
+
+재검증 (stdout/stderr/exit 분리, persisted rollout 대조):
+
+```zsh
+set -o pipefail
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/codex-spawn-probe-XXXXXX")   # 공유 /tmp symlink 회피
+command codex features list | grep -E '^multi_agent[[:space:]]'   # 예: "multi_agent  stable  true" 한 줄이 나와야 전제 성립
+printf 'Spawn two subagents in parallel: agent1 replies ALPHA, agent2 replies BRAVO. Report both.\n' > "$TMP/prompt.md"
+for eff in ultra high; do   # 두 effort 모두 같은 관측성 한계를 보이는지 확인
+  cat "$TMP/prompt.md" | env CODEX_PROGRAMMATIC=1 codex exec -s read-only --json \
+    -c model_reasoning_effort="$eff" - > "$TMP/$eff.jsonl" 2> "$TMP/$eff.err"
+  rc=$pipestatus[2]   # zsh 파이프 2번째(codex). bash에서는 이 펜스를 bash로 바꾸고 ${PIPESTATUS[1]} 사용
+  tid=$(head -1 "$TMP/$eff.jsonl" | jq -r '.thread_id')
+  pub=$(jq -R 'fromjson? | select(.item.receiver_thread_ids != null) | .item.receiver_thread_ids' "$TMP/$eff.jsonl" 2>/dev/null | head -1)   # 공개 --json: wait 이벤트의 배열(빈 값 기대)
+  roll=$(find "$HOME/.codex/sessions" -name "*$tid*" 2>/dev/null | head -1)
+  if [ -z "$roll" ]; then roll=notfound; spawns=0
+  else spawns=$(jq -R 'fromjson? | select(.payload.type=="function_call" and .payload.name=="spawn_agent")' "$roll" 2>/dev/null | jq -s 'length'); : "${spawns:=0}"; fi
+  printf '%s: rc=%s public_receiver=%s roll=%s persisted_spawn_agent_calls=%s\n' \
+    "$eff" "$rc" "${pub:-none}" "$roll" "$spawns"
+done
+```
+
+기대: 각 effort에서 `rc=0`, `public_receiver`는 빈 배열 `[]`, `roll`은 실제 경로,
+`persisted_spawn_agent_calls`가 1 이상 — 공개 필드가 비어도 persisted에 `spawn_agent` 호출이 있으면 이 한계가
+재현된 것이다. 진단: `features list`에 `multi_agent`가 `stable`/`true`로 나오지 않으면 probe 전제가 깨진 것이고,
+`roll=notfound`면 `tid` 추출/`find` 경로 문제(probe 인프라 실패)이며, `roll`은 있는데 `spawns=0`이면 이 한계가
+아닌 별개 실패이므로 `$TMP/$eff.err`를 확인한다.
+
+대안: 비대화형에서 spawn 진행을 프로그램적으로 관측·판정해야 하면 공개 `--json`에 의존하지 말고 persisted
+rollout을 파싱한다. 또는 세션 내 오케스트레이션 대신 `codex-fan-out`(별도 `codex exec` 프로세스 병렬)으로
+관측 가능한 병렬화를 쓴다.
