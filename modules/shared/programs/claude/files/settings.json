@@ -11,7 +11,10 @@
   },
   "includeCoAuthoredBy": false,
   "permissions": {
-    "deny": ["Bash(rm -rf /)", "Bash(rm -rf ~)"],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)"
+    ],
     "additionalDirectories": [
       "~/Desktop",
       "~/Downloads",
@@ -170,6 +173,5 @@
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true,
-  "model": "claude-fable-5[1m]"
+  "voiceEnabled": true
 }
