@@ -21,6 +21,12 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 등록되어 있다 (Issue 열). 4건 모두 운영자가 plan 승격을 직접 선택했고,
 방향 결정(AnkiWeb 이행, anki-study 보류)도 운영자 답변으로 확정됐다.
 
+028–029는 2026-07-13 (commit `368e3140`) Mac의 Claude/Codex 휴대폰 원격
+세션에서 로컬 GUI 권한 요청이 명령을 무한 대기시키는 장애를 실측한 뒤 생성됐다.
+028은 macOS TCC, 029는 1Password SSH agent를 소유한다. 두 plan 모두 운영자의
+"DX 1순위" 결정에 따라 광범위 권한/모든 앱 승인/전용 무인 key를 자동 기각하지
+않고 실제 선택지로 비교하되, launcher별 실측과 명시적 결정 게이트를 요구한다.
+
 **Reconcile 2026-07-06 (commit `a6bbf637`)**: DONE 전 건 spot-check 통과 —
 002(비특권 유저·sandbox 실배포 유지), 003(same-fs mktemp), 006(gitleaks
 `.local.md` 예외 부재 + gitignore 대체), 007(flock 타임아웃), 019(미러 타이머
@@ -68,6 +74,8 @@ reconcile 당시 PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)
 | 025 | 601장 백로그 재시작 프로토콜 (상한·정렬·2주 게이트) | P1 | S-M | 024 (soft) | #975 | TODO |
 | 026 | Anki 애드온·문서 drift·인프라 잔재 일괄 정리 | P2 | S | 024 (soft) | #976 | TODO |
 | 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | TODO |
+| 028 | 원격 AI 세션 macOS TCC 권한 정책을 DX 우선으로 확정·적용 | P1 | M | — | #1093 | TODO |
+| 029 | 원격 AI 세션 1Password SSH 승인 hang을 DX 우선으로 제거 | P1 | M-L | — | #1094 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -110,6 +118,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   만지는 것이 유일한 repo 접점).
 - Anki 오프사이트 독립 백업(.colpkg→restic→R2)은 plan으로 승격하지 않았다 —
   AnkiWeb 이행(024) 후 필요성이 남으면 020 스택 재사용으로 별도 승격.
+
+## Dependency notes (028–029, remote DX)
+
+- 028(TCC)과 029(1Password SSH)는 서로 다른 외부 GUI gate라 상호 독립이다.
+- 두 plan 모두 보안 최소화보다 원격 작업 지속성을 우선한다. 다만 실제 권한/키 정책은
+  운영자 결정 전 구현하지 않는다.
+- 028의 Ghostty 권한은 direct session에만 유효하고, Claude launchd/Codex App의
+  TCC permission을 대체하지 않는다.
+- 029는 A/B/C 인증 선택과 무관하게 D(outer deadline)를 공통 불변식으로 적용한다.
 
 ## Findings considered and rejected (재감사 방지)
 
