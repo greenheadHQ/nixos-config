@@ -450,6 +450,13 @@ let
                 != null
             );
         }
+        {
+          name = "Test D13 ${hostName}: Computer Use 금지 대상 허용이 활성화되어야 함";
+          cond =
+            hasHost
+            &&
+              cfg.system.defaults.CustomUserPreferences.NSGlobalDomain.ComputerUseAllowForbiddenTargets == true;
+        }
       ]
     ) expectedDarwinHosts
   );

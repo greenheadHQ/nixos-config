@@ -186,6 +186,14 @@ in
       "com.apple.keyboard.fnState" = true;
     };
 
+    # nix-darwin의 typed NSGlobalDomain schema에 없는 전역 preference는 이 경로로 선언한다.
+    CustomUserPreferences.NSGlobalDomain = {
+      # CIR: Computer Use의 금지 대상 가드를 의도적으로 해제한다. Ghostty 접근을
+      # 키 없음(거부) → true(조회·클릭 성공) → 키 없음(재거부)으로 실측했다.
+      # 보안 trade-off: 터미널 같은 민감 앱의 UI와 내용을 읽고 조작할 수 있게 된다.
+      ComputerUseAllowForbiddenTargets = true;
+    };
+
     # 네트워크 볼륨에 .DS_Store 생성 방지
     CustomUserPreferences."com.apple.desktopservices" = {
       DSDontWriteNetworkStores = true;
