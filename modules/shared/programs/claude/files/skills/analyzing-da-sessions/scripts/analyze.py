@@ -1809,7 +1809,10 @@ def _validate_remote_path(host: str, path: str) -> None:
 def _build_remote_tar_argv(host: str) -> list[str]:
     """remote tar batch fetch argv. GNU tar/bsdtar 공통 옵션만 사용한다."""
     _validate_host(host)
-    return ["ssh", host, "tar", "-C", "/", "-cf", "-", "-T", "-"]
+    remote_prefix = ["ssh", host]
+    if host == "mac":
+        remote_prefix.extend(["env", "COPYFILE_DISABLE=1"])
+    return remote_prefix + ["tar", "-C", "/", "-cf", "-", "-T", "-"]
 
 
 def _prepare_remote_tar_entries(

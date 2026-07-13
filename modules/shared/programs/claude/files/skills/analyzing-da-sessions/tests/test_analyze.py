@@ -482,11 +482,25 @@ def test_allowed_remote_path_boundary_check(analyze_module):
     ) is False
 
 
-def test_remote_tar_argv_uses_portable_stdin_list(analyze_module):
-    """원격 tar는 GNU tar/bsdtar 공통 옵션으로 stdin path list를 받는다."""
+def test_remote_tar_argv_disables_copyfile_only_on_mac(analyze_module):
+    """macOS tar는 AppleDouble metadata를 억제하고 stdin path list를 받는다."""
     assert analyze_module._build_remote_tar_argv("mac") == [
         "ssh",
         "mac",
+        "env",
+        "COPYFILE_DISABLE=1",
+        "tar",
+        "-C",
+        "/",
+        "-cf",
+        "-",
+        "-T",
+        "-",
+    ]
+
+    assert analyze_module._build_remote_tar_argv("minipc") == [
+        "ssh",
+        "minipc",
         "tar",
         "-C",
         "/",

@@ -82,7 +82,8 @@ def _allowed_remote_path(host: str, path: str) -> bool:
 
 허용 + 의무:
 - `subprocess.run(["ssh", alias, "find", base, ...], capture_output=True)` — argv 고정.
-- `subprocess.run(["ssh", alias, "tar", "-C", "/", "-cf", "-", "-T", "-"], input=...)` — argv 고정. file list는 stdin으로만 전달.
+- MiniPC: `subprocess.run(["ssh", alias, "tar", "-C", "/", "-cf", "-", "-T", "-"], input=...)` — argv 고정. file list는 stdin으로만 전달.
+- macOS: `subprocess.run(["ssh", alias, "env", "COPYFILE_DISABLE=1", "tar", "-C", "/", "-cf", "-", "-T", "-"], input=...)` — 고정 env/argv로 AppleDouble metadata 생성을 억제.
 - `subprocess.run(["ssh", alias, "cat", path], ...)` — tar batch 실패 시 fallback. path는 `_allowed_remote_path` 통과 후에만.
 
 remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 `_allowed_remote_path`로 다시 검증하여 통과한 line만 수집한다.
@@ -119,7 +120,10 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
 2. remote host 분석 직전 `_prepare_remote_tar_entries(host, files, warnings)`가 목록을 다시 검증한다. `HOST_PATH_MAP` base prefix, shell metacharacter/제어문자 거부, `.jsonl` 확장자, `posixpath.normpath`, absolute path, `posixpath.commonpath` boundary 조건은 `_allowed_remote_path`와 동일하게 적용한다.
 3. tar list는 `tar -C /` 기준 상대 path로 변환한다. 예: `/Users/greenhead/.claude/projects/a.jsonl` → `Users/greenhead/.claude/projects/a.jsonl`.
 4. file name에 newline 또는 carriage return이 포함된 path는 `tar -T -`의 newline 구분 형식으로 안전하게 표현할 수 없으므로 제외하고 warning을 남긴다. 제외된 path는 per-file fallback에서도 fetch하지 않는다.
-5. fetch command는 `ssh <alias> tar -C / -cf - -T -`이며 file list는 stdin으로 넘긴다. 이 옵션 조합은 GNU tar(리눅스)와 bsdtar(macOS) 공통 surface다.
+5. fetch command는 MiniPC에서 `ssh <alias> tar -C / -cf - -T -`, macOS에서
+   `ssh <alias> env COPYFILE_DISABLE=1 tar -C / -cf - -T -`이며 file list는 stdin으로
+   넘긴다. 고정된 macOS 환경변수는 요청 파일과 함께 생성되는 AppleDouble `._*` metadata
+   member를 억제한다. tar 옵션 조합은 GNU tar(리눅스)와 bsdtar(macOS) 공통 surface다.
 6. 로컬에서는 임시 디렉토리에 tar stream을 추출한 뒤, 추출된 로컬 파일을 `analyze_session(..., logical_path=<remote absolute path>)`로 분석한다. 임시 디렉토리는 함수 종료 시 정리한다.
 7. tar fetch가 timeout, ssh binary 부재, nonzero exit, 빈 stdout, tar 해석 실패, extractable file 0건 중 하나로 실패하면 warning을 남기고 기존 per-file `ssh <alias> cat <path>` worker pool로 fallback한다. 단, 실패 시점에 host budget이 소진되었으면 fallback으로 내려가지 않고 해당 host의 남은 수집을 중단한다.
 
@@ -147,7 +151,8 @@ path여야 한다.
 
 원격 호스트에서 실행 가능한 명령은 다음으로 제한:
 - `find <prefix> -type f -name "*.jsonl"` (path glob)
-- `tar -C / -cf - -T -` (검증된 file list를 stdin으로 받아 batch read)
+- `tar -C / -cf - -T -` (검증된 file list를 stdin으로 받아 batch read; macOS에서는
+  고정 prefix `env COPYFILE_DISABLE=1`로 AppleDouble metadata 생성을 억제)
 - `cat <path>` (tar batch 실패 시 파일 내용 read fallback)
 - `stat <path>` (파일 메타 — 선택)
 - `true` (원격 생존 확인 및 ControlMaster master 생성/활성 확인용 transport control). `ssh -O check <host>` 자체는 client 측 multiplex control이며 원격 명령을 실행하지 않는다.
