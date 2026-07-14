@@ -1809,7 +1809,10 @@ def _validate_remote_path(host: str, path: str) -> None:
 def _build_remote_tar_argv(host: str) -> list[str]:
     """remote tar batch fetch argv. GNU tar/bsdtar 공통 옵션만 사용한다."""
     _validate_host(host)
-    return ["ssh", host, "tar", "-C", "/", "-cf", "-", "-T", "-"]
+    remote_prefix = ["ssh", host]
+    if host == "mac":
+        remote_prefix.extend(["env", "COPYFILE_DISABLE=1"])
+    return remote_prefix + ["tar", "-C", "/", "-cf", "-", "-T", "-"]
 
 
 def _prepare_remote_tar_entries(
@@ -1858,6 +1861,10 @@ def _normalize_tar_member_name(name: str) -> str | None:
     if not isinstance(name, str) or not name:
         return None
     if _remote_path_has_disallowed_chars(name):
+        return None
+    # 정규화 전에 raw component를 검사한다. `ignored/../allowlisted`를 먼저
+    # normpath하면 allowlist member와 같아져 traversal 입력이 채택될 수 있다.
+    if ".." in name.split("/"):
         return None
     name_norm = posixpath.normpath(name)
     if name_norm in ("", ".") or posixpath.isabs(name_norm):

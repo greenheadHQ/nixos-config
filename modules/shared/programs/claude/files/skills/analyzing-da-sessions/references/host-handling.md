@@ -82,7 +82,8 @@ def _allowed_remote_path(host: str, path: str) -> bool:
 
 허용 + 의무:
 - `subprocess.run(["ssh", alias, "find", base, ...], capture_output=True)` — argv 고정.
-- `subprocess.run(["ssh", alias, "tar", "-C", "/", "-cf", "-", "-T", "-"], input=...)` — argv 고정. file list는 stdin으로만 전달.
+- MiniPC: `subprocess.run(["ssh", alias, "tar", "-C", "/", "-cf", "-", "-T", "-"], input=...)` — argv 고정. file list는 stdin으로만 전달.
+- macOS: `subprocess.run(["ssh", alias, "env", "COPYFILE_DISABLE=1", "tar", "-C", "/", "-cf", "-", "-T", "-"], input=...)` — 고정 env/argv로 AppleDouble metadata 생성을 억제.
 - `subprocess.run(["ssh", alias, "cat", path], ...)` — tar batch 실패 시 fallback. path는 `_allowed_remote_path` 통과 후에만.
 
 remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 `_allowed_remote_path`로 다시 검증하여 통과한 line만 수집한다.
@@ -119,9 +120,18 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
 2. remote host 분석 직전 `_prepare_remote_tar_entries(host, files, warnings)`가 목록을 다시 검증한다. `HOST_PATH_MAP` base prefix, shell metacharacter/제어문자 거부, `.jsonl` 확장자, `posixpath.normpath`, absolute path, `posixpath.commonpath` boundary 조건은 `_allowed_remote_path`와 동일하게 적용한다.
 3. tar list는 `tar -C /` 기준 상대 path로 변환한다. 예: `/Users/greenhead/.claude/projects/a.jsonl` → `Users/greenhead/.claude/projects/a.jsonl`.
 4. file name에 newline 또는 carriage return이 포함된 path는 `tar -T -`의 newline 구분 형식으로 안전하게 표현할 수 없으므로 제외하고 warning을 남긴다. 제외된 path는 per-file fallback에서도 fetch하지 않는다.
-5. fetch command는 `ssh <alias> tar -C / -cf - -T -`이며 file list는 stdin으로 넘긴다. 이 옵션 조합은 GNU tar(리눅스)와 bsdtar(macOS) 공통 surface다.
-6. 로컬에서는 임시 디렉토리에 tar stream을 추출한 뒤, 추출된 로컬 파일을 `analyze_session(..., logical_path=<remote absolute path>)`로 분석한다. 임시 디렉토리는 함수 종료 시 정리한다.
-7. tar fetch가 timeout, ssh binary 부재, nonzero exit, 빈 stdout, tar 해석 실패, extractable file 0건 중 하나로 실패하면 warning을 남기고 기존 per-file `ssh <alias> cat <path>` worker pool로 fallback한다. 단, 실패 시점에 host budget이 소진되었으면 fallback으로 내려가지 않고 해당 host의 남은 수집을 중단한다.
+5. fetch command는 MiniPC에서 `ssh <alias> tar -C / -cf - -T -`, macOS에서
+   `ssh <alias> env COPYFILE_DISABLE=1 tar -C / -cf - -T -`이며 file list는 stdin으로
+   넘긴다. 고정된 macOS 환경변수는 요청 파일과 함께 생성되는 AppleDouble `._*` metadata
+   member를 억제한다. tar 옵션 조합은 GNU tar(리눅스)와 bsdtar(macOS) 공통 surface다.
+6. 로컬 extractor는 tar member의 raw path component에 `..`가 있는지 정규화 전에 거부하고,
+   정규화된 상대 path가 요청 allowlist와 정확히 일치하는지 다시 확인한다. 일치한 member도
+   regular file이어야 하며 최종 destination은 임시 디렉토리 boundary 안이어야 한다.
+   AppleDouble `._*`, 요청하지 않은 unknown member, traversal, non-regular member는 payload로
+   채택하지 않고 validation warning으로 남긴다. 이 경계는 `_allowed_remote_path`, newline
+   거부, tar member allowlist를 대체하거나 약화하지 않는다.
+7. 검증을 통과해 추출된 로컬 파일만 `analyze_session(..., logical_path=<remote absolute path>)`로 분석한다. 임시 디렉토리는 함수 종료 시 정리한다.
+8. tar fetch가 timeout, ssh binary 부재, nonzero exit, 빈 stdout, tar 해석 실패, extractable file 0건 중 하나로 실패하면 warning을 남기고 기존 per-file `ssh <alias> cat <path>` worker pool로 fallback한다. 단, 실패 시점에 host budget이 소진되었으면 fallback으로 내려가지 않고 해당 host의 남은 수집을 중단한다.
 
 ControlMaster 정책은 tar batch와 fallback 모두 동일하다. remote host는 fetch 전에 `ssh -o ConnectTimeout=10 <host> true` preflight와 `check_controlmaster_active()`를 통과해야 하며, ControlMaster 비활성 시 host 전체 fetch를 skip한다. 이 경우 per-file fallback으로 강등하지 않는다.
 
@@ -147,7 +157,8 @@ path여야 한다.
 
 원격 호스트에서 실행 가능한 명령은 다음으로 제한:
 - `find <prefix> -type f -name "*.jsonl"` (path glob)
-- `tar -C / -cf - -T -` (검증된 file list를 stdin으로 받아 batch read)
+- `tar -C / -cf - -T -` (검증된 file list를 stdin으로 받아 batch read; macOS에서는
+  고정 prefix `env COPYFILE_DISABLE=1`로 AppleDouble metadata 생성을 억제)
 - `cat <path>` (tar batch 실패 시 파일 내용 read fallback)
 - `stat <path>` (파일 메타 — 선택)
 - `true` (원격 생존 확인 및 ControlMaster master 생성/활성 확인용 transport control). `ssh -O check <host>` 자체는 client 측 multiplex control이며 원격 명령을 실행하지 않는다.
@@ -194,9 +205,11 @@ systemd 호출부는 `--host-home mac=/Users/<username>,minipc=/home/<username>`
 09:00~14:00 KST 매시 발행을 시도한다.
 
 `da-weekly-report.sh`는 시작 시 이번 주 final core JSON(`weekly-<ISO-week>.json`)이 이미
-있으면 분석/렌더는 건너뛰지만 publish log를 읽어 target별 마지막 status가 미기록이거나
+있으면 analyzer와 LLM을 재실행하지 않는다. local full Markdown이 없거나 비었으면 canonical
+JSON에서 원자적으로 복구한 뒤, publish log를 읽어 target별 마지막 status가 미기록이거나
 `failed`/`blocked`인 target(`github`, `pushover`)만 재시도한다. `success`/`skipped`는
-terminal status이며 재시도하지 않는다. 아직 final core JSON이 없으면 `HOSTS`에서 현재 host를
+terminal status이며 재시도하지 않는다. GitHub 재시도 body는 full Markdown을 재사용하지 않고
+final canonical JSON에서 bounded projection을 매번 다시 생성한다. 아직 final core JSON이 없으면 `HOSTS`에서 현재 host를
 제외해 remote host 목록을 만들고, 각 remote host에
 `ssh -o ConnectTimeout=10 -o BatchMode=yes <host> true` preflight를 1회 수행한다. shell
 preflight는 `BatchMode=yes`를 붙이고 Python `check_remote_host_preflight`
@@ -209,14 +222,18 @@ sleep alert를 보낸 뒤 exit 0으로 다음 정시 발화를 기다린다. 이
 preflight 실패가 있어도 pipeline을 계속 진행한다.
 
 LLM commentary subprocess는 scratch cwd, read-only sandbox, `--ignore-user-config`,
-`--ignore-rules`, `--ephemeral`, secret 관련 env unset으로 실행한다. 단 같은 UID 프로세스가
-user-readable secret 파일 자체를 읽는 것은 이 경계만으로 막을 수 없다. nested bwrap 격리는
-Codex 초기화 실패가 실측되어 채택하지 않았고, 대신 commentary 출력 사용 전
-`/run/opnix/<user>/github-pat`와 `~/.config/pushover/share`의 literal secret value를
-`grep -F`로 대조해 공개 코멘트/알림 발행 경로를 차단한다. match되면 commentary를 폐기하고
-`failure_reason = "sanitize gate: secret-like content"`로 fail-soft 처리한다. 잔여 리스크:
-secret과 동일하지 않은 파생 표현, 빈 값, 아직 gate에 등록되지 않은 새 credential 파일은 값
-대조로 잡지 못한다.
+`--ignore-rules`, `--ephemeral`, secret 관련 env unset으로 실행한다. stdin에는 full draft가 아니라
+`render_commentary_input()`이 만든 bounded projection만 전달한다. finalize의 기존 commentary
+sanitize gate는 secret source read 실패를 best-effort로 처리하고 commentary 자체를 폐기하는
+방어선으로 유지한다.
+
+GitHub 호출 직전에는 별도의 fail-closed guarded publisher가 token/secret source를 경로별 한 번만
+읽어 snapshot을 만든다. 동일 snapshot으로 공개 대상 projection의 모든 문자열 값과 최종 UTF-8
+body bytes를 각각 대조하며, match·unreadable·empty/unparsed source·projection 실패 시 `gh`를
+호출하지 않는다. stdout/stderr와 append-only publish message에는 body, secret value, credential
+path, raw publisher stderr를 남기지 않는다. GitHub가 blocked/failed여도 pending Pushover target은
+계속 처리한다. 같은 UID 프로세스가 user-readable secret 파일 자체를 읽는 잔여 경계는 변하지
+않지만, exact outbound body는 발행 직전 snapshot으로 다시 검증된다.
 
 Mac 수집 실패 또는 ControlMaster 비활성은 weekly pipeline의 hard fail이 아니다. 마감 발화
 또는 직접 실행에서 `analyze.py`는 해당 host warning을 sidecar에 남기고, `da-weekly-report.sh`는

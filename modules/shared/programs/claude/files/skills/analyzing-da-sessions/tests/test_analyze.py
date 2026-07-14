@@ -482,11 +482,25 @@ def test_allowed_remote_path_boundary_check(analyze_module):
     ) is False
 
 
-def test_remote_tar_argv_uses_portable_stdin_list(analyze_module):
-    """원격 tar는 GNU tar/bsdtar 공통 옵션으로 stdin path list를 받는다."""
+def test_remote_tar_argv_disables_copyfile_only_on_mac(analyze_module):
+    """macOS tar는 AppleDouble metadata를 억제하고 stdin path list를 받는다."""
     assert analyze_module._build_remote_tar_argv("mac") == [
         "ssh",
         "mac",
+        "env",
+        "COPYFILE_DISABLE=1",
+        "tar",
+        "-C",
+        "/",
+        "-cf",
+        "-",
+        "-T",
+        "-",
+    ]
+
+    assert analyze_module._build_remote_tar_argv("minipc") == [
+        "ssh",
+        "minipc",
         "tar",
         "-C",
         "/",
@@ -593,6 +607,74 @@ def test_remote_tar_extracts_expected_members(analyze_module, tmp_path):
     extracted_path = tmp_path / "Users/greenhead/.claude/projects/a.jsonl"
     assert extracted_path.read_bytes() == payload
     assert warnings == []
+
+
+def test_remote_tar_rejects_appledouble_and_unknown_members(analyze_module, tmp_path):
+    """AppleDouble/unknown member는 payload로 채택하지 않고 warning으로 남긴다."""
+    expected = "Users/greenhead/.claude/projects/a.jsonl"
+    entries = [(f"/{expected}", expected)]
+    payload = b'{"type":"user"}\n'
+    tar_buffer = io.BytesIO()
+    with tarfile.open(fileobj=tar_buffer, mode="w") as tf:
+        expected_info = tarfile.TarInfo(expected)
+        expected_info.size = len(payload)
+        tf.addfile(expected_info, io.BytesIO(payload))
+
+        appledouble = tarfile.TarInfo(
+            "Users/greenhead/.claude/projects/._a.jsonl"
+        )
+        appledouble.size = len(payload)
+        tf.addfile(appledouble, io.BytesIO(payload))
+
+        unknown = tarfile.TarInfo(
+            "Users/greenhead/.claude/projects/unknown.jsonl"
+        )
+        unknown.size = len(payload)
+        tf.addfile(unknown, io.BytesIO(payload))
+
+    warnings: list[str] = []
+    assert analyze_module._extract_tar_bytes_to_dir(
+        "mac", tar_buffer.getvalue(), entries, str(tmp_path), warnings
+    ) is True
+
+    assert (tmp_path / expected).read_bytes() == payload
+    assert not (tmp_path / "Users/greenhead/.claude/projects/._a.jsonl").exists()
+    assert not (tmp_path / "Users/greenhead/.claude/projects/unknown.jsonl").exists()
+    assert sum("tar member skipped by validation" in item for item in warnings) == 2
+    assert any("._a.jsonl" in item for item in warnings)
+    assert any("unknown.jsonl" in item for item in warnings)
+
+
+def test_remote_tar_rejects_traversal_and_non_regular_members(
+    analyze_module,
+    tmp_path,
+):
+    """정규화로 allowlist에 축약되는 raw traversal과 non-regular member를 거부한다."""
+    expected = "Users/greenhead/.claude/projects/a.jsonl"
+    entries = [(f"/{expected}", expected)]
+    payload = b'{"type":"hostile"}\n'
+    tar_buffer = io.BytesIO()
+    with tarfile.open(fileobj=tar_buffer, mode="w") as tf:
+        traversal = tarfile.TarInfo(f"ignored/../{expected}")
+        traversal.size = len(payload)
+        tf.addfile(traversal, io.BytesIO(payload))
+
+        root_escape = tarfile.TarInfo("../escape.jsonl")
+        root_escape.size = len(payload)
+        tf.addfile(root_escape, io.BytesIO(payload))
+
+        non_regular = tarfile.TarInfo(expected)
+        non_regular.type = tarfile.DIRTYPE
+        tf.addfile(non_regular)
+
+    warnings: list[str] = []
+    assert analyze_module._extract_tar_bytes_to_dir(
+        "mac", tar_buffer.getvalue(), entries, str(tmp_path), warnings
+    ) is False
+
+    assert not (tmp_path / expected).exists()
+    assert sum("tar member skipped by validation" in item for item in warnings) == 2
+    assert any("tar member is not a regular file" in item for item in warnings)
 
 
 def test_remote_tar_fetch_fallbacks_on_nonzero_exit(analyze_module, monkeypatch, tmp_path):
