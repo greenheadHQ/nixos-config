@@ -64,26 +64,23 @@ let
     ".local/libexec/claudex/claudex-proxy-launcher"
   ];
   claudexDisabledRuntimeSource = claudexDisabledHm.home.file.".local/lib/claudex/runtime.sh".source;
-  claudexDisabledRuntimeContext = builtins.getContext (toString claudexDisabledRuntimeSource);
-  claudexDisabledRuntimeReferencesProxy = builtins.any (
-    drvPath: nixpkgsLib.hasInfix "cli-proxy-api" (builtins.readFile drvPath)
-  ) (builtins.attrNames claudexDisabledRuntimeContext);
+  # getContext exposes .drv path names but does not guarantee that those store files exist in a
+  # clean eval store. Inspect replaceVars' evaluator-owned phase instead of reading the store.
+  claudexDisabledRuntimeBuildPhase = claudexDisabledRuntimeSource.buildPhase;
+  claudexDisabledRuntimeReferencesProxy = nixpkgsLib.hasInfix "cli-proxy-api" claudexDisabledRuntimeBuildPhase;
   claudexEnabledRuntimeSource = claudexEnabledHm.home.file.".local/lib/claudex/runtime.sh".source;
-  claudexEnabledRuntimeContext = builtins.getContext (toString claudexEnabledRuntimeSource);
-  claudexEnabledRuntimeDerivationText = builtins.concatStringsSep "\n" (
-    map (drvPath: builtins.readFile drvPath) (builtins.attrNames claudexEnabledRuntimeContext)
-  );
-  claudexEnabledRuntimeDerivationMatchesDescriptor =
-    nixpkgsLib.hasInfix "--replace-fail @bindHost@ ${claudexEnabledDescriptor.bindHost}" claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix "--replace-fail @port@ ${toString claudexEnabledDescriptor.port}" claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix "--replace-fail @model@ ${claudexEnabledDescriptor.model}" claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix "--replace-fail @label@ ${claudexEnabledDescriptor.label}" claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix "--replace-fail @stateDir@ " claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix claudexEnabledDescriptor.stateDir claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix "--replace-fail @authDir@ " claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix claudexEnabledDescriptor.authDir claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix "--replace-fail @configFile@ " claudexEnabledRuntimeDerivationText
-    && nixpkgsLib.hasInfix claudexEnabledDescriptor.configFile claudexEnabledRuntimeDerivationText;
+  claudexEnabledRuntimeBuildPhase = claudexEnabledRuntimeSource.buildPhase;
+  claudexEnabledRuntimeBuildPhaseMatchesDescriptor =
+    nixpkgsLib.hasInfix "--replace-fail @bindHost@ ${claudexEnabledDescriptor.bindHost}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @port@ ${toString claudexEnabledDescriptor.port}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @model@ ${claudexEnabledDescriptor.model}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @label@ ${claudexEnabledDescriptor.label}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @stateDir@ " claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix claudexEnabledDescriptor.stateDir claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @authDir@ " claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix claudexEnabledDescriptor.authDir claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @configFile@ " claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix claudexEnabledDescriptor.configFile claudexEnabledRuntimeBuildPhase;
   fakeClaudexPkgs =
     system:
     let
@@ -490,11 +487,9 @@ let
             hm.home.file.".local/lib/claudex/runtime.sh".source
           else
             null;
-        claudexRuntimeContext =
-          if claudexRuntimeSource != null then builtins.getContext (toString claudexRuntimeSource) else { };
-        claudexRuntimeReferencesProxy = builtins.any (
-          drvPath: nixpkgsLib.hasInfix "cli-proxy-api" (builtins.readFile drvPath)
-        ) (builtins.attrNames claudexRuntimeContext);
+        claudexRuntimeBuildPhase =
+          if claudexRuntimeSource != null then claudexRuntimeSource.buildPhase else "";
+        claudexRuntimeReferencesProxy = nixpkgsLib.hasInfix "cli-proxy-api" claudexRuntimeBuildPhase;
       in
       [
         {
@@ -929,7 +924,7 @@ let
       cond =
         claudexEnabledDescriptor.enabled == true
         && toString claudexEnabledRuntimeSource == claudexEnabledDescriptor.runtimeLibrary
-        && claudexEnabledRuntimeDerivationMatchesDescriptor;
+        && claudexEnabledRuntimeBuildPhaseMatchesDescriptor;
     }
   ]
   ++ darwinIntentTests;
