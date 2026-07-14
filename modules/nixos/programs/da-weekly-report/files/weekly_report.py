@@ -719,6 +719,25 @@ def shell_assignment_value(line: str) -> tuple[str, str] | None:
     return key, value
 
 
+def strict_shell_assignment_value(line: str) -> tuple[str, str] | None:
+    """Parse one assignment without the finalize path's permissive fallback."""
+    stripped = line.strip()
+    if stripped.startswith("export "):
+        stripped = stripped.removeprefix("export ").strip()
+    if "=" not in stripped:
+        return None
+    try:
+        parts = shlex.split(stripped, comments=True, posix=True)
+    except ValueError as exc:
+        raise SecretSnapshotError("secret source invalid") from exc
+    if len(parts) != 1 or "=" not in parts[0]:
+        raise SecretSnapshotError("secret source invalid")
+    key, value = parts[0].split("=", 1)
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
+        raise SecretSnapshotError("secret source invalid")
+    return key, value
+
+
 def secret_values_from_text(text: str) -> list[str]:
     values: list[str] = []
     saw_assignment = False
@@ -753,7 +772,7 @@ def strict_secret_values_from_text(text: str) -> list[str]:
     assignments: list[str] = []
     raw_values: list[str] = []
     for line in lines:
-        assignment = shell_assignment_value(line)
+        assignment = strict_shell_assignment_value(line)
         if assignment is None:
             raw_values.append(line)
             continue

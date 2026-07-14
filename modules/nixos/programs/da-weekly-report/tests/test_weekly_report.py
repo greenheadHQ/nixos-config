@@ -939,6 +939,8 @@ def test_strict_secret_snapshot_guards_unknown_assignments_and_rejects_partial_p
         "PUSHOVER_TOKEN='known'\nmalformed secret line\n",
         "PUSHOVER_TOKEN=\nPUSHOVER_USER='known'\n",
         "FIRST=known\nSECOND value\n",
+        "PUSHOVER_TOKEN='future-secret",
+        "PUSHOVER_TOKEN=future-secret\\",
     ):
         secret_source.write_text(invalid, encoding="utf-8")
         with pytest.raises(weekly_report_module.SecretSnapshotError):
