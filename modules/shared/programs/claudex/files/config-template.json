@@ -1,0 +1,35 @@
+{
+  "host": "127.0.0.1",
+  "port": 8317,
+  "tls": {
+    "enable": false,
+    "cert": "",
+    "key": ""
+  },
+  "remote-management": {
+    "allow-remote": false,
+    "secret-key": "",
+    "disable-control-panel": true,
+    "disable-auto-update-panel": true
+  },
+  "auth-dir": "",
+  "api-keys": [],
+  "debug": false,
+  "pprof": {
+    "enable": false,
+    "addr": "127.0.0.1:8316"
+  },
+  "plugins": {
+    "enabled": false,
+    "dir": "plugins",
+    "configs": {}
+  },
+  "commercial-mode": true,
+  "logging-to-file": false,
+  "logs-max-total-size-mb": 0,
+  "error-logs-max-files": 0,
+  "usage-statistics-enabled": false,
+  "proxy-url": "",
+  "max-retry-credentials": 1,
+  "ws-auth": true
+}
