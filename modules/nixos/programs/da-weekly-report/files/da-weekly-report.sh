@@ -30,6 +30,25 @@ WINDOW_START_HOUR="${WINDOW_START_HOUR:-9}"
 WINDOW_DEADLINE_HOUR="${WINDOW_DEADLINE_HOUR:-14}"
 WINDOW_TIMEZONE="${WINDOW_TIMEZONE:-Asia/Seoul}"
 
+EPHEMERAL_FILES=()
+EPHEMERAL_DIRS=()
+
+cleanup_ephemeral() {
+  local path
+  for path in "${EPHEMERAL_FILES[@]}"; do
+    if [ -n "$path" ]; then
+      rm -f -- "$path"
+    fi
+  done
+  for path in "${EPHEMERAL_DIRS[@]}"; do
+    if [ -n "$path" ]; then
+      rm -rf -- "$path"
+    fi
+  done
+}
+
+trap cleanup_ephemeral EXIT
+
 install -d -m 700 "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 
@@ -148,30 +167,57 @@ publish_record() {
 }
 
 publish_github() {
-  local gh_status gh_stderr gh_stdout
+  local wire_status wire status reason url rest
   COMMENT_URL=""
-  # configure_publish_targets is the single place that schedules github targets.
-  if [ ! -r "$GH_PAT_PATH" ]; then
-    publish_record "github" "blocked" "GH token path not readable: $GH_PAT_PATH"
-  elif ! command -v gh >/dev/null 2>&1; then
-    publish_record "github" "blocked" "gh command not found"
-  else
-    gh_stdout="$STATE_DIR/weekly-$WEEK_ID-gh.out"
-    gh_stderr="$STATE_DIR/weekly-$WEEK_ID-gh.err"
-    set +e
-    (
-      cd "$REPO_ROOT"
-      GH_TOKEN="$(< "$GH_PAT_PATH")" gh issue comment "$TRACKING_ISSUE_NUMBER" --body-file "$REPORT_MD"
-    ) >"$gh_stdout" 2>"$gh_stderr"
-    gh_status=$?
-    set -e
-    if [ "$gh_status" -eq 0 ]; then
-      COMMENT_URL="$(grep -Eo 'https://[^ ]+' "$gh_stdout" | head -n 1 || true)"
-      publish_record "github" "success" "comment posted" "$COMMENT_URL"
-    else
-      publish_record "github" "failed" "$(tr '\n' ' ' < "$gh_stderr" | cut -c1-500)"
-    fi
+  set +e
+  wire="$(python3 "$WEEKLY_REPORT_PY" publish-github-guarded \
+    --report-json "$REPORT_JSON" \
+    --issue "$TRACKING_ISSUE_NUMBER" \
+    --repo-root "$REPO_ROOT" \
+    --token-source "$GH_PAT_PATH" \
+    --secret-source "$PUSHOVER_SHARE_CRED" \
+    --output-body "$GITHUB_BODY")"
+  wire_status=$?
+  set -e
+
+  if [ "$wire_status" -ne 0 ] || [[ "$wire" == *$'\n'* ]] || [[ "$wire" != *$'\t'* ]]; then
+    publish_record "github" "blocked" "publisher_protocol_error"
+    return 0
   fi
+  status="${wire%%$'\t'*}"
+  rest="${wire#*$'\t'}"
+  if [[ "$rest" != *$'\t'* ]]; then
+    publish_record "github" "blocked" "publisher_protocol_error"
+    return 0
+  fi
+  reason="${rest%%$'\t'*}"
+  url="${rest#*$'\t'}"
+  if [[ "$url" == *$'\t'* ]]; then
+    publish_record "github" "blocked" "publisher_protocol_error"
+    return 0
+  fi
+
+  case "$status:$reason" in
+    success:ok)
+      if [ -z "$url" ]; then
+        publish_record "github" "blocked" "publisher_protocol_error"
+        return 0
+      fi
+      COMMENT_URL="$url"
+      ;;
+    success:url_missing | failed:gh_nonzero | blocked:projection_or_staging | blocked:secret_snapshot | blocked:outbound_secret | blocked:publisher_unavailable)
+      if [ -n "$url" ]; then
+        publish_record "github" "blocked" "publisher_protocol_error"
+        return 0
+      fi
+      ;;
+    *)
+      publish_record "github" "blocked" "publisher_protocol_error"
+      return 0
+      ;;
+  esac
+  publish_record "github" "$status" "$reason" "$url"
+  return 0
 }
 
 publish_pushover() {
@@ -220,7 +266,9 @@ REPORT_JSON="$STATE_DIR/weekly-$WEEK_ID.json"
 REPORT_MD="$STATE_DIR/weekly-$WEEK_ID.md"
 PUBLISH_LOG="$STATE_DIR/weekly-$WEEK_ID-publish.json"
 COMMENTARY_OUT="$STATE_DIR/weekly-$WEEK_ID-commentary.txt"
+GITHUB_BODY="$STATE_DIR/weekly-$WEEK_ID-github-body.md"
 ATTEMPT_STATE="$(python3 "$WEEKLY_REPORT_PY" attempt-state-path --state-dir "$STATE_DIR" --week-id "$WEEK_ID")"
+EPHEMERAL_FILES+=("$DRAFT_JSON" "$COMMENTARY_OUT" "$GITHUB_BODY")
 configure_publish_targets
 
 echo "== DA weekly report $WEEK_ID =="
@@ -229,6 +277,12 @@ echo "state: $STATE_DIR"
 
 if [ -s "$REPORT_JSON" ]; then
   echo "final report exists: $REPORT_JSON"
+  if [ ! -s "$REPORT_MD" ]; then
+    echo "rebuilding full Markdown from canonical report"
+    python3 "$WEEKLY_REPORT_PY" render-full-markdown \
+      --report-json "$REPORT_JSON" \
+      --output "$REPORT_MD"
+  fi
   COMMENT_URL=""
   load_pending_publish_targets
   if [ "${#PENDING_TARGETS[@]}" -eq 0 ]; then
@@ -316,17 +370,21 @@ python3 "$WEEKLY_REPORT_PY" build \
   --commentary-error "LLM commentary pending" \
   --analyze-exit-code "$ANALYZE_STATUS"
 
-# 3. LLM 해설은 repo 밖 scratch cwd + read-only sandbox + stdin 입력만 사용한다.
+# 3. LLM 해설은 repo 밖 scratch cwd + read-only sandbox + bounded stdin만 사용한다.
 COMMENTARY_ERROR=""
 SCRATCH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/da-weekly-report-llm.XXXXXX")"
+EPHEMERAL_DIRS+=("$SCRATCH_DIR")
 COMMENTARY_INPUT="$SCRATCH_DIR/commentary-input.txt"
-cat > "$COMMENTARY_INPUT" <<'EOF'
-아래 DA weekly report JSON을 읽고 특이점, 공통점/차이점, 다음 주에 볼 신호를 한국어 한두 문단으로 해설하라.
-숫자를 새로 만들지 말고 입력 JSON의 값만 근거로 사용하라.
-EOF
-cat "$DRAFT_JSON" >> "$COMMENTARY_INPUT"
+set +e
+python3 "$WEEKLY_REPORT_PY" render-commentary-input \
+  --report-json "$DRAFT_JSON" \
+  --output "$COMMENTARY_INPUT"
+PROJECTION_STATUS=$?
+set -e
 
-if command -v codex-exec-supervised >/dev/null 2>&1; then
+if [ "$PROJECTION_STATUS" -ne 0 ]; then
+  COMMENTARY_ERROR="bounded commentary projection unavailable"
+elif command -v codex-exec-supervised >/dev/null 2>&1; then
   set +e
   # --skip-git-repo-check: scratch cwd는 의도적으로 git repo 밖이다 (secret/repo 접근 격리).
   # 이 플래그가 없으면 codex가 untrusted directory로 거부한다 (systemd 실측에서 확인).
@@ -383,7 +441,7 @@ else
 fi
 python3 "$WEEKLY_REPORT_PY" "${FINALIZE_ARGS[@]}"
 
-rm -f "$DRAFT_JSON"
+rm -f -- "$DRAFT_JSON"
 
 COMMENT_URL=""
 publish_selected_targets "${PUBLISH_TARGETS[@]}"

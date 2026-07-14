@@ -13,12 +13,15 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import glob
+import html
 import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import zoneinfo
 from pathlib import Path
 from typing import Any
@@ -36,6 +39,15 @@ DRIFT_BODY_RE = re.compile(r"(drift|참조|사본|dangling|동기화|SSOT)", re.
 REMOTE_PREFLIGHT_ALERT_KEY = "remote_preflight_alert_attempted"
 RETRYABLE_PUBLISH_STATUSES = {"failed", "blocked"}
 TRACEABILITY_RENDER_SESSION_LIMIT = 50
+COMMENTARY_INPUT_MAX_BYTES = 262_144
+GITHUB_MARKDOWN_MAX_BYTES = 60_000
+COMMENTARY_PROMPT = "\n".join([
+    "아래 DA weekly report projection을 읽고 특이점, 공통점/차이점, 다음 주에 볼 신호를 한국어 한두 문단으로 해설하라.",
+    "숫자를 새로 만들지 말고 입력 JSON의 값만 근거로 사용하라.",
+])
+M1_KEYS = ("FULL", "LITE", "SKIP")
+M2_KEYS = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
+M3_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
 WEEKDAY_INDEX = {
     "Mon": 0,
     "Tue": 1,
@@ -53,6 +65,14 @@ SECRET_ASSIGNMENT_NAMES = {
     "PUSHOVER_TOKEN",
     "PUSHOVER_USER",
 }
+
+
+class ProjectionError(ValueError):
+    """A bounded consumer projection cannot be produced safely."""
+
+
+class SecretSnapshotError(ValueError):
+    """Outbound secret sources cannot be snapshotted safely."""
 
 
 def utc_now_iso() -> str:
@@ -202,20 +222,72 @@ def load_json(path: str | os.PathLike[str]) -> dict:
         return json.load(fp)
 
 
-def atomic_write_text(path: str | os.PathLike[str], text: str) -> None:
+def stage_text(path: str | os.PathLike[str], text: str) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(f".{target.name}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fp:
-        fp.write(text)
-    tmp.chmod(0o600)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=target.parent,
+        text=True,
+    )
+    tmp = Path(tmp_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fp:
+            fp.write(text)
+            fp.flush()
+            os.fsync(fp.fileno())
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        tmp.unlink(missing_ok=True)
+        raise
+    return tmp
+
+
+def replace_staged_text(tmp: Path, path: str | os.PathLike[str]) -> None:
+    target = Path(path)
     os.replace(tmp, target)
     target.chmod(0o600)
 
 
+def atomic_write_text(path: str | os.PathLike[str], text: str) -> None:
+    tmp = stage_text(path, text)
+    try:
+        replace_staged_text(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def atomic_write_json(path: str | os.PathLike[str], obj: dict) -> None:
     atomic_write_text(path, json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+
+def atomic_write_report_pair(
+    json_path: str | os.PathLike[str],
+    report: dict,
+    markdown_path: str | os.PathLike[str],
+) -> None:
+    """Stage both canonical views, then replace Markdown before JSON commit marker."""
+    json_text = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    markdown_text = render_markdown(report) + "\n"
+    staged_json: Path | None = None
+    staged_markdown: Path | None = None
+    try:
+        staged_markdown = stage_text(markdown_path, markdown_text)
+        staged_json = stage_text(json_path, json_text)
+        replace_staged_text(staged_markdown, markdown_path)
+        staged_markdown = None
+        replace_staged_text(staged_json, json_path)
+        staged_json = None
+    finally:
+        if staged_markdown is not None:
+            staged_markdown.unlink(missing_ok=True)
+        if staged_json is not None:
+            staged_json.unlink(missing_ok=True)
 
 
 def run_git(repo_root: str, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -685,6 +757,178 @@ def load_secret_values(paths: list[str]) -> list[str]:
     return values
 
 
+def strict_secret_snapshot(
+    token_source: str,
+    secret_sources: list[str],
+) -> tuple[str, list[str]]:
+    """Read each source once and return the exact token plus comparison values."""
+    cache: dict[str, str] = {}
+
+    def read_once(path: str) -> str:
+        normalized = os.path.realpath(path)
+        if normalized not in cache:
+            try:
+                cache[normalized] = Path(path).read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise SecretSnapshotError("secret source unavailable") from exc
+        return cache[normalized]
+
+    token_text = read_once(token_source)
+    token = token_text.rstrip("\r\n")
+    if not token or "\n" in token or "\r" in token:
+        raise SecretSnapshotError("token source invalid")
+
+    values = [token]
+    seen = {token}
+    for path in secret_sources:
+        parsed = secret_values_from_text(read_once(path))
+        if not parsed:
+            raise SecretSnapshotError("secret source invalid")
+        for value in parsed:
+            if value and value not in seen:
+                values.append(value)
+                seen.add(value)
+    return token, values
+
+
+def iter_string_values(value: Any):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for child in value.values():
+            yield from iter_string_values(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            yield from iter_string_values(child)
+
+
+def projection_source_contains_secret(source: dict, secret_values: list[str]) -> bool:
+    return any(
+        secret in value
+        for value in iter_string_values(source)
+        for secret in secret_values
+    )
+
+
+def body_contains_secret(body: bytes, secret_values: list[str]) -> bool:
+    return any(secret.encode("utf-8") in body for secret in secret_values)
+
+
+def _safe_gh_environment(token: str) -> dict[str, str]:
+    allowed = (
+        "HOME",
+        "PATH",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "NIX_SSL_CERT_FILE",
+    )
+    env = {key: os.environ[key] for key in allowed if key in os.environ}
+    env["GH_TOKEN"] = token
+    return env
+
+
+def _publisher_output_aliases_protected_path(
+    output_body: str,
+    report_json: str,
+    report: dict,
+    token_source: str,
+    secret_sources: list[str],
+) -> bool:
+    protected = {
+        os.path.realpath(path)
+        for path in [report_json, token_source, *secret_sources]
+        if path
+    }
+    provenance = report.get("provenance", {})
+    for key in ("report_json_path", "report_markdown_path"):
+        path = provenance.get(key)
+        if isinstance(path, str) and path:
+            protected.add(os.path.realpath(path))
+    return os.path.realpath(output_body) in protected
+
+
+def publish_github_guarded(
+    *,
+    report_json: str,
+    issue: str,
+    repo_root: str,
+    token_source: str,
+    secret_sources: list[str],
+    output_body: str,
+) -> tuple[str, str, str]:
+    """Render, guard, and publish one exact bounded body without leaking details."""
+    basic_protected = {
+        os.path.realpath(path)
+        for path in [report_json, token_source, *secret_sources]
+        if path
+    }
+    if os.path.realpath(output_body) in basic_protected:
+        return "blocked", "projection_or_staging", ""
+    cleanup_output = True
+    try:
+        try:
+            report = load_json(report_json)
+            source = build_github_projection_source(report)
+            if _publisher_output_aliases_protected_path(
+                output_body,
+                report_json,
+                report,
+                token_source,
+                secret_sources,
+            ):
+                cleanup_output = False
+                return "blocked", "projection_or_staging", ""
+        except (OSError, UnicodeError, json.JSONDecodeError, ProjectionError, TypeError):
+            return "blocked", "projection_or_staging", ""
+
+        try:
+            token, secret_values = strict_secret_snapshot(token_source, secret_sources)
+        except SecretSnapshotError:
+            return "blocked", "secret_snapshot", ""
+
+        if projection_source_contains_secret(source, secret_values):
+            return "blocked", "outbound_secret", ""
+
+        try:
+            rendered = render_github_markdown_source(source)
+            body = rendered.encode("utf-8")
+            if body_contains_secret(body, secret_values):
+                return "blocked", "outbound_secret", ""
+            atomic_write_text(output_body, rendered)
+        except (OSError, UnicodeError, ProjectionError, TypeError, ValueError):
+            return "blocked", "projection_or_staging", ""
+
+        env = _safe_gh_environment(token)
+        if shutil.which("gh", path=env.get("PATH")) is None:
+            return "blocked", "publisher_unavailable", ""
+        try:
+            proc = subprocess.run(
+                ["gh", "issue", "comment", issue, "--body-file", "-"],
+                cwd=repo_root,
+                env=env,
+                input=body,
+                capture_output=True,
+                check=False,
+            )
+        except OSError:
+            return "blocked", "publisher_unavailable", ""
+        if proc.returncode != 0:
+            return "failed", "gh_nonzero", ""
+        match = re.search(rb"https://github\.com/[^\s]+", proc.stdout)
+        if match is None:
+            return "success", "url_missing", ""
+        return "success", "ok", match.group(0).decode("ascii", errors="ignore")
+    finally:
+        if cleanup_output:
+            try:
+                Path(output_body).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def commentary_contains_secret(text: str, secret_values: list[str]) -> bool:
     return any(secret_value in text for secret_value in secret_values)
 
@@ -699,8 +943,8 @@ def read_sanitized_commentary(
     if commentary_file:
         try:
             commentary_text = Path(commentary_file).read_text(encoding="utf-8")
-        except OSError as exc:
-            return None, f"commentary file read failed: {exc}"
+        except OSError:
+            return None, "commentary file read failed"
         if commentary_text and commentary_contains_secret(
             commentary_text,
             load_secret_values(secret_source_paths),
@@ -767,6 +1011,438 @@ def esc(value: Any) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+def _safe_number(value: Any, default: int | float = 0) -> int | float:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    return default
+
+
+def _safe_string(value: Any, default: str | None = None) -> str | None:
+    return value if isinstance(value, str) else default
+
+
+def _numeric_subset(mapping: Any, keys: tuple[str, ...]) -> dict[str, int | float]:
+    source = mapping if isinstance(mapping, dict) else {}
+    return {
+        key: _safe_number(source[key])
+        for key in keys
+        if key in source
+    }
+
+
+def _numeric_key_dict(mapping: Any) -> dict[str, int | float]:
+    if not isinstance(mapping, dict):
+        return {}
+    result: dict[str, int | float] = {}
+    for key in sorted(mapping, key=lambda item: str(item)):
+        key_text = str(key)
+        value = mapping[key]
+        if key_text.isdigit() and isinstance(value, (int, float)) and not isinstance(value, bool):
+            result[key_text] = value
+    return result
+
+
+def _warning_category(warning: str, *, health: bool = False) -> str:
+    if health:
+        return "health"
+    lowered = warning.lower()
+    if "tar member" in lowered or "validation" in lowered or "newline" in lowered:
+        return "validation"
+    if any(token in lowered for token in ("ssh", "remote", "tar ", "find ")):
+        return "remote_collection"
+    if any(token in lowered for token in ("parse", "diagnostic", "verdict")):
+        return "analysis"
+    return "other"
+
+
+def _warning_summary(coverage: dict) -> dict:
+    raw_warnings = [
+        warning
+        for warning in coverage.get("warnings", [])
+        if isinstance(warning, str)
+    ]
+    health_warnings = [
+        warning
+        for warning in coverage.get("health_warnings", [])
+        if isinstance(warning, str)
+    ]
+    category_counts = {
+        key: 0
+        for key in ("remote_collection", "validation", "analysis", "health", "other")
+    }
+    host_counts = {"mac": 0, "minipc": 0, "unattributed": 0}
+    for warning in raw_warnings:
+        category_counts[_warning_category(warning)] += 1
+        host_match = re.match(r"^host\s+(mac|minipc):", warning)
+        host_counts[host_match.group(1) if host_match else "unattributed"] += 1
+    for warning in health_warnings:
+        category_counts[_warning_category(warning, health=True)] += 1
+        host_counts["unattributed"] += 1
+    total = len(raw_warnings) + len(health_warnings)
+    return {
+        "total_count": total,
+        "category_counts": category_counts,
+        "host_counts": host_counts,
+        # Consumer projections intentionally carry counts, never raw samples.
+        "omitted_count": total,
+    }
+
+
+def _metric_projection(metrics: dict) -> dict:
+    m1 = metrics.get("M-1", {})
+    m2 = metrics.get("M-2", {})
+    m3 = metrics.get("M-3", {})
+    m4 = metrics.get("M-4", {})
+    m5 = metrics.get("M-5", {})
+    m6 = metrics.get("M-6", {})
+    severities = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE")
+    transition_keys = tuple(
+        f"{before}->{after}" for before in severities for after in severities
+    )
+    source_distribution = {}
+    for source in ("verdict_json", "md_header", "json_unmarked", "kv"):
+        info = m2.get("source_distribution", {}).get(source)
+        if isinstance(info, dict):
+            confidence = info.get("confidence")
+            source_distribution[source] = {
+                "count": _safe_number(info.get("count")),
+                "confidence": confidence
+                if confidence in {"high", "medium", "low"}
+                else "unknown",
+            }
+    by_bundle = {}
+    for bundle in M3_BUNDLES:
+        info = m3.get("by_bundle", {}).get(bundle)
+        if isinstance(info, dict):
+            by_bundle[bundle] = {
+                "total": _safe_number(info.get("total")),
+                "confirmed": _safe_number(info.get("confirmed")),
+                "confirmed_rate": _safe_number(info.get("confirmed_rate")),
+            }
+    return {
+        "M-1": {
+            "denominator": _safe_string(m1.get("denominator"), "unknown"),
+            "n": _safe_number(m1.get("n")),
+            "distribution": _numeric_subset(m1.get("distribution"), M1_KEYS),
+            "percentages": _numeric_subset(m1.get("percentages"), M1_KEYS),
+        },
+        "M-2": {
+            "denominator": _safe_string(m2.get("denominator"), "unknown"),
+            "n": _safe_number(m2.get("n")),
+            "distribution": _numeric_subset(m2.get("distribution"), M2_KEYS),
+            "percentages": _numeric_subset(m2.get("percentages"), M2_KEYS),
+            "source_distribution": source_distribution,
+        },
+        "M-3": {
+            "by_bundle": by_bundle,
+        },
+        "M-4": {
+            "round_key": _safe_string(m4.get("round_key"), "unknown"),
+            "baseline_note": _safe_string(m4.get("baseline_note"), "unavailable"),
+            "transition_matrix": _numeric_subset(
+                m4.get("transition_matrix"), transition_keys
+            ),
+        },
+        "M-5": {
+            "source": _safe_string(m5.get("source"), "unavailable"),
+            "n": _safe_number(m5.get("n")),
+            "distribution": _numeric_subset(
+                m5.get("distribution"), ("stable", "split", "fragmented")
+            ),
+        },
+        "M-6": {
+            "name": _safe_string(m6.get("name"), "persistence non-convergence"),
+            "persistence_key": _safe_string(m6.get("persistence_key"), "unavailable"),
+            "key_block_count_distribution": _numeric_key_dict(
+                m6.get("key_block_count_distribution")
+            ),
+            "coverage": {
+                "eligible_records": _safe_number(
+                    m6.get("coverage", {}).get("eligible_records")
+                ),
+                "missing_persistence_components": _safe_number(
+                    m6.get("coverage", {}).get("missing_persistence_components")
+                ),
+            },
+        },
+    }
+
+
+def _delta_projection(deltas: dict) -> dict:
+    previous_reports = [
+        {"week_id": _safe_string(item.get("week_id"), "unknown")}
+        for item in deltas.get("previous_reports", [])
+        if isinstance(item, dict)
+    ]
+    delta_order = {metric: index for index, (metric, _, _) in enumerate(DELTA_SPECS)}
+    delta_units = {metric: unit for metric, unit, _ in DELTA_SPECS}
+    projected_items = []
+    for item in deltas.get("items", []):
+        if not isinstance(item, dict) or item.get("metric") not in delta_order:
+            continue
+        comparisons = [
+            {
+                "week_id": _safe_string(comparison.get("week_id"), "unknown"),
+                "previous": _safe_number(comparison.get("previous")),
+                "delta": _safe_number(comparison.get("delta")),
+            }
+            for comparison in item.get("comparisons", [])
+            if isinstance(comparison, dict)
+        ]
+        comparisons.sort(key=lambda value: str(value.get("week_id") or ""))
+        projected_items.append({
+            "metric": item.get("metric"),
+            "unit": delta_units[str(item.get("metric"))],
+            "current": _safe_number(item.get("current")),
+            "comparisons": comparisons,
+        })
+    projected_items.sort(key=lambda item: delta_order[str(item["metric"])])
+    previous_reports.sort(key=lambda item: str(item.get("week_id") or ""))
+    return {"previous_reports": previous_reports, "items": projected_items}
+
+
+def build_consumer_summary(report: dict) -> dict:
+    """Build the deterministic allowlist shared by bounded consumers."""
+    if report.get("schema_version") != SCHEMA_VERSION:
+        raise ProjectionError("unsupported canonical report schema")
+    analysis = report.get("analysis", {})
+    coverage = report.get("coverage", {})
+    health = report.get("health", {})
+    session_counts = analysis.get("session_counts", {})
+    diagnostics = coverage.get("diagnostics", {})
+    host_collection = coverage.get("host_collection", {})
+    hosts = {}
+    for host in ("mac", "minipc"):
+        info = host_collection.get(host, {})
+        status = info.get("status")
+        hosts[host] = {
+            "status": status if status in {"ok", "partial", "unknown"} else "unknown",
+            "analyzed_sessions": _safe_number(info.get("analyzed_sessions")),
+            "warning_count": len(info.get("warnings", [])),
+        }
+    return {
+        "week": {
+            "id": _safe_string(report.get("week", {}).get("id"), "unknown"),
+            "start": _safe_string(report.get("week", {}).get("start"), "unknown"),
+            "end": _safe_string(report.get("week", {}).get("end"), "unknown"),
+            "tz": _safe_string(report.get("week", {}).get("tz"), "unknown"),
+        },
+        "session_counts": {
+            "total": _safe_number(session_counts.get("total")),
+            "arbiter_marker_sessions": _safe_number(
+                session_counts.get("arbiter_marker_sessions")
+            ),
+            "intensity_marker_sessions": _safe_number(
+                session_counts.get("intensity_marker_sessions")
+            ),
+        },
+        "metrics": _metric_projection(analysis.get("metrics", {})),
+        "derived": {
+            "intensity_full_finding_zero_rate": _safe_number(
+                analysis.get("derived", {}).get("intensity_full_finding_zero_rate")
+            ),
+        },
+        "health": {
+            "health_formula_version": _safe_number(health.get("health_formula_version")),
+            "document_size": {
+                "markdown_file_count": _safe_number(
+                    health.get("document_size", {}).get("markdown_file_count")
+                ),
+                "total_line_count": _safe_number(
+                    health.get("document_size", {}).get("total_line_count")
+                ),
+            },
+            "drift_repair_commit_count": _safe_number(
+                health.get("drift_repair_commits", {}).get("count")
+            ),
+            "rule_counts": {
+                key: _safe_number(health.get("rule_counts", {}).get(key))
+                for key in (
+                    "core_invariants_numbered",
+                    "cautions_bullets",
+                    "non_goals_numbered",
+                    "total",
+                )
+            },
+        },
+        "coverage": {
+            "partial": bool(coverage.get("partial", False)),
+            "analyze_exit_code": _safe_number(coverage.get("analyze_exit_code")),
+            "counts": {
+                key: _safe_number(diagnostics.get(key))
+                for key in (
+                    "parse_failure_count",
+                    "exclusion_count",
+                    "invalid_verdict_count",
+                    "missing_persistence_component_count",
+                )
+            },
+            "diagnostic_rates": {
+                key: _safe_number(coverage.get("diagnostic_rates", {}).get(key))
+                for key in ("parse_failures_per_session", "exclusions_per_session")
+            },
+            "marker_missing_rates": {
+                key: _safe_number(coverage.get("marker_missing_rates", {}).get(key))
+                for key in (
+                    "arbiter_marker_missing_rate",
+                    "intensity_marker_missing_rate",
+                )
+            },
+        },
+        "hosts": hosts,
+        "warnings": _warning_summary(coverage),
+        "deltas": _delta_projection(report.get("deltas", {})),
+    }
+
+
+def _bounded_utf8(text: str, limit: int, label: str) -> str:
+    if len(text.encode("utf-8")) > limit:
+        raise ProjectionError(f"{label} exceeds UTF-8 byte budget")
+    return text
+
+
+def render_commentary_input(report: dict) -> str:
+    payload = json.dumps(
+        build_consumer_summary(report),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return _bounded_utf8(
+        f"{COMMENTARY_PROMPT}\n\n{payload}\n",
+        COMMENTARY_INPUT_MAX_BYTES,
+        "commentary projection",
+    )
+
+
+def _safe_commentary_failure_reason(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    fixed = {
+        "LLM commentary pending",
+        "codex-exec-supervised produced empty commentary",
+        "codex-exec-supervised not found",
+        "sanitize gate: secret-like content",
+        "commentary file read failed",
+        "bounded commentary projection unavailable",
+        "commentary unavailable",
+    }
+    if text in fixed or re.fullmatch(r"codex-exec-supervised failed with exit \d+", text):
+        return text
+    return "commentary unavailable"
+
+
+def build_github_projection_source(report: dict) -> dict:
+    commentary = report.get("commentary", {})
+    commentary_text = commentary.get("text")
+    return {
+        "summary": build_consumer_summary(report),
+        "commentary": {
+            "text": commentary_text if isinstance(commentary_text, str) else None,
+            "failure_reason": _safe_commentary_failure_reason(
+                commentary.get("failure_reason")
+            ),
+        },
+    }
+
+
+def _json_cell(value: Any) -> str:
+    return esc(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
+def _append_metric_section(out: list[str], name: str, metric: dict) -> None:
+    out.extend([f"## {name}", "", "| 항목 | 값 |", "|------|-----|"])
+    for key, value in metric.items():
+        out.append(f"| {esc(key)} | {_json_cell(value)} |")
+    out.append("")
+
+
+def _render_github_markdown_source(source: dict) -> str:
+    summary = source["summary"]
+    week = summary["week"]
+    counts = summary["session_counts"]
+    coverage = summary["coverage"]
+    health = summary["health"]
+    out = [f"# DA Weekly Report — {week.get('id')}", ""]
+    out.extend([
+        "## 핵심 요약",
+        "",
+        "| 항목 | 값 |",
+        "|------|-----|",
+        f"| 기간 | {esc(week.get('start'))} ~ {esc(week.get('end'))} ({esc(week.get('tz'))}) |",
+        f"| 전체 세션 | {counts.get('total', 0)} |",
+        f"| Arbiter marker 세션 | {counts.get('arbiter_marker_sessions', 0)} |",
+        f"| Intensity marker 세션 | {counts.get('intensity_marker_sessions', 0)} |",
+        f"| partial | {coverage.get('partial')} |",
+        "",
+        "## 커버리지",
+        "",
+        "| 항목 | 값 |",
+        "|------|-----|",
+    ])
+    for key, value in coverage.get("counts", {}).items():
+        out.append(f"| {esc(key)} | {num(value)} |")
+    for group in ("diagnostic_rates", "marker_missing_rates"):
+        for key, value in coverage.get(group, {}).items():
+            out.append(f"| {esc(key)} | {num(value)} |")
+    out.extend(["", "| host | status | analyzed sessions | warning count |", "|------|--------|-------------------|---------------|"])
+    for host, info in summary.get("hosts", {}).items():
+        out.append(
+            f"| {esc(host)} | {esc(info.get('status'))} | {num(info.get('analyzed_sessions'))} | {num(info.get('warning_count'))} |"
+        )
+    out.append("")
+
+    for metric_name in ("M-1", "M-2", "M-3", "M-4", "M-5", "M-6"):
+        _append_metric_section(out, metric_name, summary["metrics"][metric_name])
+
+    out.extend(["## Health 요약", "", "| 항목 | 값 |", "|------|-----|"])
+    for key, value in health.items():
+        out.append(f"| {esc(key)} | {_json_cell(value)} |")
+    out.extend(["", "## 전주 delta", ""])
+    delta_items = summary.get("deltas", {}).get("items", [])
+    if delta_items:
+        out.extend([
+            "| metric | current | week | previous | delta | unit |",
+            "|--------|---------|------|----------|-------|------|",
+        ])
+        for item in delta_items:
+            for comparison in item.get("comparisons", []):
+                out.append(
+                    f"| {esc(item.get('metric'))} | {num(item.get('current'))} | {esc(comparison.get('week_id'))} | {num(comparison.get('previous'))} | {num(comparison.get('delta'))} | {esc(item.get('unit'))} |"
+                )
+    else:
+        out.append("첫 회 또는 비교 가능한 직전 리포트 없음.")
+
+    warnings = summary["warnings"]
+    out.extend(["", "## Warning 요약", "", "| category | count |", "|----------|-------|"])
+    for category, count in warnings["category_counts"].items():
+        out.append(f"| {esc(category)} | {num(count)} |")
+    out.extend(["", "| host | count |", "|------|-------|"])
+    for host, count in warnings["host_counts"].items():
+        out.append(f"| {esc(host)} | {num(count)} |")
+    out.extend(["", f"omitted raw warnings: {warnings['omitted_count']}", "", "## LLM 해설", ""])
+    commentary = source["commentary"]
+    if commentary.get("text"):
+        commentary_text = str(commentary["text"])
+    else:
+        commentary_text = f"해설 없음: {commentary.get('failure_reason') or 'commentary unavailable'}"
+    out.extend(["<pre>", html.escape(commentary_text, quote=False), "</pre>", ""])
+    return "\n".join(out)
+
+
+def render_github_markdown(report: dict) -> str:
+    return render_github_markdown_source(build_github_projection_source(report))
+
+
+def render_github_markdown_source(source: dict) -> str:
+    return _bounded_utf8(
+        _render_github_markdown_source(source),
+        GITHUB_MARKDOWN_MAX_BYTES,
+        "GitHub projection",
+    )
+
+
 def render_distribution_table(distribution: dict, percentages: dict | None = None) -> list[str]:
     rows = ["| 항목 | 카운트 | 비율 |", "|------|--------|------|"]
     for key in sorted(distribution):
@@ -777,7 +1453,7 @@ def render_distribution_table(distribution: dict, percentages: dict | None = Non
 
 
 def render_mermaid_pie(title: str, distribution: dict) -> list[str]:
-    nonzero = [(key, value) for key, value in distribution.items() if value]
+    nonzero = [(key, distribution[key]) for key in sorted(distribution) if distribution[key]]
     if not nonzero:
         return []
     rows = ["```mermaid", f"pie title {title}"]
@@ -834,7 +1510,7 @@ def render_markdown(report: dict) -> str:
     out.append("")
     out.append("| host | status | analyzed sessions | warnings |")
     out.append("|------|--------|-------------------|----------|")
-    for host, info in coverage.get("host_collection", {}).items():
+    for host, info in sorted(coverage.get("host_collection", {}).items()):
         out.append(
             f"| {esc(host)} | {esc(info.get('status'))} | {info.get('analyzed_sessions', 0)} | {len(info.get('warnings', []))} |"
         )
@@ -855,7 +1531,7 @@ def render_markdown(report: dict) -> str:
     out.append("")
     out.append("| source | confidence | count |")
     out.append("|--------|------------|-------|")
-    for source, info in m2.get("source_distribution", {}).items():
+    for source, info in sorted(m2.get("source_distribution", {}).items()):
         out.append(f"| {esc(source)} | {esc(info.get('confidence'))} | {info.get('count', 0)} |")
     out.append("")
 
@@ -1125,9 +1801,10 @@ def command_build(args: argparse.Namespace) -> int:
         provenance=provenance,
         analyze_exit_code=args.analyze_exit_code,
     )
-    atomic_write_json(args.output_json, report)
     if args.output_md:
-        atomic_write_text(args.output_md, render_markdown(report) + "\n")
+        atomic_write_report_pair(args.output_json, report, args.output_md)
+    else:
+        atomic_write_json(args.output_json, report)
     return 0
 
 
@@ -1143,8 +1820,61 @@ def command_finalize(args: argparse.Namespace) -> int:
     provenance["report_json_path"] = os.path.abspath(args.output_json)
     provenance["report_markdown_path"] = os.path.abspath(args.output_md)
     provenance["generated_at"] = utc_now_iso()
-    atomic_write_json(args.output_json, report)
-    atomic_write_text(args.output_md, render_markdown(report) + "\n")
+    atomic_write_report_pair(args.output_json, report, args.output_md)
+    return 0
+
+
+def command_render_projection(args: argparse.Namespace) -> int:
+    if os.path.realpath(args.report_json) == os.path.realpath(args.output):
+        print("ERROR: bounded projection unavailable", file=sys.stderr)
+        return 2
+    try:
+        report = load_json(args.report_json)
+        if args.projection == "commentary":
+            rendered = render_commentary_input(report)
+        else:
+            rendered = render_github_markdown(report)
+        atomic_write_text(args.output, rendered)
+    except (OSError, UnicodeError, json.JSONDecodeError, ProjectionError, TypeError, ValueError):
+        try:
+            Path(args.output).unlink(missing_ok=True)
+        except OSError:
+            pass
+        print("ERROR: bounded projection unavailable", file=sys.stderr)
+        return 2
+    return 0
+
+
+def command_render_full_markdown(args: argparse.Namespace) -> int:
+    if os.path.realpath(args.report_json) == os.path.realpath(args.output):
+        print("ERROR: full Markdown unavailable", file=sys.stderr)
+        return 2
+    try:
+        report = load_json(args.report_json)
+        atomic_write_text(args.output, render_markdown(report) + "\n")
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        try:
+            Path(args.output).unlink(missing_ok=True)
+        except OSError:
+            pass
+        print("ERROR: full Markdown unavailable", file=sys.stderr)
+        return 2
+    return 0
+
+
+def command_publish_github_guarded(args: argparse.Namespace) -> int:
+    try:
+        status, reason, url = publish_github_guarded(
+            report_json=args.report_json,
+            issue=args.issue,
+            repo_root=args.repo_root,
+            token_source=args.token_source,
+            secret_sources=args.secret_source or [],
+            output_body=args.output_body,
+        )
+    except Exception:
+        status, reason, url = "blocked", "projection_or_staging", ""
+    print(f"{status}\t{reason}\t{url}")
     return 0
 
 
@@ -1266,6 +1996,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="file containing literal secret values that must not appear in commentary",
     )
     finalize.set_defaults(func=command_finalize)
+
+    commentary_projection = sub.add_parser("render-commentary-input")
+    commentary_projection.add_argument("--report-json", required=True)
+    commentary_projection.add_argument("--output", required=True)
+    commentary_projection.set_defaults(
+        func=command_render_projection,
+        projection="commentary",
+    )
+
+    github_projection = sub.add_parser("render-github-markdown")
+    github_projection.add_argument("--report-json", required=True)
+    github_projection.add_argument("--output", required=True)
+    github_projection.set_defaults(func=command_render_projection, projection="github")
+
+    full_markdown = sub.add_parser("render-full-markdown")
+    full_markdown.add_argument("--report-json", required=True)
+    full_markdown.add_argument("--output", required=True)
+    full_markdown.set_defaults(func=command_render_full_markdown)
+
+    guarded_publish = sub.add_parser("publish-github-guarded")
+    guarded_publish.add_argument("--report-json", required=True)
+    guarded_publish.add_argument("--issue", required=True)
+    guarded_publish.add_argument("--repo-root", required=True)
+    guarded_publish.add_argument("--token-source", required=True)
+    guarded_publish.add_argument("--secret-source", action="append")
+    guarded_publish.add_argument("--output-body", required=True)
+    guarded_publish.set_defaults(func=command_publish_github_guarded)
 
     publish = sub.add_parser("publish-record")
     publish.add_argument("--publish-log", required=True)

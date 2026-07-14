@@ -1862,6 +1862,10 @@ def _normalize_tar_member_name(name: str) -> str | None:
         return None
     if _remote_path_has_disallowed_chars(name):
         return None
+    # 정규화 전에 raw component를 검사한다. `ignored/../allowlisted`를 먼저
+    # normpath하면 allowlist member와 같아져 traversal 입력이 채택될 수 있다.
+    if ".." in name.split("/"):
+        return None
     name_norm = posixpath.normpath(name)
     if name_norm in ("", ".") or posixpath.isabs(name_norm):
         return None

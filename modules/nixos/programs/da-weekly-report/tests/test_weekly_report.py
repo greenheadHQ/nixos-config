@@ -1,5 +1,10 @@
+import copy
 import datetime as dt
 import json
+import os
+from pathlib import Path
+
+import pytest
 
 
 def sample_sidecar():
@@ -131,6 +136,46 @@ def build_report(weekly_report_module, previous_reports=None):
         },
         analyze_exit_code=0,
     )
+
+
+def projection_stress_report(weekly_report_module):
+    report = build_report(weekly_report_module)
+    raw_warnings = [
+        (
+            "host mac: remote collection warning "
+            f"/Users/greenhead/.codex/raw-warning-marker-{index:05d}.jsonl"
+        )
+        for index in range(10_000)
+    ]
+    report["analysis"]["warnings"] = list(raw_warnings)
+    report["coverage"]["warnings"] = list(raw_warnings)
+    report["coverage"]["health_warnings"] = [
+        "health warning with /home/greenhead/private-health-path"
+    ]
+    report["coverage"]["host_collection"]["mac"]["warnings"] = list(raw_warnings)
+    report["commentary"] = {
+        "text": "다국어 해설 🚦 | <script> ```mermaid\npie title hostile``` & 완료",
+        "failure_reason": None,
+    }
+    report["deltas"] = {
+        "previous_reports": [
+            {
+                "path": "/home/greenhead/private-delta-marker/weekly-2026-W27.json",
+                "week_id": "2026-W27",
+            }
+        ],
+        "items": [
+            {
+                "metric": "analysis.metrics.M-2.percentages.CONFIRMED_ISSUE",
+                "unit": "%p",
+                "current": 66.7,
+                "comparisons": [
+                    {"week_id": "2026-W27", "previous": 50.0, "delta": 16.7}
+                ],
+            }
+        ],
+    }
+    return report
 
 
 def test_parse_drift_log_uses_subject_and_body(weekly_report_module):
@@ -365,6 +410,7 @@ def test_render_markdown_uses_only_pie_mermaid_and_json_view(weekly_report_modul
     assert "해설 없음: codex unavailable" in markdown
     assert "round key: `(session_path, block_index)`" in markdown
     assert "baseline: baseline" in markdown
+    assert "host mac: ssh find timeout" in markdown
 
 
 def test_publish_record_is_append_only_json_lines(weekly_report_module, tmp_path):
@@ -620,3 +666,253 @@ def test_finalize_discards_commentary_containing_secret_values(
     }
     assert not commentary.exists()
     assert "sanitize gate: secret-like content" in final_md.read_text()
+
+
+def test_commentary_projection_is_bounded_without_raw_warnings(weekly_report_module):
+    report = projection_stress_report(weekly_report_module)
+
+    rendered = weekly_report_module.render_commentary_input(report)
+    payload = json.loads(rendered.split("\n\n", 1)[1])
+
+    assert len(rendered.encode("utf-8")) <= 262_144
+    assert payload["week"]["id"] == "2026-W28"
+    assert payload["session_counts"]["total"] == 4
+    assert set(payload["metrics"]) == {f"M-{index}" for index in range(1, 7)}
+    assert payload["warnings"]["total_count"] == 10_001
+    assert payload["warnings"]["omitted_count"] == 10_001
+    assert "commentary" not in payload
+    assert "raw-warning-marker" not in rendered
+    assert "private-health-path" not in rendered
+    assert "private-delta-marker" not in rendered
+
+
+def test_github_projection_is_bounded_and_structurally_complete(weekly_report_module):
+    report = projection_stress_report(weekly_report_module)
+
+    rendered = weekly_report_module.render_github_markdown(report)
+
+    assert len(rendered.encode("utf-8")) <= 60_000
+    for heading in [
+        "## 핵심 요약",
+        "## 커버리지",
+        "## M-1",
+        "## M-2",
+        "## M-3",
+        "## M-4",
+        "## M-5",
+        "## M-6",
+        "## 전주 delta",
+        "## Warning 요약",
+        "## LLM 해설",
+    ]:
+        assert heading in rendered
+    assert rendered.count("<pre>") == rendered.count("</pre>") == 1
+    assert rendered.count("```") % 2 == 0
+    assert all(line.endswith("|") for line in rendered.splitlines() if line.startswith("|"))
+    assert "다국어 해설 🚦" in rendered
+    assert "omitted raw warnings" in rendered
+    assert "raw-warning-marker" not in rendered
+    assert "private-health-path" not in rendered
+    assert "private-delta-marker" not in rendered
+
+
+def test_projection_does_not_mutate_canonical_report(weekly_report_module):
+    report = projection_stress_report(weekly_report_module)
+    before = copy.deepcopy(report)
+
+    weekly_report_module.render_commentary_input(report)
+    weekly_report_module.render_github_markdown(report)
+
+    assert report == before
+    assert report["schema_version"] == 1
+
+
+def test_projection_cli_writes_atomically_with_0600(weekly_report_module, tmp_path):
+    report = projection_stress_report(weekly_report_module)
+    report_path = tmp_path / "weekly-2026-W28.json"
+    output_path = tmp_path / "commentary-input.txt"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    output_path.write_text("stale", encoding="utf-8")
+    output_path.chmod(0o644)
+
+    rc = weekly_report_module.main([
+        "render-commentary-input",
+        "--report-json",
+        str(report_path),
+        "--output",
+        str(output_path),
+    ])
+
+    assert rc == 0
+    assert output_path.read_text(encoding="utf-8") == weekly_report_module.render_commentary_input(
+        report
+    )
+    assert os.stat(output_path).st_mode & 0o777 == 0o600
+    assert not list(tmp_path.glob(".commentary-input.txt.*.tmp"))
+
+
+def test_github_projection_uses_only_sanitized_commentary(weekly_report_module):
+    report = build_report(weekly_report_module)
+    report["commentary"] = {"text": "검증된 해설", "failure_reason": None}
+    report["provenance"]["raw_commentary"] = "노출되면 안 되는 원문 해설"
+    report["coverage"]["warnings"].append("노출되면 안 되는 warning 원문")
+
+    rendered = weekly_report_module.render_github_markdown(report)
+
+    assert "검증된 해설" in rendered
+    assert "노출되면 안 되는 원문 해설" not in rendered
+    assert "노출되면 안 되는 warning 원문" not in rendered
+
+
+def test_github_projection_drops_non_allowlisted_dynamic_keys(weekly_report_module):
+    report = build_report(weekly_report_module)
+    report["analysis"]["metrics"]["M-2"]["source_distribution"]["verdict_json"][
+        "raw-secret-key"
+    ] = 99
+    report["analysis"]["metrics"]["M-3"]["by_bundle"]["Correctness"][
+        "raw-secret-key"
+    ] = 99
+    report["analysis"]["metrics"]["M-6"]["key_block_count_distribution"][
+        "raw-secret-key"
+    ] = 99
+
+    source = weekly_report_module.build_github_projection_source(report)
+    rendered = weekly_report_module.render_github_markdown_source(source)
+
+    assert "raw-secret-key" not in json.dumps(source, ensure_ascii=False)
+    assert "raw-secret-key" not in rendered
+
+
+def test_guarded_publisher_checks_rendered_body_after_escape(
+    weekly_report_module,
+    tmp_path,
+):
+    report = build_report(weekly_report_module)
+    report["commentary"] = {"text": "escape source & marker", "failure_reason": None}
+    report_json = tmp_path / "weekly.json"
+    report_json.write_text(json.dumps(report), encoding="utf-8")
+    token_source = tmp_path / "github-token"
+    token_source.write_text("ghp_fixture\n", encoding="utf-8")
+    secret_source = tmp_path / "secrets"
+    secret_source.write_text("PUSHOVER_TOKEN='&amp;'\n", encoding="utf-8")
+    output = tmp_path / "github-body.md"
+
+    result = weekly_report_module.publish_github_guarded(
+        report_json=str(report_json),
+        issue="1095",
+        repo_root=str(tmp_path),
+        token_source=str(token_source),
+        secret_sources=[str(secret_source)],
+        output_body=str(output),
+    )
+
+    assert result == ("blocked", "outbound_secret", "")
+    assert not output.exists()
+
+
+def test_existing_final_guard_rechecks_source_unreadable_during_finalize(
+    weekly_report_module,
+    tmp_path,
+):
+    secret = "late-readable-secret"
+    commentary_file = tmp_path / "commentary.txt"
+    commentary_file.write_text(f"해설 {secret}", encoding="utf-8")
+    late_source = tmp_path / "late-secrets"
+
+    text, error = weekly_report_module.read_sanitized_commentary(
+        str(commentary_file),
+        None,
+        [str(late_source)],
+    )
+    assert text == f"해설 {secret}"
+    assert error is None
+
+    report = build_report(weekly_report_module)
+    report["commentary"] = weekly_report_module.commentary_object(text, error)
+    report_json = tmp_path / "weekly.json"
+    report_json.write_text(json.dumps(report), encoding="utf-8")
+    token_source = tmp_path / "github-token"
+    token_source.write_text("ghp_fixture\n", encoding="utf-8")
+    late_source.write_text(f"PUSHOVER_TOKEN='{secret}'\n", encoding="utf-8")
+
+    result = weekly_report_module.publish_github_guarded(
+        report_json=str(report_json),
+        issue="1095",
+        repo_root=str(tmp_path),
+        token_source=str(token_source),
+        secret_sources=[str(late_source)],
+        output_body=str(tmp_path / "github-body.md"),
+    )
+
+    assert result == ("blocked", "outbound_secret", "")
+
+
+def test_strict_secret_snapshot_reads_each_path_once(
+    weekly_report_module,
+    tmp_path,
+    monkeypatch,
+):
+    token_source = tmp_path / "github-token"
+    token_source.write_text("ghp_fixture\n", encoding="utf-8")
+    secret_source = tmp_path / "secrets"
+    secret_source.write_text("PUSHOVER_TOKEN='fixture-secret'\n", encoding="utf-8")
+    original_read_text = Path.read_text
+    reads: dict[str, int] = {}
+
+    def tracked_read_text(path, *args, **kwargs):
+        resolved = str(path.resolve())
+        reads[resolved] = reads.get(resolved, 0) + 1
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", tracked_read_text)
+
+    token, values = weekly_report_module.strict_secret_snapshot(
+        str(token_source),
+        [str(secret_source), str(secret_source), str(token_source)],
+    )
+
+    assert token == "ghp_fixture"
+    assert values == ["ghp_fixture", "fixture-secret"]
+    assert reads == {
+        str(token_source.resolve()): 1,
+        str(secret_source.resolve()): 1,
+    }
+
+
+def test_atomic_report_pair_uses_json_as_commit_marker_and_recovers_markdown(
+    weekly_report_module,
+    tmp_path,
+    monkeypatch,
+):
+    old_report = build_report(weekly_report_module)
+    new_report = copy.deepcopy(old_report)
+    new_report["commentary"] = {"text": "new commentary", "failure_reason": None}
+    report_json = tmp_path / "weekly.json"
+    report_md = tmp_path / "weekly.md"
+    weekly_report_module.atomic_write_report_pair(report_json, old_report, report_md)
+    original_replace = weekly_report_module.replace_staged_text
+
+    def fail_json_replace(staged, target):
+        if Path(target) == report_json:
+            raise OSError("injected JSON replace failure")
+        return original_replace(staged, target)
+
+    monkeypatch.setattr(weekly_report_module, "replace_staged_text", fail_json_replace)
+    with pytest.raises(OSError, match="injected JSON replace failure"):
+        weekly_report_module.atomic_write_report_pair(report_json, new_report, report_md)
+
+    assert json.loads(report_json.read_text(encoding="utf-8")) == old_report
+    assert "new commentary" in report_md.read_text(encoding="utf-8")
+    assert not list(tmp_path.glob(".*.tmp"))
+
+    monkeypatch.setattr(weekly_report_module, "replace_staged_text", original_replace)
+    assert weekly_report_module.main([
+        "render-full-markdown",
+        "--report-json",
+        str(report_json),
+        "--output",
+        str(report_md),
+    ]) == 0
+    assert report_md.read_text(encoding="utf-8") == (
+        weekly_report_module.render_markdown(old_report) + "\n"
+    )

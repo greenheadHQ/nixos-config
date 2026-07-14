@@ -311,12 +311,68 @@ M-1~M-6, 건강 지표 추이, 전주 delta, 소스 추적 링크, LLM 해설, w
 M-1/M-2 `pie`만 사용한다.
 
 렌더링용 `traceability.sessions` stable subset은 기본 50개로 제한한다. 이는 GitHub comment
-길이 폭증을 막기 위한 상한이며, 초과분은 `omitted_session_count`에 집계한다.
+상한이 아니라 canonical JSON과 함께 보존하는 full local Markdown의 archival 가독성/크기를
+위한 기존 상한이며, 초과분은 `omitted_session_count`에 집계한다. GitHub body 크기는 아래의
+별도 bounded consumer projection이 소유한다.
 
 delta 입력 glob은 state directory의 `weekly-????-W??.json`만 사용한다. publish 기록
 `weekly-<ISO주차>-publish.json`과 draft 파일은 glob 구조상 제외된다. publish
 `success`/`failed`/`blocked`/`skipped`는 core schema에 넣지 않고 append-only publish log만
 SSOT로 삼는다.
+
+## Canonical artifact와 bounded consumer projection
+
+schema v1 canonical JSON과 consumer별 payload는 서로 다른 artifact다. canonical에서 raw
+warning/diagnostics/traceability를 삭제하거나 historical report를 다시 쓰는 방식으로 outbound
+크기를 줄이지 않는다. schema migration도 수행하지 않는다.
+
+| artifact | source | 포함/역할 | UTF-8 cap |
+|----------|--------|-----------|-----------|
+| `weekly-<week>.json` | analyzer sidecar + health + delta + finalized commentary | schema v1 canonical, raw warning, coverage SSOT, traceability, provenance 보존 | 없음 |
+| `weekly-<week>.md` | final canonical JSON과 동일 report | full local archival/rendered view. canonical JSON에서 재생성 가능 | 없음 |
+| commentary input | finalize 전 draft canonical JSON | week, session counts, M-1~M-6, derived, health summary, coverage counts/rates, mac/minipc status, warning category/host counts와 omitted count, delta | 262144 bytes |
+| GitHub Markdown | final canonical JSON | 핵심 요약, coverage/host, M-1~M-6, health, delta, warning counts/omitted count, sanitized commentary | 60000 bytes |
+
+`build_consumer_summary(report)`가 두 bounded projection의 공통 allowlist seam이다. commentary,
+raw warning 문자열, raw diagnostics, session path/traceability, provenance, previous report path는
+summary에서 제외한다. warning count의 SSOT는 `coverage.warnings +
+coverage.health_warnings`이며 `analysis.warnings`나 host별 warning 복제본을 다시 합산하지 않는다.
+raw warning은 공개 표본 없이 category/host count와 `omitted_count`로만 표현한다. M-1/M-2
+verdict, M-3 bundle, M-4 severity transition, M-5 status, host, source 이름은 고정 key
+allowlist로 재구성한다.
+
+`render_commentary_input(report)`는 고정 prompt, 빈 줄, deterministic compact JSON, final
+newline을 하나의 renderer에서 만든다. `da-weekly-report.sh`는 이 결과를 변경 없이
+`codex-exec-supervised` stdin으로 전달하며 full draft를 전달하지 않는다. projection 생성이나
+byte-cap 검사가 실패하면 LLM 호출을 생략하고 generic commentary failure status로 finalize를
+계속한다.
+
+`render_github_markdown(report)`는 sanitized `commentary.text`와 public-safe failure reason만
+사용한다. commentary는 완결된 escaped `<pre>...</pre>` 단위로 렌더링하고, table/section도
+완전한 단위로만 생성한다. raw `head -c`, 문자 slice, 열린 table/fence를 남기는 truncation은
+금지한다. 필수 section을 보존한 결과가 cap을 넘으면 `ProjectionError`로 fail-soft 처리하여
+외부 호출 전에 GitHub publish를 `blocked`로 기록한다. 여러 comment 분할이나 외부 artifact로
+우회하지 않는다.
+
+함수와 CLI(`render-commentary-input`, `render-github-markdown`)는 동일 renderer를 사용한다.
+output은 target과 같은 디렉토리의 unique temp file에 mode `0600`으로 flush/fsync한 뒤 atomic
+replace하고, 실패 시 temp/stale outbound artifact를 정리한다. finalize는 full Markdown과
+canonical JSON을 모두 먼저 render/stage하고 Markdown을 먼저, JSON을 마지막 commit marker로
+replace한다. existing-final에서 full Markdown이 missing/empty이면 JSON을 변경하지 않고
+`render-full-markdown`으로 현재 주차 view만 복구한다.
+
+초기 실행 dataflow는 `draft JSON -> commentary projection -> LLM -> sanitize finalize -> final
+JSON/full Markdown -> GitHub projection`이다. existing-final retry는 `final JSON -> missing full
+Markdown 복구(필요 시) -> GitHub projection`이며 analyzer와 LLM을 재실행하지 않는다. canonical
+SHA-256, append-only publish log, target별 latest-status, Pushover terminal 의미는 projection과
+독립적으로 유지한다.
+
+GitHub 직전 `publish-github-guarded`는 token과 모든 secret source를 경로별 정확히 한 번 읽은
+snapshot을 사용한다. 동일 outbound source의 모든 문자열 값을 escaping 전에 검사하고, 같은
+source를 render한 최종 body bytes를 다시 검사한다. 어느 쪽이든 exact secret match이면 body를
+삭제하고 `gh`를 호출하지 않는다. strict snapshot 실패, projection/staging 실패, publisher
+부재, `gh` nonzero는 각각 고정된 safe reason만 append-only publish message에 기록한다. `gh`
+exit 0인데 URL이 없는 경우도 `success/url_missing` terminal이며 중복 게시를 피한다.
 
 ## GitHub Mermaid 안전 subset
 
