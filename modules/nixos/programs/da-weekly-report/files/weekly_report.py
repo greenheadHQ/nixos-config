@@ -24,7 +24,7 @@ import sys
 import tempfile
 import zoneinfo
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 
 SCHEMA_VERSION = 1
@@ -65,6 +65,22 @@ SECRET_ASSIGNMENT_NAMES = {
     "PUSHOVER_TOKEN",
     "PUSHOVER_USER",
 }
+GITHUB_PUBLISH_REASON_OK = "ok"
+GITHUB_PUBLISH_REASON_URL_MISSING = "url_missing"
+GITHUB_PUBLISH_REASON_GH_NONZERO = "gh_nonzero"
+GITHUB_PUBLISH_REASON_PROJECTION = "projection_or_staging"
+GITHUB_PUBLISH_REASON_SECRET_SNAPSHOT = "secret_snapshot"
+GITHUB_PUBLISH_REASON_OUTBOUND_SECRET = "outbound_secret"
+GITHUB_PUBLISH_REASON_UNAVAILABLE = "publisher_unavailable"
+GITHUB_PUBLISH_STATUS_BY_REASON = {
+    GITHUB_PUBLISH_REASON_OK: "success",
+    GITHUB_PUBLISH_REASON_URL_MISSING: "success",
+    GITHUB_PUBLISH_REASON_GH_NONZERO: "failed",
+    GITHUB_PUBLISH_REASON_PROJECTION: "blocked",
+    GITHUB_PUBLISH_REASON_SECRET_SNAPSHOT: "blocked",
+    GITHUB_PUBLISH_REASON_OUTBOUND_SECRET: "blocked",
+    GITHUB_PUBLISH_REASON_UNAVAILABLE: "blocked",
+}
 
 
 class ProjectionError(ValueError):
@@ -73,6 +89,22 @@ class ProjectionError(ValueError):
 
 class SecretSnapshotError(ValueError):
     """Outbound secret sources cannot be snapshotted safely."""
+
+
+class GuardedPublishResult(NamedTuple):
+    """Validated wire result shared by the Python publisher and Bash consumer."""
+
+    status: str
+    reason: str
+    url: str
+
+
+def guarded_publish_result(reason: str, url: str = "") -> GuardedPublishResult:
+    """Build one exact status/reason/url tuple from the producer contract."""
+    status = GITHUB_PUBLISH_STATUS_BY_REASON[reason]
+    if (reason == GITHUB_PUBLISH_REASON_OK) != bool(url):
+        raise ValueError("guarded publisher URL contract violated")
+    return GuardedPublishResult(status, reason, url)
 
 
 def utc_now_iso() -> str:
@@ -880,24 +912,24 @@ def _safe_gh_environment(token: str) -> dict[str, str]:
     return env
 
 
-def _publisher_output_aliases_protected_path(
-    output_body: str,
+def _protected_publisher_paths(
     report_json: str,
-    report: dict,
     token_source: str,
     secret_sources: list[str],
-) -> bool:
+    report: dict | None = None,
+) -> set[str]:
     protected = {
         os.path.realpath(path)
         for path in [report_json, token_source, *secret_sources]
         if path
     }
-    provenance = report.get("provenance", {})
-    for key in ("report_json_path", "report_markdown_path"):
-        path = provenance.get(key)
-        if isinstance(path, str) and path:
-            protected.add(os.path.realpath(path))
-    return os.path.realpath(output_body) in protected
+    if report is not None:
+        provenance = report.get("provenance", {})
+        for key in ("report_json_path", "report_markdown_path"):
+            path = provenance.get(key)
+            if isinstance(path, str) and path:
+                protected.add(os.path.realpath(path))
+    return protected
 
 
 def publish_github_guarded(
@@ -908,52 +940,51 @@ def publish_github_guarded(
     token_source: str,
     secret_sources: list[str],
     output_body: str,
-) -> tuple[str, str, str]:
+) -> GuardedPublishResult:
     """Render, guard, and publish one exact bounded body without leaking details."""
-    basic_protected = {
-        os.path.realpath(path)
-        for path in [report_json, token_source, *secret_sources]
-        if path
-    }
-    if os.path.realpath(output_body) in basic_protected:
-        return "blocked", "projection_or_staging", ""
-    cleanup_output = True
+    output_path = os.path.realpath(output_body)
+    if output_path in _protected_publisher_paths(
+        report_json,
+        token_source,
+        secret_sources,
+    ):
+        return guarded_publish_result(GITHUB_PUBLISH_REASON_PROJECTION)
+    output_is_safe_to_unlink = True
     try:
         try:
             report = load_json(report_json)
             source = build_github_projection_source(report)
-            if _publisher_output_aliases_protected_path(
-                output_body,
+            if output_path in _protected_publisher_paths(
                 report_json,
-                report,
                 token_source,
                 secret_sources,
+                report,
             ):
-                cleanup_output = False
-                return "blocked", "projection_or_staging", ""
+                output_is_safe_to_unlink = False
+                return guarded_publish_result(GITHUB_PUBLISH_REASON_PROJECTION)
         except (OSError, UnicodeError, json.JSONDecodeError, ProjectionError, TypeError):
-            return "blocked", "projection_or_staging", ""
+            return guarded_publish_result(GITHUB_PUBLISH_REASON_PROJECTION)
 
         try:
             token, secret_values = strict_secret_snapshot(token_source, secret_sources)
         except SecretSnapshotError:
-            return "blocked", "secret_snapshot", ""
+            return guarded_publish_result(GITHUB_PUBLISH_REASON_SECRET_SNAPSHOT)
 
         if projection_source_contains_secret(source, secret_values):
-            return "blocked", "outbound_secret", ""
+            return guarded_publish_result(GITHUB_PUBLISH_REASON_OUTBOUND_SECRET)
 
         try:
             rendered = render_github_markdown_source(source)
             body = rendered.encode("utf-8")
             if body_contains_secret(body, secret_values):
-                return "blocked", "outbound_secret", ""
+                return guarded_publish_result(GITHUB_PUBLISH_REASON_OUTBOUND_SECRET)
             atomic_write_text(output_body, rendered)
         except (OSError, UnicodeError, ProjectionError, TypeError, ValueError):
-            return "blocked", "projection_or_staging", ""
+            return guarded_publish_result(GITHUB_PUBLISH_REASON_PROJECTION)
 
         env = _safe_gh_environment(token)
         if shutil.which("gh", path=env.get("PATH")) is None:
-            return "blocked", "publisher_unavailable", ""
+            return guarded_publish_result(GITHUB_PUBLISH_REASON_UNAVAILABLE)
         try:
             proc = subprocess.run(
                 ["gh", "issue", "comment", issue, "--body-file", "-"],
@@ -964,15 +995,18 @@ def publish_github_guarded(
                 check=False,
             )
         except OSError:
-            return "blocked", "publisher_unavailable", ""
+            return guarded_publish_result(GITHUB_PUBLISH_REASON_UNAVAILABLE)
         if proc.returncode != 0:
-            return "failed", "gh_nonzero", ""
+            return guarded_publish_result(GITHUB_PUBLISH_REASON_GH_NONZERO)
         match = re.search(rb"https://github\.com/[^\s]+", proc.stdout)
         if match is None:
-            return "success", "url_missing", ""
-        return "success", "ok", match.group(0).decode("ascii", errors="ignore")
+            return guarded_publish_result(GITHUB_PUBLISH_REASON_URL_MISSING)
+        return guarded_publish_result(
+            GITHUB_PUBLISH_REASON_OK,
+            match.group(0).decode("ascii", errors="ignore"),
+        )
     finally:
-        if cleanup_output:
+        if output_is_safe_to_unlink:
             try:
                 Path(output_body).unlink(missing_ok=True)
             except OSError:
@@ -1914,7 +1948,7 @@ def command_render_full_markdown(args: argparse.Namespace) -> int:
 
 def command_publish_github_guarded(args: argparse.Namespace) -> int:
     try:
-        status, reason, url = publish_github_guarded(
+        result = publish_github_guarded(
             report_json=args.report_json,
             issue=args.issue,
             repo_root=args.repo_root,
@@ -1923,8 +1957,8 @@ def command_publish_github_guarded(args: argparse.Namespace) -> int:
             output_body=args.output_body,
         )
     except Exception:
-        status, reason, url = "blocked", "projection_or_staging", ""
-    print(f"{status}\t{reason}\t{url}")
+        result = guarded_publish_result(GITHUB_PUBLISH_REASON_PROJECTION)
+    print(f"{result.status}\t{result.reason}\t{result.url}")
     return 0
 
 

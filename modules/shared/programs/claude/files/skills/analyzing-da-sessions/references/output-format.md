@@ -374,6 +374,24 @@ source를 render한 최종 body bytes를 다시 검사한다. 어느 쪽이든 e
 부재, `gh` nonzero는 각각 고정된 safe reason만 append-only publish message에 기록한다. `gh`
 exit 0인데 URL이 없는 경우도 `success/url_missing` terminal이며 중복 게시를 피한다.
 
+guarded publisher의 wire contract는 다음 조합만 허용한다. Python producer의
+`GITHUB_PUBLISH_STATUS_BY_REASON`가 status/reason SSOT이며 Bash consumer는 아래 조합과 URL
+규칙을 fail-closed로 검증한다.
+
+| status | reason | URL 규칙 | 다음 실행에서 GitHub 재시도 |
+|--------|--------|----------|-----------------------------|
+| `success` | `ok` | 필수 | 아니오 |
+| `success` | `url_missing` | 빈 값 | 아니오 |
+| `failed` | `gh_nonzero` | 빈 값 | 예 |
+| `blocked` | `projection_or_staging` | 빈 값 | 예 |
+| `blocked` | `secret_snapshot` | 빈 값 | 예 |
+| `blocked` | `outbound_secret` | 빈 값 | 예 |
+| `blocked` | `publisher_unavailable` | 빈 값 | 예 |
+| `blocked` | `publisher_protocol_error` | 빈 값, Bash-local | 예 |
+
+알 수 없는 조합, tab/newline이 섞인 wire, URL 규칙 위반은 모두 body나 세부 오류를 기록하지
+않고 Bash-local `blocked/publisher_protocol_error`로 정규화한다.
+
 ## GitHub Mermaid 안전 subset
 
 PR comment / 이슈 본문에 markdown 그대로 붙여넣을 때 사용 가능한 syntax만 사용한다:

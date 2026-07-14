@@ -197,6 +197,8 @@ publish_github() {
     return 0
   fi
 
+  # Fail-closed consumer for the producer contract documented in output-format.md.
+  # Additions must update Python's GITHUB_PUBLISH_STATUS_BY_REASON and that table first.
   case "$status:$reason" in
     success:ok)
       if [ -z "$url" ]; then
