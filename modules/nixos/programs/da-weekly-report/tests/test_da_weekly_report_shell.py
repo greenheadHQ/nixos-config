@@ -105,9 +105,14 @@ def _existing_final_fixture(tmp_path: Path, weekly_report_module) -> dict:
     _write_executable(
         bin_dir / "gh",
         f"""#!{sys.executable}
+import os
 import pathlib
 import sys
 
+if os.environ.get("GH_TOKEN") != "ghp_fixture_token":
+    raise SystemExit(93)
+if any(name in os.environ for name in ("PUSHOVER_TOKEN", "PUSHOVER_USER", "GH_PAT_PATH")):
+    raise SystemExit(94)
 calls = pathlib.Path({str(gh_calls)!r})
 count = int(calls.read_text() or "0") if calls.exists() else 0
 calls.write_text(str(count + 1))
