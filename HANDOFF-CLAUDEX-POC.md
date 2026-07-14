@@ -2,10 +2,10 @@
 
 ## TL;DR
 
-- **상황**: Claude Code 요청을 로컬 CLIProxyAPI를 통해 Codex OAuth 모델로 보내는 선언형 PoC를 이어서 완성해야 한다.
-- **현재 상태**: `codex/claudex-poc` 브랜치의 구현 커밋 `4923842a`에 Stage 1 코드와 테스트가 들어 있다. 정적·fake·빌드 검증은 통과했지만 실제 OAuth 완료, foreground proxy, Claude completion은 아직 성공하지 않았다.
-- **다음 액션**: 이 브랜치를 checkout한 뒤 아래 Phase 1의 기준선 확인부터 실행하고, 현재 Darwin 호스트에 대한 enable 정책을 먼저 확정한다.
-- **Blockers**: 실행 표면은 현재 특정 Darwin 호스트 하나에만 활성화된다. 새 머신에서 그 정책을 이동할지 확장할지는 변경과 `nrs` 전에 사용자 확인이 필요하다.
+- **상황**: Claude Code 요청을 로컬 CLIProxyAPI를 통해 Codex OAuth 모델로 보내는 선언형 Stage 1 PoC가 실제 Gate B를 통과했다.
+- **현재 상태**: 두 Darwin 호스트를 허용하는 descriptor schema 2가 적용됐고, device OAuth → pinned foreground proxy → `claudex` headless completion → clean shutdown을 실측했다.
+- **다음 액션**: 검증된 Gate B 결과를 커밋하고 `run-da for_pr`와 최종 code review를 통과시킨 뒤, remote branch 갱신 여부를 결정한다.
+- **Blockers**: Stage 1 Gate B blocker는 없다. launchd/activation을 추가하는 Stage 2는 별도 사용자 승인 전까지 범위 밖이다.
 
 > **대상**: `modules/shared/programs/claudex/`와 Darwin Home Manager 연결부
 > **목표**: 새 머신에서 실제 device OAuth → foreground proxy → `claudex` headless completion을 재현하고, Stage 1의 Gate B 판정을 남긴다.
@@ -39,10 +39,10 @@ fake 테스트만으로는 upstream 바이너리의 실제 설정 파싱, 계정
 ## 2. Git 기준선
 
 - 브랜치: `codex/claudex-poc`
-- 구현 커밋: `4923842a feat: add declarative claudex PoC`
-- 구현 커밋의 parent: `ab7a31c3a095c2f514235b763edc6133819b60e7`
-- 인수인계 작성 시점의 `origin/main`: `c6bd515b`
-- 따라서 브랜치 base는 최신 `origin/main`보다 뒤에 있다. E2E 근거를 남기기 전에는 성급하게 rebase하지 말고, 먼저 현재 diff와 충돌 가능성을 확인한다.
+- rebase 후 구현 커밋: `fb911a59 feat: add declarative claudex PoC`
+- rebase 후 인수인계 커밋: `167891fc docs: add claudex PoC handoff`
+- 현재 merge base와 `origin/main`: `c6bd515b`
+- E2E 근거를 확보한 뒤 `origin/main` 위로 rebase했다. remote branch는 이전 commit ID를 가리키므로 후속 push가 필요하면 최종 검증·커밋 뒤 `--force-with-lease`를 사용한다.
 
 새 clone 또는 브랜치가 없는 clone에서는 다음 순서로 시작한다.
 
@@ -118,7 +118,8 @@ git status --short --branch
 | Bind | `127.0.0.1:8317` |
 | 모델 | `gpt-5.6-sol` |
 | Runtime state | `$HOME/Library/Application Support/claudex` |
-| Descriptor | `$HOME/.config/claudex/runtime.json` |
+| Descriptor | `$HOME/.config/claudex/runtime.json`, schema `2` |
+| Enabled hosts | `greenhead-MacBookPro`, `work-MacBookPro` |
 | Claude 실행 파일 | `$HOME/.local/bin/claude` |
 | Service label | `org.nix-community.home.claudex-proxy` |
 | Stage 1 service | 없음; foreground launcher만 존재 |
@@ -160,7 +161,7 @@ git diff --check "$(git merge-base HEAD origin/main)"..HEAD
 
 Nix 명령은 프로젝트 direnv 환경 안에서 실행한다. rebuild가 필요하면 alias `nrs`만 사용하고 `darwin-rebuild` 또는 `nixos-rebuild`를 직접 실행하지 않는다.
 
-## 6. 중단된 실제 E2E의 정확한 상태
+## 6. 이전 중단 상태와 이번 재개 결과
 
 이전 머신에서 다음 preflight까지는 실측했다.
 
@@ -180,6 +181,20 @@ Nix 명령은 프로젝트 direnv 환경 안에서 실행한다. rebuild가 필�
 
 즉, upstream 바이너리의 device-login 진입은 실측했지만 OAuth credential은 생성되지 않았다. Foreground proxy와 Claude completion은 한 번도 실행되지 않았다. `nrs`도 실행하지 않았다. 이전 머신의 Nix store 경로와 device code는 만료·비이식 정보이므로 재사용하지 않는다.
 
+2026-07-14 이번 재개에서는 사용자가 두 Darwin 호스트 모두 허용하는 정책을 선택했다. eval 계약을 먼저 schema 2와 `targetHosts` 목록으로 바꿔 RED를 확인한 뒤 구현을 맞췄고, 다음을 실측했다.
+
+- `nrs`와 `./scripts/ai/verify-ai-compat.sh`: 통과
+- descriptor: schema `2`, 현재 host `enabled: true`, 두 `targetHosts`, loopback `127.0.0.1:8317`, 모델 `gpt-5.6-sol`, launchd plist `null`
+- canonical credential: 정확히 1개, state/auth mode `0700`, credential mode `0600`, staging 0개
+- listener: 정확히 1개이며 descriptor의 pinned `proxyExecutable`과 실제 process executable이 일치
+- Stage 1 상태: `service=missing`, `auth=ready`, `proxy=ready`, `catalog=ready`
+- headless completion stdout: 정확히 `CLAUDEX_E2E_OK`
+- 종료 후: listener/process 없음, canonical credential ready, auth 파일 1개, staging 0개
+
+그 뒤 branch를 `origin/main` 위로 rebase하고 동일 검증과 `nrs`를 다시 실행했다. Codex는 `0.144.4`로 복구됐고 AI compatibility 검증이 완전 통과했으며, listener identity와 `CLAUDEX_E2E_OK` completion도 재통과했다. 두 번째 `nrs` preview에서는 현재 branch에 없는 다른 worktree의 `headless-ssh` package가 제거되는 host-state 수렴도 함께 관찰됐다.
+
+Proxy 시작 시 `--local-model`인데도 upstream이 antigravity version metadata를 한 번 조회했다. completion과 무관한 background network 범위는 Stage 2 전 별도 조사 대상으로 남긴다.
+
 ## 7. Phase 1 — 새 머신 기준선 확인
 
 다음을 병렬로 확인한다.
@@ -190,7 +205,7 @@ uname -m
 command -v nrs
 test -x "$HOME/.local/bin/claude"
 "$HOME/.local/bin/claude" --version
-rg -n 'targetHost|enabled =|claudexShouldEnable' \
+rg -n 'targetHosts|enabled =|claudexShouldEnable' \
   modules/shared/programs/claudex/default.nix \
   tests/eval-tests.nix
 git status --short --branch
@@ -215,6 +230,8 @@ git status --short --branch
 
 1 또는 2를 선택하면 `default.nix`와 `tests/eval-tests.nix`의 기대값을 함께 변경하고, Phase 5의 정적 검증을 다시 통과시킨 뒤 `nrs`를 실행한다. 실제 hostname에 개인 식별자가 포함되어 있으면 그 값을 그대로 새 public diff에 추가하지 말고, 기존 host selector 구조에서 안전한 선언 방법을 먼저 설계한다.
 
+이번 재개에서는 **2. 허용 대상을 복수로 확장**을 선택했고, 기존 flake가 이미 선언한 두 Darwin hostname을 `targetHosts`의 명시적 allowlist로 사용했다.
+
 ## 8. Phase 2 — 선언 적용과 surface 확인
 
 enable 정책이 확정되고 필요한 변경이 검증된 뒤에만 다음을 실행한다.
@@ -227,7 +244,7 @@ nrs
 `nrs` 후 다음을 확인한다.
 
 ```bash
-jq '{schema, enabled, bindHost, port, model, proxyVersion, launchAgentPlist}' \
+jq '{schema, enabled, hostName, targetHosts, bindHost, port, model, proxyVersion, launchAgentPlist}' \
   "$HOME/.config/claudex/runtime.json"
 test -x "$HOME/.local/bin/claudex"
 test -x "$HOME/.local/bin/claudex-login"
@@ -380,17 +397,16 @@ git diff --check
 - descriptor와 eval test의 대상 정책이 일치한다.
 - Stage 1에는 launchd agent와 activation이 없다.
 
-### E2E 기록 형식
-
-이 문서의 아래 항목을 실제 값으로 갱신한다.
+### E2E 기록
 
 ```text
-환경: <Darwin/architecture, Claude Code version>
+환경: Darwin/arm64, Claude Code 2.1.209, CLIProxyAPI 7.2.73
 입력: Reply with exactly CLAUDEX_E2E_OK and nothing else.
 절차: device login -> foreground launcher -> listener identity -> headless claudex
 기대 결과: CLAUDEX_E2E_OK
-실제 결과: <stdout 또는 실패 단계와 오류>
+실제 결과: CLAUDEX_E2E_OK (exit 0, proxy POST /v1/messages?beta=true 200)
 성공 기준: exact completion + expected listener identity + clean shutdown + credential ready
+판정: PASS
 ```
 
 실패 시 token이나 credential 본문을 붙이지 말고, 단계·exit code·sanitized stderr·포트 상태만 남긴다.
@@ -408,13 +424,11 @@ git diff --cached
 
 ## 12. 남아 있는 미지와 Stage 2 조건
 
-Gate B에서 아직 직접 확인해야 하는 항목:
+Gate B 성공 후 아직 직접 확인해야 하는 항목:
 
-- 실제 completion entitlement
-- 실제 parser의 JSON-as-YAML 수용
-- completion 후 OAuth refresh persistence
+- 15분 refresh 주기를 실제로 지난 OAuth refresh persistence와 실패 복구
 - `--bare`, `--agent`, `--agents`, interactive `/model`이 고정 모델 계약을 우회하는지
-- upstream의 background network 동작 범위
+- startup에서 관찰된 antigravity version metadata 조회를 포함한 upstream background network 동작 범위
 - listener PID/executable provenance를 자동화할 방법
 
 Baseline E2E가 성공해도 곧바로 Stage 2를 구현하지 않는다. 사용자 승인 후 다음을 별도 설계한다.
@@ -427,16 +441,11 @@ Baseline E2E가 성공해도 곧바로 Stage 2를 구현하지 않는다. 사용
 
 구현 완료 뒤에는 `run-da for_pr`로 diff 품질을 검증하고, 범위가 넓어졌다면 `run-da audit`로 회귀와 side effect를 추가 점검한다.
 
-## 13. 첫 행동 요약
+## 13. 현재 다음 행동 요약
 
-새 LLM은 질문부터 시작하지 말고 아래 순서로 즉시 실측한다.
-
-1. `git fetch`와 branch checkout
-2. `git status`, `git log`, `git merge-base`
-3. `AGENTS.md`, 이 문서, `modules/shared/programs/claudex/default.nix` 읽기
-4. Darwin/architecture/Claude version 확인
-5. enable gate가 현재 머신을 포함하는지 확인
-6. 다르면 사용자에게 단일 대상 이동과 복수 대상 확장 중 하나만 질문
-7. 결정 후 테스트 → 필요 시 `nrs` → device OAuth → foreground E2E
+1. 현재 검증된 Gate B 결과를 커밋한다.
+2. `run-da for_pr`와 최종 code review를 통과시키고, finding이 있으면 수정·재검증·후속 커밋한다.
+3. rebase로 remote branch와 commit ID가 달라졌으므로 push는 최종 사용자 확인 뒤 `--force-with-lease`로 수행한다.
+4. Stage 2는 사용자 승인 전 구현하지 않는다.
 
 진실 원천 우선: 이 문서와 실제 checkout이 다르면 파일·CLI 실측을 따르고 차이를 기록한다.

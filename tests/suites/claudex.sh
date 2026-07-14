@@ -619,7 +619,7 @@ EOF
   jq -n \
     --arg label 'org.nix-community.home.claudex-proxy' \
     --arg plist "$plist" \
-    '{schema:1,enabled:true,label:$label,launchAgentPlist:$plist}' > "$descriptor"
+    '{schema:2,enabled:true,label:$label,launchAgentPlist:$plist}' > "$descriptor"
   rm -f "$sandbox/launchctl.argv"
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \

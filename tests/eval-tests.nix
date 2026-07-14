@@ -24,6 +24,10 @@ let
     "greenhead-MacBookPro"
     "work-MacBookPro"
   ];
+  claudexTargetHosts = [
+    "greenhead-MacBookPro"
+    "work-MacBookPro"
+  ];
   darwinHostNames = builtins.attrNames darwinCfgs;
   unexpectedDarwinHosts = builtins.filter (
     name: !(builtins.elem name expectedDarwinHosts)
@@ -416,7 +420,7 @@ let
         hasClaudexDescriptor = hasHost && builtins.hasAttr claudexDescriptorPath hm.home.file;
         claudexDescriptor =
           if hasClaudexDescriptor then builtins.fromJSON hm.home.file.${claudexDescriptorPath}.text else null;
-        claudexShouldEnable = hostName == "work-MacBookPro";
+        claudexShouldEnable = builtins.elem hostName claudexTargetHosts;
         claudexPublicFiles = [
           ".local/bin/claudex"
           ".local/bin/claudex-login"
@@ -543,9 +547,9 @@ let
           name = "Test D15 ${hostName}: claudex descriptor의 loopback/model/schema 계약이 고정되어야 함";
           cond =
             hasClaudexDescriptor
-            && claudexDescriptor.schema == 1
+            && claudexDescriptor.schema == 2
             && claudexDescriptor.hostName == hostName
-            && claudexDescriptor.targetHost == "work-MacBookPro"
+            && claudexDescriptor.targetHosts == claudexTargetHosts
             && claudexDescriptor.label == "org.nix-community.home.claudex-proxy"
             && claudexDescriptor.bindHost == "127.0.0.1"
             && claudexDescriptor.port == 8317
@@ -556,7 +560,7 @@ let
             && claudexDescriptor.launchAgentPlist == null;
         }
         {
-          name = "Test D16 ${hostName}: claudex 실행 표면은 work-MacBookPro에만 노출되어야 함";
+          name = "Test D16 ${hostName}: claudex 실행 표면은 승인된 Darwin 호스트에만 노출되어야 함";
           cond =
             hasClaudexDescriptor
             && claudexDescriptor.enabled == claudexShouldEnable

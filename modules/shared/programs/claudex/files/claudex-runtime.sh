@@ -352,7 +352,7 @@ _claudex_ensure_declared_launch_agent_unlocked() {
     _claudex_error "runtime descriptor is missing or unsafe: $CLAUDEX_DESCRIPTOR"
     return 1
   fi
-  if ! "$CLAUDEX_JQ" -e '.schema == 1 and (.enabled | type == "boolean")' "$CLAUDEX_DESCRIPTOR" >/dev/null; then
+  if ! "$CLAUDEX_JQ" -e '.schema == 2 and (.enabled | type == "boolean")' "$CLAUDEX_DESCRIPTOR" >/dev/null; then
     _claudex_error "runtime descriptor schema is invalid"
     return 1
   fi

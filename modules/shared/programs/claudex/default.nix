@@ -11,8 +11,11 @@
 }:
 
 let
-  targetHost = "work-MacBookPro";
-  enabled = hostname == targetHost;
+  targetHosts = [
+    "greenhead-MacBookPro"
+    "work-MacBookPro"
+  ];
+  enabled = builtins.elem hostname targetHosts;
   homeDir = config.home.homeDirectory;
   stateDir = "${homeDir}/Library/Application Support/claudex";
   authDir = "${stateDir}/auth";
@@ -77,10 +80,10 @@ let
   '';
 
   descriptor = {
-    schema = 1;
+    schema = 2;
     inherit
       enabled
-      targetHost
+      targetHosts
       label
       stateDir
       authDir
