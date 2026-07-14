@@ -3,7 +3,7 @@
 #
 # default.nix의 systemd 모듈이 이 스크립트를 writeShellApplication으로 감싸 실행한다.
 # 이 파일 자체는 user-scope 계약만 가정한다: HOME 아래 상태/SSH/Pushover 설정을 사용하고,
-# GitHub 토큰은 gh 호출 한 줄에만 셸 할당으로 주입한다. set -x 금지.
+# GitHub 토큰은 Python guarded publisher의 scrubbed 환경에만 주입한다. set -x 금지.
 set -euo pipefail
 umask 077
 

@@ -740,6 +740,39 @@ def secret_values_from_text(text: str) -> list[str]:
     return values
 
 
+def strict_secret_values_from_text(text: str) -> list[str]:
+    """Parse every meaningful source line or reject the whole snapshot."""
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    if not lines:
+        raise SecretSnapshotError("secret source invalid")
+
+    assignments: list[str] = []
+    raw_values: list[str] = []
+    for line in lines:
+        assignment = shell_assignment_value(line)
+        if assignment is None:
+            raw_values.append(line)
+            continue
+        _, value = assignment
+        if not value:
+            raise SecretSnapshotError("secret source invalid")
+        # Strict outbound guarding treats every assignment value as sensitive,
+        # including future credential names unknown to the finalize sanitizer.
+        assignments.append(value)
+
+    if assignments and raw_values:
+        raise SecretSnapshotError("secret source invalid")
+    if raw_values:
+        if len(raw_values) != 1 or "=" in raw_values[0]:
+            raise SecretSnapshotError("secret source invalid")
+        return raw_values
+    return assignments
+
+
 def load_secret_values(paths: list[str]) -> list[str]:
     values: list[str] = []
     seen: set[str] = set()
@@ -781,9 +814,7 @@ def strict_secret_snapshot(
     values = [token]
     seen = {token}
     for path in secret_sources:
-        parsed = secret_values_from_text(read_once(path))
-        if not parsed:
-            raise SecretSnapshotError("secret source invalid")
+        parsed = strict_secret_values_from_text(read_once(path))
         for value in parsed:
             if value and value not in seen:
                 values.append(value)

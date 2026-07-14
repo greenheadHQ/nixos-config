@@ -689,6 +689,7 @@ def test_commentary_projection_is_bounded_without_raw_warnings(weekly_report_mod
 def test_github_projection_is_bounded_and_structurally_complete(weekly_report_module):
     report = projection_stress_report(weekly_report_module)
 
+    source = weekly_report_module.build_github_projection_source(report)
     rendered = weekly_report_module.render_github_markdown(report)
 
     assert len(rendered.encode("utf-8")) <= 60_000
@@ -711,6 +712,31 @@ def test_github_projection_is_bounded_and_structurally_complete(weekly_report_mo
     assert all(line.endswith("|") for line in rendered.splitlines() if line.startswith("|"))
     assert "다국어 해설 🚦" in rendered
     assert "omitted raw warnings" in rendered
+    warning_summary = source["summary"]["warnings"]
+    assert warning_summary == {
+        "total_count": 10_001,
+        "category_counts": {
+            "remote_collection": 10_000,
+            "validation": 0,
+            "analysis": 0,
+            "health": 1,
+            "other": 0,
+        },
+        "host_counts": {"mac": 10_000, "minipc": 0, "unattributed": 1},
+        "omitted_count": 10_001,
+    }
+    metrics = source["summary"]["metrics"]
+    assert metrics["M-1"]["distribution"]["FULL"] == 1
+    assert metrics["M-2"]["distribution"]["CONFIRMED_ISSUE"] == 2
+    assert metrics["M-3"]["by_bundle"]["Correctness"]["total"] == 2
+    assert metrics["M-4"]["transition_matrix"]["HIGH->LOW"] == 1
+    assert metrics["M-5"]["source"] == "unavailable"
+    assert metrics["M-6"]["coverage"]["eligible_records"] == 3
+    assert "| remote_collection | 10000 |" in rendered
+    assert "| health | 1 |" in rendered
+    assert "| mac | 10000 |" in rendered
+    assert "| unattributed | 1 |" in rendered
+    assert "omitted raw warnings: 10001" in rendered
     assert "raw-warning-marker" not in rendered
     assert "private-health-path" not in rendered
     assert "private-delta-marker" not in rendered
@@ -730,25 +756,36 @@ def test_projection_does_not_mutate_canonical_report(weekly_report_module):
 def test_projection_cli_writes_atomically_with_0600(weekly_report_module, tmp_path):
     report = projection_stress_report(weekly_report_module)
     report_path = tmp_path / "weekly-2026-W28.json"
-    output_path = tmp_path / "commentary-input.txt"
     report_path.write_text(json.dumps(report), encoding="utf-8")
-    output_path.write_text("stale", encoding="utf-8")
-    output_path.chmod(0o644)
+    cases = [
+        (
+            "render-commentary-input",
+            "commentary-input.txt",
+            weekly_report_module.render_commentary_input,
+        ),
+        (
+            "render-github-markdown",
+            "github-body.md",
+            weekly_report_module.render_github_markdown,
+        ),
+    ]
+    for command, filename, renderer in cases:
+        output_path = tmp_path / filename
+        output_path.write_text("stale", encoding="utf-8")
+        output_path.chmod(0o644)
 
-    rc = weekly_report_module.main([
-        "render-commentary-input",
-        "--report-json",
-        str(report_path),
-        "--output",
-        str(output_path),
-    ])
+        rc = weekly_report_module.main([
+            command,
+            "--report-json",
+            str(report_path),
+            "--output",
+            str(output_path),
+        ])
 
-    assert rc == 0
-    assert output_path.read_text(encoding="utf-8") == weekly_report_module.render_commentary_input(
-        report
-    )
-    assert os.stat(output_path).st_mode & 0o777 == 0o600
-    assert not list(tmp_path.glob(".commentary-input.txt.*.tmp"))
+        assert rc == 0
+        assert output_path.read_text(encoding="utf-8") == renderer(report)
+        assert os.stat(output_path).st_mode & 0o777 == 0o600
+        assert not list(tmp_path.glob(f".{filename}.*.tmp"))
 
 
 def test_github_projection_uses_only_sanitized_commentary(weekly_report_module):
@@ -877,6 +914,37 @@ def test_strict_secret_snapshot_reads_each_path_once(
         str(token_source.resolve()): 1,
         str(secret_source.resolve()): 1,
     }
+
+
+def test_strict_secret_snapshot_guards_unknown_assignments_and_rejects_partial_parse(
+    weekly_report_module,
+    tmp_path,
+):
+    token_source = tmp_path / "github-token"
+    token_source.write_text("ghp_fixture\n", encoding="utf-8")
+    secret_source = tmp_path / "secrets"
+    secret_source.write_text(
+        "PUSHOVER_TOKEN='known'\nFUTURE_SECRET='future-value'\n",
+        encoding="utf-8",
+    )
+
+    token, values = weekly_report_module.strict_secret_snapshot(
+        str(token_source), [str(secret_source)]
+    )
+
+    assert token == "ghp_fixture"
+    assert values == ["ghp_fixture", "known", "future-value"]
+
+    for invalid in (
+        "PUSHOVER_TOKEN='known'\nmalformed secret line\n",
+        "PUSHOVER_TOKEN=\nPUSHOVER_USER='known'\n",
+        "FIRST=known\nSECOND value\n",
+    ):
+        secret_source.write_text(invalid, encoding="utf-8")
+        with pytest.raises(weekly_report_module.SecretSnapshotError):
+            weekly_report_module.strict_secret_snapshot(
+                str(token_source), [str(secret_source)]
+            )
 
 
 def test_atomic_report_pair_uses_json_as_commit_marker_and_recovers_markdown(

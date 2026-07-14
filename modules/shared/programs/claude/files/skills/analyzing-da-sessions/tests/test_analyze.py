@@ -641,6 +641,8 @@ def test_remote_tar_rejects_appledouble_and_unknown_members(analyze_module, tmp_
     assert not (tmp_path / "Users/greenhead/.claude/projects/._a.jsonl").exists()
     assert not (tmp_path / "Users/greenhead/.claude/projects/unknown.jsonl").exists()
     assert sum("tar member skipped by validation" in item for item in warnings) == 2
+    assert any("._a.jsonl" in item for item in warnings)
+    assert any("unknown.jsonl" in item for item in warnings)
 
 
 def test_remote_tar_rejects_traversal_and_non_regular_members(

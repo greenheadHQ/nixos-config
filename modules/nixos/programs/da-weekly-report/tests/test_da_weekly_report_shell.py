@@ -80,6 +80,16 @@ def _existing_final_fixture(tmp_path: Path, weekly_report_module) -> dict:
     for directory in (home, state_dir, bin_dir, scratch):
         directory.mkdir(mode=0o700)
 
+    network_called = tmp_path / "network-called"
+    _write_executable(
+        bin_dir / "uname",
+        "#!/usr/bin/env bash\nprintf '%s\\n' Linux\n",
+    )
+    _write_executable(
+        bin_dir / "ssh",
+        f"#!{sys.executable}\nimport pathlib\npathlib.Path({str(network_called)!r}).write_text('called')\nraise SystemExit(97)\n",
+    )
+
     week_id = subprocess.check_output(
         [sys.executable, str(WEEKLY_REPORT_PY), "week-id"],
         text=True,
@@ -190,6 +200,7 @@ send_pushover_fail_soft() {
         "pushover_cred": pushover_cred,
         "push_capture": push_capture,
         "state_dir": state_dir,
+        "network_called": network_called,
     }
 
 
@@ -489,6 +500,7 @@ pathlib.Path(args[args.index("-o") + 1]).write_text("fixture LLM commentary", en
     assert final_report["commentary"]["text"] == "fixture LLM commentary"
     assert fixture["analyzer_called"].exists()
     assert fixture["llm_called"].exists()
+    assert not fixture["network_called"].exists()
     assert not (fixture["state_dir"] / f"weekly-{fixture['week_id']}.draft.json").exists()
     assert not (fixture["state_dir"] / f"weekly-{fixture['week_id']}-commentary.txt").exists()
     scratch_root = Path(fixture["env"]["TMPDIR"])
