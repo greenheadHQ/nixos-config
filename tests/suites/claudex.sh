@@ -1,20 +1,62 @@
 # tests/suites/claudex.sh — Stage 1 fake-only coverage for the declarative claudex PoC
 # shellcheck shell=bash
 
-_claudex_substitute_file() {
-  local source="$1" destination="$2" runtime="$3" proxy="$4" template="$5"
-  local allow_test_overrides="${6:-true}" declared_home="${7:-$destination-home}"
-  local curl_bin="${8:-$(command -v curl)}" lockf_bin="${9:-/usr/bin/lockf}" launchctl_bin="${10:-/bin/launchctl}"
+_claudex_assert_no_placeholders() {
+  local path="$1"
+  if grep -Eq '@[A-Za-z_][A-Za-z0-9_-]*@' "$path"; then
+    fail "claudex fixture retained an unsubstituted placeholder: $path"
+  fi
+}
+
+_claudex_render_config_template() {
+  local source="$1" destination="$2"
+  local bind_host="${CLAUDEX_FIXTURE_BIND_HOST:-127.0.0.1}"
+  local port="${CLAUDEX_FIXTURE_PORT:-8317}"
+  local pprof_port="${CLAUDEX_FIXTURE_PPROF_PORT:-$((port - 1))}"
+
+  jq \
+    --arg bindHost "$bind_host" \
+    --argjson port "$port" \
+    --arg pprofAddr "${bind_host}:${pprof_port}" \
+    '.host = $bindHost | .port = $port | .pprof.addr = $pprofAddr' \
+    "$source" > "$destination"
+}
+
+_claudex_materialize_runtime() {
+  local destination="$1" template="$2"
+  local source="$REPO_ROOT/modules/shared/programs/claudex/files/claudex-runtime.sh"
+  local allow_test_overrides="${CLAUDEX_FIXTURE_ALLOW_TEST_OVERRIDES:-true}"
+  local declared_home="${CLAUDEX_FIXTURE_DECLARED_HOME:-$destination-home}"
+  local curl_bin="${CLAUDEX_FIXTURE_CURL_BIN:-$(command -v curl)}"
+  local lockf_bin="${CLAUDEX_FIXTURE_LOCKF_BIN:-/usr/bin/lockf}"
+  local launchctl_bin="${CLAUDEX_FIXTURE_LAUNCHCTL_BIN:-/bin/launchctl}"
+  local bind_host="${CLAUDEX_FIXTURE_BIND_HOST:-127.0.0.1}"
+  local port="${CLAUDEX_FIXTURE_PORT:-8317}"
+  local model="${CLAUDEX_FIXTURE_MODEL:-gpt-5.6-sol}"
+  local label="${CLAUDEX_FIXTURE_LABEL:-org.nix-community.home.claudex-proxy}"
+  local pprof_port="${CLAUDEX_FIXTURE_PPROF_PORT:-$((port - 1))}"
+  local state_dir="${CLAUDEX_FIXTURE_STATE_DIR:-$declared_home/Library/Application Support/claudex}"
+  local auth_dir="${CLAUDEX_FIXTURE_AUTH_DIR:-$state_dir/auth}"
+  local config_file="${CLAUDEX_FIXTURE_CONFIG_FILE:-$state_dir/config.yaml}"
+  local api_key_file="${CLAUDEX_FIXTURE_API_KEY_FILE:-$state_dir/client-api-key}"
+  local state_lock="${CLAUDEX_FIXTURE_STATE_LOCK:-$state_dir/state.lock}"
+  local work_dir="${CLAUDEX_FIXTURE_WORK_DIR:-$state_dir/work}"
+
   sed \
     -e "s|@allowTestOverrides@|$allow_test_overrides|g" \
     -e "s|@bashBin@|$(command -v bash)|g" \
     -e "s|@homeDir@|$declared_home|g" \
-    -e "s|@runtimeLibrary@|$runtime|g" \
-    -e "s|@proxyBin@|$proxy|g" \
+    -e "s|@stateDir@|$state_dir|g" \
+    -e "s|@authDir@|$auth_dir|g" \
+    -e "s|@configFile@|$config_file|g" \
+    -e "s|@apiKeyFile@|$api_key_file|g" \
+    -e "s|@stateLock@|$state_lock|g" \
+    -e "s|@workDir@|$work_dir|g" \
     -e "s|@configTemplate@|$template|g" \
     -e "s|@jqBin@|$(command -v jq)|g" \
     -e "s|@curlBin@|$curl_bin|g" \
     -e "s|@opensslBin@|$(command -v openssl)|g" \
+    -e "s|@cmpBin@|$(command -v cmp)|g" \
     -e "s|@statBin@|$(command -v stat)|g" \
     -e "s|@chmodBin@|$(command -v chmod)|g" \
     -e "s|@mkdirBin@|$(command -v mkdir)|g" \
@@ -26,7 +68,36 @@ _claudex_substitute_file() {
     -e "s|@idBin@|$(command -v id)|g" \
     -e "s|@lockfBin@|$lockf_bin|g" \
     -e "s|@launchctlBin@|$launchctl_bin|g" \
+    -e "s|@bindHost@|$bind_host|g" \
+    -e "s|@port@|$port|g" \
+    -e "s|@model@|$model|g" \
+    -e "s|@label@|$label|g" \
+    -e "s|@pprofPort@|$pprof_port|g" \
     "$source" > "$destination"
+  _claudex_assert_no_placeholders "$destination"
+}
+
+_claudex_materialize_command() {
+  local source="$1" destination="$2" runtime="$3" proxy="$4" template="$5"
+  local wrapper_settings="${6:-$template}"
+
+  sed \
+    -e "s|@bashBin@|$(command -v bash)|g" \
+    -e "s|@runtimeLibrary@|$runtime|g" \
+    -e "s|@proxyBin@|$proxy|g" \
+    -e "s|@configTemplate@|$template|g" \
+    -e "s|@wrapperSettings@|$wrapper_settings|g" \
+    "$source" > "$destination"
+  _claudex_assert_no_placeholders "$destination"
+}
+
+_claudex_write_wrapper_settings() {
+  local destination="$1"
+  jq -n '{env: {CLAUDE_CODE_EXTRA_BODY: "{}"}}' > "$destination"
+}
+
+_claudex_file_inode() {
+  stat -c '%i' "$1" 2>/dev/null || stat -f '%i' "$1" 2>/dev/null
 }
 
 _claudex_fixture() {
@@ -34,9 +105,12 @@ _claudex_fixture() {
   local root="$REPO_ROOT/modules/shared/programs/claudex"
   local generated="$sandbox/generated"
   local fake_proxy="$sandbox/fake-cli-proxy-api"
+  local wrapper_settings="$generated/wrapper-settings.json"
 
   mkdir -p "$sandbox/home/.local/bin" "$generated"
-  cp "$root/files/config-template.json" "$generated/config-template.json"
+  _claudex_render_config_template \
+    "$root/files/config-template.json" "$generated/config-template.json"
+  _claudex_write_wrapper_settings "$wrapper_settings"
   cat > "$sandbox/fake-lockf" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${CLAUDEX_FAKE_LOCK_LOG:-}" ] || printf '%s\n' "$@" >> "$CLAUDEX_FAKE_LOCK_LOG"
@@ -49,14 +123,14 @@ exit 99
 EOF
   chmod +x "$sandbox/fake-lockf" "$fake_proxy"
 
-  _claudex_substitute_file \
-    "$root/files/claudex-runtime.sh" "$generated/claudex-runtime.sh" \
-    "$generated/claudex-runtime.sh" "$fake_proxy" "$generated/config-template.json"
+  _claudex_materialize_runtime \
+    "$generated/claudex-runtime.sh" "$generated/config-template.json"
   local script
   for script in claudex claudex-login claudex-status claudex-proxy-launcher; do
-    _claudex_substitute_file \
+    _claudex_materialize_command \
       "$root/files/$script.sh" "$generated/$script" \
-      "$generated/claudex-runtime.sh" "$fake_proxy" "$generated/config-template.json"
+      "$generated/claudex-runtime.sh" "$fake_proxy" "$generated/config-template.json" \
+      "$wrapper_settings"
     chmod +x "$generated/$script"
   done
 }
@@ -69,9 +143,11 @@ _claudex_production_fixture() {
   local proxy="$sandbox/production-cli-proxy-api"
   local curl_bin="$sandbox/production-curl"
   local launchctl_bin="$sandbox/production-launchctl"
+  local wrapper_settings="$generated/wrapper-settings.json"
   local jq_bin
   jq_bin="$(command -v jq)"
   mkdir -p "$generated" "$declared_home/.local/bin"
+  _claudex_write_wrapper_settings "$wrapper_settings"
 
   cat > "$curl_bin" <<'EOF'
 #!/usr/bin/env bash
@@ -114,15 +190,17 @@ exit 17
 EOF
   chmod +x "$curl_bin" "$launchctl_bin" "$proxy"
 
-  _claudex_substitute_file \
-    "$root/files/claudex-runtime.sh" "$runtime" "$runtime" "$proxy" \
-    "$sandbox/generated/config-template.json" false "$declared_home" "$curl_bin" \
-    "$sandbox/fake-lockf" "$launchctl_bin"
+  CLAUDEX_FIXTURE_ALLOW_TEST_OVERRIDES=false \
+    CLAUDEX_FIXTURE_DECLARED_HOME="$declared_home" \
+    CLAUDEX_FIXTURE_CURL_BIN="$curl_bin" \
+    CLAUDEX_FIXTURE_LOCKF_BIN="$sandbox/fake-lockf" \
+    CLAUDEX_FIXTURE_LAUNCHCTL_BIN="$launchctl_bin" \
+    _claudex_materialize_runtime "$runtime" "$sandbox/generated/config-template.json"
   local script
   for script in claudex claudex-login claudex-status claudex-proxy-launcher; do
-    _claudex_substitute_file \
+    _claudex_materialize_command \
       "$root/files/$script.sh" "$generated/$script" "$runtime" "$proxy" \
-      "$sandbox/generated/config-template.json"
+      "$sandbox/generated/config-template.json" "$wrapper_settings"
     chmod +x "$generated/$script"
   done
 }
@@ -154,38 +232,36 @@ EOF
 }
 
 test_claudex_runtime_api_and_private_state() {
-  local sandbox state runtime public_functions expected key_before key_after external production_runtime production_home output symlink_home
+  local sandbox state runtime command_functions expected key_before key_after replacement_key config_inode_before config_inode_after external production_runtime production_home output symlink_home
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
   runtime="$sandbox/generated/claudex-runtime.sh"
   _claudex_fixture "$sandbox"
 
-  public_functions="$({
+  command_functions="$({
     HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
       source "$1"
       declare -F | sed "s/^declare -f //" | grep -v "^_" | sort
     ' _ "$runtime"
   })"
-  expected=$'assert_single_codex_credential\ncredential_count\ncurl_loopback\nensure_declared_launch_agent\nprepare_state\nrender_runtime_config\nwait_for_proxy_ready\nwith_state_lock'
-  [[ "$public_functions" == "$expected" ]] || fail "claudex runtime public API drifted: $public_functions"
+  expected=$'assert_single_codex_credential\ncredential_count\ncurl_loopback\nprepare_state\nwait_for_proxy_ready\nwith_state_lock'
+  [[ "$command_functions" == "$expected" ]] || fail "claudex runtime command API drifted: $command_functions"
   [[ ! -e "$state" ]] || fail "sourcing claudex runtime must be inert"
 
   production_runtime="$sandbox/generated/claudex-runtime-production.sh"
   production_home="$sandbox/declared-home"
-  _claudex_substitute_file \
-    "$REPO_ROOT/modules/shared/programs/claudex/files/claudex-runtime.sh" \
-    "$production_runtime" "$production_runtime" "$sandbox/fake-cli-proxy-api" \
-    "$sandbox/generated/config-template.json" false "$production_home"
+  CLAUDEX_FIXTURE_ALLOW_TEST_OVERRIDES=false \
+    CLAUDEX_FIXTURE_DECLARED_HOME="$production_home" \
+    _claudex_materialize_runtime "$production_runtime" "$sandbox/generated/config-template.json"
   output="$(
     HOME="$sandbox/hostile-home" \
       CLAUDEX_STATE_DIR="$sandbox/hostile-state" \
-      CLAUDEX_DESCRIPTOR="$sandbox/hostile-descriptor" \
       CLAUDEX_JQ=/bin/false \
-      bash -c 'source "$1"; printf "%s\n%s\n%s\n" "$CLAUDEX_HOME" "$CLAUDEX_STATE_DIR" "$CLAUDEX_DESCRIPTOR"' \
+      bash -c 'source "$1"; printf "%s\n%s\n" "$CLAUDEX_HOME" "$CLAUDEX_STATE_DIR"' \
       _ "$production_runtime"
   )"
-  expected="$production_home"$'\n'"$production_home/Library/Application Support/claudex"$'\n'"$production_home/.config/claudex/runtime.json"
-  [[ "$output" == "$expected" ]] || fail "production runtime accepted inherited home/state/descriptor overrides"
+  expected="$production_home"$'\n'"$production_home/Library/Application Support/claudex"
+  [[ "$output" == "$expected" ]] || fail "production runtime accepted inherited home/state overrides"
   [[ "$(HOME="$sandbox/hostile-home" CLAUDEX_JQ=/bin/false bash -c 'source "$1"; printf "%s" "$CLAUDEX_JQ"' _ "$production_runtime")" == "$(command -v jq)" ]] \
     || fail "production runtime accepted an inherited tool override"
 
@@ -235,9 +311,26 @@ test_claudex_runtime_api_and_private_state() {
     "$state/config.yaml" >/dev/null || fail "rendered claudex config violates its contract"
 
   key_before="$(<"$state/client-api-key")"
+  config_inode_before="$(_claudex_file_inode "$state/config.yaml")"
   _claudex_prepare_fixture_state "$sandbox"
   key_after="$(<"$state/client-api-key")"
+  config_inode_after="$(_claudex_file_inode "$state/config.yaml")"
   [[ "$key_before" == "$key_after" ]] || fail "prepare_state rotated an existing API key"
+  [[ "$config_inode_before" == "$config_inode_after" ]] \
+    || fail "byte-identical config render replaced its inode"
+
+  replacement_key="$(printf 'b%.0s' {1..64})"
+  printf '%s' "$replacement_key" > "$state/client-api-key"
+  config_inode_before="$(_claudex_file_inode "$state/config.yaml")"
+  _claudex_prepare_fixture_state "$sandbox"
+  config_inode_after="$(_claudex_file_inode "$state/config.yaml")"
+  [[ "$config_inode_before" != "$config_inode_after" ]] \
+    || fail "changed config content did not atomically replace its inode"
+  jq -e --arg key "$replacement_key" '.["api-keys"] == [$key]' "$state/config.yaml" >/dev/null \
+    || fail "changed config did not contain the replacement API key"
+  [[ "$(_codex_config_file_mode "$state/config.yaml")" == "600" ]] \
+    || fail "changed config lost mode 0600"
+  key_before="$replacement_key"
 
   printf '%s\n%s' "$key_before" trailing-bytes > "$state/client-api-key"
   if _claudex_prepare_fixture_state "$sandbox" >/dev/null 2>&1; then
@@ -253,6 +346,44 @@ test_claudex_runtime_api_and_private_state() {
     fail "prepare_state accepted a symlinked config"
   fi
   [[ "$(<"$external")" == "sentinel" ]] || fail "symlink rejection modified its external target"
+}
+
+test_claudex_runtime_derived_contract() {
+  local sandbox state runtime template output expected
+  sandbox="$(new_sandbox)"
+  state="$sandbox/contract-state"
+  runtime="$sandbox/generated/claudex-runtime-contract.sh"
+  template="$sandbox/generated/config-template-contract.json"
+  _claudex_fixture "$sandbox"
+
+  CLAUDEX_FIXTURE_BIND_HOST=127.0.0.42 \
+    CLAUDEX_FIXTURE_PORT=18317 \
+    CLAUDEX_FIXTURE_PPROF_PORT=18316 \
+    _claudex_render_config_template \
+      "$REPO_ROOT/modules/shared/programs/claudex/files/config-template.json" "$template"
+  CLAUDEX_FIXTURE_BIND_HOST=127.0.0.42 \
+    CLAUDEX_FIXTURE_PORT=18317 \
+    CLAUDEX_FIXTURE_PPROF_PORT=18316 \
+    CLAUDEX_FIXTURE_MODEL=sentinel-model \
+    CLAUDEX_FIXTURE_LABEL=org.example.claudex-sentinel \
+    _claudex_materialize_runtime "$runtime" "$template"
+
+  output="$(HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
+    source "$1"
+    printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n" \
+      "$CLAUDEX_BIND_HOST" "$CLAUDEX_PORT" "$CLAUDEX_MODEL" "$CLAUDEX_LABEL" \
+      "$CLAUDEX_PPROF_ADDR" "$CLAUDEX_BASE_URL" "$CLAUDEX_NO_PROXY"
+  ' _ "$runtime")"
+  expected=$'127.0.0.42\n18317\nsentinel-model\norg.example.claudex-sentinel\n127.0.0.42:18316\nhttp://127.0.0.42:18317\n127.0.0.42,localhost'
+  [[ "$output" == "$expected" ]] || fail "derived runtime contract drifted: $output"
+
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    bash -c 'source "$1"; prepare_state' _ "$runtime"
+  jq -e \
+    '.host == "127.0.0.42" and .port == 18317 and .pprof.addr == "127.0.0.42:18316"' \
+    "$state/config.yaml" >/dev/null || fail "rendered config ignored the injected runtime contract"
 }
 
 test_claudex_credential_and_loopback_contract() {
@@ -310,10 +441,11 @@ EOF
 }
 
 test_claudex_wrapper_pins_provider_model_and_argv() {
-  local sandbox state wrapper rc flag
+  local sandbox state wrapper wrapper_settings settings_arg rc flag
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
   wrapper="$sandbox/generated/claudex"
+  wrapper_settings="$sandbox/generated/wrapper-settings.json"
   _claudex_fixture "$sandbox"
   _claudex_prepare_fixture_state "$sandbox"
   _claudex_add_valid_credential "$state"
@@ -332,6 +464,16 @@ test_claudex_wrapper_pins_provider_model_and_argv() {
   printf 'effort_enabled=%s\n' "\${CLAUDE_CODE_ALWAYS_ENABLE_EFFORT-unset}"
   printf 'concurrency=%s\n' "\${CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY-unset}"
   printf 'tool_search=%s\n' "\${ENABLE_TOOL_SEARCH-unset}"
+  printf 'extra_body=%s\n' "\${CLAUDE_CODE_EXTRA_BODY-unset}"
+  printf 'effort_level=%s\n' "\${CLAUDE_CODE_EFFORT_LEVEL-unset}"
+  printf 'host_creds=%s\n' "\${CLAUDE_CODE_HOST_CREDS_FILE-unset}"
+  printf 'host_auth_env=%s\n' "\${CLAUDE_CODE_HOST_AUTH_ENV_VAR-unset}"
+  printf 'host_auth_refresh=%s\n' "\${CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH-unset}"
+  printf 'host_auth_timeout=%s\n' "\${CLAUDE_CODE_HOST_AUTH_REFRESH_TIMEOUT_MS-unset}"
+  printf 'host_http_proxy=%s\n' "\${CLAUDE_CODE_HOST_HTTP_PROXY_PORT-unset}"
+  printf 'host_hfi_bearer=%s\n' "\${CLAUDE_CODE_HFI_BEARER_TOKEN-unset}"
+  printf 'unix_socket=%s\n' "\${ANTHROPIC_UNIX_SOCKET-unset}"
+  printf 'no_proxy=%s\n' "\${NO_PROXY-unset}"
   if [ "\${ANTHROPIC_AUTH_TOKEN-unset}" = "\$(<"$state/client-api-key")" ]; then
     echo 'auth_token=match'
   else
@@ -352,6 +494,15 @@ EOF
     ANTHROPIC_API_KEY="hostile" \
     ANTHROPIC_AUTH_TOKEN="hostile" \
     ANTHROPIC_MODEL="hostile" \
+    ANTHROPIC_UNIX_SOCKET="$sandbox/hostile.sock" \
+    CLAUDE_CODE_EFFORT_LEVEL=low \
+    CLAUDE_CODE_EXTRA_BODY='{"model":"hostile-model","max_tokens":7}' \
+    CLAUDE_CODE_HOST_CREDS_FILE="$sandbox/host-creds.json" \
+    CLAUDE_CODE_HOST_AUTH_ENV_VAR=HOSTILE_AUTH \
+    CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH=1 \
+    CLAUDE_CODE_HOST_AUTH_REFRESH_TIMEOUT_MS=1 \
+    CLAUDE_CODE_HOST_HTTP_PROXY_PORT=65000 \
+    CLAUDE_CODE_HFI_BEARER_TOKEN=hostile-hfi \
     CLAUDE_CODE_USE_BEDROCK=1 \
     HTTP_PROXY="http://hostile.invalid" \
     "$wrapper" -- --model literal-prompt
@@ -368,11 +519,30 @@ EOF
   assert_file_contains "$sandbox/claude.log" "effort_enabled=1"
   assert_file_contains "$sandbox/claude.log" "concurrency=3"
   assert_file_contains "$sandbox/claude.log" "tool_search=false"
+  assert_file_contains "$sandbox/claude.log" "extra_body=unset"
+  assert_file_contains "$sandbox/claude.log" "effort_level=high"
+  assert_file_contains "$sandbox/claude.log" "host_creds=unset"
+  assert_file_contains "$sandbox/claude.log" "host_auth_env=unset"
+  assert_file_contains "$sandbox/claude.log" "host_auth_refresh=unset"
+  assert_file_contains "$sandbox/claude.log" "host_auth_timeout=unset"
+  assert_file_contains "$sandbox/claude.log" "host_http_proxy=unset"
+  assert_file_contains "$sandbox/claude.log" "host_hfi_bearer=unset"
+  assert_file_contains "$sandbox/claude.log" "unix_socket=unset"
+  assert_file_contains "$sandbox/claude.log" "no_proxy=127.0.0.1,localhost"
   assert_file_contains "$sandbox/claude.log" "auth_token=match"
   jq -e '.["proxy-url"] == ""' "$state/config.yaml" >/dev/null \
     || fail "claudex accepted an inherited runtime config template"
+  assert_file_contains "$sandbox/claude.log" "arg=--settings"
+  settings_arg="$(awk '/^arg=--settings$/ { getline; sub(/^arg=/, ""); print; exit }' "$sandbox/claude.log")"
+  [[ "$settings_arg" == "$wrapper_settings" ]] \
+    || fail "claudex did not pass the wrapper-owned settings file"
+  jq -e '.env.CLAUDE_CODE_EXTRA_BODY == "{}" and (.env | keys == ["CLAUDE_CODE_EXTRA_BODY"])' \
+    "$settings_arg" >/dev/null || fail "wrapper-owned settings did not neutralize extra body"
   assert_file_contains "$sandbox/claude.log" "arg=--model"
   assert_file_contains "$sandbox/claude.log" "arg=gpt-5.6-sol"
+  assert_file_contains "$sandbox/claude.log" "arg=--fallback-model"
+  [[ "$(awk '/^arg=--fallback-model$/ { getline; print; exit }' "$sandbox/claude.log")" == "arg=" ]] \
+    || fail "claudex did not mask settings fallbackModel with an empty CLI fallback list"
   assert_file_contains "$sandbox/claude.log" "arg=--effort"
   assert_file_contains "$sandbox/claude.log" "arg=high"
   assert_file_contains "$sandbox/claude.log" "arg=--"
@@ -417,10 +587,11 @@ printf 'arg=%s\n' "\$@" >> "$proxy_log"
 exit 17
 EOF
   chmod +x "$sandbox/fake-cli-proxy-api"
-  _claudex_substitute_file \
+  _claudex_materialize_command \
     "$REPO_ROOT/modules/shared/programs/claudex/files/claudex-proxy-launcher.sh" \
     "$launcher" "$sandbox/generated/claudex-runtime.sh" \
-    "$sandbox/fake-cli-proxy-api" "$sandbox/generated/config-template.json"
+    "$sandbox/fake-cli-proxy-api" "$sandbox/generated/config-template.json" \
+    "$sandbox/generated/wrapper-settings.json"
   chmod +x "$launcher"
 
   mkdir -p "$sandbox/caller"
@@ -471,10 +642,11 @@ chmod 600 "\$auth_dir/codex-stage.json"
 exit 0
 EOF
   chmod +x "$sandbox/fake-cli-proxy-api"
-  _claudex_substitute_file \
+  _claudex_materialize_command \
     "$REPO_ROOT/modules/shared/programs/claudex/files/claudex-login.sh" \
     "$login" "$sandbox/generated/claudex-runtime.sh" \
-    "$sandbox/fake-cli-proxy-api" "$sandbox/generated/config-template.json"
+    "$sandbox/fake-cli-proxy-api" "$sandbox/generated/config-template.json" \
+    "$sandbox/generated/wrapper-settings.json"
   chmod +x "$login"
   HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" "$login" \
     >/dev/null
@@ -562,14 +734,11 @@ EOF
   fi
 }
 
-test_claudex_status_and_declared_agent_are_sanitized() {
-  local sandbox state runtime status output expected rc descriptor plist
+test_claudex_status_is_sanitized() {
+  local sandbox state status output expected rc
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
-  runtime="$sandbox/generated/claudex-runtime.sh"
   status="$sandbox/generated/claudex-status"
-  descriptor="$sandbox/runtime.json"
-  plist="$sandbox/agent.plist"
   _claudex_fixture "$sandbox"
   _claudex_prepare_fixture_state "$sandbox"
   _claudex_add_valid_credential "$state"
@@ -579,14 +748,6 @@ test_claudex_status_and_declared_agent_are_sanitized() {
 #!/usr/bin/env bash
 printf '%s\n' "\$@" >> "$sandbox/launchctl.argv"
 if [ "\$1" = print ]; then
-  if [ "\${CLAUDEX_FAKE_PRINT_ONCE:-0}" = 1 ]; then
-    count=0
-    [ ! -f "$sandbox/launchctl.print-count" ] || count="\$(<"$sandbox/launchctl.print-count")"
-    count=\$((count + 1))
-    printf '%s' "\$count" > "$sandbox/launchctl.print-count"
-    [ "\$count" -gt 1 ] && exit 0
-    exit 1
-  fi
   exit "\${CLAUDEX_FAKE_PRINT_RC:-0}"
 fi
 exit 0
@@ -596,9 +757,22 @@ EOF
     CLAUDEX_STATE_DIR="$state" \
     CLAUDEX_CURL="$sandbox/fake-curl" \
     CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
-    "$status" --strict)"
-  expected=$'service=ready\nauth=ready\nproxy=ready\ncatalog=ready'
+    "$status")"
+  expected=$'service=present\nauth=ready\nproxy=ready\ncatalog=ready'
   [[ "$output" == "$expected" ]] || fail "ready status output drifted: $output"
+
+  output="$(HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_FAKE_PRINT_RC=1 \
+    "$status")"
+  expected=$'service=missing\nauth=ready\nproxy=ready\ncatalog=ready'
+  [[ "$output" == "$expected" ]] || fail "foreground-ready status output drifted: $output"
+
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$status" --strict >/dev/null 2>&1; then
+    fail "Stage 1 status accepted the removed --strict option"
+  fi
 
   rm -rf "$state"
   set +e
@@ -615,25 +789,49 @@ EOF
   assert_not_contains "$output" "test-access"
   assert_not_contains "$output" "test-refresh"
 
-  printf '%s' '<plist/>' > "$plist"
-  jq -n \
-    --arg label 'org.nix-community.home.claudex-proxy' \
-    --arg plist "$plist" \
-    '{schema:2,enabled:true,label:$label,launchAgentPlist:$plist}' > "$descriptor"
-  rm -f "$sandbox/launchctl.argv"
-  HOME="$sandbox/home" \
-    CLAUDEX_STATE_DIR="$state" \
-    CLAUDEX_DESCRIPTOR="$descriptor" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
-    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
-    CLAUDEX_FAKE_PRINT_ONCE=1 \
-    bash -c 'source "$1"; ensure_declared_launch_agent' _ "$runtime"
-  assert_file_contains "$sandbox/launchctl.argv" "print"
-  assert_file_contains "$sandbox/launchctl.argv" "bootstrap"
-  assert_file_contains "$sandbox/launchctl.argv" "$plist"
-  assert_not_contains "$(<"$sandbox/launchctl.argv")" "kickstart"
-  [[ "$(<"$sandbox/launchctl.print-count")" == 2 ]] \
-    || fail "launch agent bootstrap was not verified with a second print"
+}
+
+test_claudex_nix_generated_command_outputs_are_pinned() {
+  local runtime_drv runtime_out path settings_path
+  runtime_drv="$(
+    cd "$REPO_ROOT"
+    nix eval --impure --raw --expr '
+      let
+        f = builtins.getFlake (toString ./.);
+        fixture = import ./tests/fixtures/claudex-home.nix {
+          flake = f;
+          hostname = "greenhead-MacBookPro";
+        };
+      in
+      builtins.head (builtins.attrNames (
+        builtins.getContext (toString fixture.config.home.file.".local/bin/claudex".source)
+      ))
+    '
+  )"
+  runtime_out="$(nix build --no-link --print-out-paths "$runtime_drv^out")"
+
+  for path in \
+    "$runtime_out/bin/claudex" \
+    "$runtime_out/bin/claudex-login" \
+    "$runtime_out/bin/claudex-status" \
+    "$runtime_out/libexec/claudex/claudex-proxy-launcher"; do
+    [[ -x "$path" ]] || fail "Nix-generated command is not executable: $path"
+    _claudex_assert_no_placeholders "$path"
+    grep -Fq 'source "/nix/store/' "$path" \
+      || fail "Nix-generated command does not source a store runtime: $path"
+  done
+
+  grep -Fq 'CLAUDEX_WRAPPER_SETTINGS="/nix/store/' "$runtime_out/bin/claudex" \
+    || fail "Nix-generated claudex does not reference store wrapper settings"
+  grep -Fq -- '--settings "$CLAUDEX_WRAPPER_SETTINGS"' "$runtime_out/bin/claudex" \
+    || fail "Nix-generated claudex does not pass wrapper settings"
+  settings_path="$(sed -n 's/^CLAUDEX_WRAPPER_SETTINGS="\(.*\)"$/\1/p' "$runtime_out/bin/claudex")"
+  jq -e '.env.CLAUDE_CODE_EXTRA_BODY == "{}" and (.env | keys == ["CLAUDE_CODE_EXTRA_BODY"])' \
+    "$settings_path" >/dev/null || fail "Nix-generated wrapper settings drifted"
+  grep -Fq -- '--local-model' "$runtime_out/libexec/claudex/claudex-proxy-launcher" \
+    || fail "Nix-generated proxy launcher does not pass --local-model"
+  grep -Fq -- '--codex-device-login' "$runtime_out/bin/claudex-login" \
+    || fail "Nix-generated login does not pass --codex-device-login"
 }
 
 test_claudex_release_layout_verifier() {
@@ -668,23 +866,25 @@ test_claudex_release_layout_verifier() {
   done
 }
 
-test_claudex_disabled_runtime_excludes_proxy_closure() {
-  local drv closure
-  drv="$(
+test_claudex_disabled_home_excludes_enabled_closure() {
+  local activation_drv closure
+  activation_drv="$(
     cd "$REPO_ROOT"
     nix eval --impure --raw --expr '
       let
         f = builtins.getFlake (toString ./.);
-        cfg = f.darwinConfigurations.greenhead-MacBookPro.config;
-        hm = cfg.home-manager.users.${cfg.system.primaryUser};
+        fixture = import ./tests/fixtures/claudex-home.nix {
+          flake = f;
+          hostname = "claudex-disabled-fixture";
+        };
       in
-      builtins.head (builtins.attrNames (
-        builtins.getContext (toString hm.home.file.".local/lib/claudex/runtime.sh".source)
-      ))
+      fixture.activationPackage.drvPath
     '
   )"
-  closure="$(nix-store -qR "$drv")"
-  if grep -Fq 'cli-proxy-api' <<< "$closure"; then
-    fail "disabled-host claudex runtime closure contains CLIProxyAPI"
+  closure="$(nix-store -qR "$activation_drv")"
+  grep -Fq 'claudex-runtime.sh' <<< "$closure" \
+    || fail "disabled Claudex Home Manager closure omitted the shared runtime library"
+  if grep -Eiq 'cli-?proxy-?api|claudex-runtime-stage1' <<< "$closure"; then
+    fail "disabled Claudex Home Manager closure contains enabled-only artifacts"
   fi
 }

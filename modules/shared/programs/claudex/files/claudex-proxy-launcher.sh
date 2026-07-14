@@ -45,8 +45,8 @@ exec "$CLAUDEX_ENV" -i \
   HOME="$CLAUDEX_HOME" \
   PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
   TMPDIR="/tmp" \
-  NO_PROXY="127.0.0.1,localhost" \
-  no_proxy="127.0.0.1,localhost" \
+  NO_PROXY="$CLAUDEX_NO_PROXY" \
+  no_proxy="$CLAUDEX_NO_PROXY" \
   "$CLAUDEX_PROXY_BIN" \
     --config "$CLAUDEX_CONFIG_FILE" \
     --local-model

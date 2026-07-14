@@ -17,3 +17,12 @@ else
   echo "$output"
   exit 1
 fi
+
+echo "Running eval tests without import-from-derivation..."
+if output=$(nix eval --impure --option allow-import-from-derivation false --file "$SCRIPT_DIR/eval-tests.nix" 2>&1); then
+  echo "All no-IFD eval tests passed."
+else
+  echo "No-IFD eval tests FAILED:"
+  echo "$output"
+  exit 1
+fi

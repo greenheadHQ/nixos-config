@@ -3,8 +3,8 @@
 ## TL;DR
 
 - **상황**: Claude Code 요청을 로컬 CLIProxyAPI를 통해 Codex OAuth 모델로 보내는 선언형 Stage 1 PoC가 실제 Gate B를 통과했다.
-- **현재 상태**: 두 Darwin 호스트를 허용하는 descriptor schema 2가 적용됐고, device OAuth → pinned foreground proxy → `claudex` headless completion → clean shutdown을 실측했다.
-- **다음 액션**: 검증된 Gate B 결과를 커밋하고 `run-da for_pr`와 최종 code review를 통과시킨 뒤, remote branch 갱신 여부를 결정한다.
+- **현재 상태**: 두 Darwin 호스트를 허용하는 descriptor schema 2가 적용됐고, device OAuth → pinned foreground proxy → `claudex` headless completion → clean shutdown을 실측했다. Gate B 뒤 `run-da for_pr` 1·2·3라운드의 확정 finding을 모두 반영했으며 현재 변경셋은 required-CI 통합 러너, `nrs`, AI compatibility, hostile settings/host-auth E2E를 통과했다. R4 수렴 판정과 Standards/Spec pre-commit review도 merge-blocker 없이 끝났다.
+- **다음 액션**: 수정 배치를 커밋하고, remote branch 갱신 여부를 결정한다.
 - **Blockers**: Stage 1 Gate B blocker는 없다. launchd/activation을 추가하는 Stage 2는 별도 사용자 승인 전까지 범위 밖이다.
 
 > **대상**: `modules/shared/programs/claudex/`와 Darwin Home Manager 연결부
@@ -41,6 +41,7 @@ fake 테스트만으로는 upstream 바이너리의 실제 설정 파싱, 계정
 - 브랜치: `codex/claudex-poc`
 - rebase 후 구현 커밋: `fb911a59 feat: add declarative claudex PoC`
 - rebase 후 인수인계 커밋: `167891fc docs: add claudex PoC handoff`
+- Gate B 완료 커밋: `7ae7ee0 feat(claudex): complete Stage 1 Gate B`
 - 현재 merge base와 `origin/main`: `c6bd515b`
 - E2E 근거를 확보한 뒤 `origin/main` 위로 rebase했다. remote branch는 이전 commit ID를 가리키므로 후속 push가 필요하면 최종 검증·커밋 뒤 `--force-with-lease`를 사용한다.
 
@@ -87,6 +88,8 @@ git status --short --branch
 
 - `modules/shared/programs/claudex/files/claudex-runtime.sh`
   - state 생성, 권한 검증, config 렌더링, credential 검증, loopback curl, lock을 담당한다.
+  - 동일한 config 재렌더링은 기존 파일 inode를 보존하고, 실제 내용 변경만 원자적으로 교체한다.
+  - bind host에서 `NO_PROXY` 값을 파생해 wrapper, login, launcher, loopback curl이 같은 계약을 사용한다.
   - production variant는 home/state/tool/template 경로를 Nix 치환값으로 고정하고 환경 변수 override를 받지 않는다.
 - `modules/shared/programs/claudex/files/claudex-login.sh`
   - device OAuth를 임시 staging 디렉터리에서 수행한다.
@@ -96,18 +99,23 @@ git status --short --branch
   - private state와 credential을 검증하고, 정리된 환경에서 고정된 proxy 바이너리를 foreground로 실행한다.
 - `modules/shared/programs/claudex/files/claudex.sh`
   - provider/model/settings 관련 사용자 override를 거부한다.
+  - `CLAUDE_CODE_EXTRA_BODY`, inherited `CLAUDE_CODE_EFFORT_LEVEL`, `ANTHROPIC_UNIX_SOCKET`, Claude host-auth bridge 환경을 포함한 endpoint/request/transport override 환경을 scrub한다.
+  - wrapper-owned settings 파일로 `CLAUDE_CODE_EXTRA_BODY`를 `{}`로 고정해 user/project settings의 request-body override를 중화한다.
+  - 빈 CLI fallback 목록으로 settings의 `fallbackModel`을 마스킹하고, wrapper-owned `CLAUDE_CODE_EFFORT_LEVEL=high`를 다시 설정한다.
   - loopback catalog에서 선언 모델을 확인한 뒤 `$HOME/.local/bin/claude`를 실행한다.
   - model은 `gpt-5.6-sol`, effort는 `high`로 고정한다.
 - `modules/shared/programs/claudex/files/claudex-status.sh`
   - launchd service, auth, proxy, catalog 상태를 네 줄로 출력한다.
+  - Stage 1 성공 조건은 auth/proxy/catalog ready이며, launchd service는 정보성 상태다.
 - `modules/shared/programs/claudex/files/config-template.json`
-  - `127.0.0.1:8317`, remote management 비활성화, plugin·파일 로그·통계 비활성화를 선언한다.
+  - runtime-owned host/port/pprof slot은 비워 두고, remote management·plugin·파일 로그·통계 비활성화를 선언한다.
+  - `default.nix`의 단일 runtime contract가 최종 `127.0.0.1:8317`, 모델, label, pprof 주소를 runtime과 config에 함께 주입한다.
 
 ### 검증 연결
 
-- `tests/suites/claudex.sh`: fake boundary, state mode, credential shape, wrapper scrub, layout drift, disabled closure를 검증한다.
-- `tests/shell-script-tests.sh`: 위 suite의 8개 테스트를 전체 shell suite에 등록한다.
-- `tests/eval-tests.nix`: descriptor, 호스트 노출, pin, config, no-launchd/no-activation 계약을 평가한다.
+- `tests/suites/claudex.sh`: fake boundary, state mode, credential shape, wrapper scrub, wrapper-owned settings, 파생 runtime 계약, 실제 Nix-generated command output, layout drift, synthetic disabled Home Manager closure를 검증한다. fixture materialization 뒤 미치환 placeholder가 하나라도 남으면 실패한다.
+- `tests/shell-script-tests.sh`: 위 suite의 10개 테스트를 전체 shell suite에 등록한다.
+- `tests/eval-tests.nix`: descriptor, 실제·synthetic host 노출, pin, config, no-launchd/no-activation 계약과 portable Nix derivation 계약을 평가한다. 실제 command output 내용은 shell test가 build/read한다.
 - `lefthook.yml`과 `scripts/ai/check-lefthook-staged-config.sh`: JSON pin/template 변경이 eval 검증을 타도록 한다.
 
 ## 4. 고정 계약
@@ -133,10 +141,14 @@ git status --short --branch
 5. proxy 실행 파일과 config template은 Nix store 경로로 고정한다.
 6. 일반 `claude`의 settings와 인증은 변경하지 않는다.
 7. catalog에 모델이 보이는 것만으로 entitlement 성공으로 판정하지 않는다. 실제 completion이 필요하다.
+8. inherited request body, effort, Unix-socket transport가 wrapper의 endpoint/model/credential 경계를 우회하지 못해야 한다.
+9. byte-identical config render는 inode를 보존한다. runtime contract가 실제로 바뀌면 foreground proxy를 재시작한다.
+10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 환경값 `high`를 따른다.
+11. inherited Claude host-auth bridge와 settings `env.CLAUDE_CODE_EXTRA_BODY`는 wrapper-owned loopback/model/request 계약을 우회하지 못해야 한다.
 
 ## 5. 이미 완료된 검증
 
-2026-07-14에 구현 커밋 기준으로 다음 결과를 확인했다.
+2026-07-14 Gate B 구현 커밋 기준으로 다음 결과를 확인했다.
 
 - Darwin eval tests: 통과
 - targeted claudex shell tests 8개: 통과
@@ -148,7 +160,24 @@ git status --short --branch
 - generated Stage 1 runtime derivation build: 통과
 - `git diff --check`: 통과
 
-인수인계 작성 직전에도 Darwin eval과 claudex 표적 테스트 8개를 다시 통과시켰다. 표적 테스트를 dev shell 밖에서 직접 호출하면 BSD `/bin/chmod`가 GNU `--` 옵션을 거부하므로, 자동화 셸에서 direnv가 활성화되지 않았다면 `nix develop -c`로 실행해야 한다. 중복 full-suite 재실행은 unrelated `/nix/store` 전체 탐색이 장시간 I/O 병목에 들어가 종료했으며, 위 `215 pass / 0 fail`은 그 전에 완료된 정식 실행 결과다.
+표적 테스트를 dev shell 밖에서 직접 호출하면 BSD `/bin/chmod`가 GNU `--` 옵션을 거부하므로, 자동화 셸에서 direnv가 활성화되지 않았다면 `nix develop -c`로 실행한다.
+
+2026-07-15 현재 미커밋 수정 배치에서는 다음을 다시 확인했다.
+
+- targeted Claudex shell tests 10개: 통과
+- full shell suite: `217 pass / 0 fail`
+- Darwin eval tests: 통과; no-IFD eval도 통과
+- `CI=1 nix develop --command bash tests/run-all-tests.sh`: 통과 10 · SKIP 0 · 실패 0
+- D22는 synthetic enabled Home Manager의 portable derivation 계약을 descriptor와 대조한다. 실제 Nix-generated command output build/read는 shell test가 담당한다.
+- 관련 shell script `bash -n`: 통과
+- 관련 shell script ShellCheck `--severity=warning`: 통과
+- `nix flake check --no-build --all-systems`: 통과
+- `git diff --check`: 통과
+- `nrs`: 통과 (`81s`), 이후 `./scripts/ai/verify-ai-compat.sh` 완전 통과
+- deployed descriptor/schema/target hosts와 byte-identical config inode 보존: 통과
+- foreground listener는 descriptor의 pinned executable과 일치하고 status는 `service=missing`, 나머지 ready, exit `0`
+- hostile request-body/effort/Unix-socket/host-auth bridge 환경과 project settings `CLAUDE_CODE_EXTRA_BODY` override를 넣은 실제 completion stdout: 정확히 `CLAUDEX_E2E_OK`; 빈 fallback 목록, wrapper-owned settings, wrapper-owned effort도 함께 실측
+- foreground 종료 후 listener 없음, status exit `1`
 
 새 머신에서는 현재 checkout을 진실 원천으로 삼아 최소한 다음을 다시 실행한다.
 
@@ -184,7 +213,7 @@ Nix 명령은 프로젝트 direnv 환경 안에서 실행한다. rebuild가 필�
 2026-07-14 이번 재개에서는 사용자가 두 Darwin 호스트 모두 허용하는 정책을 선택했다. eval 계약을 먼저 schema 2와 `targetHosts` 목록으로 바꿔 RED를 확인한 뒤 구현을 맞췄고, 다음을 실측했다.
 
 - `nrs`와 `./scripts/ai/verify-ai-compat.sh`: 통과
-- descriptor: schema `2`, 현재 host `enabled: true`, 두 `targetHosts`, loopback `127.0.0.1:8317`, 모델 `gpt-5.6-sol`, launchd plist `null`
+- descriptor: schema `2`, 현재 host `enabled: true`, 두 `targetHosts`, loopback `127.0.0.1:8317`, 모델 `gpt-5.6-sol`; Stage 2용 launchd plist 필드는 없음
 - canonical credential: 정확히 1개, state/auth mode `0700`, credential mode `0600`, staging 0개
 - listener: 정확히 1개이며 descriptor의 pinned `proxyExecutable`과 실제 process executable이 일치
 - Stage 1 상태: `service=missing`, `auth=ready`, `proxy=ready`, `catalog=ready`
@@ -194,6 +223,16 @@ Nix 명령은 프로젝트 direnv 환경 안에서 실행한다. rebuild가 필�
 그 뒤 branch를 `origin/main` 위로 rebase하고 동일 검증과 `nrs`를 다시 실행했다. Codex는 `0.144.4`로 복구됐고 AI compatibility 검증이 완전 통과했으며, listener identity와 `CLAUDEX_E2E_OK` completion도 재통과했다. 두 번째 `nrs` preview에서는 현재 branch에 없는 다른 worktree의 `headless-ssh` package가 제거되는 host-state 수렴도 함께 관찰됐다.
 
 Proxy 시작 시 `--local-model`인데도 upstream이 antigravity version metadata를 한 번 조회했다. completion과 무관한 background network 범위는 Stage 2 전 별도 조사 대상으로 남긴다.
+
+Gate B 완료 뒤 `run-da for_pr` FULL 1라운드는 중복 제거 기준 9건을 모두 `CONFIRMED_ISSUE`(HIGH confidence)로 판정했다. inherited Claude transport/request override, disabled-host 테스트 공백, config inode 교체로 인한 upstream file-watch 소실, Stage 2 launchd API 선구현, status 계약, production 상수 중복, fixture helper, stale handoff, source-string 결합 eval을 한 write batch로 수정했고, 그 새 변경셋 전체를 FULL 2라운드의 fresh reviewer로 다시 검토했다.
+
+FULL 2라운드는 scratch-path 규칙을 위반한 최초 Correctness review unit을 폐기하고 fresh reviewer로 재실행했다. Regression은 `NO_FINDINGS`, 나머지 reviewer 후보를 단일 fresh Arbiter가 판정해 6건을 확정하고 1건을 기각했다. 확정한 항목은 settings fallback 우회, effort ownership, 실제 Nix wiring 테스트 공백, runtime API 계층 설명, `NO_PROXY` 중복, stale handoff였고 모두 현재 배치에 반영했다. Stage 1의 정보성 service 관찰과 foreground launcher descriptor는 현재 명세에 맞으므로 Stage 2 선구현 후보를 기각했다.
+
+FULL 3라운드는 Regression `NO_FINDINGS` 뒤 단일 fresh Arbiter가 8개 후보를 판정했다. 확정 항목은 inherited Claude host-auth bridge scrub 누락, settings `CLAUDE_CODE_EXTRA_BODY` request-body override, Linux required CI에서 eval 중 Darwin derivation 산출물 실현, 실제 Nix command output coverage 공백, descriptor/runtime path duplication, runtime API wording, status service provenance wording, Stage 1 주석 stale 표현이다. 모두 현재 배치에 반영했고, eval 산출물 read는 no-IFD portable 계약으로 옮기고 실제 output 검증은 shell test build/read로 분리했다.
+
+FULL 4 수렴 라운드는 Correctness `NO_FINDINGS`였고, Design reviewer가 제기한 descriptor metadata, package-internal runtime helper, 정보성 service 상태, sed fixture materializer 후보 4건은 Arbiter가 모두 `NOT_AN_ISSUE`/non-blocking으로 판정했다. thread cap 때문에 Standards/Spec code review는 병렬 subagent 대신 메인 세션에서 `HEAD` 대비 uncommitted WIP과 이 handoff/R3 판정 기준으로 수행했으며 추가 차단 finding은 없었다.
+
+배포 중 `/tmp/nrs-state`에는 다른 worktree의 stale PID가 남아 warning이 출력됐지만 최종 `nrs`는 정상 완료했다. 앞선 검증 중 한 activation이 Shottr `defaults`에서 멈춘 적은 있으나, 최종 2026-07-15 재배포는 개입 없이 완료됐으므로 Claudex blocker로 보지 않는다. 다른 작업의 lock 파일은 삭제하지 않았다.
 
 ## 7. Phase 1 — 새 머신 기준선 확인
 
@@ -244,7 +283,7 @@ nrs
 `nrs` 후 다음을 확인한다.
 
 ```bash
-jq '{schema, enabled, hostName, targetHosts, bindHost, port, model, proxyVersion, launchAgentPlist}' \
+jq '{schema, enabled, hostName, targetHosts, bindHost, port, model, proxyVersion, hasLaunchAgentPlist: has("launchAgentPlist")}' \
   "$HOME/.config/claudex/runtime.json"
 test -x "$HOME/.local/bin/claudex"
 test -x "$HOME/.local/bin/claudex-login"
@@ -259,10 +298,10 @@ test -x "$HOME/.local/libexec/claudex/claudex-proxy-launcher"
 - `port: 8317`
 - `model: "gpt-5.6-sol"`
 - `proxyVersion: "7.2.73"`
-- `launchAgentPlist: null`
+- `hasLaunchAgentPlist: false`
 - 네 실행 surface가 모두 executable
 
-Stage 1에서는 `launchAgentPlist: null`이 정상이다.
+Stage 1 descriptor는 Stage 2 전용 launch-agent 필드를 미리 노출하지 않는다.
 
 ## 9. Phase 3 — Device OAuth
 
@@ -304,6 +343,8 @@ find "$auth_dir" -mindepth 1 -maxdepth 1 -type f -print | wc -l
 
 이 터미널은 종료하지 않는다. launcher가 JSON-as-YAML config를 실제로 읽고 `127.0.0.1:8317`에 bind해야 한다.
 
+Nix runtime contract나 generated config가 실제로 달라졌다면 기존 foreground proxy를 먼저 종료하고 launcher를 다시 시작한다. byte-identical `claudex` 호출은 config inode를 보존하지만, 내용이 달라지는 원자적 교체 뒤에는 pinned upstream의 file-watch 재등록을 신뢰하지 않는다.
+
 ### Terminal B: listener 신원 확인
 
 ```bash
@@ -324,7 +365,7 @@ printf 'expected=%s\n' "$expected_proxy"
 ### 상태 출력 해석
 
 ```bash
-claudex-status || true
+claudex-status
 ```
 
 Stage 1의 foreground 실행에서는 다음이 기대된다.
@@ -336,7 +377,7 @@ proxy=ready
 catalog=ready
 ```
 
-launchd가 아직 없으므로 `service=missing`은 정상이며, status 명령의 exit code는 `1`이다. 이 단계에서는 status의 성공 exit를 Gate로 쓰지 않는다.
+launchd가 아직 없으므로 `service=missing`은 정상이다. auth/proxy/catalog가 ready이면 status 명령은 exit `0`이며 foreground Stage 1 readiness gate로 사용할 수 있다.
 
 ### Headless completion
 
@@ -392,7 +433,7 @@ git diff --check
 
 호스트 gate를 변경했다면 다음 불변식을 반드시 재검증한다.
 
-- disabled Darwin 호스트 closure에 CLIProxyAPI가 들어가지 않는다.
+- allowlist 밖 synthetic Home Manager activation closure에 CLIProxyAPI와 enabled-only runtime package가 들어가지 않는다.
 - enabled 호스트에만 네 실행 surface가 생긴다.
 - descriptor와 eval test의 대상 정책이 일치한다.
 - Stage 1에는 launchd agent와 activation이 없다.
@@ -435,7 +476,7 @@ Baseline E2E가 성공해도 곧바로 Stage 2를 구현하지 않는다. 사용
 
 1. launchd agent와 pinned `ProgramArguments`
 2. loaded plist, PID, store executable provenance 검증
-3. Home Manager activation의 best-effort 수렴과 `nrs` 후 strict 검증
+3. Home Manager activation의 best-effort 수렴과 `nrs` 후 service-aware 검증
 4. 최초 bootstrap의 2-pass 필요 여부
 5. 장애·재시작·credential refresh 관찰
 
@@ -443,9 +484,8 @@ Baseline E2E가 성공해도 곧바로 Stage 2를 구현하지 않는다. 사용
 
 ## 13. 현재 다음 행동 요약
 
-1. 현재 검증된 Gate B 결과를 커밋한다.
-2. `run-da for_pr`와 최종 code review를 통과시키고, finding이 있으면 수정·재검증·후속 커밋한다.
-3. rebase로 remote branch와 commit ID가 달라졌으므로 push는 최종 사용자 확인 뒤 `--force-with-lease`로 수행한다.
-4. Stage 2는 사용자 승인 전 구현하지 않는다.
+1. 현재 수정 배치를 커밋한다.
+2. rebase로 remote branch와 commit ID가 달라졌으므로 push는 최종 사용자 확인 뒤 `--force-with-lease`로 수행한다.
+3. Stage 2는 사용자 승인 전 구현하지 않는다.
 
 진실 원천 우선: 이 문서와 실제 checkout이 다르면 파일·CLI 실측을 따르고 차이를 기록한다.

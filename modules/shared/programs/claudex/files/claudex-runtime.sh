@@ -3,19 +3,24 @@
 # shellcheck disable=SC2034,SC2050
 # Shared runtime contract for the declarative claudex PoC.
 #
-# This file is sourced by the public commands. Sourcing it is side-effect free: state creation,
-# credential validation, loopback probes, and launchctl calls happen only through the eight
-# public functions listed at the end of this header.
+# This file is sourced by the version-locked commands in the same runtime package. Sourcing it
+# is side-effect free: state creation, credential validation, loopback probes, and launchctl
+# calls happen only when a command invokes a function.
 #
-# Public API:
-#   with_state_lock prepare_state render_runtime_config credential_count
+# Package-internal command API:
+#   with_state_lock prepare_state credential_count
 #   assert_single_codex_credential curl_loopback wait_for_proxy_ready
-#   ensure_declared_launch_agent
+#
+# Package-internal cross-file API (not stable for external callers):
+#   _claudex_error _claudex_read_api_key _claudex_render_runtime_config_unlocked
+#   _claudex_ensure_private_dir _claudex_single_credential_path
+#   _claudex_credential_json_valid _claudex_assert_safe_work_dir
 
 if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_JQ="${CLAUDEX_JQ:-@jqBin@}"
   CLAUDEX_CURL="${CLAUDEX_CURL:-@curlBin@}"
   CLAUDEX_OPENSSL="${CLAUDEX_OPENSSL:-@opensslBin@}"
+  CLAUDEX_CMP="${CLAUDEX_CMP:-@cmpBin@}"
   CLAUDEX_STAT="${CLAUDEX_STAT:-@statBin@}"
   CLAUDEX_CHMOD="${CLAUDEX_CHMOD:-@chmodBin@}"
   CLAUDEX_MKDIR="${CLAUDEX_MKDIR:-@mkdirBin@}"
@@ -31,6 +36,7 @@ else
   CLAUDEX_JQ="@jqBin@"
   CLAUDEX_CURL="@curlBin@"
   CLAUDEX_OPENSSL="@opensslBin@"
+  CLAUDEX_CMP="@cmpBin@"
   CLAUDEX_STAT="@statBin@"
   CLAUDEX_CHMOD="@chmodBin@"
   CLAUDEX_MKDIR="@mkdirBin@"
@@ -53,28 +59,28 @@ if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_API_KEY_FILE="${CLAUDEX_API_KEY_FILE:-$CLAUDEX_STATE_DIR/client-api-key}"
   CLAUDEX_STATE_LOCK="${CLAUDEX_STATE_LOCK:-$CLAUDEX_STATE_DIR/state.lock}"
   CLAUDEX_WORK_DIR="${CLAUDEX_WORK_DIR:-$CLAUDEX_STATE_DIR/work}"
-  CLAUDEX_DESCRIPTOR="${CLAUDEX_DESCRIPTOR:-$CLAUDEX_HOME/.config/claudex/runtime.json}"
   CLAUDEX_CONFIG_TEMPLATE="${CLAUDEX_CONFIG_TEMPLATE:-@configTemplate@}"
 else
   CLAUDEX_HOME="@homeDir@"
-  CLAUDEX_STATE_DIR="$CLAUDEX_HOME/Library/Application Support/claudex"
-  CLAUDEX_AUTH_DIR="$CLAUDEX_STATE_DIR/auth"
-  CLAUDEX_CONFIG_FILE="$CLAUDEX_STATE_DIR/config.yaml"
-  CLAUDEX_API_KEY_FILE="$CLAUDEX_STATE_DIR/client-api-key"
-  CLAUDEX_STATE_LOCK="$CLAUDEX_STATE_DIR/state.lock"
-  CLAUDEX_WORK_DIR="$CLAUDEX_STATE_DIR/work"
-  CLAUDEX_DESCRIPTOR="$CLAUDEX_HOME/.config/claudex/runtime.json"
+  CLAUDEX_STATE_DIR="@stateDir@"
+  CLAUDEX_AUTH_DIR="@authDir@"
+  CLAUDEX_CONFIG_FILE="@configFile@"
+  CLAUDEX_API_KEY_FILE="@apiKeyFile@"
+  CLAUDEX_STATE_LOCK="@stateLock@"
+  CLAUDEX_WORK_DIR="@workDir@"
   CLAUDEX_CONFIG_TEMPLATE="@configTemplate@"
 fi
 CLAUDEX_LOCK_TIMEOUT_SECONDS="${CLAUDEX_LOCK_TIMEOUT_SECONDS:-10}"
 CLAUDEX_READY_ATTEMPTS="${CLAUDEX_READY_ATTEMPTS:-20}"
 CLAUDEX_READY_DELAY_SECONDS="${CLAUDEX_READY_DELAY_SECONDS:-0.25}"
 
-CLAUDEX_BIND_HOST="127.0.0.1"
-CLAUDEX_PORT="8317"
-CLAUDEX_MODEL="gpt-5.6-sol"
-CLAUDEX_LABEL="org.nix-community.home.claudex-proxy"
+CLAUDEX_BIND_HOST="@bindHost@"
+CLAUDEX_PORT="@port@"
+CLAUDEX_MODEL="@model@"
+CLAUDEX_LABEL="@label@"
+CLAUDEX_PPROF_ADDR="${CLAUDEX_BIND_HOST}:@pprofPort@"
 CLAUDEX_BASE_URL="http://${CLAUDEX_BIND_HOST}:${CLAUDEX_PORT}"
+CLAUDEX_NO_PROXY="${CLAUDEX_BIND_HOST},localhost"
 
 _claudex_error() {
   printf 'claudex: %s\n' "$*" >&2
@@ -228,12 +234,14 @@ _claudex_ensure_api_key_unlocked() {
 }
 
 _claudex_render_runtime_config_unlocked() {
-  local key tmp
+  local key tmp cmp_status
   key="$(_claudex_read_api_key)" || return 1
   if [ -L "$CLAUDEX_CONFIG_FILE" ] || { [ -e "$CLAUDEX_CONFIG_FILE" ] && [ ! -f "$CLAUDEX_CONFIG_FILE" ]; }; then
     _claudex_error "refusing non-regular or symlink runtime config: $CLAUDEX_CONFIG_FILE"
     return 1
   fi
+  # Preserve the inode on routine wrapper calls so CLIProxyAPI's file watch stays attached.
+  # A byte-changing contract update is still atomic and requires restarting the foreground proxy.
   if [ -e "$CLAUDEX_CONFIG_FILE" ]; then
     _claudex_assert_private_file "$CLAUDEX_CONFIG_FILE" || return 1
   fi
@@ -255,6 +263,9 @@ _claudex_render_runtime_config_unlocked() {
     return 1
   fi
   if ! "$CLAUDEX_JQ" -e \
+    --arg bindHost "$CLAUDEX_BIND_HOST" \
+    --argjson port "$CLAUDEX_PORT" \
+    --arg pprofAddr "$CLAUDEX_PPROF_ADDR" \
     --arg authDir "$CLAUDEX_AUTH_DIR" \
     --rawfile apiKey "$CLAUDEX_API_KEY_FILE" '
       keys == [
@@ -263,8 +274,8 @@ _claudex_render_runtime_config_unlocked() {
         "plugins", "port", "pprof", "proxy-url", "remote-management", "tls",
         "usage-statistics-enabled", "ws-auth"
       ]
-      and .host == "127.0.0.1"
-      and .port == 8317
+      and .host == $bindHost
+      and .port == $port
       and (.tls | keys == ["cert", "enable", "key"])
       and .tls.enable == false
       and .tls.cert == ""
@@ -281,7 +292,7 @@ _claudex_render_runtime_config_unlocked() {
       and .debug == false
       and (.pprof | keys == ["addr", "enable"])
       and .pprof.enable == false
-      and .pprof.addr == "127.0.0.1:8316"
+      and .pprof.addr == $pprofAddr
       and (.plugins | keys == ["configs", "dir", "enabled"])
       and .plugins.enabled == false
       and .plugins.dir == "plugins"
@@ -298,6 +309,20 @@ _claudex_render_runtime_config_unlocked() {
     "$CLAUDEX_RM" -f -- "$tmp"
     _claudex_error "rendered runtime config violates the declared security contract"
     return 1
+  fi
+  if [ -e "$CLAUDEX_CONFIG_FILE" ]; then
+    if "$CLAUDEX_CMP" -s -- "$tmp" "$CLAUDEX_CONFIG_FILE"; then
+      "$CLAUDEX_RM" -f -- "$tmp" || return 1
+      _claudex_assert_private_file "$CLAUDEX_CONFIG_FILE"
+      return
+    else
+      cmp_status=$?
+      if [ "$cmp_status" -ne 1 ]; then
+        "$CLAUDEX_RM" -f -- "$tmp"
+        _claudex_error "failed to compare the rendered runtime config"
+        return 1
+      fi
+    fi
   fi
   "$CLAUDEX_MV" -f -- "$tmp" "$CLAUDEX_CONFIG_FILE" || {
     "$CLAUDEX_RM" -f -- "$tmp"
@@ -346,47 +371,6 @@ _claudex_credential_json_valid() {
   ' "$path" >/dev/null 2>&1
 }
 
-_claudex_ensure_declared_launch_agent_unlocked() {
-  local enabled label plist domain
-  if [ ! -f "$CLAUDEX_DESCRIPTOR" ]; then
-    _claudex_error "runtime descriptor is missing or unsafe: $CLAUDEX_DESCRIPTOR"
-    return 1
-  fi
-  if ! "$CLAUDEX_JQ" -e '.schema == 2 and (.enabled | type == "boolean")' "$CLAUDEX_DESCRIPTOR" >/dev/null; then
-    _claudex_error "runtime descriptor schema is invalid"
-    return 1
-  fi
-  enabled="$($CLAUDEX_JQ -r '.enabled' "$CLAUDEX_DESCRIPTOR")" || return 1
-  label="$($CLAUDEX_JQ -r '.label' "$CLAUDEX_DESCRIPTOR")" || return 1
-  if [ "$label" != "$CLAUDEX_LABEL" ]; then
-    _claudex_error "runtime descriptor label drift"
-    return 1
-  fi
-  domain="gui/$($CLAUDEX_ID -u)"
-
-  if [ "$enabled" = "false" ]; then
-    if "$CLAUDEX_LAUNCHCTL" print "$domain/$label" >/dev/null 2>&1; then
-      _claudex_error "disabled claudex host still has a loaded launch agent"
-      return 1
-    fi
-    return 0
-  fi
-
-  plist="$($CLAUDEX_JQ -r '.launchAgentPlist // empty' "$CLAUDEX_DESCRIPTOR")" || return 1
-  if [ -z "$plist" ] || [ ! -f "$plist" ]; then
-    _claudex_error "enabled claudex descriptor has no declared launch-agent plist"
-    return 1
-  fi
-  if "$CLAUDEX_LAUNCHCTL" print "$domain/$label" >/dev/null 2>&1; then
-    return 0
-  fi
-  "$CLAUDEX_LAUNCHCTL" bootstrap "$domain" "$plist" >/dev/null 2>&1 || true
-  if ! "$CLAUDEX_LAUNCHCTL" print "$domain/$label" >/dev/null 2>&1; then
-    _claudex_error "declared launch agent did not load after bootstrap"
-    return 1
-  fi
-}
-
 # Run a command or shell function under the canonical state lock. The descriptor and state
 # live on local APFS; /usr/bin/lockf's fd mode gives us kernel-backed exclusion without a
 # stale-lock cleanup protocol. Tests may inject CLAUDEX_LOCKF.
@@ -416,10 +400,6 @@ with_state_lock() (
 
 prepare_state() {
   with_state_lock _claudex_prepare_state_unlocked
-}
-
-render_runtime_config() {
-  with_state_lock _claudex_render_runtime_config_unlocked
 }
 
 credential_count() (
@@ -462,8 +442,8 @@ curl_loopback() (
     "$CLAUDEX_ENV" \
       -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY \
       -u http_proxy -u https_proxy -u all_proxy -u no_proxy \
-      NO_PROXY="127.0.0.1,localhost" \
-      no_proxy="127.0.0.1,localhost" \
+      NO_PROXY="$CLAUDEX_NO_PROXY" \
+      no_proxy="$CLAUDEX_NO_PROXY" \
       "$CLAUDEX_CURL" \
         -q \
         --config - \
@@ -499,8 +479,4 @@ wait_for_proxy_ready() {
   done
   _claudex_error "proxy did not become ready on $CLAUDEX_BASE_URL"
   return 1
-}
-
-ensure_declared_launch_agent() {
-  with_state_lock _claudex_ensure_declared_launch_agent_unlocked
 }

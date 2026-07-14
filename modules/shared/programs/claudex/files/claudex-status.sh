@@ -5,19 +5,10 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source "@runtimeLibrary@"
 
-case "$#" in
-  0) ;;
-  1)
-    if [ "$1" != "--strict" ]; then
-      echo "usage: claudex-status [--strict]" >&2
-      exit 2
-    fi
-    ;;
-  *)
-    echo "usage: claudex-status [--strict]" >&2
-    exit 2
-    ;;
-esac
+if [ "$#" -ne 0 ]; then
+  echo "usage: claudex-status" >&2
+  exit 2
+fi
 
 service_state="missing"
 auth_state="missing"
@@ -26,7 +17,7 @@ catalog_state="unavailable"
 
 domain="gui/$($CLAUDEX_ID -u)"
 if "$CLAUDEX_LAUNCHCTL" print "$domain/$CLAUDEX_LABEL" >/dev/null 2>&1; then
-  service_state="ready"
+  service_state="present"
 fi
 
 if [ -d "$CLAUDEX_AUTH_DIR" ] && [ ! -L "$CLAUDEX_AUTH_DIR" ]; then
@@ -62,8 +53,7 @@ printf 'auth=%s\n' "$auth_state"
 printf 'proxy=%s\n' "$proxy_state"
 printf 'catalog=%s\n' "$catalog_state"
 
-if [ "$service_state" = "ready" ] \
-  && [ "$auth_state" = "ready" ] \
+if [ "$auth_state" = "ready" ] \
   && [ "$proxy_state" = "ready" ] \
   && [ "$catalog_state" = "ready" ]; then
   exit 0
