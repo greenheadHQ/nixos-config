@@ -209,8 +209,10 @@ git status --short --branch
 
 - targeted Claudex shell tests 10개: 통과; full shell suite `217 pass / 0 fail`; Darwin eval(IFD·no-IFD): 통과; `nix flake check --no-build --all-systems`: 통과
 - `nrs` 후 배포 wrapper가 `CLAUDE_CODE_AUTO_COMPACT_WINDOW="$CLAUDEX_MAX_CONTEXT_TOKENS"` export를 포함
-- **A/B 발동 실측**: `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=1`(임계 window 1% 강제) + 2턴 stream-json 멀티턴에서 — 실험군(새 wrapper)은 `system/status`의 `status:"compacting"` 이벤트 2회 발동(미니 대화라 `compact_error:"too_few_groups"`로 요약 자체는 실패 — 트리거 사슬 동작 증거), 대조군(동일 환경에서 `AUTO_COMPACT_WINDOW`만 부재, `MAX_CONTEXT_TOKENS`는 유지)은 compact 신호 전무. env 채널 하나가 발동을 가른다는 것을 A/B로 증명
-- 실측 중 provider 불안정 재관측: 실험군 실행에서 `api_retry` 11회 발생 후 성공 (§4의 520/429 진단과 정합)
+- **확장 A/B 발동 실측 (6조건 13회, proxy 안정 시 api_retry=0으로 전부 일관)**: stream-json 멀티턴에서 `system/status`의 `status:"compacting"` 발동 유무를 대조했다. 발동한 조건 — T1 실전 임계(`AUTO_COMPACT_WINDOW=100000` + ~75k 입력, PCT override 없이 순수 토큰 초과, ×3), T4 극단(`=1`, ×2), T6 배포값(`=258000` + `PCT=1`, ×2). 미발동 조건 — T2 대조군(`AUTO_COMPACT_WINDOW` 부재, `MAX_CONTEXT_TOKENS`는 유지, ×2)은 `compacting=0`. 즉 env window 채널 하나가 발동을 가른다.
+- **PCT override의 window 의존성 실측 (REGRESSION-1 scrub 정당화)**: T5(`AUTO_COMPACT_WINDOW` 부재 + `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=1`)는 `compacting=0` — PCT override는 compact window source가 "auto"면 무효다. 반면 T6(`AUTO_COMPACT_WINDOW=258000` + `PCT=1`)은 발동. **wrapper가 window를 켜면서 상속 PCT override도 함께 살아나므로**, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`·`CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE`를 scrub 목록에 추가했다.
+- 모든 발동 케이스는 headless `-p` 단발 실행이라 `compact_error:"too_few_groups"`로 요약 자체는 실패한다(압축할 누적 대화 그룹 부족 — 트리거 사슬 동작 증거로는 충분). 실제 요약 성공은 누적 메시지가 많은 대화형 세션에서만 관찰되며 이는 headless 특성이지 wrapper 계약과 무관하다.
+- provider 불안정 재관측: 일부 실행에서 `api_retry` 다수 발생 후 성공 (§4의 520/429 진단과 정합); 안정 구간에서는 위 A/B가 재현적으로 동일했다.
 
 새 머신에서는 현재 checkout을 진실 원천으로 삼아 최소한 다음을 다시 실행한다.
 
