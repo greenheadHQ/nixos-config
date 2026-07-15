@@ -100,10 +100,11 @@ git status --short --branch
 - `modules/shared/programs/claudex/files/claudex.sh`
   - provider/model/settings 관련 사용자 override를 거부한다.
   - `CLAUDE_CODE_EXTRA_BODY`, inherited `CLAUDE_CODE_EFFORT_LEVEL`, `ANTHROPIC_UNIX_SOCKET`, Claude host-auth bridge 환경을 포함한 endpoint/request/transport override 환경을 scrub한다.
-  - wrapper-owned settings 파일로 `CLAUDE_CODE_EXTRA_BODY`를 `{}`로 고정해 user/project settings의 request-body override를 중화한다.
+  - wrapper-owned settings 파일로 `CLAUDE_CODE_EXTRA_BODY`를 고정해 user/project settings의 request-body override를 중화한다. variant는 두 개이며 모두 pinned Nix store 파일이다 — 기본 variant는 `{}`, fast variant는 `{"service_tier":"priority"}`.
   - 빈 CLI fallback 목록으로 settings의 `fallbackModel`을 마스킹하고, wrapper-owned `CLAUDE_CODE_EFFORT_LEVEL`을 다시 설정한다.
   - loopback catalog에서 선언 모델을 확인한 뒤 `$HOME/.local/bin/claude`를 실행한다.
   - model은 `gpt-5.6-sol`로 고정한다. effort는 기본 `high`이며, 명시적 `claudex --effort <low|medium|high|xhigh|max|ultra>` 인자만 세션 값을 바꾼다. `ultra`는 pinned CLI가 argv에서 warn-then-ignore하므로 env 값으로만 전달한다.
+  - Codex fast 티어는 불리언 `claudex --fast` 인자만 켠다(`--fast=<값>`은 거부). wrapper가 fast settings variant를 선택해 request body에 `service_tier`를 주입하며, 값은 온-와이어 canonical id인 `"priority"`(카탈로그 id `priority`, 표시명 "Fast")를 사용해 proxy 변환기의 `"fast"` 별칭 매핑에 의존하지 않는다. Claude CLI에는 대응 argv가 없으므로(자체 fastMode는 Anthropic 직접 API 전용 별개 기능) argv 재발행은 없다.
   - `--dangerously-skip-permissions`로 실행해 세션이 항상 bypassPermissions로 시작한다 (pinned CLI는 시작 플래그 없이 세션 중 bypass 전환이 불가능). 이 계약이 조용히 뒤집히지 않도록 사용자 인자의 `--permission-mode`도 wrapper-owned 옵션으로 거부한다.
 - `modules/shared/programs/claudex/files/claudex-status.sh`
   - launchd service, auth, proxy, catalog 상태를 네 줄로 출력한다.
@@ -146,12 +147,14 @@ git status --short --branch
 9. byte-identical config render는 inode를 보존한다. runtime contract가 실제로 바뀌면 foreground proxy를 재시작한다.
 10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 값을 따른다 — 기본 `high`, 명시적 `claudex --effort` 인자(whitelist: low/medium/high/xhigh/max/ultra)만 이를 바꾸며 상속 환경값은 계속 scrub된다.
 11. inherited Claude host-auth bridge와 settings `env.CLAUDE_CODE_EXTRA_BODY`는 wrapper-owned loopback/model/request 계약을 우회하지 못해야 한다.
+12. request body의 `service_tier`는 wrapper-owned 값만 존재한다 — 기본은 필드 미전송(계정 기본 티어), 명시적 `claudex --fast` 인자만 pinned fast settings variant로 `"priority"`를 주입하며 상속 환경값은 계속 scrub된다.
 
 ### 알려진 한계·리스크와 롤백
 
 - **벤더 정책 의존 (전략 리스크)**: 이 브릿지는 Claude Code에 non-Anthropic 모델을 loopback proxy로 연결한다. Codex OAuth entitlement 쪽은 upstream 튜토리얼에서 공개적으로 안내된 경로지만, Anthropic 또는 OpenAI가 언제든 이 조합을 차단할 수 있다. 즉 이 경계의 수명은 두 벤더의 정책에 종속되며, 기술적 완성도와 무관하게 외부 요인으로 무력화될 수 있다.
   - **롤백 경로**: 차단이 관측되면 `default.nix`의 `targetHosts` allowlist에서 해당 호스트를 빼고 `nrs`를 실행한다. 그러면 활성 Home Manager generation에서 네 실행 surface와 CLIProxyAPI enabled-only closure 노출이 즉시 제거되고 descriptor와 runtime library metadata만 남는다(`lib.optionalAttrs enabled` 경계). 단, 이전 generation과 CLIProxyAPI Nix store 경로 자체는 garbage collection 전까지 store에 남으므로, 로컬 잔여물까지 정리하려면 generation 정리와 `nix-collect-garbage` 실행이 별도로 필요하다. credential/state는 repo 밖 `$HOME/Library/Application Support/claudex`에만 있으므로 그 디렉터리를 지우면 로컬 흔적도 제거된다. 일반 `claude` 설정과 인증은 애초에 건드리지 않으므로 별도 복구가 필요 없다.
 - **subagent effort 세밀 제어 불가 (기능 한계)**: wrapper는 `CLAUDE_CODE_SUBAGENT_MODEL`로 subagent 모델만 고정 모델에 맞추고, effort는 세션 단위 값 하나(기본 `high`, `claudex --effort`로 조정 가능)를 세션 전체가 공유한다. subagent effort만 별도로 낮추는 수단은 여전히 없다(pinned Claude Code CLI 자체의 제약). 대량 fan-out 워크플로우에서 토큰 소모가 부담이면 세션 effort 자체를 낮춰서 실행한다.
+- **fast 티어의 조용한 폴백과 관찰 한계 (기능 한계)**: `claudex --fast`는 request body에 `service_tier:"priority"`를 주입하지만, Codex OAuth 계정에 fast 자격이 없으면 백엔드가 에러 없이 default 티어로 처리한다(upstream 실측 사례: openai/codex#14204). wrapper는 `exec` 구조라 응답을 검사할 수 없으므로 세션 내 자동 감지는 없다. 응답 쪽 관찰도 제한적이다 — pinned proxy는 Anthropic 형식으로 역변환한 응답 `usage.service_tier`에 `--fast` 유무와 무관하게 고정 `"standard"`를 넣으므로(2026-07-15 실측, fast/plain 대조 동일), **응답 usage로는 백엔드 티어 반영을 판별할 수 없다**. 검증 가능한 계약은 요청 주입까지다: loopback 캡처 서버에 fast settings variant로 headless 요청을 보내면 body에 top-level `"service_tier":"priority"`가 실리고, 기본 variant에서는 필드 자체가 없다(동일 실측). 백엔드 전달은 pinned proxy 소스의 claude→codex 변환기가 `service_tier`(fast/priority → `priority` 정규화, 그 외 drop)를 Codex 요청에 주입하고 executor가 이 필드를 삭제하지 않는 것으로 보증한다. 실제 1.5x 처리 여부는 계정 자격과 백엔드 정책에 종속되며 이 경계 밖이다.
 - **bypassPermissions 기본 시작 (의도된 트레이드오프)**: wrapper는 `--dangerously-skip-permissions`로 Claude Code를 실행해 모든 세션이 bypass 모드로 시작한다. pinned CLI가 시작 플래그 없이는 세션 중 bypass 전환을 허용하지 않아 사용자가 기본 bypass를 선택했다. 이를 실제로 동작시키기 위해 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`도 `0`으로 opt-out했다 — `1`이면 pinned CLI의 allowed_non_write_users hardening이 permission mode를 default로 강제해 bypass 플래그를 조용히 무력화한다(2.1.210 실측). 잔여 노출은 세션 내 서브프로세스가 wrapper-owned loopback API key 환경값을 볼 수 있다는 것인데, 이 key는 `127.0.0.1:8317` 전용이라 영향이 국소적이다. 권한 프롬프트가 필요한 환경에서는 wrapper의 bypass 플래그를 제거해야 하며, 그 경우 세션 중 bypass 전환 옵션도 함께 사라진다.
 - **`commercial-mode: true` 근거**: config template의 `commercial-mode`는 상용/라이선스 플래그가 아니라, upstream 정의상 "high-overhead request logging과 HTTP middleware 기능을 비활성화해 per-request 메모리를 줄이는" 플래그다(upstream 기본값은 `false`). 이 PoC는 credential·request 본문이 로그에 남지 않도록 request logging을 억제할 목적으로 의도적으로 `true`로 뒤집었으며, `logging-to-file`·`usage-statistics-enabled`를 모두 끄는 config-template의 보안 기본값과 같은 맥락이다. upstream 정의의 version-pinned 출처는 CLIProxyAPI `v7.2.73`의 [`config.example.yaml`](https://github.com/router-for-me/CLIProxyAPI/blob/v7.2.73/config.example.yaml)("When true, disable high-overhead request logging and HTTP middleware features to reduce per-request memory usage under high concurrency")과 [`internal/config/config.go`](https://github.com/router-for-me/CLIProxyAPI/blob/v7.2.73/internal/config/config.go)의 `CommercialMode` 필드 주석이다. 이 값이 렌더된 config에 실제로 들어가는 계약은 `tests/suites/claudex.sh`의 config-template 렌더 검증이 커버하며, 실제 로그 억제 동작의 런타임 실측은 upstream 바이너리 동작 범위라 §12의 Stage 2 전 조사(#1108)와 함께 다룬다.
 
@@ -187,6 +190,15 @@ git status --short --branch
 - foreground listener는 descriptor의 pinned executable과 일치하고 status는 `service=missing`, 나머지 ready, exit `0`
 - hostile request-body/effort/Unix-socket/host-auth bridge 환경과 project settings `CLAUDE_CODE_EXTRA_BODY` override를 넣은 실제 completion stdout: 정확히 `CLAUDEX_E2E_OK`; 빈 fallback 목록, wrapper-owned settings, wrapper-owned effort도 함께 실측
 - foreground 종료 후 listener 없음, status exit `1`
+
+2026-07-15 `--fast`(Codex fast 티어) 배치에서는 다음을 확인했다.
+
+- targeted Claudex shell tests 10개(fast 케이스 포함): 통과; full shell suite `217 pass / 0 fail`; Darwin eval(IFD·no-IFD): 통과; `nix flake check --no-build --all-systems`: 통과
+- `nrs` 후 `./scripts/ai/verify-ai-compat.sh` 완전 통과, 배포된 wrapper가 pinned fast settings variant(`{"env":{"CLAUDE_CODE_EXTRA_BODY":"{\"service_tier\":\"priority\"}"}}`)를 참조
+- `claudex --fast=true`/`--fast=priority`: exit 2 거부, `--effort hostile` 거부 계약 유지
+- `claudex --fast -p` headless completion stdout: 정확히 `CLAUDEX_E2E_OK` (exit 0)
+- loopback 캡처 실측: fast settings variant로 실행한 Claude의 `/v1/messages` request body에 top-level `"service_tier":"priority"` 존재, 기본 variant에서는 필드 부재
+- 응답 관찰 한계 실측: proxy 역변환 응답의 `usage.service_tier`는 `--fast` 유무와 무관하게 `"standard"` 고정 — 응답 usage는 티어 판별에 사용 불가 (§4 한계 참조)
 
 새 머신에서는 현재 checkout을 진실 원천으로 삼아 최소한 다음을 다시 실행한다.
 

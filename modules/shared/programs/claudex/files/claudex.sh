@@ -8,12 +8,14 @@ umask 077
 source "@runtimeLibrary@"
 CLAUDEX_CONFIG_TEMPLATE="@configTemplate@"
 CLAUDEX_WRAPPER_SETTINGS="@wrapperSettings@"
+CLAUDEX_WRAPPER_SETTINGS_FAST="@wrapperSettingsFast@"
 
 # Effort stays wrapper-owned: the inherited CLAUDE_CODE_EFFORT_LEVEL is scrubbed below and
 # only an explicit, whitelist-validated `claudex --effort <level>` argument may change the
 # session level. The wrapper consumes the argument and re-issues it as its own CLI value so
 # a single deterministic `--effort` reaches Claude.
 effort_level=high
+fast_tier=false
 expect_effort_value=false
 forward_args=()
 scan_options=true
@@ -43,6 +45,13 @@ for arg in "$@"; do
     --effort=*)
       effort_level="${arg#--effort=}"
       ;;
+    --fast)
+      fast_tier=true
+      ;;
+    --fast=*)
+      _claudex_error "--fast does not accept a value (the Codex fast tier is a boolean session flag)"
+      exit 2
+      ;;
     *)
       forward_args+=("$arg")
       ;;
@@ -66,6 +75,18 @@ esac
 effort_argv=(--effort "$effort_level")
 if [ "$effort_level" = ultra ]; then
   effort_argv=()
+fi
+
+# CIR: the Codex fast tier is wrapper-owned request-body state. The pinned Claude CLI has
+# no argv for it (Claude's own fastMode is a separate Anthropic-direct-only feature that
+# never activates on this loopback provider), so the only channel is the wrapper-owned
+# settings file feeding CLAUDE_CODE_EXTRA_BODY. `--fast` selects between two pinned Nix
+# store settings variants; the inherited CLAUDE_CODE_EXTRA_BODY environment stays scrubbed
+# either way, so hostile request-body overrides remain neutralized. The backend applies the
+# tier only when the OAuth account is entitled and silently falls back to the default tier
+# otherwise (documented limitation; no in-wrapper detection because the wrapper exec()s).
+if [ "$fast_tier" = true ]; then
+  CLAUDEX_WRAPPER_SETTINGS="$CLAUDEX_WRAPPER_SETTINGS_FAST"
 fi
 
 prepare_state
