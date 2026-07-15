@@ -101,9 +101,10 @@ git status --short --branch
   - provider/model/settings 관련 사용자 override를 거부한다.
   - `CLAUDE_CODE_EXTRA_BODY`, inherited `CLAUDE_CODE_EFFORT_LEVEL`, `ANTHROPIC_UNIX_SOCKET`, Claude host-auth bridge 환경을 포함한 endpoint/request/transport override 환경을 scrub한다.
   - wrapper-owned settings 파일로 `CLAUDE_CODE_EXTRA_BODY`를 `{}`로 고정해 user/project settings의 request-body override를 중화한다.
-  - 빈 CLI fallback 목록으로 settings의 `fallbackModel`을 마스킹하고, wrapper-owned `CLAUDE_CODE_EFFORT_LEVEL=high`를 다시 설정한다.
+  - 빈 CLI fallback 목록으로 settings의 `fallbackModel`을 마스킹하고, wrapper-owned `CLAUDE_CODE_EFFORT_LEVEL`을 다시 설정한다.
   - loopback catalog에서 선언 모델을 확인한 뒤 `$HOME/.local/bin/claude`를 실행한다.
-  - model은 `gpt-5.6-sol`, effort는 `high`로 고정한다.
+  - model은 `gpt-5.6-sol`로 고정한다. effort는 기본 `high`이며, 명시적 `claudex --effort <low|medium|high|xhigh|max|ultra>` 인자만 세션 값을 바꾼다. `ultra`는 pinned CLI가 argv에서 warn-then-ignore하므로 env 값으로만 전달한다.
+  - `--dangerously-skip-permissions`로 실행해 세션이 항상 bypassPermissions로 시작한다 (pinned CLI는 시작 플래그 없이 세션 중 bypass 전환이 불가능).
 - `modules/shared/programs/claudex/files/claudex-status.sh`
   - launchd service, auth, proxy, catalog 상태를 네 줄로 출력한다.
   - Stage 1 성공 조건은 auth/proxy/catalog ready이며, launchd service는 정보성 상태다.
@@ -143,14 +144,15 @@ git status --short --branch
 7. catalog에 모델이 보이는 것만으로 entitlement 성공으로 판정하지 않는다. 실제 completion이 필요하다.
 8. inherited request body, effort, Unix-socket transport가 wrapper의 endpoint/model/credential 경계를 우회하지 못해야 한다.
 9. byte-identical config render는 inode를 보존한다. runtime contract가 실제로 바뀌면 foreground proxy를 재시작한다.
-10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 환경값 `high`를 따른다.
+10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 값을 따른다 — 기본 `high`, 명시적 `claudex --effort` 인자(whitelist: low/medium/high/xhigh/max/ultra)만 이를 바꾸며 상속 환경값은 계속 scrub된다.
 11. inherited Claude host-auth bridge와 settings `env.CLAUDE_CODE_EXTRA_BODY`는 wrapper-owned loopback/model/request 계약을 우회하지 못해야 한다.
 
 ### 알려진 한계·리스크와 롤백
 
 - **벤더 정책 의존 (전략 리스크)**: 이 브릿지는 Claude Code에 non-Anthropic 모델을 loopback proxy로 연결한다. Codex OAuth entitlement 쪽은 upstream 튜토리얼에서 공개적으로 안내된 경로지만, Anthropic 또는 OpenAI가 언제든 이 조합을 차단할 수 있다. 즉 이 경계의 수명은 두 벤더의 정책에 종속되며, 기술적 완성도와 무관하게 외부 요인으로 무력화될 수 있다.
   - **롤백 경로**: 차단이 관측되면 `default.nix`의 `targetHosts` allowlist에서 해당 호스트를 빼고 `nrs`를 실행한다. 그러면 활성 Home Manager generation에서 네 실행 surface와 CLIProxyAPI enabled-only closure 노출이 즉시 제거되고 descriptor와 runtime library metadata만 남는다(`lib.optionalAttrs enabled` 경계). 단, 이전 generation과 CLIProxyAPI Nix store 경로 자체는 garbage collection 전까지 store에 남으므로, 로컬 잔여물까지 정리하려면 generation 정리와 `nix-collect-garbage` 실행이 별도로 필요하다. credential/state는 repo 밖 `$HOME/Library/Application Support/claudex`에만 있으므로 그 디렉터리를 지우면 로컬 흔적도 제거된다. 일반 `claude` 설정과 인증은 애초에 건드리지 않으므로 별도 복구가 필요 없다.
-- **subagent effort 세밀 제어 불가 (기능 한계)**: wrapper는 `CLAUDE_CODE_SUBAGENT_MODEL`로 subagent 모델만 고정 모델에 맞추고 effort는 세션 전체를 `high`로 고정한다. subagent effort만 별도로 낮추는 수단은 없다(pinned Claude Code CLI 자체의 제약). 대량 fan-out 워크플로우에서는 subagent가 모두 `high`로 돌아 토큰 소모가 커질 수 있다. `ultra`가 아니라 `high`로 고정해 폭증은 완화했지만, 세밀 제어가 필요하면 CLI가 subagent effort 하드셋을 지원할 때까지 기다려야 한다.
+- **subagent effort 세밀 제어 불가 (기능 한계)**: wrapper는 `CLAUDE_CODE_SUBAGENT_MODEL`로 subagent 모델만 고정 모델에 맞추고, effort는 세션 단위 값 하나(기본 `high`, `claudex --effort`로 조정 가능)를 세션 전체가 공유한다. subagent effort만 별도로 낮추는 수단은 여전히 없다(pinned Claude Code CLI 자체의 제약). 대량 fan-out 워크플로우에서 토큰 소모가 부담이면 세션 effort 자체를 낮춰서 실행한다.
+- **bypassPermissions 기본 시작 (의도된 트레이드오프)**: wrapper는 `--dangerously-skip-permissions`로 Claude Code를 실행해 모든 세션이 bypass 모드로 시작한다. pinned CLI가 시작 플래그 없이는 세션 중 bypass 전환을 허용하지 않아 사용자가 기본 bypass를 선택했다. 이를 실제로 동작시키기 위해 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`도 `0`으로 opt-out했다 — `1`이면 pinned CLI의 allowed_non_write_users hardening이 permission mode를 default로 강제해 bypass 플래그를 조용히 무력화한다(2.1.210 실측). 잔여 노출은 세션 내 서브프로세스가 wrapper-owned loopback API key 환경값을 볼 수 있다는 것인데, 이 key는 `127.0.0.1:8317` 전용이라 영향이 국소적이다. 권한 프롬프트가 필요한 환경에서는 wrapper의 bypass 플래그를 제거해야 하며, 그 경우 세션 중 bypass 전환 옵션도 함께 사라진다.
 - **`commercial-mode: true` 근거**: config template의 `commercial-mode`는 상용/라이선스 플래그가 아니라, upstream 정의상 "high-overhead request logging과 HTTP middleware 기능을 비활성화해 per-request 메모리를 줄이는" 플래그다(upstream 기본값은 `false`). 이 PoC는 credential·request 본문이 로그에 남지 않도록 request logging을 억제할 목적으로 의도적으로 `true`로 뒤집었으며, `logging-to-file`·`usage-statistics-enabled`를 모두 끄는 config-template의 보안 기본값과 같은 맥락이다. upstream 정의의 version-pinned 출처는 CLIProxyAPI `v7.2.73`의 [`config.example.yaml`](https://github.com/router-for-me/CLIProxyAPI/blob/v7.2.73/config.example.yaml)("When true, disable high-overhead request logging and HTTP middleware features to reduce per-request memory usage under high concurrency")과 [`internal/config/config.go`](https://github.com/router-for-me/CLIProxyAPI/blob/v7.2.73/internal/config/config.go)의 `CommercialMode` 필드 주석이다. 이 값이 렌더된 config에 실제로 들어가는 계약은 `tests/suites/claudex.sh`의 config-template 렌더 검증이 커버하며, 실제 로그 억제 동작의 런타임 실측은 upstream 바이너리 동작 범위라 §12의 Stage 2 전 조사(#1108)와 함께 다룬다.
 
 ## 5. 이미 완료된 검증

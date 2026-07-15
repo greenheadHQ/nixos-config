@@ -9,22 +9,64 @@ source "@runtimeLibrary@"
 CLAUDEX_CONFIG_TEMPLATE="@configTemplate@"
 CLAUDEX_WRAPPER_SETTINGS="@wrapperSettings@"
 
+# Effort stays wrapper-owned: the inherited CLAUDE_CODE_EFFORT_LEVEL is scrubbed below and
+# only an explicit, whitelist-validated `claudex --effort <level>` argument may change the
+# session level. The wrapper consumes the argument and re-issues it as its own CLI value so
+# a single deterministic `--effort` reaches Claude.
+effort_level=high
+expect_effort_value=false
+forward_args=()
 scan_options=true
 for arg in "$@"; do
   if [ "$scan_options" = false ]; then
+    forward_args+=("$arg")
+    continue
+  fi
+  if [ "$expect_effort_value" = true ]; then
+    effort_level="$arg"
+    expect_effort_value=false
     continue
   fi
   if [ "$arg" = "--" ]; then
     scan_options=false
+    forward_args+=("$arg")
     continue
   fi
   case "$arg" in
-    --model | --model=* | --fallback-model | --fallback-model=* | --effort | --effort=* | --settings | --settings=* | --setting-sources | --setting-sources=*)
+    --model | --model=* | --fallback-model | --fallback-model=* | --settings | --settings=* | --setting-sources | --setting-sources=*)
       _claudex_error "option is managed by the claudex host wrapper: $arg"
       exit 2
       ;;
+    --effort)
+      expect_effort_value=true
+      ;;
+    --effort=*)
+      effort_level="${arg#--effort=}"
+      ;;
+    *)
+      forward_args+=("$arg")
+      ;;
   esac
 done
+if [ "$expect_effort_value" = true ]; then
+  _claudex_error "--effort requires a value: low, medium, high, xhigh, max, ultra"
+  exit 2
+fi
+case "$effort_level" in
+  low | medium | high | xhigh | max | ultra) ;;
+  *)
+    _claudex_error "invalid --effort level: $effort_level (allowed: low, medium, high, xhigh, max, ultra)"
+    exit 2
+    ;;
+esac
+# The pinned CLI validates --effort argv values (low..max) and warns-then-ignores unknown
+# ones, while CLAUDE_CODE_EFFORT_LEVEL is forwarded unvalidated for the backend to
+# interpret. ultra is a backend-recognized level for the pinned model, so it travels via
+# the wrapper-owned environment value only — passing it as argv would be warn-then-ignored.
+effort_argv=(--effort "$effort_level")
+if [ "$effort_level" = ultra ]; then
+  effort_argv=()
+fi
 
 prepare_state
 assert_single_codex_credential
@@ -98,10 +140,16 @@ export ANTHROPIC_BASE_URL="$CLAUDEX_BASE_URL"
 export ANTHROPIC_AUTH_TOKEN="$api_key"
 export HOME="$CLAUDEX_HOME"
 export CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1
-export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1
+# CIR: SUBPROCESS_ENV_SCRUB is explicitly opted out (0). When set to 1, the pinned CLI's
+# allowed_non_write_users hardening forces the permission mode back to default, which
+# silently defeats --dangerously-skip-permissions (measured on 2.1.210). The user chose
+# always-bypass sessions over subprocess env scrubbing; the residual exposure is the
+# wrapper-owned loopback API key becoming visible to in-session subprocesses, which is a
+# loopback-only credential confined to 127.0.0.1:8317.
+export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0
 export CLAUDE_CODE_SUBAGENT_MODEL="$CLAUDEX_MODEL"
 export CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1
-export CLAUDE_CODE_EFFORT_LEVEL=high
+export CLAUDE_CODE_EFFORT_LEVEL="$effort_level"
 export CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3
 export ENABLE_TOOL_SEARCH=false
 export NO_PROXY="$CLAUDEX_NO_PROXY"
@@ -109,9 +157,14 @@ export no_proxy="$CLAUDEX_NO_PROXY"
 
 # An explicitly empty CLI fallback list has higher precedence than fallbackModel loaded from
 # ordinary settings and resolves to no fallback in the pinned Claude Code CLI.
+# CIR: --dangerously-skip-permissions is deliberate. The pinned CLI can only enter
+# bypassPermissions when it is enabled at startup (no mid-session switch without the flag),
+# and the user decided claudex sessions always start in bypass mode. Removing the flag
+# restores normal permission prompts but also removes the mid-session bypass option.
 exec "$claude_bin" \
   --settings "$CLAUDEX_WRAPPER_SETTINGS" \
   --model "$CLAUDEX_MODEL" \
   --fallback-model "" \
-  --effort high \
-  "$@"
+  "${effort_argv[@]}" \
+  --dangerously-skip-permissions \
+  "${forward_args[@]}"
