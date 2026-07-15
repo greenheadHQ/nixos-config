@@ -148,6 +148,7 @@ unset \
   CLAUDE_CODE_SKIP_MANTLE_AUTH \
   CLAUDE_CODE_SKIP_VERTEX_AUTH \
   CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH \
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW \
   CLAUDE_CODE_EFFORT_LEVEL \
   CLAUDE_CODE_EXTRA_BODY \
   CLAUDE_CODE_MAX_CONTEXT_TOKENS \
@@ -182,6 +183,15 @@ export CLAUDE_CODE_EFFORT_LEVEL="$effort_level"
 # value's CIR in default.nix). The numerator stays a local estimate, so the displayed
 # percentage is an approximation (handoff limits section).
 export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$CLAUDEX_MAX_CONTEXT_TOKENS"
+# CIR: MAX_CONTEXT_TOKENS alone only fixes the displayed denominator. The pinned CLI keeps
+# auto-compact disabled whenever the compact window's *source* resolves to "auto" (local
+# sessions guard), which is always the case for unrecognized model names without an
+# explicit window channel — so claudex sessions never auto-compacted (measured on 2.1.210;
+# the "N% context used" statusline label, instead of "N% until auto-compact", is the visible
+# symptom). CLAUDE_CODE_AUTO_COMPACT_WINDOW is the CLI's official env channel that flips the
+# source to "env" and re-enables the compact threshold check. It shares the same
+# wrapper-owned value so the issue #1113 re-tune stays single-sourced.
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW="$CLAUDEX_MAX_CONTEXT_TOKENS"
 export CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3
 export ENABLE_TOOL_SEARCH=false
 export NO_PROXY="$CLAUDEX_NO_PROXY"
