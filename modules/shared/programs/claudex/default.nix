@@ -76,6 +76,18 @@ let
       env.CLAUDE_CODE_EXTRA_BODY = builtins.toJSON { service_tier = "priority"; };
     }
   );
+  # CIR: the pinned CLI does not recognize the pinned model and assumes a 200k context
+  # window, and the pinned proxy hard-codes usage 0/0 into SSE message_start (upstream
+  # declined to change this), which pushes the CLI's context tracking onto a character-based
+  # local estimate. Both errors combine to saturate the statusline at "100% context used"
+  # far too early. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the CLI's official override that only
+  # applies to non-claude model names. 258000 is the limit the Codex app currently reports
+  # for the pinned model (user-measured 2026-07-15) and is itself a TEMPORARY upstream
+  # value: the model shipped with 372k, OpenAI reverted the product limit while fixing an
+  # over-billing bug and announced it will be raised again — re-tune this value when that
+  # lands (tracked in issue #1113; see also the handoff limits section). The numerator stays
+  # a local estimate, so the displayed percentage remains an approximation.
+  maxContextTokens = 258000;
 
   runtimeLibrary = pkgs.replaceVars ./files/claudex-runtime.sh {
     allowTestOverrides = "false";
@@ -126,6 +138,7 @@ let
 
   claudexScript = mkRuntimeScript ./files/claudex.sh {
     inherit configTemplate wrapperSettings wrapperSettingsFast;
+    maxContextTokens = toString maxContextTokens;
   };
   statusScript = mkRuntimeScript ./files/claudex-status.sh { };
   loginScript = mkRuntimeScript ./files/claudex-login.sh {
