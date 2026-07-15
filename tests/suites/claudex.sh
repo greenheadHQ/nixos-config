@@ -674,13 +674,17 @@ EOF
   [[ "$settings_arg" == "$wrapper_settings_fast" ]] \
     || fail "claudex --fast --effort low did not keep the fast settings variant"
 
-  # --fast is a boolean session flag; attached values are rejected before Claude runs.
+  # --fast is a boolean session flag; attached values are rejected with the wrapper's
+  # managed-option contract exit code 2 before Claude runs.
   for flag in "--fast=true" "--fast=priority"; do
     rm -f "$sandbox/claude.log"
-    if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" "$flag" \
-      >/dev/null 2>&1; then
-      fail "claudex accepted a value-carrying fast flag: $flag"
-    fi
+    set +e
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" "$flag" \
+      >/dev/null 2>&1
+    rc=$?
+    set -e
+    [[ "$rc" == "2" ]] \
+      || fail "claudex returned $rc instead of exit 2 for: $flag"
     [[ ! -e "$sandbox/claude.log" ]] || fail "rejected fast flag still invoked Claude"
   done
 }
