@@ -64,6 +64,18 @@ let
       env.CLAUDE_CODE_EXTRA_BODY = "{}";
     }
   );
+  # CIR: the fast variant carries the Codex fast tier in the wrapper-owned request body.
+  # The injected value is the final on-wire id "priority" (upstream catalog id="priority",
+  # name="Fast", 1.5x speed) rather than the "fast" alias: the pinned proxy's claude->codex
+  # translator maps fast->priority today, but its openai-responses translator already drops
+  # anything that is not exactly "priority", so pinning the canonical id keeps the contract
+  # independent of upstream alias leniency. Both variants stay pinned Nix store files;
+  # `claudex --fast` merely selects which one is passed to --settings.
+  wrapperSettingsFast = pkgs.writeText "claudex-wrapper-settings-fast.json" (
+    builtins.toJSON {
+      env.CLAUDE_CODE_EXTRA_BODY = builtins.toJSON { service_tier = "priority"; };
+    }
+  );
 
   runtimeLibrary = pkgs.replaceVars ./files/claudex-runtime.sh {
     allowTestOverrides = "false";
@@ -113,7 +125,7 @@ let
     );
 
   claudexScript = mkRuntimeScript ./files/claudex.sh {
-    inherit configTemplate wrapperSettings;
+    inherit configTemplate wrapperSettings wrapperSettingsFast;
   };
   statusScript = mkRuntimeScript ./files/claudex-status.sh { };
   loginScript = mkRuntimeScript ./files/claudex-login.sh {

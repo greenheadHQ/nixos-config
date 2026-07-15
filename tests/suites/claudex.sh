@@ -80,6 +80,7 @@ _claudex_materialize_runtime() {
 _claudex_materialize_command() {
   local source="$1" destination="$2" runtime="$3" proxy="$4" template="$5"
   local wrapper_settings="${6:-$template}"
+  local wrapper_settings_fast="${7:-$wrapper_settings}"
 
   sed \
     -e "s|@bashBin@|$(command -v bash)|g" \
@@ -87,6 +88,7 @@ _claudex_materialize_command() {
     -e "s|@proxyBin@|$proxy|g" \
     -e "s|@configTemplate@|$template|g" \
     -e "s|@wrapperSettings@|$wrapper_settings|g" \
+    -e "s|@wrapperSettingsFast@|$wrapper_settings_fast|g" \
     "$source" > "$destination"
   _claudex_assert_no_placeholders "$destination"
 }
@@ -94,6 +96,12 @@ _claudex_materialize_command() {
 _claudex_write_wrapper_settings() {
   local destination="$1"
   jq -n '{env: {CLAUDE_CODE_EXTRA_BODY: "{}"}}' > "$destination"
+}
+
+_claudex_write_wrapper_settings_fast() {
+  local destination="$1"
+  jq -n '{env: {CLAUDE_CODE_EXTRA_BODY: ({service_tier: "priority"} | tostring)}}' \
+    > "$destination"
 }
 
 _claudex_file_inode() {
@@ -106,11 +114,13 @@ _claudex_fixture() {
   local generated="$sandbox/generated"
   local fake_proxy="$sandbox/fake-cli-proxy-api"
   local wrapper_settings="$generated/wrapper-settings.json"
+  local wrapper_settings_fast="$generated/wrapper-settings-fast.json"
 
   mkdir -p "$sandbox/home/.local/bin" "$generated"
   _claudex_render_config_template \
     "$root/files/config-template.json" "$generated/config-template.json"
   _claudex_write_wrapper_settings "$wrapper_settings"
+  _claudex_write_wrapper_settings_fast "$wrapper_settings_fast"
   cat > "$sandbox/fake-lockf" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${CLAUDEX_FAKE_LOCK_LOG:-}" ] || printf '%s\n' "$@" >> "$CLAUDEX_FAKE_LOCK_LOG"
@@ -130,7 +140,7 @@ EOF
     _claudex_materialize_command \
       "$root/files/$script.sh" "$generated/$script" \
       "$generated/claudex-runtime.sh" "$fake_proxy" "$generated/config-template.json" \
-      "$wrapper_settings"
+      "$wrapper_settings" "$wrapper_settings_fast"
     chmod +x "$generated/$script"
   done
 }
@@ -144,10 +154,12 @@ _claudex_production_fixture() {
   local curl_bin="$sandbox/production-curl"
   local launchctl_bin="$sandbox/production-launchctl"
   local wrapper_settings="$generated/wrapper-settings.json"
+  local wrapper_settings_fast="$generated/wrapper-settings-fast.json"
   local jq_bin
   jq_bin="$(command -v jq)"
   mkdir -p "$generated" "$declared_home/.local/bin"
   _claudex_write_wrapper_settings "$wrapper_settings"
+  _claudex_write_wrapper_settings_fast "$wrapper_settings_fast"
 
   cat > "$curl_bin" <<'EOF'
 #!/usr/bin/env bash
@@ -200,7 +212,7 @@ EOF
   for script in claudex claudex-login claudex-status claudex-proxy-launcher; do
     _claudex_materialize_command \
       "$root/files/$script.sh" "$generated/$script" "$runtime" "$proxy" \
-      "$sandbox/generated/config-template.json" "$wrapper_settings"
+      "$sandbox/generated/config-template.json" "$wrapper_settings" "$wrapper_settings_fast"
     chmod +x "$generated/$script"
   done
 }
@@ -441,11 +453,12 @@ EOF
 }
 
 test_claudex_wrapper_pins_provider_model_and_argv() {
-  local sandbox state wrapper wrapper_settings settings_arg rc flag
+  local sandbox state wrapper wrapper_settings wrapper_settings_fast settings_arg rc flag
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
   wrapper="$sandbox/generated/claudex"
   wrapper_settings="$sandbox/generated/wrapper-settings.json"
+  wrapper_settings_fast="$sandbox/generated/wrapper-settings-fast.json"
   _claudex_fixture "$sandbox"
   _claudex_prepare_fixture_state "$sandbox"
   _claudex_add_valid_credential "$state"
@@ -621,6 +634,55 @@ EOF
     fail "claudex accepted an invalid split effort level"
   fi
   [[ ! -e "$sandbox/claude.log" ]] || fail "invalid split effort still invoked Claude"
+
+  # --fast selects the pinned fast wrapper-settings variant (service_tier=priority in the
+  # wrapper-owned request body) while the inherited CLAUDE_CODE_EXTRA_BODY stays scrubbed.
+  rm -f "$sandbox/claude.log"
+  set +e
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDE_CODE_EXTRA_BODY='{"service_tier":"hostile"}' \
+    "$wrapper" --fast -- literal-prompt
+  rc=$?
+  set -e
+  [[ "$rc" == "23" ]] || fail "claudex --fast did not reach Claude"
+  assert_file_contains "$sandbox/claude.log" "extra_body=unset"
+  assert_file_contains "$sandbox/claude.log" "effort_level=high"
+  settings_arg="$(awk '/^arg=--settings$/ { getline; sub(/^arg=/, ""); print; exit }' "$sandbox/claude.log")"
+  [[ "$settings_arg" == "$wrapper_settings_fast" ]] \
+    || fail "claudex --fast did not pass the fast wrapper-owned settings file"
+  jq -e '(.env.CLAUDE_CODE_EXTRA_BODY | fromjson) == {service_tier: "priority"}
+    and (.env | keys == ["CLAUDE_CODE_EXTRA_BODY"])' \
+    "$settings_arg" >/dev/null \
+    || fail "fast wrapper-owned settings did not pin service_tier=priority"
+
+  # --fast composes with --effort; both wrapper-owned values are re-issued together.
+  rm -f "$sandbox/claude.log"
+  set +e
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    "$wrapper" --fast --effort low -- literal-prompt
+  rc=$?
+  set -e
+  [[ "$rc" == "23" ]] || fail "claudex --fast --effort low did not reach Claude"
+  assert_file_contains "$sandbox/claude.log" "effort_level=low"
+  settings_arg="$(awk '/^arg=--settings$/ { getline; sub(/^arg=/, ""); print; exit }' "$sandbox/claude.log")"
+  [[ "$settings_arg" == "$wrapper_settings_fast" ]] \
+    || fail "claudex --fast --effort low did not keep the fast settings variant"
+
+  # --fast is a boolean session flag; attached values are rejected before Claude runs.
+  for flag in "--fast=true" "--fast=priority"; do
+    rm -f "$sandbox/claude.log"
+    if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" "$flag" \
+      >/dev/null 2>&1; then
+      fail "claudex accepted a value-carrying fast flag: $flag"
+    fi
+    [[ ! -e "$sandbox/claude.log" ]] || fail "rejected fast flag still invoked Claude"
+  done
 }
 
 test_claudex_launcher_and_login_use_fake_boundaries() {
@@ -853,7 +915,7 @@ EOF
 }
 
 test_claudex_nix_generated_command_outputs_are_pinned() {
-  local runtime_drv runtime_out path settings_path
+  local runtime_drv runtime_out path settings_path fast_settings_path
   runtime_drv="$(
     cd "$REPO_ROOT"
     nix eval --impure --raw --expr '
@@ -889,6 +951,12 @@ test_claudex_nix_generated_command_outputs_are_pinned() {
   settings_path="$(sed -n 's/^CLAUDEX_WRAPPER_SETTINGS="\(.*\)"$/\1/p' "$runtime_out/bin/claudex")"
   jq -e '.env.CLAUDE_CODE_EXTRA_BODY == "{}" and (.env | keys == ["CLAUDE_CODE_EXTRA_BODY"])' \
     "$settings_path" >/dev/null || fail "Nix-generated wrapper settings drifted"
+  grep -Fq 'CLAUDEX_WRAPPER_SETTINGS_FAST="/nix/store/' "$runtime_out/bin/claudex" \
+    || fail "Nix-generated claudex does not reference store fast wrapper settings"
+  fast_settings_path="$(sed -n 's/^CLAUDEX_WRAPPER_SETTINGS_FAST="\(.*\)"$/\1/p' "$runtime_out/bin/claudex")"
+  jq -e '(.env.CLAUDE_CODE_EXTRA_BODY | fromjson) == {service_tier: "priority"}
+    and (.env | keys == ["CLAUDE_CODE_EXTRA_BODY"])' \
+    "$fast_settings_path" >/dev/null || fail "Nix-generated fast wrapper settings drifted"
   grep -Fq -- '--local-model' "$runtime_out/libexec/claudex/claudex-proxy-launcher" \
     || fail "Nix-generated proxy launcher does not pass --local-model"
   grep -Fq -- '--codex-device-login' "$runtime_out/bin/claudex-login" \
