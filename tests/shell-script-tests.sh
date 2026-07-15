@@ -257,6 +257,16 @@ run_test "test runtime profile rejects invalid prepared runtime" test_runtime_pr
 run_test "test runtime profile concurrent run prepares once" test_runtime_profile_concurrent_run_prepares_once
 run_test "tomlkit bootstrap reuses validated snapshot source profile" test_tomlkit_bootstrap_uses_validated_snapshot_source_profile
 run_test "tomlkit bootstrap rejects mismatched snapshot source profile" test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile
+run_test "claudex runtime API and private state" test_claudex_runtime_api_and_private_state
+run_test "claudex runtime derives its internal contract" test_claudex_runtime_derived_contract
+run_test "claudex credential and loopback contract" test_claudex_credential_and_loopback_contract
+run_test "claudex wrapper pins provider model and argv" test_claudex_wrapper_pins_provider_model_and_argv
+run_test "claudex launcher and login use fake boundaries" test_claudex_launcher_and_login_use_fake_boundaries
+run_test "claudex production execution boundaries are pinned" test_claudex_production_execution_boundaries
+run_test "claudex Stage 1 status is sanitized" test_claudex_status_is_sanitized
+run_test "claudex Nix-generated command outputs are pinned" test_claudex_nix_generated_command_outputs_are_pinned
+run_test "claudex release layout verifier rejects drift" test_claudex_release_layout_verifier
+run_test "claudex disabled Home Manager closure excludes enabled artifacts" test_claudex_disabled_home_excludes_enabled_closure
 
 # codex-config fixture는 tomlkit이 필요하다. required CI의 run-all-tests는 prePushRuntime
 # profile로 항상 tomlkit을 제공하지만, 사용자가 직접 실행할 때는 미가용일 수 있다. 미가용이면

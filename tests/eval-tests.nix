@@ -10,6 +10,7 @@
 # 반환값: 모든 테스트 통과 시 true, 실패 시 assertion error (빌드 실패)
 let
   flake = builtins.getFlake (toString ./..);
+  nixpkgsLib = flake.inputs.nixpkgs.lib;
   constants = import ../libraries/constants.nix;
 
   # NixOS config (greenhead-minipc)
@@ -23,10 +24,92 @@ let
     "greenhead-MacBookPro"
     "work-MacBookPro"
   ];
+  claudexTargetHosts = [
+    "greenhead-MacBookPro"
+    "work-MacBookPro"
+  ];
   darwinHostNames = builtins.attrNames darwinCfgs;
   unexpectedDarwinHosts = builtins.filter (
     name: !(builtins.elem name expectedDarwinHosts)
   ) darwinHostNames;
+
+  # Claudex Stage 1 static inputs. These are parsed directly so a pin/template-only change is
+  # covered without ever executing the upstream CLIProxyAPI binary.
+  claudexPin = builtins.fromJSON (
+    builtins.readFile ../modules/shared/programs/claudex/cli-proxy-api-pin.json
+  );
+  claudexTemplate = builtins.fromJSON (
+    builtins.readFile ../modules/shared/programs/claudex/files/config-template.json
+  );
+  claudexDisabledFixture = import ./fixtures/claudex-home.nix {
+    inherit flake;
+    hostname = "claudex-disabled-fixture";
+  };
+  claudexEnabledFixture = import ./fixtures/claudex-home.nix {
+    inherit flake;
+    hostname = "greenhead-MacBookPro";
+  };
+  claudexDisabledHm = claudexDisabledFixture.config;
+  claudexEnabledHm = claudexEnabledFixture.config;
+  claudexDisabledDescriptor = builtins.fromJSON (
+    claudexDisabledHm.home.file.".config/claudex/runtime.json".text
+  );
+  claudexEnabledDescriptor = builtins.fromJSON (
+    claudexEnabledHm.home.file.".config/claudex/runtime.json".text
+  );
+  claudexDisabledPublicFiles = [
+    ".local/bin/claudex"
+    ".local/bin/claudex-login"
+    ".local/bin/claudex-status"
+    ".local/libexec/claudex/claudex-proxy-launcher"
+  ];
+  claudexDisabledRuntimeSource = claudexDisabledHm.home.file.".local/lib/claudex/runtime.sh".source;
+  # getContext exposes .drv path names but does not guarantee that those store files exist in a
+  # clean eval store. Inspect replaceVars' evaluator-owned phase instead of reading the store.
+  claudexDisabledRuntimeBuildPhase = claudexDisabledRuntimeSource.buildPhase;
+  claudexDisabledRuntimeReferencesProxy = nixpkgsLib.hasInfix "cli-proxy-api" claudexDisabledRuntimeBuildPhase;
+  claudexEnabledRuntimeSource = claudexEnabledHm.home.file.".local/lib/claudex/runtime.sh".source;
+  claudexEnabledRuntimeBuildPhase = claudexEnabledRuntimeSource.buildPhase;
+  claudexEnabledRuntimeBuildPhaseMatchesDescriptor =
+    nixpkgsLib.hasInfix "--replace-fail @bindHost@ ${claudexEnabledDescriptor.bindHost}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @port@ ${toString claudexEnabledDescriptor.port}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @model@ ${claudexEnabledDescriptor.model}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @label@ ${claudexEnabledDescriptor.label}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @stateDir@ " claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix claudexEnabledDescriptor.stateDir claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @authDir@ " claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix claudexEnabledDescriptor.authDir claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @configFile@ " claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix claudexEnabledDescriptor.configFile claudexEnabledRuntimeBuildPhase;
+  fakeClaudexPkgs =
+    system:
+    let
+      fakeStorePath = name: "/nix/store/00000000000000000000000000000000-${name}";
+    in
+    {
+      fetchurl = attrs: attrs;
+      lib = {
+        concatStringsSep = builtins.concatStringsSep;
+        licenses.mit = "MIT";
+        sourceTypes.binaryNativeCode = "binaryNativeCode";
+      };
+      stdenvNoCC = {
+        hostPlatform = { inherit system; };
+        mkDerivation = attrs: attrs;
+      };
+      gnutar = fakeStorePath "gnutar";
+      findutils = fakeStorePath "findutils";
+      coreutils = fakeStorePath "coreutils";
+      bash = fakeStorePath "bash";
+    };
+  claudexPackage = import ../modules/shared/programs/claudex/package.nix {
+    pkgs = fakeClaudexPkgs "aarch64-darwin";
+  };
+  claudexUnsupportedPackage = builtins.tryEval (
+    (import ../modules/shared/programs/claudex/package.nix {
+      pkgs = fakeClaudexPkgs "x86_64-linux";
+    }).src.url
+  );
 
   inherit (constants.network) minipcTailscaleIP;
 
@@ -371,6 +454,42 @@ let
       let
         hasHost = builtins.hasAttr hostName darwinCfgs;
         cfg = if hasHost then darwinCfgs.${hostName}.config else null;
+        hm = if hasHost then cfg.home-manager.users.${cfg.system.primaryUser} else null;
+        claudexDescriptorPath = ".config/claudex/runtime.json";
+        hasClaudexDescriptor = hasHost && builtins.hasAttr claudexDescriptorPath hm.home.file;
+        claudexDescriptor =
+          if hasClaudexDescriptor then builtins.fromJSON hm.home.file.${claudexDescriptorPath}.text else null;
+        claudexShouldEnable = builtins.elem hostName claudexTargetHosts;
+        claudexPublicFiles = [
+          ".local/bin/claudex"
+          ".local/bin/claudex-login"
+          ".local/bin/claudex-status"
+          ".local/libexec/claudex/claudex-proxy-launcher"
+        ];
+        claudexAgentNames = if hasHost then builtins.attrNames hm.launchd.agents else [ ];
+        claudexDarwinAgentNames =
+          if hasHost then builtins.attrNames (cfg.launchd.user.agents or { }) else [ ];
+        claudexAllActivationNames = if hasHost then builtins.attrNames (hm.home.activation or { }) else [ ];
+        claudexActivationNames =
+          if hasHost then
+            builtins.filter (name: nixpkgsLib.hasInfix "claudex" name) (claudexAllActivationNames)
+          else
+            [ ];
+        claudexActivationReferencesRuntime = builtins.any (
+          name:
+          let
+            data = hm.home.activation.${name}.data or "";
+          in
+          nixpkgsLib.hasInfix "claudex" data
+        ) claudexAllActivationNames;
+        claudexRuntimeSource =
+          if hasHost && builtins.hasAttr ".local/lib/claudex/runtime.sh" hm.home.file then
+            hm.home.file.".local/lib/claudex/runtime.sh".source
+          else
+            null;
+        claudexRuntimeBuildPhase =
+          if claudexRuntimeSource != null then claudexRuntimeSource.buildPhase else "";
+        claudexRuntimeReferencesProxy = nixpkgsLib.hasInfix "cli-proxy-api" claudexRuntimeBuildPhase;
       in
       [
         {
@@ -456,6 +575,78 @@ let
             hasHost
             &&
               cfg.system.defaults.CustomUserPreferences.NSGlobalDomain.ComputerUseAllowForbiddenTargets == true;
+        }
+        {
+          name = "Test D14 ${hostName}: claudex descriptor와 runtime library는 모든 Darwin host에 있어야 함";
+          cond = hasClaudexDescriptor && builtins.hasAttr ".local/lib/claudex/runtime.sh" hm.home.file;
+        }
+        {
+          name = "Test D15 ${hostName}: claudex descriptor의 loopback/model/schema 계약이 고정되어야 함";
+          cond =
+            hasClaudexDescriptor
+            && claudexDescriptor.schema == 2
+            && claudexDescriptor.hostName == hostName
+            && claudexDescriptor.targetHosts == claudexTargetHosts
+            && claudexDescriptor.label == "org.nix-community.home.claudex-proxy"
+            && claudexDescriptor.bindHost == "127.0.0.1"
+            && claudexDescriptor.port == 8317
+            && claudexDescriptor.model == "gpt-5.6-sol"
+            && claudexDescriptor.readiness.method == "GET"
+            && claudexDescriptor.readiness.url == "http://127.0.0.1:8317/v1/models"
+            && claudexDescriptor.readiness.catalogIsEntitlement == false
+            && !(claudexDescriptor ? launchAgentPlist);
+        }
+        {
+          name = "Test D16 ${hostName}: claudex 실행 표면은 승인된 Darwin 호스트에만 노출되어야 함";
+          cond =
+            hasClaudexDescriptor
+            && claudexDescriptor.enabled == claudexShouldEnable
+            && builtins.all (path: builtins.hasAttr path hm.home.file == claudexShouldEnable) claudexPublicFiles
+            && (
+              if claudexShouldEnable then
+                claudexDescriptor.proxyVersion == "7.2.73"
+                && claudexDescriptor.command != null
+                && builtins.length claudexDescriptor.command == 1
+                && claudexDescriptor.proxyExecutable != null
+                && claudexDescriptor.source != null
+                && builtins.elemAt claudexDescriptor.command 0 == claudexDescriptor.proxyLauncher
+                && nixpkgsLib.hasSuffix "/bin/cli-proxy-api" claudexDescriptor.proxyExecutable
+                && toString hm.home.file.".local/bin/claudex".source == "${claudexDescriptor.source}/bin/claudex"
+                &&
+                  toString hm.home.file.".local/bin/claudex-login".source
+                  == "${claudexDescriptor.source}/bin/claudex-login"
+                &&
+                  toString hm.home.file.".local/bin/claudex-status".source
+                  == "${claudexDescriptor.source}/bin/claudex-status"
+                &&
+                  toString hm.home.file.".local/libexec/claudex/claudex-proxy-launcher".source
+                  == claudexDescriptor.proxyLauncher
+              else
+                claudexDescriptor.proxyVersion == null
+                && claudexDescriptor.command == null
+                && claudexDescriptor.proxyExecutable == null
+                && claudexDescriptor.proxyLauncher == null
+                && claudexDescriptor.source == null
+            )
+            && !claudexRuntimeReferencesProxy;
+        }
+        {
+          name = "Test D17 ${hostName}: Stage 1에는 claudex launchd agent가 없어야 함";
+          cond =
+            builtins.all (
+              name:
+              name != "claudex-proxy"
+              && (hm.launchd.agents.${name}.config.Label or "") != "org.nix-community.home.claudex-proxy"
+            ) claudexAgentNames
+            && builtins.all (
+              name:
+              name != "claudex-proxy"
+              &&
+                (cfg.launchd.user.agents.${name}.serviceConfig.Label or "")
+                != "org.nix-community.home.claudex-proxy"
+            ) claudexDarwinAgentNames
+            && claudexActivationNames == [ ]
+            && !claudexActivationReferencesRuntime;
         }
       ]
     ) expectedDarwinHosts
@@ -662,6 +853,78 @@ let
     {
       name = "Test D9: unexpected Darwin host가 없어야 함 (현재 unexpected: [${builtins.concatStringsSep ", " unexpectedDarwinHosts}])";
       cond = unexpectedDarwinHosts == [ ];
+    }
+    {
+      name = "Test D18: CLIProxyAPI pin은 검증한 v7.2.73 darwin-arm64 자산과 해시여야 함";
+      cond =
+        claudexPin.version == "7.2.73"
+        && claudexPin.tag == "v7.2.73"
+        && builtins.attrNames claudexPin.platforms == [ "aarch64-darwin" ]
+        && claudexPin.platforms.aarch64-darwin.asset == "CLIProxyAPI_7.2.73_darwin_aarch64.tar.gz"
+        && claudexPin.platforms.aarch64-darwin.hash == "sha256-72ZsH3E+lEsk6OIFzoBhN+pxjnuFnlUz8BXo+KmNYqY="
+        && claudexPackage.pname == "cli-proxy-api"
+        && claudexPackage.version == "7.2.73"
+        &&
+          claudexPackage.src.url
+          == "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.73/CLIProxyAPI_7.2.73_darwin_aarch64.tar.gz"
+        && claudexPackage.src.hash == "sha256-72ZsH3E+lEsk6OIFzoBhN+pxjnuFnlUz8BXo+KmNYqY="
+        && claudexPackage.meta.mainProgram == "cli-proxy-api"
+        && claudexPackage.meta.platforms == [ "aarch64-darwin" ]
+        && nixpkgsLib.hasInfix "verify-release-layout.sh" claudexPackage.installPhase
+        && nixpkgsLib.hasInfix "install -Dm755 unpacked/cli-proxy-api" claudexPackage.installPhase
+        && claudexUnsupportedPackage.success == false;
+    }
+    {
+      name = "Test D19: claudex config base는 runtime slot을 비우고 관리/플러그인/로그/통계를 꺼야 함";
+      cond =
+        claudexTemplate.host == null
+        && claudexTemplate.port == null
+        && claudexTemplate.tls.enable == false
+        && claudexTemplate.remote-management.allow-remote == false
+        && claudexTemplate.remote-management.secret-key == ""
+        && claudexTemplate.remote-management.disable-control-panel == true
+        && claudexTemplate.remote-management.disable-auto-update-panel == true
+        && claudexTemplate.auth-dir == ""
+        && claudexTemplate.api-keys == [ ]
+        && claudexTemplate.debug == false
+        && claudexTemplate.pprof.enable == false
+        && claudexTemplate.pprof.addr == null
+        && claudexTemplate.plugins.enabled == false
+        && claudexTemplate.commercial-mode == true
+        && claudexTemplate.logging-to-file == false
+        && claudexTemplate.usage-statistics-enabled == false
+        && claudexTemplate.proxy-url == ""
+        && claudexTemplate.max-retry-credentials == 1;
+    }
+    {
+      name = "Test D20: synthetic disabled Claudex host는 metadata만 남기고 실행 표면을 노출하지 않아야 함";
+      cond =
+        !(builtins.elem claudexDisabledFixture.hostname claudexTargetHosts)
+        && claudexDisabledDescriptor.schema == 2
+        && claudexDisabledDescriptor.hostName == claudexDisabledFixture.hostname
+        && claudexDisabledDescriptor.targetHosts == claudexTargetHosts
+        && claudexDisabledDescriptor.enabled == false
+        && claudexDisabledDescriptor.source == null
+        && claudexDisabledDescriptor.command == null
+        && claudexDisabledDescriptor.proxyExecutable == null
+        && claudexDisabledDescriptor.proxyLauncher == null
+        && claudexDisabledDescriptor.proxyVersion == null
+        && !(claudexDisabledDescriptor ? launchAgentPlist)
+        && builtins.hasAttr ".local/lib/claudex/runtime.sh" claudexDisabledHm.home.file
+        && builtins.all (
+          path: !(builtins.hasAttr path claudexDisabledHm.home.file)
+        ) claudexDisabledPublicFiles;
+    }
+    {
+      name = "Test D21: synthetic disabled Claudex runtime derivation은 CLIProxyAPI를 참조하지 않아야 함";
+      cond = !claudexDisabledRuntimeReferencesProxy;
+    }
+    {
+      name = "Test D22: synthetic enabled Claudex의 portable Nix derivation 계약이 descriptor와 일치해야 함";
+      cond =
+        claudexEnabledDescriptor.enabled == true
+        && toString claudexEnabledRuntimeSource == claudexEnabledDescriptor.runtimeLibrary
+        && claudexEnabledRuntimeBuildPhaseMatchesDescriptor;
     }
   ]
   ++ darwinIntentTests;
