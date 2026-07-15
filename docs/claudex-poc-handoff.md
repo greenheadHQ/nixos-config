@@ -113,6 +113,7 @@ git status --short --branch
 - `modules/shared/programs/claudex/files/config-template.json`
   - runtime-owned host/port/pprof slot은 비워 두고, remote management·plugin·파일 로그·통계 비활성화를 선언한다.
   - `default.nix`의 단일 runtime contract가 최종 `127.0.0.1:8317`, 모델, label, pprof 주소를 runtime과 config에 함께 주입한다.
+  - 세션 불안정(520→429 cooldown 연쇄) 완화용 resilience knob 4종을 선언한다: `max-retry-interval: 30`(cooldown 흡수 활성화 — code default 0이면 완전 비활성), `passthrough-headers: true`(Retry-After 전달), `transient-error-cooldown-seconds: -1`(5xx 부수 벤치 제거), `streaming.{keepalive-seconds: 15, bootstrap-retries: 1}`(520 first-byte 재시도 + idle timeout 방지). 근거는 `default.nix`의 CIR 주석과 §4 참조. 이 값들도 runtime.sh의 config key 화이트리스트가 정확히 검증하므로 값 변경 시 두 곳을 함께 갱신한다.
 
 ### 검증 연결
 
@@ -214,6 +215,15 @@ git status --short --branch
 - **PCT override의 window 의존성 (반사실 — scrub 근거)**: 최종 wrapper가 PCT를 scrub하기 전 상태를 재현한 실험이다. T5(`AUTO_COMPACT_WINDOW` 부재 + `PCT=1`)는 `compacting=0` — PCT override는 compact window source가 "auto"면 무효다. 반면 T6(`AUTO_COMPACT_WINDOW=258000` + `PCT=1`)은 발동. **wrapper가 window를 켜면서 상속 PCT override도 함께 살아난다는 뜻**이므로, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`·`CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE`를 scrub 목록에 추가했다. scrub 반영 후에는 `claudex`로 이 두 케이스가 재현되지 않는 것이 정상이다(=상속 PCT가 무력화됨을 의미).
 - 모든 발동 케이스는 headless `-p` 단발 실행이라 `compact_error:"too_few_groups"`로 요약 자체는 실패한다(압축할 누적 대화 그룹 부족 — 트리거 사슬 동작 증거로는 충분). 실제 요약 성공은 누적 메시지가 많은 대화형 세션에서만 관찰되며 이는 headless 특성이지 wrapper 계약과 무관하다.
 - provider 불안정 재관측: 일부 실행에서 `api_retry` 다수 발생 후 성공 (§4의 520/429 진단과 정합); 안정 구간에서는 위 A/B가 재현적으로 동일했다.
+
+2026-07-15 CLIProxyAPI resilience knob 배치에서는 다음을 확인했다.
+
+- targeted Claudex shell tests 10개(config 화이트리스트 검증 포함): 통과; full shell suite `217 pass / 0 fail`; Darwin eval(IFD·no-IFD): 통과; `nix flake check --no-build --all-systems`: 통과
+- 배포 전 config 실측: 기존 `config.yaml`에 `max-retry-interval`/`passthrough-headers`/`transient-error-cooldown-seconds`/`streaming`이 전부 `null`(부재=upstream 기본 비활성) — 진단 정합
+- `nrs` 후 재렌더 config에 4 knob 정확 반영: `max-retry-interval:30, passthrough-headers:true, transient-error-cooldown-seconds:-1, streaming:{keepalive-seconds:15, bootstrap-retries:1}`
+- **proxy 파싱 검증**: 새 config로 foreground proxy가 정상 기동(`auth/proxy/catalog=ready`) — 값 타입·중첩 구조가 치명적 파싱 오류를 내지 않았다는 증거다(예: `streaming`을 nested object로 두지 않았다면 unmarshal 실패). 단 CLIProxyAPI v7.2.73의 config 로더는 `yaml.Unmarshal`을 `KnownFields` 없이 사용해 unknown top-level key를 조용히 무시하므로, **key 이름 정합은 기동 성공이 아니라 v7.2.73 `config.example.yaml` 소스 대조로 확인**했다
+- completion 회귀 없음: `claudex -p` stdout 정확히 `RESILIENCE_OK`
+- 429 cooldown 흡수 효과 자체는 실제 upstream rate-limit 상황에서만 관측 가능하므로 여기서는 강제하지 않았다(실사용 관측 대상)
 
 새 머신에서는 현재 checkout을 진실 원천으로 삼아 최소한 다음을 다시 실행한다.
 

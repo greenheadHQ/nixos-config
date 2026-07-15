@@ -271,8 +271,9 @@ _claudex_render_runtime_config_unlocked() {
       keys == [
         "api-keys", "auth-dir", "commercial-mode", "debug", "error-logs-max-files",
         "host", "logging-to-file", "logs-max-total-size-mb", "max-retry-credentials",
-        "plugins", "port", "pprof", "proxy-url", "remote-management", "tls",
-        "usage-statistics-enabled", "ws-auth"
+        "max-retry-interval", "passthrough-headers", "plugins", "port", "pprof",
+        "proxy-url", "remote-management", "streaming", "tls",
+        "transient-error-cooldown-seconds", "usage-statistics-enabled", "ws-auth"
       ]
       and .host == $bindHost
       and .port == $port
@@ -304,6 +305,12 @@ _claudex_render_runtime_config_unlocked() {
       and .["usage-statistics-enabled"] == false
       and .["proxy-url"] == ""
       and .["max-retry-credentials"] == 1
+      and .["max-retry-interval"] == 30
+      and .["passthrough-headers"] == true
+      and .["transient-error-cooldown-seconds"] == -1
+      and (.streaming | keys == ["bootstrap-retries", "keepalive-seconds"])
+      and .streaming["keepalive-seconds"] == 15
+      and .streaming["bootstrap-retries"] == 1
       and .["ws-auth"] == true
     ' "$tmp" >/dev/null; then
     "$CLAUDEX_RM" -f -- "$tmp"

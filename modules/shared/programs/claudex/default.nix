@@ -46,6 +46,15 @@ let
   #   "high-overhead request logging과 HTTP middleware를 비활성화해 per-request 메모리를 줄이는" 옵션이다.
   #   credential·request 본문이 로그에 남지 않도록 request logging을 억제할 목적으로 의도적으로 true로
   #   두었으며, logging-to-file·usage-statistics-enabled를 끄는 config-template의 보안 기본값과 같은 맥락이다.
+  # CIR: 아래 resilience knob 4종은 upstream 기본값이 전부 "비활성"이라 단일 credential 세션이
+  #   Cloudflare 520 → 429 credential cooldown 연쇄로 불안정했던 것을 완화한다 (deep-research + v7.2.73
+  #   소스 대조). max-retry-interval=30: code default 0이면 cooldown 흡수가 완전히 꺼져 429가 그대로
+  #   클라이언트로 샌다 — 30초 이하 cooldown을 proxy가 내부 대기·재시도로 흡수한다. passthrough-headers=true:
+  #   30초 초과 긴 cooldown의 Retry-After(proxy 자체 합성분 포함)를 Claude Code에 전달해 blind backoff를
+  #   정확한 대기로 바꾼다. transient-error-cooldown-seconds=-1: 5xx(408/500/502/503/504) 후 legacy 60초
+  #   벤치를 끈다(단일 credential이라 이 벤치가 전면 차단이 된다). streaming.bootstrap-retries=1: first-byte
+  #   이전 520(>=500)을 안전 재시도하고, keepalive-seconds=15: SSE heartbeat로 client idle timeout을 막는다.
+  #   mid-stream drop(응답 도중 서버측 종료)은 어떤 knob으로도 완화 불가이며 upstream 버그 수정이 필요하다.
   configTemplateBase = builtins.fromJSON (builtins.readFile ./files/config-template.json);
   configTemplate = pkgs.writeText "claudex-config-template.json" (
     builtins.toJSON (
