@@ -216,6 +216,15 @@ git status --short --branch
 - 모든 발동 케이스는 headless `-p` 단발 실행이라 `compact_error:"too_few_groups"`로 요약 자체는 실패한다(압축할 누적 대화 그룹 부족 — 트리거 사슬 동작 증거로는 충분). 실제 요약 성공은 누적 메시지가 많은 대화형 세션에서만 관찰되며 이는 headless 특성이지 wrapper 계약과 무관하다.
 - provider 불안정 재관측: 일부 실행에서 `api_retry` 다수 발생 후 성공 (§4의 520/429 진단과 정합); 안정 구간에서는 위 A/B가 재현적으로 동일했다.
 
+2026-07-15 CLIProxyAPI resilience knob 배치에서는 다음을 확인했다.
+
+- targeted Claudex shell tests 10개(config 화이트리스트 검증 포함): 통과; full shell suite `217 pass / 0 fail`; Darwin eval(IFD·no-IFD): 통과; `nix flake check --no-build --all-systems`: 통과
+- 배포 전 config 실측: 기존 `config.yaml`에 `max-retry-interval`/`passthrough-headers`/`transient-error-cooldown-seconds`/`streaming`이 전부 `null`(부재=upstream 기본 비활성) — 진단 정합
+- `nrs` 후 재렌더 config에 4 knob 정확 반영: `max-retry-interval:30, passthrough-headers:true, transient-error-cooldown-seconds:-1, streaming:{keepalive-seconds:15, bootstrap-retries:1}`
+- **proxy 스키마 검증**: 새 config로 foreground proxy가 정상 파싱·기동(`auth/proxy/catalog=ready`) — 잘못된 키/구조였다면 proxy가 config 파싱 실패로 뜨지 않으므로, 기동 성공이 스키마 정합의 실측 증거다
+- completion 회귀 없음: `claudex -p` stdout 정확히 `RESILIENCE_OK`
+- 429 cooldown 흡수 효과 자체는 실제 upstream rate-limit 상황에서만 관측 가능하므로 여기서는 강제하지 않았다(실사용 관측 대상)
+
 새 머신에서는 현재 checkout을 진실 원천으로 삼아 최소한 다음을 다시 실행한다.
 
 ```bash
