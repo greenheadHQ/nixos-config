@@ -104,7 +104,7 @@ git status --short --branch
   - 빈 CLI fallback 목록으로 settings의 `fallbackModel`을 마스킹하고, wrapper-owned `CLAUDE_CODE_EFFORT_LEVEL`을 다시 설정한다.
   - loopback catalog에서 선언 모델을 확인한 뒤 `$HOME/.local/bin/claude`를 실행한다.
   - model은 `gpt-5.6-sol`로 고정한다. effort는 기본 `high`이며, 명시적 `claudex --effort <low|medium|high|xhigh|max|ultra>` 인자만 세션 값을 바꾼다. `ultra`는 pinned CLI가 argv에서 warn-then-ignore하므로 env 값으로만 전달한다.
-  - `--dangerously-skip-permissions`로 실행해 세션이 항상 bypassPermissions로 시작한다 (pinned CLI는 시작 플래그 없이 세션 중 bypass 전환이 불가능).
+  - `--dangerously-skip-permissions`로 실행해 세션이 항상 bypassPermissions로 시작한다 (pinned CLI는 시작 플래그 없이 세션 중 bypass 전환이 불가능). 이 계약이 조용히 뒤집히지 않도록 사용자 인자의 `--permission-mode`도 wrapper-owned 옵션으로 거부한다.
 - `modules/shared/programs/claudex/files/claudex-status.sh`
   - launchd service, auth, proxy, catalog 상태를 네 줄로 출력한다.
   - Stage 1 성공 조건은 auth/proxy/catalog ready이며, launchd service는 정보성 상태다.

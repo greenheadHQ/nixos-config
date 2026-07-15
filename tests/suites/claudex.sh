@@ -549,7 +549,7 @@ EOF
   assert_file_contains "$sandbox/claude.log" "arg=--"
   assert_file_contains "$sandbox/claude.log" "arg=literal-prompt"
 
-  for flag in --model --fallback-model --settings --setting-sources; do
+  for flag in --model --fallback-model --settings --setting-sources --permission-mode; do
     rm -f "$sandbox/claude.log"
     if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" "$flag" hostile \
       >/dev/null 2>&1; then

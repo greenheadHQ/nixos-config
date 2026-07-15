@@ -33,7 +33,7 @@ for arg in "$@"; do
     continue
   fi
   case "$arg" in
-    --model | --model=* | --fallback-model | --fallback-model=* | --settings | --settings=* | --setting-sources | --setting-sources=*)
+    --model | --model=* | --fallback-model | --fallback-model=* | --settings | --settings=* | --setting-sources | --setting-sources=* | --permission-mode | --permission-mode=*)
       _claudex_error "option is managed by the claudex host wrapper: $arg"
       exit 2
       ;;
