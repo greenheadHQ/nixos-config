@@ -9,6 +9,7 @@ source "@runtimeLibrary@"
 CLAUDEX_CONFIG_TEMPLATE="@configTemplate@"
 CLAUDEX_WRAPPER_SETTINGS="@wrapperSettings@"
 CLAUDEX_WRAPPER_SETTINGS_FAST="@wrapperSettingsFast@"
+CLAUDEX_MAX_CONTEXT_TOKENS="@maxContextTokens@"
 
 # Effort stays wrapper-owned: the inherited CLAUDE_CODE_EFFORT_LEVEL is scrubbed below and
 # only an explicit, whitelist-validated `claudex --effort <level>` argument may change the
@@ -149,6 +150,7 @@ unset \
   CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH \
   CLAUDE_CODE_EFFORT_LEVEL \
   CLAUDE_CODE_EXTRA_BODY \
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS \
   CLAUDE_CODE_USE_ANTHROPIC_AWS \
   CLAUDE_CODE_USE_BEDROCK \
   CLAUDE_CODE_USE_FOUNDRY \
@@ -171,6 +173,15 @@ export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0
 export CLAUDE_CODE_SUBAGENT_MODEL="$CLAUDEX_MODEL"
 export CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1
 export CLAUDE_CODE_EFFORT_LEVEL="$effort_level"
+# CIR: the pinned CLI assumes a 200k context window for unrecognized model names, and the
+# pinned proxy hard-codes usage 0/0 into SSE message_start (upstream declined to fix), which
+# forces the CLI's context tracking onto an overestimating character-based fallback — the
+# statusline then saturates at "100% context used" early. This official non-claude-model
+# override corrects the denominator to the limit the Codex app currently reports (a
+# temporary upstream reduction from 372k; re-tune when OpenAI raises it back — see the
+# value's CIR in default.nix). The numerator stays a local estimate, so the displayed
+# percentage is an approximation (handoff limits section).
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$CLAUDEX_MAX_CONTEXT_TOKENS"
 export CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3
 export ENABLE_TOOL_SEARCH=false
 export NO_PROXY="$CLAUDEX_NO_PROXY"
