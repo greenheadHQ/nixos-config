@@ -146,6 +146,13 @@ git status --short --branch
 10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 환경값 `high`를 따른다.
 11. inherited Claude host-auth bridge와 settings `env.CLAUDE_CODE_EXTRA_BODY`는 wrapper-owned loopback/model/request 계약을 우회하지 못해야 한다.
 
+### 알려진 한계·리스크와 롤백
+
+- **벤더 정책 의존 (전략 리스크)**: 이 브릿지는 Claude Code에 non-Anthropic 모델을 loopback proxy로 연결한다. Codex OAuth entitlement 쪽은 upstream 튜토리얼에서 공개적으로 안내된 경로지만, Anthropic 또는 OpenAI가 언제든 이 조합을 차단할 수 있다. 즉 이 경계의 수명은 두 벤더의 정책에 종속되며, 기술적 완성도와 무관하게 외부 요인으로 무력화될 수 있다.
+  - **롤백 경로**: 차단이 관측되면 `default.nix`의 `targetHosts` allowlist에서 해당 호스트를 빼고 `nrs`를 실행한다. 그러면 네 실행 surface와 CLIProxyAPI closure가 즉시 사라지고 descriptor와 runtime library metadata만 남는다(`lib.optionalAttrs enabled` 경계). credential/state는 repo 밖 `$HOME/Library/Application Support/claudex`에만 있으므로 그 디렉터리를 지우면 로컬 흔적도 제거된다. 일반 `claude` 설정과 인증은 애초에 건드리지 않으므로 별도 복구가 필요 없다.
+- **subagent effort 세밀 제어 불가 (기능 한계)**: wrapper는 `CLAUDE_CODE_SUBAGENT_MODEL`로 subagent 모델만 고정 모델에 맞추고 effort는 세션 전체를 `high`로 고정한다. subagent effort만 별도로 낮추는 수단은 없다(pinned Claude Code CLI 자체의 제약). 대량 fan-out 워크플로우에서는 subagent가 모두 `high`로 돌아 토큰 소모가 커질 수 있다. `ultra`가 아니라 `high`로 고정해 폭증은 완화했지만, 세밀 제어가 필요하면 CLI가 subagent effort 하드셋을 지원할 때까지 기다려야 한다.
+- **`commercial-mode: true` 근거**: config template의 `commercial-mode`는 상용/라이선스 플래그가 아니라, upstream 정의상 "high-overhead request logging과 HTTP middleware 기능을 비활성화해 per-request 메모리를 줄이는" 플래그다(upstream 기본값은 `false`). 이 PoC는 credential·request 본문이 로그에 남지 않도록 request logging을 억제할 목적으로 의도적으로 `true`로 뒤집었으며, `logging-to-file`·`usage-statistics-enabled`를 모두 끄는 config-template의 보안 기본값과 같은 맥락이다.
+
 ## 5. 이미 완료된 검증
 
 2026-07-14 Gate B 구현 커밋 기준으로 다음 결과를 확인했다.

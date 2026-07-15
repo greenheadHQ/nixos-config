@@ -39,6 +39,13 @@ let
   pprofPort = port - 1;
 
   cliProxyApi = args.claudexCliProxyApi or (import ./package.nix { inherit pkgs; });
+  # config-template.json은 JSON이라 주석을 담을 수 없고, runtime.sh가 렌더된 config의 key 목록을
+  # 화이트리스트로 정확히 검증하므로 설명용 `_comment` key도 넣을 수 없다. 따라서 보안 관련 값의
+  # 근거는 여기에 남긴다.
+  #   commercial-mode = true: upstream 기본값은 false이며, 이 플래그는 상용/라이선스 스위치가 아니라
+  #   "high-overhead request logging과 HTTP middleware를 비활성화해 per-request 메모리를 줄이는" 옵션이다.
+  #   credential·request 본문이 로그에 남지 않도록 request logging을 억제할 목적으로 의도적으로 true로
+  #   두었으며, logging-to-file·usage-statistics-enabled를 끄는 config-template의 보안 기본값과 같은 맥락이다.
   configTemplateBase = builtins.fromJSON (builtins.readFile ./files/config-template.json);
   configTemplate = pkgs.writeText "claudex-config-template.json" (
     builtins.toJSON (
