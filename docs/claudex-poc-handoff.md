@@ -113,6 +113,7 @@ git status --short --branch
 - `modules/shared/programs/claudex/files/config-template.json`
   - runtime-owned host/port/pprof slot은 비워 두고, remote management·plugin·파일 로그·통계 비활성화를 선언한다.
   - `default.nix`의 단일 runtime contract가 최종 `127.0.0.1:8317`, 모델, label, pprof 주소를 runtime과 config에 함께 주입한다.
+  - 세션 불안정(520→429 cooldown 연쇄) 완화용 resilience knob 4종을 선언한다: `max-retry-interval: 30`(cooldown 흡수 활성화 — code default 0이면 완전 비활성), `passthrough-headers: true`(Retry-After 전달), `transient-error-cooldown-seconds: -1`(5xx 부수 벤치 제거), `streaming.{keepalive-seconds: 15, bootstrap-retries: 1}`(520 first-byte 재시도 + idle timeout 방지). 근거는 `default.nix`의 CIR 주석과 §4 참조. 이 값들도 runtime.sh의 config key 화이트리스트가 정확히 검증하므로 값 변경 시 두 곳을 함께 갱신한다.
 
 ### 검증 연결
 

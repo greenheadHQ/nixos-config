@@ -31,5 +31,12 @@
   "usage-statistics-enabled": false,
   "proxy-url": "",
   "max-retry-credentials": 1,
+  "max-retry-interval": 30,
+  "passthrough-headers": true,
+  "transient-error-cooldown-seconds": -1,
+  "streaming": {
+    "keepalive-seconds": 15,
+    "bootstrap-retries": 1
+  },
   "ws-auth": true
 }
