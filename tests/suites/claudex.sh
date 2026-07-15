@@ -486,6 +486,8 @@ test_claudex_wrapper_pins_provider_model_and_argv() {
   printf 'tool_search=%s\n' "\${ENABLE_TOOL_SEARCH-unset}"
   printf 'extra_body=%s\n' "\${CLAUDE_CODE_EXTRA_BODY-unset}"
   printf 'max_context=%s\n' "\${CLAUDE_CODE_MAX_CONTEXT_TOKENS-unset}"
+  printf 'compact_pct_override=%s\n' "\${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE-unset}"
+  printf 'blocking_limit_override=%s\n' "\${CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE-unset}"
   printf 'auto_compact_window=%s\n' "\${CLAUDE_CODE_AUTO_COMPACT_WINDOW-unset}"
   printf 'effort_level=%s\n' "\${CLAUDE_CODE_EFFORT_LEVEL-unset}"
   printf 'host_creds=%s\n' "\${CLAUDE_CODE_HOST_CREDS_FILE-unset}"
@@ -521,6 +523,8 @@ EOF
     CLAUDE_CODE_EXTRA_BODY='{"model":"hostile-model","max_tokens":7}' \
     CLAUDE_CODE_MAX_CONTEXT_TOKENS=1 \
     CLAUDE_CODE_AUTO_COMPACT_WINDOW=1 \
+    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=1 \
+    CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE=1 \
     CLAUDE_CODE_HOST_CREDS_FILE="$sandbox/host-creds.json" \
     CLAUDE_CODE_HOST_AUTH_ENV_VAR=HOSTILE_AUTH \
     CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH=1 \
@@ -545,6 +549,8 @@ EOF
   assert_file_contains "$sandbox/claude.log" "tool_search=false"
   assert_file_contains "$sandbox/claude.log" "extra_body=unset"
   assert_file_contains "$sandbox/claude.log" "max_context=$_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS"
+  assert_file_contains "$sandbox/claude.log" "compact_pct_override=unset"
+  assert_file_contains "$sandbox/claude.log" "blocking_limit_override=unset"
   assert_file_contains "$sandbox/claude.log" "auto_compact_window=$_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS"
   assert_file_contains "$sandbox/claude.log" "effort_level=high"
   assert_file_contains "$sandbox/claude.log" "host_creds=unset"
