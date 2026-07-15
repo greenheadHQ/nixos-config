@@ -514,7 +514,7 @@ EOF
   assert_file_contains "$sandbox/claude.log" "provider_bedrock=unset"
   assert_file_contains "$sandbox/claude.log" "http_proxy=unset"
   assert_file_contains "$sandbox/claude.log" "managed=1"
-  assert_file_contains "$sandbox/claude.log" "scrub=1"
+  assert_file_contains "$sandbox/claude.log" "scrub=0"
   assert_file_contains "$sandbox/claude.log" "subagent=gpt-5.6-sol"
   assert_file_contains "$sandbox/claude.log" "effort_enabled=1"
   assert_file_contains "$sandbox/claude.log" "concurrency=3"
@@ -545,10 +545,11 @@ EOF
     || fail "claudex did not mask settings fallbackModel with an empty CLI fallback list"
   assert_file_contains "$sandbox/claude.log" "arg=--effort"
   assert_file_contains "$sandbox/claude.log" "arg=high"
+  assert_file_contains "$sandbox/claude.log" "arg=--dangerously-skip-permissions"
   assert_file_contains "$sandbox/claude.log" "arg=--"
   assert_file_contains "$sandbox/claude.log" "arg=literal-prompt"
 
-  for flag in --model --fallback-model --effort --settings --setting-sources; do
+  for flag in --model --fallback-model --settings --setting-sources --permission-mode; do
     rm -f "$sandbox/claude.log"
     if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" "$flag" hostile \
       >/dev/null 2>&1; then
@@ -560,6 +561,66 @@ EOF
       fail "claudex accepted managed attached option: $flag"
     fi
   done
+
+  # --effort is user-adjustable within the validated whitelist; the wrapper consumes the
+  # argument and re-owns both the environment value and the single CLI occurrence.
+  rm -f "$sandbox/claude.log"
+  set +e
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDE_CODE_EFFORT_LEVEL=low \
+    "$wrapper" --effort xhigh -- literal-prompt
+  rc=$?
+  set -e
+  [[ "$rc" == "23" ]] || fail "claudex --effort xhigh did not reach Claude"
+  assert_file_contains "$sandbox/claude.log" "effort_level=xhigh"
+  assert_file_contains "$sandbox/claude.log" "arg=xhigh"
+
+  rm -f "$sandbox/claude.log"
+  set +e
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    "$wrapper" --effort=medium -- literal-prompt
+  rc=$?
+  set -e
+  [[ "$rc" == "23" ]] || fail "claudex --effort=medium did not reach Claude"
+  assert_file_contains "$sandbox/claude.log" "effort_level=medium"
+
+  # ultra is argv-invalid on the pinned CLI (warn-then-ignore), so the wrapper must ship it
+  # via the environment value only and omit the --effort argv pair entirely.
+  rm -f "$sandbox/claude.log"
+  set +e
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    "$wrapper" --effort ultra -- literal-prompt
+  rc=$?
+  set -e
+  [[ "$rc" == "23" ]] || fail "claudex --effort ultra did not reach Claude"
+  assert_file_contains "$sandbox/claude.log" "effort_level=ultra"
+  if grep -q '^arg=--effort$' "$sandbox/claude.log"; then
+    fail "claudex passed argv --effort for ultra despite the pinned CLI rejecting it"
+  fi
+
+  for bad_effort in "--effort" "--effort=hostile"; do
+    rm -f "$sandbox/claude.log"
+    if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" $bad_effort \
+      >/dev/null 2>&1; then
+      fail "claudex accepted invalid effort usage: $bad_effort"
+    fi
+    [[ ! -e "$sandbox/claude.log" ]] || fail "invalid effort still invoked Claude"
+  done
+  rm -f "$sandbox/claude.log"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" --effort hostile \
+    >/dev/null 2>&1; then
+    fail "claudex accepted an invalid split effort level"
+  fi
+  [[ ! -e "$sandbox/claude.log" ]] || fail "invalid split effort still invoked Claude"
 }
 
 test_claudex_launcher_and_login_use_fake_boundaries() {
