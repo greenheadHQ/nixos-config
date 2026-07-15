@@ -221,7 +221,7 @@ git status --short --branch
 - targeted Claudex shell tests 10개(config 화이트리스트 검증 포함): 통과; full shell suite `217 pass / 0 fail`; Darwin eval(IFD·no-IFD): 통과; `nix flake check --no-build --all-systems`: 통과
 - 배포 전 config 실측: 기존 `config.yaml`에 `max-retry-interval`/`passthrough-headers`/`transient-error-cooldown-seconds`/`streaming`이 전부 `null`(부재=upstream 기본 비활성) — 진단 정합
 - `nrs` 후 재렌더 config에 4 knob 정확 반영: `max-retry-interval:30, passthrough-headers:true, transient-error-cooldown-seconds:-1, streaming:{keepalive-seconds:15, bootstrap-retries:1}`
-- **proxy 스키마 검증**: 새 config로 foreground proxy가 정상 파싱·기동(`auth/proxy/catalog=ready`) — 잘못된 키/구조였다면 proxy가 config 파싱 실패로 뜨지 않으므로, 기동 성공이 스키마 정합의 실측 증거다
+- **proxy 파싱 검증**: 새 config로 foreground proxy가 정상 기동(`auth/proxy/catalog=ready`) — 값 타입·중첩 구조가 치명적 파싱 오류를 내지 않았다는 증거다(예: `streaming`을 nested object로 두지 않았다면 unmarshal 실패). 단 CLIProxyAPI v7.2.73의 config 로더는 `yaml.Unmarshal`을 `KnownFields` 없이 사용해 unknown top-level key를 조용히 무시하므로, **key 이름 정합은 기동 성공이 아니라 v7.2.73 `config.example.yaml` 소스 대조로 확인**했다
 - completion 회귀 없음: `claudex -p` stdout 정확히 `RESILIENCE_OK`
 - 429 cooldown 흡수 효과 자체는 실제 upstream rate-limit 상황에서만 관측 가능하므로 여기서는 강제하지 않았다(실사용 관측 대상)
 
