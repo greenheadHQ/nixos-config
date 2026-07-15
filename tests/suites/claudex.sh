@@ -97,7 +97,7 @@ _claudex_write_wrapper_settings() {
 }
 
 _claudex_file_inode() {
-  stat -c '%i' "$1" 2>/dev/null || stat -f '%i' "$1" 2>/dev/null
+  stat -c '%i' "$1" 2>/dev/null || /usr/bin/stat -f '%i' "$1" 2>/dev/null
 }
 
 _claudex_fixture() {
