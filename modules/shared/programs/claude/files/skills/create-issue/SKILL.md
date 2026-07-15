@@ -138,7 +138,7 @@ Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트
 - Proposed Changes: 체크박스(`- [ ]`) 형태의 구체적 변경 계획
 
 선택 섹션 (판단 기준에 따라 포함):
-- PoC / Reproduction: 재현이 중요한 주장(버그 리포트 등)에 6필드 포함 — `환경 / 입력 / 절차 / 기대 결과 / 실제 결과 / 성공 기준` (체크리스트 C1)
+- PoC / Reproduction: 재현이 중요한 주장(버그 리포트 등)에 6필드 포함 — `환경 / 입력 / 절차 / 기대 결과 / 실제 결과 / 성공 기준` (체크리스트 C1). 명시적 시각 증빙 후보가 있으면 [`../create-pr/references/attaching-evidence.md`](../create-pr/references/attaching-evidence.md)에 따라 `시각적 실제 결과` 슬롯을 준비한다. Step 2에서는 후보 식별과 슬롯 준비만 수행하고, 실제 업로드는 Step 5-A의 제목·라벨 확인 통과 직후 게시 전에 수행한다.
 - Related Commits: 수신한 인자 또는 대화 컨텍스트에 커밋 해시가 언급되었거나, Step 1(c)에서 직접 관련 커밋을 발견한 경우
 - Affected Files: 변경 대상 파일이 여러 개인 경우 (테이블 형식)
 - Notes: 추가 참고사항(제약사항, 관련 이슈 번호, YAGNI 판단 근거 등)이 있는 경우
