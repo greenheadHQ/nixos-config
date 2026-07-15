@@ -479,6 +479,8 @@ Gate B 성공 후 아직 직접 확인해야 하는 항목:
 - startup에서 관찰된 antigravity version metadata 조회를 포함한 upstream background network 동작 범위
 - listener PID/executable provenance를 자동화할 방법
 
+이 중 refresh persistence와 upstream background network(egress) 규명은 [#1108](https://github.com/greenheadHQ/nixos-config/issues/1108)로, PR 리뷰에서 분리한 경미 runtime 개선(stat 특수비트 비교, layout drift 메시지)은 [#1109](https://github.com/greenheadHQ/nixos-config/issues/1109)로 추적한다.
+
 Baseline E2E가 성공해도 곧바로 Stage 2를 구현하지 않는다. 사용자 승인 후 다음을 별도 설계한다.
 
 1. launchd agent와 pinned `ProgramArguments`
