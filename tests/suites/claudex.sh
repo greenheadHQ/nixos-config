@@ -1,6 +1,12 @@
 # tests/suites/claudex.sh — Stage 1 fake-only coverage for the declarative claudex PoC
 # shellcheck shell=bash
 
+# Single expected value for the wrapper-owned context-window override. The production
+# source of truth is `maxContextTokens` in modules/shared/programs/claudex/default.nix;
+# that value is temporary (issue #1113), so the fixture substitution, fake-claude assert,
+# and Nix-generated grep below all read this one constant to keep future re-tunes atomic.
+_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS=258000
+
 _claudex_assert_no_placeholders() {
   local path="$1"
   if grep -Eq '@[A-Za-z_][A-Za-z0-9_-]*@' "$path"; then
@@ -89,7 +95,7 @@ _claudex_materialize_command() {
     -e "s|@configTemplate@|$template|g" \
     -e "s|@wrapperSettings@|$wrapper_settings|g" \
     -e "s|@wrapperSettingsFast@|$wrapper_settings_fast|g" \
-    -e "s|@maxContextTokens@|258000|g" \
+    -e "s|@maxContextTokens@|$_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS|g" \
     "$source" > "$destination"
   _claudex_assert_no_placeholders "$destination"
 }
@@ -536,7 +542,7 @@ EOF
   assert_file_contains "$sandbox/claude.log" "concurrency=3"
   assert_file_contains "$sandbox/claude.log" "tool_search=false"
   assert_file_contains "$sandbox/claude.log" "extra_body=unset"
-  assert_file_contains "$sandbox/claude.log" "max_context=258000"
+  assert_file_contains "$sandbox/claude.log" "max_context=$_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS"
   assert_file_contains "$sandbox/claude.log" "effort_level=high"
   assert_file_contains "$sandbox/claude.log" "host_creds=unset"
   assert_file_contains "$sandbox/claude.log" "host_auth_env=unset"
@@ -965,8 +971,8 @@ test_claudex_nix_generated_command_outputs_are_pinned() {
   jq -e '(.env.CLAUDE_CODE_EXTRA_BODY | fromjson) == {service_tier: "priority"}
     and (.env | keys == ["CLAUDE_CODE_EXTRA_BODY"])' \
     "$fast_settings_path" >/dev/null || fail "Nix-generated fast wrapper settings drifted"
-  grep -Fq 'CLAUDEX_MAX_CONTEXT_TOKENS="258000"' "$runtime_out/bin/claudex" \
-    || fail "Nix-generated claudex does not pin the 258k context-window override"
+  grep -Fq "CLAUDEX_MAX_CONTEXT_TOKENS=\"$_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS\"" "$runtime_out/bin/claudex" \
+    || fail "Nix-generated claudex does not pin the expected context-window override"
   grep -Fq -- '--local-model' "$runtime_out/libexec/claudex/claudex-proxy-launcher" \
     || fail "Nix-generated proxy launcher does not pass --local-model"
   grep -Fq -- '--codex-device-login' "$runtime_out/bin/claudex-login" \
