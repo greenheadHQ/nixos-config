@@ -174,6 +174,14 @@ in
   # GitHub CLI
   programs.gh = {
     enable = true;
+    # 쿠키 전제(브라우저 + Keychain)가 macOS 데스크톱 전용이라 NixOS(MiniPC)는 제외한다.
+    # gh-difftool 동반 선언: Home Manager linkFarm이 extensions 디렉터리 전체를 소유한다.
+    # 첫 activation 시 기존 명령형 설치 디렉터리는 CLAUDE.md의 macOS 충돌 정책대로
+    # timestamped backup으로 이동된다 — 두 확장 모두 아래 선언에 있으므로 기능 손실 없음.
+    extensions = lib.optionals pkgs.stdenv.isDarwin [
+      (import ./gh-attach-package.nix { inherit pkgs; })
+      (import ./gh-difftool-package.nix { inherit pkgs; })
+    ];
     settings = {
       # GitHub 인증 프로토콜. Mac은 https(아래 darwin 전용 git insteadOf + gh PAT
       # credential helper로 통일), NixOS(MiniPC)는 opnix/ssh 경로라 기존 ssh 유지.

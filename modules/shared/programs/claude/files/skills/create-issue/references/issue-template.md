@@ -57,6 +57,10 @@
 # 성공 기준: ...
 ```
 
+### 시각적 실제 결과 (선택)
+
+[명시적 이미지 후보가 있으면 `../../create-pr/references/attaching-evidence.md`의 시각 증빙 첨부 절차에 따라 이 위치에 삽입. 후보가 없으면 이 절을 생략. PoC / Reproduction 섹션을 생략한 이슈에서도 후보가 있으면 이 슬롯만 단독 포함한다.]
+
 ## Related Commits (선택)
 
 - `<머지된 SHA>` — 커밋 메시지 한줄 요약

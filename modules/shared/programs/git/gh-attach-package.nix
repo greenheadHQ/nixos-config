@@ -1,0 +1,33 @@
+# gh-attach — GitHub user-attachments 업로드 gh 확장 (fork 공급 원점, #1118)
+# self-fix 시: fork에 커밋 → rev + src hash 갱신 (Go 의존성 변경 시 vendorHash도) → nrs
+{ pkgs }:
+pkgs.buildGoModule {
+  pname = "gh-attach";
+  version = "0.3.0";
+
+  src = pkgs.fetchFromGitHub {
+    owner = "greenheadHQ";
+    repo = "gh-attach";
+    rev = "b138347ff60da0907ae0942d2c501a54f308e736"; # v0.3.0
+    hash = "sha256-hdgdIlAcumXtiNc3dMK/gk30M2JTbhkccj6x6rMG7y8=";
+  };
+
+  vendorHash = "sha256-Kdqt/hM0mYo9CER5AmBrV5RhnT9x/2Oj+vQH0wrVw74=";
+
+  # 실행 패키지는 cmd/gh-attach 하나 — 빌드 범위를 명시적으로 좁힌다
+  subPackages = [ "cmd/gh-attach" ];
+
+  ldflags = [
+    "-s"
+    "-w"
+  ];
+
+  meta = {
+    description = "GitHub user attachment upload CLI for gh";
+    homepage = "https://github.com/greenheadHQ/gh-attach";
+    license = pkgs.lib.licenses.mit;
+    # 쿠키 전제(브라우저 + Keychain)가 macOS 전용 — default.nix의 isDarwin 가드와 scope 일치
+    platforms = pkgs.lib.platforms.darwin;
+    mainProgram = "gh-attach";
+  };
+}
