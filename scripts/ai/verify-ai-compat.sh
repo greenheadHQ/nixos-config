@@ -44,6 +44,7 @@ EXPECTED_EXPOSED=(
   playwright-cli
   review-pr-feedback
   run-da
+  using-gh-attach
   write-handoff
 )
 SHARED_EXPOSURE_EXCLUDE=(

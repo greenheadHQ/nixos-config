@@ -143,7 +143,7 @@ Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트
 - Affected Files: 변경 대상 파일이 여러 개인 경우 (테이블 형식)
 - Notes: 추가 참고사항(제약사항, 관련 이슈 번호, YAGNI 판단 근거 등)이 있는 경우
 
-공통 규칙 (섹션 선택과 독립): 명시적 시각 증빙 후보가 있으면 PoC 섹션 포함 여부와 무관하게 [`../create-pr/references/attaching-evidence.md`](../create-pr/references/attaching-evidence.md)에 따라 `시각적 실제 결과` 슬롯을 준비한다. Step 2에서는 후보 식별과 슬롯 준비만 수행하고, 실제 업로드는 Step 5-A의 제목·라벨 확인 통과 직후 게시 전에 수행한다.
+공통 규칙 (섹션 선택과 독립): 명시적 시각 증빙 후보가 있으면 PoC 섹션 포함 여부와 무관하게 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬에 따라 `시각적 실제 결과` 슬롯을 준비한다. Step 2에서는 후보 식별과 슬롯 준비만 수행하고, 실제 업로드는 Step 5-A의 제목·라벨 확인 통과 직후 게시 전에 수행한다.
 
 ### Step 3 — Anti-hallucination 자체 검증
 
@@ -184,7 +184,7 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
 실패 시 진행 차단 정책은 위 진행 상태 매트릭스 참조.
 
 1. 등록 전 제목, 라벨 조합을 사용자에게 보여주고 확인을 받는다.
-2. 확인 통과 직후, Step 2에서 식별한 명시적 시각 증빙 후보가 있으면 [`../create-pr/references/attaching-evidence.md`](../create-pr/references/attaching-evidence.md)의 절차를 여기서 실행한다 — 각 후보의 처리 결과를 반영한 본문 사본을 아래 3단계의 `$ISSUE_BODY`로 사용한다. 성공한 후보의 첨부는 유지하고 실패·skip 후보만 제외한다 (부분 성공 시 성공한 `href`를 버리면 orphan asset이 된다). 업로드·삽입에 성공한 후보가 없을 때만 원래 본문을 사용하고, 정본이 정의한 `ATTACH_STATUS`를 최종 응답에 포함한다. 후보가 없으면 이 단계를 건너뛴다.
+2. 확인 통과 직후, Step 2에서 식별한 명시적 시각 증빙 후보가 있으면 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬의 절차를 여기서 실행한다 — 각 후보의 처리 결과를 반영한 본문 사본을 아래 3단계의 `$ISSUE_BODY`로 사용한다. 성공한 후보의 첨부는 유지하고 실패·skip 후보만 제외한다 (부분 성공 시 성공한 `href`를 버리면 orphan asset이 된다). 업로드·삽입에 성공한 후보가 없을 때만 원래 본문을 사용하고, 정본이 정의한 `ATTACH_STATUS`를 최종 응답에 포함한다. 후보가 없으면 이 단계를 건너뛴다.
 3. `gh issue create`를 `--body-file`로 실행한다. 본문은 임시 파일에 저장 후 전달.
    ```bash
    # BSD/macOS mktemp는 템플릿 끝(trailing)에 XXXXXX가 와야 랜덤 치환함.
