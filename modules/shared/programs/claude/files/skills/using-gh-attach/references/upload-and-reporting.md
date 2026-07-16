@@ -57,7 +57,7 @@ exit code, JSON object shape, 필드 타입, `href` prefix를 모두 검증한�
 | 업로드, `href` 검증, 본문 삽입 성공 | `UPLOADED` | 진행 | 성공 로그 |
 | 확장 부재 | `SKIPPED(NO_EXTENSION)` | 진행 | 설치 상태 확인 안내 |
 | 민감정보 발견 | `SKIPPED(SENSITIVE_CONTENT)` | 진행 | 민감 값은 노출하지 않고 사유만 명시 |
-| 검사 수단 부재 + 사용자 확인 불가 맥락 | `SKIPPED(NO_INSPECTION)` | 진행 | 검사·확인 불가 사실 |
+| 검사 수단 부재이고 사용자 확인도 받을 수 없는 맥락 (headless 등 — 확인 가능 맥락이면 이 상태 대신 사용자 확인 게이트로 감) | `SKIPPED(NO_INSPECTION)` | 진행 | 검사·확인 불가 사실 |
 | 검사 불가 파일의 확인 요청을 사용자가 거부·보류 | `SKIPPED(USER_DECLINED)` | 진행 | 거부 사실 (민감 값 추정 금지) |
 | 원격 미생성이 확실한 실패 (서버의 포맷·크기 거부 포함) | `FAILED(PREUPLOAD)` | 진행 | 사유와 안전한 수동 재시도 안내 |
 | timeout 또는 응답 유실 | `FAILED(UNKNOWN_REMOTE_STATE)` | 진행 | 자동 재업로드 금지, 수동 판단 안내 |
