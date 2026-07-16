@@ -20,11 +20,12 @@ file --brief --mime-type "$FILE"
 
 ```bash
 python3 -c '
-import struct, sys
-# fail-closed PNG 판정: exit 0=완결된 static PNG, 1=APNG, 2=파싱 오류(시그니처 불일치·truncation·trailing data 포함)
+import os, struct, sys
+# fail-closed PNG 판정: exit 0=완결된 static PNG, 1=APNG, 2=파싱 오류(시그니처 불일치·truncation·위조 length·trailing data 포함)
 # assert를 쓰지 않는다 — python3 -O에서 제거되어 검사가 사라진다.
 try:
     with open(sys.argv[1], "rb") as f:
+        file_size = os.fstat(f.fileno()).st_size
         if f.read(8) != b"\x89PNG\r\n\x1a\n":
             sys.exit(2)
         while True:
@@ -32,6 +33,8 @@ try:
             if len(head) < 8:
                 sys.exit(2)  # IEND 전에 끝남 — 잘린 파일
             length, ctype = struct.unpack(">I4s", head)
+            if length + 4 > file_size - f.tell():
+                sys.exit(2)  # 선언 length가 남은 바이트 초과 — 위조 length의 거대 할당(OOM)을 read 전에 차단
             if ctype == b"acTL":
                 sys.exit(1)  # APNG
             if ctype == b"IEND":
