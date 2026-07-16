@@ -40,6 +40,7 @@ stdenvNoCC.mkDerivation {
   meta = {
     description = "gh extension to diff pull requests with a local difftool";
     homepage = "https://github.com/speedyleion/gh-difftool";
+    license = lib.licenses.boost;
     sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
     platforms = builtins.attrNames platforms;
     mainProgram = "gh-difftool";
