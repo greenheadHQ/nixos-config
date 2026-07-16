@@ -9,7 +9,7 @@ description: >-
   Discussions unsupported. NOT for issue/PR creation or body authoring (use create-issue/create-pr).
 ---
 
-# gh-attach 시각 증빙 첨부
+# gh-attach 파일 증빙 첨부
 
 명시적으로 제공된 파일 증빙을 gh-attach CLI로 GitHub user-attachments에 업로드하고 이슈/PR에 삽입하는 절차다. 업로드된 asset에는 삭제 UI가 없으므로 업로드는 비가역 작업으로 취급한다.
 
@@ -22,7 +22,7 @@ description: >-
 | create-issue·create-pr 등 GitHub 게시 스킬이 본문 작성 흐름 안에서 증빙 후보를 소비 | 소비자 호출 |
 | 기존 이슈/PR에 파일 첨부만 단독으로 요청받음 | 단독 호출 |
 
-포맷·크기 지원 여부는 스킬이 선제 판정하지 않고 GitHub 서버에 위임한다 — 서버가 거부하면 fail-open 상태(`FAILED(PREUPLOAD)`)로 보고한다. 지원 범위 밖 요청은 업로드 없이 미지원 사유만 안내한다.
+포맷·크기 지원 여부는 스킬이 선제 판정하지 않고 GitHub 서버에 위임한다 — 서버가 거부하면 fail-open 상태(`FAILED(PREUPLOAD)`)로 보고한다. 다음처럼 이 스킬의 surface·역할 밖인 요청은 업로드 없이 미지원 사유만 안내한다.
 
 - Discussions는 미지원이다 — gh CLI의 discussion 본문 편집 경로가 확립되지 않았다.
 - 이슈/PR 생성과 본문 작성은 이 스킬의 범위가 아니다 (create-issue/create-pr 담당).
@@ -54,5 +54,5 @@ description: >-
 3. 삽입 방식 선택: 본문(body) 수정과 comment 추가 중 하나를 정한다. 사용자가 지정하지 않았으면 기존 본문 훼손 위험이 없는 comment 추가를 권한다.
 4. 게시 의사 확정: 비가역 업로드 전에 대상, 삽입 방식, 게시 여부를 확정한다. 확정 전에는 업로드하지 않는다.
 5. 게이트·업로드: [references/preflight-gates.md](references/preflight-gates.md)의 게이트를 완료한 뒤 [references/upload-and-reporting.md](references/upload-and-reporting.md)의 절차로 업로드한다.
-6. 게시: body 수정이면 보존한 본문 사본에 파일 종류별 삽입 문법([references/upload-and-reporting.md](references/upload-and-reporting.md) 4절 — 이미지는 `![<설명>](<href>)`, 동영상은 단독 라인 bare URL, 그 외는 `[<파일명>](<href>)` 링크)으로 삽입해 `--body-file`로 게시하고, comment면 comment 본문으로 게시한다. `href` 확보 후 삽입·검증이 실패하면 게시하지 않고 `FAILED(LOCAL_INSERT)`와 확보한 `href`만 보고한다 — 기존 본문은 서버에 그대로 있으므로 보존해 둔 사본을 재게시하지 않는다. 게시 자체가 실패하면 확보한 `href`와 본문 파일을 보존해 동일 asset으로 재시도한다 — 새 asset을 업로드하지 않는다.
+6. 게시: body 수정이면 보존한 본문 사본에 파일 종류별 삽입 문법([references/upload-and-reporting.md](references/upload-and-reporting.md) 4절)으로 삽입해 `--body-file`로 게시하고, comment면 comment 본문으로 게시한다. `href` 확보 후 삽입·검증이 실패하면 게시하지 않고 `FAILED(LOCAL_INSERT)`와 확보한 `href`만 보고한다 — 기존 본문은 서버에 그대로 있으므로 보존해 둔 사본을 재게시하지 않는다. 게시 자체가 실패하면 확보한 `href`와 본문 파일을 보존해 동일 asset으로 재시도한다 — 새 asset을 업로드하지 않는다.
 7. 최종 응답에 후보별 상태와 `ATTACH_STATUS`를 포함한다.
