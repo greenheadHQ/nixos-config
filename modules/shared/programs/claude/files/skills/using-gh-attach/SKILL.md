@@ -54,5 +54,5 @@ description: >-
 3. 삽입 방식 선택: 본문(body) 수정과 comment 추가 중 하나를 정한다. 사용자가 지정하지 않았으면 기존 본문 훼손 위험이 없는 comment 추가를 권한다.
 4. 게시 의사 확정: 비가역 업로드 전에 대상, 삽입 방식, 게시 여부를 확정한다. 확정 전에는 업로드하지 않는다.
 5. 게이트·업로드: [references/preflight-gates.md](references/preflight-gates.md)의 게이트를 완료한 뒤 [references/upload-and-reporting.md](references/upload-and-reporting.md)의 절차로 업로드한다.
-6. 게시: body 수정이면 보존한 본문 사본에 파일 종류별 삽입 문법([references/upload-and-reporting.md](references/upload-and-reporting.md) 4절)으로 삽입해 `--body-file`로 게시하고, comment면 comment 본문으로 게시한다. `href` 확보 후 삽입·검증이 실패하면 게시하지 않고 `FAILED(LOCAL_INSERT)`와 확보한 `href`만 보고한다 — 기존 본문은 서버에 그대로 있으므로 보존해 둔 사본을 재게시하지 않는다. 게시 자체가 실패하면 확보한 `href`와 본문 파일을 보존해 동일 asset으로 재시도한다 — 새 asset을 업로드하지 않는다.
+6. 게시: body 수정이면 보존한 본문 사본에 파일 종류별 삽입 문법([references/upload-and-reporting.md](references/upload-and-reporting.md) 4절)으로 삽입해 `--body-file`로 게시하고, comment면 comment 본문으로 게시한다. `href` 확보 후 삽입·검증이 실패하면 게시하지 않고 `FAILED(LOCAL_INSERT)`와 확보한 `href`만 보고한다 — 기존 본문은 서버에 그대로 있으므로 보존해 둔 사본을 재게시하지 않는다. 게시 자체가 실패하면 확보한 `href`와 본문 파일을 보존하되, 실패 종류를 구분해 처리한다 — 명령이 명시적으로 거부된 경우에만 동일 asset·본문으로 재시도한다. 응답 유실 등 게시 성공 여부를 판정할 수 없으면 blind 재시도하지 않는다: 대상을 재조회해 게시 반영 여부(comment 존재, body 내용)를 확인하고 미반영일 때만 재시도한다 (comment 중복 생성 방지). body 수정 재시도 전에는 현재 본문을 재조회해 보존 시점 이후 제3자 수정이 없는지 확인한다. 어느 경우든 새 asset을 업로드하지 않는다.
 7. 최종 응답에 후보별 상태와 `ATTACH_STATUS`를 포함한다.

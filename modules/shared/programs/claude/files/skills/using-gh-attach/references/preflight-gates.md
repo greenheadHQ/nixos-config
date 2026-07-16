@@ -14,7 +14,7 @@
 file --brief --mime-type "$FILE"
 ```
 
-측정한 MIME은 차단 기준이 아니라 마스킹 게이트의 검사 방식 라우팅(직접 검사 수단 선택, 수단이 없으면 사용자 확인 경로)에 사용한다. 포맷 지원 여부 판정은 GitHub 서버에 위임하며, 서버가 거부한 포맷은 `FAILED(PREUPLOAD)`로 기록한다.
+측정한 MIME은 차단 기준이 아니라 마스킹 게이트의 검사 방식 라우팅(직접 검사 수단 선택, 수단이 없으면 사용자 확인 경로)에 사용한다. 명령이 실패하거나(비정상 exit) 출력이 비어 있으면 측정 오류다 — 3단계 계약대로 `FAILED(PREUPLOAD)`로 기록하고, 검사 불가 분류(사용자 확인·`SKIPPED(NO_INSPECTION)`)로 흘려보내지 않는다. 포맷 지원 여부 판정은 GitHub 서버에 위임하며, 서버가 거부한 포맷은 `FAILED(PREUPLOAD)`로 기록한다.
 
 6. magic MIME이 `image/png`인 파일은 chunk 구조를 파싱하여 `acTL` chunk 존재 여부를 확인한다. `acTL`이 있으면 APNG이므로 차단이 아니라 "첫 프레임만 렌더링되어 뒷 프레임을 검사할 수 없는 파일"로 분류해 마스킹 게이트의 사용자 확인 경로로 라우팅한다. 파일 전체에서 문자열만 검색하는 방식은 압축 데이터의 우연한 일치를 오판할 수 있으므로 사용하지 않는다. 기준 구현:
 
@@ -28,6 +28,7 @@ try:
         file_size = os.fstat(f.fileno()).st_size
         if f.read(8) != b"\x89PNG\r\n\x1a\n":
             sys.exit(2)
+        seen_actl = False  # acTL을 봐도 즉시 반환하지 않는다 — 구조 검증을 끝까지 마쳐야 분류가 유효하다
         while True:
             head = f.read(8)
             if len(head) < 8:
@@ -36,13 +37,13 @@ try:
             if length + 4 > file_size - f.tell():
                 sys.exit(2)  # 선언 length가 남은 바이트 초과 — 위조 length의 거대 할당(OOM)을 read 전에 차단
             if ctype == b"acTL":
-                sys.exit(1)  # APNG
+                seen_actl = True
             if ctype == b"IEND":
                 # IEND는 빈 chunk — 길이 0, 고정 CRC, 직후 EOF까지 확인해야 완결로 본다.
                 # IEND 뒤에 붙은 데이터는 마스킹 게이트가 보지 못하는 미검사 바이트이므로 거부한다.
                 if length != 0 or f.read(4) != b"\xaeB`\x82" or f.read(1) != b"":
                     sys.exit(2)
-                sys.exit(0)  # 완결된 static PNG
+                sys.exit(1 if seen_actl else 0)  # 완결 구조 확인 후에만 APNG(1)/static(0) 판정
             body = f.read(length + 4)  # data + CRC
             if len(body) < length + 4:
                 sys.exit(2)  # chunk 잘림
@@ -51,8 +52,8 @@ except OSError:
 ' "$FILE"
 ```
 
-exit code를 다음과 같이 처리한다 — `0`(정적 PNG): 직접 검사 경로, `1`(APNG): 검사 불가 분류 → 사용자 확인 경로, 그 외(시그니처 불일치·truncation·위조 length·IEND 훼손·trailing data·읽기 오류): 검사 경로 없이 즉시 `FAILED(PREUPLOAD)` 상태 (구조가 훼손된 파일은 분류 자체가 불가능하므로 fail-closed).
-7. 통과한 후보를 staging에 고정한다 — `umask 077` 아래 `mktemp -d`로 만든 staging 디렉터리에 복사하고, 복사본의 SHA-256·byte 크기·magic MIME·(PNG면) `acTL` 판정 결과를 원본 기록과 대조한다. 하나라도 다르면 그 후보를 `FAILED(PREUPLOAD)`로 기록한다. 이후 마스킹 게이트 열람과 업로드는 전부 staging 사본 경로만 사용하고 원본 경로를 다시 읽지 않는다 — 검사와 업로드 사이에 원본이 교체되어 미검사 바이트가 업로드되는 것(TOCTOU)을 staging 사본이 구조적으로 막는다.
+exit code를 다음과 같이 처리한다 — `0`(정적 PNG): 직접 검사 경로, `1`(구조가 완결된 APNG): 검사 불가 분류 → 사용자 확인 경로, 그 외(시그니처 불일치·truncation·위조 length·IEND 훼손·trailing data·읽기 오류): 검사 경로 없이 즉시 `FAILED(PREUPLOAD)` 상태 (구조가 훼손된 파일은 `acTL` 존재 여부와 무관하게 분류 자체가 불가능하므로 fail-closed — APNG 판정은 전체 구조 검증을 통과한 파일에만 내린다).
+7. 통과한 후보를 staging에 고정한다 — `umask 077` 아래 `mktemp -d`로 만든 staging 디렉터리에 복사하고, 복사본의 SHA-256·byte 크기·magic MIME·(PNG면) `acTL` 판정 결과를 원본 기록과 대조한다. 하나라도 다르면 그 후보를 `FAILED(PREUPLOAD)`로 기록한다. 이후 마스킹 게이트 열람과 업로드는 전부 staging 사본 경로만 사용하고 원본 경로를 다시 읽지 않는다 — 검사와 업로드 사이에 원본이 교체되어 미검사 바이트가 업로드되는 것(TOCTOU)을 staging 사본이 구조적으로 막는다. staging 사본의 수명: 후보의 최종 상태(`UPLOADED`/`SKIPPED(*)`/`FAILED(*)`)가 보고에 기록되면 그 후보의 staging 디렉터리를 삭제한다 — 사본에는 민감정보가 포함될 수 있다(`SKIPPED(SENSITIVE_CONTENT)` 사본 포함). 예외는 동일 asset 재사용이 예정된 동안뿐이다(게시 재시도 대기 등) — 그 재시도가 종결되면 즉시 삭제한다.
 
 ## 2. 마스킹 게이트
 
@@ -70,7 +71,7 @@ exit code를 다음과 같이 처리한다 — `0`(정적 PNG): 직접 검사 �
 검사 불가 분류의 근거와 경계:
 
 - GIF·WebP는 정적 파일이라도 검사 불가로 분류한다 — magic MIME은 애니메이션 여부를 알려주지 않고, 렌더링 열람은 첫 프레임만 보여주므로 "전체 내용 확인"을 보장할 수 없다 (APNG와 같은 뒷 프레임 위험, 판별 파서가 확립될 때까지 fail-closed).
-- 렌더링을 가진 마크업 포맷(SVG·HTML·마크다운 등)은 텍스트 소스여도 검사 불가로 분류한다 — embedded base64 이미지·외부 리소스처럼 소스 읽기가 렌더링 결과를 대변하지 못하는 내용을 담을 수 있다 (소스만 읽으면 base64 blob은 불투명 텍스트로 보이지만 GitHub 렌더러는 픽셀로 그린다). 판별은 두 단계다: `image/svg+xml`·`text/html`은 magic MIME으로 잡는다. 마크다운·AsciiDoc처럼 magic MIME이 `text/plain`으로 잡히는 렌더링 가능 텍스트는 MIME으로 구별할 수 없으므로, 플레인 텍스트 후보의 내용 검사 중 렌더링 마크업 마커를 발견하면 그 후보를 검사 불가로 강등해 사용자 확인 경로로 보낸다. 마커는 실제 렌더링 위험이 있는 완전한 형태만 해당한다 — 이미지 base64 임베드(`data:image/...;base64,`), 완결된 이미지 임베드 문법(`![...](...)` 전체), 여는 렌더링 태그(`<img`·`<svg`). 로그·코드에 우연히 찍힌 bare `data:` 문자열이나 고립된 `![` 조각은 마커가 아니다 — 검사 가능한 파일을 우연 일치로 사용자 확인에 전가하지 않는다. 확장자로 판정하지 않는 원칙은 여기서도 유지된다 — 판별 신호는 내용 마커다.
+- 렌더링을 가진 마크업 포맷(SVG·HTML·마크다운 등)은 텍스트 소스여도 검사 불가로 분류한다 — embedded base64 이미지·외부 리소스처럼 소스 읽기가 렌더링 결과를 대변하지 못하는 내용을 담을 수 있다 (소스만 읽으면 base64 blob은 불투명 텍스트로 보이지만 GitHub 렌더러는 픽셀로 그린다). 판별은 두 단계다: `image/svg+xml`·`text/html`은 magic MIME으로 잡는다. 마크다운·AsciiDoc처럼 magic MIME이 `text/plain`으로 잡히는 렌더링 가능 텍스트는 MIME으로 구별할 수 없으므로, 플레인 텍스트 후보의 내용 검사 중 렌더링 마크업 마커를 발견하면 그 후보를 검사 불가로 강등해 사용자 확인 경로로 보낸다. 마커는 실제 렌더링 위험이 있는 완전한 형태만 해당한다 — 이미지 base64 임베드(`data:image/...;base64,`), 완결된 이미지 임베드 문법(인라인 `![...](...)`과 참조형 `![...][...]` 전체), AsciiDoc 이미지 매크로(`image::`), 여는 렌더링 태그(`<img`·`<svg`). 로그·코드에 우연히 찍힌 bare `data:` 문자열이나 고립된 `![` 조각은 마커가 아니다 — 검사 가능한 파일을 우연 일치로 사용자 확인에 전가하지 않는다. 확장자로 판정하지 않는 원칙은 여기서도 유지된다 — 판별 신호는 내용 마커다.
 - 압축 파일은 내부를 추출해 재귀 검사하지 않는다 — 검사 불가로 취급한다.
 
 직접 검사의 통과 요건:
