@@ -17,7 +17,7 @@
 1. 실제 실행할 `gh` executable 또는 실행 가능한 wrapper 하나를 확정한다. shell alias나 shell builtin을 실행기로 사용하지 않는다.
 2. 같은 실행기로 `api user`, `extension list`, `attach`를 모두 수행한다. 허용 공급 원점은 저장소 Nix 선언에 고정된 `greenheadHQ/gh-attach`뿐이다. runtime 목록만으로 원점을 확인할 수 없으면 Nix 패키지 선언의 owner, repo, rev를 확인한다. `gh attach`가 없으면 모든 후보를 `SKIPPED(NO_EXTENSION)`으로 기록하고 설치 상태 확인 방법만 안내한다. 명령형 자동 설치는 하지 않는다.
 3. 각 후보가 읽을 수 있는 일반 파일인지 확인한다. 읽기 실패나 검사 중 오류는 `FAILED(PREUPLOAD)`으로 기록한다.
-4. 파일 크기를 byte 단위로 측정한다. `10,485,760` bytes 이상이면 `SKIPPED(TOO_LARGE)`로 기록한다.
+4. 파일 크기를 byte 단위로 측정한다. `10,485,760` bytes(= `10 * 1024 * 1024`, GitHub 첨부 이미지 10MB 제한에 대한 보수적 결정 상한 — [Attaching files](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files)) 이상이면 `SKIPPED(TOO_LARGE)`로 기록한다.
 5. 확장자를 신뢰하지 않고 다음 명령의 magic MIME 결과를 사용한다.
 
 ```bash
@@ -32,6 +32,8 @@ file --brief --mime-type "$FILE"
 ## 2. 마스킹 게이트
 
 업로드 전 실제 이미지를 직접 열어 픽셀에 노출된 내용을 검사한다. 파일명이나 사용자의 설명만으로 통과시키지 않는다.
+
+직접 검사로 인정되는 수단은 렌더링된 픽셀을 실제로 확인하는 것이다 — 런타임의 이미지 파일 읽기(파일 읽기 도구의 이미지 렌더링), 브라우저·스크린샷 도구의 열람 등 어떤 경로든 렌더링 결과를 시각적으로 확인했으면 충분하다. 반대로 파일 경로·메타데이터·바이트 검사만으로는 검사로 인정되지 않는다. 현재 런타임에 렌더링 확인 수단이 하나도 없거나 파일을 렌더링할 수 없으면 검사 불가로 판정한다.
 
 다음을 포함한 회사·개인 식별 정보, credential, API key·token, 내부 URL·호스트명, 공개하면 안 되는 경로·계정·세션 정보가 보이면 원본을 수정하지 않고 해당 후보를 `SKIPPED(SENSITIVE_CONTENT)`으로 기록한다. 이미지 편집이나 자동 마스킹은 이 절차의 범위가 아니다.
 
@@ -101,12 +103,12 @@ exit code, JSON object shape, 필드 타입, `href` prefix를 모두 검증한�
 
 최종 응답에는 후보별 파일명, 상태, 민감하지 않은 사유를 포함한다. `href`를 확보한 상태에서는 그 값도 포함한다.
 
-집계에서 `m`은 후보 수, `u`는 업로드 성공 수, `s`는 skip 수, `f`는 failed 수다.
+집계에서 `m`은 후보 수, `u`는 업로드 성공 수, `s`는 skip 수, `f`는 failed 수다. 모든 집계 표기는 명명형 `key=값` 필드로 통일한다 — 위치 기반 축약(`u/s/0` 등)은 필드 의미를 드러내지 못하므로 쓰지 않는다.
 
-- 전부 `UPLOADED`: `ATTACH_STATUS=UPLOADED(m/m)`
-- 하나 이상 `FAILED`: `ATTACH_STATUS=FAILED(f/m)`
-- failed 없이 전부 skipped: `ATTACH_STATUS=SKIPPED(m/m)`
-- failed 없이 uploaded와 skipped 혼합: `ATTACH_STATUS=PARTIAL(u/s/0)`
+- 전부 `UPLOADED`: `ATTACH_STATUS=UPLOADED(uploaded=m/m)`
+- 하나 이상 `FAILED`: `ATTACH_STATUS=FAILED(failed=f, total=m)`
+- failed 없이 전부 skipped: `ATTACH_STATUS=SKIPPED(skipped=m/m)`
+- failed 없이 uploaded와 skipped 혼합: `ATTACH_STATUS=PARTIAL(uploaded=u, skipped=s, total=m)`
 - 후보 0개: `ATTACH_STATUS`를 출력하지 않음
 
 `FAILED(PREUPLOAD)`만 원격 미생성이 확실할 때 수동 재시도를 안내할 수 있다. `FAILED(UNKNOWN_REMOTE_STATE)`는 blind retry로 orphan asset을 만들 수 있으므로 자동·수동 명령형 재업로드를 제안하지 말고 GitHub 본문 편집기의 최근 업로드와 로컬 로그를 사람이 대조하도록 안내한다.
