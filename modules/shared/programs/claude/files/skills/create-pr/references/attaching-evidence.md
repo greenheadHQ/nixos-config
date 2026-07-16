@@ -31,21 +31,31 @@ file --brief --mime-type "$FILE"
 ```bash
 python3 -c '
 import struct, sys
-with open(sys.argv[1], "rb") as f:
-    assert f.read(8) == b"\x89PNG\r\n\x1a\n", "not a PNG"
-    while True:
-        head = f.read(8)
-        if len(head) < 8:
-            break
-        length, ctype = struct.unpack(">I4s", head)
-        if ctype == b"acTL":
-            sys.exit(1)  # APNG
-        f.seek(length + 4, 1)  # data + CRC
-' "$FILE" && echo "static png" || echo "APNG or parse error"
+# fail-closed PNG 판정: exit 0=완결된 static PNG, 1=APNG, 2=파싱 오류(시그니처 불일치·truncation 포함)
+# assert를 쓰지 않는다 — python3 -O에서 제거되어 검사가 사라진다.
+try:
+    with open(sys.argv[1], "rb") as f:
+        if f.read(8) != b"\x89PNG\r\n\x1a\n":
+            sys.exit(2)
+        while True:
+            head = f.read(8)
+            if len(head) < 8:
+                sys.exit(2)  # IEND 전에 끝남 — 잘린 파일
+            length, ctype = struct.unpack(">I4s", head)
+            if ctype == b"acTL":
+                sys.exit(1)  # APNG
+            body = f.read(length + 4)  # data + CRC
+            if len(body) < length + 4:
+                sys.exit(2)  # chunk 잘림
+            if ctype == b"IEND":
+                sys.exit(0)  # 완결된 static PNG
+except OSError:
+    sys.exit(2)
+' "$FILE"
 ```
 
-파싱 자체가 실패(손상 PNG 등)하면 해당 후보를 `FAILED(PREUPLOAD)`로 기록한다.
-7. 통과한 후보마다 SHA-256, byte 크기, magic MIME을 기록한다. 게시 직전 첫 업로드를 시작하기 전에 전체 업로드 대상의 세 값을 다시 계산하고 PNG의 `acTL` 부재도 다시 확인한다. 하나라도 바뀌었으면 그 후보를 업로드 집합에서 제외하고 1단계부터 재검사한다. 재검사가 끝나기 전에는 나머지 파일도 업로드하지 않는다.
+exit code를 상태에 그대로 매핑한다 — `0`: 통과, `1`(APNG): `SKIPPED(UNSUPPORTED_FORMAT)`, 그 외(시그니처 불일치·truncation·읽기 오류): `FAILED(PREUPLOAD)`.
+7. 통과한 후보를 staging에 고정한다 — `umask 077` 아래 `mktemp -d`로 만든 staging 디렉터리에 복사하고, 복사본의 SHA-256·byte 크기·magic MIME·(PNG면) `acTL` 부재를 원본 기록과 대조한다. 하나라도 다르면 그 후보를 `FAILED(PREUPLOAD)`로 기록한다. 이후 마스킹 게이트 열람과 업로드는 전부 staging 사본 경로만 사용하고 원본 경로를 다시 읽지 않는다 — 검사와 업로드 사이에 원본이 교체되어 미검사 바이트가 업로드되는 것(TOCTOU)을 staging 사본이 구조적으로 막는다.
 
 ## 2. 마스킹 게이트
 
@@ -81,17 +91,17 @@ LOGIN=$("$GH_EXEC" api user --jq .login)
 
 ## 4. 업로드와 본문 삽입
 
-각 파일을 30초 timeout으로 한 번만 업로드한다. `command`는 shell builtin이므로 `timeout 30 command gh ...` 형태를 사용하지 않는다.
+각 파일을 30초 timeout으로 한 번만 업로드한다. 업로드 대상은 사전 게이트 7단계에서 고정한 staging 사본 경로다 — 원본 경로를 다시 읽지 않는다. `command`는 shell builtin이므로 `timeout 30 command gh ...` 형태를 사용하지 않는다.
 
 ```bash
-timeout 30 "$GH_EXEC" attach "$FILE" \
+timeout 30 "$GH_EXEC" attach "$STAGED_FILE" \
   -R "$OWNER_REPO" \
   --json id,href,name
 ```
 
 필요한 브라우저·프로필 선택은 `attach.yml` 또는 같은 `attach` 호출의 옵션으로 추가하되, 사전 확인과 업로드의 실행기는 바꾸지 않는다.
 
-성공 실측 출력과 필드 타입은 다음과 같다. Nix로 선언한 fork 소스 빌드 바이너리도 2026-07-16에 30초 timeout 내 동일 schema로 재확인했다. UUID, 정수, 파일명은 실행마다 달라진다.
+성공 실측 출력과 필드 타입은 다음과 같다. Nix로 선언한 fork 소스 빌드 바이너리도 2026-07-16에 30초 timeout 내 동일 schema로 재확인했다 (재검증: 무해한 테스트 이미지로 `timeout 30 "$GH_EXEC" attach <테스트 이미지> -R greenheadHQ/attach-sandbox --json id,href,name` — private 샌드박스 전용, 업로드는 비가역). UUID, 정수, 파일명은 실행마다 달라진다.
 
 ```json
 {"href":"https://github.com/user-attachments/assets/26d485fc-4f52-4428-9243-a68d6792a8b2","id":622195517,"name":"attach-test.png"}

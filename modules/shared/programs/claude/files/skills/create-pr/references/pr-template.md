@@ -162,7 +162,7 @@ local heavy_packages=("mise")
 - 실패 시 진단 방법을 포함한다.
 - 리네임/값 교체 변경이면 새 값 존재뿐 아니라 old 값·아티팩트의 부재까지 확인한다 (Negative 검증).
 - 인접 기능·라우팅이 이번 변경으로 깨지지 않았는지 확인하는 regression 단계를 포함한다.
-- 시각·UI 변경은 before/after 이미지를 [시각 증빙 첨부 절차](attaching-evidence.md)에 따라 첨부한다.
+- 시각·UI 변경에서 명시적으로 제공된 before/after 이미지 후보가 있으면 [시각 증빙 첨부 절차](attaching-evidence.md)에 따라 첨부한다. 후보가 없으면 첨부 절차를 실행하지 않는다 (임의 이미지 생성·업로드 금지).
 
 ### 예시
 

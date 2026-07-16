@@ -14,6 +14,9 @@ pkgs.buildGoModule {
 
   vendorHash = "sha256-Kdqt/hM0mYo9CER5AmBrV5RhnT9x/2Oj+vQH0wrVw74=";
 
+  # 실행 패키지는 cmd/gh-attach 하나 — 빌드 범위를 명시적으로 좁힌다
+  subPackages = [ "cmd/gh-attach" ];
+
   ldflags = [
     "-s"
     "-w"
