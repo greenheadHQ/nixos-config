@@ -23,6 +23,8 @@ pkgs.buildGoModule {
     description = "GitHub user attachment upload CLI for gh";
     homepage = "https://github.com/greenheadHQ/gh-attach";
     license = pkgs.lib.licenses.mit;
+    # 쿠키 전제(브라우저 + Keychain)가 macOS 전용 — default.nix의 isDarwin 가드와 scope 일치
+    platforms = pkgs.lib.platforms.darwin;
     mainProgram = "gh-attach";
   };
 }

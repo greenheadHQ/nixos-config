@@ -15,7 +15,7 @@
 ## 1. 사전 게이트
 
 1. 실제 실행할 `gh` executable 또는 실행 가능한 wrapper 하나를 확정한다. shell alias나 shell builtin을 실행기로 사용하지 않는다.
-2. 같은 실행기로 `api user`, `extension list`, `attach`를 모두 수행한다. 허용 공급 원점은 저장소 Nix 선언에 고정된 `greenheadHQ/gh-attach`뿐이다. runtime 목록만으로 원점을 확인할 수 없으면 Nix 패키지 선언의 owner, repo, rev를 확인한다. `gh attach`가 없으면 모든 후보를 `SKIPPED(NO_EXTENSION)`으로 기록하고 설치 상태 확인 방법만 안내한다. 명령형 자동 설치는 하지 않는다.
+2. 같은 실행기로 `api user`, `extension list`, `attach`를 모두 수행한다. 허용 공급 원점은 저장소 Nix 선언에 고정된 `greenheadHQ/gh-attach`뿐이다. runtime 목록만으로 원점을 확인할 수 없으면 Nix 패키지 선언(`modules/shared/programs/git/gh-attach-package.nix`)의 owner, repo, rev를 확인한다. `gh attach`가 없으면 모든 후보를 `SKIPPED(NO_EXTENSION)`으로 기록하고 설치 상태 확인 방법만 안내한다. 명령형 자동 설치는 하지 않는다.
 3. 각 후보가 읽을 수 있는 일반 파일인지 확인한다. 읽기 실패나 검사 중 오류는 `FAILED(PREUPLOAD)`으로 기록한다.
 4. 파일 크기를 byte 단위로 측정한다. `10,485,760` bytes(= `10 * 1024 * 1024`, GitHub 첨부 이미지 10MB 제한에 대한 보수적 결정 상한 — [Attaching files](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files)) 이상이면 `SKIPPED(TOO_LARGE)`로 기록한다.
 5. 확장자를 신뢰하지 않고 다음 명령의 magic MIME 결과를 사용한다.
@@ -33,7 +33,7 @@ file --brief --mime-type "$FILE"
 
 업로드 전 실제 이미지를 직접 열어 픽셀에 노출된 내용을 검사한다. 파일명이나 사용자의 설명만으로 통과시키지 않는다.
 
-직접 검사로 인정되는 수단은 렌더링된 픽셀을 실제로 확인하는 것이다 — 런타임의 이미지 파일 읽기(파일 읽기 도구의 이미지 렌더링), 브라우저·스크린샷 도구의 열람 등 어떤 경로든 렌더링 결과를 시각적으로 확인했으면 충분하다. 반대로 파일 경로·메타데이터·바이트 검사만으로는 검사로 인정되지 않는다. 현재 런타임에 렌더링 확인 수단이 하나도 없거나 파일을 렌더링할 수 없으면 검사 불가로 판정한다.
+직접 검사의 판정 기준은 단 하나다 — "이 파일의 렌더링 결과(픽셀)를 시각적으로 확인했는가". 수단은 무엇이든 좋다: 런타임의 이미지 파일 읽기(파일 읽기 도구의 이미지 렌더링), 브라우저·스크린샷 도구의 열람 등. 반대로 파일 경로·메타데이터·바이트 검사만으로는 이 기준을 충족하지 않는다. 현재 런타임에서 위 기준을 충족할 수단이 하나도 없거나 파일을 렌더링할 수 없으면 검사 불가로 판정한다.
 
 다음을 포함한 회사·개인 식별 정보, credential, API key·token, 내부 URL·호스트명, 공개하면 안 되는 경로·계정·세션 정보가 보이면 원본을 수정하지 않고 해당 후보를 `SKIPPED(SENSITIVE_CONTENT)`으로 기록한다. 이미지 편집이나 자동 마스킹은 이 절차의 범위가 아니다.
 

@@ -1,6 +1,7 @@
 # gh-difftool — PR diff를 로컬 difftool로 여는 gh 확장. upstream prebuilt 핀
 # D8: Home Manager linkFarm이 extensions 디렉터리 전체를 소유하므로 함께 선언해야 탈락하지 않는다.
 # nixpkgs 부재 실측(2026-07-15), 제어권 불필요 도구라 fork 없이 upstream을 핀한다.
+# 업데이트 시: version 변경 → 각 darwin asset hash를 lib.fakeHash로 두고 빌드 에러의 got 값으로 갱신 → nrs
 { pkgs }:
 let
   inherit (pkgs) lib stdenvNoCC fetchurl;
