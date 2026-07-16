@@ -7,16 +7,16 @@
 1. 실제 실행할 `gh` executable 또는 실행 가능한 wrapper 하나를 확정한다. shell alias나 shell builtin을 실행기로 사용하지 않는다.
 2. 같은 실행기로 `api user`, `extension list`, `attach`를 모두 수행한다. 허용 공급 원점은 저장소 Nix 선언에 고정된 `greenheadHQ/gh-attach`뿐이다. runtime 목록만으로 원점을 확인할 수 없으면 Nix 패키지 선언(`modules/shared/programs/git/gh-attach-package.nix`)의 owner, repo, rev를 확인한다. `gh attach`가 없으면 모든 후보를 `SKIPPED(NO_EXTENSION)`으로 기록하고 설치 상태 확인 방법만 안내한다. 명령형 자동 설치는 하지 않는다.
 3. 각 후보가 읽을 수 있는 일반 파일인지 확인한다. 읽기 실패나 검사 중 오류는 `FAILED(PREUPLOAD)`으로 기록한다.
-4. 파일 크기를 byte 단위로 측정한다. `10,485,760` bytes(= `10 * 1024 * 1024`, GitHub 첨부 이미지 10MB 제한에 대한 보수적 결정 상한 — [Attaching files](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files)) 이상이면 `SKIPPED(TOO_LARGE)`로 기록한다.
+4. 파일 크기를 byte 단위로 측정한다. 크기는 차단 기준이 아니라 보고용이다 — GitHub 상한은 파일 종류·플랜별로 달라([Attaching files](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files)) 스킬이 결정적으로 판정할 수 없으므로 서버 판정에 위임하고, 서버가 크기로 거부하면 `FAILED(PREUPLOAD)`로 기록한다.
 5. 확장자를 신뢰하지 않고 다음 명령의 magic MIME 결과를 사용한다.
 
 ```bash
 file --brief --mime-type "$FILE"
 ```
 
-허용 MIME은 `image/jpeg`와 `image/png`뿐이다. 그 외 MIME은 `SKIPPED(UNSUPPORTED_FORMAT)`으로 기록한다.
+측정한 MIME은 차단 기준이 아니라 마스킹 게이트의 검사 방식 라우팅(직접 검사 수단 선택, 수단이 없으면 사용자 확인 경로)에 사용한다. 포맷 지원 여부 판정은 GitHub 서버에 위임하며, 서버가 거부한 포맷은 `FAILED(PREUPLOAD)`로 기록한다.
 
-6. PNG는 chunk 구조를 파싱하여 `acTL` chunk 존재 여부를 확인한다. `acTL`이 있으면 APNG이므로 `SKIPPED(UNSUPPORTED_FORMAT)`으로 기록한다. 파일 전체에서 문자열만 검색하는 방식은 압축 데이터의 우연한 일치를 오판할 수 있으므로 사용하지 않는다. 기준 구현:
+6. magic MIME이 `image/png`인 파일은 chunk 구조를 파싱하여 `acTL` chunk 존재 여부를 확인한다. `acTL`이 있으면 APNG이므로 차단이 아니라 "첫 프레임만 렌더링되어 뒷 프레임을 검사할 수 없는 파일"로 분류해 마스킹 게이트의 사용자 확인 경로로 라우팅한다. 파일 전체에서 문자열만 검색하는 방식은 압축 데이터의 우연한 일치를 오판할 수 있으므로 사용하지 않는다. 기준 구현:
 
 ```bash
 python3 -c '
@@ -51,21 +51,38 @@ except OSError:
 ' "$FILE"
 ```
 
-exit code를 상태에 그대로 매핑한다 — `0`: 통과, `1`(APNG): `SKIPPED(UNSUPPORTED_FORMAT)`, 그 외(시그니처 불일치·truncation·IEND 훼손·trailing data·읽기 오류): `FAILED(PREUPLOAD)`.
-7. 통과한 후보를 staging에 고정한다 — `umask 077` 아래 `mktemp -d`로 만든 staging 디렉터리에 복사하고, 복사본의 SHA-256·byte 크기·magic MIME·(PNG면) `acTL` 부재를 원본 기록과 대조한다. 하나라도 다르면 그 후보를 `FAILED(PREUPLOAD)`로 기록한다. 이후 마스킹 게이트 열람과 업로드는 전부 staging 사본 경로만 사용하고 원본 경로를 다시 읽지 않는다 — 검사와 업로드 사이에 원본이 교체되어 미검사 바이트가 업로드되는 것(TOCTOU)을 staging 사본이 구조적으로 막는다.
+exit code를 검사 경로에 그대로 매핑한다 — `0`(정적 PNG): 직접 검사 경로, `1`(APNG): 검사 불가 분류 → 사용자 확인 경로, 그 외(시그니처 불일치·truncation·위조 length·IEND 훼손·trailing data·읽기 오류): `FAILED(PREUPLOAD)` (구조가 훼손된 파일은 분류 자체가 불가능하므로 fail-closed).
+7. 통과한 후보를 staging에 고정한다 — `umask 077` 아래 `mktemp -d`로 만든 staging 디렉터리에 복사하고, 복사본의 SHA-256·byte 크기·magic MIME·(PNG면) `acTL` 판정 결과를 원본 기록과 대조한다. 하나라도 다르면 그 후보를 `FAILED(PREUPLOAD)`로 기록한다. 이후 마스킹 게이트 열람과 업로드는 전부 staging 사본 경로만 사용하고 원본 경로를 다시 읽지 않는다 — 검사와 업로드 사이에 원본이 교체되어 미검사 바이트가 업로드되는 것(TOCTOU)을 staging 사본이 구조적으로 막는다.
 
 ## 2. 마스킹 게이트
 
-업로드 전 실제 이미지를 직접 열어 픽셀에 노출된 내용을 검사한다. 파일명이나 사용자의 설명만으로 통과시키지 않는다.
+업로드 전 파일의 실제 내용을 직접 열어 노출된 정보를 검사한다. 파일명이나 사용자의 설명만으로 통과시키지 않는다.
 
-직접 검사의 판정 기준은 단 하나다 — "이 파일의 렌더링 결과(픽셀)를 시각적으로 확인했는가". 파일 경로·메타데이터·바이트 검사만으로는 이 기준을 충족하지 않는다. 런타임별 1차 수단은 아래 표를 따르되(호출 스킬들의 런타임 도구 매핑 표와 같은 관례), 표에 없는 수단이라도 렌더링 결과를 시각적으로 확인했으면 기준을 충족한다. 현재 런타임에서 기준을 충족할 수단이 없거나 파일을 렌더링할 수 없으면 검사 불가로 판정한다.
+직접 검사의 판정 기준은 단 하나다 — "이 파일의 전체 내용을 직접 열람해 확인했는가". 파일 경로·메타데이터·바이트 존재 검사만으로는 이 기준을 충족하지 않는다. 검사 수단은 magic MIME 기준으로 다음 분류를 따른다.
+
+| 분류 | 검사 수단 | 통과 기준 |
+|------|-----------|----------|
+| 정적 이미지 (JPEG·정적 PNG 등) | 이미지 렌더링 열람 | 픽셀 시각 확인 |
+| 텍스트류 (코드·로그·CSV·JSON·마크다운 등) | 내용 읽기 | 전체 내용 확인 |
+| PDF | 페이지 읽기 (수단이 있는 런타임) | 전체 페이지 확인 |
+| 동영상·오디오·압축·기타 바이너리·APNG | 없음 — 직접 검사 불가 | 아래 사용자 확인 게이트 |
+
+압축 파일은 내부를 추출해 재귀 검사하지 않는다 — 검사 불가로 취급한다. 런타임별 1차 수단은 아래 표를 따르되(호출 스킬들의 런타임 도구 매핑 표와 같은 관례), 표에 없는 수단이라도 전체 내용을 직접 확인했으면 기준을 충족한다.
 
 | 런타임 | 1차 검사 수단 |
 |--------|---------------|
-| Claude Code 세션 | 파일 읽기 도구로 이미지 파일을 열어 렌더링 확인 |
-| Codex 세션 | 이미지 열람 도구(`view_image`)로 렌더링 확인 |
-| headless/기타 | 렌더링 수단 부재 시 검사 불가 판정 |
+| Claude Code 세션 | 파일 읽기 도구 (이미지 렌더링·텍스트 내용·PDF 페이지) |
+| Codex 세션 | 이미지는 이미지 열람 도구(`view_image`), 텍스트는 내용 읽기 |
+| headless/기타 | 수단 부재 시 검사 불가 판정 |
 
-다음을 포함한 회사·개인 식별 정보, credential, API key·token, 내부 URL·호스트명, 공개하면 안 되는 경로·계정·세션 정보가 보이면 원본을 수정하지 않고 해당 후보를 `SKIPPED(SENSITIVE_CONTENT)`으로 기록한다. 이미지 편집이나 자동 마스킹은 이 절차의 범위가 아니다.
+다음을 포함한 회사·개인 식별 정보, credential, API key·token, 내부 URL·호스트명, 공개하면 안 되는 경로·계정·세션 정보가 보이면 원본을 수정하지 않고 해당 후보를 `SKIPPED(SENSITIVE_CONTENT)`으로 기록한다. 파일 편집이나 자동 마스킹은 이 절차의 범위가 아니다.
 
-이미지를 실제로 검사할 수 없는 런타임에서는 사용자에게 대신 확인을 요구하지 않고 `SKIPPED(NO_IMAGE_INSPECTION)`으로 기록한다. 통과한 후보는 별도 blocking 확인 없이 자동으로 다음 단계로 진행한다.
+검사를 통과한 후보는 별도 blocking 확인 없이 자동으로 다음 단계로 진행한다. 검사 수단이 있는 파일을 검사하지 않고 사용자에게 확인을 미루지 않는다.
+
+### 검사 불가 파일의 사용자 확인 게이트
+
+직접 검사 수단이 없는 파일(동영상·오디오·압축·기타 바이너리·APNG)은 업로드 직전, "이 파일은 내용 검사를 하지 못했으니 민감정보가 없음을 직접 확인해달라"는 별도 명시 확인을 사용자에게 1회 받는다. 첨부 요청 자체("이 동영상 올려줘")는 이 확인으로 간주하지 않는다 — 첨부 의사와 민감정보 검토 완료는 다른 판단이다.
+
+- 사용자가 확인하면 해당 후보는 다음 단계로 진행한다.
+- 사용자가 거부하거나 보류하면 `SKIPPED(USER_DECLINED)`으로 기록한다.
+- 확인을 받을 수 없는 맥락(headless 등)에서는 `SKIPPED(NO_INSPECTION)`으로 기록한다.

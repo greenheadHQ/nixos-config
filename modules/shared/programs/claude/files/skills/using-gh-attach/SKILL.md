@@ -1,17 +1,17 @@
 ---
 name: using-gh-attach
 description: >-
-  Attach explicitly provided JPEG/PNG visual evidence to a GitHub issue or PR with the gh-attach
-  CLI — masking gate, irreversible-upload staging, fail-open ATTACH_STATUS reporting.
-  Trigger: standalone attach requests on an existing issue/PR ('이 스크린샷 이슈에 올려줘',
-  'gh attach로 첨부'), or another GitHub publishing skill reaching for the evidence-attachment
-  procedure. JPEG/PNG only; Discussions unsupported. NOT for issue/PR creation or body authoring
-  (use create-issue/create-pr).
+  Attach explicitly provided file evidence (screenshots, demo videos, logs) to a GitHub issue or
+  PR with the gh-attach CLI — content-inspection masking gate, irreversible-upload staging,
+  fail-open ATTACH_STATUS reporting. Trigger: standalone attach requests on an existing issue/PR
+  ('이 스크린샷 이슈에 올려줘', 'gh attach로 첨부'), or another GitHub publishing skill reaching
+  for the evidence-attachment procedure. Format/size limits delegated to the GitHub server;
+  Discussions unsupported. NOT for issue/PR creation or body authoring (use create-issue/create-pr).
 ---
 
 # gh-attach 시각 증빙 첨부
 
-명시적으로 제공된 JPEG/PNG 증빙을 gh-attach CLI로 GitHub user-attachments에 업로드하고 이슈/PR에 삽입하는 절차다. 업로드된 asset에는 삭제 UI가 없으므로 업로드는 비가역 작업으로 취급한다.
+명시적으로 제공된 파일 증빙을 gh-attach CLI로 GitHub user-attachments에 업로드하고 이슈/PR에 삽입하는 절차다. 업로드된 asset에는 삭제 UI가 없으므로 업로드는 비가역 작업으로 취급한다.
 
 게이트·업로드 상세의 SSOT는 [references/preflight-gates.md](references/preflight-gates.md)(사전 게이트·마스킹 게이트)와 [references/upload-and-reporting.md](references/upload-and-reporting.md)(실행기·repo 고정, 업로드·본문 삽입, `ATTACH_STATUS` 상태 보고)이며, 본문은 branch 라우팅과 안전 불변식, 단계 요약만 다룬다.
 
@@ -22,9 +22,8 @@ description: >-
 | create-issue·create-pr 등 GitHub 게시 스킬이 본문 작성 흐름 안에서 증빙 후보를 소비 | 소비자 호출 |
 | 기존 이슈/PR에 이미지 첨부만 단독으로 요청받음 | 단독 호출 |
 
-지원 범위 밖 요청은 업로드 없이 미지원 사유만 안내한다.
+포맷·크기 지원 여부는 스킬이 선제 판정하지 않고 GitHub 서버에 위임한다 — 서버가 거부하면 fail-open 상태(`FAILED(PREUPLOAD)`)로 보고한다. 지원 범위 밖 요청은 업로드 없이 미지원 사유만 안내한다.
 
-- 지원 포맷은 JPEG/PNG뿐이다. ZIP·PDF·동영상·APNG 등 다른 포맷은 미지원이다.
 - Discussions는 미지원이다 — gh CLI의 discussion 본문 편집 경로가 확립되지 않았다.
 - 이슈/PR 생성과 본문 작성은 이 스킬의 범위가 아니다 (create-issue/create-pr 담당).
 
@@ -33,7 +32,8 @@ description: >-
 - 첨부는 부가 기능이다. 이 절차의 검사·업로드·본문 삽입이 실패해도 본 작업(이슈/PR 게시 흐름)은 원래 본문으로 계속한다 (fail-open).
 - 각 후보는 독립 상태를 갖는다. 한 후보의 탈락이나 실패 때문에 다른 후보 또는 본 작업을 차단하지 않는다.
 - 업로드는 게시 의사가 확정된 뒤에만 실행한다. 모든 업로드 대상의 사전 게이트와 마스킹 게이트를 먼저 완료하며, 최종 재확인까지 모두 통과하기 전에는 어떤 파일도 업로드하지 않는다.
-- 마스킹 게이트는 실제 픽셀을 직접 열어 검사한다. 파일명이나 사용자의 설명만으로 통과시키지 않는다.
+- 마스킹 게이트는 파일의 실제 내용을 직접 열어 검사한다. 파일명이나 사용자의 설명만으로 통과시키지 않는다.
+- 직접 검사 수단이 없는 파일(동영상 등)은 업로드 직전 사용자의 별도 명시 확인 1회 없이 업로드하지 않는다 — 첨부 요청 자체는 확인으로 간주하지 않는다. 검사 수단이 있는 파일은 검사 없이 사용자 확인으로 넘기지 않는다.
 - `href` 확보 후의 실패는 확보한 `href`를 재사용한다. 자동 재업로드하지 않는다.
 - 후보가 없으면 이 절차를 실행하지 않고 `ATTACH_STATUS`도 출력하지 않는다.
 
