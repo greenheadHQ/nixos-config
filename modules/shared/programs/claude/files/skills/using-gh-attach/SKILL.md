@@ -49,10 +49,10 @@ description: >-
 
 ## 단독 호출 branch
 
-1. 대상 확정: 첨부할 이슈 또는 PR의 URL·번호를 확인한다. 대상이 불명확하면 진행 전에 확인을 요청한다.
-2. 기존 본문 조회·보존: surface별로 현재 본문을 조회해 보존한다 — 이슈는 `gh issue view <N> --json body`, PR은 `gh pr view <N> --json body`.
+1. 대상 확정과 repo 고정: 첨부할 이슈 또는 PR의 URL·번호를 확인한다. URL이면 URL에서 `OWNER_REPO`와 번호를 추출하고, 번호만 받았으면 현재 작업 디렉터리의 canonical repo(`gh repo view --json nameWithOwner -q .nameWithOwner`)를 `OWNER_REPO`로 사용한다. 추출한 repo가 현재 작업 디렉터리의 canonical repo와 다르면 진행하지 않고 거부한다 — cross-repo 첨부는 미지원이다 (업로드 asset의 접근 경계가 `-R` 지정 repo에 묶이므로, 대상 불일치는 잘못된 본문 조회·엉뚱한 저장소 게시로 이어진다). 대상이 불명확하면 진행 전에 확인을 요청한다. 이후 모든 조회·게시 명령에 같은 `-R "$OWNER_REPO"`를 명시한다.
+2. 기존 본문 조회·보존: surface별로 현재 본문을 조회해 보존한다 — 이슈는 `gh issue view <N> -R "$OWNER_REPO" --json body`, PR은 `gh pr view <N> -R "$OWNER_REPO" --json body`.
 3. 삽입 방식 선택: 본문(body) 수정과 comment 추가 중 하나를 정한다. 사용자가 지정하지 않았으면 기존 본문 훼손 위험이 없는 comment 추가를 권한다.
 4. 게시 의사 확정: 비가역 업로드 전에 대상, 삽입 방식, 게시 여부를 확정한다. 확정 전에는 업로드하지 않는다.
 5. 게이트·업로드: [references/preflight-gates.md](references/preflight-gates.md)의 게이트를 완료한 뒤 [references/upload-and-reporting.md](references/upload-and-reporting.md)의 절차로 업로드한다.
-6. 게시: body 수정이면 보존한 본문 사본에 `![<설명>](<href>)`를 삽입해 `--body-file`로 게시하고, comment면 comment 본문으로 게시한다. 게시 실패 시 확보한 `href`와 본문 파일을 보존해 동일 asset으로 재시도한다 — 새 asset을 업로드하지 않는다.
+6. 게시: body 수정이면 보존한 본문 사본에 `![<설명>](<href>)`를 삽입해 `--body-file`로 게시하고, comment면 comment 본문으로 게시한다. `href` 확보 후 삽입·검증이 실패하면 게시하지 않고 `FAILED(LOCAL_INSERT)`와 확보한 `href`만 보고한다 — 기존 본문은 서버에 그대로 있으므로 보존해 둔 사본을 재게시하지 않는다. 게시 자체가 실패하면 확보한 `href`와 본문 파일을 보존해 동일 asset으로 재시도한다 — 새 asset을 업로드하지 않는다.
 7. 최종 응답에 후보별 상태와 `ATTACH_STATUS`를 포함한다.

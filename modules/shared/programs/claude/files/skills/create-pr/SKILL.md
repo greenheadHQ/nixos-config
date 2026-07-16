@@ -63,7 +63,7 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
    - durable marker: 흡수한 PR 본문에는 hidden marker `<!-- methodology: finding-unknowns -->`를 포함한다 — finish-pr 퀴즈 게이트가 별도 세션에서도 방법론 적용 PR을 판별하는 1차 신호다.
    - 수명: 흡수 완료를 보고하기 전까지 그 파일을 삭제·이동하지 않는다 (수명 규칙 SoT: finding-unknowns 스킬).
 4. ADR 테이블 구성: 검토한 대안들을 비교 테이블로 정리한다. 대안이 1개뿐이면 ADR 섹션을 간소화한다.
-5. 7섹션 템플릿 작성: [references/pr-template.md](references/pr-template.md)의 템플릿에 따라 전체 PR 본문을 작성한다. 명시적 시각 증빙 후보가 있으면 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬의 절차를 적용한다.
+5. 7섹션 템플릿 작성: [references/pr-template.md](references/pr-template.md)의 템플릿에 따라 전체 PR 본문을 작성한다. 명시적 시각 증빙 후보가 있으면 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬의 절차를 적용한다 — 처리 결과를 반영한 본문 사본을 아래 6단계의 `--body-file`로 게시하고(성공한 후보의 첨부는 유지, 실패·skip 후보만 제외), 정본이 정의한 `ATTACH_STATUS`를 최종 응답에 포함한다.
 6. PR 생성: 본문을 임시 파일로 작성한 뒤 `gh pr create --title "<제목>" --body-file <파일>`로 PR을 생성한다 — 본문을 shell 인자로 싣지 않는다 (multiline 본문의 프로세스 목록/로그 노출 방지, review-pr-feedback의 파일/stdin 전달 규칙과 동일). 제목은 70자 미만, conventional commit 형식을 따른다.
 7. 구현 노트 정리: 3단계에서 `implementation-notes.md`를 흡수한 경우, 다음 세 조건을 모두 확인한 뒤에만 그 파일을 삭제한다 (남겨두면 finish-pr의 워크트리 정리가 dirty로 중단됨) — ① 1행 owner header 일치, ② `git ls-files --error-unmatch -- implementation-notes.md` 실패(untracked; tracked면 Git 밖 삭제 금지), ③ 생성된 PR 본문에 Decisions·Deviations·새로 발견된 미지 세 섹션 각각과 durable marker가 모두 반영되었는지 확인 (일부 섹션만 반영된 상태로 통과 금지). 하나라도 어긋나거나 PR 생성이 실패하면 파일을 보존하고 중단한다.
 
@@ -73,7 +73,7 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
 
 1. 현재 PR 확인: `gh pr view --json body,title,number`로 현재 PR 본문을 가져온다.
 2. 누락 섹션 탐지: 7섹션 중 빠진 섹션을 식별한다.
-3. 부실 섹션 강화: 있지만 내용이 부실한 섹션(예: Summary만 있고 CIR 없음)을 보강한다. 커밋 히스토리, 코드 변경, 대화 컨텍스트에서 추가 정보를 수집한다. 워크트리에 `implementation-notes.md`가 있으면 새 PR 생성 절차의 흡수 계약을 그대로 적용한다 (provenance 확인, 세 섹션 전부, durable marker — marker가 본문에 없으면 이때 기록). 기존 `user-attachments` 링크는 보존하고 재업로드하지 않으며, 명시적으로 새로 제공된 시각 증빙 후보만 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬의 절차를 적용한다.
+3. 부실 섹션 강화: 있지만 내용이 부실한 섹션(예: Summary만 있고 CIR 없음)을 보강한다. 커밋 히스토리, 코드 변경, 대화 컨텍스트에서 추가 정보를 수집한다. 워크트리에 `implementation-notes.md`가 있으면 새 PR 생성 절차의 흡수 계약을 그대로 적용한다 (provenance 확인, 세 섹션 전부, durable marker — marker가 본문에 없으면 이때 기록). 기존 `user-attachments` 링크는 보존하고 재업로드하지 않으며, 명시적으로 새로 제공된 시각 증빙 후보만 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬의 절차를 적용한다 — 처리 결과를 반영한 본문을 4단계의 `--body-file` 업데이트에 사용하고 `ATTACH_STATUS`를 최종 응답에 포함한다.
 4. 업데이트 적용: 새 본문을 임시 파일로 작성해 `gh pr edit <number> --body-file <파일>`로 업데이트한다 (본문 shell 인자 전달 금지 — 새 PR 생성 절차와 동일).
 5. 구현 노트 정리: `implementation-notes.md`를 흡수한 경우 새 PR 생성 절차의 구현 노트 정리 단계와 동일하게, 세 조건(owner header · untracked · 세 섹션 각각+marker 반영) 확인 후에만 삭제하고 실패 시 보존한다.
 

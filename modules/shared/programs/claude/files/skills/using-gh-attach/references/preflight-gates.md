@@ -21,7 +21,7 @@ file --brief --mime-type "$FILE"
 ```bash
 python3 -c '
 import struct, sys
-# fail-closed PNG 판정: exit 0=완결된 static PNG, 1=APNG, 2=파싱 오류(시그니처 불일치·truncation 포함)
+# fail-closed PNG 판정: exit 0=완결된 static PNG, 1=APNG, 2=파싱 오류(시그니처 불일치·truncation·trailing data 포함)
 # assert를 쓰지 않는다 — python3 -O에서 제거되어 검사가 사라진다.
 try:
     with open(sys.argv[1], "rb") as f:
@@ -34,17 +34,21 @@ try:
             length, ctype = struct.unpack(">I4s", head)
             if ctype == b"acTL":
                 sys.exit(1)  # APNG
+            if ctype == b"IEND":
+                # IEND는 빈 chunk — 길이 0, 고정 CRC, 직후 EOF까지 확인해야 완결로 본다.
+                # IEND 뒤에 붙은 데이터는 마스킹 게이트가 보지 못하는 미검사 바이트이므로 거부한다.
+                if length != 0 or f.read(4) != b"\xaeB`\x82" or f.read(1) != b"":
+                    sys.exit(2)
+                sys.exit(0)  # 완결된 static PNG
             body = f.read(length + 4)  # data + CRC
             if len(body) < length + 4:
                 sys.exit(2)  # chunk 잘림
-            if ctype == b"IEND":
-                sys.exit(0)  # 완결된 static PNG
 except OSError:
     sys.exit(2)
 ' "$FILE"
 ```
 
-exit code를 상태에 그대로 매핑한다 — `0`: 통과, `1`(APNG): `SKIPPED(UNSUPPORTED_FORMAT)`, 그 외(시그니처 불일치·truncation·읽기 오류): `FAILED(PREUPLOAD)`.
+exit code를 상태에 그대로 매핑한다 — `0`: 통과, `1`(APNG): `SKIPPED(UNSUPPORTED_FORMAT)`, 그 외(시그니처 불일치·truncation·IEND 훼손·trailing data·읽기 오류): `FAILED(PREUPLOAD)`.
 7. 통과한 후보를 staging에 고정한다 — `umask 077` 아래 `mktemp -d`로 만든 staging 디렉터리에 복사하고, 복사본의 SHA-256·byte 크기·magic MIME·(PNG면) `acTL` 부재를 원본 기록과 대조한다. 하나라도 다르면 그 후보를 `FAILED(PREUPLOAD)`로 기록한다. 이후 마스킹 게이트 열람과 업로드는 전부 staging 사본 경로만 사용하고 원본 경로를 다시 읽지 않는다 — 검사와 업로드 사이에 원본이 교체되어 미검사 바이트가 업로드되는 것(TOCTOU)을 staging 사본이 구조적으로 막는다.
 
 ## 2. 마스킹 게이트
