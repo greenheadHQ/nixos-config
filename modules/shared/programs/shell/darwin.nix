@@ -33,7 +33,7 @@ let
       case "$_c" in ghp_*|github_pat_*) printf '%s' "$_c"; exit 0 ;; esac
     fi
     rm -f "$_cache" 2>/dev/null
-    _sa="$HOME/.config/op/sa-token-mac"
+    _sa="$HOME/${constants.onePassword.saTokenMacRelPath}"
     [ -r "$_sa" ] || exit 0
     command -v op >/dev/null 2>&1 || exit 0
     _tok=$(OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" op read --no-newline \

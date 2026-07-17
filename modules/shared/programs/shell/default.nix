@@ -363,9 +363,9 @@ in
       #   2) Mac SA token(~/.config/op/sa-token-mac, 방식 B #873 재사용)이 읽히면 SA로 op read —
       #      biometric 0회, 데스크탑 앱·잠금·원격 여부 무관(SaaS 직행). SA 도달 범위(Automation
       #      read-only) 밖 vault(Personal/SSH)는 권한 오류로 즉시 실패하고 3)으로 넘어간다.
-      #   3) biometric(데스크탑 앱 연동, 새 터미널마다 Touch ID) — 대화형 전용. 비대화형 op read는
-      #      Mac 화면에만 뜨는 승인을 기다리며 무한 hang하므로(#1041) TTY 없으면 시도하지 않고
-      #      명확히 실패한다(fail-fast). 한계: PTY를 받은 자동화는 TTY 판정상 대화형으로 보인다.
+      #   3) biometric(데스크탑 앱 연동, 새 터미널마다 Touch ID) — 대화형 전용. 무인 판정(비TTY ·
+      #      SSH 원격 · 에이전트/CI 하네스 env)이 하나라도 참이면 승인 대기 hang(#1041) 대신
+      #      fail-fast하고, OP_GET_BIOMETRIC=1 명시 opt-in으로만 우회한다(#876 F3 정합).
       # MiniPC는 op CLI 미설치(127 guard) — opnix materialization이 대체(Phase 3).
       #─────────────────────────────────────────────────────────────────────────
       ''
@@ -385,30 +385,43 @@ in
           # password/credential 필드도 값을 그대로 반환 (item get의 기본 redact + --reveal 불필요).
           # --no-newline: 후행 개행 제거 — GH_TOKEN 등 env 주입 시 정확.
           local ref="op://$vault/$name/$field"
-          # 1) 호출자 SA env 우선 (opnix systemd env 등).
+          # 1) 호출자 SA env 우선 (opnix systemd env 등). OP_CONNECT_HOST/TOKEN은 op 공식
+          #    우선순위상 SA token보다 우선하므로 서브셸에서 제거한다 — 이 repo는 Connect 서버
+          #    미도입(PRD #780 NG-1)이라 잔존 Connect env는 항상 오염이며, 제거해야 조회 주체가
+          #    SA임이 보장된다.
           if [ -n "''${OP_SERVICE_ACCOUNT_TOKEN:-}" ]; then
-            op read --no-newline "$ref"
+            (unset OP_CONNECT_HOST OP_CONNECT_TOKEN; op read --no-newline "$ref")
             return $?
           fi
           # 2) Mac SA token 무인 경로 — gh-pat-mac(#873)과 동일하게 SA token을 op 프로세스 env로만
-          #    전달한다(셸 env 미상주). timeout은 네트워크 지연 방어(coreutils 가용 시에만 — macOS
-          #    기본엔 없음; SA 경로는 앱 연동이 없어 biometric 승인 hang 자체가 구조적으로 없다).
-          local _sa="$HOME/.config/op/sa-token-mac" _rc=1
+          #    전달한다(셸 env 미상주). Connect env 제거는 1)과 동일 근거.
+          # _sa_timeout: 무인 셸 대기 상한 — SaaS 왕복 지연은 흡수하되 hang으로 오인되기 전에
+          #    실패한다(coreutils timeout 가용 시에만 — macOS 기본엔 없음. SA 경로는 앱 연동이
+          #    없어 biometric 승인 대기 자체가 구조적으로 없다).
+          local _sa="$HOME/${constants.onePassword.saTokenMacRelPath}" _sa_state="token-missing" _rc=0 _sa_timeout=20
           if [ -r "$_sa" ]; then
             if command -v timeout >/dev/null 2>&1; then
-              OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" timeout 20 op read --no-newline "$ref"
+              (unset OP_CONNECT_HOST OP_CONNECT_TOKEN; OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" timeout "$_sa_timeout" op read --no-newline "$ref")
             else
-              OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" op read --no-newline "$ref"
+              (unset OP_CONNECT_HOST OP_CONNECT_TOKEN; OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" op read --no-newline "$ref")
             fi
             _rc=$?
             [ "$_rc" -eq 0 ] && return 0
+            _sa_state="op rc=$_rc"
           fi
-          # 3) biometric 대화형 폴백 — stdin/stderr 모두 TTY가 아니면 무인으로 판정하고 차단한다.
-          #    (stdout 기준은 안 됨 — 대화형 $(op_get ...) 명령 치환도 stdout이 파이프다.)
+          # 3) biometric 대화형 폴백 — 무인 컨텍스트에서는 시도하지 않는다(fail-fast, #1041).
+          #    무인 판정: 비TTY(stdin/stderr 어느 쪽이든), SSH 원격 세션(승인 팝업이 로컬 화면
+          #    전용이라 원격에선 보이지 않음), 알려진 에이전트/CI 하네스 env(PTY가 있어도 무인 —
+          #    gh-auth가 biometric fallback을 제거한 #876 F3과 같은 근거).
+          #    stdout은 판정에 안 쓴다 — 대화형 $(op_get ...) 명령 치환도 stdout이 파이프다.
+          #    사람이 화면 앞에 있는 예외 상황만 OP_GET_BIOMETRIC=1로 명시 우회한다.
           #    --account: 멀티 계정(개인+회사) 환경에서 개인 account 고정 (multiple accounts 에러 방지).
-          if [ ! -t 0 ] && [ ! -t 2 ]; then
-            echo "Error: op_get 비대화형 실패 — SA 경로 불가(sa-token 부재 또는 op rc=$_rc), biometric은 TTY 없이는 승인 대기 hang(#1041)이라 차단. 항목이 SA 도달 범위(Automation vault)에 있는지 확인하거나 대화형 셸에서 실행하라." >&2
-            return 1
+          if [ "''${OP_GET_BIOMETRIC:-}" != "1" ]; then
+            if [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] || [ -n "''${CI:-}" ] \
+              || [ -n "''${CLAUDECODE:-}" ] || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; then
+              echo "Error: op_get 무인 컨텍스트 — SA 경로 실패($_sa_state). biometric은 무인에서 승인 대기 hang(#1041)이라 차단한다. 항목을 Automation vault로 옮기거나, 사람이 화면 앞에 있으면 OP_GET_BIOMETRIC=1로 우회하라." >&2
+              return 1
+            fi
           fi
           op read --no-newline --account "${constants.onePassword.account}" "$ref"
         }
