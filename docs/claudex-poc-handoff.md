@@ -103,7 +103,7 @@ git status --short --branch
   - wrapper-owned settings 파일로 `CLAUDE_CODE_EXTRA_BODY`를 고정해 user/project settings의 request-body override를 중화한다. variant는 두 개이며 모두 pinned Nix store 파일이다 — 기본 variant는 `{}`, fast variant는 `{"service_tier":"priority"}`.
   - 빈 CLI fallback 목록으로 settings의 `fallbackModel`을 마스킹하고, wrapper-owned `CLAUDE_CODE_EFFORT_LEVEL`을 다시 설정한다.
   - loopback catalog에서 세션의 main model(및 mixed에서는 subagent model까지)을 확인한 뒤 `$HOME/.local/bin/claude`를 실행한다.
-  - model 계약은 역할별로 고정한다: default 모드 main = `gpt-5.6-sol`, 모든 모드의 subagent(`CLAUDE_CODE_SUBAGENT_MODEL`) = `gpt-5.6-sol`, `--mixed` 모드 main = `claude-fable-5`. 사용자 `--model` override는 여전히 거부된다. effort는 기본 `high`이며, 명시적 `claudex --effort <low|medium|high|xhigh|max|ultra>` 인자만 세션 값을 바꾼다. `ultra`는 pinned CLI가 argv에서 warn-then-ignore하므로 env 값으로만 전달한다.
+  - model 계약은 역할별로 고정한다: default 모드 main = `gpt-5.6-sol`, 모든 모드의 subagent(`CLAUDE_CODE_SUBAGENT_MODEL`) = `gpt-5.6-sol`, `--mixed` 모드 main = `claude-opus-4-8`. 사용자 `--model` override는 여전히 거부된다. 이 고정은 **세션 시작값**이다 — 세션 중 `/model` 전환(CLI 기능)으로 카탈로그의 다른 모델로 바꿀 수 있음이 실측됐다(2026-07-17). 구독 플랜의 모델 정책 변화 시 pin 재조정은 #1130이 추적한다. effort는 기본 `high`이며, 명시적 `claudex --effort <low|medium|high|xhigh|max|ultra>` 인자만 세션 값을 바꾼다. `ultra`는 pinned CLI가 argv에서 warn-then-ignore하므로 env 값으로만 전달한다.
   - `--mixed`(불리언; `--mixed=<값>` 거부)는 혼합 fleet 세션을 연다: main은 proxy의 claude credential로 서빙되는 Claude 모델, 서브에이전트는 그대로 gpt. mixed는 canonical auth에 codex+claude credential이 모두 있어야 시작되고(`claudex-login --claude`로 추가), `--mixed --fast` 조합은 fail-closed로 거부된다(fast 티어는 Codex 백엔드 전용 request-body knob).
   - Codex fast 티어는 불리언 `claudex --fast` 인자만 켠다(`--fast=<값>`은 거부). wrapper가 fast settings variant를 선택해 request body에 `service_tier`를 주입하며, 값은 온-와이어 canonical id인 `"priority"`(카탈로그 id `priority`, 표시명 "Fast")를 사용해 proxy 변환기의 `"fast"` 별칭 매핑에 의존하지 않는다. Claude CLI에는 대응 argv가 없으므로(자체 fastMode는 Anthropic 직접 API 전용 별개 기능) argv 재발행은 없다.
   - `--dangerously-skip-permissions`로 실행해 세션이 항상 bypassPermissions로 시작한다 (pinned CLI는 시작 플래그 없이 세션 중 bypass 전환이 불가능). 이 계약이 조용히 뒤집히지 않도록 사용자 인자의 `--permission-mode`도 wrapper-owned 옵션으로 거부한다.
@@ -130,7 +130,7 @@ git status --short --branch
 | Proxy | CLIProxyAPI `7.2.73`, Darwin arm64 |
 | Bind | `127.0.0.1:8317` |
 | 모델 (default main / subagent) | `gpt-5.6-sol` / `gpt-5.6-sol` |
-| 모델 (mixed main) | `claude-fable-5` (`claudex --mixed`; descriptor `.model`은 default main alias) |
+| 모델 (mixed main) | `claude-opus-4-8` (`claudex --mixed`; descriptor `.model`은 default main alias; 재조정 트리거 #1130) |
 | Runtime state | `$HOME/Library/Application Support/claudex` |
 | Descriptor | `$HOME/.config/claudex/runtime.json`, schema `2` |
 | Enabled hosts | `greenhead-MacBookPro`, `work-MacBookPro` |
@@ -158,7 +158,7 @@ git status --short --branch
 
 | 축 | `claudex` (default) | `claudex --mixed` |
 |---|---|---|
-| main model (`--model`) | `gpt-5.6-sol` | `claude-fable-5` |
+| main model (`--model`) | `gpt-5.6-sol` | `claude-opus-4-8` |
 | subagent (`CLAUDE_CODE_SUBAGENT_MODEL`) | `gpt-5.6-sol` | `gpt-5.6-sol` |
 | credential set | codex 1 (claude 0..1 허용) | codex 1 + claude 1 필수 |
 | `CLAUDE_CODE_MAX_CONTEXT_TOKENS` | 258000 | 258000 (비-claude 모델 전용이라 main 무영향) |
