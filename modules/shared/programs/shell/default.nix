@@ -398,12 +398,13 @@ in
           # _sa_timeout: 무인 셸 대기 상한 — SaaS 왕복 지연은 흡수하되 hang으로 오인되기 전에
           #    실패한다(coreutils timeout 가용 시에만 — macOS 기본엔 없음. SA 경로는 앱 연동이
           #    없어 biometric 승인 대기 자체가 구조적으로 없다).
-          # SA token은 op 프로세스 env로만 전달한다(셸 env 미상주). env로 명령 하나를 감싸 SA token이
-          # 그 command subtree(op, 또는 timeout→op)에만 상속되게 한다 — timeout 부모 셸엔 미주입.
+          # SA token은 op 프로세스에만 주입한다(셸 env 미상주). env를 op 바로 앞에 두어 env가
+          # token과 함께 op를 exec하게 한다 — timeout을 쓸 때도 `timeout … env … op` 순서라
+          # timeout 프로세스에는 token이 상속되지 않는다(`env … timeout` 순서면 timeout도 보유).
           local _sa="$HOME/${constants.onePassword.saTokenMacRelPath}" _sa_state="token-missing" _rc=0 _sa_timeout=20
           if [ -r "$_sa" ]; then
             if command -v timeout >/dev/null 2>&1; then
-              (unset OP_CONNECT_HOST OP_CONNECT_TOKEN; env OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" timeout "$_sa_timeout" op read --no-newline "$ref")
+              (unset OP_CONNECT_HOST OP_CONNECT_TOKEN; timeout "$_sa_timeout" env OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" op read --no-newline "$ref")
             else
               (unset OP_CONNECT_HOST OP_CONNECT_TOKEN; env OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" op read --no-newline "$ref")
             fi
