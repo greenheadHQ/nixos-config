@@ -652,6 +652,22 @@ let
             && claudexActivationNames == [ ]
             && !claudexActivationReferencesRuntime;
         }
+        {
+          # op_get 무인 SA 폴백(#1041/#1094 인접 DX) 회귀 핀 — 두 불변식을 잠근다:
+          # (1) SA token 파일 경로가 op_get에 배선되어 있어야 함 (무인 경로 존재).
+          # (2) 비대화형(stdin·stderr 모두 non-TTY)에서 biometric op read를 차단하는 가드가
+          #     존재해야 함 — 이 가드가 사라지면 원격/LLM 셸의 op_get이 승인 대기 hang으로 회귀한다.
+          name = "Test D18 ${hostName}: op_get 무인 SA 폴백 배선 + 비대화형 biometric 차단 가드가 initContent에 있어야 함";
+          cond =
+            hasHost
+            && (
+              let
+                zshInit = hm.programs.zsh.initContent;
+              in
+              nixpkgsLib.hasInfix ".config/op/sa-token-mac" zshInit
+              && nixpkgsLib.hasInfix "[ ! -t 0 ] && [ ! -t 2 ]" zshInit
+            );
+        }
       ]
     ) expectedDarwinHosts
   );

@@ -355,10 +355,18 @@ in
       ''
 
       #─────────────────────────────────────────────────────────────────────────
-      # 1Password op_get helper (PRD #780)
+      # 1Password op_get helper (PRD #780; 무인 SA 폴백은 #1041/#1094 인접 DX 개선)
       # op_get <name> <field> [<vault>] — vault 기본값은 constants.onePassword.vaults.automation
-      # macOS는 1Password 데스크탑 biometric authorization (새 터미널마다 필요; 10분 inactivity 세션·사용 시 refresh·12시간 hard limit). MiniPC는 OP_SERVICE_ACCOUNT_TOKEN
-      # (opnix가 systemd EnvironmentFile로 주입, Phase 3) 기반.
+      # 해석 순서 (SA-first):
+      #   1) OP_SERVICE_ACCOUNT_TOKEN이 이미 있으면 그대로 op read (SA env가 account를 결정하므로
+      #      --account 미전달 — SA 모드와 --account는 상호 배타).
+      #   2) Mac SA token(~/.config/op/sa-token-mac, 방식 B #873 재사용)이 읽히면 SA로 op read —
+      #      biometric 0회, 데스크탑 앱·잠금·원격 여부 무관(SaaS 직행). SA 도달 범위(Automation
+      #      read-only) 밖 vault(Personal/SSH)는 권한 오류로 즉시 실패하고 3)으로 넘어간다.
+      #   3) biometric(데스크탑 앱 연동, 새 터미널마다 Touch ID) — 대화형 전용. 비대화형 op read는
+      #      Mac 화면에만 뜨는 승인을 기다리며 무한 hang하므로(#1041) TTY 없으면 시도하지 않고
+      #      명확히 실패한다(fail-fast). 한계: PTY를 받은 자동화는 TTY 판정상 대화형으로 보인다.
+      # MiniPC는 op CLI 미설치(127 guard) — opnix materialization이 대체(Phase 3).
       #─────────────────────────────────────────────────────────────────────────
       ''
         op_get() {
@@ -375,10 +383,34 @@ in
           fi
           # op read: 1Password 공식 권장 secret reference URI 방식 (단일 필드 값 조회 표준 경로).
           # password/credential 필드도 값을 그대로 반환 (item get의 기본 redact + --reveal 불필요).
-          # --account: op CLI 멀티 계정(개인+회사) 환경에서 개인 account 고정 (multiple accounts 에러 방지).
-          #   MiniPC는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 Phase 3에서 호환성 재확인.
           # --no-newline: 후행 개행 제거 — GH_TOKEN 등 env 주입 시 정확.
-          op read --no-newline --account "${constants.onePassword.account}" "op://$vault/$name/$field"
+          local ref="op://$vault/$name/$field"
+          # 1) 호출자 SA env 우선 (opnix systemd env 등).
+          if [ -n "''${OP_SERVICE_ACCOUNT_TOKEN:-}" ]; then
+            op read --no-newline "$ref"
+            return $?
+          fi
+          # 2) Mac SA token 무인 경로 — gh-pat-mac(#873)과 동일하게 SA token을 op 프로세스 env로만
+          #    전달한다(셸 env 미상주). timeout은 네트워크 지연 방어(coreutils 가용 시에만 — macOS
+          #    기본엔 없음; SA 경로는 앱 연동이 없어 biometric 승인 hang 자체가 구조적으로 없다).
+          local _sa="$HOME/.config/op/sa-token-mac" _rc=1
+          if [ -r "$_sa" ]; then
+            if command -v timeout >/dev/null 2>&1; then
+              OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" timeout 20 op read --no-newline "$ref"
+            else
+              OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" op read --no-newline "$ref"
+            fi
+            _rc=$?
+            [ "$_rc" -eq 0 ] && return 0
+          fi
+          # 3) biometric 대화형 폴백 — stdin/stderr 모두 TTY가 아니면 무인으로 판정하고 차단한다.
+          #    (stdout 기준은 안 됨 — 대화형 $(op_get ...) 명령 치환도 stdout이 파이프다.)
+          #    --account: 멀티 계정(개인+회사) 환경에서 개인 account 고정 (multiple accounts 에러 방지).
+          if [ ! -t 0 ] && [ ! -t 2 ]; then
+            echo "Error: op_get 비대화형 실패 — SA 경로 불가(sa-token 부재 또는 op rc=$_rc), biometric은 TTY 없이는 승인 대기 hang(#1041)이라 차단. 항목이 SA 도달 범위(Automation vault)에 있는지 확인하거나 대화형 셸에서 실행하라." >&2
+            return 1
+          fi
+          op read --no-newline --account "${constants.onePassword.account}" "$ref"
         }
       ''
 
