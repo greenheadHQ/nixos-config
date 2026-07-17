@@ -32,6 +32,13 @@ case "$#" in
 esac
 
 prepare_state
+# The whole canonical directory must be well-formed before this command reports ready or
+# promotes anything — a malformed sibling entry would otherwise be masked here and only
+# surface when the next session start rejects the set.
+_claudex_assert_entries_wellformed "$CLAUDEX_AUTH_DIR" || {
+  _claudex_error "canonical auth directory holds a malformed entry; remove it explicitly before logging in"
+  exit 1
+}
 existing_rc=0
 existing_path="$(_claudex_credential_path_of_type "$CLAUDEX_AUTH_DIR" "$cred_type")" || existing_rc=$?
 case "$existing_rc" in
@@ -102,7 +109,15 @@ _claudex_credential_json_valid "$staged_path" "$cred_type" || {
 
 _claudex_promote_staged_credential() {
   local staged destination existing_rc
-  # Same-type duplicate is refused; the other type's entry may coexist (mixed set).
+  # Validate the final state BEFORE moving anything: the canonical set must be well-formed
+  # (a malformed sibling means the move would only produce another invalid state) and must
+  # not already hold this type. The full default/mixed set contract is deliberately NOT
+  # asserted here — codex-only and claude-only are legitimate mid-login states (either
+  # login order is allowed); the per-mode contract is asserted at session start instead.
+  _claudex_assert_entries_wellformed "$CLAUDEX_AUTH_DIR" || {
+    _claudex_error "canonical auth directory holds a malformed entry; staged credential was not promoted"
+    return 1
+  }
   existing_rc=0
   _claudex_credential_path_of_type "$CLAUDEX_AUTH_DIR" "$cred_type" >/dev/null || existing_rc=$?
   if [ "$existing_rc" -ne 1 ]; then
@@ -121,7 +136,8 @@ _claudex_promote_staged_credential() {
     _claudex_error "atomic credential promotion did not complete"
     return 1
   fi
-  assert_credential_set "$CLAUDEX_AUTH_DIR" default
+  _claudex_credential_path_of_type "$CLAUDEX_AUTH_DIR" "$cred_type" >/dev/null \
+    && _claudex_assert_entries_wellformed "$CLAUDEX_AUTH_DIR"
 }
 
 with_state_lock _claudex_promote_staged_credential

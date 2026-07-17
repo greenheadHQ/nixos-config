@@ -989,6 +989,33 @@ EOF
   if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$login" --hostile >/dev/null 2>&1; then
     fail "claudex-login accepted an unknown flag"
   fi
+
+  # Claude-first login order: --claude into an EMPTY auth dir must promote cleanly
+  # (codex-only and claude-only are legitimate mid-login states; the old full-set assert
+  # made this path fail after the move).
+  rm -rf "$state/auth"
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" --claude >/dev/null || fail "claude-first login into an empty auth dir failed"
+  [[ "$(find "$state/auth" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == "1" ]] \
+    || fail "claude-first login did not leave exactly one credential"
+  jq -e '.type == "claude"' "$state/auth/claude-stage.json" >/dev/null \
+    || fail "claude-first promoted credential is invalid"
+
+  # A malformed sibling blocks both the ready short-circuit and promotion (no partial
+  # promotion next to a poisoned set; no false ready that the session gate would reject).
+  printf '%s' '{"type":"gemini","access_token":"x","refresh_token":"y"}' \
+    > "$state/auth/gemini-bad.json"
+  chmod 600 "$state/auth/gemini-bad.json"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" --claude >/dev/null 2>&1; then
+    fail "login reported ready despite a malformed sibling entry"
+  fi
+  rm -f "$proxy_log"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" >/dev/null 2>&1; then
+    fail "codex login proceeded despite a malformed sibling entry"
+  fi
+  rm "$state/auth/gemini-bad.json"
 }
 
 test_claudex_production_execution_boundaries() {

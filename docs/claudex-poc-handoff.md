@@ -150,6 +150,9 @@ git status --short --branch
 7. catalog에 모델이 보이는 것만으로 entitlement 성공으로 판정하지 않는다. 실제 completion이 필요하다.
 8. inherited request body, effort, Unix-socket transport가 wrapper의 endpoint/model/credential 경계를 우회하지 못해야 한다.
 9. byte-identical config render는 inode를 보존한다. runtime contract가 실제로 바뀌면 foreground proxy를 재시작한다.
+10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 값을 따른다 — 기본 `high`, 명시적 `claudex --effort` 인자(whitelist: low/medium/high/xhigh/max/ultra)만 이를 바꾸며 상속 환경값은 계속 scrub된다.
+11. inherited Claude host-auth bridge와 settings `env.CLAUDE_CODE_EXTRA_BODY`는 wrapper-owned loopback/model/request 계약을 우회하지 못해야 한다.
+12. request body의 `service_tier`는 wrapper-owned 값만 존재한다 — 기본은 필드 미전송(계정 기본 티어), 명시적 `claudex --fast` 인자만 pinned fast settings variant로 `"priority"`를 주입하며 상속 환경값은 계속 scrub된다.
 
 ### 모드별 기대값 (default vs mixed)
 
@@ -163,9 +166,6 @@ git status --short --branch
 | `--fast` | 허용 | 거부 (exit 2) |
 | catalog 검증 | main 1종 | main + subagent 2종 |
 | claude.ai 커넥터 | 비활성 (auth token이 로그인을 덮음) | 비활성 (동일) |
-10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 값을 따른다 — 기본 `high`, 명시적 `claudex --effort` 인자(whitelist: low/medium/high/xhigh/max/ultra)만 이를 바꾸며 상속 환경값은 계속 scrub된다.
-11. inherited Claude host-auth bridge와 settings `env.CLAUDE_CODE_EXTRA_BODY`는 wrapper-owned loopback/model/request 계약을 우회하지 못해야 한다.
-12. request body의 `service_tier`는 wrapper-owned 값만 존재한다 — 기본은 필드 미전송(계정 기본 티어), 명시적 `claudex --fast` 인자만 pinned fast settings variant로 `"priority"`를 주입하며 상속 환경값은 계속 scrub된다.
 
 ### 알려진 한계·리스크와 롤백
 

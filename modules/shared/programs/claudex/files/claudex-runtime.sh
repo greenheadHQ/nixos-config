@@ -15,7 +15,8 @@
 #   _claudex_error _claudex_read_api_key _claudex_render_runtime_config_unlocked
 #   _claudex_ensure_private_dir _claudex_single_credential_path
 #   _claudex_credential_json_valid _claudex_credential_type_of
-#   _claudex_credential_path_of_type _claudex_assert_safe_work_dir
+#   _claudex_credential_path_of_type _claudex_assert_entries_wellformed
+#   _claudex_assert_safe_work_dir
 
 if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_JQ="${CLAUDEX_JQ:-@jqBin@}"
@@ -392,12 +393,37 @@ _claudex_credential_json_valid() {
 
 # Prints the declared .type of a credential file, or nothing when the file is not a
 # readable JSON object with a string type. Never fails the caller; type routing decisions
-# stay with the caller.
+# stay with the caller. Symlinks and non-regular entries (FIFO, directory) yield no type
+# without opening them — jq would follow a symlink or block forever on a FIFO.
 _claudex_credential_type_of() {
   local path="$1"
+  if [ -L "$path" ] || [ ! -f "$path" ]; then
+    return 0
+  fi
   "$CLAUDEX_JQ" -r 'if type == "object" and (.type | type == "string") then .type else empty end' \
     "$path" 2>/dev/null || true
 }
+
+# Asserts every entry in the directory is a well-formed codex/claude credential without
+# constraining counts. Partial sets (codex-only or claude-only) are legitimate mid-login
+# states, so login-time checks use this instead of the full assert_credential_set contract.
+_claudex_assert_entries_wellformed() (
+  local dir="$1"
+  local entry cred_entry_type
+  _claudex_assert_private_dir "$dir" || return 1
+  shopt -s dotglob nullglob
+  for entry in "$dir"/*; do
+    cred_entry_type="$(_claudex_credential_type_of "$entry")"
+    case "$cred_entry_type" in
+      codex | claude) ;;
+      *)
+        _claudex_error "unexpected credential entry in $dir: ${entry##*/}"
+        return 1
+        ;;
+    esac
+    _claudex_credential_json_valid "$entry" "$cred_entry_type" || return 1
+  done
+)
 
 # Prints the path of the unique credential of the given type. Return codes: 0 = exactly
 # one entry of that type exists (path printed), 1 = none exist (silent — callers use this
