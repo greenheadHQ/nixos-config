@@ -29,8 +29,16 @@ let
   #     below, kept for schema backward compatibility with existing consumers/eval locks).
   #   subagentModel — every mode's CLAUDE_CODE_SUBAGENT_MODEL.
   #   mixedMainModel — the --mixed main model (Claude via the proxy's claude credential).
-  #     claude-fable-5 exists in the pinned proxy's embedded catalog; entitlement is
-  #     confirmed at session start by the wrapper's catalog check, not here.
+  #     The id exists in the pinned proxy's embedded catalog; entitlement is confirmed at
+  #     session start by the wrapper's catalog check, not here.
+  # CIR: mixedMainModel moved from claude-fable-5 to claude-opus-4-8 — Fable 5 is a
+  #     limited-run model on the subscription quota plan (available through 2026-07-20),
+  #     so pinning it made mixed sessions expire with it. This constant is a build-time
+  #     value with no runtime channel by design (the wrapper rejects --model and re-owns
+  #     inherited env), so plan/model-policy changes require editing the sync points
+  #     tracked in issue #1130 and redeploying. Mid-session /model switching to another
+  #     catalog model remains available (user-measured 2026-07-17) — the pin fixes the
+  #     session's starting model, not a session-long invariant.
   # mixedMainModel/subagentModel are deliberately NOT exposed in the descriptor: no
   # consumer exists today, and schema surface grows only with a consumer + schema bump.
   runtimeContract = {
@@ -38,7 +46,7 @@ let
     port = 8317;
     defaultMainModel = "gpt-5.6-sol";
     subagentModel = "gpt-5.6-sol";
-    mixedMainModel = "claude-fable-5";
+    mixedMainModel = "claude-opus-4-8";
     label = "org.nix-community.home.claudex-proxy";
   };
   inherit (runtimeContract)

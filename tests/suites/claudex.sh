@@ -13,7 +13,7 @@ _CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS=258000
 # explicit and future re-tunes atomic.
 _CLAUDEX_EXPECTED_DEFAULT_MAIN_MODEL=gpt-5.6-sol
 _CLAUDEX_EXPECTED_SUBAGENT_MODEL=gpt-5.6-sol
-_CLAUDEX_EXPECTED_MIXED_MAIN_MODEL=claude-fable-5
+_CLAUDEX_EXPECTED_MIXED_MAIN_MODEL=claude-opus-4-8
 
 _claudex_assert_no_placeholders() {
   local path="$1"
