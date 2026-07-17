@@ -37,7 +37,9 @@ prepare_state
 if [ "$mode" = "prepare" ]; then
   exit 0
 fi
-assert_single_codex_credential
+# The proxy serves whatever valid set is present; the default contract (codex required,
+# claude optional) is the launch bar — mixed entitlement is asserted by `claudex --mixed`.
+assert_credential_set "$CLAUDEX_AUTH_DIR" default
 _claudex_assert_safe_work_dir
 
 cd "$CLAUDEX_WORK_DIR"

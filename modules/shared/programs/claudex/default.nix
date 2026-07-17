@@ -24,16 +24,29 @@ let
   apiKeyFile = "${stateDir}/client-api-key";
   stateLock = "${stateDir}/state.lock";
   workDir = "${stateDir}/work";
+  # CIR: the model contract is role-split for the --mixed session mode (issue #1127).
+  #   defaultMainModel — the default-mode main model (and the descriptor `.model` alias
+  #     below, kept for schema backward compatibility with existing consumers/eval locks).
+  #   subagentModel — every mode's CLAUDE_CODE_SUBAGENT_MODEL.
+  #   mixedMainModel — the --mixed main model (Claude via the proxy's claude credential).
+  #     claude-fable-5 exists in the pinned proxy's embedded catalog; entitlement is
+  #     confirmed at session start by the wrapper's catalog check, not here.
+  # mixedMainModel/subagentModel are deliberately NOT exposed in the descriptor: no
+  # consumer exists today, and schema surface grows only with a consumer + schema bump.
   runtimeContract = {
     bindHost = "127.0.0.1";
     port = 8317;
-    model = "gpt-5.6-sol";
+    defaultMainModel = "gpt-5.6-sol";
+    subagentModel = "gpt-5.6-sol";
+    mixedMainModel = "claude-fable-5";
     label = "org.nix-community.home.claudex-proxy";
   };
   inherit (runtimeContract)
     bindHost
     port
-    model
+    defaultMainModel
+    subagentModel
+    mixedMainModel
     label
     ;
   pprofPort = port - 1;
@@ -127,7 +140,9 @@ let
     launchctlBin = "/bin/launchctl";
     inherit
       bindHost
-      model
+      defaultMainModel
+      subagentModel
+      mixedMainModel
       label
       ;
     port = toString port;
@@ -177,8 +192,10 @@ let
       configFile
       bindHost
       port
-      model
       ;
+    # Descriptor `.model` stays the defaultMainModel alias (schema 2 compatibility);
+    # role-split fields are wrapper-internal until a descriptor consumer exists.
+    model = defaultMainModel;
     hostName = hostname;
     runtimeLibrary = toString runtimeLibrary;
     source = if enabled then toString runtimePackage else null;

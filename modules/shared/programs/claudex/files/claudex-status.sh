@@ -22,21 +22,21 @@ fi
 
 if [ -d "$CLAUDEX_AUTH_DIR" ] && [ ! -L "$CLAUDEX_AUTH_DIR" ]; then
   count="$(credential_count 2>/dev/null || printf 'invalid')"
-  if [ "$count" = "1" ]; then
-    if assert_single_codex_credential >/dev/null 2>&1; then
+  if [ "$count" != "0" ]; then
+    # The default set contract (codex exactly 1, claude at most 1) is the readiness bar;
+    # a mixed-capable set is a valid superset, so status stays mode-agnostic.
+    if assert_credential_set "$CLAUDEX_AUTH_DIR" default >/dev/null 2>&1; then
       auth_state="ready"
     else
       auth_state="invalid"
     fi
-  elif [ "$count" != "0" ]; then
-    auth_state="invalid"
   fi
 fi
 
 if [ "$auth_state" = "ready" ] && payload="$(curl_loopback /v1/models 2>/dev/null)"; then
   if "$CLAUDEX_JQ" -e '.data | type == "array"' <<< "$payload" >/dev/null 2>&1; then
     proxy_state="ready"
-    if "$CLAUDEX_JQ" -e --arg model "$CLAUDEX_MODEL" \
+    if "$CLAUDEX_JQ" -e --arg model "$CLAUDEX_DEFAULT_MAIN_MODEL" \
       '.data | any(.id == $model)' <<< "$payload" >/dev/null 2>&1; then
       catalog_state="ready"
     else

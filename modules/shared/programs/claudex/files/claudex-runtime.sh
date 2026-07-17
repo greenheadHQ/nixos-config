@@ -9,12 +9,13 @@
 #
 # Package-internal command API:
 #   with_state_lock prepare_state credential_count
-#   assert_single_codex_credential curl_loopback wait_for_proxy_ready
+#   assert_credential_set curl_loopback wait_for_proxy_ready
 #
 # Package-internal cross-file API (not stable for external callers):
 #   _claudex_error _claudex_read_api_key _claudex_render_runtime_config_unlocked
 #   _claudex_ensure_private_dir _claudex_single_credential_path
-#   _claudex_credential_json_valid _claudex_assert_safe_work_dir
+#   _claudex_credential_json_valid _claudex_credential_type_of
+#   _claudex_credential_path_of_type _claudex_assert_safe_work_dir
 
 if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_JQ="${CLAUDEX_JQ:-@jqBin@}"
@@ -76,7 +77,11 @@ CLAUDEX_READY_DELAY_SECONDS="${CLAUDEX_READY_DELAY_SECONDS:-0.25}"
 
 CLAUDEX_BIND_HOST="@bindHost@"
 CLAUDEX_PORT="@port@"
-CLAUDEX_MODEL="@model@"
+# Role-split model contract (single CLAUDEX_MODEL previously carried catalog check,
+# subagent env, and CLI --model at once; the mixed mode forks main vs subagent roles).
+CLAUDEX_DEFAULT_MAIN_MODEL="@defaultMainModel@"
+CLAUDEX_SUBAGENT_MODEL="@subagentModel@"
+CLAUDEX_MIXED_MAIN_MODEL="@mixedMainModel@"
 CLAUDEX_LABEL="@label@"
 CLAUDEX_PPROF_ADDR="${CLAUDEX_BIND_HOST}:@pprofPort@"
 CLAUDEX_BASE_URL="http://${CLAUDEX_BIND_HOST}:${CLAUDEX_PORT}"
@@ -361,7 +366,14 @@ _claudex_single_credential_path() (
 )
 
 _claudex_credential_json_valid() {
-  local path="$1"
+  local path="$1" cred_type="$2"
+  case "$cred_type" in
+    codex | claude) ;;
+    *)
+      _claudex_error "unsupported credential type: $cred_type"
+      return 1
+      ;;
+  esac
   case "${path##*/}" in
     *.json) ;;
     *)
@@ -370,13 +382,44 @@ _claudex_credential_json_valid() {
       ;;
   esac
   _claudex_assert_private_file "$path" || return 1
-  "$CLAUDEX_JQ" -e '
+  "$CLAUDEX_JQ" -e --arg credType "$cred_type" '
     type == "object"
-    and .type == "codex"
+    and .type == $credType
     and (.access_token | type == "string" and length > 0)
     and (.refresh_token | type == "string" and length > 0)
   ' "$path" >/dev/null 2>&1
 }
+
+# Prints the declared .type of a credential file, or nothing when the file is not a
+# readable JSON object with a string type. Never fails the caller; type routing decisions
+# stay with the caller.
+_claudex_credential_type_of() {
+  local path="$1"
+  "$CLAUDEX_JQ" -r 'if type == "object" and (.type | type == "string") then .type else empty end' \
+    "$path" 2>/dev/null || true
+}
+
+# Prints the path of the unique credential of the given type. Return codes: 0 = exactly
+# one entry of that type exists (path printed), 1 = none exist (silent — callers use this
+# as an existence probe), 2 = more than one entry of that type (error printed).
+_claudex_credential_path_of_type() (
+  local dir="$1" cred_type="$2"
+  local entry cred_entry_type found=""
+  _claudex_assert_private_dir "$dir" || return 2
+  shopt -s dotglob nullglob
+  for entry in "$dir"/*; do
+    cred_entry_type="$(_claudex_credential_type_of "$entry")"
+    if [ "$cred_entry_type" = "$cred_type" ]; then
+      if [ -n "$found" ]; then
+        _claudex_error "expected at most one $cred_type credential in $dir"
+        return 2
+      fi
+      found="$entry"
+    fi
+  done
+  [ -n "$found" ] || return 1
+  printf '%s' "$found"
+)
 
 # Run a command or shell function under the canonical state lock. The descriptor and state
 # live on local APFS; /usr/bin/lockf's fd mode gives us kernel-backed exclusion without a
@@ -418,11 +461,60 @@ credential_count() (
   printf '%s\n' "${#entries[@]}"
 )
 
-assert_single_codex_credential() {
-  local path
-  path="$(_claudex_single_credential_path "${1:-$CLAUDEX_AUTH_DIR}")" || return 1
-  _claudex_credential_json_valid "$path"
-}
+# Validates the canonical credential set for a session mode.
+#   default: exactly one codex credential (required) + at most one claude credential.
+#   mixed:   exactly one codex credential + exactly one claude credential.
+# Any entry that is not a valid codex/claude credential JSON is rejected in both modes.
+# CIR: mixed Stage 1.5 keeps a single proxy and a single canonical auth dir. Once a claude
+# credential is present, a default (non-mixed) session can technically reach it through the
+# same loopback API key — the user explicitly accepted this residual exposure (issue #1127
+# decision; same trust domain as the Stage 1 "loopback key visible to in-session
+# subprocesses" acceptance in claudex.sh). Splitting per-provider auth dirs/proxies was
+# rejected because credential auto-refresh rewrites files and copies would drift; the
+# follow-up boundary review is tracked on the Stage 2 gate issue #1108.
+assert_credential_set() (
+  local dir="$1" mode="$2"
+  local entry cred_entry_type codex_count=0 claude_count=0
+  case "$mode" in
+    default | mixed) ;;
+    *)
+      _claudex_error "assert_credential_set mode must be default or mixed"
+      return 1
+      ;;
+  esac
+  _claudex_assert_private_dir "$dir" || return 1
+  shopt -s dotglob nullglob
+  for entry in "$dir"/*; do
+    cred_entry_type="$(_claudex_credential_type_of "$entry")"
+    case "$cred_entry_type" in
+      codex) codex_count=$((codex_count + 1)) ;;
+      claude) claude_count=$((claude_count + 1)) ;;
+      *)
+        _claudex_error "unexpected credential entry in $dir: ${entry##*/}"
+        return 1
+        ;;
+    esac
+    _claudex_credential_json_valid "$entry" "$cred_entry_type" || return 1
+  done
+  if [ "$codex_count" -ne 1 ]; then
+    _claudex_error "expected exactly one codex credential in $dir (found $codex_count)"
+    return 1
+  fi
+  case "$mode" in
+    default)
+      if [ "$claude_count" -gt 1 ]; then
+        _claudex_error "expected at most one claude credential in $dir (found $claude_count)"
+        return 1
+      fi
+      ;;
+    mixed)
+      if [ "$claude_count" -ne 1 ]; then
+        _claudex_error "mixed mode requires exactly one claude credential in $dir (found $claude_count; run claudex-login --claude)"
+        return 1
+      fi
+      ;;
+  esac
+)
 
 curl_loopback() (
   local path="${1:-}"

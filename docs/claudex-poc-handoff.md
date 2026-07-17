@@ -102,11 +102,12 @@ git status --short --branch
   - `CLAUDE_CODE_EXTRA_BODY`, inherited `CLAUDE_CODE_EFFORT_LEVEL`, `ANTHROPIC_UNIX_SOCKET`, Claude host-auth bridge 환경을 포함한 endpoint/request/transport override 환경을 scrub한다.
   - wrapper-owned settings 파일로 `CLAUDE_CODE_EXTRA_BODY`를 고정해 user/project settings의 request-body override를 중화한다. variant는 두 개이며 모두 pinned Nix store 파일이다 — 기본 variant는 `{}`, fast variant는 `{"service_tier":"priority"}`.
   - 빈 CLI fallback 목록으로 settings의 `fallbackModel`을 마스킹하고, wrapper-owned `CLAUDE_CODE_EFFORT_LEVEL`을 다시 설정한다.
-  - loopback catalog에서 선언 모델을 확인한 뒤 `$HOME/.local/bin/claude`를 실행한다.
-  - model은 `gpt-5.6-sol`로 고정한다. effort는 기본 `high`이며, 명시적 `claudex --effort <low|medium|high|xhigh|max|ultra>` 인자만 세션 값을 바꾼다. `ultra`는 pinned CLI가 argv에서 warn-then-ignore하므로 env 값으로만 전달한다.
+  - loopback catalog에서 세션의 main model(및 mixed에서는 subagent model까지)을 확인한 뒤 `$HOME/.local/bin/claude`를 실행한다.
+  - model 계약은 역할별로 고정한다: default 모드 main = `gpt-5.6-sol`, 모든 모드의 subagent(`CLAUDE_CODE_SUBAGENT_MODEL`) = `gpt-5.6-sol`, `--mixed` 모드 main = `claude-fable-5`. 사용자 `--model` override는 여전히 거부된다. effort는 기본 `high`이며, 명시적 `claudex --effort <low|medium|high|xhigh|max|ultra>` 인자만 세션 값을 바꾼다. `ultra`는 pinned CLI가 argv에서 warn-then-ignore하므로 env 값으로만 전달한다.
+  - `--mixed`(불리언; `--mixed=<값>` 거부)는 혼합 fleet 세션을 연다: main은 proxy의 claude credential로 서빙되는 Claude 모델, 서브에이전트는 그대로 gpt. mixed는 canonical auth에 codex+claude credential이 모두 있어야 시작되고(`claudex-login --claude`로 추가), `--mixed --fast` 조합은 fail-closed로 거부된다(fast 티어는 Codex 백엔드 전용 request-body knob).
   - Codex fast 티어는 불리언 `claudex --fast` 인자만 켠다(`--fast=<값>`은 거부). wrapper가 fast settings variant를 선택해 request body에 `service_tier`를 주입하며, 값은 온-와이어 canonical id인 `"priority"`(카탈로그 id `priority`, 표시명 "Fast")를 사용해 proxy 변환기의 `"fast"` 별칭 매핑에 의존하지 않는다. Claude CLI에는 대응 argv가 없으므로(자체 fastMode는 Anthropic 직접 API 전용 별개 기능) argv 재발행은 없다.
   - `--dangerously-skip-permissions`로 실행해 세션이 항상 bypassPermissions로 시작한다 (pinned CLI는 시작 플래그 없이 세션 중 bypass 전환이 불가능). 이 계약이 조용히 뒤집히지 않도록 사용자 인자의 `--permission-mode`도 wrapper-owned 옵션으로 거부한다.
-  - context window를 wrapper-owned `CLAUDE_CODE_MAX_CONTEXT_TOKENS=258000`으로 고정하고, 같은 값을 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`로도 재발행한다 (후자가 없으면 미인식 모델에서 compact window source가 "auto"로 남아 pinned CLI가 auto-compact를 로컬 세션 가드로 비활성화한다 — 2.1.210 실측). 두 상속 환경값 모두 scrub된다. 값은 upstream의 임시 하향분이라 재상향 시 재조정이 필요하다 — 아래 "context 사용률 표시는 근사치" 항목과 후속 이슈 참조.
+  - context window를 wrapper-owned `CLAUDE_CODE_MAX_CONTEXT_TOKENS=258000`으로 고정하고, 같은 값을 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`로도 재발행한다 (후자가 없으면 미인식 모델에서 compact window source가 "auto"로 남아 pinned CLI가 auto-compact를 로컬 세션 가드로 비활성화한다 — 2.1.210 실측). 두 상속 환경값 모두 scrub된다. 값은 upstream의 임시 하향분이라 재상향 시 재조정이 필요하다 — 아래 "context 사용률 표시는 근사치" 항목과 후속 이슈 참조. 예외: `--mixed`에서는 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`를 재발행하지 않는다 — 이 env에는 모델 스코프가 없어 인식 모델인 Claude main의 compact 임계까지 끌어내리기 때문이며, 대가로 mixed의 gpt 서브에이전트는 auto-compact 없이 돈다(서브 작업이 window를 크게 밑돈다는 가정, 이슈 #1127). `CLAUDE_CODE_MAX_CONTEXT_TOKENS`는 비-claude 모델 전용이라 양쪽 모드에서 유지된다.
 - `modules/shared/programs/claudex/files/claudex-status.sh`
   - launchd service, auth, proxy, catalog 상태를 네 줄로 출력한다.
   - Stage 1 성공 조건은 auth/proxy/catalog ready이며, launchd service는 정보성 상태다.
@@ -118,7 +119,7 @@ git status --short --branch
 ### 검증 연결
 
 - `tests/suites/claudex.sh`: fake boundary, state mode, credential shape, wrapper scrub, wrapper-owned settings, 파생 runtime 계약, 실제 Nix-generated command output, layout drift, synthetic disabled Home Manager closure를 검증한다. fixture materialization 뒤 미치환 placeholder가 하나라도 남으면 실패한다.
-- `tests/shell-script-tests.sh`: 위 suite의 10개 테스트를 전체 shell suite에 등록한다.
+- `tests/shell-script-tests.sh`: 위 suite의 11개 테스트를 전체 shell suite에 등록한다.
 - `tests/eval-tests.nix`: descriptor, 실제·synthetic host 노출, pin, config, no-launchd/no-activation 계약과 portable Nix derivation 계약을 평가한다. 실제 command output 내용은 shell test가 build/read한다.
 - `lefthook.yml`과 `scripts/ai/check-lefthook-staged-config.sh`: JSON pin/template 변경이 eval 검증을 타도록 한다.
 
@@ -128,13 +129,14 @@ git status --short --branch
 |---|---|
 | Proxy | CLIProxyAPI `7.2.73`, Darwin arm64 |
 | Bind | `127.0.0.1:8317` |
-| 모델 | `gpt-5.6-sol` |
+| 모델 (default main / subagent) | `gpt-5.6-sol` / `gpt-5.6-sol` |
+| 모델 (mixed main) | `claude-fable-5` (`claudex --mixed`; descriptor `.model`은 default main alias) |
 | Runtime state | `$HOME/Library/Application Support/claudex` |
 | Descriptor | `$HOME/.config/claudex/runtime.json`, schema `2` |
 | Enabled hosts | `greenhead-MacBookPro`, `work-MacBookPro` |
 | Claude 실행 파일 | `$HOME/.local/bin/claude` |
 | Service label | `org.nix-community.home.claudex-proxy` |
-| Context window override | `CLAUDE_CODE_MAX_CONTEXT_TOKENS=258000` + `CLAUDE_CODE_AUTO_COMPACT_WINDOW=258000` (wrapper-owned; upstream 임시 하향 추종, 단일 상수 공유) |
+| Context window override | `CLAUDE_CODE_MAX_CONTEXT_TOKENS=258000` + `CLAUDE_CODE_AUTO_COMPACT_WINDOW=258000` (wrapper-owned; upstream 임시 하향 추종, 단일 상수 공유). mixed에서는 AUTO_COMPACT_WINDOW 미발행 |
 | Stage 1 service | 없음; foreground launcher만 존재 |
 
 보안·정합성 불변식:
@@ -142,12 +144,25 @@ git status --short --branch
 1. listener는 loopback만 사용한다.
 2. client API key는 state 디렉터리의 mode `0600` 파일이며, 정확히 64자의 lowercase hex여야 한다.
 3. state/auth/runtime 디렉터리는 symlink가 아니어야 하고 private mode를 유지해야 한다.
-4. canonical auth에는 정확히 하나의 유효 Codex credential만 허용한다.
+4. canonical auth의 credential set 계약: codex 정확히 1개(필수) + claude 최대 1개(mixed 필수), 그 외 타입·비JSON·중복은 거부한다 (`assert_credential_set`). claude credential이 공존하면 default 세션도 loopback key를 통해 이론상 그 credential에 닿을 수 있다 — 이 잔여 노출은 명시적으로 수용된 결정이다 (이슈 #1127, Stage 2 경계 재검토는 #1108).
 5. proxy 실행 파일과 config template은 Nix store 경로로 고정한다.
 6. 일반 `claude`의 settings와 인증은 변경하지 않는다.
 7. catalog에 모델이 보이는 것만으로 entitlement 성공으로 판정하지 않는다. 실제 completion이 필요하다.
 8. inherited request body, effort, Unix-socket transport가 wrapper의 endpoint/model/credential 경계를 우회하지 못해야 한다.
 9. byte-identical config render는 inode를 보존한다. runtime contract가 실제로 바뀌면 foreground proxy를 재시작한다.
+
+### 모드별 기대값 (default vs mixed)
+
+| 축 | `claudex` (default) | `claudex --mixed` |
+|---|---|---|
+| main model (`--model`) | `gpt-5.6-sol` | `claude-fable-5` |
+| subagent (`CLAUDE_CODE_SUBAGENT_MODEL`) | `gpt-5.6-sol` | `gpt-5.6-sol` |
+| credential set | codex 1 (claude 0..1 허용) | codex 1 + claude 1 필수 |
+| `CLAUDE_CODE_MAX_CONTEXT_TOKENS` | 258000 | 258000 (비-claude 모델 전용이라 main 무영향) |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | 258000 | 미발행 (main의 자체 auto-compact 보존; gpt 서브는 auto-compact 없음) |
+| `--fast` | 허용 | 거부 (exit 2) |
+| catalog 검증 | main 1종 | main + subagent 2종 |
+| claude.ai 커넥터 | 비활성 (auth token이 로그인을 덮음) | 비활성 (동일) |
 10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 값을 따른다 — 기본 `high`, 명시적 `claudex --effort` 인자(whitelist: low/medium/high/xhigh/max/ultra)만 이를 바꾸며 상속 환경값은 계속 scrub된다.
 11. inherited Claude host-auth bridge와 settings `env.CLAUDE_CODE_EXTRA_BODY`는 wrapper-owned loopback/model/request 계약을 우회하지 못해야 한다.
 12. request body의 `service_tier`는 wrapper-owned 값만 존재한다 — 기본은 필드 미전송(계정 기본 티어), 명시적 `claudex --fast` 인자만 pinned fast settings variant로 `"priority"`를 주입하며 상속 환경값은 계속 scrub된다.
@@ -360,7 +375,10 @@ find "$auth_dir" -mindepth 1 -maxdepth 1 -type f -print 2>/dev/null | wc -l
 
 - `0`: `claudex-login`을 실행한다.
 - `1`: `claudex-login`이 자체 schema 검증 후 ready로 종료하는지 확인한다.
-- `2` 이상 또는 invalid: 자동 삭제·선택하지 말고 중단한 뒤 사용자에게 보고한다.
+- `2`: codex+claude 공존(mixed set)이면 정상이다 — `claudex-status`가 auth=ready를 보고하는지 확인한다. 같은 타입 2개거나 invalid면 아래 규칙을 따른다.
+- 타입별 중복 또는 invalid: 자동 삭제·선택하지 말고 중단한 뒤 사용자에게 보고한다.
+
+mixed 세션용 claude credential 추가는 `claudex-login --claude`로 수행한다 (동일 staging → 타입 검증 → 원자 승격 절차; 기존 codex credential은 건드리지 않는다).
 
 실행:
 
