@@ -73,7 +73,11 @@ let
   claudexEnabledRuntimeBuildPhaseMatchesDescriptor =
     nixpkgsLib.hasInfix "--replace-fail @bindHost@ ${claudexEnabledDescriptor.bindHost}" claudexEnabledRuntimeBuildPhase
     && nixpkgsLib.hasInfix "--replace-fail @port@ ${toString claudexEnabledDescriptor.port}" claudexEnabledRuntimeBuildPhase
-    && nixpkgsLib.hasInfix "--replace-fail @model@ ${claudexEnabledDescriptor.model}" claudexEnabledRuntimeBuildPhase
+    # Descriptor `.model` is the defaultMainModel alias; the role-split subagent/mixed
+    # substitutions exist without a descriptor field (wrapper-internal contract).
+    && nixpkgsLib.hasInfix "--replace-fail @defaultMainModel@ ${claudexEnabledDescriptor.model}" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @subagentModel@ gpt-5.6-sol" claudexEnabledRuntimeBuildPhase
+    && nixpkgsLib.hasInfix "--replace-fail @mixedMainModel@ claude-fable-5" claudexEnabledRuntimeBuildPhase
     && nixpkgsLib.hasInfix "--replace-fail @label@ ${claudexEnabledDescriptor.label}" claudexEnabledRuntimeBuildPhase
     && nixpkgsLib.hasInfix "--replace-fail @stateDir@ " claudexEnabledRuntimeBuildPhase
     && nixpkgsLib.hasInfix claudexEnabledDescriptor.stateDir claudexEnabledRuntimeBuildPhase

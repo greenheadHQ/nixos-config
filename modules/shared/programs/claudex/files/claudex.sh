@@ -17,6 +17,7 @@ CLAUDEX_MAX_CONTEXT_TOKENS="@maxContextTokens@"
 # a single deterministic `--effort` reaches Claude.
 effort_level=high
 fast_tier=false
+mixed_mode=false
 expect_effort_value=false
 forward_args=()
 scan_options=true
@@ -51,6 +52,13 @@ for arg in "$@"; do
       ;;
     --fast=*)
       _claudex_error "--fast does not accept a value (the Codex fast tier is a boolean session flag)"
+      exit 2
+      ;;
+    --mixed)
+      mixed_mode=true
+      ;;
+    --mixed=*)
+      _claudex_error "--mixed does not accept a value (mixed fleet is a boolean session flag)"
       exit 2
       ;;
     *)
@@ -90,13 +98,37 @@ if [ "$fast_tier" = true ]; then
   CLAUDEX_WRAPPER_SETTINGS="$CLAUDEX_WRAPPER_SETTINGS_FAST"
 fi
 
+# CIR: --mixed --fast is rejected fail-closed. service_tier=priority is a Codex-backend
+# request-body knob; how the pinned proxy's claude translator treats an unexpected
+# service_tier on the mixed main model is unverified, so v1 refuses the combination
+# instead of risking silent divergence between main and subagent request bodies.
+if [ "$mixed_mode" = true ] && [ "$fast_tier" = true ]; then
+  _claudex_error "--mixed does not support --fast (Codex fast tier is not defined for the mixed Claude main model)"
+  exit 2
+fi
+
+# Mode-resolved model roles: the main model drives the CLI --model and catalog check;
+# the subagent model always rides CLAUDE_CODE_SUBAGENT_MODEL below.
+credential_mode=default
+main_model="$CLAUDEX_DEFAULT_MAIN_MODEL"
+if [ "$mixed_mode" = true ]; then
+  credential_mode=mixed
+  main_model="$CLAUDEX_MIXED_MAIN_MODEL"
+fi
+
 prepare_state
-assert_single_codex_credential
+assert_credential_set "$CLAUDEX_AUTH_DIR" "$credential_mode"
 wait_for_proxy_ready
 catalog="$(curl_loopback /v1/models)"
-if ! "$CLAUDEX_JQ" -e --arg model "$CLAUDEX_MODEL" \
+if ! "$CLAUDEX_JQ" -e --arg model "$main_model" \
   '.data | type == "array" and any(.id == $model)' <<< "$catalog" >/dev/null; then
-  _claudex_error "declared model is absent from the proxy catalog (catalog is not an entitlement check)"
+  _claudex_error "main model $main_model is absent from the proxy catalog (catalog is not an entitlement check)"
+  exit 1
+fi
+if [ "$main_model" != "$CLAUDEX_SUBAGENT_MODEL" ] \
+  && ! "$CLAUDEX_JQ" -e --arg model "$CLAUDEX_SUBAGENT_MODEL" \
+    '.data | type == "array" and any(.id == $model)' <<< "$catalog" >/dev/null; then
+  _claudex_error "subagent model $CLAUDEX_SUBAGENT_MODEL is absent from the proxy catalog (catalog is not an entitlement check)"
   exit 1
 fi
 
@@ -173,7 +205,7 @@ export CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1
 # wrapper-owned loopback API key becoming visible to in-session subprocesses, which is a
 # loopback-only credential confined to 127.0.0.1:8317.
 export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0
-export CLAUDE_CODE_SUBAGENT_MODEL="$CLAUDEX_MODEL"
+export CLAUDE_CODE_SUBAGENT_MODEL="$CLAUDEX_SUBAGENT_MODEL"
 export CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1
 export CLAUDE_CODE_EFFORT_LEVEL="$effort_level"
 # CIR: the pinned CLI assumes a 200k context window for unrecognized model names, and the
@@ -193,7 +225,16 @@ export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$CLAUDEX_MAX_CONTEXT_TOKENS"
 # symptom). CLAUDE_CODE_AUTO_COMPACT_WINDOW is the CLI's official env channel that flips the
 # source to "env" and re-enables the compact threshold check. It shares the same
 # wrapper-owned value so the issue #1113 re-tune stays single-sourced.
-export CLAUDE_CODE_AUTO_COMPACT_WINDOW="$CLAUDEX_MAX_CONTEXT_TOKENS"
+# CIR: the export is default-mode only. Unlike MAX_CONTEXT_TOKENS (which the CLI applies to
+# non-claude model names only), AUTO_COMPACT_WINDOW has no model scoping — in --mixed it
+# would drag the *recognized* Claude main model's compact threshold down to the gpt value,
+# while the Claude main needs no env channel at all (recognized models keep their own
+# auto-compact). The accepted cost: gpt subagents in mixed sessions run without
+# auto-compact, bounded by the "subagent tasks stay well under the window" assumption
+# recorded on issue #1127. Do not re-add the export for mixed without rechecking both.
+if [ "$mixed_mode" = false ]; then
+  export CLAUDE_CODE_AUTO_COMPACT_WINDOW="$CLAUDEX_MAX_CONTEXT_TOKENS"
+fi
 export CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY=3
 export ENABLE_TOOL_SEARCH=false
 export NO_PROXY="$CLAUDEX_NO_PROXY"
@@ -207,7 +248,7 @@ export no_proxy="$CLAUDEX_NO_PROXY"
 # restores normal permission prompts but also removes the mid-session bypass option.
 exec "$claude_bin" \
   --settings "$CLAUDEX_WRAPPER_SETTINGS" \
-  --model "$CLAUDEX_MODEL" \
+  --model "$main_model" \
   --fallback-model "" \
   "${effort_argv[@]}" \
   --dangerously-skip-permissions \

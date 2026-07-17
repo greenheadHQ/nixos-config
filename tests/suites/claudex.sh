@@ -7,6 +7,14 @@
 # and Nix-generated grep below all read this one constant to keep future re-tunes atomic.
 _CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS=258000
 
+# Role-split model expectations (production source of truth: runtimeContract in
+# modules/shared/programs/claudex/default.nix). The default main and subagent models are
+# currently the same id; keeping separate constants makes the role of each assertion
+# explicit and future re-tunes atomic.
+_CLAUDEX_EXPECTED_DEFAULT_MAIN_MODEL=gpt-5.6-sol
+_CLAUDEX_EXPECTED_SUBAGENT_MODEL=gpt-5.6-sol
+_CLAUDEX_EXPECTED_MIXED_MAIN_MODEL=claude-fable-5
+
 _claudex_assert_no_placeholders() {
   local path="$1"
   if grep -Eq '@[A-Za-z_][A-Za-z0-9_-]*@' "$path"; then
@@ -38,7 +46,9 @@ _claudex_materialize_runtime() {
   local launchctl_bin="${CLAUDEX_FIXTURE_LAUNCHCTL_BIN:-/bin/launchctl}"
   local bind_host="${CLAUDEX_FIXTURE_BIND_HOST:-127.0.0.1}"
   local port="${CLAUDEX_FIXTURE_PORT:-8317}"
-  local model="${CLAUDEX_FIXTURE_MODEL:-gpt-5.6-sol}"
+  local default_main_model="${CLAUDEX_FIXTURE_DEFAULT_MAIN_MODEL:-$_CLAUDEX_EXPECTED_DEFAULT_MAIN_MODEL}"
+  local subagent_model="${CLAUDEX_FIXTURE_SUBAGENT_MODEL:-$_CLAUDEX_EXPECTED_SUBAGENT_MODEL}"
+  local mixed_main_model="${CLAUDEX_FIXTURE_MIXED_MAIN_MODEL:-$_CLAUDEX_EXPECTED_MIXED_MAIN_MODEL}"
   local label="${CLAUDEX_FIXTURE_LABEL:-org.nix-community.home.claudex-proxy}"
   local pprof_port="${CLAUDEX_FIXTURE_PPROF_PORT:-$((port - 1))}"
   local state_dir="${CLAUDEX_FIXTURE_STATE_DIR:-$declared_home/Library/Application Support/claudex}"
@@ -76,7 +86,9 @@ _claudex_materialize_runtime() {
     -e "s|@launchctlBin@|$launchctl_bin|g" \
     -e "s|@bindHost@|$bind_host|g" \
     -e "s|@port@|$port|g" \
-    -e "s|@model@|$model|g" \
+    -e "s|@defaultMainModel@|$default_main_model|g" \
+    -e "s|@subagentModel@|$subagent_model|g" \
+    -e "s|@mixedMainModel@|$mixed_main_model|g" \
     -e "s|@label@|$label|g" \
     -e "s|@pprofPort@|$pprof_port|g" \
     "$source" > "$destination"
@@ -263,7 +275,7 @@ test_claudex_runtime_api_and_private_state() {
       declare -F | sed "s/^declare -f //" | grep -v "^_" | sort
     ' _ "$runtime"
   })"
-  expected=$'assert_single_codex_credential\ncredential_count\ncurl_loopback\nprepare_state\nwait_for_proxy_ready\nwith_state_lock'
+  expected=$'assert_credential_set\ncredential_count\ncurl_loopback\nprepare_state\nwait_for_proxy_ready\nwith_state_lock'
   [[ "$command_functions" == "$expected" ]] || fail "claudex runtime command API drifted: $command_functions"
   [[ ! -e "$state" ]] || fail "sourcing claudex runtime must be inert"
 
@@ -383,17 +395,20 @@ test_claudex_runtime_derived_contract() {
   CLAUDEX_FIXTURE_BIND_HOST=127.0.0.42 \
     CLAUDEX_FIXTURE_PORT=18317 \
     CLAUDEX_FIXTURE_PPROF_PORT=18316 \
-    CLAUDEX_FIXTURE_MODEL=sentinel-model \
+    CLAUDEX_FIXTURE_DEFAULT_MAIN_MODEL=sentinel-default-main \
+    CLAUDEX_FIXTURE_SUBAGENT_MODEL=sentinel-subagent \
+    CLAUDEX_FIXTURE_MIXED_MAIN_MODEL=sentinel-mixed-main \
     CLAUDEX_FIXTURE_LABEL=org.example.claudex-sentinel \
     _claudex_materialize_runtime "$runtime" "$template"
 
   output="$(HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
     source "$1"
-    printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n" \
-      "$CLAUDEX_BIND_HOST" "$CLAUDEX_PORT" "$CLAUDEX_MODEL" "$CLAUDEX_LABEL" \
-      "$CLAUDEX_PPROF_ADDR" "$CLAUDEX_BASE_URL" "$CLAUDEX_NO_PROXY"
+    printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n" \
+      "$CLAUDEX_BIND_HOST" "$CLAUDEX_PORT" \
+      "$CLAUDEX_DEFAULT_MAIN_MODEL" "$CLAUDEX_SUBAGENT_MODEL" "$CLAUDEX_MIXED_MAIN_MODEL" \
+      "$CLAUDEX_LABEL" "$CLAUDEX_PPROF_ADDR" "$CLAUDEX_BASE_URL" "$CLAUDEX_NO_PROXY"
   ' _ "$runtime")"
-  expected=$'127.0.0.42\n18317\nsentinel-model\norg.example.claudex-sentinel\n127.0.0.42:18316\nhttp://127.0.0.42:18317\n127.0.0.42,localhost'
+  expected=$'127.0.0.42\n18317\nsentinel-default-main\nsentinel-subagent\nsentinel-mixed-main\norg.example.claudex-sentinel\n127.0.0.42:18316\nhttp://127.0.0.42:18317\n127.0.0.42,localhost'
   [[ "$output" == "$expected" ]] || fail "derived runtime contract drifted: $output"
 
   HOME="$sandbox/home" \
@@ -420,17 +435,45 @@ test_claudex_credential_and_loopback_contract() {
 
   _claudex_add_valid_credential "$state"
   HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
-    source "$1"; assert_single_codex_credential
+    source "$1"; assert_credential_set "$CLAUDEX_AUTH_DIR" default
   ' _ "$runtime" || fail "valid Codex credential was rejected"
 
   printf '%s' '{"type":"claude","access_token":"secret","refresh_token":"secret"}' \
     > "$state/auth/codex-test.json"
+  chmod 600 "$state/auth/codex-test.json"
   if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
-    source "$1"; assert_single_codex_credential
+    source "$1"; assert_credential_set "$CLAUDEX_AUTH_DIR" default
   ' _ "$runtime" >/dev/null 2>&1; then
-    fail "wrong-provider credential was accepted"
+    fail "claude-only credential set was accepted without a codex credential"
   fi
   _claudex_add_valid_credential "$state"
+
+  # Mixed-set contract: codex + claude coexistence is a valid default set, required for
+  # mixed; a second claude entry or an unknown provider breaks both modes.
+  printf '%s' '{"type":"claude","access_token":"claude-access","refresh_token":"claude-refresh"}' \
+    > "$state/auth/claude-test.json"
+  chmod 600 "$state/auth/claude-test.json"
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
+    source "$1"; assert_credential_set "$CLAUDEX_AUTH_DIR" default
+  ' _ "$runtime" || fail "codex+claude coexistence was rejected in default mode"
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
+    source "$1"; assert_credential_set "$CLAUDEX_AUTH_DIR" mixed
+  ' _ "$runtime" || fail "codex+claude coexistence was rejected in mixed mode"
+  rm "$state/auth/claude-test.json"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
+    source "$1"; assert_credential_set "$CLAUDEX_AUTH_DIR" mixed
+  ' _ "$runtime" >/dev/null 2>&1; then
+    fail "mixed mode accepted a set without a claude credential"
+  fi
+  printf '%s' '{"type":"gemini","access_token":"x","refresh_token":"y"}' \
+    > "$state/auth/gemini-test.json"
+  chmod 600 "$state/auth/gemini-test.json"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
+    source "$1"; assert_credential_set "$CLAUDEX_AUTH_DIR" default
+  ' _ "$runtime" >/dev/null 2>&1; then
+    fail "unknown-provider credential was accepted"
+  fi
+  rm "$state/auth/gemini-test.json"
 
   _claudex_make_ready_curl "$sandbox"
 
@@ -708,6 +751,93 @@ EOF
   done
 }
 
+test_claudex_mixed_mode_contract() {
+  local sandbox state wrapper rc
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  wrapper="$sandbox/generated/claudex"
+  _claudex_fixture "$sandbox"
+  _claudex_prepare_fixture_state "$sandbox"
+  _claudex_add_valid_credential "$state"
+
+  # Mixed catalog fake: the mixed main model and the subagent model are both served.
+  cat > "$sandbox/fake-curl" <<EOF
+#!/usr/bin/env bash
+IFS= read -r _header || true
+printf '%s' '{"data":[{"id":"$_CLAUDEX_EXPECTED_SUBAGENT_MODEL"},{"id":"$_CLAUDEX_EXPECTED_MIXED_MAIN_MODEL"}]}'
+EOF
+  chmod +x "$sandbox/fake-curl"
+
+  cat > "$sandbox/home/.local/bin/claude" <<EOF
+#!/usr/bin/env bash
+{
+  printf 'subagent=%s\n' "\${CLAUDE_CODE_SUBAGENT_MODEL-unset}"
+  printf 'max_context=%s\n' "\${CLAUDE_CODE_MAX_CONTEXT_TOKENS-unset}"
+  printf 'auto_compact_window=%s\n' "\${CLAUDE_CODE_AUTO_COMPACT_WINDOW-unset}"
+  printf 'arg=%s\n' "\$@"
+} > "$sandbox/claude.log"
+exit 23
+EOF
+  chmod +x "$sandbox/home/.local/bin/claude"
+
+  # --mixed refuses to start without a claude credential (fail-closed, before exec).
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" "$wrapper" --mixed -- literal-prompt >/dev/null 2>&1; then
+    fail "--mixed started without a claude credential"
+  fi
+  [[ ! -e "$sandbox/claude.log" ]] || fail "--mixed invoked Claude without a claude credential"
+
+  printf '%s' '{"type":"claude","access_token":"claude-access","refresh_token":"claude-refresh"}' \
+    > "$state/auth/claude-test.json"
+  chmod 600 "$state/auth/claude-test.json"
+
+  # Mixed happy path: Claude main model on argv, gpt subagent env, no auto-compact window.
+  set +e
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" "$wrapper" --mixed -- literal-prompt
+  rc=$?
+  set -e
+  [[ "$rc" == "23" ]] || fail "claudex --mixed did not reach Claude"
+  assert_file_contains "$sandbox/claude.log" "subagent=$_CLAUDEX_EXPECTED_SUBAGENT_MODEL"
+  assert_file_contains "$sandbox/claude.log" "max_context=$_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS"
+  assert_file_contains "$sandbox/claude.log" "auto_compact_window=unset"
+  assert_file_contains "$sandbox/claude.log" "arg=--model"
+  assert_file_contains "$sandbox/claude.log" "arg=$_CLAUDEX_EXPECTED_MIXED_MAIN_MODEL"
+
+  # Default mode keeps working with the coexisting claude credential and keeps its
+  # auto-compact window export.
+  rm -f "$sandbox/claude.log"
+  set +e
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" "$wrapper" -- literal-prompt
+  rc=$?
+  set -e
+  [[ "$rc" == "23" ]] || fail "default claudex did not run with a coexisting claude credential"
+  assert_file_contains "$sandbox/claude.log" "arg=$_CLAUDEX_EXPECTED_DEFAULT_MAIN_MODEL"
+  assert_file_contains "$sandbox/claude.log" "auto_compact_window=$_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS"
+
+  # Managed-flag hygiene: --mixed is a boolean and combines with neither a value nor --fast.
+  rm -f "$sandbox/claude.log"
+  set +e
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" --mixed=1 >/dev/null 2>&1
+  rc=$?
+  set -e
+  [[ "$rc" == "2" ]] || fail "--mixed=1 was not rejected with exit 2"
+  set +e
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$wrapper" --mixed --fast >/dev/null 2>&1
+  rc=$?
+  set -e
+  [[ "$rc" == "2" ]] || fail "--mixed --fast was not rejected with exit 2"
+  [[ ! -e "$sandbox/claude.log" ]] || fail "rejected mixed combination still invoked Claude"
+
+  # Mixed fails when the catalog lacks the mixed main model (subagent-only catalog).
+  _claudex_make_ready_curl "$sandbox"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_CURL="$sandbox/fake-curl" "$wrapper" --mixed -- literal-prompt >/dev/null 2>&1; then
+    fail "--mixed accepted a catalog without the mixed main model"
+  fi
+}
+
 test_claudex_launcher_and_login_use_fake_boundaries() {
   local sandbox state launcher login proxy_log jq_bin expected_work rc
   sandbox="$(new_sandbox)"
@@ -810,6 +940,82 @@ EOF
   HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" "$login" \
     >/dev/null
   [[ ! -e "$proxy_log" ]] || fail "existing canonical credential triggered another device login"
+
+  # --claude adds the second provider credential next to the codex entry (mixed set).
+  cat > "$sandbox/fake-cli-proxy-api" <<EOF
+#!/usr/bin/env bash
+printf 'arg=%s\n' "\$@" > "$proxy_log"
+claude=false
+config=''
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    --claude-login) claude=true; shift ;;
+    --config) config="\$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ "\$claude" = true ] || exit 1
+auth_dir="\$("$jq_bin" -r '.["auth-dir"]' "\$config")"
+mkdir -p "\$auth_dir"
+chmod 700 "\$auth_dir"
+printf '%s' '{"type":"claude","access_token":"claude-access","refresh_token":"claude-refresh"}' > "\$auth_dir/claude-stage.json"
+chmod 600 "\$auth_dir/claude-stage.json"
+exit 0
+EOF
+  chmod +x "$sandbox/fake-cli-proxy-api"
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" --claude >/dev/null
+  assert_file_contains "$proxy_log" "arg=--claude-login"
+  [[ "$(find "$state/auth" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == "2" ]] \
+    || fail "claude login did not add the second credential next to the codex entry"
+  jq -e '.type == "claude" and .access_token == "claude-access"' \
+    "$state/auth/claude-stage.json" >/dev/null || fail "promoted claude credential is invalid"
+  jq -e '.type == "codex"' "$state/auth/codex-stage.json" >/dev/null \
+    || fail "claude login touched the canonical codex credential"
+
+  # Both login paths are idempotent per credential type once their entry exists.
+  rm -f "$proxy_log"
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" --claude >/dev/null
+  [[ ! -e "$proxy_log" ]] || fail "existing claude credential triggered another claude login"
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" >/dev/null
+  [[ ! -e "$proxy_log" ]] || fail "coexisting claude credential broke the no-arg login no-op"
+
+  # Usage hygiene: unknown or extra arguments are rejected.
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$login" --claude extra >/dev/null 2>&1; then
+    fail "claudex-login accepted extra arguments"
+  fi
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$login" --hostile >/dev/null 2>&1; then
+    fail "claudex-login accepted an unknown flag"
+  fi
+
+  # Claude-first login order: --claude into an EMPTY auth dir must promote cleanly
+  # (codex-only and claude-only are legitimate mid-login states; the old full-set assert
+  # made this path fail after the move).
+  rm -rf "$state/auth"
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" --claude >/dev/null || fail "claude-first login into an empty auth dir failed"
+  [[ "$(find "$state/auth" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == "1" ]] \
+    || fail "claude-first login did not leave exactly one credential"
+  jq -e '.type == "claude"' "$state/auth/claude-stage.json" >/dev/null \
+    || fail "claude-first promoted credential is invalid"
+
+  # A malformed sibling blocks both the ready short-circuit and promotion (no partial
+  # promotion next to a poisoned set; no false ready that the session gate would reject).
+  printf '%s' '{"type":"gemini","access_token":"x","refresh_token":"y"}' \
+    > "$state/auth/gemini-bad.json"
+  chmod 600 "$state/auth/gemini-bad.json"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" --claude >/dev/null 2>&1; then
+    fail "login reported ready despite a malformed sibling entry"
+  fi
+  rm -f "$proxy_log"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    "$login" >/dev/null 2>&1; then
+    fail "codex login proceeded despite a malformed sibling entry"
+  fi
+  rm "$state/auth/gemini-bad.json"
 }
 
 test_claudex_production_execution_boundaries() {
@@ -988,6 +1194,8 @@ test_claudex_nix_generated_command_outputs_are_pinned() {
     || fail "Nix-generated proxy launcher does not pass --local-model"
   grep -Fq -- '--codex-device-login' "$runtime_out/bin/claudex-login" \
     || fail "Nix-generated login does not pass --codex-device-login"
+  grep -Fq -- '--claude-login' "$runtime_out/bin/claudex-login" \
+    || fail "Nix-generated login does not support --claude-login"
 }
 
 test_claudex_release_layout_verifier() {
