@@ -180,6 +180,10 @@
     # ~/.1password/agent.sock symlink는 자동생성되지 않아 group container 경로를 직접 쓴다.
     # 사용처: ssh IdentityAgent(modules/darwin/programs/ssh) + ssh() preflight(shell/darwin.nix).
     agentSocketRelPath = "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock";
+    # Mac 전용 SA token의 배포 경로 (home 상대) — 단일 소스.
+    # 배포: modules/shared/programs/secrets(agenix path), 소비: gh-pat-mac(shell/darwin.nix) ·
+    # op_get(shell/default.nix). literal 분산 시 경로 정책 변경이 배포/소비 경계를 따로 움직인다.
+    saTokenMacRelPath = ".config/op/sa-token-mac";
     # 1Password 백그라운드 기동 인자 (단일 소스). -g 포커스 유지, -j hidden, --silent 메인창 억제.
     # launchd 자동 기동은 [ "/usr/bin/open" ] ++ openArgs (절대경로), shell preflight 복구는
     # `open ${escapeShellArgs openArgs}`로 공유한다 — flag 변경 시 한 곳만 고친다.

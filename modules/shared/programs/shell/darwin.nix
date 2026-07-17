@@ -33,10 +33,12 @@ let
       case "$_c" in ghp_*|github_pat_*) printf '%s' "$_c"; exit 0 ;; esac
     fi
     rm -f "$_cache" 2>/dev/null
-    _sa="$HOME/.config/op/sa-token-mac"
+    _sa="$HOME/${constants.onePassword.saTokenMacRelPath}"
     [ -r "$_sa" ] || exit 0
     command -v op >/dev/null 2>&1 || exit 0
-    _tok=$(OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" op read --no-newline \
+    # OP_CONNECT_HOST/TOKEN은 op 공식 우선순위상 SA token보다 우선하므로 서브셸에서 제거한다
+    # (op_get과 동일 계약 — repo는 Connect 서버 미도입 NG-1이라 잔존 Connect env는 항상 오염).
+    _tok=$(unset OP_CONNECT_HOST OP_CONNECT_TOKEN; OP_SERVICE_ACCOUNT_TOKEN="$(cat "$_sa")" op read --no-newline \
            "op://${constants.onePassword.vaults.automation}/github-pat/token" 2>/dev/null || true)
     case "$_tok" in ghp_*|github_pat_*) ;; *) exit 0 ;; esac
     ( umask 077; printf '%s' "$_tok" > "$_cache.tmp.$$" && mv -f "$_cache.tmp.$$" "$_cache" )

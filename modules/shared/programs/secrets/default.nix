@@ -5,6 +5,7 @@
   pkgs,
   lib,
   hostType,
+  constants,
   ...
 }:
 
@@ -79,7 +80,9 @@
     // lib.optionalAttrs (pkgs.stdenv.isDarwin && hostType == "personal") {
       opnix-service-account-token-mac = {
         file = ../../../../secrets/opnix-service-account-token-mac.age;
-        path = "${config.xdg.configHome}/op/sa-token-mac";
+        # 경로 단일 소스: constants.onePassword.saTokenMacRelPath — 소비자(gh-pat-mac·op_get)는
+        # $HOME 기준으로 같은 상수를 조립하므로 xdg.configHome이 아닌 homeDirectory로 고정한다.
+        path = "${config.home.homeDirectory}/${constants.onePassword.saTokenMacRelPath}";
         mode = "0400";
       };
     };

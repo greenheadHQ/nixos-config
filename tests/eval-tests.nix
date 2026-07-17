@@ -652,6 +652,23 @@ let
             && claudexActivationNames == [ ]
             && !claudexActivationReferencesRuntime;
         }
+        {
+          # op_get 무인 SA 폴백(#1041/#1094 인접 DX) 회귀 핀 — 구현 형태가 아니라 계약 마커를 잠근다:
+          # (1) SA token 경로 상수(constants.onePassword.saTokenMacRelPath)가 initContent에 배선됨
+          #     (무인 경로 존재 — 경로는 상수와 동일 소스이므로 경로 정책 변경에도 테스트가 따라간다).
+          # (2) biometric opt-in 플래그(OP_GET_BIOMETRIC)가 존재 — 이 마커가 사라지면 무인 컨텍스트
+          #     biometric 차단 가드가 통째로 제거된 것이므로 원격/LLM 셸의 승인 대기 hang 회귀다.
+          name = "Test D18 ${hostName}: op_get 무인 SA 폴백 배선 + biometric opt-in 가드 마커가 initContent에 있어야 함";
+          cond =
+            hasHost
+            && (
+              let
+                zshInit = hm.programs.zsh.initContent;
+              in
+              nixpkgsLib.hasInfix constants.onePassword.saTokenMacRelPath zshInit
+              && nixpkgsLib.hasInfix "OP_GET_BIOMETRIC" zshInit
+            );
+        }
       ]
     ) expectedDarwinHosts
   );
