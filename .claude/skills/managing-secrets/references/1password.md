@@ -74,9 +74,9 @@ SSOT: `modules/shared/programs/shell/darwin.nix`.
 
 1. `OP_SERVICE_ACCOUNT_TOKEN` env가 이미 있으면 그대로 `op read` (SA env가 account를 결정 — `--account` 미전달).
 2. Mac SA token(`~/.config/op/sa-token-mac`, 방식 B #873 재사용)이 읽히면 SA로 `op read` — biometric 0회, 데스크탑 앱·잠금·원격 여부 무관(SaaS 직행). SA 도달 범위(Automation read-only) 밖 vault(Personal/SSH)는 권한 오류로 즉시 실패하고 3단계로 넘어간다. LLM이 프롬프트 없이 읽어야 할 시크릿은 Automation vault에 두면 이 경로를 탄다.
-3. biometric(데스크탑 앱 연동) — 대화형 전용. 무인 판정(stdin/stderr 비TTY · SSH 원격 세션 · 에이전트/CI 하네스 env: `CI`/`CLAUDECODE`/`CODEX_CI`/`CODEX_PROGRAMMATIC`)이 하나라도 참이면 시도 없이 명확히 실패한다(fail-fast) — 비대화형 `op read`는 Mac 화면에만 뜨는 승인을 기다리며 무한 hang하기 때문(#1041). 사람이 화면 앞에 있는 예외 상황만 `OP_GET_BIOMETRIC=1`로 명시 우회한다.
+3. biometric(데스크탑 앱 연동) — **기본 차단(positive-gate)**. SA 경로 실패 시 시도 없이 fail-fast한다 — `op read`의 승인 팝업은 Mac 로컬 화면에만 떠서 무인·원격 컨텍스트에서 진입하면 무한 hang하기 때문(#1041). TTY denylist로는 표식 없는 PTY 자동화를 못 잡으므로(gh-auth가 같은 이유로 biometric fallback을 제거한 #876 F3 선례), 사람이 Mac 화면 앞에 있을 때만 켜는 `OP_GET_BIOMETRIC=1 op_get ...` opt-in에서만 biometric을 허용한다.
 
-SA 경로(1·2단계)는 서브셸에서 `OP_CONNECT_HOST`/`OP_CONNECT_TOKEN`을 제거하고 실행한다 — Connect env가 SA token보다 우선하는 op 공식 우선순위 때문이며, 이 repo는 Connect 서버 미도입(NG-1)이라 잔존 Connect env는 항상 오염이다. 경로 단일 소스는 `constants.onePassword.saTokenMacRelPath`.
+SA 경로(1·2단계)는 서브셸에서 `OP_CONNECT_HOST`/`OP_CONNECT_TOKEN`을 제거하고 SA token은 `env`로 감싼 단일 command subtree에만 주입한다 — Connect env가 SA token보다 우선하는 op 공식 우선순위 때문이며, 이 repo는 Connect 서버 미도입(NG-1)이라 잔존 Connect env는 항상 오염이다. 같은 계약을 `gh-pat-mac`(darwin.nix)도 공유한다. 경로 단일 소스는 `constants.onePassword.saTokenMacRelPath`.
 
 회귀 핀: `tests/eval-tests.nix` Test D18 (SA 경로 상수 배선 + `OP_GET_BIOMETRIC` opt-in 마커).
 
