@@ -165,7 +165,7 @@ git status --short --branch
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | 258000 | 미발행 (main의 자체 auto-compact 보존; gpt 서브는 auto-compact 없음) |
 | `--fast` | 허용 | 거부 (exit 2) |
 | catalog 검증 | main 1종 | main + subagent 2종 |
-| claude.ai 커넥터 | 비활성 (auth token이 로그인을 덮음) | 비활성 (동일) |
+| claude.ai 계정 연동 (커넥터·Remote Control) | 비활성 (auth token이 로그인을 덮어 세션이 API Usage Billing으로 취급됨 — 계정에 세션이 등록되지 않아 휴대폰·타 기기 원격 접근 불가, 2026-07-17 실측) | 비활성 (동일) |
 
 ### 알려진 한계·리스크와 롤백
 
