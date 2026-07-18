@@ -689,6 +689,28 @@ let
                 true
             );
         }
+        {
+          # minipc-headless 무인 라우팅 계약(#1094 C안) 회귀 핀 — personal 한정:
+          # (1) ssh minipc-headless alias가 IdentityAgent none(1Password 우회)으로 정의,
+          # (2) ssh() wrapper 무인 경로가 headless 키 경로 + IdentityAgent=none 오버라이드를 포함.
+          # 이 마커가 사라지면 무인 세션이 headless 우회 대신 1Password 서명 경로로 되돌아간다.
+          name = "Test D20 ${hostName}: minipc-headless alias(IdentityAgent none) + wrapper 무인 라우팅 마커";
+          cond =
+            hasHost
+            && (
+              let
+                zshInit = hm.programs.zsh.initContent;
+                sshSettings = hm.programs.ssh.settings;
+              in
+              if nixpkgsLib.hasInfix "ssh minipc preflight" zshInit then
+                (sshSettings ? "minipc-headless")
+                && (sshSettings."minipc-headless".IdentityAgent or "") == "none"
+                && nixpkgsLib.hasInfix constants.onePassword.headlessKeyRelPath zshInit
+                && nixpkgsLib.hasInfix "IdentityAgent=none" zshInit
+              else
+                true
+            );
+        }
       ]
     ) expectedDarwinHosts
   );
@@ -832,6 +854,22 @@ let
     {
       name = "Test 5d: openssh PasswordAuthentication이 false이어야 함 (공개키만 허용)";
       cond = nixosCfg.services.openssh.settings.PasswordAuthentication == false;
+    }
+    {
+      # 무인 headless 키(#1094 C안)의 blast radius 제한 회귀 핀 — from=(Mac Tailscale IP)로
+      # 출발지를 제한하고 no-*-forwarding으로 포워딩(피벗)을 차단하는 옵션이 authorized_keys
+      # 엔트리에 반드시 함께 있어야 한다. 이 옵션이 빠지면 headless 키가 무제한 신원이 된다.
+      name = "Test 5e: minipc headless authorized_key에 from=(Mac IP) + no-forwarding 제한이 있어야 함";
+      cond =
+        let
+          keys = nixosCfg.users.users.greenhead.openssh.authorizedKeys.keys;
+          hl = builtins.filter (k: nixpkgsLib.hasInfix "minipc-headless" k) keys;
+        in
+        builtins.length hl == 1
+        && nixpkgsLib.hasInfix ''from="${constants.network.macbookTailscaleIP}"'' (builtins.head hl)
+        && nixpkgsLib.hasInfix "no-port-forwarding" (builtins.head hl)
+        && nixpkgsLib.hasInfix "no-agent-forwarding" (builtins.head hl)
+        && nixpkgsLib.hasInfix "no-X11-forwarding" (builtins.head hl);
     }
     {
       name = "Test 6a: networking.firewall.enable이 true이어야 함";

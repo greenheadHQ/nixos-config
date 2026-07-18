@@ -72,4 +72,10 @@ in
   # 개인 Mac user 로그인 키 전용 recipient — work role 호스트는 복호화 불가하여 graceful 분리.
   # MiniPC host-key SA(위 minipcHostOnly)와 별개로 발급된 격리 SA (blast radius 분리, Automation read-only).
   "opnix-service-account-token-mac.age".publicKeys = [ constants.sshKeys.macbook ];
+
+  # 무인 minipc SSH 개인키 (#1094 C안) — 원격/LLM 세션이 1Password를 우회해 minipc에 접속하는
+  # 자동화 전용 신원. 개인 Mac user 로그인 키 전용 recipient(work role은 복호화 불가, graceful 분리).
+  # ~/.ssh/minipc-headless(0400, personal 한정)로 배포. blast radius는 minipc authorized_keys의
+  # from=(Mac Tailscale IP) + no-forwarding 제한으로 축소. mac-ssh/emergency와 별개 신원(혼용 금지).
+  "minipc-headless.age".publicKeys = [ constants.sshKeys.macbook ];
 }
