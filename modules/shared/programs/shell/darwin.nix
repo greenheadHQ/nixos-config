@@ -242,8 +242,12 @@ in
               # 무한 대기가 된다. 상한을 걸어 세션이 bounded time 안에 복귀하게 한다. 이 값은
               # 인증 정책과 독립된 불변식이다(어떤 인증안을 택해도 유지). 대화형 경로엔 적용하지
               # 않는다(사람이 Touch ID로 승인 가능). timeout 부재 시 degraded(기존 동작).
+              # command 토큰 없이 ssh를 직접 준다 — timeout은 외부 프로세스라 execvp로 PATH의
+              # ssh 바이너리를 찾으며 zsh 함수 재귀가 발생하지 않는다(비-timeout 경로의 `command
+              # ssh`는 함수 재귀 회피용이지만 여기선 불필요). `timeout … command ssh`는 macOS에서
+              # /usr/bin/command 실행파일에 우연히 의존해 동작할 뿐이라 이식성이 취약하다.
               local _ssh_deadline=20
-              timeout "$_ssh_deadline" command ssh "$@"
+              timeout "$_ssh_deadline" ssh "$@"
               _rc=$?
               if (( _rc == 124 )); then
                 print -u2 "✗ ssh minipc 시간 초과(''${_ssh_deadline}s, 무인) — 1Password SSH 서명 승인 대기 가능성(승인 UI는 Mac 로컬 화면에만 표시)."
