@@ -15,9 +15,16 @@ auth_state="missing"
 proxy_state="unreachable"
 catalog_state="unavailable"
 
-domain="gui/$($CLAUDEX_ID -u)"
-if "$CLAUDEX_LAUNCHCTL" print "$domain/$CLAUDEX_LABEL" >/dev/null 2>&1; then
-  service_state="present"
+# Stage 1 declares no service unit on either platform. Darwin still probes launchd so an
+# out-of-band agent would remain visible here; Linux has no launchd domain to ask and reports
+# n/a rather than "missing", which would imply a unit was expected but not found.
+if [ -n "$CLAUDEX_LAUNCHCTL" ]; then
+  domain="gui/$($CLAUDEX_ID -u)"
+  if "$CLAUDEX_LAUNCHCTL" print "$domain/$CLAUDEX_LABEL" >/dev/null 2>&1; then
+    service_state="present"
+  fi
+else
+  service_state="n/a"
 fi
 
 if [ -d "$CLAUDEX_AUTH_DIR" ] && [ ! -L "$CLAUDEX_AUTH_DIR" ]; then

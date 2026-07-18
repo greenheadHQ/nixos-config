@@ -31,7 +31,7 @@ if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_RM="${CLAUDEX_RM:-@rmBin@}"
   CLAUDEX_SLEEP="${CLAUDEX_SLEEP:-@sleepBin@}"
   CLAUDEX_ENV="${CLAUDEX_ENV:-@envBin@}"
-  CLAUDEX_LOCKF="${CLAUDEX_LOCKF:-@lockfBin@}"
+  CLAUDEX_FLOCK="${CLAUDEX_FLOCK:-@flockBin@}"
   CLAUDEX_LAUNCHCTL="${CLAUDEX_LAUNCHCTL:-@launchctlBin@}"
   CLAUDEX_ID="${CLAUDEX_ID:-@idBin@}"
 else
@@ -47,7 +47,7 @@ else
   CLAUDEX_RM="@rmBin@"
   CLAUDEX_SLEEP="@sleepBin@"
   CLAUDEX_ENV="@envBin@"
-  CLAUDEX_LOCKF="@lockfBin@"
+  CLAUDEX_FLOCK="@flockBin@"
   CLAUDEX_LAUNCHCTL="@launchctlBin@"
   CLAUDEX_ID="@idBin@"
 fi
@@ -448,8 +448,10 @@ _claudex_credential_path_of_type() (
 )
 
 # Run a command or shell function under the canonical state lock. The descriptor and state
-# live on local APFS; /usr/bin/lockf's fd mode gives us kernel-backed exclusion without a
-# stale-lock cleanup protocol. Tests may inject CLAUDEX_LOCKF.
+# live on a local filesystem; flock's fd mode gives us kernel-backed exclusion without a
+# stale-lock cleanup protocol, identically on macOS (discoteq flock) and NixOS (util-linux
+# flock). -x is stated explicitly so the exclusive contract does not rest on flock's default.
+# Tests may inject CLAUDEX_FLOCK.
 with_state_lock() (
   local lock_mode
   umask 077
@@ -467,7 +469,7 @@ with_state_lock() (
     exit 1
   fi
   exec 9>"$CLAUDEX_STATE_LOCK" || exit 1
-  if ! "$CLAUDEX_LOCKF" -s -t "$CLAUDEX_LOCK_TIMEOUT_SECONDS" 9; then
+  if ! "$CLAUDEX_FLOCK" -x -w "$CLAUDEX_LOCK_TIMEOUT_SECONDS" 9; then
     _claudex_error "timed out waiting for the state lock"
     exit 1
   fi
