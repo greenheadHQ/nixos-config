@@ -159,8 +159,9 @@ in
     # 1Password가 미실행/잠금이면 agent가 mac-ssh를 못 줘 ssh가 구 키로 폴백→Permission denied가
     # 난다. 그 순간 원인·복구를 안내하고 1Password를 자동 기동한 뒤 agent 복구를 짧게 대기한다.
     # 평시엔 launchd 자동 기동(modules/darwin/programs/ssh)이 socket을 살려두므로 이 경로는
-    # 수동 quit/크래시 등 잔여 케이스 전용이다. interactive 셸 전용(non-interactive 자동화는
-    # 이 맥락을 아는 호출자가 쓰고, GUI open 팝업이 부적절하므로 raw ssh로 통과).
+    # 수동 quit/크래시 등 잔여 케이스 전용이다. 대화형은 앱 기동 + Touch ID 잠금해제 대기를,
+    # 무인(원격/LLM)은 앱 대기를 건너뛰고 서명에 outer deadline을 걸어 세션 무한 hang을 막는다
+    # (#1094 — 승인 UI가 Mac 로컬 화면 전용이라 원격에선 보이지 않는 대기가 된다).
     # personal 전용 — minipc matchBlock/launchd와 스코프 일치(work Mac은 Tailnet 미소속이라 무관).
     # 대상 판정은 전부 `ssh -G "$@"`에 위임한다 — 수동 옵션 파싱은 ssh의 방대한 옵션 공간(메타모드·
     # user@host·-W·포트·alias·remote command)을 못 따라가 미탐·오탐이 난다. ssh -G는 -O/-W/-G 등과도
@@ -186,8 +187,24 @@ in
           if [[ -n "$_cpath" && "$_cpath" != none ]] && command ssh -O check -S "$_cpath" "${minipcHostIP}" 2>/dev/null; then
             _master_active=1
           fi
+          # 무인 컨텍스트 판정(#1094 — 원격/LLM 세션의 1Password 승인 hang 제거).
+          # 1Password SSH agent의 승인·잠금해제 UI는 Mac 로컬 화면에만 뜨므로, 사람이 화면 앞에
+          # 없는 원격/무인 세션에서는 그 대기가 보이지 않는 무한 hang이 된다. op_get의 무인 판정과
+          # 같은 신호(비TTY·SSH 원격·에이전트/CI 하네스 env)를 쓴다 — 대화형 Ghostty는 _headless=0.
+          local _headless=0
+          if [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] || [ -n "''${CI:-}" ] \
+            || [ -n "''${CLAUDECODE:-}" ] || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; then
+            _headless=1
+          fi
           if (( ! _master_active )) \
             && ! SSH_AUTH_SOCK="$_sock" ssh-add -L 2>/dev/null | grep -qF "$_b64"; then
+            if (( _headless )); then
+              # 무인: Touch ID 잠금해제가 불가하므로 앱 기동·대기가 무의미하다. 즉시 bounded 실패.
+              print -u2 "✗ ssh minipc 차단(무인): 1Password SSH agent에 mac-ssh 키가 없습니다 — 데스크탑 미실행/잠금 추정."
+              print -u2 "   무인 세션은 Touch ID 잠금해제가 불가하므로 대기 없이 종료합니다."
+              print -u2 "   대안: Mac에서 1Password 잠금해제 후 재시도, 또는 무인 전용 경로(준비 시 minipc-headless) 사용."
+              return 1
+            fi
             # Touch ID 잠금 해제 대기 상한(초) — interactive shell을 오래 막지 않도록. tries = timeout / interval.
             local _poll_interval=0.5 _timeout_seconds=15
             local _max_tries=$(( _timeout_seconds / _poll_interval ))
@@ -220,6 +237,24 @@ in
           # 여기 걸리지 않는다. master 재사용(_master_active) 경로는 서명이 없어 제외한다.
           if (( ! _master_active )); then
             local _rc
+            if (( _headless )) && command -v timeout >/dev/null 2>&1; then
+              # 무인 outer deadline(#1094) — 서명 승인 팝업이 로컬 화면 전용이라 원격/무인에선
+              # 무한 대기가 된다. 상한을 걸어 세션이 bounded time 안에 복귀하게 한다. 이 값은
+              # 인증 정책과 독립된 불변식이다(어떤 인증안을 택해도 유지). 대화형 경로엔 적용하지
+              # 않는다(사람이 Touch ID로 승인 가능). timeout 부재 시 degraded(기존 동작).
+              local _ssh_deadline=20
+              timeout "$_ssh_deadline" command ssh "$@"
+              _rc=$?
+              if (( _rc == 124 )); then
+                print -u2 "✗ ssh minipc 시간 초과(''${_ssh_deadline}s, 무인) — 1Password SSH 서명 승인 대기 가능성(승인 UI는 Mac 로컬 화면에만 표시)."
+                print -u2 "   Mac에서 1Password 잠금해제/승인 후 재시도, 또는 무인 전용 경로(준비 시 minipc-headless) 사용."
+              elif (( _rc == 255 )); then
+                print -u2 "✗ ssh minipc 실패(exit 255 — 원인은 위 stderr 참조)."
+                print -u2 "   1Password SSH agent 서명 실패라면: Mac에서 1Password 완전 재시작 후 재시도."
+                print -u2 "   그래도 안 되면(서버측 키 문제 등): ssh ${emergencyHost}  (passphrase 직접 입력)."
+              fi
+              return $_rc
+            fi
             command ssh "$@"
             _rc=$?
             if (( _rc == 255 )); then
