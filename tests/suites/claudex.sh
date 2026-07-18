@@ -15,6 +15,26 @@ _CLAUDEX_EXPECTED_DEFAULT_MAIN_MODEL=gpt-5.6-sol
 _CLAUDEX_EXPECTED_SUBAGENT_MODEL=gpt-5.6-sol
 _CLAUDEX_EXPECTED_MIXED_MAIN_MODEL=claude-opus-4-8
 
+# claudex-login과 claudex-proxy-launcher는 프록시를 `env -i ... PATH=/usr/bin:/bin:/usr/sbin:/sbin`
+# 으로 실행해 상속 환경을 격리한다. NixOS에는 그 PATH에 bash가 없어 `#!/usr/bin/env bash` shebang이
+# 해석되지 않으므로, 그 경계 아래서 실행되는 fake 프록시의 shebang만 절대 경로로 고정한다.
+# production 프록시는 절대 store 경로의 바이너리라 PATH에 의존하지 않으며, 격리 계약(env -i와
+# 제한된 PATH) 자체는 손대지 않으므로 테스트가 검증하는 경계는 그대로다.
+# 함수 이름대로 shebang만 바꾼다: 조립은 임시 파일에서 하되 대상에는 truncate 후 덮어쓰기로
+# 되돌려, 대상의 inode와 mode/권한을 보존한다. `mv`로 교체하면 임시 파일의 속성이 대상을
+# 덮어써서, 이미 실행 비트가 설정된 파일에 적용할 경우 그 비트를 조용히 잃는다.
+_claudex_pin_proxy_shebang() {
+  local target="$1" tmp bash_bin
+  bash_bin="$(command -v bash)"
+  tmp="$(mktemp)"
+  {
+    printf '#!%s\n' "$bash_bin"
+    tail -n +2 "$target"
+  } > "$tmp"
+  cat "$tmp" > "$target"
+  rm -f "$tmp"
+}
+
 _claudex_assert_no_placeholders() {
   local path="$1"
   if grep -Eq '@[A-Za-z_][A-Za-z0-9_-]*@' "$path"; then
@@ -42,7 +62,7 @@ _claudex_materialize_runtime() {
   local allow_test_overrides="${CLAUDEX_FIXTURE_ALLOW_TEST_OVERRIDES:-true}"
   local declared_home="${CLAUDEX_FIXTURE_DECLARED_HOME:-$destination-home}"
   local curl_bin="${CLAUDEX_FIXTURE_CURL_BIN:-$(command -v curl)}"
-  local lockf_bin="${CLAUDEX_FIXTURE_LOCKF_BIN:-/usr/bin/lockf}"
+  local flock_bin="${CLAUDEX_FIXTURE_FLOCK_BIN:-/usr/bin/flock}"
   local launchctl_bin="${CLAUDEX_FIXTURE_LAUNCHCTL_BIN:-/bin/launchctl}"
   local bind_host="${CLAUDEX_FIXTURE_BIND_HOST:-127.0.0.1}"
   local port="${CLAUDEX_FIXTURE_PORT:-8317}"
@@ -82,7 +102,7 @@ _claudex_materialize_runtime() {
     -e "s|@sleepBin@|$(command -v sleep)|g" \
     -e "s|@envBin@|$(command -v env)|g" \
     -e "s|@idBin@|$(command -v id)|g" \
-    -e "s|@lockfBin@|$lockf_bin|g" \
+    -e "s|@flockBin@|$flock_bin|g" \
     -e "s|@launchctlBin@|$launchctl_bin|g" \
     -e "s|@bindHost@|$bind_host|g" \
     -e "s|@port@|$port|g" \
@@ -140,7 +160,7 @@ _claudex_fixture() {
     "$root/files/config-template.json" "$generated/config-template.json"
   _claudex_write_wrapper_settings "$wrapper_settings"
   _claudex_write_wrapper_settings_fast "$wrapper_settings_fast"
-  cat > "$sandbox/fake-lockf" <<'EOF'
+  cat > "$sandbox/fake-flock" <<'EOF'
 #!/usr/bin/env bash
 [ -z "${CLAUDEX_FAKE_LOCK_LOG:-}" ] || printf '%s\n' "$@" >> "$CLAUDEX_FAKE_LOCK_LOG"
 [ "${CLAUDEX_FAKE_LOCK_FAIL:-0}" != 1 ] || exit 1
@@ -150,7 +170,8 @@ EOF
 #!/usr/bin/env bash
 exit 99
 EOF
-  chmod +x "$sandbox/fake-lockf" "$fake_proxy"
+  _claudex_pin_proxy_shebang "$fake_proxy"
+  chmod +x "$sandbox/fake-flock" "$fake_proxy"
 
   _claudex_materialize_runtime \
     "$generated/claudex-runtime.sh" "$generated/config-template.json"
@@ -174,8 +195,16 @@ _claudex_production_fixture() {
   local launchctl_bin="$sandbox/production-launchctl"
   local wrapper_settings="$generated/wrapper-settings.json"
   local wrapper_settings_fast="$generated/wrapper-settings-fast.json"
-  local jq_bin
+  local jq_bin sort_bin mkdir_bin chmod_bin
   jq_bin="$(command -v jq)"
+  # 이 fake는 launcher/login이 `env -i ... PATH=/usr/bin:/bin:/usr/sbin:/sbin`으로 실행하므로
+  # 본문이 PATH로 도구를 찾을 수 없다(NixOS에는 그 경로에 coreutils가 없다). jq와 같은 방식으로
+  # 생성 시점에 절대 경로를 박아 넣어, 격리 계약을 완화하지 않고도 fake가 어디서든 동작하게 한다.
+  # fake 안에서 PATH를 넓히지 않는 이유: 이 fake는 자신이 받은 env 스냅샷을 기록해 격리를
+  # 증명하는데, PATH를 손대면 그 스냅샷이 오염되어 검증 대상 자체가 흐려진다.
+  sort_bin="$(command -v sort)"
+  mkdir_bin="$(command -v mkdir)"
+  chmod_bin="$(command -v chmod)"
   mkdir -p "$generated" "$declared_home/.local/bin"
   _claudex_write_wrapper_settings "$wrapper_settings"
   _claudex_write_wrapper_settings_fast "$wrapper_settings_fast"
@@ -203,28 +232,29 @@ while [ "\$#" -gt 0 ]; do
   esac
 done
 if [ "\$device" = true ]; then
-  env | sort > "$sandbox/production-login.env"
+  env | "$sort_bin" > "$sandbox/production-login.env"
   printf 'home=%s\n' "\$HOME" > "$sandbox/production-login.log"
   printf 'arg=%s\n' "\${args[@]}" >> "$sandbox/production-login.log"
   auth_dir="\$("$jq_bin" -r '.["auth-dir"]' "\$config")"
-  mkdir -p "\$auth_dir"
-  chmod 700 "\$auth_dir"
+  "$mkdir_bin" -p "\$auth_dir"
+  "$chmod_bin" 700 "\$auth_dir"
   printf '%s' '{"type":"codex","access_token":"prod-access","refresh_token":"prod-refresh"}' > "\$auth_dir/codex-production.json"
-  chmod 600 "\$auth_dir/codex-production.json"
+  "$chmod_bin" 600 "\$auth_dir/codex-production.json"
   exit 0
 fi
-env | sort > "$sandbox/production-launcher.env"
+env | "$sort_bin" > "$sandbox/production-launcher.env"
 printf 'home=%s\n' "\$HOME" > "$sandbox/production-launcher.log"
 printf 'cwd=%s\n' "\$PWD" >> "$sandbox/production-launcher.log"
 printf 'arg=%s\n' "\${args[@]}" >> "$sandbox/production-launcher.log"
 exit 17
 EOF
+  _claudex_pin_proxy_shebang "$proxy"
   chmod +x "$curl_bin" "$launchctl_bin" "$proxy"
 
   CLAUDEX_FIXTURE_ALLOW_TEST_OVERRIDES=false \
     CLAUDEX_FIXTURE_DECLARED_HOME="$declared_home" \
     CLAUDEX_FIXTURE_CURL_BIN="$curl_bin" \
-    CLAUDEX_FIXTURE_LOCKF_BIN="$sandbox/fake-lockf" \
+    CLAUDEX_FIXTURE_FLOCK_BIN="$sandbox/fake-flock" \
     CLAUDEX_FIXTURE_LAUNCHCTL_BIN="$launchctl_bin" \
     _claudex_materialize_runtime "$runtime" "$sandbox/generated/config-template.json"
   local script
@@ -240,7 +270,7 @@ _claudex_prepare_fixture_state() {
   local sandbox="$1"
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$sandbox/state" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
     bash -c 'source "$1"; prepare_state' _ "$sandbox/generated/claudex-runtime.sh"
 }
 
@@ -299,7 +329,7 @@ test_claudex_runtime_api_and_private_state() {
   symlink_home="$sandbox/symlink-home"
   mkdir -p "$symlink_home" "$sandbox/external-library"
   ln -s "$sandbox/external-library" "$symlink_home/Library"
-  if HOME="$symlink_home" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  if HOME="$symlink_home" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     bash -c 'source "$1"; prepare_state' _ "$runtime" >/dev/null 2>&1; then
     fail "prepare_state accepted a symlinked default-state ancestor"
   fi
@@ -309,16 +339,21 @@ test_claudex_runtime_api_and_private_state() {
   rm -rf "$sandbox/lock-failure"
   if HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$sandbox/lock-failure" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
-    CLAUDEX_FAKE_LOCK_LOG="$sandbox/lockf.argv" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
+    CLAUDEX_FAKE_LOCK_LOG="$sandbox/flock.argv" \
     CLAUDEX_FAKE_LOCK_FAIL=1 \
     bash -c 'source "$1"; prepare_state' _ "$runtime" >/dev/null 2>&1; then
     fail "prepare_state continued after lock acquisition failed"
   fi
-  grep -Fqx -- "-s" "$sandbox/lockf.argv" || fail "lockf must receive -s"
-  grep -Fqx -- "-t" "$sandbox/lockf.argv" || fail "lockf must receive -t"
-  assert_file_contains "$sandbox/lockf.argv" "10"
-  assert_file_contains "$sandbox/lockf.argv" "9"
+  grep -Fqx -- "-x" "$sandbox/flock.argv" || fail "flock must receive -x (exclusive lock)"
+  grep -Fqx -- "-w" "$sandbox/flock.argv" || fail "flock must receive -w (lock timeout)"
+  # -s is a *shared* lock in flock (it meant "silent" in the macOS lockf this replaced), so
+  # passing it would silently downgrade the exclusive state-lock contract to a shared one.
+  if grep -Fqx -- "-s" "$sandbox/flock.argv"; then
+    fail "flock must never receive -s: that acquires a shared lock, not an exclusive one"
+  fi
+  assert_file_contains "$sandbox/flock.argv" "10"
+  assert_file_contains "$sandbox/flock.argv" "9"
   [[ ! -e "$sandbox/lock-failure/client-api-key" ]] \
     || fail "lock failure still entered the state mutation callback"
 
@@ -413,7 +448,7 @@ test_claudex_runtime_derived_contract() {
 
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
     bash -c 'source "$1"; prepare_state' _ "$runtime"
   jq -e \
     '.host == "127.0.0.42" and .port == 18317 and .pprof.addr == "127.0.0.42:18316"' \
@@ -555,7 +590,7 @@ EOF
   set +e
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" \
     ANTHROPIC_BASE_URL="https://hostile.invalid" \
     ANTHROPIC_API_KEY="hostile" \
@@ -643,7 +678,7 @@ EOF
   set +e
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" \
     CLAUDE_CODE_EFFORT_LEVEL=low \
     "$wrapper" --effort xhigh -- literal-prompt
@@ -657,7 +692,7 @@ EOF
   set +e
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" \
     "$wrapper" --effort=medium -- literal-prompt
   rc=$?
@@ -671,7 +706,7 @@ EOF
   set +e
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" \
     "$wrapper" --effort ultra -- literal-prompt
   rc=$?
@@ -703,7 +738,7 @@ EOF
   set +e
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" \
     CLAUDE_CODE_EXTRA_BODY='{"service_tier":"hostile"}' \
     "$wrapper" --fast -- literal-prompt
@@ -725,7 +760,7 @@ EOF
   set +e
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \
-    CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" \
     "$wrapper" --fast --effort low -- literal-prompt
   rc=$?
@@ -781,7 +816,7 @@ EOF
   chmod +x "$sandbox/home/.local/bin/claude"
 
   # --mixed refuses to start without a claude credential (fail-closed, before exec).
-  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" "$wrapper" --mixed -- literal-prompt >/dev/null 2>&1; then
     fail "--mixed started without a claude credential"
   fi
@@ -793,7 +828,7 @@ EOF
 
   # Mixed happy path: Claude main model on argv, gpt subagent env, no auto-compact window.
   set +e
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" "$wrapper" --mixed -- literal-prompt
   rc=$?
   set -e
@@ -808,7 +843,7 @@ EOF
   # auto-compact window export.
   rm -f "$sandbox/claude.log"
   set +e
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" "$wrapper" -- literal-prompt
   rc=$?
   set -e
@@ -832,7 +867,7 @@ EOF
 
   # Mixed fails when the catalog lacks the mixed main model (subagent-only catalog).
   _claudex_make_ready_curl "$sandbox"
-  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     CLAUDEX_CURL="$sandbox/fake-curl" "$wrapper" --mixed -- literal-prompt >/dev/null 2>&1; then
     fail "--mixed accepted a catalog without the mixed main model"
   fi
@@ -848,7 +883,7 @@ test_claudex_launcher_and_login_use_fake_boundaries() {
   jq_bin="$(command -v jq)"
   _claudex_fixture "$sandbox"
 
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     "$launcher" --prepare-only
   [[ ! -e "$proxy_log" ]] || fail "--prepare-only invoked the proxy"
   _claudex_add_valid_credential "$state"
@@ -862,6 +897,7 @@ printf 'deploy=%s\n' "\${DEPLOY-unset}" >> "$proxy_log"
 printf 'arg=%s\n' "\$@" >> "$proxy_log"
 exit 17
 EOF
+  _claudex_pin_proxy_shebang "$sandbox/fake-cli-proxy-api"
   chmod +x "$sandbox/fake-cli-proxy-api"
   _claudex_materialize_command \
     "$REPO_ROOT/modules/shared/programs/claudex/files/claudex-proxy-launcher.sh" \
@@ -875,7 +911,7 @@ EOF
   set +e
   (
     cd "$sandbox/caller"
-    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
       HOME_JWT=hostile PGSTORE_DSN=hostile DEPLOY=hostile "$launcher"
   )
   rc=$?
@@ -893,7 +929,7 @@ EOF
   rm -f "$proxy_log"
   : > "$state/work/.env"
   set +e
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" "$launcher" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" "$launcher" \
     >/dev/null 2>&1
   rc=$?
   set -e
@@ -917,6 +953,7 @@ printf '%s' '{"type":"codex","access_token":"stage-access","refresh_token":"stag
 chmod 600 "\$auth_dir/codex-stage.json"
 exit 0
 EOF
+  _claudex_pin_proxy_shebang "$sandbox/fake-cli-proxy-api"
   chmod +x "$sandbox/fake-cli-proxy-api"
   _claudex_materialize_command \
     "$REPO_ROOT/modules/shared/programs/claudex/files/claudex-login.sh" \
@@ -924,7 +961,7 @@ EOF
     "$sandbox/fake-cli-proxy-api" "$sandbox/generated/config-template.json" \
     "$sandbox/generated/wrapper-settings.json"
   chmod +x "$login"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" "$login" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" "$login" \
     >/dev/null
   [[ "$(find "$state/auth" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == "1" ]] \
     || fail "device login did not promote exactly one credential"
@@ -937,7 +974,7 @@ EOF
     fail "login staging directory leaked after promotion"
   fi
   rm -f "$proxy_log"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" "$login" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" "$login" \
     >/dev/null
   [[ ! -e "$proxy_log" ]] || fail "existing canonical credential triggered another device login"
 
@@ -962,8 +999,9 @@ printf '%s' '{"type":"claude","access_token":"claude-access","refresh_token":"cl
 chmod 600 "\$auth_dir/claude-stage.json"
 exit 0
 EOF
+  _claudex_pin_proxy_shebang "$sandbox/fake-cli-proxy-api"
   chmod +x "$sandbox/fake-cli-proxy-api"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     "$login" --claude >/dev/null
   assert_file_contains "$proxy_log" "arg=--claude-login"
   [[ "$(find "$state/auth" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == "2" ]] \
@@ -975,10 +1013,10 @@ EOF
 
   # Both login paths are idempotent per credential type once their entry exists.
   rm -f "$proxy_log"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     "$login" --claude >/dev/null
   [[ ! -e "$proxy_log" ]] || fail "existing claude credential triggered another claude login"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     "$login" >/dev/null
   [[ ! -e "$proxy_log" ]] || fail "coexisting claude credential broke the no-arg login no-op"
 
@@ -994,7 +1032,7 @@ EOF
   # (codex-only and claude-only are legitimate mid-login states; the old full-set assert
   # made this path fail after the move).
   rm -rf "$state/auth"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     "$login" --claude >/dev/null || fail "claude-first login into an empty auth dir failed"
   [[ "$(find "$state/auth" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == "1" ]] \
     || fail "claude-first login did not leave exactly one credential"
@@ -1006,12 +1044,12 @@ EOF
   printf '%s' '{"type":"gemini","access_token":"x","refresh_token":"y"}' \
     > "$state/auth/gemini-bad.json"
   chmod 600 "$state/auth/gemini-bad.json"
-  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     "$login" --claude >/dev/null 2>&1; then
     fail "login reported ready despite a malformed sibling entry"
   fi
   rm -f "$proxy_log"
-  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_LOCKF="$sandbox/fake-lockf" \
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
     "$login" >/dev/null 2>&1; then
     fail "codex login proceeded despite a malformed sibling entry"
   fi

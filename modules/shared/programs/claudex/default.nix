@@ -15,10 +15,18 @@ let
   targetHosts = [
     "greenhead-MacBookPro"
     "work-MacBookPro"
+    "greenhead-minipc"
   ];
   enabled = builtins.elem hostname targetHosts;
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   homeDir = config.home.homeDirectory;
-  stateDir = "${homeDir}/Library/Application Support/claudex";
+  # macOS keeps its Application Support convention; Linux follows the XDG state directory.
+  # Both stay under $HOME, so the symlinked-ancestor guard in the runtime applies unchanged.
+  stateDir =
+    if isDarwin then
+      "${homeDir}/Library/Application Support/claudex"
+    else
+      "${homeDir}/.local/state/claudex";
   authDir = "${stateDir}/auth";
   configFile = "${stateDir}/config.yaml";
   apiKeyFile = "${stateDir}/client-api-key";
@@ -144,8 +152,17 @@ let
     sleepBin = "${pkgs.coreutils}/bin/sleep";
     envBin = "${pkgs.coreutils}/bin/env";
     idBin = "${pkgs.coreutils}/bin/id";
-    lockfBin = "/usr/bin/lockf";
-    launchctlBin = "/bin/launchctl";
+    # The state lock uses flock's fd mode on both platforms. nixpkgs ships a darwin flock
+    # (discoteq), already relied on by claude-rc-maint, so the lock contract, its argv, and its
+    # tests stay single-path across macOS and NixOS. macOS /usr/bin/lockf is deliberately no
+    # longer used: its flags are not interchangeable with flock's (lockf -s means silent,
+    # flock -s means a *shared* lock, and the timeout flag is -t vs -w), so keeping both would
+    # fork the one code path that guards all state mutation.
+    flockBin = if isDarwin then "${pkgs.flock}/bin/flock" else "${pkgs.util-linux}/bin/flock";
+    # Stage 1 ships no service unit on either platform, so this probe only ever reports the
+    # absence of a launchd agent. Linux gets an empty value and the status command reports
+    # service=n/a rather than implying knowledge of a systemd unit that does not exist.
+    launchctlBin = if isDarwin then "/bin/launchctl" else "";
     inherit
       bindHost
       defaultMainModel

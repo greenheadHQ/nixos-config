@@ -27,6 +27,7 @@ let
   claudexTargetHosts = [
     "greenhead-MacBookPro"
     "work-MacBookPro"
+    "greenhead-minipc"
   ];
   darwinHostNames = builtins.attrNames darwinCfgs;
   unexpectedDarwinHosts = builtins.filter (
@@ -89,6 +90,9 @@ let
     system:
     let
       fakeStorePath = name: "/nix/store/00000000000000000000000000000000-${name}";
+      # package.nix branches on the host platform to patch the linux ELF interpreter, so the
+      # fake platform has to answer isLinux/isDarwin the way a real nixpkgs platform would.
+      isLinux = nixpkgsLib.hasSuffix "-linux" system;
     in
     {
       fetchurl = attrs: attrs;
@@ -96,11 +100,17 @@ let
         concatStringsSep = builtins.concatStringsSep;
         licenses.mit = "MIT";
         sourceTypes.binaryNativeCode = "binaryNativeCode";
+        optionals = nixpkgsLib.optionals;
       };
       stdenvNoCC = {
-        hostPlatform = { inherit system; };
+        hostPlatform = {
+          inherit system isLinux;
+          isDarwin = !isLinux;
+        };
         mkDerivation = attrs: attrs;
       };
+      autoPatchelfHook = fakeStorePath "auto-patchelf-hook";
+      stdenv.cc.cc.lib = fakeStorePath "gcc-lib";
       gnutar = fakeStorePath "gnutar";
       findutils = fakeStorePath "findutils";
       coreutils = fakeStorePath "coreutils";
@@ -109,9 +119,14 @@ let
   claudexPackage = import ../modules/shared/programs/claudex/package.nix {
     pkgs = fakeClaudexPkgs "aarch64-darwin";
   };
+  claudexLinuxPackage = import ../modules/shared/programs/claudex/package.nix {
+    pkgs = fakeClaudexPkgs "x86_64-linux";
+  };
+  # aarch64-linux keeps probing the unsupported-system throw: upstream does publish an asset
+  # for it, but no host needs it, so it stays unpinned and must still fail loudly.
   claudexUnsupportedPackage = builtins.tryEval (
     (import ../modules/shared/programs/claudex/package.nix {
-      pkgs = fakeClaudexPkgs "x86_64-linux";
+      pkgs = fakeClaudexPkgs "aarch64-linux";
     }).src.url
   );
 
@@ -942,13 +957,19 @@ let
       cond = unexpectedDarwinHosts == [ ];
     }
     {
-      name = "Test D18: CLIProxyAPI pin은 검증한 v7.2.73 darwin-arm64 자산과 해시여야 함";
+      name = "Test D18: CLIProxyAPI pin은 검증한 v7.2.73 darwin-arm64/linux-amd64 자산과 해시여야 함";
       cond =
         claudexPin.version == "7.2.73"
         && claudexPin.tag == "v7.2.73"
-        && builtins.attrNames claudexPin.platforms == [ "aarch64-darwin" ]
+        &&
+          builtins.attrNames claudexPin.platforms == [
+            "aarch64-darwin"
+            "x86_64-linux"
+          ]
         && claudexPin.platforms.aarch64-darwin.asset == "CLIProxyAPI_7.2.73_darwin_aarch64.tar.gz"
         && claudexPin.platforms.aarch64-darwin.hash == "sha256-72ZsH3E+lEsk6OIFzoBhN+pxjnuFnlUz8BXo+KmNYqY="
+        && claudexPin.platforms.x86_64-linux.asset == "CLIProxyAPI_7.2.73_linux_amd64.tar.gz"
+        && claudexPin.platforms.x86_64-linux.hash == "sha256-fHlZsGoG/r8ftzEC0yP8BuwT8L3D1O6MPAdyoVqgIkY="
         && claudexPackage.pname == "cli-proxy-api"
         && claudexPackage.version == "7.2.73"
         &&
@@ -956,10 +977,30 @@ let
           == "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.73/CLIProxyAPI_7.2.73_darwin_aarch64.tar.gz"
         && claudexPackage.src.hash == "sha256-72ZsH3E+lEsk6OIFzoBhN+pxjnuFnlUz8BXo+KmNYqY="
         && claudexPackage.meta.mainProgram == "cli-proxy-api"
-        && claudexPackage.meta.platforms == [ "aarch64-darwin" ]
+        &&
+          claudexPackage.meta.platforms == [
+            "aarch64-darwin"
+            "x86_64-linux"
+          ]
         && nixpkgsLib.hasInfix "verify-release-layout.sh" claudexPackage.installPhase
         && nixpkgsLib.hasInfix "install -Dm755 unpacked/cli-proxy-api" claudexPackage.installPhase
         && claudexUnsupportedPackage.success == false;
+    }
+    {
+      # 의도된 플랫폼 비대칭을 잠근다: linux prebuilt는 glibc 동적 링크에 FHS interpreter
+      # (/lib64/ld-linux-x86-64.so.2)를 달고 오므로 NixOS에서 patch 없이는 실행 자체가 불가하고,
+      # darwin prebuilt는 반대로 Mach-O 서명을 건드리면 안 되므로 patch를 끈 채 둬야 한다.
+      name = "Test D18b: claudex linux 패키지는 linux-amd64 자산을 ELF patch 경로로 설치해야 함";
+      cond =
+        claudexLinuxPackage.src.url
+        == "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.73/CLIProxyAPI_7.2.73_linux_amd64.tar.gz"
+        && claudexLinuxPackage.src.hash == "sha256-fHlZsGoG/r8ftzEC0yP8BuwT8L3D1O6MPAdyoVqgIkY="
+        && claudexLinuxPackage.dontPatchELF == false
+        && claudexLinuxPackage.nativeBuildInputs != [ ]
+        && claudexLinuxPackage.buildInputs != [ ]
+        && claudexPackage.dontPatchELF == true
+        && claudexPackage.nativeBuildInputs == [ ]
+        && claudexPackage.buildInputs == [ ];
     }
     {
       name = "Test D19: claudex config base는 runtime slot을 비우고 관리/플러그인/로그/통계를 꺼야 함";

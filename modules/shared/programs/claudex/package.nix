@@ -15,6 +15,7 @@ let
   platform =
     pin.platforms.${system}
       or (throw "cli-proxy-api: unsupported system '${system}' (supported: ${lib.concatStringsSep ", " (builtins.attrNames pin.platforms)})");
+  inherit (stdenvNoCC.hostPlatform) isLinux;
 in
 stdenvNoCC.mkDerivation {
   pname = "cli-proxy-api";
@@ -45,8 +46,16 @@ stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
+  # The linux release binary is dynamically linked against glibc and carries the FHS
+  # interpreter /lib64/ld-linux-x86-64.so.2, which does not exist on NixOS, so it must be
+  # patched to run at all (measured on v7.2.73 linux_amd64). autoPatchelfHook rewrites the
+  # interpreter and RPATH from buildInputs. Darwin keeps dontPatchELF so the Mach-O signature
+  # on the prebuilt binary is preserved untouched.
+  nativeBuildInputs = lib.optionals isLinux [ pkgs.autoPatchelfHook ];
+  buildInputs = lib.optionals isLinux [ pkgs.stdenv.cc.cc.lib ];
+
   dontStrip = true;
-  dontPatchELF = true;
+  dontPatchELF = !isLinux;
 
   meta = {
     description = "CLIProxyAPI pinned binary for the declarative claudex PoC";

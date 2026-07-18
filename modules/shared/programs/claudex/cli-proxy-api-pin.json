@@ -1,11 +1,15 @@
 {
-  "_comment": "CLIProxyAPI PoC pin. Upstream release metadata and checksums.txt were verified for v7.2.73; the binary is never executed during Stage 1 validation.",
+  "_comment": "CLIProxyAPI PoC pin. Upstream release metadata and checksums.txt were verified for v7.2.73 on both platforms; the binary is never executed during Stage 1 validation. The linux asset is the plugin-enabled variant, matching darwin (upstream also ships *_no-plugin tarballs, which are deliberately not pinned).",
   "version": "7.2.73",
   "tag": "v7.2.73",
   "platforms": {
     "aarch64-darwin": {
       "asset": "CLIProxyAPI_7.2.73_darwin_aarch64.tar.gz",
       "hash": "sha256-72ZsH3E+lEsk6OIFzoBhN+pxjnuFnlUz8BXo+KmNYqY="
+    },
+    "x86_64-linux": {
+      "asset": "CLIProxyAPI_7.2.73_linux_amd64.tar.gz",
+      "hash": "sha256-fHlZsGoG/r8ftzEC0yP8BuwT8L3D1O6MPAdyoVqgIkY="
     }
   }
 }

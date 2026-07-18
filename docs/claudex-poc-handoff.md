@@ -3,7 +3,7 @@
 ## TL;DR
 
 - **상황**: Claude Code 요청을 로컬 CLIProxyAPI를 통해 Codex OAuth 모델로 보내는 선언형 Stage 1 PoC가 실제 Gate B를 통과했다.
-- **현재 상태**: 두 Darwin 호스트를 허용하는 descriptor schema 2가 적용됐고, device OAuth → pinned foreground proxy → `claudex` headless completion → clean shutdown을 실측했다. Gate B 뒤 `run-da for_pr` 1·2·3라운드의 확정 finding을 모두 반영했으며 현재 변경셋은 required-CI 통합 러너, `nrs`, AI compatibility, hostile settings/host-auth E2E를 통과했다. R4 수렴 판정과 Standards/Spec pre-commit review도 merge-blocker 없이 끝났다.
+- **현재 상태**: 두 Darwin 호스트와 NixOS 호스트(`greenhead-minipc`)를 허용하는 descriptor schema 2가 적용됐고, device OAuth → pinned foreground proxy → `claudex` headless completion → clean shutdown을 실측했다. Gate B 뒤 `run-da for_pr` 1·2·3라운드의 확정 finding을 모두 반영했으며 현재 변경셋은 required-CI 통합 러너, `nrs`, AI compatibility, hostile settings/host-auth E2E를 통과했다. R4 수렴 판정과 Standards/Spec pre-commit review도 merge-blocker 없이 끝났다.
 - **다음 액션**: 수정 배치를 커밋하고, remote branch 갱신 여부를 결정한다.
 - **Blockers**: Stage 1 Gate B blocker는 없다. launchd/activation을 추가하는 Stage 2는 별도 사용자 승인 전까지 범위 밖이다.
 
@@ -74,13 +74,13 @@ git status --short --branch
   - Darwin Home Manager에 `../shared/programs/claudex`를 import한다.
 - `modules/shared/programs/claudex/default.nix`
   - 호스트 enable gate, state 경로, loopback 주소, 포트, 모델, runtime package, descriptor를 선언한다.
-  - 모든 Darwin 호스트에는 descriptor와 runtime library가 생긴다.
+  - 모듈을 import한 모든 호스트(darwin·nixos)에는 대상 여부와 무관하게 descriptor와 runtime library가 생긴다.
   - enable된 호스트에만 `claudex`, `claudex-login`, `claudex-status`, proxy launcher가 노출된다.
   - Stage 1에는 launchd와 activation이 의도적으로 없다.
 - `modules/shared/programs/claudex/package.nix`
   - CLIProxyAPI prebuilt archive를 고정하고 release layout을 검증한 뒤 바이너리 하나만 설치한다.
 - `modules/shared/programs/claudex/cli-proxy-api-pin.json`
-  - 버전 `7.2.73`, Darwin arm64 asset, SRI를 고정한다.
+  - 버전 `7.2.73`과 플랫폼별 asset(darwin arm64 / linux amd64) SRI를 고정한다. linux prebuilt는 glibc 동적 링크에 FHS interpreter를 달고 오므로 `autoPatchelfHook`으로 interpreter를 nix store로 재작성해야 실행되고, darwin은 Mach-O 서명 보존을 위해 `dontPatchELF`를 유지한다 (의도된 플랫폼 비대칭이며 eval 테스트가 잠근다).
 - `modules/shared/programs/claudex/files/verify-release-layout.sh`
   - archive 최상위 5개 항목의 이름과 type을 정확히 검증한다.
 
@@ -127,17 +127,18 @@ git status --short --branch
 
 | 항목 | 값 |
 |---|---|
-| Proxy | CLIProxyAPI `7.2.73`, Darwin arm64 |
+| Proxy | CLIProxyAPI `7.2.73` — darwin arm64 / linux amd64 (플랫폼별 asset·SRI pin) |
 | Bind | `127.0.0.1:8317` |
 | 모델 (default main / subagent) | `gpt-5.6-sol` / `gpt-5.6-sol` |
 | 모델 (mixed main) | `claude-opus-4-8` (`claudex --mixed`; descriptor `.model`은 default main alias; 재조정 트리거 #1130) |
-| Runtime state | `$HOME/Library/Application Support/claudex` |
+| Runtime state | darwin: `$HOME/Library/Application Support/claudex` · linux: `$HOME/.local/state/claudex` (XDG) |
 | Descriptor | `$HOME/.config/claudex/runtime.json`, schema `2` |
-| Enabled hosts | `greenhead-MacBookPro`, `work-MacBookPro` |
+| Enabled hosts | `greenhead-MacBookPro`, `work-MacBookPro`, `greenhead-minipc` |
 | Claude 실행 파일 | `$HOME/.local/bin/claude` |
 | Service label | `org.nix-community.home.claudex-proxy` |
 | Context window override | `CLAUDE_CODE_MAX_CONTEXT_TOKENS=258000` + `CLAUDE_CODE_AUTO_COMPACT_WINDOW=258000` (wrapper-owned; upstream 임시 하향 추종, 단일 상수 공유). mixed에서는 AUTO_COMPACT_WINDOW 미발행 |
-| Stage 1 service | 없음; foreground launcher만 존재 |
+| Stage 1 service | 없음; foreground launcher만 존재. status의 `service` 필드는 darwin에서 launchd 조회 결과(`missing`), linux에서 `n/a` |
+| 상태 잠금 | `flock` fd 모드(`-x -w`) — darwin은 nixpkgs `flock`(discoteq), linux는 `util-linux`. 양 플랫폼 단일 코드 경로 |
 
 보안·정합성 불변식:
 
@@ -170,7 +171,7 @@ git status --short --branch
 ### 알려진 한계·리스크와 롤백
 
 - **벤더 정책 의존 (전략 리스크)**: 이 브릿지는 Claude Code에 non-Anthropic 모델을 loopback proxy로 연결한다. Codex OAuth entitlement 쪽은 upstream 튜토리얼에서 공개적으로 안내된 경로지만, Anthropic 또는 OpenAI가 언제든 이 조합을 차단할 수 있다. 즉 이 경계의 수명은 두 벤더의 정책에 종속되며, 기술적 완성도와 무관하게 외부 요인으로 무력화될 수 있다.
-  - **롤백 경로**: 차단이 관측되면 `default.nix`의 `targetHosts` allowlist에서 해당 호스트를 빼고 `nrs`를 실행한다. 그러면 활성 Home Manager generation에서 네 실행 surface와 CLIProxyAPI enabled-only closure 노출이 즉시 제거되고 descriptor와 runtime library metadata만 남는다(`lib.optionalAttrs enabled` 경계). 단, 이전 generation과 CLIProxyAPI Nix store 경로 자체는 garbage collection 전까지 store에 남으므로, 로컬 잔여물까지 정리하려면 generation 정리와 `nix-collect-garbage` 실행이 별도로 필요하다. credential/state는 repo 밖 `$HOME/Library/Application Support/claudex`에만 있으므로 그 디렉터리를 지우면 로컬 흔적도 제거된다. 일반 `claude` 설정과 인증은 애초에 건드리지 않으므로 별도 복구가 필요 없다.
+  - **롤백 경로**: 차단이 관측되면 `default.nix`의 `targetHosts` allowlist에서 해당 호스트를 빼고 `nrs`를 실행한다. 그러면 활성 Home Manager generation에서 네 실행 surface와 CLIProxyAPI enabled-only closure 노출이 즉시 제거되고 descriptor와 runtime library metadata만 남는다(`lib.optionalAttrs enabled` 경계). 단, 이전 generation과 CLIProxyAPI Nix store 경로 자체는 garbage collection 전까지 store에 남으므로, 로컬 잔여물까지 정리하려면 generation 정리와 `nix-collect-garbage` 실행이 별도로 필요하다. credential/state는 repo 밖 state 디렉터리(darwin `$HOME/Library/Application Support/claudex`, linux `$HOME/.local/state/claudex`)에만 있으므로 그 디렉터리를 지우면 로컬 흔적도 제거된다. 일반 `claude` 설정과 인증은 애초에 건드리지 않으므로 별도 복구가 필요 없다.
 - **subagent effort 세밀 제어 불가 (기능 한계)**: wrapper는 `CLAUDE_CODE_SUBAGENT_MODEL`로 subagent 모델만 고정 모델에 맞추고, effort는 세션 단위 값 하나(기본 `high`, `claudex --effort`로 조정 가능)를 세션 전체가 공유한다. subagent effort만 별도로 낮추는 수단은 여전히 없다(pinned Claude Code CLI 자체의 제약). 대량 fan-out 워크플로우에서 토큰 소모가 부담이면 세션 effort 자체를 낮춰서 실행한다.
 - **context 사용률 표시는 근사치 (기능 한계)**: pinned proxy는 SSE `message_start`에 usage `{input_tokens:0, output_tokens:0}`을 하드코딩한다 (Codex Responses API가 스트림 시작 시점에 usage를 주지 않기 때문; 실제 값은 `message_delta`에만 실림). upstream은 동일 보고(router-for-me/CLIProxyAPI#1700)를 수정 거부로 닫았고 v7.2.77까지 이 변환기는 변경이 없다. pinned CLI(2.1.210 실측)는 각 assistant 메시지에 `message_start` 스냅샷을 박제하고 "usage 합>0인 마지막 assistant 메시지"를 컨텍스트 추적 anchor로 삼으므로, 이 경로에서는 anchor가 없어 **문자수 기반 로컬 추정으로 fallback**한다(과대 경향). 여기에 미인식 모델의 200k 기본 가정이 겹치면 statusline이 조기에 "100% context used"로 포화한다. wrapper-owned `CLAUDE_CODE_MAX_CONTEXT_TOKENS=258000`은 분모를 실효 한계로 교정하는 완화이며, 분자(로컬 추정)의 오차는 남으므로 **표시되는 %는 근사치다** — auto-compact가 실제보다 이르게 발동할 수 있으나 한계 초과(400) 방향으로는 안전하다. `258000` 자체도 임시값이다: 모델은 372k로 출시됐으나 OpenAI가 과금 버그 수정 중 제품 한계를 임시 하향했고(공지 272k, Codex 앱 실측 258k — 2026-07-15) 재상향을 예고했다. 재상향이 반영되면 이 값을 재조정한다([#1113](https://github.com/greenheadHQ/nixos-config/issues/1113)로 추적). 재검증 명령: proxy ready 상태에서 `claudex -p --output-format stream-json --verbose` 출력의 assistant 이벤트 `message.usage`가 `0/0`이면 upstream 동작이 그대로인 것이고, Codex 앱의 컨텍스트 창 표시가 현재 실효 한계의 진실 원천이다.
 - **auto-compact는 별도 env 채널이 필요 (기능 한계 → 해소)**: `CLAUDE_CODE_MAX_CONTEXT_TOKENS`는 표시용 분모만 바꾸고, pinned CLI(2.1.210)의 auto-compact 메인 경로는 compact window의 **source**가 "auto"면(로컬 세션 가드) compact를 비활성화한다. 미인식 모델은 내장 window 테이블에 없어 명시 채널 없이는 source가 항상 "auto"이므로, claudex 세션은 auto-compact가 구조적으로 꺼져 있었다 — statusline이 "N% until auto-compact" 대신 "N% context used"로 표시되는 것이 가시적 증상이다. wrapper가 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`(공식 env 채널, 유효 100k–1M)를 같은 값으로 재발행해 source를 "env"로 전환하고 임계 검사(≈ window − 출력예약 − 13k)를 활성화한다. 참고로 한계 초과 시 에러 기반 회복도 기대할 수 없다: 백엔드 API 실제 한계는 372k 스펙에 가깝고(360k 요청 200 성공 — 2026-07-15 실측), 초과 400이 나더라도 pinned proxy는 upstream 문구를 그대로 전달할 뿐 Anthropic 정식 문구로 재작성하지 않는다. 활성화는 A/B로 실측 완료(2026-07-15): `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=1` + 2턴 stream-json 멀티턴에서 새 wrapper는 `status:"compacting"` 이벤트를 발동(미니 대화라 `too_few_groups`로 요약은 실패 — 트리거 사슬 동작 증거로 충분), 동일 조건에서 `AUTO_COMPACT_WINDOW`만 뺀 대조군은 compact 신호가 전무했다. 대화형 세션의 가시 신호는 statusline "% until auto-compact" 표기 전환이다.
@@ -369,7 +370,8 @@ Stage 1 descriptor는 Stage 2 전용 launch-agent 필드를 미리 노출하지 
 먼저 기존 canonical auth 파일 수만 확인하고 내용은 출력하지 않는다.
 
 ```bash
-auth_dir="$HOME/Library/Application Support/claudex/auth"
+# state 경로는 플랫폼마다 다르므로(darwin: Library/Application Support, linux: XDG) descriptor에서 읽는다
+auth_dir="$(jq -r .authDir "$HOME/.config/claudex/runtime.json")"
 find "$auth_dir" -mindepth 1 -maxdepth 1 -type f -print 2>/dev/null | wc -l
 ```
 
@@ -414,7 +416,7 @@ Nix runtime contract나 generated config가 실제로 달라졌다면 기존 for
 ```bash
 descriptor="$HOME/.config/claudex/runtime.json"
 expected_proxy="$(jq -r .proxyExecutable "$descriptor")"
-pid="$(/usr/sbin/lsof -tiTCP:8317 -sTCP:LISTEN)"
+pid="$(lsof -tiTCP:8317 -sTCP:LISTEN)"  # darwin은 /usr/sbin/lsof, NixOS는 PATH의 lsof가 잡힌다
 test -n "$pid"
 ps -p "$pid" -o pid=,command=
 printf 'expected=%s\n' "$expected_proxy"
@@ -435,13 +437,13 @@ claudex-status
 Stage 1의 foreground 실행에서는 다음이 기대된다.
 
 ```text
-service=missing
+service=missing   # darwin 기준. linux에서는 service=n/a
 auth=ready
 proxy=ready
 catalog=ready
 ```
 
-launchd가 아직 없으므로 `service=missing`은 정상이다. auth/proxy/catalog가 ready이면 status 명령은 exit `0`이며 foreground Stage 1 readiness gate로 사용할 수 있다.
+Stage 1에는 서비스 유닛이 없으므로 darwin의 `service=missing`은 정상이다. linux에는 조회할 launchd 도메인 자체가 없어 `service=n/a`를 출력한다(값만 다르고 readiness 판정에는 관여하지 않는다). auth/proxy/catalog가 ready이면 status 명령은 exit `0`이며 foreground Stage 1 readiness gate로 사용할 수 있다.
 
 ### Headless completion
 
@@ -473,7 +475,7 @@ CLAUDEX_E2E_OK
 Terminal A에서 `Ctrl-C`로 foreground proxy를 종료한다. 무차별 `pkill`은 사용하지 않는다.
 
 ```bash
-/usr/sbin/lsof -nP -iTCP:8317 -sTCP:LISTEN
+lsof -nP -iTCP:8317 -sTCP:LISTEN  # darwin은 /usr/sbin/lsof, NixOS는 PATH의 lsof가 잡힌다
 claudex-login
 find "$auth_dir" -mindepth 1 -maxdepth 1 -type f -print | wc -l
 ```
@@ -525,7 +527,7 @@ git diff --cached --stat
 git diff --cached
 ```
 
-인증 state는 repo 밖 `$HOME/Library/Application Support/claudex`에만 있어야 한다. 의도하지 않은 로컬 경로, 개인·조직 식별 정보, 브라우저 정보가 diff에 보이면 커밋하지 않는다.
+인증 state는 repo 밖 state 디렉터리(darwin `$HOME/Library/Application Support/claudex`, linux `$HOME/.local/state/claudex`)에만 있어야 한다. 의도하지 않은 로컬 경로, 개인·조직 식별 정보, 브라우저 정보가 diff에 보이면 커밋하지 않는다.
 
 ## 12. 남아 있는 미지와 Stage 2 조건
 
