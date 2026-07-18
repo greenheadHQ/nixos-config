@@ -85,6 +85,10 @@
     macSsh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGijyrxefX4n5oRJ2775QDOFtBfjPeNzjym2i7TJx9qr mac-ssh";
     mobile = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZOWDrhEYPTD0OC0SlePYpZCWjhAvI3u2EhVq9JlzER mobile-ssh";
     emergency = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMM0hYpFqehy7U96Ms4348SStVue7pYbR3+B3PlGV+de emergency-fallback";
+    # 무인/원격 세션 전용 minipc SSH 키 (#1094 C안). 1Password를 우회하는 자동화 전용 신원 —
+    # 개인키는 agenix `minipc-headless.age`(macbook recipient)로 배포(passphrase 없음, 무인 전제).
+    # blast radius 축소: minipc authorized_keys에서 from=(Mac Tailscale IP) + no-forwarding으로 제한.
+    headless = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIv9s5124aTQk1hErvwPvdIsQG8U6y8BkXxp17cBmTDp minipc-headless";
   };
 
   # ═══════════════════════════════════════════════════════════════
@@ -184,6 +188,10 @@
     # 배포: modules/shared/programs/secrets(agenix path), 소비: gh-pat-mac(shell/darwin.nix) ·
     # op_get(shell/default.nix). literal 분산 시 경로 정책 변경이 배포/소비 경계를 따로 움직인다.
     saTokenMacRelPath = ".config/op/sa-token-mac";
+    # 무인 minipc SSH 개인키 배포 경로 (home 상대) — 단일 소스 (#1094 C안).
+    # 배포: modules/shared/programs/secrets(agenix path), 소비: ssh minipc-headless alias
+    # (modules/darwin/programs/ssh) · ssh() 무인 라우팅(shell/darwin.nix).
+    headlessKeyRelPath = ".ssh/minipc-headless";
     # 1Password 백그라운드 기동 인자 (단일 소스). -g 포커스 유지, -j hidden, --silent 메인창 억제.
     # launchd 자동 기동은 [ "/usr/bin/open" ] ++ openArgs (절대경로), shell preflight 복구는
     # `open ${escapeShellArgs openArgs}`로 공유한다 — flag 변경 시 한 곳만 고친다.

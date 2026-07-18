@@ -85,6 +85,13 @@
         path = "${config.home.homeDirectory}/${constants.onePassword.saTokenMacRelPath}";
         mode = "0400";
       };
+      # 무인 minipc SSH 개인키 (#1094 C안) — ssh minipc-headless alias가 IdentityFile로 사용.
+      # 경로 단일 소스: constants.onePassword.headlessKeyRelPath.
+      minipc-headless = {
+        file = ../../../../secrets/minipc-headless.age;
+        path = "${config.home.homeDirectory}/${constants.onePassword.headlessKeyRelPath}";
+        mode = "0400";
+      };
     };
   };
 }

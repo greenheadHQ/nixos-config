@@ -19,10 +19,15 @@
   # mac-ssh(1Password SSH agent) + mobile(iPhone·iPad 공유, Termius) + emergency(1Password 장애 fallback).
   # 기존 macbook(id_ed25519)은 mac-ssh로 대체 — id_ed25519는 FR-8에서 처분.
   # iphone/ipad 분리 키는 Termius 계정 동기화로 격리 불가 → mobile 단일 공유 키로 통합 (#866).
+  # 무인 minipc SSH 키(#1094 C안, headless)는 원격/LLM 세션이 1Password를 우회하는 전용 신원이라
+  # blast radius를 옵션으로 강제 축소한다: from=(Mac Tailscale IP)로 출발지를 Mac 한 대로 제한하고,
+  # no-{port,agent,X11}-forwarding으로 이 키를 통한 포워딩(피벗·에이전트 릴레이)을 차단한다.
+  # pty/exec는 허용(LLM이 원격 명령 실행 필요). mac-ssh/mobile/emergency와 별개 신원(혼용 금지).
   users.users.${username}.openssh.authorizedKeys.keys = with constants.sshDeviceKeys; [
     macSsh
     mobile
     emergency
+    ''from="${constants.network.macbookTailscaleIP}",no-port-forwarding,no-agent-forwarding,no-X11-forwarding ${headless}''
   ];
 
   # Wake-on-LAN (같은 LAN 전용)

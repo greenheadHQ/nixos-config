@@ -59,6 +59,7 @@ let
 
   # ssh() preflight 단일 소스 주입 (constants 기반 — socket/키/기동인자 중복 제거)
   opAgentSock = "$HOME/${constants.onePassword.agentSocketRelPath}"; # zsh가 런타임에 $HOME 확장
+  headlessKeyPath = "$HOME/${constants.onePassword.headlessKeyRelPath}"; # 무인 minipc 키(#1094 C안), zsh 런타임 $HOME 확장
   macSshKeyB64 = lib.elemAt (lib.splitString " " constants.sshDeviceKeys.macSsh) 1; # 공개키 가운데 base64 (nix가 split)
   opLaunchCmd = "/usr/bin/open ${lib.escapeShellArgs constants.onePassword.openArgs}"; # 1Password 백그라운드 기동(절대경로)
   minipcHostIP = constants.network.minipcTailscaleIP; # ssh -G effective hostname 판정 기준
@@ -195,6 +196,24 @@ in
           if [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] || [ -n "''${CI:-}" ] \
             || [ -n "''${CLAUDECODE:-}" ] || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; then
             _headless=1
+          fi
+          # C안(#1094): 무인 + headless 키 배포됨 → 1Password를 완전 우회해 headless 키로 직접
+          # 접속한다(승인 팝업·서명 대기 자체가 없음). 원래 인자("$@")를 유지한 채 인증만 -o로
+          # 오버라이드하고, ControlMaster/Path를 끊어 mac-ssh master(1Password 기반)와 격리한다.
+          # deadline은 서명 hang이 없어 불필요하나 네트워크 지연 안전망으로 유지한다. 키 미배포 시
+          # 아래 기존 경로(무인 deadline / 대화형 preflight)로 폴백한다.
+          if (( _headless )) && [ -r "${headlessKeyPath}" ]; then
+            local _rc _hdl_deadline=20
+            local -a _hk=(-o IdentityAgent=none -o IdentitiesOnly=yes -o ControlMaster=no -o ControlPath=none -i "${headlessKeyPath}")
+            if command -v timeout >/dev/null 2>&1; then
+              timeout "$_hdl_deadline" ssh "''${_hk[@]}" "$@"
+              _rc=$?
+              (( _rc == 124 )) && print -u2 "✗ ssh minipc(headless) 시간 초과(''${_hdl_deadline}s) — 네트워크/서버 응답 지연 추정."
+            else
+              command ssh "''${_hk[@]}" "$@"
+              _rc=$?
+            fi
+            return $_rc
           fi
           if (( ! _master_active )) \
             && ! SSH_AUTH_SOCK="$_sock" ssh-add -L 2>/dev/null | grep -qF "$_b64"; then

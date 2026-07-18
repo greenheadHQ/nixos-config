@@ -47,6 +47,16 @@ in
         IdentityAgent = "none"; # 1Password agent 우회 — emergency key 직접 사용
         IdentitiesOnly = "yes"; # emergency_ed25519만 제시
       };
+      # 무인/원격 세션 전용 (#1094 C안) — 1Password를 우회하는 headless key로 직접 접속.
+      # 승인 팝업이 없어 원격/무인에서 hang하지 않는다. ssh() 무인 라우팅(shell/darwin.nix)이
+      # 무인 컨텍스트에서 이 경로(IdentityAgent none + headless IdentityFile)를 사용한다.
+      "minipc-headless" = {
+        HostName = constants.network.minipcTailscaleIP;
+        User = "greenhead";
+        IdentityFile = "${homeDir}/${constants.onePassword.headlessKeyRelPath}";
+        IdentityAgent = "none"; # 1Password agent 우회 — headless key 직접 사용
+        IdentitiesOnly = "yes"; # headless key만 제시
+      };
     };
   };
 

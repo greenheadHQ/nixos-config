@@ -459,6 +459,10 @@ let
         hasHost = builtins.hasAttr hostName darwinCfgs;
         cfg = if hasHost then darwinCfgs.${hostName}.config else null;
         hm = if hasHost then cfg.home-manager.users.${cfg.system.primaryUser} else null;
+        # personal 호스트 판정: minipc matchBlock은 hostType==personal에서만 정의되므로(ssh 모듈),
+        # 이 존재 여부가 hostType의 견고한 프록시다. ssh() wrapper(shell 모듈) 삭제와 독립이라,
+        # wrapper가 사라져도 personal 판정이 유지돼 D19/D20 마커 검증이 회귀를 잡는다.
+        isPersonalHost = hasHost && (hm.programs.ssh.settings ? "minipc");
         claudexDescriptorPath = ".config/claudex/runtime.json";
         hasClaudexDescriptor = hasHost && builtins.hasAttr claudexDescriptorPath hm.home.file;
         claudexDescriptor =
@@ -682,9 +686,35 @@ let
               let
                 zshInit = hm.programs.zsh.initContent;
               in
-              # work 호스트(ssh preflight 미정의)는 마커 부재가 정상 — personal에서만 강제.
-              if nixpkgsLib.hasInfix "ssh minipc preflight" zshInit then
+              # personal은 wrapper 필수(마커 삭제 시 실패), work(ssh preflight 미정의)는 부재 정상.
+              # 조건을 hostType 프록시(isPersonalHost)로 잠가, wrapper 전체 삭제가 통과되지 않게 한다.
+              if isPersonalHost then
                 nixpkgsLib.hasInfix "_headless" zshInit && nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\"" zshInit
+              else
+                true
+            );
+        }
+        {
+          # minipc-headless 무인 라우팅 계약(#1094 C안) 회귀 핀 — personal 한정:
+          # (1) ssh minipc-headless alias가 IdentityAgent none(1Password 우회)으로 정의,
+          # (2) ssh() wrapper 무인 경로가 headless 키 경로 + IdentityAgent=none 오버라이드를 포함.
+          # 이 마커가 사라지면 무인 세션이 headless 우회 대신 1Password 서명 경로로 되돌아간다.
+          name = "Test D20 ${hostName}: minipc-headless alias(IdentityAgent none) + wrapper 무인 라우팅 마커";
+          cond =
+            hasHost
+            && (
+              let
+                zshInit = hm.programs.zsh.initContent;
+                sshSettings = hm.programs.ssh.settings;
+              in
+              # personal은 alias·키경로·IdentityAgent none 마커 필수(하나라도 없으면 실패), work는 부재 정상.
+              # hostType 프록시(isPersonalHost)로 잠가, alias·wrapper 삭제가 else true로 통과되지 않게 한다.
+              if isPersonalHost then
+                (sshSettings ? "minipc-headless")
+                # home-manager matchBlock은 옵션을 .data 아래 래핑한다(구조: after/before/data).
+                && ((sshSettings."minipc-headless".data.IdentityAgent or "") == "none")
+                && nixpkgsLib.hasInfix constants.onePassword.headlessKeyRelPath zshInit
+                && nixpkgsLib.hasInfix "IdentityAgent=none" zshInit
               else
                 true
             );
@@ -832,6 +862,22 @@ let
     {
       name = "Test 5d: openssh PasswordAuthentication이 false이어야 함 (공개키만 허용)";
       cond = nixosCfg.services.openssh.settings.PasswordAuthentication == false;
+    }
+    {
+      # 무인 headless 키(#1094 C안)의 blast radius 제한 회귀 핀 — from=(Mac Tailscale IP)로
+      # 출발지를 제한하고 no-*-forwarding으로 포워딩(피벗)을 차단하는 옵션이 authorized_keys
+      # 엔트리에 반드시 함께 있어야 한다. 이 옵션이 빠지면 headless 키가 무제한 신원이 된다.
+      name = "Test 5e: minipc headless authorized_key에 from=(Mac IP) + no-forwarding 제한이 있어야 함";
+      cond =
+        let
+          keys = nixosCfg.users.users.greenhead.openssh.authorizedKeys.keys;
+          hl = builtins.filter (k: nixpkgsLib.hasInfix "minipc-headless" k) keys;
+        in
+        builtins.length hl == 1
+        && nixpkgsLib.hasInfix ''from="${constants.network.macbookTailscaleIP}"'' (builtins.head hl)
+        && nixpkgsLib.hasInfix "no-port-forwarding" (builtins.head hl)
+        && nixpkgsLib.hasInfix "no-agent-forwarding" (builtins.head hl)
+        && nixpkgsLib.hasInfix "no-X11-forwarding" (builtins.head hl);
     }
     {
       name = "Test 6a: networking.firewall.enable이 true이어야 함";
