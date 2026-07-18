@@ -684,8 +684,7 @@ let
               in
               # work 호스트(ssh preflight 미정의)는 마커 부재가 정상 — personal에서만 강제.
               if nixpkgsLib.hasInfix "ssh minipc preflight" zshInit then
-                nixpkgsLib.hasInfix "_headless" zshInit
-                && nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\"" zshInit
+                nixpkgsLib.hasInfix "_headless" zshInit && nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\"" zshInit
               else
                 true
             );
