@@ -669,6 +669,26 @@ let
               && nixpkgsLib.hasInfix "OP_GET_BIOMETRIC" zshInit
             );
         }
+        {
+          # ssh() 무인 outer deadline(#1094) 회귀 핀 — 계약 마커를 잠근다:
+          # (1) 무인 판정에 _headless 신호가 존재 (대화형/무인 분기),
+          # (2) 서명 요청에 timeout 기반 outer deadline이 존재 — 이 마커가 사라지면 원격/무인
+          #     세션의 ssh minipc가 1Password 서명 승인 대기로 무한 hang하는 회귀다.
+          # personal 호스트에서만 ssh() preflight가 정의되므로 hostType 조건과 정합한다.
+          name = "Test D19 ${hostName}: ssh() 무인 outer deadline 마커(_headless + timeout)가 initContent에 있어야 함";
+          cond =
+            hasHost
+            && (
+              let
+                zshInit = hm.programs.zsh.initContent;
+              in
+              # work 호스트(ssh preflight 미정의)는 마커 부재가 정상 — personal에서만 강제.
+              if nixpkgsLib.hasInfix "ssh minipc preflight" zshInit then
+                nixpkgsLib.hasInfix "_headless" zshInit && nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\"" zshInit
+              else
+                true
+            );
+        }
       ]
     ) expectedDarwinHosts
   );
