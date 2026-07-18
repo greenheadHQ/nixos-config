@@ -92,6 +92,9 @@
       # 사전 빌드한다. pythonWithTomlkit 자체는 activation과 store path를 계속 공유한다.
       mkPrePushRuntime =
         { pkgs, pythonWithTomlkit }:
+        let
+          claudeRcFlock = import ./libraries/claude-rc-flock.nix { inherit pkgs; };
+        in
         pkgs.buildEnv {
           name = "nixos-config-pre-push-runtime";
           pathsToLink = [ "/bin" ];
@@ -100,7 +103,9 @@
             pkgs.python3Packages.pytest
             pkgs.coreutils
             pkgs.findutils
+            pkgs.stdenv.cc
             pkgs.lsof
+            claudeRcFlock
             pkgs.lefthook
             pkgs.bats
           ];
@@ -233,6 +238,7 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           pythonRuntimes = import ./libraries/python-runtimes.nix { inherit pkgs; };
+          claudeRcFlock = import ./libraries/claude-rc-flock.nix { inherit pkgs; };
         in
         {
           default = pkgs.mkShell {
@@ -247,6 +253,7 @@
               # claudex가 Linux 배포 대상이 되면서 8개 스위트가 "rand: command not found"로 죽었다.
               # 양 플랫폼에 동일한 openssl을 제공해 테스트가 호스트 OS에 의존하지 않게 한다.
               openssl
+              claudeRcFlock
               pythonRuntimes.pythonWithTomlkit
               inputs.agenix.packages.${system}.default
             ];
@@ -273,6 +280,7 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           pythonRuntimes = import ./libraries/python-runtimes.nix { inherit pkgs; };
+          claudeRcFlock = import ./libraries/claude-rc-flock.nix { inherit pkgs; };
           prePushRuntime = mkPrePushRuntime {
             inherit pkgs;
             inherit (pythonRuntimes) pythonWithTomlkit;
@@ -280,7 +288,7 @@
         in
         {
           inherit (pythonRuntimes) pythonWithTomlkit;
-          inherit prePushRuntime;
+          inherit claudeRcFlock prePushRuntime;
         }
       );
     };

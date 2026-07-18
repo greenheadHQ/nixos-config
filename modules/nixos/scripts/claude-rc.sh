@@ -16,6 +16,7 @@ RC_CAPACITY_SET=false
 RC_PERMISSION_MODE_SET=false
 FORCE=false
 STOP_PATH=""
+LIFECYCLE_LOCK_TIMEOUT_SECONDS="${CLAUDE_RC_LIFECYCLE_LOCK_TIMEOUT_SECONDS:-120}"
 
 log_info() { echo "[claude-rc] $*"; }
 log_warn() { echo "[claude-rc] WARN: $*" >&2; }
@@ -48,23 +49,47 @@ require_cmd() {
     local cmd="$1"
     if ! command -v "$cmd" >/dev/null 2>&1; then
         log_error "required command not found in PATH: $cmd"
-        exit 1
+        return 1
     fi
 }
 
 require_common_cmds() {
-    require_cmd flock
-    require_cmd git
-    require_cmd jq
-    require_cmd lsof
-    require_cmd pgrep
+    require_cmd flock || return 1
+    require_cmd git || return 1
+    require_cmd jq || return 1
+    require_cmd lsof || return 1
+    require_cmd pgrep || return 1
+}
+
+wrapper_lifecycle_lock_missing() {
+    log_error "required command not found in PATH: flock"
+}
+
+wrapper_lifecycle_lock_timeout() {
+    local lock_path="$1"
+    log_error "lifecycle lock acquire timeout: $lock_path"
+}
+
+wrapper_lifecycle_lock_setup_failed() {
+    local lock_path="$1"
+    log_error "lifecycle lock setup failed: $lock_path"
+}
+
+with_lifecycle_lock() {
+    with_lifecycle_lock_fd9 \
+        "$LIFECYCLE_LOCK_TIMEOUT_SECONDS" \
+        "$STATE_DIR/ensure.lock" \
+        wrapper_lifecycle_lock_missing \
+        wrapper_lifecycle_lock_timeout \
+        wrapper_lifecycle_lock_setup_failed \
+        "$@"
 }
 
 current_git_root() {
     local root
     if ! root=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null); then
         log_error "git repo가 아님"
-        exit 1
+        return 1
     fi
     printf '%s\n' "$root"
 }
@@ -76,7 +101,7 @@ stop_target_path() {
     fi
     if [[ "$STOP_PATH" != /* ]]; then
         log_error "stop path must be absolute: $STOP_PATH"
-        exit 1
+        return 1
     fi
     if [ -d "$STOP_PATH" ]; then
         canonical_existing_path "$STOP_PATH"
@@ -221,20 +246,28 @@ parse_args() {
 }
 
 do_start() {
-    require_common_cmds
-    require_cmd claude
+    require_common_cmds || return 1
+    require_cmd claude || return 1
     local instance_path lock_path log_path env_line declared_options
-    instance_path=$(current_git_root)
-    ensure_instance_dir "$instance_path"
-    lock_path=$(lock_path_for_path "$instance_path")
-    log_path=$(log_path_for_path "$instance_path")
-    declared_options=$(declared_instance_options_tsv "$instance_path")
+    local launch_status started_identity started_pid started_version
+    instance_path=$(current_git_root) || return $?
+    ensure_instance_dir "$instance_path" || return 1
+    lock_path=$(lock_path_for_path "$instance_path") || return $?
+    log_path=$(log_path_for_path "$instance_path") || return $?
+    declared_options=$(declared_instance_options_tsv "$instance_path") || return $?
 
     if ! lock_is_free "$lock_path"; then
+        started_identity=$(wait_for_started_identity "$instance_path") || started_identity=""
+        if [ -z "$started_identity" ]; then
+            log_error "lock은 잡혔지만 exact managed server identity를 확인하지 못함"
+            return 1
+        fi
+        IFS=$'\t' read -r started_pid started_version <<<"$started_identity"
         log_info "이미 실행 중: $instance_path"
-        warn_if_start_options_ignored "$instance_path"
+        log_info "verified: pid=$started_pid version=$started_version"
+        warn_if_start_options_ignored "$instance_path" || return 1
         log_info "log: $log_path"
-        exit 0
+        return 0
     fi
 
     # Wrapper-bypassed plain CLI servers do not hold this flock. Starting a
@@ -243,27 +276,37 @@ do_start() {
     if has_unmanaged_server_for_path "$instance_path"; then
         log_error "same-dir claude remote-control process already exists outside claude-rc"
         log_error "refusing duplicate start for: $instance_path"
-        exit 1
+        return 1
     fi
 
-    warn_if_declared_start_options_differ "$declared_options"
-    start_server "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE"
-    sleep 2
-
-    if lock_is_free "$lock_path"; then
-        log_error "server failed to start: $instance_path"
-        if [ -f "$log_path" ]; then
-            tail -n 30 "$log_path" >&2 || true
-        fi
-        exit 1
-    fi
+    warn_if_declared_start_options_differ "$declared_options" || return 1
+    launch_and_verify_server \
+        "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE" claude \
+        launch_status started_pid started_version || return $?
+    case "$launch_status" in
+        started) ;;
+        launch-failed)
+            log_error "server failed to start: $instance_path"
+            [ ! -f "$log_path" ] || tail -n 30 "$log_path" >&2 || true
+            return 1
+            ;;
+        identity-unresolvable|identity-unresolvable-cleaned)
+            log_error "server process/version identity를 확인하지 못함: $instance_path"
+            return 1
+            ;;
+        *)
+            log_error "unknown launch outcome: $launch_status"
+            return 1
+            ;;
+    esac
 
     if [ -z "$declared_options" ]; then
-        upsert_instance "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE" "manual"
+        upsert_instance "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE" "manual" || return $?
     else
         log_info "declared registry entry preserved: $instance_path"
     fi
     log_info "서버 시작됨: $instance_path"
+    log_info "verified: pid=$started_pid version=$started_version"
     log_info "log: $log_path"
     env_line=$(grep 'environment=' "$log_path" 2>/dev/null | tail -n 1 || true)
     if [ -n "$env_line" ]; then
@@ -274,37 +317,40 @@ do_start() {
 }
 
 do_stop() {
-    require_common_cmds
-    local instance_path session_count pid lock_path
-    instance_path=$(stop_target_path)
-    ensure_instance_dir "$instance_path"
-    lock_path=$(lock_path_for_path "$instance_path")
+    require_common_cmds || return 1
+    local instance_path session_count pid lock_path started_version
+    instance_path=$(stop_target_path) || return $?
+    ensure_instance_dir "$instance_path" || return 1
+    lock_path=$(lock_path_for_path "$instance_path") || return $?
 
-    session_count=$(count_worktree_session_procs "$instance_path")
+    session_count=$(count_worktree_session_procs "$instance_path") || return $?
     if [ "$session_count" -gt 0 ] && [ "$FORCE" != true ]; then
         log_error "재시작 불가(tombstone) 세션 ${session_count}개 존재"
         log_error "정말 종료하려면: claude-rc stop --force"
-        exit 1
+        return 1
     fi
 
     if pid=$(find_server_pid_for_path "$instance_path"); then
+        started_version=$(pid_exe_version "$pid" 2>/dev/null) || {
+            log_error "server version identity를 확인하지 못함: pid=$pid"
+            return 1
+        }
         log_info "SIGTERM: pid=$pid"
-        kill -TERM "$pid" 2>/dev/null || true
-        if ! wait_until_server_stops "$pid"; then
-            log_error "server did not exit within 10s: pid=$pid"
-            exit 1
+        if ! stop_verified_started_server "$instance_path" "$pid" "$started_version"; then
+            log_error "server identity/exit/lock-release 검증 실패: pid=$pid"
+            return 1
         fi
         log_info "서버 종료됨"
     else
         if ! lock_is_free "$lock_path"; then
             log_error "lock은 잡혔지만 cwd가 같은 서버 PID를 찾지 못함"
             log_error "maint의 no-server-process와 같은 이상 상태이므로 등록을 보존함"
-            exit 1
+            return 1
         fi
         log_info "서버가 이미 죽어 있음 — 등록만 해제"
     fi
 
-    remove_instance "$instance_path"
+    remove_instance "$instance_path" || return $?
 }
 
 do_ls() {
@@ -394,8 +440,8 @@ do_cleanup() {
 main() {
     parse_args "$@"
     case "$ACTION" in
-        start) do_start ;;
-        stop) do_stop ;;
+        start) with_lifecycle_lock do_start ;;
+        stop) with_lifecycle_lock do_stop ;;
         ls) do_ls ;;
         cleanup) do_cleanup ;;
         *) usage; exit 2 ;;

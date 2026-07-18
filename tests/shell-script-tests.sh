@@ -27,6 +27,12 @@ while IFS= read -r -d '' _suite; do
   . "$_suite"
 done < <(find "$SCRIPT_DIR/suites" -maxdepth 1 -type f -name '*.sh' -print0 | sort -z)
 
+# Claude RC의 production argv helper를 한 번만 빌드해 병렬 fixture가 공유한다.
+_claude_rc_build_pid_argv_helper
+_claude_rc_build_launch_group_helper
+export CLAUDE_RC_REAL_PID_ARGV_HELPER
+export CLAUDE_RC_REAL_LAUNCH_GROUP_HELPER
+
 run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
@@ -75,23 +81,80 @@ run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_s
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
 run_test "claude remote-control start requires git repo" test_claude_remote_control_start_requires_git_repo
+run_test "claude remote-control readlink fixture preserves canonicalization" test_claude_remote_control_readlink_fixture_preserves_canonicalization
+run_test "claude remote-control fixture uses trusted flock" test_claude_remote_control_fixture_uses_trusted_flock
+run_test "claude remote-control Nix packages include pinned runtime helpers" test_claude_remote_control_nix_packages_include_pinned_runtime_helpers
 run_test "claude remote-control start registers manual instance" test_claude_remote_control_start_registers_manual_instance
+run_test "claude remote-control start accepts late guardian handoff" test_claude_remote_control_start_accepts_late_guard_handoff
+run_test "claude remote-control bounded startup tolerates scheduler delay" test_claude_remote_control_start_tolerates_bounded_scheduler_delay
+run_test "claude remote-control interactive lifecycle actions share maint lock" test_claude_remote_control_interactive_lifecycle_actions_share_maint_lock
+run_test "claude remote-control lifecycle propagates callback failures" test_claude_remote_control_interactive_lifecycle_propagates_callback_failures
+run_test "claude remote-control registry lock failure prevents callback" test_claude_remote_control_interactive_registry_lock_failure_prevents_callback
+run_test "claude remote-control interactive start requires verified identity" test_claude_remote_control_interactive_start_requires_verified_managed_identity
+run_test "claude remote-control interactive start ignores ambient CLAUDE_BIN" test_claude_remote_control_interactive_start_ignores_ambient_claude_bin
 run_test "claude remote-control start warns on ignored options" test_claude_remote_control_start_warns_when_running_options_differ
 run_test "claude remote-control start preserves declared registry" test_claude_remote_control_start_warns_and_preserves_declared_registry
 run_test "claude remote-control rejects unmanaged same-cwd server" test_claude_remote_control_start_rejects_unmanaged_same_cwd_server
+run_test "claude remote-control rejects unmanaged rc alias" test_claude_remote_control_rejects_unmanaged_rc_alias
+run_test "claude remote-control rejects unmanaged global-option prefix" test_claude_remote_control_rejects_unmanaged_global_option_prefix
+run_test "claude remote-control rejects unmanaged valued global-option prefix" test_claude_remote_control_rejects_unmanaged_valued_global_option_prefix
+run_test "claude remote-control rejects unmanaged debug filter prefixes" test_claude_remote_control_rejects_unmanaged_debug_filter_prefixes
+run_test "claude remote-control blocks ambiguous candidates and ignores explicit session modes" test_claude_remote_control_blocks_ambiguous_candidates_and_ignores_explicit_session_modes
 run_test "claude remote-control ignores argv-only remote-control match" test_claude_remote_control_ignores_argv_only_remote_control_match
+run_test "claude remote-control ignores remote-control substring decoy" test_claude_remote_control_ignores_remote_control_substring_decoy
+run_test "claude remote-control ignores prompt token decoy" test_claude_remote_control_ignores_prompt_token_decoy
+run_test "claude remote-control maint rejects joined managed argv decoy" test_claude_remote_control_maint_rejects_joined_managed_argv_decoy
 run_test "claude remote-control maint rejects unmanaged same-cwd server" test_claude_remote_control_maint_rejects_unmanaged_same_cwd_server
 run_test "claude remote-control stop gates worktree sessions" test_claude_remote_control_stop_blocks_worktree_sessions_and_force_unregisters
 run_test "claude remote-control stop preserves held-lock registration" test_claude_remote_control_stop_preserves_registration_when_lock_held_without_pid
 run_test "claude remote-control stop path removes stale registration" test_claude_remote_control_stop_path_removes_missing_registered_instance
+run_test "claude remote-control interactive stop waits for parent lock release" test_claude_remote_control_interactive_stop_waits_for_parent_lock_release
+run_test "claude remote-control interactive stop preserves registration on parent lock timeout" test_claude_remote_control_interactive_stop_preserves_registration_when_parent_lock_release_times_out
+run_test "claude remote-control maint reports missing path with live lock" test_claude_remote_control_maint_reports_missing_path_with_live_lock
+run_test "claude remote-control maint propagates result write failure" test_claude_remote_control_maint_propagates_result_write_failure
+run_test "claude remote-control maint propagates status write failure" test_claude_remote_control_maint_propagates_status_write_failure
+run_test "claude remote-control start failure preserves unknown state" test_claude_remote_control_start_failure_preserves_unknown_state
+run_test "claude remote-control maint reaps delayed failed launcher" test_claude_remote_control_maint_reaps_delayed_failed_launcher
+run_test "claude remote-control guardian survives early launcher exit" test_claude_remote_control_launch_guard_survives_early_launcher_exit
+run_test "claude remote-control guardian reaps early-exit descendant" test_claude_remote_control_launch_guard_reaps_early_exit_descendant
+run_test "claude remote-control launch-group rejects unsafe PID files" test_claude_remote_control_launch_group_rejects_unsafe_pid_files
+run_test "claude remote-control guardian cancellation is bounded" test_claude_remote_control_launch_guard_cancel_is_bounded
+run_test "claude remote-control repeated signal cannot strand stopped group" test_claude_remote_control_repeated_signal_cannot_strand_stopped_group
+run_test "claude remote-control stopped group resumes after probe failure" test_claude_remote_control_stopped_group_resumes_after_probe_failure
+run_test "claude remote-control group escape stays unknown" test_claude_remote_control_group_escape_never_claims_cleaned
+run_test "claude remote-control guardian handles HUP" test_claude_remote_control_launch_guard_handles_hup
+run_test "claude remote-control guardian handles parent exit" test_claude_remote_control_launch_guard_handles_parent_exit
+run_test "claude remote-control guardian supports system Bash" test_claude_remote_control_launch_guard_supports_system_bash
+run_test "claude remote-control maint rejects competing lock handoff" test_claude_remote_control_maint_does_not_handoff_competing_lock
 run_test "claude remote-control slug separates same basenames" test_claude_remote_control_slug_uses_hash_for_same_basename
 run_test "claude remote-control cleanup removes only orphan worktrees" test_claude_remote_control_cleanup_removes_only_orphan_worktrees
 run_test "claude remote-control maint reconciles declarations" test_claude_remote_control_maint_reconciles_declared_instances
 run_test "claude remote-control maint gates drift by effective spawn" test_claude_remote_control_maint_uses_effective_spawn_for_drift_gate
+run_test "claude remote-control maint accepts previous-generation flock" test_claude_remote_control_maint_accepts_previous_generation_flock
+run_test "claude remote-control maint binds bridge PID to lock holder" test_claude_remote_control_maint_rejects_bridge_with_separate_lock_holder
 run_test "claude remote-control maint rejects invalid declarations" test_claude_remote_control_maint_rejects_invalid_declared_instances
 run_test "claude remote-control transcript gate scopes to worktrees" test_claude_remote_control_transcript_gate_scopes_to_worktree_dirs
+run_test "claude remote-control session matcher honors option terminator" test_claude_remote_control_session_matcher_honors_option_terminator
 run_test "claude remote-control maint reaps orphan sessions before start" test_claude_remote_control_maint_reaps_orphan_sessions_before_start
 run_test "claude remote-control maint writes status schema" test_claude_remote_control_maint_status_schema
+run_test "claude remote-control maint executes canonical nonstandard launcher target" test_claude_remote_control_maint_executes_canonical_nonstandard_launcher_target
+run_test "claude remote-control maint rejects launcher outside versions before exec" test_claude_remote_control_maint_rejects_launcher_outside_versions_before_exec
+run_test "claude remote-control maint rejects unverifiable started server" test_claude_remote_control_maint_rejects_unverifiable_started_server
+run_test "claude remote-control cleanup preserves competitor lock truth" test_claude_remote_control_unverifiable_cleanup_does_not_claim_competitor_stopped
+run_test "claude remote-control maint rejects mismatched started version" test_claude_remote_control_maint_rejects_mismatched_started_version
+run_test "claude remote-control maint restart records verified version" test_claude_remote_control_maint_restart_records_verified_version
+run_test "claude remote-control maint default policy preserves live drift" test_claude_remote_control_maint_default_policy_preserves_live_drift
+run_test "claude remote-control confirmed drift binds exact snapshot" test_claude_remote_control_maint_confirmed_drift_binds_exact_snapshot
+run_test "claude remote-control maint reports lock setup failure" test_claude_remote_control_maint_reports_lock_setup_failure
+run_test "claude remote-control maint waits for parent lock release" test_claude_remote_control_maint_waits_for_parent_lock_release
+run_test "claude remote-control maint restart rejects mismatched version" test_claude_remote_control_maint_restart_rejects_mismatched_version
+run_test "claude remote-control maint restart rejects unverifiable version" test_claude_remote_control_maint_restart_rejects_unverifiable_version
+run_test "claude remote-control maint action taxonomy is canonical" test_claude_remote_control_maint_action_taxonomy
+run_test "Shottr defaults helper bounds and short-circuits TCC access" test_shottr_defaults_helper_behavior
+run_test "Shottr secret writer uses stdin without argv exposure" test_shottr_secret_writer_uses_stdin_without_argv
+run_test "Shottr license refresh helper scrubs child environment" test_shottr_license_refresh_helper_scrubs_child_environment
+run_test "Shottr age encryption replaces ciphertext atomically" test_shottr_age_encryption_is_atomic
+run_test "Shottr CFPreferences writer round-trips through defaults" test_shottr_cfpreferences_writer_round_trip
 if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
   run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json

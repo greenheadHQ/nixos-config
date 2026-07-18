@@ -6,8 +6,7 @@
 #
 # NixOS systemd timer and macOS launchd run `claude-rc-maint ensure`
 # periodically. The script seeds declared instances, starts dead servers, and
-# restarts version-drifted servers when that will not tombstone active worktree
-# sessions.
+# applies the host-selected policy to live version drift.
 set -euo pipefail
 
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
@@ -18,37 +17,83 @@ PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
 CLAUDE_RC_DECLARED_INSTANCES="${CLAUDE_RC_DECLARED_INSTANCES:-}"
 CLAUDE_RC_PERMISSION_MODE="${CLAUDE_RC_PERMISSION_MODE:-bypassPermissions}"
+CLAUDE_RC_DRIFT_POLICY="${CLAUDE_RC_DRIFT_POLICY:-defer}"
+CLAUDE_RC_DRIFT_APPROVAL_JSON="${CLAUDE_RC_DRIFT_APPROVAL_JSON:-[]}"
 CLAUDE_RC_ALERT_HOST="${CLAUDE_RC_ALERT_HOST:-$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo claude-rc)}"
 
 PROJECTS_DIR="$HOME/.claude/projects"
 
+CLAUDE_LAUNCHER=""
 DESIRED_VERSION=""
 GLOBAL_ACTION="none"
+CONFIRMED_DRIFT_APPROVALS="[]"
 RESULTS_FILE=""
 
 log_info() { echo "[claude-rc-maint] $*"; }
 log_error() { echo "[claude-rc-maint] ERROR: $*" >&2; }
 
+global_status_action_keys() {
+    cat <<'EOF'
+flock-missing
+lock-acquire-timeout
+lock-setup-failed
+declared-instances-invalid
+invalid-drift-policy
+invalid-drift-approval
+desired-version-unresolvable
+instances-read-failed
+no-instances
+completed
+failed
+EOF
+}
+
+global_diagnostic_action_keys() {
+    printf '%s\n' status-write-failed
+}
+
+global_action_keys() {
+    global_status_action_keys
+    global_diagnostic_action_keys
+}
+
+set_global_action() {
+    local wanted="$1" action
+    while IFS= read -r action; do
+        if [ "$action" = "$wanted" ]; then
+            GLOBAL_ACTION="$wanted"
+            return 0
+        fi
+    done < <(global_action_keys)
+    log_error "unknown global action: $wanted"
+    return 1
+}
+
 #───────────────────────────────────────────────────────────────────────────────
-# flock 직렬화 (수동 실행과 timer의 동시 실행 방지)
+# flock 직렬화 (maint 실행과 interactive start/stop의 동시 lifecycle 변경 방지)
 #───────────────────────────────────────────────────────────────────────────────
+maint_lifecycle_lock_missing() {
+    set_global_action flock-missing
+    log_error "required command not found in PATH: flock"
+}
+
+maint_lifecycle_lock_timeout() {
+    set_global_action lock-acquire-timeout
+}
+
+maint_lifecycle_lock_setup_failed() {
+    set_global_action lock-setup-failed
+    log_error "lifecycle lock setup failed: $1"
+}
+
 with_lock() {
-    mkdir -p "$STATE_DIR"
-    if ! command -v flock >/dev/null 2>&1; then
-        GLOBAL_ACTION="flock-missing"
-        log_error "required command not found in PATH: flock"
-        return 1
-    fi
-    exec 9>"$STATE_DIR/ensure.lock"
-    if ! flock --timeout "$MAINT_LOCK_TIMEOUT_SECONDS" 9; then
-        GLOBAL_ACTION="lock-acquire-timeout"
-        return 1
-    fi
-    # fd 9는 이 셸이 락을 유지하는 동안만 살아야 한다. 9>&- 없이 실행하면
-    # detach되는 headless bridge가 fd 9를 상속해 락을 영구 점유하고
-    # 이후 모든 타이머 실행이 lock-acquire-timeout으로 실패한다
-    # (codex-remote-control-maint.sh의 PR #983과 동일 근거).
-    "$@" 9>&-
+    with_lifecycle_lock_fd9 \
+        "$MAINT_LOCK_TIMEOUT_SECONDS" \
+        "$STATE_DIR/ensure.lock" \
+        maint_lifecycle_lock_missing \
+        maint_lifecycle_lock_timeout \
+        maint_lifecycle_lock_setup_failed \
+        "$@"
 }
 
 reconcile_declared_instance_unlocked() {
@@ -95,7 +140,7 @@ seed_declared_instances() {
         return 0
     fi
     if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$payload"; then
-        GLOBAL_ACTION="declared-instances-invalid"
+        set_global_action declared-instances-invalid
         log_error "CLAUDE_RC_DECLARED_INSTANCES must be a JSON array"
         return 1
     fi
@@ -108,7 +153,7 @@ seed_declared_instances() {
         permission_mode=$(jq -r --arg fallback "$CLAUDE_RC_PERMISSION_MODE" '.permissionMode // $fallback' <<<"$item")
 
         if [ -z "$path" ] || [[ "$path" != /* ]]; then
-            GLOBAL_ACTION="declared-instances-invalid"
+            set_global_action declared-instances-invalid
             log_error "declared instance path must be absolute: ${path:-<empty>}"
             return 1
         fi
@@ -116,17 +161,17 @@ seed_declared_instances() {
             path=$(canonical_existing_path "$path")
         fi
         if ! validate_spawn "$spawn"; then
-            GLOBAL_ACTION="declared-instances-invalid"
+            set_global_action declared-instances-invalid
             log_error "invalid declared spawn for $path: $spawn"
             return 1
         fi
         if [ -n "$capacity" ] && ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
-            GLOBAL_ACTION="declared-instances-invalid"
+            set_global_action declared-instances-invalid
             log_error "invalid declared capacity for $path: $capacity"
             return 1
         fi
         if ! validate_permission_mode "$permission_mode"; then
-            GLOBAL_ACTION="declared-instances-invalid"
+            set_global_action declared-instances-invalid
             log_error "invalid declared permissionMode for $path: $permission_mode"
             return 1
         fi
@@ -138,32 +183,123 @@ seed_declared_instances() {
         # so a reconcile failure (mktemp/jq) must be propagated explicitly or
         # the declared instance is silently never registered nor ensured.
         if ! with_instances_lock reconcile_declared_instance_unlocked "$path" "$spawn" "$capacity" "$permission_mode"; then
-            GLOBAL_ACTION="declared-instances-invalid"
+            set_global_action declared-instances-invalid
             log_error "failed to reconcile declared instance: $path"
             return 1
         fi
     done < <(jq -c '.[]' <<<"$payload")
 }
 
+instance_action_metadata_table() {
+    cat <<'EOF'
+path-missing	stopped	false
+path-missing-lock-held	unknown	true
+started	running	false
+healthy	running	false
+restarted-version-drift	running	false
+deferred-restart-confirmation	running	false
+restart-approval-mismatch	running	true
+deferred-active-sessions	running	false
+deferred-unknown-activity	running	false
+start-version-mismatch	stopped	true
+restart-version-mismatch	stopped	true
+restart-gate-failed	running	true
+start-failed	dynamic	true
+invalid-spawn	dynamic	true
+invalid-capacity	unknown	true
+invalid-permission-mode	unknown	true
+unmanaged-server-present	unknown	true
+start-version-unresolvable	unknown	true
+start-version-unresolvable-cleaned	stopped	true
+start-version-mismatch-cleanup-failed	unknown	true
+no-server-process	unknown	true
+running-version-unresolvable	unknown	true
+restart-failed	unknown	true
+restart-version-unresolvable	unknown	true
+restart-version-unresolvable-cleaned	stopped	true
+restart-version-mismatch-cleanup-failed	unknown	true
+EOF
+}
+
+instance_action_metadata() {
+    local wanted="$1" action state failure
+    while IFS=$'\t' read -r action state failure; do
+        if [ "$action" = "$wanted" ]; then
+            # `dynamic` actions can be emitted before identity is known or
+            # while a previously identified process is still running. The
+            # caller supplies observed state; failure classification stays in
+            # this canonical table.
+            printf '%s\t%s\n' "$state" "$failure"
+            return 0
+        fi
+    done < <(instance_action_metadata_table)
+    return 1
+}
+
 record_instance_result() {
-    local path="$1" running_version="$2" desired_version="$3" action="$4"
+    local path="$1" running_version="$2" observed_version="$3"
+    local desired_version="$4" action="$5" state_override="${6:-}"
+    local metadata process_state
+    if ! metadata=$(instance_action_metadata "$action"); then
+        log_error "unknown instance action metadata: $action"
+        return 1
+    fi
+    IFS=$'\t' read -r process_state _ <<<"$metadata"
+    if [ "$process_state" = "dynamic" ]; then
+        process_state="$state_override"
+    elif [ -n "$state_override" ] && [ "$state_override" != "$process_state" ]; then
+        log_error "instance action/state mismatch: $action/$state_override (expected $process_state)"
+        return 1
+    fi
+    case "$process_state" in
+        running)
+            [ -n "$running_version" ] || return 1
+            ;;
+        stopped | unknown)
+            [ -z "$running_version" ] || return 1
+            ;;
+        *) return 1 ;;
+    esac
     jq -n -c \
         --arg path "$path" \
+        --arg processState "$process_state" \
         --arg runningVersion "$running_version" \
+        --arg observedVersion "$observed_version" \
         --arg desiredVersion "$desired_version" \
         --arg action "$action" \
-        '{path: $path, runningVersion: $runningVersion, desiredVersion: $desiredVersion, action: $action}' \
+        '{path: $path, processState: $processState,
+          runningVersion: $runningVersion, observedVersion: $observedVersion,
+          desiredVersion: $desiredVersion, action: $action}' \
         >>"$RESULTS_FILE"
 }
 
-desired_claude_version() {
-    local resolved
-    # readlink 실패가 빈 문자열 + exit 0으로 새면 DESIRED_VERSION=""가 되어
-    # 모든 실행 버전이 drift로 보이고 재시작이 반복된다 — 실패를 명시 전파해
-    # ensure_core의 desired-version-unresolvable 경로가 받게 한다.
-    resolved=$(readlink -f "$CLAUDE_BIN") || return 1
-    [ -n "$resolved" ] || return 1
-    basename "$resolved"
+resolve_claude_launcher() {
+    local resolved versions_root
+    # Resolve both boundaries once before any launcher can run. The verified
+    # canonical executable, not the mutable symlink, is used for every start so
+    # a retarget between version comparison and exec cannot cross the boundary.
+    versions_root=$(canonical_existing_path "$VERSIONS_DIR") || {
+        log_error "Claude versions directory is not resolvable: $VERSIONS_DIR"
+        return 1
+    }
+    resolved=$(readlink -f "$CLAUDE_BIN") || {
+        log_error "Claude launcher is not resolvable: $CLAUDE_BIN"
+        return 1
+    }
+    [ -n "$resolved" ] && [ -f "$resolved" ] && [ -x "$resolved" ] || {
+        log_error "Claude launcher target is not an executable file: ${resolved:-<empty>}"
+        return 1
+    }
+    case "$resolved" in
+        "$versions_root"/*) ;;
+        *)
+            log_error "Claude launcher target is outside VERSIONS_DIR: $resolved"
+            return 1
+            ;;
+    esac
+    VERSIONS_DIR="$versions_root"
+    CLAUDE_LAUNCHER="$resolved"
+    DESIRED_VERSION=$(basename "$resolved")
 }
 
 normalized_instance_prefix() {
@@ -221,52 +357,113 @@ restart_gate() {
 }
 
 restart_server() {
-    local path="$1" spawn="$2" capacity="$3" permission_mode="$4" pid lock_path
+    local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
+    local result_outcome_var="$5" result_version_var="$6"
+    local pid lock_path launch_status started_pid started_version
+    printf -v "$result_outcome_var" '%s' "restart-failed"
+    printf -v "$result_version_var" '%s' ""
     lock_path=$(lock_path_for_path "$path")
     if pid=$(find_server_pid_for_path "$path"); then
+        # Discovery and signal are separate syscalls; fail closed if the PID no
+        # longer has the exact managed launcher/lock lineage at action time.
+        pid_is_managed_server_for_path "$pid" "$path" || return 0
         kill -TERM "$pid" 2>/dev/null || true
-        wait_until_server_stops "$pid" || return 1
+        wait_until_server_stops "$pid" || return 0
+        wait_until_instance_lock_free "$lock_path" || return 0
     elif ! lock_is_free "$lock_path"; then
-        return 1
+        return 0
     fi
 
     if ! lock_is_free "$lock_path"; then
-        return 1
-    fi
-    if has_unmanaged_server_for_path "$path"; then
-        return 2
-    fi
-    start_server "$path" "$spawn" "$capacity" "$permission_mode"
-    sleep 2
-    if lock_is_free "$lock_path"; then
-        return 1
-    fi
-}
-
-handle_restart_result() {
-    local path="$1" mode="$2" running_version="$3" restart_rc="$4" action
-    if [ "$restart_rc" -eq 0 ]; then
-        action="restarted-version-drift"
-        log_info "restarted ${mode} drift: $path (${running_version} -> ${DESIRED_VERSION})"
-        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
         return 0
     fi
-    if [ "$restart_rc" -eq 2 ]; then
-        action="unmanaged-server-present"
-        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
-        log_error "unmanaged same-cwd server present after stop: $path"
-        return 1
+    if has_unmanaged_server_for_path "$path"; then
+        printf -v "$result_outcome_var" '%s' "unmanaged-server-present"
+        return 0
     fi
-    action="restart-failed"
-    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
-    return 1
+
+    launch_and_verify_server \
+        "$path" "$spawn" "$capacity" "$permission_mode" "$CLAUDE_LAUNCHER" \
+        launch_status started_pid started_version
+    case "$launch_status" in
+        launch-failed)
+            return 0
+            ;;
+        identity-unresolvable)
+            log_error "restart failed; server process/version unresolvable: $path"
+            printf -v "$result_outcome_var" '%s' "restart-version-unresolvable"
+            return 0
+            ;;
+        identity-unresolvable-cleaned)
+            log_error "restart failed; server process/version unresolvable; replacement stopped: $path"
+            printf -v "$result_outcome_var" '%s' "restart-version-unresolvable-cleaned"
+            return 0
+            ;;
+        started)
+            printf -v "$result_version_var" '%s' "$started_version"
+            ;;
+        *)
+            log_error "restart failed; unknown launch outcome: $launch_status"
+            return 0
+            ;;
+    esac
+
+    if [ "$started_version" != "$DESIRED_VERSION" ]; then
+        if stop_verified_started_server "$path" "$started_pid" "$started_version"; then
+            printf -v "$result_outcome_var" '%s' "restart-version-mismatch"
+        else
+            printf -v "$result_outcome_var" '%s' "restart-version-mismatch-cleanup-failed"
+        fi
+        return 0
+    fi
+    printf -v "$result_outcome_var" '%s' "restarted-version-drift"
 }
 
-capture_started_version() {
-    local path="$1" pid
-    if pid=$(find_server_pid_for_path "$path"); then
-        pid_exe_version "$pid" 2>/dev/null || true
-    fi
+record_restart_outcome() {
+    local path="$1" mode="$2" running_version="$3" outcome="$4" started_version="$5"
+    case "$outcome" in
+        restarted-version-drift)
+            log_info "restarted ${mode} drift: $path (${running_version} -> ${started_version})"
+            record_instance_result \
+                "$path" "$started_version" "$started_version" "$DESIRED_VERSION" "$outcome" \
+                || return 1
+            return 0
+            ;;
+        unmanaged-server-present)
+            record_instance_result \
+                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "$outcome"
+            log_error "unmanaged same-cwd server present after stop: $path"
+            ;;
+        restart-version-mismatch)
+            record_instance_result \
+                "$path" "" "$started_version" "$DESIRED_VERSION" "$outcome"
+            log_error "restart version mismatch: $path (started=${started_version:-unresolved}, desired=${DESIRED_VERSION})"
+            ;;
+        restart-version-mismatch-cleanup-failed)
+            record_instance_result \
+                "$path" "" "$started_version" "$DESIRED_VERSION" "$outcome"
+            log_error "restart version mismatch cleanup failed: $path (started=${started_version:-unresolved}, desired=${DESIRED_VERSION})"
+            ;;
+        restart-version-unresolvable)
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$outcome"
+            log_error "restart replacement version unresolvable: $path"
+            ;;
+        restart-version-unresolvable-cleaned)
+            record_instance_result \
+                "$path" "" "" "$DESIRED_VERSION" "$outcome"
+            log_error "restart replacement version unresolvable and stopped: $path"
+            ;;
+        restart-failed)
+            record_instance_result \
+                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "$outcome"
+            ;;
+        *)
+            log_error "unknown restart outcome: $outcome"
+            record_instance_result \
+                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "restart-failed"
+            ;;
+    esac
+    return 1
 }
 
 validate_instance_config() {
@@ -275,31 +472,30 @@ validate_instance_config() {
 
     if ! validate_spawn "$spawn"; then
         action="invalid-spawn"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action" unknown
         return 1
     fi
     if [ -n "$capacity" ] && ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
         action="invalid-capacity"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
         return 1
     fi
     if ! validate_permission_mode "$permission_mode"; then
         action="invalid-permission-mode"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
         return 1
     fi
 }
 
 start_missing_instance() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
-    local action lock_path reaped started_version
-    lock_path=$(lock_path_for_path "$path")
+    local action reaped launch_status started_pid started_version
     # A wrapper-bypassed plain CLI server in the same cwd does not hold our
     # lock. Starting another server here permanently creates an undeletable
     # ghost environment, so ensure must share the wrapper's cwd guard.
     if has_unmanaged_server_for_path "$path"; then
         action="unmanaged-server-present"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
         log_error "unmanaged same-cwd server present: $path"
         return 1
     fi
@@ -311,18 +507,135 @@ start_missing_instance() {
     if [ "$reaped" -gt 0 ]; then
         log_info "reaped ${reaped} orphan session process(es): $path"
     fi
-    start_server "$path" "$spawn" "$capacity" "$permission_mode"
-    sleep 2
-    if lock_is_free "$lock_path"; then
-        action="start-failed"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
-        log_error "start failed: $path"
+    launch_and_verify_server \
+        "$path" "$spawn" "$capacity" "$permission_mode" "$CLAUDE_LAUNCHER" \
+        launch_status started_pid started_version
+    case "$launch_status" in
+        launch-failed)
+            action="start-failed"
+            # No verified launcher/lock identity exists on this path. A
+            # successor may have acquired the instance lock as our guardian
+            # returned, so never claim a global stopped state from launch
+            # failure alone.
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action" unknown
+            log_error "start failed: $path"
+            return 1
+            ;;
+        identity-unresolvable)
+            action="start-version-unresolvable"
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
+            log_error "start failed; server process/version unresolvable: $path"
+            return 1
+            ;;
+        identity-unresolvable-cleaned)
+            action="start-version-unresolvable-cleaned"
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
+            log_error "start failed; server process/version unresolvable; replacement stopped: $path"
+            return 1
+            ;;
+        started)
+            ;;
+        *)
+            action="start-failed"
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action" unknown
+            log_error "start failed; unknown launch outcome: $launch_status"
+            return 1
+            ;;
+    esac
+    if [ "$started_version" != "$DESIRED_VERSION" ]; then
+        if stop_verified_started_server "$path" "$started_pid" "$started_version"; then
+            action="start-version-mismatch"
+            log_error "start version mismatch: $path (started=${started_version}, desired=${DESIRED_VERSION})"
+        else
+            action="start-version-mismatch-cleanup-failed"
+            log_error "start version mismatch cleanup failed: $path (started=${started_version}, desired=${DESIRED_VERSION})"
+        fi
+        record_instance_result \
+            "$path" "" "$started_version" "$DESIRED_VERSION" "$action"
         return 1
     fi
-    started_version=$(capture_started_version "$path")
     action="started"
-    record_instance_result "$path" "$started_version" "$DESIRED_VERSION" "$action"
+    record_instance_result \
+        "$path" "$started_version" "$started_version" "$DESIRED_VERSION" "$action" \
+        || return 1
     log_info "started: $path"
+}
+
+normalize_confirmed_drift_approvals() {
+    jq -ce '
+      if type != "array" or length == 0 then
+        error("approval must be a non-empty array")
+      elif all(.[];
+        type == "object"
+        and (keys | sort) == ["desiredVersion", "path", "runningVersion"]
+        and (.path | type) == "string" and (.path | length) > 0
+        and (.runningVersion | type) == "string" and (.runningVersion | length) > 0
+        and (.desiredVersion | type) == "string" and (.desiredVersion | length) > 0
+      ) then
+        map({path, runningVersion, desiredVersion})
+        | sort_by([.path, .runningVersion, .desiredVersion])
+      else
+        error("approval entries must contain exact non-empty path/version fields")
+      end
+    ' <<<"$CLAUDE_RC_DRIFT_APPROVAL_JSON"
+}
+
+collect_current_drift_approvals() {
+    local entries="$1" path lock_path pid running_version
+    local _spawn _capacity _permission_mode
+
+    while IFS=$'\t' read -r path _spawn _capacity _permission_mode; do
+        [ -n "$path" ] || continue
+        [ -d "$path" ] || continue
+        lock_path=$(lock_path_for_path "$path")
+        lock_is_free "$lock_path" && continue
+        if ! pid=$(find_server_pid_for_path "$path"); then
+            log_error "cannot bind confirmed drift approval to server identity: $path"
+            return 1
+        fi
+        if ! running_version=$(pid_exe_version "$pid"); then
+            log_error "cannot bind confirmed drift approval to running version: $path"
+            return 1
+        fi
+        [ "$running_version" != "$DESIRED_VERSION" ] || continue
+        jq -nc \
+            --arg path "$path" \
+            --arg runningVersion "$running_version" \
+            --arg desiredVersion "$DESIRED_VERSION" \
+            '{path: $path, runningVersion: $runningVersion, desiredVersion: $desiredVersion}'
+    done <<<"$entries"
+}
+
+validate_confirmed_drift_approvals() {
+    local entries="$1" approved observed
+    if ! approved=$(normalize_confirmed_drift_approvals); then
+        set_global_action invalid-drift-approval
+        log_error "confirmed drift approval is malformed or empty"
+        return 1
+    fi
+    if ! observed=$(collect_current_drift_approvals "$entries" | jq -sc 'sort_by([.path, .runningVersion, .desiredVersion])'); then
+        set_global_action invalid-drift-approval
+        return 1
+    fi
+    if [ "$approved" != "$observed" ]; then
+        set_global_action invalid-drift-approval
+        log_error "confirmed drift approval no longer matches the locked runtime snapshot"
+        return 1
+    fi
+    CONFIRMED_DRIFT_APPROVALS="$approved"
+}
+
+drift_tuple_is_confirmed() {
+    local path="$1" running_version="$2"
+    jq -e \
+        --arg path "$path" \
+        --arg runningVersion "$running_version" \
+        --arg desiredVersion "$DESIRED_VERSION" \
+        'any(.[];
+          .path == $path
+          and .runningVersion == $runningVersion
+          and .desiredVersion == $desiredVersion
+        )' <<<"$CONFIRMED_DRIFT_APPROVALS" >/dev/null
 }
 
 handle_running_instance() {
@@ -330,20 +643,22 @@ handle_running_instance() {
     local pid running_version action
     if ! pid=$(find_server_pid_for_path "$path"); then
         action="no-server-process"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
         log_error "lock held but server process not found: $path"
         return 1
     fi
 
     if ! running_version=$(pid_exe_version "$pid"); then
         action="running-version-unresolvable"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
         return 1
     fi
 
     if [ "$running_version" = "$DESIRED_VERSION" ]; then
         action="healthy"
-        record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+        record_instance_result \
+            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+            || return 1
         return 0
     fi
 
@@ -352,7 +667,25 @@ handle_running_instance() {
 
 handle_drift() {
     local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4" pid="$5" running_version="$6"
-    local effective_spawn gate_rc restart_rc action
+    local effective_spawn gate_rc restart_outcome restarted_version action
+    if [ "$CLAUDE_RC_DRIFT_POLICY" = "defer" ]; then
+        action="deferred-restart-confirmation"
+        record_instance_result \
+            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+            || return 1
+        log_info "deferred version drift pending operator-confirmed restart: $path"
+        return 0
+    fi
+    if [ "$CLAUDE_RC_DRIFT_POLICY" = "confirmed" ] \
+        && ! drift_tuple_is_confirmed "$path" "$running_version"; then
+        action="restart-approval-mismatch"
+        record_instance_result \
+            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+            || return 1
+        log_error "runtime drift no longer matches the confirmed approval: $path"
+        return 1
+    fi
+
     # Registry spawn is desired state and may differ from the already-running
     # server after declaration changes or temporary manual override starts.
     # Restart safety depends on the effective mode of the running process. If
@@ -366,41 +699,51 @@ handle_drift() {
         same-dir)
             # Live measurement confirmed same-dir spawned sessions reconnect to
             # the restarted server, so version drift can be corrected eagerly.
-            restart_rc=0
-            restart_server "$path" "$desired_spawn" "$capacity" "$permission_mode" || restart_rc=$?
-            handle_restart_result "$path" "same-dir" "$running_version" "$restart_rc"
+            restart_server \
+                "$path" "$desired_spawn" "$capacity" "$permission_mode" \
+                restart_outcome restarted_version
+            record_restart_outcome \
+                "$path" "same-dir" "$running_version" "$restart_outcome" "$restarted_version"
             ;;
         worktree)
             gate_rc=0
             restart_gate "$path" || gate_rc=$?
             case "$gate_rc" in
                 0)
-                    restart_rc=0
-                    restart_server "$path" "$desired_spawn" "$capacity" "$permission_mode" || restart_rc=$?
-                    handle_restart_result "$path" "worktree" "$running_version" "$restart_rc"
+                    restart_server \
+                        "$path" "$desired_spawn" "$capacity" "$permission_mode" \
+                        restart_outcome restarted_version
+                    record_restart_outcome \
+                        "$path" "worktree" "$running_version" "$restart_outcome" "$restarted_version"
                     ;;
                 1)
                     action="deferred-active-sessions"
-                    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+                    record_instance_result \
+                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+                        || return 1
                     log_info "deferred active worktree sessions: $path"
                     return 0
                     ;;
                 2)
                     action="deferred-unknown-activity"
-                    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+                    record_instance_result \
+                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+                        || return 1
                     log_info "deferred unknown worktree activity: $path"
                     return 0
                     ;;
                 *)
                     action="restart-gate-failed"
-                    record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+                    record_instance_result \
+                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action"
                     return 1
                     ;;
             esac
             ;;
         *)
             action="invalid-spawn"
-            record_instance_result "$path" "$running_version" "$DESIRED_VERSION" "$action"
+            record_instance_result \
+                "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" running
             return 1
             ;;
     esac
@@ -410,17 +753,23 @@ process_instance() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4"
     local lock_path action
 
+    lock_path=$(lock_path_for_path "$path")
     if [ ! -d "$path" ]; then
+        if [ -e "$lock_path" ] && ! lock_is_free "$lock_path"; then
+            action="path-missing-lock-held"
+            log_error "path missing while instance lock remains held: $path"
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
+            return 1
+        fi
         action="path-missing"
         log_info "path missing: $path"
-        record_instance_result "$path" "" "$DESIRED_VERSION" "$action"
+        record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action" || return 1
         return 0
     fi
 
     validate_instance_config "$path" "$spawn" "$capacity" "$permission_mode" || return 1
 
     ensure_instance_dir "$path"
-    lock_path=$(lock_path_for_path "$path")
     if lock_is_free "$lock_path"; then
         start_missing_instance "$path" "$spawn" "$capacity" "$permission_mode"
     else
@@ -432,21 +781,33 @@ ensure_core() {
     local entries rc path spawn capacity permission_mode
     GLOBAL_ACTION="running"
 
+    case "$CLAUDE_RC_DRIFT_POLICY" in
+        automatic | confirmed | defer) ;;
+        *)
+            set_global_action invalid-drift-policy
+            log_error "invalid CLAUDE_RC_DRIFT_POLICY: $CLAUDE_RC_DRIFT_POLICY"
+            return 1
+            ;;
+    esac
+
     seed_declared_instances || return 1
 
-    if ! DESIRED_VERSION=$(desired_claude_version); then
-        GLOBAL_ACTION="desired-version-unresolvable"
+    if ! resolve_claude_launcher; then
+        set_global_action desired-version-unresolvable
         return 1
     fi
 
     if ! entries=$(with_instances_lock emit_instances_tsv_unlocked); then
-        GLOBAL_ACTION="instances-read-failed"
+        set_global_action instances-read-failed
         return 1
     fi
     if [ -z "$entries" ]; then
-        GLOBAL_ACTION="no-instances"
+        set_global_action no-instances
         log_info "no registered instances"
         return 0
+    fi
+    if [ "$CLAUDE_RC_DRIFT_POLICY" = "confirmed" ]; then
+        validate_confirmed_drift_approvals "$entries" || return 1
     fi
 
     rc=0
@@ -457,9 +818,9 @@ ensure_core() {
     done <<<"$entries"
 
     if [ "$rc" -eq 0 ]; then
-        GLOBAL_ACTION="completed"
+        set_global_action completed
     else
-        GLOBAL_ACTION="failed"
+        set_global_action failed
     fi
     return "$rc"
 }
@@ -496,14 +857,12 @@ load_alerting() {
 }
 
 is_failure_action() {
-    case "$1" in
-        path-missing|started|healthy|restarted-version-drift|deferred-active-sessions|deferred-unknown-activity)
-            return 1
-            ;;
-        *)
-            return 0
-            ;;
-    esac
+    local metadata is_failure
+    if ! metadata=$(instance_action_metadata "$1"); then
+        return 0
+    fi
+    IFS=$'\t' read -r _ is_failure <<<"$metadata"
+    [ "$is_failure" = "true" ]
 }
 
 failed_instance_summary() {
@@ -580,7 +939,13 @@ cmd_ensure() {
     with_lock ensure_core || rc=$?
     # 단일 finalizer: 어떤 분기도 이 경로를 우회하지 않는다
     # (recovered/failure 알림 상태 전이가 모든 실행에서 평가되도록).
-    write_status "$rc" || true
+    if ! write_status "$rc"; then
+        set_global_action status-write-failed
+        log_error "failed to write final status"
+        # Preserve an existing lifecycle failure, but never report success when
+        # the observable status contract could not be published.
+        [ "$rc" -ne 0 ] || rc=1
+    fi
     # source되는 credential/lib 파일이 malformed여도 (source가 && 리스트의
     # 마지막 명령이라 set -e 발동) finalizer가 send_alerts 전에 죽지 않게 guard.
     load_alerting || true
@@ -594,11 +959,14 @@ usage() {
 Usage: claude-rc-maint ensure
 
 env:
-  CLAUDE_BIN, STATE_DIR, CLAUDE_RC_DECLARED_INSTANCES,
+  CLAUDE_BIN (maint launcher; basename need not be claude),
+  STATE_DIR, CLAUDE_RC_DECLARED_INSTANCES,
   VERSIONS_DIR (default ~/.local/share/claude/versions; exe boundary for server/session PID detection),
   IDLE_THRESHOLD_MINUTES (default 30), MAINT_LOCK_TIMEOUT_SECONDS (default 120),
   ALERT_COOLDOWN_SECONDS (default 1800), PUSHOVER_CRED_FILE, SERVICE_LIB,
-  CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_ALERT_HOST
+  CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_ALERT_HOST,
+  CLAUDE_RC_DRIFT_POLICY (automatic, confirmed, or defer; default defer),
+  CLAUDE_RC_DRIFT_APPROVAL_JSON (exact non-empty path/runningVersion/desiredVersion array for confirmed)
 
 CLAUDE_RC_DECLARED_INSTANCES:
   JSON array, for example:
