@@ -20,6 +20,9 @@ _CLAUDEX_EXPECTED_MIXED_MAIN_MODEL=claude-opus-4-8
 # 해석되지 않으므로, 그 경계 아래서 실행되는 fake 프록시의 shebang만 절대 경로로 고정한다.
 # production 프록시는 절대 store 경로의 바이너리라 PATH에 의존하지 않으며, 격리 계약(env -i와
 # 제한된 PATH) 자체는 손대지 않으므로 테스트가 검증하는 경계는 그대로다.
+# 함수 이름대로 shebang만 바꾼다: 조립은 임시 파일에서 하되 대상에는 truncate 후 덮어쓰기로
+# 되돌려, 대상의 inode와 mode/권한을 보존한다. `mv`로 교체하면 임시 파일의 속성이 대상을
+# 덮어써서, 이미 실행 비트가 설정된 파일에 적용할 경우 그 비트를 조용히 잃는다.
 _claudex_pin_proxy_shebang() {
   local target="$1" tmp bash_bin
   bash_bin="$(command -v bash)"
@@ -28,7 +31,8 @@ _claudex_pin_proxy_shebang() {
     printf '#!%s\n' "$bash_bin"
     tail -n +2 "$target"
   } > "$tmp"
-  mv "$tmp" "$target"
+  cat "$tmp" > "$target"
+  rm -f "$tmp"
 }
 
 _claudex_assert_no_placeholders() {
