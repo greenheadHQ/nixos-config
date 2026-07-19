@@ -106,6 +106,7 @@
   ];
 
   # 홈서버 서비스 활성화 (mkEnableOption 기본값 false)
+  homeserver.privateJobRunner.enable = true; # generic private job runner (작업 정의는 기기 로컬)
   homeserver.immich.enable = true;
   homeserver.uptimeKuma.enable = true;
   homeserver.immichCleanup.enable = true; # Claude Code Temp 앨범 매일 전체 삭제
