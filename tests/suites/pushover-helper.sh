@@ -66,11 +66,11 @@ test_pushover_send_success_passes_expected_fields() {
   PATH="$stub_dir:$PATH" pushover_send "$cred" "Test title" "Test message" 1 \
     || fail "pushover_send must succeed when curl succeeds"
 
-  assert_file_contains "$log" "token=token value"
-  assert_file_contains "$log" "user=user value"
-  assert_file_contains "$log" "title=Test title"
-  assert_file_contains "$log" "message=Test message"
-  assert_file_contains "$log" "priority=1"
+  assert_file_contains "$log" "form-string = \"token=token value\""
+  assert_file_contains "$log" "form-string = \"user=user value\""
+  assert_file_contains "$log" "form-string = \"title=Test title\""
+  assert_file_contains "$log" "form-string = \"message=Test message\""
+  assert_file_contains "$log" "form-string = \"priority=1\""
   assert_file_contains "$log" "https://api.pushover.net/1/messages.json"
   assert_not_contains "$(cat "$log")" "sound="
 }
@@ -91,7 +91,7 @@ test_pushover_send_passes_optional_sound() {
   PATH="$stub_dir:$PATH" pushover_send "$cred" "Sound title" "Sound message" 0 "falling" \
     || fail "pushover_send must succeed with optional sound"
 
-  assert_file_contains "$log" "sound=falling"
+  assert_file_contains "$log" "form-string = \"sound=falling\""
 }
 
 test_pushover_send_curl_failure_returns_1() {
@@ -110,5 +110,5 @@ test_pushover_send_curl_failure_returns_1() {
   if PATH="$stub_dir:$PATH" pushover_send "$cred" "Fail title" "Fail message" 0; then
     fail "pushover_send must fail when curl fails"
   fi
-  assert_file_contains "$log" "title=Fail title"
+  assert_file_contains "$log" "form-string = \"title=Fail title\""
 }
