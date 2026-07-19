@@ -5,7 +5,7 @@
 # Nix eval은 로컬 작업 디렉터리를 읽지 않는다(readDir/readFile/pathExists 금지) —
 # discovery·스케줄은 sync 스크립트의 런타임 스캔만 소유한다.
 #
-# 로컬 작업 규약 (기기에서 사람이 준비, 경로 상수는 libraries/constants.nix):
+# 로컬 작업 규약 (기기에서 사람이 준비):
 #   ~/.local/private-jobs/<slug>/run.sh    실행 진입점 — owner 본인·실행 가능·
 #                                          symlink 및 group/world-writable 금지
 #   ~/.local/private-jobs/<slug>/schedule  systemd OnCalendar 식 1줄 (예: "Sat 03:00")
@@ -25,42 +25,53 @@
   lib,
   pkgs,
   username,
-  constants,
   ...
 }:
 
 let
   cfg = config.homeserver.privateJobRunner;
+  # 옵션 선언은 다른 homeserver.* 서비스와 같이 options/homeserver.nix가 소유한다
+  # — 이 모듈은 구현만 갖는다 (중앙 모듈 import에 포함되는 단일 경로 유지).
   pushoverLib = pkgs.writeText "pushover-lib.sh" (
     builtins.readFile ../../../shared/scripts/lib/pushover.sh
   );
+  privateJobLib = pkgs.writeText "private-job-lib.sh" (builtins.readFile ./lib.sh);
+  # 두 스크립트가 공유하는 HOME 상대 경로 — env로 한 번만 주입한다 (스크립트별
+  # 하드코딩은 discovery와 실행이 다른 디렉터리를 보는 drift를 만든다). 이 모듈
+  # 밖 소비자가 없으므로 전역 constants가 아니라 여기가 소유한다.
+  privateJobsDefinitions = ".local/private-jobs";
+  privateJobsState = ".local/state/private-jobs";
   # user-scope Pushover 자격 (HM secrets가 배치하는 ~/.config/pushover/share) —
   # 경로만 참조한다. root-scope(age.secrets)와 달리 user unit이 읽을 수 있다.
   pushoverCredPath = "%h/.config/pushover/share";
 
+  # 실행 책임별로 의존을 분리해 선언한다 — 합집합 공유는 한 책임의 의존 추가가
+  # 나머지 실행기까지 자동 확장되는 결합을 만든다.
   mkApp =
-    name: src:
+    name: src: deps:
     pkgs.writeShellApplication {
       inherit name;
-      runtimeInputs = with pkgs; [
-        coreutils
-        curl
-        gnugrep
-        systemd
-      ];
+      runtimeInputs = deps;
       text = builtins.readFile src;
     };
-  runnerApp = mkApp "private-job-run" ./runner.sh;
-  syncApp = mkApp "private-jobs-sync" ./sync.sh;
-  notifyApp = mkApp "private-job-notify" ./notify.sh;
+  runnerApp = mkApp "private-job-run" ./runner.sh [ pkgs.coreutils ];
+  syncApp = mkApp "private-jobs-sync" ./sync.sh [
+    pkgs.coreutils
+    pkgs.curl
+    pkgs.gnugrep
+    pkgs.systemd
+  ];
+  notifyApp = mkApp "private-job-notify" ./notify.sh [
+    pkgs.coreutils
+    pkgs.curl
+  ];
 
   commonEnvironment = {
+    PRIVATE_JOB_LIB = toString privateJobLib;
     PUSHOVER_LIB = toString pushoverLib;
     PUSHOVER_CRED_FILE = pushoverCredPath;
-    # 두 스크립트가 공유하는 HOME 상대 경로 — 하드코딩 중복은 discovery와 실행이
-    # 서로 다른 디렉터리를 보게 되는 drift를 만든다 (SoT: constants.paths).
-    PRIVATE_JOBS_DEFINITIONS = constants.paths.privateJobsDefinitions;
-    PRIVATE_JOBS_STATE = constants.paths.privateJobsState;
+    PRIVATE_JOBS_DEFINITIONS = privateJobsDefinitions;
+    PRIVATE_JOBS_STATE = privateJobsState;
   };
 
   # user unit hardening 공통값. RestrictNamespaces는 의도적으로 켜지 않는다 —
@@ -81,10 +92,6 @@ let
   };
 in
 {
-  options.homeserver.privateJobRunner = {
-    enable = lib.mkEnableOption "generic private job runner (로컬 정의 작업의 user timer 실행)";
-  };
-
   # linger는 mkIf 밖에서 enable 값을 그대로 선언한다 — mkIf 안에 두면 비활성화 시
   # 옵션이 null(미관리)로 돌아가 이미 실행된 enable-linger 상태가 잔존한다.
   # 파급 주의: linger는 이 runner만이 아니라 사용자 user manager 전체를 로그인

@@ -16,6 +16,9 @@ _write_pushover_curl_stub() {
 set -euo pipefail
 : "${PUSHOVER_CURL_LOG:?}"
 printf '%s\n' "$@" >> "$PUSHOVER_CURL_LOG"
+# helper는 자격·필드를 argv가 아니라 --config - stdin으로 전달한다 — 함께 기록해야
+# 기존 필드 assertion이 성립한다.
+[ -t 0 ] || cat >> "$PUSHOVER_CURL_LOG"
 exit "${PUSHOVER_CURL_EXIT:-0}"
 EOF_STUB
   chmod +x "$dir/curl"

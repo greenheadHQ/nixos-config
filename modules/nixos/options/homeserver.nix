@@ -9,6 +9,10 @@
 
 {
   options.homeserver = {
+    privateJobRunner = {
+      enable = lib.mkEnableOption "generic private job runner (로컬 정의 작업의 user timer 실행)";
+    };
+
     immich = {
       enable = lib.mkEnableOption "Immich photo backup service";
       port = lib.mkOption {
@@ -319,5 +323,6 @@
     ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지
     ../programs/claude-remote-control.nix # Claude Code RC bridge version-drift 감시
+    ../programs/private-job-runner # generic private job runner (작업 정의는 기기 로컬)
   ];
 }

@@ -25,16 +25,28 @@ pushover_send() {
   [ -n "${PUSHOVER_TOKEN:-}" ] || return 1
   [ -n "${PUSHOVER_USER:-}" ] || return 1
 
+  # curl config의 quoted string 문법에 맞춘 완전 escape — 역슬래시·큰따옴표를
+  # 이스케이프하고 개행·CR·탭은 \n·\r·\t로 인코딩한다(curl이 unquote 시 복원).
+  # 부분 escape는 multiline 메시지를 여러 config 행으로 쪼개 전송을 깨뜨린다.
+  _pushover_cfg_escape() {
+    local v="$1"
+    v="${v//\\/\\\\}"
+    v="${v//\"/\\\"}"
+    v="${v//$'\n'/\\n}"
+    v="${v//$'\r'/\\r}"
+    v="${v//$'\t'/\\t}"
+    printf '%s' "$v"
+  }
+
   {
-    # curl config 문법: 값의 큰따옴표는 \"로 이스케이프해야 한다.
-    printf 'form-string = "token=%s"\n' "${PUSHOVER_TOKEN//\"/\\\"}"
-    printf 'form-string = "user=%s"\n' "${PUSHOVER_USER//\"/\\\"}"
-    printf 'form-string = "title=%s"\n' "${title//\"/\\\"}"
-    printf 'form-string = "message=%s"\n' "${message//\"/\\\"}"
-    printf 'form-string = "priority=%s"\n' "${priority//\"/\\\"}"
+    printf 'form-string = "token=%s"\n' "$(_pushover_cfg_escape "$PUSHOVER_TOKEN")"
+    printf 'form-string = "user=%s"\n' "$(_pushover_cfg_escape "$PUSHOVER_USER")"
+    printf 'form-string = "title=%s"\n' "$(_pushover_cfg_escape "$title")"
+    printf 'form-string = "message=%s"\n' "$(_pushover_cfg_escape "$message")"
+    printf 'form-string = "priority=%s"\n' "$(_pushover_cfg_escape "$priority")"
     if [ "$#" -ge 5 ]; then
-      printf 'form-string = "sound=%s"\n' "${sound//\"/\\\"}"
+      printf 'form-string = "sound=%s"\n' "$(_pushover_cfg_escape "$sound")"
     fi
-  } | curl -sf --proto =https --max-time 10 -q --config - \
+  } | curl -q -sf --proto =https --max-time 10 --config - \
     https://api.pushover.net/1/messages.json > /dev/null 2>&1
 }

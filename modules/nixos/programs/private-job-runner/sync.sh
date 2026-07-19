@@ -14,10 +14,15 @@
 # 오류만 억제해 1회 알림(내용이 바뀌면 다시 알림, 해소되면 자동 해제)하고 sync를
 # failed unit로 끝낸다.
 #
-# 필요 env (unit이 주입): PUSHOVER_LIB, PUSHOVER_CRED_FILE,
+# 필요 env (unit이 주입): PRIVATE_JOB_LIB, PUSHOVER_LIB, PUSHOVER_CRED_FILE,
 #   PRIVATE_JOBS_DEFINITIONS, PRIVATE_JOBS_STATE (HOME 상대)
 set -euo pipefail
 umask 0077
+
+# shellcheck source=/dev/null
+source "$PRIVATE_JOB_LIB"
+# shellcheck source=/dev/null
+source "$PUSHOVER_LIB"
 
 JOBS_ROOT="$HOME/$PRIVATE_JOBS_DEFINITIONS"
 STATE_ROOT="$HOME/$PRIVATE_JOBS_STATE"
@@ -25,10 +30,7 @@ UNIT_DIR="${XDG_RUNTIME_DIR:?}/systemd/user"
 ERROR_DIR="$STATE_ROOT/.sync-errors"
 MANAGED_MARK="# managed by private-jobs-sync"
 
-# shellcheck source=/dev/null
-source "$PUSHOVER_LIB"
-
-sync_failed=0            # 모든 종류의 sync 오류(정의·enable 실패 포함)의 집계 플래그
+sync_failed=0            # 정의·collision·start 실패를 포함한 모든 sync 오류의 집계 플래그
 declare -A error_seen=() # 이번 run에서 관측된 오류 key — 종료 시 나머지 marker 해제
 
 job_error() { # key detail — 같은 key의 "같은 내용" 오류만 억제한다 (내용이
@@ -48,44 +50,68 @@ job_error() { # key detail — 같은 key의 "같은 내용" 오류만 억제한
   fi
 }
 
+# 이름이 규약 밖인 디렉터리는 그 이름 자체가 작업 실체를 담고 있을 수 있다 —
+# journal·외부 알림에는 실명 대신 이름의 해시 앞 8자만 내보낸다.
+masked_name() { printf 'withheld-%s' "$(printf '%s' "$1" | sha256sum | cut -c1-8)"; }
+
+# runtime 파일 존재만 보면 상위 우선 경로(~/.config, /etc/systemd/user 등)의
+# 동명 unit에 shadow된다 — systemd가 실제로 로드하는 FragmentPath로 판정해
+# "내 runtime 파일이 아닌 unit"을 건드리지 않는다.
+loaded_fragment() { # unit-name → FragmentPath (미로드면 빈 출력)
+  systemctl --user show -p FragmentPath --value "$1" 2>/dev/null || true
+}
+
 mkdir -p "$UNIT_DIR"
 
 # ── 현재 정의된 작업 → timer 생성/갱신
 declare -A want=()
 if [ -d "$JOBS_ROOT" ]; then
-  for job_dir in "$JOBS_ROOT"/*/; do
-    [ -d "$job_dir" ] || continue
-    slug="$(basename "$job_dir")"
-    if ! [[ "$slug" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]]; then
-      job_error "$slug" "invalid slug directory"
-      continue
-    fi
-    if [ -L "${job_dir%/}" ] || [ ! -O "$job_dir" ]; then
-      job_error "$slug" "job directory is a symlink or not owned by user"
-      continue
-    fi
-    schedule_file="$job_dir/schedule"
-    # schedule도 실행 계약의 입력이다 — run.sh와 같은 소유·링크 기준을 요구한다.
-    if [ ! -f "$schedule_file" ] || [ -L "$schedule_file" ] || [ ! -O "$schedule_file" ]; then
-      job_error "$slug" "schedule missing, symlink, or not owned by user"
-      continue
-    fi
-    schedule="$(head -1 "$schedule_file")"
-    if ! systemd-analyze calendar "$schedule" >/dev/null 2>&1; then
-      job_error "$slug" "invalid OnCalendar expression"
-      continue
-    fi
+  # 스캔 대상 루트 자체도 실행 입력이다 — symlink·타 owner·느슨한 권한이면 스캔
+  # 전체를 중단한다 (fail-closed).
+  root_violation="$(path_violation "$JOBS_ROOT" "jobs root")"
+  if [ -n "$root_violation" ]; then
+    job_error "jobs-root" "$root_violation"
+  else
+    for job_dir in "$JOBS_ROOT"/*/; do
+      [ -d "$job_dir" ] || continue
+      slug="$(basename "$job_dir")"
+      if ! is_valid_slug "$slug"; then
+        job_error "$(masked_name "$slug")" "invalid slug directory (name withheld)"
+        continue
+      fi
+      violation="$(path_violation "${job_dir%/}" "job directory")"
+      if [ -n "$violation" ]; then
+        job_error "$slug" "$violation"
+        continue
+      fi
+      schedule_file="$job_dir/schedule"
+      # schedule도 실행 계약의 입력이다 — run.sh와 같은 소유·링크·권한 기준을 요구한다.
+      violation="$(path_violation "$schedule_file" "schedule")"
+      if [ -n "$violation" ]; then
+        job_error "$slug" "schedule: $violation"
+        continue
+      fi
+      schedule="$(head -1 "$schedule_file")"
+      if ! systemd-analyze calendar "$schedule" >/dev/null 2>&1; then
+        job_error "$slug" "invalid OnCalendar expression"
+        continue
+      fi
 
-    unit_file="$UNIT_DIR/private-job-$slug.timer"
-    # 같은 이름의 비관리 unit이 이미 있으면 덮지 않는다 — managed 헤더 검사는
-    # 제거 단계만이 아니라 생성 단계에도 적용해야 "사용자 unit 불가침" 계약이 선다.
-    if [ -e "$unit_file" ] && { [ -L "$unit_file" ] || ! head -1 "$unit_file" | grep -qF "$MANAGED_MARK"; }; then
-      job_error "$slug" "timer name collision with unmanaged unit"
-      continue
-    fi
-    want["$slug"]=1
+      unit_file="$UNIT_DIR/private-job-$slug.timer"
+      # 같은 이름의 비관리 unit(상위 우선 경로 포함)이 로드되면 덮지도 조작하지도
+      # 않는다 — managed 생성물은 내 runtime 파일이 FragmentPath일 때만 관리한다.
+      fragment="$(loaded_fragment "private-job-$slug.timer")"
+      if [ -n "$fragment" ] && [ "$fragment" != "$unit_file" ]; then
+        job_error "$slug" "timer name collision with unmanaged unit"
+        continue
+      fi
+      if [ -e "$unit_file" ] && { [ -L "$unit_file" ] || ! head -1 "$unit_file" | grep -qF "$MANAGED_MARK"; }; then
+        job_error "$slug" "timer name collision with unmanaged runtime file"
+        continue
+      fi
+      want["$slug"]=1
 
-    content="$MANAGED_MARK
+      content="$MANAGED_MARK
 [Unit]
 Description=private job timer ($slug)
 
@@ -94,22 +120,25 @@ OnCalendar=$schedule
 Persistent=true
 Unit=private-job@$slug.service
 "
-    if [ ! -f "$unit_file" ] || [ "$(cat "$unit_file")" != "$(printf '%s' "$content")" ]; then
-      printf '%s' "$content" > "$unit_file"
-      changed=1
-    fi
-  done
+      if [ ! -f "$unit_file" ] || [ "$(cat "$unit_file")" != "$(printf '%s' "$content")" ]; then
+        printf '%s' "$content" > "$unit_file"
+        changed=1
+      fi
+    done
+  fi
 fi
 
-# ── 정의가 사라진 managed timer 제거 (managed 헤더가 있는 것만 — 사용자가 직접
-# 만든 unit은 건드리지 않는다)
+# ── 정의가 사라진 managed timer 제거 (managed 헤더 + 실제 로드 경로가 내 파일일
+# 때만 stop — 사용자·HM unit은 건드리지 않는다)
 for unit_file in "$UNIT_DIR"/private-job-*.timer; do
   [ -f "$unit_file" ] || continue
   head -1 "$unit_file" | grep -qF "$MANAGED_MARK" || continue
   base="$(basename "$unit_file" .timer)"
   slug="${base#private-job-}"
   if [ -z "${want[$slug]:-}" ]; then
-    systemctl --user stop "$base.timer" >/dev/null 2>&1 || true
+    if [ "$(loaded_fragment "$base.timer")" = "$unit_file" ]; then
+      systemctl --user stop "$base.timer" >/dev/null 2>&1 || true
+    fi
     rm -f "$unit_file"
     changed=1
   fi

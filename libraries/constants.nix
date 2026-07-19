@@ -51,10 +51,6 @@
     opnixServiceAccountExpirySource = ../secrets/opnix-service-account-expiry.txt;
     # opnix SA token agenix secret — opnix/default.nix가 tokenFile 등록에 사용
     opnixServiceAccountTokenAge = ../secrets/opnix-service-account-token.age;
-    # private job runner의 HOME 상대 경로 (runner·sync 두 스크립트가 env로 공유
-    # — 하드코딩 중복 금지). 작업 정의·로그는 기기 로컬 소유라 절대경로가 아니다.
-    privateJobsDefinitions = ".local/private-jobs";
-    privateJobsState = ".local/state/private-jobs";
   };
 
   # ═══════════════════════════════════════════════════════════════
