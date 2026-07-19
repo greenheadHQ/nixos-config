@@ -414,6 +414,22 @@ toss_record_dry_run_ledger() {
   toss_ledger_record "$record_input"
 }
 
+# 실제 network mutation 전에 남기는 attempt 레코드. 전송 직후 INT/TERM이나 post-send helper
+# 실패로 프로세스가 정리·종료하면 response 레코드와 성공 알림이 모두 없어, 운영자가 서버에
+# 접수된 주문을 실패로 오인해 재전송할 수 있다. 같은 invocationId의 phase:"attempt"를 전송
+# 직전에 best-effort append해 "전송은 시도됐다"는 감사 흔적을 남긴다. response/notify가
+# 이후 같은 invocationId로 이어받는다.
+toss_record_attempt_ledger() {
+  local request_context="$1"
+  local record_input
+
+  record_input="$(toss_ledger_record_input "attempt" "0" "$request_context" "null")" || {
+    toss_ledger_warn_write_failed "build attempt record input"
+    return 0
+  }
+  toss_ledger_record "$record_input"
+}
+
 toss_record_response_ledger() {
   local request_context="$1"
   local response_body="$2"
@@ -627,6 +643,12 @@ toss_api_execute() {
   trap 'toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"; exit 130' INT
   trap 'toss_api_tmp_dir_cleanup "$tmp_dir" "$old_exit_trap" "$old_int_trap" "$old_term_trap"; exit 143' TERM
   response_file="$tmp_dir/response.json"
+
+  # 전송 직전 attempt 흔적 (safeguarded 호출 한정). 전송 후 crash/INT/TERM으로 response
+  # 레코드가 없어도 이 attempt로 "접수됐을 수 있음"을 남겨 이중 주문 오인을 막는다.
+  if [ "$requires_order_safeguards" = "1" ]; then
+    toss_record_attempt_ledger "$request_context"
+  fi
 
   call_result="$(toss_call_with_single_token_retry "$method" "$url" "$account_seq" "$body_json" "$body_provided" "$response_file")" || {
     rc=$?

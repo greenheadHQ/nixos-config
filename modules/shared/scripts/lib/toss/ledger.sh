@@ -58,7 +58,9 @@ toss_ledger_sanitized_path() {
 # 로더가 ledger.sh를 api.sh보다 먼저 source하므로 api.sh에서 이 변수를 참조할 수 있다.
 TOSS_RAW_REDACT_JQ_DEF='
     def redact_raw_string:
-      gsub("(?<prefix>authorization:[[:space:]]*bearer[[:space:]]+)[^[:space:]<>\"=,]+"; "\(.prefix)<redacted>"; "i")
+      # colon 형태 — key/value 양쪽의 선택적 quote를 허용한다. 비정상 HTML/JSON-like 응답이
+      # `{"Authorization":"Bearer TOKEN"}`처럼 header를 반사해도 raw 문자열에서 가린다.
+      gsub("(?<prefix>\"?authorization\"?[[:space:]]*:[[:space:]]*\"?bearer[[:space:]]+)[^\"[:space:]<>=,]+"; "\(.prefix)<redacted>"; "i")
       | gsub("(?<prefix>authorization[[:space:]]*=[[:space:]]*\"?bearer[[:space:]]+)[^\"&<>,[:space:]]+"; "\(.prefix)<redacted>"; "i")
       | gsub("(?<prefix>\"?(access[_-]?token|client[_-]?secret|secret|password)\"?[[:space:]]*[:=][[:space:]]*\"?)[^\"&<>,[:space:]]+"; "\(.prefix)<redacted>"; "i");
 '

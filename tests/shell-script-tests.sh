@@ -217,6 +217,10 @@ run_test "toss endpoint metadata fails on broken ref after account true" test_to
 run_test "toss endpoint metadata keeps marker-missing operation" test_toss_endpoint_metadata_keeps_marker_missing_operation
 run_test "toss endpoint metadata fails on cross-component ref" test_toss_endpoint_metadata_fails_on_cross_component_ref
 run_test "toss metadata override cannot disable order safeguards" test_toss_metadata_override_cannot_disable_order_safeguards
+run_test "toss api records attempt ledger before send" test_toss_api_records_attempt_ledger_before_send
+run_test "toss ledger redacts quoted JSON authorization" test_toss_ledger_redacts_quoted_json_authorization
+run_test "toss auth isolates connect env" test_toss_auth_isolates_connect_env
+run_test "with_file_lock fails closed without backend" test_with_file_lock_fails_closed_without_backend
 run_test "toss api rejects untrusted base URL" test_toss_api_rejects_untrusted_base_url
 run_test "toss api dry-run rejects untrusted base URL" test_toss_api_dry_run_rejects_untrusted_base_url
 run_test "toss api rejects base URL with path suffix" test_toss_api_rejects_base_url_with_path_suffix

@@ -177,8 +177,12 @@ toss_read_credentials_from_op() {
 
   local sa_token client_id client_secret
   sa_token="$(cat "$sa_file")"
-  client_id="$(OP_SERVICE_ACCOUNT_TOKEN="$sa_token" op read --no-newline "$TOSS_OP_CLIENT_ID_REF" 2>/dev/null || true)"
-  client_secret="$(OP_SERVICE_ACCOUNT_TOKEN="$sa_token" op read --no-newline "$TOSS_OP_CLIENT_SECRET_REF" 2>/dev/null || true)"
+  # op는 OP_CONNECT_HOST/TOKEN을 SA token보다 우선 적용하므로, 잔존 Connect env(원격/LLM
+  # 셸 오염 또는 opnix systemd env)가 있으면 SA 조회가 의도와 다른 backend로 가거나 실패한다.
+  # 이 repo는 Connect 서버 미도입이라 Connect env는 항상 오염 — 각 op read를 unset 서브셸로
+  # 격리한다 (main op_get의 SA 경로 계약과 동형, managing-secrets 1password.md 참조).
+  client_id="$( (unset OP_CONNECT_HOST OP_CONNECT_TOKEN; env OP_SERVICE_ACCOUNT_TOKEN="$sa_token" op read --no-newline "$TOSS_OP_CLIENT_ID_REF") 2>/dev/null || true )"
+  client_secret="$( (unset OP_CONNECT_HOST OP_CONNECT_TOKEN; env OP_SERVICE_ACCOUNT_TOKEN="$sa_token" op read --no-newline "$TOSS_OP_CLIENT_SECRET_REF") 2>/dev/null || true )"
 
   if [ -z "$client_id" ] || [ -z "$client_secret" ]; then
     echo "error: failed to read Toss client credentials from 1Password" >&2

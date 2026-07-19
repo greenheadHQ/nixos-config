@@ -144,6 +144,8 @@ assert_toss_wrapper_nix() {
     || fail "expected toss wrapper to inject TOSS_OP_SA_TOKEN_FILE from xdg.configHome"
   grep -Fq '            pkgs._1password-cli' "$nix_file" \
     || fail "expected toss wrapper to pin _1password-cli in PATH toolchain"
+  grep -Fq '            pkgs.util-linux' "$nix_file" \
+    || fail "expected toss wrapper to pin util-linux (flock lock backend) in PATH toolchain"
   grep -Fq '        exec "${pkgs.bash}/bin/bash" "${config.home.homeDirectory}/.local/bin/.toss-real" "$@"' "$nix_file" \
     || fail "expected toss wrapper to exec .toss-real via pinned bash"
 }

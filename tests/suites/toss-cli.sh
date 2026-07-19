@@ -88,6 +88,9 @@ case "${TOSS_TEST_RESPONSE_KIND:-json}" in
   false-body)
     printf 'false' > "$output_path"
     ;;
+  auth-header-json)
+    printf '<html>{"Authorization":"Bearer RAW_JSON_SENTINEL"}</html>' > "$output_path"
+    ;;
   retry-401)
     if [ "$api_count" = "1" ]; then
       printf '{"error":"invalid_token"}' > "$output_path"
@@ -163,10 +166,10 @@ test_toss_api_records_json_response_ledger() {
 
   _run_toss_order_api_fixture "$sandbox" json "$sandbox/stdout"
 
-  response_body="$(jq -c '.response.body' "$sandbox/orders.jsonl")"
+  response_body="$(jq -c 'select(.phase == "response") | .response.body' "$sandbox/orders.jsonl")"
   [ "$response_body" = '{"ok":true,"access_token":"<redacted>","nested":{"message":"client_secret=<redacted> password=<redacted>"}}' ] \
     || fail "expected JSON response body to be recorded with redaction, got: $response_body"
-  metadata_status="$(jq -r '.request.metadataStatus' "$sandbox/orders.jsonl")"
+  metadata_status="$(jq -r 'select(.phase == "response") | .request.metadataStatus' "$sandbox/orders.jsonl")"
   [ "$metadata_status" = "exact" ] || fail "expected deployed endpoint metadata lookup, got: $metadata_status"
 }
 
@@ -178,7 +181,7 @@ test_toss_api_records_scalar_json_response_ledger() {
 
   _run_toss_order_api_fixture "$sandbox" scalar-json "$sandbox/stdout"
 
-  response_body="$(jq -r '.response.body' "$sandbox/orders.jsonl")"
+  response_body="$(jq -r 'select(.phase == "response") | .response.body' "$sandbox/orders.jsonl")"
   [ "$response_body" = "access_token=<redacted> client_secret=<redacted> Authorization: Bearer <redacted>" ] \
     || fail "expected scalar JSON string response to be recorded with redaction, got: $response_body"
   assert_not_contains "$response_body" "SECRET"
@@ -194,7 +197,7 @@ test_toss_api_records_non_json_response_ledger() {
 
   _run_toss_order_api_fixture "$sandbox" html "$sandbox/stdout"
 
-  response_body="$(jq -c '.response.body' "$sandbox/orders.jsonl")"
+  response_body="$(jq -c 'select(.phase == "response") | .response.body' "$sandbox/orders.jsonl")"
   assert_contains "$response_body" '"parseableJson":false'
   assert_contains "$response_body" '"raw":"<html>client_secret=<redacted> access_token=<redacted></html>"'
   assert_not_contains "$response_body" "SECRET"
@@ -683,6 +686,94 @@ JSON
     || fail "expected order-path mutation hard floor to force requiresOrderSafeguards=true, got: $safeguards"
 }
 
+test_toss_api_records_attempt_ledger_before_send() {
+  local sandbox attempt_id response_id
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # safeguarded 호출은 전송 직전 phase:"attempt"를 남겨, 전송 후 crash로 response가 없어도
+  # "접수됐을 수 있음" 흔적을 보존한다. attempt와 response는 같은 invocationId를 공유한다.
+  _run_toss_order_api_fixture "$sandbox" json "$sandbox/stdout"
+
+  attempt_id="$(jq -r 'select(.phase == "attempt") | .invocationId' "$sandbox/orders.jsonl")"
+  response_id="$(jq -r 'select(.phase == "response") | .invocationId' "$sandbox/orders.jsonl")"
+  [ -n "$attempt_id" ] && [ "$attempt_id" != "null" ] \
+    || fail "expected an attempt ledger record before send"
+  [ "$attempt_id" = "$response_id" ] \
+    || fail "expected attempt and response to share invocationId ($attempt_id vs $response_id)"
+}
+
+test_toss_ledger_redacts_quoted_json_authorization() {
+  local sandbox ledger
+  sandbox=$(new_sandbox)
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+
+  # 비정상 HTML/JSON-like 응답이 `{"Authorization":"Bearer ..."}`처럼 header를 반사해도
+  # raw redaction이 Bearer를 0600 ledger에 남기지 않아야 한다.
+  _run_toss_order_api_fixture "$sandbox" auth-header-json "$sandbox/stdout"
+
+  ledger="$(cat "$sandbox/orders.jsonl")"
+  assert_not_contains "$ledger" "RAW_JSON_SENTINEL"
+  assert_contains "$ledger" "Bearer <redacted>"
+}
+
+test_toss_auth_isolates_connect_env() {
+  local sandbox runtime_dir connect_log
+  sandbox=$(new_sandbox)
+  runtime_dir="$sandbox/runtime"
+  connect_log="$sandbox/connect.log"
+  _prepare_toss_cli_sandbox "$sandbox"
+  _write_toss_api_curl_stub "$sandbox/bin"
+  # op stub이 SA 조회 시점의 OP_CONNECT_HOST 유무를 기록한다.
+  cat > "$sandbox/bin/op" <<EOF_OP
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'connect_host=%s\n' "\${OP_CONNECT_HOST:-none}" >> "$connect_log"
+ref=""
+for arg in "\$@"; do ref="\$arg"; done
+case "\$ref" in
+  *자격*|*client-id) printf 'mock-client-id' ;;
+  *Secret*|*client-secret) printf 'mock-client-secret' ;;
+  *) printf 'mock-op-value' ;;
+esac
+EOF_OP
+  chmod +x "$sandbox/bin/op"
+  printf 'mock-sa-token' > "$sandbox/sa-token"
+
+  # 오염된 Connect env를 넣고 강제 발급 — SA 조회는 이를 unset한 서브셸에서 실행되어야 한다.
+  HOME="$sandbox/home" \
+    PATH="$sandbox/bin:$PATH" \
+    OP_CONNECT_HOST="https://evil.connect.invalid" \
+    OP_CONNECT_TOKEN="evil-connect-token" \
+    TOSS_RUNTIME_DIR="$runtime_dir" \
+    TOSS_OP_SA_TOKEN_FILE="$sandbox/sa-token" \
+    "$(_toss_cli_script "$sandbox")" token --force >/dev/null 2>&1 || true
+
+  [ -s "$connect_log" ] || fail "expected op to be invoked for credential read"
+  grep -q "connect_host=none" "$connect_log" \
+    || fail "expected SA op read to run with OP_CONNECT_HOST unset, got: $(cat "$connect_log")"
+  ! grep -q "evil.connect.invalid" "$connect_log" \
+    || fail "SA op read must not inherit ambient OP_CONNECT_HOST"
+}
+
+test_with_file_lock_fails_closed_without_backend() {
+  local sandbox minbin rc c
+  sandbox=$(new_sandbox)
+  minbin="$sandbox/minbin"
+  mkdir -p "$minbin"
+  # flock/lockf를 제외한 최소 PATH — with_file_lock이 lock 없이 실행(fail-open)하지 않고
+  # non-zero로 fail-closed해야 한다.
+  for c in mkdir dirname; do ln -s "$(command -v "$c")" "$minbin/$c" 2>/dev/null || true; done
+
+  set +e
+  ( PATH="$minbin" bash -c 'source "'"$REPO_ROOT"'/modules/shared/scripts/lib/file-lock.sh"; with_file_lock "'"$sandbox"'/lock" 1 :' )
+  rc=$?
+  set -e
+  [ "$rc" != "0" ] || fail "expected with_file_lock to fail-closed when no lock backend is available"
+}
+
 test_toss_api_dry_run_rejects_untrusted_base_url() {
   local sandbox rc
   sandbox=$(new_sandbox)
@@ -961,9 +1052,9 @@ test_toss_ledger_records_multi_json_response_as_raw() {
 
   _run_toss_order_api_fixture "$sandbox" multi-json "$sandbox/stdout"
 
-  response_body="$(jq -c '.response.body' "$sandbox/orders.jsonl")"
+  response_body="$(jq -c 'select(.phase == "response") | .response.body' "$sandbox/orders.jsonl")"
   assert_contains "$response_body" '"parseableJson":false'
-  [ "$(jq -r '.response.body.raw' "$sandbox/orders.jsonl")" = "$(printf '1\n2')" ] \
+  [ "$(jq -r 'select(.phase == "response") | .response.body.raw' "$sandbox/orders.jsonl")" = "$(printf '1\n2')" ] \
     || fail "expected multi-JSON response to be recorded as raw wrapper, got: $response_body"
 }
 
@@ -976,8 +1067,10 @@ test_toss_ledger_append_preserves_existing_records() {
 
   _run_toss_order_api_fixture "$sandbox" json "$sandbox/stdout"
 
+  # sentinel(1) + safeguarded 주문의 attempt(1) + response(1) = 3줄. 핵심은 기존 sentinel이
+  # truncate되지 않고 살아남는 것(TOCTOU 방지)이며, 라인 수는 append record 수에 따른다.
   line_count="$(wc -l < "$sandbox/orders.jsonl" | tr -d ' ')"
-  [ "$line_count" = "2" ] || fail "expected append to preserve existing ledger records, got $line_count lines"
+  [ "$line_count" = "3" ] || fail "expected append to preserve existing record and add attempt+response, got $line_count lines"
   first_line="$(head -1 "$sandbox/orders.jsonl")"
   [ "$first_line" = '{"sentinel":true}' ] || fail "expected first ledger record to survive, got: $first_line"
 }
@@ -998,7 +1091,7 @@ test_toss_ledger_sanitizes_query_string_in_path() {
     TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
     "$(_toss_cli_script "$sandbox")" api POST '/api/v1/orders?access_token=QUERYSECRET' --account ACC123 --data '{"symbol":"005930","quantity":1}' > "$sandbox/stdout"
 
-  recorded_path="$(jq -r '.request.path' "$sandbox/orders.jsonl")"
+  recorded_path="$(jq -r 'select(.phase == "response") | .request.path' "$sandbox/orders.jsonl")"
   [ "$recorded_path" = '/api/v1/orders?<redacted>' ] \
     || fail "expected ledger path query to be sanitized, got: $recorded_path"
   assert_not_contains "$(cat "$sandbox/orders.jsonl")" "QUERYSECRET"
@@ -1080,7 +1173,7 @@ test_toss_api_emits_whitelisted_rate_limit_headers() {
   assert_contains "$stderr" "toss-rate-limit: X-RateLimit-Limit: 10"
   assert_contains "$stderr" "toss-rate-limit: Retry-After: 1"
   assert_not_contains "$stderr" "X-Secret-Header"
-  ledger_headers="$(jq -c '.response.rateLimitHeaders' "$sandbox/orders.jsonl")"
+  ledger_headers="$(jq -c 'select(.phase == "response") | .response.rateLimitHeaders' "$sandbox/orders.jsonl")"
   assert_contains "$ledger_headers" "X-RateLimit-Remaining: 9"
   assert_not_contains "$ledger_headers" "X-Secret-Header"
 }
@@ -1208,8 +1301,8 @@ test_toss_ledger_preserves_boolean_false_bodies() {
     TOSS_LEDGER_FILE="$sandbox/orders.jsonl" \
     "$(_toss_cli_script "$sandbox")" api POST /api/v1/orders --account ACC123 --data false > "$sandbox/stdout"
 
-  request_body="$(jq -c '.request.body' "$sandbox/orders.jsonl")"
-  response_body="$(jq -c '.response.body' "$sandbox/orders.jsonl")"
+  request_body="$(jq -c 'select(.phase == "response") | .request.body' "$sandbox/orders.jsonl")"
+  response_body="$(jq -c 'select(.phase == "response") | .response.body' "$sandbox/orders.jsonl")"
   [ "$request_body" = "false" ] || fail "expected JSON false request body to survive the ledger, got: $request_body"
   [ "$response_body" = "false" ] || fail "expected JSON false response body to survive the ledger, got: $response_body"
 }

@@ -68,6 +68,8 @@ in
         # credential/token을 다루는 toolchain(curl·op·jq 등)이 ambient PATH의 fake로 교체되면
         # exact-origin pin도 destination을 보장하지 못하므로(threat model은 ambient caller 불신),
         # 신뢰 Nix store 도구를 PATH 선두에 두고 pinned bash로 raw script를 실행한다.
+        # util-linux는 file-lock.sh의 flock backend를 제공한다 — 없으면 token CAS/원장 lock이
+        # fail-closed로 거부되므로 반드시 pin한다 (Darwin은 lockf가 시스템 경로에 있어 fallback).
         export PATH=${
           lib.makeBinPath [
             pkgs.curl
@@ -77,6 +79,7 @@ in
             pkgs.gnugrep
             pkgs.gnused
             pkgs.gawk
+            pkgs.util-linux
             pkgs.bash
           ]
         }:"$PATH"
