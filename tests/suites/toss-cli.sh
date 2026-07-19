@@ -720,6 +720,9 @@ test_toss_ledger_redacts_quoted_json_authorization() {
 }
 
 test_toss_auth_isolates_connect_env() {
+  # Connect env 격리는 Mac op read 경로(toss_read_credentials_from_op) 전용이다.
+  # 비-darwin은 opnix 파일 경로라 op를 부르지 않으므로 이 검증 대상이 아니다.
+  [ "$(uname -s)" = "Darwin" ] || return 0
   local sandbox runtime_dir connect_log
   sandbox=$(new_sandbox)
   runtime_dir="$sandbox/runtime"
