@@ -8,8 +8,9 @@
 # 로컬 작업 규약 (기기에서 사람이 준비):
 #   ~/.local/private-jobs/<slug>/run.sh    실행 진입점 — owner 본인·실행 가능·
 #                                          symlink 및 group/world-writable 금지
-#   ~/.local/private-jobs/<slug>/schedule  systemd OnCalendar 식 — 정확히 1줄 파일
-#                                          (초과 내용은 오류), 같은 소유·링크 기준
+#   ~/.local/private-jobs/<slug>/schedule  systemd OnCalendar 식 1줄 파일 (뒤따르는
+#                                          공백 줄만 허용, 그 외 초과 내용은 오류),
+#                                          같은 소유·링크 기준
 #   상위 사슬(~/.local/private-jobs 및 각 job 디렉터리)도 같은 기준이다: owner
 #   본인·비 symlink(상위 경로 포함)·group/world-writable 금지 — 로그 상태 사슬
 #   (~/.local/state/private-jobs 이하)은 0700/0600까지 요구한다.
@@ -18,6 +19,8 @@
 #   알림: 실패 시 unit의 ExecStopPost가 user-scope Pushover(~/.config/pushover/share)로
 #   generic 필드(slug·invocation·result·exit)만 발송 — run당 외부 알림 1회는 이
 #   runner 인프라가 소유하므로 개별 작업 래퍼는 자체 push 알림을 배선하지 않는다.
+#   예외 하나: sync의 "정의 오류"는 sync가 marker dedupe와 함께 직접 통지하고,
+#   ExecStopPost는 그 경우(SYNC_HANDLED_EXIT)를 건너뛴다 — 비정형 실패 전담.
 #
 # 동작: private-jobs-sync(user timer)가 로컬 정의를 스캔해 runtime unit 영역에
 # private-job-<slug>.timer(Persistent=true)를 생성·정리하고, 각 timer는 template
@@ -69,7 +72,12 @@ let
     pkgs.curl
   ];
 
+  # sync의 "정의 오류(개별 통지 완료)" exit 값 — 생산(sync)과 소비(notify)가
+  # 이 한 곳의 값을 env로 공유한다.
+  syncHandledExit = "3";
+
   commonEnvironment = {
+    SYNC_HANDLED_EXIT = syncHandledExit;
     PRIVATE_JOB_LIB = toString privateJobLib;
     PUSHOVER_LIB = toString pushoverLib;
     PUSHOVER_CRED_FILE = pushoverCredPath;
@@ -110,10 +118,10 @@ in
           ExecStart = "${runnerApp}/bin/private-job-run %i";
           # 실패 알림의 단일 소유자 — runner 내부 알림은 timeout·강제 종료 경로에서
           # 증발하므로 종료 후 훅에서만 판정·발송한다 ($SERVICE_RESULT 기반).
-          ExecStopPost = "${notifyApp}/bin/private-job-notify %i";
-          # bounded timeout — "야간 무인 배치가 하루 업무 시작 전에 끝난다"는
-          # 보수 상한으로, 특정 작업의 상한이 이를 넘으면 이 값만 조정한다.
-          # 초과 시 control-group 전체가 정리된다(잔존 자식 0).
+          ExecStopPost = "${notifyApp}/bin/private-job-notify %i job";
+          # bounded timeout — 이 runner가 보장하는 절대 상한이다: 이보다 오래
+          # 걸리는 작업은 이 인프라의 대상이 아니며, 그런 요구가 생기면 이 값
+          # 한 곳만 조정한다. 초과 시 control-group 전체가 정리된다(잔존 자식 0).
           TimeoutStartSec = "8h";
         };
         environment = commonEnvironment;
@@ -124,9 +132,9 @@ in
         serviceConfig = hardening // {
           Type = "oneshot";
           ExecStart = "${syncApp}/bin/private-jobs-sync";
-          # 정의 오류(exit 3 규약 — 개별 통지 완료)는 건너뛰고 비정형 실패만
-          # 통지한다 (mkdir·daemon-reload 실패 등 set -e 경로).
-          ExecStopPost = "${notifyApp}/bin/private-job-notify sync-service";
+          # 정의 오류(SYNC_HANDLED_EXIT — 개별 통지 완료)는 건너뛰고 비정형
+          # 실패만 통지한다 (mkdir·daemon-reload 실패 등 set -e 경로).
+          ExecStopPost = "${notifyApp}/bin/private-job-notify sync-service sync";
           TimeoutStartSec = "5min";
         };
         environment = commonEnvironment;
@@ -137,8 +145,8 @@ in
         wantedBy = [ "timers.target" ];
         timerConfig = {
           # 부팅 2분 뒤 최초 sync가 runtime timer를 재생성하고(재부팅 복구 경로),
-          # 15분 간격은 "정의 변경이 OnCalendar 최소 단위(시간 규모) 안에 반영"과
-          # 스캔 비용의 절충이다 — 더 촘촘한 반영이 필요하면 이 값만 줄인다.
+          # 15분은 "정의 변경이 반영되기까지의 지연 상한"이다 — 더 촘촘한 반영이
+          # 필요하면 이 값만 줄인다 (스캔 자체는 저비용이라 하한 제약은 없다).
           OnBootSec = "2min";
           OnUnitActiveSec = "15min";
         };

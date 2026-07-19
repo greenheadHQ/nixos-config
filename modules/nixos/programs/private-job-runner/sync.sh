@@ -30,6 +30,7 @@ UNIT_DIR="${XDG_RUNTIME_DIR:?}/systemd/user"
 ERROR_DIR="$STATE_ROOT/.sync-errors"
 MANAGED_MARK="# managed by private-jobs-sync"
 
+changed=0                # unit 생성·갱신·삭제 발생 여부 (daemon-reload 필요 판단)
 sync_failed=0            # 정의·collision·start 실패를 포함한 모든 sync 오류의 집계 플래그
 declare -A error_seen=() # 이번 run에서 관측된 오류 key — 종료 시 나머지 marker 해제
 
@@ -39,9 +40,9 @@ job_error() { # key detail — 같은 key의 "같은 내용" 오류만 억제한
   key="$(printf '%s' "$1" | tr -c 'a-zA-Z0-9-' '_')"
   detail="$2"
   marker="$ERROR_DIR/$key"
-  # marker 경로가 symlink면 읽지도 쓰지도 않는다 — 링크 대상 파일을 따라가
-  # 임의 경로를 덮어쓸 수 있다.
-  if [ -L "$marker" ]; then
+  # marker와 그 부모가 symlink면 읽지도 쓰지도 않는다 — 링크 대상을 따라가
+  # 임의 경로를 읽고 덮어쓸 수 있다.
+  if [ -L "$ERROR_DIR" ] || [ -L "$marker" ]; then
     echo "ERROR: job=$1 $detail" >&2
     echo "WARNING: sync-error marker is a symlink — dedupe 생략" >&2
     sync_failed=1
@@ -80,6 +81,15 @@ loaded_fragment() { # unit-name → FragmentPath (미로드면 빈 출력)
 }
 
 mkdir -p "$UNIT_DIR"
+
+# 발화 대상 template 자체가 shadow되면 모든 작업이 runner·hardening·알림 계약
+# 밖에서 실행된다 — NixOS 선언 경로(store 링크·/etc/systemd/user)가 아니면 전면
+# 중단한다.
+template_fragment="$(loaded_fragment "private-job@.service")"
+case "$template_fragment" in
+  "" | /nix/store/* | /etc/systemd/user/*) : ;;
+  *) job_error "template" "private-job@ template shadowed by unmanaged unit" ;;
+esac
 
 # ── 현재 정의된 작업 → timer 생성/갱신
 declare -A want=()
@@ -129,6 +139,13 @@ if [ -d "$JOBS_ROOT" ]; then
         job_error "$slug" "timer name collision with unmanaged unit"
         continue
       fi
+      # timer가 발화할 service 인스턴스도 shadow 검사 — timer만 검사하면 실행
+      # 자체가 unmanaged unit으로 넘어간다.
+      svc_fragment="$(loaded_fragment "private-job@$slug.service")"
+      case "$svc_fragment" in
+        "" | /nix/store/* | /etc/systemd/user/*) : ;;
+        *) job_error "$slug" "service name collision with unmanaged unit"; continue ;;
+      esac
       # -L을 먼저 본다 — dangling symlink는 -e가 false라 뒤에 두면 검사를 통과해
       # printf가 링크 대상(runtime 영역 밖)에 파일을 만들 수 있다.
       if [ -L "$unit_file" ] || { [ -e "$unit_file" ] && ! head -1 "$unit_file" | grep -qF "$MANAGED_MARK"; }; then
@@ -186,8 +203,9 @@ for slug in "${!want[@]}"; do
 done
 
 # ── 이번 run에서 관측되지 않은 오류 marker 해제 — 해소된 오류가 재발하면 다시
-# 알림되게 한다.
-if [ -d "$ERROR_DIR" ]; then
+# 알림되게 한다 (부모가 symlink면 대상 디렉터리의 파일을 지울 수 있어 건드리지
+# 않는다).
+if [ -d "$ERROR_DIR" ] && [ ! -L "$ERROR_DIR" ]; then
   for marker in "$ERROR_DIR"/*; do
     [ -f "$marker" ] || continue
     key="$(basename "$marker")"
@@ -195,8 +213,8 @@ if [ -d "$ERROR_DIR" ]; then
   done
 fi
 
-# 의도된 실패(정의 오류 등 — 개별 알림 완료)는 exit 3으로 구분한다: unit의
-# ExecStopPost는 이 코드를 보고 이중 알림을 건너뛰고, 비정형 실패(set -e의
-# 다른 종료)만 통지한다.
-[ "$sync_failed" -eq 0 ] || exit 3
+# 의도된 실패(정의 오류 등 — 개별 알림 완료)는 SYNC_HANDLED_EXIT(값 소유:
+# default.nix)로 구분한다: unit의 ExecStopPost는 이 코드를 보고 이중 알림을
+# 건너뛰고, 비정형 실패(set -e의 다른 종료)만 통지한다.
+[ "$sync_failed" -eq 0 ] || exit "${SYNC_HANDLED_EXIT:?}"
 echo "sync ok: ${#want[@]} job(s)"

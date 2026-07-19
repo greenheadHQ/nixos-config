@@ -16,6 +16,7 @@ source "$PRIVATE_JOB_LIB"
 source "$PUSHOVER_LIB"
 
 slug="${1:-unknown}"
+kind="${2:-job}" # job | sync — exit-code 해석은 호출자 종류별로 분리된 계약이다
 result="${SERVICE_RESULT:-unknown}"
 
 if [ "$result" = "success" ]; then
@@ -26,9 +27,10 @@ fi
 # 작업 실체를 담을 수 있다 (검증은 runner와 같은 lib 계약).
 is_valid_slug "$slug" || slug="withheld"
 
-# sync가 스스로 판정·통지한 정의 오류(exit 3 규약)는 여기서 다시 보내지 않는다 —
-# run당 외부 알림 1회 계약 (비정형 실패만 이 훅이 담당).
-if [ "${EXIT_STATUS:-}" = "3" ]; then
+# sync가 스스로 판정·통지한 정의 오류(SYNC_HANDLED_EXIT 규약 — 값의 소유는
+# default.nix)는 다시 보내지 않는다. 이 해석은 sync 호출에만 적용된다 — 일반
+# 작업의 같은 exit 값은 평범한 실패이며 알림 대상이다.
+if [ "$kind" = "sync" ] && [ "${EXIT_STATUS:-}" = "${SYNC_HANDLED_EXIT:?}" ]; then
   exit 0
 fi
 
