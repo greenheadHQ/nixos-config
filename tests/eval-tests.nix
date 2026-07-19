@@ -743,8 +743,8 @@ let
   # ═══════════════════════════════════════════════════════════════
 
   # assert 헬퍼: 메시지와 함께 assertion
-  # ── private job runner (#1135): generic runner 계약 고정 —
-  # 작업 실체는 기기 로컬 소유이므로 여기서는 generic 경로·hardening만 검증한다.
+  # ── private job runner (#1135): generic 계약(unit 경로·hardening·bounded
+  # timeout·sync cadence·linger) 고정 — 작업 실체는 기기 로컬 소유라 여기 없다.
   pjTemplate = nixosCfg.systemd.user.services."private-job@";
   pjSync = nixosCfg.systemd.user.services."private-jobs-sync";
   pjSyncTimer = nixosCfg.systemd.user.timers."private-jobs-sync";
