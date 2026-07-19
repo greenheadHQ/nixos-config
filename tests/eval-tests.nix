@@ -743,6 +743,27 @@ let
   # ═══════════════════════════════════════════════════════════════
 
   # assert 헬퍼: 메시지와 함께 assertion
+  # ── private job runner (#1135): generic runner 계약 고정 —
+  # 작업 실체는 기기 로컬 소유이므로 여기서는 generic 경로·hardening만 검증한다.
+  pjTemplate = nixosCfg.systemd.user.services."private-job@";
+  pjSync = nixosCfg.systemd.user.services."private-jobs-sync";
+  pjSyncTimer = nixosCfg.systemd.user.timers."private-jobs-sync";
+  pjHardeningOk =
+    svc:
+    svc.serviceConfig.UMask == "0077"
+    && svc.serviceConfig.NoNewPrivileges == true
+    && svc.serviceConfig.PrivateTmp == true
+    && svc.serviceConfig.ProtectSystem == "full"
+    && svc.serviceConfig.KillMode == "control-group";
+  # RestrictNamespaces는 의도적으로 미적용이다 — 일부 작업의 하위 도구가 user
+  # namespace를 요구한다 (모듈 주석의 결정을 여기서 고정: 켜면 이 테스트가 깨져
+  # 의도적 재결정을 강제한다).
+  pjNoNamespaceRestriction =
+    !(pjTemplate.serviceConfig ? RestrictNamespaces) && !(pjSync.serviceConfig ? RestrictNamespaces);
+  pjBoundedTimeout =
+    pjTemplate.serviceConfig.TimeoutStartSec == "8h" && pjSync.serviceConfig.TimeoutStartSec == "5min";
+  pjLingerOn = nixosCfg.users.users.${constants.username or "greenhead"}.linger or false;
+
   check =
     msg: cond: rest:
     if cond then rest else builtins.throw "EVAL TEST FAILED: ${msg}";
@@ -1053,6 +1074,29 @@ let
         claudexEnabledDescriptor.enabled == true
         && toString claudexEnabledRuntimeSource == claudexEnabledDescriptor.runtimeLibrary
         && claudexEnabledRuntimeBuildPhaseMatchesDescriptor;
+    }
+    {
+      name = "Test PJ1: private-job@ template·sync unit이 존재하고 공통 hardening(UMask 0077·NoNewPrivileges·PrivateTmp·ProtectSystem full·cgroup kill)을 갖는다";
+      cond = pjHardeningOk pjTemplate && pjHardeningOk pjSync;
+    }
+    {
+      name = "Test PJ2: RestrictNamespaces는 의도적으로 미적용 (하위 도구의 user namespace 요구 — 켜려면 이 테스트와 함께 재결정)";
+      cond = pjNoNamespaceRestriction;
+    }
+    {
+      name = "Test PJ3: bounded timeout — template 8h, sync 5min";
+      cond = pjBoundedTimeout;
+    }
+    {
+      name = "Test PJ4: sync timer가 timers.target에 걸리고 부팅 2분 + 15분 간격으로 돈다";
+      cond =
+        pjSyncTimer.wantedBy == [ "timers.target" ]
+        && pjSyncTimer.timerConfig.OnBootSec == "2min"
+        && pjSyncTimer.timerConfig.OnUnitActiveSec == "15min";
+    }
+    {
+      name = "Test PJ5: linger 활성 — 로그인 세션 없이 user manager가 부팅부터 상주해야 무인 스케줄이 성립";
+      cond = pjLingerOn;
     }
   ]
   ++ darwinIntentTests;

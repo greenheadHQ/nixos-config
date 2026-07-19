@@ -102,10 +102,12 @@
     ./programs/smartd.nix # S.M.A.R.T. 디스크 건강 모니터링 (Pushover 알림)
     ./programs/temp-monitor # lm-sensors 온도 모니터링 (5분마다, Pushover 알림)
     ./programs/pushover-purge-reminder.nix # Backup archive 6개월 보관 만료 reminder (2026-12-01 1회성)
+    ./programs/private-job-runner # 로컬 정의 작업의 user timer 실행 + 실패 알림 (generic)
     ./options/homeserver.nix # Docker/Podman 기반 홈서버 서비스 (mkOption)
   ];
 
   # 홈서버 서비스 활성화 (mkEnableOption 기본값 false)
+  homeserver.privateJobRunner.enable = true; # generic private job runner (작업 정의는 기기 로컬)
   homeserver.immich.enable = true;
   homeserver.uptimeKuma.enable = true;
   homeserver.immichCleanup.enable = true; # Claude Code Temp 앨범 매일 전체 삭제
