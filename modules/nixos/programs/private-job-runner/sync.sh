@@ -43,10 +43,19 @@ job_error() { # key detail — 같은 key의 "같은 내용" 오류만 억제한
   sync_failed=1
   error_seen["$key"]=1
   if [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$detail" ]; then
-    mkdir -p "$ERROR_DIR"
-    printf '%s' "$detail" > "$marker"
-    pushover_send "$PUSHOVER_CRED_FILE" "private job sync error" "job=$1 $detail" 1 \
-      || echo "WARNING: sync error notification could not be sent" >&2
+    # marker는 "알림이 실제로 나간 뒤"에만 기록한다 — 먼저 기록하면 전송 실패가
+    # "알림 완료"로 남아 같은 오류의 재시도가 영구 억제된다.
+    if pushover_send "$PUSHOVER_CRED_FILE" "private job sync error" "job=$1 $detail" 1; then
+      mkdir -p "$ERROR_DIR"
+      err_dir_violation="$(path_violation "$ERROR_DIR" "sync error dir" d 077)"
+      if [ -z "$err_dir_violation" ]; then
+        printf '%s' "$detail" > "$marker"
+      else
+        echo "WARNING: $err_dir_violation — marker 기록 생략" >&2
+      fi
+    else
+      echo "WARNING: sync error notification could not be sent" >&2
+    fi
   fi
 }
 
@@ -68,7 +77,7 @@ declare -A want=()
 if [ -d "$JOBS_ROOT" ]; then
   # 스캔 대상 루트 자체도 실행 입력이다 — symlink·타 owner·느슨한 권한이면 스캔
   # 전체를 중단한다 (fail-closed).
-  root_violation="$(path_violation "$JOBS_ROOT" "jobs root")"
+  root_violation="$(path_violation "$JOBS_ROOT" "jobs root" d 022)"
   if [ -n "$root_violation" ]; then
     job_error "jobs-root" "$root_violation"
   else
@@ -79,14 +88,14 @@ if [ -d "$JOBS_ROOT" ]; then
         job_error "$(masked_name "$slug")" "invalid slug directory (name withheld)"
         continue
       fi
-      violation="$(path_violation "${job_dir%/}" "job directory")"
+      violation="$(path_violation "${job_dir%/}" "job directory" d 022)"
       if [ -n "$violation" ]; then
         job_error "$slug" "$violation"
         continue
       fi
       schedule_file="$job_dir/schedule"
       # schedule도 실행 계약의 입력이다 — run.sh와 같은 소유·링크·권한 기준을 요구한다.
-      violation="$(path_violation "$schedule_file" "schedule")"
+      violation="$(path_violation "$schedule_file" "schedule" f 022)"
       if [ -n "$violation" ]; then
         job_error "$slug" "schedule: $violation"
         continue
@@ -105,7 +114,9 @@ if [ -d "$JOBS_ROOT" ]; then
         job_error "$slug" "timer name collision with unmanaged unit"
         continue
       fi
-      if [ -e "$unit_file" ] && { [ -L "$unit_file" ] || ! head -1 "$unit_file" | grep -qF "$MANAGED_MARK"; }; then
+      # -L을 먼저 본다 — dangling symlink는 -e가 false라 뒤에 두면 검사를 통과해
+      # printf가 링크 대상(runtime 영역 밖)에 파일을 만들 수 있다.
+      if [ -L "$unit_file" ] || { [ -e "$unit_file" ] && ! head -1 "$unit_file" | grep -qF "$MANAGED_MARK"; }; then
         job_error "$slug" "timer name collision with unmanaged runtime file"
         continue
       fi
