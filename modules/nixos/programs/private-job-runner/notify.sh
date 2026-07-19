@@ -6,10 +6,12 @@
 # $EXIT_STATUS를 받으므로, 여기서만 판정해 같은 run에 정확히 1회 보낸다.
 # 알림 내용은 generic 필드(slug·invocation·result·exit)만 — 작업 실체는 싣지 않는다.
 #
-# 필요 env (unit이 주입): PUSHOVER_LIB, PUSHOVER_CRED_FILE
+# 필요 env (unit이 주입): PRIVATE_JOB_LIB, PUSHOVER_LIB, PUSHOVER_CRED_FILE
 # systemd 제공 env: SERVICE_RESULT, EXIT_CODE, EXIT_STATUS, INVOCATION_ID
 set -euo pipefail
 
+# shellcheck source=/dev/null
+source "$PRIVATE_JOB_LIB"
 # shellcheck source=/dev/null
 source "$PUSHOVER_LIB"
 
@@ -17,6 +19,16 @@ slug="${1:-unknown}"
 result="${SERVICE_RESULT:-unknown}"
 
 if [ "$result" = "success" ]; then
+  exit 0
+fi
+
+# 실행기가 거부한 invalid instance 이름도 외부 채널에는 싣지 않는다 — 이름 자체가
+# 작업 실체를 담을 수 있다 (검증은 runner와 같은 lib 계약).
+is_valid_slug "$slug" || slug="withheld"
+
+# sync가 스스로 판정·통지한 정의 오류(exit 3 규약)는 여기서 다시 보내지 않는다 —
+# run당 외부 알림 1회 계약 (비정형 실패만 이 훅이 담당).
+if [ "${EXIT_STATUS:-}" = "3" ]; then
   exit 0
 fi
 

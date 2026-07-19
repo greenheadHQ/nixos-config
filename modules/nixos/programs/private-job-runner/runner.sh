@@ -27,7 +27,7 @@ fail() { # detail → failed unit (알림은 ExecStopPost 소유)
 
 assert_safe() { # path label type denymask
   local violation
-  violation="$(path_violation "$1" "$2" "$3" "$4")"
+  violation="$(path_violation_reason "$1" "$2" "$3" "$4")"
   [ -z "$violation" ] || fail "$violation"
 }
 

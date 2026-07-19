@@ -8,8 +8,11 @@
 # 로컬 작업 규약 (기기에서 사람이 준비):
 #   ~/.local/private-jobs/<slug>/run.sh    실행 진입점 — owner 본인·실행 가능·
 #                                          symlink 및 group/world-writable 금지
-#   ~/.local/private-jobs/<slug>/schedule  systemd OnCalendar 식 1줄 (예: "Sat 03:00")
-#                                          — 같은 소유·링크 기준 적용
+#   ~/.local/private-jobs/<slug>/schedule  systemd OnCalendar 식 — 정확히 1줄 파일
+#                                          (초과 내용은 오류), 같은 소유·링크 기준
+#   상위 사슬(~/.local/private-jobs 및 각 job 디렉터리)도 같은 기준이다: owner
+#   본인·비 symlink(상위 경로 포함)·group/world-writable 금지 — 로그 상태 사슬
+#   (~/.local/state/private-jobs 이하)은 0700/0600까지 요구한다.
 #   <slug>는 ^[a-z0-9][a-z0-9-]{0,63}$ 의 중립 문자열만 — 작업 실체를 드러내지 않는 이름.
 #   로그: ~/.local/state/private-jobs/<slug>/logs/<run-id>.log (0700/0600, bounded retention)
 #   알림: 실패 시 unit의 ExecStopPost가 user-scope Pushover(~/.config/pushover/share)로
@@ -108,8 +111,9 @@ in
           # 실패 알림의 단일 소유자 — runner 내부 알림은 timeout·강제 종료 경로에서
           # 증발하므로 종료 후 훅에서만 판정·발송한다 ($SERVICE_RESULT 기반).
           ExecStopPost = "${notifyApp}/bin/private-job-notify %i";
-          # bounded timeout — 개별 작업의 자체 상한(현행 최대 6h급)보다 넉넉한
-          # 최후 방어선이다. 초과 시 control-group 전체가 정리된다(잔존 자식 0).
+          # bounded timeout — "야간 무인 배치가 하루 업무 시작 전에 끝난다"는
+          # 보수 상한으로, 특정 작업의 상한이 이를 넘으면 이 값만 조정한다.
+          # 초과 시 control-group 전체가 정리된다(잔존 자식 0).
           TimeoutStartSec = "8h";
         };
         environment = commonEnvironment;
@@ -120,6 +124,9 @@ in
         serviceConfig = hardening // {
           Type = "oneshot";
           ExecStart = "${syncApp}/bin/private-jobs-sync";
+          # 정의 오류(exit 3 규약 — 개별 통지 완료)는 건너뛰고 비정형 실패만
+          # 통지한다 (mkdir·daemon-reload 실패 등 set -e 경로).
+          ExecStopPost = "${notifyApp}/bin/private-job-notify sync-service";
           TimeoutStartSec = "5min";
         };
         environment = commonEnvironment;
@@ -130,8 +137,8 @@ in
         wantedBy = [ "timers.target" ];
         timerConfig = {
           # 부팅 2분 뒤 최초 sync가 runtime timer를 재생성하고(재부팅 복구 경로),
-          # 15분 간격은 "정의 변경이 다음 스케줄 전에 반영"과 스캔 비용의 절충이다
-          # (주기 작업은 시간 단위라 15분 지연은 무해).
+          # 15분 간격은 "정의 변경이 OnCalendar 최소 단위(시간 규모) 안에 반영"과
+          # 스캔 비용의 절충이다 — 더 촘촘한 반영이 필요하면 이 값만 줄인다.
           OnBootSec = "2min";
           OnUnitActiveSec = "15min";
         };

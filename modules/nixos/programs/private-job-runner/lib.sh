@@ -9,7 +9,8 @@ is_valid_slug() {
 }
 
 # 경로 안전성 판정 — 위반 사유를 stdout으로 출력한다 (정상이면 빈 출력. 반환값이
-# 아니라 출력이 계약이다: 호출자가 사유를 로그·알림에 그대로 쓴다).
+# 아니라 출력이 계약이다 — 이름의 "_reason"이 그 계약이다: predicate처럼
+# `if path_violation_reason ...`으로 쓰면 항상 참이 된다).
 #   type: f(regular file) | d(directory) — owner 소유의 FIFO·디렉터리 오배치도
 #         입력 종류 위반으로 잡는다 (head가 정지·즉사하는 경로 차단)
 #   denymask: 거부할 권한 비트(8진) — 실행 입력은 022(group/world-write 금지),
@@ -17,7 +18,7 @@ is_valid_slug() {
 # 검증~사용 사이의 좁은 TOCTOU 창은 남는다: 이 기기의 위협 모델은 "다른 로컬
 # 계정이 없는 단일 사용자 호스트"이고, 이 검증의 목적은 실수로 느슨한 권한·링크가
 # 생긴 상태를 fail-closed로 드러내는 것이다.
-path_violation() { # path label type denymask
+path_violation_reason() { # path label type denymask
   local path="$1" label="$2" type="$3" denymask="$4" perms
   if [ ! -e "$path" ]; then
     printf '%s missing' "$label"
@@ -32,6 +33,16 @@ path_violation() { # path label type denymask
     d) [ -d "$path" ] || { printf '%s is not a directory' "$label"; return 0; } ;;
     *) printf 'internal: unknown type %s' "$type"; return 0 ;;
   esac
+  # 필수 접근권 — 금지 비트만 보면 owner가 읽지 못하는 0300 디렉터리가 통과해
+  # "작업 0건 발견 → 전체 timer 삭제" 같은 조용한 오동작으로 이어진다.
+  if [ ! -r "$path" ]; then
+    printf '%s is not readable by owner' "$label"
+    return 0
+  fi
+  if [ "$type" = "d" ] && [ ! -x "$path" ]; then
+    printf '%s is not searchable by owner' "$label"
+    return 0
+  fi
   if [ ! -O "$path" ]; then
     printf '%s not owned by user' "$label"
     return 0

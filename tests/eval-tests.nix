@@ -742,7 +742,6 @@ let
   # 테스트 실행
   # ═══════════════════════════════════════════════════════════════
 
-  # assert 헬퍼: 메시지와 함께 assertion
   # ── private job runner (#1135): generic 계약(unit 경로·hardening·bounded
   # timeout·sync cadence·linger) 고정 — 작업 실체는 기기 로컬 소유라 여기 없다.
   pjTemplate = nixosCfg.systemd.user.services."private-job@";
@@ -764,6 +763,7 @@ let
     pjTemplate.serviceConfig.TimeoutStartSec == "8h" && pjSync.serviceConfig.TimeoutStartSec == "5min";
   pjLingerOn = nixosCfg.users.users.${constants.username or "greenhead"}.linger or false;
 
+  # assert 헬퍼: 메시지와 함께 assertion
   check =
     msg: cond: rest:
     if cond then rest else builtins.throw "EVAL TEST FAILED: ${msg}";

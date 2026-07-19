@@ -35,10 +35,19 @@ declare -A error_seen=() # 이번 run에서 관측된 오류 key — 종료 시 
 
 job_error() { # key detail — 같은 key의 "같은 내용" 오류만 억제한다 (내용이
   # 바뀌면 새 알림, 해소되면 marker가 걷혀 재발 시 다시 알림).
-  local key detail marker
+  local key detail marker err_dir_violation
   key="$(printf '%s' "$1" | tr -c 'a-zA-Z0-9-' '_')"
   detail="$2"
   marker="$ERROR_DIR/$key"
+  # marker 경로가 symlink면 읽지도 쓰지도 않는다 — 링크 대상 파일을 따라가
+  # 임의 경로를 덮어쓸 수 있다.
+  if [ -L "$marker" ]; then
+    echo "ERROR: job=$1 $detail" >&2
+    echo "WARNING: sync-error marker is a symlink — dedupe 생략" >&2
+    sync_failed=1
+    error_seen["$key"]=1
+    return 0
+  fi
   echo "ERROR: job=$1 $detail" >&2
   sync_failed=1
   error_seen["$key"]=1
@@ -47,7 +56,7 @@ job_error() { # key detail — 같은 key의 "같은 내용" 오류만 억제한
     # "알림 완료"로 남아 같은 오류의 재시도가 영구 억제된다.
     if pushover_send "$PUSHOVER_CRED_FILE" "private job sync error" "job=$1 $detail" 1; then
       mkdir -p "$ERROR_DIR"
-      err_dir_violation="$(path_violation "$ERROR_DIR" "sync error dir" d 077)"
+      err_dir_violation="$(path_violation_reason "$ERROR_DIR" "sync error dir" d 077)"
       if [ -z "$err_dir_violation" ]; then
         printf '%s' "$detail" > "$marker"
       else
@@ -77,7 +86,7 @@ declare -A want=()
 if [ -d "$JOBS_ROOT" ]; then
   # 스캔 대상 루트 자체도 실행 입력이다 — symlink·타 owner·느슨한 권한이면 스캔
   # 전체를 중단한다 (fail-closed).
-  root_violation="$(path_violation "$JOBS_ROOT" "jobs root" d 022)"
+  root_violation="$(path_violation_reason "$JOBS_ROOT" "jobs root" d 022)"
   if [ -n "$root_violation" ]; then
     job_error "jobs-root" "$root_violation"
   else
@@ -88,16 +97,22 @@ if [ -d "$JOBS_ROOT" ]; then
         job_error "$(masked_name "$slug")" "invalid slug directory (name withheld)"
         continue
       fi
-      violation="$(path_violation "${job_dir%/}" "job directory" d 022)"
+      violation="$(path_violation_reason "${job_dir%/}" "job directory" d 022)"
       if [ -n "$violation" ]; then
         job_error "$slug" "$violation"
         continue
       fi
       schedule_file="$job_dir/schedule"
       # schedule도 실행 계약의 입력이다 — run.sh와 같은 소유·링크·권한 기준을 요구한다.
-      violation="$(path_violation "$schedule_file" "schedule" f 022)"
+      violation="$(path_violation_reason "$schedule_file" "schedule" f 022)"
       if [ -n "$violation" ]; then
         job_error "$slug" "schedule: $violation"
+        continue
+      fi
+      # "1줄 파일" 계약을 실제로 검증한다 — 첫 줄만 조용히 소비하면 운영자는
+      # 나머지 내용도 반영됐다고 오해한다.
+      if [ -n "$(sed -n '2,$p' "$schedule_file" | tr -d '[:space:]')" ]; then
+        job_error "$slug" "schedule must be a single line"
         continue
       fi
       schedule="$(head -1 "$schedule_file")"
@@ -148,7 +163,12 @@ for unit_file in "$UNIT_DIR"/private-job-*.timer; do
   slug="${base#private-job-}"
   if [ -z "${want[$slug]:-}" ]; then
     if [ "$(loaded_fragment "$base.timer")" = "$unit_file" ]; then
-      systemctl --user stop "$base.timer" >/dev/null 2>&1 || true
+      # stop이 실패하면 파일을 지우지 않는다 — active timer가 manager 메모리에서
+      # 계속 발화하는 유령 상태를 만들지 않고 다음 sync가 재시도하게 한다.
+      if ! systemctl --user stop "$base.timer" >/dev/null 2>&1; then
+        job_error "$slug" "timer stop failed (unit file preserved for retry)"
+        continue
+      fi
     fi
     rm -f "$unit_file"
     changed=1
@@ -175,5 +195,8 @@ if [ -d "$ERROR_DIR" ]; then
   done
 fi
 
-[ "$sync_failed" -eq 0 ] || exit 1
+# 의도된 실패(정의 오류 등 — 개별 알림 완료)는 exit 3으로 구분한다: unit의
+# ExecStopPost는 이 코드를 보고 이중 알림을 건너뛰고, 비정형 실패(set -e의
+# 다른 종료)만 통지한다.
+[ "$sync_failed" -eq 0 ] || exit 3
 echo "sync ok: ${#want[@]} job(s)"
