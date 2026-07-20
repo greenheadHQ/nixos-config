@@ -10,18 +10,19 @@ gh-attach v0.3.0 (rev `b138347`) 소스에서 확인한 동작 계약이다. 도
 - auto 모드는 브라우저 목록만 순회하고 프로필은 열거하지 않는다 (`internal/cookies/source.go`의 `ExpandSource`). 프로필 미지정 Chromium 계열에는 `"Default"` 프로필이 고정 적용된다 (`ApplyDefaultProfile`).
 - 귀결: 멀티 프로필 환경에서 `Default`가 아닌 프로필에만 GitHub 로그인이 있으면 auto 탐색은 구조적으로 실패한다. `failed to resolve usable cookie source from N attempt(s)`는 "로그인이 없다"가 아니라 "로그인된 프로필이 시도되지 않았다"일 수 있다. `--browser <이름>`만 지정한 재시도도 같은 이유로 실패한다 — 프로필 지정 없이는 여전히 `Default`만 본다.
 
-재검증:
+재검증 (auto 탐색 계약은 `source.go`, `dotcom_user` 매칭 계약은 `cookie_resolver.go`):
 
 ```bash
 gh api "repos/greenheadHQ/gh-attach/contents/internal/cookies/source.go?ref=<rev>" -q '.content' | base64 -d
+gh api "repos/greenheadHQ/gh-attach/contents/internal/attach/cookie_resolver.go?ref=<rev>" -q '.content' | base64 -d
 ```
 
 ## 2. 진단·재시도 순서
 
 1. 같은 실행기·같은 인자에 `--verbose`만 더해 재실행한다. `source[N]: browser=… profile=… provider=… error=…` 라인이 어떤 브라우저·프로필이 시도됐고 왜 탈락했는지 알려준다. `skipped (dotcom_user missing)`은 쿠키는 있으나 로그인 흔적이 없는 프로필, `skipped (dotcom_user=… != gh_login=…)`은 다른 계정으로 로그인된 프로필, `selected source: …`가 매칭 성공이다.
-2. verbose가 `Default` 프로필 실패만 보여주면 아래 3절 경계 안에서 프로필을 열거해 후보를 압축한다.
+2. verbose가 `Default` 프로필 실패만 보여주면 3절 경계 안에서 4절 레시피로 프로필을 열거해 후보를 압축한다.
 3. `--browser <이름> --profile "<프로필 디렉터리명>"`으로 재시도한다 (`--verbose` 유지). 후보가 여럿이면 도구의 `dotcom_user` 대조가 오매칭을 걸러주므로 순서대로 시도해도 안전하다.
-4. 성공한 프로필은 4절대로 `attach.yml`에 지속화해 재탐색을 없앤다.
+4. 성공한 프로필은 5절대로 `attach.yml`에 지속화해 재탐색을 없앤다.
 
 ## 3. 프로필 조사의 자율 경계
 
@@ -42,7 +43,7 @@ gh api "repos/greenheadHQ/gh-attach/contents/internal/cookies/source.go?ref=<rev
 
 ## 4. Chromium 계열 레시피 (macOS)
 
-검증된 구체 절차는 Chrome 기준이다 (gh-attach의 쿠키 전제가 macOS 전용 — Nix 패키지 선언 `platforms` 참조). 다른 Chromium 계열은 base 경로만 다르고, Firefox 등 비Chromium 브라우저는 이 레시피를 그대로 적용하지 말고 1절의 verbose 진단과 3절의 경계 원칙만 적용한다 — 미검증 절차를 추정으로 실행하지 않는다.
+검증된 구체 절차는 Chrome 기준이다 (gh-attach의 쿠키 전제가 macOS 전용 — Nix 패키지 선언 `platforms` 참조). 다른 Chromium 계열은 base 경로만 다르고, Firefox 등 비Chromium 브라우저는 이 레시피를 그대로 적용하지 말고 2절의 verbose 진단과 3절의 경계 원칙만 적용한다 — 미검증 절차를 추정으로 실행하지 않는다.
 
 프로필 열거와 표시 이름 매핑 (`Local State`는 Chrome이 프로필 메타데이터를 담는 JSON이다):
 
