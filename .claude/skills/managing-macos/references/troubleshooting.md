@@ -313,8 +313,8 @@ sleep 3
 nrs
 ```
 
-2단계가 "보존" 메시지를 출력했다면 그 label은 여전히 booted 상태입니다.
-`launchctl list | grep <label>`로 확인하고, 원인을 해소한 뒤 재시도하세요.
+2단계가 "보존" 메시지를 출력했다면 그 label은 여전히 booted 상태일 수 있습니다.
+`launchctl list | grep <label>`로 실제 상태를 확인하고, 원인을 해소한 뒤 재시도하세요.
 
 예방: `nrs` alias 사용 시 자동으로 에이전트를 정리합니다. `nrs` 정리는 `com.green.*`와 `com.greenhead.*`를 모두 동적으로 처리하므로, 위 수동 절차는 `nrs` 자체가 실패할 때만 사용합니다.
 

@@ -154,7 +154,7 @@ cleanup_launchd_agents() {
     if [[ ${#failed_agents[@]} -gt 0 ]]; then
         log_warn "  ⚠️  ${#failed_agents[@]} agent(s) failed to bootout — plist를 남겨 두었습니다."
         log_warn "     rebuild 후에도 이 agent가 구 상태로 남아 있으면 아래로 언로드하세요."
-        log_warn "     (plist는 남겨둡니다 — 다음 rebuild에서 home-manager가 재적재합니다)"
+        log_warn "     (plist는 남겨둡니다 — 다음 rebuild가 재적재를 시도할 수 있도록)"
         local fa
         for fa in "${failed_agents[@]}"; do
             log_warn "       launchctl bootout gui/${uid}/${fa}"

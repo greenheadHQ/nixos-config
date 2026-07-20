@@ -196,8 +196,9 @@ nrs                          # lock이 바뀌었으므로 --offline 불가
 git add -u && git commit -m "fix: <platform> FOD hash" && git push
 ```
 
-`--offline`은 lock이 바뀌지 않은 재적용에만 사용합니다. lock 갱신 직후에는 로컬에 없는
-store path를 받아야 하므로 반드시 실패합니다.
+`--offline`은 lock이 바뀌지 않은 재적용에 사용합니다. lock 갱신 직후에는 새 store path가
+로컬에 없으면 실패하므로 온라인 `nrs`를 씁니다 (필요한 경로가 이미 store에 있으면 동작할
+수도 있으나 미리 알기 어렵습니다).
 
 > 참고: `nrs`, `nrp` 명령은 `~/.local/bin/`에 설치되며, `--offline` 플래그로 오프라인 모드를 사용합니다.
 

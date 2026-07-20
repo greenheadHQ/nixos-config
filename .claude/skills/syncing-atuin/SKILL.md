@@ -22,7 +22,7 @@ Atuin v1 API deprecated
 - 실제 동기화 상태는 `atuin doctor`의 `last_sync`로 확인
 - 현재 설정은 `sync.records = true`와 `auto_sync = true` 기준
 
-`atuin history delete` 서브커맨드 미존재 (v18.16.1 기준 여전히 없음)
+`atuin history delete` 서브커맨드 미존재 (v18.17.0 기준 여전히 없음. `atuin history --help`로 재확인)
 - `atuin history` 하위에 `delete` 명령어가 없음
 - 한글 포함 항목 일괄 삭제: `atuin-clean-kr` 스크립트 사용
 - DB 경로: `~/.local/share/atuin/history.db`

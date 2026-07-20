@@ -316,9 +316,10 @@ nrs            # 일반 모드 (다운로드 필요)
 
 - `nrs --offline`은 캐시에 모든 패키지가 있어야 동작
 - 새 패키지 추가 시에는 `nrs` 사용 필요
-- `flake.lock`이 갱신된 직후에는 `--offline`을 쓸 수 없다. lock이 바뀌면 그 rev의 store path가
-  로컬에 없고 `--offline`은 substituter도 건너뛰므로 반드시 실패한다.
-  `--offline`은 "lock 무변경 상태에서 기존 세대를 재적용"하는 경우에만 유효하다.
+- `flake.lock`이 갱신된 직후에는 보통 `--offline`을 쓸 수 없다. 새 rev의 store path가 로컬에
+  없으면 `--offline`은 substituter도 건너뛰므로 실패한다. 필요한 경로가 이미 로컬 store에
+  있다면(다른 호스트에서 받아뒀거나 GC 전이라면) 동작할 수도 있으나 그 조건을 미리 알기
+  어려우므로, lock 갱신 후에는 온라인 `nrs`를 쓰고 `--offline`은 lock 무변경 재적용에 쓴다.
 
 ## 패키지 변경사항 미리보기 (nvd)
 
