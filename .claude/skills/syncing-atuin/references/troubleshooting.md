@@ -127,7 +127,7 @@ echo "テスト 한글"  # 정상 출력되는지 확인
 ## 한글 포함 히스토리 일괄 삭제
 
 > 발생 시점: 2026-01-27
-> 환경: atuin 18.16.1 기준 `history delete` 부재 재확인, zsh-autosuggestions 0.7.1 (nixpkgs)
+> 환경: atuin 18.17.0 기준 `history delete` 부재 재확인, zsh-autosuggestions 0.7.1 (nixpkgs)
 > 상태: 해결 (`atuin-clean-kr` 스크립트)
 
 증상: zsh-autosuggestion이 한글이 포함된 명령어(예: git commit 한글 메시지)를 제안할 때 터미널 TUI 렌더링이 깨짐.
@@ -158,9 +158,9 @@ atuin-clean-kr
 4. `--dry-run`: 총 개수 + 처음 20개 미리보기
 5. 기본 모드: `[y/N]` 확인 → 타임스탬프 백업 → 삭제 → sync 제한 경고
 
-### `atuin history delete` 서브커맨드 부재 (v18.16.1 기준 여전히 없음)
+### `atuin history delete` 서브커맨드 부재 (v18.17.0 기준 여전히 없음)
 
-atuin 18.16.1에는 `atuin history delete` 서브커맨드가 존재하지 않음 (`atuin --version && atuin history --help`로 재검증).
+atuin 18.17.0에는 `atuin history delete` 서브커맨드가 존재하지 않음 (`atuin --version && atuin history --help`로 재검증).
 
 ```bash
 $ atuin history --help
