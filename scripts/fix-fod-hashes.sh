@@ -87,8 +87,10 @@ cache_precheck() {
 
   # heavy_pkgs: "패키지명<TAB>HEAVY|MODERATE" 형식 (탭 구분)
   local heavy_pkgs=""
-  local jq_stderr
-  jq_stderr=$(mktemp)
+  local jq_stderr_file
+  jq_stderr_file=$(mktemp)
+  # 정상 경로 한 곳에만 의존하지 않도록 함수 반환 시 정리한다.
+  trap 'rm -f "$jq_stderr_file"' RETURN
   # shellcheck disable=SC2086
   heavy_pkgs=$(nix show-derivation $drv_paths 2>/dev/null | jq -r '
     # Glue derivation 제외 (빌드 시간 무의미한 시스템 조립용 drv)
@@ -99,12 +101,18 @@ cache_precheck() {
     def is_infra:
       test("^(hook-|.*-hook-|wrapper-|stdenv-|bash-|source-|vendor-|.*-setup-hook|patch-)");
 
-    # nix derivation JSON v4 스키마:
+    # nix derivation JSON v4 스키마 전제. 드리프트 시 발현 방식이 서로 달라 구분해 둔다:
     #   - top-level이 {"derivations":{...},"version":4}로 한 겹 감싸여 있다
-    #   - drv 키와 output path에 "/nix/store/" 접두사가 없다 (basename만)
+    #     → 구조가 바뀌면 jq가 죽어 아래 경고로 잡힌다
     #   - 의존 drv는 .inputDrvs가 아니라 .inputs.drvs에 있다
-    # 세 가지 모두 만족해야 스코어링이 동작한다. 하나라도 어긋나면 jq가 죽고
-    # 아래 `|| true`가 그것을 삼켜 heavy_pkgs가 조용히 비게 된다 (v3 스키마 시절 회귀).
+    #     → 키가 바뀌면 `null | keys`로 죽어 아래 경고로 잡힌다
+    #   - drv 키와 output path에 "/nix/store/" 접두사가 없다 (basename만)
+    #     → 이 전제만 어긋나면 jq는 죽지 않는다. sub()이 no-op이 되어 해시 접두사가 붙은
+    #       패키지명을 조용히 내고, 이름 대조가 빗나가 등급이 사라진다. 아래 version
+    #       게이트가 그 무증상 드리프트를 시끄러운 실패로 바꾼다.
+    if (.version // 0) != 4 then
+      error("unsupported derivation JSON version: \(.version // "missing") (expected 4)")
+    else . end |
     .derivations | to_entries[] |
     (.key | sub("^[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")) as $pkg |
     select(($pkg | is_glue) | not) |
@@ -150,15 +158,16 @@ cache_precheck() {
     elif ($has_rust or $has_cmake or $has_meson or $has_go) and $score > 0 then "\($pkg)\tMODERATE"
     else empty
     end
-  ' 2>"$jq_stderr" || true)
+  ' 2>"$jq_stderr_file" || true)
 
   # 스코어링 실패를 조용히 넘기지 않는다. `|| true`는 경고 등급 표시가 없더라도
   # 본 작업(FOD hash 수정)은 계속되게 하려는 것이지, 스키마 회귀를 은폐하려는 것이 아니다.
-  if [[ -s "$jq_stderr" ]]; then
-    echo -e "  \033[0;33m⚠️  heavy-package 스코어링 실패 — 아래 목록의 HEAVY/MODERATE 등급이 생략됩니다\033[0m" >&2
-    echo -e "  \033[0;33m    nix derivation JSON 스키마가 바뀌었을 수 있습니다 (jq: $(head -1 "$jq_stderr"))\033[0m" >&2
+  # jq 진단 원문은 프로그램 텍스트(\t, \033 등)를 인용할 수 있으므로 printf '%s'로 넘겨
+  # 이스케이프가 해석되지 않게 한다.
+  if [[ -s "$jq_stderr_file" ]]; then
+    printf '  \033[0;33m⚠️  heavy-package 스코어링 실패 — 아래 목록의 HEAVY/MODERATE 등급이 생략됩니다\033[0m\n' >&2
+    printf '  \033[0;33m    nix derivation JSON 스키마가 바뀌었을 수 있습니다 (jq: %s)\033[0m\n' "$(head -1 "$jq_stderr_file")" >&2
   fi
-  rm -f "$jq_stderr"
 
   echo ""
   echo "⚠️  ${pkg_count}개 패키지가 소스에서 빌드됩니다 (캐시 없음):"

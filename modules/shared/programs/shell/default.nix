@@ -511,6 +511,8 @@ in
   };
 
   # FZF
+  # fileWidget/changeDirWidget은 home-manager가 중첩 경로로 개명했다 (mkRenamedOptionModule).
+  # defaultCommand/defaultOptions는 개명 대상이 아니라 평면 키로 남는다 — 혼재는 의도된 상태다.
   programs.fzf = {
     enable = true;
     enableZshIntegration = false;

@@ -357,7 +357,13 @@ git add -u && git commit -m "chore: update flake inputs" && git push
 git pull
 ./scripts/fix-fod-hashes.sh  # 이 플랫폼 전용 FOD hash 검증 (호스트마다 별도 필요)
 nrs                          # --offline 금지: lock이 바뀌어 로컬에 없는 store path를 받아야 한다
+
+# 3. hash가 수정됐다면 저장소로 되돌린다
+git add -u && git commit -m "fix: <platform> FOD hash" && git push
 ```
+
+3단계를 빠뜨리면 그 호스트의 working tree가 dirty로 남아 다음 `nfu`가 중단되고
+(`nfu.sh`의 clean tree 게이트), 고친 hash가 다른 호스트로 전파되지 않습니다.
 
 2번째 호스트에서 `nfu`를 쓰지 않는 이유: `nfu`는 `nix flake update`를 선행하므로
 1번에서 검증·커밋한 lock이 다른 rev로 재갱신되어 멀티 호스트 동기화가 깨진다.

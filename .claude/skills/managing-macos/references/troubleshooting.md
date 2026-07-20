@@ -298,12 +298,16 @@ launchctl bootout gui/$(id -u)/com.greenhead.folder-action.convert-video-to-gif 
 launchctl bootout gui/$(id -u)/com.greenhead.folder-action.rename-asset 2>/dev/null
 launchctl bootout gui/$(id -u)/com.greenhead.folder-action.upload-immich 2>/dev/null
 
-# 3. plist 파일 삭제
+# 3. plist 파일 삭제 — 단, 2단계 bootout이 성공한 label만 지웁니다.
+#    bootout이 실패(= 여전히 booted)한 label의 plist를 지우면, home-manager가
+#    bootout 단계를 건너뛰고 이미 booted된 label에 bootstrap을 시도해 실패하며,
+#    그 실패가 activation 전체를 중단시켜 부분 활성화 상태가 됩니다.
+#    (같은 이유로 nrs의 자동 cleanup도 실패한 label의 plist는 보존합니다)
 rm -f ~/Library/LaunchAgents/com.greenhead.folder-action.*.plist
 
 # 4. 2-3초 대기 후 재시도
 sleep 3
-sudo darwin-rebuild switch --flake ~/Workspace/nixos-config
+nrs
 ```
 
 예방: `nrs` alias 사용 시 자동으로 에이전트를 정리합니다. `nrs` 정리는 `com.green.*`와 `com.greenhead.*`를 모두 동적으로 처리하므로, 위 수동 절차는 `nrs` 자체가 실패할 때만 사용합니다.

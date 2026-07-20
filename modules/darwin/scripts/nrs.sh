@@ -72,7 +72,8 @@ install_rebuild_common_compat_shims
 cleanup_launchd_agents() {
     log_info "🧹 Cleaning up launchd agents..."
 
-    local uid cleaned=0 failed=0 exit_code
+    local uid cleaned=0 exit_code
+    # failed_agents가 실패 사실의 단일 소스다 (별도 카운터를 두면 갱신 누락으로 어긋난다).
     local -a failed_agents=()
     uid=$(id -u)
 
@@ -88,7 +89,6 @@ cleanup_launchd_agents() {
             exit_code=$?
             if [[ $exit_code -ne 3 ]]; then  # 3 = No such process (정상)
                 log_warn "  ⚠️  Failed to bootout: $agent (exit: $exit_code)"
-                ((++failed))
                 failed_agents+=("$agent")
             fi
         fi
@@ -96,23 +96,38 @@ cleanup_launchd_agents() {
 
     # plist 파일 삭제 — 단, bootout에 실패한 agent의 plist는 남긴다.
     #
-    # plist를 지우면 home-manager의 processAgent가 `[[ -f "$dstPath" ]]` 검사에서 빠져
+    # plist를 지우면 home-manager의 processAgent가 `[[ -f "$dstPath" ]]` 게이트에서 빠져
     # bootout을 건너뛰고, 여전히 booted 상태인 label에 bootstrap을 시도해 실패한다.
-    # 구 home-manager는 이 실패를 경고 후 계속 처리했으나, 현재 버전은 setupLaunchAgents
-    # 실패를 activation 전체 중단(exit)으로 처리한다. 중단 지점이 linkGeneration보다
-    # 앞이라 새 plist는 설치됐는데 home 파일 심링크는 구 세대를 가리키는 부분 활성화가 된다.
-    # 따라서 bootout이 실패한 label은 plist를 남겨 home-manager가 정상 bootout 경로를 타게 한다.
-    local removed=0 plist label
+    # 현재 home-manager는 그 실패를 삼키지 않는다 — setupLaunchAgents의 상태코드를 받아
+    # 명시적으로 exit하므로 뒤따르는 linkGeneration 등이 통째로 스킵되고, 새 plist는
+    # 설치됐는데 home 파일 심링크는 구 세대를 가리키는 부분 활성화 상태가 된다.
+    #
+    # 근거 좌표 (home-manager 업데이트 후 재확인용): home-manager `modules/launchd/default.nix`의
+    # processAgent — `[[ -f "$dstPath" ]]` bootout 게이트와, 활성 세대 activate 스크립트 말미의
+    # `setupLaunchAgents || launchdStatus=$?` → `exit "$launchdStatus"`.
+    # 두 지점이 사라졌다면 이 보존 로직의 전제도 다시 검토한다.
+    #
+    # find는 최상위 일반 파일로 한정한다. 재귀로 넓히면 하위 디렉토리의 동명 파일까지
+    # rm 대상이 되어, 기존 top-level glob(`~/Library/LaunchAgents/com.green*.plist`)보다
+    # 삭제 범위가 조용히 커진다.
+    local removed=0 plist label f is_failed
     while IFS= read -r plist; do
         [[ -z "$plist" ]] && continue
         label=$(basename "$plist" .plist)
-        if [[ " ${failed_agents[*]:-} " == *" ${label} "* ]]; then
-            log_warn "  ⚠️  Kept plist for $label (bootout 실패 — home-manager가 처리하도록 위임)"
+
+        # 배열 멤버십 판정: 공백 포함 label에도 안전하도록 명시적 비교를 쓴다.
+        is_failed=false
+        for f in ${failed_agents[@]+"${failed_agents[@]}"}; do
+            [[ "$f" == "$label" ]] && { is_failed=true; break; }
+        done
+
+        if [[ "$is_failed" == true ]]; then
+            log_warn "  ⚠️  Kept plist for $label (bootout 실패 — home-manager가 재시도하도록 위임)"
             continue
         fi
         rm -f "$plist"
         ((++removed))
-    done < <(find ~/Library/LaunchAgents -name 'com.green*.plist' 2>/dev/null)
+    done < <(find ~/Library/LaunchAgents -maxdepth 1 -type f -name 'com.green*.plist' 2>/dev/null)
 
     if [[ "$removed" -gt 0 ]]; then
         log_info "  ✓ Removed $removed plist file(s)"
@@ -121,8 +136,13 @@ cleanup_launchd_agents() {
     if [[ $cleaned -gt 0 ]]; then
         log_info "  ✓ Cleaned up $cleaned agent(s)"
     fi
-    if [[ $failed -gt 0 ]]; then
-        log_warn "  ⚠️  $failed agent(s) failed to bootout"
+    if [[ ${#failed_agents[@]} -gt 0 ]]; then
+        log_warn "  ⚠️  ${#failed_agents[@]} agent(s) failed to bootout — plist를 남겨 두었습니다."
+        # home-manager가 관리하는 label(현재 세대의 LaunchAgents 디렉토리에 있는 것)만 다음
+        # activation에서 재시도된다. legacy 네임스페이스처럼 home-manager 관리 밖의 label은
+        # 이 경로로 회복되지 않으므로, rebuild 후에도 남아 있으면 수동 정리가 필요하다:
+        #   launchctl bootout gui/$(id -u)/<label> && rm -f ~/Library/LaunchAgents/<label>.plist
+        log_warn "     rebuild 후에도 남아 있으면 수동 bootout이 필요할 수 있습니다."
     fi
 
     # launchd 내부 상태 정리 대기

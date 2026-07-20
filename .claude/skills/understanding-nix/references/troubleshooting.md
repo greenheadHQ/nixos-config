@@ -191,10 +191,13 @@ git add -u && git commit -m "chore: update flake inputs" && git push
 git pull
 ./scripts/fix-fod-hashes.sh  # 이 플랫폼 전용 FOD hash 검증
 nrs                          # lock이 바뀌었으므로 --offline 불가
+
+# 3. hash가 수정됐다면 저장소로 되돌린다
+git add -u && git commit -m "fix: <platform> FOD hash" && git push
 ```
 
-`--offline`은 lock이 바뀌지 않은 재적용에만 쓴다. lock 갱신 직후에는 로컬에 없는
-store path를 받아야 하므로 반드시 실패한다.
+`--offline`은 lock이 바뀌지 않은 재적용에만 사용합니다. lock 갱신 직후에는 로컬에 없는
+store path를 받아야 하므로 반드시 실패합니다.
 
 > 참고: `nrs`, `nrp` 명령은 `~/.local/bin/`에 설치되며, `--offline` 플래그로 오프라인 모드를 사용합니다.
 
@@ -241,8 +244,8 @@ nrs
 
 ## 상세 에러 확인
 
-`nrs`는 `--offline` / `--force` / `--cores N`만 받으므로 `--show-trace`를 전달할 수 없다.
-스택 추적이 필요하면 switch 없이 빌드만 돌린다 (호스트명은 `scutil --get LocalHostName`):
+`nrs`는 `--offline` / `--force` / `--cores N`만 받으므로 `--show-trace`를 전달할 수 없습니다.
+스택 추적이 필요하면 switch 없이 빌드만 실행합니다 (호스트명은 `scutil --get LocalHostName`):
 
 ```bash
 nix build .#darwinConfigurations.<hostname>.system --show-trace   # macOS
