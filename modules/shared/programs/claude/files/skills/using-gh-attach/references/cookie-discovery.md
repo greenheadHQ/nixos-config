@@ -43,7 +43,7 @@ gh api "repos/greenheadHQ/gh-attach/contents/internal/attach/cookie_resolver.go?
 
 ## 4. Chromium 계열 레시피 (macOS)
 
-검증된 구체 절차는 Chrome 기준이다 (gh-attach의 쿠키 전제가 macOS 전용 — Nix 패키지 선언 `platforms` 참조). 다른 Chromium 계열은 base 경로만 다르고, Firefox 등 비Chromium 브라우저는 이 레시피를 그대로 적용하지 말고 2절의 verbose 진단과 3절의 경계 원칙만 적용한다 — 미검증 절차를 추정으로 실행하지 않는다.
+검증된 구체 절차는 Chrome 기준이다 (gh-attach의 쿠키 전제가 macOS 전용 — `modules/shared/programs/git/gh-attach-package.nix`의 `platforms` 선언 참조). 다른 Chromium 계열은 base 경로만 다르고, Firefox 등 비Chromium 브라우저는 이 레시피를 그대로 적용하지 말고 2절의 verbose 진단과 3절의 경계 원칙만 적용한다 — 미검증 절차를 추정으로 실행하지 않는다.
 
 프로필 열거와 표시 이름 매핑 (`Local State`는 Chrome이 프로필 메타데이터를 담는 JSON이다):
 
