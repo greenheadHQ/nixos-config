@@ -63,8 +63,12 @@ nix derivation show .#darwinConfigurations.<host>.system  # derivation 확인
 ### Flake 변경 반영
 
 1. `git add .` — Nix flakes는 git-tracked 파일만 인식한다.
-2. `nix flake update <input-name>` — 외부 input 갱신이 필요한 경우.
-3. `nrs` 또는 `nrs --offline`으로 빌드.
+2. `nrs`로 빌드. lock 무변경 재적용이면 `nrs --offline`도 가능하다.
+
+외부 input 갱신이 필요하면 raw `nix flake update` 대신 `nfu`를 쓴다 —
+update → FOD hash fix → nrs를 원자적으로 수행한다. FOD hash 단계를 건너뛰면
+input 업데이트로 깨진 hash가 빌드 실패로 이어진다. 2번째 호스트 절차와
+`--offline` 제약은 [references/features.md](references/features.md) 참조.
 
 ### 빌드 실패 진단
 

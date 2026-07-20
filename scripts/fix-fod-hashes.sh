@@ -87,12 +87,28 @@ cache_precheck() {
 
   # heavy_pkgs: "패키지명<TAB>HEAVY|MODERATE" 형식 (탭 구분)
   local heavy_pkgs=""
-  local jq_stderr_file
+  local jq_stderr_file drv_json
   jq_stderr_file=$(mktemp)
-  # 정상 경로 한 곳에만 의존하지 않도록 함수 반환 시 정리한다.
-  trap 'rm -f "$jq_stderr_file"' RETURN
+  drv_json=$(mktemp)
+  # RETURN + EXIT 둘 다 건다. 이 함수는 아래 사용자 취소 분기에서 `exit 1`로도 빠져나가는데,
+  # bash의 RETURN trap은 exit 경로에서 발화하지 않아 임시 파일이 남는다.
+  trap 'rm -f "$jq_stderr_file" "$drv_json"' RETURN EXIT
+
+  # derivation JSON을 먼저 파일로 받아 "명령 실패로 stdout이 빈" 경우를 구분한다.
+  # 파이프로 바로 넘기면 빈 입력을 받은 jq가 프로그램을 한 번도 실행하지 않고
+  # rc=0 / stderr 없음으로 끝나, 아래 경고 게이트가 발화하지 못한다.
+  # `nix derivation show`는 정식 이름이다 — `nix show-derivation`은 deprecated alias라
+  # 상시 경고를 내고 언젠가 제거되면 바로 이 무증상 경로를 탄다.
   # shellcheck disable=SC2086
-  heavy_pkgs=$(nix show-derivation $drv_paths 2>/dev/null | jq -r '
+  if ! nix derivation show $drv_paths >"$drv_json" 2>"$jq_stderr_file" || [[ ! -s "$drv_json" ]]; then
+    printf '  \033[0;33m⚠️  derivation 정보를 가져오지 못해 HEAVY/MODERATE 등급이 생략됩니다\033[0m\n' >&2
+    if [[ -s "$jq_stderr_file" ]]; then
+      printf '  \033[0;33m    (nix: %s)\033[0m\n' "$(head -1 "$jq_stderr_file")" >&2
+    fi
+    : >"$jq_stderr_file"
+  fi
+
+  heavy_pkgs=$(jq -r '
     # Glue derivation 제외 (빌드 시간 무의미한 시스템 조립용 drv)
     def is_glue:
       test("^(activation-|activate$|home-manager-|darwin-system-|nixos-system-|etc-|etc$|set-environment|unit-script-|unit-|system-path|system-units|user-units|system-generators|user-generators|system-shutdown|shutdown-ramfs)");
@@ -101,17 +117,20 @@ cache_precheck() {
     def is_infra:
       test("^(hook-|.*-hook-|wrapper-|stdenv-|bash-|source-|vendor-|.*-setup-hook|patch-)");
 
-    # nix derivation JSON v4 스키마 전제. 드리프트 시 발현 방식이 서로 달라 구분해 둔다:
-    #   - top-level이 {"derivations":{...},"version":4}로 한 겹 감싸여 있다
+    # nix derivation JSON 스키마 전제. 드리프트 시 발현 방식이 서로 달라 구분해 둔다:
+    #   - top-level이 {"derivations":{...}}로 한 겹 감싸여 있다
     #     → 구조가 바뀌면 jq가 죽어 아래 경고로 잡힌다
     #   - 의존 drv는 .inputDrvs가 아니라 .inputs.drvs에 있다
     #     → 키가 바뀌면 `null | keys`로 죽어 아래 경고로 잡힌다
-    #   - drv 키와 output path에 "/nix/store/" 접두사가 없다 (basename만)
+    #   - drv 키에 "/nix/store/" 접두사가 없다 (basename만)
     #     → 이 전제만 어긋나면 jq는 죽지 않는다. sub()이 no-op이 되어 해시 접두사가 붙은
-    #       패키지명을 조용히 내고, 이름 대조가 빗나가 등급이 사라진다. 아래 version
-    #       게이트가 그 무증상 드리프트를 시끄러운 실패로 바꾼다.
-    if (.version // 0) != 4 then
-      error("unsupported derivation JSON version: \(.version // "missing") (expected 4)")
+    #       패키지명을 조용히 내고, 이름 대조가 빗나가 등급이 사라진다. 그래서 이 모드만
+    #       명시적으로 단언한다.
+    # version 값 자체는 차단 조건으로 쓰지 않는다. 이 프로그램이 읽는 표면은 위 세 가지뿐이라,
+    # 그 밖이 바뀐 하위호환 bump에서 등급이 통째로 사라지는 편이 더 해롭다 (등급이 가장
+    # 필요한 시점이 곧 input 업데이트 직후다). 대신 진단에 version을 실어 원인을 남긴다.
+    if (.derivations | keys | first // "") | startswith("/nix/store/") then
+      error("drv key is store-prefixed — schema drift (derivation JSON version: \(.version // "unknown"))")
     else . end |
     .derivations | to_entries[] |
     (.key | sub("^[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")) as $pkg |
@@ -158,7 +177,7 @@ cache_precheck() {
     elif ($has_rust or $has_cmake or $has_meson or $has_go) and $score > 0 then "\($pkg)\tMODERATE"
     else empty
     end
-  ' 2>"$jq_stderr_file" || true)
+  ' "$drv_json" 2>"$jq_stderr_file" || true)
 
   # 스코어링 실패를 조용히 넘기지 않는다. `|| true`는 경고 등급 표시가 없더라도
   # 본 작업(FOD hash 수정)은 계속되게 하려는 것이지, 스키마 회귀를 은폐하려는 것이 아니다.

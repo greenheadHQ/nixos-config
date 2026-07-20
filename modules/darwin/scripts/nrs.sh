@@ -107,15 +107,20 @@ cleanup_launchd_agents() {
     # `setupLaunchAgents || launchdStatus=$?` → `exit "$launchdStatus"`.
     # 두 지점이 사라졌다면 이 보존 로직의 전제도 다시 검토한다.
     #
-    # find는 최상위 일반 파일로 한정한다. 재귀로 넓히면 하위 디렉토리의 동명 파일까지
-    # rm 대상이 되어, 기존 top-level glob(`~/Library/LaunchAgents/com.green*.plist`)보다
-    # 삭제 범위가 조용히 커진다.
+    # trade-off: 보존한 plist는 home-manager의 bootoutAgent 경로로 되돌아가는데, macOS 26
+    # 이상에서 그 경로는 `launchctl bootout --wait`라 멈출 수 있다 — 이 함수가 애초에
+    # 예방하려던 증상이다. 그럼에도 보존을 택한 이유는 두 실패 모드의 성질이 다르기 때문이다.
+    # 삭제 시: activation이 중단되어 home 심링크가 구 세대를 가리키는 부분 활성화가 조용히
+    # 남는다. 보존 시: 멈춤이 즉시 관측되고 Ctrl+C + 문서화된 수동 복구로 빠져나올 수 있다
+    # (managing-macos/references/troubleshooting.md). 관측 가능한 실패를 택한 것이다.
     local removed=0 plist label f is_failed
     while IFS= read -r plist; do
         [[ -z "$plist" ]] && continue
         label=$(basename "$plist" .plist)
 
         # 배열 멤버십 판정: 공백 포함 label에도 안전하도록 명시적 비교를 쓴다.
+        # `${arr[@]+"${arr[@]}"}`는 set -u에서 빈 배열 확장이 unbound로 죽는 것을 막는
+        # 관용구다 (bash 4.4 미만 호환). 이 스크립트는 set -euo pipefail 아래에서 돈다.
         is_failed=false
         for f in ${failed_agents[@]+"${failed_agents[@]}"}; do
             [[ "$f" == "$label" ]] && { is_failed=true; break; }
@@ -127,6 +132,8 @@ cleanup_launchd_agents() {
         fi
         rm -f "$plist"
         ((++removed))
+        # -maxdepth 1 -type f: 기존 top-level glob(`~/Library/LaunchAgents/com.green*.plist`)과
+        # 같은 집합을 유지하기 위한 제약이다. 빼면 하위 디렉토리 항목까지 rm 대상이 된다.
     done < <(find ~/Library/LaunchAgents -maxdepth 1 -type f -name 'com.green*.plist' 2>/dev/null)
 
     if [[ "$removed" -gt 0 ]]; then
@@ -138,11 +145,12 @@ cleanup_launchd_agents() {
     fi
     if [[ ${#failed_agents[@]} -gt 0 ]]; then
         log_warn "  ⚠️  ${#failed_agents[@]} agent(s) failed to bootout — plist를 남겨 두었습니다."
-        # home-manager가 관리하는 label(현재 세대의 LaunchAgents 디렉토리에 있는 것)만 다음
-        # activation에서 재시도된다. legacy 네임스페이스처럼 home-manager 관리 밖의 label은
-        # 이 경로로 회복되지 않으므로, rebuild 후에도 남아 있으면 수동 정리가 필요하다:
-        #   launchctl bootout gui/$(id -u)/<label> && rm -f ~/Library/LaunchAgents/<label>.plist
-        log_warn "     rebuild 후에도 남아 있으면 수동 bootout이 필요할 수 있습니다."
+        log_warn "     home-manager가 activation에서 bootout을 재시도합니다."
+        log_warn "     rebuild가 이 지점에서 멈추거나, 아래 label이 계속 남으면 수동 정리:"
+        local fa
+        for fa in "${failed_agents[@]}"; do
+            log_warn "       launchctl bootout gui/${uid}/${fa} && rm -f ~/Library/LaunchAgents/${fa}.plist"
+        done
     fi
 
     # launchd 내부 상태 정리 대기
