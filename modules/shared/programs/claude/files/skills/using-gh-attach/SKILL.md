@@ -13,7 +13,7 @@ description: >-
 
 명시적으로 제공된 파일 증빙을 gh-attach CLI로 GitHub user-attachments에 업로드하고 이슈/PR에 삽입하는 절차다. 업로드된 asset에는 삭제 UI가 없으므로 업로드는 비가역 작업으로 취급한다.
 
-게이트·업로드 상세의 SSOT는 [references/preflight-gates.md](references/preflight-gates.md)(사전 게이트·마스킹 게이트)와 [references/upload-and-reporting.md](references/upload-and-reporting.md)(실행기·repo 고정, 업로드·본문 삽입, `ATTACH_STATUS` 상태 보고)이며, 본문은 branch 라우팅과 안전 불변식, 단계 요약만 다룬다.
+게이트·업로드 상세의 SSOT는 [references/preflight-gates.md](references/preflight-gates.md)(사전 게이트·마스킹 게이트)와 [references/upload-and-reporting.md](references/upload-and-reporting.md)(실행기·repo 고정, 업로드·본문 삽입, `ATTACH_STATUS` 상태 보고), [references/cookie-discovery.md](references/cookie-discovery.md)(쿠키 탐색 실패 시 브라우저 프로필 특정·재시도)이며, 본문은 branch 라우팅과 안전 불변식, 단계 요약만 다룬다.
 
 ## Branch 라우팅
 
@@ -33,7 +33,7 @@ description: >-
 - 각 후보는 독립 상태를 갖는다. 한 후보의 탈락이나 실패 때문에 다른 후보 또는 본 작업을 차단하지 않는다.
 - 업로드는 게시 의사가 확정된 뒤에만 실행한다. 모든 업로드 대상의 사전 게이트와 마스킹 게이트를 먼저 완료하며, 최종 재확인까지 모두 통과하기 전에는 어떤 파일도 업로드하지 않는다.
 - 마스킹 게이트는 파일의 실제 내용을 직접 열어 검사한다. 파일명이나 사용자의 설명만으로 통과시키지 않는다.
-- 직접 검사 수단이 없는 파일(동영상 등)은 업로드 직전 사용자의 별도 명시 확인 1회 없이 업로드하지 않는다 — 첨부 요청 자체는 확인으로 간주하지 않는다. 검사 수단이 있는 파일은 검사 없이 사용자 확인으로 넘기지 않는다.
+- 직접 검사 수단이 없는 파일(동영상 등)은 업로드 직전 사용자의 별도 명시 확인 1회 없이 업로드하지 않는다 — 첨부 요청 자체는 확인으로 간주하지 않는다. 예외는 대상 repo가 비-PUBLIC(`PRIVATE`·`INTERNAL`)으로 확인된 경우 하나뿐이며, visibility 판정과 완화 경계는 [references/preflight-gates.md](references/preflight-gates.md)의 사용자 확인 게이트를 따른다 (판정 실패 시 예외 없음). 검사 수단이 있는 파일은 검사 없이 사용자 확인으로 넘기지 않는다.
 - `href` 확보 후의 실패는 확보한 `href`를 재사용한다. 자동 재업로드하지 않는다.
 - 후보가 없으면 이 절차를 실행하지 않고 `ATTACH_STATUS`도 출력하지 않는다.
 
