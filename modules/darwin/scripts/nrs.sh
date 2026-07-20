@@ -107,6 +107,12 @@ cleanup_launchd_agents() {
     # `setupLaunchAgents || launchdStatus=$?` → `exit "$launchdStatus"`.
     # 두 지점이 사라졌다면 이 보존 로직의 전제도 다시 검토한다.
     #
+    # 주의: 보존이 곧 자동 복구를 뜻하지는 않는다. processAgent에는 bootout 게이트보다 앞서
+    # "Skip if unchanged" 게이트(`cmp -s "$srcPath" "$dstPath"` + `agentIsLoaded`)가 있어,
+    # plist 내용이 그대로이고 agent가 여전히 loaded면 bootout에 도달하지 않고 return 0 한다.
+    # bootout 실패는 대개 loaded 상태이므로, plist가 바뀌지 않은 경우 activation은 조용히
+    # no-op이 된다. 그래서 아래 요약에서 수동 복구 명령을 함께 출력한다.
+    #
     # trade-off: 보존한 plist는 home-manager의 bootoutAgent 경로로 되돌아가는데, macOS 26
     # 이상에서 그 경로는 `launchctl bootout --wait`라 멈출 수 있다 — 이 함수가 애초에
     # 예방하려던 증상이다. 그럼에도 보존을 택한 이유는 두 실패 모드의 성질이 다르기 때문이다.
@@ -127,7 +133,7 @@ cleanup_launchd_agents() {
         done
 
         if [[ "$is_failed" == true ]]; then
-            log_warn "  ⚠️  Kept plist for $label (bootout 실패 — home-manager가 재시도하도록 위임)"
+            log_warn "  ⚠️  Kept plist for $label (bootout 실패 — 삭제 시 activation 중단을 피함)"
             continue
         fi
         rm -f "$plist"
@@ -145,8 +151,8 @@ cleanup_launchd_agents() {
     fi
     if [[ ${#failed_agents[@]} -gt 0 ]]; then
         log_warn "  ⚠️  ${#failed_agents[@]} agent(s) failed to bootout — plist를 남겨 두었습니다."
-        log_warn "     home-manager가 activation에서 bootout을 재시도합니다."
-        log_warn "     rebuild가 이 지점에서 멈추거나, 아래 label이 계속 남으면 수동 정리:"
+        log_warn "     plist 내용이 바뀐 경우에만 home-manager가 bootout을 재시도합니다."
+        log_warn "     내용이 그대로면 activation은 no-op이므로 아래로 직접 정리하세요:"
         local fa
         for fa in "${failed_agents[@]}"; do
             log_warn "       launchctl bootout gui/${uid}/${fa} && rm -f ~/Library/LaunchAgents/${fa}.plist"

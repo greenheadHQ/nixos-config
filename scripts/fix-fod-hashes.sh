@@ -211,7 +211,10 @@ cache_precheck() {
     return 0
   fi
 
-  read -rp "계속하시겠습니까? [y/N] " answer
+  # read 실패(EOF 등)는 취소로 처리한다. `set -e` 아래에서 그냥 두면 셸이 즉시 죽어
+  # RETURN trap도 아래 정리도 타지 못하고 임시 파일이 남는다.
+  # (프롬프트 대기 중 SIGINT는 여전히 정리 없이 끝난다 — mktemp 파일이라 TMPDIR 정리에 맡긴다)
+  read -rp "계속하시겠습니까? [y/N] " answer || answer="n"
   case "$answer" in
     [yY]|[yY][eE][sS]) return 0 ;;
     *)
