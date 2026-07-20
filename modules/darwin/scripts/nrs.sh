@@ -73,6 +73,7 @@ cleanup_launchd_agents() {
     log_info "🧹 Cleaning up launchd agents..."
 
     local uid cleaned=0 failed=0 exit_code
+    local -a failed_agents=()
     uid=$(id -u)
 
     # 동적으로 com.green.*/com.greenhead.* 에이전트 찾아서 정리 (username 마이그레이션 전환기: dual-namespace)
@@ -88,17 +89,33 @@ cleanup_launchd_agents() {
             if [[ $exit_code -ne 3 ]]; then  # 3 = No such process (정상)
                 log_warn "  ⚠️  Failed to bootout: $agent (exit: $exit_code)"
                 ((++failed))
+                failed_agents+=("$agent")
             fi
         fi
     done < <(launchctl list 2>/dev/null | awk '/com\.(green|greenhead)\./ {print $3}')
 
-    # plist 파일 삭제
-    local plist_count
-    plist_count=$(find ~/Library/LaunchAgents -name 'com.green*.plist' 2>/dev/null | wc -l | tr -d ' ')
+    # plist 파일 삭제 — 단, bootout에 실패한 agent의 plist는 남긴다.
+    #
+    # plist를 지우면 home-manager의 processAgent가 `[[ -f "$dstPath" ]]` 검사에서 빠져
+    # bootout을 건너뛰고, 여전히 booted 상태인 label에 bootstrap을 시도해 실패한다.
+    # 구 home-manager는 이 실패를 경고 후 계속 처리했으나, 현재 버전은 setupLaunchAgents
+    # 실패를 activation 전체 중단(exit)으로 처리한다. 중단 지점이 linkGeneration보다
+    # 앞이라 새 plist는 설치됐는데 home 파일 심링크는 구 세대를 가리키는 부분 활성화가 된다.
+    # 따라서 bootout이 실패한 label은 plist를 남겨 home-manager가 정상 bootout 경로를 타게 한다.
+    local removed=0 plist label
+    while IFS= read -r plist; do
+        [[ -z "$plist" ]] && continue
+        label=$(basename "$plist" .plist)
+        if [[ " ${failed_agents[*]:-} " == *" ${label} "* ]]; then
+            log_warn "  ⚠️  Kept plist for $label (bootout 실패 — home-manager가 처리하도록 위임)"
+            continue
+        fi
+        rm -f "$plist"
+        ((++removed))
+    done < <(find ~/Library/LaunchAgents -name 'com.green*.plist' 2>/dev/null)
 
-    if [[ "$plist_count" -gt 0 ]]; then
-        rm -f ~/Library/LaunchAgents/com.green*.plist
-        log_info "  ✓ Removed $plist_count plist file(s)"
+    if [[ "$removed" -gt 0 ]]; then
+        log_info "  ✓ Removed $removed plist file(s)"
     fi
 
     if [[ $cleaned -gt 0 ]]; then
