@@ -103,7 +103,7 @@ exit code를 다음과 같이 처리한다 — `0`(정적 PNG): 직접 검사 �
 대상 repo의 visibility가 `PRIVATE` 또는 `INTERNAL`로 확인되면 위 사용자 확인을 생략하고 해당 후보를 다음 단계로 진행한다. 근거: 업로드 asset의 접근 경계가 `-R` 지정 repo에 묶이므로([../SKILL.md](../SKILL.md)의 cross-repo 거부와 같은 접근 모델) 노출 면이 repo 접근 권한자로 한정되고, 이때 확인 게이트의 비용이 방어 가치를 넘는다.
 
 - 판정은 업로드와 같은 실행기로 수행한다: `"$GH_EXEC" repo view -R "$OWNER_REPO" --json visibility -q .visibility`
-- 값이 `PUBLIC`이거나 판정이 실패하면 완화 없이 위 확인 게이트를 그대로 적용한다 (fail-closed).
+- 완화는 판정 결과가 정확히 `PRIVATE` 또는 `INTERNAL`일 때만 적용한다. 그 외 값(`PUBLIC`, 빈 출력, 알 수 없는 값)과 판정 실패는 전부 위 확인 게이트를 그대로 적용한다 — allowlist 밖은 모두 게이트 유지가 기본값이다 (fail-closed).
 - 완화 범위는 이 확인 게이트 하나뿐이다. 마스킹 게이트의 직접 검사와 `SKIPPED(SENSITIVE_CONTENT)` 처리, 게시 의사 확정, 업로드 비가역 취급은 visibility와 무관하게 유지된다.
 - 확인을 생략하더라도 현재 런타임에서 가용한 검사 수단(2절 표와 그 통과 요건의 "표에 없는 수단" 조항 기준)으로 부분 열람이 가능하면 best-effort로 열람하고, 민감정보가 보이면 `SKIPPED(SENSITIVE_CONTENT)`로 기록한다. 부분 열람은 통과 요건이 아니라 추가 방어선이다 — 수단이 없거나 실패해도 업로드는 진행한다.
 - 이 완화로 확인 없이 업로드한 후보는 최종 보고에 "내용 미검사 업로드 (비-PUBLIC 완화)"를 명시한다.

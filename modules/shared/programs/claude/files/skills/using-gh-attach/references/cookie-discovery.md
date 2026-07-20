@@ -63,15 +63,19 @@ for key, v in sorted(info.items()):
 
 ```bash
 DB="$HOME/Library/Application Support/Google/Chrome/<프로필 디렉터리명>/Cookies"
-sqlite3 "file:$DB?immutable=1" \
+sqlite3 "file:$DB?mode=ro" \
   "select count(*) from cookies where host_key like '%github.com' and name='dotcom_user';"
 ```
 
-`immutable=1`은 실행 중인 Chrome이 잠근 DB를 읽기 전용으로 열기 위한 것이며 쓰기 시도가 없음을 함께 보장한다. 결과가 `1` 이상인 프로필이 재시도 후보다.
+`mode=ro`는 쓰기 시도가 없음을 보장하면서 잠금·변경 감지는 그대로 유지한다. Chrome이 실행 중이어도 조회된다. `immutable=1`을 쓰지 않는다 — 그 플래그는 "파일이 변경되지 않는다"를 엔진에 약속하는 것이라 Chrome이 갱신 중인 DB에서는 오래된 값이나 `SQLITE_CORRUPT`를 낼 수 있다([SQLite URI 문서](https://sqlite.org/uri.html)). 결과가 `1` 이상인 프로필이 재시도 후보다.
 
 ## 5. attach.yml 지속화
 
-성공한 프로필은 설정 파일에 기록해 이후 세션의 재탐색을 없앤다. 경로와 스키마는 v0.3.0 소스 `internal/config/config.go`에서 확인했다 (재검증은 1절과 같은 방식으로 해당 파일 조회).
+성공한 프로필은 설정 파일에 기록해 이후 세션의 재탐색을 없앤다. 경로와 스키마는 v0.3.0 소스 `internal/config/config.go`에서 확인했다. 재검증은 1절과 같은 방식으로 조회한다:
+
+```bash
+gh api "repos/greenheadHQ/gh-attach/contents/internal/config/config.go?ref=<rev>" -q '.content' | base64 -d
+```
 
 - 경로: `$XDG_CONFIG_HOME/gh/attach.yml`, 미설정 시 `~/.config/gh/attach.yml`
 - 스키마: `browsers` 배열, 항목 필드는 `browser`·`profile`·`cookie_store_path` (미사용 필드 생략 가능)
