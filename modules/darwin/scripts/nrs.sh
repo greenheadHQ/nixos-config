@@ -72,10 +72,22 @@ install_rebuild_common_compat_shims
 cleanup_launchd_agents() {
     log_info "🧹 Cleaning up launchd agents..."
 
-    local uid cleaned=0 exit_code
+    local uid cleaned=0 exit_code agent_list
     # failed_agents가 실패 사실의 단일 소스다 (별도 카운터를 두면 갱신 누락으로 어긋난다).
     local -a failed_agents=()
     uid=$(id -u)
+
+    # `launchctl list` 출력을 먼저 변수로 받는다. 아래 while에 process substitution으로 바로
+    # 흘려보내면 이 명령의 실패가 set -e에도 잡히지 않고 루프가 0회 도는 것으로 끝난다.
+    # 그러면 failed_agents가 빈 채로 아래 삭제 루프가 돌아, 실제로는 booted인 agent의 plist까지
+    # 전량 삭제된다 — 이 함수가 막으려는 부분 활성화를 정확히 유발하는 경로다.
+    # 목록을 못 얻으면 어느 것이 살아 있는지 알 수 없으므로 정리를 건너뛴다. cleanup 효과는
+    # 잃지만(setupLaunchAgents 멈춤 가능성은 관측 가능하고 복구 절차가 있다), 조용한 손상은 막는다.
+    if ! agent_list=$(launchctl list 2>/dev/null); then
+        log_warn "  ⚠️  launchctl list 실패 — 어떤 agent가 로드됐는지 알 수 없어 정리를 건너뜁니다."
+        log_warn "     rebuild가 setupLaunchAgents에서 멈추면 Ctrl+C 후 수동 정리하세요."
+        return 0
+    fi
 
     # 동적으로 com.green.*/com.greenhead.* 에이전트 찾아서 정리 (username 마이그레이션 전환기: dual-namespace)
     # 주의: ((++var)) 사용 필수. ((var++))는 var=0일 때 exit code 1 반환 → set -e로 스크립트 종료됨
@@ -92,7 +104,7 @@ cleanup_launchd_agents() {
                 failed_agents+=("$agent")
             fi
         fi
-    done < <(launchctl list 2>/dev/null | awk '/com\.(green|greenhead)\./ {print $3}')
+    done < <(printf '%s\n' "$agent_list" | awk '/com\.(green|greenhead)\./ {print $3}')
 
     # plist 파일 삭제 — 단, bootout에 실패한 agent의 plist는 남긴다.
     #
