@@ -13,7 +13,7 @@ description: >-
 
 명시적으로 제공된 파일 증빙을 gh-attach CLI로 GitHub user-attachments에 업로드하고 이슈/PR에 삽입하는 절차다. 업로드된 asset에는 삭제 UI가 없으므로 업로드는 비가역 작업으로 취급한다.
 
-게이트·업로드 상세의 SSOT는 [references/preflight-gates.md](references/preflight-gates.md)(사전 게이트·마스킹 게이트)와 [references/upload-and-reporting.md](references/upload-and-reporting.md)(실행기·repo 고정, 업로드·본문 삽입, `ATTACH_STATUS` 상태 보고)이며, 본문은 branch 라우팅과 안전 불변식, 단계 요약만 다룬다.
+게이트·업로드 상세의 SSOT는 [references/preflight-gates.md](references/preflight-gates.md)(사전 게이트·마스킹 게이트)와 [references/upload-and-reporting.md](references/upload-and-reporting.md)(실행기·repo 고정, 업로드·본문 삽입, `ATTACH_STATUS` 상태 보고), [references/cookie-discovery.md](references/cookie-discovery.md)(쿠키 탐색 실패 시 브라우저 프로필 특정·재시도)이며, 본문은 branch 라우팅과 안전 불변식, 단계 요약만 다룬다.
 
 ## Branch 라우팅
 
