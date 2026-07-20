@@ -107,18 +107,17 @@ cleanup_launchd_agents() {
     # `setupLaunchAgents || launchdStatus=$?` → `exit "$launchdStatus"`.
     # 두 지점이 사라졌다면 이 보존 로직의 전제도 다시 검토한다.
     #
-    # 주의: 보존이 곧 자동 복구를 뜻하지는 않는다. processAgent에는 bootout 게이트보다 앞서
+    # 보존이 곧 자동 복구는 아니다. processAgent에는 bootout 게이트보다 앞서
     # "Skip if unchanged" 게이트(`cmp -s "$srcPath" "$dstPath"` + `agentIsLoaded`)가 있어,
     # plist 내용이 그대로이고 agent가 여전히 loaded면 bootout에 도달하지 않고 return 0 한다.
-    # bootout 실패는 대개 loaded 상태이므로, plist가 바뀌지 않은 경우 activation은 조용히
-    # no-op이 된다. 그래서 아래 요약에서 수동 복구 명령을 함께 출력한다.
+    # bootout 실패는 대개 loaded 상태이므로, plist가 바뀌지 않으면 activation은 no-op이다.
+    # 즉 보존의 효과는 "복구"가 아니라 "이번 rebuild를 깨뜨리지 않음"이다.
     #
-    # trade-off: 보존한 plist는 home-manager의 bootoutAgent 경로로 되돌아가는데, macOS 26
-    # 이상에서 그 경로는 `launchctl bootout --wait`라 멈출 수 있다 — 이 함수가 애초에
-    # 예방하려던 증상이다. 그럼에도 보존을 택한 이유는 두 실패 모드의 성질이 다르기 때문이다.
-    # 삭제 시: activation이 중단되어 home 심링크가 구 세대를 가리키는 부분 활성화가 조용히
-    # 남는다. 보존 시: 멈춤이 즉시 관측되고 Ctrl+C + 문서화된 수동 복구로 빠져나올 수 있다
-    # (managing-macos/references/troubleshooting.md). 관측 가능한 실패를 택한 것이다.
+    # trade-off: 두 실패 모드의 성질이 다르다. 삭제 시에는 activation이 중단되어 home 심링크가
+    # 구 세대를 가리키는 부분 활성화가 조용히 남는다 — 이후 모든 작업이 어긋난다. 보존 시에는
+    # 해당 agent만 구 상태로 남고 나머지 activation은 정상 완료된다. 피해 범위가 좁은 쪽을 택했다.
+    # (보존한 plist가 bootoutAgent 경로로 가는 경우 macOS 26 이상에서는 `launchctl bootout --wait`라
+    #  멈출 수 있다. 그때는 Ctrl+C 후 managing-macos/references/troubleshooting.md의 절차를 따른다.)
     local removed=0 plist label f is_failed
     while IFS= read -r plist; do
         [[ -z "$plist" ]] && continue
@@ -138,8 +137,11 @@ cleanup_launchd_agents() {
         fi
         rm -f "$plist"
         ((++removed))
-        # -maxdepth 1 -type f: 기존 top-level glob(`~/Library/LaunchAgents/com.green*.plist`)과
-        # 같은 집합을 유지하기 위한 제약이다. 빼면 하위 디렉토리 항목까지 rm 대상이 된다.
+        # -maxdepth 1: 기존 top-level glob(`~/Library/LaunchAgents/com.green*.plist`)의 범위를
+        # 유지한다. 빼면 하위 디렉토리 항목까지 rm 대상이 된다.
+        # -type f: glob에는 없던 추가 제약이다. home-manager는 plist를 `install -Dm444`로
+        # 일반 파일로 설치하므로 정상 상태에서는 결과가 같고, 심링크나 디렉토리가 이 이름으로
+        # 있다면 우리가 만든 것이 아니므로 건드리지 않는다.
     done < <(find ~/Library/LaunchAgents -maxdepth 1 -type f -name 'com.green*.plist' 2>/dev/null)
 
     if [[ "$removed" -gt 0 ]]; then
@@ -151,11 +153,11 @@ cleanup_launchd_agents() {
     fi
     if [[ ${#failed_agents[@]} -gt 0 ]]; then
         log_warn "  ⚠️  ${#failed_agents[@]} agent(s) failed to bootout — plist를 남겨 두었습니다."
-        log_warn "     plist 내용이 바뀐 경우에만 home-manager가 bootout을 재시도합니다."
-        log_warn "     내용이 그대로면 activation은 no-op이므로 아래로 직접 정리하세요:"
+        log_warn "     rebuild 후에도 이 agent가 구 상태로 남아 있으면 아래로 언로드하세요."
+        log_warn "     (plist는 남겨둡니다 — 다음 rebuild에서 home-manager가 재적재합니다)"
         local fa
         for fa in "${failed_agents[@]}"; do
-            log_warn "       launchctl bootout gui/${uid}/${fa} && rm -f ~/Library/LaunchAgents/${fa}.plist"
+            log_warn "       launchctl bootout gui/${uid}/${fa}"
         done
     fi
 

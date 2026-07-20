@@ -108,7 +108,6 @@ cache_precheck() {
     if [[ -s "$jq_stderr_file" ]]; then
       printf '  \033[0;33m    (nix: %s)\033[0m\n' "$(head -1 "$jq_stderr_file")" >&2
     fi
-    : >"$jq_stderr_file"
   fi
 
   heavy_pkgs=$(jq -r '

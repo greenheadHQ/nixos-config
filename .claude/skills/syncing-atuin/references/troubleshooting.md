@@ -506,9 +506,9 @@ atuin --version
 
 ```bash
 # nixpkgs를 해당 migration을 포함하는 버전 이상으로 업데이트
-nix flake update nixpkgs  # 또는 nix flake update (전체)
-nrs                        # rebuild 적용
-atuin --version            # 18.13.x 이상 확인
+# nfu를 쓴다 — raw `nix flake update`는 FOD hash fix 단계가 없어 빌드가 깨질 수 있다
+nfu             # fzf에서 nixpkgs 선택 (update → FOD hash fix → nrs)
+atuin --version # 18.13.x 이상 확인
 ```
 
 예방:
