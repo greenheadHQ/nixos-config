@@ -316,7 +316,10 @@ nrs            # 일반 모드 (다운로드 필요)
 
 - `nrs --offline`은 캐시에 모든 패키지가 있어야 동작
 - 새 패키지 추가 시에는 `nrs` 사용 필요
-- 집/회사 간 `flake.lock`을 git으로 동기화하면 어디서든 `nrs --offline` 사용 가능
+- `flake.lock`이 갱신된 직후에는 보통 `--offline`을 쓸 수 없다. 새 rev의 store path가 로컬에
+  없으면 `--offline`은 substituter도 건너뛰므로 실패한다. 필요한 경로가 이미 로컬 store에
+  있다면(다른 호스트에서 받아뒀거나 GC 전이라면) 동작할 수도 있으나 그 조건을 미리 알기
+  어려우므로, lock 갱신 후에는 온라인 `nrs`를 쓰고 `--offline`은 lock 무변경 재적용에 쓴다.
 
 ## 패키지 변경사항 미리보기 (nvd)
 
@@ -347,15 +350,24 @@ NixOS는 alias 기반이라 `nrh`/`nrh-all` 두 명령으로 구분합니다.
 권장 워크플로우:
 
 ```bash
-# 1. 집에서 flake update 후 push
-nix flake update
-nrs
-git add flake.lock && git commit -m "update flake.lock" && git push
+# 1. 첫 호스트에서 flake update (nfu가 update → FOD hash fix → nrs를 원자적으로 수행)
+nfu
+git add -u && git commit -m "chore: update flake inputs" && git push
 
-# 2. 회사에서 pull 후 빠른 rebuild
+# 2. 두 번째 호스트에서 pull 후 적용
 git pull
-nrs --offline  # 네트워크 요청 없이 빠르게 빌드
+./scripts/fix-fod-hashes.sh  # 이 플랫폼 전용 FOD hash 검증 (호스트마다 별도 필요)
+nrs                          # --offline 금지: lock이 바뀌어 로컬에 없는 store path를 받아야 한다
+
+# 3. hash가 수정됐다면 저장소로 되돌린다
+git add -u && git commit -m "fix: <platform> FOD hash" && git push
 ```
+
+3단계를 빠뜨리면 그 호스트의 working tree가 dirty로 남아 다음 `nfu`가 중단되고
+(`nfu.sh`의 clean tree 게이트), 고친 hash가 다른 호스트로 전파되지 않습니다.
+
+2번째 호스트에서 `nfu`를 쓰지 않는 이유: `nfu`는 `nix flake update`를 선행하므로
+1번에서 검증·커밋한 lock이 다른 rev로 재갱신되어 멀티 호스트 동기화가 깨진다.
 
 ## 병렬 다운로드 최적화
 

@@ -56,7 +56,10 @@ in
   };
 
   # NixOS: mise prebuilt 바이너리 사용 (소스 빌드 방지)
-  # NixOS에서 all_compile/node.compile 기본값이 true → Python 3.13과 Node.js configure.py 비호환 에러 발생
+  # NixOS에서 all_compile/node.compile 기본값이 true → 최신 Python과 Node.js configure.py 비호환 에러 발생
+  # (Python 3.13에서 최초 관측. 이 호스트가 실제로 쓰는 python3 버전 확인 —
+  #  registry가 아니라 저장소 pin을 평가해야 한다:
+  #  nix eval --raw .#nixosConfigurations.greenhead-minipc.pkgs.python3.version)
   home.sessionVariables = {
     MISE_ALL_COMPILE = "0";
     MISE_NODE_COMPILE = "0"; # Node 전용 안전핀

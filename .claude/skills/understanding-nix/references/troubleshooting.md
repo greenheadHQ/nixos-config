@@ -137,7 +137,7 @@ bash -l
 
 ```bash
 # 1. CPU 사용률 확인 (낮으면 I/O 병목)
-time sudo darwin-rebuild switch --flake .
+time nrs
 # 출력 예: 5.73s user 5.97s system 6% cpu 2:56.01 total
 #          ↑ CPU 시간은 12초, 총 시간은 3분 → I/O 대기가 대부분
 
@@ -155,9 +155,6 @@ ls -d /nix/store/*-source 2>/dev/null | wc -l
 
 ```bash
 # flake.lock이 동기화되어 있고, 새 패키지가 없는 경우
-sudo darwin-rebuild switch --flake . --offline
-
-# 또는 alias 사용
 nrs --offline
 ```
 
@@ -186,15 +183,22 @@ echo 'access-tokens = github.com=ghp_YOUR_TOKEN' >> ~/.config/nix/nix.conf
 권장 워크플로우:
 
 ```bash
-# 1. 한 호스트에서 flake update 후 push
-nix flake update
-nrs  # 또는 sudo darwin-rebuild switch --flake .
-git add flake.lock && git commit -m "update" && git push
+# 1. 한 호스트에서 flake update (nfu = update → FOD hash fix → nrs)
+nfu
+git add -u && git commit -m "chore: update flake inputs" && git push
 
-# 2. 다른 호스트에서 pull 후 offline rebuild
+# 2. 다른 호스트에서 pull 후 적용
 git pull
-nrs --offline  # ~10초 완료!
+./scripts/fix-fod-hashes.sh  # 이 플랫폼 전용 FOD hash 검증
+nrs                          # lock이 바뀌었으므로 --offline 불가
+
+# 3. hash가 수정됐다면 저장소로 되돌린다
+git add -u && git commit -m "fix: <platform> FOD hash" && git push
 ```
+
+`--offline`은 lock이 바뀌지 않은 재적용에 사용합니다. lock 갱신 직후에는 새 store path가
+로컬에 없으면 실패하므로 온라인 `nrs`를 씁니다 (필요한 경로가 이미 store에 있으면 동작할
+수도 있으나 미리 알기 어렵습니다).
 
 > 참고: `nrs`, `nrp` 명령은 `~/.local/bin/`에 설치되며, `--offline` 플래그로 오프라인 모드를 사용합니다.
 
@@ -234,15 +238,19 @@ nix run nix-darwin -- switch --flake .
 Nix flakes는 git으로 추적되는 파일만 인식합니다:
 ```bash
 git add <changed-files>
-darwin-rebuild switch --flake .
+nrs
 ```
 
 ---
 
 ## 상세 에러 확인
 
+`nrs`는 `--offline` / `--force` / `--cores N`만 받으므로 `--show-trace`를 전달할 수 없습니다.
+스택 추적이 필요하면 switch 없이 빌드만 실행합니다 (호스트명은 `scutil --get LocalHostName`):
+
 ```bash
-darwin-rebuild switch --flake . --show-trace
+nix build .#darwinConfigurations.<hostname>.system --show-trace   # macOS
+nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --show-trace  # NixOS
 ```
 
 ---
@@ -332,7 +340,7 @@ nix-ld란?
 적용 후:
 
 ```bash
-$ sudo nixos-rebuild switch --flake .#hostname
+$ nrs
 
 # Claude Code 재설치
 $ curl -fsSL https://claude.ai/install.sh | bash
@@ -373,7 +381,7 @@ i18n.defaultLocale = "ko_KR.UTF-8";
 
 3. flake 기반 빌드:
 ```bash
-sudo nixos-rebuild switch --flake .#hostname
+nrs
 ```
 
 교훈:

@@ -8,7 +8,11 @@
     # v2 (이번 변경): cache hit 최우선 정책으로 전환
     #   대안 1: nixos-unstable-small — 빠르지만 darwin 캐시 보장 안됨 (Mac 소스 빌드 30분+)
     #   대안 2: nixpkgs-unstable — darwin 캐시 우수하나 NixOS 모듈 테스트 없음
-    #   대안 3: nixos-24.11 (stable) — 안정적이나 최신 패키지 접근 불가
+    #   대안 3: stable 채널 (CIR 작성 시점 기록: nixos-24.11) — 안정적이나 최신 패키지 접근 불가
+    #           이 값은 당시 기록이며 현재 stable은 다르다. 재검토 시 최신 stable을 먼저 확인한다:
+    #             curl -sI https://channels.nixos.org/nixos-unstable  # 또는 https://nixos.org/manual/nixos/stable/
+    #           현재 pin된 unstable 버전 확인 (registry가 아니라 이 저장소의 input을 평가):
+    #             nix eval --raw --impure --expr '(builtins.getFlake (toString ./.)).inputs.nixpkgs.lib.version'
     #   선택: nixos-unstable — 전체 NixOS 테스트 + Hydra 빌드 시간 충분 → 캐시 커버리지 최대
     #   trade-off: 업데이트가 수일 지연되나, 최신 버전보다 캐시 가용성을 우선하므로 수용.
     #   참고: darwin nrs.sh에는 preflight_source_build_check가 없어,

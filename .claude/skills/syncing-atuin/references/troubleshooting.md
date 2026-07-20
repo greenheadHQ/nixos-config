@@ -127,7 +127,7 @@ echo "テスト 한글"  # 정상 출력되는지 확인
 ## 한글 포함 히스토리 일괄 삭제
 
 > 발생 시점: 2026-01-27
-> 환경: atuin 18.16.1 기준 `history delete` 부재 재확인, zsh-autosuggestions 0.7.1 (nixpkgs)
+> 환경: atuin 18.17.0 기준 `history delete` 부재 재확인, zsh-autosuggestions 0.7.1 (nixpkgs)
 > 상태: 해결 (`atuin-clean-kr` 스크립트)
 
 증상: zsh-autosuggestion이 한글이 포함된 명령어(예: git commit 한글 메시지)를 제안할 때 터미널 TUI 렌더링이 깨짐.
@@ -158,14 +158,14 @@ atuin-clean-kr
 4. `--dry-run`: 총 개수 + 처음 20개 미리보기
 5. 기본 모드: `[y/N]` 확인 → 타임스탬프 백업 → 삭제 → sync 제한 경고
 
-### `atuin history delete` 서브커맨드 부재 (v18.16.1 기준 여전히 없음)
+### `atuin history delete` 서브커맨드 부재 (v18.17.0 기준 여전히 없음)
 
-atuin 18.16.1에는 `atuin history delete` 서브커맨드가 존재하지 않음 (`atuin --version && atuin history --help`로 재검증).
+atuin 18.17.0에는 `atuin history delete` 서브커맨드가 존재하지 않음 (`atuin --version && atuin history --help`로 재검증).
 
 ```bash
 $ atuin history --help
-# 사용 가능한 커맨드: start, end, list, last, init-store, prune, dedup
-# "delete"는 없음
+# 삭제 계열은 prune / dedup 뿐이고 "delete"는 없음
+# (재확인 시 목록 전체를 대조할 필요 없이 delete 부재만 보면 된다)
 ```
 
 `atuin search --delete "<쿼리>"` 명령이 존재하지만, 정규식을 지원하지 않아 "한글이 포함된 모든 항목"을 한 번에 매칭할 수 없음. 따라서 SQLite DB 직접 수정이 필요.
@@ -506,9 +506,9 @@ atuin --version
 
 ```bash
 # nixpkgs를 해당 migration을 포함하는 버전 이상으로 업데이트
-nix flake update nixpkgs  # 또는 nix flake update (전체)
-nrs                        # rebuild 적용
-atuin --version            # 18.13.x 이상 확인
+# nfu를 쓴다 — raw `nix flake update`는 FOD hash fix 단계가 없어 빌드가 깨질 수 있다
+nfu             # fzf에서 nixpkgs 선택 (update → FOD hash fix → nrs)
+atuin --version # 18.13.x 이상 확인
 ```
 
 예방:

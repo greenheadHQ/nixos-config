@@ -291,20 +291,30 @@ sleep 1                                        # 1초 대기
 ```bash
 # 1. 멈춘 darwin-rebuild를 Ctrl+C로 중단
 
-# 2. 에이전트 수동 정리 (sudo 없이 실행!)
-launchctl bootout gui/$(id -u)/com.greenhead.folder-action.compress-rar 2>/dev/null
-launchctl bootout gui/$(id -u)/com.greenhead.folder-action.compress-video 2>/dev/null
-launchctl bootout gui/$(id -u)/com.greenhead.folder-action.convert-video-to-gif 2>/dev/null
-launchctl bootout gui/$(id -u)/com.greenhead.folder-action.rename-asset 2>/dev/null
-launchctl bootout gui/$(id -u)/com.greenhead.folder-action.upload-immich 2>/dev/null
+# 2. 에이전트 정리 + plist 삭제 (sudo 없이 실행!)
+#    bootout에 성공한 label의 plist만 지웁니다. 실패(= 여전히 booted)한 label의 plist를
+#    지우면 home-manager가 bootout 단계를 건너뛰고 이미 booted된 label에 bootstrap을
+#    시도해 실패하며, 그 실패가 activation 전체를 중단시켜 부분 활성화 상태가 됩니다.
+#    (같은 이유로 nrs의 자동 cleanup도 실패한 label의 plist는 보존합니다)
+for plist in ~/Library/LaunchAgents/com.greenhead.folder-action.*.plist; do
+  [ -e "$plist" ] || continue
+  label=$(basename "$plist" .plist)
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null
+  rc=$?
+  if [ $rc -eq 0 ] || [ $rc -eq 3 ]; then   # 0=성공, 3=No such process(이미 없음)
+    rm -f "$plist"
+  else
+    echo "보존: $label (bootout 실패 rc=$rc — 수동 확인 필요)"
+  fi
+done
 
-# 3. plist 파일 삭제
-rm -f ~/Library/LaunchAgents/com.greenhead.folder-action.*.plist
-
-# 4. 2-3초 대기 후 재시도
+# 3. 2-3초 대기 후 재시도
 sleep 3
-sudo darwin-rebuild switch --flake ~/Workspace/nixos-config
+nrs
 ```
+
+2단계가 "보존" 메시지를 출력했다면 그 label은 여전히 booted 상태일 수 있습니다.
+`launchctl list | grep <label>`로 실제 상태를 확인하고, 원인을 해소한 뒤 재시도하세요.
 
 예방: `nrs` alias 사용 시 자동으로 에이전트를 정리합니다. `nrs` 정리는 `com.green.*`와 `com.greenhead.*`를 모두 동적으로 처리하므로, 위 수동 절차는 `nrs` 자체가 실패할 때만 사용합니다.
 

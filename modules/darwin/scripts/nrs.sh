@@ -72,8 +72,22 @@ install_rebuild_common_compat_shims
 cleanup_launchd_agents() {
     log_info "🧹 Cleaning up launchd agents..."
 
-    local uid cleaned=0 failed=0 exit_code
+    local uid cleaned=0 exit_code agent_list
+    # failed_agents가 실패 사실의 단일 소스다 (별도 카운터를 두면 갱신 누락으로 어긋난다).
+    local -a failed_agents=()
     uid=$(id -u)
+
+    # `launchctl list` 출력을 먼저 변수로 받는다. 아래 while에 process substitution으로 바로
+    # 흘려보내면 이 명령의 실패가 set -e에도 잡히지 않고 루프가 0회 도는 것으로 끝난다.
+    # 그러면 failed_agents가 빈 채로 아래 삭제 루프가 돌아, 실제로는 booted인 agent의 plist까지
+    # 전량 삭제된다 — 이 함수가 막으려는 부분 활성화를 정확히 유발하는 경로다.
+    # 목록을 못 얻으면 어느 것이 살아 있는지 알 수 없으므로 정리를 건너뛴다. cleanup 효과는
+    # 잃지만(setupLaunchAgents 멈춤 가능성은 관측 가능하고 복구 절차가 있다), 조용한 손상은 막는다.
+    if ! agent_list=$(launchctl list 2>/dev/null); then
+        log_warn "  ⚠️  launchctl list 실패 — 어떤 agent가 로드됐는지 알 수 없어 정리를 건너뜁니다."
+        log_warn "     rebuild가 setupLaunchAgents에서 멈추면 Ctrl+C 후 수동 정리하세요."
+        return 0
+    fi
 
     # 동적으로 com.green.*/com.greenhead.* 에이전트 찾아서 정리 (username 마이그레이션 전환기: dual-namespace)
     # 주의: ((++var)) 사용 필수. ((var++))는 var=0일 때 exit code 1 반환 → set -e로 스크립트 종료됨
@@ -87,25 +101,76 @@ cleanup_launchd_agents() {
             exit_code=$?
             if [[ $exit_code -ne 3 ]]; then  # 3 = No such process (정상)
                 log_warn "  ⚠️  Failed to bootout: $agent (exit: $exit_code)"
-                ((++failed))
+                failed_agents+=("$agent")
             fi
         fi
-    done < <(launchctl list 2>/dev/null | awk '/com\.(green|greenhead)\./ {print $3}')
+    done < <(printf '%s\n' "$agent_list" | awk '/com\.(green|greenhead)\./ {print $3}')
 
-    # plist 파일 삭제
-    local plist_count
-    plist_count=$(find ~/Library/LaunchAgents -name 'com.green*.plist' 2>/dev/null | wc -l | tr -d ' ')
+    # plist 파일 삭제 — 단, bootout에 실패한 agent의 plist는 남긴다.
+    #
+    # plist를 지우면 home-manager의 processAgent가 `[[ -f "$dstPath" ]]` 게이트에서 빠져
+    # bootout을 건너뛰고, 여전히 booted 상태인 label에 bootstrap을 시도해 실패한다.
+    # 현재 home-manager는 그 실패를 삼키지 않는다 — setupLaunchAgents의 상태코드를 받아
+    # 명시적으로 exit하므로 뒤따르는 linkGeneration 등이 통째로 스킵되고, 새 plist는
+    # 설치됐는데 home 파일 심링크는 구 세대를 가리키는 부분 활성화 상태가 된다.
+    #
+    # 근거 좌표 (home-manager 업데이트 후 재확인용): home-manager `modules/launchd/default.nix`의
+    # processAgent — `[[ -f "$dstPath" ]]` bootout 게이트와, 활성 세대 activate 스크립트 말미의
+    # `setupLaunchAgents || launchdStatus=$?` → `exit "$launchdStatus"`.
+    # 두 지점이 사라졌다면 이 보존 로직의 전제도 다시 검토한다.
+    #
+    # 보존이 곧 자동 복구는 아니다. processAgent에는 bootout 게이트보다 앞서
+    # "Skip if unchanged" 게이트(`cmp -s "$srcPath" "$dstPath"` + `agentIsLoaded`)가 있어,
+    # plist 내용이 그대로이고 agent가 여전히 loaded면 bootout에 도달하지 않고 return 0 한다.
+    # bootout 실패는 대개 loaded 상태이므로, plist가 바뀌지 않으면 activation은 no-op이다.
+    # 즉 보존의 효과는 "복구"가 아니라 "이번 rebuild를 깨뜨리지 않음"이다.
+    #
+    # trade-off: 두 실패 모드의 성질이 다르다. 삭제 시에는 activation이 중단되어 home 심링크가
+    # 구 세대를 가리키는 부분 활성화가 조용히 남는다 — 이후 모든 작업이 어긋난다. 보존 시에는
+    # 해당 agent만 구 상태로 남고 나머지 activation은 정상 완료된다. 피해 범위가 좁은 쪽을 택했다.
+    # (보존한 plist가 bootoutAgent 경로로 가는 경우 macOS 26 이상에서는 `launchctl bootout --wait`라
+    #  멈출 수 있다. 그때는 Ctrl+C 후 managing-macos/references/troubleshooting.md의 절차를 따른다.)
+    local removed=0 plist label f is_failed
+    while IFS= read -r plist; do
+        [[ -z "$plist" ]] && continue
+        label=$(basename "$plist" .plist)
 
-    if [[ "$plist_count" -gt 0 ]]; then
-        rm -f ~/Library/LaunchAgents/com.green*.plist
-        log_info "  ✓ Removed $plist_count plist file(s)"
+        # 배열 멤버십 판정: 공백 포함 label에도 안전하도록 명시적 비교를 쓴다.
+        # `${arr[@]+"${arr[@]}"}`는 set -u에서 빈 배열 확장이 unbound로 죽는 것을 막는
+        # 관용구다 (bash 4.4 미만 호환). 이 스크립트는 set -euo pipefail 아래에서 돈다.
+        is_failed=false
+        for f in ${failed_agents[@]+"${failed_agents[@]}"}; do
+            [[ "$f" == "$label" ]] && { is_failed=true; break; }
+        done
+
+        if [[ "$is_failed" == true ]]; then
+            log_warn "  ⚠️  Kept plist for $label (bootout 실패 — 삭제 시 activation 중단을 피함)"
+            continue
+        fi
+        rm -f "$plist"
+        ((++removed))
+        # -maxdepth 1: 기존 top-level glob(`~/Library/LaunchAgents/com.green*.plist`)의 범위를
+        # 유지한다. 빼면 하위 디렉토리 항목까지 rm 대상이 된다.
+        # -type f: glob에는 없던 추가 제약이다. home-manager는 plist를 `install -Dm444`로
+        # 일반 파일로 설치하므로 정상 상태에서는 결과가 같고, 심링크나 디렉토리가 이 이름으로
+        # 있다면 우리가 만든 것이 아니므로 건드리지 않는다.
+    done < <(find ~/Library/LaunchAgents -maxdepth 1 -type f -name 'com.green*.plist' 2>/dev/null)
+
+    if [[ "$removed" -gt 0 ]]; then
+        log_info "  ✓ Removed $removed plist file(s)"
     fi
 
     if [[ $cleaned -gt 0 ]]; then
         log_info "  ✓ Cleaned up $cleaned agent(s)"
     fi
-    if [[ $failed -gt 0 ]]; then
-        log_warn "  ⚠️  $failed agent(s) failed to bootout"
+    if [[ ${#failed_agents[@]} -gt 0 ]]; then
+        log_warn "  ⚠️  ${#failed_agents[@]} agent(s) failed to bootout — plist를 남겨 두었습니다."
+        log_warn "     rebuild 후에도 이 agent가 구 상태로 남아 있으면 아래로 언로드하세요."
+        log_warn "     (plist는 남겨둡니다 — 다음 rebuild가 재적재를 시도할 수 있도록)"
+        local fa
+        for fa in "${failed_agents[@]}"; do
+            log_warn "       launchctl bootout gui/${uid}/${fa}"
+        done
     fi
 
     # launchd 내부 상태 정리 대기

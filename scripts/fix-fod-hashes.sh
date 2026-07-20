@@ -80,15 +80,37 @@ cache_precheck() {
   #
   # trade-off: jq 스코어링 로직이 복잡해졌지만, false positive 제거 +
   #            severity 구분으로 사용자 판단력 향상이 더 가치 있음.
-  #            nix show-derivation 1회 배치 호출이므로 성능 영향 미미.
+  #            nix derivation show 1회 배치 호출이므로 성능 영향 미미.
 
   local drv_paths
   drv_paths=$(printf '%s\n' "$build_drvs" | sed 's/^[[:space:]]*//')
 
   # heavy_pkgs: "패키지명<TAB>HEAVY|MODERATE" 형식 (탭 구분)
   local heavy_pkgs=""
+  local jq_stderr_file drv_json
+  jq_stderr_file=$(mktemp)
+  drv_json=$(mktemp)
+  # RETURN만 건다. EXIT을 함께 걸면 안 된다 — EXIT trap은 프로세스 전역이라 함수가 반환한
+  # 뒤에도 남는데, 그 시점에는 위 `local` 두 변수가 스코프에서 사라져 `set -u` 아래에서
+  # unbound variable로 죽고 스크립트 종료코드를 1로 덮어쓴다. 그러면 빌드가 성공했는데도
+  # 호출자인 nfu가 실패로 판단해 rollback(`git checkout -- .`)으로 flake.lock을 되돌린다.
+  # exit 경로의 정리는 그 분기에서 직접 rm 한다 (아래 취소 분기 참조).
+  trap 'rm -f "$jq_stderr_file" "$drv_json"' RETURN
+
+  # derivation JSON을 먼저 파일로 받아 "명령 실패로 stdout이 빈" 경우를 구분한다.
+  # 파이프로 바로 넘기면 빈 입력을 받은 jq가 프로그램을 한 번도 실행하지 않고
+  # rc=0 / stderr 없음으로 끝나, 아래 경고 게이트가 발화하지 못한다.
+  # `nix derivation show`는 정식 이름이다 — `nix show-derivation`은 deprecated alias라
+  # 상시 경고를 내고 언젠가 제거되면 바로 이 무증상 경로를 탄다.
   # shellcheck disable=SC2086
-  heavy_pkgs=$(nix show-derivation $drv_paths 2>/dev/null | jq -r '
+  if ! nix derivation show $drv_paths >"$drv_json" 2>"$jq_stderr_file" || [[ ! -s "$drv_json" ]]; then
+    printf '  \033[0;33m⚠️  derivation 정보를 가져오지 못해 HEAVY/MODERATE 등급이 생략됩니다\033[0m\n' >&2
+    if [[ -s "$jq_stderr_file" ]]; then
+      printf '  \033[0;33m    (nix: %s)\033[0m\n' "$(head -1 "$jq_stderr_file")" >&2
+    fi
+  fi
+
+  heavy_pkgs=$(jq -r '
     # Glue derivation 제외 (빌드 시간 무의미한 시스템 조립용 drv)
     def is_glue:
       test("^(activation-|activate$|home-manager-|darwin-system-|nixos-system-|etc-|etc$|set-environment|unit-script-|unit-|system-path|system-units|user-units|system-generators|user-generators|system-shutdown|shutdown-ramfs)");
@@ -97,13 +119,28 @@ cache_precheck() {
     def is_infra:
       test("^(hook-|.*-hook-|wrapper-|stdenv-|bash-|source-|vendor-|.*-setup-hook|patch-)");
 
-    to_entries[] |
-    (.key | sub("/nix/store/[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")) as $pkg |
+    # nix derivation JSON 스키마 전제. 드리프트 시 발현 방식이 서로 달라 구분해 둔다:
+    #   - top-level이 {"derivations":{...}}로 한 겹 감싸여 있다
+    #     → 구조가 바뀌면 jq가 죽어 아래 경고로 잡힌다
+    #   - 의존 drv는 .inputDrvs가 아니라 .inputs.drvs에 있다
+    #     → 키가 바뀌면 `null | keys`로 죽어 아래 경고로 잡힌다
+    #   - drv 키에 "/nix/store/" 접두사가 없다 (basename만)
+    #     → 이 전제만 어긋나면 jq는 죽지 않는다. sub()이 no-op이 되어 해시 접두사가 붙은
+    #       패키지명을 조용히 내고, 이름 대조가 빗나가 등급이 사라진다. 그래서 이 모드만
+    #       명시적으로 단언한다.
+    # version 값 자체는 차단 조건으로 쓰지 않는다. 이 프로그램이 읽는 표면은 위 세 가지뿐이라,
+    # 그 밖이 바뀐 하위호환 bump에서 등급이 통째로 사라지는 편이 더 해롭다 (등급이 가장
+    # 필요한 시점이 곧 input 업데이트 직후다). 대신 진단에 version을 실어 원인을 남긴다.
+    if (.derivations | keys | first // "") | startswith("/nix/store/") then
+      error("drv key is store-prefixed — schema drift (derivation JSON version: \(.version // "unknown"))")
+    else . end |
+    .derivations | to_entries[] |
+    (.key | sub("^[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")) as $pkg |
     select(($pkg | is_glue) | not) |
 
-    # inputDrvs에서 dep 이름 추출
-    (.value.inputDrvs | keys | map(
-      capture("/nix/store/[a-z0-9]{32}-(?<name>.+)\\.drv").name // empty
+    # inputs.drvs에서 dep 이름 추출
+    (.value.inputs.drvs | keys | map(
+      sub("^[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")
     ) | map(select(. != ""))) as $all_deps |
 
     # 인프라 제외한 라이브러리 의존 수
@@ -142,7 +179,16 @@ cache_precheck() {
     elif ($has_rust or $has_cmake or $has_meson or $has_go) and $score > 0 then "\($pkg)\tMODERATE"
     else empty
     end
-  ' 2>/dev/null || true)
+  ' "$drv_json" 2>"$jq_stderr_file" || true)
+
+  # 스코어링 실패를 조용히 넘기지 않는다. `|| true`는 경고 등급 표시가 없더라도
+  # 본 작업(FOD hash 수정)은 계속되게 하려는 것이지, 스키마 회귀를 은폐하려는 것이 아니다.
+  # jq 진단 원문은 프로그램 텍스트(\t, \033 등)를 인용할 수 있으므로 printf '%s'로 넘겨
+  # 이스케이프가 해석되지 않게 한다.
+  if [[ -s "$jq_stderr_file" ]]; then
+    printf '  \033[0;33m⚠️  heavy-package 스코어링 실패 — 아래 목록의 HEAVY/MODERATE 등급이 생략됩니다\033[0m\n' >&2
+    printf '  \033[0;33m    nix derivation JSON 스키마가 바뀌었을 수 있습니다 (jq: %s)\033[0m\n' "$(head -1 "$jq_stderr_file")" >&2
+  fi
 
   echo ""
   echo "⚠️  ${pkg_count}개 패키지가 소스에서 빌드됩니다 (캐시 없음):"
@@ -164,11 +210,18 @@ cache_precheck() {
     return 0
   fi
 
-  read -rp "계속하시겠습니까? [y/N] " answer
+  # read 실패(EOF 등)는 취소로 처리한다. `set -e` 아래에서 그냥 두면 셸이 즉시 죽어
+  # RETURN trap도 아래 정리도 타지 못하고 임시 파일이 남는다.
+  # (프롬프트 대기 중 SIGINT는 여전히 정리 없이 끝난다 — mktemp 파일이라 TMPDIR 정리에 맡긴다)
+  read -rp "계속하시겠습니까? [y/N] " answer || answer="n"
   case "$answer" in
     [yY]|[yY][eE][sS]) return 0 ;;
     *)
-      echo "빌드를 취소합니다. (flake.lock 변경은 롤백됩니다)"
+      # RETURN trap은 exit 경로에서 발화하지 않으므로 여기서 직접 정리한다.
+      rm -f "$jq_stderr_file" "$drv_json"
+      # 롤백은 호출자(nfu)의 책임이다. 이 스크립트를 단독 실행한 경우에는
+      # 되돌릴 lock 변경도, 롤백 주체도 없다.
+      echo "빌드를 취소합니다."
       exit 1
       ;;
   esac

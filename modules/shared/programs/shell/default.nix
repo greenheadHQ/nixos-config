@@ -511,22 +511,28 @@ in
   };
 
   # FZF
+  # fileWidget/changeDirWidget은 home-manager가 중첩 경로로 개명했다 (mkRenamedOptionModule).
+  # defaultCommand/defaultOptions는 개명 대상이 아니라 평면 키로 남는다 — 혼재는 의도된 상태다.
   programs.fzf = {
     enable = true;
     enableZshIntegration = false;
     defaultCommand = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
-    fileWidgetCommand = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
-    changeDirWidgetCommand = "${lib.getExe pkgs.fd} --type d --strip-cwd-prefix --exclude .git";
     defaultOptions = [
       "--bind=tab:toggle-down,shift-tab:toggle-up"
     ];
-    fileWidgetOptions = [
-      "--preview 'if [ -d {} ]; then ${lib.getExe pkgs.eza} --tree --level=2 --color=always {}; else ${lib.getExe pkgs.bat} --color=always --style=numbers --line-range=:500 {}; fi'"
-      "--preview-window=right:60%:wrap"
-    ];
-    changeDirWidgetOptions = [
-      "--preview '${lib.getExe pkgs.eza} --tree --level=2 --color=always {}'"
-      "--preview-window=right:60%:wrap"
-    ];
+    fileWidget = {
+      command = "${lib.getExe pkgs.fd} --strip-cwd-prefix --exclude .git";
+      options = [
+        "--preview 'if [ -d {} ]; then ${lib.getExe pkgs.eza} --tree --level=2 --color=always {}; else ${lib.getExe pkgs.bat} --color=always --style=numbers --line-range=:500 {}; fi'"
+        "--preview-window=right:60%:wrap"
+      ];
+    };
+    changeDirWidget = {
+      command = "${lib.getExe pkgs.fd} --type d --strip-cwd-prefix --exclude .git";
+      options = [
+        "--preview '${lib.getExe pkgs.eza} --tree --level=2 --color=always {}'"
+        "--preview-window=right:60%:wrap"
+      ];
+    };
   };
 }
