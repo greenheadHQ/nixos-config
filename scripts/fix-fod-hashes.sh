@@ -87,6 +87,8 @@ cache_precheck() {
 
   # heavy_pkgs: "패키지명<TAB>HEAVY|MODERATE" 형식 (탭 구분)
   local heavy_pkgs=""
+  local jq_stderr
+  jq_stderr=$(mktemp)
   # shellcheck disable=SC2086
   heavy_pkgs=$(nix show-derivation $drv_paths 2>/dev/null | jq -r '
     # Glue derivation 제외 (빌드 시간 무의미한 시스템 조립용 drv)
@@ -97,13 +99,19 @@ cache_precheck() {
     def is_infra:
       test("^(hook-|.*-hook-|wrapper-|stdenv-|bash-|source-|vendor-|.*-setup-hook|patch-)");
 
-    to_entries[] |
-    (.key | sub("/nix/store/[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")) as $pkg |
+    # nix derivation JSON v4 스키마:
+    #   - top-level이 {"derivations":{...},"version":4}로 한 겹 감싸여 있다
+    #   - drv 키와 output path에 "/nix/store/" 접두사가 없다 (basename만)
+    #   - 의존 drv는 .inputDrvs가 아니라 .inputs.drvs에 있다
+    # 세 가지 모두 만족해야 스코어링이 동작한다. 하나라도 어긋나면 jq가 죽고
+    # 아래 `|| true`가 그것을 삼켜 heavy_pkgs가 조용히 비게 된다 (v3 스키마 시절 회귀).
+    .derivations | to_entries[] |
+    (.key | sub("^[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")) as $pkg |
     select(($pkg | is_glue) | not) |
 
-    # inputDrvs에서 dep 이름 추출
-    (.value.inputDrvs | keys | map(
-      capture("/nix/store/[a-z0-9]{32}-(?<name>.+)\\.drv").name // empty
+    # inputs.drvs에서 dep 이름 추출
+    (.value.inputs.drvs | keys | map(
+      sub("^[a-z0-9]{32}-"; "") | sub("\\.drv$"; "")
     ) | map(select(. != ""))) as $all_deps |
 
     # 인프라 제외한 라이브러리 의존 수
@@ -142,7 +150,15 @@ cache_precheck() {
     elif ($has_rust or $has_cmake or $has_meson or $has_go) and $score > 0 then "\($pkg)\tMODERATE"
     else empty
     end
-  ' 2>/dev/null || true)
+  ' 2>"$jq_stderr" || true)
+
+  # 스코어링 실패를 조용히 넘기지 않는다. `|| true`는 경고 등급 표시가 없더라도
+  # 본 작업(FOD hash 수정)은 계속되게 하려는 것이지, 스키마 회귀를 은폐하려는 것이 아니다.
+  if [[ -s "$jq_stderr" ]]; then
+    echo -e "  \033[0;33m⚠️  heavy-package 스코어링 실패 — 아래 목록의 HEAVY/MODERATE 등급이 생략됩니다\033[0m" >&2
+    echo -e "  \033[0;33m    nix derivation JSON 스키마가 바뀌었을 수 있습니다 (jq: $(head -1 "$jq_stderr"))\033[0m" >&2
+  fi
+  rm -f "$jq_stderr"
 
   echo ""
   echo "⚠️  ${pkg_count}개 패키지가 소스에서 빌드됩니다 (캐시 없음):"
