@@ -80,7 +80,7 @@ cache_precheck() {
   #
   # trade-off: jq 스코어링 로직이 복잡해졌지만, false positive 제거 +
   #            severity 구분으로 사용자 판단력 향상이 더 가치 있음.
-  #            nix show-derivation 1회 배치 호출이므로 성능 영향 미미.
+  #            nix derivation show 1회 배치 호출이므로 성능 영향 미미.
 
   local drv_paths
   drv_paths=$(printf '%s\n' "$build_drvs" | sed 's/^[[:space:]]*//')
@@ -90,9 +90,12 @@ cache_precheck() {
   local jq_stderr_file drv_json
   jq_stderr_file=$(mktemp)
   drv_json=$(mktemp)
-  # RETURN + EXIT 둘 다 건다. 이 함수는 아래 사용자 취소 분기에서 `exit 1`로도 빠져나가는데,
-  # bash의 RETURN trap은 exit 경로에서 발화하지 않아 임시 파일이 남는다.
-  trap 'rm -f "$jq_stderr_file" "$drv_json"' RETURN EXIT
+  # RETURN만 건다. EXIT을 함께 걸면 안 된다 — EXIT trap은 프로세스 전역이라 함수가 반환한
+  # 뒤에도 남는데, 그 시점에는 위 `local` 두 변수가 스코프에서 사라져 `set -u` 아래에서
+  # unbound variable로 죽고 스크립트 종료코드를 1로 덮어쓴다. 그러면 빌드가 성공했는데도
+  # 호출자인 nfu가 실패로 판단해 rollback(`git checkout -- .`)으로 flake.lock을 되돌린다.
+  # exit 경로의 정리는 그 분기에서 직접 rm 한다 (아래 취소 분기 참조).
+  trap 'rm -f "$jq_stderr_file" "$drv_json"' RETURN
 
   # derivation JSON을 먼저 파일로 받아 "명령 실패로 stdout이 빈" 경우를 구분한다.
   # 파이프로 바로 넘기면 빈 입력을 받은 jq가 프로그램을 한 번도 실행하지 않고
@@ -212,7 +215,11 @@ cache_precheck() {
   case "$answer" in
     [yY]|[yY][eE][sS]) return 0 ;;
     *)
-      echo "빌드를 취소합니다. (flake.lock 변경은 롤백됩니다)"
+      # RETURN trap은 exit 경로에서 발화하지 않으므로 여기서 직접 정리한다.
+      rm -f "$jq_stderr_file" "$drv_json"
+      # 롤백은 호출자(nfu)의 책임이다. 이 스크립트를 단독 실행한 경우에는
+      # 되돌릴 lock 변경도, 롤백 주체도 없다.
+      echo "빌드를 취소합니다."
       exit 1
       ;;
   esac

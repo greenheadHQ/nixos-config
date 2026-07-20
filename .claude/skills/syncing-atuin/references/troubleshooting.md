@@ -164,8 +164,8 @@ atuin 18.17.0에는 `atuin history delete` 서브커맨드가 존재하지 않�
 
 ```bash
 $ atuin history --help
-# 사용 가능한 커맨드: start, end, list, last, init-store, prune, dedup
-# "delete"는 없음
+# 삭제 계열은 prune / dedup 뿐이고 "delete"는 없음
+# (재확인 시 목록 전체를 대조할 필요 없이 delete 부재만 보면 된다)
 ```
 
 `atuin search --delete "<쿼리>"` 명령이 존재하지만, 정규식을 지원하지 않아 "한글이 포함된 모든 항목"을 한 번에 매칭할 수 없음. 따라서 SQLite DB 직접 수정이 필요.
