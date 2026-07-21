@@ -39,7 +39,23 @@ _bootstrap_worktree() {
   fi
 
   _wt_trust_codex_project "$wt_path"
+  _wt_trust_mise_configs "$wt_path"
   _wt_inherit_claude_local_plugins "$wt_path" "$git_root"
+}
+
+# mise trust는 config 파일 경로 기준이라 원본 repo에서 한 trust가 worktree로
+# 승계되지 않는다. 미신뢰로 두면 worktree의 mise 도구 호출이 막혀, 세션들이
+# 명령마다 `mise trust`를 방어적으로 앞세우는 낭비가 반복 관측됐다 (2026-07
+# 전수조사). mise 부재·trust 실패는 non-fatal — worktree 생성을 막지 않는다.
+_wt_trust_mise_configs() {
+  local wt_path="$1"
+  command -v mise > /dev/null 2>&1 || return 0
+  local cfg
+  for cfg in mise.toml .mise.toml mise.local.toml .mise.local.toml; do
+    [[ -f "$wt_path/$cfg" ]] || continue
+    mise trust "$wt_path/$cfg" > /dev/null 2>&1 \
+      || _warn "mise trust 실패: $cfg — 필요 시 worktree에서 수동 mise trust"
+  done
 }
 
 _wt_prepare_claude_settings() {
