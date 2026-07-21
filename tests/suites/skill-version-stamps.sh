@@ -118,10 +118,12 @@ test_warn_skill_version_stamps_from_head_detects_stale_head() {
 
   # HEAD에는 구 스탬프를 커밋하고 working tree만 신 스탬프로 갱신 —
   # 기본 모드는 일치로 침묵하지만 --from-head는 push 대상 HEAD의 drift를 경고해야 한다.
+  # GIT_CONFIG 격리는 subshell 전체에 export — commit이 호스트 hooksPath·훅을 상속하지 않게 한다.
   (cd "$repo_root" && \
-    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -c init.templateDir= init -q -b main && \
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 && \
+    git -c init.templateDir= init -q -b main && \
     git add -A && \
-    git -c user.email=fixture@test -c user.name=fixture commit -qm "stale stamps")
+    git -c user.email=fixture@test -c user.name=fixture -c core.hooksPath= commit -qm "stale stamps")
   create_version_stamp_fixture_repo "$repo_root" "0.145.0" "2.1.206"
 
   output=$(cd "$repo_root" && PATH="$bin_dir" "$BASH" scripts/ai/warn-skill-version-stamps.sh 2>&1)
@@ -151,6 +153,16 @@ EOF
     || fail "expected warn-only exit 0 on exec failure, got exit $?: $output"
   assert_contains "$output" "codex --version 실행·버전 파싱 실패"
   assert_not_contains "$output" "using-claude-p"
+
+  # 정상 종료하지만 버전 토큰이 없는 출력도 동일한 WARN 경로를 타야 한다 (파싱 실패 분기).
+  cat > "$bin_dir/codex" <<'EOF'
+#!/bin/sh
+echo "unknown-format"
+EOF
+  chmod +x "$bin_dir/codex"
+  output=$(cd "$repo_root" && PATH="$bin_dir" "$BASH" scripts/ai/warn-skill-version-stamps.sh 2>&1) \
+    || fail "expected warn-only exit 0 on unparseable output, got exit $?: $output"
+  assert_contains "$output" "codex --version 실행·버전 파싱 실패"
 }
 
 test_warn_skill_version_stamps_warns_on_unparseable_stamp() {
