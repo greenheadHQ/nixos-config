@@ -11,6 +11,8 @@ set -euo pipefail
 
 # shellcheck disable=SC2034  # REBUILD_CMD는 source된 rebuild-common.sh에서 사용
 REBUILD_CMD="darwin-rebuild"
+# shellcheck disable=SC2034  # REBUILD_MODE는 source된 rebuild-common.sh의 usage 분기에서 사용
+REBUILD_MODE="preview"
 # shellcheck source=/dev/null  # 런타임에 ~/.local/lib/rebuild-common.sh 로딩
 source "$HOME/.local/lib/rebuild-common.sh"
 parse_args "$@"

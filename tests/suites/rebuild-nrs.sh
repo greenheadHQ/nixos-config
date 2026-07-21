@@ -133,6 +133,33 @@ install_platform_nrs_entrypoint() {
   esac
 }
 
+install_platform_nrp_entrypoint() {
+  local sandbox="$1" platform="$2"
+  local home_dir="$sandbox/home"
+  local generated_dir="$sandbox/generated"
+
+  mkdir -p "$home_dir/.local/bin" "$generated_dir"
+
+  # shellcheck disable=SC2016  # Literal Nix source strings.
+  case "$platform" in
+    darwin)
+      register_copy_exec \
+        "$REPO_ROOT/modules/shared/programs/shell/darwin.nix" \
+        ".local/bin/nrp" \
+        '${darwinScriptsDir}/nrp.sh' \
+        "modules/darwin/scripts/nrp.sh"
+      ;;
+    nixos)
+      register_copy_exec \
+        "$REPO_ROOT/modules/shared/programs/shell/nixos.nix" \
+        ".local/bin/nrp" \
+        '${nixosScriptsDir}/nrp.sh' \
+        "modules/nixos/scripts/nrp.sh"
+      ;;
+    *) fail "unknown platform for nrp entrypoint: $platform" ;;
+  esac
+}
+
 install_recording_nrs_relink() {
   local home_dir="$1"
   mkdir -p "$home_dir/.local/bin"
@@ -211,25 +238,28 @@ test_rebuild_common_exports_public_api() {
 }
 
 test_parse_args_unknown_argument_shows_usage_and_fails() {
-  local sandbox output rc
+  local sandbox stdout_file stderr_file rc
   sandbox=$(new_sandbox)
   install_deployed_layout "$sandbox"
+  stdout_file="$sandbox/parse-args.out"
+  stderr_file="$sandbox/parse-args.err"
 
+  # 오류 메시지와 usage는 stderr 계약이다 — stdout/stderr를 분리 캡처해 스트림 회귀를 감지한다.
   rc=0
-  output=$(
-    HOME="$sandbox/home" \
-    PATH="$FIXTURE_DIR/bin:$PATH" \
-    bash -c '
-      set -euo pipefail
-      REBUILD_CMD="nixos-rebuild"
-      source "'"$sandbox/home/.local/lib/rebuild-common.sh"'"
-      parse_args --bogus
-    ' 2>&1
-  ) || rc=$?
+  HOME="$sandbox/home" \
+  PATH="$FIXTURE_DIR/bin:$PATH" \
+  bash -c '
+    set -euo pipefail
+    REBUILD_CMD="nixos-rebuild"
+    source "'"$sandbox/home/.local/lib/rebuild-common.sh"'"
+    parse_args --bogus
+  ' > "$stdout_file" 2> "$stderr_file" || rc=$?
 
   [[ "$rc" -eq 1 ]] || fail "expected parse_args --bogus to exit 1 (actual: $rc)"
-  assert_contains "$output" "Unknown argument: --bogus"
-  assert_contains "$output" "Usage:"
+  assert_contains "$(cat "$stderr_file")" "Unknown argument: --bogus"
+  assert_contains "$(cat "$stderr_file")" "Usage:"
+  [[ -s "$stdout_file" ]] && fail "expected empty stdout for unknown argument (got: $(cat "$stdout_file"))"
+  return 0
 }
 
 test_nixos_nrs_help_flag_prints_usage() {
@@ -261,24 +291,58 @@ test_nixos_nrs_help_flag_prints_usage() {
   assert_not_contains "$output" "Unknown argument"
 }
 
-test_nrp_help_usage_omits_force_flag() {
-  local sandbox output
+test_darwin_nrs_h_alias_prints_usage() {
+  local sandbox home_dir repo_root output
   sandbox=$(new_sandbox)
-  install_deployed_layout "$sandbox"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
 
-  # _print_rebuild_usage는 ${0##*/}로 진입점을 구분한다 — bash -c의 후속 인자로 $0=nrp 지정.
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_platform_nrs_entrypoint "$sandbox" darwin
+
+  # darwin 진입점 + 짧은 alias -h도 동일 usage 계약을 따른다.
   output=$(
-    HOME="$sandbox/home" \
+    HOME="$home_dir" \
     PATH="$FIXTURE_DIR/bin:$PATH" \
     bash -c '
       set -euo pipefail
-      REBUILD_CMD="nixos-rebuild"
-      source "'"$sandbox/home/.local/lib/rebuild-common.sh"'"
-      _print_rebuild_usage
-    ' nrp 2>&1
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/nrs"'" -h
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Usage: nrs"
+  assert_contains "$output" "--force"
+  assert_contains "$output" "--cores N"
+  assert_not_contains "$output" "Unknown argument"
+}
+
+test_nrp_help_usage_omits_force_flag() {
+  local sandbox home_dir repo_root output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_platform_nrp_entrypoint "$sandbox" nixos
+
+  # 실제 nrp 진입점 실행 — REBUILD_MODE=preview 선언이 usage에서 무효 --force를 제외한다.
+  output=$(
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/nrp"'" --help
+    ' 2>&1
   )
 
   assert_contains "$output" "Usage: nrp"
+  assert_contains "$output" "--cores N"
   assert_not_contains "$output" "--force"
 }
 

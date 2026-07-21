@@ -89,30 +89,24 @@ extract_oos_entries() {
 # --help는 usage 출력 후 exit 0 — LLM/사용자가 사용법을 실행으로 발견할 수 있게 한다 (#1138).
 #───────────────────────────────────────────────────────────────────────────────
 _print_rebuild_usage() {
-    # nrp 진입점에서 --force는 실동작이 없으므로 (darwin: NO_CHANGES 분기 없음,
-    # nixos: 항상 --warn-only) usage에서 제외해 명령별 실제 계약만 안내한다.
-    if [[ "${0##*/}" == nrp* ]]; then
-        cat <<EOF
-Usage: ${0##*/} [--offline] [--cores N]
-
-${REBUILD_CMD} preview wrapper (switch 없음)
-
-Options:
-  --offline    오프라인 rebuild (substituter 미사용, 빠름)
-  --cores N    빌드 코어 수 제한 (nixos-rebuild 전용)
-  -h, --help   이 도움말 출력 후 종료
-EOF
-        return
+    # 진입점이 REBUILD_MODE=preview를 선언하면 (nrp) 실동작 없는 --force를
+    # usage에서 제외한다 (darwin nrp: NO_CHANGES 분기 없음, nixos nrp: 항상 --warn-only).
+    local synopsis="[--offline] [--force] [--cores N]"
+    local desc="${REBUILD_CMD} wrapper (preview 포함)"
+    local force_help=$'\n  --force      NO_CHANGES 스킵 우회 (darwin) / 소스 빌드 경고 무시 (nixos)'
+    if [[ "${REBUILD_MODE:-switch}" == "preview" ]]; then
+        synopsis="[--offline] [--cores N]"
+        desc="${REBUILD_CMD} preview wrapper (switch 없음)"
+        force_help=""
     fi
     cat <<EOF
-Usage: ${0##*/} [--offline] [--force] [--cores N]
+Usage: ${0##*/} ${synopsis}
 
-${REBUILD_CMD} wrapper (preview 포함)
+${desc}
 
 Options:
-  --offline    오프라인 rebuild (substituter 미사용, 빠름)
-  --force      NO_CHANGES 스킵 우회 (darwin) / 소스 빌드 경고 무시 (nixos)
-  --cores N    빌드 코어 수 제한 (nixos-rebuild 전용)
+  --offline    오프라인 rebuild (substituter 미사용, 빠름)${force_help}
+  --cores N    빌드 코어 수 제한
   -h, --help   이 도움말 출력 후 종료
 EOF
 }
@@ -132,7 +126,7 @@ parse_args() {
                 (( 10#$2 < 1 )) && { log_error "--cores: positive integer required"; exit 1; }
                 CORES_FLAG="--cores $2"; shift ;;
             -h|--help) _print_rebuild_usage; exit 0 ;;
-            *) log_error "Unknown argument: $1"; _print_rebuild_usage >&2; exit 1 ;;
+            *) log_error "Unknown argument: $1" >&2; _print_rebuild_usage >&2; exit 1 ;;
         esac
         shift
     done

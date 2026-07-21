@@ -190,7 +190,7 @@ run_darwin_rebuild() {
 
     local rc=0
     # shellcheck disable=SC2086
-    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG || rc=$?
+    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG $CORES_FLAG || rc=$?
 
     if [[ "$rc" -ne 0 ]]; then
         log_error "❌ darwin-rebuild switch failed (exit code: $rc)"
