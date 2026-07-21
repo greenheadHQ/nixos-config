@@ -159,7 +159,7 @@ node = "20.18"
 pnpm = "latest"
 EOF
 
-# trust 실행 (최초 1회)
+# trust 실행 (최초 1회 — config의 env·template 검토 후, 신뢰하는 저장소에서만)
 $ mise trust
 ```
 
