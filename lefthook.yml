@@ -180,3 +180,8 @@ pre-push:
         - "scripts/ai/test-runtime-profile.sh"
       # profile의 Bats를 사용하고 비대화형 hook에는 Bats/tput용 기본 TERM을 주입한다.
       run: bash ./scripts/ai/test-runtime-profile.sh run "$PWD" -- env TERM="${TERM:-xterm-256color}" bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
+    ai-skill-version-stamps:
+      # Claude CLI는 저장소 밖 auto-updater로 갱신되어 staged 신호가 없다 — pre-commit의
+      # staged glob 경보를 보완해 push 시점에는 glob 없이 항상 drift를 대조한다 (warn-only,
+      # CLI --version 기동 비용은 push 빈도가 낮아 수용).
+      run: bash ./scripts/ai/warn-skill-version-stamps.sh

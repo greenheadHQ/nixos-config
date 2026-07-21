@@ -201,6 +201,8 @@ pre-push:
         - "modules/shared/programs/claude/files/scripts/tests/statusline.bats"
         - "scripts/ai/test-runtime-profile.sh"
       run: bash ./scripts/ai/test-runtime-profile.sh run "$PWD" -- env TERM="${TERM:-xterm-256color}" bats modules/shared/programs/claude/files/scripts/tests/statusline.bats
+    ai-skill-version-stamps:
+      run: bash ./scripts/ai/warn-skill-version-stamps.sh
 EOF
 
 if ! diff -u "$expected_prepush" "$normalized_prepush" >&2; then
