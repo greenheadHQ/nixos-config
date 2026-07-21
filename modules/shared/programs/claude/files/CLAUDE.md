@@ -1,1 +1,2 @@
 - 사고(thinking) 과정을 항상 한국어(Korean)로 수행하라. 영어로 사고하지 마라.
+- 이 사용자의 모든 머신에서 node/npm/npx/pnpm/yarn 런타임은 mise가 관리한다 (shim 경유). 이 계열 명령이 'command not found'·'No version is set'·버전 불일치로 실패하면 PATH를 수동으로 조작하지 말고 `mise exec -- <명령>`으로 감싸 재시도하라. 프로젝트 버전 미설치는 `mise install`, worktree/신규 디렉토리의 설정 미신뢰는 `mise trust`로 해결한다.

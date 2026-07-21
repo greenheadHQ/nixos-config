@@ -2,7 +2,9 @@
 name: managing-mise
 description: |
   Manage mise runtime: Node.js, pnpm, shims.
-  Trigger: 'mise 설정', 'pnpm not found', '.nvmrc', 'mise shims', 'mise activate', '런타임 버전 불일치'.
+  Trigger: 'mise 설정', 'pnpm not found', 'node not found', '.nvmrc', 'mise shims',
+  'mise activate', 'mise trust', 'mise exec', '런타임 버전 불일치', 'No version is set',
+  'worktree에서 node/pnpm 실패', '여러 node 버전 공존', 'activation에서 mise 실패'.
 ---
 
 # mise 런타임 버전 관리
@@ -76,6 +78,19 @@ mise는 두 계층으로 활성화된다:
 - 옛 `MISE_SHELL` 가드 폐기 (#845): 부모 대화형 셸의 `MISE_SHELL`이 자식 비대화형 셸로 상속되어 shims 활성화를 조기 스킵하는 회귀를 만들어 폐기됐다.
 - `.zshrc`에서 shims prepend가 추가로 필요한 이유 (#857): Claude Code 같은 도구가 세션 시작 시 interactive 셸 PATH를 snapshot으로 박제하고 비대화형 호출마다 그 PATH를 복원한다. `mise activate zsh`(hook 모드)는 호출 끝에 `_mise_hook`을 즉시 발동시켜 install-bins를 PATH에 prepend하지만, hook 모드 정책상 shims는 PATH에 prepend하지 않는다 (shims는 `--shims` 플래그 경유에서만 PATH에 들어간다). 결과적으로 snapshot에는 install-bins는 들어가도 shims가 빠진 baseline이 박제되어, shim으로 노출되는 mise 도구(예: pnpm, per-project node)는 비대화형에 미노출된다. `.zshrc`에서 shims를 명시적으로 prepend하면 snapshot에 shims도 포함되어 비대화형 호출이 동작한다. (과거 이 회귀의 대표 사례였던 codex는 #890에서 nix overlay로 이관돼 더는 mise shim에 의존하지 않는다.)
 - 위험·우려와 fallback 후보: 이 fix는 Claude Code snapshot 캡처 메커니즘에 간접 의존한다. 향후 캡처 방식 변경(예: sanitized PATH 기록) 시 회귀 재발 가능. fallback 후보는 (a) `~/.claude/settings.json`의 `env.PATH`에 shims를 직접 prepend, (b) login shell init(`.zprofile`/`.zlogin`)에 shims 보강. (과거 codex 비노출 회귀 조기 감지로 검토했던 `command -v codex` 자가 검사는 codex의 nix overlay 이관 이후 mise shim과 무관해졌고, `verify-ai-compat`에는 codex가 shim에 가려지지 않고 nix 경로로 resolve되는지 검사하는 가드가 별도로 추가됐다 — #890.)
+
+## 비대화형/LLM 마찰 경계면
+
+mise activation은 대화형 셸 기준이라, 아래 실행 컨텍스트에서 깨지는 사례가 반복 관측됐다 (2026-07 세션 로그·히스토리 전수조사). 사람의 대화형 셸에서는 재현되지 않으므로 "내 셸에선 되는데"로 진단이 지연되기 쉽다.
+
+| 경계면 | 전형적 증상 | 대응 |
+|---|---|---|
+| 비대화형 셸 (SSH `zsh -c`, LLM Bash tool) | pnpm/node not found | `.zshenv` shims가 1차 방어. 실패 시 `mise exec -- <명령>` |
+| hook 실행 환경 (lefthook·플러그인 hook) | 런타임 not found로 품질 게이트 조용한 무력화 | hook 스크립트가 mise 도구를 부르면 shims PATH 보강 또는 `mise exec` 경유 |
+| home-manager activation 제한 PATH | `mise: command not found`, reshim exit 127 | activation에서 mise 실행 금지 (#814→#890 교훈) |
+| worktree cwd | 프로젝트 config 미신뢰로 도구 비활성 | worktree마다 `mise trust` (trust는 경로 기준이라 원본 trust가 승계 안 됨) |
+
+비대화형에서 안전한 기본 규약: `mise exec -- <명령>` — 버전 resolve와 PATH 주입을 mise가 한 번에 처리하므로 shims/activate 상태와 무관하게 동작한다. 대화형 성공을 근거로 다른 컨텍스트도 동작할 것이라 가정하지 않는다.
 
 ## 핵심 절차
 
