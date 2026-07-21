@@ -112,7 +112,10 @@ if [ -d "$JOBS_ROOT" ]; then
         job_error "$slug" "$violation"
         continue
       fi
-      schedule_file="$job_dir/schedule"
+      # job_dir는 glob("$JOBS_ROOT"/*/)에서 와 트레일링 슬래시를 포함한다 — 그대로
+      # 이어 붙이면 "…//schedule"이 되고, realpath 정규화(단일 슬래시)와 달라져
+      # canonical 검증이 정상 경로를 오탐 거부한다 (실기기 발현).
+      schedule_file="${job_dir%/}/schedule"
       # schedule도 실행 계약의 입력이다 — run.sh와 같은 소유·링크·권한 기준을 요구한다.
       violation="$(path_violation_reason "$schedule_file" "schedule" f 022)"
       if [ -n "$violation" ]; then
