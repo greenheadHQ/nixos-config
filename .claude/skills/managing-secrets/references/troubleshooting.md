@@ -1,6 +1,7 @@
 # 트러블슈팅
 
 아래 `age` 명령은 `nix-shell -p age` 환경에서 실행 (devShell에 미포함).
+1Password 함정(op read 비대화형 hang / SA 만료일 GUI 전용 / agent.toml 승인 팝업)은 [1password.md](1password.md)의 트러블슈팅 참조.
 
 ## agenix -e의 /dev/stdin 에러
 
