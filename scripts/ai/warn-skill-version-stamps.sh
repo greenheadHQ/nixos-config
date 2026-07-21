@@ -11,6 +11,30 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# --from-head: working tree 대신 HEAD 커밋의 문서를 읽는다. pre-push에서 사용 —
+# unstaged로만 고쳐진 스탬프가 "일치"로 보이면 구 스탬프가 담긴 HEAD가 조용히 push되므로,
+# push 경계에서는 실제 push 대상 트리를 검사한다.
+FROM_HEAD=false
+[ "${1:-}" = "--from-head" ] && FROM_HEAD=true
+
+# 대상 문서 읽기 — FROM_HEAD면 git 객체에서, 아니면 working tree에서.
+doc_exists() {
+  if $FROM_HEAD; then
+    git -C "$REPO_ROOT" cat-file -e "HEAD:$1" 2>/dev/null
+  else
+    [ -f "$REPO_ROOT/$1" ]
+  fi
+}
+
+doc_content() {
+  if $FROM_HEAD; then
+    git -C "$REPO_ROOT" show "HEAD:$1" 2>/dev/null
+  else
+    # $(<file)은 bash 내장 읽기 — PATH가 최소화된 hook 환경에서 외부 cat 의존을 피한다.
+    printf '%s\n' "$(<"$REPO_ROOT/$1")"
+  fi
+}
+
 warn() {
   echo "[WARN] $1" >&2
 }
@@ -49,33 +73,33 @@ installed_version() {
 # 절 경계는 확인하지 않는다 — 이 고정 형식 라인은 "작성 기준" 절에만 존재한다는 전제이며,
 # 다른 절에 같은 형식이 생기면 먼저 나오는 쪽이 이긴다.
 stamp_version() {
-  local file="$1" prefix="$2" line
+  local rel_path="$1" prefix="$2" line
   local pattern="^- 확인 버전: ${prefix}([0-9]+(\.[0-9]+)+)"
   while IFS= read -r line; do
     if [[ "$line" =~ $pattern ]]; then
       printf '%s\n' "${BASH_REMATCH[1]}"
       return 0
     fi
-  done < "$file"
+  done < <(doc_content "$rel_path")
   return 1
 }
 
 # 파일 전체에서 "- 재검증:" 형식의 최초 일치 라인에서 백틱 안 명령 텍스트 추출
 # (WARN 메시지 병기용 — stamp_version과 같은 최초-일치 전제).
 recheck_command() {
-  local file="$1" line
+  local rel_path="$1" line
   local pattern='^- 재검증: `([^`]+)`'
   while IFS= read -r line; do
     if [[ "$line" =~ $pattern ]]; then
       printf '%s\n' "${BASH_REMATCH[1]}"
       return 0
     fi
-  done < "$file"
+  done < <(doc_content "$rel_path")
   return 1
 }
 
 main() {
-  local entry skill rel_path cli prefix file
+  local entry skill rel_path cli prefix
   local doc_ver cli_ver recheck warnings=0
 
   if is_true "${SKIP_AI_SKILL_CHECK:-}"; then
@@ -84,7 +108,6 @@ main() {
 
   for entry in "${TARGETS[@]}"; do
     IFS='|' read -r skill rel_path cli prefix <<< "$entry"
-    file="$REPO_ROOT/$rel_path"
 
     # CLI 부재만 조용히 skip한다 (정책: 미설치 환경 무소음). 설치된 CLI의
     # 실행·파싱 실패는 출력 계약 drift 신호이므로 WARN으로 드러낸다.
@@ -95,20 +118,20 @@ main() {
       continue
     fi
 
-    if [ ! -f "$file" ]; then
+    if ! doc_exists "$rel_path"; then
       warn "$skill: SKILL.md 없음 ($rel_path) — 대상 목록 갱신 필요"
       warnings=$((warnings + 1))
       continue
     fi
 
-    if ! doc_ver="$(stamp_version "$file" "$prefix")"; then
+    if ! doc_ver="$(stamp_version "$rel_path" "$prefix")"; then
       warn "$skill: '확인 버전' 스탬프 추출 실패 ($rel_path) — 스탬프 형식 변경 시 이 체크의 추출 규칙도 갱신"
       warnings=$((warnings + 1))
       continue
     fi
 
     if [ "$doc_ver" != "$cli_ver" ]; then
-      recheck="$(recheck_command "$file")" || recheck="$rel_path '작성 기준' 절의 재검증 명령 참조"
+      recheck="$(recheck_command "$rel_path")" || recheck="$rel_path '작성 기준' 절의 재검증 명령 참조"
       warn "$skill: 문서 스탬프 $doc_ver vs 설치 $cli_ver — 재검증: $recheck"
       warnings=$((warnings + 1))
     fi

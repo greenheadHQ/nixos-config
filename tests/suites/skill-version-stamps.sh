@@ -106,6 +106,31 @@ test_warn_skill_version_stamps_skips_when_cli_absent() {
   [ -z "$output" ] || fail "expected silent skip when CLIs are absent, got: $output"
 }
 
+test_warn_skill_version_stamps_from_head_detects_stale_head() {
+  local sandbox repo_root bin_dir output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  bin_dir="$sandbox/bin"
+  create_version_stamp_fixture_repo "$repo_root" "0.144.1" "2.1.206"
+  create_version_stamp_cli_stubs "$bin_dir" "0.145.0" "2.1.206"
+  ln -s "$(command -v git)" "$bin_dir/git"
+
+  # HEAD에는 구 스탬프를 커밋하고 working tree만 신 스탬프로 갱신 —
+  # 기본 모드는 일치로 침묵하지만 --from-head는 push 대상 HEAD의 drift를 경고해야 한다.
+  (cd "$repo_root" && \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -c init.templateDir= init -q -b main && \
+    git add -A && \
+    git -c user.email=fixture@test -c user.name=fixture commit -qm "stale stamps")
+  create_version_stamp_fixture_repo "$repo_root" "0.145.0" "2.1.206"
+
+  output=$(cd "$repo_root" && PATH="$bin_dir" "$BASH" scripts/ai/warn-skill-version-stamps.sh 2>&1)
+  [ -z "$output" ] || fail "expected working-tree mode to stay quiet after unstaged fix, got: $output"
+
+  output=$(cd "$repo_root" && PATH="$bin_dir" "$BASH" scripts/ai/warn-skill-version-stamps.sh --from-head 2>&1) \
+    || fail "expected warn-only exit 0 from --from-head, got exit $?: $output"
+  assert_contains "$output" "문서 스탬프 0.144.1 vs 설치 0.145.0"
+}
+
 test_warn_skill_version_stamps_warns_on_cli_exec_failure() {
   local sandbox repo_root bin_dir output
   sandbox=$(new_sandbox)
