@@ -34,6 +34,10 @@
 
 ## Rebuild Contract
 
+- Caller-declared inputs (source 전에 진입점이 선언):
+  `REBUILD_CMD` (필수, `darwin-rebuild` | `nixos-rebuild`),
+  `REBUILD_MODE` (선택, `switch` | `preview`, 기본 `switch` — usage의 wrapper 설명과
+  `--force` 노출을 결정하며, 환경 상속 오염을 막기 위해 모든 진입점이 명시 선언한다)
 - Public rebuild helpers:
   `parse_args`, `log_info`, `log_warn`, `log_error`, `worktree_symlink_guard`,
   `acquire_nrs_lock`, `release_nrs_lock`, `release_nrs_lock_after_no_changes`,
@@ -63,7 +67,7 @@
 - Top-level entrypoints stay thin. New runtime logic belongs in a helper file unless it is dispatch/help text.
 - Helpers are grouped by change reason, not by arbitrary line counts.
 - Loader source order is part of the contract. The ordered helper manifest in each top-level entrypoint is the single source of truth for helper membership and load order.
-- If a new helper is added under an existing helper directory, update the entrypoint helper manifest and tests together. `modules/shared/programs/shell/default.nix` only needs changes for new top-level entrypoints or new helper directories. New deployment entries must add a `register_*` call in `install_deployed_layout()` or `install_platform_nrs_entrypoint()`.
+- If a new helper is added under an existing helper directory, update the entrypoint helper manifest and tests together. `modules/shared/programs/shell/default.nix` only needs changes for new top-level entrypoints or new helper directories. New deployment entries must add a `register_*` call in `install_deployed_layout()` or `install_platform_rebuild_entrypoint()`.
 - `tests/shell-script-tests.sh` must stay hermetic and recursive-layout aware: it should ignore host Git hooks/config and mirror the deployed helper tree shape, not a flat copy.
 - Tests must exercise the deployed layout, not only the repo-local path. `tests/shell-script-tests.sh` should validate both the expected Home Manager wiring and runtime smoke paths.
 - Public surface smoke를 유지하되, ordered helper manifest/order contract를 검증하는 최소 fixture test도 유지한다.

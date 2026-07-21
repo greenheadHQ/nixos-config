@@ -6,11 +6,14 @@
 #   nrs --offline             # 오프라인 rebuild (빠름)
 #   nrs --force               # 소스 빌드 경고 무시
 #   nrs --force --cores 2    # 코어 제한으로 진행
+#   nrs --help                # 사용법 출력
 
 set -euo pipefail
 
 # shellcheck disable=SC2034  # REBUILD_CMD는 source된 rebuild-common.sh에서 사용
 REBUILD_CMD="nixos-rebuild"
+# shellcheck disable=SC2034  # REBUILD_MODE는 source된 rebuild-common.sh의 usage 분기에서 사용
+REBUILD_MODE="switch"
 # shellcheck source=/dev/null  # 런타임에 ~/.local/lib/rebuild-common.sh 로딩
 source "$HOME/.local/lib/rebuild-common.sh"
 parse_args "$@"

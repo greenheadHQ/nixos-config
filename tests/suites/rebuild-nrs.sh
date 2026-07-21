@@ -106,8 +106,8 @@ install_codex_managed_artifact_fixture() {
     "$home_dir/.codex/lib/pinning-patterns.sh"
 }
 
-install_platform_nrs_entrypoint() {
-  local sandbox="$1" platform="$2"
+install_platform_rebuild_entrypoint() {
+  local sandbox="$1" platform="$2" command="$3"
   local home_dir="$sandbox/home"
   local generated_dir="$sandbox/generated"
 
@@ -118,19 +118,27 @@ install_platform_nrs_entrypoint() {
     darwin)
       register_copy_exec \
         "$REPO_ROOT/modules/shared/programs/shell/darwin.nix" \
-        ".local/bin/nrs" \
-        '${darwinScriptsDir}/nrs.sh' \
-        "modules/darwin/scripts/nrs.sh"
+        ".local/bin/$command" \
+        '${darwinScriptsDir}/'"$command"'.sh' \
+        "modules/darwin/scripts/$command.sh"
       ;;
     nixos)
       register_copy_exec \
         "$REPO_ROOT/modules/shared/programs/shell/nixos.nix" \
-        ".local/bin/nrs" \
-        '${nixosScriptsDir}/nrs.sh' \
-        "modules/nixos/scripts/nrs.sh"
+        ".local/bin/$command" \
+        '${nixosScriptsDir}/'"$command"'.sh' \
+        "modules/nixos/scripts/$command.sh"
       ;;
-    *) fail "unknown platform for nrs entrypoint: $platform" ;;
+    *) fail "unknown platform for $command entrypoint: $platform" ;;
   esac
+}
+
+install_platform_nrs_entrypoint() {
+  install_platform_rebuild_entrypoint "$1" "$2" nrs
+}
+
+install_platform_nrp_entrypoint() {
+  install_platform_rebuild_entrypoint "$1" "$2" nrp
 }
 
 install_recording_nrs_relink() {
@@ -208,6 +216,117 @@ test_rebuild_common_exports_public_api() {
   assert_contains "$output" "codex_managed_artifacts_missing"
   assert_contains "$output" "codex_log_managed_artifacts_missing"
   assert_contains "$output" "repair_codex_config_drift_no_changes"
+}
+
+test_parse_args_unknown_argument_shows_usage_and_fails() {
+  local sandbox stdout_file stderr_file rc
+  sandbox=$(new_sandbox)
+  install_deployed_layout "$sandbox"
+  stdout_file="$sandbox/parse-args.out"
+  stderr_file="$sandbox/parse-args.err"
+
+  # 오류 메시지와 usage는 stderr 계약이다 — stdout/stderr를 분리 캡처해 스트림 회귀를 감지한다.
+  rc=0
+  HOME="$sandbox/home" \
+  PATH="$FIXTURE_DIR/bin:$PATH" \
+  bash -c '
+    set -euo pipefail
+    REBUILD_CMD="nixos-rebuild"
+    source "'"$sandbox/home/.local/lib/rebuild-common.sh"'"
+    parse_args --bogus
+  ' > "$stdout_file" 2> "$stderr_file" || rc=$?
+
+  [[ "$rc" -eq 1 ]] || fail "expected parse_args --bogus to exit 1 (actual: $rc)"
+  assert_contains "$(cat "$stderr_file")" "Unknown argument: --bogus"
+  assert_contains "$(cat "$stderr_file")" "Usage:"
+  [[ -s "$stdout_file" ]] && fail "expected empty stdout for unknown argument (got: $(cat "$stdout_file"))"
+  return 0
+}
+
+# usage/도움말 계열 테스트 공용 fixture — sandbox를 만들고 배포 진입점을 설치한 뒤
+# ENTRYPOINT_FIXTURE_HOME / ENTRYPOINT_FIXTURE_REPO 전역을 설정한다.
+# 이 계열은 parse_args 단계에서 종료되므로 rebuild/sudo stub 없이 안전하게 실행된다.
+prepare_rebuild_entrypoint_fixture() {
+  local platform="$1" command="$2"
+  local sandbox
+  sandbox=$(new_sandbox)
+  ENTRYPOINT_FIXTURE_HOME="$sandbox/home"
+  ENTRYPOINT_FIXTURE_REPO="$sandbox/repo"
+  create_git_fixture_repo "$ENTRYPOINT_FIXTURE_REPO"
+  ENTRYPOINT_FIXTURE_REPO="$(cd "$ENTRYPOINT_FIXTURE_REPO" && pwd -P)"
+  install_deployed_layout "$sandbox" "$ENTRYPOINT_FIXTURE_REPO"
+  install_platform_rebuild_entrypoint "$sandbox" "$platform" "$command"
+}
+
+# 준비된 fixture에서 배포 진입점을 실행한다 (stdout+stderr 병합 반환).
+# 시나리오별 환경변수는 호출 앞에 붙인다: REBUILD_MODE=preview run_deployed_rebuild_entrypoint nrs --help
+run_deployed_rebuild_entrypoint() {
+  local command="$1"; shift
+  HOME="$ENTRYPOINT_FIXTURE_HOME" \
+  PATH="$FIXTURE_DIR/bin:$PATH" \
+  bash -c '
+    set -euo pipefail
+    cd "'"$ENTRYPOINT_FIXTURE_REPO"'"
+    "'"$ENTRYPOINT_FIXTURE_HOME/.local/bin/$command"'" "$@"
+  ' _ "$@" 2>&1
+}
+
+test_nixos_nrs_help_flag_prints_usage() {
+  local output
+  prepare_rebuild_entrypoint_fixture nixos nrs
+  output=$(run_deployed_rebuild_entrypoint nrs --help)
+
+  assert_contains "$output" "Usage: nrs"
+  assert_contains "$output" "--offline"
+  assert_contains "$output" "--cores N"
+  assert_not_contains "$output" "Applying changes"
+  assert_not_contains "$output" "Unknown argument"
+}
+
+test_darwin_nrs_h_alias_prints_usage() {
+  local output
+  prepare_rebuild_entrypoint_fixture darwin nrs
+  # darwin 진입점 + 짧은 alias -h도 동일 usage 계약을 따른다.
+  output=$(run_deployed_rebuild_entrypoint nrs -h)
+
+  assert_contains "$output" "Usage: nrs"
+  assert_contains "$output" "--force"
+  assert_contains "$output" "--cores N"
+  assert_not_contains "$output" "Unknown argument"
+}
+
+test_nrs_help_ignores_inherited_rebuild_mode() {
+  local output
+  prepare_rebuild_entrypoint_fixture nixos nrs
+  # 진입점의 REBUILD_MODE=switch 명시 선언이 호출 환경에서 상속된 값을 덮는다.
+  output=$(REBUILD_MODE="preview" run_deployed_rebuild_entrypoint nrs --help)
+
+  assert_contains "$output" "Usage: nrs"
+  assert_contains "$output" "--force"
+  assert_not_contains "$output" "preview wrapper"
+}
+
+test_nrp_help_usage_omits_force_flag() {
+  local output
+  prepare_rebuild_entrypoint_fixture nixos nrp
+  # 실제 nrp 진입점 실행 — REBUILD_MODE=preview 선언이 usage에서 무효 --force를 제외한다.
+  output=$(run_deployed_rebuild_entrypoint nrp --help)
+
+  assert_contains "$output" "Usage: nrp"
+  assert_contains "$output" "--cores N"
+  assert_not_contains "$output" "--force"
+}
+
+test_nrp_rejects_force_flag() {
+  local output rc
+  prepare_rebuild_entrypoint_fixture nixos nrp
+  # preview 진입점에서 --force는 usage뿐 아니라 parser에서도 거부된다.
+  rc=0
+  output=$(run_deployed_rebuild_entrypoint nrp --force) || rc=$?
+
+  [[ "$rc" -eq 1 ]] || fail "expected nrp --force to exit 1 (actual: $rc)"
+  assert_contains "$output" "--force is not supported"
+  assert_contains "$output" "Usage: nrp"
 }
 
 test_detect_worktree_uses_current_worktree_path() {
