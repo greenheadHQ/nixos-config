@@ -39,8 +39,9 @@ EOF
 EOF
 }
 
-# PATH 통제용 디렉토리: warn 스크립트의 외부 명령 의존은 dirname뿐(나머지는 bash 내장)이라,
-# dirname만 담은 디렉토리 하나로 PATH를 좁혀 CLI 존재/부재를 결정론적으로 재현한다.
+# PATH 통제용 디렉토리: warn 스크립트의 기본 모드 외부 명령 의존은 dirname뿐(나머지는
+# bash 내장)이라, dirname만 담은 디렉토리 하나로 PATH를 좁혀 CLI 존재/부재를 결정론적으로
+# 재현한다. --from-head 모드는 git이 추가로 필요하므로 해당 테스트가 별도로 링크한다.
 create_version_stamp_path_dir() {
   local bin_dir="$1"
   mkdir -p "$bin_dir"

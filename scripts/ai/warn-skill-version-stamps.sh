@@ -13,7 +13,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # --from-head: working tree 대신 HEAD 커밋의 문서를 읽는다. pre-push에서 사용 —
 # unstaged로만 고쳐진 스탬프가 "일치"로 보이면 구 스탬프가 담긴 HEAD가 조용히 push되므로,
-# push 경계에서는 실제 push 대상 트리를 검사한다.
+# push 경계에서는 실제 push 대상 트리를 검사한다. HEAD는 push 대상의 근사다(현재 브랜치
+# push 워크플로우 기준) — 다른 ref를 지정 push하는 경우는 warn-only 도구의 검사 범위 밖.
 FROM_HEAD=false
 [ "${1:-}" = "--from-head" ] && FROM_HEAD=true
 
