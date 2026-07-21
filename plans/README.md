@@ -72,7 +72,7 @@ reconcile 당시 PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)
 | 023 | worktree-path-guard sibling worktree 오탐 제거 | P2 | S | — | #935 | DONE (PR #968) |
 | 024 | Anki를 AnkiWeb 동기화로 실제 전환 (5/30 결정 이행) | P1 | S | — | #974 | DONE (2026-07-12 이행 — 외부 사본 minipc·해시 일치, 서버는 2025-12-24 스냅샷임을 temp 프로필 실측 확증 후 Upload, prefs syncKey=SET 검증. 감사 "미사용" 결론 정정은 evidence 문서 서두 참조) |
 | 025 | 601장 백로그 재시작 프로토콜 (상한·정렬·2주 게이트) | P1 | S-M | 024 (soft) | #975 | TODO |
-| 026 | Anki 애드온·문서 drift·인프라 잔재 일괄 정리 | P2 | S | 024 (soft) | #976 | TODO |
+| 026 | Anki 애드온·문서 drift·인프라 잔재 일괄 정리 | P2 | S | 024 (soft) | #976 | TODO (Part A 문서 정정 완료 2026-07-21. 잔여: Part B 운영자 GUI, Part C는 STOP — `/var/lib/private/anki-sync-server`에 203MB 실데이터 실측되어 삭제 보류, 처분은 운영자 결정 대기) |
 | 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | TODO |
 | 028 | 원격 AI 세션 macOS TCC 권한 정책을 DX 우선으로 확정·적용 | P1 | M | — | #1093 | TODO |
 | 029 | 원격 AI 세션 1Password SSH 승인 hang을 DX 우선으로 제거 | P1 | M-L | — | #1094 | TODO |
