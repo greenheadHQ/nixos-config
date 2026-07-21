@@ -26,7 +26,8 @@ is_true() {
 # 버전 뒤 괄호 텍스트가 붙어도 매칭한다. prefix의 trailing space는 필드 구분자 IFS='|'가
 # whitespace를 포함하지 않아 read에서 보존된다.
 # 대상 skill root를 추가/변경하면 lefthook.yml의 ai-skill-version-stamps glob과
-# scripts/ai/check-lefthook-staged-config.sh의 기대 블록도 함께 갱신한다 (3곳 수동 동기화).
+# scripts/ai/check-lefthook-staged-config.sh의 기대 블록, tests/suites/skill-version-stamps.sh의
+# fixture(대상 경로·스탬프·기대 경고 건수)도 함께 갱신한다 (4곳 수동 동기화).
 TARGETS=(
   "using-codex-exec|modules/shared/programs/claude/files/skills/using-codex-exec/SKILL.md|codex|codex-cli "
   "using-claude-p|modules/shared/programs/claude/files/skills/using-claude-p/SKILL.md|claude|Claude Code v"
