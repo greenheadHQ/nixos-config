@@ -86,7 +86,7 @@ mise는 두 계층으로 활성화된다:
 
 ## 비대화형/LLM 마찰 경계면
 
-`mise activate zsh` hook 모드는 대화형 셸 기준이라 (`--shims` 모드는 비대화형용 — 위 표 참조), 아래 실행 컨텍스트에서 깨지는 사례가 반복 관측됐다 (2026-07 세션 로그·히스토리 전수조사). 사람의 대화형 셸에서는 재현되지 않으므로 "내 셸에선 되는데"로 진단이 지연되기 쉽다.
+mise 사용은 아래 비대화형·자동화 컨텍스트에서 서로 다른 이유로 깨지는 사례가 반복 관측됐다 (2026-07 세션 로그·히스토리 전수조사) — 앞 두 행은 hook/shims 활성화 문제(`mise activate zsh` hook 모드는 대화형 셸 기준, `--shims`는 비대화형용 — 위 표 참조), activation 행은 제한 PATH, worktree 행은 config trust 문제다. 사람의 대화형 셸에서는 재현되지 않으므로 "내 셸에선 되는데"로 진단이 지연되기 쉽다.
 
 | 경계면 | 전형적 증상 | 대응 |
 |---|---|---|
@@ -106,7 +106,7 @@ mise는 두 계층으로 활성화된다:
 | paranoid mode | 비공유 (의도된 재승인 경계) | 수동 재승인 |
 | git 비연결 디렉토리 | 비공유 | `mise trust` (선행 조건 적용) |
 
-주의: worktree 공유는 경로 기준 신뢰이지 현재 브랜치 config 내용의 검증이 아니다. worktree는 다른 브랜치의 다른 config 내용을 담을 수 있으므로, 외부/타인 브랜치를 checkout한 worktree에서는 mise config 변경 여부를 먼저 검토한다 (env·template은 로드 시 셸 명령을 실행할 수 있다).
+주의: trust는 경로 기준 신뢰이지 config 내용의 검증이 아니다 (콘텐츠 기준 재승인은 paranoid mode만 제공). worktree든 main checkout이든 branch 전환·pull로 이미 trusted인 경로의 config 내용이 바뀌어도 재승인을 묻지 않으므로, 외부/타인 브랜치를 받았다면 mise config 변경 여부를 먼저 검토한다 (env·template은 로드 시 셸 명령을 실행할 수 있다).
 
 근거: worktree trust 공유는 mise 2026.7.5에서 도입 ([upstream 릴리스](https://github.com/jdx/mise/releases/tag/v2026.7.5)). 재검증: `mise trust --help`의 worktree 공유 문구.
 
