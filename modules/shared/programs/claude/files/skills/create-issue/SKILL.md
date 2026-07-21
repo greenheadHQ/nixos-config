@@ -188,6 +188,7 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
 
 1. 등록 전 제목, 라벨 조합을 사용자에게 보여주고 확인을 받는다.
 2. 확인 통과 직후, Step 2에서 식별한 명시적 시각 증빙 후보가 있으면 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬의 절차를 여기서 실행한다 — 각 후보의 처리 결과를 반영한 본문 사본을 아래 3단계의 `$ISSUE_BODY`로 사용한다. 성공한 후보의 첨부는 유지하고 실패·skip 후보만 제외한다 (부분 성공 시 성공한 `href`를 버리면 orphan asset이 된다). 업로드·삽입에 성공한 후보가 없을 때만 원래 본문을 사용하고, 정본이 정의한 `ATTACH_STATUS`를 최종 응답에 포함한다. 후보가 없으면 이 단계를 건너뛴다.
+   첨부를 삽입했다면 Step 3의 sanitization scan은 이 시점의 최종 본문 사본에 다시 적용한다 — 삽입되는 첨부 라벨의 파일명·설명도 S1 값(개인·회사 식별자 등)을 담을 수 있으므로, 검사한 본문과 게시하는 본문이 반드시 동일 파일이어야 한다 (sanitization checklist S3의 post-render 원칙).
 3. `gh issue create`를 `--body-file`로 실행한다. 본문은 임시 파일에 저장 후 전달.
    ```bash
    # BSD/macOS mktemp는 템플릿 끝(trailing)에 XXXXXX가 와야 랜덤 치환함.
