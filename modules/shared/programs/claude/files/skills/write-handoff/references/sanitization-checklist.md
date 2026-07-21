@@ -65,6 +65,7 @@ S1과 겹치면 S1이 우선한다 — 아래 보존 범주에 속해도 문자�
 
    `path:LINE`·`path:START-END` 인용은 3)·4) 검사 전에 trailing `:[0-9]+(-[0-9]+)?` suffix를 떼어낸 순수 경로로 검사한다 — Git은 suffix를 파일명 일부로 해석해 실재 경로도 부재로 오판한다 (게시 원문의 인용 표기는 그대로 보존).
    0)에서 visibility가 PUBLIC이 아니거나 repo가 의도한 대상이 아니면, 1)·2)의 SHA가 다르면, 로컬 `origin/main`은 공개 상태의 근거가 아니다. 확인 실패·미커밋·미푸시·비공개 브랜치에만 있는 값/경로는 모두 S1로 처리한다 (fail-closed).
+   게시 대상이 cwd origin과 다른 repo면(예: handoff에 외부 이슈 URL 지정) 검사 대상과 게시 대상을 결합해 판단한다: 이 검사(0~4)는 "cwd 유래 정보가 이미 인터넷에 공개돼 있는가"를 cwd origin 기준으로 판정하는 것이므로, cwd origin이 PUBLIC으로 확인될 때만 게시 대상과 무관하게 유효하다. cwd origin이 비공개·불명이면 게시 대상 repo가 무엇이든 S1이며, 게시 대상 repo 자체의 식별·공개 여부는 `gh repo view <owner/repo> --json nameWithOwner,visibility`로 별도 확인한다.
 
 ## S4. 언어 유지 규칙
 
