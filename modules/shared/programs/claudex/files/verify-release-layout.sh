@@ -10,7 +10,10 @@ fi
 shopt -s dotglob nullglob
 entries=("$1"/*)
 if [ "${#entries[@]}" -ne 5 ]; then
-  echo "cli-proxy-api: upstream release layout changed" >&2
+  echo "cli-proxy-api: upstream release layout changed (expected 5 entries, found ${#entries[@]}):" >&2
+  for entry in "${entries[@]}"; do
+    echo "  ${entry##*/}" >&2
+  done
   exit 1
 fi
 

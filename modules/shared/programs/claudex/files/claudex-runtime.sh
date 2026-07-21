@@ -118,8 +118,14 @@ _claudex_assert_default_state_ancestors() {
   done
 }
 
+# GNU stat %a prefixes a special-bit digit when setuid/setgid/sticky is set (a setgid 0700
+# directory prints 2700), which the exact "700"/"600" comparisons at the call sites would
+# wrongly reject. Return only the trailing owner/group/other triplet: with group/other bits
+# forced to zero by those comparisons, special bits grant no additional access.
 _claudex_file_mode() {
-  "$CLAUDEX_STAT" -c '%a' "$1" 2>/dev/null
+  local mode
+  mode="$("$CLAUDEX_STAT" -c '%a' "$1" 2>/dev/null)" || return 1
+  printf '%s\n' "${mode: -3}"
 }
 
 _claudex_file_owner() {

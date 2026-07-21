@@ -376,6 +376,20 @@ test_claudex_runtime_api_and_private_state() {
      and .["usage-statistics-enabled"] == false' \
     "$state/config.yaml" >/dev/null || fail "rendered claudex config violates its contract"
 
+  # GNU stat %a prefixes a special-bit digit (setgid 0700 -> "2700") and GNU chmod 700
+  # does not clear a directory's setgid bit, so the runtime cannot self-heal from one:
+  # the mode check must accept special bits over a private triplet while still rejecting
+  # any group/other access.
+  chmod g+s "$state/auth"
+  _claudex_prepare_fixture_state "$sandbox" \
+    || fail "prepare_state rejected a setgid auth dir with a 700 triplet"
+  chmod g-s "$state/auth"
+  chmod 750 "$state/work"
+  if _claudex_prepare_fixture_state "$sandbox" >/dev/null 2>&1; then
+    fail "prepare_state accepted a group-readable work dir"
+  fi
+  chmod 700 "$state/work"
+
   key_before="$(<"$state/client-api-key")"
   config_inode_before="$(_claudex_file_inode "$state/config.yaml")"
   _claudex_prepare_fixture_state "$sandbox"
@@ -1237,7 +1251,7 @@ test_claudex_nix_generated_command_outputs_are_pinned() {
 }
 
 test_claudex_release_layout_verifier() {
-  local sandbox verifier exact entry
+  local sandbox verifier exact entry output
   sandbox="$(new_sandbox)"
   verifier="$REPO_ROOT/modules/shared/programs/claudex/files/verify-release-layout.sh"
   exact="$sandbox/exact"
@@ -1266,6 +1280,17 @@ test_claudex_release_layout_verifier() {
       fail "CLIProxyAPI release verifier accepted $entry layout drift"
     fi
   done
+
+  # A count mismatch must dump the actual entries so an upstream version bump is
+  # diagnosable from the failure output alone.
+  rm -rf "$sandbox/candidate"
+  cp -R "$exact" "$sandbox/candidate"
+  : > "$sandbox/candidate/EXTRA"
+  if output="$(bash "$verifier" "$sandbox/candidate" 2>&1)"; then
+    fail "CLIProxyAPI release verifier accepted an extra release entry"
+  fi
+  assert_contains "$output" "expected 5 entries, found 6"
+  assert_contains "$output" "EXTRA"
 }
 
 test_claudex_disabled_home_excludes_enabled_closure() {
