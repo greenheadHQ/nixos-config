@@ -43,19 +43,45 @@ _bootstrap_worktree() {
   _wt_inherit_claude_local_plugins "$wt_path" "$git_root"
 }
 
-# mise trust는 config 파일 경로 기준이라 원본 repo에서 한 trust가 worktree로
-# 승계되지 않는다. 미신뢰로 두면 worktree의 mise 도구 호출이 막혀, 세션들이
-# 명령마다 `mise trust`를 방어적으로 앞세우는 낭비가 반복 관측됐다 (2026-07
-# 전수조사). mise 부재·trust 실패는 non-fatal — worktree 생성을 막지 않는다.
+# mise trust는 경로 기준이라 원본 repo에서 한 trust가 worktree로 승계되지 않는다
+# (구버전 기준; 2026.x는 일반 모드에서 worktree 공유하나 paranoid·구버전은 비공유).
+# 미신뢰로 두면 worktree의 mise 도구 호출이 막혀, 세션들이 명령마다 `mise trust`를
+# 방어적으로 앞세우는 낭비가 반복 관측됐다 (2026-07 전수조사).
+# mise 부재·trust 실패는 non-fatal — worktree 생성을 막지 않는다.
 _wt_trust_mise_configs() {
   local wt_path="$1"
   command -v mise > /dev/null 2>&1 || return 0
-  local cfg
-  for cfg in mise.toml .mise.toml mise.local.toml .mise.local.toml; do
-    [[ -f "$wt_path/$cfg" ]] || continue
-    mise trust "$wt_path/$cfg" > /dev/null 2>&1 \
-      || _warn "mise trust 실패: $cfg — 필요 시 worktree에서 수동 mise trust"
+
+  # paranoid 모드는 config 내용 변경마다 수동 재승인이 설계 의도다 — 자동 trust로
+  # 그 보안 경계를 우회하지 않는다 (https://mise.jdx.dev/paranoid.html).
+  if [[ "${MISE_PARANOID:-0}" == "1" ]] \
+    || [[ "$(mise settings get paranoid 2> /dev/null)" == "true" ]]; then
+    _warn "mise paranoid mode 감지 — 자동 trust 생략 (필요 시 worktree에서 수동 mise trust)"
+    return 0
+  fi
+
+  # mise가 탐색하는 config 후보를 훑어 (1) 존재 여부 (2) symlink 여부를 본다.
+  # symlink config는 worktree 밖 파일을 trust/파싱 대상으로 끌어들일 수 있으므로
+  # (.codex 복사의 symlink 거부와 동일 원칙) 자동 trust를 생략한다.
+  local cfg found=0
+  for cfg in "$wt_path"/mise*.toml "$wt_path"/.mise*.toml \
+    "$wt_path"/mise/config.toml "$wt_path"/.mise/config.toml \
+    "$wt_path"/.config/mise.toml "$wt_path"/.config/mise/config*.toml \
+    "$wt_path"/.config/mise/conf.d/*.toml; do
+    [[ -e "$cfg" || -L "$cfg" ]] || continue
+    if [[ -L "$cfg" ]]; then
+      _warn "worktree mise config가 symlink라 자동 trust를 생략합니다: ${cfg#"$wt_path"/}"
+      return 0
+    fi
+    found=1
   done
+  [[ "$found" == "1" ]] || return 0
+
+  # 인자 없는 `mise trust`는 디렉토리 단위 trust다 — mise가 지원하는 모든 config 경로
+  # (mise.toml, .config/mise/config.toml, conf.d/*.toml, local 변형)를 한 번에 커버한다
+  # (실측: trust 후 `mise config ls`가 전부 파싱됨). `--all`과 달리 parents는 trust하지 않는다.
+  (cd "$wt_path" && mise trust > /dev/null 2>&1) \
+    || _warn "mise trust 실패 — 필요 시 worktree에서 수동 mise trust"
 }
 
 _wt_prepare_claude_settings() {

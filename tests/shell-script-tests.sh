@@ -61,6 +61,9 @@ run_test "wt create supports valid Codex projects shapes" test_wt_create_support
 run_test "wt create preserves unmergeable Codex config" test_wt_create_preserves_unmergeable_codex_config
 run_test "wt create trusts worktree mise configs" test_wt_create_trusts_mise_configs
 run_test "wt create survives mise trust failure" test_wt_create_mise_trust_failure_is_nonfatal
+run_test "wt create skips mise trust in paranoid env" test_wt_create_mise_paranoid_skips_auto_trust
+run_test "wt create skips mise trust with paranoid setting" test_wt_create_mise_paranoid_setting_skips_auto_trust
+run_test "wt create skips mise trust for symlinked config" test_wt_create_mise_symlink_config_skips_auto_trust
 run_test "wt create inherits Claude local plugin manifest" test_wt_create_inherits_claude_local_plugin_manifest
 run_test "wt create ignores branch-tracked plugin settings" test_wt_create_ignores_branch_tracked_plugin_settings
 run_test "wt plugin manifest ignores noncanonical adjacent lock directory" test_wt_plugin_manifest_ignores_noncanonical_adjacent_lock_directory
