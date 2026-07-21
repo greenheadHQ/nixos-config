@@ -93,9 +93,22 @@ mise는 두 계층으로 활성화된다:
 | 비대화형 셸 (SSH `zsh -c`, LLM Bash tool) | pnpm/node not found | `.zshenv` shims가 선언적 환경 방어. 즉시 복구는 `mise exec -- <명령>` |
 | hook 실행 환경 (lefthook·플러그인 hook) | 런타임 not found로 품질 게이트 조용한 무력화 | hook 스크립트가 mise 도구를 부르면 shims PATH 보강 또는 `mise exec` 경유 |
 | home-manager activation 제한 PATH | `mise: command not found`, reshim exit 127 | activation에서 mise 실행 금지 (#814→#890 교훈) |
-| worktree cwd | 프로젝트 config 미신뢰로 도구 비활성 | mise 2026.7.5+([upstream 릴리스](https://github.com/jdx/mise/releases/tag/v2026.7.5)에서 도입) 일반 모드는 main checkout의 trust를 linked worktree와 공유한다. 2026.7.4 이하(검증 당시 배포본 2025.12.13 포함)·paranoid mode·비연결 디렉토리는 worktree별 `mise trust`(선행 조건 참조) 필요 (재검증: `mise trust --help`의 worktree 공유 문구) |
+| worktree cwd | 프로젝트 config 미신뢰로 도구 비활성 | 버전·모드·연결 상태에 따라 trust 공유 여부가 다름 — 아래 "worktree trust 공유 조건" 참조 |
 
-비대화형에서 안전한 기본 규약: `mise exec -- <명령>` — 버전 resolve와 PATH 주입을 mise가 한 번에 처리하므로 shims/activate 상태와 무관하게 동작한다. 대화형 성공을 근거로 다른 컨텍스트도 동작할 것이라 가정하지 않는다.
+비대화형에서 PATH 문제의 안전한 복구 규약: `mise exec -- <명령>` — 버전 resolve와 PATH 주입을 mise가 한 번에 처리하므로 shims/activate 상태와 무관하게 동작한다. 대화형 성공을 근거로 다른 컨텍스트도 동작할 것이라 가정하지 않는다. 단 이는 PATH 복구 경로일 뿐 trust 경계의 우회가 아니다 — 검토하지 않은 config가 로드되는 컨텍스트라면 실행 전에 trust 선행 조건을 먼저 적용한다.
+
+### worktree trust 공유 조건
+
+| 조건 | trust 공유 | 조치 |
+|---|---|---|
+| 2026.7.5 이상, 일반 모드, linked worktree | 공유 (main checkout 기준) | 추가 trust 불요 |
+| 2026.7.4 이하 (검증 당시 배포본 2025.12.13 포함) | 비공유 | worktree별 `mise trust` (선행 조건 적용) |
+| paranoid mode | 비공유 (의도된 재승인 경계) | 수동 재승인 |
+| git 비연결 디렉토리 | 비공유 | `mise trust` (선행 조건 적용) |
+
+주의: worktree 공유는 경로 기준 신뢰이지 현재 브랜치 config 내용의 검증이 아니다. worktree는 다른 브랜치의 다른 config 내용을 담을 수 있으므로, 외부/타인 브랜치를 checkout한 worktree에서는 mise config 변경 여부를 먼저 검토한다 (env·template은 로드 시 셸 명령을 실행할 수 있다).
+
+근거: worktree trust 공유는 mise 2026.7.5에서 도입 ([upstream 릴리스](https://github.com/jdx/mise/releases/tag/v2026.7.5)). 재검증: `mise trust --help`의 worktree 공유 문구.
 
 ## 핵심 절차
 
