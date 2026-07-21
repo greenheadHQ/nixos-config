@@ -167,6 +167,8 @@ run_test "skill-usage-report missing log errors" test_skill_usage_report_missing
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing
+run_test "darwin nrs no-change skips relink without HM gcroot" test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot
+run_test "darwin nrs no-change restores when HM gcroot present" test_darwin_nrs_no_changes_restores_when_hm_gcroot_present
 run_test "install-lefthook cleans up redundant local core.hooksPath" test_install_lefthook_cleanup_local_redundant
 run_test "install-lefthook preserves custom local core.hooksPath" test_install_lefthook_preserves_custom_local
 run_test "install-lefthook is silent on clean state" test_install_lefthook_silent_on_clean_state

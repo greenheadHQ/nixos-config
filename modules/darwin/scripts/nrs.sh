@@ -242,7 +242,12 @@ main() {
             echo ""
             log_info "✅ No changes to apply. Skipping rebuild."
             log_info "  (Use 'nrs --force' to force full rebuild including activation scripts)"
-            maybe_relink_or_restore
+            # Safety: HM gcroot가 유효할 때만 실행 — gcroot 파손 시 Phase 1(rm)만 되고
+            # Phase 2(restore) 실패하여 심링크 유실 방지. 이 경로는 rebuild 없이
+            # 종료되므로 HM activation이 심링크를 재생성할 기회도 없다.
+            if [[ -e "$HOME/.local/state/home-manager/gcroots/current-home" ]]; then
+                maybe_relink_or_restore
+            fi
             repair_codex_config_drift_no_changes
             release_nrs_lock_after_no_changes
             return 0
@@ -262,9 +267,12 @@ main() {
     # - main: maybe_relink_or_restore() → stale worktree symlink 제거 + nix store 복원
     # - worktree: worktree 심링크 직접 제거 + nrs-relink restore로 기존 entry 복원
     #   (activation 성공 후 maybe_relink_or_restore()가 다시 worktree로 relink)
-    if rebuild_is_main_flake; then
+    # Safety: HM gcroot가 유효할 때만 실행 — gcroot 파손 시 Phase 1(rm)만 되고
+    # Phase 2(restore) 실패하여 심링크 유실 방지 (NixOS wrapper와 동일 guard)
+    if rebuild_is_main_flake \
+       && [[ -e "$HOME/.local/state/home-manager/gcroots/current-home" ]]; then
         maybe_relink_or_restore
-    else
+    elif ! rebuild_is_main_flake; then
         prepare_worktree_symlinks_for_rebuild
     fi
     run_darwin_rebuild
