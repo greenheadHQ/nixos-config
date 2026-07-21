@@ -578,7 +578,7 @@ capability probe 동작 ([`modules/shared/scripts/codex-exec-supervised.sh`](../
 
 Nix wiring ([`modules/shared/programs/shell/default.nix`](../../../../../shell/default.nix)): home.file로 `~/.local/bin/codex-exec-supervised`를 `pkgs.writeShellScript` wrapper에 link한다. wrapper가 `CODEX_EXEC_TIMEOUT_BIN`/`CODEX_EXEC_SETSID_BIN`에 `pkgs.coreutils`/`pkgs.util-linux`의 absolute store path를 export한 뒤 raw script(`modules/shared/scripts/codex-exec-supervised.sh`)를 exec한다. wrapper는 PATH를 변경하지 않으므로 사용자 PATH의 BSD coreutils가 보존된다 (mac `stat -f %m` 같은 BSD 호출 의미 보존).
 
-오케스트레이션 vs 자문 (Layer 2 — `-C scratch` 추가): consult 전용 호출(외부 LLM에 옵션을 자문하는 비-repo 작업)은 Layer 1 위에 `-C <non-repo-scratch-dir>` + `--skip-git-repo-check`를 추가한다. reviewer/auditor (run-da/codex-fan-out)는 repo cwd가 필요하므로 Layer 2를 적용하지 않는다.
+오케스트레이션 vs 자문 (Layer 2 — `-C scratch` 추가): consult 전용 호출(외부 LLM에 옵션을 자문하는 비-repo 작업)은 Layer 1 위에 `-C <non-repo-scratch-dir>` + `--skip-git-repo-check`를 추가한다. reviewer/auditor (run-da)는 repo cwd가 필요하므로 Layer 2를 적용하지 않는다.
 
 variant legend (issue #593 PoC 8 variant + wrapper 적용 분류):
 
@@ -740,5 +740,5 @@ done
 아닌 별개 실패이므로 `$TMP/$eff.err`를 확인한다.
 
 대안: 비대화형에서 spawn 진행을 프로그램적으로 관측·판정해야 하면 공개 `--json`에 의존하지 말고 persisted
-rollout을 파싱한다. 또는 세션 내 오케스트레이션 대신 `codex-fan-out`(별도 `codex exec` 프로세스 병렬)으로
+rollout을 파싱한다. 또는 세션 내 오케스트레이션 대신 별도 `codex exec` 프로세스를 독립 실행해
 관측 가능한 병렬화를 쓴다.

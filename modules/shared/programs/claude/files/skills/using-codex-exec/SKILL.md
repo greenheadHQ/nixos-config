@@ -20,7 +20,7 @@ description: >-
 | Claude Code 세션·headless 자동화 | `codex-exec-supervised` (Layer 1) | stdin EOF + process group + timeout 보장이 필요한 programmatic 호출. [known-issues.md §15](references/known-issues.md#15-codex-exec-supervised-wrapper로-14-위에-process-grouptimeout-한계-보강-issue-593) 참조. |
 | 사용자가 literal raw 실행을 요청했거나 1회성 수동 진단 | raw `codex exec` | alias를 피하도록 `command codex` 또는 `env ... codex`로 호출한다. |
 
-`run-da`·`codex-fan-out`은 각 스킬의 라우팅 계약이 우선한다. Direct Codex 세션에서
+`run-da`는 스킬의 라우팅 계약이 우선한다. Direct Codex 세션에서
 subprocess fallback이 필요하면 해당 스킬이 요구하는 별도 사용자 승인을 먼저 받는다.
 
 ## 작성 기준

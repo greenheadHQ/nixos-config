@@ -11,7 +11,7 @@
 
 ## 2026-07-11 재검증: 현재 운영 계약
 
-- Direct Codex의 기본 fan-out은 native subagent다. `using-codex-exec`와 `codex-fan-out`은
+- Direct Codex의 기본 fan-out은 native subagent다. `using-codex-exec`은
   자기 참조 방지를 위해 Direct Codex에 의도적으로 노출하지 않으며 직접 호출 대상이 아니다.
 - Claude Code는 `codex exec` subprocess, headless는 foreground serial subprocess 경로를 사용한다.
   세션별 binding의 정본은 [runtime mapping](../../../../modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md),
@@ -164,7 +164,7 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex'
 - fenced code block은 예시 코드로 보고 제외한다.
 - blockquote 안의 FAIL literal은 WARN으로 downgrade한다.
 - 런타임별 binding을 보여주는 구조적 mapping table은 예외로 허용하되, 일반 prose는 엄격하게 검사한다.
-- `set-icons`, `using-claude-p`, `using-codex-exec`, `codex-fan-out`는 별도의 SKILL.md lint 제외 목록을 따른다.
+- `set-icons`, `using-claude-p`, `using-codex-exec`는 별도의 SKILL.md lint 제외 목록을 따른다.
 
 fixture만 빠르게 확인하려면 다음을 실행한다:
 

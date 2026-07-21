@@ -41,7 +41,6 @@ EXPECTED_EXPOSED=(
   finding-unknowns
   finish-pr
   issuing-codex-pairing-code
-  playwright-cli
   review-pr-feedback
   run-da
   using-gh-attach
@@ -51,12 +50,12 @@ SHARED_EXPOSURE_EXCLUDE=(
   set-icons
   using-claude-p
   using-codex-exec
-  codex-fan-out
 )
 # Split retired names so the public stale-reference scan scope can stay
 # zero-match while this verifier still checks deployed residue.
 RETIRED_SHARED_SKILLS=(
   "syncing-codex""-harness"
+  "codex-fan""-out"
 )
 RETIRED_EXECUTABLES=(
   ".local/bin/codex""-sync"
@@ -69,7 +68,6 @@ SKILL_NEUTRAL_LINT_EXCLUDE=(
   set-icons
   using-claude-p
   using-codex-exec
-  codex-fan-out
 )
 
 errors=0
@@ -343,7 +341,7 @@ standalone_root="$HOME/.codex/packages/standalone"
 # 회귀 가드 (#890): codex는 declarative nix overlay(nix profile/store)로 설치된다. mise npm
 # backend에서 이관된 뒤로, 잔존 mise codex shim이 PATH 앞에서 codex(nix profile)를 shadow하면 안 된다 —
 # config 미등록 dangling shim 호출은 mise version resolve(fork 폭주, os error 35)를 재유발한다.
-# 의존처(codex-exec-supervised, shell의 codex/codex-apps 런처, codex-fan-out)가 전부
+# 의존처(codex-exec-supervised, shell의 codex/codex-apps 런처)가 전부
 # command -v codex에 의존하므로 이 셸 컨텍스트에서 codex가 nix 경로로 resolve되는지 검증한다.
 # 주의: mise shim은 그 자체가 nix mise 바이너리로의 symlink라 readlink -f 결과가 nix store가 되어
 # shim을 못 거른다. 따라서 command -v가 돌려준 첫 PATH 매치 경로 자체로 mise/node 잔재를 판정하고,
