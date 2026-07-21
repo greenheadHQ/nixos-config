@@ -55,16 +55,26 @@ _is_64_hex() {
   [ "${#1}" -eq 64 ]
 }
 
+# GNU/BSD stat 겸용 파일 mode 조회 (예: "600").
+_file_mode() {
+  stat -c '%a' "$1" 2>/dev/null || /usr/bin/stat -f '%Lp' "$1" 2>/dev/null
+}
+
 # 기존 파일이 owner-only 계약(regular file·비심링크·소유자·mode 600)을 만족하는지 검증.
 # mode만 어긋나면 600 교정을 시도하고, 교정 불가·심링크·타소유는 이벤트를 포기한다
 # (fail-closed — umask는 신규 inode에만 적용되므로 기존 파일은 매 실행 검증해야 한다).
 _ensure_owner_only_file() {
   [ -f "$1" ] && [ ! -L "$1" ] && [ -O "$1" ] || return 1
-  case "$(stat -c '%a' "$1" 2>/dev/null || /usr/bin/stat -f '%Lp' "$1" 2>/dev/null)" in
+  # macOS ACL은 POSIX mode와 별개 권한 축이라 %a/%Lp 검사에 잡히지 않는다 —
+  # owner-only 보장 전에 제거한다 (chmod -N은 ACL이 없어도 성공, 실패 시 fail-closed).
+  if [ "$(uname)" = "Darwin" ]; then
+    /bin/chmod -N "$1" 2>/dev/null || return 1
+  fi
+  case "$(_file_mode "$1")" in
     600) return 0 ;;
   esac
   chmod 600 "$1" 2>/dev/null || return 1
-  [ "$(stat -c '%a' "$1" 2>/dev/null || /usr/bin/stat -f '%Lp' "$1" 2>/dev/null)" = "600" ]
+  [ "$(_file_mode "$1")" = "600" ]
 }
 
 # key가 없으면 32-byte random을 hex로 한 번만 생성 (same-directory temp + atomic rename).

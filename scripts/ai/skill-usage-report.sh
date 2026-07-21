@@ -96,6 +96,9 @@ rows: dict[str, dict[str, int]] = defaultdict(
 # v2 event contract (log-skill.sh와 동기 유지): exact 6-key set + exact types.
 V2_KEYS = {"schema_version", "event_type", "ts", "runtime", "skill", "session_key"}
 SESSION_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
+# datetime.fromtimestamp() 변환 가능 범위를 파싱 단계에서 강제한다 —
+# 범위 밖 행이 report 전체를 OverflowError로 중단시키지 않도록 skip 계약을 지킨다.
+TS_MAX = 253402300799  # 9999-12-31T23:59:59Z
 
 
 def parse_v2_event(line: str) -> tuple[int, str] | None:
@@ -110,13 +113,13 @@ def parse_v2_event(line: str) -> tuple[int, str] | None:
         return None
     if event["event_type"] != "skill_invocation":
         return None
-    if type(event["ts"]) is not int:
+    if type(event["ts"]) is not int or not (0 <= event["ts"] <= TS_MAX):
         return None
     if not isinstance(event["runtime"], str) or not event["runtime"]:
         return None
     if not isinstance(event["skill"], str) or not event["skill"]:
         return None
-    if not isinstance(event["session_key"], str) or not SESSION_KEY_RE.match(
+    if not isinstance(event["session_key"], str) or not SESSION_KEY_RE.fullmatch(
         event["session_key"]
     ):
         return None
@@ -142,6 +145,8 @@ with open(log_path, "r", encoding="utf-8", errors="replace", newline="") as hand
             try:
                 timestamp = int(fields[0])
             except ValueError:
+                continue
+            if not 0 <= timestamp <= TS_MAX:
                 continue
 
             skill = fields[4]
