@@ -56,13 +56,15 @@ S1과 겹치면 S1이 우선한다 — 아래 보존 범주에 속해도 문자�
 4. S2로 보존하려는 repo 유래 경로·식별자는 공개 상태를 실측 확인한다 — 현재 worktree 존재는 근거가 아니다. 확인은 무상태 읽기만 사용한다 (`git fetch` 금지 — 모든 worktree가 공유하는 remote-tracking ref를 바꾸고, 공통 Git 디렉터리가 read-only인 환경에서는 실패한다):
 
    ```bash
+   gh repo view --json nameWithOwner,visibility             # 0) 원격이 의도한 canonical repo이고 PUBLIC인지 (인증된 ls-remote 성공은 공개 증명이 아니다)
    git ls-remote --exit-code origin main                    # 1) 원격 실측 (필수) — SHA를 아래와 대조
    git rev-parse origin/main                                # 2) 로컬 추적 ref SHA — 1)과 일치해야 유효
    git cat-file -e "origin/main:<path>"                     # 3) 경로가 공개 기본 브랜치에 실재하는가
    git grep -F -n -e '<식별자>' origin/main -- '<path>'     # 4) 값의 공개 이력 (고정 문자열 매치, 경로 실재와 별개)
    ```
 
-   1)·2)의 SHA가 다르면 로컬 `origin/main`은 공개 상태의 근거가 아니다. SHA 불일치·원격 조회 실패·미커밋·미푸시·비공개 브랜치에만 있는 값/경로는 모두 S1로 처리한다 (fail-closed).
+   `path:LINE`·`path:START-END` 인용은 3)·4) 검사 전에 trailing `:[0-9]+(-[0-9]+)?` suffix를 떼어낸 순수 경로로 검사한다 — Git은 suffix를 파일명 일부로 해석해 실재 경로도 부재로 오판한다 (게시 원문의 인용 표기는 그대로 보존).
+   0)에서 visibility가 PUBLIC이 아니거나 repo가 의도한 대상이 아니면, 1)·2)의 SHA가 다르면, 로컬 `origin/main`은 공개 상태의 근거가 아니다. 확인 실패·미커밋·미푸시·비공개 브랜치에만 있는 값/경로는 모두 S1로 처리한다 (fail-closed).
 
 ## S4. 언어 유지 규칙
 
