@@ -210,6 +210,57 @@ test_rebuild_common_exports_public_api() {
   assert_contains "$output" "repair_codex_config_drift_no_changes"
 }
 
+test_parse_args_unknown_argument_shows_usage_and_fails() {
+  local sandbox output rc
+  sandbox=$(new_sandbox)
+  install_deployed_layout "$sandbox"
+
+  rc=0
+  output=$(
+    HOME="$sandbox/home" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      REBUILD_CMD="nixos-rebuild"
+      source "'"$sandbox/home/.local/lib/rebuild-common.sh"'"
+      parse_args --bogus
+    ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" -eq 1 ]] || fail "expected parse_args --bogus to exit 1 (actual: $rc)"
+  assert_contains "$output" "Unknown argument: --bogus"
+  assert_contains "$output" "Usage:"
+}
+
+test_nixos_nrs_help_flag_prints_usage() {
+  local sandbox home_dir repo_root output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_platform_nrs_entrypoint "$sandbox" nixos
+
+  # --help는 parse_args에서 exit 0 하므로 rebuild/sudo stub 없이 안전하게 실행된다.
+  output=$(
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/nrs"'" --help
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Usage: nrs"
+  assert_contains "$output" "--offline"
+  assert_contains "$output" "--cores N"
+  assert_not_contains "$output" "Applying changes"
+  assert_not_contains "$output" "Unknown argument"
+}
+
 test_detect_worktree_uses_current_worktree_path() {
   local sandbox home_dir repo_root worktree_root output
   sandbox=$(new_sandbox)

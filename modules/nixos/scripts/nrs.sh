@@ -6,6 +6,7 @@
 #   nrs --offline             # 오프라인 rebuild (빠름)
 #   nrs --force               # 소스 빌드 경고 무시
 #   nrs --force --cores 2    # 코어 제한으로 진행
+#   nrs --help                # 사용법 출력
 
 set -euo pipefail
 

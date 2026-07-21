@@ -86,7 +86,22 @@ extract_oos_entries() {
 
 #───────────────────────────────────────────────────────────────────────────────
 # 인수 파싱 (OFFLINE_FLAG, FORCE_FLAG, CORES_FLAG 설정)
+# --help는 usage 출력 후 exit 0 — LLM/사용자가 사용법을 실행으로 발견할 수 있게 한다 (#1138).
 #───────────────────────────────────────────────────────────────────────────────
+_print_rebuild_usage() {
+    cat <<EOF
+Usage: ${0##*/} [--offline] [--force] [--cores N]
+
+${REBUILD_CMD} wrapper (preview 포함)
+
+Options:
+  --offline    오프라인 rebuild (substituter 미사용, 빠름)
+  --force      NO_CHANGES 스킵 우회 (darwin) / 소스 빌드 경고 무시 (nixos)
+  --cores N    빌드 코어 수 제한 (nixos-rebuild 전용)
+  -h, --help   이 도움말 출력 후 종료
+EOF
+}
+
 # shellcheck disable=SC2034  # Public flags are consumed by callers/helpers after parse_args.
 parse_args() {
     OFFLINE_FLAG=""
@@ -101,7 +116,8 @@ parse_args() {
                 [[ ! "$2" =~ ^[0-9]+$ ]] && { log_error "--cores: positive integer required"; exit 1; }
                 (( 10#$2 < 1 )) && { log_error "--cores: positive integer required"; exit 1; }
                 CORES_FLAG="--cores $2"; shift ;;
-            *) log_error "Unknown argument: $1"; exit 1 ;;
+            -h|--help) _print_rebuild_usage; exit 0 ;;
+            *) log_error "Unknown argument: $1"; _print_rebuild_usage >&2; exit 1 ;;
         esac
         shift
     done

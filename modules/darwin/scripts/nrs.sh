@@ -6,6 +6,7 @@
 #   nrs           # 일반 rebuild
 #   nrs --offline # 오프라인 rebuild (빠름)
 #   nrs --force   # NO_CHANGES 스킵 우회 (activation scripts 강제 재실행)
+#   nrs --help    # 사용법 출력
 
 set -euo pipefail
 
