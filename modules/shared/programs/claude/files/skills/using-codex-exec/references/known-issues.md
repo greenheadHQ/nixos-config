@@ -740,5 +740,6 @@ done
 아닌 별개 실패이므로 `$TMP/$eff.err`를 확인한다.
 
 대안: 비대화형에서 spawn 진행을 프로그램적으로 관측·판정해야 하면 공개 `--json`에 의존하지 말고 persisted
-rollout을 파싱한다. 또는 세션 내 오케스트레이션 대신 별도 `codex exec` 프로세스를 독립 실행해
-관측 가능한 병렬화를 쓴다.
+rollout을 파싱한다. 또는 세션 내 오케스트레이션 대신, [`run-da`의 fallback 계약](../../run-da/references/hardening-contract.md)에 따라
+사용자 승인 후 `codex-exec-supervised --sandbox read-only`로 별도 `codex exec` 프로세스를 독립 실행해 관측 가능한 병렬화를 쓴다.
+Direct Codex가 라우팅·승인·쓰기 경계를 우회하는 raw 또는 임의 병렬 `codex exec` 실행을 해서는 안 된다.
