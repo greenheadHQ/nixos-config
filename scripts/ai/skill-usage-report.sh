@@ -16,7 +16,7 @@ usage() {
   cat <<'EOF'
 Usage: skill-usage-report.sh [--log PATH] [--since YYYY-MM-DD]
 
-Summarize Claude Skill usage from the log-skill.sh TSV log.
+Summarize Claude Skill usage from the log-skill.sh log (v2 JSONL events + legacy TSV rows).
 EOF
 }
 

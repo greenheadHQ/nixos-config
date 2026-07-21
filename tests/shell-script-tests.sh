@@ -236,6 +236,8 @@ run_test "fragile-hardcoding-guard line count true positive preserved" test_frag
 run_test "fragile-hardcoding-guard edit true positive preserved" test_fragile_hardcoding_guard_edit_true_positive_preserved
 run_test "fragile-hardcoding-guard empty and malformed input noop" test_fragile_hardcoding_guard_empty_and_malformed_input_noop
 run_test "log-skill normal input logs v2 event" test_log_skill_hook_normal_input_logs_v2_event
+run_test "log-skill repairs loose log mode before append" test_log_skill_hook_repairs_loose_log_mode
+run_test "log-skill skips symlinked pseudonym key" test_log_skill_hook_skips_symlinked_key
 run_test "log-skill session key is stable pseudonym" test_log_skill_hook_session_key_is_stable_pseudonym
 run_test "log-skill invalid key skips event without fallback" test_log_skill_hook_invalid_key_skips_event_without_fallback
 run_test "log-skill empty malformed and subagent noop" test_log_skill_hook_empty_malformed_and_subagent_noop

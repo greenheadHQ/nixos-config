@@ -82,6 +82,41 @@ test_log_skill_hook_normal_input_logs_v2_event() {
   [[ "$(_codex_config_file_mode "$key")" == "600" ]] || fail "expected pseudonym key mode 600"
 }
 
+test_log_skill_hook_repairs_loose_log_mode() {
+  # 기존 파일은 umask가 지켜주지 않는다 — 0644로 남은 log를 600으로 교정한 뒤에만 기록해야 한다.
+  local sandbox home out log
+  sandbox=$(new_sandbox)
+  home="$sandbox/home"
+  mkdir -p "$home/.claude"
+  log="$home/.claude/skill-usage.log"
+  printf '%s\n' '{"schema_version":2,"event_type":"skill_invocation"}' > "$log"
+  chmod 644 "$log"
+
+  out=$(_chra_run_hook "log-skill.sh" \
+    '{"session_id":"sid-mode-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+  [[ -z "$out" ]] || fail "unexpected hook output: $out"
+  [[ "$(wc -l < "$log")" -eq 2 ]] || fail "expected appended event after mode repair"
+  [[ "$(_codex_config_file_mode "$log")" == "600" ]] || fail "expected loose log mode repaired to 600"
+}
+
+test_log_skill_hook_skips_symlinked_key() {
+  # 심링크로 치환된 key는 trust boundary 위반 — 이벤트를 포기하고 아무 것도 기록하지 않는다.
+  local sandbox home out log key target
+  sandbox=$(new_sandbox)
+  home="$sandbox/home"
+  mkdir -p "$home/.claude"
+  key="$home/.claude/skill-usage.key"
+  log="$home/.claude/skill-usage.log"
+  target="$sandbox/planted-key"
+  printf '%s' "abad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1dea" > "$target"
+  ln -s "$target" "$key"
+
+  out=$(_chra_run_hook "log-skill.sh" \
+    '{"session_id":"sid-sym-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+  [[ -z "$out" ]] || fail "unexpected hook output: $out"
+  [ ! -e "$log" ] || fail "expected no event when key is a symlink"
+}
+
 test_log_skill_hook_session_key_is_stable_pseudonym() {
   local sandbox home out log k1 k2 k3
   sandbox=$(new_sandbox)

@@ -55,6 +55,18 @@ _is_64_hex() {
   [ "${#1}" -eq 64 ]
 }
 
+# 기존 파일이 owner-only 계약(regular file·비심링크·소유자·mode 600)을 만족하는지 검증.
+# mode만 어긋나면 600 교정을 시도하고, 교정 불가·심링크·타소유는 이벤트를 포기한다
+# (fail-closed — umask는 신규 inode에만 적용되므로 기존 파일은 매 실행 검증해야 한다).
+_ensure_owner_only_file() {
+  [ -f "$1" ] && [ ! -L "$1" ] && [ -O "$1" ] || return 1
+  case "$(stat -c '%a' "$1" 2>/dev/null || /usr/bin/stat -f '%Lp' "$1" 2>/dev/null)" in
+    600) return 0 ;;
+  esac
+  chmod 600 "$1" 2>/dev/null || return 1
+  [ "$(stat -c '%a' "$1" 2>/dev/null || /usr/bin/stat -f '%Lp' "$1" 2>/dev/null)" = "600" ]
+}
+
 # key가 없으면 32-byte random을 hex로 한 번만 생성 (same-directory temp + atomic rename).
 # key material은 argv/stdout/stderr에 노출하지 않는다.
 if [ ! -f "$SKILL_USAGE_KEY" ]; then
@@ -69,6 +81,8 @@ if [ ! -f "$SKILL_USAGE_KEY" ]; then
   rm -f "$KEY_TMP"
 fi
 
+# 읽기 전 trust boundary 검증 — 심링크 치환·권한 완화된 기존 key는 사용하지 않는다.
+_ensure_owner_only_file "$SKILL_USAGE_KEY" || exit 0
 LOCAL_KEY=$(cat "$SKILL_USAGE_KEY" 2>/dev/null) || exit 0
 _is_64_hex "$LOCAL_KEY" || exit 0
 
@@ -85,7 +99,12 @@ EVENT=$(jq -cn \
   2>/dev/null) || exit 0
 [ -n "$EVENT" ] || exit 0
 
+# append 전에 0600으로 미리 생성해 umask worst-case의 사후 chmod 의존을 제거하고,
+# 기존 파일이면 owner-only 계약을 검증한다 (실패 시 이벤트 포기).
+if [ ! -e "$SKILL_USAGE_LOG" ] && [ ! -L "$SKILL_USAGE_LOG" ]; then
+  ( umask 077; : >> "$SKILL_USAGE_LOG" ) 2>/dev/null || exit 0
+fi
+_ensure_owner_only_file "$SKILL_USAGE_LOG" || exit 0
 printf '%s\n' "$EVENT" >> "$SKILL_USAGE_LOG" 2>/dev/null || exit 0
-chmod 600 "$SKILL_USAGE_LOG" 2>/dev/null || true
 
 exit 0
