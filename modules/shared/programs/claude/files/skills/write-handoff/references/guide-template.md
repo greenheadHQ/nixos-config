@@ -16,7 +16,7 @@
 작성 규칙:
 - 가이드 상단 10줄 이내에 배치 (primacy bias 활용).
 - 4슬롯 모두 채운다. 해당 없으면 "없음" 명시.
-- 공개 노출 주의: 이 가이드는 `gh issue comment`로 GitHub에 게시된다. `현재 상태` 슬롯에 민감한 로컬 컨텍스트(`git status` 출력, 워크트리 dirty state, 개인 작업 경로)를 적지 않는다. 공개 안전 정보(repo-relative 파일 경로, 작업 단계, 검증 결과)만 기술.
+- 공개 노출 주의: 이 가이드는 `gh issue comment`로 GitHub에 게시된다. `현재 상태` 슬롯에 민감한 로컬 컨텍스트(`git status` 출력, 워크트리 dirty state, 개인 작업 경로)를 적지 않는다. 공개 안전 정보(repo-relative 파일 경로, 작업 단계, 검증 결과)만 기술. 금지/보존 전체 기준과 post-render scan 절차는 [sanitization-checklist.md](sanitization-checklist.md) 참조.
 - 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — 장문에서 모델은 시작/끝 정보에 강하고 중간 정보 활용이 약함.
 
 ## 헤더 블록
@@ -268,6 +268,16 @@ Issue #252의 LLM 이행 가이드에서 관찰된 효과적인 패턴:
 `[INFERRED]` PoC 추가가 품질을 개선한다 — 정량 벤치마크 부재, PROMPTEVALS 등 인접 근거로 추론.
 `[CONFLICTING]` FRONT(2024)는 pipeline 분리 우세, Evaluating Design Choices(2025)는 direct generation 우세.
 ```
+
+### "정밀 sanitization" 패턴
+
+공개 게시 전 [sanitization-checklist.md](sanitization-checklist.md)의 금지(S1)/보존(S2) 기준과 S3 scan 절차를 적용한다. blanket redaction 금지 — 과잉 검열과 누락 검열 모두 결함이다.
+
+❌ 과잉 검열 (false positive): `현재 상태` 슬롯에서 `tests/eval-tests.nix:15` 같은 repo-relative 경로까지 "로컬 경로"로 오인해 삭제 _(why: 후속 LLM이 대상 파일을 재탐색해야 함 — S2에 따라 유지)_
+
+❌ 누락 검열 (false negative): 실패한 검증 로그를 통째로 붙여넣어 홈 디렉토리 절대 경로(사용자명 포함)를 노출 _(why: 공개 게시물에 개인 식별자 신규 노출 — S1 위반)_
+
+✅ GOOD: `"tests/eval-tests.nix:15 평가 실패 (assertion 미충족). 로그의 홈 경로는 ~/ 표기로 치환"` — repo 근거는 보존, 개인 식별자만 제거.
 
 ### "미검증 주석" 패턴 (DEPRECATED)
 

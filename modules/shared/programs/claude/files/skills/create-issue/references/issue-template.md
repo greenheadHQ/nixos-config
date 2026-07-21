@@ -127,6 +127,14 @@
 - 관련 이슈는 `#번호` 형식으로 참조
 - YAGNI 판단 근거, 선행 조건, 위험 요소 등 기재
 
+## 공개 Sanitization (전 섹션 공통)
+
+이슈 본문은 PUBLIC repo에 게시된다. 금지/보존 기준과 post-render scan 절차는 [공개용 sanitization checklist](../../write-handoff/references/sanitization-checklist.md)가 단일 진실 원천이다 (SKILL.md Step 3에서 강제). 과잉 검열과 누락 검열 모두 결함이다.
+
+❌ 과잉 검열 (false positive): Context/References의 `modules/.../file.nix:42` repo-relative 근거를 "로컬 경로"로 오인해 삭제 _(why: References 섹션의 citation 계약(B1/B4)이 무너짐 — S2에 따라 유지)_
+
+❌ 누락 검열 (false negative): PoC / Reproduction의 `실제 결과` 필드에 에러 로그를 통째로 붙여 홈 디렉토리 절대 경로(사용자명 포함)를 노출 _(why: 공개 게시물에 개인 식별자 신규 노출 — S1 위반. `~/` 또는 repo-relative로 치환 후 게시)_
+
 ## 작성 예시
 
 > 가상 예시 주의: 아래는 템플릿 작성 형식 예시이며, 실제 repo 상태와 시점에 따라 불일치할 수 있다 (예: `darwinConfigurations` 평가는 이미 `tests/eval-tests.nix`에 존재). line 번호는 작성 시점 기준으로 실측 반영한다.
