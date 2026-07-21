@@ -42,7 +42,7 @@ macOS·NixOS 모두 `pkgs.mise`(nix, `libraries/packages.nix`의 shared)로 설�
 mise current
 
 # 전역 버전 변경: modules/shared/programs/mise/config.toml 수정 후 nrs
-# (`mise use -g`·`mise settings`는 read-only config라 의도적으로 실패 — drift 가드)
+# (`mise use -g`·`mise settings add/set/unset` 같은 전역 쓰기 명령은 read-only config라 의도적으로 실패 — drift 가드)
 
 # 프로젝트 버전 설치
 mise install node@20.18
@@ -90,7 +90,7 @@ mise는 두 계층으로 활성화된다:
 2. .nvmrc 인식 안 됨: mise 2025.10.0부터 기본 비활성화 → `idiomatic_version_file_enable_tools` 설정 필요
 3. NixOS에서 node 빌드 실패: `MISE_NODE_COMPILE=0` 필요 (현재 `nixos.nix`에서 영구 설정됨)
 4. mise.local.toml 미신뢰: `mise trust` 실행 필요 (최초 1회; worktree도 경로가 다르므로 별도 trust)
-5. `mise use -g`/`mise settings` 실패 (read-only config): 의도된 가드 — 전역 변경은 SoT 파일 수정 + nrs, 임시 도구는 `~/.config/mise/conf.d/`
+5. `mise use -g`/`mise settings add·set·unset` 실패 (read-only config): 의도된 가드 — 전역 변경은 SoT 파일 수정 + nrs, 임시 도구는 `~/.config/mise/conf.d/` (읽기 명령 `mise settings`는 정상 동작)
 
 ## 레퍼런스
 
