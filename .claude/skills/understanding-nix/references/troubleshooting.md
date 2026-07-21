@@ -245,7 +245,7 @@ nrs
 
 ## 상세 에러 확인
 
-`nrs`는 `--offline` / `--force` / `--cores N`만 받으므로 `--show-trace`를 전달할 수 없습니다.
+`nrs`는 `--offline` / `--force` / `--cores N` / `--help`만 받으므로 `--show-trace`를 전달할 수 없습니다 (전체 목록은 `nrs --help`).
 스택 추적이 필요하면 switch 없이 빌드만 실행합니다 (호스트명은 `scutil --get LocalHostName`):
 
 ```bash

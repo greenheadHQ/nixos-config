@@ -89,6 +89,21 @@ extract_oos_entries() {
 # --help는 usage 출력 후 exit 0 — LLM/사용자가 사용법을 실행으로 발견할 수 있게 한다 (#1138).
 #───────────────────────────────────────────────────────────────────────────────
 _print_rebuild_usage() {
+    # nrp 진입점에서 --force는 실동작이 없으므로 (darwin: NO_CHANGES 분기 없음,
+    # nixos: 항상 --warn-only) usage에서 제외해 명령별 실제 계약만 안내한다.
+    if [[ "${0##*/}" == nrp* ]]; then
+        cat <<EOF
+Usage: ${0##*/} [--offline] [--cores N]
+
+${REBUILD_CMD} preview wrapper (switch 없음)
+
+Options:
+  --offline    오프라인 rebuild (substituter 미사용, 빠름)
+  --cores N    빌드 코어 수 제한 (nixos-rebuild 전용)
+  -h, --help   이 도움말 출력 후 종료
+EOF
+        return
+    fi
     cat <<EOF
 Usage: ${0##*/} [--offline] [--force] [--cores N]
 

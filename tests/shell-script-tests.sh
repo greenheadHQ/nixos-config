@@ -33,6 +33,7 @@ run_test "managed plugin skill helper rejects duplicate matches" test_managed_pl
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
 run_test "parse_args unknown argument shows usage and fails" test_parse_args_unknown_argument_shows_usage_and_fails
 run_test "nixos nrs --help prints usage" test_nixos_nrs_help_flag_prints_usage
+run_test "nrp --help usage omits inert --force" test_nrp_help_usage_omits_force_flag
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
 run_test "worktree relink skips non-TTY without opt-in" test_worktree_relink_skips_non_tty_without_opt_in
 run_test "worktree relink opt-in allows non-TTY" test_worktree_relink_opt_in_allows_non_tty

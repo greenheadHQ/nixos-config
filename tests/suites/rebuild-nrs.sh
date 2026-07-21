@@ -261,6 +261,27 @@ test_nixos_nrs_help_flag_prints_usage() {
   assert_not_contains "$output" "Unknown argument"
 }
 
+test_nrp_help_usage_omits_force_flag() {
+  local sandbox output
+  sandbox=$(new_sandbox)
+  install_deployed_layout "$sandbox"
+
+  # _print_rebuild_usage는 ${0##*/}로 진입점을 구분한다 — bash -c의 후속 인자로 $0=nrp 지정.
+  output=$(
+    HOME="$sandbox/home" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      REBUILD_CMD="nixos-rebuild"
+      source "'"$sandbox/home/.local/lib/rebuild-common.sh"'"
+      _print_rebuild_usage
+    ' nrp 2>&1
+  )
+
+  assert_contains "$output" "Usage: nrp"
+  assert_not_contains "$output" "--force"
+}
+
 test_detect_worktree_uses_current_worktree_path() {
   local sandbox home_dir repo_root worktree_root output
   sandbox=$(new_sandbox)

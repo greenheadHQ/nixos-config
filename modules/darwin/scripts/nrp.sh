@@ -2,9 +2,10 @@
 # darwin-rebuild preview-only script
 # 빌드 후 변경사항만 미리보기 (switch 없이)
 #
-# 사용법:
+# 사용법 (공용 usage의 요약 — 전체는 nrp --help):
 #   nrp           # 일반 미리보기
 #   nrp --offline # 오프라인 미리보기
+#   nrp --help    # 사용법 출력
 
 set -euo pipefail
 
