@@ -86,7 +86,28 @@ extract_oos_entries() {
 
 #───────────────────────────────────────────────────────────────────────────────
 # 인수 파싱 (OFFLINE_FLAG, FORCE_FLAG, CORES_FLAG 설정)
+# --help는 usage 출력 후 exit 0 — LLM/사용자가 사용법을 실행으로 발견할 수 있게 한다 (#1138).
 #───────────────────────────────────────────────────────────────────────────────
+_print_rebuild_usage() {
+    # 진입점이 REBUILD_MODE=preview를 선언하면 (nrp) 실동작 없는 --force를
+    # usage와 parser 양쪽에서 제외한다 (darwin nrp: NO_CHANGES 분기 없음,
+    # nixos nrp: 항상 --warn-only). 배열 원소 하나 = 출력 행 하나.
+    local mode="${REBUILD_MODE:-switch}"
+    local synopsis desc
+    local -a option_lines=('  --offline    오프라인 rebuild (substituter 미사용, 빠름)')
+    if [[ "$mode" == "preview" ]]; then
+        synopsis="[--offline] [--cores N]"
+        desc="${REBUILD_CMD} preview wrapper (switch 없음)"
+    else
+        synopsis="[--offline] [--force] [--cores N]"
+        desc="${REBUILD_CMD} wrapper (preview 포함)"
+        option_lines+=('  --force      NO_CHANGES 스킵 우회 (darwin) / 소스 빌드 경고 무시 (nixos)')
+    fi
+    option_lines+=('  --cores N    빌드 코어 수 제한' '  -h, --help   이 도움말 출력 후 종료')
+    printf 'Usage: %s %s\n\n%s\n\nOptions:\n' "${0##*/}" "$synopsis" "$desc"
+    printf '%s\n' "${option_lines[@]}"
+}
+
 # shellcheck disable=SC2034  # Public flags are consumed by callers/helpers after parse_args.
 parse_args() {
     OFFLINE_FLAG=""
@@ -95,13 +116,21 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --offline) OFFLINE_FLAG="--offline" ;;
-            --force)   FORCE_FLAG=true ;;
+            --force)
+                # preview 진입점에서는 무동작 인터페이스이므로 usage와 동일하게 거부한다.
+                if [[ "${REBUILD_MODE:-switch}" == "preview" ]]; then
+                    log_error "--force is not supported by ${0##*/} (preview mode)" >&2
+                    _print_rebuild_usage >&2
+                    exit 1
+                fi
+                FORCE_FLAG=true ;;
             --cores)
                 [[ -z "${2:-}" || "$2" =~ ^-- ]] && { log_error "--cores requires a number"; exit 1; }
                 [[ ! "$2" =~ ^[0-9]+$ ]] && { log_error "--cores: positive integer required"; exit 1; }
                 (( 10#$2 < 1 )) && { log_error "--cores: positive integer required"; exit 1; }
                 CORES_FLAG="--cores $2"; shift ;;
-            *) log_error "Unknown argument: $1"; exit 1 ;;
+            -h|--help) _print_rebuild_usage; exit 0 ;;
+            *) log_error "Unknown argument: $1" >&2; _print_rebuild_usage >&2; exit 1 ;;
         esac
         shift
     done

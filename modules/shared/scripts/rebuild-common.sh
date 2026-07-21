@@ -6,6 +6,9 @@
 #
 # 필수 변수:
 #   REBUILD_CMD - "darwin-rebuild" 또는 "nixos-rebuild"
+# 선택 변수:
+#   REBUILD_MODE - "switch"(기본) 또는 "preview" — usage 표기와 --force 노출 결정.
+#                  환경 상속 오염 방지를 위해 모든 진입점이 명시 선언한다.
 #
 # caller-facing 제공 함수:
 #   parse_args, log_info, log_warn, log_error,

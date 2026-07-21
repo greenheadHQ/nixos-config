@@ -6,11 +6,14 @@
 #   nrs           # 일반 rebuild
 #   nrs --offline # 오프라인 rebuild (빠름)
 #   nrs --force   # NO_CHANGES 스킵 우회 (activation scripts 강제 재실행)
+#   nrs --help    # 사용법 출력
 
 set -euo pipefail
 
 # shellcheck disable=SC2034  # REBUILD_CMD는 source된 rebuild-common.sh에서 사용
 REBUILD_CMD="darwin-rebuild"
+# shellcheck disable=SC2034  # REBUILD_MODE는 source된 rebuild-common.sh의 usage 분기에서 사용
+REBUILD_MODE="switch"
 # shellcheck source=/dev/null  # 런타임에 ~/.local/lib/rebuild-common.sh 로딩
 source "$HOME/.local/lib/rebuild-common.sh"
 parse_args "$@"
@@ -189,7 +192,7 @@ run_darwin_rebuild() {
 
     local rc=0
     # shellcheck disable=SC2086
-    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG || rc=$?
+    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG $CORES_FLAG || rc=$?
 
     if [[ "$rc" -ne 0 ]]; then
         log_error "❌ darwin-rebuild switch failed (exit code: $rc)"
