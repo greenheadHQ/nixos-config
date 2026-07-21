@@ -1261,12 +1261,12 @@ test_claudex_release_layout_verifier() {
   done
   bash "$verifier" "$exact" || fail "exact CLIProxyAPI release layout was rejected"
 
-  for entry in missing extra symlink directory; do
+  # extra(초과 항목) 케이스는 아래 진단 출력 테스트가 거부·메시지 계약을 함께 검증한다.
+  for entry in missing symlink directory; do
     rm -rf "$sandbox/candidate"
     cp -R "$exact" "$sandbox/candidate"
     case "$entry" in
       missing) rm "$sandbox/candidate/LICENSE" ;;
-      extra) : > "$sandbox/candidate/EXTRA" ;;
       symlink)
         rm "$sandbox/candidate/LICENSE"
         ln -s README.md "$sandbox/candidate/LICENSE"
