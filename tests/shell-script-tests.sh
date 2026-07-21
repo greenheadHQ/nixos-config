@@ -179,6 +179,7 @@ run_test "skill-usage-report v2 JSONL matches legacy aggregation" test_skill_usa
 run_test "skill-usage-report mixed log matches legacy aggregation" test_skill_usage_report_mixed_log_matches_legacy_aggregation
 run_test "skill-usage-report leaves input log unchanged" test_skill_usage_report_does_not_modify_input_log
 run_test "skill-usage-report missing log errors" test_skill_usage_report_missing_log_errors
+run_test "skill-usage-report skill grammar parity with writer" test_skill_usage_report_skill_grammar_parity_with_writer
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
 run_test "darwin nrs no-change activates when Codex artifact missing" test_darwin_nrs_no_changes_activates_when_codex_artifact_missing

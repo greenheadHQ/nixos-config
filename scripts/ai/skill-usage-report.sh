@@ -153,7 +153,9 @@ with open(log_path, "r", encoding="utf-8", errors="replace", newline="") as hand
                 continue
 
             skill = fields[4]
-            if not skill:
+            # legacy TSV도 동일 스킬명 문법을 강제한다 — v2와 같은 출력 경로를 공유하므로
+            # 제어문자·과대 길이가 보고서 행을 조작하지 못하게 한다.
+            if not SKILL_RE.fullmatch(skill):
                 continue
 
         if since_epoch is not None and timestamp < since_epoch:

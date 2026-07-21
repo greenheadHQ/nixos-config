@@ -41,7 +41,41 @@ test_skill_usage_report_v2_jsonl_matches_legacy_aggregation() {
   output=$(bash "$(_skill_usage_report_script)" --log "$FIXTURE_DIR/skill-usage-report.v2.jsonl")
   expected=$(cat "$FIXTURE_DIR/skill-usage-report.expected")
   [[ "$output" == "$expected" ]] || fail "unexpected v2-only skill usage report output: $output"
-  assert_not_contains "$output" "extra-key-must-be-rejected"
+}
+
+# writer(log-skill.sh)와 parser(skill-usage-report.sh)의 스킬명 문법 계약 parity —
+# 경계값이 양쪽에서 동일하게 수락/거부되는지 검증해 한쪽만 수정되는 drift를 잡는다.
+test_skill_usage_report_skill_grammar_parity_with_writer() {
+  local sandbox home log ok128 bad129 v2log output
+  sandbox=$(new_sandbox)
+  home="$sandbox/home"
+  mkdir -p "$home/.claude"
+  log="$home/.claude/skill-usage.log"
+  ok128=$(printf 'a%.0s' {1..128})
+  bad129=$(printf 'a%.0s' {1..129})
+
+  # writer: 유효 경계(128자)는 기록, 초과(129자)·제어문자는 거부
+  for skill in "run-da" "$ok128"; do
+    printf '%s' "$(jq -cn --arg s "$skill" '{session_id:"sid-parity",tool_input:{skill:$s}}')" | \
+      env HOOK_RUNTIME_LIB="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh" \
+      HOME="$home" bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/log-skill.sh"
+  done
+  for skill in "$bad129" $'bad\nskill'; do
+    printf '%s' "$(jq -cn --arg s "$skill" '{session_id:"sid-parity",tool_input:{skill:$s}}')" | \
+      env HOOK_RUNTIME_LIB="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh" \
+      HOME="$home" bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/log-skill.sh"
+  done
+  [[ "$(wc -l < "$log")" -eq 2 ]] || fail "writer grammar boundary mismatch: $(cat "$log")"
+
+  # parser: writer가 기록한 두 행은 집계되고, 수기로 주입한 초과 길이 v2 행은 skip된다
+  v2log="$sandbox/v2.jsonl"
+  cp "$log" "$v2log"
+  printf '%s\n' "$(jq -cn --arg s "$bad129" \
+    '{schema_version:2,event_type:"skill_invocation",ts:1742302800,runtime:"claude-main",skill:$s,session_key:("ab" * 32)}')" >> "$v2log"
+  output=$(bash "$(_skill_usage_report_script)" --log "$v2log")
+  assert_contains "$output" "run-da"
+  assert_contains "$output" "$ok128"
+  assert_not_contains "$output" "$bad129"
 }
 
 test_skill_usage_report_mixed_log_matches_legacy_aggregation() {
