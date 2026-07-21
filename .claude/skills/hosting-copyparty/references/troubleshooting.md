@@ -92,7 +92,7 @@ sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
 [/]
   /data
   accs:
-    rwda: greenhead
+    rwmda: greenhead
 ```
 
 ## 6. "multiple filesystem-paths" 에러
@@ -111,7 +111,7 @@ Copyparty 설정에서 루트 볼륨 `[/]` -> `/data`와 서브경로 볼륨 `[/
 
 해결:
 - 경로별 읽기 전용 ACL 분리 불가 - Copyparty 구조적 제약
-- 단일 루트 볼륨 `[/]` -> `/data`만 사용 (rwda 권한)
+- 단일 루트 볼륨 `[/]` -> `/data`만 사용 (rwmda 권한)
 - Immich/백업 데이터 보호는 사용자 주의에 의존
 
 교훈:

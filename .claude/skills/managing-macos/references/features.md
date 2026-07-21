@@ -322,7 +322,8 @@ fc-list | grep -i "D2Coding"
 
 `modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다.
 
-- hostType 제한: `lib.mkIf (hostType == "personal")` — personal 호스트만 적용
+- 공통 + personal 분리: 공통 블록(모든 darwin 호스트 — `ghostty` cask, `playwright-cli` formula)과
+  `lib.mkIf (hostType == "personal")` 가드의 personal 전용 블록(아래 Cask 목록)으로 구성
 - cleanup = "none": 선언되지 않은 앱을 자동 삭제하지 않음 (수동 설치 cask 보호)
 
 ### 서드파티 Tap Formula 주의사항

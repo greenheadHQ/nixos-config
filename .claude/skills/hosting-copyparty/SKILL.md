@@ -66,18 +66,21 @@ sudo copyparty-update --dry-run   # 수행 예정 작업 확인
 sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 → 재시작 → 헬스체크)
 ```
 
-- 이미지에 버전 레이블이 없으므로 GitHub latest 추적 + 이미지 digest 비교 방식
+- pinned tag 기준: 설정된 이미지를 pull → digest 비교 (같은 태그의 재빌드만 반영). GitHub latest는 알림/안내용
+- 새 버전 반영은 `modules/nixos/programs/docker/copyparty.nix`의 image 태그 수정 후 `nrs`
 - 백업 불필요 (설정은 Nix 관리, 데이터는 HDD 볼륨)
 - ERR trap에서 컨테이너 자동 복구
 - 통합 업데이트 시스템 상세: `running-containers` 스킬의 [service-update-system.md](../running-containers/references/service-update-system.md) 참조
 
 ### ACL 구조
 
-현재 단일 루트 볼륨으로 HDD 전체를 rwda(읽기/쓰기/삭제/관리) 권한으로 제공합니다.
+현재 단일 루트 볼륨으로 HDD 전체를 rwmda(읽기/쓰기/이동/삭제/관리) 권한으로 제공합니다.
+`m`(move)이 빠지면 웹 UI에서 파일 이름 변경/이동이 조용히 사라지므로, config 재작성 시 누락 금지.
+정본: `modules/nixos/programs/docker/copyparty.nix`의 `accs:` 블록.
 
 | Copyparty 경로 | 호스트 경로 | 권한 |
 |----------------|------------|------|
-| `/` | `/mnt/data` | 읽기/쓰기/삭제/관리 |
+| `/` | `/mnt/data` | 읽기/쓰기/이동/삭제/관리 |
 
 > 주의: Immich 사진(`/immich/`)을 Copyparty에서 삭제하지 않도록 주의.
 > Copyparty에서 Immich 파일 삭제 시 Immich DB와 불일치 발생.
@@ -140,7 +143,8 @@ localhost 바인딩 (Caddy 연동)
 - `th-maxsize` 옵션은 존재하지 않음 (사용 금지)
 
 이미지 태그
-- `copyparty/ac:latest` 사용 (audio/video/image 썸네일 + 트랜스코딩 포함)
+- `copyparty/ac` variant를 pinned tag로 사용 (audio/video/image 썸네일 + 트랜스코딩 포함)
+- 실제 태그 정본: `modules/nixos/programs/docker/copyparty.nix` (재검증: `rg -n 'image = ' modules/nixos/programs/docker/copyparty.nix`)
 - 기본 `copyparty/copyparty` 이미지는 썸네일 미지원
 
 세션 데이터 영속성

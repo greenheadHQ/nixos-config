@@ -12,7 +12,7 @@ Karakeep 버전 업데이트 후 반드시 아래 패턴이 유효한지 확인�
 
 검증이 누락되면 OOM/크롤 실패 시 Pushover 알림이 발송되지 않아, 크래시 루프를 사용자가 인지하지 못할 수 있다.
 
-의존 패턴 목록 (현재 기준: `ghcr.io/karakeep-app/karakeep:release`):
+의존 패턴 목록 (기준: `ghcr.io/karakeep-app/karakeep`의 pinned tag — 실제 태그는 `rg -n 'image = ' modules/nixos/programs/docker/karakeep.nix`로 확인):
 
 | 패턴 | 용도 | 변경 가능성 |
 |------|------|-----------|

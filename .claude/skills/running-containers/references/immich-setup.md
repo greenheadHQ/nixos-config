@@ -69,10 +69,13 @@ MiniPC(greenhead-minipc)에서 NixOS `virtualisation.oci-containers` (Podman 백
 
 | 컨테이너 | 이미지 | 역할 | 리소스 제한 |
 |----------|--------|------|------------|
-| `immich-server` | `ghcr.io/immich-app/immich-server:release` | 웹 서버 + API | `constants.containers.immich.server` |
-| `immich-postgres` | `tensorchord/pgvecto-rs:pg16-v0.2.0` | DB (pgvecto-rs) | `constants.containers.immich.postgres` |
-| `immich-redis` | `redis:7-alpine` | Job Queue / 캐싱 | `constants.containers.immich.redis` |
-| `immich-ml` | `ghcr.io/immich-app/immich-machine-learning:release` | ML (CPU 버전) | `constants.containers.immich.ml` |
+| `immich-server` | `ghcr.io/immich-app/immich-server` | 웹 서버 + API | `constants.containers.immich.server` |
+| `immich-postgres` | `ghcr.io/immich-app/postgres` | DB (VectorChord) | `constants.containers.immich.postgres` |
+| `immich-redis` | `redis` | Job Queue / 캐싱 | `constants.containers.immich.redis` |
+| `immich-ml` | `ghcr.io/immich-app/immich-machine-learning` | ML (CPU 버전) | `constants.containers.immich.ml` |
+
+모든 이미지는 pinned tag 사용 (rolling `:release` 아님). 실제 태그 정본:
+`rg -n 'image = ' modules/nixos/programs/docker/immich.nix`. 새 버전 반영은 태그 수정 후 `nrs`.
 
 ### 주요 설정 항목
 

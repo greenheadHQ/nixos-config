@@ -42,7 +42,7 @@ copyparty = {
 
 핵심 구성요소:
 - copyparty-config oneshot 서비스: agenix 시크릿에서 비밀번호 추출 → INI 설정 파일 생성
-- copyparty Podman 컨테이너: `copyparty/ac:latest` 이미지
+- copyparty Podman 컨테이너: `copyparty/ac` 이미지 (pinned tag — 정본은 이 파일의 `image =` 줄)
 - `--entrypoint=python3`: 이미지 기본 ENTRYPOINT 오버라이드 (initcfg 볼륨 충돌 방지)
 - cmd: `["-m" "copyparty" "-c" "/cfg/config.conf"]`
 - ConditionPathExists: 설정 파일 없으면 시작 방지
@@ -73,17 +73,17 @@ INI 스타일, 섹션별 구성:
 [/]                       # 가상 경로 (루트)
   /data                   # 컨테이너 내 실제 파일시스템 경로
   accs:
-    rwda: greenhead       # 읽기/쓰기/삭제/관리
+    rwmda: greenhead      # 읽기/쓰기/이동/삭제/관리
 ```
 
 주의사항:
 - 루트 `[/]` -> `/data` 볼륨 하나만 사용 (하위 경로 별도 마운트 시 충돌)
-- `r:` = 읽기 전용, `rwda:` = 전체 권한
+- `r:` = 읽기 전용, `rwmda:` = 전체 권한 (`m` = move — 빠지면 파일 이름 변경/이동 불가)
 - 들여쓰기는 2칸 스페이스 (탭 불가)
 
 ## Docker 이미지 정보
 
-- 이미지: `copyparty/ac:latest` (thumbnailer for audio/video/images + transcoding)
+- 이미지: `copyparty/ac` pinned tag (thumbnailer for audio/video/images + transcoding). 실제 태그: `rg -n 'image = ' modules/nixos/programs/docker/copyparty.nix`
 - 기본 포트: 3923
 - 기본 ENTRYPOINT: `python3 -m copyparty -c /z/initcfg` ← 오버라이드 필수
 - 우리 설정: `--entrypoint=python3`, cmd: `-m copyparty -c /cfg/config.conf`
