@@ -122,7 +122,7 @@ _claudex_assert_default_state_ancestors() {
 # directory prints 2700), which the exact "700"/"600" comparisons at the call sites would
 # wrongly reject. Return only the trailing owner/group/other triplet: with group/other bits
 # forced to zero by those comparisons, special bits grant no additional access.
-_claudex_file_mode() {
+_claudex_permission_triplet() {
   local mode
   mode="$("$CLAUDEX_STAT" -c '%a' "$1" 2>/dev/null)" || return 1
   printf '%s\n' "${mode: -3}"
@@ -139,7 +139,7 @@ _claudex_assert_private_dir() {
     _claudex_error "expected a real private directory: $path"
     return 1
   fi
-  if [ "$(_claudex_file_mode "$path")" != "700" ]; then
+  if [ "$(_claudex_permission_triplet "$path")" != "700" ]; then
     _claudex_error "directory mode must be 0700: $path"
     return 1
   fi
@@ -173,7 +173,7 @@ _claudex_assert_private_file() {
     _claudex_error "expected a real private file: $path"
     return 1
   fi
-  if [ "$(_claudex_file_mode "$path")" != "600" ]; then
+  if [ "$(_claudex_permission_triplet "$path")" != "600" ]; then
     _claudex_error "file mode must be 0600: $path"
     return 1
   fi
@@ -459,7 +459,7 @@ _claudex_credential_path_of_type() (
 # flock). -x is stated explicitly so the exclusive contract does not rest on flock's default.
 # Tests may inject CLAUDEX_FLOCK.
 with_state_lock() (
-  local lock_mode
+  local lock_triplet
   umask 077
   _claudex_assert_default_state_ancestors || exit 1
   _claudex_ensure_private_dir "$CLAUDEX_STATE_DIR" || exit 1
@@ -469,8 +469,8 @@ with_state_lock() (
   fi
   : >> "$CLAUDEX_STATE_LOCK" || exit 1
   "$CLAUDEX_CHMOD" 600 -- "$CLAUDEX_STATE_LOCK" || exit 1
-  lock_mode="$(_claudex_file_mode "$CLAUDEX_STATE_LOCK")"
-  if [ "$lock_mode" != "600" ]; then
+  lock_triplet="$(_claudex_permission_triplet "$CLAUDEX_STATE_LOCK")"
+  if [ "$lock_triplet" != "600" ]; then
     _claudex_error "state lock mode must be 0600"
     exit 1
   fi
