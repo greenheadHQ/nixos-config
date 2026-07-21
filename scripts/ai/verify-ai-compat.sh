@@ -8,7 +8,9 @@
 # - 소스 디렉토리 삭제/이동: modules/shared/programs/claude/files/skills/ 또는 .claude/skills/
 # - modules/shared/programs/claude/default.nix 배선 항목 제거
 # - modules/shared/programs/codex/default.nix exposedCodexSkills/intentionallyNotExposed 항목 제거
-# - 이 스크립트의 EXPECTED_* 목록에서 제거하고 RETIRED_SHARED_SKILLS에 등록
+# - 이 스크립트의 EXPECTED_* 목록에서 제거. 완전 퇴역(이 이름으로 재설치하지 않음)이면
+#   RETIRED_SHARED_SKILLS에 등록해 홈 잔재를 감시한다. 단 user-scope 재설치(예: `npx skills add -g`)를
+#   허용하는 스킬은 홈 잔재 검사(존재=FAIL)와 충돌하므로 등록하지 않고, 미등록 예외 근거를 남긴다
 # - 전 스킬 코퍼스에서 스킬명 cross-reference grep (NOT-for, 산문 참조)
 # - 전 스킬 evals/queries.json에서 혼동쌍 잔존 grep
 # - nrs로 홈 디렉터리 심링크 정리 반영
@@ -62,7 +64,7 @@ RETIRED_EXECUTABLES=(
 )
 
 # SKILL.md tool-neutral lint has its own exclusion policy. It currently matches
-# the shared exposure exclusions because these four skills are legacy adapters,
+# the shared exposure exclusions because these skills are legacy adapters,
 # but future exposure-only exclusions must be added deliberately.
 SKILL_NEUTRAL_LINT_EXCLUDE=(
   set-icons
