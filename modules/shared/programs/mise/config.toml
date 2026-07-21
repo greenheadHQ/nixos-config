@@ -7,7 +7,8 @@
 # 배경: 전역 config가 runtime mutation(mise use -g)으로 관리되던 시절 두 머신이
 # drift했고(Mac: node latest+yarn / MiniPC: node lts+pnpm+죽은 codex entry),
 # 오타(cocodpods)·deprecated 설정(legacy_version_file)이 잔존해 선언 관리로 이관했다.
-# mise use -g / mise settings 같은 전역 쓰기 명령은 이제 의도적으로 실패한다 (drift 가드).
+# mise use -g / mise settings add·set·unset 같은 전역 쓰기 명령은 이제 의도적으로
+# 실패한다 (drift 가드). 읽기 조회(인자 없는 mise settings)는 정상 동작한다.
 
 [settings]
 # .nvmrc / .node-version 인식 (mise 2025.10.0부터 기본 비활성 — idiomatic version file)
