@@ -105,8 +105,9 @@ in
   # Shell aliases (공통)
   home.shellAliases = {
     # 파일 목록 (eza 사용)
+    # ls는 alias하지 않는다 — LLM이 ls를 POSIX ls로 가정하고 실행해
+    # eza 출력/옵션 차이로 실수를 유발했음 (#1119)
     l = "eza -l";
-    ls = "eza -la";
     ll = "eza -la";
 
     # broot: tree 스타일 출력
