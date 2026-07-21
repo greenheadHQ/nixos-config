@@ -25,24 +25,28 @@ is_true() {
 # 스탬프 라인은 "- 확인 버전: <prefix><버전>[ 부가 설명]" 형식이며, configuring-codex처럼
 # 버전 뒤 괄호 텍스트가 붙어도 매칭한다. prefix의 trailing space는 필드 구분자 IFS='|'가
 # whitespace를 포함하지 않아 read에서 보존된다.
+# 대상 skill root를 추가/변경하면 lefthook.yml의 ai-skill-version-stamps glob과
+# scripts/ai/check-lefthook-staged-config.sh의 기대 블록도 함께 갱신한다 (3곳 수동 동기화).
 TARGETS=(
   "using-codex-exec|modules/shared/programs/claude/files/skills/using-codex-exec/SKILL.md|codex|codex-cli "
   "using-claude-p|modules/shared/programs/claude/files/skills/using-claude-p/SKILL.md|claude|Claude Code v"
   "configuring-codex|.claude/skills/configuring-codex/SKILL.md|codex|codex-cli "
 )
 
-# CLI --version 출력의 첫 X.Y[.Z...] 토큰 추출
-# (codex: "codex-cli 0.144.6" / claude: "2.1.216 (Claude Code)")
+# 설치된 CLI의 --version 출력에서 첫 X.Y[.Z...] 토큰 추출
+# (codex: "codex-cli 0.144.6" / claude: "2.1.216 (Claude Code)").
+# CLI 존재 확인은 호출부 책임 — 여기 실패는 실행·파싱 실패를 뜻한다.
 installed_version() {
   local cli="$1" output
-  command -v "$cli" >/dev/null 2>&1 || return 1
   output="$("$cli" --version 2>/dev/null)" || return 1
   local pattern='([0-9]+(\.[0-9]+)+)'
   [[ "$output" =~ $pattern ]] || return 1
   printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
-# SKILL.md "작성 기준" 절의 "- 확인 버전:" 라인에서 prefix 뒤 버전 토큰 추출
+# 파일 전체에서 "- 확인 버전:" 형식의 최초 일치 라인에서 prefix 뒤 버전 토큰 추출.
+# 절 경계는 확인하지 않는다 — 이 고정 형식 라인은 "작성 기준" 절에만 존재한다는 전제이며,
+# 다른 절에 같은 형식이 생기면 먼저 나오는 쪽이 이긴다.
 stamp_version() {
   local file="$1" prefix="$2" line
   local pattern="^- 확인 버전: ${prefix}([0-9]+(\.[0-9]+)+)"
@@ -55,7 +59,8 @@ stamp_version() {
   return 1
 }
 
-# 같은 절의 "- 재검증:" 라인에서 백틱 안 명령 텍스트 추출 (WARN 메시지 병기용)
+# 파일 전체에서 "- 재검증:" 형식의 최초 일치 라인에서 백틱 안 명령 텍스트 추출
+# (WARN 메시지 병기용 — stamp_version과 같은 최초-일치 전제).
 recheck_command() {
   local file="$1" line
   local pattern='^- 재검증: `([^`]+)`'
@@ -80,7 +85,14 @@ main() {
     IFS='|' read -r skill rel_path cli prefix <<< "$entry"
     file="$REPO_ROOT/$rel_path"
 
-    cli_ver="$(installed_version "$cli")" || continue
+    # CLI 부재만 조용히 skip한다 (정책: 미설치 환경 무소음). 설치된 CLI의
+    # 실행·파싱 실패는 출력 계약 drift 신호이므로 WARN으로 드러낸다.
+    command -v "$cli" >/dev/null 2>&1 || continue
+    if ! cli_ver="$(installed_version "$cli")"; then
+      warn "$skill: $cli --version 실행·버전 파싱 실패 — CLI 출력 형식 변경 시 이 체크의 추출 규칙도 갱신"
+      warnings=$((warnings + 1))
+      continue
+    fi
 
     if [ ! -f "$file" ]; then
       warn "$skill: SKILL.md 없음 ($rel_path) — 대상 목록 갱신 필요"

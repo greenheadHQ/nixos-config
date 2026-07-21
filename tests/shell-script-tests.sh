@@ -170,6 +170,7 @@ run_test "warn-skill-stale-identifiers clean pass stays quiet" test_warn_skill_s
 run_test "warn-skill-version-stamps matching stays quiet" test_warn_skill_version_stamps_matching_stays_quiet
 run_test "warn-skill-version-stamps detects drift" test_warn_skill_version_stamps_detects_drift
 run_test "warn-skill-version-stamps skips when cli absent" test_warn_skill_version_stamps_skips_when_cli_absent
+run_test "warn-skill-version-stamps warns on cli exec failure" test_warn_skill_version_stamps_warns_on_cli_exec_failure
 run_test "warn-skill-version-stamps warns on unparseable stamp" test_warn_skill_version_stamps_warns_on_unparseable_stamp
 run_test "skill-usage-report aggregates sample TSV" test_skill_usage_report_aggregates_sample_tsv
 run_test "skill-usage-report --since filters sample TSV" test_skill_usage_report_since_filters_sample_tsv

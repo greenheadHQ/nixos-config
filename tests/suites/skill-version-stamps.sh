@@ -106,6 +106,27 @@ test_warn_skill_version_stamps_skips_when_cli_absent() {
   [ -z "$output" ] || fail "expected silent skip when CLIs are absent, got: $output"
 }
 
+test_warn_skill_version_stamps_warns_on_cli_exec_failure() {
+  local sandbox repo_root bin_dir output
+  sandbox=$(new_sandbox)
+  repo_root="$sandbox/repo"
+  bin_dir="$sandbox/bin"
+  create_version_stamp_fixture_repo "$repo_root" "0.144.1" "2.1.206"
+  create_version_stamp_cli_stubs "$bin_dir" "0.144.1" "2.1.206"
+  # codex는 설치되어 있으나 --version이 실패 — CLI 부재의 silent skip과 달리
+  # 출력 계약 drift 신호이므로 WARN으로 드러나야 한다.
+  cat > "$bin_dir/codex" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+  chmod +x "$bin_dir/codex"
+
+  output=$(cd "$repo_root" && PATH="$bin_dir" "$BASH" scripts/ai/warn-skill-version-stamps.sh 2>&1) \
+    || fail "expected warn-only exit 0 on exec failure, got exit $?: $output"
+  assert_contains "$output" "codex --version 실행·버전 파싱 실패"
+  assert_not_contains "$output" "using-claude-p"
+}
+
 test_warn_skill_version_stamps_warns_on_unparseable_stamp() {
   local sandbox repo_root bin_dir output
   sandbox=$(new_sandbox)
