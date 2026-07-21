@@ -270,11 +270,14 @@ fi
 
 # shared refs 의존 목록 (sibling skill references that {name} relies on):
 # - create-issue  →  skills/write-handoff/references/llm-friendly-checklist.md
+# - create-issue  →  skills/write-handoff/references/sanitization-checklist.md (공개 S1~S4 정본)
 # 새 의존 추가 시 이 case 블록 갱신
 case "{name}" in
   create-issue)
     [ -f "skills/write-handoff/references/llm-friendly-checklist.md" ] \
       && CAT_FILES+=("skills/write-handoff/references/llm-friendly-checklist.md")
+    [ -f "skills/write-handoff/references/sanitization-checklist.md" ] \
+      && CAT_FILES+=("skills/write-handoff/references/sanitization-checklist.md")
     ;;
 esac
 
