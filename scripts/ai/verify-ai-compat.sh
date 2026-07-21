@@ -469,7 +469,7 @@ for _run_da_heading in '### R1' '### R2'; do
     fail "run-da PR comment example ${_run_da_heading#\#\#\# } heading 누락: ${_run_da_protocol#"$REPO_ROOT"/}"
   fi
 done
-if grep -Eq '^### Round [0-9]+' "$_run_da_protocol"; then
+if grep -Eiq '^### round [0-9]+' "$_run_da_protocol"; then
   fail "run-da PR comment example pinning round counter 재도입: ${_run_da_protocol#"$REPO_ROOT"/}"
 else
   pass "run-da PR comment example avoids pinning round counters"
