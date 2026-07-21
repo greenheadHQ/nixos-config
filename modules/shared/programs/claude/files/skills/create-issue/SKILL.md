@@ -145,7 +145,7 @@ Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트
 
 공통 규칙 (섹션 선택과 독립): 명시적 시각 증빙 후보가 있으면 PoC 섹션 포함 여부와 무관하게 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬에 따라 `시각적 실제 결과` 슬롯을 준비한다. Step 2에서는 후보 식별과 슬롯 준비만 수행하고, 실제 업로드는 Step 5-A의 제목·라벨 확인 통과 직후 게시 전에 수행한다.
 
-작성 언어와 공개 안전성 (섹션 선택과 독립): 사용자가 한국어로 요청했거나 대화가 한국어면 이슈 본문도 한국어로 유지한다 (sanitization checklist S4). 작성 중에도 [공개용 sanitization checklist](../write-handoff/references/sanitization-checklist.md)의 금지 항목(S1)을 넣지 않고 보존 항목(S2)을 지우지 않는다 — 최종 강제는 Step 3에서 수행.
+작성 언어와 공개 안전성 (섹션 선택과 독립): 사용자가 본문 언어를 명시적으로 지정했으면 그 지정이 우선하고, 지정이 없으면 한국어로 요청했거나 대화가 한국어일 때 이슈 본문도 한국어로 유지한다 (sanitization checklist S4). 작성 중에도 [공개용 sanitization checklist](../write-handoff/references/sanitization-checklist.md)의 금지 항목(S1)을 넣지 않고 보존 항목(S2)을 지우지 않는다 — 최종 강제는 Step 3에서 수행.
 
 ### Step 3 — 게시 전 자체 검증 (anti-hallucination + sanitization)
 
