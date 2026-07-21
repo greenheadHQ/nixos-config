@@ -106,7 +106,7 @@ agenix 계열 트러블슈팅은 [troubleshooting.md](troubleshooting.md) 참조
 
 ### 1Password 데스크탑 (재)기동 후 SSH 키 승인 팝업 반복 (Mac 전용)
 
-증상: 1Password 데스크탑이 재기동·잠금해제될 때마다 SSH 실행 시 키 사용 승인 팝업이 다시 뜬다. 원격/무인 세션에서는 이 팝업이 Mac 로컬 화면에만 떠서 보이지 않는 무한 대기가 된다 (#1094 실측: `BatchMode`/`ConnectTimeout`은 agent 서명 승인 대기에 상한을 주지 못해 40초+ hang).
+증상: 1Password 데스크탑 앱이 재기동될 때마다 (그리고 기본 설정 "Until 1Password locks"에서는 잠금해제 후에도) SSH 실행 시 키 사용 승인 팝업이 다시 뜬다. 원격/무인 세션에서는 이 팝업이 Mac 로컬 화면에만 떠서 보이지 않는 무한 대기가 된다 (#1094 실측: `BatchMode`/`ConnectTimeout`은 agent 서명 승인 대기에 상한을 주지 못해 40초+ hang).
 
 원인: `agent.toml`(SSH vault 노출, `modules/darwin/programs/ssh/default.nix`가 박제)로 agent에 노출된 키는 1Password의 클라이언트 앱별(per-app) 승인 모델을 따르는데, 승인 기억이 agent session(앱 실행 단위)에 묶여 앱 quit·재부팅 시 리셋된다. 시간 기반 승인(4·12·24h)은 잠금 자체는 견디지만 앱 재기동에는 무효이고, "Approve for all applications"는 지속시간이 아니라 그 session에서 키를 쓸 수 있는 애플리케이션 범위를 넓히는 옵션이다. `onepassword-autostart` launchd가 로그인마다 앱을 재기동하므로, 재로그인 후 첫 서명 요청부터 승인 팝업이 반복 출현한다 (#1094에서 승인 기억 연장안(A/B)을 기각한 사유 — 외출 후 재로그인·재부팅이 기본 상태라 앱 재기동으로 무효).
 
