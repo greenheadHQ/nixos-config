@@ -46,6 +46,18 @@ pre-commit:
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-consistency.sh
     ai-skill-stale-identifiers:
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-stale-identifiers.sh
+    ai-skill-version-stamps:
+      # 외부 CLI(codex/claude) 의존 스킬의 "확인 버전" 스탬프 drift warn-only 경보 (#1078).
+      # CLI --version 기동 비용이 있어 대상 스킬 문서·codex 핀(버전이 오르는 커밋)·이 스크립트가
+      # staged일 때만 실행한다. glob 변경 시 scripts/ai/check-lefthook-staged-config.sh 의
+      # expected 블록도 함께 갱신한다 (미동기화 시 staged-config guard fail).
+      glob:
+        - "modules/shared/programs/claude/files/skills/using-codex-exec/**"
+        - "modules/shared/programs/claude/files/skills/using-claude-p/**"
+        - ".claude/skills/configuring-codex/**"
+        - "modules/shared/programs/codex/codex-pin.json"
+        - "scripts/ai/warn-skill-version-stamps.sh"
+      run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-version-stamps.sh
     gitleaks:
       run: bash ./scripts/ai/run-gitleaks-staged-policy.sh
     nixfmt:

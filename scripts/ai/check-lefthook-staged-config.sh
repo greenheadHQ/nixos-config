@@ -117,6 +117,14 @@ pre-commit:
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-consistency.sh
     ai-skill-stale-identifiers:
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-stale-identifiers.sh
+    ai-skill-version-stamps:
+      glob:
+        - "modules/shared/programs/claude/files/skills/using-codex-exec/**"
+        - "modules/shared/programs/claude/files/skills/using-claude-p/**"
+        - ".claude/skills/configuring-codex/**"
+        - "modules/shared/programs/codex/codex-pin.json"
+        - "scripts/ai/warn-skill-version-stamps.sh"
+      run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./scripts/ai/warn-skill-version-stamps.sh
     gitleaks:
       run: bash ./scripts/ai/run-gitleaks-staged-policy.sh
     nixfmt:
@@ -211,6 +219,7 @@ repo_scripts=(
   "scripts/ai/lib/staged-snapshot-cache.sh"
   "scripts/ai/warn-skill-consistency.sh"
   "scripts/ai/warn-skill-stale-identifiers.sh"
+  "scripts/ai/warn-skill-version-stamps.sh"
   "scripts/ai/run-gitleaks-staged-policy.sh"
   "tests/run-eval-tests.sh"
   "tests/test-codex-hook-fixtures.sh"
