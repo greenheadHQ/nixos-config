@@ -243,27 +243,38 @@ test_parse_args_unknown_argument_shows_usage_and_fails() {
   return 0
 }
 
-test_nixos_nrs_help_flag_prints_usage() {
-  local sandbox home_dir repo_root output
+# usage/도움말 계열 테스트 공용 fixture — sandbox를 만들고 배포 진입점을 설치한 뒤
+# ENTRYPOINT_FIXTURE_HOME / ENTRYPOINT_FIXTURE_REPO 전역을 설정한다.
+# 이 계열은 parse_args 단계에서 종료되므로 rebuild/sudo stub 없이 안전하게 실행된다.
+prepare_rebuild_entrypoint_fixture() {
+  local platform="$1" command="$2"
+  local sandbox
   sandbox=$(new_sandbox)
-  home_dir="$sandbox/home"
-  repo_root="$sandbox/repo"
+  ENTRYPOINT_FIXTURE_HOME="$sandbox/home"
+  ENTRYPOINT_FIXTURE_REPO="$sandbox/repo"
+  create_git_fixture_repo "$ENTRYPOINT_FIXTURE_REPO"
+  ENTRYPOINT_FIXTURE_REPO="$(cd "$ENTRYPOINT_FIXTURE_REPO" && pwd -P)"
+  install_deployed_layout "$sandbox" "$ENTRYPOINT_FIXTURE_REPO"
+  install_platform_rebuild_entrypoint "$sandbox" "$platform" "$command"
+}
 
-  create_git_fixture_repo "$repo_root"
-  repo_root="$(cd "$repo_root" && pwd -P)"
-  install_deployed_layout "$sandbox" "$repo_root"
-  install_platform_nrs_entrypoint "$sandbox" nixos
+# 준비된 fixture에서 배포 진입점을 실행한다 (stdout+stderr 병합 반환).
+# 시나리오별 환경변수는 호출 앞에 붙인다: REBUILD_MODE=preview run_deployed_rebuild_entrypoint nrs --help
+run_deployed_rebuild_entrypoint() {
+  local command="$1"; shift
+  HOME="$ENTRYPOINT_FIXTURE_HOME" \
+  PATH="$FIXTURE_DIR/bin:$PATH" \
+  bash -c '
+    set -euo pipefail
+    cd "'"$ENTRYPOINT_FIXTURE_REPO"'"
+    "'"$ENTRYPOINT_FIXTURE_HOME/.local/bin/$command"'" "$@"
+  ' _ "$@" 2>&1
+}
 
-  # --help는 parse_args에서 exit 0 하므로 rebuild/sudo stub 없이 안전하게 실행된다.
-  output=$(
-    HOME="$home_dir" \
-    PATH="$FIXTURE_DIR/bin:$PATH" \
-    bash -c '
-      set -euo pipefail
-      cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/nrs"'" --help
-    ' 2>&1
-  )
+test_nixos_nrs_help_flag_prints_usage() {
+  local output
+  prepare_rebuild_entrypoint_fixture nixos nrs
+  output=$(run_deployed_rebuild_entrypoint nrs --help)
 
   assert_contains "$output" "Usage: nrs"
   assert_contains "$output" "--offline"
@@ -273,26 +284,10 @@ test_nixos_nrs_help_flag_prints_usage() {
 }
 
 test_darwin_nrs_h_alias_prints_usage() {
-  local sandbox home_dir repo_root output
-  sandbox=$(new_sandbox)
-  home_dir="$sandbox/home"
-  repo_root="$sandbox/repo"
-
-  create_git_fixture_repo "$repo_root"
-  repo_root="$(cd "$repo_root" && pwd -P)"
-  install_deployed_layout "$sandbox" "$repo_root"
-  install_platform_nrs_entrypoint "$sandbox" darwin
-
+  local output
+  prepare_rebuild_entrypoint_fixture darwin nrs
   # darwin 진입점 + 짧은 alias -h도 동일 usage 계약을 따른다.
-  output=$(
-    HOME="$home_dir" \
-    PATH="$FIXTURE_DIR/bin:$PATH" \
-    bash -c '
-      set -euo pipefail
-      cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/nrs"'" -h
-    ' 2>&1
-  )
+  output=$(run_deployed_rebuild_entrypoint nrs -h)
 
   assert_contains "$output" "Usage: nrs"
   assert_contains "$output" "--force"
@@ -301,27 +296,10 @@ test_darwin_nrs_h_alias_prints_usage() {
 }
 
 test_nrs_help_ignores_inherited_rebuild_mode() {
-  local sandbox home_dir repo_root output
-  sandbox=$(new_sandbox)
-  home_dir="$sandbox/home"
-  repo_root="$sandbox/repo"
-
-  create_git_fixture_repo "$repo_root"
-  repo_root="$(cd "$repo_root" && pwd -P)"
-  install_deployed_layout "$sandbox" "$repo_root"
-  install_platform_nrs_entrypoint "$sandbox" nixos
-
+  local output
+  prepare_rebuild_entrypoint_fixture nixos nrs
   # 진입점의 REBUILD_MODE=switch 명시 선언이 호출 환경에서 상속된 값을 덮는다.
-  output=$(
-    HOME="$home_dir" \
-    REBUILD_MODE="preview" \
-    PATH="$FIXTURE_DIR/bin:$PATH" \
-    bash -c '
-      set -euo pipefail
-      cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/nrs"'" --help
-    ' 2>&1
-  )
+  output=$(REBUILD_MODE="preview" run_deployed_rebuild_entrypoint nrs --help)
 
   assert_contains "$output" "Usage: nrs"
   assert_contains "$output" "--force"
@@ -329,26 +307,10 @@ test_nrs_help_ignores_inherited_rebuild_mode() {
 }
 
 test_nrp_help_usage_omits_force_flag() {
-  local sandbox home_dir repo_root output
-  sandbox=$(new_sandbox)
-  home_dir="$sandbox/home"
-  repo_root="$sandbox/repo"
-
-  create_git_fixture_repo "$repo_root"
-  repo_root="$(cd "$repo_root" && pwd -P)"
-  install_deployed_layout "$sandbox" "$repo_root"
-  install_platform_nrp_entrypoint "$sandbox" nixos
-
+  local output
+  prepare_rebuild_entrypoint_fixture nixos nrp
   # 실제 nrp 진입점 실행 — REBUILD_MODE=preview 선언이 usage에서 무효 --force를 제외한다.
-  output=$(
-    HOME="$home_dir" \
-    PATH="$FIXTURE_DIR/bin:$PATH" \
-    bash -c '
-      set -euo pipefail
-      cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/nrp"'" --help
-    ' 2>&1
-  )
+  output=$(run_deployed_rebuild_entrypoint nrp --help)
 
   assert_contains "$output" "Usage: nrp"
   assert_contains "$output" "--cores N"
@@ -356,27 +318,11 @@ test_nrp_help_usage_omits_force_flag() {
 }
 
 test_nrp_rejects_force_flag() {
-  local sandbox home_dir repo_root output rc
-  sandbox=$(new_sandbox)
-  home_dir="$sandbox/home"
-  repo_root="$sandbox/repo"
-
-  create_git_fixture_repo "$repo_root"
-  repo_root="$(cd "$repo_root" && pwd -P)"
-  install_deployed_layout "$sandbox" "$repo_root"
-  install_platform_nrp_entrypoint "$sandbox" nixos
-
+  local output rc
+  prepare_rebuild_entrypoint_fixture nixos nrp
   # preview 진입점에서 --force는 usage뿐 아니라 parser에서도 거부된다.
   rc=0
-  output=$(
-    HOME="$home_dir" \
-    PATH="$FIXTURE_DIR/bin:$PATH" \
-    bash -c '
-      set -euo pipefail
-      cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/nrp"'" --force
-    ' 2>&1
-  ) || rc=$?
+  output=$(run_deployed_rebuild_entrypoint nrp --force) || rc=$?
 
   [[ "$rc" -eq 1 ]] || fail "expected nrp --force to exit 1 (actual: $rc)"
   assert_contains "$output" "--force is not supported"
