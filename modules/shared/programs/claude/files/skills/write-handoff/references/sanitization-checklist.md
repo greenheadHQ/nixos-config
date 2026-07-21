@@ -46,7 +46,7 @@ S1과 겹치면 S1이 우선한다 — 아래 보존 범주에 속해도 문자�
 1. 초안 파일에 대해 기계 검출 가능한 금지 패턴을 검색한다:
 
    ```bash
-   rg -n '/Users/|/home/|-----BEGIN|(ghp|gho|ghs|github_pat)_|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' <초안 파일>
+   rg -n '/Users/|/home/|-----BEGIN|(ghp|gho|ghu|ghs|ghr|github_pat)_|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' <초안 파일>
    ```
 
 2. 매치를 하나씩 판정한다 — 기계적 일괄 삭제 금지:
@@ -56,15 +56,15 @@ S1과 겹치면 S1이 우선한다 — 아래 보존 범주에 속해도 문자�
 4. S2로 보존하려는 repo 유래 경로·식별자는 공개 상태를 실측 확인한다 — 현재 worktree 존재는 근거가 아니다. 확인은 무상태 읽기만 사용한다 (`git fetch` 금지 — 모든 worktree가 공유하는 remote-tracking ref를 바꾸고, 공통 Git 디렉터리가 read-only인 환경에서는 실패한다):
 
    ```bash
-   gh repo view --json nameWithOwner,visibility             # 0) 원격이 의도한 canonical repo이고 PUBLIC인지 (인증된 ls-remote 성공은 공개 증명이 아니다)
-   git ls-remote --exit-code origin main                    # 1) 원격 실측 (필수) — SHA를 아래와 대조
-   git rev-parse origin/main                                # 2) 로컬 추적 ref SHA — 1)과 일치해야 유효
-   git cat-file -e "origin/main:<path>"                     # 3) 경로가 공개 기본 브랜치에 실재하는가
-   git grep -F -n -e '<식별자>' origin/main -- '<path>'     # 4) 값의 공개 이력 (고정 문자열 매치, 경로 실재와 별개)
+   gh repo view --json nameWithOwner,visibility,defaultBranchRef  # 0) canonical repo·PUBLIC 확인 + 기본 브랜치명(<BR>) 획득 — main 하드코딩 금지
+   git ls-remote --exit-code origin "<BR>"                        # 1) 원격 실측 (필수) — SHA를 아래와 대조
+   git rev-parse "origin/<BR>"                                    # 2) 로컬 추적 ref SHA — 1)과 일치해야 유효
+   git cat-file -e "origin/<BR>:<path>"                           # 3) 경로가 공개 기본 브랜치에 실재하는가
+   git grep -F -n -e '<식별자>' "origin/<BR>" -- '<path>'         # 4) 값의 공개 이력 (고정 문자열 매치, 경로 실재와 별개)
    ```
 
    `path:LINE`·`path:START-END` 인용은 3)·4) 검사 전에 trailing `:[0-9]+(-[0-9]+)?` suffix를 떼어낸 순수 경로로 검사한다 — Git은 suffix를 파일명 일부로 해석해 실재 경로도 부재로 오판한다 (게시 원문의 인용 표기는 그대로 보존).
-   0)에서 visibility가 PUBLIC이 아니거나 repo가 의도한 대상이 아니면, 1)·2)의 SHA가 다르면, 로컬 `origin/main`은 공개 상태의 근거가 아니다. 확인 실패·미커밋·미푸시·비공개 브랜치에만 있는 값/경로는 모두 S1로 처리한다 (fail-closed).
+   0)에서 visibility가 PUBLIC이 아니거나 repo가 의도한 대상이 아니면, 1)·2)의 SHA가 다르면, 로컬 `origin/<BR>`은 공개 상태의 근거가 아니다. 확인 실패·미커밋·미푸시·비공개 브랜치에만 있는 값/경로는 모두 S1로 처리한다 (fail-closed).
    게시 대상이 cwd origin과 다른 repo면(예: handoff에 외부 이슈 URL 지정) 검사 대상과 게시 대상을 결합해 판단한다: 이 검사(0~4)는 "cwd 유래 정보가 이미 인터넷에 공개돼 있는가"를 cwd origin 기준으로 판정하는 것이므로, cwd origin이 PUBLIC으로 확인될 때만 게시 대상과 무관하게 유효하다. cwd origin이 비공개·불명이면 게시 대상 repo가 무엇이든 S1이며, 게시 대상 repo 자체의 식별·공개 여부는 `gh repo view <owner/repo> --json nameWithOwner,visibility`로 별도 확인한다.
 
 ## S4. 언어 유지 규칙

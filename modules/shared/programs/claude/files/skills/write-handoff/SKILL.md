@@ -211,8 +211,11 @@ LLM이 커밋 메시지를 자의적으로 작성하지 않고, 가이드에 명
 작성한 가이드를 이슈 코멘트로 게시한다. `--body-file`만 허용한다. 본문에는 `$HOME`, `$(...)`, 백틱, 큰따옴표, 내부 `EOF` 등 셸 해석 토큰이 포함될 수 있으며, 이번 스킬이 추가한 `Phase N 검증+커밋` 섹션 자체가 커밋 템플릿용 `cat <<'EOF'...EOF` 예시를 포함한다. 따라서 `$(cat <<'EOF' ... EOF)` 래퍼는 inner `EOF`에서 조기 종료되어 본문이 잘리거나 명령이 실행된다. `--body "<본문>"` 직접 전달과 quoted HEREDOC 모두 금지.
 
 ```bash
-# 필수: 본문을 파일에 저장한 뒤 --body-file로 전달
-gh issue comment <number> --body-file <path-to-guide.md>
+# 필수: 본문을 파일에 저장한 뒤 --body-file로 전달.
+# 게시 대상은 처음 이슈를 읽을 때의 참조를 그대로 쓴다 — URL로 받았으면 URL을 그대로 전달한다.
+# bare number만 쓰면 cwd origin의 동번 이슈로 게시되어, sanitization에서 검사한 대상과
+# 실제 write sink가 어긋날 수 있다 (sanitization checklist S3의 게시 대상 결합 규칙).
+gh issue comment <이슈 참조(URL 또는 number)> --body-file <path-to-guide.md>
 ```
 
 참고: `gh issue comment --body-file -`로 stdin도 허용되지만, 생성된 가이드를 파일로 저장하는 워크플로가 디버깅·재실행에 유리하다.
