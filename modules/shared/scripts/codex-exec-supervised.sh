@@ -115,7 +115,7 @@ fi
 
 # wrapper-level capability probe (사전점검용 — codex exec를 호출하지 않고 의존성만 검증).
 # 모든 dependency(setsid/timeout/codex) resolution이 위에서 통과했으므로 여기서 exit 0이면 OK 신호다.
-# 사전점검 callsite (run-da(audit)/codex-fan-out preflight)는 `codex-exec-supervised --check`로 호출한다.
+# 사전점검 callsite (run-da(audit) preflight)는 `codex-exec-supervised --check`로 호출한다.
 if [[ "${1:-}" == "--check" ]]; then
   printf 'codex-exec-supervised: dependencies OK (timeout=%s setsid=%s codex=%s)\n' \
     "$TIMEOUT_BIN" "$SETSID_BIN" "$(command -v codex)" >&2

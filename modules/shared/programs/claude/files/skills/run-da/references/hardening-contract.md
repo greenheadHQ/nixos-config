@@ -4,7 +4,7 @@
 codex exec 경로(Claude Code 세션 · headless 세션)는 [`arbiter-scaling.md`](arbiter-scaling.md)의 subprocess 계약을 따른다.
 여러 규칙이 충돌하면 더 엄격한 역할 제한이 generic PoC 허용보다 우선한다.
 
-이 파일은 `run-da` canonical contract의 SSOT다. `run-da`의 모드 문서(audit 모드 포함)와 다른 스킬(`codex-fan-out` 등)이 single-writer / main-agent-only / 역할별 경계 / VIOLATION 처리 / Delegation fallback을 참조할 때 본 파일이 정본이다.
+이 파일은 `run-da` canonical contract의 SSOT다. `run-da`의 모드 문서(audit 모드 포함)와 다른 스킬이 single-writer / main-agent-only / 역할별 경계 / VIOLATION 처리 / Delegation fallback을 참조할 때 본 파일이 정본이다.
 
 ## 용어와 우선순위
 

@@ -227,14 +227,6 @@ in
     ".claude/skills/write-handoff".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/write-handoff";
 
-    # playwright-cli 스킬 (user-scope)
-    ".claude/skills/playwright-cli".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/playwright-cli";
-
-    # codex-fan-out 스킬 (user-scope)
-    ".claude/skills/codex-fan-out".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/codex-fan-out";
-
     # finding-unknowns 스킬 (user-scope)
     ".claude/skills/finding-unknowns".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/finding-unknowns";

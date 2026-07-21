@@ -38,8 +38,8 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 | 세션 | 기본 실행 경로 |
 |------|----------------|
-| Direct Codex | native subagent. `using-codex-exec`와 `codex-fan-out`은 자기 참조 방지를 위해 의도적으로 노출하지 않으며 직접 호출 대상이 아니다. |
-| Claude Code | `codex exec` subprocess. `using-codex-exec`와 `codex-fan-out`은 이 경로를 위한 adapter 문서다. |
+| Direct Codex | native subagent. `using-codex-exec`은 자기 참조 방지를 위해 의도적으로 노출하지 않으며 직접 호출 대상이 아니다. |
+| Claude Code | `codex exec` subprocess. `using-codex-exec`은 이 경로를 위한 adapter 문서다. |
 | headless | `codex exec` subprocess를 foreground serial로 실행한다. |
 
 세션별 binding은 [runtime mapping](../../../modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md)이 정본이다.

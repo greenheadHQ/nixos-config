@@ -8,7 +8,9 @@
 # - 소스 디렉토리 삭제/이동: modules/shared/programs/claude/files/skills/ 또는 .claude/skills/
 # - modules/shared/programs/claude/default.nix 배선 항목 제거
 # - modules/shared/programs/codex/default.nix exposedCodexSkills/intentionallyNotExposed 항목 제거
-# - 이 스크립트의 EXPECTED_* 목록에서 제거하고 RETIRED_SHARED_SKILLS에 등록
+# - 이 스크립트의 EXPECTED_* 목록에서 제거. 완전 퇴역(이 이름으로 재설치하지 않음)이면
+#   RETIRED_SHARED_SKILLS에 등록해 홈 잔재를 감시한다. 단 user-scope 재설치(예: `npx skills add -g`)를
+#   허용하는 스킬은 홈 잔재 검사(존재=FAIL)와 충돌하므로 등록하지 않고, 미등록 예외 근거를 남긴다
 # - 전 스킬 코퍼스에서 스킬명 cross-reference grep (NOT-for, 산문 참조)
 # - 전 스킬 evals/queries.json에서 혼동쌍 잔존 grep
 # - nrs로 홈 디렉터리 심링크 정리 반영
@@ -41,7 +43,6 @@ EXPECTED_EXPOSED=(
   finding-unknowns
   finish-pr
   issuing-codex-pairing-code
-  playwright-cli
   review-pr-feedback
   run-da
   using-gh-attach
@@ -51,25 +52,24 @@ SHARED_EXPOSURE_EXCLUDE=(
   set-icons
   using-claude-p
   using-codex-exec
-  codex-fan-out
 )
 # Split retired names so the public stale-reference scan scope can stay
 # zero-match while this verifier still checks deployed residue.
 RETIRED_SHARED_SKILLS=(
   "syncing-codex""-harness"
+  "codex-fan""-out"
 )
 RETIRED_EXECUTABLES=(
   ".local/bin/codex""-sync"
 )
 
 # SKILL.md tool-neutral lint has its own exclusion policy. It currently matches
-# the shared exposure exclusions because these four skills are legacy adapters,
+# the shared exposure exclusions because these skills are legacy adapters,
 # but future exposure-only exclusions must be added deliberately.
 SKILL_NEUTRAL_LINT_EXCLUDE=(
   set-icons
   using-claude-p
   using-codex-exec
-  codex-fan-out
 )
 
 errors=0
@@ -343,7 +343,7 @@ standalone_root="$HOME/.codex/packages/standalone"
 # 회귀 가드 (#890): codex는 declarative nix overlay(nix profile/store)로 설치된다. mise npm
 # backend에서 이관된 뒤로, 잔존 mise codex shim이 PATH 앞에서 codex(nix profile)를 shadow하면 안 된다 —
 # config 미등록 dangling shim 호출은 mise version resolve(fork 폭주, os error 35)를 재유발한다.
-# 의존처(codex-exec-supervised, shell의 codex/codex-apps 런처, codex-fan-out)가 전부
+# 의존처(codex-exec-supervised, shell의 codex/codex-apps 런처)가 전부
 # command -v codex에 의존하므로 이 셸 컨텍스트에서 codex가 nix 경로로 resolve되는지 검증한다.
 # 주의: mise shim은 그 자체가 nix mise 바이너리로의 symlink라 readlink -f 결과가 nix store가 되어
 # shim을 못 거른다. 따라서 command -v가 돌려준 첫 PATH 매치 경로 자체로 mise/node 잔재를 판정하고,

@@ -48,7 +48,6 @@ let
     "finding-unknowns"
     "finish-pr"
     "issuing-codex-pairing-code"
-    "playwright-cli"
     "review-pr-feedback"
     "run-da"
     # using-gh-attach: create-issue/create-pr가 소비하는 증빙 첨부 정본 — 소비 스킬이 노출되므로 함께 노출
@@ -67,9 +66,6 @@ let
     "using-claude-p"
     # using-codex-exec: Codex 자기 참조 방지 (PR #212)
     "using-codex-exec"
-    # codex-fan-out: Codex 세션은 native subagent fan-out이 기본 경로이므로 자기 참조가 된다.
-    # 이 스킬은 Claude/headless 세션에서 codex exec subprocess를 구동하는 패턴용.
-    "codex-fan-out"
   ];
 
   mkCodexSkillEntry = name: {
