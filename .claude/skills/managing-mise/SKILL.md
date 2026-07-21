@@ -85,10 +85,10 @@ mise activation은 대화형 셸 기준이라, 아래 실행 컨텍스트에서 
 
 | 경계면 | 전형적 증상 | 대응 |
 |---|---|---|
-| 비대화형 셸 (SSH `zsh -c`, LLM Bash tool) | pnpm/node not found | `.zshenv` shims가 1차 방어. 실패 시 `mise exec -- <명령>` |
+| 비대화형 셸 (SSH `zsh -c`, LLM Bash tool) | pnpm/node not found | `.zshenv` shims가 선언적 환경 방어. 즉시 복구는 `mise exec -- <명령>` |
 | hook 실행 환경 (lefthook·플러그인 hook) | 런타임 not found로 품질 게이트 조용한 무력화 | hook 스크립트가 mise 도구를 부르면 shims PATH 보강 또는 `mise exec` 경유 |
 | home-manager activation 제한 PATH | `mise: command not found`, reshim exit 127 | activation에서 mise 실행 금지 (#814→#890 교훈) |
-| worktree cwd | 프로젝트 config 미신뢰로 도구 비활성 | worktree마다 `mise trust` (trust는 경로 기준이라 원본 trust가 승계 안 됨) |
+| worktree cwd | 프로젝트 config 미신뢰로 도구 비활성 | mise 2026.x 일반 모드는 main checkout의 trust를 linked worktree와 공유한다. 구버전(예: 2025.12.x 배포본)·paranoid mode·비연결 디렉토리는 worktree별 `mise trust` 필요 (재검증: `mise trust --help`의 worktree 공유 문구) |
 
 비대화형에서 안전한 기본 규약: `mise exec -- <명령>` — 버전 resolve와 PATH 주입을 mise가 한 번에 처리하므로 shims/activate 상태와 무관하게 동작한다. 대화형 성공을 근거로 다른 컨텍스트도 동작할 것이라 가정하지 않는다.
 
@@ -98,7 +98,7 @@ mise activation은 대화형 셸 기준이라, 아래 실행 컨텍스트에서 
 2. 전역 버전 변경은 `modules/shared/programs/mise/config.toml` 수정 후 `nrs`로 배포한다.
 3. 프로젝트별 버전은 `mise.toml` 또는 `.nvmrc` 기준으로 `mise install`을 실행한다.
 4. `.nvmrc` 인식(`idiomatic_version_file_enable_tools`)은 전역 config에 선언돼 있다 — 별도 실행 불필요.
-5. 비대화형 셸 문제는 `~/.zshenv`의 shims 경로와 `mise activate` 적용 여부를 점검한다.
+5. 비대화형 셸 실패의 즉시 복구는 `mise exec -- <명령>` 경유가 우선이다. 같은 실패가 반복되거나 셸 환경의 영구 복구가 필요할 때만 `~/.zshenv`의 shims 경로와 `mise activate` 적용 여부를 점검한다.
 
 ## 자주 발생하는 문제
 
