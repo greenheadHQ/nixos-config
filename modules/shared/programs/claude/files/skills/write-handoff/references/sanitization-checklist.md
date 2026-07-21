@@ -31,7 +31,9 @@
 
 ## S2. 보존 항목 (지우지 않는다)
 
-- repo-relative 파일 경로 (`path/to/file.nix:LINE`)
+S1과 겹치면 S1이 우선한다 — 아래 보존 범주에 속해도 문자열 안에 S1 식별자(회사명·내부 서비스명·개인 식별자 등)가 포함되면 그 부분을 치환한 뒤 보존한다.
+
+- repo-relative 파일 경로 (`path/to/file.nix:LINE`) — 경로 문자열 자체의 S1 식별자 부재 + 공개 기본 브랜치 실재(S3 4항)가 전제
 - 이슈/PR 번호, 머지된 commit SHA
 - 검증 명령과 실행 결과, 실패 증상/에러 메시지 (민감값 미포함 시)
 - 공개 원격의 기본 브랜치(또는 공개된 commit)에서 확인된 경로, 도메인, 설정 식별자 (신규 노출 아님 — 확인 절차는 S3 4항, 현재 worktree 존재만으로는 근거가 아니다)
@@ -51,13 +53,15 @@
    - S1 해당 → repo-relative path 치환, placeholder 치환, 또는 삭제.
    - S2 해당 (이미 공개된 값, 문서상 placeholder) → 유지.
 3. 회사명·실명·사내 서비스명은 패턴 검색으로 잡히지 않는다. 본문을 처음부터 다시 읽으며 S1 표를 항목별로 대조한다.
-4. S2로 보존하려는 repo 유래 식별자는 공개 상태를 실측 확인한다 — 현재 worktree 존재는 근거가 아니다:
+4. S2로 보존하려는 repo 유래 경로·식별자는 공개 상태를 실측 확인한다 — 현재 worktree 존재는 근거가 아니다. 확인은 무상태 읽기만 사용한다 (`git fetch` 금지 — 모든 worktree가 공유하는 remote-tracking ref를 바꾸고, 공통 Git 디렉터리가 read-only인 환경에서는 실패한다):
 
    ```bash
-   git fetch origin && git grep -n '<식별자>' origin/main -- '<path>'   # 공개 기본 브랜치에 실재?
+   git cat-file -e "origin/main:<path>"            # 경로가 공개 기본 브랜치에 실재하는가
+   git grep -n '<식별자>' origin/main -- '<path>'  # 값 자체의 공개 이력 (경로 실재와 별개 검증)
+   git ls-remote origin main                       # (선택) 로컬 추적 ref가 낡았는지 SHA 대조
    ```
 
-   미커밋·미푸시·비공개 브랜치에만 있는 값이거나 확인이 불가능하면 S1로 처리한다 (fail-closed).
+   미커밋·미푸시·비공개 브랜치에만 있는 값/경로거나 확인이 불가능하면 S1로 처리한다 (fail-closed).
 
 ## S4. 언어 유지 규칙
 
