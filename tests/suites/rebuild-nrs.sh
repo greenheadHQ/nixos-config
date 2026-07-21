@@ -106,8 +106,8 @@ install_codex_managed_artifact_fixture() {
     "$home_dir/.codex/lib/pinning-patterns.sh"
 }
 
-install_platform_nrs_entrypoint() {
-  local sandbox="$1" platform="$2"
+install_platform_rebuild_entrypoint() {
+  local sandbox="$1" platform="$2" command="$3"
   local home_dir="$sandbox/home"
   local generated_dir="$sandbox/generated"
 
@@ -118,46 +118,27 @@ install_platform_nrs_entrypoint() {
     darwin)
       register_copy_exec \
         "$REPO_ROOT/modules/shared/programs/shell/darwin.nix" \
-        ".local/bin/nrs" \
-        '${darwinScriptsDir}/nrs.sh' \
-        "modules/darwin/scripts/nrs.sh"
+        ".local/bin/$command" \
+        '${darwinScriptsDir}/'"$command"'.sh' \
+        "modules/darwin/scripts/$command.sh"
       ;;
     nixos)
       register_copy_exec \
         "$REPO_ROOT/modules/shared/programs/shell/nixos.nix" \
-        ".local/bin/nrs" \
-        '${nixosScriptsDir}/nrs.sh' \
-        "modules/nixos/scripts/nrs.sh"
+        ".local/bin/$command" \
+        '${nixosScriptsDir}/'"$command"'.sh' \
+        "modules/nixos/scripts/$command.sh"
       ;;
-    *) fail "unknown platform for nrs entrypoint: $platform" ;;
+    *) fail "unknown platform for $command entrypoint: $platform" ;;
   esac
 }
 
+install_platform_nrs_entrypoint() {
+  install_platform_rebuild_entrypoint "$1" "$2" nrs
+}
+
 install_platform_nrp_entrypoint() {
-  local sandbox="$1" platform="$2"
-  local home_dir="$sandbox/home"
-  local generated_dir="$sandbox/generated"
-
-  mkdir -p "$home_dir/.local/bin" "$generated_dir"
-
-  # shellcheck disable=SC2016  # Literal Nix source strings.
-  case "$platform" in
-    darwin)
-      register_copy_exec \
-        "$REPO_ROOT/modules/shared/programs/shell/darwin.nix" \
-        ".local/bin/nrp" \
-        '${darwinScriptsDir}/nrp.sh' \
-        "modules/darwin/scripts/nrp.sh"
-      ;;
-    nixos)
-      register_copy_exec \
-        "$REPO_ROOT/modules/shared/programs/shell/nixos.nix" \
-        ".local/bin/nrp" \
-        '${nixosScriptsDir}/nrp.sh' \
-        "modules/nixos/scripts/nrp.sh"
-      ;;
-    *) fail "unknown platform for nrp entrypoint: $platform" ;;
-  esac
+  install_platform_rebuild_entrypoint "$1" "$2" nrp
 }
 
 install_recording_nrs_relink() {
@@ -317,6 +298,34 @@ test_darwin_nrs_h_alias_prints_usage() {
   assert_contains "$output" "--force"
   assert_contains "$output" "--cores N"
   assert_not_contains "$output" "Unknown argument"
+}
+
+test_nrs_help_ignores_inherited_rebuild_mode() {
+  local sandbox home_dir repo_root output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_platform_nrs_entrypoint "$sandbox" nixos
+
+  # 진입점의 REBUILD_MODE=switch 명시 선언이 호출 환경에서 상속된 값을 덮는다.
+  output=$(
+    HOME="$home_dir" \
+    REBUILD_MODE="preview" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/nrs"'" --help
+    ' 2>&1
+  )
+
+  assert_contains "$output" "Usage: nrs"
+  assert_contains "$output" "--force"
+  assert_not_contains "$output" "preview wrapper"
 }
 
 test_nrp_help_usage_omits_force_flag() {
