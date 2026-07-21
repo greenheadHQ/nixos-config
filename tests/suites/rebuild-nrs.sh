@@ -700,6 +700,113 @@ EOF
   assert_user_codex_hooks_pruned "$home_dir"
 }
 
+# darwin no-change gcroot guard fixture — caller의 local 변수(sandbox/home_dir/repo_root/
+# worktree_root/stub_dir/current_target/relink_log/lock_file)를 bash dynamic scoping으로 채운다.
+# main repo에서 no-change nrs를 돌리되, stale worktree 심링크 probe를 심어 guard가 없으면
+# maybe_relink_or_restore의 Phase 1(rm) + restore가 반드시 실행되는 상태를 만든다.
+setup_darwin_no_change_gcroot_fixture() {
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  stub_dir="$sandbox/stub-bin"
+  current_target="$sandbox/current-system"
+  relink_log="$sandbox/nrs-relink.log"
+  lock_file="$sandbox/nrs-state"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  worktree_root="$repo_root/.claude/worktrees/feature_one"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_platform_nrs_entrypoint "$sandbox" darwin
+  install_codex_managed_artifact_fixture "$home_dir"
+  install_recording_nrs_relink "$home_dir"
+
+  mkdir -p "$stub_dir" "$current_target" "$home_dir/.claude"
+  rm -f "$lock_file"
+
+  # stale worktree probe: main 경로 _remove_worktree_symlinks가 매칭하는 심링크
+  ln -sf "$worktree_root/CLAUDE.md" "$home_dir/.claude/CLAUDE.md"
+
+  cat > "$stub_dir/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+"$@"
+EOF
+  cat > "$stub_dir/darwin-rebuild" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  build)
+    ln -sfn "${DARWIN_CURRENT_SYSTEM:?}" ./result
+    ;;
+  switch)
+    :
+    ;;
+  *)
+    echo "unexpected darwin-rebuild subcommand: $1" >&2
+    exit 1
+    ;;
+esac
+EOF
+  cat > "$stub_dir/nvd" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "stub nvd diff"
+EOF
+  local real_readlink
+  real_readlink="$(command -v readlink)"
+  cat > "$stub_dir/readlink" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "/run/current-system" ]]; then
+  printf '%s\n' "\${DARWIN_CURRENT_SYSTEM:?}"
+else
+  "$real_readlink" "\$@"
+fi
+EOF
+  chmod +x "$stub_dir/sudo" "$stub_dir/darwin-rebuild" "$stub_dir/nvd" "$stub_dir/readlink"
+}
+
+run_darwin_no_change_gcroot_nrs() {
+  HOME="$home_dir" \
+  PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
+  DARWIN_CURRENT_SYSTEM="$current_target" \
+  NRS_LOCK_FILE="$lock_file" \
+  NRS_RELINK_LOG="$relink_log" \
+  bash -c '
+    set -euo pipefail
+    cd "'"$repo_root"'"
+    "'"$home_dir/.local/bin/nrs"'"
+  ' 2>&1
+}
+
+test_darwin_nrs_no_changes_skips_relink_without_hm_gcroot() {
+  local sandbox home_dir repo_root worktree_root stub_dir current_target relink_log lock_file output
+  setup_darwin_no_change_gcroot_fixture
+
+  output=$(run_darwin_no_change_gcroot_nrs)
+
+  assert_contains "$output" "No changes to apply"
+  assert_not_contains "$output" "Restoring symlinks to nix store chain"
+  [[ ! -s "$relink_log" ]] || fail "expected no-change nrs without HM gcroot to skip nrs-relink"
+  [[ -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected stale worktree symlink to be left untouched without HM gcroot"
+  [[ ! -e "$lock_file" ]] || fail "expected nrs lock file to be removed after no-change early return"
+}
+
+test_darwin_nrs_no_changes_restores_when_hm_gcroot_present() {
+  local sandbox home_dir repo_root worktree_root stub_dir current_target relink_log lock_file output
+  setup_darwin_no_change_gcroot_fixture
+  mkdir -p "$home_dir/.local/state/home-manager/gcroots"
+  touch "$home_dir/.local/state/home-manager/gcroots/current-home"
+
+  output=$(run_darwin_no_change_gcroot_nrs)
+
+  assert_contains "$output" "No changes to apply"
+  assert_contains "$output" "Restoring symlinks to nix store chain"
+  assert_file_contains "$relink_log" "restore"
+  [[ ! -L "$home_dir/.claude/CLAUDE.md" ]] || fail "expected stale worktree symlink to be removed when HM gcroot is present"
+}
+
 test_darwin_nrs_no_changes_activates_when_codex_artifact_missing() {
   local sandbox home_dir repo_root stub_dir output current_target switch_log lock_file
   sandbox=$(new_sandbox)
