@@ -121,18 +121,14 @@ pnpm 10.28.0
 - [Discussion #4345: idiomatic versions default disabled](https://github.com/jdx/mise/discussions/4345)
 - [mise 공식 설정 문서](https://mise.jdx.dev/configuration.html)
 
-해결: `idiomatic_version_file_enable_tools` 설정 추가.
+현재 상태: 전역 config SoT(`modules/shared/programs/mise/config.toml`)에 `idiomatic_version_file_enable_tools = ["node"]`가 이미 선언돼 있어 node의 `.nvmrc` 인식에는 별도 조치가 불필요하다.
 
-현재는 전역 config가 nix 선언(`modules/shared/programs/mise/config.toml`)이고 이 설정이 이미 포함돼 있어 별도 조치가 불필요하다. 새 도구를 idiomatic file 인식 대상에 추가하려면 SoT 파일을 수정 후 `nrs`한다 (`mise settings add`는 read-only config라 실패한다):
+다른 도구를 idiomatic file 인식 대상에 추가하려면 SoT 파일의 해당 배열에 도구명을 추가하고 `nrs`한다 (`mise settings add`는 read-only config라 실패한다):
 
 ```toml
-# modules/shared/programs/mise/config.toml
+# modules/shared/programs/mise/config.toml — 최소 변경 예시 (전체 내용은 SoT 파일 참조)
 [settings]
-idiomatic_version_file_enable_tools = ["node"]
-
-[tools]
-node = "lts"      # 전역 기본값
-pnpm = "latest"
+idiomatic_version_file_enable_tools = ["node", "<추가할-도구>"]
 ```
 
 프로젝트별 버전 설치:

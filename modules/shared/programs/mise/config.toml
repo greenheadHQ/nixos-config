@@ -18,4 +18,7 @@ idiomatic_version_file_enable_tools = ["node"]
 node = "lts"
 pnpm = "latest"
 yarn = "1.22.22" # yarn classic 고정 (v1 계열을 쓰는 외부 프로젝트용)
-gitleaks = "8.30.0" # NOTE: nix devShell(flake.nix)과 이중 관리 — 정리 별도 검토 (#890 비목표)
+# gitleaks 이중 선언의 역할 분리: flake.nix devShell은 이 repo 진입 시(direnv) 제공하고,
+# 아래 mise 전역은 devShell 밖 컨텍스트(비대화형 훅·타 프로젝트 — #826 계열)의 fallback이다.
+# 단일 SoT로 합치려면 devShell 밖 훅의 gitleaks 해석 경로를 먼저 재설계해야 한다 (착수 시 이슈로 승격).
+gitleaks = "8.30.0"
