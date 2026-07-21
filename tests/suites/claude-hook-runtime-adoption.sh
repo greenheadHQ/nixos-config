@@ -78,8 +78,8 @@ test_log_skill_hook_normal_input_logs_v2_event() {
   assert_not_contains "$line" "sid-raw-1"
   assert_not_contains "$line" "$(cat "$key")"
   # log/key 모두 owner-only 0600
-  [[ "$(_codex_config_file_mode "$log")" == "600" ]] || fail "expected usage log mode 600"
-  [[ "$(_codex_config_file_mode "$key")" == "600" ]] || fail "expected pseudonym key mode 600"
+  [[ "$(_portable_file_mode "$log")" == "600" ]] || fail "expected usage log mode 600"
+  [[ "$(_portable_file_mode "$key")" == "600" ]] || fail "expected pseudonym key mode 600"
 }
 
 test_log_skill_hook_repairs_loose_log_mode() {
@@ -96,7 +96,7 @@ test_log_skill_hook_repairs_loose_log_mode() {
     '{"session_id":"sid-mode-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "unexpected hook output: $out"
   [[ "$(wc -l < "$log")" -eq 2 ]] || fail "expected appended event after mode repair"
-  [[ "$(_codex_config_file_mode "$log")" == "600" ]] || fail "expected loose log mode repaired to 600"
+  [[ "$(_portable_file_mode "$log")" == "600" ]] || fail "expected loose log mode repaired to 600"
 }
 
 test_log_skill_hook_skips_symlinked_key() {

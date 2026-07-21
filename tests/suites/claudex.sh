@@ -358,12 +358,12 @@ test_claudex_runtime_api_and_private_state() {
     || fail "lock failure still entered the state mutation callback"
 
   _claudex_prepare_fixture_state "$sandbox"
-  [[ "$(_codex_config_file_mode "$state")" == "700" ]] || fail "claudex state mode must be 0700"
-  [[ "$(_codex_config_file_mode "$state/auth")" == "700" ]] || fail "claudex auth mode must be 0700"
-  [[ "$(_codex_config_file_mode "$state/work")" == "700" ]] || fail "claudex work mode must be 0700"
-  [[ "$(_codex_config_file_mode "$state/client-api-key")" == "600" ]] || fail "claudex key mode must be 0600"
-  [[ "$(_codex_config_file_mode "$state/config.yaml")" == "600" ]] || fail "claudex config mode must be 0600"
-  [[ "$(_codex_config_file_mode "$state/state.lock")" == "600" ]] || fail "claudex lock mode must be 0600"
+  [[ "$(_portable_file_mode "$state")" == "700" ]] || fail "claudex state mode must be 0700"
+  [[ "$(_portable_file_mode "$state/auth")" == "700" ]] || fail "claudex auth mode must be 0700"
+  [[ "$(_portable_file_mode "$state/work")" == "700" ]] || fail "claudex work mode must be 0700"
+  [[ "$(_portable_file_mode "$state/client-api-key")" == "600" ]] || fail "claudex key mode must be 0600"
+  [[ "$(_portable_file_mode "$state/config.yaml")" == "600" ]] || fail "claudex config mode must be 0600"
+  [[ "$(_portable_file_mode "$state/state.lock")" == "600" ]] || fail "claudex lock mode must be 0600"
   grep -Eq '^[0-9a-f]{64}$' "$state/client-api-key" || fail "claudex key must be 64 lowercase hex bytes"
   jq -e \
     --arg auth "$state/auth" \
@@ -408,7 +408,7 @@ test_claudex_runtime_api_and_private_state() {
     || fail "changed config content did not atomically replace its inode"
   jq -e --arg key "$replacement_key" '.["api-keys"] == [$key]' "$state/config.yaml" >/dev/null \
     || fail "changed config did not contain the replacement API key"
-  [[ "$(_codex_config_file_mode "$state/config.yaml")" == "600" ]] \
+  [[ "$(_portable_file_mode "$state/config.yaml")" == "600" ]] \
     || fail "changed config lost mode 0600"
   key_before="$replacement_key"
 

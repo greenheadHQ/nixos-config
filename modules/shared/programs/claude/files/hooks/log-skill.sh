@@ -28,6 +28,11 @@ AGENT_ID=$(printf '%s' "$INPUT" | hook_parse_json_path '.agent_id // empty')
 
 SKILL=$(printf '%s' "$INPUT" | hook_parse_json_path '.tool_input.skill // empty')
 [ -z "$SKILL" ] && exit 0
+# 스킬명 문법 검증 — 제어문자·개행·과대 길이가 v2 이벤트와 report 출력을 오염시키지 않게 한다.
+case "$SKILL" in
+  *[!A-Za-z0-9._:-]*) exit 0 ;;
+esac
+[ "${#SKILL}" -le 128 ] || exit 0
 
 SESSION_ID=$(printf '%s' "$INPUT" | hook_parse_session_id)
 

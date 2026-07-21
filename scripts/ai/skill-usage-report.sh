@@ -96,8 +96,11 @@ rows: dict[str, dict[str, int]] = defaultdict(
 # v2 event contract (log-skill.sh와 동기 유지): exact 6-key set + exact types.
 V2_KEYS = {"schema_version", "event_type", "ts", "runtime", "skill", "session_key"}
 SESSION_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
+# writer(log-skill.sh)의 스킬명 문법과 동기 유지 — 제어문자가 TSV 출력 행을 위조하지 못하게 한다.
+SKILL_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 # datetime.fromtimestamp() 변환 가능 범위를 파싱 단계에서 강제한다 —
 # 범위 밖 행이 report 전체를 OverflowError로 중단시키지 않도록 skip 계약을 지킨다.
+# 하한 1: 집계기의 first==0 미초기화 sentinel과의 충돌을 차단한다 (epoch 0 비지원).
 TS_MAX = 253402300799  # 9999-12-31T23:59:59Z
 
 
@@ -113,11 +116,11 @@ def parse_v2_event(line: str) -> tuple[int, str] | None:
         return None
     if event["event_type"] != "skill_invocation":
         return None
-    if type(event["ts"]) is not int or not (0 <= event["ts"] <= TS_MAX):
+    if type(event["ts"]) is not int or not (1 <= event["ts"] <= TS_MAX):
         return None
     if not isinstance(event["runtime"], str) or not event["runtime"]:
         return None
-    if not isinstance(event["skill"], str) or not event["skill"]:
+    if not isinstance(event["skill"], str) or not SKILL_RE.fullmatch(event["skill"]):
         return None
     if not isinstance(event["session_key"], str) or not SESSION_KEY_RE.fullmatch(
         event["session_key"]
@@ -146,7 +149,7 @@ with open(log_path, "r", encoding="utf-8", errors="replace", newline="") as hand
                 timestamp = int(fields[0])
             except ValueError:
                 continue
-            if not 0 <= timestamp <= TS_MAX:
+            if not 1 <= timestamp <= TS_MAX:
                 continue
 
             skill = fields[4]

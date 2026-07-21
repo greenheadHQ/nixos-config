@@ -234,6 +234,6 @@ sys.exit(0 if a == b else 1)
 PY
 }
 # GNU `stat -c` / BSD `stat -f` 를 모두 지원하는 helper. "%a"/"%p" 3자리 octal을 반환.
-_codex_config_file_mode() {
+_portable_file_mode() {
   stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
 }

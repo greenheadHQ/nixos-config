@@ -353,7 +353,7 @@ assert data["model"] == "test-model", data
 PY
 
   assert_line_count "$config_file" "[projects.\"$new_worktree\"]" 1
-  mode_after=$(_codex_config_file_mode "$config_file")
+  mode_after=$(_portable_file_mode "$config_file")
   [[ "$mode_after" == "600" ]] \
     || fail "expected Codex config mode 600 after trust registration, got: $mode_after"
 }

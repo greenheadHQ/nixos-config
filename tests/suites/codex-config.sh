@@ -194,7 +194,7 @@ test_codex_config_sync_noop_preserves_bytes() {
   [[ "$first_hash" == "$second_hash" ]] \
     || fail "sync_noop_preserves_bytes: bytes changed between first and second sync"
 
-  mode_after=$(_codex_config_file_mode "$target")
+  mode_after=$(_portable_file_mode "$target")
   [[ "$mode_after" == "600" ]] \
     || fail "sync_noop_preserves_bytes: mode=$mode_after (expected 600)"
 }
@@ -219,7 +219,7 @@ test_codex_config_sync_rejects_bad_mode() {
   [[ -n "$second_stderr" ]] \
     || fail "sync_rejects_bad_mode: expected summary log on write, stderr empty"
 
-  mode_after=$(_codex_config_file_mode "$target")
+  mode_after=$(_portable_file_mode "$target")
   [[ "$mode_after" == "600" ]] \
     || fail "sync_rejects_bad_mode: mode=$mode_after after sync (expected 600)"
 }
@@ -249,7 +249,7 @@ test_codex_config_sync_rejects_symlink() {
 
   [[ -L "$target" ]] && fail "sync_rejects_symlink: target is still a symlink after sync"
   [[ -f "$target" ]] || fail "sync_rejects_symlink: target is not a regular file after sync"
-  mode_after=$(_codex_config_file_mode "$target")
+  mode_after=$(_portable_file_mode "$target")
   [[ "$mode_after" == "600" ]] \
     || fail "sync_rejects_symlink: mode=$mode_after after sync (expected 600)"
 }
