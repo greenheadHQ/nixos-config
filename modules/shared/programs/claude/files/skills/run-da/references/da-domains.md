@@ -78,6 +78,8 @@ PoC는 정적 근거만으로 판정이 불가능한 경우에 한해서만 수�
 tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-only command, host mutation은 explicit delegation 없이는 금지다.
 위 규칙을 위반했거나 금지된 작업이 필요하면 finding 대신 `VIOLATION` 형식으로 반환하라.
 
+리뷰 모드가 `for_plan`이면 아직 구현되지 않은 계획을 검토한다. 현재 코드에 변경이 반영되지 않았거나 git diff가 비어 있는 것은 당연하며, finding의 기각 근거가 아니다. "사실 정확성"은 지적한 기술적 메커니즘이 실제로 존재하는지, "변경 연관성"은 계획이 실행되면 해당 문제가 도입되는지를 기준으로 검토하라.
+
 작업이 의도적으로 제거·축소·교체하는 동작은 regression/side-effect가 아니다. 변경 의도(diff가 향하는 방향)와 일치하는 동작 소멸은 위반으로 보고하지 마라. 제거가 의도인지 diff/컨텍스트로 불확실하면 위반으로 단정하지 말고 그 불확실성을 finding에 명시하라.
 반대로, 과거에 의도적으로 내린 결정(방어 로직, 트레이드오프 선택, 기각한 대안)을 그 도입 근거를 모른 채 되돌리는 것은 회귀다(decision regression). 주입된 "의사결정 컨텍스트 팩"과 git read-only 조회(`git log -S`/`blame`/`show`)로 이번 변경이 과거 결정과 충돌하는지 점검하고, 충돌하면 과거 결정의 출처(commit SHA / PR# / issue#)를 finding에 첨부하라(출처 없는 추상적 우려는 기각된다). 줄 수가 많다는 이유만으로 방어 로직을 "군살"로 단정하지 마라. 또한 `mv`/rename/in-place write가 기존 파일의 symlink(다른 레이어가 관리)·mode/권한·owner 속성을 보존하는지 확인하라. 회귀로 판정하기 전 증거 시점 이후의 수정 커밋을 대조하라(시계열 게이트).
 

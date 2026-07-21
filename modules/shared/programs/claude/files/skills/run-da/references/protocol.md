@@ -224,7 +224,7 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 <details>
 <summary>Round details</summary>
 
-### Round 1
+### R1
 - changeset: frozen=main...HEAD@abc1234, write_phase=none, next=R2 new changeset after batch fix
 - Correctness: 3건 (`HALLUCINATION` CONFIRMED 1, `SECURITY` CONFIRMED 1, `SECURITY` NOT_AN_ISSUE 1)
 - Design: CLEAR
@@ -232,7 +232,7 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 - Maintainability: 1건 (`READABILITY` CONFIRMED 1) → R2에서 fixed
 - selective: trigger 1건 → split 1 (vote-shape 2:1, minority=NOT_AN_ISSUE)  ← 선택: selective consistency가 발동된 라운드에만 이 줄을 적음
 
-### Round 2
+### R2
 ...
 
 </details>

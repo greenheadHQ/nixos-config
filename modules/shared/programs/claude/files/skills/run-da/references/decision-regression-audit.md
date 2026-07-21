@@ -70,6 +70,25 @@ degraded 수행 (fan-out 없는 경우): Review Intensity가 SKIP/LITE여서 rev
 
 이미 고쳐진 문제를 신규로 등록하지 않는다. 증거가 과거 시점이면 `git log --since=<증거시점> -- <path>`로 후속 수정을 확인한다.
 
+### Step B-1 — main 회귀 PR lookup (hook/test hard-fail)
+
+#### When to Use
+
+현재 브랜치에서 pre-commit/pre-push hook 또는 동일 검증이 갑자기 hard-fail하고, 실패가 이번 변경과 직접 연결되는지 불명확할 때 사용한다. 모든 hook failure를 main 회귀로 단정하지 않으며, 아래 순서를 바꾸지 않는다.
+
+#### Procedure
+
+1. local-diff 격리: `git status --short`로 candidate 변경과 unrelated 변경을 나눈다. unrelated 변경만 되돌릴 수 있는 방식으로 분리한 뒤 같은 hook/test를 정확히 1회 재실행한다. candidate 변경을 숨기거나 삭제해서 통과시키지 않는다.
+2. stable token 추출: 같은 failure가 남으면 출력에서 fixture ID, pattern 이름, 검사명, 증상 문자열처럼 버전이 바뀌어도 유지될 토큰을 고른다. 임시 경로, 줄 번호, 약식 commit hash만 검색 키로 쓰지 않는다.
+3. merged PR 검색: forge가 있으면 stable token으로 merged PR을 찾고 본문·파일·merge commit을 읽는다. 예: `gh pr list --state merged --search '"<stable-token>"'`, 이어서 `gh pr view <PR-number> --json number,title,body,files,mergeCommit`. 관련 issue가 있으면 함께 읽어 도입 근거와 후속 수정 여부를 시계열에 병합한다.
+4. main 포함 여부 대조: PR 번호를 안정 식별자로 기록하고, 해당 PR의 merge commit이 target main에 포함됐는지와 현재 브랜치가 그 수정 전인지 확인한다. 약식 commit hash 하나만으로 "이미 수정됨" 또는 "현재 브랜치 문제"를 결론내리지 않는다.
+5. 정상 경로 우선: main에 이미 수정된 회귀라면 main sync/rebase 후 동일 hook/test를 직접 다시 실행한다. local diff가 원인이면 candidate 변경을 수정하고 재검증한다.
+6. bypass는 승인된 임시 escape hatch만: `--no-verify`는 사용자의 명시 승인 후에만 일시적으로 사용할 수 있다. 승인된 bypass 뒤에도 main sync/rebase와 동일 hook/test 직접 재실행을 완료하고 그 결과를 기록해야 한다. 승인 없는 bypass나 "main에 fix가 있을 것"이라는 추정만으로 진행하지 않는다.
+
+#### 우선순위 원칙
+
+`local-diff 격리 → merged PR lookup과 시계열 확인 → 정상 경로로 수정·동기화 → 사용자 승인된 임시 bypass` 순서다. 네트워크 조회, branch mutation, rebase, commit/push, GitHub write는 메인 에이전트가 수행하며 reviewer/auditor/Arbiter에 위임하지 않는다.
+
 ### Step C — reviewer/auditor 보강
 
 각 reviewer/auditor는 주입된 팩 + 자기 bundle 관점의 read-only 조회로, 이번 변경이 과거 결정과 충돌하는지 점검한다. 충돌 발견 시 finding에 과거 결정의 출처(commit SHA / PR# / issue# / 세션)를 근거로 첨부한다(출처 없는 추상적 우려는 기각 대상).

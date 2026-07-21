@@ -461,6 +461,23 @@ require_contract_text \
   "run-da audit hardening contract pointer"
 
 require_contract_text \
+  "modules/shared/programs/claude/files/skills/run-da/references/protocol.md" \
+  "### R1" \
+  "run-da PR comment example R1 heading"
+
+require_contract_text \
+  "modules/shared/programs/claude/files/skills/run-da/references/protocol.md" \
+  "### R2" \
+  "run-da PR comment example R2 heading"
+
+_run_da_protocol="$REPO_ROOT/modules/shared/programs/claude/files/skills/run-da/references/protocol.md"
+if grep -Eq '^### Round [0-9]+' "$_run_da_protocol"; then
+  fail "run-da PR comment example pinning round counter 재도입: ${_run_da_protocol#"$REPO_ROOT"/}"
+else
+  pass "run-da PR comment example avoids pinning round counters"
+fi
+
+require_contract_text \
   "AGENTS.override.md" \
   '$run-da' \
   "AGENTS.override mentions run-da"
