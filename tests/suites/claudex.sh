@@ -1291,6 +1291,18 @@ test_claudex_release_layout_verifier() {
   fi
   assert_contains "$output" "expected 5 entries, found 6"
   assert_contains "$output" "EXTRA"
+
+  # Upstream 유래 파일명의 제어문자(개행·ESC)는 %q로 중화되어 로그를 위조할 수 없어야 한다.
+  rm -rf "$sandbox/candidate"
+  cp -R "$exact" "$sandbox/candidate"
+  : > "$sandbox/candidate/$(printf 'EVIL\nFORGED')"
+  if output="$(bash "$verifier" "$sandbox/candidate" 2>&1)"; then
+    fail "CLIProxyAPI release verifier accepted a control-character entry"
+  fi
+  assert_contains "$output" "EVIL"
+  if printf '%s\n' "$output" | grep -q '^FORGED'; then
+    fail "control-character entry forged an independent log line"
+  fi
 }
 
 test_claudex_disabled_home_excludes_enabled_closure() {
