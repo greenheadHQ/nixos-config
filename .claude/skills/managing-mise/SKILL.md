@@ -101,7 +101,7 @@ mise는 두 계층으로 활성화된다:
 
 | 조건 | trust 공유 | 조치 |
 |---|---|---|
-| 2026.7.5 이상, 일반 모드, linked worktree | 공유 (main checkout 기준) | 추가 trust 불요 |
+| 2026.7.5 이상, 일반 모드, linked worktree — main checkout의 동일 config 경로가 이미 trusted이고 worktree에서 `--ignore`하지 않은 경우 | 공유 (main→worktree 단방향) | 추가 trust 불요 |
 | 2026.7.4 이하 (검증 당시 배포본 2025.12.13 포함) | 비공유 | worktree별 `mise trust` (선행 조건 적용) |
 | paranoid mode | 비공유 (의도된 재승인 경계) | 수동 재승인 |
 | git 비연결 디렉토리 | 비공유 | `mise trust` (선행 조건 적용) |
