@@ -1,0 +1,21 @@
+# mise 전역 설정 — nix 선언 관리 (SoT: 이 파일. ~/.config/mise/config.toml은 read-only symlink)
+#
+# 전역 도구 추가/변경: 이 파일 수정 후 nrs.
+# 머신 로컬/임시 도구: ~/.config/mise/conf.d/*.toml (nix 비관리 — mise가 config.toml과 병합 로드).
+# 프로젝트별 버전: 각 프로젝트의 mise.toml / .nvmrc (idiomatic file, 아래 settings 참조).
+#
+# 배경: 전역 config가 runtime mutation(mise use -g)으로 관리되던 시절 두 머신이
+# drift했고(Mac: node latest+yarn / MiniPC: node lts+pnpm+죽은 codex entry),
+# 오타(cocodpods)·deprecated 설정(legacy_version_file)이 잔존해 선언 관리로 이관했다.
+# mise use -g / mise settings 같은 전역 쓰기 명령은 이제 의도적으로 실패한다 (drift 가드).
+
+[settings]
+# .nvmrc / .node-version 인식 (mise 2025.10.0부터 기본 비활성 — idiomatic version file)
+idiomatic_version_file_enable_tools = ["node"]
+
+[tools]
+# 전역은 fallback일 뿐 — 프로젝트별 버전은 .nvmrc/mise.toml이 우선한다.
+node = "lts"
+pnpm = "latest"
+yarn = "1.22.22" # yarn classic 고정 (v1 계열을 쓰는 외부 프로젝트용)
+gitleaks = "8.30.0" # NOTE: nix devShell(flake.nix)과 이중 관리 — 정리 별도 검토 (#890 비목표)

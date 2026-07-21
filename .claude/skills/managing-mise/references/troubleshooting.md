@@ -123,16 +123,12 @@ pnpm 10.28.0
 
 해결: `idiomatic_version_file_enable_tools` 설정 추가.
 
-```bash
-# CLI로 설정
-$ mise settings add idiomatic_version_file_enable_tools node
-```
-
-또는 `~/.config/mise/config.toml`에 직접 추가:
+현재는 전역 config가 nix 선언(`modules/shared/programs/mise/config.toml`)이고 이 설정이 이미 포함돼 있어 별도 조치가 불필요하다. 새 도구를 idiomatic file 인식 대상에 추가하려면 SoT 파일을 수정 후 `nrs`한다 (`mise settings add`는 read-only config라 실패한다):
 
 ```toml
+# modules/shared/programs/mise/config.toml
 [settings]
-idiomatic_version_file_enable_tools = ['node']
+idiomatic_version_file_enable_tools = ["node"]
 
 [tools]
 node = "lts"      # 전역 기본값
@@ -182,7 +178,7 @@ $ mise trust
 증상: mise로 node 설치 시 빌드 실패.
 
 ```bash
-$ mise use -g node@lts
+$ mise install node@lts
 ./configure: line 8: exec: python: not found
 ```
 
@@ -192,12 +188,10 @@ $ mise use -g node@lts
 
 ```bash
 # 환경변수로 컴파일 비활성화
-$ MISE_NODE_COMPILE=0 mise use -g node@lts
-
-# 또는 영구 설정 (~/.config/mise/config.toml)
-[settings]
-node_compile = false
+$ MISE_NODE_COMPILE=0 mise install node@lts
 ```
+
+현재는 `modules/shared/programs/shell/nixos.nix`가 `MISE_NODE_COMPILE=0`·`MISE_ALL_COMPILE=0`을 영구 설정하므로 평상시엔 재발하지 않는다.
 
 확인:
 

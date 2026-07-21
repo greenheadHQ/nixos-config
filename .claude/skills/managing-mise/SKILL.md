@@ -29,7 +29,8 @@ macOS·NixOS 모두 `pkgs.mise`(nix, `libraries/packages.nix`의 shared)로 설�
 
 | 파일 | 용도 |
 |------|------|
-| `~/.config/mise/config.toml` | 전역 설정 |
+| `~/.config/mise/config.toml` | 전역 설정 — nix 선언 read-only symlink. SoT: `modules/shared/programs/mise/config.toml` |
+| `~/.config/mise/conf.d/*.toml` | 머신 로컬/임시 전역 도구 (nix 비관리 — config.toml과 병합 로드) |
 | `mise.toml` / `.mise.toml` | 프로젝트별 설정 |
 | `mise.local.toml` | 프로젝트 로컬 (gitignore됨) |
 | `.nvmrc`, `.node-version` | Node.js 버전 (idiomatic files) |
@@ -40,8 +41,8 @@ macOS·NixOS 모두 `pkgs.mise`(nix, `libraries/packages.nix`의 shared)로 설�
 # 현재 버전 확인
 mise current
 
-# 전역 버전 설정
-mise use -g node@lts
+# 전역 버전 변경: modules/shared/programs/mise/config.toml 수정 후 nrs
+# (`mise use -g`·`mise settings`는 read-only config라 의도적으로 실패 — drift 가드)
 
 # 프로젝트 버전 설치
 mise install node@20.18
@@ -54,6 +55,7 @@ mise trust
 
 | 파일 | 용도 |
 |------|------|
+| `modules/shared/programs/mise/config.toml` | 전역 config SoT (`~/.config/mise/config.toml`로 심링크 배포) |
 | `modules/shared/programs/shell/default.nix` | zsh mise 활성화 (shims + activate) |
 | `modules/shared/programs/shell/nixos.nix` | NixOS 환경변수 (`MISE_ALL_COMPILE=0`, `MISE_NODE_COMPILE=0`) |
 | `libraries/packages.nix` | `pkgs.mise` 패키지 설치 (shared — macOS+NixOS 공통) |
@@ -77,9 +79,9 @@ mise는 두 계층으로 활성화된다:
 ## 핵심 절차
 
 1. `mise current`로 현재 선택된 런타임을 확인한다.
-2. 전역 버전이 필요하면 `mise use -g node@lts`로 고정한다.
+2. 전역 버전 변경은 `modules/shared/programs/mise/config.toml` 수정 후 `nrs`로 배포한다.
 3. 프로젝트별 버전은 `mise.toml` 또는 `.nvmrc` 기준으로 `mise install`을 실행한다.
-4. `.nvmrc` 인식이 필요하면 `mise settings add idiomatic_version_file_enable_tools node`를 실행한다.
+4. `.nvmrc` 인식(`idiomatic_version_file_enable_tools`)은 전역 config에 선언돼 있다 — 별도 실행 불필요.
 5. 비대화형 셸 문제는 `~/.zshenv`의 shims 경로와 `mise activate` 적용 여부를 점검한다.
 
 ## 자주 발생하는 문제
@@ -87,7 +89,8 @@ mise는 두 계층으로 활성화된다:
 1. SSH 비대화형 세션에서 pnpm not found: `.zshenv`에 mise shims 누락 → 셸 활성화 구조 참조
 2. .nvmrc 인식 안 됨: mise 2025.10.0부터 기본 비활성화 → `idiomatic_version_file_enable_tools` 설정 필요
 3. NixOS에서 node 빌드 실패: `MISE_NODE_COMPILE=0` 필요 (현재 `nixos.nix`에서 영구 설정됨)
-4. mise.local.toml 미신뢰: `mise trust` 실행 필요 (최초 1회)
+4. mise.local.toml 미신뢰: `mise trust` 실행 필요 (최초 1회; worktree도 경로가 다르므로 별도 trust)
+5. `mise use -g`/`mise settings` 실패 (read-only config): 의도된 가드 — 전역 변경은 SoT 파일 수정 + nrs, 임시 도구는 `~/.config/mise/conf.d/`
 
 ## 레퍼런스
 
