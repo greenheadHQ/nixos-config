@@ -85,12 +85,21 @@ _ensure_owner_only_file() {
 # key가 없으면 32-byte random을 hex로 한 번만 생성 (same-directory temp + atomic rename).
 # key material은 argv/stdout/stderr에 노출하지 않는다.
 if [ ! -f "$SKILL_USAGE_KEY" ]; then
+  # 경로가 디렉터리·심링크 등 비정상 inode면 생성 자체를 포기한다 —
+  # mv -n이 디렉터리 내부로 이동해 호출마다 key 파일을 누적시키는 경로 차단.
+  if [ -e "$SKILL_USAGE_KEY" ] || [ -L "$SKILL_USAGE_KEY" ]; then
+    exit 0
+  fi
   KEY_TMP=$(mktemp "$(dirname "$SKILL_USAGE_KEY")/.skill-usage.key.XXXXXX" 2>/dev/null) || exit 0
+  # macOS file_inherit ACL은 새 파일에 상속된다 — key 기록 전에 제거해 노출 창을 없앤다.
+  if [ "$(uname)" = "Darwin" ]; then
+    /bin/chmod -N "$KEY_TMP" 2>/dev/null || { rm -f "$KEY_TMP"; exit 0; }
+  fi
+  chmod 600 "$KEY_TMP" 2>/dev/null || { rm -f "$KEY_TMP"; exit 0; }
   if ! head -c 32 /dev/urandom | od -An -v -tx1 | tr -d ' \n' > "$KEY_TMP" 2>/dev/null; then
     rm -f "$KEY_TMP"
     exit 0
   fi
-  chmod 600 "$KEY_TMP" 2>/dev/null || { rm -f "$KEY_TMP"; exit 0; }
   # 경합으로 다른 프로세스가 먼저 만들었으면 mv -n이 no-op — 그쪽 key를 쓴다
   mv -n "$KEY_TMP" "$SKILL_USAGE_KEY" 2>/dev/null || true
   rm -f "$KEY_TMP"
