@@ -355,6 +355,34 @@ test_nrp_help_usage_omits_force_flag() {
   assert_not_contains "$output" "--force"
 }
 
+test_nrp_rejects_force_flag() {
+  local sandbox home_dir repo_root output rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  install_platform_nrp_entrypoint "$sandbox" nixos
+
+  # preview 진입점에서 --force는 usage뿐 아니라 parser에서도 거부된다.
+  rc=0
+  output=$(
+    HOME="$home_dir" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/nrp"'" --force
+    ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" -eq 1 ]] || fail "expected nrp --force to exit 1 (actual: $rc)"
+  assert_contains "$output" "--force is not supported"
+  assert_contains "$output" "Usage: nrp"
+}
+
 test_detect_worktree_uses_current_worktree_path() {
   local sandbox home_dir repo_root worktree_root output
   sandbox=$(new_sandbox)

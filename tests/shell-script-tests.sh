@@ -36,6 +36,7 @@ run_test "nixos nrs --help prints usage" test_nixos_nrs_help_flag_prints_usage
 run_test "darwin nrs -h alias prints usage" test_darwin_nrs_h_alias_prints_usage
 run_test "nrs --help ignores inherited REBUILD_MODE" test_nrs_help_ignores_inherited_rebuild_mode
 run_test "nrp --help usage omits inert --force" test_nrp_help_usage_omits_force_flag
+run_test "nrp rejects inert --force flag" test_nrp_rejects_force_flag
 run_test "detect_worktree switches to active worktree" test_detect_worktree_uses_current_worktree_path
 run_test "worktree relink skips non-TTY without opt-in" test_worktree_relink_skips_non_tty_without_opt_in
 run_test "worktree relink opt-in allows non-TTY" test_worktree_relink_opt_in_allows_non_tty
