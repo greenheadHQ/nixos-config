@@ -5,6 +5,7 @@
 # 사용법 (공용 usage의 요약 — 전체는 nrp --help):
 #   nrp           # 일반 미리보기
 #   nrp --offline # 오프라인 미리보기
+#   nrp --cores 2 # 코어 제한 미리보기
 #   nrp --help    # 사용법 출력
 
 set -euo pipefail
