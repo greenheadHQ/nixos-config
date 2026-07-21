@@ -460,6 +460,21 @@ require_contract_text \
   "hardening-contract.md#skill-internal-fan-out-authorization" \
   "run-da audit hardening contract pointer"
 
+_run_da_protocol="$REPO_ROOT/modules/shared/programs/claude/files/skills/run-da/references/protocol.md"
+# require_contract_text는 -Fq 부분 일치라 "### R10"도 통과하므로 전체 줄 일치로 검증한다
+for _run_da_heading in '### R1' '### R2'; do
+  if grep -Fxq -- "$_run_da_heading" "$_run_da_protocol"; then
+    pass "run-da PR comment example ${_run_da_heading#\#\#\# } heading"
+  else
+    fail "run-da PR comment example ${_run_da_heading#\#\#\# } heading 누락: ${_run_da_protocol#"$REPO_ROOT"/}"
+  fi
+done
+if grep -Eiq '^### round [0-9]+' "$_run_da_protocol"; then
+  fail "run-da PR comment example pinning round counter 재도입: ${_run_da_protocol#"$REPO_ROOT"/}"
+else
+  pass "run-da PR comment example avoids pinning round counters"
+fi
+
 require_contract_text \
   "AGENTS.override.md" \
   '$run-da' \

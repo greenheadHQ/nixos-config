@@ -152,6 +152,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 | findings ≥ 1로 first-pass Arbiter 진입 | [`references/arbiter-prompt.md`](references/arbiter-prompt.md), [`references/protocol.md`](references/protocol.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | Step 5a에서 Arbiter prompt/실행 계약을 조립할 때 |
 | selective consistency trigger 매치 | [`references/stability-measurement.md`](references/stability-measurement.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md), [`references/protocol.md`](references/protocol.md), [`references/arbiter-prompt.md`](references/arbiter-prompt.md) | first-pass VERDICT_JSON이 LOW confidence, NEEDS_MORE_INFO, 이전 outer round 반복 중 하나에 매치한 뒤에만 |
 | `GATE-REMOVAL-SIMPLIFY` 또는 decision-regression 조사 필요 | [`references/decision-regression-audit.md`](references/decision-regression-audit.md) | compact 룰 판정 후 gate가 매치되거나 mode Step 1에서 조사 강도가 결정된 때 |
+| hook/test hard-fail에서 main 회귀 PR lookup 필요 | [`references/decision-regression-audit.md`](references/decision-regression-audit.md) | local-diff 격리 후 같은 failure가 남아 merged PR·후속 수정 시계열을 확인할 때 |
 | 사용자 질문, 자동 반영, 검증 의무 확인 | [`references/main-agent-obligations.md`](references/main-agent-obligations.md), [`references/validation-paths.md`](references/validation-paths.md) | NEEDS_MORE_INFO/split/blocked 보고, CONFIRMED_ISSUE 반영, 검증 경로 선택이 실제로 필요할 때 |
 
 ## 용어 정책
@@ -190,12 +191,13 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 1. Review Intensity는 메인 LLM 인라인 체크리스트다 — 메인 LLM이 모든 룰을 평가한 표를 기록하고 first-match로 단계를 채택한다. 자유 추론 금지. fail-closed rule group(보안/모듈/설정·의존성) 매치/불확실 시 강한 검토 fail-closed ([`references/intensity-procedure.md`](references/intensity-procedure.md)).
 2. Single-writer / main-agent-only — tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 메인 에이전트 소유. DA reviewer/Arbiter는 위임 금지 ([`references/hardening-contract.md`](references/hardening-contract.md) 역할별 경계). Review Intensity 인라인 판정은 메인 에이전트의 정상 경로다.
 3. Conservative wait — `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다.
-4. PoC 의무화 — DA가 위반을 지적하면 구체적 파일:줄 또는 계획 항목 번호를 제시. 증거 없는 추상적 우려는 Arbiter가 NOT_AN_ISSUE로 판정한다.
-5. CONFIRMED_ISSUE 자동 반영 — Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동 반영하되, review phase 중 patch/edit/apply_patch, write-mode formatter, generated output 변경은 금지한다. confirmed 항목은 write phase에서 batch로 반영하며, CRITICAL 심각도는 다음 outer round 진행 차단 후 write phase 첫 항목으로 처리한다.
-6. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO/`split` 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
-7. Fresh perspective 보장 — 매 라운드마다 새 reviewer/Arbiter 실행 단위 (Codex: 새 native subagent thread, codex exec: 새 `codex exec` 프로세스).
-8. 의사결정·회귀 컨텍스트 조사 — 제거/단순화/되돌림/리팩터 변경이거나 git상 왕복 핫스팟 파일이면 Review Intensity와 무관하게 fail-closed로 과거 의사결정(commit/PR/issue + 있으면 CIR/ADR·로컬 세션 로그)을 조사해 회귀 재도입을 점검한다. 메인이 "의사결정 컨텍스트 팩"을 수집·주입하고 reviewer/Arbiter가 read-only 보강한다. git으로 버전관리되는 모든 저장소에서 동작하며 기록 관습에 의존하지 않는다 ([`references/decision-regression-audit.md`](references/decision-regression-audit.md)).
-9. Dismissal ledger는 exact match만 suppress — `fresh` anti-anchoring을 위해 이전 finding 본문/이전 transcript는 주입하지 않는다. Arbiter `NOT_AN_ISSUE` 또는 사용자 명시 제외 중 eligible 항목만 ignored local ledger에 기록하고, `NEEDS_MORE_INFO`는 자동 기각으로 저장하지 않는다 ([`references/dismissal-ledger.md`](references/dismissal-ledger.md)).
+4. for_plan은 미구현 계획 리뷰 — 현재 코드에 변경이 없거나 git diff가 비어 있는 것은 finding 기각 근거가 아니다. reviewer는 기술적 메커니즘의 실재와 계획 실행 후 문제 도입 여부를 검토한다 ([`references/da-domains.md`](references/da-domains.md), [`references/arbiter-prompt.md`](references/arbiter-prompt.md)).
+5. PoC 의무화 — DA가 위반을 지적하면 구체적 파일:줄 또는 계획 항목 번호를 제시. 증거 없는 추상적 우려는 Arbiter가 NOT_AN_ISSUE로 판정한다.
+6. CONFIRMED_ISSUE 자동 반영 — Arbiter가 CONFIRMED_ISSUE로 판정한 항목은 자동 반영하되, review phase 중 patch/edit/apply_patch, write-mode formatter, generated output 변경은 금지한다. confirmed 항목은 write phase에서 batch로 반영하며, CRITICAL 심각도는 다음 outer round 진행 차단 후 write phase 첫 항목으로 처리한다.
+7. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO/`split` 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
+8. Fresh perspective 보장 — 매 라운드마다 새 reviewer/Arbiter 실행 단위 (Codex: 새 native subagent thread, codex exec: 새 `codex exec` 프로세스).
+9. 의사결정·회귀 컨텍스트 조사 — 제거/단순화/되돌림/리팩터 변경이거나 git상 왕복 핫스팟 파일이면 Review Intensity와 무관하게 fail-closed로 과거 의사결정(commit/PR/issue + 있으면 CIR/ADR·로컬 세션 로그)을 조사해 회귀 재도입을 점검한다. 메인이 "의사결정 컨텍스트 팩"을 수집·주입하고 reviewer/Arbiter가 read-only 보강한다. git으로 버전관리되는 모든 저장소에서 동작하며 기록 관습에 의존하지 않는다 ([`references/decision-regression-audit.md`](references/decision-regression-audit.md)).
+10. Dismissal ledger는 exact match만 suppress — `fresh` anti-anchoring을 위해 이전 finding 본문/이전 transcript는 주입하지 않는다. Arbiter `NOT_AN_ISSUE` 또는 사용자 명시 제외 중 eligible 항목만 ignored local ledger에 기록하고, `NEEDS_MORE_INFO`는 자동 기각으로 저장하지 않는다 ([`references/dismissal-ledger.md`](references/dismissal-ledger.md)).
 
 ## 주의사항
 
