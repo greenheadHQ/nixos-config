@@ -3,8 +3,9 @@
 # Usage: scripts/ai/skill-usage-report.sh [--log PATH] [--since YYYY-MM-DD]
 # Usage: scripts/ai/skill-usage-report.sh --log ~/skill-usage.log --since 2026-01-01
 #
-# Consumes the TSV emitted by modules/shared/programs/claude/files/hooks/log-skill.sh.
-# Column definitions live in that hook; this parser depends on that order.
+# Consumes the log emitted by modules/shared/programs/claude/files/hooks/log-skill.sh.
+# Rows starting with "{" are strict v2 JSONL events; other rows are legacy TSV
+# (read-only compatibility). Schema definitions live in that hook; update together.
 set -euo pipefail
 
 DEFAULT_LOG="${HOME}/.claude/skill-usage.log"
@@ -65,9 +66,11 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required"
 python3 - "$log_file" "$since_date" <<'PY'
 from __future__ import annotations
 
+import json
+import re
+import sys
 from collections import defaultdict
 from datetime import date, datetime, time, timezone
-import sys
 
 log_path = sys.argv[1]
 since_arg = sys.argv[2]
@@ -90,25 +93,62 @@ rows: dict[str, dict[str, int]] = defaultdict(
     lambda: {"count": 0, "first": 0, "recent": 0}
 )
 
+# v2 event contract (log-skill.sh와 동기 유지): exact 6-key set + exact types.
+V2_KEYS = {"schema_version", "event_type", "ts", "runtime", "skill", "session_key"}
+SESSION_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def parse_v2_event(line: str) -> tuple[int, str] | None:
+    """Strict v2 JSONL row -> (timestamp, skill). Malformed rows are skipped."""
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(event, dict) or set(event) != V2_KEYS:
+        return None
+    if type(event["schema_version"]) is not int or event["schema_version"] != 2:
+        return None
+    if event["event_type"] != "skill_invocation":
+        return None
+    if type(event["ts"]) is not int:
+        return None
+    if not isinstance(event["runtime"], str) or not event["runtime"]:
+        return None
+    if not isinstance(event["skill"], str) or not event["skill"]:
+        return None
+    if not isinstance(event["session_key"], str) or not SESSION_KEY_RE.match(
+        event["session_key"]
+    ):
+        return None
+    return event["ts"], event["skill"]
+
+
 with open(log_path, "r", encoding="utf-8", errors="replace", newline="") as handle:
     for raw_line in handle:
         line = raw_line.rstrip("\n")
         if not line:
             continue
-        fields = line.split("\t")
-        if len(fields) < 5:
-            continue
 
-        try:
-            timestamp = int(fields[0])
-        except ValueError:
-            continue
+        if line.startswith("{"):
+            parsed = parse_v2_event(line)
+            if parsed is None:
+                continue
+            timestamp, skill = parsed
+        else:
+            fields = line.split("\t")
+            if len(fields) < 5:
+                continue
+
+            try:
+                timestamp = int(fields[0])
+            except ValueError:
+                continue
+
+            skill = fields[4]
+            if not skill:
+                continue
 
         if since_epoch is not None and timestamp < since_epoch:
-            continue
-
-        skill = fields[4]
-        if not skill:
             continue
 
         row = rows[skill]

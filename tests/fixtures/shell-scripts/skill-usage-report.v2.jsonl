@@ -1,0 +1,10 @@
+{"schema_version":2,"event_type":"skill_invocation","ts":1767225600,"runtime":"claude-main","skill":"managing-minipc","session_key":"abad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1dea"}
+{"schema_version":2,"event_type":"skill_invocation","ts":1767355200,"runtime":"claude-main","skill":"run-da","session_key":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}
+{"schema_version":2,"event_type":"skill_invocation","ts":1769934600,"runtime":"claude-main","skill":"managing-minipc","session_key":"abad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1dea"}
+{"schema_version":2,"event_type":"skill_invocation","ts":1770147900,"runtime":"claude-main","skill":"configuring-codex","session_key":"cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d"}
+{"schema_version":2,"event_type":"skill_invocation","ts":1770147900,"runtime":"claude-main","skill":"run-da","session_key":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}
+{"schema_version":1,"event_type":"skill_invocation","ts":1770147900,"runtime":"claude-main","skill":"ignored-skill","session_key":"abad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1dea"}
+{"schema_version":2,"event_type":"skill_invocation","ts":1770147900,"runtime":"claude-main","skill":"ignored-skill","session_key":"NOT-LOWERCASE-HEX"}
+{"schema_version":2,"event_type":"skill_invocation","ts":1770147900,"runtime":"claude-main","skill":"ignored-skill","session_key":"abad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1dea","args":"extra-key-must-be-rejected"}
+{"schema_version":2,"event_type":"skill_invocation","ts":"1770147900","runtime":"claude-main","skill":"ignored-skill","session_key":"abad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1deaabad1dea"}
+{"schema_version":2,"event_type":"skill_invocation","ts":1770147900,

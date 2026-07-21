@@ -40,31 +40,95 @@ _chra_marker_path() {
     bash -c '. "$SESSION_STATE_LIB"; marker_path_for_cwd "$CWD_FOR_MARKER"'
 }
 
-test_log_skill_hook_normal_input_logs_usage() {
-  local sandbox home input out log line
+test_log_skill_hook_normal_input_logs_v2_event() {
+  local sandbox home input out log key line keyset
   sandbox=$(new_sandbox)
   home="$sandbox/home"
   mkdir -p "$home/.claude"
+  # synthetic credential-shaped placeholder + tab/newline — raw args는 log에 절대 남지 않아야 한다
   input=$(jq -n \
-    --arg sid "sid-1" \
+    --arg sid "sid-raw-1" \
     --arg skill "managing-minipc" \
-    --arg args "arg value" \
+    --arg args $'--token FAKE-PLACEHOLDER-SECRET\tline2\nline3' \
     '{session_id:$sid,tool_input:{skill:$skill,args:$args}}')
   out=$(_chra_run_hook "log-skill.sh" "$input" HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "expected log-skill normal input to produce no stdout, got: $out"
   log="$home/.claude/skill-usage.log"
+  key="$home/.claude/skill-usage.key"
   [ -f "$log" ] || fail "expected log-skill to create usage log"
+  [ -f "$key" ] || fail "expected log-skill to create pseudonym key"
+  [[ "$(wc -l < "$log")" -eq 1 ]] || fail "expected exactly one v2 event line"
   line=$(cat "$log")
-  assert_contains "$line" $'tester\tsid-1'
-  assert_contains "$line" $'\tmanaging-minipc\targ value'
+  # 한 줄 valid JSON + exact 6-key set + exact types (Target event contract)
+  printf '%s' "$line" | jq -e . >/dev/null || fail "expected v2 event to be valid JSON: $line"
+  keyset=$(printf '%s' "$line" | jq -r 'keys_unsorted | join(",")')
+  [[ "$keyset" == "schema_version,event_type,ts,runtime,skill,session_key" ]] || \
+    fail "unexpected v2 key set: $keyset"
+  printf '%s' "$line" | jq -e '
+    .schema_version == 2
+    and .event_type == "skill_invocation"
+    and (.ts | type == "number")
+    and .runtime == "claude-main"
+    and .skill == "managing-minipc"
+    and (.session_key | type == "string" and test("^[0-9a-f]{64}$"))
+  ' >/dev/null || fail "v2 event contract violated: $line"
+  # 금지 필드 부재: args placeholder / user / repo / raw session id / key material
+  assert_not_contains "$line" "FAKE-PLACEHOLDER-SECRET"
+  assert_not_contains "$line" "tester"
+  assert_not_contains "$line" "sid-raw-1"
+  assert_not_contains "$line" "$(cat "$key")"
+  # log/key 모두 owner-only 0600
+  [[ "$(_codex_config_file_mode "$log")" == "600" ]] || fail "expected usage log mode 600"
+  [[ "$(_codex_config_file_mode "$key")" == "600" ]] || fail "expected pseudonym key mode 600"
 }
 
-test_log_skill_hook_empty_malformed_and_subagent_noop() {
-  local sandbox home input out log
+test_log_skill_hook_session_key_is_stable_pseudonym() {
+  local sandbox home out log k1 k2 k3
   sandbox=$(new_sandbox)
   home="$sandbox/home"
   mkdir -p "$home/.claude"
   log="$home/.claude/skill-usage.log"
+
+  out=$(_chra_run_hook "log-skill.sh" \
+    '{"session_id":"sid-stable-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+  [[ -z "$out" ]] || fail "unexpected hook output: $out"
+  out=$(_chra_run_hook "log-skill.sh" \
+    '{"session_id":"sid-stable-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+  [[ -z "$out" ]] || fail "unexpected hook output: $out"
+  out=$(_chra_run_hook "log-skill.sh" \
+    '{"session_id":"sid-stable-2","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+  [[ -z "$out" ]] || fail "unexpected hook output: $out"
+
+  k1=$(sed -n 1p "$log" | jq -r .session_key)
+  k2=$(sed -n 2p "$log" | jq -r .session_key)
+  k3=$(sed -n 3p "$log" | jq -r .session_key)
+  [[ "$k1" == "$k2" ]] || fail "expected same session id to map to same session_key"
+  [[ "$k1" != "$k3" ]] || fail "expected different session ids to map to different session_keys"
+}
+
+test_log_skill_hook_invalid_key_skips_event_without_fallback() {
+  local sandbox home out log key
+  sandbox=$(new_sandbox)
+  home="$sandbox/home"
+  mkdir -p "$home/.claude"
+  log="$home/.claude/skill-usage.log"
+  key="$home/.claude/skill-usage.key"
+  # key 읽기/검증 실패 시 raw id fallback 없이 event를 건너뛴다
+  printf 'not-64-lowercase-hex\n' > "$key"
+
+  out=$(_chra_run_hook "log-skill.sh" \
+    '{"session_id":"sid-raw-2","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+  [[ -z "$out" ]] || fail "expected invalid key to noop, got: $out"
+  [ ! -e "$log" ] || fail "expected invalid key to skip event without raw-id fallback"
+}
+
+test_log_skill_hook_empty_malformed_and_subagent_noop() {
+  local sandbox home input out log key
+  sandbox=$(new_sandbox)
+  home="$sandbox/home"
+  mkdir -p "$home/.claude"
+  log="$home/.claude/skill-usage.log"
+  key="$home/.claude/skill-usage.key"
 
   out=$(_chra_run_hook "log-skill.sh" "" HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "expected log-skill empty stdin to noop, got: $out"
@@ -78,6 +142,7 @@ test_log_skill_hook_empty_malformed_and_subagent_noop() {
   out=$(_chra_run_hook "log-skill.sh" "$input" HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "expected log-skill subagent input to noop, got: $out"
   [ ! -e "$log" ] || fail "expected log-skill subagent input not to create log"
+  [ ! -e "$key" ] || fail "expected noop paths not to create pseudonym key"
 }
 
 test_nrs_session_cleanup_hook_empty_malformed_and_nonrepo_input_noop() {

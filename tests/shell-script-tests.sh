@@ -175,6 +175,9 @@ run_test "warn-skill-version-stamps --from-head detects stale HEAD" test_warn_sk
 run_test "warn-skill-version-stamps warns on unparseable stamp" test_warn_skill_version_stamps_warns_on_unparseable_stamp
 run_test "skill-usage-report aggregates sample TSV" test_skill_usage_report_aggregates_sample_tsv
 run_test "skill-usage-report --since filters sample TSV" test_skill_usage_report_since_filters_sample_tsv
+run_test "skill-usage-report v2 JSONL matches legacy aggregation" test_skill_usage_report_v2_jsonl_matches_legacy_aggregation
+run_test "skill-usage-report mixed log matches legacy aggregation" test_skill_usage_report_mixed_log_matches_legacy_aggregation
+run_test "skill-usage-report leaves input log unchanged" test_skill_usage_report_does_not_modify_input_log
 run_test "skill-usage-report missing log errors" test_skill_usage_report_missing_log_errors
 run_test "darwin nrs offline force smoke" test_darwin_nrs_offline_force_smoke
 run_test "darwin nrs no-change releases worktree lock" test_darwin_nrs_no_changes_releases_worktree_lock
@@ -232,7 +235,9 @@ run_test "fragile-hardcoding-guard line count word order independent" test_fragi
 run_test "fragile-hardcoding-guard line count true positive preserved" test_fragile_hardcoding_guard_line_count_true_positive_preserved
 run_test "fragile-hardcoding-guard edit true positive preserved" test_fragile_hardcoding_guard_edit_true_positive_preserved
 run_test "fragile-hardcoding-guard empty and malformed input noop" test_fragile_hardcoding_guard_empty_and_malformed_input_noop
-run_test "log-skill normal input logs usage" test_log_skill_hook_normal_input_logs_usage
+run_test "log-skill normal input logs v2 event" test_log_skill_hook_normal_input_logs_v2_event
+run_test "log-skill session key is stable pseudonym" test_log_skill_hook_session_key_is_stable_pseudonym
+run_test "log-skill invalid key skips event without fallback" test_log_skill_hook_invalid_key_skips_event_without_fallback
 run_test "log-skill empty malformed and subagent noop" test_log_skill_hook_empty_malformed_and_subagent_noop
 run_test "nrs-session-cleanup empty malformed and nonrepo noop" test_nrs_session_cleanup_hook_empty_malformed_and_nonrepo_input_noop
 run_test "plans-gc removes old transient buffer" test_plans_gc_hook_removes_old_transient_buffer
