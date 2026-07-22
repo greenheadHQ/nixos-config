@@ -14,7 +14,10 @@
 #     publish). 반쯤 채워진 트리가 노출되지 않는다.
 #   - 공유 worktree 는 chmod a-w(read-only). consumer 가 실수로 쓰면 즉시 드러난다.
 #   - lock holder 가 죽거나 과도하게 느리면 대기자가 타임아웃 후 lock 을 제거하고 직접
-#     빌드한다(정교한 PID 판정 없음 — 최악은 중복 checkout 1회로, 정확성은 유지된다).
+#     빌드한다(정교한 PID 판정 없음). 결과 트리의 정확성은 유지되지만, 중복 빌드 횟수는
+#     1회로 제한되지 않는다: holder 의 빌드가 _SSC_LOCK_TIMEOUT_SECONDS 보다 오래 걸리면
+#     만료된 대기자가 차례로 lock 을 승계해 빌드가 대기자 수만큼 늘어난다(실측: 대기자
+#     4명→4회, 6명→6회). 정상 부하에서는 빌드가 타임아웃보다 훨씬 빨라 1회로 수렴한다.
 #   - 캐시 정리는 OS 임시디렉토리 정책(macOS /var/folders, /tmp 청소 등)에 위임한다. 같은 staged
 #     내용은 같은 hash 로 재사용되고, 다른 hash 누적은 OS tmp 청소로 회수된다.
 #
@@ -146,7 +149,13 @@ _ssc_safe_mkdir() {
 _ssc_acquire() {
   local repo_root="$1" cache_dir="$2" lockdir="$3" build_dir="$4" src_index="$5"
   local start
+  # 진단용(#1164): 이 호출이 몇 번째 라운드에 빌더가 됐는지와, 대기 루프를 빠져나온 사유를
+  # 추적한다. 동시성 테스트가 빌드 상한을 넘겼을 때 "최초 진입 빌더(round=1)"와 "대기 후 승계
+  # 빌더(round>1)"를 구분해야 원인을 특정할 수 있다 — 상한 초과를 관측하고도 경로를 몰라
+  # 재현에 실패한 사례가 있었다. build log 는 env 설정 시에만 기록되므로 상시 비용은 없다.
+  local round=0 reentry=none
   while true; do
+    round=$(( round + 1 ))
     if [ -f "$cache_dir/.ready" ] && [ -d "$cache_dir/worktree" ]; then
       return 0
     fi
@@ -169,8 +178,12 @@ _ssc_acquire() {
         return 1
       fi
       # 테스트 가시성: 실제 checkout-index(=캐시 빌드) 횟수 기록. env 미설정 시 무동작.
+      # round/reentry 를 함께 남겨, 상한 초과 시 빌더가 생긴 경로까지 진단할 수 있게 한다(#1164).
+      # 한 줄 = 한 빌드 유지(호출자가 라인 수로 센다).
       if [ -n "${STAGED_SNAPSHOT_CACHE_DEBUG_BUILD_LOG:-}" ]; then
-        printf '%s\n' "$build_dir" >> "$STAGED_SNAPSHOT_CACHE_DEBUG_BUILD_LOG" 2>/dev/null || true
+        printf '%s round=%s reentry=%s pid=%s\n' \
+          "$build_dir" "$round" "$reentry" "${BASHPID:-$$}" \
+          >> "$STAGED_SNAPSHOT_CACHE_DEBUG_BUILD_LOG" 2>/dev/null || true
       fi
       chmod -R a-w "$build_dir/worktree" 2>/dev/null || true
       # .ready 는 build_dir 안에 만들어 publish(mv) 로 cache_dir 과 함께 원자 게시한다. 생성에
@@ -202,17 +215,22 @@ _ssc_acquire() {
       return 1
     fi
     # 대기자: 다른 호출이 빌드 중. .ready 를 polling 하고, 타임아웃 초과 시 lock 을 제거해
-    # 직접 빌드 경로로 넘어간다(holder 사망/과부하 추정 — 최악은 중복 checkout 1회).
+    # 직접 빌드 경로로 넘어간다(holder 사망/과부하 추정). 이 경로의 중복 빌드 상한은 1회가
+    # 아니다 — 파일 상단 메커니즘 주석 참조.
     start="$SECONDS"
     while [ ! -f "$cache_dir/.ready" ]; do
       sleep "$_SSC_POLL_INTERVAL"
       if [ -f "$cache_dir/.ready" ] && [ -d "$cache_dir/worktree" ]; then
         return 0
       fi
+      # lock 이 사라졌는데 .ready 도 없다 → holder 가 게시 없이 물러났다. 바깥 루프에서 직접
+      # 빌더가 된다. 정상 흐름(게시 후 해제)에서는 위 .ready 검사에 먼저 걸리므로 도달하지 않는다.
       if [ ! -d "$lockdir" ]; then
+        reentry=nolock
         break
       fi
       if [ $(( SECONDS - start )) -ge "$_SSC_LOCK_TIMEOUT_SECONDS" ]; then
+        reentry=timeout
         rm -rf "$lockdir" 2>/dev/null || true
         break
       fi
