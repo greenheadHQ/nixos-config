@@ -74,28 +74,32 @@ installed_version() {
 # 절 경계는 확인하지 않는다 — 이 고정 형식 라인은 "작성 기준" 절에만 존재한다는 전제이며,
 # 다른 절에 같은 형식이 생기면 먼저 나오는 쪽이 이긴다.
 stamp_version() {
-  local rel_path="$1" prefix="$2" line
+  local rel_path="$1" prefix="$2" line content
+  # 내용을 변수로 캡처 후 herestring 순회 — process substitution은 매치 시 조기 return이
+  # writer printf에 SIGPIPE(Broken pipe stderr)를 일으킨다 (CI 실측).
+  content="$(doc_content "$rel_path")" || return 1
   local pattern="^- 확인 버전: ${prefix}([0-9]+(\.[0-9]+)+)"
   while IFS= read -r line; do
     if [[ "$line" =~ $pattern ]]; then
       printf '%s\n' "${BASH_REMATCH[1]}"
       return 0
     fi
-  done < <(doc_content "$rel_path")
+  done <<< "$content"
   return 1
 }
 
 # 파일 전체에서 "- 재검증:" 형식의 최초 일치 라인에서 백틱 안 명령 텍스트 추출
 # (WARN 메시지 병기용 — stamp_version과 같은 최초-일치 전제).
 recheck_command() {
-  local rel_path="$1" line
+  local rel_path="$1" line content
+  content="$(doc_content "$rel_path")" || return 1
   local pattern='^- 재검증: `([^`]+)`'
   while IFS= read -r line; do
     if [[ "$line" =~ $pattern ]]; then
       printf '%s\n' "${BASH_REMATCH[1]}"
       return 0
     fi
-  done < <(doc_content "$rel_path")
+  done <<< "$content"
   return 1
 }
 
