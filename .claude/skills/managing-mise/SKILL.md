@@ -49,10 +49,15 @@ mise current
 # 프로젝트 버전 설치
 mise install node@20.18
 
-# 프로젝트 설정 신뢰 — config의 env·template 등 실행성 내용을 검토한 뒤,
-# 사용자 소유이거나 신뢰가 명시된 저장소에서만 실행한다
+# 프로젝트 설정 신뢰 (실행 전 아래 "trust 선행 조건" 참조)
 mise trust
 ```
+
+### trust 선행 조건 (정본)
+
+`mise trust`는 config의 env·template·hook 같은 실행성 기능을 활성화하는 보안 승인이다.
+실행 전 config 내용을 검토하고, 사용자 소유이거나 사용자가 신뢰를 명시한 저장소에서만 실행한다
+(글로벌 CLAUDE.md 규약과 동일). 본 문서의 모든 `mise trust` 안내는 이 조건을 전제한다.
 
 ### 관련 설정 파일
 
@@ -81,14 +86,14 @@ mise는 두 계층으로 활성화된다:
 
 ## 비대화형/LLM 마찰 경계면
 
-mise activation은 대화형 셸 기준이라, 아래 실행 컨텍스트에서 깨지는 사례가 반복 관측됐다 (2026-07 세션 로그·히스토리 전수조사). 사람의 대화형 셸에서는 재현되지 않으므로 "내 셸에선 되는데"로 진단이 지연되기 쉽다.
+`mise activate zsh` hook 모드는 대화형 셸 기준이라 (`--shims` 모드는 비대화형용 — 위 표 참조), 아래 실행 컨텍스트에서 깨지는 사례가 반복 관측됐다 (2026-07 세션 로그·히스토리 전수조사). 사람의 대화형 셸에서는 재현되지 않으므로 "내 셸에선 되는데"로 진단이 지연되기 쉽다.
 
 | 경계면 | 전형적 증상 | 대응 |
 |---|---|---|
 | 비대화형 셸 (SSH `zsh -c`, LLM Bash tool) | pnpm/node not found | `.zshenv` shims가 선언적 환경 방어. 즉시 복구는 `mise exec -- <명령>` |
 | hook 실행 환경 (lefthook·플러그인 hook) | 런타임 not found로 품질 게이트 조용한 무력화 | hook 스크립트가 mise 도구를 부르면 shims PATH 보강 또는 `mise exec` 경유 |
 | home-manager activation 제한 PATH | `mise: command not found`, reshim exit 127 | activation에서 mise 실행 금지 (#814→#890 교훈) |
-| worktree cwd | 프로젝트 config 미신뢰로 도구 비활성 | mise 2026.x 일반 모드는 main checkout의 trust를 linked worktree와 공유한다. 구버전(예: 2025.12.x 배포본)·paranoid mode·비연결 디렉토리는 worktree별 `mise trust` 필요 (재검증: `mise trust --help`의 worktree 공유 문구) |
+| worktree cwd | 프로젝트 config 미신뢰로 도구 비활성 | mise 2026.7.5+([upstream 릴리스](https://github.com/jdx/mise/releases/tag/v2026.7.5)에서 도입) 일반 모드는 main checkout의 trust를 linked worktree와 공유한다. 2026.7.4 이하(검증 당시 배포본 2025.12.13 포함)·paranoid mode·비연결 디렉토리는 worktree별 `mise trust`(선행 조건 참조) 필요 (재검증: `mise trust --help`의 worktree 공유 문구) |
 
 비대화형에서 안전한 기본 규약: `mise exec -- <명령>` — 버전 resolve와 PATH 주입을 mise가 한 번에 처리하므로 shims/activate 상태와 무관하게 동작한다. 대화형 성공을 근거로 다른 컨텍스트도 동작할 것이라 가정하지 않는다.
 
@@ -105,7 +110,7 @@ mise activation은 대화형 셸 기준이라, 아래 실행 컨텍스트에서 
 1. SSH 비대화형 세션에서 pnpm not found: `.zshenv`에 mise shims 누락 → 셸 활성화 구조 참조
 2. .nvmrc 인식 안 됨: node는 전역 SoT에 이미 idiomatic 선언돼 있으므로 nrs 배포 상태부터 확인 → 상세·다른 도구 추가는 troubleshooting 참조
 3. NixOS에서 node 빌드 실패: `MISE_NODE_COMPILE=0` 필요 (현재 `nixos.nix`에서 영구 설정됨)
-4. mise.local.toml 미신뢰: config 내용 검토 후 신뢰하는 저장소에서만 `mise trust` 실행 (최초 1회; worktree도 경로가 다르므로 별도 trust)
+4. mise.local.toml 미신뢰: `mise trust` 실행 필요 (최초 1회; trust 선행 조건 참조. worktree는 trust 공유 조건 표 참조)
 5. `mise use -g`/`mise settings add·set·unset` 실패 (read-only config): 의도된 가드 — 전역 변경은 SoT 파일 수정 + nrs, 임시 도구는 `~/.config/mise/conf.d/` (읽기 명령 `mise settings`는 정상 동작)
 
 ## 레퍼런스
