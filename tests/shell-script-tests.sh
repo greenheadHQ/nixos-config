@@ -167,6 +167,12 @@ run_test "check-skill-noise rejects external symlink skill projection" test_chec
 run_test "warn-skill-consistency ignores managed plugin skill projection" test_warn_skill_consistency_ignores_managed_plugin_skill_projection
 run_test "warn-skill-stale-identifiers detects residual skill doc" test_warn_skill_stale_identifiers_detects_residual_skill_doc
 run_test "warn-skill-stale-identifiers clean pass stays quiet" test_warn_skill_stale_identifiers_clean_pass_stays_quiet
+run_test "warn-skill-version-stamps matching stays quiet" test_warn_skill_version_stamps_matching_stays_quiet
+run_test "warn-skill-version-stamps detects drift" test_warn_skill_version_stamps_detects_drift
+run_test "warn-skill-version-stamps skips when cli absent" test_warn_skill_version_stamps_skips_when_cli_absent
+run_test "warn-skill-version-stamps warns on cli exec failure" test_warn_skill_version_stamps_warns_on_cli_exec_failure
+run_test "warn-skill-version-stamps --from-head detects stale HEAD" test_warn_skill_version_stamps_from_head_detects_stale_head
+run_test "warn-skill-version-stamps warns on unparseable stamp" test_warn_skill_version_stamps_warns_on_unparseable_stamp
 run_test "skill-usage-report aggregates sample TSV" test_skill_usage_report_aggregates_sample_tsv
 run_test "skill-usage-report --since filters sample TSV" test_skill_usage_report_since_filters_sample_tsv
 run_test "skill-usage-report missing log errors" test_skill_usage_report_missing_log_errors
