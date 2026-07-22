@@ -94,7 +94,7 @@ SSOT: `libraries/constants.nix`(sshDeviceKeys), `modules/darwin/programs/ssh/def
 
 ## 트러블슈팅 — 1Password 함정 (#1041)
 
-agenix 계열 트러블슈팅은 [troubleshooting.md](troubleshooting.md) 참조. `op read` 비대화형 hang은 #1134로 코드 상환됨 — 위 "op_get 해석 순서" 참조.
+agenix 계열 트러블슈팅은 [troubleshooting.md](troubleshooting.md) 참조. `op read` 비대화형 hang은 #1134로 코드로 해결됨 — 위 "op_get 해석 순서" 참조.
 
 ### SA token 만료일이 op CLI로 조회되지 않음
 
