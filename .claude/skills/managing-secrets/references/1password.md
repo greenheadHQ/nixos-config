@@ -28,7 +28,7 @@ SSOT: `secrets/secrets.nix`(L67-78), `modules/shared/programs/secrets/default.ni
 
 ## SA token 90일 rotation 만료 알림 — Mac launchd + MiniPC systemd 양쪽
 
-1Password Individual은 SA 자동 만료를 미지원하므로, 평문 ISO date expiry record(.txt)를 SSOT로 운용한다 (op CLI 만료 조회 미지원 대체). SA 재발급 시 해당 `.txt`를 갱신한다.
+1Password Individual은 SA 자동 만료를 미지원하고, SA 만료일 확인은 1Password.com 웹 GUI 전용이다 — op CLI로는 조회할 수 없다 (아래 트러블슈팅 참조). 그 대체로 평문 ISO date expiry record(.txt)를 SSOT로 운용한다. SA 재발급 시 GUI에서 만료일을 확인해 해당 `.txt`를 갱신한다.
 
 | 호스트 | 메커니즘 | expiry record (SSOT) |
 |--------|----------|----------------------|
@@ -91,3 +91,23 @@ SSOT: `libraries/constants.nix`(onePassword), `modules/shared/programs/shell/def
 - Emergency fallback 운영 키는 `~/.ssh/emergency_ed25519` (`IdentityAgent=none` 독립 fallback), 1Password backup copy는 SSH vault에 보관.
 
 SSOT: `libraries/constants.nix`(sshDeviceKeys), `modules/darwin/programs/ssh/default.nix`, `secrets/secrets.nix`.
+
+## 트러블슈팅 — 1Password 함정 (#1041)
+
+agenix 계열 트러블슈팅은 [troubleshooting.md](troubleshooting.md) 참조. `op read` 비대화형 hang은 #1134로 코드로 해결됨 — 위 "op_get 해석 순서" 참조.
+
+### SA token 만료일이 op CLI로 조회되지 않음
+
+증상: SA token의 만료일을 op CLI로 확인하려 해도 만료 정보를 얻을 수 없다.
+
+원인: 1Password는 SA 만료일을 CLI에 노출하지 않는다 — 만료일 확인은 1Password.com 웹 GUI(Service Accounts 페이지) 전용이다.
+
+해결: GUI에서 확인한 만료일을 평문 expiry record(`secrets/opnix-service-account-expiry{,-mac}.txt`)에 박제하고, rotation 알림이 이 record를 SSOT로 읽는다 (위 "SA token 90일 rotation" 섹션). SA 재발급 시 GUI에서 새 만료일을 확인해 `.txt`를 갱신한다.
+
+### 1Password 데스크탑 (재)기동 후 SSH 키 승인 팝업 반복 (Mac 전용)
+
+증상: 1Password 데스크탑 앱이 재기동될 때마다 (그리고 기본 설정 "Until 1Password locks"에서는 잠금해제 후에도) SSH 실행 시 키 사용 승인 팝업이 다시 뜬다. 원격/무인 세션에서는 이 팝업이 Mac 로컬 화면에만 떠서 보이지 않는 무한 대기가 된다 (#1094 실측: `BatchMode`/`ConnectTimeout`은 agent 서명 승인 대기에 상한을 주지 못해 40초+ hang).
+
+원인: `agent.toml`(SSH vault 노출, `modules/darwin/programs/ssh/default.nix`가 박제)로 agent에 노출된 키는 1Password의 클라이언트 앱별(per-app) 승인 모델을 따르는데, 승인 기억이 agent session(앱 실행 단위)에 묶여 앱 quit·재부팅 시 리셋된다. 시간 기반 승인(4·12·24h)은 잠금 자체는 견디지만 앱 재기동에는 무효이고, "Approve for all applications"는 지속시간이 아니라 그 session에서 키를 쓸 수 있는 애플리케이션 범위를 넓히는 옵션이다. `onepassword-autostart` launchd가 로그인마다 앱을 재기동하므로, 재로그인 후 첫 서명 요청부터 승인 팝업이 반복 출현한다 (#1094에서 승인 기억 연장안(A/B)을 기각한 사유 — 외출 후 재로그인·재부팅이 기본 상태라 앱 재기동으로 무효).
+
+해결: 로컬 대화형에서는 이 팝업이 정상 보안 경계다 — 끄지 않는다. 원격/무인 hang은 interactive zsh의 `ssh()` 래퍼(무인 판정 + `minipc-headless` 키 `IdentityAgent=none` 1Password 완전 우회 + 20초 outer deadline)가 처리한다 (#1094 C·D안, `modules/shared/programs/shell/darwin.nix`). 단 이 래퍼는 zsh 함수라 `.zshrc`를 거치지 않는 비대화형 자식 `ssh`(Claude Bash tool·Codex app-server 등)에는 적용되지 않는다 — 그 경로의 launcher 배선은 plan 029의 미해결 범위다. agent.toml 노출 vault는 SSH vault 한정으로 좁게 유지한다 — 노출을 넓히면 승인 대상 키만 늘어난다.

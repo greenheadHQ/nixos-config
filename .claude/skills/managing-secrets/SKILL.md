@@ -158,6 +158,6 @@ HM activation이 `~/.config/shottr/license`에서 값을 읽어 `defaults write 
 
 ## 레퍼런스
 
-- 1Password 운영 (SA 발급 / 90일 rotation / op CLI / gh 무인 / SSH device key): [references/1password.md](references/1password.md)
+- 1Password 운영 (SA 발급 / 90일 rotation / op CLI / gh 무인 / SSH device key / 1Password 함정 트러블슈팅): [references/1password.md](references/1password.md)
 - 워크플로 상세 (암호화/복호화/호스트 추가): [references/workflows.md](references/workflows.md)
-- 트러블슈팅: [references/troubleshooting.md](references/troubleshooting.md)
+- 트러블슈팅 (agenix 계열): [references/troubleshooting.md](references/troubleshooting.md)
