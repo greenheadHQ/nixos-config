@@ -217,7 +217,9 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
   codex(nix profile)를 shadow하지 못하게 정리만 한다:
   1. `cleanupLegacyCodexCli` — 과거 GitHub ELF(NixOS)/brew cask(macOS) 잔재 정리
   2. `cleanupMiseCodexShim` — mise npm backend 잔재(`shims/codex`·`installs/npm-openai-codex/`) 멱등 제거.
-     mise 명령을 호출하지 않고 순수 rm (dangling shim의 mise resolve가 fork 폭주원). config.toml entry 제거는 수동.
+     mise 명령을 호출하지 않고 순수 rm (dangling shim의 mise resolve가 fork 폭주원). config.toml의 codex
+     entry는 mise 전역 config가 nix 선언(`modules/shared/programs/mise/config.toml`)으로 이관되며 선언에서
+     제외되는 방식으로 소멸한다.
   3. `cleanupManualNodeCodex` — 수동 `npm install -g @openai/codex` 잔재 제거 (node가 mise에 남아 유효)
 
 ### SoT와 업데이트
@@ -227,8 +229,9 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
   해시 prefetch → 핀 갱신 → nrs; `--pre`로 alpha 포함). platforms/asset 키는 정적 설정이라 손으로 관리.
 - overlay는 OpenAI 릴리스를 직핀하므로 lag이 사실상 없다(직핀 최신). config 템플릿 feature floor
   (현재 0.124+)는 항상 충족. 갱신 후 `codex-pin.json` 변경을 커밋한다.
-- runtime `~/.config/mise/config.toml`의 `[tools]."npm:@openai/codex"` entry는 nix 비관리 SoT라
-  이관 시 직접 텍스트 편집으로 제거한다(mise 명령 금지). `node`/`gitleaks` entry는 보존.
+- `~/.config/mise/config.toml`은 nix 선언 read-only symlink다 (SoT:
+  `modules/shared/programs/mise/config.toml`; 직접 편집·`mise use -g` 불가). codex entry는
+  선언에 없으므로 배포 시 자동 소멸하고, `node`/`gitleaks`는 선언에 포함되어 보존된다.
 
 ### 운영 주의 (nix overlay)
 

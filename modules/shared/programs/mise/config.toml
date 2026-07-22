@@ -1,0 +1,25 @@
+# mise 전역 설정 — nix 선언 관리 (SoT: 이 파일. ~/.config/mise/config.toml은 read-only symlink)
+#
+# 전역 도구 추가/변경: 이 파일 수정 후 nrs.
+# 머신 로컬/임시 도구: ~/.config/mise/conf.d/*.toml (nix 비관리 — mise가 config.toml과 병합 로드).
+# 프로젝트별 버전: 각 프로젝트의 mise.toml / .nvmrc (idiomatic file, 아래 settings 참조).
+#
+# 배경: 전역 config가 runtime mutation(mise use -g)으로 관리되던 시절 두 머신이
+# drift했고(Mac: node latest+yarn / MiniPC: node lts+pnpm+죽은 codex entry),
+# 오타(cocodpods)·deprecated 설정(legacy_version_file)이 잔존해 선언 관리로 이관했다.
+# mise use -g / mise settings add·set·unset 같은 전역 쓰기 명령은 이제 의도적으로
+# 실패한다 (drift 가드). 읽기 조회(인자 없는 mise settings)는 정상 동작한다.
+
+[settings]
+# .nvmrc / .node-version 인식 (mise 2025.10.0부터 기본 비활성 — idiomatic version file)
+idiomatic_version_file_enable_tools = ["node"]
+
+[tools]
+# 전역은 fallback일 뿐 — 프로젝트별 버전은 .nvmrc/mise.toml이 우선한다.
+node = "lts"
+pnpm = "latest"
+yarn = "1.22.22" # yarn classic 고정 (v1 계열을 쓰는 외부 프로젝트용)
+# gitleaks 이중 선언의 역할 분리: flake.nix devShell은 이 repo 진입 시(direnv) 제공하고,
+# 아래 mise 전역은 devShell 밖 컨텍스트(비대화형 훅·타 프로젝트 — #826 계열)의 fallback이다.
+# 단일 SoT로 합치려면 devShell 밖 훅의 gitleaks 해석 경로를 먼저 재설계해야 한다 (착수 시 이슈로 승격).
+gitleaks = "8.30.0"

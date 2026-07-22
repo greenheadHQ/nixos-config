@@ -121,22 +121,14 @@ pnpm 10.28.0
 - [Discussion #4345: idiomatic versions default disabled](https://github.com/jdx/mise/discussions/4345)
 - [mise 공식 설정 문서](https://mise.jdx.dev/configuration.html)
 
-해결: `idiomatic_version_file_enable_tools` 설정 추가.
+현재 상태: 전역 config SoT(`modules/shared/programs/mise/config.toml`)에 `idiomatic_version_file_enable_tools = ["node"]`가 이미 선언돼 있어 node의 `.nvmrc` 인식에는 별도 조치가 불필요하다.
 
-```bash
-# CLI로 설정
-$ mise settings add idiomatic_version_file_enable_tools node
-```
-
-또는 `~/.config/mise/config.toml`에 직접 추가:
+다른 도구를 idiomatic file 인식 대상에 추가하려면 SoT 파일의 해당 배열에 도구명을 추가하고 `nrs`한다 (`mise settings add`는 read-only config라 실패한다):
 
 ```toml
+# modules/shared/programs/mise/config.toml — 최소 변경 예시 (전체 내용은 SoT 파일 참조)
 [settings]
-idiomatic_version_file_enable_tools = ['node']
-
-[tools]
-node = "lts"      # 전역 기본값
-pnpm = "latest"
+idiomatic_version_file_enable_tools = ["node", "<추가할-도구>"]
 ```
 
 프로젝트별 버전 설치:
@@ -167,7 +159,7 @@ node = "20.18"
 pnpm = "latest"
 EOF
 
-# trust 실행 (최초 1회)
+# trust 실행 (최초 1회 — config의 env·template 검토 후, 신뢰하는 저장소에서만)
 $ mise trust
 ```
 
@@ -182,7 +174,7 @@ $ mise trust
 증상: mise로 node 설치 시 빌드 실패.
 
 ```bash
-$ mise use -g node@lts
+$ mise install node@lts
 ./configure: line 8: exec: python: not found
 ```
 
@@ -192,12 +184,10 @@ $ mise use -g node@lts
 
 ```bash
 # 환경변수로 컴파일 비활성화
-$ MISE_NODE_COMPILE=0 mise use -g node@lts
-
-# 또는 영구 설정 (~/.config/mise/config.toml)
-[settings]
-node_compile = false
+$ MISE_NODE_COMPILE=0 mise install node@lts
 ```
+
+현재는 `modules/shared/programs/shell/nixos.nix`가 `MISE_NODE_COMPILE=0`·`MISE_ALL_COMPILE=0`을 영구 설정하므로 평상시엔 재발하지 않는다.
 
 확인:
 

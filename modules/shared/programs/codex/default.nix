@@ -172,8 +172,8 @@ in
   #   shadow한다. 게다가 config(~/.config/mise/config.toml) 미등록 dangling shim 호출은
   #   mise version resolve(fork 폭주, os error 35)를 재유발한다 — 본 이관이 탈출하려는 실패 모드.
   #   따라서 mise 명령을 일절 호출하지 않고 순수 rm만 한다(mise resolve 자체가 폭주원이므로).
-  #   config.toml의 [tools]."npm:@openai/codex" entry 제거는 nix 비관리 runtime SoT라 마이그레이션
-  #   수동 단계로 둔다(activation이 사용자 mise config를 편집하지 않음). 설치본 trail
+  #   config.toml의 [tools]."npm:@openai/codex" entry는 mise 전역 config의 nix 선언 이관
+  #   (modules/shared/programs/mise/config.toml — codex entry 미포함)으로 배포 시 소멸한다. 설치본 trail
   #   (MISE_DATA_DIR 커스텀 환경은 경로가 다를 수 있으나 이 프로젝트 범위 밖):
   #     ~/.local/share/mise/shims/codex                  (shim — PATH shadow의 직접 원인)
   #     ~/.local/share/mise/installs/npm-openai-codex/    (backend 설치 트리)
