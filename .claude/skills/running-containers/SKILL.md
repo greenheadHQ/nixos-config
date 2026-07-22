@@ -111,6 +111,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 
 | 서비스 | systemd 서비스 | 타이머 | 백업 위치 |
 |--------|---------------|--------|-----------|
+| Immich 원본 미러 | `immich-originals-mirror` | 04:30 | HDD (`/mnt/data/backups/immich-originals`, SSD upload-cache rsync 미러) |
 | Karakeep | `karakeep-backup` | 05:00 | HDD (`/mnt/data/backups/karakeep`) |
 | Immich DB | `immich-db-backup` | 05:30 | HDD (`/mnt/data/backups/immich`) |
 
@@ -122,10 +123,21 @@ Immich: API 버전 조회 가능 → "현재 v2.5.5 → 최신 v2.6.0" 형태 �
 
 Immich DB 백업: `immich-db-backup` 서비스가 매일 05:30에 `podman exec immich-postgres pg_dump -Fc`로 커스텀 포맷 백업 생성. 디스크 공간 검사, pg_restore --list 무결성 검증, 원자적 파일 이동, 30일 보관. 실패 시 Pushover 알림 (`pushover-immich` 재사용). `sudo systemctl start immich-db-backup`으로 수동 실행.
 
-Uptime Kuma/Copyparty/Karakeep: 이미지에 버전 레이블 없음 → GitHub latest 추적 + 이미지 digest 비교 방식. 상세: [references/service-update-system.md](references/service-update-system.md)
+Uptime Kuma/Copyparty/Karakeep: pinned tag 기준 — 설정된 이미지를 pull → digest 비교 (같은 태그의 재빌드만 반영). GitHub latest는 새 버전 알림/안내용이며, 실제 버전 반영은 해당 서비스 모듈(`modules/nixos/programs/docker/*.nix`)의 image 태그 수정 후 `nrs`. 상세: [references/service-update-system.md](references/service-update-system.md)
 Karakeep 수동 업데이트는 `--ack-bridge-risk` 플래그가 필수다 (브릿지/로그 의존성 인지 강제).
 
 Karakeep 이벤트 알림: `karakeep-notify`가 웹훅→Pushover 브리지(socat)로 아카이빙 성공/실패 알림을 전송한다.
+
+### 런타임 스모크 테스트
+
+`homeserver.smokeTest.enable = true` (`modules/nixos/programs/smoke-test.nix`). 매일 06:00에
+활성 서비스의 HTTPS 엔드포인트 헬스체크 + 백업 신선도(기본 상한 초과 여부)를 검사하고,
+실패 시 Pushover 알림 (`pushover-system-monitor` 공유). 수동 실행:
+
+```bash
+sudo systemctl start homeserver-smoke-test
+journalctl -u homeserver-smoke-test --no-pager -n 30
+```
 
 ### FolderAction 자동 업로드
 

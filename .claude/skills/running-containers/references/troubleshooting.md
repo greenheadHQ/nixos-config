@@ -33,7 +33,7 @@ sudo systemctl stop podman-immich-server podman-immich-ml podman-immich-postgres
 sudo systemctl restart tailscaled
 ```
 
-2. 영구 해결 - OpenVINO 대신 일반 이미지 사용:
+2. 영구 해결 - OpenVINO 대신 일반 이미지 사용 (당시 config — 이후 rolling `:release`에서 pinned tag로 전환됨, 현재 태그는 `immich.nix` 참조):
 ```nix
 # modules/nixos/programs/docker/immich.nix
 virtualisation.oci-containers.containers.immich-ml = {

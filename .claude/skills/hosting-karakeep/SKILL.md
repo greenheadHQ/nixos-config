@@ -33,9 +33,12 @@ Karakeep 웹 아카이버/북마크 관리 서비스 운영 스킬.
 
 | 컨테이너 | 이미지 | 역할 | 리소스 |
 |-----------|--------|------|--------|
-| `karakeep` | `ghcr.io/karakeep-app/karakeep:release` | Next.js 앱 (포트 3000) | 2GB / 1 CPU |
-| `karakeep-chrome` | `gcr.io/zenika-hub/alpine-chrome:124` | 헤드리스 Chrome (스크린샷) | 2GB / 1 CPU |
-| `karakeep-meilisearch` | `getmeili/meilisearch:v1.13.3` | 전문 검색 | 1GB / 0.5 CPU |
+| `karakeep` | `ghcr.io/karakeep-app/karakeep` | Next.js 앱 (포트 3000) | 2GB / 1 CPU |
+| `karakeep-chrome` | `gcr.io/zenika-hub/alpine-chrome` | 헤드리스 Chrome (스크린샷) | 2GB / 1 CPU |
+| `karakeep-meilisearch` | `getmeili/meilisearch` | 전문 검색 | 1GB / 0.5 CPU |
+
+세 이미지 모두 pinned tag 사용 (rolling `:release`/`:latest` 아님). 실제 태그 정본:
+`rg -n 'image = ' modules/nixos/programs/docker/karakeep.nix`. 새 버전 반영은 태그 수정 후 `nrs`.
 
 ### Data Path
 

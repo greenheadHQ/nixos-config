@@ -44,18 +44,20 @@ darwinOnly = [ ... pkgs.패키지명 ];
 |------|------|------|
 | Dock | `configuration.nix` | 자동 숨김, 크기, 최근 앱 |
 | Finder | `configuration.nix` | 숨김 파일, 확장자, 네트워크 .DS_Store 방지 |
-| 키보드 | `configuration.nix` | 키 반복 속도 |
-| 트랙패드 | `configuration.nix` | 탭 클릭, 자연스러운 스크롤 |
+| 키보드 | `configuration.nix` | 키 반복 속도, F1-F12 표준 기능키 |
+| 마우스/스크롤 | `configuration.nix` | 자연스러운 스크롤 비활성화 (트랙패드 탭 클릭 설정은 없음) |
 
 ### Homebrew 관리
 
-`modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다 (personal 호스트만 적용).
+`modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다.
+공통(모든 darwin 호스트: `ghostty` cask, `playwright-cli` formula)과 personal 전용(`hostType == "personal"` 가드)으로 분리되어 있습니다.
 
 ```nix
 # cleanup = "none" — 선언되지 않은 앱을 삭제하지 않음 (수동 설치 cask 보호)
 # upgrade = true + greedyCasks = false — 자체 업데이터 cask는 brew upgrade 강제 대상에서 제외
+# personal 전용 예:
 homebrew.casks = [
-  "ghostty" "raycast" "rectangle"
+  "raycast" "rectangle"
   "hammerspoon" "homerow"
   "fork" "monitorcontrol" "1password" "1password-cli"
 ];

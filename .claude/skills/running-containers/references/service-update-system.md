@@ -6,6 +6,9 @@ Immich, Uptime Kuma, Copyparty, Karakeep 4개 컨테이너 서비스가 `service
 
 - 버전 체크 (자동): 매일 GitHub Releases API로 최신 버전 확인 → Pushover 알림
 - 업데이트 (수동): `sudo <서비스>-update` 명령으로 안전한 업데이트
+- 모든 컨테이너 이미지는 pinned tag (rolling `:latest`/`:release` 아님). update 스크립트는 설정된
+  pinned 이미지를 pull → digest 비교하므로 같은 태그의 재빌드만 반영한다. 새 버전 반영은
+  해당 서비스 모듈(`modules/nixos/programs/docker/*.nix`)의 image 태그 수정 후 `nrs`.
 
 ## 아키텍처
 
@@ -73,26 +76,26 @@ Immich는 Immich API로 현재 버전을 확인하는 고유 로직이 있어 �
 
 ### Uptime Kuma
 
-- 현재 버전 확인: 이미지에 버전 레이블 없음 → GitHub latest만 추적
+- 현재 버전 확인: pinned image tag 기준 (update 스크립트가 태그에서 추출). GitHub latest는 알림용
 - 알림 형태: "v2.1.0 출시됨" (현재 버전 미표시)
-- 메이저 불일치 감지: 이미지 태그 `:1`은 1.x만, GitHub latest가 2.x → 추가 안내 포함
-- 업데이트: 이미지 pull → digest 비교 → stop → SQLite 백업(`kuma.db` gzip) → start → HTTP 헬스체크
+- 메이저 불일치 감지 (`DETECT_MAJOR_MISMATCH`): pinned tag 메이저 ≠ GitHub latest 메이저 → 추가 안내 포함
+- 업데이트: pinned 이미지 pull → digest 비교 → stop → SQLite 백업(`kuma.db` gzip) → start → HTTP 헬스체크
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작 (모니터링 서비스 가용성 보장)
 - Tailscale 불필요: localhost + 인터넷만 사용
 
 ### Copyparty
 
-- 현재 버전 확인: 이미지에 버전 레이블 없음 → GitHub latest만 추적
+- 현재 버전 확인: pinned image tag 기준 (update 스크립트가 태그에서 추출). GitHub latest는 알림용
 - 알림 형태: "v1.20.6 출시됨"
-- 업데이트: 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
+- 업데이트: pinned 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작
 - Tailscale 불필요: localhost + 인터넷만 사용
 
 ### Karakeep
 
-- 현재 버전 확인: 이미지에 버전 레이블 없음 → GitHub latest만 추적
+- 현재 버전 확인: pinned image tag 기준 (update 스크립트가 태그에서 추출). GitHub latest는 알림용
 - 알림 형태: "v0.x.y 출시됨"
-- 업데이트: 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
+- 업데이트: pinned 이미지 pull → digest 비교 → 재시작 → HTTP 헬스체크 (백업 없음)
 - 실행 명령: `sudo karakeep-update --ack-bridge-risk` (`--ack-bridge-risk` 없이 실행 불가)
 - ERR trap 복구: 실패 시 컨테이너 자동 재시작
 - Tailscale 불필요: localhost + 인터넷만 사용

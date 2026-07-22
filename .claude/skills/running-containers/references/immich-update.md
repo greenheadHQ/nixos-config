@@ -59,7 +59,7 @@ Immich 서버가 `127.0.0.1`에만 바인딩되어 있으므로, Tailscale IP로
     ↓
 [무결성 검증] gzip -t + 최소 크기(1KB) 확인
     ↓
-[이미지 Pull] immich-server:release + immich-ml:release
+[이미지 Pull] immich-server + immich-ml (설정된 pinned tag)
     ↓
 [재시작] stop server → stop ml → start ml → start server
     ↓
