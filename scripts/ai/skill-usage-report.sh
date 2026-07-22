@@ -3,8 +3,9 @@
 # Usage: scripts/ai/skill-usage-report.sh [--log PATH] [--since YYYY-MM-DD]
 # Usage: scripts/ai/skill-usage-report.sh --log ~/skill-usage.log --since 2026-01-01
 #
-# Consumes the TSV emitted by modules/shared/programs/claude/files/hooks/log-skill.sh.
-# Column definitions live in that hook; this parser depends on that order.
+# Consumes the log emitted by modules/shared/programs/claude/files/hooks/log-skill.sh.
+# Rows starting with "{" are strict v2 JSONL events; other rows are legacy TSV
+# (read-only compatibility). Schema definitions live in that hook; update together.
 set -euo pipefail
 
 DEFAULT_LOG="${HOME}/.claude/skill-usage.log"
@@ -15,7 +16,7 @@ usage() {
   cat <<'EOF'
 Usage: skill-usage-report.sh [--log PATH] [--since YYYY-MM-DD]
 
-Summarize Claude Skill usage from the log-skill.sh TSV log.
+Summarize Claude Skill usage from the log-skill.sh log (v2 JSONL events + legacy TSV rows).
 EOF
 }
 
@@ -65,9 +66,11 @@ command -v python3 >/dev/null 2>&1 || die "python3 is required"
 python3 - "$log_file" "$since_date" <<'PY'
 from __future__ import annotations
 
+import json
+import re
+import sys
 from collections import defaultdict
 from datetime import date, datetime, time, timezone
-import sys
 
 log_path = sys.argv[1]
 since_arg = sys.argv[2]
@@ -90,25 +93,72 @@ rows: dict[str, dict[str, int]] = defaultdict(
     lambda: {"count": 0, "first": 0, "recent": 0}
 )
 
+# v2 event contract (log-skill.sh와 동기 유지): exact 6-key set + exact types.
+V2_KEYS = {"schema_version", "event_type", "ts", "runtime", "skill", "session_key"}
+SESSION_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
+# writer(log-skill.sh)의 스킬명 문법과 동기 유지 — 제어문자가 TSV 출력 행을 위조하지 못하게 한다.
+SKILL_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+# datetime.fromtimestamp() 변환 가능 범위를 파싱 단계에서 강제한다 —
+# 범위 밖 행이 report 전체를 OverflowError로 중단시키지 않도록 skip 계약을 지킨다.
+# 하한 1: 집계기의 first==0 미초기화 sentinel과의 충돌을 차단한다 (epoch 0 비지원).
+TS_MAX = 253402300799  # 9999-12-31T23:59:59Z
+
+
+def parse_v2_event(line: str) -> tuple[int, str] | None:
+    """Strict v2 JSONL row -> (timestamp, skill). Malformed rows are skipped."""
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(event, dict) or set(event) != V2_KEYS:
+        return None
+    if type(event["schema_version"]) is not int or event["schema_version"] != 2:
+        return None
+    if event["event_type"] != "skill_invocation":
+        return None
+    if type(event["ts"]) is not int or not (1 <= event["ts"] <= TS_MAX):
+        return None
+    if not isinstance(event["runtime"], str) or not event["runtime"]:
+        return None
+    if not isinstance(event["skill"], str) or not SKILL_RE.fullmatch(event["skill"]):
+        return None
+    if not isinstance(event["session_key"], str) or not SESSION_KEY_RE.fullmatch(
+        event["session_key"]
+    ):
+        return None
+    return event["ts"], event["skill"]
+
+
 with open(log_path, "r", encoding="utf-8", errors="replace", newline="") as handle:
     for raw_line in handle:
         line = raw_line.rstrip("\n")
         if not line:
             continue
-        fields = line.split("\t")
-        if len(fields) < 5:
-            continue
 
-        try:
-            timestamp = int(fields[0])
-        except ValueError:
-            continue
+        if line.startswith("{"):
+            parsed = parse_v2_event(line)
+            if parsed is None:
+                continue
+            timestamp, skill = parsed
+        else:
+            fields = line.split("\t")
+            if len(fields) < 5:
+                continue
+
+            try:
+                timestamp = int(fields[0])
+            except ValueError:
+                continue
+            if not 1 <= timestamp <= TS_MAX:
+                continue
+
+            skill = fields[4]
+            # legacy TSV도 동일 스킬명 문법을 강제한다 — v2와 같은 출력 경로를 공유하므로
+            # 제어문자·과대 길이가 보고서 행을 조작하지 못하게 한다.
+            if not SKILL_RE.fullmatch(skill):
+                continue
 
         if since_epoch is not None and timestamp < since_epoch:
-            continue
-
-        skill = fields[4]
-        if not skill:
             continue
 
         row = rows[skill]

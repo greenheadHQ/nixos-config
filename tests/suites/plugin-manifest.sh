@@ -221,7 +221,7 @@ assert not any(
     for e in disabled_entries
 ), disabled_entries
 PY
-  mode_after=$(_codex_config_file_mode "$manifest")
+  mode_after=$(_portable_file_mode "$manifest")
   [[ "$mode_after" == "600" ]] \
     || fail "expected Claude plugin manifest mode 600 after inheritance, got: $mode_after"
 }
