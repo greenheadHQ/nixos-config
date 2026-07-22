@@ -5,8 +5,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS — implementation/runtime complete; post-rebase DA fixes 재검증 중
+- **State**: IN PROGRESS — implementation/runtime complete; post-rebase DA fixes 재검증 중. 완료 조건: #1177/#1178/#1179 3개 분할 PR이 모두 머지되고 재검증 matrix가 통과하면 DONE으로 전환한다.
 - **Issue**: https://github.com/greenheadHQ/nixos-config/issues/1093
+- **PRs**: #1177 (TCC 정책 본체) / #1178 (Shottr activation) / #1179 (claude-rc lifecycle) — #1133에서 분할
 - **Policy owner**: operator
 - **Remote policy**: C — Claude의 persistent additional directory는 `~/Workspace`만 유지
 - **Direct terminal policy**: D — Ghostty Full Disk Access 유지

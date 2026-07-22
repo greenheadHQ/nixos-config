@@ -138,11 +138,16 @@ probe 시작/종료 시각을 기록하고 실제 read는 별도의 GNU `timeout
 START='<probe-start-local>'
 END='<probe-end-local>'
 nix develop --command bash -lc '
-  set -o pipefail
-  timeout -k 5s 30s /usr/bin/log show --start "$1" --end "$2" \
+  # producer(log show)와 filter(rg)를 분리한다. 한 파이프라인으로 묶고 pipefail을 걸면
+  # "이벤트 0건"의 rg exit 1 과 "timeout/log show 실패"가 섞여 진짜 조회 실패를 놓친다.
+  raw=$(timeout -k 5s 30s /usr/bin/log show --start "$1" --end "$2" \
     --style compact --info --debug \
-    --predicate '\''process == "tccd" OR process == "sandboxd"'\'' \
-    | rg '\''AUTHREQ|responsible|accessing|SystemPolicy'\''
+    --predicate '\''process == "tccd" OR process == "sandboxd"'\'') || {
+    echo "log show/timeout 실패 (rc=$?): 재확인 필요" >&2
+    exit 1
+  }
+  # rg exit 1(no match)은 허용 — "TCC prompt 0건"은 정상 결과다.
+  printf '\''%s\n'\'' "$raw" | rg '\''AUTHREQ|responsible|accessing|SystemPolicy'\'' || true
 ' bash "$START" "$END"
 ```
 
@@ -276,6 +281,9 @@ effective state를 확인한다. enrollment 제거는 해당 enrollment가 설�
 - launcher argv, parentage, launchd/SMAppService wiring
 - macOS major update 또는 PPPC schema 변경
 - MDM enrollment/profile/APNs certificate 변경
+- Claude `additionalDirectories` 등 접근 경계 정책 변경 (보호 폴더 재유입은 TCC 노출 폭을 바꾼다)
+- Shottr 등 activation-time 프로세스의 sandbox container 접근 변경 (App Data attribution 재유발 가능)
+- launcher lifecycle logic 변경 (responsible identity·argv·parentage에 영향)
 
 재검증은 위 [Launcher별 actual E2E recipe](#launcher별-actual-e2e-recipe)의 진입점과 lineage
 조건을 그대로 사용한다. generic shell이나 이전 child의 결과로 대체하지 않는다.
