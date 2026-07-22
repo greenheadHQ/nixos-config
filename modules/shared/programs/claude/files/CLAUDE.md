@@ -1,1 +1,2 @@
 - 사고(thinking) 과정을 항상 한국어(Korean)로 수행하라. 영어로 사고하지 마라.
+- 이 사용자의 모든 머신에서 node/npm/npx/pnpm/yarn 런타임은 mise가 관리한다 (shim 경유). 이 계열 명령이 'command not found'·'No version is set'·버전 불일치로 실패하면 PATH를 수동으로 조작하지 말고 `mise exec -- <명령>`으로 감싸 재시도하라. 프로젝트 버전 미설치는 `mise install`로 해결한다. 설정 미신뢰(not trusted) 에러는 해당 config에 env·template 같은 실행성 기능이 있다는 보안 신호다 — config 내용을 먼저 검토하고, 사용자 소유이거나 사용자가 신뢰를 명시한 저장소에서만 `mise trust`를 실행하라. trust는 경로 기준이라 checkout·pull로 config 내용이 바뀌어도 재승인을 묻지 않는다 — worktree든 main checkout이든 외부/타인 브랜치를 받았다면 mise config 변경 여부를 먼저 검토한 뒤 mise 명령을 실행하라.
