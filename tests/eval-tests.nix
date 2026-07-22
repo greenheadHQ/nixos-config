@@ -1022,9 +1022,16 @@ let
         # builtins.match는 전체-문자열 앵커(부분 매치 아님)라 .* 래핑이 필요하고, POSIX ERE의 `.`은
         # newline을 매치하지 않아 completionInit이 멀티라인이면 전체 매치가 실패하므로 newline을
         # 공백으로 평탄화한다(현 HM 기본값은 단일 라인이라 평탄화는 방어적 no-op).
+        #
+        # `compinit` 부분 문자열이 아니라 초기화 시퀀스 전체를 요구한다. 부분 문자열만 보면
+        # `# compinit은 나중에` 같은 주석이나 compinit을 실제로 호출하지 않는 값도 통과해,
+        # "사용자 compinit이 단일 정본으로 살아있다"는 이 테스트의 불변식이 헐거워진다.
+        # 현 HM 기본값(실측: `autoload -U compinit && compinit`)과 정확히 대응하며, 업스트림이
+        # 이 시퀀스를 바꾸면 의도대로 여기서 먼저 깨져 재검토를 강제한다.
         &&
-          builtins.match ".*compinit.*" (builtins.replaceStrings [ "\n" ] [ " " ] hmZsh.completionInit)
-          != null;
+          builtins.match ".*autoload -U compinit && compinit.*" (
+            builtins.replaceStrings [ "\n" ] [ " " ] hmZsh.completionInit
+          ) != null;
     }
   ]
   ++ [
