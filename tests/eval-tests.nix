@@ -990,6 +990,42 @@ let
       name = "Test 7a: Tailscale useRoutingFeatures가 server이어야 함 (exit node 방지)";
       cond = nixosCfg.services.tailscale.useRoutingFeatures == "server";
     }
+    # 셸 startup 최적화 회귀 lock — modules/nixos/configuration.nix.
+    # darwin D10-D12와 같은 불변식 쌍을 NixOS에도 잠근다. 타이밍이 아닌 config-level만 검증
+    # (결정론적, 부하 무관). 이 호스트 실측으로 동일 병리를 확인했다: /etc/zshrc의 compinit이
+    # home-manager 사용자 compinit과 중복 실행되고, prompt suse는 Starship이 덮어써 사문이다.
+    {
+      name = "Test 8a: NixOS 시스템 compinit 중복 제거 — enableGlobalCompInit이 false여야 함";
+      cond = nixosCfg.programs.zsh.enableGlobalCompInit == false;
+    }
+    {
+      name = "Test 8b: NixOS 사문 promptinit 제거 — promptInit이 빈 문자열이어야 함 (Starship이 프롬프트를 덮어씀)";
+      cond = nixosCfg.programs.zsh.promptInit == "";
+    }
+    {
+      # 8a가 시스템 compinit을 제거하므로 사용자 compinit이 유일 정본이 되어야 한다.
+      # 부정 불변식(8a)과 긍정 불변식(이 테스트)을 한 쌍으로 잠가 단일-정본 추상화를 보호한다.
+      # 검증 대상 enableCompletion/completionInit은 이 repo가 명시 설정하지 않고 home-manager
+      # 업스트림 기본값에 의존한다 — repo를 grep해도 설정이 안 나오는 이유다. 깨지면
+      # (enableCompletion=false / oh-my-zsh·prezto 도입 / 업스트림 변경) 이 호스트의 셸 completion이
+      # 전면 사망하므로 framework 기본값을 의도적으로 잠근다.
+      name = "Test 8c: NixOS 시스템 compinit 제거의 짝 — 사용자(home-manager) compinit이 단일 정본으로 존재해야 함";
+      cond =
+        let
+          # NixOS에는 darwin의 system.primaryUser 옵션이 없으므로 home-manager.users의 실제 키를
+          # 사용한다(이 호스트는 사용자 1명 — 늘어나면 이 단언이 먼저 깨져 재검토를 강제한다).
+          hmUsers = builtins.attrNames nixosCfg.home-manager.users;
+          hmZsh = nixosCfg.home-manager.users.${builtins.head hmUsers}.programs.zsh;
+        in
+        builtins.length hmUsers == 1
+        && hmZsh.enableCompletion
+        # builtins.match는 전체-문자열 앵커(부분 매치 아님)라 .* 래핑이 필요하고, POSIX ERE의 `.`은
+        # newline을 매치하지 않아 completionInit이 멀티라인이면 전체 매치가 실패하므로 newline을
+        # 공백으로 평탄화한다(현 HM 기본값은 단일 라인이라 평탄화는 방어적 no-op).
+        &&
+          builtins.match ".*compinit.*" (builtins.replaceStrings [ "\n" ] [ " " ] hmZsh.completionInit)
+          != null;
+    }
   ]
   ++ [
     {

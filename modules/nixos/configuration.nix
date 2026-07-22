@@ -82,6 +82,28 @@
   # Zsh 활성화
   programs.zsh.enable = true;
 
+  # 셸 startup 최적화 — NixOS /etc/zshrc가 매 인터랙티브 셸에 emit하는 중복/사문 작업 제거.
+  # darwin(modules/darwin/configuration.nix)과 같은 병리를 이 호스트에서도 실측 확인해 이식했다.
+  # === Change Intent Record ===
+  # 실측(NixOS 호스트):
+  #   (1) 이중 compinit: 시스템 /etc/zshrc:42의 `autoload -U compinit && compinit`과
+  #       사용자 ~/.zshrc:53(home-manager)의 compinit이 셸당 둘 다 실행된다. 두 compinit이
+  #       같은 ~/.zcompdump를 두고 콜드 재빌드(fpath 전수 감사)를 반복한다.
+  #   (2) prompt suse: /etc/zshrc:66의 `promptinit && prompt suse`가 로드되지만 Starship이
+  #       PROMPT/precmd를 전부 덮어써 100% 사문(dead work)이다.
+  # enableGlobalCompInit=false: 시스템 compinit을 제거해 사용자 compinit을 단일 정본으로 만든다.
+  #   단일 compinit은 ~/.zcompdump가 신선하면 로드만 하고, fpath 변경 시 자동 재빌드하며
+  #   compaudit(보안 감사)도 유지한다.
+  # promptInit="": Starship이 덮어쓰는 prompt suse 로드를 제거(프롬프트 동작 불변).
+  # Trade-off (darwin과 다른 점 — 이 호스트 실측 기준): 시스템 compinit 제거는 사용자 ~/.zshrc를
+  #   source하지 않는 zsh 셸에서 compinit 0회를 뜻한다. darwin에서는 root의 zsh 사용 가능성을
+  #   우려했으나, 이 호스트는 root 로그인 셸이 bash이고 /root/.zshrc도 없어 해당 셸이 존재하지
+  #   않는다. 로그인 가능한 일반 사용자도 1명(zsh)뿐이며 그 세션은 home-manager compinit을 탄다.
+  #   enableBashCompletion은 정상 세션의 bash `complete` 기반 completion 호환을 위해 유지한다.
+  #   root가 zsh를 쓰게 되거나 zsh 사용자가 추가되면 이 전제를 재확인한다.
+  programs.zsh.enableGlobalCompInit = false;
+  programs.zsh.promptInit = "";
+
   # 로그 용량 제한 (컨테이너 포함 전체 시스템 로그)
   services.journald.extraConfig = ''
     SystemMaxUse=2G
