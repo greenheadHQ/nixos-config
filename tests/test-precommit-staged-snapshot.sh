@@ -377,7 +377,7 @@ test_staged_snapshot_cache_hit_and_readonly() {
 #
 # 따라서 상한 2 는 "계약이 허용하는 정상 동작"이 아니라 **원인 미규명 상태에서 CI 차단을 푸는
 # 완화**다. 상한을 넘기면 build log 를 덤프해 다음 관측에서 경로(round/reentry)를 특정한다.
-test_staged_snapshot_cache_concurrent_single_build() {
+test_staged_snapshot_cache_concurrent_bounded_builds() {
   local dir log builds
   dir="$(make_repo)"
   printf 'concurrent probe\n' > "$dir/concurrent-probe.txt"
@@ -446,7 +446,7 @@ test_guard_rejects_unsupported_command_shape
 test_guard_rejects_unsupported_pre_push_shape
 test_installer_idempotent_and_worktree_local
 test_staged_snapshot_cache_hit_and_readonly
-test_staged_snapshot_cache_concurrent_single_build
+test_staged_snapshot_cache_concurrent_bounded_builds
 test_staged_snapshot_cache_stale_lock_takeover
 
 echo "All pre-commit staged snapshot tests passed."
