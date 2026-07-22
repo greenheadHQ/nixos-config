@@ -84,10 +84,10 @@ SSOT: `libraries/constants.nix`(onePassword), `modules/shared/programs/shell/def
 
 ## SSH device key 운영 (#866 닫힘 — mobile-ssh 단일 공유 키)
 
-`constants.sshDeviceKeys` 3종 — `macSsh`(comment `mac-ssh`), `mobile`(comment `mobile-ssh`), `emergency`(comment `emergency-fallback`) — 은 MiniPC `authorized_keys` 등록용 공개키이며(`mac-ssh`만 추가로 Mac SSH agent에 노출), agenix 복호화 recipient(`sshKeys`)와는 분리된 개념이다.
+`constants.sshDeviceKeys`는 SSH 접속 클라이언트 공개키의 정본이다. 대상 호스트의 `authorized_keys`에 등록하며(`mobile-ssh`는 MiniPC + personal Mac, work Mac 미배포), `mac-ssh`는 추가로 Mac SSH agent에 노출된다. agenix 복호화 recipient(`sshKeys`)와는 분리된 개념이다.
 
 - iPhone/iPad는 Termius keychain 동기화로 디바이스별 격리가 불성립 → `iphone-ssh`/`ipad-ssh` 분리 키를 폐기하고 단일 `mobile-ssh` 공유 키로 통합(#866 닫힘). 운영 모델: `mobile-ssh` 공유 키 rotate + Termius 디바이스 해제.
-- `mac-ssh` private key는 1Password SSH vault에 보관(#874로 Automation에서 격리), `agent.toml`이 SSH vault에 바인딩되어 SA token blast radius가 축소된다(SA는 SSH vault `op read` 차단). `mobile-ssh`는 1Password가 아니라 Termius keychain에만 보관된다(공개키만 agenix `sshDeviceKeys`로 MiniPC authorized_keys 등록).
+- `mac-ssh` private key는 1Password SSH vault에 보관(#874로 Automation에서 격리), `agent.toml`이 SSH vault에 바인딩되어 SA token blast radius가 축소된다(SA는 SSH vault `op read` 차단). `mobile-ssh`는 1Password가 아니라 Termius keychain에만 보관된다(공개키는 `sshDeviceKeys`를 통해 MiniPC + personal Mac authorized_keys에 등록, work Mac 미배포).
 - Emergency fallback 운영 키는 `~/.ssh/emergency_ed25519` (`IdentityAgent=none` 독립 fallback), 1Password backup copy는 SSH vault에 보관.
 
 SSOT: `libraries/constants.nix`(sshDeviceKeys), `modules/darwin/programs/ssh/default.nix`, `secrets/secrets.nix`.

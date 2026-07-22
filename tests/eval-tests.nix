@@ -20,8 +20,10 @@ let
   # 범위: evaluation-safe value-level 설정만 검증.
   # 제외: postActivation, symbolic hotkeys, GUI 세션/WindowServer 의존 동작.
   darwinCfgs = flake.darwinConfigurations;
-  expectedDarwinHosts = [
+  personalDarwinHosts = [
     "greenhead-MacBookPro"
+  ];
+  expectedDarwinHosts = personalDarwinHosts ++ [
     "work-MacBookPro"
   ];
   claudexTargetHosts = [
@@ -748,7 +750,7 @@ let
                   builtins.filter (key: key == constants.sshDeviceKeys.mobile) authorizedKeys
                 );
               in
-              if hostName == "greenhead-MacBookPro" then mobileKeyCount == 1 else mobileKeyCount == 0
+              if builtins.elem hostName personalDarwinHosts then mobileKeyCount == 1 else mobileKeyCount == 0
             );
         }
       ]
