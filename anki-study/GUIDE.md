@@ -164,7 +164,12 @@ async function submitAnswers() {
 
 타이머/스코어/힌트(잠금-탭 시 -10pt)/자기평가(Again/Hard/Good/Easy +0/+5/+10/+20).
 
-## 5. 호스팅 & 채점 흐름 (현재 운영 방식, Future Ideas는 별도)
+## 5. 호스팅 & 채점 흐름 (⚠️ 중단됨 — server.py 부재, #839 참조)
+
+> **2026-07-05 현행화**: 아래 흐름은 2026-05-10 첫 세션의 기록이다. `server.py`는
+> repo에 없고 minipc의 Anki 인프라는 PR #863로 철거됐다. 학습 세션을 재개하려면
+> 첫 작업으로 서빙 경로 복구 또는 static-only 강등을 선행할 것 (issue #839
+> close 코멘트의 재개 조건).
 
 - LLM이 `/tmp/<workspace>/<card>.html` 작성 → Python http.server로 minipc Tailscale IP에서 서빙
 - 사용자가 답 입력 → POST `/submit` → `<workspace>/answers/ans_<unix_ms>.json` 저장
@@ -174,6 +179,8 @@ async function submitAnswers() {
 ## 6. 무엇을 *하지 않을지* (Future Ideas — 사용자가 명시적으로 요청할 때만)
 
 다음은 awesome-anki 1.0 함정의 재발 위험이 큰 것들. dogfooding 결과 *불편/욕구*가 명확해지기 전에는 손대지 마라:
+
+> ⚠️ AnkiConnect·homeserver 관련 항목은 PR #863(2026-05-30)로 self-host 인프라 구성(서비스·모듈·시크릿·vhost)이 제거되어, 착수 시 재구축이 전제된다. 단 minipc `/var/lib/private/anki-sync-server`의 실데이터(203MB)는 처분 보류 상태다 — plans/README.md 026 행의 Part C STOP 기록 참조.
 
 - 공통 HTML 셸 + 카드별 JSON 스키마 (템플릿화)
 - 호스팅 영구화 (`homeserver.ankiStudy.*` 모듈, Caddy 리버스 프록시)

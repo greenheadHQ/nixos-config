@@ -42,7 +42,7 @@ anki-study/
 
 1. [`GUIDE.md`](GUIDE.md) 를 LLM에게 입력으로 제공
 2. lapses 상위 카드 1-5장을 골라 "이 카드들로 학습 페이지 만들어줘" 라고 부탁
-3. minipc Tailscale 내부에서 호스팅된 페이지로 학습 + AI 채점
+3. (중단됨) minipc Tailscale 내부 호스팅 페이지 학습 + AI 채점 — `server.py` 부재로 이 흐름은 현재 동작하지 않는다 (GUIDE §5의 중단 기록·재개 선행조건 참조)
 
 세션 종료 후:
 
@@ -58,6 +58,15 @@ anki-study/
 
 이걸 깨는 어떤 결정도 1순위 위반.
 
+## 운영 전제 (2026-07-05 기준)
+
+- 데스크톱 Anki 26.5, 프로필 `greenheadHQ` 단일.
+- 동기화: plans/024 이행 **전** = 무동기화(로컬 단독) / 이행·검증 **후** =
+  AnkiWeb. 현재 어느 쪽인지는 `plans/README.md`의 024 status 행이 판정 기준.
+- 백업: Anki 로컬 자동 .colpkg (같은 디스크). AnkiWeb 서버본은 024 완료·검증
+  후에만 존재. 독립 오프사이트 백업은 시점 무관 **없음**.
+- 복습 운영 규칙은 `plans/025-anki-restart-protocol.md` Step 2가 SSOT.
+
 ## 관련 자료
 
 - [issue #711](https://github.com/greenheadHQ/nixos-config/issues/711) — 프로젝트 etcd (1.0 회고 + 2.0 정의 + Future Ideas 박제)
@@ -67,6 +76,8 @@ anki-study/
 ## Future Ideas (현재 결정 X — issue #711 § 8 참조)
 
 dogfooding 결과 *불편/욕구*가 명확해지면 그때 검토:
+
+> ⚠️ AnkiConnect·homeserver 관련 항목은 PR #863(2026-05-30)로 self-host 인프라가 전량 철거되어, 착수 시 모듈·시크릿·vhost 재구축이 전제된다.
 
 - 공통 HTML 셸 + 카드별 JSON 스키마 (템플릿화)
 - 호스팅 영구화 (`homeserver.ankiStudy.*` 모듈)
