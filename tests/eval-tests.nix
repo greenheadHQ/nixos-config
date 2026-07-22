@@ -469,6 +469,38 @@ let
     in
     builtins.length policyLines == 1 && builtins.elemAt policyLines 0 == expectedDarwinSudoRule cfg;
 
+  # Remote TCC 정책 자체는 host runtime state라 eval 대상이 아니다. 대신 선택한 C/D 정책이
+  # 의존하는 선언 surface(앱 설치, launcher 복구, Claude internal allowlist)만 잠근다.
+  claudeSettings = builtins.fromJSON (
+    builtins.readFile ../modules/shared/programs/claude/files/settings.json
+  );
+  expectedClaudeAdditionalDirectories = [ "~/Workspace" ];
+
+  normalizedCaskName = cask: if builtins.isAttrs cask then cask.name else cask;
+  ghosttyCaskCount =
+    cfg:
+    builtins.length (builtins.filter (cask: normalizedCaskName cask == "ghostty") cfg.homebrew.casks);
+
+  claudeRcAgent =
+    cfg: cfg.home-manager.users.${cfg.system.primaryUser}.launchd.agents.claude-rc-ensure;
+  claudeRcDeclaredInstances =
+    cfg: builtins.fromJSON (claudeRcAgent cfg).config.EnvironmentVariables.CLAUDE_RC_DECLARED_INSTANCES;
+  shottrActivation = cfg: cfg.home-manager.users.${cfg.system.primaryUser}.home.activation;
+  shottrActivationEntryNames = [
+    "checkShottrFolderAndWarn"
+    "applyShottrCoreSettings"
+    "applyShottrLicenseFromSecret"
+  ];
+  hasShottrActivationEntries =
+    activation:
+    builtins.all (
+      name:
+      builtins.hasAttr name activation
+      && builtins.isAttrs activation.${name}
+      && activation.${name} ? data
+      && builtins.isString activation.${name}.data
+    ) shottrActivationEntryNames;
+
   darwinIntentTests = builtins.concatLists (
     map (
       hostName:
@@ -752,6 +784,10 @@ let
               in
               if builtins.elem hostName personalDarwinHosts then mobileKeyCount == 1 else mobileKeyCount == 0
             );
+        }
+        {
+          name = "Test D23b ${hostName}: Ghostty.app cask가 정확히 한 번 선언되어야 함";
+          cond = hasHost && ghosttyCaskCount cfg == 1;
         }
       ]
     ) expectedDarwinHosts
@@ -1159,6 +1195,14 @@ let
     {
       name = "Test PJ5: linger 활성 — 로그인 세션 없이 user manager가 부팅부터 상주해야 무인 스케줄이 성립";
       cond = pjLingerOn;
+    }
+    {
+      name = "Test D28a: C 정책의 persistent additional working roots는 exact Workspace-only여야 함";
+      cond = claudeSettings.permissions.additionalDirectories == expectedClaudeAdditionalDirectories;
+    }
+    {
+      name = "Test D28b: on-demand CLAUDE.md auto-load flag는 유지하되 deadline/TCC 성공 증거가 아님";
+      cond = claudeSettings.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD == "1";
     }
   ]
   ++ darwinIntentTests;

@@ -16,9 +16,6 @@
       "Bash(rm -rf ~)"
     ],
     "additionalDirectories": [
-      "~/Desktop",
-      "~/Downloads",
-      "~/Documents",
       "~/Workspace"
     ]
   },

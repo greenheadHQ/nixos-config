@@ -47,6 +47,22 @@ darwinOnly = [ ... pkgs.패키지명 ];
 | 키보드 | `configuration.nix` | 키 반복 속도, F1-F12 표준 기능키 |
 | 마우스/스크롤 | `configuration.nix` | 자연스러운 스크롤 비활성화 (트랙패드 탭 클릭 설정은 없음) |
 
+### TCC / Files & Folders / Full Disk Access
+
+앱 설치와 일반 preference는 Nix로 관리할 수 있지만, macOS TCC decision은 별도 host
+state다. `nrs`나 `defaults`가 Files & Folders 또는 Full Disk Access를 부여한다고
+간주하지 않는다.
+
+- 수동 정책: System Settings에서 운영자가 승인·rollback하고 실제 launcher E2E로 확인한다.
+- managed 정책: Apple PPPC payload를 사용할 수 있지만 user-approved MDM enrollment와
+  MDM delivery가 필요하다. 독립 `.mobileconfig` 수동 설치로 PPPC grant를 우회하지 않는다.
+- sandbox app preference를 읽고 쓰는 `defaults`도 `SystemPolicyAppData`를 유발할 수 있으므로
+  remote activation 경로에서는 outer deadline과 kill-after를 둔다.
+- 금지: TCC DB 직접 수정, SIP 비활성화, 무차별 `tccutil reset`.
+
+identity 확인, bounded fixture, rollback, update/reboot 재검증 절차는
+[references/tcc.md](references/tcc.md)를 따른다.
+
 ### Homebrew 관리
 
 `modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다.

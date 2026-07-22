@@ -1,197 +1,355 @@
-# Plan 028: 원격 AI 세션의 macOS TCC 권한 정책을 DX 우선으로 확정하고 적용한다
+# Plan 028: 원격 AI 세션의 macOS TCC 정책
 
-> **Executor instructions**: 이 plan은 먼저 launcher별 TCC identity와 권한 지속성을
-> 실측하고, 운영자에게 A/B/C 선택을 받은 뒤 선택한 정책만 구현한다. macOS Privacy &
-> Security 설정 변경은 반드시 운영자가 직접 수행하거나 Computer Use의 action-time
-> confirmation을 받은 뒤 수행한다. 선택 전에는 권한을 추가·삭제하거나
-> `additionalDirectories`를 바꾸지 않는다. 완료 시 `plans/README.md`의 028 행을 갱신한다.
->
-> **Drift check (run first)**:
-> `git diff --stat 368e3140..HEAD -- modules/shared/programs/claude/files/settings.json modules/darwin/programs/claude-remote-control.nix modules/shared/programs/codex/files/config.darwin.toml scripts/ai/verify-ai-compat.sh .claude/skills/managing-claude-rc/SKILL.md`
-> 위 파일이 바뀌었으면 Current state와 대조하고, TCC/remote-control 관련 의미 변경이면 STOP한다.
+> 이 문서는 공개 저장소에 보존되는 정책·재현 계약이다. 개인 Mac의 PID, exact 시각, Nix store
+> hash, signing hash, Team ID, 현재 MDM/Keychain 상태와 원시 TCC 로그는 기록하지 않는다.
 
 ## Status
 
-- **Priority**: P1
-- **Effort**: M (실측·결정 S, 선택 정책 구현·재부팅 검증 S~M)
-- **Risk**: MED (Option B는 권한 범위가 넓고, Option C는 보호 폴더 접근 DX가 낮아진다)
-- **Depends on**: none
-- **Category**: bug / dx / security
-- **Planned at**: commit `368e3140`, 2026-07-13
+- **State**: IN PROGRESS — implementation/runtime complete; post-rebase DA fixes 재검증 중
 - **Issue**: https://github.com/greenheadHQ/nixos-config/issues/1093
+- **Policy owner**: operator
+- **Remote policy**: C — Claude의 persistent additional directory는 `~/Workspace`만 유지
+- **Direct terminal policy**: D — Ghostty Full Disk Access 유지
+- **Base**: `main`
 
-## Why this matters
+## Goal and boundaries
 
-휴대폰 원격 세션은 Mac 앞에서 TCC 팝업을 클릭할 수 없으므로, 로컬에서는 1회 승인으로
-끝나는 요청이 원격에서는 세션 전체 hang이 된다. 2026-07-13 실측에서 Claude의 첫 Bash와
-`SystemPolicyDesktopFolder` prompt가 같은 시각에 발생했고 20분 넘게 결과가 없었다.
-최소권한만을 정답으로 고정하지 않고, **원격 작업 지속성(DX)을 최우선**으로 targeted
-permission, Full Disk Access, on-demand access를 비교해 안정적인 운영안을 확정한다.
+휴대폰에서 사용하는 Claude Code/Codex 원격 세션이 macOS TCC GUI 응답을 기다리며 멈추지
+않게 한다. 우선순위는 다음과 같다.
 
-## Current state
+1. Mac 앞에 없어도 원격 작업이 계속되는 DX
+2. 앱 업데이트와 재부팅 뒤 지속성
+3. 책임 앱과 권한 범위의 예측 가능성
+4. 같은 DX라면 더 좁은 권한
 
-- `modules/shared/programs/claude/files/settings.json:18-23`:
-  ```json
-  "additionalDirectories": [
-    "~/Desktop",
-    "~/Downloads",
-    "~/Documents",
-    "~/Workspace"
-  ]
-  ```
-  보호 폴더 3개가 모든 Claude 세션에 영구 추가된다.
-- `modules/darwin/programs/claude-remote-control.nix:30-42`는 launchd headless bridge를
-  `bypassPermissions`로 실행한다. 이 프로세스는 Ghostty의 자식이 아니다.
-- 실측 TCC attribution:
-  - Claude Remote Control: responsible=Nix bash, accessing=`com.anthropic.claude-code`,
-    service=`SystemPolicyDesktopFolder`.
-  - Codex App remote: responsible=`com.openai.codex`, accessing=`find`,
-    service=`SystemPolicyAppData`.
-  - 직접 Ghostty 세션: responsible=Ghostty. 따라서 Ghostty 권한은 headless launcher에
-    자동 승계되지 않는다.
-- Apple은 stable code identity가 없으면 Files & Folders 결정이 버전 간 안정적으로
-  재사용되지 않아 prompt가 반복될 수 있다고 설명한다.
-- Claude는 영구 `additionalDirectories` 외에 세션 한정 `/add-dir`와 시작 시
-  `--add-dir`를 공식 지원한다.
+TCC DB 직접 수정, broad `tccutil reset`, SIP 비활성화와 실제 private data read는 금지한다.
+권한 변경, 앱 종료·재실행, `nrs`, reboot는 각각 action-time confirmation 뒤에만 수행한다.
+모든 보호 폴더 probe는 고정 문자열 fixture 하나와 outer deadline을 사용한다.
 
-## Commands you will need
+## Confirmed problem
 
-| Purpose | Command | Expected on success |
-|---------|---------|---------------------|
-| 설정 문법 | `jq empty modules/shared/programs/claude/files/settings.json` | exit 0 |
-| TCC 로그 | `/usr/bin/log show --style compact --info --debug --last 5m --predicate '(process == "sandboxd" OR process == "tccd")'` | launcher/service attribution 확인 |
-| AI 호환 게이트 | `./scripts/ai/verify-ai-compat.sh` | FAIL 0 |
-| 전체 게이트 | `bash tests/run-all-tests.sh` | FAILED 0 |
-| 실배포 | `nrs` | activation 성공 |
+- 원격 launcher의 보호 폴더 read가 TCC prompt를 만들면 GUI 응답 전까지 caller가 오래 대기할
+  수 있다.
+- `nrs` 중 Shottr의 sandbox container preference read도 ChatGPT/Codex app identity에
+  `SystemPolicyAppData` prompt를 귀속시킬 수 있었다.
+- Claude Remote Control과 Codex App은 responsible identity가 다르다. 한 launcher의 성공을
+  다른 launcher의 성공으로 계산할 수 없다.
+- Ghostty의 권한은 Ghostty direct child에만 적용되며 launchd Claude 또는 Codex App child로
+  승계되지 않는다.
 
-## Suggested executor toolkit
+## Attribution contract
 
-- `finding-unknowns`: Option A/B의 stable identity를 구현 전에 실측한다.
-- `managing-macos`: macOS Privacy & Security 운영 절차를 따른다.
-- `managing-claude-rc`, `configuring-codex`: launcher별 runtime binding을 확인한다.
-- `computer-use`: UI를 읽는 데 쓸 수 있으나, 권한 변경 클릭은 action-time confirmation이 필요하다.
+| Launcher | Responsible code class | Accessing client class | Relevant TCC service | Stable identity assessment |
+|---|---|---|---|---|
+| Claude Remote Control | Nix-managed launch shell and declared bridge | actual bridge tool child | `SystemPolicyDesktopFolder`, fallback `SystemPolicyAllFiles` | Nix updates can change executable identity; durable manual grant candidate가 아님 |
+| Codex App remote | signed ChatGPT app bundle (`com.openai.codex`) | bundled app-server/tool child | protected-folder services and investigation-only `SystemPolicyAppData` | bundle identity는 stable 후보지만 user consent가 restart 뒤 다시 필요할 수 있음 |
+| Ghostty direct | signed Ghostty bundle (`com.mitchellh.ghostty`) | direct shell child | `SystemPolicyAllFiles` | direct terminal에 한해 stable 후보 |
 
-## Scope
+`SystemPolicyAppData`는 원래 Claude protected-folder hang과 별개인 Shottr activation 경로다.
+두 사건의 evidence와 성공 판정을 섞지 않는다.
 
-**In scope**:
+## Options and ADR
 
-- Option A: Claude/ChatGPT responsible app/binary의 필요한 Files & Folders/App Data 사전 허용
-- Option B: Claude/ChatGPT responsible app/binary의 Full Disk Access 상시 허용
-- Option C: `additionalDirectories`를 `~/Workspace`로 축소하고 `/add-dir` opt-in
-- Ghostty 권한은 직접 터미널 세션 보조 선택지로만 평가
-- 선택 정책의 문서·정적 검사·실배포 검증
+| Option | Decision | Rationale | Rollback |
+|---|---|---|---|
+| A. responsible identity에 targeted Files & Folders/App Data | ❌ | 초기에는 A+D를 선택했지만 두 remote launcher에서 restart/update-safe하게 사전 부여되는 동일 계약을 만들지 못했다. Codex targeted consent 재등장도 관측했다. | 선택 service+bundle consent만 표적 제거 |
+| B. responsible app/binary에 Full Disk Access | ❌ | 권한 폭만으로 기각하지 않았다. ChatGPT bundle과 달리 Claude 쪽 durable responsible identity를 두-launcher matrix에 고정할 수 없고, `bypassPermissions`와 결합 범위도 크다. | System Settings에서 exact app entry 제거 후 matrix 재검증 |
+| C. `~/Workspace` persistent, protected folders opt-in | ✅ | 보호 폴더를 자동 traversal surface에서 빼고 remote 기본 경로를 prompt-free로 만든다. 필요할 때만 `/add-dir` 또는 `--add-dir`를 사용한다. | 필요한 폴더를 explicit opt-in; 정책 변경 시 A/B를 다시 실증 |
+| D. Ghostty Full Disk Access | ✅ 보조 | direct terminal의 중단 없는 DX를 제공한다. remote launcher 성공 증거에는 포함하지 않는다. | System Settings에서 Ghostty entry 제거 후 direct matrix 재검증 |
+| Managed PPPC + MDM | ❌ 이번 issue | Apple이 지원하는 선언적 후보이며 금지된 접근이 아니다. 다만 MDM enrollment, service, profile lifecycle이라는 새 trust/운영 경계를 함께 도입하므로 이번 선택에 포함하지 않는다. | MDM acknowledgment와 profile removal을 별도 runbook으로 검증 |
 
-**Out of scope**:
+## CIR
 
-- TCC DB 직접 편집, `tccutil reset`을 이용한 무차별 초기화
-- PPPC/MDM 신규 도입 (개인 Mac 한 대에 과도함; 실제 수요가 생기면 별도 이슈)
-- 보호 폴더나 다른 앱 container를 광범위하게 스캔해 prompt를 억지 재현하는 것
-- 1Password SSH/biometric 정책 — plan 029 소유
+### Context
 
-## Git workflow
+과거 commit `d8b09f3e35c345cdd3f3203981a9327ae86c3730`은 기존
+Downloads/Documents/Workspace persistent roots를 유지하면서 Desktop을 추가하고,
+`/add-dir`/`--add-dir` root의 `CLAUDE.md` 자동 로드를 도입해 로컬 편의를 높였다. 휴대폰 원격
+운영에서는 persistent protected roots가 TCC prompt를 implicit하게 유발해 같은 설정의 비용이
+달라졌다. 자동 로드 flag는 protected roots를 session opt-in하는 대체 DX로 유지한다.
 
-- Branch: `fix/remote-tcc-dx-policy`
-- Conventional commit 예: `fix(ai): 원격 세션 TCC 권한 정책 적용`
-- 운영자 승인 전 commit/push/PR 금지. 실제 권한 클릭은 커밋 대상이 아니므로 PR 본문에 수동
-  운영 단계와 실측 결과를 기록한다.
+### Intervention
 
-## Steps
+- A/B/C/D를 권한 폭만으로 걸러내지 않고 launcher별 responsible/accessing identity와 service를
+  분리해 bounded fixture로 검증했다.
+- 운영자는 처음 A+D를 선택했으나 targeted consent의 재등장과 Shottr AppData attribution을
+  확인한 뒤 최종 C+D로 전환했다.
+- PPPC/MDM은 운영자가 금지한 것이 아니라는 정정을 반영했다. 지원되는 future policy-as-code
+  경로로 남기되 이번 issue에서는 선택하지 않았다.
+- 선택하지 않은 ChatGPT/Claude folder/FDA 시험 grant는 표적 cleanup한다. remembered Deny는
+  grant가 아니며, 의도적으로 남는 권한은 D의 Ghostty FDA뿐이다.
 
-### Step 1: launcher별 TCC baseline을 비자극 방식으로 기록한다
+### Result
 
-기존 로그와 현재 설정만 사용해 아래 표를 채운다. 새 prompt를 만들기 위해 보호 폴더를
-스캔하지 않는다.
+- Claude persistent `additionalDirectories`는 `~/Workspace` 하나다.
+- protected folder는 `/add-dir` 또는 `--add-dir`로 session마다 명시적으로 선택한다.
+- repo read는 actual launcher lineage에서 성공해야 하고, protected fixture는 C 정책상 즉시 deny
+  또는 bounded 종료해야 한다. prompt를 승인해 read가 성공한 cell은 C 성공으로 계산하지 않는다.
+- Shottr activation은 AppData 요청이 발생해도 GNU `timeout`과 circuit breaker로 다음 write를
+  건너뛰고 전체 `nrs`를 계속한다.
+- Shottr license/vault 값은 native CFPreferences writer의 stdin으로만 전달하며 process argv,
+  child environment와 warning log에 포함하지 않는다.
+- Claude bridge lifecycle은 실제 PID, executable, cwd, exact argv, trusted flock parent와 lock
+  ownership을 함께 검증한다. launcher deadline 실패 뒤 같은 process group의 지연 child가 살아남지 않으며, status
+  write 실패는 성공으로 숨기지 않는다. 다른 process가 startup race에서 lock을 먼저 잡아도 그
+  상태를 자기 launcher 성공으로 넘기지 않는다. identity를 확인할 수 없는 자기 replacement는
+  exact guardian→group-leader ownership, stable PGID와 bounded cleanup으로 정리하고 lock-free
+  postcondition까지 확인된 경우에만 `stopped`를 남긴다. descendant가 의도적으로 다른 process
+  group/session으로 벗어나 lock을 유지하거나 successor가 lock을 잡아 cleanup을 입증하지 못하면
+  `unknown`으로 보존한다.
+- bridge candidate는 exact `remote-control`/`rc` token으로 찾되 self-updating CLI의 global-option
+  문법을 복제하지 않는다. 명시적 prompt/argument boundary 뒤 token은 제외하고, 나머지 모호한
+  same-cwd/versioned candidate는 signal하지 않은 채 두 번째 서버 시작만 차단한다. maint launcher는
+  실행 전에 canonical `VERSIONS_DIR` 경계를 검증하고 symlink 대신 검증된 target을 실행한다.
+- 수동 TCC state는 Nix가 선언적으로 보장한다고 주장하지 않는다.
 
-| Launcher | Responsible code | TCC service | Existing decision | Stable identity 후보 |
-|----------|------------------|-------------|-------------------|-----------------------|
-| Claude Remote Control | | | | |
-| Codex App remote | | | | |
-| Ghostty direct | | | | |
+### Decision-regression guard
 
-**Verify**: 표의 모든 행에 `log show` 근거 시각과 binary/bundle identifier가 있다.
+C를 되돌리려면 다음 중 하나를 실제 두-launcher matrix로 먼저 입증해야 한다.
 
-### Step 2: Option A(targeted pre-authorization)를 먼저 실증한다
+- targeted consent가 restart와 update 뒤 prompt 없이 유지됨
+- durable responsible identity에 FDA가 두 launcher 모두 적용됨
+- managed PPPC/MDM이 실제 acknowledgment, rollback, update 재검증까지 운영됨
 
-운영자 확인 후 System Settings > Privacy & Security에서 Step 1의 실제 responsible
-주체에 필요한 Files & Folders/App Data 권한만 허용한다. Claude/Codex 프로세스를 재시작하고
-Mac 재부팅 후 다음 두 케이스를 각각 실행한다.
+## Implementation
 
-1. repo 내부 read-only Bash — prompt 없이 성공해야 한다.
-2. 운영자가 의도한 보호 폴더의 단일 임시 파일 read — prompt 없이 성공해야 한다.
+### Remote policy and runbooks
 
-테스트 후 로그에서 새 `AUTHREQ_PROMPTING`이 없는지 확인한다. versioned Nix bash 또는 Claude
-binary 때문에 permission entry가 유지되지 않으면 결과를 `Option A unstable`로 기록한다.
+- `modules/shared/programs/claude/files/settings.json`
+  - persistent `additionalDirectories = ["~/Workspace"]`
+- `.claude/skills/managing-claude-rc/SKILL.md`
+  - protected folder opt-in과 remote evidence 기준
+- `.claude/skills/managing-macos/references/tcc.md`
+  - launcher attribution, bounded log query, apply/rollback/update 절차
+- `.claude/skills/managing-macos/SKILL.md`
+  - C+D 운영 surface
 
-**Verify**: 재부팅 후 두 launcher의 두 케이스가 성공하고 prompting 0건이면 A 통과.
+### Claude lifecycle
 
-### Step 3: A가 불안정하면 Option B(Full Disk Access)를 실제 후보로 실증한다
+- `modules/darwin/programs/claude-remote-control.nix`
+  - declared launcher의 주기적 recovery
+- `modules/nixos/scripts/claude-rc-lib.sh`
+- `modules/nixos/scripts/claude-rc.sh`
+- `modules/nixos/programs/claude-remote-control/files/claude-rc-maint.sh`
+- `modules/nixos/scripts/claude-rc-pid-argv.c`
+- `modules/nixos/scripts/claude-rc-launch-group.c`
+- `modules/nixos/lib/claude-rc-launch-group-package.nix`
+- `modules/nixos/lib/claude-rc-package.nix`
+- `modules/nixos/lib/claude-rc-maint-package.nix`
+  - exact process identity, lock lineage, stable process-group supervision, callback/result propagation과
+    delayed-launch cancellation
+- `flake.nix`, `scripts/ai/test-runtime-profile.sh`, `scripts/ai/lib/tomlkit-bootstrap.sh`
+  - devShell, pre-push profile, fallback과 production이 같은 플랫폼별 pinned `flock` 구현을 제공·검증
+  - profile fingerprint와 staged-snapshot 비교는 한 runtime-input 목록을 공유하고, wrapper closure/PATH
+    fixture는 current platform selector의 exact `flock` output을 고정한다
 
-A가 실패한 경우에만 운영자에게 권한 확대 범위를 다시 보여주고 확인받는다. Claude/ChatGPT의
-stable responsible app/binary에 Full Disk Access를 부여한 뒤 Step 2 matrix를 반복한다.
-Ghostty FDA는 direct session만 대상으로 별도 행에 기록하며 remote 성공으로 간주하지 않는다.
+### Shottr activation safety
 
-**Verify**: 재부팅 후 Claude/Codex remote 둘 다 성공 + prompting 0건. 하나라도 실패하면 B 불합격.
+- `scripts/secrets/age-encrypt-atomic.sh`
+  - stdin age 입력을 same-directory temporary output에 성공시킨 뒤 atomic replace
+- `modules/darwin/programs/shottr/default.nix`
+- `modules/darwin/programs/shottr/defaults-helper.sh`
+- `modules/darwin/programs/shottr/cfpreferences-writer.c`
+- `modules/darwin/programs/shottr/cfpreferences-writer-package.nix`
+  - bounded read/write, per-activation breaker, secret stdin boundary
+- `.claude/skills/managing-macos/references/shottr-credentials.md`
+- `.claude/skills/managing-secrets/SKILL.md`
+  - xtrace/argv/child environment 값 비공개, deadline, action-time confirmation 계약
 
-### Step 4: 운영자 결정 게이트를 통과한다
+### Tests
 
-아래를 한 표로 제시하고 A/B/C 중 하나를 운영자에게 선택받는다.
+- `tests/lib/claude-remote-control-fixtures.sh`
+- `tests/suites/claude-remote-control-wrapper.sh`
+- `tests/suites/claude-remote-control-guardian.sh`
+- `tests/suites/claude-remote-control-maint.sh`
+- `tests/suites/shottr-defaults.sh`
+- `tests/shell-script-tests.sh`
+- `tests/eval-tests.nix`
+- `tests/run-all-tests.sh`
+  - 기계적으로 보장 가능한 config, identity, deadline, argv, guardian/process-group cleanup, hermetic runtime과
+    failure-propagation 불변식만 검증
+  - production wrapper closure/PATH에서 exact PID argv helper와 platform-selected `flock`을 고정하고,
+    `nrs` 직후 previous-generation `flock` parent도 managed lineage로 유지한다
+  - official `remote-control`/`rc` exact token과 joined/split global-option candidate를 차단하면서
+    explicit prompt boundary와 substring decoy는 제외하는 argv fixture를 고정한다
+  - Darwin-only CFPreferences round-trip은 다른 runner에서 묵시적으로 PASS하지 않고 canonical `N/A`로
+    표시하며, Darwin host PASS는 아래 실제 host 검증 증거와 함께 요구한다
 
-- A: targeted permission — DX 높음, 범위 중간, 지속성 실측 결과
-- B: Full Disk Access — DX 최고, 범위 넓음, 지속성 실측 결과
-- C: Workspace-only + `/add-dir` — DX 중간, 범위 최소, 항상 예측 가능
+## Verification contract
 
-**Verify**: GitHub issue #1093 또는 세션에 운영자의 명시적 A/B/C 선택이 기록됨.
+### Automated
 
-### Step 5: 선택 정책만 구현·문서화한다
+```bash
+jq empty modules/shared/programs/claude/files/settings.json
+shellcheck modules/nixos/scripts/claude-rc-lib.sh \
+  modules/nixos/programs/claude-remote-control/files/claude-rc-maint.sh \
+  modules/darwin/programs/shottr/defaults-helper.sh
+./tests/run-eval-tests.sh
+./tests/run-shell-script-tests.sh
+./scripts/ai/verify-ai-compat.sh
+CI=1 nix develop --command bash tests/run-all-tests.sh
+git diff --check
+```
 
-- A/B: manual System Settings 절차, 실제 bundle/binary identity, 재부팅 검증, 업데이트 후
-  재검증 조건을 `.claude/skills/managing-claude-rc/SKILL.md`에 기록한다. 선언적으로 확인
-  불가능한 TCC state를 Nix 설정이 보장한다고 쓰지 않는다.
-- C: `settings.json`에서 Desktop/Downloads/Documents를 제거하고 Workspace만 유지한다.
-  `/add-dir`/`--add-dir` opt-in 절차를 문서화한다.
-- 공통: 가능한 정적 불변식만 `verify-ai-compat.sh` 또는 적합한 테스트에 추가한다.
+Native Shottr writer는 Darwin에서 빌드하고 temporary preferences basename에만 round-trip한다.
+실제 Shottr license 값, 다른 앱 container 또는 private data는 테스트하지 않는다.
 
-**Verify**: `jq empty`, `./scripts/ai/verify-ai-compat.sh`, `bash tests/run-all-tests.sh` 모두 성공.
+### Exclusive host phase
 
-### Step 6: nrs 후 원격 E2E를 수행한다
+다른 Goal의 `nrs`/GUI/E2E window가 끝나고 lock이 free인 것을 확인한 뒤, 하나의 operator window로
+다음을 수행한다.
 
-`nrs`를 실행해 설정/문서를 배포한다. Claude Remote Control과 Codex App에서 새 세션을 만들고
-repo 내부 Bash와 의도된 보호 폴더 read를 각각 실행한다. 각 명령은 outer timeout을 두어 새
-prompt가 생겨도 세션을 무한 대기시키지 않는다.
+1. action-time confirmation
+2. `NRS_ALLOW_WORKTREE_RELINK=1 nrs`
+3. shared skill 변경 후 `./scripts/ai/verify-ai-compat.sh`
+4. actual Claude Remote Control child와 actual Codex App child에서 repo/protected fixture matrix
+5. 필요한 launcher restart는 별도 confirmation 뒤 반복
+6. Ghostty direct child는 D 보조 matrix로 별도 기록
+7. fixture와 임시 process cleanup, 선택하지 않은 grant 0건 확인
 
-**Verify**: 두 launcher 모두 선택 정책의 기대 동작과 일치하고, 무한 대기 0건.
+| Cell | Repo | Protected fixture under C | Prompt budget |
+|---|---|---|---|
+| Claude Remote Control actual child | exit 0 within deadline | immediate deny or bounded nonzero | 0 new prompt |
+| Codex App actual child | exit 0 within deadline | immediate deny or bounded nonzero | 0 new prompt after remembered deny |
+| Ghostty direct child | exit 0 within deadline | exit 0 within deadline | 0 new prompt |
 
-## Test plan
+로컬 `claude -p`, 일반 shell 또는 Codex Desktop 내부 shell만으로 actual launcher 증거를 대체하지
+않는다. D 결과는 Claude/Codex remote 성공 합계에 넣지 않는다.
 
-- 정적: JSON 문법, 선택 C이면 보호 폴더 문자열 부재, A/B이면 운영 문서에 exact identity와
-  재검증 조건 존재.
-- 통합: `verify-ai-compat.sh`, 전체 test suite.
-- 런타임: launcher 2종 × repo/protected path 2종 × restart/reboot 2상태 matrix.
-- 회귀: Ghostty direct 세션이 기존 파일 접근/터미널 기능을 유지함.
+latest `main` rebase와 승인된 `nrs` 뒤 실제 launcher lineage에서 다음 aggregate를 다시 확인했다.
+exact 시각, PID, executable/store path와 원시 로그는 공개 plan에 보존하지 않는다.
 
-## Done criteria
+| Cell | Repo | Desktop fixture | Elapsed | New prompt | TCC observation |
+|---|---:|---:|---:|---:|---|
+| Claude Remote Control actual child | 0 | 2 | deadline 내 | 0 | remembered deny가 즉시 반환됐고 exact probe window에 새 auth request 없음 |
+| Codex App actual bundled child | 0 | 2 | deadline 내 | 0 | `SystemPolicyDesktopFolder`/`SystemPolicyAllFiles`, remembered deny |
+| Ghostty direct child | 0 | 0 | deadline 내 | 0 | Desktop request 없음; 기존 FDA로 direct child 성공 |
 
-- [ ] launcher별 TCC attribution 표 완성
-- [ ] Option A 실측 완료, 불안정 시 Option B 실측 완료
-- [ ] 운영자의 A/B/C 선택 기록
-- [ ] 선택 정책만 구현·문서화
-- [ ] `./scripts/ai/verify-ai-compat.sh` FAIL 0
-- [ ] `bash tests/run-all-tests.sh` FAILED 0
-- [ ] `nrs` 성공
-- [ ] Claude/Codex remote E2E에서 무한 대기 0건
-- [ ] `plans/README.md` 028 행 갱신
+Claude bridge와 ChatGPT App을 각각 정상 재시작한 뒤 actual child를 새로 확인하고 remote 두 행을
+반복했다. 두 launcher 모두 repo 성공과 protected fixture의 bounded deny가 유지됐고 새 prompt는
+없었다. 재시작 전 웹에 남아 있던 Claude worktree 세션은 예상대로 tombstone 상태를 명시적으로
+반환했으며, 재기동된 declared environment에서 만든 새 Remote Control 세션만 성공 증거로
+계산했다. tombstone을 TCC hang 또는 launcher 성공으로 오인하지 않는다.
+
+Ghostty direct 행은 앱 재시작과 두 차례 reboot 뒤에도 같은 prompt-free matrix를 유지했다. 이는
+보조 D의 direct-terminal 지속성만 입증하며 Claude/Codex remote 성공으로 계산하지 않는다.
+
+App Data consent를 표적 reset한 상태에서 forced activation을 반복하자 first-use prompt가 다시
+발생했지만, helper가 deadline 뒤 Shottr preference write만 건너뛰고 전체 `nrs`는 성공했다. prompt
+요청 process가 끝난 뒤 저장된 consent는 같은 service/bundle만 다시 reset해 Delete event를
+확인했으며, prompt를 다시 만들 수 있는 probe는 반복하지 않았다.
+
+DA에서 확인한 argv classifier와 helper invocation 수정 뒤 worktree generation을 다시 배포했고
+runtime compatibility 검증이 완전 통과했다. 새 local Remote Control 세션의 actual managed bridge
+lineage에서 bounded repo read는 exit 0으로 즉시 끝났고 새 TCC prompt는 0건이었다. 이 smoke가 만든
+session, SDK child와 결과 파일은 모두 정리했다. protected-path 정책은 바뀌지 않았으므로 위의
+repo/protected/restart matrix를 그대로 유지한다.
+
+후속 DA는 prompt decoy 방어가 공식 `rc` alias와 command 앞 global option까지 함께 제외하는 회귀를
+확인했다. 첫 수정은 positional parser로 두 공식 subcommand와 global option을 구분했지만, latest-main
+재검토에서 joined option 누락과 self-updating CLI 문법 복제 자체가 다시 확인됐다. 최종 구현은 exact
+command token과 explicit prompt boundary만 사용한다. 모호한 same-cwd/versioned candidate는 lifecycle
+signal 대상이 아니라 duplicate start 차단 대상으로만 취급한다. split/joined option, alias, prompt와
+substring decoy를 각각 behavior fixture로 고정했다.
+
+최종 정적 검토에서 macOS 1분 ensure가 live version drift까지 자동 재시작하면 위의 action-time
+경계와 충돌함을 확인했다. Darwin periodic policy를 liveness-only로 분리해 죽은 bridge는 계속 1분
+안에 자동 복구하되 live drift는 `deferred-restart-confirmation`으로 보존한다. 운영자가 확인한
+exact `(path,runningVersion,desiredVersion)` JSON을 `confirmed` policy에 전달한 한 번의 ensure만
+재시작을 수행하며, NixOS의 기존 unattended `automatic` 정책은 유지한다. optional debug filter와
+background-agent prompt처럼 bridge 여부가
+모호한 process는 새 시작을 보수적으로 막지만 signal하지 않으며, explicit print/argument boundary와
+`--sdk-url` option terminator는 session/prompt exclusion fixture로 고정했다. 수동 `confirmed` 실행 전
+`defer` snapshot의 전체 drift 후보와 `claude-rc ls`를 제시하고, lifecycle lock 안에서 approval JSON과
+현재 tuple 집합을 다시 exact compare한다. mismatch·malformed·empty approval은 restart 전에
+fail-closed하며, one-shot policy/approval env는 새 bridge로 전파하지 않는다. snapshot은 ensure exit 0과
+status `action=completed`/`exitCode=0`을 검증한다. Darwin `defer`와 NixOS `automatic` 배선은 각각
+eval로 검증한다.
+
+이 후속 수정도 worktree generation으로 배포했고 runtime compatibility 검증이 통과했다. bounded
+`claude-rc ls`는 기존 등록/선언 bridge를 모두 healthy로 판정했다. 보호 폴더 정책, TCC state와 실제
+remote command 경로는 바뀌지 않아 추가 prompt probe나 launcher restart는 수행하지 않았다.
+
+liveness-only drift 정책까지 반영한 최종 worktree generation도 배포했다. launchd의 deployed
+environment는 `defer`, stable `claude-rc-maint` home symlink는 executable로 확인했고 runtime
+compatibility 검증이 통과했다. bounded `claude-rc ls`와 maint status는 등록된 두 bridge를 모두
+running/healthy로 보고했다. 이 단계 역시 앱 재시작, TCC mutation, 보호 폴더 probe 없이 끝냈다.
+
+latest `main` 재베이스 뒤 `$run-da for_pr`는 stable maintenance symlink를 bare로 실행할 때 shared
+default `automatic`이 action-time confirmation 경계를 우회할 수 있음을 확인했다. shared default를
+fail-closed `defer`로 바꾸고, NixOS service만 unattended `automatic`, 운영자 확인 뒤 실행하는 명령은
+exact snapshot을 요구하는 `confirmed`를 명시한다.
+같은 라운드에서 Markdown·shell source의 exact 문자열·공백·출현 횟수를 성공 증거로 삼던 eval을
+제거했다. eval은 evaluated attr와 platform selector만 검사하고, 실행 동작은 tracked helper의
+behavior fixture가 검증한다.
+
+다음 전체 DA 라운드는 maint launcher가 version 경계를 검증하기 전에 실행될 수 있는 문제, Shottr
+secret refresh의 실행 SoT가 Markdown heredoc이던 문제, production status와 운영 표의 parity drift를
+확인했다. maint는 canonical launcher를 pre-exec 검증하고, Shottr refresh는 tracked executable로
+이동했으며, production action 전부가 운영 표에 존재하는지 fixture가 확인한다.
+
+후속 read-only 검토는 top-level status action과 instance action의 문서 경계가 섞여 있던 문제,
+공백을 포함할 수 있는 Shottr timeout executable 호출 경계, 비대해진 Remote Control fixture의 변경
+격리 문제를 확인했다. top-level과 instance action은 각각 production vocabulary·운영 표 parity를
+검증하고, timeout executable은 quoted path fixture로 고정했다. Remote Control fixture는 공통 harness와
+wrapper·guardian·maint/status suite로 분리하되 기존 test function 68개가 모두 discovery되는 것을 전체
+shell suite로 검증한다.
+
+다음 frozen changeset의 FULL DA는 one-shot restart policy가 장기 bridge에 상속되는 문제, 게시 실패
+뒤에만 정해져 `status.json`에 기록할 수 없는 diagnostic을 top-level status 값으로 문서화한 문제,
+lifecycle lock file open 실패가 internal `none` action으로 게시되는 문제를 확인했다. confirmed restart는
+locked runtime tuple 집합과 exact match하는 non-empty approval만 허용하고 policy/approval env를 bridge
+exec 전에 제거한다. status publication failure는 exit·stderr·alert 전용 diagnostic으로 분리하고,
+lock parent/open 실패는 canonical `lock-setup-failed` status와 behavior fixture로 보존한다.
+
+최신 `main` 재베이스 뒤 fresh FULL 검토는 유지보수 suite 소유권을 포함한 low-severity 제안 3건을
+확인했다. 운영자는 그중 suite 소유권만 반영하고 추가 검토를 중단하도록 결정했다. wrapper suite의
+maint-only fixture 6개를 등록과 동작을 바꾸지 않고 maint suite로 옮겼고, shell fixture 275개와 전체
+suite 10개 그룹이 다시 통과했다. 나머지 2건은 반영하지 않았으며 post-fix CLEAR를 주장하지 않는다.
+이 운영자 결정은 최종 review 상태의 일부로 보존한다.
+
+최종 readback과 cleanup은 선택 정책의 권한만 남기고 기존의 무관한 TCC 결정을 변경하지 않는
+범위로 완료했다. remembered deny는 grant로 세지 않으며 선택하지 않은 시험 grant는 0건이다.
+
+### Update-time revalidation
+
+다음이 바뀌면 attribution table과 영향받는 matrix를 다시 실행한다.
+
+- Claude, ChatGPT/Codex 또는 Ghostty app/CLI
+- Nix bash 또는 launcher package
+- macOS major version이나 TCC/PPPC schema
+- MDM/profile 도입 또는 제거
+- `additionalDirectories`, Shottr activation, launcher lifecycle 로직
+
+## Completion checklist
+
+- [x] 운영자 최종 선택 C+D 기록
+- [x] A/B/C/D와 managed PPPC 판단 기록
+- [x] 자동 config/lifecycle/Shottr safety 구현과 focused fixture
+- [x] latest `main` rebase 뒤 전체 automated suite
+- [x] action-time 승인된 `nrs`, verify-ai-compat, actual launcher E2E
+- [x] 선택하지 않은 시험 grant 0건과 fixture/process cleanup
+- [x] `$run-da for_pr` 실행과 운영자 선택 finding 반영 (추가 검토 중단, post-fix CLEAR 미주장)
+- [x] single reviewed changeset push와 PR 공개 정보 재감사
+- [x] `$create-pr` update 뒤 base/head, 7개 섹션, `Closes #1093`, 공개 정보 readback
 
 ## STOP conditions
 
-- TCC responsible identity가 재부팅 전후 달라짐 — A/B를 구현하지 말고 원인 보고.
-- Option B가 Claude/Codex 중 한 launcher에만 적용됨 — Ghostty/ChatGPT 권한을 섞어 추정 금지.
-- 운영자 A/B/C 선택이 없음 — 구현 시작 금지.
-- TCC DB 직접 수정이나 SIP/보안 기능 비활성화가 필요해짐 — 범위 밖.
-- 테스트가 다른 앱의 실제 private data를 읽어야만 통과함 — 임시 파일 fixture로 축소.
+- responsible identity가 재시작/update 전후 바뀌어 선택 정책을 입증할 수 없음
+- Claude/Codex 중 한 launcher만 완료됨
+- 실제 private data가 있어야만 테스트 가능함
+- probe에 outer deadline을 적용할 수 없음
+- action-time confirmation 없이 권한 변경, 앱 재시작, `nrs` 또는 reboot가 필요함
+- automated test 또는 host E2E 실패, 혹은 명시적 운영자 결정 없는 review nonconvergence
 
-## Maintenance notes
+STOP 시 worktree를 보존하고 완료 단계, blocker, 재개 지점을 보고한다. PR을 성공으로 과장하지
+않고 merge하지 않는다.
 
-- Claude/Codex 업데이트 후 responsible binary identity가 바뀌면 A/B permission을 재검증한다.
-- A/B 채택 시 권한 범위는 PR 본문과 managing-claude-rc 문서 양쪽에 남긴다.
-- C 채택 시 Desktop/Downloads/Documents 영구 추가 요청이 다시 나오면 #1093의 DX 결정부터
-  재검토하고 기계적으로 되돌리지 않는다.
+## References
+
+- [Apple PPPC payload](https://developer.apple.com/documentation/devicemanagement/privacypreferencespolicycontrol)
+- [Apple PPPC services](https://developer.apple.com/documentation/devicemanagement/privacypreferencespolicycontrol/services-data.dictionary)
+- [Apple Device Enrollment](https://support.apple.com/guide/deployment/depd1c27dfe6/web)
+- [Apple file access controls](https://support.apple.com/guide/security/controlling-app-access-to-files-secddd1d86a6/web)
+- [Claude working directories](https://code.claude.com/docs/en/permissions#working-directories)
+- [Claude bypassPermissions mode](https://code.claude.com/docs/en/permission-modes#skip-all-checks-with-bypasspermissions-mode)
