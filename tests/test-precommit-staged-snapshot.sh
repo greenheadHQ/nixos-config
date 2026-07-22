@@ -368,7 +368,11 @@ test_staged_snapshot_cache_hit_and_readonly() {
     || fail "staged snapshot must clear source-profile READY before consumer execution"
 }
 
-# parallel pre-commit 모사: 동시 호출이 경쟁해도 mkdir lock 직렬화로 build 는 정확히 1회.
+# parallel pre-commit 모사: 동시 호출 6개가 경쟁해도 mkdir lock 직렬화로 build 는 1회다.
+# 단 lib/staged-snapshot-cache.sh:16-17,204-205 가 정의하는 계약상, holder 가 느려 대기자가
+# 타임아웃 takeover 하면 중복 checkout 1회까지는 허용된다(정확성은 유지). 부하가 큰 CI 러너에서
+# 그 경로가 실제로 관측돼 `= 1` 단언이 flaky 했으므로(#1164), 계약과 같은 상한(2회)으로 맞춘다.
+# 3회 이상은 직렬화 붕괴이므로 계속 실패시킨다.
 test_staged_snapshot_cache_concurrent_single_build() {
   local dir log builds
   dir="$(make_repo)"
@@ -383,7 +387,10 @@ test_staged_snapshot_cache_concurrent_single_build() {
   done
   wait
   builds="$(wc -l < "$log" | tr -d ' ')"
-  [ "$builds" = "1" ] || fail "expected exactly 1 build under concurrency, got $builds"
+  # 하한: 빌드가 0이면 캐시 경로 자체가 동작하지 않은 것.
+  [ "$builds" -ge 1 ] || fail "expected at least 1 build under concurrency, got $builds"
+  # 상한: 계약이 허용하는 takeover 중복 1회까지(=2). 6개 동시 호출 중 3회 이상 빌드는 직렬화 붕괴.
+  [ "$builds" -le 2 ] || fail "expected at most 2 builds under concurrency (serialization + one allowed takeover), got $builds"
 }
 
 # 멈춘/죽은 빌더의 lock(단순 버전은 owner 메타 없는 빈 디렉토리)은 대기자가 타임아웃 후 제거하고
