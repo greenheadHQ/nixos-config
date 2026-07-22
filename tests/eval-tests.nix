@@ -734,6 +734,23 @@ let
                 true
             );
         }
+        {
+          # Termius mobile-ssh는 개인 Mac 원격 접속용 신원이다. work Mac까지
+          # 허용하면 공유 모바일 키의 blast radius가 업무 호스트로 확장되므로,
+          # personal에는 정확히 1개·work에는 0개인 양방향 계약을 최종 평가값에서 검증한다.
+          name = "Test D23 ${hostName}: mobile-ssh authorized key는 personal Mac에만 정확히 1개 있어야 함";
+          cond =
+            hasHost
+            && (
+              let
+                authorizedKeys = cfg.users.users.${cfg.system.primaryUser}.openssh.authorizedKeys.keys;
+                mobileKeyCount = builtins.length (
+                  builtins.filter (key: key == constants.sshDeviceKeys.mobile) authorizedKeys
+                );
+              in
+              if hostName == "greenhead-MacBookPro" then mobileKeyCount == 1 else mobileKeyCount == 0
+            );
+        }
       ]
     ) expectedDarwinHosts
   );

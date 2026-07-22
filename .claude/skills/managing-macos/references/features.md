@@ -68,8 +68,9 @@ sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist
 
 | 키 | 용도 |
 |---|---|
-| `greenhead-home-mac-2025-10` | Termius 등 외부 기기 접속 |
-| `greenhead@minipc` | MiniPC에서 접속 |
+| `greenhead-home-mac-2025-10` | MacBook 사용자 키 |
+| `mobile-ssh` | iPhone·iPad Termius 공유 접속(personal Mac만) |
+| `greenhead@minipc` | MiniPC에서 접속(personal Mac만) |
 
 Termius 연결 정보:
 
@@ -77,15 +78,15 @@ Termius 연결 정보:
 |------|-----|
 | Host | Tailscale IP (예: `100.65.50.98`) |
 | Port | `22` |
-| Username | `green` |
-| Auth | SSH Key (Ed25519) |
+| Username | `greenhead` |
+| Auth | SSH Key (`mobile-ssh`, Ed25519) |
 
 mosh 사용:
 
 ```bash
 # Termius에서 mosh 연결 시 자동으로 mosh-server 사용
 # 또는 CLI에서:
-mosh green@100.65.50.98
+mosh greenhead@100.65.50.98
 ```
 
 > 참고: macOS의 launchd가 SSH 소켓을 직접 관리하므로 `sshd_config`의 `ListenAddress` 설정은 적용되지 않습니다. LAN 접근 제한이 필요한 경우 pf 방화벽을 사용해야 합니다.
