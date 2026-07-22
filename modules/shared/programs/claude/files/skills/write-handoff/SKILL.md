@@ -71,7 +71,7 @@ Phase 기반 이행 가이드를 작성하고, 이슈 코멘트로 게시한다.
 - 첫 행동 지시: 새 세션이 바로 실행할 첫 검색/파일 읽기/검증 명령 또는 확인 단계.
 
 대화에서 확립되지 않은 후속 연계나 외부 게시 절차는 새로 만들지 않는다.
-로컬 파일은 공개 게시물이 아니므로 필요한 로컬 작업 경로와 dirty-state 맥락을 적을 수 있다. 그래도 시크릿, 토큰, 복호화 값은 쓰지 않는다.
+로컬 파일은 공개 게시물이 아니므로 필요한 로컬 작업 경로와 dirty-state 맥락을 적을 수 있다. 그래도 시크릿, 토큰, 복호화 값은 쓰지 않는다 ([references/sanitization-checklist.md](references/sanitization-checklist.md) 적용 범위 참조).
 
 ## 절차
 
@@ -200,6 +200,8 @@ LLM이 커밋 메시지를 자의적으로 작성하지 않고, 가이드에 명
 3. 독립 답변: 초안을 보지 않은 상태로 파일 읽기·검색 도구 또는 `gh` CLI 재실행으로 질문에 답.
 4. 불일치 처리: 답변과 초안이 일치하지 않으면 초안 수정. 확인 불가 시 `[UNVERIFIED]` 라벨 또는 삭제.
 
+같은 시점에 공개 sanitization post-render scan을 수행한다: [references/sanitization-checklist.md](references/sanitization-checklist.md)의 금지(S1)/보존(S2) 기준, S3 scan 절차, 언어 유지 규칙(S4)을 초안에 적용한다. blanket redaction 금지 — S2 항목(repo-relative path, 검증 명령/결과, 실패 증상)은 지우지 않는다. 기본 모드(공개 게시)는 전체 적용하고, 로컬 모드는 S1 중 시크릿/토큰/키/복호화 값 금지만 적용한다.
+
 이 E1/E2 anti-hallucination 계약과 작성 품질 계약은 기본 모드와 로컬 모드에 동일하게 적용된다. 게시 대상만 이슈 코멘트와 cwd 파일로 갈라진다.
 
 ### Step 9: 게시 또는 로컬 파일 저장
@@ -209,8 +211,11 @@ LLM이 커밋 메시지를 자의적으로 작성하지 않고, 가이드에 명
 작성한 가이드를 이슈 코멘트로 게시한다. `--body-file`만 허용한다. 본문에는 `$HOME`, `$(...)`, 백틱, 큰따옴표, 내부 `EOF` 등 셸 해석 토큰이 포함될 수 있으며, 이번 스킬이 추가한 `Phase N 검증+커밋` 섹션 자체가 커밋 템플릿용 `cat <<'EOF'...EOF` 예시를 포함한다. 따라서 `$(cat <<'EOF' ... EOF)` 래퍼는 inner `EOF`에서 조기 종료되어 본문이 잘리거나 명령이 실행된다. `--body "<본문>"` 직접 전달과 quoted HEREDOC 모두 금지.
 
 ```bash
-# 필수: 본문을 파일에 저장한 뒤 --body-file로 전달
-gh issue comment <number> --body-file <path-to-guide.md>
+# 필수: 본문을 파일에 저장한 뒤 --body-file로 전달.
+# 게시 대상은 처음 이슈를 읽을 때의 참조를 그대로 쓴다 — URL로 받았으면 URL을 그대로 전달한다.
+# bare number만 쓰면 cwd origin의 동번 이슈로 게시되어, sanitization에서 검사한 대상과
+# 실제 write sink가 어긋날 수 있다 (sanitization checklist S3의 게시 대상 결합 규칙).
+gh issue comment <이슈 참조(URL 또는 number)> --body-file <path-to-guide.md>
 ```
 
 참고: `gh issue comment --body-file -`로 stdin도 허용되지만, 생성된 가이드를 파일로 저장하는 워크플로가 디버깅·재실행에 유리하다.
@@ -270,3 +275,4 @@ gh issue comment <number> --body-file <path-to-guide.md>
 
 - [references/guide-template.md](references/guide-template.md) — LLM 이행 가이드 마크다운 템플릿 + TL;DR 블록 + 헤더 블록/Phase 구조/커밋 템플릿/QA 체크리스트 + 모범 패턴
 - [references/llm-friendly-checklist.md](references/llm-friendly-checklist.md) — `create-issue`/`write-handoff` 공유 체크리스트. Normative(스킬 강제) + Informational(권장) 분리. 라벨 체계(`[UNVERIFIED]`/`[INFERRED]`/`[CONFLICTING]`)와 출처 링크
+- [references/sanitization-checklist.md](references/sanitization-checklist.md) — `create-issue`/`write-handoff` 공유 단일 진실 원천. 공개 게시물 금지/보존 항목(S1/S2), post-render scan 절차(S3), 언어 유지 규칙(S4)

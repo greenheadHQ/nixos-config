@@ -270,11 +270,17 @@ fi
 
 # shared refs 의존 목록 (sibling skill references that {name} relies on):
 # - create-issue  →  skills/write-handoff/references/llm-friendly-checklist.md
+# - create-issue  →  skills/write-handoff/references/sanitization-checklist.md (공개 S1~S4 정본)
 # 새 의존 추가 시 이 case 블록 갱신
 case "{name}" in
   create-issue)
-    [ -f "skills/write-handoff/references/llm-friendly-checklist.md" ] \
-      && CAT_FILES+=("skills/write-handoff/references/llm-friendly-checklist.md")
+    # 두 정본은 필수 계약이다 — 부재 시 검열 규칙이 빠진 채 진행하지 않도록 명시적으로 실패한다.
+    for _shared_ref in \
+      "skills/write-handoff/references/llm-friendly-checklist.md" \
+      "skills/write-handoff/references/sanitization-checklist.md"; do
+      [ -f "$_shared_ref" ] || { echo "missing required shared reference: $_shared_ref" >&2; exit 1; }
+      CAT_FILES+=("$_shared_ref")
+    done
     ;;
 esac
 

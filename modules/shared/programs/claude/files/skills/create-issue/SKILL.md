@@ -145,12 +145,15 @@ Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트
 
 공통 규칙 (섹션 선택과 독립): 명시적 시각 증빙 후보가 있으면 PoC 섹션 포함 여부와 무관하게 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬에 따라 `시각적 실제 결과` 슬롯을 준비한다. Step 2에서는 후보 식별과 슬롯 준비만 수행하고, 실제 업로드는 Step 5-A의 제목·라벨 확인 통과 직후 게시 전에 수행한다.
 
-### Step 3 — Anti-hallucination 자체 검증
+작성 언어와 공개 안전성 (섹션 선택과 독립): 사용자가 본문 언어를 명시적으로 지정했으면 그 지정이 우선하고, 지정이 없으면 한국어로 요청했거나 대화가 한국어일 때 이슈 본문도 한국어로 유지한다 (sanitization checklist S4). 작성 중에도 [공개용 sanitization checklist](../write-handoff/references/sanitization-checklist.md)의 금지 항목(S1)을 넣지 않고 보존 항목(S2)을 지우지 않는다 — 최종 강제는 Step 3에서 수행.
 
-작성된 이슈 본문에 체크리스트 E1/E2를 적용한다 (규칙 상세 정의와 출처는 [`../write-handoff/references/llm-friendly-checklist.md`](../write-handoff/references/llm-friendly-checklist.md) Normative E1/E2 참조).
+### Step 3 — 게시 전 자체 검증 (anti-hallucination + sanitization)
+
+작성된 이슈 본문에 체크리스트 E1/E2와 공개 sanitization scan을 적용한다 (E1/E2 규칙 상세 정의와 출처는 [`../write-handoff/references/llm-friendly-checklist.md`](../write-handoff/references/llm-friendly-checklist.md) Normative E1/E2 참조).
 
 - E1: 근거 없거나 확신 낮은 주장은 `[UNVERIFIED]` 라벨 또는 삭제 (라벨 체계 상세는 [체크리스트 라벨 체계](../write-handoff/references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조).
 - E2: 비자명 주장을 검증 질문으로 변환 → 파일 읽기·검색 도구 또는 `gh` CLI 재실행으로 독립 확인 → 불일치/근거 부재 시 라벨 또는 삭제.
+- S1-S3: 공개 sanitization post-render scan — [공개용 sanitization checklist](../write-handoff/references/sanitization-checklist.md)의 금지(S1)/보존(S2) 기준과 S3 scan 절차를 초안에 적용한다. blanket redaction 금지 — S2 항목(repo-relative path, 검증 명령/결과, 실패 증상)은 지우지 않는다.
 
 ### Step 4 — 라벨 자동 결정
 
@@ -185,6 +188,7 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
 
 1. 등록 전 제목, 라벨 조합을 사용자에게 보여주고 확인을 받는다.
 2. 확인 통과 직후, Step 2에서 식별한 명시적 시각 증빙 후보가 있으면 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬의 절차를 여기서 실행한다 — 각 후보의 처리 결과를 반영한 본문 사본을 아래 3단계의 `$ISSUE_BODY`로 사용한다. 성공한 후보의 첨부는 유지하고 실패·skip 후보만 제외한다 (부분 성공 시 성공한 `href`를 버리면 orphan asset이 된다). 업로드·삽입에 성공한 후보가 없을 때만 원래 본문을 사용하고, 정본이 정의한 `ATTACH_STATUS`를 최종 응답에 포함한다. 후보가 없으면 이 단계를 건너뛴다.
+   첨부를 삽입했다면 Step 3의 sanitization scan은 이 시점의 최종 본문 사본에 다시 적용한다 — 삽입되는 첨부 라벨의 파일명·설명도 S1 값(개인·회사 식별자 등)을 담을 수 있으므로, 검사한 본문과 게시하는 본문이 반드시 동일 파일이어야 한다 (sanitization checklist S3의 post-render 원칙).
 3. `gh issue create`를 `--body-file`로 실행한다. 본문은 임시 파일에 저장 후 전달.
    ```bash
    # BSD/macOS mktemp는 템플릿 끝(trailing)에 XXXXXX가 와야 랜덤 치환함.
@@ -285,7 +289,7 @@ Umbrella를 사용할 때는 먼저 `/create-issue`로 umbrella를 등록한 뒤
 
 ## 주의사항
 
-- 이슈 본문에 시크릿/credential/API 키를 포함하지 않는다. `.age` 복호화 값, `.env` 내용은 파일 경로만 참조한다.
+- 이슈 본문에 시크릿/credential/API 키를 포함하지 않는다. `.age` 복호화 값, `.env` 내용은 파일 경로만 참조한다. 개인/회사 식별자, 절대 로컬 경로 등 나머지 금지/보존 기준은 [공개용 sanitization checklist](../write-handoff/references/sanitization-checklist.md)가 단일 진실 원천이다 (Step 3에서 강제).
 - 조회(`gh issue list`), 감사(audit), 라이프사이클(close/reopen/edit), 라벨 관리(CRUD)는 이 스킬의 범위 밖이다. `gh` CLI를 직접 사용한다.
 - `gh issue create` 실행 시 본문은 `--body-file`로 전달한다. HEREDOC(`$(cat <<'EOF' ... EOF)`) 방식은 본문 내부에 PoC/Reproduction 섹션의 nested `cat <<'EOF'` 예시나 독립 `EOF` 라인이 포함될 때 outer heredoc가 조기 종료되어 등록이 실패하거나 본문이 잘린다. `PoC / Reproduction` 섹션(issue-template)의 shell 재현 스니펫이 기본 기능이므로 HEREDOC 전달은 금지.
 ## 참조 자료
@@ -293,3 +297,4 @@ Umbrella를 사용할 때는 먼저 `/create-issue`로 umbrella를 등록한 뒤
 - [references/issue-template.md](references/issue-template.md) -- 이슈 템플릿 (필수 섹션: TL;DR/Context/References/Proposed Changes + 선택 섹션: PoC/Related Commits/Affected Files/Notes) + 섹션별 작성 가이드 + 작성 예시
 - [references/label-taxonomy.md](references/label-taxonomy.md) -- 라벨 체계 상세 (색상 코드, 판단 기준, 설계 근거)
 - [LLM 친화성 체크리스트](../write-handoff/references/llm-friendly-checklist.md) -- `create-issue`/`write-handoff` 공유. Normative(스킬 강제) + Informational(권장) 분리. 라벨 체계(`[UNVERIFIED]`/`[INFERRED]`/`[CONFLICTING]`). 공식 docs/학술 출처 링크 포함
+- [공개용 sanitization checklist](../write-handoff/references/sanitization-checklist.md) -- `create-issue`/`write-handoff` 공유 단일 진실 원천. 공개 게시물 금지/보존 항목(S1/S2), post-render scan 절차(S3), 언어 유지 규칙(S4)

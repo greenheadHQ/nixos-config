@@ -1,0 +1,95 @@
+# 공개용 Sanitization Checklist
+
+> `create-issue`/`write-handoff` 스킬이 공유하는 public-safe sanitization 단일 진실 원천.
+> 규칙 변경 시 이 파일을 먼저 수정하고, 소비자 문서(두 SKILL.md, `issue-template.md`, `guide-template.md`)의 요약 문구/포인터도 함께 점검한다.
+
+적용 범위: GitHub에 게시되는 산출물 — `create-issue`의 이슈 본문, `write-handoff` 기본 모드의 이슈 코멘트. `write-handoff` 로컬 모드(`HANDOFF-*.local.md`)는 공개 게시물이 아니므로 S1 중 시크릿/토큰/키/복호화 값 금지만 적용한다 (SKILL.md 로컬 킥오프 프롬프트 구조 참조).
+
+배경: 이 repo는 PUBLIC이다. 기존 규칙은 "시크릿 금지" 수준에 머물러 절대경로·개인/회사 식별자를 놓치거나, 반대로 유용한 repo-relative 맥락까지 과하게 지우는 즉석 판단이 반복됐다. 상세 배경과 실전 사례는 #405 참조.
+
+---
+
+## 핵심 원칙
+
+1. blanket redaction 금지: 모든 로컬 경로/식별자를 무조건 삭제하지 않는다. 후속 작업에 필요한 맥락 보존과 민감정보 제거를 동시에 만족해야 한다.
+2. 신규 노출 기준: 판단 기준은 "이 문서로 인해 처음 공개되는 정보인가"이다. repo 코드/문서에 이미 공개된 경로·도메인·설정 식별자의 인용은 신규 노출이 아니므로 허용한다. 단 "이미 공개"는 현재 worktree에 존재한다는 뜻이 아니라 공개 원격에 실제로 게시된 상태를 뜻한다 — 미커밋·미푸시·비공개 브랜치에만 있는 값은 공개 이력이 없다.
+3. post-render scan: 초안 완성 후 게시 직전에 금지 패턴을 다시 검색한다 (S3 절차).
+
+## S1. 금지 항목 (발견 시 치환 또는 삭제)
+
+| 항목 | 처리 |
+|------|------|
+| 시크릿/credential/API 키/토큰 값, `.age` 복호화 값, `.env` 내용 | 값 대신 파일 경로만 참조 |
+| 개인 식별자 — 실명, 이메일 주소, 개인 계정/핸들 | 역할 지칭으로 대체 ("사용자", "운영자") |
+| 회사/내부 식별 표현 — 회사명, 사내 서비스/커넥터명, 내부 도메인 | 일반 명사 또는 공개 제품 예시로 대체 |
+| 공인 IP, 비공개 호스트 주소 | `libraries/constants.nix` 경로 참조 또는 placeholder |
+| 홈 디렉토리 아래 절대 로컬 경로 (사용자명 노출) | repo 내부는 repo-relative path로 치환, repo 밖은 `~/` 또는 `$HOME/` 표기 |
+| 세션 식별자 — 세션 로그 파일명 UUID 등 | 조사 방법론 언급은 유지하되 식별자만 제거 |
+| 세션 로그의 사용자 발화 원문 인용 | 패턴 요약 + 횟수로 대체 |
+| 공개 불필요한 dirty state — `git status` 출력, 워크트리 오염 상태, 로컬 임시 파일 목록 | 작업 단계 서술로 대체 |
+| 악용 가능 절차의 단계별 상세 | 증상 수준 서술로 축약 ("문서대로 하면 기능이 조용히 사라진다"는 허용, 악용 재현 절차는 배제) |
+
+## S2. 보존 항목 (지우지 않는다)
+
+S1과 겹치면 S1이 우선한다 — 아래 보존 범주에 속해도 문자열 안에 S1 식별자(회사명·내부 서비스명·개인 식별자 등)가 포함되면 그 부분을 치환한 뒤 보존한다.
+
+- repo-relative 파일 경로 (`path/to/file.nix:LINE`) — 경로 문자열 자체의 S1 식별자 부재 + 공개 기본 브랜치 실재(S3 4항)가 전제
+- 이슈/PR 번호, 머지된 commit SHA
+- 검증 명령과 실행 결과, 실패 증상/에러 메시지 (민감값 미포함 시)
+- 공개 원격의 기본 브랜치(또는 공개된 commit)에서 확인된 경로, 도메인, 설정 식별자 (신규 노출 아님 — 확인 절차는 S3 4항, 현재 worktree 존재만으로는 근거가 아니다)
+- 조사 방법론 서술 (예: "세션 로그 분석으로 확인") — 식별자 없이
+
+## S3. Post-render scan 절차
+
+초안 완성 후 게시 직전에 수행한다. E2 Self-verification 패스와 같은 시점에 실행해도 된다.
+
+1. 초안 파일에 대해 기계 검출 가능한 금지 패턴을 검색한다:
+
+   ```bash
+   rg -n '/Users/|/home/|-----BEGIN|(ghp|gho|ghu|ghs|ghr|github_pat)_|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' <초안 파일>
+   ```
+
+2. 매치를 하나씩 판정한다 — 기계적 일괄 삭제 금지:
+   - S1 해당 → repo-relative path 치환, placeholder 치환, 또는 삭제.
+   - S2 해당 (이미 공개된 값, 문서상 placeholder) → 유지.
+3. 회사명·실명·사내 서비스명은 패턴 검색으로 잡히지 않는다. 본문을 처음부터 다시 읽으며 S1 표를 항목별로 대조한다.
+4. S2로 보존하려는 repo 유래 경로·식별자는 공개 상태를 실측 확인한다 — 현재 worktree 존재는 근거가 아니다. 확인은 무상태 읽기만 사용한다 (`git fetch` 금지 — 모든 worktree가 공유하는 remote-tracking ref를 바꾸고, 공통 Git 디렉터리가 read-only인 환경에서는 실패한다):
+
+   ```bash
+   ORIGIN_URL=$(git remote get-url origin)
+   gh repo view "$ORIGIN_URL" --json nameWithOwner,visibility,defaultBranchRef  # 0) origin과 결합된 canonical·PUBLIC 확인 + 기본 브랜치 획득 (인자 생략 금지 — GH_REPO/set-default가 다른 repo를 조회할 수 있다)
+   BR=…   # 0)의 defaultBranchRef.name — main 하드코딩 금지
+   git ls-remote --exit-code origin "$BR"                     # 1) 원격 실측 (필수) — SHA를 아래와 대조
+   git rev-parse "origin/$BR"                                 # 2) 로컬 추적 ref SHA — 1)과 일치해야 유효
+   git cat-file -e "origin/$BR:$CHECK_PATH"                   # 3) 경로가 공개 기본 브랜치에 실재하는가
+   git grep -F -n -e "$IDENT" "origin/$BR" -- "$CHECK_PATH"   # 4) 값의 공개 이력 (고정 문자열 매치, 경로 실재와 별개)
+   ```
+
+   치환 값 안전 계약: `BR`·`CHECK_PATH`·`IDENT`는 반드시 변수에 담아 quoted expansion으로 argv 전달한다 — 명령 문자열 안 텍스트 치환·`eval`·재파싱 금지 (원격 metadata·초안 유래 값의 `$()`·따옴표가 셸에서 실행되는 injection 차단). 값이 영숫자·`-`·`_`·`.`·`/`·공백 밖의 문자를 포함하면 그 검사를 포기하고 S1로 처리한다.
+   `path:LINE`·`path:START-END` 인용은 3)·4) 검사 전에 trailing `:[0-9]+(-[0-9]+)?` suffix를 떼어낸 순수 경로로 검사한다 — Git은 suffix를 파일명 일부로 해석해 실재 경로도 부재로 오판한다 (게시 원문의 인용 표기는 그대로 보존).
+   0)에서 visibility가 PUBLIC이 아니거나 `nameWithOwner`가 의도한 대상이 아니면, 1)·2)의 SHA가 다르면, 로컬 `origin/$BR`은 공개 상태의 근거가 아니다. 확인 실패·미커밋·미푸시·비공개 브랜치에만 있는 값/경로는 모두 S1로 처리한다 (fail-closed).
+   게시 대상이 cwd origin과 다른 repo면(예: handoff에 외부 이슈 URL 지정) 검사 대상과 게시 대상을 결합해 판단한다: 이 검사(0~4)는 "cwd 유래 정보가 이미 인터넷에 공개돼 있는가"를 cwd origin 기준으로 판정하는 것이므로, cwd origin이 PUBLIC으로 확인될 때만 게시 대상과 무관하게 유효하다. cwd origin이 비공개·불명이면 게시 대상 repo가 무엇이든 S1이며, 게시 대상 repo 자체의 식별·공개 여부는 `gh repo view <owner/repo> --json nameWithOwner,visibility`로 별도 확인한다.
+
+## S4. 언어 유지 규칙
+
+사용자가 출력 언어를 명시적으로 지정했으면 그 지정이 우선한다 (예: 한국어 대화 중 "본문은 영어로 작성해줘"). 지정이 없으면, 한국어로 요청했거나 대화가 한국어로 진행 중일 때 issue/handoff 본문도 한국어로 유지한다. sanitization은 언어 전환 사유가 아니다.
+
+## 과잉/누락 검열 예시
+
+❌ 과잉 검열 (false positive — 유용한 맥락까지 삭제):
+
+- `tests/suites/lefthook.sh:42` 같은 repo-relative 경로를 "로컬 경로"로 오인해 삭제 → 후속 LLM이 대상 파일을 재탐색해야 함. S2에 따라 유지한다.
+- 검증 명령의 실패 출력 전체를 "로컬 상태"로 간주해 삭제 → 실패 증상은 재현의 핵심 근거. 민감값이 없으면 유지한다.
+
+❌ 누락 검열 (false negative — 민감정보 게시):
+
+- 에러 로그를 통째로 붙여넣으면서 홈 디렉토리 절대 경로(사용자명 포함)를 그대로 노출 → repo-relative 또는 `~/` 표기로 치환한다.
+- "회사 A 전용 커넥터에서 재현" 같은 내부 식별 표현을 그대로 게시 → 일반 명사 또는 공개 제품 예시로 대체한다.
+
+✅ GOOD: `"~/.claude/settings.json 심링크가 깨진 상태에서 modules/shared/programs/claude/default.nix:120의 배선이 적용되지 않음"` — 홈 경로는 `~/` 표기, repo 근거는 repo-relative로 보존.
+
+---
+
+## 관련 이슈
+
+- #405 — 본 체크리스트 도입 이슈 (sanitization 즉석 판단의 규칙화).
