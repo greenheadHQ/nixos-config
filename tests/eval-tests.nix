@@ -853,6 +853,7 @@ let
               && instance.spawn == "worktree"
               && instance.permissionMode == "bypassPermissions"
               && instance.capacity == null
+              && instance.path == "${hm.home.homeDirectory}/Workspace/nixos-config"
             );
         }
         {

@@ -1214,18 +1214,18 @@ EOF
       || fail "global action setter vocabulary differs from status plus diagnostic snapshots"
 
     global_doc="$(awk '
-      /^#### Top-level `status.action`$/ { inside = 1; next }
-      inside && /^#### / { exit }
+      /^### Top-level `status.action`$/ { inside = 1; next }
+      inside && /^### / { exit }
       inside { print }
     ' "$operator_doc")"
     diagnostic_doc="$(awk '
-      /^#### Status publication failure$/ { inside = 1; next }
-      inside && /^#### / { exit }
+      /^### Status publication failure$/ { inside = 1; next }
+      inside && /^### / { exit }
       inside { print }
     ' "$operator_doc")"
     instance_doc="$(awk '
-      /^#### Per-instance `status.instances\[\]\.action`$/ { inside = 1; next }
-      inside && /^#### / { exit }
+      /^### Per-instance `status.instances\[\]\.action`$/ { inside = 1; next }
+      inside && /^### / { exit }
       inside { print }
     ' "$operator_doc")"
 

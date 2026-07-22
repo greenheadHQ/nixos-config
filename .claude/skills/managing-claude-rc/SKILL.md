@@ -334,7 +334,7 @@ CLAUDE_RC_DRIFT_APPROVAL_JSON="$approval" \
   claude-rc-maint ensure
 ```
 
-#### Top-level `status.action`
+### Top-level `status.action`
 
 `none`과 `running`은 실행 중에만 쓰는 internal 값이며 final status vocabulary에 포함하지 않는다.
 
@@ -352,14 +352,14 @@ CLAUDE_RC_DRIFT_APPROVAL_JSON="$approval" \
 | `completed` | 모든 instance 처리가 성공함. 각 `instances[].action`에서 세부 결과 확인 |
 | `failed` | 하나 이상의 instance 처리가 실패함. 각 failure action과 exact lock/process identity 확인 |
 
-#### Status publication failure
+### Status publication failure
 
 `status-write-failed`는 `status.json.action` 값이 아니다. final status 게시 자체가 실패한 뒤에만 정해지는
 진단값이므로 새 JSON에 기록할 수 없다. 이 경우 command는 nonzero로 끝나고 stderr·notification에는
 `status-write-failed`가 남으며, 기존 `status.json`은 없거나 stale일 수 있다. state directory
 mode·node type·filesystem 상태를 확인하고 command exit와 log를 status 파일보다 우선한다.
 
-#### Per-instance `status.instances[].action`
+### Per-instance `status.instances[].action`
 
 | instance action | 의미 / 조치 |
 |-----------------|-------------|

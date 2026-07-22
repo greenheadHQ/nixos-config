@@ -411,9 +411,9 @@ EOF
   chmod +x "$fake_age"
   printf '%s\n' "$old_ciphertext" > "$output"
   chmod 0644 "$output"
-  old_mode="$(stat -c '%a' "$output" 2>/dev/null || stat -f '%Lp' "$output")"
-  old_uid="$(stat -c '%u' "$output" 2>/dev/null || stat -f '%u' "$output")"
-  old_gid="$(stat -c '%g' "$output" 2>/dev/null || stat -f '%g' "$output")"
+  old_mode="$(stat -c '%a' "$output" 2>/dev/null || /usr/bin/stat -f '%Lp' "$output")"
+  old_uid="$(stat -c '%u' "$output" 2>/dev/null || /usr/bin/stat -f '%u' "$output")"
+  old_gid="$(stat -c '%g' "$output" 2>/dev/null || /usr/bin/stat -f '%g' "$output")"
 
   if builtin printf '%s' "$plaintext" | "$helper" "$output" "$fake_age" fail-after-write; then
     fail "failing age command unexpectedly replaced ciphertext"
@@ -429,11 +429,11 @@ EOF
   observed="$(cat "$output")"
   [ "$observed" = "encrypted:$plaintext" ] \
     || fail "successful age command did not atomically replace ciphertext"
-  [ "$(stat -c '%a' "$output" 2>/dev/null || stat -f '%Lp' "$output")" = "$old_mode" ] \
+  [ "$(stat -c '%a' "$output" 2>/dev/null || /usr/bin/stat -f '%Lp' "$output")" = "$old_mode" ] \
     || fail "atomic replacement changed an existing output mode"
-  [ "$(stat -c '%u' "$output" 2>/dev/null || stat -f '%u' "$output")" = "$old_uid" ] \
+  [ "$(stat -c '%u' "$output" 2>/dev/null || /usr/bin/stat -f '%u' "$output")" = "$old_uid" ] \
     || fail "atomic replacement changed an existing output owner"
-  [ "$(stat -c '%g' "$output" 2>/dev/null || stat -f '%g' "$output")" = "$old_gid" ] \
+  [ "$(stat -c '%g' "$output" 2>/dev/null || /usr/bin/stat -f '%g' "$output")" = "$old_gid" ] \
     || fail "atomic replacement changed an existing output group"
   if find "$sandbox" -maxdepth 1 -name '.shottr-license.age.tmp.*' -print -quit | grep -q .; then
     fail "successful age command left a temporary file"
@@ -445,9 +445,9 @@ EOF
   printf '%s\n' "$old_ciphertext" > "$target"
   chmod 0640 "$target"
   ln -s 'target/shottr-license.age' "$target_link"
-  target_mode="$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")"
-  target_uid="$(stat -c '%u' "$target" 2>/dev/null || stat -f '%u' "$target")"
-  target_gid="$(stat -c '%g' "$target" 2>/dev/null || stat -f '%g' "$target")"
+  target_mode="$(stat -c '%a' "$target" 2>/dev/null || /usr/bin/stat -f '%Lp' "$target")"
+  target_uid="$(stat -c '%u' "$target" 2>/dev/null || /usr/bin/stat -f '%u' "$target")"
+  target_gid="$(stat -c '%g' "$target" 2>/dev/null || /usr/bin/stat -f '%g' "$target")"
 
   builtin printf '%s' "$plaintext" | "$helper" "$target_link" "$fake_age" success
   [ -L "$target_link" ] || fail "atomic replacement replaced the output symlink"
@@ -455,11 +455,11 @@ EOF
     || fail "atomic replacement changed the output symlink target"
   [ "$(cat "$target")" = "encrypted:$plaintext" ] \
     || fail "atomic replacement did not update the symlink target"
-  [ "$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")" = "$target_mode" ] \
+  [ "$(stat -c '%a' "$target" 2>/dev/null || /usr/bin/stat -f '%Lp' "$target")" = "$target_mode" ] \
     || fail "symlink target replacement changed mode"
-  [ "$(stat -c '%u' "$target" 2>/dev/null || stat -f '%u' "$target")" = "$target_uid" ] \
+  [ "$(stat -c '%u' "$target" 2>/dev/null || /usr/bin/stat -f '%u' "$target")" = "$target_uid" ] \
     || fail "symlink target replacement changed owner"
-  [ "$(stat -c '%g' "$target" 2>/dev/null || stat -f '%g' "$target")" = "$target_gid" ] \
+  [ "$(stat -c '%g' "$target" 2>/dev/null || /usr/bin/stat -f '%g' "$target")" = "$target_gid" ] \
     || fail "symlink target replacement changed group"
 
   top_link="$sandbox/shottr-license-top.age"
@@ -494,7 +494,7 @@ EOF
   [ "$(cat "$sandbox/target/new-shottr-license.age")" = "encrypted:$plaintext" ] \
     || fail "atomic replacement did not create the dangling symlink target"
   [ "$(stat -c '%a' "$sandbox/target/new-shottr-license.age" 2>/dev/null \
-      || stat -f '%Lp' "$sandbox/target/new-shottr-license.age")" = "600" ] \
+      || /usr/bin/stat -f '%Lp' "$sandbox/target/new-shottr-license.age")" = "600" ] \
     || fail "new dangling symlink target did not retain restrictive mode"
 
   loop_a="$sandbox/loop-a.age"
