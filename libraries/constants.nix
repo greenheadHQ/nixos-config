@@ -74,7 +74,7 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
-  # 디바이스별 SSH 공개키 — MiniPC authorized_keys 등록용
+  # SSH 접속 클라이언트 디바이스 공개키 — 대상 호스트 authorized_keys 등록용
   # 1Password SSH vault inventory(Automation에서 분리)와 일관. agenix recipient(sshKeys)와는 분리.
   # private 보관: macSsh = 1Password vault(SSH agent), emergency = ~/.ssh + 1Password backup,
   #   mobile = Termius keychain (iPhone·iPad 공유). Termius 계정 동기화가 host의 key 지정과

@@ -106,11 +106,11 @@ in
     home = "/Users/${username}";
     # SSH 원격 접속 허용 키
     openssh.authorizedKeys.keys = [
-      constants.sshKeys.macbook # Termius 등 외부 기기에서 접속
+      constants.sshKeys.macbook # MacBook 사용자 키
     ]
     ++ lib.optionals (hostType == "personal") [
-      # MiniPC는 Tailscale IP 전용 — work Mac에는 불필요
-      constants.sshKeys.minipc
+      constants.sshDeviceKeys.mobile # iPhone·iPad Termius 공유 키 — personal Mac 전용
+      constants.sshKeys.minipc # MiniPC 사용자 키 — personal Mac 전용
     ];
   };
 

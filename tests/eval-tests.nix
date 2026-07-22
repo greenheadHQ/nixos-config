@@ -20,8 +20,10 @@ let
   # 범위: evaluation-safe value-level 설정만 검증.
   # 제외: postActivation, symbolic hotkeys, GUI 세션/WindowServer 의존 동작.
   darwinCfgs = flake.darwinConfigurations;
-  expectedDarwinHosts = [
+  personalDarwinHosts = [
     "greenhead-MacBookPro"
+  ];
+  expectedDarwinHosts = personalDarwinHosts ++ [
     "work-MacBookPro"
   ];
   claudexTargetHosts = [
@@ -732,6 +734,23 @@ let
                 && nixpkgsLib.hasInfix "IdentityAgent=none" zshInit
               else
                 true
+            );
+        }
+        {
+          # Termius mobile-ssh는 개인 Mac 원격 접속용 신원이다. work Mac까지
+          # 허용하면 공유 모바일 키의 blast radius가 업무 호스트로 확장되므로,
+          # personal에는 정확히 1개·work에는 0개인 양방향 계약을 최종 평가값에서 검증한다.
+          name = "Test D23 ${hostName}: mobile-ssh authorized key는 personal Mac에만 정확히 1개 있어야 함";
+          cond =
+            hasHost
+            && (
+              let
+                authorizedKeys = cfg.users.users.${cfg.system.primaryUser}.openssh.authorizedKeys.keys;
+                mobileKeyCount = builtins.length (
+                  builtins.filter (key: key == constants.sshDeviceKeys.mobile) authorizedKeys
+                );
+              in
+              if builtins.elem hostName personalDarwinHosts then mobileKeyCount == 1 else mobileKeyCount == 0
             );
         }
       ]
