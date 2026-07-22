@@ -231,6 +231,9 @@ repo_scripts=(
   # hook 설정과 allowlist만 staged되고 installer 변경이 빠지면 그 계약이 조용히 깨지므로,
   # PR #750의 helper script drift 경계를 installer까지 넓힌다.
   "scripts/ai/install-lefthook-hooks.sh"
+  # commit-msg hook의 pinning command가 실행하는 스크립트. commit-msg 단계에는 이 guard가
+  # 없으므로, pre-commit 시점의 이 drift check가 commit-msg 실행 계약까지 함께 보호한다.
+  "scripts/ai/commit-msg-pinning.sh"
 )
 
 for path in "${repo_scripts[@]}"; do

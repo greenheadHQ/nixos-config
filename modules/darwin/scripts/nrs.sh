@@ -259,8 +259,8 @@ main() {
     worktree_symlink_guard
 
     # Critical section: cask conflict resolve + cleanup + restore + switch를 serialize
-    # DA Fix #3: cleanup이 lock 밖에 있으면 다른 프로세스의 switch와 겹칠 수 있음
-    # CodeRabbit: preflight_cask_conflict_check의 brew uninstall도 lock 안에서 실행
+    # cleanup이 lock 밖에 있으면 다른 프로세스의 switch와 겹칠 수 있으므로 lock 안에서 실행하고,
+    # preflight_cask_conflict_check의 brew uninstall도 같은 이유로 lock 안에 둔다.
     acquire_rebuild_lock
     preflight_cask_conflict_check
     cleanup_launchd_agents
