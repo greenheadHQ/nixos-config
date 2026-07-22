@@ -42,7 +42,7 @@ anki-study/
 
 1. [`GUIDE.md`](GUIDE.md) 를 LLM에게 입력으로 제공
 2. lapses 상위 카드 1-5장을 골라 "이 카드들로 학습 페이지 만들어줘" 라고 부탁
-3. minipc Tailscale 내부에서 호스팅된 페이지로 학습 + AI 채점
+3. (중단됨) minipc Tailscale 내부 호스팅 페이지 학습 + AI 채점 — `server.py` 부재로 이 흐름은 현재 동작하지 않는다 (GUIDE §5의 중단 기록·재개 선행조건 참조)
 
 세션 종료 후:
 

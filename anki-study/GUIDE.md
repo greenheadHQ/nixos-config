@@ -180,7 +180,7 @@ async function submitAnswers() {
 
 다음은 awesome-anki 1.0 함정의 재발 위험이 큰 것들. dogfooding 결과 *불편/욕구*가 명확해지기 전에는 손대지 마라:
 
-> ⚠️ AnkiConnect·homeserver 관련 항목은 PR #863(2026-05-30)로 self-host 인프라가 전량 철거되어, 착수 시 모듈·시크릿·vhost 재구축이 전제된다.
+> ⚠️ AnkiConnect·homeserver 관련 항목은 PR #863(2026-05-30)로 self-host 인프라 구성(서비스·모듈·시크릿·vhost)이 제거되어, 착수 시 재구축이 전제된다. 단 minipc `/var/lib/private/anki-sync-server`의 실데이터(203MB)는 처분 보류 상태다 — plans/README.md 026 행의 Part C STOP 기록 참조.
 
 - 공통 HTML 셸 + 카드별 JSON 스키마 (템플릿화)
 - 호스팅 영구화 (`homeserver.ankiStudy.*` 모듈, Caddy 리버스 프록시)
