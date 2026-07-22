@@ -1,6 +1,6 @@
 # tests/suites/test-runtime-profile.sh — pre-push runtime profile 계약 테스트 (sourced)
 # shellcheck shell=bash
-# shellcheck disable=SC2154  # REPO_ROOT는 aggregator가 제공한다.
+# shellcheck disable=SC2016,SC2153,SC2154  # aggregator 변수와 inner bash literal.
 
 # production command contract를 fake runtime fixture도 그대로 사용한다.
 # shellcheck disable=SC1091
@@ -19,6 +19,8 @@ _test_runtime_profile_make_repo() {
   printf '{"version": 7}\n' > "$dir/flake.lock"
   printf '{ outputs = _: { }; }\n' > "$dir/flake.nix"
   printf '{ pkgs }: { pythonWithTomlkit = pkgs.python3; }\n' > "$dir/libraries/python-runtimes.nix"
+  printf '{ pkgs }: if pkgs.stdenv.isLinux then pkgs.util-linux else pkgs.flock\n' \
+    > "$dir/libraries/claude-rc-flock.nix"
 }
 
 _test_runtime_profile_make_runtime() {
@@ -305,6 +307,7 @@ test_tomlkit_bootstrap_uses_validated_snapshot_source_profile() (
   cp "$source/flake.lock" "$snapshot/flake.lock"
   cp "$source/flake.nix" "$snapshot/flake.nix"
   cp "$source/libraries/python-runtimes.nix" "$snapshot/libraries/python-runtimes.nix"
+  cp "$source/libraries/claude-rc-flock.nix" "$snapshot/libraries/claude-rc-flock.nix"
   : > "$snapshot/consumer.sh"
   : > "$log"
   PATH="$fake_bin:$PATH" FAKE_RUNTIME="$runtime" FAKE_NIX_LOG="$log" bash "$script" prepare "$source"
@@ -336,7 +339,11 @@ test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile() (
     bash "$script" prepare "$source" || fail "failed to prepare source profile for mismatch fixture"
   test_runtime_profile_is_current "$source" || fail "mismatch fixture source profile is not current"
 
-  for changed_path in flake.lock flake.nix libraries/python-runtimes.nix; do
+  for changed_path in \
+    flake.lock \
+    flake.nix \
+    libraries/python-runtimes.nix \
+    libraries/claude-rc-flock.nix; do
     rm -rf "$snapshot"
     mkdir -p "$snapshot/scripts/ai/lib" "$snapshot/libraries"
     cp "$REPO_ROOT/scripts/ai/test-runtime-profile.sh" "$snapshot/scripts/ai/test-runtime-profile.sh"
@@ -344,6 +351,7 @@ test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile() (
     cp "$source/flake.lock" "$snapshot/flake.lock"
     cp "$source/flake.nix" "$snapshot/flake.nix"
     cp "$source/libraries/python-runtimes.nix" "$snapshot/libraries/python-runtimes.nix"
+    cp "$source/libraries/claude-rc-flock.nix" "$snapshot/libraries/claude-rc-flock.nix"
     printf ' \n' >> "$snapshot/$changed_path"
     : > "$snapshot/consumer.sh"
     : > "$log"
@@ -355,6 +363,8 @@ test_tomlkit_bootstrap_rejects_mismatched_snapshot_source_profile() (
       _ "$snapshot" 2>&1)" || fail "mismatched staged input did not fall back to snapshot runtime: $changed_path"
     assert_contains "$output" "staged runtime inputs differ; using snapshot flake $snapshot"
     assert_contains "$output" "nix shell --inputs-from $snapshot"
+    assert_contains "$output" "nixpkgs#stdenv.cc"
+    assert_contains "$output" "$snapshot#claudeRcFlock"
     [ "$(cat "$log")" = "shell" ] || fail "mismatched staged input reused source profile: $changed_path"
   done
 )

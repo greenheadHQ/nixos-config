@@ -3,7 +3,7 @@
 #
 # pre-push/통합 테스트가 공유하는 hermetic runtime GC-root 관리 모듈.
 #
-# `prepare`는 flake.lock + runtime 정의 content hash와 profile 검증이 모두 current일 때
+# `prepare`는 flake.lock + runtime/플랫폼 flock 정의 content hash와 profile 검증이 모두 current일 때
 # 재사용하고, stamp/profile 부재·불일치·검증 실패 시 `.#prePushRuntime`을 다시 빌드한다.
 # out-link는 worktree의 .direnv 아래에 두어 worktree 수명과 함께 정리하고, Git 공용
 # 디렉토리 lock으로 여러 worktree/direnv의 동시 Nix eval을 직렬화한다.
@@ -14,16 +14,29 @@
 
 _TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS=(
   python3
+  cc
   touch
   find
   lsof
+  flock
   lefthook
   bats
   pytest
 )
 
+_TEST_RUNTIME_PROFILE_FINGERPRINT_INPUTS=(
+  flake.lock
+  flake.nix
+  libraries/python-runtimes.nix
+  libraries/claude-rc-flock.nix
+)
+
 test_runtime_profile_required_commands() {
   printf '%s\n' "${_TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS[@]}"
+}
+
+test_runtime_profile_fingerprint_inputs() {
+  printf '%s\n' "${_TEST_RUNTIME_PROFILE_FINGERPRINT_INPUTS[@]}"
 }
 
 test_runtime_profile_path() {
@@ -37,14 +50,14 @@ test_runtime_profile_stamp_path() {
 test_runtime_profile_fingerprint() {
   local repo_root="$1"
   local path path_hash hashes=""
-  for path in flake.lock flake.nix libraries/python-runtimes.nix; do
+  while IFS= read -r path; do
     [ -f "$repo_root/$path" ] || {
       echo "test-runtime-profile: stamp input missing: $repo_root/$path" >&2
       return 1
     }
     path_hash="$(git -C "$repo_root" hash-object -- "$path")" || return 1
     hashes="${hashes}${path_hash}"$'\n'
-  done
+  done < <(test_runtime_profile_fingerprint_inputs)
   printf '%s' "$hashes" | git -C "$repo_root" hash-object --stdin
 }
 
