@@ -64,8 +64,9 @@ in
       StartInterval = 60;
       RunAtLoad = true;
       # launchd는 job 종료 시 같은 process group의 잔여 프로세스를 정리한다.
-      # maint가 double-fork로 headless 서버를 re-parent해도 process group은 유지될 수
-      # 있으므로, ensure가 방금 띄운 서버를 같이 죽이지 않게 한다.
+      # maint가 native launch-group supervisor(setpgid(0,0)로 자기 그룹 분리)로 headless
+      # 서버를 띄우므로 서버는 별도 process group이 되지만, ensure가 방금 띄운 서버를
+      # 같이 죽이지 않도록 안전하게 그룹 정리를 포기한다.
       AbandonProcessGroup = true;
       EnvironmentVariables = {
         HOME = homeDir;

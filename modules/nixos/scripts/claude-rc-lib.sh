@@ -41,6 +41,8 @@ STARTED_IDENTITY_POLL_ATTEMPTS="${STARTED_IDENTITY_POLL_ATTEMPTS:-100}"
 STARTED_IDENTITY_POLL_INTERVAL_SECONDS="${STARTED_IDENTITY_POLL_INTERVAL_SECONDS:-0.1}"
 STOPPED_LOCK_POLL_ATTEMPTS="${STOPPED_LOCK_POLL_ATTEMPTS:-30}"
 STOPPED_LOCK_POLL_INTERVAL_SECONDS="${STOPPED_LOCK_POLL_INTERVAL_SECONDS:-0.1}"
+STOPPED_SERVER_POLL_ATTEMPTS="${STOPPED_SERVER_POLL_ATTEMPTS:-10}"
+STOPPED_SERVER_POLL_INTERVAL_SECONDS="${STOPPED_SERVER_POLL_INTERVAL_SECONDS:-1}"
 TSV_NULL='__CLAUDE_RC_NULL__'
 
 iso_timestamp() {
@@ -1085,12 +1087,12 @@ handoff_launch_guard() {
 }
 
 wait_until_server_stops() {
-    local pid="$1"
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
+    local pid="$1" _
+    for ((_ = 0; _ < STOPPED_SERVER_POLL_ATTEMPTS; _++)); do
         if ! kill -0 "$pid" 2>/dev/null || pid_is_zombie_process "$pid"; then
             return 0
         fi
-        sleep 1
+        sleep "$STOPPED_SERVER_POLL_INTERVAL_SECONDS"
     done
     return 1
 }

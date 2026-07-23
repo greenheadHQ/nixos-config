@@ -45,9 +45,16 @@ container preferences의 `kc-license`와 `kc-vault`를 pre-fill합니다. 전용
   action-time confirmation을 받고, 확인 뒤 아래처럼 현재 Shottr PID만 종료한다.
 
 ```bash
-/usr/bin/pgrep -x Shottr | while IFS= read -r pid; do
-  /bin/kill -9 "$pid"
-done
+# fail-closed: 정확히 1개 PID일 때만 종료한다. 0개면 종료할 것이 없고, 2개 이상이면
+# 어느 것이 "현재 Shottr"인지 확정할 수 없으므로 중단하고 수동 확인에 맡긴다.
+shottr_pids=$(/usr/bin/pgrep -x Shottr) || true
+shottr_count=$(printf '%s\n' "$shottr_pids" | grep -c .)
+if [ "$shottr_count" -eq 1 ]; then
+  /bin/kill -9 "$shottr_pids"
+elif [ "$shottr_count" -gt 1 ]; then
+  printf 'Shottr PID가 %s개 관측됨 — 단일 확정 불가로 종료 중단. 수동 확인 필요.\n' \
+    "$shottr_count" >&2
+fi
 if timeout -k 5s 30s /usr/bin/defaults read cc.ffitch.shottr kc-license \
   >/dev/null 2>&1; then
   printf 'kc-license: present\n'

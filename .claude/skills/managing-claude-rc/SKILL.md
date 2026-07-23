@@ -232,8 +232,12 @@ no-grant matrix, 적용·rollback은 단일 운영 SoT인
 - 서버는 네트워크 약 10분 단절 시 자기 종료할 수 있다. macOS는 login 직후 transient
   종료도 실제 관측됐으므로 1분 ensure가 부활을 담당한다. 성공한 ensure 결과는
   `status.json` top-level `.action == "completed"`와 대상 `.instances[]`의
-  `.action == "started"` 또는 `"healthy"`, `.processState == "running"`, non-empty
-  `.runningVersion`을 함께 확인한다. `.observedVersion`은 마지막으로 식별한 버전이라
+  성공 action, `.processState == "running"`, non-empty `.runningVersion`을 함께
+  확인한다. 성공 action은 정책별로 다르다: 정상 경로는 `"started"`/`"healthy"`,
+  NixOS의 자동 drift 재시작은 `"restarted-version-drift"`, macOS의 의도적 보류는
+  `"deferred-restart-confirmation"`/`"deferred-active-sessions"`/`"deferred-unknown-activity"`로
+  기록된다 (실패만 `"failed"`). `started`/`healthy`만 성공으로 보면 drift 재시작과
+  defer를 실패로 오판한다. `.observedVersion`은 마지막으로 식별한 버전이라
   이미 멈춘 mismatch process에도 남을 수 있다. `.runningVersion`은 각 instance 처리 시점에
   live identity를 검증했을 때만 채우지만, top-level timestamp를 쓰기 직전에 모든 instance를
   다시 검증하지는 않는다. 따라서 현재 생존 여부는 별도로 `claude-rc ls`의 `RUNNING=yes`와
