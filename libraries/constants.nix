@@ -162,6 +162,8 @@
     paths = {
       # Shottr/FolderActions 공통 저장 경로 (HOME 상대경로)
       shottrDefaultFolderRelative = "FolderActions/upload-immich";
+      # Shottr sandbox container의 CFPreferences target (HOME 상대경로, .plist 확장자 제외)
+      shottrPreferencesTargetRelative = "Library/Containers/cc.ffitch.shottr/Data/Library/Preferences/cc.ffitch.shottr";
     };
   };
 

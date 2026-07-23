@@ -789,6 +789,10 @@ let
           name = "Test D23b ${hostName}: Ghostty.app cask가 정확히 한 번 선언되어야 함";
           cond = hasHost && ghosttyCaskCount cfg == 1;
         }
+        {
+          name = "Test D27 ${hostName}: Shottr의 선언된 activation entries가 모두 존재해야 함";
+          cond = hasHost && hasShottrActivationEntries (shottrActivation cfg);
+        }
       ]
     ) expectedDarwinHosts
   );

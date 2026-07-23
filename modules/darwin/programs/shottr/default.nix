@@ -12,6 +12,7 @@
 {
   config,
   lib,
+  pkgs,
   constants,
   ...
 }:
@@ -20,14 +21,17 @@ let
   homeDir = config.home.homeDirectory;
   shottrDomain = "cc.ffitch.shottr";
   shottrDefaultFolder = "${homeDir}/${constants.macos.paths.shottrDefaultFolderRelative}";
+  shottrPreferencesTarget = "${homeDir}/${constants.macos.paths.shottrPreferencesTargetRelative}";
   shottrLicensePath = "${config.xdg.configHome}/shottr/license";
-  shottrDefaultsWriteHelper = ''
-    _shottr_defaults_write() {
-      if ! /usr/bin/defaults write "$@" 2>/dev/null; then
-        echo "Warning: defaults write $2 failed (sandbox restriction?). Skipping."
-      fi
-    }
+  # `defaults`가 sandbox app container를 읽고 쓸 때 responsible app의 AppData TCC prompt가
+  # 발생할 수 있다. 원격 nrs가 GUI 응답을 기다리며 멈추지 않도록 각 호출을 bounded하게 하고,
+  # 한 번 timeout되면 같은 activation의 나머지 Shottr write를 건너뛴다.
+  shottrDefaultsTimeoutBin = "${pkgs.coreutils}/bin/timeout";
+  shottrDefaultsHelper = ''
+    ${builtins.readFile ../../../../scripts/secrets/shottr-deadlines.sh}
+    ${builtins.readFile ./defaults-helper.sh}
   '';
+  shottrCfPreferencesWriter = import ./cfpreferences-writer-package.nix { inherit pkgs; };
 in
 {
   # 경로 가드: 폴더/북마크 이슈를 조기에 알림
@@ -37,7 +41,10 @@ in
       echo "FolderActions activation should create this path."
     fi
 
-    current_folder="$(/usr/bin/defaults read "${shottrDomain}" defaultFolder 2>/dev/null || true)"
+    ${shottrDefaultsHelper}
+    SHOTTR_DEFAULTS_WRITES_BLOCKED=0
+    shottr_defaults_read current_folder \
+      "${shottrDefaultsTimeoutBin}" /usr/bin/defaults "${shottrDomain}" defaultFolder
     if [ -n "$current_folder" ] && [ "$current_folder" != "${shottrDefaultFolder}" ]; then
       echo "Warning: Shottr current folder differs from declared folder."
       echo "  current: $current_folder"
@@ -54,23 +61,23 @@ in
   # Carbon key codes:
   #   1=18(0x12) 2=19(0x13) 3=20(0x14) O=31(0x1F)
   home.activation.applyShottrCoreSettings = lib.hm.dag.entryAfter [ "checkShottrFolderAndWarn" ] ''
-    ${shottrDefaultsWriteHelper}
-    _shottr_defaults_write "${shottrDomain}" defaultFolder "${shottrDefaultFolder}"
-    _shottr_defaults_write "${shottrDomain}" saveFormat "Auto"
-    _shottr_defaults_write "${shottrDomain}" KeyboardShortcuts_fullscreen -string '{"carbonModifiers":768,"carbonKeyCode":18}'   # ⇧⌘1
-    _shottr_defaults_write "${shottrDomain}" KeyboardShortcuts_area -string '{"carbonKeyCode":20,"carbonModifiers":768}'          # ⇧⌘3
-    _shottr_defaults_write "${shottrDomain}" KeyboardShortcuts_scrolling -string '{"carbonModifiers":768,"carbonKeyCode":19}'     # ⇧⌘2
-    _shottr_defaults_write "${shottrDomain}" KeyboardShortcuts_ocr -string '{"carbonModifiers":6400,"carbonKeyCode":31}'          # ⌃⌥⌘O
+    ${shottrDefaultsHelper}
+    shottr_defaults_write "${shottrDefaultsTimeoutBin}" /usr/bin/defaults "${shottrDomain}" defaultFolder "${shottrDefaultFolder}"
+    shottr_defaults_write "${shottrDefaultsTimeoutBin}" /usr/bin/defaults "${shottrDomain}" saveFormat "Auto"
+    shottr_defaults_write "${shottrDefaultsTimeoutBin}" /usr/bin/defaults "${shottrDomain}" KeyboardShortcuts_fullscreen -string '{"carbonModifiers":768,"carbonKeyCode":18}'   # ⇧⌘1
+    shottr_defaults_write "${shottrDefaultsTimeoutBin}" /usr/bin/defaults "${shottrDomain}" KeyboardShortcuts_area -string '{"carbonKeyCode":20,"carbonModifiers":768}'          # ⇧⌘3
+    shottr_defaults_write "${shottrDefaultsTimeoutBin}" /usr/bin/defaults "${shottrDomain}" KeyboardShortcuts_scrolling -string '{"carbonModifiers":768,"carbonKeyCode":19}'     # ⇧⌘2
+    shottr_defaults_write "${shottrDefaultsTimeoutBin}" /usr/bin/defaults "${shottrDomain}" KeyboardShortcuts_ocr -string '{"carbonModifiers":6400,"carbonKeyCode":31}'          # ⌃⌥⌘O
 
     # Manual Scrolling Capture 활성화
     # Auto Scroll Capture는 Terminal, VS Code 등 비표준 스크롤 앱에서 화면이 짤림.
     # Manual 모드는 사용자가 직접 스크롤하며 캡처하므로 이런 앱에서도 정상 동작.
     # ref: https://shottr.cc/kb/faq
     # ref: https://hurricane-flower-fdf.notion.site/Manual-Scrolling-Capture-120d943b739b80bf868dd1009eeadc17
-    _shottr_defaults_write "${shottrDomain}" scrollingManualEnabled -bool true
+    shottr_defaults_write "${shottrDefaultsTimeoutBin}" /usr/bin/defaults "${shottrDomain}" scrollingManualEnabled -bool true
   '';
 
-  # 라이센스 pre-fill (agenix secret → defaults write)
+  # 라이센스 pre-fill (agenix secret → container CFPreferences)
   # Keychain 없는 새 맥북에서 Activate 버튼 1회 클릭만으로 활성화 가능
   #
   # macOS에서 agenix는 launchd agent(activate-agenix, RunAtLoad)로 시크릿을 복호화한다.
@@ -79,7 +86,7 @@ in
   home.activation.applyShottrLicenseFromSecret =
     lib.hm.dag.entryAfter [ "applyShottrCoreSettings" "setupLaunchAgents" ]
       ''
-        ${shottrDefaultsWriteHelper}
+        ${shottrDefaultsHelper}
         _waited=0
         while [ ! -f "${shottrLicensePath}" ] && [ "$_waited" -lt 5 ]; do
           sleep 1
@@ -89,15 +96,36 @@ in
         if [ ! -f "${shottrLicensePath}" ]; then
           echo "Note: Shottr license secret not yet available. License pre-fill skipped."
         else
-          kc_license="$(sed -n 's/^KC_LICENSE=//p' "${shottrLicensePath}" | tail -n 1 | tr -d '\r')"
-          kc_vault="$(sed -n 's/^KC_VAULT=//p' "${shottrLicensePath}" | tail -n 1 | tr -d '\r')"
+          # Hostile/inherited activation environments may enable allexport or
+          # pre-export either spelling. Scrub the parent first, then keep the
+          # entire secret read/write interval in a subshell with allexport off.
+          unset kc_license kc_vault KC_LICENSE KC_VAULT
+          (
+            set +x
+            set +a
+            unset kc_license kc_vault KC_LICENSE KC_VAULT
+            kc_license="$(sed -n 's/^KC_LICENSE=//p' "${shottrLicensePath}" | tail -n 1 | tr -d '\r')"
+            kc_vault="$(sed -n 's/^KC_VAULT=//p' "${shottrLicensePath}" | tail -n 1 | tr -d '\r')"
+            export -n kc_license kc_vault
 
-          if [ -n "$kc_license" ]; then
-            _shottr_defaults_write "${shottrDomain}" kc-license -string "$kc_license"
-          fi
-          if [ -n "$kc_vault" ]; then
-            _shottr_defaults_write "${shottrDomain}" kc-vault -string "$kc_vault"
-          fi
+            if [ -n "$kc_license" ]; then
+              shottr_defaults_write_stdin \
+                "${shottrDefaultsTimeoutBin}" \
+                "${shottrCfPreferencesWriter}/bin/shottr-cfpreferences-writer" \
+                "${shottrPreferencesTarget}" \
+                kc-license \
+                < <(builtin printf '%s' "$kc_license")
+            fi
+            if [ -n "$kc_vault" ]; then
+              shottr_defaults_write_stdin \
+                "${shottrDefaultsTimeoutBin}" \
+                "${shottrCfPreferencesWriter}/bin/shottr-cfpreferences-writer" \
+                "${shottrPreferencesTarget}" \
+                kc-vault \
+                < <(builtin printf '%s' "$kc_vault")
+            fi
+            unset kc_license kc_vault KC_LICENSE KC_VAULT
+          )
         fi
       '';
 

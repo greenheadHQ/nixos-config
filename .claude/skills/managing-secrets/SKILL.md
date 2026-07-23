@@ -117,7 +117,8 @@ agenix `.age` 18개(디스크 실측) + 1Password 항목(github-pat, SSH device 
 
 ### Shottr 라이센스 pre-fill (agenix)
 
-Shottr 라이센스 키를 agenix로 암호화하여 `nrs` 실행 시 `defaults write`로 pre-fill합니다.
+Shottr 라이센스 키를 agenix로 암호화하여 `nrs` 실행 시 전용 CFPreferences writer의 stdin으로
+pre-fill합니다.
 
 Secret 파일 형식:
 ```
@@ -127,19 +128,25 @@ KC_VAULT=<base64 encoded vault>
 
 `.age` 파일 생성/갱신:
 ```bash
-printf 'KC_LICENSE=%s\nKC_VAULT=%s\n' \
-  "$(defaults read cc.ffitch.shottr kc-license)" \
-  "$(defaults read cc.ffitch.shottr kc-vault)" | \
+./scripts/secrets/refresh-shottr-license.sh secrets/shottr-license.age \
   nix shell nixpkgs#age -c age \
-    -r "ssh-ed25519 <macbook-pubkey>" \
-    -r "ssh-ed25519 <minipc-pubkey>" \
-    -o secrets/shottr-license.age
+  -r "ssh-ed25519 <macbook-pubkey>" \
+  -r "ssh-ed25519 <minipc-pubkey>"
 ```
 
-HM activation이 `~/.config/shottr/license`에서 값을 읽어 `defaults write cc.ffitch.shottr kc-license -string ...`로 주입합니다.
+두 read 중 하나라도 실패하거나 30초 deadline을 넘으면 age 출력을 시작하지 않는 fail-closed
+절차다. tracked refresh helper는 첫 명령에서 inherited `xtrace`를 끄고, inherited `allexport`와
+기존 export 속성을 제거하므로 평문은 터미널 trace나 timeout/helper/age의 child environment로
+전달되지 않는다. atomic helper는 stdin을 age에 전달하고 같은 디렉터리의 mode `0600` 임시 파일에
+성공한 뒤에만 원자적으로 교체하므로 실패 시 기존
+암호문을 보존한다. 실제 값은 터미널에 출력하지 않는다. HM activation은 `~/.config/shottr/license`에서 값을
+읽고, 전용 CFPreferences writer의 stdin으로만 전달한다. 라이센스 값은 activation 프로세스의
+명령행 인자나 timeout/writer child environment에 포함되지 않는다. AppData prompt로 timeout되면
+후속 Shottr write만 생략하고 나머지 activation을 계속한다.
 새 맥북에서 Shottr 실행 후 Activate 버튼 1회 클릭으로 활성화됩니다.
 
-> Shottr 크레덴셜 구조 상세는 managing-macos 스킬의 "Shottr 크레덴셜 관리 (상세)" 섹션 참조.
+> Shottr 크레덴셜 구조, deadline, action-time 앱 종료 규칙은
+> [managing-macos의 Shottr 상세 runbook](../managing-macos/references/shottr-credentials.md)을 따른다.
 
 ## 자주 발생하는 문제
 
