@@ -46,12 +46,22 @@ kc_license="$("$timeout_bin" -k "$SHOTTR_DEFAULTS_KILL_AFTER" "$SHOTTR_DEFAULTS_
     exit 1
 }
 export -n kc_license
+# defaults read 는 키가 없으면 non-zero 지만, 키가 있고 값이 빈 문자열이면 exit 0 이다(실측).
+# 빈 값을 그대로 암호화하면 정상 .age 를 빈 시크릿으로 덮어쓰므로 fail-closed 로 중단한다.
+[ -n "$kc_license" ] || {
+    printf 'kc-license is empty; refusing to overwrite the secret with an empty value.\n' >&2
+    exit 1
+}
 kc_vault="$("$timeout_bin" -k "$SHOTTR_DEFAULTS_KILL_AFTER" "$SHOTTR_DEFAULTS_DEADLINE" \
     "$defaults_bin" read cc.ffitch.shottr kc-vault)" || {
     printf 'kc-vault read failed or timed out; secret file was not changed.\n' >&2
     exit 1
 }
 export -n kc_vault
+[ -n "$kc_vault" ] || {
+    printf 'kc-vault is empty; refusing to overwrite the secret with an empty value.\n' >&2
+    exit 1
+}
 
 printf 'KC_LICENSE=%s\nKC_VAULT=%s\n' "$kc_license" "$kc_vault" \
     | "$atomic_helper" "$output" "$@"

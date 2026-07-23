@@ -293,6 +293,7 @@ run_test "claudex disabled Home Manager closure excludes enabled artifacts" test
 run_test "Shottr defaults helper bounds and short-circuits TCC access" test_shottr_defaults_helper_behavior
 run_test "Shottr secret writer uses stdin without argv exposure" test_shottr_secret_writer_uses_stdin_without_argv
 run_test "Shottr license refresh helper scrubs child environment" test_shottr_license_refresh_helper_scrubs_child_environment
+run_test "Shottr license refresh rejects empty value" test_shottr_license_refresh_rejects_empty_value
 run_test "Shottr age encryption replaces ciphertext atomically" test_shottr_age_encryption_is_atomic
 run_test "Shottr CFPreferences writer round-trips through defaults" test_shottr_cfpreferences_writer_round_trip
 

@@ -379,6 +379,47 @@ EOF
     || fail "hostile environment fixture did not observe the secret re-export mutant"
 )
 
+# defaults read 는 키가 있고 값이 빈 문자열이면 exit 0 을 낸다(실측). 이때 refresh helper 가
+# 빈 값을 그대로 암호화하면 정상 .age 를 빈 시크릿으로 덮어쓴다. helper 가 fail-closed 로
+# 중단하고 기존 출력(있다면)을 건드리지 않는지 검증한다.
+test_shottr_license_refresh_rejects_empty_value() (
+  local sandbox helper deadlines fake_bin defaults_bin timeout_bin real_timeout
+  local output status
+  sandbox="$(new_sandbox)"
+  helper="$REPO_ROOT/scripts/secrets/refresh-shottr-license.sh"
+  deadlines="$REPO_ROOT/scripts/secrets/shottr-deadlines.sh"
+  fake_bin="$sandbox/bin"
+  defaults_bin="$fake_bin/defaults"
+  timeout_bin="$(command -v timeout)" || fail "GNU timeout is required"
+  output="$sandbox/shottr-license.age"
+  mkdir -p "$fake_bin"
+
+  # kc-license 는 정상, kc-vault 는 존재하지만 빈 문자열(exit 0)을 반환하는 defaults stub.
+  cat > "$defaults_bin" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+last=""
+for arg in "$@"; do last="$arg"; done
+case "$last" in
+  kc-license) printf '%s\n' 'issue-1093-license-sentinel' ;;
+  kc-vault) printf '' ;;   # 키는 존재하나 값이 비어 있음 → exit 0
+  *) exit 64 ;;
+esac
+EOF
+  chmod +x "$defaults_bin"
+
+  # 기존 출력이 있으면 덮어쓰지 않아야 하므로 미리 심어 둔다.
+  printf 'pre-existing-ciphertext\n' > "$output"
+
+  status=0
+  SHOTTR_DEFAULTS_BIN="$defaults_bin" SHOTTR_TIMEOUT_BIN="$timeout_bin" \
+    bash "$helper" "$output" true 2>/dev/null || status=$?
+  [ "$status" -ne 0 ] \
+    || fail "refresh helper accepted an empty kc-vault instead of failing closed"
+  [ "$(cat "$output")" = "pre-existing-ciphertext" ] \
+    || fail "refresh helper overwrote the existing secret with an empty value"
+)
+
 test_shottr_age_encryption_is_atomic() (
   local sandbox helper fake_age output old_ciphertext plaintext observed
   local old_mode old_uid old_gid target target_link target_mode target_uid target_gid
