@@ -474,6 +474,14 @@ let
   claudeSettings = builtins.fromJSON (
     builtins.readFile ../modules/shared/programs/claude/files/settings.json
   );
+  claudeRcFlockSelector = import ../libraries/claude-rc-flock.nix;
+  fakeFlockPkgs = isLinux: {
+    stdenv = { inherit isLinux; };
+    util-linux = "util-linux";
+    flock = "discoteq-flock";
+  };
+  claudeRcLinuxFlock = claudeRcFlockSelector { pkgs = fakeFlockPkgs true; };
+  claudeRcDarwinFlock = claudeRcFlockSelector { pkgs = fakeFlockPkgs false; };
   expectedClaudeAdditionalDirectories = [ "~/Workspace" ];
 
   normalizedCaskName = cask: if builtins.isAttrs cask then cask.name else cask;
@@ -788,6 +796,65 @@ let
         {
           name = "Test D23b ${hostName}: Ghostty.app cask가 정확히 한 번 선언되어야 함";
           cond = hasHost && ghosttyCaskCount cfg == 1;
+        }
+        {
+          name = "Test D24 ${hostName}: Claude Remote Control ensure가 login 및 1분 주기로 자동 복구되어야 함";
+          cond =
+            hasHost
+            && (
+              let
+                agent = claudeRcAgent cfg;
+              in
+              agent.enable
+              && agent.config.RunAtLoad
+              && agent.config.StartInterval == 60
+              && agent.config.AbandonProcessGroup
+              && agent.config.EnvironmentVariables.CLAUDE_RC_DRIFT_POLICY == "defer"
+            );
+        }
+        {
+          name = "Test D25 ${hostName}: Claude Remote Control launchd argv가 maint ensure만 실행해야 함";
+          cond =
+            hasHost
+            && (
+              let
+                args = (claudeRcAgent cfg).config.ProgramArguments;
+              in
+              builtins.length args == 2
+              && builtins.match ".*/claude-rc-maint" (builtins.elemAt args 0) != null
+              && builtins.elemAt args 1 == "ensure"
+            );
+        }
+        {
+          name = "Test D25b ${hostName}: Claude RC maint 수동 경로가 stable home symlink로 노출되어야 함";
+          cond =
+            hasHost
+            &&
+              builtins.match ".*/claude-rc-maint" (toString hm.home.file.".local/bin/claude-rc-maint".source)
+              != null;
+        }
+        {
+          name = "Test D26 ${hostName}: 선언 Claude Remote Control instance가 worktree+bypassPermissions 단일 entry여야 함";
+          cond =
+            hasHost
+            && (
+              let
+                instances = claudeRcDeclaredInstances cfg;
+                instance = if builtins.length instances == 1 then builtins.elemAt instances 0 else null;
+              in
+              instance != null
+              &&
+                builtins.attrNames instance == [
+                  "capacity"
+                  "path"
+                  "permissionMode"
+                  "spawn"
+                ]
+              && instance.spawn == "worktree"
+              && instance.permissionMode == "bypassPermissions"
+              && instance.capacity == null
+              && instance.path == "${hm.home.homeDirectory}/Workspace/nixos-config"
+            );
         }
         {
           name = "Test D27 ${hostName}: Shottr의 선언된 activation entries가 모두 존재해야 함";
@@ -1207,6 +1274,16 @@ let
     {
       name = "Test D28b: on-demand CLAUDE.md auto-load flag는 유지하되 deadline/TCC 성공 증거가 아님";
       cond = claudeSettings.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD == "1";
+    }
+    {
+      name = "Test D31: Claude RC의 플랫폼별 flock selector가 exact 구현을 반환해야 함";
+      cond = claudeRcLinuxFlock == "util-linux" && claudeRcDarwinFlock == "discoteq-flock";
+    }
+    {
+      name = "Test D32: NixOS Claude RC ensure는 unattended automatic drift policy를 유지해야 함";
+      cond =
+        nixosCfg.homeserver.claudeRemoteControl.enable
+        && nixosCfg.systemd.services.claude-rc-ensure.environment.CLAUDE_RC_DRIFT_POLICY == "automatic";
     }
   ]
   ++ darwinIntentTests;

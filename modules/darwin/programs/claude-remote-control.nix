@@ -2,7 +2,7 @@
 # Claude Code Remote Control bridge의 macOS(darwin) headless 배선
 #
 # NixOS systemd 버전(modules/nixos/programs/claude-remote-control.nix)의 launchd
-# 이식판. 래퍼(~/.local/bin/claude-rc) 설치와 30분 주기 version-drift 감시
+# 이식판. 래퍼(~/.local/bin/claude-rc) 설치와 1분 주기 liveness/live-drift 감시
 # (claude-rc-ensure launchd agent)를 한 모듈에 응집한다.
 #
 # NixOS와의 차이:
@@ -48,6 +48,7 @@ let
 in
 {
   home.file.".local/bin/claude-rc".source = "${claudeRcPkg}/bin/claude-rc";
+  home.file.".local/bin/claude-rc-maint".source = "${maintenanceCli}/bin/claude-rc-maint";
 
   launchd.agents.claude-rc-ensure = {
     enable = true;
@@ -56,26 +57,33 @@ in
         "${maintenanceCli}/bin/claude-rc-maint"
         "ensure"
       ];
-      # 30분 주기 (systemd OnUnitActiveSec=30m 대응) + 로그인 시 1회
-      # (OnBootSec=2m 대응 — ensure가 bridge 부재 시 시작하므로 부팅 후 자동 구동).
-      StartInterval = 1800;
+      # 로그인 시 1회 실행하고, boot-time transient exit나 이후 bridge 종료를
+      # 원격 운영자가 Mac 앞에 없어도 1분 안에 다시 ensure한다. NixOS의 30분
+      # drift timer보다 짧은 이유는 Darwin에 network-online/OnBootSec gate가 없고,
+      # 실제 reboot에서 첫 bridge가 종료된 뒤 30분 공백이 확인됐기 때문이다.
+      StartInterval = 60;
       RunAtLoad = true;
       # launchd는 job 종료 시 같은 process group의 잔여 프로세스를 정리한다.
-      # maint가 double-fork로 headless 서버를 re-parent해도 process group은 유지될 수
-      # 있으므로, ensure가 방금 띄운 서버를 같이 죽이지 않게 한다.
+      # maint가 native launch-group supervisor(setpgid(0,0)로 자기 그룹 분리)로 headless
+      # 서버를 띄우므로 서버는 별도 process group이 되지만, ensure가 방금 띄운 서버를
+      # 같이 죽이지 않도록 안전하게 그룹 정리를 포기한다.
       AbandonProcessGroup = true;
       EnvironmentVariables = {
         HOME = homeDir;
         STATE_DIR = stateDir;
         CLAUDE_RC_DECLARED_INSTANCES = declaredInstances;
+        # Missing/dead bridges still start automatically. A live bridge on an
+        # older Claude version stays running until the operator explicitly
+        # confirms an interactive maintenance restart.
+        CLAUDE_RC_DRIFT_POLICY = "defer";
         SERVICE_LIB = "${serviceLib}";
         PUSHOVER_CRED_FILE = pushoverCredPath;
         IDLE_THRESHOLD_MINUTES = toString idleThresholdMinutes;
         ALERT_COOLDOWN_SECONDS = toString alertCooldownSeconds;
-        # writeShellApplication runtimeInputs가 앞에 붙는다. 이 tail은
-        # ~/.local/bin(claude launcher + maint/래퍼 내부 bare `claude` 호출),
-        # nix 프로필, 그리고 /usr/bin(시스템 pgrep — darwin은 procps 미지원이라
-        # maint 패키징이 시스템 바이너리에 의존)을 해석하기 위해 필요하다.
+        # writeShellApplication runtimeInputs가 앞에 붙는다. Darwin runtimeInputs에는
+        # procps가 없으므로 이 tail의 /usr/bin이 maint의 bare pgrep fallback을 제공한다.
+        # Claude launcher는 CLAUDE_BIN의 기본 절대 경로(~/.local/bin/claude)로 실행되며,
+        # 이 launchd job은 interactive wrapper나 그 내부 bare `claude`를 호출하지 않는다.
         PATH = "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin";
       };
       StandardOutPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";

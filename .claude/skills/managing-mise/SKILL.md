@@ -90,7 +90,7 @@ mise 사용은 아래 비대화형·자동화 컨텍스트에서 서로 다른 �
 
 | 경계면 | 전형적 증상 | 대응 |
 |---|---|---|
-| 비대화형 셸 (SSH `zsh -c`, LLM Bash tool) | pnpm/node not found | `.zshenv` shims가 선언적 환경 방어. 즉시 복구는 `mise exec -- <명령>` |
+| 비대화형 셸 (SSH `zsh -c`, LLM shell) | pnpm/node not found | `.zshenv` shims가 선언적 환경 방어. 즉시 복구는 `mise exec -- <명령>` |
 | hook 실행 환경 (lefthook·플러그인 hook) | 런타임 not found로 품질 게이트 조용한 무력화 | hook 스크립트가 mise 도구를 부르면 shims PATH 보강 또는 `mise exec` 경유 |
 | home-manager activation 제한 PATH | `mise: command not found`, reshim exit 127 | activation에서 mise 실행 금지 (#814→#890 교훈) |
 | worktree cwd | 프로젝트 config 미신뢰로 도구 비활성 | 버전·모드·연결 상태에 따라 trust 공유 여부가 다름 — 아래 "worktree trust 공유 조건" 참조 |

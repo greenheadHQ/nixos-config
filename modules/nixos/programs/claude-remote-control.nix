@@ -88,6 +88,9 @@ in
         HOME = homeDir;
         STATE_DIR = stateDir;
         CLAUDE_RC_DECLARED_INSTANCES = declaredInstances;
+        # Headless NixOS retains the established unattended drift-restart
+        # policy; Darwin overrides this to defer live restarts for TCC DX.
+        CLAUDE_RC_DRIFT_POLICY = "automatic";
         SERVICE_LIB = "${serviceLib}";
         IDLE_THRESHOLD_MINUTES = toString cfg.idleThresholdMinutes;
         ALERT_COOLDOWN_SECONDS = "1800";
