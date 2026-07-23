@@ -18,7 +18,7 @@ LOGIN=$("$GH_EXEC" api user --jq .login)
 - 브라우저 쿠키 자동 탐색이 명시적으로 실패하면 업로드가 발생하지 않은 것을 확인한 뒤 [cookie-discovery.md](cookie-discovery.md)의 절차로 로그인 프로필을 특정해 재시도한다 (auto 탐색이 실패하는 구조적 사유는 그 문서 1절 참조). 조사의 자율 경계(메타데이터 한정)와 박제 금지 원칙도 그 문서를 따른다.
 - 계정, repo, 확장 공급 원점 또는 무결성 상태가 불명확하면 업로드하지 않고 `FAILED(PREUPLOAD)`으로 기록한다.
 
-`OWNER_REPO`를 고정한 뒤의 모든 조회·게시·업로드 명령은 대상 repo를 명령 자체에 명시한다. 명시 문법은 명령마다 다르므로(플래그로 받는 명령과 positional 인자로 받는 명령이 섞여 있다) 아래 표 밖의 명령은 실행 전 `--help`로 확인한다.
+`OWNER_REPO`를 고정한 뒤, 대상 이슈·PR·repo·asset을 다루는 repo-scoped 조회·게시·업로드 명령은 대상 repo를 명령 자체에 명시한다. 위 `api user`·`extension list`처럼 repo를 대상으로 하지 않는 계정·확장 조회는 이 규칙의 대상이 아니다. 명시 문법은 명령마다 다르므로(플래그로 받는 명령과 positional 인자로 받는 명령이 섞여 있다) 아래 표 밖의 repo-scoped 명령은 실행 전 `--help`로 확인한다.
 
 | 명령 | repo 명시 문법 |
 |------|----------------|
@@ -29,10 +29,24 @@ LOGIN=$("$GH_EXEC" api user --jq .login)
 
 `gh repo view`는 이 스킬에서 두 용도로 쓰이고 인자 유무가 서로 다르다 — 뒤섞으면 검증이 무력화된다.
 
-- cwd canonical repo를 탐지할 때는 위 코드블록처럼 인자 없이 호출한다. 여기에 `"$OWNER_REPO"`를 넣으면 "추출한 repo가 cwd canonical repo와 같은가"라는 검증이 자기 입력을 되돌려받는 순환이 되어 cross-repo 거부([../SKILL.md](../SKILL.md))가 무력화된다.
+- cwd canonical repo를 탐지할 때는 위 코드블록처럼 인자 없이 호출한다. 여기에 `"$OWNER_REPO"`를 넣으면 "추출한 repo가 cwd canonical repo와 같은가"라는 검증이 자기 입력을 되돌려받는 순환이 되어 cross-repo 거부([../SKILL.md](../SKILL.md#단독-호출-branch) 단독 호출 branch 1단계)가 무력화된다.
 - 이미 고정된 대상 repo를 조회할 때는(visibility 판정 등) `"$OWNER_REPO"`를 positional로 명시한다.
 
-표는 gh 2.96.0 실측이다 — 재검증은 `gh <명령> --help`의 `-R, --repo` 유무와 `USAGE` 줄의 positional 자리를 대조한다. `gh attach`는 gh CLI가 아니라 fork한 확장(`greenheadHQ/gh-attach`)이 제공하므로 gh 버전과 무관하게 `gh attach --help`로 따로 확인한다.
+표는 gh 2.96.0 실측이다. 재검증은 3단계에서 고정한 같은 실행기로 수행하고, 각 출력의 `-R, --repo` 유무와 `USAGE` 줄의 positional 자리를 표와 대조한다.
+
+```bash
+"$GH_EXEC" --version
+"$GH_EXEC" issue view --help
+"$GH_EXEC" issue edit --help
+"$GH_EXEC" issue comment --help
+"$GH_EXEC" pr view --help
+"$GH_EXEC" pr edit --help
+"$GH_EXEC" pr comment --help
+"$GH_EXEC" repo view --help
+"$GH_EXEC" attach --help
+```
+
+마지막 `attach`는 gh CLI가 아니라 fork한 확장(`greenheadHQ/gh-attach`)이 제공하므로 gh 버전 스탬프의 적용 대상이 아니다 — 확장을 업그레이드하면 이 명령으로 따로 확인한다.
 
 ## 4. 업로드와 본문 삽입
 
