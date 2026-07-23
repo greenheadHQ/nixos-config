@@ -49,7 +49,7 @@ description: >-
 
 ## 단독 호출 branch
 
-1. 대상 확정과 repo 고정: 첨부할 이슈 또는 PR의 URL·번호를 확인한다. URL이면 URL에서 `OWNER_REPO`와 번호를 추출하고, 번호만 받았으면 현재 작업 디렉터리의 canonical repo(`gh repo view --json nameWithOwner -q .nameWithOwner`)를 `OWNER_REPO`로 사용한다. 추출한 repo가 현재 작업 디렉터리의 canonical repo와 다르면 진행하지 않고 거부한다 — cross-repo 첨부는 미지원이다 (업로드 asset의 접근 경계가 `-R` 지정 repo에 묶이므로, 대상 불일치는 잘못된 본문 조회·엉뚱한 저장소 게시로 이어진다). 대상이 불명확하면 진행 전에 확인을 요청한다. 이후 모든 조회·게시 명령에 같은 `-R "$OWNER_REPO"`를 명시한다.
+1. 대상 확정과 repo 고정: 첨부할 이슈 또는 PR의 URL·번호를 확인한다. URL이면 URL에서 `OWNER_REPO`와 번호를 추출하고, 번호만 받았으면 현재 작업 디렉터리의 canonical repo(`gh repo view --json nameWithOwner -q .nameWithOwner`)를 `OWNER_REPO`로 사용한다. 추출한 repo가 현재 작업 디렉터리의 canonical repo와 다르면 진행하지 않고 거부한다 — cross-repo 첨부는 미지원이다 (업로드 asset의 접근 경계가 `gh attach -R`로 지정한 repo에 묶이므로, 대상 불일치는 잘못된 본문 조회·엉뚱한 저장소 게시로 이어진다). 대상이 불명확하면 진행 전에 확인을 요청한다. 이후 모든 조회·게시 명령은 대상 repo를 명령 자체에 명시하되, 명시 문법은 명령마다 다르므로 [references/upload-and-reporting.md](references/upload-and-reporting.md) 3절의 표를 따른다.
 2. 기존 본문 조회·보존: surface별로 현재 본문을 조회해 보존한다 — 이슈는 `gh issue view <N> -R "$OWNER_REPO" --json body`, PR은 `gh pr view <N> -R "$OWNER_REPO" --json body`.
 3. 삽입 방식 선택: 본문(body) 수정과 comment 추가 중 하나를 정한다. 사용자가 지정하지 않았으면 기존 본문 훼손 위험이 없는 comment 추가를 권한다.
 4. 게시 의사 확정: 비가역 업로드 전에 대상, 삽입 방식, 게시 여부를 확정한다. 확정 전에는 업로드하지 않는다.
