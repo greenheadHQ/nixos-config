@@ -1,0 +1,63 @@
+---
+tags: [ neovim, lazyvim, terminal, shell, snacks ]
+---
+터미널 / 셸 명령 실행
+
+플로팅 터미널 (snacks.nvim)
+
+  Ctrl+/        플로팅 터미널 토글 (Root Dir 기준) — 한 번 더 누르면 숨김
+  <leader>ft    플로팅 터미널 (Root Dir)        = Ctrl+/
+  <leader>fT    플로팅 터미널 (cwd)             모노레포 전체 기준
+  <leader>gg    lazygit 열기
+  <leader>C     cheatsheet 브라우저 (fzf)
+
+  Ctrl+/ 는 Normal/Terminal 양쪽에 매핑되어 있어 터미널 안에서 눌러도 접힌다.
+  숨기는 것은 프로세스를 죽이지 않으므로 다시 열면 하던 작업이 그대로 이어진다.
+  단 셸에서 exit 하거나 실행한 명령이 스스로 끝나면 창이 닫히고 세션도 사라진다
+  (snacks 기본 auto_close) → 다음에 열면 새 세션.
+
+  ※ 모노레포: 소문자(ft)는 LSP root(현재 패키지), 대문자(fT)는 cwd(전체)
+
+터미널 모드 ↔ Normal 모드
+
+  Ctrl+\        Normal 모드로 탈출   (커스텀, Vim 순정은 <C-\><C-n> 두 번)
+  Esc Esc       Normal 모드로 탈출   (snacks 플로팅 터미널 한정, 200ms 안에 두 번)
+  i / a         다시 입력(Terminal) 모드로
+  q             (Normal 모드에서) 플로팅 터미널 숨기기 = Ctrl+/
+
+  Normal 모드로 나오면 hjkl 스크롤, y 복사, / 검색이 그대로 동작한다.
+  → 긴 빌드 로그에서 에러 줄만 찾아 복사할 때 유용.
+
+  터미널 모드에서는 한글 IM 자동 전환을 적용하지 않는다 (입력 의도 존중).
+
+윈도우로 터미널 열기 (플로팅 대신 split 차지)
+
+  :terminal     현재 윈도우를 터미널로        :term 로 축약 가능
+  :sp | term    가로 분할에 터미널
+  :vsp | term   세로 분할에 터미널
+
+  split 간 이동은 일반 윈도우 이동(<C-h>/<C-l>)과 동일. 상세는 nvim/buffer 참조.
+
+에디터를 벗어나지 않고 CLI 실행 (Ex 명령)
+
+  :!ls -al          한 번 실행하고 결과만 표시 (Enter로 복귀)
+  :!node %          % = 현재 파일 경로   %:p 절대경로, %:h 디렉터리
+  :r !date          명령 출력을 커서 아래 줄에 삽입 (read)
+  :%!jq .           버퍼 전체를 명령에 통과시켜 결과로 치환 (필터)
+  :!sort -u         Visual 선택 영역만 필터 (V로 선택 후 : 누르면 '<,'> 자동 입력)
+
+  실전 필터: :%!jq .  (JSON 정렬) / :%!sort -u  (줄 정렬+중복제거)
+
+특정 명령을 전용 토글 창으로 (커스텀 추가법)
+
+  vim.keymap.set("n", "<leader>C", function()
+    Snacks.terminal("cheatsheet", { win = { style = "float" } })
+  end, { desc = "Cheat sheets" })
+
+  Snacks.terminal 의 세션 식별자는 cmd 단독이 아니라 cmd + cwd + env + count 조합이다.
+  위 예시처럼 cwd를 넘기지 않으면 현재 디렉터리 기준이라, 다른 프로젝트에서 같은 키를
+  눌러도 별도 세션이 열린다. 프로젝트 무관하게 하나로 묶으려면 cwd를 고정해서 넘긴다.
+  count는 키 앞에 숫자를 붙여 지정 — 2<leader>C 처럼 독립 창을 여러 개 띄울 수 있다.
+
+  자주 쓰는 TUI(btop, pnpm dev 등)를 키에 붙여두면 Ctrl+/ 처럼 여닫을 수 있다.
+  추가 위치: modules/shared/programs/neovim/files/nvim/lua/config/keymaps.lua
