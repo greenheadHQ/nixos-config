@@ -12,14 +12,18 @@ tags: [ neovim, lazyvim, terminal, shell, snacks ]
   <leader>C     cheatsheet 브라우저 (fzf)
 
   Ctrl+/ 는 Normal/Terminal 양쪽에 매핑되어 있어 터미널 안에서 눌러도 접힌다.
-  숨겨도 프로세스는 살아 있으므로 다시 열면 하던 작업이 그대로 이어진다.
+  숨기는 것은 프로세스를 죽이지 않으므로 다시 열면 하던 작업이 그대로 이어진다.
+  단 셸에서 exit 하거나 실행한 명령이 스스로 끝나면 창이 닫히고 세션도 사라진다
+  (snacks 기본 auto_close) → 다음에 열면 새 세션.
 
   ※ 모노레포: 소문자(ft)는 LSP root(현재 패키지), 대문자(fT)는 cwd(전체)
 
 터미널 모드 ↔ Normal 모드
 
   Ctrl+\        Normal 모드로 탈출   (커스텀, Vim 순정은 <C-\><C-n> 두 번)
+  Esc Esc       Normal 모드로 탈출   (snacks 플로팅 터미널 한정, 200ms 안에 두 번)
   i / a         다시 입력(Terminal) 모드로
+  q             (Normal 모드에서) 플로팅 터미널 숨기기 = Ctrl+/
 
   Normal 모드로 나오면 hjkl 스크롤, y 복사, / 검색이 그대로 동작한다.
   → 긴 빌드 로그에서 에러 줄만 찾아 복사할 때 유용.
@@ -50,6 +54,10 @@ tags: [ neovim, lazyvim, terminal, shell, snacks ]
     Snacks.terminal("cheatsheet", { win = { style = "float" } })
   end, { desc = "Cheat sheets" })
 
-  Snacks.terminal("<명령>") 은 첫 인자가 같으면 같은 세션을 토글한다.
+  Snacks.terminal 의 세션 식별자는 cmd 단독이 아니라 cmd + cwd + env + count 조합이다.
+  위 예시처럼 cwd를 넘기지 않으면 현재 디렉터리 기준이라, 다른 프로젝트에서 같은 키를
+  눌러도 별도 세션이 열린다. 프로젝트 무관하게 하나로 묶으려면 cwd를 고정해서 넘긴다.
+  count는 키 앞에 숫자를 붙여 지정 — 2<leader>C 처럼 독립 창을 여러 개 띄울 수 있다.
+
   자주 쓰는 TUI(btop, pnpm dev 등)를 키에 붙여두면 Ctrl+/ 처럼 여닫을 수 있다.
   추가 위치: modules/shared/programs/neovim/files/nvim/lua/config/keymaps.lua
