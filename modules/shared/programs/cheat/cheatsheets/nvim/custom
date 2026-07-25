@@ -8,6 +8,9 @@ tags: [ neovim, lazyvim, custom, keymap ]
   <leader>yP    절대 경로 복사 (클립보드)
   jk            Esc (Insert 모드)
   Ctrl+\        터미널 Normal 모드
+  <leader>C     cheatsheet 브라우저 (fzf)
+
+  ※ 터미널 열기/CLI 실행 전반은 nvim/terminal 참조
 
 편집 도구
   gcc           줄 주석 토글
