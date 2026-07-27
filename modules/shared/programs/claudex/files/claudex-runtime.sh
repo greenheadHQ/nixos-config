@@ -419,13 +419,15 @@ _claudex_credential_fingerprint() {
 }
 
 _claudex_credential_set_fingerprint() {
-  local dir="$1" digest
+  local dir="$1" digest entry_digest
   _claudex_assert_private_dir "$dir" || return 1
   digest="$(
+    set -o pipefail
     shopt -s dotglob nullglob
     for entry in "$dir"/*; do
       _claudex_assert_private_file "$entry" "credential file" || exit 1
-      printf '%s\0%s\0' "${entry##*/}" "$(_claudex_credential_fingerprint "$entry")" || exit 1
+      entry_digest="$(_claudex_credential_fingerprint "$entry")" || exit 1
+      printf '%s\0%s\0' "${entry##*/}" "$entry_digest" || exit 1
     done | "$CLAUDEX_OPENSSL" dgst -sha256
   )" || return 1
   digest="${digest##*= }"

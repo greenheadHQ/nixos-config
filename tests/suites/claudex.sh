@@ -488,6 +488,25 @@ test_claudex_credential_and_loopback_contract() {
     source "$1"; assert_credential_set "$CLAUDEX_AUTH_DIR" default
   ' _ "$runtime" || fail "valid Codex credential was rejected"
 
+  # Set fingerprints are a fail-closed concurrency boundary. A non-private entry or
+  # an individual credential digest failure must not be hidden by a successful final
+  # set digest on the right side of the pipeline.
+  chmod 644 "$state/auth/codex-test.json"
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
+    source "$1"; _claudex_credential_set_fingerprint "$CLAUDEX_AUTH_DIR"
+  ' _ "$runtime" >/dev/null 2>&1; then
+    fail "credential set fingerprint accepted a non-private entry"
+  fi
+  chmod 600 "$state/auth/codex-test.json"
+
+  if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" bash -c '
+    source "$1"
+    _claudex_credential_fingerprint() { return 91; }
+    _claudex_credential_set_fingerprint "$CLAUDEX_AUTH_DIR"
+  ' _ "$runtime" >/dev/null 2>&1; then
+    fail "credential set fingerprint hid an individual digest failure"
+  fi
+
   printf '%s' '{"type":"claude","access_token":"secret","refresh_token":"secret"}' \
     > "$state/auth/codex-test.json"
   chmod 600 "$state/auth/codex-test.json"
@@ -1192,7 +1211,7 @@ EOF
 }
 
 test_claudex_login_replacement_fails_closed() {
-  local sandbox state login jq_bin scenario output before after rc real_cp real_mv real_rm
+  local sandbox state login jq_bin scenario output before after rc real_cp real_mv real_rm CLAUDEX_CURL
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
   login="$sandbox/generated/claudex-login"
@@ -1207,7 +1226,8 @@ test_claudex_login_replacement_fails_closed() {
 exit 7
 EOF
   chmod +x "$sandbox/no-proxy-curl"
-  export CLAUDEX_CURL="$sandbox/no-proxy-curl"
+  CLAUDEX_CURL="$sandbox/no-proxy-curl"
+  export CLAUDEX_CURL
   mkdir -p "$state/auth"
   chmod 700 "$state" "$state/auth"
 
