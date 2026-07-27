@@ -11,6 +11,7 @@ _delegation_alert_raw() {
   local state_dir="$1" input="$2"
   printf '%s' "$input" | \
     env HOOK_RUNTIME_LIB="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh" \
+      SESSION_STATE_LIB="$REPO_ROOT/modules/shared/programs/claude/files/lib/session-state.sh" \
       CLAUDE_DELEGATION_STATE_DIR="$state_dir" \
       bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/delegation-alert.sh" 2>&1
 }

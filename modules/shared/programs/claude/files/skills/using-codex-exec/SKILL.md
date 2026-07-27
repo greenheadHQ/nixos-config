@@ -333,16 +333,26 @@ fan-out 금지는 반드시 Codex 입력 프롬프트에 직접 적는다. `~/.c
 
 ### 허용 파일 목록은 권한 제한이 아니다
 
-`-s workspace-write`는 저장소 전체에 쓰기를 허용한다. 프롬프트의 허용 파일 목록은 지시일 뿐 sandbox가 강제하지 않고, 아래 성공 계약 네 조건도 변경 경로를 검사하지 않는다. 자동 위임에서는 호출자가 실행 전후를 대조한다:
+`-s workspace-write`는 저장소 전체에 쓰기를 허용한다. 프롬프트의 허용 파일 목록은 지시일 뿐 sandbox가 강제하지 않고, 아래 성공 계약 네 조건도 변경 경로를 검사하지 않는다. 자동 위임에서는 호출자가 실행 전후를 대조한다.
+
+`git status --porcelain`만 비교하면 이미 dirty한 파일의 내용 추가 변경을 놓친다 — 출력 문자열이 같기 때문이다. 이 한계는 [`run-da/modes/audit.md`](../run-da/modes/audit.md)의 Non-goals가 content-only mutation·ignored 파일·write-then-revert 미감지로 이미 기술한 것과 동일하다. 따라서 status가 아니라 내용까지 포함한 스냅샷을 뜬다:
 
 ```zsh
-git -C "$REPO" status --porcelain > "$DIR/baseline.txt"   # 실행 전
+_snapshot() {   # tracked 변경 내용 + untracked 파일 해시까지 포함
+  git -C "$REPO" status --porcelain
+  git -C "$REPO" diff HEAD
+  git -C "$REPO" ls-files --others --exclude-standard -z |
+    xargs -0 -r shasum -a 256 2>/dev/null
+}
+_snapshot > "$DIR/baseline.txt"   # 실행 전
 # ... codex-exec-supervised 실행 ...
-git -C "$REPO" status --porcelain > "$DIR/after.txt"      # 실행 후
+_snapshot > "$DIR/after.txt"      # 실행 후
 diff "$DIR/baseline.txt" "$DIR/after.txt"
 ```
 
 허용 목록 밖 경로가 나오면 exit 0이어도 성공으로 판정하지 않고 사용자에게 보고한다.
+
+이 스냅샷도 `.gitignore` 대상 파일, write-then-revert, branch/remote/host mutation은 감지하지 못한다. 격리가 실제로 필요한 위임은 전용 worktree에서 실행해 대조 범위를 그 worktree로 좁힌다.
 
 ### ESCALATION 형식
 
