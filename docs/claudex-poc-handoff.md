@@ -154,6 +154,9 @@ git status --short --branch
 10. user/project settings의 `fallbackModel`은 headless 고정 모델 계약을 우회하지 못하고, session effort는 wrapper-owned 값을 따른다 — 기본 `high`, 명시적 `claudex --effort` 인자(whitelist: low/medium/high/xhigh/max/ultra)만 이를 바꾸며 상속 환경값은 계속 scrub된다.
 11. inherited Claude host-auth bridge와 settings `env.CLAUDE_CODE_EXTRA_BODY`는 wrapper-owned loopback/model/request 계약을 우회하지 못해야 한다.
 12. request body의 `service_tier`는 wrapper-owned 값만 존재한다 — 기본은 필드 미전송(계정 기본 티어), 명시적 `claudex --fast` 인자만 pinned fast settings variant로 `"priority"`를 주입하며 상속 환경값은 계속 scrub된다.
+13. `claudex-login --replace`는 선택한 provider만 private staging에서 재인증한다. OAuth 전 canonical set 전체의 경로·내용 snapshot과 승격 직전 상태가 다르면 중단하고, 성공 시에도 sibling provider를 byte-for-byte 보존한다.
+14. replacement는 기존 canonical 경로를 같은 filesystem의 검증된 staged 파일로 원자 교체한다. CLIProxyAPI 7.2.73은 credential 파일명을 생성할 때 계정 정보를 반영하지만 loader는 auth-dir의 JSON 내용을 파싱하고 watcher identity는 경로를 기준으로 하므로, 기존 canonical 경로를 유지해 실행 중 watcher가 provider 삭제/추가로 오인하지 않게 한다.
+15. 교체 전 credential은 state 아래 `credential-backups/`에 mode `0600` private backup으로 보존한다. 자동 정리하지 않으며, 실패 시 자동 rollback에 사용한다. 성공 후 backup 삭제는 새 credential의 실제 completion 검증을 마친 운영자가 별도로 결정한다.
 
 ### 모드별 기대값 (default vs mixed)
 
@@ -380,11 +383,28 @@ find "$auth_dir" -mindepth 1 -maxdepth 1 -type f -print 2>/dev/null | wc -l
 ```
 
 - `0`: `claudex-login`을 실행한다.
-- `1`: `claudex-login`이 자체 schema 검증 후 ready로 종료하는지 확인한다.
+- `1`: `claudex-login`이 자체 schema 검증 후 `present and schema-valid; live validity was not checked`로 종료하는지 확인한다.
 - `2`: codex+claude 공존(mixed set)이면 정상이다 — `claudex-status`가 auth=ready를 보고하는지 확인한다. 같은 타입 2개거나 invalid면 아래 규칙을 따른다.
 - 타입별 중복 또는 invalid: 자동 삭제·선택하지 말고 중단한 뒤 사용자에게 보고한다.
 
 mixed 세션용 claude credential 추가는 `claudex-login --claude`로 수행한다 (동일 staging → 타입 검증 → 원자 승격 절차; 기존 codex credential은 건드리지 않는다).
+
+schema-valid credential의 upstream refresh가 거부되거나 실제 completion이 401로 실패하면, 자동 삭제 대신 provider별 명시적 replacement를 사용한다.
+
+```bash
+# Codex credential만 교체
+claudex-login --replace
+
+# Claude credential만 교체
+claudex-login --claude --replace
+```
+
+- replacement 대상 provider가 없으면 실패하며, 먼저 `--replace` 없는 일반 로그인을 안내한다.
+- OAuth 시작 전과 canonical mutation 직전에 credential set 전체를 비교한다. 그 사이 다른 프로세스가 어느 provider든 변경하면 staged 결과를 버리고 중단한다.
+- 새 credential의 schema와 private mode를 검증하기 전에는 canonical set을 바꾸지 않는다.
+- atomic replacement 또는 사후 검증이 실패하면 검증된 private backup으로 기존 credential을 복구한다.
+- staging과 backup의 credential 본문·파일명은 출력하지 않는다.
+- 실제 replacement OAuth는 계정 credential을 바꾸는 외부 상태 변경이므로 자동화 에이전트가 수행할 때 직전 사용자 승인이 필요하다.
 
 실행:
 
@@ -401,7 +421,7 @@ claudex-login
 find "$auth_dir" -mindepth 1 -maxdepth 1 -type f -print | wc -l
 ```
 
-기대 결과는 `canonical Codex credential is already ready`와 파일 수 `1`이다. credential JSON, access token, refresh token, client API key는 출력하지 않는다.
+기대 결과는 `canonical codex credential is present and schema-valid; live validity was not checked`와 파일 수 `1`이다. 이 문구는 upstream live validity를 증명하지 않는다. credential JSON, access token, refresh token, client API key는 출력하지 않는다.
 
 ## 10. Phase 4 — Foreground proxy와 completion
 

@@ -93,6 +93,7 @@ _claudex_materialize_runtime() {
     -e "s|@curlBin@|$curl_bin|g" \
     -e "s|@opensslBin@|$(command -v openssl)|g" \
     -e "s|@cmpBin@|$(command -v cmp)|g" \
+    -e "s|@cpBin@|$(command -v cp)|g" \
     -e "s|@statBin@|$(command -v stat)|g" \
     -e "s|@chmodBin@|$(command -v chmod)|g" \
     -e "s|@mkdirBin@|$(command -v mkdir)|g" \
@@ -888,7 +889,7 @@ EOF
 }
 
 test_claudex_launcher_and_login_use_fake_boundaries() {
-  local sandbox state launcher login proxy_log jq_bin expected_work rc
+  local sandbox state launcher login proxy_log jq_bin expected_work output rc
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
   launcher="$sandbox/generated/claudex-proxy-launcher"
@@ -988,8 +989,11 @@ EOF
     fail "login staging directory leaked after promotion"
   fi
   rm -f "$proxy_log"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" "$login" \
-    >/dev/null
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" "$login"
+  )"
+  [[ "$output" == "claudex-login: canonical codex credential is present and schema-valid; live validity was not checked" ]] \
+    || fail "existing codex credential was reported as live-ready: $output"
   [[ ! -e "$proxy_log" ]] || fail "existing canonical credential triggered another device login"
 
   # --claude adds the second provider credential next to the codex entry (mixed set).
@@ -1027,11 +1031,18 @@ EOF
 
   # Both login paths are idempotent per credential type once their entry exists.
   rm -f "$proxy_log"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
-    "$login" --claude >/dev/null
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      "$login" --claude
+  )"
+  [[ "$output" == "claudex-login: canonical claude credential is present and schema-valid; live validity was not checked" ]] \
+    || fail "existing claude credential was reported as live-ready: $output"
   [[ ! -e "$proxy_log" ]] || fail "existing claude credential triggered another claude login"
-  HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
-    "$login" >/dev/null
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" "$login"
+  )"
+  [[ "$output" == "claudex-login: canonical codex credential is present and schema-valid; live validity was not checked" ]] \
+    || fail "coexisting codex credential was reported as live-ready: $output"
   [[ ! -e "$proxy_log" ]] || fail "coexisting claude credential broke the no-arg login no-op"
 
   # Usage hygiene: unknown or extra arguments are rejected.
@@ -1068,6 +1079,311 @@ EOF
     fail "codex login proceeded despite a malformed sibling entry"
   fi
   rm "$state/auth/gemini-bad.json"
+}
+
+test_claudex_login_replaces_one_provider_safely() {
+  local sandbox state login proxy_log jq_bin output sibling_before codex_before backup_path
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  login="$sandbox/generated/claudex-login"
+  proxy_log="$sandbox/proxy.log"
+  jq_bin="$(command -v jq)"
+  _claudex_fixture "$sandbox"
+  mkdir -p "$state/auth"
+  chmod 700 "$state" "$state/auth"
+  _claudex_add_valid_credential "$state"
+  printf '%s' '{"type":"claude","access_token":"sibling-access","refresh_token":"sibling-refresh"}' \
+    > "$state/auth/claude-sibling.json"
+  chmod 600 "$state/auth/claude-sibling.json"
+  sibling_before="$(sha256sum "$state/auth/claude-sibling.json")"
+
+  cat > "$sandbox/fake-cli-proxy-api" <<EOF
+#!/usr/bin/env bash
+printf 'arg=%s\n' "\$@" > "$proxy_log"
+config=''
+cred_type=codex
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    --config) config="\$2"; shift 2 ;;
+    --claude-login) cred_type=claude; shift ;;
+    *) shift ;;
+  esac
+done
+auth_dir="\$("$jq_bin" -r '.["auth-dir"]' "\$config")"
+mkdir -p "\$auth_dir"
+chmod 700 "\$auth_dir"
+if [ "\$cred_type" = codex ]; then
+  printf '%s' '{"type":"codex","access_token":"replacement-access","refresh_token":"replacement-refresh"}'
+else
+  printf '%s' '{"type":"claude","access_token":"replacement-claude-access","refresh_token":"replacement-claude-refresh"}'
+fi > "\$auth_dir/upstream-generated-name.json"
+chmod 600 "\$auth_dir/upstream-generated-name.json"
+EOF
+  _claudex_pin_proxy_shebang "$sandbox/fake-cli-proxy-api"
+  chmod +x "$sandbox/fake-cli-proxy-api"
+  _claudex_materialize_command \
+    "$REPO_ROOT/modules/shared/programs/claudex/files/claudex-login.sh" \
+    "$login" "$sandbox/generated/claudex-runtime.sh" \
+    "$sandbox/fake-cli-proxy-api" "$sandbox/generated/config-template.json" \
+    "$sandbox/generated/wrapper-settings.json"
+  chmod +x "$login"
+
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      "$login" --replace 2>&1
+  )"
+  [[ "$output" == "claudex-login: follow the codex OAuth instructions printed by CLIProxyAPI"$'\n'"claudex-login: canonical codex credential was replaced and is schema-valid; live validity was not checked" ]] \
+    || fail "Codex replacement output drifted or exposed private data: $output"
+  assert_file_contains "$proxy_log" "arg=--codex-device-login"
+  [[ -f "$state/auth/codex-test.json" ]] \
+    || fail "Codex replacement did not preserve the canonical credential path"
+  [[ ! -e "$state/auth/upstream-generated-name.json" ]] \
+    || fail "Codex replacement adopted the staging filename and changed watcher identity"
+  jq -e '.type == "codex" and .access_token == "replacement-access"' \
+    "$state/auth/codex-test.json" >/dev/null || fail "Codex replacement was not promoted"
+  [[ "$(sha256sum "$state/auth/claude-sibling.json")" == "$sibling_before" ]] \
+    || fail "Codex replacement changed the Claude sibling"
+  [[ "$(stat -c '%a' "$state/credential-backups")" == "700" ]] \
+    || fail "credential backup directory is not private"
+  backup_path="$(find "$state/credential-backups" -mindepth 1 -maxdepth 1 -type f -print -quit)"
+  [[ -n "$backup_path" && "$(stat -c '%a' "$backup_path")" == "600" ]] \
+    || fail "replaced Codex credential did not leave one private backup"
+  jq -e '.type == "codex" and .access_token == "test-access"' "$backup_path" >/dev/null \
+    || fail "Codex backup does not hold the pre-replacement credential"
+
+  # The symmetric Claude path preserves the already-replaced Codex credential.
+  codex_before="$(sha256sum "$state/auth/codex-test.json")"
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      "$login" --replace --claude 2>&1
+  )"
+  [[ "$output" == "claudex-login: follow the claude OAuth instructions printed by CLIProxyAPI"$'\n'"claudex-login: canonical claude credential was replaced and is schema-valid; live validity was not checked" ]] \
+    || fail "Claude replacement output drifted or exposed private data: $output"
+  assert_file_contains "$proxy_log" "arg=--claude-login"
+  [[ -f "$state/auth/claude-sibling.json" ]] \
+    || fail "Claude replacement did not preserve the canonical credential path"
+  jq -e '.type == "claude" and .access_token == "replacement-claude-access"' \
+    "$state/auth/claude-sibling.json" >/dev/null || fail "Claude replacement was not promoted"
+  [[ "$(sha256sum "$state/auth/codex-test.json")" == "$codex_before" ]] \
+    || fail "Claude replacement changed the Codex sibling"
+  [[ "$(find "$state/credential-backups" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == "2" ]] \
+    || fail "provider replacements did not retain one backup per operation"
+  find "$state/credential-backups" -mindepth 1 -maxdepth 1 -type f -exec \
+    "$jq_bin" -e 'select(.type == "claude" and .access_token == "sibling-access")' {} + \
+    >/dev/null || fail "Claude backup does not hold the pre-replacement credential"
+  if find "$state" -maxdepth 1 -name 'auth.login.*' | grep -q .; then
+    fail "replacement staging directory leaked after promotion"
+  fi
+}
+
+test_claudex_login_replacement_fails_closed() {
+  local sandbox state login jq_bin scenario output before after rc real_mv
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  login="$sandbox/generated/claudex-login"
+  jq_bin="$(command -v jq)"
+  scenario="$sandbox/scenario"
+  real_mv="$(command -v mv)"
+  _claudex_fixture "$sandbox"
+  mkdir -p "$state/auth"
+  chmod 700 "$state" "$state/auth"
+
+  _reset_replacement_credentials() {
+    rm -rf "$state/auth" "$state/credential-backups"
+    mkdir -p "$state/auth"
+    chmod 700 "$state/auth"
+    printf '%s' '{"type":"codex","access_token":"original-secret-access","refresh_token":"original-secret-refresh"}' \
+      > "$state/auth/private-codex-account.json"
+    printf '%s' '{"type":"claude","access_token":"sibling-secret-access","refresh_token":"sibling-secret-refresh"}' \
+      > "$state/auth/private-claude-account.json"
+    chmod 600 "$state/auth/"*.json
+  }
+
+  _canonical_digest() {
+    find "$state/auth" -mindepth 1 -maxdepth 1 -type f -exec sha256sum {} + | sort
+  }
+
+  _assert_login_args_rejected() {
+    if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$login" "$@" >/dev/null 2>&1; then
+      fail "claudex-login accepted hostile argv: $*"
+    fi
+  }
+
+  cat > "$sandbox/fake-cli-proxy-api" <<EOF
+#!/usr/bin/env bash
+config=''
+while [ "\$#" -gt 0 ]; do
+  if [ "\$1" = '--config' ]; then config="\$2"; shift 2; else shift; fi
+done
+case "\$(<"$scenario")" in
+  oauth-fail) exit 19 ;;
+esac
+auth_dir="\$("$jq_bin" -r '.["auth-dir"]' "\$config")"
+mkdir -p "\$auth_dir"
+chmod 700 "\$auth_dir"
+case "\$(<"$scenario")" in
+  invalid-stage)
+    printf '%s' '{"type":"codex","access_token":"","refresh_token":"staged-secret-refresh"}' \
+      > "\$auth_dir/private-staged-account.json"
+    ;;
+  *)
+    printf '%s' '{"type":"codex","access_token":"staged-secret-access","refresh_token":"staged-secret-refresh"}' \
+      > "\$auth_dir/private-staged-account.json"
+    ;;
+esac
+chmod 600 "\$auth_dir/private-staged-account.json"
+case "\$(<"$scenario")" in
+  concurrent-target)
+    printf '%s' '{"type":"codex","access_token":"concurrent-secret-access","refresh_token":"concurrent-secret-refresh"}' \
+      > "$state/auth/private-codex-account.json"
+    chmod 600 "$state/auth/private-codex-account.json"
+    ;;
+  concurrent-sibling)
+    printf '%s' '{"type":"claude","access_token":"concurrent-sibling-access","refresh_token":"concurrent-sibling-refresh"}' \
+      > "$state/auth/private-claude-account.json"
+    chmod 600 "$state/auth/private-claude-account.json"
+    ;;
+esac
+EOF
+  _claudex_pin_proxy_shebang "$sandbox/fake-cli-proxy-api"
+  chmod +x "$sandbox/fake-cli-proxy-api"
+  _claudex_materialize_command \
+    "$REPO_ROOT/modules/shared/programs/claudex/files/claudex-login.sh" \
+    "$login" "$sandbox/generated/claudex-runtime.sh" \
+    "$sandbox/fake-cli-proxy-api" "$sandbox/generated/config-template.json" \
+    "$sandbox/generated/wrapper-settings.json"
+  chmod +x "$login"
+
+  for scenario_name in oauth-fail invalid-stage; do
+    _reset_replacement_credentials
+    printf '%s' "$scenario_name" > "$scenario"
+    before="$(_canonical_digest)"
+    set +e
+    output="$(
+      HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+        "$login" --replace 2>&1
+    )"
+    rc=$?
+    set -e
+    [[ "$rc" != 0 ]] || fail "$scenario_name replacement unexpectedly succeeded"
+    [[ "$(_canonical_digest)" == "$before" ]] \
+      || fail "$scenario_name replacement changed the canonical credential set"
+    assert_not_contains "$output" "secret-"
+    assert_not_contains "$output" "private-"
+  done
+
+  # A valid concurrent mutation anywhere in the canonical set invalidates the snapshot.
+  for scenario_name in concurrent-target concurrent-sibling; do
+    _reset_replacement_credentials
+    printf '%s' "$scenario_name" > "$scenario"
+    set +e
+    output="$(
+      HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+        "$login" --replace 2>&1
+    )"
+    rc=$?
+    set -e
+    [[ "$rc" != 0 ]] || fail "$scenario_name mutation did not stop replacement"
+    jq -e '.access_token != "staged-secret-access"' \
+      "$state/auth/private-codex-account.json" >/dev/null \
+      || fail "$scenario_name mutation was overwritten by the staged credential"
+    assert_not_contains "$output" "secret-"
+    assert_not_contains "$output" "private-"
+  done
+
+  # A failed atomic move leaves the canonical set byte-identical and no redundant backup.
+  _reset_replacement_credentials
+  printf '%s' success > "$scenario"
+  cat > "$sandbox/fail-replacement-mv" <<EOF
+#!/usr/bin/env bash
+if [ "\${1-}" = "-f" ] && [[ "\${3-}" == *"/auth.login."*"/auth/"* ]]; then
+  exit 91
+fi
+exec "$real_mv" "\$@"
+EOF
+  chmod +x "$sandbox/fail-replacement-mv"
+  before="$(_canonical_digest)"
+  set +e
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_MV="$sandbox/fail-replacement-mv" "$login" --replace 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 && "$(_canonical_digest)" == "$before" ]] \
+    || fail "failed atomic replacement changed the canonical credential set"
+  [[ -z "$(find "$state/credential-backups" -mindepth 1 -maxdepth 1 -type f -print -quit)" ]] \
+    || fail "failed atomic replacement retained a redundant backup"
+  assert_not_contains "$output" "secret-"
+  assert_not_contains "$output" "private-"
+
+  # Corruption after the rename triggers automatic rollback from the verified backup.
+  _reset_replacement_credentials
+  cat > "$sandbox/corrupt-replacement-mv" <<EOF
+#!/usr/bin/env bash
+"$real_mv" "\$@" || exit
+if [ "\${1-}" = "-f" ] && [[ "\${3-}" == *"/auth.login."*"/auth/"* ]]; then
+  printf '%s' '{"type":"codex","access_token":"","refresh_token":""}' > "\${4}"
+  chmod 600 "\${4}"
+fi
+EOF
+  chmod +x "$sandbox/corrupt-replacement-mv"
+  before="$(_canonical_digest)"
+  set +e
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_MV="$sandbox/corrupt-replacement-mv" "$login" --replace 2>&1
+  )"
+  rc=$?
+  set -e
+  after="$(_canonical_digest)"
+  [[ "$rc" != 0 && "$after" == "$before" ]] \
+    || fail "post-rename validation failure did not restore the canonical credential set"
+  assert_not_contains "$output" "secret-"
+  assert_not_contains "$output" "private-"
+
+  # Missing providers, malformed/duplicate state, and hostile argv fail without OAuth or deletion.
+  _reset_replacement_credentials
+  rm "$state/auth/private-claude-account.json"
+  if output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      "$login" --claude --replace 2>&1
+  )"; then
+    fail "replacement accepted a missing Claude credential"
+  fi
+  assert_contains "$output" "run claudex-login without --replace first"
+  assert_not_contains "$output" "private-"
+
+  _assert_login_args_rejected --replace --replace
+  _assert_login_args_rejected --claude --claude
+  _assert_login_args_rejected --hostile
+  _assert_login_args_rejected positional
+
+  printf '%s' '{"type":"gemini","access_token":"malformed-secret-access","refresh_token":"malformed-secret-refresh"}' \
+    > "$state/auth/private-malformed-account.json"
+  chmod 600 "$state/auth/private-malformed-account.json"
+  if output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      "$login" --replace 2>&1
+  )"; then
+    fail "replacement accepted a malformed canonical entry"
+  fi
+  assert_not_contains "$output" "secret-"
+  assert_not_contains "$output" "private-"
+  rm "$state/auth/private-malformed-account.json"
+
+  cp "$state/auth/private-codex-account.json" "$state/auth/private-codex-duplicate.json"
+  chmod 600 "$state/auth/private-codex-duplicate.json"
+  if output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      "$login" --replace 2>&1
+  )"; then
+    fail "replacement accepted duplicate Codex credentials"
+  fi
+  [[ "$(find "$state/auth" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" == "2" ]] \
+    || fail "duplicate rejection deleted a canonical credential"
+  assert_not_contains "$output" "secret-"
+  assert_not_contains "$output" "private-"
 }
 
 test_claudex_production_execution_boundaries() {

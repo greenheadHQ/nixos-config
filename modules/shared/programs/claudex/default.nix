@@ -147,6 +147,7 @@ let
     curlBin = "${pkgs.curl}/bin/curl";
     opensslBin = "${pkgs.openssl}/bin/openssl";
     cmpBin = "${pkgs.diffutils}/bin/cmp";
+    cpBin = "${pkgs.coreutils}/bin/cp";
     statBin = "${pkgs.coreutils}/bin/stat";
     chmodBin = "${pkgs.coreutils}/bin/chmod";
     mkdirBin = "${pkgs.coreutils}/bin/mkdir";

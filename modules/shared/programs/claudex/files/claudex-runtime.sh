@@ -14,7 +14,8 @@
 # Package-internal cross-file API (not stable for external callers):
 #   _claudex_error _claudex_read_api_key _claudex_render_runtime_config_unlocked
 #   _claudex_ensure_private_dir _claudex_single_credential_path
-#   _claudex_credential_json_valid _claudex_credential_type_of
+#   _claudex_credential_json_valid _claudex_credential_fingerprint
+#   _claudex_credential_set_fingerprint _claudex_credential_type_of
 #   _claudex_credential_path_of_type _claudex_assert_entries_wellformed
 #   _claudex_assert_safe_work_dir
 
@@ -23,6 +24,7 @@ if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_CURL="${CLAUDEX_CURL:-@curlBin@}"
   CLAUDEX_OPENSSL="${CLAUDEX_OPENSSL:-@opensslBin@}"
   CLAUDEX_CMP="${CLAUDEX_CMP:-@cmpBin@}"
+  CLAUDEX_CP="${CLAUDEX_CP:-@cpBin@}"
   CLAUDEX_STAT="${CLAUDEX_STAT:-@statBin@}"
   CLAUDEX_CHMOD="${CLAUDEX_CHMOD:-@chmodBin@}"
   CLAUDEX_MKDIR="${CLAUDEX_MKDIR:-@mkdirBin@}"
@@ -39,6 +41,7 @@ else
   CLAUDEX_CURL="@curlBin@"
   CLAUDEX_OPENSSL="@opensslBin@"
   CLAUDEX_CMP="@cmpBin@"
+  CLAUDEX_CP="@cpBin@"
   CLAUDEX_STAT="@statBin@"
   CLAUDEX_CHMOD="@chmodBin@"
   CLAUDEX_MKDIR="@mkdirBin@"
@@ -397,6 +400,48 @@ _claudex_credential_json_valid() {
   ' "$path" >/dev/null 2>&1
 }
 
+_claudex_credential_fingerprint() {
+  local path="$1" digest
+  _claudex_assert_private_file "$path" || return 1
+  digest="$("$CLAUDEX_OPENSSL" dgst -sha256 < "$path")" || return 1
+  digest="${digest##*= }"
+  if [ "${#digest}" -ne 64 ]; then
+    _claudex_error "credential fingerprint has an invalid length"
+    return 1
+  fi
+  case "$digest" in
+    *[!0-9a-fA-F]*)
+      _claudex_error "credential fingerprint has an invalid format"
+      return 1
+      ;;
+  esac
+  printf '%s' "$digest"
+}
+
+_claudex_credential_set_fingerprint() {
+  local dir="$1" digest
+  _claudex_assert_private_dir "$dir" || return 1
+  digest="$(
+    shopt -s dotglob nullglob
+    for entry in "$dir"/*; do
+      _claudex_assert_private_file "$entry" || exit 1
+      printf '%s\0%s\0' "${entry##*/}" "$(_claudex_credential_fingerprint "$entry")" || exit 1
+    done | "$CLAUDEX_OPENSSL" dgst -sha256
+  )" || return 1
+  digest="${digest##*= }"
+  if [ "${#digest}" -ne 64 ]; then
+    _claudex_error "credential set fingerprint has an invalid length"
+    return 1
+  fi
+  case "$digest" in
+    *[!0-9a-fA-F]*)
+      _claudex_error "credential set fingerprint has an invalid format"
+      return 1
+      ;;
+  esac
+  printf '%s' "$digest"
+}
+
 # Prints the declared .type of a credential file, or nothing when the file is not a
 # readable JSON object with a string type. Never fails the caller; type routing decisions
 # stay with the caller. Symlinks and non-regular entries (FIFO, directory) yield no type
@@ -423,7 +468,7 @@ _claudex_assert_entries_wellformed() (
     case "$cred_entry_type" in
       codex | claude) ;;
       *)
-        _claudex_error "unexpected credential entry in $dir: ${entry##*/}"
+        _claudex_error "canonical auth directory holds an unexpected credential entry"
         return 1
         ;;
     esac
