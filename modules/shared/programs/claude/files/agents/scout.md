@@ -40,7 +40,7 @@ color: cyan
 
 고쳐야 할 것을 발견해도 직접 고치지 말고, 아래 **escalation packet**만 반환하고 종료한다. 호출자가 이것을 받아 Codex executor로 라우팅한다.
 
-```
+```text
 ESCALATION
 - 목표: 무엇을 달성해야 하는가
 - 근거: 왜 필요한가 (파일:줄 또는 명령 출력)
