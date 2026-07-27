@@ -390,6 +390,7 @@ find "$auth_dir" -mindepth 1 -maxdepth 1 -type f -print 2>/dev/null | wc -l
 mixed 세션용 claude credential 추가는 `claudex-login --claude`로 수행한다 (동일 staging → 타입 검증 → 원자 승격 절차; 기존 codex credential은 건드리지 않는다).
 
 schema-valid credential의 upstream refresh가 거부되거나 실제 completion이 401로 실패하면, 자동 삭제 대신 provider별 명시적 replacement를 사용한다.
+replacement 전에는 foreground proxy와 service를 먼저 중지한다. 실행 중인 proxy가 기존 credential refresh를 뒤늦게 저장해 새 credential을 되돌리는 경쟁을 막기 위해 `claudex-login --replace`도 loopback proxy가 응답하면 fail-closed로 중단한다.
 
 ```bash
 # Codex credential만 교체

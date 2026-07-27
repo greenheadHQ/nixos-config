@@ -97,6 +97,13 @@ case "$existing_rc" in
     ;;
 esac
 
+if [ "$replace" = true ] \
+  && "$CLAUDEX_CURL" --silent --show-error --output /dev/null \
+    --connect-timeout 1 --max-time 2 "$CLAUDEX_BASE_URL/v1/models" 2>/dev/null; then
+  _claudex_error "stop the local claudex proxy before replacing credentials"
+  exit 1
+fi
+
 staging="$($CLAUDEX_MKTEMP -d "$CLAUDEX_STATE_DIR/auth.login.XXXXXX")"
 _claudex_quiet_chmod 700 -- "$staging" || {
   _claudex_error "failed to secure the private login staging directory"
@@ -123,17 +130,49 @@ _claudex_ensure_private_dir "$staging_auth"
 
 echo "claudex-login: follow the $cred_type OAuth instructions printed by CLIProxyAPI"
 _claudex_filter_login_output() {
-  local line
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      "Authentication saved to "*)
-        printf '%s\n' "Authentication saved to private staging"
-        ;;
-      *)
-        printf '%s\n' "$line"
-        ;;
-    esac
+  local buffer="" char private_prefix="$staging" redacting=false suffix
+  while IFS= read -r -n 1 char; do
+    # Bash read consumes the newline delimiter and returns an empty value for it.
+    [ -n "$char" ] || char=$'\n'
+    if [ "$redacting" = true ]; then
+      if [ "$char" = $'\n' ]; then
+        printf '\n'
+        redacting=false
+      fi
+      continue
+    fi
+
+    buffer+="$char"
+    while [ -n "$buffer" ]; do
+      # Hold only a possible prefix across reads. Everything else is forwarded
+      # immediately, including CLIProxyAPI's newline-free callback prompt.
+      case "$private_prefix" in
+        "$buffer"*) break ;;
+      esac
+      case "$buffer" in
+        "$private_prefix"*)
+          suffix="${buffer#"$private_prefix"}"
+          printf '%s' "[private login staging]"
+          buffer=""
+          if [ "$suffix" = $'\n' ]; then
+            printf '\n'
+            redacting=false
+          else
+            redacting=true
+          fi
+          ;;
+        *)
+          printf '%s' "${buffer:0:1}"
+          buffer="${buffer:1}"
+          ;;
+      esac
+    done
   done
+  if [ "$buffer" = "$private_prefix" ]; then
+    printf '%s' "[private login staging]"
+  else
+    printf '%s' "$buffer"
+  fi
 }
 set +e
 (

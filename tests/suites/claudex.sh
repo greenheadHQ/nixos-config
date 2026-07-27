@@ -1089,6 +1089,11 @@ test_claudex_login_replaces_one_provider_safely() {
   proxy_log="$sandbox/proxy.log"
   jq_bin="$(command -v jq)"
   _claudex_fixture "$sandbox"
+  cat > "$sandbox/no-proxy-curl" <<'EOF'
+#!/usr/bin/env bash
+exit 7
+EOF
+  chmod +x "$sandbox/no-proxy-curl"
   mkdir -p "$state/auth"
   chmod 700 "$state" "$state/auth"
   _claudex_add_valid_credential "$state"
@@ -1118,7 +1123,14 @@ else
   printf '%s' '{"type":"claude","access_token":"replacement-claude-access","refresh_token":"replacement-claude-refresh"}'
 fi > "\$auth_dir/upstream-generated-name.json"
 chmod 600 "\$auth_dir/upstream-generated-name.json"
+printf '%s' 'Paste the callback URL if manual fallback is required: '
+printf 'Saving credentials to %s\n' "\$auth_dir/upstream-generated-name.json"
 printf 'Authentication saved to %s\n' "\$auth_dir/upstream-generated-name.json"
+if [ "\$cred_type" = codex ]; then
+  printf '%s\n' 'Codex device authentication successful!'
+else
+  printf '%s\n' 'Claude authentication successful!'
+fi
 EOF
   _claudex_pin_proxy_shebang "$sandbox/fake-cli-proxy-api"
   chmod +x "$sandbox/fake-cli-proxy-api"
@@ -1131,9 +1143,10 @@ EOF
 
   output="$(
     HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CURL="$sandbox/no-proxy-curl" \
       "$login" --replace 2>&1
   )"
-  [[ "$output" == "claudex-login: follow the codex OAuth instructions printed by CLIProxyAPI"$'\n'"Authentication saved to private staging"$'\n'"claudex-login: canonical codex credential was replaced and is schema-valid; live validity was not checked" ]] \
+  [[ "$output" == "claudex-login: follow the codex OAuth instructions printed by CLIProxyAPI"$'\n'"Paste the callback URL if manual fallback is required: Saving credentials to [private login staging]"$'\n'"Authentication saved to [private login staging]"$'\n'"Codex device authentication successful!"$'\n'"claudex-login: canonical codex credential was replaced and is schema-valid; live validity was not checked" ]] \
     || fail "Codex replacement output drifted or exposed private data: $output"
   assert_file_contains "$proxy_log" "arg=--codex-device-login"
   [[ -f "$state/auth/codex-test.json" ]] \
@@ -1156,9 +1169,10 @@ EOF
   codex_before="$(sha256sum "$state/auth/codex-test.json")"
   output="$(
     HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CURL="$sandbox/no-proxy-curl" \
       "$login" --replace --claude 2>&1
   )"
-  [[ "$output" == "claudex-login: follow the claude OAuth instructions printed by CLIProxyAPI"$'\n'"Authentication saved to private staging"$'\n'"claudex-login: canonical claude credential was replaced and is schema-valid; live validity was not checked" ]] \
+  [[ "$output" == "claudex-login: follow the claude OAuth instructions printed by CLIProxyAPI"$'\n'"Paste the callback URL if manual fallback is required: Saving credentials to [private login staging]"$'\n'"Authentication saved to [private login staging]"$'\n'"Claude authentication successful!"$'\n'"claudex-login: canonical claude credential was replaced and is schema-valid; live validity was not checked" ]] \
     || fail "Claude replacement output drifted or exposed private data: $output"
   assert_file_contains "$proxy_log" "arg=--claude-login"
   [[ -f "$state/auth/claude-sibling.json" ]] \
@@ -1188,6 +1202,12 @@ test_claudex_login_replacement_fails_closed() {
   real_mv="$(command -v mv)"
   real_rm="$(command -v rm)"
   _claudex_fixture "$sandbox"
+  cat > "$sandbox/no-proxy-curl" <<'EOF'
+#!/usr/bin/env bash
+exit 7
+EOF
+  chmod +x "$sandbox/no-proxy-curl"
+  export CLAUDEX_CURL="$sandbox/no-proxy-curl"
   mkdir -p "$state/auth"
   chmod 700 "$state" "$state/auth"
 
@@ -1224,6 +1244,11 @@ esac
 auth_dir="\$("$jq_bin" -r '.["auth-dir"]' "\$config")"
 mkdir -p "\$auth_dir"
 chmod 700 "\$auth_dir"
+if [ "\$(<"$scenario")" = save-error ]; then
+  printf 'failed to save credential: open %s: permission denied\n' \
+    "\$auth_dir/private-staged-account.json" >&2
+  exit 18
+fi
 case "\$(<"$scenario")" in
   invalid-stage | invalid-stage-mode)
     printf '%s' '{"type":"codex","access_token":"","refresh_token":"staged-secret-refresh"}' \
@@ -1263,7 +1288,29 @@ EOF
     "$sandbox/generated/wrapper-settings.json"
   chmod +x "$login"
 
-  for scenario_name in oauth-fail invalid-stage invalid-stage-mode; do
+  # Replacement refuses to start OAuth while a loopback proxy responds, because a
+  # refresh already in flight could persist the old credential lineage afterward.
+  cat > "$sandbox/responding-proxy-curl" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "$sandbox/responding-proxy-curl"
+  _reset_replacement_credentials
+  printf '%s' success > "$scenario"
+  before="$(_canonical_digest)"
+  if output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CURL="$sandbox/responding-proxy-curl" "$login" --replace 2>&1
+  )"; then
+    fail "replacement started while the local proxy was responding"
+  fi
+  [[ "$(_canonical_digest)" == "$before" ]] \
+    || fail "running-proxy rejection changed the canonical credential set"
+  assert_contains "$output" "stop the local claudex proxy before replacing credentials"
+  [[ -z "$(find "$state" -maxdepth 1 -name 'auth.login.*' -print -quit)" ]] \
+    || fail "running-proxy rejection created a login staging directory"
+
+  for scenario_name in oauth-fail save-error invalid-stage invalid-stage-mode; do
     _reset_replacement_credentials
     printf '%s' "$scenario_name" > "$scenario"
     before="$(_canonical_digest)"
