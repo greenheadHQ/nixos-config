@@ -259,6 +259,7 @@ run_test "worktree-path-guard allows main repo plan path exception" test_worktre
 run_test "worktree-path-guard empty and malformed input noop" test_worktree_path_guard_empty_and_malformed_input_noop
 run_test "delegation-alert stays silent below threshold" test_delegation_alert_first_four_edits_are_silent
 run_test "delegation-alert warns without permissionDecision" test_delegation_alert_fifth_edit_warns_without_permission_decision
+run_test "delegation-alert warns once per turn" test_delegation_alert_warns_once_per_turn
 run_test "delegation-alert resets counter on new prompt" test_delegation_alert_prompt_change_resets_counter
 run_test "delegation-alert ignores subagent calls" test_delegation_alert_subagent_calls_are_ignored
 run_test "delegation-alert ignores non-write tools" test_delegation_alert_bash_does_not_increment_counter

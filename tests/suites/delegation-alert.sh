@@ -61,6 +61,23 @@ test_delegation_alert_fifth_edit_warns_without_permission_decision() {
   fi
 }
 
+# 임계 도달 경고는 그 턴에 한 번만 나온다(`-eq`). 6회째 이후에도 매번 주입되면
+# 같은 턴에서 경고 피로를 만든다.
+test_delegation_alert_warns_once_per_turn() {
+  local sandbox state_dir out call
+  sandbox=$(new_sandbox)
+  state_dir="$sandbox/state"
+  for call in 1 2 3 4 5; do
+    out=$(_delegation_alert_call "$state_dir" "session-a" "prompt-a")
+  done
+  [[ -n "$out" ]] || fail "expected fifth edit to warn"
+  for call in 6 7; do
+    out=$(_delegation_alert_call "$state_dir" "session-a" "prompt-a")
+    [[ -z "$out" ]] || fail "expected edit $call to stay silent after the one-shot warning, got: $out"
+  done
+  assert_file_contains "$state_dir/session-a" "prompt-a 7"
+}
+
 test_delegation_alert_prompt_change_resets_counter() {
   local sandbox state_dir out call
   sandbox=$(new_sandbox)
