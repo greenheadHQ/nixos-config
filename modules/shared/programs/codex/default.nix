@@ -78,8 +78,16 @@ in
   # ─── 글로벌 설정 (~/.codex/) ───
 
   home.file = {
-    # 글로벌 AGENTS.md - Claude의 CLAUDE.md와 동일 소스 공유
-    ".codex/AGENTS.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
+    # 글로벌 AGENTS.md - Codex 전용 사본.
+    # [WHY] 과거에는 Claude의 CLAUDE.md를 그대로 공유했으나, 그 파일에 Claude Code
+    # 런타임 전용 지시(위임 결정표 — Agent tool 기반 scout 위임, Codex executor 호출)가
+    # 들어가면서 Codex 세션이 자기 자신에게 위임하려 하고 존재하지 않는 서브에이전트를
+    # 찾는 문제가 생겼다. 런타임에 해당하지 않는 지시는 무효화 문구로 덮는 것보다
+    # 애초에 전달하지 않는 편이 컨텍스트와 판단 부담 양쪽에서 낫다.
+    # 양쪽에 모두 필요한 규칙(현재는 mise 런타임)은 두 파일에 함께 유지하며,
+    # tests/suites/agents-instruction-scope.sh가 그 동기화와 누출 여부를 검증한다.
+    ".codex/AGENTS.md".source =
+      config.lib.file.mkOutOfStoreSymlink "${nixosConfigPath}/modules/shared/programs/codex/files/AGENTS.md";
 
     # run-da Arbiter selective consistency harness. run-da 스킬이 Codex에도 노출되므로
     # Claude와 동일 source를 Codex scope에도 미러링하여 `~/.codex/scripts/fleiss-kappa.py`를
