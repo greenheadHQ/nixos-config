@@ -119,13 +119,17 @@ let
   # declined to change this), which pushes the CLI's context tracking onto a character-based
   # local estimate. Both errors combine to saturate the statusline at "100% context used"
   # far too early. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the CLI's official override that only
-  # applies to non-claude model names. 258000 is the limit the Codex app currently reports
-  # for the pinned model (user-measured 2026-07-15) and is itself a TEMPORARY upstream
-  # value: the model shipped with 372k, OpenAI reverted the product limit while fixing an
-  # over-billing bug and announced it will be raised again — re-tune this value when that
-  # lands (tracked in issue #1113; see also the handoff limits section). The numerator stays
-  # a local estimate, so the displayed percentage remains an approximation.
-  maxContextTokens = 258000;
+  # applies to non-claude model names. The official Codex catalog defines both context_window
+  # and max_context_window as 272000 for gpt-5.6-sol. Codex separately applies its 95%
+  # effective-window policy and therefore reports 258400 as usable input; that policy value
+  # is not the raw Codex catalog window. Claude Code applies its own output and compaction headroom
+  # below the declared window, so feeding the Codex effective value here would reserve
+  # headroom twice. Keep both wrapper channels anchored to the raw catalog value and re-tune
+  # them together when the official model metadata changes. The numerator stays a local
+  # estimate, so the displayed percentage remains an approximation. Reverify with:
+  #   codex debug models | jq '.models[] | select(.slug == "gpt-5.6-sol") |
+  #     {context_window,max_context_window,effective_context_window_percent}'
+  maxContextTokens = 272000;
 
   runtimeLibrary = pkgs.replaceVars ./files/claudex-runtime.sh {
     allowTestOverrides = "false";

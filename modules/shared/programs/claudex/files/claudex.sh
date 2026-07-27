@@ -212,19 +212,21 @@ export CLAUDE_CODE_EFFORT_LEVEL="$effort_level"
 # pinned proxy hard-codes usage 0/0 into SSE message_start (upstream declined to fix), which
 # forces the CLI's context tracking onto an overestimating character-based fallback — the
 # statusline then saturates at "100% context used" early. This official non-claude-model
-# override corrects the denominator to the limit the Codex app currently reports (a
-# temporary upstream reduction from 372k; re-tune when OpenAI raises it back — see the
-# value's CIR in default.nix). The numerator stays a local estimate, so the displayed
-# percentage is an approximation (handoff limits section).
+# override corrects the denominator to the official Codex catalog's raw context window.
+# Codex reports a smaller effective window after applying its own 95% headroom, but Claude
+# Code applies separate output and compaction reserves below this declared window; reusing
+# the Codex effective value here would count headroom twice. The numerator stays a local
+# estimate, so the displayed percentage is an approximation (handoff limits section).
 export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$CLAUDEX_MAX_CONTEXT_TOKENS"
-# CIR: MAX_CONTEXT_TOKENS alone only fixes the displayed denominator. The pinned CLI keeps
-# auto-compact disabled whenever the compact window's *source* resolves to "auto" (local
-# sessions guard), which is always the case for unrecognized model names without an
-# explicit window channel — so claudex sessions never auto-compacted (measured on 2.1.210;
-# the "N% context used" statusline label, instead of "N% until auto-compact", is the visible
-# symptom). CLAUDE_CODE_AUTO_COMPACT_WINDOW is the CLI's official env channel that flips the
-# source to "env" and re-enables the compact threshold check. It shares the same
-# wrapper-owned value so the issue #1113 re-tune stays single-sourced.
+# CIR: MAX_CONTEXT_TOKENS fixes the non-claude model's local window, usage denominator, and
+# pre-query gates, but it does not change the compact window's *source*. The pinned CLI keeps
+# auto-compact disabled whenever that source resolves to "auto" (local sessions guard),
+# which is always the case for unrecognized model names without an explicit window channel
+# — so claudex sessions never auto-compacted (measured on 2.1.210; the "N% context used"
+# statusline label, instead of "N% until auto-compact", is the visible symptom).
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW is the CLI's official env channel that flips the source to
+# "env" and re-enables the compact threshold check. It shares the same wrapper-owned Codex
+# catalog window so future catalog re-tunes stay single-sourced.
 # CIR: the export is default-mode only. Unlike MAX_CONTEXT_TOKENS (which the CLI applies to
 # non-claude model names only), AUTO_COMPACT_WINDOW has no model scoping — in --mixed it
 # would drag the *recognized* Claude main model's compact threshold down to the gpt value,
