@@ -43,7 +43,7 @@ test_agents_scope_common_rules_stay_in_sync() {
   claude="$(_ais_claude_md)"
   [[ -f "$codex" ]] || fail "codex AGENTS.md 없음"
   [[ -f "$claude" ]] || fail "claude CLAUDE.md 없음"
-  while IFS= read -r line; do
+  while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "${line// /}" ]] && continue
     if ! grep -qxF -e "$line" "$claude"; then
       fail "codex AGENTS.md의 줄이 claude CLAUDE.md에 없음 (동기화 깨짐): ${line:0:60}…"
