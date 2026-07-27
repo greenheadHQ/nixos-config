@@ -107,7 +107,12 @@ staging_config="$staging/config.yaml"
 cleanup_staging() {
   _claudex_quiet_rm -rf -- "$staging"
 }
-trap cleanup_staging EXIT INT TERM
+cleanup_staging_on_exit() {
+  local exit_status=$?
+  cleanup_staging || _claudex_error "failed to remove the private login staging directory"
+  return "$exit_status"
+}
+trap cleanup_staging_on_exit EXIT INT TERM
 
 _claudex_ensure_private_dir "$staging_auth"
 (
@@ -117,6 +122,19 @@ _claudex_ensure_private_dir "$staging_auth"
 )
 
 echo "claudex-login: follow the $cred_type OAuth instructions printed by CLIProxyAPI"
+_claudex_filter_login_output() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "Authentication saved to "*)
+        printf '%s\n' "Authentication saved to private staging"
+        ;;
+      *)
+        printf '%s\n' "$line"
+        ;;
+    esac
+  done
+}
 set +e
 (
   cd "$staging"
@@ -131,8 +149,8 @@ set +e
       "$login_flag" \
       --no-browser \
       --local-model
-)
-login_rc=$?
+) 2>&1 | _claudex_filter_login_output
+login_rc="${PIPESTATUS[0]}"
 set -e
 if [ "$login_rc" -ne 0 ]; then
   _claudex_error "$cred_type login failed"
@@ -281,6 +299,12 @@ _claudex_promote_staged_credential() {
 }
 
 with_state_lock _claudex_promote_staged_credential
+if ! cleanup_staging; then
+  trap - EXIT INT TERM
+  _claudex_error "failed to remove the private login staging directory"
+  exit 1
+fi
+trap - EXIT INT TERM
 if [ "$replace" = true ]; then
   echo "claudex-login: canonical $cred_type credential was replaced and is schema-valid; live validity was not checked"
 else

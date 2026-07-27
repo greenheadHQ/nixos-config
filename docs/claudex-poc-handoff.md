@@ -119,7 +119,7 @@ git status --short --branch
 ### 검증 연결
 
 - `tests/suites/claudex.sh`: fake boundary, state mode, credential shape, wrapper scrub, wrapper-owned settings, 파생 runtime 계약, 실제 Nix-generated command output, layout drift, synthetic disabled Home Manager closure를 검증한다. fixture materialization 뒤 미치환 placeholder가 하나라도 남으면 실패한다.
-- `tests/shell-script-tests.sh`: 위 suite의 11개 테스트를 전체 shell suite에 등록한다.
+- `tests/shell-script-tests.sh`: 위 suite의 13개 테스트를 전체 shell suite에 등록한다.
 - `tests/eval-tests.nix`: descriptor, 실제·synthetic host 노출, pin, config, no-launchd/no-activation 계약과 portable Nix derivation 계약을 평가한다. 실제 command output 내용은 shell test가 build/read한다.
 - `lefthook.yml`과 `scripts/ai/check-lefthook-staged-config.sh`: JSON pin/template 변경이 eval 검증을 타도록 한다.
 

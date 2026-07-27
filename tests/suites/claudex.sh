@@ -1118,6 +1118,7 @@ else
   printf '%s' '{"type":"claude","access_token":"replacement-claude-access","refresh_token":"replacement-claude-refresh"}'
 fi > "\$auth_dir/upstream-generated-name.json"
 chmod 600 "\$auth_dir/upstream-generated-name.json"
+printf 'Authentication saved to %s\n' "\$auth_dir/upstream-generated-name.json"
 EOF
   _claudex_pin_proxy_shebang "$sandbox/fake-cli-proxy-api"
   chmod +x "$sandbox/fake-cli-proxy-api"
@@ -1132,7 +1133,7 @@ EOF
     HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
       "$login" --replace 2>&1
   )"
-  [[ "$output" == "claudex-login: follow the codex OAuth instructions printed by CLIProxyAPI"$'\n'"claudex-login: canonical codex credential was replaced and is schema-valid; live validity was not checked" ]] \
+  [[ "$output" == "claudex-login: follow the codex OAuth instructions printed by CLIProxyAPI"$'\n'"Authentication saved to private staging"$'\n'"claudex-login: canonical codex credential was replaced and is schema-valid; live validity was not checked" ]] \
     || fail "Codex replacement output drifted or exposed private data: $output"
   assert_file_contains "$proxy_log" "arg=--codex-device-login"
   [[ -f "$state/auth/codex-test.json" ]] \
@@ -1157,7 +1158,7 @@ EOF
     HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
       "$login" --replace --claude 2>&1
   )"
-  [[ "$output" == "claudex-login: follow the claude OAuth instructions printed by CLIProxyAPI"$'\n'"claudex-login: canonical claude credential was replaced and is schema-valid; live validity was not checked" ]] \
+  [[ "$output" == "claudex-login: follow the claude OAuth instructions printed by CLIProxyAPI"$'\n'"Authentication saved to private staging"$'\n'"claudex-login: canonical claude credential was replaced and is schema-valid; live validity was not checked" ]] \
     || fail "Claude replacement output drifted or exposed private data: $output"
   assert_file_contains "$proxy_log" "arg=--claude-login"
   [[ -f "$state/auth/claude-sibling.json" ]] \
@@ -1177,7 +1178,7 @@ EOF
 }
 
 test_claudex_login_replacement_fails_closed() {
-  local sandbox state login jq_bin scenario output before after rc real_cp real_mv
+  local sandbox state login jq_bin scenario output before after rc real_cp real_mv real_rm
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
   login="$sandbox/generated/claudex-login"
@@ -1185,6 +1186,7 @@ test_claudex_login_replacement_fails_closed() {
   scenario="$sandbox/scenario"
   real_cp="$(command -v cp)"
   real_mv="$(command -v mv)"
+  real_rm="$(command -v rm)"
   _claudex_fixture "$sandbox"
   mkdir -p "$state/auth"
   chmod 700 "$state" "$state/auth"
@@ -1238,6 +1240,7 @@ if [ "\$(<"$scenario")" = invalid-stage-mode ]; then
     > "\$auth_dir/private-staged-account.json"
   chmod 644 "\$auth_dir/private-staged-account.json"
 fi
+printf 'Authentication saved to %s\n' "\$auth_dir/private-staged-account.json"
 case "\$(<"$scenario")" in
   concurrent-target)
     printf '%s' '{"type":"codex","access_token":"concurrent-secret-access","refresh_token":"concurrent-secret-refresh"}' \
@@ -1406,6 +1409,34 @@ EOF
     || fail "post-rename validation failure did not restore the canonical credential set"
   assert_not_contains "$output" "secret-"
   assert_not_contains "$output" "private-"
+
+  # Success is not reported until the private staging directory has been removed. A
+  # path-bearing rm diagnostic is suppressed and replaced with a generic failure.
+  _reset_replacement_credentials
+  printf '%s' success > "$scenario"
+  cat > "$sandbox/fail-staging-cleanup-rm" <<EOF
+#!/usr/bin/env bash
+if [ "\${1-}" = "-rf" ] && [[ "\${3-}" == *"/auth.login."* ]]; then
+  printf 'rm operand=%s\n' "\$@" >&2
+  exit 93
+fi
+exec "$real_rm" "\$@"
+EOF
+  chmod +x "$sandbox/fail-staging-cleanup-rm"
+  set +e
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_RM="$sandbox/fail-staging-cleanup-rm" "$login" --replace 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "replacement reported success after staging cleanup failed"
+  jq -e '.access_token == "staged-secret-access"' \
+    "$state/auth/private-codex-account.json" >/dev/null \
+    || fail "staging cleanup failure obscured the completed replacement state"
+  assert_contains "$output" "failed to remove the private login staging directory"
+  assert_not_contains "$output" "auth.login."
+  assert_not_contains "$output" "private-staged-account"
 
   # Missing providers, malformed/duplicate state, and hostile argv fail without OAuth or deletion.
   _reset_replacement_credentials
