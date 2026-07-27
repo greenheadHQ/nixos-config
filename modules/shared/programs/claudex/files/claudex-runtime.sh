@@ -17,7 +17,7 @@
 #   _claudex_credential_json_valid _claudex_credential_fingerprint
 #   _claudex_credential_set_fingerprint _claudex_credential_type_of
 #   _claudex_credential_path_of_type _claudex_assert_entries_wellformed
-#   _claudex_assert_safe_work_dir
+#   _claudex_assert_safe_work_dir _claudex_loopback_responding
 
 if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_JQ="${CLAUDEX_JQ:-@jqBin@}"
@@ -634,6 +634,28 @@ curl_loopback() (
         --max-time 5 \
         --request GET \
         --url "$CLAUDEX_BASE_URL$path"
+)
+
+_claudex_loopback_responding() (
+  # This is a listener-presence probe, not an authenticated readiness check: any HTTP
+  # response means replacement must stop. Keep the same proxy/config isolation as
+  # curl_loopback so ambient curl settings cannot bypass or spoof the loopback gate.
+  "$CLAUDEX_ENV" \
+    -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY \
+    -u http_proxy -u https_proxy -u all_proxy -u no_proxy \
+    NO_PROXY="$CLAUDEX_NO_PROXY" \
+    no_proxy="$CLAUDEX_NO_PROXY" \
+    "$CLAUDEX_CURL" \
+      -q \
+      --output /dev/null \
+      --silent \
+      --show-error \
+      --noproxy '*' \
+      --proto '=http' \
+      --connect-timeout 1 \
+      --max-time 2 \
+      --request GET \
+      --url "$CLAUDEX_BASE_URL/v1/models"
 )
 
 wait_for_proxy_ready() {

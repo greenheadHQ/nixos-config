@@ -1310,6 +1310,33 @@ EOF
   [[ -z "$(find "$state" -maxdepth 1 -name 'auth.login.*' -print -quit)" ]] \
     || fail "running-proxy rejection created a login staging directory"
 
+  # A proxy that starts during OAuth is caught by the second probe under the
+  # promotion state lock, before backup or canonical mutation.
+  cat > "$sandbox/proxy-starts-during-oauth-curl" <<EOF
+#!/usr/bin/env bash
+count=0
+if [ -f "$sandbox/curl-count" ]; then read -r count < "$sandbox/curl-count"; fi
+count=\$((count + 1))
+printf '%s' "\$count" > "$sandbox/curl-count"
+if [ "\$count" -ge 2 ]; then exit 0; fi
+exit 7
+EOF
+  chmod +x "$sandbox/proxy-starts-during-oauth-curl"
+  _reset_replacement_credentials
+  printf '%s' success > "$scenario"
+  before="$(_canonical_digest)"
+  if output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CURL="$sandbox/proxy-starts-during-oauth-curl" "$login" --replace 2>&1
+  )"; then
+    fail "replacement continued after the proxy started during OAuth"
+  fi
+  [[ "$(_canonical_digest)" == "$before" ]] \
+    || fail "late proxy rejection changed the canonical credential set"
+  [[ ! -d "$state/credential-backups" ]] \
+    || fail "late proxy rejection created a credential backup"
+  assert_contains "$output" "stop the local claudex proxy before replacing credentials"
+
   for scenario_name in oauth-fail save-error invalid-stage invalid-stage-mode; do
     _reset_replacement_credentials
     printf '%s' "$scenario_name" > "$scenario"

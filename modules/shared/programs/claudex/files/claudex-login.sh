@@ -97,9 +97,7 @@ case "$existing_rc" in
     ;;
 esac
 
-if [ "$replace" = true ] \
-  && "$CLAUDEX_CURL" --silent --show-error --output /dev/null \
-    --connect-timeout 1 --max-time 2 "$CLAUDEX_BASE_URL/v1/models" 2>/dev/null; then
+if [ "$replace" = true ] && _claudex_loopback_responding 2>/dev/null; then
   _claudex_error "stop the local claudex proxy before replacing credentials"
   exit 1
 fi
@@ -254,6 +252,14 @@ _claudex_promote_staged_credential() {
     _claudex_credential_path_of_type "$CLAUDEX_AUTH_DIR" "$cred_type" >/dev/null \
       && _claudex_assert_entries_wellformed "$CLAUDEX_AUTH_DIR"
     return
+  fi
+
+  # OAuth can take minutes. Re-probe while holding the state lock so a cooperating
+  # launcher that starts after the early check cannot race backup/replacement with an
+  # old credential lineage.
+  if _claudex_loopback_responding 2>/dev/null; then
+    _claudex_error "stop the local claudex proxy before replacing credentials"
+    return 1
   fi
 
   existing_rc=0
