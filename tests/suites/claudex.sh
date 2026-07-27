@@ -1,11 +1,11 @@
 # tests/suites/claudex.sh — Stage 1 fake-only coverage for the declarative claudex PoC
 # shellcheck shell=bash
 
-# Single expected value for the wrapper-owned context-window override. The production
-# source of truth is `maxContextTokens` in modules/shared/programs/claudex/default.nix;
-# that value is temporary (issue #1113), so the fixture substitution, fake-claude assert,
-# and Nix-generated grep below all read this one constant to keep future re-tunes atomic.
-_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS=258000
+# Single expected raw Codex catalog window for the wrapper-owned context override. The production
+# source of truth is `maxContextTokens` in modules/shared/programs/claudex/default.nix, so
+# the fixture substitution, fake-claude assert, and Nix-generated grep below all read this
+# one constant to keep future catalog re-tunes atomic.
+_CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS=272000
 
 # Role-split model expectations (production source of truth: runtimeContract in
 # modules/shared/programs/claudex/default.nix). The default main and subagent models are
