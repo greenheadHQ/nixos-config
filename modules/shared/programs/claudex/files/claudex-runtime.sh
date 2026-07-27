@@ -170,18 +170,18 @@ _claudex_ensure_private_dir() {
 }
 
 _claudex_assert_private_file() {
-  local path="$1"
+  local path="$1" display_path="${2:-$1}"
   _claudex_reject_newline "$path" || return 1
   if [ -L "$path" ] || [ ! -f "$path" ]; then
-    _claudex_error "expected a real private file: $path"
+    _claudex_error "expected a real private file: $display_path"
     return 1
   fi
   if [ "$(_claudex_permission_triplet "$path")" != "600" ]; then
-    _claudex_error "file mode must be 0600: $path"
+    _claudex_error "file mode must be 0600: $display_path"
     return 1
   fi
   if [ "$(_claudex_file_owner "$path")" != "$($CLAUDEX_ID -u)" ]; then
-    _claudex_error "file owner does not match the current user: $path"
+    _claudex_error "file owner does not match the current user: $display_path"
     return 1
   fi
 }
@@ -391,7 +391,7 @@ _claudex_credential_json_valid() {
       return 1
       ;;
   esac
-  _claudex_assert_private_file "$path" || return 1
+  _claudex_assert_private_file "$path" "credential file" || return 1
   "$CLAUDEX_JQ" -e --arg credType "$cred_type" '
     type == "object"
     and .type == $credType
@@ -402,7 +402,7 @@ _claudex_credential_json_valid() {
 
 _claudex_credential_fingerprint() {
   local path="$1" digest
-  _claudex_assert_private_file "$path" || return 1
+  _claudex_assert_private_file "$path" "credential file" || return 1
   digest="$("$CLAUDEX_OPENSSL" dgst -sha256 < "$path")" || return 1
   digest="${digest##*= }"
   if [ "${#digest}" -ne 64 ]; then
@@ -424,7 +424,7 @@ _claudex_credential_set_fingerprint() {
   digest="$(
     shopt -s dotglob nullglob
     for entry in "$dir"/*; do
-      _claudex_assert_private_file "$entry" || exit 1
+      _claudex_assert_private_file "$entry" "credential file" || exit 1
       printf '%s\0%s\0' "${entry##*/}" "$(_claudex_credential_fingerprint "$entry")" || exit 1
     done | "$CLAUDEX_OPENSSL" dgst -sha256
   )" || return 1

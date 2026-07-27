@@ -1177,12 +1177,13 @@ EOF
 }
 
 test_claudex_login_replacement_fails_closed() {
-  local sandbox state login jq_bin scenario output before after rc real_mv
+  local sandbox state login jq_bin scenario output before after rc real_cp real_mv
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
   login="$sandbox/generated/claudex-login"
   jq_bin="$(command -v jq)"
   scenario="$sandbox/scenario"
+  real_cp="$(command -v cp)"
   real_mv="$(command -v mv)"
   _claudex_fixture "$sandbox"
   mkdir -p "$state/auth"
@@ -1222,7 +1223,7 @@ auth_dir="\$("$jq_bin" -r '.["auth-dir"]' "\$config")"
 mkdir -p "\$auth_dir"
 chmod 700 "\$auth_dir"
 case "\$(<"$scenario")" in
-  invalid-stage)
+  invalid-stage | invalid-stage-mode)
     printf '%s' '{"type":"codex","access_token":"","refresh_token":"staged-secret-refresh"}' \
       > "\$auth_dir/private-staged-account.json"
     ;;
@@ -1232,6 +1233,11 @@ case "\$(<"$scenario")" in
     ;;
 esac
 chmod 600 "\$auth_dir/private-staged-account.json"
+if [ "\$(<"$scenario")" = invalid-stage-mode ]; then
+  printf '%s' '{"type":"codex","access_token":"staged-secret-access","refresh_token":"staged-secret-refresh"}' \
+    > "\$auth_dir/private-staged-account.json"
+  chmod 644 "\$auth_dir/private-staged-account.json"
+fi
 case "\$(<"$scenario")" in
   concurrent-target)
     printf '%s' '{"type":"codex","access_token":"concurrent-secret-access","refresh_token":"concurrent-secret-refresh"}' \
@@ -1254,7 +1260,7 @@ EOF
     "$sandbox/generated/wrapper-settings.json"
   chmod +x "$login"
 
-  for scenario_name in oauth-fail invalid-stage; do
+  for scenario_name in oauth-fail invalid-stage invalid-stage-mode; do
     _reset_replacement_credentials
     printf '%s' "$scenario_name" > "$scenario"
     before="$(_canonical_digest)"
@@ -1271,6 +1277,18 @@ EOF
     assert_not_contains "$output" "secret-"
     assert_not_contains "$output" "private-"
   done
+
+  # A canonical credential permission failure is generic and does not expose its
+  # account-derived filename before OAuth starts.
+  _reset_replacement_credentials
+  chmod 644 "$state/auth/private-codex-account.json"
+  if output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      "$login" --replace 2>&1
+  )"; then
+    fail "replacement accepted a non-private canonical credential"
+  fi
+  assert_not_contains "$output" "private-"
 
   # A valid concurrent mutation anywhere in the canonical set invalidates the snapshot.
   for scenario_name in concurrent-target concurrent-sibling; do
@@ -1291,12 +1309,59 @@ EOF
     assert_not_contains "$output" "private-"
   done
 
+  # A non-cooperating writer that changes the target while the private backup is copied
+  # is detected by the final pre-promotion snapshot check.
+  _reset_replacement_credentials
+  printf '%s' success > "$scenario"
+  cat > "$sandbox/mutate-after-backup-cp" <<EOF
+#!/usr/bin/env bash
+"$real_cp" "\$@" || exit
+printf '%s' '{"type":"codex","access_token":"post-backup-concurrent-access","refresh_token":"post-backup-concurrent-refresh"}' \
+  > "$state/auth/private-codex-account.json"
+chmod 600 "$state/auth/private-codex-account.json"
+EOF
+  chmod +x "$sandbox/mutate-after-backup-cp"
+  set +e
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CP="$sandbox/mutate-after-backup-cp" "$login" --replace 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "post-backup canonical mutation did not stop replacement"
+  jq -e '.access_token == "post-backup-concurrent-access"' \
+    "$state/auth/private-codex-account.json" >/dev/null \
+    || fail "post-backup concurrent credential was overwritten"
+  [[ -z "$(find "$state/credential-backups" -mindepth 1 -maxdepth 1 -type f -print -quit)" ]] \
+    || fail "post-backup mutation retained a stale backup"
+  assert_not_contains "$output" "private-"
+
+  # Operand-bearing coreutils diagnostics are suppressed before a generic error is printed.
+  _reset_replacement_credentials
+  cat > "$sandbox/noisy-fail-cp" <<'EOF'
+#!/usr/bin/env bash
+printf 'cp operand=%s\n' "$@" >&2
+exit 92
+EOF
+  chmod +x "$sandbox/noisy-fail-cp"
+  set +e
+  output="$(
+    HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CP="$sandbox/noisy-fail-cp" "$login" --replace 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "failed backup copy unexpectedly allowed replacement"
+  assert_contains "$output" "failed to create the private credential backup"
+  assert_not_contains "$output" "private-"
+
   # A failed atomic move leaves the canonical set byte-identical and no redundant backup.
   _reset_replacement_credentials
   printf '%s' success > "$scenario"
   cat > "$sandbox/fail-replacement-mv" <<EOF
 #!/usr/bin/env bash
 if [ "\${1-}" = "-f" ] && [[ "\${3-}" == *"/auth.login."*"/auth/"* ]]; then
+  printf 'mv operand=%s\n' "\$@" >&2
   exit 91
 fi
 exec "$real_mv" "\$@"

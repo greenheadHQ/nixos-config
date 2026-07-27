@@ -384,7 +384,7 @@ find "$auth_dir" -mindepth 1 -maxdepth 1 -type f -print 2>/dev/null | wc -l
 
 - `0`: `claudex-login`을 실행한다.
 - `1`: `claudex-login`이 자체 schema 검증 후 `present and schema-valid; live validity was not checked`로 종료하는지 확인한다.
-- `2`: codex+claude 공존(mixed set)이면 정상이다 — `claudex-status`가 auth=ready를 보고하는지 확인한다. 같은 타입 2개거나 invalid면 아래 규칙을 따른다.
+- `2`: codex+claude 공존(mixed set)이면 정상이다 — `claudex-status`가 `auth=ready`를 보고하는지 확인한다. 이 값은 로컬 credential set의 schema/file readiness만 뜻하며 upstream token 유효성은 확인하지 않는다. 같은 타입 2개거나 invalid면 아래 규칙을 따른다.
 - 타입별 중복 또는 invalid: 자동 삭제·선택하지 말고 중단한 뒤 사용자에게 보고한다.
 
 mixed 세션용 claude credential 추가는 `claudex-login --claude`로 수행한다 (동일 staging → 타입 검증 → 원자 승격 절차; 기존 codex credential은 건드리지 않는다).
@@ -467,7 +467,7 @@ proxy=ready
 catalog=ready
 ```
 
-Stage 1에는 서비스 유닛이 없으므로 darwin의 `service=missing`은 정상이다. linux에는 조회할 launchd 도메인 자체가 없어 `service=n/a`를 출력한다(값만 다르고 readiness 판정에는 관여하지 않는다). auth/proxy/catalog가 ready이면 status 명령은 exit `0`이며 foreground Stage 1 readiness gate로 사용할 수 있다.
+Stage 1에는 서비스 유닛이 없으므로 darwin의 `service=missing`은 정상이다. linux에는 조회할 launchd 도메인 자체가 없어 `service=n/a`를 출력한다(값만 다르고 readiness 판정에는 관여하지 않는다). auth/proxy/catalog가 ready이면 status 명령은 exit `0`이며 로컬 schema/file·proxy·catalog를 확인하는 foreground Stage 1 readiness gate로 사용할 수 있다. `auth=ready`는 upstream refresh token의 live validity를 증명하지 않으며, 실제 인증 성공은 아래 headless completion으로 확인한다.
 
 ### Headless completion
 
