@@ -266,6 +266,10 @@ run_test "delegation-alert ignores non-write tools" test_delegation_alert_bash_d
 run_test "delegation-alert requires prompt_id" test_delegation_alert_missing_prompt_id_creates_no_state
 run_test "delegation-alert counts sessions independently" test_delegation_alert_sessions_count_independently
 run_test "delegation-alert rejects unsafe session id" test_delegation_alert_unsafe_session_id_creates_no_state
+run_test "codex instructions exclude Claude-only directives" test_agents_scope_codex_has_no_claude_only_directives
+run_test "shared instruction rules stay in sync" test_agents_scope_common_rules_stay_in_sync
+run_test "claude instructions keep the delegation table" test_agents_scope_claude_keeps_delegation_table
+run_test "codex AGENTS wiring uses its own copy" test_agents_scope_codex_wiring_does_not_share_claude_md
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
