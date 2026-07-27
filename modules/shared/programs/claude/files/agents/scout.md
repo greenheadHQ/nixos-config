@@ -5,7 +5,7 @@ description: >-
   사실 확인이 필요할 때 사용한다. 조사 결과만 요약해 돌려주며 파일을 수정하지 않는다.
   오케스트레이터가 직접 여러 파일을 훑기 전에 먼저 이 에이전트에 위임한다.
 model: sonnet
-effort: medium
+effort: high
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, ToolSearch
 maxTurns: 30
 color: cyan
@@ -49,5 +49,7 @@ ESCALATION
 ```
 
 ## 예산
+
+`effort: high`는 모델을 sonnet으로 낮춘 것에 대한 보정이다. 모델 등급과 추론 레벨을 함께 낮추면 조사 품질이 두 축에서 동시에 깎인다. 세션의 상속 레벨(보통 더 높다)을 그대로 물려받지 않으면서도 정찰에 필요한 깊이는 남긴다.
 
 `maxTurns: 30`은 폭주 방지용 **초기 기본값**이며 실측에서 도출한 값이 아니다. 정찰이 30턴에서 잘리는 일이 반복되면 조사 범위가 한 번에 너무 넓은 것이므로, 값을 올리기 전에 호출자가 질문을 쪼갰는지 먼저 검토한다.
