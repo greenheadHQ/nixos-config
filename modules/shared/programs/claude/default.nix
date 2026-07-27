@@ -167,12 +167,19 @@ in
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/pinning-alert.sh";
     ".claude/hooks/pinning-guard.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/pinning-guard.sh";
+    ".claude/hooks/delegation-alert.sh".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/hooks/delegation-alert.sh";
     ".claude/lib/pinning-patterns.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/pinning-patterns.sh";
     ".claude/lib/session-state.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/session-state.sh";
     ".claude/lib/hook-runtime.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/lib/hook-runtime.sh";
+
+    # scout 서브에이전트 (user-scope) — 읽기 전용 정찰·조사 위임 대상.
+    # tools allowlist로 편집 도구와 MCP를 제외하며, 오케스트레이터 패턴의 읽기 경로를 담당한다.
+    ".claude/agents/scout.md".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/agents/scout.md";
 
     # hs.notify contentImage용 아이콘 (Claude.app에서 추출한 128x128 PNG, macOS 전용)
     ".claude/assets/notification-icon.png" = lib.mkIf pkgs.stdenv.isDarwin {

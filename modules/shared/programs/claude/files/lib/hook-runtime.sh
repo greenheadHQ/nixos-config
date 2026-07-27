@@ -10,6 +10,7 @@
 # `hook_load_lib` 는 정책 결정권 없이 stdout 으로 path 또는 빈 문자열을 반환한다.
 #
 # USED-BY:
+#   claude/files/hooks/delegation-alert.sh       # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/pinning-alert.sh         # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/pinning-guard.sh         # via $HOOK_RUNTIME_LIB
 #   claude/files/hooks/fragile-hardcoding-guard.sh # via $HOOK_RUNTIME_LIB
