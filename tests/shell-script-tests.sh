@@ -298,6 +298,8 @@ run_test "claudex credential and loopback contract" test_claudex_credential_and_
 run_test "claudex wrapper pins provider model and argv" test_claudex_wrapper_pins_provider_model_and_argv
 run_test "claudex mixed mode contract" test_claudex_mixed_mode_contract
 run_test "claudex launcher and login use fake boundaries" test_claudex_launcher_and_login_use_fake_boundaries
+run_test "claudex login replaces one provider safely" test_claudex_login_replaces_one_provider_safely
+run_test "claudex login replacement fails closed" test_claudex_login_replacement_fails_closed
 run_test "claudex production execution boundaries are pinned" test_claudex_production_execution_boundaries
 run_test "claudex Stage 1 status is sanitized" test_claudex_status_is_sanitized
 run_test "claudex Nix-generated command outputs are pinned" test_claudex_nix_generated_command_outputs_are_pinned
