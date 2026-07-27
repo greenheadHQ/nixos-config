@@ -316,18 +316,78 @@ resume_rc=$?
 `resume --last`는 오류 대신 새 session id로 조용히 시작해 exit 0을 반환했다 — 위 예제가
 session id·응답 context 확인을 포함하는 이유다. 불일치하거나 결과가 비면 재개 실패로 처리한다.
 
+## 위임 프롬프트 계약
+
+오케스트레이터가 executor에게 구현을 넘길 때 프롬프트에 포함하는 항목이다. 경계를 주지 않으면 executor가 예외마다 가드·검증 지점·실행 모드를 덧붙여 작업 범위를 스스로 늘린다. 열린 조사를 허용하면 wrapper timeout까지 도달하기도 한다. 범위는 호출자가 고정한다.
+
+| 항목 | 내용 |
+|------|------|
+| 완료조건 | 무엇을 만족하면 끝인지 유한하게 나열한다. "잘 동작하면 완료" 같은 열린 조건을 쓰지 않는다. 결과 본문에 넣을 완료 표식(예: `DONE: <작업명>`)을 요구하고, 성공 계약 5항에서 그 표식을 확인한다 |
+| 수정 허용 파일 | 고쳐도 되는 파일을 열거하고, 그 밖의 파일은 건드리지 말라고 명시한다. 부분 수정만 허용하는 파일은 범위(예: 특정 주석 블록 1줄)까지 적는다 |
+| 금지 사항 | 새 가드·검증 지점·실행 모드 추가 금지. native subagent·nested `codex exec`·기타 fan-out 금지. commit/push/branch 조작 금지 |
+| ESCALATION 경로 | 명세가 틀렸거나 허용 파일 밖을 고쳐야만 완료 가능하다고 판단될 때 추측으로 진행하지 않고 중단·보고하도록 형식을 준다 (아래) |
+| 시간 상한 | wrapper의 `CODEX_EXEC_TIMEOUT_SECONDS`(기본 1800초, 상한 7200초)가 강제한다. 10분을 넘길 수 있는 작업은 호출자가 background로 발사하고 완료 알림으로 받는다 — foreground Bash tool 호출은 10분에서 잘린다 |
+| effort | 일반 구현은 `high`를 기본값으로 한다. 자체 effort 계약을 가진 호출자(`run-da`의 role profile·`agent=`·사용자 지정 override)는 그 SSOT가 우선하며, 이 절은 그 값을 덮어쓰지 않는다 |
+
+fan-out 금지는 반드시 Codex 입력 프롬프트에 직접 적는다. `~/.claude/CLAUDE.md`의 단일 계층 규칙은 Claude 측 지침이라 executor에게 전달되지 않으며, `codex exec` 내부의 `collaboration.spawn_agent`는 실제로 동작한다 (Gotcha §9).
+
+### 허용 파일 목록은 권한 제한이 아니다
+
+`-s workspace-write`는 저장소 전체에 쓰기를 허용한다. 프롬프트의 허용 파일 목록은 지시일 뿐 sandbox가 강제하지 않고, 아래 성공 계약 네 조건도 변경 경로를 검사하지 않는다. 자동 위임에서는 호출자가 실행 전후를 대조한다.
+
+`git status --porcelain`만 비교하면 이미 dirty한 파일의 내용 추가 변경을 놓친다 — 출력 문자열이 같기 때문이다. 이 한계는 [`run-da/modes/audit.md`](../run-da/modes/audit.md)의 Non-goals가 content-only mutation·ignored 파일·write-then-revert 미감지로 이미 기술한 것과 동일하다. 따라서 status가 아니라 내용까지 포함한 스냅샷을 뜬다:
+
+```zsh
+_snapshot() {   # tracked 변경 내용 + untracked 파일 해시까지 포함
+  # ls-files는 저장소 기준 상대경로를 내므로 해시도 같은 디렉토리에서 계산한다.
+  # `git -C`의 효과는 파이프 뒤 xargs로 이어지지 않는다.
+  ( cd "$REPO" || return 1
+    git status --porcelain
+    git diff HEAD
+    git ls-files --others --exclude-standard -z | xargs -0 -r shasum -a 256 )
+}
+_snapshot > "$DIR/baseline.txt"   # 실행 전
+# ... codex-exec-supervised 실행 ...
+_snapshot > "$DIR/after.txt"      # 실행 후
+diff "$DIR/baseline.txt" "$DIR/after.txt"
+```
+
+허용 목록 밖 경로가 나오면 exit 0이어도 성공으로 판정하지 않고 사용자에게 보고한다 (성공 계약 6항).
+
+이 스냅샷도 `.gitignore` 대상 파일, write-then-revert, branch/remote/host mutation은 감지하지 못한다. 격리가 실제로 필요한 위임은 전용 worktree에서 실행해 대조 범위를 그 worktree로 좁힌다.
+
+### ESCALATION 형식
+
+executor가 계획의 오류를 발견했을 때 쓸 유일한 탈출구다. 이 경로가 없으면 executor에게는 "잘못된 명세를 그대로 구현" 또는 "계약 위반" 두 가지만 남는다.
+
+```text
+ESCALATION
+- 무엇이 문제인가:
+- 근거 (파일:줄 또는 명령 출력):
+- 필요한 변경:
+- 영향 받는 파일:
+- 최소 수정안:
+```
+
+ESCALATION을 반환한 실행은 완료 표식을 출력하지 않으므로 성공 계약 5항에서 걸러진다. 호출자는 이것을 실패가 아니라 계획 수정 요청으로 처리한다.
+
 ## 성공 계약
 
-프로세스 exit만으로 업무 성공을 판정하지 않는다. 아래 네 조건을 모두 확인한다.
+프로세스 exit만으로 업무 성공을 판정하지 않는다. 1~4는 모든 호출에, 5~6은 위임 프롬프트 계약을 적용한
+구현 위임에 추가로 적용한다.
 
 1. wrapper/CLI exit가 0이다.
 2. stderr에 timeout, usage limit, sandbox denial, unsupported model 오류가 없다
    (구현: `! grep -q "ERROR:" <stderr>` — CLI 오류는 `ERROR:` prefix로 출력되고 진행 로그·배너에는 없다).
 3. 기대 산출물이 존재하고 비어 있지 않다: `test -s "$RESULT"`.
 4. 반복 라운드라면 직전 결과 대비 새 finding·수정·판정 같은 진척 delta가 있다.
+5. 완료 표식 검사 — 완료 표식을 요구한 작업은 결과 본문에도 그 표식이 있어야 한다.
+   ESCALATION을 반환한 실행은 표식이 없으므로 여기서 걸러진다.
+6. 허용 경로 대조 — "허용 파일 목록은 권한 제한이 아니다"의 스냅샷 비교를 수행하고,
+   허용 목록 밖 경로가 나오면 exit 0이어도 실패로 판정한다.
 
-완료 표식을 요구한 작업은 결과 본문에도 그 표식이 있어야 한다. 진척 없는 pass가 연속되면 circuit
-breaker로 중단하고 같은 호출을 증식시키지 않는다. fan-out은 패턴 8 스모크를 한 번 통과한 뒤 시작한다.
+진척 없는 pass가 연속되면 circuit breaker로 중단하고 같은 호출을 증식시키지 않는다.
+fan-out은 패턴 8 스모크를 한 번 통과한 뒤 시작한다.
 
 | 분류 | 신호 | 처리 |
 |------|------|------|

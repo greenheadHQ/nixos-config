@@ -11,6 +11,7 @@
 # USED-BY:
 #   claude/files/hooks/session-init-icons.sh    # via $SESSION_STATE_LIB
 #   claude/files/hooks/record-last-session.sh   # via $SESSION_STATE_LIB
+#   claude/files/hooks/delegation-alert.sh      # via $SESSION_STATE_LIB
 #
 # scripts/ai/verify-ai-compat.sh 가 본 USED-BY 선언과 실제 source 호출 일치를 oracle로 검증.
 #
