@@ -2121,6 +2121,36 @@ test_claudex_production_execution_boundaries() {
   [[ ! -e "$sandbox/hostile-state" ]] || fail "production launcher accepted inherited state path"
   _claudex_add_valid_credential "$state"
 
+  cat > "$declared_home/.local/bin/claude" <<EOF
+#!/usr/bin/env bash
+printf 'home=%s\n' "\$HOME" > "$sandbox/production-claude.log"
+printf 'arg=%s\n' "\$@" >> "$sandbox/production-claude.log"
+exit 23
+EOF
+  cat > "$hostile_home/.local/bin/claude" <<EOF
+#!/usr/bin/env bash
+: > "$sandbox/hostile-claude-ran"
+exit 0
+EOF
+  cat > "$sandbox/production/claudex-proxy" <<'EOF'
+#!/usr/bin/env bash
+[ "$#" -eq 1 ] && [ "$1" = ensure ]
+EOF
+  chmod +x \
+    "$declared_home/.local/bin/claude" \
+    "$hostile_home/.local/bin/claude" \
+    "$sandbox/production/claudex-proxy"
+
+  set +e
+  HOME="$hostile_home" "$sandbox/production/claudex" -- harmless-prompt
+  rc=$?
+  set -e
+  [[ "$rc" == 23 ]] || fail "production claudex did not preserve Claude's exit status"
+  [[ ! -e "$sandbox/hostile-claude-ran" ]] \
+    || fail "production claudex executed hostile HOME's Claude"
+  assert_file_contains "$sandbox/production-claude.log" "home=$declared_home"
+  assert_file_contains "$sandbox/production-claude.log" "arg=harmless-prompt"
+
   set +e
   HOME="$hostile_home" \
     HOME_JWT=hostile home_jwt=hostile \

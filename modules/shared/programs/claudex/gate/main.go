@@ -379,6 +379,12 @@ func (g *gate) abortStartup(startupErr error) error {
 			}
 		}
 	}
+	stateLock, lockErr := g.acquireStateLock()
+	if lockErr != nil {
+		g.suppressManagedRestart()
+		return fmt.Errorf("%w; credential recovery lock failed: %v", startupErr, lockErr)
+	}
+	defer releaseFileLock(stateLock)
 	if recoveryErr := g.recoverCredentialSet(); recoveryErr != nil {
 		g.suppressManagedRestart()
 		return fmt.Errorf("%w; credential recovery failed: %v", startupErr, recoveryErr)
@@ -612,7 +618,7 @@ func (g *gate) startChild(logFile *os.File) error {
 		g.childExited = true
 		state := g.state
 		if state != "stopping" && state != "stopped" {
-			g.unexpectedChild = err != nil
+			g.unexpectedChild = true
 		}
 		if state == "starting" {
 			if err == nil {
@@ -625,7 +631,7 @@ func (g *gate) startChild(logFile *os.File) error {
 		close(g.childDone)
 		if state != "starting" && state != "stopping" && state != "stopped" {
 			if err == nil {
-				g.stopAfterCleanChildExit()
+				g.failUnexpected(errors.New("backend exited unexpectedly with status 0"))
 			} else {
 				g.failUnexpected(fmt.Errorf("backend exited: %w", err))
 			}
@@ -973,7 +979,11 @@ func (g *gate) stopProcess(force bool) (int, error) {
 		if g.control != nil {
 			_ = g.control.Close()
 		}
-		g.captureLatestCredentialSnapshot()
+		stateLock, recoveryErr := g.acquireStateLock()
+		if recoveryErr == nil {
+			defer releaseFileLock(stateLock)
+			g.captureLatestCredentialSnapshot()
+		}
 		if g.childCommand() != nil {
 			select {
 			case <-g.childDone:
@@ -989,7 +999,9 @@ func (g *gate) stopProcess(force bool) (int, error) {
 				}
 			}
 		}
-		recoveryErr := g.recoverCredentialSet()
+		if recoveryErr == nil {
+			recoveryErr = g.recoverCredentialSet()
+		}
 		g.mu.Lock()
 		if recoveryErr != nil {
 			log.Printf("claudex-gate: credential recovery failed: %v", recoveryErr)
@@ -1005,6 +1017,51 @@ func (g *gate) stopProcess(force bool) (int, error) {
 	})
 	<-g.stopped
 	return g.stopExit, g.stopError
+}
+
+func (g *gate) acquireStateLock() (*os.File, error) {
+	path := filepath.Join(g.options.stateDir, "state.lock")
+	info, err := os.Lstat(path)
+	if err == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
+		return nil, errors.New("refusing non-regular or symlink state lock")
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	locked := false
+	defer func() {
+		if !locked {
+			_ = file.Close()
+		}
+	}()
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !fileInfo.Mode().IsRegular() || fileInfo.Mode().Perm() != 0o600 {
+		return nil, errors.New("state lock must be a regular mode 0600 file")
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, err
+	}
+	locked = true
+	return file, nil
+}
+
+func releaseFileLock(file *os.File) {
+	if file == nil {
+		return
+	}
+	_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	_ = file.Close()
 }
 
 func (g *gate) captureLatestCredentialSnapshot() {
@@ -1225,18 +1282,6 @@ func (g *gate) failUnexpected(err error) {
 	if stopError == nil && exitCode == 0 {
 		exitCode = 1
 	}
-	g.finish(exitCode)
-}
-
-func (g *gate) stopAfterCleanChildExit() {
-	g.mu.Lock()
-	if g.state == "stopping" || g.state == "stopped" {
-		g.mu.Unlock()
-		return
-	}
-	g.state = "stopping"
-	g.mu.Unlock()
-	exitCode, _ := g.stopProcess(false)
 	g.finish(exitCode)
 }
 

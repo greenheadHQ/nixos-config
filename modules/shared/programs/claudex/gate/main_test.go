@@ -123,12 +123,17 @@ func TestValidateCredentialSetRejectsNonJSONEntry(t *testing.T) {
 }
 
 func TestDrainStopReportsCredentialRecoveryFailure(t *testing.T) {
-	authDir := t.TempDir()
+	stateDir := t.TempDir()
+	authDir := filepath.Join(stateDir, "auth")
+	if err := os.Mkdir(authDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	writePrivateFile(t, filepath.Join(authDir, "codex.json"), []byte(`{"type":"codex"}`))
 	runtime := &gate{
 		options: serveOptions{
-			mode:    "managed",
-			authDir: authDir,
+			mode:     "managed",
+			stateDir: stateDir,
+			authDir:  authDir,
 		},
 		state:         "open",
 		instance:      "test-instance",
@@ -169,9 +174,11 @@ func TestDrainStopReportsCredentialRecoveryFailure(t *testing.T) {
 }
 
 func TestSignalDuringControlDrainNeverReopensAdmission(t *testing.T) {
+	stateDir := t.TempDir()
 	runtime := &gate{
 		options: serveOptions{
 			mode:         "managed",
+			stateDir:     stateDir,
 			drainSeconds: 2,
 		},
 		state:         "open",
@@ -248,12 +255,17 @@ func TestSignalDuringControlDrainNeverReopensAdmission(t *testing.T) {
 }
 
 func TestRecoveryFailureSuppressesUnexpectedRestart(t *testing.T) {
-	authDir := t.TempDir()
+	stateDir := t.TempDir()
+	authDir := filepath.Join(stateDir, "auth")
+	if err := os.Mkdir(authDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	writePrivateFile(t, filepath.Join(authDir, "codex.json"), []byte(`{"type":"codex"}`))
 	runtime := &gate{
 		options: serveOptions{
-			mode:    "managed",
-			authDir: authDir,
+			mode:     "managed",
+			stateDir: stateDir,
+			authDir:  authDir,
 		},
 		state:         "open",
 		activeCancels: make(map[uint64]context.CancelFunc),
@@ -308,6 +320,127 @@ func TestCredentialRecoveryPreservesNewValidSibling(t *testing.T) {
 	if err := validateCredentialSet(authDir); err != nil {
 		t.Fatalf("recovered credential set is invalid: %v", err)
 	}
+}
+
+func TestCredentialRecoveryWaitsForCanonicalStateLock(t *testing.T) {
+	stateDir := t.TempDir()
+	authDir := filepath.Join(stateDir, "auth")
+	if err := os.Mkdir(authDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(t, filepath.Join(authDir, "codex.json"), []byte(`{"type":"codex"}`))
+	snapshotDir := filepath.Join(stateDir, "snapshot")
+	if err := os.Mkdir(snapshotDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(
+		t,
+		filepath.Join(snapshotDir, "codex.json"),
+		[]byte(`{"type":"codex","access_token":"snapshot-access","refresh_token":"snapshot-refresh"}`),
+	)
+	lockPath := filepath.Join(stateDir, "state.lock")
+	ready := filepath.Join(stateDir, "lock-ready")
+	holder := exec.Command(os.Args[0], "-test.run", "^TestGateStateLockHolderHelper$")
+	holder.Env = append(
+		os.Environ(),
+		"GO_WANT_CLAUDEX_STATE_LOCK_HOLDER=1",
+		"CLAUDEX_TEST_STATE_LOCK="+lockPath,
+		"CLAUDEX_TEST_STATE_LOCK_READY="+ready,
+	)
+	holderInput, err := holder.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	holderOutput := &strings.Builder{}
+	holder.Stdout = holderOutput
+	holder.Stderr = holderOutput
+	if err := holder.Start(); err != nil {
+		t.Fatal(err)
+	}
+	holderWaited := false
+	t.Cleanup(func() {
+		if !holderWaited && (holder.ProcessState == nil || !holder.ProcessState.Exited()) {
+			_ = holderInput.Close()
+			_ = holder.Process.Kill()
+			_ = holder.Wait()
+		}
+	})
+	waitFor(t, "external state-lock holder", func() bool {
+		_, err := os.Stat(ready)
+		return err == nil
+	})
+	runtime := &gate{
+		options: serveOptions{
+			mode:     "managed",
+			stateDir: stateDir,
+			authDir:  authDir,
+		},
+		state:              "stopping",
+		activeCancels:      make(map[uint64]context.CancelFunc),
+		credentialSnapshot: snapshotDir,
+		stopped:            make(chan struct{}),
+		done:               make(chan struct{}),
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, err := runtime.stopProcess(false)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("credential recovery bypassed the held state lock: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if _, err := os.Stat(authDir); err != nil {
+		t.Fatalf("credential directory changed while the state lock was held: %v", err)
+	}
+	matches, err := filepath.Glob(filepath.Join(stateDir, ".auth-invalid-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatal("credential recovery renamed auth while the state lock was held")
+	}
+	if err := holderInput.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := holder.Wait(); err != nil {
+		t.Fatalf("state-lock holder exit: %v\n%s", err, holderOutput)
+	}
+	holderWaited = true
+
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("credential recovery did not resume after the state lock was released")
+	}
+	if err := validateCredentialSet(authDir); err != nil {
+		t.Fatalf("recovered credential set is invalid: %v", err)
+	}
+}
+
+func TestGateStateLockHolderHelper(t *testing.T) {
+	if os.Getenv("GO_WANT_CLAUDEX_STATE_LOCK_HOLDER") != "1" {
+		return
+	}
+	path := os.Getenv("CLAUDEX_TEST_STATE_LOCK")
+	ready := os.Getenv("CLAUDEX_TEST_STATE_LOCK_READY")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	if err := os.WriteFile(ready, []byte("ready"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, os.Stdin)
 }
 
 func TestCleanupDoesNotRemoveAnotherGateControlSocket(t *testing.T) {
@@ -377,7 +510,7 @@ func TestBindControlReplacesStaleSocket(t *testing.T) {
 	_ = connection.Close()
 }
 
-func TestCleanBackendExitStopsWithoutRestart(t *testing.T) {
+func TestCleanBackendExitAfterReadinessTriggersRestart(t *testing.T) {
 	root := t.TempDir()
 	authDir := filepath.Join(root, "auth")
 	if err := os.Mkdir(authDir, 0o700); err != nil {
@@ -405,6 +538,7 @@ func TestCleanBackendExitStopsWithoutRestart(t *testing.T) {
 	runtime := &gate{
 		options: serveOptions{
 			mode:             "managed",
+			stateDir:         root,
 			authDir:          authDir,
 			workDir:          root,
 			home:             root,
@@ -427,11 +561,11 @@ func TestCleanBackendExitStopsWithoutRestart(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("gate did not stop after a clean backend exit")
 	}
-	if runtime.exitCode != 0 {
-		t.Fatalf("clean backend exit produced gate exit %d, want 0", runtime.exitCode)
+	if runtime.exitCode != 1 {
+		t.Fatalf("unexpected clean backend exit produced gate exit %d, want 1", runtime.exitCode)
 	}
-	if runtime.unexpectedChild {
-		t.Fatal("clean backend exit was classified as a crash")
+	if !runtime.unexpectedChild {
+		t.Fatal("unexpected clean backend exit was not classified as a crash")
 	}
 }
 
