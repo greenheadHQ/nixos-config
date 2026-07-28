@@ -62,6 +62,7 @@ type serveOptions struct {
 	home             string
 	drainSeconds     int
 	childStopSeconds int
+	startupLockFD    int
 }
 
 type snapshot struct {
@@ -108,6 +109,7 @@ type gate struct {
 	nextRequestID uint64
 	activeCancels map[uint64]context.CancelFunc
 	drainZero     chan struct{}
+	terminalStop  bool
 
 	instance           string
 	gateExecutable     string
@@ -181,6 +183,7 @@ func runServe(args []string) int {
 	flags.StringVar(&options.home, "home", "", "declared user home")
 	flags.IntVar(&options.drainSeconds, "drain-seconds", 30, "signal drain budget")
 	flags.IntVar(&options.childStopSeconds, "child-stop-seconds", 10, "child stop budget")
+	flags.IntVar(&options.startupLockFD, "startup-lock-fd", -1, "inherited lifecycle lock descriptor")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
@@ -219,6 +222,9 @@ func validateServeOptions(options *serveOptions) error {
 	}
 	if options.drainSeconds < 0 || options.childStopSeconds < 0 {
 		return errors.New("stop budgets must be nonnegative")
+	}
+	if options.startupLockFD != -1 && (options.mode != "foreground" || options.startupLockFD < 3) {
+		return errors.New("--startup-lock-fd requires foreground mode and a descriptor >= 3")
 	}
 	for _, address := range []string{options.publicAddress, options.backendAddress} {
 		host, _, err := net.SplitHostPort(address)
@@ -329,6 +335,9 @@ func (g *gate) prepare(signals <-chan os.Signal) error {
 	if err := g.bindControl(); err != nil {
 		return err
 	}
+	if err := g.releaseStartupLock(); err != nil {
+		return err
+	}
 	if err := g.startChild(logFile); err != nil {
 		return err
 	}
@@ -417,6 +426,21 @@ func (g *gate) acquireRuntimeLock() error {
 		return errors.New("another claudex gate owns the runtime lock")
 	}
 	g.lockFile = file
+	return nil
+}
+
+func (g *gate) releaseStartupLock() error {
+	if g.options.startupLockFD < 0 {
+		return nil
+	}
+	fd := g.options.startupLockFD
+	if err := syscall.Flock(fd, syscall.LOCK_UN); err != nil {
+		return fmt.Errorf("release startup lifecycle lock: %w", err)
+	}
+	if err := syscall.Close(fd); err != nil {
+		return fmt.Errorf("close startup lifecycle lock: %w", err)
+	}
+	g.options.startupLockFD = -1
 	return nil
 }
 
@@ -868,19 +892,31 @@ func (g *gate) drainAndStop(request controlRequest, disconnected <-chan struct{}
 		g.mu.Unlock()
 		return controlResponse{OK: false, Code: "UNKNOWN"}, false
 	case <-timer.C:
-		return g.reopenAfterAbortedDrain("BUSY_REOPENED")
+		return g.reopenAfterAbortedDrain(zero, "BUSY_REOPENED")
 	case <-disconnected:
-		return g.reopenAfterAbortedDrain("CALLER_DISCONNECTED")
+		return g.reopenAfterAbortedDrain(zero, "CALLER_DISCONNECTED")
 	}
 }
 
-func (g *gate) reopenAfterAbortedDrain(code string) (controlResponse, bool) {
+func (g *gate) reopenAfterAbortedDrain(zero chan struct{}, code string) (controlResponse, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.state == "draining" {
-		g.state = "open"
-		g.drainZero = nil
+	if g.state != "draining" {
+		return controlResponse{OK: false, Code: "UNKNOWN"}, false
 	}
+	if g.active == 0 {
+		g.state = "stopping"
+		g.drainZero = nil
+		return controlResponse{OK: true, Code: "STOPPING"}, true
+	}
+	if g.terminalStop {
+		return controlResponse{OK: false, Code: "STOPPING", Message: "terminal shutdown is already in progress"}, false
+	}
+	if g.drainZero != zero {
+		return controlResponse{OK: false, Code: "UNKNOWN"}, false
+	}
+	g.state = "open"
+	g.drainZero = nil
 	return controlResponse{OK: false, Code: code, Message: "active requests remain; admission reopened"}, false
 }
 
@@ -890,6 +926,7 @@ func (g *gate) stopFromSignal() {
 		g.mu.Unlock()
 		return
 	}
+	g.terminalStop = true
 	g.state = "draining"
 	if g.active == 0 {
 		g.state = "stopping"
@@ -898,8 +935,11 @@ func (g *gate) stopFromSignal() {
 		g.finish(exitCode)
 		return
 	}
-	zero := make(chan struct{})
-	g.drainZero = zero
+	zero := g.drainZero
+	if zero == nil {
+		zero = make(chan struct{})
+		g.drainZero = zero
+	}
 	forceAtDeadline := time.NewTimer(time.Duration(g.options.drainSeconds) * time.Second)
 	g.mu.Unlock()
 	select {

@@ -79,8 +79,12 @@ _claudex_wait_for_gate() {
   for ((attempt = 0; attempt < CLAUDEX_READY_ATTEMPTS; attempt++)); do
     if snapshot="$(_claudex_gate_inspect 2>/dev/null)" \
       && "$CLAUDEX_JQ" -e --arg generation "$CLAUDEX_GENERATION" '
-        .generation == $generation and .state == "open"
-      ' <<< "$snapshot" >/dev/null 2>&1; then
+        .mode == "managed"
+        and .generation == $generation
+        and .state == "open"
+      ' <<< "$snapshot" >/dev/null 2>&1 \
+      && _claudex_managed_snapshot_owned \
+        "$snapshot" "$CLAUDEX_SERVICE_NAME" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"; then
       wait_for_proxy_ready
       return
     fi
@@ -127,6 +131,10 @@ _claudex_ensure_locked() {
     fi
     if [ "$state" = open ] && [ "$generation" = "$CLAUDEX_GENERATION" ]; then
       wait_for_proxy_ready
+      return
+    fi
+    if [ "$state" = starting ] && [ "$generation" = "$CLAUDEX_GENERATION" ]; then
+      _claudex_wait_for_gate
       return
     fi
     if [ "$state" = open ] && [ "$generation" != "$CLAUDEX_GENERATION" ]; then
@@ -234,6 +242,14 @@ _claudex_foreground_prepare_locked() {
   assert_credential_set "$CLAUDEX_AUTH_DIR" default
 }
 
+_claudex_run_foreground_locked() {
+  _claudex_foreground_prepare_locked
+  # with_lifecycle_lock owns descriptor 8. The gate inherits it and releases it only
+  # after the singleton runtime lock and control socket have been acquired, so a
+  # concurrent managed ensure can never enter the startup gap.
+  exec "$CLAUDEX_PROXY_LAUNCHER" --foreground --startup-lock-fd 8
+}
+
 command="${1-}"
 case "$command" in
   "")
@@ -265,8 +281,7 @@ case "$command" in
     ;;
   foreground)
     [ "$#" -eq 1 ] || { proxy_usage >&2; exit 2; }
-    with_lifecycle_lock _claudex_foreground_prepare_locked
-    exec "$CLAUDEX_PROXY_LAUNCHER" --foreground
+    with_lifecycle_lock _claudex_run_foreground_locked
     ;;
   logs)
     shift

@@ -1106,6 +1106,134 @@ EOF
     "$proxy" start
 }
 
+test_claudex_managed_start_waits_through_owned_starting_state() {
+  local sandbox state runtime proxy counter starting_snapshot open_snapshot foreground_snapshot
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  runtime="$sandbox/generated/claudex-runtime.sh"
+  proxy="$sandbox/generated/claudex-proxy"
+  counter="$sandbox/inspect-count"
+  _claudex_fixture "$sandbox"
+  _claudex_prepare_fixture_state "$sandbox"
+  _claudex_add_valid_credential "$state"
+  _claudex_make_ready_curl "$sandbox"
+
+  cat > "$sandbox/fake-launchctl" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = print ]; then
+  printf 'path = %s\n' "$sandbox/generated/claudex-proxy.plist"
+  printf 'pid = 10\n'
+fi
+exit 0
+EOF
+  chmod +x "$sandbox/fake-launchctl"
+  starting_snapshot="$(
+    jq -cn \
+      --arg gate "$sandbox/generated/claudex-gate" \
+      --arg backend "$sandbox/fake-cli-proxy-api" \
+      '{schema: 1, instance: "fixture", generation: "fixture-generation",
+        mode: "managed", state: "starting", accepting: false, active: 0,
+        gate_pid: 10, gate_executable: $gate, backend_pid: 11,
+        backend_executable: $backend}'
+  )"
+  open_snapshot="$(jq -c '.state = "open" | .accepting = true' <<< "$starting_snapshot")"
+  foreground_snapshot="$(jq -c '.mode = "foreground" | .state = "open" | .accepting = true' \
+    <<< "$starting_snapshot")"
+  printf '0\n' > "$counter"
+  printf '%s\n' "$starting_snapshot" > "$sandbox/starting.json"
+  printf '%s\n' "$open_snapshot" > "$sandbox/open.json"
+  printf '%s\n' "$foreground_snapshot" > "$sandbox/foreground.json"
+
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_READY_DELAY_SECONDS=0 \
+    bash -c '
+      source "$1"
+      source <(sed "/^command=/,\$d" "$2")
+      counter="$3"
+      starting="$4"
+      open="$5"
+      _claudex_gate_inspect() {
+        local count
+        count="$(cat "$counter")"
+        if [ "$count" -eq 0 ]; then
+          cat "$starting"
+        else
+          cat "$open"
+        fi
+        printf "%s\n" "$((count + 1))" > "$counter"
+      }
+      _claudex_ensure_locked
+    ' _ "$runtime" "$proxy" "$counter" "$sandbox/starting.json" "$sandbox/open.json"
+  [[ "$(cat "$counter")" -ge 2 ]] \
+    || fail "managed ensure did not wait through an owned starting snapshot"
+
+  if HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_READY_ATTEMPTS=1 \
+    CLAUDEX_READY_DELAY_SECONDS=0 \
+    bash -c '
+      source "$1"
+      source <(sed "/^command=/,\$d" "$2")
+      foreground="$3"
+      _claudex_gate_inspect() { cat "$foreground"; }
+      _claudex_wait_for_gate
+    ' _ "$runtime" "$proxy" "$sandbox/foreground.json" >/dev/null 2>&1; then
+    fail "managed readiness waiter accepted a foreground gate"
+  fi
+}
+
+test_claudex_foreground_hands_lifecycle_lock_to_gate() {
+  local sandbox state proxy flock_bin marker
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  proxy="$sandbox/generated/claudex-proxy"
+  flock_bin="$(command -v flock)"
+  marker="$sandbox/gate-observed-lock"
+  _claudex_fixture "$sandbox"
+  _claudex_prepare_fixture_state "$sandbox"
+  _claudex_add_valid_credential "$state"
+
+  cat > "$sandbox/generated/claudex-gate" <<'EOF'
+#!/usr/bin/env bash
+startup_fd=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --startup-lock-fd ]; then
+    startup_fd="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+[ "$startup_fd" = 8 ] || exit 91
+[ -e "/dev/fd/$startup_fd" ] || exit 92
+if (
+  exec 9>"$CLAUDEX_LIFECYCLE_LOCK"
+  "$CLAUDEX_FLOCK" -x -n 9
+); then
+  exit 93
+fi
+printf 'held\n' > "$CLAUDEX_FAKE_LOCK_MARKER"
+EOF
+  chmod +x "$sandbox/generated/claudex-gate"
+
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LIFECYCLE_LOCK="$state/lifecycle.lock" \
+    CLAUDEX_FLOCK="$flock_bin" \
+    CLAUDEX_FAKE_LOCK_MARKER="$marker" \
+    "$proxy" foreground
+  [[ -e "$marker" ]] || fail "foreground gate did not inherit the held lifecycle lock"
+  (
+    exec 9>"$state/lifecycle.lock"
+    "$flock_bin" -x -n 9
+  ) || fail "foreground exit did not release the lifecycle lock"
+}
+
 test_claudex_launchd_start_preserves_current_inactive_definition() {
   local sandbox runtime proxy log
   sandbox="$(new_sandbox)"
@@ -2169,8 +2297,8 @@ EOF
   [[ "$rc" != 0 ]] || fail "unhealthy proxy status unexpectedly succeeded"
   jq -e '
     .proxy == "unhealthy"
-    and .reason == "proxy process는 있지만 새 요청을 받을 준비가 되지 않았습니다"
-    and .next_command == "claudex proxy restart"
+    and .reason == "proxy 상태 전환이 진행 중입니다. 잠시 후 다시 확인하세요"
+    and .next_command == "claudex status"
   ' <<< "$output" >/dev/null || fail "unhealthy proxy status drifted: $output"
 
   if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$status" --strict >/dev/null 2>&1; then

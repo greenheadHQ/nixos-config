@@ -464,7 +464,7 @@ claudex status
 claudex status --json
 ```
 
-준비된 foreground 또는 managed 실행에서는 JSON의 다음 값이 기대된다.
+아래는 준비된 managed 실행의 예시다. foreground도 나머지 readiness 값은 같지만 manager를 등록하지 않은 상태라면 `service`는 `unregistered`일 수 있다. `service`는 manager 등록 여부를 보여주는 정보이며 foreground readiness 조건은 아니다.
 
 ```json
 {

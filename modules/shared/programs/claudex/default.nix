@@ -70,6 +70,25 @@ let
   gracefulDrainSeconds = 30;
   childStopSeconds = 10;
   serviceName = "claudex-proxy.service";
+  # Manager behavior is part of the runtime generation contract. Keep these values
+  # centralized so a launchd/systemd lifecycle change cannot leave an already-loaded
+  # manager definition looking current to the gate.
+  managerLifecycle = {
+    autoStart = "first-session";
+    restart = "on-failure";
+    restartDelay = "2s";
+    stopTimeoutSeconds = 45;
+    privateUmask = "0077";
+    launchd = {
+      runAtLoad = false;
+      keepAliveSuccessfulExit = false;
+      abandonProcessGroup = false;
+    };
+    systemd = {
+      logMode = "append";
+      killMode = "mixed";
+    };
+  };
 
   cliProxyApi = args.claudexCliProxyApi or (import ./package.nix { inherit pkgs; });
   gatePackage = pkgs.buildGoModule {
@@ -113,6 +132,7 @@ let
           childStopSeconds
           serviceName
           maxContextTokens
+          managerLifecycle
           ;
         platform = if isDarwin then "darwin" else "linux";
         proxyVersion = cliProxyApi.version;
@@ -278,16 +298,16 @@ let
         <string>--managed</string>
       </array>
       <key>RunAtLoad</key>
-      <false/>
+      <${if managerLifecycle.launchd.runAtLoad then "true" else "false"}/>
       <key>KeepAlive</key>
       <dict>
         <key>SuccessfulExit</key>
-        <false/>
+        <${if managerLifecycle.launchd.keepAliveSuccessfulExit then "true" else "false"}/>
       </dict>
       <key>AbandonProcessGroup</key>
-      <false/>
+      <${if managerLifecycle.launchd.abandonProcessGroup then "true" else "false"}/>
       <key>ExitTimeOut</key>
-      <integer>45</integer>
+      <integer>${toString managerLifecycle.stopTimeoutSeconds}</integer>
       <key>StandardOutPath</key>
       <string>${logFile}</string>
       <key>StandardErrorPath</key>
@@ -357,9 +377,8 @@ let
     proxyVersion = if enabled then cliProxyApi.version else null;
     generation = if enabled then runtimeGeneration else null;
     lifecycle = {
-      autoStart = "first-session";
+      inherit (managerLifecycle) autoStart restart;
       platform = if isDarwin then "launchd" else "systemd-user";
-      restart = "on-failure";
       gracefulDrainSeconds = gracefulDrainSeconds;
     };
     readiness = {
@@ -397,13 +416,13 @@ in
     Service = {
       Type = "simple";
       ExecStart = "${proxyLauncherScript} --managed";
-      Restart = "on-failure";
-      RestartSec = "2s";
-      StandardOutput = "append:${logFile}";
-      StandardError = "append:${logFile}";
-      UMask = "0077";
-      KillMode = "mixed";
-      TimeoutStopSec = "45s";
+      Restart = managerLifecycle.restart;
+      RestartSec = managerLifecycle.restartDelay;
+      StandardOutput = "${managerLifecycle.systemd.logMode}:${logFile}";
+      StandardError = "${managerLifecycle.systemd.logMode}:${logFile}";
+      UMask = managerLifecycle.privateUmask;
+      KillMode = managerLifecycle.systemd.killMode;
+      TimeoutStopSec = "${toString managerLifecycle.stopTimeoutSeconds}s";
     };
   };
 }

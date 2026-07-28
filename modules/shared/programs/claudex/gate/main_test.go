@@ -50,6 +50,34 @@ func TestHelpDocumentsPublicInternalCommands(t *testing.T) {
 	}
 }
 
+func TestReleaseStartupLockUnlocksInheritedDescriptor(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.lock")
+	fd, err := syscall.Open(path, syscall.O_CREAT|syscall.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = syscall.Close(fd)
+		t.Fatal(err)
+	}
+	runtime := &gate{options: serveOptions{startupLockFD: fd}}
+	if err := runtime.releaseStartupLock(); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.options.startupLockFD != -1 {
+		t.Fatalf("startup lock descriptor = %d, want released", runtime.options.startupLockFD)
+	}
+
+	probe, err := syscall.Open(path, syscall.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Close(probe)
+	if err := syscall.Flock(probe, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatalf("released lifecycle lock remained held: %v", err)
+	}
+}
+
 func freeAddress(t *testing.T) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -137,6 +165,85 @@ func TestDrainStopReportsCredentialRecoveryFailure(t *testing.T) {
 	}
 	if runtime.exitCode != 0 {
 		t.Fatalf("recovery failure exit = %d, want restart-suppressing 0", runtime.exitCode)
+	}
+}
+
+func TestSignalDuringControlDrainNeverReopensAdmission(t *testing.T) {
+	runtime := &gate{
+		options: serveOptions{
+			mode:         "managed",
+			drainSeconds: 2,
+		},
+		state:         "open",
+		instance:      "test-instance",
+		active:        1,
+		activeCancels: make(map[uint64]context.CancelFunc),
+		stopped:       make(chan struct{}),
+		done:          make(chan struct{}),
+	}
+	disconnected := make(chan struct{})
+	type result struct {
+		response  controlResponse
+		committed bool
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		response, committed := runtime.drainAndStop(
+			controlRequest{
+				Instance:       runtime.instance,
+				Generation:     runtime.options.generation,
+				TimeoutSeconds: 5,
+			},
+			disconnected,
+		)
+		resultCh <- result{response: response, committed: committed}
+	}()
+	waitFor(t, "control drain", func() bool {
+		runtime.mu.Lock()
+		defer runtime.mu.Unlock()
+		return runtime.state == "draining" && runtime.drainZero != nil
+	})
+
+	signalDone := make(chan struct{})
+	go func() {
+		runtime.stopFromSignal()
+		close(signalDone)
+	}()
+	waitFor(t, "terminal signal intent", func() bool {
+		runtime.mu.Lock()
+		defer runtime.mu.Unlock()
+		return runtime.terminalStop
+	})
+	close(disconnected)
+
+	select {
+	case drainResult := <-resultCh:
+		if drainResult.committed || drainResult.response.Code != "STOPPING" {
+			t.Fatalf("overlapped control drain result = %+v", drainResult)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("control drain did not observe the overlapping signal")
+	}
+	runtime.mu.Lock()
+	if runtime.state == "open" {
+		runtime.mu.Unlock()
+		t.Fatal("control disconnect reopened admission after terminal signal")
+	}
+	zero := runtime.drainZero
+	runtime.active = 0
+	runtime.drainZero = nil
+	close(zero)
+	runtime.mu.Unlock()
+
+	select {
+	case <-signalDone:
+	case <-time.After(time.Second):
+		t.Fatal("signal shutdown did not finish after active requests drained")
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.state != "stopped" {
+		t.Fatalf("terminal shutdown state = %q, want stopped", runtime.state)
 	}
 }
 

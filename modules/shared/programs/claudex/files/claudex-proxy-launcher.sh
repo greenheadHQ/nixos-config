@@ -15,21 +15,39 @@ CLAUDEX_GATE_BIN="@gateBin@"
 CLAUDEX_GENERATION="@generation@"
 
 usage() {
-  echo "usage: claudex-proxy-launcher --managed|--foreground|--prepare-only" >&2
+  echo "usage: claudex-proxy-launcher --managed|--prepare-only|--foreground --startup-lock-fd FD" >&2
 }
 
 mode=""
+startup_lock_fd=-1
 case "$#" in
   1)
     case "$1" in
       --managed) mode=managed ;;
-      --foreground) mode=foreground ;;
       --prepare-only) mode=prepare ;;
       *)
         usage
         exit 2
         ;;
     esac
+    ;;
+  3)
+    if [ "$1" != --foreground ] || [ "$2" != --startup-lock-fd ]; then
+      usage
+      exit 2
+    fi
+    case "$3" in
+      "" | *[!0-9]*)
+        usage
+        exit 2
+        ;;
+    esac
+    if [ "$3" -lt 3 ]; then
+      usage
+      exit 2
+    fi
+    mode=foreground
+    startup_lock_fd="$3"
     ;;
   *)
     usage
@@ -46,6 +64,11 @@ fi
 assert_credential_set "$CLAUDEX_AUTH_DIR" default
 _claudex_assert_safe_work_dir
 
+startup_lock_args=()
+if [ "$startup_lock_fd" -ge 0 ]; then
+  startup_lock_args=(--startup-lock-fd "$startup_lock_fd")
+fi
+
 exec "$CLAUDEX_GATE_BIN" serve \
   --mode "$mode" \
   --state-dir "$CLAUDEX_STATE_DIR" \
@@ -61,4 +84,5 @@ exec "$CLAUDEX_GATE_BIN" serve \
   --drain-seconds "@gracefulDrainSeconds@" \
   --child-stop-seconds "@childStopSeconds@" \
   --log-file "$CLAUDEX_LOG_FILE" \
-  --home "$CLAUDEX_HOME"
+  --home "$CLAUDEX_HOME" \
+  "${startup_lock_args[@]}"

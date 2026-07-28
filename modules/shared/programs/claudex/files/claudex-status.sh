@@ -95,8 +95,16 @@ if snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
   if [ "$identity_ok" = true ] && [ "$generation_state" = current ]; then
     if [ "$gate_state" != open ] || { [ "$mode" != managed ] && [ "$mode" != foreground ]; }; then
       proxy_state="unhealthy"
-      reason="proxy process는 있지만 새 요청을 받을 준비가 되지 않았습니다"
-      next_command="claudex proxy restart"
+      case "$gate_state" in
+        starting | draining | stopping)
+          reason="proxy 상태 전환이 진행 중입니다. 잠시 후 다시 확인하세요"
+          next_command="claudex status"
+          ;;
+        *)
+          reason="proxy process는 있지만 상태를 안전하게 자동 복구할 수 없습니다"
+          next_command="상태를 공유하고 수동 확인"
+          ;;
+      esac
     elif payload="$(curl_loopback /v1/models 2>/dev/null)"; then
       if "$CLAUDEX_JQ" -e '.data | type == "array"' <<< "$payload" >/dev/null 2>&1; then
         proxy_state="ready"
