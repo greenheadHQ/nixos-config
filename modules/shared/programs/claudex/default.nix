@@ -1,8 +1,5 @@
-# Declarative PoC: run Claude Code against a loopback CLIProxyAPI backed by Codex OAuth.
-#
-# Stage 1's Nix build/eval/activation path intentionally contains no launchd agent,
-# activation hook, nrs integration, OAuth execution, or proxy smoke run. Manual Gate B is
-# documented separately in the handoff.
+# Declarative Claudex runtime: run Claude Code through an on-demand loopback gate backed by
+# pinned CLIProxyAPI OAuth credentials. Login-time activation and OAuth remain explicit.
 args@{
   config,
   hostname,
@@ -31,6 +28,9 @@ let
   configFile = "${stateDir}/config.yaml";
   apiKeyFile = "${stateDir}/client-api-key";
   stateLock = "${stateDir}/state.lock";
+  lifecycleLock = "${stateDir}/lifecycle.lock";
+  controlSocket = "${stateDir}/control.sock";
+  logFile = "${stateDir}/proxy.log";
   workDir = "${stateDir}/work";
   # CIR: the model contract is role-split for the --mixed session mode (issue #1127).
   #   defaultMainModel — the default-mode main model (and the descriptor `.model` alias
@@ -66,8 +66,60 @@ let
     label
     ;
   pprofPort = port - 1;
+  backendPort = port + 1;
+  gracefulDrainSeconds = 30;
+  childStopSeconds = 10;
+  serviceName = "claudex-proxy.service";
 
   cliProxyApi = args.claudexCliProxyApi or (import ./package.nix { inherit pkgs; });
+  gatePackage = pkgs.buildGoModule {
+    pname = "claudex-gate";
+    version = "1.0.0";
+    src = ./gate;
+    vendorHash = null;
+    subPackages = [ "." ];
+    ldflags = [
+      "-s"
+      "-w"
+    ];
+    meta = {
+      description = "Claudex loopback traffic gate and child supervisor";
+      license = lib.licenses.mit;
+      mainProgram = "claudex-gate";
+      platforms = [
+        "aarch64-darwin"
+        "x86_64-linux"
+      ];
+    };
+  };
+  runtimeGeneration = builtins.hashString "sha256" (
+    builtins.toJSON {
+      sources = map builtins.readFile [
+        ./files/claudex-runtime.sh
+        ./files/claudex.sh
+        ./files/claudex-login.sh
+        ./files/claudex-status.sh
+        ./files/claudex-proxy.sh
+        ./files/claudex-proxy-launcher.sh
+        ./files/config-template.json
+        ./cli-proxy-api-pin.json
+        ./gate/go.mod
+        ./gate/main.go
+      ];
+      contract = runtimeContract // {
+        inherit
+          backendPort
+          gracefulDrainSeconds
+          childStopSeconds
+          serviceName
+          maxContextTokens
+          ;
+        platform = if isDarwin then "darwin" else "linux";
+        proxyVersion = cliProxyApi.version;
+        gateVersion = gatePackage.version;
+      };
+    }
+  );
   # config-template.json은 JSON이라 주석을 담을 수 없고, runtime.sh가 렌더된 config의 key 목록을
   # 화이트리스트로 정확히 검증하므로 설명용 `_comment` key도 넣을 수 없다. 따라서 보안 관련 값의
   # 근거는 여기에 남긴다.
@@ -141,6 +193,9 @@ let
       configFile
       apiKeyFile
       stateLock
+      lifecycleLock
+      controlSocket
+      logFile
       workDir
       ;
     jqBin = "${pkgs.jq}/bin/jq";
@@ -164,10 +219,11 @@ let
     # flock -s means a *shared* lock, and the timeout flag is -t vs -w), so keeping both would
     # fork the one code path that guards all state mutation.
     flockBin = if isDarwin then "${pkgs.flock}/bin/flock" else "${pkgs.util-linux}/bin/flock";
-    # Stage 1 ships no service unit on either platform, so this probe only ever reports the
-    # absence of a launchd agent. Linux gets an empty value and the status command reports
-    # service=n/a rather than implying knowledge of a systemd unit that does not exist.
     launchctlBin = if isDarwin then "/bin/launchctl" else "";
+    systemctlBin = if isDarwin then "" else "${pkgs.systemd}/bin/systemctl";
+    gateBin = if enabled then "${gatePackage}/bin/claudex-gate" else "";
+    generation = runtimeGeneration;
+    platform = if isDarwin then "darwin" else "linux";
     inherit
       bindHost
       defaultMainModel
@@ -190,29 +246,80 @@ let
       // replacements
     );
 
-  claudexScript = mkRuntimeScript ./files/claudex.sh {
-    inherit configTemplate wrapperSettings wrapperSettingsFast;
-    maxContextTokens = toString maxContextTokens;
+  statusScript = mkRuntimeScript ./files/claudex-status.sh {
+    inherit serviceName;
   };
-  statusScript = mkRuntimeScript ./files/claudex-status.sh { };
   loginScript = mkRuntimeScript ./files/claudex-login.sh {
     proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
     inherit configTemplate;
   };
   proxyLauncherScript = mkRuntimeScript ./files/claudex-proxy-launcher.sh {
     proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
+    gateBin = "${gatePackage}/bin/claudex-gate";
+    generation = runtimeGeneration;
+    backendPort = toString backendPort;
+    gracefulDrainSeconds = toString gracefulDrainSeconds;
+    childStopSeconds = toString childStopSeconds;
     inherit configTemplate;
   };
+  launchdPlist = pkgs.writeText "claudex-proxy.plist" ''
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+      <key>Label</key>
+      <string>${label}</string>
+      <key>ProgramArguments</key>
+      <array>
+        <string>${proxyLauncherScript}</string>
+        <string>--managed</string>
+      </array>
+      <key>RunAtLoad</key>
+      <false/>
+      <key>KeepAlive</key>
+      <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+      </dict>
+      <key>AbandonProcessGroup</key>
+      <false/>
+      <key>ExitTimeOut</key>
+      <integer>45</integer>
+      <key>StandardOutPath</key>
+      <string>${logFile}</string>
+      <key>StandardErrorPath</key>
+      <string>${logFile}</string>
+    </dict>
+    </plist>
+  '';
+  proxyScript = mkRuntimeScript ./files/claudex-proxy.sh {
+    proxyLauncher = proxyLauncherScript;
+    inherit
+      launchdPlist
+      serviceName
+      ;
+    statusHandler = statusScript;
+    tailBin = "${pkgs.coreutils}/bin/tail";
+    gracefulDrainSeconds = toString gracefulDrainSeconds;
+  };
+  claudexScript = mkRuntimeScript ./files/claudex.sh {
+    inherit configTemplate wrapperSettings wrapperSettingsFast;
+    maxContextTokens = toString maxContextTokens;
+    loginHandler = loginScript;
+    statusHandler = statusScript;
+    proxyHandler = proxyScript;
+  };
 
-  runtimePackage = pkgs.runCommand "claudex-runtime-stage1" { } ''
+  runtimePackage = pkgs.runCommand "claudex-runtime-stage2" { } ''
     install -Dm755 ${claudexScript} "$out/bin/claudex"
-    install -Dm755 ${loginScript} "$out/bin/claudex-login"
-    install -Dm755 ${statusScript} "$out/bin/claudex-status"
+    install -Dm755 ${loginScript} "$out/libexec/claudex/claudex-login"
+    install -Dm755 ${statusScript} "$out/libexec/claudex/claudex-status"
+    install -Dm755 ${proxyScript} "$out/libexec/claudex/claudex-proxy"
     install -Dm755 ${proxyLauncherScript} "$out/libexec/claudex/claudex-proxy-launcher"
   '';
 
   descriptor = {
-    schema = 2;
+    schema = 3;
     inherit
       enabled
       targetHosts
@@ -220,20 +327,37 @@ let
       stateDir
       authDir
       configFile
+      controlSocket
+      logFile
       bindHost
       port
       ;
-    # Descriptor `.model` stays the defaultMainModel alias (schema 2 compatibility);
+    # Descriptor `.model` stays the defaultMainModel alias for existing consumers;
     # role-split fields are wrapper-internal until a descriptor consumer exists.
     model = defaultMainModel;
     hostName = hostname;
     runtimeLibrary = toString runtimeLibrary;
     source = if enabled then toString runtimePackage else null;
-    command = if enabled then [ "${runtimePackage}/libexec/claudex/claudex-proxy-launcher" ] else null;
+    command =
+      if enabled then
+        [
+          "${runtimePackage}/libexec/claudex/claudex-proxy-launcher"
+          "--managed"
+        ]
+      else
+        null;
     proxyExecutable = if enabled then "${cliProxyApi}/bin/cli-proxy-api" else null;
+    gateExecutable = if enabled then "${gatePackage}/bin/claudex-gate" else null;
     proxyLauncher =
       if enabled then "${runtimePackage}/libexec/claudex/claudex-proxy-launcher" else null;
     proxyVersion = if enabled then cliProxyApi.version else null;
+    generation = if enabled then runtimeGeneration else null;
+    lifecycle = {
+      autoStart = "first-session";
+      platform = if isDarwin then "launchd" else "systemd-user";
+      restart = "on-failure";
+      gracefulDrainSeconds = gracefulDrainSeconds;
+    };
     readiness = {
       method = "GET";
       url = "http://${bindHost}:${toString port}/v1/models";
@@ -255,17 +379,24 @@ in
       source = "${runtimePackage}/bin/claudex";
       executable = true;
     };
-    ".local/bin/claudex-login" = {
-      source = "${runtimePackage}/bin/claudex-login";
-      executable = true;
-    };
-    ".local/bin/claudex-status" = {
-      source = "${runtimePackage}/bin/claudex-status";
-      executable = true;
-    };
     ".local/libexec/claudex/claudex-proxy-launcher" = {
       source = "${runtimePackage}/libexec/claudex/claudex-proxy-launcher";
       executable = true;
+    };
+  };
+
+  systemd.user.services.claudex-proxy = lib.mkIf (!isDarwin && enabled) {
+    Unit = {
+      Description = "Claudex on-demand loopback proxy";
+      X-SwitchMethod = "keep-old";
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${proxyLauncherScript} --managed";
+      Restart = "on-failure";
+      RestartSec = "2s";
+      KillMode = "mixed";
+      TimeoutStopSec = "45s";
     };
   };
 }

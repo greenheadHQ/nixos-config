@@ -35,7 +35,10 @@ if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_ENV="${CLAUDEX_ENV:-@envBin@}"
   CLAUDEX_FLOCK="${CLAUDEX_FLOCK:-@flockBin@}"
   CLAUDEX_LAUNCHCTL="${CLAUDEX_LAUNCHCTL:-@launchctlBin@}"
+  CLAUDEX_SYSTEMCTL="${CLAUDEX_SYSTEMCTL:-@systemctlBin@}"
   CLAUDEX_ID="${CLAUDEX_ID:-@idBin@}"
+  CLAUDEX_TEST_BYPASS_ENSURE="${CLAUDEX_TEST_BYPASS_ENSURE:-true}"
+  CLAUDEX_TEST_GATE_SNAPSHOT="${CLAUDEX_TEST_GATE_SNAPSHOT:-}"
 else
   CLAUDEX_JQ="@jqBin@"
   CLAUDEX_CURL="@curlBin@"
@@ -52,7 +55,9 @@ else
   CLAUDEX_ENV="@envBin@"
   CLAUDEX_FLOCK="@flockBin@"
   CLAUDEX_LAUNCHCTL="@launchctlBin@"
+  CLAUDEX_SYSTEMCTL="@systemctlBin@"
   CLAUDEX_ID="@idBin@"
+  CLAUDEX_TEST_BYPASS_ENSURE=false
 fi
 
 if [ "@allowTestOverrides@" = "true" ]; then
@@ -63,8 +68,14 @@ if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_CONFIG_FILE="${CLAUDEX_CONFIG_FILE:-$CLAUDEX_STATE_DIR/config.yaml}"
   CLAUDEX_API_KEY_FILE="${CLAUDEX_API_KEY_FILE:-$CLAUDEX_STATE_DIR/client-api-key}"
   CLAUDEX_STATE_LOCK="${CLAUDEX_STATE_LOCK:-$CLAUDEX_STATE_DIR/state.lock}"
+  CLAUDEX_LIFECYCLE_LOCK="${CLAUDEX_LIFECYCLE_LOCK:-$CLAUDEX_STATE_DIR/lifecycle.lock}"
+  CLAUDEX_CONTROL_SOCKET="${CLAUDEX_CONTROL_SOCKET:-$CLAUDEX_STATE_DIR/control.sock}"
+  CLAUDEX_LOG_FILE="${CLAUDEX_LOG_FILE:-$CLAUDEX_STATE_DIR/proxy.log}"
   CLAUDEX_WORK_DIR="${CLAUDEX_WORK_DIR:-$CLAUDEX_STATE_DIR/work}"
   CLAUDEX_CONFIG_TEMPLATE="${CLAUDEX_CONFIG_TEMPLATE:-@configTemplate@}"
+  CLAUDEX_GATE_BIN="${CLAUDEX_GATE_BIN:-@gateBin@}"
+  CLAUDEX_GENERATION="${CLAUDEX_GENERATION:-@generation@}"
+  CLAUDEX_PLATFORM="${CLAUDEX_PLATFORM:-@platform@}"
 else
   CLAUDEX_HOME="@homeDir@"
   CLAUDEX_STATE_DIR="@stateDir@"
@@ -72,8 +83,14 @@ else
   CLAUDEX_CONFIG_FILE="@configFile@"
   CLAUDEX_API_KEY_FILE="@apiKeyFile@"
   CLAUDEX_STATE_LOCK="@stateLock@"
+  CLAUDEX_LIFECYCLE_LOCK="@lifecycleLock@"
+  CLAUDEX_CONTROL_SOCKET="@controlSocket@"
+  CLAUDEX_LOG_FILE="@logFile@"
   CLAUDEX_WORK_DIR="@workDir@"
   CLAUDEX_CONFIG_TEMPLATE="@configTemplate@"
+  CLAUDEX_GATE_BIN="@gateBin@"
+  CLAUDEX_GENERATION="@generation@"
+  CLAUDEX_PLATFORM="@platform@"
 fi
 CLAUDEX_LOCK_TIMEOUT_SECONDS="${CLAUDEX_LOCK_TIMEOUT_SECONDS:-10}"
 CLAUDEX_READY_ATTEMPTS="${CLAUDEX_READY_ATTEMPTS:-20}"
@@ -529,6 +546,60 @@ with_state_lock() (
   "$@"
 )
 
+with_lifecycle_lock() (
+  local lock_triplet
+  umask 077
+  _claudex_assert_default_state_ancestors || exit 1
+  _claudex_ensure_private_dir "$CLAUDEX_STATE_DIR" || exit 1
+  if [ -L "$CLAUDEX_LIFECYCLE_LOCK" ] \
+    || { [ -e "$CLAUDEX_LIFECYCLE_LOCK" ] && [ ! -f "$CLAUDEX_LIFECYCLE_LOCK" ]; }; then
+    _claudex_error "refusing non-regular or symlink lifecycle lock"
+    exit 1
+  fi
+  : >> "$CLAUDEX_LIFECYCLE_LOCK" || exit 1
+  "$CLAUDEX_CHMOD" 600 -- "$CLAUDEX_LIFECYCLE_LOCK" || exit 1
+  lock_triplet="$(_claudex_permission_triplet "$CLAUDEX_LIFECYCLE_LOCK")"
+  if [ "$lock_triplet" != "600" ]; then
+    _claudex_error "lifecycle lock mode must be 0600"
+    exit 1
+  fi
+  exec 8>"$CLAUDEX_LIFECYCLE_LOCK" || exit 1
+  if ! "$CLAUDEX_FLOCK" -x -w "$CLAUDEX_LOCK_TIMEOUT_SECONDS" 8; then
+    _claudex_error "timed out waiting for the lifecycle lock"
+    exit 1
+  fi
+  "$@"
+)
+
+_claudex_gate_inspect() {
+  if [ "@allowTestOverrides@" = "true" ] && [ -n "$CLAUDEX_TEST_GATE_SNAPSHOT" ]; then
+    printf '%s\n' "$CLAUDEX_TEST_GATE_SNAPSHOT"
+    return
+  fi
+  [ -S "$CLAUDEX_CONTROL_SOCKET" ] || return 1
+  "$CLAUDEX_GATE_BIN" control inspect --socket "$CLAUDEX_CONTROL_SOCKET"
+}
+
+_claudex_assert_proxy_stopped() {
+  local snapshot
+  if snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
+    if "$CLAUDEX_JQ" -e '.mode == "foreground"' <<< "$snapshot" >/dev/null 2>&1; then
+      _claudex_error "stop the foreground claudex proxy with Ctrl-C before replacing credentials"
+    else
+      _claudex_error "stop the managed claudex proxy before replacing credentials"
+    fi
+    return 1
+  fi
+  if [ -e "$CLAUDEX_CONTROL_SOCKET" ] || [ -L "$CLAUDEX_CONTROL_SOCKET" ]; then
+    _claudex_error "cannot prove that the claudex proxy is stopped"
+    return 1
+  fi
+  if _claudex_loopback_responding 2>/dev/null; then
+    _claudex_error "stop the local claudex proxy before replacing credentials"
+    return 1
+  fi
+}
+
 prepare_state() {
   with_state_lock _claudex_prepare_state_unlocked
 }
@@ -590,7 +661,7 @@ assert_credential_set() (
       ;;
     mixed)
       if [ "$claude_count" -ne 1 ]; then
-        _claudex_error "mixed mode requires exactly one claude credential in $dir (found $claude_count; run claudex-login --claude)"
+        _claudex_error "mixed mode requires exactly one claude credential in $dir (found $claude_count; run claudex login claude)"
         return 1
       fi
       ;;

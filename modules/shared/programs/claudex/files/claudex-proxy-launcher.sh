@@ -11,21 +11,25 @@ source "@runtimeLibrary@"
 # cannot swap either the reviewed binary or its security template.
 CLAUDEX_PROXY_BIN="@proxyBin@"
 CLAUDEX_CONFIG_TEMPLATE="@configTemplate@"
+CLAUDEX_GATE_BIN="@gateBin@"
+CLAUDEX_GENERATION="@generation@"
 
 usage() {
-  echo "usage: claudex-proxy-launcher [--prepare-only]" >&2
+  echo "usage: claudex-proxy-launcher --managed|--foreground|--prepare-only" >&2
 }
 
-mode="run"
+mode=""
 case "$#" in
-  0) ;;
   1)
-    if [ "$1" = "--prepare-only" ]; then
-      mode="prepare"
-    else
-      usage
-      exit 2
-    fi
+    case "$1" in
+      --managed) mode=managed ;;
+      --foreground) mode=foreground ;;
+      --prepare-only) mode=prepare ;;
+      *)
+        usage
+        exit 2
+        ;;
+    esac
     ;;
   *)
     usage
@@ -42,13 +46,19 @@ fi
 assert_credential_set "$CLAUDEX_AUTH_DIR" default
 _claudex_assert_safe_work_dir
 
-cd "$CLAUDEX_WORK_DIR"
-exec "$CLAUDEX_ENV" -i \
-  HOME="$CLAUDEX_HOME" \
-  PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
-  TMPDIR="/tmp" \
-  NO_PROXY="$CLAUDEX_NO_PROXY" \
-  no_proxy="$CLAUDEX_NO_PROXY" \
-  "$CLAUDEX_PROXY_BIN" \
-    --config "$CLAUDEX_CONFIG_FILE" \
-    --local-model
+exec "$CLAUDEX_GATE_BIN" serve \
+  --mode "$mode" \
+  --state-dir "$CLAUDEX_STATE_DIR" \
+  --auth-dir "$CLAUDEX_AUTH_DIR" \
+  --work-dir "$CLAUDEX_WORK_DIR" \
+  --config "$CLAUDEX_CONFIG_FILE" \
+  --public-key-file "$CLAUDEX_API_KEY_FILE" \
+  --backend-bin "$CLAUDEX_PROXY_BIN" \
+  --generation "$CLAUDEX_GENERATION" \
+  --public-address "$CLAUDEX_BIND_HOST:$CLAUDEX_PORT" \
+  --backend-address "$CLAUDEX_BIND_HOST:@backendPort@" \
+  --control-socket "$CLAUDEX_CONTROL_SOCKET" \
+  --drain-seconds "@gracefulDrainSeconds@" \
+  --child-stop-seconds "@childStopSeconds@" \
+  --log-file "$CLAUDEX_LOG_FILE" \
+  --home "$CLAUDEX_HOME"
