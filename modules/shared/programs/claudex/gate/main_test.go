@@ -377,6 +377,46 @@ func TestCredentialRecoveryPreservesNewValidSibling(t *testing.T) {
 	}
 }
 
+func TestCredentialRecoveryPreservesAmbiguousCurrentProvider(t *testing.T) {
+	root := t.TempDir()
+	authDir := filepath.Join(root, "auth")
+	if err := os.Mkdir(authDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	first := []byte(`{"type":"codex","access_token":"current-one","refresh_token":"refresh-one"}`)
+	second := []byte(`{"type":"codex","access_token":"current-two","refresh_token":"refresh-two"}`)
+	firstPath := filepath.Join(authDir, "codex-one.json")
+	secondPath := filepath.Join(authDir, "codex-two.json")
+	writePrivateFile(t, firstPath, first)
+	writePrivateFile(t, secondPath, second)
+	snapshotDir := filepath.Join(root, "snapshot")
+	if err := os.Mkdir(snapshotDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(
+		t,
+		filepath.Join(snapshotDir, "codex.json"),
+		[]byte(`{"type":"codex","access_token":"snapshot","refresh_token":"snapshot-refresh"}`),
+	)
+
+	runtime := &gate{
+		options:            serveOptions{authDir: authDir},
+		credentialSnapshot: snapshotDir,
+	}
+	if err := runtime.recoverCredentialSet(); err == nil {
+		t.Fatal("credential recovery silently selected a fallback over ambiguous current credentials")
+	}
+	for path, expected := range map[string][]byte{firstPath: first, secondPath: second} {
+		actual, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ambiguous current credential was not restored: %v", err)
+		}
+		if string(actual) != string(expected) {
+			t.Fatalf("ambiguous current credential changed: %s", actual)
+		}
+	}
+}
+
 func TestCredentialRecoveryWaitsForCanonicalStateLock(t *testing.T) {
 	stateDir := t.TempDir()
 	authDir := filepath.Join(stateDir, "auth")

@@ -142,12 +142,16 @@ elif _claudex_loopback_responding 2>/dev/null; then
   next_command="해당 process를 확인한 뒤 다시 실행"
 fi
 
-if [ "$auth_state" = missing ]; then
-  reason="Codex 인증 파일이 없습니다"
-  next_command="claudex login"
-elif [ "$auth_state" = invalid ]; then
-  reason="인증 파일 구조가 올바르지 않습니다"
-  next_command="상태 출력을 공유하고 인증 파일을 확인"
+# An untrusted listener or control identity must be resolved before credential work can help.
+# Preserve that remediation when independent auth damage is present.
+if [ "$proxy_state" != foreign ] && [ "$proxy_state" != unknown ]; then
+  if [ "$auth_state" = missing ]; then
+    reason="Codex 인증 파일이 없습니다"
+    next_command="claudex login"
+  elif [ "$auth_state" = invalid ]; then
+    reason="인증 파일 구조가 올바르지 않습니다"
+    next_command="상태 출력을 공유하고 인증 파일을 확인"
+  fi
 fi
 
 overall="not_ready"

@@ -2417,6 +2417,24 @@ EOF
     and .next_command == "해당 process를 확인한 뒤 다시 실행"
   ' <<< "$output" >/dev/null || fail "foreign listener status drifted: $output"
 
+  rm -f "$state/auth/codex-test.json"
+  set +e
+  output="$(HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    "$status" --json)"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "foreign listener with missing auth unexpectedly succeeded"
+  jq -e '
+    .auth == "missing"
+    and .proxy == "foreign"
+    and .reason == "8317 포트가 응답하지만 Claudex가 관리하는 process가 아닙니다"
+    and .next_command == "해당 process를 확인한 뒤 다시 실행"
+  ' <<< "$output" >/dev/null || fail "foreign listener remediation was hidden by missing auth: $output"
+  _claudex_add_valid_credential "$state"
+
   unhealthy_snapshot="$(jq -c '.state = "draining"' <<< "$snapshot")"
   set +e
   output="$(HOME="$sandbox/home" \

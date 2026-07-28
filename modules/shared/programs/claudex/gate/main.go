@@ -1139,6 +1139,9 @@ func buildRecoveryCredentialSet(currentDir, snapshotDir, parentDir, name string)
 	}()
 	usedNames := make(map[string]bool)
 	for _, provider := range []string{"codex", "claude"} {
+		if len(current[provider]) > 1 {
+			return "", fmt.Errorf("credential recovery has ambiguous current %s entries", provider)
+		}
 		candidates := fallback[provider]
 		if len(current[provider]) == 1 {
 			candidates = current[provider]
