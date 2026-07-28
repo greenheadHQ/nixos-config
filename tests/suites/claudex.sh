@@ -998,9 +998,11 @@ EOF
 }
 
 test_claudex_managed_proxy_requires_manager_ownership() {
-  local sandbox state proxy snapshot wrong_snapshot output rc
+  local sandbox state runtime proxy snapshot wrong_snapshot outdated_snapshot
+  local pinned_outdated_snapshot malformed_snapshot output rc
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
+  runtime="$sandbox/generated/claudex-runtime.sh"
   proxy="$sandbox/generated/claudex-proxy"
   _claudex_fixture "$sandbox"
   _claudex_prepare_fixture_state "$sandbox"
@@ -1068,6 +1070,58 @@ EOF
   set -e
   [[ "$rc" != 0 ]] || fail "Darwin accepted a managed gate with an unexpected executable"
   assert_contains "$output" "service identity를 확인할 수 없습니다"
+
+  outdated_snapshot="$(
+    jq -c '
+      .generation = "old-generation"
+      | .gate_executable = "/tmp/fake-gate"
+      | .backend_executable = "/tmp/fake-backend"
+    ' <<< "$snapshot"
+  )"
+  if HOME="$sandbox/home" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_FAKE_MANAGER_PID=10 \
+    bash -c '
+      source "$1"
+      _claudex_managed_snapshot_owned \
+        "$2" "$CLAUDEX_SERVICE_NAME" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"
+    ' _ "$runtime" "$outdated_snapshot"; then
+    fail "Darwin accepted an outdated managed gate with unpinned executables"
+  fi
+
+  pinned_outdated_snapshot="$(
+    jq -c '
+      .generation = "old-generation"
+      | .gate_executable =
+          "/nix/store/00000000000000000000000000000000-old-gate/bin/claudex-gate"
+      | .backend_executable =
+          "/nix/store/11111111111111111111111111111111-old-backend/bin/cli-proxy-api"
+    ' <<< "$snapshot"
+  )"
+  HOME="$sandbox/home" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_FAKE_MANAGER_PID=10 \
+    bash -c '
+      source "$1"
+      _claudex_managed_snapshot_owned \
+        "$2" "$CLAUDEX_SERVICE_NAME" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"
+    ' _ "$runtime" "$pinned_outdated_snapshot" \
+    || fail "Darwin rejected a pinned outdated managed gate"
+
+  for malformed_snapshot in \
+    "$(jq -c 'del(.generation)' <<< "$pinned_outdated_snapshot")" \
+    "$(jq -c '.generation = 7' <<< "$pinned_outdated_snapshot")"; do
+    if HOME="$sandbox/home" \
+      CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+      CLAUDEX_FAKE_MANAGER_PID=10 \
+      bash -c '
+        source "$1"
+        _claudex_managed_snapshot_owned \
+          "$2" "$CLAUDEX_SERVICE_NAME" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"
+      ' _ "$runtime" "$malformed_snapshot"; then
+      fail "Darwin accepted a malformed managed generation"
+    fi
+  done
 
   HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \

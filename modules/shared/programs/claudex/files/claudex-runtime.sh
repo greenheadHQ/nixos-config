@@ -636,8 +636,8 @@ _claudex_snapshot_executables_pinned() {
 }
 
 # A managed-mode claim is trusted only when the exact launchd label/systemd unit owns
-# the gate PID. Current-generation reuse additionally pins both executable paths. An
-# outdated manager-owned gate remains controllable so the new generation can drain it.
+# the gate PID. Current-generation reuse requires exact executable paths; an outdated
+# gate remains controllable only while both reported executables are Nix-store pinned.
 _claudex_managed_snapshot_owned() {
   local snapshot="$1" service_name="$2" expected_gate="$3" expected_backend="$4"
   local gate_pid manager_pid generation
@@ -646,9 +646,13 @@ _claudex_managed_snapshot_owned() {
   ' <<< "$snapshot" 2>/dev/null)" || return 1
   manager_pid="$(_claudex_manager_main_pid "$service_name")" || return 1
   [ "$gate_pid" = "$manager_pid" ] || return 1
-  generation="$("$CLAUDEX_JQ" -r '.generation // empty' <<< "$snapshot")"
+  generation="$("$CLAUDEX_JQ" -er '
+    .generation | select(type == "string" and length > 0)
+  ' <<< "$snapshot" 2>/dev/null)" || return 1
   if [ "$generation" = "$CLAUDEX_GENERATION" ]; then
     _claudex_snapshot_executables_current "$snapshot" "$expected_gate" "$expected_backend"
+  else
+    _claudex_snapshot_executables_pinned "$snapshot"
   fi
 }
 
