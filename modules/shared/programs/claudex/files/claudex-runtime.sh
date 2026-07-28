@@ -19,7 +19,7 @@
 #   _claudex_credential_path_of_type _claudex_assert_entries_wellformed
 #   _claudex_assert_safe_work_dir _claudex_loopback_responding _claudex_gate_inspect
 #   _claudex_assert_proxy_stopped _claudex_snapshot_executables_current
-#   _claudex_managed_snapshot_owned
+#   _claudex_snapshot_executables_pinned _claudex_managed_snapshot_owned
 
 if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_JQ="${CLAUDEX_JQ:-@jqBin@}"
@@ -614,6 +614,16 @@ _claudex_snapshot_executables_current() {
     --arg backend "$expected_backend" \
     '.gate_executable == $gate and .backend_executable == $backend' \
     <<< "$snapshot" >/dev/null 2>&1
+}
+
+_claudex_snapshot_executables_pinned() {
+  local snapshot="$1"
+  "$CLAUDEX_JQ" -e '
+    (.gate_executable
+      | type == "string" and test("^/nix/store/[0-9a-z]{32}-[^/]+/.+"))
+    and (.backend_executable
+      | type == "string" and test("^/nix/store/[0-9a-z]{32}-[^/]+/.+"))
+  ' <<< "$snapshot" >/dev/null 2>&1
 }
 
 # A managed-mode claim is trusted only when the exact launchd label/systemd unit owns

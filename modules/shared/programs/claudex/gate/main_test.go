@@ -328,6 +328,110 @@ func TestCleanBackendExitStopsWithoutRestart(t *testing.T) {
 	}
 }
 
+func TestForegroundStartupSIGINTStopsChildGroup(t *testing.T) {
+	binary := buildGate(t)
+	root, err := os.MkdirTemp("/tmp", "claudex-startup-signal-test.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	stateDir := filepath.Join(root, "state")
+	authDir := filepath.Join(stateDir, "auth")
+	workDir := filepath.Join(stateDir, "work")
+	for _, path := range []string{stateDir, authDir, workDir} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publicKeyFile := filepath.Join(stateDir, "client-api-key")
+	writePrivateFile(t, publicKeyFile, []byte(strings.Repeat("d", 64)))
+	writePrivateFile(
+		t,
+		filepath.Join(authDir, "codex.json"),
+		[]byte(`{"type":"codex","access_token":"access","refresh_token":"refresh"}`),
+	)
+	configFile := filepath.Join(stateDir, "config.json")
+	writePrivateFile(t, configFile, []byte(`{}`))
+	started := filepath.Join(root, "child-started")
+	stopped := filepath.Join(root, "child-stopped")
+	helper := filepath.Join(root, "slow-backend")
+	writePrivateFile(t, helper, []byte(fmt.Sprintf(
+		`#!/bin/sh
+started=%q
+stopped=%q
+trap 'printf stopped > "$stopped"; exit 0' TERM INT
+printf '%%s' "$$" > "$started"
+while :; do /bin/sleep 1; done
+`,
+		started,
+		stopped,
+	)))
+	if err := os.Chmod(helper, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	socket := filepath.Join(stateDir, "control.sock")
+	gate := exec.Command(
+		binary, "serve",
+		"--mode", "foreground",
+		"--state-dir", stateDir,
+		"--auth-dir", authDir,
+		"--work-dir", workDir,
+		"--config", configFile,
+		"--public-key-file", publicKeyFile,
+		"--backend-bin", helper,
+		"--generation", "test-generation",
+		"--public-address", freeAddress(t),
+		"--backend-address", freeAddress(t),
+		"--control-socket", socket,
+		"--drain-seconds", "5",
+		"--child-stop-seconds", "2",
+		"--log-file", filepath.Join(stateDir, "proxy.log"),
+	)
+	gateOutput := &strings.Builder{}
+	gate.Stdout = gateOutput
+	gate.Stderr = gateOutput
+	if err := gate.Start(); err != nil {
+		t.Fatal(err)
+	}
+	childPID := 0
+	gateWaited := false
+	t.Cleanup(func() {
+		if childPID > 0 {
+			_ = syscall.Kill(-childPID, syscall.SIGKILL)
+		}
+		if !gateWaited && (gate.ProcessState == nil || !gate.ProcessState.Exited()) {
+			_ = gate.Process.Signal(syscall.SIGKILL)
+			_ = gate.Wait()
+		}
+	})
+	waitFor(t, "foreground startup child", func() bool {
+		raw, err := os.ReadFile(started)
+		if err != nil {
+			return false
+		}
+		childPID, err = strconv.Atoi(strings.TrimSpace(string(raw)))
+		return err == nil && childPID > 0
+	})
+	if err := gate.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	if err := gate.Wait(); err != nil {
+		t.Fatalf("startup SIGINT did not produce a clean gate exit: %v\n%s", err, gateOutput)
+	}
+	gateWaited = true
+	waitFor(t, "startup child stop marker", func() bool {
+		_, err := os.Stat(stopped)
+		return err == nil
+	})
+	if err := syscall.Kill(-childPID, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("foreground child group survived startup SIGINT: %v", err)
+	}
+	if _, err := os.Lstat(socket); !os.IsNotExist(err) {
+		t.Fatalf("control socket survived startup SIGINT cleanup: %v", err)
+	}
+}
+
 func TestWrongCertificateReceivesNoBackendCredentialOrBody(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")

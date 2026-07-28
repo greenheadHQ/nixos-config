@@ -41,7 +41,10 @@ const usage = `usage:
 
 const backendCertificateLifetime = 10 * 365 * 24 * time.Hour
 
-var errBackendExitedClean = errors.New("backend exited cleanly")
+var (
+	errBackendExitedClean = errors.New("backend exited cleanly")
+	errStartupInterrupted = errors.New("gate startup interrupted by signal")
+)
 
 type serveOptions struct {
 	mode             string
@@ -256,10 +259,13 @@ func newGate(options serveOptions) (*gate, error) {
 }
 
 func (g *gate) serve() int {
-	if err := g.prepare(); err != nil {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(signals)
+	if err := g.prepare(signals); err != nil {
 		g.cleanup()
 		fmt.Fprintf(os.Stderr, "claudex-gate: %v\n", err)
-		if errors.Is(err, errBackendExitedClean) {
+		if errors.Is(err, errBackendExitedClean) || errors.Is(err, errStartupInterrupted) {
 			return 0
 		}
 		if g.options.mode == "managed" && g.managedRestartSuppressed() {
@@ -267,9 +273,6 @@ func (g *gate) serve() int {
 		}
 		return 1
 	}
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
-	defer signal.Stop(signals)
 	go func() {
 		select {
 		case <-signals:
@@ -282,7 +285,7 @@ func (g *gate) serve() int {
 	return g.exitCode
 }
 
-func (g *gate) prepare() error {
+func (g *gate) prepare(signals <-chan os.Signal) error {
 	for _, dir := range []string{g.options.stateDir, g.options.authDir, g.options.workDir} {
 		if err := assertPrivateDir(dir); err != nil {
 			return err
@@ -329,7 +332,7 @@ func (g *gate) prepare() error {
 	if err := g.startChild(logFile); err != nil {
 		return err
 	}
-	if err := g.waitBackendReady(); err != nil {
+	if err := g.waitBackendReady(signals); err != nil {
 		return g.abortStartup(err)
 	}
 	g.mu.Lock()
@@ -607,7 +610,7 @@ func (g *gate) startChild(logFile *os.File) error {
 	return nil
 }
 
-func (g *gate) waitBackendReady() error {
+func (g *gate) waitBackendReady(signals <-chan os.Signal) error {
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy:           nil,
@@ -617,6 +620,11 @@ func (g *gate) waitBackendReady() error {
 	}
 	endpoint := "https://" + g.options.backendAddress + "/v1/models"
 	for attempt := 0; attempt < 40; attempt++ {
+		select {
+		case <-signals:
+			return errStartupInterrupted
+		default:
+		}
 		g.mu.Lock()
 		startupErr := g.startupErr
 		g.mu.Unlock()
@@ -647,7 +655,18 @@ func (g *gate) waitBackendReady() error {
 				return nil
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-signals:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return errStartupInterrupted
+		case <-timer.C:
+		}
 	}
 	return errors.New("backend did not become ready")
 }

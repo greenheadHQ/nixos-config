@@ -74,10 +74,14 @@ if snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
       next_command="상태를 공유하고 수동 확인"
     fi
   elif [ "$mode" = foreground ]; then
-    if [ "$generation_state" != current ] \
-      || _claudex_snapshot_executables_current \
+    if [ "$generation_state" = current ] \
+      && _claudex_snapshot_executables_current \
         "$snapshot" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"; then
       identity_ok=true
+    elif [ "$generation_state" = outdated ] \
+      && _claudex_snapshot_executables_pinned "$snapshot"; then
+      identity_ok=true
+      next_command="실행 중인 터미널에서 Ctrl-C 후 다시 실행"
     else
       proxy_state="unknown"
       reason="foreground proxy의 executable identity를 확인할 수 없습니다"

@@ -2025,7 +2025,8 @@ test_claudex_production_execution_boundaries() {
 }
 
 test_claudex_status_is_sanitized() {
-  local sandbox state status output snapshot rc
+  local sandbox state status output snapshot foreground_snapshot outdated_snapshot
+  local unknown_snapshot unhealthy_snapshot rc
   sandbox="$(new_sandbox)"
   state="$sandbox/state"
   status="$sandbox/generated/claudex-status"
@@ -2039,7 +2040,7 @@ test_claudex_status_is_sanitized() {
 printf '%s\n' "\$@" >> "$sandbox/launchctl.argv"
 if [ "\$1" = print ]; then
   printf 'path = %s\n' "$sandbox/generated/claudex-proxy.plist"
-  printf 'pid = 10\n'
+  printf 'pid = %s\n' "\${CLAUDEX_FAKE_MANAGER_PID:-10}"
   exit "\${CLAUDEX_FAKE_PRINT_RC:-0}"
 fi
 exit 0
@@ -2084,6 +2085,94 @@ EOF
     and .generation == "current"
   ' <<< "$output" >/dev/null || fail "status JSON contract drifted: $output"
 
+  foreground_snapshot="$(jq -c '.mode = "foreground"' <<< "$snapshot")"
+  output="$(HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_TEST_GATE_SNAPSHOT="$foreground_snapshot" \
+    "$status" --json)"
+  jq -e '
+    .overall == "ready"
+    and .proxy == "ready"
+    and .generation == "current"
+    and .next_command == "claudex"
+  ' <<< "$output" >/dev/null || fail "current foreground status drifted: $output"
+
+  outdated_snapshot="$(
+    jq -c '
+      .mode = "foreground"
+      | .generation = "old-generation"
+      | .gate_executable = "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-old-gate/bin/claudex-gate"
+      | .backend_executable = "/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-old-proxy/bin/cli-proxy-api"
+    ' <<< "$snapshot"
+  )"
+  set +e
+  output="$(HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_TEST_GATE_SNAPSHOT="$outdated_snapshot" \
+    "$status" --json)"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "outdated foreground status unexpectedly succeeded"
+  jq -e '
+    .proxy == "outdated"
+    and .generation == "outdated"
+    and .reason == "실행 중인 proxy가 이전 Nix generation입니다"
+    and .next_command == "실행 중인 터미널에서 Ctrl-C 후 다시 실행"
+  ' <<< "$output" >/dev/null || fail "outdated foreground status drifted: $output"
+
+  unknown_snapshot="$(jq -c 'del(.gate_executable)' <<< "$outdated_snapshot")"
+  set +e
+  output="$(HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_TEST_GATE_SNAPSHOT="$unknown_snapshot" \
+    "$status" --json)"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "unproven foreground identity unexpectedly succeeded"
+  jq -e '
+    .proxy == "unknown"
+    and .reason == "foreground proxy의 executable identity를 확인할 수 없습니다"
+    and .next_command == "실행 중인 터미널에서 Ctrl-C 후 다시 실행"
+  ' <<< "$output" >/dev/null || fail "unknown foreground status drifted: $output"
+
+  set +e
+  output="$(HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    "$status" --json)"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "foreign listener status unexpectedly succeeded"
+  jq -e '
+    .proxy == "foreign"
+    and .reason == "8317 포트가 응답하지만 Claudex가 관리하는 process가 아닙니다"
+    and .next_command == "해당 process를 확인한 뒤 다시 실행"
+  ' <<< "$output" >/dev/null || fail "foreign listener status drifted: $output"
+
+  unhealthy_snapshot="$(jq -c '.state = "draining"' <<< "$snapshot")"
+  set +e
+  output="$(HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_TEST_GATE_SNAPSHOT="$unhealthy_snapshot" \
+    "$status" --json)"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "unhealthy proxy status unexpectedly succeeded"
+  jq -e '
+    .proxy == "unhealthy"
+    and .reason == "proxy process는 있지만 새 요청을 받을 준비가 되지 않았습니다"
+    and .next_command == "claudex proxy restart"
+  ' <<< "$output" >/dev/null || fail "unhealthy proxy status drifted: $output"
+
   if HOME="$sandbox/home" CLAUDEX_STATE_DIR="$state" "$status" --strict >/dev/null 2>&1; then
     fail "status accepted the unsupported --strict option"
   fi
@@ -2112,7 +2201,7 @@ EOF
 }
 
 test_claudex_nix_generated_command_outputs_are_pinned() {
-  local runtime_drv runtime_out path settings_path fast_settings_path
+  local runtime_drv runtime_out path settings_path fast_settings_path handler_var handler_path
   runtime_drv="$(
     cd "$REPO_ROOT"
     nix eval --impure --raw --expr '
@@ -2171,6 +2260,19 @@ test_claudex_nix_generated_command_outputs_are_pinned() {
     || fail "Nix-generated claudex does not route to the internal login handler"
   grep -Fq 'CLAUDEX_PROXY_HANDLER="/nix/store/' "$runtime_out/bin/claudex" \
     || fail "Nix-generated claudex does not route to the internal proxy handler"
+  for handler_var in CLAUDEX_LOGIN_HANDLER CLAUDEX_STATUS_HANDLER CLAUDEX_PROXY_HANDLER; do
+    handler_path="$(
+      sed -n "s/^${handler_var}=\"\\(.*\\)\"$/\\1/p" "$runtime_out/bin/claudex"
+    )"
+    [[ -n "$handler_path" && -x "$handler_path" ]] \
+      || fail "Nix-generated internal handler is not executable: $handler_var=$handler_path"
+  done
+  handler_path="$(
+    sed -n 's/^CLAUDEX_PROXY_LAUNCHER="\(.*\)"$/\1/p' \
+      "$runtime_out/libexec/claudex/claudex-proxy"
+  )"
+  [[ -n "$handler_path" && -x "$handler_path" ]] \
+    || fail "Nix-generated service launcher is not executable: $handler_path"
 }
 
 test_claudex_release_layout_verifier() {

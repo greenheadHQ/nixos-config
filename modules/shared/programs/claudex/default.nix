@@ -238,13 +238,15 @@ let
 
   mkRuntimeScript =
     source: replacements:
-    pkgs.replaceVars source (
-      {
+    pkgs.replaceVarsWith {
+      src = source;
+      isExecutable = true;
+      replacements = {
         bashBin = "${pkgs.bash}/bin/bash";
         inherit runtimeLibrary;
       }
-      // replacements
-    );
+      // replacements;
+    };
 
   statusScript = mkRuntimeScript ./files/claudex-status.sh {
     inherit serviceName;
