@@ -257,15 +257,6 @@ run_test "worktree-path-guard allows own worktree file" test_worktree_path_guard
 run_test "worktree-path-guard allows sibling worktree file" test_worktree_path_guard_allows_sibling_worktree_file
 run_test "worktree-path-guard allows main repo plan path exception" test_worktree_path_guard_allows_main_repo_plan_path_exception
 run_test "worktree-path-guard empty and malformed input noop" test_worktree_path_guard_empty_and_malformed_input_noop
-run_test "delegation-alert stays silent below threshold" test_delegation_alert_first_four_edits_are_silent
-run_test "delegation-alert warns without permissionDecision" test_delegation_alert_fifth_edit_warns_without_permission_decision
-run_test "delegation-alert warns once per turn" test_delegation_alert_warns_once_per_turn
-run_test "delegation-alert resets counter on new prompt" test_delegation_alert_prompt_change_resets_counter
-run_test "delegation-alert ignores subagent calls" test_delegation_alert_subagent_calls_are_ignored
-run_test "delegation-alert ignores non-write tools" test_delegation_alert_bash_does_not_increment_counter
-run_test "delegation-alert requires prompt_id" test_delegation_alert_missing_prompt_id_creates_no_state
-run_test "delegation-alert counts sessions independently" test_delegation_alert_sessions_count_independently
-run_test "delegation-alert rejects unsafe session id" test_delegation_alert_unsafe_session_id_creates_no_state
 run_test "immich originals mirror skips rsync on empty source" test_immich_originals_mirror_empty_source_skips_rsync
 run_test "immich cleanup paginates v3 nextPage string" test_immich_cleanup_v3_paginates_next_page_string
 run_test "immich cleanup preserves empty album notification" test_immich_cleanup_v3_empty_album_preserves_notification
