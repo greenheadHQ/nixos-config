@@ -124,13 +124,9 @@ func TestManagedGateAuthenticatesAndDrainsBeforeChildStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
 	writePrivateFile(t, helper, []byte(fmt.Sprintf(
-		"#!%s\nGO_WANT_CLAUDEX_BACKEND=1 exec %q -test.run '^TestGateBackendHelper$' -- \"$@\"\n",
-		shell, testBinary,
+		"#!/bin/sh\nGO_WANT_CLAUDEX_BACKEND=1 exec %q -test.run '^TestGateBackendHelper$' -- \"$@\"\n",
+		testBinary,
 	)))
 	if err := os.Chmod(helper, 0o700); err != nil {
 		t.Fatal(err)
@@ -203,7 +199,7 @@ func TestManagedGateAuthenticatesAndDrainsBeforeChildStop(t *testing.T) {
 		t.Fatalf("wrong credential status = %d", wrongResponse.StatusCode)
 	}
 	loggedRequests, err := os.ReadFile(requestLog)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(loggedRequests), "/wrong") {

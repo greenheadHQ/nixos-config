@@ -21,7 +21,7 @@ claudex_usage() {
   claudex -- <세션 입력...>
   claudex login [codex|claude] [--replace]
   claudex status [--json]
-  claudex proxy start|stop|restart|foreground|logs
+  claudex proxy start|foreground
   claudex proxy stop|restart [--force]
   claudex proxy logs [-f]
   claudex help

@@ -156,7 +156,6 @@ _claudex_materialize_command() {
     -e "s|@proxyLauncher@|$command_dir/claudex-proxy-launcher|g" \
     -e "s|@launchdPlist@|$command_dir/claudex-proxy.plist|g" \
     -e "s|@serviceName@|claudex-proxy.service|g" \
-    -e "s|@statusHandler@|$command_dir/claudex-status|g" \
     -e "s|@tailBin@|$(command -v tail)|g" \
     "$source" > "$destination"
   _claudex_assert_no_placeholders "$destination"
@@ -865,7 +864,7 @@ test_claudex_unified_cli_help_is_side_effect_free() {
   output="$(HOME="$sandbox/home" CLAUDEX_STATE_DIR="$sandbox/state" "$wrapper" --help)"
   assert_contains "$output" "claudex login [codex|claude] [--replace]"
   assert_contains "$output" "claudex status [--json]"
-  assert_contains "$output" "claudex proxy start|stop|restart|foreground|logs"
+  assert_contains "$output" "claudex proxy start|foreground"
   [[ ! -e "$sandbox/state" ]] || fail "claudex --help mutated runtime state"
 
   output="$(HOME="$sandbox/home" CLAUDEX_STATE_DIR="$sandbox/state" "$wrapper" help)"
@@ -874,7 +873,7 @@ test_claudex_unified_cli_help_is_side_effect_free() {
 }
 
 test_claudex_unified_cli_routes_subcommands() {
-  local sandbox wrapper handler
+  local sandbox wrapper handler rc
   sandbox="$(new_sandbox)"
   wrapper="$sandbox/generated/claudex"
   _claudex_fixture "$sandbox"
@@ -883,6 +882,7 @@ test_claudex_unified_cli_routes_subcommands() {
     cat > "$sandbox/generated/$handler" <<EOF
 #!/usr/bin/env bash
 printf '%s\\n' '$handler '"\$*" >> "$sandbox/dispatch.log"
+exit "\${CLAUDEX_HANDLER_EXIT:-0}"
 EOF
     chmod +x "$sandbox/generated/$handler"
   done
@@ -894,6 +894,43 @@ EOF
   assert_file_contains "$sandbox/dispatch.log" "claudex-login --claude --replace"
   assert_file_contains "$sandbox/dispatch.log" "claudex-status --json"
   assert_file_contains "$sandbox/dispatch.log" "claudex-proxy stop --force"
+
+  set +e
+  CLAUDEX_HANDLER_EXIT=37 HOME="$sandbox/home" "$wrapper" status >/dev/null 2>&1
+  rc=$?
+  set -e
+  [[ "$rc" == "37" ]] || fail "claudex did not preserve a subcommand handler failure"
+}
+
+test_claudex_proxy_stop_reports_busy_requests() {
+  local sandbox proxy output snapshot rc
+  sandbox="$(new_sandbox)"
+  proxy="$sandbox/generated/claudex-proxy"
+  _claudex_fixture "$sandbox"
+
+  cat > "$sandbox/busy-gate" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' '{"ok":false,"code":"BUSY_REOPENED","message":"active requests remain; admission reopened"}'
+exit 1
+EOF
+  chmod +x "$sandbox/busy-gate"
+  snapshot='{"schema":1,"instance":"fixture","generation":"fixture-generation","mode":"managed","state":"open","accepting":true,"active":1,"gate_pid":10,"backend_pid":11,"backend_executable":"/nix/store/fake/bin/cli-proxy-api"}'
+
+  set +e
+  output="$(
+    HOME="$sandbox/home" \
+      CLAUDEX_STATE_DIR="$sandbox/state" \
+      CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_GATE_BIN="$sandbox/busy-gate" \
+      CLAUDEX_TEST_GATE_SNAPSHOT="$snapshot" \
+      "$proxy" stop 2>&1
+  )"
+  rc=$?
+  set -e
+
+  [[ "$rc" != 0 ]] || fail "busy proxy stop unexpectedly succeeded"
+  assert_contains "$output" "활성 요청이 있어 proxy를 중지하지 않았습니다"
+  assert_contains "$output" "claudex proxy stop --force"
 }
 
 test_claudex_mixed_mode_contract() {

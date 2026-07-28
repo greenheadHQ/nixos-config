@@ -479,13 +479,16 @@ claudex status --json
 
 ```json
 {
+  "schema": 1,
   "overall": "ready",
   "auth": "ready",
   "auth_live_validity": "unchecked",
   "proxy": "ready",
   "readiness": "ready",
   "catalog": "ready",
-  "generation": "current"
+  "generation": "current",
+  "reason": "로컬 proxy와 모델 catalog가 준비됐습니다",
+  "next_command": "claudex"
 }
 ```
 

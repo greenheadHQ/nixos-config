@@ -298,6 +298,7 @@ run_test "claudex credential and loopback contract" test_claudex_credential_and_
 run_test "claudex wrapper pins provider model and argv" test_claudex_wrapper_pins_provider_model_and_argv
 run_test "claudex unified CLI help is side-effect free" test_claudex_unified_cli_help_is_side_effect_free
 run_test "claudex unified CLI routes subcommands" test_claudex_unified_cli_routes_subcommands
+run_test "claudex proxy stop reports busy requests" test_claudex_proxy_stop_reports_busy_requests
 run_test "claudex mixed mode contract" test_claudex_mixed_mode_contract
 run_test "claudex launcher and login use fake boundaries" test_claudex_launcher_and_login_use_fake_boundaries
 run_test "claudex login replaces one provider safely" test_claudex_login_replaces_one_provider_safely

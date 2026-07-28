@@ -31,6 +31,7 @@ _claudex_manager_registered() {
 }
 
 _claudex_manager_start() {
+  local domain
   if [ "$CLAUDEX_PLATFORM" = darwin ]; then
     domain="gui/$($CLAUDEX_ID -u)"
     # A private launchd definition survives a clean process exit. Replace any inactive
@@ -132,7 +133,8 @@ _claudex_ensure_locked() {
 }
 
 _claudex_stop_locked() {
-  local force="$1" snapshot mode state generation instance
+  local force="$1" snapshot mode state generation instance gate_response
+  local -a args
   if ! snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
     if [ -e "$CLAUDEX_CONTROL_SOCKET" ] || [ -L "$CLAUDEX_CONTROL_SOCKET" ] \
       || _claudex_loopback_responding 2>/dev/null; then
@@ -163,7 +165,14 @@ _claudex_stop_locked() {
     --timeout-seconds 0
   )
   [ "$force" = false ] || args+=(--force)
-  "$CLAUDEX_GATE_BIN" "${args[@]}" >/dev/null
+  if ! gate_response="$("$CLAUDEX_GATE_BIN" "${args[@]}" 2>/dev/null)"; then
+    if "$CLAUDEX_JQ" -e '.code == "BUSY_REOPENED"' <<< "$gate_response" >/dev/null 2>&1; then
+      _claudex_error "활성 요청이 있어 proxy를 중지하지 않았습니다. 강제 중지는 claudex proxy stop --force를 사용하세요"
+    else
+      _claudex_error "proxy 중지 요청이 실패했습니다"
+    fi
+    return 1
+  fi
   _claudex_manager_stop
   echo "claudex: proxy를 중지했습니다" >&2
 }

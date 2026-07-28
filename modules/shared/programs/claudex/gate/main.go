@@ -39,6 +39,8 @@ const usage = `usage:
   claudex-gate control drain-stop --socket PATH --instance NONCE --generation ID --timeout-seconds N [--force]
 `
 
+const backendCertificateLifetime = 10 * 365 * 24 * time.Hour
+
 type serveOptions struct {
 	mode             string
 	stateDir         string
@@ -242,7 +244,7 @@ func (g *gate) serve() int {
 	if err := g.prepare(); err != nil {
 		g.cleanup()
 		fmt.Fprintf(os.Stderr, "claudex-gate: %v\n", err)
-		if g.options.mode == "managed" && (g.suppressRestart || g.child == nil) {
+		if g.options.mode == "managed" && g.managedRestartSuppressed() {
 			return 0
 		}
 		return 1
@@ -280,7 +282,7 @@ func (g *gate) prepare() error {
 		return err
 	}
 	if err := validateCredentialSet(g.options.authDir); err != nil {
-		g.suppressRestart = true
+		g.suppressManagedRestart()
 		return err
 	}
 	if err := g.acquireRuntimeLock(); err != nil {
@@ -328,7 +330,7 @@ func (g *gate) prepare() error {
 }
 
 func (g *gate) abortStartup(startupErr error) error {
-	if g.child != nil {
+	if g.childCommand() != nil {
 		select {
 		case <-g.childDone:
 		default:
@@ -344,10 +346,28 @@ func (g *gate) abortStartup(startupErr error) error {
 		}
 	}
 	if recoveryErr := g.recoverCredentialSet(); recoveryErr != nil {
-		g.suppressRestart = true
+		g.suppressManagedRestart()
 		return fmt.Errorf("%w; credential recovery failed: %v", startupErr, recoveryErr)
 	}
 	return startupErr
+}
+
+func (g *gate) childCommand() *exec.Cmd {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.child
+}
+
+func (g *gate) managedRestartSuppressed() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.suppressRestart || g.child == nil
+}
+
+func (g *gate) suppressManagedRestart() {
+	g.mu.Lock()
+	g.suppressRestart = true
+	g.mu.Unlock()
 }
 
 func (g *gate) acquireRuntimeLock() error {
@@ -359,7 +379,7 @@ func (g *gate) acquireRuntimeLock() error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return err
 	}
@@ -534,7 +554,9 @@ func (g *gate) startChild(logFile *os.File) error {
 	if err := command.Start(); err != nil {
 		return err
 	}
+	g.mu.Lock()
 	g.child = command
+	g.mu.Unlock()
 	go func() {
 		err := command.Wait()
 		g.mu.Lock()
@@ -846,7 +868,7 @@ func (g *gate) stopProcess(force bool) int {
 			_ = g.control.Close()
 		}
 		g.captureLatestCredentialSnapshot()
-		if g.child != nil {
+		if g.childCommand() != nil {
 			select {
 			case <-g.childDone:
 			default:
@@ -965,13 +987,14 @@ func copyCredentialSet(sourceDir, parentDir, name string) (string, error) {
 }
 
 func (g *gate) signalChild(signal syscall.Signal) error {
-	if g.child == nil || g.child.Process == nil {
+	child := g.childCommand()
+	if child == nil || child.Process == nil {
 		return nil
 	}
 	if g.options.mode == "foreground" {
-		return syscall.Kill(-g.child.Process.Pid, signal)
+		return syscall.Kill(-child.Process.Pid, signal)
 	}
-	return g.child.Process.Signal(signal)
+	return child.Process.Signal(signal)
 }
 
 func (g *gate) failUnexpected(err error) {
@@ -1163,7 +1186,7 @@ func generateBackendCertificate(certPath, keyPath string) (*x509.CertPool, error
 		SerialNumber:          randomSerial(),
 		Subject:               pkix.Name{CommonName: "claudex-private-ca"},
 		NotBefore:             now.Add(-time.Minute),
-		NotAfter:              now.Add(24 * time.Hour),
+		NotAfter:              now.Add(backendCertificateLifetime),
 		IsCA:                  true,
 		BasicConstraintsValid: true,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
@@ -1182,7 +1205,7 @@ func generateBackendCertificate(certPath, keyPath string) (*x509.CertPool, error
 		DNSNames:     []string{"claudex-backend"},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 		NotBefore:    now.Add(-time.Minute),
-		NotAfter:     now.Add(24 * time.Hour),
+		NotAfter:     now.Add(backendCertificateLifetime),
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 	}
