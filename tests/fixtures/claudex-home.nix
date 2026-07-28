@@ -2,13 +2,14 @@
   flake,
   hostname,
   pkgs ? flake.inputs.nixpkgs.legacyPackages.${builtins.currentSystem},
+  proxyFixtureTag ? "default",
   username ? "claudex-fixture",
 }:
 
 let
   fakeCliProxyApi =
-    pkgs.runCommand "cli-proxy-api-fixture-7.2.73" { } ''
-      install -Dm755 ${pkgs.writeShellScript "cli-proxy-api-fixture" "exit 99"} "$out/bin/cli-proxy-api"
+    pkgs.runCommand "cli-proxy-api-fixture-7.2.73-${proxyFixtureTag}" { } ''
+      install -Dm755 ${pkgs.writeShellScript "cli-proxy-api-fixture-${proxyFixtureTag}" "exit 99"} "$out/bin/cli-proxy-api"
     ''
     // {
       version = "7.2.73";

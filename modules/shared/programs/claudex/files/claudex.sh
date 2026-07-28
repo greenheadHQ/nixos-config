@@ -10,6 +10,58 @@ CLAUDEX_CONFIG_TEMPLATE="@configTemplate@"
 CLAUDEX_WRAPPER_SETTINGS="@wrapperSettings@"
 CLAUDEX_WRAPPER_SETTINGS_FAST="@wrapperSettingsFast@"
 CLAUDEX_MAX_CONTEXT_TOKENS="@maxContextTokens@"
+CLAUDEX_LOGIN_HANDLER="@loginHandler@"
+CLAUDEX_STATUS_HANDLER="@statusHandler@"
+CLAUDEX_PROXY_HANDLER="@proxyHandler@"
+
+claudex_usage() {
+  cat <<'EOF'
+사용법:
+  claudex [세션 인자...]
+  claudex -- <세션 입력...>
+  claudex login [codex|claude] [--replace]
+  claudex status [--json]
+  claudex proxy start|foreground
+  claudex proxy stop|restart [--force]
+  claudex proxy logs [-f]
+  claudex help
+EOF
+}
+
+case "${1-}" in
+  help | --help)
+    if [ "$#" -ne 1 ]; then
+      claudex_usage >&2
+      exit 2
+    fi
+    claudex_usage
+    exit 0
+    ;;
+  login)
+    shift
+    login_provider=codex
+    if [ "${1-}" = codex ] || [ "${1-}" = claude ]; then
+      login_provider="$1"
+      shift
+    fi
+    if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != --replace ]; }; then
+      echo "usage: claudex login [codex|claude] [--replace]" >&2
+      exit 2
+    fi
+    login_args=()
+    [ "$login_provider" = codex ] || login_args+=(--claude)
+    [ "$#" -eq 0 ] || login_args+=(--replace)
+    exec "$CLAUDEX_LOGIN_HANDLER" "${login_args[@]}"
+    ;;
+  status)
+    shift
+    exec "$CLAUDEX_STATUS_HANDLER" "$@"
+    ;;
+  proxy)
+    shift
+    exec "$CLAUDEX_PROXY_HANDLER" "$@"
+    ;;
+esac
 
 # Effort stays wrapper-owned: the inherited CLAUDE_CODE_EFFORT_LEVEL is scrubbed below and
 # only an explicit, whitelist-validated `claudex --effort <level>` argument may change the
@@ -116,7 +168,11 @@ if [ "$mixed_mode" = true ]; then
   main_model="$CLAUDEX_MIXED_MAIN_MODEL"
 fi
 
-prepare_state
+if [ "$CLAUDEX_TEST_BYPASS_ENSURE" = true ]; then
+  prepare_state
+else
+  "$CLAUDEX_PROXY_HANDLER" ensure
+fi
 assert_credential_set "$CLAUDEX_AUTH_DIR" "$credential_mode"
 wait_for_proxy_ready
 catalog="$(curl_loopback /v1/models)"

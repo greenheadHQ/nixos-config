@@ -37,7 +37,7 @@ for arg in "$@"; do
   case "$arg" in
     --claude)
       if [ "$seen_claude" = true ]; then
-        echo "usage: claudex-login [--claude] [--replace]" >&2
+        echo "usage: claudex login [codex|claude] [--replace]" >&2
         exit 2
       fi
       seen_claude=true
@@ -46,14 +46,14 @@ for arg in "$@"; do
       ;;
     --replace)
       if [ "$seen_replace" = true ]; then
-        echo "usage: claudex-login [--claude] [--replace]" >&2
+        echo "usage: claudex login [codex|claude] [--replace]" >&2
         exit 2
       fi
       seen_replace=true
       replace=true
       ;;
     *)
-      echo "usage: claudex-login [--claude] [--replace]" >&2
+      echo "usage: claudex login [codex|claude] [--replace]" >&2
       exit 2
       ;;
   esac
@@ -79,7 +79,7 @@ case "$existing_rc" in
       exit 1
     fi
     if [ "$replace" = false ]; then
-      echo "claudex-login: canonical $cred_type credential is present and schema-valid; live validity was not checked"
+      echo "claudex login: canonical $cred_type credential is present and schema-valid; live validity was not checked"
       exit 0
     fi
     existing_fingerprint="$(_claudex_credential_fingerprint "$existing_path")" || exit 1
@@ -87,7 +87,7 @@ case "$existing_rc" in
     ;;
   1)
     if [ "$replace" = true ]; then
-      _claudex_error "canonical $cred_type credential is absent; run claudex-login without --replace first"
+      _claudex_error "canonical $cred_type credential is absent; run claudex login $cred_type first"
       exit 1
     fi
     ;;
@@ -97,9 +97,8 @@ case "$existing_rc" in
     ;;
 esac
 
-if [ "$replace" = true ] && _claudex_loopback_responding 2>/dev/null; then
-  _claudex_error "stop the local claudex proxy before replacing credentials"
-  exit 1
+if [ "$replace" = true ]; then
+  with_lifecycle_lock _claudex_assert_proxy_stopped
 fi
 
 staging="$($CLAUDEX_MKTEMP -d "$CLAUDEX_STATE_DIR/auth.login.XXXXXX")"
@@ -126,7 +125,7 @@ _claudex_ensure_private_dir "$staging_auth"
   _claudex_render_runtime_config_unlocked
 )
 
-echo "claudex-login: follow the $cred_type OAuth instructions printed by CLIProxyAPI"
+echo "claudex login: follow the $cred_type OAuth instructions printed by CLIProxyAPI"
 _claudex_filter_login_output() {
   local buffer="" char private_prefix="$staging" redacting=false suffix
   while IFS= read -r -n 1 char; do
@@ -343,7 +342,19 @@ _claudex_promote_staged_credential() {
   fi
 }
 
-with_state_lock _claudex_promote_staged_credential
+_claudex_promote_replacement_with_lifecycle_lock() {
+  _claudex_assert_proxy_stopped || return 1
+  with_state_lock _claudex_promote_staged_credential
+}
+
+if [ "$replace" = true ]; then
+  # OAuth may take minutes, so the initial stopped check is released while the user logs in.
+  # From this second exact stopped check through promotion validation and rollback, the
+  # lifecycle lock stays outermost; state mutation is always lifecycle -> state.
+  with_lifecycle_lock _claudex_promote_replacement_with_lifecycle_lock
+else
+  with_state_lock _claudex_promote_staged_credential
+fi
 if ! cleanup_staging; then
   trap - EXIT INT TERM
   _claudex_error "failed to remove the private login staging directory"
@@ -351,7 +362,7 @@ if ! cleanup_staging; then
 fi
 trap - EXIT INT TERM
 if [ "$replace" = true ]; then
-  echo "claudex-login: canonical $cred_type credential was replaced and is schema-valid; live validity was not checked"
+  echo "claudex login: canonical $cred_type credential was replaced and is schema-valid; live validity was not checked"
 else
-  echo "claudex-login: canonical $cred_type credential is ready"
+  echo "claudex login: canonical $cred_type credential is ready"
 fi

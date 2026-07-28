@@ -8,7 +8,7 @@
 # calls happen only when a command invokes a function.
 #
 # Package-internal command API:
-#   with_state_lock prepare_state credential_count
+#   with_state_lock with_lifecycle_lock prepare_state credential_count
 #   assert_credential_set curl_loopback wait_for_proxy_ready
 #
 # Package-internal cross-file API (not stable for external callers):
@@ -17,7 +17,10 @@
 #   _claudex_credential_json_valid _claudex_credential_fingerprint
 #   _claudex_credential_set_fingerprint _claudex_credential_type_of
 #   _claudex_credential_path_of_type _claudex_assert_entries_wellformed
-#   _claudex_assert_safe_work_dir _claudex_loopback_responding
+#   _claudex_assert_safe_work_dir _claudex_loopback_responding _claudex_gate_inspect
+#   _claudex_assert_proxy_stopped _claudex_snapshot_executables_current
+#   _claudex_snapshot_executables_pinned _claudex_managed_snapshot_owned
+#   _claudex_acquire_lifecycle_lock _claudex_release_lifecycle_lock
 
 if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_JQ="${CLAUDEX_JQ:-@jqBin@}"
@@ -35,7 +38,10 @@ if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_ENV="${CLAUDEX_ENV:-@envBin@}"
   CLAUDEX_FLOCK="${CLAUDEX_FLOCK:-@flockBin@}"
   CLAUDEX_LAUNCHCTL="${CLAUDEX_LAUNCHCTL:-@launchctlBin@}"
+  CLAUDEX_SYSTEMCTL="${CLAUDEX_SYSTEMCTL:-@systemctlBin@}"
   CLAUDEX_ID="${CLAUDEX_ID:-@idBin@}"
+  CLAUDEX_TEST_BYPASS_ENSURE="${CLAUDEX_TEST_BYPASS_ENSURE:-true}"
+  CLAUDEX_TEST_GATE_SNAPSHOT="${CLAUDEX_TEST_GATE_SNAPSHOT:-}"
 else
   CLAUDEX_JQ="@jqBin@"
   CLAUDEX_CURL="@curlBin@"
@@ -52,7 +58,9 @@ else
   CLAUDEX_ENV="@envBin@"
   CLAUDEX_FLOCK="@flockBin@"
   CLAUDEX_LAUNCHCTL="@launchctlBin@"
+  CLAUDEX_SYSTEMCTL="@systemctlBin@"
   CLAUDEX_ID="@idBin@"
+  CLAUDEX_TEST_BYPASS_ENSURE=false
 fi
 
 if [ "@allowTestOverrides@" = "true" ]; then
@@ -63,8 +71,14 @@ if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_CONFIG_FILE="${CLAUDEX_CONFIG_FILE:-$CLAUDEX_STATE_DIR/config.yaml}"
   CLAUDEX_API_KEY_FILE="${CLAUDEX_API_KEY_FILE:-$CLAUDEX_STATE_DIR/client-api-key}"
   CLAUDEX_STATE_LOCK="${CLAUDEX_STATE_LOCK:-$CLAUDEX_STATE_DIR/state.lock}"
+  CLAUDEX_LIFECYCLE_LOCK="${CLAUDEX_LIFECYCLE_LOCK:-$CLAUDEX_STATE_DIR/lifecycle.lock}"
+  CLAUDEX_CONTROL_SOCKET="${CLAUDEX_CONTROL_SOCKET:-$CLAUDEX_STATE_DIR/control.sock}"
+  CLAUDEX_LOG_FILE="${CLAUDEX_LOG_FILE:-$CLAUDEX_STATE_DIR/proxy.log}"
   CLAUDEX_WORK_DIR="${CLAUDEX_WORK_DIR:-$CLAUDEX_STATE_DIR/work}"
   CLAUDEX_CONFIG_TEMPLATE="${CLAUDEX_CONFIG_TEMPLATE:-@configTemplate@}"
+  CLAUDEX_GATE_BIN="${CLAUDEX_GATE_BIN:-@gateBin@}"
+  CLAUDEX_GENERATION="${CLAUDEX_GENERATION:-@generation@}"
+  CLAUDEX_PLATFORM="${CLAUDEX_PLATFORM:-@platform@}"
 else
   CLAUDEX_HOME="@homeDir@"
   CLAUDEX_STATE_DIR="@stateDir@"
@@ -72,8 +86,14 @@ else
   CLAUDEX_CONFIG_FILE="@configFile@"
   CLAUDEX_API_KEY_FILE="@apiKeyFile@"
   CLAUDEX_STATE_LOCK="@stateLock@"
+  CLAUDEX_LIFECYCLE_LOCK="@lifecycleLock@"
+  CLAUDEX_CONTROL_SOCKET="@controlSocket@"
+  CLAUDEX_LOG_FILE="@logFile@"
   CLAUDEX_WORK_DIR="@workDir@"
   CLAUDEX_CONFIG_TEMPLATE="@configTemplate@"
+  CLAUDEX_GATE_BIN="@gateBin@"
+  CLAUDEX_GENERATION="@generation@"
+  CLAUDEX_PLATFORM="@platform@"
 fi
 CLAUDEX_LOCK_TIMEOUT_SECONDS="${CLAUDEX_LOCK_TIMEOUT_SECONDS:-10}"
 CLAUDEX_READY_ATTEMPTS="${CLAUDEX_READY_ATTEMPTS:-20}"
@@ -529,6 +549,133 @@ with_state_lock() (
   "$@"
 )
 
+_claudex_acquire_lifecycle_lock() {
+  local lock_triplet
+  umask 077
+  _claudex_assert_default_state_ancestors || return 1
+  _claudex_ensure_private_dir "$CLAUDEX_STATE_DIR" || return 1
+  if [ -L "$CLAUDEX_LIFECYCLE_LOCK" ] \
+    || { [ -e "$CLAUDEX_LIFECYCLE_LOCK" ] && [ ! -f "$CLAUDEX_LIFECYCLE_LOCK" ]; }; then
+    _claudex_error "refusing non-regular or symlink lifecycle lock"
+    return 1
+  fi
+  : >> "$CLAUDEX_LIFECYCLE_LOCK" || return 1
+  "$CLAUDEX_CHMOD" 600 -- "$CLAUDEX_LIFECYCLE_LOCK" || return 1
+  lock_triplet="$(_claudex_permission_triplet "$CLAUDEX_LIFECYCLE_LOCK")"
+  if [ "$lock_triplet" != "600" ]; then
+    _claudex_error "lifecycle lock mode must be 0600"
+    return 1
+  fi
+  exec 8>"$CLAUDEX_LIFECYCLE_LOCK" || return 1
+  if ! "$CLAUDEX_FLOCK" -x -w "$CLAUDEX_LOCK_TIMEOUT_SECONDS" 8; then
+    _claudex_error "timed out waiting for the lifecycle lock"
+    return 1
+  fi
+}
+
+_claudex_release_lifecycle_lock() {
+  exec 8>&-
+}
+
+with_lifecycle_lock() (
+  _claudex_acquire_lifecycle_lock || exit 1
+  "$@"
+)
+
+_claudex_gate_inspect() {
+  if [ "@allowTestOverrides@" = "true" ] && [ -n "$CLAUDEX_TEST_GATE_SNAPSHOT" ]; then
+    printf '%s\n' "$CLAUDEX_TEST_GATE_SNAPSHOT"
+    return
+  fi
+  [ -S "$CLAUDEX_CONTROL_SOCKET" ] || return 1
+  "$CLAUDEX_GATE_BIN" control inspect --socket "$CLAUDEX_CONTROL_SOCKET"
+}
+
+_claudex_manager_main_pid() {
+  local service_name="$1" output line pid=""
+  if [ "$CLAUDEX_PLATFORM" = darwin ]; then
+    output="$("$CLAUDEX_LAUNCHCTL" print "gui/$("$CLAUDEX_ID" -u)/$CLAUDEX_LABEL" 2>/dev/null)" \
+      || return 1
+    while IFS= read -r line; do
+      line="${line#"${line%%[![:space:]]*}"}"
+      case "$line" in
+        "pid = "*)
+          pid="${line#pid = }"
+          break
+          ;;
+      esac
+    done <<< "$output"
+  else
+    output="$("$CLAUDEX_SYSTEMCTL" --user show "$service_name" \
+      --property MainPID --value 2>/dev/null)" || return 1
+    IFS= read -r pid <<< "$output"
+  fi
+  case "$pid" in
+    "" | 0 | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$pid"
+}
+
+_claudex_snapshot_executables_current() {
+  local snapshot="$1" expected_gate="$2" expected_backend="$3"
+  "$CLAUDEX_JQ" -e \
+    --arg gate "$expected_gate" \
+    --arg backend "$expected_backend" \
+    '.gate_executable == $gate and .backend_executable == $backend' \
+    <<< "$snapshot" >/dev/null 2>&1
+}
+
+_claudex_snapshot_executables_pinned() {
+  local snapshot="$1"
+  "$CLAUDEX_JQ" -e '
+    (.gate_executable
+      | type == "string" and test("^/nix/store/[0-9a-z]{32}-[^/]+/.+"))
+    and (.backend_executable
+      | type == "string" and test("^/nix/store/[0-9a-z]{32}-[^/]+/.+"))
+  ' <<< "$snapshot" >/dev/null 2>&1
+}
+
+# A managed-mode claim is trusted only when the exact launchd label/systemd unit owns
+# the gate PID. Current-generation reuse requires exact executable paths; an outdated
+# gate remains controllable only while both reported executables are Nix-store pinned.
+_claudex_managed_snapshot_owned() {
+  local snapshot="$1" service_name="$2" expected_gate="$3" expected_backend="$4"
+  local gate_pid manager_pid generation
+  gate_pid="$("$CLAUDEX_JQ" -er '
+    .gate_pid | select(type == "number" and . > 0 and floor == .) | tostring
+  ' <<< "$snapshot" 2>/dev/null)" || return 1
+  manager_pid="$(_claudex_manager_main_pid "$service_name")" || return 1
+  [ "$gate_pid" = "$manager_pid" ] || return 1
+  generation="$("$CLAUDEX_JQ" -er '
+    .generation | select(type == "string" and length > 0)
+  ' <<< "$snapshot" 2>/dev/null)" || return 1
+  if [ "$generation" = "$CLAUDEX_GENERATION" ]; then
+    _claudex_snapshot_executables_current "$snapshot" "$expected_gate" "$expected_backend"
+  else
+    _claudex_snapshot_executables_pinned "$snapshot"
+  fi
+}
+
+_claudex_assert_proxy_stopped() {
+  local snapshot
+  if snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
+    if "$CLAUDEX_JQ" -e '.mode == "foreground"' <<< "$snapshot" >/dev/null 2>&1; then
+      _claudex_error "stop the foreground claudex proxy with Ctrl-C before replacing credentials"
+    else
+      _claudex_error "stop the managed claudex proxy before replacing credentials"
+    fi
+    return 1
+  fi
+  if [ -e "$CLAUDEX_CONTROL_SOCKET" ] || [ -L "$CLAUDEX_CONTROL_SOCKET" ]; then
+    _claudex_error "cannot prove that the claudex proxy is stopped"
+    return 1
+  fi
+  if _claudex_loopback_responding 2>/dev/null; then
+    _claudex_error "stop the local claudex proxy before replacing credentials"
+    return 1
+  fi
+}
+
 prepare_state() {
   with_state_lock _claudex_prepare_state_unlocked
 }
@@ -590,7 +737,7 @@ assert_credential_set() (
       ;;
     mixed)
       if [ "$claude_count" -ne 1 ]; then
-        _claudex_error "mixed mode requires exactly one claude credential in $dir (found $claude_count; run claudex-login --claude)"
+        _claudex_error "mixed mode requires exactly one claude credential in $dir (found $claude_count; run claudex login claude)"
         return 1
       fi
       ;;

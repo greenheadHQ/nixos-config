@@ -36,7 +36,7 @@ let
     name: !(builtins.elem name expectedDarwinHosts)
   ) darwinHostNames;
 
-  # Claudex Stage 1 static inputs. These are parsed directly so a pin/template-only change is
+  # Claudex static inputs. These are parsed directly so a pin/template-only change is
   # covered without ever executing the upstream CLIProxyAPI binary.
   claudexPin = builtins.fromJSON (
     builtins.readFile ../modules/shared/programs/claudex/cli-proxy-api-pin.json
@@ -52,6 +52,11 @@ let
     inherit flake;
     hostname = "greenhead-MacBookPro";
   };
+  claudexAlternateProxyFixture = import ./fixtures/claudex-home.nix {
+    inherit flake;
+    hostname = "greenhead-MacBookPro";
+    proxyFixtureTag = "alternate";
+  };
   claudexDisabledHm = claudexDisabledFixture.config;
   claudexEnabledHm = claudexEnabledFixture.config;
   claudexDisabledDescriptor = builtins.fromJSON (
@@ -60,10 +65,11 @@ let
   claudexEnabledDescriptor = builtins.fromJSON (
     claudexEnabledHm.home.file.".config/claudex/runtime.json".text
   );
+  claudexAlternateProxyDescriptor = builtins.fromJSON (
+    claudexAlternateProxyFixture.config.home.file.".config/claudex/runtime.json".text
+  );
   claudexDisabledPublicFiles = [
     ".local/bin/claudex"
-    ".local/bin/claudex-login"
-    ".local/bin/claudex-status"
     ".local/libexec/claudex/claudex-proxy-launcher"
   ];
   claudexDisabledRuntimeSource = claudexDisabledHm.home.file.".local/lib/claudex/runtime.sh".source;
@@ -527,8 +533,6 @@ let
         claudexShouldEnable = builtins.elem hostName claudexTargetHosts;
         claudexPublicFiles = [
           ".local/bin/claudex"
-          ".local/bin/claudex-login"
-          ".local/bin/claudex-status"
           ".local/libexec/claudex/claudex-proxy-launcher"
         ];
         claudexAgentNames = if hasHost then builtins.attrNames hm.launchd.agents else [ ];
@@ -649,7 +653,7 @@ let
           name = "Test D15 ${hostName}: claudex descriptor의 loopback/model/schema 계약이 고정되어야 함";
           cond =
             hasClaudexDescriptor
-            && claudexDescriptor.schema == 2
+            && claudexDescriptor.schema == 3
             && claudexDescriptor.hostName == hostName
             && claudexDescriptor.targetHosts == claudexTargetHosts
             && claudexDescriptor.label == "org.nix-community.home.claudex-proxy"
@@ -659,6 +663,10 @@ let
             && claudexDescriptor.readiness.method == "GET"
             && claudexDescriptor.readiness.url == "http://127.0.0.1:8317/v1/models"
             && claudexDescriptor.readiness.catalogIsEntitlement == false
+            && claudexDescriptor.lifecycle.autoStart == "first-session"
+            && claudexDescriptor.lifecycle.platform == "launchd"
+            && claudexDescriptor.lifecycle.restart == "on-failure"
+            && claudexDescriptor.lifecycle.gracefulDrainSeconds == 30
             && !(claudexDescriptor ? launchAgentPlist);
         }
         {
@@ -671,18 +679,16 @@ let
               if claudexShouldEnable then
                 claudexDescriptor.proxyVersion == "7.2.73"
                 && claudexDescriptor.command != null
-                && builtins.length claudexDescriptor.command == 1
+                && builtins.length claudexDescriptor.command == 2
                 && claudexDescriptor.proxyExecutable != null
+                && claudexDescriptor.gateExecutable != null
+                && claudexDescriptor.generation != null
                 && claudexDescriptor.source != null
                 && builtins.elemAt claudexDescriptor.command 0 == claudexDescriptor.proxyLauncher
+                && builtins.elemAt claudexDescriptor.command 1 == "--managed"
                 && nixpkgsLib.hasSuffix "/bin/cli-proxy-api" claudexDescriptor.proxyExecutable
+                && nixpkgsLib.hasSuffix "/bin/claudex-gate" claudexDescriptor.gateExecutable
                 && toString hm.home.file.".local/bin/claudex".source == "${claudexDescriptor.source}/bin/claudex"
-                &&
-                  toString hm.home.file.".local/bin/claudex-login".source
-                  == "${claudexDescriptor.source}/bin/claudex-login"
-                &&
-                  toString hm.home.file.".local/bin/claudex-status".source
-                  == "${claudexDescriptor.source}/bin/claudex-status"
                 &&
                   toString hm.home.file.".local/libexec/claudex/claudex-proxy-launcher".source
                   == claudexDescriptor.proxyLauncher
@@ -690,13 +696,17 @@ let
                 claudexDescriptor.proxyVersion == null
                 && claudexDescriptor.command == null
                 && claudexDescriptor.proxyExecutable == null
+                && claudexDescriptor.gateExecutable == null
                 && claudexDescriptor.proxyLauncher == null
+                && claudexDescriptor.generation == null
                 && claudexDescriptor.source == null
             )
+            && !(builtins.hasAttr ".local/bin/claudex-login" hm.home.file)
+            && !(builtins.hasAttr ".local/bin/claudex-status" hm.home.file)
             && !claudexRuntimeReferencesProxy;
         }
         {
-          name = "Test D17 ${hostName}: Stage 1에는 claudex launchd agent가 없어야 함";
+          name = "Test D17 ${hostName}: claudex launchd 정의는 로그인 시 자동 활성화되지 않아야 함";
           cond =
             builtins.all (
               name:
@@ -870,6 +880,11 @@ let
 
   # ── private job runner (#1135): generic 계약(unit 경로·hardening·bounded
   # timeout·sync cadence·linger) 고정 — 작업 실체는 기기 로컬 소유라 여기 없다.
+  claudexNixosHm = nixosCfg.home-manager.users.${constants.username or "greenhead"};
+  claudexNixosDescriptor = builtins.fromJSON (
+    claudexNixosHm.home.file.".config/claudex/runtime.json".text
+  );
+  claudexNixosService = claudexNixosHm.systemd.user.services.claudex-proxy;
   pjTemplate = nixosCfg.systemd.user.services."private-job@";
   pjSync = nixosCfg.systemd.user.services."private-jobs-sync";
   pjSyncTimer = nixosCfg.systemd.user.timers."private-jobs-sync";
@@ -1218,15 +1233,17 @@ let
       name = "Test D20: synthetic disabled Claudex host는 metadata만 남기고 실행 표면을 노출하지 않아야 함";
       cond =
         !(builtins.elem claudexDisabledFixture.hostname claudexTargetHosts)
-        && claudexDisabledDescriptor.schema == 2
+        && claudexDisabledDescriptor.schema == 3
         && claudexDisabledDescriptor.hostName == claudexDisabledFixture.hostname
         && claudexDisabledDescriptor.targetHosts == claudexTargetHosts
         && claudexDisabledDescriptor.enabled == false
         && claudexDisabledDescriptor.source == null
         && claudexDisabledDescriptor.command == null
         && claudexDisabledDescriptor.proxyExecutable == null
+        && claudexDisabledDescriptor.gateExecutable == null
         && claudexDisabledDescriptor.proxyLauncher == null
         && claudexDisabledDescriptor.proxyVersion == null
+        && claudexDisabledDescriptor.generation == null
         && !(claudexDisabledDescriptor ? launchAgentPlist)
         && builtins.hasAttr ".local/lib/claudex/runtime.sh" claudexDisabledHm.home.file
         && builtins.all (
@@ -1243,6 +1260,33 @@ let
         claudexEnabledDescriptor.enabled == true
         && toString claudexEnabledRuntimeSource == claudexEnabledDescriptor.runtimeLibrary
         && claudexEnabledRuntimeBuildPhaseMatchesDescriptor;
+    }
+    {
+      name = "Test D22b: NixOS Claudex user service는 자동 기동 없이 실패 복구·graceful stop 계약을 가져야 함";
+      cond =
+        claudexNixosDescriptor.enabled == true
+        && claudexNixosDescriptor.lifecycle.platform == "systemd-user"
+        && claudexNixosService.Unit.X-SwitchMethod == "keep-old"
+        && !(claudexNixosService ? Install)
+        && claudexNixosService.Service.Restart == "on-failure"
+        && claudexNixosService.Service.RestartSec == "2s"
+        && claudexNixosService.Service.StandardOutput == "append:${claudexNixosDescriptor.logFile}"
+        && claudexNixosService.Service.StandardError == "append:${claudexNixosDescriptor.logFile}"
+        && claudexNixosService.Service.UMask == "0077"
+        && claudexNixosService.Service.KillMode == "mixed"
+        && claudexNixosService.Service.TimeoutStopSec == "45s"
+        && builtins.length claudexNixosService.Service.ExecStart == 1
+        && nixpkgsLib.hasInfix "claudex-proxy-launcher" (
+          builtins.elemAt claudexNixosService.Service.ExecStart 0
+        )
+        && nixpkgsLib.hasSuffix " --managed" (builtins.elemAt claudexNixosService.Service.ExecStart 0);
+    }
+    {
+      name = "Test D22c: Claudex generation은 동일 버전 executable의 store path 변경도 추적해야 함";
+      cond =
+        claudexEnabledDescriptor.proxyVersion == claudexAlternateProxyDescriptor.proxyVersion
+        && claudexEnabledDescriptor.proxyExecutable != claudexAlternateProxyDescriptor.proxyExecutable
+        && claudexEnabledDescriptor.generation != claudexAlternateProxyDescriptor.generation;
     }
     {
       name = "Test PJ1: private-job@ template·sync unit이 존재하고 공통 hardening(UMask 0077·NoNewPrivileges·PrivateTmp·ProtectSystem full·cgroup kill)을 갖는다";

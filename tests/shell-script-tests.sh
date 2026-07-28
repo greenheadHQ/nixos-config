@@ -283,12 +283,23 @@ run_test "claudex runtime API and private state" test_claudex_runtime_api_and_pr
 run_test "claudex runtime derives its internal contract" test_claudex_runtime_derived_contract
 run_test "claudex credential and loopback contract" test_claudex_credential_and_loopback_contract
 run_test "claudex wrapper pins provider model and argv" test_claudex_wrapper_pins_provider_model_and_argv
+run_test "claudex unified CLI help is side-effect free" test_claudex_unified_cli_help_is_side_effect_free
+run_test "claudex unified CLI routes subcommands" test_claudex_unified_cli_routes_subcommands
+run_test "claudex proxy stop reports busy requests" test_claudex_proxy_stop_reports_busy_requests
+run_test "claudex proxy stop reports credential recovery failure" test_claudex_proxy_stop_reports_credential_recovery_failure
+run_test "claudex managed proxy requires manager ownership" test_claudex_managed_proxy_requires_manager_ownership
+run_test "claudex managed start waits through owned starting state" test_claudex_managed_start_waits_through_owned_starting_state
+run_test "claudex foreground hands lifecycle lock to gate" test_claudex_foreground_hands_lifecycle_lock_to_gate
+run_test "claudex managed launcher hands lifecycle lock to gate" test_claudex_managed_launcher_hands_lifecycle_lock_to_gate
+run_test "claudex managed start releases lifecycle baton" test_claudex_managed_start_releases_lifecycle_baton
+run_test "claudex launchd start preserves current inactive definition" test_claudex_launchd_start_preserves_current_inactive_definition
+run_test "claudex start delegates stale socket recovery to gate" test_claudex_start_delegates_stale_socket_recovery_to_gate
 run_test "claudex mixed mode contract" test_claudex_mixed_mode_contract
 run_test "claudex launcher and login use fake boundaries" test_claudex_launcher_and_login_use_fake_boundaries
 run_test "claudex login replaces one provider safely" test_claudex_login_replaces_one_provider_safely
 run_test "claudex login replacement fails closed" test_claudex_login_replacement_fails_closed
 run_test "claudex production execution boundaries are pinned" test_claudex_production_execution_boundaries
-run_test "claudex Stage 1 status is sanitized" test_claudex_status_is_sanitized
+run_test "claudex status is sanitized" test_claudex_status_is_sanitized
 run_test "claudex Nix-generated command outputs are pinned" test_claudex_nix_generated_command_outputs_are_pinned
 run_test "claudex release layout verifier rejects drift" test_claudex_release_layout_verifier
 run_test "claudex disabled Home Manager closure excludes enabled artifacts" test_claudex_disabled_home_excludes_enabled_closure
