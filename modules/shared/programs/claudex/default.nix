@@ -397,6 +397,9 @@ in
       ExecStart = "${proxyLauncherScript} --managed";
       Restart = "on-failure";
       RestartSec = "2s";
+      StandardOutput = "append:${logFile}";
+      StandardError = "append:${logFile}";
+      UMask = "0077";
       KillMode = "mixed";
       TimeoutStopSec = "45s";
     };

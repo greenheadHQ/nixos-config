@@ -302,6 +302,7 @@ run_test "claudex proxy stop reports busy requests" test_claudex_proxy_stop_repo
 run_test "claudex proxy stop reports credential recovery failure" test_claudex_proxy_stop_reports_credential_recovery_failure
 run_test "claudex managed proxy requires manager ownership" test_claudex_managed_proxy_requires_manager_ownership
 run_test "claudex launchd start preserves current inactive definition" test_claudex_launchd_start_preserves_current_inactive_definition
+run_test "claudex start delegates stale socket recovery to gate" test_claudex_start_delegates_stale_socket_recovery_to_gate
 run_test "claudex mixed mode contract" test_claudex_mixed_mode_contract
 run_test "claudex launcher and login use fake boundaries" test_claudex_launcher_and_login_use_fake_boundaries
 run_test "claudex login replaces one provider safely" test_claudex_login_replaces_one_provider_safely

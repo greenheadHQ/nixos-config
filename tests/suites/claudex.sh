@@ -1154,6 +1154,78 @@ EOF
   grep -Fq "kickstart " "$log" || fail "replacement launchd definition was not kickstarted"
 }
 
+test_claudex_start_delegates_stale_socket_recovery_to_gate() {
+  local sandbox state proxy marker snapshot
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  proxy="$sandbox/generated/claudex-proxy"
+  marker="$sandbox/manager-started"
+  _claudex_fixture "$sandbox"
+  _claudex_prepare_fixture_state "$sandbox"
+  _claudex_add_valid_credential "$state"
+
+  cat > "$sandbox/stale-gate" <<'EOF'
+#!/usr/bin/env bash
+[ -e "$CLAUDEX_FAKE_MANAGER_MARKER" ] || exit 1
+cat "$CLAUDEX_FAKE_GATE_SNAPSHOT"
+EOF
+  cat > "$sandbox/stale-launchctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CLAUDEX_FAKE_LAUNCHCTL_LOG"
+case "$1" in
+  print)
+    printf 'path = %s\n' "$CLAUDEX_FAKE_DEFINITION_PATH"
+    [ ! -e "$CLAUDEX_FAKE_MANAGER_MARKER" ] || printf 'pid = 10\n'
+    ;;
+  kickstart)
+    : > "$CLAUDEX_FAKE_MANAGER_MARKER"
+    ;;
+esac
+exit 0
+EOF
+  cat > "$sandbox/stale-curl" <<'EOF'
+#!/usr/bin/env bash
+[ -e "$CLAUDEX_FAKE_MANAGER_MARKER" ] || exit 7
+IFS= read -r _header || true
+printf '%s' '{"data":[{"id":"gpt-5.6-sol"}]}'
+EOF
+  chmod +x "$sandbox/stale-gate" "$sandbox/stale-launchctl" "$sandbox/stale-curl"
+  snapshot="$(
+    jq -cn \
+      --arg gate "$sandbox/stale-gate" \
+      --arg backend "$sandbox/fake-cli-proxy-api" \
+      '{schema: 1, instance: "fixture", generation: "fixture-generation",
+        mode: "managed", state: "open", accepting: true, active: 0,
+        gate_pid: 10, gate_executable: $gate, backend_pid: 11,
+        backend_executable: $backend}'
+  )"
+  printf '%s\n' "$snapshot" > "$sandbox/stale-snapshot.json"
+  python3 - "$state/control.sock" <<'PY'
+import socket
+import sys
+
+listener = socket.socket(socket.AF_UNIX)
+listener.bind(sys.argv[1])
+listener.close()
+PY
+
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
+    CLAUDEX_GATE_BIN="$sandbox/stale-gate" \
+    CLAUDEX_CURL="$sandbox/stale-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/stale-launchctl" \
+    CLAUDEX_FAKE_MANAGER_MARKER="$marker" \
+    CLAUDEX_FAKE_GATE_SNAPSHOT="$sandbox/stale-snapshot.json" \
+    CLAUDEX_FAKE_LAUNCHCTL_LOG="$sandbox/launchctl.log" \
+    CLAUDEX_FAKE_DEFINITION_PATH="$sandbox/generated/claudex-proxy.plist" \
+    "$proxy" start
+
+  [ -e "$marker" ] || fail "stale control socket prevented manager start"
+  grep -Fq "kickstart " "$sandbox/launchctl.log" \
+    || fail "stale control socket recovery did not kickstart the manager"
+}
+
 test_claudex_mixed_mode_contract() {
   local sandbox state wrapper rc
   sandbox="$(new_sandbox)"

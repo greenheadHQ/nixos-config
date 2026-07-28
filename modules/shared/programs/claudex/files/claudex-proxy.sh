@@ -151,14 +151,13 @@ _claudex_ensure_locked() {
     return 1
   fi
 
-  if [ -e "$CLAUDEX_CONTROL_SOCKET" ] || [ -L "$CLAUDEX_CONTROL_SOCKET" ]; then
-    _claudex_error "proxy control socket의 소유 상태를 확인할 수 없습니다"
-    return 1
-  fi
   if _claudex_loopback_responding 2>/dev/null; then
     _claudex_error "$CLAUDEX_PORT 포트를 알 수 없는 process가 사용 중입니다"
     return 1
   fi
+  # A crash can leave a stale Unix socket pathname behind. Do not delete it in the
+  # shell: the new gate first acquires the singleton runtime lock, then validates and
+  # replaces only a socket path that no live gate can own.
   _claudex_start_stopped_locked
 }
 

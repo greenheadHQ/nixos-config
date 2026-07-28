@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -154,6 +156,267 @@ func TestRecoveryFailureSuppressesUnexpectedRestart(t *testing.T) {
 	runtime.failUnexpected(errors.New("test failure"))
 	if runtime.exitCode != 0 {
 		t.Fatalf("recovery failure exit = %d, want restart-suppressing 0", runtime.exitCode)
+	}
+}
+
+func TestCredentialRecoveryPreservesNewValidSibling(t *testing.T) {
+	root := t.TempDir()
+	authDir := filepath.Join(root, "auth")
+	if err := os.Mkdir(authDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	oldCodex := []byte(`{"type":"codex","access_token":"old-access","refresh_token":"old-refresh"}`)
+	newClaude := []byte(`{"type":"claude","access_token":"new-access","refresh_token":"new-refresh"}`)
+	codexPath := filepath.Join(authDir, "codex.json")
+	claudePath := filepath.Join(authDir, "claude-added.json")
+	writePrivateFile(t, codexPath, oldCodex)
+	snapshot, err := copyCredentialSet(authDir, root, "snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(t, claudePath, newClaude)
+	writePrivateFile(t, codexPath, []byte(`{"type":"codex"}`))
+
+	runtime := &gate{
+		options:            serveOptions{authDir: authDir},
+		credentialSnapshot: snapshot,
+	}
+	if err := runtime.recoverCredentialSet(); err != nil {
+		t.Fatal(err)
+	}
+	restoredCodex, err := os.ReadFile(codexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(restoredCodex) != string(oldCodex) {
+		t.Fatalf("codex fallback changed: %s", restoredCodex)
+	}
+	preservedClaude, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(preservedClaude) != string(newClaude) {
+		t.Fatalf("new valid sibling changed: %s", preservedClaude)
+	}
+	if err := validateCredentialSet(authDir); err != nil {
+		t.Fatalf("recovered credential set is invalid: %v", err)
+	}
+}
+
+func TestCleanupDoesNotRemoveAnotherGateControlSocket(t *testing.T) {
+	root, err := os.MkdirTemp("/tmp", "claudex-control-owner-test.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	socket := filepath.Join(root, "control.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	competing := &gate{options: serveOptions{controlSocket: socket}}
+	competing.cleanup()
+	if _, err := os.Lstat(socket); err != nil {
+		t.Fatalf("unowned live control socket was removed: %v", err)
+	}
+	connection, err := net.DialTimeout("unix", socket, time.Second)
+	if err != nil {
+		t.Fatalf("original control listener stopped accepting connections: %v", err)
+	}
+	_ = connection.Close()
+}
+
+func TestBindControlReplacesStaleSocket(t *testing.T) {
+	root, err := os.MkdirTemp("/tmp", "claudex-stale-socket-test.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	socket := filepath.Join(root, "control.sock")
+	stale, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unixStale, ok := stale.(*net.UnixListener)
+	if !ok {
+		t.Fatal("Unix listener has an unexpected type")
+	}
+	unixStale.SetUnlinkOnClose(false)
+	if err := stale.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(socket); err != nil {
+		t.Fatalf("stale socket fixture is missing: %v", err)
+	}
+
+	runtime := &gate{
+		options: serveOptions{controlSocket: socket},
+		stopped: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+	if err := runtime.bindControl(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		close(runtime.stopped)
+		runtime.cleanup()
+	})
+	connection, err := net.DialTimeout("unix", socket, time.Second)
+	if err != nil {
+		t.Fatalf("replacement control listener is unreachable: %v", err)
+	}
+	_ = connection.Close()
+}
+
+func TestCleanBackendExitStopsWithoutRestart(t *testing.T) {
+	root := t.TempDir()
+	authDir := filepath.Join(root, "auth")
+	if err := os.Mkdir(authDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(
+		t,
+		filepath.Join(authDir, "codex.json"),
+		[]byte(`{"type":"codex","access_token":"access","refresh_token":"refresh"}`),
+	)
+	snapshot, err := copyCredentialSet(authDir, root, "snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(root, "clean-backend")
+	writePrivateFile(t, helper, []byte("#!/bin/sh\nexit 0\n"))
+	if err := os.Chmod(helper, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	logFile, err := os.OpenFile(filepath.Join(root, "proxy.log"), os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = logFile.Close() })
+	runtime := &gate{
+		options: serveOptions{
+			mode:             "managed",
+			authDir:          authDir,
+			workDir:          root,
+			home:             root,
+			backendBin:       helper,
+			childStopSeconds: 1,
+		},
+		state:              "open",
+		activeCancels:      make(map[uint64]context.CancelFunc),
+		credentialSnapshot: snapshot,
+		childConfig:        "",
+		childDone:          make(chan struct{}),
+		stopped:            make(chan struct{}),
+		done:               make(chan struct{}),
+	}
+	if err := runtime.startChild(logFile); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runtime.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("gate did not stop after a clean backend exit")
+	}
+	if runtime.exitCode != 0 {
+		t.Fatalf("clean backend exit produced gate exit %d, want 0", runtime.exitCode)
+	}
+	if runtime.unexpectedChild {
+		t.Fatal("clean backend exit was classified as a crash")
+	}
+}
+
+func TestWrongCertificateReceivesNoBackendCredentialOrBody(t *testing.T) {
+	root := t.TempDir()
+	stateDir := filepath.Join(root, "state")
+	authDir := filepath.Join(stateDir, "auth")
+	for _, path := range []string{stateDir, authDir} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writePrivateFile(
+		t,
+		filepath.Join(authDir, "codex.json"),
+		[]byte(`{"type":"codex","access_token":"access","refresh_token":"refresh"}`),
+	)
+	configFile := filepath.Join(stateDir, "config.json")
+	writePrivateFile(t, configFile, []byte(`{}`))
+
+	attackerCert := filepath.Join(root, "attacker-cert.pem")
+	attackerKey := filepath.Join(root, "attacker-key.pem")
+	if _, err := generateBackendCertificate(attackerCert, attackerKey); err != nil {
+		t.Fatal(err)
+	}
+	rawListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	attackerListener := tls.NewListener(rawListener, &tls.Config{
+		Certificates: mustLoadCertificate(attackerCert, attackerKey),
+		MinVersion:   tls.VersionTLS12,
+	})
+	var requests atomic.Int64
+	var authorizationBytes atomic.Int64
+	var bodyBytes atomic.Int64
+	attacker := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests.Add(1)
+		authorizationBytes.Add(int64(len(request.Header.Get("Authorization"))))
+		raw, _ := io.ReadAll(request.Body)
+		bodyBytes.Add(int64(len(raw)))
+		writer.WriteHeader(http.StatusOK)
+	})}
+	go func() { _ = attacker.Serve(attackerListener) }()
+	t.Cleanup(func() { _ = attacker.Close() })
+
+	publicKey := strings.Repeat("b", 64)
+	runtime, err := newGate(serveOptions{
+		stateDir:       stateDir,
+		authDir:        authDir,
+		configFile:     configFile,
+		backendAddress: rawListener.Addr().String(),
+		publicAddress:  freeAddress(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.publicKey = publicKey
+	if err := runtime.prepareBackend(); err != nil {
+		t.Fatal(err)
+	}
+	runtime.state = "open"
+	if err := runtime.bindPublic(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(runtime.cleanup)
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+runtime.publicListener.Addr().String()+"/secret",
+		bytes.NewBufferString("private-request-body"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+publicKey)
+	client := &http.Client{Timeout: 10 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusBadGateway {
+		t.Fatalf("wrong-certificate backend status = %d, want 502", response.StatusCode)
+	}
+	if requests.Load() != 0 || authorizationBytes.Load() != 0 || bodyBytes.Load() != 0 {
+		t.Fatalf(
+			"wrong-certificate backend received requests=%d authorization_bytes=%d body_bytes=%d",
+			requests.Load(),
+			authorizationBytes.Load(),
+			bodyBytes.Load(),
+		)
 	}
 }
 
@@ -379,6 +642,211 @@ func TestManagedGateAuthenticatesAndDrainsBeforeChildStop(t *testing.T) {
 	}
 }
 
+func TestForegroundSIGINTDrainsBeforeStoppingChildProcessGroup(t *testing.T) {
+	binary := buildGate(t)
+	root, err := os.MkdirTemp("/tmp", "claudex-foreground-test.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	stateDir := filepath.Join(root, "state")
+	authDir := filepath.Join(stateDir, "auth")
+	workDir := filepath.Join(stateDir, "work")
+	for _, path := range []string{stateDir, authDir, workDir} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publicKey := strings.Repeat("c", 64)
+	publicKeyFile := filepath.Join(stateDir, "client-api-key")
+	writePrivateFile(t, publicKeyFile, []byte(publicKey))
+	writePrivateFile(
+		t,
+		filepath.Join(authDir, "codex.json"),
+		[]byte(`{"type":"codex","access_token":"access","refresh_token":"refresh"}`),
+	)
+
+	stopFile := filepath.Join(root, "child-stopped")
+	memberReady := filepath.Join(root, "group-member-ready")
+	memberStopped := filepath.Join(root, "group-member-stopped")
+	requestLog := filepath.Join(root, "backend-requests")
+	configFile := filepath.Join(stateDir, "config.json")
+	config, err := json.Marshal(map[string]any{
+		"host":                      "127.0.0.1",
+		"port":                      1,
+		"tls":                       map[string]any{"enable": false, "cert": "", "key": ""},
+		"auth-dir":                  authDir,
+		"api-keys":                  []string{publicKey},
+		"test-stop-file":            stopFile,
+		"test-request-log":          requestLog,
+		"test-group-member-ready":   memberReady,
+		"test-group-member-stopped": memberStopped,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(t, configFile, config)
+
+	helper := filepath.Join(root, "fake-backend")
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePrivateFile(t, helper, []byte(fmt.Sprintf(
+		"#!/bin/sh\nGO_WANT_CLAUDEX_BACKEND=1 exec %q -test.run '^TestGateBackendHelper$' -- \"$@\"\n",
+		testBinary,
+	)))
+	if err := os.Chmod(helper, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	publicAddress := freeAddress(t)
+	backendAddress := freeAddress(t)
+	socket := filepath.Join(stateDir, "control.sock")
+	gate := exec.Command(
+		binary, "serve",
+		"--mode", "foreground",
+		"--state-dir", stateDir,
+		"--auth-dir", authDir,
+		"--work-dir", workDir,
+		"--config", configFile,
+		"--public-key-file", publicKeyFile,
+		"--backend-bin", helper,
+		"--generation", "test-generation",
+		"--public-address", publicAddress,
+		"--backend-address", backendAddress,
+		"--control-socket", socket,
+		"--drain-seconds", "5",
+		"--child-stop-seconds", "2",
+		"--log-file", filepath.Join(stateDir, "proxy.log"),
+	)
+	gateOutput := &strings.Builder{}
+	gate.Stdout = gateOutput
+	gate.Stderr = gateOutput
+	if err := gate.Start(); err != nil {
+		t.Fatal(err)
+	}
+	gateWaited := false
+	backendProcessGroup := 0
+	t.Cleanup(func() {
+		if backendProcessGroup > 0 {
+			_ = syscall.Kill(-backendProcessGroup, syscall.SIGKILL)
+		}
+		if !gateWaited && (gate.ProcessState == nil || !gate.ProcessState.Exited()) {
+			_ = gate.Process.Signal(syscall.SIGKILL)
+			_ = gate.Wait()
+		}
+	})
+
+	control := func() ([]byte, error) {
+		return exec.Command(binary, "control", "inspect", "--socket", socket).CombinedOutput()
+	}
+	var current snapshot
+	waitFor(t, "foreground gate and child group member readiness", func() bool {
+		output, err := control()
+		if err != nil || json.Unmarshal(output, &current) != nil || current.State != "open" {
+			return false
+		}
+		_, err = os.Stat(memberReady)
+		return err == nil
+	})
+	memberRaw, err := os.ReadFile(memberReady)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberPID, err := strconv.Atoi(strings.TrimSpace(string(memberRaw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	backendProcessGroup, err = syscall.Getpgid(current.BackendPID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberProcessGroup, err := syscall.Getpgid(memberPID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateProcessGroup, err := syscall.Getpgid(current.GatePID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backendProcessGroup != current.BackendPID || memberProcessGroup != backendProcessGroup {
+		t.Fatalf(
+			"foreground child group mismatch: backend_pid=%d backend_pgid=%d member_pgid=%d",
+			current.BackendPID,
+			backendProcessGroup,
+			memberProcessGroup,
+		)
+	}
+	if gateProcessGroup == backendProcessGroup {
+		t.Fatal("foreground backend still shares the gate process group")
+	}
+
+	releaseFile := filepath.Join(root, "release")
+	streamRequest, err := http.NewRequest(
+		http.MethodGet,
+		"http://"+publicAddress+"/stream?release="+releaseFile,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamRequest.Header.Set("Authorization", "Bearer "+publicKey)
+	streamResponse, err := http.DefaultClient.Do(streamRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := make([]byte, 5)
+	if _, err := io.ReadFull(streamResponse.Body, first); err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != "begin" {
+		t.Fatalf("unexpected stream prefix %q", first)
+	}
+	waitFor(t, "active foreground request", func() bool {
+		output, err := control()
+		return err == nil && json.Unmarshal(output, &current) == nil && current.Active == 1
+	})
+
+	if err := gate.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "foreground draining state", func() bool {
+		output, err := control()
+		return err == nil && strings.Contains(string(output), `"state":"draining"`)
+	})
+	for _, marker := range []string{stopFile, memberStopped} {
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatalf("child process group stopped before active request drained: %s", marker)
+		}
+	}
+	if err := syscall.Kill(-backendProcessGroup, 0); err != nil {
+		t.Fatalf("child process group is not alive while draining: %v", err)
+	}
+
+	writePrivateFile(t, releaseFile, []byte("go"))
+	rest, err := io.ReadAll(streamResponse.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = streamResponse.Body.Close()
+	if string(rest) != "end" {
+		t.Fatalf("unexpected stream suffix %q", rest)
+	}
+	if err := gate.Wait(); err != nil {
+		t.Fatalf("foreground gate exit: %v\n%s", err, gateOutput)
+	}
+	gateWaited = true
+	waitFor(t, "foreground child process-group stop markers", func() bool {
+		_, leaderErr := os.Stat(stopFile)
+		_, memberErr := os.Stat(memberStopped)
+		return leaderErr == nil && memberErr == nil
+	})
+	if err := syscall.Kill(-backendProcessGroup, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("foreground child process group survived gate exit: %v", err)
+	}
+}
+
 func TestGateBackendHelper(t *testing.T) {
 	if os.Getenv("GO_WANT_CLAUDEX_BACKEND") != "1" {
 		return
@@ -422,6 +890,25 @@ func TestGateBackendHelper(t *testing.T) {
 	stopFile, _ := config["test-stop-file"].(string)
 	requestLog, _ := config["test-request-log"].(string)
 	corruptCredential, _ := config["test-corrupt-credential"].(string)
+	groupMemberReady, _ := config["test-group-member-ready"].(string)
+	groupMemberStopped, _ := config["test-group-member-stopped"].(string)
+	var groupMember *exec.Cmd
+	if groupMemberReady != "" {
+		testBinary, err := os.Executable()
+		if err != nil {
+			os.Exit(96)
+		}
+		groupMember = exec.Command(testBinary, "-test.run", "^TestGateGroupMemberHelper$")
+		groupMember.Env = append(
+			os.Environ(),
+			"GO_WANT_CLAUDEX_GROUP_MEMBER=1",
+			"CLAUDEX_GROUP_MEMBER_READY="+groupMemberReady,
+			"CLAUDEX_GROUP_MEMBER_STOPPED="+groupMemberStopped,
+		)
+		if err := groupMember.Start(); err != nil {
+			os.Exit(97)
+		}
+	}
 
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Authorization") != "Bearer "+key {
@@ -471,12 +958,31 @@ func TestGateBackendHelper(t *testing.T) {
 		if corruptCredential != "" {
 			_ = os.WriteFile(corruptCredential, []byte(`{"type":"codex"}`), 0o600)
 		}
+		if groupMember != nil {
+			if err := groupMember.Wait(); err != nil {
+				os.Exit(98)
+			}
+		}
 		writePrivateFileForHelper(stopFile)
 		_ = server.Shutdown(context.Background())
 	}()
 	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		os.Exit(94)
 	}
+	os.Exit(0)
+}
+
+func TestGateGroupMemberHelper(t *testing.T) {
+	if os.Getenv("GO_WANT_CLAUDEX_GROUP_MEMBER") != "1" {
+		return
+	}
+	signals := make(chan os.Signal, 1)
+	signalNotify(signals)
+	ready := os.Getenv("CLAUDEX_GROUP_MEMBER_READY")
+	stopped := os.Getenv("CLAUDEX_GROUP_MEMBER_STOPPED")
+	_ = os.WriteFile(ready, []byte(strconv.Itoa(os.Getpid())), 0o600)
+	<-signals
+	writePrivateFileForHelper(stopped)
 	os.Exit(0)
 }
 

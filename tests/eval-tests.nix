@@ -1261,6 +1261,9 @@ let
         && claudexNixosService.Unit.X-SwitchMethod == "keep-old"
         && !(claudexNixosService ? Install)
         && claudexNixosService.Service.Restart == "on-failure"
+        && claudexNixosService.Service.StandardOutput == "append:${claudexNixosDescriptor.logFile}"
+        && claudexNixosService.Service.StandardError == "append:${claudexNixosDescriptor.logFile}"
+        && claudexNixosService.Service.UMask == "0077"
         && claudexNixosService.Service.KillMode == "mixed"
         && claudexNixosService.Service.TimeoutStopSec == "45s"
         && builtins.length claudexNixosService.Service.ExecStart == 1

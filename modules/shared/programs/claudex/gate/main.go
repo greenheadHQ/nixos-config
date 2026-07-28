@@ -41,6 +41,8 @@ const usage = `usage:
 
 const backendCertificateLifetime = 10 * 365 * 24 * time.Hour
 
+var errBackendExitedClean = errors.New("backend exited cleanly")
+
 type serveOptions struct {
 	mode             string
 	stateDir         string
@@ -86,6 +88,12 @@ type controlResponse struct {
 	Code     string    `json:"code,omitempty"`
 	Message  string    `json:"message,omitempty"`
 	Snapshot *snapshot `json:"snapshot,omitempty"`
+}
+
+type credentialEntry struct {
+	name     string
+	provider string
+	raw      []byte
 }
 
 type gate struct {
@@ -251,6 +259,9 @@ func (g *gate) serve() int {
 	if err := g.prepare(); err != nil {
 		g.cleanup()
 		fmt.Fprintf(os.Stderr, "claudex-gate: %v\n", err)
+		if errors.Is(err, errBackendExitedClean) {
+			return 0
+		}
 		if g.options.mode == "managed" && g.managedRestartSuppressed() {
 			return 0
 		}
@@ -323,8 +334,12 @@ func (g *gate) prepare() error {
 	}
 	g.mu.Lock()
 	if g.childExited {
+		err := g.startupErr
 		g.mu.Unlock()
-		return g.abortStartup(errors.New("backend exited during startup"))
+		if err == nil {
+			err = errors.New("backend exited during startup")
+		}
+		return g.abortStartup(err)
 	}
 	if g.startupErr != nil {
 		err := g.startupErr
@@ -570,15 +585,23 @@ func (g *gate) startChild(logFile *os.File) error {
 		g.childExited = true
 		state := g.state
 		if state != "stopping" && state != "stopped" {
-			g.unexpectedChild = true
+			g.unexpectedChild = err != nil
 		}
 		if state == "starting" {
-			g.startupErr = fmt.Errorf("backend exited during startup: %w", err)
+			if err == nil {
+				g.startupErr = errBackendExitedClean
+			} else {
+				g.startupErr = fmt.Errorf("backend exited during startup: %w", err)
+			}
 		}
 		g.mu.Unlock()
 		close(g.childDone)
 		if state != "starting" && state != "stopping" && state != "stopped" {
-			g.failUnexpected(fmt.Errorf("backend exited: %w", err))
+			if err == nil {
+				g.stopAfterCleanChildExit()
+			} else {
+				g.failUnexpected(fmt.Errorf("backend exited: %w", err))
+			}
 		}
 	}()
 	return nil
@@ -602,6 +625,12 @@ func (g *gate) waitBackendReady() error {
 		}
 		select {
 		case <-g.childDone:
+			g.mu.Lock()
+			startupErr = g.startupErr
+			g.mu.Unlock()
+			if startupErr != nil {
+				return startupErr
+			}
 			return errors.New("backend exited before readiness")
 		default:
 		}
@@ -947,13 +976,21 @@ func (g *gate) recoverCredentialSet() error {
 	if err != nil {
 		return err
 	}
-	recovery, err := copyCredentialSet(g.credentialSnapshot, parent, ".auth-recovery-"+nonce)
-	if err != nil {
-		return err
-	}
 	broken := filepath.Join(parent, ".auth-invalid-"+nonce)
 	if err := os.Rename(g.options.authDir, broken); err != nil {
-		_ = os.RemoveAll(recovery)
+		return err
+	}
+	// Freeze the invalid directory before selecting entries. A concurrent atomic login
+	// promotion is then either included in `broken` or fails against the absent canonical
+	// directory; it cannot report success and be silently lost by the recovery swap.
+	recovery, err := buildRecoveryCredentialSet(
+		broken,
+		g.credentialSnapshot,
+		parent,
+		".auth-recovery-"+nonce,
+	)
+	if err != nil {
+		_ = os.Rename(broken, g.options.authDir)
 		return err
 	}
 	if err := os.Rename(recovery, g.options.authDir); err != nil {
@@ -967,6 +1004,101 @@ func (g *gate) recoverCredentialSet() error {
 		return fmt.Errorf("restored credential set failed validation: %w", err)
 	}
 	_ = os.RemoveAll(broken)
+	return nil
+}
+
+func buildRecoveryCredentialSet(currentDir, snapshotDir, parentDir, name string) (string, error) {
+	current, err := validCredentialEntriesByProvider(currentDir)
+	if err != nil {
+		return "", err
+	}
+	fallback, err := validCredentialEntriesByProvider(snapshotDir)
+	if err != nil {
+		return "", err
+	}
+	destination := filepath.Join(parentDir, name)
+	if err := os.Mkdir(destination, 0o700); err != nil {
+		return "", err
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(destination)
+		}
+	}()
+	usedNames := make(map[string]bool)
+	for _, provider := range []string{"codex", "claude"} {
+		candidates := fallback[provider]
+		if len(current[provider]) == 1 {
+			candidates = current[provider]
+		}
+		if len(candidates) == 0 {
+			continue
+		}
+		if len(candidates) != 1 {
+			return "", fmt.Errorf("credential recovery has ambiguous %s entries", provider)
+		}
+		entry := candidates[0]
+		if usedNames[entry.name] {
+			return "", errors.New("credential recovery has colliding entry names")
+		}
+		usedNames[entry.name] = true
+		if err := writePrivateExclusive(filepath.Join(destination, entry.name), entry.raw); err != nil {
+			return "", err
+		}
+	}
+	if err := validateCredentialSet(destination); err != nil {
+		return "", err
+	}
+	cleanup = false
+	return destination, nil
+}
+
+func validCredentialEntriesByProvider(dir string) (map[string][]credentialEntry, error) {
+	result := map[string][]credentialEntry{
+		"codex":  nil,
+		"claude": nil,
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		parsed, err := readCredentialEntry(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		result[parsed.provider] = append(result[parsed.provider], parsed)
+	}
+	return result, nil
+}
+
+func writePrivateExclusive(path string, raw []byte) error {
+	file, err := os.OpenFile(
+		path,
+		os.O_CREATE|os.O_EXCL|os.O_WRONLY|syscall.O_NOFOLLOW,
+		0o600,
+	)
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		_ = file.Close()
+		if !ok {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := file.Write(raw); err != nil {
+		return err
+	}
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	ok = true
 	return nil
 }
 
@@ -1037,6 +1169,18 @@ func (g *gate) failUnexpected(err error) {
 	g.finish(exitCode)
 }
 
+func (g *gate) stopAfterCleanChildExit() {
+	g.mu.Lock()
+	if g.state == "stopping" || g.state == "stopped" {
+		g.mu.Unlock()
+		return
+	}
+	g.state = "stopping"
+	g.mu.Unlock()
+	exitCode, _ := g.stopProcess(false)
+	g.finish(exitCode)
+}
+
 func (g *gate) finish(exitCode int) {
 	g.finishOnce.Do(func() {
 		g.exitCode = exitCode
@@ -1050,9 +1194,9 @@ func (g *gate) cleanup() {
 	}
 	if g.control != nil {
 		_ = g.control.Close()
-	}
-	if g.options.controlSocket != "" {
-		_ = os.Remove(g.options.controlSocket)
+		if g.options.controlSocket != "" {
+			_ = os.Remove(g.options.controlSocket)
+		}
 	}
 	if g.lockFile != nil {
 		_ = syscall.Flock(int(g.lockFile.Fd()), syscall.LOCK_UN)
@@ -1149,6 +1293,9 @@ func assertPrivateRegular(path string) error {
 }
 
 func validateCredentialSet(authDir string) error {
+	if err := assertPrivateDir(authDir); err != nil {
+		return errors.New("credential directory is unsafe")
+	}
 	entries, err := os.ReadDir(authDir)
 	if err != nil {
 		return err
@@ -1156,28 +1303,11 @@ func validateCredentialSet(authDir string) error {
 	codexCount := 0
 	claudeCount := 0
 	for _, entry := range entries {
-		// Keep the gate's recovery contract identical to the shell-side canonical
-		// credential validator: every credential entry is a private JSON file.
-		if filepath.Ext(entry.Name()) != ".json" {
-			return errors.New("credential set contains a non-JSON entry")
-		}
-		path := filepath.Join(authDir, entry.Name())
-		if err := assertPrivateRegular(path); err != nil {
-			return errors.New("credential set contains an unsafe entry")
-		}
-		raw, err := os.ReadFile(path)
+		parsed, err := readCredentialEntry(filepath.Join(authDir, entry.Name()))
 		if err != nil {
-			return err
-		}
-		var credential struct {
-			Type         string `json:"type"`
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
-		}
-		if json.Unmarshal(raw, &credential) != nil || credential.AccessToken == "" || credential.RefreshToken == "" {
 			return errors.New("credential set contains an invalid entry")
 		}
-		switch credential.Type {
+		switch parsed.provider {
 		case "codex":
 			codexCount++
 		case "claude":
@@ -1190,6 +1320,34 @@ func validateCredentialSet(authDir string) error {
 		return errors.New("credential set does not satisfy the default contract")
 	}
 	return nil
+}
+
+func readCredentialEntry(path string) (credentialEntry, error) {
+	name := filepath.Base(path)
+	// Keep the gate's recovery contract identical to the shell-side canonical
+	// credential validator: every credential entry is a private JSON file.
+	if filepath.Ext(name) != ".json" {
+		return credentialEntry{}, errors.New("credential entry is not JSON")
+	}
+	if err := assertPrivateRegular(path); err != nil {
+		return credentialEntry{}, errors.New("credential entry is unsafe")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return credentialEntry{}, err
+	}
+	var credential struct {
+		Type         string `json:"type"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if json.Unmarshal(raw, &credential) != nil || credential.AccessToken == "" || credential.RefreshToken == "" {
+		return credentialEntry{}, errors.New("credential entry is invalid")
+	}
+	if credential.Type != "codex" && credential.Type != "claude" {
+		return credentialEntry{}, errors.New("credential entry has unsupported type")
+	}
+	return credentialEntry{name: name, provider: credential.Type, raw: raw}, nil
 }
 
 func randomHex(bytes int) (string, error) {
