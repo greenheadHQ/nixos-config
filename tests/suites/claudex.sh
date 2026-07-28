@@ -2346,6 +2346,30 @@ EOF
     and .generation == "current"
   ' <<< "$output" >/dev/null || fail "status JSON contract drifted: $output"
 
+  cat > "$sandbox/fake-curl" <<'EOF'
+#!/usr/bin/env bash
+IFS= read -r _header || true
+printf '%s' '{"data":[{"id":"different-model"}]}'
+EOF
+  chmod +x "$sandbox/fake-curl"
+  set +e
+  output="$(HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_TEST_GATE_SNAPSHOT="$snapshot" \
+    "$status" --json)"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "missing current-generation catalog model unexpectedly succeeded"
+  jq -e '
+    .generation == "current"
+    and .catalog == "missing"
+    and .reason == "현재 generation의 proxy catalog에 기본 모델이 없습니다"
+    and .next_command == "상태를 공유하고 수동 확인"
+  ' <<< "$output" >/dev/null || fail "missing catalog remediation drifted: $output"
+  _claudex_make_ready_curl "$sandbox"
+
   foreground_snapshot="$(jq -c '.mode = "foreground"' <<< "$snapshot")"
   output="$(HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \

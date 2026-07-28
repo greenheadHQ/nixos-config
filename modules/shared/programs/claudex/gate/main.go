@@ -44,6 +44,7 @@ const backendCertificateLifetime = 10 * 365 * 24 * time.Hour
 var (
 	errBackendExitedClean = errors.New("backend exited cleanly")
 	errStartupInterrupted = errors.New("gate startup interrupted by signal")
+	errRuntimeLockOwned   = errors.New("another claudex gate owns the runtime lock")
 )
 
 type serveOptions struct {
@@ -315,6 +316,9 @@ func (g *gate) prepare(signals <-chan os.Signal) error {
 		return err
 	}
 	if err := g.acquireRuntimeLock(); err != nil {
+		if errors.Is(err, errRuntimeLockOwned) {
+			g.suppressManagedRestart()
+		}
 		return err
 	}
 	logFile, err := g.openLog()
@@ -325,6 +329,9 @@ func (g *gate) prepare(signals <-chan os.Signal) error {
 		return err
 	}
 	if err := g.bindPublic(); err != nil {
+		if errors.Is(err, syscall.EADDRINUSE) {
+			g.suppressManagedRestart()
+		}
 		return err
 	}
 	if err := g.bindControl(); err != nil {
@@ -396,7 +403,7 @@ func (g *gate) childCommand() *exec.Cmd {
 func (g *gate) managedRestartSuppressed() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.suppressRestart || g.child == nil
+	return g.suppressRestart
 }
 
 func (g *gate) suppressManagedRestart() {
@@ -424,7 +431,7 @@ func (g *gate) acquireRuntimeLock() error {
 	}
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		file.Close()
-		return errors.New("another claudex gate owns the runtime lock")
+		return errRuntimeLockOwned
 	}
 	g.lockFile = file
 	return nil

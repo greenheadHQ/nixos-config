@@ -116,8 +116,8 @@ if snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
           next_command="claudex"
         else
           catalog_state="missing"
-          reason="기본 모델이 proxy catalog에 없습니다"
-          next_command="claudex proxy restart"
+          reason="현재 generation의 proxy catalog에 기본 모델이 없습니다"
+          next_command="상태를 공유하고 수동 확인"
         fi
       else
         proxy_state="unhealthy"

@@ -100,6 +100,58 @@ func TestValidateServeOptionsAllowsManagedStartupLock(t *testing.T) {
 	}
 }
 
+func TestManagedPreChildExitClassification(t *testing.T) {
+	newRuntime := func(t *testing.T, credential []byte) *gate {
+		t.Helper()
+		stateDir := t.TempDir()
+		if err := os.Chmod(stateDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		authDir := filepath.Join(stateDir, "auth")
+		workDir := filepath.Join(stateDir, "work")
+		for _, path := range []string{authDir, workDir} {
+			if err := os.Mkdir(path, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		writePrivateFile(t, filepath.Join(authDir, "codex.json"), credential)
+		publicKey := filepath.Join(stateDir, "client-api-key")
+		writePrivateFile(t, publicKey, []byte(strings.Repeat("a", 64)))
+		runtime, err := newGate(serveOptions{
+			mode:          "managed",
+			stateDir:      stateDir,
+			authDir:       authDir,
+			workDir:       workDir,
+			configFile:    filepath.Join(stateDir, "config.json"),
+			publicKeyFile: publicKey,
+			backendBin:    "/missing/backend",
+			generation:    "generation",
+			logFile:       filepath.Join(stateDir, "missing", "proxy.log"),
+			home:          stateDir,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return runtime
+	}
+
+	t.Run("transient setup failure requests manager restart", func(t *testing.T) {
+		runtime := newRuntime(
+			t,
+			[]byte(`{"type":"codex","access_token":"access","refresh_token":"refresh"}`),
+		)
+		if exitCode := runtime.serve(); exitCode != 1 {
+			t.Fatalf("transient pre-child failure exit = %d, want 1", exitCode)
+		}
+	})
+	t.Run("invalid credentials suppress manager restart", func(t *testing.T) {
+		runtime := newRuntime(t, []byte(`{"type":"codex"}`))
+		if exitCode := runtime.serve(); exitCode != 0 {
+			t.Fatalf("invalid credential exit = %d, want 0", exitCode)
+		}
+	})
+}
+
 func freeAddress(t *testing.T) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
