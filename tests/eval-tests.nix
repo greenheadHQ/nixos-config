@@ -52,6 +52,11 @@ let
     inherit flake;
     hostname = "greenhead-MacBookPro";
   };
+  claudexAlternateProxyFixture = import ./fixtures/claudex-home.nix {
+    inherit flake;
+    hostname = "greenhead-MacBookPro";
+    proxyFixtureTag = "alternate";
+  };
   claudexDisabledHm = claudexDisabledFixture.config;
   claudexEnabledHm = claudexEnabledFixture.config;
   claudexDisabledDescriptor = builtins.fromJSON (
@@ -59,6 +64,9 @@ let
   );
   claudexEnabledDescriptor = builtins.fromJSON (
     claudexEnabledHm.home.file.".config/claudex/runtime.json".text
+  );
+  claudexAlternateProxyDescriptor = builtins.fromJSON (
+    claudexAlternateProxyFixture.config.home.file.".config/claudex/runtime.json".text
   );
   claudexDisabledPublicFiles = [
     ".local/bin/claudex"
@@ -1272,6 +1280,13 @@ let
           builtins.elemAt claudexNixosService.Service.ExecStart 0
         )
         && nixpkgsLib.hasSuffix " --managed" (builtins.elemAt claudexNixosService.Service.ExecStart 0);
+    }
+    {
+      name = "Test D22c: Claudex generation은 동일 버전 executable의 store path 변경도 추적해야 함";
+      cond =
+        claudexEnabledDescriptor.proxyVersion == claudexAlternateProxyDescriptor.proxyVersion
+        && claudexEnabledDescriptor.proxyExecutable != claudexAlternateProxyDescriptor.proxyExecutable
+        && claudexEnabledDescriptor.generation != claudexAlternateProxyDescriptor.generation;
     }
     {
       name = "Test PJ1: private-job@ template·sync unit이 존재하고 공통 hardening(UMask 0077·NoNewPrivileges·PrivateTmp·ProtectSystem full·cgroup kill)을 갖는다";

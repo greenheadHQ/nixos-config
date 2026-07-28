@@ -20,6 +20,7 @@
 #   _claudex_assert_safe_work_dir _claudex_loopback_responding _claudex_gate_inspect
 #   _claudex_assert_proxy_stopped _claudex_snapshot_executables_current
 #   _claudex_snapshot_executables_pinned _claudex_managed_snapshot_owned
+#   _claudex_acquire_lifecycle_lock _claudex_release_lifecycle_lock
 
 if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_JQ="${CLAUDEX_JQ:-@jqBin@}"
@@ -548,28 +549,36 @@ with_state_lock() (
   "$@"
 )
 
-with_lifecycle_lock() (
+_claudex_acquire_lifecycle_lock() {
   local lock_triplet
   umask 077
-  _claudex_assert_default_state_ancestors || exit 1
-  _claudex_ensure_private_dir "$CLAUDEX_STATE_DIR" || exit 1
+  _claudex_assert_default_state_ancestors || return 1
+  _claudex_ensure_private_dir "$CLAUDEX_STATE_DIR" || return 1
   if [ -L "$CLAUDEX_LIFECYCLE_LOCK" ] \
     || { [ -e "$CLAUDEX_LIFECYCLE_LOCK" ] && [ ! -f "$CLAUDEX_LIFECYCLE_LOCK" ]; }; then
     _claudex_error "refusing non-regular or symlink lifecycle lock"
-    exit 1
+    return 1
   fi
-  : >> "$CLAUDEX_LIFECYCLE_LOCK" || exit 1
-  "$CLAUDEX_CHMOD" 600 -- "$CLAUDEX_LIFECYCLE_LOCK" || exit 1
+  : >> "$CLAUDEX_LIFECYCLE_LOCK" || return 1
+  "$CLAUDEX_CHMOD" 600 -- "$CLAUDEX_LIFECYCLE_LOCK" || return 1
   lock_triplet="$(_claudex_permission_triplet "$CLAUDEX_LIFECYCLE_LOCK")"
   if [ "$lock_triplet" != "600" ]; then
     _claudex_error "lifecycle lock mode must be 0600"
-    exit 1
+    return 1
   fi
-  exec 8>"$CLAUDEX_LIFECYCLE_LOCK" || exit 1
+  exec 8>"$CLAUDEX_LIFECYCLE_LOCK" || return 1
   if ! "$CLAUDEX_FLOCK" -x -w "$CLAUDEX_LOCK_TIMEOUT_SECONDS" 8; then
     _claudex_error "timed out waiting for the lifecycle lock"
-    exit 1
+    return 1
   fi
+}
+
+_claudex_release_lifecycle_lock() {
+  exec 8>&-
+}
+
+with_lifecycle_lock() (
+  _claudex_acquire_lifecycle_lock || exit 1
   "$@"
 )
 

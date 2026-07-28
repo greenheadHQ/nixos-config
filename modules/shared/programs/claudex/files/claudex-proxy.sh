@@ -99,6 +99,10 @@ _claudex_start_stopped_locked() {
   assert_credential_set "$CLAUDEX_AUTH_DIR" default
   echo "claudex: proxy를 시작하는 중입니다..." >&2
   _claudex_manager_start
+  # The manager-owned launcher must acquire this same lock before it can hand it to the gate.
+  # Release our descriptor after the manager has spawned the job, then wait without holding
+  # the baton; otherwise a manual start deadlocks against its own managed launcher.
+  _claudex_release_lifecycle_lock
   _claudex_wait_for_gate
 }
 

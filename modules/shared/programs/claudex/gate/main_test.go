@@ -78,6 +78,28 @@ func TestReleaseStartupLockUnlocksInheritedDescriptor(t *testing.T) {
 	}
 }
 
+func TestValidateServeOptionsAllowsManagedStartupLock(t *testing.T) {
+	options := serveOptions{
+		mode:           "managed",
+		stateDir:       "/state",
+		authDir:        "/state/auth",
+		workDir:        "/state/work",
+		configFile:     "/state/config",
+		publicKeyFile:  "/state/key",
+		backendBin:     "/backend",
+		generation:     "generation",
+		publicAddress:  "127.0.0.1:8317",
+		backendAddress: "127.0.0.1:8318",
+		controlSocket:  "/state/control.sock",
+		logFile:        "/state/proxy.log",
+		home:           "/home",
+		startupLockFD:  8,
+	}
+	if err := validateServeOptions(&options); err != nil {
+		t.Fatalf("managed startup lock was rejected: %v", err)
+	}
+}
+
 func freeAddress(t *testing.T) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -95,6 +117,39 @@ func writePrivateFile(t *testing.T, path string, content []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGateDiagnosticsFollowRotatedLog(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "proxy.log")
+	writePrivateFile(t, logPath, []byte("old-log"))
+	if err := os.Truncate(logPath, (5<<20)+1); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &gate{options: serveOptions{logFile: logPath}}
+	if _, err := runtime.openLog(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { runtime.cleanup() })
+
+	const diagnostic = "post-rotation gate diagnostic"
+	runtime.logf("%s", diagnostic)
+	if err := runtime.logFile.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(current), diagnostic) {
+		t.Fatalf("current proxy log does not contain gate diagnostic: %q", current)
+	}
+	rotated, err := os.ReadFile(logPath + ".1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rotated), diagnostic) {
+		t.Fatal("gate diagnostic was written to the rotated manager log")
 	}
 }
 

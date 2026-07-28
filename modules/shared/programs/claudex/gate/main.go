@@ -130,6 +130,8 @@ type gate struct {
 	control            net.Listener
 	proxy              *httputil.ReverseProxy
 	lockFile           *os.File
+	logFile            *os.File
+	logger             *log.Logger
 
 	stopOnce   sync.Once
 	stopped    chan struct{}
@@ -223,8 +225,8 @@ func validateServeOptions(options *serveOptions) error {
 	if options.drainSeconds < 0 || options.childStopSeconds < 0 {
 		return errors.New("stop budgets must be nonnegative")
 	}
-	if options.startupLockFD != -1 && (options.mode != "foreground" || options.startupLockFD < 3) {
-		return errors.New("--startup-lock-fd requires foreground mode and a descriptor >= 3")
+	if options.startupLockFD != -1 && options.startupLockFD < 3 {
+		return errors.New("--startup-lock-fd requires a descriptor >= 3")
 	}
 	for _, address := range []string{options.publicAddress, options.backendAddress} {
 		host, _, err := net.SplitHostPort(address)
@@ -269,8 +271,8 @@ func (g *gate) serve() int {
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(signals)
 	if err := g.prepare(signals); err != nil {
+		g.logf("claudex-gate: %v", err)
 		g.cleanup()
-		fmt.Fprintf(os.Stderr, "claudex-gate: %v\n", err)
 		if errors.Is(err, errBackendExitedClean) || errors.Is(err, errStartupInterrupted) {
 			return 0
 		}
@@ -315,15 +317,8 @@ func (g *gate) prepare(signals <-chan os.Signal) error {
 	if err := g.acquireRuntimeLock(); err != nil {
 		return err
 	}
-	if err := rotateLog(g.options.logFile, 5<<20); err != nil {
-		return err
-	}
-	logFile, err := os.OpenFile(g.options.logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	logFile, err := g.openLog()
 	if err != nil {
-		return err
-	}
-	defer logFile.Close()
-	if err := os.Chmod(g.options.logFile, 0o600); err != nil {
 		return err
 	}
 	if err := g.prepareBackend(); err != nil {
@@ -547,7 +542,7 @@ func (g *gate) bindPublic() error {
 		request.Header.Set("Authorization", "Bearer "+g.backendKey)
 	}
 	proxy.ErrorHandler = func(writer http.ResponseWriter, _ *http.Request, err error) {
-		log.Printf("claudex-gate backend error: %v", err)
+		g.logf("claudex-gate backend error: %v", err)
 		http.Error(writer, "backend unavailable", http.StatusBadGateway)
 	}
 	g.proxy = proxy
@@ -1004,7 +999,7 @@ func (g *gate) stopProcess(force bool) (int, error) {
 		}
 		g.mu.Lock()
 		if recoveryErr != nil {
-			log.Printf("claudex-gate: credential recovery failed: %v", recoveryErr)
+			g.logf("claudex-gate: credential recovery failed: %v", recoveryErr)
 			// Avoid an on-failure restart loop while the canonical auth set is invalid.
 			g.stopExit = 0
 			g.stopError = errors.New("credential recovery failed")
@@ -1265,7 +1260,7 @@ func (g *gate) signalChild(signal syscall.Signal) error {
 }
 
 func (g *gate) failUnexpected(err error) {
-	log.Printf("claudex-gate: %v", err)
+	g.logf("claudex-gate: %v", err)
 	g.mu.Lock()
 	if g.state == "starting" {
 		g.startupErr = err
@@ -1306,9 +1301,38 @@ func (g *gate) cleanup() {
 		_ = syscall.Flock(int(g.lockFile.Fd()), syscall.LOCK_UN)
 		_ = g.lockFile.Close()
 	}
+	if g.logFile != nil {
+		_ = g.logFile.Close()
+		g.logFile = nil
+	}
 	if g.instanceDir != "" && validateCredentialSet(g.options.authDir) == nil {
 		_ = os.RemoveAll(g.instanceDir)
 	}
+}
+
+func (g *gate) openLog() (*os.File, error) {
+	if err := rotateLog(g.options.logFile, 5<<20); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(g.options.logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	g.logFile = file
+	g.logger = log.New(file, "", log.LstdFlags)
+	return file, nil
+}
+
+func (g *gate) logf(format string, args ...any) {
+	if g.logger != nil {
+		g.logger.Printf(format, args...)
+		return
+	}
+	log.Printf(format, args...)
 }
 
 func runControl(args []string) int {

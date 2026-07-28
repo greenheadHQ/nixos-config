@@ -111,6 +111,8 @@ let
       ];
     };
   };
+  proxyExecutablePath = "${cliProxyApi}/bin/cli-proxy-api";
+  gateExecutablePath = "${gatePackage}/bin/claudex-gate";
   runtimeGeneration = builtins.hashString "sha256" (
     builtins.toJSON {
       sources = map builtins.readFile [
@@ -137,6 +139,8 @@ let
         platform = if isDarwin then "darwin" else "linux";
         proxyVersion = cliProxyApi.version;
         gateVersion = gatePackage.version;
+        proxyExecutable = proxyExecutablePath;
+        gateExecutable = gateExecutablePath;
       };
     }
   );
@@ -241,7 +245,7 @@ let
     flockBin = if isDarwin then "${pkgs.flock}/bin/flock" else "${pkgs.util-linux}/bin/flock";
     launchctlBin = if isDarwin then "/bin/launchctl" else "";
     systemctlBin = if isDarwin then "" else "${pkgs.systemd}/bin/systemctl";
-    gateBin = if enabled then "${gatePackage}/bin/claudex-gate" else "";
+    gateBin = if enabled then gateExecutablePath else "";
     generation = runtimeGeneration;
     platform = if isDarwin then "darwin" else "linux";
     inherit
@@ -270,15 +274,15 @@ let
 
   statusScript = mkRuntimeScript ./files/claudex-status.sh {
     inherit serviceName;
-    proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
+    proxyBin = proxyExecutablePath;
   };
   loginScript = mkRuntimeScript ./files/claudex-login.sh {
-    proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
+    proxyBin = proxyExecutablePath;
     inherit configTemplate;
   };
   proxyLauncherScript = mkRuntimeScript ./files/claudex-proxy-launcher.sh {
-    proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
-    gateBin = "${gatePackage}/bin/claudex-gate";
+    proxyBin = proxyExecutablePath;
+    gateBin = gateExecutablePath;
     generation = runtimeGeneration;
     backendPort = toString backendPort;
     gracefulDrainSeconds = toString gracefulDrainSeconds;
@@ -317,7 +321,7 @@ let
   '';
   proxyScript = mkRuntimeScript ./files/claudex-proxy.sh {
     proxyLauncher = proxyLauncherScript;
-    proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
+    proxyBin = proxyExecutablePath;
     inherit
       launchdPlist
       serviceName
@@ -370,8 +374,8 @@ let
         ]
       else
         null;
-    proxyExecutable = if enabled then "${cliProxyApi}/bin/cli-proxy-api" else null;
-    gateExecutable = if enabled then "${gatePackage}/bin/claudex-gate" else null;
+    proxyExecutable = if enabled then proxyExecutablePath else null;
+    gateExecutable = if enabled then gateExecutablePath else null;
     proxyLauncher =
       if enabled then "${runtimePackage}/libexec/claudex/claudex-proxy-launcher" else null;
     proxyVersion = if enabled then cliProxyApi.version else null;

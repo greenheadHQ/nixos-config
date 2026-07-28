@@ -1234,6 +1234,109 @@ EOF
   ) || fail "foreground exit did not release the lifecycle lock"
 }
 
+test_claudex_managed_launcher_hands_lifecycle_lock_to_gate() {
+  local sandbox state launcher flock_bin marker
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  launcher="$sandbox/generated/claudex-proxy-launcher"
+  flock_bin="$(command -v flock)"
+  marker="$sandbox/managed-gate-observed-lock"
+  _claudex_fixture "$sandbox"
+  _claudex_prepare_fixture_state "$sandbox"
+  _claudex_add_valid_credential "$state"
+
+  cat > "$sandbox/generated/claudex-gate" <<'EOF'
+#!/usr/bin/env bash
+mode=""
+startup_fd=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --mode)
+      mode="$2"
+      shift 2
+      ;;
+    --startup-lock-fd)
+      startup_fd="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+[ "$mode" = managed ] || exit 90
+[ "$startup_fd" = 8 ] || exit 91
+[ -e "/dev/fd/$startup_fd" ] || exit 92
+if (
+  exec 9>"$CLAUDEX_LIFECYCLE_LOCK"
+  "$CLAUDEX_FLOCK" -x -n 9
+); then
+  exit 93
+fi
+printf 'held\n' > "$CLAUDEX_FAKE_LOCK_MARKER"
+EOF
+  chmod +x "$sandbox/generated/claudex-gate"
+
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LIFECYCLE_LOCK="$state/lifecycle.lock" \
+    CLAUDEX_FLOCK="$flock_bin" \
+    CLAUDEX_FAKE_LOCK_MARKER="$marker" \
+    "$launcher" --managed
+  [[ -e "$marker" ]] || fail "managed gate did not inherit the held lifecycle lock"
+  (
+    exec 9>"$state/lifecycle.lock"
+    "$flock_bin" -x -n 9
+  ) || fail "managed exit did not release the lifecycle lock"
+}
+
+test_claudex_managed_start_releases_lifecycle_baton() {
+  local sandbox state runtime proxy flock_bin marker
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  runtime="$sandbox/generated/claudex-runtime.sh"
+  proxy="$sandbox/generated/claudex-proxy"
+  flock_bin="$(command -v flock)"
+  marker="$sandbox/manager-acquired-lifecycle-lock"
+  _claudex_fixture "$sandbox"
+  _claudex_prepare_fixture_state "$sandbox"
+  _claudex_add_valid_credential "$state"
+
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_LIFECYCLE_LOCK="$state/lifecycle.lock" \
+    CLAUDEX_FLOCK="$flock_bin" \
+    CLAUDEX_FAKE_LOCK_MARKER="$marker" \
+    bash -c '
+      source "$1"
+      source <(sed "/^command=/,\$d" "$2")
+      manager_pid=""
+      _claudex_manager_start() {
+        (
+          exec 8>&-
+          exec 9>"$CLAUDEX_LIFECYCLE_LOCK"
+          "$CLAUDEX_FLOCK" -x -w 2 9
+          printf "acquired\n" > "$CLAUDEX_FAKE_LOCK_MARKER"
+        ) &
+        manager_pid=$!
+      }
+      _claudex_wait_for_gate() {
+        local attempt
+        for ((attempt = 0; attempt < 40; attempt++)); do
+          if [ -e "$CLAUDEX_FAKE_LOCK_MARKER" ]; then
+            wait "$manager_pid"
+            return
+          fi
+          sleep 0.05
+        done
+        wait "$manager_pid" || true
+        return 1
+      }
+      with_lifecycle_lock _claudex_start_stopped_locked
+    ' _ "$runtime" "$proxy"
+  [[ -e "$marker" ]] || fail "manual managed start did not hand the lifecycle lock to the manager"
+}
+
 test_claudex_launchd_start_preserves_current_inactive_definition() {
   local sandbox runtime proxy log
   sandbox="$(new_sandbox)"

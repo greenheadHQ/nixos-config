@@ -55,34 +55,46 @@ case "$#" in
     ;;
 esac
 
-prepare_state
 if [ "$mode" = "prepare" ]; then
+  prepare_state
   exit 0
 fi
-# The proxy serves whatever valid set is present; the default contract (codex required,
-# claude optional) is the launch bar — mixed entitlement is asserted by `claudex --mixed`.
-assert_credential_set "$CLAUDEX_AUTH_DIR" default
-_claudex_assert_safe_work_dir
 
-startup_lock_args=()
-if [ "$startup_lock_fd" -ge 0 ]; then
-  startup_lock_args=(--startup-lock-fd "$startup_lock_fd")
+_claudex_run_gate_locked() {
+  local -a startup_lock_args=()
+  prepare_state
+  # The proxy serves whatever valid set is present; the default contract (codex required,
+  # claude optional) is the launch bar — mixed entitlement is asserted by `claudex --mixed`.
+  assert_credential_set "$CLAUDEX_AUTH_DIR" default
+  _claudex_assert_safe_work_dir
+  if [ "$startup_lock_fd" -ge 0 ]; then
+    startup_lock_args=(--startup-lock-fd "$startup_lock_fd")
+  fi
+
+  exec "$CLAUDEX_GATE_BIN" serve \
+    --mode "$mode" \
+    --state-dir "$CLAUDEX_STATE_DIR" \
+    --auth-dir "$CLAUDEX_AUTH_DIR" \
+    --work-dir "$CLAUDEX_WORK_DIR" \
+    --config "$CLAUDEX_CONFIG_FILE" \
+    --public-key-file "$CLAUDEX_API_KEY_FILE" \
+    --backend-bin "$CLAUDEX_PROXY_BIN" \
+    --generation "$CLAUDEX_GENERATION" \
+    --public-address "$CLAUDEX_BIND_HOST:$CLAUDEX_PORT" \
+    --backend-address "$CLAUDEX_BIND_HOST:@backendPort@" \
+    --control-socket "$CLAUDEX_CONTROL_SOCKET" \
+    --drain-seconds "@gracefulDrainSeconds@" \
+    --child-stop-seconds "@childStopSeconds@" \
+    --log-file "$CLAUDEX_LOG_FILE" \
+    --home "$CLAUDEX_HOME" \
+    "${startup_lock_args[@]}"
+}
+
+if [ "$mode" = "managed" ]; then
+  # Manager restarts bypass the user-facing lifecycle command, so acquire the canonical
+  # lifecycle lock in this process and hand descriptor 8 to the gate. The gate releases it
+  # only after owning the runtime lock and control socket, preserving manager MainPID identity.
+  _claudex_acquire_lifecycle_lock
+  startup_lock_fd=8
 fi
-
-exec "$CLAUDEX_GATE_BIN" serve \
-  --mode "$mode" \
-  --state-dir "$CLAUDEX_STATE_DIR" \
-  --auth-dir "$CLAUDEX_AUTH_DIR" \
-  --work-dir "$CLAUDEX_WORK_DIR" \
-  --config "$CLAUDEX_CONFIG_FILE" \
-  --public-key-file "$CLAUDEX_API_KEY_FILE" \
-  --backend-bin "$CLAUDEX_PROXY_BIN" \
-  --generation "$CLAUDEX_GENERATION" \
-  --public-address "$CLAUDEX_BIND_HOST:$CLAUDEX_PORT" \
-  --backend-address "$CLAUDEX_BIND_HOST:@backendPort@" \
-  --control-socket "$CLAUDEX_CONTROL_SOCKET" \
-  --drain-seconds "@gracefulDrainSeconds@" \
-  --child-stop-seconds "@childStopSeconds@" \
-  --log-file "$CLAUDEX_LOG_FILE" \
-  --home "$CLAUDEX_HOME" \
-  "${startup_lock_args[@]}"
+_claudex_run_gate_locked
