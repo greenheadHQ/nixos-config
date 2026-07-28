@@ -8,7 +8,7 @@
 # calls happen only when a command invokes a function.
 #
 # Package-internal command API:
-#   with_state_lock prepare_state credential_count
+#   with_state_lock with_lifecycle_lock prepare_state credential_count
 #   assert_credential_set curl_loopback wait_for_proxy_ready
 #
 # Package-internal cross-file API (not stable for external callers):
@@ -17,7 +17,9 @@
 #   _claudex_credential_json_valid _claudex_credential_fingerprint
 #   _claudex_credential_set_fingerprint _claudex_credential_type_of
 #   _claudex_credential_path_of_type _claudex_assert_entries_wellformed
-#   _claudex_assert_safe_work_dir _claudex_loopback_responding
+#   _claudex_assert_safe_work_dir _claudex_loopback_responding _claudex_gate_inspect
+#   _claudex_assert_proxy_stopped _claudex_snapshot_executables_current
+#   _claudex_managed_snapshot_owned
 
 if [ "@allowTestOverrides@" = "true" ]; then
   CLAUDEX_JQ="${CLAUDEX_JQ:-@jqBin@}"
@@ -578,6 +580,57 @@ _claudex_gate_inspect() {
   fi
   [ -S "$CLAUDEX_CONTROL_SOCKET" ] || return 1
   "$CLAUDEX_GATE_BIN" control inspect --socket "$CLAUDEX_CONTROL_SOCKET"
+}
+
+_claudex_manager_main_pid() {
+  local service_name="$1" output line pid=""
+  if [ "$CLAUDEX_PLATFORM" = darwin ]; then
+    output="$("$CLAUDEX_LAUNCHCTL" print "gui/$("$CLAUDEX_ID" -u)/$CLAUDEX_LABEL" 2>/dev/null)" \
+      || return 1
+    while IFS= read -r line; do
+      line="${line#"${line%%[![:space:]]*}"}"
+      case "$line" in
+        "pid = "*)
+          pid="${line#pid = }"
+          break
+          ;;
+      esac
+    done <<< "$output"
+  else
+    output="$("$CLAUDEX_SYSTEMCTL" --user show "$service_name" \
+      --property MainPID --value 2>/dev/null)" || return 1
+    IFS= read -r pid <<< "$output"
+  fi
+  case "$pid" in
+    "" | 0 | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$pid"
+}
+
+_claudex_snapshot_executables_current() {
+  local snapshot="$1" expected_gate="$2" expected_backend="$3"
+  "$CLAUDEX_JQ" -e \
+    --arg gate "$expected_gate" \
+    --arg backend "$expected_backend" \
+    '.gate_executable == $gate and .backend_executable == $backend' \
+    <<< "$snapshot" >/dev/null 2>&1
+}
+
+# A managed-mode claim is trusted only when the exact launchd label/systemd unit owns
+# the gate PID. Current-generation reuse additionally pins both executable paths. An
+# outdated manager-owned gate remains controllable so the new generation can drain it.
+_claudex_managed_snapshot_owned() {
+  local snapshot="$1" service_name="$2" expected_gate="$3" expected_backend="$4"
+  local gate_pid manager_pid generation
+  gate_pid="$("$CLAUDEX_JQ" -er '
+    .gate_pid | select(type == "number" and . > 0 and floor == .) | tostring
+  ' <<< "$snapshot" 2>/dev/null)" || return 1
+  manager_pid="$(_claudex_manager_main_pid "$service_name")" || return 1
+  [ "$gate_pid" = "$manager_pid" ] || return 1
+  generation="$("$CLAUDEX_JQ" -r '.generation // empty' <<< "$snapshot")"
+  if [ "$generation" = "$CLAUDEX_GENERATION" ]; then
+    _claudex_snapshot_executables_current "$snapshot" "$expected_gate" "$expected_backend"
+  fi
 }
 
 _claudex_assert_proxy_stopped() {

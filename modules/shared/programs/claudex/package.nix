@@ -1,8 +1,8 @@
 # CLIProxyAPI prebuilt binary pin for the claudex PoC.
 #
-# Stage 1 Nix builds may fetch and unpack this derivation, but must not execute the binary.
-# Runtime execution is held behind the manual Gate B flow documented in the handoff because
-# upstream starts background network workers and mutates OAuth credentials at runtime.
+# Nix builds only fetch, verify, patch, and install this derivation. Runtime execution stays
+# behind the on-demand Claudex gate; OAuth, refresh observation, and host/service mutation
+# remain explicit action-time operations documented in the handoff.
 { pkgs }:
 let
   inherit (pkgs)

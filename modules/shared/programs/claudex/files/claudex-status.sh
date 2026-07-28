@@ -5,6 +5,7 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source "@runtimeLibrary@"
 CLAUDEX_SERVICE_NAME="@serviceName@"
+CLAUDEX_PROXY_BIN="@proxyBin@"
 
 json=false
 case "$#" in
@@ -54,6 +55,7 @@ if snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
   mode="$("$CLAUDEX_JQ" -r '.mode // empty' <<< "$snapshot")"
   gate_state="$("$CLAUDEX_JQ" -r '.state // empty' <<< "$snapshot")"
   gate_generation="$("$CLAUDEX_JQ" -r '.generation // empty' <<< "$snapshot")"
+  identity_ok=false
   if [ "$gate_generation" = "$CLAUDEX_GENERATION" ]; then
     generation_state="current"
   else
@@ -62,7 +64,31 @@ if snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
     reason="실행 중인 proxy가 이전 Nix generation입니다"
     next_command="claudex proxy restart"
   fi
-  if [ "$generation_state" = current ]; then
+  if [ "$mode" = managed ]; then
+    if _claudex_managed_snapshot_owned \
+      "$snapshot" "$CLAUDEX_SERVICE_NAME" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"; then
+      identity_ok=true
+    else
+      proxy_state="unknown"
+      reason="managed proxy의 service identity를 확인할 수 없습니다"
+      next_command="상태를 공유하고 수동 확인"
+    fi
+  elif [ "$mode" = foreground ]; then
+    if [ "$generation_state" != current ] \
+      || _claudex_snapshot_executables_current \
+        "$snapshot" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"; then
+      identity_ok=true
+    else
+      proxy_state="unknown"
+      reason="foreground proxy의 executable identity를 확인할 수 없습니다"
+      next_command="실행 중인 터미널에서 Ctrl-C 후 다시 실행"
+    fi
+  else
+    proxy_state="unknown"
+    reason="proxy mode를 확인할 수 없습니다"
+    next_command="상태를 공유하고 수동 확인"
+  fi
+  if [ "$identity_ok" = true ] && [ "$generation_state" = current ]; then
     if [ "$gate_state" != open ] || { [ "$mode" != managed ] && [ "$mode" != foreground ]; }; then
       proxy_state="unhealthy"
       reason="proxy process는 있지만 새 요청을 받을 준비가 되지 않았습니다"
@@ -90,7 +116,7 @@ if snapshot="$(_claudex_gate_inspect 2>/dev/null)"; then
       fi
     else
       proxy_state="unhealthy"
-      reason="managed proxy가 readiness 요청에 응답하지 않습니다"
+      reason="proxy가 readiness 요청에 응답하지 않습니다"
       next_command="claudex proxy restart"
     fi
   fi
@@ -100,7 +126,7 @@ elif [ -e "$CLAUDEX_CONTROL_SOCKET" ] || [ -L "$CLAUDEX_CONTROL_SOCKET" ]; then
   next_command="상태를 공유하고 수동 확인"
 elif _claudex_loopback_responding 2>/dev/null; then
   proxy_state="foreign"
-  reason="8317 포트가 응답하지만 Claudex가 관리하는 process가 아닙니다"
+  reason="$CLAUDEX_PORT 포트가 응답하지만 Claudex가 관리하는 process가 아닙니다"
   next_command="해당 process를 확인한 뒤 다시 실행"
 fi
 

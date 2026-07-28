@@ -248,6 +248,7 @@ let
 
   statusScript = mkRuntimeScript ./files/claudex-status.sh {
     inherit serviceName;
+    proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
   };
   loginScript = mkRuntimeScript ./files/claudex-login.sh {
     proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
@@ -294,6 +295,7 @@ let
   '';
   proxyScript = mkRuntimeScript ./files/claudex-proxy.sh {
     proxyLauncher = proxyLauncherScript;
+    proxyBin = "${cliProxyApi}/bin/cli-proxy-api";
     inherit
       launchdPlist
       serviceName

@@ -207,8 +207,9 @@ EOF
   _claudex_pin_proxy_shebang "$fake_proxy"
   chmod +x "$sandbox/fake-flock" "$fake_proxy" "$generated/claudex-gate"
 
-  _claudex_materialize_runtime \
-    "$generated/claudex-runtime.sh" "$generated/config-template.json"
+  CLAUDEX_FIXTURE_GATE_BIN="$generated/claudex-gate" \
+    _claudex_materialize_runtime \
+      "$generated/claudex-runtime.sh" "$generated/config-template.json"
   local script
   for script in claudex-login claudex-status claudex-proxy-launcher claudex-proxy claudex; do
     _claudex_materialize_command \
@@ -913,8 +914,23 @@ test_claudex_proxy_stop_reports_busy_requests() {
 printf '%s\n' '{"ok":false,"code":"BUSY_REOPENED","message":"active requests remain; admission reopened"}'
 exit 1
 EOF
-  chmod +x "$sandbox/busy-gate"
-  snapshot='{"schema":1,"instance":"fixture","generation":"fixture-generation","mode":"managed","state":"open","accepting":true,"active":1,"gate_pid":10,"backend_pid":11,"backend_executable":"/nix/store/fake/bin/cli-proxy-api"}'
+  cat > "$sandbox/fake-launchctl" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = print ]; then
+  printf 'pid = 10\n'
+fi
+exit 0
+EOF
+  chmod +x "$sandbox/busy-gate" "$sandbox/fake-launchctl"
+  snapshot="$(
+    jq -cn \
+      --arg gate "$sandbox/busy-gate" \
+      --arg backend "$sandbox/fake-cli-proxy-api" \
+      '{schema: 1, instance: "fixture", generation: "fixture-generation",
+        mode: "managed", state: "open", accepting: true, active: 1,
+        gate_pid: 10, gate_executable: $gate, backend_pid: 11,
+        backend_executable: $backend}'
+  )"
 
   set +e
   output="$(
@@ -922,6 +938,7 @@ EOF
       CLAUDEX_STATE_DIR="$sandbox/state" \
       CLAUDEX_FLOCK="$sandbox/fake-flock" \
       CLAUDEX_GATE_BIN="$sandbox/busy-gate" \
+      CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
       CLAUDEX_TEST_GATE_SNAPSHOT="$snapshot" \
       "$proxy" stop 2>&1
   )"
@@ -931,6 +948,210 @@ EOF
   [[ "$rc" != 0 ]] || fail "busy proxy stop unexpectedly succeeded"
   assert_contains "$output" "활성 요청이 있어 proxy를 중지하지 않았습니다"
   assert_contains "$output" "claudex proxy stop --force"
+}
+
+test_claudex_proxy_stop_reports_credential_recovery_failure() {
+  local sandbox proxy output snapshot rc
+  sandbox="$(new_sandbox)"
+  proxy="$sandbox/generated/claudex-proxy"
+  _claudex_fixture "$sandbox"
+
+  cat > "$sandbox/recovery-failing-gate" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' '{"ok":false,"code":"RECOVERY_FAILED","message":"credential recovery failed; operator action is required"}'
+exit 1
+EOF
+  cat > "$sandbox/fake-launchctl" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = print ]; then
+  printf 'pid = 10\n'
+fi
+exit 0
+EOF
+  chmod +x "$sandbox/recovery-failing-gate" "$sandbox/fake-launchctl"
+  snapshot="$(
+    jq -cn \
+      --arg gate "$sandbox/recovery-failing-gate" \
+      --arg backend "$sandbox/fake-cli-proxy-api" \
+      '{schema: 1, instance: "fixture", generation: "fixture-generation",
+        mode: "managed", state: "open", accepting: true, active: 0,
+        gate_pid: 10, gate_executable: $gate, backend_pid: 11,
+        backend_executable: $backend}'
+  )"
+
+  set +e
+  output="$(
+    HOME="$sandbox/home" \
+      CLAUDEX_STATE_DIR="$sandbox/state" \
+      CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_GATE_BIN="$sandbox/recovery-failing-gate" \
+      CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+      CLAUDEX_TEST_GATE_SNAPSHOT="$snapshot" \
+      "$proxy" stop 2>&1
+  )"
+  rc=$?
+  set -e
+
+  [[ "$rc" != 0 ]] || fail "credential recovery failure was reported as success"
+  assert_contains "$output" "proxy는 중지됐지만 인증 파일 복구에 실패했습니다"
+  assert_contains "$output" "claudex status"
+}
+
+test_claudex_managed_proxy_requires_manager_ownership() {
+  local sandbox state proxy snapshot wrong_snapshot output rc
+  sandbox="$(new_sandbox)"
+  state="$sandbox/state"
+  proxy="$sandbox/generated/claudex-proxy"
+  _claudex_fixture "$sandbox"
+  _claudex_prepare_fixture_state "$sandbox"
+  _claudex_add_valid_credential "$state"
+  _claudex_make_ready_curl "$sandbox"
+
+  cat > "$sandbox/fake-launchctl" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = print ]; then
+  printf 'path = %s\n' "$sandbox/generated/claudex-proxy.plist"
+  printf 'pid = %s\n' "\${CLAUDEX_FAKE_MANAGER_PID:-0}"
+fi
+exit 0
+EOF
+  cat > "$sandbox/fake-systemctl" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"MainPID"*) printf '%s\n' "${CLAUDEX_FAKE_MANAGER_PID:-0}" ;;
+  *"LoadState"*) printf 'loaded\n' ;;
+esac
+exit 0
+EOF
+  chmod +x "$sandbox/fake-launchctl" "$sandbox/fake-systemctl"
+  snapshot="$(
+    jq -cn \
+      --arg gate "$sandbox/generated/claudex-gate" \
+      --arg backend "$sandbox/fake-cli-proxy-api" \
+      '{schema: 1, instance: "fixture", generation: "fixture-generation",
+        mode: "managed", state: "open", accepting: true, active: 0,
+        gate_pid: 10, gate_executable: $gate, backend_pid: 11,
+        backend_executable: $backend}'
+  )"
+
+  set +e
+  output="$(
+    HOME="$sandbox/home" \
+      CLAUDEX_STATE_DIR="$state" \
+      CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CURL="$sandbox/fake-curl" \
+      CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+      CLAUDEX_FAKE_MANAGER_PID=99 \
+      CLAUDEX_TEST_GATE_SNAPSHOT="$snapshot" \
+      "$proxy" start 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "Darwin accepted a managed gate not owned by launchd"
+  assert_contains "$output" "service identity를 확인할 수 없습니다"
+
+  wrong_snapshot="$(
+    jq -c '.gate_executable = "/nix/store/wrong/bin/claudex-gate"' <<< "$snapshot"
+  )"
+  set +e
+  output="$(
+    HOME="$sandbox/home" \
+      CLAUDEX_STATE_DIR="$state" \
+      CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CURL="$sandbox/fake-curl" \
+      CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+      CLAUDEX_FAKE_MANAGER_PID=10 \
+      CLAUDEX_TEST_GATE_SNAPSHOT="$wrong_snapshot" \
+      "$proxy" start 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "Darwin accepted a managed gate with an unexpected executable"
+  assert_contains "$output" "service identity를 확인할 수 없습니다"
+
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_FAKE_MANAGER_PID=10 \
+    CLAUDEX_TEST_GATE_SNAPSHOT="$snapshot" \
+    "$proxy" start
+
+  set +e
+  output="$(
+    HOME="$sandbox/home" \
+      CLAUDEX_STATE_DIR="$state" \
+      CLAUDEX_PLATFORM=linux \
+      CLAUDEX_FLOCK="$sandbox/fake-flock" \
+      CLAUDEX_CURL="$sandbox/fake-curl" \
+      CLAUDEX_SYSTEMCTL="$sandbox/fake-systemctl" \
+      CLAUDEX_FAKE_MANAGER_PID=99 \
+      CLAUDEX_TEST_GATE_SNAPSHOT="$snapshot" \
+      "$proxy" start 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != 0 ]] || fail "Linux accepted a managed gate not owned by systemd"
+  assert_contains "$output" "service identity를 확인할 수 없습니다"
+
+  HOME="$sandbox/home" \
+    CLAUDEX_STATE_DIR="$state" \
+    CLAUDEX_PLATFORM=linux \
+    CLAUDEX_FLOCK="$sandbox/fake-flock" \
+    CLAUDEX_CURL="$sandbox/fake-curl" \
+    CLAUDEX_SYSTEMCTL="$sandbox/fake-systemctl" \
+    CLAUDEX_FAKE_MANAGER_PID=10 \
+    CLAUDEX_TEST_GATE_SNAPSHOT="$snapshot" \
+    "$proxy" start
+}
+
+test_claudex_launchd_start_preserves_current_inactive_definition() {
+  local sandbox runtime proxy log
+  sandbox="$(new_sandbox)"
+  runtime="$sandbox/generated/claudex-runtime.sh"
+  proxy="$sandbox/generated/claudex-proxy"
+  log="$sandbox/launchctl.log"
+  _claudex_fixture "$sandbox"
+
+  cat > "$sandbox/fake-launchctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CLAUDEX_FAKE_LAUNCHCTL_LOG"
+if [ "$1" = print ]; then
+  printf 'path = %s\n' "$CLAUDEX_FAKE_DEFINITION_PATH"
+fi
+exit 0
+EOF
+  chmod +x "$sandbox/fake-launchctl"
+
+  : > "$log"
+  HOME="$sandbox/home" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_FAKE_LAUNCHCTL_LOG="$log" \
+    CLAUDEX_FAKE_DEFINITION_PATH="$sandbox/generated/claudex-proxy.plist" \
+    bash -c '
+      source "$1"
+      source <(sed "/^command=/,\$d" "$2")
+      _claudex_manager_start
+    ' _ "$runtime" "$proxy"
+  grep -Fq "kickstart " "$log" || fail "current launchd definition was not kickstarted"
+  if grep -Eq '(^| )(bootout|bootstrap)( |$)' "$log"; then
+    fail "current inactive launchd definition was unnecessarily replaced"
+  fi
+
+  : > "$log"
+  HOME="$sandbox/home" \
+    CLAUDEX_LAUNCHCTL="$sandbox/fake-launchctl" \
+    CLAUDEX_FAKE_LAUNCHCTL_LOG="$log" \
+    CLAUDEX_FAKE_DEFINITION_PATH="$sandbox/stale-claudex-proxy.plist" \
+    bash -c '
+      source "$1"
+      source <(sed "/^command=/,\$d" "$2")
+      _claudex_manager_start
+    ' _ "$runtime" "$proxy"
+  grep -Fq "bootout " "$log" || fail "stale launchd definition was not booted out"
+  grep -Fq "bootstrap " "$log" || fail "current launchd definition was not bootstrapped"
+  grep -Fq "kickstart " "$log" || fail "replacement launchd definition was not kickstarted"
 }
 
 test_claudex_mixed_mode_contract() {
@@ -1745,12 +1966,22 @@ test_claudex_status_is_sanitized() {
 #!/usr/bin/env bash
 printf '%s\n' "\$@" >> "$sandbox/launchctl.argv"
 if [ "\$1" = print ]; then
+  printf 'path = %s\n' "$sandbox/generated/claudex-proxy.plist"
+  printf 'pid = 10\n'
   exit "\${CLAUDEX_FAKE_PRINT_RC:-0}"
 fi
 exit 0
 EOF
   chmod +x "$sandbox/fake-launchctl"
-  snapshot='{"schema":1,"instance":"fixture","generation":"fixture-generation","mode":"managed","state":"open","accepting":true,"active":0,"gate_pid":10,"backend_pid":11,"backend_executable":"/nix/store/fake/bin/cli-proxy-api"}'
+  snapshot="$(
+    jq -cn \
+      --arg gate "$sandbox/generated/claudex-gate" \
+      --arg backend "$sandbox/fake-cli-proxy-api" \
+      '{schema: 1, instance: "fixture", generation: "fixture-generation",
+        mode: "managed", state: "open", accepting: true, active: 0,
+        gate_pid: 10, gate_executable: $gate, backend_pid: 11,
+        backend_executable: $backend}'
+  )"
   output="$(HOME="$sandbox/home" \
     CLAUDEX_STATE_DIR="$state" \
     CLAUDEX_CURL="$sandbox/fake-curl" \

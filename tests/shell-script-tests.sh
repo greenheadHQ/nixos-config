@@ -299,6 +299,9 @@ run_test "claudex wrapper pins provider model and argv" test_claudex_wrapper_pin
 run_test "claudex unified CLI help is side-effect free" test_claudex_unified_cli_help_is_side_effect_free
 run_test "claudex unified CLI routes subcommands" test_claudex_unified_cli_routes_subcommands
 run_test "claudex proxy stop reports busy requests" test_claudex_proxy_stop_reports_busy_requests
+run_test "claudex proxy stop reports credential recovery failure" test_claudex_proxy_stop_reports_credential_recovery_failure
+run_test "claudex managed proxy requires manager ownership" test_claudex_managed_proxy_requires_manager_ownership
+run_test "claudex launchd start preserves current inactive definition" test_claudex_launchd_start_preserves_current_inactive_definition
 run_test "claudex mixed mode contract" test_claudex_mixed_mode_contract
 run_test "claudex launcher and login use fake boundaries" test_claudex_launcher_and_login_use_fake_boundaries
 run_test "claudex login replaces one provider safely" test_claudex_login_replaces_one_provider_safely

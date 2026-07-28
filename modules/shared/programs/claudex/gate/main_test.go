@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -77,6 +78,83 @@ func waitFor(t *testing.T, description string, check func() bool) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", description)
+}
+
+func TestValidateCredentialSetRejectsNonJSONEntry(t *testing.T) {
+	authDir := t.TempDir()
+	writePrivateFile(
+		t,
+		filepath.Join(authDir, "codex-credential"),
+		[]byte(`{"type":"codex","access_token":"access","refresh_token":"refresh"}`),
+	)
+	if err := validateCredentialSet(authDir); err == nil {
+		t.Fatal("credential set accepted a non-.json entry that the shell validator rejects")
+	}
+}
+
+func TestDrainStopReportsCredentialRecoveryFailure(t *testing.T) {
+	authDir := t.TempDir()
+	writePrivateFile(t, filepath.Join(authDir, "codex.json"), []byte(`{"type":"codex"}`))
+	runtime := &gate{
+		options: serveOptions{
+			mode:    "managed",
+			authDir: authDir,
+		},
+		state:         "open",
+		instance:      "test-instance",
+		activeCancels: make(map[uint64]context.CancelFunc),
+		stopped:       make(chan struct{}),
+		done:          make(chan struct{}),
+	}
+	server, client := net.Pipe()
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = client.Close()
+	})
+	go runtime.handleControl(server)
+	request := controlRequest{
+		Command:        "drain-stop",
+		Instance:       runtime.instance,
+		Generation:     runtime.options.generation,
+		TimeoutSeconds: 0,
+	}
+	if err := json.NewEncoder(client).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	var response controlResponse
+	if err := json.NewDecoder(client).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.OK || response.Code != "RECOVERY_FAILED" {
+		t.Fatalf("recovery failure response = %+v", response)
+	}
+	select {
+	case <-runtime.done:
+	case <-time.After(time.Second):
+		t.Fatal("gate did not finish after reporting credential recovery failure")
+	}
+	if runtime.exitCode != 0 {
+		t.Fatalf("recovery failure exit = %d, want restart-suppressing 0", runtime.exitCode)
+	}
+}
+
+func TestRecoveryFailureSuppressesUnexpectedRestart(t *testing.T) {
+	authDir := t.TempDir()
+	writePrivateFile(t, filepath.Join(authDir, "codex.json"), []byte(`{"type":"codex"}`))
+	runtime := &gate{
+		options: serveOptions{
+			mode:    "managed",
+			authDir: authDir,
+		},
+		state:         "open",
+		activeCancels: make(map[uint64]context.CancelFunc),
+		stopped:       make(chan struct{}),
+		done:          make(chan struct{}),
+	}
+	runtime.failUnexpected(errors.New("test failure"))
+	if runtime.exitCode != 0 {
+		t.Fatalf("recovery failure exit = %d, want restart-suppressing 0", runtime.exitCode)
+	}
 }
 
 func TestManagedGateAuthenticatesAndDrainsBeforeChildStop(t *testing.T) {

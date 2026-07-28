@@ -68,6 +68,7 @@ type snapshot struct {
 	Accepting         bool   `json:"accepting"`
 	Active            int    `json:"active"`
 	GatePID           int    `json:"gate_pid"`
+	GateExecutable    string `json:"gate_executable"`
 	BackendPID        int    `json:"backend_pid"`
 	BackendExecutable string `json:"backend_executable"`
 }
@@ -98,6 +99,7 @@ type gate struct {
 	drainZero     chan struct{}
 
 	instance           string
+	gateExecutable     string
 	publicKey          string
 	backendKey         string
 	backendTLS         *tls.Config
@@ -106,7 +108,6 @@ type gate struct {
 	credentialSnapshot string
 	child              *exec.Cmd
 	childDone          chan struct{}
-	childErr           error
 	childExited        bool
 	unexpectedChild    bool
 	startupErr         error
@@ -120,6 +121,7 @@ type gate struct {
 	stopOnce   sync.Once
 	stopped    chan struct{}
 	stopExit   int
+	stopError  error
 	finishOnce sync.Once
 	done       chan struct{}
 	exitCode   int
@@ -228,14 +230,19 @@ func newGate(options serveOptions) (*gate, error) {
 	if err != nil {
 		return nil, err
 	}
+	gateExecutable, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve gate executable: %w", err)
+	}
 	runtime := &gate{
-		options:       options,
-		state:         "starting",
-		instance:      instance,
-		activeCancels: make(map[uint64]context.CancelFunc),
-		childDone:     make(chan struct{}),
-		stopped:       make(chan struct{}),
-		done:          make(chan struct{}),
+		options:        options,
+		state:          "starting",
+		instance:       instance,
+		gateExecutable: gateExecutable,
+		activeCancels:  make(map[uint64]context.CancelFunc),
+		childDone:      make(chan struct{}),
+		stopped:        make(chan struct{}),
+		done:           make(chan struct{}),
 	}
 	return runtime, nil
 }
@@ -560,7 +567,6 @@ func (g *gate) startChild(logFile *os.File) error {
 	go func() {
 		err := command.Wait()
 		g.mu.Lock()
-		g.childErr = err
 		g.childExited = true
 		state := g.state
 		if state != "stopping" && state != "stopped" {
@@ -726,7 +732,16 @@ func (g *gate) handleControl(connection net.Conn) {
 			_ = json.NewEncoder(connection).Encode(response)
 			return
 		}
-		exitCode := g.stopProcess(request.Force)
+		exitCode, stopError := g.stopProcess(request.Force)
+		if stopError != nil {
+			_ = json.NewEncoder(connection).Encode(controlResponse{
+				OK:      false,
+				Code:    "RECOVERY_FAILED",
+				Message: "credential recovery failed; operator action is required",
+			})
+			g.finish(exitCode)
+			return
+		}
 		_ = json.NewEncoder(connection).Encode(controlResponse{OK: exitCode == 0, Code: "STOPPED"})
 		g.finish(exitCode)
 	default:
@@ -750,6 +765,7 @@ func (g *gate) snapshot() snapshot {
 		Accepting:         g.state == "open",
 		Active:            g.active,
 		GatePID:           os.Getpid(),
+		GateExecutable:    g.gateExecutable,
 		BackendPID:        childPID,
 		BackendExecutable: g.options.backendBin,
 	}
@@ -830,7 +846,8 @@ func (g *gate) stopFromSignal() {
 	if g.active == 0 {
 		g.state = "stopping"
 		g.mu.Unlock()
-		g.finish(g.stopProcess(false))
+		exitCode, _ := g.stopProcess(false)
+		g.finish(exitCode)
 		return
 	}
 	zero := make(chan struct{})
@@ -850,10 +867,11 @@ func (g *gate) stopFromSignal() {
 	g.mu.Lock()
 	g.state = "stopping"
 	g.mu.Unlock()
-	g.finish(g.stopProcess(false))
+	exitCode, _ := g.stopProcess(false)
+	g.finish(exitCode)
 }
 
-func (g *gate) stopProcess(force bool) int {
+func (g *gate) stopProcess(force bool) (int, error) {
 	g.stopOnce.Do(func() {
 		if g.publicServer != nil {
 			if force {
@@ -889,6 +907,7 @@ func (g *gate) stopProcess(force bool) int {
 			log.Printf("claudex-gate: credential recovery failed: %v", recoveryErr)
 			// Avoid an on-failure restart loop while the canonical auth set is invalid.
 			g.stopExit = 0
+			g.stopError = errors.New("credential recovery failed")
 		} else if g.unexpectedChild {
 			g.stopExit = 1
 		}
@@ -897,7 +916,7 @@ func (g *gate) stopProcess(force bool) int {
 		close(g.stopped)
 	})
 	<-g.stopped
-	return g.stopExit
+	return g.stopExit, g.stopError
 }
 
 func (g *gate) captureLatestCredentialSnapshot() {
@@ -1011,8 +1030,8 @@ func (g *gate) failUnexpected(err error) {
 	}
 	g.state = "stopping"
 	g.mu.Unlock()
-	exitCode := g.stopProcess(true)
-	if exitCode == 0 {
+	exitCode, stopError := g.stopProcess(true)
+	if stopError == nil && exitCode == 0 {
 		exitCode = 1
 	}
 	g.finish(exitCode)
@@ -1137,6 +1156,11 @@ func validateCredentialSet(authDir string) error {
 	codexCount := 0
 	claudeCount := 0
 	for _, entry := range entries {
+		// Keep the gate's recovery contract identical to the shell-side canonical
+		// credential validator: every credential entry is a private JSON file.
+		if filepath.Ext(entry.Name()) != ".json" {
+			return errors.New("credential set contains a non-JSON entry")
+		}
 		path := filepath.Join(authDir, entry.Name())
 		if err := assertPrivateRegular(path); err != nil {
 			return errors.New("credential set contains an unsafe entry")

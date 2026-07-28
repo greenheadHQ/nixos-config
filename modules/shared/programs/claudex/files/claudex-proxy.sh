@@ -7,6 +7,7 @@ umask 077
 source "@runtimeLibrary@"
 
 CLAUDEX_PROXY_LAUNCHER="@proxyLauncher@"
+CLAUDEX_PROXY_BIN="@proxyBin@"
 CLAUDEX_LAUNCHD_PLIST="@launchdPlist@"
 CLAUDEX_SERVICE_NAME="@serviceName@"
 CLAUDEX_STATUS_HANDLER="@statusHandler@"
@@ -30,17 +31,33 @@ _claudex_manager_registered() {
   "$CLAUDEX_LAUNCHCTL" print "gui/$($CLAUDEX_ID -u)/$CLAUDEX_LABEL" >/dev/null 2>&1
 }
 
+_claudex_launchd_definition_current() {
+  local output line
+  output="$("$CLAUDEX_LAUNCHCTL" print "gui/$("$CLAUDEX_ID" -u)/$CLAUDEX_LABEL" 2>/dev/null)" \
+    || return 1
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    if [ "$line" = "path = $CLAUDEX_LAUNCHD_PLIST" ]; then
+      # The plist is a content-addressed Nix store path. Exact path equality proves
+      # ProgramArguments (including the launcher generation) are current.
+      return 0
+    fi
+  done <<< "$output"
+  return 1
+}
+
 _claudex_manager_start() {
   local domain
   if [ "$CLAUDEX_PLATFORM" = darwin ]; then
     domain="gui/$($CLAUDEX_ID -u)"
-    # A private launchd definition survives a clean process exit. Replace any inactive
-    # registration before starting so a Nix generation change cannot kickstart stale
-    # ProgramArguments. The lifecycle caller has already proved that no owned gate is live.
     if _claudex_manager_registered; then
-      "$CLAUDEX_LAUNCHCTL" bootout "$domain/$CLAUDEX_LABEL"
+      if ! _claudex_launchd_definition_current; then
+        "$CLAUDEX_LAUNCHCTL" bootout "$domain/$CLAUDEX_LABEL"
+        "$CLAUDEX_LAUNCHCTL" bootstrap "$domain" "$CLAUDEX_LAUNCHD_PLIST"
+      fi
+    else
+      "$CLAUDEX_LAUNCHCTL" bootstrap "$domain" "$CLAUDEX_LAUNCHD_PLIST"
     fi
-    "$CLAUDEX_LAUNCHCTL" bootstrap "$domain" "$CLAUDEX_LAUNCHD_PLIST"
     "$CLAUDEX_LAUNCHCTL" kickstart "$domain/$CLAUDEX_LABEL"
   else
     "$CLAUDEX_SYSTEMCTL" --user start "$CLAUDEX_SERVICE_NAME"
@@ -89,7 +106,10 @@ _claudex_ensure_locked() {
     generation="$("$CLAUDEX_JQ" -r '.generation' <<< "$snapshot")"
     instance="$("$CLAUDEX_JQ" -r '.instance' <<< "$snapshot")"
     if [ "$mode" = foreground ]; then
-      if [ "$state" = open ] && [ "$generation" = "$CLAUDEX_GENERATION" ]; then
+      if [ "$state" = open ] \
+        && [ "$generation" = "$CLAUDEX_GENERATION" ] \
+        && _claudex_snapshot_executables_current \
+          "$snapshot" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"; then
         wait_for_proxy_ready
         return
       fi
@@ -100,11 +120,21 @@ _claudex_ensure_locked() {
       _claudex_error "unknown proxy mode"
       return 1
     fi
+    if ! _claudex_managed_snapshot_owned \
+      "$snapshot" "$CLAUDEX_SERVICE_NAME" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"; then
+      _claudex_error "managed proxy의 service identity를 확인할 수 없습니다"
+      return 1
+    fi
     if [ "$state" = open ] && [ "$generation" = "$CLAUDEX_GENERATION" ]; then
       wait_for_proxy_ready
       return
     fi
     if [ "$state" = open ] && [ "$generation" != "$CLAUDEX_GENERATION" ]; then
+      if ! _claudex_managed_snapshot_owned \
+        "$snapshot" "$CLAUDEX_SERVICE_NAME" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"; then
+        _claudex_error "managed proxy identity가 변경되어 갱신하지 않았습니다"
+        return 1
+      fi
       if ! "$CLAUDEX_GATE_BIN" control drain-stop \
         --socket "$CLAUDEX_CONTROL_SOCKET" \
         --instance "$instance" \
@@ -126,7 +156,7 @@ _claudex_ensure_locked() {
     return 1
   fi
   if _claudex_loopback_responding 2>/dev/null; then
-    _claudex_error "8317 포트를 알 수 없는 process가 사용 중입니다"
+    _claudex_error "$CLAUDEX_PORT 포트를 알 수 없는 process가 사용 중입니다"
     return 1
   fi
   _claudex_start_stopped_locked
@@ -157,6 +187,11 @@ _claudex_stop_locked() {
     _claudex_error "proxy 상태를 안전하게 중지할 수 없습니다: $state"
     return 1
   fi
+  if ! _claudex_managed_snapshot_owned \
+    "$snapshot" "$CLAUDEX_SERVICE_NAME" "$CLAUDEX_GATE_BIN" "$CLAUDEX_PROXY_BIN"; then
+    _claudex_error "managed proxy의 service identity를 확인할 수 없어 중지하지 않았습니다"
+    return 1
+  fi
   args=(
     control drain-stop
     --socket "$CLAUDEX_CONTROL_SOCKET"
@@ -168,6 +203,8 @@ _claudex_stop_locked() {
   if ! gate_response="$("$CLAUDEX_GATE_BIN" "${args[@]}" 2>/dev/null)"; then
     if "$CLAUDEX_JQ" -e '.code == "BUSY_REOPENED"' <<< "$gate_response" >/dev/null 2>&1; then
       _claudex_error "활성 요청이 있어 proxy를 중지하지 않았습니다. 강제 중지는 claudex proxy stop --force를 사용하세요"
+    elif "$CLAUDEX_JQ" -e '.code == "RECOVERY_FAILED"' <<< "$gate_response" >/dev/null 2>&1; then
+      _claudex_error "proxy는 중지됐지만 인증 파일 복구에 실패했습니다. claudex status로 상태를 확인하세요"
     else
       _claudex_error "proxy 중지 요청이 실패했습니다"
     fi

@@ -39,31 +39,19 @@ fake 테스트만으로는 upstream 바이너리의 실제 설정 파싱, 계정
 
 ## 2. Git 기준선
 
-- 브랜치: `codex/claudex-poc`
-- rebase 후 구현 커밋: `fb911a59 feat: add declarative claudex PoC`
-- rebase 후 인수인계 커밋: `167891fc docs: add claudex PoC handoff`
-- Gate B 완료 커밋: `7ae7ee0 feat(claudex): complete Stage 1 Gate B`
-- 현재 merge base와 `origin/main`: `c6bd515b`
-- E2E 근거를 확보한 뒤 `origin/main` 위로 rebase했다. remote branch는 이전 commit ID를 가리키므로 후속 push가 필요하면 최종 검증·커밋 뒤 `--force-with-lease`를 사용한다.
-
-새 clone 또는 브랜치가 없는 clone에서는 다음 순서로 시작한다.
+이 문서는 특정 작업 브랜치나 commit ID를 기준선으로 고정하지 않는다. Stage 1의
+`codex/claudex-poc` 브랜치와 당시 merge base는 역사적 구현 기록이며 현재 재개 지점이 아니다.
+새 세션에서는 작업 중인 PR/branch와 최신 `origin/main`을 직접 확인한다.
 
 ```bash
-git fetch origin main codex/claudex-poc
-git switch --track origin/codex/claudex-poc
+git fetch origin main
 git status --short --branch
 git log --oneline --decorate -5
 git merge-base HEAD origin/main
 ```
 
-이미 로컬 브랜치가 있으면 다음을 사용한다.
-
-```bash
-git fetch origin main codex/claudex-poc
-git switch codex/claudex-poc
-git pull --ff-only
-git status --short --branch
-```
+PR을 이어받는 경우에는 GitHub의 현재 head branch와 commit을 먼저 확인하고 그 branch의 기존
+worktree를 사용한다. 이 문서만 보고 별도 Stage 1 branch를 만들거나 force-push하지 않는다.
 
 커밋 전에는 개인 식별자, 조직·고객 식별자, 로컬 사용자명이 포함된 절대 경로, 내부 분류 문구가 staged diff와 커밋 메시지에 없는지 대소문자 무시로 검사한다. 런타임 credential, API key, 브라우저 계정 정보는 어떤 형태로도 커밋하지 않는다.
 
@@ -104,7 +92,8 @@ git status --short --branch
 - `modules/shared/programs/claudex/gate/`
   - `127.0.0.1:8317` public bearer를 검증하고, 임시 key와 per-instance TLS를 쓰는 `127.0.0.1:8318` backend child로 요청을 전달한다.
   - active request 수를 handler lifetime 동안 추적해 새 요청을 막고 drain한 뒤 child를 종료한다.
-  - 시작 시 schema-valid credential set을 snapshot하고, 종료 뒤 canonical JSON이 empty/partial/invalid면 검증된 snapshot을 원자 복구한다.
+  - 시작 시 schema-valid credential set을 snapshot하고, 종료 뒤 canonical JSON이 empty/partial/invalid면 검증된 snapshot으로 복구·재검증한다.
+  - 복구는 같은 filesystem의 두 directory rename을 사용한다. 두 rename 사이에 process가 강제 종료되면 canonical path가 잠시 없을 수 있으므로 남은 `.auth-invalid-*`와 instance snapshot을 보존하고 operator 확인을 요구한다.
 - `modules/shared/programs/claudex/files/claudex.sh`
   - 첫 인자를 기준으로 `login`, `status`, `proxy`, `help`를 routing하고, 그 외 인자는 기존 Claude session argv로 처리한다.
   - session 전에 managed proxy를 자동으로 준비한다.
@@ -603,7 +592,7 @@ git diff --cached
 - local credential file timestamp나 JSON shape는 live validity 증거가 아니다. 그래서 새 `expired` stable status enum은 추가하지 않고 `auth_live_validity=unchecked` 경계를 유지한다.
 - 한 loopback bearer key에는 provider/model ACL이 없다. mixed Claude credential도 같은 local key를 가진 caller가 사용할 수 있다. 장기 실행은 원격 trust boundary를 만들지는 않지만 local key의 사용 가능 시간을 늘린다.
 
-Lifecycle gate는 upstream을 patch하지 않고 truncate-write 잔여 위험을 줄인다. 시작 전 verified `0600` credential-set snapshot을 만들고, orderly stop 직전에 가능한 최신 schema-valid snapshot을 갱신한다. child exit 뒤 canonical set이 empty/partial/invalid면 verified snapshot을 atomic restore하고 재검증한다. 복구가 실패하면 manager restart loop를 막는다. 이것은 disk 손상 복구일 뿐 refresh worker의 완전한 quiescence나 restored credential의 live validity를 증명하지 않는다.
+Lifecycle gate는 upstream을 patch하지 않고 truncate-write 잔여 위험을 줄인다. 시작 전 verified `0600` credential-set snapshot을 만들고, orderly stop 직전에 가능한 최신 schema-valid snapshot을 갱신한다. child exit 뒤 canonical set이 empty/partial/invalid면 verified snapshot으로 복구하고 재검증한다. 이 복구는 같은 filesystem의 두 directory rename을 사용하므로 그 사이의 강제 종료까지 atomic하다고 주장하지 않는다. 복구가 실패하면 manager restart loop를 막고 control caller에도 실패를 반환한다. 이것은 disk 손상 복구일 뿐 refresh worker의 완전한 quiescence나 restored credential의 live validity를 증명하지 않는다.
 
 다음 실측은 실제 process/network/OAuth 상태를 건드리므로 실행 직전 사용자 승인을 받는다.
 
