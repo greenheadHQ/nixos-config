@@ -151,15 +151,46 @@ _wt_tmux_session_open() {
   exec tmux new-session -s "$session_name" -c "$wt_path"
 }
 
+# 세션 상태를 삼상태로 조회한다 (stdout: absent | present | unknown).
+#
+# tmux는 "세션 없음"과 "상태를 못 읽음"을 모두 exit 1로 알리므로, 그 구분을 여기 한곳에
+# 둔다. 삭제 안전성을 판단하는 호출자들이 각자 stderr를 해석하면 같은 삼상태 모델이
+# 여러 모듈로 흩어지고, 의미를 바꿀 때 함께 고쳐야 한다.
+#   absent  — tmux가 없거나 서버가 안 떠 있거나 그 이름의 세션이 없다
+#   present — 세션이 있다
+#   unknown — 서버는 있는데 조회가 실패했다 (소켓·권한 등). 판단 불가.
+_wt_tmux_session_state() {
+  local session_name="$1"
+  command -v tmux >/dev/null 2>&1 || { printf 'absent\n'; return 0; }
+
+  local err rc=0
+  err=$(tmux list-sessions 2>&1 >/dev/null) || rc=$?
+  if (( rc != 0 )); then
+    if [[ "$err" == *"no server running"* || "$err" == *"error connecting"* ]]; then
+      printf 'absent\n'
+    else
+      printf 'unknown\n'
+    fi
+    return 0
+  fi
+
+  if tmux has-session -t "=$session_name" 2>/dev/null; then
+    printf 'present\n'
+  else
+    printf 'absent\n'
+  fi
+}
+
 # 세션 종료를 막아야 하는지 판정한다 (부수효과 없음). 사실 조회가 아니라 정책 판정이라
 # 이름도 그렇게 붙였다 — 반환값을 "클라이언트가 존재한다"로 읽으면 안 된다.
-# 연결된 클라이언트가 있으면 막고(활성 사용 보호), 세션이 있는데 조회가 실패하면
+# 연결된 클라이언트가 있으면 막고(활성 사용 보호), 상태나 클라이언트 목록을 읽지 못하면
 # "없음"이 아니라 "알 수 없음"이므로 역시 막는다(fail-closed).
 _wt_tmux_session_close_should_block() {
   local session_name="$1"
-  # tmux 서버나 세션이 아예 없으면 클라이언트도 없다 (정상 케이스).
-  tmux list-sessions &>/dev/null || return 1
-  tmux has-session -t "=$session_name" 2>/dev/null || return 1
+  case "$(_wt_tmux_session_state "$session_name")" in
+    absent)  return 1 ;;
+    unknown) return 0 ;;
+  esac
 
   local clients
   clients=$(tmux list-clients -t "=$session_name" 2>/dev/null) || return 0
@@ -169,7 +200,7 @@ _wt_tmux_session_close_should_block() {
 _wt_tmux_session_close() {
   local session_name="$1"
   if _wt_tmux_session_close_should_block "$session_name"; then
-    _info "스킵: tmux 세션 '$session_name'에 연결된 클라이언트가 있습니다"
+    _info "스킵: tmux 세션 '$session_name' — 연결된 클라이언트가 있거나 상태를 확인하지 못했습니다"
     return 1
   fi
   tmux kill-session -t "=$session_name" 2>/dev/null || true

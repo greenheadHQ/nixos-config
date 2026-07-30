@@ -297,21 +297,17 @@ _remove_worktree() {
     # 막을 수단이 없다. idle shell은 활성 프로세스 가드에도 걸리지 않으므로, 위험을
     # 알릴 기회가 없던 삭제에서는 세션 자체를 스킵 조건으로 삼는 편이 안전하다.
     #
-    # "세션 없음"과 "조회 실패"는 둘 다 exit 1이라 구분해야 한다. 서버가 없어서 실패한
-    # 것이면 세션도 없으니 진행하고, 소켓·권한 문제로 상태를 알 수 없으면 멈춘다.
-    if command -v tmux >/dev/null 2>&1; then
-      local tmux_err tmux_rc=0
-      tmux_err=$(tmux list-sessions 2>&1 >/dev/null) || tmux_rc=$?
-      if (( tmux_rc == 0 )); then
-        if tmux has-session -t "=$session_name" 2>/dev/null; then
-          _info "스킵: $name — tmux 세션이 남아 있습니다 (세션 종료 후 다시 실행하거나 --yes)"
-          return 1
-        fi
-      elif [[ "$tmux_err" != *"no server running"* && "$tmux_err" != *"error connecting"* ]]; then
-        _warn "스킵: $name (tmux 상태를 확인하지 못해 무확인 삭제를 중단합니다: ${tmux_err})"
+    # "세션 없음"과 "상태를 못 읽음"의 구분은 tmux.sh의 삼상태 probe가 소유한다.
+    case "$(_wt_tmux_session_state "$session_name")" in
+      present)
+        _info "스킵: $name — tmux 세션이 남아 있습니다 (세션 종료 후 다시 실행하거나 --yes)"
         return 1
-      fi
-    fi
+        ;;
+      unknown)
+        _warn "스킵: $name (tmux 상태를 확인하지 못해 무확인 삭제를 중단합니다)"
+        return 1
+        ;;
+    esac
 
     if ! git -C "$git_root" worktree remove "$wt_path" 2>/dev/null; then
       _warn "스킵: $name (worktree를 제거할 수 없습니다 — 정리되지 않은 변경, 잠금, submodule 등)"
@@ -326,9 +322,10 @@ _remove_worktree() {
     _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" \
       || _warn "참고: $name — Claude local plugin 등록을 정리하지 못했습니다"
   else
-    # forced는 기존 순서를 유지한다 — 강제 제거라 거부되지 않으므로 부수 정리를 먼저 해도
-    # 부분 정리로 끝나지 않는다. 호출자가 승인을 받은 경우와 clean 비-MERGED 기존 경로가
-    # 모두 여기로 온다.
+    # forced는 main과 같은 순서를 유지한다 (호출자가 승인을 받은 경우와 clean 비-MERGED
+    # 기존 경로가 여기로 온다). 아래 세션 종료가 실패하면 worktree 제거 전에 중단하므로
+    # tmux 창만 닫힌 부분 정리가 남을 수 있다 — 기존부터 있던 동작이라 그대로 둔다.
+    # guarded가 제거를 앞으로 당긴 것은 그 경로에만 적용되는 정책이다.
     _wt_tmux_close "$wt_path" || true
     _wt_tmux_session_close "$session_name" || {
       _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
