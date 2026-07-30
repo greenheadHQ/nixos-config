@@ -339,6 +339,7 @@ _remove_worktree() {
   fi
 
   # 브랜치 삭제 (detached가 아닌 경우)
+  local branch_kept=false
   if [[ "$branch" != "detached" ]]; then
     if [[ "$mode" == "guarded" ]]; then
       if ! git -C "$git_root" update-ref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
@@ -347,21 +348,22 @@ _remove_worktree() {
         printf -v _safe_branch '%q' "$branch"
         _warn "브랜치 유지: $branch (삭제 판정 이후 새 커밋이 생겨 ref를 지우지 않았습니다)"
         _warn "  복구: git worktree add ${_safe_path} ${_safe_branch}"
-        _info "삭제: $name (worktree만)"
-        # 정상 삭제 경로와 같은 계약을 지킨다 (#294) — 복원 실패를 삼키면 사용자가
-        # dangling 심링크와 필요한 수동 조치를 모른 채 성공 메시지만 받는다.
-        "$HOME/.local/bin/nrs-relink" fix-dangling >/dev/null 2>&1 \
-          || _warn "심링크 복원 실패 — 수동 nrs 필요"
-        return 0
+        branch_kept=true
       fi
     else
       git -C "$git_root" branch -D "$branch" 2>/dev/null || true
     fi
   fi
 
-  _info "삭제: $name ($branch)"
+  # 후처리는 한곳에서만 한다 — 경로별로 복제하면 메시지와 실패 처리가 갈라진다.
+  if [[ "$branch_kept" == "true" ]]; then
+    _info "삭제: $name (worktree만)"
+  else
+    _info "삭제: $name ($branch)"
+  fi
 
-  # worktree 삭제 후 dangling 심링크 자동 복원 (#294)
-  "$HOME/.local/bin/nrs-relink" fix-dangling >/dev/null 2>&1 || \
-      _info "⚠️  심링크 복원 실패 (치명적이지 않음, 수동 nrs 필요)"
+  # worktree 삭제 후 dangling 심링크 자동 복원 (#294). 실패를 삼키면 사용자가
+  # dangling 심링크와 필요한 수동 조치를 모른 채 성공 메시지만 받는다.
+  "$HOME/.local/bin/nrs-relink" fix-dangling >/dev/null 2>&1 \
+    || _warn "심링크 복원 실패 — 수동 nrs 필요"
 }

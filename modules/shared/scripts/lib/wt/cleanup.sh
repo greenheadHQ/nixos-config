@@ -191,10 +191,10 @@ cmd_cleanup() {
         continue
       fi
 
-      # item_loss_risk는 PR MERGED로 보정된 값이라 이 분기에서는 항상 false다.
-      # --auto는 사용자 확인 없이 지우므로 raw git 상태를 한 번 더 본다: upstream이
-      # 살아 있는데 그보다 앞선 커밋이 있으면 머지 후 추가 작업일 수 있다.
-      # (reuse guard와 중복 방어 — 자동 삭제 경로만 이 보수성을 유지한다.)
+      # auto 후보는 raw pr_status로 뽑으므로, 근거가 없거나 낡아 item_loss_risk가 true인
+      # 항목도 이 분기에 들어온다. 그 값을 신뢰하는 대신 raw git 상태를 직접 본다:
+      # upstream이 살아 있는데 그보다 앞선 커밋이 있으면 머지 후 추가 작업일 수 있다.
+      # (reuse guard와 중복 방어 — 사용자 확인 없이 지우는 경로만 이 보수성을 유지한다.)
       if git -C "$wt_path" rev-parse --abbrev-ref "@{upstream}" &>/dev/null \
         && _wt_has_unpushed "$wt_path"; then
         _info "스킵: $name (merge 후 추가 커밋 있음)"
@@ -205,6 +205,17 @@ cmd_cleanup() {
       # 단 --yes는 "위험을 알고 우회한다"는 선언이므로 여기서도 forced로 보낸다 —
       # 이름 지정 경로에만 적용하면 문서가 약속한 escape hatch가 auto에서 동작하지 않는다.
       if [[ -n "${WT_ASSUME_YES:-}" ]]; then
+        # --yes가 바꾸는 것은 제거 전략뿐이다. 후보 선정 가드는 그대로 지켜야 문서 계약과
+        # 맞는다 — 위 dirty·추가 커밋 검사는 수집 시점 값이라, 조회 이후 생긴 변경은
+        # 여기서 다시 봐야 강제 제거가 그것까지 지우지 않는다.
+        if _wt_is_dirty "$wt_path"; then
+          _info "스킵: $name (dirty 있음)"
+          continue
+        fi
+        if ! _wt_head_unchanged "$wt_path" "$_wt_cleanup_tmp/$name.head"; then
+          _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
+          continue
+        fi
         _remove_worktree "$wt_path" "$branch" "$git_root" "forced" \
           || _info "경고: $name 삭제 실패"
         continue
