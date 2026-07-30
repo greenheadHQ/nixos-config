@@ -18,7 +18,9 @@ _wt_warn_cleanup_from_root() {
 _wt_merged_head_still_valid() {
   local wt_path="$1" head_file="$2" name="$3"
   _wt_head_unchanged "$wt_path" "$head_file" && return 0
-  _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
+  # 실패 원인은 HEAD 변경뿐 아니라 근거 기록 부재·읽기 실패도 포함한다 (fail-closed).
+  # 어느 쪽이든 "지워도 되는지 다시 확인해야 한다"는 결론은 같으므로 한 문장으로 알린다.
+  _warn "스킵: $name (MERGED 근거를 재확인하지 못했습니다 — HEAD 변경 또는 근거 기록 유실. 다시 실행하세요)"
   return 1
 }
 
@@ -196,8 +198,14 @@ cmd_cleanup() {
 
       # 검증한 OID를 넘겨 브랜치 삭제를 CAS로 만든다 — 이 확인과 실제 삭제 사이에도
       # 창이 남으므로, 그 안에서 커밋이 생기면 ref가 지워지지 않아야 한다.
-      local verified_oid=""
-      [[ -f "$_wt_cleanup_tmp/$name.head" ]] && verified_oid=$(cat "$_wt_cleanup_tmp/$name.head" 2>/dev/null || true)
+      # 근거를 읽지 못하면 중단한다 — 빈 값을 넘기면 CAS가 아니라 강제 삭제로 떨어져
+      # 안전 근거를 잃은 상태에서 오히려 보호가 풀린다.
+      local verified_oid
+      verified_oid=$(cat "$_wt_cleanup_tmp/$name.head" 2>/dev/null || true)
+      if [[ -z "$verified_oid" ]]; then
+        _warn "스킵: $name (삭제 근거 OID를 읽지 못했습니다 — 다시 실행하세요)"
+        continue
+      fi
       _remove_worktree "$wt_path" "$branch" "$git_root" "$verified_oid" || _info "경고: $name 삭제 실패"
     done
 
@@ -307,10 +315,18 @@ cmd_cleanup() {
     fi
 
     # MERGED로 확인을 건너뛴 항목은 검증 OID를 넘겨 브랜치 삭제를 CAS로 만든다.
-    # 그 외(사용자가 확인한 dirty/미push)는 기존대로 강제 삭제한다 — 사용자가 이미
-    # 잃을 것을 알고 승인한 경로다.
+    # 근거를 읽지 못하면 중단한다 — 빈 값은 CAS가 아니라 강제 삭제 경로이므로,
+    # 확인을 생략한 채 보호까지 풀린 상태가 된다.
+    # 그 외(사용자가 확인한 dirty/미push)는 기존대로 강제 삭제한다 — 잃을 것을 알고
+    # 승인한 경로다.
     local verified_oid=""
-    [[ -f "$_wt_cleanup_tmp/$name.head" ]] && verified_oid=$(cat "$_wt_cleanup_tmp/$name.head" 2>/dev/null || true)
+    if [[ "${item_pr[$found_idx]}" == "MERGED" ]]; then
+      verified_oid=$(cat "$_wt_cleanup_tmp/$name.head" 2>/dev/null || true)
+      if [[ -z "$verified_oid" ]]; then
+        _warn "스킵: $name (삭제 근거 OID를 읽지 못했습니다 — 다시 실행하세요)"
+        continue
+      fi
+    fi
     if _remove_worktree "$wt_path" "$branch" "$git_root" "$verified_oid"; then
       removed=$((removed + 1))
     fi

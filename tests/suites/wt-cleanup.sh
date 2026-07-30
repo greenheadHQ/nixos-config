@@ -173,13 +173,8 @@ test_wt_cleanup_auto_skips_merged_branch_reuse() {
   install_deployed_layout "$sandbox" "$repo_root"
 
   target_path="$repo_root/.claude/worktrees/feature_one"
-  mkdir -p "$gh_dir"
-  cat > "$gh_dir/gh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'MERGED deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n'
-EOF
-  chmod +x "$gh_dir/gh"
+  # 로컬 HEAD와 다른 OID = 동명의 다른 브랜치 (branch name reuse)
+  install_merged_pr_mock "$gh_dir" "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
   output=$(
     HOME="$home_dir" \

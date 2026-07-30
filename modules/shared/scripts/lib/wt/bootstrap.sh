@@ -267,14 +267,30 @@ _remove_worktree() {
   _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
 
   # worktree 제거
-  git -C "$git_root" worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path"
+  if [[ -n "$expected_oid" ]]; then
+    # 사용자 확인을 거치지 않은 삭제(MERGED 판정 기반)에서는 강제 옵션과 rm -rf
+    # fallback을 쓰지 않는다. dirty 여부는 후보 수집 시점에 한 번 측정되므로 그 뒤
+    # 생긴 변경은 알 수 없는데, 비강제 remove는 정리되지 않은 변경이나 잠금이 있으면
+    # git이 거부해 준다 — 그 거부를 그대로 존중해 승인 없이 아무것도 잃지 않게 한다.
+    if ! git -C "$git_root" worktree remove "$wt_path" 2>/dev/null; then
+      _warn "스킵: $name (정리되지 않은 변경이 있거나 worktree를 제거할 수 없습니다)"
+      _warn "  확인 후 지우려면: wt cleanup $(printf '%q' "$name") --yes"
+      return 1
+    fi
+  else
+    # 사용자가 dirty/미push를 확인하고 승인한 경로 — 잃을 것을 알고 요청한 삭제다.
+    git -C "$git_root" worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path"
+  fi
 
   # 브랜치 삭제 (detached가 아닌 경우)
   if [[ "$branch" != "detached" ]]; then
     if [[ -n "$expected_oid" ]]; then
       if ! git -C "$git_root" update-ref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
+        local _safe_path _safe_branch
+        printf -v _safe_path '%q' "$wt_path"
+        printf -v _safe_branch '%q' "$branch"
         _warn "브랜치 유지: $branch (삭제 판정 이후 새 커밋이 생겨 ref를 지우지 않았습니다)"
-        _warn "  복구: git worktree add ${wt_path} ${branch}"
+        _warn "  복구: git worktree add ${_safe_path} ${_safe_branch}"
         _info "삭제: $name (worktree만)"
         "$HOME/.local/bin/nrs-relink" fix-dangling >/dev/null 2>&1 || true
         return 0

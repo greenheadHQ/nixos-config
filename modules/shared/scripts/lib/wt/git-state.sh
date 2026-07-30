@@ -186,7 +186,10 @@ _wt_last_commit_msg() {
 
 # ── PR 상태 병렬 조회 ────────────────────────────────────────────────────────
 
-# 모든 worktree의 PR 상태를 병렬로 조회하고 tmp_dir/*.pr에 저장
+# 모든 worktree의 PR 상태를 병렬로 조회해 tmp_dir에 캐시한다.
+# 생성 파일: <name>.pr (상태 문자열), 그리고 MERGED인 경우에만 <name>.head
+# (판정 근거 OID — 삭제 직전 재검증과 JSON 출력 보정이 이 값에 의존한다).
+# 캐시를 정리하거나 호출부를 옮길 때 두 파일을 함께 다뤄야 한다.
 _fetch_pr_statuses() {
   local git_root="$1"
   local tmp_dir="$2"
