@@ -323,7 +323,7 @@ fc-list | grep -i "D2Coding"
 
 `modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다.
 
-- 공통 + personal 분리: 공통 블록(모든 darwin 호스트 — `ghostty` cask, `playwright-cli` formula)과
+- 공통 + personal 분리: 공통 블록(모든 darwin 호스트 — `ghostty` cask, `awscli`·`playwright-cli` formula)과
   `lib.mkIf (hostType == "personal")` 가드의 personal 전용 블록(아래 Cask 목록)으로 구성
 - cleanup = "none": 선언되지 않은 앱을 자동 삭제하지 않음 (수동 설치 cask 보호)
 
@@ -493,7 +493,11 @@ cat ~/Library/Logs/folder-actions/*.log
 
 `libraries/packages.nix`의 `darwinOnly` 리스트에서 관리됩니다.
 
-Homebrew가 GUI 앱(Cask)을 담당하는 반면, CLI 도구는 Nix로 선언적 관리합니다.
+Homebrew가 GUI 앱(Cask)을 담당하는 반면, CLI 도구는 원칙적으로 Nix로 선언적 관리합니다.
+
+예외는 Nix 경로가 실제로 동작하지 않는 도구뿐이며, 각 예외는 `homebrew.nix` 주석에 사유와 환원 조건을 함께 남깁니다.
+현재 예외: `awscli` (nixpkgs darwin libffi가 macOS 27에서 dlopen 실패 → 이슈 #1194. upstream 수정 시 `pkgs.awscli2`로 환원),
+`playwright-cli` (nixpkgs 미수록).
 
 | 패키지 | 용도 |
 |--------|------|

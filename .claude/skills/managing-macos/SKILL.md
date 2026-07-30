@@ -66,7 +66,8 @@ identity 확인, bounded fixture, rollback, update/reboot 재검증 절차는
 ### Homebrew 관리
 
 `modules/darwin/programs/homebrew.nix`에서 선언적으로 관리됩니다.
-공통(모든 darwin 호스트: `ghostty` cask, `playwright-cli` formula)과 personal 전용(`hostType == "personal"` 가드)으로 분리되어 있습니다.
+공통(모든 darwin 호스트: `ghostty` cask, `awscli`·`playwright-cli` formula)과 personal 전용(`hostType == "personal"` 가드)으로 분리되어 있습니다.
+`awscli`는 nixpkgs darwin libffi가 macOS 27에서 깨져 Nix 경로가 실행 불가라 임시로 Homebrew에 둔 예외입니다 (이슈 #1194, 환원 조건은 `homebrew.nix` 주석 참조).
 
 ```nix
 # cleanup = "none" — 선언되지 않은 앱을 삭제하지 않음 (수동 설치 cask 보호)
