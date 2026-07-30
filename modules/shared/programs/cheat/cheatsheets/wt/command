@@ -48,9 +48,16 @@ wt — Git worktree 관리 (fzf TUI, tmux 통합)
   wt cleanup                인터랙티브 — fzf 다중 선택 (Tab 토글, Enter 확인)
                             dirty/unpushed 항목은 개별 확인
   wt cleanup --auto         MERGED 자동 정리 (dirty/unpushed → 스킵 + 경고)
+                            squash merge로 upstream이 사라진 MERGED는 미push로 보지 않음
 
-  삭제 시: tmux 윈도우/세션 닫기 → git worktree remove → git branch -D
+  삭제 시:
+    확인을 거친 삭제(--yes 또는 개별 확인 통과)
+      tmux 윈도우/세션 닫기 → git worktree remove --force → git branch -D
+    확인 없는 삭제(MERGED 판정 기반)
+      근거 OID 재확인 → git worktree remove (비강제) → update-ref -d (CAS)
+      거부되면 아무것도 건드리지 않고 스킵. 새 커밋이 생겼으면 브랜치를 남김
   안전 가드: 현재 윈도우 / 마지막 윈도우는 닫지 않음
+             현재 위치한 worktree는 제외 (저장소 루트에서 재실행)
 
 [tmux 밖에서]
   wt <branch>               worktree 생성 후 해당 경로로 cd

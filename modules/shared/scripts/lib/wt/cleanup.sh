@@ -13,12 +13,10 @@ _wt_warn_cleanup_from_root() {
   _warn "  저장소 루트에서 실행하세요: cd ${_safe_root} && wt cleanup ${_safe_name}"
 }
 
-# MERGED 판정의 근거가 아직 유효한지 확인하고, 무효면 경고까지 낸다.
-# 두 삭제 경로(auto·이름 지정)가 같은 안전 정책과 같은 문구를 쓰도록 한곳에 둔다.
 # 사용자 확인을 건너뛰는 삭제(guarded)에 쓸 근거 OID를 stdout으로 반환한다.
 # 재확인에 실패하면 경고 후 1을 반환해 호출자가 건너뛰게 한다 — 근거를 확인할 수
-# 없으면 지우지 않는다. 두 삭제 경로가 같은 검증·문구·실패 처리를 쓰도록 한곳에 둔다.
-# 실패 원인은 HEAD 변경뿐 아니라 근거 기록 부재·읽기 실패도 포함한다 (fail-closed).
+# 없으면 지우지 않는다(fail-closed). 실패 원인에는 HEAD 변경뿐 아니라 근거 기록
+# 부재·읽기 실패도 포함된다. 두 삭제 경로가 같은 검증·문구·실패 처리를 쓰도록 한곳에 둔다.
 _wt_guarded_delete_oid() {
   local wt_path="$1" head_file="$2" name="$3"
   local oid
@@ -296,10 +294,17 @@ cmd_cleanup() {
     local name
     name=$(basename "$wt_path")
 
-    # 삭제 정책은 PR 상태가 아니라 "사용자가 이 삭제를 승인했는가"로 갈린다.
-    # 승인했으면 잃을 것을 알고 요청한 것이므로 기존대로 강제 삭제하고(--yes 우회 계약),
-    # 승인 절차 없이 지우는 경우에만 guarded로 보호한다.
-    local confirmed=false
+    # 삭제 정책은 PR 상태가 아니라 "사용자가 이 삭제의 위험을 인지했는가"로 갈린다.
+    # 인지한 경우(확인 프롬프트 통과 또는 --yes)는 기존대로 강제 삭제하고, 위험을
+    # 알릴 기회가 없었던 경우에만 guarded로 보호한다.
+    #
+    # clean한 OPEN/CLOSED/NONE도 확인을 거치지 않지만 forced로 남긴다 — 이름을 직접
+    # 지정한 기존 동작이고, guarded는 이번에 확인 프롬프트를 없앤 MERGED 경로를
+    # 메우려는 것이지 기존 경로까지 조이려는 것이 아니다.
+    local risk_acknowledged=false
+    # --yes는 "위험을 알고 우회한다"는 명시적 선언이다. 이를 인지로 취급해야 guarded가
+    # 거부했을 때 안내하는 재실행(--yes)이 실제로 강제 삭제로 이어진다.
+    [[ -n "${WT_ASSUME_YES:-}" ]] && risk_acknowledged=true
     if [[ "${item_dirty[$found_idx]}" == "true" ]] || [[ "${item_loss_risk[$found_idx]}" == "true" ]]; then
       local warn_msg="$name:"
       [[ "${item_dirty[$found_idx]}" == "true" ]] && warn_msg+=" uncommitted 변경사항"
@@ -307,11 +312,11 @@ cmd_cleanup() {
 
       _info "$warn_msg"
       _confirm "정말 삭제하시겠습니까?" || { _info "스킵: $name"; continue; }
-      confirmed=true
+      risk_acknowledged=true
     fi
 
     local mode="forced" verified_oid=""
-    if [[ "$confirmed" == "false" && "${item_pr[$found_idx]}" == "MERGED" ]]; then
+    if [[ "$risk_acknowledged" == "false" && "${item_pr[$found_idx]}" == "MERGED" ]]; then
       mode="guarded"
       verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name") || continue
     fi

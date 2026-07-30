@@ -237,9 +237,16 @@ _open_worktree() {
 # expected_oid일 때만 지워, 창 안에서 커밋이 생기면 ref가 남는다 — worktree 디렉토리가
 # 사라져도 `git worktree add`로 되살릴 수 있다.
 _remove_worktree() {
-  local wt_path="$1" branch="$2" git_root="$3" mode="${4:-forced}" expected_oid="${5:-}"
+  local wt_path="$1" branch="$2" git_root="$3" mode="$4" expected_oid="${5:-}"
   local name
   name=$(basename "$wt_path")
+
+  # mode는 폐쇄 집합이다. 미지정이나 오타를 기본값으로 흘리면 가장 파괴적인 정책이
+  # 조용히 선택되므로, 알 수 없는 값은 여기서 거부한다.
+  case "$mode" in
+    forced|guarded) ;;
+    *) _warn "스킵: $name (알 수 없는 삭제 모드: ${mode:-<없음>})"; return 1 ;;
+  esac
 
   if [[ "$mode" == "guarded" && -z "$expected_oid" ]]; then
     _warn "스킵: $name (무확인 삭제인데 근거 OID가 없습니다)"
@@ -261,11 +268,17 @@ _remove_worktree() {
 
   _wt_require_state_helpers
 
-  # guarded는 아래 tmux·플러그인 정리보다 먼저 삭제 가능 여부를 확인한다. 그 정리는
-  # 되돌릴 수 없어서, 뒤늦게 제거가 거부되면 tmux 창과 plugin 등록만 사라진 부분 정리가
-  # 남는다. 여기서 걸러내면 "승인 없이는 아무것도 건드리지 않는다"가 실제로 성립한다.
-  # 이 확인은 호출자 검증 이후의 창도 좁힌다 — 검증과 삭제 사이가 짧을수록 안전하다.
+  # canonical path는 제거 전에 확보한다 — 제거 후에는 디렉토리가 없어 구할 수 없다.
+  local canonical_wt_path session_name
+  canonical_wt_path="$(cd "$wt_path" && pwd -P)" || canonical_wt_path="$wt_path"
+  session_name=$(_wt_session_name "$name")
+
   if [[ "$mode" == "guarded" ]]; then
+    # 무확인 삭제에서는 worktree 제거 성공을 mutation 경계로 삼는다. tmux 창 종료와
+    # plugin 등록 해제는 되돌릴 수 없어서, 그것들을 먼저 하고 나서 제거가 거부되면
+    # worktree는 남고 작업 문맥만 사라진 부분 정리가 된다. 제거를 앞에 두면 거부될 때
+    # 아무것도 건드리지 않은 상태로 끝난다 — lock·submodule처럼 미리 예측하기 어려운
+    # 거부 사유도 이 경계에서 함께 걸린다.
     local now_head
     if ! now_head=$(git -C "$wt_path" rev-parse HEAD 2>/dev/null); then
       _warn "스킵: $name (HEAD를 읽지 못해 삭제 근거를 재확인할 수 없습니다)"
@@ -275,36 +288,28 @@ _remove_worktree() {
       _warn "스킵: $name (삭제 판정 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
       return 1
     fi
-    if _wt_is_dirty "$wt_path"; then
-      _warn "스킵: $name (정리되지 않은 변경이 있습니다)"
-      _warn "  확인 후 지우려면: wt cleanup $(printf '%q' "$name") --yes"
-      return 1
-    fi
-  fi
 
-  # tmux 윈도우 닫기 (실패해도 worktree는 삭제)
-  _wt_tmux_close "$wt_path" || true
-
-  # tmux 세션 정리 (wt- 접두사 세션, 연결된 클라이언트 있으면 삭제 중단)
-  local session_name
-  session_name=$(_wt_session_name "$name")
-  _wt_tmux_session_close "$session_name" || {
-    _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
-    return 1
-  }
-
-  local canonical_wt_path
-  canonical_wt_path="$(cd "$wt_path" && pwd -P)" || canonical_wt_path="$wt_path"
-  _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
-
-  # worktree 제거
-  if [[ "$mode" == "guarded" ]]; then
     if ! git -C "$git_root" worktree remove "$wt_path" 2>/dev/null; then
-      _warn "스킵: $name (정리되지 않은 변경이 있거나 worktree를 제거할 수 없습니다)"
-      _warn "  확인 후 지우려면: wt cleanup $(printf '%q' "$name") --yes"
+      _warn "스킵: $name (worktree를 제거할 수 없습니다 — 정리되지 않은 변경, 잠금, submodule 등)"
+      _warn "  확인하고 강제로 지우려면: wt cleanup $(printf '%q' "$name") --yes"
       return 1
     fi
+
+    # 제거에 성공했으므로 이제 부수 상태를 정리한다. 여기서 실패해도 worktree는 이미
+    # 사라졌으니 중단하지 않고 알리기만 한다.
+    _wt_tmux_close "$wt_path" || true
+    _wt_tmux_session_close "$session_name" || _info "참고: $name — 연결된 tmux 세션이 남아 있습니다"
+    _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" \
+      || _warn "참고: $name — Claude local plugin 등록을 정리하지 못했습니다"
   else
+    # 승인된 삭제는 기존 순서를 유지한다 — 강제 제거라 거부되지 않으므로 부수 정리를
+    # 먼저 해도 부분 정리로 끝나지 않는다.
+    _wt_tmux_close "$wt_path" || true
+    _wt_tmux_session_close "$session_name" || {
+      _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
+      return 1
+    }
+    _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
     git -C "$git_root" worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path"
   fi
 
