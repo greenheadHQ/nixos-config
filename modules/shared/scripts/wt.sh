@@ -123,8 +123,10 @@ Git worktree 관리 도구 (fzf TUI, tmux 통합; 비대화형/LLM 셸 호환)
 
 옵션 (cleanup):
   --auto                  MERGED 상태 worktree 자동 정리
-  --yes, -y               위험을 인지하고 강제 삭제 — dirty/unpushed 확인을 자동 승인하며,
-                          MERGED 무확인 삭제에 붙는 보호(비강제 제거·근거 재확인·ref CAS)도 해제
+  --yes, -y               선정된 대상의 제거 전략을 강제로 전환 — dirty/unpushed 확인을
+                          자동 승인하고, MERGED 무확인 삭제에 붙는 보호(비강제 제거·
+                          근거 재확인·ref CAS)도 해제한다. 단 --auto의 후보 선정 자체
+                          (dirty·merge 후 추가 커밋은 스킵)는 우회하지 않는다
   [name...]               정리할 worktree 이름 직접 지정
 
 비대화형 (LLM/스크립트):

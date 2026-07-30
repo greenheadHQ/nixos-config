@@ -151,7 +151,8 @@ cmd_cleanup() {
   # 이름을 지정한 호출에서는 이 안내를 생략한다 — 지정한 이름이 현재 worktree면
   # 아래 미매칭 분기가 같은 안내를 하므로, 여기서도 알리면 같은 재실행 명령이 두 번
   # 출력된다. 안내 책임을 호출 형태별로 한쪽에만 둔다.
-  if [[ -n "$current_wt" ]] && (( ${#names_filter[@]} == 0 )); then
+  # 단 --auto는 이름을 함께 받아도 아래 분기에 도달하기 전에 반환하므로 여기서 알린다.
+  if [[ -n "$current_wt" ]] && { [[ "$auto" == "true" ]] || (( ${#names_filter[@]} == 0 )); }; then
     local cur_name cur_pr
     cur_name=$(basename "$current_wt")
     cur_pr="NONE"

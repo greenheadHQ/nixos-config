@@ -296,9 +296,21 @@ _remove_worktree() {
     # 확인해도 그 직후 attach할 수 있고, 세션 종료는 제거 뒤라(부분 정리 방지) 그 사이를
     # 막을 수단이 없다. idle shell은 활성 프로세스 가드에도 걸리지 않으므로, 위험을
     # 알릴 기회가 없던 삭제에서는 세션 자체를 스킵 조건으로 삼는 편이 안전하다.
-    if tmux has-session -t "=$session_name" 2>/dev/null; then
-      _info "스킵: $name — tmux 세션이 남아 있습니다 (세션 종료 후 다시 실행하거나 --yes)"
-      return 1
+    #
+    # "세션 없음"과 "조회 실패"는 둘 다 exit 1이라 구분해야 한다. 서버가 없어서 실패한
+    # 것이면 세션도 없으니 진행하고, 소켓·권한 문제로 상태를 알 수 없으면 멈춘다.
+    if command -v tmux >/dev/null 2>&1; then
+      local tmux_err tmux_rc=0
+      tmux_err=$(tmux list-sessions 2>&1 >/dev/null) || tmux_rc=$?
+      if (( tmux_rc == 0 )); then
+        if tmux has-session -t "=$session_name" 2>/dev/null; then
+          _info "스킵: $name — tmux 세션이 남아 있습니다 (세션 종료 후 다시 실행하거나 --yes)"
+          return 1
+        fi
+      elif [[ "$tmux_err" != *"no server running"* && "$tmux_err" != *"error connecting"* ]]; then
+        _warn "스킵: $name (tmux 상태를 확인하지 못해 무확인 삭제를 중단합니다: ${tmux_err})"
+        return 1
+      fi
     fi
 
     if ! git -C "$git_root" worktree remove "$wt_path" 2>/dev/null; then

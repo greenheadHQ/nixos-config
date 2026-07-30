@@ -151,12 +151,11 @@ _wt_tmux_session_open() {
   exec tmux new-session -s "$session_name" -c "$wt_path"
 }
 
-# 세션 정리 (cleanup용, = prefix: exact match)
-# 연결된 클라이언트가 있으면 세션을 죽이지 않음 (활성 사용 보호)
-# 세션에 붙어 있는 클라이언트가 있는지 확인한다 (부수효과 없음).
-# 조회 자체가 실패하면 "없음"이 아니라 "알 수 없음"이므로 있다고 답한다(fail-closed) —
-# 이 검사로 삭제를 막는 호출자가 조회 장애 때 보호를 잃지 않게 한다.
-_wt_tmux_session_has_clients() {
+# 세션 종료를 막아야 하는지 판정한다 (부수효과 없음). 사실 조회가 아니라 정책 판정이라
+# 이름도 그렇게 붙였다 — 반환값을 "클라이언트가 존재한다"로 읽으면 안 된다.
+# 연결된 클라이언트가 있으면 막고(활성 사용 보호), 세션이 있는데 조회가 실패하면
+# "없음"이 아니라 "알 수 없음"이므로 역시 막는다(fail-closed).
+_wt_tmux_session_close_should_block() {
   local session_name="$1"
   # tmux 서버나 세션이 아예 없으면 클라이언트도 없다 (정상 케이스).
   tmux list-sessions &>/dev/null || return 1
@@ -169,7 +168,7 @@ _wt_tmux_session_has_clients() {
 
 _wt_tmux_session_close() {
   local session_name="$1"
-  if _wt_tmux_session_has_clients "$session_name"; then
+  if _wt_tmux_session_close_should_block "$session_name"; then
     _info "스킵: tmux 세션 '$session_name'에 연결된 클라이언트가 있습니다"
     return 1
   fi
