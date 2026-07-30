@@ -223,6 +223,22 @@ _open_worktree() {
 
 # ── worktree 제거 (tmux 윈도우 포함) ─────────────────────────────────────────
 
+# 비강제 `git worktree remove`가 실패한 뒤 이 경로가 아직 worktree로 등록돼 있는가.
+# git은 사전 검사(정리되지 않은 변경·잠금·submodule)에서 거부하면 아무것도 건드리지
+# 않지만, 검사를 통과한 뒤 디렉토리 삭제가 실패하면(권한·I/O) 관리 디렉토리 등록 해제는
+# 그대로 진행하고 실패를 알린다. 그래서 "실패했으니 무변경"이 성립하지 않는다.
+# stdout: registered | absent | unknown (tmux 상태 probe와 같은 삼상태 계약)
+_wt_worktree_registration_state() {
+  local git_root="$1" wt_path="$2" canonical_wt_path="$3"
+  local list
+  list=$(git -C "$git_root" worktree list --porcelain 2>/dev/null) || { printf 'unknown\n'; return 0; }
+  if printf '%s\n' "$list" | grep -qxF -e "worktree $wt_path" -e "worktree $canonical_wt_path"; then
+    printf 'registered\n'
+  else
+    printf 'absent\n'
+  fi
+}
+
 # 호출 형태 (mode는 필수, 폐쇄 집합):
 #   _remove_worktree <wt_path> <branch> <git_root> forced
 #   _remove_worktree <wt_path> <branch> <git_root> guarded <expected_oid>
@@ -234,9 +250,11 @@ _open_worktree() {
 #              비-MERGED를 이름으로 지정한 기존 경로.
 #   guarded  — 비강제 제거 + ref CAS. expected_oid가 필수다.
 #              호출자가 쓰는 경우: 위험을 알릴 기회가 없던 MERGED 무확인 삭제.
-#              거부 시점별 상태가 다르다 — 비강제 remove가 거부되면 아무것도 건드리지
-#              않고 끝나지만(mutation 경계), 그 뒤 ref CAS가 거부되면 worktree는 이미
-#              제거된 상태에서 브랜치만 남는다(복구 명령을 안내한다).
+#              거부 시점별 상태가 다르다 — 비강제 remove가 사전 검사에서 거부되면
+#              아무것도 건드리지 않고 끝나고(mutation 경계), 검사를 통과한 뒤 삭제가
+#              실패하면 등록만 해제된 부분 제거로 끝날 수 있다(등록 상태를 보고 안내를
+#              가른다). 그 뒤 ref CAS가 거부되면 worktree는 이미 제거된 상태에서
+#              브랜치만 남는다(복구 명령을 안내한다).
 #
 # guarded에서 강제 옵션을 쓰지 않는 이유: 호출자의 dirty 판정은 후보 수집 시점 값이라
 # 그 뒤 생긴 변경을 모른다. 비강제 remove는 정리되지 않은 변경이나 잠금이 있으면 git이
@@ -280,21 +298,19 @@ _remove_worktree() {
   canonical_wt_path="$(cd "$wt_path" && pwd -P)" || canonical_wt_path="$wt_path"
   session_name=$(_wt_session_name "$name")
 
+  # 복구 안내에 쓰는 shell-quoted 사본. 안내는 제거 실패와 ref 유지 두 곳에서 나오므로
+  # 한 번만 만들어 쓴다 — 따로 만들면 인용 규칙이 갈라진다.
+  local _safe_wt_path _safe_wt_branch
+  printf -v _safe_wt_path '%q' "$wt_path"
+  printf -v _safe_wt_branch '%q' "$branch"
+
   if [[ "$mode" == "guarded" ]]; then
     # 무확인 삭제에서는 worktree 제거 성공을 mutation 경계로 삼는다. tmux 창 종료와
     # plugin 등록 해제는 되돌릴 수 없어서, 그것들을 먼저 하고 나서 제거가 거부되면
-    # worktree는 남고 작업 문맥만 사라진 부분 정리가 된다. 제거를 앞에 두면 거부될 때
-    # 아무것도 건드리지 않은 상태로 끝난다 — lock·submodule처럼 미리 예측하기 어려운
-    # 거부 사유도 이 경계에서 함께 걸린다.
-    local now_head
-    if ! now_head=$(git -C "$wt_path" rev-parse HEAD 2>/dev/null); then
-      _warn "스킵: $name (HEAD를 읽지 못해 삭제 근거를 재확인할 수 없습니다)"
-      return 1
-    fi
-    if [[ "$now_head" != "$expected_oid" ]]; then
-      _warn "스킵: $name (삭제 판정 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
-      return 1
-    fi
+    # worktree는 남고 작업 문맥만 사라진 부분 정리가 된다. 제거를 앞에 두면 거부가
+    # 대부분 사전 검사에서 나므로 아무것도 건드리지 않은 채 끝난다 — lock·submodule처럼
+    # 미리 예측하기 어려운 거부 사유도 이 검사에 함께 걸린다.
+    #
     # 무확인 삭제에서는 대상 tmux 세션이 존재하는 것만으로 물러난다. 클라이언트 유무를
     # 확인해도 그 직후 attach할 수 있고, 세션 종료는 제거 뒤라(부분 정리 방지) 그 사이를
     # 막을 수단이 없다. idle shell은 활성 프로세스 가드에도 걸리지 않으므로, 위험을
@@ -312,9 +328,43 @@ _remove_worktree() {
         ;;
     esac
 
+    # 근거 재확인은 제거 직전에 둔다. tmux probe 같은 외부 호출은 시간이 걸리고, 그 사이
+    # HEAD나 체크아웃 브랜치가 바뀌면 확인한 적 없는 대상을 지우게 된다. 브랜치까지 보는
+    # 이유는 _wt_head_unchanged와 같다 — 같은 커밋을 가리키는 다른 브랜치로 전환되면 OID
+    # 비교만으로는 통과하고, 그 worktree를 지운 뒤 수집 시점 브랜치의 ref를 CAS 삭제한다.
+    local now_head now_branch
+    if ! now_head=$(git -C "$wt_path" rev-parse HEAD 2>/dev/null); then
+      _warn "스킵: $name (HEAD를 읽지 못해 삭제 근거를 재확인할 수 없습니다)"
+      return 1
+    fi
+    if [[ "$now_head" != "$expected_oid" ]]; then
+      _warn "스킵: $name (삭제 판정 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
+      return 1
+    fi
+    now_branch=$(_wt_branch "$wt_path")
+    if [[ "$now_branch" != "$branch" ]]; then
+      _warn "스킵: $name (삭제 판정 이후 체크아웃 브랜치가 바뀌었습니다 — 다시 실행해 확인하세요)"
+      return 1
+    fi
+
     if ! git -C "$git_root" worktree remove "$wt_path" 2>/dev/null; then
-      _warn "스킵: $name (worktree를 제거할 수 없습니다 — 정리되지 않은 변경, 잠금, submodule 등)"
-      _warn "  확인하고 강제로 지우려면: wt cleanup $(printf '%q' "$name") --yes"
+      # 실패를 무변경으로 단정하지 않는다 (위 _wt_worktree_registration_state 주석 참조).
+      case "$(_wt_worktree_registration_state "$git_root" "$wt_path" "$canonical_wt_path")" in
+        registered)
+          _warn "스킵: $name (worktree를 제거할 수 없습니다 — 정리되지 않은 변경, 잠금, submodule 등)"
+          _warn "  확인하고 강제로 지우려면: wt cleanup $(printf '%q' "$name") --yes"
+          ;;
+        absent)
+          _warn "부분 제거: $name (등록은 해제됐지만 경로 삭제가 끝나지 않았습니다)"
+          _warn "  남은 경로를 직접 확인하고 지우세요: ${_safe_wt_path}"
+          _warn "  브랜치 $branch 는 지우지 않았습니다 — 복구: git worktree add ${_safe_wt_path} ${_safe_wt_branch}"
+          ;;
+        *)
+          _warn "스킵: $name (worktree 제거가 실패했고 등록 상태도 확인하지 못했습니다)"
+          _warn "  경로와 등록을 함께 확인하세요: git worktree list --porcelain"
+          _warn "  브랜치 $branch 는 지우지 않았습니다"
+          ;;
+      esac
       return 1
     fi
 
@@ -346,11 +396,8 @@ _remove_worktree() {
       # 같은 OID를 가리키는 symbolic ref로 바뀌면 CAS는 통과하면서 엉뚱한 대상 브랜치를
       # 지울 수 있다. OID 비교는 값만 보고 ref의 정체성 변경은 못 잡는다.
       if ! git -C "$git_root" update-ref --no-deref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
-        local _safe_path _safe_branch
-        printf -v _safe_path '%q' "$wt_path"
-        printf -v _safe_branch '%q' "$branch"
         _warn "브랜치 유지: $branch (삭제 판정 이후 새 커밋이 생겨 ref를 지우지 않았습니다)"
-        _warn "  복구: git worktree add ${_safe_path} ${_safe_branch}"
+        _warn "  복구: git worktree add ${_safe_wt_path} ${_safe_wt_branch}"
         branch_kept=true
       fi
     else

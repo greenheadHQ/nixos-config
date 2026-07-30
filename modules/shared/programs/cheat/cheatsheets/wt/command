@@ -54,9 +54,11 @@ wt — Git worktree 관리 (fzf TUI, tmux 통합)
     강제 경로 — --yes, 개별 확인 통과, clean한 비-MERGED 이름 지정
       tmux 윈도우/세션 닫기 → git worktree remove --force → git branch -D
     보호 경로 — 확인 없이 지우는 MERGED
-      근거 OID 재확인 → tmux 세션 있으면 스킵 → git worktree remove (비강제)
+      tmux 세션 있으면 스킵 → 근거 OID·브랜치 재확인 → git worktree remove (비강제)
       → 부수 정리 → update-ref -d (CAS)
-      비강제 remove가 거부되면 아무것도 건드리지 않고 스킵 (여기가 mutation 경계)
+      비강제 remove가 사전 검사에서 거부되면 아무것도 건드리지 않고 스킵 (mutation 경계)
+      검사 통과 후 삭제가 실패하면 등록만 풀린 부분 제거일 수 있음 — 그 경우 남은 경로와
+      브랜치 복구 명령을 안내함
       그 뒤 CAS가 거부되면(새 커밋 발생) worktree는 이미 제거된 상태로 브랜치만 남김
       --yes는 이 보호를 해제하고 강제 경로로 보냄 (--auto의 후보 선정은 그대로)
   안전 가드: 현재 윈도우 / 마지막 윈도우는 닫지 않음

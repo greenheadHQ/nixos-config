@@ -498,6 +498,55 @@ EOF
   done
 }
 
+test_wt_remove_worktree_guarded_rechecks_branch_unit() {
+  # 무확인 삭제의 근거는 OID와 브랜치를 함께 묶는다. 그런데 후보 수집과 실제 제거 사이에는
+  # tmux probe 같은 외부 호출이 끼어들어 시간이 흐른다. 그 사이 같은 커밋을 가리키는 다른
+  # 브랜치로 전환되면 OID만 비교하는 재확인은 통과하고, 조회한 적 없는 브랜치의 worktree를
+  # 지운 뒤 수집 시점 브랜치의 ref를 CAS 삭제하게 된다. 제거 직전 재확인이 브랜치 정체성도
+  # 보는지 확인한다.
+  local sandbox repo wt_path recorded_oid
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  wt_path="$sandbox/wt"
+  mkdir -p "$repo"
+
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@example.invalid
+  git -C "$repo" config user.name t
+  git -C "$repo" commit -q --allow-empty -m first
+  git -C "$repo" worktree add -q "$wt_path" -b feature
+  recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
+
+  (
+    set -euo pipefail
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    # 이 테스트의 대상은 근거 재확인뿐이다. 삭제 경로의 나머지 부수 효과(helper 요구,
+    # tmux, plugin 등록)는 stub으로 걷어내 재확인 결과만 관찰한다.
+    _wt_require_state_helpers() { :; }
+    _wt_has_active_process() { return 1; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+
+    # 같은 OID의 다른 브랜치로 전환된 상태 → 제거를 거부해야 한다
+    git -C "$wt_path" switch -q -c sibling
+    ! _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 21
+    [[ -d "$wt_path" ]] || exit 22
+    git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 23
+
+    # 원래 브랜치로 돌아오면 근거가 다시 성립하므로 제거된다 (가드가 과잉 차단이 아님)
+    git -C "$wt_path" switch -q feature
+    _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 24
+    [[ ! -d "$wt_path" ]] || exit 25
+    ! git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 26
+  ) || fail "_remove_worktree guarded 브랜치 재확인이 기대와 다르게 동작 (exit $?)"
+}
+
 test_wt_head_unchanged_guard_unit() {
   # MERGED 판정은 조회 시점 HEAD를 근거로 하므로, 조회와 삭제 사이에 새 커밋이 생기면
   # 그 판정이 stale해진다. _wt_head_unchanged는 그 창을 닫는 가드이며, 확인 불가한
@@ -540,6 +589,14 @@ test_wt_head_unchanged_guard_unit() {
     # 빈 기록도 fail-closed
     : > "$head_file"
     ! _wt_head_unchanged "$repo" "$head_file" || exit 14
+
+    # 형식이 어긋난 기록은 브랜치 검사를 건너뛰는 우회로가 되므로 통과시키지 않는다.
+    # OID만 있는 기록 (구분자 없음)
+    git -C "$repo" rev-parse HEAD > "$head_file"
+    ! _wt_head_unchanged "$repo" "$head_file" || exit 17
+    # 브랜치가 빈 기록 (구분자는 있으나 값이 없음)
+    printf '%s \n' "$(git -C "$repo" rev-parse HEAD)" > "$head_file"
+    ! _wt_head_unchanged "$repo" "$head_file" || exit 18
   ) || fail "_wt_head_unchanged 가드가 기대와 다르게 동작 (exit $?)"
 }
 
