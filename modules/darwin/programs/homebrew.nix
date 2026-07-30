@@ -168,6 +168,7 @@ in
       #     nix run --inputs-from . nixpkgs#awscli2 -- --version
       brews = [
         "awscli" # AWS CLI v2 (aarch64 네이티브)
+        # playwright-cli: nixpkgs 미수록 (playwright/-driver/-mcp/-test만 존재). 수록되면 Nix로 환원한다.
         "playwright-cli" # AI 에이전트 브라우저 자동화 CLI (Playwright 기반, 토큰 효율적)
       ];
 

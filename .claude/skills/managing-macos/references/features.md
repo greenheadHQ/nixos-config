@@ -385,7 +385,9 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 
 > `cleanup = "none"`이므로 cask 목록에서 제거해도 기존 `/Applications/Figma.app`은 삭제되지 않습니다.
 
-### Brew Formula
+### Brew Formula (personal 전용)
+
+공통 formula(`awscli`, `playwright-cli`)는 위 "GUI 앱 (Homebrew Casks)" 절의 공통 블록 설명을 참조하세요.
 
 | Formula                    | 용도                              |
 | -------------------------- | --------------------------------- |
