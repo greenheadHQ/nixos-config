@@ -131,8 +131,12 @@ cmd_cleanup() {
   # 현재 위치한 worktree는 위 루프에서 제외된다 — 자기 자신을 지우면 셸의 cwd가
   # 사라지기 때문이다. 문제는 그 제외를 침묵하면 "정리했는데 왜 그대로냐"로 보인다는
   # 점이다 (#1186: finish-pr을 worktree 안에서 돌리면 --auto가 아무 말 없이 끝났다).
-  # 제외 사실과 해결 방법을 항상 알리고, 실제 정리 대상(MERGED)이면 경고 수준으로 올린다.
-  if [[ -n "$current_wt" ]]; then
+  # 제외 사실과 해결 방법을 알리고, 실제 정리 대상(MERGED)이면 경고 수준으로 올린다.
+  #
+  # 이름을 지정한 호출에서는 이 안내를 생략한다 — 지정한 이름이 현재 worktree면
+  # 아래 미매칭 분기가 같은 안내를 하므로, 여기서도 알리면 같은 재실행 명령이 두 번
+  # 출력된다. 안내 책임을 호출 형태별로 한쪽에만 둔다.
+  if [[ -n "$current_wt" ]] && (( ${#names_filter[@]} == 0 )); then
     local cur_name cur_pr
     cur_name=$(basename "$current_wt")
     cur_pr="NONE"
@@ -175,6 +179,12 @@ cmd_cleanup() {
       if git -C "$wt_path" rev-parse --abbrev-ref "@{upstream}" &>/dev/null \
         && _wt_has_unpushed "$wt_path"; then
         _info "스킵: $name (merge 후 추가 커밋 있음)"
+        continue
+      fi
+
+      # PR 조회와 삭제 사이에 새 커밋이 생겼으면 MERGED 판정이 stale하다 (git-state.sh).
+      if ! _wt_head_unchanged "$wt_path" "$_wt_cleanup_tmp/$name.head"; then
+        _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
         continue
       fi
 
@@ -278,6 +288,14 @@ cmd_cleanup() {
 
       _info "$warn_msg"
       _confirm "정말 삭제하시겠습니까?" || { _info "스킵: $name"; continue; }
+    fi
+
+    # MERGED는 확인 프롬프트를 건너뛰므로, 그 판정의 근거가 아직 유효한지 삭제 직전에
+    # 다시 본다 — 조회 이후 새 커밋이 생겼다면 사용자 확인 없이 지워선 안 된다.
+    if [[ "${item_pr[$found_idx]}" == "MERGED" ]] \
+      && ! _wt_head_unchanged "$wt_path" "$_wt_cleanup_tmp/$name.head"; then
+      _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
+      continue
     fi
 
     if _remove_worktree "$wt_path" "$branch" "$git_root"; then

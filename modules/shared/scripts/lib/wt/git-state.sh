@@ -102,6 +102,25 @@ _wt_has_unpushed_risk() {
   _wt_has_unpushed "$wt"
 }
 
+# MERGED 판정의 근거가 된 HEAD가 아직 그대로인지 확인한다 (TOCTOU 가드).
+#
+# PR 상태는 cleanup 시작 시 한 번 조회해 캐시한다. 그 사이에 worktree에 새 커밋이
+# 생기면 "MERGED = 잃을 커밋 없음"이라는 전제가 깨지는데, 캐시된 문자열만으로는
+# 알 수 없다. 대화형 선택처럼 조회와 삭제 사이가 길어질수록 창이 커진다.
+# 기록이 없거나 현재 HEAD를 못 읽으면 fail-closed로 false를 반환한다 —
+# 확인할 수 없으면 삭제하지 않는 쪽이 안전하다.
+_wt_head_unchanged() {
+  local wt="$1"
+  local recorded_file="$2"
+  [[ -f "$recorded_file" ]] || return 1
+
+  local recorded current
+  recorded=$(cat "$recorded_file" 2>/dev/null) || return 1
+  [[ -n "$recorded" ]] || return 1
+  current=$(git -C "$wt" rev-parse HEAD 2>/dev/null) || return 1
+  [[ "$recorded" == "$current" ]]
+}
+
 # PR 상태 조회 (gh CLI)
 # 인자: branch, git_root, [wt_path]
 # wt_path가 주어지면 branch name reuse 감지: MERGED PR의 headRefOid와
@@ -175,6 +194,12 @@ _fetch_pr_statuses() {
       local pr_status
       pr_status=$(_wt_pr_status "$branch" "$git_root" "$wt")
       echo "$pr_status" > "$tmp_dir/$name.pr"
+      # MERGED 판정은 그 시점의 HEAD를 근거로 한다 (reuse guard의 headRefOid 비교).
+      # 조회와 삭제 사이에 새 커밋이 생기면 그 판정이 stale해지므로, 근거가 된 HEAD를
+      # 함께 남겨 삭제 직전에 재확인할 수 있게 한다 (_wt_head_unchanged).
+      if [[ "$pr_status" == "MERGED" ]]; then
+        git -C "$wt" rev-parse HEAD > "$tmp_dir/$name.head" 2>/dev/null || true
+      fi
     ) &
     pids+=($!)
   done

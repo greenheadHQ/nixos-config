@@ -1,7 +1,8 @@
 # tests/suites/wt-cleanup.sh — 도메인 테스트 정의 (sourced; aggregator가 lib/test-common.sh 후 source)
 # shellcheck shell=bash
 # SC2154: 공통 변수는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
-# shellcheck disable=SC2154,SC2164
+# SC2153: REPO_ROOT도 같은 aggregator 정의 변수라 local repo_root 오타가 아니다.
+# shellcheck disable=SC2154,SC2164,SC2153
 add_stale_worktree() {
   # 손상(stale) worktree fixture: .git이 존재하지 않는 gitdir을 가리킨다 (사용자명
   # 마이그레이션 잔재 모사 — #883의 실제 트리거). 'aaa_broken'은 정렬상 feature_one보다
@@ -405,6 +406,47 @@ test_wt_cleanup_name_filter_current_worktree_reports_root_command() {
   assert_contains "$output" "현재 위치한 worktree라 여기서는 삭제할 수 없습니다: feature_one"
   assert_contains "$output" "저장소 루트에서 실행하세요"
   [[ -d "$target_path" ]] || fail "현재 worktree는 보존돼야 함: $target_path"
+
+  # 안내 책임이 공통 블록과 미매칭 분기에 중복되면 같은 재실행 명령이 두 번 나온다.
+  # 이름 지정 호출에서는 미매칭 분기 하나만 안내해야 한다.
+  local guide_count
+  guide_count=$(printf '%s\n' "$output" | grep -c "저장소 루트에서 실행하세요" || true)
+  [[ "$guide_count" == "1" ]] || fail "재실행 안내가 1회여야 하는데 ${guide_count}회 출력됨: $output"
+}
+
+test_wt_head_unchanged_guard_unit() {
+  # MERGED 판정은 조회 시점 HEAD를 근거로 하므로, 조회와 삭제 사이에 새 커밋이 생기면
+  # 그 판정이 stale해진다. _wt_head_unchanged는 그 창을 닫는 가드이며, 확인 불가한
+  # 입력(기록 없음/빈 기록/git 실패)에서는 fail-closed여야 한다.
+  local sandbox repo head_file
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  mkdir -p "$repo"
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@example.invalid
+  git -C "$repo" config user.name t
+  git -C "$repo" commit -q --allow-empty -m first
+  head_file="$sandbox/recorded.head"
+
+  (
+    set -euo pipefail
+    source "$REPO_ROOT/modules/shared/scripts/lib/wt/git-state.sh"
+
+    # 기록이 없으면 확인 불가 → fail-closed
+    ! _wt_head_unchanged "$repo" "$head_file" || exit 11
+
+    # 기록이 현재 HEAD와 같으면 통과
+    git -C "$repo" rev-parse HEAD > "$head_file"
+    _wt_head_unchanged "$repo" "$head_file" || exit 12
+
+    # 기록 이후 새 커밋이 생기면 차단
+    git -C "$repo" commit -q --allow-empty -m second
+    ! _wt_head_unchanged "$repo" "$head_file" || exit 13
+
+    # 빈 기록도 fail-closed
+    : > "$head_file"
+    ! _wt_head_unchanged "$repo" "$head_file" || exit 14
+  ) || fail "_wt_head_unchanged 가드가 기대와 다르게 동작 (exit $?)"
 }
 
 test_wt_cleanup_auto_reports_current_merged_exclusion() {
