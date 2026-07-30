@@ -147,7 +147,28 @@ in
       enable = true;
 
       # Homebrew Formula (CLI 도구) — 공통
+      #
+      # [일시적 Homebrew 우회 — upstream 수정 시 Nix로 환원]
+      # 아래 casks의 [Nix 전환이 불가능한 앱]과 달리, 이 항목은 영구 제약이 아니라
+      # upstream 버그가 고쳐지면 되돌리는 임시 예외다.
+      #
+      # awscli: nixpkgs darwin의 libffi(Apple libffi-40 기반)가 macOS 27에서 실행 불가.
+      #   nixpkgs는 purity를 위해 시스템 /usr/lib/libffi-trampolines.dylib 대신 자기 자신의
+      #   trampolines dylib을 dlopen하도록 closures.c를 패치하는데(postPatch의 /usr/lib → $out/lib),
+      #   그 dylib은 trampoline.S만으로 링크된 특수 형태라 macOS 27 dyld의 chained fixups 검증에
+      #   걸린다 ("seg_count exceeds number of segments"). dlopen이 실패하면 closures.c의
+      #   assert(trampoline_handle)에서 abort하므로, nix python의 ctypes/cffi 콜백을 쓰는 패키지가
+      #   통째로 죽는다 (awscli2·awscli v1 모두 `aws --version`조차 실행 불가).
+      #   nixpkgs-unstable에도 아직 수정이 없고, libffi overlay로 고치면 508개 파생물을 소스
+      #   빌드해야 해 이 저장소의 cache hit 최우선 정책(flake.nix CIR)과 충돌한다.
+      #   Homebrew bottle은 arm64 네이티브 + 시스템 dyld 경로라 정상 동작한다.
+      #   재검토(이슈 #1194): nixpkgs가 이 libffi 문제를 고치면 pkgs.awscli2로 되돌린다.
+      #   저장소 루트에서 아래를 실행해 버전이 출력되면 해결된 것이다. `--inputs-from .`이 없으면
+      #   flake registry의 nixpkgs를 평가해 이 저장소가 고정한 revision과 다른 것을 검사하게 된다:
+      #     nix run --inputs-from . nixpkgs#awscli2 -- --version
       brews = [
+        "awscli" # AWS CLI v2 (aarch64 네이티브)
+        # playwright-cli: nixpkgs 미수록 (playwright/-driver/-mcp/-test만 존재). 수록되면 Nix로 환원한다.
         "playwright-cli" # AI 에이전트 브라우저 자동화 CLI (Playwright 기반, 토큰 효율적)
       ];
 
