@@ -122,13 +122,18 @@ _wt_head_unchanged() {
 }
 
 # PR 상태 조회 (gh CLI)
-# 인자: branch, git_root, [wt_path]
+# 인자: branch, git_root, [wt_path], [verified_oid_out]
 # wt_path가 주어지면 branch name reuse 감지: MERGED PR의 headRefOid와
 # 현재 브랜치 HEAD를 비교하여, 다르면 NONE 반환 (동명의 다른 브랜치)
+#
+# verified_oid_out이 주어지면 MERGED 판정의 근거가 된 OID를 그 경로에 기록한다.
+# 반드시 "비교에 사용한 그 값"이어야 한다 — 판정 후 HEAD를 다시 읽으면 두 읽기
+# 사이에 생긴 커밋이 근거로 둔갑해, 삭제 직전 재검증이 그 커밋을 통과시킨다.
 _wt_pr_status() {
   local branch="$1"
   local git_root="$2"
   local wt_path="${3:-}"
+  local verified_oid_out="${4:-}"
 
   if ! command -v gh &>/dev/null; then
     echo "NONE"
@@ -155,6 +160,8 @@ _wt_pr_status() {
       echo "NONE"
       return
     fi
+    # 비교를 통과한 바로 그 OID를 근거로 남긴다 (여기서 HEAD를 다시 읽지 않는다).
+    [[ -n "$verified_oid_out" ]] && printf '%s\n' "$pr_head_oid" > "$verified_oid_out"
   fi
 
   case "$pr_state" in
@@ -191,15 +198,11 @@ _fetch_pr_statuses() {
     branch=$(_wt_branch "$wt")
     name=$(basename "$wt")
     (
+      # MERGED 판정의 근거가 된 OID를 _wt_pr_status가 직접 기록한다 — 판정 후 HEAD를
+      # 다시 읽으면 그 사이에 생긴 커밋이 근거로 둔갑해 삭제 직전 재검증을 통과한다.
       local pr_status
-      pr_status=$(_wt_pr_status "$branch" "$git_root" "$wt")
+      pr_status=$(_wt_pr_status "$branch" "$git_root" "$wt" "$tmp_dir/$name.head")
       echo "$pr_status" > "$tmp_dir/$name.pr"
-      # MERGED 판정은 그 시점의 HEAD를 근거로 한다 (reuse guard의 headRefOid 비교).
-      # 조회와 삭제 사이에 새 커밋이 생기면 그 판정이 stale해지므로, 근거가 된 HEAD를
-      # 함께 남겨 삭제 직전에 재확인할 수 있게 한다 (_wt_head_unchanged).
-      if [[ "$pr_status" == "MERGED" ]]; then
-        git -C "$wt" rev-parse HEAD > "$tmp_dir/$name.head" 2>/dev/null || true
-      fi
     ) &
     pids+=($!)
   done

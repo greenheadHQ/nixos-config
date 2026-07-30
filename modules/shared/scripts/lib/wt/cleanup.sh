@@ -13,6 +13,15 @@ _wt_warn_cleanup_from_root() {
   _warn "  저장소 루트에서 실행하세요: cd ${_safe_root} && wt cleanup ${_safe_name}"
 }
 
+# MERGED 판정의 근거가 아직 유효한지 확인하고, 무효면 경고까지 낸다.
+# 두 삭제 경로(auto·이름 지정)가 같은 안전 정책과 같은 문구를 쓰도록 한곳에 둔다.
+_wt_merged_head_still_valid() {
+  local wt_path="$1" head_file="$2" name="$3"
+  _wt_head_unchanged "$wt_path" "$head_file" && return 0
+  _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
+  return 1
+}
+
 cmd_cleanup() {
   local auto=false
   local names_filter=()
@@ -183,10 +192,7 @@ cmd_cleanup() {
       fi
 
       # PR 조회와 삭제 사이에 새 커밋이 생겼으면 MERGED 판정이 stale하다 (git-state.sh).
-      if ! _wt_head_unchanged "$wt_path" "$_wt_cleanup_tmp/$name.head"; then
-        _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
-        continue
-      fi
+      _wt_merged_head_still_valid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name" || continue
 
       _remove_worktree "$wt_path" "$branch" "$git_root" || _info "경고: $name 삭제 실패"
     done
@@ -292,10 +298,8 @@ cmd_cleanup() {
 
     # MERGED는 확인 프롬프트를 건너뛰므로, 그 판정의 근거가 아직 유효한지 삭제 직전에
     # 다시 본다 — 조회 이후 새 커밋이 생겼다면 사용자 확인 없이 지워선 안 된다.
-    if [[ "${item_pr[$found_idx]}" == "MERGED" ]] \
-      && ! _wt_head_unchanged "$wt_path" "$_wt_cleanup_tmp/$name.head"; then
-      _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
-      continue
+    if [[ "${item_pr[$found_idx]}" == "MERGED" ]]; then
+      _wt_merged_head_still_valid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name" || continue
     fi
 
     if _remove_worktree "$wt_path" "$branch" "$git_root"; then

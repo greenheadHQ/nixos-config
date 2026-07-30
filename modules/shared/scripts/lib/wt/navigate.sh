@@ -23,7 +23,15 @@ _wt_ls_json() {
     # JSON 키 unpushed는 "정리하면 잃을 커밋이 있는가"를 뜻한다 — squash merge 후 upstream이
     # 사라진 MERGED worktree를 미push로 오판하지 않도록 PR 상태로 보정한다 (git-state.sh).
     # 내부 변수는 그 의미대로 loss_risk로 두고, 기존 JSON 키는 아래 경계에서 매핑한다.
-    loss_risk=false; _wt_has_unpushed_risk "$wt" "$pr_status" && loss_risk=true
+    #
+    # 단 PR 상태는 조회 시점 스냅샷이라, 그 뒤 커밋이 생기면 MERGED 근거가 stale해진다.
+    # 출력 직전에 근거 OID와 현재 HEAD를 대조해, 어긋나면 raw 판정으로 되돌린다 —
+    # 그러지 않으면 잃을 커밋이 있는데도 unpushed:false를 보고하게 된다.
+    local effective_pr="$pr_status"
+    if [[ "$pr_status" == "MERGED" ]] && ! _wt_head_unchanged "$wt" "$tmp/$name.head"; then
+      effective_pr="NONE"
+    fi
+    loss_risk=false; _wt_has_unpushed_risk "$wt" "$effective_pr" && loss_risk=true
     is_current=false; [[ "$wt" == "$current_wt" ]] && is_current=true
     objs+=("$(jq -n \
       --arg name "$name" --arg branch "$branch" --arg path "$wt" \

@@ -2,7 +2,21 @@
 # shellcheck shell=bash
 # SC2154: 공통 변수는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
 # SC2153: REPO_ROOT도 같은 aggregator 정의 변수라 local repo_root 오타가 아니다.
-# shellcheck disable=SC2154,SC2164,SC2153
+# SC2030/SC2031: 단위 테스트가 subshell 안에서만 PATH를 바꾸는 것은 의도된 격리다.
+# shellcheck disable=SC2154,SC2164,SC2153,SC2030,SC2031
+# MERGED PR을 보고하는 gh mock. 여러 테스트가 같은 출력 프로토콜을 쓰므로 한곳에 둔다 —
+# `_wt_pr_status`가 파싱하는 형식("<STATE> <headRefOid>")이 바뀌면 이 함수만 고치면 된다.
+install_merged_pr_mock() {
+  local gh_dir="$1" head_oid="$2"
+  mkdir -p "$gh_dir"
+  cat > "$gh_dir/gh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'MERGED %s\n' "$head_oid"
+EOF
+  chmod +x "$gh_dir/gh"
+}
+
 add_stale_worktree() {
   # 손상(stale) worktree fixture: .git이 존재하지 않는 gitdir을 가리킨다 (사용자명
   # 마이그레이션 잔재 모사 — #883의 실제 트리거). 'aaa_broken'은 정렬상 feature_one보다
@@ -62,13 +76,7 @@ test_wt_cleanup_auto_removes_merged_worktree() {
   target_path="$repo_root/.claude/worktrees/feature_one"
   head_oid="$(git -C "$target_path" rev-parse HEAD)"
 
-  mkdir -p "$gh_dir"
-  cat > "$gh_dir/gh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'MERGED %s\n' "$head_oid"
-EOF
-  chmod +x "$gh_dir/gh"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
 
   output=$(
     HOME="$home_dir" \
@@ -100,13 +108,7 @@ test_wt_cleanup_auto_skips_dirty_merged_worktree() {
   head_oid="$(git -C "$target_path" rev-parse HEAD)"
   echo "dirty" > "$target_path/dirty.txt"
 
-  mkdir -p "$gh_dir"
-  cat > "$gh_dir/gh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'MERGED %s\n' "$head_oid"
-EOF
-  chmod +x "$gh_dir/gh"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
 
   output=$(
     HOME="$home_dir" \
@@ -143,13 +145,7 @@ test_wt_cleanup_auto_skips_unpushed_with_upstream() {
   git -C "$target_path" commit -m "ahead" >/dev/null 2>&1
   head_oid="$(git -C "$target_path" rev-parse HEAD)"
 
-  mkdir -p "$gh_dir"
-  cat > "$gh_dir/gh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'MERGED %s\n' "$head_oid"
-EOF
-  chmod +x "$gh_dir/gh"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
 
   output=$(
     HOME="$home_dir" \
@@ -218,13 +214,7 @@ test_wt_cleanup_auto_survives_stale_worktree() {
   head_oid="$(git -C "$target_path" rev-parse HEAD)"
   add_stale_worktree "$repo_root"
 
-  mkdir -p "$gh_dir"
-  cat > "$gh_dir/gh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'MERGED %s\n' "$head_oid"
-EOF
-  chmod +x "$gh_dir/gh"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
 
   rc=0
   output=$(
@@ -265,13 +255,7 @@ test_wt_cleanup_name_filter_survives_stale_worktree() {
   head_oid="$(git -C "$target_path" rev-parse HEAD)"
   add_stale_worktree "$repo_root"
 
-  mkdir -p "$gh_dir"
-  cat > "$gh_dir/gh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'MERGED %s\n' "$head_oid"
-EOF
-  chmod +x "$gh_dir/gh"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
 
   rc=0
   output=$(
@@ -352,13 +336,7 @@ test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm() {
   target_path="$repo_root/.claude/worktrees/feature_one"
   head_oid="$(git -C "$target_path" rev-parse HEAD)"
 
-  mkdir -p "$gh_dir"
-  cat > "$gh_dir/gh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'MERGED %s\n' "$head_oid"
-EOF
-  chmod +x "$gh_dir/gh"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
 
   output=$(
     HOME="$home_dir" \
@@ -414,6 +392,51 @@ test_wt_cleanup_name_filter_current_worktree_reports_root_command() {
   [[ "$guide_count" == "1" ]] || fail "재실행 안내가 1회여야 하는데 ${guide_count}회 출력됨: $output"
 }
 
+test_wt_pr_status_records_verified_oid_unit() {
+  # MERGED 판정의 근거는 "PR headRefOid == 그 시점 로컬 HEAD" 비교다. 그 비교에 사용한
+  # OID 자체를 기록해야 하며, 판정 후 HEAD를 다시 읽어서는 안 된다 — 두 읽기 사이에
+  # 생긴 커밋이 근거로 둔갑하면 삭제 직전 재검증이 그 커밋을 통과시킨다.
+  local sandbox repo gh_dir head_oid oid_file status
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  gh_dir="$sandbox/gh-bin"
+  mkdir -p "$repo"
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@example.invalid
+  git -C "$repo" config user.name t
+  git -C "$repo" commit -q --allow-empty -m first
+  git -C "$repo" remote add origin https://example.invalid/x.git
+  head_oid=$(git -C "$repo" rev-parse HEAD)
+  install_merged_pr_mock "$gh_dir" "$head_oid"
+  oid_file="$sandbox/verified.oid"
+
+  status=$(
+    set -euo pipefail
+    PATH="$gh_dir:$PATH"
+    source "$REPO_ROOT/modules/shared/scripts/lib/wt/git-state.sh"
+    _wt_pr_status "feature-one" "$repo" "$repo" "$oid_file"
+  )
+
+  [[ "$status" == "MERGED" ]] || fail "MERGED를 기대했으나 '$status'"
+  [[ -f "$oid_file" ]] || fail "검증에 사용한 OID가 기록되지 않음: $oid_file"
+  local recorded
+  recorded=$(cat "$oid_file")
+  [[ "$recorded" == "$head_oid" ]] || fail "기록된 OID가 검증값과 다름: recorded=$recorded expected=$head_oid"
+
+  # 브랜치 이름이 재사용된 경우(로컬 HEAD가 PR OID와 다름)는 NONE이며 근거를 남기지 않는다.
+  local reuse_oid_file reuse_status
+  reuse_oid_file="$sandbox/reuse.oid"
+  git -C "$repo" commit -q --allow-empty -m second
+  reuse_status=$(
+    set -euo pipefail
+    PATH="$gh_dir:$PATH"
+    source "$REPO_ROOT/modules/shared/scripts/lib/wt/git-state.sh"
+    _wt_pr_status "feature-one" "$repo" "$repo" "$reuse_oid_file"
+  )
+  [[ "$reuse_status" == "NONE" ]] || fail "재사용 브랜치는 NONE이어야 하는데 '$reuse_status'"
+  [[ ! -f "$reuse_oid_file" ]] || fail "NONE 판정에서 근거 OID를 남기면 안 됨: $reuse_oid_file"
+}
+
 test_wt_head_unchanged_guard_unit() {
   # MERGED 판정은 조회 시점 HEAD를 근거로 하므로, 조회와 삭제 사이에 새 커밋이 생기면
   # 그 판정이 stale해진다. _wt_head_unchanged는 그 창을 닫는 가드이며, 확인 불가한
@@ -466,13 +489,7 @@ test_wt_cleanup_auto_reports_current_merged_exclusion() {
   target_path="$repo_root/.claude/worktrees/feature_one"
   head_oid="$(git -C "$target_path" rev-parse HEAD)"
 
-  mkdir -p "$gh_dir"
-  cat > "$gh_dir/gh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'MERGED %s\n' "$head_oid"
-EOF
-  chmod +x "$gh_dir/gh"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
 
   output=$(
     env -u TMUX \
