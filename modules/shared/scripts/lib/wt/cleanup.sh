@@ -15,15 +15,17 @@ _wt_warn_cleanup_from_root() {
 
 # 사용자 확인을 건너뛰는 삭제(guarded)에 쓸 근거 OID를 stdout으로 반환한다.
 # 재확인에 실패하면 경고 후 1을 반환해 호출자가 건너뛰게 한다 — 근거를 확인할 수
-# 없으면 지우지 않는다(fail-closed). 실패 원인에는 HEAD 변경뿐 아니라 근거 기록
-# 부재·읽기 실패도 포함된다. 두 삭제 경로가 같은 검증·문구·실패 처리를 쓰도록 한곳에 둔다.
+# 없으면 지우지 않는다(fail-closed). 실패 원인은 새 커밋(OID 변경), 같은 커밋에서의
+# 체크아웃 브랜치 전환, 근거 기록 부재·형식 위반·읽기 실패를 모두 포함한다 — 근거는
+# `<oid> <branch>` 둘 다이기 때문이다(git-state.sh의 `_wt_head_unchanged`).
+# 두 삭제 경로가 같은 검증·문구·실패 처리를 쓰도록 한곳에 둔다.
 _wt_guarded_delete_oid() {
   local wt_path="$1" head_file="$2" name="$3"
   local recorded oid
   recorded=$(cat "$head_file" 2>/dev/null || true)
   oid="${recorded%% *}"   # 기록 형식은 "<oid> <branch>" (git-state.sh)
   if [[ -z "$oid" ]] || ! _wt_head_unchanged "$wt_path" "$head_file"; then
-    _warn "스킵: $name (MERGED 근거를 재확인하지 못했습니다 — HEAD 변경 또는 근거 기록 유실. 다시 실행하세요)"
+    _warn "스킵: $name (MERGED 근거를 재확인하지 못했습니다 — 새 커밋이나 브랜치 전환, 또는 근거 기록 유실. 다시 실행하세요)"
     return 1
   fi
   printf '%s' "$oid"
