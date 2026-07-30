@@ -504,22 +504,25 @@ test_wt_remove_worktree_guarded_rechecks_branch_unit() {
   # 브랜치로 전환되면 OID만 비교하는 재확인은 통과하고, 조회한 적 없는 브랜치의 worktree를
   # 지운 뒤 수집 시점 브랜치의 ref를 CAS 삭제하게 된다. 제거 직전 재확인이 브랜치 정체성도
   # 보는지 확인한다.
-  local sandbox repo wt_path recorded_oid
+  local sandbox repo wt_path
   sandbox=$(new_sandbox)
   repo="$sandbox/repo"
   wt_path="$sandbox/wt"
   mkdir -p "$repo"
 
-  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-  git -C "$repo" init -q
-  git -C "$repo" config user.email t@example.invalid
-  git -C "$repo" config user.name t
-  git -C "$repo" commit -q --allow-empty -m first
-  git -C "$repo" worktree add -q "$wt_path" -b feature
-  recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
-
   (
     set -euo pipefail
+    # git 격리 환경은 이 subshell 안으로 한정한다 — 함수 스코프에서 export하면 순차 실행
+    # 모드에서 뒤따르는 테스트의 git 동작까지 바꾼다.
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feature
+    local recorded_oid
+    recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
+
     for helper in ui git-state tmux bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
@@ -552,23 +555,25 @@ test_wt_remove_worktree_guarded_keeps_reused_branch_unit() {
   # `git branch -D`와 달리 다른 worktree가 사용 중인 브랜치도 지운다. worktree 제거와
   # ref 삭제 사이에 다른 wt 실행이 같은 브랜치를 새 worktree에 체크아웃하면(커밋이 없어
   # OID는 그대로라 CAS도 통과한다) 사용 중인 ref가 사라진다. 그 창을 닫았는지 확인한다.
-  local sandbox repo wt_path reused_path recorded_oid
+  local sandbox repo wt_path reused_path
   sandbox=$(new_sandbox)
   repo="$sandbox/repo"
   wt_path="$sandbox/wt"
   reused_path="$sandbox/wt-reused"
   mkdir -p "$repo"
 
-  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-  git -C "$repo" init -q
-  git -C "$repo" config user.email t@example.invalid
-  git -C "$repo" config user.name t
-  git -C "$repo" commit -q --allow-empty -m first
-  git -C "$repo" worktree add -q "$wt_path" -b feature
-  recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
-
   (
     set -euo pipefail
+    # git 격리 환경은 이 subshell 안으로 한정한다 (위 테스트와 같은 이유).
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feature
+    local recorded_oid
+    recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
+
     for helper in ui git-state tmux bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
@@ -594,25 +599,27 @@ test_wt_remove_worktree_guarded_clears_branch_config_unit() {
   # porcelain `git branch -D`는 ref와 함께 branch.<name> 설정 섹션도 지운다. plumbing
   # 삭제는 ref만 지우므로, 정리한 뒤에도 낡은 upstream·rebase 설정이 남아 같은 이름의
   # 새 브랜치가 그것을 물려받는다. guarded가 그 정리까지 하는지 확인한다.
-  local sandbox repo wt_path recorded_oid leftover
+  local sandbox repo wt_path leftover
   sandbox=$(new_sandbox)
   repo="$sandbox/repo"
   wt_path="$sandbox/wt"
   mkdir -p "$repo"
 
-  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-  git -C "$repo" init -q
-  git -C "$repo" config user.email t@example.invalid
-  git -C "$repo" config user.name t
-  git -C "$repo" commit -q --allow-empty -m first
-  git -C "$repo" worktree add -q "$wt_path" -b feature
-  git -C "$repo" config branch.feature.remote origin
-  git -C "$repo" config branch.feature.merge refs/heads/feature
-  git -C "$repo" config branch.feature.rebase true
-  recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
-
   (
     set -euo pipefail
+    # git 격리 환경은 이 subshell 안으로 한정한다 (위 테스트와 같은 이유).
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feature
+    git -C "$repo" config branch.feature.remote origin
+    git -C "$repo" config branch.feature.merge refs/heads/feature
+    git -C "$repo" config branch.feature.rebase true
+    local recorded_oid
+    recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
+
     for helper in ui git-state tmux bootstrap; do
       # shellcheck source=/dev/null
       source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
@@ -628,7 +635,9 @@ test_wt_remove_worktree_guarded_clears_branch_config_unit() {
     ! git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 42
   ) || fail "_remove_worktree guarded 삭제가 실패 (exit $?)"
 
-  leftover=$(git -C "$repo" config --get-regexp '^branch\.feature\.' 2>/dev/null || true)
+  # 이 조회도 같은 격리를 쓴다 — global config가 섞이면 잔존 판정이 흔들린다.
+  leftover=$(env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo" config --get-regexp '^branch\.feature\.' 2>/dev/null || true)
   [[ -z "$leftover" ]] || fail "guarded 삭제 후 branch.feature 설정이 남음: $leftover"
 }
 
