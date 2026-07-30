@@ -516,16 +516,26 @@ test_wt_head_unchanged_guard_unit() {
     set -euo pipefail
     source "$REPO_ROOT/modules/shared/scripts/lib/wt/git-state.sh"
 
+    local branch
+    branch=$(git -C "$repo" branch --show-current)
+
     # 기록이 없으면 확인 불가 → fail-closed
     ! _wt_head_unchanged "$repo" "$head_file" || exit 11
 
-    # 기록이 현재 HEAD와 같으면 통과
-    git -C "$repo" rev-parse HEAD > "$head_file"
+    # 기록(<oid> <branch>)이 현재 상태와 같으면 통과
+    printf '%s %s\n' "$(git -C "$repo" rev-parse HEAD)" "$branch" > "$head_file"
     _wt_head_unchanged "$repo" "$head_file" || exit 12
 
     # 기록 이후 새 커밋이 생기면 차단
     git -C "$repo" commit -q --allow-empty -m second
     ! _wt_head_unchanged "$repo" "$head_file" || exit 13
+
+    # OID가 같아도 다른 브랜치로 전환됐으면 차단 — 근거는 브랜치 정체성까지 포함한다
+    printf '%s %s\n' "$(git -C "$repo" rev-parse HEAD)" "$branch" > "$head_file"
+    git -C "$repo" switch -q -c other-branch
+    ! _wt_head_unchanged "$repo" "$head_file" || exit 15
+    git -C "$repo" switch -q "$branch"
+    _wt_head_unchanged "$repo" "$head_file" || exit 16
 
     # 빈 기록도 fail-closed
     : > "$head_file"

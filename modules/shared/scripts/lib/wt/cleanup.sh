@@ -19,8 +19,9 @@ _wt_warn_cleanup_from_root() {
 # 부재·읽기 실패도 포함된다. 두 삭제 경로가 같은 검증·문구·실패 처리를 쓰도록 한곳에 둔다.
 _wt_guarded_delete_oid() {
   local wt_path="$1" head_file="$2" name="$3"
-  local oid
-  oid=$(cat "$head_file" 2>/dev/null || true)
+  local recorded oid
+  recorded=$(cat "$head_file" 2>/dev/null || true)
+  oid="${recorded%% *}"   # 기록 형식은 "<oid> <branch>" (git-state.sh)
   if [[ -z "$oid" ]] || ! _wt_head_unchanged "$wt_path" "$head_file"; then
     _warn "스킵: $name (MERGED 근거를 재확인하지 못했습니다 — HEAD 변경 또는 근거 기록 유실. 다시 실행하세요)"
     return 1
@@ -318,7 +319,7 @@ cmd_cleanup() {
     local name
     name=$(basename "$wt_path")
 
-    # 삭제 정책은 PR 상태가 아니라 "사용자가 이 삭제의 위험을 인지했는가"로 갈린다.
+    # MERGED 대상의 제거 전략은 "사용자가 이 삭제의 위험을 인지했는가"로 갈린다.
     # 인지한 경우(확인 프롬프트 통과 또는 --yes)는 기존대로 강제 삭제하고, 위험을
     # 알릴 기회가 없었던 경우에만 guarded로 보호한다.
     #

@@ -95,19 +95,19 @@ _wt_has_unpushed() {
 # "머지된 PR의 headRefOid == 로컬 HEAD"까지 확인한 결과다. 즉 로컬에만 있는
 # 커밋이 없음이 이미 보장되므로, 잃을 것이 없어 경고 대상에서 제외한다.
 # MERGED가 아니면 기존 보수적 판정을 그대로 유지한다.
-# 인자: wt, pr_status, [head_file]
+# 인자: wt, pr_status, head_file (셋 다 필수)
 #
-# head_file을 주면 근거 유효성 보정까지 이 함수가 수행한다 — 소비자가 먼저
-# `_wt_effective_pr_status`를 부르는 두 단계 프로토콜은 그 순서를 아는 사람만 안전하고,
-# 새 소비자가 raw 캐시 상태를 그대로 넘기면 검증되지 않았거나 낡은 MERGED를 "손실 없음"
-# 으로 오판한다. 근거 파일 없이 호출하면 문자열만 보고 판정한다(구 계약).
+# 근거 파일을 반드시 받아 유효성 보정까지 이 함수가 수행한다. 선택 인자로 두면
+# "근거 없이 문자열만 보고 판정"하는 우회 경로가 남고, 그것을 쓴 소비자는 검증되지
+# 않았거나 낡은 MERGED를 "손실 없음"으로 오판한다 — 파괴적 정리의 입력이라 그 여지를
+# 남기지 않는다. 정말 비검증 판정이 필요해지면 의미가 드러나는 별도 helper를 만든다.
 _wt_has_unpushed_risk() {
   local wt="$1"
   local pr_status="${2:-NONE}"
-  local head_file="${3:-}"
+  local head_file="$3"
 
-  local effective="$pr_status"
-  [[ -n "$head_file" ]] && effective=$(_wt_effective_pr_status "$wt" "$pr_status" "$head_file")
+  local effective
+  effective=$(_wt_effective_pr_status "$wt" "$pr_status" "$head_file")
 
   [[ "$effective" == "MERGED" ]] && return 1
   _wt_has_unpushed "$wt"
@@ -139,11 +139,25 @@ _wt_head_unchanged() {
   local recorded_file="$2"
   [[ -f "$recorded_file" ]] || return 1
 
-  local recorded current
+  # 기록 형식: "<oid> <branch>". OID만으로는 부족하다 — 같은 커밋을 가리키는 다른
+  # 브랜치로 전환되면 OID 비교는 통과하고, 그 상태로 삭제하면 조회한 적 없는 브랜치의
+  # ref를 지운다. 근거를 브랜치 정체성까지 묶어야 "그때 그 브랜치"임이 보장된다.
+  local recorded recorded_oid recorded_branch current_oid current_branch
   recorded=$(cat "$recorded_file" 2>/dev/null) || return 1
   [[ -n "$recorded" ]] || return 1
-  current=$(git -C "$wt" rev-parse HEAD 2>/dev/null) || return 1
-  [[ "$recorded" == "$current" ]]
+  recorded_oid="${recorded%% *}"
+  recorded_branch="${recorded#* }"
+  [[ -n "$recorded_oid" ]] || return 1
+
+  current_oid=$(git -C "$wt" rev-parse HEAD 2>/dev/null) || return 1
+  [[ "$recorded_oid" == "$current_oid" ]] || return 1
+
+  # 브랜치가 기록돼 있으면(형식상 항상 기록된다) 정체성도 확인한다.
+  if [[ "$recorded_branch" != "$recorded" ]]; then
+    current_branch=$(_wt_branch "$wt")
+    [[ "$recorded_branch" == "$current_branch" ]] || return 1
+  fi
+  return 0
 }
 
 # PR 상태 조회 (gh CLI)
@@ -240,7 +254,9 @@ _fetch_pr_statuses() {
       verified_oid=""
       [[ "$raw" == "$pr_status "* ]] && verified_oid="${raw#"$pr_status" }"
       echo "$pr_status" > "$tmp_dir/$name.pr"
-      [[ -n "$verified_oid" ]] && printf '%s\n' "$verified_oid" > "$tmp_dir/$name.head"
+      # 근거는 "<oid> <branch>"로 남긴다 — OID만 남기면 같은 커밋의 다른 브랜치로
+      # 전환된 경우를 구분하지 못한다 (_wt_head_unchanged 참조).
+      [[ -n "$verified_oid" ]] && printf '%s %s\n' "$verified_oid" "$branch" > "$tmp_dir/$name.head"
     ) &
     pids+=($!)
   done
