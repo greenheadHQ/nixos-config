@@ -197,7 +197,15 @@ cmd_cleanup() {
         continue
       fi
 
-      # --auto는 사용자 확인 없이 지우므로 guarded 모드다 (비강제 제거 + ref CAS).
+      # --auto는 사용자 확인 없이 지우므로 기본이 guarded다 (비강제 제거 + ref CAS).
+      # 단 --yes는 "위험을 알고 우회한다"는 선언이므로 여기서도 forced로 보낸다 —
+      # 이름 지정 경로에만 적용하면 문서가 약속한 escape hatch가 auto에서 동작하지 않는다.
+      if [[ -n "${WT_ASSUME_YES:-}" ]]; then
+        _remove_worktree "$wt_path" "$branch" "$git_root" "forced" \
+          || _info "경고: $name 삭제 실패"
+        continue
+      fi
+
       local verified_oid
       verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name") || continue
       _remove_worktree "$wt_path" "$branch" "$git_root" "guarded" "$verified_oid" \

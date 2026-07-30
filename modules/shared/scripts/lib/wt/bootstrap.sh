@@ -227,11 +227,13 @@ _open_worktree() {
 #   _remove_worktree <wt_path> <branch> <git_root> forced
 #   _remove_worktree <wt_path> <branch> <git_root> guarded <expected_oid>
 #
-# mode는 "사용자가 이 삭제의 위험을 인지했는가"를 나타내며 삭제 정책을 결정한다:
-#   forced   — 확인 프롬프트를 통과했거나 `--yes`로 우회했거나 기존 동작 경로.
-#              강제 제거와 `branch -D`를 그대로 쓴다. 잃을 것을 알고 요청한 삭제다.
-#   guarded  — 위험을 알릴 기회가 없던 삭제(MERGED 판정 기반). expected_oid가 필수이며
-#              비강제 제거 + ref CAS만 사용해, 인지 없이는 아무것도 잃지 않는다.
+# mode는 제거 전략을 고른다. "승인 여부"를 직접 뜻하지 않는다 — 어떤 전략을 쓸지는
+# 호출자가 정책으로 판단하며, 이 함수는 그 결정을 실행만 한다:
+#   forced   — 강제 제거(`--force`, 실패 시 `rm -rf`)와 `branch -D`. 되돌릴 수 없다.
+#              호출자가 쓰는 경우: 확인 프롬프트 통과, `--yes`, 그리고 clean한
+#              비-MERGED를 이름으로 지정한 기존 경로.
+#   guarded  — 비강제 제거 + ref CAS. expected_oid가 필수다. 거부되면 아무것도 잃지 않는다.
+#              호출자가 쓰는 경우: 위험을 알릴 기회가 없던 MERGED 무확인 삭제.
 #
 # guarded에서 강제 옵션을 쓰지 않는 이유: 호출자의 dirty 판정은 후보 수집 시점 값이라
 # 그 뒤 생긴 변경을 모른다. 비강제 remove는 정리되지 않은 변경이나 잠금이 있으면 git이
@@ -290,11 +292,12 @@ _remove_worktree() {
       _warn "스킵: $name (삭제 판정 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
       return 1
     fi
-    # 연결된 tmux 세션 보호는 제거 전에 판정해야 한다. 세션 종료는 제거 뒤로 미뤘지만
-    # (부분 정리 방지), 그 실패를 사후에 알기만 하면 사용자가 붙어 있는 세션의 cwd를
-    # 지워버린다. idle shell은 활성 프로세스 가드에 걸리지 않으므로 여기서 fail-closed로 막는다.
-    if _wt_tmux_session_has_clients "$session_name"; then
-      _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
+    # 무확인 삭제에서는 대상 tmux 세션이 존재하는 것만으로 물러난다. 클라이언트 유무를
+    # 확인해도 그 직후 attach할 수 있고, 세션 종료는 제거 뒤라(부분 정리 방지) 그 사이를
+    # 막을 수단이 없다. idle shell은 활성 프로세스 가드에도 걸리지 않으므로, 위험을
+    # 알릴 기회가 없던 삭제에서는 세션 자체를 스킵 조건으로 삼는 편이 안전하다.
+    if tmux has-session -t "=$session_name" 2>/dev/null; then
+      _info "스킵: $name — tmux 세션이 남아 있습니다 (세션 종료 후 다시 실행하거나 --yes)"
       return 1
     fi
 
@@ -311,8 +314,9 @@ _remove_worktree() {
     _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" \
       || _warn "참고: $name — Claude local plugin 등록을 정리하지 못했습니다"
   else
-    # 승인된 삭제는 기존 순서를 유지한다 — 강제 제거라 거부되지 않으므로 부수 정리를
-    # 먼저 해도 부분 정리로 끝나지 않는다.
+    # forced는 기존 순서를 유지한다 — 강제 제거라 거부되지 않으므로 부수 정리를 먼저 해도
+    # 부분 정리로 끝나지 않는다. 호출자가 승인을 받은 경우와 clean 비-MERGED 기존 경로가
+    # 모두 여기로 온다.
     _wt_tmux_close "$wt_path" || true
     _wt_tmux_session_close "$session_name" || {
       _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
