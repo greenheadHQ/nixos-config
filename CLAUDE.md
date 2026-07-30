@@ -26,7 +26,7 @@ home-manager activation 충돌 정책: macOS에서 mkOutOfStoreSymlink target이
 
 - 생성: `wt <branch>`. 기존 worktree/브랜치와 충돌하면 비대화형은 **안전하게 실패**하므로 의도를 `--if-exists=reuse|recreate|fail`로 명시한다.
 - 이동: 비대화형은 cd 불가 — 경로를 stdout으로 출력하므로 `cd "$(wt cd <name>)"`로 쓴다. 인자 없는 `wt cd`는 실패하니 이름을 지정한다.
-- 목록: `wt ls --json` (name/branch/path/pr/dirty/unpushed/current/committedAt/age 구조화 출력, jq 파싱용). `unpushed`는 "정리하면 잃을 커밋이 있는가"를 뜻한다 — squash merge로 원격 브랜치가 사라져 upstream이 없어도 PR이 MERGED면 `false`다 (판정 근거는 `lib/wt/git-state.sh`의 `_wt_has_unpushed_risk`).
+- 목록: `wt ls --json` (name/branch/path/pr/dirty/unpushed/current/committedAt/age 구조화 출력, jq 파싱용). `unpushed`는 "정리하면 잃을 커밋이 있는가"를 뜻한다 — squash merge로 원격 브랜치가 사라져 upstream이 없어도, PR이 MERGED이고 그 판정 근거인 OID가 현재 HEAD와 일치하는 동안에는 `false`다 (`lib/wt/git-state.sh`의 `_wt_has_unpushed_risk`). `pr`은 조회 시점 스냅샷이라, 조회 뒤 새 커밋이 생기면 `pr: "MERGED"`와 `unpushed: true`가 함께 나올 수 있다 — 근거가 낡았다는 정상 신호이지 결함이 아니다.
 - 정리: `wt cleanup --auto` (MERGED 자동) 또는 `wt cleanup <name>...` (이름 지정). dirty/unpushed 확인 우회는 `--yes`. **정리 대상 worktree 밖(저장소 루트)에서 실행한다** — 자기 자신은 삭제 시 셸의 cwd가 사라지므로 항상 제외되며, 이때 `wt`가 그 사실과 재실행 명령을 알린다.
 
 **워크트리에서 git hook 파일을 직접 쓰지 않는다.** direnv/`nrs`가 그 워크트리의 `core.hooksPath`를 고정하기 전에는 `git rev-parse --git-path hooks`가 **메인 repo의 `.git/hooks`** 로 해석된다. 그 경로에 쓰면 메인 repo의 hook을 덮어써 이후 모든 커밋이 막힐 수 있다 (#1073에서 관측된 경로). hook 동작을 확인해야 하면 `tests/suites/lefthook.sh`의 격리 fixture(`create_install_lefthook_fixture`)를 쓴다. 이미 덮어썼다면 그 hook 파일을 지운 뒤 direnv를 다시 진입한다 — `lefthook.yml`이 정의하는 hook은 `lefthook install`이 다시 쓴다. 다만 `<hook>.old`가 이미 있으면 lefthook이 백업 rename에 실패해 install이 죽으므로, 그때는 `<hook>`과 `<hook>.old`를 함께 지운다.

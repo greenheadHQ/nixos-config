@@ -122,18 +122,18 @@ _wt_head_unchanged() {
 }
 
 # PR 상태 조회 (gh CLI)
-# 인자: branch, git_root, [wt_path], [verified_oid_out]
+# 인자: branch, git_root, [wt_path]
 # wt_path가 주어지면 branch name reuse 감지: MERGED PR의 headRefOid와
 # 현재 브랜치 HEAD를 비교하여, 다르면 NONE 반환 (동명의 다른 브랜치)
 #
-# verified_oid_out이 주어지면 MERGED 판정의 근거가 된 OID를 그 경로에 기록한다.
-# 반드시 "비교에 사용한 그 값"이어야 한다 — 판정 후 HEAD를 다시 읽으면 두 읽기
+# stdout: "<STATE>", 단 MERGED는 "MERGED <verified_oid>"로 근거 OID를 함께 반환한다.
+# 그 OID는 반드시 "비교에 사용한 그 값"이다 — 판정 후 HEAD를 다시 읽으면 두 읽기
 # 사이에 생긴 커밋이 근거로 둔갑해, 삭제 직전 재검증이 그 커밋을 통과시킨다.
+# 저장은 호출자(_fetch_pr_statuses)가 전담한다 — 조회 함수는 캐시 경로를 모른다.
 _wt_pr_status() {
   local branch="$1"
   local git_root="$2"
   local wt_path="${3:-}"
-  local verified_oid_out="${4:-}"
 
   if ! command -v gh &>/dev/null; then
     echo "NONE"
@@ -160,8 +160,9 @@ _wt_pr_status() {
       echo "NONE"
       return
     fi
-    # 비교를 통과한 바로 그 OID를 근거로 남긴다 (여기서 HEAD를 다시 읽지 않는다).
-    [[ -n "$verified_oid_out" ]] && printf '%s\n' "$pr_head_oid" > "$verified_oid_out"
+    # 비교를 통과한 바로 그 OID를 근거로 반환한다 (여기서 HEAD를 다시 읽지 않는다).
+    echo "MERGED $pr_head_oid"
+    return
   fi
 
   case "$pr_state" in
@@ -198,11 +199,15 @@ _fetch_pr_statuses() {
     branch=$(_wt_branch "$wt")
     name=$(basename "$wt")
     (
-      # MERGED 판정의 근거가 된 OID를 _wt_pr_status가 직접 기록한다 — 판정 후 HEAD를
-      # 다시 읽으면 그 사이에 생긴 커밋이 근거로 둔갑해 삭제 직전 재검증을 통과한다.
-      local pr_status
-      pr_status=$(_wt_pr_status "$branch" "$git_root" "$wt" "$tmp_dir/$name.head")
+      # _wt_pr_status는 MERGED일 때 "MERGED <verified_oid>"를 반환한다. 상태와 근거
+      # OID를 분리해 저장하는 책임은 여기(캐시 소유자)에 둔다.
+      local raw pr_status verified_oid
+      raw=$(_wt_pr_status "$branch" "$git_root" "$wt")
+      pr_status="${raw%% *}"
+      verified_oid=""
+      [[ "$raw" == "$pr_status "* ]] && verified_oid="${raw#"$pr_status" }"
       echo "$pr_status" > "$tmp_dir/$name.pr"
+      [[ -n "$verified_oid" ]] && printf '%s\n' "$verified_oid" > "$tmp_dir/$name.head"
     ) &
     pids+=($!)
   done

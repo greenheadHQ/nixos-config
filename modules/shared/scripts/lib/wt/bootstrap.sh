@@ -223,8 +223,16 @@ _open_worktree() {
 
 # ── worktree 제거 (tmux 윈도우 포함) ─────────────────────────────────────────
 
+# 인자: wt_path, branch, git_root, [expected_oid]
+#
+# expected_oid가 주어지면 브랜치 삭제를 그 값에 대한 compare-and-swap으로 수행한다.
+# 호출자가 "지워도 안전하다"고 판정한 시점과 실제 삭제 사이에는 항상 창이 있고
+# (아래 tmux·플러그인 정리 단계만큼 길어진다), 그 사이 새 커밋이 생기면 `branch -D`는
+# 그것까지 지워버린다. `update-ref -d <ref> <oid>`는 ref가 그 OID일 때만 지우므로,
+# 창 안에서 커밋이 생기면 삭제가 실패하고 커밋이 브랜치에 남는다 — worktree 디렉토리가
+# 사라져도 `git worktree add`로 되살릴 수 있다.
 _remove_worktree() {
-  local wt_path="$1" branch="$2" git_root="$3"
+  local wt_path="$1" branch="$2" git_root="$3" expected_oid="${4:-}"
   local name
   name=$(basename "$wt_path")
 
@@ -263,7 +271,17 @@ _remove_worktree() {
 
   # 브랜치 삭제 (detached가 아닌 경우)
   if [[ "$branch" != "detached" ]]; then
-    git -C "$git_root" branch -D "$branch" 2>/dev/null || true
+    if [[ -n "$expected_oid" ]]; then
+      if ! git -C "$git_root" update-ref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
+        _warn "브랜치 유지: $branch (삭제 판정 이후 새 커밋이 생겨 ref를 지우지 않았습니다)"
+        _warn "  복구: git worktree add ${wt_path} ${branch}"
+        _info "삭제: $name (worktree만)"
+        "$HOME/.local/bin/nrs-relink" fix-dangling >/dev/null 2>&1 || true
+        return 0
+      fi
+    else
+      git -C "$git_root" branch -D "$branch" 2>/dev/null || true
+    fi
   fi
 
   _info "삭제: $name ($branch)"

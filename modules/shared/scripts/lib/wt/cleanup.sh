@@ -194,7 +194,11 @@ cmd_cleanup() {
       # PR 조회와 삭제 사이에 새 커밋이 생겼으면 MERGED 판정이 stale하다 (git-state.sh).
       _wt_merged_head_still_valid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name" || continue
 
-      _remove_worktree "$wt_path" "$branch" "$git_root" || _info "경고: $name 삭제 실패"
+      # 검증한 OID를 넘겨 브랜치 삭제를 CAS로 만든다 — 이 확인과 실제 삭제 사이에도
+      # 창이 남으므로, 그 안에서 커밋이 생기면 ref가 지워지지 않아야 한다.
+      local verified_oid=""
+      [[ -f "$_wt_cleanup_tmp/$name.head" ]] && verified_oid=$(cat "$_wt_cleanup_tmp/$name.head" 2>/dev/null || true)
+      _remove_worktree "$wt_path" "$branch" "$git_root" "$verified_oid" || _info "경고: $name 삭제 실패"
     done
 
     git worktree prune 2>/dev/null || true
@@ -302,7 +306,12 @@ cmd_cleanup() {
       _wt_merged_head_still_valid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name" || continue
     fi
 
-    if _remove_worktree "$wt_path" "$branch" "$git_root"; then
+    # MERGED로 확인을 건너뛴 항목은 검증 OID를 넘겨 브랜치 삭제를 CAS로 만든다.
+    # 그 외(사용자가 확인한 dirty/미push)는 기존대로 강제 삭제한다 — 사용자가 이미
+    # 잃을 것을 알고 승인한 경로다.
+    local verified_oid=""
+    [[ -f "$_wt_cleanup_tmp/$name.head" ]] && verified_oid=$(cat "$_wt_cleanup_tmp/$name.head" 2>/dev/null || true)
+    if _remove_worktree "$wt_path" "$branch" "$git_root" "$verified_oid"; then
       removed=$((removed + 1))
     fi
   done

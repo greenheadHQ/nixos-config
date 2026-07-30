@@ -392,11 +392,11 @@ test_wt_cleanup_name_filter_current_worktree_reports_root_command() {
   [[ "$guide_count" == "1" ]] || fail "재실행 안내가 1회여야 하는데 ${guide_count}회 출력됨: $output"
 }
 
-test_wt_pr_status_records_verified_oid_unit() {
+test_wt_pr_status_returns_verified_oid_unit() {
   # MERGED 판정의 근거는 "PR headRefOid == 그 시점 로컬 HEAD" 비교다. 그 비교에 사용한
-  # OID 자체를 기록해야 하며, 판정 후 HEAD를 다시 읽어서는 안 된다 — 두 읽기 사이에
+  # OID 자체를 반환해야 하며, 판정 후 HEAD를 다시 읽어서는 안 된다 — 두 읽기 사이에
   # 생긴 커밋이 근거로 둔갑하면 삭제 직전 재검증이 그 커밋을 통과시킨다.
-  local sandbox repo gh_dir head_oid oid_file status
+  local sandbox repo gh_dir head_oid raw
   sandbox=$(new_sandbox)
   repo="$sandbox/repo"
   gh_dir="$sandbox/gh-bin"
@@ -408,33 +408,27 @@ test_wt_pr_status_records_verified_oid_unit() {
   git -C "$repo" remote add origin https://example.invalid/x.git
   head_oid=$(git -C "$repo" rev-parse HEAD)
   install_merged_pr_mock "$gh_dir" "$head_oid"
-  oid_file="$sandbox/verified.oid"
 
-  status=$(
+  raw=$(
     set -euo pipefail
     PATH="$gh_dir:$PATH"
     source "$REPO_ROOT/modules/shared/scripts/lib/wt/git-state.sh"
-    _wt_pr_status "feature-one" "$repo" "$repo" "$oid_file"
+    _wt_pr_status "feature-one" "$repo" "$repo"
   )
 
-  [[ "$status" == "MERGED" ]] || fail "MERGED를 기대했으나 '$status'"
-  [[ -f "$oid_file" ]] || fail "검증에 사용한 OID가 기록되지 않음: $oid_file"
-  local recorded
-  recorded=$(cat "$oid_file")
-  [[ "$recorded" == "$head_oid" ]] || fail "기록된 OID가 검증값과 다름: recorded=$recorded expected=$head_oid"
+  [[ "$raw" == "MERGED $head_oid" ]] \
+    || fail "MERGED와 검증 OID를 함께 반환해야 함: got='$raw' expected='MERGED $head_oid'"
 
-  # 브랜치 이름이 재사용된 경우(로컬 HEAD가 PR OID와 다름)는 NONE이며 근거를 남기지 않는다.
-  local reuse_oid_file reuse_status
-  reuse_oid_file="$sandbox/reuse.oid"
+  # 브랜치 이름이 재사용된 경우(로컬 HEAD가 PR OID와 다름)는 근거 없이 NONE이다.
+  local reuse_raw
   git -C "$repo" commit -q --allow-empty -m second
-  reuse_status=$(
+  reuse_raw=$(
     set -euo pipefail
     PATH="$gh_dir:$PATH"
     source "$REPO_ROOT/modules/shared/scripts/lib/wt/git-state.sh"
-    _wt_pr_status "feature-one" "$repo" "$repo" "$reuse_oid_file"
+    _wt_pr_status "feature-one" "$repo" "$repo"
   )
-  [[ "$reuse_status" == "NONE" ]] || fail "재사용 브랜치는 NONE이어야 하는데 '$reuse_status'"
-  [[ ! -f "$reuse_oid_file" ]] || fail "NONE 판정에서 근거 OID를 남기면 안 됨: $reuse_oid_file"
+  [[ "$reuse_raw" == "NONE" ]] || fail "재사용 브랜치는 NONE이어야 하는데 '$reuse_raw'"
 }
 
 test_wt_head_unchanged_guard_unit() {

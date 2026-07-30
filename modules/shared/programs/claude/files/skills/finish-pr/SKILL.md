@@ -104,7 +104,7 @@ Skip 조건:
 1. `CLAUDE.md`의 비대화형 `wt` 규칙을 따른다.
 2. 정리 대상 worktree 밖에서 실행한다 — 저장소 루트(main checkout)로 이동한 뒤 `wt cleanup`을 호출한다. worktree 안에서 실행하면 자기 자신은 삭제 대상에서 제외되어(셸의 cwd가 사라지므로) 정리되지 않는다. 4단계에서 이미 main을 최신화하며 이동했다면 그 위치를 유지하면 된다.
 3. 현재 작업이 완료됐고 dirty/unpushed 변경이 없으면 `wt cleanup <name>` 또는 `wt cleanup --auto`로 정리한다.
-4. dirty 또는 unpushed 상태가 있으면 STOP하고 어떤 파일/커밋 때문에 정리하지 않았는지 보고한다. 사용자 승인 없이 `--yes`로 우회하지 않는다. 단 squash merge된 PR의 worktree는 원격 브랜치가 삭제되며 upstream이 사라져도 `wt`가 PR 상태로 보정하므로, MERGED인데 unpushed로 막히면 그 자체가 결함 신호다.
+4. dirty 또는 unpushed 상태가 있으면 STOP하고 어떤 파일/커밋 때문에 정리하지 않았는지 보고한다. 사용자 승인 없이 `--yes`로 우회하지 않는다. squash merge된 PR의 worktree는 원격 브랜치가 삭제되며 upstream이 사라져도 `wt`가 PR 상태로 보정하므로 보통 unpushed로 막히지 않는다. 다만 PR 상태 조회 뒤 그 worktree에 새 커밋이 생기면 근거가 낡아 unpushed로 되돌아가는데, 이는 잃을 커밋이 실제로 있다는 뜻이므로 정상 동작이다 — 그 커밋을 어떻게 할지 먼저 정한다.
 
 Skip 조건:
 - worktree 기반 작업이 아니면 정리할 대상이 없다고 보고하고 생략한다.
