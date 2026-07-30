@@ -350,6 +350,41 @@ test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm() {
   [[ ! -d "$target_path" ]] || fail "MERGED worktree가 upstream 부재로 정리되지 않음: $target_path"
 }
 
+test_wt_cleanup_name_filter_confirmed_dirty_merged_removes() {
+  # 삭제 정책은 PR 상태가 아니라 "사용자가 승인했는가"로 갈린다. dirty + MERGED를
+  # --yes로 승인하면 강제 삭제로 진행돼야 한다 — 승인 경로까지 비강제로 끌려가면
+  # git이 dirty를 거부해 "0개 삭제"만 반복하고 CLAUDE.md의 --yes 우회 계약이 깨진다.
+  local sandbox home_dir repo_root gh_dir output target_path head_oid
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  gh_dir="$sandbox/gh-bin"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  git -C "$repo_root" remote add origin https://example.invalid/nixos-config.git
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  head_oid="$(git -C "$target_path" rev-parse HEAD)"
+  echo "dirty" > "$target_path/dirty.txt"
+  install_merged_pr_mock "$gh_dir" "$head_oid"
+
+  output=$(
+    HOME="$home_dir" \
+    PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup feature_one --yes
+    ' 2>&1
+  )
+
+  assert_contains "$output" "정리 완료: 1개 삭제"
+  [[ ! -d "$target_path" ]] || fail "--yes로 승인한 dirty MERGED worktree가 삭제되지 않음: $target_path"
+}
+
 test_wt_cleanup_name_filter_current_worktree_reports_root_command() {
   # #1186: worktree 안에서 자기 자신을 정리하려 하면 items에서 제외되어 삭제되지
   # 않는데, 과거 메시지는 세 원인을 뭉뚱그려 사용자가 어느 쪽인지 몰랐고 해결

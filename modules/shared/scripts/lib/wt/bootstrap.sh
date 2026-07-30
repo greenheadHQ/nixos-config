@@ -223,18 +223,28 @@ _open_worktree() {
 
 # ── worktree 제거 (tmux 윈도우 포함) ─────────────────────────────────────────
 
-# 인자: wt_path, branch, git_root, [expected_oid]
+# 인자: wt_path, branch, git_root, [mode], [expected_oid]
 #
-# expected_oid가 주어지면 브랜치 삭제를 그 값에 대한 compare-and-swap으로 수행한다.
-# 호출자가 "지워도 안전하다"고 판정한 시점과 실제 삭제 사이에는 항상 창이 있고
-# (아래 tmux·플러그인 정리 단계만큼 길어진다), 그 사이 새 커밋이 생기면 `branch -D`는
-# 그것까지 지워버린다. `update-ref -d <ref> <oid>`는 ref가 그 OID일 때만 지우므로,
-# 창 안에서 커밋이 생기면 삭제가 실패하고 커밋이 브랜치에 남는다 — worktree 디렉토리가
+# mode는 "이 삭제를 사용자가 승인했는가"를 나타내며, 삭제 정책을 결정한다:
+#   forced  (기본) — 사용자가 dirty/미push를 확인하고 승인했거나 기존 동작 경로.
+#                    강제 제거와 `branch -D`를 그대로 쓴다. 잃을 것을 알고 요청한 삭제다.
+#   guarded        — 사용자 확인을 건너뛴 삭제(MERGED 판정 기반). expected_oid가 필수이며
+#                    비강제 제거 + ref CAS만 사용해, 승인 없이는 아무것도 잃지 않는다.
+#
+# guarded에서 강제 옵션을 쓰지 않는 이유: 호출자의 dirty 판정은 후보 수집 시점 값이라
+# 그 뒤 생긴 변경을 모른다. 비강제 remove는 정리되지 않은 변경이나 잠금이 있으면 git이
+# 거부하므로 그 거부를 그대로 존중한다. 브랜치 삭제도 `update-ref -d <ref> <oid>`로
+# expected_oid일 때만 지워, 창 안에서 커밋이 생기면 ref가 남는다 — worktree 디렉토리가
 # 사라져도 `git worktree add`로 되살릴 수 있다.
 _remove_worktree() {
-  local wt_path="$1" branch="$2" git_root="$3" expected_oid="${4:-}"
+  local wt_path="$1" branch="$2" git_root="$3" mode="${4:-forced}" expected_oid="${5:-}"
   local name
   name=$(basename "$wt_path")
+
+  if [[ "$mode" == "guarded" && -z "$expected_oid" ]]; then
+    _warn "스킵: $name (무확인 삭제인데 근거 OID가 없습니다)"
+    return 1
+  fi
 
   # cwd 가드: 현재 셸이 삭제 대상 worktree 안에 있으면 중단
   local current_dir
@@ -250,6 +260,27 @@ _remove_worktree() {
   fi
 
   _wt_require_state_helpers
+
+  # guarded는 아래 tmux·플러그인 정리보다 먼저 삭제 가능 여부를 확인한다. 그 정리는
+  # 되돌릴 수 없어서, 뒤늦게 제거가 거부되면 tmux 창과 plugin 등록만 사라진 부분 정리가
+  # 남는다. 여기서 걸러내면 "승인 없이는 아무것도 건드리지 않는다"가 실제로 성립한다.
+  # 이 확인은 호출자 검증 이후의 창도 좁힌다 — 검증과 삭제 사이가 짧을수록 안전하다.
+  if [[ "$mode" == "guarded" ]]; then
+    local now_head
+    if ! now_head=$(git -C "$wt_path" rev-parse HEAD 2>/dev/null); then
+      _warn "스킵: $name (HEAD를 읽지 못해 삭제 근거를 재확인할 수 없습니다)"
+      return 1
+    fi
+    if [[ "$now_head" != "$expected_oid" ]]; then
+      _warn "스킵: $name (삭제 판정 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
+      return 1
+    fi
+    if _wt_is_dirty "$wt_path"; then
+      _warn "스킵: $name (정리되지 않은 변경이 있습니다)"
+      _warn "  확인 후 지우려면: wt cleanup $(printf '%q' "$name") --yes"
+      return 1
+    fi
+  fi
 
   # tmux 윈도우 닫기 (실패해도 worktree는 삭제)
   _wt_tmux_close "$wt_path" || true
@@ -267,24 +298,19 @@ _remove_worktree() {
   _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
 
   # worktree 제거
-  if [[ -n "$expected_oid" ]]; then
-    # 사용자 확인을 거치지 않은 삭제(MERGED 판정 기반)에서는 강제 옵션과 rm -rf
-    # fallback을 쓰지 않는다. dirty 여부는 후보 수집 시점에 한 번 측정되므로 그 뒤
-    # 생긴 변경은 알 수 없는데, 비강제 remove는 정리되지 않은 변경이나 잠금이 있으면
-    # git이 거부해 준다 — 그 거부를 그대로 존중해 승인 없이 아무것도 잃지 않게 한다.
+  if [[ "$mode" == "guarded" ]]; then
     if ! git -C "$git_root" worktree remove "$wt_path" 2>/dev/null; then
       _warn "스킵: $name (정리되지 않은 변경이 있거나 worktree를 제거할 수 없습니다)"
       _warn "  확인 후 지우려면: wt cleanup $(printf '%q' "$name") --yes"
       return 1
     fi
   else
-    # 사용자가 dirty/미push를 확인하고 승인한 경로 — 잃을 것을 알고 요청한 삭제다.
     git -C "$git_root" worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path"
   fi
 
   # 브랜치 삭제 (detached가 아닌 경우)
   if [[ "$branch" != "detached" ]]; then
-    if [[ -n "$expected_oid" ]]; then
+    if [[ "$mode" == "guarded" ]]; then
       if ! git -C "$git_root" update-ref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
         local _safe_path _safe_branch
         printf -v _safe_path '%q' "$wt_path"

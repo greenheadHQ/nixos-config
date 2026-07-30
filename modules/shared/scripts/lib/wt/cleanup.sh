@@ -15,13 +15,19 @@ _wt_warn_cleanup_from_root() {
 
 # MERGED 판정의 근거가 아직 유효한지 확인하고, 무효면 경고까지 낸다.
 # 두 삭제 경로(auto·이름 지정)가 같은 안전 정책과 같은 문구를 쓰도록 한곳에 둔다.
-_wt_merged_head_still_valid() {
+# 사용자 확인을 건너뛰는 삭제(guarded)에 쓸 근거 OID를 stdout으로 반환한다.
+# 재확인에 실패하면 경고 후 1을 반환해 호출자가 건너뛰게 한다 — 근거를 확인할 수
+# 없으면 지우지 않는다. 두 삭제 경로가 같은 검증·문구·실패 처리를 쓰도록 한곳에 둔다.
+# 실패 원인은 HEAD 변경뿐 아니라 근거 기록 부재·읽기 실패도 포함한다 (fail-closed).
+_wt_guarded_delete_oid() {
   local wt_path="$1" head_file="$2" name="$3"
-  _wt_head_unchanged "$wt_path" "$head_file" && return 0
-  # 실패 원인은 HEAD 변경뿐 아니라 근거 기록 부재·읽기 실패도 포함한다 (fail-closed).
-  # 어느 쪽이든 "지워도 되는지 다시 확인해야 한다"는 결론은 같으므로 한 문장으로 알린다.
-  _warn "스킵: $name (MERGED 근거를 재확인하지 못했습니다 — HEAD 변경 또는 근거 기록 유실. 다시 실행하세요)"
-  return 1
+  local oid
+  oid=$(cat "$head_file" 2>/dev/null || true)
+  if [[ -z "$oid" ]] || ! _wt_head_unchanged "$wt_path" "$head_file"; then
+    _warn "스킵: $name (MERGED 근거를 재확인하지 못했습니다 — HEAD 변경 또는 근거 기록 유실. 다시 실행하세요)"
+    return 1
+  fi
+  printf '%s' "$oid"
 }
 
 cmd_cleanup() {
@@ -193,20 +199,11 @@ cmd_cleanup() {
         continue
       fi
 
-      # PR 조회와 삭제 사이에 새 커밋이 생겼으면 MERGED 판정이 stale하다 (git-state.sh).
-      _wt_merged_head_still_valid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name" || continue
-
-      # 검증한 OID를 넘겨 브랜치 삭제를 CAS로 만든다 — 이 확인과 실제 삭제 사이에도
-      # 창이 남으므로, 그 안에서 커밋이 생기면 ref가 지워지지 않아야 한다.
-      # 근거를 읽지 못하면 중단한다 — 빈 값을 넘기면 CAS가 아니라 강제 삭제로 떨어져
-      # 안전 근거를 잃은 상태에서 오히려 보호가 풀린다.
+      # --auto는 사용자 확인 없이 지우므로 guarded 모드다 (비강제 제거 + ref CAS).
       local verified_oid
-      verified_oid=$(cat "$_wt_cleanup_tmp/$name.head" 2>/dev/null || true)
-      if [[ -z "$verified_oid" ]]; then
-        _warn "스킵: $name (삭제 근거 OID를 읽지 못했습니다 — 다시 실행하세요)"
-        continue
-      fi
-      _remove_worktree "$wt_path" "$branch" "$git_root" "$verified_oid" || _info "경고: $name 삭제 실패"
+      verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name") || continue
+      _remove_worktree "$wt_path" "$branch" "$git_root" "guarded" "$verified_oid" \
+        || _info "경고: $name 삭제 실패"
     done
 
     git worktree prune 2>/dev/null || true
@@ -299,6 +296,10 @@ cmd_cleanup() {
     local name
     name=$(basename "$wt_path")
 
+    # 삭제 정책은 PR 상태가 아니라 "사용자가 이 삭제를 승인했는가"로 갈린다.
+    # 승인했으면 잃을 것을 알고 요청한 것이므로 기존대로 강제 삭제하고(--yes 우회 계약),
+    # 승인 절차 없이 지우는 경우에만 guarded로 보호한다.
+    local confirmed=false
     if [[ "${item_dirty[$found_idx]}" == "true" ]] || [[ "${item_loss_risk[$found_idx]}" == "true" ]]; then
       local warn_msg="$name:"
       [[ "${item_dirty[$found_idx]}" == "true" ]] && warn_msg+=" uncommitted 변경사항"
@@ -306,28 +307,15 @@ cmd_cleanup() {
 
       _info "$warn_msg"
       _confirm "정말 삭제하시겠습니까?" || { _info "스킵: $name"; continue; }
+      confirmed=true
     fi
 
-    # MERGED는 확인 프롬프트를 건너뛰므로, 그 판정의 근거가 아직 유효한지 삭제 직전에
-    # 다시 본다 — 조회 이후 새 커밋이 생겼다면 사용자 확인 없이 지워선 안 된다.
-    if [[ "${item_pr[$found_idx]}" == "MERGED" ]]; then
-      _wt_merged_head_still_valid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name" || continue
+    local mode="forced" verified_oid=""
+    if [[ "$confirmed" == "false" && "${item_pr[$found_idx]}" == "MERGED" ]]; then
+      mode="guarded"
+      verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name") || continue
     fi
-
-    # MERGED로 확인을 건너뛴 항목은 검증 OID를 넘겨 브랜치 삭제를 CAS로 만든다.
-    # 근거를 읽지 못하면 중단한다 — 빈 값은 CAS가 아니라 강제 삭제 경로이므로,
-    # 확인을 생략한 채 보호까지 풀린 상태가 된다.
-    # 그 외(사용자가 확인한 dirty/미push)는 기존대로 강제 삭제한다 — 잃을 것을 알고
-    # 승인한 경로다.
-    local verified_oid=""
-    if [[ "${item_pr[$found_idx]}" == "MERGED" ]]; then
-      verified_oid=$(cat "$_wt_cleanup_tmp/$name.head" 2>/dev/null || true)
-      if [[ -z "$verified_oid" ]]; then
-        _warn "스킵: $name (삭제 근거 OID를 읽지 못했습니다 — 다시 실행하세요)"
-        continue
-      fi
-    fi
-    if _remove_worktree "$wt_path" "$branch" "$git_root" "$verified_oid"; then
+    if _remove_worktree "$wt_path" "$branch" "$git_root" "$mode" "$verified_oid"; then
       removed=$((removed + 1))
     fi
   done
