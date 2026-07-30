@@ -1,6 +1,18 @@
 # shellcheck shell=bash
 # ── 서브커맨드: cleanup ──────────────────────────────────────────────────────
 
+# 현재 worktree는 자기 자신을 지우면 셸의 cwd가 사라지므로 정리 대상에서 제외된다.
+# 그 사실과 재실행 방법을 알리는 안내를 한곳에 둔다 — auto 경로와 이름 지정 경로가
+# 같은 문구·같은 quoting을 써야 안내가 갈라지지 않는다.
+_wt_warn_cleanup_from_root() {
+  local git_root="$1" name="$2" message="$3"
+  local _safe_root _safe_name
+  printf -v _safe_root '%q' "$git_root"
+  printf -v _safe_name '%q' "$name"
+  _warn "$message"
+  _warn "  저장소 루트에서 실행하세요: cd ${_safe_root} && wt cleanup ${_safe_name}"
+}
+
 cmd_cleanup() {
   local auto=false
   local names_filter=()
@@ -51,7 +63,7 @@ cmd_cleanup() {
   local item_branches=()
   local item_pr=()
   local item_dirty=()
-  local item_unpushed=()
+  local item_loss_risk=()
   local merged_indices=()
   local broken_count=0
 
@@ -72,7 +84,7 @@ cmd_cleanup() {
       continue
     fi
 
-    local name branch ts age pr_status dirty_flag unpushed_flag last_msg
+    local name branch ts age pr_status dirty_flag loss_risk_flag last_msg
     name=$(basename "$wt")
     branch=$(_wt_branch "$wt")
     ts=$(_wt_last_commit_ts "$wt")
@@ -84,8 +96,8 @@ cmd_cleanup() {
     dirty_flag=false
     _wt_is_dirty "$wt" && dirty_flag=true
 
-    unpushed_flag=false
-    _wt_has_unpushed_risk "$wt" "$pr_status" && unpushed_flag=true
+    loss_risk_flag=false
+    _wt_has_unpushed_risk "$wt" "$pr_status" && loss_risk_flag=true
 
     last_msg=$(_wt_last_commit_msg "$wt")
 
@@ -99,17 +111,17 @@ cmd_cleanup() {
 
     local dirty_mark=""
     [[ "$dirty_flag" == "true" ]] && dirty_mark=" ●dirty"
-    local unpushed_mark=""
-    [[ "$unpushed_flag" == "true" ]] && unpushed_mark=" ↑unpushed"
+    local loss_risk_mark=""
+    [[ "$loss_risk_flag" == "true" ]] && loss_risk_mark=" ↑unpushed"
 
-    local label="$st_icon $name [$age $pr_status${dirty_mark}${unpushed_mark}] — $last_msg"
+    local label="$st_icon $name [$age $pr_status${dirty_mark}${loss_risk_mark}] — $last_msg"
 
     items+=("$label")
     item_paths+=("$wt")
     item_branches+=("$branch")
     item_pr+=("$pr_status")
     item_dirty+=("$dirty_flag")
-    item_unpushed+=("$unpushed_flag")
+    item_loss_risk+=("$loss_risk_flag")
 
     [[ "$pr_status" == "MERGED" ]] && merged_indices+=("$idx")
 
@@ -126,11 +138,8 @@ cmd_cleanup() {
     cur_pr="NONE"
     [[ -f "$_wt_cleanup_tmp/$cur_name.pr" ]] && cur_pr=$(cat "$_wt_cleanup_tmp/$cur_name.pr")
     if [[ "$cur_pr" == "MERGED" ]]; then
-      local _safe_root _safe_name
-      printf -v _safe_root '%q' "$git_root"
-      printf -v _safe_name '%q' "$cur_name"
-      _warn "현재 worktree라 여기서는 삭제할 수 없어 제외했습니다: $cur_name (PR MERGED)"
-      _warn "  저장소 루트에서 실행하세요: cd ${_safe_root} && wt cleanup ${_safe_name}"
+      _wt_warn_cleanup_from_root "$git_root" "$cur_name" \
+        "현재 worktree라 여기서는 삭제할 수 없어 제외했습니다: $cur_name (PR MERGED)"
     else
       _info "현재 worktree 제외: $cur_name (PR $cur_pr)"
     fi
@@ -159,7 +168,7 @@ cmd_cleanup() {
         continue
       fi
 
-      # item_unpushed는 PR MERGED로 보정된 값이라 이 분기에서는 항상 false다.
+      # item_loss_risk는 PR MERGED로 보정된 값이라 이 분기에서는 항상 false다.
       # --auto는 사용자 확인 없이 지우므로 raw git 상태를 한 번 더 본다: upstream이
       # 살아 있는데 그보다 앞선 커밋이 있으면 머지 후 추가 작업일 수 있다.
       # (reuse guard와 중복 방어 — 자동 삭제 경로만 이 보수성을 유지한다.)
@@ -249,11 +258,8 @@ cmd_cleanup() {
       # 세 원인을 한 문장에 뭉뚱그리면 사용자가 어느 쪽인지 모른 채 막힌다 (#1186).
       # 현재 worktree는 원인이 특정되고 해결책도 명확하므로 분리해 안내한다.
       if [[ -n "$current_wt" && "$sel_name" == "$(basename "$current_wt")" ]]; then
-        local _safe_root _safe_name
-        printf -v _safe_root '%q' "$git_root"
-        printf -v _safe_name '%q' "$sel_name"
-        _warn "현재 위치한 worktree라 여기서는 삭제할 수 없습니다: $sel_name"
-        _warn "  저장소 루트에서 실행하세요: cd ${_safe_root} && wt cleanup ${_safe_name}"
+        _wt_warn_cleanup_from_root "$git_root" "$sel_name" \
+          "현재 위치한 worktree라 여기서는 삭제할 수 없습니다: $sel_name"
       else
         _warn "정리 대상 아님: $sel_name (존재하지 않거나, 손상되어 제외됨)"
       fi
@@ -265,10 +271,10 @@ cmd_cleanup() {
     local name
     name=$(basename "$wt_path")
 
-    if [[ "${item_dirty[$found_idx]}" == "true" ]] || [[ "${item_unpushed[$found_idx]}" == "true" ]]; then
+    if [[ "${item_dirty[$found_idx]}" == "true" ]] || [[ "${item_loss_risk[$found_idx]}" == "true" ]]; then
       local warn_msg="$name:"
       [[ "${item_dirty[$found_idx]}" == "true" ]] && warn_msg+=" uncommitted 변경사항"
-      [[ "${item_unpushed[$found_idx]}" == "true" ]] && warn_msg+=" push하지 않은 커밋"
+      [[ "${item_loss_risk[$found_idx]}" == "true" ]] && warn_msg+=" push하지 않은 커밋"
 
       _info "$warn_msg"
       _confirm "정말 삭제하시겠습니까?" || { _info "스킵: $name"; continue; }
