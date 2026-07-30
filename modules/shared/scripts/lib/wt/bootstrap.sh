@@ -232,8 +232,11 @@ _open_worktree() {
 #   forced   — 강제 제거(`--force`, 실패 시 `rm -rf`)와 `branch -D`. 되돌릴 수 없다.
 #              호출자가 쓰는 경우: 확인 프롬프트 통과, `--yes`, 그리고 clean한
 #              비-MERGED를 이름으로 지정한 기존 경로.
-#   guarded  — 비강제 제거 + ref CAS. expected_oid가 필수다. 거부되면 아무것도 잃지 않는다.
+#   guarded  — 비강제 제거 + ref CAS. expected_oid가 필수다.
 #              호출자가 쓰는 경우: 위험을 알릴 기회가 없던 MERGED 무확인 삭제.
+#              거부 시점별 상태가 다르다 — 비강제 remove가 거부되면 아무것도 건드리지
+#              않고 끝나지만(mutation 경계), 그 뒤 ref CAS가 거부되면 worktree는 이미
+#              제거된 상태에서 브랜치만 남는다(복구 명령을 안내한다).
 #
 # guarded에서 강제 옵션을 쓰지 않는 이유: 호출자의 dirty 판정은 후보 수집 시점 값이라
 # 그 뒤 생긴 변경을 모른다. 비강제 remove는 정리되지 않은 변경이나 잠금이 있으면 git이

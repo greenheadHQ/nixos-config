@@ -109,6 +109,20 @@ _wt_has_unpushed_risk() {
 # 알 수 없다. 대화형 선택처럼 조회와 삭제 사이가 길어질수록 창이 커진다.
 # 기록이 없거나 현재 HEAD를 못 읽으면 fail-closed로 false를 반환한다 —
 # 확인할 수 없으면 삭제하지 않는 쪽이 안전하다.
+# 캐시된 PR 상태를 근거 유효성까지 반영한 값으로 보정한다.
+#
+# `MERGED`는 "조회 시점 headRefOid == 로컬 HEAD"를 전제로 한 판정이다. 그 근거가
+# 없거나(검증하지 못한 MERGED) 이후 HEAD가 바뀌었으면 더는 MERGED로 취급하면 안 된다.
+# 소비자마다 이 보정을 다시 구현하면 한 곳이 빠지고, 그 소비자만 낡은 근거를 믿게 된다.
+_wt_effective_pr_status() {
+  local wt="$1" pr_status="$2" head_file="$3"
+  if [[ "$pr_status" == "MERGED" ]] && ! _wt_head_unchanged "$wt" "$head_file"; then
+    printf 'NONE\n'
+    return 0
+  fi
+  printf '%s\n' "$pr_status"
+}
+
 _wt_head_unchanged() {
   local wt="$1"
   local recorded_file="$2"

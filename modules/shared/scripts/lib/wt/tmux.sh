@@ -163,32 +163,32 @@ _wt_tmux_session_state() {
   local session_name="$1"
   command -v tmux >/dev/null 2>&1 || { printf 'absent\n'; return 0; }
 
+  # has-session 하나로 충분하다 — 서버가 없으면 그 사실도 이 호출이 알려준다(실측).
+  # exit 1만으로는 "없음"과 "못 읽음"을 구분할 수 없으므로 stderr를 분류한다.
   local err rc=0
-  err=$(tmux list-sessions 2>&1 >/dev/null) || rc=$?
-  if (( rc != 0 )); then
-    # 서버 부재와 조회 불능을 errno 문구로 가른다. tmux는 소켓이 없으면
-    # "error connecting to <socket> (No such file or directory)"를, 서버가 죽어 있으면
-    # "no server running" 또는 "(Connection refused)"를 낸다 — 모두 부재다.
-    # 반면 "(Permission denied)"처럼 접근 자체가 막힌 경우는 활성 세션이 있어도 알 수
-    # 없으므로 unknown으로 두어 무확인 삭제를 막는다.
-    # (실측: 이 저장소 개발 환경에서 서버 미실행 시 "No such file or directory"가 나온다.
-    #  "error connecting"만 보고 부재로 단정하면 권한 오류가, unknown으로 단정하면
-    #  정상적인 서버 부재가 잘못 처리된다.)
-    if [[ "$err" == *"no server running"* \
-       || "$err" == *"No such file or directory"* \
-       || "$err" == *"Connection refused"* ]]; then
-      printf 'absent\n'
-    else
-      printf 'unknown\n'
-    fi
-    return 0
-  fi
-
-  if tmux has-session -t "=$session_name" 2>/dev/null; then
+  err=$(tmux has-session -t "=$session_name" 2>&1) || rc=$?
+  if (( rc == 0 )); then
     printf 'present\n'
-  else
+  elif _wt_tmux_err_means_absent "$err"; then
     printf 'absent\n'
+  else
+    printf 'unknown\n'
   fi
+}
+
+# tmux 오류 메시지가 "부재"를 뜻하는지 판정한다. 이 환경 실측 기준:
+#   서버 미실행 — "error connecting to <socket> (No such file or directory)"
+#                 (서버가 죽는 방식에 따라 "no server running"이나 "(Connection refused)"도 나온다)
+#   세션 없음   — "can't find session: <name>"
+# 그 밖의 실패(예: "(Permission denied)")는 활성 세션이 있어도 알 수 없다는 뜻이므로
+# 부재로 보지 않는다 — 그래야 호출자가 unknown으로 fail-closed할 수 있다.
+_wt_tmux_err_means_absent() {
+  local err="$1"
+  [[ "$err" == *"no server running"* \
+     || "$err" == *"No such file or directory"* \
+     || "$err" == *"Connection refused"* \
+     || "$err" == *"can't find session"* \
+     || "$err" == *"session not found"* ]]
 }
 
 # 세션 종료를 막아야 하는지 판정한다 (부수효과 없음). 사실 조회가 아니라 정책 판정이라

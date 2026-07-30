@@ -111,8 +111,11 @@ cmd_cleanup() {
     dirty_flag=false
     _wt_is_dirty "$wt" && dirty_flag=true
 
+    # 근거가 없거나 낡은 MERGED는 보정 대상에서 빼고 raw 판정으로 돌린다 (git-state.sh).
+    local effective_pr
+    effective_pr=$(_wt_effective_pr_status "$wt" "$pr_status" "$_wt_cleanup_tmp/$name.head")
     loss_risk_flag=false
-    _wt_has_unpushed_risk "$wt" "$pr_status" && loss_risk_flag=true
+    _wt_has_unpushed_risk "$wt" "$effective_pr" && loss_risk_flag=true
 
     last_msg=$(_wt_last_commit_msg "$wt")
 
