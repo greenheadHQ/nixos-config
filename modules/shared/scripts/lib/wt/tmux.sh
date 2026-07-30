@@ -153,9 +153,16 @@ _wt_tmux_session_open() {
 
 # 세션 정리 (cleanup용, = prefix: exact match)
 # 연결된 클라이언트가 있으면 세션을 죽이지 않음 (활성 사용 보호)
+# 세션에 붙어 있는 클라이언트가 있는지만 확인한다 (부수효과 없음).
+# 삭제를 mutation 이전에 fail-closed로 막아야 하는 호출자가 이 검사만 따로 쓴다.
+_wt_tmux_session_has_clients() {
+  local session_name="$1"
+  tmux list-clients -t "=$session_name" 2>/dev/null | grep -q .
+}
+
 _wt_tmux_session_close() {
   local session_name="$1"
-  if tmux list-clients -t "=$session_name" 2>/dev/null | grep -q .; then
+  if _wt_tmux_session_has_clients "$session_name"; then
     _info "스킵: tmux 세션 '$session_name'에 연결된 클라이언트가 있습니다"
     return 1
   fi

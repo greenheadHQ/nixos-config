@@ -223,13 +223,15 @@ _open_worktree() {
 
 # ── worktree 제거 (tmux 윈도우 포함) ─────────────────────────────────────────
 
-# 인자: wt_path, branch, git_root, [mode], [expected_oid]
+# 호출 형태 (mode는 필수, 폐쇄 집합):
+#   _remove_worktree <wt_path> <branch> <git_root> forced
+#   _remove_worktree <wt_path> <branch> <git_root> guarded <expected_oid>
 #
-# mode는 "이 삭제를 사용자가 승인했는가"를 나타내며, 삭제 정책을 결정한다:
-#   forced  (기본) — 사용자가 dirty/미push를 확인하고 승인했거나 기존 동작 경로.
-#                    강제 제거와 `branch -D`를 그대로 쓴다. 잃을 것을 알고 요청한 삭제다.
-#   guarded        — 사용자 확인을 건너뛴 삭제(MERGED 판정 기반). expected_oid가 필수이며
-#                    비강제 제거 + ref CAS만 사용해, 승인 없이는 아무것도 잃지 않는다.
+# mode는 "사용자가 이 삭제의 위험을 인지했는가"를 나타내며 삭제 정책을 결정한다:
+#   forced   — 확인 프롬프트를 통과했거나 `--yes`로 우회했거나 기존 동작 경로.
+#              강제 제거와 `branch -D`를 그대로 쓴다. 잃을 것을 알고 요청한 삭제다.
+#   guarded  — 위험을 알릴 기회가 없던 삭제(MERGED 판정 기반). expected_oid가 필수이며
+#              비강제 제거 + ref CAS만 사용해, 인지 없이는 아무것도 잃지 않는다.
 #
 # guarded에서 강제 옵션을 쓰지 않는 이유: 호출자의 dirty 판정은 후보 수집 시점 값이라
 # 그 뒤 생긴 변경을 모른다. 비강제 remove는 정리되지 않은 변경이나 잠금이 있으면 git이
@@ -237,7 +239,7 @@ _open_worktree() {
 # expected_oid일 때만 지워, 창 안에서 커밋이 생기면 ref가 남는다 — worktree 디렉토리가
 # 사라져도 `git worktree add`로 되살릴 수 있다.
 _remove_worktree() {
-  local wt_path="$1" branch="$2" git_root="$3" mode="$4" expected_oid="${5:-}"
+  local wt_path="$1" branch="$2" git_root="$3" mode="${4:-}" expected_oid="${5:-}"
   local name
   name=$(basename "$wt_path")
 
@@ -286,6 +288,13 @@ _remove_worktree() {
     fi
     if [[ "$now_head" != "$expected_oid" ]]; then
       _warn "스킵: $name (삭제 판정 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
+      return 1
+    fi
+    # 연결된 tmux 세션 보호는 제거 전에 판정해야 한다. 세션 종료는 제거 뒤로 미뤘지만
+    # (부분 정리 방지), 그 실패를 사후에 알기만 하면 사용자가 붙어 있는 세션의 cwd를
+    # 지워버린다. idle shell은 활성 프로세스 가드에 걸리지 않으므로 여기서 fail-closed로 막는다.
+    if _wt_tmux_session_has_clients "$session_name"; then
+      _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
       return 1
     fi
 
