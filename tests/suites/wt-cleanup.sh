@@ -547,6 +547,91 @@ test_wt_remove_worktree_guarded_rechecks_branch_unit() {
   ) || fail "_remove_worktree guarded 브랜치 재확인이 기대와 다르게 동작 (exit $?)"
 }
 
+test_wt_remove_worktree_guarded_keeps_reused_branch_unit() {
+  # guarded는 브랜치를 plumbing(`update-ref -d`)으로 지운다. 그 명령은 porcelain
+  # `git branch -D`와 달리 다른 worktree가 사용 중인 브랜치도 지운다. worktree 제거와
+  # ref 삭제 사이에 다른 wt 실행이 같은 브랜치를 새 worktree에 체크아웃하면(커밋이 없어
+  # OID는 그대로라 CAS도 통과한다) 사용 중인 ref가 사라진다. 그 창을 닫았는지 확인한다.
+  local sandbox repo wt_path reused_path recorded_oid
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  wt_path="$sandbox/wt"
+  reused_path="$sandbox/wt-reused"
+  mkdir -p "$repo"
+
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@example.invalid
+  git -C "$repo" config user.name t
+  git -C "$repo" commit -q --allow-empty -m first
+  git -C "$repo" worktree add -q "$wt_path" -b feature
+  recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
+
+  (
+    set -euo pipefail
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    _wt_require_state_helpers() { :; }
+    _wt_has_active_process() { return 1; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
+    # 이 helper는 worktree 제거 성공 후 ref 삭제 전에 호출된다 — 경쟁 창을 주입할 지점이다.
+    _wt_remove_claude_local_plugins_for_worktree() {
+      git -C "$repo" worktree add -q "$reused_path" feature
+    }
+
+    _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 31
+    # 재사용된 worktree와 그 ref는 살아 있어야 한다
+    git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 32
+    [[ -d "$reused_path" ]] || exit 33
+  ) || fail "guarded 삭제가 재사용된 브랜치를 보호하지 못함 (exit $?)"
+}
+
+test_wt_remove_worktree_guarded_clears_branch_config_unit() {
+  # porcelain `git branch -D`는 ref와 함께 branch.<name> 설정 섹션도 지운다. plumbing
+  # 삭제는 ref만 지우므로, 정리한 뒤에도 낡은 upstream·rebase 설정이 남아 같은 이름의
+  # 새 브랜치가 그것을 물려받는다. guarded가 그 정리까지 하는지 확인한다.
+  local sandbox repo wt_path recorded_oid leftover
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  wt_path="$sandbox/wt"
+  mkdir -p "$repo"
+
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@example.invalid
+  git -C "$repo" config user.name t
+  git -C "$repo" commit -q --allow-empty -m first
+  git -C "$repo" worktree add -q "$wt_path" -b feature
+  git -C "$repo" config branch.feature.remote origin
+  git -C "$repo" config branch.feature.merge refs/heads/feature
+  git -C "$repo" config branch.feature.rebase true
+  recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
+
+  (
+    set -euo pipefail
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    _wt_require_state_helpers() { :; }
+    _wt_has_active_process() { return 1; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+
+    _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 41
+    ! git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 42
+  ) || fail "_remove_worktree guarded 삭제가 실패 (exit $?)"
+
+  leftover=$(git -C "$repo" config --get-regexp '^branch\.feature\.' 2>/dev/null || true)
+  [[ -z "$leftover" ]] || fail "guarded 삭제 후 branch.feature 설정이 남음: $leftover"
+}
+
 test_wt_head_unchanged_guard_unit() {
   # MERGED 판정은 조회 시점 HEAD를 근거로 하므로, 조회와 삭제 사이에 새 커밋이 생기면
   # 그 판정이 stale해진다. _wt_head_unchanged는 그 창을 닫는 가드이며, 확인 불가한

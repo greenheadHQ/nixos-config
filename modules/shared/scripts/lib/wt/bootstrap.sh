@@ -239,6 +239,22 @@ _wt_worktree_registration_state() {
   fi
 }
 
+# 이 브랜치를 체크아웃하고 있는 worktree가 남아 있는가.
+# guarded의 ref 삭제는 plumbing(`update-ref -d`)이라 porcelain `git branch -D`가 하던
+# "다른 worktree가 사용 중이면 거부" 검사를 받지 못한다 — 이 환경 git 2.54 실측으로
+# 사용 중인 브랜치도 exit 0으로 지운다. 그 검사를 여기서 되살린다.
+# stdout: in-use | free | unknown (확인 실패는 free로 흘리지 않는다)
+_wt_branch_checkout_state() {
+  local git_root="$1" branch="$2"
+  local list
+  list=$(git -C "$git_root" worktree list --porcelain 2>/dev/null) || { printf 'unknown\n'; return 0; }
+  if printf '%s\n' "$list" | grep -qxF "branch refs/heads/$branch"; then
+    printf 'in-use\n'
+  else
+    printf 'free\n'
+  fi
+}
+
 # 호출 형태 (mode는 필수, 폐쇄 집합):
 #   _remove_worktree <wt_path> <branch> <git_root> forced
 #   _remove_worktree <wt_path> <branch> <git_root> guarded <expected_oid>
@@ -392,13 +408,30 @@ _remove_worktree() {
   local branch_kept=false
   if [[ "$branch" != "detached" ]]; then
     if [[ "$mode" == "guarded" ]]; then
+      # worktree 제거와 여기 사이에는 저장소 잠금이 없다. 그 틈에 다른 wt 실행이 아직
+      # 남아 있는 이 브랜치를 새 worktree에 체크아웃할 수 있고, 커밋이 없으면 OID가 같아
+      # CAS도 통과한다. porcelain이 하던 사용 중 검사를 삭제 직전에 되살려 그 창을 닫는다
+      # (완전한 직렬화는 저장소 잠금이 필요하며, 그 보호는 forced 경로에도 원래 없다).
+      local checkout_state
+      checkout_state=$(_wt_branch_checkout_state "$git_root" "$branch")
       # --no-deref: update-ref는 기본적으로 symbolic ref를 따라간다. 그 사이 이 ref가
       # 같은 OID를 가리키는 symbolic ref로 바뀌면 CAS는 통과하면서 엉뚱한 대상 브랜치를
       # 지울 수 있다. OID 비교는 값만 보고 ref의 정체성 변경은 못 잡는다.
-      if ! git -C "$git_root" update-ref --no-deref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
+      if [[ "$checkout_state" == "in-use" ]]; then
+        _warn "브랜치 유지: $branch (다른 worktree가 이 브랜치를 사용 중입니다)"
+        branch_kept=true
+      elif [[ "$checkout_state" != "free" ]]; then
+        _warn "브랜치 유지: $branch (사용 중인지 확인하지 못해 ref를 지우지 않았습니다)"
+        branch_kept=true
+      elif ! git -C "$git_root" update-ref --no-deref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
         _warn "브랜치 유지: $branch (삭제 판정 이후 새 커밋이 생겨 ref를 지우지 않았습니다)"
         _warn "  복구: git worktree add ${_safe_wt_path} ${_safe_wt_branch}"
         branch_kept=true
+      else
+        # branch -D는 ref와 함께 branch.<name> 설정 섹션도 지운다. plumbing 삭제는 ref만
+        # 지우므로, 정리해도 낡은 upstream·rebase 설정이 남아 같은 이름의 새 브랜치가
+        # 그것을 물려받는다. (reflog는 update-ref -d도 함께 지운다 — 실측 확인.)
+        git -C "$git_root" config --remove-section "branch.$branch" >/dev/null 2>&1 || true
       fi
     else
       git -C "$git_root" branch -D "$branch" 2>/dev/null || true
