@@ -461,6 +461,43 @@ test_wt_pr_status_returns_verified_oid_unit() {
   [[ "$reuse_raw" == "NONE" ]] || fail "재사용 브랜치는 NONE이어야 하는데 '$reuse_raw'"
 }
 
+test_wt_tmux_session_state_classification_unit() {
+  # 서버 부재와 조회 불능을 stderr errno 문구로 가른다. 이 분류가 한쪽으로 치우치면
+  # 정상적인 서버 부재가 unknown이 되어 무확인 정리가 전부 막히거나(실제로 겪은 회귀),
+  # 반대로 권한 오류가 absent로 통과해 접근 못 하는 활성 세션의 worktree가 지워진다.
+  local sandbox bin state msg expect case_spec
+  sandbox=$(new_sandbox)
+  bin="$sandbox/bin"
+  mkdir -p "$bin"
+
+  for case_spec in \
+    "no server running on /tmp/x|absent" \
+    "error connecting to /tmp/x (No such file or directory)|absent" \
+    "error connecting to /tmp/x (Connection refused)|absent" \
+    "error connecting to /tmp/x (Permission denied)|unknown" \
+    "server exited unexpectedly|unknown"
+  do
+    msg="${case_spec%|*}"
+    expect="${case_spec##*|}"
+    cat > "$bin/tmux" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "$msg" >&2
+exit 1
+EOF
+    chmod +x "$bin/tmux"
+
+    state=$(
+      PATH="$bin:$PATH" bash -c '
+        set -euo pipefail
+        source "$1/modules/shared/scripts/lib/wt/tmux.sh"
+        _wt_tmux_session_state wt-example
+      ' _ "$REPO_ROOT"
+    )
+    [[ "$state" == "$expect" ]] \
+      || fail "tmux 상태 분류 오류: stderr='$msg' → '$state' (기대: '$expect')"
+  done
+}
+
 test_wt_head_unchanged_guard_unit() {
   # MERGED 판정은 조회 시점 HEAD를 근거로 하므로, 조회와 삭제 사이에 새 커밋이 생기면
   # 그 판정이 stale해진다. _wt_head_unchanged는 그 창을 닫는 가드이며, 확인 불가한

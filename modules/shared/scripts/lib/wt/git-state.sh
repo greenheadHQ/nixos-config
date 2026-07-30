@@ -160,9 +160,14 @@ _wt_pr_status() {
       echo "NONE"
       return
     fi
-    # 비교를 통과한 바로 그 OID를 근거로 반환한다 (여기서 HEAD를 다시 읽지 않는다).
-    echo "MERGED $pr_head_oid"
-    return
+    if [[ -n "$branch_head" ]]; then
+      # 비교를 통과한 바로 그 OID를 근거로 반환한다 (여기서 HEAD를 다시 읽지 않는다).
+      echo "MERGED $pr_head_oid"
+      return
+    fi
+    # HEAD를 읽지 못해 비교를 하지 못했다. 상태는 MERGED로 두되 근거는 붙이지 않는다 —
+    # 검증하지 않은 값을 "verified" 자리에 넣으면 그 계약을 믿는 소비자가 생긴다.
+    # 근거가 없으면 무확인 삭제 경로가 fail-closed로 멈춘다.
   fi
 
   case "$pr_state" in

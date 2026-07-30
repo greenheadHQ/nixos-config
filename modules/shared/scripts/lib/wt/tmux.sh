@@ -166,7 +166,17 @@ _wt_tmux_session_state() {
   local err rc=0
   err=$(tmux list-sessions 2>&1 >/dev/null) || rc=$?
   if (( rc != 0 )); then
-    if [[ "$err" == *"no server running"* || "$err" == *"error connecting"* ]]; then
+    # 서버 부재와 조회 불능을 errno 문구로 가른다. tmux는 소켓이 없으면
+    # "error connecting to <socket> (No such file or directory)"를, 서버가 죽어 있으면
+    # "no server running" 또는 "(Connection refused)"를 낸다 — 모두 부재다.
+    # 반면 "(Permission denied)"처럼 접근 자체가 막힌 경우는 활성 세션이 있어도 알 수
+    # 없으므로 unknown으로 두어 무확인 삭제를 막는다.
+    # (실측: 이 저장소 개발 환경에서 서버 미실행 시 "No such file or directory"가 나온다.
+    #  "error connecting"만 보고 부재로 단정하면 권한 오류가, unknown으로 단정하면
+    #  정상적인 서버 부재가 잘못 처리된다.)
+    if [[ "$err" == *"no server running"* \
+       || "$err" == *"No such file or directory"* \
+       || "$err" == *"Connection refused"* ]]; then
       printf 'absent\n'
     else
       printf 'unknown\n'

@@ -318,7 +318,7 @@ _remove_worktree() {
     # 제거에 성공했으므로 이제 부수 상태를 정리한다. 여기서 실패해도 worktree는 이미
     # 사라졌으니 중단하지 않고 알리기만 한다.
     _wt_tmux_close "$wt_path" || true
-    _wt_tmux_session_close "$session_name" || _info "참고: $name — 연결된 tmux 세션이 남아 있습니다"
+    _wt_tmux_session_close "$session_name" || _info "참고: $name — tmux 세션이 남아 있습니다 (연결된 클라이언트 또는 상태 확인 실패)"
     _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" \
       || _warn "참고: $name — Claude local plugin 등록을 정리하지 못했습니다"
   else
@@ -328,7 +328,7 @@ _remove_worktree() {
     # guarded가 제거를 앞으로 당긴 것은 그 경로에만 적용되는 정책이다.
     _wt_tmux_close "$wt_path" || true
     _wt_tmux_session_close "$session_name" || {
-      _info "스킵: $name — 연결된 tmux 세션이 있어 삭제하지 않습니다"
+      _info "스킵: $name — tmux 세션을 정리하지 못했습니다 (연결된 클라이언트 또는 상태 확인 실패)"
       return 1
     }
     _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
@@ -345,7 +345,10 @@ _remove_worktree() {
         _warn "브랜치 유지: $branch (삭제 판정 이후 새 커밋이 생겨 ref를 지우지 않았습니다)"
         _warn "  복구: git worktree add ${_safe_path} ${_safe_branch}"
         _info "삭제: $name (worktree만)"
-        "$HOME/.local/bin/nrs-relink" fix-dangling >/dev/null 2>&1 || true
+        # 정상 삭제 경로와 같은 계약을 지킨다 (#294) — 복원 실패를 삼키면 사용자가
+        # dangling 심링크와 필요한 수동 조치를 모른 채 성공 메시지만 받는다.
+        "$HOME/.local/bin/nrs-relink" fix-dangling >/dev/null 2>&1 \
+          || _warn "심링크 복원 실패 — 수동 nrs 필요"
         return 0
       fi
     else
