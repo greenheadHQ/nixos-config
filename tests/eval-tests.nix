@@ -646,6 +646,11 @@ let
               cfg.system.defaults.CustomUserPreferences.NSGlobalDomain.ComputerUseAllowForbiddenTargets == true;
         }
         {
+          name = "Test D33 ${hostName}: 한국어 입력기 삭제 방식이 글자 단위(DeleteBy=2)로 선언되어야 함";
+          cond =
+            hasHost && cfg.system.defaults.CustomUserPreferences."com.apple.inputmethod.Korean".DeleteBy == 2;
+        }
+        {
           name = "Test D14 ${hostName}: claudex descriptor와 runtime library는 모든 Darwin host에 있어야 함";
           cond = hasClaudexDescriptor && builtins.hasAttr ".local/lib/claudex/runtime.sh" hm.home.file;
         }
