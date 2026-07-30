@@ -40,6 +40,8 @@
   darwinOnly = [
     # ghostty: Homebrew Cask로 관리 (homebrew.nix)
     # pkgs.ghostty-bin은 CLI 바이너리만 제공하고 macOS .app 번들을 포함하지 않음
+    # awscli: Homebrew formula로 관리 (homebrew.nix)
+    # pkgs.awscli2/awscli는 nixpkgs darwin libffi가 macOS 27에서 깨져 실행 불가 — 사유는 homebrew.nix 참조
     pkgs.imagemagick # 이미지 처리
     pkgs.rar # 압축
     pkgs.shottr # 스크린샷 (GUI, macOS 전용)
