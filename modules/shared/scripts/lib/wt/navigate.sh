@@ -12,7 +12,7 @@ _wt_ls_json() {
   local objs=()
   local wt
   for wt in "${worktrees[@]}"; do
-    local name branch ts age pr_status dirty unpushed is_current
+    local name branch ts age pr_status dirty loss_risk is_current
     name=$(basename "$wt")
     branch=$(_wt_branch "$wt")
     ts=$(_wt_last_commit_ts "$wt")
@@ -20,12 +20,19 @@ _wt_ls_json() {
     pr_status="NONE"
     [[ -f "$tmp/$name.pr" ]] && pr_status=$(cat "$tmp/$name.pr")
     dirty=false; _wt_is_dirty "$wt" && dirty=true
-    unpushed=false; _wt_has_unpushed "$wt" && unpushed=true
+    # JSON 키 unpushed는 "정리하면 잃을 커밋이 있는가"를 뜻한다 — squash merge 후 upstream이
+    # 사라진 MERGED worktree를 미push로 오판하지 않도록 PR 상태로 보정한다 (git-state.sh).
+    # 내부 변수는 그 의미대로 loss_risk로 두고, 기존 JSON 키는 아래 경계에서 매핑한다.
+    #
+    # 단 PR 상태는 조회 시점 스냅샷이라, 그 뒤 커밋이 생기면 MERGED 근거가 stale해진다.
+    # 출력 직전에 근거 OID와 현재 HEAD를 대조해, 어긋나면 raw 판정으로 되돌린다 —
+    # 그러지 않으면 잃을 커밋이 있는데도 unpushed:false를 보고하게 된다.
+    loss_risk=false; _wt_has_unpushed_risk "$wt" "$pr_status" "$tmp/$name.head" && loss_risk=true
     is_current=false; [[ "$wt" == "$current_wt" ]] && is_current=true
     objs+=("$(jq -n \
       --arg name "$name" --arg branch "$branch" --arg path "$wt" \
       --arg pr "$pr_status" --arg age "$age" --argjson ts "${ts:-0}" \
-      --argjson dirty "$dirty" --argjson unpushed "$unpushed" \
+      --argjson dirty "$dirty" --argjson unpushed "$loss_risk" \
       --argjson current "$is_current" \
       '{name:$name, branch:$branch, path:$path, pr:$pr, committedAt:$ts, age:$age, dirty:$dirty, unpushed:$unpushed, current:$current}')")
   done

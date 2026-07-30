@@ -1,14 +1,47 @@
 # shellcheck shell=bash
 # ── 서브커맨드: cleanup ──────────────────────────────────────────────────────
 
+# 현재 worktree는 자기 자신을 지우면 셸의 cwd가 사라지므로 정리 대상에서 제외된다.
+# 그 사실과 재실행 방법을 알리는 안내를 한곳에 둔다 — auto 경로와 이름 지정 경로가
+# 같은 문구·같은 quoting을 써야 안내가 갈라지지 않는다.
+_wt_warn_cleanup_from_root() {
+  local git_root="$1" name="$2" message="$3"
+  local _safe_root _safe_name
+  printf -v _safe_root '%q' "$git_root"
+  printf -v _safe_name '%q' "$name"
+  _warn "$message"
+  _warn "  저장소 루트에서 실행하세요: cd ${_safe_root} && wt cleanup ${_safe_name}"
+}
+
+# 사용자 확인을 건너뛰는 삭제(guarded)에 쓸 근거 OID를 stdout으로 반환한다.
+# 재확인에 실패하면 경고 후 1을 반환해 호출자가 건너뛰게 한다 — 근거를 확인할 수
+# 없으면 지우지 않는다(fail-closed). 실패 원인은 새 커밋(OID 변경), 같은 커밋에서의
+# 체크아웃 브랜치 전환, 근거 기록 부재·형식 위반·읽기 실패를 모두 포함한다 — 근거는
+# `<oid> <branch>` 둘 다이기 때문이다(git-state.sh의 `_wt_head_unchanged`).
+# 두 삭제 경로가 같은 검증·문구·실패 처리를 쓰도록 한곳에 둔다.
+_wt_guarded_delete_oid() {
+  local wt_path="$1" head_file="$2" name="$3"
+  local recorded oid
+  recorded=$(cat "$head_file" 2>/dev/null || true)
+  oid="${recorded%% *}"   # 기록 형식은 "<oid> <branch>" (git-state.sh)
+  if [[ -z "$oid" ]] || ! _wt_head_unchanged "$wt_path" "$head_file"; then
+    _warn "스킵: $name (MERGED 근거를 재확인하지 못했습니다 — 새 커밋이나 브랜치 전환, 또는 근거 기록 유실. 다시 실행하세요)"
+    return 1
+  fi
+  printf '%s' "$oid"
+}
+
 cmd_cleanup() {
   local auto=false
   local names_filter=()
+  # --yes는 두 가지를 한다: _confirm 자동 승인(WT_ASSUME_YES)과 제거 전략 강제.
+  # 후자는 이 명령의 정책이므로 전역 변수에 얹지 않고 로컬 상태로 둔다.
+  local force_removal=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --auto)    auto=true ;;
-      --yes|-y)  export WT_ASSUME_YES=1 ;;  # ui.sh _confirm이 소비 (cross-file)
+      --yes|-y)  export WT_ASSUME_YES=1; force_removal=true ;;  # WT_ASSUME_YES는 ui.sh _confirm이 소비 (cross-file)
       -h|--help) show_help; return 0 ;;
       -*)        _die "알 수 없는 옵션: $1" ;;
       *)         names_filter+=("$1") ;;
@@ -51,7 +84,7 @@ cmd_cleanup() {
   local item_branches=()
   local item_pr=()
   local item_dirty=()
-  local item_unpushed=()
+  local item_loss_risk=()
   local merged_indices=()
   local broken_count=0
 
@@ -72,7 +105,7 @@ cmd_cleanup() {
       continue
     fi
 
-    local name branch ts age pr_status dirty_flag unpushed_flag last_msg
+    local name branch ts age pr_status dirty_flag loss_risk_flag last_msg
     name=$(basename "$wt")
     branch=$(_wt_branch "$wt")
     ts=$(_wt_last_commit_ts "$wt")
@@ -84,8 +117,9 @@ cmd_cleanup() {
     dirty_flag=false
     _wt_is_dirty "$wt" && dirty_flag=true
 
-    unpushed_flag=false
-    _wt_has_unpushed "$wt" && unpushed_flag=true
+    # 근거 파일을 함께 넘기면 근거가 없거나 낡은 MERGED는 보정 대상에서 빠진다 (git-state.sh).
+    loss_risk_flag=false
+    _wt_has_unpushed_risk "$wt" "$pr_status" "$_wt_cleanup_tmp/$name.head" && loss_risk_flag=true
 
     last_msg=$(_wt_last_commit_msg "$wt")
 
@@ -99,22 +133,44 @@ cmd_cleanup() {
 
     local dirty_mark=""
     [[ "$dirty_flag" == "true" ]] && dirty_mark=" ●dirty"
-    local unpushed_mark=""
-    [[ "$unpushed_flag" == "true" ]] && unpushed_mark=" ↑unpushed"
+    local loss_risk_mark=""
+    [[ "$loss_risk_flag" == "true" ]] && loss_risk_mark=" ↑unpushed"
 
-    local label="$st_icon $name [$age $pr_status${dirty_mark}${unpushed_mark}] — $last_msg"
+    local label="$st_icon $name [$age $pr_status${dirty_mark}${loss_risk_mark}] — $last_msg"
 
     items+=("$label")
     item_paths+=("$wt")
     item_branches+=("$branch")
     item_pr+=("$pr_status")
     item_dirty+=("$dirty_flag")
-    item_unpushed+=("$unpushed_flag")
+    item_loss_risk+=("$loss_risk_flag")
 
     [[ "$pr_status" == "MERGED" ]] && merged_indices+=("$idx")
 
     idx=$((idx + 1))
   done
+
+  # 현재 위치한 worktree는 위 루프에서 제외된다 — 자기 자신을 지우면 셸의 cwd가
+  # 사라지기 때문이다. 문제는 그 제외를 침묵하면 "정리했는데 왜 그대로냐"로 보인다는
+  # 점이다 (#1186: finish-pr을 worktree 안에서 돌리면 --auto가 아무 말 없이 끝났다).
+  # 제외 사실과 해결 방법을 알리고, 실제 정리 대상(MERGED)이면 경고 수준으로 올린다.
+  #
+  # 이름을 지정한 호출에서는 이 안내를 생략한다 — 지정한 이름이 현재 worktree면
+  # 아래 미매칭 분기가 같은 안내를 하므로, 여기서도 알리면 같은 재실행 명령이 두 번
+  # 출력된다. 안내 책임을 호출 형태별로 한쪽에만 둔다.
+  # 단 --auto는 이름을 함께 받아도 아래 분기에 도달하기 전에 반환하므로 여기서 알린다.
+  if [[ -n "$current_wt" ]] && { [[ "$auto" == "true" ]] || (( ${#names_filter[@]} == 0 )); }; then
+    local cur_name cur_pr
+    cur_name=$(basename "$current_wt")
+    cur_pr="NONE"
+    [[ -f "$_wt_cleanup_tmp/$cur_name.pr" ]] && cur_pr=$(cat "$_wt_cleanup_tmp/$cur_name.pr")
+    if [[ "$cur_pr" == "MERGED" ]]; then
+      _wt_warn_cleanup_from_root "$git_root" "$cur_name" \
+        "현재 worktree라 여기서는 삭제할 수 없어 제외했습니다: $cur_name (PR MERGED)"
+    else
+      _info "현재 worktree 제외: $cur_name (PR $cur_pr)"
+    fi
+  fi
 
   if [[ "$auto" == "true" ]]; then
     if (( ${#merged_indices[@]} == 0 )); then
@@ -139,14 +195,40 @@ cmd_cleanup() {
         continue
       fi
 
-      if [[ "${item_unpushed[$i]}" == "true" ]]; then
-        if git -C "$wt_path" rev-parse --abbrev-ref "@{upstream}" &>/dev/null; then
-          _info "스킵: $name (merge 후 추가 커밋 있음)"
-          continue
-        fi
+      # auto 후보는 raw pr_status로 뽑으므로, 근거가 없거나 낡아 item_loss_risk가 true인
+      # 항목도 이 분기에 들어온다. 그 값을 신뢰하는 대신 raw git 상태를 직접 본다:
+      # upstream이 살아 있는데 그보다 앞선 커밋이 있으면 머지 후 추가 작업일 수 있다.
+      # (reuse guard와 중복 방어 — 사용자 확인 없이 지우는 경로만 이 보수성을 유지한다.)
+      if git -C "$wt_path" rev-parse --abbrev-ref "@{upstream}" &>/dev/null \
+        && _wt_has_unpushed "$wt_path"; then
+        _info "스킵: $name (merge 후 추가 커밋 있음)"
+        continue
       fi
 
-      _remove_worktree "$wt_path" "$branch" "$git_root" || _info "경고: $name 삭제 실패"
+      # --auto는 사용자 확인 없이 지우므로 기본이 guarded다 (비강제 제거 + ref CAS).
+      # 단 --yes는 "위험을 알고 우회한다"는 선언이므로 여기서도 forced로 보낸다 —
+      # 이름 지정 경로에만 적용하면 문서가 약속한 escape hatch가 auto에서 동작하지 않는다.
+      if [[ "$force_removal" == "true" ]]; then
+        # --yes가 바꾸는 것은 제거 전략뿐이다. 후보 선정 가드는 그대로 지켜야 문서 계약과
+        # 맞는다 — 위 dirty·추가 커밋 검사는 수집 시점 값이라, 조회 이후 생긴 변경은
+        # 여기서 다시 봐야 강제 제거가 그것까지 지우지 않는다.
+        if _wt_is_dirty "$wt_path"; then
+          _info "스킵: $name (dirty 있음)"
+          continue
+        fi
+        if ! _wt_head_unchanged "$wt_path" "$_wt_cleanup_tmp/$name.head"; then
+          _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
+          continue
+        fi
+        _remove_worktree "$wt_path" "$branch" "$git_root" "forced" \
+          || _info "경고: $name 삭제 실패"
+        continue
+      fi
+
+      local verified_oid
+      verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name") || continue
+      _remove_worktree "$wt_path" "$branch" "$git_root" "guarded" "$verified_oid" \
+        || _info "경고: $name 삭제 실패"
     done
 
     git worktree prune 2>/dev/null || true
@@ -223,7 +305,14 @@ cmd_cleanup() {
     if (( found_idx < 0 )); then
       # items에 없음: 존재하지 않거나, 손상되어 제외됐거나(위 경고), 현재 worktree.
       # 과거엔 silent continue라 "정리 완료: 0개"만 떠 진단이 어려웠다 (#883).
-      _warn "정리 대상 아님: $sel_name (존재하지 않거나, 손상되어 제외됐거나, 현재 worktree)"
+      # 세 원인을 한 문장에 뭉뚱그리면 사용자가 어느 쪽인지 모른 채 막힌다 (#1186).
+      # 현재 worktree는 원인이 특정되고 해결책도 명확하므로 분리해 안내한다.
+      if [[ -n "$current_wt" && "$sel_name" == "$(basename "$current_wt")" ]]; then
+        _wt_warn_cleanup_from_root "$git_root" "$sel_name" \
+          "현재 위치한 worktree라 여기서는 삭제할 수 없습니다: $sel_name"
+      else
+        _warn "정리 대상 아님: $sel_name (존재하지 않거나, 손상되어 제외됨)"
+      fi
       continue
     fi
 
@@ -232,16 +321,33 @@ cmd_cleanup() {
     local name
     name=$(basename "$wt_path")
 
-    if [[ "${item_dirty[$found_idx]}" == "true" ]] || [[ "${item_unpushed[$found_idx]}" == "true" ]]; then
+    # MERGED 대상의 제거 전략은 "사용자가 이 삭제의 위험을 인지했는가"로 갈린다.
+    # 인지한 경우(확인 프롬프트 통과 또는 --yes)는 기존대로 강제 삭제하고, 위험을
+    # 알릴 기회가 없었던 경우에만 guarded로 보호한다.
+    #
+    # clean한 OPEN/CLOSED/NONE도 확인을 거치지 않지만 forced로 남긴다 — 이름을 직접
+    # 지정한 기존 동작이고, guarded는 이번에 확인 프롬프트를 없앤 MERGED 경로를
+    # 메우려는 것이지 기존 경로까지 조이려는 것이 아니다.
+    local risk_acknowledged=false
+    # --yes는 "위험을 알고 우회한다"는 명시적 선언이다. 이를 인지로 취급해야 guarded가
+    # 거부했을 때 안내하는 재실행(--yes)이 실제로 강제 삭제로 이어진다.
+    [[ "$force_removal" == "true" ]] && risk_acknowledged=true
+    if [[ "${item_dirty[$found_idx]}" == "true" ]] || [[ "${item_loss_risk[$found_idx]}" == "true" ]]; then
       local warn_msg="$name:"
       [[ "${item_dirty[$found_idx]}" == "true" ]] && warn_msg+=" uncommitted 변경사항"
-      [[ "${item_unpushed[$found_idx]}" == "true" ]] && warn_msg+=" push하지 않은 커밋"
+      [[ "${item_loss_risk[$found_idx]}" == "true" ]] && warn_msg+=" push하지 않은 커밋"
 
       _info "$warn_msg"
       _confirm "정말 삭제하시겠습니까?" || { _info "스킵: $name"; continue; }
+      risk_acknowledged=true
     fi
 
-    if _remove_worktree "$wt_path" "$branch" "$git_root"; then
+    local mode="forced" verified_oid=""
+    if [[ "$risk_acknowledged" == "false" && "${item_pr[$found_idx]}" == "MERGED" ]]; then
+      mode="guarded"
+      verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name") || continue
+    fi
+    if _remove_worktree "$wt_path" "$branch" "$git_root" "$mode" "$verified_oid"; then
       removed=$((removed + 1))
     fi
   done

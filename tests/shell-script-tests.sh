@@ -134,6 +134,16 @@ run_test "wt cleanup auto skips merged branch reuse" test_wt_cleanup_auto_skips_
 run_test "wt cleanup auto survives stale worktree" test_wt_cleanup_auto_survives_stale_worktree
 run_test "wt cleanup name-filter survives stale worktree" test_wt_cleanup_name_filter_survives_stale_worktree
 run_test "wt cleanup auto broken-only reports skip count" test_wt_cleanup_auto_broken_only_reports_skip_count
+run_test "wt cleanup name-filter merged without upstream needs no confirm" test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm
+run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
+run_test "wt cleanup name-filter current worktree reports root command" test_wt_cleanup_name_filter_current_worktree_reports_root_command
+run_test "wt cleanup auto reports current merged exclusion" test_wt_cleanup_auto_reports_current_merged_exclusion
+run_test "wt tmux session-state classification unit" test_wt_tmux_session_state_classification_unit
+run_test "wt head-unchanged guard unit" test_wt_head_unchanged_guard_unit
+run_test "wt pr-status returns verified oid unit" test_wt_pr_status_returns_verified_oid_unit
+run_test "wt guarded remove rechecks branch unit" test_wt_remove_worktree_guarded_rechecks_branch_unit
+run_test "wt guarded remove keeps reused branch unit" test_wt_remove_worktree_guarded_keeps_reused_branch_unit
+run_test "wt guarded remove clears branch config unit" test_wt_remove_worktree_guarded_clears_branch_config_unit
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes

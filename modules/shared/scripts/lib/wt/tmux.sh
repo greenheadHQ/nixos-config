@@ -151,12 +151,66 @@ _wt_tmux_session_open() {
   exec tmux new-session -s "$session_name" -c "$wt_path"
 }
 
-# 세션 정리 (cleanup용, = prefix: exact match)
-# 연결된 클라이언트가 있으면 세션을 죽이지 않음 (활성 사용 보호)
+# 세션 상태를 삼상태로 조회한다 (stdout: absent | present | unknown).
+#
+# tmux는 "세션 없음"과 "상태를 못 읽음"을 모두 exit 1로 알리므로, 그 구분을 여기 한곳에
+# 둔다. 삭제 안전성을 판단하는 호출자들이 각자 stderr를 해석하면 같은 삼상태 모델이
+# 여러 모듈로 흩어지고, 의미를 바꿀 때 함께 고쳐야 한다.
+#   absent  — tmux가 없거나 서버가 안 떠 있거나 그 이름의 세션이 없다
+#   present — 세션이 있다
+#   unknown — 서버는 있는데 조회가 실패했다 (소켓·권한 등). 판단 불가.
+_wt_tmux_session_state() {
+  local session_name="$1"
+  command -v tmux >/dev/null 2>&1 || { printf 'absent\n'; return 0; }
+
+  # has-session 하나로 충분하다 — 서버가 없으면 그 사실도 이 호출이 알려준다(실측).
+  # exit 1만으로는 "없음"과 "못 읽음"을 구분할 수 없으므로 stderr를 분류한다.
+  local err rc=0
+  err=$(tmux has-session -t "=$session_name" 2>&1) || rc=$?
+  if (( rc == 0 )); then
+    printf 'present\n'
+  elif _wt_tmux_err_means_absent "$err"; then
+    printf 'absent\n'
+  else
+    printf 'unknown\n'
+  fi
+}
+
+# tmux 오류 메시지가 "부재"를 뜻하는지 판정한다. 이 환경 실측 기준:
+#   서버 미실행 — "error connecting to <socket> (No such file or directory)"
+#                 (서버가 죽는 방식에 따라 "no server running"이나 "(Connection refused)"도 나온다)
+#   세션 없음   — "can't find session: <name>"
+# 그 밖의 실패(예: "(Permission denied)")는 활성 세션이 있어도 알 수 없다는 뜻이므로
+# 부재로 보지 않는다 — 그래야 호출자가 unknown으로 fail-closed할 수 있다.
+_wt_tmux_err_means_absent() {
+  local err="$1"
+  [[ "$err" == *"no server running"* \
+     || "$err" == *"No such file or directory"* \
+     || "$err" == *"Connection refused"* \
+     || "$err" == *"can't find session"* \
+     || "$err" == *"session not found"* ]]
+}
+
+# 세션 종료를 막아야 하는지 판정한다 (부수효과 없음). 사실 조회가 아니라 정책 판정이라
+# 이름도 그렇게 붙였다 — 반환값을 "클라이언트가 존재한다"로 읽으면 안 된다.
+# 연결된 클라이언트가 있으면 막고(활성 사용 보호), 상태나 클라이언트 목록을 읽지 못하면
+# "없음"이 아니라 "알 수 없음"이므로 역시 막는다(fail-closed).
+_wt_tmux_session_close_should_block() {
+  local session_name="$1"
+  case "$(_wt_tmux_session_state "$session_name")" in
+    absent)  return 1 ;;
+    unknown) return 0 ;;
+  esac
+
+  local clients
+  clients=$(tmux list-clients -t "=$session_name" 2>/dev/null) || return 0
+  [[ -n "$clients" ]]
+}
+
 _wt_tmux_session_close() {
   local session_name="$1"
-  if tmux list-clients -t "=$session_name" 2>/dev/null | grep -q .; then
-    _info "스킵: tmux 세션 '$session_name'에 연결된 클라이언트가 있습니다"
+  if _wt_tmux_session_close_should_block "$session_name"; then
+    _info "스킵: tmux 세션 '$session_name' — 연결된 클라이언트가 있거나 상태를 확인하지 못했습니다"
     return 1
   fi
   tmux kill-session -t "=$session_name" 2>/dev/null || true
