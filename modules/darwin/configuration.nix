@@ -204,6 +204,15 @@ in
       appswitcher-all-displays = true;
     };
 
+    # 한국어 입력기(두벌식)의 삭제 방식을 '글자' 단위로 고정한다.
+    # 시스템 설정 > 키보드 > 입력 소스 > 두벌식의 '삭제 방식'이 '글자'인 상태에서
+    # 이 도메인의 plist를 실측해 DeleteBy = 2를 확인했다.
+    # macOS는 기본값을 plist에 기록하지 않으므로 이 키는 사용자가 값을 바꾼 경우에만 나타난다
+    # (같은 화면의 '서체 크기'·'입력 포맷'은 기본값이라 plist에 키가 없다).
+    CustomUserPreferences."com.apple.inputmethod.Korean" = {
+      DeleteBy = 2;
+    };
+
     # 키보드 단축키 (com.apple.symbolichotkeys)
     #
     # [주의] CustomUserPreferences가 아닌 postActivation에서 관리.
