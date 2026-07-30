@@ -328,3 +328,123 @@ test_wt_cleanup_auto_broken_only_reports_skip_count() {
   [[ -d "$broken_path" ]] || fail "손상 worktree는 보존돼야 함(정리 제외): $broken_path"
   [[ -d "$target_path" ]] || fail "MERGED 아닌 정상 worktree는 보존돼야 함: $target_path"
 }
+
+test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm() {
+  # squash merge 후 원격 브랜치가 삭제되면 upstream이 사라져 _wt_has_unpushed가
+  # 보수적 true를 낸다. 그 값을 그대로 믿으면 이미 머지된 worktree가 "push하지 않은
+  # 커밋 있음"으로 확인을 요구하고, 비대화형(finish-pr 등)에서는 확인이 실패해
+  # 정리가 막힌다. PR MERGED는 headRefOid == 로컬 HEAD가 검증된 상태이므로
+  # --yes 없이도 확인 프롬프트 없이 정리돼야 한다.
+  local sandbox home_dir repo_root gh_dir output target_path head_oid
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  gh_dir="$sandbox/gh-bin"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  # origin은 있으나 push하지 않아 upstream이 없는 상태 (= squash merge 후 원격
+  # 브랜치가 삭제되고 remote-tracking ref까지 정리된 상황과 동일한 git 상태)
+  git -C "$repo_root" remote add origin https://example.invalid/nixos-config.git
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  head_oid="$(git -C "$target_path" rev-parse HEAD)"
+
+  mkdir -p "$gh_dir"
+  cat > "$gh_dir/gh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'MERGED %s\n' "$head_oid"
+EOF
+  chmod +x "$gh_dir/gh"
+
+  output=$(
+    HOME="$home_dir" \
+    PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup feature_one
+    ' 2>&1
+  )
+
+  assert_contains "$output" "정리 완료: 1개 삭제"
+  assert_not_contains "$output" "비대화형: 확인 필요"
+  assert_not_contains "$output" "push하지 않은 커밋"
+  [[ ! -d "$target_path" ]] || fail "MERGED worktree가 upstream 부재로 정리되지 않음: $target_path"
+}
+
+test_wt_cleanup_name_filter_current_worktree_reports_root_command() {
+  # #1186: worktree 안에서 자기 자신을 정리하려 하면 items에서 제외되어 삭제되지
+  # 않는데, 과거 메시지는 세 원인을 뭉뚱그려 사용자가 어느 쪽인지 몰랐고 해결
+  # 방법도 없었다. 원인을 특정하고 저장소 루트 재실행 명령을 제시해야 한다.
+  local sandbox home_dir repo_root output target_path
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  target_path="$repo_root/.claude/worktrees/feature_one"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+      set -euo pipefail
+      cd "'"$target_path"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup feature_one
+    ' 2>&1 || true
+  )
+
+  assert_contains "$output" "현재 위치한 worktree라 여기서는 삭제할 수 없습니다: feature_one"
+  assert_contains "$output" "저장소 루트에서 실행하세요"
+  [[ -d "$target_path" ]] || fail "현재 worktree는 보존돼야 함: $target_path"
+}
+
+test_wt_cleanup_auto_reports_current_merged_exclusion() {
+  # #1186의 침묵 경로: --auto는 현재 worktree를 제외하면서 아무 말도 하지 않아
+  # "자동 정리 완료"만 보였다. 제외 사실과 해결 방법을 알려야 한다.
+  local sandbox home_dir repo_root gh_dir output target_path head_oid
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  gh_dir="$sandbox/gh-bin"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  git -C "$repo_root" remote add origin https://example.invalid/nixos-config.git
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  head_oid="$(git -C "$target_path" rev-parse HEAD)"
+
+  mkdir -p "$gh_dir"
+  cat > "$gh_dir/gh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'MERGED %s\n' "$head_oid"
+EOF
+  chmod +x "$gh_dir/gh"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+      set -euo pipefail
+      cd "'"$target_path"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup --auto
+    ' 2>&1 || true
+  )
+
+  assert_contains "$output" "현재 worktree라 여기서는 삭제할 수 없어 제외했습니다: feature_one (PR MERGED)"
+  assert_contains "$output" "저장소 루트에서 실행하세요"
+  [[ -d "$target_path" ]] || fail "현재 worktree는 보존돼야 함: $target_path"
+}

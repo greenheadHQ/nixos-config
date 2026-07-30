@@ -85,7 +85,7 @@ cmd_cleanup() {
     _wt_is_dirty "$wt" && dirty_flag=true
 
     unpushed_flag=false
-    _wt_has_unpushed "$wt" && unpushed_flag=true
+    _wt_has_unpushed_risk "$wt" "$pr_status" && unpushed_flag=true
 
     last_msg=$(_wt_last_commit_msg "$wt")
 
@@ -116,6 +116,26 @@ cmd_cleanup() {
     idx=$((idx + 1))
   done
 
+  # 현재 위치한 worktree는 위 루프에서 제외된다 — 자기 자신을 지우면 셸의 cwd가
+  # 사라지기 때문이다. 문제는 그 제외를 침묵하면 "정리했는데 왜 그대로냐"로 보인다는
+  # 점이다 (#1186: finish-pr을 worktree 안에서 돌리면 --auto가 아무 말 없이 끝났다).
+  # 제외 사실과 해결 방법을 항상 알리고, 실제 정리 대상(MERGED)이면 경고 수준으로 올린다.
+  if [[ -n "$current_wt" ]]; then
+    local cur_name cur_pr
+    cur_name=$(basename "$current_wt")
+    cur_pr="NONE"
+    [[ -f "$_wt_cleanup_tmp/$cur_name.pr" ]] && cur_pr=$(cat "$_wt_cleanup_tmp/$cur_name.pr")
+    if [[ "$cur_pr" == "MERGED" ]]; then
+      local _safe_root _safe_name
+      printf -v _safe_root '%q' "$git_root"
+      printf -v _safe_name '%q' "$cur_name"
+      _warn "현재 worktree라 여기서는 삭제할 수 없어 제외했습니다: $cur_name (PR MERGED)"
+      _warn "  저장소 루트에서 실행하세요: cd ${_safe_root} && wt cleanup ${_safe_name}"
+    else
+      _info "현재 worktree 제외: $cur_name (PR $cur_pr)"
+    fi
+  fi
+
   if [[ "$auto" == "true" ]]; then
     if (( ${#merged_indices[@]} == 0 )); then
       # 손상 카운트를 late-auto(아래)·name-filter 요약과 일관되게 노출 (#883 broken-only 경로).
@@ -139,11 +159,14 @@ cmd_cleanup() {
         continue
       fi
 
-      if [[ "${item_unpushed[$i]}" == "true" ]]; then
-        if git -C "$wt_path" rev-parse --abbrev-ref "@{upstream}" &>/dev/null; then
-          _info "스킵: $name (merge 후 추가 커밋 있음)"
-          continue
-        fi
+      # item_unpushed는 PR MERGED로 보정된 값이라 이 분기에서는 항상 false다.
+      # --auto는 사용자 확인 없이 지우므로 raw git 상태를 한 번 더 본다: upstream이
+      # 살아 있는데 그보다 앞선 커밋이 있으면 머지 후 추가 작업일 수 있다.
+      # (reuse guard와 중복 방어 — 자동 삭제 경로만 이 보수성을 유지한다.)
+      if git -C "$wt_path" rev-parse --abbrev-ref "@{upstream}" &>/dev/null \
+        && _wt_has_unpushed "$wt_path"; then
+        _info "스킵: $name (merge 후 추가 커밋 있음)"
+        continue
       fi
 
       _remove_worktree "$wt_path" "$branch" "$git_root" || _info "경고: $name 삭제 실패"
@@ -223,7 +246,17 @@ cmd_cleanup() {
     if (( found_idx < 0 )); then
       # items에 없음: 존재하지 않거나, 손상되어 제외됐거나(위 경고), 현재 worktree.
       # 과거엔 silent continue라 "정리 완료: 0개"만 떠 진단이 어려웠다 (#883).
-      _warn "정리 대상 아님: $sel_name (존재하지 않거나, 손상되어 제외됐거나, 현재 worktree)"
+      # 세 원인을 한 문장에 뭉뚱그리면 사용자가 어느 쪽인지 모른 채 막힌다 (#1186).
+      # 현재 worktree는 원인이 특정되고 해결책도 명확하므로 분리해 안내한다.
+      if [[ -n "$current_wt" && "$sel_name" == "$(basename "$current_wt")" ]]; then
+        local _safe_root _safe_name
+        printf -v _safe_root '%q' "$git_root"
+        printf -v _safe_name '%q' "$sel_name"
+        _warn "현재 위치한 worktree라 여기서는 삭제할 수 없습니다: $sel_name"
+        _warn "  저장소 루트에서 실행하세요: cd ${_safe_root} && wt cleanup ${_safe_name}"
+      else
+        _warn "정리 대상 아님: $sel_name (존재하지 않거나, 손상되어 제외됨)"
+      fi
       continue
     fi
 

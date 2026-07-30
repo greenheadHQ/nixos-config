@@ -63,7 +63,10 @@ _wt_is_dirty() {
   [[ -n "$status" ]]
 }
 
-# worktree에 unpushed 커밋이 있는지 체크
+# worktree에 unpushed 커밋이 있는지 체크 (raw git 상태)
+# upstream을 못 찾으면 보수적으로 true다 — 한 번도 push하지 않은 브랜치를 놓치지
+# 않기 위함이다. 이 보수성이 squash merge 후 false positive를 만드는 문제는
+# _wt_has_unpushed_risk가 PR 상태로 보정한다 (아래 주석 참조).
 _wt_has_unpushed() {
   local branch
   branch=$(_wt_branch "$1")
@@ -74,6 +77,29 @@ _wt_has_unpushed() {
   local ahead
   ahead=$(git -C "$1" rev-list --count "$upstream..HEAD" 2>/dev/null) || return 1
   (( ahead > 0 ))
+}
+
+# 정리(cleanup) 안전성 관점의 unpushed 판정 — "지우면 잃을 커밋이 있는가".
+#
+# squash merge를 하면 GitHub이 원격 브랜치를 삭제하고, remote-tracking ref까지
+# 정리되면 로컬 브랜치의 upstream이 사라진다. 그러면 위 _wt_has_unpushed가 보수적
+# true를 내어, 이미 main에 반영된 worktree가 "push하지 않은 커밋 있음"으로 오판된다.
+# 이 false positive는 정리를 막아 worktree가 계속 쌓이게 한다.
+#
+# git만으로는 이 상태를 신뢰성 있게 판정할 수 없다 (실측):
+#   - `git cherry`는 patch-id 비교라, 여러 커밋이 하나로 합쳐지는 squash에서는
+#     모든 커밋을 미반영(+)으로 판정한다.
+#   - 트리 직접 비교는 머지 직후에만 맞고, main이 이후 앞서가면 차이로 나온다.
+#
+# 반면 PR이 MERGED라는 사실은 _wt_pr_status의 branch name reuse guard가
+# "머지된 PR의 headRefOid == 로컬 HEAD"까지 확인한 결과다. 즉 로컬에만 있는
+# 커밋이 없음이 이미 보장되므로, 잃을 것이 없어 경고 대상에서 제외한다.
+# MERGED가 아니면 기존 보수적 판정을 그대로 유지한다.
+_wt_has_unpushed_risk() {
+  local wt="$1"
+  local pr_status="${2:-NONE}"
+  [[ "$pr_status" == "MERGED" ]] && return 1
+  _wt_has_unpushed "$wt"
 }
 
 # PR 상태 조회 (gh CLI)

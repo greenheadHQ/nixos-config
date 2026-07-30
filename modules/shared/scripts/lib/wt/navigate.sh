@@ -20,7 +20,9 @@ _wt_ls_json() {
     pr_status="NONE"
     [[ -f "$tmp/$name.pr" ]] && pr_status=$(cat "$tmp/$name.pr")
     dirty=false; _wt_is_dirty "$wt" && dirty=true
-    unpushed=false; _wt_has_unpushed "$wt" && unpushed=true
+    # unpushed는 "정리하면 잃을 커밋이 있는가"를 뜻한다 — squash merge 후 upstream이
+    # 사라진 MERGED worktree를 미push로 오판하지 않도록 PR 상태로 보정한다 (git-state.sh).
+    unpushed=false; _wt_has_unpushed_risk "$wt" "$pr_status" && unpushed=true
     is_current=false; [[ "$wt" == "$current_wt" ]] && is_current=true
     objs+=("$(jq -n \
       --arg name "$name" --arg branch "$branch" --arg path "$wt" \
