@@ -27,9 +27,7 @@ _wt_ls_json() {
     # 단 PR 상태는 조회 시점 스냅샷이라, 그 뒤 커밋이 생기면 MERGED 근거가 stale해진다.
     # 출력 직전에 근거 OID와 현재 HEAD를 대조해, 어긋나면 raw 판정으로 되돌린다 —
     # 그러지 않으면 잃을 커밋이 있는데도 unpushed:false를 보고하게 된다.
-    local effective_pr
-    effective_pr=$(_wt_effective_pr_status "$wt" "$pr_status" "$tmp/$name.head")
-    loss_risk=false; _wt_has_unpushed_risk "$wt" "$effective_pr" && loss_risk=true
+    loss_risk=false; _wt_has_unpushed_risk "$wt" "$pr_status" "$tmp/$name.head" && loss_risk=true
     is_current=false; [[ "$wt" == "$current_wt" ]] && is_current=true
     objs+=("$(jq -n \
       --arg name "$name" --arg branch "$branch" --arg path "$wt" \

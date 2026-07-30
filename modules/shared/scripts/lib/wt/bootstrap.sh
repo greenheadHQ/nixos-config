@@ -342,7 +342,10 @@ _remove_worktree() {
   local branch_kept=false
   if [[ "$branch" != "detached" ]]; then
     if [[ "$mode" == "guarded" ]]; then
-      if ! git -C "$git_root" update-ref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
+      # --no-deref: update-ref는 기본적으로 symbolic ref를 따라간다. 그 사이 이 ref가
+      # 같은 OID를 가리키는 symbolic ref로 바뀌면 CAS는 통과하면서 엉뚱한 대상 브랜치를
+      # 지울 수 있다. OID 비교는 값만 보고 ref의 정체성 변경은 못 잡는다.
+      if ! git -C "$git_root" update-ref --no-deref -d "refs/heads/$branch" "$expected_oid" 2>/dev/null; then
         local _safe_path _safe_branch
         printf -v _safe_path '%q' "$wt_path"
         printf -v _safe_branch '%q' "$branch"

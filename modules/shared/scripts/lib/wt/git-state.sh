@@ -95,10 +95,21 @@ _wt_has_unpushed() {
 # "머지된 PR의 headRefOid == 로컬 HEAD"까지 확인한 결과다. 즉 로컬에만 있는
 # 커밋이 없음이 이미 보장되므로, 잃을 것이 없어 경고 대상에서 제외한다.
 # MERGED가 아니면 기존 보수적 판정을 그대로 유지한다.
+# 인자: wt, pr_status, [head_file]
+#
+# head_file을 주면 근거 유효성 보정까지 이 함수가 수행한다 — 소비자가 먼저
+# `_wt_effective_pr_status`를 부르는 두 단계 프로토콜은 그 순서를 아는 사람만 안전하고,
+# 새 소비자가 raw 캐시 상태를 그대로 넘기면 검증되지 않았거나 낡은 MERGED를 "손실 없음"
+# 으로 오판한다. 근거 파일 없이 호출하면 문자열만 보고 판정한다(구 계약).
 _wt_has_unpushed_risk() {
   local wt="$1"
   local pr_status="${2:-NONE}"
-  [[ "$pr_status" == "MERGED" ]] && return 1
+  local head_file="${3:-}"
+
+  local effective="$pr_status"
+  [[ -n "$head_file" ]] && effective=$(_wt_effective_pr_status "$wt" "$pr_status" "$head_file")
+
+  [[ "$effective" == "MERGED" ]] && return 1
   _wt_has_unpushed "$wt"
 }
 

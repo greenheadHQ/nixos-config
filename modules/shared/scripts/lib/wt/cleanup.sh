@@ -31,11 +31,14 @@ _wt_guarded_delete_oid() {
 cmd_cleanup() {
   local auto=false
   local names_filter=()
+  # --yes는 두 가지를 한다: _confirm 자동 승인(WT_ASSUME_YES)과 제거 전략 강제.
+  # 후자는 이 명령의 정책이므로 전역 변수에 얹지 않고 로컬 상태로 둔다.
+  local force_removal=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --auto)    auto=true ;;
-      --yes|-y)  export WT_ASSUME_YES=1 ;;  # ui.sh _confirm이 소비 (cross-file)
+      --yes|-y)  export WT_ASSUME_YES=1; force_removal=true ;;  # WT_ASSUME_YES는 ui.sh _confirm이 소비 (cross-file)
       -h|--help) show_help; return 0 ;;
       -*)        _die "알 수 없는 옵션: $1" ;;
       *)         names_filter+=("$1") ;;
@@ -111,11 +114,9 @@ cmd_cleanup() {
     dirty_flag=false
     _wt_is_dirty "$wt" && dirty_flag=true
 
-    # 근거가 없거나 낡은 MERGED는 보정 대상에서 빼고 raw 판정으로 돌린다 (git-state.sh).
-    local effective_pr
-    effective_pr=$(_wt_effective_pr_status "$wt" "$pr_status" "$_wt_cleanup_tmp/$name.head")
+    # 근거 파일을 함께 넘기면 근거가 없거나 낡은 MERGED는 보정 대상에서 빠진다 (git-state.sh).
     loss_risk_flag=false
-    _wt_has_unpushed_risk "$wt" "$effective_pr" && loss_risk_flag=true
+    _wt_has_unpushed_risk "$wt" "$pr_status" "$_wt_cleanup_tmp/$name.head" && loss_risk_flag=true
 
     last_msg=$(_wt_last_commit_msg "$wt")
 
@@ -204,7 +205,7 @@ cmd_cleanup() {
       # --auto는 사용자 확인 없이 지우므로 기본이 guarded다 (비강제 제거 + ref CAS).
       # 단 --yes는 "위험을 알고 우회한다"는 선언이므로 여기서도 forced로 보낸다 —
       # 이름 지정 경로에만 적용하면 문서가 약속한 escape hatch가 auto에서 동작하지 않는다.
-      if [[ -n "${WT_ASSUME_YES:-}" ]]; then
+      if [[ "$force_removal" == "true" ]]; then
         # --yes가 바꾸는 것은 제거 전략뿐이다. 후보 선정 가드는 그대로 지켜야 문서 계약과
         # 맞는다 — 위 dirty·추가 커밋 검사는 수집 시점 값이라, 조회 이후 생긴 변경은
         # 여기서 다시 봐야 강제 제거가 그것까지 지우지 않는다.
@@ -327,7 +328,7 @@ cmd_cleanup() {
     local risk_acknowledged=false
     # --yes는 "위험을 알고 우회한다"는 명시적 선언이다. 이를 인지로 취급해야 guarded가
     # 거부했을 때 안내하는 재실행(--yes)이 실제로 강제 삭제로 이어진다.
-    [[ -n "${WT_ASSUME_YES:-}" ]] && risk_acknowledged=true
+    [[ "$force_removal" == "true" ]] && risk_acknowledged=true
     if [[ "${item_dirty[$found_idx]}" == "true" ]] || [[ "${item_loss_risk[$found_idx]}" == "true" ]]; then
       local warn_msg="$name:"
       [[ "${item_dirty[$found_idx]}" == "true" ]] && warn_msg+=" uncommitted 변경사항"
