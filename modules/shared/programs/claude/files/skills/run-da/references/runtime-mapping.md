@@ -20,9 +20,9 @@ Direct Codex 세션의 native fan-out lifecycle과 동시 발사 상한은 현�
 
 | profile | 판별 조건 (model-visible tool 집합) | slot 회수 | 동시 발사(batch) 상한 |
 |---------|-------------------------------------|-----------|----------------------|
-| `current` | `spawn_agent`·`wait_agent`가 있고 explicit `close_agent`가 없음 | explicit close 도구가 없다 — 결과 수신 후 slot 회수를 자체 확인할 수 없으므로, 광고 slot을 초과하는 발사를 계획하지 않는다 | developer 광고 total slot N(root 포함, N ≥ 2 필요)에서 child batch = N − 1. N < 2이면 child slot이 없으므로 native fan-out 불가 — codex exec fallback 또는 serial 경로를 쓴다 |
+| `current` | `spawn_agent`·`wait_agent`가 있고 explicit `close_agent`가 없음 | explicit close 도구가 없다 — 결과 수신 후 slot 회수를 자체 확인할 수 없으므로, 광고 slot을 초과하는 발사를 계획하지 않는다 | developer 광고 total slot N(root 포함, N ≥ 2 필요)에서 child batch = N − 1. N < 2이면 child slot이 없으므로 native fan-out 불가 — codex exec fallback(serial subprocess)을 쓴다 (native serial 아님 — root 외 native 실행 slot이 없다) |
 | `legacy` | `spawn_agent`·`wait_agent`·`close_agent` 모두 있음 | completed thread를 다음 round/retry 전에 `close_agent`로 닫아 slot을 회수한다 (닫기 전까지 slot 점유) | 광고 slot 사용 시 current와 동일하게 child batch = N − 1 (N은 root 포함 total, N ≥ 2 필요). 미광고 시 `agents.max_threads` 설정값을 child thread 상한으로 쓰되, 그 값의 root 포함 여부를 세션 표면에서 확정할 수 없으면 unknown으로 강등한다 |
-| `unknown` | tool 집합 또는 slot 상한을 세션 표면에서 확인할 수 없음 | — | fail-safe: serial 실행(동시 1). 자동 verifier 결과로 unknown을 덮지 않는다 |
+| `unknown` | tool 집합 또는 slot 상한을 세션 표면에서 확인할 수 없음 | — | fail-safe 분기: `spawn_agent`·`wait_agent`는 확인됐고 slot만 미확정이면 native serial(동시 1). tool 집합 자체가 미확인·부재면 native 실행 불가 — codex exec fallback만 사용한다. 자동 verifier 결과로 unknown을 덮지 않는다 |
 
 - slot source: 세션 developer 메시지의 collaboration 안내 문장(예: "There are N available concurrency slots, meaning that up to N agents can be active at once, including you")이 1차 근거다. 이 광고가 없으면 slot은 unknown이다.
 - 실행 중 unit의 강제 중단 (cancellation capability — lifecycle profile과 독립 축): `close_agent`는 slot 회수 도구이지 중단 도구가 아니다. 중단은 profile과 무관하게 세션 표면에 광고된 중단 도구(예: `interrupt_agent`)가 있을 때만 수행하고, 없으면 conservative wait을 유지한다. 중단과 slot 회수는 별개 단계다: legacy에서 중단·완료된 thread의 slot 회수만 `close_agent`가 담당한다.
