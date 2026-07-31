@@ -250,6 +250,11 @@ in
         "homerow"
         "fork"
         "monitorcontrol"
+        # whatcable: USB-C 케이블 진단 메뉴바 앱 (#1191). 공식 homebrew-cask, auto_updates
+        # 특성이라 greedyCasks=false 정책과 결합해 자체 업데이터에 위임된다.
+        # CLI(whatcable-cli)는 개발자 개인 tap(darrylmorley/whatcable) 신뢰가 필요해
+        # 의도적으로 제외 — 실수요가 생기면 별도 판단한다.
+        "whatcable"
         # 1Password 비밀번호/SSH 키/PAT 통합 (PRD #780 Phase 1)
         # - 1password: 데스크탑 앱 (vault, SSH agent, biometric)
         # - 1password-cli: op CLI (op_get helper + Shell Plugin 지원)
