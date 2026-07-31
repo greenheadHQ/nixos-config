@@ -76,7 +76,7 @@ identity 확인, bounded fixture, rollback, update/reboot 재검증 절차는
 homebrew.casks = [
   "raycast" "rectangle"
   "hammerspoon" "homerow"
-  "fork" "monitorcontrol" "1password" "1password-cli"
+  "fork" "monitorcontrol" "whatcable" "1password" "1password-cli"
 ];
 homebrew.brews = [ "laishulu/homebrew/macism" "sox" ]; # Neovim 한영 전환, 오디오 처리
 # shottr → Nix 패키지로 관리 (libraries/packages.nix darwinOnly)

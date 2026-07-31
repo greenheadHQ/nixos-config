@@ -347,6 +347,7 @@ brews = [ "laishulu/homebrew/macism" ];  # ✅ 전체 경로
 | Homerow        | 키보드 네비게이션          |
 | Fork           | Git GUI                    |
 | MonitorControl | 외부 모니터 밝기 조절      |
+| WhatCable      | USB-C 케이블 진단 메뉴바 앱 (auto_updates·CLI 포함 여부는 homebrew.nix 주석 참조) |
 | 1Password      | 비밀번호/SSH 키/PAT 관리   |
 | 1Password CLI  | `op` CLI (1password-cli cask) |
 
@@ -434,7 +435,7 @@ brew install --cask --adopt raycast:
 brew install --cask --adopt raycast
 
 # 여러 앱 일괄 adopt (Nix 패키지로 관리하는 shottr, vscode 제외)
-for cask in ghostty raycast rectangle hammerspoon homerow fork monitorcontrol 1password 1password-cli; do
+for cask in ghostty raycast rectangle hammerspoon homerow fork monitorcontrol whatcable 1password 1password-cli; do
   brew install --cask --adopt "$cask" || echo "FAILED: $cask"
 done
 

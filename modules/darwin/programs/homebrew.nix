@@ -250,6 +250,14 @@ in
         "homerow"
         "fork"
         "monitorcontrol"
+        # whatcable: USB-C 케이블 진단 메뉴바 앱 (#1191). 공식 homebrew-cask, auto_updates
+        # 특성이라 greedyCasks=false 정책과 결합해 자체 업데이터에 위임된다.
+        # 요구사항: macOS 14+ / Apple Silicon 전용 cask — 이 repo의 darwin 시스템은
+        # aarch64-darwin 단일 정의(flake.nix)라 전 darwin 호스트에서 충족된다.
+        # 개발자 개인 tap(darrylmorley/whatcable)과 그 CLI-only formula(whatcable-cli)는
+        # tap 신뢰(brew trust)가 필요해 의도적으로 제외. 단 이 공식 cask 자체가 앱 내장
+        # CLI(binary artifact → $HOMEBREW_PREFIX/bin/whatcable)를 설치하므로 CLI 기능은 포함된다.
+        "whatcable"
         # 1Password 비밀번호/SSH 키/PAT 통합 (PRD #780 Phase 1)
         # - 1password: 데스크탑 앱 (vault, SSH agent, biometric)
         # - 1password-cli: op CLI (op_get helper + Shell Plugin 지원)
