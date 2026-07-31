@@ -252,8 +252,9 @@ in
         "monitorcontrol"
         # whatcable: USB-C 케이블 진단 메뉴바 앱 (#1191). 공식 homebrew-cask, auto_updates
         # 특성이라 greedyCasks=false 정책과 결합해 자체 업데이터에 위임된다.
-        # CLI(whatcable-cli)는 개발자 개인 tap(darrylmorley/whatcable) 신뢰가 필요해
-        # 의도적으로 제외 — 실수요가 생기면 별도 판단한다.
+        # 개발자 개인 tap(darrylmorley/whatcable)과 그 CLI-only formula(whatcable-cli)는
+        # tap 신뢰(brew trust)가 필요해 의도적으로 제외. 단 이 공식 cask 자체가 앱 내장
+        # CLI(binary artifact → $HOMEBREW_PREFIX/bin/whatcable)를 설치하므로 CLI 기능은 포함된다.
         "whatcable"
         # 1Password 비밀번호/SSH 키/PAT 통합 (PRD #780 Phase 1)
         # - 1password: 데스크탑 앱 (vault, SSH agent, biometric)
