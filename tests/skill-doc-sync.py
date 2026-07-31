@@ -64,20 +64,30 @@ _SEMANTIC_CLOSE_RE = re.compile(r"thread[^\n]{0,20}닫")
 _CURRENT_CLOSE_DIRECTIVE_RE = re.compile(r"current[^\n]{0,40}close_agent로\s*닫")
 
 
+# 부정·중립 문맥 토큰: 이 단어들이 있는 줄은 close/threads 언급이 있어도 "실행 지시"가
+# 아니라 부재·금지·이력 서술로 본다 (예: "닫지 않는다", "close_agent 호출을 금지한다").
+_NEGATION_TOKENS = ("없", "않", "금지", "아님", "폐지")
+
+
+def _has_negation(line: str) -> bool:
+    return any(token in line for token in _NEGATION_TOKENS)
+
+
 def close_contract_violation(line: str) -> str | None:
     """close 계약 위반이면 사유 문자열, 허용이면 None.
 
-    허용 계약 (runtime-mapping.md capability profile SSOT):
-    - close_agent/의미상 close 지시는 `legacy` 한정 서술과 함께만 등장할 수 있다.
-    - `close_agent`의 부재를 말하는 부정 서술("없음"/"없이"/"없다")은 허용한다.
-    - current 문맥에 close_agent 실행 지시가 결합되면 legacy 단어가 있어도 위반이다.
+    보장 범위 (라인 단위 근사 검사 — 정확한 의미 분석이 아니다):
+    - close_agent 언급 또는 "thread…닫" 표현이 있는 줄에서, `legacy` 한정도 부정·중립
+      문맥 토큰도 없으면 unqualified close 재도입으로 본다.
+    - "current … close_agent로 닫" 정확 문형(40자 이내)은 legacy 단어가 있어도 위반이다.
+      이 결합 검사는 해당 문형에 한정된 근사이며, 우회 표현까지 잡는다고 보장하지 않는다.
     """
     mentions_close = "close_agent" in line or _SEMANTIC_CLOSE_RE.search(line)
     if not mentions_close:
         return None
     if _CURRENT_CLOSE_DIRECTIVE_RE.search(line):
         return "current 문맥에 close_agent 실행 지시 (SSOT 모순 결합)"
-    if "legacy" in line or "없" in line:
+    if "legacy" in line or _has_negation(line):
         return None
     return "legacy 한정도 부재 서술도 없는 close 계약 (unqualified close 재도입)"
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
@@ -418,7 +428,7 @@ def check_capability_profile() -> None:
     for path in CAPABILITY_CONTRACT_DOCS:
         text = read_text(path)
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if re.search(r"agents\.max_threads.*6", line):
+            if re.search(r"agents\.max_threads.*6", line) and not _has_negation(line):
                 details.append(f"{path}:{lineno}: fixed `agents.max_threads` 6 literal 재도입")
             reason = close_contract_violation(line)
             if reason:

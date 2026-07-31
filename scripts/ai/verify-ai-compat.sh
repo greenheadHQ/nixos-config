@@ -498,79 +498,91 @@ require_contract_text \
 echo ""
 echo "=== Codex CLI-default native capability probe ==="
 # #1098: run-da native fan-out 계약의 CLI-default surface를 실측 판정한다.
-# `codex debug prompt-input` 출력의 developer 메시지에서 sanitized tool-name set과
-# slot 광고 문장만 추출한다 — raw prompt는 stdout/로그에 출력하지 않고, 임시 파일은
-# trap으로 비정상 종료 시에도 정리한다 (mktemp 기본 0600 권한).
-# 오탐 방지: tool 존재 판정은 developer 산문 전체 substring이 아니라, collaboration
-# block의 고정 tool 열거 문형("Call `a`, `b`, ... only as direct tool calls")에서만
-# 한다 — "close_agent is unavailable" 같은 부정문/예시 산문이 존재 판정으로 오인되지
-# 않게 한다. slot도 root 포함이 명시된 전체 문형("There are N ... including you")만
-# 인정한다. 두 anchor 중 하나라도 식별하지 못하면 추측하지 않고 unknown으로 fail한다.
-# 내부 판별은 lifecycle 축(explicit close 유무)과 batch-limit 축(slot 광고)을 분리
-# 평가한 뒤 public 3-profile(current/legacy/unknown)로 도출한다 (#1098 target shape).
+# `codex debug prompt-input` stdout을 jq로 즉시 파이프해 developer 텍스트만 메모리
+# 변수로 유지한다 — raw prompt는 디스크에 저장하지 않고 stdout/로그에도 출력하지
+# 않으며, 최종 출력에는 정제된 tool 이름과 slot 숫자만 노출한다.
+# 오탐/스푸핑 방지: tool·slot anchor를 developer 메시지 전체 합본이 아니라 "단일
+# developer 메시지" 단위로 찾고, 두 anchor를 모두 포함하는 메시지가 정확히 하나일
+# 때만 그 메시지(collaboration block)를 채택한다 — project-local AGENTS 산문 등
+# 다른 메시지의 유사 문형이 tool/slot 판정에 섞이지 않게 한다. tool 존재 판정은
+# 그 block의 고정 열거 문형("Call `a`, `b`, ... only as direct tool calls")에서만,
+# slot은 root 포함이 명시된 전체 문형("There are N ... including you")에서 두 숫자가
+# 일치할 때만 인정한다. anchor 미식별(0개/복수)이면 추측하지 않고 unknown으로 fail.
+# 판별 축: lifecycle(explicit close 유무)과 batch-limit(slot 광고)을 분리 평가해
+# public 3-profile(current/legacy/unknown)로 도출한다 (#1098 target shape).
+# cancellation(중단 도구)은 profile 판별과 독립인 별도 capability로 보고만 한다
+# (runtime-mapping.md: 중단은 광고된 도구가 있을 때만, 없으면 conservative wait).
 # 이 판정은 surface_scope=cli-default 전용이며, active Desktop/다른 세션 표면의
 # 증명이 아니다 (각 세션은 자기 표면으로 재판별 — runtime-mapping.md capability profile).
 if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-  # raw prompt를 디스크에 남기지 않는다 — stdout을 jq로 즉시 파이프해 developer 텍스트만
-  # 메모리 변수로 유지한다 (문서 계약 "raw prompt 저장/출력 금지"와 일치).
-  _cap_dev_text="$(command codex debug prompt-input 'runtime capability probe' 2>/dev/null \
-    | jq -r '[.[] | select(.role == "developer") | .content[]?.text // empty] | join("\n")' 2>/dev/null || true)"
-  if [ -z "$_cap_dev_text" ]; then
-    fail "capability probe: codex debug prompt-input 실행 실패 또는 developer 메시지 없음 (surface_scope=cli-default 판정 불가)"
-  else
-    # tool 열거 anchor 문장에서만 backtick 토큰을 추출한다.
-    _cap_call_line="$(printf '%s' "$_cap_dev_text" | grep -Eo 'Call [^.]*only as direct tool calls' | head -1 || true)"
-    _cap_tools=""
-    if [ -n "$_cap_call_line" ]; then
-      _cap_tools="$(printf '%s' "$_cap_call_line" | grep -Eo '`[a-z_]+`' | tr -d '`' | paste -sd, - || true)"
-    fi
-    # slot은 root 포함("including you")이 명시된 전체 문형만 인정하고,
-    # 문장 안의 두 숫자(total/active 상한)가 서로 일치할 때만 신뢰한다.
-    _cap_slot_line="$(printf '%s' "$_cap_dev_text" | grep -Eo 'There are [0-9]+ available concurrency slots, meaning that up to [0-9]+ agents can be active at once, including you' | head -1 || true)"
-    _cap_slots=""
-    if [ -n "$_cap_slot_line" ]; then
-      _cap_slot_total="$(printf '%s' "$_cap_slot_line" | grep -Eo '[0-9]+' | sed -n 1p || true)"
-      _cap_slot_active="$(printf '%s' "$_cap_slot_line" | grep -Eo '[0-9]+' | sed -n 2p || true)"
-      # 두 숫자 불일치 또는 N<2(child slot 없음 — native fan-out 불가)면 slot 미확정으로 둔다.
-      if [ -n "$_cap_slot_total" ] && [ "$_cap_slot_total" = "$_cap_slot_active" ] && [ "$_cap_slot_total" -ge 2 ]; then
-        _cap_slots="$_cap_slot_total"
+  # pipefail 하에서 codex/jq 실패가 assignment exit로 보존된다 (`|| true` 금지 —
+  # 부분 출력이 성공으로 둔갑하는 것을 막는다). jq는 두 anchor를 모두 포함하는
+  # developer 메시지가 정확히 1개일 때만 그 텍스트를 반환하고, 아니면 빈 문자열.
+  if _cap_block="$(command codex debug prompt-input 'runtime capability probe' 2>/dev/null \
+    | jq -r '[.[] | select(.role == "developer") | ([.content[]?.text // empty] | join("\n")) | select(test("only as direct tool calls") and test("available concurrency slots"))] | if length == 1 then .[0] else "" end')"; then
+    if [ -z "$_cap_block" ]; then
+      fail "capability probe: collaboration block 식별 실패 (두 anchor를 모두 포함한 developer 메시지가 0개 또는 복수) — surface_scope=cli-default profile=unknown, run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
+    else
+      # tool 열거 anchor 문장에서만 backtick 토큰을 추출한다.
+      _cap_call_line="$(printf '%s' "$_cap_block" | grep -Eo 'Call [^.]*only as direct tool calls' | head -1 || true)"
+      _cap_tools=""
+      if [ -n "$_cap_call_line" ]; then
+        _cap_tools="$(printf '%s' "$_cap_call_line" | grep -Eo '`[a-z_]+`' | tr -d '`' | paste -sd, - || true)"
+      fi
+      # slot: 같은 block에서 root 포함 전체 문형만 인정, 두 숫자 일치를 요구한다.
+      # 상태 구분 — ok(N>=2) / no-child(N=1: 확인된 native fan-out 불가) / 빈 값(미확정).
+      _cap_slot_line="$(printf '%s' "$_cap_block" | grep -Eo 'There are [0-9]+ available concurrency slots, meaning that up to [0-9]+ agents can be active at once, including you' | head -1 || true)"
+      _cap_slots=""
+      _cap_slot_state="unknown"
+      if [ -n "$_cap_slot_line" ]; then
+        _cap_slot_total="$(printf '%s' "$_cap_slot_line" | grep -Eo '[0-9]+' | sed -n 1p || true)"
+        _cap_slot_active="$(printf '%s' "$_cap_slot_line" | grep -Eo '[0-9]+' | sed -n 2p || true)"
+        if [ -n "$_cap_slot_total" ] && [ "$_cap_slot_total" = "$_cap_slot_active" ]; then
+          if [ "$_cap_slot_total" -ge 2 ]; then
+            _cap_slots="$_cap_slot_total"
+            _cap_slot_state="ok"
+          else
+            _cap_slot_state="no-child"
+          fi
+        fi
+      fi
+      # lifecycle 축: spawn+wait 존재와 explicit close 유무만으로 판별한다.
+      _cap_lifecycle="unavailable"
+      case ",$_cap_tools," in
+        *,spawn_agent,*)
+          case ",$_cap_tools," in
+            *,wait_agent,*)
+              case ",$_cap_tools," in
+                *,close_agent,*) _cap_lifecycle="explicit-close" ;;
+                *) _cap_lifecycle="no-explicit-close" ;;
+              esac
+              ;;
+          esac
+          ;;
+      esac
+      # cancellation 축 (진단 보고 전용 — profile 판별에 미사용).
+      _cap_interrupt="no"
+      case ",$_cap_tools," in
+        *,interrupt_agent,*) _cap_interrupt="yes" ;;
+      esac
+      # 도출: lifecycle 미확정 또는 slot 미확정이면 unknown.
+      if [ "$_cap_lifecycle" = "unavailable" ] || [ "$_cap_slot_state" = "unknown" ]; then
+        _cap_profile="unknown"
+      elif [ "$_cap_lifecycle" = "explicit-close" ]; then
+        _cap_profile="legacy"
+      else
+        _cap_profile="current"
+      fi
+      if [ "$_cap_slot_state" = "no-child" ]; then
+        fail "capability probe: surface_scope=cli-default profile=$_cap_profile lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt slots=$_cap_slot_total — total slot이 root뿐(child 0)이라 native fan-out 불가, codex exec fallback을 사용"
+      elif [ "$_cap_profile" = "unknown" ]; then
+        fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt tools=[${_cap_tools:-none}] slots=${_cap_slots:-unknown} — run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
+      else
+        pass "capability probe: surface_scope=cli-default profile=$_cap_profile lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt tools=[$_cap_tools] slots=$_cap_slots"
       fi
     fi
-    # lifecycle 축: explicit-close / no-explicit-close / unavailable.
-    # no-explicit-close(current)는 강제 중단 계약을 위해 interrupt_agent 가용도 요구한다
-    # (runtime-mapping.md current 판별 조건과 동일 — interrupt 미노출 표면은 unknown).
-    _cap_lifecycle="unavailable"
-    case ",$_cap_tools," in
-      *,spawn_agent,*)
-        case ",$_cap_tools," in
-          *,wait_agent,*)
-            case ",$_cap_tools," in
-              *,close_agent,*) _cap_lifecycle="explicit-close" ;;
-              *)
-                case ",$_cap_tools," in
-                  *,interrupt_agent,*) _cap_lifecycle="no-explicit-close" ;;
-                esac
-                ;;
-            esac
-            ;;
-        esac
-        ;;
-    esac
-    # 평탄한 도출: 두 축 중 하나라도 미확인이면 unknown (fail-safe: serial).
-    if [ -z "$_cap_slots" ]; then
-      _cap_profile="unknown"
-    elif [ "$_cap_lifecycle" = "unavailable" ]; then
-      _cap_profile="unknown"
-    elif [ "$_cap_lifecycle" = "explicit-close" ]; then
-      _cap_profile="legacy"
-    else
-      _cap_profile="current"
-    fi
-    if [ "$_cap_profile" = "unknown" ]; then
-      fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=$_cap_lifecycle tools=[${_cap_tools:-none}] slots=${_cap_slots:-unknown} — run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
-    else
-      pass "capability probe: surface_scope=cli-default profile=$_cap_profile lifecycle=$_cap_lifecycle tools=[$_cap_tools] slots=$_cap_slots"
-    fi
+  else
+    fail "capability probe: codex debug prompt-input 또는 jq 파이프라인 실패 (surface_scope=cli-default 판정 불가)"
   fi
 else
   fail "capability probe: codex 또는 jq 없음 (CLI-default surface 판정 불가)"
