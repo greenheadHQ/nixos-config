@@ -124,7 +124,7 @@ pending write queue가 있으면 메인 에이전트가 single-writer로 일괄 
 
 반영 후 동일 선택 review unit을 새 reviewer 실행 단위로 재실행한다.
 
-- Codex 세션 경로: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
+- Codex 세션 경로: 이전 round thread의 slot 회수를 capability profile 규칙(legacy만 `close_agent`, current는 explicit close 없이 광고 slot 내 발사 계획 — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)으로 처리한 뒤 새 subagent들을 띄운다.
 - codex exec 경로: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
 
 ## Step 7: CLEAR까지 반복

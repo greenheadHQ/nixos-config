@@ -21,10 +21,11 @@ Direct Codex 세션의 native fan-out lifecycle과 동시 발사 상한은 현�
 | profile | 판별 조건 (model-visible tool 집합) | slot 회수 | 동시 발사(batch) 상한 |
 |---------|-------------------------------------|-----------|----------------------|
 | `current` | `spawn_agent`·`wait_agent`가 있고 explicit `close_agent`가 없음 | explicit close 도구가 없다 — 결과 수신 후 slot 회수를 자체 확인할 수 없으므로, 광고 slot을 초과하는 발사를 계획하지 않는다 | developer 광고 total slot N(root 포함)에서 child batch = max(1, N-1) |
-| `legacy` | `spawn_agent`·`wait_agent`·`close_agent` 모두 있음 | completed thread를 다음 round/retry 전에 `close_agent`로 닫아 slot을 회수한다 (닫기 전까지 slot 점유) | 세션이 광고한 slot 상한 (미광고 시 `agents.max_threads` 설정값) |
-| `unknown` | tool 집합 또는 slot 상한을 세션 표면에서 확인할 수 없음 | — | fail-safe: serial 실행(동시 1) 또는 bounded batch 2. 자동 verifier 결과로 unknown을 덮지 않는다 |
+| `legacy` | `spawn_agent`·`wait_agent`·`close_agent` 모두 있음 | completed thread를 다음 round/retry 전에 `close_agent`로 닫아 slot을 회수한다 (닫기 전까지 slot 점유) | 광고 slot 사용 시 current와 동일하게 child batch = max(1, N-1) (N은 root 포함 total). 미광고 시 `agents.max_threads` 설정값을 child thread 상한으로 쓰되, 그 값의 root 포함 여부를 세션 표면에서 확정할 수 없으면 unknown으로 강등한다 |
+| `unknown` | tool 집합 또는 slot 상한을 세션 표면에서 확인할 수 없음 | — | fail-safe: serial 실행(동시 1). 자동 verifier 결과로 unknown을 덮지 않는다 |
 
 - slot source: 세션 developer 메시지의 collaboration 안내 문장(예: "There are N available concurrency slots, meaning that up to N agents can be active at once, including you")이 1차 근거다. 이 광고가 없으면 slot은 unknown이다.
+- 실행 중 unit의 강제 중단: `close_agent`는 slot 회수 도구이지 중단 도구가 아니다. 중단이 필요하면 current profile에서는 `interrupt_agent`를 사용한다 (CLI-default 실측에서 가용 확인). legacy profile에서는 세션이 광고하는 중단 도구를 따르고, 미광고면 conservative wait을 유지한다.
 - active-session gate: 각 세션은 자기 표면의 tool 목록·slot 광고로 판별한다. CLI-default probe 결과를 다른 세션(예: Desktop fresh task)의 증거로 재사용하지 않는다. CLI와 Desktop의 표면이 다르면 하나로 강제하지 말고 별도 profile로 보고한다.
 - CLI-default 실측 (codex-cli 0.146.0, 2026-07-31, `codex debug prompt-input` — surface_scope=cli-default): model-visible tools = `spawn_agent`, `followup_task`, `send_message`, `wait_agent`, `interrupt_agent`, `list_agents` (close_agent 없음), 광고 slot = 4 (root 포함) → `current` profile, child batch 3. 같은 실측에서 full-history fork(`fork_turns` 생략/`"all"`)는 부모 model/effort를 상속하며 override를 받지 않는다고 광고됐다.
 - 재검증: `./scripts/ai/verify-ai-compat.sh`의 "Codex CLI-default native capability probe" 검사가 sanitized tool-name set과 slot source만 파싱해 profile을 판정한다 (raw prompt 저장/출력 금지, `surface_scope=cli-default` 명시, unknown이면 fail). Codex pin 갱신 시 CLI-default 결과와 active-session 결과를 구분해 기록한다.

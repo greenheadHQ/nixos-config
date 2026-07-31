@@ -50,11 +50,15 @@ CAPABILITY_CONTRACT_DOCS = (
     _RUN_DA_DIR / "modes/audit.md",
     _RUN_DA_DIR / "modes/for_plan.md",
     _RUN_DA_DIR / "modes/for_pr.md",
+    _RUN_DA_DIR / "references/hardening-contract.md",
     _RUN_DA_DIR / "references/main-agent-obligations.md",
     Path(
         "modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md"
     ),
 )
+# literal `close_agent` 없이도 의미상 무조건 close를 지시하는 한국어 표현
+# (예: "thread를 모두 닫은 뒤", "offending thread를 닫는다") 재도입을 차단한다.
+_UNCONDITIONAL_CLOSE_RE = re.compile(r"thread[^\n]{0,20}닫")
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
 EXPECTED_AGENT_ARGS = {"agent=codex-xhigh", "agent=codex-high", "agent=codex-medium", "agent=claude"}
 FORBIDDEN_MODEL_LITERALS = ("gpt-5", "opus", "sonnet")
@@ -379,7 +383,10 @@ def check_capability_profile() -> None:
     """
     mapping_text = read_text(RUNTIME_MAPPING)
     section = section_after_heading(mapping_text, "## Codex native lifecycle capability profile")
-    found_profiles = set(re.findall(r"^\|\s*`(current|legacy|unknown)`\s*\|", section, re.M))
+    profile_pattern = re.compile(
+        r"^\|\s*`(" + "|".join(sorted(EXPECTED_CAPABILITY_PROFILES)) + r")`\s*\|", re.M
+    )
+    found_profiles = set(profile_pattern.findall(section))
     if found_profiles != EXPECTED_CAPABILITY_PROFILES:
         raise CheckFailure(
             f"{RUNTIME_MAPPING}: expected capability profiles "
@@ -392,10 +399,13 @@ def check_capability_profile() -> None:
         for lineno, line in enumerate(text.splitlines(), start=1):
             if re.search(r"agents\.max_threads.*6", line):
                 details.append(f"{path}:{lineno}: fixed `agents.max_threads` 6 literal 재도입")
-            if "close_agent" in line and not re.search(
-                r"current|legacy|capability|profile", line, re.I
-            ):
+            has_capability_context = re.search(r"current|legacy|capability|profile", line, re.I)
+            if "close_agent" in line and not has_capability_context:
                 details.append(f"{path}:{lineno}: capability 문맥 없는 unqualified `close_agent`")
+            if _UNCONDITIONAL_CLOSE_RE.search(line) and not has_capability_context:
+                details.append(
+                    f"{path}:{lineno}: capability 문맥 없는 무조건 thread close 지시 (의미상 close 계약 재도입)"
+                )
         if "close_agent" in text and path != RUNTIME_MAPPING:
             if "codex-native-lifecycle-capability-profile" not in text and (
                 "Codex native lifecycle capability profile" not in text

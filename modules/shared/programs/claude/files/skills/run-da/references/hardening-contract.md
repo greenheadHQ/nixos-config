@@ -40,7 +40,7 @@ Direct Codex 세션에서 사용자가 `$run-da`, `$run-da audit`처럼 fan-out 
 ## `VIOLATION` 공통 처리
 
 - `RECOVERABLE`: offending unit 결과만 폐기하고 fresh rerun한다. rerun 전까지 `CLEAR` 계산에 포함하지 않는다.
-- `STATEFUL`: 현재 라운드를 즉시 중단한다. offending thread를 닫고, 이번 라운드에서 offending unit이 만든 scratch dir, 임시 ref/branch, 산출물만 정리한다.
+- `STATEFUL`: 현재 라운드를 즉시 중단한다. offending thread는 capability profile에 따라 중단·회수한다(legacy: `close_agent`, current: `interrupt_agent`로 중단 — [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT). 이번 라운드에서 offending unit이 만든 scratch dir, 임시 ref/branch, 산출물만 정리한다.
 - `STATEFUL` 경로에서도 기존 local tracked/untracked 변경은 자동 정리하지 않는다. 비가역적 외부 side effect가 있었거나 cleanup 범위를 특정할 수 없으면 해당 unit을 `BLOCKED`로 남기고 명시적 rerun 전까지 종료한다.
 
 ## Delegation fallback (정책 요약)
