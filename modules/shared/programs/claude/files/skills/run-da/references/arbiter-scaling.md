@@ -337,7 +337,7 @@ Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아�
 
 ## 런타임 선택 규칙
 
-- Codex 세션 경로는 현재 세션이 Codex CLI 호스트(`spawn_agent` API 사용 가능)일 때 기본 경로다.
+- Codex 세션 경로는 현재 세션이 capability profile 판별([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile))에서 current 또는 legacy로 판정되어 native orchestration이 가능할 때 기본 경로다. unknown이면 같은 SSOT의 fail-safe(serial 동시 1) 또는 codex exec fallback 규칙을 따른다.
 - codex exec 경로는 Claude Code 세션(codex exec 기본 → Agent tool fallback)과 headless 세션(CI, `claude -p`)에서 기본 경로다.
 - `CODEX_CI=1`은 Codex 세션에서도 보일 수 있으므로 sole discriminator로 쓰지 않는다.
 

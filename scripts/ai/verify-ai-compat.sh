@@ -521,7 +521,7 @@ if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
   if _cap_block="$(command codex debug prompt-input 'runtime capability probe' 2>/dev/null \
     | jq -r '[.[] | select(.role == "developer") | ([.content[]?.text // empty] | join("\n")) | select(test("only as direct tool calls") and test("available concurrency slots"))] | if length == 1 then .[0] else "" end')"; then
     if [ -z "$_cap_block" ]; then
-      fail "capability probe: collaboration block 식별 실패 (두 anchor를 모두 포함한 developer 메시지가 0개 또는 복수) — surface_scope=cli-default profile=unknown, run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
+      fail "capability probe: collaboration block 식별 실패 (두 anchor를 모두 포함한 developer 메시지가 0개 또는 복수) — surface_scope=cli-default profile=unknown, native 표면을 확인할 수 없어 codex exec fallback 또는 serial(동시 1) fail-safe만 가능"
     else
       # tool 열거 anchor 문장에서만 backtick 토큰을 추출한다.
       _cap_call_line="$(printf '%s' "$_cap_block" | grep -Eo 'Call [^.]*only as direct tool calls' | head -1 || true)"
@@ -576,7 +576,12 @@ if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
       if [ "$_cap_slot_state" = "no-child" ]; then
         fail "capability probe: surface_scope=cli-default profile=$_cap_profile lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt slots=$_cap_slot_total — total slot이 root뿐(child 0)이라 native fan-out 불가, codex exec fallback을 사용"
       elif [ "$_cap_profile" = "unknown" ]; then
-        fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt tools=[${_cap_tools:-none}] slots=${_cap_slots:-unknown} — run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
+        if [ "$_cap_lifecycle" = "unavailable" ]; then
+          # spawn/wait 자체가 없으면 native 실행이 아예 불가하다 — serial조차 안내하지 않는다.
+          fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=unavailable interrupt=$_cap_interrupt tools=[${_cap_tools:-none}] — native 도구 부재로 native fan-out 자체 불가, codex exec fallback만 가능"
+        else
+          fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt tools=[$_cap_tools] slots=unknown — slot 미확정, run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
+        fi
       else
         pass "capability probe: surface_scope=cli-default profile=$_cap_profile lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt tools=[$_cap_tools] slots=$_cap_slots"
       fi

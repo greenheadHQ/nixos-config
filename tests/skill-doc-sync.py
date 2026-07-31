@@ -56,40 +56,6 @@ CAPABILITY_CONTRACT_DOCS = (
         "modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md"
     ),
 )
-# literal `close_agent` 없이도 의미상 close를 지시하는 한국어 표현
-# (예: "thread를 모두 닫은 뒤", "offending thread를 닫는다")도 함께 스캔한다.
-# 거리 20자는 "thread를 close_agent로 닫아" 같은 목적어-조사 삽입을 덮는 근사값이다.
-_SEMANTIC_CLOSE_RE = re.compile(r"thread[^\n]{0,20}닫")
-# SSOT 모순 결합: current 문맥에서 close_agent 실행("~로 닫")을 지시하는 문장.
-_CURRENT_CLOSE_DIRECTIVE_RE = re.compile(r"current[^\n]{0,40}close_agent로\s*닫")
-
-
-# 부정·중립 문맥 토큰: 이 단어들이 있는 줄은 close/threads 언급이 있어도 "실행 지시"가
-# 아니라 부재·금지·이력 서술로 본다 (예: "닫지 않는다", "close_agent 호출을 금지한다").
-_NEGATION_TOKENS = ("없", "않", "금지", "아님", "폐지")
-
-
-def _has_negation(line: str) -> bool:
-    return any(token in line for token in _NEGATION_TOKENS)
-
-
-def close_contract_violation(line: str) -> str | None:
-    """close 계약 위반이면 사유 문자열, 허용이면 None.
-
-    보장 범위 (라인 단위 근사 검사 — 정확한 의미 분석이 아니다):
-    - close_agent 언급 또는 "thread…닫" 표현이 있는 줄에서, `legacy` 한정도 부정·중립
-      문맥 토큰도 없으면 unqualified close 재도입으로 본다.
-    - "current … close_agent로 닫" 정확 문형(40자 이내)은 legacy 단어가 있어도 위반이다.
-      이 결합 검사는 해당 문형에 한정된 근사이며, 우회 표현까지 잡는다고 보장하지 않는다.
-    """
-    mentions_close = "close_agent" in line or _SEMANTIC_CLOSE_RE.search(line)
-    if not mentions_close:
-        return None
-    if _CURRENT_CLOSE_DIRECTIVE_RE.search(line):
-        return "current 문맥에 close_agent 실행 지시 (SSOT 모순 결합)"
-    if "legacy" in line or _has_negation(line):
-        return None
-    return "legacy 한정도 부재 서술도 없는 close 계약 (unqualified close 재도입)"
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
 EXPECTED_AGENT_ARGS = {"agent=codex-xhigh", "agent=codex-high", "agent=codex-medium", "agent=claude"}
 FORBIDDEN_MODEL_LITERALS = ("gpt-5", "opus", "sonnet")
@@ -405,12 +371,16 @@ def check_bundle_subdomains() -> None:
 
 
 def check_capability_profile() -> None:
-    """native lifecycle capability profile 계약 (#1098).
+    """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
 
     1. runtime-mapping.md의 SSOT 절에 current/legacy/unknown 3-profile 표가 존재한다.
-    2. fixed-literal 재도입 금지: `agents.max_threads` + 고정 6 가정, capability 문맥
-       없는 unqualified `close_agent` 지시를 대상 문서 전체에서 차단한다.
+    2. fixed-literal 재도입 금지: `agents.max_threads`와 고정 6이 한 줄에 결합된
+       리터럴을 대상 문서 전체에서 차단한다 (#1098 verify 계약).
     3. close_agent를 언급하는 문서는 SSOT 앵커 포인터를 유지한다.
+
+    자연어 의미 추정(무조건 close 표현 판정 등)은 하지 않는다 — 라운드마다 오탐과
+    미탐 지적이 상충해 유지비만 커지므로 제거했다 (사용자 결정). close 계약의 의미
+    정합은 SSOT 문서와 코드 리뷰가 담당한다.
     """
     mapping_text = read_text(RUNTIME_MAPPING)
     section = section_after_heading(mapping_text, "## Codex native lifecycle capability profile")
@@ -428,11 +398,8 @@ def check_capability_profile() -> None:
     for path in CAPABILITY_CONTRACT_DOCS:
         text = read_text(path)
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if re.search(r"agents\.max_threads.*6", line) and not _has_negation(line):
+            if re.search(r"agents\.max_threads.*6", line):
                 details.append(f"{path}:{lineno}: fixed `agents.max_threads` 6 literal 재도입")
-            reason = close_contract_violation(line)
-            if reason:
-                details.append(f"{path}:{lineno}: {reason}")
         if "close_agent" in text and path != RUNTIME_MAPPING:
             if "codex-native-lifecycle-capability-profile" not in text and (
                 "Codex native lifecycle capability profile" not in text

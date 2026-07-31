@@ -14,7 +14,7 @@ audit 모드는 preflight 체크리스트를 건너뛴다 — 감사 자체가 �
 | 항목 | 값 |
 |------|-----|
 | 기본 fan-out | 6개 auditor bundle (에이전트 6개) |
-| open thread cap | capability profile의 batch 상한 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT — 광고 slot 기반, unknown이면 serial/bounded) |
+| open thread cap | capability profile의 batch 상한 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT — 광고 slot 기반, unknown이면 serial(동시 1)) |
 | `MAX` modifier | 기본 6 bundle을 10개 세부 관점으로 확장 (exhaustive override) |
 | `fresh` modifier | audit 모드 부적용 — 라운드 반복이 없으므로 해석하지 않는다 |
 | `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: `run-da audit agent=codex-high` |
