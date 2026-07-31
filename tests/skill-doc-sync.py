@@ -38,6 +38,24 @@ EXPECTED_RULE_IDS = {
 }
 EXPECTED_CONSTANTS = {"STABLE_MIN", "ESCALATE_MIN"}
 EXPECTED_PROFILES = {"strong", "standard"}
+EXPECTED_CAPABILITY_PROFILES = {"current", "legacy", "unknown"}
+_RUN_DA_DIR = Path("modules/shared/programs/claude/files/skills/run-da")
+# capability profile 계약 (#1098) 대상 문서: unqualified close_agent / fixed
+# `agents.max_threads` 6 literal 재도입을 차단하는 스캔 범위.
+CAPABILITY_CONTRACT_DOCS = (
+    Path("AGENTS.override.md"),
+    SKILL,
+    RUNTIME_MAPPING,
+    ARBITER_SCALING,
+    _RUN_DA_DIR / "modes/audit.md",
+    _RUN_DA_DIR / "modes/for_plan.md",
+    _RUN_DA_DIR / "modes/for_pr.md",
+    _RUN_DA_DIR / "references/hardening-contract.md",
+    _RUN_DA_DIR / "references/main-agent-obligations.md",
+    Path(
+        "modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md"
+    ),
+)
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
 EXPECTED_AGENT_ARGS = {"agent=codex-xhigh", "agent=codex-high", "agent=codex-medium", "agent=claude"}
 FORBIDDEN_MODEL_LITERALS = ("gpt-5", "opus", "sonnet")
@@ -352,6 +370,45 @@ def check_bundle_subdomains() -> None:
         raise CheckFailure("\n".join(details))
 
 
+def check_capability_profile() -> None:
+    """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
+
+    1. runtime-mapping.md의 SSOT 절에 current/legacy/unknown 3-profile 표가 존재한다.
+    2. fixed-literal 재도입 금지: `agents.max_threads`와 고정 6이 한 줄에 결합된
+       리터럴을 대상 문서 전체에서 차단한다 (#1098 verify 계약).
+    3. close_agent를 언급하는 문서는 SSOT 앵커 포인터를 유지한다.
+
+    자연어 의미 추정(무조건 close 표현 판정 등)은 하지 않는다 — 라운드마다 오탐과
+    미탐 지적이 상충해 유지비만 커지므로 제거했다 (사용자 결정). close 계약의 의미
+    정합은 SSOT 문서와 코드 리뷰가 담당한다.
+    """
+    mapping_text = read_text(RUNTIME_MAPPING)
+    section = section_after_heading(mapping_text, "## Codex native lifecycle capability profile")
+    profile_pattern = re.compile(
+        r"^\|\s*`(" + "|".join(sorted(EXPECTED_CAPABILITY_PROFILES)) + r")`\s*\|", re.M
+    )
+    found_profiles = set(profile_pattern.findall(section))
+    if found_profiles != EXPECTED_CAPABILITY_PROFILES:
+        raise CheckFailure(
+            f"{RUNTIME_MAPPING}: expected capability profiles "
+            f"{sorted(EXPECTED_CAPABILITY_PROFILES)}, got {sorted(found_profiles)}"
+        )
+
+    details = []
+    for path in CAPABILITY_CONTRACT_DOCS:
+        text = read_text(path)
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if re.search(r"agents\.max_threads.*6", line):
+                details.append(f"{path}:{lineno}: fixed `agents.max_threads` 6 literal 재도입")
+        if "close_agent" in text and path != RUNTIME_MAPPING:
+            if "codex-native-lifecycle-capability-profile" not in text and (
+                "Codex native lifecycle capability profile" not in text
+            ):
+                details.append(f"{path}: close_agent 언급하지만 capability profile SSOT 포인터 없음")
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
 def main() -> int:
     checks = (
         ("intensity rules", check_intensity_rules),
@@ -363,6 +420,7 @@ def main() -> int:
         ("agent args", check_agent_args),
         ("no hardcoded model literals", check_no_hardcoded_model_literals),
         ("reviewer bundle subdomains", check_bundle_subdomains),
+        ("capability profile", check_capability_profile),
     )
 
     passed = 0

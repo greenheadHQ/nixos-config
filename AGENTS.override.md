@@ -16,7 +16,7 @@ AGENTS.md(= CLAUDE.md 심링크)의 프로젝트 규칙을 모두 따르되, 아
 - Codex 세션에서 review/audit/planning fan-out 시 nested `codex exec`보다 native subagent 경로를 우선한다
 - `$run-da`(audit 모드 포함) 등 fan-out 스킬 호출은 해당 스킬이 문서화한 범위의 내부 native subagent fan-out에 대한 explicit delegation으로 본다. `codex-exec-supervised` fallback은 native delegation 거부/미지원 시 별도 사용자 승인 후에만 사용한다.
 - `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다
-- current session의 open agent thread cap(`agents.max_threads`, unset 기본 6)을 넘기지 말고, completed agent thread는 다음 round/retry 전에 close한다
+- native fan-out의 동시 발사 상한과 completed thread 회수는 현재 세션의 capability profile을 따른다 (model-visible tool 집합 + developer 광고 slot으로 판별, `close_agent`는 legacy profile에만 존재 — run-da/references/runtime-mapping.md의 "Codex native lifecycle capability profile"이 SSOT)
 - repository-specific Codex 세션 authority boundaries, write rules, and lock-sensitive command rules은 project-local skill docs 또는 `AGENTS.override.md` custom section에 둔다
 - SKILL.md의 `allowed-tools` frontmatter는 Codex에서 무시됨
 

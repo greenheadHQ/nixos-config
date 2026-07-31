@@ -7,12 +7,28 @@
 | 행동 | Codex 세션 | Claude Code 세션 | headless 세션 |
 |------|-----------|------------------|---------------|
 | 사용자에게 질문 (blocking tool call) | `request_user_input` | `AskUserQuestion` 도구 | 미지원 (자동 전이 적용) |
-| fan-out 실행 (기본) | `spawn_agent` → `wait_agent` → `close_agent` (delegation 허용 시) | `Bash tool` + `run_in_background: true`로 `codex exec` subprocess 병렬 발사 (codex exec 사전점검 성공 시 기본) | `codex exec` subprocess를 serial foreground로 순차 실행 (완료 알림/`&+wait` 없음) |
+| fan-out 실행 (기본) | capability profile에 따른 native lifecycle (delegation 허용 시; 아래 "[Codex native lifecycle capability profile](#codex-native-lifecycle-capability-profile)" 절 SSOT — current: `spawn_agent` → `wait_agent`, legacy: `spawn_agent` → `wait_agent` → `close_agent`) | `Bash tool` + `run_in_background: true`로 `codex exec` subprocess 병렬 발사 (codex exec 사전점검 성공 시 기본) | `codex exec` subprocess를 serial foreground로 순차 실행 (완료 알림/`&+wait` 없음) |
 | fan-out 실행 (fallback) | codex exec subprocess (아래 "Delegation fallback" + `arbiter-scaling.md` 실행 계약) | `Agent` tool + `run_in_background: true` (codex exec 사전점검 실패 원인 고지 후 사용자가 Claude 경로 진행을 확인한 경우만) | — |
 | 결과 수집 | `wait_agent` 반환값, 또는 `exec_command`로 `cat`/`sed` 셸 읽기 | `Read` 도구 | `cat`/`sed` via shell |
 | 파일 읽기 | `exec_command`로 `cat`/`sed`/`rg` | `Read` 도구 | `cat`/`sed`/`rg` |
 
 Skill-internal fan-out authorization: Direct Codex 세션에서 fan-out 스킬 호출이 내부 native subagent fan-out에 대한 explicit delegation으로 취급되는 권한 계약은 [`hardening-contract.md`](hardening-contract.md#skill-internal-fan-out-authorization)가 정본이다. 이 파일은 해당 권한을 실제 런타임 도구 binding으로만 연결한다.
+
+## Codex native lifecycle capability profile
+
+Direct Codex 세션의 native fan-out lifecycle과 동시 발사 상한은 현재 세션의 model-visible collaboration tool 집합과 developer 메시지가 광고한 slot으로 결정한다. 제품명(CLI/Desktop), CLI 버전, `CODEX_CI` 값으로 lifecycle을 추측하지 않는다. 메인 에이전트는 첫 fan-out 전에 자기 세션 표면에서 아래 profile을 판별해 선언한다.
+
+| profile | 판별 조건 (model-visible tool 집합) | slot 회수 | 동시 발사(batch) 상한 |
+|---------|-------------------------------------|-----------|----------------------|
+| `current` | `spawn_agent`·`wait_agent`가 있고 explicit `close_agent`가 없음 | explicit close 도구가 없다 — 결과 수신 후 slot 회수를 자체 확인할 수 없으므로, 광고 slot을 초과하는 발사를 계획하지 않는다 | developer 광고 total slot N(root 포함, N ≥ 2 필요)에서 child batch = N − 1. N < 2이면 child slot이 없으므로 native fan-out 불가 — codex exec fallback(serial subprocess)을 쓴다 (native serial 아님 — root 외 native 실행 slot이 없다) |
+| `legacy` | `spawn_agent`·`wait_agent`·`close_agent` 모두 있음 | completed thread를 다음 round/retry 전에 `close_agent`로 닫아 slot을 회수한다 (닫기 전까지 slot 점유) | 광고 slot 사용 시 current와 동일하게 child batch = N − 1 (N은 root 포함 total, N ≥ 2 필요). 미광고 시 `agents.max_threads` 설정값을 child thread 상한으로 쓰되, 그 값의 root 포함 여부를 세션 표면에서 확정할 수 없으면 unknown으로 강등한다 |
+| `unknown` | tool 집합 또는 slot 상한을 세션 표면에서 확인할 수 없음 | — | fail-safe 분기: `spawn_agent`·`wait_agent`는 확인됐고 slot만 미확정이면 native serial(동시 1). tool 집합 자체가 미확인·부재면 native 실행 불가 — codex exec fallback만 사용한다. 자동 verifier 결과로 unknown을 덮지 않는다 |
+
+- slot source: 세션 developer 메시지의 collaboration 안내 문장(예: "There are N available concurrency slots, meaning that up to N agents can be active at once, including you")이 1차 근거다. 이 광고가 없으면 slot은 unknown이다.
+- 실행 중 unit의 강제 중단 (cancellation capability — lifecycle profile과 독립 축): `close_agent`는 slot 회수 도구이지 중단 도구가 아니다. 중단은 profile과 무관하게 세션 표면에 광고된 중단 도구(예: `interrupt_agent`)가 있을 때만 수행하고, 없으면 conservative wait을 유지한다. 중단과 slot 회수는 별개 단계다: legacy에서 중단·완료된 thread의 slot 회수만 `close_agent`가 담당한다.
+- active-session gate: 각 세션은 자기 표면의 tool 목록·slot 광고로 판별한다. CLI-default probe 결과를 다른 세션(예: Desktop fresh task)의 증거로 재사용하지 않는다. CLI와 Desktop의 표면이 다르면 하나로 강제하지 말고 별도 profile로 보고한다.
+- CLI-default 실측 (codex-cli 0.146.0, 2026-07-31, `codex debug prompt-input` — surface_scope=cli-default): model-visible tools = `spawn_agent`, `followup_task`, `send_message`, `wait_agent`, `interrupt_agent`, `list_agents` (close_agent 없음, interrupt_agent 있음), 광고 slot = 4 (root 포함) → `current` profile, child batch 3. 같은 실측에서 full-history fork(`fork_turns` 생략/`"all"`)는 부모 model/effort를 상속하며 override를 받지 않는다고 광고됐다.
+- 재검증: `./scripts/ai/verify-ai-compat.sh`의 "Codex CLI-default native capability probe" 검사가 sanitized tool-name set과 slot source만 파싱해 profile을 판정한다 (raw prompt 저장/출력 금지, `surface_scope=cli-default` 명시, unknown이면 fail). Codex pin 갱신 시 CLI-default 결과와 active-session 결과를 구분해 기록한다.
 
 plain-text 재개 ≠ 질문 도구 — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 승인, 3회 반복 판정, 라운드 한계효용 저하, 5회 라운드 초과, 추세 기반 조기 중단, fresh 모드 반복 감지)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 자동 상태 전이 경로(arbiter-scaling.md)로 처리한다.
 

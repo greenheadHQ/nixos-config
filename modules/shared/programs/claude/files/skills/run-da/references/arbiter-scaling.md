@@ -62,15 +62,13 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 
 ### Codex 세션 경로
 
-현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`, `close_agent`)을 사용할 수 있으면
+현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`; lifecycle은 [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) capability profile로 판별)을 사용할 수 있으면
 Arbiter도 이를 기본 경로로 사용한다.
 
 - 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로 사용한다.
 - 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt/result 파일을 기본 경로로 요구하지 않는다.
 - Arbiter는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다.
-- 결과는 `wait_agent`로 수신하고, timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 결과를 파싱한 뒤 completed thread를 `close_agent`로 닫는다.
-- completed thread는 `close_agent` 전까지 open-thread slot을 계속 점유한다.
-  current session cap을 넘기는 fan-out/retry 전에 먼저 닫는다.
+- 결과는 `wait_agent`로 수신하고, timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 결과 파싱 후의 slot 회수는 capability profile을 따른다 (legacy profile만 `close_agent` 호출, current profile은 explicit close 없이 광고 slot 내에서만 발사 — [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
@@ -192,7 +190,7 @@ Degraded mode 계약 (fallback 경로 한정): `--sandbox read-only` 강제로 �
 1. Arbiter용 fresh subagent는 strong review profile로 띄운다.
 2. 프롬프트에는 관련 reference 문서를 직접 읽고, review-only/no-write contract를 따르며, 파일을 수정하지 말라고 명시한다.
 3. `wait_agent`로 결과를 받는다. timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다.
-4. 결과 파싱 후 completed thread를 `close_agent`로 닫는다.
+4. 결과 파싱 후 slot 회수는 capability profile을 따른다 ([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
@@ -276,8 +274,8 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 ### Codex 세션 경로 (N=3)
 
 1. 동일 판정 기준 / 템플릿으로 3개의 fresh subagent를 strong review profile로 `spawn_agent` 실행한다. 프롬프트 본문은 위 "프롬프트 축소 규칙"대로 trigger된 finding subset 만 포함해 조립하고, 이전 판정 transcript는 공유하지 않는다 (독립 판정 원칙).
-2. 현재 session의 open-thread slot이 `agents.max_threads`(unset 기본 6)을 넘으면 batch한다. 3개 발사 전에 first-pass Arbiter의 completed thread를 `close_agent`로 닫아 슬롯을 확보한다.
-3. `wait_agent`로 3개 결과를 모두 수신한 뒤 `close_agent`로 닫는다. timeout만으로 failure 처리하거나 self-auditing으로 대체하지 않는다(conservative wait).
+2. N=3 발사가 capability profile의 batch 상한([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)을 넘으면 batch한다. legacy profile에서는 3개 발사 전에 first-pass Arbiter의 completed thread를 `close_agent`로 닫아 슬롯을 확보하고, current profile에서는 광고 slot 내에서 발사 수를 조절한다.
+3. `wait_agent`로 3개 결과를 모두 수신한다. timeout만으로 failure 처리하거나 self-auditing으로 대체하지 않는다(conservative wait). 수신 후 slot 회수는 capability profile을 따른다.
 4. 3개 결과 markdown을 각각 파일로 저장(`/tmp/da-${_DA_SID}-arbiter-selective-*/arbiter-{1,2,3}.md`) 후 세션 scope의 `fleiss-kappa.py`(Claude: `~/.claude/scripts/`, Codex: `~/.codex/scripts/`)로 집계한다.
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션, N=3)
@@ -333,13 +331,13 @@ N=3 중 1개 이상이 실패하면 (결과 파일 없음/빈 파일/exit code !
 Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아니라, 메인 에이전트가 contract breach 또는 malformed output을 감지했을 때 아래 규칙으로 분류한다.
 
 - `recoverable violation`: 출력 형식 위반, prompt contract 미준수처럼 상태를 바꾸지 않은 위반. 결과를 폐기하고 fresh subagent로 1회 재실행한다.
-- `stateful violation`: tracked write, branch mutation, commit/push, GitHub write, main-agent-only command 실행, host mutation처럼 상태를 바꾼 위반. 현재 라운드를 즉시 중단하고 offending thread를 닫는다.
+- `stateful violation`: tracked write, branch mutation, commit/push, GitHub write, main-agent-only command 실행, host mutation처럼 상태를 바꾼 위반. 라운드 중단·offending thread 중단·회수·정리의 공통 계약은 [`hardening-contract.md`](hardening-contract.md)의 VIOLATION 처리가 정본이며 여기에 재정의하지 않는다 (cancellation·slot 회수 도구 binding은 [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile)).
 - stateful violation은 이번 라운드에서 offending unit이 만든 scratch 산출물과 임시 ref/branch만 정리 대상으로 삼는다. 기존 local tracked/untracked 변경은 자동 정리하지 않는다.
 - 비가역적 외부 side effect가 있었거나 cleanup 범위를 특정할 수 없으면 질문 도구 가능 시 사용자에게 보고하고, 질문 도구 미지원 런타임에서는 자동 `CLEAR` 처리하지 않고 `BLOCKED`로 남긴다. 명시적 rerun 전에는 재개하지 않는다.
 
 ## 런타임 선택 규칙
 
-- Codex 세션 경로는 현재 세션이 Codex CLI 호스트(`spawn_agent` API 사용 가능)일 때 기본 경로다.
+- Codex 세션 경로는 현재 세션이 capability profile 판별([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile))에서 current 또는 legacy로 판정되어 native orchestration이 가능할 때 기본 경로다. unknown이면 같은 SSOT의 fail-safe(serial 동시 1) 또는 codex exec fallback 규칙을 따른다.
 - codex exec 경로는 Claude Code 세션(codex exec 기본 → Agent tool fallback)과 headless 세션(CI, `claude -p`)에서 기본 경로다.
 - `CODEX_CI=1`은 Codex 세션에서도 보일 수 있으므로 sole discriminator로 쓰지 않는다.
 

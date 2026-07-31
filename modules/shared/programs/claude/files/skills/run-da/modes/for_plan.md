@@ -46,7 +46,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 
 - 선택된 review unit마다 fresh native subagent 1개를 standard review profile로 `spawn_agent` 실행한다.
 - 각 프롬프트는 [`../references/da-domains.md`](../references/da-domains.md)의 공통 프롬프트 구조에 계획 전체 내용을 포함하고, "계획 외의 관련 파일도 직접 읽어 탐색하라", "out-of-repo scratch PoC만 허용한다", "`run-da` canonical contract의 stateful-violation 금지 작업(`tracked write`, `branch mutation`, `commit/push`, `GitHub write`, `main-agent-only command`, `host mutation`)을 축약 없이 따르라" ([`../references/hardening-contract.md`](../references/hardening-contract.md) 참조), "규칙 위반은 finding 대신 `VIOLATION`으로 반환하라"를 명시한다.
-- 선택된 review unit 수가 current session의 open slot을 넘으면 batch한다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 계속 점유한다.
+- 선택된 review unit 수가 capability profile의 batch 상한을 넘으면 batch한다 (slot 판별·회수 규칙은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 - `wait_agent` timeout만으로 실패 처리하거나 reviewer를 kill/self-auditing으로 대체하지 않는다.
 - `fresh` modifier와 selective propagation 규칙은 동일하게 적용한다.
 
@@ -82,7 +82,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 
 ## Step 3: reviewer 결과 수신 + 종합 리포트
 
-- Codex 세션 경로: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 completed reviewer thread를 `close_agent`로 닫는다.
+- Codex 세션 경로: `wait_agent` 결과를 집계한 뒤, 다음 round/retry 전에 capability profile의 slot 회수 규칙을 적용한다 (legacy만 `close_agent` — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 - Codex 세션 경로: `VIOLATION` 처리 규칙은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 공통 처리 정의를 따른다. offending unit은 rerun 또는 `BLOCKED` 해소 전까지 `CLEAR` 계산에 포함하지 않는다.
 - codex exec 경로: 선택된 review unit(FULL 기본 4개, LITE는 선택한 수, explicit exhaustive는 6개) 전부 실행(Claude Code는 병렬, headless는 serial) 완료 후, 각 `$DA_DIR/$UNIT-result.md` 패턴의 결과 파일을 파일 읽기 도구로 명시적으로 읽어 수집한다. 결과 파일이 없거나 빈 경우, 또는 exit code가 0이 아니면 실패로 판정한다.
 - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
@@ -96,7 +96,7 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR
 ## Step 5: Arbiter 실행 (findings ≥ 1건 시)
 
 - 5a. first-pass Arbiter: Arbiter 프롬프트를 조립한다 ([`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 for_plan 조립 규칙 참조). for_plan에서는 반드시 계획 원문을 포함해야 하며, 상세 조립 형식은 arbiter-prompt.md의 "프롬프트 조립 > for_plan 모드" 참조.
-  - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 completed Arbiter thread를 `close_agent`로 닫는다.
+  - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 `wait_agent`로 결과를 수신한 뒤, 다음 round/retry 전에 capability profile의 slot 회수 규칙을 적용한다 (legacy만 `close_agent` — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
   - codex exec 경로: foreground 실행 (단일 exec이므로 결과를 즉시 확인. [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) 실행 계약 참조).
 - 5b. Selective consistency trigger 검사: first-pass 결과의 VERDICT_JSON 블록을 읽어 [`../references/stability-measurement.md`](../references/stability-measurement.md)의 trigger 조건에 매치되는 finding을 식별한다 (조건 정의는 해당 문서가 SSOT).
 - 5c. N=3 재판정 (trigger 매치 finding에 한해): 동일 Arbiter 프롬프트로 독립 N=3을 실행한다. 실행 계약과 환경 격리는 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 "N=3 실행 계약" 섹션 참조. selective consistency 서브런은 outer round 카운트에 포함되지 않는다.
@@ -124,7 +124,7 @@ pending write queue가 있으면 메인 에이전트가 single-writer로 일괄 
 
 반영 후 동일 선택 review unit을 새 reviewer 실행 단위로 재실행한다.
 
-- Codex 세션 경로: 이전 round의 completed reviewer/Arbiter thread를 모두 닫은 뒤 새 subagent들을 띄운다.
+- Codex 세션 경로: 이전 round thread의 slot 회수를 capability profile 규칙(legacy만 `close_agent`, current는 explicit close 없이 광고 slot 내 발사 계획 — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)으로 처리한 뒤 새 subagent들을 띄운다.
 - codex exec 경로: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
 
 ## Step 7: CLEAR까지 반복
