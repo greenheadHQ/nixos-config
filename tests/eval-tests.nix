@@ -677,7 +677,7 @@ let
             && builtins.all (path: builtins.hasAttr path hm.home.file == claudexShouldEnable) claudexPublicFiles
             && (
               if claudexShouldEnable then
-                claudexDescriptor.proxyVersion == "7.2.73"
+                claudexDescriptor.proxyVersion == "7.2.111"
                 && claudexDescriptor.command != null
                 && builtins.length claudexDescriptor.command == 2
                 && claudexDescriptor.proxyExecutable != null
@@ -1167,25 +1167,25 @@ let
       cond = unexpectedDarwinHosts == [ ];
     }
     {
-      name = "Test D18: CLIProxyAPI pin은 검증한 v7.2.73 darwin-arm64/linux-amd64 자산과 해시여야 함";
+      name = "Test D18: CLIProxyAPI pin은 검증한 v7.2.111 darwin-arm64/linux-amd64 자산과 해시여야 함";
       cond =
-        claudexPin.version == "7.2.73"
-        && claudexPin.tag == "v7.2.73"
+        claudexPin.version == "7.2.111"
+        && claudexPin.tag == "v7.2.111"
         &&
           builtins.attrNames claudexPin.platforms == [
             "aarch64-darwin"
             "x86_64-linux"
           ]
-        && claudexPin.platforms.aarch64-darwin.asset == "CLIProxyAPI_7.2.73_darwin_aarch64.tar.gz"
-        && claudexPin.platforms.aarch64-darwin.hash == "sha256-72ZsH3E+lEsk6OIFzoBhN+pxjnuFnlUz8BXo+KmNYqY="
-        && claudexPin.platforms.x86_64-linux.asset == "CLIProxyAPI_7.2.73_linux_amd64.tar.gz"
-        && claudexPin.platforms.x86_64-linux.hash == "sha256-fHlZsGoG/r8ftzEC0yP8BuwT8L3D1O6MPAdyoVqgIkY="
+        && claudexPin.platforms.aarch64-darwin.asset == "CLIProxyAPI_7.2.111_darwin_aarch64.tar.gz"
+        && claudexPin.platforms.aarch64-darwin.hash == "sha256-WJIoDb5yaEzj9/MDu2B6GHFkosd7gRA2q+729o1NE/E="
+        && claudexPin.platforms.x86_64-linux.asset == "CLIProxyAPI_7.2.111_linux_amd64.tar.gz"
+        && claudexPin.platforms.x86_64-linux.hash == "sha256-wYxPvd0UaFZuSuXSYnkcM0PTuZpCLxBnHqcTneyyHoU="
         && claudexPackage.pname == "cli-proxy-api"
-        && claudexPackage.version == "7.2.73"
+        && claudexPackage.version == "7.2.111"
         &&
           claudexPackage.src.url
-          == "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.73/CLIProxyAPI_7.2.73_darwin_aarch64.tar.gz"
-        && claudexPackage.src.hash == "sha256-72ZsH3E+lEsk6OIFzoBhN+pxjnuFnlUz8BXo+KmNYqY="
+          == "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.111/CLIProxyAPI_7.2.111_darwin_aarch64.tar.gz"
+        && claudexPackage.src.hash == "sha256-WJIoDb5yaEzj9/MDu2B6GHFkosd7gRA2q+729o1NE/E="
         && claudexPackage.meta.mainProgram == "cli-proxy-api"
         &&
           claudexPackage.meta.platforms == [
@@ -1203,8 +1203,8 @@ let
       name = "Test D18b: claudex linux 패키지는 linux-amd64 자산을 ELF patch 경로로 설치해야 함";
       cond =
         claudexLinuxPackage.src.url
-        == "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.73/CLIProxyAPI_7.2.73_linux_amd64.tar.gz"
-        && claudexLinuxPackage.src.hash == "sha256-fHlZsGoG/r8ftzEC0yP8BuwT8L3D1O6MPAdyoVqgIkY="
+        == "https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.111/CLIProxyAPI_7.2.111_linux_amd64.tar.gz"
+        && claudexLinuxPackage.src.hash == "sha256-wYxPvd0UaFZuSuXSYnkcM0PTuZpCLxBnHqcTneyyHoU="
         && claudexLinuxPackage.dontPatchELF == false
         && claudexLinuxPackage.nativeBuildInputs != [ ]
         && claudexLinuxPackage.buildInputs != [ ]

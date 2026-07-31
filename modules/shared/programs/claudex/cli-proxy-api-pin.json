@@ -1,15 +1,15 @@
 {
-  "_comment": "CLIProxyAPI PoC pin. Upstream release metadata and checksums.txt were verified for v7.2.73 on both platforms; the binary is never executed during Stage 1 validation. The linux asset is the plugin-enabled variant, matching darwin (upstream also ships *_no-plugin tarballs, which are deliberately not pinned).",
-  "version": "7.2.73",
-  "tag": "v7.2.73",
+  "_comment": "CLIProxyAPI PoC pin. Upstream release metadata and checksums.txt were verified for v7.2.111 on both platforms; the binary is never executed during Stage 1 validation. The linux asset is the plugin-enabled variant, matching darwin (upstream also ships *_no-plugin tarballs, which are deliberately not pinned).",
+  "version": "7.2.111",
+  "tag": "v7.2.111",
   "platforms": {
     "aarch64-darwin": {
-      "asset": "CLIProxyAPI_7.2.73_darwin_aarch64.tar.gz",
-      "hash": "sha256-72ZsH3E+lEsk6OIFzoBhN+pxjnuFnlUz8BXo+KmNYqY="
+      "asset": "CLIProxyAPI_7.2.111_darwin_aarch64.tar.gz",
+      "hash": "sha256-WJIoDb5yaEzj9/MDu2B6GHFkosd7gRA2q+729o1NE/E="
     },
     "x86_64-linux": {
-      "asset": "CLIProxyAPI_7.2.73_linux_amd64.tar.gz",
-      "hash": "sha256-fHlZsGoG/r8ftzEC0yP8BuwT8L3D1O6MPAdyoVqgIkY="
+      "asset": "CLIProxyAPI_7.2.111_linux_amd64.tar.gz",
+      "hash": "sha256-wYxPvd0UaFZuSuXSYnkcM0PTuZpCLxBnHqcTneyyHoU="
     }
   }
 }

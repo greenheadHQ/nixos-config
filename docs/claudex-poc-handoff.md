@@ -69,7 +69,7 @@ worktree를 사용한다. 이 문서만 보고 별도 Stage 1 branch를 만들�
 - `modules/shared/programs/claudex/package.nix`
   - CLIProxyAPI prebuilt archive를 고정하고 release layout을 검증한 뒤 바이너리 하나만 설치한다.
 - `modules/shared/programs/claudex/cli-proxy-api-pin.json`
-  - 버전 `7.2.73`과 플랫폼별 asset(darwin arm64 / linux amd64) SRI를 고정한다. linux prebuilt는 glibc 동적 링크에 FHS interpreter를 달고 오므로 `autoPatchelfHook`으로 interpreter를 nix store로 재작성해야 실행되고, darwin은 Mach-O 서명 보존을 위해 `dontPatchELF`를 유지한다 (의도된 플랫폼 비대칭이며 eval 테스트가 잠근다).
+  - 버전 `7.2.111`과 플랫폼별 asset(darwin arm64 / linux amd64) SRI를 고정한다. linux prebuilt는 glibc 동적 링크에 FHS interpreter를 달고 오므로 `autoPatchelfHook`으로 interpreter를 nix store로 재작성해야 실행되고, darwin은 Mach-O 서명 보존을 위해 `dontPatchELF`를 유지한다 (의도된 플랫폼 비대칭이며 eval 테스트가 잠근다).
 - `modules/shared/programs/claudex/files/verify-release-layout.sh`
   - archive 최상위 5개 항목의 이름과 type을 정확히 검증한다.
 
@@ -126,7 +126,7 @@ worktree를 사용한다. 이 문서만 보고 별도 Stage 1 branch를 만들�
 
 | 항목 | 값 |
 |---|---|
-| Proxy | CLIProxyAPI `7.2.73` — darwin arm64 / linux amd64 (플랫폼별 asset·SRI pin) |
+| Proxy | CLIProxyAPI `7.2.111` — darwin arm64 / linux amd64 (플랫폼별 asset·SRI pin). 본문의 v7.2.73 기준 "소스 확정" 서술들은 실측 당시 버전 기록이며 7.2.111 소스로 전부 재검증된 것은 아니다 |
 | Bind | `127.0.0.1:8317` |
 | 모델 (default main / subagent) | `gpt-5.6-sol` / `gpt-5.6-sol` |
 | 모델 (mixed main) | `claude-opus-4-8` (`claudex --mixed`; descriptor `.model`은 default main alias; 재조정 트리거 #1130) |
@@ -369,7 +369,7 @@ claudex help
 - `bindHost: "127.0.0.1"`
 - `port: 8317`
 - `model: "gpt-5.6-sol"`
-- `proxyVersion: "7.2.73"`
+- `proxyVersion: "7.2.111"`
 - `schema: 3`
 - `lifecycle.autoStart: "first-session"`
 - public 실행 surface는 `claudex` 하나이며, 도움말에 `login`, `status`, `proxy`가 표시됨
@@ -581,7 +581,7 @@ git diff --cached
 
 ## 12. #1108 source 조사 결과와 남은 실측
 
-현재 pin CLIProxyAPI `v7.2.73`과 current upstream을 읽기 전용으로 대조한 결과:
+조사 당시 pin이던 CLIProxyAPI `v7.2.73`과 당시 upstream을 읽기 전용으로 대조한 결과 (pin이 갱신되면 아래 서술은 소스 재검증 전까지 v7.2.73 기준 기록이다):
 
 - `--local-model`은 model catalog updater만 끈다. server는 시작 직후와 이후 3시간마다
   `https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/latest-arm64-mac.yml`

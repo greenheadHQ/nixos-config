@@ -8,11 +8,11 @@
 
 let
   fakeCliProxyApi =
-    pkgs.runCommand "cli-proxy-api-fixture-7.2.73-${proxyFixtureTag}" { } ''
+    pkgs.runCommand "cli-proxy-api-fixture-7.2.111-${proxyFixtureTag}" { } ''
       install -Dm755 ${pkgs.writeShellScript "cli-proxy-api-fixture-${proxyFixtureTag}" "exit 99"} "$out/bin/cli-proxy-api"
     ''
     // {
-      version = "7.2.73";
+      version = "7.2.111";
     };
   home = flake.inputs.home-manager.lib.homeManagerConfiguration {
     inherit pkgs;
