@@ -319,10 +319,13 @@ _claudex_promote_staged_credential() {
     return 1
   fi
 
-  # CIR: pinned CLIProxyAPI 7.2.73 keys auth watcher state by path and explicitly
-  # treats a same-path rename as an atomic update. Preserve the canonical basename and
-  # replace it from staging on the same filesystem so a running watcher never sees a
-  # provider disappear between two renames. The verified private backup remains available.
+  # CIR: source-verified on CLIProxyAPI v7.2.73 — the auth watcher keys state by path
+  # and explicitly treats a same-path rename as an atomic update. Preserve the canonical
+  # basename and replace it from staging on the same filesystem so a running watcher never
+  # sees a provider disappear between two renames. The verified private backup remains
+  # available. Re-verify this premise on pin bumps: upstream later changed credential
+  # filename generation (v7.2.89), filestore equality (v7.2.102), and added a watcher
+  # deletion guard (v7.2.103) — not yet source-re-verified against the current pin.
   destination="$current_path"
   if ! _claudex_quiet_mv -f -- "$staged" "$destination"; then
     _claudex_quiet_rm -f -- "$backup_path"
