@@ -496,6 +496,52 @@ require_contract_text \
   "AGENTS.override separate approval anchor"
 
 echo ""
+echo "=== Codex CLI-default native capability probe ==="
+# #1098: run-da native fan-out 계약의 CLI-default surface를 실측 판정한다.
+# `codex debug prompt-input` 출력의 developer 메시지에서 sanitized tool-name set과
+# slot 광고 문장만 추출한다 — raw prompt는 저장/출력하지 않는다.
+# 이 판정은 surface_scope=cli-default 전용이며, active Desktop/다른 세션 표면의
+# 증명이 아니다 (각 세션은 자기 표면으로 재판별 — runtime-mapping.md capability profile).
+if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  _cap_probe_json="$(mktemp)"
+  if command codex debug prompt-input 'runtime capability probe' > "$_cap_probe_json" 2>/dev/null; then
+    _cap_dev_text="$(jq -r '[.[] | select(.role == "developer") | .content[]?.text // empty] | join("\n")' "$_cap_probe_json" 2>/dev/null || true)"
+    _cap_tools=""
+    for _cap_tool in spawn_agent wait_agent close_agent send_message followup_task interrupt_agent list_agents; do
+      case "$_cap_dev_text" in
+        *"$_cap_tool"*) _cap_tools="${_cap_tools:+$_cap_tools,}$_cap_tool" ;;
+      esac
+    done
+    _cap_slots="$(printf '%s' "$_cap_dev_text" | grep -Eo 'There are [0-9]+ available concurrency slots' | grep -Eo '[0-9]+' | head -1 || true)"
+    _cap_profile="unknown"
+    case ",$_cap_tools," in
+      *,spawn_agent,*)
+        case ",$_cap_tools," in
+          *,wait_agent,*)
+            case ",$_cap_tools," in
+              *,close_agent,*) _cap_profile="legacy" ;;
+              *) _cap_profile="current" ;;
+            esac
+            ;;
+        esac
+        ;;
+    esac
+    # slot 광고가 없으면 batch 상한을 정할 수 없으므로 unknown으로 강등한다 (fail-safe).
+    if [ -z "$_cap_slots" ]; then _cap_profile="unknown"; fi
+    if [ "$_cap_profile" = "unknown" ]; then
+      fail "capability probe: surface_scope=cli-default profile=unknown tools=[${_cap_tools:-none}] slots=${_cap_slots:-unknown} — run-da native fan-out은 serial/bounded fail-safe로만 동작 가능"
+    else
+      pass "capability probe: surface_scope=cli-default profile=$_cap_profile tools=[$_cap_tools] slots=$_cap_slots"
+    fi
+  else
+    fail "capability probe: codex debug prompt-input 실행 실패 (surface_scope=cli-default 판정 불가)"
+  fi
+  rm -f "$_cap_probe_json"
+else
+  fail "capability probe: codex 또는 jq 없음 (CLI-default surface 판정 불가)"
+fi
+
+echo ""
 echo "=== 프로젝트 스킬 투영 확인 (디렉토리 심링크) ==="
 
 if [ ! -d "$TARGET_SKILLS_DIR" ]; then

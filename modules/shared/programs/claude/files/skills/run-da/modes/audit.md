@@ -14,7 +14,7 @@ audit 모드는 preflight 체크리스트를 건너뛴다 — 감사 자체가 �
 | 항목 | 값 |
 |------|-----|
 | 기본 fan-out | 6개 auditor bundle (에이전트 6개) |
-| open thread cap | current session의 `agents.max_threads` (unset 기본 6) |
+| open thread cap | capability profile의 batch 상한 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT — 광고 slot 기반, unknown이면 serial/bounded) |
 | `MAX` modifier | 기본 6 bundle을 10개 세부 관점으로 확장 (exhaustive override) |
 | `fresh` modifier | audit 모드 부적용 — 라운드 반복이 없으므로 해석하지 않는다 |
 | `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: `run-da audit agent=codex-high` |
@@ -127,7 +127,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 - Codex 세션 경로에서는 `run-da` canonical contract의 standard review profile을 사용한다.
 - `wait_agent` timeout이나 단순 지연만으로 auditor를 kill하거나 self-auditing으로 대체하지 않는다.
 - tracked workspace write, branch mutation, commit/push, GitHub write, `wt`/`nrs`/rebuild 계열은 auditor가 실행하지 않는다.
-- Codex 세션 경로에서는 current session의 open slot을 넘기지 않는다. `agents.max_threads`는 unset일 때 기본 6이며, completed thread도 `close_agent` 전에는 슬롯을 점유한다.
+- Codex 세션 경로에서는 capability profile의 batch 상한을 넘기지 않는다 (slot 판별·회수 규칙은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### Step 3a: Codex 세션 경로
 
@@ -195,7 +195,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 1. 각 발견 사항의 유효성을 검증한다 (파일:줄이 실제로 존재하는지, 근거가 타당한지).
 2. 중복 발견을 제거한다 (여러 bundle에서 같은 문제를 지적한 경우).
 3. 심각도 순으로 정렬한다.
-4. Codex 세션 경로에서는 결과 집계가 끝난 completed audit thread를 `close_agent`로 닫아 다음 batch/retry 슬롯을 회수한다.
+4. Codex 세션 경로에서는 결과 집계 후 capability profile의 slot 회수 규칙을 적용해 다음 batch/retry 슬롯을 확보한다 (legacy만 `close_agent` — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 5. 사후 변조 감지 (Codex 세션 경로 전용): 아래 "사후 변조 감지" 섹션의 비교를 수행한다. codex exec 경로는 read-only sandbox가 workspace write를 구조적으로 차단하므로 생략한다.
 6. `RECOVERABLE VIOLATION`은 `SAFE`에서 제외하고 fresh auditor로 재디스패치한다. 이는 auditor가 새 상태 코드를 정의하는 것이 아니라, 메인 에이전트가 출력 형식 위반이나 scope 침범 같은 contract breach를 감지했을 때 부여하는 조율 분류다. 단 Codex 세션 경로에서 status delta가 동시에 존재하면 `STATEFUL VIOLATION` 분류가 우선한다.
 7. `STATEFUL VIOLATION`만 `BLOCKED (VIOLATION)`로 남긴다. 이 경우 사용자에게 불완전한 run이 보고되기 전에는 fresh auditor로 재디스패치하지 않는다.
@@ -343,7 +343,7 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
 - 감사 결과를 사용자에게 먼저 제시하고, 수정은 사용자 승인 후 진행한다.
 - 변경 범위가 극소한 경우 에이전트 수를 줄여 효율을 높인다.
 - 기본 fan-out은 6 bundle이며, `MAX` modifier만 exhaustive override(10개 세부 관점)다. 10은 기본값이 아니고, trailing 컨텍스트는 우선순위 판단용으로 보존한다.
-- Codex 세션 경로에서는 completed audit thread를 다음 batch/retry 전에 명시적으로 `close_agent`로 닫는다.
+- Codex 세션 경로에서는 다음 batch/retry 전에 capability profile의 slot 회수 규칙을 적용한다 (legacy만 `close_agent` — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 - `SAFE`는 유효한 auditor 결과가 모두 확보된 뒤에만 반환한다. `RECOVERABLE VIOLATION` 재디스패치 중이거나 `BLOCKED (VIOLATION)` unit이 남아 있으면 완료로 간주하지 않는다.
 - for_plan/for_pr 루프와 목적이 다르다: 루프는 품질을 반복 개선하고, audit는 안전성을 일회 검증한다.
 - 일회성 강제: "`SAFE`가 나올 때까지" 같은 지시에도 같은 changeset에 자동으로 반복 재발사하지 않는다. 1회 감사 후 결과를 보고하고, fix 후 재검증이 필요하면 사용자 확인을 거쳐 새 단발 감사로 실행한다. 매 재감사가 새 리뷰 표면을 만드는 비수렴이 의심되면(감사는 일회성이라 자동 라운드 카운팅이 없다) 자동 재발사 대신 사용자에게 보고하고 판단을 구한다.

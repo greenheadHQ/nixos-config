@@ -202,7 +202,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 ## 주의사항
 
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
-- Codex 세션 경로에서는 completed reviewer/Arbiter thread를 다음 round/retry 전에 명시적으로 `close_agent`로 닫는다. 닫지 않으면 open-thread slot이 회수되지 않는다.
+- Codex 세션 경로에서는 다음 round/retry 전에 capability profile의 slot 회수·batch 규칙을 적용한다 (legacy profile만 completed thread를 `close_agent`로 닫고, current profile은 explicit close 없이 광고 slot 내에서만 발사 — [`references/runtime-mapping.md`](references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 - Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. `agent=`가 지정되면 해당 호출에서는 그 실행 프로파일이 reviewer/auditor와 Arbiter 전체에 우선한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑). 사용자 지정 실행 파라미터는 codex exec 경로 전용이므로 native subagent 경로에는 적용되지 않으며, 경로 제약 규칙(위 사용자 지정 실행 파라미터 섹션)에 따라 codex exec 경로로 전환된 호출에서만 우선 적용된다.
 - codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행되어 코드/계획 write를 read-only sandbox로 구조적으로 차단한다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명·service_tier는 스킬이 고정하지 않는다 — 사용자가 명시 지정한 값만 `-c` config override로 주입하고(사용자 지정 실행 파라미터), 미지정 시 reasoning effort만 기본 role profile 또는 `agent=` 인자에서 결정한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
