@@ -511,19 +511,34 @@ echo "=== Codex CLI-default native capability probe ==="
 # 이 판정은 surface_scope=cli-default 전용이며, active Desktop/다른 세션 표면의
 # 증명이 아니다 (각 세션은 자기 표면으로 재판별 — runtime-mapping.md capability profile).
 if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-  _cap_probe_json="$(mktemp)"
-  trap 'rm -f "$_cap_probe_json"' EXIT INT TERM
-  if command codex debug prompt-input 'runtime capability probe' > "$_cap_probe_json" 2>/dev/null; then
-    _cap_dev_text="$(jq -r '[.[] | select(.role == "developer") | .content[]?.text // empty] | join("\n")' "$_cap_probe_json" 2>/dev/null || true)"
+  # raw prompt를 디스크에 남기지 않는다 — stdout을 jq로 즉시 파이프해 developer 텍스트만
+  # 메모리 변수로 유지한다 (문서 계약 "raw prompt 저장/출력 금지"와 일치).
+  _cap_dev_text="$(command codex debug prompt-input 'runtime capability probe' 2>/dev/null \
+    | jq -r '[.[] | select(.role == "developer") | .content[]?.text // empty] | join("\n")' 2>/dev/null || true)"
+  if [ -z "$_cap_dev_text" ]; then
+    fail "capability probe: codex debug prompt-input 실행 실패 또는 developer 메시지 없음 (surface_scope=cli-default 판정 불가)"
+  else
     # tool 열거 anchor 문장에서만 backtick 토큰을 추출한다.
     _cap_call_line="$(printf '%s' "$_cap_dev_text" | grep -Eo 'Call [^.]*only as direct tool calls' | head -1 || true)"
     _cap_tools=""
     if [ -n "$_cap_call_line" ]; then
       _cap_tools="$(printf '%s' "$_cap_call_line" | grep -Eo '`[a-z_]+`' | tr -d '`' | paste -sd, - || true)"
     fi
-    # slot은 root 포함("including you")이 명시된 전체 문형에서 첫 숫자(total N)만 취한다.
-    _cap_slots="$(printf '%s' "$_cap_dev_text" | grep -Eo 'There are [0-9]+ available concurrency slots, meaning that up to [0-9]+ agents can be active at once, including you' | grep -Eo '[0-9]+' | head -1 || true)"
-    # lifecycle 축: explicit-close / no-explicit-close / unavailable
+    # slot은 root 포함("including you")이 명시된 전체 문형만 인정하고,
+    # 문장 안의 두 숫자(total/active 상한)가 서로 일치할 때만 신뢰한다.
+    _cap_slot_line="$(printf '%s' "$_cap_dev_text" | grep -Eo 'There are [0-9]+ available concurrency slots, meaning that up to [0-9]+ agents can be active at once, including you' | head -1 || true)"
+    _cap_slots=""
+    if [ -n "$_cap_slot_line" ]; then
+      _cap_slot_total="$(printf '%s' "$_cap_slot_line" | grep -Eo '[0-9]+' | sed -n 1p || true)"
+      _cap_slot_active="$(printf '%s' "$_cap_slot_line" | grep -Eo '[0-9]+' | sed -n 2p || true)"
+      # 두 숫자 불일치 또는 N<2(child slot 없음 — native fan-out 불가)면 slot 미확정으로 둔다.
+      if [ -n "$_cap_slot_total" ] && [ "$_cap_slot_total" = "$_cap_slot_active" ] && [ "$_cap_slot_total" -ge 2 ]; then
+        _cap_slots="$_cap_slot_total"
+      fi
+    fi
+    # lifecycle 축: explicit-close / no-explicit-close / unavailable.
+    # no-explicit-close(current)는 강제 중단 계약을 위해 interrupt_agent 가용도 요구한다
+    # (runtime-mapping.md current 판별 조건과 동일 — interrupt 미노출 표면은 unknown).
     _cap_lifecycle="unavailable"
     case ",$_cap_tools," in
       *,spawn_agent,*)
@@ -531,7 +546,11 @@ if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
           *,wait_agent,*)
             case ",$_cap_tools," in
               *,close_agent,*) _cap_lifecycle="explicit-close" ;;
-              *) _cap_lifecycle="no-explicit-close" ;;
+              *)
+                case ",$_cap_tools," in
+                  *,interrupt_agent,*) _cap_lifecycle="no-explicit-close" ;;
+                esac
+                ;;
             esac
             ;;
         esac
@@ -552,11 +571,7 @@ if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     else
       pass "capability probe: surface_scope=cli-default profile=$_cap_profile lifecycle=$_cap_lifecycle tools=[$_cap_tools] slots=$_cap_slots"
     fi
-  else
-    fail "capability probe: codex debug prompt-input 실행 실패 (surface_scope=cli-default 판정 불가)"
   fi
-  rm -f "$_cap_probe_json"
-  trap - EXIT INT TERM
 else
   fail "capability probe: codex 또는 jq 없음 (CLI-default surface 판정 불가)"
 fi
