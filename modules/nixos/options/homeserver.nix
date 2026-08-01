@@ -245,6 +245,45 @@
       };
     };
 
+    interactionLimitsRenewal = {
+      enable = lib.mkEnableOption "GitHub interaction limits auto-renewal timer";
+      repo = lib.mkOption {
+        type = lib.types.str;
+        default = "greenheadHQ/nixos-config";
+        description = "GitHub repository (owner/name) whose interaction limits are kept renewed";
+      };
+      limit = lib.mkOption {
+        type = lib.types.enum [
+          "existing_users"
+          "contributors_only"
+          "collaborators_only"
+        ];
+        default = "collaborators_only";
+        description = "Interaction limit group enforced on renewal";
+      };
+      expiry = lib.mkOption {
+        type = lib.types.enum [
+          "one_day"
+          "three_days"
+          "one_week"
+          "one_month"
+          "six_months"
+        ];
+        default = "six_months";
+        description = "Expiry window requested on renewal (six_months is the GitHub maximum)";
+      };
+      renewThresholdDays = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 14;
+        description = "Renew when remaining days fall to this value or below";
+      };
+      timerCalendar = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 10:30:00 Asia/Seoul";
+        description = "OnCalendar schedule for the daily expiry check";
+      };
+    };
+
     # opnix: 1Password Service Account 기반 시크릿 materialization 인프라
     # enable=true 시 services.onepassword-secrets(Go SDK root oneshot)로 op:// reference를
     # tmpfs에 materialize하고, SA token 90일 rotation 알림 timer를 활성화한다.
@@ -319,6 +358,7 @@
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
     ../programs/da-weekly-report # DA 세션 주간 리포트 timer
+    ../programs/interaction-limits-renewal # GitHub interaction limits 만료 전 자동 갱신
     ../programs/opnix # 1Password Service Account 시크릿 materialization
     ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지

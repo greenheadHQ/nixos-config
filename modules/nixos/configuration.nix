@@ -151,6 +151,7 @@
     enable = true; # DA 세션 주간 리포트 timer
     trackingIssueNumber = 1067; # 리포트 누적 그릇 (연 1회 로테이션 — 이슈 본문 운영 원칙 참조)
   };
+  homeserver.interactionLimitsRenewal.enable = true; # GitHub interaction limits 만료 전 자동 갱신 (외부 PR 차단 유지)
   homeserver.opnix.enable = true; # 1Password SA token materialization + gh 인증
   homeserver.codexRemoteControl.enable = true; # Codex mobile remote-control app-server 회귀 방지
   homeserver.claudeRemoteControl = {
