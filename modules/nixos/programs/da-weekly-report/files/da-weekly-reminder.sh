@@ -13,7 +13,7 @@ PUSHOVER_BODY="내일 오전 DA 주간 리포트 수집. MacBook을 깨워두면
 # 공통 fail-soft 전송 헬퍼 (report 파이프라인과 공유 — drift 방지 단일 소스).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1090
-source "${PUSHOVER_LIB:-$SCRIPT_DIR/pushover-lib.sh}"
+source "${PUSHOVER_LIB:-$SCRIPT_DIR/../../../lib/pushover-fail-soft.sh}"
 
 send_pushover_fail_soft "$PUSHOVER_HELPER" "$PUSHOVER_SHARE_CRED" "$PUSHOVER_TITLE" "$PUSHOVER_BODY" 0 || true
 

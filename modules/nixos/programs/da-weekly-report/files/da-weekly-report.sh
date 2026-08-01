@@ -107,7 +107,7 @@ deadline_reached() {
 
 # 공통 fail-soft 전송 헬퍼 (reminder와 공유 — drift 방지 단일 소스).
 # shellcheck disable=SC1090
-source "${PUSHOVER_LIB:-$SCRIPT_DIR/pushover-lib.sh}"
+source "${PUSHOVER_LIB:-$SCRIPT_DIR/../../../lib/pushover-fail-soft.sh}"
 
 send_remote_sleep_alert() {
   local body="MacBook이 잠들어 있습니다. 깨우면 다음 정시 시도에 포함됩니다"

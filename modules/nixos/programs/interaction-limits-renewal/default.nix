@@ -15,7 +15,12 @@ let
   cfg = config.homeserver.interactionLimitsRenewal;
 
   homeDir = "/home/${username}";
-  ghPatPath = "/run/opnix/${username}/github-pat";
+
+  # 정책 상수 — 현재 요구가 고정이라 옵션으로 열지 않는다 (사용처가 생기면 그때 일반화).
+  # collaborators_only: 외부인 PR/이슈/코멘트 차단. six_months: GitHub이 허용하는 최장 만료.
+  limitValue = "collaborators_only";
+  expiry = "six_months";
+  ghPatPath = config.homeserver.opnix.ghPatPath;
 
   renewalScript = pkgs.writeShellApplication {
     name = "interaction-limits-renewal";
@@ -64,14 +69,14 @@ in
         HOME = homeDir;
         USER = username;
         REPO = cfg.repo;
-        LIMIT_VALUE = cfg.limit;
-        EXPIRY = cfg.expiry;
+        LIMIT_VALUE = limitValue;
+        EXPIRY = expiry;
         RENEW_THRESHOLD_DAYS = toString cfg.renewThresholdDays;
         GH_PAT_PATH = ghPatPath;
         PUSHOVER_SHARE_CRED = "${homeDir}/.config/pushover/share";
         PUSHOVER_HELPER = "${homeDir}/.local/lib/pushover.sh";
-        # 공통 fail-soft 전송 헬퍼 — da-weekly-report와 같은 store 파일을 source한다 (drift 방지).
-        PUSHOVER_LIB = "${../da-weekly-report/files/pushover-lib.sh}";
+        # 공용 fail-soft 전송 헬퍼 — 소비 모듈들이 같은 store 파일을 source한다 (drift 방지).
+        PUSHOVER_LIB = "${../../lib/pushover-fail-soft.sh}";
       };
     };
 

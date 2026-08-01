@@ -27,45 +27,51 @@ let
   ghPatPath = "/run/opnix/${username}/github-pat";
 in
 {
-  config = lib.mkIf cfg.enable {
-    # ── SA token 만료일 평문 record 배포 (stub 보존) ──
-    # rotation timer(opnix-rotate.nix)가 /etc/opnix-service-account-expiry를 읽는다.
-    # source 파일: secrets/opnix-service-account-expiry.txt (ISO-8601 date 1줄, agenix 아님).
-    environment.etc."opnix-service-account-expiry".source =
-      constants.paths.opnixServiceAccountExpirySource;
+  config = lib.mkMerge [
+    {
+      # ghPatPath SoT 값 할당 — mkIf 밖: opnix disable 환경에서도 소비자의 옵션 참조가 평가 가능하다.
+      homeserver.opnix.ghPatPath = ghPatPath;
+    }
+    (lib.mkIf cfg.enable {
+      # ── SA token 만료일 평문 record 배포 (stub 보존) ──
+      # rotation timer(opnix-rotate.nix)가 /etc/opnix-service-account-expiry를 읽는다.
+      # source 파일: secrets/opnix-service-account-expiry.txt (ISO-8601 date 1줄, agenix 아님).
+      environment.etc."opnix-service-account-expiry".source =
+        constants.paths.opnixServiceAccountExpirySource;
 
-    # ── SA token (agenix, host key 복호화) ──
-    # opnix-secrets.service는 tokenFile을 항상 root:${opnixGroup} 0640으로 강제하므로
-    # (opnix nix/module.nix), agenix도 동일 권한으로 선언해 매 activation 권한 경합(토글)을 제거한다.
-    # recipient는 minipcHostOnly(host key) — 부팅 의존 시크릿이라 user key 노출 표면과 격리.
-    age.secrets.opnix-service-account-token = {
-      file = constants.paths.opnixServiceAccountTokenAge;
-      mode = "0640";
-      owner = "root";
-      group = opnixGroup;
-    };
-
-    # ── opnix native materialization ──
-    services.onepassword-secrets = {
-      enable = true;
-      tokenFile = config.age.secrets.opnix-service-account-token.path;
-      # users 옵션은 의도적으로 미설정 — token group readable이 일반 user로 확산되는 것을 차단.
-      secrets.githubPat = {
-        # op:// reference. opnix는 secret key에 camelCase만 허용하므로 githubPat (파일명은 path로 지정).
-        reference = "op://${vault}/github-pat/token";
-        path = ghPatPath;
-        owner = username;
-        group = "users";
-        mode = "0400";
+      # ── SA token (agenix, host key 복호화) ──
+      # opnix-secrets.service는 tokenFile을 항상 root:${opnixGroup} 0640으로 강제하므로
+      # (opnix nix/module.nix), agenix도 동일 권한으로 선언해 매 activation 권한 경합(토글)을 제거한다.
+      # recipient는 minipcHostOnly(host key) — 부팅 의존 시크릿이라 user key 노출 표면과 격리.
+      age.secrets.opnix-service-account-token = {
+        file = constants.paths.opnixServiceAccountTokenAge;
+        mode = "0640";
+        owner = "root";
+        group = opnixGroup;
       };
-    };
 
-    # materialize 대상의 parent dir을 tmpfs(/run)에 미리 생성한다.
-    # opnix processor는 parent를 0755 root로 MkdirAll하지만 이미 존재하면 no-op이므로,
-    # tmpfiles가 먼저 0700 ${username}으로 만들어 두면 권한이 보존된다.
-    systemd.tmpfiles.rules = [
-      "d /run/opnix 0755 root root -"
-      "d /run/opnix/${username} 0700 ${username} users -"
-    ];
-  };
+      # ── opnix native materialization ──
+      services.onepassword-secrets = {
+        enable = true;
+        tokenFile = config.age.secrets.opnix-service-account-token.path;
+        # users 옵션은 의도적으로 미설정 — token group readable이 일반 user로 확산되는 것을 차단.
+        secrets.githubPat = {
+          # op:// reference. opnix는 secret key에 camelCase만 허용하므로 githubPat (파일명은 path로 지정).
+          reference = "op://${vault}/github-pat/token";
+          path = ghPatPath;
+          owner = username;
+          group = "users";
+          mode = "0400";
+        };
+      };
+
+      # materialize 대상의 parent dir을 tmpfs(/run)에 미리 생성한다.
+      # opnix processor는 parent를 0755 root로 MkdirAll하지만 이미 존재하면 no-op이므로,
+      # tmpfiles가 먼저 0700 ${username}으로 만들어 두면 권한이 보존된다.
+      systemd.tmpfiles.rules = [
+        "d /run/opnix 0755 root root -"
+        "d /run/opnix/${username} 0700 ${username} users -"
+      ];
+    })
+  ];
 }

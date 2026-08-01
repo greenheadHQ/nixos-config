@@ -252,26 +252,6 @@
         default = "greenheadHQ/nixos-config";
         description = "GitHub repository (owner/name) whose interaction limits are kept renewed";
       };
-      limit = lib.mkOption {
-        type = lib.types.enum [
-          "existing_users"
-          "contributors_only"
-          "collaborators_only"
-        ];
-        default = "collaborators_only";
-        description = "Interaction limit group enforced on renewal";
-      };
-      expiry = lib.mkOption {
-        type = lib.types.enum [
-          "one_day"
-          "three_days"
-          "one_week"
-          "one_month"
-          "six_months"
-        ];
-        default = "six_months";
-        description = "Expiry window requested on renewal (six_months is the GitHub maximum)";
-      };
       renewThresholdDays = lib.mkOption {
         type = lib.types.ints.positive;
         default = 14;
@@ -289,6 +269,15 @@
     # tmpfs에 materialize하고, SA token 90일 rotation 알림 timer를 활성화한다.
     opnix = {
       enable = lib.mkEnableOption "1Password Service Account secrets materialization (opnix)";
+      ghPatPath = lib.mkOption {
+        type = lib.types.str;
+        readOnly = true;
+        description = ''
+          opnix가 gh PAT를 materialize하는 경로 (SoT — 값은 opnix/default.nix가 할당).
+          소비자(da-weekly-report, interaction-limits-renewal 등)는 경로를 재정의하지 말고
+          config.homeserver.opnix.ghPatPath를 참조한다.
+        '';
+      };
     };
 
     codexRemoteControl = {
