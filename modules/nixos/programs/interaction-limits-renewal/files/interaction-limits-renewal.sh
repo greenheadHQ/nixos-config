@@ -46,7 +46,7 @@ current_expires="$(jq -r '.expires_at // empty' <<<"$current_json")"
 # 갱신 사유를 명시적 상태로 판정한다. remain_days는 실제 잔여일이 계산된 경우에만 설정된다.
 #   ok       — 원하는 limit이 threshold보다 여유 있게 남음 (무알림 종료)
 #   expiring — 원하는 limit이지만 잔여일이 threshold 이하
-#   absent   — GET 성공 + 빈 응답 (limits 미설정)
+#   absent   — GET 성공 + limit 필드 누락/null/빈 값 (limits 미설정)
 #   mismatch — 다른 limit 값이 설정되어 있거나 만료 시각을 해석할 수 없음
 renewal_reason="mismatch"
 remain_days=""

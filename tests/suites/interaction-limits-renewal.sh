@@ -7,7 +7,8 @@ _ilr_script="$REPO_ROOT/modules/nixos/programs/interaction-limits-renewal/files/
 # 단일 gh stub:
 #   GET  — ILR_TEST_GET_EXIT가 0이면 ILR_TEST_GET_JSON(기본 '{}')을 반환, 아니면 해당 코드로 실패.
 #          PUT 이후(marker 존재)에는 ILR_TEST_GET_JSON_AFTER_PUT이 있으면 그 값을 반환.
-#   PUT  — marker 파일을 남기고 ILR_TEST_PUT_EXIT로 종료.
+#   PUT  — 모든 `api -X` 호출을 PUT으로 간주해 marker 파일을 남기고 ILR_TEST_PUT_EXIT로 종료
+#          (의도적 단순화: 검증 대상 스크립트의 유일한 -X 호출이 PUT이다).
 _ilr_install_gh_stub() {
   local path="$1"
   cat > "$path" <<'STUB'
