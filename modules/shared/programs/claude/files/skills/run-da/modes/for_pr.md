@@ -11,7 +11,7 @@
 | Step | for_plan | for_pr (delta) |
 |------|----------|----------------|
 | Step 0 | 동일 | Review Intensity 입력은 `git diff --stat main...HEAD` (계획 요약 대신) |
-| Step 1 | 계획 내용 수집 | diff preflight + 수집: ①리뷰 대상 구현이 커밋되어 있는지 확인한다 — branch diff(`git diff main...HEAD`)의 공백 여부와 무관하게, baseline의 staged/unstaged/untracked 변경 중 이번 리뷰 대상 구현에 속하는 것이 하나라도 있으면 진행하지 않고 커밋을 요청한다 (미커밋 구현 전체 또는 커밋된 구현 위의 미커밋 후속 수정이 리뷰 diff·push에서 조용히 빠지는 것을 차단. 리뷰 대상과 무관한 사용자 변경만 baseline으로 허용) ②workspace baseline을 기록한다 — `git status --porcelain=v1 -z --untracked-files=all`로 파일 단위 경로를 수집하고(untracked 디렉터리 축약 방지), tracked dirty 경로의 diff 내용과 untracked 파일 hash를 repo 밖 scratch에 저장한다 (finalize 내용 대조 기준) → `git diff main...HEAD`로 diff 수집. diff를 프롬프트에 직접 포함 (exec 우회 패턴). diff가 과도하게 크면 (`git diff main...HEAD \| wc -l`로 확인) 기계적 변경(flake.lock, hash 변경 등)을 필터링한 축약 diff 사용 (`git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능) |
+| Step 1 | 계획 내용 수집 | diff preflight + workspace baseline 기록 + diff 수집 — 체크포인트별 절차는 아래 "Step 1 상세: diff preflight + workspace baseline" 절 참조 |
 | Step 2 | reviewer prompt에 계획 원문 포함 | reviewer prompt에 diff를 `<git-diff>` 태그로 감싸서 포함 + "diff 외부의 관련 파일도 직접 읽어 탐색하라" 지시 |
 | Step 2 (codex exec) | `DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-plan-XXXXXX)` | `DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-pr-XXXXXX)` (`-pr-` prefix). 후속 prompt/exec 호출은 for_plan Step 2와 동일하게 stdout `DA_DIR` 리터럴 재설정 + `[ -d "$DA_DIR" ]` / `[ -f "$DA_DIR/$UNIT.md" ]` guard를 적용 |
 | Step 3 | 동일 | 동일 ([`./for_plan.md`](./for_plan.md#step-3-reviewer-결과-수신--종합-리포트)) |
@@ -21,6 +21,15 @@
 | Step 6 write phase | 통합 반영 루프(통합 설계→batch 반영→walkthrough→후속 수정 처리→finalize) 후 계획 확정·새 changeset 선언 | 동일 루프를 코드에 적용하되 commit·dirty 겹침 게이트·baseline 검증이 추가된다 — 순서와 조건은 아래 "Step 6 상세: for_pr write phase" 절 참조 |
 | Step 7 | 수렴 predicate 충족까지 반복 (protocol.md "수렴 판정" SSOT + "최대 라운드 수" 적용: 상한 + 한계효용 + 비수렴 조기중단 + read/write 분리) | 동일 |
 | Step 8 | (없음) | push — 수렴 종료 후 최종 승인을 받아 push한다. push 전 walkthrough delta가 마지막 commit에 포함됐는지 확인한다 (네트워크/auth 정책 의존 — [`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조) |
+
+## Step 1 상세: diff preflight + workspace baseline
+
+체크포인트는 이름으로 참조한다. 순서대로 수행한다:
+
+- 미커밋 구현 차단: branch diff(`git diff main...HEAD`)의 공백 여부와 무관하게, workspace의 staged/unstaged/untracked 변경 중 이번 리뷰 대상 구현에 속하는 것이 하나라도 있으면 진행하지 않고 커밋을 요청한다 — 미커밋 구현 전체 또는 커밋된 구현 위의 미커밋 후속 수정이 리뷰 diff·push에서 조용히 빠지는 것을 차단한다. 리뷰 대상과 무관한 사용자 변경만 baseline으로 허용한다.
+- baseline 기록: `git status --porcelain=v1 -z --untracked-files=all`로 파일 단위 경로를 수집하고(untracked 디렉터리 축약 방지), tracked dirty 경로의 diff 내용과 untracked 파일 hash를 repo 밖 scratch에 저장한다 (finalize의 내용 대조 기준).
+- diff 수집: `git diff main...HEAD`로 수집해 프롬프트에 직접 포함한다 (exec 우회 패턴). diff가 과도하게 크면 (`git diff main...HEAD | wc -l`로 확인) 기계적 변경(flake.lock, hash 변경 등)을 필터링한 축약 diff를 사용한다 (`git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능).
+- baseline 재수집 규칙: 이후 단계에서 사용자가 workspace 상태를 바꾸는 선택(커밋/stash 후 재개 등)을 하면, 위 미커밋 구현 차단·baseline 기록을 다시 수행해 baseline을 갱신한다 — 이후 모든 대조는 갱신된 baseline 기준이다 (낡은 baseline과의 비교는 정당한 재개 경로를 위반으로 오인한다).
 
 ## 공통 절차 (for_plan과 동일)
 
@@ -37,13 +46,21 @@
 
 ## Step 6 상세: for_pr write phase
 
-for_plan의 통합 반영 루프에 다음 for_pr 전용 체크포인트를 더한다:
+for_plan의 통합 반영 루프에 다음 for_pr 전용 체크포인트를 더한다. 체크포인트는 이름으로 참조한다:
 
-1. write phase 시작: `git rev-parse HEAD`를 `pre_write_sha`로 기록한다 (protocol.md revalidation `batch-delta-intensity` 조건의 batch delta 입력 기준).
-2. dirty 겹침 게이트 (통합 설계 시점): round_write_set의 수정 대상 경로와 Step 1 workspace baseline의 dirty/untracked 경로의 교집합을 검사한다. 겹치면 batch 반영을 시작하지 않고 질문 도구로 사용자 판단을 받는다 — 사용자가 해당 파일을 커밋/stash 후 재개하거나, 사용자 hunk가 agent commit에 섞일 위험을 고지받고 명시 승인. 겹침이 없어야 아래 baseline 비교가 건전하다 (agent 수정 경로는 전부 commit되어 상태 변화로 드러난다).
-3. 게이트 재적용 (후속 write 전): walkthrough 후속 수정·formatter/generator가 batch 반영 시점에 없던 새 경로를 쓰기 전에, 그 경로를 baseline dirty/untracked 목록과 다시 대조한다 — 초기 게이트만으로는 후속 write가 보호되지 않는다.
-4. finalize (walkthrough CLEAN 후): 최종 diff 확인 → 메인 에이전트가 single-writer로 `git commit --only -- <batch 경로>`로 커밋한다 ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의. 경로 한정 커밋은 기존 index의 무관한 staged 사용자 항목을 포함하지도, 건드리지도 않는다 — 전역 index equality를 요구하면 무관한 staged 변경이 finalize를 영구 차단한다) → 생성된 commit의 경로 집합(`git show --name-only`)이 batch 경로 집합과 일치하고 baseline의 기존 staged 상태가 그대로인지 확인한다 → `git status --porcelain=v1 -z --untracked-files=all`을 Step 1 baseline과 비교해 write phase가 만든 새 미커밋 delta가 없는지 확인하고, baseline의 기존 dirty/untracked 경로는 저장해둔 diff 내용·hash와 대조해 내용이 변하지 않았는지 확인한다 (porcelain 상태 문자열은 내용 변화를 못 본다). 사용자의 기존 dirty/untracked 파일 자체는 차단 사유가 아니다 — 전역 clean을 요구하면 기존 파일이 finalize를 영구 차단하고, 이를 치우는 것은 hardening 계약 위반이다.
-5. 새 changeset(diff/commit range) 선언 + 변경 범위를 round summary에 기록. walkthrough 후속 수정이 uncommitted로 남아 push에서 누락되거나 다음 라운드 preflight를 깨는 것을 구조적으로 방지한다.
+- pre-write 기록: write phase 시작 시 `git rev-parse HEAD`를 `pre_write_sha`로 기록한다 (protocol.md revalidation `batch-delta-intensity` 조건의 batch delta 입력 기준).
+- dirty 겹침 게이트 (통합 설계 시점): round_write_set의 수정 대상 경로와 Step 1 baseline의 dirty/untracked 경로의 교집합을 검사한다. 겹침이 없어야 finalize의 baseline 대조가 건전하다 (agent 수정 경로는 전부 commit되어 상태 변화로 드러난다). 겹치면 batch 반영을 시작하지 않고 질문 도구로 사용자 판단을 받는다. 선택지별 후속 전이:
+  - 커밋/stash 후 재개: workspace 상태가 바뀌었으므로 "Step 1 상세"의 baseline 재수집 규칙을 적용한다 — 이후 모든 대조는 갱신된 baseline 기준이다.
+  - 혼입 명시 승인 (사용자 hunk가 agent commit에 섞일 위험 고지 후): 승인된 경로 집합을 기록하고 batch 경로 집합에 포함한다. finalize의 baseline 불변 대조에서 이 경로들은 제외하며(내용 변화가 승인된 결과다), 사용자 hunk가 commit에 포함된 사실을 round summary에 기록한다.
+- 게이트 재적용 (후속 write 전): walkthrough 후속 수정·formatter/generator가 batch 반영 시점에 없던 새 경로를 쓰기 전에, 그 경로를 baseline dirty/untracked 목록과 다시 대조한다 — 초기 게이트만으로는 후속 write가 보호되지 않는다. 겹치면 위 게이트의 선택지별 전이를 동일하게 적용한다.
+- finalize (walkthrough CLEAN 후) — 아래 체크를 순서대로 수행한다:
+  1. 최종 diff 확인.
+  2. 신규 경로 stage: batch 경로 중 Git이 아직 추적하지 않는 신규 파일·rename destination만 `git add -- <신규 batch 경로>`로 제한적으로 stage한다. path-limited commit은 Git이 이미 아는 경로만 커밋할 수 있으므로, 이 선행 없이는 신규 파일을 만드는 batch(테스트·fixture·generated output)의 commit이 pathspec 오류로 실패한다. 무관한 기존 staged 항목은 건드리지 않는다.
+  3. commit: 메인 에이전트가 single-writer로 `git commit --only -- <batch 경로>` ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의. 경로 한정 커밋은 기존 index의 무관한 staged 사용자 항목을 포함하지도, 건드리지도 않는다 — 전역 index equality를 요구하면 무관한 staged 변경이 finalize를 영구 차단한다).
+  4. commit 경로 대조: 생성된 commit의 경로 집합(`git show --name-only`)이 batch 경로 집합(혼입 승인 경로 포함)과 일치하는지 확인한다.
+  5. staged 보존 확인: baseline의 기존 staged 상태가 그대로인지 확인한다.
+  6. workspace 불변 대조: `git status --porcelain=v1 -z --untracked-files=all`을 현행 baseline과 비교해 write phase가 만든 새 미커밋 delta가 없는지 확인하고, baseline의 기존 dirty/untracked 경로(혼입 승인 경로 제외)는 저장해둔 diff 내용·hash와 대조해 내용이 변하지 않았는지 확인한다 (porcelain 상태 문자열은 내용 변화를 못 본다). 사용자의 기존 dirty/untracked 파일 자체는 차단 사유가 아니다 — 전역 clean을 요구하면 기존 파일이 finalize를 영구 차단하고, 이를 치우는 것은 hardening 계약 위반이다.
+- changeset 선언: 새 changeset(diff/commit range)을 선언하고 변경 범위를 round summary에 기록한다. walkthrough 후속 수정이 uncommitted로 남아 push에서 누락되거나 다음 라운드 preflight를 깨는 것을 구조적으로 방지한다.
 
 ## Step 8 상세: push
 

@@ -80,6 +80,10 @@ run_driver "skill-doc-sync" bash tests/test-skill-doc-sync.sh
 #    tests/run-analyzing-da-sessions-tests.sh driver를 거친다.
 run_driver "analyzing-da-sessions-tests" bash tests/run-analyzing-da-sessions-tests.sh
 
+# 6b) fleiss-kappa-tests — run-da 공통 검증기/집계기(fleiss-kappa.py)의 schema 1.1
+#     semantic 계약·manifest 대조·aggregate 보존을 hermetic pytest로 검증한다.
+run_driver "fleiss-kappa-tests" bash tests/run-fleiss-kappa-tests.sh
+
 # 7) da-weekly-report-tests — weekly JSON schema/delta/render 순수 함수 계약을 검증한다.
 run_driver "da-weekly-report-tests" bash tests/run-da-weekly-report-tests.sh
 

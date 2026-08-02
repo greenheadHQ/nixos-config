@@ -15,7 +15,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | finding 없음 | — | — | — | ALL CLEAR (수렴 종료의 특수형 — `walkthrough_status=NOT_REQUIRED`) |
 | 이번 라운드 반영 항목 전부 LOW (accepted severity 기준) | CONFIRMED_ISSUE | N/A / stable | write phase 반영 후 수렴 predicate 평가 (아래 "수렴 판정"이 SSOT — walkthrough 후속 수정·최종 delta Intensity 재평가에 따라 재검증이 강제될 수 있다) | predicate 충족 시 CONVERGED 보고 |
 
-stability_status 의미, selective consistency 트리거, `unknown` sentinel 정의는 [`stability-measurement.md`](stability-measurement.md) 참조. `partial_failure`는 `fleiss-kappa.py` 출력의 top-level 플래그와 `missing`/`file_level_failures`/`per_file_malformed` 필드로 전달되며 해당 finding은 `per_finding`에 포함되지 않는다 — caller는 이를 finding별 BLOCKED로 매핑한다.
+stability_status 의미, selective consistency 트리거, `unknown` sentinel 정의는 [`stability-measurement.md`](stability-measurement.md) 참조. `partial_failure`는 `fleiss-kappa.py` 출력의 top-level 플래그이며, 세부 원인은 `missing`/`manifest_violations`/`file_level_failures`/`per_file_malformed` 필드로 전달된다. caller 매핑은 원인 단위가 다르다 — `missing`에 오른 finding은 `per_finding`에서 제외되므로 그 finding만 BLOCKED로 매핑한다. `manifest_violations`·`file_level_failures`·`per_file_malformed`는 파일 단위 위반이라 정상 파싱된 finding이 `per_finding`에 남아 있을 수 있다 — caller는 `per_finding`을 소비하기 전에 top-level `partial_failure`를 먼저 확인하고, 파일 단위 위반이 있으면 개별 stable 결과를 소비하지 않고 그 수집 단위 전체를 아래 "수렴 판정" caller 검증의 fail-closed 전이(1회 재실행 → BLOCKED)로 처리한다.
 
 ### 기존 용어 매핑
 
@@ -246,7 +246,7 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 2. `walkthrough-forced` — walkthrough가 후속 수정 또는 범위 밖 발견을 하나라도 발생시킴 (심각도 분류 없음. walkthrough가 무언가를 발견했다는 사실 자체가 리뷰 표면이 불안정하다는 신호다).
 3. `batch-delta-intensity` — write phase 종료 시 최종 batch delta의 Review Intensity classification-only 재적용 판정이 SKIP이 아님. 세부는 다음으로 분리한다:
    - 발동 조건: 재적용 판정이 SKIP이 아닐 때 (FULL 판정, fail-closed rule group 매치·불확실 포함). 별도 범위 휴리스틱 없이 기존 분류기([`intensity-rules.md`](intensity-rules.md) 8룰)를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다.
-   - 입력: 이번 라운드 write phase가 만든 batch delta뿐 — for_pr은 write phase 시작 전에 기록한 `pre_write_sha` 기준 `git diff --stat <pre_write_sha>..HEAD`(finalize commit 후), for_plan은 이번 batch가 수정한 계획 항목·파일 목록.
+   - 입력: 이번 라운드 write phase가 만든 batch delta뿐 — for_pr은 write phase 시작 전에 기록한 `pre_write_sha` 기준 `git diff --stat <pre_write_sha>..HEAD`(finalize commit 후), for_plan은 `batch_change_summary` — 이번 batch가 수정한 계획 항목·파일 목록에 항목별 변경 유형([`intensity-rules.md`](intensity-rules.md) 룰 매칭에 필요한 의미 — 보안/모듈·서비스/설정·의존성/인터페이스/문서 등)을 붙인 요약. 대상 이름만 전달하면 분류기가 자유 추론하거나 `RULE-UNCLEAR → FULL`로만 판정할 수 있으므로, write phase의 통합 설계가 이미 아는 변경 유형을 함께 전달한다 (대화 컨텍스트 기반 계획처럼 Git diff가 없는 입력에서도 동일).
    - 판정별 전이: `SKIP` = 재검증 불요 신호 (LOW-only 재검증 생략은 재평가가 SKIP인 국소 delta에만 허용). `LITE` = 재검증 생략이 아니라 LITE가 선택한 bundle로 경량 재검증 실행 (검토가 필요하다는 분류를 생략 신호로 뒤집지 않는다). `FULL` = FULL 재검증.
    - 금지: PR 전체 diff(`main...HEAD`)를 입력으로 쓰는 것 — 원 changeset이 FULL인 한 LOW-only 수렴이 영구히 불가능해진다. SKIP 사용자 승인·모드 종료 수행 — 적용 범위는 [`intensity-procedure.md`](intensity-procedure.md)의 "수렴 게이트용 classification-only 적용"이 정의한다.
 
@@ -254,8 +254,8 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 | 발동 조건 조합 | 재검증 unit 선택 |
 |---|---|
-| `severity-gate`만 (batch 재평가 SKIP, walkthrough CLEAN) | 최초 라운드의 선택 unit 재사용 |
-| `walkthrough-forced` + batch 재평가 SKIP | 최초 라운드의 선택 unit (+범위 밖 발견이 미선택 bundle 관점이면 그 bundle 추가) |
+| `severity-gate`만 (batch 재평가 SKIP, walkthrough CLEAN) | 직전 리뷰 라운드에서 실행한 unit 집합(`last_review_units`) 재사용 — 최초 라운드가 아니다. 후속 라운드에서 LITE/walkthrough로 추가된 bundle이 finding을 확정했다면 그 bundle이 `last_review_units`에 이미 포함되어 재검증에서 빠지지 않는다 |
+| `walkthrough-forced` + batch 재평가 SKIP | `last_review_units` (+범위 밖 발견이 미선택 bundle 관점이면 그 bundle 추가) |
 | batch 재평가 LITE | LITE가 선택한 bundle (범위 밖 발견 관점 bundle 포함) |
 | batch 재평가 FULL / fail-closed | 4 reviewer bundle |
 | `MAX` modifier 호출 | exhaustive 6-domain 유지 — `MAX`는 Intensity 우회 계약이므로 batch 재평가 판정과 무관하게 fan-out을 유지한다 (재평가는 재검증 필요 판정에만 사용) |

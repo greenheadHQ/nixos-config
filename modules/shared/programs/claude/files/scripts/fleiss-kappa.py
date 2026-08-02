@@ -16,7 +16,12 @@ corpus 전용이므로 2개 이상의 finding이 있어야 정의된다.
 Threshold policy SSOT: stability-measurement.md (STABLE_MIN / ESCALATE_MIN).
 
 Usage:
-    fleiss-kappa.py <arbiter1.md> <arbiter2.md> <arbiter3.md> [--offline]
+    # N=3 vote-shape 집계 (aggregate JSON을 stdout에 출력)
+    fleiss-kappa.py <arbiter1.md> <arbiter2.md> <arbiter3.md> \
+        [--expect-findings <ID,ID,...>] [--offline]
+    # first-pass caller 검증 (집계 없음 — 파일별 schema/manifest 검사 결과 JSON,
+    # 전체 통과 시 exit 0 / 위반 시 exit 1)
+    fleiss-kappa.py --validate-only --expect-findings <ID,ID,...> <result.md>
 
 Output: JSON on stdout. See main() for schema.
 """
@@ -366,7 +371,9 @@ def main():
     args = parser.parse_args()
 
     expected_ids = None
-    if args.expect_findings:
+    if args.expect_findings is not None:
+        # 빈 문자열("")은 "옵션 미지정"이 아니라 인자 오류다 — truthiness 검사로 조용히
+        # manifest 검증을 우회하는 경로(셸 변수 유실 등)를 차단한다.
         raw_ids = [fid.strip() for fid in args.expect_findings.split(",")]
         if "" in raw_ids or len(raw_ids) != len(set(raw_ids)):
             print(
