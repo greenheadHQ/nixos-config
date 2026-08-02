@@ -304,7 +304,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
    - 최소 `$CODEX_HOME/config.toml`을 작성하되 `[mcp_servers.<name>]` 테이블(실제 Codex TOML 스키마는 [`sync-codex-config.py`](../../../../../codex/files/sync-codex-config.py)의 user-owned `mcp_servers` 보존 정책과 [`scenario-D-mcp-servers-coexist.toml`](../../../../../../../../tests/fixtures/codex-hooks/sync-preservation/scenario-D-mcp-servers-coexist.toml) fixture로 확인)을 포함하지 않는다. 또는 TOML 파서로 기존 config를 복사한 뒤 `mcp_servers` 테이블 전체를 삭제한다. (참고: `[[mcp_servers]]` array-of-table 문법은 현재 Codex가 사용하지 않으므로 혼동 방지를 위해 `[mcp_servers.*]` 정확 표기를 사용한다.)
    - effort 옵션은 필수로 명시적으로 지정한다: `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`. scratch `CODEX_HOME`이므로 user config default가 적용되지 않아 호출 시점 기본값 의존이 불가하다. 모델명·service_tier는 스킬이 pin하지 않으며, 사용자 명시 지정이 있을 때만 `_DA_MODEL_TIER_OVERRIDES`로 주입한다.
 3. Claude Code 세션: `run_in_background: true`로 3개를 병렬 발사 후 완료 알림을 기다린다 (sleep/poll 금지). headless 세션: 3개 프로세스를 serial foreground로 순차 실행한다 (각 종료 확인 후 다음). 결과 파일 경로는 두 경로 모두 `/tmp/da-${_DA_SID}-arbiter-selective-<round>/arbiter-{1,2,3}-result.md`로 라운드별 분리.
-4. 수집 후 세션 scope의 `fleiss-kappa.py`(Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py`)에 `arbiter-1-result.md arbiter-2-result.md arbiter-3-result.md`를 인자로 전달하여 vote-shape를 얻는다. `--offline` 플래그는 배포 후 kappa 관찰 목적일 때만 부가한다.
+4. 수집 후 세션 scope의 `fleiss-kappa.py`(Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py`)에 `--expect-findings <trigger된 finding ID 쉼표 목록>`과 `arbiter-1-result.md arbiter-2-result.md arbiter-3-result.md`를 인자로 전달하여 vote-shape를 얻는다 (manifest 대조로 세 Arbiter 공통 누락·미지 ID를 partial_failure로 잡는다). `--offline` 플래그는 배포 후 kappa 관찰 목적일 때만 부가한다.
 
 ## 실패 처리
 

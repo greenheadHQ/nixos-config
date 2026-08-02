@@ -1068,6 +1068,12 @@ def _mutate_verdict_json_blocks(session_text, mutate):
     return "\n".join(out_lines) + "\n"
 
 
+def _fleiss_kappa_path():
+    tests_dir = os.path.dirname(os.path.abspath(__file__))
+    files_root = os.path.dirname(os.path.dirname(os.path.dirname(tests_dir)))
+    return os.path.join(files_root, "scripts", "fleiss-kappa.py")
+
+
 def test_additive_axes_plausibility_reflected_in_canonical_hash(
     fixtures_dir, analyze_module, tmp_path
 ):
@@ -1103,9 +1109,7 @@ def test_fleiss_kappa_preserves_additive_verdict_fields(tmp_path):
     analyzer는 accepted_severity를 소비하지 않으므로 이 테스트가 유일한 보존 검증이다)."""
     import sys
 
-    tests_dir = os.path.dirname(os.path.abspath(__file__))
-    files_root = os.path.dirname(os.path.dirname(os.path.dirname(tests_dir)))
-    harness = os.path.join(files_root, "scripts", "fleiss-kappa.py")
+    harness = _fleiss_kappa_path()
     assert os.path.isfile(harness), harness
 
     block = (
@@ -1149,9 +1153,7 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
     구버전 자칭)을 검출하고 정상 결과는 통과시키는지 검증한다."""
     import sys
 
-    tests_dir = os.path.dirname(os.path.abspath(__file__))
-    files_root = os.path.dirname(os.path.dirname(os.path.dirname(tests_dir)))
-    harness = os.path.join(files_root, "scripts", "fleiss-kappa.py")
+    harness = _fleiss_kappa_path()
 
     def block(payload):
         return (
@@ -1177,6 +1179,9 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
         "downgrade.md": ({**valid, "schema_version": "1.0"}, False),
         # axes가 객체가 아니어도 예외 없이 malformed로 집계돼야 한다
         "axes-shape.md": ({**valid, "axes": "PASS"}, False),
+        # 정확히 1.1만 허용 — 상한 밖·비정형 버전 거부
+        "future.md": ({**valid, "schema_version": "2.0"}, False),
+        "garbage.md": ({**valid, "schema_version": "garbage"}, False),
         # confidence 누락도 위반이다
         "no-confidence.md": ({k: v for k, v in valid.items() if k != "confidence"}, False),
     }
@@ -1204,3 +1209,50 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
             text=True,
         )
         assert json.loads(proc.stdout)["ok"] is expected_ok, manifest
+
+
+def test_fleiss_kappa_aggregate_manifest_catches_uniform_omission(tmp_path):
+    """세 Arbiter가 모두 같은 finding을 누락해도 --expect-findings manifest가
+    partial_failure로 잡는지, manifest 밖 ID도 위반인지 검증한다."""
+    import sys
+
+    harness = _fleiss_kappa_path()
+
+    def block(fid):
+        payload = {
+            "schema_version": "1.1", "finding_id": fid,
+            "verdict": "CONFIRMED_ISSUE", "confidence": "HIGH",
+            "reviewer_severity": "MEDIUM", "accepted_severity": "MEDIUM",
+            "stability_status": "N/A",
+            "axes": {"portability": "N/A", "plausibility": "PASS"},
+        }
+        return (
+            f"### {fid} — verdict\n\n<!-- verdict-json:start -->\n```json\n"
+            + json.dumps(payload, ensure_ascii=False)
+            + "\n```\n<!-- verdict-json:end -->\n"
+        )
+
+    paths = []
+    for i in range(3):
+        p = tmp_path / f"arbiter-{i + 1}-result.md"
+        p.write_text(block("X-1"))  # X-2는 세 파일 모두에서 누락
+        paths.append(str(p))
+
+    proc = subprocess.run(
+        [sys.executable, harness, "--expect-findings", "X-1,X-2", *paths],
+        capture_output=True,
+        text=True,
+    )
+    aggregate = json.loads(proc.stdout)
+    assert aggregate.get("partial_failure") is True
+    assert aggregate.get("manifest_violations")
+    assert "X-2" in json.dumps(aggregate["manifest_violations"])
+
+    # manifest 밖 finding(미지 ID)도 위반
+    proc = subprocess.run(
+        [sys.executable, harness, "--expect-findings", "Y-9", *paths],
+        capture_output=True,
+        text=True,
+    )
+    aggregate = json.loads(proc.stdout)
+    assert aggregate.get("partial_failure") is True

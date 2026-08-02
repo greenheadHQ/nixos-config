@@ -45,7 +45,7 @@ PLAUSIBILITY_MATRIX = {
     "NOT_AN_ISSUE": {"FAIL", "N/A"},
     "NEEDS_MORE_INFO": {"PASS", "UNKNOWN"},
 }
-LIVE_SCHEMA_MIN_MINOR = 1  # 실시간 결과는 1.1 이상 (major 1)
+LIVE_SCHEMA_VERSION = "1.1"  # 실시간 결과는 정확히 이 버전 (새 계약 도입 시 검증기와 함께 갱신)
 
 
 def validate_verdict_entry(entry):
@@ -53,19 +53,16 @@ def validate_verdict_entry(entry):
 
     protocol.md "수렴 판정" caller 검증의 기계 검증 SSOT 구현체 —
     version·필수 필드·모든 enum·verdict 정합 행렬을 이 함수 하나가 검사한다.
-    reviewer 원본 finding과의 대조(reviewer_severity 은닉 차단)와 원본 finding
-    ID manifest는 원본을 아는 caller가 --expect-findings로 전달하거나 직접
-    수행한다. 과거 1.0 산출물 지원은 없다 — 실시간 계약(1.1+)만 검증한다.
+    finding_id의 존재·중복 검사는 parser(parse_verdict_json_blocks) 소관이고,
+    reviewer 원본 finding과의 대조(reviewer_severity 은닉 차단)는 원본을 아는
+    caller 몫이며, finding ID manifest는 --expect-findings로 전달된다.
+    과거 1.0 산출물 지원은 없다 — 실시간 계약(정확히 1.1)만 검증한다.
     """
     violations = []
-    sv = str(entry.get("schema_version") or "")
-    parts = sv.split(".")
-    is_pre_1_1 = not sv or (
-        parts[0] == "1" and (len(parts) < 2 or not parts[1].isdigit() or int(parts[1]) < LIVE_SCHEMA_MIN_MINOR)
-    )
-    if is_pre_1_1:
+    sv = entry.get("schema_version")
+    if sv != LIVE_SCHEMA_VERSION:
         violations.append(
-            f"live 결과는 schema_version 1.1 이상이어야 함 (got {sv!r})"
+            f"live 결과는 schema_version {LIVE_SCHEMA_VERSION!r}이어야 함 (got {sv!r})"
         )
         return violations
     verdict = entry.get("verdict")
@@ -95,6 +92,14 @@ def validate_verdict_entry(entry):
     if verdict != "NOT_AN_ISSUE" and entry.get("accepted_severity") not in SEVERITY_VALUES:
         violations.append(
             f"accepted_severity 누락 또는 enum 밖 값: {entry.get('accepted_severity')!r}"
+        )
+    if entry.get("stability_status") not in ("N/A", "stable", "split", "fragmented"):
+        violations.append(
+            f"stability_status 누락 또는 enum 밖 값: {entry.get('stability_status')!r}"
+        )
+    if isinstance(axes, dict) and axes.get("portability") not in ("PASS", "FAIL", "N/A"):
+        violations.append(
+            f"axes.portability 누락 또는 enum 밖 값: {axes.get('portability')!r}"
         )
     basis = entry.get("rejection_basis")
     if verdict == "NOT_AN_ISSUE":
@@ -392,8 +397,15 @@ def main():
         if len(entries) == 0
     ]
     all_finding_ids = set()
-    for entries in arbiter_entries:
+    manifest_violations = {}
+    for i, entries in enumerate(arbiter_entries):
         all_finding_ids.update(entries.keys())
+        if expected_ids is not None:
+            found = set(entries.keys())
+            issues = [f"기대 finding 누락: {fid}" for fid in sorted(expected_ids - found)]
+            issues += [f"manifest 밖 finding: {fid}" for fid in sorted(found - expected_ids)]
+            if issues:
+                manifest_violations[str(args.arbiter_files[i])] = issues
     if expected_ids is not None:
         # manifest 기준 집계: 세 Arbiter가 모두 같은 finding을 누락해도 missing으로 잡힌다.
         all_finding_ids = set(expected_ids)
@@ -456,6 +468,10 @@ def main():
     }
 
     partial_failure = False
+    if manifest_violations:
+        # --expect-findings 양방향 대조 위반 (누락·미지 ID) — finding 소실/오염 차단.
+        result["manifest_violations"] = manifest_violations
+        partial_failure = True
     if missing:
         result["missing"] = missing
         partial_failure = True

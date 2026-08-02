@@ -385,7 +385,7 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 형식 fixture가 둘 다 통과해야 한다.
 
 필드 의미:
-- `schema_version`: VERDICT_JSON 스키마 버전. 순수 additive 필드 추가는 기존 버전 내 호환, caller 검증 대상(사실상 필수) 필드 추가는 minor 증가, breaking 변경 시 major 증가. 현재 `1.1` — `accepted_severity`·`axes.plausibility`가 caller 검증 대상으로 추가됐다. `1.0` 레코드(구 산출물)는 두 필드 부재를 semantic malformed로 처리하지 않는다 ([`protocol.md`](protocol.md) caller 검증의 version 조건).
+- `schema_version`: VERDICT_JSON 스키마 버전. 현재 실시간 계약은 정확히 `1.1`이며 검증기는 이 값만 허용한다 — `1.0`을 포함한 다른 버전은 실시간 경로에서 semantic malformed다 (하위호환 미지원, [`protocol.md`](protocol.md) caller 검증 SSOT). 새 계약 버전 도입 시 이 값·검증기·문서를 함께 갱신한다.
 - `finding_id`: DA reviewer finding의 원본 ID (예: `Correctness-1`, `SECURITY-2`).
 - `verdict`: core verdict enum. guardrail 축 Portability로 verdict를 뒤집지 않는다.
 - `confidence`: NOT_AN_ISSUE/CONFIRMED_ISSUE 시 Arbiter의 판정 신뢰도. `fleiss-kappa.py`는 이 필드를 selective consistency 결과에 보존하여 low-confidence unanimous verdict의 fail-closed 승격을 유지한다.
