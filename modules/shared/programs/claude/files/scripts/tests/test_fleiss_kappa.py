@@ -31,7 +31,6 @@ def _verdict_payload(**overrides):
         "confidence": "HIGH",
         "reviewer_severity": "MEDIUM",
         "accepted_severity": "MEDIUM",
-        "stability_status": "N/A",
         "axes": {"portability": "N/A", "plausibility": "PASS"},
     }
     for key, value in overrides.items():
@@ -120,12 +119,9 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         "no-confidence.md": ({k: v for k, v in valid.items() if k != "confidence"}, False),
         # 확정/기각 verdict에 confidence=N/A 금지 (NEEDS_MORE_INFO 전용)
         "na-confidence.md": ({**valid, "confidence": "N/A"}, False),
-        # 개별 entry가 aggregate 전용 상태를 환각하면 malformed
+        # stability_status는 aggregate 전용 — 개별 entry에 있으면 값과 무관하게 위반
         "agg-status.md": ({**valid, "stability_status": "stable"}, False),
-        # 산출 불가능한 값이므로 누락은 정상 (caller가 N/A로 읽는다)
-        "no-status.md": (
-            {k: v for k, v in valid.items() if k != "stability_status"}, True
-        ),
+        "na-status.md": ({**valid, "stability_status": "N/A"}, False),
         # PLAUSIBILITY_FAIL에는 evidence_scope 필수 (ledger 영속 판정 근거)
         "no-scope.md": ({k: v for k, v in valid.items() if k != "evidence_scope"}, False),
         "bad-scope.md": ({**valid, "evidence_scope": "SOMETHING_ELSE"}, False),

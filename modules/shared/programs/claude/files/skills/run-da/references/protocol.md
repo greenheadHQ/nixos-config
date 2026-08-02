@@ -219,11 +219,11 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 기계 검증(존재·enum·정합 행렬·manifest)은 공통 검증기 `fleiss-kappa.py --validate-only --expect-findings <ID목록> <result.md>`가 단일 소유한다 — first-pass 결과 수집 시 메인이 Arbiter에 전달했던 finding ID 목록을 manifest로 넘겨 호출하고, N=3 집계 경로는 같은 검증을 내부 적용해 위반 entry를 malformed(→partial_failure/BLOCKED 경로)로 처리한다. `--expect-findings`는 두 경로 모두에서 필수 인자다 — 생략하면 검증기가 인자 오류로 종료하므로 manifest 없는 수집이 성공으로 처리되는 경로는 없다 (관측 전용 `--no-manifest` opt-out은 실시간 수집에 쓰지 않는다). 검증 규칙 (구현체: `validate_verdict_entry` 단일 진입점):
 
 - schema: 실시간 결과는 `schema_version`이 정확히 `1.1` (그 외 전부 위반).
-- 필수 필드 + enum: `verdict`·`confidence`는 존재+enum 필수. `axes`는 객체여야 하고 `axes.plausibility ∈ {PASS, FAIL, UNKNOWN, N/A}`, `reviewer_severity ∈ {CRITICAL, HIGH, MEDIUM, LOW}` 필수. `accepted_severity`는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다.
+- 필수 필드 + enum: `verdict`·`confidence`는 존재+enum 필수이며, 확정/기각 verdict(CONFIRMED_ISSUE·NOT_AN_ISSUE)에는 `confidence=N/A`를 허용하지 않는다 (N/A는 NEEDS_MORE_INFO 전용 — 신뢰도 없는 확정이 LOW-confidence 트리거를 우회하는 것을 차단). `axes`는 객체여야 하고 `axes.plausibility ∈ {PASS, FAIL, UNKNOWN, N/A}`, `axes.portability ∈ {PASS, FAIL, N/A}`, `reviewer_severity ∈ {CRITICAL, HIGH, MEDIUM, LOW}` 필수. `accepted_severity`는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다.
 - verdict 정합 행렬: `CONFIRMED_ISSUE → plausibility PASS 필수` / `NOT_AN_ISSUE → FAIL 또는 N/A` / `NEEDS_MORE_INFO → PASS 또는 UNKNOWN`. 행렬 밖 조합(예: FAIL+CONFIRMED_ISSUE, UNKNOWN+NOT_AN_ISSUE)은 위반이다.
 - 기각 근거 정합: NOT_AN_ISSUE는 `rejection_basis ∈ {FACTUAL_FAIL, RELEVANCE_FAIL, PLAUSIBILITY_FAIL}` 필수. `plausibility=N/A`는 `rejection_basis`가 FACTUAL_FAIL 또는 RELEVANCE_FAIL일 때만 적법하고, PLAUSIBILITY_FAIL이면 `plausibility=FAIL`이어야 한다. NOT_AN_ISSUE가 아닌 verdict에 `rejection_basis`가 있으면 위반이다.
 - 기각 근거 수명주기: `rejection_basis=PLAUSIBILITY_FAIL`은 `evidence_scope ∈ {FROZEN_SURFACE, ENVIRONMENT_WORKLOAD}` 필수 (ledger 영속 eligibility의 기계 판정 근거 — [`dismissal-ledger.md`](dismissal-ledger.md) SSOT). 다른 `rejection_basis`·verdict에 `evidence_scope`가 있으면 위반이다.
-- 개별 entry 전용 값 경계: `stability_status`는 개별 Arbiter가 산출할 수 없는 aggregate 전용 상태이므로 누락이 정상이다 (caller는 누락을 `N/A`로 읽는다). 값을 쓴 경우에만 `N/A`여야 하며, `stable`/`split`/`fragmented`는 위반이다.
+- 개별 entry 전용 값 경계: `stability_status`는 aggregate envelope 전용 필드다. 개별 entry에 이 필드가 있으면 값과 무관하게 위반이다 — 개별 Arbiter는 이 값을 산출할 수 없으므로 자리표시자를 두지 않고, 소유자를 aggregate 하나로 고정한다.
 - finding manifest 대조: 파일의 유효 finding ID 집합이 `--expect-findings` 목록과 정확히 일치해야 한다 — 누락(전달한 finding에 판정이 없음)·미지 ID 모두 위반이다 (Arbiter 출력에서 finding이 조용히 사라지는 것을 차단. N=3도 이 manifest 기준으로 missing을 판정한다).
 
 기계 검증기가 볼 수 없는 교차 검증 1개는 메인 에이전트 몫이다:
@@ -246,11 +246,11 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 1. `severity-gate` — `round_max_accepted_severity`가 MEDIUM 이상.
 2. `walkthrough-forced` — walkthrough가 후속 수정 또는 범위 밖 발견을 하나라도 발생시킴 (심각도 분류 없음. walkthrough가 무언가를 발견했다는 사실 자체가 리뷰 표면이 불안정하다는 신호다).
-3. `batch-delta-intensity` — write phase 종료 시 최종 batch delta의 Review Intensity classification-only 재적용 판정이 SKIP이 아님. 세부는 다음으로 분리한다:
+3. `batch-delta-intensity` — write phase 종료 시 최종 batch delta에 Review Intensity의 classification 계약([`intensity-procedure.md`](intensity-procedure.md)의 순수 판정 계약 — 승인·조사·종료 같은 부수효과 없이 판정값만 산출한다)을 적용한 결과가 SKIP이 아님. 세부는 다음으로 분리한다:
    - 발동 조건: 재적용 판정이 SKIP이 아닐 때 (FULL 판정, fail-closed rule group 매치·불확실 포함). 별도 범위 휴리스틱 없이 기존 분류기([`intensity-rules.md`](intensity-rules.md) 8룰)를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다.
    - 입력: 이번 라운드 write phase가 만든 batch delta뿐 — for_pr은 write phase 시작 전에 기록한 `pre_write_sha` 기준 `git diff --stat <pre_write_sha>..HEAD`(finalize commit 후), for_plan은 `batch_change_summary` — 이번 batch가 수정한 계획 항목·파일 목록에 항목별 변경 유형([`intensity-rules.md`](intensity-rules.md) 룰 매칭에 필요한 의미 — 보안/모듈·서비스/설정·의존성/인터페이스/문서 등)을 붙인 요약. 대상 이름만 전달하면 분류기가 자유 추론하거나 `RULE-UNCLEAR → FULL`로만 판정할 수 있으므로, write phase의 통합 설계가 이미 아는 변경 유형을 함께 전달한다 (대화 컨텍스트 기반 계획처럼 Git diff가 없는 입력에서도 동일).
    - 판정별 전이: `SKIP` = 재검증 불요 신호 (LOW-only 재검증 생략은 재평가가 SKIP인 국소 delta에만 허용). `LITE` = 재검증 생략이 아니라 LITE가 선택한 bundle로 경량 재검증 실행 (검토가 필요하다는 분류를 생략 신호로 뒤집지 않는다). `FULL` = FULL 재검증.
-   - 금지: PR 전체 diff(`main...HEAD`)를 입력으로 쓰는 것 — 원 changeset이 FULL인 한 LOW-only 수렴이 영구히 불가능해진다. SKIP 사용자 승인·모드 종료 수행 — 적용 범위는 [`intensity-procedure.md`](intensity-procedure.md)의 "수렴 게이트용 classification-only 적용"이 정의한다.
+   - 금지: ①PR 전체 diff(`main...HEAD`)를 입력으로 쓰는 것 — 원 changeset이 FULL인 한 LOW-only 수렴이 영구히 불가능해진다 ②SKIP 사용자 승인·조사 발동·모드 종료를 수행하는 것 — 이 게이트는 판정값만 소비한다 (호출자별 소비 범위는 intensity-procedure.md의 classification 계약이 정의한다).
 
 재검증 라운드의 review unit 선택은 발동 조건 조합에 따라 다음 라우팅 표를 따른다 (모든 조합을 포괄한다):
 

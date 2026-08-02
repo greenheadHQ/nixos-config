@@ -324,7 +324,6 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS / FAIL / N/A
   - 현실적 발생 가능성 (Plausibility): PASS / FAIL / 판단 불가(UNKNOWN) / N/A
   - Portability / Cross-Environment Drift: PASS / FAIL / N/A
-- **stability_status**: N/A (개별 판정에서는 항상 N/A — 실제 상태는 aggregate에서 산출)
 - **evidence_scope**: (Plausibility FAIL 기각에만) FROZEN_SURFACE / ENVIRONMENT_WORKLOAD + 그 근거가 무엇에 의존하는지 한 줄
 - **심각도 판정**: {accepted_severity} — 심각도 타당성 PASS면 reviewer 원값 그대로, FAIL이면 "원값 X → 조정 Y"와 조정 근거를 명시 (조정 여부의 기계 판정은 VERDICT_JSON의 `reviewer_severity`/`accepted_severity` 비교로 자기완결된다 — 이 줄은 조정 근거를 사람에게 설명하는 보고용 서술이다)
 - **근거**: 직접 확인 결과 + 기술적 판단 (for_pr: 파일:줄 / for_plan: 관련 파일 또는 계획 원문)
@@ -335,52 +334,92 @@ for_plan 핵심 원칙:
 
 사람 읽기용 블록 바로 아래에 fenced JSON을 추가한다. 기계 소비자(selective consistency harness와 메인 에이전트의 caller 검증·집계)는 이 블록만 참조하므로 사람용 wording 변경에 영향받지 않는다 — 사람용 블록은 근거 서술과 보고용 표시 계층이다. `<!-- verdict-json:start -->`와 `<!-- verdict-json:end -->` delimiter로 감싼다.
 
-예시 블록은 outer fence 4 backticks로 감싸고 inner JSON fence는 3 backticks로 내부에 둔다 (CommonMark/GitHub fenced-code 중첩 호환):
+아래는 verdict별 실제 유효 payload다 — 선택지 나열이 아니라 그대로 검증기를 통과하는 완성 예시이므로, 자기 판정에 해당하는 것을 골라 값만 바꿔 쓴다 (필드별 허용값과 조건은 아래 "필드 의미" 참조). 값 조합에는 verdict마다 다른 제약이 있어서(예: CONFIRMED_ISSUE는 `plausibility`가 반드시 `PASS`, `confidence`에 `N/A` 금지) 한 골격에 선택지를 나열하면 통과하지 못하는 조합이 만들어진다. 예시 블록은 outer fence 4 backticks로 감싸고 inner JSON fence는 3 backticks로 내부에 둔다 (CommonMark/GitHub fenced-code 중첩 호환). 실제 출력 시에는 inner JSON 블록 하나만 3-backtick fence로 내보낸다.
+
+CONFIRMED_ISSUE (심각도 조정이 있으면 `accepted_severity`만 다른 값으로):
 
 ````text
 <!-- verdict-json:start -->
 ```json
 {
   "schema_version": "1.1",
-  "finding_id": "{finding ID 원문}",
-  "verdict": "CONFIRMED_ISSUE" | "NEEDS_MORE_INFO",
-  "confidence": "HIGH" | "MEDIUM" | "LOW" | "N/A",
-  "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-  "accepted_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-  "stability_status": "N/A",
+  "finding_id": "Correctness-1",
+  "verdict": "CONFIRMED_ISSUE",
+  "confidence": "HIGH",
+  "reviewer_severity": "MEDIUM",
+  "accepted_severity": "MEDIUM",
   "axes": {
-    "portability": "PASS" | "FAIL" | "N/A",
-    "plausibility": "PASS" | "FAIL" | "UNKNOWN" | "N/A"
+    "portability": "N/A",
+    "plausibility": "PASS"
   }
 }
 ```
 <!-- verdict-json:end -->
 ````
 
-NOT_AN_ISSUE 판정에만 `rejection_basis` 필드를 추가한 골격을 사용한다 (다른 verdict에 이 필드가 있으면 caller 검증 위반이다). `rejection_basis`가 `PLAUSIBILITY_FAIL`이면 `evidence_scope`도 함께 넣는다 (그 외 기각 근거에는 이 필드를 넣지 않는다):
+NEEDS_MORE_INFO (`plausibility`는 `PASS` 또는 판단 불가인 `UNKNOWN`):
 
 ````text
 <!-- verdict-json:start -->
 ```json
 {
   "schema_version": "1.1",
-  "finding_id": "{finding ID 원문}",
+  "finding_id": "Design-2",
+  "verdict": "NEEDS_MORE_INFO",
+  "confidence": "N/A",
+  "reviewer_severity": "HIGH",
+  "accepted_severity": "HIGH",
+  "axes": {
+    "portability": "N/A",
+    "plausibility": "UNKNOWN"
+  }
+}
+```
+<!-- verdict-json:end -->
+````
+
+NOT_AN_ISSUE — 사실 정확성·변경 연관성 기각 (`rejection_basis`는 `FACTUAL_FAIL` 또는 `RELEVANCE_FAIL`, `accepted_severity`는 요구하지 않는다):
+
+````text
+<!-- verdict-json:start -->
+```json
+{
+  "schema_version": "1.1",
+  "finding_id": "Regression-3",
   "verdict": "NOT_AN_ISSUE",
-  "confidence": "HIGH" | "MEDIUM" | "LOW",
-  "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-  "rejection_basis": "FACTUAL_FAIL" | "RELEVANCE_FAIL" | "PLAUSIBILITY_FAIL",
-  "evidence_scope": "FROZEN_SURFACE" | "ENVIRONMENT_WORKLOAD",
-  "stability_status": "N/A",
+  "confidence": "HIGH",
+  "reviewer_severity": "LOW",
+  "rejection_basis": "FACTUAL_FAIL",
   "axes": {
-    "portability": "PASS" | "FAIL" | "N/A",
-    "plausibility": "FAIL" | "N/A"
+    "portability": "N/A",
+    "plausibility": "N/A"
   }
 }
 ```
 <!-- verdict-json:end -->
 ````
 
-실제 Arbiter 출력 시에는 inner JSON 블록 하나만 3-backtick fence로 내보내면 된다 (outer text fence는 이 문서의 예시용 wrapping이다).
+NOT_AN_ISSUE — Plausibility 기각. 이 경우에만 `evidence_scope`를 넣고 `plausibility`는 `FAIL`이어야 한다 (다른 기각 근거에 `evidence_scope`를 넣으면 caller 검증 위반이다):
+
+````text
+<!-- verdict-json:start -->
+```json
+{
+  "schema_version": "1.1",
+  "finding_id": "Maintainability-4",
+  "verdict": "NOT_AN_ISSUE",
+  "confidence": "HIGH",
+  "reviewer_severity": "MEDIUM",
+  "rejection_basis": "PLAUSIBILITY_FAIL",
+  "evidence_scope": "FROZEN_SURFACE",
+  "axes": {
+    "portability": "N/A",
+    "plausibility": "FAIL"
+  }
+}
+```
+<!-- verdict-json:end -->
+````
 
 형식 변경 의무: `<!-- verdict-json:start -->` / `<!-- verdict-json:end -->` delimiter,
 inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 바꾸면
@@ -397,7 +436,7 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 - `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다. 소비 규칙(N=3 지지 entry 최댓값 집계 — 실시간 entry의 누락은 fallback이 아니라 semantic malformed다)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
 - `rejection_basis`: NOT_AN_ISSUE 판정의 기각 근거 축 — `FACTUAL_FAIL`(사실 정확성) / `RELEVANCE_FAIL`(변경 연관성) / `PLAUSIBILITY_FAIL`(현실적 발생 가능성). NOT_AN_ISSUE에서만 출력하며(다른 verdict에는 필드 자체를 넣지 않는다), `plausibility=N/A`의 적법성 검증을 JSON 자기완결로 만든다 ([`protocol.md`](protocol.md) caller 검증).
 - `evidence_scope`: `rejection_basis=PLAUSIBILITY_FAIL`일 때만 출력하는 기각 근거의 수명주기 분류 — `FROZEN_SURFACE`(frozen changeset의 불변 계약에만 의존) / `ENVIRONMENT_WORKLOAD`(환경·워크로드 가정에 의존). ledger 기록자는 이 값만으로 영속 eligibility를 판정한다 (사람용 rationale 재해석 불필요 — [`dismissal-ledger.md`](dismissal-ledger.md) SSOT). 다른 기각 근거·verdict에 이 필드가 있으면 caller 검증 위반이다.
-- `stability_status`: 개별 Arbiter 자체는 항상 `N/A`로 내보낸다. first-pass/단일 판정은 agreement 정보 없이 독립 판단이므로 이 필드를 채울 수 없다. selective consistency N=3 재판정 이후, `fleiss-kappa.py`가 3개 entry를 집계하여 별도 aggregate envelope의 `stability_status` 필드(`stable`/`split`/`fragmented`)로 산출한다. 즉 이 필드는 개별 VERDICT_JSON에는 `N/A`로 두고, 실제 값은 aggregate 출력에서 확인한다. 개별 entry가 산출할 수 없는 값이므로 필드 누락은 위반이 아니며 caller가 `N/A`로 읽는다 — 값을 쓴 경우에만 `N/A`여야 하고, `stable`/`split`/`fragmented`를 쓰면 aggregate 상태 환각으로 semantic malformed다. 자세한 상태 전이는 [references/stability-measurement.md](stability-measurement.md)와 [references/protocol.md](protocol.md) 참조.
+- `stability_status`: 개별 VERDICT_JSON에는 출력하지 않는다 (있으면 caller 검증 위반). first-pass/단일 판정은 agreement 정보 없이 독립 판단이므로 Arbiter가 이 값을 산출할 수 없다 — 실제 상태는 selective consistency N=3 이후 `fleiss-kappa.py`가 3개 entry를 집계해 aggregate envelope의 `stability_status`(`stable`/`split`/`fragmented`)로만 산출하며, 그 필드의 소유자도 aggregate 하나뿐이다. 자세한 상태 전이는 [references/stability-measurement.md](stability-measurement.md)와 [references/protocol.md](protocol.md) 참조.
 - `axes`: 판정 보조·관측 축의 평가 결과를 담는 맵 — verdict에 대한 결정권은 각 축의 정의를 따른다 (`portability`: 결정권 없는 guardrail / `plausibility`: 판정 우선순위에 참여하는 core criterion의 기록). 값은 사람용 블록의 "기준 평가" 줄과 일치해야 하며, `plausibility`의 caller 검증(정합 행렬·fail-closed 전이)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 축 추가 시 이 맵에 새 키가 더해진다.
 
 ## 프롬프트 조립

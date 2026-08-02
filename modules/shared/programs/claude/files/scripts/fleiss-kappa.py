@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Run-DA Arbiter selective consistency harness (N=3 policy + optional offline Fleiss kappa).
+"""Run-DA VERDICT_JSON validator + selective consistency aggregator.
+
+이 파일은 두 책임을 소유한다 (파일명은 초기 Fleiss kappa 용도에서 유래했고, 세션 scope에
+단일 파일로 프로비저닝되는 계약이라 유지한다 — 분리하면 프로비저닝 대상이 늘어난다):
+
+  1. VERDICT_JSON 계약 검증 (`validate_verdict_entry` + `--validate-only`) —
+     protocol.md "수렴 판정" caller 검증의 기계 검증 SSOT. first-pass 결과 수집이 소비한다.
+  2. selective consistency 집계 (`classify_vote_shape` 이하 + 기본 CLI 경로) —
+     N=3 vote-shape와 stability_status 산출. trigger된 finding에만 실행된다.
+
+두 모드는 parse_and_check_manifest()의 같은 파싱·manifest 결과를 소비한다.
 
 v1 정책: selective consistency가 발동한 finding에 대해 **N=3 독립 Arbiter** 결과를 받아
 vote-shape(3:0 / 2:1 / 1:1:1)와 stability_status(stable / split / fragmented)를 계산한다.
@@ -14,10 +24,6 @@ Kappa는 **배포 후 장기 관찰 지표**이며 v1 실시간 분기에는 사
 corpus 전용이므로 2개 이상의 finding이 있어야 정의된다.
 
 Threshold policy SSOT: stability-measurement.md (STABLE_MIN / ESCALATE_MIN).
-
-이 스크립트는 두 책임을 함께 갖는다 (protocol.md "수렴 판정"이 지정한 공통 검증기 +
-selective consistency 집계기): `--validate-only`의 first-pass 계약 검증과 N=3 vote-shape
-집계. 두 모드는 parse_and_check_manifest()의 같은 파싱·manifest 결과를 소비한다.
 
 Usage:
     # N=3 vote-shape 집계 (aggregate JSON을 stdout에 출력)
@@ -116,12 +122,13 @@ def validate_verdict_entry(entry):
         violations.append(
             f"accepted_severity 누락 또는 enum 밖 값: {entry.get('accepted_severity')!r}"
         )
-    # stability_status는 개별 Arbiter가 산출할 수 없는 aggregate 전용 상태라
-    # 누락이 정상이다 (caller는 누락을 N/A로 읽는다). 값을 쓴 경우에만 'N/A'를
-    # 요구해 stable/split/fragmented 환각을 semantic malformed로 잡는다.
-    if "stability_status" in entry and entry["stability_status"] != "N/A":
+    # stability_status는 aggregate envelope 전용 필드다 — 개별 Arbiter는 산출할 수
+    # 없으므로 개별 entry에 두지 않는다. 자리표시자 'N/A'를 요구하면 아무도 읽지
+    # 않는 필드가 계약 표면에 남고, 값을 허용하면 aggregate 상태 환각 경로가 열린다.
+    if "stability_status" in entry:
         violations.append(
-            f"개별 entry의 stability_status는 'N/A'만 허용: {entry['stability_status']!r}"
+            "stability_status는 aggregate 전용 필드 — 개별 entry에 출력 금지 "
+            f"(got {entry['stability_status']!r})"
         )
     if isinstance(axes, dict) and axes.get("portability") not in ("PASS", "FAIL", "N/A"):
         violations.append(
@@ -212,6 +219,13 @@ def resolve_expected_ids(args):
     return set(raw_ids), None
 
 
+# finding ID의 shell-safe 문법 — `{prefix}-{순번}`. prefix가 bundle인지 subdomain인지는
+# 여기서 강제하지 않는다 (reviewer bundle은 `Correctness-1`, exhaustive 경로는
+# `SECURITY-2` 같은 subdomain prefix를 쓴다). 이 검사의 목적은 namespace 검증이 아니라,
+# reviewer 산출 ID가 --expect-findings 셸 인자로 전달되기 전에 안전한 문자 집합만
+# 통과시키는 것이다 (da-domains.md의 ID 형식 규약은 문서 계약으로 별도 유지).
+SAFE_FINDING_ID_PATTERN = re.compile(r"[A-Za-z_]+-[0-9]+")
+
 # arbiter-prompt.md "출력 형식 > 기계 파싱용 VERDICT_JSON 블록" 스키마와 일치
 VERDICT_JSON_PATTERN = re.compile(
     r"<!-- verdict-json:start -->\s*```json\s*(?P<body>.+?)\s*```\s*<!-- verdict-json:end -->",
@@ -257,9 +271,9 @@ def parse_verdict_json_blocks(markdown_path: Path):
             malformed += 1
             continue
         finding_id = entry.get("finding_id")
-        if not isinstance(finding_id, str) or not re.fullmatch(r"[A-Za-z_]+-[0-9]+", finding_id):
+        if not isinstance(finding_id, str) or not SAFE_FINDING_ID_PATTERN.fullmatch(finding_id):
             print(
-                f"warning: VERDICT_JSON without valid finding_id in {markdown_path}",
+                f"warning: VERDICT_JSON without shell-safe finding_id in {markdown_path}",
                 file=sys.stderr,
             )
             malformed += 1
@@ -409,9 +423,10 @@ def interpret_kappa(kappa):
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Run-DA Arbiter selective consistency harness (N=3 vote-shape policy). "
-            "v1에서는 정확히 3개 Arbiter 결과 markdown에서 vote-shape를 계산한다 "
-            "(3 아닌 입력은 'unknown'으로 분류). "
+            "Run-DA VERDICT_JSON validator + selective consistency aggregator. "
+            "--validate-only는 schema 1.1 계약과 finding manifest 대조만 수행한다 "
+            "(first-pass caller 검증). 기본 경로는 정확히 3개 Arbiter 결과 markdown에서 "
+            "vote-shape를 계산한다 (3 아닌 입력은 'unknown'으로 분류). "
             "--offline 플래그로 corpus-level Fleiss kappa를 장기 관찰 목적으로 추가 계산."
         ),
     )
@@ -425,8 +440,8 @@ def main():
         "--validate-only",
         action="store_true",
         help=(
-            "집계 없이 각 입력 파일의 VERDICT_JSON schema 1.1 semantic 계약만 검증하고 "
-            "JSON 결과를 출력한다 (first-pass caller 검증용 — protocol.md 수렴 판정 SSOT)"
+            "집계 없이 각 입력 파일의 VERDICT_JSON schema 1.1 계약과 finding manifest 대조를 "
+            "검증하고 JSON 결과를 출력한다 (first-pass caller 검증용 — protocol.md 수렴 판정 SSOT)"
         ),
     )
     parser.add_argument(

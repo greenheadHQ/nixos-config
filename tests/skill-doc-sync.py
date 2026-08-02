@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -407,6 +409,52 @@ def check_threat_path_types() -> None:
         )
 
 
+def check_verdict_json_examples() -> None:
+    """arbiter-prompt.md의 VERDICT_JSON 골격 예시가 실제 검증기를 통과하는지 검사한다.
+
+    schema 계약은 문서 예시(pseudo-JSON)·protocol 산문·validator 코드 세 곳에 손으로
+    표현되어 왔고, 그래서 "골격대로 썼는데 semantic malformed로 거부"되는 드리프트가
+    반복됐다. 이 검사는 문서 예시를 production 파서와 같은 delimiter 패턴으로 추출해
+    `validate_verdict_entry()`에 직접 통과시키므로, 예시와 검증기가 어긋나면 실패한다
+    (고정 기대값 목록을 두지 않는다 — 계약의 제3의 사본을 만들지 않기 위함).
+    """
+    spec = importlib.util.spec_from_file_location("_fleiss_kappa", FLEISS_KAPPA)
+    if spec is None or spec.loader is None:
+        raise CheckFailure(f"{FLEISS_KAPPA}: 검증기 모듈을 로드할 수 없음")
+    harness = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(harness)
+
+    text = read_text(ARBITER_PROMPT)
+    blocks = list(harness.VERDICT_JSON_PATTERN.finditer(text))
+    if not blocks:
+        raise CheckFailure(
+            f"{ARBITER_PROMPT}: VERDICT_JSON 골격 예시를 찾지 못함 "
+            "(delimiter 형식이 바뀌었거나 예시가 사라졌다)"
+        )
+
+    details = []
+    seen_verdicts = set()
+    for block in blocks:
+        try:
+            entry = json.loads(block.group("body"))
+        except json.JSONDecodeError as exc:
+            details.append(f"골격 예시가 유효한 JSON이 아님: {exc}")
+            continue
+        violations = harness.validate_verdict_entry(entry)
+        if violations:
+            details.append(
+                f"골격 예시 {entry.get('finding_id')!r}가 검증기를 통과하지 못함: {violations}"
+            )
+        else:
+            seen_verdicts.add(entry.get("verdict"))
+
+    missing = set(harness.VERDICT_CATEGORIES) - seen_verdicts
+    if missing:
+        details.append(f"유효 골격 예시가 없는 verdict: {sorted(missing)}")
+    if details:
+        raise CheckFailure("\n".join(f"  {ARBITER_PROMPT}: {d}" for d in details))
+
+
 def check_capability_profile() -> None:
     """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
 
@@ -458,6 +506,7 @@ def main() -> int:
         ("no hardcoded model literals", check_no_hardcoded_model_literals),
         ("reviewer bundle subdomains", check_bundle_subdomains),
         ("threat path types", check_threat_path_types),
+        ("verdict json examples", check_verdict_json_examples),
         ("capability profile", check_capability_profile),
     )
 

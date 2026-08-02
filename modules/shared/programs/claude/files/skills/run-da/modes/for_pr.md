@@ -49,15 +49,16 @@
 for_plan의 통합 반영 루프에 다음 for_pr 전용 체크포인트를 더한다. 체크포인트는 이름으로 참조한다:
 
 - pre-write 기록: write phase 시작 시 `git rev-parse HEAD`를 `pre_write_sha`로 기록한다 (protocol.md revalidation `batch-delta-intensity` 조건의 batch delta 입력 기준).
-- dirty 겹침 게이트 (통합 설계 시점): round_write_set의 수정 대상 경로와 Step 1 baseline의 dirty/untracked 경로의 교집합을 검사한다. 겹침이 없어야 finalize의 baseline 대조가 건전하다 (agent 수정 경로는 전부 commit되어 상태 변화로 드러난다). 겹치면 batch 반영을 시작하지 않고 질문 도구로 사용자 판단을 받는다. 선택지별 후속 전이:
+- `batch_paths` 상태 정의: 아래 체크포인트들이 공유하는 경로 집합이다. 초기값은 통합 설계가 정한 round_write_set의 수정 대상 경로이며, write phase 진행 중 다음 시점에 갱신한다 — ①walkthrough 후속 수정이 새 경로를 만들면 추가 ②formatter/generator가 generated output 경로를 만들면 추가 ③dirty 겹침 게이트에서 사용자가 혼입을 승인한 경로를 합류 ④rename이 포함되면 source와 destination을 둘 다 원소로 갖는다 (finalize의 commit 경로 대조가 rename을 두 경로로 펼친 표현과 비교하기 때문). 이후 stage·commit·commit 대조는 모두 갱신이 끝난 이 집합을 기준으로 수행한다.
+- dirty 겹침 게이트 (통합 설계 시점): `batch_paths`와 Step 1 baseline의 dirty/untracked 경로의 교집합을 검사한다. 겹침이 없어야 finalize의 baseline 대조가 건전하다 (agent 수정 경로는 전부 commit되어 상태 변화로 드러난다). 겹치면 batch 반영을 시작하지 않고 질문 도구로 사용자 판단을 받는다. 선택지별 후속 전이:
   - 커밋/stash 후 재개: workspace 상태가 바뀌었으므로 "Step 1 상세"의 baseline 재수집 규칙을 적용한다 — 이후 모든 대조는 갱신된 baseline 기준이다.
-  - 혼입 명시 승인 (사용자 hunk가 agent commit에 섞일 위험 고지 후): 승인된 경로 집합을 기록하고 batch 경로 집합에 포함한다. finalize의 baseline 불변 대조에서 이 경로들은 제외하며(내용 변화가 승인된 결과다), 사용자 hunk가 commit에 포함된 사실을 round summary에 기록한다.
+  - 혼입 명시 승인 (사용자 hunk가 agent commit에 섞일 위험 고지 후): 승인된 경로 집합을 `batch_paths`에 합류시킨다. finalize의 baseline 불변 대조에서 이 경로들은 제외하며(내용 변화가 승인된 결과다), 사용자 hunk가 commit에 포함된 사실을 round summary에 기록한다.
 - 게이트 재적용 (후속 write 전): walkthrough 후속 수정·formatter/generator가 batch 반영 시점에 없던 새 경로를 쓰기 전에, 그 경로를 baseline dirty/untracked 목록과 다시 대조한다 — 초기 게이트만으로는 후속 write가 보호되지 않는다. 겹치면 위 게이트의 선택지별 전이를 동일하게 적용한다.
 - finalize (walkthrough CLEAN 후) — 아래 체크를 순서대로 수행한다:
   1. 최종 diff 확인.
-  2. 신규 경로 stage: batch 경로 중 Git이 아직 추적하지 않는 신규 파일·rename destination만 `git add -- <신규 batch 경로>`로 제한적으로 stage한다. path-limited commit은 Git이 이미 아는 경로만 커밋할 수 있으므로, 이 선행 없이는 신규 파일을 만드는 batch(테스트·fixture·generated output)의 commit이 pathspec 오류로 실패한다. 무관한 기존 staged 항목은 건드리지 않는다.
-  3. commit: 메인 에이전트가 single-writer로 `git commit --only -- <batch 경로>` ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의. 경로 한정 커밋은 기존 index의 무관한 staged 사용자 항목을 포함하지도, 건드리지도 않는다 — 전역 index equality를 요구하면 무관한 staged 변경이 finalize를 영구 차단한다).
-  4. commit 경로 대조: 생성된 commit의 경로 집합이 batch 경로 집합(혼입 승인 경로 포함)과 일치하는지 확인한다. 경로 목록은 `git diff-tree --no-commit-id --name-only --no-renames -r HEAD`로 얻는다 — rename detection이 켜진 출력(`git show --name-only`)은 rename을 destination 하나로 접어 source 경로를 숨기므로, batch가 rename을 포함하면 정상 commit도 집합 불일치로 오판된다. `--no-renames`는 rename을 delete+add 두 경로로 펼쳐 batch 경로 집합과 같은 표현을 만든다.
+  2. 신규 경로 stage: `batch_paths` 중 Git이 아직 추적하지 않는 신규 파일·rename destination만 `git add -- <해당 경로>`로 제한적으로 stage한다. path-limited commit은 Git이 이미 아는 경로만 커밋할 수 있으므로, 이 선행 없이는 신규 파일을 만드는 batch(테스트·fixture·generated output)의 commit이 pathspec 오류로 실패한다. 무관한 기존 staged 항목은 건드리지 않는다.
+  3. commit: 메인 에이전트가 single-writer로 `git commit --only -- <batch_paths>` ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의. 경로 한정 커밋은 기존 index의 무관한 staged 사용자 항목을 포함하지도, 건드리지도 않는다 — 전역 index equality를 요구하면 무관한 staged 변경이 finalize를 영구 차단한다).
+  4. commit 경로 대조: 생성된 commit의 경로 집합이 `batch_paths`와 일치하는지 확인한다. 경로 목록은 `git diff-tree --no-commit-id --name-only --no-renames -r HEAD`로 얻는다 — rename detection이 켜진 출력(`git show --name-only`)은 rename을 destination 하나로 접어 source 경로를 숨기므로, batch가 rename을 포함하면 정상 commit도 집합 불일치로 오판된다. `--no-renames`는 rename을 delete+add 두 경로로 펼쳐 `batch_paths`와 같은 표현을 만든다.
   5. staged 보존 확인: baseline의 기존 staged 상태가 그대로인지 확인한다.
   6. workspace 불변 대조: `git status --porcelain=v1 -z --untracked-files=all`을 현행 baseline과 비교해 write phase가 만든 새 미커밋 delta가 없는지 확인하고, baseline의 기존 dirty/untracked 경로(혼입 승인 경로 제외)는 저장해둔 diff 내용·hash와 대조해 내용이 변하지 않았는지 확인한다 (porcelain 상태 문자열은 내용 변화를 못 본다). 사용자의 기존 dirty/untracked 파일 자체는 차단 사유가 아니다 — 전역 clean을 요구하면 기존 파일이 finalize를 영구 차단하고, 이를 치우는 것은 hardening 계약 위반이다.
 - changeset 선언: 새 changeset(diff/commit range)을 선언하고 변경 범위를 round summary에 기록한다. walkthrough 후속 수정이 uncommitted로 남아 push에서 누락되거나 다음 라운드 preflight를 깨는 것을 구조적으로 방지한다.

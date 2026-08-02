@@ -68,9 +68,9 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 Arbiter도 이를 기본 경로로 사용한다.
 
 - 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로 사용한다.
-- 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt/result 파일을 기본 경로로 요구하지 않는다.
+- 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt 파일을 요구하지 않는다.
 - Arbiter는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다.
-- 결과는 `wait_agent`로 수신하고, timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 결과 파싱 후의 slot 회수는 capability profile을 따른다 (legacy profile만 `close_agent` 호출, current profile은 explicit close 없이 광고 slot 내에서만 발사 — [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
+- 결과 수집: `wait_agent`로 완료를 확인하고 그 subagent가 최종 응답으로 전달한 본문을 수집한다 (`wait_agent` 반환값은 상태 요약이라 VERDICT_JSON이 없다 — [`runtime-mapping.md`](runtime-mapping.md) 결과 수집 행). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 수집한 본문은 `/tmp/da-${_DA_SID}-arbiter-*` 네임스페이스의 scratch 파일로 저장한다 — 공통 검증기가 파일 입력 전용이므로 native 경로도 이 저장 단계를 거쳐야 검증을 수행할 수 있다 (메인 에이전트가 쓰는 결과 파일이며, Arbiter의 no-write role과 무관하다). 결과 파싱 후의 slot 회수는 capability profile을 따른다 (legacy profile만 `close_agent` 호출, current profile은 explicit close 없이 광고 slot 내에서만 발사 — [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
@@ -191,7 +191,7 @@ Degraded mode 계약 (fallback 경로 한정): `--sandbox read-only` 강제로 �
 
 1. Arbiter용 fresh subagent는 strong review profile로 띄운다.
 2. 프롬프트에는 관련 reference 문서를 직접 읽고, review-only/no-write contract를 따르며, 파일을 수정하지 말라고 명시한다.
-3. `wait_agent`로 결과를 받는다. timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다.
+3. `wait_agent`로 완료를 확인하고 subagent 최종 응답 본문을 수집해 scratch 결과 파일로 저장한다 (위 "Codex 세션 경로"의 결과 수집 계약과 동일 — `wait_agent` 반환값에는 결과 본문이 없다). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다.
 4. 결과 파싱 후 slot 회수는 capability profile을 따른다 ([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
