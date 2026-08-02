@@ -205,7 +205,7 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 ### accepted severity
 
 - accepted severity는 Arbiter 판정을 거친 항목에만 존재한다. 값은 VERDICT_JSON의 `accepted_severity` 필드다 (산출 주체는 Arbiter — 심각도 조정 시 조정값, 아니면 reviewer 원값. [`arbiter-prompt.md`](arbiter-prompt.md) 출력 요건 참조). 메인 에이전트는 집계(최댓값 계산)만 수행한다 — Arbiter 판정 대체가 아니다.
-- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity` 중 최종 수용 verdict를 지지하는 entry들의 최댓값을 메인이 계산한다 (기각표의 severity가 재검증 수준을 결정하지 않게 한다. 지지 entry에 값이 없으면 reviewer 원심각도로 fail-closed fallback. harness는 변경하지 않는다).
+- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity` 중 최종 수용 verdict를 지지하는 entry들의 최댓값을 메인이 계산한다 (기각표의 severity가 재검증 수준을 결정하지 않게 한다. 검증을 통과한 지지 entry에는 값이 반드시 있다 — 누락 entry는 검증 단계에서 이미 malformed다. harness는 변경하지 않는다).
 - 실시간 경로에서 write set 진입 가능 verdict의 `accepted_severity` 누락·비정상은 caller 검증의 semantic malformed 전이(1회 재실행 → BLOCKED)가 유일한 처리다 — 검증을 통과한 항목에는 값이 반드시 있으므로 집계 단계의 누락 fallback은 존재하지 않는다. 예외적으로 사용자 수용 경로 등 Arbiter 판정 값 없이 write set에 들어오는 항목은 reviewer 원심각도를, 그것도 불명이면 CRITICAL을 사용한다 (MEDIUM 고정 대체는 CRITICAL의 진행 차단·최우선 처리를 소실시키므로 fail-closed가 아니다).
 - 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목도 같은 규칙의 값을 가진다.
 - `VerdictRecord`·M-4 등 세션 분석 지표는 변경하지 않는다 — M-4는 종전대로 reviewer 보고 심각도 기반 지표다.
@@ -246,7 +246,17 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 2. `walkthrough-forced` — walkthrough가 후속 수정 또는 범위 밖 발견을 하나라도 발생시킴 (심각도 분류 없음. walkthrough가 무언가를 발견했다는 사실 자체가 리뷰 표면이 불안정하다는 신호다).
 3. `batch-delta-intensity` — write phase 종료 시 최종 batch delta에 Review Intensity 인라인 체크리스트([`intensity-rules.md`](intensity-rules.md) 8룰)를 classification-only로 재적용한 판정이 SKIP이 아님. Intensity는 검토 범위를 정하는 분류이므로 이 게이트에서는 판정을 다음처럼 소비한다 — `SKIP`: 재검증 불요 신호. `LITE`: 재검증 생략이 아니라 LITE가 선택한 bundle로 경량 재검증 라운드를 실행한다 (검토가 필요하다는 분류를 생략 신호로 뒤집지 않는다). `FULL`(fail-closed rule group 매치·불확실 포함): FULL 재검증. 적용 범위는 [`intensity-procedure.md`](intensity-procedure.md)의 "수렴 게이트용 classification-only 적용"이 정의하며(SKIP 사용자 승인·모드 종료는 수행하지 않는다), 재평가 입력은 이번 라운드 write phase가 만든 batch delta뿐이다 — for_pr은 write phase 시작 전에 기록한 `pre_write_sha` 기준 `git diff --stat <pre_write_sha>..HEAD`(finalize commit 후), for_plan은 이번 batch가 수정한 계획 항목·파일 목록. PR 전체 diff(`main...HEAD`)를 입력으로 쓰면 원 changeset이 FULL인 한 LOW-only 수렴이 영구히 불가능해지므로 금지다. 별도 범위 휴리스틱을 두지 않고 기존 분류기를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다. LOW-only 재검증 생략은 이 재평가가 SKIP인 국소 delta에만 허용된다.
 
-`walkthrough-forced` 또는 `batch-delta-intensity`가 발동한 재검증 라운드는 최초 라운드의 review unit 선택을 재사용하지 않는다 — `batch-delta-intensity`의 Intensity 재평가 판정(범위 밖 발견이 있으면 그 관점 포함)이 다음 라운드의 unit 선택을 결정한다 (LITE 판정이면 그 LITE가 선택한 bundle). walkthrough의 범위 밖 발견이 미선택 bundle 관점이면 그 bundle이 선택되도록 반영하되, `fresh` 계약 준수를 위해 발견의 본문·위치는 reviewer 프롬프트에 주입하지 않는다 — bundle 선택에만 사용하고 reviewer는 최종 changeset을 독립 검토한다.
+재검증 라운드의 review unit 선택은 발동 조건 조합에 따라 다음 라우팅 표를 따른다 (모든 조합을 포괄한다):
+
+| 발동 조건 조합 | 재검증 unit 선택 |
+|---|---|
+| `severity-gate`만 (batch 재평가 SKIP, walkthrough CLEAN) | 최초 라운드의 선택 unit 재사용 |
+| `walkthrough-forced` + batch 재평가 SKIP | 최초 라운드의 선택 unit (+범위 밖 발견이 미선택 bundle 관점이면 그 bundle 추가) |
+| batch 재평가 LITE | LITE가 선택한 bundle (범위 밖 발견 관점 bundle 포함) |
+| batch 재평가 FULL / fail-closed | 4 reviewer bundle |
+| `MAX` modifier 호출 | exhaustive 6-domain 유지 — `MAX`는 Intensity 우회 계약이므로 batch 재평가 판정과 무관하게 fan-out을 유지한다 (재평가는 재검증 필요 판정에만 사용) |
+
+walkthrough의 범위 밖 발견이 미선택 bundle 관점이면 그 bundle이 선택되도록 반영하되, `fresh` 계약 준수를 위해 발견의 본문·위치는 reviewer 프롬프트에 주입하지 않는다 — bundle 선택에만 사용하고 reviewer는 최종 changeset을 독립 검토한다.
 
 ### walkthrough_status
 

@@ -312,7 +312,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 ### Semantic malformed (VERDICT_JSON 계약 위반) — 모든 런타임 공통 전이
 
-VERDICT_JSON caller 검증 위반(검증 규칙·fail-closed 전이의 SSOT: [`protocol.md`](protocol.md)의 "수렴 판정" caller 검증 — 실시간 수집 경로 schema 1.1+ 강제 포함)은 아래 generic 실패 처리·recoverable violation·질문 도구 미지원 자동 전이보다 우선하는 별도 분류다. 전이 내용(1회 재실행 → 재위반 시 BLOCKED, 모든 자동 승격 경로 진입 금지)은 protocol.md가 정본이며 여기 재서술하지 않는다.
+VERDICT_JSON caller 검증 위반(검증 규칙·fail-closed 전이의 SSOT: [`protocol.md`](protocol.md)의 "수렴 판정" caller 검증 — 실시간 수집 경로 schema_version 정확히 1.1 강제 포함)은 아래 generic 실패 처리·recoverable violation·질문 도구 미지원 자동 전이보다 우선하는 별도 분류다. 전이 내용(1회 재실행 → 재위반 시 BLOCKED, 모든 자동 승격 경로 진입 금지)은 protocol.md가 정본이며 여기 재서술하지 않는다.
 
 ### Single Arbiter 실패 (first-pass 또는 예외적 확장 단일 Arbiter)
 

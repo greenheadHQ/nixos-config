@@ -5,7 +5,7 @@ v1 정책: selective consistency가 발동한 finding에 대해 **N=3 독립 Arb
 vote-shape(3:0 / 2:1 / 1:1:1)와 stability_status(stable / split / fragmented)를 계산한다.
 입력 파일이 정확히 3개가 아니면 vote-shape는 "unknown"으로 분류되어 v1 정책 범위 밖이다.
 
-Each file must contain VERDICT_JSON blocks (schema_version major 1) with per-finding verdicts
+Each file must contain VERDICT_JSON blocks (schema_version exactly "1.1") with per-finding verdicts
 as defined in arbiter-prompt.md "출력 형식" section.
 
 With --offline flag, also compute corpus-level Fleiss' kappa across findings
@@ -69,8 +69,13 @@ def validate_verdict_entry(entry):
     if verdict not in VERDICT_CATEGORIES:
         violations.append(f"verdict 누락 또는 enum 밖 값: {verdict!r}")
         return violations
-    if entry.get("confidence") not in CONFIDENCE_VALUES:
-        violations.append(f"confidence 누락 또는 enum 밖 값: {entry.get('confidence')!r}")
+    conf = entry.get("confidence")
+    if conf not in CONFIDENCE_VALUES:
+        violations.append(f"confidence 누락 또는 enum 밖 값: {conf!r}")
+    elif verdict in ("CONFIRMED_ISSUE", "NOT_AN_ISSUE") and conf == "N/A":
+        # N/A 신뢰도는 NEEDS_MORE_INFO 전용 — 신뢰도 없는 확정/기각이
+        # selective consistency LOW 트리거를 우회하는 것을 차단한다.
+        violations.append(f"확정 verdict({verdict})에 confidence=N/A 금지")
     axes = entry.get("axes")
     if not isinstance(axes, dict):
         violations.append(f"axes가 객체가 아님: {type(axes).__name__}")
@@ -114,6 +119,13 @@ def validate_verdict_entry(entry):
     elif basis is not None:
         violations.append(f"{verdict}에 rejection_basis 출력 금지 (got {basis!r})")
     return violations
+
+
+def manifest_diff_violations(expected_ids, found_ids):
+    """--expect-findings manifest 양방향 대조 위반 목록 (누락·미지 ID)."""
+    issues = [f"기대 finding 누락: {fid}" for fid in sorted(expected_ids - found_ids)]
+    issues += [f"manifest 밖 finding: {fid}" for fid in sorted(found_ids - expected_ids)]
+    return issues
 
 
 # arbiter-prompt.md "출력 형식 > 기계 파싱용 VERDICT_JSON 블록" 스키마와 일치
@@ -353,9 +365,14 @@ def main():
 
     expected_ids = None
     if args.expect_findings:
-        expected_ids = {
-            fid.strip() for fid in args.expect_findings.split(",") if fid.strip()
-        }
+        raw_ids = [fid.strip() for fid in args.expect_findings.split(",")]
+        if "" in raw_ids or len(raw_ids) != len(set(raw_ids)):
+            print(
+                f"error: --expect-findings에 빈 항목 또는 중복 ID: {args.expect_findings!r}",
+                file=sys.stderr,
+            )
+            return 1
+        expected_ids = set(raw_ids)
 
     if args.validate_only:
         report = {"files": [], "ok": True}
@@ -364,10 +381,7 @@ def main():
             found_ids = set(entries.keys())
             manifest_violations = []
             if expected_ids is not None:
-                for fid in sorted(expected_ids - found_ids):
-                    manifest_violations.append(f"기대 finding 누락: {fid}")
-                for fid in sorted(found_ids - expected_ids):
-                    manifest_violations.append(f"manifest 밖 finding: {fid}")
+                manifest_violations = manifest_diff_violations(expected_ids, found_ids)
             file_ok = (
                 malformed == 0 and len(entries) > 0 and not manifest_violations
             )
@@ -401,9 +415,7 @@ def main():
     for i, entries in enumerate(arbiter_entries):
         all_finding_ids.update(entries.keys())
         if expected_ids is not None:
-            found = set(entries.keys())
-            issues = [f"기대 finding 누락: {fid}" for fid in sorted(expected_ids - found)]
-            issues += [f"manifest 밖 finding: {fid}" for fid in sorted(found - expected_ids)]
+            issues = manifest_diff_violations(expected_ids, set(entries.keys()))
             if issues:
                 manifest_violations[str(args.arbiter_files[i])] = issues
     if expected_ids is not None:

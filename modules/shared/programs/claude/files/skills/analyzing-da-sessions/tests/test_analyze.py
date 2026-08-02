@@ -1184,6 +1184,8 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
         "garbage.md": ({**valid, "schema_version": "garbage"}, False),
         # confidence 누락도 위반이다
         "no-confidence.md": ({k: v for k, v in valid.items() if k != "confidence"}, False),
+        # 확정/기각 verdict에 confidence=N/A 금지 (NEEDS_MORE_INFO 전용)
+        "na-confidence.md": ({**valid, "confidence": "N/A"}, False),
     }
     for name, (payload, expected_ok) in cases.items():
         path = tmp_path / name
@@ -1197,8 +1199,16 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
         assert report["ok"] is expected_ok, (name, proc.stderr)
         assert (proc.returncode == 0) is expected_ok, name
 
-    # --expect-findings manifest: 누락·미지 ID를 위반으로 잡는다 (finding 소실 차단)
+    # manifest의 중복·빈 항목은 인자 오류로 즉시 거부된다
     valid_path = tmp_path / "valid.md"
+    proc = subprocess.run(
+        [sys.executable, harness, "--validate-only", "--expect-findings", "X-1,X-1", str(valid_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 1 and "중복" in proc.stderr
+
+    # --expect-findings manifest: 누락·미지 ID를 위반으로 잡는다 (finding 소실 차단)
     for manifest, expected_ok in (("X-1", True), ("X-1,X-2", False), ("Y-9", False)):
         proc = subprocess.run(
             [
