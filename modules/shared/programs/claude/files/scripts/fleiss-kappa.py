@@ -56,6 +56,7 @@ CONFIDENCE_VALUES = ("HIGH", "MEDIUM", "LOW", "N/A")
 # 현재 live schema의 semantic 계약 (protocol.md "수렴 판정" caller 검증 SSOT와 동기화)
 SEVERITY_VALUES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
 PLAUSIBILITY_VALUES = ("PASS", "FAIL", "UNKNOWN", "N/A")
+PORTABILITY_VALUES = ("PASS", "FAIL", "N/A")
 REJECTION_BASES = ("FACTUAL_FAIL", "RELEVANCE_FAIL", "PLAUSIBILITY_FAIL")
 # PLAUSIBILITY_FAIL 기각 근거의 수명주기 분류 (dismissal-ledger.md 영속 eligibility SSOT):
 # FROZEN_SURFACE = frozen changeset의 불변 계약 근거 → ledger 영속 eligible
@@ -130,7 +131,7 @@ def validate_verdict_entry(entry):
             "stability_status는 aggregate 전용 필드 — 개별 entry에 출력 금지 "
             f"(got {entry['stability_status']!r})"
         )
-    if isinstance(axes, dict) and axes.get("portability") not in ("PASS", "FAIL", "N/A"):
+    if isinstance(axes, dict) and axes.get("portability") not in PORTABILITY_VALUES:
         violations.append(
             f"axes.portability 누락 또는 enum 밖 값: {axes.get('portability')!r}"
         )

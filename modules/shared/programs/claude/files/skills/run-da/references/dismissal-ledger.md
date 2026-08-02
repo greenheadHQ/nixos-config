@@ -44,7 +44,7 @@ Plausibility FAIL 기각([`arbiter-prompt.md`](arbiter-prompt.md) 판정 우선�
 |------|------|
 | `mode` | `for_plan` 또는 `for_pr` |
 | `base_commit` | `for_pr`: target branch와 `HEAD`의 merge-base. `for_plan`: 계획이 특정 diff/branch에 묶인 경우 그 base commit, 아니면 현재 `HEAD` |
-| `surface_hash` | frozen changeset 전체의 hash. `for_pr`는 `git diff main...HEAD`와 review surface에 포함된 dirty/untracked content의 canonical hash. `for_plan`은 계획 원문과 Step 1에서 수집한 관련 context pack의 canonical hash |
+| `surface_hash` | frozen changeset 전체의 hash. `for_pr`는 `git diff main...HEAD`의 canonical hash (Step 1이 clean workspace를 요구하므로 미커밋 상태는 review surface에 없다). `for_plan`은 계획 원문과 Step 1에서 수집한 관련 context pack의 canonical hash |
 | `target` | PR 번호/branch/계획 파일 경로처럼 사람이 scope를 식별할 수 있는 값 |
 
 `surface_hash`는 ledger match의 핵심이다. hash를 계산할 수 없으면 ledger suppression을 사용하지 않는다.

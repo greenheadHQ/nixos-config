@@ -45,7 +45,7 @@ stability_status 의미, selective consistency 트리거, `unknown` sentinel 정
 
 각 outer round는 frozen changeset을 대상으로 한 review phase와, Arbiter 판정 후의 write phase를 분리한다.
 
-- changeset 동결: outer round 시작 시 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`와 현재 workspace 상태가 frozen changeset이다.
+- changeset 동결: outer round 시작 시 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`가 frozen changeset이다 (for_pr은 Step 1에서 clean workspace를 요구하므로 미커밋 상태가 검토 표면에 섞이지 않는다).
 - review phase 범위: reviewer 실행, reviewer 결과 수집, Arbiter 실행, selective consistency N=3, vote-shape 집계, 전건 보고, 질문 도구 판단 수집까지다.
 - review phase 중 patch 금지: 이 구간에는 active changeset을 바꾸는 patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. check-only formatter나 diff-only generator처럼 파일 변경이 없으면 허용한다. delegated reviewer/Arbiter의 read-only/no-write 경계는 [`hardening-contract.md`](hardening-contract.md)가 정본이다.
 - dismissal ledger 기록: Arbiter 상태 전이와 사용자 전건 보고가 끝난 직후 메인 에이전트가 쓰는 local ignored review metadata다. write phase 산출물이 아니며 pending write queue에 넣지 않는다. ledger write가 tracked diff를 만들면 기록하지 않고 NOTES에 남긴다. 세부 규칙은 [`dismissal-ledger.md`](dismissal-ledger.md)가 정본이다.
@@ -225,7 +225,14 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 
 검증기 호출 계약 (호출 전 필수): 세션 scope의 helper 절대경로를 `HELPER_PATH`로 결정하고 (Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py` — PATH에 `fleiss-kappa.py`라는 명령은 없다), capability 확인·`--validate-only`·N=3 집계를 모두 같은 `"$HELPER_PATH"`로 호출한다.
 
-첫 호출 전에 필요한 옵션(`--validate-only`·`--expect-findings`) 지원 여부를 확인한다. 미지원이면 그 사실과 원인을 사용자에게 보고한 뒤 중단한다 — 검증 없이 수렴 판정으로 넘어가지 않는다. helper는 checkout의 파일을 가리키는 out-of-store symlink이므로, run-da 문서가 요구하는 CLI·schema 계약이 배포된 helper보다 새로우면 이 상황이 실제로 발생한다 (실측: 이 계약 도입 시점의 helper는 `--validate-only`를 `unrecognized arguments`로 거부했다). 이때 조용히 진행하는 것이 가장 나쁜 결과이므로 중단이 기본값이다.
+첫 호출 전에 필요한 옵션(`--validate-only`·`--expect-findings`) 지원 여부를 확인한다. helper는 checkout의 파일을 가리키는 out-of-store symlink이므로, run-da 문서가 요구하는 CLI·schema 계약이 배포된 helper보다 새로우면 미지원 상황이 실제로 발생한다 — run-da 자체를 개선하는 PR이 대표적이다 (실측: 이 계약 도입 시점의 helper는 `--validate-only`를 `unrecognized arguments`로 거부했다).
+
+미지원일 때 조용히 진행하는 것이 가장 나쁜 결과이므로 자동 진행은 금지한다. 대신 그 사실과 원인(배포된 helper가 이 계약보다 오래됨)을 사용자에게 보고하고 질문 도구로 선택을 받는다:
+
+- 배포 후 재시도: 사용자가 `nrs`로 현재 checkout을 배포하면 helper가 갱신되어 계약이 맞는다. 이것이 계약을 바꾸는 PR의 정상 진행 경로다 — 검증기와 문서가 같은 버전이 되어야 자기 검증이 성립하기 때문이다.
+- 이번 라운드 검증 생략: 사용자가 명시 승인하면 first-pass 검증 없이 진행하되, 생략 사실과 사유를 round summary에 기록한다. 검증이 잡았을 finding 소실·schema 위반은 이 라운드에서 검출되지 않는다.
+
+질문 도구 미지원 런타임(headless)에서는 선택을 받을 수 없으므로 중단한다.
 
 검증기 공급망 신뢰 (범위 밖): helper 실체가 신뢰할 수 있는 코드인지는 이 스킬이 판정하지 않는다. 전역 helper 경로는 immutable artifact가 아니라 checkout 파일을 가리키는 symlink이고 `nrs-relink`가 이를 임의 worktree로 전환할 수 있으므로, 경로나 diff 포함 여부만으로는 신뢰를 판정할 수 없다 — 실제 해결은 helper를 nix store의 immutable artifact로 프로비저닝하거나 blob hash를 신뢰 기준 ref와 대조하는 인프라 변경이며, 문서 절차로 대체할 수 없다. [`../SKILL.md#non-goals`](../SKILL.md#non-goals)의 알려진 한계로 둔다.
 
@@ -257,7 +264,7 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 write phase가 끝나면 그 결과로 다음 값이 확정된다 (스냅샷이 아니라 write phase 산출값이다):
 
-- `write_reverted_count`: `round_write_set` 중 반영을 시도했다가 취소되어 미해결로 남은 항목 수. walkthrough가 batch 수정을 되돌려 최종 delta가 사라진 경우가 이에 해당한다 (for_pr은 `actual_commit_paths`가 빈 집합인 상태 — [`../modes/for_pr.md`](../modes/for_pr.md) finalize 참조). 되돌린 이유를 round summary에 기록한다.
+- `write_reverted_count`: `round_write_set` 중 반영을 시도했다가 취소되어 미해결로 남은 항목 수. walkthrough가 batch 수정을 되돌려 최종 delta가 사라진 경우가 이에 해당한다 (for_pr은 finalize 시점 `git status`가 비어 commit하지 않는 상태 — [`../modes/for_pr.md`](../modes/for_pr.md) finalize 참조). 되돌린 이유를 round summary에 기록한다.
 
 ### revalidation_required (단일 파생값)
 
