@@ -15,7 +15,7 @@ v1 정책: selective consistency가 발동한 finding에 대해 **N=3 독립 Arb
 vote-shape(3:0 / 2:1 / 1:1:1)와 stability_status(stable / split / fragmented)를 계산한다.
 입력 파일이 정확히 3개가 아니면 vote-shape는 "unknown"으로 분류되어 v1 정책 범위 밖이다.
 
-Each file must contain VERDICT_JSON blocks (schema_version exactly "1.1") with per-finding verdicts
+Each file must contain VERDICT_JSON blocks whose schema_version matches LIVE_SCHEMA_VERSION exactly, with per-finding verdicts
 as defined in arbiter-prompt.md "출력 형식" section.
 
 With --offline flag, also compute corpus-level Fleiss' kappa across findings
@@ -53,7 +53,7 @@ ESCALATE_MIN = 0.4
 VERDICT_CATEGORIES = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
 CONFIDENCE_VALUES = ("HIGH", "MEDIUM", "LOW", "N/A")
 
-# schema 1.1 semantic 계약 (protocol.md "수렴 판정" caller 검증 SSOT와 동기화)
+# 현재 live schema의 semantic 계약 (protocol.md "수렴 판정" caller 검증 SSOT와 동기화)
 SEVERITY_VALUES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
 PLAUSIBILITY_VALUES = ("PASS", "FAIL", "UNKNOWN", "N/A")
 REJECTION_BASES = ("FACTUAL_FAIL", "RELEVANCE_FAIL", "PLAUSIBILITY_FAIL")
@@ -71,14 +71,14 @@ LIVE_SCHEMA_VERSION = "1.1"  # 실시간 결과는 정확히 이 버전 (새 계
 
 
 def validate_verdict_entry(entry):
-    """schema 1.1 계약 위반 목록을 반환하는 단일 검증 진입점 (빈 리스트 = 통과).
+    """현재 live schema 계약 위반 목록을 반환하는 단일 검증 진입점 (빈 리스트 = 통과).
 
     protocol.md "수렴 판정" caller 검증의 기계 검증 SSOT 구현체 —
     version·필수 필드·모든 enum·verdict 정합 행렬을 이 함수 하나가 검사한다.
     finding_id의 존재·중복 검사는 parser(load_validated_verdict_entries) 소관이고,
     reviewer 원본 finding과의 대조(reviewer_severity 은닉 차단)는 원본을 아는
     caller 몫이며, finding ID manifest는 --expect-findings로 전달된다.
-    과거 1.0 산출물 지원은 없다 — 실시간 계약(정확히 1.1)만 검증한다.
+    과거 산출물 하위호환은 없다 — LIVE_SCHEMA_VERSION과 정확히 일치하는 계약만 검증한다.
     """
     violations = []
     sv = entry.get("schema_version")
@@ -159,23 +159,35 @@ def validate_verdict_entry(entry):
     return violations
 
 
-def manifest_diff_violations(expected_ids, found_ids):
-    """--expect-findings manifest 양방향 대조 위반 목록 (누락·미지 ID)."""
-    issues = [f"기대 finding 누락: {fid}" for fid in sorted(expected_ids - found_ids)]
+def manifest_diff_violations(expected_ids, found_ids, missing_is_violation=True):
+    """--expect-findings manifest 대조 위반 목록.
+
+    missing_is_violation=True (validate-only): 누락·미지 ID 모두 exact-set 위반이다.
+    False (N=3 집계): 누락은 finding 단위 `missing`으로 별도 전달되므로 여기서
+    제외한다 — 파일 단위 위반으로도 함께 기록하면 finding 하나가 빠졌을 때
+    나머지 정상 집계까지 수집 단위 전체 폐기 경로로 끌려간다 (caller 매핑이
+    원인별로 갈리는 이유는 protocol.md 상태 전이표 아래 정의 참조).
+    """
+    issues = []
+    if missing_is_violation:
+        issues += [f"기대 finding 누락: {fid}" for fid in sorted(expected_ids - found_ids)]
     issues += [f"manifest 밖 finding: {fid}" for fid in sorted(found_ids - expected_ids)]
     return issues
 
 
-def parse_and_check_manifest(paths, expected_ids):
+def parse_and_check_manifest(paths, expected_ids, missing_is_violation=True):
     """파일별 (entries, malformed, manifest 위반)을 한 번에 산출하는 공통 흐름.
 
     validate-only와 N=3 집계가 같은 파싱·manifest 대조 결과를 소비하도록
     두 분기의 조립을 여기로 모은다 (동일 계약이 두 제어 흐름에 복제되지 않게 한다).
+    missing_is_violation은 manifest_diff_violations()의 같은 이름 인자로 전달된다.
     """
     parsed = []
     for path in paths:
         entries, malformed = load_validated_verdict_entries(path)
-        issues = manifest_diff_violations(expected_ids, set(entries.keys()))
+        issues = manifest_diff_violations(
+            expected_ids, set(entries.keys()), missing_is_violation
+        )
         parsed.append({
             "path": path,
             "entries": entries,
@@ -230,7 +242,7 @@ def load_validated_verdict_entries(markdown_path: Path):
       - JSONDecodeError: malformed 카운트 +1, 해당 block skip.
       - json 결과가 dict가 아니면(list/str/null 등): malformed +1, skip.
       - finding_id 누락/비문자열: malformed +1, skip.
-      - validate_verdict_entry() 위반 (schema 1.1 계약 전체): malformed +1, skip.
+      - validate_verdict_entry() 위반 (live schema 계약 전체): malformed +1, skip.
       - 동일 파일 내 동일 finding_id 중복: malformed +1, 해당 finding entries에서 제거
         (silent overwrite 방지; caller는 BLOCKED 취급).
     """
@@ -410,7 +422,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Run-DA VERDICT_JSON validator + selective consistency aggregator. "
-            "--validate-only는 schema 1.1 계약과 finding manifest 대조만 수행한다 "
+            f"--validate-only는 schema {LIVE_SCHEMA_VERSION} 계약과 finding manifest 대조만 수행한다 "
             "(first-pass caller 검증). 기본 경로는 정확히 3개 Arbiter 결과 markdown에서 "
             "vote-shape를 계산한다 (3 아닌 입력은 'unknown'으로 분류). "
             "--offline 플래그로 corpus-level Fleiss kappa를 장기 관찰 목적으로 추가 계산."
@@ -426,8 +438,9 @@ def main():
         "--validate-only",
         action="store_true",
         help=(
-            "집계 없이 각 입력 파일의 VERDICT_JSON schema 1.1 계약과 finding manifest 대조를 "
-            "검증하고 JSON 결과를 출력한다 (first-pass caller 검증용 — protocol.md 수렴 판정 SSOT)"
+            f"집계 없이 각 입력 파일의 VERDICT_JSON schema {LIVE_SCHEMA_VERSION} 계약과 finding "
+            "manifest 대조를 검증하고 JSON 결과를 출력한다 "
+            "(first-pass caller 검증용 — protocol.md 수렴 판정 SSOT)"
         ),
     )
     parser.add_argument(
@@ -453,7 +466,11 @@ def main():
         print(f"error: {arg_error}", file=sys.stderr)
         return 1
 
-    parsed = parse_and_check_manifest(args.arbiter_files, expected_ids)
+    # validate-only는 exact-set 검증(누락도 위반), 집계는 누락을 finding 단위
+    # `missing`으로만 전달한다 (파일 단위 폐기 경로와 분리).
+    parsed = parse_and_check_manifest(
+        args.arbiter_files, expected_ids, missing_is_violation=args.validate_only
+    )
 
     if args.validate_only:
         report = {"files": [], "ok": True}
@@ -492,11 +509,11 @@ def main():
             manifest_violations[str(item["path"])] = item["manifest_violations"]
     # manifest 기준 집계: 세 Arbiter가 모두 같은 finding을 누락해도 missing으로 잡힌다
     # (관측된 ID의 union을 쓰면 공통 누락이 집합에서 사라져 조용히 통과한다).
-    all_finding_ids = set(expected_ids)
+    expected_finding_ids = set(expected_ids)
 
     per_finding = []
     missing = {}
-    for fid in sorted(all_finding_ids):
+    for fid in sorted(expected_finding_ids):
         verdicts = []
         confidences = []
         entries_for_finding = []
@@ -545,7 +562,8 @@ def main():
 
     result = {
         "n_arbiters": len(args.arbiter_files),
-        "n_findings": len(all_finding_ids),
+        # manifest 기준이므로 관측 수가 아니라 기대 finding 수다.
+        "n_findings": len(expected_finding_ids),
         "n_classified": len(per_finding),
         "per_finding": per_finding,
         "per_file_malformed": per_file_malformed,

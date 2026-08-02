@@ -193,18 +193,25 @@ def test_validate_only_manifest_catches_missing_and_unknown(tmp_path):
 
 
 def test_aggregate_manifest_catches_uniform_omission(tmp_path):
-    """세 Arbiter가 모두 같은 finding을 누락해도 --expect-findings manifest가
-    partial_failure로 잡는지, manifest 밖 ID도 위반인지 검증한다."""
+    """세 Arbiter가 모두 같은 finding을 누락해도 manifest가 잡는지 검증한다.
+
+    집계 경로에서 누락은 finding 단위 `missing`으로만 전달되고 파일 단위
+    `manifest_violations`에는 오르지 않는다 — 그래야 finding 하나가 빠졌을 때
+    나머지 정상 finding까지 수집 단위 전체 폐기로 끌려가지 않는다."""
     # X-2는 세 파일 모두에서 누락
     paths = _write_arbiter_results(tmp_path, _verdict_payload())
 
     proc = _run_harness("--expect-findings", "X-1,X-2", *paths)
     aggregate = json.loads(proc.stdout)
     assert aggregate.get("partial_failure") is True
-    assert aggregate.get("manifest_violations")
-    assert "X-2" in json.dumps(aggregate["manifest_violations"])
+    assert "X-2" in aggregate.get("missing", {})
+    assert not aggregate.get("manifest_violations")
+    # 누락되지 않은 finding은 정상 분류되어 남는다 (finding 단위 차단)
+    assert [f["finding_id"] for f in aggregate["per_finding"]] == ["X-1"]
 
-    # manifest 밖 finding(미지 ID)도 위반
+    # manifest 밖 finding(미지 ID)은 파일 단위 위반이다
     proc = _run_harness("--expect-findings", "Y-9", *paths)
     aggregate = json.loads(proc.stdout)
     assert aggregate.get("partial_failure") is True
+    assert aggregate.get("manifest_violations")
+    assert "X-1" in json.dumps(aggregate["manifest_violations"])

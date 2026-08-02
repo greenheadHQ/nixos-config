@@ -15,7 +15,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | finding 없음 | — | — | — | ALL CLEAR (수렴 종료의 특수형 — `walkthrough_status=NOT_REQUIRED`) |
 | 이번 라운드 반영 항목 전부 LOW (accepted severity 기준) | CONFIRMED_ISSUE | N/A / stable | write phase 반영 후 수렴 predicate 평가 (아래 "수렴 판정"이 SSOT — walkthrough 후속 수정·최종 delta Intensity 재평가에 따라 재검증이 강제될 수 있다) | predicate 충족 시 CONVERGED 보고 |
 
-stability_status 의미, selective consistency 트리거, `unknown` sentinel 정의는 [`stability-measurement.md`](stability-measurement.md) 참조. `partial_failure`는 `fleiss-kappa.py` 출력의 top-level 플래그이며, 세부 원인은 `missing`/`manifest_violations`/`file_level_failures`/`per_file_malformed` 필드로 전달된다. caller 매핑은 원인 단위가 다르다 — `missing`에 오른 finding은 `per_finding`에서 제외되므로 그 finding만 BLOCKED로 매핑한다. `manifest_violations`·`file_level_failures`·`per_file_malformed`는 파일 단위 위반이라 정상 파싱된 finding이 `per_finding`에 남아 있을 수 있다 — caller는 `per_finding`을 소비하기 전에 top-level `partial_failure`를 먼저 확인하고, 파일 단위 위반이 있으면 개별 stable 결과를 소비하지 않고 그 수집 단위 전체를 아래 "수렴 판정" caller 검증의 fail-closed 전이(1회 재실행 → BLOCKED)로 처리한다.
+stability_status 의미, selective consistency 트리거, `unknown` sentinel 정의는 [`stability-measurement.md`](stability-measurement.md) 참조. `partial_failure`는 `fleiss-kappa.py` 출력의 top-level 플래그이며, 세부 원인은 `missing`/`manifest_violations`/`file_level_failures`/`per_file_malformed` 필드로 전달된다. caller 매핑은 원인 단위가 다르다 — `missing`에 오른 finding은 `per_finding`에서 제외되므로 그 finding만 BLOCKED로 매핑하고, 같은 수집의 나머지 정상 finding은 계속 소비한다 (집계 경로는 기대 finding 누락을 `missing`으로만 전달하고 `manifest_violations`에는 넣지 않는다 — 둘 다에 기록하면 finding 하나가 빠졌을 때 파일 단위 폐기 경로가 항상 함께 발동해 finding 단위 처리가 존재하지 않게 된다). `manifest_violations`(집계 경로에서는 manifest 밖 미지 ID)·`file_level_failures`·`per_file_malformed`는 파일 단위 위반이라 정상 파싱된 finding이 `per_finding`에 남아 있을 수 있다 — caller는 `per_finding`을 소비하기 전에 top-level `partial_failure`를 먼저 확인하고, 파일 단위 위반이 있으면 개별 stable 결과를 소비하지 않고 그 수집 단위 전체를 아래 "수렴 판정" caller 검증의 fail-closed 전이(1회 재실행 → BLOCKED)로 처리한다.
 
 ### 기존 용어 매핑
 
@@ -205,7 +205,14 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 ### accepted severity
 
 - accepted severity는 Arbiter 판정을 거친 항목에만 존재한다. 값은 VERDICT_JSON의 `accepted_severity` 필드다 (산출 주체는 Arbiter — 심각도 조정 시 조정값, 아니면 reviewer 원값. [`arbiter-prompt.md`](arbiter-prompt.md) 출력 요건 참조). 메인 에이전트는 집계(최댓값 계산)만 수행한다 — Arbiter 판정 대체가 아니다.
-- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity` 중 최종 수용 verdict를 지지하는 entry들의 최댓값을 메인이 계산한다 (기각표의 severity가 재검증 수준을 결정하지 않게 한다. 검증을 통과한 지지 entry에는 값이 반드시 있다 — 누락 entry는 검증 단계에서 이미 malformed다. harness는 변경하지 않는다).
+- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity` 중 "최종 수용 verdict를 지지하는 entry"들의 최댓값을 메인이 계산한다 (기각표의 severity가 재검증 수준을 결정하지 않게 한다. 검증을 통과한 지지 entry에는 값이 반드시 있다 — 누락 entry는 검증 단계에서 이미 malformed다. harness는 변경하지 않는다).
+- "최종 수용 verdict"는 상태별로 다음과 같이 확정한다. harness는 `majority_verdict`와 원본 `entries`만 주므로, 이 확정이 없으면 어느 entry 집합이 근거인지 기계적으로 결정되지 않는다:
+  - `stable`(3:0): 그 unanimous verdict. 지지 entry는 전부다.
+  - `split`(2:1)에서 사용자가 수용: 사용자가 수용한 쪽의 verdict. 다수·소수 어느 쪽을 수용했든 그 verdict를 낸 entry만 지지 entry다 (다수 NOT_AN_ISSUE인데 소수 CONFIRMED_ISSUE를 수용하면 그 소수 entry가 근거).
+  - `split`에서 사용자가 기각: write set에 들어가지 않으므로 accepted severity를 산출하지 않는다.
+  - 사용자가 NEEDS_MORE_INFO를 수용: NEEDS_MORE_INFO를 낸 entry들이 지지 entry다.
+  - 지지 entry가 하나도 없는 경우(사용자가 어떤 entry도 지지하지 않는 판단을 한 경우): 아래 "Arbiter 판정 값 없이 write set에 들어오는 항목" 규칙을 따른다.
+  메인은 확정한 `{최종 수용 verdict, accepted_severity, 지지 entry 인덱스}`를 round summary에 기록해 이후 집계가 같은 근거를 참조하게 한다.
 - 실시간 경로에서 write set 진입 가능 verdict의 `accepted_severity` 누락·비정상은 caller 검증의 semantic malformed 전이(1회 재실행 → BLOCKED)가 유일한 처리다 — 검증을 통과한 항목에는 값이 반드시 있으므로 집계 단계의 누락 fallback은 존재하지 않는다. 예외적으로 사용자 수용 경로 등 Arbiter 판정 값 없이 write set에 들어오는 항목은 reviewer 원심각도를, 그것도 불명이면 CRITICAL을 사용한다 (MEDIUM 고정 대체는 CRITICAL의 진행 차단·최우선 처리를 소실시키므로 fail-closed가 아니다).
 - 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목도 같은 규칙의 값을 가진다.
 - `VerdictRecord`·M-4 등 세션 분석 지표는 변경하지 않는다 — M-4는 종전대로 reviewer 보고 심각도 기반 지표다.
@@ -215,6 +222,8 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 `axes.plausibility`·`accepted_severity`·`reviewer_severity`·`rejection_basis`·`evidence_scope`는 verdict·수렴·기각 영속을 결정하는 값의 기록이므로 누락·오염·의미 불일치가 기각/무재검증 방향으로 샐 수 있다. 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점(first-pass·N=3)에서 다음을 검증한다.
 
 실시간 수집 경로에서는 `schema_version`이 정확히 현재 출력 계약 버전(1.1)이어야 한다 — first-pass·N=3 결과는 매번 fresh Arbiter가 이 계약으로 생성하므로, 1.0·버전 누락·미래 버전은 전부 출력 계약 위반이며 아래 fail-closed 전이를 따른다 (구버전 자칭으로 검증을 우회하거나 미지 버전이 현 계약 검사만 받고 통과하는 경로 차단). 하위호환은 지원하지 않으며, 새 계약 버전 도입 시 검증기·문서를 함께 갱신한다.
+
+검증기 실체 해석 (호출 전 필수): `fleiss-kappa.py`는 세션 scope의 전역 경로(`~/.claude/scripts/` 또는 `~/.codex/scripts/`)로 프로비저닝되지만, 그 심링크는 항상 main checkout의 원본을 가리킨다. 따라서 worktree에서 개발 중인 run-da 문서가 main보다 새로운 CLI·schema 계약을 요구하면 전역 helper가 그 인자를 거부해 first-pass 검증과 N=3 집계가 즉시 중단된다 (실측: 이 계약 도입 시점의 전역 helper는 `--validate-only`를 `unrecognized arguments`로 거부했다). 메인 에이전트는 지금 따르고 있는 run-da 문서와 같은 checkout의 `modules/shared/programs/claude/files/scripts/fleiss-kappa.py`를 먼저 해석해 사용하고, 그 경로가 없을 때만 전역 helper로 폴백한다. 어느 쪽을 쓰든 첫 호출 전에 필요한 옵션(`--validate-only`·`--expect-findings`)을 지원하는지 확인하고, 미지원이면 그 사실을 사용자에게 보고한 뒤 중단한다 — 검증 없이 진행하지 않는다.
 
 기계 검증(존재·enum·정합 행렬·manifest)은 공통 검증기 `fleiss-kappa.py --validate-only --expect-findings <ID목록> <result.md>`가 단일 소유한다 — first-pass 결과 수집 시 메인이 Arbiter에 전달했던 finding ID 목록을 manifest로 넘겨 호출하고, N=3 집계 경로는 같은 검증을 내부 적용해 위반 entry를 malformed(→partial_failure/BLOCKED 경로)로 처리한다. `--expect-findings`는 두 경로 모두에서 필수 인자다 — 생략하면 검증기가 인자 오류로 종료하므로 manifest 없는 수집이 성공으로 처리되는 경로는 없다. 검증 규칙 (구현체: `validate_verdict_entry` 단일 진입점):
 
