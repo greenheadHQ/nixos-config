@@ -59,7 +59,9 @@ PLAUSIBILITY_VALUES = ("PASS", "FAIL", "UNKNOWN", "N/A")
 REJECTION_BASES = ("FACTUAL_FAIL", "RELEVANCE_FAIL", "PLAUSIBILITY_FAIL")
 # PLAUSIBILITY_FAIL 기각 근거의 수명주기 분류 (dismissal-ledger.md 영속 eligibility SSOT):
 # FROZEN_SURFACE = frozen changeset의 불변 계약 근거 → ledger 영속 eligible
-# ENVIRONMENT_WORKLOAD = 환경·워크로드 가정 근거 → 비영속 (현재 루프 한정 suppress)
+# ENVIRONMENT_WORKLOAD = 환경·워크로드 가정 근거 → ledger 비영속. 그 라운드의 판정으로
+#   끝나고 다음 라운드에 같은 finding이 올라오면 다시 판정한다 (루프 한정 suppression
+#   상태를 따로 두지 않는다 — 소유자 없는 상태를 만들지 않기 위함).
 EVIDENCE_SCOPES = ("FROZEN_SURFACE", "ENVIRONMENT_WORKLOAD")
 # verdict -> 허용되는 axes.plausibility 값 (정합 행렬)
 PLAUSIBILITY_MATRIX = {

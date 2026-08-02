@@ -94,54 +94,91 @@ def test_aggregate_preserves_additive_verdict_fields(tmp_path):
 def test_validate_only_flags_semantic_malformed(tmp_path):
     """--validate-only 모드가 schema 1.1 semantic 계약 위반(정합 행렬·rejection_basis·
     구버전 자칭)을 검출하고 정상 결과는 통과시키는지 검증한다."""
-    valid = _verdict_payload(
+    rejected = _verdict_payload(
         verdict="NOT_AN_ISSUE",
         accepted_severity=None,
         rejection_basis="PLAUSIBILITY_FAIL",
         evidence_scope="FROZEN_SURFACE",
         axes={"portability": "N/A", "plausibility": "FAIL"},
     )
+    factual = _verdict_payload(
+        verdict="NOT_AN_ISSUE",
+        accepted_severity=None,
+        rejection_basis="FACTUAL_FAIL",
+        axes={"portability": "N/A", "plausibility": "N/A"},
+    )
     confirmed = _verdict_payload()
+
+    # 각 케이스는 정확히 하나의 invariant만 위반하고, 그 invariant를 가리키는
+    # violation 메시지를 확인한다 — payload 하나가 여러 규칙을 동시에 어기면
+    # 검사 대상 규칙이 삭제돼도 다른 위반 때문에 테스트가 계속 통과한다.
     cases = {
-        "valid.md": (valid, True),
-        # verdict 정합 행렬 위반: CONFIRMED + plausibility FAIL
-        "matrix.md": ({**valid, "verdict": "CONFIRMED_ISSUE"}, False),
-        # NOT_AN_ISSUE인데 rejection_basis 누락
-        "basis.md": ({k: v for k, v in valid.items() if k != "rejection_basis"}, False),
-        # 실시간 경로에서 1.0 자칭
-        "downgrade.md": ({**valid, "schema_version": "1.0"}, False),
-        # axes가 객체가 아니어도 예외 없이 malformed로 집계돼야 한다
-        "axes-shape.md": ({**valid, "axes": "PASS"}, False),
-        # 정확히 1.1만 허용 — 상한 밖·비정형 버전 거부
-        "future.md": ({**valid, "schema_version": "2.0"}, False),
-        "garbage.md": ({**valid, "schema_version": "garbage"}, False),
-        # confidence 누락도 위반이다
-        "no-confidence.md": ({k: v for k, v in valid.items() if k != "confidence"}, False),
-        # 확정/기각 verdict에 confidence=N/A 금지 (NEEDS_MORE_INFO 전용)
-        "na-confidence.md": ({**valid, "confidence": "N/A"}, False),
-        # stability_status는 aggregate 전용 — 개별 entry에 있으면 값과 무관하게 위반
-        "agg-status.md": ({**valid, "stability_status": "stable"}, False),
-        "na-status.md": ({**valid, "stability_status": "N/A"}, False),
-        # PLAUSIBILITY_FAIL에는 evidence_scope 필수 (ledger 영속 판정 근거)
-        "no-scope.md": ({k: v for k, v in valid.items() if k != "evidence_scope"}, False),
-        "bad-scope.md": ({**valid, "evidence_scope": "SOMETHING_ELSE"}, False),
-        "env-scope.md": ({**valid, "evidence_scope": "ENVIRONMENT_WORKLOAD"}, True),
-        # 다른 기각 근거·verdict에는 evidence_scope 금지
+        # (payload, 기대 violation 조각 또는 None=통과)
+        "valid-plausibility.md": (rejected, None),
+        "valid-factual.md": (factual, None),
+        "valid-confirmed.md": (confirmed, None),
+        "valid-env-scope.md": ({**rejected, "evidence_scope": "ENVIRONMENT_WORKLOAD"}, None),
+        # schema 버전: 정확히 live 버전만
+        "downgrade.md": ({**rejected, "schema_version": "1.0"}, "schema_version"),
+        "future.md": ({**rejected, "schema_version": "2.0"}, "schema_version"),
+        "garbage.md": ({**rejected, "schema_version": "garbage"}, "schema_version"),
+        # verdict 정합 행렬 — CONFIRMED에 plausibility FAIL (다른 필드는 CONFIRMED 계약 충족)
+        "matrix.md": (
+            {**confirmed, "axes": {"portability": "N/A", "plausibility": "FAIL"}},
+            "정합 행렬",
+        ),
+        # confidence
+        "no-confidence.md": (
+            {k: v for k, v in rejected.items() if k != "confidence"}, "confidence"
+        ),
+        "na-confidence.md": ({**rejected, "confidence": "N/A"}, "confidence=N/A"),
+        # axes 구조 — 이 케이스만 연쇄 위반이 불가피하다 (axes가 객체가 아니면
+        # 그 안의 값을 읽을 수 없어 하위 축 검사도 함께 실패한다). 기대 메시지로
+        # 최상위 원인을 지정해 다른 위반에 가려지지 않게 한다.
+        "axes-shape.md": ({**rejected, "axes": "PASS"}, "axes가 객체가 아님"),
+        "no-portability.md": ({**rejected, "axes": {"plausibility": "FAIL"}}, "portability"),
+        # severity
+        "no-reviewer-severity.md": (
+            {k: v for k, v in confirmed.items() if k != "reviewer_severity"},
+            "reviewer_severity",
+        ),
+        "no-accepted-severity.md": (
+            {k: v for k, v in confirmed.items() if k != "accepted_severity"},
+            "accepted_severity",
+        ),
+        # stability_status는 aggregate 전용 — 값과 무관하게 존재 자체가 위반
+        "agg-status.md": ({**rejected, "stability_status": "stable"}, "aggregate 전용"),
+        "na-status.md": ({**rejected, "stability_status": "N/A"}, "aggregate 전용"),
+        # rejection_basis (FACTUAL 기반이라 evidence_scope가 없어 단일 위반이다)
+        "no-basis.md": (
+            {k: v for k, v in factual.items() if k != "rejection_basis"}, "rejection_basis"
+        ),
+        "basis-on-confirmed.md": (
+            {**confirmed, "rejection_basis": "FACTUAL_FAIL"}, "rejection_basis 출력 금지"
+        ),
+        # evidence_scope
+        "no-scope.md": (
+            {k: v for k, v in rejected.items() if k != "evidence_scope"}, "evidence_scope"
+        ),
+        "bad-scope.md": ({**rejected, "evidence_scope": "SOMETHING_ELSE"}, "evidence_scope"),
         "scope-on-factual.md": (
-            {**valid, "rejection_basis": "FACTUAL_FAIL",
-             "axes": {"portability": "N/A", "plausibility": "N/A"}}, False
+            {**factual, "evidence_scope": "FROZEN_SURFACE"}, "PLAUSIBILITY_FAIL 전용"
         ),
         "scope-on-confirmed.md": (
-            {**confirmed, "evidence_scope": "FROZEN_SURFACE"}, False
+            {**confirmed, "evidence_scope": "FROZEN_SURFACE"}, "PLAUSIBILITY_FAIL 전용"
         ),
     }
-    for name, (payload, expected_ok) in cases.items():
+    for name, (payload, expected_violation) in cases.items():
         path = tmp_path / name
         path.write_text(_verdict_block(payload))
         proc = _run_harness("--validate-only", "--expect-findings", "X-1", str(path))
         report = json.loads(proc.stdout)
+        expected_ok = expected_violation is None
         assert report["ok"] is expected_ok, (name, proc.stderr)
         assert (proc.returncode == 0) is expected_ok, name
+        if expected_violation is not None:
+            # 검증기는 위반 사유를 stderr에 남긴다 — 의도한 invariant가 잡혔는지 확인한다.
+            assert expected_violation in proc.stderr, (name, proc.stderr)
 
 
 def test_manifest_argument_rejects_duplicate_and_empty(tmp_path):

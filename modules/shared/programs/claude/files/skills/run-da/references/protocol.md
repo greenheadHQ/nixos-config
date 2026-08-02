@@ -223,11 +223,16 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 
 실시간 수집 경로에서는 `schema_version`이 정확히 현재 출력 계약 버전(1.1)이어야 한다 — first-pass·N=3 결과는 매번 fresh Arbiter가 이 계약으로 생성하므로, 1.0·버전 누락·미래 버전은 전부 출력 계약 위반이며 아래 fail-closed 전이를 따른다 (구버전 자칭으로 검증을 우회하거나 미지 버전이 현 계약 검사만 받고 통과하는 경로 차단). 하위호환은 지원하지 않으며, 새 계약 버전 도입 시 검증기·문서를 함께 갱신한다.
 
-검증기 실체 해석 (호출 전 필수): 실행 대상은 세션 scope의 전역 helper(`~/.claude/scripts/` 또는 `~/.codex/scripts/`)뿐이다. active changeset 안의 `fleiss-kappa.py`를 실행하지 않는다 — 그 파일은 지금 검증받고 있는 대상이고, for_pr에서는 비신뢰 변경에 포함될 수 있으므로 검증기와 검증 대상의 신뢰 경계가 합쳐진다 (메인 에이전트 권한으로 임의 Python이 실행되거나 검증 결과가 위조된다. capability를 확인하려고 실행하는 것도 같은 위협이다).
+검증기 신뢰 판정 (호출 전 필수): `fleiss-kappa.py`가 전역 경로(`~/.claude/scripts/` 또는 `~/.codex/scripts/`)에 있다는 사실만으로는 안전하지 않다 — 그 경로는 immutable artifact가 아니라 checkout의 파일을 가리키는 out-of-store symlink이고, `nrs-relink`는 이를 현재 worktree로 전환하기도 한다. 따라서 신뢰는 경로가 아니라 "이 검증기가 지금 리뷰 대상인가"로 판정한다.
 
-전역 helper 심링크는 main checkout의 원본을 가리키므로, worktree에서 개발 중인 run-da 문서가 main보다 새로운 CLI·schema 계약을 요구하면 그 인자를 거부한다 (실측: 이 계약 도입 시점의 전역 helper는 `--validate-only`를 `unrecognized arguments`로 거부했다). 이때 조용히 진행하지 않는다 — 첫 호출 전에 필요한 옵션(`--validate-only`·`--expect-findings`)의 지원 여부를 확인하고, 미지원이면 그 사실과 원인(전역 helper가 아직 이 계약을 모른다)을 사용자에게 보고한 뒤 중단한다. 검증 없이 수렴 판정으로 넘어가지 않는다.
+1. 실행할 helper의 최종 실체를 확인한다 (`realpath`로 symlink 체인을 끝까지 따라간다).
+2. 그 파일이 이번 라운드의 frozen changeset에 포함되는지 본다 — branch diff(`git diff --name-only main...HEAD`)에 있거나, workspace에서 dirty·untracked면 포함된 것이다.
+3. 포함되지 않으면 그대로 실행한다 (리뷰 대상이 아니므로 검증기와 검증 대상이 분리되어 있다).
+4. 포함되면 검증기 변경 자체가 리뷰 대상이므로, 그 diff를 사용자에게 보여주고 명시 승인을 받은 뒤에만 실행한다. 승인 없이 실행하지도, 검증을 생략하지도 않는다 — 승인이 없으면 중단한다. 질문 도구 미지원 런타임에서는 승인을 받을 수 없으므로 중단만 가능하다.
 
-예외 (사용자 명시 승인): 지금 리뷰 중인 changeset을 사용자 자신이 작성했고 helper 변경도 그 일부인 경우(스킬 자체를 개발하는 dogfooding), 사용자가 위 위험을 고지받고 명시 승인하면 그 checkout의 helper를 쓸 수 있다. 승인 없이 자동 폴백하지 않으며, 질문 도구 미지원 런타임에서는 이 예외를 적용하지 않고 중단한다.
+4번은 예외 경로가 아니라 검증기 계약을 진화시키는 정상 경로다. 검증기의 CLI·schema를 바꾸는 PR은 그 변경이 배포되기 전이라 어떤 경로의 helper도 새 계약을 모르거나(구버전) 리뷰 대상이거나(신버전) 둘 중 하나다 — 이 구조에서 자동 실행을 허용하면 비신뢰 코드 실행이 되고, 전면 금지하면 계약 진화 자체가 막힌다. 사람이 helper diff를 확인하는 단계를 정상 절차로 두어 양쪽을 모두 피한다.
+
+또한 helper가 필요한 옵션(`--validate-only`·`--expect-findings`)을 지원하는지 첫 호출 전에 확인하고, 미지원이면 그 사실과 원인을 사용자에게 보고한 뒤 중단한다 (실측: 이 계약 도입 시점의 배포된 helper는 `--validate-only`를 `unrecognized arguments`로 거부했다). 검증 없이 수렴 판정으로 넘어가지 않는다.
 
 기계 검증(존재·enum·정합 행렬·manifest)은 공통 검증기 `fleiss-kappa.py --validate-only --expect-findings <ID목록> <result.md>`가 단일 소유한다 — first-pass 결과 수집 시 메인이 Arbiter에 전달했던 finding ID 목록을 manifest로 넘겨 호출하고, N=3 집계 경로는 같은 검증을 내부 적용해 위반 entry를 malformed(→partial_failure/BLOCKED 경로)로 처리한다. `--expect-findings`는 두 경로 모두에서 필수 인자다 — 생략하면 검증기가 인자 오류로 종료하므로 manifest 없는 수집이 성공으로 처리되는 경로는 없다. 검증 규칙 (구현체: `validate_verdict_entry` 단일 진입점):
 
