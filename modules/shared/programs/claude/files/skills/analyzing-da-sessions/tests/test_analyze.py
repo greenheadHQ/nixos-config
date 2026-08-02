@@ -1186,6 +1186,8 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
         "no-confidence.md": ({k: v for k, v in valid.items() if k != "confidence"}, False),
         # 확정/기각 verdict에 confidence=N/A 금지 (NEEDS_MORE_INFO 전용)
         "na-confidence.md": ({**valid, "confidence": "N/A"}, False),
+        # 개별 entry의 stability_status는 N/A만 (aggregate 전용 상태 환각 차단)
+        "agg-status.md": ({**valid, "stability_status": "stable"}, False),
     }
     for name, (payload, expected_ok) in cases.items():
         path = tmp_path / name

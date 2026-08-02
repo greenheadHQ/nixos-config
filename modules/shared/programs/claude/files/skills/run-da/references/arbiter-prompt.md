@@ -344,7 +344,7 @@ for_plan 핵심 원칙:
   "confidence": "HIGH" | "MEDIUM" | "LOW" | "N/A",
   "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
   "accepted_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-  "stability_status": "N/A" | "stable" | "split" | "fragmented",
+  "stability_status": "N/A",
   "axes": {
     "portability": "PASS" | "FAIL" | "N/A",
     "plausibility": "PASS" | "FAIL" | "UNKNOWN" | "N/A"
@@ -366,7 +366,7 @@ NOT_AN_ISSUE 판정에만 `rejection_basis` 필드를 추가한 골격을 사용
   "confidence": "HIGH" | "MEDIUM" | "LOW",
   "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
   "rejection_basis": "FACTUAL_FAIL" | "RELEVANCE_FAIL" | "PLAUSIBILITY_FAIL",
-  "stability_status": "N/A" | "stable" | "split" | "fragmented",
+  "stability_status": "N/A",
   "axes": {
     "portability": "PASS" | "FAIL" | "N/A",
     "plausibility": "FAIL" | "N/A"

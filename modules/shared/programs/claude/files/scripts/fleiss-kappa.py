@@ -98,9 +98,11 @@ def validate_verdict_entry(entry):
         violations.append(
             f"accepted_severity 누락 또는 enum 밖 값: {entry.get('accepted_severity')!r}"
         )
-    if entry.get("stability_status") not in ("N/A", "stable", "split", "fragmented"):
+    if entry.get("stability_status") != "N/A":
+        # stable/split/fragmented는 N=3 aggregate envelope 전용 — 개별 Arbiter
+        # entry가 집계 상태를 환각하면 semantic malformed다 (arbiter-prompt.md).
         violations.append(
-            f"stability_status 누락 또는 enum 밖 값: {entry.get('stability_status')!r}"
+            f"개별 entry의 stability_status는 'N/A'만 허용: {entry.get('stability_status')!r}"
         )
     if isinstance(axes, dict) and axes.get("portability") not in ("PASS", "FAIL", "N/A"):
         violations.append(
@@ -173,7 +175,7 @@ def parse_verdict_json_blocks(markdown_path: Path):
             malformed += 1
             continue
         finding_id = entry.get("finding_id")
-        if not isinstance(finding_id, str) or not finding_id:
+        if not isinstance(finding_id, str) or not re.fullmatch(r"[A-Za-z_]+-[0-9]+", finding_id):
             print(
                 f"warning: VERDICT_JSON without valid finding_id in {markdown_path}",
                 file=sys.stderr,

@@ -244,7 +244,11 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 1. `severity-gate` — `round_max_accepted_severity`가 MEDIUM 이상.
 2. `walkthrough-forced` — walkthrough가 후속 수정 또는 범위 밖 발견을 하나라도 발생시킴 (심각도 분류 없음. walkthrough가 무언가를 발견했다는 사실 자체가 리뷰 표면이 불안정하다는 신호다).
-3. `batch-delta-intensity` — write phase 종료 시 최종 batch delta에 Review Intensity 인라인 체크리스트([`intensity-rules.md`](intensity-rules.md) 8룰)를 classification-only로 재적용한 판정이 SKIP이 아님. Intensity는 검토 범위를 정하는 분류이므로 이 게이트에서는 판정을 다음처럼 소비한다 — `SKIP`: 재검증 불요 신호. `LITE`: 재검증 생략이 아니라 LITE가 선택한 bundle로 경량 재검증 라운드를 실행한다 (검토가 필요하다는 분류를 생략 신호로 뒤집지 않는다). `FULL`(fail-closed rule group 매치·불확실 포함): FULL 재검증. 적용 범위는 [`intensity-procedure.md`](intensity-procedure.md)의 "수렴 게이트용 classification-only 적용"이 정의하며(SKIP 사용자 승인·모드 종료는 수행하지 않는다), 재평가 입력은 이번 라운드 write phase가 만든 batch delta뿐이다 — for_pr은 write phase 시작 전에 기록한 `pre_write_sha` 기준 `git diff --stat <pre_write_sha>..HEAD`(finalize commit 후), for_plan은 이번 batch가 수정한 계획 항목·파일 목록. PR 전체 diff(`main...HEAD`)를 입력으로 쓰면 원 changeset이 FULL인 한 LOW-only 수렴이 영구히 불가능해지므로 금지다. 별도 범위 휴리스틱을 두지 않고 기존 분류기를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다. LOW-only 재검증 생략은 이 재평가가 SKIP인 국소 delta에만 허용된다.
+3. `batch-delta-intensity` — write phase 종료 시 최종 batch delta의 Review Intensity classification-only 재적용 판정이 SKIP이 아님. 세부는 다음으로 분리한다:
+   - 발동 조건: 재적용 판정이 SKIP이 아닐 때 (FULL 판정, fail-closed rule group 매치·불확실 포함). 별도 범위 휴리스틱 없이 기존 분류기([`intensity-rules.md`](intensity-rules.md) 8룰)를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다.
+   - 입력: 이번 라운드 write phase가 만든 batch delta뿐 — for_pr은 write phase 시작 전에 기록한 `pre_write_sha` 기준 `git diff --stat <pre_write_sha>..HEAD`(finalize commit 후), for_plan은 이번 batch가 수정한 계획 항목·파일 목록.
+   - 판정별 전이: `SKIP` = 재검증 불요 신호 (LOW-only 재검증 생략은 재평가가 SKIP인 국소 delta에만 허용). `LITE` = 재검증 생략이 아니라 LITE가 선택한 bundle로 경량 재검증 실행 (검토가 필요하다는 분류를 생략 신호로 뒤집지 않는다). `FULL` = FULL 재검증.
+   - 금지: PR 전체 diff(`main...HEAD`)를 입력으로 쓰는 것 — 원 changeset이 FULL인 한 LOW-only 수렴이 영구히 불가능해진다. SKIP 사용자 승인·모드 종료 수행 — 적용 범위는 [`intensity-procedure.md`](intensity-procedure.md)의 "수렴 게이트용 classification-only 적용"이 정의한다.
 
 재검증 라운드의 review unit 선택은 발동 조건 조합에 따라 다음 라우팅 표를 따른다 (모든 조합을 포괄한다):
 
