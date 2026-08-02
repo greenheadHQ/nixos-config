@@ -34,7 +34,7 @@ Review Intensity의 판정 부분은 호출자와 무관한 순수 계약이다.
 호출자별 입력과 출력 소비:
 
 - 모드 진입 preflight: 입력은 아래 1번이 정의한 기본 입력(for_pr `git diff --stat main...HEAD`, for_plan 계획 요약). 판정값을 받아 "결과 보고"의 SKIP 사용자 승인·조사 발동 게이트·SKIP 시 모드 종료를 수행한다.
-- 수렴 게이트 ([`protocol.md`](protocol.md) revalidation_required의 `batch-delta-intensity`): 입력은 batch delta(for_pr `git diff --stat <pre_write_sha>..HEAD`, for_plan `batch_change_summary` — 수정 항목·파일 목록 + 항목별 변경 유형이며, 위 표의 입력 형태를 batch delta 범위로 좁힌 것이다). 판정값만 소비하고 승인·조사·종료 전이는 수행하지 않는다 — 판정별 소비 규칙(SKIP=재검증 불요, LITE=선택 bundle 경량 재검증, FULL=FULL 재검증)은 protocol.md `batch-delta-intensity` 정의가 정본이다.
+- 수렴 게이트 ([`protocol.md`](protocol.md) revalidation_required의 `batch-delta-intensity`): 입력은 batch delta의 `batch_change_summary`로, 위 표의 입력 형태를 batch delta 범위로 좁힌 것이다 — for_pr은 `git diff --stat <pre_write_sha>..HEAD`와 그 범위 hunk에서 도출한 변경 유형, for_plan은 수정 항목·파일 목록과 항목별 변경 유형이다 (diffstat이나 이름 목록만으로는 룰 매칭에 필요한 의미가 없다). 판정값만 소비하고 승인·조사·종료 전이는 수행하지 않는다 — 판정별 소비 규칙(SKIP=재검증 불요, LITE=선택 bundle 경량 재검증, FULL=FULL 재검증)은 protocol.md `batch-delta-intensity` 정의가 정본이다.
 
 아래 인라인 체크리스트는 이 계약의 처리 단계를 모드 진입 preflight 관점에서 서술한 것이다 — 1~4번이 위 표의 처리에 해당하고, "결과 보고" 이후가 preflight 전용 부수효과다.
 

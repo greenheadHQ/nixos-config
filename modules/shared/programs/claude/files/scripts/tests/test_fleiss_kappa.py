@@ -163,11 +163,10 @@ def test_manifest_argument_rejects_duplicate_and_empty(tmp_path):
     assert "빈 항목" in proc.stderr
 
 
-def test_manifest_is_required_unless_explicitly_opted_out(tmp_path):
+def test_manifest_is_required(tmp_path):
     """--expect-findings 생략은 "검증 없음"이 아니라 인자 오류다.
 
-    옵션이 선택적이면 finding이 누락된 결과도 ok=true로 통과해 조기 수렴으로 샌다.
-    관측 목적의 우회는 --no-manifest 명시적 opt-out으로만 가능하다."""
+    옵션이 선택적이면 finding이 누락된 결과도 ok=true로 통과해 조기 수렴으로 샌다."""
     valid_path = tmp_path / "valid.md"
     valid_path.write_text(_verdict_block(_verdict_payload()))
 
@@ -179,18 +178,6 @@ def test_manifest_is_required_unless_explicitly_opted_out(tmp_path):
         proc = _run_harness(*argv)
         assert proc.returncode == 1, argv
         assert "--expect-findings" in proc.stderr, (argv, proc.stderr)
-
-    # 명시적 opt-out은 통과한다 (관측 전용 경로)
-    proc = _run_harness("--validate-only", "--no-manifest", str(valid_path))
-    assert proc.returncode == 0, proc.stderr
-    assert json.loads(proc.stdout)["ok"] is True
-
-    # 상호 배타 — 둘을 함께 주면 의도가 모순이므로 거부한다
-    proc = _run_harness(
-        "--validate-only", "--no-manifest", "--expect-findings", "X-1", str(valid_path)
-    )
-    assert proc.returncode == 1
-    assert "함께 쓸 수 없다" in proc.stderr
 
 
 def test_validate_only_manifest_catches_missing_and_unknown(tmp_path):

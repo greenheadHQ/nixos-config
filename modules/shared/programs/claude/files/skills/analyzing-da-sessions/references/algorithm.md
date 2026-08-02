@@ -118,7 +118,7 @@ keyword 분모 금지: 본문에 `arbiter` 단어가 있다고 분모에 포함�
 | `perspective` | finding ID 또는 finding block의 관점 |
 | `location_identity` | finding block의 위치 식별자 (`path:line` 등) |
 | `finding_fingerprint` | finding 요약 정규화 텍스트 SHA-256 |
-| `stability_status` | VERDICT_JSON 필드 보존. 개별 Arbiter 출력은 보통 `N/A` |
+| `stability_status` | schema 1.1 개별 VERDICT_JSON에는 이 필드가 없다 (aggregate 전용). analyzer가 누락 시 호환값 `N/A`를 합성해 채운다 |
 | `canonical_verdict_hash` | canonical verdict object hash. verdict 단위 dedupe key 입력 |
 
 aggregate 결과의 `metrics["M-2"]["source_distribution"]` 필드에 source별 추출률을 출력해 low-confidence fallback 비율을 가시화한다.

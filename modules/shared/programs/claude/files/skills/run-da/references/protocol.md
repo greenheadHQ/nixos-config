@@ -57,7 +57,7 @@ stability_status 의미, selective consistency 트리거, `unknown` sentinel 정
 
 ### Arbiter 출력 요건
 
-- 각 finding에 대해 사람용 markdown 블록(verdict, 신뢰도, 판정 기준 평가, stability_status, 근거)과 기계 파싱용 VERDICT_JSON 블록(`accepted_severity`·`axes.plausibility` 포함)을 둘 다 반환한다. 형식은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "출력 형식" 섹션 참조.
+- 각 finding에 대해 사람용 markdown 블록(verdict, 신뢰도, 판정 기준 평가, 심각도 판정, 근거)과 기계 파싱용 VERDICT_JSON 블록(`accepted_severity`·`axes.plausibility` 포함)을 둘 다 반환한다. 형식은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "출력 형식" 섹션 참조.
 - VERDICT_JSON 블록은 selective consistency harness(`fleiss-kappa.py`)가 파싱한다. 사람용 markdown wording이 변해도 JSON 스키마는 유지되어야 한다.
 - NOT_AN_ISSUE 판정에는 직접 확인 + 반증 근거가 필수다 (모드별 상세: [`arbiter-prompt.md`](arbiter-prompt.md) 참조).
 - LOW 신뢰도 NOT_AN_ISSUE는 자동으로 NEEDS_MORE_INFO로 승격된다.
@@ -216,13 +216,15 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 
 실시간 수집 경로에서는 `schema_version`이 정확히 현재 출력 계약 버전(1.1)이어야 한다 — first-pass·N=3 결과는 매번 fresh Arbiter가 이 계약으로 생성하므로, 1.0·버전 누락·미래 버전은 전부 출력 계약 위반이며 아래 fail-closed 전이를 따른다 (구버전 자칭으로 검증을 우회하거나 미지 버전이 현 계약 검사만 받고 통과하는 경로 차단). 하위호환은 지원하지 않으며, 새 계약 버전 도입 시 검증기·문서를 함께 갱신한다.
 
-기계 검증(존재·enum·정합 행렬·manifest)은 공통 검증기 `fleiss-kappa.py --validate-only --expect-findings <ID목록> <result.md>`가 단일 소유한다 — first-pass 결과 수집 시 메인이 Arbiter에 전달했던 finding ID 목록을 manifest로 넘겨 호출하고, N=3 집계 경로는 같은 검증을 내부 적용해 위반 entry를 malformed(→partial_failure/BLOCKED 경로)로 처리한다. `--expect-findings`는 두 경로 모두에서 필수 인자다 — 생략하면 검증기가 인자 오류로 종료하므로 manifest 없는 수집이 성공으로 처리되는 경로는 없다 (관측 전용 `--no-manifest` opt-out은 실시간 수집에 쓰지 않는다). 검증 규칙 (구현체: `validate_verdict_entry` 단일 진입점):
+기계 검증(존재·enum·정합 행렬·manifest)은 공통 검증기 `fleiss-kappa.py --validate-only --expect-findings <ID목록> <result.md>`가 단일 소유한다 — first-pass 결과 수집 시 메인이 Arbiter에 전달했던 finding ID 목록을 manifest로 넘겨 호출하고, N=3 집계 경로는 같은 검증을 내부 적용해 위반 entry를 malformed(→partial_failure/BLOCKED 경로)로 처리한다. `--expect-findings`는 두 경로 모두에서 필수 인자다 — 생략하면 검증기가 인자 오류로 종료하므로 manifest 없는 수집이 성공으로 처리되는 경로는 없다. 검증 규칙 (구현체: `validate_verdict_entry` 단일 진입점):
 
-- schema: 실시간 결과는 `schema_version`이 정확히 `1.1` (그 외 전부 위반).
-- 필수 필드 + enum: `verdict`·`confidence`는 존재+enum 필수이며, 확정/기각 verdict(CONFIRMED_ISSUE·NOT_AN_ISSUE)에는 `confidence=N/A`를 허용하지 않는다 (N/A는 NEEDS_MORE_INFO 전용 — 신뢰도 없는 확정이 LOW-confidence 트리거를 우회하는 것을 차단). `axes`는 객체여야 하고 `axes.plausibility ∈ {PASS, FAIL, UNKNOWN, N/A}`, `axes.portability ∈ {PASS, FAIL, N/A}`, `reviewer_severity ∈ {CRITICAL, HIGH, MEDIUM, LOW}` 필수. `accepted_severity`는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다.
-- verdict 정합 행렬: `CONFIRMED_ISSUE → plausibility PASS 필수` / `NOT_AN_ISSUE → FAIL 또는 N/A` / `NEEDS_MORE_INFO → PASS 또는 UNKNOWN`. 행렬 밖 조합(예: FAIL+CONFIRMED_ISSUE, UNKNOWN+NOT_AN_ISSUE)은 위반이다.
-- 기각 근거 정합: NOT_AN_ISSUE는 `rejection_basis ∈ {FACTUAL_FAIL, RELEVANCE_FAIL, PLAUSIBILITY_FAIL}` 필수. `plausibility=N/A`는 `rejection_basis`가 FACTUAL_FAIL 또는 RELEVANCE_FAIL일 때만 적법하고, PLAUSIBILITY_FAIL이면 `plausibility=FAIL`이어야 한다. NOT_AN_ISSUE가 아닌 verdict에 `rejection_basis`가 있으면 위반이다.
-- 기각 근거 수명주기: `rejection_basis=PLAUSIBILITY_FAIL`은 `evidence_scope ∈ {FROZEN_SURFACE, ENVIRONMENT_WORKLOAD}` 필수 (ledger 영속 eligibility의 기계 판정 근거 — [`dismissal-ledger.md`](dismissal-ledger.md) SSOT). 다른 `rejection_basis`·verdict에 `evidence_scope`가 있으면 위반이다.
+허용 값 목록·정합 행렬 같은 기계 규칙의 정본은 `validate_verdict_entry`의 상수와 분기이며, 본 문서는 각 규칙이 왜 있는지(정책)만 소유한다 — 값을 여기 재서술하면 세 번째 사본이 되어 드리프트가 생긴다 (실제로 반복 발생했다. 문서 골격과 검증기의 정합은 `tests/skill-doc-sync.py`의 verdict json examples 검사가 기계적으로 강제한다):
+
+- schema 버전 고정: 실시간 결과는 현재 계약 버전과 정확히 일치해야 한다. 구버전 자칭으로 검증을 우회하거나 미지 버전이 현 계약 검사만 받고 통과하는 경로를 막는다.
+- 필수 필드와 enum: verdict·신뢰도·심각도·판정 축 값이 모두 존재하고 정의된 값이어야 한다. 확정/기각 verdict에 신뢰도 `N/A`를 허용하지 않는 이유는 신뢰도 없는 확정이 LOW-confidence fail-closed 승격을 우회하기 때문이다. `accepted_severity`는 write set에 들어가는 verdict에만 요구한다 — 기각 항목은 수렴 심각도 집계에 쓰이지 않는다.
+- verdict 정합 행렬: verdict와 Plausibility 평가가 서로 모순되지 않아야 한다 (예: Plausibility FAIL로 기각해 놓고 CONFIRMED로 쓰는 조합). 판정 우선순위가 JSON만으로 재구성되게 만드는 장치다.
+- 기각 근거 정합: 기각에는 어느 축에서 떨어졌는지가 필수이며, 그 값이 Plausibility 평가와 일관돼야 한다. `plausibility=N/A`의 적법성을 JSON 자기완결로 판정하기 위함이다.
+- 기각 근거 수명주기: Plausibility 기각에는 근거가 frozen surface에 의존하는지 환경·워크로드에 의존하는지가 필수다 (ledger 영속 eligibility의 기계 판정 근거 — [`dismissal-ledger.md`](dismissal-ledger.md) SSOT). 다른 기각 근거에는 이 필드를 두지 않는다.
 - 개별 entry 전용 값 경계: `stability_status`는 aggregate envelope 전용 필드다. 개별 entry에 이 필드가 있으면 값과 무관하게 위반이다 — 개별 Arbiter는 이 값을 산출할 수 없으므로 자리표시자를 두지 않고, 소유자를 aggregate 하나로 고정한다.
 - finding manifest 대조: 파일의 유효 finding ID 집합이 `--expect-findings` 목록과 정확히 일치해야 한다 — 누락(전달한 finding에 판정이 없음)·미지 ID 모두 위반이다 (Arbiter 출력에서 finding이 조용히 사라지는 것을 차단. N=3도 이 manifest 기준으로 missing을 판정한다).
 
@@ -248,7 +250,7 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 2. `walkthrough-forced` — walkthrough가 후속 수정 또는 범위 밖 발견을 하나라도 발생시킴 (심각도 분류 없음. walkthrough가 무언가를 발견했다는 사실 자체가 리뷰 표면이 불안정하다는 신호다).
 3. `batch-delta-intensity` — write phase 종료 시 최종 batch delta에 Review Intensity의 classification 계약([`intensity-procedure.md`](intensity-procedure.md)의 순수 판정 계약 — 승인·조사·종료 같은 부수효과 없이 판정값만 산출한다)을 적용한 결과가 SKIP이 아님. 세부는 다음으로 분리한다:
    - 발동 조건: 재적용 판정이 SKIP이 아닐 때 (FULL 판정, fail-closed rule group 매치·불확실 포함). 별도 범위 휴리스틱 없이 기존 분류기([`intensity-rules.md`](intensity-rules.md) 8룰)를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다.
-   - 입력: 이번 라운드 write phase가 만든 batch delta뿐 — for_pr은 write phase 시작 전에 기록한 `pre_write_sha` 기준 `git diff --stat <pre_write_sha>..HEAD`(finalize commit 후), for_plan은 `batch_change_summary` — 이번 batch가 수정한 계획 항목·파일 목록에 항목별 변경 유형([`intensity-rules.md`](intensity-rules.md) 룰 매칭에 필요한 의미 — 보안/모듈·서비스/설정·의존성/인터페이스/문서 등)을 붙인 요약. 대상 이름만 전달하면 분류기가 자유 추론하거나 `RULE-UNCLEAR → FULL`로만 판정할 수 있으므로, write phase의 통합 설계가 이미 아는 변경 유형을 함께 전달한다 (대화 컨텍스트 기반 계획처럼 Git diff가 없는 입력에서도 동일).
+   - 입력: 이번 라운드 write phase가 만든 batch delta의 `batch_change_summary` — 대상 목록과 항목별 변경 유형([`intensity-rules.md`](intensity-rules.md) 룰 매칭에 필요한 의미 — 보안/모듈·서비스/설정·의존성/인터페이스/문서 등)을 함께 담은 요약이며, 모드에 따라 도출 방법만 다르다. for_pr은 write phase 시작 전에 기록한 `pre_write_sha` 기준 `git diff --stat <pre_write_sha>..HEAD`(finalize commit 후)에 더해 그 범위의 실제 hunk에서 변경 유형을 도출한다 ([`intensity-procedure.md`](intensity-procedure.md) "변경 규모 입력 수집"의 도출 규칙을 batch 범위에 적용). for_plan은 이번 batch가 수정한 계획 항목·파일 목록에 같은 유형 정보를 붙인다. 어느 모드든 대상 이름만 전달하면 분류기가 자유 추론하거나 `RULE-UNCLEAR → FULL`로만 판정할 수 있어 수렴 경로가 사실상 닫히므로, write phase의 통합 설계가 이미 아는 변경 유형을 함께 전달한다 (diffstat만으로는 소규모 함수 수정인지 인터페이스·설정 변경인지 구분되지 않고, 대화 컨텍스트 기반 계획에는 Git diff 자체가 없다).
    - 판정별 전이: `SKIP` = 재검증 불요 신호 (LOW-only 재검증 생략은 재평가가 SKIP인 국소 delta에만 허용). `LITE` = 재검증 생략이 아니라 LITE가 선택한 bundle로 경량 재검증 실행 (검토가 필요하다는 분류를 생략 신호로 뒤집지 않는다). `FULL` = FULL 재검증.
    - 금지: ①PR 전체 diff(`main...HEAD`)를 입력으로 쓰는 것 — 원 changeset이 FULL인 한 LOW-only 수렴이 영구히 불가능해진다 ②SKIP 사용자 승인·조사 발동·모드 종료를 수행하는 것 — 이 게이트는 판정값만 소비한다 (호출자별 소비 범위는 intensity-procedure.md의 classification 계약이 정의한다).
 

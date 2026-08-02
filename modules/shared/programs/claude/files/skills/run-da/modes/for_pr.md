@@ -31,18 +31,14 @@
 - diff 수집: `git diff main...HEAD`로 수집해 프롬프트에 직접 포함한다 (exec 우회 패턴). diff가 과도하게 크면 (`git diff main...HEAD | wc -l`로 확인) 기계적 변경(flake.lock, hash 변경 등)을 필터링한 축약 diff를 사용한다 (`git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능).
 - baseline 재수집 규칙: 이후 단계에서 사용자가 workspace 상태를 바꾸는 선택(커밋/stash 후 재개 등)을 하면, 위 미커밋 구현 차단·baseline 기록을 다시 수행해 baseline을 갱신한다 — 이후 모든 대조는 갱신된 baseline 기준이다 (낡은 baseline과의 비교는 정당한 재개 경로를 위반으로 오인한다).
 
-## 공통 절차 (for_plan과 동일)
+## 공통 절차 (for_plan SSOT)
 
-다음은 `for_plan`과 100% 동일하다. 본문은 [`./for_plan.md`](./for_plan.md)를 SSOT로 한다:
+위 delta 표에 적힌 차이를 제외한 모든 단계의 본문은 [`./for_plan.md`](./for_plan.md)가 SSOT다 — 여기서 재요약하지 않는다. for_pr 전용 차이는 delta 표와 위·아래 상세 절 세 곳(Step 1 / Step 6 / Step 8)에서만 소유한다.
 
-- Step 0 본문: Review Intensity 판단 절차 ([`../references/intensity-procedure.md`](../references/intensity-procedure.md)).
-- Step 1 본문 (의사결정 컨텍스트 팩 수집 + dismissal ledger load): 제거·단순화·되돌림·리팩터 또는 왕복 핫스팟이면 [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A를 for_plan Step 1과 동일하게 수행한다 (입력만 계획 대신 `git diff main...HEAD`). 수집한 팩은 Step 2 reviewer·Step 5 Arbiter 프롬프트에 selective propagation으로 주입. `fresh` 반복 세션의 dismissal ledger load는 frozen `git diff main...HEAD` + workspace review surface hash와 exact match할 때만 유효하다.
-- Step 2 본문 (Codex 세션 경로): capability profile에 따른 `spawn_agent`/`wait_agent`(+legacy 한정 `close_agent`) lifecycle과 batch 규칙 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT), conservative wait, fresh modifier, selective propagation.
-- Step 2 본문 (codex exec 경로): 임시 디렉토리, stdout `DA_DIR` 리터럴 재설정, prompt 파일 guard, `cat | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe (Layer 1, [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) role별 명령 표가 SSOT), `&+wait` 금지, Claude Code 병렬 / headless serial foreground 구분, [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 공통 주의(셸 호출 간 변수 유실).
-- Step 3 본문: VIOLATION 처리, 결과 파일 검증, 실패 unit 재실행, `fresh` dismissal ledger exact match suppression.
-- Step 5 (5a~5e): Arbiter 호출, selective consistency trigger 검사, N=3 재판정, vote-shape 집계, 상태 전이 적용. 상태 전이 구조(N/A·stable·split·fragmented 분기, NEEDS_MORE_INFO 사용자 판단 요청, fragmented BLOCKED)는 for_plan과 동일하다. CONFIRMED_ISSUE는 review phase 중 수정하지 않고 pending write queue로만 이동한다.
-- Step 6: write phase 통합 반영 루프(통합 설계→batch 반영→walkthrough→후속 수정 처리→finalize), 새 reviewer 실행 단위, 새 `DA_DIR`. for_pr은 finalize에서 walkthrough CLEAN 후 commit까지 수행하고, 다음 라운드를 새 changeset으로 선언한다 (위 "Step 6 상세: for_pr write phase" 절 참조).
-- Step 7: 수렴 predicate 탈출 조건 ([`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT). 수렴까지 반복은 상한/조기중단/read-write 분리 규칙을 함께 적용한다.
+for_pr에서 입력만 달라지는 공통 단계는 다음 둘뿐이다 (절차 자체는 for_plan과 같다):
+
+- Step 1의 의사결정 컨텍스트 팩 수집: [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A의 입력이 계획 원문 대신 `git diff main...HEAD`다. `fresh` 반복 세션의 dismissal ledger load도 frozen `git diff main...HEAD` + workspace review surface hash와 exact match할 때만 유효하다.
+- Step 0의 Review Intensity 입력: delta 표 참조.
 
 ## Step 6 상세: for_pr write phase
 
@@ -50,17 +46,22 @@ for_plan의 통합 반영 루프에 다음 for_pr 전용 체크포인트를 더�
 
 - pre-write 기록: write phase 시작 시 `git rev-parse HEAD`를 `pre_write_sha`로 기록한다 (protocol.md revalidation `batch-delta-intensity` 조건의 batch delta 입력 기준).
 - `batch_paths` 상태 정의: 아래 체크포인트들이 공유하는 경로 집합이다. 초기값은 통합 설계가 정한 round_write_set의 수정 대상 경로이며, write phase 진행 중 다음 시점에 갱신한다 — ①walkthrough 후속 수정이 새 경로를 만들면 추가 ②formatter/generator가 generated output 경로를 만들면 추가 ③dirty 겹침 게이트에서 사용자가 혼입을 승인한 경로를 합류 ④rename이 포함되면 source와 destination을 둘 다 원소로 갖는다 (finalize의 commit 경로 대조가 rename을 두 경로로 펼친 표현과 비교하기 때문). 이후 stage·commit·commit 대조는 모두 갱신이 끝난 이 집합을 기준으로 수행한다.
-- dirty 겹침 게이트 (통합 설계 시점): `batch_paths`와 Step 1 baseline의 dirty/untracked 경로의 교집합을 검사한다. 겹침이 없어야 finalize의 baseline 대조가 건전하다 (agent 수정 경로는 전부 commit되어 상태 변화로 드러난다). 겹치면 batch 반영을 시작하지 않고 질문 도구로 사용자 판단을 받는다. 선택지별 후속 전이:
-  - 커밋/stash 후 재개: workspace 상태가 바뀌었으므로 "Step 1 상세"의 baseline 재수집 규칙을 적용한다 — 이후 모든 대조는 갱신된 baseline 기준이다.
-  - 혼입 명시 승인 (사용자 hunk가 agent commit에 섞일 위험 고지 후): 승인된 경로 집합을 `batch_paths`에 합류시킨다. finalize의 baseline 불변 대조에서 이 경로들은 제외하며(내용 변화가 승인된 결과다), 사용자 hunk가 commit에 포함된 사실을 round summary에 기록한다.
+- dirty 겹침 게이트 (통합 설계 시점): `batch_paths`와 Step 1 baseline의 dirty/untracked 경로의 교집합을 검사한다. 겹침이 없어야 finalize의 baseline 대조가 건전하다 (agent 수정 경로는 전부 commit되어 상태 변화로 드러난다). 겹치면 batch 반영을 시작하지 않고 질문 도구로 사용자 판단을 받는다. 선택지는 겹친 경로가 baseline에서 staged였는지로 갈린다:
+  - stash 후 재개 (모든 겹침에서 가능): `HEAD`가 그대로이므로 이번 라운드의 frozen changeset이 유지된다. "Step 1 상세"의 baseline 재수집 규칙만 적용하고 라운드를 계속한다.
+  - 커밋 후 재개: `HEAD`가 바뀌므로 이번 라운드가 리뷰한 frozen changeset과 실제 브랜치 상태가 달라진다. baseline만 갱신하고 계속하면 미검토 사용자 commit이 최종 push에 실려 나가고 `pre_write_sha..HEAD` batch delta도 그 commit을 포함하게 된다. 따라서 이 선택지는 현재 라운드를 폐기하고 Step 0부터 다시 시작하는 전이다 — 새 `HEAD` 기준으로 Intensity·diff·컨텍스트 팩·ledger를 다시 freeze하고 review phase부터 수행한 뒤, 새 write phase에서 `pre_write_sha`를 새로 기록한다. 이번 라운드의 pending write queue는 재검토 대상이 되므로 그대로 반영하지 않는다. 폐기된 라운드도 review phase를 이미 소비했으므로 protocol.md "최대 라운드 수"의 라운드 카운트에 포함하고, 폐기 사유를 round summary에 남긴다.
+  - 혼입 명시 승인 (unstaged·untracked 겹침에서만 가능): 사용자 hunk가 agent commit에 섞일 위험을 고지하고 승인받은 뒤 그 경로를 `batch_paths`에 합류시킨다. finalize의 workspace 불변 대조에서 이 경로들은 제외하며(내용 변화가 승인된 결과다), 사용자 hunk가 commit에 포함된 사실을 round summary에 기록한다. staged 겹침에는 이 선택지를 제공하지 않는다 — 승인된 staged hunk는 commit으로 index에서 소비되어 finalize의 staged 보존 확인을 통과할 수 없으므로, staged 겹침은 stash 또는 라운드 재시작으로만 해소한다.
 - 게이트 재적용 (후속 write 전): walkthrough 후속 수정·formatter/generator가 batch 반영 시점에 없던 새 경로를 쓰기 전에, 그 경로를 baseline dirty/untracked 목록과 다시 대조한다 — 초기 게이트만으로는 후속 write가 보호되지 않는다. 겹치면 위 게이트의 선택지별 전이를 동일하게 적용한다.
 - finalize (walkthrough CLEAN 후) — 아래 체크를 순서대로 수행한다:
   1. 최종 diff 확인.
-  2. 신규 경로 stage: `batch_paths` 중 Git이 아직 추적하지 않는 신규 파일·rename destination만 `git add -- <해당 경로>`로 제한적으로 stage한다. path-limited commit은 Git이 이미 아는 경로만 커밋할 수 있으므로, 이 선행 없이는 신규 파일을 만드는 batch(테스트·fixture·generated output)의 commit이 pathspec 오류로 실패한다. 무관한 기존 staged 항목은 건드리지 않는다.
-  3. commit: 메인 에이전트가 single-writer로 `git commit --only -- <batch_paths>` ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의. 경로 한정 커밋은 기존 index의 무관한 staged 사용자 항목을 포함하지도, 건드리지도 않는다 — 전역 index equality를 요구하면 무관한 staged 변경이 finalize를 영구 차단한다).
-  4. commit 경로 대조: 생성된 commit의 경로 집합이 `batch_paths`와 일치하는지 확인한다. 경로 목록은 `git diff-tree --no-commit-id --name-only --no-renames -r HEAD`로 얻는다 — rename detection이 켜진 출력(`git show --name-only`)은 rename을 destination 하나로 접어 source 경로를 숨기므로, batch가 rename을 포함하면 정상 commit도 집합 불일치로 오판된다. `--no-renames`는 rename을 delete+add 두 경로로 펼쳐 `batch_paths`와 같은 표현을 만든다.
-  5. staged 보존 확인: baseline의 기존 staged 상태가 그대로인지 확인한다.
+  2. 신규 경로 stage: `batch_paths` 중 Git이 아직 추적하지 않는 신규 파일·rename destination만 `git --literal-pathspecs add -- <해당 경로>`로 제한적으로 stage한다. path-limited commit은 Git이 이미 아는 경로만 커밋할 수 있으므로, 이 선행 없이는 신규 파일을 만드는 batch(테스트·fixture·generated output)의 commit이 pathspec 오류로 실패한다. 무관한 기존 staged 항목은 건드리지 않는다.
+  3. commit: 메인 에이전트가 single-writer로 `git --literal-pathspecs commit --only -- <batch_paths>` ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의. 경로 한정 커밋은 기존 index의 무관한 staged 사용자 항목을 포함하지도, 건드리지도 않는다 — 전역 index equality를 요구하면 무관한 staged 변경이 finalize를 영구 차단한다).
+  4. commit 경로 대조: 생성된 commit의 경로 집합이 `batch_paths`와 일치하는지 확인한다. 경로 목록은 `git diff-tree --no-commit-id --name-only --no-renames -r -z HEAD`로 얻어 NUL 단위로 비교한다 — rename detection이 켜진 출력(`git show --name-only`)은 rename을 destination 하나로 접어 source 경로를 숨기므로, batch가 rename을 포함하면 정상 commit도 집합 불일치로 오판된다. `--no-renames`는 rename을 delete+add 두 경로로 펼쳐 `batch_paths`와 같은 표현을 만들고, `-z`는 newline이 든 경로가 두 원소로 쪼개지는 것을 막는다.
+
+  5. staged 보존 확인: baseline의 기존 staged 상태가 그대로인지 확인한다 (겹침 게이트가 staged 경로의 혼입 승인을 제공하지 않으므로 예외가 없다).
   6. workspace 불변 대조: `git status --porcelain=v1 -z --untracked-files=all`을 현행 baseline과 비교해 write phase가 만든 새 미커밋 delta가 없는지 확인하고, baseline의 기존 dirty/untracked 경로(혼입 승인 경로 제외)는 저장해둔 diff 내용·hash와 대조해 내용이 변하지 않았는지 확인한다 (porcelain 상태 문자열은 내용 변화를 못 본다). 사용자의 기존 dirty/untracked 파일 자체는 차단 사유가 아니다 — 전역 clean을 요구하면 기존 파일이 finalize를 영구 차단하고, 이를 치우는 것은 hardening 계약 위반이다.
+
+  `--literal-pathspecs`가 stage·commit에 붙는 이유: `--` 뒤의 인자도 여전히 pathspec으로 해석되므로 glob과 `:(exclude)` 같은 magic이 살아 있다. 그런 이름의 파일이 저장소에 실재하고 batch 대상이 되면, exclusion-only pathspec은 "pathspec 없이 호출한 전체 집합에서 제외"로 해석되어 baseline의 무관한 사용자 변경까지 stage·commit된다. 사후 경로 대조는 이미 만들어진 commit을 되돌리지 못하므로 명령 자체에서 리터럴 해석을 강제한다. 각 경로는 개별 argv로 전달한다 (경로 수가 많으면 `--pathspec-from-file`+`--pathspec-file-nul`).
+
 - changeset 선언: 새 changeset(diff/commit range)을 선언하고 변경 범위를 round summary에 기록한다. walkthrough 후속 수정이 uncommitted로 남아 push에서 누락되거나 다음 라운드 preflight를 깨는 것을 구조적으로 방지한다.
 
 ## Step 8 상세: push

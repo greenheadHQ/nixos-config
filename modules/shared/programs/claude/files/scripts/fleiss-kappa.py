@@ -32,11 +32,9 @@ Usage:
     # first-pass caller 검증 (집계 없음 — 파일별 schema/manifest 검사 결과 JSON,
     # 전체 통과 시 exit 0 / 위반 시 exit 1)
     fleiss-kappa.py --validate-only --expect-findings <ID,ID,...> <result.md>
-    # manifest 없는 관측 전용 호출 (실시간 수집 경로에서는 쓰지 않는다)
-    fleiss-kappa.py --no-manifest --offline <arbiter1.md> <arbiter2.md> <arbiter3.md>
 
-`--expect-findings`는 실시간 경로의 필수 인자다 — 생략은 검증 없음이 아니라 인자 오류이며,
-관측 목적의 우회는 `--no-manifest` 명시적 opt-out으로만 가능하다.
+`--expect-findings`는 모든 호출의 필수 인자다 — 생략은 검증 없음이 아니라 인자 오류다.
+manifest 없는 수집이 성공으로 처리되면 finding 누락이 그대로 소비되어 조기 수렴으로 샌다.
 
 Output: JSON on stdout. See main() for schema.
 """
@@ -77,7 +75,7 @@ def validate_verdict_entry(entry):
 
     protocol.md "수렴 판정" caller 검증의 기계 검증 SSOT 구현체 —
     version·필수 필드·모든 enum·verdict 정합 행렬을 이 함수 하나가 검사한다.
-    finding_id의 존재·중복 검사는 parser(parse_verdict_json_blocks) 소관이고,
+    finding_id의 존재·중복 검사는 parser(load_validated_verdict_entries) 소관이고,
     reviewer 원본 finding과의 대조(reviewer_severity 은닉 차단)는 원본을 아는
     caller 몫이며, finding ID manifest는 --expect-findings로 전달된다.
     과거 1.0 산출물 지원은 없다 — 실시간 계약(정확히 1.1)만 검증한다.
@@ -173,16 +171,11 @@ def parse_and_check_manifest(paths, expected_ids):
 
     validate-only와 N=3 집계가 같은 파싱·manifest 대조 결과를 소비하도록
     두 분기의 조립을 여기로 모은다 (동일 계약이 두 제어 흐름에 복제되지 않게 한다).
-    expected_ids가 None이면 manifest 대조를 생략한다 (--no-manifest opt-out 경로).
     """
     parsed = []
     for path in paths:
-        entries, malformed = parse_verdict_json_blocks(path)
-        issues = (
-            manifest_diff_violations(expected_ids, set(entries.keys()))
-            if expected_ids is not None
-            else []
-        )
+        entries, malformed = load_validated_verdict_entries(path)
+        issues = manifest_diff_violations(expected_ids, set(entries.keys()))
         parsed.append({
             "path": path,
             "entries": entries,
@@ -193,22 +186,15 @@ def parse_and_check_manifest(paths, expected_ids):
 
 
 def resolve_expected_ids(args):
-    """--expect-findings / --no-manifest 인자에서 expected_ids를 결정한다.
+    """--expect-findings 인자에서 expected_ids를 결정한다.
 
-    manifest 대조는 실시간 수집 경로의 필수 경계이므로(protocol.md 수렴 판정),
-    옵션 생략은 "검증 없음"이 아니라 인자 오류다. 관측 목적의 manifest 없는
-    호출은 --no-manifest 명시적 opt-out으로만 허용한다.
+    manifest 대조는 모든 수집 경로의 필수 경계이므로(protocol.md 수렴 판정),
+    옵션 생략은 "검증 없음"이 아니라 인자 오류다 — manifest 없는 호출이 성공하면
+    finding 누락이 그대로 소비된다.
     반환: (expected_ids | None, error_message | None).
     """
-    if args.no_manifest:
-        if args.expect_findings is not None:
-            return None, "--expect-findings와 --no-manifest는 함께 쓸 수 없다"
-        return None, None
     if args.expect_findings is None:
-        return None, (
-            "--expect-findings가 필요하다 (실시간 수집의 finding manifest 대조는 필수). "
-            "manifest 없는 관측 전용 호출은 --no-manifest를 명시하라"
-        )
+        return None, "--expect-findings가 필요하다 (finding manifest 대조는 필수)"
     # 빈 문자열("")은 "옵션 미지정"이 아니라 인자 오류다 — truthiness 검사로 조용히
     # manifest 검증을 우회하는 경로(셸 변수 유실 등)를 차단한다.
     raw_ids = [fid.strip() for fid in args.expect_findings.split(",")]
@@ -233,7 +219,7 @@ VERDICT_JSON_PATTERN = re.compile(
 )
 
 
-def parse_verdict_json_blocks(markdown_path: Path):
+def load_validated_verdict_entries(markdown_path: Path):
     """Parse VERDICT_JSON blocks from Arbiter result markdown.
 
     Returns (entries, malformed_count):
@@ -453,14 +439,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--no-manifest",
-        action="store_true",
-        help=(
-            "manifest 대조 없이 실행하는 명시적 opt-out (관측·디버깅 전용). "
-            "실시간 수집 경로에서는 쓰지 않는다 — finding 누락이 검증 성공으로 처리된다"
-        ),
-    )
-    parser.add_argument(
         "--offline",
         action="store_true",
         help=(
@@ -508,15 +486,13 @@ def main():
         for i, entries in enumerate(arbiter_entries)
         if len(entries) == 0
     ]
-    all_finding_ids = set()
     manifest_violations = {}
     for item in parsed:
-        all_finding_ids.update(item["entries"].keys())
         if item["manifest_violations"]:
             manifest_violations[str(item["path"])] = item["manifest_violations"]
-    if expected_ids is not None:
-        # manifest 기준 집계: 세 Arbiter가 모두 같은 finding을 누락해도 missing으로 잡힌다.
-        all_finding_ids = set(expected_ids)
+    # manifest 기준 집계: 세 Arbiter가 모두 같은 finding을 누락해도 missing으로 잡힌다
+    # (관측된 ID의 union을 쓰면 공통 누락이 집합에서 사라져 조용히 통과한다).
+    all_finding_ids = set(expected_ids)
 
     per_finding = []
     missing = {}

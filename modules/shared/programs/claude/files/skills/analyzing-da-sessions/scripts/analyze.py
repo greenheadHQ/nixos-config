@@ -1236,7 +1236,8 @@ def compute_persistence_metrics(sessions: list[dict]) -> dict:
 def resolve_stability_status_from_round_summary(text: str) -> Counter:
     """M-5 v1 source: round summary `selective:` 라인 파싱.
 
-    개별 Arbiter VERDICT_JSON의 `stability_status`는 항상 `N/A`이므로 source 대상 아님.
+    개별 Arbiter VERDICT_JSON에는 `stability_status`가 없으므로(schema 1.1에서 aggregate
+    전용 필드로 고정) source 대상 아님 — 추출 시 누락 기본값 `N/A`를 합성할 뿐이다.
     `fleiss-kappa.py` aggregate envelope 호출은 selective consistency arbiter result 디렉터리를
     session-level에서 직접 추적해야 하는데, 본 Skill의 전체 corpus 스캔 모델에서는 그 경계가
     자연스럽지 않다 — v1은 round summary 패턴만 사용하고, 둘 다 부재 시 unavailable로 보고한다.
