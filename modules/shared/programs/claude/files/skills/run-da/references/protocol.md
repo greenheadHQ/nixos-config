@@ -13,7 +13,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | finding 있음 | (majority verdict) | split | 사용자 판단 대기 (NEEDS_MORE_INFO 경로) | 질문 도구 + vote-shape |
 | finding 있음 | — | fragmented / partial_failure / unknown | BLOCKED — 자동 수정 금지 | 질문 도구 또는 중단 보고 |
 | finding 없음 | — | — | — | ALL CLEAR (수렴 종료의 특수형 — `walkthrough_status=NOT_REQUIRED`) |
-| 이번 라운드 반영 항목 전부 LOW (accepted severity 기준) | CONFIRMED_ISSUE | N/A / stable | write phase 반영 + walkthrough CLEAN 후 재검증 라운드 없이 수렴 종료 (아래 "수렴 판정" 참조) | CONVERGED 보고 |
+| 이번 라운드 반영 항목 전부 LOW (accepted severity 기준) | CONFIRMED_ISSUE | N/A / stable | write phase 반영 후 수렴 predicate 평가 (아래 "수렴 판정"이 SSOT — walkthrough 후속 수정·최종 delta Intensity 재평가에 따라 재검증이 강제될 수 있다) | predicate 충족 시 CONVERGED 보고 |
 
 stability_status 의미, selective consistency 트리거, `unknown` sentinel 정의는 [`stability-measurement.md`](stability-measurement.md) 참조. `partial_failure`는 `fleiss-kappa.py` 출력의 top-level 플래그와 `missing`/`file_level_failures`/`per_file_malformed` 필드로 전달되며 해당 finding은 `per_finding`에 포함되지 않는다 — caller는 이를 finding별 BLOCKED로 매핑한다.
 
@@ -205,20 +205,22 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 ### accepted severity
 
 - accepted severity는 Arbiter 판정을 거친 항목에만 존재한다. 값은 VERDICT_JSON의 `accepted_severity` 필드다 (산출 주체는 Arbiter — 심각도 조정 시 조정값, 아니면 reviewer 원값. [`arbiter-prompt.md`](arbiter-prompt.md) 출력 요건 참조). 메인 에이전트는 집계(최댓값 계산)만 수행한다 — Arbiter 판정 대체가 아니다.
-- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity`의 유효 entry 최댓값을 메인이 계산한다 (fail-closed 보수 집계 — harness는 변경하지 않는다).
+- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity` 중 최종 수용 verdict를 지지하는 entry들의 최댓값을 메인이 계산한다 (기각표의 severity가 재검증 수준을 결정하지 않게 한다. 지지 entry에 값이 없으면 reviewer 원심각도로 fail-closed fallback. harness는 변경하지 않는다).
 - 누락·비정상 값이면 reviewer 원심각도로 fallback하고, 원심각도도 확인할 수 없으면 CRITICAL로 취급한다 (MEDIUM 고정 대체는 CRITICAL의 진행 차단·최우선 처리를 소실시키므로 fail-closed가 아니다). N=3 최댓값 계산에도 이 fallback 값을 포함한다.
 - 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목도 같은 규칙의 값을 가진다.
 - `VerdictRecord`·M-4 등 세션 분석 지표는 변경하지 않는다 — M-4는 종전대로 reviewer 보고 심각도 기반 지표다.
 
 ### VERDICT_JSON 기계값의 caller 검증 (메인 에이전트 의무)
 
-`axes.plausibility`와 `accepted_severity`는 verdict·수렴을 결정하는 값의 기록이므로 누락·오염·의미 불일치가 기각/무재검증 방향으로 샐 수 있다. 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점(first-pass·N=3)에서 다음을 검증한다. 이 검증은 schema_version 1.1 이상의 산출물에 적용한다 — 1.0 레코드(두 필드 도입 전 구 산출물)는 구버전으로 간주하고 semantic malformed로 처리하지 않는다:
+`axes.plausibility`·`accepted_severity`·`reviewer_severity`·`rejection_basis`는 verdict·수렴을 결정하는 값의 기록이므로 누락·오염·의미 불일치가 기각/무재검증 방향으로 샐 수 있다. 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점(first-pass·N=3)에서 다음을 검증한다.
 
-- 존재 + enum: `axes.plausibility ∈ {PASS, FAIL, UNKNOWN, N/A}`.
-- verdict 정합 행렬: `CONFIRMED_ISSUE → PASS 필수` / `NOT_AN_ISSUE → FAIL 또는 N/A` / `NEEDS_MORE_INFO → PASS 또는 UNKNOWN`. 행렬 밖 조합(예: FAIL+CONFIRMED_ISSUE, UNKNOWN+NOT_AN_ISSUE)은 위반이다.
-- `NOT_AN_ISSUE + N/A` 조합은 JSON만으로 적법성을 판정할 수 없다(사실 정확성·변경 연관성은 기계 필드가 아니다) — 자동 수용하지 않고, 사람용 블록에서 사실 정확성 또는 변경 연관성 FAIL과 반증 근거가 실제로 서술됐는지 대조한 뒤에만 수용한다. 대조 실패는 위반이다.
-- `accepted_severity` 의미 일치: 사람용 블록의 심각도 타당성이 PASS면 reviewer 원심각도와 동일해야 하고, FAIL(조정)이면 사람용 블록에 명시된 조정값과 동일해야 한다. 불일치는 위반이다 (JSON만 낮은 값으로 새는 것을 차단 — 이 값이 MEDIUM+ 재검증/LOW 무재검증 종료를 직접 결정하기 때문).
-- 위반 시 fail-closed (모든 런타임 공통 전이): fresh 실행 단위로 1회 재실행하고, 재실행 결과도 위반이면 해당 finding을 BLOCKED(malformed)로 처리한다. 어떤 런타임에서도 의미적 NEEDS_MORE_INFO 승격·headless 자동 CONFIRMED 승격·LITE 트리거 축소 경로에 태우지 않는다 (런타임별 실패 처리와의 동기화는 [`arbiter-scaling.md`](arbiter-scaling.md)의 semantic malformed 전이가 같은 규칙을 명시한다).
+실시간 수집 경로에서는 `schema_version`이 1.1 이상 2.0 미만이어야 한다 — first-pass·N=3 결과는 매번 fresh Arbiter가 현재 출력 계약(1.1)으로 생성하므로, 이 경로의 1.0·버전 누락은 구 산출물이 아니라 출력 계약 위반이며 아래 fail-closed 전이를 따른다 (구버전을 자칭해 검증을 우회하는 경로 차단). 1.0 레코드의 구버전 호환(두 필드 부재를 malformed로 보지 않음)은 과거 세션 로그를 읽는 분석 경로(analyzing-da-sessions)에만 적용된다.
+
+- 존재 + enum: `axes.plausibility ∈ {PASS, FAIL, UNKNOWN, N/A}`, `accepted_severity`·`reviewer_severity ∈ {CRITICAL, HIGH, MEDIUM, LOW}`.
+- verdict 정합 행렬: `CONFIRMED_ISSUE → plausibility PASS 필수` / `NOT_AN_ISSUE → FAIL 또는 N/A` / `NEEDS_MORE_INFO → PASS 또는 UNKNOWN`. 행렬 밖 조합(예: FAIL+CONFIRMED_ISSUE, UNKNOWN+NOT_AN_ISSUE)은 위반이다.
+- 기각 근거 정합: NOT_AN_ISSUE는 `rejection_basis ∈ {FACTUAL_FAIL, RELEVANCE_FAIL, PLAUSIBILITY_FAIL}` 필수. `plausibility=N/A`는 `rejection_basis`가 FACTUAL_FAIL 또는 RELEVANCE_FAIL일 때만 적법하고, PLAUSIBILITY_FAIL이면 `plausibility=FAIL`이어야 한다. NOT_AN_ISSUE가 아닌 verdict에 `rejection_basis`가 있으면 위반이다.
+- `accepted_severity` 정합: `reviewer_severity`와 다르면 심각도 조정이며, 사람용 블록의 심각도 판정 줄에 조정 근거가 서술되어야 한다 (조정 자체는 Arbiter 권한 — 원값이 JSON에 함께 있으므로 하향·상향이 기계적으로 드러난다).
+- 위반 시 fail-closed (모든 런타임 공통 전이): fresh 실행 단위로 1회 재실행하고, 재실행 결과도 위반이면 해당 finding을 BLOCKED(malformed)로 처리한다. 어떤 런타임에서도 의미적 NEEDS_MORE_INFO 승격·headless 자동 CONFIRMED 승격·LITE 트리거 축소 경로에 태우지 않는다 (런타임 실패 처리 문서는 이 전이를 재서술하지 않고 본 섹션을 참조한다 — [`arbiter-scaling.md`](arbiter-scaling.md)의 semantic malformed 절).
 
 ### round outcome 스냅샷 (불변)
 
@@ -234,7 +236,7 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 1. `round_max_accepted_severity`가 MEDIUM 이상.
 2. walkthrough가 후속 수정 또는 범위 밖 발견을 하나라도 발생시킴 (`walkthrough_forced_revalidation` — 심각도 분류 없음. walkthrough가 무언가를 발견했다는 사실 자체가 리뷰 표면이 불안정하다는 신호다).
-3. write phase 종료 시 최종 batch delta에 Review Intensity 인라인 체크리스트([`intensity-rules.md`](intensity-rules.md) 8룰, [`intensity-procedure.md`](intensity-procedure.md) 절차)를 재적용한 판정이 SKIP 또는 LITE가 아님 (FULL 판정, fail-closed rule group 매치·불확실 포함). 별도 범위 휴리스틱을 두지 않고 기존 분류기를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다. LOW-only 재검증 생략은 이 재평가가 SKIP/LITE인 국소 delta에만 허용된다.
+3. write phase 종료 시 최종 batch delta에 Review Intensity 인라인 체크리스트([`intensity-rules.md`](intensity-rules.md) 8룰)를 classification-only로 재적용한 판정이 SKIP 또는 LITE가 아님 (FULL 판정, fail-closed rule group 매치·불확실 포함. 적용 범위는 [`intensity-procedure.md`](intensity-procedure.md)의 "수렴 게이트용 classification-only 적용"이 정의 — SKIP 사용자 승인·모드 종료는 수행하지 않는다). 별도 범위 휴리스틱을 두지 않고 기존 분류기를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다. LOW-only 재검증 생략은 이 재평가가 SKIP/LITE인 국소 delta에만 허용된다.
 
 조건 2 또는 3이 발동한 재검증 라운드는 최초 라운드의 review unit 선택을 재사용하지 않는다 — 조건 3의 Intensity 재평가 판정(범위 밖 발견이 있으면 그 관점 포함)이 다음 라운드의 unit 선택을 결정한다. walkthrough의 범위 밖 발견이 미선택 bundle 관점이면 그 bundle이 선택되도록 반영하되, `fresh` 계약 준수를 위해 발견의 본문·위치는 reviewer 프롬프트에 주입하지 않는다 — bundle 선택에만 사용하고 reviewer는 최종 changeset을 독립 검토한다.
 
@@ -293,9 +295,9 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 - `Needs Info`: `verdict=NEEDS_MORE_INFO` 또는 `stability_status=split` (split는 질문 도구 필수로 분류).
 - `Blocked`: `stability_status=fragmented` 또는 partial_failure. [`stability-measurement.md`](stability-measurement.md) 참조.
 
-`Result` 행 유형 (수렴 predicate 결과에 따라):
+`Result` 행 유형 (수렴 predicate 결과에 따라 — 아래 세 문자열이 canonical 기본형이다):
 - `ALL CLEAR after N rounds` — finding 0건 특수형.
 - `CONVERGED after N rounds (low_without_reviewer_rerun_count: k, walkthrough: clean)` — LOW-only 반영 후 수렴 종료. `low_without_reviewer_rerun_count`는 최종 라운드 `round_write_set`에서 반영된 LOW 항목 수다. `walkthrough: clean`은 독립 reviewer 재검증만 생략했고 자가 walkthrough는 통과했음을 명시한다. finding은 있었지만 전건 기각되어 write phase가 없는 무수정 수렴은 `CONVERGED after N rounds (low_without_reviewer_rerun_count: 0, walkthrough: not_required)`로 표기한다.
 - `EARLY_STOP (unconverged) after N rounds` — 한계효용·비수렴·5회 상한·신규 0건 조기 종료.
 
-LITE 실행 시 모든 `Result` 유형에 `NOT_RUN` 목록을 병기한다 — `ALL SELECTED CLEAR (NOT_RUN: Design, ...)` / `CONVERGED ... (NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.
+LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN: <bundle 목록>)`을 덧붙인다 — `ALL CLEAR after N rounds (NOT_RUN: Design, ...)` / `CONVERGED after N rounds (..., NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.

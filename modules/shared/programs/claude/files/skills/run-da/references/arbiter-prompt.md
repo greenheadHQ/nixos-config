@@ -22,7 +22,7 @@ Codex 세션에서는 native subagent, Claude Code 세션과 headless 세션에�
 
 ### 판정 기준 (Grading Criteria)
 
-각 finding을 아래 기준으로 평가한다. 이 기준 목록(이름·정의)은 본 섹션이 단독 소유자다 — 다른 문서는 목록을 복제하지 않고 anchor link로만 참조한다. verdict를 결정하는 core criteria는 사실 정확성, 변경 연관성, 심각도 타당성, 실행 가능성, 현실적 발생 가능성(Plausibility)이고, Portability는 verdict 결정권 없는 guardrail로 작용한다.
+각 finding을 아래 기준으로 평가한다. 이 기준 목록(이름·정의)은 본 섹션이 단독 소유자다 — 다른 문서는 목록을 복제하지 않고 anchor link로만 참조한다. 기준은 세 계층으로 나뉜다: verdict criteria(verdict를 결정 — 사실 정확성, 변경 연관성, 현실적 발생 가능성(Plausibility)), adjustment criteria(verdict를 뒤집지 않고 조정·보완 — 심각도 타당성, 실행 가능성), guardrail(결정권 없는 보조 — Portability).
 
 | 기준 | 질문 | PASS | FAIL |
 |------|------|------|------|
@@ -146,6 +146,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS — "환경변수 또는 agenix 시크릿으로 대체"는 구체적 수정 방향.
   - 현실적 발생 가능성 (Plausibility): PASS — 노출/유출 threat path 성립 (보호 자산인 토큰 → repo라는 관찰 가능한 노출 지점).
   - Portability / Cross-Environment Drift: N/A — single-file local issue, cross-env 차원과 무관.
+- **심각도 판정**: HIGH — reviewer 원값 유지
 - **근거**: 지적된 파일에 basicauth_password가 평문으로 존재. 이번 diff에서 신규 추가된 줄.
 ```
 
@@ -162,6 +163,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: N/A
   - 현실적 발생 가능성 (Plausibility): N/A — 변경 연관성 FAIL로 verdict가 이미 결정되어 평가 불필요.
   - Portability / Cross-Environment Drift: N/A — 변경 무관이므로 평가 불필요.
+- **심각도 판정**: LOW — reviewer 원값 유지 (변경 무관 기각)
 - **근거**: 해당 줄을 직접 읽어 미사용 alias 존재 확인. 그러나 git diff로 확인한 결과 이번 변경에서 이 파일을 수정하지 않음.
 - **증거**: `git diff main...HEAD -- {파일}` → 빈 출력 (이번 변경 없음)
 ```
@@ -179,6 +181,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS
   - 현실적 발생 가능성 (Plausibility): 판단 불가(UNKNOWN) — 확장 의도에 따라 실존 마찰일 수도, 없어도 무방한 구조일 수도 있음.
   - Portability / Cross-Environment Drift: N/A — 설계 추상화 이슈, cross-env 차원과 무관.
+- **심각도 판정**: MEDIUM — reviewer 원값 유지 (판단 대기 중에도 항상 출력)
 - **근거**: 추상화가 현재 단일 구현만 가지지만, 사용자의 확장 의도를 알 수 없어 YAGNI 여부 판단 불가.
 - **필요 정보**: 이 추상화의 향후 사용 계획이 있는지 사용자 확인 필요.
 ```
@@ -196,6 +199,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS — "sessionPath 대신 profileExtra에서 append" 수정 방향 명확.
   - 현실적 발생 가능성 (Plausibility): PASS — 계획 실행 즉시 일상 셸 환경에서 발생하는 실존 결함.
   - Portability / Cross-Environment Drift: N/A — 단일 host(Home Manager) 내 PATH resolution 이슈, cross-env 차원과 무관.
+- **심각도 판정**: MEDIUM — reviewer 원값 유지
 - **근거**: hm-session-vars.sh에서 실제로 PATH 앞에 prepend되는 것을 확인. 계획대로 실행하면 SDK의 sqlite3이 /usr/bin/sqlite3를 shadow.
 ```
 
@@ -212,6 +216,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: N/A
   - 현실적 발생 가능성 (Plausibility): N/A — 변경 연관성 FAIL로 verdict가 이미 결정되어 평가 불필요.
   - Portability / Cross-Environment Drift: FAIL — 환경 가정(darwin 2대 공통 적용)이 프로젝트 scope에 정당하게 고정되어 있고 기존 패턴과 일치. cross-env drift 아님.
+- **심각도 판정**: MEDIUM — reviewer 원값 유지 (기각)
 - **근거**: hostType 분리는 personal 전용 앱에만 적용되는 패턴. 양쪽 Mac 모두 해당 도구가 설치되어 공통 적용이 맞음.
 - **증거**: 계획 원문에서 "macOS 전용 변경"으로 명시. homebrew.nix:24의 주석 "공통 cask인 이유: 설치도 공통이어야 scope 일치"가 동일 패턴을 뒷받침.
 ```
@@ -231,7 +236,8 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS — `$HOME/.{claude,codex}/skills/set-icons` 파라미터화 등 수정 방향 명확.
   - 현실적 발생 가능성 (Plausibility): PASS — Codex-only 환경·다른 clone은 실제 운영되는 조건이며, 그 조건에서 경로 drift가 실제로 발생.
   - Portability / Cross-Environment Drift: PASS — `modules/shared/programs/codex/default.nix`의 `exposedCodexSkills` / `intentionallyNotExposed` 리스트가 Codex Global skill 노출 정책의 source of truth인데 템플릿은 `~/.claude/`만 가리킴. set-icons는 `intentionallyNotExposed` list 멤버라 `~/.codex/skills/`에 투영되지 않으므로 Codex-only 환경 또는 다른 repo clone에선 `~/.claude/skills/set-icons` 부재 시 경로 drift 발생.
-- **근거**: core invariant(사실 정확성 + 변경 연관성 PASS)로 CONFIRMED. Portability PASS는 cross-env 해석 근거 + 심각도 최소 LOW 확보로 작용.
+- **심각도 판정**: LOW — reviewer 원값 유지
+- **근거**: verdict criteria(사실 정확성 + 변경 연관성 + Plausibility PASS)로 CONFIRMED. Portability PASS는 cross-env 해석 근거 + 심각도 최소 LOW 확보로 작용.
 - **증거 (실재)**: `modules/shared/programs/codex/default.nix`의 `exposedCodexSkills` / `intentionallyNotExposed` 리스트 — 실제 Codex global skill 노출 정책의 source of truth이며 가상 시나리오의 cross-env drift 판정 근거가 된다. 가상 PR diff 자체는 이 example 내부에 가정된 픽션이다.
 ```
 
@@ -248,6 +254,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: N/A
   - 현실적 발생 가능성 (Plausibility): FAIL — "입력이 수 GB면 OOM"은 이론상 시나리오. 이 함수의 입력은 로컬 설정 파일(수 KB 규모)이며, 그 크기의 입력이 생길 현실적 발생 경로가 제시되지 않았다. SECURITY 관점도 아니므로 공격자 유발 경로 검토 대상이 아니다.
   - Portability / Cross-Environment Drift: N/A
+- **심각도 판정**: MEDIUM — reviewer 원값 유지 (Plausibility FAIL 기각)
 - **근거**: 해당 함수의 실제 호출부를 읽어 입력원이 로컬 설정 파일뿐임을 확인.
 - **증거**: 호출부 코드 스니펫 — 입력이 고정 경로 설정 파일로 한정됨.
 ```
@@ -265,6 +272,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: N/A
   - 현실적 발생 가능성 (Plausibility): FAIL — "캐시를 추가하면 좋을 듯"은 실존 결함·마찰이 아니라 없어도 무방한 최적화 제안. 현재 호출 빈도에서 사용자가 실제 겪는 지연·마찰의 증거가 없다.
   - Portability / Cross-Environment Drift: N/A
+- **심각도 판정**: LOW — reviewer 원값 유지 (Plausibility FAIL 기각)
 - **근거**: 호출 빈도와 응답 시간을 확인 — 세션당 1회 호출로 최적화 필요 근거 없음.
 - **증거**: 호출부 코드 스니펫 — 단일 호출 경로.
 ```
@@ -322,7 +330,7 @@ for_plan 핵심 원칙:
 
 ### 기계 파싱용 VERDICT_JSON 블록
 
-사람 읽기용 블록 바로 아래에 fenced JSON을 추가한다. 파서는 이 블록만 참조하므로 사람용 wording 변경에 영향받지 않는다. `<!-- verdict-json:start -->`와 `<!-- verdict-json:end -->` delimiter로 감싼다.
+사람 읽기용 블록 바로 아래에 fenced JSON을 추가한다. 기계 소비자(selective consistency harness와 메인 에이전트의 caller 검증·집계)는 이 블록만 참조하므로 사람용 wording 변경에 영향받지 않는다 — 사람용 블록은 근거 서술과 보고용 표시 계층이다. `<!-- verdict-json:start -->`와 `<!-- verdict-json:end -->` delimiter로 감싼다.
 
 예시 블록은 outer fence 4 backticks로 감싸고 inner JSON fence는 3 backticks로 내부에 둔다 (CommonMark/GitHub fenced-code 중첩 호환):
 
@@ -334,7 +342,9 @@ for_plan 핵심 원칙:
   "finding_id": "{finding ID 원문}",
   "verdict": "CONFIRMED_ISSUE" | "NOT_AN_ISSUE" | "NEEDS_MORE_INFO",
   "confidence": "HIGH" | "MEDIUM" | "LOW" | "N/A",
+  "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
   "accepted_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+  "rejection_basis": "FACTUAL_FAIL" | "RELEVANCE_FAIL" | "PLAUSIBILITY_FAIL",
   "stability_status": "N/A" | "stable" | "split" | "fragmented",
   "axes": {
     "portability": "PASS" | "FAIL" | "N/A",
@@ -358,7 +368,9 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 - `finding_id`: DA reviewer finding의 원본 ID (예: `Correctness-1`, `SECURITY-2`).
 - `verdict`: core verdict enum. guardrail 축 Portability로 verdict를 뒤집지 않는다.
 - `confidence`: NOT_AN_ISSUE/CONFIRMED_ISSUE 시 Arbiter의 판정 신뢰도. `fleiss-kappa.py`는 이 필드를 selective consistency 결과에 보존하여 low-confidence unanimous verdict의 fail-closed 승격을 유지한다.
-- `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 reviewer 원값. 조정 유무와 무관하게 항상 출력한다. 소비 규칙(N=3 최댓값 집계, 누락 시 fallback)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
+- `reviewer_severity`: DA reviewer가 보고한 원심각도. 항상 출력한다 — `accepted_severity`와 함께 있으면 심각도 조정 여부가 JSON만으로 드러난다.
+- `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. 조정 유무와 무관하게 항상 출력한다. 소비 규칙(N=3 지지 entry 최댓값 집계, 누락 시 fallback)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
+- `rejection_basis`: NOT_AN_ISSUE 판정의 기각 근거 축 — `FACTUAL_FAIL`(사실 정확성) / `RELEVANCE_FAIL`(변경 연관성) / `PLAUSIBILITY_FAIL`(현실적 발생 가능성). NOT_AN_ISSUE에서만 출력하며(다른 verdict에는 필드 자체를 넣지 않는다), `plausibility=N/A`의 적법성 검증을 JSON 자기완결로 만든다 ([`protocol.md`](protocol.md) caller 검증).
 - `stability_status`: 개별 Arbiter 자체는 항상 `N/A`로 내보낸다. first-pass/단일 판정은 agreement 정보 없이 독립 판단이므로 이 필드를 채울 수 없다. selective consistency N=3 재판정 이후, `fleiss-kappa.py`가 3개 entry를 집계하여 별도 aggregate envelope의 `stability_status` 필드(`stable`/`split`/`fragmented`)로 산출한다. 즉 이 필드는 개별 VERDICT_JSON에는 `N/A`로 두고, 실제 값은 aggregate 출력에서 확인한다. 자세한 상태 전이는 [references/stability-measurement.md](stability-measurement.md)와 [references/protocol.md](protocol.md) 참조.
 - `axes`: 판정 보조·관측 축의 평가 결과를 담는 맵 — verdict에 대한 결정권은 각 축의 정의를 따른다 (`portability`: 결정권 없는 guardrail / `plausibility`: 판정 우선순위에 참여하는 core criterion의 기록). 값은 사람용 블록의 "기준 평가" 줄과 일치해야 하며, `plausibility`의 caller 검증(정합 행렬·fail-closed 전이)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 축 추가 시 이 맵에 새 키가 더해진다.
 

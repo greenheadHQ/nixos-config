@@ -21,6 +21,10 @@ Review Intensity 판정은 메인 LLM이 인라인으로 8 룰 체크리스트�
 `MAX` modifier는 위 표의 FULL과 다르다. 자동 FULL은 4 reviewer bundle이고,
 modifier `MAX`는 Review Intensity를 건너뛰고 exhaustive 6-domain path로 진입한다.
 
+## 수렴 게이트용 classification-only 적용
+
+[`protocol.md`](protocol.md)의 revalidation_required 조건 3(최종 batch delta 재평가)이 이 절차를 참조할 때는 분류만 수행한다: 아래 인라인 체크리스트의 1(입력 수집)~4(fail-closed) 단계로 SKIP/LITE/FULL 판정값과 표만 산출하고, 5단계의 SKIP 사용자 승인 절차·모드 종료·조사 발동 게이트는 수행하지 않는다 (이 게이트의 소비자는 판정값뿐이며, SKIP 판정은 "재검증 불요" 신호로만 쓰인다).
+
 ## 인라인 체크리스트 절차 (강제)
 
 메인 LLM은 `/run-da` 호출 진입 시, 또는 문서화된 자동 호출자의 preflight gate 진입 시, 다음을 순서대로 수행한다. 자유 추론 금지 — 8 룰 체크리스트를 기계적으로 적용한다.

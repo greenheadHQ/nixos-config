@@ -310,12 +310,9 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 단일 호출 패턴에서의 실패 감지: 위 코드블록은 `exit 1`로 종료하여 셸 호출이 비정상 종료로 보고된다. stdout에 `ARBITER_FAILED:` 접두어가 출력되며, `dir=` 필드에 임시 디렉토리 경로, 이어서 stderr 로그 내용이 포함된다. 메인 에이전트는 셸 호출의 exit code 또는 stdout의 `ARBITER_FAILED:` 접두어로 실패를 감지한다.
 
-### Semantic malformed (plausibility 정합 행렬 위반) — 모든 런타임 공통 전이
+### Semantic malformed (VERDICT_JSON 계약 위반) — 모든 런타임 공통 전이
 
-VERDICT_JSON의 `axes.plausibility` 존재·enum·verdict 정합 행렬 위반과 `accepted_severity`의 사람용 블록 의미 불일치(검증 규칙 SSOT: [`protocol.md`](protocol.md)의 "수렴 판정" caller 검증 — schema 1.1+ 산출물 대상)는 아래 generic 실패 처리·recoverable violation·질문 도구 미지원 자동 전이보다 우선하는 별도 분류다:
-
-- 모든 런타임(first-pass·N=3·headless·LITE)에서 동일하게: fresh 실행 단위로 1회 재실행 → 재실행 결과도 위반이면 해당 finding을 `BLOCKED(malformed)`로 처리한다.
-- 이 분류는 어떤 자동 승격 경로에도 진입하지 않는다 — first-pass의 "NEEDS_MORE_INFO 자동 CONFIRMED_ISSUE 승격"(질문 도구 미지원 대응), N=3의 vote-shape 집계, LITE의 trigger 축소 모두 해당 없음. malformed 판정이 자동 수정 또는 자동 기각으로 뒤집히는 것을 차단하기 위함이다.
+VERDICT_JSON caller 검증 위반(검증 규칙·fail-closed 전이의 SSOT: [`protocol.md`](protocol.md)의 "수렴 판정" caller 검증 — 실시간 수집 경로 schema 1.1+ 강제 포함)은 아래 generic 실패 처리·recoverable violation·질문 도구 미지원 자동 전이보다 우선하는 별도 분류다. 전이 내용(1회 재실행 → 재위반 시 BLOCKED, 모든 자동 승격 경로 진입 금지)은 protocol.md가 정본이며 여기 재서술하지 않는다.
 
 ### Single Arbiter 실패 (first-pass 또는 예외적 확장 단일 Arbiter)
 
@@ -339,7 +336,7 @@ N=3 중 1개 이상이 실패하면 (결과 파일 없음/빈 파일/exit code !
 
 Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아니라, 메인 에이전트가 contract breach 또는 malformed output을 감지했을 때 아래 규칙으로 분류한다.
 
-- `recoverable violation`: 출력 형식 위반, prompt contract 미준수처럼 상태를 바꾸지 않은 위반. 결과를 폐기하고 fresh subagent로 1회 재실행한다. 단 plausibility 정합 행렬 위반은 위 "Semantic malformed" 분류가 우선한다 (재실행 1회 후 재위반 시 BLOCKED — 자동 승격 경로 진입 금지).
+- `recoverable violation`: 출력 형식 위반, prompt contract 미준수처럼 상태를 바꾸지 않은 위반. 결과를 폐기하고 fresh subagent로 1회 재실행한다. 단 VERDICT_JSON caller 검증 위반은 위 "Semantic malformed" 분류가 우선한다 (전이는 [`protocol.md`](protocol.md) caller 검증이 정본).
 - `stateful violation`: tracked write, branch mutation, commit/push, GitHub write, main-agent-only command 실행, host mutation처럼 상태를 바꾼 위반. 라운드 중단·offending thread 중단·회수·정리의 공통 계약은 [`hardening-contract.md`](hardening-contract.md)의 VIOLATION 처리가 정본이며 여기에 재정의하지 않는다 (cancellation·slot 회수 도구 binding은 [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile)).
 - stateful violation은 이번 라운드에서 offending unit이 만든 scratch 산출물과 임시 ref/branch만 정리 대상으로 삼는다. 기존 local tracked/untracked 변경은 자동 정리하지 않는다.
 - 비가역적 외부 side effect가 있었거나 cleanup 범위를 특정할 수 없으면 질문 도구 가능 시 사용자에게 보고하고, 질문 도구 미지원 런타임에서는 자동 `CLEAR` 처리하지 않고 `BLOCKED`로 남긴다. 명시적 rerun 전에는 재개하지 않는다.
@@ -360,7 +357,7 @@ Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아�
 
 ### First-pass single Arbiter 경로 (기존)
 
-- NEEDS_MORE_INFO 항목은 CONFIRMED_ISSUE로 자동 승격한다 (텍스트 보고만으로는 상태 전이가 불가능하므로). 단 plausibility 정합 행렬 위반으로 생긴 semantic malformed는 이 자동 승격 대상이 아니다 — 위 "Semantic malformed" 전이(1회 재실행 → BLOCKED)를 따른다.
+- NEEDS_MORE_INFO 항목은 CONFIRMED_ISSUE로 자동 승격한다 (텍스트 보고만으로는 상태 전이가 불가능하므로). 단 semantic malformed는 이 자동 승격 대상이 아니다 — 위 "Semantic malformed" 분류를 따른다 (전이는 [`protocol.md`](protocol.md) caller 검증이 정본).
 - CONFIRMED_ISSUE는 동일하게 자동 수정한다.
 - SKIP 판정 시 질문 도구 불가 → 자동 LITE 승격 (메인 LLM 인라인 체크리스트의 SKIP 결과도 동일하게 적용).
 - 3회 반복 규칙 도달 시 질문 도구 불가 → 자동 수용 (지적대로 수정).

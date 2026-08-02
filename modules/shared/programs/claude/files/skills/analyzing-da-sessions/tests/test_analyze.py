@@ -1077,7 +1077,8 @@ def test_fleiss_kappa_preserves_additive_verdict_fields(tmp_path):
         "```json\n"
         '{"schema_version": "1.1", "finding_id": "X-1",'
         ' "verdict": "CONFIRMED_ISSUE", "confidence": "HIGH",'
-        ' "accepted_severity": "MEDIUM", "stability_status": "N/A",'
+        ' "reviewer_severity": "MEDIUM", "accepted_severity": "MEDIUM",'
+        ' "stability_status": "N/A",'
         ' "axes": {"portability": "N/A", "plausibility": "PASS"}}\n'
         "```\n"
         "<!-- verdict-json:end -->\n"
@@ -1102,4 +1103,5 @@ def test_fleiss_kappa_preserves_additive_verdict_fields(tmp_path):
     assert len(entries) == 3
     for entry in entries:
         assert entry["accepted_severity"] == "MEDIUM"
+        assert entry["reviewer_severity"] == "MEDIUM"
         assert entry["axes"]["plausibility"] == "PASS"
