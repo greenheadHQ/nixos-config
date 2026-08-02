@@ -1032,3 +1032,74 @@ def test_find_severity_prefers_ahead_across_all_occurrences(analyze_module):
     verdict_offset = text.index("Target-1 — CONFIRMED_ISSUE")
     severity = analyze_module.find_severity_for_finding(text, "Target-1", verdict_offset)
     assert severity == "HIGH"
+
+
+def test_additive_axes_plausibility_reflected_in_canonical_hash(
+    fixtures_dir, analyze_module, tmp_path
+):
+    """VERDICT_JSON additive 필드 중 axes.plausibility가 canonical_verdict_hash에
+    반영되는지 검증한다 (analyzer 경로의 관측 지점 — protocol.md 수렴 판정 계약)."""
+    text, _ = load_fixture_pair(fixtures_dir, "06-claude-contract")
+    assert '\\"plausibility\\":\\"PASS\\"' in text, "fixture must carry plausibility"
+
+    with_field = tmp_path / "with-plausibility.jsonl"
+    with_field.write_text(text)
+    without_field = tmp_path / "without-plausibility.jsonl"
+    without_field.write_text(text.replace(',\\"plausibility\\":\\"PASS\\"', ""))
+
+    result_with = analyze_module.analyze_session(str(with_field))
+    result_without = analyze_module.analyze_session(str(without_field))
+    assert result_with is not None and result_without is not None
+
+    hashes_with = [r["canonical_verdict_hash"] for r in result_with["verdicts"]]
+    hashes_without = [r["canonical_verdict_hash"] for r in result_without["verdicts"]]
+    assert len(hashes_with) == len(hashes_without) == 2
+    for h_with, h_without in zip(hashes_with, hashes_without):
+        assert h_with != h_without, (
+            "plausibility must participate in canonical hash"
+        )
+
+
+def test_fleiss_kappa_preserves_additive_verdict_fields(tmp_path):
+    """selective consistency harness가 aggregate entries에 accepted_severity와
+    axes.plausibility를 그대로 보존하는지 검증한다 (harness 경로의 관측 지점 —
+    analyzer는 accepted_severity를 소비하지 않으므로 이 테스트가 유일한 보존 검증이다)."""
+    import sys
+
+    tests_dir = os.path.dirname(os.path.abspath(__file__))
+    files_root = os.path.dirname(os.path.dirname(os.path.dirname(tests_dir)))
+    harness = os.path.join(files_root, "scripts", "fleiss-kappa.py")
+    assert os.path.isfile(harness), harness
+
+    block = (
+        "### X-1 — CONFIRMED_ISSUE\n\n"
+        "<!-- verdict-json:start -->\n"
+        "```json\n"
+        '{"schema_version": "1.0", "finding_id": "X-1",'
+        ' "verdict": "CONFIRMED_ISSUE", "confidence": "HIGH",'
+        ' "accepted_severity": "MEDIUM", "stability_status": "N/A",'
+        ' "axes": {"portability": "N/A", "plausibility": "PASS"}}\n'
+        "```\n"
+        "<!-- verdict-json:end -->\n"
+    )
+    paths = []
+    for i in range(3):
+        p = tmp_path / f"arbiter-{i + 1}-result.md"
+        p.write_text(block)
+        paths.append(str(p))
+
+    proc = subprocess.run(
+        [sys.executable, harness, *paths],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    aggregate = json.loads(proc.stdout)
+    assert not aggregate.get("partial_failure")
+    per_finding = aggregate["per_finding"]
+    assert len(per_finding) == 1
+    entries = per_finding[0]["entries"]
+    assert len(entries) == 3
+    for entry in entries:
+        assert entry["accepted_severity"] == "MEDIUM"
+        assert entry["axes"]["plausibility"] == "PASS"

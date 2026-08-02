@@ -83,6 +83,9 @@ tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-
 작업이 의도적으로 제거·축소·교체하는 동작은 regression/side-effect가 아니다. 변경 의도(diff가 향하는 방향)와 일치하는 동작 소멸은 위반으로 보고하지 마라. 제거가 의도인지 diff/컨텍스트로 불확실하면 위반으로 단정하지 말고 그 불확실성을 finding에 명시하라.
 반대로, 과거에 의도적으로 내린 결정(방어 로직, 트레이드오프 선택, 기각한 대안)을 그 도입 근거를 모른 채 되돌리는 것은 회귀다(decision regression). 주입된 "의사결정 컨텍스트 팩"과 git read-only 조회(`git log -S`/`blame`/`show`)로 이번 변경이 과거 결정과 충돌하는지 점검하고, 충돌하면 과거 결정의 출처(commit SHA / PR# / issue#)를 finding에 첨부하라(출처 없는 추상적 우려는 기각된다). 줄 수가 많다는 이유만으로 방어 로직을 "군살"로 단정하지 마라. 또한 `mv`/rename/in-place write가 기존 파일의 symlink(다른 레이어가 관리)·mode/권한·owner 속성을 보존하는지 확인하라. 회귀로 판정하기 전 증거 시점 이후의 수정 커밋을 대조하라(시계열 게이트).
 
+실존 결함·마찰만 보고하라. "있으면 좋을" 추가 기능·방어·최적화 제안은 finding이 아니다 (명백한 에러/오류/오타와 사용자가 실제 겪는 UX/DX 마찰은 실존 결함·마찰이다).
+극단적·이론상 입력이나 환경을 가정한 지적은 현실적 발생 경로를 함께 제시하지 못하면 보고하지 마라. 단 SECURITY 관점은 취약점 유형별 threat path(injection/입력 기반, 노출/유출, 인가 결함, 네트워크 표면)가 성립하면 현실적 경로로 본다 — 유형별 성립 조건의 정의와 최종 판정은 Arbiter 소관이므로([`arbiter-prompt.md`](arbiter-prompt.md)의 "SECURITY threat path" 섹션) 성립이 의심되면 유형명을 표기해 보고하라.
+
 다른 bundle({OTHER_BUNDLES})의 우려는 언급하지 마라.
 문제가 없으면 CLEAR를 반환하라.
 

@@ -90,7 +90,7 @@ modifier `MAX`는 Review Intensity를 건너뛰고 exhaustive 6-domain path로 �
    선택 판단 기준: 해당 bundle의 "집중 대상"([`da-domains.md`](da-domains.md))이 이번 변경에 적용되는가.
 4. 선택되지 않은 bundle은 `NOT_RUN`으로 기록한다.
 5. 선택된 bundle만으로 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md)의 절차를 수행한다.
-6. 종료 조건: 선택된 bundle 전부 CLEAR (`NOT_RUN` bundle은 평가 대상 아님).
+6. 종료 조건: 수렴 predicate ([`protocol.md`](protocol.md)의 "수렴 판정" SSOT — `NOT_RUN` bundle은 평가 대상이 아니며, Result 표기에 `NOT_RUN` 목록을 병기한다).
 
 ### LITE 예시
 

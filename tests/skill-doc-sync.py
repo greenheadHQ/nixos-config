@@ -57,6 +57,11 @@ CAPABILITY_CONTRACT_DOCS = (
     ),
 )
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
+ARBITER_PROMPT = _RUN_DA_DIR / "references/arbiter-prompt.md"
+# SECURITY threat path 유형명 — 정의(이름+경로 조건)는 arbiter-prompt.md가 단독
+# 소유하고, da-domains.md는 유형 이름만 나열한다. 유형 추가·개명 시 한쪽만
+# 갱신되는 drift를 차단한다.
+EXPECTED_THREAT_PATH_TYPES = ("injection/입력 기반", "노출/유출", "인가 결함", "네트워크 표면")
 EXPECTED_AGENT_ARGS = {"agent=codex-xhigh", "agent=codex-high", "agent=codex-medium", "agent=claude"}
 FORBIDDEN_MODEL_LITERALS = ("gpt-5", "opus", "sonnet")
 
@@ -370,6 +375,21 @@ def check_bundle_subdomains() -> None:
         raise CheckFailure("\n".join(details))
 
 
+def check_threat_path_types() -> None:
+    """SECURITY threat path 유형명이 arbiter-prompt.md(정의 소유)와
+    da-domains.md(이름 나열)에 모두 존재하는지 검사한다."""
+    details = []
+    for path in (ARBITER_PROMPT, DA_DOMAINS):
+        text = read_text(path)
+        for type_name in EXPECTED_THREAT_PATH_TYPES:
+            if type_name not in text:
+                details.append(f"{path}: threat path 유형명 {type_name!r} 누락")
+    if "SECURITY threat path" not in read_text(ARBITER_PROMPT):
+        details.append(f"{ARBITER_PROMPT}: 'SECURITY threat path' 정의 섹션 누락")
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
 def check_capability_profile() -> None:
     """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
 
@@ -420,6 +440,7 @@ def main() -> int:
         ("agent args", check_agent_args),
         ("no hardcoded model literals", check_no_hardcoded_model_literals),
         ("reviewer bundle subdomains", check_bundle_subdomains),
+        ("threat path types", check_threat_path_types),
         ("capability profile", check_capability_profile),
     )
 

@@ -12,7 +12,8 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | finding 있음 | 임의 | N/A / stable + low_confidence_warning=true | fail-closed 승격 (질문 도구 호출) | 질문 도구 + LOW confidence 이력 |
 | finding 있음 | (majority verdict) | split | 사용자 판단 대기 (NEEDS_MORE_INFO 경로) | 질문 도구 + vote-shape |
 | finding 있음 | — | fragmented / partial_failure / unknown | BLOCKED — 자동 수정 금지 | 질문 도구 또는 중단 보고 |
-| finding 없음 | — | — | — | ALL CLEAR |
+| finding 없음 | — | — | — | ALL CLEAR (수렴 종료의 특수형 — `walkthrough_status=NOT_REQUIRED`) |
+| 이번 라운드 반영 항목 전부 LOW (accepted severity 기준) | CONFIRMED_ISSUE | N/A / stable | write phase 반영 + walkthrough CLEAN 후 재검증 라운드 없이 수렴 종료 (아래 "수렴 판정" 참조) | CONVERGED 보고 |
 
 stability_status 의미, selective consistency 트리거, `unknown` sentinel 정의는 [`stability-measurement.md`](stability-measurement.md) 참조. `partial_failure`는 `fleiss-kappa.py` 출력의 top-level 플래그와 `missing`/`file_level_failures`/`per_file_malformed` 필드로 전달되며 해당 finding은 `per_finding`에 포함되지 않는다 — caller는 이를 finding별 BLOCKED로 매핑한다.
 
@@ -31,7 +32,7 @@ stability_status 의미, selective consistency 트리거, `unknown` sentinel 정
 
 1. DA 에이전트가 findings를 반환한다 (각 finding에 보고용 ID 포함).
 2. findings 개수에 따라 Arbiter 수를 결정한다 ([arbiter-scaling.md](arbiter-scaling.md)).
-3. Arbiter 에이전트가 각 finding을 5가지 기준으로 독립 검증한다 ([arbiter-prompt.md](arbiter-prompt.md)). Portability는 verdict 결정권 없는 guardrail이다.
+3. Arbiter 에이전트가 각 finding을 판정 기준([arbiter-prompt.md](arbiter-prompt.md)의 "판정 기준" 섹션이 기준 목록의 단독 소유자)으로 독립 검증한다. Portability는 verdict 결정권 없는 guardrail이다.
 4. first-pass Arbiter 결과가 selective consistency trigger 조건([stability-measurement.md](stability-measurement.md) 참조)에 매치되면 N=3 재판정을 실행하고 vote-shape로 stability_status를 결정한다. 자세한 상태 전이는 아래 "Selective consistency 상태 전이" 참조.
 5. 메인 에이전트는 사용자에게 전건 보고한다 (vote-shape가 있으면 함께 보고).
 6. CONFIRMED_ISSUE + (stability_status=N/A 또는 stable) 항목을 pending write queue에 추가한다. CRITICAL은 진행 차단 항목으로 표시하되 review phase 중 즉시 patch하지 않는다.
@@ -49,13 +50,14 @@ stability_status 의미, selective consistency 트리거, `unknown` sentinel 정
 - review phase 중 patch 금지: 이 구간에는 active changeset을 바꾸는 patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. check-only formatter나 diff-only generator처럼 파일 변경이 없으면 허용한다. delegated reviewer/Arbiter의 read-only/no-write 경계는 [`hardening-contract.md`](hardening-contract.md)가 정본이다.
 - dismissal ledger 기록: Arbiter 상태 전이와 사용자 전건 보고가 끝난 직후 메인 에이전트가 쓰는 local ignored review metadata다. write phase 산출물이 아니며 pending write queue에 넣지 않는다. ledger write가 tracked diff를 만들면 기록하지 않고 NOTES에 남긴다. 세부 규칙은 [`dismissal-ledger.md`](dismissal-ledger.md)가 정본이다.
 - 일괄 수정: CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목은 pending write queue에 모아 write phase에서 메인 에이전트가 batch로 반영한다. 정상 confirmed finding 반영을 막는 규칙이 아니라 반영 시점을 라운드 밖으로 옮기는 규칙이다.
+- write phase는 통합 반영 루프다: write phase는 "개별 finding 패치의 나열"이 아니라 `통합 설계 → batch 반영 → walkthrough → 후속 수정 처리 → finalize` 순서의 단일 루프로 수행한다. 각 finding을 국소 패치로 덧대면 수용 자체가 만드는 사이드이펙트를 놓친다 — 반영 전 대상 전체를 통독해 finding 간 상호작용과 기존 구조와의 모순을 점검하고, 하나의 통합 변경 설계를 세운 뒤 반영한다. 반영 후에는 수정된 대상을 처음 읽는 사람처럼 순서대로 따라 실행하는 walkthrough 자가 검증을 수행한다. 단계별 상세 절차는 [`../modes/for_plan.md`](../modes/for_plan.md)의 write phase가 정본이다.
 - CRITICAL 기본값: CRITICAL finding만 즉시 중단/수정하는 예외는 기본 절차에 두지 않는다. CRITICAL은 다음 outer round 진입을 차단하고, 현재 round의 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 반영한다.
 - 새 changeset: write phase 후 다음 outer round를 시작하면 "새 changeset" 리뷰로 명시한다. 이전 round의 frozen changeset과 write phase batch delta를 round summary에 기록해 추세 기반 조기 중단의 신규 confirmed finding 계산 기준을 분리한다.
 - audit 모드와의 용어 정합: for_plan/for_pr는 read/write phase를 가진 반복 개선 루프이고, audit 모드는 같은 changeset을 일회성 read-only로 검증하는 감사다. 감사는 "`SAFE`까지" 자동 반복 재발사하지 않는다.
 
 ### Arbiter 출력 요건
 
-- 각 finding에 대해 사람용 markdown 블록(verdict, 신뢰도, 5가지 기준 평가, stability_status, 근거)과 기계 파싱용 VERDICT_JSON 블록을 둘 다 반환한다. 형식은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "출력 형식" 섹션 참조.
+- 각 finding에 대해 사람용 markdown 블록(verdict, 신뢰도, 판정 기준 평가, stability_status, 근거)과 기계 파싱용 VERDICT_JSON 블록(`accepted_severity`·`axes.plausibility` 포함)을 둘 다 반환한다. 형식은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "출력 형식" 섹션 참조.
 - VERDICT_JSON 블록은 selective consistency harness(`fleiss-kappa.py`)가 파싱한다. 사람용 markdown wording이 변해도 JSON 스키마는 유지되어야 한다.
 - NOT_AN_ISSUE 판정에는 직접 확인 + 반증 근거가 필수다 (모드별 상세: [`arbiter-prompt.md`](arbiter-prompt.md) 참조).
 - LOW 신뢰도 NOT_AN_ISSUE는 자동으로 NEEDS_MORE_INFO로 승격된다.
@@ -135,7 +137,7 @@ DA 에이전트가 위반을 지적할 때 반드시 다음 중 하나를 제시
 | 재현 시나리오 | 입력 → 기대 → 실제 | "빈 리스트 입력 시 NPE 발생" |
 | 레퍼런스 | 공식 문서/RFC 링크 | "Nix manual Section 15.1에 따르면..." |
 
-증거 없이 "~할 수도 있다" 수준의 지적은 Arbiter가 NOT_AN_ISSUE(실행 가능성 FAIL)로 판정한다.
+증거 없이 "~할 수도 있다" 수준의 지적은 Arbiter가 NOT_AN_ISSUE(현실적 발생 가능성(Plausibility) FAIL — 현실적 발생 경로 제시 불가)로 판정한다. 실행 가능성(Actionability) FAIL은 "수정 방향 불명"으로 한정되며 기각 사유가 아니다 ([`arbiter-prompt.md`](arbiter-prompt.md) 판정 우선순위 참조).
 
 ### Arbiter 검증 후 수정 의무
 
@@ -162,18 +164,18 @@ Selective consistency 서브런 카운팅: selective consistency의 N=3 재판�
 
 ### 최대 라운드 수
 
-명시적 상한은 5 outer round다. 5회 이후에도 CLEAR에 도달하지 못하면
-사용자에게 현황을 보고하고 계속 진행 여부를 확인한다(자동 무한 진행 금지). selective consistency 서브런은 outer round 카운트에 포함하지 않는다.
+명시적 상한은 5 outer round다. 5회 이후에도 수렴 종료에 도달하지 못하면
+사용자에게 현황을 보고하고 계속 진행 여부를 확인한다(자동 무한 진행 금지). 이때 종료하면 `EARLY_STOP (unconverged)`로 기록한다. selective consistency 서브런은 outer round 카운트에 포함하지 않는다.
 
 라운드 한계효용 판정: 각 outer round 종료 시 직전 outer round 대비 신규 finding 수를 집계한다. 동일성은 3회 반복 규칙과 같은 "세부 관점 + 위치(파일:줄 또는 계획 항목 번호)" 기준을 사용하고, valid dismissal ledger exact match로 suppress된 항목은 새 finding 계산에서 제외한다. 첫 outer round는 비교 대상이 없으므로 전체 finding 수를 신규 finding 수로 기록하되, 연속 저효용 판정은 다음 outer round부터 평가한다.
 
-- 신규 finding 0건: 새 정보가 없으므로 수렴으로 판정하고 루프 종료를 제안한다. 반복되는 동일 지적이 남아 있으면 3회 반복 규칙 또는 기존 사용자 판단 경로로 닫는다.
+- 신규 finding 0건: 새 정보가 없다는 한계효용 신호이므로 루프 종료를 제안한다. 이 경로의 종료는 수렴 predicate 통과가 아니면 `EARLY_STOP (unconverged)`로 기록한다. 반복되는 동일 지적이 남아 있으면 3회 반복 규칙 또는 기존 사용자 판단 경로로 닫는다.
 - 신규 finding 1~2건: 낮은 신규 정보량으로 기록한다. 이 상태가 2 outer round 연속이면, 다음 round를 시작하기 전에 사용자에게 현재 비용 대비 추가 기대효과를 보고하고 계속/종료를 질문 도구로 확인한다.
 - 신규 finding 3건 이상: 한계효용 저하로 보지 않는다. 단 아래 비수렴 추세 또는 5회 상한 조건은 별도로 적용한다.
 
-위 판정은 5회 상한 전의 조기 수렴·한계효용 장치다. 5회 상한은 그대로 유지되며, 5회 이후 CLEAR에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
+위 판정은 5회 상한 전의 조기 중단·한계효용 장치다. 5회 상한은 그대로 유지되며, 5회 이후 수렴 종료에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
 
-비수렴 추세 조기 중단: 신규 confirmed finding(직전 outer round에 없던 confirmed — 동일성은 3회 반복 규칙과 같은 기준) 수가 직전 대비 감소하지 않는 outer round가 2회 연속이면(따라서 최소 outer round 3부터 평가 가능하며, R1·단일 라운드는 미발동), 5회 상한 전이라도 비수렴으로 간주해 즉시 현황을 사용자에게 보고하고 계속 여부를 확인한다. CLEAR까지 반복은 상한/한계효용/비수렴 조기중단/read-write 분리 규칙을 함께 적용한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 수렴하지 않는 경우가 대표 사례다 — 이때는 라운드 중 표면을 계속 다듬어 finding을 닫으려 하기보다 changeset 동결 유지, batch 범위 축소, 또는 변경 범위 축소를 우선 검토한다. "3회 반복 규칙"이 동일 지적의 반복을 잡는다면, 이 규칙은 매 라운드 다른 새 confirmed finding이 끊이지 않는 비수렴을 잡는다.
+비수렴 추세 조기 중단: 신규 confirmed finding(직전 outer round에 없던 confirmed — 동일성은 3회 반복 규칙과 같은 기준) 수가 직전 대비 감소하지 않는 outer round가 2회 연속이면(따라서 최소 outer round 3부터 평가 가능하며, R1·단일 라운드는 미발동), 5회 상한 전이라도 비수렴으로 간주해 즉시 현황을 사용자에게 보고하고 계속 여부를 확인한다. 수렴까지 반복은 상한/한계효용/비수렴 조기중단/read-write 분리 규칙을 함께 적용한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 수렴하지 않는 경우가 대표 사례다 — 이때는 라운드 중 표면을 계속 다듬어 finding을 닫으려 하기보다 changeset 동결 유지, batch 범위 축소, 또는 변경 범위 축소를 우선 검토한다. "3회 반복 규칙"이 동일 지적의 반복을 잡는다면, 이 규칙은 매 라운드 다른 새 confirmed finding이 끊이지 않는 비수렴을 잡는다.
 
 ## 라운드 요약 기록
 
@@ -183,6 +185,7 @@ Selective consistency 서브런 카운팅: selective consistency의 N=3 재판�
 Round N 요약: DA 발견 X건(신규 X'건 — 직전 라운드에 없던 관점+위치) → Arbiter: CONFIRMED Y건(신규 confirmed Y'건), NOT_AN_ISSUE Z건, NEEDS_MORE_INFO W건
 bundle별: Correctness 2건(SECURITY 1, HALLUCINATION 1), Regression CLEAR, ...
 changeset: frozen=<계획 원문/commit range/diff 기준>, write_phase=<수정 파일/계획 항목/diffstat/generated output 유무>, next=<R(N+1) 새 changeset 여부>
+convergence: round_max_accepted_severity=<NONE|LOW|MEDIUM|HIGH|CRITICAL>, revalidation_required=<true|false>, walkthrough=<CLEAN|NOT_REQUIRED>, walkthrough_followups=<후속 수정/범위 밖 발견 건수>
 marginal_utility: new_findings=<X'건>, low_new_streak=<연속 횟수>, decision=<continue|stop_proposed|asked_user|unconverged>
 dismissal_ledger: recorded=<NOT_AN_ISSUE/USER_EXCLUDED 기록 수>, suppressed=<fresh exact match로 새 finding에서 제외한 수>, stale_ignored=<stale ledger로 무시한 수>
 ```
@@ -195,15 +198,62 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 
 `split`/`fragmented`/`partial_failure` 항목은 0이 아닐 때만 나열해도 된다. 위 verdict 카운트(Y/Z/W)에서 `split`은 NEEDS_MORE_INFO로, `fragmented`/`partial_failure`는 BLOCKED로 집계된다. stability_status 정의는 [`stability-measurement.md`](stability-measurement.md) 참조.
 
-## 탈출 조건
+## 수렴 판정 (accepted severity · round outcome 스냅샷 · 수렴 predicate)
 
-다음을 모두 충족하면 DA 루프를 종료한다:
+본 섹션이 DA 루프 종료 판정의 SSOT다. 다른 문서(SKILL.md invariants, mode 문서, main-agent-obligations.md, intensity-procedure.md)는 이 predicate를 링크로만 참조하고 재서술하지 않는다.
 
-1. 선택된 reviewer 모두 CLEAR: 실행된 모든 reviewer bundle 또는 세부 도메인에서 위반 미발견 (`NOT_RUN` 제외).
-2. 미처리 항목 0건: NEEDS_MORE_INFO 상태의 finding이 없다.
-3. NOT_AN_ISSUE/제외 항목 근거 완비: Arbiter가 NOT_AN_ISSUE로 판정하거나 사용자가 제외한 항목에 모두 근거가 있다.
+### accepted severity
 
-위 조건은 정상 ALL CLEAR 탈출이다. 최대 라운드 수 섹션의 신규 0건 수렴, 한계효용 저하, 비수렴 추세, 5회 상한은 CLEAR 전에도 사용자 판단 또는 자동 종료 규칙으로 루프를 멈출 수 있는 조기 종료 경로다.
+- accepted severity는 Arbiter 판정을 거친 항목에만 존재한다. 값은 VERDICT_JSON의 `accepted_severity` 필드다 (산출 주체는 Arbiter — 심각도 조정 시 조정값, 아니면 reviewer 원값. [`arbiter-prompt.md`](arbiter-prompt.md) 출력 요건 참조). 메인 에이전트는 집계(최댓값 계산)만 수행한다 — Arbiter 판정 대체가 아니다.
+- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity`의 유효 entry 최댓값을 메인이 계산한다 (fail-closed 보수 집계 — harness는 변경하지 않는다).
+- 누락·비정상 값이면 reviewer 원심각도로 fallback하고, 원심각도도 확인할 수 없으면 CRITICAL로 취급한다 (MEDIUM 고정 대체는 CRITICAL의 진행 차단·최우선 처리를 소실시키므로 fail-closed가 아니다). N=3 최댓값 계산에도 이 fallback 값을 포함한다.
+- 사용자가 수용한 NEEDS_MORE_INFO/`split` 항목도 같은 규칙의 값을 가진다.
+- `VerdictRecord`·M-4 등 세션 분석 지표는 변경하지 않는다 — M-4는 종전대로 reviewer 보고 심각도 기반 지표다.
+
+### VERDICT_JSON 기계값의 caller 검증 (메인 에이전트 의무)
+
+`axes.plausibility`는 verdict를 결정하는 기준의 기록이므로 누락·오염이 기각 방향으로 샐 수 있다 (누락이 안전 방향(재검증)으로 떨어지는 `accepted_severity`와 비대칭 — 후자는 위 fallback 규칙으로 충분하다). 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점(first-pass·N=3)에서 다음을 검증한다:
+
+- 존재 + enum: `axes.plausibility ∈ {PASS, FAIL, UNKNOWN, N/A}`.
+- verdict 정합 행렬: `CONFIRMED_ISSUE → PASS 필수` / `NOT_AN_ISSUE → FAIL 또는 N/A` / `NEEDS_MORE_INFO → PASS 또는 UNKNOWN`. 행렬 밖 조합(예: FAIL+CONFIRMED_ISSUE, UNKNOWN+NOT_AN_ISSUE)은 위반이다.
+- `NOT_AN_ISSUE + N/A` 조합은 JSON만으로 적법성을 판정할 수 없다(사실 정확성·변경 연관성은 기계 필드가 아니다) — 자동 수용하지 않고, 사람용 블록에서 사실 정확성 또는 변경 연관성 FAIL과 반증 근거가 실제로 서술됐는지 대조한 뒤에만 수용한다. 대조 실패는 위반이다.
+- 위반 시 fail-closed (모든 런타임 공통 전이): fresh 실행 단위로 1회 재실행하고, 재실행 결과도 위반이면 해당 finding을 BLOCKED(malformed)로 처리한다. 어떤 런타임에서도 의미적 NEEDS_MORE_INFO 승격·headless 자동 CONFIRMED 승격·LITE 트리거 축소 경로에 태우지 않는다 (런타임별 실패 처리와의 동기화는 [`arbiter-scaling.md`](arbiter-scaling.md)의 semantic malformed 전이가 같은 규칙을 명시한다).
+
+### round outcome 스냅샷 (불변)
+
+write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시점)에 라운드 결과를 불변 스냅샷으로 고정한다. write phase에서 queue가 소비되어도 이 스냅샷은 불변이며, 수렴 판정과 round summary는 이것만 참조한다:
+
+- `round_write_set`: 이번 라운드에 반영할 항목 (CONFIRMED_ISSUE + 사용자 수용 항목).
+- `round_max_accepted_severity`: round_write_set의 accepted severity 최댓값 (빈 set이면 NONE).
+- `unresolved_count`: 미처리 NEEDS_MORE_INFO/`split`/BLOCKED 수.
+
+### revalidation_required (단일 파생값)
+
+다음 중 하나라도 참이면 `revalidation_required = true` (재검증 라운드 필요):
+
+1. `round_max_accepted_severity`가 MEDIUM 이상.
+2. walkthrough가 후속 수정 또는 범위 밖 발견을 하나라도 발생시킴 (`walkthrough_forced_revalidation` — 심각도 분류 없음. walkthrough가 무언가를 발견했다는 사실 자체가 리뷰 표면이 불안정하다는 신호다).
+3. 통합 반영 설계 또는 최종 batch delta가 여러 소비자가 공유하는 인터페이스의 재구성·구조 변경을 포함 (LOW finding들을 합쳐 넓은 구조 변경을 한 경우 포함 — LOW-only 재검증 생략은 "LOW finding + 국소 delta"에만 허용).
+
+조건 2 또는 3이 발동한 재검증 라운드는 최초 라운드의 review unit 선택을 재사용하지 않는다 — 최종 batch changeset(범위 밖 발견이 있으면 그 관점 포함)을 입력으로 Review Intensity를 재계산한다 (구조 변경은 `RULE-MODULE-SERVICE`로 FULL에 잡히는 것이 정상 경로). walkthrough의 범위 밖 발견이 미선택 bundle 관점이면 그 bundle이 선택되도록 반영하되, `fresh` 계약 준수를 위해 발견의 본문·위치는 reviewer 프롬프트에 주입하지 않는다 — bundle 선택에만 사용하고 reviewer는 최종 changeset을 독립 검토한다.
+
+### walkthrough_status
+
+- `CLEAN`: 마지막으로 실행된 walkthrough pass가 추가 수정 없이 종료.
+- `NOT_REQUIRED`: write phase가 없는 경로 (finding 0건 ALL CLEAR, 빈 diff 즉시 종료).
+
+### 수렴 predicate
+
+다음을 모두 충족하면 DA 루프를 수렴 종료한다:
+
+1. `revalidation_required` = false.
+2. `unresolved_count` = 0.
+3. NOT_AN_ISSUE/사용자 제외 항목 근거 완비: Arbiter가 NOT_AN_ISSUE로 판정하거나 사용자가 제외한 항목에 모두 근거가 있다.
+4. `walkthrough_status` ∈ {CLEAN, NOT_REQUIRED}.
+
+finding 0건 ALL CLEAR는 1·2·3이 자명하고 `walkthrough_status=NOT_REQUIRED`인 특수형이다. 이번 라운드 반영 항목이 전부 LOW인 수렴 종료(CONVERGED)는 독립 reviewer 재검증만 생략하는 것이다 — walkthrough 자가 검증은 수행되며, 이 생략은 의도적 트레이드오프다 (LOW 리스크 + 국소 delta 한정 + 통합 반영 설계 + walkthrough가 품질 보완).
+
+최대 라운드 수 섹션의 한계효용 저하, 비수렴 추세, 5회 상한, 신규 finding 0건은 수렴 전에도 루프를 멈출 수 있는 조기 종료 경로이며, 이 경로의 종료는 CONVERGED가 아니라 `EARLY_STOP (unconverged)`로 기록한다 — "신규 finding 0건"은 한계효용 신호일 뿐 수렴 predicate 통과가 아니다.
 
 ## PR 코멘트 게시 형식
 
@@ -242,5 +292,9 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 - `Needs Info`: `verdict=NEEDS_MORE_INFO` 또는 `stability_status=split` (split는 질문 도구 필수로 분류).
 - `Blocked`: `stability_status=fragmented` 또는 partial_failure. [`stability-measurement.md`](stability-measurement.md) 참조.
 
-LITE 실행 시 `Result` 행은 `ALL SELECTED CLEAR (NOT_RUN: Design, ...)`로 표기하고,
-Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.
+`Result` 행 유형 (수렴 predicate 결과에 따라):
+- `ALL CLEAR after N rounds` — finding 0건 특수형.
+- `CONVERGED after N rounds (low_without_reviewer_rerun_count: k, walkthrough: clean)` — LOW-only 반영 후 수렴 종료. `low_without_reviewer_rerun_count`는 최종 라운드 `round_write_set`에서 반영된 LOW 항목 수다. `walkthrough: clean`은 독립 reviewer 재검증만 생략했고 자가 walkthrough는 통과했음을 명시한다.
+- `EARLY_STOP (unconverged) after N rounds` — 한계효용·비수렴·5회 상한·신규 0건 조기 종료.
+
+LITE 실행 시 모든 `Result` 유형에 `NOT_RUN` 목록을 병기한다 — `ALL SELECTED CLEAR (NOT_RUN: Design, ...)` / `CONVERGED ... (NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.

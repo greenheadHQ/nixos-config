@@ -2,7 +2,7 @@
 
 이 문서가 "새 세션이 과거 의사결정을 모르고 회귀를 재도입"하는 것을 막기 위한 컨텍스트 조사 절차의 단일 진실 원천(SSOT)이다. `run-da`의 reviewer/Arbiter(for_plan/for_pr)와 auditor(audit 모드)가 모두 이 문서를 참조한다.
 
-SSOT 경계 (중복 방지): 본 문서는 절차·소스 계층·세션 로그 방법론의 정본이다. 단 (a) 발동 조건(어떤 변경에 조사를 강제할지)은 [`intensity-rules.md`](intensity-rules.md)의 `GATE-REMOVAL-SIMPLIFY`가, (b) 5기준 기반 verdict 매핑은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정"이 각각 정본이다. 본 문서는 이들 정본을 복제(verbatim 또는 규범적 재서술)하지 않으며, 탐색을 돕는 1줄 요지와 링크만 둔다. 또한 reviewer/auditor에게 주입되는 프롬프트 본문([`da-domains.md`](da-domains.md) 공통 프롬프트 등)은 self-containment를 위해 핵심 지시를 의도적으로 재서술할 수 있다(중복 허용 예외).
+SSOT 경계 (중복 방지): 본 문서는 절차·소스 계층·세션 로그 방법론의 정본이다. 단 (a) 발동 조건(어떤 변경에 조사를 강제할지)은 [`intensity-rules.md`](intensity-rules.md)의 `GATE-REMOVAL-SIMPLIFY`가, (b) 판정 기준 기반 verdict 매핑은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정"이 각각 정본이다. 본 문서는 이들 정본을 복제(verbatim 또는 규범적 재서술)하지 않으며, 탐색을 돕는 1줄 요지와 링크만 둔다. 또한 reviewer/auditor에게 주입되는 프롬프트 본문([`da-domains.md`](da-domains.md) 공통 프롬프트 등)은 self-containment를 위해 핵심 지시를 의도적으로 재서술할 수 있다(중복 허용 예외).
 
 Owner: `run-da` — for_plan/for_pr(reviewer/Arbiter)와 audit 모드(auditor)가 함께 사용한다. (validation-path catalog와 동일한 owner+링크 모델)
 
@@ -95,7 +95,7 @@ degraded 수행 (fan-out 없는 경우): Review Intensity가 SKIP/LITE여서 rev
 
 ### Step D — 회귀 판정 및 처리
 
-회귀가 의심되면 Arbiter가 과거 결정의 근거를 출처(commit SHA / PR# / issue#)와 함께 제시하고, 현재 변경 의도(commit/PR/대화)와 대조한다. 5기준 기반 verdict 매핑(과거 근거를 알고 한 의도적 변경 → 통과, 근거를 모르는 되돌림 → 회귀, 불명확 → 사용자 질문)의 정본은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정" 섹션이다. 사용자 질문 시 [`main-agent-obligations.md`](main-agent-obligations.md)의 5요소 맥락 의무를, 상태 전이는 [`protocol.md`](protocol.md)를 따른다.
+회귀가 의심되면 Arbiter가 과거 결정의 근거를 출처(commit SHA / PR# / issue#)와 함께 제시하고, 현재 변경 의도(commit/PR/대화)와 대조한다. 판정 기준 기반 verdict 매핑(과거 근거를 알고 한 의도적 변경 → 통과, 근거를 모르는 되돌림 → 회귀, 불명확 → 사용자 질문)의 정본은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정" 섹션이다. 사용자 질문 시 [`main-agent-obligations.md`](main-agent-obligations.md)의 5요소 맥락 의무를, 상태 전이는 [`protocol.md`](protocol.md)를 따른다.
 
 이는 [`da-domains.md`](da-domains.md)의 "의도된 제거·축소는 위반이 아니다"의 반대편을 보완한다: 의도된 변경은 통과시키되, 근거를 모르는 되돌림만 잡는다.
 
