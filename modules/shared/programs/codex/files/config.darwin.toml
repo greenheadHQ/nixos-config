@@ -21,6 +21,28 @@ voice_transcription = true
 goals = true
 default_mode_request_user_input = true
 
+# Multi-agent 동시 실행 상한 (codex 0.146.0 기준).
+# `[agents].max_concurrent_threads_per_session`은 primary thread를 제외하고 동시에 열어둘 수
+# 있는 spawned-agent thread 수 상한이다. 16이면 세션 developer 메시지가 광고하는 total slot이
+# 17(root 포함)이 되고, run-da는 그 광고 slot 안에서만 fan-out한다
+# (`run-da/references/runtime-mapping.md`의 capability profile 계약). 미설정 시 기본은 total 4
+# (= child 3)이라 `audit MAX`의 10개 관점이 4회 batch로 쪼개졌다. 16은 그 10개를 한 번에
+# 발사하고 6 slot을 여유로 남긴다.
+# 같은 이름을 top-level에 두면 codex가 미지의 top-level 키로 보고 조용히 무시하므로
+# (top-level은 unknown 키를 거부하지 않는다 — `-c totally_bogus_key=1`도 config.load ok)
+# 반드시 `[agents]` 테이블 아래에 둔다.
+# `agents.max_threads`는 같은 필드의 legacy alias다. 병기하면 codex가 startup warning
+# "Ignoring malformed agent role definition: duplicate field ..."를 내므로 병기 금지.
+# `[features].multi_agent_v2`를 켜도 이 값은 그대로 반영된다 (0.146.0 CLI 실측: v2 ON + 이 키
+# 16 → 17 slot). 단 features.multi_agent_v2.max_concurrent_threads_per_session은 root를 포함한
+# total 기준이라 같은 16이 17이 아닌 16 slot이 되므로, 기준이 다른 두 키를 병기하지 않는다.
+# 재검증: codex debug prompt-input 'probe' \
+#           | jq -r '[.[]|select(.role=="developer")|([.content[]?.text//empty]|join("\n"))]|join("\n")' \
+#           | grep -Eo 'There are [0-9]+ available concurrency slots'
+#         → "There are 17 available concurrency slots"면 반영된 것이다.
+[agents]
+max_concurrent_threads_per_session = 16
+
 # Codex 0.124+ stable hooks (issue #585 / epic #584).
 # hooks는 PR openai/codex#19012로 default-enabled가 되어 `[features].hooks`로 노출되며
 # 명시 활성화 불필요. 강제 활성화가 필요하면 `[features].hooks = true`.
