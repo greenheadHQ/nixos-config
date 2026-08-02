@@ -15,7 +15,7 @@
 ## [reviewer bundle] 문제 발견: [count]건
 
 ### 1. [문제 제목]
-- **ID**: {BUNDLE}-{순번} (예: `Correctness-1`. 치환 규칙은 "공통 프롬프트 구조" 섹션 경고 블록 참조)
+- **ID**: {PREFIX}-{순번} (아래 "finding ID 문법" 참조. 치환 규칙은 "공통 프롬프트 구조" 섹션 경고 블록 참조)
 - **세부 관점**: {SUBDOMAIN}
 - **위치**: [파일:줄] 또는 [계획 항목 번호]
 - **문제**: 구체적 문제 기술
@@ -91,6 +91,15 @@ tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-
 
 [공통 출력 형식에 따라 결과를 반환하라]
 ```
+
+## finding ID 문법
+
+finding ID 문법의 정본이다 — 소비 문서와 검증기는 여기를 참조하고 정규식 사본을 두지 않는다.
+
+- 형식: `{PREFIX}-{순번}` (순번은 각 reviewer 결과 안에서 1부터, 중복 없이).
+- `{PREFIX}` namespace는 실행 경로에 따라 다르며 둘 다 적법하다: 기본 bundle fan-out은 bundle 이름(`Correctness-1`, `Design-2`), exhaustive override(`MAX`)는 세부 관점 이름(`SECURITY-2`, `CLEAN_CODE-1`).
+- 허용 문자: prefix는 영문자와 `_`, 순번은 숫자 (정규식 `[A-Za-z_]+-[0-9]+`). 이 제약의 목적은 namespace 검증이 아니라 shell-safe 보장이다 — reviewer가 만든 ID는 비신뢰 입력인데 이후 `--expect-findings` 셸 인자로 전달된다.
+- 검증기 구현은 `fleiss-kappa.py`의 `SAFE_FINDING_ID_PATTERN` 상수다. 문법을 바꾸면 이 절과 그 상수를 함께 갱신한다 (manual sync contract).
 
 ## 기본 reviewer bundle 정의
 
