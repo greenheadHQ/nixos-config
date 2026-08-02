@@ -5,7 +5,7 @@ v1 정책: selective consistency가 발동한 finding에 대해 **N=3 독립 Arb
 vote-shape(3:0 / 2:1 / 1:1:1)와 stability_status(stable / split / fragmented)를 계산한다.
 입력 파일이 정확히 3개가 아니면 vote-shape는 "unknown"으로 분류되어 v1 정책 범위 밖이다.
 
-Each file must contain VERDICT_JSON blocks (schema_version=1.0) with per-finding verdicts
+Each file must contain VERDICT_JSON blocks (schema_version major 1) with per-finding verdicts
 as defined in arbiter-prompt.md "출력 형식" section.
 
 With --offline flag, also compute corpus-level Fleiss' kappa across findings

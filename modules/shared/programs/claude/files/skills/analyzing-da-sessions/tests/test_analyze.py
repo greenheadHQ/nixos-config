@@ -1075,7 +1075,7 @@ def test_fleiss_kappa_preserves_additive_verdict_fields(tmp_path):
         "### X-1 — CONFIRMED_ISSUE\n\n"
         "<!-- verdict-json:start -->\n"
         "```json\n"
-        '{"schema_version": "1.0", "finding_id": "X-1",'
+        '{"schema_version": "1.1", "finding_id": "X-1",'
         ' "verdict": "CONFIRMED_ISSUE", "confidence": "HIGH",'
         ' "accepted_severity": "MEDIUM", "stability_status": "N/A",'
         ' "axes": {"portability": "N/A", "plausibility": "PASS"}}\n'

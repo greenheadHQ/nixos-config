@@ -312,7 +312,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 ### Semantic malformed (plausibility 정합 행렬 위반) — 모든 런타임 공통 전이
 
-VERDICT_JSON의 `axes.plausibility` 존재·enum·verdict 정합 행렬 위반(검증 규칙 SSOT: [`protocol.md`](protocol.md)의 "수렴 판정" caller 검증)은 아래 generic 실패 처리·recoverable violation·질문 도구 미지원 자동 전이보다 우선하는 별도 분류다:
+VERDICT_JSON의 `axes.plausibility` 존재·enum·verdict 정합 행렬 위반과 `accepted_severity`의 사람용 블록 의미 불일치(검증 규칙 SSOT: [`protocol.md`](protocol.md)의 "수렴 판정" caller 검증 — schema 1.1+ 산출물 대상)는 아래 generic 실패 처리·recoverable violation·질문 도구 미지원 자동 전이보다 우선하는 별도 분류다:
 
 - 모든 런타임(first-pass·N=3·headless·LITE)에서 동일하게: fresh 실행 단위로 1회 재실행 → 재실행 결과도 위반이면 해당 finding을 `BLOCKED(malformed)`로 처리한다.
 - 이 분류는 어떤 자동 승격 경로에도 진입하지 않는다 — first-pass의 "NEEDS_MORE_INFO 자동 CONFIRMED_ISSUE 승격"(질문 도구 미지원 대응), N=3의 vote-shape 집계, LITE의 trigger 축소 모두 해당 없음. malformed 판정이 자동 수정 또는 자동 기각으로 뒤집히는 것을 차단하기 위함이다.

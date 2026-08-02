@@ -212,11 +212,12 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 
 ### VERDICT_JSON 기계값의 caller 검증 (메인 에이전트 의무)
 
-`axes.plausibility`는 verdict를 결정하는 기준의 기록이므로 누락·오염이 기각 방향으로 샐 수 있다 (누락이 안전 방향(재검증)으로 떨어지는 `accepted_severity`와 비대칭 — 후자는 위 fallback 규칙으로 충분하다). 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점(first-pass·N=3)에서 다음을 검증한다:
+`axes.plausibility`와 `accepted_severity`는 verdict·수렴을 결정하는 값의 기록이므로 누락·오염·의미 불일치가 기각/무재검증 방향으로 샐 수 있다. 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점(first-pass·N=3)에서 다음을 검증한다. 이 검증은 schema_version 1.1 이상의 산출물에 적용한다 — 1.0 레코드(두 필드 도입 전 구 산출물)는 구버전으로 간주하고 semantic malformed로 처리하지 않는다:
 
 - 존재 + enum: `axes.plausibility ∈ {PASS, FAIL, UNKNOWN, N/A}`.
 - verdict 정합 행렬: `CONFIRMED_ISSUE → PASS 필수` / `NOT_AN_ISSUE → FAIL 또는 N/A` / `NEEDS_MORE_INFO → PASS 또는 UNKNOWN`. 행렬 밖 조합(예: FAIL+CONFIRMED_ISSUE, UNKNOWN+NOT_AN_ISSUE)은 위반이다.
 - `NOT_AN_ISSUE + N/A` 조합은 JSON만으로 적법성을 판정할 수 없다(사실 정확성·변경 연관성은 기계 필드가 아니다) — 자동 수용하지 않고, 사람용 블록에서 사실 정확성 또는 변경 연관성 FAIL과 반증 근거가 실제로 서술됐는지 대조한 뒤에만 수용한다. 대조 실패는 위반이다.
+- `accepted_severity` 의미 일치: 사람용 블록의 심각도 타당성이 PASS면 reviewer 원심각도와 동일해야 하고, FAIL(조정)이면 사람용 블록에 명시된 조정값과 동일해야 한다. 불일치는 위반이다 (JSON만 낮은 값으로 새는 것을 차단 — 이 값이 MEDIUM+ 재검증/LOW 무재검증 종료를 직접 결정하기 때문).
 - 위반 시 fail-closed (모든 런타임 공통 전이): fresh 실행 단위로 1회 재실행하고, 재실행 결과도 위반이면 해당 finding을 BLOCKED(malformed)로 처리한다. 어떤 런타임에서도 의미적 NEEDS_MORE_INFO 승격·headless 자동 CONFIRMED 승격·LITE 트리거 축소 경로에 태우지 않는다 (런타임별 실패 처리와의 동기화는 [`arbiter-scaling.md`](arbiter-scaling.md)의 semantic malformed 전이가 같은 규칙을 명시한다).
 
 ### round outcome 스냅샷 (불변)
@@ -233,9 +234,9 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 1. `round_max_accepted_severity`가 MEDIUM 이상.
 2. walkthrough가 후속 수정 또는 범위 밖 발견을 하나라도 발생시킴 (`walkthrough_forced_revalidation` — 심각도 분류 없음. walkthrough가 무언가를 발견했다는 사실 자체가 리뷰 표면이 불안정하다는 신호다).
-3. 통합 반영 설계 또는 최종 batch delta가 여러 소비자가 공유하는 인터페이스의 재구성·구조 변경을 포함 (LOW finding들을 합쳐 넓은 구조 변경을 한 경우 포함 — LOW-only 재검증 생략은 "LOW finding + 국소 delta"에만 허용).
+3. write phase 종료 시 최종 batch delta에 Review Intensity 인라인 체크리스트([`intensity-rules.md`](intensity-rules.md) 8룰, [`intensity-procedure.md`](intensity-procedure.md) 절차)를 재적용한 판정이 SKIP 또는 LITE가 아님 (FULL 판정, fail-closed rule group 매치·불확실 포함). 별도 범위 휴리스틱을 두지 않고 기존 분류기를 단일 경계로 재사용한다 — LOW finding을 고치면서 보안·설정·의존성·인터페이스를 건드리면 `RULE-SECURITY`/`RULE-CONFIG-DEPENDENCY`/`RULE-MODULE-SERVICE`가 severity와 무관하게 재검증을 강제한다. LOW-only 재검증 생략은 이 재평가가 SKIP/LITE인 국소 delta에만 허용된다.
 
-조건 2 또는 3이 발동한 재검증 라운드는 최초 라운드의 review unit 선택을 재사용하지 않는다 — 최종 batch changeset(범위 밖 발견이 있으면 그 관점 포함)을 입력으로 Review Intensity를 재계산한다 (구조 변경은 `RULE-MODULE-SERVICE`로 FULL에 잡히는 것이 정상 경로). walkthrough의 범위 밖 발견이 미선택 bundle 관점이면 그 bundle이 선택되도록 반영하되, `fresh` 계약 준수를 위해 발견의 본문·위치는 reviewer 프롬프트에 주입하지 않는다 — bundle 선택에만 사용하고 reviewer는 최종 changeset을 독립 검토한다.
+조건 2 또는 3이 발동한 재검증 라운드는 최초 라운드의 review unit 선택을 재사용하지 않는다 — 조건 3의 Intensity 재평가 판정(범위 밖 발견이 있으면 그 관점 포함)이 다음 라운드의 unit 선택을 결정한다. walkthrough의 범위 밖 발견이 미선택 bundle 관점이면 그 bundle이 선택되도록 반영하되, `fresh` 계약 준수를 위해 발견의 본문·위치는 reviewer 프롬프트에 주입하지 않는다 — bundle 선택에만 사용하고 reviewer는 최종 changeset을 독립 검토한다.
 
 ### walkthrough_status
 
@@ -294,7 +295,7 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 
 `Result` 행 유형 (수렴 predicate 결과에 따라):
 - `ALL CLEAR after N rounds` — finding 0건 특수형.
-- `CONVERGED after N rounds (low_without_reviewer_rerun_count: k, walkthrough: clean)` — LOW-only 반영 후 수렴 종료. `low_without_reviewer_rerun_count`는 최종 라운드 `round_write_set`에서 반영된 LOW 항목 수다. `walkthrough: clean`은 독립 reviewer 재검증만 생략했고 자가 walkthrough는 통과했음을 명시한다.
+- `CONVERGED after N rounds (low_without_reviewer_rerun_count: k, walkthrough: clean)` — LOW-only 반영 후 수렴 종료. `low_without_reviewer_rerun_count`는 최종 라운드 `round_write_set`에서 반영된 LOW 항목 수다. `walkthrough: clean`은 독립 reviewer 재검증만 생략했고 자가 walkthrough는 통과했음을 명시한다. finding은 있었지만 전건 기각되어 write phase가 없는 무수정 수렴은 `CONVERGED after N rounds (low_without_reviewer_rerun_count: 0, walkthrough: not_required)`로 표기한다.
 - `EARLY_STOP (unconverged) after N rounds` — 한계효용·비수렴·5회 상한·신규 0건 조기 종료.
 
 LITE 실행 시 모든 `Result` 유형에 `NOT_RUN` 목록을 병기한다 — `ALL SELECTED CLEAR (NOT_RUN: Design, ...)` / `CONVERGED ... (NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.

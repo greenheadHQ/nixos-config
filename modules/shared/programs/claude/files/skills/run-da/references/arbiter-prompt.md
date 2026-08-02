@@ -315,6 +315,7 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): PASS / FAIL / 판단 불가(UNKNOWN) / N/A
   - Portability / Cross-Environment Drift: PASS / FAIL / N/A
 - **stability_status**: N/A / stable / split / fragmented (selective consistency 실행 시만 non-N/A)
+- **심각도 판정**: {accepted_severity} — 심각도 타당성 PASS면 reviewer 원값 그대로, FAIL이면 "원값 X → 조정 Y"와 조정 근거를 명시 (VERDICT_JSON `accepted_severity`와 일치해야 하며, caller가 이 줄과 대조 검증한다)
 - **근거**: 직접 확인 결과 + 기술적 판단 (for_pr: 파일:줄 / for_plan: 관련 파일 또는 계획 원문)
 - **증거**: (NOT_AN_ISSUE의 경우 필수) for_pr: 반증 코드 스니펫 / for_plan: 반증 근거 (관련 파일 내용 또는 계획 원문 인용)
 ```
@@ -329,7 +330,7 @@ for_plan 핵심 원칙:
 <!-- verdict-json:start -->
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "finding_id": "{finding ID 원문}",
   "verdict": "CONFIRMED_ISSUE" | "NOT_AN_ISSUE" | "NEEDS_MORE_INFO",
   "confidence": "HIGH" | "MEDIUM" | "LOW" | "N/A",
@@ -353,7 +354,7 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 형식 fixture가 둘 다 통과해야 한다.
 
 필드 의미:
-- `schema_version`: VERDICT_JSON 스키마 버전. additive 필드 추가는 기존 버전 내 호환, breaking 변경 시 major 증가. 현재 `1.0` (`accepted_severity`·`axes.plausibility`는 additive).
+- `schema_version`: VERDICT_JSON 스키마 버전. 순수 additive 필드 추가는 기존 버전 내 호환, caller 검증 대상(사실상 필수) 필드 추가는 minor 증가, breaking 변경 시 major 증가. 현재 `1.1` — `accepted_severity`·`axes.plausibility`가 caller 검증 대상으로 추가됐다. `1.0` 레코드(구 산출물)는 두 필드 부재를 semantic malformed로 처리하지 않는다 ([`protocol.md`](protocol.md) caller 검증의 version 조건).
 - `finding_id`: DA reviewer finding의 원본 ID (예: `Correctness-1`, `SECURITY-2`).
 - `verdict`: core verdict enum. guardrail 축 Portability로 verdict를 뒤집지 않는다.
 - `confidence`: NOT_AN_ISSUE/CONFIRMED_ISSUE 시 Arbiter의 판정 신뢰도. `fleiss-kappa.py`는 이 필드를 selective consistency 결과에 보존하여 low-confidence unanimous verdict의 fail-closed 승격을 유지한다.
