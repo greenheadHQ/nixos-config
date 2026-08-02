@@ -1034,8 +1034,8 @@ def test_find_severity_prefers_ahead_across_all_occurrences(analyze_module):
     assert severity == "HIGH"
 
 
-def _strip_verdict_json_field(session_text, mutate):
-    """fixture jsonl의 각 라인에서 VERDICT_JSON을 구조 파싱해 mutate를 적용한다."""
+def _mutate_verdict_json_blocks(session_text, mutate):
+    """fixture jsonl의 모든 VERDICT_JSON 객체를 구조 파싱해 mutate 콜백(제자리 변경)을 적용한 재직렬화 결과를 반환한다."""
     import re as _re
 
     pattern = _re.compile(r"```json\n(.*?)\n```", _re.DOTALL)
@@ -1079,7 +1079,7 @@ def test_additive_axes_plausibility_reflected_in_canonical_hash(
     with_field.write_text(text)
     without_field = tmp_path / "without-plausibility.jsonl"
     without_field.write_text(
-        _strip_verdict_json_field(
+        _mutate_verdict_json_blocks(
             text, lambda obj: obj.get("axes", {}).pop("plausibility", None)
         )
     )
@@ -1163,7 +1163,7 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
     valid = {
         "schema_version": "1.1", "finding_id": "X-1",
         "verdict": "NOT_AN_ISSUE", "confidence": "HIGH",
-        "reviewer_severity": "MEDIUM", "accepted_severity": "MEDIUM",
+        "reviewer_severity": "MEDIUM",
         "rejection_basis": "PLAUSIBILITY_FAIL", "stability_status": "N/A",
         "axes": {"portability": "N/A", "plausibility": "FAIL"},
     }
@@ -1175,6 +1175,10 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
         "basis.md": ({k: v for k, v in valid.items() if k != "rejection_basis"}, False),
         # 실시간 경로에서 1.0 자칭
         "downgrade.md": ({**valid, "schema_version": "1.0"}, False),
+        # axes가 객체가 아니어도 예외 없이 malformed로 집계돼야 한다
+        "axes-shape.md": ({**valid, "axes": "PASS"}, False),
+        # confidence 누락도 위반이다
+        "no-confidence.md": ({k: v for k, v in valid.items() if k != "confidence"}, False),
     }
     for name, (payload, expected_ok) in cases.items():
         path = tmp_path / name
@@ -1188,11 +1192,15 @@ def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
         assert report["ok"] is expected_ok, (name, proc.stderr)
         assert (proc.returncode == 0) is expected_ok, name
 
-    # --legacy-compat은 1.0 레코드를 과거 로그 관측용으로 허용한다
-    legacy = tmp_path / "downgrade.md"
-    proc = subprocess.run(
-        [sys.executable, harness, "--validate-only", "--legacy-compat", str(legacy)],
-        capture_output=True,
-        text=True,
-    )
-    assert json.loads(proc.stdout)["ok"] is True
+    # --expect-findings manifest: 누락·미지 ID를 위반으로 잡는다 (finding 소실 차단)
+    valid_path = tmp_path / "valid.md"
+    for manifest, expected_ok in (("X-1", True), ("X-1,X-2", False), ("Y-9", False)):
+        proc = subprocess.run(
+            [
+                sys.executable, harness, "--validate-only",
+                "--expect-findings", manifest, str(valid_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert json.loads(proc.stdout)["ok"] is expected_ok, manifest

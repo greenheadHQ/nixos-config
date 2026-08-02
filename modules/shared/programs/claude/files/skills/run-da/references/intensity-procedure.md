@@ -23,7 +23,7 @@ modifier `MAX`는 Review Intensity를 건너뛰고 exhaustive 6-domain path로 �
 
 ## 수렴 게이트용 classification-only 적용
 
-[`protocol.md`](protocol.md)의 revalidation_required 조건 3(최종 batch delta 재평가)이 이 절차를 참조할 때는 분류만 수행한다: 아래 인라인 체크리스트 중 "변경 규모 입력 수집"→"체크리스트 평가"→"판정 결정"→"fail-closed 절차"만 수행해 SKIP/LITE/FULL 판정값과 표를 산출하고, "결과 보고"의 SKIP 사용자 승인 진입·"조사 발동 게이트"·SKIP 절차의 모드 종료는 수행하지 않는다 (이 게이트의 소비자는 판정값뿐이며, SKIP 판정은 "재검증 불요" 신호로만 쓰인다). 입력은 protocol.md 조건 3이 정의한 batch delta(for_pr: `git diff --stat <pre_write_sha>..HEAD`, for_plan: 이번 batch가 수정한 계획 항목·파일 목록)다 — "변경 규모 입력 수집"의 `main...HEAD` 기본 입력을 그대로 쓰지 않는다.
+[`protocol.md`](protocol.md)의 revalidation_required의 `batch-delta-intensity` 조건(최종 batch delta 재평가)이 이 절차를 참조할 때는 분류만 수행한다: 아래 인라인 체크리스트 중 "변경 규모 입력 수집"→"체크리스트 평가"→"판정 결정"→"fail-closed 절차"만 수행해 SKIP/LITE/FULL 판정값과 표를 산출하고, "결과 보고"의 SKIP 사용자 승인 진입·"조사 발동 게이트"·SKIP 절차의 모드 종료는 수행하지 않는다 (이 게이트의 소비자는 판정값뿐이다 — 판정별 소비 규칙(SKIP=재검증 불요, LITE=선택 bundle 경량 재검증, FULL=FULL 재검증)은 protocol.md `batch-delta-intensity` 정의가 정본). 입력은 protocol.md `batch-delta-intensity`가 정의한 batch delta(for_pr: `git diff --stat <pre_write_sha>..HEAD`, for_plan: 이번 batch가 수정한 계획 항목·파일 목록)다 — "변경 규모 입력 수집"의 `main...HEAD` 기본 입력을 그대로 쓰지 않는다.
 
 ## 인라인 체크리스트 절차 (강제)
 

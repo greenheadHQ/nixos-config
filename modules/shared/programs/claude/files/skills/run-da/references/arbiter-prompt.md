@@ -120,7 +120,7 @@ for_plan 핵심 원칙:
 
 ### 심각도별 하드 threshold
 
-메인 에이전트 행동의 입력은 `accepted_severity`(Arbiter 조정 후 값)다. Arbiter는 모든 판정의 VERDICT_JSON에 `accepted_severity`를 항상 출력한다 — 심각도 조정 시 조정값, 아니면 reviewer 원값. 조정한 경우 사람용 블록에 조정 근거를 명시하고 JSON 값과 일치시킨다.
+메인 에이전트 행동의 입력은 `accepted_severity`(Arbiter 조정 후 값)다. Arbiter는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)의 VERDICT_JSON에 `accepted_severity`를 출력한다 — 심각도 조정 시 조정값, 아니면 reviewer 원값 (NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다). 조정한 경우 사람용 블록에 조정 근거를 명시하고 JSON 값과 일치시킨다.
 
 | accepted_severity | Arbiter CONFIRMED_ISSUE 시 메인 에이전트 행동 |
 |----------|----------------------------------------------|
@@ -181,7 +181,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS
   - 현실적 발생 가능성 (Plausibility): 판단 불가(UNKNOWN) — 확장 의도에 따라 실존 마찰일 수도, 없어도 무방한 구조일 수도 있음.
   - Portability / Cross-Environment Drift: N/A — 설계 추상화 이슈, cross-env 차원과 무관.
-- **심각도 판정**: MEDIUM — reviewer 원값 유지 (판단 대기 중에도 항상 출력)
+- **심각도 판정**: MEDIUM — reviewer 원값 유지 (NEEDS_MORE_INFO는 write set 진입 가능 verdict이므로 출력)
 - **근거**: 추상화가 현재 단일 구현만 가지지만, 사용자의 확장 의도를 알 수 없어 YAGNI 여부 판단 불가.
 - **필요 정보**: 이 추상화의 향후 사용 계획이 있는지 사용자 확인 필요.
 ```
@@ -365,7 +365,6 @@ NOT_AN_ISSUE 판정에만 `rejection_basis` 필드를 추가한 골격을 사용
   "verdict": "NOT_AN_ISSUE",
   "confidence": "HIGH" | "MEDIUM" | "LOW",
   "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-  "accepted_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
   "rejection_basis": "FACTUAL_FAIL" | "RELEVANCE_FAIL" | "PLAUSIBILITY_FAIL",
   "stability_status": "N/A" | "stable" | "split" | "fragmented",
   "axes": {
@@ -391,7 +390,7 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 - `verdict`: core verdict enum. guardrail 축 Portability로 verdict를 뒤집지 않는다.
 - `confidence`: NOT_AN_ISSUE/CONFIRMED_ISSUE 시 Arbiter의 판정 신뢰도. `fleiss-kappa.py`는 이 필드를 selective consistency 결과에 보존하여 low-confidence unanimous verdict의 fail-closed 승격을 유지한다.
 - `reviewer_severity`: DA reviewer가 보고한 원심각도. 항상 출력한다 — `accepted_severity`와 함께 있으면 심각도 조정 여부가 JSON만으로 드러난다.
-- `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. 조정 유무와 무관하게 항상 출력한다. 소비 규칙(N=3 지지 entry 최댓값 집계, 누락 시 fallback)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
+- `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다. 소비 규칙(N=3 지지 entry 최댓값 집계, 누락 시 fallback)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
 - `rejection_basis`: NOT_AN_ISSUE 판정의 기각 근거 축 — `FACTUAL_FAIL`(사실 정확성) / `RELEVANCE_FAIL`(변경 연관성) / `PLAUSIBILITY_FAIL`(현실적 발생 가능성). NOT_AN_ISSUE에서만 출력하며(다른 verdict에는 필드 자체를 넣지 않는다), `plausibility=N/A`의 적법성 검증을 JSON 자기완결로 만든다 ([`protocol.md`](protocol.md) caller 검증).
 - `stability_status`: 개별 Arbiter 자체는 항상 `N/A`로 내보낸다. first-pass/단일 판정은 agreement 정보 없이 독립 판단이므로 이 필드를 채울 수 없다. selective consistency N=3 재판정 이후, `fleiss-kappa.py`가 3개 entry를 집계하여 별도 aggregate envelope의 `stability_status` 필드(`stable`/`split`/`fragmented`)로 산출한다. 즉 이 필드는 개별 VERDICT_JSON에는 `N/A`로 두고, 실제 값은 aggregate 출력에서 확인한다. 자세한 상태 전이는 [references/stability-measurement.md](stability-measurement.md)와 [references/protocol.md](protocol.md) 참조.
 - `axes`: 판정 보조·관측 축의 평가 결과를 담는 맵 — verdict에 대한 결정권은 각 축의 정의를 따른다 (`portability`: 결정권 없는 guardrail / `plausibility`: 판정 우선순위에 참여하는 core criterion의 기록). 값은 사람용 블록의 "기준 평가" 줄과 일치해야 하며, `plausibility`의 caller 검증(정합 행렬·fail-closed 전이)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 축 추가 시 이 맵에 새 키가 더해진다.

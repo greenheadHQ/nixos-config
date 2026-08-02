@@ -122,7 +122,7 @@ Step 5 상태 전이와 사용자 판단이 끝나면, 먼저 round outcome 스�
 - 후속 수정 처리: walkthrough가 발견한 결함 중 즉시 수정할 수 있는 범위는 이번 batch가 도입한 회귀 또는 round_write_set 반영에 필수인 변경뿐이다 (confirmed-only write 계약 유지 — Arbiter 판정·사용자 수용 없는 무관 결함·기존 결함을 tracked change로 만들지 않는다). 범위 안 결함은 수정 사실과 범위를 기록하고(심각도 분류 없음 — Arbiter를 거치지 않은 수정에 심각도 산출 주체가 없다) 수정한 뒤 walkthrough를 재시작한다. 범위 밖 발견은 수정하지 않고 새 finding 후보로 기록해 다음 라운드 리뷰 대상으로 넘긴다. 후속 수정 또는 범위 밖 발견이 하나라도 있으면 `walkthrough_forced_revalidation = true`. 건수를 round summary에 표기한다.
 - finalize: 마지막 walkthrough pass가 추가 수정 없이 끝나면(`walkthrough_status=CLEAN`) 다음 outer round의 검토 대상이 되는 새 changeset을 선언한다 (for_pr은 이 시점에 commit — [`./for_pr.md`](./for_pr.md) delta 참조).
 
-`revalidation_required`([`../references/protocol.md`](../references/protocol.md) 수렴 판정의 단일 파생값)가 true이면 새 reviewer 실행 단위로 재검증 라운드를 진행한다. 조건 2·3 발동 시 review unit 선택은 최종 batch changeset 기준 Review Intensity 재계산을 따른다 (protocol.md 수렴 판정 참조).
+`revalidation_required`([`../references/protocol.md`](../references/protocol.md) 수렴 판정의 단일 파생값)가 true이면 새 reviewer 실행 단위로 재검증 라운드를 진행한다. `walkthrough-forced`·`batch-delta-intensity` 발동 시 review unit 선택은 최종 batch delta 기준 Intensity 재평가 판정을 따른다 (protocol.md 수렴 판정 참조).
 
 - Codex 세션 경로: 이전 round thread의 slot 회수를 capability profile 규칙(legacy만 `close_agent`, current는 explicit close 없이 광고 slot 내 발사 계획 — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)으로 처리한 뒤 새 subagent들을 띄운다.
 - codex exec 경로: 새 `codex exec` 프로세스와 새 `DA_DIR`을 사용한다.
