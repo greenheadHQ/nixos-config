@@ -320,6 +320,14 @@ run_test "Shottr license refresh rejects empty value" test_shottr_license_refres
 run_test "Shottr age encryption replaces ciphertext atomically" test_shottr_age_encryption_is_atomic
 run_test "Shottr CFPreferences writer round-trips through defaults" test_shottr_cfpreferences_writer_round_trip
 
+# interaction-limits-renewal suite (tests/suites/interaction-limits-renewal.sh)
+run_test "interaction-limits-renewal quiet path skips PUT/notify" test_ilr_no_renewal_when_far_from_expiry
+run_test "interaction-limits-renewal renews near expiry" test_ilr_renews_and_notifies_when_near_expiry
+run_test "interaction-limits-renewal renews when limits absent" test_ilr_renews_when_limits_absent
+run_test "interaction-limits-renewal GET failure exits nonzero" test_ilr_get_failure_notifies_and_exits_nonzero
+run_test "interaction-limits-renewal PUT failure exits nonzero" test_ilr_put_failure_notifies_and_exits_nonzero
+run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing_pat_notifies_and_exits_nonzero
+
 # codex-config fixture는 tomlkit이 필요하다. required CI의 run-all-tests는 prePushRuntime
 # profile로 항상 tomlkit을 제공하지만, 사용자가 직접 실행할 때는 미가용일 수 있다. 미가용이면
 # codex-config 섹션만 skip + profile runner 안내 (기본 shell suite 진입은 유지).

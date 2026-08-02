@@ -245,11 +245,39 @@
       };
     };
 
+    interactionLimitsRenewal = {
+      enable = lib.mkEnableOption "GitHub interaction limits auto-renewal timer";
+      repo = lib.mkOption {
+        type = lib.types.str;
+        default = "greenheadHQ/nixos-config";
+        description = "GitHub repository (owner/name) whose interaction limits are kept renewed";
+      };
+      renewThresholdDays = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 14;
+        description = "Renew when remaining days fall to this value or below";
+      };
+      timerCalendar = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 10:30:00 Asia/Seoul";
+        description = "OnCalendar schedule for the daily expiry check";
+      };
+    };
+
     # opnix: 1Password Service Account 기반 시크릿 materialization 인프라
     # enable=true 시 services.onepassword-secrets(Go SDK root oneshot)로 op:// reference를
     # tmpfs에 materialize하고, SA token 90일 rotation 알림 timer를 활성화한다.
     opnix = {
       enable = lib.mkEnableOption "1Password Service Account secrets materialization (opnix)";
+      ghPatPath = lib.mkOption {
+        type = lib.types.str;
+        readOnly = true;
+        description = ''
+          opnix가 gh PAT를 materialize하는 경로 (SoT — 값은 opnix/default.nix가 할당).
+          소비자(da-weekly-report, interaction-limits-renewal 등)는 경로를 재정의하지 말고
+          config.homeserver.opnix.ghPatPath를 참조한다.
+        '';
+      };
     };
 
     codexRemoteControl = {
@@ -319,6 +347,7 @@
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
     ../programs/da-weekly-report # DA 세션 주간 리포트 timer
+    ../programs/interaction-limits-renewal # GitHub interaction limits 만료 전 자동 갱신
     ../programs/opnix # 1Password Service Account 시크릿 materialization
     ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지

@@ -14,7 +14,7 @@ let
 
   homeDir = "/home/${username}";
   stateDir = "${homeDir}/.local/state/da-weekly-report";
-  ghPatPath = "/run/opnix/${username}/github-pat";
+  ghPatPath = config.homeserver.opnix.ghPatPath;
   weeklyReportPy = ./files/weekly_report.py;
   analyzePy = ../../../shared/programs/claude/files/skills/analyzing-da-sessions/scripts/analyze.py;
   formatHour =
@@ -58,8 +58,8 @@ let
     STATE_DIR = stateDir;
     PUSHOVER_SHARE_CRED = "${homeDir}/.config/pushover/share";
     PUSHOVER_HELPER = "${homeDir}/.local/lib/pushover.sh";
-    # 공통 fail-soft 전송 헬퍼 — 두 entrypoint가 같은 store 파일을 source한다 (drift 방지).
-    PUSHOVER_LIB = "${./files/pushover-lib.sh}";
+    # 공용 fail-soft 전송 헬퍼 — 소비 모듈들이 같은 store 파일을 source한다 (drift 방지).
+    PUSHOVER_LIB = "${../../lib/pushover-fail-soft.sh}";
     # writeShellApplication runtimeInputs가 앞에 붙는다. 이 tail은 Home Manager가
     # 관리하는 user-scope codex/codex-exec-supervised wrapper를 해석하기 위해 필요하다.
     PATH = lib.mkForce "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin";
