@@ -697,11 +697,17 @@ def extract_finding_summary(block: str) -> str | None:
         r"(?:\*\*)?(?:문제|요약|Summary|Finding|Issue)(?:\*\*)?\s*[:：]\s*(.+)",
         r"^-\s+(.+)",
     )
+    # Arbiter 사람용 블록의 메타데이터 라벨 — finding 요약으로 채택되면 안 된다.
+    # 라벨이 추가될 때 여기 함께 넣지 않으면 그 줄이 요약으로 잡혀
+    # finding_fingerprint가 심각도나 evidence scope의 해시가 되고,
+    # 라운드 사이 그 값이 바뀌면 동일 finding의 M-6 persistence가 분리된다.
     excluded_prefixes = (
         "**판정**",
         "**신뢰도**",
         "**기준 평가**",
         "**stability_status**",
+        "**evidence_scope**",
+        "**심각도 판정**",
         "**근거**",
         "**증거**",
     )

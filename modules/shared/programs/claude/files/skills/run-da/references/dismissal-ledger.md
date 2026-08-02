@@ -90,11 +90,12 @@ dismissal:
   source: arbiter
   confidence: HIGH
   stability_status: N/A
+  rejection_basis: FACTUAL_FAIL
   rationale: "The option default remains false and the changed branch is only reached when explicitly enabled."
 scope: same_changeset
 ```
 
-사용자 제외 항목은 `dismissal.verdict: USER_EXCLUDED`, `dismissal.source: user`, `dismissal.user_decision: exclude_with_rationale`를 사용한다. `rationale`는 사용자가 승인한 기술적 근거를 적는다.
+사용자 제외 항목은 `dismissal.verdict: USER_EXCLUDED`, `dismissal.source: user`, `dismissal.user_decision: exclude_with_rationale`를 사용한다. `rationale`는 사용자가 승인한 기술적 근거를 적는다. Arbiter 기각(`source: arbiter`)은 VERDICT_JSON의 `rejection_basis`를 그대로 저장하고, 그 값이 `PLAUSIBILITY_FAIL`이면 `evidence_scope: FROZEN_SURFACE`도 함께 저장한다 — 영속 여부를 결정한 근거를 ledger 안에 남겨야 이후 load 시 사람용 rationale을 재해석하지 않고 판정할 수 있다 (`ENVIRONMENT_WORKLOAD`는 애초에 기록 대상이 아니므로 저장된 값은 항상 `FROZEN_SURFACE`다).
 
 ## 기록 시점과 phase 정합
 
@@ -131,6 +132,7 @@ ledger write는 active changeset을 수정하는 write phase 산출물이 아니
 - `review_unit` 또는 `perspective`가 다름.
 - `scope`가 현재 실행 범위를 포함하지 않음.
 - schema 필수 필드, 기술적 `rationale`, Arbiter confidence/stability 정보가 누락됨.
+- Arbiter 기각인데 `rejection_basis`가 없거나, `PLAUSIBILITY_FAIL`인데 `evidence_scope: FROZEN_SURFACE`가 없음 — 영속 eligibility를 확인할 수 없으므로 fail-closed로 suppression에서 제외한다 (구조화 필드 없이 저장된 과거 entry가 이 경로로 걸러진다).
 - ledger 파일이 tracked 상태거나 tracked diff에 잡힘.
 - verdict가 `NEEDS_MORE_INFO`, `split`, `fragmented`, `partial_failure`, `unknown` 중 하나임.
 
