@@ -39,7 +39,7 @@ Portability 축은 `N/A`도 허용한다. finding 자체가 cross-environment �
 
 판정 우선순위 (core invariant):
 1. 사실 정확성 또는 변경 연관성이 FAIL → NOT_AN_ISSUE.
-2. Plausibility FAIL → NOT_AN_ISSUE (ledger 영속 조건은 [`dismissal-ledger.md`](dismissal-ledger.md) 참조).
+2. Plausibility FAIL → NOT_AN_ISSUE. 이때 기각 근거가 어디에 의존하는지를 `evidence_scope`로 함께 기록한다 — frozen changeset의 불변 계약(코드 구조, 문서·설정 계약)에만 의존하면 `FROZEN_SURFACE`, 환경·워크로드 가정(입력 규모, 배포 환경, 사용 경로)에 의존하면 `ENVIRONMENT_WORKLOAD`. 이 값이 ledger 영속 여부를 결정한다 ([`dismissal-ledger.md`](dismissal-ledger.md) 참조).
 3. 사실 정확성·변경 연관성·Plausibility 중 판단 불가가 있으면 → NEEDS_MORE_INFO.
 4. 셋 모두 PASS → CONFIRMED_ISSUE (심각도/실행 가능성 FAIL은 조정·보완 사유이지 기각 사유가 아님).
 
@@ -223,7 +223,7 @@ for_plan 핵심 원칙:
 
 #### 예시 6: for_plan CONFIRMED_ISSUE — Portability guardrail
 
-템플릿 경로가 현재 환경에선 실존하지만 문서 계약 기준으로 cross-env drift가 있는 case. Portability 축이 "사실 정확성" 해석을 cross-env로 확장하고 심각도 보조로 작용한다. core invariant(사실 정확성 + 변경 연관성 PASS)로 CONFIRMED.
+템플릿 경로가 현재 환경에선 실존하지만 문서 계약 기준으로 cross-env drift가 있는 case. Portability 축이 "사실 정확성" 해석을 cross-env로 확장하고 심각도 보조로 작용한다. 위 판정 우선순위 4번(verdict criteria 세 축 전부 PASS)으로 CONFIRMED.
 
 ```text
 ### ADJACENT-1 — CONFIRMED_ISSUE *(가상 시나리오 — 가상 PR이 가상 템플릿 경로를 도입한 case에 대한 판정 사례)*
@@ -241,7 +241,7 @@ for_plan 핵심 원칙:
 - **증거 (실재)**: `modules/shared/programs/codex/default.nix`의 `exposedCodexSkills` / `intentionallyNotExposed` 리스트 — 실제 Codex global skill 노출 정책의 source of truth이며 가상 시나리오의 cross-env drift 판정 근거가 된다. 가상 PR diff 자체는 이 example 내부에 가정된 픽션이다.
 ```
 
-#### 예시 7: NOT_AN_ISSUE — Plausibility FAIL (극단·이론상 시나리오)
+#### 예시 7: NOT_AN_ISSUE — Plausibility FAIL (극단·이론상 시나리오, evidence_scope=ENVIRONMENT_WORKLOAD)
 
 ```text
 ### SIDE_EFFECT-2 — NOT_AN_ISSUE
@@ -255,11 +255,12 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): FAIL — "입력이 수 GB면 OOM"은 이론상 시나리오. 이 함수의 입력은 로컬 설정 파일(수 KB 규모)이며, 그 크기의 입력이 생길 현실적 발생 경로가 제시되지 않았다. SECURITY 관점도 아니므로 공격자 유발 경로 검토 대상이 아니다.
   - Portability / Cross-Environment Drift: N/A
 - **심각도 판정**: MEDIUM — reviewer 원값 유지 (Plausibility FAIL 기각)
+- **evidence_scope**: ENVIRONMENT_WORKLOAD — 기각 근거가 "입력이 로컬 설정 파일 규모"라는 워크로드 가정에 의존한다. 운영 조건이 바뀌면 재평가가 필요하므로 ledger 비영속.
 - **근거**: 해당 함수의 실제 호출부를 읽어 입력원이 로컬 설정 파일뿐임을 확인.
 - **증거**: 호출부 코드 스니펫 — 입력이 고정 경로 설정 파일로 한정됨.
 ```
 
-#### 예시 8: NOT_AN_ISSUE — Plausibility FAIL (제안성 지적)
+#### 예시 8: NOT_AN_ISSUE — Plausibility FAIL (제안성 지적, evidence_scope=FROZEN_SURFACE)
 
 ```text
 ### READABILITY-3 — NOT_AN_ISSUE
@@ -273,6 +274,7 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): FAIL — "이름을 더 서술적으로 바꾸면 좋을 듯"은 실존 마찰이 아니라 취향 제안. 현재 이름이 동작과 불일치하거나 독자가 실제로 오독한 증거가 없고, 주변 코드의 네이밍 관례와도 일치한다.
   - Portability / Cross-Environment Drift: N/A
 - **심각도 판정**: LOW — reviewer 원값 유지 (Plausibility FAIL 기각)
+- **evidence_scope**: FROZEN_SURFACE — 기각 근거가 frozen changeset의 코드 구조·네이밍 관례에만 의존한다. 그 표면이 그대로인 한 결론이 유지되므로 ledger 영속 eligible.
 - **근거**: 함수 정의와 전체 호출부를 확인 — 이름이 실제 동작을 정확히 기술하고 주변 관례와 일치함.
 - **증거**: 같은 모듈의 기존 helper 네이밍 목록 — 제안된 이름이 오히려 관례 이탈.
 ```
@@ -322,7 +324,8 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS / FAIL / N/A
   - 현실적 발생 가능성 (Plausibility): PASS / FAIL / 판단 불가(UNKNOWN) / N/A
   - Portability / Cross-Environment Drift: PASS / FAIL / N/A
-- **stability_status**: N/A / stable / split / fragmented (selective consistency 실행 시만 non-N/A)
+- **stability_status**: N/A (개별 판정에서는 항상 N/A — 실제 상태는 aggregate에서 산출)
+- **evidence_scope**: (Plausibility FAIL 기각에만) FROZEN_SURFACE / ENVIRONMENT_WORKLOAD + 그 근거가 무엇에 의존하는지 한 줄
 - **심각도 판정**: {accepted_severity} — 심각도 타당성 PASS면 reviewer 원값 그대로, FAIL이면 "원값 X → 조정 Y"와 조정 근거를 명시 (조정 여부의 기계 판정은 VERDICT_JSON의 `reviewer_severity`/`accepted_severity` 비교로 자기완결된다 — 이 줄은 조정 근거를 사람에게 설명하는 보고용 서술이다)
 - **근거**: 직접 확인 결과 + 기술적 판단 (for_pr: 파일:줄 / for_plan: 관련 파일 또는 계획 원문)
 - **증거**: (NOT_AN_ISSUE의 경우 필수) for_pr: 반증 코드 스니펫 / for_plan: 반증 근거 (관련 파일 내용 또는 계획 원문 인용)
@@ -354,7 +357,7 @@ for_plan 핵심 원칙:
 <!-- verdict-json:end -->
 ````
 
-NOT_AN_ISSUE 판정에만 `rejection_basis` 필드를 추가한 골격을 사용한다 (다른 verdict에 이 필드가 있으면 caller 검증 위반이다):
+NOT_AN_ISSUE 판정에만 `rejection_basis` 필드를 추가한 골격을 사용한다 (다른 verdict에 이 필드가 있으면 caller 검증 위반이다). `rejection_basis`가 `PLAUSIBILITY_FAIL`이면 `evidence_scope`도 함께 넣는다 (그 외 기각 근거에는 이 필드를 넣지 않는다):
 
 ````text
 <!-- verdict-json:start -->
@@ -366,6 +369,7 @@ NOT_AN_ISSUE 판정에만 `rejection_basis` 필드를 추가한 골격을 사용
   "confidence": "HIGH" | "MEDIUM" | "LOW",
   "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
   "rejection_basis": "FACTUAL_FAIL" | "RELEVANCE_FAIL" | "PLAUSIBILITY_FAIL",
+  "evidence_scope": "FROZEN_SURFACE" | "ENVIRONMENT_WORKLOAD",
   "stability_status": "N/A",
   "axes": {
     "portability": "PASS" | "FAIL" | "N/A",
@@ -392,7 +396,8 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 - `reviewer_severity`: DA reviewer가 보고한 원심각도. 항상 출력한다 — `accepted_severity`와 함께 있으면 심각도 조정 여부가 JSON만으로 드러난다.
 - `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다. 소비 규칙(N=3 지지 entry 최댓값 집계 — 실시간 entry의 누락은 fallback이 아니라 semantic malformed다)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
 - `rejection_basis`: NOT_AN_ISSUE 판정의 기각 근거 축 — `FACTUAL_FAIL`(사실 정확성) / `RELEVANCE_FAIL`(변경 연관성) / `PLAUSIBILITY_FAIL`(현실적 발생 가능성). NOT_AN_ISSUE에서만 출력하며(다른 verdict에는 필드 자체를 넣지 않는다), `plausibility=N/A`의 적법성 검증을 JSON 자기완결로 만든다 ([`protocol.md`](protocol.md) caller 검증).
-- `stability_status`: 개별 Arbiter 자체는 항상 `N/A`로 내보낸다. first-pass/단일 판정은 agreement 정보 없이 독립 판단이므로 이 필드를 채울 수 없다. selective consistency N=3 재판정 이후, `fleiss-kappa.py`가 3개 entry를 집계하여 별도 aggregate envelope의 `stability_status` 필드(`stable`/`split`/`fragmented`)로 산출한다. 즉 이 필드는 개별 VERDICT_JSON에는 `N/A`로 두고, 실제 값은 aggregate 출력에서 확인한다. 자세한 상태 전이는 [references/stability-measurement.md](stability-measurement.md)와 [references/protocol.md](protocol.md) 참조.
+- `evidence_scope`: `rejection_basis=PLAUSIBILITY_FAIL`일 때만 출력하는 기각 근거의 수명주기 분류 — `FROZEN_SURFACE`(frozen changeset의 불변 계약에만 의존) / `ENVIRONMENT_WORKLOAD`(환경·워크로드 가정에 의존). ledger 기록자는 이 값만으로 영속 eligibility를 판정한다 (사람용 rationale 재해석 불필요 — [`dismissal-ledger.md`](dismissal-ledger.md) SSOT). 다른 기각 근거·verdict에 이 필드가 있으면 caller 검증 위반이다.
+- `stability_status`: 개별 Arbiter 자체는 항상 `N/A`로 내보낸다. first-pass/단일 판정은 agreement 정보 없이 독립 판단이므로 이 필드를 채울 수 없다. selective consistency N=3 재판정 이후, `fleiss-kappa.py`가 3개 entry를 집계하여 별도 aggregate envelope의 `stability_status` 필드(`stable`/`split`/`fragmented`)로 산출한다. 즉 이 필드는 개별 VERDICT_JSON에는 `N/A`로 두고, 실제 값은 aggregate 출력에서 확인한다. 개별 entry가 산출할 수 없는 값이므로 필드 누락은 위반이 아니며 caller가 `N/A`로 읽는다 — 값을 쓴 경우에만 `N/A`여야 하고, `stable`/`split`/`fragmented`를 쓰면 aggregate 상태 환각으로 semantic malformed다. 자세한 상태 전이는 [references/stability-measurement.md](stability-measurement.md)와 [references/protocol.md](protocol.md) 참조.
 - `axes`: 판정 보조·관측 축의 평가 결과를 담는 맵 — verdict에 대한 결정권은 각 축의 정의를 따른다 (`portability`: 결정권 없는 guardrail / `plausibility`: 판정 우선순위에 참여하는 core criterion의 기록). 값은 사람용 블록의 "기준 평가" 줄과 일치해야 하며, `plausibility`의 caller 검증(정합 행렬·fail-closed 전이)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 축 추가 시 이 맵에 새 키가 더해진다.
 
 ## 프롬프트 조립

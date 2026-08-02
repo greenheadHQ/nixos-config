@@ -6,7 +6,8 @@
 # 단일 진입점을 재사용해 중복 정의를 피한다.
 #
 # 커버리지 경계: required CI의 전체 회귀(shell-script-tests · codex-hook-fixtures 포함)와
-#   pre-push의 3개 조건부 게이트(analyzing-da-sessions-tests · flake-check · statusline-bats),
+#   pre-push의 4개 조건부 게이트(analyzing-da-sessions-tests · fleiss-kappa-tests ·
+#   flake-check · statusline-bats),
 #   da-weekly-report-tests + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
 #   드라이버(codex-exec-supervised · precommit-staged-snapshot)를 포함한다. 벤치마크
 #   tests/bench-shell-startup.sh는 회귀 게이트가 아니라 측정 도구이므로(자체 헤더에 명시) 제외한다.

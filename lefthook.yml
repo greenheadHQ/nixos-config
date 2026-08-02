@@ -153,7 +153,7 @@ pre-push:
   # CIR: #1045는 CI가 advisory라 shell 전체 검증을 매 push마다 유지했다. #1090에서 main의
   # `check`를 required로 승격했고, 현행 shell 전체 suite는 profile 적용만으로도 cold push
   # 기준을 초과하는 것으로 재측정됐다. 따라서 전체 shell/codex fixture는 required CI의
-  # run-all-tests로 이관하고, 로컬 pre-push는 변경과 직접 관련된 3개 glob command와
+  # run-all-tests로 이관하고, 로컬 pre-push는 변경과 직접 관련된 4개 glob command와
   # 저장소 밖 상태를 감시하는 always-run 예외 1개(ai-skill-version-stamps)만 남긴다.
   # profileless 경로에서는 첫 runtime command가 검증된 profile을 준비한 뒤 다음 command가
   # 재사용하도록 순차 실행해 direct flake-check와의 Nix eval-cache 경합도 막는다. 삭제 파일 등

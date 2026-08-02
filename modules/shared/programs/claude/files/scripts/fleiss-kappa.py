@@ -15,13 +15,22 @@ corpus 전용이므로 2개 이상의 finding이 있어야 정의된다.
 
 Threshold policy SSOT: stability-measurement.md (STABLE_MIN / ESCALATE_MIN).
 
+이 스크립트는 두 책임을 함께 갖는다 (protocol.md "수렴 판정"이 지정한 공통 검증기 +
+selective consistency 집계기): `--validate-only`의 first-pass 계약 검증과 N=3 vote-shape
+집계. 두 모드는 parse_and_check_manifest()의 같은 파싱·manifest 결과를 소비한다.
+
 Usage:
     # N=3 vote-shape 집계 (aggregate JSON을 stdout에 출력)
-    fleiss-kappa.py <arbiter1.md> <arbiter2.md> <arbiter3.md> \
-        [--expect-findings <ID,ID,...>] [--offline]
+    fleiss-kappa.py --expect-findings <ID,ID,...> \
+        <arbiter1.md> <arbiter2.md> <arbiter3.md> [--offline]
     # first-pass caller 검증 (집계 없음 — 파일별 schema/manifest 검사 결과 JSON,
     # 전체 통과 시 exit 0 / 위반 시 exit 1)
     fleiss-kappa.py --validate-only --expect-findings <ID,ID,...> <result.md>
+    # manifest 없는 관측 전용 호출 (실시간 수집 경로에서는 쓰지 않는다)
+    fleiss-kappa.py --no-manifest --offline <arbiter1.md> <arbiter2.md> <arbiter3.md>
+
+`--expect-findings`는 실시간 경로의 필수 인자다 — 생략은 검증 없음이 아니라 인자 오류이며,
+관측 목적의 우회는 `--no-manifest` 명시적 opt-out으로만 가능하다.
 
 Output: JSON on stdout. See main() for schema.
 """
@@ -44,6 +53,10 @@ CONFIDENCE_VALUES = ("HIGH", "MEDIUM", "LOW", "N/A")
 SEVERITY_VALUES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
 PLAUSIBILITY_VALUES = ("PASS", "FAIL", "UNKNOWN", "N/A")
 REJECTION_BASES = ("FACTUAL_FAIL", "RELEVANCE_FAIL", "PLAUSIBILITY_FAIL")
+# PLAUSIBILITY_FAIL 기각 근거의 수명주기 분류 (dismissal-ledger.md 영속 eligibility SSOT):
+# FROZEN_SURFACE = frozen changeset의 불변 계약 근거 → ledger 영속 eligible
+# ENVIRONMENT_WORKLOAD = 환경·워크로드 가정 근거 → 비영속 (현재 루프 한정 suppress)
+EVIDENCE_SCOPES = ("FROZEN_SURFACE", "ENVIRONMENT_WORKLOAD")
 # verdict -> 허용되는 axes.plausibility 값 (정합 행렬)
 PLAUSIBILITY_MATRIX = {
     "CONFIRMED_ISSUE": {"PASS"},
@@ -103,11 +116,12 @@ def validate_verdict_entry(entry):
         violations.append(
             f"accepted_severity 누락 또는 enum 밖 값: {entry.get('accepted_severity')!r}"
         )
-    if entry.get("stability_status") != "N/A":
-        # stable/split/fragmented는 N=3 aggregate envelope 전용 — 개별 Arbiter
-        # entry가 집계 상태를 환각하면 semantic malformed다 (arbiter-prompt.md).
+    # stability_status는 개별 Arbiter가 산출할 수 없는 aggregate 전용 상태라
+    # 누락이 정상이다 (caller는 누락을 N/A로 읽는다). 값을 쓴 경우에만 'N/A'를
+    # 요구해 stable/split/fragmented 환각을 semantic malformed로 잡는다.
+    if "stability_status" in entry and entry["stability_status"] != "N/A":
         violations.append(
-            f"개별 entry의 stability_status는 'N/A'만 허용: {entry.get('stability_status')!r}"
+            f"개별 entry의 stability_status는 'N/A'만 허용: {entry['stability_status']!r}"
         )
     if isinstance(axes, dict) and axes.get("portability") not in ("PASS", "FAIL", "N/A"):
         violations.append(
@@ -125,6 +139,18 @@ def validate_verdict_entry(entry):
             )
     elif basis is not None:
         violations.append(f"{verdict}에 rejection_basis 출력 금지 (got {basis!r})")
+    # evidence_scope는 PLAUSIBILITY_FAIL 기각의 ledger 수명주기를 결정하므로
+    # 그 경우에만 필수다 — 기록자가 사람용 rationale 재해석 없이 영속 여부를 판단한다.
+    scope = entry.get("evidence_scope")
+    if basis == "PLAUSIBILITY_FAIL":
+        if scope not in EVIDENCE_SCOPES:
+            violations.append(
+                f"PLAUSIBILITY_FAIL에 evidence_scope 누락 또는 enum 밖 값: {scope!r}"
+            )
+    elif scope is not None:
+        violations.append(
+            f"evidence_scope는 PLAUSIBILITY_FAIL 전용 (got {scope!r} with basis={basis!r})"
+        )
     return violations
 
 
@@ -133,6 +159,57 @@ def manifest_diff_violations(expected_ids, found_ids):
     issues = [f"기대 finding 누락: {fid}" for fid in sorted(expected_ids - found_ids)]
     issues += [f"manifest 밖 finding: {fid}" for fid in sorted(found_ids - expected_ids)]
     return issues
+
+
+def parse_and_check_manifest(paths, expected_ids):
+    """파일별 (entries, malformed, manifest 위반)을 한 번에 산출하는 공통 흐름.
+
+    validate-only와 N=3 집계가 같은 파싱·manifest 대조 결과를 소비하도록
+    두 분기의 조립을 여기로 모은다 (동일 계약이 두 제어 흐름에 복제되지 않게 한다).
+    expected_ids가 None이면 manifest 대조를 생략한다 (--no-manifest opt-out 경로).
+    """
+    parsed = []
+    for path in paths:
+        entries, malformed = parse_verdict_json_blocks(path)
+        issues = (
+            manifest_diff_violations(expected_ids, set(entries.keys()))
+            if expected_ids is not None
+            else []
+        )
+        parsed.append({
+            "path": path,
+            "entries": entries,
+            "malformed": malformed,
+            "manifest_violations": issues,
+        })
+    return parsed
+
+
+def resolve_expected_ids(args):
+    """--expect-findings / --no-manifest 인자에서 expected_ids를 결정한다.
+
+    manifest 대조는 실시간 수집 경로의 필수 경계이므로(protocol.md 수렴 판정),
+    옵션 생략은 "검증 없음"이 아니라 인자 오류다. 관측 목적의 manifest 없는
+    호출은 --no-manifest 명시적 opt-out으로만 허용한다.
+    반환: (expected_ids | None, error_message | None).
+    """
+    if args.no_manifest:
+        if args.expect_findings is not None:
+            return None, "--expect-findings와 --no-manifest는 함께 쓸 수 없다"
+        return None, None
+    if args.expect_findings is None:
+        return None, (
+            "--expect-findings가 필요하다 (실시간 수집의 finding manifest 대조는 필수). "
+            "manifest 없는 관측 전용 호출은 --no-manifest를 명시하라"
+        )
+    # 빈 문자열("")은 "옵션 미지정"이 아니라 인자 오류다 — truthiness 검사로 조용히
+    # manifest 검증을 우회하는 경로(셸 변수 유실 등)를 차단한다.
+    raw_ids = [fid.strip() for fid in args.expect_findings.split(",")]
+    if "" in raw_ids:
+        return None, f"--expect-findings에 빈 항목: {args.expect_findings!r}"
+    if len(raw_ids) != len(set(raw_ids)):
+        return None, f"--expect-findings에 중복 ID: {args.expect_findings!r}"
+    return set(raw_ids), None
 
 
 # arbiter-prompt.md "출력 형식 > 기계 파싱용 VERDICT_JSON 블록" 스키마와 일치
@@ -355,9 +432,17 @@ def main():
     parser.add_argument(
         "--expect-findings",
         help=(
-            "쉼표 구분 finding ID manifest. 지정 시 각 파일의 유효 finding ID 집합이 "
-            "이 집합과 정확히 일치해야 한다 — 누락·미지 ID는 위반 (finding 소실 차단). "
+            "쉼표 구분 finding ID manifest (실시간 경로 필수). 각 파일의 유효 finding ID "
+            "집합이 이 집합과 정확히 일치해야 한다 — 누락·미지 ID는 위반 (finding 소실 차단). "
             "N=3 집계에서도 이 집합 기준으로 missing을 판정한다"
+        ),
+    )
+    parser.add_argument(
+        "--no-manifest",
+        action="store_true",
+        help=(
+            "manifest 대조 없이 실행하는 명시적 opt-out (관측·디버깅 전용). "
+            "실시간 수집 경로에서는 쓰지 않는다 — finding 누락이 검증 성공으로 처리된다"
         ),
     )
     parser.add_argument(
@@ -370,36 +455,27 @@ def main():
     )
     args = parser.parse_args()
 
-    expected_ids = None
-    if args.expect_findings is not None:
-        # 빈 문자열("")은 "옵션 미지정"이 아니라 인자 오류다 — truthiness 검사로 조용히
-        # manifest 검증을 우회하는 경로(셸 변수 유실 등)를 차단한다.
-        raw_ids = [fid.strip() for fid in args.expect_findings.split(",")]
-        if "" in raw_ids or len(raw_ids) != len(set(raw_ids)):
-            print(
-                f"error: --expect-findings에 빈 항목 또는 중복 ID: {args.expect_findings!r}",
-                file=sys.stderr,
-            )
-            return 1
-        expected_ids = set(raw_ids)
+    expected_ids, arg_error = resolve_expected_ids(args)
+    if arg_error:
+        print(f"error: {arg_error}", file=sys.stderr)
+        return 1
+
+    parsed = parse_and_check_manifest(args.arbiter_files, expected_ids)
 
     if args.validate_only:
         report = {"files": [], "ok": True}
-        for path in args.arbiter_files:
-            entries, malformed = parse_verdict_json_blocks(path)
-            found_ids = set(entries.keys())
-            manifest_violations = []
-            if expected_ids is not None:
-                manifest_violations = manifest_diff_violations(expected_ids, found_ids)
+        for item in parsed:
             file_ok = (
-                malformed == 0 and len(entries) > 0 and not manifest_violations
+                item["malformed"] == 0
+                and len(item["entries"]) > 0
+                and not item["manifest_violations"]
             )
             report["files"].append(
                 {
-                    "path": str(path),
-                    "valid_findings": sorted(found_ids),
-                    "malformed_count": malformed,
-                    "manifest_violations": manifest_violations,
+                    "path": str(item["path"]),
+                    "valid_findings": sorted(item["entries"].keys()),
+                    "malformed_count": item["malformed"],
+                    "manifest_violations": item["manifest_violations"],
                     "ok": file_ok,
                 }
             )
@@ -408,10 +484,8 @@ def main():
         print()
         return 0 if report["ok"] else 1
 
-    # 각 Arbiter 파일에서 (entries, malformed_count) 수집.
-    parsed = [parse_verdict_json_blocks(p) for p in args.arbiter_files]
-    arbiter_entries = [entries for entries, _ in parsed]
-    per_file_malformed = [mal for _, mal in parsed]
+    arbiter_entries = [item["entries"] for item in parsed]
+    per_file_malformed = [item["malformed"] for item in parsed]
     # 파일이 아예 비었거나 모든 블록이 malformed인 경우 file-level failure.
     # caller는 이 상태를 partial_failure로 간주하여 BLOCKED 처리해야 한다.
     file_level_failures = [
@@ -421,12 +495,10 @@ def main():
     ]
     all_finding_ids = set()
     manifest_violations = {}
-    for i, entries in enumerate(arbiter_entries):
-        all_finding_ids.update(entries.keys())
-        if expected_ids is not None:
-            issues = manifest_diff_violations(expected_ids, set(entries.keys()))
-            if issues:
-                manifest_violations[str(args.arbiter_files[i])] = issues
+    for item in parsed:
+        all_finding_ids.update(item["entries"].keys())
+        if item["manifest_violations"]:
+            manifest_violations[str(item["path"])] = item["manifest_violations"]
     if expected_ids is not None:
         # manifest 기준 집계: 세 Arbiter가 모두 같은 finding을 누락해도 missing으로 잡힌다.
         all_finding_ids = set(expected_ids)

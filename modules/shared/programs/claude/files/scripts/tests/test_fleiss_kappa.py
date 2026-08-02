@@ -78,7 +78,7 @@ def test_aggregate_preserves_additive_verdict_fields(tmp_path):
     보존하는지 검증한다 (protocol.md accepted severity 집계의 관측 지점)."""
     paths = _write_arbiter_results(tmp_path, _verdict_payload())
 
-    proc = _run_harness(*paths)
+    proc = _run_harness("--expect-findings", "X-1", *paths)
     assert proc.returncode == 0, proc.stderr
     aggregate = json.loads(proc.stdout)
     assert not aggregate.get("partial_failure")
@@ -99,8 +99,10 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         verdict="NOT_AN_ISSUE",
         accepted_severity=None,
         rejection_basis="PLAUSIBILITY_FAIL",
+        evidence_scope="FROZEN_SURFACE",
         axes={"portability": "N/A", "plausibility": "FAIL"},
     )
+    confirmed = _verdict_payload()
     cases = {
         "valid.md": (valid, True),
         # verdict 정합 행렬 위반: CONFIRMED + plausibility FAIL
@@ -118,13 +120,29 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         "no-confidence.md": ({k: v for k, v in valid.items() if k != "confidence"}, False),
         # 확정/기각 verdict에 confidence=N/A 금지 (NEEDS_MORE_INFO 전용)
         "na-confidence.md": ({**valid, "confidence": "N/A"}, False),
-        # 개별 entry의 stability_status는 N/A만 (aggregate 전용 상태 환각 차단)
+        # 개별 entry가 aggregate 전용 상태를 환각하면 malformed
         "agg-status.md": ({**valid, "stability_status": "stable"}, False),
+        # 산출 불가능한 값이므로 누락은 정상 (caller가 N/A로 읽는다)
+        "no-status.md": (
+            {k: v for k, v in valid.items() if k != "stability_status"}, True
+        ),
+        # PLAUSIBILITY_FAIL에는 evidence_scope 필수 (ledger 영속 판정 근거)
+        "no-scope.md": ({k: v for k, v in valid.items() if k != "evidence_scope"}, False),
+        "bad-scope.md": ({**valid, "evidence_scope": "SOMETHING_ELSE"}, False),
+        "env-scope.md": ({**valid, "evidence_scope": "ENVIRONMENT_WORKLOAD"}, True),
+        # 다른 기각 근거·verdict에는 evidence_scope 금지
+        "scope-on-factual.md": (
+            {**valid, "rejection_basis": "FACTUAL_FAIL",
+             "axes": {"portability": "N/A", "plausibility": "N/A"}}, False
+        ),
+        "scope-on-confirmed.md": (
+            {**confirmed, "evidence_scope": "FROZEN_SURFACE"}, False
+        ),
     }
     for name, (payload, expected_ok) in cases.items():
         path = tmp_path / name
         path.write_text(_verdict_block(payload))
-        proc = _run_harness("--validate-only", str(path))
+        proc = _run_harness("--validate-only", "--expect-findings", "X-1", str(path))
         report = json.loads(proc.stdout)
         assert report["ok"] is expected_ok, (name, proc.stderr)
         assert (proc.returncode == 0) is expected_ok, name
@@ -147,6 +165,36 @@ def test_manifest_argument_rejects_duplicate_and_empty(tmp_path):
     proc = _run_harness("--expect-findings", "", str(valid_path))
     assert proc.returncode == 1
     assert "빈 항목" in proc.stderr
+
+
+def test_manifest_is_required_unless_explicitly_opted_out(tmp_path):
+    """--expect-findings 생략은 "검증 없음"이 아니라 인자 오류다.
+
+    옵션이 선택적이면 finding이 누락된 결과도 ok=true로 통과해 조기 수렴으로 샌다.
+    관측 목적의 우회는 --no-manifest 명시적 opt-out으로만 가능하다."""
+    valid_path = tmp_path / "valid.md"
+    valid_path.write_text(_verdict_block(_verdict_payload()))
+
+    # 두 모드 모두 manifest 없는 호출을 거부한다
+    for argv in (
+        ("--validate-only", str(valid_path)),
+        (str(valid_path),),
+    ):
+        proc = _run_harness(*argv)
+        assert proc.returncode == 1, argv
+        assert "--expect-findings" in proc.stderr, (argv, proc.stderr)
+
+    # 명시적 opt-out은 통과한다 (관측 전용 경로)
+    proc = _run_harness("--validate-only", "--no-manifest", str(valid_path))
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["ok"] is True
+
+    # 상호 배타 — 둘을 함께 주면 의도가 모순이므로 거부한다
+    proc = _run_harness(
+        "--validate-only", "--no-manifest", "--expect-findings", "X-1", str(valid_path)
+    )
+    assert proc.returncode == 1
+    assert "함께 쓸 수 없다" in proc.stderr
 
 
 def test_validate_only_manifest_catches_missing_and_unknown(tmp_path):

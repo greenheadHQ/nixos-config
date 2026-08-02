@@ -1038,13 +1038,20 @@ def _mutate_verdict_json_blocks(session_text, mutate):
     """fixture jsonl의 모든 VERDICT_JSON 객체를 구조 파싱해 mutate 콜백(제자리 변경)을 적용한 재직렬화 결과를 반환한다."""
     import re as _re
 
-    pattern = _re.compile(r"```json\n(.*?)\n```", _re.DOTALL)
+    # production 파서(fleiss-kappa.py VERDICT_JSON_PATTERN)와 같은 delimiter 경계를 쓴다 —
+    # ```json fence만 매칭하면 같은 payload 안의 무관한 JSON 블록까지 변형된다.
+    pattern = _re.compile(
+        r"(?P<open><!-- verdict-json:start -->\n```json\n)"
+        r"(?P<body>.*?)"
+        r"(?P<close>\n```\n<!-- verdict-json:end -->)",
+        _re.DOTALL,
+    )
 
     def _rewrite_payload(payload_text):
         def _sub(m):
-            obj = json.loads(m.group(1))
+            obj = json.loads(m.group("body"))
             mutate(obj)
-            return "```json\n" + json.dumps(obj, ensure_ascii=False) + "\n```"
+            return m.group("open") + json.dumps(obj, ensure_ascii=False) + m.group("close")
 
         return pattern.sub(_sub, payload_text)
 

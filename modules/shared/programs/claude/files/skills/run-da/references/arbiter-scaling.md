@@ -39,7 +39,7 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 정책 정의(트리거 조건, vote-shape, threshold 상수)는 [`stability-measurement.md`](stability-measurement.md)가 단일 진실 원천이다. 이 문서는 실행 계약만 다루며 정책 원자를 재서술하지 않는다.
 
 - 실행 단위: N=3 독립 Arbiter (fresh subagent 또는 fresh `codex exec` 프로세스).
-- 집계: 세션 scope에 맞는 `fleiss-kappa.py` helper(Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py` — 양쪽에 동일 소스가 프로비저닝된다)로 VERDICT_JSON 블록을 파싱.
+- 집계: 세션 scope에 맞는 `fleiss-kappa.py` helper(Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py` — 양쪽에 동일 소스가 프로비저닝된다)로 VERDICT_JSON 블록을 파싱. 호출 인자 계약(`--expect-findings` 필수)은 아래 N=3 실행 계약의 집계 단계가 정의한다.
 - 상태 전이는 [`protocol.md`](protocol.md)의 "Selective consistency 상태 전이" 섹션.
 - N=3 실행 세부는 아래 "Selective consistency N=3 실행 계약" 섹션.
 
@@ -327,8 +327,8 @@ codex exec 실패 시 (exit code != 0, 빈 결과 파일):
 N=3 중 1개 이상이 실패하면 (결과 파일 없음/빈 파일/exit code != 0/malformed VERDICT_JSON):
 
 1. surviving single-arbiter 결과로 fallback하지 않는다. 부분 표본은 vote-shape 집계에 충분하지 않다.
-2. `fleiss-kappa.py` 출력에서 `partial_failure: true`로 표기되며, 해당 finding은 `per_finding`에서 제외된다.
-3. partial failure 대상 finding은 BLOCKED 상태로 기록한다 (protocol.md 상태 전이 표 참조).
+2. `fleiss-kappa.py` 출력에서 top-level `partial_failure: true`로 표기된다. 세부 원인별 caller 매핑은 [`protocol.md`](protocol.md)의 상태 전이 표 아래 정의가 정본이며 여기 재서술하지 않는다 — 요지는 원인마다 차단 단위가 다르다는 것이다: `missing`은 그 finding만 `per_finding`에서 빠지고, 파일 단위 위반(`manifest_violations`·`file_level_failures`·`per_file_malformed`)은 정상 파싱된 finding이 `per_finding`에 남아 있어도 그 수집 단위 전체를 소비하지 않는다.
+3. 차단 대상은 BLOCKED 상태로 기록한다 (2번의 단위를 그대로 따른다).
 4. 질문 도구 지원 런타임: 사용자에게 판단 요청 (수용 / 기각 / 이번 round 제외 / 실행 환경 확인 후 rerun).
 5. 질문 도구 미지원 런타임: 자동 승격 금지. 명시적 rerun 전에는 재개하지 않는다.
 

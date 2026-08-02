@@ -57,7 +57,7 @@ for_plan의 통합 반영 루프에 다음 for_pr 전용 체크포인트를 더�
   1. 최종 diff 확인.
   2. 신규 경로 stage: batch 경로 중 Git이 아직 추적하지 않는 신규 파일·rename destination만 `git add -- <신규 batch 경로>`로 제한적으로 stage한다. path-limited commit은 Git이 이미 아는 경로만 커밋할 수 있으므로, 이 선행 없이는 신규 파일을 만드는 batch(테스트·fixture·generated output)의 commit이 pathspec 오류로 실패한다. 무관한 기존 staged 항목은 건드리지 않는다.
   3. commit: 메인 에이전트가 single-writer로 `git commit --only -- <batch 경로>` ([`../references/hardening-contract.md`](../references/hardening-contract.md)의 single-writer 정의. 경로 한정 커밋은 기존 index의 무관한 staged 사용자 항목을 포함하지도, 건드리지도 않는다 — 전역 index equality를 요구하면 무관한 staged 변경이 finalize를 영구 차단한다).
-  4. commit 경로 대조: 생성된 commit의 경로 집합(`git show --name-only`)이 batch 경로 집합(혼입 승인 경로 포함)과 일치하는지 확인한다.
+  4. commit 경로 대조: 생성된 commit의 경로 집합이 batch 경로 집합(혼입 승인 경로 포함)과 일치하는지 확인한다. 경로 목록은 `git diff-tree --no-commit-id --name-only --no-renames -r HEAD`로 얻는다 — rename detection이 켜진 출력(`git show --name-only`)은 rename을 destination 하나로 접어 source 경로를 숨기므로, batch가 rename을 포함하면 정상 commit도 집합 불일치로 오판된다. `--no-renames`는 rename을 delete+add 두 경로로 펼쳐 batch 경로 집합과 같은 표현을 만든다.
   5. staged 보존 확인: baseline의 기존 staged 상태가 그대로인지 확인한다.
   6. workspace 불변 대조: `git status --porcelain=v1 -z --untracked-files=all`을 현행 baseline과 비교해 write phase가 만든 새 미커밋 delta가 없는지 확인하고, baseline의 기존 dirty/untracked 경로(혼입 승인 경로 제외)는 저장해둔 diff 내용·hash와 대조해 내용이 변하지 않았는지 확인한다 (porcelain 상태 문자열은 내용 변화를 못 본다). 사용자의 기존 dirty/untracked 파일 자체는 차단 사유가 아니다 — 전역 clean을 요구하면 기존 파일이 finalize를 영구 차단하고, 이를 치우는 것은 hardening 계약 위반이다.
 - changeset 선언: 새 changeset(diff/commit range)을 선언하고 변경 범위를 round summary에 기록한다. walkthrough 후속 수정이 uncommitted로 남아 push에서 누락되거나 다음 라운드 preflight를 깨는 것을 구조적으로 방지한다.

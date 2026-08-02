@@ -212,16 +212,18 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 
 ### VERDICT_JSON 기계값의 caller 검증 (메인 에이전트 의무)
 
-`axes.plausibility`·`accepted_severity`·`reviewer_severity`·`rejection_basis`는 verdict·수렴을 결정하는 값의 기록이므로 누락·오염·의미 불일치가 기각/무재검증 방향으로 샐 수 있다. 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점(first-pass·N=3)에서 다음을 검증한다.
+`axes.plausibility`·`accepted_severity`·`reviewer_severity`·`rejection_basis`·`evidence_scope`는 verdict·수렴·기각 영속을 결정하는 값의 기록이므로 누락·오염·의미 불일치가 기각/무재검증 방향으로 샐 수 있다. 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점(first-pass·N=3)에서 다음을 검증한다.
 
 실시간 수집 경로에서는 `schema_version`이 정확히 현재 출력 계약 버전(1.1)이어야 한다 — first-pass·N=3 결과는 매번 fresh Arbiter가 이 계약으로 생성하므로, 1.0·버전 누락·미래 버전은 전부 출력 계약 위반이며 아래 fail-closed 전이를 따른다 (구버전 자칭으로 검증을 우회하거나 미지 버전이 현 계약 검사만 받고 통과하는 경로 차단). 하위호환은 지원하지 않으며, 새 계약 버전 도입 시 검증기·문서를 함께 갱신한다.
 
-기계 검증(존재·enum·정합 행렬·manifest)은 공통 검증기 `fleiss-kappa.py --validate-only --expect-findings <ID목록> <result.md>`가 단일 소유한다 — first-pass 결과 수집 시 메인이 Arbiter에 전달했던 finding ID 목록을 manifest로 넘겨 호출하고, N=3 집계 경로는 같은 검증을 내부 적용해 위반 entry를 malformed(→partial_failure/BLOCKED 경로)로 처리한다. 검증 규칙 (구현체: `validate_verdict_entry` 단일 진입점):
+기계 검증(존재·enum·정합 행렬·manifest)은 공통 검증기 `fleiss-kappa.py --validate-only --expect-findings <ID목록> <result.md>`가 단일 소유한다 — first-pass 결과 수집 시 메인이 Arbiter에 전달했던 finding ID 목록을 manifest로 넘겨 호출하고, N=3 집계 경로는 같은 검증을 내부 적용해 위반 entry를 malformed(→partial_failure/BLOCKED 경로)로 처리한다. `--expect-findings`는 두 경로 모두에서 필수 인자다 — 생략하면 검증기가 인자 오류로 종료하므로 manifest 없는 수집이 성공으로 처리되는 경로는 없다 (관측 전용 `--no-manifest` opt-out은 실시간 수집에 쓰지 않는다). 검증 규칙 (구현체: `validate_verdict_entry` 단일 진입점):
 
 - schema: 실시간 결과는 `schema_version`이 정확히 `1.1` (그 외 전부 위반).
 - 필수 필드 + enum: `verdict`·`confidence`는 존재+enum 필수. `axes`는 객체여야 하고 `axes.plausibility ∈ {PASS, FAIL, UNKNOWN, N/A}`, `reviewer_severity ∈ {CRITICAL, HIGH, MEDIUM, LOW}` 필수. `accepted_severity`는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다.
 - verdict 정합 행렬: `CONFIRMED_ISSUE → plausibility PASS 필수` / `NOT_AN_ISSUE → FAIL 또는 N/A` / `NEEDS_MORE_INFO → PASS 또는 UNKNOWN`. 행렬 밖 조합(예: FAIL+CONFIRMED_ISSUE, UNKNOWN+NOT_AN_ISSUE)은 위반이다.
 - 기각 근거 정합: NOT_AN_ISSUE는 `rejection_basis ∈ {FACTUAL_FAIL, RELEVANCE_FAIL, PLAUSIBILITY_FAIL}` 필수. `plausibility=N/A`는 `rejection_basis`가 FACTUAL_FAIL 또는 RELEVANCE_FAIL일 때만 적법하고, PLAUSIBILITY_FAIL이면 `plausibility=FAIL`이어야 한다. NOT_AN_ISSUE가 아닌 verdict에 `rejection_basis`가 있으면 위반이다.
+- 기각 근거 수명주기: `rejection_basis=PLAUSIBILITY_FAIL`은 `evidence_scope ∈ {FROZEN_SURFACE, ENVIRONMENT_WORKLOAD}` 필수 (ledger 영속 eligibility의 기계 판정 근거 — [`dismissal-ledger.md`](dismissal-ledger.md) SSOT). 다른 `rejection_basis`·verdict에 `evidence_scope`가 있으면 위반이다.
+- 개별 entry 전용 값 경계: `stability_status`는 개별 Arbiter가 산출할 수 없는 aggregate 전용 상태이므로 누락이 정상이다 (caller는 누락을 `N/A`로 읽는다). 값을 쓴 경우에만 `N/A`여야 하며, `stable`/`split`/`fragmented`는 위반이다.
 - finding manifest 대조: 파일의 유효 finding ID 집합이 `--expect-findings` 목록과 정확히 일치해야 한다 — 누락(전달한 finding에 판정이 없음)·미지 ID 모두 위반이다 (Arbiter 출력에서 finding이 조용히 사라지는 것을 차단. N=3도 이 manifest 기준으로 missing을 판정한다).
 
 기계 검증기가 볼 수 없는 교차 검증 1개는 메인 에이전트 몫이다:
