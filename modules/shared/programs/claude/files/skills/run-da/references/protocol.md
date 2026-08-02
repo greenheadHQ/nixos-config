@@ -205,7 +205,7 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 ### accepted severity
 
 - accepted severity는 Arbiter 판정을 거친 항목에만 존재한다. 값은 VERDICT_JSON의 `accepted_severity` 필드다 (산출 주체는 Arbiter — 심각도 조정 시 조정값, 아니면 reviewer 원값. [`arbiter-prompt.md`](arbiter-prompt.md) 출력 요건 참조). 메인 에이전트는 집계(최댓값 계산)만 수행한다 — Arbiter 판정 대체가 아니다.
-- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity` 중 "최종 수용 verdict를 지지하는 entry"들의 최댓값을 메인이 계산한다 (기각표의 severity가 재검증 수준을 결정하지 않게 한다. 검증을 통과한 지지 entry에는 값이 반드시 있다 — 누락 entry는 검증 단계에서 이미 malformed다. harness는 변경하지 않는다).
+- selective consistency N=3이 실행된 finding은 harness aggregate가 보존하는 `entries[].accepted_severity` 중 "최종 수용 verdict를 지지하는 entry"들의 최댓값을 메인이 계산한다 — 단 최종 수용 verdict가 write set에 들어가는 경우(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에만 계산한다. 기각표의 severity가 재검증 수준을 결정하지 않게 하기 위함이고, write set에 들어가는 verdict의 지지 entry에는 검증상 값이 반드시 있다. NOT_AN_ISSUE가 최종 수용 verdict이면 accepted severity를 산출하지 않는다 — 그 verdict는 write set에 들어가지 않고, 검증기도 NOT_AN_ISSUE에는 `accepted_severity`를 요구하지 않으므로 지지 entry 전체에 값이 없을 수 있다 (없는 값의 최댓값을 계산하려 하면 정상 기각이 malformed로 처리된다). harness는 변경하지 않는다.
 - "최종 수용 verdict"는 상태별로 다음과 같이 확정한다. harness는 `majority_verdict`와 원본 `entries`만 주므로, 이 확정이 없으면 어느 entry 집합이 근거인지 기계적으로 결정되지 않는다:
   - `stable`(3:0): 그 unanimous verdict. 지지 entry는 전부다.
   - `split`(2:1)에서 사용자가 수용: 사용자가 수용한 쪽의 verdict. 다수·소수 어느 쪽을 수용했든 그 verdict를 낸 entry만 지지 entry다 (다수 NOT_AN_ISSUE인데 소수 CONFIRMED_ISSUE를 수용하면 그 소수 entry가 근거).

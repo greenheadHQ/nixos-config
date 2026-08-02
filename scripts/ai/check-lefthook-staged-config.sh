@@ -194,6 +194,12 @@ pre-push:
         - "modules/shared/programs/claude/files/scripts/tests/test_fleiss_kappa.py"
         - "tests/run-fleiss-kappa-tests.sh"
       run: bash ./tests/run-fleiss-kappa-tests.sh
+    skill-doc-sync:
+      glob:
+        - "modules/shared/programs/claude/files/skills/run-da/**"
+        - "modules/shared/programs/claude/files/scripts/fleiss-kappa.py"
+        - "tests/skill-doc-sync.py"
+      run: bash ./tests/test-skill-doc-sync.sh
     flake-check:
       glob:
         - "*.nix"

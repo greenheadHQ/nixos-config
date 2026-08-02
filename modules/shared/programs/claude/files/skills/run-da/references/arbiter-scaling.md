@@ -278,7 +278,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 1. 동일 판정 기준 / 템플릿으로 3개의 fresh subagent를 strong review profile로 `spawn_agent` 실행한다. 프롬프트 본문은 위 "프롬프트 축소 규칙"대로 trigger된 finding subset 만 포함해 조립하고, 이전 판정 transcript는 공유하지 않는다 (독립 판정 원칙).
 2. N=3 발사가 capability profile의 batch 상한([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)을 넘으면 batch한다. legacy profile에서는 3개 발사 전에 first-pass Arbiter의 completed thread를 `close_agent`로 닫아 슬롯을 확보하고, current profile에서는 광고 slot 내에서 발사 수를 조절한다.
 3. 3개 모두의 결과를 수집한다 ([`runtime-mapping.md`](runtime-mapping.md#result-collection) binding). timeout만으로 failure 처리하거나 self-auditing으로 대체하지 않는다(conservative wait). 수신 후 slot 회수는 capability profile을 따른다.
-4. 3개 결과 markdown을 각각 파일로 저장(`/tmp/da-${_DA_SID}-arbiter-selective-*/arbiter-{1,2,3}.md`) 후 `"$HELPER_PATH"`로 집계한다 ([`protocol.md`](protocol.md) "검증기 호출 계약"). 호출 계약은 아래 codex exec 경로 4번과 동일하다 — `--expect-findings <trigger된 finding ID 쉼표 목록>`을 반드시 전달한다 (manifest 없는 집계는 세 Arbiter 공통 누락을 잡지 못한다).
+4. 3개 결과 markdown을 각각 파일로 저장(`/tmp/da-${_DA_SID}-arbiter-selective-*/arbiter-{1,2,3}-result.md` — 아래 codex exec 경로와 같은 파일명을 쓴다) 후 `"$HELPER_PATH"`로 집계한다 ([`protocol.md`](protocol.md) "검증기 호출 계약"). 호출 계약은 아래 codex exec 경로 4번과 동일하다 — `--expect-findings <trigger된 finding ID 쉼표 목록>`을 반드시 전달한다 (manifest 없는 집계는 세 Arbiter 공통 누락을 잡지 못한다).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션, N=3)
 

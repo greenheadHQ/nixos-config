@@ -175,6 +175,15 @@ pre-push:
       # run-da 공통 검증기/집계기(fleiss-kappa.py) harness 계약을 profile의 pytest로 검증한다.
       # glob을 harness 자체로 좁힌다 — 계약 변경은 반드시 이 파일들의 변경을 동반한다.
       run: bash ./tests/run-fleiss-kappa-tests.sh
+    skill-doc-sync:
+      glob:
+        - "modules/shared/programs/claude/files/skills/run-da/**"
+        - "modules/shared/programs/claude/files/scripts/fleiss-kappa.py"
+        - "tests/skill-doc-sync.py"
+      # run-da 문서군의 manual sync contract를 검증한다 — 특히 arbiter-prompt.md의
+      # VERDICT_JSON 골격을 실제 validator에 통과시키는 검사가 여기 있다. 계약이
+      # 어긋나면 Arbiter 출력이 semantic malformed로 거부되므로 CI 전에 잡는다.
+      run: bash ./tests/test-skill-doc-sync.sh
     flake-check:
       glob:
         - "*.nix"

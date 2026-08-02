@@ -324,8 +324,8 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS / FAIL / N/A
   - 현실적 발생 가능성 (Plausibility): PASS / FAIL / 판단 불가(UNKNOWN) / N/A
   - Portability / Cross-Environment Drift: PASS / FAIL / N/A
-- **evidence_scope**: (Plausibility FAIL 기각에만) FROZEN_SURFACE / ENVIRONMENT_WORKLOAD + 그 근거가 무엇에 의존하는지 한 줄
 - **심각도 판정**: {accepted_severity} — 심각도 타당성 PASS면 reviewer 원값 그대로, FAIL이면 "원값 X → 조정 Y"와 조정 근거를 명시 (조정 여부의 기계 판정은 VERDICT_JSON의 `reviewer_severity`/`accepted_severity` 비교로 자기완결된다 — 이 줄은 조정 근거를 사람에게 설명하는 보고용 서술이다)
+- **evidence_scope**: (Plausibility FAIL 기각에만) FROZEN_SURFACE / ENVIRONMENT_WORKLOAD + 그 근거가 무엇에 의존하는지 한 줄
 - **근거**: 직접 확인 결과 + 기술적 판단 (for_pr: 파일:줄 / for_plan: 관련 파일 또는 계획 원문)
 - **증거**: (NOT_AN_ISSUE의 경우 필수) for_pr: 반증 코드 스니펫 / for_plan: 반증 근거 (관련 파일 내용 또는 계획 원문 인용)
 ```
