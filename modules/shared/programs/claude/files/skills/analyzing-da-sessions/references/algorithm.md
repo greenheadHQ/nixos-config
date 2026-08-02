@@ -118,7 +118,7 @@ keyword 분모 금지: 본문에 `arbiter` 단어가 있다고 분모에 포함�
 | `perspective` | finding ID 또는 finding block의 관점 |
 | `location_identity` | finding block의 위치 식별자 (`path:line` 등) |
 | `finding_fingerprint` | finding 요약 정규화 텍스트 SHA-256 |
-| `stability_status` | VERDICT_JSON 필드 보존. 개별 Arbiter 출력은 보통 `N/A` |
+| `stability_status` | schema 1.1 개별 VERDICT_JSON에는 이 필드가 없다 (aggregate 전용). analyzer가 누락 시 호환값 `N/A`를 합성해 채운다 |
 | `canonical_verdict_hash` | canonical verdict object hash. verdict 단위 dedupe key 입력 |
 
 aggregate 결과의 `metrics["M-2"]["source_distribution"]` 필드에 source별 추출률을 출력해 low-confidence fallback 비율을 가시화한다.
@@ -222,7 +222,7 @@ selective consistency stability_status 측정은 verdict extraction pipeline과 
 | round summary `selective:` 라인 | `selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_failure T건` 패턴 매치 시 stable/split/fragmented 카운트 누적. SoT는 `analyze.py`의 `SELECTIVE_LINE` 정규식 + `resolve_stability_status_from_round_summary`. |
 | unavailable | round summary 라인 부재 시. 추정 금지. |
 
-금지: 개별 Arbiter VERDICT_JSON의 `stability_status` 필드는 항상 `N/A`이므로 절대 source로 사용하지 않는다 (`run-da/references/arbiter-prompt.md` SSOT).
+금지: 개별 Arbiter VERDICT_JSON에는 `stability_status` 필드가 없으므로(schema 1.1에서 aggregate 전용으로 고정) 절대 source로 사용하지 않는다 — 추출 시 보이는 값은 analyzer가 누락에 합성한 호환값 `N/A`일 뿐이다 (`run-da/references/arbiter-prompt.md` SSOT).
 
 v1에서 미사용 source — `fleiss-kappa.py` aggregate envelope: 본 문서 초기 draft에는 1차 source로 `fleiss-kappa.py` aggregate envelope의 `per_finding[].stability_status`가 명시됐으나, 호출하려면 selective consistency arbiter result 디렉토리(예: `/tmp/da-*-arbiter-selective-*/arbiter-{1,2,3}-result.md`)를 session-level에서 직접 추적해야 하는데, 본 Skill의 corpus 전체 스캔 모델에서는 그 경계가 자연스럽게 결합되지 않는다. 따라서 v1은 round summary fallback만 사용하고, 1차 source 통합은 follow-up 범위로 둔다.
 

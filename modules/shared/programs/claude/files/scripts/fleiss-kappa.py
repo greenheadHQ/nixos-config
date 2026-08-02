@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
-"""Run-DA Arbiter selective consistency harness (N=3 policy + optional offline Fleiss kappa).
+"""Run-DA VERDICT_JSON validator + selective consistency aggregator.
+
+이 파일은 두 책임을 소유한다 (파일명은 초기 Fleiss kappa 용도에서 유래했고, 세션 scope에
+단일 파일로 프로비저닝되는 계약이라 유지한다 — 분리하면 프로비저닝 대상이 늘어난다):
+
+  1. VERDICT_JSON 계약 검증 (`validate_verdict_entry` + `--validate-only`) —
+     protocol.md "수렴 판정" caller 검증의 기계 검증 SSOT. first-pass 결과 수집이 소비한다.
+  2. selective consistency 집계 (`classify_vote_shape` 이하 + 기본 CLI 경로) —
+     N=3 vote-shape와 stability_status 산출. trigger된 finding에만 실행된다.
+
+두 모드는 parse_and_check_manifest()의 같은 파싱·manifest 결과를 소비한다.
 
 v1 정책: selective consistency가 발동한 finding에 대해 **N=3 독립 Arbiter** 결과를 받아
 vote-shape(3:0 / 2:1 / 1:1:1)와 stability_status(stable / split / fragmented)를 계산한다.
 입력 파일이 정확히 3개가 아니면 vote-shape는 "unknown"으로 분류되어 v1 정책 범위 밖이다.
 
-Each file must contain VERDICT_JSON blocks (schema_version=1.0) with per-finding verdicts
+Each file must contain VERDICT_JSON blocks whose schema_version matches LIVE_SCHEMA_VERSION exactly, with per-finding verdicts
 as defined in arbiter-prompt.md "출력 형식" section.
 
 With --offline flag, also compute corpus-level Fleiss' kappa across findings
@@ -16,7 +26,15 @@ corpus 전용이므로 2개 이상의 finding이 있어야 정의된다.
 Threshold policy SSOT: stability-measurement.md (STABLE_MIN / ESCALATE_MIN).
 
 Usage:
-    fleiss-kappa.py <arbiter1.md> <arbiter2.md> <arbiter3.md> [--offline]
+    # N=3 vote-shape 집계 (aggregate JSON을 stdout에 출력)
+    fleiss-kappa.py --expect-findings <ID,ID,...> \
+        <arbiter1.md> <arbiter2.md> <arbiter3.md> [--offline]
+    # first-pass caller 검증 (집계 없음 — 파일별 schema/manifest 검사 결과 JSON,
+    # 전체 통과 시 exit 0 / 위반 시 exit 1)
+    fleiss-kappa.py --validate-only --expect-findings <ID,ID,...> <result.md>
+
+`--expect-findings`는 모든 호출의 필수 인자다 — 생략은 검증 없음이 아니라 인자 오류다.
+manifest 없는 수집이 성공으로 처리되면 finding 누락이 그대로 소비되어 조기 수렴으로 샌다.
 
 Output: JSON on stdout. See main() for schema.
 """
@@ -35,8 +53,179 @@ ESCALATE_MIN = 0.4
 VERDICT_CATEGORIES = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
 CONFIDENCE_VALUES = ("HIGH", "MEDIUM", "LOW", "N/A")
 
-# 지원되는 VERDICT_JSON 스키마 major 버전. breaking change 시 이 set을 갱신.
-SUPPORTED_SCHEMA_MAJOR = {"1"}
+# 현재 live schema의 semantic 계약 (protocol.md "수렴 판정" caller 검증 SSOT와 동기화)
+SEVERITY_VALUES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+PLAUSIBILITY_VALUES = ("PASS", "FAIL", "UNKNOWN", "N/A")
+PORTABILITY_VALUES = ("PASS", "FAIL", "N/A")
+REJECTION_BASES = ("FACTUAL_FAIL", "RELEVANCE_FAIL", "PLAUSIBILITY_FAIL")
+# PLAUSIBILITY_FAIL 기각 근거의 수명주기 분류 (dismissal-ledger.md 영속 eligibility SSOT):
+# FROZEN_SURFACE = frozen changeset의 불변 계약 근거 → ledger 영속 eligible
+# ENVIRONMENT_WORKLOAD = 환경·워크로드 가정 근거 → ledger 비영속. 그 라운드의 판정으로
+#   끝나고 다음 라운드에 같은 finding이 올라오면 다시 판정한다 (루프 한정 suppression
+#   상태를 따로 두지 않는다 — 소유자 없는 상태를 만들지 않기 위함).
+EVIDENCE_SCOPES = ("FROZEN_SURFACE", "ENVIRONMENT_WORKLOAD")
+# verdict -> 허용되는 axes.plausibility 값 (정합 행렬)
+PLAUSIBILITY_MATRIX = {
+    "CONFIRMED_ISSUE": {"PASS"},
+    "NOT_AN_ISSUE": {"FAIL", "N/A"},
+    "NEEDS_MORE_INFO": {"PASS", "UNKNOWN"},
+}
+LIVE_SCHEMA_VERSION = "1.1"  # 실시간 결과는 정확히 이 버전 (새 계약 도입 시 검증기와 함께 갱신)
+
+
+def validate_verdict_entry(entry):
+    """현재 live schema 계약 위반 목록을 반환하는 단일 검증 진입점 (빈 리스트 = 통과).
+
+    protocol.md "수렴 판정" caller 검증의 기계 검증 SSOT 구현체 —
+    version·필수 필드·모든 enum·verdict 정합 행렬을 이 함수 하나가 검사한다.
+    finding_id의 존재·중복 검사는 parser(load_validated_verdict_entries) 소관이고,
+    reviewer 원본 finding과의 대조(reviewer_severity 은닉 차단)는 원본을 아는
+    caller 몫이며, finding ID manifest는 --expect-findings로 전달된다.
+    과거 산출물 하위호환은 없다 — LIVE_SCHEMA_VERSION과 정확히 일치하는 계약만 검증한다.
+    """
+    violations = []
+    sv = entry.get("schema_version")
+    if sv != LIVE_SCHEMA_VERSION:
+        violations.append(
+            f"live 결과는 schema_version {LIVE_SCHEMA_VERSION!r}이어야 함 (got {sv!r})"
+        )
+        return violations
+    verdict = entry.get("verdict")
+    if verdict not in VERDICT_CATEGORIES:
+        violations.append(f"verdict 누락 또는 enum 밖 값: {verdict!r}")
+        return violations
+    conf = entry.get("confidence")
+    if conf not in CONFIDENCE_VALUES:
+        violations.append(f"confidence 누락 또는 enum 밖 값: {conf!r}")
+    elif verdict in ("CONFIRMED_ISSUE", "NOT_AN_ISSUE") and conf == "N/A":
+        # N/A 신뢰도는 NEEDS_MORE_INFO 전용 — 신뢰도 없는 확정/기각이
+        # selective consistency LOW 트리거를 우회하는 것을 차단한다.
+        violations.append(f"확정 verdict({verdict})에 confidence=N/A 금지")
+    axes = entry.get("axes")
+    if not isinstance(axes, dict):
+        violations.append(f"axes가 객체가 아님: {type(axes).__name__}")
+        plaus = None
+    else:
+        plaus = axes.get("plausibility")
+    if plaus not in PLAUSIBILITY_VALUES:
+        violations.append(f"axes.plausibility 누락 또는 enum 밖 값: {plaus!r}")
+    elif plaus not in PLAUSIBILITY_MATRIX[verdict]:
+        violations.append(
+            f"verdict 정합 행렬 위반: verdict={verdict} + plausibility={plaus}"
+        )
+    if entry.get("reviewer_severity") not in SEVERITY_VALUES:
+        violations.append(
+            f"reviewer_severity 누락 또는 enum 밖 값: {entry.get('reviewer_severity')!r}"
+        )
+    # accepted_severity는 write set 진입 가능 verdict(CONFIRMED/NEEDS_MORE_INFO)에만
+    # 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다 (있어도 무방).
+    if verdict != "NOT_AN_ISSUE" and entry.get("accepted_severity") not in SEVERITY_VALUES:
+        violations.append(
+            f"accepted_severity 누락 또는 enum 밖 값: {entry.get('accepted_severity')!r}"
+        )
+    # stability_status는 aggregate envelope 전용 필드다 — 개별 Arbiter는 산출할 수
+    # 없으므로 개별 entry에 두지 않는다. 자리표시자 'N/A'를 요구하면 아무도 읽지
+    # 않는 필드가 계약 표면에 남고, 값을 허용하면 aggregate 상태 환각 경로가 열린다.
+    if "stability_status" in entry:
+        violations.append(
+            "stability_status는 aggregate 전용 필드 — 개별 entry에 출력 금지 "
+            f"(got {entry['stability_status']!r})"
+        )
+    if isinstance(axes, dict) and axes.get("portability") not in PORTABILITY_VALUES:
+        violations.append(
+            f"axes.portability 누락 또는 enum 밖 값: {axes.get('portability')!r}"
+        )
+    basis = entry.get("rejection_basis")
+    if verdict == "NOT_AN_ISSUE":
+        if basis not in REJECTION_BASES:
+            violations.append(f"NOT_AN_ISSUE에 rejection_basis 누락/비정상: {basis!r}")
+        elif basis == "PLAUSIBILITY_FAIL" and plaus != "FAIL":
+            violations.append("rejection_basis=PLAUSIBILITY_FAIL이면 plausibility=FAIL 필수")
+        elif basis in ("FACTUAL_FAIL", "RELEVANCE_FAIL") and plaus not in ("N/A", "FAIL"):
+            violations.append(
+                f"rejection_basis={basis}와 plausibility={plaus} 조합 비정합"
+            )
+    elif basis is not None:
+        violations.append(f"{verdict}에 rejection_basis 출력 금지 (got {basis!r})")
+    # evidence_scope는 PLAUSIBILITY_FAIL 기각의 ledger 수명주기를 결정하므로
+    # 그 경우에만 필수다 — 기록자가 사람용 rationale 재해석 없이 영속 여부를 판단한다.
+    scope = entry.get("evidence_scope")
+    if basis == "PLAUSIBILITY_FAIL":
+        if scope not in EVIDENCE_SCOPES:
+            violations.append(
+                f"PLAUSIBILITY_FAIL에 evidence_scope 누락 또는 enum 밖 값: {scope!r}"
+            )
+    elif scope is not None:
+        violations.append(
+            f"evidence_scope는 PLAUSIBILITY_FAIL 전용 (got {scope!r} with basis={basis!r})"
+        )
+    return violations
+
+
+def manifest_diff_violations(expected_ids, found_ids, missing_is_violation=True):
+    """--expect-findings manifest 대조 위반 목록.
+
+    missing_is_violation=True (validate-only): 누락·미지 ID 모두 exact-set 위반이다.
+    False (N=3 집계): 누락은 finding 단위 `missing`으로 별도 전달되므로 여기서
+    제외한다 — 파일 단위 위반으로도 함께 기록하면 finding 하나가 빠졌을 때
+    나머지 정상 집계까지 수집 단위 전체 폐기 경로로 끌려간다 (caller 매핑이
+    원인별로 갈리는 이유는 protocol.md 상태 전이표 아래 정의 참조).
+    """
+    issues = []
+    if missing_is_violation:
+        issues += [f"기대 finding 누락: {fid}" for fid in sorted(expected_ids - found_ids)]
+    issues += [f"manifest 밖 finding: {fid}" for fid in sorted(found_ids - expected_ids)]
+    return issues
+
+
+def parse_and_check_manifest(paths, expected_ids, missing_is_violation=True):
+    """파일별 (entries, malformed, manifest 위반)을 한 번에 산출하는 공통 흐름.
+
+    validate-only와 N=3 집계가 같은 파싱·manifest 대조 결과를 소비하도록
+    두 분기의 조립을 여기로 모은다 (동일 계약이 두 제어 흐름에 복제되지 않게 한다).
+    missing_is_violation은 manifest_diff_violations()의 같은 이름 인자로 전달된다.
+    """
+    parsed = []
+    for path in paths:
+        entries, malformed = load_validated_verdict_entries(path)
+        issues = manifest_diff_violations(
+            expected_ids, set(entries.keys()), missing_is_violation
+        )
+        parsed.append({
+            "path": path,
+            "entries": entries,
+            "malformed": malformed,
+            "manifest_violations": issues,
+        })
+    return parsed
+
+
+def resolve_expected_ids(args):
+    """--expect-findings 인자에서 expected_ids를 결정한다.
+
+    manifest 대조는 모든 수집 경로의 필수 경계이므로(protocol.md 수렴 판정),
+    옵션 생략은 "검증 없음"이 아니라 인자 오류다 — manifest 없는 호출이 성공하면
+    finding 누락이 그대로 소비된다.
+    반환: (expected_ids | None, error_message | None).
+    """
+    if args.expect_findings is None:
+        return None, "--expect-findings가 필요하다 (finding manifest 대조는 필수)"
+    # 빈 문자열("")은 "옵션 미지정"이 아니라 인자 오류다 — truthiness 검사로 조용히
+    # manifest 검증을 우회하는 경로(셸 변수 유실 등)를 차단한다.
+    raw_ids = [fid.strip() for fid in args.expect_findings.split(",")]
+    if "" in raw_ids:
+        return None, f"--expect-findings에 빈 항목: {args.expect_findings!r}"
+    if len(raw_ids) != len(set(raw_ids)):
+        return None, f"--expect-findings에 중복 ID: {args.expect_findings!r}"
+    return set(raw_ids), None
+
+
+# finding ID의 shell-safe 문법 — `{prefix}-{순번}`. prefix가 bundle인지 subdomain인지는
+# 여기서 강제하지 않는다 (reviewer bundle은 `Correctness-1`, exhaustive 경로는
+# `SECURITY-2` 같은 subdomain prefix를 쓴다). 이 검사의 목적은 namespace 검증이 아니라,
+# reviewer 산출 ID가 --expect-findings 셸 인자로 전달되기 전에 안전한 문자 집합만
+# 통과시키는 것이다 (da-domains.md의 ID 형식 규약은 문서 계약으로 별도 유지).
+SAFE_FINDING_ID_PATTERN = re.compile(r"[A-Za-z_]+-[0-9]+")
 
 # arbiter-prompt.md "출력 형식 > 기계 파싱용 VERDICT_JSON 블록" 스키마와 일치
 VERDICT_JSON_PATTERN = re.compile(
@@ -45,7 +234,7 @@ VERDICT_JSON_PATTERN = re.compile(
 )
 
 
-def parse_verdict_json_blocks(markdown_path: Path):
+def load_validated_verdict_entries(markdown_path: Path):
     """Parse VERDICT_JSON blocks from Arbiter result markdown.
 
     Returns (entries, malformed_count):
@@ -56,7 +245,7 @@ def parse_verdict_json_blocks(markdown_path: Path):
       - JSONDecodeError: malformed 카운트 +1, 해당 block skip.
       - json 결과가 dict가 아니면(list/str/null 등): malformed +1, skip.
       - finding_id 누락/비문자열: malformed +1, skip.
-      - schema_version이 SUPPORTED_SCHEMA_MAJOR에 없으면: malformed +1, skip.
+      - validate_verdict_entry() 위반 (live schema 계약 전체): malformed +1, skip.
       - 동일 파일 내 동일 finding_id 중복: malformed +1, 해당 finding entries에서 제거
         (silent overwrite 방지; caller는 BLOCKED 취급).
     """
@@ -83,24 +272,22 @@ def parse_verdict_json_blocks(markdown_path: Path):
             malformed += 1
             continue
         finding_id = entry.get("finding_id")
-        if not isinstance(finding_id, str) or not finding_id:
+        if not isinstance(finding_id, str) or not SAFE_FINDING_ID_PATTERN.fullmatch(finding_id):
             print(
-                f"warning: VERDICT_JSON without valid finding_id in {markdown_path}",
+                f"warning: VERDICT_JSON without shell-safe finding_id in {markdown_path}",
                 file=sys.stderr,
             )
             malformed += 1
             continue
-        # schema_version 검증: 없으면 보수적으로 skip (1.0 assumed만 허용).
-        sv = entry.get("schema_version")
-        if sv is not None:
-            major = str(sv).split(".", 1)[0]
-            if major not in SUPPORTED_SCHEMA_MAJOR:
+        semantic_violations = validate_verdict_entry(entry)
+        if semantic_violations:
+            for v in semantic_violations:
                 print(
-                    f"warning: unsupported schema_version={sv!r} in {markdown_path}",
+                    f"warning: semantic malformed VERDICT_JSON ({finding_id}) in {markdown_path}: {v}",
                     file=sys.stderr,
                 )
-                malformed += 1
-                continue
+            malformed += 1
+            continue
         if finding_id in entries:
             # 같은 파일 안 중복 — 어느 쪽도 신뢰 불가. 해당 finding을 duplicated_ids에 표시.
             print(
@@ -108,24 +295,6 @@ def parse_verdict_json_blocks(markdown_path: Path):
                 file=sys.stderr,
             )
             duplicated_ids.add(finding_id)
-            malformed += 1
-            continue
-        # confidence enum strict validation (arbiter-prompt.md "출력 형식" 스키마).
-        conf = entry.get("confidence")
-        if conf is not None and conf not in CONFIDENCE_VALUES:
-            print(
-                f"warning: invalid confidence={conf!r} in {markdown_path} (finding_id={finding_id})",
-                file=sys.stderr,
-            )
-            malformed += 1
-            continue
-        # verdict enum 검증 — downstream에서도 거르지만 조기 거부로 caller 계약 명확화.
-        v = entry.get("verdict")
-        if v is not None and v not in VERDICT_CATEGORIES:
-            print(
-                f"warning: invalid verdict={v!r} in {markdown_path} (finding_id={finding_id})",
-                file=sys.stderr,
-            )
             malformed += 1
             continue
         entries[finding_id] = entry
@@ -255,9 +424,10 @@ def interpret_kappa(kappa):
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Run-DA Arbiter selective consistency harness (N=3 vote-shape policy). "
-            "v1에서는 정확히 3개 Arbiter 결과 markdown에서 vote-shape를 계산한다 "
-            "(3 아닌 입력은 'unknown'으로 분류). "
+            "Run-DA VERDICT_JSON validator + selective consistency aggregator. "
+            f"--validate-only는 schema {LIVE_SCHEMA_VERSION} 계약과 finding manifest 대조만 수행한다 "
+            "(first-pass caller 검증). 기본 경로는 정확히 3개 Arbiter 결과 markdown에서 "
+            "vote-shape를 계산한다 (3 아닌 입력은 'unknown'으로 분류). "
             "--offline 플래그로 corpus-level Fleiss kappa를 장기 관찰 목적으로 추가 계산."
         ),
     )
@@ -266,6 +436,23 @@ def main():
         nargs="+",
         type=Path,
         help="Arbiter result markdown files containing VERDICT_JSON blocks (v1 vote-shape는 N=3 정책)",
+    )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help=(
+            f"집계 없이 각 입력 파일의 VERDICT_JSON schema {LIVE_SCHEMA_VERSION} 계약과 finding "
+            "manifest 대조를 검증하고 JSON 결과를 출력한다 "
+            "(first-pass caller 검증용 — protocol.md 수렴 판정 SSOT)"
+        ),
+    )
+    parser.add_argument(
+        "--expect-findings",
+        help=(
+            "쉼표 구분 finding ID manifest (실시간 경로 필수). 각 파일의 유효 finding ID "
+            "집합이 이 집합과 정확히 일치해야 한다 — 누락·미지 ID는 위반 (finding 소실 차단). "
+            "N=3 집계에서도 이 집합 기준으로 missing을 판정한다"
+        ),
     )
     parser.add_argument(
         "--offline",
@@ -277,10 +464,41 @@ def main():
     )
     args = parser.parse_args()
 
-    # 각 Arbiter 파일에서 (entries, malformed_count) 수집.
-    parsed = [parse_verdict_json_blocks(p) for p in args.arbiter_files]
-    arbiter_entries = [entries for entries, _ in parsed]
-    per_file_malformed = [mal for _, mal in parsed]
+    expected_ids, arg_error = resolve_expected_ids(args)
+    if arg_error:
+        print(f"error: {arg_error}", file=sys.stderr)
+        return 1
+
+    # validate-only는 exact-set 검증(누락도 위반), 집계는 누락을 finding 단위
+    # `missing`으로만 전달한다 (파일 단위 폐기 경로와 분리).
+    parsed = parse_and_check_manifest(
+        args.arbiter_files, expected_ids, missing_is_violation=args.validate_only
+    )
+
+    if args.validate_only:
+        report = {"files": [], "ok": True}
+        for item in parsed:
+            file_ok = (
+                item["malformed"] == 0
+                and len(item["entries"]) > 0
+                and not item["manifest_violations"]
+            )
+            report["files"].append(
+                {
+                    "path": str(item["path"]),
+                    "valid_findings": sorted(item["entries"].keys()),
+                    "malformed_count": item["malformed"],
+                    "manifest_violations": item["manifest_violations"],
+                    "ok": file_ok,
+                }
+            )
+            report["ok"] = report["ok"] and file_ok
+        json.dump(report, sys.stdout, indent=2, ensure_ascii=False)
+        print()
+        return 0 if report["ok"] else 1
+
+    arbiter_entries = [item["entries"] for item in parsed]
+    per_file_malformed = [item["malformed"] for item in parsed]
     # 파일이 아예 비었거나 모든 블록이 malformed인 경우 file-level failure.
     # caller는 이 상태를 partial_failure로 간주하여 BLOCKED 처리해야 한다.
     file_level_failures = [
@@ -288,13 +506,17 @@ def main():
         for i, entries in enumerate(arbiter_entries)
         if len(entries) == 0
     ]
-    all_finding_ids = set()
-    for entries in arbiter_entries:
-        all_finding_ids.update(entries.keys())
+    manifest_violations = {}
+    for item in parsed:
+        if item["manifest_violations"]:
+            manifest_violations[str(item["path"])] = item["manifest_violations"]
+    # manifest 기준 집계: 세 Arbiter가 모두 같은 finding을 누락해도 missing으로 잡힌다
+    # (관측된 ID의 union을 쓰면 공통 누락이 집합에서 사라져 조용히 통과한다).
+    expected_finding_ids = set(expected_ids)
 
     per_finding = []
     missing = {}
-    for fid in sorted(all_finding_ids):
+    for fid in sorted(expected_finding_ids):
         verdicts = []
         confidences = []
         entries_for_finding = []
@@ -343,13 +565,18 @@ def main():
 
     result = {
         "n_arbiters": len(args.arbiter_files),
-        "n_findings": len(all_finding_ids),
+        # manifest 기준이므로 관측 수가 아니라 기대 finding 수다.
+        "n_findings": len(expected_finding_ids),
         "n_classified": len(per_finding),
         "per_finding": per_finding,
         "per_file_malformed": per_file_malformed,
     }
 
     partial_failure = False
+    if manifest_violations:
+        # --expect-findings 양방향 대조 위반 (누락·미지 ID) — finding 소실/오염 차단.
+        result["manifest_violations"] = manifest_violations
+        partial_failure = True
     if missing:
         result["missing"] = missing
         partial_failure = True
@@ -384,4 +611,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

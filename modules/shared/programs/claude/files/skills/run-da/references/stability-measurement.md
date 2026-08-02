@@ -9,7 +9,7 @@ run-da Arbiter가 동일 finding에 대해 round마다 상반된 verdict를 내�
 | 이 문서 (`stability-measurement.md`) | 정책 정의 (trigger 조건, threshold, stability_status enum) |
 | [`protocol.md`](protocol.md) | 상태 전이 (verdict × stability_status → 메인 에이전트 행동) |
 | [`arbiter-scaling.md`](arbiter-scaling.md) | 런타임 실행 계약 (Codex 세션 / codex exec 병렬 실행 방법, 실패 처리) |
-| [`arbiter-prompt.md`](arbiter-prompt.md) | VERDICT_JSON 블록 스키마, 5가지 판정 기준, Few-shot |
+| [`arbiter-prompt.md`](arbiter-prompt.md) | VERDICT_JSON 블록 스키마, 판정 기준, Few-shot |
 
 ## v1 정책: vote-shape 기반 selective consistency
 

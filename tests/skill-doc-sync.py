@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -57,6 +59,7 @@ CAPABILITY_CONTRACT_DOCS = (
     ),
 )
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
+ARBITER_PROMPT = _RUN_DA_DIR / "references/arbiter-prompt.md"
 EXPECTED_AGENT_ARGS = {"agent=codex-xhigh", "agent=codex-high", "agent=codex-medium", "agent=claude"}
 FORBIDDEN_MODEL_LITERALS = ("gpt-5", "opus", "sonnet")
 
@@ -370,6 +373,88 @@ def check_bundle_subdomains() -> None:
         raise CheckFailure("\n".join(details))
 
 
+def check_threat_path_types() -> None:
+    """SECURITY threat path 유형 집합의 동기화를 검사한다.
+
+    정의(이름+경로 조건)는 arbiter-prompt.md "SECURITY threat path" 절의 bullet이
+    단독 소유하고, da-domains.md는 괄호 나열로 이름만 소비한다. 양쪽에서 유형
+    집합을 파싱해 exact-set 비교하므로, 어느 쪽이든 유형을 추가·개명하고 다른
+    쪽을 누락하면 실패한다 (고정 상수 목록을 두지 않는다 — 제3의 사본 방지).
+    """
+    arbiter_text = read_text(ARBITER_PROMPT)
+    section_match = re.search(
+        r"#### SECURITY threat path.*?(?=\n#{2,4} )", arbiter_text, re.DOTALL
+    )
+    if not section_match:
+        raise CheckFailure(f"{ARBITER_PROMPT}: 'SECURITY threat path' 정의 섹션 누락")
+    owner_types = set(
+        re.findall(r"^- ([^:]+):", section_match.group(0), re.MULTILINE)
+    )
+    if not owner_types:
+        raise CheckFailure(f"{ARBITER_PROMPT}: threat path bullet 유형을 파싱하지 못함")
+
+    domains_text = read_text(DA_DOMAINS)
+    consumer_match = re.search(
+        r"취약점 유형별 threat path\(([^)]+)\)", domains_text
+    )
+    if not consumer_match:
+        raise CheckFailure(f"{DA_DOMAINS}: threat path 유형 나열(괄호)을 찾지 못함")
+    consumer_types = {part.strip() for part in consumer_match.group(1).split(",")}
+
+    if owner_types != consumer_types:
+        raise CheckFailure(
+            "threat path 유형 집합 불일치:\n"
+            f"  {ARBITER_PROMPT}: {sorted(owner_types)}\n"
+            f"  {DA_DOMAINS}: {sorted(consumer_types)}"
+        )
+
+
+def check_verdict_json_examples() -> None:
+    """arbiter-prompt.md의 VERDICT_JSON 골격 예시가 실제 검증기를 통과하는지 검사한다.
+
+    schema 계약은 문서 예시(pseudo-JSON)·protocol 산문·validator 코드 세 곳에 손으로
+    표현되어 왔고, 그래서 "골격대로 썼는데 semantic malformed로 거부"되는 드리프트가
+    반복됐다. 이 검사는 문서 예시를 production 파서와 같은 delimiter 패턴으로 추출해
+    `validate_verdict_entry()`에 직접 통과시키므로, 예시와 검증기가 어긋나면 실패한다
+    (고정 기대값 목록을 두지 않는다 — 계약의 제3의 사본을 만들지 않기 위함).
+    """
+    spec = importlib.util.spec_from_file_location("_fleiss_kappa", FLEISS_KAPPA)
+    if spec is None or spec.loader is None:
+        raise CheckFailure(f"{FLEISS_KAPPA}: 검증기 모듈을 로드할 수 없음")
+    harness = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(harness)
+
+    text = read_text(ARBITER_PROMPT)
+    blocks = list(harness.VERDICT_JSON_PATTERN.finditer(text))
+    if not blocks:
+        raise CheckFailure(
+            f"{ARBITER_PROMPT}: VERDICT_JSON 골격 예시를 찾지 못함 "
+            "(delimiter 형식이 바뀌었거나 예시가 사라졌다)"
+        )
+
+    details = []
+    seen_verdicts = set()
+    for block in blocks:
+        try:
+            entry = json.loads(block.group("body"))
+        except json.JSONDecodeError as exc:
+            details.append(f"골격 예시가 유효한 JSON이 아님: {exc}")
+            continue
+        violations = harness.validate_verdict_entry(entry)
+        if violations:
+            details.append(
+                f"골격 예시 {entry.get('finding_id')!r}가 검증기를 통과하지 못함: {violations}"
+            )
+        else:
+            seen_verdicts.add(entry.get("verdict"))
+
+    missing = set(harness.VERDICT_CATEGORIES) - seen_verdicts
+    if missing:
+        details.append(f"유효 골격 예시가 없는 verdict: {sorted(missing)}")
+    if details:
+        raise CheckFailure("\n".join(f"  {ARBITER_PROMPT}: {d}" for d in details))
+
+
 def check_capability_profile() -> None:
     """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
 
@@ -420,6 +505,8 @@ def main() -> int:
         ("agent args", check_agent_args),
         ("no hardcoded model literals", check_no_hardcoded_model_literals),
         ("reviewer bundle subdomains", check_bundle_subdomains),
+        ("threat path types", check_threat_path_types),
+        ("verdict json examples", check_verdict_json_examples),
         ("capability profile", check_capability_profile),
     )
 

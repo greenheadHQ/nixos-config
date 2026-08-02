@@ -2,6 +2,8 @@
 
 Arbiter 에이전트의 실행 수, 실행 계약, 실패 처리를 정의한다.
 
+reviewer는 "없다"를 잘 찾지만, "없는 게 맞다"는 판단은 독립 검증자가 해야 한다. 이것이 reviewer와 분리된 Arbiter를 두는 이유다.
+
 ## 기본값: single strong arbiter
 
 P0 기본값은 항상 단일 강한 Arbiter 1개다.
@@ -37,7 +39,7 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 정책 정의(트리거 조건, vote-shape, threshold 상수)는 [`stability-measurement.md`](stability-measurement.md)가 단일 진실 원천이다. 이 문서는 실행 계약만 다루며 정책 원자를 재서술하지 않는다.
 
 - 실행 단위: N=3 독립 Arbiter (fresh subagent 또는 fresh `codex exec` 프로세스).
-- 집계: 세션 scope에 맞는 `fleiss-kappa.py` helper(Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py` — 양쪽에 동일 소스가 프로비저닝된다)로 VERDICT_JSON 블록을 파싱.
+- 집계: `"$HELPER_PATH"`로 VERDICT_JSON 블록을 파싱. helper 절대경로 결정·capability 확인·미지원 시 fail-closed 중단은 [`protocol.md`](protocol.md)의 "검증기 호출 계약"이 SSOT다. 호출 인자 계약(`--expect-findings` 필수)은 아래 N=3 실행 계약의 집계 단계가 정의한다.
 - 상태 전이는 [`protocol.md`](protocol.md)의 "Selective consistency 상태 전이" 섹션.
 - N=3 실행 세부는 아래 "Selective consistency N=3 실행 계약" 섹션.
 
@@ -66,9 +68,9 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 Arbiter도 이를 기본 경로로 사용한다.
 
 - 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로 사용한다.
-- 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt/result 파일을 기본 경로로 요구하지 않는다.
+- 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt 파일을 요구하지 않는다.
 - Arbiter는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다.
-- 결과는 `wait_agent`로 수신하고, timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 결과 파싱 후의 slot 회수는 capability profile을 따른다 (legacy profile만 `close_agent` 호출, current profile은 explicit close 없이 광고 slot 내에서만 발사 — [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
+- 결과 수집: [`runtime-mapping.md`](runtime-mapping.md#result-collection)의 결과 수집 binding을 따른다 (무엇이 결과 본문이고 `wait_agent` 반환값이 무엇인지는 그 anchor가 정의한다). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 수집한 본문은 `/tmp/da-${_DA_SID}-arbiter-*` 네임스페이스의 scratch 파일로 저장한다 — 공통 검증기가 파일 입력 전용이므로 native 경로도 이 저장 단계를 거쳐야 검증을 수행할 수 있다 (메인 에이전트가 쓰는 결과 파일이며, Arbiter의 no-write role과 무관하다). 결과 파싱 후의 slot 회수는 capability profile을 따른다 (legacy profile만 `close_agent` 호출, current profile은 explicit close 없이 광고 slot 내에서만 발사 — [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
@@ -189,7 +191,7 @@ Degraded mode 계약 (fallback 경로 한정): `--sandbox read-only` 강제로 �
 
 1. Arbiter용 fresh subagent는 strong review profile로 띄운다.
 2. 프롬프트에는 관련 reference 문서를 직접 읽고, review-only/no-write contract를 따르며, 파일을 수정하지 말라고 명시한다.
-3. `wait_agent`로 결과를 받는다. timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다.
+3. 결과를 수집해 scratch 결과 파일로 저장한다 ([`runtime-mapping.md`](runtime-mapping.md#result-collection) binding). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다.
 4. 결과 파싱 후 slot 회수는 capability profile을 따른다 ([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
@@ -275,8 +277,8 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 1. 동일 판정 기준 / 템플릿으로 3개의 fresh subagent를 strong review profile로 `spawn_agent` 실행한다. 프롬프트 본문은 위 "프롬프트 축소 규칙"대로 trigger된 finding subset 만 포함해 조립하고, 이전 판정 transcript는 공유하지 않는다 (독립 판정 원칙).
 2. N=3 발사가 capability profile의 batch 상한([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)을 넘으면 batch한다. legacy profile에서는 3개 발사 전에 first-pass Arbiter의 completed thread를 `close_agent`로 닫아 슬롯을 확보하고, current profile에서는 광고 slot 내에서 발사 수를 조절한다.
-3. `wait_agent`로 3개 결과를 모두 수신한다. timeout만으로 failure 처리하거나 self-auditing으로 대체하지 않는다(conservative wait). 수신 후 slot 회수는 capability profile을 따른다.
-4. 3개 결과 markdown을 각각 파일로 저장(`/tmp/da-${_DA_SID}-arbiter-selective-*/arbiter-{1,2,3}.md`) 후 세션 scope의 `fleiss-kappa.py`(Claude: `~/.claude/scripts/`, Codex: `~/.codex/scripts/`)로 집계한다.
+3. 3개 모두의 결과를 수집한다 ([`runtime-mapping.md`](runtime-mapping.md#result-collection) binding). timeout만으로 failure 처리하거나 self-auditing으로 대체하지 않는다(conservative wait). 수신 후 slot 회수는 capability profile을 따른다.
+4. 3개 결과 markdown을 각각 파일로 저장(`/tmp/da-${_DA_SID}-arbiter-selective-*/arbiter-{1,2,3}-result.md` — 아래 codex exec 경로와 같은 파일명을 쓴다) 후 `"$HELPER_PATH"`로 집계한다 ([`protocol.md`](protocol.md) "검증기 호출 계약"). 호출 계약은 아래 codex exec 경로 4번과 동일하다 — `--expect-findings <trigger된 finding ID 쉼표 목록>`을 반드시 전달한다 (manifest 없는 집계는 세 Arbiter 공통 누락을 잡지 못한다).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션, N=3)
 
@@ -302,11 +304,15 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
    - 최소 `$CODEX_HOME/config.toml`을 작성하되 `[mcp_servers.<name>]` 테이블(실제 Codex TOML 스키마는 [`sync-codex-config.py`](../../../../../codex/files/sync-codex-config.py)의 user-owned `mcp_servers` 보존 정책과 [`scenario-D-mcp-servers-coexist.toml`](../../../../../../../../tests/fixtures/codex-hooks/sync-preservation/scenario-D-mcp-servers-coexist.toml) fixture로 확인)을 포함하지 않는다. 또는 TOML 파서로 기존 config를 복사한 뒤 `mcp_servers` 테이블 전체를 삭제한다. (참고: `[[mcp_servers]]` array-of-table 문법은 현재 Codex가 사용하지 않으므로 혼동 방지를 위해 `[mcp_servers.*]` 정확 표기를 사용한다.)
    - effort 옵션은 필수로 명시적으로 지정한다: `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`. scratch `CODEX_HOME`이므로 user config default가 적용되지 않아 호출 시점 기본값 의존이 불가하다. 모델명·service_tier는 스킬이 pin하지 않으며, 사용자 명시 지정이 있을 때만 `_DA_MODEL_TIER_OVERRIDES`로 주입한다.
 3. Claude Code 세션: `run_in_background: true`로 3개를 병렬 발사 후 완료 알림을 기다린다 (sleep/poll 금지). headless 세션: 3개 프로세스를 serial foreground로 순차 실행한다 (각 종료 확인 후 다음). 결과 파일 경로는 두 경로 모두 `/tmp/da-${_DA_SID}-arbiter-selective-<round>/arbiter-{1,2,3}-result.md`로 라운드별 분리.
-4. 수집 후 세션 scope의 `fleiss-kappa.py`(Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py`)에 `arbiter-1-result.md arbiter-2-result.md arbiter-3-result.md`를 인자로 전달하여 vote-shape를 얻는다. `--offline` 플래그는 배포 후 kappa 관찰 목적일 때만 부가한다.
+4. 수집 후 `"$HELPER_PATH"`([`protocol.md`](protocol.md) "검증기 호출 계약"으로 결정한 절대경로)에 `--expect-findings <trigger된 finding ID 쉼표 목록>`과 `arbiter-1-result.md arbiter-2-result.md arbiter-3-result.md`를 인자로 전달하여 vote-shape를 얻는다 (manifest 대조로 세 Arbiter 공통 누락·미지 ID를 partial_failure로 잡는다). `--offline` 플래그는 배포 후 kappa 관찰 목적일 때만 부가한다.
 
 ## 실패 처리
 
 단일 호출 패턴에서의 실패 감지: 위 코드블록은 `exit 1`로 종료하여 셸 호출이 비정상 종료로 보고된다. stdout에 `ARBITER_FAILED:` 접두어가 출력되며, `dir=` 필드에 임시 디렉토리 경로, 이어서 stderr 로그 내용이 포함된다. 메인 에이전트는 셸 호출의 exit code 또는 stdout의 `ARBITER_FAILED:` 접두어로 실패를 감지한다.
+
+### Semantic malformed (VERDICT_JSON 계약 위반) — 모든 런타임 공통 전이
+
+VERDICT_JSON caller 검증 위반은 아래 generic 실패 처리·recoverable violation·질문 도구 미지원 자동 전이보다 우선하는 별도 분류다. 이 문서가 소유하는 것은 그 우선순위뿐이며, 무엇이 위반인지와 위반 시 어떤 전이를 밟는지는 [`protocol.md`](protocol.md)의 "수렴 판정" caller 검증이 정본이다 (여기서 버전·재시도 횟수·차단 단위를 재서술하지 않는다 — 사본을 두면 계약이 바뀔 때 한쪽만 갱신되고 링크 때문에 정본을 따르는 것처럼 보인다).
 
 ### Single Arbiter 실패 (first-pass 또는 예외적 확장 단일 Arbiter)
 
@@ -321,8 +327,8 @@ codex exec 실패 시 (exit code != 0, 빈 결과 파일):
 N=3 중 1개 이상이 실패하면 (결과 파일 없음/빈 파일/exit code != 0/malformed VERDICT_JSON):
 
 1. surviving single-arbiter 결과로 fallback하지 않는다. 부분 표본은 vote-shape 집계에 충분하지 않다.
-2. `fleiss-kappa.py` 출력에서 `partial_failure: true`로 표기되며, 해당 finding은 `per_finding`에서 제외된다.
-3. partial failure 대상 finding은 BLOCKED 상태로 기록한다 (protocol.md 상태 전이 표 참조).
+2. `fleiss-kappa.py` 출력에서 top-level `partial_failure: true`로 표기된다. 원인마다 차단 단위가 다르며, 그 매핑은 [`protocol.md`](protocol.md)의 상태 전이 표 아래 정의가 정본이다 (어떤 필드가 finding 단위이고 어떤 것이 파일 단위인지를 여기서 나열하지 않는다).
+3. 차단 대상은 BLOCKED 상태로 기록한다 (2번이 가리키는 단위를 그대로 따른다).
 4. 질문 도구 지원 런타임: 사용자에게 판단 요청 (수용 / 기각 / 이번 round 제외 / 실행 환경 확인 후 rerun).
 5. 질문 도구 미지원 런타임: 자동 승격 금지. 명시적 rerun 전에는 재개하지 않는다.
 
@@ -330,7 +336,7 @@ N=3 중 1개 이상이 실패하면 (결과 파일 없음/빈 파일/exit code !
 
 Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아니라, 메인 에이전트가 contract breach 또는 malformed output을 감지했을 때 아래 규칙으로 분류한다.
 
-- `recoverable violation`: 출력 형식 위반, prompt contract 미준수처럼 상태를 바꾸지 않은 위반. 결과를 폐기하고 fresh subagent로 1회 재실행한다.
+- `recoverable violation`: 출력 형식 위반, prompt contract 미준수처럼 상태를 바꾸지 않은 위반. 결과를 폐기하고 fresh subagent로 1회 재실행한다. 단 VERDICT_JSON caller 검증 위반은 위 "Semantic malformed" 분류가 우선한다 (전이는 [`protocol.md`](protocol.md) caller 검증이 정본).
 - `stateful violation`: tracked write, branch mutation, commit/push, GitHub write, main-agent-only command 실행, host mutation처럼 상태를 바꾼 위반. 라운드 중단·offending thread 중단·회수·정리의 공통 계약은 [`hardening-contract.md`](hardening-contract.md)의 VIOLATION 처리가 정본이며 여기에 재정의하지 않는다 (cancellation·slot 회수 도구 binding은 [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile)).
 - stateful violation은 이번 라운드에서 offending unit이 만든 scratch 산출물과 임시 ref/branch만 정리 대상으로 삼는다. 기존 local tracked/untracked 변경은 자동 정리하지 않는다.
 - 비가역적 외부 side effect가 있었거나 cleanup 범위를 특정할 수 없으면 질문 도구 가능 시 사용자에게 보고하고, 질문 도구 미지원 런타임에서는 자동 `CLEAR` 처리하지 않고 `BLOCKED`로 남긴다. 명시적 rerun 전에는 재개하지 않는다.
@@ -351,7 +357,7 @@ Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아�
 
 ### First-pass single Arbiter 경로 (기존)
 
-- NEEDS_MORE_INFO 항목은 CONFIRMED_ISSUE로 자동 승격한다 (텍스트 보고만으로는 상태 전이가 불가능하므로).
+- NEEDS_MORE_INFO 항목은 CONFIRMED_ISSUE로 자동 승격한다 (텍스트 보고만으로는 상태 전이가 불가능하므로). 단 semantic malformed는 이 자동 승격 대상이 아니다 — 위 "Semantic malformed" 분류를 따른다 (전이는 [`protocol.md`](protocol.md) caller 검증이 정본).
 - CONFIRMED_ISSUE는 동일하게 자동 수정한다.
 - SKIP 판정 시 질문 도구 불가 → 자동 LITE 승격 (메인 LLM 인라인 체크리스트의 SKIP 결과도 동일하게 적용).
 - 3회 반복 규칙 도달 시 질문 도구 불가 → 자동 수용 (지적대로 수정).

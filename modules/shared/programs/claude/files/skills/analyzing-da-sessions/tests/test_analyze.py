@@ -1032,3 +1032,71 @@ def test_find_severity_prefers_ahead_across_all_occurrences(analyze_module):
     verdict_offset = text.index("Target-1 — CONFIRMED_ISSUE")
     severity = analyze_module.find_severity_for_finding(text, "Target-1", verdict_offset)
     assert severity == "HIGH"
+
+
+def _mutate_verdict_json_blocks(analyze_module, session_text, mutate):
+    """fixture jsonl의 모든 VERDICT_JSON 객체를 구조 파싱해 mutate 콜백(제자리 변경)을 적용한 재직렬화 결과를 반환한다.
+
+    delimiter 문법은 production 파서(`analyze_module.VERDICT_JSON_BLOCK`)를 그대로
+    재사용한다 — 정규식을 복사하면 사본이 원본보다 좁아지거나(공백·개행 유연성 상실)
+    형식 변경 시 함께 갱신할 지점이 하나 늘어난다.
+    """
+    pattern = analyze_module.VERDICT_JSON_BLOCK
+
+    def _rewrite_payload(payload_text):
+        def _sub(m):
+            obj = json.loads(m.group(1))
+            mutate(obj)
+            # 캡처 그룹 밖의 delimiter·fence는 원문 그대로 두고 body만 교체한다.
+            start, end = m.span(1)
+            return m.group(0)[: start - m.start()] + json.dumps(obj, ensure_ascii=False) + m.group(0)[end - m.start() :]
+
+        return pattern.sub(_sub, payload_text)
+
+    out_lines = []
+    for line in session_text.splitlines():
+        if not line.strip():
+            out_lines.append(line)
+            continue
+        record = json.loads(line)
+
+        def _walk(node):
+            if isinstance(node, dict):
+                return {k: _walk(v) for k, v in node.items()}
+            if isinstance(node, list):
+                return [_walk(v) for v in node]
+            if isinstance(node, str) and "verdict-json:start" in node:
+                return _rewrite_payload(node)
+            return node
+
+        out_lines.append(json.dumps(_walk(record), ensure_ascii=False))
+    return "\n".join(out_lines) + "\n"
+
+
+def test_additive_axes_plausibility_reflected_in_canonical_hash(
+    fixtures_dir, analyze_module, tmp_path
+):
+    """VERDICT_JSON additive 필드 중 axes.plausibility가 canonical_verdict_hash에
+    반영되는지 검증한다 (analyzer 경로의 관측 지점 — protocol.md 수렴 판정 계약)."""
+    text, _ = load_fixture_pair(fixtures_dir, "06-claude-contract")
+
+    with_field = tmp_path / "with-plausibility.jsonl"
+    with_field.write_text(text)
+    without_field = tmp_path / "without-plausibility.jsonl"
+    without_field.write_text(
+        _mutate_verdict_json_blocks(
+            analyze_module, text, lambda obj: obj.get("axes", {}).pop("plausibility", None)
+        )
+    )
+
+    result_with = analyze_module.analyze_session(str(with_field))
+    result_without = analyze_module.analyze_session(str(without_field))
+    assert result_with is not None and result_without is not None
+
+    hashes_with = [r["canonical_verdict_hash"] for r in result_with["verdicts"]]
+    hashes_without = [r["canonical_verdict_hash"] for r in result_without["verdicts"]]
+    assert len(hashes_with) == len(hashes_without) == 2
+    for h_with, h_without in zip(hashes_with, hashes_without):
+        assert h_with != h_without, (
+            "plausibility must participate in canonical hash"
+        )

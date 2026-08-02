@@ -27,6 +27,8 @@ ledger에 저장할 수 있는 항목은 아래뿐이다.
 - Arbiter가 `NOT_AN_ISSUE`로 판정했고, `confidence`가 `HIGH` 또는 `MEDIUM`이며, `stability_status`가 `N/A` 또는 `stable`이고, 기술적 반증 근거가 있는 항목.
 - 3회 반복 규칙 또는 사용자 판단 경로에서 사용자가 명시적으로 `제외 + 근거 기록`을 선택했고, 적용 범위와 기술적 근거가 있는 항목.
 
+Plausibility FAIL 기각([`arbiter-prompt.md`](arbiter-prompt.md) 판정 우선순위)의 추가 조건: VERDICT_JSON의 `evidence_scope`가 `FROZEN_SURFACE`일 때만 영속 eligible이다 — 기각 근거가 frozen changeset surface의 불변 계약(코드 구조, 문서·설정 계약)에만 의존한다는 뜻이다. `ENVIRONMENT_WORKLOAD`(입력 규모, 배포 환경, 사용 경로 같은 환경·워크로드 가정 의존)이면 ledger에 기록하지 않는다 — 그 라운드의 기각 판정으로 끝나고, 다음 라운드에 같은 finding이 다시 올라오면 다시 판정한다 (반복이 누적되면 3회 반복 판정 규칙이 사용자 판단으로 전환한다). 별도의 루프 한정 suppression 상태를 두지 않는다 — key·수명·invalidation을 소유할 주체가 없는 상태를 만들면 그 자체가 다음 결함이 된다. 운영 조건이 바뀌면 과거에 비현실적이던 문제가 현실화될 수 있는데, ledger key에는 그 가정이 없어 조용히 계속 억제되는 것을 방지하기 위함이다. 이 분기는 구조화된 필드 하나로 판정한다 — 사람용 rationale을 재해석하지 않는다 (필드 정의·검증 규칙은 [`arbiter-prompt.md`](arbiter-prompt.md) 필드 의미와 [`protocol.md`](protocol.md) caller 검증).
+
 저장하지 않는 항목:
 
 - `NEEDS_MORE_INFO` 자체. 사용자 판단이 필요한 상태를 자동 기각으로 저장하지 않는다.
@@ -42,7 +44,7 @@ ledger에 저장할 수 있는 항목은 아래뿐이다.
 |------|------|
 | `mode` | `for_plan` 또는 `for_pr` |
 | `base_commit` | `for_pr`: target branch와 `HEAD`의 merge-base. `for_plan`: 계획이 특정 diff/branch에 묶인 경우 그 base commit, 아니면 현재 `HEAD` |
-| `surface_hash` | frozen changeset 전체의 hash. `for_pr`는 `git diff main...HEAD`와 review surface에 포함된 dirty/untracked content의 canonical hash. `for_plan`은 계획 원문과 Step 1에서 수집한 관련 context pack의 canonical hash |
+| `surface_hash` | frozen changeset 전체의 hash. `for_pr`는 `git diff main...HEAD`의 canonical hash (Step 1이 clean workspace를 요구하므로 미커밋 상태는 review surface에 없다). `for_plan`은 계획 원문과 Step 1에서 수집한 관련 context pack의 canonical hash |
 | `target` | PR 번호/branch/계획 파일 경로처럼 사람이 scope를 식별할 수 있는 값 |
 
 `surface_hash`는 ledger match의 핵심이다. hash를 계산할 수 없으면 ledger suppression을 사용하지 않는다.
@@ -88,11 +90,12 @@ dismissal:
   source: arbiter
   confidence: HIGH
   stability_status: N/A
+  rejection_basis: FACTUAL_FAIL
   rationale: "The option default remains false and the changed branch is only reached when explicitly enabled."
 scope: same_changeset
 ```
 
-사용자 제외 항목은 `dismissal.verdict: USER_EXCLUDED`, `dismissal.source: user`, `dismissal.user_decision: exclude_with_rationale`를 사용한다. `rationale`는 사용자가 승인한 기술적 근거를 적는다.
+사용자 제외 항목은 `dismissal.verdict: USER_EXCLUDED`, `dismissal.source: user`, `dismissal.user_decision: exclude_with_rationale`를 사용한다. `rationale`는 사용자가 승인한 기술적 근거를 적는다. Arbiter 기각(`source: arbiter`)은 VERDICT_JSON의 `rejection_basis`를 그대로 저장하고, 그 값이 `PLAUSIBILITY_FAIL`이면 `evidence_scope: FROZEN_SURFACE`도 함께 저장한다 — 영속 여부를 결정한 근거를 ledger 안에 남겨야 이후 load 시 사람용 rationale을 재해석하지 않고 판정할 수 있다 (`ENVIRONMENT_WORKLOAD`는 애초에 기록 대상이 아니므로 저장된 값은 항상 `FROZEN_SURFACE`다).
 
 ## 기록 시점과 phase 정합
 
@@ -129,6 +132,7 @@ ledger write는 active changeset을 수정하는 write phase 산출물이 아니
 - `review_unit` 또는 `perspective`가 다름.
 - `scope`가 현재 실행 범위를 포함하지 않음.
 - schema 필수 필드, 기술적 `rationale`, Arbiter confidence/stability 정보가 누락됨.
+- Arbiter 기각인데 `rejection_basis`가 없거나, `PLAUSIBILITY_FAIL`인데 `evidence_scope: FROZEN_SURFACE`가 없음 — 영속 eligibility를 확인할 수 없으므로 fail-closed로 suppression에서 제외한다 (구조화 필드 없이 저장된 과거 entry가 이 경로로 걸러진다).
 - ledger 파일이 tracked 상태거나 tracked diff에 잡힘.
 - verdict가 `NEEDS_MORE_INFO`, `split`, `fragmented`, `partial_failure`, `unknown` 중 하나임.
 

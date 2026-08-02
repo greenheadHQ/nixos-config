@@ -6,7 +6,8 @@
 # 단일 진입점을 재사용해 중복 정의를 피한다.
 #
 # 커버리지 경계: required CI의 전체 회귀(shell-script-tests · codex-hook-fixtures 포함)와
-#   pre-push의 3개 조건부 게이트(analyzing-da-sessions-tests · flake-check · statusline-bats),
+#   pre-push의 5개 조건부 게이트(analyzing-da-sessions-tests · fleiss-kappa-tests ·
+#   skill-doc-sync · flake-check · statusline-bats),
 #   da-weekly-report-tests + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
 #   드라이버(codex-exec-supervised · precommit-staged-snapshot)를 포함한다. 벤치마크
 #   tests/bench-shell-startup.sh는 회귀 게이트가 아니라 측정 도구이므로(자체 헤더에 명시) 제외한다.
@@ -79,6 +80,10 @@ run_driver "skill-doc-sync" bash tests/test-skill-doc-sync.sh
 #    hermetic pytest fixture로 검증한다. 호출 방식은 lefthook.yml pre-push 항목과 동일하게
 #    tests/run-analyzing-da-sessions-tests.sh driver를 거친다.
 run_driver "analyzing-da-sessions-tests" bash tests/run-analyzing-da-sessions-tests.sh
+
+# 6b) fleiss-kappa-tests — run-da 공통 검증기/집계기(fleiss-kappa.py)의 schema 1.1
+#     semantic 계약·manifest 대조·aggregate 보존을 hermetic pytest로 검증한다.
+run_driver "fleiss-kappa-tests" bash tests/run-fleiss-kappa-tests.sh
 
 # 7) da-weekly-report-tests — weekly JSON schema/delta/render 순수 함수 계약을 검증한다.
 run_driver "da-weekly-report-tests" bash tests/run-da-weekly-report-tests.sh

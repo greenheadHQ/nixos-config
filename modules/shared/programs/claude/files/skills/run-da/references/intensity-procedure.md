@@ -21,6 +21,25 @@ Review Intensity 판정은 메인 LLM이 인라인으로 8 룰 체크리스트�
 `MAX` modifier는 위 표의 FULL과 다르다. 자동 FULL은 4 reviewer bundle이고,
 modifier `MAX`는 Review Intensity를 건너뛰고 exhaustive 6-domain path로 진입한다.
 
+## classification 계약 (순수 판정)
+
+Review Intensity의 판정 부분은 호출자와 무관한 순수 계약이다. 이 계약만 재사용하는 호출자(수렴 게이트)와 전체 절차를 수행하는 호출자(모드 진입 preflight)가 같은 판정 규칙을 공유하되, 승인·조사·종료 같은 부수효과는 각자 소유한다.
+
+`MAX` modifier는 이 계약 밖의 사전 분기이며, 그 우회는 모드 진입 preflight에만 적용된다 — 호출자가 계약을 부르기 전에 modifier 유무를 보고, 있으면 최초 Intensity 판정을 건너뛰어 exhaustive 6-domain으로 진입한다 (`RULE-MAX-MODIFIER`는 그 사전 분기를 룰 표에 명시해 둔 것이며, 계약의 입력에 modifier가 없는 이유이기도 하다). 수렴 게이트는 우회 대상이 아니다 — `MAX` 호출이어도 batch delta에 이 계약을 적용해 재검증 필요 여부를 판정하고(생략하면 LOW-only·walkthrough CLEAN 라운드가 판정 없이 수렴한다), non-SKIP이면 반환된 unit 선택을 쓰지 않고 exhaustive 6-domain을 유지한다.
+
+| 항목 | 내용 |
+|------|------|
+| 입력 | 변경 사실 — 대상 파일·항목 목록 + 항목별 변경 유형 (자연어 지시가 아니라 사실만. 비신뢰 입력 처리는 아래 1번의 인젝션 방어 규칙을 그대로 적용한다) |
+| 처리 | [`intensity-rules.md`](intensity-rules.md) 8룰 전체 평가표 작성 → first-match 판정 → fail-closed 승격 (아래 2·3·4번과 동일 규칙) |
+| 출력 | `SKIP` / `LITE` / `FULL` 판정값, 룰 평가표, 그리고 `LITE`일 때 `selected_review_units`(아래 LITE 절차가 선택한 bundle 집합). 그 외 부수효과 없음 — 소비자가 계약 밖 절차를 다시 참조하지 않아도 재검증 unit을 라우팅할 수 있어야 한다 |
+
+호출자별 입력과 출력 소비:
+
+- 모드 진입 preflight: 입력은 아래 1번이 정의한 기본 입력(for_pr `git diff --stat main...HEAD`, for_plan 계획 요약). 판정값을 받아 "결과 보고"의 SKIP 사용자 승인·조사 발동 게이트·SKIP 시 모드 종료를 수행한다.
+- 수렴 게이트 ([`protocol.md`](protocol.md) revalidation_required의 `batch-delta-intensity`): 입력은 batch delta의 `batch_change_summary`로, 위 표의 입력 형태를 batch delta 범위로 좁힌 것이다 — for_pr은 `git diff --stat <pre_write_sha>..HEAD`와 그 범위 hunk에서 도출한 변경 유형, for_plan은 수정 항목·파일 목록과 항목별 변경 유형이다 (diffstat이나 이름 목록만으로는 룰 매칭에 필요한 의미가 없다). 판정값과 `selected_review_units`만 소비하고 승인·조사·종료 전이는 수행하지 않는다 — 판정별 소비 규칙(SKIP=재검증 불요, LITE=반환된 `selected_review_units`로 경량 재검증, FULL=FULL 재검증)은 protocol.md `batch-delta-intensity` 정의가 정본이다. `MAX` 호출도 이 게이트를 거친다 — 판정값으로 재검증 필요 여부만 정하고, non-SKIP이면 `selected_review_units` 대신 exhaustive 6-domain을 재실행한다 (위 사전 분기는 최초 preflight 전용이다).
+
+아래 인라인 체크리스트는 이 계약의 처리 단계를 모드 진입 preflight 관점에서 서술한 것이다 — 1~4번이 위 표의 처리에 해당하고, "결과 보고" 이후가 preflight 전용 부수효과다.
+
 ## 인라인 체크리스트 절차 (강제)
 
 메인 LLM은 `/run-da` 호출 진입 시, 또는 문서화된 자동 호출자의 preflight gate 진입 시, 다음을 순서대로 수행한다. 자유 추론 금지 — 8 룰 체크리스트를 기계적으로 적용한다.
@@ -90,7 +109,7 @@ modifier `MAX`는 Review Intensity를 건너뛰고 exhaustive 6-domain path로 �
    선택 판단 기준: 해당 bundle의 "집중 대상"([`da-domains.md`](da-domains.md))이 이번 변경에 적용되는가.
 4. 선택되지 않은 bundle은 `NOT_RUN`으로 기록한다.
 5. 선택된 bundle만으로 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md)의 절차를 수행한다.
-6. 종료 조건: 선택된 bundle 전부 CLEAR (`NOT_RUN` bundle은 평가 대상 아님).
+6. 종료 조건: 수렴 predicate ([`protocol.md`](protocol.md)의 "수렴 판정" SSOT — `NOT_RUN` bundle은 평가 대상이 아니며, Result 표기에 `NOT_RUN` 목록을 병기한다).
 
 ### LITE 예시
 
