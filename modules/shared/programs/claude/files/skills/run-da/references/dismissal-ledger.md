@@ -27,7 +27,7 @@ ledger에 저장할 수 있는 항목은 아래뿐이다.
 - Arbiter가 `NOT_AN_ISSUE`로 판정했고, `confidence`가 `HIGH` 또는 `MEDIUM`이며, `stability_status`가 `N/A` 또는 `stable`이고, 기술적 반증 근거가 있는 항목.
 - 3회 반복 규칙 또는 사용자 판단 경로에서 사용자가 명시적으로 `제외 + 근거 기록`을 선택했고, 적용 범위와 기술적 근거가 있는 항목.
 
-Plausibility FAIL 기각([`arbiter-prompt.md`](arbiter-prompt.md) 판정 우선순위)의 추가 조건: VERDICT_JSON의 `evidence_scope`가 `FROZEN_SURFACE`일 때만 영속 eligible이다 — 기각 근거가 frozen changeset surface의 불변 계약(코드 구조, 문서·설정 계약)에만 의존한다는 뜻이다. `ENVIRONMENT_WORKLOAD`(입력 규모, 배포 환경, 사용 경로 같은 환경·워크로드 가정 의존)이면 비영속 — 현재 루프 한정 suppress만 허용하고 ledger에 기록하지 않는다. 운영 조건이 바뀌면 과거에 비현실적이던 문제가 현실화될 수 있는데, ledger key에는 그 가정이 없어 조용히 계속 억제되는 것을 방지하기 위함이다. 이 분기는 구조화된 필드 하나로 판정한다 — 사람용 rationale을 재해석하지 않는다 (필드 정의·검증 규칙은 [`arbiter-prompt.md`](arbiter-prompt.md) 필드 의미와 [`protocol.md`](protocol.md) caller 검증).
+Plausibility FAIL 기각([`arbiter-prompt.md`](arbiter-prompt.md) 판정 우선순위)의 추가 조건: VERDICT_JSON의 `evidence_scope`가 `FROZEN_SURFACE`일 때만 영속 eligible이다 — 기각 근거가 frozen changeset surface의 불변 계약(코드 구조, 문서·설정 계약)에만 의존한다는 뜻이다. `ENVIRONMENT_WORKLOAD`(입력 규모, 배포 환경, 사용 경로 같은 환경·워크로드 가정 의존)이면 ledger에 기록하지 않는다 — 그 라운드의 기각 판정으로 끝나고, 다음 라운드에 같은 finding이 다시 올라오면 다시 판정한다 (반복이 누적되면 3회 반복 판정 규칙이 사용자 판단으로 전환한다). 별도의 루프 한정 suppression 상태를 두지 않는다 — key·수명·invalidation을 소유할 주체가 없는 상태를 만들면 그 자체가 다음 결함이 된다. 운영 조건이 바뀌면 과거에 비현실적이던 문제가 현실화될 수 있는데, ledger key에는 그 가정이 없어 조용히 계속 억제되는 것을 방지하기 위함이다. 이 분기는 구조화된 필드 하나로 판정한다 — 사람용 rationale을 재해석하지 않는다 (필드 정의·검증 규칙은 [`arbiter-prompt.md`](arbiter-prompt.md) 필드 의미와 [`protocol.md`](protocol.md) caller 검증).
 
 저장하지 않는 항목:
 

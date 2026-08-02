@@ -223,7 +223,11 @@ selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_fa
 
 실시간 수집 경로에서는 `schema_version`이 정확히 현재 출력 계약 버전(1.1)이어야 한다 — first-pass·N=3 결과는 매번 fresh Arbiter가 이 계약으로 생성하므로, 1.0·버전 누락·미래 버전은 전부 출력 계약 위반이며 아래 fail-closed 전이를 따른다 (구버전 자칭으로 검증을 우회하거나 미지 버전이 현 계약 검사만 받고 통과하는 경로 차단). 하위호환은 지원하지 않으며, 새 계약 버전 도입 시 검증기·문서를 함께 갱신한다.
 
-검증기 실체 해석 (호출 전 필수): `fleiss-kappa.py`는 세션 scope의 전역 경로(`~/.claude/scripts/` 또는 `~/.codex/scripts/`)로 프로비저닝되지만, 그 심링크는 항상 main checkout의 원본을 가리킨다. 따라서 worktree에서 개발 중인 run-da 문서가 main보다 새로운 CLI·schema 계약을 요구하면 전역 helper가 그 인자를 거부해 first-pass 검증과 N=3 집계가 즉시 중단된다 (실측: 이 계약 도입 시점의 전역 helper는 `--validate-only`를 `unrecognized arguments`로 거부했다). 메인 에이전트는 지금 따르고 있는 run-da 문서와 같은 checkout의 `modules/shared/programs/claude/files/scripts/fleiss-kappa.py`를 먼저 해석해 사용하고, 그 경로가 없을 때만 전역 helper로 폴백한다. 어느 쪽을 쓰든 첫 호출 전에 필요한 옵션(`--validate-only`·`--expect-findings`)을 지원하는지 확인하고, 미지원이면 그 사실을 사용자에게 보고한 뒤 중단한다 — 검증 없이 진행하지 않는다.
+검증기 실체 해석 (호출 전 필수): 실행 대상은 세션 scope의 전역 helper(`~/.claude/scripts/` 또는 `~/.codex/scripts/`)뿐이다. active changeset 안의 `fleiss-kappa.py`를 실행하지 않는다 — 그 파일은 지금 검증받고 있는 대상이고, for_pr에서는 비신뢰 변경에 포함될 수 있으므로 검증기와 검증 대상의 신뢰 경계가 합쳐진다 (메인 에이전트 권한으로 임의 Python이 실행되거나 검증 결과가 위조된다. capability를 확인하려고 실행하는 것도 같은 위협이다).
+
+전역 helper 심링크는 main checkout의 원본을 가리키므로, worktree에서 개발 중인 run-da 문서가 main보다 새로운 CLI·schema 계약을 요구하면 그 인자를 거부한다 (실측: 이 계약 도입 시점의 전역 helper는 `--validate-only`를 `unrecognized arguments`로 거부했다). 이때 조용히 진행하지 않는다 — 첫 호출 전에 필요한 옵션(`--validate-only`·`--expect-findings`)의 지원 여부를 확인하고, 미지원이면 그 사실과 원인(전역 helper가 아직 이 계약을 모른다)을 사용자에게 보고한 뒤 중단한다. 검증 없이 수렴 판정으로 넘어가지 않는다.
+
+예외 (사용자 명시 승인): 지금 리뷰 중인 changeset을 사용자 자신이 작성했고 helper 변경도 그 일부인 경우(스킬 자체를 개발하는 dogfooding), 사용자가 위 위험을 고지받고 명시 승인하면 그 checkout의 helper를 쓸 수 있다. 승인 없이 자동 폴백하지 않으며, 질문 도구 미지원 런타임에서는 이 예외를 적용하지 않고 중단한다.
 
 기계 검증(존재·enum·정합 행렬·manifest)은 공통 검증기 `fleiss-kappa.py --validate-only --expect-findings <ID목록> <result.md>`가 단일 소유한다 — first-pass 결과 수집 시 메인이 Arbiter에 전달했던 finding ID 목록을 manifest로 넘겨 호출하고, N=3 집계 경로는 같은 검증을 내부 적용해 위반 entry를 malformed(→partial_failure/BLOCKED 경로)로 처리한다. `--expect-findings`는 두 경로 모두에서 필수 인자다 — 생략하면 검증기가 인자 오류로 종료하므로 manifest 없는 수집이 성공으로 처리되는 경로는 없다. 검증 규칙 (구현체: `validate_verdict_entry` 단일 진입점):
 
@@ -249,7 +253,11 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 - `round_write_set`: 이번 라운드에 반영할 항목 (CONFIRMED_ISSUE + 사용자 수용 항목).
 - `round_max_accepted_severity`: round_write_set의 accepted severity 최댓값 (빈 set이면 NONE).
-- `unresolved_count`: 미처리 NEEDS_MORE_INFO/`split`/BLOCKED 수.
+- `unresolved_count`: 미처리 NEEDS_MORE_INFO/`split`/BLOCKED 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다).
+
+write phase가 끝나면 그 결과로 다음 값이 확정된다 (스냅샷이 아니라 write phase 산출값이다):
+
+- `write_reverted_count`: `round_write_set` 중 반영을 시도했다가 취소되어 미해결로 남은 항목 수. walkthrough가 batch 수정을 되돌려 최종 delta가 사라진 경우가 이에 해당한다 (for_pr은 `actual_commit_paths`가 빈 집합인 상태 — [`../modes/for_pr.md`](../modes/for_pr.md) finalize 참조). 되돌린 이유를 round summary에 기록한다.
 
 ### revalidation_required (단일 파생값)
 
@@ -285,7 +293,7 @@ walkthrough의 범위 밖 발견이 미선택 bundle 관점이면 그 bundle이 
 다음을 모두 충족하면 DA 루프를 수렴 종료한다:
 
 1. `revalidation_required` = false.
-2. `unresolved_count` = 0.
+2. `unresolved_count` = 0이고 `write_reverted_count` = 0 (반영을 되돌려 미해결로 남은 항목이 없다).
 3. NOT_AN_ISSUE/사용자 제외 항목 근거 완비: Arbiter가 NOT_AN_ISSUE로 판정하거나 사용자가 제외한 항목에 모두 근거가 있다.
 4. `walkthrough_status` ∈ {CLEAN, NOT_REQUIRED}.
 

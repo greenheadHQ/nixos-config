@@ -135,7 +135,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 - fan-out 직전에 아래 "사후 변조 감지" 섹션의 사전 스냅샷을 메인 에이전트 컨텍스트에 보존한다.
 - bundle마다 fresh native subagent 1개를 standard review profile로 `spawn_agent` 실행한다.
 - bundle 수가 현재 open slot보다 많으면 batch로 나눈다.
-- 모든 결과는 `wait_agent`로 완료를 확인한 뒤 각 subagent가 최종 응답으로 전달한 본문을 수집한다 (`wait_agent` 반환값은 상태 요약이며 결과 본문이 아니다 — [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 결과 수집 행). timeout만으로 실패 처리하거나 auditor를 중간 kill/self-auditing으로 대체하지 않는다.
+- 모든 결과는 [`../references/runtime-mapping.md`](../references/runtime-mapping.md#result-collection)의 결과 수집 binding으로 수집한다. timeout만으로 실패 처리하거나 auditor를 중간 kill/self-auditing으로 대체하지 않는다.
 
 ### Step 3b: codex exec 경로 (Claude Code 세션 · headless 세션)
 

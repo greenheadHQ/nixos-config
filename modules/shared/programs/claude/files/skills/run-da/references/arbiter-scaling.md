@@ -39,7 +39,7 @@ v1은 selective propagation으로 추린 escalated findings를 단일 Arbiter에
 정책 정의(트리거 조건, vote-shape, threshold 상수)는 [`stability-measurement.md`](stability-measurement.md)가 단일 진실 원천이다. 이 문서는 실행 계약만 다루며 정책 원자를 재서술하지 않는다.
 
 - 실행 단위: N=3 독립 Arbiter (fresh subagent 또는 fresh `codex exec` 프로세스).
-- 집계: `fleiss-kappa.py` helper로 VERDICT_JSON 블록을 파싱. helper 실체 해석 순서(현재 문서와 같은 checkout 우선, 전역 `~/.claude/scripts/`·`~/.codex/scripts/`는 폴백)와 호출 전 capability 확인은 [`protocol.md`](protocol.md)의 "검증기 실체 해석"이 SSOT다. 호출 인자 계약(`--expect-findings` 필수)은 아래 N=3 실행 계약의 집계 단계가 정의한다.
+- 집계: `fleiss-kappa.py` helper로 VERDICT_JSON 블록을 파싱. 실행 대상은 전역 helper뿐이며(active changeset의 helper는 검증 대상이라 실행하지 않는다), 호출 전 capability 확인과 미지원 시 fail-closed 중단은 [`protocol.md`](protocol.md)의 "검증기 실체 해석"이 SSOT다. 호출 인자 계약(`--expect-findings` 필수)은 아래 N=3 실행 계약의 집계 단계가 정의한다.
 - 상태 전이는 [`protocol.md`](protocol.md)의 "Selective consistency 상태 전이" 섹션.
 - N=3 실행 세부는 아래 "Selective consistency N=3 실행 계약" 섹션.
 
@@ -70,7 +70,7 @@ Arbiter도 이를 기본 경로로 사용한다.
 - 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로 사용한다.
 - 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt 파일을 요구하지 않는다.
 - Arbiter는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다.
-- 결과 수집: `wait_agent`로 완료를 확인하고 그 subagent가 최종 응답으로 전달한 본문을 수집한다 (`wait_agent` 반환값은 상태 요약이라 VERDICT_JSON이 없다 — [`runtime-mapping.md`](runtime-mapping.md) 결과 수집 행). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 수집한 본문은 `/tmp/da-${_DA_SID}-arbiter-*` 네임스페이스의 scratch 파일로 저장한다 — 공통 검증기가 파일 입력 전용이므로 native 경로도 이 저장 단계를 거쳐야 검증을 수행할 수 있다 (메인 에이전트가 쓰는 결과 파일이며, Arbiter의 no-write role과 무관하다). 결과 파싱 후의 slot 회수는 capability profile을 따른다 (legacy profile만 `close_agent` 호출, current profile은 explicit close 없이 광고 slot 내에서만 발사 — [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
+- 결과 수집: [`runtime-mapping.md`](runtime-mapping.md#result-collection)의 결과 수집 binding을 따른다 (무엇이 결과 본문이고 `wait_agent` 반환값이 무엇인지는 그 anchor가 정의한다). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 수집한 본문은 `/tmp/da-${_DA_SID}-arbiter-*` 네임스페이스의 scratch 파일로 저장한다 — 공통 검증기가 파일 입력 전용이므로 native 경로도 이 저장 단계를 거쳐야 검증을 수행할 수 있다 (메인 에이전트가 쓰는 결과 파일이며, Arbiter의 no-write role과 무관하다). 결과 파싱 후의 slot 회수는 capability profile을 따른다 (legacy profile만 `close_agent` 호출, current profile은 explicit close 없이 광고 slot 내에서만 발사 — [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
@@ -191,7 +191,7 @@ Degraded mode 계약 (fallback 경로 한정): `--sandbox read-only` 강제로 �
 
 1. Arbiter용 fresh subagent는 strong review profile로 띄운다.
 2. 프롬프트에는 관련 reference 문서를 직접 읽고, review-only/no-write contract를 따르며, 파일을 수정하지 말라고 명시한다.
-3. `wait_agent`로 완료를 확인하고 subagent 최종 응답 본문을 수집해 scratch 결과 파일로 저장한다 (위 "Codex 세션 경로"의 결과 수집 계약과 동일 — `wait_agent` 반환값에는 결과 본문이 없다). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다.
+3. 결과를 수집해 scratch 결과 파일로 저장한다 ([`runtime-mapping.md`](runtime-mapping.md#result-collection) binding). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다.
 4. 결과 파싱 후 slot 회수는 capability profile을 따른다 ([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
@@ -277,7 +277,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 1. 동일 판정 기준 / 템플릿으로 3개의 fresh subagent를 strong review profile로 `spawn_agent` 실행한다. 프롬프트 본문은 위 "프롬프트 축소 규칙"대로 trigger된 finding subset 만 포함해 조립하고, 이전 판정 transcript는 공유하지 않는다 (독립 판정 원칙).
 2. N=3 발사가 capability profile의 batch 상한([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)을 넘으면 batch한다. legacy profile에서는 3개 발사 전에 first-pass Arbiter의 completed thread를 `close_agent`로 닫아 슬롯을 확보하고, current profile에서는 광고 slot 내에서 발사 수를 조절한다.
-3. `wait_agent`로 3개 모두의 완료를 확인하고 각 subagent가 최종 응답으로 전달한 본문을 수집한다 (`wait_agent` 반환값은 상태 요약뿐 — [`runtime-mapping.md`](runtime-mapping.md) 결과 수집 행). timeout만으로 failure 처리하거나 self-auditing으로 대체하지 않는다(conservative wait). 수신 후 slot 회수는 capability profile을 따른다.
+3. 3개 모두의 결과를 수집한다 ([`runtime-mapping.md`](runtime-mapping.md#result-collection) binding). timeout만으로 failure 처리하거나 self-auditing으로 대체하지 않는다(conservative wait). 수신 후 slot 회수는 capability profile을 따른다.
 4. 3개 결과 markdown을 각각 파일로 저장(`/tmp/da-${_DA_SID}-arbiter-selective-*/arbiter-{1,2,3}.md`) 후 `fleiss-kappa.py`로 집계한다 (helper 실체 해석은 [`protocol.md`](protocol.md) "검증기 실체 해석"). 호출 계약은 아래 codex exec 경로 4번과 동일하다 — `--expect-findings <trigger된 finding ID 쉼표 목록>`을 반드시 전달한다 (manifest 없는 집계는 세 Arbiter 공통 누락을 잡지 못한다).
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션, N=3)
