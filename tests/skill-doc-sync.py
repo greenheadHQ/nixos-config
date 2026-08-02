@@ -58,10 +58,6 @@ CAPABILITY_CONTRACT_DOCS = (
 )
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
 ARBITER_PROMPT = _RUN_DA_DIR / "references/arbiter-prompt.md"
-# SECURITY threat path 유형명 — 정의(이름+경로 조건)는 arbiter-prompt.md가 단독
-# 소유하고, da-domains.md는 유형 이름만 나열한다. 유형 추가·개명 시 한쪽만
-# 갱신되는 drift를 차단한다.
-EXPECTED_THREAT_PATH_TYPES = ("injection/입력 기반", "노출/유출", "인가 결함", "네트워크 표면")
 EXPECTED_AGENT_ARGS = {"agent=codex-xhigh", "agent=codex-high", "agent=codex-medium", "agent=claude"}
 FORBIDDEN_MODEL_LITERALS = ("gpt-5", "opus", "sonnet")
 
@@ -376,18 +372,39 @@ def check_bundle_subdomains() -> None:
 
 
 def check_threat_path_types() -> None:
-    """SECURITY threat path 유형명이 arbiter-prompt.md(정의 소유)와
-    da-domains.md(이름 나열)에 모두 존재하는지 검사한다."""
-    details = []
-    for path in (ARBITER_PROMPT, DA_DOMAINS):
-        text = read_text(path)
-        for type_name in EXPECTED_THREAT_PATH_TYPES:
-            if type_name not in text:
-                details.append(f"{path}: threat path 유형명 {type_name!r} 누락")
-    if "SECURITY threat path" not in read_text(ARBITER_PROMPT):
-        details.append(f"{ARBITER_PROMPT}: 'SECURITY threat path' 정의 섹션 누락")
-    if details:
-        raise CheckFailure("\n".join(details))
+    """SECURITY threat path 유형 집합의 동기화를 검사한다.
+
+    정의(이름+경로 조건)는 arbiter-prompt.md "SECURITY threat path" 절의 bullet이
+    단독 소유하고, da-domains.md는 괄호 나열로 이름만 소비한다. 양쪽에서 유형
+    집합을 파싱해 exact-set 비교하므로, 어느 쪽이든 유형을 추가·개명하고 다른
+    쪽을 누락하면 실패한다 (고정 상수 목록을 두지 않는다 — 제3의 사본 방지).
+    """
+    arbiter_text = read_text(ARBITER_PROMPT)
+    section_match = re.search(
+        r"#### SECURITY threat path.*?(?=\n#{2,4} )", arbiter_text, re.DOTALL
+    )
+    if not section_match:
+        raise CheckFailure(f"{ARBITER_PROMPT}: 'SECURITY threat path' 정의 섹션 누락")
+    owner_types = set(
+        re.findall(r"^- ([^:]+):", section_match.group(0), re.MULTILINE)
+    )
+    if not owner_types:
+        raise CheckFailure(f"{ARBITER_PROMPT}: threat path bullet 유형을 파싱하지 못함")
+
+    domains_text = read_text(DA_DOMAINS)
+    consumer_match = re.search(
+        r"취약점 유형별 threat path\(([^)]+)\)", domains_text
+    )
+    if not consumer_match:
+        raise CheckFailure(f"{DA_DOMAINS}: threat path 유형 나열(괄호)을 찾지 못함")
+    consumer_types = {part.strip() for part in consumer_match.group(1).split(",")}
+
+    if owner_types != consumer_types:
+        raise CheckFailure(
+            "threat path 유형 집합 불일치:\n"
+            f"  {ARBITER_PROMPT}: {sorted(owner_types)}\n"
+            f"  {DA_DOMAINS}: {sorted(consumer_types)}"
+        )
 
 
 def check_capability_profile() -> None:

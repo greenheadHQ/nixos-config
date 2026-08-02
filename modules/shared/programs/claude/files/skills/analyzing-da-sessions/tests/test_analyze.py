@@ -1034,18 +1034,55 @@ def test_find_severity_prefers_ahead_across_all_occurrences(analyze_module):
     assert severity == "HIGH"
 
 
+def _strip_verdict_json_field(session_text, mutate):
+    """fixture jsonl의 각 라인에서 VERDICT_JSON을 구조 파싱해 mutate를 적용한다."""
+    import re as _re
+
+    pattern = _re.compile(r"```json\n(.*?)\n```", _re.DOTALL)
+
+    def _rewrite_payload(payload_text):
+        def _sub(m):
+            obj = json.loads(m.group(1))
+            mutate(obj)
+            return "```json\n" + json.dumps(obj, ensure_ascii=False) + "\n```"
+
+        return pattern.sub(_sub, payload_text)
+
+    out_lines = []
+    for line in session_text.splitlines():
+        if not line.strip():
+            out_lines.append(line)
+            continue
+        record = json.loads(line)
+
+        def _walk(node):
+            if isinstance(node, dict):
+                return {k: _walk(v) for k, v in node.items()}
+            if isinstance(node, list):
+                return [_walk(v) for v in node]
+            if isinstance(node, str) and "verdict-json:start" in node:
+                return _rewrite_payload(node)
+            return node
+
+        out_lines.append(json.dumps(_walk(record), ensure_ascii=False))
+    return "\n".join(out_lines) + "\n"
+
+
 def test_additive_axes_plausibility_reflected_in_canonical_hash(
     fixtures_dir, analyze_module, tmp_path
 ):
     """VERDICT_JSON additive 필드 중 axes.plausibility가 canonical_verdict_hash에
     반영되는지 검증한다 (analyzer 경로의 관측 지점 — protocol.md 수렴 판정 계약)."""
     text, _ = load_fixture_pair(fixtures_dir, "06-claude-contract")
-    assert '\\"plausibility\\":\\"PASS\\"' in text, "fixture must carry plausibility"
 
     with_field = tmp_path / "with-plausibility.jsonl"
     with_field.write_text(text)
     without_field = tmp_path / "without-plausibility.jsonl"
-    without_field.write_text(text.replace(',\\"plausibility\\":\\"PASS\\"', ""))
+    without_field.write_text(
+        _strip_verdict_json_field(
+            text, lambda obj: obj.get("axes", {}).pop("plausibility", None)
+        )
+    )
 
     result_with = analyze_module.analyze_session(str(with_field))
     result_without = analyze_module.analyze_session(str(without_field))
@@ -1105,3 +1142,57 @@ def test_fleiss_kappa_preserves_additive_verdict_fields(tmp_path):
         assert entry["accepted_severity"] == "MEDIUM"
         assert entry["reviewer_severity"] == "MEDIUM"
         assert entry["axes"]["plausibility"] == "PASS"
+
+
+def test_fleiss_kappa_validate_only_flags_semantic_malformed(tmp_path):
+    """--validate-only 모드가 schema 1.1 semantic 계약 위반(정합 행렬·rejection_basis·
+    구버전 자칭)을 검출하고 정상 결과는 통과시키는지 검증한다."""
+    import sys
+
+    tests_dir = os.path.dirname(os.path.abspath(__file__))
+    files_root = os.path.dirname(os.path.dirname(os.path.dirname(tests_dir)))
+    harness = os.path.join(files_root, "scripts", "fleiss-kappa.py")
+
+    def block(payload):
+        return (
+            "### X-1 — verdict\n\n<!-- verdict-json:start -->\n```json\n"
+            + json.dumps(payload, ensure_ascii=False)
+            + "\n```\n<!-- verdict-json:end -->\n"
+        )
+
+    valid = {
+        "schema_version": "1.1", "finding_id": "X-1",
+        "verdict": "NOT_AN_ISSUE", "confidence": "HIGH",
+        "reviewer_severity": "MEDIUM", "accepted_severity": "MEDIUM",
+        "rejection_basis": "PLAUSIBILITY_FAIL", "stability_status": "N/A",
+        "axes": {"portability": "N/A", "plausibility": "FAIL"},
+    }
+    cases = {
+        "valid.md": (valid, True),
+        # verdict 정합 행렬 위반: CONFIRMED + plausibility FAIL
+        "matrix.md": ({**valid, "verdict": "CONFIRMED_ISSUE"}, False),
+        # NOT_AN_ISSUE인데 rejection_basis 누락
+        "basis.md": ({k: v for k, v in valid.items() if k != "rejection_basis"}, False),
+        # 실시간 경로에서 1.0 자칭
+        "downgrade.md": ({**valid, "schema_version": "1.0"}, False),
+    }
+    for name, (payload, expected_ok) in cases.items():
+        path = tmp_path / name
+        path.write_text(block(payload))
+        proc = subprocess.run(
+            [sys.executable, harness, "--validate-only", str(path)],
+            capture_output=True,
+            text=True,
+        )
+        report = json.loads(proc.stdout)
+        assert report["ok"] is expected_ok, (name, proc.stderr)
+        assert (proc.returncode == 0) is expected_ok, name
+
+    # --legacy-compat은 1.0 레코드를 과거 로그 관측용으로 허용한다
+    legacy = tmp_path / "downgrade.md"
+    proc = subprocess.run(
+        [sys.executable, harness, "--validate-only", "--legacy-compat", str(legacy)],
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(proc.stdout)["ok"] is True

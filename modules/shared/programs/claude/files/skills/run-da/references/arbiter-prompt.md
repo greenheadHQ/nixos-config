@@ -55,7 +55,7 @@ SECURITY 세부 관점 finding의 "현실적 경로"는 취약점 유형별 thre
 - injection/입력 기반: 공격자가 통제하는 source → 실제 노출 인터페이스 → 취약 sink 도달. 중간의 인증·인가/상류 검증 gate는 "통과·우회 가능하거나, 해당 gate가 없거나, sink가 gate보다 먼저 실행되는" 경우 경로 성립을 막지 않는다 (pre-auth 공격 — 예: 로그인 폼 injection — 을 배제하지 않는다).
 - 노출/유출: 보호 자산(시크릿·개인정보·내부 상태) → 공격자가 관찰 가능한 노출 지점(로그, 응답, 공개 저장소).
 - 인가 결함: 공격자 principal/action → 누락·오적용된 인가 → 보호 자원 접근.
-- 네트워크 표면: 외부 도달 가능 listener → 보호되지 않은 서비스.
+- 네트워크 표면: 외부 도달 가능 listener → 의도된 노출 범위 또는 요구된 네트워크 보호 경계를 벗어난 서비스. 애플리케이션 인증의 존재는 경로 부정 근거가 아니라 심각도 완화 요소다 (loopback→`0.0.0.0` 전환처럼 인증이 있어도 pre-auth 파서·로그인 endpoint가 새로 노출되면 경로 성립).
 
 입력의 극단성 단독으로는 Plausibility FAIL 근거가 아니고, 공격 입력의 생성 가능성 단독으로는 PASS 근거가 아니다 (공격 입력의 생성 가능성과 공격 경로의 존재를 혼동하지 않는다). 해당 유형의 threat path 성립이 불명확하면 `UNKNOWN`(→NEEDS_MORE_INFO).
 
@@ -323,7 +323,7 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): PASS / FAIL / 판단 불가(UNKNOWN) / N/A
   - Portability / Cross-Environment Drift: PASS / FAIL / N/A
 - **stability_status**: N/A / stable / split / fragmented (selective consistency 실행 시만 non-N/A)
-- **심각도 판정**: {accepted_severity} — 심각도 타당성 PASS면 reviewer 원값 그대로, FAIL이면 "원값 X → 조정 Y"와 조정 근거를 명시 (VERDICT_JSON `accepted_severity`와 일치해야 하며, caller가 이 줄과 대조 검증한다)
+- **심각도 판정**: {accepted_severity} — 심각도 타당성 PASS면 reviewer 원값 그대로, FAIL이면 "원값 X → 조정 Y"와 조정 근거를 명시 (조정 여부의 기계 판정은 VERDICT_JSON의 `reviewer_severity`/`accepted_severity` 비교로 자기완결된다 — 이 줄은 조정 근거를 사람에게 설명하는 보고용 서술이다)
 - **근거**: 직접 확인 결과 + 기술적 판단 (for_pr: 파일:줄 / for_plan: 관련 파일 또는 계획 원문)
 - **증거**: (NOT_AN_ISSUE의 경우 필수) for_pr: 반증 코드 스니펫 / for_plan: 반증 근거 (관련 파일 내용 또는 계획 원문 인용)
 ```
@@ -340,15 +340,37 @@ for_plan 핵심 원칙:
 {
   "schema_version": "1.1",
   "finding_id": "{finding ID 원문}",
-  "verdict": "CONFIRMED_ISSUE" | "NOT_AN_ISSUE" | "NEEDS_MORE_INFO",
+  "verdict": "CONFIRMED_ISSUE" | "NEEDS_MORE_INFO",
   "confidence": "HIGH" | "MEDIUM" | "LOW" | "N/A",
+  "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+  "accepted_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+  "stability_status": "N/A" | "stable" | "split" | "fragmented",
+  "axes": {
+    "portability": "PASS" | "FAIL" | "N/A",
+    "plausibility": "PASS" | "FAIL" | "UNKNOWN" | "N/A"
+  }
+}
+```
+<!-- verdict-json:end -->
+````
+
+NOT_AN_ISSUE 판정에만 `rejection_basis` 필드를 추가한 골격을 사용한다 (다른 verdict에 이 필드가 있으면 caller 검증 위반이다):
+
+````text
+<!-- verdict-json:start -->
+```json
+{
+  "schema_version": "1.1",
+  "finding_id": "{finding ID 원문}",
+  "verdict": "NOT_AN_ISSUE",
+  "confidence": "HIGH" | "MEDIUM" | "LOW",
   "reviewer_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
   "accepted_severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
   "rejection_basis": "FACTUAL_FAIL" | "RELEVANCE_FAIL" | "PLAUSIBILITY_FAIL",
   "stability_status": "N/A" | "stable" | "split" | "fragmented",
   "axes": {
     "portability": "PASS" | "FAIL" | "N/A",
-    "plausibility": "PASS" | "FAIL" | "UNKNOWN" | "N/A"
+    "plausibility": "FAIL" | "N/A"
   }
 }
 ```

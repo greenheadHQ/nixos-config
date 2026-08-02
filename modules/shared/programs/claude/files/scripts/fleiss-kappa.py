@@ -35,6 +35,66 @@ ESCALATE_MIN = 0.4
 VERDICT_CATEGORIES = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
 CONFIDENCE_VALUES = ("HIGH", "MEDIUM", "LOW", "N/A")
 
+# schema 1.1 semantic 계약 (protocol.md "수렴 판정" caller 검증 SSOT와 동기화)
+SEVERITY_VALUES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+PLAUSIBILITY_VALUES = ("PASS", "FAIL", "UNKNOWN", "N/A")
+REJECTION_BASES = ("FACTUAL_FAIL", "RELEVANCE_FAIL", "PLAUSIBILITY_FAIL")
+# verdict -> 허용되는 axes.plausibility 값 (정합 행렬)
+PLAUSIBILITY_MATRIX = {
+    "CONFIRMED_ISSUE": {"PASS"},
+    "NOT_AN_ISSUE": {"FAIL", "N/A"},
+    "NEEDS_MORE_INFO": {"PASS", "UNKNOWN"},
+}
+LIVE_SCHEMA_MIN_MINOR = 1  # 실시간 결과는 1.1 이상 (major 1)
+
+
+def validate_semantic_contract(entry, legacy_compat=False):
+    """schema 1.1 semantic 계약 위반 목록을 반환한다 (빈 리스트 = 통과).
+
+    protocol.md "수렴 판정" caller 검증의 기계 검증 부분 SSOT 구현체.
+    reviewer 원본 finding과의 대조(reviewer_severity 은닉 차단)는 원본을 아는
+    메인 에이전트 몫이라 여기서 검증하지 않는다.
+    legacy_compat=True는 과거 세션 로그 관측 전용 — 1.0/버전 누락 레코드를
+    구버전으로 간주해 semantic 검증을 건너뛴다 (실시간 경로 사용 금지).
+    """
+    violations = []
+    sv = str(entry.get("schema_version") or "")
+    parts = sv.split(".")
+    is_pre_1_1 = not sv or (
+        parts[0] == "1" and (len(parts) < 2 or not parts[1].isdigit() or int(parts[1]) < LIVE_SCHEMA_MIN_MINOR)
+    )
+    if is_pre_1_1:
+        if legacy_compat:
+            return []
+        violations.append(
+            f"live 결과는 schema_version 1.1 이상이어야 함 (got {sv!r})"
+        )
+        return violations
+    verdict = entry.get("verdict")
+    plaus = (entry.get("axes") or {}).get("plausibility")
+    if plaus not in PLAUSIBILITY_VALUES:
+        violations.append(f"axes.plausibility 누락 또는 enum 밖 값: {plaus!r}")
+    elif verdict in PLAUSIBILITY_MATRIX and plaus not in PLAUSIBILITY_MATRIX[verdict]:
+        violations.append(
+            f"verdict 정합 행렬 위반: verdict={verdict} + plausibility={plaus}"
+        )
+    for field in ("reviewer_severity", "accepted_severity"):
+        if entry.get(field) not in SEVERITY_VALUES:
+            violations.append(f"{field} 누락 또는 enum 밖 값: {entry.get(field)!r}")
+    basis = entry.get("rejection_basis")
+    if verdict == "NOT_AN_ISSUE":
+        if basis not in REJECTION_BASES:
+            violations.append(f"NOT_AN_ISSUE에 rejection_basis 누락/비정상: {basis!r}")
+        elif basis == "PLAUSIBILITY_FAIL" and plaus != "FAIL":
+            violations.append("rejection_basis=PLAUSIBILITY_FAIL이면 plausibility=FAIL 필수")
+        elif basis in ("FACTUAL_FAIL", "RELEVANCE_FAIL") and plaus not in ("N/A", "FAIL"):
+            violations.append(
+                f"rejection_basis={basis}와 plausibility={plaus} 조합 비정합"
+            )
+    elif basis is not None:
+        violations.append(f"{verdict}에 rejection_basis 출력 금지 (got {basis!r})")
+    return violations
+
 # 지원되는 VERDICT_JSON 스키마 major 버전. breaking change 시 이 set을 갱신.
 SUPPORTED_SCHEMA_MAJOR = {"1"}
 
@@ -45,7 +105,7 @@ VERDICT_JSON_PATTERN = re.compile(
 )
 
 
-def parse_verdict_json_blocks(markdown_path: Path):
+def parse_verdict_json_blocks(markdown_path: Path, legacy_compat: bool = False):
     """Parse VERDICT_JSON blocks from Arbiter result markdown.
 
     Returns (entries, malformed_count):
@@ -101,6 +161,15 @@ def parse_verdict_json_blocks(markdown_path: Path):
                 )
                 malformed += 1
                 continue
+        semantic_violations = validate_semantic_contract(entry, legacy_compat=legacy_compat)
+        if semantic_violations:
+            for v in semantic_violations:
+                print(
+                    f"warning: semantic malformed VERDICT_JSON ({finding_id}) in {markdown_path}: {v}",
+                    file=sys.stderr,
+                )
+            malformed += 1
+            continue
         if finding_id in entries:
             # 같은 파일 안 중복 — 어느 쪽도 신뢰 불가. 해당 finding을 duplicated_ids에 표시.
             print(
@@ -268,6 +337,22 @@ def main():
         help="Arbiter result markdown files containing VERDICT_JSON blocks (v1 vote-shape는 N=3 정책)",
     )
     parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help=(
+            "집계 없이 각 입력 파일의 VERDICT_JSON schema 1.1 semantic 계약만 검증하고 "
+            "JSON 결과를 출력한다 (first-pass caller 검증용 — protocol.md 수렴 판정 SSOT)"
+        ),
+    )
+    parser.add_argument(
+        "--legacy-compat",
+        action="store_true",
+        help=(
+            "과거 세션 로그 관측 전용: schema 1.0/버전 누락 레코드의 semantic 검증을 "
+            "건너뛴다. 실시간 first-pass/N=3 경로에서 사용 금지 (protocol.md)"
+        ),
+    )
+    parser.add_argument(
         "--offline",
         action="store_true",
         help=(
@@ -277,8 +362,31 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.validate_only:
+        report = {"files": [], "ok": True}
+        for path in args.arbiter_files:
+            entries, malformed = parse_verdict_json_blocks(
+                path, legacy_compat=args.legacy_compat
+            )
+            file_ok = malformed == 0 and len(entries) > 0
+            report["files"].append(
+                {
+                    "path": str(path),
+                    "valid_findings": sorted(entries.keys()),
+                    "malformed_count": malformed,
+                    "ok": file_ok,
+                }
+            )
+            report["ok"] = report["ok"] and file_ok
+        json.dump(report, sys.stdout, indent=2, ensure_ascii=False)
+        print()
+        return 0 if report["ok"] else 1
+
     # 각 Arbiter 파일에서 (entries, malformed_count) 수집.
-    parsed = [parse_verdict_json_blocks(p) for p in args.arbiter_files]
+    parsed = [
+        parse_verdict_json_blocks(p, legacy_compat=args.legacy_compat)
+        for p in args.arbiter_files
+    ]
     arbiter_entries = [entries for entries, _ in parsed]
     per_file_malformed = [mal for _, mal in parsed]
     # 파일이 아예 비었거나 모든 블록이 malformed인 경우 file-level failure.
@@ -384,4 +492,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
