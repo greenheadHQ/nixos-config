@@ -96,7 +96,12 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 
 재생성 시점은 `copyparty-config` 유닛이 다시 실행될 때입니다. 이 유닛은 `RemainAfterExit = true`라
 컨테이너만 재시작해서는 재실행되지 않으므로, 손으로 편집한 내용은 즉시 되돌아가지 않고 Nix 소스와
-드리프트한 채 남습니다. 강제 재생성은 `sudo systemctl restart copyparty-config`입니다.
+드리프트한 채 남습니다. 되돌리려면 재생성과 재시작을 함께 해야 합니다 (파일만 되살리면 실행 중인
+프로세스는 편집본을 계속 씁니다):
+
+```bash
+sudo systemctl restart copyparty-config && sudo systemctl restart podman-copyparty
+```
 
 설정 변경은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`에서 하고 `nrs`로 반영합니다.
 `nrs` 한 번으로 재생성과 재시작이 모두 일어나지만, 메커니즘은 서로 다른 두 가지입니다.
@@ -181,7 +186,7 @@ ConditionPathExists 안전장치
 - Caddy 리버스 프록시를 통해 접근 시 `rejected by cors-check` 에러 발생
 - 해결: `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet, Podman 브릿지 네트워크) 추가
 - `rproxy: 1`만으로는 부족 — X-Forwarded-For 헤더 소스(Podman gateway)를 `xff-src`로 신뢰해야 함
-- 설정 변경은 `nrs`가 파일 재생성 + 컨테이너 재시작까지 처리 (`restartTriggers`). 수동은 `sudo systemctl restart podman-copyparty`
+- 설정 변경 반영 절차는 "설정 파일 구조" 절 참조 (`nrs` 한 번으로 처리되며, 수동 경로도 그곳에 있음)
 
 localhost 바인딩 (Caddy 연동)
 - 포트가 `127.0.0.1:3923`에 바인딩 (Caddy가 유일한 외부 진입점)
@@ -211,7 +216,7 @@ localhost 바인딩 (Caddy 연동)
 
 1. 컨테이너 시작 실패: `journalctl -u podman-copyparty`에서 "multiple filesystem-paths" 또는 initcfg 충돌 확인. 상세: troubleshooting 항목 6, 7
 2. 로그인 실패: agenix secret 복호화 확인 (`sudo cat /run/agenix/copyparty-password`)
-3. CORS 403 (리버스 프록시): `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 설정 확인, 컨테이너 재시작
+3. CORS 403 (리버스 프록시): `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 설정 확인 후 재적용 (절차는 "설정 파일 구조" 절)
 4. 비밀번호 변경: `(cd secrets && agenix -e copyparty-password.age)` 후 `nrs` 재적용
 
 ## 런타임 환경 전제

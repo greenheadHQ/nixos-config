@@ -47,7 +47,7 @@ curl -sI -H 'Origin: https://copyparty.greenhead.dev' https://copyparty.greenhea
 해결:
 - `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 확인
 - `rproxy: 1`만으로는 부족 — Podman 브릿지 네트워크 게이트웨이를 `xff-src`로 신뢰해야 함
-- `configScript` 변경은 `nrs`가 처리 (config 유닛의 ExecStart 경로가 바뀌어 파일 재생성 → 그 경로를 `restartTriggers`로 물고 있는 컨테이너가 재시작). 수동은 `sudo systemctl restart podman-copyparty`
+- `configScript` 변경은 `nrs`가 처리 (config 유닛의 ExecStart 경로가 바뀌어 파일 재생성 → 그 경로를 `restartTriggers`로 물고 있는 컨테이너가 재시작). 수동은 `sudo systemctl restart copyparty-config && sudo systemctl restart podman-copyparty`
 
 ## 4. 비밀번호 변경
 
@@ -77,7 +77,7 @@ sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf
 sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
 ```
 
-정상 설정 예시 (생성 결과 기준 — 정본은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`):
+정상 설정 예시:
 ```ini
 [global]
   hist: /cfg/hists
@@ -97,10 +97,6 @@ sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
   accs:
     rwmda: greenhead
 ```
-
-이 예시는 conf 파일과 바이트 단위로 같은 형태입니다 (`[global]`은 0칸, 옵션은 2칸 들여쓰기).
-Nix 소스를 직접 대조하지는 마세요 — indented string이 공통 들여쓰기 4칸을 제거하고 `${podmanSubnet}` 같은
-보간이 미치환 상태로 보여서, 정상일 때도 전 줄이 불일치로 보입니다.
 
 ## 6. "multiple filesystem-paths" 에러
 
