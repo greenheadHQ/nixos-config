@@ -94,6 +94,27 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 설정 파일(`copyparty.conf`)은 `copyparty-config` oneshot 서비스가 agenix 시크릿에서 비밀번호를 주입하여 생성합니다.
 위치: `/var/lib/docker-data/copyparty/config/copyparty.conf` (chmod 0600)
 
+이 파일은 서비스가 매 시작마다 재생성하므로 직접 편집하면 되돌아갑니다.
+설정 변경은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`에서 하고 `nrs`로 반영합니다.
+
+### 검색 인덱싱
+
+`[global]`의 `e2dsa`가 파일 검색(웹 UI 상단 🔎 버튼)을 활성화합니다. 이 옵션이 없으면 버튼 자체가 표시되지 않습니다.
+인덱스 DB는 `hist:` 경로(SSD)에 저장됩니다.
+
+| 옵션 | 값 | 의미 |
+|------|-----|------|
+| `e2dsa` | (플래그) | 모든 볼륨을 시작 시 스캔하여 up2k DB에 색인 |
+| `no-hash` | `.` | 정규식이며 `.`은 모든 경로에 매칭 — 스캔 시 파일 해시 계산 생략 |
+| `re-maxage` | `86400` | 하루 1회 재스캔 (Copyparty 밖에서 추가된 파일 반영) |
+
+`no-hash`로 해시를 생략해도 검색(파일명·경로·크기·날짜)은 정상 동작하며, 대신 업로드 시 중복 감지와
+이어받기가 동작하지 않습니다. HDD 전체를 읽어야 하는 초기 해시 스캔을 피해 다른 서비스와의 디스크 경합을
+줄이려는 선택입니다. 해시가 필요해지면 `no-hash` 줄을 제거하고 `nrs`로 재스캔합니다 (전체 읽기로 장시간 소요).
+
+`e2dsa`는 컨테이너 시작 시점에만 스캔하므로, 백업 스크립트나 Immich처럼 Copyparty 밖에서 파일을 추가하는
+경로가 있으면 `re-maxage` 없이는 인덱스가 낡습니다.
+
 ## 스토리지 구조
 
 | 경로 | 디스크 | 용도 |

@@ -28,6 +28,9 @@ let
       no-crt
       rproxy: 1
       xff-src: ${podmanSubnet}
+      e2dsa
+      no-hash: .
+      re-maxage: 86400
 
     [accounts]
     CONF
