@@ -19,6 +19,11 @@ let
 
   # 비밀번호를 주입한 설정 파일 생성
   # <<'CONF' (quoted heredoc)로 셸 해석 방지 + printf로 비밀번호만 안전 삽입
+  #
+  # 검색 인덱싱 3옵션: e2dsa = 시작 시 전 볼륨 색인 (이게 없으면 웹 UI에 검색 버튼 자체가 안 뜬다),
+  # no-hash의 `.`은 "모든 경로"를 뜻하는 정규식 (초기 해시 스캔 회피 — 값을 지우면 HDD 전체 재해시로
+  # 의미가 뒤집힌다), re-maxage = 재스캔 주기(초). 트레이드오프 상세는
+  # .claude/skills/hosting-copyparty/SKILL.md "검색 인덱싱" 참조.
   configScript = pkgs.writeShellScript "copyparty-config-gen" ''
     PASSWORD=$(cat ${passwordPath})
     cat > ${configPath} <<'CONF'
@@ -65,6 +70,9 @@ in
       description = "Generate Copyparty config with secrets";
       wantedBy = [ "podman-copyparty.service" ];
       before = [ "podman-copyparty.service" ];
+      # configScript는 비밀번호 '경로'만 담으므로 .age를 재암호화해도 store path가 그대로다.
+      # 암호문 자체를 트리거로 걸어야 비밀번호 교체가 conf 재생성으로 이어진다.
+      restartTriggers = [ config.age.secrets.copyparty-password.file ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = configScript;
@@ -109,9 +117,13 @@ in
         ConditionPathExists = passwordPath;
       };
       # config 내용은 컨테이너 유닛에 들어가지 않고 경로만 볼륨 인자로 들어간다.
-      # configScript를 트리거로 걸어야 설정 변경 시 컨테이너가 재시작된다
+      # conf의 두 입력(생성 스크립트 + 비밀번호 암호문)을 모두 트리거로 걸어야
+      # 설정 변경과 비밀번호 교체가 컨테이너 재시작으로 이어진다
       # (copyparty는 시작 시점에만 conf를 읽는다).
-      restartTriggers = [ configScript ];
+      restartTriggers = [
+        configScript
+        config.age.secrets.copyparty-password.file
+      ];
     };
   };
 }

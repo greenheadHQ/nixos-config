@@ -99,9 +99,20 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 드리프트한 채 남습니다. 강제 재생성은 `sudo systemctl restart copyparty-config`입니다.
 
 설정 변경은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`에서 하고 `nrs`로 반영합니다.
-`podman-copyparty`에 `restartTriggers = [ configScript ]`가 걸려 있어 설정이 바뀌면 파일 재생성과
-컨테이너 재시작이 함께 일어납니다. 이 트리거가 없으면 파일만 새로 써지고 실행 중인 프로세스는 옛
-설정을 유지합니다 — copyparty는 시작 시점에만 conf를 읽기 때문입니다.
+`nrs` 한 번으로 재생성과 재시작이 모두 일어나지만, 메커니즘은 서로 다른 두 가지입니다.
+
+| 무엇이 | 왜 |
+|--------|-----|
+| conf 파일 재생성 | `configScript`가 바뀌면 `copyparty-config`의 `ExecStart` store path가 바뀌어 유닛이 재실행됨 |
+| 컨테이너 재시작 | `podman-copyparty`가 그 store path를 `restartTriggers`로 물고 있어 유닛이 변경으로 감지됨 |
+
+이 구분이 중요한 이유는 `restartTriggers`가 다른 유닛을 재실행시킬 수 없기 때문입니다 — 재생성은 트리거가
+아니라 config 유닛 자체의 변경으로 일어납니다. 트리거가 빠지면 파일만 새로 써지고 실행 중인 프로세스는 옛
+설정을 유지합니다 (copyparty는 시작 시점에만 conf를 읽습니다).
+
+conf의 입력은 `configScript`와 agenix 비밀번호 두 개이므로 양쪽 유닛 모두 `.age` 파일도 트리거로 물고
+있습니다. 이게 없으면 비밀번호를 교체해도 `configScript`의 store path가 그대로라 구 비밀번호가 계속
+유효합니다.
 
 ### 검색 인덱싱
 
@@ -126,6 +137,12 @@ HDD 전체를 읽어야 하는 초기 해시 스캔을 피해 다른 서비스�
 
 `e2dsa`는 컨테이너 시작 시점에만 스캔하므로, 백업 스크립트나 Immich처럼 Copyparty 밖에서 파일을 추가하는
 경로가 있으면 `re-maxage` 없이는 인덱스가 낡습니다.
+
+스캔이 도는 동안(기동 직후 첫 스캔, 일일 재스캔) 이름 변경·이동 요청은 스캔이 끝날 때까지 응답하지
+않습니다. 인덱서가 그 구간 내내 mutex를 잡는데, 인덱서를 중단시킬 수 있는 액션 목록(`--fika`)의 기본값
+`ucd`에 이동(`m`)이 빠져 있기 때문입니다 (업로드·복사·삭제는 중단시킬 수 있어 영향 없음).
+2회차 이후 스캔은 dhash 가속으로 짧아집니다. 이 창을 줄이려면 `fika: ucmd`를 검토할 수 있지만,
+업스트림이 `m`을 `untested/scary`로 표기하고 있어 기본값을 그대로 둡니다.
 
 ## 스토리지 구조
 
@@ -175,8 +192,9 @@ localhost 바인딩 (Caddy 연동)
 - 캐시 위치: SSD (`/var/lib/docker-data/copyparty/hists`)
 - `th-maxsize` 옵션은 존재하지 않음 (사용 금지)
 - `e2dsa`가 함의하는 `-e2d`는 폴더 커버 썸네일 선택 규칙을 완화한다 — 커버 파일명(`folder.jpg` 등)이
-  없어도 사진이 든 폴더에 커버가 자동 선택되므로, 브라우징 범위만큼 캐시와 HDD 읽기가 늘 수 있다.
-  이 자동 선택만 끄는 옵션은 없고, 문제가 되면 `th-maxage` 축소가 현실적인 레버다
+  없어도 사진이 든 폴더에 커버가 자동 선택되므로, 브라우징 범위만큼 캐시와 HDD 읽기가 늘 수 있다
+  (이 자동 선택만 끄는 옵션은 없다). `th-maxage` 축소는 SSD 캐시 용량만 줄이고 HDD 읽기는 오히려
+  늘리므로, 두 비용 중 무엇이 문제인지 확인한 뒤 조정한다
 
 이미지 태그
 - `copyparty/ac` variant를 pinned tag로 사용 (audio/video/image 썸네일 + 트랜스코딩 포함)

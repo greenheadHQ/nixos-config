@@ -57,7 +57,8 @@ homeserver.copyparty.enable = true;
 
 ## Copyparty 설정 파일 형식
 
-INI 스타일, 섹션별 구성:
+INI 스타일, 섹션별 구성 (아래는 형식 설명용이며, 실제 값의 정본은
+`modules/nixos/programs/docker/copyparty.nix`의 `configScript`입니다):
 
 ```ini
 [global]
