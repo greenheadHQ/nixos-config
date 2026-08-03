@@ -76,6 +76,7 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 
 현재 단일 루트 볼륨으로 HDD 전체를 rwmda(읽기/쓰기/이동/삭제/관리) 권한으로 제공합니다.
 `m`(move)이 빠지면 웹 UI에서 파일 이름 변경/이동이 조용히 사라지므로, config 재작성 시 누락 금지.
+(ACL이 정상인데 이동이 응답하지 않으면 인덱서 스캔 중일 수 있습니다 — "검색 인덱싱" 절 참조.)
 정본: `modules/nixos/programs/docker/copyparty.nix`의 `accs:` 블록.
 
 | Copyparty 경로 | 호스트 경로 | 권한 |
