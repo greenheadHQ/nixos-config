@@ -22,8 +22,8 @@ let
   #
   # 검색 인덱싱 3옵션: e2dsa = 시작 시 전 볼륨 색인 (이게 없으면 웹 UI에 검색 버튼 자체가 안 뜬다),
   # no-hash의 `.`은 "모든 경로"를 뜻하는 정규식 (초기 해시 스캔 회피), re-maxage = 재스캔 주기(초).
-  # no-hash는 값이 필수인 옵션이라 `.`만 지우고 키를 남기면 argparse가 거부해 컨테이너가 기동하지 않는다
-  # — 해시를 되살리려면 줄째로 지운다. 트레이드오프 상세는
+  # 해시를 되살리려면 no-hash를 줄째로 지운다 — 값만 비우면(`no-hash:`) 조용히 통과해
+  # 해시 스캔이 다시 켜진다. 트레이드오프 상세는
   # .claude/skills/hosting-copyparty/SKILL.md "검색 인덱싱" 참조.
   configScript = pkgs.writeShellScript "copyparty-config-gen" ''
     PASSWORD=$(cat ${passwordPath})

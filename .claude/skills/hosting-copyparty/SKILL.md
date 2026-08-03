@@ -107,18 +107,17 @@ sudo systemctl restart copyparty-config && sudo systemctl restart podman-copypar
 설정 변경은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`에서 하고 `nrs`로 반영합니다.
 `nrs` 한 번으로 재생성과 재시작이 모두 일어나지만, 메커니즘은 서로 다른 두 가지입니다.
 
-| 무엇이 | 왜 |
-|--------|-----|
-| conf 파일 재생성 | `configScript`가 바뀌면 `copyparty-config`의 `ExecStart` store path가 바뀌어 유닛이 재실행됨 |
-| 컨테이너 재시작 | `podman-copyparty`가 그 store path를 `restartTriggers`로 물고 있어 유닛이 변경으로 감지됨 |
+conf의 입력은 `configScript`와 agenix 비밀번호 두 개이고, 각 입력이 두 유닛을 따로 움직입니다.
 
-이 구분이 중요한 이유는 `restartTriggers`가 다른 유닛을 재실행시킬 수 없기 때문입니다 — 재생성은 트리거가
-아니라 config 유닛 자체의 변경으로 일어납니다. 트리거가 빠지면 파일만 새로 써지고 실행 중인 프로세스는 옛
-설정을 유지합니다 (copyparty는 시작 시점에만 conf를 읽습니다).
+| 바뀐 입력 | conf 재생성 | 컨테이너 재시작 |
+|-----------|-------------|-----------------|
+| `configScript` | `copyparty-config`의 `ExecStart` store path 변경 | `podman-copyparty`의 `restartTriggers` |
+| `.age` 비밀번호 | `copyparty-config`의 `restartTriggers` | `podman-copyparty`의 `restartTriggers` |
 
-conf의 입력은 `configScript`와 agenix 비밀번호 두 개이므로 양쪽 유닛 모두 `.age` 파일도 트리거로 물고
-있습니다. 이게 없으면 비밀번호를 교체해도 `configScript`의 store path가 그대로라 구 비밀번호가 계속
-유효합니다.
+두 입력 모두 양쪽 유닛에 걸려 있어야 합니다. `restartTriggers`는 자기 유닛만 재시작시키므로, 한쪽이
+빠지면 파일만 새로 써지고 실행 중인 프로세스는 옛 값을 유지합니다 (copyparty는 시작 시점에만 conf를
+읽습니다). 특히 `.age` 트리거가 없으면 `configScript`의 store path가 불변이라 비밀번호를 교체해도
+구 비밀번호가 계속 유효합니다.
 
 ### 검색 인덱싱
 

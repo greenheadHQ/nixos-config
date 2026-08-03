@@ -204,23 +204,20 @@ sudo podman inspect copyparty --format '{{.State.ExitCode}}'
 
 증상: 웹 UI 또는 Finder(WebDAV)에서 파일 이름 변경·이동 요청이 응답 없이 대기
 
-원인 후보는 둘이며 ACL부터 확인하지 말고 인덱서 상태를 먼저 본다 — ACL 문제는 조용히 실패하지만,
-인덱서 대기는 응답 자체가 없다:
+원인 후보는 둘이며 ACL보다 인덱서를 먼저 본다 — ACL 문제는 조용히 실패하지만 인덱서 대기는 응답 자체가 없다.
 
-1. 인덱서 스캔 중 (ACL이 정상이어도 발생): up2k 인덱서가 스캔 구간 내내 mutex를 잡는데,
-   인덱서를 중단시킬 수 있는 액션 목록(`--fika`)의 기본값 `ucd`에 이동(`m`)이 빠져 있다.
-   컨테이너 기동 직후 첫 스캔과 `re-maxage` 주기 재스캔에서 발생하며, 스캔이 끝나면 저절로 풀린다.
-2. ACL에 `m` 누락: 이 경우는 대기가 아니라 기능이 조용히 사라진다.
+1. 인덱서 스캔 중 (ACL이 정상이어도 발생, 스캔이 끝나면 풀림). 배경은 `hosting-copyparty` SKILL.md "검색 인덱싱" 절.
+2. ACL에 `m` 누락 (대기가 아니라 기능이 조용히 사라짐).
 
 진단:
 ```bash
-# 스캔 진행 중인지 확인 (hashing/scanning 로그)
-sudo podman logs --tail 50 copyparty
+# 인덱서 점유 구간 확인 — blocked ~ now possible 사이가 스캔 중
+sudo podman logs copyparty 2>&1 | grep -E 'blocked due to indexing|uploads are now possible|progress:|volumes in' | tail -20
 
 # ACL 확인 — rwmda의 m 포함 여부
 sudo grep -A3 'accs:' /var/lib/docker-data/copyparty/config/copyparty.conf
 ```
 
 해결:
-- 스캔 중이면 종료를 기다린다 (2회차 이후 스캔은 dhash 가속으로 짧아짐)
+- 스캔 중이면 종료를 기다린다
 - ACL에 `m`이 없으면 `copyparty.nix`의 `accs:` 블록 수정 후 `nrs`
