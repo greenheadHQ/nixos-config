@@ -47,7 +47,7 @@ curl -sI -H 'Origin: https://copyparty.greenhead.dev' https://copyparty.greenhea
 해결:
 - `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 확인
 - `rproxy: 1`만으로는 부족 — Podman 브릿지 네트워크 게이트웨이를 `xff-src`로 신뢰해야 함
-- 설정 변경 후 컨테이너 재시작 필수: `sudo systemctl restart podman-copyparty`
+- 설정 변경은 `nrs`가 처리 (메커니즘은 `hosting-copyparty` SKILL.md "설정 파일 구조" 절). 수동은 `sudo systemctl restart copyparty-config && sudo systemctl restart podman-copyparty`
 
 ## 4. 비밀번호 변경
 
@@ -77,7 +77,7 @@ sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf
 sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
 ```
 
-정상 설정 예시:
+정상 설정 예시 (정본은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`):
 ```ini
 [global]
   hist: /cfg/hists
@@ -85,6 +85,9 @@ sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
   no-crt
   rproxy: 1
   xff-src: 10.88.0.0/16  # constants.network.podmanSubnet
+  e2dsa
+  no-hash: .
+  re-maxage: 86400
 
 [accounts]
   greenhead: <PASSWORD>
@@ -196,3 +199,25 @@ sudo podman inspect copyparty --format '{{.State.ExitCode}}'
 해결:
 - `copyparty.nix`에서 `${dockerData}/copyparty/sessions:/cfg/copyparty` 볼륨 마운트 확인
 - 세션 초기화 필요 시: `sudo rm /var/lib/docker-data/copyparty/sessions/*` 후 컨테이너 재시작
+
+## 10. 이름 변경/이동이 응답하지 않음
+
+증상: 웹 UI 또는 Finder(WebDAV)에서 파일 이름 변경·이동 요청이 응답 없이 대기
+
+원인 후보는 둘이며 ACL보다 인덱서를 먼저 본다 — ACL 문제는 조용히 실패하지만 인덱서 대기는 응답 자체가 없다.
+
+1. 인덱서 스캔 중 (ACL이 정상이어도 발생, 스캔이 끝나면 풀림). 배경은 `hosting-copyparty` SKILL.md "검색 인덱싱" 절.
+2. ACL에 `m` 누락 (대기가 아니라 기능이 조용히 사라짐).
+
+진단:
+```bash
+# 인덱서 점유 구간 확인 — blocked ~ now possible 사이가 스캔 중
+sudo podman logs copyparty 2>&1 | grep -E 'blocked due to indexing|uploads are now possible|progress:|volumes in' | tail -20
+
+# ACL 확인 — rwmda의 m 포함 여부
+sudo grep -A3 'accs:' /var/lib/docker-data/copyparty/config/copyparty.conf
+```
+
+해결:
+- 스캔 중이면 종료를 기다린다
+- ACL에 `m`이 없으면 `copyparty.nix`의 `accs:` 블록 수정 후 `nrs`

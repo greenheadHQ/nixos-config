@@ -76,6 +76,7 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 
 현재 단일 루트 볼륨으로 HDD 전체를 rwmda(읽기/쓰기/이동/삭제/관리) 권한으로 제공합니다.
 `m`(move)이 빠지면 웹 UI에서 파일 이름 변경/이동이 조용히 사라지므로, config 재작성 시 누락 금지.
+(ACL이 정상인데 이동이 응답하지 않으면 인덱서 스캔 중일 수 있습니다 — "검색 인덱싱" 절 참조.)
 정본: `modules/nixos/programs/docker/copyparty.nix`의 `accs:` 블록.
 
 | Copyparty 경로 | 호스트 경로 | 권한 |
@@ -93,6 +94,62 @@ sudo copyparty-update             # 실제 업데이트 (pull → digest 비교 
 
 설정 파일(`copyparty.conf`)은 `copyparty-config` oneshot 서비스가 agenix 시크릿에서 비밀번호를 주입하여 생성합니다.
 위치: `/var/lib/docker-data/copyparty/config/copyparty.conf` (chmod 0600)
+
+재생성 시점은 `copyparty-config` 유닛이 다시 실행될 때입니다. 이 유닛은 `RemainAfterExit = true`라
+컨테이너만 재시작해서는 재실행되지 않으므로, 손으로 편집한 내용은 즉시 되돌아가지 않고 Nix 소스와
+드리프트한 채 남습니다. 되돌리려면 재생성과 재시작을 함께 해야 합니다 (파일만 되살리면 실행 중인
+프로세스는 편집본을 계속 씁니다):
+
+```bash
+sudo systemctl restart copyparty-config && sudo systemctl restart podman-copyparty
+```
+
+설정 변경은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`에서 하고 `nrs`로 반영합니다.
+`nrs` 한 번으로 재생성과 재시작이 모두 일어나지만, 메커니즘은 서로 다른 두 가지입니다.
+
+conf의 입력은 `configScript`와 agenix 비밀번호 두 개이고, 각 입력이 두 유닛을 따로 움직입니다.
+
+| 바뀐 입력 | conf 재생성 | 컨테이너 재시작 |
+|-----------|-------------|-----------------|
+| `configScript` | `copyparty-config`의 `ExecStart` store path 변경 | `podman-copyparty`의 `restartTriggers` |
+| `.age` 비밀번호 | `copyparty-config`의 `restartTriggers` | `podman-copyparty`의 `restartTriggers` |
+
+두 입력 모두 양쪽 유닛에 걸려 있어야 합니다. `restartTriggers`는 자기 유닛만 재시작시키므로, 한쪽이
+빠지면 파일만 새로 써지고 실행 중인 프로세스는 옛 값을 유지합니다 (copyparty는 시작 시점에만 conf를
+읽습니다). 특히 `.age` 트리거가 없으면 `configScript`의 store path가 불변이라 비밀번호를 교체해도
+구 비밀번호가 계속 유효합니다.
+
+### 검색 인덱싱
+
+`[global]`의 `e2dsa`가 파일 검색(웹 UI 상단 🔎 버튼)을 활성화합니다. 이 옵션이 없으면 버튼 자체가 표시되지 않습니다.
+인덱스 DB는 `hist:` 경로(SSD)에 저장됩니다.
+
+| 옵션 | 값 | 의미 |
+|------|-----|------|
+| `e2dsa` | (플래그) | 모든 볼륨을 시작 시 스캔하여 up2k DB에 색인 |
+| `no-hash` | `.` | 정규식이며 `.`은 모든 경로에 매칭 — 스캔 시 파일 해시 계산 생략 |
+| `re-maxage` | `86400` | 하루 1회 재스캔 (Copyparty 밖에서 추가된 파일 반영) |
+
+`no-hash`로 해시를 생략해도 검색(파일명·경로·크기·날짜)은 정상 동작합니다. 포기하는 것은 "이미 디스크에
+있던 파일"과의 해시 매칭이라, 서버에 이미 존재하는 파일을 다시 올릴 때 서버 내 복사(clone)로 처리되지 못하고
+네트워크로 다시 전송됩니다. 중단된 업로드 이어받기는 up2k 스냅샷(`--snap-wri`) 기반이라 영향받지 않고,
+심볼릭링크 중복 제거(`--dedup`)는 이 설정에서 선언한 적이 없어 원래부터 비활성입니다.
+HDD 전체를 읽어야 하는 초기 해시 스캔을 피해 다른 서비스와의 디스크 경합을 줄이려는 선택입니다.
+
+기존 파일과의 해시 매칭이 필요해지면 `no-hash` 줄을 제거하고 `nrs`로 재스캔합니다. `nohash`는 copyparty의
+`VF_AFFECTS_INDEXING` volflag라 값이 바뀌면 dhash 캐시가 폐기되고 전체를 다시 읽으므로, 재스캔이 조용히
+생략되지는 않습니다 (그만큼 장시간 소요).
+
+`e2dsa`는 컨테이너 시작 시점에만 스캔하므로, 백업 스크립트나 Immich처럼 Copyparty 밖에서 파일을 추가하는
+경로가 있으면 `re-maxage` 없이는 인덱스가 낡습니다.
+
+스캔이 도는 동안(기동 직후 첫 스캔, 일일 재스캔) 이름 변경·이동 요청은 스캔이 끝날 때까지 응답하지
+않습니다. 인덱서가 그 구간 내내 mutex를 잡는데, 인덱서를 중단시킬 수 있는 액션 목록(`--fika`)의 기본값
+`ucd`에 이동(`m`)이 빠져 있기 때문입니다. 복사·삭제는 인덱서를 양보시켜 짧은 대기 후 처리되고,
+업로드도 통상 즉시 통과하지만 인덱서가 양보 지점에 10초 안에 도달하지 못하면 503을 받고 클라이언트가
+재시도합니다.
+2회차 이후 스캔은 dhash 가속으로 짧아집니다. 이 창을 줄이려면 `fika: ucmd`를 검토할 수 있지만,
+업스트림이 `m`을 `untested/scary`로 표기하고 있어 기본값을 그대로 둡니다.
 
 ## 스토리지 구조
 
@@ -131,7 +188,7 @@ ConditionPathExists 안전장치
 - Caddy 리버스 프록시를 통해 접근 시 `rejected by cors-check` 에러 발생
 - 해결: `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet, Podman 브릿지 네트워크) 추가
 - `rproxy: 1`만으로는 부족 — X-Forwarded-For 헤더 소스(Podman gateway)를 `xff-src`로 신뢰해야 함
-- 설정 변경 후 컨테이너 재시작 필수 (`sudo systemctl restart podman-copyparty`)
+- 설정 변경 반영 절차는 "설정 파일 구조" 절 참조 (`nrs` 한 번으로 처리되며, 수동 경로도 그곳에 있음)
 
 localhost 바인딩 (Caddy 연동)
 - 포트가 `127.0.0.1:3923`에 바인딩 (Caddy가 유일한 외부 진입점)
@@ -141,6 +198,10 @@ localhost 바인딩 (Caddy 연동)
 - `th-maxage: 7776000` (90일) 설정
 - 캐시 위치: SSD (`/var/lib/docker-data/copyparty/hists`)
 - `th-maxsize` 옵션은 존재하지 않음 (사용 금지)
+- `e2dsa`가 함의하는 `-e2d`는 폴더 커버 썸네일 선택 규칙을 완화한다 — 커버 파일명(`folder.jpg` 등)이
+  없어도 사진이 든 폴더에 커버가 자동 선택되므로, 브라우징 범위만큼 캐시와 HDD 읽기가 늘 수 있다
+  (이 자동 선택만 끄는 옵션은 없다). `th-maxage` 축소는 SSD 캐시 용량만 줄이고 HDD 읽기는 오히려
+  늘리므로, 두 비용 중 무엇이 문제인지 확인한 뒤 조정한다
 
 이미지 태그
 - `copyparty/ac` variant를 pinned tag로 사용 (audio/video/image 썸네일 + 트랜스코딩 포함)
@@ -157,7 +218,7 @@ localhost 바인딩 (Caddy 연동)
 
 1. 컨테이너 시작 실패: `journalctl -u podman-copyparty`에서 "multiple filesystem-paths" 또는 initcfg 충돌 확인. 상세: troubleshooting 항목 6, 7
 2. 로그인 실패: agenix secret 복호화 확인 (`sudo cat /run/agenix/copyparty-password`)
-3. CORS 403 (리버스 프록시): `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 설정 확인, 컨테이너 재시작
+3. CORS 403 (리버스 프록시): `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 설정 확인 후 재적용 (절차는 "설정 파일 구조" 절)
 4. 비밀번호 변경: `(cd secrets && agenix -e copyparty-password.age)` 후 `nrs` 재적용
 
 ## 런타임 환경 전제

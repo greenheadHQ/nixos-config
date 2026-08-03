@@ -57,7 +57,8 @@ homeserver.copyparty.enable = true;
 
 ## Copyparty 설정 파일 형식
 
-INI 스타일, 섹션별 구성:
+INI 스타일, 섹션별 구성 (아래는 형식 설명용이며, 실제 값의 정본은
+`modules/nixos/programs/docker/copyparty.nix`의 `configScript`입니다):
 
 ```ini
 [global]
@@ -66,6 +67,9 @@ INI 스타일, 섹션별 구성:
   no-crt                  # 자체 TLS 비활성 (Caddy가 HTTPS 처리)
   rproxy: 1               # 리버스 프록시 뒤에서 실행 (X-Forwarded 헤더 신뢰)
   xff-src: 10.88.0.0/16   # Podman 브릿지 네트워크를 프록시 소스로 신뢰 (constants.network.podmanSubnet)
+  e2dsa                   # 시작 시 모든 볼륨 색인 (검색 활성화)
+  no-hash: .              # 정규식 — 모든 경로의 해시 계산 생략 (기존 파일 clone 매칭 포기)
+  re-maxage: 86400        # 하루 1회 재스캔 (초 단위)
 
 [accounts]
   greenhead: PASSWORD     # 계정: 비밀번호
@@ -108,8 +112,15 @@ initcfg를 완전히 건너뛰는 것이 유일한 해결책.
 ## 리소스 설정 근거
 
 - 메모리 1GB + swap 1GB: FFmpeg 썸네일 생성 시 300-500MB 스파이크 대비
-- CPU 1코어: 단일 사용자, 다른 서비스 영향 최소화
+- CPU 1코어: 단일 사용자, 다른 서비스의 CPU 경합 최소화
 - 썸네일 캐시 90일: 적절한 캐시 재활용과 디스크 사용 균형
+- 검색 인덱싱(`e2dsa`) 추가 후에도 한도 유지: `no-hash`로 해시 계산을 생략해 스캔이 메타데이터 확인
+  위주라 메모리 증가가 작다. 단 CPU 제한은 디스크 I/O 경합을 제한하지 않으므로, 스캔과 `-e2d`가
+  넓힌 썸네일 생성이 만드는 HDD 부하는 같은 디스크를 쓰는 Immich·Karakeep에 그대로 나타난다
+- `re-maxage` 재스캔은 캘린더가 아니라 컨테이너 기동 시각 기준 인터벌이라 실행 시각이 고정되지 않는다
+  (`nrs`나 이미지 업데이트로 재시작할 때마다 표류). 04:00~05:30에 stagger 배치된 다른 HDD 작업과
+  겹칠 수 있으며, 겹침을 피해야 하면 `re-maxage: 0`으로 끄고 `?scan` 엔드포인트를 호출하는
+  systemd timer로 옮긴다
 
 ## WebDAV 연결 (Mac Finder)
 
