@@ -10,9 +10,6 @@ suppress_unstable_features_warning = true
 [notice]
 hide_full_access_warning = true
 
-[notice.model_migrations]
-"gpt-5.2" = "gpt-5.2-codex"
-
 [features]
 multi_agent = true
 apps = true

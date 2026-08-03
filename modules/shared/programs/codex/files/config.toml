@@ -10,9 +10,6 @@ suppress_unstable_features_warning = true
 [notice]
 hide_full_access_warning = true
 
-[notice.model_migrations]
-"gpt-5.2" = "gpt-5.2-codex"
-
 # Linux default disables `apps` to skip `codex_apps` MCP boot; use `codex-apps`
 # shell alias for opt-in connector / plugin / tool_search surface (#772).
 [features]
