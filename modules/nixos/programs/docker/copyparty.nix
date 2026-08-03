@@ -108,6 +108,10 @@ in
       unitConfig = {
         ConditionPathExists = passwordPath;
       };
+      # config 내용은 컨테이너 유닛에 들어가지 않고 경로만 볼륨 인자로 들어간다.
+      # configScript를 트리거로 걸어야 설정 변경 시 컨테이너가 재시작된다
+      # (copyparty는 시작 시점에만 conf를 읽는다).
+      restartTriggers = [ configScript ];
     };
   };
 }

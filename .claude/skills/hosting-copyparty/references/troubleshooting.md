@@ -47,7 +47,7 @@ curl -sI -H 'Origin: https://copyparty.greenhead.dev' https://copyparty.greenhea
 해결:
 - `[global]` 섹션에 `rproxy: 1` + `xff-src: 10.88.0.0/16` (constants.network.podmanSubnet) 확인
 - `rproxy: 1`만으로는 부족 — Podman 브릿지 네트워크 게이트웨이를 `xff-src`로 신뢰해야 함
-- 설정 변경 후 컨테이너 재시작 필수: `sudo systemctl restart podman-copyparty`
+- 설정 변경은 `nrs`가 처리 (`restartTriggers`로 파일 재생성 + 컨테이너 재시작). 수동은 `sudo systemctl restart podman-copyparty`
 
 ## 4. 비밀번호 변경
 
@@ -77,23 +77,14 @@ sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf
 sudo cat /var/lib/docker-data/copyparty/config/copyparty.conf | cat -A
 ```
 
-정상 설정 예시:
-```ini
-[global]
-  hist: /cfg/hists
-  th-maxage: 7776000
-  no-crt
-  rproxy: 1
-  xff-src: 10.88.0.0/16  # constants.network.podmanSubnet
+정상 설정 예시의 정본은 `modules/nixos/programs/docker/copyparty.nix`의 `configScript`입니다.
+여기에 사본을 두면 옵션이 추가될 때마다 드리프트하므로, 대조 시 아래로 정본을 확인합니다:
 
-[accounts]
-  greenhead: <PASSWORD>
-
-[/]
-  /data
-  accs:
-    rwmda: greenhead
+```bash
+rg -n -A25 'configScript = ' modules/nixos/programs/docker/copyparty.nix
 ```
+
+`[accounts]`의 비밀번호 줄만 agenix 시크릿에서 주입되며, 나머지 줄은 정본과 1:1로 일치해야 합니다.
 
 ## 6. "multiple filesystem-paths" 에러
 
