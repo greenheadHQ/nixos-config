@@ -131,7 +131,7 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 
 해결: 설정 도구에서 그 자리를 일반 `F3` 키로 바꿉니다. 이 키보드는 F키를 보낼 때 `fn` 플래그를 붙이므로(`keycode=99 flags=[fn]`), macOS 기본 Mission Control 단축키(`AppleSymbolicHotKeys` 32번 = keycode 99 + fn 마스크 `0x800000`)에 그대로 걸립니다. 펌웨어 설정만으로 해결되며 Hammerspoon 개입이 필요 없습니다.
 
-설정 도구는 키보드를 wired 모드로 전환한 뒤 `link.nocfree.com`에 접속해 사용합니다 (NocFree Lite의 Vial과 달리 이 모델은 전용 웹 도구를 사용). 유선 모드와 무선 모드의 키 설정은 분리 저장되므로, 재할당 후 무선 모드로 되돌린 상태에서 동작을 다시 확인합니다.
+설정 도구는 키보드를 wired 모드로 전환한 뒤 `link.nocfree.com`에 접속해 사용합니다 (NocFree Lite의 Vial과 달리 이 모델은 전용 웹 도구를 사용). 같은 계열인 NocFree Lite 문서에는 유선/무선 설정이 분리 저장된다는 서술이 있으나, 이 모델에서는 유선으로 재할당한 뒤 도구를 닫고 Bluetooth로 되돌려도 설정이 유지되는 것을 실측 확인했습니다.
 
 > F11도 같은 방식(일반 `F11` 키로 교체)으로 macOS 기본 "데스크탑 보기" 단축키에 걸릴 가능성이 있습니다. 다만 현재는 펌웨어가 `Vol -`를 보내는 상태를 전제로 위의 eventtap이 처리하며, 이쪽이 실측 검증을 마친 경로입니다.
 
