@@ -201,6 +201,47 @@ hs.urlevent.bind("claude-fork", function(eventName, params)
 end)
 
 --------------------------------------------------------------------------------
+-- Split 키보드(NocFree &) F11 → 바탕화면 보기
+--------------------------------------------------------------------------------
+-- 이 키보드는 펌웨어가 F10~F12를 macOS 미디어키로 내보낸다
+-- (F10=음소거, F11=볼륨 다운, F12=볼륨 업). Shift 조합도 같은 미디어키로 오므로
+-- Shift+F10/F11/F12 = 음소거/볼륨 다운/볼륨 업은 이미 동작한다.
+-- 여기서는 수식키 없는 F11(볼륨 다운)만 가로채 "바탕화면 보기"로 바꾼다.
+--
+-- 키보드 식별: 미디어키 이벤트는 keyboardType이 0으로 들어와 장치를 구분할 수 없다
+-- (일반 키 이벤트는 split=40 / 내장=91로 구분된다). 대신 내장 키보드는
+-- fnState=true 때문에 볼륨 조절 시 fn 플래그가 붙으므로(내장 fn+F11 →
+-- SOUND_DOWN flags=[fn]), 수식키가 전혀 없는 SOUND_DOWN만 가로채면 내장 키보드의
+-- 볼륨 조절은 영향받지 않는다.
+-- 한계: 다른 외장 키보드를 연결하면 그 키보드의 볼륨 다운도 여기에 걸린다.
+--
+-- 참고: 같은 키보드의 F3는 여기서 처리하지 않는다. 펌웨어에 "Mission Control" 기능키를
+-- 할당하면 신호가 macOS에 도달하지 않지만(Apple 자체 키보드 경로로만 처리되는 기능),
+-- 설정 도구에서 일반 F3 키로 바꾸면 이 키보드가 fn 플래그를 붙여 보내므로
+-- (keycode=99 flags=[fn]) macOS 기본 Mission Control 단축키에 그대로 걸린다.
+-- 즉 펌웨어 설정만으로 해결되며 Hammerspoon 개입이 필요 없다.
+
+-- eventtap은 참조가 사라지면 GC되므로 전역에 보관한다
+splitKeyboardShowDesktopTap = hs.eventtap.new(
+    {hs.eventtap.event.types.systemDefined},
+    function(e)
+        local sd = e:systemKey()
+        if not sd or sd.key ~= "SOUND_DOWN" then return false end
+
+        -- 수식키가 하나라도 눌려 있으면 원래 동작(볼륨 다운)을 유지한다
+        for _, pressed in pairs(e:getFlags()) do
+            if pressed then return false end
+        end
+
+        -- 실행은 keyDown 에서만. keyUp 도 소비해야 볼륨이 내려가지 않는다.
+        if sd.down then
+            hs.spaces.toggleShowDesktop()
+        end
+        return true
+    end)
+splitKeyboardShowDesktopTap:start()
+
+--------------------------------------------------------------------------------
 -- 설정 로드 완료 알림
 --------------------------------------------------------------------------------
 
