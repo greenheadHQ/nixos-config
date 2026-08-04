@@ -11,9 +11,13 @@
   },
   "includeCoAuthoredBy": false,
   "permissions": {
-    "defaultMode": "bypassPermissions",
-    "deny": ["Bash(rm -rf /)", "Bash(rm -rf ~)"],
-    "additionalDirectories": ["~/Workspace"]
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)"
+    ],
+    "additionalDirectories": [
+      "~/Workspace"
+    ]
   },
   "hooks": {
     "PreToolUse": [
