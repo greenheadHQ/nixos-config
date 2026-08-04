@@ -6,6 +6,7 @@ Hammerspoon을 사용한 키보드 자동화 및 단축키 설정입니다.
 
 - [터미널 Ctrl/Opt 단축키 (한글 입력소스 문제 해결)](#터미널-ctrlopt-단축키-한글-입력소스-문제-해결)
 - [Finder → Ghostty 터미널 열기](#finder--ghostty-터미널-열기)
+- [Split 키보드(NocFree &) F키](#split-키보드nocfree--f키)
 
 ---
 
@@ -97,3 +98,41 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 - 설정 리로드 완료 시 macOS 알림 표시
 
 > 참고: 구현 과정에서 발생한 문제와 해결 방법은 [`references/troubleshooting.md`의 "Hammerspoon 관련"](troubleshooting.md#hammerspoon-관련) 섹션을 참고하세요.
+
+## Split 키보드(NocFree &) F키
+
+`NocFree &` split 키보드는 펌웨어가 F10~F12를 macOS 미디어키로 내보냅니다. Hammerspoon은 그중 수식키 없는 F11만 가로채 "바탕화면 보기"로 바꿉니다.
+
+| 입력 | 동작 | 처리 주체 |
+| ---- | ---- | --------- |
+| `F11` | 바탕화면 보기 | Hammerspoon eventtap |
+| `Shift+F10` | 음소거 | 키보드 펌웨어 (통과) |
+| `Shift+F11` | 볼륨 다운 | 키보드 펌웨어 (통과) |
+| `Shift+F12` | 볼륨 업 | 키보드 펌웨어 (통과) |
+
+내장 키보드 영향 없음: 미디어키 이벤트는 `keyboardType`이 0으로 들어와 장치를 구분할 수 없지만(일반 키 이벤트는 split=40 / 내장=91), 내장 키보드는 `fnState=true` 때문에 볼륨 조절 시 `fn` 플래그가 붙습니다 (내장 `fn+F11` → `SOUND_DOWN flags=[fn]`). 수식키가 전혀 없는 `SOUND_DOWN`만 가로채므로 내장 키보드의 볼륨 조절은 그대로 유지됩니다.
+
+한계: 다른 외장 키보드를 연결하면 그 키보드의 볼륨 다운도 바탕화면 보기로 바뀝니다.
+
+### 펌웨어 쪽 제약 (Hammerspoon으로 처리 불가)
+
+이 키보드의 F키 대역은 펌웨어가 macOS 기본 레이아웃대로 할당해 두었지만, 일부 기능은 macOS에 신호가 도달하지 않거나 잘못 구현되어 있습니다. 키보드 설정 도구(`link.nocfree.com`)의 할당과 eventtap 실측을 대조한 결과:
+
+| 물리 키 | 펌웨어 할당 | macOS가 실제로 받는 신호 |
+| ------- | ----------- | ------------------------ |
+| `F1` / `F2` | 밝기 -/+ | 밝기 다운 / 밝기 업 (정상) |
+| `F3` | Mission Control | 없음 — 신호가 도달하지 않음 |
+| `F3` | 일반 `F3` 키로 교체 후 | `keycode=99 flags=[fn]` → Mission Control 정상 동작 |
+| `F4` | Spotlight | `Cmd+S` (한글 입력 상태에서 "ㄴ"이 입력됨) |
+| `F5` | 키보드 백라이트 - | 없음 — 신호가 도달하지 않음 |
+| `F10` / `F11` / `F12` | 음소거 / Vol- / Vol+ | 음소거 / 볼륨 다운 / 볼륨 업 (정상) |
+
+`Mission Control`·`키보드 백라이트` 기능키는 macOS가 Apple 자체 키보드 경로로만 처리하는 것으로 보여, 서드파티 키보드가 보내면 무시됩니다 (같은 키보드의 밝기·볼륨은 정상 동작). macOS 쪽에 가로챌 이벤트가 없으므로 Hammerspoon으로도 처리할 수 없습니다.
+
+해결: 설정 도구에서 그 자리를 일반 `F3` 키로 바꿉니다. 이 키보드는 F키를 보낼 때 `fn` 플래그를 붙이므로(`keycode=99 flags=[fn]`), macOS 기본 Mission Control 단축키(`AppleSymbolicHotKeys` 32번 = keycode 99 + fn 마스크 `0x800000`)에 그대로 걸립니다. 펌웨어 설정만으로 해결되며 Hammerspoon 개입이 필요 없습니다.
+
+설정 도구는 키보드를 wired 모드로 전환한 뒤 `link.nocfree.com`에 접속해 사용합니다 (NocFree Lite의 Vial과 달리 이 모델은 전용 웹 도구를 사용). 같은 계열인 NocFree Lite 문서에는 유선/무선 설정이 분리 저장된다는 서술이 있으나, 이 모델에서는 유선으로 재할당한 뒤 도구를 닫고 Bluetooth로 되돌려도 설정이 유지되는 것을 실측 확인했습니다.
+
+> F11도 같은 방식(일반 `F11` 키로 교체)으로 macOS 기본 "데스크탑 보기" 단축키에 걸릴 가능성이 있습니다. 다만 현재는 펌웨어가 `Vol -`를 보내는 상태를 전제로 위의 eventtap이 처리하며, 이쪽이 실측 검증을 마친 경로입니다.
+>
+> 미디어키 이벤트의 `data1` 디코딩: `NX_KEYTYPE = data1 >> 16` (0=볼륨 업, 1=볼륨 다운, 2=밝기 업, 3=밝기 다운, 7=음소거)
