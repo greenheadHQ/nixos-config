@@ -134,5 +134,5 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 설정 도구는 키보드를 wired 모드로 전환한 뒤 `link.nocfree.com`에 접속해 사용합니다 (NocFree Lite의 Vial과 달리 이 모델은 전용 웹 도구를 사용). 같은 계열인 NocFree Lite 문서에는 유선/무선 설정이 분리 저장된다는 서술이 있으나, 이 모델에서는 유선으로 재할당한 뒤 도구를 닫고 Bluetooth로 되돌려도 설정이 유지되는 것을 실측 확인했습니다.
 
 > F11도 같은 방식(일반 `F11` 키로 교체)으로 macOS 기본 "데스크탑 보기" 단축키에 걸릴 가능성이 있습니다. 다만 현재는 펌웨어가 `Vol -`를 보내는 상태를 전제로 위의 eventtap이 처리하며, 이쪽이 실측 검증을 마친 경로입니다.
-
+>
 > 미디어키 이벤트의 `data1` 디코딩: `NX_KEYTYPE = data1 >> 16` (0=볼륨 업, 1=볼륨 다운, 2=밝기 업, 3=밝기 다운, 7=음소거)

@@ -233,8 +233,11 @@ splitKeyboardShowDesktopTap = hs.eventtap.new(
             if pressed then return false end
         end
 
-        -- 실행은 keyDown 에서만. keyUp 도 소비해야 볼륨이 내려가지 않는다.
-        if sd.down then
+        -- 실행은 첫 keyDown 에서만. keyUp 도 소비해야 볼륨이 내려가지 않는다.
+        -- 키를 누르고 있으면 auto-repeat keyDown 이 이어지는데, 이때마다 토글하면
+        -- 바탕화면이 깜빡인다. repeat 은 Lua 예약어라 sd["repeat"] 로 접근한다
+        -- (sd.repeat 는 "<name> expected near 'repeat'" 컴파일 에러).
+        if sd.down and not sd["repeat"] then
             hs.spaces.toggleShowDesktop()
         end
         return true
