@@ -337,6 +337,13 @@ class ScopeTests(DispatcherFixture):
         self.assertIn(f"userknownhostsfile={known_hosts}", auth["argv"])
         self.assertIn("stricthostkeychecking=yes", auth["argv"])
 
+    def test_auth_master_does_not_enable_confirmation_mode(self) -> None:
+        result = self.run_dispatch("minipc", "true")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        auth = next(call for call in self.calls() if call["event"] == "auth")
+        self.assertEqual(auth["argv"].count("-M"), 1)
+        self.assertNotIn("ControlMaster=yes", auth["argv"])
+
     def test_custom_config_alias_to_minipc_is_managed_and_bounded(self) -> None:
         custom = self.root / "custom-alias.conf"
         custom.write_text(

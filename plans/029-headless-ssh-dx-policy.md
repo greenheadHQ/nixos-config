@@ -11,7 +11,7 @@
 - **Base snapshot**: `origin/main@78f26c667a3b383d8110cf31bd549ce3b626e26d`
 - **Priority**: P1
 - **Risk**: HIGH — launcher PATH와 SSH 인증/command 경계를 바꾼다
-- **Execution**: IN PROGRESS
+- **Execution**: IMPLEMENTED — automated/host E2E complete, PR pending
 - **Plan DA**: COMPLETE — R22 MEDIUM+ 0; signal 보존 LOW는 반영, 유지보수 LOW 2건은 범위 고정에 따라 잔존
 
 ## Problem
@@ -95,7 +95,8 @@ dispatcher는 lexical destination을 먼저 파싱한다.
 configured ControlPath가 active면 bounded `-O check` 뒤 그 socket으로 data command를 실행한다.
 새 인증이 필요하면 unique `${DARWIN_USER_TEMP_DIR}/headless-ssh/call-*` socket을 만든다.
 
-1. GNU `timeout`은 `/usr/bin/ssh -fN -M` 인증 master에만 적용한다.
+1. GNU `timeout`은 `/usr/bin/ssh -fN -M` 인증 master에만 적용한다. `-M`과
+   `ControlMaster=yes`를 중복 지정하지 않아 OpenSSH confirmation mode를 켜지 않는다.
 2. master는 `IdentityAgent=none`, dedicated key, `BatchMode=yes`, password/keyboard-interactive off,
    `ControlPersist=5`로 direct MiniPC tuple에 인증한다.
 3. timeout은 stable exit 124와 `HEADLESS_SSH_AUTH_TIMEOUT` 복구 안내를 출력한다.
@@ -141,6 +142,7 @@ configured ControlPath가 active면 bounded `-O check` 뒤 그 socket으로 data
 15. `-f` background session master 비간섭과 bounded self-exit
 16. real SSH/timeout 부재 fail-closed
 17. key mode 오류 network 전 fail-closed
+18. auth master가 non-confirming ControlMaster enablement를 정확히 한 번만 사용
 
 Canonical gates:
 
@@ -179,6 +181,27 @@ Host mutation은 `/tmp/nrs-state` free 확인과 fresh action-time 승인 뒤에
 실제 probe는 바깥 watchdog을 가지되 production command 전체 deadline과 혼동하지 않는다.
 secret/key 내용은 기록하지 않고 path/exit/elapsed/prompt 여부만 기록한다.
 
+### 2026-08-06 actual evidence
+
+- `NRS_ALLOW_WORKTREE_RELINK=1 nrs`: exit 0, 80초. 직후 `verify-ai-compat` 완전 통과.
+- Codex actual app-server child: private `headless-ssh/bin/ssh` resolve, no-master 기본
+  `0/0s`, 장시간 `0/17s`, PTY `0`, `-f` marker 완료, unsupported identity는 network 전
+  `125`, active configured master 재사용 `0/0s`와 master 생존 확인.
+- Claude actual Remote child: declared bridge의 versioned `--sdk-url` child에서 같은 private
+  path를 resolve했고 no-master 기본 `0/0s`, 장시간 `0/17s`, PTY `0`; active configured
+  master 재사용은 `0/0s`와 master 생존으로 확인했다.
+- 최초 active-master fixture에서 auth master에 `-M`과 `ControlMaster=yes`가 함께 들어가
+  OpenSSH confirmation mode가 켜지는 회귀를 발견했다. 중복 enablement를 제거하고
+  hermetic regression test, 재배포, Codex/Claude actual child를 모두 다시 통과했다.
+- Claude bridge는 active session 0 확인 뒤 정상 restart했다. ChatGPT/Codex quit/reopen은
+  action-time 질문에서 사용자가 생략을 선택해 이번 실행에서는 하지 않았다. 현재 actual
+  app-server child binding은 확인됐지만 fresh app process persistence cell은 미실행이다.
+- 1Password GUI/승인, credential/key, MiniPC authorized_keys, TCC, reboot mutation은 0건이다.
+  C의 lock/quit/reboot 독립성은 기존 #1094 완료 comment와 merge commit `cd3555d1`의
+  실증을 유지하며, 이번 변경에서는 launcher와 deadline 경계만 재검증했다.
+- 모든 test master/socket/Remote session/browser tab을 정리했고 `launchctl submit` job 0,
+  SDK test child 0, configured master inactive, `/tmp/nrs-state` free를 확인했다.
+
 ## Commit, DA, PR
 
 1. checkpoint commit 뒤 latest `origin/main` rebase
@@ -191,14 +214,14 @@ secret/key 내용은 기록하지 않고 path/exit/elapsed/prompt 여부만 기�
 
 ## Completion checklist
 
-- [ ] C+D 적용, E 보조 선택 기록
+- [x] C+D 적용, E 보조 선택 기록
 - [x] A/B GUI mutation 0건
 - [x] credential/key/server authorized_keys mutation 0건
 - [x] PTY 보존 결정 기록
-- [ ] hermetic focused/full tests 통과
-- [ ] Claude/Codex actual child binding과 master 없음/있음 E2E
-- [ ] 성공/실패 bounded, 장시간 command 회귀 없음
-- [ ] nrs와 verify-ai-compat 통과
+- [x] hermetic focused/full tests 통과
+- [x] Claude/Codex actual child binding과 master 없음/있음 E2E
+- [x] 성공/실패 bounded, 장시간 command 회귀 없음
+- [x] nrs와 verify-ai-compat 통과
 - [ ] `$run-da for_pr` MEDIUM+ 0
 - [ ] branch push와 `$create-pr`
 - [ ] PR URL/base/head/7 sections/`Closes #1094`/final SHA 재검증

@@ -491,8 +491,6 @@ def dispatch(contract: Contract, ssh_argv: list[str]) -> int:
         "-o",
         "PubkeyAuthentication=yes",
         "-o",
-        "ControlMaster=yes",
-        "-o",
         f"ControlPath={control_path}",
         "-o",
         "ControlPersist=5",
