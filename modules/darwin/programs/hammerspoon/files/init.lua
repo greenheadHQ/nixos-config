@@ -215,11 +215,12 @@ end)
 -- 볼륨 조절은 영향받지 않는다.
 -- 한계: 다른 외장 키보드를 연결하면 그 키보드의 볼륨 다운도 여기에 걸린다.
 --
--- 참고: 같은 키보드의 F3는 여기서 처리하지 않는다. 펌웨어에 "Mission Control" 기능키를
--- 할당하면 신호가 macOS에 도달하지 않지만(Apple 자체 키보드 경로로만 처리되는 기능),
--- 설정 도구에서 일반 F3 키로 바꾸면 이 키보드가 fn 플래그를 붙여 보내므로
--- (keycode=99 flags=[fn]) macOS 기본 Mission Control 단축키에 그대로 걸린다.
--- 즉 펌웨어 설정만으로 해결되며 Hammerspoon 개입이 필요 없다.
+-- 참고: 같은 키보드의 F3는 여기서 처리하지 않는다. NocFree Link의 기본
+-- "Mission Control" 할당은 Ctrl+Up을 보내지만, 이 Mac은 Mission Control을
+-- Fn+F3(AppleSymbolicHotKeys 32번)로 선언하고 Ctrl+Up은 Neovim 창 크기 조절에
+-- 남겨 두므로 서로 맞지 않는다. Link에서 물리 F3 하나만 Basic의 일반 F3로
+-- 바꾸면 선언된 단축키와 맞아 Mission Control이 동작한다. 유선/Bluetooth/2.4GHz
+-- 모두 실측했으며 Hammerspoon 개입은 필요 없다.
 
 -- eventtap은 참조가 사라지면 GC되므로 전역에 보관한다
 splitKeyboardShowDesktopTap = hs.eventtap.new(

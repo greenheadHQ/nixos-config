@@ -114,22 +114,22 @@ grep -n "terminalOptKeys" modules/darwin/programs/hammerspoon/files/init.lua
 
 한계: 다른 외장 키보드를 연결하면 그 키보드의 볼륨 다운도 바탕화면 보기로 바뀝니다.
 
-### 펌웨어 쪽 제약 (Hammerspoon으로 처리 불가)
+### F3 입력 불일치와 해결
 
 이 키보드의 F키 대역은 펌웨어가 macOS 기본 레이아웃대로 할당해 두었지만, 일부 기능은 macOS에 신호가 도달하지 않거나 잘못 구현되어 있습니다. 키보드 설정 도구(`link.nocfree.com`)의 할당과 eventtap 실측을 대조한 결과:
 
 | 물리 키 | 펌웨어 할당 | macOS가 실제로 받는 신호 |
 | ------- | ----------- | ------------------------ |
 | `F1` / `F2` | 밝기 -/+ | 밝기 다운 / 밝기 업 (정상) |
-| `F3` | Mission Control | 없음 — 신호가 도달하지 않음 |
-| `F3` | 일반 `F3` 키로 교체 후 | `keycode=99 flags=[fn]` → Mission Control 정상 동작 |
+| `F3` | Mission Control | `Ctrl+Up` — 현재 macOS 단축키 설정과 불일치 |
+| `F3` | Basic의 일반 `F3`로 교체 후 | Mission Control 정상 동작 (유선/Bluetooth/2.4GHz) |
 | `F4` | Spotlight | `Cmd+S` (한글 입력 상태에서 "ㄴ"이 입력됨) |
 | `F5` | 키보드 백라이트 - | 없음 — 신호가 도달하지 않음 |
 | `F10` / `F11` / `F12` | 음소거 / Vol- / Vol+ | 음소거 / 볼륨 다운 / 볼륨 업 (정상) |
 
-`Mission Control`·`키보드 백라이트` 기능키는 macOS가 Apple 자체 키보드 경로로만 처리하는 것으로 보여, 서드파티 키보드가 보내면 무시됩니다 (같은 키보드의 밝기·볼륨은 정상 동작). macOS 쪽에 가로챌 이벤트가 없으므로 Hammerspoon으로도 처리할 수 없습니다.
+`Mission Control` 할당은 실제로 `Ctrl+Up`을 보내지만, 이 저장소는 macOS Mission Control 단축키를 `Fn+F3`(`AppleSymbolicHotKeys` 32번 = keycode 99 + fn 마스크 `0x800000`)로 선언합니다. 또한 `Ctrl+Up`은 Neovim 창 높이 조절에 사용하므로, 이를 전역 Mission Control 단축키로 되돌리거나 Hammerspoon에서 가로채면 기존 편집기 조작과 충돌합니다. 키보드 백라이트 F5는 기존 기록에서 신호가 관측되지 않았지만 이번 작업에서는 다시 검증하지 않았으므로 F3와 같은 원인이라고 단정하지 않습니다.
 
-해결: 설정 도구에서 그 자리를 일반 `F3` 키로 바꿉니다. 이 키보드는 F키를 보낼 때 `fn` 플래그를 붙이므로(`keycode=99 flags=[fn]`), macOS 기본 Mission Control 단축키(`AppleSymbolicHotKeys` 32번 = keycode 99 + fn 마스크 `0x800000`)에 그대로 걸립니다. 펌웨어 설정만으로 해결되며 Hammerspoon 개입이 필요 없습니다.
+해결: 설정 도구에서 `layer 1`의 물리 F3 한 자리만 선택하고 `Basic`의 일반 `F3`로 바꿉니다. 그러면 현재 macOS Mission Control 단축키와 맞아 정상 동작합니다. 유선에서 변경한 뒤 Bluetooth와 2.4GHz로 전환해도 설정이 유지되는 것을 실측했습니다. 펌웨어 설정만으로 해결되며 Hammerspoon 개입은 필요 없습니다.
 
 설정 도구는 키보드를 wired 모드로 전환한 뒤 `link.nocfree.com`에 접속해 사용합니다 (NocFree Lite의 Vial과 달리 이 모델은 전용 웹 도구를 사용). 같은 계열인 NocFree Lite 문서에는 유선/무선 설정이 분리 저장된다는 서술이 있으나, 이 모델에서는 유선으로 재할당한 뒤 도구를 닫고 Bluetooth로 되돌려도 설정이 유지되는 것을 실측 확인했습니다.
 
