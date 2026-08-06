@@ -849,12 +849,22 @@ let
             );
         }
         {
-          name = "Test D25b ${hostName}: Claude RC maint 수동 경로가 stable home symlink로 노출되어야 함";
+          name = "Test D25b ${hostName}: Claude RC maint 수동 경로가 personal에서 headless launcher를 사용해야 함";
           cond =
             hasHost
-            &&
-              builtins.match ".*/claude-rc-maint" (toString hm.home.file.".local/bin/claude-rc-maint".source)
-              != null;
+            && (
+              let
+                source = toString hm.home.file.".local/bin/claude-rc-maint".source;
+                isPersonal = builtins.elem hostName personalDarwinHosts;
+              in
+              builtins.match ".*/claude-rc-maint" source != null
+              && (
+                if isPersonal then
+                  nixpkgsLib.hasInfix "claude-rc-maint-headless-launcher" source
+                else
+                  !nixpkgsLib.hasInfix "claude-rc-maint-headless-launcher" source
+              )
+            );
         }
         {
           name = "Test D26 ${hostName}: 선언 Claude Remote Control instance가 worktree+bypassPermissions 단일 entry여야 함";

@@ -69,10 +69,22 @@ let
       ''
     else
       claudeRcPkg;
+  # 문서화된 수동 recovery/drift 경로도 bridge를 직접 spawn한다. Ghostty에서
+  # claude-rc-maint ensure를 실행해도 새 bridge child가 같은 private SSH를 상속해야 한다.
+  claudeRcMaintLauncher =
+    if headlessDispatcher.enabled then
+      (pkgs.writeShellScriptBin "claude-rc-maint" ''
+        export NIXOS_CONFIG_HEADLESS_SSH=1
+        export PATH="${headlessDispatcher.stableBinPath}:$PATH"
+        exec ${maintenanceCli}/bin/claude-rc-maint "$@"
+      '').overrideAttrs
+        { name = "claude-rc-maint-headless-launcher"; }
+    else
+      maintenanceCli;
 in
 {
   home.file.".local/bin/claude-rc".source = "${claudeRcLauncher}/bin/claude-rc";
-  home.file.".local/bin/claude-rc-maint".source = "${maintenanceCli}/bin/claude-rc-maint";
+  home.file.".local/bin/claude-rc-maint".source = "${claudeRcMaintLauncher}/bin/claude-rc-maint";
 
   launchd.agents.claude-rc-ensure = {
     enable = true;

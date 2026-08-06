@@ -63,7 +63,7 @@ PTY를 보존한다. 현행 `from=` 및 port/agent/X11 forwarding 제한은 그�
 
 private package는 `bin/ssh`만 제공하며 global `home.packages`나 `home.sessionPath`에 넣지 않는다.
 
-- Claude: launchd maint와 personal Darwin의 얇은 manual `claude-rc` wrapper가
+- Claude: launchd maint와 personal Darwin의 얇은 manual `claude-rc`/`claude-rc-maint` wrapper가
   `~/.local/share/nixos-config/headless-ssh/bin`을 child PATH 앞에 둔다.
 - Codex: Darwin config의 `shell_environment_policy.set` marker를 받은 non-TTY tool shell만
   `.zshenv`에서 같은 stable private PATH를 prepend한다.
