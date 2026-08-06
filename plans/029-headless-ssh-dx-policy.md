@@ -11,8 +11,9 @@
 - **Base snapshot**: `origin/main@78f26c667a3b383d8110cf31bd549ce3b626e26d`
 - **Priority**: P1
 - **Risk**: HIGH — launcher PATH와 SSH 인증/command 경계를 바꾼다
-- **Execution**: IMPLEMENTED — automated/host E2E complete, PR pending
+- **Execution**: COMPLETE — automated/host E2E와 PR #1213 생성 완료, merge하지 않음
 - **Plan DA**: COMPLETE — R22 MEDIUM+ 0; signal 보존 LOW는 반영, 유지보수 LOW 2건은 범위 고정에 따라 잔존
+- **PR DA**: COMPLETE — confirmed MEDIUM launcher binding 1건 반영 후 재검토 MEDIUM+ 0; LOW만 잔존
 
 ## Problem
 
@@ -184,6 +185,9 @@ secret/key 내용은 기록하지 않고 path/exit/elapsed/prompt 여부만 기�
 ### 2026-08-06 actual evidence
 
 - `NRS_ALLOW_WORKTREE_RELINK=1 nrs`: exit 0, 80초. 직후 `verify-ai-compat` 완전 통과.
+- PR DA의 manual maint binding 수정 뒤 `nrs`: exit 0, 108초. 배포된
+  `claude-rc-maint-headless-launcher`가 marker와 private SSH PATH를 전달하고 등록 bridge 2개가
+  bounded health check에서 running/healthy임을 확인했다.
 - Codex actual app-server child: private `headless-ssh/bin/ssh` resolve, no-master 기본
   `0/0s`, 장시간 `0/17s`, PTY `0`, `-f` marker 완료, unsupported identity는 network 전
   `125`, active configured master 재사용 `0/0s`와 master 생존 확인.
@@ -222,10 +226,10 @@ secret/key 내용은 기록하지 않고 path/exit/elapsed/prompt 여부만 기�
 - [x] Claude/Codex actual child binding과 master 없음/있음 E2E
 - [x] 성공/실패 bounded, 장시간 command 회귀 없음
 - [x] nrs와 verify-ai-compat 통과
-- [ ] `$run-da for_pr` MEDIUM+ 0
-- [ ] branch push와 `$create-pr`
-- [ ] PR URL/base/head/7 sections/`Closes #1094`/final SHA 재검증
-- [ ] worktree clean, merge하지 않음
+- [x] `$run-da for_pr` MEDIUM+ 0
+- [x] branch push와 `$create-pr` — PR #1213
+- [x] PR URL/base/head/7 sections/`Closes #1094`/final SHA 재검증
+- [x] worktree clean, merge하지 않음
 
 ## STOP conditions
 
