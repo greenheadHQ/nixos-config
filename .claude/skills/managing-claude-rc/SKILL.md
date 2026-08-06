@@ -317,20 +317,25 @@ approval="$(
   jq -e '.action == "completed" and .exitCode == 0' "$status" >/dev/null
   jq -c '[.instances[]
     | select(.action == "deferred-restart-confirmation")
-    | {path, runningVersion, desiredVersion}]
-    | sort_by([.path, .runningVersion, .desiredVersion])' "$status"
+    | {path, runningVersion, desiredVersion,
+       runningEnvironmentGeneration, desiredEnvironmentGeneration}]
+    | sort_by([.path, .runningVersion, .desiredVersion,
+               .runningEnvironmentGeneration, .desiredEnvironmentGeneration])' "$status"
 )"
 jq -e 'length > 0' <<<"$approval" >/dev/null
-jq -r '.[] | [.path, .runningVersion, .desiredVersion] | @tsv' <<<"$approval"
+jq -r '.[] | [.path, .runningVersion, .desiredVersion,
+               .runningEnvironmentGeneration, .desiredEnvironmentGeneration] | @tsv' <<<"$approval"
 claude-rc ls
 ```
 
 block 전체가 exit 0일 때만 출력된 후보를 승인 목록으로 쓴다. 후보 전체를 이름으로 포함해
 action-time confirmation을 한 번 받고 처음의 exact JSON을 stable home symlink maint에 전달한다.
-`confirmed`는 lifecycle lock을 잡은 뒤 현재 `(path,runningVersion,desiredVersion)` 집합을 다시 계산해
-approval과 exact match하는 경우만 restart한다. 어느 명령이나 status 검증이 실패하거나 runtime
-snapshot이 달라졌으면 restart하지 않고 새 `defer` snapshot으로 승인부터 다시 수행한다. one-shot
-policy/approval env는 새 bridge에 상속되지 않는다.
+Darwin의 managed launcher에서는 environment generation까지 포함한 5-field tuple이 필수다.
+`confirmed`는 lifecycle lock을 잡은 뒤 현재
+`(path,runningVersion,desiredVersion,runningEnvironmentGeneration,desiredEnvironmentGeneration)` 집합을
+다시 계산해 approval과 exact match하는 경우만 restart한다. 어느 명령이나 status 검증이 실패하거나
+runtime snapshot이 달라졌으면 restart하지 않고 새 `defer` snapshot으로 승인부터 다시 수행한다.
+one-shot policy/approval env는 새 bridge에 상속되지 않는다.
 
 ```bash
 CLAUDE_RC_DRIFT_POLICY=confirmed \

@@ -211,12 +211,16 @@ invalid-permission-mode	unknown	true
 unmanaged-server-present	unknown	true
 start-version-unresolvable	unknown	true
 start-version-unresolvable-cleaned	stopped	true
+start-environment-attestation-failed	unknown	true
+start-environment-attestation-failed-cleaned	stopped	true
 start-version-mismatch-cleanup-failed	unknown	true
 no-server-process	unknown	true
 running-version-unresolvable	unknown	true
 restart-failed	unknown	true
 restart-version-unresolvable	unknown	true
 restart-version-unresolvable-cleaned	stopped	true
+restart-environment-attestation-failed	unknown	true
+restart-environment-attestation-failed-cleaned	stopped	true
 restart-version-mismatch-cleanup-failed	unknown	true
 EOF
 }
@@ -239,6 +243,8 @@ instance_action_metadata() {
 record_instance_result() {
     local path="$1" running_version="$2" observed_version="$3"
     local desired_version="$4" action="$5" state_override="${6:-}"
+    local running_environment_generation="${7:-}"
+    local desired_environment_generation="$CLAUDE_RC_ENVIRONMENT_GENERATION"
     local metadata process_state
     if ! metadata=$(instance_action_metadata "$action"); then
         log_error "unknown instance action metadata: $action"
@@ -266,10 +272,15 @@ record_instance_result() {
         --arg runningVersion "$running_version" \
         --arg observedVersion "$observed_version" \
         --arg desiredVersion "$desired_version" \
+        --arg runningEnvironmentGeneration "$running_environment_generation" \
+        --arg desiredEnvironmentGeneration "$desired_environment_generation" \
         --arg action "$action" \
         '{path: $path, processState: $processState,
           runningVersion: $runningVersion, observedVersion: $observedVersion,
-          desiredVersion: $desiredVersion, action: $action}' \
+          desiredVersion: $desiredVersion,
+          runningEnvironmentGeneration: $runningEnvironmentGeneration,
+          desiredEnvironmentGeneration: $desiredEnvironmentGeneration,
+          action: $action}' \
         >>"$RESULTS_FILE"
 }
 
@@ -399,6 +410,16 @@ restart_server() {
             printf -v "$result_outcome_var" '%s' "restart-version-unresolvable-cleaned"
             return 0
             ;;
+        environment-attestation-failed)
+            log_error "restart failed; environment attestation could not be published: $path"
+            printf -v "$result_outcome_var" '%s' "restart-environment-attestation-failed"
+            return 0
+            ;;
+        environment-attestation-failed-cleaned)
+            log_error "restart failed; environment attestation could not be published; replacement stopped: $path"
+            printf -v "$result_outcome_var" '%s' "restart-environment-attestation-failed-cleaned"
+            return 0
+            ;;
         started)
             printf -v "$result_version_var" '%s' "$started_version"
             ;;
@@ -421,17 +442,20 @@ restart_server() {
 
 record_restart_outcome() {
     local path="$1" mode="$2" running_version="$3" outcome="$4" started_version="$5"
+    local prior_environment_generation="${6:-}"
     case "$outcome" in
         restarted-version-drift)
             log_info "restarted ${mode} drift: $path (${running_version} -> ${started_version})"
             record_instance_result \
-                "$path" "$started_version" "$started_version" "$DESIRED_VERSION" "$outcome" \
+                "$path" "$started_version" "$started_version" "$DESIRED_VERSION" "$outcome" "" \
+                "$CLAUDE_RC_ENVIRONMENT_GENERATION" \
                 || return 1
             return 0
             ;;
         unmanaged-server-present)
             record_instance_result \
-                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "$outcome"
+                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "$outcome" "" \
+                "$prior_environment_generation"
             log_error "unmanaged same-cwd server present after stop: $path"
             ;;
         restart-version-mismatch)
@@ -453,14 +477,24 @@ record_restart_outcome() {
                 "$path" "" "" "$DESIRED_VERSION" "$outcome"
             log_error "restart replacement version unresolvable and stopped: $path"
             ;;
+        restart-environment-attestation-failed)
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$outcome"
+            log_error "restart replacement environment attestation failed: $path"
+            ;;
+        restart-environment-attestation-failed-cleaned)
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$outcome"
+            log_error "restart replacement environment attestation failed and stopped: $path"
+            ;;
         restart-failed)
             record_instance_result \
-                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "$outcome"
+                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "$outcome" "" \
+                "$prior_environment_generation"
             ;;
         *)
             log_error "unknown restart outcome: $outcome"
             record_instance_result \
-                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "restart-failed"
+                "$path" "" "${started_version:-$running_version}" "$DESIRED_VERSION" "restart-failed" "" \
+                "$prior_environment_generation"
             ;;
     esac
     return 1
@@ -533,6 +567,18 @@ start_missing_instance() {
             log_error "start failed; server process/version unresolvable; replacement stopped: $path"
             return 1
             ;;
+        environment-attestation-failed)
+            action="start-environment-attestation-failed"
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
+            log_error "start failed; environment attestation could not be published: $path"
+            return 1
+            ;;
+        environment-attestation-failed-cleaned)
+            action="start-environment-attestation-failed-cleaned"
+            record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
+            log_error "start failed; environment attestation could not be published; replacement stopped: $path"
+            return 1
+            ;;
         started)
             ;;
         *)
@@ -556,32 +602,48 @@ start_missing_instance() {
     fi
     action="started"
     record_instance_result \
-        "$path" "$started_version" "$started_version" "$DESIRED_VERSION" "$action" \
+        "$path" "$started_version" "$started_version" "$DESIRED_VERSION" "$action" "" \
+        "$CLAUDE_RC_ENVIRONMENT_GENERATION" \
         || return 1
     log_info "started: $path"
 }
 
 normalize_confirmed_drift_approvals() {
-    jq -ce '
+    jq -ce --arg desiredEnvironmentGeneration "$CLAUDE_RC_ENVIRONMENT_GENERATION" '
       if type != "array" or length == 0 then
         error("approval must be a non-empty array")
-      elif all(.[];
-        type == "object"
-        and (keys | sort) == ["desiredVersion", "path", "runningVersion"]
-        and (.path | type) == "string" and (.path | length) > 0
-        and (.runningVersion | type) == "string" and (.runningVersion | length) > 0
-        and (.desiredVersion | type) == "string" and (.desiredVersion | length) > 0
-      ) then
-        map({path, runningVersion, desiredVersion})
-        | sort_by([.path, .runningVersion, .desiredVersion])
+      elif $desiredEnvironmentGeneration == "unmanaged" then
+        if all(.[];
+          type == "object"
+          and (keys | sort) == ["desiredVersion", "path", "runningVersion"]
+          and (.path | type) == "string" and (.path | length) > 0
+          and (.runningVersion | type) == "string" and (.runningVersion | length) > 0
+          and (.desiredVersion | type) == "string" and (.desiredVersion | length) > 0
+        ) then
+          map({path, runningVersion, desiredVersion})
+          | sort_by([.path, .runningVersion, .desiredVersion])
+        else error("approval entries must contain exact non-empty path/version fields") end
       else
-        error("approval entries must contain exact non-empty path/version fields")
+        if all(.[];
+          type == "object"
+          and (keys | sort) == ["desiredEnvironmentGeneration", "desiredVersion", "path", "runningEnvironmentGeneration", "runningVersion"]
+          and (.path | type) == "string" and (.path | length) > 0
+          and (.runningVersion | type) == "string" and (.runningVersion | length) > 0
+          and (.desiredVersion | type) == "string" and (.desiredVersion | length) > 0
+          and (.runningEnvironmentGeneration | type) == "string" and (.runningEnvironmentGeneration | length) > 0
+          and .desiredEnvironmentGeneration == $desiredEnvironmentGeneration
+        ) then
+          map({path, runningVersion, desiredVersion,
+               runningEnvironmentGeneration, desiredEnvironmentGeneration})
+          | sort_by([.path, .runningVersion, .desiredVersion,
+                     .runningEnvironmentGeneration, .desiredEnvironmentGeneration])
+        else error("approval entries must contain the exact path/version/environment generation tuple") end
       end
     ' <<<"$CLAUDE_RC_DRIFT_APPROVAL_JSON"
 }
 
 collect_current_drift_approvals() {
-    local entries="$1" path lock_path pid running_version
+    local entries="$1" path lock_path pid running_version running_environment_generation
     local _spawn _capacity _permission_mode
 
     while IFS=$'\t' read -r path _spawn _capacity _permission_mode; do
@@ -597,12 +659,29 @@ collect_current_drift_approvals() {
             log_error "cannot bind confirmed drift approval to running version: $path"
             return 1
         fi
-        [ "$running_version" != "$DESIRED_VERSION" ] || continue
-        jq -nc \
-            --arg path "$path" \
-            --arg runningVersion "$running_version" \
-            --arg desiredVersion "$DESIRED_VERSION" \
-            '{path: $path, runningVersion: $runningVersion, desiredVersion: $desiredVersion}'
+        running_environment_generation=$(running_environment_generation_for_path "$path" "$pid")
+        if [ "$running_version" = "$DESIRED_VERSION" ] \
+            && { [ "$CLAUDE_RC_ENVIRONMENT_GENERATION" = "unmanaged" ] \
+                || [ "$running_environment_generation" = "$CLAUDE_RC_ENVIRONMENT_GENERATION" ]; }; then
+            continue
+        fi
+        if [ "$CLAUDE_RC_ENVIRONMENT_GENERATION" = "unmanaged" ]; then
+            jq -nc \
+                --arg path "$path" \
+                --arg runningVersion "$running_version" \
+                --arg desiredVersion "$DESIRED_VERSION" \
+                '{path: $path, runningVersion: $runningVersion, desiredVersion: $desiredVersion}'
+        else
+            jq -nc \
+                --arg path "$path" \
+                --arg runningVersion "$running_version" \
+                --arg desiredVersion "$DESIRED_VERSION" \
+                --arg runningEnvironmentGeneration "$running_environment_generation" \
+                --arg desiredEnvironmentGeneration "$CLAUDE_RC_ENVIRONMENT_GENERATION" \
+                '{path: $path, runningVersion: $runningVersion, desiredVersion: $desiredVersion,
+                  runningEnvironmentGeneration: $runningEnvironmentGeneration,
+                  desiredEnvironmentGeneration: $desiredEnvironmentGeneration}'
+        fi
     done <<<"$entries"
 }
 
@@ -613,7 +692,10 @@ validate_confirmed_drift_approvals() {
         log_error "confirmed drift approval is malformed or empty"
         return 1
     fi
-    if ! observed=$(collect_current_drift_approvals "$entries" | jq -sc 'sort_by([.path, .runningVersion, .desiredVersion])'); then
+    if ! observed=$(collect_current_drift_approvals "$entries" | jq -sc '
+      sort_by([.path, .runningVersion, .desiredVersion,
+               (.runningEnvironmentGeneration // ""), (.desiredEnvironmentGeneration // "")])
+    '); then
         set_global_action invalid-drift-approval
         return 1
     fi
@@ -626,21 +708,26 @@ validate_confirmed_drift_approvals() {
 }
 
 drift_tuple_is_confirmed() {
-    local path="$1" running_version="$2"
+    local path="$1" running_version="$2" running_environment_generation="$3"
     jq -e \
         --arg path "$path" \
         --arg runningVersion "$running_version" \
         --arg desiredVersion "$DESIRED_VERSION" \
+        --arg runningEnvironmentGeneration "$running_environment_generation" \
+        --arg desiredEnvironmentGeneration "$CLAUDE_RC_ENVIRONMENT_GENERATION" \
         'any(.[];
           .path == $path
           and .runningVersion == $runningVersion
           and .desiredVersion == $desiredVersion
+          and ($desiredEnvironmentGeneration == "unmanaged"
+               or (.runningEnvironmentGeneration == $runningEnvironmentGeneration
+                   and .desiredEnvironmentGeneration == $desiredEnvironmentGeneration))
         )' <<<"$CONFIRMED_DRIFT_APPROVALS" >/dev/null
 }
 
 handle_running_instance() {
     local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4"
-    local pid running_version action
+    local pid running_version running_environment_generation action
     if ! pid=$(find_server_pid_for_path "$path"); then
         action="no-server-process"
         record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
@@ -653,34 +740,47 @@ handle_running_instance() {
         record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
         return 1
     fi
+    running_environment_generation=$(running_environment_generation_for_path "$path" "$pid")
 
-    if [ "$running_version" = "$DESIRED_VERSION" ]; then
+    if [ "$running_version" = "$DESIRED_VERSION" ] \
+        && { [ "$CLAUDE_RC_ENVIRONMENT_GENERATION" = "unmanaged" ] \
+            || [ "$running_environment_generation" = "$CLAUDE_RC_ENVIRONMENT_GENERATION" ]; }; then
         action="healthy"
         record_instance_result \
-            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" "" \
+            "$running_environment_generation" \
             || return 1
         return 0
     fi
 
-    handle_drift "$path" "$desired_spawn" "$capacity" "$permission_mode" "$pid" "$running_version"
+    handle_drift "$path" "$desired_spawn" "$capacity" "$permission_mode" "$pid" "$running_version" \
+        "$running_environment_generation"
 }
 
 handle_drift() {
     local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4" pid="$5" running_version="$6"
-    local effective_spawn gate_rc restart_outcome restarted_version action
-    if [ "$CLAUDE_RC_DRIFT_POLICY" = "defer" ]; then
+    local running_environment_generation="$7"
+    local effective_spawn gate_rc restart_outcome restarted_version action environment_drift=false
+    if [ "$CLAUDE_RC_ENVIRONMENT_GENERATION" != "unmanaged" ] \
+        && [ "$running_environment_generation" != "$CLAUDE_RC_ENVIRONMENT_GENERATION" ]; then
+        environment_drift=true
+    fi
+    if [ "$CLAUDE_RC_DRIFT_POLICY" = "defer" ] \
+        || { [ "$environment_drift" = true ] && [ "$CLAUDE_RC_DRIFT_POLICY" != "confirmed" ]; }; then
         action="deferred-restart-confirmation"
         record_instance_result \
-            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" "" \
+            "$running_environment_generation" \
             || return 1
-        log_info "deferred version drift pending operator-confirmed restart: $path"
+        log_info "deferred runtime drift pending operator-confirmed restart: $path"
         return 0
     fi
     if [ "$CLAUDE_RC_DRIFT_POLICY" = "confirmed" ] \
-        && ! drift_tuple_is_confirmed "$path" "$running_version"; then
+        && ! drift_tuple_is_confirmed "$path" "$running_version" "$running_environment_generation"; then
         action="restart-approval-mismatch"
         record_instance_result \
-            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+            "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" "" \
+            "$running_environment_generation" \
             || return 1
         log_error "runtime drift no longer matches the confirmed approval: $path"
         return 1
@@ -703,7 +803,8 @@ handle_drift() {
                 "$path" "$desired_spawn" "$capacity" "$permission_mode" \
                 restart_outcome restarted_version
             record_restart_outcome \
-                "$path" "same-dir" "$running_version" "$restart_outcome" "$restarted_version"
+                "$path" "same-dir" "$running_version" "$restart_outcome" "$restarted_version" \
+                "$running_environment_generation"
             ;;
         worktree)
             gate_rc=0
@@ -714,12 +815,14 @@ handle_drift() {
                         "$path" "$desired_spawn" "$capacity" "$permission_mode" \
                         restart_outcome restarted_version
                     record_restart_outcome \
-                        "$path" "worktree" "$running_version" "$restart_outcome" "$restarted_version"
+                        "$path" "worktree" "$running_version" "$restart_outcome" "$restarted_version" \
+                        "$running_environment_generation"
                     ;;
                 1)
                     action="deferred-active-sessions"
                     record_instance_result \
-                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" "" \
+                        "$running_environment_generation" \
                         || return 1
                     log_info "deferred active worktree sessions: $path"
                     return 0
@@ -727,7 +830,8 @@ handle_drift() {
                 2)
                     action="deferred-unknown-activity"
                     record_instance_result \
-                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" \
+                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" "" \
+                        "$running_environment_generation" \
                         || return 1
                     log_info "deferred unknown worktree activity: $path"
                     return 0
@@ -735,7 +839,8 @@ handle_drift() {
                 *)
                     action="restart-gate-failed"
                     record_instance_result \
-                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action"
+                        "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" "" \
+                        "$running_environment_generation"
                     return 1
                     ;;
             esac
@@ -743,7 +848,8 @@ handle_drift() {
         *)
             action="invalid-spawn"
             record_instance_result \
-                "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" running
+                "$path" "$running_version" "$running_version" "$DESIRED_VERSION" "$action" running \
+                "$running_environment_generation"
             return 1
             ;;
     esac

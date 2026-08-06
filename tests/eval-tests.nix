@@ -12,9 +12,9 @@ let
   flake = builtins.getFlake (toString ./..);
   nixpkgsLib = flake.inputs.nixpkgs.lib;
   constants = import ../libraries/constants.nix;
-
   # NixOS config (greenhead-minipc)
   nixosCfg = flake.nixosConfigurations.greenhead-minipc.config;
+  nixosHm = nixosCfg.home-manager.users.greenhead;
 
   # Darwin intent 검증은 여기서 직접 수행한다.
   # 범위: evaluation-safe value-level 설정만 검증.
@@ -741,49 +741,71 @@ let
             );
         }
         {
-          # ssh() 무인 outer deadline(#1094) 회귀 핀 — 계약 마커를 잠근다:
-          # (1) 무인 판정에 _headless 신호가 존재 (대화형/무인 분기),
-          # (2) 서명 요청에 timeout 기반 outer deadline이 존재 — 이 마커가 사라지면 원격/무인
-          #     세션의 ssh minipc가 1Password 서명 승인 대기로 무한 hang하는 회귀다.
-          # personal 호스트에서만 ssh() preflight가 정의되므로 hostType 조건과 정합한다.
-          name = "Test D19 ${hostName}: ssh() 무인 outer deadline 마커(_headless + timeout)가 initContent에 있어야 함";
+          # #1094 launcher binding 회귀 핀. 인증 deadline은 whole-command `timeout ssh`가 아니라
+          # private dispatcher 안의 auth phase에만 적용한다. 따라서 eval은 shell 구현 문자열이
+          # 아니라 marker + non-TTY gate + private package PATH + Claude launchd environment를 잠근다.
+          name = "Test D19 ${hostName}: launcher marker가 private dispatcher와 Claude child environment에 exact 배선되어야 함";
           cond =
             hasHost
             && (
               let
-                zshInit = hm.programs.zsh.initContent;
+                zshEnv = builtins.unsafeDiscardStringContext hm.programs.zsh.envExtra;
+                agentEnv = (claudeRcAgent cfg).config.EnvironmentVariables;
+                agentPath = builtins.unsafeDiscardStringContext agentEnv.PATH;
+                hasDispatcher = builtins.hasAttr ".local/share/nixos-config/headless-ssh" hm.home.file;
+                dispatcherRoot =
+                  if hasDispatcher then
+                    builtins.unsafeDiscardStringContext (
+                      toString hm.home.file.".local/share/nixos-config/headless-ssh".source
+                    )
+                  else
+                    "";
+                dispatcherBin = "${dispatcherRoot}/bin";
               in
-              # personal은 wrapper 필수(마커 삭제 시 실패), work(ssh preflight 미정의)는 부재 정상.
-              # 조건을 hostType 프록시(isPersonalHost)로 잠가, wrapper 전체 삭제가 통과되지 않게 한다.
               if isPersonalHost then
-                nixpkgsLib.hasInfix "_headless" zshInit && nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\"" zshInit
+                hasDispatcher
+                && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv
+                && nixpkgsLib.hasInfix "[ ! -t 0 ]" zshEnv
+                && nixpkgsLib.hasInfix dispatcherBin zshEnv
+                && !(builtins.elem dispatcherBin hm.home.sessionPath)
+                && agentEnv.CLAUDE_RC_HEADLESS_SSH_MARKER == "1"
+                && agentEnv.CLAUDE_RC_BRIDGE_PATH == agentEnv.PATH
+                && nixpkgsLib.hasPrefix "${dispatcherBin}:" agentPath
+                && agentEnv.CLAUDE_RC_ENVIRONMENT_GENERATION != ""
               else
-                true
+                !hasDispatcher
+                && !(nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv)
+                && agentEnv.CLAUDE_RC_HEADLESS_SSH_MARKER == "0"
+                && agentEnv.CLAUDE_RC_BRIDGE_PATH == agentEnv.PATH
+                && !(nixpkgsLib.hasInfix "headless-ssh-dispatcher" agentPath)
             );
         }
         {
-          # minipc-headless 무인 라우팅 계약(#1094 C안) 회귀 핀 — personal 한정:
-          # (1) ssh minipc-headless alias가 IdentityAgent none(1Password 우회)으로 정의,
-          # (2) ssh() wrapper 무인 경로가 headless 키 경로 + IdentityAgent=none 오버라이드를 포함.
-          # 이 마커가 사라지면 무인 세션이 headless 우회 대신 1Password 서명 경로로 되돌아간다.
-          name = "Test D20 ${hostName}: minipc-headless alias(IdentityAgent none) + wrapper 무인 라우팅 마커";
+          # C 정책은 선언된 alias에서만 IdentityAgent=none을 사용하고, launcher child는 PATH의
+          # dispatcher로 들어간다. interactive Ghostty/global PATH와 ssh() 전체 command에는
+          # headless key override나 짧은 timeout을 주입하지 않는다.
+          name = "Test D20 ${hostName}: C alias·Codex role seed·interactive raw SSH 경계가 exact여야 함";
           cond =
             hasHost
             && (
               let
                 zshInit = hm.programs.zsh.initContent;
                 sshSettings = hm.programs.ssh.settings;
+                codexSeed = toString hm.home.file.".local/share/nixos-config/codex/config-template.toml".source;
               in
-              # personal은 alias·키경로·IdentityAgent none 마커 필수(하나라도 없으면 실패), work는 부재 정상.
-              # hostType 프록시(isPersonalHost)로 잠가, alias·wrapper 삭제가 else true로 통과되지 않게 한다.
               if isPersonalHost then
                 (sshSettings ? "minipc-headless")
-                # home-manager matchBlock은 옵션을 .data 아래 래핑한다(구조: after/before/data).
                 && ((sshSettings."minipc-headless".data.IdentityAgent or "") == "none")
-                && nixpkgsLib.hasInfix constants.onePassword.headlessKeyRelPath zshInit
-                && nixpkgsLib.hasInfix "IdentityAgent=none" zshInit
+                && (
+                  (sshSettings."minipc-headless".data.IdentityFile or "")
+                  == "${hm.home.homeDirectory}/${constants.onePassword.headlessKeyRelPath}"
+                )
+                && nixpkgsLib.hasSuffix "-codex-config-personal.toml" codexSeed
+                && !(nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\"" zshInit)
+                && !(nixpkgsLib.hasInfix "IdentityAgent=none" zshInit)
+                && !(nixpkgsLib.hasInfix constants.onePassword.headlessKeyRelPath zshInit)
               else
-                true
+                !(sshSettings ? "minipc-headless") && nixpkgsLib.hasSuffix "-codex-config-work.toml" codexSeed
             );
         }
         {
@@ -1333,6 +1355,12 @@ let
       cond =
         nixosCfg.homeserver.claudeRemoteControl.enable
         && nixosCfg.systemd.services.claude-rc-ensure.environment.CLAUDE_RC_DRIFT_POLICY == "automatic";
+    }
+    {
+      name = "Test D34: NixOS Codex evaluated seed는 server role(marker 0) derivation이어야 함";
+      cond = nixpkgsLib.hasSuffix "-codex-config-server.toml" (
+        toString nixosHm.home.file.".local/share/nixos-config/codex/config-template.toml".source
+      );
     }
   ]
   ++ darwinIntentTests;

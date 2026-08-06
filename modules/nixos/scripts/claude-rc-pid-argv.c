@@ -5,6 +5,7 @@
 #include <string.h>
 
 #ifdef __APPLE__
+#include <sys/time.h>
 #include <sys/sysctl.h>
 #include <sys/types.h>
 #elif defined(__linux__)
@@ -14,6 +15,74 @@
 #else
 #error "claude-rc-pid-argv supports only Darwin and Linux"
 #endif
+
+static int emit_start_identity(pid_t pid) {
+#ifdef __APPLE__
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
+    struct kinfo_proc process;
+    size_t size = sizeof(process);
+
+    memset(&process, 0, sizeof(process));
+    if (sysctl(mib, 4, &process, &size, NULL, 0) != 0 ||
+        size != sizeof(process) || process.kp_proc.p_pid != pid) {
+        return -1;
+    }
+    return printf("darwin:%lld:%d\n",
+                  (long long)process.kp_proc.p_starttime.tv_sec,
+                  process.kp_proc.p_starttime.tv_usec) > 0
+               ? 0
+               : -1;
+#elif defined(__linux__)
+    char path[64];
+    char buffer[8192];
+    char *cursor;
+    char *end;
+    ssize_t count;
+    int fd;
+    int field;
+
+    if (snprintf(path, sizeof(path), "/proc/%ld/stat", (long)pid) <= 0) {
+        return -1;
+    }
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        return -1;
+    }
+    do {
+        count = read(fd, buffer, sizeof(buffer) - 1);
+    } while (count < 0 && errno == EINTR);
+    close(fd);
+    if (count <= 0 || (size_t)count >= sizeof(buffer)) {
+        return -1;
+    }
+    buffer[count] = '\0';
+    cursor = strrchr(buffer, ')');
+    if (cursor == NULL || cursor[1] != ' ') {
+        return -1;
+    }
+    cursor += 2;
+    for (field = 3; field <= 22; field++) {
+        while (*cursor == ' ') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            return -1;
+        }
+        end = strchr(cursor, ' ');
+        if (field == 22) {
+            if (end != NULL) {
+                *end = '\0';
+            }
+            return printf("linux:%s\n", cursor) > 0 ? 0 : -1;
+        }
+        if (end == NULL) {
+            return -1;
+        }
+        cursor = end + 1;
+    }
+    return -1;
+#endif
+}
 
 #define MAX_ARGV_BYTES (16U * 1024U * 1024U)
 
@@ -167,9 +236,13 @@ static int emit_argv(pid_t pid) {
 int main(int argc, char **argv) {
     pid_t pid;
 
-    if (argc != 2 || parse_pid(argv[1], &pid) != 0) {
-        fprintf(stderr, "usage: claude-rc-pid-argv PID\n");
-        return 2;
+    if (argc == 2 && parse_pid(argv[1], &pid) == 0) {
+        return emit_argv(pid) == 0 ? 0 : 1;
     }
-    return emit_argv(pid) == 0 ? 0 : 1;
+    if (argc == 3 && strcmp(argv[1], "--start-identity") == 0 &&
+        parse_pid(argv[2], &pid) == 0) {
+        return emit_start_identity(pid) == 0 ? 0 : 1;
+    }
+    fprintf(stderr, "usage: claude-rc-pid-argv [--start-identity] PID\n");
+    return 2;
 }

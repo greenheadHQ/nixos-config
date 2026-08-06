@@ -16,11 +16,16 @@ test_claude_remote_control_nix_packages_include_pinned_runtime_helpers() {
         f = builtins.getFlake (toString ./.);
         pkgs = f.inputs.nixpkgs.legacyPackages.${builtins.currentSystem};
         selectedFlock = import ./libraries/claude-rc-flock.nix { inherit pkgs; };
+        controlEnvironment = {
+          CLAUDE_RC_BRIDGE_PATH = "/contract/headless-dispatcher/bin:/contract/home/.local/bin";
+          CLAUDE_RC_HEADLESS_SSH_MARKER = "1";
+          CLAUDE_RC_ENVIRONMENT_GENERATION = "fixture-environment-generation";
+        };
       in
       {
         packages = map (package: package.drvPath) [
-          (import ./modules/nixos/lib/claude-rc-package.nix { inherit pkgs; })
-          (import ./modules/nixos/lib/claude-rc-maint-package.nix { inherit pkgs; })
+          (import ./modules/nixos/lib/claude-rc-package.nix { inherit pkgs controlEnvironment; })
+          (import ./modules/nixos/lib/claude-rc-maint-package.nix { inherit pkgs controlEnvironment; })
         ];
         flock = {
           inherit (selectedFlock) drvPath outputName;
@@ -69,6 +74,14 @@ test_claude_remote_control_nix_packages_include_pinned_runtime_helpers() {
       || fail "$package_name closure omits the selected Claude RC flock"
     grep -Fq "$flock_output/bin" "$output/bin/$package_name" \
       || fail "$package_name runtime PATH omits the selected Claude RC flock"
+    grep -Fq 'export CLAUDE_RC_BRIDGE_PATH=/contract/headless-dispatcher/bin:/contract/home/.local/bin' \
+      "$output/bin/$package_name" \
+      || fail "$package_name omits the evaluated bridge PATH binding"
+    grep -Fq 'export CLAUDE_RC_HEADLESS_SSH_MARKER=1' "$output/bin/$package_name" \
+      || fail "$package_name omits the evaluated headless SSH marker"
+    grep -Fq 'export CLAUDE_RC_ENVIRONMENT_GENERATION=fixture-environment-generation' \
+      "$output/bin/$package_name" \
+      || fail "$package_name omits the evaluated environment generation"
     launch_group_status=0
     "$launch_group_output/bin/claude-rc-launch-group" >/dev/null 2>&1 \
       || launch_group_status=$?
@@ -78,6 +91,73 @@ test_claude_remote_control_nix_packages_include_pinned_runtime_helpers() {
   done < <(jq -r '.packages[]' <<< "$eval_json")
   [ "$index" = "${#package_names[@]}" ] \
     || fail "Claude RC package evaluation returned $index wrappers"
+}
+
+test_claude_remote_control_darwin_binding_is_single_generation() {
+  local result
+  result="$({
+    cd "$REPO_ROOT"
+    nix eval --impure --json --expr '
+      let
+        f = builtins.getFlake (toString ./.);
+        mk = hostName: expectedMarker:
+          let
+            d = f.darwinConfigurations.${hostName};
+            cfg = d.config;
+            pkgs = d.pkgs;
+            lib = f.inputs.nixpkgs.lib;
+            hm = cfg.home-manager.users.${cfg.system.primaryUser};
+            agent = hm.launchd.agents.claude-rc-ensure.config;
+            agentEnv = agent.EnvironmentVariables;
+            pathEntries = lib.splitString ":" agentEnv.PATH;
+            dispatcher = {
+              enabled = expectedMarker == "1";
+              homeDir = hm.home.homeDirectory;
+              binPath = if expectedMarker == "1" then builtins.head pathEntries else "/disabled";
+            };
+            expected = import ./modules/darwin/programs/claude-remote-control-launch-environment.nix {
+              inherit pkgs lib;
+              hostType = if expectedMarker == "1" then "personal" else "work";
+              headlessDispatcher = dispatcher;
+            };
+            rc = import ./modules/nixos/lib/claude-rc-package.nix {
+              inherit pkgs;
+              controlEnvironment = expected.controlEnvironment;
+            };
+            maint = import ./modules/nixos/lib/claude-rc-maint-package.nix {
+              inherit pkgs;
+              controlEnvironment = expected.controlEnvironment;
+            };
+          in {
+            constructorMatches = expected.controlEnvironment == {
+              CLAUDE_RC_BRIDGE_PATH = agentEnv.CLAUDE_RC_BRIDGE_PATH;
+              CLAUDE_RC_HEADLESS_SSH_MARKER = agentEnv.CLAUDE_RC_HEADLESS_SSH_MARKER;
+              CLAUDE_RC_ENVIRONMENT_GENERATION = agentEnv.CLAUDE_RC_ENVIRONMENT_GENERATION;
+            };
+            pathMatches = agentEnv.PATH == expected.bridgePath;
+            rcSourceMatches = toString hm.home.file.".local/bin/claude-rc".source == "${rc}/bin/claude-rc";
+            maintSourceMatches = toString hm.home.file.".local/bin/claude-rc-maint".source == "${maint}/bin/claude-rc-maint";
+            launchdMatchesMaint = builtins.elemAt agent.ProgramArguments 0 == "${maint}/bin/claude-rc-maint";
+            marker = expected.marker;
+          };
+      in {
+        personal = mk "greenhead-MacBookPro" "1";
+        work = mk "work-MacBookPro" "0";
+      }
+    '
+  } 2>&1)" || fail "could not evaluate Darwin Claude launch binding: $result"
+
+  jq -e '
+    all(.personal, .work;
+      .constructorMatches
+      and .pathMatches
+      and .rcSourceMatches
+      and .maintSourceMatches
+      and .launchdMatchesMaint)
+    and .personal.marker == "1"
+    and .work.marker == "0"
+  ' <<<"$result" >/dev/null \
+    || fail "Darwin Claude launch binding generation mismatch: $result"
 }
 
 
@@ -455,6 +535,163 @@ test_claude_remote_control_interactive_start_ignores_ambient_claude_bin() {
   assert_not_contains "$log" "$CLAUDE_RC_MANAGED_BIN/claude"
 
   _claude_rc_release_server "$repo"
+}
+
+test_claude_remote_control_start_resolves_claude_from_bridge_path() {
+  local sandbox repo bridge_dir original_claude bash_bin log
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  bridge_dir="$sandbox/bridge-bin"
+  original_claude="$CLAUDE_RC_FAKE_BIN/claude"
+  bash_bin="$(command -v bash)"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  mkdir -p "$bridge_dir"
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  mv "$original_claude" "$bridge_dir/claude"
+  trap 'mv "$bridge_dir/claude" "$original_claude" 2>/dev/null || true; rm -f "$CLAUDE_RC_HOLD_FILE"' RETURN
+  CLAUDE_RC_BRIDGE_PATH="$bridge_dir:$CLAUDE_RC_FAKE_BIN:/usr/bin:/bin:/usr/sbin:/sbin" \
+    _claude_rc_run "$repo" env \
+      PATH="$CLAUDE_RC_FAKE_BIN:/usr/bin:/bin:/usr/sbin:/sbin" \
+      "$bash_bin" "$(_claude_rc_wrapper_script)" start >/dev/null
+  _claude_rc_wait_fake_claude_log "remote-control --spawn worktree" \
+    || fail "bridge-path Claude launcher log did not appear"
+  log="$(cat "$CLAUDE_RC_LOG")"
+  assert_contains "$log" $'\t'"$bridge_dir/claude"$'\tremote-control'
+
+  _claude_rc_release_server "$repo"
+  mv "$bridge_dir/claude" "$original_claude"
+  trap - RETURN
+}
+
+test_claude_remote_control_managed_attestation_lifecycle() {
+  local sandbox repo slug attestation status
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  slug="$(_claude_rc_slug "$repo")"
+  attestation="$CLAUDE_RC_STATE/$slug/environment-attestation.json"
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  CLAUDE_RC_ENVIRONMENT_GENERATION=environment-current \
+  CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+  CLAUDE_RC_BRIDGE_PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
+    _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start >/dev/null
+  jq -e '
+    .schemaVersion == 1
+    and .environmentGeneration == "environment-current"
+    and (.pid | type) == "number"
+    and (.processStartIdentity | type) == "string"
+  ' "$attestation" >/dev/null || fail "managed start did not publish exact environment attestation"
+
+  CLAUDE_RC_ENVIRONMENT_GENERATION=environment-current \
+  CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+  CLAUDE_RC_BRIDGE_PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
+    _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" stop --force >/dev/null
+  [ ! -e "$attestation" ] || fail "verified managed stop left a stale environment attestation"
+  status="$(cat "$CLAUDE_RC_STATE/instances.json")"
+  jq -e --arg path "$repo" '(.instances | has($path)) | not' <<<"$status" >/dev/null \
+    || fail "verified managed stop did not unregister instance: $status"
+  rm -f "$CLAUDE_RC_HOLD_FILE"
+}
+
+test_claude_remote_control_attestation_failures_are_fail_closed() {
+  local sandbox repo slug instance_dir attestation out rc lock_path status wrapper
+
+  # Publication failure: an attacker-controlled symlink is never followed and
+  # the just-launched server is cancelled before registration.
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  slug="$(_claude_rc_slug "$repo")"
+  instance_dir="$CLAUDE_RC_STATE/$slug"
+  attestation="$instance_dir/environment-attestation.json"
+  lock_path="$instance_dir/lock"
+  mkdir -p "$instance_dir"
+  ln -s "$sandbox/foreign-attestation" "$attestation"
+  : > "$CLAUDE_RC_HOLD_FILE"
+  rc=0
+  out="$(CLAUDE_RC_ENVIRONMENT_GENERATION=environment-current \
+    CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+    CLAUDE_RC_BRIDGE_PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
+    _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start 2>&1)" || rc=$?
+  [ "$rc" -ne 0 ] || fail "attestation publication failure must fail start: $out"
+  assert_contains "$out" "environment identity를 확인하지 못함"
+  [ -L "$attestation" ] || fail "attestation publication failure followed or replaced the symlink"
+  "$CLAUDE_RC_FAKE_BIN/flock" --timeout 1 "$lock_path" true \
+    || fail "attestation publication failure left the server lock held"
+  rm -f "$attestation" "$CLAUDE_RC_HOLD_FILE"
+
+  # Cleanup failure after a verified stop must keep the registry and stale
+  # attestation visible instead of falsely reporting a complete lifecycle.
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  slug="$(_claude_rc_slug "$repo")"
+  instance_dir="$CLAUDE_RC_STATE/$slug"
+  attestation="$instance_dir/environment-attestation.json"
+  lock_path="$instance_dir/lock"
+  wrapper="$(_claude_rc_wrapper_script)"
+  : > "$CLAUDE_RC_HOLD_FILE"
+  CLAUDE_RC_ENVIRONMENT_GENERATION=environment-current \
+  CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+  CLAUDE_RC_BRIDGE_PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
+    _claude_rc_run "$repo" bash "$wrapper" start >/dev/null
+  rc=0
+  out="$(CLAUDE_RC_ENVIRONMENT_GENERATION=environment-current \
+    CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+    CLAUDE_RC_BRIDGE_PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
+    _claude_rc_run "$repo" bash -c '
+      set -euo pipefail
+      source "$1"
+      clear_environment_attestation() { return 1; }
+      main stop --force
+    ' _ "$wrapper" 2>&1)" || rc=$?
+  [ "$rc" -ne 0 ] || fail "attestation cleanup failure must fail stop: $out"
+  assert_contains "$out" "identity/exit/lock-release 검증 실패"
+  [ -f "$attestation" ] || fail "failed attestation cleanup must leave visible stale evidence"
+  "$CLAUDE_RC_FAKE_BIN/flock" --timeout 1 "$lock_path" true \
+    || fail "failed attestation cleanup left the stopped server lock held"
+  status="$(cat "$CLAUDE_RC_STATE/instances.json")"
+  jq -e --arg path "$repo" '.instances | has($path)' <<<"$status" >/dev/null \
+    || fail "attestation cleanup failure must preserve registry: $status"
+  rm -f "$attestation" "$CLAUDE_RC_HOLD_FILE"
+}
+
+test_claude_remote_control_handoff_failure_cleans_attestation() {
+  local sandbox repo slug attestation lock_path wrapper out rc
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  slug="$(_claude_rc_slug "$repo")"
+  attestation="$CLAUDE_RC_STATE/$slug/environment-attestation.json"
+  lock_path="$CLAUDE_RC_STATE/$slug/lock"
+  wrapper="$(_claude_rc_wrapper_script)"
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  rc=0
+  out="$(CLAUDE_RC_ENVIRONMENT_GENERATION=environment-current \
+    CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+    CLAUDE_RC_BRIDGE_PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
+    _claude_rc_run "$repo" bash -c '
+      set -euo pipefail
+      source "$1"
+      handoff_launch_guard() {
+        cancel_launch_guard "$1" "$2" || true
+        return 1
+      }
+      main start
+    ' _ "$wrapper" 2>&1)" || rc=$?
+  [ "$rc" -ne 0 ] || fail "forced handoff failure must fail start: $out"
+  [ ! -e "$attestation" ] || fail "handoff failure left a stale environment attestation"
+  "$CLAUDE_RC_FAKE_BIN/flock" --timeout 1 "$lock_path" true \
+    || fail "handoff failure left the server lock held"
+  rm -f "$CLAUDE_RC_HOLD_FILE"
 }
 
 test_claude_remote_control_start_warns_when_running_options_differ() {

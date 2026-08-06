@@ -33,6 +33,8 @@ fi
 
 # shellcheck source=/dev/null
 . "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
+# shellcheck source=/dev/null
+. "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex.sh"
 
 # Nix SoT(default.nix)와 독립된 감사 오라클.
 # 두 리스트는 서로 교집합이 없어야 하며, shared 디렉토리의 모든 스킬이 둘 중 하나에 속해야 한다.
@@ -711,15 +713,21 @@ fi
 echo ""
 echo "=== template ↔ live drift 검증 ==="
 
-# Nix store에 복사된 template seed가 아니라 현재 flake 워킹트리의 template을 검증 기준으로 쓴다.
-if [ "$(uname -s)" = "Darwin" ]; then
-  _TEMPLATE="$REPO_ROOT/modules/shared/programs/codex/files/config.darwin.toml"
+# Host role marker는 Nix evaluation으로 생성되므로 배포된 immutable seed가 유일한 SSOT다.
+# missing/regular/external/dangling seed에서 platform source로 fallback하면 live role drift와
+# 함께 통과할 수 있으므로 verifier도 direct Nix-store symlink가 아니면 fail-closed한다.
+_DEPLOYED_TEMPLATE="$HOME/.local/share/nixos-config/codex/config-template.toml"
+if codex_evaluated_seed_is_trusted "$_DEPLOYED_TEMPLATE"; then
+  _TEMPLATE="$_DEPLOYED_TEMPLATE"
 else
-  _TEMPLATE="$REPO_ROOT/modules/shared/programs/codex/files/config.toml"
+  _TEMPLATE=""
+  fail "evaluated per-host Codex seed 신뢰 경계 위반: $_DEPLOYED_TEMPLATE ($CODEX_EVALUATED_SEED_DIAGNOSTIC)"
 fi
 _CHECK_SCRIPT="$REPO_ROOT/modules/shared/programs/codex/files/sync-codex-config.py"
 
-if [ ! -f "$_TEMPLATE" ]; then
+if [ -z "$_TEMPLATE" ]; then
+  : # seed boundary failure was already reported above
+elif [ ! -f "$_TEMPLATE" ]; then
   fail "template 파일 없음: $_TEMPLATE"
 elif [ ! -f "$_CHECK_SCRIPT" ]; then
   fail "sync-codex-config.py 없음: $_CHECK_SCRIPT"

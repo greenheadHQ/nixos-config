@@ -84,6 +84,9 @@ test_verify_ai_compat_codex_artifact_contract_static() {
   assert_contains "$expectations_content" 'EXPECTED_DISPATCHER_SUB_SCRIPTS=(record-last-stop.sh nrs-session-cleanup.sh)'
   assert_contains "$verifier_content" '_check_hook_executable ".codex/hooks/pinning-alert.sh"'
   assert_contains "$verifier_content" '_check_hook_executable ".codex/hooks/pinning-guard.sh"'
+  assert_contains "$verifier_content" 'codex_evaluated_seed_is_trusted "$_DEPLOYED_TEMPLATE"'
+  assert_not_contains "$verifier_content" 'marker verification deferred until post-nrs rerun'
+  assert_contains "$(cat "$codex_rebuild_helper")" 'CODEX_EVALUATED_SEED_REL_PATH=".local/share/nixos-config/codex/config-template.toml"'
 
   assert_contains "$verifier_content" '_check_readable_symlink_suffix ".codex/lib/pinning-patterns.sh" "$_pinning_lib_suffix"'
   assert_contains "$verifier_content" '_check_readable_symlink_suffix ".codex/lib/hook-runtime.sh" "$_hook_runtime_lib_suffix"'

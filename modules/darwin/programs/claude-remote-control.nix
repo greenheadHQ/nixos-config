@@ -16,16 +16,35 @@
 {
   config,
   pkgs,
+  lib,
+  constants,
+  hostType,
   nixosConfigDefaultPath,
   ...
 }:
 
 let
   homeDir = config.home.homeDirectory;
-  username = config.home.username;
   stateDir = "${homeDir}/.local/state/claude-rc";
   pushoverCredPath = "${config.xdg.configHome}/pushover/share";
   serviceLib = import ../../nixos/lib/service-lib.nix { inherit pkgs; };
+  headlessDispatcher = import ./ssh/headless-dispatcher.nix {
+    inherit
+      config
+      pkgs
+      lib
+      constants
+      hostType
+      ;
+  };
+  launchEnvironment = import ./claude-remote-control-launch-environment.nix {
+    inherit
+      pkgs
+      lib
+      hostType
+      headlessDispatcher
+      ;
+  };
 
   # 선언 인스턴스 운영 상수 — NixOS의 homeserver.claudeRemoteControl.* 대응.
   bridgeSpawn = "worktree";
@@ -43,8 +62,14 @@ let
   ];
 
   # NixOS HM 배선(shell/nixos.nix)과 같은 래퍼 패키지.
-  claudeRcPkg = import ../../nixos/lib/claude-rc-package.nix { inherit pkgs; };
-  maintenanceCli = import ../../nixos/lib/claude-rc-maint-package.nix { inherit pkgs; };
+  claudeRcPkg = import ../../nixos/lib/claude-rc-package.nix {
+    inherit pkgs;
+    inherit (launchEnvironment) controlEnvironment;
+  };
+  maintenanceCli = import ../../nixos/lib/claude-rc-maint-package.nix {
+    inherit pkgs;
+    inherit (launchEnvironment) controlEnvironment;
+  };
 in
 {
   home.file.".local/bin/claude-rc".source = "${claudeRcPkg}/bin/claude-rc";
@@ -68,7 +93,7 @@ in
       # 서버를 띄우므로 서버는 별도 process group이 되지만, ensure가 방금 띄운 서버를
       # 같이 죽이지 않도록 안전하게 그룹 정리를 포기한다.
       AbandonProcessGroup = true;
-      EnvironmentVariables = {
+      EnvironmentVariables = launchEnvironment.controlEnvironment // {
         HOME = homeDir;
         STATE_DIR = stateDir;
         CLAUDE_RC_DECLARED_INSTANCES = declaredInstances;
@@ -84,7 +109,7 @@ in
         # procps가 없으므로 이 tail의 /usr/bin이 maint의 bare pgrep fallback을 제공한다.
         # Claude launcher는 CLAUDE_BIN의 기본 절대 경로(~/.local/bin/claude)로 실행되며,
         # 이 launchd job은 interactive wrapper나 그 내부 bare `claude`를 호출하지 않는다.
-        PATH = "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        PATH = launchEnvironment.bridgePath;
       };
       StandardOutPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";
       StandardErrorPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";

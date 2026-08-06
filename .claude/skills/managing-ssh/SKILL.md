@@ -20,10 +20,14 @@ sudo에서 SSH_AUTH_SOCK 유실
 - `sudo` 실행 시 환경변수가 초기화되어 SSH 키 인증 실패
 - 해결: `sudo -E` 또는 sudoers에서 `SSH_AUTH_SOCK` 유지 설정
 
-macOS에서 `ssh minipc` preflight 차단 (1Password agent)
-- Phase 2a 후 macOS SSH는 1Password agent(mac-ssh)로 인증 — 로컬 id_ed25519는 archive됨
-- 1Password 데스크탑 미실행/잠금 시 `ssh()` preflight가 안내·자동 기동·최대 15초 대기
-- 해결: 1Password 잠금 해제. 즉시 접속은 `ssh minipc-emergency` (passphrase). 상세: references/troubleshooting.md
+macOS MiniPC 경로는 interactive와 launcher child가 다름
+- interactive Ghostty의 `ssh minipc`는 기존 1Password agent(mac-ssh)+preflight를 유지한다.
+- personal Claude Remote Control/Codex launcher가 표시한 non-TTY child는 private dispatcher와
+  dedicated `minipc-headless` key(`IdentityAgent none`)를 사용한다. 1Password GUI를 기다리지 않는다.
+- launcher 경로는 인증 성립까지만 15초 deadline을 적용하고, 인증 뒤 장시간 command는 자르지 않는다.
+- `HEADLESS_SSH_AUTH_TIMEOUT`이면 actual child의 `command -v ssh` → agenix
+  `minipc-headless` materialization metadata → MiniPC authorized_keys entry → Tailscale 순서로 점검한다.
+- `minipc-emergency`는 interactive 수동 복구 전용이다. headless key나 자동 fallback으로 재사용하지 않는다.
 
 NixOS에서 SSH 키 자동 로드 실패
 - NixOS는 launchd가 아니라 `services.ssh-agent` + `programs.keychain`으로 키 로드
@@ -63,6 +67,7 @@ tailscale ip -4
 |------|------|
 | `$HOME/.ssh/config` | SSH 호스트 설정 |
 | `$HOME/.ssh/mac-ssh.pub` | macOS `minipc` IdentityFile 고정용 공개키 (`constants.sshDeviceKeys.macSsh`에서 생성) |
+| `$HOME/.ssh/minipc-headless` | personal launcher 전용 agenix materialization; 내용 출력 금지 |
 | `$HOME/.ssh/emergency_ed25519` | 1Password 장애 시 `minipc-emergency` fallback 개인 키 |
 | `$HOME/.ssh/id_ed25519` | NixOS/GitHub 로컬 개인 키 |
 | `$HOME/.ssh/authorized_keys` | 인증된 키 (서버) |
@@ -88,18 +93,20 @@ users.users.${username}.openssh.authorizedKeys.keys = with constants.sshDeviceKe
 
 ## 핵심 절차
 
-1. macOS `ssh minipc` 인증 실패는 먼저 1Password 데스크탑/agent 상태를 본다. `modules/darwin/programs/ssh/default.nix`의 `IdentityAgent`, `agent.toml`, `onepassword-autostart`와 `modules/shared/programs/shell/darwin.nix`의 `ssh()` preflight가 현행 경로다.
-2. `Load key ... invalid format`이면 키 파일 형식 문제로 분류한다. 파일 끝 개행, CRLF, 복사 손상을 확인한다.
-3. 인증이 아니라 timeout/no route 계열이면 Tailscale 상태(`tailscale status`, `tailscale up`)를 확인한다.
-4. NixOS 로컬 키 문제는 `home.nix`의 `services.ssh-agent`와 `programs.keychain`, `ssh-add -l`을 점검한다.
-5. 서버 키 배포는 `libraries/constants.nix`의 `sshDeviceKeys`를 갱신한 뒤 `authorizedKeys` 선언을 재적용한다.
+1. 먼저 runtime binding을 구분한다. interactive Ghostty는 1Password preflight, personal Claude/Codex non-TTY child는 `NIXOS_CONFIG_HEADLESS_SSH=1`+private dispatcher 경로다.
+2. launcher 경로의 `HEADLESS_SSH_AUTH_TIMEOUT`은 1Password 잠금 문제가 아니다. actual child의 `command -v ssh`, agenix materialization의 존재/권한 metadata, 선언된 server entry, Tailscale 순으로 확인한다. key 본체는 읽거나 로그로 남기지 않는다.
+3. `Load key ... invalid format`이면 키 파일 형식 문제로 분류한다. 파일 끝 개행, CRLF, 복사 손상을 확인한다.
+4. 인증이 아니라 timeout/no route 계열이면 Tailscale 상태(`tailscale status`, `tailscale up`)를 확인한다.
+5. NixOS 로컬 키 문제는 `home.nix`의 `services.ssh-agent`와 `programs.keychain`, `ssh-add -l`을 점검한다.
+6. 서버 키 배포는 `libraries/constants.nix`의 `sshDeviceKeys`를 갱신한 뒤 `authorizedKeys` 선언을 재적용한다.
 
 ## 자주 발생하는 문제
 
-1. 1Password agent 미실행/잠금: `ssh minipc` preflight 안내에 따라 1Password 잠금 해제, 긴급 시 `ssh minipc-emergency`
-2. SSH 키 invalid format: 키 파일 끝 개행, CRLF, 복사 손상 확인
-3. Tailscale 만료/미연결: `tailscale status`, `tailscale up`으로 확인
-4. sudo 인증 실패: `sudo -E` 또는 SSH_AUTH_SOCK 유지
+1. interactive 1Password agent 미실행/잠금: `ssh minipc` preflight 안내에 따라 1Password 잠금 해제; launcher child에는 해당하지 않는다.
+2. launcher `HEADLESS_SSH_AUTH_TIMEOUT`: child binary path, agenix materialization metadata, server entry, Tailscale을 점검하며 emergency key로 자동 fallback하지 않는다.
+3. SSH 키 invalid format: 키 파일 끝 개행, CRLF, 복사 손상 확인
+4. Tailscale 만료/미연결: `tailscale status`, `tailscale up`으로 확인
+5. sudo 인증 실패: `sudo -E` 또는 SSH_AUTH_SOCK 유지
 
 ## 레퍼런스
 

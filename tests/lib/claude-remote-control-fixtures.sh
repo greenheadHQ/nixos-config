@@ -92,6 +92,10 @@ if [ -n "${FAKE_CLAUDE_ENV_LOG:-}" ]; then
   printf 'drift_policy=%s\tdrift_approval=%s\n' \
     "${CLAUDE_RC_DRIFT_POLICY-unset}" \
     "${CLAUDE_RC_DRIFT_APPROVAL_JSON-unset}" >> "$FAKE_CLAUDE_ENV_LOG"
+  printf 'headless_marker=%s\theadless_generation=%s\tpath=%s\n' \
+    "${NIXOS_CONFIG_HEADLESS_SSH-unset}" \
+    "${NIXOS_CONFIG_HEADLESS_SSH_GENERATION-unset}" \
+    "$PATH" >> "$FAKE_CLAUDE_ENV_LOG"
 fi
 if [ -n "${FAKE_STARTED_EXE_FILE:-}" ] && [ -n "${FAKE_CLAUDE_STARTED_EXE:-}" ]; then
   printf '%s\n' "$FAKE_CLAUDE_STARTED_EXE" > "$FAKE_STARTED_EXE_FILE"
@@ -288,6 +292,9 @@ _claude_rc_install_pid_argv_dispatcher() {
       "$CLAUDE_RC_REAL_PID_ARGV_HELPER" "$CLAUDE_RC_PID_ARGV_FIXTURE_DIR"
     cat <<'EOS'
 set -euo pipefail
+if [ "${1:-}" = "--start-identity" ]; then
+  exec "$REAL_PID_ARGV_HELPER" "$@"
+fi
 pid="${1:-}"
 [ -n "$pid" ] || exit 2
 
@@ -359,6 +366,9 @@ _claude_rc_run() {
       VERSIONS_DIR="$CLAUDE_RC_VERSIONS" \
       CLAUDE_RC_DRIFT_POLICY="${CLAUDE_RC_DRIFT_POLICY:-}" \
       CLAUDE_RC_DRIFT_APPROVAL_JSON="${CLAUDE_RC_DRIFT_APPROVAL_JSON:-}" \
+      CLAUDE_RC_BRIDGE_PATH="${CLAUDE_RC_BRIDGE_PATH:-}" \
+      CLAUDE_RC_HEADLESS_SSH_MARKER="${CLAUDE_RC_HEADLESS_SSH_MARKER:-}" \
+      CLAUDE_RC_ENVIRONMENT_GENERATION="${CLAUDE_RC_ENVIRONMENT_GENERATION:-}" \
       PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
       FAKE_CLAUDE_LOG="$CLAUDE_RC_LOG" \
       FAKE_CLAUDE_HOLD_FILE="${CLAUDE_RC_HOLD_FILE:-}" \
@@ -403,6 +413,9 @@ _claude_rc_run_maint() {
       CLAUDE_BIN="${CLAUDE_RC_TEST_MAINT_BIN:-$CLAUDE_RC_MANAGED_BIN/claude}" \
       CLAUDE_RC_DRIFT_POLICY="${CLAUDE_RC_DRIFT_POLICY:-defer}" \
       CLAUDE_RC_DRIFT_APPROVAL_JSON="${CLAUDE_RC_DRIFT_APPROVAL_JSON:-[]}" \
+      CLAUDE_RC_BRIDGE_PATH="${CLAUDE_RC_BRIDGE_PATH:-}" \
+      CLAUDE_RC_HEADLESS_SSH_MARKER="${CLAUDE_RC_HEADLESS_SSH_MARKER:-}" \
+      CLAUDE_RC_ENVIRONMENT_GENERATION="${CLAUDE_RC_ENVIRONMENT_GENERATION:-}" \
       FAKE_CLAUDE_RESOLVED_EXE="${FAKE_CLAUDE_RESOLVED_EXE_OVERRIDE:-$CLAUDE_RC_VERSIONS/claude-new}" \
       PATH="$CLAUDE_RC_FAKE_BIN:$PATH" \
       FAKE_CLAUDE_LOG="$CLAUDE_RC_LOG" \

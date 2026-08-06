@@ -8,8 +8,18 @@
 #   - Darwin: discoteq flock과 lsof를 넣는다.
 #     pgrep은 nixpkgs 대체가 없어 시스템 /usr/bin/pgrep에 의존한다 —
 #     호출측 launchd agent가 PATH tail에 /usr/bin을 포함해야 한다.
-{ pkgs }:
+{
+  pkgs,
+  controlEnvironment ? { },
+}:
 let
+  controlEnvironmentScript = pkgs.lib.concatStringsSep "\n" (
+    pkgs.lib.mapAttrsToList (
+      name: value:
+      assert builtins.match "[A-Z][A-Z0-9_]*" name != null;
+      "export ${name}=${pkgs.lib.escapeShellArg (toString value)}"
+    ) controlEnvironment
+  );
   pidArgv = import ./claude-rc-pid-argv-package.nix { inherit pkgs; };
   launchGroup = import ./claude-rc-launch-group-package.nix { inherit pkgs; };
   claudeRcFlock = import ../../../libraries/claude-rc-flock.nix { inherit pkgs; };
@@ -38,7 +48,9 @@ pkgs.writeShellApplication {
       lsof
     ];
   text =
-    builtins.readFile ../scripts/claude-rc-lib.sh
+    controlEnvironmentScript
+    + "\n"
+    + builtins.readFile ../scripts/claude-rc-lib.sh
     + "\n"
     + builtins.readFile ../programs/claude-remote-control/files/claude-rc-maint.sh;
 }

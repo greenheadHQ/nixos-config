@@ -1010,6 +1010,69 @@ test_claude_remote_control_maint_confirmed_drift_binds_exact_snapshot() {
   _claude_rc_release_server "$repo"
 }
 
+test_claude_remote_control_managed_environment_drift_requires_exact_confirmation() {
+  local sandbox repo status approval bridge_path env_log
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  env_log="$sandbox/managed-environment.log"
+  bridge_path="$CLAUDE_RC_FAKE_BIN:$PATH"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  CLAUDE_RC_BRIDGE_PATH="$bridge_path" \
+  CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+  CLAUDE_RC_ENVIRONMENT_GENERATION=environment-old \
+  FAKE_CLAUDE_STARTED_EXE="$CLAUDE_RC_VERSIONS/claude-new" \
+    _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start >/dev/null
+
+  CLAUDE_RC_BRIDGE_PATH="$bridge_path" \
+  CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+  CLAUDE_RC_ENVIRONMENT_GENERATION=environment-new \
+  CLAUDE_RC_DRIFT_POLICY=automatic \
+    _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '
+    .action == "completed"
+    and .instances[0].action == "deferred-restart-confirmation"
+    and .instances[0].runningVersion == .instances[0].desiredVersion
+    and .instances[0].runningEnvironmentGeneration == "environment-old"
+    and .instances[0].desiredEnvironmentGeneration == "environment-new"
+  ' <<<"$status" >/dev/null \
+    || fail "automatic policy must defer managed same-version environment drift: $status"
+
+  approval="$(jq -c '
+    [.instances[] | select(.action == "deferred-restart-confirmation")
+      | {path, runningVersion, desiredVersion,
+         runningEnvironmentGeneration, desiredEnvironmentGeneration}]
+    | sort_by([.path, .runningVersion, .desiredVersion,
+               .runningEnvironmentGeneration, .desiredEnvironmentGeneration])
+  ' <<<"$status")"
+
+  CLAUDE_RC_BRIDGE_PATH="$bridge_path" \
+  CLAUDE_RC_HEADLESS_SSH_MARKER=1 \
+  CLAUDE_RC_ENVIRONMENT_GENERATION=environment-new \
+  CLAUDE_RC_DRIFT_POLICY=confirmed \
+  CLAUDE_RC_DRIFT_APPROVAL_JSON="$approval" \
+  FAKE_CLAUDE_ENV_LOG="$env_log" \
+  FAKE_CLAUDE_STARTED_EXE="$CLAUDE_RC_VERSIONS/claude-new" \
+    _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '
+    .action == "completed"
+    and .instances[0].action == "restarted-version-drift"
+    and .instances[0].runningEnvironmentGeneration == "environment-new"
+    and .instances[0].desiredEnvironmentGeneration == "environment-new"
+  ' <<<"$status" >/dev/null \
+    || fail "exact environment-generation approval did not restart the bridge: $status"
+  grep -Fq $'headless_marker=1\theadless_generation=environment-new\t' "$env_log" \
+    || fail "managed bridge child did not receive the exact marker/generation"
+  grep -Fxq $'drift_policy=unset\tdrift_approval=unset' "$env_log" \
+    || fail "managed bridge child retained one-shot drift approval variables"
+
+  _claude_rc_release_server "$repo"
+}
+
 test_claude_remote_control_maint_reports_lock_setup_failure() {
   local sandbox status out rc
   sandbox="$(_claude_rc_new_sandbox)"
