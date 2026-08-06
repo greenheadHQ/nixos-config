@@ -15,7 +15,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import time
 
 
 INTERNAL_ERROR = 125
@@ -102,7 +101,6 @@ class Invocation:
     argv: tuple[str, ...]
     destination: str | None
     normalized_destination: str | None
-    remote_argv: tuple[str, ...]
     options: tuple[tuple[str, str | None], ...]
     meta: bool
 
@@ -121,7 +119,6 @@ def parse_invocation(argv: list[str], manifest: dict[str, object]) -> Invocation
     assert isinstance(arity, dict)
     options: list[tuple[str, str | None]] = []
     destination: str | None = None
-    remote: tuple[str, ...] = ()
     meta = False
     index = 0
     while index < len(argv):
@@ -130,11 +127,9 @@ def parse_invocation(argv: list[str], manifest: dict[str, object]) -> Invocation
             index += 1
             if index < len(argv):
                 destination = argv[index]
-                remote = tuple(argv[index + 1 :])
             break
         if token == "-" or not token.startswith("-"):
             destination = token
-            remote = tuple(argv[index + 1 :])
             break
         if token.startswith("--"):
             raise ContractError("HEADLESS_SSH_OPTION_UNSUPPORTED", token)
@@ -166,7 +161,6 @@ def parse_invocation(argv: list[str], manifest: dict[str, object]) -> Invocation
         argv=tuple(argv),
         destination=destination,
         normalized_destination=normalize_destination(destination) if destination else None,
-        remote_argv=remote,
         options=tuple(options),
         meta=meta,
     )
@@ -393,11 +387,14 @@ def data_command(contract: Contract, control_path: str, invocation: Invocation) 
 def run_data(command: list[str]) -> int:
     child: subprocess.Popen[bytes] | None = None
     forwarded: list[int] = []
+    pending_before_spawn: list[int] = []
     previous: dict[int, object] = {}
 
     def forward(signum: int, _frame: object) -> None:
         forwarded.append(signum)
-        if child is not None and child.poll() is None:
+        if child is None:
+            pending_before_spawn.append(signum)
+        elif child.poll() is None:
             try:
                 child.send_signal(signum)
             except ProcessLookupError:
@@ -408,6 +405,13 @@ def run_data(command: list[str]) -> int:
         signal.signal(signum, forward)
     try:
         child = subprocess.Popen(command)
+        for signum in pending_before_spawn:
+            if child.poll() is not None:
+                break
+            try:
+                child.send_signal(signum)
+            except ProcessLookupError:
+                break
         returncode = child.wait()
     finally:
         for signum, disposition in previous.items():
@@ -424,9 +428,22 @@ def dispatch(contract: Contract, ssh_argv: list[str]) -> int:
     assert invocation.normalized_destination is not None
     if invocation.normalized_destination in contract.raw_destinations:
         exec_real(contract, invocation.argv)
+    # 일반 다른 host는 config를 두 번 평가하지 않고 raw exact-once로 보낸다.
+    # 다만 caller가 별도 config(-F)나 explicit HostName을 제시하면 lexical alias만으로
+    # MiniPC 여부를 알 수 없으므로 bounded effective classification을 수행한다.
+    ambiguous_destination = any(
+        flag == "F"
+        or (
+            flag == "o"
+            and value is not None
+            and value.split("=", 1)[0].split(None, 1)[0].lower() == "hostname"
+        )
+        for flag, value in invocation.options
+    )
     if (
         invocation.normalized_destination not in contract.managed_destinations
         and invocation.normalized_destination != contract.target_host
+        and not ambiguous_destination
     ):
         exec_real(contract, invocation.argv)
 
@@ -566,7 +583,8 @@ def main() -> int:
         returncode = dispatch(contract, ssh_argv)
         if returncode < 0:
             signum = -returncode
-            signal.signal(signum, signal.SIG_DFL)
+            if signum != signal.SIGKILL:
+                signal.signal(signum, signal.SIG_DFL)
             os.kill(os.getpid(), signum)
         return returncode
     except ContractError as error:

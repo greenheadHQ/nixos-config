@@ -5,18 +5,8 @@
 # 있는 도구에 의존하므로 writeShellApplication runtimeInputs로 실행 환경을
 # 고정한다. claude 자체는 ~/.local/bin/claude launcher가 자체 업데이트를
 # 관리하므로 runtimeInputs에 넣지 않고 호출측 PATH tail에서 해석한다.
-{
-  pkgs,
-  controlEnvironment ? { },
-}:
+{ pkgs }:
 let
-  controlEnvironmentScript = pkgs.lib.concatStringsSep "\n" (
-    pkgs.lib.mapAttrsToList (
-      name: value:
-      assert builtins.match "[A-Z][A-Z0-9_]*" name != null;
-      "export ${name}=${pkgs.lib.escapeShellArg (toString value)}"
-    ) controlEnvironment
-  );
   pidArgv = import ./claude-rc-pid-argv-package.nix { inherit pkgs; };
   launchGroup = import ./claude-rc-launch-group-package.nix { inherit pkgs; };
   claudeRcFlock = import ../../../libraries/claude-rc-flock.nix { inherit pkgs; };
@@ -46,9 +36,5 @@ pkgs.writeShellApplication {
       # pgrep은 nixpkgs 대체가 없어 호출측 PATH의 /usr/bin/pgrep으로 fallthrough.
     ];
   text =
-    controlEnvironmentScript
-    + "\n"
-    + builtins.readFile ../scripts/claude-rc-lib.sh
-    + "\n"
-    + builtins.readFile ../scripts/claude-rc.sh;
+    builtins.readFile ../scripts/claude-rc-lib.sh + "\n" + builtins.readFile ../scripts/claude-rc.sh;
 }

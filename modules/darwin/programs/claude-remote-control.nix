@@ -25,6 +25,7 @@
 
 let
   homeDir = config.home.homeDirectory;
+  username = config.home.username;
   stateDir = "${homeDir}/.local/state/claude-rc";
   pushoverCredPath = "${config.xdg.configHome}/pushover/share";
   serviceLib = import ../../nixos/lib/service-lib.nix { inherit pkgs; };
@@ -37,14 +38,7 @@ let
       hostType
       ;
   };
-  launchEnvironment = import ./claude-remote-control-launch-environment.nix {
-    inherit
-      pkgs
-      lib
-      hostType
-      headlessDispatcher
-      ;
-  };
+  baselinePath = "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
   # 선언 인스턴스 운영 상수 — NixOS의 homeserver.claudeRemoteControl.* 대응.
   bridgeSpawn = "worktree";
@@ -62,17 +56,22 @@ let
   ];
 
   # NixOS HM 배선(shell/nixos.nix)과 같은 래퍼 패키지.
-  claudeRcPkg = import ../../nixos/lib/claude-rc-package.nix {
-    inherit pkgs;
-    inherit (launchEnvironment) controlEnvironment;
-  };
-  maintenanceCli = import ../../nixos/lib/claude-rc-maint-package.nix {
-    inherit pkgs;
-    inherit (launchEnvironment) controlEnvironment;
-  };
+  claudeRcPkg = import ../../nixos/lib/claude-rc-package.nix { inherit pkgs; };
+  maintenanceCli = import ../../nixos/lib/claude-rc-maint-package.nix { inherit pkgs; };
+  # Manual start도 bridge child에만 private SSH PATH를 전달한다. 호출한 Ghostty의
+  # 환경은 바꾸지 않으며 공통 NixOS Claude lifecycle package도 수정하지 않는다.
+  claudeRcLauncher =
+    if headlessDispatcher.enabled then
+      pkgs.writeShellScriptBin "claude-rc" ''
+        export NIXOS_CONFIG_HEADLESS_SSH=1
+        export PATH="${headlessDispatcher.stableBinPath}:$PATH"
+        exec ${claudeRcPkg}/bin/claude-rc "$@"
+      ''
+    else
+      claudeRcPkg;
 in
 {
-  home.file.".local/bin/claude-rc".source = "${claudeRcPkg}/bin/claude-rc";
+  home.file.".local/bin/claude-rc".source = "${claudeRcLauncher}/bin/claude-rc";
   home.file.".local/bin/claude-rc-maint".source = "${maintenanceCli}/bin/claude-rc-maint";
 
   launchd.agents.claude-rc-ensure = {
@@ -93,7 +92,7 @@ in
       # 서버를 띄우므로 서버는 별도 process group이 되지만, ensure가 방금 띄운 서버를
       # 같이 죽이지 않도록 안전하게 그룹 정리를 포기한다.
       AbandonProcessGroup = true;
-      EnvironmentVariables = launchEnvironment.controlEnvironment // {
+      EnvironmentVariables = {
         HOME = homeDir;
         STATE_DIR = stateDir;
         CLAUDE_RC_DECLARED_INSTANCES = declaredInstances;
@@ -109,7 +108,11 @@ in
         # procps가 없으므로 이 tail의 /usr/bin이 maint의 bare pgrep fallback을 제공한다.
         # Claude launcher는 CLAUDE_BIN의 기본 절대 경로(~/.local/bin/claude)로 실행되며,
         # 이 launchd job은 interactive wrapper나 그 내부 bare `claude`를 호출하지 않는다.
-        PATH = launchEnvironment.bridgePath;
+        PATH =
+          lib.optionalString headlessDispatcher.enabled "${headlessDispatcher.stableBinPath}:" + baselinePath;
+      }
+      // lib.optionalAttrs headlessDispatcher.enabled {
+        NIXOS_CONFIG_HEADLESS_SSH = "1";
       };
       StandardOutPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";
       StandardErrorPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";

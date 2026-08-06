@@ -8,11 +8,11 @@
 
 - **Issue**: https://github.com/greenheadHQ/nixos-config/issues/1094
 - **Branch**: `codex/issue-1094-headless-ssh-dx-policy`
-- **Base snapshot**: `origin/main@28b556e9d79c03fdff2f39f088b4c6a0624d37e0`
+- **Base snapshot**: `origin/main@78f26c667a3b383d8110cf31bd549ce3b626e26d`
 - **Priority**: P1
 - **Risk**: HIGH — launcher PATH와 SSH 인증/command 경계를 바꾼다
 - **Execution**: IN PROGRESS
-- **Plan DA**: R18, MEDIUM+ 0 / LOW 0
+- **Plan DA**: COMPLETE — R22 MEDIUM+ 0; signal 보존 LOW는 반영, 유지보수 LOW 2건은 범위 고정에 따라 잔존
 
 ## Problem
 
@@ -35,7 +35,7 @@
 |---|---:|---|---|---|---|
 | A: all applications 승인 | ❌ | agent session 동안 편함 | 1Password unlock/session에 다시 종속 | user process 전체 | 승인 상태 정리 필요 |
 | B: per-app 승인 | ❌ | 앱별 승인 필요 | app/agent 수명에 종속 | Claude/ChatGPT process | launcher별 관리 |
-| C: `minipc-headless` key | ✅ | GUI 0회 | agenix materialization 뒤 독립 | 기존 MiniPC 전용 key | 기존 rotate/revoke runbook |
+| C: `minipc-headless` key | ✅ | GUI 0회 | agenix materialization 뒤 독립 | 기존 MiniPC 전용 key | `managing-ssh` 수동 rotate/revoke runbook |
 | D: auth deadline | ✅ 필수 | 무한 hang 대신 bounded 124 | 상태와 무관 | launcher MiniPC auth phase | 낮음 |
 | E: active master reuse | ✅ 보조 | 재인증 0회 | master 생존 동안 | 검증된 configured socket | 새 공유 master 없음 |
 
@@ -63,21 +63,29 @@ PTY를 보존한다. 현행 `from=` 및 port/agent/X11 forwarding 제한은 그�
 
 private package는 `bin/ssh`만 제공하며 global `home.packages`나 `home.sessionPath`에 넣지 않는다.
 
-- Claude: 하나의 launch-environment constructor가 launchd maint, manual `claude-rc`, 실제 bridge
-  child PATH를 만든다. bridge attestation은 실행 중인 bridge가 해당 environment generation을
-  실제로 소유하는지 확인한다.
-- Codex: evaluated personal-role config seed가 `NIXOS_CONFIG_HEADLESS_SSH=1`을 child shell에
-  넣고 `.zshenv`가 non-TTY launcher child에서만 private PATH를 prepend한다.
+- Claude: launchd maint와 personal Darwin의 얇은 manual `claude-rc` wrapper가
+  `~/.local/share/nixos-config/headless-ssh/bin`을 child PATH 앞에 둔다.
+- Codex: Darwin config의 `shell_environment_policy.set` marker를 받은 non-TTY tool shell만
+  `.zshenv`에서 같은 stable private PATH를 prepend한다.
+- marker 없는 기존 remote/automation interactive zsh는 공통 headless predicate로 stable
+  dispatcher를 직접 호출해 main의 bounded 인증 계약을 보존한다. interactive Ghostty는 해당
+  신호가 없어 raw SSH를 유지한다.
+- stable home symlink는 activation 때 현재 immutable package로 relink된다. 따라서 SSH 때문에
+  Claude environment generation/attestation이나 shared lifecycle schema를 추가하지 않는다.
+- versioned manifest는 실제 parser가 소비하는 OpenSSH short-option arity만 가진다. macOS의
+  `/usr/bin/ssh`가 갱신되면 `ssh -h`/manpage의 short-option argument 유무와 함께 갱신한다.
 - Ghostty: marker가 없으므로 `/usr/bin/ssh`와 기존 interactive 1Password preflight를 유지한다.
 
 ### 2. Target scope
 
 dispatcher는 lexical destination을 먼저 파싱한다.
 
-- raw exact: `minipc-emergency`, 다른 host, meta `-V/-Q/-G/-O`
+- raw exact: `minipc-emergency`, 명백한 다른 host, meta `-V/-Q/-G/-O`
 - managed candidate: `minipc`, `minipc-headless`, exact MiniPC Tailscale IP
 - `user@host`, `-W`, `-t/-tt`, remote argv, safe custom `-F`는 보존한다.
-- candidate만 bounded `/usr/bin/ssh -G`로 effective host/user/port를 확인한다.
+- candidate와 destination을 바꿀 수 있는 explicit `-F`/`-o HostName` 호출만 bounded
+  `/usr/bin/ssh -G`로 effective host/user/port를 확인한다. 따라서 `-F safe.conf custom-alias`
+  가 MiniPC tuple이면 managed되고, 일반 다른 host는 config를 두 번 평가하지 않고 raw exact-once다.
 - effective host가 MiniPC가 아니면 original OpenSSH로 돌아간다.
 - explicit identity/proxy/master ownership을 바꾸는 unsupported option은 network 전에 125로
   진단한다. 조용한 1Password/emergency fallback은 없다.
@@ -95,8 +103,9 @@ configured ControlPath가 active면 bounded `-O check` 뒤 그 socket으로 data
    socket race가 direct 재인증으로 fallback하지 않는다.
 5. data command에는 deadline을 적용하지 않고 stdout/stderr/exit/signal/PTY를 보존한다.
 6. foreground 종료 뒤 bounded `-O exit`와 call dir cleanup을 수행한다. `-f` background session은
-   master를 즉시 끊지 않고 socket을 unpublish한 뒤 `ControlPersist=5` 자가 종료에 맡긴다.
-   wrapper crash도 같은 짧은 상한으로 수렴한다.
+   master를 즉시 끊지 않고 socket을 unpublish한다. active client가 끝난 뒤 idle master는
+   `ControlPersist=5`에 따라 5초 후 자가 종료한다. 이는 wrapper crash 중인 active session의
+   5초 watchdog을 의미하지 않는다.
 
 이 구현은 persistent policy FSM, bootstrap, rotation/recovery helper를 추가하지 않는다. 정상 사용에
 새 수동 승인이나 복구 절차를 만들지 않는 것이 DX 계약이다.
@@ -123,7 +132,8 @@ configured ControlPath가 active면 bounded `-O check` 뒤 그 socket으로 data
 7. stale master의 bounded dedicated auth
 8. `minipc-emergency`/다른 host raw exact once
 9. `-V/-Q/-G/-O` meta raw
-10. `user@host`, safe custom `-F`의 host-verification transport, `-W`, `-tt` 보존
+10. `user@host`, safe custom `-F` alias/host-verification transport, explicit
+    `-o HostName`, `-W`, `-tt` 보존
 11. effective retarget non-MiniPC raw
 12. explicit identity override network 전 fail-closed
 13. 동시 호출 unique socket과 cleanup
@@ -155,8 +165,16 @@ Host mutation은 `/tmp/nrs-state` free 확인과 fresh action-time 승인 뒤에
    - master 있음: success 0, 새 auth 없음
    - dedicated auth 불가: auth deadline 안 124/255
    - auth 뒤 장시간 command: deadline 이후 success
+   - 실제 OpenSSH `-tt`: remote stdin/stdout TTY 할당 success
+   - 실제 OpenSSH `-f`: dispatcher socket unpublish 뒤 짧은 background marker 완료
    - child `ssh` resolved path와 ancestry
-6. Ghostty는 raw `/usr/bin/ssh`; `minipc-emergency`와 다른 host 비간섭
+6. fresh action-time 확인 뒤 1Password locked/quit 상태에서도 두 actual child가 prompt 0,
+   bounded success인지 확인한다. 기존 C 배포·직접 E2E의 안정 근거는 #1094의
+   2026-07-18 완료 comment와 merge commit `cd3555d1`이며, 이번에는 새 launcher binding만
+   재검증한다.
+7. launcher restart 뒤 같은 matrix를 반복한다. C의 reboot 독립 주장은 fresh action-time
+   승인 뒤 actual-child success/prompt 0으로 확인한다.
+8. Ghostty는 raw `/usr/bin/ssh`; `minipc-emergency`와 다른 host 비간섭
 
 실제 probe는 바깥 watchdog을 가지되 production command 전체 deadline과 혼동하지 않는다.
 secret/key 내용은 기록하지 않고 path/exit/elapsed/prompt 여부만 기록한다.
@@ -167,8 +185,9 @@ secret/key 내용은 기록하지 않고 path/exit/elapsed/prompt 여부만 기�
 2. 전체 gate와 영향받은 nrs/E2E 반복
 3. `$run-da for_pr`; unresolved MEDIUM+ 0이면 LOW를 정직하게 기록하고 진행
 4. final branch push
-5. `$create-pr`로 main 대상 PR 생성, Summary에 `Closes #1094`
-6. DA 결과는 별도 PR comment, handoff comment 없음, merge하지 않음
+5. PR 직전 duplicate OPEN PR을 다시 확인하고, 없으면 CLOSED #1094를 reopen한다.
+6. `$create-pr`로 main 대상 PR 생성, Summary에 `Closes #1094`
+7. DA 결과는 별도 PR comment, handoff comment 없음, merge하지 않음
 
 ## Completion checklist
 

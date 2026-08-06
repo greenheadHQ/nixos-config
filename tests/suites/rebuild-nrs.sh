@@ -2,7 +2,6 @@
 # shellcheck shell=bash
 # SC2154: 공통 변수는 aggregator/test-common이 정의. SC2164: set -euo pipefail 런타임 상속.
 # shellcheck disable=SC2154,SC2164
-CODEX_FIXTURE_SEED_STORE_PATH=""
 write_mixed_user_codex_hooks() {
   local home_dir="$1"
   mkdir -p "$home_dir/.codex"
@@ -87,18 +86,7 @@ install_repo_fallback_codex_legacy_hooks_helper() {
 
 install_codex_managed_artifact_fixture() {
   local home_dir="$1"
-  mkdir -p \
-    "$home_dir/.codex/hooks" \
-    "$home_dir/.codex/lib" \
-    "$home_dir/.local/share/nixos-config/codex"
-
-  if [[ -z "$CODEX_FIXTURE_SEED_STORE_PATH" ]]; then
-    CODEX_FIXTURE_SEED_STORE_PATH="$(
-      nix store add-file "$FIXTURE_DIR/codex-config/bare_sync_compat/template.toml"
-    )" || fail "could not materialize immutable Codex seed fixture"
-  fi
-  ln -sfn "$CODEX_FIXTURE_SEED_STORE_PATH" \
-    "$home_dir/.local/share/nixos-config/codex/config-template.toml"
+  mkdir -p "$home_dir/.codex/hooks" "$home_dir/.codex/lib"
 
   ln -sf "$REPO_ROOT/modules/shared/programs/codex/files/hooks/record-prompt-submit.sh" \
     "$home_dir/.codex/hooks/record-prompt-submit.sh"
@@ -228,150 +216,6 @@ test_rebuild_common_exports_public_api() {
   assert_contains "$output" "codex_managed_artifacts_missing"
   assert_contains "$output" "codex_log_managed_artifacts_missing"
   assert_contains "$output" "repair_codex_config_drift_no_changes"
-}
-
-test_codex_evaluated_seed_trust_boundary() {
-  local sandbox store_root store_file seed external uid helper
-  sandbox=$(new_sandbox)
-  store_root="$sandbox/store"
-  store_file="$store_root/evaluated-codex-config.toml"
-  seed="$sandbox/config-template.toml"
-  external="$sandbox/external.toml"
-  uid="$(id -u)"
-  helper="$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex.sh"
-  mkdir -p "$store_root"
-  printf '%s\n' 'model = "fixture"' > "$store_file"
-  printf '%s\n' 'model = "external"' > "$external"
-  # shellcheck source=../../modules/shared/scripts/lib/rebuild/codex.sh
-  source "$helper"
-
-  ln -s "$store_file" "$seed"
-  codex_evaluated_seed_is_trusted "$seed" "$store_root" "$uid" \
-    || fail "direct immutable-root seed should be trusted: $CODEX_EVALUATED_SEED_DIAGNOSTIC"
-
-  rm -f "$seed"
-  cp "$store_file" "$seed"
-  if codex_evaluated_seed_is_trusted "$seed" "$store_root" "$uid"; then
-    fail "regular seed must not be trusted"
-  fi
-  assert_contains "$CODEX_EVALUATED_SEED_DIAGNOSTIC" "not a direct symlink"
-
-  rm -f "$seed"
-  ln -s "$external" "$seed"
-  if codex_evaluated_seed_is_trusted "$seed" "$store_root" "$uid"; then
-    fail "external seed symlink must not be trusted"
-  fi
-  assert_contains "$CODEX_EVALUATED_SEED_DIAGNOSTIC" "outside the immutable store"
-
-  rm -f "$seed"
-  ln -s "$store_root/missing.toml" "$seed"
-  if codex_evaluated_seed_is_trusted "$seed" "$store_root" "$uid"; then
-    fail "dangling store seed must not be trusted"
-  fi
-  assert_contains "$CODEX_EVALUATED_SEED_DIAGNOSTIC" "not a regular store file"
-
-  rm -f "$seed"
-  ln -s "$store_file" "$store_root/chain.toml"
-  ln -s "$store_root/chain.toml" "$seed"
-  if codex_evaluated_seed_is_trusted "$seed" "$store_root" "$uid"; then
-    fail "store symlink chain must not be trusted"
-  fi
-  assert_contains "$CODEX_EVALUATED_SEED_DIAGNOSTIC" "not a regular store file"
-}
-
-test_codex_evaluated_seed_participates_in_no_change_gate() {
-  local sandbox home_dir helper
-  sandbox=$(new_sandbox)
-  home_dir="$sandbox/home"
-  helper="$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex.sh"
-  install_codex_managed_artifact_fixture "$home_dir"
-  # shellcheck source=../../modules/shared/scripts/lib/rebuild/codex.sh
-  source "$helper"
-
-  HOME="$home_dir" codex_managed_artifacts_missing \
-    && fail "complete hook/lib/seed fixture should allow the no-change path"
-  rm -f "$home_dir/.local/share/nixos-config/codex/config-template.toml"
-  HOME="$home_dir" codex_managed_artifacts_missing \
-    || fail "missing evaluated seed must force activation"
-  assert_contains "$(printf '%s\n' "${CODEX_MISSING_MANAGED_ARTIFACTS[@]}")" \
-    "$home_dir/.local/share/nixos-config/codex/config-template.toml"
-}
-
-test_codex_no_change_repair_uses_only_trusted_role_seed() {
-  local sandbox home_dir stub_bin template_source template_store live helper nix_log marker project
-  sandbox=$(new_sandbox)
-  home_dir="$sandbox/home"
-  stub_bin="$sandbox/bin"
-  template_source="$sandbox/work-seed.toml"
-  live="$home_dir/.codex/config.toml"
-  helper="$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex.sh"
-  nix_log="$sandbox/nix.log"
-  mkdir -p "$stub_bin" "$(dirname "$live")" "$home_dir/.local/share/nixos-config/codex"
-  cat > "$template_source" <<'EOF'
-model = "gpt-fixture"
-
-[shell_environment_policy.set]
-NIXOS_CONFIG_HEADLESS_SSH = "0"
-EOF
-  template_store="$(nix store add-file "$template_source")" \
-    || fail "could not materialize work-role Codex seed"
-  ln -s "$template_store" "$home_dir/.local/share/nixos-config/codex/config-template.toml"
-  cat > "$live" <<'EOF'
-model = "gpt-fixture"
-
-[shell_environment_policy.set]
-NIXOS_CONFIG_HEADLESS_SSH = "1"
-
-[projects."/preserved"]
-trust_level = "trusted"
-EOF
-  chmod 0600 "$live"
-  cat > "$stub_bin/nix" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >> "${CODEX_TEST_NIX_LOG:?}"
-while [ "$#" -gt 0 ] && [ "$1" != "--command" ]; do shift; done
-[ "$#" -gt 0 ] || exit 64
-shift
-exec "$@"
-EOF
-  chmod +x "$stub_bin/nix"
-  # shellcheck source=../../modules/shared/scripts/lib/rebuild/codex.sh
-  source "$helper"
-  log_warn() { printf '%s\n' "$*" >&2; }
-
-  HOME="$home_dir" \
-  FLAKE_PATH="$REPO_ROOT" \
-  CODEX_TEST_NIX_LOG="$nix_log" \
-  PATH="$stub_bin:$PATH" \
-    repair_codex_config_drift_no_changes
-  marker="$(python3 - "$live" <<'PY'
-import sys, tomllib
-with open(sys.argv[1], "rb") as fh:
-    print(tomllib.load(fh)["shell_environment_policy"]["set"]["NIXOS_CONFIG_HEADLESS_SSH"])
-PY
-)"
-  [ "$marker" = "0" ] || fail "work-role seed did not repair personal marker 1 -> 0"
-  project="$(python3 - "$live" <<'PY'
-import sys, tomllib
-with open(sys.argv[1], "rb") as fh:
-    print(tomllib.load(fh)["projects"]["/preserved"]["trust_level"])
-PY
-)"
-  [ "$project" = "trusted" ] || fail "role repair did not preserve user-owned project config"
-  [ -s "$nix_log" ] || fail "trusted role repair did not execute the sync path"
-
-  rm -f "$home_dir/.local/share/nixos-config/codex/config-template.toml"
-  cp "$template_source" "$home_dir/.local/share/nixos-config/codex/config-template.toml"
-  : > "$nix_log"
-  if HOME="$home_dir" \
-    FLAKE_PATH="$REPO_ROOT" \
-    CODEX_TEST_NIX_LOG="$nix_log" \
-    PATH="$stub_bin:$PATH" \
-      repair_codex_config_drift_no_changes; then
-    fail "regular evaluated seed must fail closed"
-  fi
-  [ ! -s "$nix_log" ] || fail "unsafe evaluated seed reached the sync subprocess"
 }
 
 test_parse_args_unknown_argument_shows_usage_and_fails() {
@@ -758,7 +602,7 @@ EOF
     ' 2>&1
   )
 
-  assert_contains "$output" "Codex managed artifact missing or unsafe"
+  assert_contains "$output" "Codex hook/lib artifact missing"
   assert_contains "$output" '$HOME/.codex/hooks/pinning-alert.sh'
   assert_contains "$output" "Applying changes (offline)"
   assert_not_contains "$output" "Skipping rebuild"
@@ -1179,7 +1023,7 @@ EOF
     ' 2>&1
   )
 
-  assert_contains "$output" "Codex managed artifact missing or unsafe"
+  assert_contains "$output" "Codex hook/lib artifact missing"
   assert_contains "$output" '$HOME/.codex/hooks/pinning-alert.sh'
   assert_contains "$output" "Applying changes"
   assert_not_contains "$output" "Skipping rebuild"

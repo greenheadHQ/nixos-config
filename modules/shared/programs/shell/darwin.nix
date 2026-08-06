@@ -72,6 +72,15 @@ let
       hostType
       ;
   };
+  # Keep the non-interactive/remote signal set identical between .zshenv and
+  # the interactive ssh() compatibility path. The launcher marker decides
+  # whether .zshenv may change PATH; the signal set decides whether a shell is
+  # headless enough to require bounded MiniPC authentication.
+  headlessContextPredicate = ''
+    { [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] \
+      || [ -n "''${CI:-}" ] || [ -n "''${CLAUDECODE:-}" ] \
+      || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; }
+  '';
 in
 {
   # macOS용 스크립트 설치
@@ -134,12 +143,10 @@ in
   programs.zsh.envExtra = lib.mkAfter (
     lib.optionalString headlessDispatcher.enabled ''
       if [[ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" == "1" ]] \
-        && { [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] \
-          || [ -n "''${CI:-}" ] || [ -n "''${CLAUDECODE:-}" ] \
-          || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; }; then
+        && ${headlessContextPredicate}; then
         case ":$PATH:" in
-          *":${headlessDispatcher.binPath}:"*) ;;
-          *) export PATH="${headlessDispatcher.binPath}:$PATH" ;;
+          *":${headlessDispatcher.stableBinPath}:"*) ;;
+          *) export PATH="${headlessDispatcher.stableBinPath}:$PATH" ;;
         esac
       fi
     ''
@@ -198,14 +205,11 @@ in
     (lib.optionalString (hostType == "personal") ''
       ssh() {
         local _cfg _host _ident _cpath
-        # A launcher-marked non-interactive shell resolves `command ssh` to the
-        # private dispatcher from .zshenv. Do not duplicate option/deadline logic
-        # in this interactive helper.
-        if [[ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" == "1" ]] \
-          && { [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] \
-            || [ -n "''${CI:-}" ] || [ -n "''${CLAUDECODE:-}" ] \
-            || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; }; then
-          command ssh "$@"
+        # Preserve the bounded path that remote/automation zsh already had on
+        # main. Launcher children also reach this same dispatcher via .zshenv;
+        # interactive Ghostty has none of these signals and stays on raw SSH.
+        if ${headlessContextPredicate}; then
+          ${headlessDispatcher.stableBinPath}/ssh "$@"
           return $?
         fi
         _cfg=$(command ssh -G "$@" 2>/dev/null)

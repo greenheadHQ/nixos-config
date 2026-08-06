@@ -10,37 +10,6 @@ let
   homeDir = config.home.homeDirectory;
   # 1Password macOS SSH agent socket (단일 소스: constants.onePassword.agentSocketRelPath)
   onePasswordAgentSock = "${homeDir}/${constants.onePassword.agentSocketRelPath}";
-  sshSettings = {
-    "*" = {
-      AddKeysToAgent = "yes";
-      IdentityAgent = "\"${onePasswordAgentSock}\"";
-    };
-  }
-  // lib.optionalAttrs (hostType == "personal") {
-    "minipc" = {
-      HostName = constants.network.minipcTailscaleIP;
-      User = "greenhead";
-      IdentityFile = "${homeDir}/.ssh/mac-ssh.pub";
-      IdentitiesOnly = "yes";
-      ControlMaster = "auto";
-      ControlPath = "~/.ssh/cm-%h-%p-%r";
-      ControlPersist = "600";
-    };
-    "minipc-emergency" = {
-      HostName = constants.network.minipcTailscaleIP;
-      User = "greenhead";
-      IdentityFile = "${homeDir}/.ssh/emergency_ed25519";
-      IdentityAgent = "none";
-      IdentitiesOnly = "yes";
-    };
-    "minipc-headless" = {
-      HostName = constants.network.minipcTailscaleIP;
-      User = "greenhead";
-      IdentityFile = "${homeDir}/${constants.onePassword.headlessKeyRelPath}";
-      IdentityAgent = "none";
-      IdentitiesOnly = "yes";
-    };
-  };
   headlessDispatcher = import ./headless-dispatcher.nix {
     inherit
       config
@@ -58,9 +27,47 @@ in
     enable = true;
     # home-manager의 기본 SSH 설정 비활성화
     enableDefaultConfig = false;
-    # Launcher dispatcher scope is intentionally limited to the two declared
-    # MiniPC aliases and the exact Tailscale host; other SSH destinations stay raw.
-    settings = sshSettings;
+    settings = {
+      "*" = {
+        AddKeysToAgent = "yes";
+        # 1Password SSH agent (group container socket — 공백 포함 경로라 quote 필요)
+        IdentityAgent = "\"${onePasswordAgentSock}\"";
+      };
+    }
+    // lib.optionalAttrs (hostType == "personal") {
+      # MiniPC는 Tailscale IP 전용 — work Mac(Tailnet 미소속)에서는 접속 불가
+      "minipc" = {
+        HostName = constants.network.minipcTailscaleIP;
+        User = "greenhead";
+        # mac-ssh 공개키로 고정 + IdentitiesOnly — agent의 mac-ssh 키만 제시한다.
+        # 구 id_rsa/id_ecdsa 등 무차별 키 시도(서버 로그 오염·MaxAuthTries lockout 위험)를 차단한다.
+        IdentityFile = "${homeDir}/.ssh/mac-ssh.pub";
+        IdentitiesOnly = "yes";
+        ControlMaster = "auto";
+        ControlPath = "~/.ssh/cm-%h-%p-%r";
+        # ControlPersist 600 유지 — #710 analyzing-da-sessions의 ControlMaster 다중화(K=8 worker pool)가 의존.
+        # 영구(yes)는 무인 파이프 호출에서 master가 stdout을 점유해 hang을 유발하므로, 600으로 master 자동 종료를 보장한다.
+        ControlPersist = "600";
+      };
+      # 1Password 장애(데스크탑 quit/Touch ID 고장/계정 잠금) fallback (PRD #780 Phase 2a, FR-9)
+      "minipc-emergency" = {
+        HostName = constants.network.minipcTailscaleIP;
+        User = "greenhead";
+        IdentityFile = "${homeDir}/.ssh/emergency_ed25519";
+        IdentityAgent = "none"; # 1Password agent 우회 — emergency key 직접 사용
+        IdentitiesOnly = "yes"; # emergency_ed25519만 제시
+      };
+      # 무인/원격 세션 전용 (#1094 C안) — 1Password를 우회하는 headless key로 직접 접속.
+      # 승인 팝업이 없어 원격/무인에서 hang하지 않는다. ssh() 무인 라우팅(shell/darwin.nix)이
+      # 무인 컨텍스트에서 이 경로(IdentityAgent none + headless IdentityFile)를 사용한다.
+      "minipc-headless" = {
+        HostName = constants.network.minipcTailscaleIP;
+        User = "greenhead";
+        IdentityFile = "${homeDir}/${constants.onePassword.headlessKeyRelPath}";
+        IdentityAgent = "none"; # 1Password agent 우회 — headless key 직접 사용
+        IdentitiesOnly = "yes"; # headless key만 제시
+      };
+    };
   };
 
   # 1Password SSH agent 키 노출 설정 (PRD #780 Phase 2a, #872 후속 P4: SSH 키 vault 분리)
@@ -77,8 +84,8 @@ in
   # IdentitiesOnly=yes와 함께 agent의 mac-ssh 키만 제시하게 한다(무차별 키 시도 차단).
   home.file.".ssh/mac-ssh.pub".text = "${constants.sshDeviceKeys.macSsh}\n";
 
-  # Stable inspection path only; package/bin is intentionally absent from
-  # home.packages/sessionPath so interactive Ghostty keeps /usr/bin/ssh.
+  # Launcher 전용 stable path. global package/session PATH에는 넣지 않아
+  # interactive Ghostty와 일반 SSH가 계속 /usr/bin/ssh를 사용한다.
   home.file.".local/share/nixos-config/headless-ssh" = lib.mkIf headlessDispatcher.enabled {
     source = headlessDispatcher.package;
   };

@@ -15,7 +15,6 @@
   pkgs,
   lib,
   nixosConfigPath,
-  hostType,
   ...
 }:
 
@@ -24,20 +23,8 @@ let
   # store로 복사되므로, worktree에서 `nrs --flake .` 로 빌드해도 그 worktree의 최신
   # 파일이 seed로 반영된다. `nixosConfigPath`(=항상 메인 체크아웃 경로) 기반 문자열을
   # 쓰면 worktree 변경이 누락된다.
-  codexConfigBasePath =
+  codexConfigSeedPath =
     if pkgs.stdenv.isDarwin then ./files/config.darwin.toml else ./files/config.toml;
-  headlessSshMarker = if pkgs.stdenv.isDarwin && hostType == "personal" then "1" else "0";
-  # Per-host immutable seed: Codex Desktop/app-server injects this marker into
-  # tool shells; .zshenv independently decides whether the private ssh path is
-  # appropriate. Static source templates remain platform fixtures only.
-  codexConfigSeedPath = pkgs.writeText "codex-config-${hostType}.toml" (
-    builtins.readFile codexConfigBasePath
-    + ''
-
-      [shell_environment_policy.set]
-      NIXOS_CONFIG_HEADLESS_SSH = "${headlessSshMarker}"
-    ''
-  );
   # activation에서 repo-managed 키와 사용자 소유 섹션을 merge하는 Python 스크립트.
   # 동일하게 store path로 copy되므로 현 flake 기준으로 동작한다.
   codexSyncScript = ./files/sync-codex-config.py;
@@ -93,10 +80,6 @@ in
   home.file = {
     # 글로벌 AGENTS.md - Claude의 CLAUDE.md와 동일 소스 공유
     ".codex/AGENTS.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
-
-    # No-change repair and runtime verification must consume the evaluated
-    # host-role seed, not guess from the platform-only repository template.
-    ".local/share/nixos-config/codex/config-template.toml".source = codexConfigSeedPath;
 
     # run-da Arbiter selective consistency harness. run-da 스킬이 Codex에도 노출되므로
     # Claude와 동일 source를 Codex scope에도 미러링하여 `~/.codex/scripts/fleiss-kappa.py`를

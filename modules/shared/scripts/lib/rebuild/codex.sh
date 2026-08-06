@@ -38,68 +38,9 @@ CODEX_MANAGED_LIB_ARTIFACTS=(
     lib/pinning-patterns.sh
 )
 CODEX_MISSING_MANAGED_ARTIFACTS=()
-CODEX_EVALUATED_SEED_REL_PATH=".local/share/nixos-config/codex/config-template.toml"
-CODEX_EVALUATED_SEED_DIAGNOSTIC=""
-
-# The per-host seed is an authority boundary: activation creates a direct
-# symlink to an immutable Nix-store regular file. A regular file, an external
-# symlink, a symlink chain, or a dangling store target must never become the
-# repair/verifier oracle. Optional root/uid parameters are fixture seams only;
-# production callers use the /nix/store + root-owned defaults.
-codex_evaluated_seed_is_trusted() {
-    local seed_path="$1"
-    local store_root="${2:-/nix/store}"
-    local expected_uid="${3:-0}"
-    local target target_uid
-    CODEX_EVALUATED_SEED_DIAGNOSTIC=""
-
-    if [[ ! -L "$seed_path" ]]; then
-        if [[ -e "$seed_path" ]]; then
-            CODEX_EVALUATED_SEED_DIAGNOSTIC="seed is not a direct symlink"
-        else
-            CODEX_EVALUATED_SEED_DIAGNOSTIC="seed is missing or dangling"
-        fi
-        return 1
-    fi
-    target=$(readlink "$seed_path") || {
-        CODEX_EVALUATED_SEED_DIAGNOSTIC="seed readlink failed"
-        return 1
-    }
-    case "$target" in
-        "$store_root"/*) ;;
-        *)
-            CODEX_EVALUATED_SEED_DIAGNOSTIC="seed target is outside the immutable store"
-            return 1
-            ;;
-    esac
-    [[ "$target" != *"/../"* && "$target" != */.. && "$target" != *"/./"* ]] || {
-        CODEX_EVALUATED_SEED_DIAGNOSTIC="seed target is not canonical"
-        return 1
-    }
-    [[ -f "$target" && ! -L "$target" ]] || {
-        CODEX_EVALUATED_SEED_DIAGNOSTIC="seed target is not a regular store file"
-        return 1
-    }
-    if target_uid=$(stat -f '%u' "$target" 2>/dev/null); then
-        :
-    elif target_uid=$(stat -c '%u' "$target" 2>/dev/null); then
-        :
-    else
-        CODEX_EVALUATED_SEED_DIAGNOSTIC="seed target ownership is unreadable"
-        return 1
-    fi
-    [[ "$target_uid" = "$expected_uid" ]] || {
-        CODEX_EVALUATED_SEED_DIAGNOSTIC="seed target owner is not the expected immutable-store owner"
-        return 1
-    }
-    return 0
-}
 
 codex_managed_artifacts_missing() {
     local codex_home="${1:-$HOME/.codex}"
-    local seed_path="${2:-$HOME/$CODEX_EVALUATED_SEED_REL_PATH}"
-    local store_root="${3:-/nix/store}"
-    local expected_uid="${4:-0}"
     local rel
     CODEX_MISSING_MANAGED_ARTIFACTS=()
 
@@ -108,18 +49,14 @@ codex_managed_artifacts_missing() {
         CODEX_MISSING_MANAGED_ARTIFACTS+=("$codex_home/$rel")
     done
 
-    if ! codex_evaluated_seed_is_trusted "$seed_path" "$store_root" "$expected_uid"; then
-        CODEX_MISSING_MANAGED_ARTIFACTS+=("$seed_path")
-    fi
-
     [[ "${#CODEX_MISSING_MANAGED_ARTIFACTS[@]}" -gt 0 ]]
 }
 
 # Call only after codex_managed_artifacts_missing has populated
 # CODEX_MISSING_MANAGED_ARTIFACTS for the current filesystem state.
 codex_log_managed_artifacts_missing() {
-    log_warn "⚠️  Codex managed artifact missing or unsafe; running activation instead of no-change skip."
-    log_warn "   Cause: a Nix-managed hook/lib file is absent or the evaluated per-host seed is not a direct immutable-store symlink."
+    log_warn "⚠️  Codex hook/lib artifact missing; running activation instead of no-change skip."
+    log_warn "   Cause: one or more Nix-managed ~/.codex hook/lib files are absent."
     log_warn "   Action: activation will recreate them now; if they remain missing, run 'nrs --force' and then './scripts/ai/verify-ai-compat.sh'."
 
     local path label
@@ -140,20 +77,20 @@ repair_codex_config_drift_no_changes() {
         log_warn "⚠️  FLAKE_PATH 미설정 — codex config drift 복구 스킵"
         return 0
     fi
-    local template="$HOME/.local/share/nixos-config/codex/config-template.toml"
+    local template
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        template="$FLAKE_PATH/modules/shared/programs/codex/files/config.darwin.toml"
+    else
+        template="$FLAKE_PATH/modules/shared/programs/codex/files/config.toml"
+    fi
     local script="$FLAKE_PATH/modules/shared/programs/codex/files/sync-codex-config.py"
 
     if ! command -v nix >/dev/null 2>&1; then
         log_warn "⚠️  nix 명령 미가용 — codex config drift 복구 스킵"
         return 0
     fi
-    if ! codex_evaluated_seed_is_trusted "$template"; then
-        log_warn "⚠️  evaluated per-host Codex seed 신뢰 경계 위반 — drift 복구 중단 ($CODEX_EVALUATED_SEED_DIAGNOSTIC)"
-        log_warn "   Action: run activation (nrs --force); regular/external/dangling seed는 role oracle로 사용하지 않습니다."
-        return 1
-    fi
-    if [[ ! -f "$script" ]]; then
-        log_warn "⚠️  codex sync script 부재 — drift 복구 스킵 ($script)"
+    if [[ ! -f "$template" || ! -f "$script" ]]; then
+        log_warn "⚠️  codex template/script 부재 — drift 복구 스킵 ($template, $script)"
         return 0
     fi
 

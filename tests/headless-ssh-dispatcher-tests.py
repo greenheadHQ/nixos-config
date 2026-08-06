@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -13,12 +14,23 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 
 REPO = Path(__file__).resolve().parents[1]
 CORE = REPO / "modules/darwin/programs/ssh/files/headless-ssh-dispatcher.py"
 FAKE = REPO / "tests/fixtures/headless-ssh/fake-ssh.py"
 MANIFEST = REPO / "tests/fixtures/headless-ssh/compatible-manifest.json"
+
+
+def load_dispatcher_module():
+    spec = importlib.util.spec_from_file_location("headless_ssh_dispatcher", CORE)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("dispatcher module could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class DispatcherFixture(unittest.TestCase):
@@ -218,6 +230,50 @@ class CoreContractTests(DispatcherFixture):
         self.assertEqual(result.returncode, 124)
         self.assertEqual(result.stderr, "remote-124")
 
+    def test_signal_received_during_spawn_is_forwarded_to_the_new_child(self) -> None:
+        dispatcher = load_dispatcher_module()
+        delivered: list[int] = []
+
+        class SignalDuringSpawn:
+            def __init__(self, _command: list[str]):
+                self.returncode: int | None = None
+                os.kill(os.getpid(), signal.SIGTERM)
+
+            def poll(self) -> int | None:
+                return self.returncode
+
+            def send_signal(self, signum: int) -> None:
+                delivered.append(signum)
+                self.returncode = -signum
+
+            def wait(self) -> int:
+                return self.returncode if self.returncode is not None else 0
+
+        with mock.patch.object(dispatcher.subprocess, "Popen", SignalDuringSpawn):
+            result = dispatcher.run_data(["unused"])
+
+        self.assertEqual(delivered, [signal.SIGTERM])
+        self.assertEqual(result, -signal.SIGTERM)
+
+    def test_sigkill_exit_is_reproduced_without_changing_its_disposition(self) -> None:
+        dispatcher = load_dispatcher_module()
+        parsed = mock.Mock(ssh_argv=[])
+        contract = mock.Mock()
+
+        with (
+            mock.patch.object(dispatcher, "parser") as parser_mock,
+            mock.patch.object(dispatcher.Contract, "from_args", return_value=contract),
+            mock.patch.object(dispatcher, "dispatch", return_value=-signal.SIGKILL),
+            mock.patch.object(dispatcher.signal, "signal") as disposition,
+            mock.patch.object(dispatcher.os, "kill") as self_kill,
+        ):
+            parser_mock.return_value.parse_args.return_value = parsed
+            result = dispatcher.main()
+
+        disposition.assert_not_called()
+        self_kill.assert_called_once_with(os.getpid(), signal.SIGKILL)
+        self.assertEqual(result, -signal.SIGKILL)
+
 
 class ScopeTests(DispatcherFixture):
     def test_emergency_and_other_host_are_raw_exact_once(self) -> None:
@@ -280,6 +336,25 @@ class ScopeTests(DispatcherFixture):
         self.assertIn(str(self.key), auth["argv"])
         self.assertIn(f"userknownhostsfile={known_hosts}", auth["argv"])
         self.assertIn("stricthostkeychecking=yes", auth["argv"])
+
+    def test_custom_config_alias_to_minipc_is_managed_and_bounded(self) -> None:
+        custom = self.root / "custom-alias.conf"
+        custom.write_text(
+            "Host lab-box\n  HostName 100.64.0.2\n  User greenhead\n",
+            encoding="utf-8",
+        )
+        result = self.run_dispatch("-F", str(custom), "lab-box", "true")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.events()[:2], ["config", "auth"])
+        data = next(call for call in self.calls() if call["event"] == "data")
+        self.assertIn("lab-box", data["argv"])
+
+    def test_explicit_hostname_retarget_to_minipc_is_managed(self) -> None:
+        result = self.run_dispatch(
+            "-o", "HostName=100.64.0.2", "lab-box", "true"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("auth", self.events())
 
     def test_effective_retarget_to_other_host_returns_to_raw_path(self) -> None:
         self.write_scenario(hostname="example.test", user="alice")

@@ -6,9 +6,6 @@
 
 STATE_DIR="${STATE_DIR:-$HOME/.local/state/claude-rc}"
 VERSIONS_DIR="${VERSIONS_DIR:-$HOME/.local/share/claude/versions}"
-CLAUDE_RC_BRIDGE_PATH="${CLAUDE_RC_BRIDGE_PATH:-$PATH}"
-CLAUDE_RC_HEADLESS_SSH_MARKER="${CLAUDE_RC_HEADLESS_SSH_MARKER:-0}"
-CLAUDE_RC_ENVIRONMENT_GENERATION="${CLAUDE_RC_ENVIRONMENT_GENERATION:-unmanaged}"
 INSTANCES_FILE="$STATE_DIR/instances.json"
 INSTANCES_LOCK="$STATE_DIR/instances.json.lock"
 LOG_MAX_BYTES=$((5 * 1024 * 1024))
@@ -94,107 +91,6 @@ lock_path_for_path() {
 log_path_for_path() {
     local path="$1"
     printf '%s/server.log\n' "$(instance_dir_for_path "$path")"
-}
-
-environment_attestation_path_for_path() {
-    local path="$1"
-    printf '%s/environment-attestation.json\n' "$(instance_dir_for_path "$path")"
-}
-
-pid_process_start_identity() {
-    local pid="$1"
-    case "$pid" in
-        '' | *[!0-9]*) return 1 ;;
-    esac
-    claude-rc-pid-argv --start-identity "$pid"
-}
-
-write_environment_attestation() {
-    local path="$1" pid="$2" attestation tmp start
-    [ "$CLAUDE_RC_ENVIRONMENT_GENERATION" != "unmanaged" ] || return 0
-    start=$(pid_process_start_identity "$pid") || return 1
-    attestation=$(environment_attestation_path_for_path "$path") || return 1
-    [ ! -L "$attestation" ] || return 1
-    tmp=$(mktemp "${attestation}.new.XXXXXX") || return 1
-    chmod 0600 "$tmp" || { rm -f "$tmp"; return 1; }
-    if ! jq -n -c \
-        --argjson pid "$pid" \
-        --arg processStartIdentity "$start" \
-        --arg environmentGeneration "$CLAUDE_RC_ENVIRONMENT_GENERATION" \
-        '{schemaVersion: 1, pid: $pid, processStartIdentity: $processStartIdentity,
-          environmentGeneration: $environmentGeneration}' >"$tmp"; then
-        rm -f "$tmp"
-        return 1
-    fi
-    mv -f "$tmp" "$attestation"
-}
-
-environment_attestation_snapshot_for_cleanup() {
-    local path="$1" pid="$2" attestation current_start
-    if [ "$CLAUDE_RC_ENVIRONMENT_GENERATION" = "unmanaged" ]; then
-        printf 'unmanaged\n'
-        return 0
-    fi
-    attestation=$(environment_attestation_path_for_path "$path") || return 1
-    [ -f "$attestation" ] && [ ! -L "$attestation" ] || return 1
-    current_start=$(pid_process_start_identity "$pid") || return 1
-    jq -cer \
-        --argjson pid "$pid" \
-        --arg processStartIdentity "$current_start" '
-          if type == "object"
-             and (keys | sort) == ["environmentGeneration", "pid", "processStartIdentity", "schemaVersion"]
-             and .schemaVersion == 1
-             and .pid == $pid
-             and .processStartIdentity == $processStartIdentity
-             and (.environmentGeneration | type) == "string"
-             and (.environmentGeneration | length) > 0
-          then .
-          else error("invalid environment attestation")
-          end
-        ' "$attestation"
-}
-
-read_environment_attestation() {
-    local path="$1" pid="$2" snapshot
-    snapshot=$(environment_attestation_snapshot_for_cleanup "$path" "$pid") || return 1
-    if [ "$snapshot" = "unmanaged" ]; then
-        printf 'unmanaged\n'
-        return 0
-    fi
-    jq -er '.environmentGeneration' <<<"$snapshot"
-}
-
-running_environment_generation_for_path() {
-    local path="$1" pid="$2" generation
-    if generation=$(read_environment_attestation "$path" "$pid" 2>/dev/null); then
-        printf '%s\n' "$generation"
-    else
-        printf 'unknown\n'
-    fi
-}
-
-clear_environment_attestation() {
-    local path="$1" expected_snapshot="$2" attestation current_snapshot
-    if [ "$CLAUDE_RC_ENVIRONMENT_GENERATION" = "unmanaged" ]; then
-        [ "$expected_snapshot" = "unmanaged" ]
-        return
-    fi
-    [ "$expected_snapshot" != "unmanaged" ] || return 1
-    attestation=$(environment_attestation_path_for_path "$path") || return 1
-    [ -f "$attestation" ] && [ ! -L "$attestation" ] || return 1
-    current_snapshot=$(jq -cer '
-      if type == "object"
-         and (keys | sort) == ["environmentGeneration", "pid", "processStartIdentity", "schemaVersion"]
-         and .schemaVersion == 1
-         and (.pid | type) == "number"
-         and (.processStartIdentity | type) == "string"
-         and (.environmentGeneration | type) == "string"
-      then .
-      else error("invalid environment attestation")
-      end
-    ' "$attestation") || return 1
-    [ "$current_snapshot" = "$expected_snapshot" ] || return 1
-    rm -f "$attestation"
 }
 
 ensure_instance_dir() {
@@ -769,7 +665,6 @@ spawn_guarded_server_launch() {
     local instance_dir lock_path log_path launch_pid_file launch_group_file guard_identity_file
     local spawned_guard_pid spawned_launcher_pid spawned_group_pid attempt
     local guardian_parent_pid
-    local launch_group_bin flock_bin
     local -a args
     printf -v "$result_guard_pid_var" '%s' ""
     printf -v "$result_launcher_pid_var" '%s' ""
@@ -780,18 +675,10 @@ spawn_guarded_server_launch() {
     mkdir -p "$instance_dir" || return 1
     rotate_log_if_needed "$log_path" || return 1
     # Callers make the launcher contract explicit: maint passes its exact
-    # managed entrypoint, while the interactive wrapper resolves an absolute
-    # `claude` entrypoint from CLAUDE_RC_BRIDGE_PATH. The stable symlink still
-    # preserves self-update behavior without trusting ambient PATH.
+    # managed entrypoint, while the interactive wrapper passes literal `claude`
+    # to preserve PATH-based self-update behavior even if ambient CLAUDE_BIN is
+    # set for an unrelated command.
     [ -n "$claude_bin" ] || return 1
-    [ -n "$CLAUDE_RC_BRIDGE_PATH" ] || return 1
-    case "$CLAUDE_RC_HEADLESS_SSH_MARKER" in
-        0 | 1) ;;
-        *) return 1 ;;
-    esac
-    [ -n "$CLAUDE_RC_ENVIRONMENT_GENERATION" ] || return 1
-    launch_group_bin=$(command -v claude-rc-launch-group) || return 1
-    flock_bin=$(command -v flock) || return 1
     args=("$claude_bin" remote-control --spawn "$spawn" --permission-mode "$permission_mode")
     if [ -n "$capacity" ]; then
         args+=(--capacity "$capacity")
@@ -916,11 +803,7 @@ spawn_guarded_server_launch() {
             exec </dev/null >>"$log_path" 2>&1
             exec env -u CREDENTIALS_DIRECTORY -u PUSHOVER_CRED_FILE -u PUSHOVER_TOKEN -u PUSHOVER_USER -u SERVICE_LIB \
                 -u CLAUDE_RC_DRIFT_POLICY -u CLAUDE_RC_DRIFT_APPROVAL_JSON \
-                -u CLAUDE_RC_BRIDGE_PATH -u CLAUDE_RC_HEADLESS_SSH_MARKER -u CLAUDE_RC_ENVIRONMENT_GENERATION \
-                PATH="$CLAUDE_RC_BRIDGE_PATH" \
-                NIXOS_CONFIG_HEADLESS_SSH="$CLAUDE_RC_HEADLESS_SSH_MARKER" \
-                NIXOS_CONFIG_HEADLESS_SSH_GENERATION="$CLAUDE_RC_ENVIRONMENT_GENERATION" \
-                "$launch_group_bin" "$launch_pid_file" "$flock_bin" -n "$lock_path" "${args[@]}"
+                claude-rc-launch-group "$launch_pid_file" flock -n "$lock_path" "${args[@]}"
         ) &
         owned_group_pid=$!
         printf '%s\n' "$owned_group_pid" > "$launch_group_file"
@@ -1246,29 +1129,26 @@ wait_until_instance_lock_free() {
 }
 
 stop_verified_started_server() {
-    local path="$1" pid="$2" expected_version="$3" current_version lock_path attestation_snapshot
+    local path="$1" pid="$2" expected_version="$3" current_version lock_path
     case "$pid" in
         ''|*[!0-9]*) return 1 ;;
     esac
     pid_is_managed_server_for_path "$pid" "$path" || return 1
     current_version=$(pid_exe_version "$pid" 2>/dev/null) || return 1
     [ "$current_version" = "$expected_version" ] || return 1
-    attestation_snapshot=$(environment_attestation_snapshot_for_cleanup "$path" "$pid") || return 1
     # Re-run the full launcher/lock predicate immediately before signaling so a
     # recycled PID or a same-cwd decoy cannot inherit an earlier verification.
     pid_is_managed_server_for_path "$pid" "$path" || return 1
     kill -TERM "$pid" 2>/dev/null || return 1
     wait_until_server_stops "$pid" || return 1
     lock_path=$(lock_path_for_path "$path") || return 1
-    wait_until_instance_lock_free "$lock_path" || return 1
-    clear_environment_attestation "$path" "$attestation_snapshot"
+    wait_until_instance_lock_free "$lock_path"
 }
 
 launch_and_verify_server() {
     local path="$1" spawn="$2" capacity="$3" permission_mode="$4" launcher="$5"
     local result_status_var="$6" result_pid_var="$7" result_version_var="$8"
     local lock_path launch_guard_pid launcher_pid launch_group_pid started_identity resolved_pid resolved_version
-    local attestation_snapshot
     printf -v "$result_status_var" '%s' "launch-failed"
     printf -v "$result_pid_var" '%s' ""
     printf -v "$result_version_var" '%s' ""
@@ -1282,27 +1162,8 @@ launch_and_verify_server() {
     sleep "$SERVER_START_SETTLE_SECONDS"
     started_identity=$(wait_for_started_identity "$path" "$launcher_pid") || started_identity=""
     if [ -n "$started_identity" ]; then
+        handoff_launch_guard "$launch_guard_pid" "$launch_group_pid" || return 0
         IFS=$'\t' read -r resolved_pid resolved_version <<<"$started_identity"
-        if ! write_environment_attestation "$path" "$resolved_pid"; then
-            printf -v "$result_status_var" '%s' "environment-attestation-failed"
-            if cancel_launch_guard "$launch_guard_pid" "$launch_group_pid" \
-                && wait_until_instance_lock_free "$lock_path"; then
-                printf -v "$result_status_var" '%s' "environment-attestation-failed-cleaned"
-            fi
-            return 0
-        fi
-        if ! attestation_snapshot=$(environment_attestation_snapshot_for_cleanup "$path" "$resolved_pid"); then
-            printf -v "$result_status_var" '%s' "environment-attestation-failed"
-            if cancel_launch_guard "$launch_guard_pid" "$launch_group_pid" \
-                && wait_until_instance_lock_free "$lock_path"; then
-                printf -v "$result_status_var" '%s' "environment-attestation-failed-cleaned"
-            fi
-            return 0
-        fi
-        if ! handoff_launch_guard "$launch_guard_pid" "$launch_group_pid"; then
-            clear_environment_attestation "$path" "$attestation_snapshot" || true
-            return 0
-        fi
         printf -v "$result_status_var" '%s' "started"
         printf -v "$result_pid_var" '%s' "$resolved_pid"
         printf -v "$result_version_var" '%s' "$resolved_version"

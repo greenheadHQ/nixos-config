@@ -12,9 +12,9 @@ let
   flake = builtins.getFlake (toString ./..);
   nixpkgsLib = flake.inputs.nixpkgs.lib;
   constants = import ../libraries/constants.nix;
+
   # NixOS config (greenhead-minipc)
   nixosCfg = flake.nixosConfigurations.greenhead-minipc.config;
-  nixosHm = nixosCfg.home-manager.users.greenhead;
 
   # Darwin intent 검증은 여기서 직접 수행한다.
   # 범위: evaluation-safe value-level 설정만 검증.
@@ -741,57 +741,47 @@ let
             );
         }
         {
-          # #1094 launcher binding 회귀 핀. 인증 deadline은 whole-command `timeout ssh`가 아니라
-          # private dispatcher 안의 auth phase에만 적용한다. 따라서 eval은 shell 구현 문자열이
-          # 아니라 marker + non-TTY gate + private package PATH + Claude launchd environment를 잠근다.
-          name = "Test D19 ${hostName}: launcher marker가 private dispatcher와 Claude child environment에 exact 배선되어야 함";
+          # launcher-scoped D 계약(#1094): stable private PATH는 personal Darwin의
+          # marked non-TTY child와 Claude launchd에만 배선한다. 전역 sessionPath에
+          # 넣지 않아 interactive Ghostty/일반 SSH의 binary 의미를 보존한다.
+          name = "Test D19 ${hostName}: headless SSH dispatcher는 personal launcher child에만 배선되어야 함";
           cond =
             hasHost
             && (
               let
-                zshEnv = builtins.unsafeDiscardStringContext hm.programs.zsh.envExtra;
+                stableRoot = "${hm.home.homeDirectory}/.local/share/nixos-config/headless-ssh";
+                stableBin = "${stableRoot}/bin";
+                zshEnv = hm.programs.zsh.envExtra;
                 agentEnv = (claudeRcAgent cfg).config.EnvironmentVariables;
-                agentPath = builtins.unsafeDiscardStringContext agentEnv.PATH;
                 hasDispatcher = builtins.hasAttr ".local/share/nixos-config/headless-ssh" hm.home.file;
-                dispatcherRoot =
-                  if hasDispatcher then
-                    builtins.unsafeDiscardStringContext (
-                      toString hm.home.file.".local/share/nixos-config/headless-ssh".source
-                    )
-                  else
-                    "";
-                dispatcherBin = "${dispatcherRoot}/bin";
               in
               if isPersonalHost then
                 hasDispatcher
                 && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv
-                && nixpkgsLib.hasInfix "[ ! -t 0 ]" zshEnv
-                && nixpkgsLib.hasInfix dispatcherBin zshEnv
-                && !(builtins.elem dispatcherBin hm.home.sessionPath)
-                && agentEnv.CLAUDE_RC_HEADLESS_SSH_MARKER == "1"
-                && agentEnv.CLAUDE_RC_BRIDGE_PATH == agentEnv.PATH
-                && nixpkgsLib.hasPrefix "${dispatcherBin}:" agentPath
-                && agentEnv.CLAUDE_RC_ENVIRONMENT_GENERATION != ""
+                && nixpkgsLib.hasInfix stableBin zshEnv
+                && !(builtins.elem stableBin hm.home.sessionPath)
+                && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == "1"
+                && nixpkgsLib.hasPrefix "${stableBin}:" agentEnv.PATH
               else
                 !hasDispatcher
-                && !(nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv)
-                && agentEnv.CLAUDE_RC_HEADLESS_SSH_MARKER == "0"
-                && agentEnv.CLAUDE_RC_BRIDGE_PATH == agentEnv.PATH
-                && !(nixpkgsLib.hasInfix "headless-ssh-dispatcher" agentPath)
+                && !nixpkgsLib.hasInfix stableBin zshEnv
+                && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == ""
+                && !nixpkgsLib.hasInfix stableBin agentEnv.PATH
             );
         }
         {
-          # C 정책은 선언된 alias에서만 IdentityAgent=none을 사용하고, launcher child는 PATH의
-          # dispatcher로 들어간다. interactive Ghostty/global PATH와 ssh() 전체 command에는
-          # headless key override나 짧은 timeout을 주입하지 않는다.
-          name = "Test D20 ${hostName}: C alias·Codex role seed·interactive raw SSH 경계가 exact여야 함";
+          # C + D 계약: headless alias는 1Password agent를 사용하지 않고, Codex
+          # child marker와 personal dispatcher가 함께 존재한다. 기존의 전체 remote
+          # command timeout 구현은 다시 들어오면 안 된다(장시간 명령 DX 보존).
+          name = "Test D20 ${hostName}: C key alias와 Claude/Codex auth-phase dispatcher 계약";
           cond =
             hasHost
             && (
               let
                 zshInit = hm.programs.zsh.initContent;
+                stableBin = "${hm.home.homeDirectory}/.local/share/nixos-config/headless-ssh/bin";
                 sshSettings = hm.programs.ssh.settings;
-                codexSeed = toString hm.home.file.".local/share/nixos-config/codex/config-template.toml".source;
+                codexDarwinConfig = builtins.readFile ../modules/shared/programs/codex/files/config.darwin.toml;
               in
               if isPersonalHost then
                 (sshSettings ? "minipc-headless")
@@ -800,12 +790,13 @@ let
                   (sshSettings."minipc-headless".data.IdentityFile or "")
                   == "${hm.home.homeDirectory}/${constants.onePassword.headlessKeyRelPath}"
                 )
-                && nixpkgsLib.hasSuffix "-codex-config-personal.toml" codexSeed
-                && !(nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\"" zshInit)
-                && !(nixpkgsLib.hasInfix "IdentityAgent=none" zshInit)
-                && !(nixpkgsLib.hasInfix constants.onePassword.headlessKeyRelPath zshInit)
+                && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH = \"1\"" codexDarwinConfig
+                && nixpkgsLib.hasInfix "${stableBin}/ssh" zshInit
+                && nixpkgsLib.hasInfix "SSH_CONNECTION" zshInit
+                && !nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\" ssh" zshInit
+                && !nixpkgsLib.hasInfix "timeout \"$_hdl_deadline\" ssh" zshInit
               else
-                !(sshSettings ? "minipc-headless") && nixpkgsLib.hasSuffix "-codex-config-work.toml" codexSeed
+                true
             );
         }
         {
@@ -1355,12 +1346,6 @@ let
       cond =
         nixosCfg.homeserver.claudeRemoteControl.enable
         && nixosCfg.systemd.services.claude-rc-ensure.environment.CLAUDE_RC_DRIFT_POLICY == "automatic";
-    }
-    {
-      name = "Test D34: NixOS Codex evaluated seed는 server role(marker 0) derivation이어야 함";
-      cond = nixpkgsLib.hasSuffix "-codex-config-server.toml" (
-        toString nixosHm.home.file.".local/share/nixos-config/codex/config-template.toml".source
-      );
     }
   ]
   ++ darwinIntentTests;

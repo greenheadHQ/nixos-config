@@ -31,9 +31,6 @@ run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
 run_test "rebuild-common exports public API" test_rebuild_common_exports_public_api
-run_test "Codex evaluated seed trust boundary" test_codex_evaluated_seed_trust_boundary
-run_test "Codex evaluated seed participates in no-change gate" test_codex_evaluated_seed_participates_in_no_change_gate
-run_test "Codex no-change repair uses trusted role seed" test_codex_no_change_repair_uses_only_trusted_role_seed
 run_test "parse_args unknown argument shows usage and fails" test_parse_args_unknown_argument_shows_usage_and_fails
 run_test "nixos nrs --help prints usage" test_nixos_nrs_help_flag_prints_usage
 run_test "darwin nrs -h alias prints usage" test_darwin_nrs_h_alias_prints_usage
@@ -77,15 +74,8 @@ run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
-run_test "claude remote-control Nix packages embed binding" test_claude_remote_control_nix_packages_include_pinned_runtime_helpers
-run_test "claude remote-control Darwin binding is one generation" test_claude_remote_control_darwin_binding_is_single_generation
 run_test "claude remote-control start requires git repo" test_claude_remote_control_start_requires_git_repo
 run_test "claude remote-control start registers manual instance" test_claude_remote_control_start_registers_manual_instance
-run_test "claude remote-control start ignores ambient CLAUDE_BIN" test_claude_remote_control_interactive_start_ignores_ambient_claude_bin
-run_test "claude remote-control start resolves Claude from bridge PATH" test_claude_remote_control_start_resolves_claude_from_bridge_path
-run_test "claude remote-control managed attestation lifecycle" test_claude_remote_control_managed_attestation_lifecycle
-run_test "claude remote-control attestation failures fail closed" test_claude_remote_control_attestation_failures_are_fail_closed
-run_test "claude remote-control handoff failure cleans attestation" test_claude_remote_control_handoff_failure_cleans_attestation
 run_test "claude remote-control start warns on ignored options" test_claude_remote_control_start_warns_when_running_options_differ
 run_test "claude remote-control start preserves declared registry" test_claude_remote_control_start_warns_and_preserves_declared_registry
 run_test "claude remote-control rejects unmanaged same-cwd server" test_claude_remote_control_start_rejects_unmanaged_same_cwd_server
@@ -102,7 +92,6 @@ run_test "claude remote-control maint rejects invalid declarations" test_claude_
 run_test "claude remote-control transcript gate scopes to worktrees" test_claude_remote_control_transcript_gate_scopes_to_worktree_dirs
 run_test "claude remote-control maint reaps orphan sessions before start" test_claude_remote_control_maint_reaps_orphan_sessions_before_start
 run_test "claude remote-control maint writes status schema" test_claude_remote_control_maint_status_schema
-run_test "claude remote-control managed environment drift requires exact confirmation" test_claude_remote_control_managed_environment_drift_requires_exact_confirmation
 if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
   run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json

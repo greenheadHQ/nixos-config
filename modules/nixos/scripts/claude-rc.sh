@@ -61,26 +61,6 @@ require_common_cmds() {
     require_cmd pgrep || return 1
 }
 
-resolve_bridge_claude_launcher() {
-    local launcher
-    launcher=$(PATH="$CLAUDE_RC_BRIDGE_PATH" command -v claude 2>/dev/null) || {
-        log_error "Claude launcher not found in CLAUDE_RC_BRIDGE_PATH"
-        return 1
-    }
-    case "$launcher" in
-        /*) ;;
-        *)
-            log_error "Claude launcher from CLAUDE_RC_BRIDGE_PATH is not absolute: $launcher"
-            return 1
-            ;;
-    esac
-    [ -f "$launcher" ] && [ -x "$launcher" ] || {
-        log_error "Claude launcher from CLAUDE_RC_BRIDGE_PATH is not an executable file: $launcher"
-        return 1
-    }
-    printf '%s\n' "$launcher"
-}
-
 wrapper_lifecycle_lock_missing() {
     log_error "required command not found in PATH: flock"
 }
@@ -267,9 +247,9 @@ parse_args() {
 
 do_start() {
     require_common_cmds || return 1
-    local instance_path lock_path log_path env_line declared_options claude_launcher
+    require_cmd claude || return 1
+    local instance_path lock_path log_path env_line declared_options
     local launch_status started_identity started_pid started_version
-    claude_launcher=$(resolve_bridge_claude_launcher) || return 1
     instance_path=$(current_git_root) || return $?
     ensure_instance_dir "$instance_path" || return 1
     lock_path=$(lock_path_for_path "$instance_path") || return $?
@@ -301,7 +281,7 @@ do_start() {
 
     warn_if_declared_start_options_differ "$declared_options" || return 1
     launch_and_verify_server \
-        "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE" "$claude_launcher" \
+        "$instance_path" "$RC_SPAWN" "$RC_CAPACITY" "$RC_PERMISSION_MODE" claude \
         launch_status started_pid started_version || return $?
     case "$launch_status" in
         started) ;;
@@ -310,8 +290,8 @@ do_start() {
             [ ! -f "$log_path" ] || tail -n 30 "$log_path" >&2 || true
             return 1
             ;;
-        identity-unresolvable|identity-unresolvable-cleaned|environment-attestation-failed|environment-attestation-failed-cleaned)
-            log_error "server process/version/environment identity를 확인하지 못함: $instance_path"
+        identity-unresolvable|identity-unresolvable-cleaned)
+            log_error "server process/version identity를 확인하지 못함: $instance_path"
             return 1
             ;;
         *)

@@ -91,6 +91,26 @@ users.users.${username}.openssh.authorizedKeys.keys = with constants.sshDeviceKe
 
 공개키 문자열은 직접 하드코딩하지 말고 `libraries/constants.nix`의 `sshDeviceKeys`를 참조한다. 실제 MiniPC 구성은 `hosts/greenhead-minipc/default.nix` 기준.
 
+### `minipc-headless` rotate/revoke runbook
+
+이 키는 일반 SSH·emergency key와 혼용하지 않는다. private material의 SSOT는
+`secrets/minipc-headless.age`, recipient는 `constants.sshKeys.macbook`, personal Mac
+materialization은 `~/.ssh/minipc-headless` mode 0400이다. key 본체를 출력하거나 평문 파일로
+Git에 추가하지 않는다.
+
+- `rotate`: credential/server mutation 직전에 action-time 확인을 받는다. 새 전용 key의
+  restricted candidate 공개키를 기존 엔트리와 함께 MiniPC에 먼저 배포한다. private key는
+  macbook recipient로 `.age`에 암호화하고 Mac에 배포한다. 1Password가 quit/locked인 actual
+  launcher E2E가 통과한 뒤에만 구 공개키를 제거한다. 실패하면 구 key를 유지하고 candidate를
+  제거한다.
+- `즉시 revoke / Mac 분실`: 분실 Mac의 headless key에 의존하지 않는 승인된 관리 경로로
+  MiniPC authorized_keys의 해당 restricted entry를 먼저 제거하고 배포한다. `from=` 제한만으로
+  revoke됐다고 간주하지 않는다. 이어서 encrypted private key와 공개키 constant를 새 key로
+  rotate하고 Mac materialization을 재배포하며, 구 private material과 임시 평문은 확인 후 폐기한다.
+- `검증`: 값 대신 recipient/파일 type/owner/mode, restricted server entry, bounded
+  actual-child exit/elapsed/prompt만 기록한다. `minipc-emergency`를 bootstrap이나 자동
+  fallback으로 재사용하지 않는다.
+
 ## 핵심 절차
 
 1. 먼저 runtime binding을 구분한다. interactive Ghostty는 1Password preflight, personal Claude/Codex non-TTY child는 `NIXOS_CONFIG_HEADLESS_SSH=1`+private dispatcher 경로다.

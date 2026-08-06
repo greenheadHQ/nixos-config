@@ -79,12 +79,10 @@ in
 {
   inherit
     enabled
-    homeDir
     package
-    runtimeGeneration
-    managedDestinations
-    rawDestinations
     ;
-  binPath = "${package}/bin";
-  marker = if enabled then "1" else "0";
+  # Launcher PATH에는 immutable store path가 아니라 이 stable home path를 넣는다.
+  # activation이 package symlink를 relink하므로 장수 bridge도 다음 child lookup부터
+  # 최신 dispatcher를 사용하고 별도 generation attestation/restart가 필요 없다.
+  stableBinPath = "${homeDir}/.local/share/nixos-config/headless-ssh/bin";
 }
