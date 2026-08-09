@@ -16,6 +16,11 @@ let
 
   configPath = "${dockerData}/copyparty/config/copyparty.conf";
   passwordPath = config.age.secrets.copyparty-password.path;
+  # 암호문의 개별 store path — 재시작 트리거용. 문자열 보간이 필수다:
+  # .file을 path 값 그대로 리스트에 넣으면 toString 경로를 타서 flake source 전체
+  # (/nix/store/<hash>-source/secrets/...)에 결합되고, 무관한 커밋마다 재시작이 발생한다.
+  # "${...}"는 그 파일 하나를 개별 store 객체로 복사해 암호문 내용에만 의존한다 (실측 확인).
+  passwordCiphertext = "${config.age.secrets.copyparty-password.file}";
 
   # 비밀번호를 주입한 설정 파일 생성
   # <<'CONF' (quoted heredoc)로 셸 해석 방지 + printf로 비밀번호만 안전 삽입
@@ -73,7 +78,7 @@ in
       before = [ "podman-copyparty.service" ];
       # configScript는 비밀번호 '경로'만 담으므로 .age를 재암호화해도 store path가 그대로다.
       # 암호문 자체를 트리거로 걸어야 비밀번호 교체가 conf 재생성으로 이어진다.
-      restartTriggers = [ config.age.secrets.copyparty-password.file ];
+      restartTriggers = [ passwordCiphertext ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = configScript;
@@ -123,7 +128,7 @@ in
       # (copyparty는 시작 시점에만 conf를 읽는다).
       restartTriggers = [
         configScript
-        config.age.secrets.copyparty-password.file
+        passwordCiphertext
       ];
     };
   };
