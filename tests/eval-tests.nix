@@ -741,47 +741,60 @@ let
             );
         }
         {
-          # ssh() 무인 outer deadline(#1094) 회귀 핀 — 계약 마커를 잠근다:
-          # (1) 무인 판정에 _headless 신호가 존재 (대화형/무인 분기),
-          # (2) 서명 요청에 timeout 기반 outer deadline이 존재 — 이 마커가 사라지면 원격/무인
-          #     세션의 ssh minipc가 1Password 서명 승인 대기로 무한 hang하는 회귀다.
-          # personal 호스트에서만 ssh() preflight가 정의되므로 hostType 조건과 정합한다.
-          name = "Test D19 ${hostName}: ssh() 무인 outer deadline 마커(_headless + timeout)가 initContent에 있어야 함";
+          # launcher-scoped D 계약(#1094): stable private PATH는 personal Darwin의
+          # marked non-TTY child와 Claude launchd에만 배선한다. 전역 sessionPath에
+          # 넣지 않아 interactive Ghostty/일반 SSH의 binary 의미를 보존한다.
+          name = "Test D19 ${hostName}: headless SSH dispatcher는 personal launcher child에만 배선되어야 함";
           cond =
             hasHost
             && (
               let
-                zshInit = hm.programs.zsh.initContent;
+                stableRoot = "${hm.home.homeDirectory}/${constants.paths.headlessSshDispatcherRelPath}";
+                stableBin = "${stableRoot}/bin";
+                zshEnv = hm.programs.zsh.envExtra;
+                agentEnv = (claudeRcAgent cfg).config.EnvironmentVariables;
+                hasDispatcher = builtins.hasAttr constants.paths.headlessSshDispatcherRelPath hm.home.file;
               in
-              # personal은 wrapper 필수(마커 삭제 시 실패), work(ssh preflight 미정의)는 부재 정상.
-              # 조건을 hostType 프록시(isPersonalHost)로 잠가, wrapper 전체 삭제가 통과되지 않게 한다.
               if isPersonalHost then
-                nixpkgsLib.hasInfix "_headless" zshInit && nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\"" zshInit
+                hasDispatcher
+                && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv
+                && nixpkgsLib.hasInfix stableBin zshEnv
+                && !(builtins.elem stableBin hm.home.sessionPath)
+                && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == "1"
+                && nixpkgsLib.hasPrefix "${stableBin}:" agentEnv.PATH
               else
-                true
+                !hasDispatcher
+                && !nixpkgsLib.hasInfix stableBin zshEnv
+                && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == ""
+                && !nixpkgsLib.hasInfix stableBin agentEnv.PATH
             );
         }
         {
-          # minipc-headless 무인 라우팅 계약(#1094 C안) 회귀 핀 — personal 한정:
-          # (1) ssh minipc-headless alias가 IdentityAgent none(1Password 우회)으로 정의,
-          # (2) ssh() wrapper 무인 경로가 headless 키 경로 + IdentityAgent=none 오버라이드를 포함.
-          # 이 마커가 사라지면 무인 세션이 headless 우회 대신 1Password 서명 경로로 되돌아간다.
-          name = "Test D20 ${hostName}: minipc-headless alias(IdentityAgent none) + wrapper 무인 라우팅 마커";
+          # C + D 계약: headless alias는 1Password agent를 사용하지 않고, Codex
+          # child marker와 personal dispatcher가 함께 존재한다. 기존의 전체 remote
+          # command timeout 구현은 다시 들어오면 안 된다(장시간 명령 DX 보존).
+          name = "Test D20 ${hostName}: C key alias와 Claude/Codex auth-phase dispatcher 계약";
           cond =
             hasHost
             && (
               let
                 zshInit = hm.programs.zsh.initContent;
+                stableBin = "${hm.home.homeDirectory}/${constants.paths.headlessSshDispatcherRelPath}/bin";
                 sshSettings = hm.programs.ssh.settings;
+                codexDarwinConfig = builtins.readFile ../modules/shared/programs/codex/files/config.darwin.toml;
               in
-              # personal은 alias·키경로·IdentityAgent none 마커 필수(하나라도 없으면 실패), work는 부재 정상.
-              # hostType 프록시(isPersonalHost)로 잠가, alias·wrapper 삭제가 else true로 통과되지 않게 한다.
               if isPersonalHost then
                 (sshSettings ? "minipc-headless")
-                # home-manager matchBlock은 옵션을 .data 아래 래핑한다(구조: after/before/data).
                 && ((sshSettings."minipc-headless".data.IdentityAgent or "") == "none")
-                && nixpkgsLib.hasInfix constants.onePassword.headlessKeyRelPath zshInit
-                && nixpkgsLib.hasInfix "IdentityAgent=none" zshInit
+                && (
+                  (sshSettings."minipc-headless".data.IdentityFile or "")
+                  == "${hm.home.homeDirectory}/${constants.onePassword.headlessKeyRelPath}"
+                )
+                && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH = \"1\"" codexDarwinConfig
+                && nixpkgsLib.hasInfix "${stableBin}/ssh" zshInit
+                && nixpkgsLib.hasInfix "SSH_CONNECTION" zshInit
+                && !nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\" ssh" zshInit
+                && !nixpkgsLib.hasInfix "timeout \"$_hdl_deadline\" ssh" zshInit
               else
                 true
             );
@@ -836,12 +849,22 @@ let
             );
         }
         {
-          name = "Test D25b ${hostName}: Claude RC maint 수동 경로가 stable home symlink로 노출되어야 함";
+          name = "Test D25b ${hostName}: Claude RC maint 수동 경로가 personal에서 headless launcher를 사용해야 함";
           cond =
             hasHost
-            &&
-              builtins.match ".*/claude-rc-maint" (toString hm.home.file.".local/bin/claude-rc-maint".source)
-              != null;
+            && (
+              let
+                source = toString hm.home.file.".local/bin/claude-rc-maint".source;
+                isPersonal = builtins.elem hostName personalDarwinHosts;
+              in
+              builtins.match ".*/claude-rc-maint" source != null
+              && (
+                if isPersonal then
+                  nixpkgsLib.hasInfix "claude-rc-maint-headless-launcher" source
+                else
+                  !nixpkgsLib.hasInfix "claude-rc-maint-headless-launcher" source
+              )
+            );
         }
         {
           name = "Test D26 ${hostName}: 선언 Claude Remote Control instance가 worktree+bypassPermissions 단일 entry여야 함";

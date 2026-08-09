@@ -16,6 +16,9 @@
 {
   config,
   pkgs,
+  lib,
+  constants,
+  hostType,
   nixosConfigDefaultPath,
   ...
 }:
@@ -26,6 +29,16 @@ let
   stateDir = "${homeDir}/.local/state/claude-rc";
   pushoverCredPath = "${config.xdg.configHome}/pushover/share";
   serviceLib = import ../../nixos/lib/service-lib.nix { inherit pkgs; };
+  headlessDispatcher = import ./ssh/headless-dispatcher.nix {
+    inherit
+      config
+      pkgs
+      lib
+      constants
+      hostType
+      ;
+  };
+  baselinePath = "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
   # 선언 인스턴스 운영 상수 — NixOS의 homeserver.claudeRemoteControl.* 대응.
   bridgeSpawn = "worktree";
@@ -45,10 +58,33 @@ let
   # NixOS HM 배선(shell/nixos.nix)과 같은 래퍼 패키지.
   claudeRcPkg = import ../../nixos/lib/claude-rc-package.nix { inherit pkgs; };
   maintenanceCli = import ../../nixos/lib/claude-rc-maint-package.nix { inherit pkgs; };
+  # Manual start도 bridge child에만 private SSH PATH를 전달한다. 호출한 Ghostty의
+  # 환경은 바꾸지 않으며 공통 NixOS Claude lifecycle package도 수정하지 않는다.
+  claudeRcLauncher =
+    if headlessDispatcher.enabled then
+      pkgs.writeShellScriptBin "claude-rc" ''
+        export NIXOS_CONFIG_HEADLESS_SSH=1
+        export PATH="${headlessDispatcher.stableBinPath}:$PATH"
+        exec ${claudeRcPkg}/bin/claude-rc "$@"
+      ''
+    else
+      claudeRcPkg;
+  # 문서화된 수동 recovery/drift 경로도 bridge를 직접 spawn한다. Ghostty에서
+  # claude-rc-maint ensure를 실행해도 새 bridge child가 같은 private SSH를 상속해야 한다.
+  claudeRcMaintLauncher =
+    if headlessDispatcher.enabled then
+      (pkgs.writeShellScriptBin "claude-rc-maint" ''
+        export NIXOS_CONFIG_HEADLESS_SSH=1
+        export PATH="${headlessDispatcher.stableBinPath}:$PATH"
+        exec ${maintenanceCli}/bin/claude-rc-maint "$@"
+      '').overrideAttrs
+        { name = "claude-rc-maint-headless-launcher"; }
+    else
+      maintenanceCli;
 in
 {
-  home.file.".local/bin/claude-rc".source = "${claudeRcPkg}/bin/claude-rc";
-  home.file.".local/bin/claude-rc-maint".source = "${maintenanceCli}/bin/claude-rc-maint";
+  home.file.".local/bin/claude-rc".source = "${claudeRcLauncher}/bin/claude-rc";
+  home.file.".local/bin/claude-rc-maint".source = "${claudeRcMaintLauncher}/bin/claude-rc-maint";
 
   launchd.agents.claude-rc-ensure = {
     enable = true;
@@ -84,7 +120,11 @@ in
         # procps가 없으므로 이 tail의 /usr/bin이 maint의 bare pgrep fallback을 제공한다.
         # Claude launcher는 CLAUDE_BIN의 기본 절대 경로(~/.local/bin/claude)로 실행되며,
         # 이 launchd job은 interactive wrapper나 그 내부 bare `claude`를 호출하지 않는다.
-        PATH = "${homeDir}/.local/bin:/etc/profiles/per-user/${username}/bin:/run/current-system/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        PATH =
+          lib.optionalString headlessDispatcher.enabled "${headlessDispatcher.stableBinPath}:" + baselinePath;
+      }
+      // lib.optionalAttrs headlessDispatcher.enabled {
+        NIXOS_CONFIG_HEADLESS_SSH = "1";
       };
       StandardOutPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";
       StandardErrorPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";

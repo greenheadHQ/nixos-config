@@ -44,6 +44,9 @@
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
+    # Launcher 전용 headless SSH dispatcher의 Home 상대 설치 경로.
+    # Home Manager target과 launcher PATH가 이 값을 함께 사용해 배선 drift를 막는다.
+    headlessSshDispatcherRelPath = ".local/share/nixos-config/headless-ssh";
     # agenix 복호화 identity (host private key) + opnix SA 만료 record source
     # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
     # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.

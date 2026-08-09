@@ -59,11 +59,28 @@ let
 
   # ssh() preflight 단일 소스 주입 (constants 기반 — socket/키/기동인자 중복 제거)
   opAgentSock = "$HOME/${constants.onePassword.agentSocketRelPath}"; # zsh가 런타임에 $HOME 확장
-  headlessKeyPath = "$HOME/${constants.onePassword.headlessKeyRelPath}"; # 무인 minipc 키(#1094 C안), zsh 런타임 $HOME 확장
   macSshKeyB64 = lib.elemAt (lib.splitString " " constants.sshDeviceKeys.macSsh) 1; # 공개키 가운데 base64 (nix가 split)
   opLaunchCmd = "/usr/bin/open ${lib.escapeShellArgs constants.onePassword.openArgs}"; # 1Password 백그라운드 기동(절대경로)
   minipcHostIP = constants.network.minipcTailscaleIP; # ssh -G effective hostname 판정 기준
   emergencyHost = "minipc-emergency"; # ssh config host alias(modules/darwin/programs/ssh) — 1Password 장애 fallback 안내 단일 소스
+  headlessDispatcher = import ../../../darwin/programs/ssh/headless-dispatcher.nix {
+    inherit
+      config
+      pkgs
+      lib
+      constants
+      hostType
+      ;
+  };
+  # Keep the non-interactive/remote signal set identical between .zshenv and
+  # the interactive ssh() compatibility path. The launcher marker decides
+  # whether .zshenv may change PATH; the signal set decides whether a shell is
+  # headless enough to require bounded MiniPC authentication.
+  headlessContextPredicate = ''
+    { [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] \
+      || [ -n "''${CI:-}" ] || [ -n "''${CLAUDECODE:-}" ] \
+      || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; }
+  '';
 in
 {
   # macOS용 스크립트 설치
@@ -120,6 +137,21 @@ in
     ghAuth
   ];
 
+  # Codex/Claude launcher child가 명시 marker를 전달한 비대화형 컨텍스트에서만
+  # private dispatcher를 PATH 앞에 둔다. global sessionPath/home.packages는 건드리지
+  # 않으므로 interactive Ghostty와 일반 SSH는 /usr/bin/ssh 의미를 유지한다.
+  programs.zsh.envExtra = lib.mkAfter (
+    lib.optionalString headlessDispatcher.enabled ''
+      if [[ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" == "1" ]] \
+        && ${headlessContextPredicate}; then
+        case ":$PATH:" in
+          *":${headlessDispatcher.stableBinPath}:"*) ;;
+          *) export PATH="${headlessDispatcher.stableBinPath}:$PATH" ;;
+        esac
+      fi
+    ''
+  );
+
   # macOS 전용 Zsh 초기화
   programs.zsh.initContent = lib.mkMerge [
     (lib.mkBefore ''
@@ -161,8 +193,7 @@ in
     # 난다. 그 순간 원인·복구를 안내하고 1Password를 자동 기동한 뒤 agent 복구를 짧게 대기한다.
     # 평시엔 launchd 자동 기동(modules/darwin/programs/ssh)이 socket을 살려두므로 이 경로는
     # 수동 quit/크래시 등 잔여 케이스 전용이다. 대화형은 앱 기동 + Touch ID 잠금해제 대기를,
-    # 무인(원격/LLM)은 앱 대기를 건너뛰고 서명에 outer deadline을 걸어 세션 무한 hang을 막는다
-    # (#1094 — 승인 UI가 Mac 로컬 화면 전용이라 원격에선 보이지 않는 대기가 된다).
+    # launcher-marked 무인 child는 .zshenv의 auth-phase dispatcher를 사용한다(#1094).
     # personal 전용 — minipc matchBlock/launchd와 스코프 일치(work Mac은 Tailnet 미소속이라 무관).
     # 대상 판정은 전부 `ssh -G "$@"`에 위임한다 — 수동 옵션 파싱은 ssh의 방대한 옵션 공간(메타모드·
     # user@host·-W·포트·alias·remote command)을 못 따라가 미탐·오탐이 난다. ssh -G는 -O/-W/-G 등과도
@@ -174,6 +205,13 @@ in
     (lib.optionalString (hostType == "personal") ''
       ssh() {
         local _cfg _host _ident _cpath
+        # Preserve the bounded path that remote/automation zsh already had on
+        # main. Launcher children also reach this same dispatcher via .zshenv;
+        # interactive Ghostty has none of these signals and stays on raw SSH.
+        if ${headlessContextPredicate}; then
+          ${headlessDispatcher.stableBinPath}/ssh "$@"
+          return $?
+        fi
         _cfg=$(command ssh -G "$@" 2>/dev/null)
         _host=$(print -r -- "$_cfg" | awk 'tolower($1)=="hostname"{print $2; exit}')
         # IdentityAgent 전체 값(공백 포함 경로)을 추출해 1Password socket과 정확 비교한다.
@@ -188,42 +226,8 @@ in
           if [[ -n "$_cpath" && "$_cpath" != none ]] && command ssh -O check -S "$_cpath" "${minipcHostIP}" 2>/dev/null; then
             _master_active=1
           fi
-          # 무인 컨텍스트 판정(#1094 — 원격/LLM 세션의 1Password 승인 hang 제거).
-          # 1Password SSH agent의 승인·잠금해제 UI는 Mac 로컬 화면에만 뜨므로, 사람이 화면 앞에
-          # 없는 원격/무인 세션에서는 그 대기가 보이지 않는 무한 hang이 된다. op_get의 무인 판정과
-          # 같은 신호(비TTY·SSH 원격·에이전트/CI 하네스 env)를 쓴다 — 대화형 Ghostty는 _headless=0.
-          local _headless=0
-          if [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] || [ -n "''${CI:-}" ] \
-            || [ -n "''${CLAUDECODE:-}" ] || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; then
-            _headless=1
-          fi
-          # C안(#1094): 무인 + headless 키 배포됨 → 1Password를 완전 우회해 headless 키로 직접
-          # 접속한다(승인 팝업·서명 대기 자체가 없음). 원래 인자("$@")를 유지한 채 인증만 -o로
-          # 오버라이드하고, ControlMaster/Path를 끊어 mac-ssh master(1Password 기반)와 격리한다.
-          # deadline은 서명 hang이 없어 불필요하나 네트워크 지연 안전망으로 유지한다. 키 미배포 시
-          # 아래 기존 경로(무인 deadline / 대화형 preflight)로 폴백한다.
-          if (( _headless )) && [ -r "${headlessKeyPath}" ]; then
-            local _rc _hdl_deadline=20
-            local -a _hk=(-o IdentityAgent=none -o IdentitiesOnly=yes -o ControlMaster=no -o ControlPath=none -i "${headlessKeyPath}")
-            if command -v timeout >/dev/null 2>&1; then
-              timeout "$_hdl_deadline" ssh "''${_hk[@]}" "$@"
-              _rc=$?
-              (( _rc == 124 )) && print -u2 "✗ ssh minipc(headless) 시간 초과(''${_hdl_deadline}s) — 네트워크/서버 응답 지연 추정."
-            else
-              command ssh "''${_hk[@]}" "$@"
-              _rc=$?
-            fi
-            return $_rc
-          fi
           if (( ! _master_active )) \
             && ! SSH_AUTH_SOCK="$_sock" ssh-add -L 2>/dev/null | grep -qF "$_b64"; then
-            if (( _headless )); then
-              # 무인: Touch ID 잠금해제가 불가하므로 앱 기동·대기가 무의미하다. 즉시 bounded 실패.
-              print -u2 "✗ ssh minipc 차단(무인): 1Password SSH agent에 mac-ssh 키가 없습니다 — 데스크탑 미실행/잠금 추정."
-              print -u2 "   무인 세션은 Touch ID 잠금해제가 불가하므로 대기 없이 종료합니다."
-              print -u2 "   대안: Mac에서 1Password 잠금해제 후 재시도, 또는 무인 전용 경로(준비 시 minipc-headless) 사용."
-              return 1
-            fi
             # Touch ID 잠금 해제 대기 상한(초) — interactive shell을 오래 막지 않도록. tries = timeout / interval.
             local _poll_interval=0.5 _timeout_seconds=15
             local _max_tries=$(( _timeout_seconds / _poll_interval ))
@@ -256,28 +260,6 @@ in
           # 여기 걸리지 않는다. master 재사용(_master_active) 경로는 서명이 없어 제외한다.
           if (( ! _master_active )); then
             local _rc
-            if (( _headless )) && command -v timeout >/dev/null 2>&1; then
-              # 무인 outer deadline(#1094) — 서명 승인 팝업이 로컬 화면 전용이라 원격/무인에선
-              # 무한 대기가 된다. 상한을 걸어 세션이 bounded time 안에 복귀하게 한다. 이 값은
-              # 인증 정책과 독립된 불변식이다(어떤 인증안을 택해도 유지). 대화형 경로엔 적용하지
-              # 않는다(사람이 Touch ID로 승인 가능). timeout 부재 시 degraded(기존 동작).
-              # command 토큰 없이 ssh를 직접 준다 — timeout은 외부 프로세스라 execvp로 PATH의
-              # ssh 바이너리를 찾으며 zsh 함수 재귀가 발생하지 않는다(비-timeout 경로의 `command
-              # ssh`는 함수 재귀 회피용이지만 여기선 불필요). `timeout … command ssh`는 macOS에서
-              # /usr/bin/command 실행파일에 우연히 의존해 동작할 뿐이라 이식성이 취약하다.
-              local _ssh_deadline=20
-              timeout "$_ssh_deadline" ssh "$@"
-              _rc=$?
-              if (( _rc == 124 )); then
-                print -u2 "✗ ssh minipc 시간 초과(''${_ssh_deadline}s, 무인) — 1Password SSH 서명 승인 대기 가능성(승인 UI는 Mac 로컬 화면에만 표시)."
-                print -u2 "   Mac에서 1Password 잠금해제/승인 후 재시도, 또는 무인 전용 경로(준비 시 minipc-headless) 사용."
-              elif (( _rc == 255 )); then
-                print -u2 "✗ ssh minipc 실패(exit 255 — 원인은 위 stderr 참조)."
-                print -u2 "   1Password SSH agent 서명 실패라면: Mac에서 1Password 완전 재시작 후 재시도."
-                print -u2 "   그래도 안 되면(서버측 키 문제 등): ssh ${emergencyHost}  (passphrase 직접 입력)."
-              fi
-              return $_rc
-            fi
             command ssh "$@"
             _rc=$?
             if (( _rc == 255 )); then

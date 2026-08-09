@@ -1,5 +1,6 @@
 {
   config,
+  pkgs,
   lib,
   constants,
   hostType,
@@ -9,6 +10,15 @@ let
   homeDir = config.home.homeDirectory;
   # 1Password macOS SSH agent socket (단일 소스: constants.onePassword.agentSocketRelPath)
   onePasswordAgentSock = "${homeDir}/${constants.onePassword.agentSocketRelPath}";
+  headlessDispatcher = import ./headless-dispatcher.nix {
+    inherit
+      config
+      pkgs
+      lib
+      constants
+      hostType
+      ;
+  };
 in
 {
   # Mac SSH는 1Password SSH agent로 인증 (PRD #780 Phase 2a).
@@ -73,6 +83,12 @@ in
   # minipc IdentityFile 고정용 mac-ssh 공개키 (개인키는 1Password agent 보관).
   # IdentitiesOnly=yes와 함께 agent의 mac-ssh 키만 제시하게 한다(무차별 키 시도 차단).
   home.file.".ssh/mac-ssh.pub".text = "${constants.sshDeviceKeys.macSsh}\n";
+
+  # Launcher 전용 stable path. global package/session PATH에는 넣지 않아
+  # interactive Ghostty와 일반 SSH가 계속 /usr/bin/ssh를 사용한다.
+  home.file.${constants.paths.headlessSshDispatcherRelPath} = lib.mkIf headlessDispatcher.enabled {
+    source = headlessDispatcher.package;
+  };
 
   # 1Password 로그인 자동 기동 (minipc SSH 회귀 예방, PRD #780 Phase 2a 후속)
   # 근본 원인: Mac SSH 인증을 1Password agent(mac-ssh)로 이관(FR-8)한 뒤, 1Password 데스크탑이

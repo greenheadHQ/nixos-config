@@ -319,6 +319,11 @@ run_test "Shottr license refresh helper scrubs child environment" test_shottr_li
 run_test "Shottr license refresh rejects empty value" test_shottr_license_refresh_rejects_empty_value
 run_test "Shottr age encryption replaces ciphertext atomically" test_shottr_age_encryption_is_atomic
 run_test "Shottr CFPreferences writer round-trips through defaults" test_shottr_cfpreferences_writer_round_trip
+run_test "headless SSH dispatcher core contract" test_headless_ssh_dispatcher_core_contract
+run_test "headless SSH dispatcher suite class coverage" test_headless_ssh_dispatcher_group_coverage
+run_test "headless SSH dispatcher scope parser" test_headless_ssh_dispatcher_scope_parser
+run_test "headless SSH dispatcher supervisor" test_headless_ssh_dispatcher_supervisor
+run_test "headless SSH dispatcher identity compatibility" test_headless_ssh_dispatcher_identity_compat
 
 # interaction-limits-renewal suite (tests/suites/interaction-limits-renewal.sh)
 run_test "interaction-limits-renewal quiet path skips PUT/notify" test_ilr_no_renewal_when_far_from_expiry
