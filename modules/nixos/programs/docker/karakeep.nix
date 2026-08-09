@@ -22,6 +22,17 @@ let
   sharedEnvFilePath = "/run/karakeep-env";
   openaiEnvFilePath = "/run/karakeep-openai-env";
 
+  # 암호문의 개별 store path — 재시작 트리거용. 위 *Path(런타임 복호화 경로 /run/agenix/...)와
+  # 달리 .age 내용이 바뀌면 값이 바뀐다. 문자열 보간이 필수다: .file을 path 값 그대로 리스트에
+  # 넣으면 toString 경로를 타서 flake source 전체(/nix/store/<hash>-source/secrets/...)에
+  # 결합되고, 무관한 커밋마다 재시작이 발생한다. "${...}"는 그 파일 하나를 개별 store 객체로
+  # 복사해 암호문 내용에만 의존한다 (실측 확인).
+  sharedSecretCiphertexts = [
+    "${config.age.secrets.karakeep-nextauth-secret.file}"
+    "${config.age.secrets.karakeep-meili-master-key.file}"
+  ];
+  openaiSecretCiphertext = "${config.age.secrets.karakeep-openai-key.file}";
+
   # agenix 시크릿에서 공통 환경변수 파일 생성 (karakeep + meilisearch)
   sharedEnvScript = pkgs.writeShellScript "karakeep-env-gen" ''
     set -euo pipefail
@@ -85,6 +96,9 @@ in
       description = "Generate Karakeep shared environment file from agenix secrets";
       wantedBy = [ "podman-karakeep.service" ];
       before = [ "podman-karakeep.service" ];
+      # 생성 스크립트는 시크릿의 런타임 '경로'만 담으므로 .age를 재암호화해도 store path가
+      # 그대로다. 암호문을 트리거로 걸어야 시크릿 교체가 env 파일 재생성으로 이어진다.
+      restartTriggers = sharedSecretCiphertexts;
       serviceConfig = {
         Type = "oneshot";
         ExecStart = sharedEnvScript;
@@ -97,6 +111,8 @@ in
       description = "Generate Karakeep OpenAI environment file from agenix secrets";
       wantedBy = [ "podman-karakeep.service" ];
       before = [ "podman-karakeep.service" ];
+      # karakeep-env와 동일한 계약 — 암호문 변경이 env 파일 재생성으로 이어진다.
+      restartTriggers = [ openaiSecretCiphertext ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = openaiEnvScript;
@@ -234,6 +250,10 @@ in
         "karakeep-env.service"
         "karakeep-openai-env.service"
       ];
+      # env 파일 내용은 컨테이너 유닛에 들어가지 않고 경로만 들어간다. 소비하는 두 env 파일의
+      # 원천 암호문을 모두 트리거로 걸어야 시크릿 교체가 컨테이너 재시작으로 이어진다
+      # (env 파일은 시작 시점에만 읽힌다). 생성 유닛에만 걸면 파일만 갱신되고 프로세스는 옛 값을 유지한다.
+      restartTriggers = sharedSecretCiphertexts ++ [ openaiSecretCiphertext ];
       unitConfig = {
         ConditionPathExists = nextauthSecretPath;
         RequiresMountsFor = mediaData;
@@ -254,6 +274,9 @@ in
         "create-karakeep-network.service"
         "karakeep-env.service"
       ];
+      # shared env 파일(MEILI_MASTER_KEY)만 소비하므로 그 원천 암호문만 트리거로 건다.
+      # karakeep-chrome은 environmentFiles가 없어 트리거 대상이 아니다.
+      restartTriggers = sharedSecretCiphertexts;
       unitConfig = {
         RequiresMountsFor = mediaData;
       };

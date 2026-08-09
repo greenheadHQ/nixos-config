@@ -22,6 +22,13 @@ let
 
   envFilePath = "/run/caddy/env";
 
+  # 암호문의 개별 store path — 재시작 트리거용. 문자열 보간이 필수다:
+  # .file을 path 값 그대로 리스트에 넣으면 toString 경로를 타서 flake source 전체
+  # (/nix/store/<hash>-source/secrets/...)에 결합되고, 무관한 커밋마다 Caddy가 재시작된다
+  # (= 전체 리버스 프록시 순간 단절). "${...}"는 그 파일 하나를 개별 store 객체로 복사해
+  # 암호문 내용에만 의존한다 (실측 확인).
+  tokenCiphertext = "${config.age.secrets.cloudflare-dns-api-token.file}";
+
   # 보안 헤더 (모든 virtualHost에 공통 적용)
   securityHeaders = import ../lib/caddy-security-headers.nix;
 
@@ -52,6 +59,11 @@ in
       description = "Generate Caddy environment file with Cloudflare token";
       wantedBy = [ "caddy.service" ];
       before = [ "caddy.service" ];
+      # envScript는 시크릿의 런타임 '경로'(/run/agenix/...)만 담으므로 .age를 재암호화해도
+      # store path가 그대로다. 암호문을 트리거로 걸어야 토큰 교체가 env 파일 재생성으로 이어진다.
+      # 이게 없으면 RemainAfterExit=true라 소비 서비스를 재시작해도 이 유닛은 재실행되지 않아
+      # 구 토큰이 계속 유효하다.
+      restartTriggers = [ tokenCiphertext ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -139,6 +151,9 @@ in
         "tailscaled.service"
         "caddy-env.service"
       ];
+      # env 파일 내용은 유닛 정의에 들어가지 않고 경로만 들어간다. 암호문을 트리거로 걸어야
+      # 토큰 교체가 Caddy 재시작(새 env 파일 로드)으로 이어진다. Caddy는 env를 시작 시점에만 읽는다.
+      restartTriggers = [ tokenCiphertext ];
       serviceConfig = {
         ExecStartPre = import ../lib/tailscale-wait.nix { inherit pkgs; };
         EnvironmentFile = envFilePath;
