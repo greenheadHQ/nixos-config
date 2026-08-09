@@ -21,6 +21,9 @@ REPO = Path(__file__).resolve().parents[1]
 CORE = REPO / "modules/darwin/programs/ssh/files/headless-ssh-dispatcher.py"
 FAKE = REPO / "tests/fixtures/headless-ssh/fake-ssh.py"
 MANIFEST = REPO / "tests/fixtures/headless-ssh/compatible-manifest.json"
+PRODUCTION_MANIFEST = (
+    REPO / "modules/darwin/programs/ssh/files/darwin-openssh-10.3p1-26A5388g.json"
+)
 
 
 def load_dispatcher_module():
@@ -276,6 +279,22 @@ class CoreContractTests(DispatcherFixture):
 
 
 class ScopeTests(DispatcherFixture):
+    def test_protocol_version_options_are_manifested_and_raw_exact_once(self) -> None:
+        for manifest_path in (MANIFEST, PRODUCTION_MANIFEST):
+            with self.subTest(manifest=manifest_path):
+                arity = json.loads(manifest_path.read_text(encoding="utf-8"))["shortOptionArity"]
+                self.assertEqual(arity["1"], 0)
+                self.assertEqual(arity["2"], 0)
+
+        for option in ("-1", "-2"):
+            with self.subTest(option=option):
+                self.clear_calls()
+                argv = (option, "github.com", "true")
+                result = self.run_dispatch(*argv)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.events(), ["data"])
+                self.assertEqual(self.calls()[0]["argv"], list(argv))
+
     def test_emergency_and_other_host_are_raw_exact_once(self) -> None:
         for destination in ("minipc-emergency", "github.com"):
             with self.subTest(destination=destination):
