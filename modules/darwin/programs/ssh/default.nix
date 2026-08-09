@@ -86,7 +86,7 @@ in
 
   # Launcher 전용 stable path. global package/session PATH에는 넣지 않아
   # interactive Ghostty와 일반 SSH가 계속 /usr/bin/ssh를 사용한다.
-  home.file.".local/share/nixos-config/headless-ssh" = lib.mkIf headlessDispatcher.enabled {
+  home.file.${constants.paths.headlessSshDispatcherRelPath} = lib.mkIf headlessDispatcher.enabled {
     source = headlessDispatcher.package;
   };
 

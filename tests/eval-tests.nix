@@ -749,11 +749,11 @@ let
             hasHost
             && (
               let
-                stableRoot = "${hm.home.homeDirectory}/.local/share/nixos-config/headless-ssh";
+                stableRoot = "${hm.home.homeDirectory}/${constants.paths.headlessSshDispatcherRelPath}";
                 stableBin = "${stableRoot}/bin";
                 zshEnv = hm.programs.zsh.envExtra;
                 agentEnv = (claudeRcAgent cfg).config.EnvironmentVariables;
-                hasDispatcher = builtins.hasAttr ".local/share/nixos-config/headless-ssh" hm.home.file;
+                hasDispatcher = builtins.hasAttr constants.paths.headlessSshDispatcherRelPath hm.home.file;
               in
               if isPersonalHost then
                 hasDispatcher
@@ -779,7 +779,7 @@ let
             && (
               let
                 zshInit = hm.programs.zsh.initContent;
-                stableBin = "${hm.home.homeDirectory}/.local/share/nixos-config/headless-ssh/bin";
+                stableBin = "${hm.home.homeDirectory}/${constants.paths.headlessSshDispatcherRelPath}/bin";
                 sshSettings = hm.programs.ssh.settings;
                 codexDarwinConfig = builtins.readFile ../modules/shared/programs/codex/files/config.darwin.toml;
               in
