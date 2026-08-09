@@ -86,7 +86,7 @@ class DispatcherFixture(unittest.TestCase):
     def command(
         self,
         *ssh_argv: str,
-        auth_deadline: float = 0.25,
+        auth_deadline: float = 1.0,
         real_ssh: Path | None = None,
         timeout_bin: str | None = None,
     ) -> list[str]:
@@ -219,13 +219,13 @@ class CoreContractTests(DispatcherFixture):
         self.assertIn("HEADLESS_SSH_AUTH_TIMEOUT", result.stderr)
 
     def test_post_auth_long_command_outlives_auth_deadline(self) -> None:
-        self.write_scenario(remote_delay=0.7, stdout="long-ok")
+        self.write_scenario(remote_delay=1.5, stdout="long-ok")
         started = time.monotonic()
-        result = self.run_dispatch("minipc", "long", auth_deadline=0.2)
+        result = self.run_dispatch("minipc", "long", auth_deadline=1.0)
         elapsed = time.monotonic() - started
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "long-ok")
-        self.assertGreaterEqual(elapsed, 0.65)
+        self.assertGreaterEqual(elapsed, 1.4)
 
     def test_remote_124_is_not_mislabeled_as_auth_timeout(self) -> None:
         self.write_scenario(remote_exit=124, stderr="remote-124")
