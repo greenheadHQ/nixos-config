@@ -84,7 +84,7 @@ echo "codex $current → $ver ($tag) 갱신 중..."
 base="https://github.com/$REPO/releases/download/$tag"
 
 # 해시 컬럼 정렬 폭 = 현행 최장 asset 이름(codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz, 53자)+1.
-# 재검증: jq -r '.platforms[] | .. | objects | .asset? // empty' codex-pin.json | awk '{print length}' | sort -rn | head -1
+# 재검증: jq -r '.platforms[] | .. | objects | .asset? // empty' modules/shared/programs/codex/codex-pin.json | awk '{print length}' | sort -rn | head -1
 ASSET_COL=54
 
 # 핀과 같은 디렉토리에 임시 파일을 만들어 최종 mv가 same-fs atomic rename이 되게 하고,
@@ -94,16 +94,19 @@ tmp="$(mktemp "$(dirname "$PIN")/.codex-pin.XXXXXX")"
 trap 'rm -f "$tmp" "$tmp".2' EXIT
 cp "$PIN" "$tmp"
 
-# prefetch_sub_asset <plat> <key> <required:1|0> <설명>
-# platforms.<plat>.<key>.{asset,hash} 중첩 sub-asset을 prefetch해 핀 해시를 갱신한다.
-# codeModeHost는 package.nix eval이 전 플랫폼 필수로 강제하므로(선언 없으면 throw) required=1로
-# update 단계에서 먼저 잡는다. standalonePackage는 x86_64-linux 전용 선택 필드라 required=0(미선언 스킵).
-prefetch_sub_asset() {
+# prefetch_asset <plat> <key|""> <required:1|0> <설명>
+# 플랫폼 asset의 핀 해시를 prefetch해 갱신한다. key가 빈 문자열이면 top-level CLI asset
+# (platforms.<plat>.{asset,hash}), 아니면 중첩 sub-asset(platforms.<plat>.<key>.{asset,hash})이다.
+# CLI asset과 codeModeHost는 package.nix eval이 전 플랫폼 필수로 강제하므로(선언 없으면 throw)
+# required=1로 update 단계에서 먼저 잡는다. standalonePackage는 x86_64-linux 전용 선택
+# 필드라 required=0(미선언 스킵).
+prefetch_asset() {
   local plat="$1" key="$2" required="$3" desc="$4" asset h
-  asset="$(jq -r --arg p "$plat" --arg k "$key" '.platforms[$p][$k].asset // empty' "$PIN")"
+  asset="$(jq -r --arg p "$plat" --arg k "$key" \
+    '.platforms[$p] | (if $k == "" then . else .[$k] end) | .asset? // empty' "$PIN")"
   if [ -z "$asset" ]; then
     if [ "$required" = 1 ]; then
-      echo "update-codex: ${plat}에 ${key} 선언 없음 — package.nix eval이 throw한다. codex-pin.json에 ${key} asset/hash를 추가하라" >&2
+      echo "update-codex: ${plat}에 ${desc} asset 선언 없음 — package.nix eval이 throw한다. codex-pin.json에 asset/hash를 추가하라" >&2
       exit 1
     fi
     return 0
@@ -116,22 +119,14 @@ prefetch_sub_asset() {
   }
   echo "$h"
   jq --arg p "$plat" --arg k "$key" --arg h "$h" \
-    '.platforms[$p][$k].hash=$h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
+    'if $k == "" then .platforms[$p].hash = $h else .platforms[$p][$k].hash = $h end' \
+    "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
 }
 
 for plat in $(jq -r '.platforms | keys[]' "$PIN"); do
-  asset="$(jq -r --arg p "$plat" '.platforms[$p].asset' "$PIN")"
-  printf '  prefetch %-*s' "$ASSET_COL" "$asset"
-  h="$(nix store prefetch-file --json "$base/$asset" 2>/dev/null | jq -r '.hash')" || {
-    echo "FAIL"
-    echo "update-codex: $asset prefetch 실패 — 릴리스에 해당 asset이 없거나 네트워크 오류" >&2
-    exit 1
-  }
-  echo "$h"
-  jq --arg p "$plat" --arg h "$h" '.platforms[$p].hash=$h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
-
-  prefetch_sub_asset "$plat" codeModeHost 1 "code-mode host"
-  prefetch_sub_asset "$plat" standalonePackage 0 "standalone package"
+  prefetch_asset "$plat" "" 1 "CLI"
+  prefetch_asset "$plat" codeModeHost 1 "code-mode host"
+  prefetch_asset "$plat" standalonePackage 0 "standalone package"
 done
 jq --arg v "$ver" --arg t "$tag" '.version=$v | .tag=$t' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
 mv "$tmp" "$PIN"
