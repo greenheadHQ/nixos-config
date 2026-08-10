@@ -2,6 +2,15 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154
 
+_create_issue_file_mode() {
+  local mode
+  if mode="$(stat -c '%a' "$1" 2>/dev/null)"; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  /usr/bin/stat -f '%Lp' "$1"
+}
+
 _create_issue_extract_step5a_recipe() {
   local skill_file="$1"
 
@@ -57,11 +66,11 @@ set -euo pipefail
 
 fixture_mode() {
   local mode
-  if mode="$(stat -f '%Lp' "$1" 2>/dev/null)"; then
+  if mode="$(stat -c '%a' "$1" 2>/dev/null)"; then
     printf '%s\n' "$mode"
     return
   fi
-  stat -c '%a' "$1"
+  /usr/bin/stat -f '%Lp' "$1"
 }
 
 fixture_write_body() {
@@ -138,10 +147,10 @@ body_file="$8"
   exit 83
 }
 
-if body_mode="$(stat -f '%Lp' "$body_file" 2>/dev/null)"; then
+if body_mode="$(stat -c '%a' "$body_file" 2>/dev/null)"; then
   :
 else
-  body_mode="$(stat -c '%a' "$body_file")"
+  body_mode="$(/usr/bin/stat -f '%Lp' "$body_file")"
 fi
 [[ "$body_mode" == "600" ]] || {
   echo "fake gh: body mode is $body_mode, expected 600" >&2
@@ -163,7 +172,7 @@ EOF
 
 test_create_issue_documented_body_lifecycle_is_safe() {
   local sandbox skill_file recipe_file runner_file stub_bin expected_body
-  local writer_trace gh_trace output rc body_path body_dir symlink_target target_mode
+  local fixture_path writer_trace gh_trace output rc body_path body_dir symlink_target target_mode
 
   sandbox="$(new_sandbox)"
   skill_file="$REPO_ROOT/modules/shared/programs/claude/files/skills/create-issue/SKILL.md"
@@ -179,15 +188,16 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   _create_issue_write_recipe_fixture "$skill_file" "$recipe_file"
   _create_issue_write_runner "$runner_file"
   _create_issue_write_fake_gh "$stub_bin/gh"
+  fixture_path="$stub_bin:$PATH"
 
   output="$(
     TMPDIR="$sandbox/tmp" \
-      PATH="$stub_bin:/usr/bin:/bin" \
+      PATH="$fixture_path" \
       RECIPE_FILE="$recipe_file" \
       EXPECTED_BODY_FILE="$expected_body" \
       WRITER_TRACE="$writer_trace" \
       GH_TRACE="$gh_trace" \
-      "$runner_file" 2>&1
+      "$BASH" "$runner_file" 2>&1
   )" || fail "documented create-issue success path failed: $output"
 
   assert_contains "$output" "ISSUE_URL=https://github.com/example/repo/issues/999"
@@ -204,13 +214,13 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   set +e
   output="$(
     TMPDIR="$sandbox/tmp" \
-      PATH="$stub_bin:/usr/bin:/bin" \
+      PATH="$fixture_path" \
       RECIPE_FILE="$recipe_file" \
       EXPECTED_BODY_FILE="$expected_body" \
       WRITER_TRACE="$writer_trace" \
       GH_TRACE="$gh_trace" \
       GH_FAIL=1 \
-      "$runner_file" 2>&1
+      "$BASH" "$runner_file" 2>&1
   )"
   rc=$?
   set -e
@@ -235,25 +245,21 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   set +e
   output="$(
     TMPDIR="$sandbox/tmp" \
-      PATH="$stub_bin:/usr/bin:/bin" \
+      PATH="$fixture_path" \
       RECIPE_FILE="$recipe_file" \
       EXPECTED_BODY_FILE="$expected_body" \
       WRITER_TRACE="$writer_trace" \
       GH_TRACE="$gh_trace" \
       WRITER_KIND=symlink \
       SYMLINK_TARGET="$symlink_target" \
-      "$runner_file" 2>&1
+      "$BASH" "$runner_file" 2>&1
   )"
   rc=$?
   set -e
 
   [[ "$rc" != "0" ]] || fail "documented create-issue path accepted a symlink body"
   [[ ! -s "$gh_trace" ]] || fail "documented create-issue path called gh with a symlink body"
-  if target_mode="$(stat -f '%Lp' "$symlink_target" 2>/dev/null)"; then
-    :
-  else
-    target_mode="$(stat -c '%a' "$symlink_target")"
-  fi
+  target_mode="$(_create_issue_file_mode "$symlink_target")"
   [[ "$target_mode" == "644" ]] \
     || fail "symlink rejection changed the external target mode"
 }
