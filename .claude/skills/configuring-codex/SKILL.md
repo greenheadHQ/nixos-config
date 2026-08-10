@@ -80,16 +80,19 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 
 Codex CLI 바이너리는 declarative nix overlay로 설치한다 (`modules/shared/programs/codex/package.nix`,
 `libraries/packages.nix`의 `shared` 경유; macOS+NixOS 공통; #890에서 mise npm backend → nix 이관).
-overlay는 OpenAI 공식 GitHub 릴리스의 prebuilt 바이너리를 직접 핀한다 — nixpkgs lag(수 주)이나
-제3자 flake 신뢰 없이 최신 codex를 추적하기 위함이다. codex-rs는 정적 바이너리 2종(codex +
-code-mode host 사이드카 codex-code-mode-host — 0.147.0+ 도구 실행 필수, codex와 같은 bin/에
-있어야 동작; linux=musl, darwin=signed macho)이라 소스 컴파일·patchelf 없이 fetch + install만
-하며, overlay가 둘을 같은 $out/bin에 설치해 nix profile/store 경로로 안정적으로 resolve된다
-(mise shim의 비대화형 PATH fragility 회피가 이관 동기 — #815/#821/#823/#845/#858).
+overlay는 OpenAI 공식 GitHub 릴리스의 prebuilt를 직접 핀한다 — nixpkgs lag(수 주)이나
+제3자 flake 신뢰 없이 최신 codex를 추적하기 위함이다. 설치 소스는 upstream이 조립·검증해
+발행하는 codex-package 통합 tarball 하나다 (#1219 — codex + code-mode host 사이드카
+codex-code-mode-host + 번들 rg/zsh 동봉; linux=musl, darwin=signed macho라 소스 컴파일·patchelf
+없음). overlay는 tarball 전체를 `$out/libexec/codex/`에 풀고 `$out/bin/codex` symlink만
+노출한다 — codex가 canonical 실행 경로 옆 `codex-package.json`으로 package layout을 인식해
+사이드카·번들 도구를 libexec 실경로에서 찾는다. 구성 요소 열거는 upstream 소관이라, 릴리스가
+구성 요소를 추가/분리해도 저장소가 추적할 필요 없다(#1220 반쪽 설치 장애 클래스의 구조적 해소;
+mise shim의 비대화형 PATH fragility 회피가 이관 동기 — #815/#821/#823/#845/#858).
 
 - 버전 SoT: `modules/shared/programs/codex/codex-pin.json` (version/tag + flake systems 2개
-  (aarch64-darwin·x86_64-linux)의 asset/hash와 codeModeHost.asset/hash; x86_64-linux는
-  standalonePackage 추가). version/tag/hash는 `update-codex`로 bump하고,
+  (aarch64-darwin·x86_64-linux)의 codex-package asset/hash 각 1쌍).
+  version/tag/hash는 `update-codex`로 bump하고,
   platforms/asset 키는 정적 설정이라 손으로 관리한다.
 - 설치/정리 코드 SoT: `default.nix`의 정리 activation 3종(`cleanupLegacyCodexCli`,
   `cleanupMiseCodexShim`, `cleanupManualNodeCodex`). 이들은 codex를 설치하지 않고, 과거 설치 방식

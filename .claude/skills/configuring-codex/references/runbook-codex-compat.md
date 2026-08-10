@@ -210,10 +210,11 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
 ### 설치 + 정리 activation
 
 - 설치: nix overlay(`modules/shared/programs/codex/package.nix`, `libraries/packages.nix`의 `shared`
-  경유) — macOS+NixOS 공통 nix profile/store. OpenAI 공식 GitHub 릴리스 prebuilt를 직접 핀한다
-  (`codex-pin.json`). nixpkgs lag·제3자 flake 없이 최신 추적이 목적이며, codex-rs는 정적 바이너리
-  2종(codex + codex-code-mode-host 사이드카 — 0.147.0+ 도구 실행 필수, 같은 bin/ 설치)이라
-  fetch+install만 한다(컴파일·patchelf 없음). 최신화는 `update-codex` 한 줄.
+  경유) — macOS+NixOS 공통 nix profile/store. OpenAI 공식 GitHub 릴리스의 codex-package 통합
+  tarball을 직접 핀한다(`codex-pin.json`, #1219 — codex + codex-code-mode-host 사이드카 + 번들
+  rg/zsh를 upstream이 조립·발행). nixpkgs lag·제3자 flake 없이 최신 추적이 목적이며, tarball
+  전체를 `$out/libexec/codex/`에 풀고 `$out/bin/codex` symlink만 노출한다(컴파일·patchelf 없음;
+  codex가 canonical 실행 경로 기준 package layout을 인식). 최신화는 `update-codex` 한 줄.
 - 정리 activation 3종(`default.nix`) — codex를 설치하지 않고, 과거 설치 방식 잔재가 PATH에서
   codex(nix profile)를 shadow하지 못하게 정리만 한다:
   1. `cleanupLegacyCodexCli` — 과거 GitHub ELF(NixOS)/brew cask(macOS) 잔재 정리
@@ -226,8 +227,8 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
 ### SoT와 업데이트
 
 - 버전 SoT: `modules/shared/programs/codex/codex-pin.json` (version/tag + flake systems 2개
-  (aarch64-darwin·x86_64-linux)의 asset/hash와 codeModeHost.asset/hash; x86_64-linux는
-  standalonePackage 추가). 업데이트는 `update-codex`(최신 stable 조회 →
+  (aarch64-darwin·x86_64-linux)의 codex-package asset/hash 각 1쌍; NixOS remote-control
+  standalone payload도 같은 asset 공유). 업데이트는 `update-codex`(최신 stable 조회 →
   해시 prefetch → 핀 갱신 → nrs; `--pre`로 alpha 포함). platforms/asset 키는 정적 설정이라 손으로 관리.
 - overlay는 OpenAI 릴리스를 직핀하므로 lag이 사실상 없다(직핀 최신). config 템플릿 feature floor
   (현재 0.124+)는 항상 충족. 갱신 후 `codex-pin.json` 변경을 커밋한다.
@@ -266,14 +267,14 @@ readlink -f ~/.codex/packages/standalone/current/bin/codex  # Codex App remote-c
 ### 2026-06-29 업데이트: remote-control standalone 예외
 
 ChatGPT mobile Codex sync를 위한 app-server는 일반 CLI와 별도의 standalone package layout을 사용한다.
-이 payload는 `modules/shared/programs/codex/codex-pin.json`의 pinned `standalonePackage` asset/hash에서
-동기화하며, systemd `codex-remote-control-ensure.service`가
+이 payload는 `modules/shared/programs/codex/codex-pin.json`의 pinned platform asset/hash(CLI
+패키징과 같은 codex-package tarball, #1219)에서 동기화하며, systemd `codex-remote-control-ensure.service`가
 `~/.codex/packages/standalone/releases/<version>-x86_64-unknown-linux-musl/`와 `current` symlink를 관리한다.
 
 경계:
 - 일반 `command -v codex`는 계속 Nix-managed profile/store 경로여야 한다.
 - `~/.local/bin/codex`가 standalone을 가리키는 symlink이면 PATH shadow 회귀이므로 제거 대상이다.
-- `update-codex`는 CLI asset hash·code-mode host hash와 standalone package hash를 함께 갱신한다.
+- `update-codex`가 갱신하는 platform asset hash 하나가 CLI 설치와 standalone payload 양쪽을 커버한다.
 - timer는 `codex doctor`를 실행하지 않는다. 대신 `ensure-running`이 pinned standalone 동기화,
   ChatGPT auth 확인, daemon/start 상태 확인, 버전 drift 재시작, stale socket 정리, 그리고 같은 사용자 +
   legacy app-server per-process 증거가 있는 경우에만 stale PID repair를 수행한다.

@@ -11,10 +11,9 @@ let
   cfg = config.homeserver.codexRemoteControl;
   pin = builtins.fromJSON (builtins.readFile ../../shared/programs/codex/codex-pin.json);
   system = pkgs.stdenv.hostPlatform.system;
+  # CLI 패키징(#1219)이 codex-package 통합 tarball을 단일 소스로 쓰므로, remote-control
+  # standalone payload도 같은 platform asset을 그대로 공유한다 (별도 standalonePackage 선언 불필요).
   platform = pin.platforms.${system} or (throw "codexRemoteControl: unsupported system '${system}'");
-  standalonePackageMeta =
-    platform.standalonePackage
-      or (throw "codexRemoteControl: ${system} needs platforms.${system}.standalonePackage in codex-pin.json");
   standaloneTriple =
     if system == "x86_64-linux" then
       "x86_64-unknown-linux-musl"
@@ -28,8 +27,8 @@ let
   serviceLib = import ../lib/service-lib.nix { inherit pkgs; };
 
   standalonePackage = pkgs.fetchurl {
-    url = "https://github.com/openai/codex/releases/download/${pin.tag}/${standalonePackageMeta.asset}";
-    hash = standalonePackageMeta.hash;
+    url = "https://github.com/openai/codex/releases/download/${pin.tag}/${platform.asset}";
+    hash = platform.hash;
   };
 
   maintenanceCli = pkgs.writeShellApplication {

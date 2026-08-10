@@ -3,10 +3,10 @@
 #
 # codex는 declarative nix overlay(modules/shared/programs/codex/package.nix)로 설치되며 버전은
 # codex-pin.json에 핀된다. 이 스크립트는 OpenAI GitHub 릴리스에서 최신 stable(rust-vX.Y.Z)을
-# 찾아 핀된 플랫폼들의 CLI asset·code-mode host 사이드카(0.147.0+ 도구 실행 필수) 해시를
-# prefetch하고, standalonePackage가 선언된 플랫폼(현재 x86_64-linux)은 Codex App remote-control
-# standalone package 해시도 함께 prefetch해 핀을 갱신하고 nrs로 적용한다. nixpkgs lag·제3자
-# flake 없이 "한 줄로 최신"을 받기 위한 경로.
+# 찾아 핀된 플랫폼들의 codex-package 통합 tarball(#1219 — codex + code-mode host 사이드카 +
+# 번들 rg/zsh를 upstream이 조립해 발행; NixOS remote-control standalone payload도 같은 asset
+# 공유) 해시를 prefetch해 핀을 갱신하고 nrs로 적용한다. nixpkgs lag·제3자 flake 없이
+# "한 줄로 최신"을 받기 위한 경로.
 #
 # 사용법:
 #   update-codex            # 최신 stable로 핀 갱신 + nrs
@@ -75,29 +75,35 @@ tag="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq "$jq_filter" 2
 ver="${tag#rust-v}"
 current="$(jq -r '.version' "$PIN")"
 
-# ensure_asset_decl <plat> <key|""> <required:1|0> <설명>
-# 핀 선언을 조회해 asset 이름을 출력한다. required=1인데 미선언이면 pin 경로를 안내하고 실패한다.
+# ensure_asset_decl <plat>
+# 핀 선언을 조회해 asset 이름을 출력한다. 미선언이면 pin 경로를 안내하고 실패한다.
 # 같은 버전 fast path 전의 완결성 검사와 prefetch_asset이 이 검사 하나를 공유한다.
 ensure_asset_decl() {
-  local plat="$1" key="$2" required="$3" desc="$4" asset
-  asset="$(jq -r --arg p "$plat" --arg k "$key" \
-    '.platforms[$p] | (if $k == "" then . else .[$k] end) | .asset? // empty' "$PIN")"
-  if [ -z "$asset" ] && [ "$required" = 1 ]; then
-    echo "update-codex: ${plat}에 ${desc} asset 선언 없음 — package.nix eval이 throw한다. codex-pin.json의 platforms.${plat}${key:+.$key}에 asset/hash를 추가하라" >&2
+  local plat="$1" asset
+  asset="$(jq -r --arg p "$plat" '.platforms[$p].asset? // empty' "$PIN")"
+  if [ -z "$asset" ]; then
+    echo "update-codex: ${plat}에 codex-package asset 선언 없음 — package.nix eval이 throw한다. codex-pin.json의 platforms.${plat}에 asset/hash를 추가하라" >&2
     exit 1
   fi
   printf '%s\n' "$asset"
 }
 
-# required asset 선언 완결성을 같은 버전 fast path보다 먼저 검사한다 — 부분 편집된 핀(예: 새
-# 플랫폼 추가 시 codeModeHost 누락)이 "이미 최신" 조기 종료를 타고 검증 없이 통과하면, 그 누락은
+# 핀 선언 완결성을 같은 버전 fast path보다 먼저 검사한다 — 부분 편집된 핀(예: 새 플랫폼
+# 추가 시 asset/hash 누락)이 "이미 최신" 조기 종료를 타고 검증 없이 통과하면, 그 누락은
 # 해당 호스트의 nrs eval에서야 드러난다 (update 단계 선제 검증 계약의 구멍 — PR #1220 리뷰 반영).
+# asset 이름은 사람이 넣어야 하는 값이라 누락 시 즉시 실패하고, hash는 prefetch가 스스로
+# 계산할 수 있는 값이라 누락 시 fast path를 우회해 prefetch로 복구한다 (PR #1221 리뷰 반영).
+missing_hash=0
 for plat in $(jq -r '.platforms | keys[]' "$PIN"); do
-  ensure_asset_decl "$plat" "" 1 "CLI" >/dev/null
-  ensure_asset_decl "$plat" codeModeHost 1 "code-mode host" >/dev/null
+  ensure_asset_decl "$plat" >/dev/null
+  hash_decl="$(jq -r --arg p "$plat" '.platforms[$p].hash? // empty' "$PIN")"
+  if [ -z "$hash_decl" ]; then
+    echo "update-codex: ${plat}에 hash 선언 없음 — fast path를 건너뛰고 prefetch로 복구한다"
+    missing_hash=1
+  fi
 done
 
-if [ "$ver" = "$current" ] && [ "$force" = 0 ]; then
+if [ "$ver" = "$current" ] && [ "$force" = 0 ] && [ "$missing_hash" = 0 ]; then
   echo "이미 최신: codex $current ($tag) — 변경 없음"
   exit 0
 fi
@@ -105,9 +111,9 @@ fi
 echo "codex $current → $ver ($tag) 갱신 중..."
 base="https://github.com/$REPO/releases/download/$tag"
 
-# 해시 컬럼 정렬 폭 = 현행 최장 asset 이름(codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz, 53자)+1.
-# 재검증: jq -r '.platforms[] | .. | objects | .asset? // empty' modules/shared/programs/codex/codex-pin.json | awk '{print length}' | sort -rn | head -1
-ASSET_COL=54
+# 해시 컬럼 정렬 폭 = 현행 최장 asset 이름(codex-package-x86_64-unknown-linux-musl.tar.gz, 46자)+1.
+# 재검증: jq -r '.platforms[].asset' modules/shared/programs/codex/codex-pin.json | awk '{print length}' | sort -rn | head -1
+ASSET_COL=47
 
 # 핀과 같은 디렉토리에 임시 파일을 만들어 최종 mv가 same-fs atomic rename이 되게 하고,
 # trap으로 중단 시 잔재를 정리한다(핀 디렉토리는 git 추적 대상이라 누수 시 working tree 오염).
@@ -116,32 +122,24 @@ tmp="$(mktemp "$(dirname "$PIN")/.codex-pin.XXXXXX")"
 trap 'rm -f "$tmp" "$tmp".2' EXIT
 cp "$PIN" "$tmp"
 
-# prefetch_asset <plat> <key|""> <required:1|0> <설명>
-# 플랫폼 asset의 핀 해시를 prefetch해 갱신한다. key가 빈 문자열이면 top-level CLI asset
-# (platforms.<plat>.{asset,hash}), 아니면 중첩 sub-asset(platforms.<plat>.<key>.{asset,hash})이다.
-# CLI asset과 codeModeHost는 package.nix eval이 전 플랫폼 필수로 강제하므로(선언 없으면 throw)
-# required=1로 update 단계에서 먼저 잡는다. standalonePackage는 x86_64-linux 전용 선택
-# 필드라 required=0(미선언 스킵). 선언 검사는 ensure_asset_decl이 소유한다.
+# prefetch_asset <plat>
+# 플랫폼 codex-package asset(platforms.<plat>.{asset,hash})의 핀 해시를 prefetch해 갱신한다.
+# 선언 검사는 ensure_asset_decl이 소유한다.
 prefetch_asset() {
-  local plat="$1" key="$2" required="$3" desc="$4" asset h
-  asset="$(ensure_asset_decl "$plat" "$key" "$required" "$desc")"
-  [ -n "$asset" ] || return 0
+  local plat="$1" asset h
+  asset="$(ensure_asset_decl "$plat")"
   printf '  prefetch %-*s' "$ASSET_COL" "$asset"
   h="$(nix store prefetch-file --json "$base/$asset" 2>/dev/null | jq -r '.hash')" || {
     echo "FAIL"
-    echo "update-codex: $asset prefetch 실패 — 릴리스에 $desc asset이 없거나 네트워크 오류" >&2
+    echo "update-codex: $asset prefetch 실패 — 릴리스에 codex-package asset이 없거나 네트워크 오류" >&2
     exit 1
   }
   echo "$h"
-  jq --arg p "$plat" --arg k "$key" --arg h "$h" \
-    'if $k == "" then .platforms[$p].hash = $h else .platforms[$p][$k].hash = $h end' \
-    "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
+  jq --arg p "$plat" --arg h "$h" '.platforms[$p].hash = $h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
 }
 
 for plat in $(jq -r '.platforms | keys[]' "$PIN"); do
-  prefetch_asset "$plat" "" 1 "CLI"
-  prefetch_asset "$plat" codeModeHost 1 "code-mode host"
-  prefetch_asset "$plat" standalonePackage 0 "standalone package"
+  prefetch_asset "$plat"
 done
 jq --arg v "$ver" --arg t "$tag" '.version=$v | .tag=$t' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
 mv "$tmp" "$PIN"
