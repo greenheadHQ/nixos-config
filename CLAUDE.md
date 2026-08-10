@@ -18,6 +18,8 @@ Environment 섹션의 `Platform` 값으로 현재 환경을 판별한다.
 
 `nrs`를 사용. `darwin-rebuild`/`nixos-rebuild` 직접 실행 금지. `nrs`는 preview를 포함하며, macOS에서는 launchd 정리와 Hammerspoon 재시작도 처리한다. 워크트리에서 `nrs` 완료 시 `$HOME` 아래 out-of-store symlink의 워크트리 relink을 시도한다 (`nrs-relink`, non-fatal). 비TTY/에이전트 컨텍스트에서는 이 worktree relink만 스킵하며, 필요 시 `NRS_ALLOW_WORKTREE_RELINK=1`로 opt-in한다. main repo에서 `nrs` 실행 시 nix store 체인으로 복원을 시도한다.
 
+비대화형(에이전트) 컨텍스트에서 `nrs`는 sudo 캐시가 필요 없다 — macOS는 sudoers NOPASSWD 규칙(darwin-rebuild 한정, `modules/darwin/configuration.nix`의 `security.sudo.extraConfig`)이, NixOS는 `wheelNeedsPassword=false`가 인증을 면제한다. **`sudo -n true`로 실행 가능 여부를 사전 확인하지 마라**: `true`는 NOPASSWD 규칙 밖 명령이라 캐시 없으면 항상 실패하며, nrs 실행 가능성과 무관한 잘못된 프록시다 (2026-07 오진으로 불필요한 사용자 위임 반복 발생). 검증이 필요하면 `sudo -n -ll /run/current-system/sw/bin/darwin-rebuild switch` 출력에 `Options: !authenticate`가 있는지 본다 — rc 기반 판정(`sudo -n -l <cmd>`)은 admin `(ALL) ALL` 규칙 때문에 인증이 필요한 명령에도 rc 0을 주므로 쓰지 않는다. 비TTY에서 `nrs`는 sudo를 `-n`으로 호출하므로 규칙이 깨져도 hang 없이 즉시 실패하고 원인을 안내한다.
+
 home-manager activation 충돌 정책: macOS에서 mkOutOfStoreSymlink target이 외부 프로세스의 atomic rename으로 일반 파일이 되면 `home-manager.backupCommand`가 자가 치유한다 (regular file은 unlink + 콘솔 한 줄 echo, directory는 timestamped backup). 사이드이펙트로, symlink가 깨진 시간 동안 사용자가 home 쪽에서 의도 변경한 내용도 silent 손실될 수 있다 (예: VSCode UI에서 keybinding 추가 후 settings.json이 깨진 상태에서 한 후속 변경). 정상 symlink 흐름에서는 source 직접 수정 = git 추적이 정상 동작한다. 본 정책은 사용자 명시 동의 범위 내. 정책 본체는 `modules/darwin/home.nix`.
 
 ## Worktree (wt)

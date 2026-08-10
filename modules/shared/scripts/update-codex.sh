@@ -148,7 +148,7 @@ echo "✅ 핀 갱신 완료: codex $ver ($PIN)"
 
 if [ "$do_build" = 1 ]; then
   if [ -x "$NRS_BIN" ]; then
-    echo "▶ nrs 실행 (sudo 필요)..."
+    echo "▶ nrs 실행 (sudo는 NOPASSWD 규칙으로 자동 인증)..."
     (cd "$FLAKE_PATH" && "$NRS_BIN")
     echo ""
     echo "ℹ️  codex-pin.json 변경을 커밋하세요:"

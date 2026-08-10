@@ -71,8 +71,12 @@ run_nixos_rebuild() {
     fi
 
     local rc=0
+    # 비TTY에서는 sudo 인증 프롬프트에 응답할 수 없다. -n으로 호출해 인증 필요 시 즉시 실패.
+    # (NixOS는 wheelNeedsPassword=false라 평시엔 무해하지만, 정책이 바뀌어도 hang은 막는다)
+    local -a sudo_flags=()
+    [[ -t 0 ]] || sudo_flags=(-n)
     # shellcheck disable=SC2086
-    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG $CORES_FLAG || rc=$?
+    sudo ${sudo_flags[@]+"${sudo_flags[@]}"} "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG $CORES_FLAG || rc=$?
 
     if [[ "$rc" -eq 0 ]]; then
         return 0

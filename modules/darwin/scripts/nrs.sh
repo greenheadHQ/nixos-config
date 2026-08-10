@@ -191,11 +191,25 @@ run_darwin_rebuild() {
     fi
 
     local rc=0
+    # 비TTY(에이전트·자동화)에서는 sudo 인증 프롬프트에 응답할 수 없다. -n으로 호출해
+    # NOPASSWD 규칙(modules/darwin/configuration.nix의 security.sudo.extraConfig,
+    # darwin-rebuild 한정) 미매칭 시 무한 대기 대신 즉시 실패시킨다.
+    local -a sudo_flags=()
+    [[ -t 0 ]] || sudo_flags=(-n)
     # shellcheck disable=SC2086
-    sudo "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG $CORES_FLAG || rc=$?
+    sudo ${sudo_flags[@]+"${sudo_flags[@]}"} "$REBUILD_CMD" switch --flake "$FLAKE_PATH" $OFFLINE_FLAG $CORES_FLAG || rc=$?
 
     if [[ "$rc" -ne 0 ]]; then
         log_error "❌ darwin-rebuild switch failed (exit code: $rc)"
+        # 비대화형 sudo 인증 실패와 darwin-rebuild 자체 실패를 구분해 안내.
+        # 판정은 -ll 출력의 !authenticate 파싱 — rc 기반(sudo -n -l <cmd>) 판정은
+        # admin (ALL) ALL 규칙 때문에 인증이 필요한 명령에도 rc 0이라 성립하지 않는다.
+        if [[ ${#sudo_flags[@]} -gt 0 ]] \
+           && ! sudo -n -ll "$REBUILD_CMD" switch 2>/dev/null | grep -q '!authenticate'; then
+            log_warn "⚠️  원인: 비대화형 sudo 인증 실패 — NOPASSWD 규칙이 darwin-rebuild에 매칭되지 않았습니다."
+            log_warn "   확인: sudo -n -ll $REBUILD_CMD switch 출력에 'Options: !authenticate'가 있어야 정상"
+            log_warn "   규칙: modules/darwin/configuration.nix의 security.sudo.extraConfig"
+        fi
         if [[ -n "${UNINSTALLED_CASKS:-}" ]]; then
             echo ""
             log_warn "⚠️  The following cask(s) were uninstalled before rebuild:"

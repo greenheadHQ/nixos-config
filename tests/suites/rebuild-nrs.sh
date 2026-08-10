@@ -152,6 +152,34 @@ EOF
   chmod +x "$home_dir/.local/bin/nrs-relink"
 }
 
+# fake sudo stub. 비TTY nrs는 sudo를 -n(fail-fast)으로 호출하므로 실제 sudo처럼
+# 옵션을 소비한 뒤 명령을 exec한다. -l/-ll(darwin nrs 실패 진단 경로가 호출하는
+# 조회 모드)은 명령을 실행하지 않고 소비만 한다 — 현재 어떤 테스트도 rebuild 실패
+# 진단 경로를 구동하지 않으므로, 실제 `sudo -ll` 출력(!authenticate) emulation은
+# 두지 않는다 (소비처 없는 스캐폴딩 회피; production 진단 판정의 정확성은 실측으로
+# 확인). 모르는 옵션은 fail-loud로 계약 드리프트를 잡고, FAKE_SUDO_ARGS_LOG가
+# 설정되면 호출 인자를 기록한다 (-n 전달 계약 assert용).
+install_fake_sudo_stub() {
+  local stub_dir="$1"
+  cat > "$stub_dir/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ -n "${FAKE_SUDO_ARGS_LOG:-}" ]]; then
+  printf 'sudo %s\n' "$*" >> "$FAKE_SUDO_ARGS_LOG"
+fi
+while [[ "${1:-}" == -* ]]; do
+  case "$1" in
+    -n) shift ;;
+    -l|-ll) exit 0 ;;
+    --) shift; break ;;
+    *) echo "fake sudo: unexpected option $1" >&2; exit 64 ;;
+  esac
+done
+exec "$@"
+EOF
+  chmod +x "$stub_dir/sudo"
+}
+
 test_rebuild_common_exports_public_api() {
   local sandbox output
   sandbox=$(new_sandbox)
@@ -471,11 +499,7 @@ test_nixos_nrs_offline_force_smoke() {
   install_repo_fallback_codex_legacy_hooks_helper "$repo_root"
 
   mkdir -p "$stub_dir" "$home_dir/.local/bin"
-  cat > "$stub_dir/sudo" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-"$@"
-EOF
+  install_fake_sudo_stub "$stub_dir"
   cat > "$stub_dir/nixos-rebuild" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -515,17 +539,20 @@ EOF
     HOME="$home_dir" \
     PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
     NRS_RESULT_TARGET="$result_target" \
+    FAKE_SUDO_ARGS_LOG="$sandbox/sudo-args.log" \
     bash -c '
       set -euo pipefail
       cd "'"$repo_root"'"
       "'"$home_dir/.local/bin/nrs"'" --offline --force
-    ' 2>&1
+    ' </dev/null 2>&1
   )
 
   assert_contains "$output" "Applying changes (offline)"
   assert_contains "$output" "Done!"
   assert_contains "$output" "Removed retired user-level Codex hooks.compatibility.json"
   assert_contains "$output" "Pruned 1 stale Codex hook entry"
+  # 비TTY 계약: nrs는 sudo를 -n(fail-fast)으로 호출해야 한다
+  assert_contains "$(cat "$sandbox/sudo-args.log")" "sudo -n nixos-rebuild switch"
   [[ ! -e "$repo_root/.codex/hooks.json" ]] || fail "expected nixos nrs to remove retired hooks.json"
   [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected nixos nrs to remove retired hooks.compatibility.json"
   assert_user_codex_hooks_pruned "$home_dir"
@@ -546,11 +573,7 @@ test_nixos_nrs_no_changes_activates_when_codex_artifact_missing() {
   install_codex_managed_artifact_fixture "$home_dir"
   rm -f "$home_dir/.codex/hooks/pinning-alert.sh"
 
-  cat > "$stub_dir/sudo" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-"$@"
-EOF
+  install_fake_sudo_stub "$stub_dir"
   cat > "$stub_dir/nixos-rebuild" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -624,11 +647,7 @@ test_darwin_nrs_offline_force_smoke() {
   mkdir -p "$stub_dir" "$home_dir/.local/bin" "$home_dir/Library/LaunchAgents" "$sandbox/current-system"
   current_target="$sandbox/current-system"
 
-  cat > "$stub_dir/sudo" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-"$@"
-EOF
+  install_fake_sudo_stub "$stub_dir"
   cat > "$stub_dir/darwin-rebuild" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -707,17 +726,20 @@ EOF
     PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
     DARWIN_RESULT_TARGET="$result_target" \
     DARWIN_CURRENT_SYSTEM="$current_target" \
+    FAKE_SUDO_ARGS_LOG="$sandbox/sudo-args.log" \
     bash -c '
       set -euo pipefail
       cd "'"$repo_root"'"
       "'"$home_dir/.local/bin/nrs"'" --offline --force
-    ' 2>&1
+    ' </dev/null 2>&1
   )
 
   assert_contains "$output" "Applying changes (offline)"
   assert_contains "$output" "Done!"
   assert_contains "$output" "Removed retired user-level Codex hooks.compatibility.json"
   assert_contains "$output" "Pruned 1 stale Codex hook entry"
+  # 비TTY 계약: nrs는 sudo를 -n(fail-fast)으로 호출해야 한다
+  assert_contains "$(cat "$sandbox/sudo-args.log")" "sudo -n darwin-rebuild switch"
   [[ ! -e "$repo_root/.codex/hooks.json" ]] || fail "expected darwin nrs to remove retired hooks.json"
   [[ ! -e "$repo_root/.codex/hooks.compatibility.json" ]] || fail "expected darwin nrs to remove retired hooks.compatibility.json"
   assert_user_codex_hooks_pruned "$home_dir"
@@ -750,11 +772,7 @@ test_darwin_nrs_no_changes_releases_worktree_lock() {
   write_mixed_user_codex_hooks "$home_dir"
   install_codex_managed_artifact_fixture "$home_dir"
 
-  cat > "$stub_dir/sudo" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-"$@"
-EOF
+  install_fake_sudo_stub "$stub_dir"
   cat > "$stub_dir/darwin-rebuild" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -846,11 +864,7 @@ setup_darwin_no_change_gcroot_fixture() {
   # stale worktree probe: main 경로 _remove_worktree_symlinks가 매칭하는 심링크
   ln -sf "$worktree_root/CLAUDE.md" "$home_dir/.claude/CLAUDE.md"
 
-  cat > "$stub_dir/sudo" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-"$@"
-EOF
+  install_fake_sudo_stub "$stub_dir"
   cat > "$stub_dir/darwin-rebuild" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -942,11 +956,7 @@ test_darwin_nrs_no_changes_activates_when_codex_artifact_missing() {
   install_codex_managed_artifact_fixture "$home_dir"
   rm -f "$home_dir/.codex/hooks/pinning-alert.sh"
 
-  cat > "$stub_dir/sudo" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-"$@"
-EOF
+  install_fake_sudo_stub "$stub_dir"
   cat > "$stub_dir/darwin-rebuild" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
