@@ -192,19 +192,45 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
 3. `gh issue create`를 `--body-file`로 실행한다. 본문은 임시 파일에 저장 후 전달.
    ```bash
    # BSD/macOS mktemp는 템플릿 끝(trailing)에 XXXXXX가 와야 랜덤 치환함.
-   # 확장자 없이 랜덤 파일 생성 — gh issue create --body-file은 확장자 무관.
+   # 전용 private 디렉터리만 만들고 본문 target은 첫 편집 전까지 존재하지 않게 둔다.
    umask 077
-   ISSUE_BODY=$(mktemp -t issue-body.XXXXXX) || { echo "ERROR: mktemp 실패"; exit 1; }
+   ISSUE_BODY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/issue-body.XXXXXX") \
+     || { echo "ERROR: 본문 임시 디렉터리 생성 실패"; exit 1; }
+   chmod 700 "$ISSUE_BODY_DIR" \
+     || { echo "ERROR: 본문 임시 디렉터리 권한 설정 실패: $ISSUE_BODY_DIR"; exit 1; }
+   ISSUE_BODY="$ISSUE_BODY_DIR/body.md"
+   if [ -e "$ISSUE_BODY" ] || [ -L "$ISSUE_BODY" ]; then
+     echo "ERROR: 첫 편집 전 본문 target이 이미 존재함: $ISSUE_BODY"
+     exit 1
+   fi
    # <작성된 본문>을 $ISSUE_BODY에 기록 (파일 편집 도구)
+
+   # 게시 경계에서는 regular file만 허용하고, 편집 도구의 기본 mode와 무관하게 0600으로 고정한다.
+   if [ ! -f "$ISSUE_BODY" ] || [ -L "$ISSUE_BODY" ]; then
+     echo "ERROR: 본문이 regular non-symlink file이 아님"
+     echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 게시하지 않고 보존됨"
+     exit 1
+   fi
+   if ! chmod 600 "$ISSUE_BODY"; then
+     echo "ERROR: 본문 파일 권한 설정 실패"
+     echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 게시하지 않고 보존됨"
+     exit 1
+   fi
 
    # gh issue create — 성공 시 URL 캡처, 실패 시 본문 경로/미리보기 출력 후 exit 1
    if ISSUE_URL=$(gh issue create --title "<제목>" --label "<라벨>" --body-file "$ISSUE_BODY"); then
      echo "ISSUE_URL=$ISSUE_URL"
-     rm -f "$ISSUE_BODY"
+     # GitHub write 성공과 로컬 cleanup 성공을 혼동하지 않는다. 정확한 파일과 빈 디렉터리만 제거한다.
+     if ! rm -f "$ISSUE_BODY"; then
+       echo "WARN: 이슈는 등록됐지만 본문 파일 정리 실패: $ISSUE_BODY"
+     elif ! rmdir "$ISSUE_BODY_DIR"; then
+       echo "WARN: 이슈는 등록됐지만 본문 임시 디렉터리 정리 실패: $ISSUE_BODY_DIR"
+     fi
    else
      rc=$?
      echo "ERROR: gh issue create 실패 (exit $rc)"
      echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 본문 보존됨 (재시도 시 재사용)"
+     echo "ISSUE_BODY_DIR=$ISSUE_BODY_DIR  # 성공한 재시도 뒤 빈 디렉터리를 정리"
      # 본문은 stdout으로 덤프하지 않는다 — 사용자가 실수로 시크릿을 포함한 경우 세션/운영 로그에 남을 위험.
      # 필요 시 로컬 shell에서 직접 확인: `sed -n '1,20p' "$ISSUE_BODY_PATH"` 또는 에디터로 열기.
      echo "본문 미리보기는 보안상 stdout 덤프하지 않음. 확인 명령: sed -n '1,20p' \"\$ISSUE_BODY_PATH\""

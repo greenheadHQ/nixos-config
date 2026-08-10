@@ -74,6 +74,7 @@ run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
 run_test "codex activation .agents symlink guard static" test_codex_activation_agents_symlink_guard_static
+run_test "create-issue documented body lifecycle is safe" test_create_issue_documented_body_lifecycle_is_safe
 run_test "claude remote-control start requires git repo" test_claude_remote_control_start_requires_git_repo
 run_test "claude remote-control start registers manual instance" test_claude_remote_control_start_registers_manual_instance
 run_test "claude remote-control start warns on ignored options" test_claude_remote_control_start_warns_when_running_options_differ
