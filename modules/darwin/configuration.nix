@@ -94,10 +94,17 @@ in
   # Touch ID for sudo
   security.pam.services.sudo_local.touchIdAuth = true;
 
-  # darwin-rebuild를 Touch ID 없이 실행 (nrs 자동화용)
-  # 보안: NixOS는 이미 wheelNeedsPassword=false (ALL 명령 NOPASSWD). 이것은 더 제한적.
+  # sudo 전면 NOPASSWD — 원격/무인 LLM 자율주행의 sudo 마찰을 근본 제거.
+  # 근거: 직전의 darwin-rebuild 한정 NOPASSWD 규칙은 인자 제약이 없어 이미
+  # root-equivalent였다 (사용자 쓰기 가능 flake로 임의 activation 스크립트를 root
+  # 실행 가능). 따라서 전면 개방의 권한 증분은 한계적이고, NixOS(MiniPC)는 이미
+  # wheelNeedsPassword=false로 같은 상태다. 위협모델은 표적 공격자가 아니라 자율
+  # 에이전트이며, 프론티어 모델의 위험 명령 오실행 확률이 제로에 수렴한다는 사용자
+  # 판단하에 정직한 전면 개방을 택했다.
+  # 되돌리려면 이 줄을 `${username} ALL=(root) NOPASSWD: /run/current-system/sw/bin/darwin-rebuild`로
+  # 좁힌다 (git history: 이 커밋 직전 상태).
   security.sudo.extraConfig = ''
-    ${username} ALL=(root) NOPASSWD: /run/current-system/sw/bin/darwin-rebuild
+    ${username} ALL=(ALL) NOPASSWD: ALL
   '';
 
   # 사용자 설정
