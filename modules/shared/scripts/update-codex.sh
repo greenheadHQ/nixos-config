@@ -106,7 +106,7 @@ prefetch_asset() {
     '.platforms[$p] | (if $k == "" then . else .[$k] end) | .asset? // empty' "$PIN")"
   if [ -z "$asset" ]; then
     if [ "$required" = 1 ]; then
-      echo "update-codex: ${plat}에 ${desc} asset 선언 없음 — package.nix eval이 throw한다. codex-pin.json에 asset/hash를 추가하라" >&2
+      echo "update-codex: ${plat}에 ${desc} asset 선언 없음 — package.nix eval이 throw한다. codex-pin.json의 platforms.${plat}${key:+.$key}에 asset/hash를 추가하라" >&2
       exit 1
     fi
     return 0
