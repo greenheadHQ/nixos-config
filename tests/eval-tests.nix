@@ -459,8 +459,7 @@ let
       "Defaults:root,%admin env_keep+=TERMINFO"
     ];
 
-  expectedDarwinSudoRule =
-    cfg: "${cfg.system.primaryUser} ALL=(root) NOPASSWD: /run/current-system/sw/bin/darwin-rebuild";
+  expectedDarwinSudoRule = cfg: "${cfg.system.primaryUser} ALL=(ALL) NOPASSWD: ALL";
 
   normalizedDarwinSudoPolicyLines =
     cfg:
@@ -570,7 +569,7 @@ let
           cond = hasHost && cfg.security.pam.services.sudo_local.touchIdAuth == true;
         }
         {
-          name = "Test D2 ${hostName}: sudo.extraConfig 정규화 후 darwin-rebuild NOPASSWD 규칙 1줄만 남아야 함";
+          name = "Test D2 ${hostName}: sudo.extraConfig 정규화 후 전면 NOPASSWD 규칙 1줄만 남아야 함";
           cond = hasHost && darwinSudoRuleMatchesExactly cfg;
         }
         {
