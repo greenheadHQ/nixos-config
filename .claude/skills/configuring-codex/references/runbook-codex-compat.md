@@ -211,8 +211,9 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
 
 - 설치: nix overlay(`modules/shared/programs/codex/package.nix`, `libraries/packages.nix`의 `shared`
   경유) — macOS+NixOS 공통 nix profile/store. OpenAI 공식 GitHub 릴리스 prebuilt를 직접 핀한다
-  (`codex-pin.json`). nixpkgs lag·제3자 flake 없이 최신 추적이 목적이며, codex-rs는 정적 단일
-  바이너리라 fetch+install만 한다(컴파일·patchelf 없음). 최신화는 `update-codex` 한 줄.
+  (`codex-pin.json`). nixpkgs lag·제3자 flake 없이 최신 추적이 목적이며, codex-rs는 정적 바이너리
+  2종(codex + codex-code-mode-host 사이드카 — 0.147.0+ 도구 실행 필수, 같은 bin/ 설치)이라
+  fetch+install만 한다(컴파일·patchelf 없음). 최신화는 `update-codex` 한 줄.
 - 정리 activation 3종(`default.nix`) — codex를 설치하지 않고, 과거 설치 방식 잔재가 PATH에서
   codex(nix profile)를 shadow하지 못하게 정리만 한다:
   1. `cleanupLegacyCodexCli` — 과거 GitHub ELF(NixOS)/brew cask(macOS) 잔재 정리
@@ -225,7 +226,8 @@ Codex CLI가 디렉토리 심링크는 공식 지원함을 확인했다.
 ### SoT와 업데이트
 
 - 버전 SoT: `modules/shared/programs/codex/codex-pin.json` (version/tag + flake systems 2개
-  (aarch64-darwin·x86_64-linux)의 asset/hash). 업데이트는 `update-codex`(최신 stable 조회 →
+  (aarch64-darwin·x86_64-linux)의 asset/hash와 codeModeHost.asset/hash; x86_64-linux는
+  standalonePackage 추가). 업데이트는 `update-codex`(최신 stable 조회 →
   해시 prefetch → 핀 갱신 → nrs; `--pre`로 alpha 포함). platforms/asset 키는 정적 설정이라 손으로 관리.
 - overlay는 OpenAI 릴리스를 직핀하므로 lag이 사실상 없다(직핀 최신). config 템플릿 feature floor
   (현재 0.124+)는 항상 충족. 갱신 후 `codex-pin.json` 변경을 커밋한다.
@@ -271,7 +273,7 @@ ChatGPT mobile Codex sync를 위한 app-server는 일반 CLI와 별도의 standa
 경계:
 - 일반 `command -v codex`는 계속 Nix-managed profile/store 경로여야 한다.
 - `~/.local/bin/codex`가 standalone을 가리키는 symlink이면 PATH shadow 회귀이므로 제거 대상이다.
-- `update-codex`는 CLI asset hash와 standalone package hash를 함께 갱신한다.
+- `update-codex`는 CLI asset hash·code-mode host hash와 standalone package hash를 함께 갱신한다.
 - timer는 `codex doctor`를 실행하지 않는다. 대신 `ensure-running`이 pinned standalone 동기화,
   ChatGPT auth 확인, daemon/start 상태 확인, 버전 drift 재시작, stale socket 정리, 그리고 같은 사용자 +
   legacy app-server per-process 증거가 있는 경우에만 stale PID repair를 수행한다.

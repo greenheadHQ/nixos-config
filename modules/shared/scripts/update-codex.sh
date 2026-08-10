@@ -3,9 +3,10 @@
 #
 # codex는 declarative nix overlay(modules/shared/programs/codex/package.nix)로 설치되며 버전은
 # codex-pin.json에 핀된다. 이 스크립트는 OpenAI GitHub 릴리스에서 최신 stable(rust-vX.Y.Z)을
-# 찾아 핀된 플랫폼들의 CLI asset 해시와, 선언된 경우 code-mode host 사이드카(0.147.0+ 도구
-# 실행 필수)·Codex App remote-control standalone package 해시를 함께 prefetch해 핀을 갱신하고
-# nrs로 적용한다. nixpkgs lag·제3자 flake 없이 "한 줄로 최신"을 받기 위한 경로.
+# 찾아 핀된 플랫폼들의 CLI asset·code-mode host 사이드카(0.147.0+ 도구 실행 필수) 해시를
+# prefetch하고, standalonePackage가 선언된 플랫폼(현재 x86_64-linux)은 Codex App remote-control
+# standalone package 해시도 함께 prefetch해 핀을 갱신하고 nrs로 적용한다. nixpkgs lag·제3자
+# flake 없이 "한 줄로 최신"을 받기 위한 경로.
 #
 # 사용법:
 #   update-codex            # 최신 stable로 핀 갱신 + nrs
@@ -82,15 +83,45 @@ fi
 echo "codex $current → $ver ($tag) 갱신 중..."
 base="https://github.com/$REPO/releases/download/$tag"
 
+# 해시 컬럼 정렬 폭 = 현행 최장 asset 이름(codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz, 53자)+1.
+# 재검증: jq -r '.platforms[] | .. | objects | .asset? // empty' codex-pin.json | awk '{print length}' | sort -rn | head -1
+ASSET_COL=54
+
 # 핀과 같은 디렉토리에 임시 파일을 만들어 최종 mv가 same-fs atomic rename이 되게 하고,
 # trap으로 중단 시 잔재를 정리한다(핀 디렉토리는 git 추적 대상이라 누수 시 working tree 오염).
 tmp="$(mktemp "$(dirname "$PIN")/.codex-pin.XXXXXX")"
 # "$tmp".2는 아래 jq write-then-rename의 scratch sibling. trap이 둘 다 정리한다(아직 없으면 no-op).
 trap 'rm -f "$tmp" "$tmp".2' EXIT
 cp "$PIN" "$tmp"
+
+# prefetch_sub_asset <plat> <key> <required:1|0> <설명>
+# platforms.<plat>.<key>.{asset,hash} 중첩 sub-asset을 prefetch해 핀 해시를 갱신한다.
+# codeModeHost는 package.nix eval이 전 플랫폼 필수로 강제하므로(선언 없으면 throw) required=1로
+# update 단계에서 먼저 잡는다. standalonePackage는 x86_64-linux 전용 선택 필드라 required=0(미선언 스킵).
+prefetch_sub_asset() {
+  local plat="$1" key="$2" required="$3" desc="$4" asset h
+  asset="$(jq -r --arg p "$plat" --arg k "$key" '.platforms[$p][$k].asset // empty' "$PIN")"
+  if [ -z "$asset" ]; then
+    if [ "$required" = 1 ]; then
+      echo "update-codex: ${plat}에 ${key} 선언 없음 — package.nix eval이 throw한다. codex-pin.json에 ${key} asset/hash를 추가하라" >&2
+      exit 1
+    fi
+    return 0
+  fi
+  printf '  prefetch %-*s' "$ASSET_COL" "$asset"
+  h="$(nix store prefetch-file --json "$base/$asset" 2>/dev/null | jq -r '.hash')" || {
+    echo "FAIL"
+    echo "update-codex: $asset prefetch 실패 — 릴리스에 $desc asset이 없거나 네트워크 오류" >&2
+    exit 1
+  }
+  echo "$h"
+  jq --arg p "$plat" --arg k "$key" --arg h "$h" \
+    '.platforms[$p][$k].hash=$h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
+}
+
 for plat in $(jq -r '.platforms | keys[]' "$PIN"); do
   asset="$(jq -r --arg p "$plat" '.platforms[$p].asset' "$PIN")"
-  printf '  prefetch %-44s' "$asset" # 44 = 현행 asset 이름 최장(~39자) 정렬용 cosmetic 폭
+  printf '  prefetch %-*s' "$ASSET_COL" "$asset"
   h="$(nix store prefetch-file --json "$base/$asset" 2>/dev/null | jq -r '.hash')" || {
     echo "FAIL"
     echo "update-codex: $asset prefetch 실패 — 릴리스에 해당 asset이 없거나 네트워크 오류" >&2
@@ -99,31 +130,8 @@ for plat in $(jq -r '.platforms | keys[]' "$PIN"); do
   echo "$h"
   jq --arg p "$plat" --arg h "$h" '.platforms[$p].hash=$h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
 
-  cmh_asset="$(jq -r --arg p "$plat" '.platforms[$p].codeModeHost.asset // empty' "$PIN")"
-  if [ -n "$cmh_asset" ]; then
-    printf '  prefetch %-44s' "$cmh_asset"
-    cmh_hash="$(nix store prefetch-file --json "$base/$cmh_asset" 2>/dev/null | jq -r '.hash')" || {
-      echo "FAIL"
-      echo "update-codex: $cmh_asset prefetch 실패 — 릴리스에 code-mode host asset이 없거나 네트워크 오류" >&2
-      exit 1
-    }
-    echo "$cmh_hash"
-    jq --arg p "$plat" --arg h "$cmh_hash" \
-      '.platforms[$p].codeModeHost.hash=$h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
-  fi
-
-  standalone_asset="$(jq -r --arg p "$plat" '.platforms[$p].standalonePackage.asset // empty' "$PIN")"
-  if [ -n "$standalone_asset" ]; then
-    printf '  prefetch %-44s' "$standalone_asset"
-    standalone_hash="$(nix store prefetch-file --json "$base/$standalone_asset" 2>/dev/null | jq -r '.hash')" || {
-      echo "FAIL"
-      echo "update-codex: $standalone_asset prefetch 실패 — 릴리스에 standalone package asset이 없거나 네트워크 오류" >&2
-      exit 1
-    }
-    echo "$standalone_hash"
-    jq --arg p "$plat" --arg h "$standalone_hash" \
-      '.platforms[$p].standalonePackage.hash=$h' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
-  fi
+  prefetch_sub_asset "$plat" codeModeHost 1 "code-mode host"
+  prefetch_sub_asset "$plat" standalonePackage 0 "standalone package"
 done
 jq --arg v "$ver" --arg t "$tag" '.version=$v | .tag=$t' "$tmp" >"$tmp".2 && mv "$tmp".2 "$tmp"
 mv "$tmp" "$PIN"
