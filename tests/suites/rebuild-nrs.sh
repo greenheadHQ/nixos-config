@@ -153,7 +153,9 @@ EOF
 }
 
 # fake sudo stub. 비TTY nrs는 sudo를 -n(fail-fast)으로 호출하므로 실제 sudo처럼
-# 옵션을 소비한 뒤 명령을 exec한다. 모르는 옵션은 fail-loud로 드러내 계약 드리프트를 잡고,
+# 옵션을 소비한 뒤 명령을 exec한다. -l은 NOPASSWD 규칙 조회 모드(darwin nrs의 실패
+# 진단 경로가 호출)로, 명령을 실행하지 않고 FAKE_SUDO_LIST_RC(기본 0 = 규칙 매칭
+# 정상)로 종료한다. 모르는 옵션은 fail-loud로 드러내 계약 드리프트를 잡고,
 # FAKE_SUDO_ARGS_LOG가 설정되면 호출 인자를 기록한다 (-n 전달 계약 assert용).
 install_fake_sudo_stub() {
   local stub_dir="$1"
@@ -166,6 +168,7 @@ fi
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     -n) shift ;;
+    -l) exit "${FAKE_SUDO_LIST_RC:-0}" ;;
     --) shift; break ;;
     *) echo "fake sudo: unexpected option $1" >&2; exit 64 ;;
   esac
