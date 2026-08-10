@@ -153,11 +153,12 @@ EOF
 }
 
 # fake sudo stub. 비TTY nrs는 sudo를 -n(fail-fast)으로 호출하므로 실제 sudo처럼
-# 옵션을 소비한 뒤 명령을 exec한다. -l/-ll은 NOPASSWD 규칙 조회 모드(darwin nrs의
-# 실패 진단 경로가 -ll 출력의 '!authenticate'를 파싱)로, 명령을 실행하지 않고
-# FAKE_SUDO_LIST_AUTH(기본 nopasswd = 'Options: !authenticate' 출력)에 따라 실제
-# sudo -ll 출력 형태를 흉내낸다. 모르는 옵션은 fail-loud로 드러내 계약 드리프트를
-# 잡고, FAKE_SUDO_ARGS_LOG가 설정되면 호출 인자를 기록한다 (-n 전달 계약 assert용).
+# 옵션을 소비한 뒤 명령을 exec한다. -l/-ll(darwin nrs 실패 진단 경로가 호출하는
+# 조회 모드)은 명령을 실행하지 않고 소비만 한다 — 현재 어떤 테스트도 rebuild 실패
+# 진단 경로를 구동하지 않으므로, 실제 `sudo -ll` 출력(!authenticate) emulation은
+# 두지 않는다 (소비처 없는 스캐폴딩 회피; production 진단 판정의 정확성은 실측으로
+# 확인). 모르는 옵션은 fail-loud로 계약 드리프트를 잡고, FAKE_SUDO_ARGS_LOG가
+# 설정되면 호출 인자를 기록한다 (-n 전달 계약 assert용).
 install_fake_sudo_stub() {
   local stub_dir="$1"
   cat > "$stub_dir/sudo" <<'EOF'
@@ -169,12 +170,7 @@ fi
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
     -n) shift ;;
-    -l|-ll)
-      if [[ "${FAKE_SUDO_LIST_AUTH:-nopasswd}" == nopasswd ]]; then
-        echo "    Options: !authenticate"
-      fi
-      exit 0
-      ;;
+    -l|-ll) exit 0 ;;
     --) shift; break ;;
     *) echo "fake sudo: unexpected option $1" >&2; exit 64 ;;
   esac
