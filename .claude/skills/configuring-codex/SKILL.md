@@ -81,11 +81,11 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 Codex CLI 바이너리는 declarative nix overlay로 설치한다 (`modules/shared/programs/codex/package.nix`,
 `libraries/packages.nix`의 `shared` 경유; macOS+NixOS 공통; #890에서 mise npm backend → nix 이관).
 overlay는 OpenAI 공식 GitHub 릴리스의 prebuilt 바이너리를 직접 핀한다 — nixpkgs lag(수 주)이나
-제3자 flake 신뢰 없이 최신 codex를 추적하기 위함이다. codex-rs는 정적 바이너리(linux=musl,
-darwin=signed macho) 2종 — codex + code-mode host 사이드카(codex-code-mode-host; 0.147.0+ 도구 실행
-필수, 같은 bin/에 있어야 동작) — 을 같은 $out/bin에 설치하며, 소스 컴파일·patchelf 없이
-fetch + install만 하므로 nix profile/store 경로로 안정적으로 resolve된다(mise shim의 비대화형 PATH
-fragility 회피가 이관 동기 — #815/#821/#823/#845/#858).
+제3자 flake 신뢰 없이 최신 codex를 추적하기 위함이다. codex-rs는 정적 바이너리 2종(codex +
+code-mode host 사이드카 codex-code-mode-host — 0.147.0+ 도구 실행 필수, codex와 같은 bin/에
+있어야 동작; linux=musl, darwin=signed macho)이라 소스 컴파일·patchelf 없이 fetch + install만
+하며, overlay가 둘을 같은 $out/bin에 설치해 nix profile/store 경로로 안정적으로 resolve된다
+(mise shim의 비대화형 PATH fragility 회피가 이관 동기 — #815/#821/#823/#845/#858).
 
 - 버전 SoT: `modules/shared/programs/codex/codex-pin.json` (version/tag + flake systems 2개
   (aarch64-darwin·x86_64-linux)의 asset/hash와 codeModeHost.asset/hash; x86_64-linux는
