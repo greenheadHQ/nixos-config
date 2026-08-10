@@ -88,14 +88,22 @@ ensure_asset_decl() {
   printf '%s\n' "$asset"
 }
 
-# asset 선언 완결성을 같은 버전 fast path보다 먼저 검사한다 — 부분 편집된 핀(예: 새 플랫폼
-# 추가 시 asset 누락)이 "이미 최신" 조기 종료를 타고 검증 없이 통과하면, 그 누락은
+# 핀 선언 완결성을 같은 버전 fast path보다 먼저 검사한다 — 부분 편집된 핀(예: 새 플랫폼
+# 추가 시 asset/hash 누락)이 "이미 최신" 조기 종료를 타고 검증 없이 통과하면, 그 누락은
 # 해당 호스트의 nrs eval에서야 드러난다 (update 단계 선제 검증 계약의 구멍 — PR #1220 리뷰 반영).
+# asset 이름은 사람이 넣어야 하는 값이라 누락 시 즉시 실패하고, hash는 prefetch가 스스로
+# 계산할 수 있는 값이라 누락 시 fast path를 우회해 prefetch로 복구한다 (PR #1221 리뷰 반영).
+missing_hash=0
 for plat in $(jq -r '.platforms | keys[]' "$PIN"); do
   ensure_asset_decl "$plat" >/dev/null
+  hash_decl="$(jq -r --arg p "$plat" '.platforms[$p].hash? // empty' "$PIN")"
+  if [ -z "$hash_decl" ]; then
+    echo "update-codex: ${plat}에 hash 선언 없음 — fast path를 건너뛰고 prefetch로 복구한다"
+    missing_hash=1
+  fi
 done
 
-if [ "$ver" = "$current" ] && [ "$force" = 0 ]; then
+if [ "$ver" = "$current" ] && [ "$force" = 0 ] && [ "$missing_hash" = 0 ]; then
   echo "이미 최신: codex $current ($tag) — 변경 없음"
   exit 0
 fi
@@ -103,9 +111,9 @@ fi
 echo "codex $current → $ver ($tag) 갱신 중..."
 base="https://github.com/$REPO/releases/download/$tag"
 
-# 해시 컬럼 정렬 폭 = 현행 최장 asset 이름(codex-package-x86_64-unknown-linux-musl.tar.gz, 44자)+1.
+# 해시 컬럼 정렬 폭 = 현행 최장 asset 이름(codex-package-x86_64-unknown-linux-musl.tar.gz, 46자)+1.
 # 재검증: jq -r '.platforms[].asset' modules/shared/programs/codex/codex-pin.json | awk '{print length}' | sort -rn | head -1
-ASSET_COL=45
+ASSET_COL=47
 
 # 핀과 같은 디렉토리에 임시 파일을 만들어 최종 mv가 same-fs atomic rename이 되게 하고,
 # trap으로 중단 시 잔재를 정리한다(핀 디렉토리는 git 추적 대상이라 누수 시 working tree 오염).
