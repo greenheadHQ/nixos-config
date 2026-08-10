@@ -23,7 +23,7 @@
 - Project projection은 `.agents/skills/<name>` directory symlink 단위다. repo-local target은
   `../../.claude/skills/<name>`이어야 하고 투영된 `SKILL.md`에 접근 가능해야 한다. 레거시 실디렉토리,
   누락·대상 불일치·고아 entry는 실패하며, 접근 가능한 `SKILL.md`를 가진 절대 target plugin symlink는 허용한다.
-- 실측 codex 런타임과 `codex-pin.json`의 버전 일치 확인: `jq -r .version modules/shared/programs/codex/codex-pin.json && codex --version` (확인 버전 스탬프는 `SKILL.md` "작성 기준"에만 기재한다 — 여기 박으면 bump 때 stale해진다. 버전 값 자체의 SoT는 `codex-pin.json`).
+- 실측 codex 런타임과 `codex-pin.json`의 버전 일치 확인 — 불일치가 문자열로 드러나게 비교한다: `[ "$(jq -r .version modules/shared/programs/codex/codex-pin.json)" = "$(command codex --version | awk '{print $2}')" ] && echo "version match" || echo "version MISMATCH"` (`command codex`는 zsh wrapper 함수 우회. 확인 버전 스탬프는 `SKILL.md` "작성 기준"에만 기재한다 — 여기 박으면 bump 때 stale해진다. 버전 값 자체의 SoT는 `codex-pin.json`).
 
 ## 증상
 

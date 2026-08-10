@@ -75,6 +75,28 @@ tag="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq "$jq_filter" 2
 ver="${tag#rust-v}"
 current="$(jq -r '.version' "$PIN")"
 
+# ensure_asset_decl <plat> <key|""> <required:1|0> <설명>
+# 핀 선언을 조회해 asset 이름을 출력한다. required=1인데 미선언이면 pin 경로를 안내하고 실패한다.
+# 같은 버전 fast path 전의 완결성 검사와 prefetch_asset이 이 검사 하나를 공유한다.
+ensure_asset_decl() {
+  local plat="$1" key="$2" required="$3" desc="$4" asset
+  asset="$(jq -r --arg p "$plat" --arg k "$key" \
+    '.platforms[$p] | (if $k == "" then . else .[$k] end) | .asset? // empty' "$PIN")"
+  if [ -z "$asset" ] && [ "$required" = 1 ]; then
+    echo "update-codex: ${plat}에 ${desc} asset 선언 없음 — package.nix eval이 throw한다. codex-pin.json의 platforms.${plat}${key:+.$key}에 asset/hash를 추가하라" >&2
+    exit 1
+  fi
+  printf '%s\n' "$asset"
+}
+
+# required asset 선언 완결성을 같은 버전 fast path보다 먼저 검사한다 — 부분 편집된 핀(예: 새
+# 플랫폼 추가 시 codeModeHost 누락)이 "이미 최신" 조기 종료를 타고 검증 없이 통과하면, 그 누락은
+# 해당 호스트의 nrs eval에서야 드러난다 (update 단계 선제 검증 계약의 구멍 — PR #1220 리뷰 반영).
+for plat in $(jq -r '.platforms | keys[]' "$PIN"); do
+  ensure_asset_decl "$plat" "" 1 "CLI" >/dev/null
+  ensure_asset_decl "$plat" codeModeHost 1 "code-mode host" >/dev/null
+done
+
 if [ "$ver" = "$current" ] && [ "$force" = 0 ]; then
   echo "이미 최신: codex $current ($tag) — 변경 없음"
   exit 0
@@ -99,18 +121,11 @@ cp "$PIN" "$tmp"
 # (platforms.<plat>.{asset,hash}), 아니면 중첩 sub-asset(platforms.<plat>.<key>.{asset,hash})이다.
 # CLI asset과 codeModeHost는 package.nix eval이 전 플랫폼 필수로 강제하므로(선언 없으면 throw)
 # required=1로 update 단계에서 먼저 잡는다. standalonePackage는 x86_64-linux 전용 선택
-# 필드라 required=0(미선언 스킵).
+# 필드라 required=0(미선언 스킵). 선언 검사는 ensure_asset_decl이 소유한다.
 prefetch_asset() {
   local plat="$1" key="$2" required="$3" desc="$4" asset h
-  asset="$(jq -r --arg p "$plat" --arg k "$key" \
-    '.platforms[$p] | (if $k == "" then . else .[$k] end) | .asset? // empty' "$PIN")"
-  if [ -z "$asset" ]; then
-    if [ "$required" = 1 ]; then
-      echo "update-codex: ${plat}에 ${desc} asset 선언 없음 — package.nix eval이 throw한다. codex-pin.json의 platforms.${plat}${key:+.$key}에 asset/hash를 추가하라" >&2
-      exit 1
-    fi
-    return 0
-  fi
+  asset="$(ensure_asset_decl "$plat" "$key" "$required" "$desc")"
+  [ -n "$asset" ] || return 0
   printf '  prefetch %-*s' "$ASSET_COL" "$asset"
   h="$(nix store prefetch-file --json "$base/$asset" 2>/dev/null | jq -r '.hash')" || {
     echo "FAIL"
