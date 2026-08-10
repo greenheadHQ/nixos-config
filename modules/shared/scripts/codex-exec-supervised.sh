@@ -3,16 +3,23 @@
 #
 # Background (issue #593): codex exec --ephemeral는 prompt 인수가 있어도 stdin이 piped면
 # read_prompt_from_stdin(StdinPromptBehavior::OptionalAppend)가 EOF 미도달 시 무기한 wait한다.
-# npm wrapper(@openai/codex)는 spawn(binaryPath, args, {stdio:"inherit", env})로 native binary를
-# 호출하면서 detach나 process group 생성을 하지 않고 SIGKILL forward도 안 한다. 따라서
-# 단순 `timeout` 호출만으로는 wrapper PID만 죽고 native binary가 잔존할 수 있다.
+# 이 동작은 upstream 미해결이다 (openai/codex#20919, #27019 — 2026-08 기준 OPEN, opt-out
+# 플래그 없음). stdin EOF 보장은 호출자 책임이고(아래 "stdin 처리 책임"), 본 wrapper는 그
+# 규약이 깨졌을 때의 폭발 반경을 timeout으로 유한하게 만든다.
 #
-# 본 wrapper는 setsid + timeout 조합으로 process group kill을 보장한다. mac BSD coreutils에는
-# timeout이 없고 setsid도 없으므로, Nix wrapper(modules/shared/programs/shell/default.nix의
-# home.file + pkgs.writeShellScript)가 두 binary의 absolute store path를 CODEX_EXEC_TIMEOUT_BIN과
-# CODEX_EXEC_SETSID_BIN env 변수에 export한 뒤 본 raw script를 exec한다. 이로써 wrapper subprocess의
-# PATH가 GNU coreutils로 오염되지 않고, codex exec 자식 shell도 원래 user PATH(BSD coreutils 우선)를
-# 보존한다.
+# 역사 각주: 도입 당시(2026-05, PR #636)는 npm wrapper(@openai/codex) 패키징의 detach/process
+# group 부재로 "timeout이 wrapper PID만 죽이고 native가 잔존"하는 축이 있어 setsid를 채택했다.
+# 현행 패키징(modules/shared/programs/codex/ — upstream tarball의 native binary 직핀)에는 중간
+# npm 프로세스가 없어 그 실패 모드는 소멸했고, 2026-08 mac+Linux 분리 실측에서 process group은
+# GNU timeout 자신이 생성하며(비-foreground 모드) SIGTERM 무시 hang의 유일한 구제는
+# --kill-after(SIGKILL 승급)임이 확인됐다. setsid 의존 제거는 후속 PR에서 real-codex Linux
+# 재확인 후 진행한다 — 그 전까지 기존 fail-closed 동작을 유지한다.
+#
+# mac BSD coreutils에는 timeout이 없고 setsid도 없으므로, Nix wrapper(modules/shared/programs/
+# shell/default.nix의 home.file + pkgs.writeShellScript)가 두 binary의 absolute store path를
+# CODEX_EXEC_TIMEOUT_BIN과 CODEX_EXEC_SETSID_BIN env 변수에 export한 뒤 본 raw script를 exec한다.
+# 이로써 wrapper subprocess의 PATH가 GNU coreutils로 오염되지 않고, codex exec 자식 shell도
+# 원래 user PATH(BSD coreutils 우선)를 보존한다.
 #
 # stdin 처리 책임: 호출자가 명시적으로 처리 (`cat prompt.md | codex-exec-supervised ... -` 또는
 # `codex-exec-supervised ... < /dev/null`). 본 wrapper는 stdin을 inherit한다.
@@ -40,15 +47,22 @@
 #                                 budget(1800초)을 초과하는 합법 작업의 escape는 raw codex exec
 #                                 우회로 처리).
 #   CODEX_EXEC_KILL_AFTER_SECONDS SIGTERM 후 SIGKILL 전환 grace, default 5
-#                                 rationale: npm wrapper SIGTERM forward 후 native 응답 대기.
-#                                 양수 정수만 허용. 상한 60초.
+#                                 rationale: SIGTERM 수신 후 codex의 자체 정리 시간. SIGTERM이
+#                                 무시되는 hang에서는 이 SIGKILL 승급이 유일한 구제임이 실측
+#                                 확인됐다 (2026-08 hazard 분리 실험). 양수 정수만 허용. 상한 60초.
 #   CODEX_EXEC_TIMEOUT_BIN        timeout binary absolute path. 미설정 시 PATH 검색 후 부재면 BLOCKED.
 #                                 Nix wrapper가 ${pkgs.coreutils}/bin/timeout으로 set한다.
 #   CODEX_EXEC_SETSID_BIN         setsid binary absolute path. 미설정 시 PATH 검색 후 부재면 BLOCKED.
-#                                 부재 fail-closed (process group kill 보장이 본 wrapper의 핵심 경계).
+#                                 부재 fail-closed. 주의: 2026-08 실측에서 setsid는 종료 보장에
+#                                 기여하지 않음이 확인됐다 (process group은 timeout이 생성 — 헤더
+#                                 역사 각주 참조). 제거는 후속 PR 범위이며 그 전까지 기존 동작 유지.
 #                                 진단용 timeout-only 실행이 필요하면 본 wrapper를 우회해 timeout/codex를
 #                                 직접 호출한다 (보장 약화는 wrapper 인터페이스 안에 흡수하지 않는다).
 #                                 Nix wrapper가 ${pkgs.util-linux}/bin/setsid로 set한다.
+#
+#   위 4개 외의 CODEX_EXEC_* 환경변수는 fail-closed로 거부한다 (exit 127) — 정본 변수명
+#   오타(예: CODEX_EXEC_TIMEOUT=1500)가 침묵으로 무시되어 호출 의도가 소실되는 사고 방지
+#   (2026-08-06 실사례). CODEX_EXEC_ 네임스페이스는 본 wrapper 소유다.
 #
 # Exit code:
 #   0          정상
@@ -58,6 +72,17 @@
 #   기타       codex 자체 exit code
 
 set -euo pipefail
+
+# 미지 CODEX_EXEC_* 변수 fail-fast. 반드시 본 스크립트의 어떤 CODEX_EXEC_* 셸 변수 할당보다
+# 먼저 실행한다 — 이 시점의 ${!CODEX_EXEC_@}는 환경에서 상속된 이름만 열거한다.
+_KNOWN_CODEX_EXEC_VARS=" CODEX_EXEC_TIMEOUT_SECONDS CODEX_EXEC_KILL_AFTER_SECONDS CODEX_EXEC_TIMEOUT_BIN CODEX_EXEC_SETSID_BIN "
+for _codex_exec_var in "${!CODEX_EXEC_@}"; do
+  if [[ "$_KNOWN_CODEX_EXEC_VARS" != *" $_codex_exec_var "* ]]; then
+    printf 'codex-exec-supervised: 알 수 없는 환경변수 %s — 허용:%s(exit 127)\n' \
+      "$_codex_exec_var" "$_KNOWN_CODEX_EXEC_VARS" >&2
+    exit 127
+  fi
+done
 
 # 환경변수 검증 helper. 양수 정수만 허용.
 _validate_positive_int() {

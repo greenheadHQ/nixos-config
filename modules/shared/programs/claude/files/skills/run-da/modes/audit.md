@@ -20,7 +20,7 @@ audit 모드는 preflight 체크리스트를 건너뛴다 — 감사 자체가 �
 | `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: `run-da audit agent=codex-high` |
 | trailing 자유 텍스트 | `audit` (및 `MAX`) 토큰 뒤 나머지 인자 전체를 메인 에이전트의 우선순위 판단 컨텍스트로 보존 (Step 1 `git diff` 결과와 결합) |
 | 정수 에이전트 수 인자 | 폐지 — fan-out 크기는 기본 6 bundle / `MAX` 10 관점으로만 결정한다 |
-| 에이전트 권한 | 읽기 전용. codex exec 경로(Claude Code/headless)는 Layer 1(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules`)으로 구조적 강제. Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영 (Non-goals 참조) |
+| 에이전트 권한 | 읽기 전용. codex exec 경로(Claude Code/headless)는 Layer 1 명령 literal(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules`)로 실행 — 실제 차단 수행자는 codex의 read-only sandbox이고 플래그 부착은 명령 literal SSOT가 담보하는 문서 규약이다 (wrapper는 passthrough, #1086). Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영 (Non-goals 참조) |
 
 ## 용어 정책
 
@@ -208,7 +208,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 
 ## 사후 변조 감지 (Codex 세션 경로 전용)
 
-codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor가 `codex-exec-supervised --sandbox read-only`로 실행되어 workspace write가 구조적으로 차단되므로 사후 변조 감지가 불필요하다.
+codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 literal(SSOT)이 담보하는 문서 규약이다 — 명령 literal을 수정할 때 `--sandbox read-only`를 제거하면 이 생략의 전제가 함께 무너지므로, 그 경우 사후 변조 감지를 복원해야 한다.
 
 Codex 세션(`spawn_agent`) 경로는 read-only sandbox를 구조적으로 강제할 수 없으므로 (Non-goals 참조) 다음 최소 감지를 적용한다:
 
@@ -335,7 +335,7 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
    - write-then-revert 미감지: 파일을 수정한 뒤 원상복구하면 최종 `git status` delta가 사전 스냅샷과 같아 감지되지 않는다.
    - cross-workspace mutation 미감지: branch/remote/GitHub/host/main-agent-only command mutation은 `git status`로 감지 불가이므로 self-report 누락 또는 의심 시 fail-closed `BLOCKED` 처리한다.
 
-2. auditor 기본 실행 경로의 read-only sandbox 적용 (issue #593 Layer 1): Claude Code 세션과 headless 세션의 기본 경로는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral`이다. supervised wrapper(setsid + timeout, [`using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15)가 process-group kill을 보장하고, read-only sandbox + `--ignore-user-config` + `--ignore-rules`가 audit 의도(read-only + execpolicy mutation 차단)를 구조적으로 강제한다. auditor는 scratch PoC를 수행하지 않는다 ([`../references/hardening-contract.md`](../references/hardening-contract.md) "역할별 경계" — Auditor는 모든 write/scratch PoC 금지). 파일·문서 증거 기반 검증만 가능하며, scratch PoC 권한은 for_plan/for_pr의 DA reviewer 역할에만 적용된다.
+2. auditor 기본 실행 경로의 read-only sandbox 적용 (issue #593 Layer 1): Claude Code 세션과 headless 세션의 기본 경로는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral`이다. supervised wrapper([`using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15)가 timeout budget + `--kill-after` SIGKILL 승급으로 hang의 폭발 반경을 유한화하고, 명령 literal에 포함된 read-only sandbox + `--ignore-user-config` + `--ignore-rules`가 audit 의도(read-only + execpolicy mutation 차단)를 담보한다 (차단 수행자는 codex sandbox — wrapper는 passthrough, #1086). auditor는 scratch PoC를 수행하지 않는다 ([`../references/hardening-contract.md`](../references/hardening-contract.md) "역할별 경계" — Auditor는 모든 write/scratch PoC 금지). 파일·문서 증거 기반 검증만 가능하며, scratch PoC 권한은 for_plan/for_pr의 DA reviewer 역할에만 적용된다.
 
 ## 주의사항
 

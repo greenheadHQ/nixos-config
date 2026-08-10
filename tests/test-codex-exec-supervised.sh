@@ -16,6 +16,10 @@
 #   6. -1   (음수)                 → exit 127
 #   7. abc  (non-numeric)          → exit 127
 #
+# 검증 대상 (미지 CODEX_EXEC_* fail-fast):
+#   8. CODEX_EXEC_TIMEOUT=1500 (정본 _SECONDS 오타) → exit 127 + stderr "알 수 없는 환경변수"
+#   9. CODEX_EXEC_KILL_AFTER_SECONDS=5 (known 변수) → exit 0 (fail-fast 미발동 확인)
+#
 # Host dependency와 무관하게 7개 경계를 모두 검증한다. `--check`는 dependency를 실행하지 않고
 # resolution만 확인하므로 codex/setsid/timeout executable stub과 explicit binary env를 주입한다.
 
@@ -102,5 +106,13 @@ run_case "test_negative_rejected" \
   "CODEX_EXEC_TIMEOUT_SECONDS=-1" 127
 run_case "test_non_numeric_rejected" \
   "CODEX_EXEC_TIMEOUT_SECONDS=abc" 127
+
+# ── 미지 CODEX_EXEC_* fail-fast 케이스 ──
+# 정본 변수명 오타(CODEX_EXEC_TIMEOUT — _SECONDS 누락)가 침묵으로 무시되어 호출 의도가
+# 소실되는 사고 방지 (2026-08-06 실사례). known 변수는 fail-fast를 발동시키지 않아야 한다.
+run_case "test_unknown_codex_exec_var_rejected (오타 변수 fail-fast)" \
+  "CODEX_EXEC_TIMEOUT=1500" 127 "알 수 없는 환경변수 CODEX_EXEC_TIMEOUT"
+run_case "test_known_kill_after_var_accepted (known 변수 fail-fast 미발동)" \
+  "CODEX_EXEC_KILL_AFTER_SECONDS=5" 0
 
 echo "==> All wrapper env validation boundary cases passed"
