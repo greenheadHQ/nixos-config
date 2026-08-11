@@ -60,9 +60,12 @@
 #                                 직접 호출한다 (보장 약화는 wrapper 인터페이스 안에 흡수하지 않는다).
 #                                 Nix wrapper가 ${pkgs.util-linux}/bin/setsid로 set한다.
 #
-#   위 4개 외의 CODEX_EXEC_* 환경변수는 fail-closed로 거부한다 (exit 127) — 정본 변수명
-#   오타(예: CODEX_EXEC_TIMEOUT=1500)가 침묵으로 무시되어 호출 의도가 소실되는 사고 방지
-#   (2026-08-06 실사례). CODEX_EXEC_ 네임스페이스는 본 wrapper 소유다.
+#   정본 4개의 계열 이름(TIMEOUT/KILL_AFTER/SETSID 접두)이면서 정확 불일치인 CODEX_EXEC_*
+#   변수는 fail-closed로 거부한다 (exit 127) — 정본 변수명 오타(예: CODEX_EXEC_TIMEOUT=1500,
+#   _SECONDS 누락)가 침묵으로 무시되어 호출 의도가 소실되는 사고 방지 (2026-08-06 실사례).
+#   주의: CODEX_EXEC_ 접두사 전체는 wrapper 소유가 아니다 — upstream codex 자신이
+#   CODEX_EXEC_SERVER_*(exec-server 서브커맨드의 env 바인딩: URL/EXIT_ON_STDIN_CLOSE/
+#   NOISE_* 등)를 예약하므로, 계열 밖 변수는 검사 없이 통과시킨다.
 #
 # Exit code:
 #   0          정상
@@ -73,15 +76,23 @@
 
 set -euo pipefail
 
-# 미지 CODEX_EXEC_* 변수 fail-fast. 반드시 본 스크립트의 어떤 CODEX_EXEC_* 셸 변수 할당보다
+# 정본 변수명 near-miss fail-fast. 반드시 본 스크립트의 어떤 CODEX_EXEC_* 셸 변수 할당보다
 # 먼저 실행한다 — 이 시점의 ${!CODEX_EXEC_@}는 환경에서 상속된 이름만 열거한다.
+# 거부 범위는 정본 4개의 계열 이름(TIMEOUT/KILL_AFTER/SETSID 접두)뿐이다 — CODEX_EXEC_ 접두사
+# 전체를 거부하면 upstream codex가 예약한 CODEX_EXEC_SERVER_*(exec-server env 바인딩)까지
+# 오발동으로 차단한다 (헤더 참조).
 _KNOWN_CODEX_EXEC_VARS=" CODEX_EXEC_TIMEOUT_SECONDS CODEX_EXEC_KILL_AFTER_SECONDS CODEX_EXEC_TIMEOUT_BIN CODEX_EXEC_SETSID_BIN "
 for _codex_exec_var in "${!CODEX_EXEC_@}"; do
-  if [[ "$_KNOWN_CODEX_EXEC_VARS" != *" $_codex_exec_var "* ]]; then
-    printf 'codex-exec-supervised: 알 수 없는 환경변수 %s — 허용:%s(exit 127)\n' \
-      "$_codex_exec_var" "$_KNOWN_CODEX_EXEC_VARS" >&2
-    exit 127
+  if [[ "$_KNOWN_CODEX_EXEC_VARS" == *" $_codex_exec_var "* ]]; then
+    continue
   fi
+  case "$_codex_exec_var" in
+    CODEX_EXEC_TIMEOUT*|CODEX_EXEC_KILL_AFTER*|CODEX_EXEC_SETSID*)
+      printf 'codex-exec-supervised: %s 는 정본 변수명이 아님 (오타 의심) — 허용:%s(exit 127)\n' \
+        "$_codex_exec_var" "$_KNOWN_CODEX_EXEC_VARS" >&2
+      exit 127
+      ;;
+  esac
 done
 
 # 환경변수 검증 helper. 양수 정수만 허용.
@@ -121,7 +132,9 @@ if [[ ! -x "$TIMEOUT_BIN" ]]; then
 fi
 
 # setsid binary resolution: env var(absolute path) 우선, fallback PATH 검색.
-# 부재 시 fail-closed (보안 경계: process group kill 보장이 본 wrapper의 핵심).
+# 부재 시 fail-closed (기존 계약 유지). 근거·현행 실측은 헤더 역사 각주와
+# CODEX_EXEC_SETSID_BIN 항목 참조 — 2026-08 실측상 setsid는 종료 보장에 기여하지
+# 않으며(process group은 timeout이 생성), 제거는 후속 PR 범위다.
 # 진단 목적의 timeout-only 실행은 본 wrapper를 우회해 직접 timeout/codex를 호출한다.
 SETSID_BIN="${CODEX_EXEC_SETSID_BIN:-}"
 if [[ -z "$SETSID_BIN" ]] && command -v setsid >/dev/null 2>&1; then

@@ -41,7 +41,7 @@ auditor-specific delta: audit 모드의 fan-out 대상은 auditor다 (standard r
 | 경로 | 조건 |
 |------|------|
 | Codex 세션 | Codex CLI가 호스트 — native subagent fan-out (delegation 허용 시). delegation-denied fallback은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 "Delegation fallback" 참조 |
-| Claude Code 세션 | Claude Code가 호스트 — codex exec 기본 (사전점검: `command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check` 모두 성공해야 한다. wrapper `--check`는 setsid/timeout/codex 의존성을 자체 검증하고 OK 시 exit 0, 부재 시 exit 127을 반환한다 — codex exec를 호출하지 않으므로 사전점검 비용이 작다). codex 또는 wrapper 미가용/capability probe 실패 시 Claude Code fallback으로 자동 대체하지 않고 실패 원인과 대안(Claude 경로 진행 / 중단)을 사용자에게 확인한다 |
+| Claude Code 세션 | Claude Code가 호스트 — codex exec 기본 (사전점검: `command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check` 모두 성공해야 한다. wrapper `--check`는 wrapper 자체 사전 검증을 수행하고 OK 시 exit 0, 실패 시 exit 127을 반환한다 — 127 사유는 setsid/timeout/codex 의존성 부재 외에 정본 `CODEX_EXEC_*` 변수명 near-miss 오타도 포함하므로 원인은 stderr로 확인한다. codex exec를 호출하지 않으므로 사전점검 비용이 작다). codex 또는 wrapper 미가용/capability probe 실패 시 Claude Code fallback으로 자동 대체하지 않고 실패 원인과 대안(Claude 경로 진행 / 중단)을 사용자에게 확인한다 |
 | headless 세션 | CI, `claude -p`, `codex exec` subprocess |
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다.
@@ -196,7 +196,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 2. 중복 발견을 제거한다 (여러 bundle에서 같은 문제를 지적한 경우).
 3. 심각도 순으로 정렬한다.
 4. Codex 세션 경로에서는 결과 집계 후 capability profile의 slot 회수 규칙을 적용해 다음 batch/retry 슬롯을 확보한다 (legacy만 `close_agent` — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
-5. 사후 변조 감지 (Codex 세션 경로 전용): 아래 "사후 변조 감지" 섹션의 비교를 수행한다. codex exec 경로는 read-only sandbox가 workspace write를 구조적으로 차단하므로 생략한다.
+5. 사후 변조 감지 (Codex 세션 경로 전용): 아래 "사후 변조 감지" 섹션의 비교를 수행한다. codex exec 경로의 생략 근거와 복원 조건은 그 섹션이 정본이다.
 6. `RECOVERABLE VIOLATION`은 `SAFE`에서 제외하고 fresh auditor로 재디스패치한다. 이는 auditor가 새 상태 코드를 정의하는 것이 아니라, 메인 에이전트가 출력 형식 위반이나 scope 침범 같은 contract breach를 감지했을 때 부여하는 조율 분류다. 단 Codex 세션 경로에서 status delta가 동시에 존재하면 `STATEFUL VIOLATION` 분류가 우선한다.
 7. `STATEFUL VIOLATION`만 `BLOCKED (VIOLATION)`로 남긴다. 이 경우 사용자에게 불완전한 run이 보고되기 전에는 fresh auditor로 재디스패치하지 않는다.
 
@@ -208,7 +208,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 
 ## 사후 변조 감지 (Codex 세션 경로 전용)
 
-codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 literal(SSOT)이 담보하는 문서 규약이다 — 명령 literal을 수정할 때 `--sandbox read-only`를 제거하면 이 생략의 전제가 함께 무너지므로, 그 경우 사후 변조 감지를 복원해야 한다.
+codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) 문서 규약이다 — 규약의 담보 지점은 Layer 1 명령 literal을 보유한 문서 전부다: [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 표(정본), [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 Layer 1 패턴, [`./for_plan.md`](./for_plan.md) Step 2의 실행 예시. 이 중 어느 사본에서든 `--sandbox read-only`를 제거하면 이 생략의 전제가 함께 무너지므로, 그 경우 사후 변조 감지를 복원해야 한다.
 
 Codex 세션(`spawn_agent`) 경로는 read-only sandbox를 구조적으로 강제할 수 없으므로 (Non-goals 참조) 다음 최소 감지를 적용한다:
 
@@ -339,7 +339,7 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
 
 ## 주의사항
 
-- 에이전트는 읽기 전용이다. 코드/tracked workspace 수정을 금지한다. codex exec 경로(Claude Code/headless)는 Layer 1(supervised wrapper + `--sandbox read-only` + `--ignore-user-config` + `--ignore-rules`)으로 구조적 강제, Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영한다 (한계는 Non-goals 참조).
+- 에이전트는 읽기 전용이다. 코드/tracked workspace 수정을 금지한다. codex exec 경로(Claude Code/headless)는 Layer 1 명령 literal(`--sandbox read-only` + `--ignore-user-config` + `--ignore-rules`)로 실행한다 — 실제 차단 수행자는 codex의 read-only sandbox이고 wrapper는 passthrough다(#1086, 위 에이전트 권한 표 참조). Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영한다 (한계는 Non-goals 참조).
 - 감사 결과를 사용자에게 먼저 제시하고, 수정은 사용자 승인 후 진행한다.
 - 변경 범위가 극소한 경우 에이전트 수를 줄여 효율을 높인다.
 - 기본 fan-out은 6 bundle이며, `MAX` modifier만 exhaustive override(10개 세부 관점)다. 10은 기본값이 아니고, trailing 컨텍스트는 우선순위 판단용으로 보존한다.
