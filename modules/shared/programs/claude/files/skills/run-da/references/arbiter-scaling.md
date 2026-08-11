@@ -196,7 +196,7 @@ Degraded mode 계약 (fallback 경로 한정): `--sandbox read-only` 강제로 �
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
-이 코드블록 전체를 단일 셸 호출로 실행한다 (런타임 공통 — 셸 호출 간 환경변수 비공유. 호출을 나누면 `$ARBITER_DIR`이 유실됨). literal 재사용 환각 주의 (issue #632): first-pass Arbiter는 단일 foreground exec이므로 `ARBITER_DIR` suffix를 다음 호출에서 literal로 재입력하지 않게 단일 shell 호출을 구조적으로 강제한다. full rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
+이 코드블록 전체를 단일 셸 호출로 실행한다 (런타임 공통 — 셸 호출 간 환경변수 비공유. 호출을 나누면 `$ARBITER_DIR`이 유실됨). literal 재사용 환각 주의 (issue #632): first-pass Arbiter는 단일 exec이고 `$ARBITER_DIR`이 셸 호출 간 유실되므로, suffix를 다음 호출에서 literal로 재입력하지 않게 단일 shell 호출을 구조적으로 강제한다 (이 요구는 발사 방식과 무관 — background 발사도 블록 전체가 한 셸 호출이다). full rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
 
 ```bash
 # 1. Arbiter 임시 디렉토리 생성
@@ -211,7 +211,8 @@ cat > "$ARBITER_DIR/arbiter-prompt.md" <<'PROMPT'
 PROMPT
 [ -f "$ARBITER_DIR/arbiter-prompt.md" ] || { echo "ARBITER_FAILED: missing prompt=$ARBITER_DIR/arbiter-prompt.md"; exit 1; }
 
-# 3. codex exec 실행 (foreground)
+# 3. codex exec 실행 (발사 방식은 위 실행 계약 참조 — headless serial foreground /
+#    Claude Code 세션은 run_in_background: true + 완료 알림 수집)
 # RUN_DA_CODEX_EFFORT는 role별 기본 profile, agent= 인자, 또는 사용자 명시 effort에서 결정한다.
 RUN_DA_CODEX_EFFORT="${RUN_DA_CODEX_EFFORT:-high}"
 case "$RUN_DA_CODEX_EFFORT" in

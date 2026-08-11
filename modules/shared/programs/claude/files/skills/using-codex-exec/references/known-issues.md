@@ -22,8 +22,10 @@ git rev-parse --show-toplevel
 - 저장소 루트 밖에서 실행 중인지 확인
 - 워크트리(worktree) 환경이면 `git rev-parse --git-dir`로 git 디렉토리 경로 확인
 - 비대화형 PATH에서 `command -v codex`가 실패하면 곧바로 미설치로 단정하지 않는다.
-  programmatic 경로는 `command -v codex-exec-supervised` →
-  `codex-exec-supervised --check` → 확인된 Codex 절대경로 순으로 진단한다.
+  wrapper exit 127은 PATH/의존성 외에 invalid env 값·정본 `CODEX_EXEC_*` 변수명
+  near-miss(§15)도 포함하므로 stderr를 먼저 읽는다. 이후 programmatic 경로는
+  `command -v codex-exec-supervised` → `codex-exec-supervised --check` →
+  확인된 Codex 절대경로 순으로 진단한다.
 
 오류 기록은 stdout, stderr, `-o` 결과, exit code를 분리한다. JSON/JSONL parser 앞에
 `2>&1`를 두지 않고, pipeline은 `set -o pipefail`과 zsh `pipestatus`로 Codex exit를 보존한다.
@@ -31,7 +33,7 @@ git rev-parse --show-toplevel
 
 | 오류 분류 | 재시도 정책 | 관측 출처 |
 |----------|-------------|----------|
-| PATH/의존성 exit 127 | 경로·wrapper `--check` 후에만 재실행 | 실전 재발 사례 7건 + wrapper smoke |
+| wrapper 사전 검증 실패(invalid env·near-miss 포함)/PATH exit 127 | stderr로 사유 확인 → 경로·wrapper `--check` 후에만 재실행 | 실전 재발 사례 7건 + wrapper smoke |
 | 부모 sandbox denial | 소유권 변경 금지, §18 분기 | 실전 재발 사례 6건 |
 | timeout exit 124/137 | 자식 정리 확인 후 fresh retry 최대 1회 | 실전 재발 사례 |
 | usage limit | fail-fast. 신규 세션 재시도 금지 | 실전 재발 사례; 2026-07-10 재확인 |
@@ -347,7 +349,7 @@ Codex 세션의 native subagent 경로와 일반 터미널에는 이 제약을 �
 
 #### literal 재사용 시 random suffix 환각 금지 (issue #632)
 
-`mktemp`/`mktemp -d`/`mktemp -t` 결과 경로의 random suffix는 opaque high-entropy literal이므로 LLM token prediction에서 다른 suffix와 혼선될 수 있다. stdout에 출력된 정확한 경로를 byte-level 그대로 재사용하고, suffix를 검증 없이 변형·재생성하거나 `/tmp/da-*` 같은 wildcard glob로 대체하지 않는다. 호출 직전 디렉토리는 `[ -d "$DIR" ]`, 파일은 `[ -f "$FILE" ]` guard로 fail-fast한다. 단일 foreground exec는 prompt 작성, codex exec, result check를 같은 shell call 안에서 완료한다. 구조적으로 multi-call이 필요한 flow는 분리 구조를 유지하되 출력된 literal 경로와 guard를 사용한다.
+`mktemp`/`mktemp -d`/`mktemp -t` 결과 경로의 random suffix는 opaque high-entropy literal이므로 LLM token prediction에서 다른 suffix와 혼선될 수 있다. stdout에 출력된 정확한 경로를 byte-level 그대로 재사용하고, suffix를 검증 없이 변형·재생성하거나 `/tmp/da-*` 같은 wildcard glob로 대체하지 않는다. 호출 직전 디렉토리는 `[ -d "$DIR" ]`, 파일은 `[ -f "$FILE" ]` guard로 fail-fast한다. 단일 exec 흐름은 발사 방식과 무관하게 prompt 작성, codex exec, result check를 같은 shell call 안에서 완료한다 (background 발사도 블록 전체가 한 셸 호출이다). 구조적으로 multi-call이 필요한 flow는 분리 구조를 유지하되 출력된 literal 경로와 guard를 사용한다.
 
 올바른 패턴 — codex exec 병렬 실행:
 

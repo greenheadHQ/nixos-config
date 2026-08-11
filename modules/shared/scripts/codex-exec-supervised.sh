@@ -159,7 +159,7 @@ fi
 # exit 0이 OK 신호다. `--check` 실패(127)의 사유 목록은 헤더 Exit code 절이 정본.
 # 사전점검 callsite (run-da(audit) preflight)는 `codex-exec-supervised --check`로 호출한다.
 if [[ "${1:-}" == "--check" ]]; then
-  printf 'codex-exec-supervised: dependencies OK (timeout=%s setsid=%s codex=%s)\n' \
+  printf 'codex-exec-supervised: precheck OK (env+deps; timeout=%s setsid=%s codex=%s)\n' \
     "$TIMEOUT_BIN" "$SETSID_BIN" "$(command -v codex)" >&2
   exit 0
 fi
