@@ -60,7 +60,8 @@ EXPECTED_CODEX_MANAGED_LIB_ARTIFACTS=(hook-runtime.sh pinning-patterns.sh)
 LIVE_CODEX_TIMEOUT_SECONDS=30
 
 # codex-exec-supervised wrapper kill-after grace (issue #593).
-# rationale: npm wrapper SIGTERM forward 후 native 응답 대기.
+# rationale: SIGTERM 수신 후 codex의 자체 정리 시간 (SIGTERM 무시 hang에서는 SIGKILL 승급이
+# 유일한 구제 — 정본 서술은 wrapper 헤더의 CODEX_EXEC_KILL_AFTER_SECONDS 항목).
 # 본 fixture는 wrapper의 default timeout을 사용하지 않는다 (운영 budget = 30분).
 # 대신 invocation matrix 전용 짧은 timeout을 별도 oracle 상수로 둔다.
 CODEX_EXEC_KILL_AFTER_SECONDS=5

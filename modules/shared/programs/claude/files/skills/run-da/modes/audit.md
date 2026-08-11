@@ -20,7 +20,7 @@ audit 모드는 preflight 체크리스트를 건너뛴다 — 감사 자체가 �
 | `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: `run-da audit agent=codex-high` |
 | trailing 자유 텍스트 | `audit` (및 `MAX`) 토큰 뒤 나머지 인자 전체를 메인 에이전트의 우선순위 판단 컨텍스트로 보존 (Step 1 `git diff` 결과와 결합) |
 | 정수 에이전트 수 인자 | 폐지 — fan-out 크기는 기본 6 bundle / `MAX` 10 관점으로만 결정한다 |
-| 에이전트 권한 | 읽기 전용. codex exec 경로(Claude Code/headless)는 Layer 1(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules`)으로 구조적 강제. Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영 (Non-goals 참조) |
+| 에이전트 권한 | 읽기 전용. codex exec 경로(Claude Code/headless)는 Layer 1 명령 literal(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral`)로 실행 — 실제 차단 수행자는 codex의 read-only sandbox이고 플래그 부착은 명령 literal SSOT가 담보하는 문서 규약이다 (wrapper는 passthrough, #1086). Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영 (Non-goals 참조) |
 
 ## 용어 정책
 
@@ -41,7 +41,7 @@ auditor-specific delta: audit 모드의 fan-out 대상은 auditor다 (standard r
 | 경로 | 조건 |
 |------|------|
 | Codex 세션 | Codex CLI가 호스트 — native subagent fan-out (delegation 허용 시). delegation-denied fallback은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 "Delegation fallback" 참조 |
-| Claude Code 세션 | Claude Code가 호스트 — codex exec 기본 (사전점검: `command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check` 모두 성공해야 한다. wrapper `--check`는 setsid/timeout/codex 의존성을 자체 검증하고 OK 시 exit 0, 부재 시 exit 127을 반환한다 — codex exec를 호출하지 않으므로 사전점검 비용이 작다). codex 또는 wrapper 미가용/capability probe 실패 시 Claude Code fallback으로 자동 대체하지 않고 실패 원인과 대안(Claude 경로 진행 / 중단)을 사용자에게 확인한다 |
+| Claude Code 세션 | Claude Code가 호스트 — codex exec 기본 (사전점검: `command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check` 모두 성공해야 한다. wrapper `--check`는 wrapper 자체 사전 검증을 수행하고 OK 시 exit 0, 실패 시 exit 127을 반환한다 — 127 사유는 setsid/timeout/codex 의존성 부재 외에 invalid env 값과 정본 `CODEX_EXEC_*` 변수명 near-miss 오타도 포함하므로 원인은 stderr로 확인한다. codex exec를 호출하지 않으므로 사전점검 비용이 작다). codex 또는 wrapper 미가용/사전 검증 실패 시 Claude Code fallback으로 자동 대체하지 않고 실패 원인과 대안(Claude 경로 진행 / 중단)을 사용자에게 확인한다 |
 | headless 세션 | CI, `claude -p`, `codex exec` subprocess |
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다.
@@ -108,7 +108,7 @@ N개 에이전트를 병렬 실행하기 전에 다음을 확인한다:
 
 ### Step 3: 병렬 에이전트 실행
 
-N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 경우). headless 세션은 [run-da 런타임 도구 매핑](../references/runtime-mapping.md#런타임-도구-매핑)에 따라 serial foreground로 순차 실행한다 — 각 subprocess의 종료와 result를 직렬로 확인한다.
+N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 경우). headless 세션은 [run-da 런타임 도구 매핑](../references/runtime-mapping.md#런타임-도구-매핑)에 따라 serial foreground로 순차 실행한다 — 각 subprocess의 종료와 result를 직렬로 확인한다 (`claude -p`는 Bash tool 상한 적용 — [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) 실행 계약 참조).
 
 각 에이전트에게 전달하는 내용:
 
@@ -196,7 +196,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 2. 중복 발견을 제거한다 (여러 bundle에서 같은 문제를 지적한 경우).
 3. 심각도 순으로 정렬한다.
 4. Codex 세션 경로에서는 결과 집계 후 capability profile의 slot 회수 규칙을 적용해 다음 batch/retry 슬롯을 확보한다 (legacy만 `close_agent` — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
-5. 사후 변조 감지 (Codex 세션 경로 전용): 아래 "사후 변조 감지" 섹션의 비교를 수행한다. codex exec 경로는 read-only sandbox가 workspace write를 구조적으로 차단하므로 생략한다.
+5. 사후 변조 감지: 아래 "사후 변조 감지" 섹션의 술어를 적용한다 — Codex 세션 경로는 비교를 수행하고, codex exec 경로는 실제 발사되는 Layer 1 literal에 `--sandbox read-only`가 있을 때만 생략한다 (플래그가 없으면 비교를 복원. 생략 근거·복원 조건은 그 섹션이 정본).
 6. `RECOVERABLE VIOLATION`은 `SAFE`에서 제외하고 fresh auditor로 재디스패치한다. 이는 auditor가 새 상태 코드를 정의하는 것이 아니라, 메인 에이전트가 출력 형식 위반이나 scope 침범 같은 contract breach를 감지했을 때 부여하는 조율 분류다. 단 Codex 세션 경로에서 status delta가 동시에 존재하면 `STATEFUL VIOLATION` 분류가 우선한다.
 7. `STATEFUL VIOLATION`만 `BLOCKED (VIOLATION)`로 남긴다. 이 경우 사용자에게 불완전한 run이 보고되기 전에는 fresh auditor로 재디스패치하지 않는다.
 
@@ -206,9 +206,9 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 
 리포트 제시 후 `rm -rf "$DA_DIR"`로 이번 실행의 임시 디렉토리를 삭제한다 (codex exec 경로에서 생성한 경우). BLOCKED (VIOLATION)로 중단된 경우에는 진단 보존을 위해 삭제하지 않는다.
 
-## 사후 변조 감지 (Codex 세션 경로 전용)
+## 사후 변조 감지
 
-codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor가 `codex-exec-supervised --sandbox read-only`로 실행되어 workspace write가 구조적으로 차단되므로 사후 변조 감지가 불필요하다.
+codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) 문서 규약이다. 복원 조건은 술어로 정의한다: 실제 발사되는 Layer 1 명령 literal에 `--sandbox read-only`가 포함되지 않으면 이 생략의 전제가 무너지므로 사후 변조 감지를 복원해야 한다. 명령 literal의 정본은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 블록(기본 codex exec 경로와 delegation fallback 공통) 하나이며, 다른 문서(본 문서 포함)의 literal 언급은 전부 그 사본이다 — 어느 사본을 고치든 판정 기준은 이 술어이지 사본 목록이 아니다.
 
 Codex 세션(`spawn_agent`) 경로는 read-only sandbox를 구조적으로 강제할 수 없으므로 (Non-goals 참조) 다음 최소 감지를 적용한다:
 
@@ -335,11 +335,11 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
    - write-then-revert 미감지: 파일을 수정한 뒤 원상복구하면 최종 `git status` delta가 사전 스냅샷과 같아 감지되지 않는다.
    - cross-workspace mutation 미감지: branch/remote/GitHub/host/main-agent-only command mutation은 `git status`로 감지 불가이므로 self-report 누락 또는 의심 시 fail-closed `BLOCKED` 처리한다.
 
-2. auditor 기본 실행 경로의 read-only sandbox 적용 (issue #593 Layer 1): Claude Code 세션과 headless 세션의 기본 경로는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral`이다. supervised wrapper(setsid + timeout, [`using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15)가 process-group kill을 보장하고, read-only sandbox + `--ignore-user-config` + `--ignore-rules`가 audit 의도(read-only + execpolicy mutation 차단)를 구조적으로 강제한다. auditor는 scratch PoC를 수행하지 않는다 ([`../references/hardening-contract.md`](../references/hardening-contract.md) "역할별 경계" — Auditor는 모든 write/scratch PoC 금지). 파일·문서 증거 기반 검증만 가능하며, scratch PoC 권한은 for_plan/for_pr의 DA reviewer 역할에만 적용된다.
+2. auditor 기본 실행 경로의 read-only sandbox 적용 (issue #593 Layer 1): Claude Code 세션과 headless 세션의 기본 경로는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral`이다. supervised wrapper([`using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15)가 timeout budget + `--kill-after` SIGKILL 승급으로 hang의 폭발 반경을 유한화하고, 명령 literal에 포함된 read-only sandbox + `--ignore-user-config` + `--ignore-rules`가 audit 의도(read-only + execpolicy mutation 차단)를 담보한다 (차단 수행자는 codex sandbox — wrapper는 passthrough, #1086). auditor는 scratch PoC를 수행하지 않는다 ([`../references/hardening-contract.md`](../references/hardening-contract.md) "역할별 경계" — Auditor는 모든 write/scratch PoC 금지). 파일·문서 증거 기반 검증만 가능하며, scratch PoC 권한은 for_plan/for_pr의 DA reviewer 역할에만 적용된다.
 
 ## 주의사항
 
-- 에이전트는 읽기 전용이다. 코드/tracked workspace 수정을 금지한다. codex exec 경로(Claude Code/headless)는 Layer 1(supervised wrapper + `--sandbox read-only` + `--ignore-user-config` + `--ignore-rules`)으로 구조적 강제, Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영한다 (한계는 Non-goals 참조).
+- 에이전트는 읽기 전용이다. 코드/tracked workspace 수정을 금지한다. codex exec 경로(Claude Code/headless)는 Layer 1 명령 literal(`--sandbox read-only` + `--ignore-user-config` + `--ignore-rules` + `--ephemeral`)로 실행한다 — 실제 차단 수행자는 codex의 read-only sandbox이고 wrapper는 passthrough다(#1086, 위 에이전트 권한 표 참조). Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영한다 (한계는 Non-goals 참조).
 - 감사 결과를 사용자에게 먼저 제시하고, 수정은 사용자 승인 후 진행한다.
 - 변경 범위가 극소한 경우 에이전트 수를 줄여 효율을 높인다.
 - 기본 fan-out은 6 bundle이며, `MAX` modifier만 exhaustive override(10개 세부 관점)다. 10은 기본값이 아니고, trailing 컨텍스트는 우선순위 판단용으로 보존한다.

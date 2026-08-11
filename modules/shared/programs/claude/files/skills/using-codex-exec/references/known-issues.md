@@ -22,8 +22,10 @@ git rev-parse --show-toplevel
 - 저장소 루트 밖에서 실행 중인지 확인
 - 워크트리(worktree) 환경이면 `git rev-parse --git-dir`로 git 디렉토리 경로 확인
 - 비대화형 PATH에서 `command -v codex`가 실패하면 곧바로 미설치로 단정하지 않는다.
-  programmatic 경로는 `command -v codex-exec-supervised` →
-  `codex-exec-supervised --check` → 확인된 Codex 절대경로 순으로 진단한다.
+  wrapper exit 127은 PATH/의존성 외에 invalid env 값·정본 `CODEX_EXEC_*` 변수명
+  near-miss(§15)도 포함하므로 stderr를 먼저 읽는다. 이후 programmatic 경로는
+  `command -v codex-exec-supervised` → `codex-exec-supervised --check` →
+  확인된 Codex 절대경로 순으로 진단한다.
 
 오류 기록은 stdout, stderr, `-o` 결과, exit code를 분리한다. JSON/JSONL parser 앞에
 `2>&1`를 두지 않고, pipeline은 `set -o pipefail`과 zsh `pipestatus`로 Codex exit를 보존한다.
@@ -31,7 +33,7 @@ git rev-parse --show-toplevel
 
 | 오류 분류 | 재시도 정책 | 관측 출처 |
 |----------|-------------|----------|
-| PATH/의존성 exit 127 | 경로·wrapper `--check` 후에만 재실행 | 실전 재발 사례 7건 + wrapper smoke |
+| wrapper 사전 검증 실패(invalid env·near-miss 포함)/PATH exit 127 | stderr로 사유 확인 → 경로·wrapper `--check` 후에만 재실행 | 실전 재발 사례 7건 + wrapper smoke |
 | 부모 sandbox denial | 소유권 변경 금지, §18 분기 | 실전 재발 사례 6건 |
 | timeout exit 124/137 | 자식 정리 확인 후 fresh retry 최대 1회 | 실전 재발 사례 |
 | usage limit | fail-fast. 신규 세션 재시도 금지 | 실전 재발 사례; 2026-07-10 재확인 |
@@ -347,7 +349,7 @@ Codex 세션의 native subagent 경로와 일반 터미널에는 이 제약을 �
 
 #### literal 재사용 시 random suffix 환각 금지 (issue #632)
 
-`mktemp`/`mktemp -d`/`mktemp -t` 결과 경로의 random suffix는 opaque high-entropy literal이므로 LLM token prediction에서 다른 suffix와 혼선될 수 있다. stdout에 출력된 정확한 경로를 byte-level 그대로 재사용하고, suffix를 검증 없이 변형·재생성하거나 `/tmp/da-*` 같은 wildcard glob로 대체하지 않는다. 호출 직전 디렉토리는 `[ -d "$DIR" ]`, 파일은 `[ -f "$FILE" ]` guard로 fail-fast한다. 단일 foreground exec는 prompt 작성, codex exec, result check를 같은 shell call 안에서 완료한다. 구조적으로 multi-call이 필요한 flow는 분리 구조를 유지하되 출력된 literal 경로와 guard를 사용한다.
+`mktemp`/`mktemp -d`/`mktemp -t` 결과 경로의 random suffix는 opaque high-entropy literal이므로 LLM token prediction에서 다른 suffix와 혼선될 수 있다. stdout에 출력된 정확한 경로를 byte-level 그대로 재사용하고, suffix를 검증 없이 변형·재생성하거나 `/tmp/da-*` 같은 wildcard glob로 대체하지 않는다. 호출 직전 디렉토리는 `[ -d "$DIR" ]`, 파일은 `[ -f "$FILE" ]` guard로 fail-fast한다. foreground 단일 exec 흐름은 prompt 작성, codex exec, result check를 같은 shell call 안에서 완료한다. `run_in_background` 발사는 heredoc+exec 체이닝 hang 금지(§11 하위 항목)에 따라 prompt 작성 호출과 exec 호출을 분리한다. 분리가 필요한 모든 flow는 출력된 literal 경로와 guard를 사용한다.
 
 올바른 패턴 — codex exec 병렬 실행:
 
@@ -539,14 +541,14 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspa
 [#19945](https://github.com/openai/codex/issues/19945) (TTY 분리 + 긴 prompt silent crash, 0.124 회귀).
 관측 출처: 실전 재발 사례. 현재 semantic 재검증 미수행 (v0.142.5 기준 서술 유지).
 
-### 15. `codex-exec-supervised` wrapper로 §14 위에 process group/timeout 한계 보강 (issue #593)
+### 15. `codex-exec-supervised` wrapper로 §14 위에 timeout budget 한계 보강 (issue #593)
 
-심각도: 보강 패턴 — §14 stdin pipe + supervised wrapper로 inline TOML override + npm wrapper detach 부재 한계까지 차단
+심각도: 보강 패턴 — §14 stdin pipe + supervised wrapper로 inline TOML override 등 잔존 hang 축의 폭발 반경을 timeout으로 유한화
 
-배경 (issue #593): §14의 stdin pipe 패턴을 따른 호출도 다음 두 추가 요인이 결합되면 silent hang 가능:
+배경 (issue #593): §14의 stdin pipe 패턴을 따른 호출도 다음 추가 요인이 결합되면 silent hang 가능:
 
 1. `-c hooks.<event>='[...]'` inline TOML override — Mac codex 0.128 8 PoC variant 중 vH(host HOME + no override + stdin pipe + read-only)만 OK, override 포함 vA-G + vJ 모두 hang. Agent D source 분석은 `-c` parse/merge 정상이지만 override shape가 hook engine MatcherGroup 등록 실패 가능성을 시사 (정밀 위치 [UNVERIFIED]).
-2. npm wrapper(@openai/codex) detach/process group 부재 — `codex-cli/bin/codex.js`의 `spawn(binaryPath, args, {stdio:"inherit", env})`은 `detached:true`도, process group 생성도 없다. SIGINT/SIGTERM/SIGHUP은 forward되지만 SIGKILL은 forward 불가. `timeout` 단독은 wrapper PID만 죽여 native binary가 잔존할 수 있다.
+2. (역사 각주 — 현행 소멸) 도입 당시(2026-05) npm wrapper(@openai/codex) 패키징은 `codex-cli/bin/codex.js`의 `spawn(binaryPath, args, {stdio:"inherit", env})`이 detach/process group 생성 없이 native를 호출해, `timeout` 단독으로는 wrapper PID만 죽고 native binary가 잔존할 수 있었다. 현행 패키징(`modules/shared/programs/codex/` — upstream tarball의 native binary 직핀)에는 중간 npm 프로세스가 없어 이 실패 모드는 재현 불가다 (2026-08 실측: `timeout --kill-after` 단독 감독에서 exit 124 직후 codex 프로세스 잔존 0).
 
 후속 5-variant 실측에서도 `-c hooks.*` inline override 제거 시 12초 안에 성공하고 override
 포함 시 hang했다. `Reading additional input...` banner만으로 hang을 판정하지 말고 banner + 무진척 +
@@ -559,7 +561,7 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspa
 - [codex_sdk README](https://github.com/nshkrdotcom/codex_sdk) — SDK가 one-shot argv-prompt 실행 시 upstream CLI가 EOF 대기하지 않게 stdin을 닫는다고 명시.
 - 본 repo와 동일 증상 OpenAI upstream issue는 미발견 (정확 매치는 외부 wrapper/skill repo에서만 반복).
 
-해결: programmatic codex exec 호출은 supervised wrapper(`codex-exec-supervised`)를 사용한다. wrapper는 absolute store path 우선 + capability-probe fallback으로 `setsid`(process group 생성) + `timeout`/`gtimeout`(SIGTERM/SIGKILL grace)을 적용한다. stdin EOF는 pipe(`cat file | ... -`) 또는 file redirect(`< file`) 둘 다 허용 — 둘 다 §14의 stdin EOF 보장 패턴이다. Layer 1 호출에서는 pipe 형태가 일반적이고, supervisor에 시간/budget을 거는 호출(예: `consulting-step.md`)에서는 file redirect 형태가 가독성 좋다.
+해결: programmatic codex exec 호출은 supervised wrapper(`codex-exec-supervised`)를 사용한다. wrapper는 absolute store path 우선 + capability-probe fallback으로 `timeout`/`gtimeout`(SIGTERM 후 `--kill-after` SIGKILL 승급)을 적용한다 — 2026-08 실측상 setsid는 종료 보장에 기여하지 않으며 제거는 후속 PR 범위다 (실측 상세·제거 게이트는 아래 "실증 갱신" 블록이 정본; 그 전까지 wrapper는 setsid도 요구한다). stdin EOF는 pipe(`cat file | ... -`) 또는 file redirect(`< file`) 둘 다 허용 — 둘 다 §14의 stdin EOF 보장 패턴이다. Layer 1 호출에서는 pipe 형태가 일반적이다.
 
 ```bash
 # §14 stdin pipe + §15 supervised wrapper 결합 (Layer 1 — 모든 programmatic 호출 공통)
@@ -571,10 +573,11 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   2>"$DIR/stderr.log"
 ```
 
-capability probe 동작 ([`modules/shared/scripts/codex-exec-supervised.sh`](../../../../../../scripts/codex-exec-supervised.sh)):
-- `setsid` 부재 → BLOCKED, exit 127 (process group kill 보장이 wrapper 핵심 경계이므로 fail-closed). 진단 목적 timeout-only는 wrapper를 우회해 `timeout` + `codex`를 직접 호출한다.
+wrapper 사전 검증(precheck) 동작 ([`modules/shared/scripts/codex-exec-supervised.sh`](../../../../../../scripts/codex-exec-supervised.sh)):
+- `setsid` 부재 → BLOCKED, exit 127. 주의: setsid는 종료 보장에 기여하지 않음이 실측 확인됐고 제거는 후속 PR 범위다 (정본: 아래 "실증 갱신" 블록) — 그 전까지 fail-closed 동작이 유지된다. 진단 목적 timeout-only는 wrapper를 우회해 `timeout` + `codex`를 직접 호출한다.
 - `timeout`/`gtimeout` 부재 → BLOCKED, exit 127. Mac BSD에는 둘 다 없으므로 Nix wrapper가 binary 가용성을 보장한다.
 - `codex` 부재 → exit 127.
+- 정본 4개 변수(`CODEX_EXEC_TIMEOUT_SECONDS`, `CODEX_EXEC_KILL_AFTER_SECONDS`, `CODEX_EXEC_TIMEOUT_BIN`, `CODEX_EXEC_SETSID_BIN`)의 계열 이름(TIMEOUT/KILL_AFTER/SETSID 접두)이면서 정확 불일치인 `CODEX_EXEC_*` 발견 → exit 127 (near-miss fail-fast). 정본 변수명 오타(예: `CODEX_EXEC_TIMEOUT=1500` — `_SECONDS` 누락)가 침묵으로 무시되어 호출 의도가 소실되는 사고 방지. 계열 밖 `CODEX_EXEC_*`(upstream codex가 예약한 `CODEX_EXEC_SERVER_*` 등)는 wrapper 소관이 아니므로 통과한다.
 
 Nix wiring ([`modules/shared/programs/shell/default.nix`](../../../../../shell/default.nix)): home.file로 `~/.local/bin/codex-exec-supervised`를 `pkgs.writeShellScript` wrapper에 link한다. wrapper가 `CODEX_EXEC_TIMEOUT_BIN`/`CODEX_EXEC_SETSID_BIN`에 `pkgs.coreutils`/`pkgs.util-linux`의 absolute store path를 export한 뒤 raw script(`modules/shared/scripts/codex-exec-supervised.sh`)를 exec한다. wrapper는 PATH를 변경하지 않으므로 사용자 PATH의 BSD coreutils가 보존된다 (mac `stat -f %m` 같은 BSD 호출 의미 보존).
 
@@ -585,14 +588,24 @@ variant legend (issue #593 PoC 8 variant + wrapper 적용 분류):
 | 시나리오 | HOME | CODEX_HOME | hooks 등록 | sandbox | stdin | 결과 (Mac 0.128, supervised wrapper 미적용) | wrapper 적용 후 기대 |
 |----------|------|-----------|-----------|---------|-------|--------|--------|
 | `host_home_no_override_stdin_pipe_pass` | host | host | 없음 (host config inline) | read-only | `</dev/null` 또는 pipe | OK 12s, hook fired, "PONG" | OK (wrapper grace 무관 — 이미 정상) |
-| `raw_override_inline_toml_hang` | host/sandbox | host/sandbox | `-c hooks.<event>` override | workspace-write(당시 자동실행 플래그)/read-only | host inherited 또는 pipe | HANG (timeout 못 죽임) | wrapper의 setsid+kill-after로 timeout 안에 정리되어 PASS |
+| `raw_override_inline_toml_hang` | host/sandbox | host/sandbox | `-c hooks.<event>` override | workspace-write(당시 자동실행 플래그)/read-only | host inherited 또는 pipe | HANG (timeout 못 죽임) | wrapper의 timeout budget + `--kill-after` SIGKILL 승급으로 정리되어 PASS (2026-08 분리 실측: setsid 유무 무관하게 동일 결과 — 구원자는 `--kill-after`) |
 | `isolated_codex_home_overrideless_retired_self_injection` | sandbox | sandbox | ephemeral config.toml | read-only | inherited | HANG/marker unset in retired PR #595 self-injection assertion | Retired historical context (#634) — local fixture now validates caller-supplied `CODEX_PROGRAMMATIC=1` inheritance with supervised wrapper + stdin pipe EOF |
 
 Retired historical context (#634): `tests/test-codex-hook-fixtures.sh`의 기존 PR #595 self-injection assertion은 `CODEX_HOME=$sandbox/codex-home` + ephemeral config.toml + inherited stdin + raw `codex exec`에서 mac 0.128 marker unset/hang 계열 실패를 보였다. #634에서 fixture 계약을 local supported path로 정렬했다: programmatic caller가 `CODEX_PROGRAMMATIC=1`을 codex 프로세스에 붙이고, live fixture는 `codex-exec-supervised` + stdin pipe EOF + sandbox `CODEX_HOME` hook config로 이 marker가 hook subprocess까지 상속되는지만 검증한다. managed hook early-exit 자체는 deterministic noise-guard fixture가 검증한다.
 
-§14와의 관계: §14는 stdin EOF 보장을 stdin pipe로 구조적으로 제공한다. §15는 그 위에 process group/SIGKILL grace를 추가해 wrapper PID 종료가 native까지 닿지 않는 시나리오를 차단한다. 두 패턴은 결합 사용한다.
+§14와의 관계: §14는 stdin EOF 보장을 stdin pipe로 구조적으로 제공한다. §15는 그 위에 timeout budget + SIGKILL 승급을 추가해, stdin 규약이 깨지거나 override 결합 hang이 발생해도 폭발 반경을 유한하게 만든다. 두 패턴은 결합 사용한다.
 
-실증 (Mac codex 0.128): `read_prompt_from_stdin(StdinPromptBehavior::OptionalAppend)` source line + npm wrapper spawn 시 detach 부재 직접 검증. 외부 보고 4종(gstack #1034/#1045, codex_sdk, oh-my-codex #1449)이 stdin EOF fix path를 일관되게 제시.
+실증 (도입 시점 — Mac codex 0.128, npm 패키징): `read_prompt_from_stdin(StdinPromptBehavior::OptionalAppend)` source line + npm wrapper spawn 시 detach 부재 직접 검증. 외부 보고 4종(gstack #1034/#1045, codex_sdk, oh-my-codex #1449)이 stdin EOF fix path를 일관되게 제시.
+
+실증 갱신 (2026-08-10 — codex 0.147.0, native 직핀; setsid 실측 서술의 정본 블록 — 다른 위치의 언급은 이 블록을 참조한다). 각 항목의 재검증 명령을 병기한다 (codex 업그레이드 시 이 명령들로 스탬프 유효성을 재확인한다; 전부 read-only sandbox + 소액 API 비용):
+
+① stdin optional-append hang은 여전히 재현된다 — upstream [#20919](https://github.com/openai/codex/issues/20919)·[#27019](https://github.com/openai/codex/issues/27019) OPEN, opt-out 플래그 없음. 재검증: `command timeout 60 zsh -c 'sleep 300 | command codex exec --sandbox read-only --skip-git-repo-check --ephemeral "1+1?"'` → `Reading additional input from stdin...` 후 무진행·rc 124면 재현 유지, 정상 응답이면 스탬프 낡음.
+
+② npm wrapper 잔존 축은 소멸 — `timeout --kill-after` 단독 감독으로 codex 본체 정리 확인. 재검증: `command timeout --kill-after=5 45 codex exec --sandbox read-only --skip-git-repo-check --ephemeral "긴 응답을 300초 동안 생성하라" < /dev/null; sleep 2; pgrep -fl 'libexec/codex'` → 잔존 프로세스 0이면 유지.
+
+③ mac+Linux hazard 분리 실험에서 process group은 GNU timeout 자신이 생성하고(비-foreground 모드) SIGTERM 무시 hang의 유일한 구제는 `--kill-after`(SIGKILL 승급)이며 setsid는 결과를 바꾸지 않는다. 재검증(합성, codex 불필요): SIGTERM 무시 스크립트(`trap '' TERM; sleep 60`)를 (a) `timeout --kill-after=3 6 …` (b) `setsid --wait timeout --kill-after=3 6 …` (c) `setsid --wait timeout 6 …` 세 분기로 실행 → (a)(b)만 137/약 9초 종료·(c)는 무한 대기면 유지 (동일 매트릭스를 mac과 `ssh minipc` 양쪽에서). setsid 의존 제거는 real-codex Linux 매트릭스 재확인(계정 quota 리셋 2026-08-16 이후; 그 전까지는 합성 hazard 실험 대체)을 게이트로 하는 후속 PR 범위다.
+
+④ codex가 자체 process group으로 분리해 띄운 exec-tool 자식은 wrapper로도 회수되지 않는다 (supervisor 레벨에서 원리적 커버 불가 — upstream 영역). 재검증: `CODEX_EXEC_TIMEOUT_SECONDS=40 codex-exec-supervised --sandbox read-only --skip-git-repo-check --ephemeral "shell 도구로 sleep 150을 실행하라" < /dev/null; sleep 2; ps -axo pid,ppid,pgid,command | grep 'sleep 150'` → `PPID=1`·자기 PGID로 잔존하면 유지 (확인 후 잔존 프로세스는 kill로 정리).
 
 발견 세션: PR #588 Phase 4 머지 후 retry hang (issue #593, 2026-04-29 발생).
 

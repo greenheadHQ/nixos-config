@@ -16,7 +16,12 @@
 #   6. -1   (음수)                 → exit 127
 #   7. abc  (non-numeric)          → exit 127
 #
-# Host dependency와 무관하게 7개 경계를 모두 검증한다. `--check`는 dependency를 실행하지 않고
+# 검증 대상 (정본 변수명 near-miss fail-fast):
+#   8. CODEX_EXEC_TIMEOUT=1500 (정본 _SECONDS 오타) → exit 127 + stderr "정본 변수명이 아님"
+#   9. CODEX_EXEC_KILL_AFTER_SECONDS=5 (known 변수) → exit 0 (fail-fast 미발동 확인)
+#  10. CODEX_EXEC_SERVER_URL=x (upstream codex 예약 접두사) → exit 0 (계열 밖 통과 확인)
+#
+# Host dependency와 무관하게 위 목록의 모든 경계를 검증한다. `--check`는 dependency를 실행하지 않고
 # resolution만 확인하므로 codex/setsid/timeout executable stub과 explicit binary env를 주입한다.
 
 set -euo pipefail
@@ -46,14 +51,17 @@ run_case() {
   local rc=0 stderr_log
   stderr_log="$(mktemp "${TMPDIR:-/tmp}/codex-exec-supervised-test.XXXXXX")"
 
+  # env -i로 부모 셸의 CODEX_EXEC_* 상속을 차단한다 — 부모 환경에 near-miss/invalid 값이
+  # 있으면 케이스가 지정한 값보다 먼저 걸려 false fail이 난다. 각 케이스는 자신이 명시한
+  # 변수만 갖는 클린 환경에서 실행된다.
   if [[ "$env_spec" == "unset" ]]; then
-    env -u CODEX_EXEC_TIMEOUT_SECONDS \
+    env -i \
       PATH="$STUB_BIN:$PATH" \
       CODEX_EXEC_TIMEOUT_BIN="$STUB_BIN/timeout" \
       CODEX_EXEC_SETSID_BIN="$STUB_BIN/setsid" \
       "$SUPERVISED" --check 2>"$stderr_log" || rc=$?
   else
-    env "$env_spec" \
+    env -i "$env_spec" \
       PATH="$STUB_BIN:$PATH" \
       CODEX_EXEC_TIMEOUT_BIN="$STUB_BIN/timeout" \
       CODEX_EXEC_SETSID_BIN="$STUB_BIN/setsid" \
@@ -102,5 +110,16 @@ run_case "test_negative_rejected" \
   "CODEX_EXEC_TIMEOUT_SECONDS=-1" 127
 run_case "test_non_numeric_rejected" \
   "CODEX_EXEC_TIMEOUT_SECONDS=abc" 127
+
+# ── 정본 변수명 near-miss fail-fast 케이스 ──
+# 정본 변수명 오타(CODEX_EXEC_TIMEOUT — _SECONDS 누락)가 침묵으로 무시되어 호출 의도가
+# 소실되는 사고 방지 (2026-08-06 실사례). known 변수는 fail-fast를 발동시키지 않아야 하고,
+# 계열 밖 CODEX_EXEC_*(upstream codex가 예약한 CODEX_EXEC_SERVER_* 등)는 통과해야 한다.
+run_case "test_near_miss_codex_exec_var_rejected (오타 변수 fail-fast)" \
+  "CODEX_EXEC_TIMEOUT=1500" 127 "정본 변수명이 아님"
+run_case "test_known_kill_after_var_accepted (known 변수 fail-fast 미발동)" \
+  "CODEX_EXEC_KILL_AFTER_SECONDS=5" 0
+run_case "test_upstream_reserved_prefix_accepted (upstream 예약 접두사 통과)" \
+  "CODEX_EXEC_SERVER_URL=http://localhost:1" 0
 
 echo "==> All wrapper env validation boundary cases passed"

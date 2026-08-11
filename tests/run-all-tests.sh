@@ -69,8 +69,8 @@ run_driver "shell-script-tests" \
 run_driver "codex-hook-fixtures" bash tests/test-codex-hook-fixtures.sh --no-live
 
 # 4) codex-exec-supervised — codex-exec-supervised wrapper의 env validation 경계(타임아웃 cap/양수/
-#    non-numeric) 단위 검증. hermetic dependency stub을 사용해 valid-env 3건과 invalid-env 4건을
-#    host의 codex/setsid/timeout 설치 여부와 무관하게 모두 실행한다.
+#    non-numeric + 정본 CODEX_EXEC_* 변수명 near-miss) 단위 검증. hermetic dependency stub을 사용해
+#    fixture 헤더 목록의 모든 경계를 host의 codex/setsid/timeout 설치 여부와 무관하게 실행한다.
 run_driver "codex-exec-supervised" bash tests/test-codex-exec-supervised.sh
 
 # 5) skill-doc-sync — run-da 문서군의 manual sync contract 4쌍을 검증한다.

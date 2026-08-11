@@ -77,8 +77,8 @@ Arbiter도 이를 기본 경로로 사용한다.
 Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automation일 때,
 또는 사용자가 `codex exec`를 명시적으로 요구할 때는 기존 `codex exec` 계약을 따른다.
 
-- `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (issue #593 Layer 1: setsid + timeout capability-probe wrapper, [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 SSOT)
-- foreground 실행 (병렬/background 없음 — 단일 exec이므로 결과를 즉시 확인. 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조)
+- `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (issue #593 Layer 1: timeout capability-probe wrapper, [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 SSOT). 주의: 이 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본)
+- 단일 exec (병렬 fan-out 없음). 발사 방식은 하네스 기준으로 갈린다 — 하네스 foreground 상한은 세션 라벨이 아니라 Bash tool 속성이다 (상한 수치·근거 사실의 정본은 [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md) "foreground/background 상한 불일치" 절이며, 발사 방식 계약 자체는 본 절이 소유한다). 대화형 Claude Code 세션은 그 상한이 wrapper budget보다 먼저 걸리므로 `run_in_background: true`로 발사하고 완료 알림으로 결과를 수집한다. headless 중 `claude -p`도 같은 Bash tool 상한이 적용되므로 상한 면제가 아니다 — serial foreground로 실행할 때는 `timeout` 파라미터를 반드시 최대치로 명시하고, 그 상한을 초과할 것으로 예상되는 실행은 계획하지 않는다. CI·`codex exec` subprocess 셸은 serial foreground (완료 알림 없음). 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
 - `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
@@ -88,7 +88,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `--ephemeral`로 세션 히스토리 오염 방지
 
 `& + wait` shell-level 병렬을 사용하지 않는다 (런타임 공통; Claude Code Bash tool sandbox 제약에서 유래했으나 Codex `exec_command`·headless 셸 모두 동일하게 적용).
-`cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe로 프롬프트를 전달한다 (Layer 1, 아래 role별 명령 표 참조). 인라인 인자 `"$(cat file)"`는 사용하지 않는다 (marker는 codex 프로세스 적용 — issue #585).
+`cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe로 프롬프트를 전달한다 (Layer 1, 아래 role별 명령 블록 참조). 인라인 인자 `"$(cat file)"`는 사용하지 않는다 (marker는 codex 프로세스 적용 — issue #585).
 
 ### Codex delegation-denied fallback (subprocess 실행 계약)
 
@@ -102,7 +102,7 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 - 각 review unit은 독립 subprocess (fresh 판정 경계는 프로세스 경계로 보존).
 - 사용자 승인 후에만 실행 ([`hardening-contract.md`](hardening-contract.md) "Delegation fallback" 섹션 참조).
 
-role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정하고, `RUN_DA_CODEX_EFFORT`를 profile resolution 결과로 설정한 뒤(사용자가 model/tier를 명시했으면 `RUN_DA_CODEX_MODEL`/`RUN_DA_CODEX_TIER`를, effort를 명시했으면 `RUN_DA_USER_EFFORT_OVERRIDE=1`을 — 각 축은 명시된 경우에만) guard와 함께 실행한다. 모델명은 literal로 고정하지 않는다. 기본 role effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 표가 SSOT다.
+role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 주의: 아래 block들의 wrapper 호출 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정하고, `RUN_DA_CODEX_EFFORT`를 profile resolution 결과로 설정한 뒤(사용자가 model/tier를 명시했으면 `RUN_DA_CODEX_MODEL`/`RUN_DA_CODEX_TIER`를, effort를 명시했으면 `RUN_DA_USER_EFFORT_OVERRIDE=1`을 — 각 축은 명시된 경우에만) guard와 함께 실행한다. 모델명은 literal로 고정하지 않는다. 기본 role effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 표가 SSOT다.
 
 | profile | 기본 `RUN_DA_CODEX_EFFORT` |
 |---------|----------------------------|
@@ -196,7 +196,7 @@ Degraded mode 계약 (fallback 경로 한정): `--sandbox read-only` 강제로 �
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
-이 코드블록 전체를 단일 셸 호출로 실행한다 (런타임 공통 — 셸 호출 간 환경변수 비공유. 호출을 나누면 `$ARBITER_DIR`이 유실됨). literal 재사용 환각 주의 (issue #632): first-pass Arbiter는 단일 foreground exec이므로 `ARBITER_DIR` suffix를 다음 호출에서 literal로 재입력하지 않게 단일 shell 호출을 구조적으로 강제한다. full rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
+이 절차는 준비(#1 임시 디렉토리 + #2 프롬프트 작성)와 발사·수집(#3 codex exec + #4 결과 확인) 두 단계다. headless serial foreground 경로는 전체를 단일 셸 호출로 체이닝한다 (셸 호출 간 환경변수 비공유 — 호출을 나누면 `$ARBITER_DIR`이 유실됨). 대화형 Claude Code 세션의 background 발사는 준비 호출과 발사·수집 호출을 별도 Bash 호출로 분리한다 — heredoc(프롬프트 작성)과 codex exec를 `run_in_background` 호출 하나에 합치는 것은 hang 금지 패턴이다 ([`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md) §11 하위 항목). 분리 시 준비 호출이 stdout으로 출력한 `$ARBITER_DIR` 리터럴을 발사 호출에서 재설정하고 `[ -d ]`/`[ -f ]` guard를 적용한다. literal 재사용 환각 주의 (issue #632): suffix를 검증 없이 변형·재생성하지 않는다 — full rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
 
 ```bash
 # 1. Arbiter 임시 디렉토리 생성
@@ -211,7 +211,8 @@ cat > "$ARBITER_DIR/arbiter-prompt.md" <<'PROMPT'
 PROMPT
 [ -f "$ARBITER_DIR/arbiter-prompt.md" ] || { echo "ARBITER_FAILED: missing prompt=$ARBITER_DIR/arbiter-prompt.md"; exit 1; }
 
-# 3. codex exec 실행 (foreground)
+# 3. codex exec 실행 (발사 방식은 위 "codex exec 경로" 실행 계약이 정본 — 분기 서술을
+#    여기 복제하지 않는다)
 # RUN_DA_CODEX_EFFORT는 role별 기본 profile, agent= 인자, 또는 사용자 명시 effort에서 결정한다.
 RUN_DA_CODEX_EFFORT="${RUN_DA_CODEX_EFFORT:-high}"
 case "$RUN_DA_CODEX_EFFORT" in
@@ -256,7 +257,7 @@ fi
 
 (legacy anchor: `Bash tool 변수 유실 방지`. 런타임 공통 — Claude Code Bash tool에서 처음 노출됐으나 Codex `exec_command`·headless 셸 모두 동일 제약.)
 
-`codex exec` 결과를 파일로 받아 후속 처리하는 경우, 위 코드블록 전체(#1~#4)를 단일 셸 호출로 체이닝한다. 위 코드블록이 올바른 패턴이다.
+`codex exec` 결과를 파일로 받아 후속 처리하는 경우, 실행 절차의 두 단계 구조(준비 / 발사·수집)를 따른다 — 각 단계 내부는 단일 셸 호출로 체이닝하고, 단계를 나눌 때는 stdout으로 출력된 리터럴 경로 재설정 + guard가 필수다.
 
 아래는 호출을 분리하면 발생하는 잘못된 패턴이다:
 
@@ -282,11 +283,11 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션, N=3)
 
-실행 매커니즘은 런타임에 따라 다르다 ([`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표의 fan-out 실행 행 참조):
+실행 매커니즘은 런타임에 따라 다르다 ([`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표의 fan-out 실행 행 참조). 발사 방식의 분기 기준(하네스 기준 — Bash tool 상한, `claude -p` 포함)은 위 "codex exec 경로" first-pass 실행 계약이 정본이며 N=3에도 동일 적용된다:
 - Claude Code 세션: 아래 병렬(background) 방식으로 3개 프로세스 동시 실행, 완료 알림 기반 수집.
-- headless 세션: serial foreground로 3개 프로세스를 순차 실행한다 (완료 알림/`&+wait` 없음, 각 프로세스 종료 후 다음 프로세스 기동). 결과 파일 경로·환경 격리 방식은 아래와 동일하게 적용하되, 실행 방식만 serial로 바꾼다.
+- headless 세션: serial foreground로 3개 프로세스를 순차 실행한다 (완료 알림/`&+wait` 없음, 각 프로세스 종료 후 다음 프로세스 기동; `claude -p`는 Bash tool 상한 적용 대상이므로 위 정본 계약의 `timeout` 최대치 명시 요구를 따른다). 결과 파일 경로·환경 격리 방식은 아래와 동일하게 적용하되, 실행 방식만 serial로 바꾼다.
 
-1. 동일 Arbiter 프롬프트 파일을 3번 실행하기 위해 3개의 `codex exec` 프로세스를 기동한다 (Claude Code: background, headless: serial foreground). reviewer fan-out과 달리 Arbiter N=3 자체는 모두 같은 프롬프트다(프롬프트 조향 금지, 독립 판정 원칙).
+1. 동일 Arbiter 프롬프트 파일을 3번 실행하기 위해 3개의 `codex exec` 프로세스를 기동한다 (발사 방식은 위 정본 계약 참조). reviewer fan-out과 달리 Arbiter N=3 자체는 모두 같은 프롬프트다(프롬프트 조향 금지, 독립 판정 원칙).
 2. 환경 격리 — first-pass Arbiter와 selective consistency N=3 모두 같은 resolved effort를 사용한다. 인자 미지정 시 strong review profile 기본 effort는 `high`이며, `agent=codex-*`가 지정되면 그 effort가 N=3에도 그대로 적용된다. 사용자 지정 실행 파라미터(model/effort/tier)도 first-pass와 동일하게 N=3에 그대로 적용된다. selective consistency N=3은 외부 표면과 충돌을 줄이기 위해 다음 두 방식 중 하나를 선택한다:
 
    (a) 기본 경로 + config 차단 (권장, 간단):
@@ -303,7 +304,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
      - 둘 다 불가능하면 scratch CODEX_HOME에서 `codex login status`가 `Not logged in`으로 실패하므로 방식 (a)로 돌아간다.
    - 최소 `$CODEX_HOME/config.toml`을 작성하되 `[mcp_servers.<name>]` 테이블(실제 Codex TOML 스키마는 [`sync-codex-config.py`](../../../../../codex/files/sync-codex-config.py)의 user-owned `mcp_servers` 보존 정책과 [`scenario-D-mcp-servers-coexist.toml`](../../../../../../../../tests/fixtures/codex-hooks/sync-preservation/scenario-D-mcp-servers-coexist.toml) fixture로 확인)을 포함하지 않는다. 또는 TOML 파서로 기존 config를 복사한 뒤 `mcp_servers` 테이블 전체를 삭제한다. (참고: `[[mcp_servers]]` array-of-table 문법은 현재 Codex가 사용하지 않으므로 혼동 방지를 위해 `[mcp_servers.*]` 정확 표기를 사용한다.)
    - effort 옵션은 필수로 명시적으로 지정한다: `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`. scratch `CODEX_HOME`이므로 user config default가 적용되지 않아 호출 시점 기본값 의존이 불가하다. 모델명·service_tier는 스킬이 pin하지 않으며, 사용자 명시 지정이 있을 때만 `_DA_MODEL_TIER_OVERRIDES`로 주입한다.
-3. Claude Code 세션: `run_in_background: true`로 3개를 병렬 발사 후 완료 알림을 기다린다 (sleep/poll 금지). headless 세션: 3개 프로세스를 serial foreground로 순차 실행한다 (각 종료 확인 후 다음). 결과 파일 경로는 두 경로 모두 `/tmp/da-${_DA_SID}-arbiter-selective-<round>/arbiter-{1,2,3}-result.md`로 라운드별 분리.
+3. Claude Code 세션: `run_in_background: true`로 3개를 병렬 발사 후 완료 알림을 기다린다 (sleep/poll 금지). headless 세션: 3개 프로세스를 serial foreground로 순차 실행한다 (각 종료 확인 후 다음; `claude -p`는 위 정본 계약의 `timeout` 최대치 명시 요구 적용). 결과 파일 경로는 두 경로 모두 `/tmp/da-${_DA_SID}-arbiter-selective-<round>/arbiter-{1,2,3}-result.md`로 라운드별 분리.
 4. 수집 후 `"$HELPER_PATH"`([`protocol.md`](protocol.md) "검증기 호출 계약"으로 결정한 절대경로)에 `--expect-findings <trigger된 finding ID 쉼표 목록>`과 `arbiter-1-result.md arbiter-2-result.md arbiter-3-result.md`를 인자로 전달하여 vote-shape를 얻는다 (manifest 대조로 세 Arbiter 공통 누락·미지 ID를 partial_failure로 잡는다). `--offline` 플래그는 배포 후 kappa 관찰 목적일 때만 부가한다.
 
 ## 실패 처리

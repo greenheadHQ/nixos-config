@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
-# codex-exec-supervised — capability-probe based supervisor wrapper for codex exec
+# codex-exec-supervised — precheck-based supervisor wrapper for codex exec
 #
 # Background (issue #593): codex exec --ephemeral는 prompt 인수가 있어도 stdin이 piped면
 # read_prompt_from_stdin(StdinPromptBehavior::OptionalAppend)가 EOF 미도달 시 무기한 wait한다.
-# npm wrapper(@openai/codex)는 spawn(binaryPath, args, {stdio:"inherit", env})로 native binary를
-# 호출하면서 detach나 process group 생성을 하지 않고 SIGKILL forward도 안 한다. 따라서
-# 단순 `timeout` 호출만으로는 wrapper PID만 죽고 native binary가 잔존할 수 있다.
+# 이 동작은 upstream 미해결이다 (openai/codex#20919, #27019 — 2026-08 기준 OPEN, opt-out
+# 플래그 없음). stdin EOF 보장은 호출자 책임이고(아래 "stdin 처리 책임"), 본 wrapper는 그
+# 규약이 깨졌을 때의 폭발 반경을 timeout으로 유한하게 만든다.
 #
-# 본 wrapper는 setsid + timeout 조합으로 process group kill을 보장한다. mac BSD coreutils에는
-# timeout이 없고 setsid도 없으므로, Nix wrapper(modules/shared/programs/shell/default.nix의
-# home.file + pkgs.writeShellScript)가 두 binary의 absolute store path를 CODEX_EXEC_TIMEOUT_BIN과
-# CODEX_EXEC_SETSID_BIN env 변수에 export한 뒤 본 raw script를 exec한다. 이로써 wrapper subprocess의
-# PATH가 GNU coreutils로 오염되지 않고, codex exec 자식 shell도 원래 user PATH(BSD coreutils 우선)를
-# 보존한다.
+# 역사 각주: 도입 당시(2026-05, PR #636)는 npm wrapper(@openai/codex) 패키징의 detach/process
+# group 부재로 "timeout이 wrapper PID만 죽이고 native가 잔존"하는 축이 있어 setsid를 채택했다.
+# 현행 패키징(modules/shared/programs/codex/ — upstream tarball의 native binary 직핀)에는 중간
+# npm 프로세스가 없어 그 실패 모드는 소멸했고, 2026-08 mac+Linux 분리 실측에서 process group은
+# GNU timeout 자신이 생성하며(비-foreground 모드) SIGTERM 무시 hang의 유일한 구제는
+# --kill-after(SIGKILL 승급)임이 확인됐다. setsid 의존 제거는 후속 PR에서 real-codex Linux
+# 재확인 후 진행한다 — 그 전까지 기존 fail-closed 동작을 유지한다. 실측 상세·제거 게이트의
+# 정본은 using-codex-exec 스킬 references/known-issues.md §15의 "실증 갱신" 블록이다.
+#
+# mac BSD coreutils에는 timeout이 없고 setsid도 없으므로, Nix wrapper(modules/shared/programs/
+# shell/default.nix의 home.file + pkgs.writeShellScript)가 두 binary의 absolute store path를
+# CODEX_EXEC_TIMEOUT_BIN과 CODEX_EXEC_SETSID_BIN env 변수에 export한 뒤 본 raw script를 exec한다.
+# 이로써 wrapper subprocess의 PATH가 GNU coreutils로 오염되지 않고, codex exec 자식 shell도
+# 원래 user PATH(BSD coreutils 우선)를 보존한다.
 #
 # stdin 처리 책임: 호출자가 명시적으로 처리 (`cat prompt.md | codex-exec-supervised ... -` 또는
 # `codex-exec-supervised ... < /dev/null`). 본 wrapper는 stdin을 inherit한다.
@@ -21,8 +29,9 @@
 #   cat prompt.md | codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
 #     -c model_reasoning_effort="medium" -o result.md -
 #
-# wrapper 자체 capability probe (사전점검용 — codex exec를 호출하지 않고 의존성만 검증):
-#   codex-exec-supervised --check  # 모든 dependency(setsid/timeout/codex) 가용 시 exit 0, 부재 시 127
+# wrapper 자체 사전 검증(precheck) — codex exec를 호출하지 않고 자체 검증만 수행:
+#   codex-exec-supervised --check  # 사전 검증 통과 시 exit 0, 실패 시 127 (dependency 부재 /
+#                                  # invalid env 값 / 정본 CODEX_EXEC_* 변수명 near-miss — 사유는 stderr)
 #
 # 환경 변수 (override 가능):
 #   CODEX_EXEC_TIMEOUT_SECONDS    overall timeout, default 1800 (30분; Codex
@@ -40,24 +49,54 @@
 #                                 budget(1800초)을 초과하는 합법 작업의 escape는 raw codex exec
 #                                 우회로 처리).
 #   CODEX_EXEC_KILL_AFTER_SECONDS SIGTERM 후 SIGKILL 전환 grace, default 5
-#                                 rationale: npm wrapper SIGTERM forward 후 native 응답 대기.
-#                                 양수 정수만 허용. 상한 60초.
+#                                 rationale: SIGTERM 수신 후 codex의 자체 정리 시간. SIGTERM이
+#                                 무시되는 hang에서는 이 SIGKILL 승급이 유일한 구제임이 실측
+#                                 확인됐다 (2026-08 hazard 분리 실험). 양수 정수만 허용. 상한 60초.
 #   CODEX_EXEC_TIMEOUT_BIN        timeout binary absolute path. 미설정 시 PATH 검색 후 부재면 BLOCKED.
 #                                 Nix wrapper가 ${pkgs.coreutils}/bin/timeout으로 set한다.
 #   CODEX_EXEC_SETSID_BIN         setsid binary absolute path. 미설정 시 PATH 검색 후 부재면 BLOCKED.
-#                                 부재 fail-closed (process group kill 보장이 본 wrapper의 핵심 경계).
+#                                 부재 fail-closed. 주의: 2026-08 실측에서 setsid는 종료 보장에
+#                                 기여하지 않음이 확인됐다 (process group은 timeout이 생성 — 헤더
+#                                 역사 각주 참조). 제거는 후속 PR 범위이며 그 전까지 기존 동작 유지.
 #                                 진단용 timeout-only 실행이 필요하면 본 wrapper를 우회해 timeout/codex를
 #                                 직접 호출한다 (보장 약화는 wrapper 인터페이스 안에 흡수하지 않는다).
 #                                 Nix wrapper가 ${pkgs.util-linux}/bin/setsid로 set한다.
+#
+#   정본 4개의 계열 이름(TIMEOUT/KILL_AFTER/SETSID 접두)이면서 정확 불일치인 CODEX_EXEC_*
+#   변수는 fail-closed로 거부한다 (exit 127) — 정본 변수명 오타(예: CODEX_EXEC_TIMEOUT=1500,
+#   _SECONDS 누락)가 침묵으로 무시되어 호출 의도가 소실되는 사고 방지 (2026-08-06 실사례).
+#   주의: CODEX_EXEC_ 접두사 전체는 wrapper 소유가 아니다 — upstream codex 자신이
+#   CODEX_EXEC_SERVER_*(exec-server 서브커맨드의 env 바인딩: URL/EXIT_ON_STDIN_CLOSE/
+#   NOISE_* 등)를 예약하므로, 계열 밖 변수는 검사 없이 통과시킨다.
 #
 # Exit code:
 #   0          정상
 #   124        timeout 발동 (SIGTERM)
 #   137        SIGKILL (timeout --kill-after)
-#   127        capability-probe 실패 (codex/timeout/setsid 부재 또는 invalid env). BLOCKED 신호.
+#   127        wrapper 자체 사전 검증 실패 (codex/timeout/setsid 부재, invalid env 값, 또는
+#              정본 CODEX_EXEC_* 변수명 near-miss). BLOCKED 신호 — 사유는 stderr 확인.
 #   기타       codex 자체 exit code
 
 set -euo pipefail
+
+# 정본 변수명 near-miss fail-fast. 반드시 본 스크립트의 어떤 CODEX_EXEC_* 셸 변수 할당보다
+# 먼저 실행한다 — 이 시점의 ${!CODEX_EXEC_@}는 환경에서 상속된 이름만 열거한다.
+# 거부 범위는 정본 4개의 계열 이름(TIMEOUT/KILL_AFTER/SETSID 접두)뿐이다 — CODEX_EXEC_ 접두사
+# 전체를 거부하면 upstream codex가 예약한 CODEX_EXEC_SERVER_*(exec-server env 바인딩)까지
+# 오발동으로 차단한다 (헤더 참조).
+_KNOWN_CODEX_EXEC_VARS=" CODEX_EXEC_TIMEOUT_SECONDS CODEX_EXEC_KILL_AFTER_SECONDS CODEX_EXEC_TIMEOUT_BIN CODEX_EXEC_SETSID_BIN "
+for _codex_exec_var in "${!CODEX_EXEC_@}"; do
+  if [[ "$_KNOWN_CODEX_EXEC_VARS" == *" $_codex_exec_var "* ]]; then
+    continue
+  fi
+  case "$_codex_exec_var" in
+    CODEX_EXEC_TIMEOUT*|CODEX_EXEC_KILL_AFTER*|CODEX_EXEC_SETSID*)
+      printf 'codex-exec-supervised: %s 는 정본 변수명이 아님 (오타 의심) — 허용:%s(exit 127)\n' \
+        "$_codex_exec_var" "$_KNOWN_CODEX_EXEC_VARS" >&2
+      exit 127
+      ;;
+  esac
+done
 
 # 환경변수 검증 helper. 양수 정수만 허용.
 _validate_positive_int() {
@@ -96,7 +135,9 @@ if [[ ! -x "$TIMEOUT_BIN" ]]; then
 fi
 
 # setsid binary resolution: env var(absolute path) 우선, fallback PATH 검색.
-# 부재 시 fail-closed (보안 경계: process group kill 보장이 본 wrapper의 핵심).
+# 부재 시 fail-closed (기존 계약 유지). 근거·현행 실측은 헤더 역사 각주와
+# CODEX_EXEC_SETSID_BIN 항목 참조 — 2026-08 실측상 setsid는 종료 보장에 기여하지
+# 않으며(process group은 timeout이 생성), 제거는 후속 PR 범위다.
 # 진단 목적의 timeout-only 실행은 본 wrapper를 우회해 직접 timeout/codex를 호출한다.
 SETSID_BIN="${CODEX_EXEC_SETSID_BIN:-}"
 if [[ -z "$SETSID_BIN" ]] && command -v setsid >/dev/null 2>&1; then
@@ -113,11 +154,12 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 127
 fi
 
-# wrapper-level capability probe (사전점검용 — codex exec를 호출하지 않고 의존성만 검증).
-# 모든 dependency(setsid/timeout/codex) resolution이 위에서 통과했으므로 여기서 exit 0이면 OK 신호다.
+# wrapper-level 사전 검증(precheck) — codex exec를 호출하지 않고 wrapper 자체 검증만 수행.
+# 이 지점 도달 = near-miss fail-fast + env validation + dependency resolution 전부 통과이므로
+# exit 0이 OK 신호다. `--check` 실패(127)의 사유 목록은 헤더 Exit code 절이 정본.
 # 사전점검 callsite (run-da(audit) preflight)는 `codex-exec-supervised --check`로 호출한다.
 if [[ "${1:-}" == "--check" ]]; then
-  printf 'codex-exec-supervised: dependencies OK (timeout=%s setsid=%s codex=%s)\n' \
+  printf 'codex-exec-supervised: precheck OK (env+deps; timeout=%s setsid=%s codex=%s)\n' \
     "$TIMEOUT_BIN" "$SETSID_BIN" "$(command -v codex)" >&2
   exit 0
 fi
