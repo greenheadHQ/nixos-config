@@ -78,7 +78,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 또는 사용자가 `codex exec`를 명시적으로 요구할 때는 기존 `codex exec` 계약을 따른다.
 
 - `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (issue #593 Layer 1: timeout capability-probe wrapper, [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 SSOT). 주의: 이 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본)
-- 단일 exec (병렬 fan-out 없음). 발사 방식은 하네스 기준으로 갈린다 — 하네스 foreground 상한은 세션 라벨이 아니라 Bash tool 속성이다 (수치·계약의 정본은 [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md) "foreground/background 상한 불일치" 절). 대화형 Claude Code 세션은 그 상한이 wrapper budget보다 먼저 걸리므로 `run_in_background: true`로 발사하고 완료 알림으로 결과를 수집한다. headless 중 `claude -p`도 같은 Bash tool 상한이 적용되므로 상한 면제가 아니다 — serial foreground로 실행할 때는 `timeout` 파라미터를 반드시 최대치로 명시하고, 그 상한을 초과할 것으로 예상되는 실행은 계획하지 않는다. CI·`codex exec` subprocess 셸은 serial foreground (완료 알림 없음). 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조
+- 단일 exec (병렬 fan-out 없음). 발사 방식은 하네스 기준으로 갈린다 — 하네스 foreground 상한은 세션 라벨이 아니라 Bash tool 속성이다 (상한 수치·근거 사실의 정본은 [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md) "foreground/background 상한 불일치" 절이며, 발사 방식 계약 자체는 본 절이 소유한다). 대화형 Claude Code 세션은 그 상한이 wrapper budget보다 먼저 걸리므로 `run_in_background: true`로 발사하고 완료 알림으로 결과를 수집한다. headless 중 `claude -p`도 같은 Bash tool 상한이 적용되므로 상한 면제가 아니다 — serial foreground로 실행할 때는 `timeout` 파라미터를 반드시 최대치로 명시하고, 그 상한을 초과할 것으로 예상되는 실행은 계획하지 않는다. CI·`codex exec` subprocess 셸은 serial foreground (완료 알림 없음). 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
 - `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
@@ -88,7 +88,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `--ephemeral`로 세션 히스토리 오염 방지
 
 `& + wait` shell-level 병렬을 사용하지 않는다 (런타임 공통; Claude Code Bash tool sandbox 제약에서 유래했으나 Codex `exec_command`·headless 셸 모두 동일하게 적용).
-`cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe로 프롬프트를 전달한다 (Layer 1, 아래 role별 명령 표 참조). 인라인 인자 `"$(cat file)"`는 사용하지 않는다 (marker는 codex 프로세스 적용 — issue #585).
+`cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe로 프롬프트를 전달한다 (Layer 1, 아래 role별 명령 블록 참조). 인라인 인자 `"$(cat file)"`는 사용하지 않는다 (marker는 codex 프로세스 적용 — issue #585).
 
 ### Codex delegation-denied fallback (subprocess 실행 계약)
 
@@ -196,7 +196,7 @@ Degraded mode 계약 (fallback 경로 한정): `--sandbox read-only` 강제로 �
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
-이 코드블록 전체를 단일 셸 호출로 실행한다 (런타임 공통 — 셸 호출 간 환경변수 비공유. 호출을 나누면 `$ARBITER_DIR`이 유실됨). literal 재사용 환각 주의 (issue #632): first-pass Arbiter는 단일 exec이고 `$ARBITER_DIR`이 셸 호출 간 유실되므로, suffix를 다음 호출에서 literal로 재입력하지 않게 단일 shell 호출을 구조적으로 강제한다 (이 요구는 발사 방식과 무관 — background 발사도 블록 전체가 한 셸 호출이다). full rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
+이 절차는 준비(#1 임시 디렉토리 + #2 프롬프트 작성)와 발사·수집(#3 codex exec + #4 결과 확인) 두 단계다. headless serial foreground 경로는 전체를 단일 셸 호출로 체이닝한다 (셸 호출 간 환경변수 비공유 — 호출을 나누면 `$ARBITER_DIR`이 유실됨). 대화형 Claude Code 세션의 background 발사는 준비 호출과 발사·수집 호출을 별도 Bash 호출로 분리한다 — heredoc(프롬프트 작성)과 codex exec를 `run_in_background` 호출 하나에 합치는 것은 hang 금지 패턴이다 ([`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md) §11 하위 항목). 분리 시 준비 호출이 stdout으로 출력한 `$ARBITER_DIR` 리터럴을 발사 호출에서 재설정하고 `[ -d ]`/`[ -f ]` guard를 적용한다. literal 재사용 환각 주의 (issue #632): suffix를 검증 없이 변형·재생성하지 않는다 — full rule은 [`using-codex-exec/known-issues.md`](../../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632)를 따른다.
 
 ```bash
 # 1. Arbiter 임시 디렉토리 생성
@@ -257,7 +257,7 @@ fi
 
 (legacy anchor: `Bash tool 변수 유실 방지`. 런타임 공통 — Claude Code Bash tool에서 처음 노출됐으나 Codex `exec_command`·headless 셸 모두 동일 제약.)
 
-`codex exec` 결과를 파일로 받아 후속 처리하는 경우, 위 코드블록 전체(#1~#4)를 단일 셸 호출로 체이닝한다. 위 코드블록이 올바른 패턴이다.
+`codex exec` 결과를 파일로 받아 후속 처리하는 경우, 실행 절차의 두 단계 구조(준비 / 발사·수집)를 따른다 — 각 단계 내부는 단일 셸 호출로 체이닝하고, 단계를 나눌 때는 stdout으로 출력된 리터럴 경로 재설정 + guard가 필수다.
 
 아래는 호출을 분리하면 발생하는 잘못된 패턴이다:
 

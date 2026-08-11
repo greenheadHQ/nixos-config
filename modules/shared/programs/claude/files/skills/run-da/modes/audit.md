@@ -41,7 +41,7 @@ auditor-specific delta: audit 모드의 fan-out 대상은 auditor다 (standard r
 | 경로 | 조건 |
 |------|------|
 | Codex 세션 | Codex CLI가 호스트 — native subagent fan-out (delegation 허용 시). delegation-denied fallback은 [`../references/hardening-contract.md`](../references/hardening-contract.md)의 "Delegation fallback" 참조 |
-| Claude Code 세션 | Claude Code가 호스트 — codex exec 기본 (사전점검: `command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check` 모두 성공해야 한다. wrapper `--check`는 wrapper 자체 사전 검증을 수행하고 OK 시 exit 0, 실패 시 exit 127을 반환한다 — 127 사유는 setsid/timeout/codex 의존성 부재 외에 invalid env 값과 정본 `CODEX_EXEC_*` 변수명 near-miss 오타도 포함하므로 원인은 stderr로 확인한다. codex exec를 호출하지 않으므로 사전점검 비용이 작다). codex 또는 wrapper 미가용/capability probe 실패 시 Claude Code fallback으로 자동 대체하지 않고 실패 원인과 대안(Claude 경로 진행 / 중단)을 사용자에게 확인한다 |
+| Claude Code 세션 | Claude Code가 호스트 — codex exec 기본 (사전점검: `command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check` 모두 성공해야 한다. wrapper `--check`는 wrapper 자체 사전 검증을 수행하고 OK 시 exit 0, 실패 시 exit 127을 반환한다 — 127 사유는 setsid/timeout/codex 의존성 부재 외에 invalid env 값과 정본 `CODEX_EXEC_*` 변수명 near-miss 오타도 포함하므로 원인은 stderr로 확인한다. codex exec를 호출하지 않으므로 사전점검 비용이 작다). codex 또는 wrapper 미가용/사전 검증 실패 시 Claude Code fallback으로 자동 대체하지 않고 실패 원인과 대안(Claude 경로 진행 / 중단)을 사용자에게 확인한다 |
 | headless 세션 | CI, `claude -p`, `codex exec` subprocess |
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다.
@@ -208,7 +208,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 
 ## 사후 변조 감지
 
-codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) 문서 규약이다. 복원 조건은 술어로 정의한다: 실제 발사되는 Layer 1 명령 literal에 `--sandbox read-only`가 포함되지 않으면 이 생략의 전제가 무너지므로 사후 변조 감지를 복원해야 한다. 명령 literal의 정본은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 표 하나이며, 다른 문서(본 문서 포함)의 literal 언급은 전부 그 사본이다 — 어느 사본을 고치든 판정 기준은 이 술어이지 사본 목록이 아니다.
+codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) 문서 규약이다. 복원 조건은 술어로 정의한다: 실제 발사되는 Layer 1 명령 literal에 `--sandbox read-only`가 포함되지 않으면 이 생략의 전제가 무너지므로 사후 변조 감지를 복원해야 한다. 명령 literal의 정본은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 블록(기본 codex exec 경로와 delegation fallback 공통) 하나이며, 다른 문서(본 문서 포함)의 literal 언급은 전부 그 사본이다 — 어느 사본을 고치든 판정 기준은 이 술어이지 사본 목록이 아니다.
 
 Codex 세션(`spawn_agent`) 경로는 read-only sandbox를 구조적으로 강제할 수 없으므로 (Non-goals 참조) 다음 최소 감지를 적용한다:
 

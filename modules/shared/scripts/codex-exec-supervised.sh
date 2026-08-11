@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# codex-exec-supervised — capability-probe based supervisor wrapper for codex exec
+# codex-exec-supervised — precheck-based supervisor wrapper for codex exec
 #
 # Background (issue #593): codex exec --ephemeral는 prompt 인수가 있어도 stdin이 piped면
 # read_prompt_from_stdin(StdinPromptBehavior::OptionalAppend)가 EOF 미도달 시 무기한 wait한다.
@@ -29,7 +29,7 @@
 #   cat prompt.md | codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
 #     -c model_reasoning_effort="medium" -o result.md -
 #
-# wrapper 자체 capability probe (사전점검용 — codex exec를 호출하지 않고 자체 검증만 수행):
+# wrapper 자체 사전 검증(precheck) — codex exec를 호출하지 않고 자체 검증만 수행:
 #   codex-exec-supervised --check  # 사전 검증 통과 시 exit 0, 실패 시 127 (dependency 부재 /
 #                                  # invalid env 값 / 정본 CODEX_EXEC_* 변수명 near-miss — 사유는 stderr)
 #
@@ -154,7 +154,7 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 127
 fi
 
-# wrapper-level capability probe (사전점검용 — codex exec를 호출하지 않고 wrapper 자체 검증만 수행).
+# wrapper-level 사전 검증(precheck) — codex exec를 호출하지 않고 wrapper 자체 검증만 수행.
 # 이 지점 도달 = near-miss fail-fast + env validation + dependency resolution 전부 통과이므로
 # exit 0이 OK 신호다. `--check` 실패(127)의 사유 목록은 헤더 Exit code 절이 정본.
 # 사전점검 callsite (run-da(audit) preflight)는 `codex-exec-supervised --check`로 호출한다.

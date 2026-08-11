@@ -349,7 +349,7 @@ Codex 세션의 native subagent 경로와 일반 터미널에는 이 제약을 �
 
 #### literal 재사용 시 random suffix 환각 금지 (issue #632)
 
-`mktemp`/`mktemp -d`/`mktemp -t` 결과 경로의 random suffix는 opaque high-entropy literal이므로 LLM token prediction에서 다른 suffix와 혼선될 수 있다. stdout에 출력된 정확한 경로를 byte-level 그대로 재사용하고, suffix를 검증 없이 변형·재생성하거나 `/tmp/da-*` 같은 wildcard glob로 대체하지 않는다. 호출 직전 디렉토리는 `[ -d "$DIR" ]`, 파일은 `[ -f "$FILE" ]` guard로 fail-fast한다. 단일 exec 흐름은 발사 방식과 무관하게 prompt 작성, codex exec, result check를 같은 shell call 안에서 완료한다 (background 발사도 블록 전체가 한 셸 호출이다). 구조적으로 multi-call이 필요한 flow는 분리 구조를 유지하되 출력된 literal 경로와 guard를 사용한다.
+`mktemp`/`mktemp -d`/`mktemp -t` 결과 경로의 random suffix는 opaque high-entropy literal이므로 LLM token prediction에서 다른 suffix와 혼선될 수 있다. stdout에 출력된 정확한 경로를 byte-level 그대로 재사용하고, suffix를 검증 없이 변형·재생성하거나 `/tmp/da-*` 같은 wildcard glob로 대체하지 않는다. 호출 직전 디렉토리는 `[ -d "$DIR" ]`, 파일은 `[ -f "$FILE" ]` guard로 fail-fast한다. foreground 단일 exec 흐름은 prompt 작성, codex exec, result check를 같은 shell call 안에서 완료한다. `run_in_background` 발사는 heredoc+exec 체이닝 hang 금지(§11 하위 항목)에 따라 prompt 작성 호출과 exec 호출을 분리한다. 분리가 필요한 모든 flow는 출력된 literal 경로와 guard를 사용한다.
 
 올바른 패턴 — codex exec 병렬 실행:
 
@@ -573,7 +573,7 @@ cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   2>"$DIR/stderr.log"
 ```
 
-capability probe 동작 ([`modules/shared/scripts/codex-exec-supervised.sh`](../../../../../../scripts/codex-exec-supervised.sh)):
+wrapper 사전 검증(precheck) 동작 ([`modules/shared/scripts/codex-exec-supervised.sh`](../../../../../../scripts/codex-exec-supervised.sh)):
 - `setsid` 부재 → BLOCKED, exit 127. 주의: setsid는 종료 보장에 기여하지 않음이 실측 확인됐고 제거는 후속 PR 범위다 (정본: 아래 "실증 갱신" 블록) — 그 전까지 fail-closed 동작이 유지된다. 진단 목적 timeout-only는 wrapper를 우회해 `timeout` + `codex`를 직접 호출한다.
 - `timeout`/`gtimeout` 부재 → BLOCKED, exit 127. Mac BSD에는 둘 다 없으므로 Nix wrapper가 binary 가용성을 보장한다.
 - `codex` 부재 → exit 127.
