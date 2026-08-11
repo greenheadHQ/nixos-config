@@ -597,7 +597,15 @@ Retired historical context (#634): `tests/test-codex-hook-fixtures.sh`의 기존
 
 실증 (도입 시점 — Mac codex 0.128, npm 패키징): `read_prompt_from_stdin(StdinPromptBehavior::OptionalAppend)` source line + npm wrapper spawn 시 detach 부재 직접 검증. 외부 보고 4종(gstack #1034/#1045, codex_sdk, oh-my-codex #1449)이 stdin EOF fix path를 일관되게 제시.
 
-실증 갱신 (2026-08-10 — codex 0.147.0, native 직핀; setsid 실측 서술의 정본 블록 — 다른 위치의 언급은 이 블록을 참조한다): ① stdin optional-append hang은 여전히 재현된다 (`sleep 300 | codex exec … "prompt"` → `Reading additional input from stdin...` 후 무진행; upstream [#20919](https://github.com/openai/codex/issues/20919)·[#27019](https://github.com/openai/codex/issues/27019) OPEN, opt-out 플래그 없음). ② npm wrapper 잔존 축은 소멸 — `timeout --kill-after` 단독 감독으로 codex 본체 정리 확인. ③ mac+Linux hazard 분리 실험에서 process group은 GNU timeout 자신이 생성하고(비-foreground 모드) SIGTERM 무시 hang의 유일한 구제는 `--kill-after`(SIGKILL 승급)이며 setsid는 결과를 바꾸지 않는다. setsid 의존 제거는 real-codex Linux 매트릭스 재확인(계정 quota 리셋 2026-08-16 이후; 그 전까지는 합성 hazard 실험 대체)을 게이트로 하는 후속 PR 범위다. ④ codex가 자체 process group으로 분리해 띄운 exec-tool 자식은 wrapper로도 회수되지 않는다 (supervisor 레벨에서 원리적 커버 불가 — upstream 영역).
+실증 갱신 (2026-08-10 — codex 0.147.0, native 직핀; setsid 실측 서술의 정본 블록 — 다른 위치의 언급은 이 블록을 참조한다). 각 항목의 재검증 명령을 병기한다 (codex 업그레이드 시 이 명령들로 스탬프 유효성을 재확인한다; 전부 read-only sandbox + 소액 API 비용):
+
+① stdin optional-append hang은 여전히 재현된다 — upstream [#20919](https://github.com/openai/codex/issues/20919)·[#27019](https://github.com/openai/codex/issues/27019) OPEN, opt-out 플래그 없음. 재검증: `command timeout 60 zsh -c 'sleep 300 | command codex exec --sandbox read-only --skip-git-repo-check --ephemeral "1+1?"'` → `Reading additional input from stdin...` 후 무진행·rc 124면 재현 유지, 정상 응답이면 스탬프 낡음.
+
+② npm wrapper 잔존 축은 소멸 — `timeout --kill-after` 단독 감독으로 codex 본체 정리 확인. 재검증: `command timeout --kill-after=5 45 codex exec --sandbox read-only --skip-git-repo-check --ephemeral "긴 응답을 300초 동안 생성하라" < /dev/null; sleep 2; pgrep -fl 'libexec/codex'` → 잔존 프로세스 0이면 유지.
+
+③ mac+Linux hazard 분리 실험에서 process group은 GNU timeout 자신이 생성하고(비-foreground 모드) SIGTERM 무시 hang의 유일한 구제는 `--kill-after`(SIGKILL 승급)이며 setsid는 결과를 바꾸지 않는다. 재검증(합성, codex 불필요): SIGTERM 무시 스크립트(`trap '' TERM; sleep 60`)를 (a) `timeout --kill-after=3 6 …` (b) `setsid --wait timeout --kill-after=3 6 …` (c) `setsid --wait timeout 6 …` 세 분기로 실행 → (a)(b)만 137/약 9초 종료·(c)는 무한 대기면 유지 (동일 매트릭스를 mac과 `ssh minipc` 양쪽에서). setsid 의존 제거는 real-codex Linux 매트릭스 재확인(계정 quota 리셋 2026-08-16 이후; 그 전까지는 합성 hazard 실험 대체)을 게이트로 하는 후속 PR 범위다.
+
+④ codex가 자체 process group으로 분리해 띄운 exec-tool 자식은 wrapper로도 회수되지 않는다 (supervisor 레벨에서 원리적 커버 불가 — upstream 영역). 재검증: `CODEX_EXEC_TIMEOUT_SECONDS=40 codex-exec-supervised --sandbox read-only --skip-git-repo-check --ephemeral "shell 도구로 sleep 150을 실행하라" < /dev/null; sleep 2; ps -axo pid,ppid,pgid,command | grep 'sleep 150'` → `PPID=1`·자기 PGID로 잔존하면 유지 (확인 후 잔존 프로세스는 kill로 정리).
 
 발견 세션: PR #588 Phase 4 머지 후 retry hang (issue #593, 2026-04-29 발생).
 

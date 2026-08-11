@@ -51,14 +51,17 @@ run_case() {
   local rc=0 stderr_log
   stderr_log="$(mktemp "${TMPDIR:-/tmp}/codex-exec-supervised-test.XXXXXX")"
 
+  # env -i로 부모 셸의 CODEX_EXEC_* 상속을 차단한다 — 부모 환경에 near-miss/invalid 값이
+  # 있으면 케이스가 지정한 값보다 먼저 걸려 false fail이 난다. 각 케이스는 자신이 명시한
+  # 변수만 갖는 클린 환경에서 실행된다.
   if [[ "$env_spec" == "unset" ]]; then
-    env -u CODEX_EXEC_TIMEOUT_SECONDS \
+    env -i \
       PATH="$STUB_BIN:$PATH" \
       CODEX_EXEC_TIMEOUT_BIN="$STUB_BIN/timeout" \
       CODEX_EXEC_SETSID_BIN="$STUB_BIN/setsid" \
       "$SUPERVISED" --check 2>"$stderr_log" || rc=$?
   else
-    env "$env_spec" \
+    env -i "$env_spec" \
       PATH="$STUB_BIN:$PATH" \
       CODEX_EXEC_TIMEOUT_BIN="$STUB_BIN/timeout" \
       CODEX_EXEC_SETSID_BIN="$STUB_BIN/setsid" \
