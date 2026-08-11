@@ -206,7 +206,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 
 리포트 제시 후 `rm -rf "$DA_DIR"`로 이번 실행의 임시 디렉토리를 삭제한다 (codex exec 경로에서 생성한 경우). BLOCKED (VIOLATION)로 중단된 경우에는 진단 보존을 위해 삭제하지 않는다.
 
-## 사후 변조 감지 (Codex 세션 경로 전용)
+## 사후 변조 감지
 
 codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) 문서 규약이다. 복원 조건은 술어로 정의한다: 실제 발사되는 Layer 1 명령 literal에 `--sandbox read-only`가 포함되지 않으면 이 생략의 전제가 무너지므로 사후 변조 감지를 복원해야 한다. 명령 literal의 정본은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 표 하나이며, 다른 문서(본 문서 포함)의 literal 언급은 전부 그 사본이다 — 어느 사본을 고치든 판정 기준은 이 술어이지 사본 목록이 아니다.
 

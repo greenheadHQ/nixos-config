@@ -78,7 +78,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 또는 사용자가 `codex exec`를 명시적으로 요구할 때는 기존 `codex exec` 계약을 따른다.
 
 - `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (issue #593 Layer 1: timeout capability-probe wrapper, [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 SSOT). 주의: 이 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본)
-- foreground 실행 (병렬/background 없음 — 단일 exec이므로 결과를 즉시 확인. 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조)
+- 단일 exec (병렬 fan-out 없음). 발사 방식은 세션 유형에 따라 다르다 — headless 세션은 serial foreground, Claude Code 세션은 Bash tool foreground 상한(기본 120초, `timeout` 파라미터 명시 시 최대 600초)이 wrapper budget(1800초)보다 먼저 걸리므로 `run_in_background: true`로 발사하고 완료 알림으로 결과를 수집한다 (상한 계약의 정본은 [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md) "foreground/background 상한 불일치" 절). 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
 - `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리

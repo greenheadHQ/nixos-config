@@ -154,8 +154,9 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 127
 fi
 
-# wrapper-level capability probe (사전점검용 — codex exec를 호출하지 않고 의존성만 검증).
-# 모든 dependency(setsid/timeout/codex) resolution이 위에서 통과했으므로 여기서 exit 0이면 OK 신호다.
+# wrapper-level capability probe (사전점검용 — codex exec를 호출하지 않고 wrapper 자체 검증만 수행).
+# 이 지점 도달 = near-miss fail-fast + env validation + dependency resolution 전부 통과이므로
+# exit 0이 OK 신호다. `--check` 실패(127)의 사유 목록은 헤더 Exit code 절이 정본.
 # 사전점검 callsite (run-da(audit) preflight)는 `codex-exec-supervised --check`로 호출한다.
 if [[ "${1:-}" == "--check" ]]; then
   printf 'codex-exec-supervised: dependencies OK (timeout=%s setsid=%s codex=%s)\n' \
