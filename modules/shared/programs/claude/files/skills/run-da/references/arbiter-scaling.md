@@ -211,8 +211,8 @@ cat > "$ARBITER_DIR/arbiter-prompt.md" <<'PROMPT'
 PROMPT
 [ -f "$ARBITER_DIR/arbiter-prompt.md" ] || { echo "ARBITER_FAILED: missing prompt=$ARBITER_DIR/arbiter-prompt.md"; exit 1; }
 
-# 3. codex exec 실행 (발사 방식은 위 실행 계약 참조 — headless serial foreground /
-#    Claude Code 세션은 run_in_background: true + 완료 알림 수집)
+# 3. codex exec 실행 (발사 방식은 위 "codex exec 경로" 실행 계약이 정본 — 분기 서술을
+#    여기 복제하지 않는다)
 # RUN_DA_CODEX_EFFORT는 role별 기본 profile, agent= 인자, 또는 사용자 명시 effort에서 결정한다.
 RUN_DA_CODEX_EFFORT="${RUN_DA_CODEX_EFFORT:-high}"
 case "$RUN_DA_CODEX_EFFORT" in
@@ -283,11 +283,11 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션, N=3)
 
-실행 매커니즘은 런타임에 따라 다르다 ([`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표의 fan-out 실행 행 참조):
+실행 매커니즘은 런타임에 따라 다르다 ([`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표의 fan-out 실행 행 참조). 발사 방식의 분기 기준(하네스 기준 — Bash tool 상한, `claude -p` 포함)은 위 "codex exec 경로" first-pass 실행 계약이 정본이며 N=3에도 동일 적용된다:
 - Claude Code 세션: 아래 병렬(background) 방식으로 3개 프로세스 동시 실행, 완료 알림 기반 수집.
-- headless 세션: serial foreground로 3개 프로세스를 순차 실행한다 (완료 알림/`&+wait` 없음, 각 프로세스 종료 후 다음 프로세스 기동). 결과 파일 경로·환경 격리 방식은 아래와 동일하게 적용하되, 실행 방식만 serial로 바꾼다.
+- headless 세션: serial foreground로 3개 프로세스를 순차 실행한다 (완료 알림/`&+wait` 없음, 각 프로세스 종료 후 다음 프로세스 기동; `claude -p`는 Bash tool 상한 적용 대상이므로 위 정본 계약의 `timeout` 최대치 명시 요구를 따른다). 결과 파일 경로·환경 격리 방식은 아래와 동일하게 적용하되, 실행 방식만 serial로 바꾼다.
 
-1. 동일 Arbiter 프롬프트 파일을 3번 실행하기 위해 3개의 `codex exec` 프로세스를 기동한다 (Claude Code: background, headless: serial foreground). reviewer fan-out과 달리 Arbiter N=3 자체는 모두 같은 프롬프트다(프롬프트 조향 금지, 독립 판정 원칙).
+1. 동일 Arbiter 프롬프트 파일을 3번 실행하기 위해 3개의 `codex exec` 프로세스를 기동한다 (발사 방식은 위 정본 계약 참조). reviewer fan-out과 달리 Arbiter N=3 자체는 모두 같은 프롬프트다(프롬프트 조향 금지, 독립 판정 원칙).
 2. 환경 격리 — first-pass Arbiter와 selective consistency N=3 모두 같은 resolved effort를 사용한다. 인자 미지정 시 strong review profile 기본 effort는 `high`이며, `agent=codex-*`가 지정되면 그 effort가 N=3에도 그대로 적용된다. 사용자 지정 실행 파라미터(model/effort/tier)도 first-pass와 동일하게 N=3에 그대로 적용된다. selective consistency N=3은 외부 표면과 충돌을 줄이기 위해 다음 두 방식 중 하나를 선택한다:
 
    (a) 기본 경로 + config 차단 (권장, 간단):
@@ -304,7 +304,7 @@ selective consistency trigger([stability-measurement.md](stability-measurement.m
      - 둘 다 불가능하면 scratch CODEX_HOME에서 `codex login status`가 `Not logged in`으로 실패하므로 방식 (a)로 돌아간다.
    - 최소 `$CODEX_HOME/config.toml`을 작성하되 `[mcp_servers.<name>]` 테이블(실제 Codex TOML 스키마는 [`sync-codex-config.py`](../../../../../codex/files/sync-codex-config.py)의 user-owned `mcp_servers` 보존 정책과 [`scenario-D-mcp-servers-coexist.toml`](../../../../../../../../tests/fixtures/codex-hooks/sync-preservation/scenario-D-mcp-servers-coexist.toml) fixture로 확인)을 포함하지 않는다. 또는 TOML 파서로 기존 config를 복사한 뒤 `mcp_servers` 테이블 전체를 삭제한다. (참고: `[[mcp_servers]]` array-of-table 문법은 현재 Codex가 사용하지 않으므로 혼동 방지를 위해 `[mcp_servers.*]` 정확 표기를 사용한다.)
    - effort 옵션은 필수로 명시적으로 지정한다: `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`. scratch `CODEX_HOME`이므로 user config default가 적용되지 않아 호출 시점 기본값 의존이 불가하다. 모델명·service_tier는 스킬이 pin하지 않으며, 사용자 명시 지정이 있을 때만 `_DA_MODEL_TIER_OVERRIDES`로 주입한다.
-3. Claude Code 세션: `run_in_background: true`로 3개를 병렬 발사 후 완료 알림을 기다린다 (sleep/poll 금지). headless 세션: 3개 프로세스를 serial foreground로 순차 실행한다 (각 종료 확인 후 다음). 결과 파일 경로는 두 경로 모두 `/tmp/da-${_DA_SID}-arbiter-selective-<round>/arbiter-{1,2,3}-result.md`로 라운드별 분리.
+3. Claude Code 세션: `run_in_background: true`로 3개를 병렬 발사 후 완료 알림을 기다린다 (sleep/poll 금지). headless 세션: 3개 프로세스를 serial foreground로 순차 실행한다 (각 종료 확인 후 다음; `claude -p`는 위 정본 계약의 `timeout` 최대치 명시 요구 적용). 결과 파일 경로는 두 경로 모두 `/tmp/da-${_DA_SID}-arbiter-selective-<round>/arbiter-{1,2,3}-result.md`로 라운드별 분리.
 4. 수집 후 `"$HELPER_PATH"`([`protocol.md`](protocol.md) "검증기 호출 계약"으로 결정한 절대경로)에 `--expect-findings <trigger된 finding ID 쉼표 목록>`과 `arbiter-1-result.md arbiter-2-result.md arbiter-3-result.md`를 인자로 전달하여 vote-shape를 얻는다 (manifest 대조로 세 Arbiter 공통 누락·미지 ID를 partial_failure로 잡는다). `--offline` 플래그는 배포 후 kappa 관찰 목적일 때만 부가한다.
 
 ## 실패 처리

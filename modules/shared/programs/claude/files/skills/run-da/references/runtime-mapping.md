@@ -7,7 +7,7 @@
 | 행동 | Codex 세션 | Claude Code 세션 | headless 세션 |
 |------|-----------|------------------|---------------|
 | 사용자에게 질문 (blocking tool call) | `request_user_input` | `AskUserQuestion` 도구 | 미지원 (자동 전이 적용) |
-| fan-out 실행 (기본) | capability profile에 따른 native lifecycle (delegation 허용 시; 아래 "[Codex native lifecycle capability profile](#codex-native-lifecycle-capability-profile)" 절 SSOT — current: `spawn_agent` → `wait_agent`, legacy: `spawn_agent` → `wait_agent` → `close_agent`) | `Bash tool` + `run_in_background: true`로 `codex exec` subprocess 병렬 발사 (codex exec 사전점검 성공 시 기본) | `codex exec` subprocess를 serial foreground로 순차 실행 (완료 알림/`&+wait` 없음) |
+| fan-out 실행 (기본) | capability profile에 따른 native lifecycle (delegation 허용 시; 아래 "[Codex native lifecycle capability profile](#codex-native-lifecycle-capability-profile)" 절 SSOT — current: `spawn_agent` → `wait_agent`, legacy: `spawn_agent` → `wait_agent` → `close_agent`) | `Bash tool` + `run_in_background: true`로 `codex exec` subprocess 병렬 발사 (codex exec 사전점검 성공 시 기본) | `codex exec` subprocess를 serial foreground로 순차 실행 (완료 알림/`&+wait` 없음; `claude -p`는 Bash tool 상한 적용 — [`arbiter-scaling.md`](arbiter-scaling.md) codex exec 경로 실행 계약의 `timeout` 최대치 명시 요구를 따른다) |
 | fan-out 실행 (fallback) | codex exec subprocess (아래 "Delegation fallback" + `arbiter-scaling.md` 실행 계약) | `Agent` tool + `run_in_background: true` (codex exec 사전점검 실패 원인 고지 후 사용자가 Claude 경로 진행을 확인한 경우만) | — |
 | 결과 수집 (<a id="result-collection"></a>정의 anchor) | subagent가 최종 응답으로 전달한 본문 (`wait_agent`는 완료 신호·상태 요약만 반환하고 결과 본문은 포함하지 않는다), 또는 subagent가 파일로 쓴 결과를 `exec_command`로 `cat`/`sed` 셸 읽기 | `Read` 도구 | `cat`/`sed` via shell |
 | 파일 읽기 | `exec_command`로 `cat`/`sed`/`rg` | `Read` 도구 | `cat`/`sed`/`rg` |

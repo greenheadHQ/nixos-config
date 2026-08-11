@@ -108,7 +108,7 @@ N개 에이전트를 병렬 실행하기 전에 다음을 확인한다:
 
 ### Step 3: 병렬 에이전트 실행
 
-N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 경우). headless 세션은 [run-da 런타임 도구 매핑](../references/runtime-mapping.md#런타임-도구-매핑)에 따라 serial foreground로 순차 실행한다 — 각 subprocess의 종료와 result를 직렬로 확인한다.
+N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 경우). headless 세션은 [run-da 런타임 도구 매핑](../references/runtime-mapping.md#런타임-도구-매핑)에 따라 serial foreground로 순차 실행한다 — 각 subprocess의 종료와 result를 직렬로 확인한다 (`claude -p`는 Bash tool 상한 적용 — [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) 실행 계약 참조).
 
 각 에이전트에게 전달하는 내용:
 
