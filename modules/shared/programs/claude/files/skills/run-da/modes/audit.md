@@ -208,7 +208,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 
 ## 사후 변조 감지 (Codex 세션 경로 전용)
 
-codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) 문서 규약이다 — 규약의 담보 지점은 Layer 1 명령 literal을 보유한 문서 전부다: [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 표(정본), [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 Layer 1 패턴, [`./for_plan.md`](./for_plan.md) Step 2의 실행 예시. 이 중 어느 사본에서든 `--sandbox read-only`를 제거하면 이 생략의 전제가 함께 무너지므로, 그 경우 사후 변조 감지를 복원해야 한다.
+codex exec 경로(Claude Code 세션 · headless 세션)는 사후 변조 감지를 생략한다 — auditor 명령이 `--sandbox read-only`를 포함하는 한 codex 자체의 sandbox(macOS seatbelt / Linux bwrap)가 workspace write를 차단하기 때문이다. 이 플래그의 부착은 wrapper가 강제하는 것이 아니라(passthrough, #1086) 문서 규약이다. 복원 조건은 술어로 정의한다: 실제 발사되는 Layer 1 명령 literal에 `--sandbox read-only`가 포함되지 않으면 이 생략의 전제가 무너지므로 사후 변조 감지를 복원해야 한다. 명령 literal의 정본은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 표 하나이며, 다른 문서(본 문서 포함)의 literal 언급은 전부 그 사본이다 — 어느 사본을 고치든 판정 기준은 이 술어이지 사본 목록이 아니다.
 
 Codex 세션(`spawn_agent`) 경로는 read-only sandbox를 구조적으로 강제할 수 없으므로 (Non-goals 참조) 다음 최소 감지를 적용한다:
 

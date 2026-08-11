@@ -13,7 +13,8 @@
 # npm 프로세스가 없어 그 실패 모드는 소멸했고, 2026-08 mac+Linux 분리 실측에서 process group은
 # GNU timeout 자신이 생성하며(비-foreground 모드) SIGTERM 무시 hang의 유일한 구제는
 # --kill-after(SIGKILL 승급)임이 확인됐다. setsid 의존 제거는 후속 PR에서 real-codex Linux
-# 재확인 후 진행한다 — 그 전까지 기존 fail-closed 동작을 유지한다.
+# 재확인 후 진행한다 — 그 전까지 기존 fail-closed 동작을 유지한다. 실측 상세·제거 게이트의
+# 정본은 using-codex-exec 스킬 references/known-issues.md §15의 "실증 갱신" 블록이다.
 #
 # mac BSD coreutils에는 timeout이 없고 setsid도 없으므로, Nix wrapper(modules/shared/programs/
 # shell/default.nix의 home.file + pkgs.writeShellScript)가 두 binary의 absolute store path를
@@ -28,8 +29,9 @@
 #   cat prompt.md | codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
 #     -c model_reasoning_effort="medium" -o result.md -
 #
-# wrapper 자체 capability probe (사전점검용 — codex exec를 호출하지 않고 의존성만 검증):
-#   codex-exec-supervised --check  # 모든 dependency(setsid/timeout/codex) 가용 시 exit 0, 부재 시 127
+# wrapper 자체 capability probe (사전점검용 — codex exec를 호출하지 않고 자체 검증만 수행):
+#   codex-exec-supervised --check  # 사전 검증 통과 시 exit 0, 실패 시 127 (dependency 부재 /
+#                                  # invalid env 값 / 정본 CODEX_EXEC_* 변수명 near-miss — 사유는 stderr)
 #
 # 환경 변수 (override 가능):
 #   CODEX_EXEC_TIMEOUT_SECONDS    overall timeout, default 1800 (30분; Codex
@@ -71,7 +73,8 @@
 #   0          정상
 #   124        timeout 발동 (SIGTERM)
 #   137        SIGKILL (timeout --kill-after)
-#   127        capability-probe 실패 (codex/timeout/setsid 부재 또는 invalid env). BLOCKED 신호.
+#   127        wrapper 자체 사전 검증 실패 (codex/timeout/setsid 부재, invalid env 값, 또는
+#              정본 CODEX_EXEC_* 변수명 near-miss). BLOCKED 신호 — 사유는 stderr 확인.
 #   기타       codex 자체 exit code
 
 set -euo pipefail
