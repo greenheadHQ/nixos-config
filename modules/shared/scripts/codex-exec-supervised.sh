@@ -198,6 +198,13 @@ fi
 # status로 전달되지 않을 수 있다 (util-linux setsid(1) -w 참조).
 # 최상위 exec는 계약이다 — 제거하면 wrapper bash가 timeout 밖에 남아 외부 하네스가 wrapper PID에
 # 보낸 신호가 timeout/codex에 전달되지 않는다.
+# supervisor argv는 한 곳에서 구성한다 — 감독 옵션(setsid 정책·timeout 인자) 변경 시
+# 이 배열만 수정하면 REQUIRE 유무 분기 양쪽에 함께 적용된다 (setsid 제거 후속 PR의 수정 지점).
+_SUPERVISOR_ARGV=(
+  "$SETSID_BIN" --wait "$TIMEOUT_BIN"
+  --kill-after="$CODEX_EXEC_KILL_AFTER_SECONDS"
+  "$CODEX_EXEC_TIMEOUT_SECONDS"
+)
 if [[ -n "${CODEX_EXEC_REQUIRE_NONEMPTY:-}" ]]; then
   # postcondition shim — timeout의 감독 아래에서 codex를 실행하고 rc==0일 때만 결과 파일을
   # 검사한다. GNU timeout 함정: timeout의 직접 자식(본 shim)이 그룹 SIGTERM에서 codex보다 먼저
@@ -206,9 +213,7 @@ if [[ -n "${CODEX_EXEC_REQUIRE_NONEMPTY:-}" ]]; then
   # 자식 codex에 상속되므로 금지). rc는 `rc=0; ... || rc=$?` 패턴으로 캡처한다 — shim에는
   # 부모의 set -euo pipefail이 상속되지 않지만, errexit 환경에서도 도달 가능한 형태로 통일.
   # 검사 [ -f ] && [ -s ]는 디렉터리 오탐을 막는다. bash -c의 `_`는 $0 placeholder.
-  exec "$SETSID_BIN" --wait "$TIMEOUT_BIN" \
-    --kill-after="$CODEX_EXEC_KILL_AFTER_SECONDS" \
-    "$CODEX_EXEC_TIMEOUT_SECONDS" \
+  exec "${_SUPERVISOR_ARGV[@]}" \
     bash -c '
       trap : TERM
       require_path="$1"; shift
@@ -221,7 +226,4 @@ if [[ -n "${CODEX_EXEC_REQUIRE_NONEMPTY:-}" ]]; then
       exit "$rc"
     ' _ "$CODEX_EXEC_REQUIRE_NONEMPTY" codex exec "$@"
 fi
-exec "$SETSID_BIN" --wait "$TIMEOUT_BIN" \
-  --kill-after="$CODEX_EXEC_KILL_AFTER_SECONDS" \
-  "$CODEX_EXEC_TIMEOUT_SECONDS" \
-  codex exec "$@"
+exec "${_SUPERVISOR_ARGV[@]}" codex exec "$@"

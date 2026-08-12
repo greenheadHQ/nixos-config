@@ -1241,28 +1241,55 @@ _pid_has_ancestor_in_snapshot() {
   [[ "$cur" == "$target" ]]
 }
 
-_cleanup_marker_lines() {
-  # $1=ps 라인들(pid ppid pgid command). helper와 그 자식 sleep의 subtree 전체를
-  # child-first(TERM→KILL)로 종료하고 기록 PID 전부의 소멸을 확인한다 — helper만 죽이면
-  # sleep이 고아로 남아 이후 관측을 오염시킨다.
+_ps_line_command() {
+  # $1=ps 라인(pid ppid pgid command) — 앞 3개 숫자 필드를 제거해 command 원문을 보존 추출한다
+  # (awk 필드 재조합은 연속 공백을 붕괴시켜 identity 비교가 깨진다).
+  sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+[[:space:]]+//' <<<"$1"
+}
+
+_pid_identity_matches() {
+  # $1=pid, $2=수집 시점 command. 현재 그 PID의 argv가 수집 시점과 일치하는가 — kill 신호
+  # 발사 직전의 PID 재사용 방어 (kill→sleep→kill 사이 원 프로세스가 죽고 PID가 재사용되면
+  # 무관한 프로세스에 후속 KILL이 가는 표준 race). 프로세스 부재도 불일치(=발사 불필요)다.
+  local pid="$1" expected_cmd="$2" current_cmd
+  current_cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+  [[ -n "$current_cmd" && "$current_cmd" == "$expected_cmd" ]]
+}
+
+_cleanup_pid_lines_with_children() {
+  # $1=ps 라인들(pid ppid pgid command — marker helper든 wrapper 그룹 구성원이든 임의 대상).
+  # 각 대상과 그 직계 자식(1단계만 확장 — 재귀 아님)을 child-first(TERM→KILL)로 종료하고
+  # 기록 PID 전부의 소멸을 확인한다 — 부모만 죽이면 자식(sleep 등)이 고아로 남아 이후
+  # 관측을 오염시킨다. 각 신호는 수집 시점 argv와 현재 argv가 일치할 때만 발사한다
+  # (PID 재사용 시 무관 프로세스 오살 방지 — 불일치=원 프로세스 소멸로 취급).
   # 반환: 소멸 확인까지 완료하면 0, 하나라도 잔존하면 1 — caller가 이 rc를 무시하면
   # 잔존 상태로 pass mark/sentinel이 발행될 수 있으므로, pass 경로의 caller는 반드시 확인한다.
   local lines="$1"
   [[ -n "$lines" ]] || return 0
-  local helper_pids child_lines all_pids p survivors=0
-  helper_pids="$(awk '{print $1}' <<<"$lines" | tr '\n' ' ')"
-  child_lines="$(_marker_child_lines "$helper_pids")"
-  all_pids="$(printf '%s\n%s\n' "$child_lines" "$lines" | awk 'NF {print $1}')"
-  for p in $all_pids; do kill -TERM "$p" 2>/dev/null || true; done
+  local parent_pids child_lines all_lines survivors=0 line pid cmd
+  parent_pids="$(awk '{print $1}' <<<"$lines" | tr '\n' ' ')"
+  child_lines="$(_marker_child_lines "$parent_pids")"
+  all_lines="$(printf '%s\n%s\n' "$child_lines" "$lines" | awk 'NF')"
+  while IFS= read -r line; do
+    pid="$(awk '{print $1}' <<<"$line")"
+    cmd="$(_ps_line_command "$line")"
+    _pid_identity_matches "$pid" "$cmd" && kill -TERM "$pid" 2>/dev/null || true
+  done <<<"$all_lines"
   sleep 1
-  for p in $all_pids; do kill -KILL "$p" 2>/dev/null || true; done
+  while IFS= read -r line; do
+    pid="$(awk '{print $1}' <<<"$line")"
+    cmd="$(_ps_line_command "$line")"
+    _pid_identity_matches "$pid" "$cmd" && kill -KILL "$pid" 2>/dev/null || true
+  done <<<"$all_lines"
   sleep 1
-  for p in $all_pids; do
-    if kill -0 "$p" 2>/dev/null; then
-      warn "marker cleanup: PID $p 소멸 확인 실패 — 수동 확인 필요"
+  while IFS= read -r line; do
+    pid="$(awk '{print $1}' <<<"$line")"
+    cmd="$(_ps_line_command "$line")"
+    if _pid_identity_matches "$pid" "$cmd"; then
+      warn "process cleanup: PID $pid 소멸 확인 실패 — 수동 확인 필요"
       survivors=$(( survivors + 1 ))
     fi
-  done
+  done <<<"$all_lines"
   [[ "$survivors" -eq 0 ]]
 }
 
@@ -1282,7 +1309,7 @@ _marker_fail() {
   # 분기가 정리를 각자 반복하다 누락되는 것을 막는 단일 계약이다. 성공 경로의 strict 정리
   # (rc 확인 후 sentinel mark)는 known leak 분기가 별도로 수행한다.
   local marker_path="$1"; shift
-  _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_path")" || true
+  _cleanup_pid_lines_with_children "$(_collect_marker_subtree_lines "$marker_path")" || true
   fail "$@"
 }
 
@@ -1642,7 +1669,7 @@ test_codex_exec_marker_residual_live() {
 
   if (( rc == 127 )); then
     warn "marker residual: supervisor BLOCKED (capability-probe 실패) — skip"
-    _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
+    _cleanup_pid_lines_with_children "$(_collect_marker_subtree_lines "$marker_helper")" || true
     return 0
   fi
 
@@ -1675,7 +1702,7 @@ test_codex_exec_marker_residual_live() {
   local group_lingering
   group_lingering="$(ps -axo pid=,ppid=,pgid=,command= 2>/dev/null | awk -v pg="$timeout_pgid" '$3 == pg' || true)"
   if [[ -n "$group_lingering" ]]; then
-    _cleanup_marker_lines "$group_lingering" || true
+    _cleanup_pid_lines_with_children "$group_lingering" || true
     _marker_fail "$marker_helper" "marker residual: wrapper 소유 그룹(pgid=$timeout_pgid) 잔존 — process group kill 회귀:
 $group_lingering"
   fi
@@ -1689,7 +1716,7 @@ $group_lingering"
     local leak_count
     leak_count="$(awk 'NF' <<<"$leak_lines" | wc -l | tr -d ' ')"
     warn "marker residual: 세션 이탈 잔존 ${leak_count}개 — known leak (known-issues §15 실증 갱신 ④, fail 아님) 기록 후 정리"
-    _cleanup_marker_lines "$leak_lines" \
+    _cleanup_pid_lines_with_children "$leak_lines" \
       || fail "marker residual: known leak 정리 실패 (잔존 PID 소멸 미확인) — 정리 완료 전에는 sentinel을 발행하지 않는다"
   fi
 
@@ -1731,12 +1758,21 @@ test_marker_residual_detector_negative_control() {
     fail "negative control: 합성 marker helper 기동 실패"
   fi
 
+  # 실패 분기 공통 정리 — helper만 죽이면 exec 없이 실행된 자식 sleep이 고아로 남으므로
+  # (함수 헤더 계약과 동일), helper PID로 라인을 구성해 자식까지 함께 정리한다.
+  # 탐지기(_ps_lines_matching) 자체를 검증하는 중이므로 observed에 의존하지 않는다.
+  _negative_control_abort() {
+    local msg="$1" helper_line
+    helper_line="$(ps -o pid=,ppid=,pgid=,command= -p "$helper_pid" 2>/dev/null || true)"
+    _cleanup_pid_lines_with_children "$helper_line" || true
+    fail "$msg"
+  }
+
   sleep 1
   local observed
   observed="$(_ps_lines_matching "$marker_helper")"
   if [[ -z "$observed" ]]; then
-    kill -KILL "$helper_pid" 2>/dev/null || true
-    fail "negative control: 탐지기가 실행 중 marker를 관측하지 못함 — 탐지기 회귀"
+    _negative_control_abort "negative control: 탐지기가 실행 중 marker를 관측하지 못함 — 탐지기 회귀"
   fi
 
   # 현재 테스트 프로세스의 PGID를 wrapper 소유 그룹의 대역으로 두면, set -m으로 분리된
@@ -1747,25 +1783,21 @@ test_marker_residual_detector_negative_control() {
   local self_pgid
   self_pgid="$(ps -o pgid= -p "${BASHPID:-$$}" | tr -d ' ')"
   if [[ -z "$self_pgid" ]]; then
-    kill -KILL "$helper_pid" 2>/dev/null || true
-    fail "negative control: 자기 PGID 조회 실패"
+    _negative_control_abort "negative control: 자기 PGID 조회 실패"
   fi
   local out_group
   out_group="$(awk -v pg="$self_pgid" '$3 != pg' <<<"$observed")"
   if [[ -z "$out_group" ]]; then
-    kill -KILL "$helper_pid" 2>/dev/null || true
-    fail "negative control: 그룹 이탈 marker가 out-of-group으로 분류되지 않음 — 분류기 회귀"
+    _negative_control_abort "negative control: 그룹 이탈 marker가 out-of-group으로 분류되지 않음 — 분류기 회귀"
   fi
 
   # 정리 실효 검증까지: helper + 자식 sleep subtree를 정리하고 소멸을 확인한다.
   # cleanup rc(잔존 소멸 미확인=1)와 helper 생존 재확인 둘 다 정리기 회귀로 판정한다.
-  if ! _cleanup_marker_lines "$observed"; then
-    kill -KILL "$helper_pid" 2>/dev/null || true
-    fail "negative control: cleanup이 잔존 소멸을 확인하지 못함 — 정리기 회귀"
+  if ! _cleanup_pid_lines_with_children "$observed"; then
+    _negative_control_abort "negative control: cleanup이 잔존 소멸을 확인하지 못함 — 정리기 회귀"
   fi
   if kill -0 "$helper_pid" 2>/dev/null; then
-    kill -KILL "$helper_pid" 2>/dev/null || true
-    fail "negative control: cleanup 후에도 helper($helper_pid) 잔존 — 정리기 회귀"
+    _negative_control_abort "negative control: cleanup 후에도 helper($helper_pid) 잔존 — 정리기 회귀"
   fi
 }
 
