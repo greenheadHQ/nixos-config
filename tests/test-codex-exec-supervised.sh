@@ -358,11 +358,15 @@ run_term_case() {
   if [[ ! -s "$pid_file" ]]; then
     fail "[term/ignore=$ignore] codex stub이 PID를 기록하지 못함 — 케이스 무효"
   fi
-  local codex_pid
+  local codex_pid codex_state
   codex_pid="$(cat "$pid_file")"
-  if kill -0 "$codex_pid" 2>/dev/null; then
+  # kill -0은 zombie(Z)에도 성공한다 — PID 1이 고아를 즉시 reap하지 않는 환경(Linux 컨테이너
+  # CI)에서는 KILL된 stub이 reap 전까지 Z로 남으므로, 프로세스 상태를 확인해 zombie는 종료로
+  # 취급한다 (Z는 실행·신호 수신이 불가능한 이미 죽은 항목이다).
+  codex_state="$(ps -o stat= -p "$codex_pid" 2>/dev/null | tr -d ' ' || true)"
+  if [[ -n "$codex_state" && "$codex_state" != Z* ]]; then
     kill -KILL "$codex_pid" 2>/dev/null || true
-    fail "[term/ignore=$ignore] codex stub PID $codex_pid 잔존 — 그룹 정리 회귀"
+    fail "[term/ignore=$ignore] codex stub PID $codex_pid 잔존(state=$codex_state) — 그룹 정리 회귀"
   fi
 }
 
