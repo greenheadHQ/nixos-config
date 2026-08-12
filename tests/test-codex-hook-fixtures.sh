@@ -2,7 +2,7 @@
 # tests/test-codex-hook-fixtures.sh
 # Codex 0.124+ stable hook 회귀 차단 fixture runner.
 #
-# 10 카테고리 (8 deterministic + 2 live opt-in subsets):
+# 카테고리 (deterministic + live opt-in subsets):
 #   1. stdin schema baseline 0.124       — fixtures/codex-hooks/stdin/{userpromptsubmit-codex-0.124,stop-codex-0.124,stop-no-last-message}.json
 #   2. dispatcher ordering / failure recovery — runner 내부 mock subscript
 #   3. noise-guard env 변형              — runner 내부 helper (4 env 조합)
@@ -11,10 +11,24 @@
 #   5. programmatic env inheritance (live opt-in) — CODEX_HOOK_LIVE=1 / --live
 #   5b. codex exec invocation matrix (live opt-in, must-pass-only) — issue #593 supervised wrapper 회귀 차단
 #       (--live 시 invocation matrix를 programmatic env inheritance보다 먼저 실행)
+#   5c. marker 기반 잔존 프로세스 검증 (live opt-in — issue #1228 1단계) + deterministic
+#       negative control(탐지기 실효 검증)·supervised 해석 predicate 자체 테스트
 #   7. pinning-alert behavioral          — fixtures/codex-hooks/stdin/pinning-{claude,codex}-*.json
 #   7b. PreToolUse pinning-guard behavioral — hard-fail deny JSON + clean pass fixtures
 #   7c. commit-msg pinning behavioral    — fixtures/codex-hooks/commit-msg/*.msg
 # (카테고리 6 stop-notification reliability/security는 native push 도입으로 제거됨.)
+#
+# live 통과 판정 계약 (issue #1228): live fixture는 환경 결함을 WARN skip 후 exit 0으로 끝낼 수
+# 있으므로, exit 0만으로는 검증 완료가 아니다. 필수 live 시나리오(invocation matrix / marker
+# residual / env inheritance) 전부가 검증·정리까지 완료된 경우에만 aggregate sentinel
+# `LIVE_REQUIRED_ALL_PASS` 1줄이 stdout에 출력된다 (WARN/skip 경로에서는 어떤 sentinel도 출력하지
+# 않는다). --live 통과 판정은 `exit 0 그리고 sentinel 존재` 둘 다 요구한다.
+#
+# 검증 대상 wrapper 선택 (issue #1228): CODEX_HOOK_SUPERVISED_BIN=source|installed (default: source)
+#   source     워크트리 소스(modules/shared/scripts/codex-exec-supervised.sh)를 실행하고 Nix wrapper
+#              계층이 export하는 CODEX_EXEC_*_BIN을 설치본에서 추출해 주입한다 — nrs 전에도 워크트리
+#              수정본을 검증한다 (종전 PATH-우선 해석은 구 설치본을 검증하는 허상이었다).
+#   installed  PATH 설치본(~/.local/bin)을 env 주입 없이 실행한다 (post-nrs 실제 Nix 배선 검증).
 #
 # nrs-session-cleanup.sh는 NRS_LOCK_FILE을 하드코딩하므로 (host /tmp/nrs-state 누수 위험)
 # fixture는 real script를 직접 호출하지 않고 mock subscript로 대체한다.
@@ -35,9 +49,13 @@ for arg in "$@"; do
 Usage: $0 [--live | --no-live]
   default      deterministic fixture만 실행
   --live       live opt-in fixture까지 실행: codex exec invocation matrix(must-pass-only)
-               + programmatic env inheritance live fixture (실행 순서대로)
+               → marker residual → programmatic env inheritance (실행 순서대로).
+               통과 판정은 exit 0 + stdout의 LIVE_REQUIRED_ALL_PASS sentinel 둘 다 요구
+               (환경 결함 WARN skip 시 exit 0이어도 sentinel은 출력되지 않는다)
   --no-live    deterministic 강제 (default와 동일; verify-ai-compat가 사용)
 ENV: CODEX_HOOK_LIVE=1  (--live와 동등; CLI 인자가 env보다 우선하며 마지막 모드 인자가 이긴다)
+     CODEX_HOOK_SUPERVISED_BIN=source|installed  (검증 대상 wrapper 선택; default source —
+               워크트리 소스 + 설치본 추출 env 주입. installed는 post-nrs Nix 배선 검증용)
 EOF
       exit 0
       ;;
@@ -55,6 +73,9 @@ done
 tomlkit_bootstrap_require "$REPO_ROOT" "${BASH_SOURCE[0]}" "$@"
 
 TEST_TMP_FILE="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-list.XXXXXX")"
+# 필수 live 시나리오의 pass mark 수집 파일 — aggregate sentinel(LIVE_REQUIRED_ALL_PASS) 판정용.
+# WARN skip 경로는 mark를 남기지 않는다 (헤더 "live 통과 판정 계약" 참조).
+LIVE_PASS_FILE="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-live-pass.XXXXXX")"
 
 # ─── Hook contract expectation oracle ───
 # tests/lib/codex-hook-expectations.sh가 EXPECTED_* / LIVE_CODEX_TIMEOUT_SECONDS /
@@ -105,6 +126,7 @@ cleanup() {
     done < "$TEST_TMP_FILE"
     rm -f "$TEST_TMP_FILE"
   fi
+  rm -f "$LIVE_PASS_FILE"
   return 0
 }
 trap cleanup EXIT
@@ -1136,6 +1158,110 @@ test_commit_msg_pinning_behavioral() {
   done
 }
 
+# ─── supervised wrapper 해석 + marker 잔존 탐지기 (live fixture 공통 — issue #1228 1단계) ───
+
+_supervised_source_has_setsid_assignment() {
+  # 워크트리 소스에 setsid 실행 할당문이 존재하는가. 주석·역사 각주는 `#`로 시작해 매치되지
+  # 않으므로 setsid 제거 커밋 후에는 predicate가 자동으로 꺼진다 (SETSID_BIN 주입도 중단 —
+  # 제거 후 설치본에 export가 없는 것이 정상이므로 무조건 추출 fail로 걸면 fixture가 전부 죽는다).
+  grep -q '^SETSID_BIN=' "$1"
+}
+
+_extract_installed_env_bin() {
+  # $1=env 변수 이름. 설치본 Nix wrapper(writeShellScript)의 export 라인에서 store 절대경로 추출.
+  local var="$1" installed
+  installed="$(command -v codex-exec-supervised 2>/dev/null)" || return 1
+  grep -o "${var}=\"[^\"]*\"" "$installed" 2>/dev/null | head -1 | cut -d'"' -f2
+}
+
+resolve_supervised() {
+  # 검증 대상 wrapper 결정 (헤더 "검증 대상 wrapper 선택" 참조). 성공 시 전역
+  # SUPERVISED_BIN(실행 경로)과 SUPERVISED_ENV(주입 env K=V 배열)를 설정한다.
+  # 모드 결함·추출 실패는 fail — 조용한 skip은 검증 대상이 뒤바뀌는 허상을 만든다.
+  local mode="${CODEX_HOOK_SUPERVISED_BIN:-source}"
+  SUPERVISED_ENV=()
+  case "$mode" in
+    installed)
+      SUPERVISED_BIN="$(command -v codex-exec-supervised 2>/dev/null)" \
+        || fail "supervised 해석: installed 모드인데 PATH에 codex-exec-supervised 부재 (nrs 후 재시도)"
+      ;;
+    source)
+      SUPERVISED_BIN="$REPO_ROOT/modules/shared/scripts/codex-exec-supervised.sh"
+      [[ -x "$SUPERVISED_BIN" ]] || fail "supervised 해석: 워크트리 소스가 실행 불가: $SUPERVISED_BIN"
+      local timeout_bin=""
+      timeout_bin="$(_extract_installed_env_bin CODEX_EXEC_TIMEOUT_BIN)" || timeout_bin=""
+      [[ -n "$timeout_bin" ]] \
+        || fail "supervised 해석: 설치본에서 CODEX_EXEC_TIMEOUT_BIN 추출 실패 — source 모드는 설치본의 store 경로 추출이 필요하다 (nrs로 설치 후 재시도)"
+      SUPERVISED_ENV+=("CODEX_EXEC_TIMEOUT_BIN=$timeout_bin")
+      if _supervised_source_has_setsid_assignment "$SUPERVISED_BIN"; then
+        local setsid_bin=""
+        setsid_bin="$(_extract_installed_env_bin CODEX_EXEC_SETSID_BIN)" || setsid_bin=""
+        [[ -n "$setsid_bin" ]] \
+          || fail "supervised 해석: 소스가 setsid를 요구하는데 설치본에서 CODEX_EXEC_SETSID_BIN 추출 실패"
+        SUPERVISED_ENV+=("CODEX_EXEC_SETSID_BIN=$setsid_bin")
+      fi
+      ;;
+    *)
+      fail "supervised 해석: CODEX_HOOK_SUPERVISED_BIN=$mode — source|installed만 허용"
+      ;;
+  esac
+}
+
+_live_mark_passed() {
+  # 필수 live 시나리오가 검증·정리까지 완료했을 때만 호출한다 (WARN skip 경로 금지).
+  printf '%s\n' "$1" >> "$LIVE_PASS_FILE"
+}
+
+_ps_lines_matching() {
+  # argv에 $1 문자열을 포함한 프로세스 라인(pid ppid pgid command) 추출. grep 자신은 제외.
+  # 종전 검증이 이 방식을 sandbox 경로에 적용했는데, 명령줄에 그 경로가 없는 프로세스는
+  # 구조적으로 통과했다 — 지금은 고유 marker helper 경로(argv에 유지됨)에만 적용한다.
+  ps -axo pid=,ppid=,pgid=,command= 2>/dev/null | grep -F -- "$1" | grep -Fv 'grep -F' || true
+}
+
+_marker_child_lines() {
+  # $1=부모 PID 목록(공백/개행 구분). 그 PID를 PPID로 갖는 프로세스 라인을 추출한다 —
+  # helper의 자식 sleep은 argv에 marker 경로가 없으므로 PPID 체인으로만 찾을 수 있다.
+  local parent_pids="$1"
+  [[ -n "$parent_pids" ]] || return 0
+  ps -axo pid=,ppid=,pgid=,command= 2>/dev/null | awk -v pids="$parent_pids" '
+    BEGIN { n = split(pids, a, /[[:space:]]+/); for (i = 1; i <= n; i++) if (a[i] != "") want[a[i]] = 1 }
+    ($2 in want)' || true
+}
+
+_pid_has_ancestor_in_snapshot() {
+  # $1=시작 PID, $2=조상 후보 PID, $3=ps 스냅샷 파일(pid ppid pgid command).
+  # 스냅샷 기반 PPID 체인 추적 (최대 16단계) — 시작 PID가 조상 후보의 후손이면 rc 0.
+  local cur="$1" target="$2" snap="$3" depth=0
+  while [[ -n "$cur" && "$cur" != "0" && "$cur" != "1" ]] && (( depth < 16 )); do
+    [[ "$cur" == "$target" ]] && return 0
+    cur="$(awk -v p="$cur" '$1 == p { print $2; exit }' "$snap")"
+    depth=$(( depth + 1 ))
+  done
+  [[ "$cur" == "$target" ]]
+}
+
+_cleanup_marker_lines() {
+  # $1=ps 라인들(pid ppid pgid command). helper와 그 자식 sleep의 subtree 전체를
+  # child-first(TERM→KILL)로 종료하고 기록 PID 전부의 소멸을 확인한다 — helper만 죽이면
+  # sleep이 고아로 남아 이후 관측을 오염시킨다.
+  local lines="$1"
+  [[ -n "$lines" ]] || return 0
+  local helper_pids child_lines all_pids p
+  helper_pids="$(awk '{print $1}' <<<"$lines" | tr '\n' ' ')"
+  child_lines="$(_marker_child_lines "$helper_pids")"
+  all_pids="$(printf '%s\n%s\n' "$child_lines" "$lines" | awk 'NF {print $1}')"
+  for p in $all_pids; do kill -TERM "$p" 2>/dev/null || true; done
+  sleep 1
+  for p in $all_pids; do kill -KILL "$p" 2>/dev/null || true; done
+  sleep 1
+  for p in $all_pids; do
+    if kill -0 "$p" 2>/dev/null; then
+      warn "marker cleanup: PID $p 소멸 확인 실패 — 수동 확인 필요"
+    fi
+  done
+}
+
 # ─── 카테고리 5: programmatic env inheritance live (opt-in) ───
 # programmatic codex exec 호출자가 CODEX_PROGRAMMATIC=1을 codex 프로세스에 붙이면,
 # UserPromptSubmit hook subprocess까지 해당 marker가 상속되는지 검증한다. managed hook
@@ -1147,16 +1273,8 @@ test_programmatic_env_inheritance_live() {
     return 0
   fi
 
-  local supervised
-  if command -v codex-exec-supervised >/dev/null 2>&1; then
-    supervised="codex-exec-supervised"
-  else
-    supervised="$REPO_ROOT/modules/shared/scripts/codex-exec-supervised.sh"
-    if [[ ! -x "$supervised" ]]; then
-      warn "programmatic env inheritance live: codex-exec-supervised 미설치 (~/.local/bin 또는 $supervised) — skip (환경 결함)"
-      return 0
-    fi
-  fi
+  # 검증 대상 wrapper 해석 — CODEX_HOOK_SUPERVISED_BIN=source|installed (헤더 참조).
+  resolve_supervised
 
   local sandbox dump_log
   sandbox=$(new_hook_sandbox)
@@ -1188,6 +1306,14 @@ type = "command"
 command = "$sandbox/home/.codex/hooks/dump-env.sh"
 EOF
 
+  # sandbox CODEX_HOME은 host auth를 상속하지 않아 API 호출이 401로 죽는다 (2026-08-12 실측 —
+  # hook 발화 여부와 무관한 구조적 결함). host auth.json이 있으면 복사해 정상 완주를 허용한다.
+  # 부재 시 복사 없이 진행 — dump_log 검증은 가능하나 codex 후속이 비정상이면 sentinel mark가
+  # 남지 않는다 (원인 해소 요구 신호).
+  if [[ -f "$HOME/.codex/auth.json" ]]; then
+    cp "$HOME/.codex/auth.json" "$sandbox/codex-home/auth.json"
+  fi
+
   # 본 fixture의 검증 의도는 "programmatic 호출자가 codex 프로세스에 붙인 CODEX_PROGRAMMATIC=1이
   # hook subprocess까지 상속되는지"이다. CLAUDECODE는 부모에서 제거해 이 fixture가 Claude nesting
   # marker에 의존하지 않음을 보인다.
@@ -1195,6 +1321,11 @@ EOF
   # dump-env hook 등록은 sandbox CODEX_HOME/config.toml에 있으므로 --ignore-user-config를 쓰지 않는다.
   # 쓰면 sandbox config 자체가 무시되어 hook이 발화하지 않는다. stdin은 wrapper 책임이 아니므로
   # pipe + '-'로 EOF를 명시해 inherited-stdin hang shape를 차단한다.
+  #
+  # --dangerously-bypass-hook-trust: codex 0.147.0부터 hooks는 persisted hook trust가 없으면
+  # 조용히 발화하지 않는다 (2026-08-12 실측 — 미발화가 에러 없이 정상 종료로 보인다). 본 fixture는
+  # hook source를 자신이 작성하므로 upstream이 명시한 "automation that already vets hook sources"
+  # 용례에 해당한다.
   local codex_rc=0
   local codex_stderr="$sandbox/codex-exec.stderr"
   ( cd "$sandbox" && printf 'noop\n' | env -u CLAUDECODE \
@@ -1205,8 +1336,10 @@ EOF
        HOME="$sandbox/home" \
        XDG_DATA_HOME="$sandbox/xdg-data" \
        XDG_CONFIG_HOME="$sandbox/xdg-config" \
-       "$supervised" \
+       ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
+       "$SUPERVISED_BIN" \
          --ephemeral --skip-git-repo-check --sandbox read-only --ignore-rules \
+         --dangerously-bypass-hook-trust \
          -c model="gpt-5.5" -c model_reasoning_effort="medium" \
          - >/dev/null 2>"$codex_stderr" ) \
     || codex_rc=$?
@@ -1218,8 +1351,12 @@ EOF
     grep -qE '^CODEX_PROGRAMMATIC=1$' "$dump_log" \
       || fail "programmatic env inheritance live: CODEX_PROGRAMMATIC=1 미도달 (dump_log=$(cat "$dump_log"))"
     if (( codex_rc != 0 )); then
+      # inheritance 검증 자체는 통과했으나 codex 후속 비정상 — sentinel 판정에는 포함하지
+      # 않는다 (원인 해소 전까지 필수 시나리오 미완 취급).
       warn "programmatic env inheritance live: hook inheritance 도달 확인 + codex exec 후속 비정상(rc=$codex_rc) — inheritance 통과"
+      return 0
     fi
+    _live_mark_passed env_inheritance
     return 0
   fi
 
@@ -1245,9 +1382,11 @@ EOF
 #   2. raw_override_inline_toml_hang_with_supervisor_pass — issue #593 raw PoC + supervisor 적용
 #      (supervisor가 timeout 안에 SIGTERM/SIGKILL grace로 정리 → 124/137 exit가 정상)
 #
-# 환경 결함 (codex/codex-exec-supervised 부재) 시만 WARN skip (capability-probe 정책).
+# 환경 결함 (codex 부재) 시만 WARN skip (capability-probe 정책).
 # preflight 통과 후 timeout/no-result는 fail (must-pass-only 계약).
-# scenario-2는 supervisor 정리 + 잔존 process 부재까지 검증.
+# 잔존 프로세스 검증은 카테고리 5c(marker residual)가 담당한다 — 종전 scenario-2의
+# sandbox 경로 문자열 매칭 검증은 명령줄에 그 경로가 없는 프로세스를 구조적으로 통과시키고,
+# Reply PONG 프롬프트는 shell 자식을 만들지 않아 검증 표면 자체가 없는 허상이었다 (#1228).
 test_codex_exec_invocation_live_matrix() {
   # preflight: codex 가용성 (wrapper가 자체 capability-probe하므로 timeout/setsid 별도 검사 불필요).
   if ! command -v codex >/dev/null 2>&1; then
@@ -1255,19 +1394,8 @@ test_codex_exec_invocation_live_matrix() {
     return 0
   fi
 
-  # codex-exec-supervised는 nrs activation 후 ~/.local/bin/에 노출된다
-  # (modules/shared/programs/shell/default.nix의 home.file + pkgs.writeShellScript wrapper).
-  # 미설치 환경(test 직접 실행 등)에서는 repo absolute path fallback.
-  local supervised
-  if command -v codex-exec-supervised >/dev/null 2>&1; then
-    supervised="codex-exec-supervised"
-  else
-    supervised="$REPO_ROOT/modules/shared/scripts/codex-exec-supervised.sh"
-    if [[ ! -x "$supervised" ]]; then
-      warn "invocation matrix: codex-exec-supervised 미설치 (~/.local/bin 또는 $supervised) — skip (환경 결함)"
-      return 0
-    fi
-  fi
+  # 검증 대상 wrapper 해석 — CODEX_HOOK_SUPERVISED_BIN=source|installed (헤더 참조).
+  resolve_supervised
 
   local sandbox
   sandbox=$(new_hook_sandbox)
@@ -1285,7 +1413,8 @@ test_codex_exec_invocation_live_matrix() {
     CODEX_PROGRAMMATIC=1 \
     CODEX_EXEC_TIMEOUT_SECONDS="$INVOCATION_MATRIX_TIMEOUT_SECONDS" \
     CODEX_EXEC_KILL_AFTER_SECONDS="$CODEX_EXEC_KILL_AFTER_SECONDS" \
-    "$supervised" \
+    ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
+    "$SUPERVISED_BIN" \
       --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
       -c model="gpt-5.5" -c model_reasoning_effort="medium" \
       -o "$result1" \
@@ -1316,7 +1445,9 @@ test_codex_exec_invocation_live_matrix() {
   # ── Scenario 2: raw_override_inline_toml_hang_with_supervisor_pass ──
   # issue #593 raw PoC 패턴(`-c hooks.<event>` override 포함). supervisor 미적용 시 hang 확정.
   # supervisor 적용 시 timeout 안에 SIGTERM/SIGKILL grace로 정리되어 0/124/137 exit 모두 PASS.
-  # 잔존 codex 프로세스가 없는지 추가 검증 (process group kill 입증).
+  # --dangerously-bypass-hook-trust: codex 0.147.0부터 hooks는 persisted hook trust가 없으면
+  # 조용히 발화하지 않는다 (2026-08-12 실측). 본 fixture는 hook source를 자신이 작성하므로
+  # upstream이 명시한 "automation that already vets hook sources" 용례에 해당한다.
   local hook_log="$sandbox/scenario-2-hook.log"
   local hook_script="$sandbox/scenario-2-dump.sh"
   cat > "$hook_script" <<EOF
@@ -1331,14 +1462,14 @@ EOF
   local stderr2="$sandbox/scenario-2.stderr"
   local rc2=0
   local override="[{hooks=[{type=\"command\",command=\"$hook_script\"}]}]"
-  local sandbox_path="$sandbox"
-  local self_pid=$$
   printf 'Reply PONG\n' | env -u CLAUDECODE \
     CODEX_PROGRAMMATIC=1 \
     CODEX_EXEC_TIMEOUT_SECONDS="$INVOCATION_MATRIX_TIMEOUT_SECONDS" \
     CODEX_EXEC_KILL_AFTER_SECONDS="$CODEX_EXEC_KILL_AFTER_SECONDS" \
-    "$supervised" \
+    ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
+    "$SUPERVISED_BIN" \
       --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
+      --dangerously-bypass-hook-trust \
       -c model="gpt-5.5" -c model_reasoning_effort="medium" \
       -c "hooks.UserPromptSubmit=$override" \
       -c "hooks.Stop=$override" \
@@ -1361,16 +1492,8 @@ EOF
         fail "invocation matrix scenario-2: rc=0 but result2 empty — final message 누락 회귀"
       fi
 
-      # 잔존 codex/timeout 프로세스가 sandbox path로 식별되는지 확인 (process group kill 입증).
-      # macOS pgrep -fc/-fa 미지원 → portable ps + grep -F (fixed string).
-      sleep 1  # SIGKILL grace 후 OS reaper에 시간 부여
-      local lingering_pids lingering_count lingering_lines
-      lingering_pids=$(ps -axo pid=,command= 2>/dev/null | grep -F -- "$sandbox_path" | grep -v "^[[:space:]]*${self_pid}[[:space:]]" | grep -v 'grep -F -- ' | awk '{print $1}' || true)
-      if [[ -n "$lingering_pids" ]]; then
-        lingering_count=$(printf '%s\n' "$lingering_pids" | wc -l | tr -d ' ')
-        lingering_lines=$(ps -axo pid=,command= 2>/dev/null | grep -F -- "$sandbox_path" | grep -v "^[[:space:]]*${self_pid}[[:space:]]" | grep -v 'grep -F -- ' | head -5 || true)
-        fail "invocation matrix scenario-2: supervisor 종료 후 sandbox 관련 프로세스 ${lingering_count}개 잔존 — process group kill 회귀. ${lingering_lines}"
-      fi
+      # 잔존 프로세스 검증은 여기서 하지 않는다 — 종전 sandbox 경로 문자열 매칭은 검증 표면이
+      # 없는 허상이었다 (함수 헤더 참조). marker 기반 잔존 검증은 카테고리 5c가 수행한다.
       ;;
     127)
       warn "invocation matrix scenario-2: supervisor BLOCKED (capability probe 실패) — skip"
@@ -1382,6 +1505,241 @@ EOF
       fail "invocation matrix scenario-2 (raw_override_supervised_pass): 비정상 exit($rc2) — supervisor 미정리 회귀. stderr_tail: ${stderr_tail2:-<empty>}"
       ;;
   esac
+
+  _live_mark_passed invocation_matrix
+}
+
+# ─── 카테고리 5c: marker 기반 잔존 프로세스 검증 (live opt-in — issue #1228 1단계) ───
+# codex에게 고유 marker helper(sleep 150을 exec 없이 실행 — helper 프로세스의 argv에 고유
+# 경로가 유지된다; exec sleep이면 argv가 sleep으로 교체되어 식별자가 사라진다)를 shell 도구로
+# 실행시키고,
+#   ① 실행 중 process tree 표본화(1초 간격 ps)로 wrapper 후손의 PID·PPID·PGID를 기록하고
+#   ② supervisor 종료 후 잔존을 확인한다.
+# positive control (시나리오 유효 조건 — 전부 충족해야 판정에 사용):
+#   - marker helper가 실행 중 표본에서 실제 관측되고, PPID 체인이 wrapper(timeout PID)에 닿는다
+#     (= wrapper 후손 — codex가 명령을 실제 실행했다는 직접 증거)
+#   - codex 프로세스가 timeout 소유 PGID의 구성원으로 관측된다 (그룹 잔존 판정의 표면 존재 증거)
+#   주: issue #1228 문면의 원 가정("marker가 timeout 소유 PGID에 속했음을 확인")은 codex
+#   0.147.0 실측(2026-08-12)에서 구조적으로 성립 불가 — codex는 shell 도구 자식을 항상 자체
+#   process group으로 분리한다 (known-issues.md §15 실증 갱신 ④가 조건부가 아닌 기본 동작).
+#   따라서 in-group 표면은 codex 프로세스 자신이고, marker는 후손 도달·leak 관측 표면이다.
+# 판정 분리: (a) wrapper 소유 그룹(timeout이 만든 그룹)의 잔존 = fail — PGID 전수 검사,
+#            (b) codex가 자체 그룹으로 분리한 세션 이탈 자식(marker subtree)의 잔존 = known
+#            leak으로 기록·정리만 (fail 아님 — §15 실증 갱신 ④의 원리적 커버 불가 축).
+test_codex_exec_marker_residual_live() {
+  if ! command -v codex >/dev/null 2>&1; then
+    warn "marker residual: codex 바이너리 부재 — skip (환경 결함)"
+    return 0
+  fi
+  resolve_supervised
+
+  local sandbox
+  sandbox=$(new_hook_sandbox)
+
+  local marker_helper
+  marker_helper="$(mktemp "$sandbox/marker-XXXXXX.sh")"
+  printf '#!/usr/bin/env bash\nsleep 150\n' > "$marker_helper"
+  chmod +x "$marker_helper"
+
+  local result="$sandbox/marker-result.md"
+  local stderr_log="$sandbox/marker.stderr"
+
+  # 프롬프트는 stdin pipe로 전달한다 — argv 전달이면 ps command에 marker 경로가 미리 노출되어
+  # 도구 도달을 오판한다.
+  local wrapper_pid rc=0
+  printf 'Use the shell tool to run exactly this command now, then wait for it to finish: bash %s\n' "$marker_helper" \
+    | env -u CLAUDECODE \
+      CODEX_PROGRAMMATIC=1 \
+      CODEX_EXEC_TIMEOUT_SECONDS="$MARKER_RESIDUAL_TIMEOUT_SECONDS" \
+      CODEX_EXEC_KILL_AFTER_SECONDS="$CODEX_EXEC_KILL_AFTER_SECONDS" \
+      ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
+      "$SUPERVISED_BIN" \
+        --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
+        -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+        -o "$result" \
+        - >/dev/null 2>"$stderr_log" &
+  wrapper_pid=$!
+
+  # 실행 중 표본화: wrapper 소유 그룹(timeout이 만든 그룹)을 식별하고, 전체 ps 스냅샷에서
+  #   - codex가 timeout 그룹 구성원으로 존재하는지 (그룹 잔존 판정 표면)
+  #   - marker helper가 wrapper 후손(PPID 체인)으로 관측되는지 (도구 도달 직접 증거)
+  # 를 축적한다.
+  # timeout 식별: wrapper는 exec 체인(env→bash→setsid→timeout)이라 background PID($!)가 그대로
+  # timeout PID가 된다 (setsid는 비-그룹-리더 호출자에서 fork 없이 in-place exec; fork 경로
+  # 방어로 wrapper_pid의 직계 자식도 후보에 넣는다). GNU timeout은 비-foreground 모드에서
+  # setpgid로 자기 자신을 그룹 리더로 만들므로 PGID==PID인 표본만 채택한다 — setpgid 전의
+  # 짧은 창을 잡으면 fixture 셸 그룹이 wrapper 소유 그룹으로 오인되는 오탐이 실측됐다.
+  local deadline=$(( MARKER_RESIDUAL_TIMEOUT_SECONDS + CODEX_EXEC_KILL_AFTER_SECONDS + 10 ))
+  local timeout_pid="" timeout_pgid=""
+  local observed_marker=0 observed_descendant=0 observed_group_member=0
+  local full_snapshot="$sandbox/marker-full.snapshot"
+  local mid_snapshot="$sandbox/marker-mid.snapshot"
+  : > "$mid_snapshot"
+  local elapsed=0
+  while (( elapsed < deadline )); do
+    kill -0 "$wrapper_pid" 2>/dev/null || break
+    ps -axo pid=,ppid=,pgid=,command= 2>/dev/null > "$full_snapshot" || true
+    if [[ -z "$timeout_pid" ]]; then
+      local timeout_line
+      timeout_line="$(awk -v p="$wrapper_pid" \
+        '($1 == p || $2 == p) && $1 == $3 && /--kill-after=/' "$full_snapshot" | head -1 || true)"
+      if [[ -n "$timeout_line" ]]; then
+        timeout_pid="$(awk '{print $1}' <<<"$timeout_line")"
+        timeout_pgid="$(awk '{print $3}' <<<"$timeout_line")"
+      fi
+    fi
+    if [[ -n "$timeout_pgid" ]]; then
+      # timeout 그룹 구성원(timeout 자신 제외 — codex 등) 관측 = 그룹 잔존 판정의 표면 존재.
+      if awk -v pg="$timeout_pgid" -v tp="$timeout_pid" '$3 == pg && $1 != tp { found = 1 } END { exit !found }' "$full_snapshot"; then
+        observed_group_member=1
+      fi
+    fi
+    local marker_lines
+    marker_lines="$(grep -F -- "$marker_helper" "$full_snapshot" | grep -Fv 'grep -F' || true)"
+    if [[ -n "$marker_lines" ]]; then
+      observed_marker=1
+      printf '%s\n' "$marker_lines" >> "$mid_snapshot"
+      if [[ -n "$timeout_pid" ]]; then
+        local marker_pid
+        marker_pid="$(head -1 <<<"$marker_lines" | awk '{print $1}')"
+        if _pid_has_ancestor_in_snapshot "$marker_pid" "$timeout_pid" "$full_snapshot"; then
+          observed_descendant=1
+        fi
+      fi
+    fi
+    sleep 1
+    elapsed=$(( elapsed + 1 ))
+  done
+  wait "$wrapper_pid" 2>/dev/null || rc=$?
+
+  # 종료 이후의 모든 경로(fail 포함)에서 marker subtree를 정리하기 위한 수집 helper.
+  _collect_marker_lingering() {
+    local lingering helper_pids child_lines
+    lingering="$(_ps_lines_matching "$marker_helper")"
+    helper_pids="$(awk '{print $1}' <<<"$lingering" | tr '\n' ' ')"
+    child_lines="$(_marker_child_lines "$helper_pids")"
+    printf '%s\n%s\n' "$lingering" "$child_lines" | awk 'NF'
+  }
+
+  if (( rc == 127 )); then
+    warn "marker residual: supervisor BLOCKED (capability-probe 실패) — skip"
+    _cleanup_marker_lines "$(_collect_marker_lingering)"
+    return 0
+  fi
+
+  # positive control — 관측 실패는 검증 표면이 없는 것이므로 무효 fail (must-pass 계약).
+  # fail 전에 subtree를 정리해 후속 실행 관측 오염을 막는다.
+  local stderr_tail
+  stderr_tail=$(tail -c 400 "$stderr_log" 2>/dev/null | tr '\n' ' ' || true)
+  if (( ! observed_marker )); then
+    fail "marker residual: marker helper가 실행 중 표본에서 관측되지 않음 — codex가 shell 도구로 명령을 실행하지 않았거나 timeout budget(${MARKER_RESIDUAL_TIMEOUT_SECONDS}s) 내 미도달 (rc=$rc). stderr_tail: ${stderr_tail:-<empty>}"
+  fi
+  if (( ! observed_descendant )); then
+    _cleanup_marker_lines "$(_collect_marker_lingering)"
+    fail "marker residual: marker가 wrapper(timeout pid=${timeout_pid:-<미식별>})의 후손으로 확인되지 않음 — 다른 출처의 동명 프로세스이거나 표본화 결함 (무효)"
+  fi
+  if (( ! observed_group_member )); then
+    _cleanup_marker_lines "$(_collect_marker_lingering)"
+    fail "marker residual: timeout 소유 PGID(${timeout_pgid:-<미식별>})의 구성원(codex)이 관측되지 않음 — 그룹 잔존 판정의 표면이 없다 (무효)"
+  fi
+  case "$rc" in
+    0|124|137) : ;;  # 0=codex 자체 정리 후 응답, 124/137=supervisor 정리 — 모두 판정 가능 상태.
+    *)
+      _cleanup_marker_lines "$(_collect_marker_lingering)"
+      fail "marker residual: 비정상 exit($rc). stderr_tail: ${stderr_tail:-<empty>}"
+      ;;
+  esac
+
+  # 종료 후 잔존 판정.
+  sleep 1  # SIGKILL grace 후 OS reaper에 시간 부여
+  # (a) wrapper 소유 그룹 잔존 — marker 매칭이 아니라 PGID 전수 검사 (codex 등 그룹 구성원이
+  #     TERM/KILL을 피해 남으면 marker와 무관하게 회귀다).
+  local group_lingering
+  group_lingering="$(ps -axo pid=,ppid=,pgid=,command= 2>/dev/null | awk -v pg="$timeout_pgid" '$3 == pg' || true)"
+  if [[ -n "$group_lingering" ]]; then
+    _cleanup_marker_lines "$(_collect_marker_lingering)"
+    fail "marker residual: wrapper 소유 그룹(pgid=$timeout_pgid) 잔존 — process group kill 회귀:
+$group_lingering"
+  fi
+  # (b) 세션 이탈 marker subtree 잔존 — known leak (codex 0.147.0은 shell 자식을 자체 그룹으로
+  #     분리한다; §15 실증 갱신 ④). 기록 후 child-first 정리, fail 아님.
+  local leak_lines
+  leak_lines="$(_collect_marker_lingering)"
+  if [[ -n "$leak_lines" ]]; then
+    local leak_count
+    leak_count="$(awk 'NF' <<<"$leak_lines" | wc -l | tr -d ' ')"
+    warn "marker residual: 세션 이탈 잔존 ${leak_count}개 — known leak (known-issues §15 실증 갱신 ④, fail 아님) 기록 후 정리"
+    _cleanup_marker_lines "$leak_lines"
+  fi
+
+  _live_mark_passed marker_residual
+}
+
+# ─── 카테고리 5c-det: supervised 해석 predicate 자체 테스트 (deterministic) ───
+# predicate(^SETSID_BIN= 실행 할당문 매칭)의 켜짐/꺼짐 양쪽을 검증한다 — setsid 제거 커밋 후
+# 자동으로 꺼져 SETSID_BIN 주입이 중단되는 성질의 회귀 차단. 현재 워크트리 소스의 상태 자체는
+# assert하지 않는다 (소스 상태에 결합되면 제거 커밋이 fixture를 죽인다).
+test_supervised_setsid_predicate_self() {
+  local sandbox
+  sandbox=$(new_hook_sandbox)
+  printf 'SETSID_BIN="${CODEX_EXEC_SETSID_BIN:-}"\n' > "$sandbox/with-setsid.sh"
+  printf '# 역사 각주: SETSID_BIN=... 은 과거 계약\nTIMEOUT_BIN=x\n' > "$sandbox/without-setsid.sh"
+  _supervised_source_has_setsid_assignment "$sandbox/with-setsid.sh" \
+    || fail "setsid predicate: 실행 할당문이 있는 소스에서 켜져야 함"
+  if _supervised_source_has_setsid_assignment "$sandbox/without-setsid.sh"; then
+    fail "setsid predicate: 주석/각주뿐인 소스에서 꺼져야 함"
+  fi
+}
+
+# ─── 카테고리 5c-det: marker 잔존 탐지기 negative control (deterministic) ───
+# 의도적으로 process group을 이탈한 marker 자식을 합성으로 만들어, 탐지기가 그 잔존을 실제로
+# 관측·out-of-group 분류하는지 확인한다 (탐지기 자체의 실효 검증 — codex 불필요).
+# macOS에는 setsid(1)가 없으므로 `set -m`(job control) background job의 자체 process group으로
+# 그룹 이탈을 재현한다.
+test_marker_residual_detector_negative_control() {
+  local sandbox
+  sandbox=$(new_hook_sandbox)
+  local marker_helper
+  marker_helper="$(mktemp "$sandbox/marker-neg-XXXXXX.sh")"
+  printf '#!/usr/bin/env bash\nsleep 30\n' > "$marker_helper"
+  chmod +x "$marker_helper"
+
+  local helper_pid
+  helper_pid="$(bash -c "set -m; bash '$marker_helper' >/dev/null 2>&1 & printf '%s' \$!")"
+  if [[ -z "$helper_pid" ]]; then
+    fail "negative control: 합성 marker helper 기동 실패"
+  fi
+
+  sleep 1
+  local observed
+  observed="$(_ps_lines_matching "$marker_helper")"
+  if [[ -z "$observed" ]]; then
+    kill -KILL "$helper_pid" 2>/dev/null || true
+    fail "negative control: 탐지기가 실행 중 marker를 관측하지 못함 — 탐지기 회귀"
+  fi
+
+  # 현재 테스트 프로세스의 PGID를 wrapper 소유 그룹의 대역으로 두면, set -m으로 분리된
+  # helper는 out-of-group으로 분류되어야 한다. ($$는 subshell에서도 최상위 PID를 주므로
+  # $BASHPID 기준 — 병렬 harness의 subshell 실행에서도 성립한다. fork는 PGID를 보존한다.)
+  local self_pgid
+  self_pgid="$(ps -o pgid= -p "$BASHPID" | tr -d ' ')"
+  if [[ -z "$self_pgid" ]]; then
+    kill -KILL "$helper_pid" 2>/dev/null || true
+    fail "negative control: 자기 PGID 조회 실패"
+  fi
+  local out_group
+  out_group="$(awk -v pg="$self_pgid" '$3 != pg' <<<"$observed")"
+  if [[ -z "$out_group" ]]; then
+    kill -KILL "$helper_pid" 2>/dev/null || true
+    fail "negative control: 그룹 이탈 marker가 out-of-group으로 분류되지 않음 — 분류기 회귀"
+  fi
+
+  # 정리 실효 검증까지: helper + 자식 sleep subtree를 정리하고 소멸을 확인한다.
+  _cleanup_marker_lines "$observed"
+  if kill -0 "$helper_pid" 2>/dev/null; then
+    kill -KILL "$helper_pid" 2>/dev/null || true
+    fail "negative control: cleanup 후에도 helper($helper_pid) 잔존 — 정리기 회귀"
+  fi
 }
 
 # ─── 실행 진입점 ───
@@ -1424,21 +1782,43 @@ run_test "pretooluse pinning-guard meta behavioral (#587)" \
   test_pretooluse_pinning_guard_meta_behavioral
 run_test "commit-msg pinning behavioral" \
   test_commit_msg_pinning_behavioral
+run_test "supervised setsid predicate self-test (#1228)" \
+  test_supervised_setsid_predicate_self
+run_test "marker residual detector negative control (#1228)" \
+  test_marker_residual_detector_negative_control
 
 if [[ "$LIVE_MODE" == "1" ]]; then
-  # invocation matrix를 programmatic env inheritance보다 먼저 실행한다 (issue #593):
-  # wrapper/process-group 회귀 차단 신호를 먼저 확보한 뒤, sandbox CODEX_HOME에 등록한
-  # dump hook이 caller-supplied CODEX_PROGRAMMATIC marker를 상속받는지 확인한다.
+  # invocation matrix를 먼저 실행한다 (issue #593): wrapper/process-group 회귀 차단 신호를
+  # 먼저 확보한 뒤, marker residual(잔존 검증 표면)과 env inheritance를 순서대로 실행한다.
   run_test "codex exec invocation matrix (supervised wrapper, must-pass-only)" \
     test_codex_exec_invocation_live_matrix
+  run_test "codex exec marker residual (wrapper 후손 잔존 검증, #1228)" \
+    test_codex_exec_marker_residual_live
   run_test "programmatic env inheritance live (codex exec --ephemeral)" \
     test_programmatic_env_inheritance_live
 else
   echo "==> codex exec invocation matrix  (skip; --live 또는 CODEX_HOOK_LIVE=1로 활성화)"
+  echo "==> codex exec marker residual  (skip; --live 또는 CODEX_HOOK_LIVE=1로 활성화)"
   echo "==> programmatic env inheritance live  (skip; --live 또는 CODEX_HOOK_LIVE=1로 활성화)"
 fi
 
 # 병렬 큐잉된 모든 run_test 를 대기·집계한다(TEST_JOBS=1 순차면 no-op). 실패가 하나라도 있으면
 # non-zero 로 종료해 아래 성공 메시지 출력과 pre-commit/required CI 통과를 막는다.
 parallel_barrier
+
+# aggregate sentinel (issue #1228) — 필수 live 시나리오 전부가 검증·정리까지 완료(=WARN skip
+# 없이 pass)된 경우에만 출력한다. 위 parallel_barrier/순차 실행에서 실패가 있으면 여기 도달
+# 전에 종료되므로, sentinel은 "exit 0 + 전 시나리오 pass mark"에서만 나온다.
+if [[ "$LIVE_MODE" == "1" ]]; then
+  _live_missing=""
+  for _live_scenario in invocation_matrix marker_residual env_inheritance; do
+    grep -qx "$_live_scenario" "$LIVE_PASS_FILE" 2>/dev/null \
+      || _live_missing="$_live_missing $_live_scenario"
+  done
+  if [[ -z "$_live_missing" ]]; then
+    echo "LIVE_REQUIRED_ALL_PASS"
+  else
+    warn "live 필수 시나리오 미완(sentinel 미발행):$_live_missing — WARN skip 원인 해소 후 재실행"
+  fi
+fi
 echo "All codex hook fixture tests passed."
