@@ -1503,8 +1503,10 @@ EOF
 # 환경 결함 (codex 부재) 시만 WARN skip (capability-probe 정책).
 # preflight 통과 후 timeout/no-result는 fail (must-pass-only 계약).
 # 잔존 프로세스 검증은 카테고리 5c(marker residual)가 담당한다 — 종전 scenario-2의
-# sandbox 경로 문자열 매칭 검증은 명령줄에 그 경로가 없는 프로세스를 구조적으로 통과시키고,
-# Reply PONG 프롬프트는 shell 자식을 만들지 않아 검증 표면 자체가 없는 허상이었다 (#1228).
+# sandbox 경로 문자열 매칭은 codex/timeout 본체(-o 인자 등으로 sandbox 경로가 argv에 실림)는
+# 잡을 수 있었지만, 명령줄에 그 경로가 없는 shell 도구 자식은 구조적으로 통과시켰고
+# Reply PONG 프롬프트는 shell 자식을 만들지 않아 그 축의 검증 표면이 없었다 (#1228).
+# 본체 잔존 검증은 5c의 timeout PGID 전수 검사가 더 엄격하게 이관 커버한다.
 test_codex_exec_invocation_live_matrix() {
   # preflight: codex 가용성 (wrapper가 자체 capability-probe하므로 timeout/setsid 별도 검사 불필요).
   if ! command -v codex >/dev/null 2>&1; then
@@ -1619,8 +1621,9 @@ EOF
         fail "invocation matrix scenario-2: rc=0 but result2 empty — final message 누락 회귀"
       fi
 
-      # 잔존 프로세스 검증은 여기서 하지 않는다 — 종전 sandbox 경로 문자열 매칭은 검증 표면이
-      # 없는 허상이었다 (함수 헤더 참조). marker 기반 잔존 검증은 카테고리 5c가 수행한다.
+      # 잔존 프로세스 검증은 여기서 하지 않는다 — 본체(codex/timeout) 잔존은 카테고리 5c의
+      # timeout PGID 전수 검사로 이관됐고, shell 자식 축은 종전 방식으로는 표면이 없었다
+      # (함수 헤더 참조).
       ;;
     127)
       warn "invocation matrix scenario-2: supervisor BLOCKED (capability probe 실패) — skip"
@@ -1704,11 +1707,13 @@ test_codex_exec_marker_residual_live() {
   #   - codex가 timeout 그룹 구성원으로 존재하는지 (그룹 잔존 판정 표면)
   #   - marker helper가 wrapper 후손(PPID 체인)으로 관측되는지 (도구 도달 직접 증거)
   # 를 축적한다.
-  # timeout 식별: wrapper는 exec 체인(env→bash→setsid→timeout)이라 background PID($!)가 그대로
-  # timeout PID가 된다 (setsid는 비-그룹-리더 호출자에서 fork 없이 in-place exec; fork 경로
-  # 방어로 wrapper_pid의 직계 자식도 후보에 넣는다). GNU timeout은 비-foreground 모드에서
-  # setpgid로 자기 자신을 그룹 리더로 만들므로 PGID==PID인 표본만 채택한다 — setpgid 전의
-  # 짧은 창을 잡으면 fixture 셸 그룹이 wrapper 소유 그룹으로 오인되는 오탐이 실측됐다.
+  # timeout 식별: 기동부가 ( cd … && pipeline ) & 형태라 $!(wrapper_pid)는 서브셸 PID이고,
+  # exec 체인(env→bash→setsid→timeout — 전부 in-place exec 단일 PID)은 그 직계 자식이다.
+  # 따라서 $2 == p(PPID 매치)가 정상 경로 분기이고, $1 == p는 기동부가 서브셸 없이 exec되는
+  # 형태로 바뀌었을 때의 여유분이다 (setsid fork 경로 — 호출자가 그룹 리더 — 는 두 분기 모두
+  # 커버하지 않음). GNU timeout은 비-foreground 모드에서 setpgid로 자기 자신을 그룹 리더로
+  # 만들므로 PGID==PID인 표본만 채택한다 — setpgid 전의 짧은 창을 잡으면 fixture 셸 그룹이
+  # wrapper 소유 그룹으로 오인되는 오탐이 실측됐다.
   local deadline=$(( MARKER_RESIDUAL_TIMEOUT_SECONDS + CODEX_EXEC_KILL_AFTER_SECONDS + MARKER_DEADLINE_GRACE_SECONDS ))
   local timeout_pid="" timeout_pgid=""
   local observed_marker=0 observed_descendant=0 observed_group_member=0
@@ -1726,8 +1731,8 @@ test_codex_exec_marker_residual_live() {
       if [[ -n "$timeout_line" ]]; then
         timeout_pid="$(awk '{print $1}' <<<"$timeout_line")"
         timeout_pgid="$(awk '{print $3}' <<<"$timeout_line")"
-        # 기동 직후 등록된 wrapper 라인은 exec 체인(env→bash→setsid→timeout)의 중간 argv라
-        # 중단 시 identity 불일치로 스킵될 수 있다 — argv가 안정된 timeout 시점에 재등록한다.
+        # 기동 직후 등록된 것은 $! 서브셸(fixture 자신의 argv)이다 — 정리 대상 입도를
+        # 실제 supervisor(timeout) PID로 좁히기 위해 식별 시점에 재등록한다.
         _register_live_proc "$timeout_pid"
       fi
     fi
