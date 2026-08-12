@@ -155,7 +155,7 @@ rm -rf "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/<broken-gen-number>"
 launchctl kickstart -k "gui/$(id -u)/org.nix-community.home.activate-agenix"
 ```
 
-예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다. rm은 non-fatal이다 — `.tmp`는 "agent가 지금 쓰는 중"의 표시일 수도 있어, 쓰기 중인 디렉토리를 rm -rf하면 ENOTEMPTY로 실패해 activation 전체가 중단된 사례가 있다 (2026-08-12). 활성 generation 제외 방식은 쓰지 않는다 — crash loop 잔재는 정확히 활성 번호+1에 남으므로 제외하면 본래 목적이 깨진다. rm이 활성 쓰기를 이긴 경우 agent는 실패 종료 후 `KeepAlive(SuccessfulExit=false)` 재시도로 자가 회복한다.
+예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다. `.tmp`는 "agent가 지금 쓰는 중"의 표시일 수도 있으므로, 삭제 전에 `launchctl bootout`으로 agent를 내려 writer와 rm을 직렬화한다 — 쓰는 중인 generation을 그냥 rm -rf하면 ENOTEMPTY로 실패해 activation이 중단되거나(2026-08-12 사례), 완성된 secret 일부만 지워진 불완전 generation이 조용히 배포될 수 있다. bootout된 agent는 `setupLaunchAgents`가 다시 bootstrap하고(home-manager는 plist unchanged라도 not-loaded job을 재로드) RunAtLoad 1회 실행이 완전한 fresh generation을 재생성한다. `.tmp` 잔재가 없으면 bootout 없이 통과하므로 정상 경로에는 개입이 없다. rm 실패는 non-fatal (경고 후 다음 activation에서 재시도).
 
 ---
 

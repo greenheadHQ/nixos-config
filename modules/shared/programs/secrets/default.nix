@@ -33,25 +33,39 @@
   # 이후 agent 재시작 시 해당 .tmp를 덮어쓸 수 없어 crash loop 발생.
   # setupLaunchAgents 전에 깨진 generation을 정리한다.
   #
-  # rm은 non-fatal: .tmp는 "쓰다 만 잔재"만이 아니라 "agent가 지금 쓰는 중"의 표시일
-  # 수도 있어, 쓰기 중인 디렉토리를 rm -rf하면 삭제 도중 새 파일이 생겨 ENOTEMPTY로
-  # 실패할 수 있고, 그 rc가 activation 전체를 중단시킨 사례가 있다 (2026-08-12 nrs 실패).
-  # 활성 generation을 판별해 제외하는 방식은 쓰지 않는다 — crash loop 잔재는 정확히
-  # 활성 번호+1에 남으므로(agent가 readlink+1로 같은 번호를 재사용) 제외하면 본래
-  # 목적이 깨진다. 대신 rm이 활성 쓰기와 경합해 지더라도 경고만 남기고, 이긴 경우
-  # agent는 실패 종료 후 KeepAlive(SuccessfulExit=false)가 재시도해 자가 회복한다.
-  # 위 KeepAlive override로 무한 재스폰이 사라져 activation 시점에 agent가 실행 중인
-  # 경우 자체가 드물어졌으므로 경합 확률도 함께 소멸한다.
+  # 삭제 전 bootout으로 writer와 직렬화한다: .tmp는 "쓰다 만 잔재"만이 아니라
+  # "agent가 지금 쓰는 중"의 표시일 수도 있다. 쓰는 중인 generation을 rm -rf하면
+  # (a) 삭제 도중 age가 새 파일을 만들어 ENOTEMPTY로 rm이 실패하거나 (2026-08-12
+  # nrs 실패 사례 — 당시엔 그 rc가 activation 전체를 중단시켰다), (b) rm이 완성된
+  # secret 일부만 지운 뒤 agent가 나머지를 완성·링크해 불완전한 generation이
+  # exit 0으로 조용히 배포될 수 있다. bootout이 두 경합을 모두 제거한다 —
+  # bootout 후에는 job이 도메인에서 제거되어 재스폰이 불가능하고, home-manager의
+  # setupLaunchAgents는 plist가 unchanged라도 not-loaded job은 다시 bootstrap하므로
+  # (launchd 모듈의 "up-to-date but not loaded" 경로) RunAtLoad 1회 실행이 완전한
+  # fresh generation을 재생성한다. .tmp 잔재가 없으면 bootout도 하지 않아 정상
+  # 경로에는 아무 개입이 없다.
+  #
+  # rm 실패는 non-fatal로 남긴다 — bootout 직렬화로 경합은 구조적으로 제거되므로
+  # 이제 실패는 예상 밖 이상 신호이지만, 그것이 activation 전체를 중단시킬 이유는
+  # 없다 (경고 후 다음 activation에서 재시도).
   home.activation.cleanupAgenixStaleGenerations = lib.mkIf pkgs.stdenv.isDarwin (
     lib.hm.dag.entryBefore [ "setupLaunchAgents" ] ''
       _agenix_mount="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)/agenix.d"
       if [ -d "$_agenix_mount" ]; then
+        _stale_gens=()
         for _gen_dir in "$_agenix_mount"/*/; do
           if /usr/bin/find "$_gen_dir" -name '*.tmp' -maxdepth 1 2>/dev/null | /usr/bin/grep -q .; then
-            echo "[agenix] Removing stale generation with .tmp files: $_gen_dir"
-            rm -rf "$_gen_dir" || echo "[agenix] WARNING: could not fully remove $_gen_dir (agent may be writing); leaving for next activation"
+            _stale_gens+=("$_gen_dir")
           fi
         done
+        if [ "''${#_stale_gens[@]}" -gt 0 ]; then
+          # 쓰는 중일 수 있는 agent를 먼저 내려 rm과 직렬화 (미로드 상태면 무해하게 실패)
+          /bin/launchctl bootout "gui/$(/usr/bin/id -u)/org.nix-community.home.activate-agenix" 2>/dev/null || true
+          for _gen_dir in "''${_stale_gens[@]}"; do
+            echo "[agenix] Removing stale generation with .tmp files: $_gen_dir"
+            rm -rf "$_gen_dir" || echo "[agenix] WARNING: could not fully remove $_gen_dir; leaving for next activation"
+          done
+        fi
       fi
     ''
   );
