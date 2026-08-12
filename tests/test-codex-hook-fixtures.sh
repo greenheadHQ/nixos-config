@@ -1276,11 +1276,23 @@ _collect_marker_subtree_lines() {
   printf '%s\n%s\n' "$lingering" "$child_lines" | awk 'NF'
 }
 
+_marker_fail() {
+  # $1=marker helper 경로, 나머지=fail 메시지. 실패 보고 전에 marker subtree를 best-effort
+  # 정리한다 (fail 직전 정리이므로 rc 무시 — 잔존 시 warn이 수동 확인을 안내한다). 실패·무효
+  # 분기가 정리를 각자 반복하다 누락되는 것을 막는 단일 계약이다. 성공 경로의 strict 정리
+  # (rc 확인 후 sentinel mark)는 known leak 분기가 별도로 수행한다.
+  local marker_path="$1"; shift
+  _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_path")" || true
+  fail "$@"
+}
+
 # ─── 카테고리 5: programmatic env inheritance live (opt-in) ───
 # programmatic codex exec 호출자가 CODEX_PROGRAMMATIC=1을 codex 프로세스에 붙이면,
 # UserPromptSubmit hook subprocess까지 해당 marker가 상속되는지 검증한다. managed hook
 # early-exit 자체는 deterministic noise-guard fixture(카테고리 3)가 검증한다.
-# 환경 결함(codex/wrapper 부재, wrapper capability-probe 실패, session 실패)이면 WARN skip.
+# 환경 결함(codex 부재, capability-probe 실패, session 실패)이면 WARN skip — 단 wrapper
+# 해석(source/installed 모드·설치본 추출)은 resolve_supervised가 fail-closed로 처리한다
+# (skip이 아니라 fail; 검증 대상이 뒤바뀌는 허상 방지).
 test_programmatic_env_inheritance_live() {
   if ! command -v codex >/dev/null 2>&1; then
     warn "programmatic env inheritance live: codex 바이너리 부재 — skip"
@@ -1635,27 +1647,22 @@ test_codex_exec_marker_residual_live() {
   fi
 
   # positive control — 관측 실패는 검증 표면이 없는 것이므로 무효 fail (must-pass 계약).
-  # fail 전에 subtree를 정리해 후속 실행 관측 오염을 막는다 (fail 직전 정리이므로 rc는 무시 —
-  # 어차피 실패 경로이고, 잔존 시 warn이 수동 확인을 안내한다).
+  # 모든 실패 분기는 _marker_fail이 subtree 정리 후 실패를 보고한다 (정리 누락 방지 단일 계약).
   local stderr_tail
   stderr_tail=$(tail -c 400 "$stderr_log" 2>/dev/null | tr '\n' ' ' || true)
   if (( ! observed_marker )); then
-    _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
-    fail "marker residual: marker helper가 실행 중 표본에서 관측되지 않음 — codex가 shell 도구로 명령을 실행하지 않았거나 timeout budget(${MARKER_RESIDUAL_TIMEOUT_SECONDS}s) 내 미도달 (rc=$rc). stderr_tail: ${stderr_tail:-<empty>}"
+    _marker_fail "$marker_helper" "marker residual: marker helper가 실행 중 표본에서 관측되지 않음 — codex가 shell 도구로 명령을 실행하지 않았거나 timeout budget(${MARKER_RESIDUAL_TIMEOUT_SECONDS}s) 내 미도달 (rc=$rc). stderr_tail: ${stderr_tail:-<empty>}"
   fi
   if (( ! observed_descendant )); then
-    _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
-    fail "marker residual: marker가 wrapper(timeout pid=${timeout_pid:-<미식별>})의 후손으로 확인되지 않음 — 다른 출처의 동명 프로세스이거나 표본화 결함 (무효). 관측 표본 tail: $(tail -3 "$mid_snapshot" 2>/dev/null | tr '\n' ' ' || true)"
+    _marker_fail "$marker_helper" "marker residual: marker가 wrapper(timeout pid=${timeout_pid:-<미식별>})의 후손으로 확인되지 않음 — 다른 출처의 동명 프로세스이거나 표본화 결함 (무효). 관측 표본 tail: $(tail -3 "$mid_snapshot" 2>/dev/null | tr '\n' ' ' || true)"
   fi
   if (( ! observed_group_member )); then
-    _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
-    fail "marker residual: timeout 소유 PGID(${timeout_pgid:-<미식별>})의 구성원(codex)이 관측되지 않음 — 그룹 잔존 판정의 표면이 없다 (무효). 관측 표본 tail: $(tail -3 "$mid_snapshot" 2>/dev/null | tr '\n' ' ' || true)"
+    _marker_fail "$marker_helper" "marker residual: timeout 소유 PGID(${timeout_pgid:-<미식별>})의 구성원(codex)이 관측되지 않음 — 그룹 잔존 판정의 표면이 없다 (무효). 관측 표본 tail: $(tail -3 "$mid_snapshot" 2>/dev/null | tr '\n' ' ' || true)"
   fi
   case "$rc" in
     0|124|137) : ;;  # 0=codex 자체 정리 후 응답, 124/137=supervisor 정리 — 모두 판정 가능 상태.
     *)
-      _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
-      fail "marker residual: 비정상 exit($rc). stderr_tail: ${stderr_tail:-<empty>}"
+      _marker_fail "$marker_helper" "marker residual: 비정상 exit($rc). stderr_tail: ${stderr_tail:-<empty>}"
       ;;
   esac
 
@@ -1668,8 +1675,8 @@ test_codex_exec_marker_residual_live() {
   local group_lingering
   group_lingering="$(ps -axo pid=,ppid=,pgid=,command= 2>/dev/null | awk -v pg="$timeout_pgid" '$3 == pg' || true)"
   if [[ -n "$group_lingering" ]]; then
-    _cleanup_marker_lines "$(printf '%s\n%s\n' "$group_lingering" "$(_collect_marker_subtree_lines "$marker_helper")" | awk 'NF')" || true
-    fail "marker residual: wrapper 소유 그룹(pgid=$timeout_pgid) 잔존 — process group kill 회귀:
+    _cleanup_marker_lines "$group_lingering" || true
+    _marker_fail "$marker_helper" "marker residual: wrapper 소유 그룹(pgid=$timeout_pgid) 잔존 — process group kill 회귀:
 $group_lingering"
   fi
   # (b) 세션 이탈 marker subtree 잔존 — known leak (codex 0.147.0에서 재관측: shell 자식을
@@ -1734,9 +1741,11 @@ test_marker_residual_detector_negative_control() {
 
   # 현재 테스트 프로세스의 PGID를 wrapper 소유 그룹의 대역으로 두면, set -m으로 분리된
   # helper는 out-of-group으로 분류되어야 한다. ($$는 subshell에서도 최상위 PID를 주므로
-  # $BASHPID 기준 — 병렬 harness의 subshell 실행에서도 성립한다. fork는 PGID를 보존한다.)
+  # $BASHPID 우선 — 병렬 harness의 subshell 실행에서도 성립한다. fork는 PGID를 보존한다.
+  # $BASHPID는 bash 4.0+ 전용이라 macOS 기본 3.2에서는 $$로 폴백한다 — 3.2에서는
+  # parallel-harness가 순차 실행을 강제하므로 $$가 곧 현재 실행 셸이다.)
   local self_pgid
-  self_pgid="$(ps -o pgid= -p "$BASHPID" | tr -d ' ')"
+  self_pgid="$(ps -o pgid= -p "${BASHPID:-$$}" | tr -d ' ')"
   if [[ -z "$self_pgid" ]]; then
     kill -KILL "$helper_pid" 2>/dev/null || true
     fail "negative control: 자기 PGID 조회 실패"

@@ -22,6 +22,7 @@ _TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS=(
   lefthook
   bats
   pytest
+  timeout
 )
 
 _TEST_RUNTIME_PROFILE_FINGERPRINT_INPUTS=(
