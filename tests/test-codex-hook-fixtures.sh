@@ -85,6 +85,10 @@ REQUIRED_LIVE_SCENARIOS=(invocation_matrix marker_residual env_inheritance)
 # `ps -o pid=,ppid=,pgid=,command=` 출력이며 정상 종료 시 이미 정리된 PID는 identity
 # 불일치(부재)로 스킵되어 무해하다.
 LIVE_PROC_REGISTRY="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-procs.XXXXXX")"
+# marker helper 경로 등록 파일 — helper 프로세스는 codex가 나중에 기동하므로 PID 등록만으로는
+# 첫 표본 관측 전에 중단되는 창이 남는다. 생성 즉시 경로를 등록해 두고, EXIT trap이 경로
+# argv 재탐색으로 그 창의 잔존까지 정리한다.
+LIVE_MARKER_PATH_REGISTRY="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-marker-paths.XXXXXX")"
 
 _register_live_proc() {
   # $1=PID — 기동 직후 호출해 중단 경로 정리 대상으로 등록한다. 같은 PID를 argv가 안정된
@@ -156,6 +160,15 @@ cleanup() {
     _cleanup_pid_lines_with_children "$(cat "$LIVE_PROC_REGISTRY")" || true
   fi
   rm -f "$LIVE_PROC_REGISTRY"
+  # 등록된 marker 경로를 argv로 재탐색해 첫 표본 관측 전 중단 창의 helper 잔존까지 정리한다.
+  if [[ -s "$LIVE_MARKER_PATH_REGISTRY" ]] && declare -f _collect_marker_and_direct_children_lines >/dev/null; then
+    local marker_path
+    while IFS= read -r marker_path; do
+      [[ -n "$marker_path" ]] || continue
+      _cleanup_pid_lines_with_children "$(_collect_marker_and_direct_children_lines "$marker_path")" || true
+    done < "$LIVE_MARKER_PATH_REGISTRY"
+  fi
+  rm -f "$LIVE_MARKER_PATH_REGISTRY"
   if [[ -f "$TEST_TMP_FILE" ]]; then
     while IFS= read -r dir; do
       [[ -n "$dir" ]] && rm -rf "$dir"
@@ -1654,6 +1667,9 @@ test_codex_exec_marker_residual_live() {
   marker_helper="$(mktemp "$sandbox/marker-XXXXXX.sh")"
   printf '#!/usr/bin/env bash\nsleep %s\n' "$MARKER_HELPER_SLEEP_SECONDS" > "$marker_helper"
   chmod +x "$marker_helper"
+  # 생성 즉시 경로를 등록한다 — PID 등록(관측 시점)만으로는 첫 표본 전에 중단되면 helper가
+  # 정리 대상에서 빠진다 (EXIT trap이 이 경로로 재탐색 정리).
+  printf '%s\n' "$marker_helper" >> "$LIVE_MARKER_PATH_REGISTRY"
 
   local result="$sandbox/marker-result.md"
   local stderr_log="$sandbox/marker.stderr"

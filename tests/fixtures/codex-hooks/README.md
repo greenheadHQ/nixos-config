@@ -159,7 +159,7 @@ invocation matrix의 하위 케이스:
 | `host_home_no_override_stdin_pipe_supervised_pass` | host HOME + no `-c hooks` override + stdin pipe + read-only + `codex-exec-supervised` | 정상 종료 (rc=0) + result 파일 생성 |
 | `raw_override_inline_toml_hang_with_supervisor_pass` | sandbox CODEX_HOME(+auth 복사) + sandbox cwd + `-c hooks.<event>` override + `--dangerously-bypass-hook-trust` + stdin pipe + read-only | rc=0/124/137 모두 PASS (supervisor가 timeout 안에 정리) + hook 발화 |
 
-판정 계약 (issue #1228): 필수 시나리오가 하나라도 미완(WARN skip 포함)이면 전체 통과 문구 없이 `Deterministic tests passed; live REQUIRED scenarios incomplete.` + exit 1로 종결된다 — 통과 판정은 exit 0 하나로 닫히고, stdout의 `LIVE_REQUIRED_ALL_PASS` sentinel은 성공 경로의 이중 확인 신호다. WARN skip은 환경 결함(codex 부재·auth/session 실패·supervisor capability-probe 실패 rc 127)에 적용되고, 검증 대상 wrapper 해석은 `CODEX_HOOK_SUPERVISED_BIN=source|installed`(기본 source — 워크트리 소스 + 설치본 `CODEX_EXEC_*_BIN` 추출 주입, 추출 실패는 fail)가 fail-closed로 처리한다. installed 모드는 post-`nrs` Nix 배선 검증용이다.
+판정 계약 (issue #1228): 필수 시나리오가 하나라도 미완(WARN skip 포함)이면 전체 통과 문구 없이 `Deterministic tests passed; live REQUIRED scenarios incomplete.` + exit 1로 종결된다 — 통과 판정은 exit 0 하나로 닫히고, stdout의 `LIVE_REQUIRED_ALL_PASS` sentinel은 성공 경로의 이중 확인 신호다. WARN skip의 범위는 시나리오별로 다르다: codex 부재는 공통 skip이고, supervisor capability-probe 실패(rc 127)는 세 시나리오 모두 skip, auth/session 실패는 scenario-1(명시 auth/network 신호)과 env inheritance(codex 비정상+dump 부재)만 skip하며 — marker residual은 rc 127 외 비정상을 hard fail한다 (must-pass 계약). 검증 대상 wrapper 해석은 `CODEX_HOOK_SUPERVISED_BIN=source|installed`(기본 source — 워크트리 소스 + 설치본 `CODEX_EXEC_*_BIN` 추출 주입, 추출 실패는 fail)가 fail-closed로 처리한다. installed 모드는 post-`nrs` Nix 배선 검증용이다.
 
 ## issue #593 PoC variant legend
 
