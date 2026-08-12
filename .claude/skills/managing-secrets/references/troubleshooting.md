@@ -148,14 +148,22 @@ tail -20 ~/Library/Logs/agenix/stderr
 수동 해결:
 
 ```bash
-# 깨진 generation 삭제
+# 1. agent를 먼저 완전히 내린다 — .tmp는 "지금 쓰는 중"의 표시일 수 있어
+#    삭제보다 bootout이 선행해야 한다. macOS 26+는 --wait로 종료 완료를 보장
+#    (이전 버전은 --wait 미지원 — bootout 성공 후 1~2초 대기).
+#    "No such process" 에러는 이미 내려가 있다는 뜻이므로 무시하고 진행.
+launchctl bootout --wait "gui/$(id -u)/org.nix-community.home.activate-agenix"
+
+# 2. 깨진 generation 삭제
 rm -rf "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/<broken-gen-number>"
 
-# agenix agent 재시작
-launchctl kickstart -k "gui/$(id -u)/org.nix-community.home.activate-agenix"
+# 3. setupLaunchAgents가 agent를 재bootstrap하도록 activation 재실행
+#    (bootout된 job에 kickstart는 불가 — bootstrap 경로가 필요하다.
+#     일반 nrs는 변경이 없으면 activation을 생략하므로 --force 필수)
+nrs --force
 ```
 
-예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다. `.tmp`는 "agent가 지금 쓰는 중"의 표시일 수도 있으므로, 삭제 전에 `launchctl bootout`으로 agent를 내려 writer와 rm을 직렬화한다 — 쓰는 중인 generation을 그냥 rm -rf하면 ENOTEMPTY로 실패해 activation이 중단되거나(2026-08-12 사례), 완성된 secret 일부만 지워진 불완전 generation이 조용히 배포될 수 있다. bootout된 agent는 `setupLaunchAgents`가 다시 bootstrap하고(home-manager는 plist unchanged라도 not-loaded job을 재로드) RunAtLoad 1회 실행이 완전한 fresh generation을 재생성한다. `.tmp` 잔재가 없으면 bootout 없이 통과하므로 정상 경로에는 개입이 없다. rm 실패는 non-fatal (경고 후 다음 activation에서 재시도).
+예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다. `.tmp`는 "agent가 지금 쓰는 중"의 표시일 수도 있으므로, 삭제 전에 `launchctl bootout`으로 agent를 내려 writer와 rm을 직렬화한다 — 쓰는 중인 generation을 그냥 rm -rf하면 ENOTEMPTY로 실패해 activation이 중단되거나(2026-08-12 사례), 완성된 secret 일부만 지워진 불완전 generation이 조용히 배포될 수 있다. bootout 계약은 home-manager launchd 모듈의 `bootoutAgent`와 동일하다: macOS 26+는 `--wait`로 종료 완료를 보장, 이전 버전은 성공 후 1초 대기, "No such process"류만 미로드(harmless)로 통과하고 그 외 실패 시에는 활성 writer가 남았을 수 있으므로 그 회차의 삭제를 건너뛴다. bootout된 agent는 `setupLaunchAgents`가 다시 bootstrap하고(home-manager는 plist unchanged라도 not-loaded job을 재로드) RunAtLoad 1회 실행이 완전한 fresh generation을 재생성한다. `.tmp` 잔재가 없으면 bootout 없이 통과하므로 정상 경로에는 개입이 없다. rm 실패는 non-fatal (경고 후 다음 activation에서 재시도).
 
 ---
 

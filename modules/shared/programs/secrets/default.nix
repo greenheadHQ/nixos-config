@@ -38,12 +38,19 @@
   # (a) 삭제 도중 age가 새 파일을 만들어 ENOTEMPTY로 rm이 실패하거나 (2026-08-12
   # nrs 실패 사례 — 당시엔 그 rc가 activation 전체를 중단시켰다), (b) rm이 완성된
   # secret 일부만 지운 뒤 agent가 나머지를 완성·링크해 불완전한 generation이
-  # exit 0으로 조용히 배포될 수 있다. bootout이 두 경합을 모두 제거한다 —
-  # bootout 후에는 job이 도메인에서 제거되어 재스폰이 불가능하고, home-manager의
-  # setupLaunchAgents는 plist가 unchanged라도 not-loaded job은 다시 bootstrap하므로
-  # (launchd 모듈의 "up-to-date but not loaded" 경로) RunAtLoad 1회 실행이 완전한
-  # fresh generation을 재생성한다. .tmp 잔재가 없으면 bootout도 하지 않아 정상
-  # 경로에는 아무 개입이 없다.
+  # exit 0으로 조용히 배포될 수 있다.
+  #
+  # bootout 계약은 home-manager launchd 모듈의 bootoutAgent와 동일하게 맞춘다
+  # (버전별 종료 완료 보장 + harmless/실패 구분 — bootout은 기본적으로 완료를
+  # 기다리지 않고 반환하므로 macOS 26+는 --wait, 이전 버전은 성공 후 1초 대기).
+  # "No such process"류는 미로드(=writer 없음)로 통과하고, 그 외 실패는 활성
+  # writer가 남았을 수 있으므로 이번 activation에서는 삭제를 건너뛴다 — bootout
+  # 실패 후 파괴적 후속 작업을 계속하지 않는 기존 방어 결정(nrs.sh launchd
+  # cleanup)과 같은 원칙이다. bootout 성공 후에는 job이 도메인에서 제거되어
+  # 재스폰이 불가능하고, setupLaunchAgents는 plist가 unchanged라도 not-loaded
+  # job을 다시 bootstrap하므로 ("up-to-date but not loaded" 경로) RunAtLoad 1회
+  # 실행이 완전한 fresh generation을 재생성한다. .tmp 잔재가 없으면 bootout도
+  # 하지 않아 정상 경로에는 아무 개입이 없다.
   #
   # rm 실패는 non-fatal로 남긴다 — bootout 직렬화로 경합은 구조적으로 제거되므로
   # 이제 실패는 예상 밖 이상 신호이지만, 그것이 activation 전체를 중단시킬 이유는
@@ -59,12 +66,34 @@
           fi
         done
         if [ "''${#_stale_gens[@]}" -gt 0 ]; then
-          # 쓰는 중일 수 있는 agent를 먼저 내려 rm과 직렬화 (미로드 상태면 무해하게 실패)
-          /bin/launchctl bootout "gui/$(/usr/bin/id -u)/org.nix-community.home.activate-agenix" 2>/dev/null || true
-          for _gen_dir in "''${_stale_gens[@]}"; do
-            echo "[agenix] Removing stale generation with .tmp files: $_gen_dir"
-            rm -rf "$_gen_dir" || echo "[agenix] WARNING: could not fully remove $_gen_dir; leaving for next activation"
-          done
+          _agent_target="gui/$(/usr/bin/id -u)/org.nix-community.home.activate-agenix"
+          _bootout_ok=0
+          _bootout_out=""
+          if [ "$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d. -f1)" -ge 26 ]; then
+            if _bootout_out="$(/bin/launchctl bootout --wait "$_agent_target" 2>&1)"; then
+              _bootout_ok=1
+            fi
+          else
+            if _bootout_out="$(/bin/launchctl bootout "$_agent_target" 2>&1)"; then
+              /bin/sleep 1
+              _bootout_ok=1
+            fi
+          fi
+          if [ "$_bootout_ok" -ne 1 ]; then
+            case "$_bootout_out" in
+              *"No such process"* | *"Domain does not support specified action"*)
+                _bootout_ok=1 # 미로드 — 활성 writer 없음
+                ;;
+            esac
+          fi
+          if [ "$_bootout_ok" -eq 1 ]; then
+            for _gen_dir in "''${_stale_gens[@]}"; do
+              echo "[agenix] Removing stale generation with .tmp files: $_gen_dir"
+              rm -rf "$_gen_dir" || echo "[agenix] WARNING: could not fully remove $_gen_dir; leaving for next activation"
+            done
+          else
+            echo "[agenix] WARNING: could not bootout agenix agent ($_bootout_out); skipping stale generation cleanup this run"
+          fi
         fi
       fi
     ''
