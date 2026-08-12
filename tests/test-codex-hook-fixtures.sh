@@ -1293,9 +1293,10 @@ _cleanup_pid_lines_with_children() {
   [[ "$survivors" -eq 0 ]]
 }
 
-_collect_marker_subtree_lines() {
-  # $1=marker helper 경로. 현재 잔존하는 helper(argv 매칭) + 그 자식 sleep(PPID 체인)의
-  # ps 라인을 병합해 출력한다 — 종료 이후의 모든 경로(fail 포함)에서 정리 대상 수집에 쓴다.
+_collect_marker_and_direct_children_lines() {
+  # $1=marker helper 경로. 현재 잔존하는 helper(argv 매칭) + 그 직계 자식(1단계만 확장 —
+  # 재귀 아님; sleep은 helper의 직계 자식이므로 충분)의 ps 라인을 병합해 출력한다 —
+  # 종료 이후의 모든 경로(fail 포함)에서 정리 대상 수집에 쓴다.
   local marker_path="$1" lingering helper_pids child_lines
   lingering="$(_ps_lines_matching "$marker_path")"
   helper_pids="$(awk '{print $1}' <<<"$lingering" | tr '\n' ' ')"
@@ -1304,13 +1305,24 @@ _collect_marker_subtree_lines() {
 }
 
 _marker_fail() {
-  # $1=marker helper 경로, 나머지=fail 메시지. 실패 보고 전에 marker subtree를 best-effort
+  # $1=marker helper 경로, 나머지=fail 메시지. 실패 보고 전에 marker와 직계 자식을 best-effort
   # 정리한다 (fail 직전 정리이므로 rc 무시 — 잔존 시 warn이 수동 확인을 안내한다). 실패·무효
   # 분기가 정리를 각자 반복하다 누락되는 것을 막는 단일 계약이다. 성공 경로의 strict 정리
   # (rc 확인 후 sentinel mark)는 known leak 분기가 별도로 수행한다.
   local marker_path="$1"; shift
-  _cleanup_pid_lines_with_children "$(_collect_marker_subtree_lines "$marker_path")" || true
+  _cleanup_pid_lines_with_children "$(_collect_marker_and_direct_children_lines "$marker_path")" || true
   fail "$@"
+}
+
+_negative_control_abort() {
+  # $1=helper PID, $2=fail 메시지. negative control 실패 분기의 공통 정리 — helper만 죽이면
+  # exec 없이 실행된 자식 sleep이 고아로 남으므로, helper PID로 라인을 구성해 직계 자식까지
+  # 함께 정리한 뒤 실패를 보고한다. 탐지기(_ps_lines_matching) 자체를 검증하는 테스트이므로
+  # 탐지기 출력에 의존하지 않고 PID로 직접 수집한다.
+  local helper_pid="$1" msg="$2" helper_line
+  helper_line="$(ps -o pid=,ppid=,pgid=,command= -p "$helper_pid" 2>/dev/null || true)"
+  _cleanup_pid_lines_with_children "$helper_line" || true
+  fail "$msg"
 }
 
 # ─── 카테고리 5: programmatic env inheritance live (opt-in) ───
@@ -1517,10 +1529,20 @@ EOF
   local stderr2="$sandbox/scenario-2.stderr"
   local rc2=0
   local override="[{hooks=[{type=\"command\",command=\"$hook_script\"}]}]"
-  printf 'Reply PONG\n' | env -u CLAUDECODE \
+  # trust 우회 반경 격리: --dangerously-bypass-hook-trust는 로드된 모든 hook에 적용되므로,
+  # host CODEX_HOME(user hook)과 repo cwd(project .codex/config.toml)를 그대로 두면 fixture
+  # 자작 hook 밖의 미검증 hook까지 우회 반경에 들어간다. sandbox CODEX_HOME(+auth 복사) +
+  # sandbox cwd로 로드 가능한 hook을 inline override 하나로 좁힌다 — 이 조건에서만
+  # "automation that already vets hook sources" 전제가 실제로 성립한다.
+  mkdir -p "$sandbox/scenario2-codex-home"
+  if [[ -f "$HOME/.codex/auth.json" ]]; then
+    cp "$HOME/.codex/auth.json" "$sandbox/scenario2-codex-home/auth.json"
+  fi
+  ( cd "$sandbox" && printf 'Reply PONG\n' | env -u CLAUDECODE \
     CODEX_PROGRAMMATIC=1 \
     CODEX_EXEC_TIMEOUT_SECONDS="$INVOCATION_MATRIX_TIMEOUT_SECONDS" \
     CODEX_EXEC_KILL_AFTER_SECONDS="$CODEX_EXEC_KILL_AFTER_SECONDS" \
+    CODEX_HOME="$sandbox/scenario2-codex-home" \
     ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
     "$SUPERVISED_BIN" \
       --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
@@ -1529,7 +1551,7 @@ EOF
       -c "hooks.UserPromptSubmit=$override" \
       -c "hooks.Stop=$override" \
       -o "$result2" \
-      - >/dev/null 2>"$stderr2" || rc2=$?
+      - >/dev/null 2>"$stderr2" ) || rc2=$?
 
   case "$rc2" in
     0|124|137)
@@ -1669,7 +1691,7 @@ test_codex_exec_marker_residual_live() {
 
   if (( rc == 127 )); then
     warn "marker residual: supervisor BLOCKED (capability-probe 실패) — skip"
-    _cleanup_pid_lines_with_children "$(_collect_marker_subtree_lines "$marker_helper")" || true
+    _cleanup_pid_lines_with_children "$(_collect_marker_and_direct_children_lines "$marker_helper")" || true
     return 0
   fi
 
@@ -1711,7 +1733,7 @@ $group_lingering"
   #     단 정리 자체가 실패하면(잔존 소멸 미확인) sentinel 계약("검증·정리까지 완료")에 따라
   #     pass mark를 남기지 않고 fail한다.
   local leak_lines
-  leak_lines="$(_collect_marker_subtree_lines "$marker_helper")"
+  leak_lines="$(_collect_marker_and_direct_children_lines "$marker_helper")"
   if [[ -n "$leak_lines" ]]; then
     local leak_count
     leak_count="$(awk 'NF' <<<"$leak_lines" | wc -l | tr -d ' ')"
@@ -1753,26 +1775,18 @@ test_marker_residual_detector_negative_control() {
   chmod +x "$marker_helper"
 
   local helper_pid
-  helper_pid="$(bash -c "set -m; bash '$marker_helper' >/dev/null 2>&1 & printf '%s' \$!")"
+  # 경로는 bash -c 코드 문자열에 보간하지 않고 위치 인자로 전달한다 — TMPDIR 파생 경로에
+  # 따옴표/셸 구문이 섞이면 보간이 인용 종료로 이어진다.
+  helper_pid="$(bash -c 'set -m; bash "$1" >/dev/null 2>&1 & printf "%s" "$!"' _ "$marker_helper")"
   if [[ -z "$helper_pid" ]]; then
     fail "negative control: 합성 marker helper 기동 실패"
   fi
-
-  # 실패 분기 공통 정리 — helper만 죽이면 exec 없이 실행된 자식 sleep이 고아로 남으므로
-  # (함수 헤더 계약과 동일), helper PID로 라인을 구성해 자식까지 함께 정리한다.
-  # 탐지기(_ps_lines_matching) 자체를 검증하는 중이므로 observed에 의존하지 않는다.
-  _negative_control_abort() {
-    local msg="$1" helper_line
-    helper_line="$(ps -o pid=,ppid=,pgid=,command= -p "$helper_pid" 2>/dev/null || true)"
-    _cleanup_pid_lines_with_children "$helper_line" || true
-    fail "$msg"
-  }
 
   sleep 1
   local observed
   observed="$(_ps_lines_matching "$marker_helper")"
   if [[ -z "$observed" ]]; then
-    _negative_control_abort "negative control: 탐지기가 실행 중 marker를 관측하지 못함 — 탐지기 회귀"
+    _negative_control_abort "$helper_pid" "negative control: 탐지기가 실행 중 marker를 관측하지 못함 — 탐지기 회귀"
   fi
 
   # 현재 테스트 프로세스의 PGID를 wrapper 소유 그룹의 대역으로 두면, set -m으로 분리된
@@ -1783,21 +1797,21 @@ test_marker_residual_detector_negative_control() {
   local self_pgid
   self_pgid="$(ps -o pgid= -p "${BASHPID:-$$}" | tr -d ' ')"
   if [[ -z "$self_pgid" ]]; then
-    _negative_control_abort "negative control: 자기 PGID 조회 실패"
+    _negative_control_abort "$helper_pid" "negative control: 자기 PGID 조회 실패"
   fi
   local out_group
   out_group="$(awk -v pg="$self_pgid" '$3 != pg' <<<"$observed")"
   if [[ -z "$out_group" ]]; then
-    _negative_control_abort "negative control: 그룹 이탈 marker가 out-of-group으로 분류되지 않음 — 분류기 회귀"
+    _negative_control_abort "$helper_pid" "negative control: 그룹 이탈 marker가 out-of-group으로 분류되지 않음 — 분류기 회귀"
   fi
 
   # 정리 실효 검증까지: helper + 자식 sleep subtree를 정리하고 소멸을 확인한다.
   # cleanup rc(잔존 소멸 미확인=1)와 helper 생존 재확인 둘 다 정리기 회귀로 판정한다.
   if ! _cleanup_pid_lines_with_children "$observed"; then
-    _negative_control_abort "negative control: cleanup이 잔존 소멸을 확인하지 못함 — 정리기 회귀"
+    _negative_control_abort "$helper_pid" "negative control: cleanup이 잔존 소멸을 확인하지 못함 — 정리기 회귀"
   fi
   if kill -0 "$helper_pid" 2>/dev/null; then
-    _negative_control_abort "negative control: cleanup 후에도 helper($helper_pid) 잔존 — 정리기 회귀"
+    _negative_control_abort "$helper_pid" "negative control: cleanup 후에도 helper($helper_pid) 잔존 — 정리기 회귀"
   fi
 }
 
