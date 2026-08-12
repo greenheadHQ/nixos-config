@@ -155,7 +155,33 @@ rm -rf "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/<broken-gen-number>"
 launchctl kickstart -k "gui/$(id -u)/org.nix-community.home.activate-agenix"
 ```
 
-예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다.
+예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다. rm은 non-fatal이다 — `.tmp`는 "agent가 지금 쓰는 중"의 표시일 수도 있어, 쓰기 중인 디렉토리를 rm -rf하면 ENOTEMPTY로 실패해 activation 전체가 중단된 사례가 있다 (2026-08-12). 활성 generation 제외 방식은 쓰지 않는다 — crash loop 잔재는 정확히 활성 번호+1에 남으므로 제외하면 본래 목적이 깨진다. rm이 활성 쓰기를 이긴 경우 agent는 실패 종료 후 `KeepAlive(SuccessfulExit=false)` 재시도로 자가 회복한다.
+
+---
+
+## macOS agenix launchd agent 무한 재스폰 루프 (KeepAlive 의미론)
+
+> 발생 시점: 2026-08-12 진단 (루프 자체는 최소 2026-01부터 만성)
+> 해결: `KeepAlive` override (`modules/shared/programs/secrets/default.nix`)
+
+증상: agent가 성공(exit 0)해도 5~15초마다 무한 재실행. `~/Library/Logs/agenix/stdout`이 수백 MB로 비대해지고, generation 번호가 부팅 세션당 수만까지 증가. `nrs`의 `cleanupAgenixStaleGenerations`가 쓰기 중인 generation과 race해 간헐적으로 activation이 죽는 2차 피해 유발.
+
+원인: upstream `ryantm/agenix`의 `age-home.nix`가 `KeepAlive = { Crashed = false; SuccessfulExit = false; }`를 선언. `launchd.plist(5)`에서 `Crashed = false`는 "crash가 아닌 종료라면 재시작"(inverse condition)이라, oneshot mount 스크립트의 정상 종료마다 재스폰이 발동한다.
+
+진단:
+
+```bash
+# runs가 비정상적으로 크고 state가 spawn scheduled면 루프 중
+launchctl print "gui/$(id -u)/org.nix-community.home.activate-agenix" | grep -E "state|runs|last exit"
+
+# 스폰 사유가 semaphore(KeepAlive)인지 확인
+launchctl blame "gui/$(id -u)/org.nix-community.home.activate-agenix"
+
+# 배포된 plist에 Crashed 키가 없어야 정상 (override 적용 확인)
+grep -A3 KeepAlive ~/Library/LaunchAgents/org.nix-community.home.activate-agenix.plist
+```
+
+해결: `launchd.agents.activate-agenix.config.KeepAlive`를 `lib.mkForce { SuccessfulExit = false; }`로 override — 실패 시 재시도라는 upstream 의도는 보존하고 non-crash 재스폰 조건만 제거한다.
 
 ---
 
