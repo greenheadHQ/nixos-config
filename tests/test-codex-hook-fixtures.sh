@@ -1321,9 +1321,24 @@ _cleanup_pid_lines_with_children() {
   local lines="$1"
   [[ -n "$lines" ]] || return 0
   local parent_pids child_lines all_lines survivors=0 line pid cmd
-  parent_pids="$(awk '{print $1}' <<<"$lines" | tr '\n' ' ')"
+  # 자식 확장 전에 부모 라인부터 identity 대조한다 — stale PID(이미 종료 후 재사용)를 그대로
+  # PPID 매칭에 넣으면 무관한 현재 프로세스의 자식이 "방금 수집된 라인"으로 들어와 발사부의
+  # identity 가드를 항상 통과한다 (가드는 발사 대상이 아니라 수집 입력에서 걸어야 한다).
+  # 부수 효과: EXIT 경로의 registry처럼 전부 stale인 입력은 여기서 비어 TERM/KILL 루프와
+  # sleep 2회를 건너뛴다 (pre-commit hot path 비용 제거).
+  local live_parent_lines=""
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    pid="$(awk '{print $1}' <<<"$line")"
+    cmd="$(_ps_line_command "$line")"
+    if _pid_identity_matches "$pid" "$cmd"; then
+      live_parent_lines+="$line"$'\n'
+    fi
+  done <<<"$lines"
+  [[ -n "$live_parent_lines" ]] || return 0
+  parent_pids="$(awk '{print $1}' <<<"$live_parent_lines" | tr '\n' ' ')"
   child_lines="$(_direct_child_ps_lines "$parent_pids")"
-  all_lines="$(printf '%s\n%s\n' "$child_lines" "$lines" | awk 'NF')"
+  all_lines="$(printf '%s\n%s\n' "$child_lines" "$live_parent_lines" | awk 'NF')"
   while IFS= read -r line; do
     pid="$(awk '{print $1}' <<<"$line")"
     cmd="$(_ps_line_command "$line")"
@@ -1440,7 +1455,7 @@ EOF
   # pipe + '-'로 EOF를 명시해 inherited-stdin hang shape를 차단한다.
   #
   # --dangerously-bypass-hook-trust: codex 0.129.0부터 hooks는 persisted hook trust가 없으면
-  # 조용히 발화하지 않는다 (upstream 도입: openai/codex#21615; 0.147.0에서 2026-08-12 mac 재관측 —
+  # 조용히 발화하지 않는다 (도입: openai/codex#20321(rust-v0.129.0); 사용자 보고: openai/codex#21615; 0.147.0에서 2026-08-12 mac 재관측 —
   # 미발화가 에러 없이 정상 종료로 보인다). 본 fixture는
   # hook source를 자신이 작성하므로 upstream이 명시한 "automation that already vets hook sources"
   # 용례에 해당한다.
@@ -1566,7 +1581,7 @@ test_codex_exec_invocation_live_matrix() {
   # issue #593 raw PoC 패턴(`-c hooks.<event>` override 포함). supervisor 미적용 시 hang 확정.
   # supervisor 적용 시 timeout 안에 SIGTERM/SIGKILL grace로 정리되어 0/124/137 exit 모두 PASS.
   # --dangerously-bypass-hook-trust: codex 0.129.0부터 hooks는 persisted hook trust가 없으면
-  # 조용히 발화하지 않는다 (upstream 도입: openai/codex#21615; 0.147.0에서 2026-08-12 mac 재관측).
+  # 조용히 발화하지 않는다 (도입: openai/codex#20321(rust-v0.129.0); 사용자 보고: openai/codex#21615; 0.147.0에서 2026-08-12 mac 재관측).
   # 본 fixture는 hook source를 자신이 작성하므로 upstream이 명시한
   # "automation that already vets hook sources" 용례에 해당한다.
   local hook_log="$sandbox/scenario-2-hook.log"
