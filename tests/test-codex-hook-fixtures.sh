@@ -87,8 +87,24 @@ REQUIRED_LIVE_SCENARIOS=(invocation_matrix marker_residual env_inheritance)
 LIVE_PROC_REGISTRY="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-procs.XXXXXX")"
 
 _register_live_proc() {
-  # $1=PID — 기동 직후 호출해 중단 경로 정리 대상으로 등록한다.
+  # $1=PID — 기동 직후 호출해 중단 경로 정리 대상으로 등록한다. 같은 PID를 argv가 안정된
+  # 시점(예: wrapper exec 체인이 timeout에 도달한 뒤)에 다시 호출하면 라인이 추가 등록된다 —
+  # 정리기는 라인 단위 identity 검사라 stale 라인은 불일치로 스킵되고 fresh 라인이 매치된다.
   ps -o pid=,ppid=,pgid=,command= -p "$1" >> "$LIVE_PROC_REGISTRY" 2>/dev/null || true
+}
+
+_register_live_proc_lines() {
+  # $1=ps 라인들 — 이미 관측된 표본 라인(예: marker helper)을 그대로 등록한다.
+  [[ -n "$1" ]] && printf '%s\n' "$1" >> "$LIVE_PROC_REGISTRY" || true
+}
+
+_copy_active_codex_auth() {
+  # $1=대상 codex-home 디렉터리. 정본 경로는 활성 CODEX_HOME이다 — $HOME/.codex 고정은
+  # 다중 계정 환경(부모가 custom CODEX_HOME 사용)에서 다른 계정의 인증으로 실행된다.
+  local host_codex_home="${CODEX_HOME:-$HOME/.codex}"
+  if [[ -f "$host_codex_home/auth.json" ]]; then
+    cp "$host_codex_home/auth.json" "$1/auth.json"
+  fi
 }
 
 # ─── Hook contract expectation oracle ───
@@ -1243,9 +1259,10 @@ _ps_lines_matching() {
   ps -axo pid=,ppid=,pgid=,command= 2>/dev/null | grep -F -- "$1" | grep -Fv 'grep -F' || true
 }
 
-_marker_child_lines() {
-  # $1=부모 PID 목록(공백/개행 구분). 그 PID를 PPID로 갖는 프로세스 라인을 추출한다 —
-  # helper의 자식 sleep은 argv에 marker 경로가 없으므로 PPID 체인으로만 찾을 수 있다.
+_direct_child_ps_lines() {
+  # $1=부모 PID 목록(공백/개행 구분 — marker helper든 wrapper 그룹 구성원이든 임의 부모).
+  # 그 PID를 PPID로 갖는 직계 자식 프로세스 라인을 추출한다 (1단계만, 재귀 아님).
+  # 예: marker helper의 자식 sleep은 argv에 marker 경로가 없으므로 PPID로만 찾을 수 있다.
   local parent_pids="$1"
   [[ -n "$parent_pids" ]] || return 0
   ps -axo pid=,ppid=,pgid=,command= 2>/dev/null | awk -v pids="$parent_pids" '
@@ -1292,7 +1309,7 @@ _cleanup_pid_lines_with_children() {
   [[ -n "$lines" ]] || return 0
   local parent_pids child_lines all_lines survivors=0 line pid cmd
   parent_pids="$(awk '{print $1}' <<<"$lines" | tr '\n' ' ')"
-  child_lines="$(_marker_child_lines "$parent_pids")"
+  child_lines="$(_direct_child_ps_lines "$parent_pids")"
   all_lines="$(printf '%s\n%s\n' "$child_lines" "$lines" | awk 'NF')"
   while IFS= read -r line; do
     pid="$(awk '{print $1}' <<<"$line")"
@@ -1324,7 +1341,7 @@ _collect_marker_and_direct_children_lines() {
   local marker_path="$1" lingering helper_pids child_lines
   lingering="$(_ps_lines_matching "$marker_path")"
   helper_pids="$(awk '{print $1}' <<<"$lingering" | tr '\n' ' ')"
-  child_lines="$(_marker_child_lines "$helper_pids")"
+  child_lines="$(_direct_child_ps_lines "$helper_pids")"
   printf '%s\n%s\n' "$lingering" "$child_lines" | awk 'NF'
 }
 
@@ -1398,12 +1415,8 @@ EOF
   # sandbox CODEX_HOME은 host auth를 상속하지 않아 API 호출이 401로 죽는다 (2026-08-12 실측 —
   # hook 발화 여부와 무관한 구조적 결함). host auth.json이 있으면 복사해 정상 완주를 허용한다.
   # 부재 시 복사 없이 진행 — dump_log 검증은 가능하나 codex 후속이 비정상이면 sentinel mark가
-  # 남지 않는다 (원인 해소 요구 신호). 정본 경로는 활성 CODEX_HOME이다 — $HOME/.codex 고정은
-  # 다중 계정 환경(부모가 custom CODEX_HOME 사용)에서 다른 계정의 인증으로 실행된다.
-  local host_codex_home="${CODEX_HOME:-$HOME/.codex}"
-  if [[ -f "$host_codex_home/auth.json" ]]; then
-    cp "$host_codex_home/auth.json" "$sandbox/codex-home/auth.json"
-  fi
+  # 남지 않는다 (원인 해소 요구 신호).
+  _copy_active_codex_auth "$sandbox/codex-home"
 
   # 본 fixture의 검증 의도는 "programmatic 호출자가 codex 프로세스에 붙인 CODEX_PROGRAMMATIC=1이
   # hook subprocess까지 상속되는지"이다. CLAUDECODE는 부모에서 제거해 이 fixture가 Claude nesting
@@ -1561,10 +1574,7 @@ EOF
   # sandbox cwd로 로드 가능한 hook을 inline override 하나로 좁힌다 — 이 조건에서만
   # "automation that already vets hook sources" 전제가 실제로 성립한다.
   mkdir -p "$sandbox/scenario2-codex-home"
-  local host_codex_home="${CODEX_HOME:-$HOME/.codex}"
-  if [[ -f "$host_codex_home/auth.json" ]]; then
-    cp "$host_codex_home/auth.json" "$sandbox/scenario2-codex-home/auth.json"
-  fi
+  _copy_active_codex_auth "$sandbox/scenario2-codex-home"
   ( cd "$sandbox" && printf 'Reply PONG\n' | env -u CLAUDECODE \
     CODEX_PROGRAMMATIC=1 \
     CODEX_EXEC_TIMEOUT_SECONDS="$INVOCATION_MATRIX_TIMEOUT_SECONDS" \
@@ -1691,6 +1701,9 @@ test_codex_exec_marker_residual_live() {
       if [[ -n "$timeout_line" ]]; then
         timeout_pid="$(awk '{print $1}' <<<"$timeout_line")"
         timeout_pgid="$(awk '{print $3}' <<<"$timeout_line")"
+        # 기동 직후 등록된 wrapper 라인은 exec 체인(env→bash→setsid→timeout)의 중간 argv라
+        # 중단 시 identity 불일치로 스킵될 수 있다 — argv가 안정된 timeout 시점에 재등록한다.
+        _register_live_proc "$timeout_pid"
       fi
     fi
     if [[ -n "$timeout_pgid" ]]; then
@@ -1702,6 +1715,11 @@ test_codex_exec_marker_residual_live() {
     local marker_lines
     marker_lines="$(grep -F -- "$marker_helper" "$full_snapshot" | grep -Fv 'grep -F' || true)"
     if [[ -n "$marker_lines" ]]; then
+      if (( ! observed_marker )); then
+        # 최초 관측 시점에 helper를 중단 경로 정리 대상으로 등록한다 — marker subtree는
+        # 자체 PGID로 이탈하므로(§15 ④) wrapper 등록만으로는 Ctrl-C/CI 취소 시 잔존한다.
+        _register_live_proc_lines "$marker_lines"
+      fi
       observed_marker=1
       printf '%s\n' "$marker_lines" >> "$mid_snapshot"
       if [[ -n "$timeout_pid" ]]; then
