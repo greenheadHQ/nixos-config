@@ -120,7 +120,7 @@ tests/test-codex-hook-fixtures.sh
 # verify-ai-compat가 호출하는 형태와 동일
 tests/test-codex-hook-fixtures.sh --no-live
 
-# live opt-in (codex exec 호출 — 환경 결함 시 WARN skip)
+# live opt-in (codex exec 호출 — 환경 결함 시 WARN skip, 필수 시나리오 미완이면 exit 1)
 tests/test-codex-hook-fixtures.sh --live
 # 또는
 CODEX_HOOK_LIVE=1 tests/test-codex-hook-fixtures.sh
@@ -142,16 +142,24 @@ agent_id 키는 0.124 schema에 없으며 hook은 graceful fallback에 의존한
 | `scenario-E-posttooluse-template-owned.toml` | template이 선언한 PostToolUse 이벤트(issue #603)에 사용자가 entry 추가 시 sync가 template 값으로 덮어씀 | 사용자 PostToolUse marker가 사라지고 managed pinning-alert command만 남음 |
 | `scenario-F-pretooluse-template-owned.toml` | template이 선언한 PreToolUse 이벤트(issue #587)에 사용자가 entry 추가 시 sync가 template 값으로 덮어씀 | 사용자 PreToolUse marker가 사라지고 managed pinning-guard command만 남음 |
 
-## codex exec invocation matrix 시나리오 (live opt-in, issue #593)
+## codex exec live 시나리오 (live opt-in, issue #593 · #1228)
 
-`test_codex_exec_invocation_live_matrix` 카테고리는 fix 적용 후 PASS가 기대되는 시나리오만 검증한다 (must-pass-only). PR #595 fixture pattern hang은 본 matrix 제외 — known caveat: [`using-codex-exec/references/known-issues.md`](../../../modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md) §15 + 별도 follow-up.
+`--live`의 필수 시나리오는 세 top-level 단위다 (must-pass-only; 아래 첫 표). PR #595 fixture pattern hang은 본 matrix 제외 — known caveat: [`using-codex-exec/references/known-issues.md`](../../../modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md) §15 + 별도 follow-up.
 
-| 케이스 이름 | 패턴 | 기대 동작 | 검증 의의 |
-|-------------|------|----------|----------|
-| `host_home_no_override_stdin_pipe_supervised_pass` | host HOME + no `-c hooks` override + stdin pipe + read-only + `codex-exec-supervised` | 정상 종료 (rc=0) + result 파일 생성 | host HOME + supervisor 정상 동작 회귀 차단 |
-| `raw_override_inline_toml_hang_with_supervisor_pass` | host HOME + `-c hooks.<event>` override + stdin pipe + read-only + `codex-exec-supervised` | rc=0/124/137 모두 PASS (supervisor가 timeout 안에 정리) | issue #593 raw PoC 패턴 + supervisor 적용 시 native 잔존 차단 회귀 차단 |
+| 필수 시나리오 (sentinel 집계 단위) | 검증 대상 | 검증 의의 |
+|-----------------------------------|----------|----------|
+| `invocation_matrix` | 아래 하위 표의 두 케이스 | issue #593 supervised wrapper 회귀 차단 |
+| `marker_residual` (#1228) | 고유 marker helper를 shell 도구로 실행 + 1초 간격 process tree 표본화 → wrapper 소유 그룹(PGID 전수 검사) 잔존 0 + 세션 이탈 marker subtree는 known leak으로 기록·정리 | supervisor 종료 후 잔존 프로세스 검증의 실효 표면 (§15 실증 갱신 ④) |
+| `env_inheritance` | caller가 붙인 `CODEX_PROGRAMMATIC=1`이 sandbox `CODEX_HOME` hook subprocess까지 상속 | programmatic marker 상속 회귀 차단 |
 
-환경 결함(timeout/codex/codex-exec-supervised 부재) 시 WARN skip — capability-probe 정책 ([`run-da/SKILL.md`](../../../modules/shared/programs/claude/files/skills/run-da/SKILL.md) "stdin pipe + supervised wrapper").
+invocation matrix의 하위 케이스:
+
+| 케이스 이름 | 패턴 | 기대 동작 |
+|-------------|------|----------|
+| `host_home_no_override_stdin_pipe_supervised_pass` | host HOME + no `-c hooks` override + stdin pipe + read-only + `codex-exec-supervised` | 정상 종료 (rc=0) + result 파일 생성 |
+| `raw_override_inline_toml_hang_with_supervisor_pass` | sandbox CODEX_HOME(+auth 복사) + sandbox cwd + `-c hooks.<event>` override + `--dangerously-bypass-hook-trust` + stdin pipe + read-only | rc=0/124/137 모두 PASS (supervisor가 timeout 안에 정리) + hook 발화 |
+
+판정 계약 (issue #1228): 필수 시나리오가 하나라도 미완(WARN skip 포함)이면 전체 통과 문구 없이 `Deterministic tests passed; live REQUIRED scenarios incomplete.` + exit 1로 종결된다 — 통과 판정은 exit 0 하나로 닫히고, stdout의 `LIVE_REQUIRED_ALL_PASS` sentinel은 성공 경로의 이중 확인 신호다. WARN skip의 범위는 시나리오별로 다르다: codex 부재는 공통 skip이고, supervisor capability-probe 실패(rc 127)는 세 시나리오 모두 skip, auth/session 실패는 scenario-1(명시 auth/network 신호)과 env inheritance(codex 비정상+dump 부재)만 skip하며 — marker residual은 rc 127 외 비정상을 hard fail한다 (must-pass 계약). 검증 대상 wrapper 해석은 `CODEX_HOOK_SUPERVISED_BIN=source|installed`(기본 source — 워크트리 소스 + 설치본 `CODEX_EXEC_*_BIN` 추출 주입, 추출 실패는 fail)가 fail-closed로 처리한다. installed 모드는 post-`nrs` Nix 배선 검증용이다.
 
 ## issue #593 PoC variant legend
 

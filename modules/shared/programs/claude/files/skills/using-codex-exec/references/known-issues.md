@@ -577,7 +577,10 @@ wrapper 사전 검증(precheck) 동작 ([`modules/shared/scripts/codex-exec-supe
 - `setsid` 부재 → BLOCKED, exit 127. 주의: setsid는 종료 보장에 기여하지 않음이 실측 확인됐고 제거는 후속 PR 범위다 (정본: 아래 "실증 갱신" 블록) — 그 전까지 fail-closed 동작이 유지된다. 진단 목적 timeout-only는 wrapper를 우회해 `timeout` + `codex`를 직접 호출한다.
 - `timeout`/`gtimeout` 부재 → BLOCKED, exit 127. Mac BSD에는 둘 다 없으므로 Nix wrapper가 binary 가용성을 보장한다.
 - `codex` 부재 → exit 127.
-- 정본 4개 변수(`CODEX_EXEC_TIMEOUT_SECONDS`, `CODEX_EXEC_KILL_AFTER_SECONDS`, `CODEX_EXEC_TIMEOUT_BIN`, `CODEX_EXEC_SETSID_BIN`)의 계열 이름(TIMEOUT/KILL_AFTER/SETSID 접두)이면서 정확 불일치인 `CODEX_EXEC_*` 발견 → exit 127 (near-miss fail-fast). 정본 변수명 오타(예: `CODEX_EXEC_TIMEOUT=1500` — `_SECONDS` 누락)가 침묵으로 무시되어 호출 의도가 소실되는 사고 방지. 계열 밖 `CODEX_EXEC_*`(upstream codex가 예약한 `CODEX_EXEC_SERVER_*` 등)는 wrapper 소관이 아니므로 통과한다.
+- `CODEX_EXEC_REQUIRE_NONEMPTY`가 설정됐는데 빈 값이거나 절대경로가 아님 → exit 127 (invalid env 규약).
+- 정본 5개 변수(`CODEX_EXEC_TIMEOUT_SECONDS`, `CODEX_EXEC_KILL_AFTER_SECONDS`, `CODEX_EXEC_TIMEOUT_BIN`, `CODEX_EXEC_SETSID_BIN`, `CODEX_EXEC_REQUIRE_NONEMPTY`)의 계열 이름(TIMEOUT/KILL_AFTER/SETSID/REQUIRE 접두)이면서 정확 불일치인 `CODEX_EXEC_*` 발견 → exit 127 (near-miss fail-fast). 정본 변수명 오타(예: `CODEX_EXEC_TIMEOUT=1500` — `_SECONDS` 누락)가 침묵으로 무시되어 호출 의도가 소실되는 사고 방지. 계열 밖 `CODEX_EXEC_*`(upstream codex가 예약한 `CODEX_EXEC_SERVER_*` 등)는 wrapper 소관이 아니므로 통과한다.
+
+wrapper postcondition (opt-in — issue #1228): `CODEX_EXEC_REQUIRE_NONEMPTY=<절대경로>`를 설정하면 codex가 exit 0인데 그 경로가 non-empty regular file이 아닐 때(부재/0 byte/디렉터리) wrapper가 rc 3 + stderr 식별자 `codex-exec-supervised: empty output`으로 실패한다. codex exit 0 + `-o` 결과 파일 0 byte 실사례 대응이며, passthrough 순수성(#1086) 때문에 wrapper가 `-o`를 파싱하지 않고 호출자가 경로를 env로 알려준다. 소비자 판별 계약: rc 3 단독이 아니라 rc 3 + 해당 stderr 식별자 조합 (codex 자체도 3을 반환할 수 있다). 호출자 계약: 실행 전 대상 파일을 삭제/초기화해야 한다 — 이전 실행의 stale 파일이 있으면 이번 실행이 아무것도 안 써도 통과한다. 검사는 timeout 감독 아래 shim에서 codex rc 0일 때만 수행되므로 124/137 등 timeout·codex 오류 rc는 보존된다.
 
 Nix wiring ([`modules/shared/programs/shell/default.nix`](../../../../../shell/default.nix)): home.file로 `~/.local/bin/codex-exec-supervised`를 `pkgs.writeShellScript` wrapper에 link한다. wrapper가 `CODEX_EXEC_TIMEOUT_BIN`/`CODEX_EXEC_SETSID_BIN`에 `pkgs.coreutils`/`pkgs.util-linux`의 absolute store path를 export한 뒤 raw script(`modules/shared/scripts/codex-exec-supervised.sh`)를 exec한다. wrapper는 PATH를 변경하지 않으므로 사용자 PATH의 BSD coreutils가 보존된다 (mac `stat -f %m` 같은 BSD 호출 의미 보존).
 
@@ -605,9 +608,11 @@ Retired historical context (#634): `tests/test-codex-hook-fixtures.sh`의 기존
 
 ③ mac+Linux hazard 분리 실험에서 process group은 GNU timeout 자신이 생성하고(비-foreground 모드) SIGTERM 무시 hang의 유일한 구제는 `--kill-after`(SIGKILL 승급)이며 setsid는 결과를 바꾸지 않는다. 재검증(합성, codex 불필요): SIGTERM 무시 스크립트(`trap '' TERM; sleep 60`)를 (a) `timeout --kill-after=3 6 …` (b) `setsid --wait timeout --kill-after=3 6 …` (c) `setsid --wait timeout 6 …` 세 분기로 실행 → (a)(b)만 137/약 9초 종료·(c)는 무한 대기면 유지 (동일 매트릭스를 mac과 `ssh minipc` 양쪽에서). setsid 의존 제거는 real-codex Linux 매트릭스 재확인(계정 quota 리셋 2026-08-16 이후; 그 전까지는 합성 hazard 실험 대체)을 게이트로 하는 후속 PR 범위다.
 
-④ codex가 자체 process group으로 분리해 띄운 exec-tool 자식은 wrapper로도 회수되지 않는다 (supervisor 레벨에서 원리적 커버 불가 — upstream 영역). 재검증: `CODEX_EXEC_TIMEOUT_SECONDS=40 codex-exec-supervised --sandbox read-only --skip-git-repo-check --ephemeral "shell 도구로 sleep 150을 실행하라" < /dev/null; sleep 2; ps -axo pid,ppid,pgid,command | grep 'sleep 150'` → `PPID=1`·자기 PGID로 잔존하면 유지 (확인 후 잔존 프로세스는 kill로 정리).
+④ codex가 자체 process group으로 분리해 띄운 exec-tool 자식은 wrapper로도 회수되지 않는다 (supervisor 레벨에서 원리적 커버 불가 — upstream 영역). 갱신 (2026-08-12 mac 실측, codex 0.147.0): 이 분리는 조건부가 아니라 shell 도구 자식의 기본 동작이다 — codex 프로세스 자신은 timeout 그룹에 속해 정리되지만, shell 자식은 항상 자체 PGID로 분리되어 supervisor 종료 후 `PPID=1`로 잔존한다. `tests/test-codex-hook-fixtures.sh --live`의 marker residual 시나리오가 이 leak을 상시 관측·기록·정리한다 (fail 아님 — wrapper 소유 그룹 잔존만 fail). 재검증: `CODEX_EXEC_TIMEOUT_SECONDS=40 codex-exec-supervised --sandbox read-only --skip-git-repo-check --ephemeral "shell 도구로 sleep 150을 실행하라" < /dev/null; sleep 2; ps -axo pid,ppid,pgid,command | grep 'sleep 150'` → `PPID=1`·자기 PGID로 잔존하면 유지 (확인 후 잔존 프로세스는 kill로 정리).
 
-발견 세션: PR #588 Phase 4 머지 후 retry hang (issue #593, 2026-04-29 발생).
+⑤ codex 0.129.0부터 hooks는 persisted hook trust가 없으면 조용히 발화하지 않는다 (도입: upstream PR [openai/codex#20321](https://github.com/openai/codex/pull/20321) "hook trust metadata and enforcement" — rust-v0.129.0 릴리스 노트에 최초 등재; 사용자 보고: [openai/codex#21615](https://github.com/openai/codex/issues/21615). 본 저장소는 0.147.0에서 2026-08-12 mac 실측으로 재관측했다. 미발화가 에러 없이 정상 종료로 보이므로 hook 로그 부재 외 신호가 없다). inline `-c hooks.<event>` override와 sandbox `CODEX_HOME/config.toml` 등록 hook 모두 해당하며, sandbox 유무·`--ephemeral` 유무와 무관하다. hook source를 스스로 작성·검증하는 자동화(fixture 등)는 `--dangerously-bypass-hook-trust`로 우회한다 (문구 출처는 CLI help — "automation that already vets hook sources"; 재검증: `codex help exec | grep -A2 dangerously-bypass-hook-trust`). 재검증: 임시 hook 스크립트를 `-c hooks.UserPromptSubmit` override로 등록해 플래그 없이/있이 각 1회 실행 → 플래그 없이는 미발화·있으면 발화면 유지.
+
+발견 세션: PR #588 Phase 4 머지 후 retry hang (issue #593, 2026-04-29 발생). ④ 갱신·⑤ 추가는 issue #1228 1단계 (2026-08-12).
 
 ### 16. NixOS bwrap 의존
 

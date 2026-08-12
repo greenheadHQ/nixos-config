@@ -61,8 +61,19 @@
 #                                 진단용 timeout-only 실행이 필요하면 본 wrapper를 우회해 timeout/codex를
 #                                 직접 호출한다 (보장 약화는 wrapper 인터페이스 안에 흡수하지 않는다).
 #                                 Nix wrapper가 ${pkgs.util-linux}/bin/setsid로 set한다.
+#   CODEX_EXEC_REQUIRE_NONEMPTY   opt-in postcondition (issue #1228): 절대경로 설정 시, codex가
+#                                 exit 0인데 그 경로가 non-empty regular file이 아니면(부재/0 byte/
+#                                 디렉터리) exit 3 + stderr "codex-exec-supervised: empty output".
+#                                 codex exit 0 + `-o` 결과 파일 0 byte 실사례 대응. passthrough
+#                                 순수성(#1086: wrapper는 인자를 해석하지 않는다) 때문에 `-o`를
+#                                 파싱하지 않고 호출자가 경로를 env로 알려준다. 검사는 timeout
+#                                 감독 아래 shim에서 codex rc==0일 때만 수행한다 (124/137 등
+#                                 timeout/codex 오류 rc를 덮어쓰지 않는다). 호출자 계약: 실행 전
+#                                 대상 파일을 삭제/초기화해야 한다 — 이전 실행의 stale 파일이
+#                                 있으면 이번 실행이 아무것도 안 써도 통과한다.
+#                                 빈 값이거나 `/`로 시작하지 않으면 exit 127 (invalid env 규약).
 #
-#   정본 4개의 계열 이름(TIMEOUT/KILL_AFTER/SETSID 접두)이면서 정확 불일치인 CODEX_EXEC_*
+#   정본 5개의 계열 이름(TIMEOUT/KILL_AFTER/SETSID/REQUIRE 접두)이면서 정확 불일치인 CODEX_EXEC_*
 #   변수는 fail-closed로 거부한다 (exit 127) — 정본 변수명 오타(예: CODEX_EXEC_TIMEOUT=1500,
 #   _SECONDS 누락)가 침묵으로 무시되어 호출 의도가 소실되는 사고 방지 (2026-08-06 실사례).
 #   주의: CODEX_EXEC_ 접두사 전체는 wrapper 소유가 아니다 — upstream codex 자신이
@@ -75,22 +86,26 @@
 #   137        SIGKILL (timeout --kill-after)
 #   127        wrapper 자체 사전 검증 실패 (codex/timeout/setsid 부재, invalid env 값, 또는
 #              정본 CODEX_EXEC_* 변수명 near-miss). BLOCKED 신호 — 사유는 stderr 확인.
+#   3          CODEX_EXEC_REQUIRE_NONEMPTY postcondition 실패 (codex exit 0인데 대상 파일이
+#              non-empty regular file이 아님). codex passthrough 규약상 숫자 단독으로는
+#              비중첩을 보장할 수 없다 — 소비자는 rc 3 + stderr 식별자
+#              "codex-exec-supervised: empty output" 조합으로 판별한다.
 #   기타       codex 자체 exit code
 
 set -euo pipefail
 
 # 정본 변수명 near-miss fail-fast. 반드시 본 스크립트의 어떤 CODEX_EXEC_* 셸 변수 할당보다
 # 먼저 실행한다 — 이 시점의 ${!CODEX_EXEC_@}는 환경에서 상속된 이름만 열거한다.
-# 거부 범위는 정본 4개의 계열 이름(TIMEOUT/KILL_AFTER/SETSID 접두)뿐이다 — CODEX_EXEC_ 접두사
-# 전체를 거부하면 upstream codex가 예약한 CODEX_EXEC_SERVER_*(exec-server env 바인딩)까지
+# 거부 범위는 정본 5개의 계열 이름(TIMEOUT/KILL_AFTER/SETSID/REQUIRE 접두)뿐이다 — CODEX_EXEC_
+# 접두사 전체를 거부하면 upstream codex가 예약한 CODEX_EXEC_SERVER_*(exec-server env 바인딩)까지
 # 오발동으로 차단한다 (헤더 참조).
-_KNOWN_CODEX_EXEC_VARS=" CODEX_EXEC_TIMEOUT_SECONDS CODEX_EXEC_KILL_AFTER_SECONDS CODEX_EXEC_TIMEOUT_BIN CODEX_EXEC_SETSID_BIN "
+_KNOWN_CODEX_EXEC_VARS=" CODEX_EXEC_TIMEOUT_SECONDS CODEX_EXEC_KILL_AFTER_SECONDS CODEX_EXEC_TIMEOUT_BIN CODEX_EXEC_SETSID_BIN CODEX_EXEC_REQUIRE_NONEMPTY "
 for _codex_exec_var in "${!CODEX_EXEC_@}"; do
   if [[ "$_KNOWN_CODEX_EXEC_VARS" == *" $_codex_exec_var "* ]]; then
     continue
   fi
   case "$_codex_exec_var" in
-    CODEX_EXEC_TIMEOUT*|CODEX_EXEC_KILL_AFTER*|CODEX_EXEC_SETSID*)
+    CODEX_EXEC_TIMEOUT*|CODEX_EXEC_KILL_AFTER*|CODEX_EXEC_SETSID*|CODEX_EXEC_REQUIRE*)
       printf 'codex-exec-supervised: %s 는 정본 변수명이 아님 (오타 의심) — 허용:%s(exit 127)\n' \
         "$_codex_exec_var" "$_KNOWN_CODEX_EXEC_VARS" >&2
       exit 127
@@ -116,6 +131,16 @@ CODEX_EXEC_TIMEOUT_SECONDS="${CODEX_EXEC_TIMEOUT_SECONDS:-1800}"
 CODEX_EXEC_KILL_AFTER_SECONDS="${CODEX_EXEC_KILL_AFTER_SECONDS:-5}"
 _validate_positive_int CODEX_EXEC_TIMEOUT_SECONDS "$CODEX_EXEC_TIMEOUT_SECONDS" 7200 || exit 127
 _validate_positive_int CODEX_EXEC_KILL_AFTER_SECONDS "$CODEX_EXEC_KILL_AFTER_SECONDS" 60 || exit 127
+
+# CODEX_EXEC_REQUIRE_NONEMPTY 값 검증 (opt-in postcondition — 계약은 헤더 참조).
+# 설정됐는데 빈 값이거나 절대경로가 아니면 fail-closed (기존 invalid env 규약과 동일 계열).
+if [[ -n "${CODEX_EXEC_REQUIRE_NONEMPTY+x}" ]]; then
+  if [[ -z "$CODEX_EXEC_REQUIRE_NONEMPTY" || "$CODEX_EXEC_REQUIRE_NONEMPTY" != /* ]]; then
+    printf 'codex-exec-supervised: CODEX_EXEC_REQUIRE_NONEMPTY=%s — 비어 있지 않은 절대경로만 허용 (exit 127)\n' \
+      "${CODEX_EXEC_REQUIRE_NONEMPTY:-<empty>}" >&2
+    exit 127
+  fi
+fi
 
 # timeout binary resolution: env var(absolute path) 우선, fallback PATH 검색.
 TIMEOUT_BIN="${CODEX_EXEC_TIMEOUT_BIN:-}"
@@ -171,7 +196,34 @@ fi
 # `setsid --wait`: setsid가 fork 경로(호출 프로세스가 process group leader인 경우)를 타면 자식 종료를
 # 기다려 자식의 exit status를 반환한다. 옵션이 없으면 timeout이 발생시킨 124/137이 wrapper 종료
 # status로 전달되지 않을 수 있다 (util-linux setsid(1) -w 참조).
-exec "$SETSID_BIN" --wait "$TIMEOUT_BIN" \
-  --kill-after="$CODEX_EXEC_KILL_AFTER_SECONDS" \
-  "$CODEX_EXEC_TIMEOUT_SECONDS" \
-  codex exec "$@"
+# 최상위 exec는 계약이다 — 제거하면 wrapper bash가 timeout 밖에 남아 외부 하네스가 wrapper PID에
+# 보낸 신호가 timeout/codex에 전달되지 않는다.
+# supervisor argv는 한 곳에서 구성한다 — 감독 옵션(setsid 정책·timeout 인자) 변경 시
+# 이 배열만 수정하면 REQUIRE 유무 분기 양쪽에 함께 적용된다 (setsid 제거 후속 PR의 수정 지점).
+_SUPERVISOR_ARGV=(
+  "$SETSID_BIN" --wait "$TIMEOUT_BIN"
+  --kill-after="$CODEX_EXEC_KILL_AFTER_SECONDS"
+  "$CODEX_EXEC_TIMEOUT_SECONDS"
+)
+if [[ -n "${CODEX_EXEC_REQUIRE_NONEMPTY:-}" ]]; then
+  # postcondition shim — timeout의 감독 아래에서 codex를 실행하고 rc==0일 때만 결과 파일을
+  # 검사한다. GNU timeout 함정: timeout의 직접 자식(본 shim)이 그룹 SIGTERM에서 codex보다 먼저
+  # 죽으면 timeout이 "감시 대상 종료"로 판단해 --kill-after SIGKILL 승급을 취소한다 — 따라서
+  # shim은 `trap : TERM`으로 codex 종료까지 TERM에서 살아남는다 (`trap '' TERM`은 SIG_IGN이
+  # 자식 codex에 상속되므로 금지). rc는 `rc=0; ... || rc=$?` 패턴으로 캡처한다 — shim에는
+  # 부모의 set -euo pipefail이 상속되지 않지만, errexit 환경에서도 도달 가능한 형태로 통일.
+  # 검사 [ -f ] && [ -s ]는 디렉터리 오탐을 막는다. bash -c의 `_`는 $0 placeholder.
+  exec "${_SUPERVISOR_ARGV[@]}" \
+    bash -c '
+      trap : TERM
+      require_path="$1"; shift
+      rc=0
+      "$@" || rc=$?
+      if [ "$rc" -eq 0 ] && ! { [ -f "$require_path" ] && [ -s "$require_path" ]; }; then
+        printf "codex-exec-supervised: empty output (codex rc 0, CODEX_EXEC_REQUIRE_NONEMPTY=%s)\n" "$require_path" >&2
+        exit 3
+      fi
+      exit "$rc"
+    ' _ "$CODEX_EXEC_REQUIRE_NONEMPTY" codex exec "$@"
+fi
+exec "${_SUPERVISOR_ARGV[@]}" codex exec "$@"

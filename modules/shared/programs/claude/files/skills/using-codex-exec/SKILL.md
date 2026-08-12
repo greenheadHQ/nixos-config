@@ -236,6 +236,20 @@ pipe_rcs=("${PIPESTATUS[@]}")   # zsh는 ("${pipestatus[@]}") — 인덱스가 1
   && ! grep -q "ERROR:" /tmp/stderr.log   # 성공 계약 조건 2 (CLI 오류의 ERROR: prefix 검사)
 ```
 
+위의 `test -s` 빈 결과 검증은 wrapper에 위임할 수도 있다 (opt-in, issue #1228):
+`CODEX_EXEC_REQUIRE_NONEMPTY=<결과 파일 절대경로>`를 설정하면 codex가 exit 0인데 그 경로가
+non-empty regular file이 아닐 때 wrapper가 rc 3 + stderr 식별자
+`codex-exec-supervised: empty output`으로 실패한다.
+
+- 판별은 rc 3 단독이 아니라 rc 3 + 해당 stderr 식별자 조합으로 한다 — codex passthrough
+  규약상 codex 자체도 3을 반환할 수 있다 (식별자 부재 = codex의 3).
+- 호출자 계약: 실행 전 대상 파일을 삭제/초기화해야 한다. 이전 실행의 stale 파일이 있으면
+  이번 실행이 아무것도 안 써도 통과한다 (위 예시의 `rm -f /tmp/result.md`가 그 역할).
+- timeout rc(124/137)와 codex 오류 rc는 덮어쓰지 않는다 — 검사는 codex rc 0일 때만 수행된다.
+- 값은 절대경로만 허용 (빈 값·상대경로는 invalid env 규약대로 exit 127).
+
+상세 계약은 [known-issues.md §15](references/known-issues.md#15-codex-exec-supervised-wrapper로-14-위에-timeout-budget-한계-보강-issue-593)를 참조한다.
+
 사용자가 literal raw 실행을 요청한 1회성 수동 진단에서는 인라인 프롬프트도 가능하다:
 
 ```bash

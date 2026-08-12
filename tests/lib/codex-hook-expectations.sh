@@ -69,3 +69,17 @@ CODEX_EXEC_KILL_AFTER_SECONDS=5
 # invocation matrix fixture default timeout — fixture 안에서 supervisor 발동(timeout 정리)을 검증.
 # wrapper default(1800s)와 분리하여 호출자가 fixture 전용 짧은 budget을 명시한다.
 INVOCATION_MATRIX_TIMEOUT_SECONDS=40
+
+# marker residual live fixture 전용 timeout (issue #1228 1단계) — codex 기동 + 모델 응답 +
+# shell 도구 도달(marker helper 실행)까지의 여유를 포함해야 관측 표면이 생기므로
+# invocation matrix(40s)와 분리한다.
+MARKER_RESIDUAL_TIMEOUT_SECONDS=60
+
+# marker helper의 sleep 수명 — 반드시 MARKER_RESIDUAL_TIMEOUT_SECONDS +
+# CODEX_EXEC_KILL_AFTER_SECONDS 보다 충분히 길어야 supervisor 발동(timeout 정리)이 보장되고
+# 관측 창이 유지된다. 한쪽만 조정하면 테스트 의도가 깨지므로 관계를 이 정본에서 함께 본다.
+MARKER_HELPER_SLEEP_SECONDS=150
+
+# marker 표본화 deadline의 여유 — supervisor 미종료 회귀 판정(deadline 후 wrapper 생존 시
+# fail) 전에 timeout+kill-after 정리가 완료될 시간을 준다.
+MARKER_DEADLINE_GRACE_SECONDS=10
