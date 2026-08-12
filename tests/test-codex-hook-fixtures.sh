@@ -1245,9 +1245,11 @@ _cleanup_marker_lines() {
   # $1=ps 라인들(pid ppid pgid command). helper와 그 자식 sleep의 subtree 전체를
   # child-first(TERM→KILL)로 종료하고 기록 PID 전부의 소멸을 확인한다 — helper만 죽이면
   # sleep이 고아로 남아 이후 관측을 오염시킨다.
+  # 반환: 소멸 확인까지 완료하면 0, 하나라도 잔존하면 1 — caller가 이 rc를 무시하면
+  # 잔존 상태로 pass mark/sentinel이 발행될 수 있으므로, pass 경로의 caller는 반드시 확인한다.
   local lines="$1"
   [[ -n "$lines" ]] || return 0
-  local helper_pids child_lines all_pids p
+  local helper_pids child_lines all_pids p survivors=0
   helper_pids="$(awk '{print $1}' <<<"$lines" | tr '\n' ' ')"
   child_lines="$(_marker_child_lines "$helper_pids")"
   all_pids="$(printf '%s\n%s\n' "$child_lines" "$lines" | awk 'NF {print $1}')"
@@ -1258,8 +1260,20 @@ _cleanup_marker_lines() {
   for p in $all_pids; do
     if kill -0 "$p" 2>/dev/null; then
       warn "marker cleanup: PID $p 소멸 확인 실패 — 수동 확인 필요"
+      survivors=$(( survivors + 1 ))
     fi
   done
+  [[ "$survivors" -eq 0 ]]
+}
+
+_collect_marker_subtree_lines() {
+  # $1=marker helper 경로. 현재 잔존하는 helper(argv 매칭) + 그 자식 sleep(PPID 체인)의
+  # ps 라인을 병합해 출력한다 — 종료 이후의 모든 경로(fail 포함)에서 정리 대상 수집에 쓴다.
+  local marker_path="$1" lingering helper_pids child_lines
+  lingering="$(_ps_lines_matching "$marker_path")"
+  helper_pids="$(awk '{print $1}' <<<"$lingering" | tr '\n' ' ')"
+  child_lines="$(_marker_child_lines "$helper_pids")"
+  printf '%s\n%s\n' "$lingering" "$child_lines" | awk 'NF'
 }
 
 # ─── 카테고리 5: programmatic env inheritance live (opt-in) ───
@@ -1322,8 +1336,9 @@ EOF
   # 쓰면 sandbox config 자체가 무시되어 hook이 발화하지 않는다. stdin은 wrapper 책임이 아니므로
   # pipe + '-'로 EOF를 명시해 inherited-stdin hang shape를 차단한다.
   #
-  # --dangerously-bypass-hook-trust: codex 0.147.0부터 hooks는 persisted hook trust가 없으면
-  # 조용히 발화하지 않는다 (2026-08-12 실측 — 미발화가 에러 없이 정상 종료로 보인다). 본 fixture는
+  # --dangerously-bypass-hook-trust: codex 0.129.0부터 hooks는 persisted hook trust가 없으면
+  # 조용히 발화하지 않는다 (upstream 도입: openai/codex#21615; 0.147.0에서 2026-08-12 mac 재관측 —
+  # 미발화가 에러 없이 정상 종료로 보인다). 본 fixture는
   # hook source를 자신이 작성하므로 upstream이 명시한 "automation that already vets hook sources"
   # 용례에 해당한다.
   local codex_rc=0
@@ -1445,9 +1460,10 @@ test_codex_exec_invocation_live_matrix() {
   # ── Scenario 2: raw_override_inline_toml_hang_with_supervisor_pass ──
   # issue #593 raw PoC 패턴(`-c hooks.<event>` override 포함). supervisor 미적용 시 hang 확정.
   # supervisor 적용 시 timeout 안에 SIGTERM/SIGKILL grace로 정리되어 0/124/137 exit 모두 PASS.
-  # --dangerously-bypass-hook-trust: codex 0.147.0부터 hooks는 persisted hook trust가 없으면
-  # 조용히 발화하지 않는다 (2026-08-12 실측). 본 fixture는 hook source를 자신이 작성하므로
-  # upstream이 명시한 "automation that already vets hook sources" 용례에 해당한다.
+  # --dangerously-bypass-hook-trust: codex 0.129.0부터 hooks는 persisted hook trust가 없으면
+  # 조용히 발화하지 않는다 (upstream 도입: openai/codex#21615; 0.147.0에서 2026-08-12 mac 재관측).
+  # 본 fixture는 hook source를 자신이 작성하므로 upstream이 명시한
+  # "automation that already vets hook sources" 용례에 해당한다.
   local hook_log="$sandbox/scenario-2-hook.log"
   local hook_script="$sandbox/scenario-2-dump.sh"
   cat > "$hook_script" <<EOF
@@ -1612,40 +1628,33 @@ test_codex_exec_marker_residual_live() {
   done
   wait "$wrapper_pid" 2>/dev/null || rc=$?
 
-  # 종료 이후의 모든 경로(fail 포함)에서 marker subtree를 정리하기 위한 수집 helper.
-  _collect_marker_lingering() {
-    local lingering helper_pids child_lines
-    lingering="$(_ps_lines_matching "$marker_helper")"
-    helper_pids="$(awk '{print $1}' <<<"$lingering" | tr '\n' ' ')"
-    child_lines="$(_marker_child_lines "$helper_pids")"
-    printf '%s\n%s\n' "$lingering" "$child_lines" | awk 'NF'
-  }
-
   if (( rc == 127 )); then
     warn "marker residual: supervisor BLOCKED (capability-probe 실패) — skip"
-    _cleanup_marker_lines "$(_collect_marker_lingering)"
+    _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
     return 0
   fi
 
   # positive control — 관측 실패는 검증 표면이 없는 것이므로 무효 fail (must-pass 계약).
-  # fail 전에 subtree를 정리해 후속 실행 관측 오염을 막는다.
+  # fail 전에 subtree를 정리해 후속 실행 관측 오염을 막는다 (fail 직전 정리이므로 rc는 무시 —
+  # 어차피 실패 경로이고, 잔존 시 warn이 수동 확인을 안내한다).
   local stderr_tail
   stderr_tail=$(tail -c 400 "$stderr_log" 2>/dev/null | tr '\n' ' ' || true)
   if (( ! observed_marker )); then
+    _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
     fail "marker residual: marker helper가 실행 중 표본에서 관측되지 않음 — codex가 shell 도구로 명령을 실행하지 않았거나 timeout budget(${MARKER_RESIDUAL_TIMEOUT_SECONDS}s) 내 미도달 (rc=$rc). stderr_tail: ${stderr_tail:-<empty>}"
   fi
   if (( ! observed_descendant )); then
-    _cleanup_marker_lines "$(_collect_marker_lingering)"
-    fail "marker residual: marker가 wrapper(timeout pid=${timeout_pid:-<미식별>})의 후손으로 확인되지 않음 — 다른 출처의 동명 프로세스이거나 표본화 결함 (무효)"
+    _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
+    fail "marker residual: marker가 wrapper(timeout pid=${timeout_pid:-<미식별>})의 후손으로 확인되지 않음 — 다른 출처의 동명 프로세스이거나 표본화 결함 (무효). 관측 표본 tail: $(tail -3 "$mid_snapshot" 2>/dev/null | tr '\n' ' ' || true)"
   fi
   if (( ! observed_group_member )); then
-    _cleanup_marker_lines "$(_collect_marker_lingering)"
-    fail "marker residual: timeout 소유 PGID(${timeout_pgid:-<미식별>})의 구성원(codex)이 관측되지 않음 — 그룹 잔존 판정의 표면이 없다 (무효)"
+    _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
+    fail "marker residual: timeout 소유 PGID(${timeout_pgid:-<미식별>})의 구성원(codex)이 관측되지 않음 — 그룹 잔존 판정의 표면이 없다 (무효). 관측 표본 tail: $(tail -3 "$mid_snapshot" 2>/dev/null | tr '\n' ' ' || true)"
   fi
   case "$rc" in
     0|124|137) : ;;  # 0=codex 자체 정리 후 응답, 124/137=supervisor 정리 — 모두 판정 가능 상태.
     *)
-      _cleanup_marker_lines "$(_collect_marker_lingering)"
+      _cleanup_marker_lines "$(_collect_marker_subtree_lines "$marker_helper")" || true
       fail "marker residual: 비정상 exit($rc). stderr_tail: ${stderr_tail:-<empty>}"
       ;;
   esac
@@ -1653,23 +1662,28 @@ test_codex_exec_marker_residual_live() {
   # 종료 후 잔존 판정.
   sleep 1  # SIGKILL grace 후 OS reaper에 시간 부여
   # (a) wrapper 소유 그룹 잔존 — marker 매칭이 아니라 PGID 전수 검사 (codex 등 그룹 구성원이
-  #     TERM/KILL을 피해 남으면 marker와 무관하게 회귀다).
+  #     TERM/KILL을 피해 남으면 marker와 무관하게 회귀다). fail 전에 검출된 그룹 잔존과
+  #     marker subtree를 함께 정리한다 — marker subtree만 정리하면 정작 검출한 codex/timeout
+  #     프로세스가 호스트에 남는다.
   local group_lingering
   group_lingering="$(ps -axo pid=,ppid=,pgid=,command= 2>/dev/null | awk -v pg="$timeout_pgid" '$3 == pg' || true)"
   if [[ -n "$group_lingering" ]]; then
-    _cleanup_marker_lines "$(_collect_marker_lingering)"
+    _cleanup_marker_lines "$(printf '%s\n%s\n' "$group_lingering" "$(_collect_marker_subtree_lines "$marker_helper")" | awk 'NF')" || true
     fail "marker residual: wrapper 소유 그룹(pgid=$timeout_pgid) 잔존 — process group kill 회귀:
 $group_lingering"
   fi
-  # (b) 세션 이탈 marker subtree 잔존 — known leak (codex 0.147.0은 shell 자식을 자체 그룹으로
-  #     분리한다; §15 실증 갱신 ④). 기록 후 child-first 정리, fail 아님.
+  # (b) 세션 이탈 marker subtree 잔존 — known leak (codex 0.147.0에서 재관측: shell 자식을
+  #     자체 그룹으로 분리한다; §15 실증 갱신 ④). 기록 후 child-first 정리, fail 아님.
+  #     단 정리 자체가 실패하면(잔존 소멸 미확인) sentinel 계약("검증·정리까지 완료")에 따라
+  #     pass mark를 남기지 않고 fail한다.
   local leak_lines
-  leak_lines="$(_collect_marker_lingering)"
+  leak_lines="$(_collect_marker_subtree_lines "$marker_helper")"
   if [[ -n "$leak_lines" ]]; then
     local leak_count
     leak_count="$(awk 'NF' <<<"$leak_lines" | wc -l | tr -d ' ')"
     warn "marker residual: 세션 이탈 잔존 ${leak_count}개 — known leak (known-issues §15 실증 갱신 ④, fail 아님) 기록 후 정리"
-    _cleanup_marker_lines "$leak_lines"
+    _cleanup_marker_lines "$leak_lines" \
+      || fail "marker residual: known leak 정리 실패 (잔존 PID 소멸 미확인) — 정리 완료 전에는 sentinel을 발행하지 않는다"
   fi
 
   _live_mark_passed marker_residual
@@ -1735,7 +1749,11 @@ test_marker_residual_detector_negative_control() {
   fi
 
   # 정리 실효 검증까지: helper + 자식 sleep subtree를 정리하고 소멸을 확인한다.
-  _cleanup_marker_lines "$observed"
+  # cleanup rc(잔존 소멸 미확인=1)와 helper 생존 재확인 둘 다 정리기 회귀로 판정한다.
+  if ! _cleanup_marker_lines "$observed"; then
+    kill -KILL "$helper_pid" 2>/dev/null || true
+    fail "negative control: cleanup이 잔존 소멸을 확인하지 못함 — 정리기 회귀"
+  fi
   if kill -0 "$helper_pid" 2>/dev/null; then
     kill -KILL "$helper_pid" 2>/dev/null || true
     fail "negative control: cleanup 후에도 helper($helper_pid) 잔존 — 정리기 회귀"
@@ -1746,9 +1764,9 @@ test_marker_residual_detector_negative_control() {
 # run_test 를 job-pool 병렬 실행으로 제공하는 공유 하네스로 교체한다 (각 테스트는 독립
 # new_hook_sandbox 라 병렬 격리 성립). 모든 run_test 등록 후 아래 parallel_barrier 로 수집한다.
 # TEST_JOBS=1 이면 순차 폴백. harness 의 run_test 는 $1 을 라벨로 받아 시그니처가 동일하다.
-# --live 모드의 두 live fixture(invocation matrix → programmatic env inheritance)는 순서 계약이
-# 있으므로(#647/#593: issue #593 wrapper/process-group 회귀 신호를 먼저 확보) 병렬화하지 않고
-# 순차로 강제한다. deterministic(--no-live; lefthook pre-commit + required CI 경로)만 job-pool
+# --live 모드의 세 live fixture(invocation matrix → marker residual → programmatic env
+# inheritance)는 순서 계약이 있으므로(#647/#593: issue #593 wrapper/process-group 회귀 신호를
+# 먼저 확보한 뒤 잔존 검증 표면과 hook 상속을 본다) 병렬화하지 않고 순차로 강제한다. deterministic(--no-live; lefthook pre-commit + required CI 경로)만 job-pool
 # 병렬로 실행한다. LIVE_MODE 판정은 위 CLI 파싱에서 이미 끝났다.
 # shellcheck disable=SC2034  # TEST_JOBS 는 바로 아래 source 하는 parallel-harness.sh 가 읽는다.
 [ "$LIVE_MODE" = "1" ] && TEST_JOBS=1
