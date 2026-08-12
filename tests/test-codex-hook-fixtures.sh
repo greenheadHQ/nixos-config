@@ -1660,18 +1660,24 @@ test_codex_exec_marker_residual_live() {
 
   # 프롬프트는 stdin pipe로 전달한다 — argv 전달이면 ps command에 marker 경로가 미리 노출되어
   # 도구 도달을 오판한다.
+  # sandbox cwd + 격리 CODEX_HOME(+활성 auth 복사): repo cwd로 실행하면 검토 브랜치의 AGENTS.md가
+  # 모델 지시로 로드된다 — 브랜치 제어 지시가 추가 shell 명령을 유도할 수 있는 표면을 scenario-2와
+  # 동일한 격리로 차단한다.
+  mkdir -p "$sandbox/marker-codex-home"
+  _copy_active_codex_auth "$sandbox/marker-codex-home"
   local wrapper_pid rc=0
-  printf 'Use the shell tool to run exactly this command now, then wait for it to finish: bash %s\n' "$marker_helper" \
+  ( cd "$sandbox" && printf 'Use the shell tool to run exactly this command now, then wait for it to finish: bash %s\n' "$marker_helper" \
     | env -u CLAUDECODE \
       CODEX_PROGRAMMATIC=1 \
       CODEX_EXEC_TIMEOUT_SECONDS="$MARKER_RESIDUAL_TIMEOUT_SECONDS" \
       CODEX_EXEC_KILL_AFTER_SECONDS="$CODEX_EXEC_KILL_AFTER_SECONDS" \
+      CODEX_HOME="$sandbox/marker-codex-home" \
       ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
       "$SUPERVISED_BIN" \
         --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
         -c model="gpt-5.5" -c model_reasoning_effort="medium" \
         -o "$result" \
-        - >/dev/null 2>"$stderr_log" &
+        - >/dev/null 2>"$stderr_log" ) &
   wrapper_pid=$!
   _register_live_proc "$wrapper_pid"
 
