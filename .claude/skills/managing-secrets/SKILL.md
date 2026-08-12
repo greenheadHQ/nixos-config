@@ -154,8 +154,9 @@ KC_VAULT=<base64 encoded vault>
 2. 복호화 실패: SSH 키 불일치 또는 identity path 오류
 3. 재암호화 누락: `secrets/secrets.nix`의 publicKeys 변경 후 `cd secrets && nix run github:ryantm/agenix -- -r` 미실행
 4. 배포 후 파일 미생성: Home Manager agenix 서비스 상태 확인, `nrs` 재실행
-5. macOS agenix crash loop (.tmp 잔류): `nrs`가 복호화 중인 agent를 kill → stale `.tmp` 파일이 다음 generation을 block. 예방 코드(`cleanupAgenixStaleGenerations`)가 `setupLaunchAgents` 전에 자동 정리
+5. macOS agenix crash loop (.tmp 잔류): `nrs`가 복호화 중인 agent를 kill → stale `.tmp` 파일이 다음 generation을 block. 예방 코드(`cleanupAgenixStaleGenerations`)가 `setupLaunchAgents` 전에 자동 정리 (삭제 전 `launchctl bootout`으로 활성 writer와 직렬화, rm 실패는 non-fatal)
 6. macOS activation에서 시크릿 미발견: agenix는 `launchd.agents`로 복호화 → `setupLaunchAgents` 이후 + polling 필요
+7. macOS agent 무한 재스폰 (exit 0인데 5~15초마다 재실행, stdout 로그 비대): upstream `KeepAlive.Crashed = false`의 launchd 의미론("non-crash 종료 시 재시작")이 원인 → `KeepAlive` override로 교정 완료 (`modules/shared/programs/secrets/default.nix`)
 
 상세는 [references/troubleshooting.md](references/troubleshooting.md) 참조.
 

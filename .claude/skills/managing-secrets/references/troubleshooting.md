@@ -148,14 +148,43 @@ tail -20 ~/Library/Logs/agenix/stderr
 수동 해결:
 
 ```bash
-# 깨진 generation 삭제
-rm -rf "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/<broken-gen-number>"
-
-# agenix agent 재시작
-launchctl kickstart -k "gui/$(id -u)/org.nix-community.home.activate-agenix"
+# 예방 코드(cleanupAgenixStaleGenerations)가 안전한 순서 전체를 이미 수행한다:
+# OS 버전 분기된 bootout 완료 대기(26+는 --wait, 미만은 성공 후 1초 대기) →
+# 성공 또는 미로드일 때만 삭제 → setupLaunchAgents 재bootstrap.
+# 수동으로 bootout/rm을 복제하지 말고 activation 재실행 한 번으로 복구한다.
+# (일반 nrs는 시스템 구성이 같으면 activation을 생략하므로 --force 필수)
+nrs --force
 ```
 
-예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다.
+수동으로 개별 명령을 실행해야 하는 예외 상황(예: nrs 자체가 불가)이라면, 위 예방 코드(`modules/shared/programs/secrets/default.nix`)의 순서와 조건을 그대로 따른다 — bootout이 성공하거나 명시적 미로드("No such process")일 때만 삭제하고, macOS 26 미만에서는 `--wait` 없이 bootout 후 1초 대기한다.
+
+예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다. `.tmp`는 "agent가 지금 쓰는 중"의 표시일 수도 있으므로, 삭제 전에 `launchctl bootout`으로 agent를 내려 writer와 rm을 직렬화한다 — 쓰는 중인 generation을 그냥 rm -rf하면 ENOTEMPTY로 실패해 activation이 중단되거나(2026-08-12 사례), 완성된 secret 일부만 지워진 불완전 generation이 조용히 배포될 수 있다. bootout 계약은 home-manager launchd 모듈의 `bootoutAgent`와 동일하다: macOS 26+는 `--wait`로 종료 완료를 보장, 이전 버전은 성공 후 1초 대기, "No such process"류만 미로드(harmless)로 통과하고 그 외 실패 시에는 활성 writer가 남았을 수 있으므로 그 회차의 삭제를 건너뛴다. bootout된 agent는 `setupLaunchAgents`가 다시 bootstrap하고(home-manager는 plist unchanged라도 not-loaded job을 재로드) RunAtLoad 1회 실행이 완전한 fresh generation을 재생성한다. `.tmp` 잔재가 없으면 bootout 없이 통과하므로 정상 경로에는 개입이 없다. rm 실패는 non-fatal (경고 후 다음 activation에서 재시도).
+
+---
+
+## macOS agenix launchd agent 무한 재스폰 루프 (KeepAlive 의미론)
+
+> 발생 시점: 2026-08-12 진단 (루프 자체는 최소 2026-01부터 만성)
+> 해결: `KeepAlive` override (`modules/shared/programs/secrets/default.nix`)
+
+증상: agent가 성공(exit 0)해도 5~15초마다 무한 재실행. `~/Library/Logs/agenix/stdout`이 수백 MB로 비대해지고, generation 번호가 부팅 세션당 수만까지 증가. `nrs`의 `cleanupAgenixStaleGenerations`가 쓰기 중인 generation과 race해 간헐적으로 activation이 죽는 2차 피해 유발.
+
+원인: upstream `ryantm/agenix`의 `age-home.nix`가 `KeepAlive = { Crashed = false; SuccessfulExit = false; }`를 선언. `launchd.plist(5)`에서 `Crashed = false`는 "crash가 아닌 종료라면 재시작"(inverse condition)이라, oneshot mount 스크립트의 정상 종료마다 재스폰이 발동한다.
+
+진단:
+
+```bash
+# runs가 비정상적으로 크고 state가 spawn scheduled면 루프 중
+launchctl print "gui/$(id -u)/org.nix-community.home.activate-agenix" | grep -E "state|runs|last exit"
+
+# 스폰 사유가 semaphore(KeepAlive)인지 확인
+launchctl blame "gui/$(id -u)/org.nix-community.home.activate-agenix"
+
+# 배포된 plist에 Crashed 키가 없어야 정상 (override 적용 확인)
+grep -A3 KeepAlive ~/Library/LaunchAgents/org.nix-community.home.activate-agenix.plist
+```
+
+해결: `launchd.agents.activate-agenix.config.KeepAlive`를 `lib.mkForce { SuccessfulExit = false; }`로 override — 실패 시 재시도라는 upstream 의도는 보존하고 non-crash 재스폰 조건만 제거한다.
 
 ---
 
