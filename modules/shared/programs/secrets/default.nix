@@ -66,7 +66,11 @@
           fi
         done
         if [ "''${#_stale_gens[@]}" -gt 0 ]; then
-          _agent_target="gui/$(/usr/bin/id -u)/org.nix-community.home.activate-agenix"
+          # target은 home-manager 설정을 단일 소스로 조립한다 — domain/Label을
+          # literal로 복제하면 upstream이 Label을 바꾸거나 domain을 override한
+          # 호스트에서 잘못된 target을 bootout하고, 그 "No such process"가
+          # 미로드 성공으로 오인되어 실제 writer를 둔 채 삭제하게 된다.
+          _agent_target="${config.launchd.agents.activate-agenix.domain}/$(/usr/bin/id -u)/${config.launchd.agents.activate-agenix.config.Label}"
           _bootout_ok=0
           _bootout_out=""
           if [ "$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d. -f1)" -ge 26 ]; then
