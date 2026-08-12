@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # tests/test-codex-exec-supervised.sh
-# codex-exec-supervised wrapper의 env validation boundary를 검증하는 unit fixture.
+# codex-exec-supervised wrapper의 contract fixture — precheck(env validation boundary) +
+# 실행 argv wiring + REQUIRE_NONEMPTY postcondition + 실제 GNU timeout 기반 TERM/KILL signal
+# lifecycle까지 wrapper 계약 전체를 검증한다.
 #
 # 책임 경계: 본 fixture는 hook fixture runner(tests/test-codex-hook-fixtures.sh)와 분리되어 있다.
 # hook runner는 tomlkit bootstrap + hook sandbox + live codex matrix를 포함하는 통합 시나리오이고,
-# wrapper의 env validation은 그 책임 경계 밖이다. wrapper만 빠르게 회귀 검증할 때 hook 인프라
+# wrapper 자체 계약은 그 책임 경계 밖이다. wrapper만 빠르게 회귀 검증할 때 hook 인프라
 # 의존 없이 실행 가능하도록 별도 entry point로 둔다.
 #
 # 검증 대상 (CODEX_EXEC_TIMEOUT_SECONDS env validation):

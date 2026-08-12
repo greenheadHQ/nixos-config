@@ -18,11 +18,11 @@
 #   7c. commit-msg pinning behavioral    — fixtures/codex-hooks/commit-msg/*.msg
 # (카테고리 6 stop-notification reliability/security는 native push 도입으로 제거됨.)
 #
-# live 통과 판정 계약 (issue #1228): live fixture는 환경 결함을 WARN skip 후 exit 0으로 끝낼 수
-# 있으므로, exit 0만으로는 검증 완료가 아니다. 필수 live 시나리오(invocation matrix / marker
-# residual / env inheritance) 전부가 검증·정리까지 완료된 경우에만 aggregate sentinel
-# `LIVE_REQUIRED_ALL_PASS` 1줄이 stdout에 출력된다 (WARN/skip 경로에서는 어떤 sentinel도 출력하지
-# 않는다). --live 통과 판정은 `exit 0 그리고 sentinel 존재` 둘 다 요구한다.
+# live 통과 판정 계약 (issue #1228): 필수 live 시나리오(invocation matrix / marker residual /
+# env inheritance — REQUIRED_LIVE_SCENARIOS가 단일 선언) 전부가 검증·정리까지 완료된 경우에만
+# aggregate sentinel `LIVE_REQUIRED_ALL_PASS` 1줄이 stdout에 출력되고 전체 통과 문구와 exit 0으로
+# 종결된다. 하나라도 미완(환경 결함 WARN skip 포함)이면 전체 통과 문구 없이 exit 1로 종결된다 —
+# 통과 판정은 exit 0 하나로 닫히며, sentinel은 성공 경로의 이중 확인 신호다.
 #
 # 검증 대상 wrapper 선택 (issue #1228): CODEX_HOOK_SUPERVISED_BIN=source|installed (default: source)
 #   source     워크트리 소스(modules/shared/scripts/codex-exec-supervised.sh)를 실행하고 Nix wrapper
@@ -50,8 +50,8 @@ Usage: $0 [--live | --no-live]
   default      deterministic fixture만 실행
   --live       live opt-in fixture까지 실행: codex exec invocation matrix(must-pass-only)
                → marker residual → programmatic env inheritance (실행 순서대로).
-               통과 판정은 exit 0 + stdout의 LIVE_REQUIRED_ALL_PASS sentinel 둘 다 요구
-               (환경 결함 WARN skip 시 exit 0이어도 sentinel은 출력되지 않는다)
+               필수 시나리오가 하나라도 미완(WARN skip 포함)이면 exit 1로 종결된다.
+               성공 시 stdout에 LIVE_REQUIRED_ALL_PASS sentinel 1줄 (이중 확인 신호)
   --no-live    deterministic 강제 (default와 동일; verify-ai-compat가 사용)
 ENV: CODEX_HOOK_LIVE=1  (--live와 동등; CLI 인자가 env보다 우선하며 마지막 모드 인자가 이긴다)
      CODEX_HOOK_SUPERVISED_BIN=source|installed  (검증 대상 wrapper 선택; default source —
@@ -76,6 +76,20 @@ TEST_TMP_FILE="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-list.XXXXXX")"
 # 필수 live 시나리오의 pass mark 수집 파일 — aggregate sentinel(LIVE_REQUIRED_ALL_PASS) 판정용.
 # WARN skip 경로는 mark를 남기지 않는다 (헤더 "live 통과 판정 계약" 참조).
 LIVE_PASS_FILE="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-live-pass.XXXXXX")"
+# 필수 live 시나리오 ID의 단일 선언 — 각 시나리오의 _live_mark_passed 호출 리터럴과 함께
+# 갱신한다 (집계 루프는 이 배열만 소비).
+REQUIRED_LIVE_SCENARIOS=(invocation_matrix marker_residual env_inheritance)
+# live가 기동한 장수명 프로세스(wrapper·marker helper)의 등록 파일 — Ctrl-C/CI 취소 등
+# 중단 경로에서도 EXIT trap이 임시 디렉터리 삭제 전에 이 목록을 identity 확인 후 정리한다
+# (디렉터리를 먼저 지우면 marker 경로 기반 재탐색이 불가능해진다). 라인 형식은
+# `ps -o pid=,ppid=,pgid=,command=` 출력이며 정상 종료 시 이미 정리된 PID는 identity
+# 불일치(부재)로 스킵되어 무해하다.
+LIVE_PROC_REGISTRY="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-procs.XXXXXX")"
+
+_register_live_proc() {
+  # $1=PID — 기동 직후 호출해 중단 경로 정리 대상으로 등록한다.
+  ps -o pid=,ppid=,pgid=,command= -p "$1" >> "$LIVE_PROC_REGISTRY" 2>/dev/null || true
+}
 
 # ─── Hook contract expectation oracle ───
 # tests/lib/codex-hook-expectations.sh가 EXPECTED_* / LIVE_CODEX_TIMEOUT_SECONDS /
@@ -120,6 +134,12 @@ done
 # ─── cleanup / 출력 helper ───
 cleanup() {
   local dir
+  # 프로세스 정리를 디렉터리 삭제보다 먼저 수행한다 (중단 경로에서 marker 경로 기반 재탐색이
+  # 가능한 동안 identity 확인 정리 — _cleanup_pid_lines_with_children은 이 시점에 이미 정의됨).
+  if [[ -s "$LIVE_PROC_REGISTRY" ]] && declare -f _cleanup_pid_lines_with_children >/dev/null; then
+    _cleanup_pid_lines_with_children "$(cat "$LIVE_PROC_REGISTRY")" || true
+  fi
+  rm -f "$LIVE_PROC_REGISTRY"
   if [[ -f "$TEST_TMP_FILE" ]]; then
     while IFS= read -r dir; do
       [[ -n "$dir" ]] && rm -rf "$dir"
@@ -130,6 +150,10 @@ cleanup() {
   return 0
 }
 trap cleanup EXIT
+# INT/TERM은 명시 exit로 변환해 EXIT trap(위 cleanup)의 발화를 보장한다 — 중단 경로에서도
+# 장수명 프로세스(wrapper·marker helper)가 정리되게 한다.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 warn() { echo "WARN: $*" >&2; }
@@ -1374,9 +1398,11 @@ EOF
   # sandbox CODEX_HOME은 host auth를 상속하지 않아 API 호출이 401로 죽는다 (2026-08-12 실측 —
   # hook 발화 여부와 무관한 구조적 결함). host auth.json이 있으면 복사해 정상 완주를 허용한다.
   # 부재 시 복사 없이 진행 — dump_log 검증은 가능하나 codex 후속이 비정상이면 sentinel mark가
-  # 남지 않는다 (원인 해소 요구 신호).
-  if [[ -f "$HOME/.codex/auth.json" ]]; then
-    cp "$HOME/.codex/auth.json" "$sandbox/codex-home/auth.json"
+  # 남지 않는다 (원인 해소 요구 신호). 정본 경로는 활성 CODEX_HOME이다 — $HOME/.codex 고정은
+  # 다중 계정 환경(부모가 custom CODEX_HOME 사용)에서 다른 계정의 인증으로 실행된다.
+  local host_codex_home="${CODEX_HOME:-$HOME/.codex}"
+  if [[ -f "$host_codex_home/auth.json" ]]; then
+    cp "$host_codex_home/auth.json" "$sandbox/codex-home/auth.json"
   fi
 
   # 본 fixture의 검증 의도는 "programmatic 호출자가 codex 프로세스에 붙인 CODEX_PROGRAMMATIC=1이
@@ -1535,8 +1561,9 @@ EOF
   # sandbox cwd로 로드 가능한 hook을 inline override 하나로 좁힌다 — 이 조건에서만
   # "automation that already vets hook sources" 전제가 실제로 성립한다.
   mkdir -p "$sandbox/scenario2-codex-home"
-  if [[ -f "$HOME/.codex/auth.json" ]]; then
-    cp "$HOME/.codex/auth.json" "$sandbox/scenario2-codex-home/auth.json"
+  local host_codex_home="${CODEX_HOME:-$HOME/.codex}"
+  if [[ -f "$host_codex_home/auth.json" ]]; then
+    cp "$host_codex_home/auth.json" "$sandbox/scenario2-codex-home/auth.json"
   fi
   ( cd "$sandbox" && printf 'Reply PONG\n' | env -u CLAUDECODE \
     CODEX_PROGRAMMATIC=1 \
@@ -1615,7 +1642,7 @@ test_codex_exec_marker_residual_live() {
 
   local marker_helper
   marker_helper="$(mktemp "$sandbox/marker-XXXXXX.sh")"
-  printf '#!/usr/bin/env bash\nsleep 150\n' > "$marker_helper"
+  printf '#!/usr/bin/env bash\nsleep %s\n' "$MARKER_HELPER_SLEEP_SECONDS" > "$marker_helper"
   chmod +x "$marker_helper"
 
   local result="$sandbox/marker-result.md"
@@ -1636,6 +1663,7 @@ test_codex_exec_marker_residual_live() {
         -o "$result" \
         - >/dev/null 2>"$stderr_log" &
   wrapper_pid=$!
+  _register_live_proc "$wrapper_pid"
 
   # 실행 중 표본화: wrapper 소유 그룹(timeout이 만든 그룹)을 식별하고, 전체 ps 스냅샷에서
   #   - codex가 timeout 그룹 구성원으로 존재하는지 (그룹 잔존 판정 표면)
@@ -1646,7 +1674,7 @@ test_codex_exec_marker_residual_live() {
   # 방어로 wrapper_pid의 직계 자식도 후보에 넣는다). GNU timeout은 비-foreground 모드에서
   # setpgid로 자기 자신을 그룹 리더로 만들므로 PGID==PID인 표본만 채택한다 — setpgid 전의
   # 짧은 창을 잡으면 fixture 셸 그룹이 wrapper 소유 그룹으로 오인되는 오탐이 실측됐다.
-  local deadline=$(( MARKER_RESIDUAL_TIMEOUT_SECONDS + CODEX_EXEC_KILL_AFTER_SECONDS + 10 ))
+  local deadline=$(( MARKER_RESIDUAL_TIMEOUT_SECONDS + CODEX_EXEC_KILL_AFTER_SECONDS + MARKER_DEADLINE_GRACE_SECONDS ))
   local timeout_pid="" timeout_pgid=""
   local observed_marker=0 observed_descendant=0 observed_group_member=0
   local full_snapshot="$sandbox/marker-full.snapshot"
@@ -1687,6 +1715,14 @@ test_codex_exec_marker_residual_live() {
     sleep 1
     elapsed=$(( elapsed + 1 ))
   done
+  # deadline 내 wrapper 미종료 = supervisor 종료 보장 회귀. 그대로 wait하면 fixture 자체가
+  # 무기한 hang하므로(검증 대상 결함이 검증기를 잠근다), 정리 후 즉시 fail한다.
+  if kill -0 "$wrapper_pid" 2>/dev/null; then
+    local wrapper_line
+    wrapper_line="$(ps -o pid=,ppid=,pgid=,command= -p "$wrapper_pid" 2>/dev/null || true)"
+    _cleanup_pid_lines_with_children "$wrapper_line" || true
+    _marker_fail "$marker_helper" "marker residual: supervisor가 deadline(${deadline}s) 내 미종료 — 종료 보장 회귀 (wrapper pid=$wrapper_pid)"
+  fi
   wait "$wrapper_pid" 2>/dev/null || rc=$?
 
   if (( rc == 127 )); then
@@ -1781,6 +1817,7 @@ test_marker_residual_detector_negative_control() {
   if [[ -z "$helper_pid" ]]; then
     fail "negative control: 합성 marker helper 기동 실패"
   fi
+  _register_live_proc "$helper_pid"
 
   sleep 1
   local observed
@@ -1884,14 +1921,18 @@ parallel_barrier
 # 전에 종료되므로, sentinel은 "exit 0 + 전 시나리오 pass mark"에서만 나온다.
 if [[ "$LIVE_MODE" == "1" ]]; then
   _live_missing=""
-  for _live_scenario in invocation_matrix marker_residual env_inheritance; do
+  for _live_scenario in "${REQUIRED_LIVE_SCENARIOS[@]}"; do
     grep -qx "$_live_scenario" "$LIVE_PASS_FILE" 2>/dev/null \
       || _live_missing="$_live_missing $_live_scenario"
   done
   if [[ -z "$_live_missing" ]]; then
     echo "LIVE_REQUIRED_ALL_PASS"
   else
+    # 미완료를 성공처럼 보이게 두지 않는다 — 전체 통과 문구를 억제하고 non-zero로 종결해
+    # 판정이 exit code 한 계층에서 닫히게 한다 (sentinel은 성공 경로의 이중 확인 신호).
     warn "live 필수 시나리오 미완(sentinel 미발행):$_live_missing — WARN skip 원인 해소 후 재실행"
+    echo "Deterministic tests passed; live REQUIRED scenarios incomplete."
+    exit 1
   fi
 fi
 echo "All codex hook fixture tests passed."

@@ -144,15 +144,22 @@ agent_id 키는 0.124 schema에 없으며 hook은 graceful fallback에 의존한
 
 ## codex exec live 시나리오 (live opt-in, issue #593 · #1228)
 
-`--live`는 세 필수 시나리오를 순차 실행한다 (must-pass-only). PR #595 fixture pattern hang은 본 matrix 제외 — known caveat: [`using-codex-exec/references/known-issues.md`](../../../modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md) §15 + 별도 follow-up.
+`--live`의 필수 시나리오는 세 top-level 단위다 (must-pass-only; 아래 첫 표). PR #595 fixture pattern hang은 본 matrix 제외 — known caveat: [`using-codex-exec/references/known-issues.md`](../../../modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md) §15 + 별도 follow-up.
 
-| 케이스 이름 | 패턴 | 기대 동작 | 검증 의의 |
-|-------------|------|----------|----------|
-| `host_home_no_override_stdin_pipe_supervised_pass` | host HOME + no `-c hooks` override + stdin pipe + read-only + `codex-exec-supervised` | 정상 종료 (rc=0) + result 파일 생성 | host HOME + supervisor 정상 동작 회귀 차단 |
-| `raw_override_inline_toml_hang_with_supervisor_pass` | host HOME + `-c hooks.<event>` override + `--dangerously-bypass-hook-trust` + stdin pipe + read-only + `codex-exec-supervised` | rc=0/124/137 모두 PASS (supervisor가 timeout 안에 정리) + hook 발화 | issue #593 raw PoC 패턴 + supervisor 적용 시 native 잔존 차단 회귀 차단 |
-| `marker_residual` (#1228) | 고유 marker helper를 shell 도구로 실행 + 1초 간격 process tree 표본화 | wrapper 소유 그룹(PGID 전수 검사) 잔존 0 + 세션 이탈 marker subtree는 known leak으로 기록·정리 | supervisor 종료 후 잔존 프로세스 검증의 실효 표면 (§15 실증 갱신 ④) |
+| 필수 시나리오 (sentinel 집계 단위) | 검증 대상 | 검증 의의 |
+|-----------------------------------|----------|----------|
+| `invocation_matrix` | 아래 하위 표의 두 케이스 | issue #593 supervised wrapper 회귀 차단 |
+| `marker_residual` (#1228) | 고유 marker helper를 shell 도구로 실행 + 1초 간격 process tree 표본화 → wrapper 소유 그룹(PGID 전수 검사) 잔존 0 + 세션 이탈 marker subtree는 known leak으로 기록·정리 | supervisor 종료 후 잔존 프로세스 검증의 실효 표면 (§15 실증 갱신 ④) |
+| `env_inheritance` | caller가 붙인 `CODEX_PROGRAMMATIC=1`이 sandbox `CODEX_HOME` hook subprocess까지 상속 | programmatic marker 상속 회귀 차단 |
 
-판정 계약 (issue #1228): 통과는 `exit 0` 그리고 stdout의 `LIVE_REQUIRED_ALL_PASS` sentinel 둘 다 요구한다 — 환경 결함 WARN skip 경로는 exit 0이어도 sentinel을 발행하지 않는다. 환경 결함 WARN skip은 codex 부재·auth/session 실패에만 적용되고, 검증 대상 wrapper 해석은 `CODEX_HOOK_SUPERVISED_BIN=source|installed`(기본 source — 워크트리 소스 + 설치본 `CODEX_EXEC_*_BIN` 추출 주입, 추출 실패는 fail)가 fail-closed로 처리한다. installed 모드는 post-`nrs` Nix 배선 검증용이다.
+invocation matrix의 하위 케이스:
+
+| 케이스 이름 | 패턴 | 기대 동작 |
+|-------------|------|----------|
+| `host_home_no_override_stdin_pipe_supervised_pass` | host HOME + no `-c hooks` override + stdin pipe + read-only + `codex-exec-supervised` | 정상 종료 (rc=0) + result 파일 생성 |
+| `raw_override_inline_toml_hang_with_supervisor_pass` | sandbox CODEX_HOME(+auth 복사) + sandbox cwd + `-c hooks.<event>` override + `--dangerously-bypass-hook-trust` + stdin pipe + read-only | rc=0/124/137 모두 PASS (supervisor가 timeout 안에 정리) + hook 발화 |
+
+판정 계약 (issue #1228): 필수 시나리오가 하나라도 미완(WARN skip 포함)이면 전체 통과 문구 없이 `Deterministic tests passed; live REQUIRED scenarios incomplete.` + exit 1로 종결된다 — 통과 판정은 exit 0 하나로 닫히고, stdout의 `LIVE_REQUIRED_ALL_PASS` sentinel은 성공 경로의 이중 확인 신호다. WARN skip은 환경 결함(codex 부재·auth/session 실패·supervisor capability-probe 실패 rc 127)에 적용되고, 검증 대상 wrapper 해석은 `CODEX_HOOK_SUPERVISED_BIN=source|installed`(기본 source — 워크트리 소스 + 설치본 `CODEX_EXEC_*_BIN` 추출 주입, 추출 실패는 fail)가 fail-closed로 처리한다. installed 모드는 post-`nrs` Nix 배선 검증용이다.
 
 ## issue #593 PoC variant legend
 
