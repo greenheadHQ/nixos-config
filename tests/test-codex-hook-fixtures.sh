@@ -1664,7 +1664,10 @@ test_codex_exec_marker_residual_live() {
   sandbox=$(new_hook_sandbox)
 
   local marker_helper
-  marker_helper="$(mktemp "$sandbox/marker-XXXXXX.sh")"
+  # template은 trailing X로 끝나야 한다 — BSD mktemp(nix 부재 macOS fallback 경로)는 X 뒤에
+  # 접미사가 오면 실패 대신 X를 치환하지 않은 literal 파일명을 조용히 만들어(2026-08-12 실측)
+  # suffix의 고유 식별자 역할이 사라진다. 확장자는 bash <경로> 호출이라 불필요.
+  marker_helper="$(mktemp "$sandbox/marker-XXXXXX")"
   printf '#!/usr/bin/env bash\nsleep %s\n' "$MARKER_HELPER_SLEEP_SECONDS" > "$marker_helper"
   chmod +x "$marker_helper"
   # 생성 즉시 경로를 등록한다 — PID 등록(관측 시점)만으로는 첫 표본 전에 중단되면 helper가
@@ -1846,7 +1849,8 @@ test_marker_residual_detector_negative_control() {
   local sandbox
   sandbox=$(new_hook_sandbox)
   local marker_helper
-  marker_helper="$(mktemp "$sandbox/marker-neg-XXXXXX.sh")"
+  # trailing X 요구는 위 marker residual의 template 주석과 동일 (BSD mktemp 계약).
+  marker_helper="$(mktemp "$sandbox/marker-neg-XXXXXX")"
   printf '#!/usr/bin/env bash\nsleep 30\n' > "$marker_helper"
   chmod +x "$marker_helper"
 
