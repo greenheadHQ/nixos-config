@@ -493,6 +493,16 @@ let
   ghosttyCaskCount =
     cfg:
     builtins.length (builtins.filter (cask: normalizedCaskName cask == "ghostty") cfg.homebrew.casks);
+  # Ghostty AppSupport 스텁 (#1232): macOS에서 XDG보다 나중에 로드되어 이기는 슬롯.
+  # 스텁에 설정 지시어가 들어가는 순간 Nix 선언을 덮는 override 레이어가 부활한다.
+  ghosttyAppSupportPath = "Library/Application Support/com.mitchellh.ghostty/config";
+  # Ghostty 지시어는 전부 key = value 형태다. 주석·빈 줄만 남았는지로 불활성을 판정한다.
+  ghosttyStubIsInert =
+    text:
+    text != ""
+    && builtins.all (line: builtins.match "[[:space:]]*(#.*)?" line != null) (
+      nixpkgsLib.splitString "\n" text
+    );
 
   claudeRcAgent =
     cfg: cfg.home-manager.users.${cfg.system.primaryUser}.launchd.agents.claude-rc-ensure;
@@ -818,6 +828,21 @@ let
         {
           name = "Test D23b ${hostName}: Ghostty.app cask가 정확히 한 번 선언되어야 함";
           cond = hasHost && ghosttyCaskCount cfg == 1;
+        }
+        {
+          name = "Test D23c ${hostName}: Ghostty AppSupport config를 Nix가 점유하고 설정 지시어가 0줄이어야 함";
+          cond =
+            hasHost
+            && builtins.hasAttr ghosttyAppSupportPath hm.home.file
+            && ghosttyStubIsInert (hm.home.file.${ghosttyAppSupportPath}.text or "");
+        }
+        {
+          name = "Test D23d ${hostName}: shift+enter keybind의 백슬래시가 리터럴로 보존되어야 함";
+          cond =
+            hasHost
+            && nixpkgsLib.hasInfix ''keybind = shift+enter=text:\n'' (
+              hm.xdg.configFile."ghostty/config".text or ""
+            );
         }
         {
           name = "Test D24 ${hostName}: Claude Remote Control ensure가 login 및 1분 주기로 자동 복구되어야 함";
