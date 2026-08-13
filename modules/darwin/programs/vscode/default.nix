@@ -243,6 +243,9 @@ in
 
     ${lib.concatMapStringsSep "\n" (ext: ''set_handler ".${ext}"'') codeExtensions}
 
+    # NB: public.plain-text 등록은 확장자 없는 모든 설정 파일을 VSCode로 연다.
+    #   files.autoSave=afterDelay와 결합해 "앱이 기본 에디터로 설정 열기" 경로마다
+    #   오타 1글자가 자동 저장되는 사고를 만든다 (Ghostty 사례: #1232).
     register_public_uti public.plain-text
     register_public_uti public.source-code
     # NB: public.folder default는 macOS가 Apple-protected (Finder 고정) — duti가 error -50
