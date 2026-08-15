@@ -108,6 +108,9 @@
             claudeRcFlock
             pkgs.lefthook
             pkgs.bats
+            # Claude snapshot routing fixture는 production parser와 같은 zsh로
+            # .zshenv -> .zshrc -> snapshot source 순서를 재현한다.
+            pkgs.zsh
           ];
         };
 

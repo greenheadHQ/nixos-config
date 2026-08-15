@@ -763,27 +763,32 @@ let
                 stableRoot = "${hm.home.homeDirectory}/${constants.paths.headlessSshDispatcherRelPath}";
                 stableBin = "${stableRoot}/bin";
                 zshEnv = hm.programs.zsh.envExtra;
-                countInfix = needle: haystack: (builtins.length (nixpkgsLib.splitString needle haystack)) - 1;
+                zshInit = hm.programs.zsh.initContent;
+                snapshotRefresh = hm.home.activation.refreshClaudeShellSnapshotPaths.data or "";
                 agentEnv = (claudeRcAgent cfg).config.EnvironmentVariables;
                 hasDispatcher = builtins.hasAttr constants.paths.headlessSshDispatcherRelPath hm.home.file;
               in
               if isPersonalHost then
                 hasDispatcher
                 && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv
-                # owner + context에 각각 있어야 한다. 단순 hasInfix는 owner가 빠져도
-                # context의 동일 문자열 때문에 통과하는 false-green이었다.
-                && countInfix "CLAUDECODE" zshEnv == 2
-                && countInfix "CLAUDE_CODE_SESSION_KIND" zshEnv == 2
+                && nixpkgsLib.hasInfix "CLAUDECODE" zshEnv
+                && nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshEnv
                 && nixpkgsLib.hasInfix "= \"bg\"" zshEnv
                 && nixpkgsLib.hasInfix stableBin zshEnv
+                && nixpkgsLib.hasInfix "BEGIN nixos-config headless SSH snapshot PATH finalizer" zshInit
+                && nixpkgsLib.hasInfix stableBin zshInit
+                && nixpkgsLib.hasInfix "refresh-claude-snapshot-paths.sh" snapshotRefresh
+                && nixpkgsLib.hasInfix stableBin snapshotRefresh
                 && !(builtins.elem stableBin hm.home.sessionPath)
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == "1"
                 && nixpkgsLib.hasPrefix "${stableBin}:" agentEnv.PATH
               else
                 !hasDispatcher
                 && !nixpkgsLib.hasInfix stableBin zshEnv
+                && !nixpkgsLib.hasInfix stableBin zshInit
                 && !nixpkgsLib.hasInfix "CLAUDECODE" zshEnv
                 && !nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshEnv
+                && snapshotRefresh == ""
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == ""
                 && !nixpkgsLib.hasInfix stableBin agentEnv.PATH
             );

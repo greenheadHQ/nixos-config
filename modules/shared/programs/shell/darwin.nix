@@ -72,19 +72,24 @@ let
       hostType
       ;
   };
+  # These predicates are interpolated immediately before `; then`. Nix
+  # indented strings retain a trailing newline, so normalize them once at the
+  # construction boundary instead of relying on every caller to trim it.
+  inlineZshPredicate = source: lib.removeSuffix "\n" source;
+  claudeAutomationPredicate = inlineZshPredicate ''
+    { [ -n "''${CLAUDECODE:-}" ] \
+      || [ "''${CLAUDE_CODE_SESSION_KIND:-}" = "bg" ]; }
+  '';
   # Keep the non-interactive/remote signal set identical between .zshenv and
   # the interactive ssh() compatibility path. Claude background sessions run
   # tools inside a PTY and do not inherit the launcher marker, so TTY checks
   # alone misclassify them as interactive. Their explicit session kind is the
   # runtime-owned signal that no local 1Password approval flow is available.
-  # removeSuffix is parse-critical: these predicates are interpolated before
-  # `; then`; retaining the indented-string newline would render `}\n; then`,
-  # which zsh rejects.
-  headlessContextPredicate = lib.removeSuffix "\n" ''
+  headlessContextPredicate = inlineZshPredicate ''
     { [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] \
-      || [ -n "''${CI:-}" ] || [ -n "''${CLAUDECODE:-}" ] \
+      || [ -n "''${CI:-}" ] \
       || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ] \
-      || [ "''${CLAUDE_CODE_SESSION_KIND:-}" = "bg" ]; }
+      || ${claudeAutomationPredicate}; }
   '';
   # PATH mutation remains opt-in. CLAUDECODE is included because Claude creates
   # its reusable login-shell snapshot with CLAUDECODE=1, then sources the
@@ -93,10 +98,16 @@ let
   # the snapshot's `export PATH=...` overwrites the new shell's .zshenv PATH.
   # The launcher marker and bg signal cover non-snapshot child paths. Ordinary
   # interactive shells have none of these owners and stay on raw OpenSSH.
-  headlessPathOwnerPredicate = lib.removeSuffix "\n" ''
+  headlessPathOwnerPredicate = inlineZshPredicate ''
     { [ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" = "1" ] \
-      || [ -n "''${CLAUDECODE:-}" ] \
-      || [ "''${CLAUDE_CODE_SESSION_KIND:-}" = "bg" ]; }
+      || ${claudeAutomationPredicate}; }
+  '';
+  # Move, rather than merely add, the private directory to the front. Claude
+  # sources .zshrc before recording its snapshot, and Homebrew/mise can prepend
+  # their own directories after .zshenv has run.
+  headlessPathSetup = ''
+    path=("${headlessDispatcher.stableBinPath}" "''${(@)path:#${headlessDispatcher.stableBinPath}}")
+    export PATH
   '';
 in
 {
@@ -162,11 +173,21 @@ in
     lib.optionalString headlessDispatcher.enabled ''
       if ${headlessPathOwnerPredicate} \
         && ${headlessContextPredicate}; then
-        case ":$PATH:" in
-          *":${headlessDispatcher.stableBinPath}:"*) ;;
-          *) export PATH="${headlessDispatcher.stableBinPath}:$PATH" ;;
-        esac
+        ${headlessPathSetup}
       fi
+    ''
+  );
+
+  # Claude background spares can outlive both nrs and a newly opened foreground
+  # session while retaining an old snapshot path. Repair existing snapshots in
+  # place without restarting the daemon; newly generated snapshots are covered
+  # by the .zshenv + final .zshrc ordering above.
+  home.activation.refreshClaudeShellSnapshotPaths = lib.mkIf headlessDispatcher.enabled (
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD ${pkgs.bash}/bin/bash \
+        ${./files/refresh-claude-snapshot-paths.sh} \
+        "${config.home.homeDirectory}/.claude/shell-snapshots" \
+        "${headlessDispatcher.stableBinPath}"
     ''
   );
 
@@ -211,7 +232,7 @@ in
     # 난다. 그 순간 원인·복구를 안내하고 1Password를 자동 기동한 뒤 agent 복구를 짧게 대기한다.
     # 평시엔 launchd 자동 기동(modules/darwin/programs/ssh)이 socket을 살려두므로 이 경로는
     # 수동 quit/크래시 등 잔여 케이스 전용이다. 대화형은 앱 기동 + Touch ID 잠금해제 대기를,
-    # launcher-marked 무인 child는 .zshenv의 auth-phase dispatcher를 사용한다(#1094).
+    # personal automation child는 .zshenv/snapshot의 auth-phase dispatcher를 사용한다(#1094).
     # personal 전용 — minipc matchBlock/launchd와 스코프 일치(work Mac은 Tailnet 미소속이라 무관).
     # 대상 판정은 전부 `ssh -G "$@"`에 위임한다 — 수동 옵션 파싱은 ssh의 방대한 옵션 공간(메타모드·
     # user@host·-W·포트·alias·remote command)을 못 따라가 미탐·오탐이 난다. ssh -G는 -O/-W/-G 등과도
@@ -326,5 +347,18 @@ in
         fi
       }
     '')
+
+    (lib.mkOrder 1700 (
+      lib.optionalString headlessDispatcher.enabled ''
+        # BEGIN nixos-config headless SSH snapshot PATH finalizer
+        # Claude snapshot 생성기가 .zshrc 전체를 source한 뒤 환경을 기록하므로, Homebrew/mise 등
+        # 앞선 초기화가 PATH를 바꾼 뒤 dispatcher를 다시 최우선으로 정규화한다.
+        if ${headlessPathOwnerPredicate} \
+          && ${headlessContextPredicate}; then
+          ${headlessPathSetup}
+        fi
+        # END nixos-config headless SSH snapshot PATH finalizer
+      ''
+    ))
   ];
 }

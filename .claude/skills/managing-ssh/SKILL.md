@@ -28,10 +28,11 @@ macOS MiniPC 경로는 interactive와 automation child가 다름
   interactive라고 판정하지 않는다. Claude login-shell snapshot은 `CLAUDECODE=1` 생성 시
   dispatcher PATH를 캡처해야 이후 snapshot의 PATH 복원 뒤 `timeout ssh`도 같은 경로를 쓴다.
   이 automation 경로는 1Password GUI를 기다리지 않는다.
-- 설정 적용 전에 만들어진 Claude snapshot은 기존 PATH를 계속 복원할 수 있다. 배포 뒤 actual
-  child의 `command -v ssh`가 여전히 raw SSH면 진행 중 작업을 보존한 뒤 새 Claude 세션에서
-  snapshot을 재생성하고 다시 확인한다. 실행 중 앱/bridge를 임의로 재시작하지 않는다.
-- launcher 경로는 인증 성립까지만 15초 deadline을 적용하고, 인증 뒤 장시간 command는 자르지 않는다.
+- 설정 적용 전에 만들어져 장수 background spare가 재사용하는 Claude snapshot은 activation이
+  dispatcher PATH recovery를 끝에 추가한다. 새 snapshot은 `.zshrc` 최종 단계에서 dispatcher를
+  최우선으로 기록한다. 배포 뒤 actual child의 `command -v ssh`가 여전히 raw SSH면 snapshot
+  recovery marker와 파일 metadata를 확인하되, 실행 중 앱/bridge를 임의로 재시작하지 않는다.
+- automation 경로는 인증 성립까지만 15초 deadline을 적용하고, 인증 뒤 장시간 command는 자르지 않는다.
 - `HEADLESS_SSH_AUTH_TIMEOUT`이면 actual child의 `command -v ssh` → agenix
   `minipc-headless` materialization metadata → MiniPC authorized_keys entry → Tailscale 순서로 점검한다.
 - `minipc-emergency`는 interactive 수동 복구 전용이다. headless key나 자동 fallback으로 재사용하지 않는다.
@@ -74,7 +75,7 @@ tailscale ip -4
 |------|------|
 | `$HOME/.ssh/config` | SSH 호스트 설정 |
 | `$HOME/.ssh/mac-ssh.pub` | macOS `minipc` IdentityFile 고정용 공개키 (`constants.sshDeviceKeys.macSsh`에서 생성) |
-| `$HOME/.ssh/minipc-headless` | personal launcher 전용 agenix materialization; 내용 출력 금지 |
+| `$HOME/.ssh/minipc-headless` | personal automation 전용 agenix materialization; 내용 출력 금지 |
 | `$HOME/.ssh/emergency_ed25519` | 1Password 장애 시 `minipc-emergency` fallback 개인 키 |
 | `$HOME/.ssh/id_ed25519` | NixOS/GitHub 로컬 개인 키 |
 | `$HOME/.ssh/authorized_keys` | 인증된 키 (서버) |
@@ -108,7 +109,7 @@ Git에 추가하지 않는다.
 - `rotate`: credential/server mutation 직전에 action-time 확인을 받는다. 새 전용 key의
   restricted candidate 공개키를 기존 엔트리와 함께 MiniPC에 먼저 배포한다. private key는
   macbook recipient로 `.age`에 암호화하고 Mac에 배포한다. 1Password가 quit/locked인 actual
-  launcher E2E가 통과한 뒤에만 구 공개키를 제거한다. 실패하면 구 key를 유지하고 candidate를
+  automation E2E가 통과한 뒤에만 구 공개키를 제거한다. 실패하면 구 key를 유지하고 candidate를
   제거한다.
 - `즉시 revoke / Mac 분실`: 분실 Mac의 headless key에 의존하지 않는 승인된 관리 경로로
   MiniPC authorized_keys의 해당 restricted entry를 먼저 제거하고 배포한다. `from=` 제한만으로
@@ -121,7 +122,7 @@ Git에 추가하지 않는다.
 ## 핵심 절차
 
 1. 먼저 runtime binding을 구분한다. interactive Ghostty는 1Password preflight, personal Claude/Codex launcher child와 PTY 기반 Claude background child는 private dispatcher 경로다. launcher는 `NIXOS_CONFIG_HEADLESS_SSH=1`, Claude snapshot/background는 `CLAUDECODE=1` 생성 snapshot 또는 `CLAUDE_CODE_SESSION_KIND=bg` 신호로 소유권을 판정한다.
-2. launcher 경로의 `HEADLESS_SSH_AUTH_TIMEOUT`은 1Password 잠금 문제가 아니다. actual child의 `command -v ssh`, agenix materialization의 존재/권한 metadata, 선언된 server entry, Tailscale 순으로 확인한다. key 본체는 읽거나 로그로 남기지 않는다.
+2. automation 경로의 `HEADLESS_SSH_AUTH_TIMEOUT`은 1Password 잠금 문제가 아니다. actual child의 `command -v ssh`, stale snapshot recovery marker, agenix materialization의 존재/권한 metadata, 선언된 server entry, Tailscale 순으로 확인한다. key 본체는 읽거나 로그로 남기지 않는다.
 3. `Load key ... invalid format`이면 키 파일 형식 문제로 분류한다. 파일 끝 개행, CRLF, 복사 손상을 확인한다.
 4. 인증이 아니라 timeout/no route 계열이면 Tailscale 상태(`tailscale status`, `tailscale up`)를 확인한다.
 5. NixOS 로컬 키 문제는 `home.nix`의 `services.ssh-agent`와 `programs.keychain`, `ssh-add -l`을 점검한다.
@@ -129,8 +130,8 @@ Git에 추가하지 않는다.
 
 ## 자주 발생하는 문제
 
-1. interactive 1Password agent 미실행/잠금: `ssh minipc` preflight 안내에 따라 1Password 잠금 해제; launcher child에는 해당하지 않는다.
-2. launcher `HEADLESS_SSH_AUTH_TIMEOUT`: child binary path, agenix materialization metadata, server entry, Tailscale을 점검하며 emergency key로 자동 fallback하지 않는다.
+1. interactive 1Password agent 미실행/잠금: `ssh minipc` preflight 안내에 따라 1Password 잠금 해제; automation child에는 해당하지 않는다.
+2. automation `HEADLESS_SSH_AUTH_TIMEOUT`: child binary path, snapshot recovery marker, agenix materialization metadata, server entry, Tailscale을 점검하며 emergency key로 자동 fallback하지 않는다.
 3. SSH 키 invalid format: 키 파일 끝 개행, CRLF, 복사 손상 확인
 4. Tailscale 만료/미연결: `tailscale status`, `tailscale up`으로 확인
 5. sudo 인증 실패: `sudo -E` 또는 SSH_AUTH_SOCK 유지
