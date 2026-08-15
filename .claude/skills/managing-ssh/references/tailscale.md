@@ -18,7 +18,7 @@ SSH 키 자동 로드와 Tailscale VPN 관련 설정입니다.
 
 macOS는 로컬 `id_ed25519`를 `ssh-add`로 자동 로드하지 않고, 1Password SSH agent를 `IdentityAgent`로 사용합니다. 현행 구성은 `modules/darwin/programs/ssh/default.nix`와 `libraries/constants.nix`가 단일 소스입니다.
 
-아키텍처:
+interactive 아키텍처:
 
 ```
 macOS 로그인
@@ -26,8 +26,13 @@ macOS 로그인
     └──▶ launchd.agents.onepassword-autostart
             └──▶ 1Password 데스크탑 기동
                     └──▶ 1Password SSH agent socket
-                            └──▶ ssh minipc → mac-ssh 키로 인증
+                            └──▶ Ghostty ssh minipc → mac-ssh 키로 인증
 ```
+
+personal Claude/Codex automation child는 이 경로와 분리된다. launcher/background 신호가 있는
+child와 Claude shell snapshot은 `~/.local/share/nixos-config/headless-ssh/bin/ssh` dispatcher를
+우선 사용하고, `minipc-headless` dedicated key(`IdentityAgent none`)로 인증한다. 따라서 이 경로의
+실패나 팝업은 1Password 잠금 문제가 아니다.
 
 컴포넌트:
 
@@ -36,6 +41,8 @@ macOS 로그인
 | `programs.ssh.settings."*".IdentityAgent` | 1Password agent socket 사용 (`constants.onePassword.agentSocketRelPath`) |
 | `programs.ssh.settings."minipc"` | Tailscale IP, `User = "greenhead"`, `IdentityFile = ~/.ssh/mac-ssh.pub`, `IdentitiesOnly = yes` |
 | `programs.ssh.settings."minipc-emergency"` | 1Password 우회 fallback (`IdentityAgent = none`, `~/.ssh/emergency_ed25519`) |
+| `~/.local/share/nixos-config/headless-ssh/bin/ssh` | personal automation의 MiniPC 전용 dispatcher; 다른 SSH 목적지는 raw OpenSSH로 전달 |
+| `~/.ssh/minipc-headless` | dispatcher 전용 agenix materialization (`IdentityAgent none`, mode 0400) |
 | `home.file.".config/1Password/ssh/agent.toml"` | SSH vault를 1Password agent에 노출 (`constants.onePassword.vaults.ssh`) |
 | `home.file.".ssh/mac-ssh.pub"` | `constants.sshDeviceKeys.macSsh` 공개키 배포 |
 | `launchd.agents.onepassword-autostart` | 로그인 시 1Password 백그라운드 기동 |
@@ -68,7 +75,7 @@ ssh minipc
 ssh minipc-emergency
 ```
 
-`ssh minipc`에서 1Password agent가 `mac-ssh` 키를 제공하지 못하면 shell의 `ssh()` preflight가 1Password 기동과 잠금 해제를 안내한다. 상세 진단은 `references/troubleshooting.md`의 "Mac에서 `ssh minipc`가 1Password preflight로 차단됨" 섹션을 따른다.
+interactive Ghostty의 `ssh minipc`에서 1Password agent가 `mac-ssh` 키를 제공하지 못하면 shell의 `ssh()` preflight가 1Password 기동과 잠금 해제를 안내한다. 상세 진단은 `references/troubleshooting.md`의 "Mac에서 `ssh minipc`가 1Password preflight로 차단됨" 섹션을 따른다. automation child는 상위 `SKILL.md`의 runtime binding 절차에서 `command -v ssh`와 stale snapshot recovery marker부터 확인한다.
 
 이력: 과거 `com.green.ssh-add-keys` launchd agent가 `ssh-add ~/.ssh/id_ed25519`를 실행하던 구성은 1Password SSH agent 전환 후 제거/archived 되었다.
 

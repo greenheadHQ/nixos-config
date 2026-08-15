@@ -104,7 +104,9 @@ let
   '';
   # Move, rather than merely add, the private directory to the front. Claude
   # sources .zshrc before recording its snapshot, and Homebrew/mise can prepend
-  # their own directories after .zshenv has run.
+  # their own directories after .zshenv has run. The zsh lifecycle fixture
+  # consumes the literal first path= entry below; update both together if this
+  # serialization changes.
   headlessPathSetup = ''
     path=("${headlessDispatcher.stableBinPath}" "''${(@)path:#${headlessDispatcher.stableBinPath}}")
     export PATH
@@ -351,6 +353,8 @@ in
     (lib.mkOrder 1700 (
       lib.optionalString headlessDispatcher.enabled ''
         # BEGIN nixos-config headless SSH snapshot PATH finalizer
+        # The BEGIN/END markers are a stable extraction contract for the zsh
+        # lifecycle regression fixture; update the fixture with either marker.
         # Claude snapshot 생성기가 .zshrc 전체를 source한 뒤 환경을 기록하므로, Homebrew/mise 등
         # 앞선 초기화가 PATH를 바꾼 뒤 dispatcher를 다시 최우선으로 정규화한다.
         if ${headlessPathOwnerPredicate} \

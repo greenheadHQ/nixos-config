@@ -30,7 +30,7 @@ Hi greenheadHQ! You've successfully authenticated...
 1. `nrs`로 실행한다. 직접 `darwin-rebuild`를 실행하지 않는다.
 2. GitHub fetch가 실패하면 `ssh-add -l`과 `ssh -T git@github.com`으로 현재 agent에 GitHub용 로컬 키가 보이는지 확인한다.
 3. 로컬 `~/.ssh/id_ed25519`를 계속 쓰는 GitHub/nix-daemon 경로라면 필요한 세션에서 `ssh-add ~/.ssh/id_ed25519`로 키를 로드한 뒤 다시 시도한다.
-4. `ssh minipc` 실패는 이 항목이 아니라 아래 "Mac에서 `ssh minipc`가 1Password preflight로 차단됨" 섹션을 따른다.
+4. interactive Ghostty의 `ssh minipc` 실패는 아래 "Mac에서 `ssh minipc`가 1Password preflight로 차단됨" 섹션을 따른다. personal Claude/Codex automation child는 상위 `SKILL.md`의 runtime binding 절차를 따른다.
 
 확인 방법:
 
@@ -46,6 +46,7 @@ ssh -T git@github.com
 ### Mac에서 `ssh minipc`가 1Password preflight로 차단됨
 
 > 발생 맥락: 1Password SSH agent 전환(Phase 2a) 후속
+> 적용 범위: interactive Ghostty. personal Claude/Codex automation child에는 적용하지 않는다.
 
 증상: `ssh minipc` 실행 시 아래 안내가 뜨고 접속이 지연/차단됨.
 
@@ -57,6 +58,12 @@ ssh -T git@github.com
 원인: macOS의 minipc 인증은 1Password agent의 `mac-ssh` 키에 의존한다(구 로컬 `id_ed25519`는 서버 authorized_keys에서 제거됨). 1Password 데스크탑이 미실행/잠금이면 agent가 키를 제공하지 못해, ssh가 구 키로 폴백하다 `Permission denied (publickey)`로 차단된다.
 
 shell의 `ssh()` preflight 래퍼(`modules/shared/programs/shell/darwin.nix`)가 `ssh -G`의 effective IdentityAgent로 minipc를 식별해 원인·복구를 안내하고, 1Password를 자동 기동한 뒤 agent 복구를 최대 15초 대기한다.
+
+personal Claude/Codex launcher 또는 Claude background child는 private dispatcher와 dedicated
+`minipc-headless` key를 사용하므로 1Password 잠금 해제를 시도하지 않는다. automation에서
+팝업이나 `HEADLESS_SSH_AUTH_TIMEOUT`이 발생하면 상위 `SKILL.md`의 정본 절차로 돌아가 actual
+child의 `command -v ssh`, stale snapshot recovery marker, agenix materialization metadata,
+server entry, Tailscale 순서로 진단한다. key 본체는 출력하지 않는다.
 
 해결:
 

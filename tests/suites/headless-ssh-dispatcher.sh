@@ -90,11 +90,11 @@ test_claude_snapshot_preserves_headless_ssh_path() {
   printf '#!/bin/sh\nprintf "raw\\n"\n' > "$raw_bin/ssh"
   printf '#!/bin/sh\nprintf "headless\\n"\n' > "$dispatcher_bin/ssh"
   printf '#!/bin/sh\nprintf "competitor\\n"\n' > "$competitor_bin/ssh"
+  # Keep timeout explicit so the fixture varies only the child ssh lookup.
   printf '#!/bin/sh\nexec "$@"\n' > "$tools_bin/timeout"
-  printf '#!/bin/sh\nexec "$@"\n' > "$competitor_bin/timeout"
   chmod +x \
     "$raw_bin/ssh" "$dispatcher_bin/ssh" "$competitor_bin/ssh" \
-    "$tools_bin/timeout" "$competitor_bin/timeout"
+    "$tools_bin/timeout"
 
   mkdir -p "$sandbox/snapshot-zdot" "$sandbox/tool-zdot" "$sandbox/work-zdot"
   printf 'export PATH="%s"\n%s\n' "$initial_path" "$fixture_env" > "$sandbox/snapshot-zdot/.zshenv"
