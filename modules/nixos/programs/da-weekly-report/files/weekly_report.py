@@ -1132,7 +1132,7 @@ def _warning_category(warning: str, *, health: bool = False) -> str:
     lowered = warning.lower()
     if "tar member" in lowered or "validation" in lowered or "newline" in lowered:
         return "validation"
-    if any(token in lowered for token in ("ssh", "remote", "tar ", "find ")):
+    if any(token in lowered for token in ("ssh", "remote", "tar ", "find ", "budget")):
         return "remote_collection"
     if any(token in lowered for token in ("parse", "diagnostic", "verdict")):
         return "analysis"

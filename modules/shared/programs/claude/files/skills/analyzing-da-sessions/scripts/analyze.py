@@ -154,8 +154,13 @@ SEVERITY_LOOKBEHIND_CHARS = 200  # finding_id 등장 위치 기준 앞쪽 탐색
 SEVERITY_LOOKAHEAD_CHARS = 1000  # finding_id 등장 위치 기준 뒤쪽 탐색 범위
 SSH_FIND_TIMEOUT_SECONDS = 60  # 원격 호스트의 find 명령 timeout
 SSH_CAT_TIMEOUT_SECONDS = 120  # 원격 호스트의 cat 명령 timeout
-SSH_TAR_TIMEOUT_SECONDS = 300  # 원격 호스트의 tar batch stream timeout
-SSH_HOST_FETCH_BUDGET_SECONDS = 300  # host별 remote find + fetch 전체 wall-clock budget
+SSH_TAR_TIMEOUT_SECONDS = 540  # 원격 호스트의 tar batch stream timeout (host budget이 상한으로 clamp)
+SSH_HOST_FETCH_BUDGET_SECONDS = 600  # host별 remote find + fetch 전체 wall-clock budget
+# 원격 세션 파일 크기 상한 (find -size 단위 MB, BSD/GNU 공통 문법).
+# 2026-08 mac ~/.codex/sessions에 50MB 초과 rollout 148건(약 192GB)이 쌓여 host budget을
+# 초과시켰고, mac 수집이 4주 연속 0건이 됐다 (issue #1067 W30~W33). verdict 신호는
+# 50MB 미만 파일에 집중된다 (Claude 세션 로그 최대 관측치 43MB, 초과분 verdict 기여 없음).
+REMOTE_FILE_SIZE_CAP_MB = 50
 FLEISS_KAPPA_TIMEOUT_SECONDS = 60  # fleiss-kappa.py helper 호출 timeout (현재 v1에서는 미사용)
 SSH_FETCH_WORKERS = 8  # 원격 호스트당 동시 SSH cat worker 수 (host 순차 처리, host당 K=8 병렬)
 SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10  # ssh preflight / ControlMaster check timeout
@@ -223,7 +228,7 @@ class HostFetchBudget:
             if self.warning_emitted:
                 return
             warnings.append(
-                f"host {self.host}: fetch budget 초과 (절전/무응답 가능성) — partial result"
+                f"host {self.host}: ssh fetch budget 초과 — remote 수집 중단, partial result"
             )
             self.warning_emitted = True
 
@@ -1974,6 +1979,47 @@ def _extract_tar_bytes_to_dir(
     )
 
 
+def _count_remote_oversized_files(
+    host: str,
+    base: str,
+    budget: HostFetchBudget | None,
+) -> int:
+    """size cap으로 제외된 원격 jsonl 수를 센다 (침묵 절단 방지용 보조 카운트).
+
+    수집을 막지 않는 보조 정보이므로 실패·budget 소진 시 0을 반환하고 조용히
+    넘어간다 — 실패 시 별도 warning을 내면 본 수집 warning과 중복 노이즈가 된다.
+    """
+    timeout: float = SSH_FIND_TIMEOUT_SECONDS
+    if budget is not None:
+        timeout_value, _ = budget.timeout_for(SSH_FIND_TIMEOUT_SECONDS)
+        if timeout_value is None:
+            return 0
+        timeout = timeout_value
+    try:
+        proc = subprocess.run(
+            [
+                "ssh",
+                host,
+                "find",
+                base,
+                "-type",
+                "f",
+                "-name",
+                "'*.jsonl'",
+                "-size",
+                f"+{REMOTE_FILE_SIZE_CAP_MB}M",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return 0
+    if proc.returncode != 0:
+        return 0
+    return sum(1 for line in proc.stdout.splitlines() if line.strip())
+
+
 def collect_remote_files(
     host: str,
     warnings: list[str],
@@ -2005,7 +2051,18 @@ def collect_remote_files(
             # SSH는 argv를 single string으로 합쳐 원격 shell에 전달하므로
             # `*.jsonl`을 single-quote로 감싸 원격 glob expansion을 차단한다.
             proc = subprocess.run(
-                ["ssh", host, "find", base, "-type", "f", "-name", "'*.jsonl'"],
+                [
+                    "ssh",
+                    host,
+                    "find",
+                    base,
+                    "-type",
+                    "f",
+                    "-name",
+                    "'*.jsonl'",
+                    "-size",
+                    f"-{REMOTE_FILE_SIZE_CAP_MB}M",
+                ],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -2024,6 +2081,12 @@ def collect_remote_files(
                 if not _allowed_remote_path(host, line):
                     continue
                 all_files.append(line)
+            oversized = _count_remote_oversized_files(host, base, budget)
+            if oversized:
+                warnings.append(
+                    f"host {host}: {base} oversized jsonl {oversized}건 제외 "
+                    f"(find -size +{REMOTE_FILE_SIZE_CAP_MB}M 초과분, size cap)"
+                )
             if budget is not None and budget.expired():
                 budget.warn_exceeded(warnings)
                 break

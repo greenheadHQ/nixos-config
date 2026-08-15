@@ -773,7 +773,7 @@ def test_host_fetch_budget_clamps_find_and_stops_after_budget_timeout(
 
     monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
 
-    assert analyze_module.SSH_HOST_FETCH_BUDGET_SECONDS == 300
+    assert analyze_module.SSH_HOST_FETCH_BUDGET_SECONDS == 600
     assert analyze_module.collect_remote_files("mac", warnings, budget) == []
     assert calls == [
         (
@@ -786,11 +786,53 @@ def test_host_fetch_budget_clamps_find_and_stops_after_budget_timeout(
                 "f",
                 "-name",
                 "'*.jsonl'",
+                "-size",
+                f"-{analyze_module.REMOTE_FILE_SIZE_CAP_MB}M",
             ],
             5.0,
         )
     ]
-    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+    assert any("ssh fetch budget 초과" in w for w in warnings)
+
+
+def test_collect_remote_files_reports_oversized_exclusions(
+    analyze_module,
+    monkeypatch,
+):
+    """size cap 제외분은 침묵 절단하지 않고 건수 warning으로 보고한다."""
+    monkeypatch.setattr(analyze_module.time, "monotonic", lambda: 0.0)
+    warnings: list[str] = []
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        size_arg = argv[argv.index("-size") + 1]
+        if size_arg.startswith("+"):
+            stdout = (
+                "/Users/greenhead/.claude/projects/p/big-a.jsonl\n"
+                "/Users/greenhead/.claude/projects/p/big-b.jsonl\n"
+                if argv[3] == "~/.claude/projects"
+                else ""
+            )
+        else:
+            stdout = (
+                "/Users/greenhead/.claude/projects/p/s.jsonl\n"
+                if argv[3] == "~/.claude/projects"
+                else ""
+            )
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    files = analyze_module.collect_remote_files("mac", warnings, budget=None)
+    assert files == ["/Users/greenhead/.claude/projects/p/s.jsonl"]
+    # base 2곳 × (목록 find + oversized find) = 4회
+    assert len(calls) == 4
+    oversized_warnings = [w for w in warnings if "oversized jsonl" in w]
+    assert oversized_warnings == [
+        "host mac: ~/.claude/projects oversized jsonl 2건 제외 "
+        f"(find -size +{analyze_module.REMOTE_FILE_SIZE_CAP_MB}M 초과분, size cap)"
+    ]
 
 
 def test_controlmaster_check_uses_remaining_host_budget(analyze_module, monkeypatch):
@@ -813,7 +855,7 @@ def test_controlmaster_check_uses_remaining_host_budget(analyze_module, monkeypa
         budget=budget,
     ) is False
     assert calls == [(["ssh", "-O", "check", "mac"], 3.0)]
-    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+    assert any("ssh fetch budget 초과" in w for w in warnings)
 
 
 def test_fetch_remote_file_skips_when_host_budget_already_expired(
@@ -838,7 +880,7 @@ def test_fetch_remote_file_skips_when_host_budget_already_expired(
     )
 
     assert result is None
-    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+    assert any("ssh fetch budget 초과" in w for w in warnings)
 
 
 def test_host_home_override(analyze_module):
