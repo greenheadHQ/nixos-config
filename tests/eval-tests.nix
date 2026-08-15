@@ -750,10 +750,10 @@ let
             );
         }
         {
-          # launcher/background-scoped D 계약(#1094): stable private PATH는 personal
-          # Darwin의 marked child와 Claude background session에만 배선한다. Claude
-          # background tool은 PTY를 쓰고 launcher marker를 상속하지 않으므로 명시적인
-          # CLAUDE_CODE_SESSION_KIND=bg 신호가 없으면 `timeout ssh`가 raw SSH로 샌다.
+          # launcher/snapshot/background-scoped D 계약(#1094): stable private PATH는
+          # personal Darwin의 marked child, Claude snapshot 생성 셸, background session에만
+          # 배선한다. snapshot은 .zshenv 뒤 PATH를 다시 export하므로 CLAUDECODE owner가
+          # snapshot 자체에 dispatcher를 캡처해야 `timeout ssh`가 raw SSH로 새지 않는다.
           # 전역 sessionPath에는 넣지 않아 interactive Ghostty/일반 SSH를 보존한다.
           name = "Test D19 ${hostName}: headless SSH dispatcher는 personal agent child에만 배선되어야 함";
           cond =
@@ -763,13 +763,17 @@ let
                 stableRoot = "${hm.home.homeDirectory}/${constants.paths.headlessSshDispatcherRelPath}";
                 stableBin = "${stableRoot}/bin";
                 zshEnv = hm.programs.zsh.envExtra;
+                countInfix = needle: haystack: (builtins.length (nixpkgsLib.splitString needle haystack)) - 1;
                 agentEnv = (claudeRcAgent cfg).config.EnvironmentVariables;
                 hasDispatcher = builtins.hasAttr constants.paths.headlessSshDispatcherRelPath hm.home.file;
               in
               if isPersonalHost then
                 hasDispatcher
                 && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv
-                && nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshEnv
+                # owner + context에 각각 있어야 한다. 단순 hasInfix는 owner가 빠져도
+                # context의 동일 문자열 때문에 통과하는 false-green이었다.
+                && countInfix "CLAUDECODE" zshEnv == 2
+                && countInfix "CLAUDE_CODE_SESSION_KIND" zshEnv == 2
                 && nixpkgsLib.hasInfix "= \"bg\"" zshEnv
                 && nixpkgsLib.hasInfix stableBin zshEnv
                 && !(builtins.elem stableBin hm.home.sessionPath)
@@ -778,6 +782,7 @@ let
               else
                 !hasDispatcher
                 && !nixpkgsLib.hasInfix stableBin zshEnv
+                && !nixpkgsLib.hasInfix "CLAUDECODE" zshEnv
                 && !nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshEnv
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == ""
                 && !nixpkgsLib.hasInfix stableBin agentEnv.PATH

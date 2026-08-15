@@ -20,10 +20,17 @@ sudo에서 SSH_AUTH_SOCK 유실
 - `sudo` 실행 시 환경변수가 초기화되어 SSH 키 인증 실패
 - 해결: `sudo -E` 또는 sudoers에서 `SSH_AUTH_SOCK` 유지 설정
 
-macOS MiniPC 경로는 interactive와 launcher child가 다름
+macOS MiniPC 경로는 interactive와 automation child가 다름
 - interactive Ghostty의 `ssh minipc`는 기존 1Password agent(mac-ssh)+preflight를 유지한다.
-- personal Claude Remote Control/Codex launcher가 표시한 non-TTY child는 private dispatcher와
-  dedicated `minipc-headless` key(`IdentityAgent none`)를 사용한다. 1Password GUI를 기다리지 않는다.
+- personal Claude Remote Control/Codex launcher child와 Claude background child는 private
+  dispatcher와 dedicated `minipc-headless` key(`IdentityAgent none`)를 사용한다. Claude
+  background tool은 PTY 안에서 실행되고 launcher marker가 없을 수 있으므로, TTY 여부만으로
+  interactive라고 판정하지 않는다. Claude login-shell snapshot은 `CLAUDECODE=1` 생성 시
+  dispatcher PATH를 캡처해야 이후 snapshot의 PATH 복원 뒤 `timeout ssh`도 같은 경로를 쓴다.
+  이 automation 경로는 1Password GUI를 기다리지 않는다.
+- 설정 적용 전에 만들어진 Claude snapshot은 기존 PATH를 계속 복원할 수 있다. 배포 뒤 actual
+  child의 `command -v ssh`가 여전히 raw SSH면 진행 중 작업을 보존한 뒤 새 Claude 세션에서
+  snapshot을 재생성하고 다시 확인한다. 실행 중 앱/bridge를 임의로 재시작하지 않는다.
 - launcher 경로는 인증 성립까지만 15초 deadline을 적용하고, 인증 뒤 장시간 command는 자르지 않는다.
 - `HEADLESS_SSH_AUTH_TIMEOUT`이면 actual child의 `command -v ssh` → agenix
   `minipc-headless` materialization metadata → MiniPC authorized_keys entry → Tailscale 순서로 점검한다.
@@ -113,7 +120,7 @@ Git에 추가하지 않는다.
 
 ## 핵심 절차
 
-1. 먼저 runtime binding을 구분한다. interactive Ghostty는 1Password preflight, personal Claude/Codex non-TTY child는 `NIXOS_CONFIG_HEADLESS_SSH=1`+private dispatcher 경로다.
+1. 먼저 runtime binding을 구분한다. interactive Ghostty는 1Password preflight, personal Claude/Codex launcher child와 PTY 기반 Claude background child는 private dispatcher 경로다. launcher는 `NIXOS_CONFIG_HEADLESS_SSH=1`, Claude snapshot/background는 `CLAUDECODE=1` 생성 snapshot 또는 `CLAUDE_CODE_SESSION_KIND=bg` 신호로 소유권을 판정한다.
 2. launcher 경로의 `HEADLESS_SSH_AUTH_TIMEOUT`은 1Password 잠금 문제가 아니다. actual child의 `command -v ssh`, agenix materialization의 존재/권한 metadata, 선언된 server entry, Tailscale 순으로 확인한다. key 본체는 읽거나 로그로 남기지 않는다.
 3. `Load key ... invalid format`이면 키 파일 형식 문제로 분류한다. 파일 끝 개행, CRLF, 복사 손상을 확인한다.
 4. 인증이 아니라 timeout/no route 계열이면 Tailscale 상태(`tailscale status`, `tailscale up`)를 확인한다.

@@ -77,18 +77,25 @@ let
   # tools inside a PTY and do not inherit the launcher marker, so TTY checks
   # alone misclassify them as interactive. Their explicit session kind is the
   # runtime-owned signal that no local 1Password approval flow is available.
+  # removeSuffix is parse-critical: these predicates are interpolated before
+  # `; then`; retaining the indented-string newline would render `}\n; then`,
+  # which zsh rejects.
   headlessContextPredicate = lib.removeSuffix "\n" ''
     { [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] \
       || [ -n "''${CI:-}" ] || [ -n "''${CLAUDECODE:-}" ] \
       || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ] \
       || [ "''${CLAUDE_CODE_SESSION_KIND:-}" = "bg" ]; }
   '';
-  # PATH mutation remains opt-in: a managed launcher marker or Claude's
-  # background-session signal must own the child before the context predicate
-  # can expose the private dispatcher. This keeps ordinary interactive shells
-  # on raw OpenSSH while covering external wrappers such as `timeout ssh`.
+  # PATH mutation remains opt-in. CLAUDECODE is included because Claude creates
+  # its reusable login-shell snapshot with CLAUDECODE=1, then sources the
+  # snapshot after each tool shell starts. Capturing the private PATH there is
+  # what keeps external wrappers such as `timeout ssh` on the dispatcher after
+  # the snapshot's `export PATH=...` overwrites the new shell's .zshenv PATH.
+  # The launcher marker and bg signal cover non-snapshot child paths. Ordinary
+  # interactive shells have none of these owners and stay on raw OpenSSH.
   headlessPathOwnerPredicate = lib.removeSuffix "\n" ''
     { [ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" = "1" ] \
+      || [ -n "''${CLAUDECODE:-}" ] \
       || [ "''${CLAUDE_CODE_SESSION_KIND:-}" = "bg" ]; }
   '';
 in
@@ -147,9 +154,10 @@ in
     ghAuth
   ];
 
-  # Codex/Claude launcher child 또는 Claude background session으로 식별된 컨텍스트에서만
-  # private dispatcher를 PATH 앞에 둔다. global sessionPath/home.packages는 건드리지
-  # 않으므로 interactive Ghostty와 일반 SSH는 /usr/bin/ssh 의미를 유지한다.
+  # Codex/Claude launcher child, Claude snapshot 생성 셸, Claude background session으로
+  # 식별된 컨텍스트에서만 private dispatcher를 PATH 앞에 둔다. global
+  # sessionPath/home.packages는 건드리지 않으므로 interactive Ghostty와 일반 SSH는
+  # /usr/bin/ssh 의미를 유지한다.
   programs.zsh.envExtra = lib.mkAfter (
     lib.optionalString headlessDispatcher.enabled ''
       if ${headlessPathOwnerPredicate} \
