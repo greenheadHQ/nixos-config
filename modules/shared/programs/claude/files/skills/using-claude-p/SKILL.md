@@ -122,9 +122,17 @@ Claude Code 하네스의 Bash tool로 `claude -p`를 발사할 때는 하네스 
 수치·계약의 SoT는 [using-codex-exec SKILL.md "foreground/background 상한 불일치"](../using-codex-exec/SKILL.md#foregroundbackground-상한-불일치-호출-방식-계약) 절이다
 (그 절이 명시하듯 `claude -p` headless에 공통 적용). 이 절은 수치를 복제하지 않는다 — 규칙만 적는다.
 
-- foreground 호출은 하네스 timeout이 wrapper·SSH 등 안쪽 예산보다 먼저 발화한다
-  (`Exit code 143 / Command timed out ...` 실측). timeout 파라미터의 상한 초과값은 거부되지
-  않지만(2.1.233 라이브 재현), 실효 상한은 하네스 최대치로 가정한다.
+- foreground 호출은 하네스 timeout이 wrapper·SSH 등 안쪽 예산보다 먼저 발화한다. timeout
+  파라미터에 상한 초과값을 줘도 거부되지 않지만 실효 상한은 하네스 최대치로 클램프된다
+  (2.1.233 실측: 660초 작업에 `timeout: 900000` 지정 → 600초에 발화).
+- 상한 도달의 처리는 버전에 따라 다르다 — 2.1.233 실측에서는 프로세스를 죽이지 않고
+  `Command did not complete within its 600s timeout and was moved to the background`로
+  background 전환했고, 작업은 660초를 완주해 exit 0으로 끝났다 (구 버전 2.1.220 관측은
+  `Exit code 143 / Command timed out`으로 종료). 어느 쪽이든 foreground 응답은 그 시점에
+  끊기므로, 결과는 stdout이 아니라 파일 또는 완료 알림의 output 경로에서 회수한다.
+- 동일 응답에서 여러 foreground Bash 호출을 발사해도 병렬이 아니라 직렬 실행된다
+  (2.1.233 실측: 3초 작업 4개가 0.0→3.0, 3.1→6.1, 6.2→9.2, 9.3→12.3초로 순차). fan-out
+  예산은 합산해야 하며, 실제 병렬은 `run_in_background: true`뿐이다.
 - 수 분 이상 걸릴 수 있는 호출은 Bash tool `run_in_background: true`로 발사한다. 완료 알림의
   exit code는 claude가 아니라 래핑 셸의 최종 rc다 — `rc 캡처 → .rc 파일 영속화 → exit $rc`로
   끝낸다 (using-codex-exec SKILL.md "background 발사의 rc 계약"과 동일 규약; 꼬리 echo/cat을 두면
@@ -135,9 +143,9 @@ Claude Code 하네스의 Bash tool로 `claude -p`를 발사할 때는 하네스 
 - 하네스 timeout으로 잘린 호출은 명령 말미의 in-band 계약 검사(`_EC=$?; ...` 후속 라인)까지
   함께 사라진다 — 판정은 별도 호출(out-of-band)로 재확인한다.
 - 용어 구분 3종: CLI 플래그 `--background`/`--bg`(background agent 시작) ≠ Bash tool
-  `run_in_background` 파라미터 ≠ 하네스의 foreground→background 자동 전환(foreground 의도
-  호출이 background로 전환되어 알림으로 통지된 실측). 자동 전환되면 stdout 직수신 전제가
-  깨지므로 결과는 항상 파일로 받는다.
+  `run_in_background` 파라미터 ≠ 하네스의 foreground→background 자동 전환(foreground 상한
+  도달이 트리거 — 위 실측). 자동 전환되면 stdout 직수신 전제가 깨지므로 결과는 항상 파일로
+  받는다. 전환됐다고 실패한 것은 아니다 — 작업은 계속되고 완료 알림이 온다.
 
 ## 성공 계약
 
