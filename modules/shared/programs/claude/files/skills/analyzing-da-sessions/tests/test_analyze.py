@@ -795,43 +795,85 @@ def test_host_fetch_budget_clamps_find_and_stops_after_budget_timeout(
     assert any("ssh fetch budget 초과" in w for w in warnings)
 
 
-def test_collect_remote_files_reports_oversized_exclusions(
+def test_collect_remote_files_records_exclusions_outside_warnings(
     analyze_module,
     monkeypatch,
 ):
-    """size cap 제외분은 침묵 절단하지 않고 건수 warning으로 보고한다."""
+    """size cap 제외는 실패가 아니므로 warnings가 아닌 corpus_exclusions로 기록한다.
+
+    warnings에 넣으면 `host <name>:` prefix가 weekly coverage의 host partial 판정
+    입력이 되어, 수집이 정상인 주에도 mac이 영구 partial로 표시된다.
+    """
     monkeypatch.setattr(analyze_module.time, "monotonic", lambda: 0.0)
     warnings: list[str] = []
+    exclusions: list[dict] = []
     calls = []
 
     def fake_run(argv, **kwargs):
         calls.append(argv)
+        base = argv[argv.index("find") + 1]
         size_arg = argv[argv.index("-size") + 1]
+        if base != "~/.claude/projects":
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
         if size_arg.startswith("+"):
             stdout = (
                 "/Users/greenhead/.claude/projects/p/big-a.jsonl\n"
                 "/Users/greenhead/.claude/projects/p/big-b.jsonl\n"
-                if argv[3] == "~/.claude/projects"
-                else ""
+                # subagents 하위는 수집 대상 정의 밖이므로 제외 건수에도 들어가면 안 된다.
+                "/Users/greenhead/.claude/projects/p/subagents/big-c.jsonl\n"
             )
         else:
-            stdout = (
-                "/Users/greenhead/.claude/projects/p/s.jsonl\n"
-                if argv[3] == "~/.claude/projects"
-                else ""
-            )
+            stdout = "/Users/greenhead/.claude/projects/p/s.jsonl\n"
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
 
-    files = analyze_module.collect_remote_files("mac", warnings, budget=None)
+    files = analyze_module.collect_remote_files(
+        "mac", warnings, budget=None, exclusions=exclusions
+    )
     assert files == ["/Users/greenhead/.claude/projects/p/s.jsonl"]
     # base 2곳 × (목록 find + oversized find) = 4회
     assert len(calls) == 4
-    oversized_warnings = [w for w in warnings if "oversized jsonl" in w]
-    assert oversized_warnings == [
-        "host mac: ~/.claude/projects oversized jsonl 2건 제외 "
-        f"(find -size +{analyze_module.REMOTE_FILE_SIZE_CAP_MB}M 초과분, size cap)"
+    assert warnings == []
+    assert exclusions == [
+        {
+            "host": "mac",
+            "base": "~/.claude/projects",
+            "reason": "size_cap",
+            "cap_mb": analyze_module.REMOTE_FILE_SIZE_CAP_MB,
+            "excluded_files": 2,
+        }
+    ]
+
+
+def test_collect_local_files_applies_same_size_cap(analyze_module, tmp_path, monkeypatch):
+    """corpus 정의는 실행 위치에 따라 달라지지 않는다 — 로컬 경로도 같은 cap을 쓴다."""
+    claude_dir = tmp_path / "claude"
+    codex_dir = tmp_path / "codex"
+    claude_dir.mkdir()
+    codex_dir.mkdir()
+    small = claude_dir / "small.jsonl"
+    small.write_text("{}\n")
+    big = claude_dir / "big.jsonl"
+    big.write_bytes(b"x" * (analyze_module.REMOTE_FILE_SIZE_CAP_MB * 1024 * 1024 + 1))
+
+    monkeypatch.setitem(
+        analyze_module.HOST_PATH_MAP,
+        "mac",
+        {"claude": str(claude_dir), "codex": str(codex_dir)},
+    )
+    exclusions: list[dict] = []
+    files = analyze_module.collect_local_files("mac", exclusions)
+
+    assert files == [str(small)]
+    assert exclusions == [
+        {
+            "host": "mac",
+            "base": str(claude_dir),
+            "reason": "size_cap",
+            "cap_mb": analyze_module.REMOTE_FILE_SIZE_CAP_MB,
+            "excluded_files": 1,
+        }
     ]
 
 

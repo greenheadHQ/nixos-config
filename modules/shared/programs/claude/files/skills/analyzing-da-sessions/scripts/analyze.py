@@ -154,13 +154,21 @@ SEVERITY_LOOKBEHIND_CHARS = 200  # finding_id 등장 위치 기준 앞쪽 탐색
 SEVERITY_LOOKAHEAD_CHARS = 1000  # finding_id 등장 위치 기준 뒤쪽 탐색 범위
 SSH_FIND_TIMEOUT_SECONDS = 60  # 원격 호스트의 find 명령 timeout
 SSH_CAT_TIMEOUT_SECONDS = 120  # 원격 호스트의 cat 명령 timeout
-SSH_TAR_TIMEOUT_SECONDS = 540  # 원격 호스트의 tar batch stream timeout (host budget이 상한으로 clamp)
 SSH_HOST_FETCH_BUDGET_SECONDS = 600  # host별 remote find + fetch 전체 wall-clock budget
-# 원격 세션 파일 크기 상한 (find -size 단위 MB, BSD/GNU 공통 문법).
-# 2026-08 mac ~/.codex/sessions에 50MB 초과 rollout 148건(약 192GB)이 쌓여 host budget을
-# 초과시켰고, mac 수집이 4주 연속 0건이 됐다 (issue #1067 W30~W33). verdict 신호는
-# 50MB 미만 파일에 집중된다 (Claude 세션 로그 최대 관측치 43MB, 초과분 verdict 기여 없음).
+# 세션 파일 크기 상한 (find -size 단위 MB, BSD/GNU 공통 문법).
+#
+# 2026-08 mac ~/.codex/sessions에 50MB 초과 rollout 158건(약 180GB)이 쌓여 host budget을
+# 초과시켰고, mac 수집이 4주 연속 0건이 됐다 (issue #1067 W30~W33).
+#
+# 이 cap은 "신호 없는 파일 제외"가 아니라 **의도적 corpus 편향**이다 — 크기는 verdict 신호의
+# 판별자가 아니다. 실측(2026-08-15 mac): 초과분 대부분은 verdict 0건의 대용량 tool output
+# 이지만, 470MB rollout 1건에서 verdict 160건이 정상 추출된다. 즉 cap은 수집 가용성을 위해
+# 일부 실제 verdict를 버리는 trade-off이며, 버린 규모는 corpus_exclusions로 기록해 분모
+# 변화를 복원할 수 있게 한다. 신호 기준 선별(원격 marker grep prefilter)은 별도 범위다.
 REMOTE_FILE_SIZE_CAP_MB = 50
+# tar batch stream timeout. host budget에서 find 몫(목록 find + oversized 카운트 find)을
+# 뺀 값 — budget이 바뀌면 자동으로 따라간다 (실제 호출은 budget 잔여로 다시 clamp된다).
+SSH_TAR_TIMEOUT_SECONDS = SSH_HOST_FETCH_BUDGET_SECONDS - 2 * SSH_FIND_TIMEOUT_SECONDS
 FLEISS_KAPPA_TIMEOUT_SECONDS = 60  # fleiss-kappa.py helper 호출 timeout (현재 v1에서는 미사용)
 SSH_FETCH_WORKERS = 8  # 원격 호스트당 동시 SSH cat worker 수 (host 순차 처리, host당 K=8 병렬)
 SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10  # ssh preflight / ControlMaster check timeout
@@ -1393,6 +1401,7 @@ def build_aggregate(
     corpus_label: str,
     warnings: list[str],
     json_sidecar_path: str | None = None,
+    corpus_exclusions: list[dict] | None = None,
 ) -> dict:
     """모든 세션 분석 결과를 통합 aggregate 객체로 빌드."""
     arbiter_marker_sessions = [s for s in sessions if s and s["has_arbiter_marker"]]
@@ -1593,6 +1602,9 @@ def build_aggregate(
             "sessions": traceability_sessions,
         },
         "warnings": warnings,
+        # corpus 정책 제외 (실패 아님 — host partial 판정 입력인 warnings와 분리).
+        # 소비자는 이 값으로 분모 변화를 복원한다.
+        "corpus_exclusions": corpus_exclusions or [],
     }
 
 
@@ -1744,19 +1756,44 @@ def _validate_host(alias: str) -> None:
         raise ValueError(f"invalid host: {alias!r}. valid: {sorted(VALID_HOSTS)}")
 
 
-def collect_local_files(host: str) -> list[str]:
-    """현재 머신의 jsonl 파일 glob."""
+def collect_local_files(host: str, exclusions: list[dict] | None = None) -> list[str]:
+    """현재 머신의 jsonl 파일 glob.
+
+    corpus 정의는 실행 위치에 따라 달라지면 안 되므로, 원격 수집과 동일한
+    `REMOTE_FILE_SIZE_CAP_MB` 상한을 적용하고 제외 건수를 같은 형식으로 기록한다.
+    """
     _validate_host(host)
     paths = HOST_PATH_MAP[host]
+    cap_bytes = REMOTE_FILE_SIZE_CAP_MB * 1024 * 1024
     files = []
     for base, pattern in [
         (paths["claude"], "**/*.jsonl"),
         (paths["codex"], "**/rollout-*.jsonl"),
     ]:
         glob_path = os.path.join(base, pattern)
+        oversized = 0
         for f in glob.glob(glob_path, recursive=True):
-            if "/subagents/" not in f:
-                files.append(f)
+            if "/subagents/" in f:
+                continue
+            try:
+                if os.path.getsize(f) > cap_bytes:
+                    oversized += 1
+                    continue
+            except OSError:
+                # 경합으로 사라진 파일은 수집 대상에서 빠지며, 아래 open 단계와 같은
+                # 방식으로 조용히 건너뛴다 (제외 카운트에도 넣지 않는다).
+                continue
+            files.append(f)
+        if oversized and exclusions is not None:
+            exclusions.append(
+                {
+                    "host": host,
+                    "base": base,
+                    "reason": "size_cap",
+                    "cap_mb": REMOTE_FILE_SIZE_CAP_MB,
+                    "excluded_files": oversized,
+                }
+            )
     return files
 
 
@@ -1979,6 +2016,41 @@ def _extract_tar_bytes_to_dir(
     )
 
 
+def _remote_find_argv(host: str, base: str, size_expr: str) -> list[str]:
+    """원격 jsonl 목록 find의 고정 argv. 수집 경로와 제외 카운트 경로가 공유한다.
+
+    `'*.jsonl'`의 홑따옴표는 오타가 아니다 — SSH는 argv를 single string으로 합쳐
+    원격 shell에 전달하므로, 따옴표로 감싸야 원격 glob expansion이 차단된다.
+    `size_expr`은 `-50M`(미만) 또는 `+50M`(초과) 형태의 find -size 인자다.
+    """
+    return [
+        "ssh",
+        host,
+        "find",
+        base,
+        "-type",
+        "f",
+        "-name",
+        "'*.jsonl'",
+        "-size",
+        size_expr,
+    ]
+
+
+def _collectible_remote_lines(host: str, stdout: str) -> list[str]:
+    """원격 find stdout에서 수집 대상 정의를 만족하는 path만 남긴다.
+
+    수집 경로와 제외 카운트 경로가 같은 정의를 써야 "제외된 N건"이 실제 수집
+    대상 기준이 된다. `/subagents/` 하위는 wrapper output이라 대상이 아니고,
+    비신뢰 path line은 `_allowed_remote_path`로 검증한다.
+    """
+    return [
+        line
+        for line in stdout.splitlines()
+        if "/subagents/" not in line and _allowed_remote_path(host, line)
+    ]
+
+
 def _count_remote_oversized_files(
     host: str,
     base: str,
@@ -1997,18 +2069,7 @@ def _count_remote_oversized_files(
         timeout = timeout_value
     try:
         proc = subprocess.run(
-            [
-                "ssh",
-                host,
-                "find",
-                base,
-                "-type",
-                "f",
-                "-name",
-                "'*.jsonl'",
-                "-size",
-                f"+{REMOTE_FILE_SIZE_CAP_MB}M",
-            ],
+            _remote_find_argv(host, base, f"+{REMOTE_FILE_SIZE_CAP_MB}M"),
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -2017,13 +2078,14 @@ def _count_remote_oversized_files(
         return 0
     if proc.returncode != 0:
         return 0
-    return sum(1 for line in proc.stdout.splitlines() if line.strip())
+    return len(_collectible_remote_lines(host, proc.stdout))
 
 
 def collect_remote_files(
     host: str,
     warnings: list[str],
     budget: HostFetchBudget | None = None,
+    exclusions: list[dict] | None = None,
 ) -> list[str]:
     """원격 호스트에서 jsonl 파일 path glob (subprocess.run 고정 argv).
 
@@ -2035,6 +2097,10 @@ def collect_remote_files(
     통과한 line만 수집한다 — 제어문자/shell metacharacter/relative path/sibling-prefix
     포함 line은 silently 폐기한다. 검증은 absolute `HOST_PATH_MAP` prefix와의
     boundary 비교로 수행한다.
+
+    `REMOTE_FILE_SIZE_CAP_MB` 초과 파일은 목록에서 제외하고, 제외 건수를 `exclusions`
+    리스트에 구조화 기록한다. 이 제외는 실패가 아니라 설계된 corpus 정책이므로
+    `warnings`(=host partial 판정 입력)에 넣지 않는다.
     """
     _validate_host(host)
     all_files: list[str] = []
@@ -2048,21 +2114,8 @@ def collect_remote_files(
                 break
             timeout = timeout_value
         try:
-            # SSH는 argv를 single string으로 합쳐 원격 shell에 전달하므로
-            # `*.jsonl`을 single-quote로 감싸 원격 glob expansion을 차단한다.
             proc = subprocess.run(
-                [
-                    "ssh",
-                    host,
-                    "find",
-                    base,
-                    "-type",
-                    "f",
-                    "-name",
-                    "'*.jsonl'",
-                    "-size",
-                    f"-{REMOTE_FILE_SIZE_CAP_MB}M",
-                ],
+                _remote_find_argv(host, base, f"-{REMOTE_FILE_SIZE_CAP_MB}M"),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -2075,17 +2128,17 @@ def collect_remote_files(
                     budget.warn_exceeded(warnings)
                     break
                 continue
-            for line in proc.stdout.splitlines():
-                if "/subagents/" in line:
-                    continue
-                if not _allowed_remote_path(host, line):
-                    continue
-                all_files.append(line)
+            all_files.extend(_collectible_remote_lines(host, proc.stdout))
             oversized = _count_remote_oversized_files(host, base, budget)
-            if oversized:
-                warnings.append(
-                    f"host {host}: {base} oversized jsonl {oversized}건 제외 "
-                    f"(find -size +{REMOTE_FILE_SIZE_CAP_MB}M 초과분, size cap)"
+            if oversized and exclusions is not None:
+                exclusions.append(
+                    {
+                        "host": host,
+                        "base": base,
+                        "reason": "size_cap",
+                        "cap_mb": REMOTE_FILE_SIZE_CAP_MB,
+                        "excluded_files": oversized,
+                    }
                 )
             if budget is not None and budget.expired():
                 budget.warn_exceeded(warnings)
@@ -2454,6 +2507,10 @@ def main() -> int:
     args = parser.parse_args()
 
     warnings: list[str] = []
+    # corpus 정책으로 제외한 파일 기록 — 실패가 아니므로 warnings와 분리한다
+    # (warnings는 host partial 판정 입력이라, 상시 발생하는 제외를 섞으면 수집이
+    # 정상인 주에도 영구 partial이 된다).
+    corpus_exclusions: list[dict] = []
     cur_host = current_host()
     host_budgets: dict[str, HostFetchBudget] = {}
     remote_preflight_ok: set[str] = set()
@@ -2495,7 +2552,7 @@ def main() -> int:
         files_by_host = defaultdict(list)
         for host in args.hosts:
             if host == cur_host:
-                files_by_host[host] = collect_local_files(host)
+                files_by_host[host] = collect_local_files(host, corpus_exclusions)
             else:
                 if not check_remote_host_preflight(host, warnings):
                     files_by_host[host] = []
@@ -2503,7 +2560,9 @@ def main() -> int:
                 remote_preflight_ok.add(host)
                 budget = HostFetchBudget.start(host)
                 host_budgets[host] = budget
-                files_by_host[host] = collect_remote_files(host, warnings, budget)
+                files_by_host[host] = collect_remote_files(
+                    host, warnings, budget, corpus_exclusions
+                )
         corpus_label = "live"
 
     # 분석 — host 순차 처리, remote host는 ControlMaster preflight 후 worker pool dispatch.
@@ -2532,7 +2591,7 @@ def main() -> int:
             continue
 
         # remote: ControlMaster preflight + worker pool.
-        # ControlMaster 비활성이면 K=1 강등이 5526 파일 직렬 fetch ≈ 37분으로 5분 timeout
+        # ControlMaster 비활성이면 K=1 강등이 수천 파일 직렬 fetch ≈ 수십 분으로 host budget
         # 안에 끝나기 어려우므로 fail-fast로 host 전체 fetch를 skip하고 명시적 warning을
         # 누적한다. 사용자가 ControlMaster 활성화 (mac nrs 등) 누락을 즉시 인지할 수 있다.
         cm_active = check_controlmaster_active(
@@ -2546,7 +2605,8 @@ def main() -> int:
                 continue
             warnings.append(
                 f"host {host}: ControlMaster 비활성으로 fetch skip — 활성화 후 재실행 필요"
-                f" (직렬 fallback은 5분 budget 안에 완료 불가능). minipc는 nrs, mac은 사용자 수동 nrs."
+                f" (직렬 fallback은 {SSH_HOST_FETCH_BUDGET_SECONDS}초 budget 안에 완료 불가능)."
+                f" minipc는 nrs, mac은 사용자 수동 nrs."
             )
             continue
         if budget is None:
@@ -2610,7 +2670,9 @@ def main() -> int:
             warnings.extend(local_warnings)
 
     # aggregate
-    agg = build_aggregate(sessions, args.hosts, corpus_label, warnings, json_path)
+    agg = build_aggregate(
+        sessions, args.hosts, corpus_label, warnings, json_path, corpus_exclusions
+    )
 
     # 출력: markdown stdout
     print(render_markdown(agg))
