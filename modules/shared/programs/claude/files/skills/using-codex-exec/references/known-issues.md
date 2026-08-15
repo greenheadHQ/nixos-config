@@ -35,6 +35,7 @@ git rev-parse --show-toplevel
 |----------|-------------|----------|
 | wrapper 사전 검증 실패(invalid env·near-miss 포함)/PATH exit 127 | stderr로 사유 확인 → 경로·wrapper `--check` 후에만 재실행 | 실전 재발 사례 7건 + wrapper smoke |
 | 부모 sandbox denial | 소유권 변경 금지, §18 분기 | 실전 재발 사례 6건 |
+| 자식 sandbox denial (`-s read-only`에서 쓰기 시도) | rc 0 + 결과 파일 non-empty로 끝나므로 rc·파일 검사로는 못 잡고, 완료 표식·자기신고도 신뢰할 수 없다(거부돼도 모델이 표식을 낼 수 있음). 쓰기 작업은 실행 밖에서 결정적 postcondition(기대 파일 존재·내용·해시·`git diff --quiet`)을 확인한다. stderr 분류 시에는 ANSI 제거 후 `ERROR <module>: error=patch rejected: writing is blocked by read-only sandbox` 형태를 찾는다 (리터럴 `ERROR:` 0건) | 2026-08-15, 0.147.0 실측 |
 | timeout exit 124 (SIGTERM 단계) | budget 부족 신호 — 동일 budget 재시도 금지, 자식 정리 확인 후 budget 상향 fresh retry 최대 1회 | 실전 재발 사례 |
 | exit 137 (SIGKILL, 원인 다중) | wrapper `--kill-after` 승급 / codex 자신의 137 passthrough / 외부 SIGKILL이 모두 137이다 — 단독으로 timeout 판정 금지. 경과 시간(budget 도달 여부)·stderr·usage limit 행과 교차 확인 후 분기 | 실전 재발 사례 + wrapper passthrough 규약 |
 | usage limit | fail-fast. 신규 세션 재시도 금지. 즉시형(`hit your usage limit`) 외에 내부 재시도 hang형이 있고 외부 SIGKILL 시 exit null/137로 위장 — (code, signal) + stderr 패턴으로 판정, stderr tail 바이트 진단 금지(프롬프트 에코가 찍힘) | 실전 재발 사례; 2026-08-15 재확인 |

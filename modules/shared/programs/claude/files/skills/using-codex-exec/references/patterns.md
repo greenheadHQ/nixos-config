@@ -142,7 +142,9 @@ AGENTS.override.md > AGENTS.md > TEAM_GUIDE.md > .agents.md
 
 디렉토리 트리 깊은 곳의 파일이 상위를 오버라이드한다.
 
-재검증 미수행 (0.142.5 기준 서술 유지): AGENTS instruction의 실제 적용과 깊이별 우선순위.
+적용 범위 (재확인: 2026-08-15, 0.147.0 marker 실측): `codex exec`는 형식·내용 지시를 모두
+따르지만, `codex exec review`는 내용·스코프 지시만 반영하고 출력 형식 지시는 무시한다
+(SKILL.md "코드 리뷰 — 커스텀 지시 필요"의 표 참조). 깊이별 우선순위는 재검증 미수행.
 
 ## 패턴 4: 커스텀 리뷰 — exec 우회 (1회성 지시)
 
@@ -310,8 +312,11 @@ pipe_rcs=("${pipestatus[@]}")   # zsh 1-base. bash는 ("${PIPESTATUS[@]}") + 0-b
 # 산출물로 이번 실패가 성공으로 뒤집히지 않는다 (SKILL.md 성공 계약 조건 1·2).
 ```
 
-주의: `--output-schema`는 exec/review/resume help에 모두 있다 (재확인: 2026-07-10,
-0.144.1). 실제 schema-conforming output은 재검증 미수행 (0.142.5 기준 서술 유지).
+주의: `--output-schema`는 exec/review/resume help에 모두 있지만, help에 있다고 동작하는 것은
+아니다 — `codex exec review`에서는 인자를 받고도 무시하는 silent no-op이다 (재확인:
+2026-08-15, 0.147.0: required 키를 지정해도 rc 0에 결과는 자연어 리뷰, 경고 0건 —
+SKILL.md gotcha 11). 이 패턴처럼 exec 경로에서만 스키마 강제를 신뢰하고, 리뷰에 구조화
+출력이 필요하면 패턴 4(exec 우회)를 쓴다. resume 경로는 재검증 미수행.
 
 ## 패턴 7: JSONL 이벤트 스트림
 

@@ -147,7 +147,7 @@ review에는 image 플래그가 없다.
 | `--disable <FEATURE>` | 피처 비활성화 |
 | `--strict-config` | 전달한 `-c`뿐 아니라 로드된 config 전체의 미인식 필드를 오류로 처리. capability probe는 `--ignore-user-config --strict-config`로 user config drift를 격리 |
 | `-m, --model <MODEL>` | 모델 선택 (생략 권장 — config.toml 기본값 사용. 단 `--ignore-user-config` 동반 시 이 원칙의 예외 — 해당 행 참조) |
-| `--output-schema <FILE>` | JSON Schema 출력 형식 — 0.142.5부터 review/resume도 지원 (이전에는 exec 전용) |
+| `--output-schema <FILE>` | JSON Schema 출력 형식 — exec에서 동작. review는 인자를 받되 무시하는 silent no-op이다 (gotcha 11, 2026-08-15 실측); resume은 미검증 |
 | `--dangerously-bypass-approvals-and-sandbox` | 샌드박스 우회 (`--yolo` 숨은 alias) |
 | `--dangerously-bypass-hook-trust` | 영속 hook trust 없이 활성 hook 실행 허용 (신규, 0.142.5 — 자동화 전용, 위험) |
 | `--skip-git-repo-check` | Git 저장소 체크 건너뜀 |
@@ -322,12 +322,17 @@ PROMPT과 scope flag이 상호 배타이므로, 두 가지 대안 중 선택한�
 방법 A — AGENTS.md 활용 (영구 지시, review diff 스코핑 유지)
 
 프로젝트 `AGENTS.md` 또는 `~/.codex/AGENTS.override.md`에 리뷰 정책을 배치한 뒤,
-scope flag으로 review를 실행하면 지시가 자동 적용된다.
-(지시 파일 우선순위: [references/patterns.md](references/patterns.md) 패턴 3 참조)
+scope flag으로 review를 실행하면 지시가 적용된다 — 단 적용 범위가 제한적이다
+(재확인: 2026-08-15, 0.147.0 — 임시 repo marker 실측 4회):
 
-재검증 미수행 (0.142.5 기준 서술 유지): AGENTS instruction의 실제 적용과 우선순위.
-재검증 방법: 임시 repo의 `AGENTS.md`에 고유 marker 지시(예: "리뷰 결과 첫 줄에 AGENTS_APPLIED를 출력")를 넣고
-`codex exec review --uncommitted`를 실행해 결과에 marker가 반영되는지 확인한다.
+| 지시 유형 | `codex exec` | `codex exec review` |
+|-----------|-------------|---------------------|
+| 내용·스코프 ("보안만 지적, 스타일 금지") | 적용 | 적용 (대조군 대비 스타일 지적 억제 확인) |
+| 출력 형식 (첫 줄 marker, 항목 끝 태그) | 적용 | 미적용 (2회 일관) |
+
+즉 방법 A로는 리뷰의 관점·범위를 바꿀 수 있지만 출력 형식은 강제할 수 없다. review에서
+`--output-schema`도 silent no-op이므로(gotcha 11), 형식·구조화 출력이 필요하면 방법 B가 유일하다.
+(지시 파일 우선순위: [references/patterns.md](references/patterns.md) 패턴 3 참조 — 깊이별 우선순위는 재검증 미수행)
 
 방법 B — exec 우회 (1회성 지시, 최대 유연성)
 
@@ -450,7 +455,18 @@ exit $rc                       # 하네스 완료 알림에 codex rc가 실리�
 
 ### foreground/background 상한 불일치 (호출 방식 계약)
 
-wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 budget이지만, Claude Code 하네스의 Bash tool을 경유하는 foreground 호출에서는 이 budget에 도달하지 못한다 — 상한은 세션 유형이 아니라 하네스 속성이라 대화형 세션과 `claude -p` headless에 공통 적용되며, Bash tool의 foreground 대기 상한이 기본 120초, `timeout` 파라미터 명시 시 최대 600초(10분)라 하네스가 먼저 프로세스를 끊는다 (`Exit code 143 / Command timed out` — 2026-07-10 실사례: Arbiter foreground 실행이 10분에 잘리고 background 재실행으로 8분 34초 만에 성공). 수 분 이상 걸릴 수 있는 programmatic 호출은 background로 실행하고, foreground가 꼭 필요하면 Bash tool `timeout` 파라미터를 반드시 명시하되 wrapper budget이 아니라 하네스 상한이 실질 상한임을 전제한다. run-da의 role별·하네스별 발사 방식은 run-da 스킬 `references/arbiter-scaling.md`의 실행 계약이 소유하며, 본 절은 그 계약이 참조하는 하네스 상한 사실의 정본이다.
+wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 budget이지만, Claude Code 하네스의 Bash tool을 경유하는 foreground 호출에서는 안쪽 예산이 하네스 상한보다 길 때 이 budget에 도달하지 못한다 — 상한은 세션 유형이 아니라 하네스 속성이라 대화형 세션과 `claude -p` headless에 공통 적용되며, Bash tool의 foreground 대기 상한은 기본 120초, `timeout` 파라미터 명시 시 최대 600초(10분)다. 초과값을 줘도 거부되지 않고 600초로 클램프된다 (재확인: 2026-08-15, Claude Code 2.1.233 — 660초 작업에 `timeout: 900000` 지정 → 600초에 발화). 안쪽 timeout(wrapper·SSH)이 하네스 상한보다 짧으면 당연히 그쪽이 먼저 발화한다.
+
+상한 도달 시 처리는 하네스 버전에 따라 다르므로 결과 회수 계약도 갈린다:
+
+| 하네스 동작 | 관측 | 결과 회수 |
+|---|---|---|
+| background 자동 전환 | 2.1.233 실측 — `Command did not complete within its 600s timeout and was moved to the background`. 프로세스는 살아 660초를 완주하고 exit 0 | 작업이 계속되므로 완료 알림의 output 경로 또는 `-o` 결과 파일에서 회수 |
+| 프로세스 종료 | 2.1.220 관측 — `Exit code 143 / Command timed out` (2026-07-10 실사례: Arbiter foreground 실행이 10분에 잘리고 background 재실행으로 8분 34초 만에 성공) | 완료 알림이 오지 않는다. 종료 시점까지 이미 파일로 영속화된 산출물만 회수 가능하므로 중간 결과를 파일에 흘려두지 않았다면 유실 |
+
+재현: 하네스 상한을 넘는 작업(예: `python3 -c "import time; time.sleep(660)"`)을 foreground로, Bash tool `timeout` 파라미터에 상한 초과값(예: 900000)을 지정해 발사하고 어느 쪽 동작이 나오는지 관측한다 (모델 호출 0).
+
+수 분 이상 걸릴 수 있는 programmatic 호출은 처음부터 background로 실행하고, foreground가 꼭 필요하면 Bash tool `timeout` 파라미터를 반드시 명시하되 wrapper budget이 아니라 하네스 상한이 실질 상한임을 전제한다. 어느 경우든 결과는 stdout이 아니라 파일로 받는다 — 두 동작 모두 foreground 응답은 그 시점에 끊긴다. run-da의 role별·하네스별 발사 방식은 run-da 스킬 `references/arbiter-scaling.md`의 실행 계약이 소유하며, 본 절은 그 계약이 참조하는 하네스 상한 사실의 정본이다.
 
 ## Gotchas
 
@@ -464,6 +480,8 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 8. `-c hooks.*` inline override는 stdin과 독립적으로 hang을 유발한 실측 축이다. programmatic 호출에서 제거하고 [known-issues.md §15](references/known-issues.md#15-codex-exec-supervised-wrapper로-14-위에-timeout-budget-한계-보강-issue-593)의 supervisor·timeout 계약을 적용한다.
 9. codex exec `--json`은 multi-agent spawn/child 이벤트를 노출하지 않는다 (관측성 한계, 0.144.1). `collaboration.spawn_agent`는 실제로 작동해 child를 생성·실행하지만, 공개 `--json`에는 `tool:"wait"` 이벤트만 보이고 그 `receiver_thread_ids`가 `[]`다 — 이를 spawn 실패로 오판하지 마라 (child가 이미 실행됐을 수 있어 재시도 시 중복 실행). 실제 spawn 여부는 `~/.codex/sessions`의 persisted rollout(`spawn_agent`/`sub_agent_activity`/`inter_agent_communication_metadata`)으로 확인한다. 상세·재검증 probe(버전 변화 시 재확인): [known-issues.md §19](references/known-issues.md#19-codex-exec---json이-multi-agent-spawnchild-이벤트를-노출하지-않음-관측성-한계)
 10. `Not inside a trusted directory and --skip-git-repo-check was not specified.` — git worktree 밖에서 실행하면 rc 1 + 이 문구로 모델 호출 전 즉사한다 (토큰 0, ~1초; 2026-08-15, 0.147.0 실측). fan-out 전멸의 최다 단일 원인 중 하나 (독립 6세션 재현). 트리거 축 4개: ① 비-git cwd ② `-C <비-git scratch>` (판정 대상은 셸 cwd가 아니라 `-C` 값) ③ `resume` (게이트가 세션 조회보다 먼저 발화, 초기 exec의 플래그 비승계) ④ `review --uncommitted` 등 scope 지정 시 (단 review에는 `-C`가 없다). 에러 문구와 달리 판정 기준은 config `trust_level`이 아니라 git worktree 내부 여부 단일 조건이다 — `trust_level="trusted"` 등재로는 통과하지 못하고, 신뢰 목록에 없는 생 `git init` 디렉토리는 통과한다 (실측). `--ephemeral`·`--ignore-user-config`로 우회 불가, `--skip-git-repo-check`가 유일 해제. 프리플라이트: `git -C "$dir" rev-parse --is-inside-work-tree` (플래그 과부착은 무해). 상세: [known-issues.md §8](references/known-issues.md#8-git-저장소-체크-실패), 격리 실행 블록: [references/patterns.md](references/patterns.md)
+11. `codex exec review`의 `--output-schema`는 인자를 받되 무시하는 silent no-op이다 (재확인: 2026-08-15, 0.147.0 실측: 스키마 required 키를 지정해도 rc 0에 결과는 자연어 리뷰 텍스트, `jq -e`로 필수 키 검사 실패, stderr에 스키마 관련 경고 0건). 즉 review 경로에서는 `--output-schema`도 AGENTS.md 형식 지시도 출력 형식을 강제하지 못한다 — 구조화 출력이 필요하면 exec 우회(방법 B)를 쓰고, CI 게이트가 review의 스키마 강제를 신뢰하지 않게 한다.
+12. sandbox denial은 rc 0으로 끝난다 (재확인: 2026-08-15, 0.147.0 실측: `-s read-only`에서 쓰기 지시 → 파일 미변경, rc 0, `-o`에는 모델의 자연어 보고). stderr에는 `ERROR codex_core::tools::router: error=patch rejected: writing is blocked by read-only sandbox ...`가 남지만 리터럴 `ERROR:`는 0건이라 구 판정식으로는 미탐이고, rc·결과 파일 검사로도 잡히지 않는다. 완료 표식이나 모델의 자기신고에 의존하지 마라 — 도구 호출이 거부돼도 모델은 표식을 출력할 수 있다. 쓰기를 요구한 작업의 판정은 실행 밖에서 확인하는 결정적 postcondition이어야 한다: 기대 파일의 존재·내용·해시·`git diff --quiet` 중 작업에 맞는 것을 호출자가 직접 검사한다. 보조로 stderr를 볼 때는 ANSI 제거 후 위 tracing 문자열(`error=patch rejected`)을 찾는다.
 
 ## 모델 사용 원칙
 
@@ -508,8 +526,14 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
   목록·로그 노출).
 - 임시 non-git cwd + `--skip-git-repo-check`로 저장소 밖에서 실행한다.
 - `--ignore-user-config`와 `--ignore-rules`는 항상 쌍으로 쓴다. 단 이 조합이 차단하지 못하는
-  표면이 있다 — cwd 기반 project config의 MCP 정의·skills 투영은 별도 축이다 (차단 범위
-  skills/MCP/hooks 축별 실측은 미수행 항목).
+  표면이 있다 — cwd 기반 project 축(project `AGENTS.md`, `.agents/skills` 투영)은 이 플래그의
+  대상이 아니며 cwd 이동만이 유일한 차단 수단이다 (재확인: 2026-08-15, 0.147.0 —
+  `codex debug prompt-input`으로 모델 가시 컨텍스트를 덤프해 대조: project cwd에서는 두 마커가
+  모두 존재하고, 동일 조건의 clean cwd에서는 둘 다 사라진다).
+- 격리가 실제로 걸렸는지는 모델 호출 없이 검증할 수 있다 — `codex debug prompt-input '<프롬프트>'`가
+  모델에 실제로 들어가는 컨텍스트를 JSON으로 덤프하므로, 격리 대상 문자열이 남아 있는지
+  grep한다 (`--ignore-user-config`는 이 debug 서브커맨드에서 미지원이라 rc 2로 거부된다 — 그
+  플래그의 효과는 exec 배너·실행으로 확인한다).
 - 출력은 untrusted로 취급하고, 프롬프트에 홈/전역 재귀 검색을 지시하지 않는다.
 
 ## 운영 체크리스트
