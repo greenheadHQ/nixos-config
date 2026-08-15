@@ -67,9 +67,10 @@ codex exec 실행이 필요한가?
 │          → references/patterns.md 패턴 2 참조
 │
 ├─ 세션 재개인가?
-│  └─ YES → codex exec resume --last 또는 <session-id>
-│           ⚠️ --ephemeral 원본은 0.144.1에서 새 세션으로 silent fallback 가능
-│           → stderr/session id와 응답 context로 실제 재개 여부 검증
+│  └─ YES → codex exec resume <session-id> (id 명시가 정석 — --last 회피)
+│           ⚠️ 저장 세션 없는 cwd의 --last는 무출력 hang 또는 새 세션
+│           silent fallback (gotcha 4 두 축) → wrapper timeout 필수,
+│           stderr/session id와 응답 context로 실제 재개 여부 검증
 │
 └─ 일반 실행 → 위 실행 경로 게이트로 raw/supervised 선택
                → references/patterns.md 패턴 1 참조
@@ -92,9 +93,10 @@ codex exec 실행이 필요한가?
 
 | 플래그 | 설명 |
 |--------|------|
-| `-s, --sandbox <SANDBOX_MODE>` | 샌드박스 정책 (read-only, workspace-write, danger-full-access) — review/resume은 미지원 |
-| `-C, --cd <DIR>` | 작업 디렉토리 지정 |
+| `-s, --sandbox <SANDBOX_MODE>` | 샌드박스 정책 (read-only, workspace-write, danger-full-access) — review/resume은 미지원. 셸 명령 네트워크: read-only = 항상 차단(재개방 불가) / workspace-write = 기본 차단, `-c sandbox_workspace_write.network_access=true`로 재개방 가능 / danger-full-access = 허용. OS 중립 사실 — macOS Seatbelt·NixOS bwrap 동일 실측 (2026-08-15, 0.147.0 darwin; `codex sandbox -c sandbox_mode=... -- curl` 토큰 0 재검증). 서브프로세스 프롬프트에 원격 fetch를 지시하지 말 것 — 필요한 원격 데이터는 호출자가 미리 캡처해 주입한다 |
+| `-C, --cd <DIR>` | 작업 디렉토리 지정 — trusted directory 게이트(gotcha 10)의 판정 대상은 셸 cwd가 아니라 이 값이다. review에는 이 플래그가 없다 |
 | `--add-dir <DIR>` | 추가 쓰기 가능 디렉토리 |
+| `--approve-for-me` | 승인 요청을 workspace-write sandbox의 자동 리뷰로 라우팅 (신규, 0.147.0 — upstream #36373). 배너 `approval: on-request` + `sandbox: workspace-write`로 확인. `-s`·`--dangerously-bypass-approvals-and-sandbox`와는 clap 하드 상호 배타(파서 즉시 실패). review/resume 파서는 거부 |
 | `--oss` | 오픈소스 프로바이더 |
 | `--local-provider <OSS_PROVIDER>` | 로컬 프로바이더 (lmstudio/ollama) |
 | `-p, --profile <CONFIG_PROFILE_V2>` | `$CODEX_HOME/<name>.config.toml`을 기본 유저 config 위에 레이어 |
@@ -130,18 +132,18 @@ review에는 image 플래그가 없다.
 | `--enable <FEATURE>` | 피처 활성화 |
 | `--disable <FEATURE>` | 피처 비활성화 |
 | `--strict-config` | 전달한 `-c`뿐 아니라 로드된 config 전체의 미인식 필드를 오류로 처리. capability probe는 `--ignore-user-config --strict-config`로 user config drift를 격리 |
-| `-m, --model <MODEL>` | 모델 선택 (생략 권장 — config.toml 기본값 사용) |
+| `-m, --model <MODEL>` | 모델 선택 (생략 권장 — config.toml 기본값 사용. 단 `--ignore-user-config` 동반 시 이 원칙의 예외 — 해당 행 참조) |
 | `--output-schema <FILE>` | JSON Schema 출력 형식 — 0.142.5부터 review/resume도 지원 (이전에는 exec 전용) |
 | `--dangerously-bypass-approvals-and-sandbox` | 샌드박스 우회 (`--yolo` 숨은 alias) |
 | `--dangerously-bypass-hook-trust` | 영속 hook trust 없이 활성 hook 실행 허용 (신규, 0.142.5 — 자동화 전용, 위험) |
 | `--skip-git-repo-check` | Git 저장소 체크 건너뜀 |
 | `--ephemeral` | 세션 파일 미저장 |
-| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지) |
+| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지). config에 의존하던 암묵 기본값이 함께 사라진다 — `model_reasoning_effort`가 CLI 기본값으로 드리프트하는 것을 A/B 실측 (2026-08-15, 0.147.0: config `low` → 배너 `none`; model은 런타임 기본이 config 값과 우연히 같아 무증상이나 메커니즘 동일). 값을 고정해야 하는 호출은 `-c model_reasoning_effort=` 등으로 명시하고, 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다 |
 | `--ignore-rules` | user/project execpolicy `.rules` 파일 로드 차단 |
 | `--json` | JSONL 이벤트 출력 |
 | `-o, --output-last-message <FILE>` | 마지막 메시지 파일 저장. review에서 `-o`·stdout 모두 정상 (0.144.1 실측); upstream #12502의 open 상태와 로컬 동작은 분리 — known-issues.md §2 참조 |
 
-⚠️ 승인(approval) 관련 공개 CLI 플래그는 존재하지 않는다. `exec`/`review`/`resume`은 headless 실행이므로 승인 프롬프트 자체가 불가능하고, approval은 항상 `never`로 고정된다 (재검증 미수행: 0.142.5 기준 서술 유지). 과거 단축 플래그 `--full-auto`는 0.144.1 help에는 없지만 hidden parser가 수용하고 `--sandbox workspace-write` 사용을 안내하는 deprecation warning을 낸다. 새 문서·스크립트에서는 아래 공개 surface를 사용한다:
+⚠️ 승인(approval) 관련 공개 CLI 플래그는 `review`/`resume`에는 없다. exec에는 0.147.0부터 `--approve-for-me`가 있다 (위 exec 전용 표) — 플래그 없는 기본 실행의 approval은 `never`이며 배너 `approval:` 값으로 재확인한다 (재확인: 2026-08-15, 0.147.0 배너 실측). 과거 단축 플래그 `--full-auto`는 0.147.0에서 완전 제거되어 전 서브커맨드에서 rc 2 `unexpected argument`로 즉시 실패한다 (supervised wrapper 경유도 동일 — passthrough; 변천은 known-issues "버전별 변천" 참조. `--yolo` 숨은 alias는 여전히 유효). 새 문서·스크립트에서는 아래 공개 surface를 사용한다:
 
 - `exec`: `-s workspace-write`로 sandbox tier만 지정한다
 - `review`/`resume`: 전용 sandbox 플래그가 없으므로 `config.toml`의 `sandbox_mode`를 따르거나, 필요 시 `--dangerously-bypass-approvals-and-sandbox`를 사용한다
@@ -333,11 +335,17 @@ banner_session=$(sed -n 's/.*session id:[[:space:]]*\([^[:space:]]*\).*/\1/p' \
 ```
 
 변형: `resume --last` (같은 cwd의 마지막 세션), `resume --last --all` (cwd 필터 해제).
-사용자가 요청한 1회성 수동 진단은 alias를 피하도록 raw `command codex exec resume --last`를 사용할 수 있다.
+`[SESSION_ID]` 인자는 UUID 외에 thread name도 수용하며 UUID가 파싱되면 우선한다 (0.147.0 help).
+programmatic 자동화에서는 `--last`를 쓰지 말고 세션 id를 명시한다 — 아래 gotcha 4의 두 실패
+축이 모두 `--last` + 무저장 cwd 조합에서 발생하고, raw 호출에는 timeout 구제가 없다.
 
-`--ephemeral` 세션은 저장되지 않는다. 0.144.1에서 저장 세션이 없는 cwd의
-`resume --last`는 오류 대신 새 session id로 조용히 시작해 exit 0을 반환했다 — 위 예제가
-session id·응답 context 확인을 포함하는 이유다. 불일치하거나 결과가 비면 재개 실패로 처리한다.
+`--ephemeral` 세션은 저장되지 않는다. 저장 세션이 없는 cwd의 `resume --last`는 버전·환경에
+따라 (a) 새 session id로 조용히 시작해 exit 0 (0.144.1 관측 — silent fallback 로직은 0.147.0에도
+잔존), 또는 (b) 배너조차 없는 무출력 무기한 정지 (0.147.0 실측 5/5, 300초까지 무출력 — 대형
+세션 코퍼스·state DB 환경에서 관측된 시그니처로 wrapper timeout rc 124가 유일한 구제) 중
+하나로 나타난다 — 위 예제가 session id·응답 context 확인을 포함하고 supervised 경로를 강제하는
+이유다. 불일치하거나 결과가 비면 재개 실패로 처리한다. 상세 시그니처는
+[known-issues.md의 resume 실패 시그니처](references/known-issues.md) 참조.
 
 ## 성공 계약
 
@@ -417,15 +425,16 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 
 ## Gotchas
 
-1. `--search`는 exec에서 미동작: `error: unexpected argument '--search' found`. 대안 config key `-c web_search=live`는 strict config 검증을 통과했으나 실제 tool 제공은 재검증 미수행 (2026-07-10, 0.144.1).
-2. `--full-auto`는 0.144.1 help에서 숨겨졌지만 parser가 수용하고 deprecation warning을 낸다. 새 호출은 `-s workspace-write`를 사용한다. 명시한 `-s` 값이 `config.toml`의 `sandbox_mode`를 override한다 (2026-07-03, 0.142.5 실측: `-s read-only` 지정 시 config가 `danger-full-access`여도 read-only로 실행됨; 0.144.1 재검증 미수행).
+1. `--search`는 exec에서 미동작: `error: unexpected argument '--search' found` (0.147.0 동일). web search 도구는 config·플래그 없이도 exec에 제공되어 실제 동작함을 실측 (2026-08-15, 0.147.0 라이브 1회 + rollout 교차확인). 웹검색은 sandbox tier와 무관한 서버측 별개 경로다 — `-s read-only`로 셸 네트워크를 차단해도 web_search는 동작하므로 세션 격리로 오해하지 말 것. 검색 질의에 저장소명·경로·심볼명이 실려 나가는 정보 노출 축이 있다.
+2. `--full-auto`는 0.147.0에서 완전 제거 — 전 서브커맨드(exec/review/resume/top-level)에서 rc 2 `unexpected argument`로 즉시 실패한다 (2026-08-15 실측; 변천은 known-issues "버전별 변천"). 과거 세션 로그·문서 예시의 `--full-auto`를 복사하지 마라. 새 호출은 `-s workspace-write`를 사용한다. 명시한 `-s` 값이 `config.toml`의 `sandbox_mode`를 override한다 (2026-07-03, 0.142.5 실측: `-s read-only` 지정 시 config가 `danger-full-access`여도 read-only로 실행됨; 0.144.1 재검증 미수행).
 3. CODEX_API_KEY는 exec 전용: interactive TUI와 VS Code extension에서는 무시됨. OPENAI_API_KEY는 auth 체인에 미참여 (TUI prefill 전용). 우선순위: CODEX_API_KEY > ephemeral tokens > auth.json. 재검증 미수행 (0.142.5 기준 서술 유지; 상세: [known-issues.md §17](references/known-issues.md#17-exec-auth-chain-우선순위와-login-status-한계))
-4. ephemeral resume silent fallback: `--ephemeral` 원본은 저장되지 않으며, 저장 세션이 없는 cwd의 `resume --last`는 0.144.1에서 오류 대신 새 세션을 시작하고 exit 0을 반환했다. session id와 응답 context로 판정한다 — session id 매치는 ANSI 제거 후 수행한다 (본문 "세션 재개" 예제 참조; 평문 `grep -F`는 강제 컬러 환경에서 항상 실패).
+4. 무저장 cwd의 `resume --last`는 두 실패 축이 있다 — (a) exit 0 silent fallback: 오류 대신 새 session id로 조용히 시작 (0.144.1 관측; fallback 로직은 0.147.0에도 잔존 — 도달 불가 provider 실행에서 새 세션 발급 관측). (b) 무출력 hang: 배너 이전 단계에서 무기한 정지, stderr 0바이트 (0.147.0 실측 5/5 — 대형 세션 코퍼스 환경 시그니처, wrapper timeout rc 124가 유일 구제. stderr가 완전히 비므로 stderr 기반 판정은 이 실패를 놓친다). 어느 축이든 처방 동일: `--last` 대신 세션 id 명시, supervised 경로 필수, session id·응답 context로 판정 — session id 대조는 ANSI 제거 후 값을 추출해 문자열 비교한다 (본문 "세션 재개" 예제 참조; 평문 `grep -F`는 강제 컬러 환경에서 항상 실패하고, `grep -E`에 값을 직접 넣으면 접두사·메타문자 오탐이 난다).
 5. `codex review` (top-level) vs `codex exec review`: 전자는 `-m`, `--json`, `-o`, `--output-schema`, `--ephemeral`, `-s/--sandbox` 등 미지원 (재확인: 2026-07-10, 0.144.1 help). 비대화형 자동화에는 반드시 `codex exec review` 사용
 6. Bash tool sandbox에서 `&` + `$!` 미작동: Claude Code의 Bash tool에서 background process PID 캡처(`$!`)가 리터럴 문자열로 반환됨. shell-level 병렬 대신 여러 병렬 Bash tool 호출 + supervised stdin pipe를 사용한다. 이 제약은 Codex 세션의 native subagent 경로에는 적용되지 않는다. 재검증 미수행 (0.142.5 기준 서술 유지; 상세: [known-issues.md](references/known-issues.md) §11)
 7. stdin pipe로 stdin hang 방지: `cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -`로 EOF를 보장한다. `Reading additional input...` banner 하나만으로 hang이라 단정하지 말고, banner + 무진척 + 결과 미생성을 함께 확인한다. 상세: [known-issues.md](references/known-issues.md) §14
 8. `-c hooks.*` inline override는 stdin과 독립적으로 hang을 유발한 실측 축이다. programmatic 호출에서 제거하고 [known-issues.md §15](references/known-issues.md#15-codex-exec-supervised-wrapper로-14-위에-timeout-budget-한계-보강-issue-593)의 supervisor·timeout 계약을 적용한다.
 9. codex exec `--json`은 multi-agent spawn/child 이벤트를 노출하지 않는다 (관측성 한계, 0.144.1). `collaboration.spawn_agent`는 실제로 작동해 child를 생성·실행하지만, 공개 `--json`에는 `tool:"wait"` 이벤트만 보이고 그 `receiver_thread_ids`가 `[]`다 — 이를 spawn 실패로 오판하지 마라 (child가 이미 실행됐을 수 있어 재시도 시 중복 실행). 실제 spawn 여부는 `~/.codex/sessions`의 persisted rollout(`spawn_agent`/`sub_agent_activity`/`inter_agent_communication_metadata`)으로 확인한다. 상세·재검증 probe(버전 변화 시 재확인): [known-issues.md §19](references/known-issues.md#19-codex-exec---json이-multi-agent-spawnchild-이벤트를-노출하지-않음-관측성-한계)
+10. `Not inside a trusted directory and --skip-git-repo-check was not specified.` — git worktree 밖에서 실행하면 rc 1 + 이 문구로 모델 호출 전 즉사한다 (토큰 0, ~1초; 2026-08-15, 0.147.0 실측). fan-out 전멸의 최다 단일 원인 중 하나 (독립 6세션 재현). 트리거 축 4개: ① 비-git cwd ② `-C <비-git scratch>` (판정 대상은 셸 cwd가 아니라 `-C` 값) ③ `resume` (게이트가 세션 조회보다 먼저 발화, 초기 exec의 플래그 비승계) ④ `review --uncommitted` 등 scope 지정 시 (단 review에는 `-C`가 없다). 에러 문구와 달리 판정 기준은 config `trust_level`이 아니라 git worktree 내부 여부 단일 조건이다 — `trust_level="trusted"` 등재로는 통과하지 못하고, 신뢰 목록에 없는 생 `git init` 디렉토리는 통과한다 (실측). `--ephemeral`·`--ignore-user-config`로 우회 불가, `--skip-git-repo-check`가 유일 해제. 프리플라이트: `git -C "$dir" rev-parse --is-inside-work-tree` (플래그 과부착은 무해). 상세: [known-issues.md §8](references/known-issues.md#8-git-저장소-체크-실패), 격리 실행 블록: [references/patterns.md](references/patterns.md)
 
 ## 모델 사용 원칙
 
@@ -459,7 +468,7 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 | review에서 PROMPT + scope flag | `'[PROMPT]' cannot be used with '--base'` | 의사결정 트리의 방법 A 또는 B |
 | exec 전용 플래그를 review에 전달 | `unexpected argument` | exec 전용/공통 매트릭스 확인 |
 | PROMPT 인자와 `-` 마커 동시 사용 | `unexpected argument '-'` | PROMPT 또는 stdin marker 중 하나만 선택 |
-| `--ephemeral` 뒤 `resume --last`의 exit 0을 재개 성공으로 간주 | 새 세션 silent fallback | session id와 응답 context 확인 |
+| programmatic 자동화에서 `resume --last` 사용 | 무저장 cwd에서 무출력 hang(0.147.0) 또는 새 세션 silent fallback(0.144.1) — gotcha 4 | 세션 id 명시 + supervised 경로 + session id·응답 context 확인 |
 | programmatic 호출에 raw `codex exec` 사용 | hang/자식 프로세스 잔존 | 실행 경로 게이트의 supervised wrapper 사용 |
 | `-c hooks.*` inline override | stdin과 무관한 silent hang 가능 | override 제거 + §15 supervisor 적용 |
 | JSON parser 앞 `2>&1` | stderr 혼입으로 JSON 파싱 실패 | stdout/stderr/result 분리 |

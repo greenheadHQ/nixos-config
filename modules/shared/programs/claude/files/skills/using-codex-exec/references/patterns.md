@@ -367,6 +367,45 @@ rg -q '^SMOKE_COMPLETE$' /tmp/smoke-result.md
 
 fan-out 전에 이 패턴을 1회 필수 실행한다. 통과하면 기존 복잡한 프롬프트로 단계적으로 복귀한다.
 
+## 패턴 9: 임시 cwd 격리 실행
+
+repo 밖 scratch 디렉토리에서 실행할 때의 표준 세트. 넷 중 하나라도 빠지면 각기 다른 실패가 난다
+(`--skip-git-repo-check` 누락 시 rc 1 즉사 — SKILL.md gotcha 10):
+
+```bash
+# 프리플라이트: 게이트와 동일한 판별식. -C를 쓰면 판정 대상은 셸 cwd가 아니라 -C 값이다.
+git -C "$DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || SKIP_FLAG=--skip-git-repo-check
+
+cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+  --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ${SKIP_FLAG:-} \
+  -C "$DIR" -c model_reasoning_effort="medium" -o "$OUT" -
+```
+
+- `--ignore-user-config`와 `--ignore-rules`는 항상 쌍으로 쓴다 (user config·execpolicy 격리).
+- `--ignore-user-config`는 config 유래 기본값(effort 등)도 차단하므로 `-c`로 명시한다
+  (known-issues §17 인접 서술 참조).
+- `--skip-git-repo-check` 과부착(이미 git repo인 곳)은 무해하다 — 게이트만 꺼진다.
+- review에는 `-C`가 없다 (exec 전용).
+
+## 패턴 10: in-progress 판정 (예외적 진단 수단)
+
+기본 원칙은 그대로다 — background 실행 후 sleep/poll로 완료를 확인하지 않는다 (완료 알림이
+자동으로 온다). 아래 폴링 지표는 알림 부재·사용자 질의·foreground timeout 등 예외적 진단
+상황에서만 쓴다:
+
+- `-o` 결과 파일은 프로세스 종료 직전에야 최초 생성된다 (known-issues §11 3b) —
+  실행 중 부재는 실패 신호가 아니다.
+- liveness 양성 신호: 두 시점 샘플에서 stderr 파일 크기·mtime이 전진하면 살아 있는 것이다.
+- 역은 성립하지 않는다 — 무전진 단독으로 사망 판정 금지 (정상 실행 중 수 분 정체 실측).
+  사망 판정은 프로세스 생존 확인과 결합한다: 경로 sentinel 전체 매칭
+  (`pgrep -f "$DIR"` 또는 `ps -eo pid,etime,command | grep -F "$DIR"`)을 쓰고,
+  `pgrep -f 'codex exec'` 같은 명령어 패턴 매칭은 쓰지 않는다 (Bash tool 자신의 래퍼가
+  매치되거나 패턴 미스로 오판한 실측 사례).
+- stderr tail의 마지막 줄로 완료·진척을 추론하지 않는다 (원인 분류 목적의 내용 검사는 유효).
+- "result 부재 + stderr 존재"가 항상 진행 중을 뜻하지도 않는다 — detach 실패·stream 오류
+  전멸에서도 같은 외형이 난다. 최종 판정은 완료 알림 또는 `.rc` 마커로만 한다.
+- `2>` stderr 분리를 항상 유지하는 이유: timeout으로 죽으면 stderr가 유일한 포렌식 산출물이다.
+
 ## exec vs review 비교표
 
 | 항목 | `codex exec` | `codex exec review` |
@@ -392,3 +431,5 @@ Codex 자식으로 환경을 전달하며 CLI 자체는 이 값을 자동 주입
 | 구조화 출력 | 6 | supervised `--output-schema schema.json -o result` |
 | JSONL 스트림 | 7 | supervised `--json` + stdout/stderr 분리 |
 | 환경 점검 | 8 | fan-out 전 supervised 최소 스모크 |
+| 임시 cwd 격리 | 9 | `--ignore-user-config --ignore-rules --ephemeral --skip-git-repo-check` + effort `-c` 명시 |
+| 진행 중 진단 | 10 | stderr 전진=생존, `-o` 부재≠실패, 사망 판정은 프로세스 생존 확인 결합 |

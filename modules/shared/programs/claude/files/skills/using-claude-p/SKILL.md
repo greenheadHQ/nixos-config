@@ -44,9 +44,12 @@ claude -p 실행이 필요한가?
 ├─ 도구 실행이 필요한가?
 │  ├─ YES
 │  │    도구를 제한할 필요가 있나?
-│  │    ├─ YES → --allowed-tools "Bash,Read" (stdin 필수!)
+│  │    ├─ YES, 정밀 allowlist → --allowed-tools "Bash,Read" (stdin 필수!)
 │  │    │         ⚠️ --dangerously-skip-permissions와 함께 쓰면 제한 무효
-│  │    └─ NO → --dangerously-skip-permissions 추가
+│  │    │         ⚠️ Bash 패턴은 따옴표·공백 민감 (gotchas #36·#46) — 스킬 실행엔 부적합할 수 있음
+│  │    ├─ YES, 위험 도구만 차단 → --permission-mode dontAsk + deny 규칙 (hooks·deny 존중)
+│  │    │         또는 --dangerously-skip-permissions + --disallowedTools Write,Edit
+│  │    └─ NO → --dangerously-skip-permissions 추가 (전면 우회 아님 — carve-out은 gotchas #43)
 │  └─ NO → 기본 실행 (권한 플래그 불필요)
 │
 ├─ 출력을 프로그래밍적으로 파싱할 필요가 있나?
@@ -136,7 +139,10 @@ Claude Code 하네스의 Bash tool로 `claude -p`를 발사할 때는 하네스 
 `claude -p --output-format json` 완료는 다음 조건을 모두 만족해야 한다.
 
 1. process exit가 0이다.
-2. `type=result` 이벤트가 있고 `subtype=success`, `is_error=false`다.
+2. `type=result` 이벤트가 있고 `subtype=success`, `is_error=false`다. 보조 축 (2.1.233 실측 —
+   같은 result 이벤트에서 무료로 얻는다): `terminal_reason`이 `completed`가 아니면 비정상 종료,
+   `permission_denials`가 비어 있지 않으면 exit 0이어도 도구가 차단된 것이다 (gotchas #3의
+   프로그래밍적 탐지 — "도구 거부는 exit로 못 잡는다" 갭을 이 필드가 메운다).
 3. 파일 생성을 요구한 작업은 `test -s "$RESULT"`를 통과하고 기대 완료 표식이 있다.
 4. 반복 pass는 직전 결과 대비 새 finding·수정·판정 같은 진척 delta가 있다.
 

@@ -6,11 +6,26 @@
 - 확인 버전: Claude Code v2.1.206
 - 재검증: `claude --version && claude --help && claude -p --help`
 - 확인 범위: 인증된 JSON 성공 probe에서 init key를 재확인 (2026-08-15, v2.1.233 — 이벤트 수는 런마다 가변이며 고정 계약이 아님, gotchas.md #6. 재검증: `echo "ok" | claude -p --model haiku --output-format json`). 이 probe가 커버하는 범위는 init key 존재와 이벤트 shape뿐이며, T1~T8 스크립트 전체의 동작은 재검증 미수행이다 (v2.1.202 기준 서술 유지)
-- 비용: 각 테스트 ~$0.07 (v2.1.202 기준 서술 유지; 현재 비용 재검증 미수행)
+- 비용: 각 테스트의 "비용:" 표기는 v2.1.202 기준 추정치다. 실비는 모델·캐시에 따라 수 배
+  변동하므로 (2.1.233 실측: haiku 사소 호출 ~$0.012, 스키마 호출 ~$0.060) 하드코딩 표 대신
+  result 이벤트의 `total_cost_usd`(모델별 내역은 `modelUsage`)를 파싱해 측정한다.
 
 공통 성공 계약: Claude exit 0, `result/success` + `is_error=false`, 기대 산출물 `test -s`, 기대
 marker를 모두 확인한다. JSON stdout, stderr, 업무 산출물을 분리하고 parser 앞에 `2>&1`을 두지 않는다.
 반복 테스트는 직전 결과 대비 진척 delta가 없으면 circuit breaker로 중단한다.
+
+## 판정에 쓸 수 있는 init·result 필드 (2026-08-15, v2.1.233 실측 + 공식 headless 문서)
+
+| 이벤트 | 필드 | 용도 | 주의 |
+|--------|------|------|------|
+| init | `plugin_errors` | 플러그인 load-time 오류 배열 — 비어 있지 않으면 FAIL 게이트 | 오류 없으면 키 자체가 생략됨. 로드 실패 플러그인은 `plugins`에서 빠지므로 개수 비교로는 탐지 불가 |
+| init | `mcp_server_errors` | `--mcp-config` 엔트리의 config validation 스킵 목록 (v2.1.219+) | 런타임 연결 실패는 미포함. 오류 없으면 키 생략 |
+| init | `capabilities` | SDK 프로토콜 behavior의 feature detection (v2.1.205+) | 프로토콜 축 전용 — CLI 플래그 존재 판정에는 쓸 수 없다 |
+| result | `terminal_reason` | `completed` 외 값(`max_turns` 등)은 비정상 종료 신호 | |
+| result | `permission_denials` | 도구 거부 목록 — exit 0이어도 비어 있지 않으면 도구가 차단된 것 (gotchas #3의 프로그래밍적 탐지) | |
+| result | `total_cost_usd` / `modelUsage` | 호출당 실비 측정 | client-side 추정치 |
+| result | `structured_output` | `--json-schema` 호출의 검증된 출력 | 스키마 미지정 호출에는 키 없음 (patterns.md 패턴 10) |
+| rate_limit_event | `rate_limit_info` (status/resetsAt/utilization) | 한도 접근 경고 게이트 (`status != allowed`) | |
 
 ## T1: Harness 인벤토리 검증
 
@@ -42,8 +57,12 @@ print(len(init.get('skills', [])))
 print(len(init.get('tools', [])))
 print(len(init.get('mcp_servers', [])))
 print(len(init.get('plugins', [])))
+# 로드 실패 항목은 plugins/mcp_servers 목록에서 빠지므로 개수 비교로는 탐지 불가 —
+# 에러 배열 게이트가 정본이다 (오류 없으면 키 자체가 생략됨: 공식 headless 문서)
+print(len(init.get('plugin_errors', [])))
+print(len(init.get('mcp_server_errors', [])))
 print('yes' if ok else 'no')" < /tmp/harness-init.json) || { echo "T1: FAIL (JSON parse or missing system event)"; exit 1; }
-{ read -r SKILLS; read -r TOOLS; read -r MCP; read -r PLUGINS; read -r RESULT_OK; } <<< "$INV"
+{ read -r SKILLS; read -r TOOLS; read -r MCP; read -r PLUGINS; read -r PLUGIN_ERRS; read -r MCP_ERRS; read -r RESULT_OK; } <<< "$INV"
 
 echo "Skills: $SKILLS, Tools: $TOOLS, MCP: $MCP, Plugins: $PLUGINS"
 
@@ -52,12 +71,14 @@ PASS=true
 [ "$RESULT_OK" != "yes" ] && echo "FAIL: result event is not successful" && PASS=false
 [ "$SKILLS" -lt 10 ] && echo "FAIL: Skills too few ($SKILLS < 10)" && PASS=false
 [ "$TOOLS" -lt 10 ] && echo "FAIL: Tools too few ($TOOLS < 10)" && PASS=false
+[ "$PLUGIN_ERRS" -gt 0 ] && echo "FAIL: plugin_errors non-empty ($PLUGIN_ERRS)" && PASS=false
+[ "$MCP_ERRS" -gt 0 ] && echo "FAIL: mcp_server_errors non-empty ($MCP_ERRS)" && PASS=false
 # MCP 서버 0개는 정상이다 (이 저장소는 관리 MCP 서버를 두지 않는다) — MCP 개수 단언 없음
 
 $PASS && echo "T1: PASS" || echo "T1: FAIL"
 ```
 
-판정 로직: Skills >= 10, Tools >= 10이면 PASS (MCP 개수는 판정에서 제외 — 0개 정상). 정확한 기대값은 nrs 직후 한 번 측정하여 기준선으로 사용.
+판정 로직: Skills >= 10, Tools >= 10, `plugin_errors`·`mcp_server_errors` 빈 배열이면 PASS (MCP 개수는 판정에서 제외 — 0개 정상). 정확한 기대값은 nrs 직후 한 번 측정하여 기준선으로 사용.
 
 ## T2: 스킬 트리거 Spot Check
 
@@ -208,7 +229,7 @@ done <<< "$EXPECTED_SERVERS"
 $PASS && echo "T4: PASS" || echo "T4: FAIL"
 ```
 
-판정 로직: ~/.claude/mcp.json이 없으면 SKIP(관리 MCP 없음이 정상). 있으면 mcp.json의 모든 서버 이름이 init mcp_servers에 존재하면 PASS.
+판정 로직: ~/.claude/mcp.json이 없으면 SKIP(관리 MCP 없음이 정상). 있으면 mcp.json의 모든 서버 이름이 init mcp_servers에 존재하면 PASS. 추가로 init의 `mcp_server_errors` 배열이 비어 있지 않으면 FAIL (config validation 스킵 항목 — v2.1.219+). 단 서버 `status:"pending"`은 캐시된 tool list를 가진 원격 서버의 정상 상태이므로 (공식 문서) status 기반 판정은 넣지 않는다 — 거짓 양성이 난다.
 
 ## T5: 권한 모델 검증
 

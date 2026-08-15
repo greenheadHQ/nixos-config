@@ -24,6 +24,7 @@ print 모드는 workspace trust dialog를 생략하고 invalid settings를 조�
 | `--prompt-suggestions [value]` | print/SDK 모드에서 다음 프롬프트 예측 메시지 emit | `true/false/1/0/yes/no/on/off`, preset `true` |
 | `--json-schema <schema>` | JSON Schema 기반 structured output validation | 무효 schema는 모델 호출 전 즉시 오류 (v2.1.205 실측) |
 | `--max-turns <N>` | `--help` 미표시 | hidden parser 수용 재확인: 2026-07-10, v2.1.206. turn semantics는 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| `--forward-subagent-text` | subagent의 text/thinking 블록을 `parent_tool_use_id`가 붙은 메시지로 전달 | 전제조건: `--print` + `--output-format=stream-json` (v2.1.211+; depth-2+ 중첩 subagent 전달은 v2.1.219+). env `CLAUDE_CODE_FORWARD_SUBAGENT_TEXT` 동등 |
 
 ## 범용 플래그 (대화형/비대화형 공통)
 
@@ -37,7 +38,7 @@ print 모드는 workspace trust dialog를 생략하고 invalid settings를 조�
 | `--fork-session` | resume/continue 시 새 session ID 생성 | `--resume`/`--continue`와 함께 사용 |
 | `--session-id <uuid>` | 특정 session ID 사용 | UUID 필요 |
 | `--from-pr [value]` | PR 번호/URL 또는 검색어로 PR 연계 세션 resume | 대화형 picker 가능 |
-| `--dangerously-skip-permissions` | 모든 permission check 우회 | `-p`에서 도구 사용 시 흔히 필요 |
+| `--dangerously-skip-permissions` | 모든 permission check 우회 | `-p`에서 도구 사용 시 흔히 필요. 단 전면 우회가 아니다 — catastrophic removal 계열 carve-out 5갈래는 여전히 프롬프트(=headless 차단)로 떨어진다 ([gotcha #43](gotchas.md)). 선택 기준은 3지선다: allowlist / skip+denylist / `--permission-mode dontAsk`+deny (gotcha #3) |
 | `--allow-dangerously-skip-permissions` | bypass 옵션을 활성화하되 기본값으로 켜지는 것은 아님 | sandbox용 옵션 |
 | `--permission-mode <mode>` | `acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, `plan` | 구 `default`가 아니라 `manual`; bypass equivalence는 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | `--allowedTools`, `--allowed-tools <tools...>` | 허용할 도구 목록 (쉼표 또는 공백 구분) | variadic이므로 prompt는 stdin. skip-permissions와 병용하면 allowlist 무효 |
@@ -105,7 +106,7 @@ v2.1.206 help의 공식 선택지는 `acceptEdits`, `auto`, `bypassPermissions`,
 | 플래그 생략 | 표시 (TTY 필요) | O | O | 기본 동작 (비대화형에서는 TTY 없어 도구 차단 가능) |
 | `manual` | 표시 (TTY 필요) | O | O | 명시적 수동 승인 모드 |
 | `acceptEdits` | 편집만 허용 | O | O | 파일 편집만 자동 승인 |
-| `bypassPermissions` | X 건너뜀 | O | X (passthrough) | = `--dangerously-skip-permissions` |
+| `bypassPermissions` | X 건너뜀 (carve-out 제외 — [gotcha #43](gotchas.md)) | O | X (passthrough) | = `--dangerously-skip-permissions` |
 | `plan` | 계획 모드 | O | O | 읽기 전용 작업 |
 | `auto` | 자동 판단 | O | O | 컨텍스트에 따라 자동 |
 | `dontAsk` | X 건너뜀 | O | O | 승인 없이 실행, hooks 결정은 반영 |
