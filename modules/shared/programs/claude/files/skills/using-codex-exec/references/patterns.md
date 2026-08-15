@@ -372,13 +372,24 @@ fan-out 전에 이 패턴을 1회 필수 실행한다. 통과하면 기존 복�
 repo 밖 scratch 디렉토리에서 실행할 때의 표준 세트. 넷 중 하나라도 빠지면 각기 다른 실패가 난다
 (`--skip-git-repo-check` 누락 시 rc 1 즉사 — SKILL.md gotcha 10):
 
-```bash
+```zsh
 # 프리플라이트: 게이트와 동일한 판별식. -C를 쓰면 판정 대상은 셸 cwd가 아니라 -C 값이다.
-git -C "$DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || SKIP_FLAG=--skip-git-repo-check
+# rc가 아니라 출력이 정확히 true인지로 판정한다 — .git 안에서는 false + rc 0이다 (실측).
+# 매 실행마다 초기화한다 — 같은 셸에서 반복하면 이전 값이 남아 잘못 부착된다.
+SKIP_FLAG=
+[ "$(git -C "$DIR" rev-parse --is-inside-work-tree 2>/dev/null)" = "true" ] \
+  || SKIP_FLAG=--skip-git-repo-check
 
+[ -s "$PROMPT" ] || { echo "missing/empty PROMPT=$PROMPT" >&2; exit 1; }
+set -o pipefail
 cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ${SKIP_FLAG:-} \
   -C "$DIR" -c model_reasoning_effort="medium" -o "$OUT" -
+pipe_rcs=("${pipestatus[@]}")   # zsh 1-base. bash는 ("${PIPESTATUS[@]}") + 0-base
+rc="${pipe_rcs[2]}"
+[ -n "$rc" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
+[ "${pipe_rcs[1]}" -eq 0 ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 판정에 반영
+[ "$rc" -eq 0 ] && test -s "$OUT"
 ```
 
 - `--ignore-user-config`와 `--ignore-rules`는 항상 쌍으로 쓴다 (user config·execpolicy 격리).

@@ -293,8 +293,13 @@ config·hooks·execpolicy 로드 조건)이며 에러 문구가 두 축을 혼�
    ```bash
    cd "$(git rev-parse --show-toplevel)"
    ```
-2. 저장소 외 실행이 꼭 필요하면 `--skip-git-repo-check`를 사용한다. 프리플라이트
-   `git -C "$dir" rev-parse --is-inside-work-tree`가 게이트와 정확히 같은 판별식이며,
+2. 저장소 외 실행이 꼭 필요하면 `--skip-git-repo-check`를 사용한다. 프리플라이트는 rc가 아니라
+   출력이 정확히 `true`인지로 판정한다 — `.git` 디렉토리 안에서는 `false`를 출력하면서 rc 0을
+   반환하므로(실측) rc만 보면 worktree 밖을 놓친다:
+   ```bash
+   [ "$(git -C "$dir" rev-parse --is-inside-work-tree 2>/dev/null)" = "true" ] \
+     || SKIP_FLAG=--skip-git-repo-check
+   ```
    이미 git repo인 곳에 플래그를 과부착해도 무해하다 (게이트만 꺼짐).
 
 부수: 게이트를 통과해 실행이 성사되면 codex가 그 경로를 `config.toml`에 `trust_level =
@@ -844,7 +849,8 @@ Direct Codex가 라우팅·승인·쓰기 경계를 우회하는 raw 또는 임�
 |---|---|---|
 | rc 1, ~2초, stderr `Error: thread/resume: ... no rollout found for thread id <uuid> (code -32600)` | 존재하지 않는 세션 id 지정 | 정상 fail-fast — id 오타/유실 확인 |
 | rc 124 (supervised) / 무기한 (raw), stdout·stderr 0바이트, 배너 미출력, `-o` 미생성 | 무저장 cwd의 `--last` (대형 세션 코퍼스·state DB 환경에서 관측 — 배너 이전 단계 정지) | `--last` 금지, 세션 id 명시. raw resume은 timeout 구제가 없어 금지. stderr가 완전히 비므로 stderr 기반 판정은 이 실패를 못 잡는다 — rc·산출물이 정본 |
-| rc 0인데 배너 session id ≠ 요청 세션 | silent fallback (새 세션 발급 — fallback 로직은 0.147.0에도 잔존) | 재개 실패로 처리. ANSI 제거 후 session id 대조 |
+| rc 0인데 배너 session id ≠ 요청 세션 (세션 id 명시 경로) | silent fallback (새 세션 발급 — fallback 로직은 0.147.0에도 잔존) | 재개 실패로 처리. ANSI 제거 후 값을 추출해 입력 id와 문자열 비교 |
+| rc 0이지만 재개 여부를 확인할 기준이 없음 (`--last` 경로) | `--last`에는 요청 id가 없어 배너 id를 비교할 대상이 없다 — 새 세션 발급과 정상 재개가 같은 외형이다 | 자동화에서는 `--last`를 쓰지 않는다 (세션 id 명시가 정석). 부득이 쓴다면 호출 전에 기대하는 마지막 세션 id를 별도로 저장해 두고 그 값과 비교한다 |
 | rc 1 + `Not inside a trusted directory ...` | 비-git cwd에서 resume (게이트가 세션 조회보다 선행) | §8 분기 |
 
 `[SESSION_ID]` 인자는 UUID 또는 thread name을 수용하며 UUID가 파싱되면 우선한다 (0.147.0 help).

@@ -326,9 +326,13 @@ case "{name}" in
     ;;
 esac
 
-cat "${CAT_FILES[@]}" \
-  | MY_TOKEN="xxx" claude -p --output-format text --dangerously-skip-permissions \
-  > /tmp/result.md 2>/tmp/stderr.txt
+# stdin 상한(10MB) 사전 게이트 — 합쳐서 재는 것이 정본이다 (개별 파일은 작아도 합산이 넘칠 수 있다)
+cat "${CAT_FILES[@]}" > /tmp/injected-prompt.md
+[ "$(wc -c < /tmp/injected-prompt.md)" -le 10000000 ] || {
+  echo "stdin over 10MB — 파일 경로 참조 방식으로 전환한다 (gotchas #40)" >&2; exit 1; }
+
+MY_TOKEN="xxx" claude -p --output-format text --dangerously-skip-permissions \
+  < /tmp/injected-prompt.md > /tmp/result.md 2>/tmp/stderr.txt
 test -s /tmp/result.md
 ```
 
@@ -362,11 +366,21 @@ import sys, json
 data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 results = [d for d in items if isinstance(d, dict) and d.get('type')=='result']
-assert results and results[-1].get('subtype')=='success' and not results[-1].get('is_error', False), 'result is not successful'
+# assert는 python3 -O / PYTHONOPTIMIZE=1에서 통째로 제거되므로 판정에 쓰지 않는다.
+if not results:
+    raise SystemExit('no result event')
+r = results[-1]
+if r.get('subtype') != 'success' or r.get('is_error', False):
+    raise SystemExit('result is not successful')
+if r.get('terminal_reason') not in (None, 'completed'):
+    raise SystemExit(f\"abnormal termination: {r.get('terminal_reason')}\")
+if r.get('permission_denials'):
+    raise SystemExit('tool permission denied (exit 0이어도 실패)')
 # --json-schema를 넘긴 호출에 한해: 검증된 구조화 출력은 result의 structured_output 키에 담긴다
 # (2.1.233 실측 — 미지정 호출에는 키 자체가 없으므로 무조건 존재 단언 금지).
-so = results[-1].get('structured_output')
-assert isinstance(so, dict) and 'summary' in so, 'structured_output missing or schema keys absent'
+so = r.get('structured_output')
+if not isinstance(so, dict) or 'summary' not in so:
+    raise SystemExit('structured_output missing or schema keys absent')
 print('structured output OK')" < /tmp/structured.json
 ```
 

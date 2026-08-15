@@ -10,8 +10,8 @@
   변동하므로 (2.1.233 실측: haiku 사소 호출 ~$0.012, 스키마 호출 ~$0.060) 하드코딩 표 대신
   result 이벤트의 `total_cost_usd`(모델별 내역은 `modelUsage`)를 파싱해 측정한다.
 
-공통 성공 계약: Claude exit 0, `result/success` + `is_error=false`, 기대 산출물 `test -s`, 기대
-marker를 모두 확인한다. JSON stdout, stderr, 업무 산출물을 분리하고 parser 앞에 `2>&1`을 두지 않는다.
+공통 성공 계약: Claude exit 0, `result/success` + `is_error=false` + `terminal_reason=completed`
++ 빈 `permission_denials`, 기대 산출물 `test -s`, 기대 marker를 모두 확인한다. JSON stdout, stderr, 업무 산출물을 분리하고 parser 앞에 `2>&1`을 두지 않는다.
 반복 테스트는 직전 결과 대비 진척 delta가 없으면 circuit breaker로 중단한다.
 
 ## 판정에 쓸 수 있는 init·result 필드 (2026-08-15, v2.1.233 실측 + 공식 headless 문서)
@@ -52,7 +52,12 @@ items = data if isinstance(data, list) else [data]
 init = next(d for d in items if isinstance(d, dict)
             and d.get('type')=='system' and d.get('subtype')=='init')
 results = [d for d in items if isinstance(d, dict) and d.get('type')=='result']
-ok = bool(results) and results[-1].get('subtype') == 'success' and not results[-1].get('is_error', False)
+# 성공 판정에 terminal_reason·permission_denials를 함께 본다 — subtype/is_error만 보면
+# 비정상 종료(max_turns 등)와 도구 거부(exit 0)가 성공으로 통과한다 (위 필드 표).
+r = results[-1] if results else {}
+ok = (bool(results) and r.get('subtype') == 'success' and not r.get('is_error', False)
+      and r.get('terminal_reason', 'completed') == 'completed'
+      and not r.get('permission_denials'))
 print(len(init.get('skills', [])))
 print(len(init.get('tools', [])))
 print(len(init.get('mcp_servers', [])))
@@ -210,6 +215,15 @@ init = next(d for d in items if isinstance(d, dict)
 for s in init.get('mcp_servers', []):
     print(s)")
 
+# 이름 대조만으로는 config validation 스킵을 탐지하지 못한다 — 에러 배열이 정본 게이트다.
+MCP_ERRS=$(echo "$RESULT" | python3 -c "
+import sys, json
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())
+items = data if isinstance(data, list) else [data]
+init = next(d for d in items if isinstance(d, dict)
+            and d.get('type')=='system' and d.get('subtype')=='init')
+print(len(init.get('mcp_server_errors', [])))")
+
 EXPECTED_SERVERS=$(python3 -c "
 import json
 with open('$MCP_CONFIG') as f:
@@ -228,7 +242,9 @@ while IFS= read -r server; do
   fi
 done <<< "$EXPECTED_SERVERS"
 
-$PASS && echo "T4: PASS" || echo "T4: FAIL"
+[ "$MCP_ERRS" -gt 0 ] && echo "  ✗ mcp_server_errors non-empty ($MCP_ERRS)" && PASS=false
+
+if $PASS; then echo "T4: PASS"; else echo "T4: FAIL"; exit 1; fi
 ```
 
 판정 로직: ~/.claude/mcp.json이 없으면 SKIP(관리 MCP 없음이 정상). 있으면 mcp.json의 모든 서버 이름이 init mcp_servers에 존재하면 PASS. 추가로 init의 `mcp_server_errors` 배열이 비어 있지 않으면 FAIL (config validation 스킵 항목 — v2.1.219+). 단 서버 `status:"pending"`은 캐시된 tool list를 가진 원격 서버의 정상 상태이므로 (공식 문서) status 기반 판정은 넣지 않는다 — 거짓 양성이 난다.
