@@ -102,15 +102,41 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
   `cat` fetch를 시도하지 않는다.
 - ControlMaster mux socket 존재만으로 생존 판정하지 않는다. mux가 살아 있어도 상대 Mac이
   절전/무응답이면 `ssh ... true` preflight 또는 subprocess timeout으로 fast-fail해야 한다.
-- preflight 성공 후 `HostFetchBudget`을 시작한다. `SSH_HOST_FETCH_BUDGET_SECONDS = 300`이며,
+- preflight 성공 후 `HostFetchBudget`을 시작한다. `SSH_HOST_FETCH_BUDGET_SECONDS = 600`이며,
   remote `find` 시작부터 해당 host의 `find + tar batch 또는 per-file cat fallback` 전체를
   같은 wall-clock deadline으로 제한한다.
 - 각 SSH 호출 timeout은 기존 per-call timeout과 host budget 잔여 시간 중 더 작은 값으로
   clamp한다. budget이 소진되면 남은 수집은 시작하지 않고 partial warning을 남긴다.
 - preflight 이후 수행되는 `ssh -O check <host>` ControlMaster 확인도 host budget 잔여
   시간 안에서만 실행한다.
-- budget warning 문구는 `host <name>: fetch budget 초과 (절전/무응답 가능성) — partial result`
-  형식을 유지한다. `host <name>:` prefix는 weekly coverage의 host partial 판정 입력이다.
+- budget warning 문구는 `host <name>: ssh fetch budget 초과 — remote 수집 중단, partial result`
+  형식을 유지한다. `host <name>:` prefix는 weekly coverage의 host partial 판정 입력이므로,
+  실패가 아닌 사건(아래 size cap 제외 등)에는 이 prefix를 쓰지 않는다. 문구에 `ssh` 토큰을
+  포함하는 것도 계약이다 — weekly report의 warning 카테고리 분류 입력이다.
+
+### corpus size cap
+
+- `CORPUS_FILE_SIZE_CAP_MIB = 50` (50 MiB = 52,428,800 바이트). 원격 `find`는 base마다 두 번
+  실행된다: 수집 목록용과 초과 건수 카운트용. 바이트 suffix로 상한을 걸어 수집은
+  `-size -<cap+1>c`, 초과 카운트는 `-size +<cap>c`로 상보 분할한다 (`REMOTE_FIND_SIZE_INCLUDE`
+  /`REMOTE_FIND_SIZE_EXCLUDE`). 로컬 수집(`collect_local_files`)도 같은 바이트 경계를 쓴다 —
+  corpus 정의가 실행 위치에 따라 달라지지 않게 하기 위함이다.
+- `M` suffix를 쓰지 않는 이유: `find -size`의 `M` 의미가 구현마다 다르다. GNU는 크기를 MB
+  단위로 올림해 비교하므로 `-50M`/`+50M` 사이에 1MiB 폭의 구간이 수집에도 초과 카운트에도
+  잡히지 않고, BSD는 바이트 정확 비교라 갭이 cap 값 한 점이다. 어느 쪽이든 침묵 절단이
+  생긴다. `c` suffix는 양 구현 모두 바이트 정확 비교라 로컬 `os.path.getsize` 판정과 경계가
+  일치한다. 재검증: 경계 전후 크기의 fixture를 만들어 `find -size -<cap+1>c`와
+  `-size +<cap>c`의 합이 전체와 같은지 두 구현에서 확인한다.
+- 이 cap은 "신호 없는 파일 제외"가 아니라 의도적 corpus 편향이다. 크기는 verdict 신호의
+  판별자가 아니며(초과분에도 verdict가 존재한다), 수집 가용성을 위해 일부 실제 verdict를
+  버리는 trade-off다. 도입 배경은 2026-08 mac `~/.codex/sessions` 폭증으로 인한 budget 초과
+  (mac 수집 4주 연속 0건).
+- 제외 건수는 `warnings`가 아니라 sidecar의 `corpus_exclusions[]`(host/base/reason/cap_mib/
+  excluded_files)에 기록하고, weekly coverage는 이를 `host_collection[host].excluded_files`로
+  노출한다. 제외는 실패가 아니므로 host `status`·리포트 `partial` 판정에 영향을 주지 않는다.
+- 제외 건수를 측정하지 못한 경우(카운트용 find의 timeout·nonzero·budget 소진)는 다르다 —
+  0건과 구분해 `host <name>:` prefix warning으로 올려 partial로 만든다. 실패를 0으로 축약하면
+  파일을 실제로 버리면서 리포트에는 제외 없음으로 보여 corpus 편향이 사라진다.
 
 ## fetch 전략: tar batch 우선 + per-file cat fallback
 
@@ -175,7 +201,8 @@ SSH 호출이 실패한 호스트/파일은 측정에서 제외하고 `warnings`
 - `analyze_remote_sessions_via_tar(host, entries, warnings)`: tar batch 실패는 `warnings`에 누적 후 `None` 반환. caller는 기존 per-file cat fallback을 실행한다.
 - `fetch_remote_file(host, path, warnings)`: `cat` 명령 timeout / ssh binary 부재 / nonzero rc 모두 `warnings`에 누적 후 `None` 반환.
 - `analyze_remote_session(host, path, warnings)`: `fetch_remote_file` 반환이 `None`이면 그대로 `None` 반환 → caller가 sessions 리스트에 append하지 않는다.
-- `HostFetchBudget`: host budget 소진 시 `host <name>: fetch budget 초과 (절전/무응답 가능성) — partial result` warning을 한 번 남기고, 남은 remote 수집을 시작하지 않는다.
+- `HostFetchBudget`: host budget 소진 시 `host <name>: ssh fetch budget 초과 — remote 수집 중단, partial result` warning을 한 번 남기고, 남은 remote 수집을 시작하지 않는다.
+- size cap 제외는 이 partial 계열이 아니다 — `corpus_exclusions[]`로 분리 기록한다 (위 "corpus size cap" 참조).
 
 markdown stdout 출력에는 footer에 warnings 섹션이 추가된다:
 

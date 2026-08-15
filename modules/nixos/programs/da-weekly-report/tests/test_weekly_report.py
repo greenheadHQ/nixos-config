@@ -504,6 +504,21 @@ def test_finalize_discards_commentary_containing_secret_values(
     assert "sanitize gate: secret-like content" in final_md.read_text()
 
 
+def test_warning_category_classifies_fetch_budget_as_remote_collection(
+    weekly_report_module,
+):
+    """budget 초과 warning은 remote_collection으로 분류돼야 한다.
+
+    구 문구("fetch budget 초과 (절전/무응답 가능성)")가 ssh/tar/find 토큰이 없어
+    other로 분류된 탓에, mac 수집 4주 연속 0건(issue #1067 W30~W33)이 카테고리 표에서
+    보이지 않았다. 신 문구와 구 문구 모두 remote_collection이어야 한다.
+    """
+    new_style = "host mac: ssh fetch budget 초과 — remote 수집 중단, partial result"
+    old_style = "host mac: fetch budget 초과 (절전/무응답 가능성) — partial result"
+    assert weekly_report_module._warning_category(new_style) == "remote_collection"
+    assert weekly_report_module._warning_category(old_style) == "remote_collection"
+
+
 def test_commentary_projection_is_bounded_without_raw_warnings(weekly_report_module):
     report = projection_stress_report(weekly_report_module)
 

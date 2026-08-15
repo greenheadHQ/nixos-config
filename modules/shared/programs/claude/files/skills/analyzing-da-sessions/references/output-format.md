@@ -217,7 +217,10 @@ JSON sidecar: /tmp/analyze-da-sessions-<ISO>.json (또는 --json out= 명시 경
     },
     "sessions": []
   },
-  "warnings": []
+  "warnings": [],
+  "corpus_exclusions": [
+    {"host": "mac", "base": "~/.codex/sessions", "reason": "size_cap", "cap_mib": 50, "excluded_files": 158}
+  ]
 }
 ```
 
@@ -277,7 +280,7 @@ emit하지 않는다.
     "marker_missing_rates": {"arbiter_marker_missing_rate": 0.6, "intensity_marker_missing_rate": 0.7},
     "m2_source_distribution": {"verdict_json": {"count": 7, "confidence": "high"}},
     "m5_source_distribution": {"round_summary_fallback": 1},
-    "host_collection": {"mac": {"status": "ok", "analyzed_sessions": 5, "warnings": []}, "minipc": {"status": "ok", "analyzed_sessions": 5, "warnings": []}},
+    "host_collection": {"mac": {"status": "ok", "analyzed_sessions": 5, "warnings": [], "excluded_files": 0}, "minipc": {"status": "ok", "analyzed_sessions": 5, "warnings": [], "excluded_files": 0}},
     "warnings": [],
     "health_warnings": []
   },

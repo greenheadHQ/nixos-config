@@ -545,6 +545,9 @@ def build_coverage(sidecar: dict, health: dict, analyze_exit_code: int) -> dict:
     total_sessions = session_counts.get("total", 0) or 0
     warnings = sidecar.get("warnings", [])
     warning_host_set = warning_hosts(warnings)
+    corpus_exclusions = [
+        entry for entry in sidecar.get("corpus_exclusions", []) if isinstance(entry, dict)
+    ]
     trace_hosts = sidecar.get("traceability", {}).get("coverage", {}).get("host_distribution", {})
     host_collection = {}
     for host in sidecar.get("hosts", []):
@@ -556,6 +559,13 @@ def build_coverage(sidecar: dict, health: dict, analyze_exit_code: int) -> dict:
             "status": status,
             "analyzed_sessions": analyzed_count,
             "warnings": [w for w in warnings if w.startswith(f"host {host}:")],
+            # corpus 정책 제외 (size cap 등). 실패가 아니므로 status/partial에 영향을
+            # 주지 않고, 분모 변화를 읽을 수 있도록 건수만 노출한다.
+            "excluded_files": sum(
+                entry.get("excluded_files", 0) or 0
+                for entry in corpus_exclusions
+                if entry.get("host") == host
+            ),
         }
 
     arbiter_sessions = session_counts.get("arbiter_marker_sessions", 0) or 0
@@ -1132,7 +1142,9 @@ def _warning_category(warning: str, *, health: bool = False) -> str:
     lowered = warning.lower()
     if "tar member" in lowered or "validation" in lowered or "newline" in lowered:
         return "validation"
-    if any(token in lowered for token in ("ssh", "remote", "tar ", "find ")):
+    # "budget"은 ssh 토큰이 없던 구 문구("fetch budget 초과 (절전/무응답 가능성)")를 담은
+    # 과거 주차 sidecar를 재처리할 때만 쓰인다 — 현행 문구는 ssh 토큰으로 이미 분류된다.
+    if any(token in lowered for token in ("ssh", "remote", "tar ", "find ", "budget")):
         return "remote_collection"
     if any(token in lowered for token in ("parse", "diagnostic", "verdict")):
         return "analysis"
@@ -1303,6 +1315,7 @@ def build_consumer_summary(report: dict) -> dict:
             "status": status if status in {"ok", "partial", "unknown"} else "unknown",
             "analyzed_sessions": _safe_number(info.get("analyzed_sessions")),
             "warning_count": len(info.get("warnings", [])),
+            "excluded_files": _safe_number(info.get("excluded_files")),
         }
     return {
         "week": {
@@ -1470,10 +1483,15 @@ def _render_github_markdown_source(source: dict) -> str:
     for group in ("diagnostic_rates", "marker_missing_rates"):
         for key, value in coverage.get(group, {}).items():
             out.append(f"| {esc(key)} | {num(value)} |")
-    out.extend(["", "| host | status | analyzed sessions | warning count |", "|------|--------|-------------------|---------------|"])
+    out.extend([
+        "",
+        "| host | status | analyzed sessions | warning count | excluded (size cap) |",
+        "|------|--------|-------------------|---------------|---------------------|",
+    ])
     for host, info in summary.get("hosts", {}).items():
         out.append(
-            f"| {esc(host)} | {esc(info.get('status'))} | {num(info.get('analyzed_sessions'))} | {num(info.get('warning_count'))} |"
+            f"| {esc(host)} | {esc(info.get('status'))} | {num(info.get('analyzed_sessions'))} "
+            f"| {num(info.get('warning_count'))} | {num(info.get('excluded_files'))} |"
         )
     out.append("")
 
@@ -1592,11 +1610,12 @@ def render_markdown(report: dict) -> str:
     out.append(f"| Intensity marker 미출현율 | {pct(coverage.get('marker_missing_rates', {}).get('intensity_marker_missing_rate'), 100)} |")
     out.append(f"| health warnings | {len(coverage.get('health_warnings', []))} |")
     out.append("")
-    out.append("| host | status | analyzed sessions | warnings |")
-    out.append("|------|--------|-------------------|----------|")
+    out.append("| host | status | analyzed sessions | warnings | excluded (size cap) |")
+    out.append("|------|--------|-------------------|----------|---------------------|")
     for host, info in sorted(coverage.get("host_collection", {}).items()):
         out.append(
-            f"| {esc(host)} | {esc(info.get('status'))} | {info.get('analyzed_sessions', 0)} | {len(info.get('warnings', []))} |"
+            f"| {esc(host)} | {esc(info.get('status'))} | {info.get('analyzed_sessions', 0)} "
+            f"| {len(info.get('warnings', []))} | {info.get('excluded_files', 0)} |"
         )
     out.append("")
 

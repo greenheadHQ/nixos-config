@@ -773,7 +773,7 @@ def test_host_fetch_budget_clamps_find_and_stops_after_budget_timeout(
 
     monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
 
-    assert analyze_module.SSH_HOST_FETCH_BUDGET_SECONDS == 300
+    assert analyze_module.SSH_HOST_FETCH_BUDGET_SECONDS == 600
     assert analyze_module.collect_remote_files("mac", warnings, budget) == []
     assert calls == [
         (
@@ -786,11 +786,124 @@ def test_host_fetch_budget_clamps_find_and_stops_after_budget_timeout(
                 "f",
                 "-name",
                 "'*.jsonl'",
+                "-size",
+                analyze_module.REMOTE_FIND_SIZE_INCLUDE,
             ],
             5.0,
         )
     ]
-    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+    assert any("ssh fetch budget 초과" in w for w in warnings)
+
+
+def test_collect_remote_files_records_exclusions_outside_warnings(
+    analyze_module,
+    monkeypatch,
+):
+    """size cap 제외는 실패가 아니므로 warnings가 아닌 corpus_exclusions로 기록한다.
+
+    warnings에 넣으면 `host <name>:` prefix가 weekly coverage의 host partial 판정
+    입력이 되어, 수집이 정상인 주에도 mac이 영구 partial로 표시된다.
+    """
+    monkeypatch.setattr(analyze_module.time, "monotonic", lambda: 0.0)
+    warnings: list[str] = []
+    exclusions: list[dict] = []
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        base = argv[argv.index("find") + 1]
+        size_arg = argv[argv.index("-size") + 1]
+        if base != "~/.claude/projects":
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        if size_arg.startswith("+"):
+            stdout = (
+                "/Users/greenhead/.claude/projects/p/big-a.jsonl\n"
+                "/Users/greenhead/.claude/projects/p/big-b.jsonl\n"
+                # subagents 하위는 수집 대상 정의 밖이므로 제외 건수에도 들어가면 안 된다.
+                "/Users/greenhead/.claude/projects/p/subagents/big-c.jsonl\n"
+            )
+        else:
+            stdout = "/Users/greenhead/.claude/projects/p/s.jsonl\n"
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    files = analyze_module.collect_remote_files(
+        "mac", warnings, budget=None, corpus_exclusions=exclusions
+    )
+    assert files == ["/Users/greenhead/.claude/projects/p/s.jsonl"]
+    # base 2곳 × (목록 find + oversized find) = 4회
+    assert len(calls) == 4
+    assert warnings == []
+    assert exclusions == [
+        analyze_module._corpus_exclusion_entry("mac", "~/.claude/projects", 2)
+    ]
+
+
+def test_oversized_count_failure_becomes_partial_warning(analyze_module, monkeypatch):
+    """제외 건수 측정 실패는 "0건"이 아니라 partial warning으로 드러나야 한다.
+
+    실패를 0으로 축약하면 파일을 실제로 버리면서 리포트에는 제외 없음으로 보여,
+    이 카운트가 막으려던 침묵 절단이 카운트 자신에서 재발한다.
+    """
+    monkeypatch.setattr(analyze_module.time, "monotonic", lambda: 0.0)
+    warnings: list[str] = []
+    exclusions: list[dict] = []
+
+    def fake_run(argv, **kwargs):
+        size_arg = argv[argv.index("-size") + 1]
+        if size_arg.startswith("+"):
+            # 제외 카운트용 find만 실패한다 (수집 find는 성공).
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="boom")
+        base = argv[argv.index("find") + 1]
+        stdout = (
+            "/Users/greenhead/.claude/projects/p/s.jsonl\n"
+            if base == "~/.claude/projects"
+            else ""
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    files = analyze_module.collect_remote_files(
+        "mac", warnings, budget=None, corpus_exclusions=exclusions
+    )
+
+    assert files == ["/Users/greenhead/.claude/projects/p/s.jsonl"]
+    assert exclusions == []
+    measure_warnings = [w for w in warnings if "제외 건수 측정 실패" in w]
+    assert len(measure_warnings) == 2  # base 2곳
+    # host prefix가 있어야 weekly coverage가 partial로 인지한다.
+    assert all(w.startswith("host mac:") for w in measure_warnings)
+
+
+def test_collect_local_files_applies_same_size_cap(analyze_module, tmp_path, monkeypatch):
+    """corpus 정의는 실행 위치에 따라 달라지지 않는다 — 로컬 경로도 같은 cap을 쓴다."""
+    claude_dir = tmp_path / "claude"
+    codex_dir = tmp_path / "codex"
+    claude_dir.mkdir()
+    codex_dir.mkdir()
+    small = claude_dir / "small.jsonl"
+    small.write_text("{}\n")
+    big = claude_dir / "big.jsonl"
+    big.write_bytes(b"x" * (analyze_module.CORPUS_FILE_SIZE_CAP_BYTES + 1))
+    # cap 경계값 자체는 수집 대상이다 (원격 find `c` suffix 분할과 같은 경계).
+    edge = claude_dir / "edge.jsonl"
+    edge.write_bytes(b"x" * analyze_module.CORPUS_FILE_SIZE_CAP_BYTES)
+
+    monkeypatch.setitem(
+        analyze_module.HOST_PATH_MAP,
+        "mac",
+        {"claude": str(claude_dir), "codex": str(codex_dir)},
+    )
+    exclusions: list[dict] = []
+    files = analyze_module.collect_local_files("mac", exclusions)
+
+    assert sorted(files) == sorted([str(small), str(edge)])
+    # base는 실행 위치와 무관하게 논리 tilde 표기로 기록된다 (원격 수집과 동일 문자열).
+    assert exclusions == [
+        analyze_module._corpus_exclusion_entry("mac", "~/.claude/projects", 1)
+    ]
 
 
 def test_controlmaster_check_uses_remaining_host_budget(analyze_module, monkeypatch):
@@ -813,7 +926,7 @@ def test_controlmaster_check_uses_remaining_host_budget(analyze_module, monkeypa
         budget=budget,
     ) is False
     assert calls == [(["ssh", "-O", "check", "mac"], 3.0)]
-    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+    assert any("ssh fetch budget 초과" in w for w in warnings)
 
 
 def test_fetch_remote_file_skips_when_host_budget_already_expired(
@@ -838,7 +951,7 @@ def test_fetch_remote_file_skips_when_host_budget_already_expired(
     )
 
     assert result is None
-    assert any("budget 초과 (절전/무응답 가능성)" in w for w in warnings)
+    assert any("ssh fetch budget 초과" in w for w in warnings)
 
 
 def test_host_home_override(analyze_module):
