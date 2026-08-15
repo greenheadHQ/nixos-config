@@ -30,7 +30,8 @@
 #     -c model_reasoning_effort="medium" -o result.md -
 #
 # wrapper 자체 사전 검증(precheck) — codex exec를 호출하지 않고 자체 검증만 수행:
-#   codex-exec-supervised --check  # 사전 검증 통과 시 exit 0, 실패 시 127 (dependency 부재 /
+#   codex-exec-supervised --check  # 사전 검증 통과 시 exit 0 + 정본 env 5개 목록과 exit code
+#                                  # 규약 요약을 stderr로 노출, 실패 시 127 (dependency 부재 /
 #                                  # invalid env 값 / 정본 CODEX_EXEC_* 변수명 near-miss — 사유는 stderr)
 #
 # 환경 변수 (override 가능):
@@ -186,6 +187,11 @@ fi
 if [[ "${1:-}" == "--check" ]]; then
   printf 'codex-exec-supervised: precheck OK (env+deps; timeout=%s setsid=%s codex=%s)\n' \
     "$TIMEOUT_BIN" "$SETSID_BIN" "$(command -v codex)" >&2
+  # 계약 노출 — 정본 env 목록은 near-miss 거부 목록($_KNOWN_CODEX_EXEC_VARS)을 그대로 재사용해
+  # 드리프트를 차단한다. 변수명 오타로 timeout 조절이 침묵 무시된 사고(2026-08-06)의 재발 방지.
+  # exit code 규약의 정본은 헤더 Exit code 절이며 여기서는 요약만 노출한다.
+  printf 'codex-exec-supervised: env(정본):%s\n' "$_KNOWN_CODEX_EXEC_VARS" >&2
+  printf 'codex-exec-supervised: exit: 0=정상 124=timeout(SIGTERM) 137=SIGKILL(--kill-after) 127=precheck/invalid-env/near-miss 3=REQUIRE_NONEMPTY 실패(stderr "empty output" 동반) 기타=codex rc\n' >&2
   exit 0
 fi
 

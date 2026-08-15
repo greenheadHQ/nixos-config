@@ -16,6 +16,11 @@ description: >-
 - 확인 날짜: 2026-07-10
 - 확인 버전: Claude Code v2.1.206
 - 재검증: `claude --version && claude --help && claude -p --help`
+- 개별 항목에 `재확인: <날짜>, <버전>` 스탬프가 붙어 있으면 그 스탬프가 위 헤더보다 우선한다
+  (헤더는 문서 전체를 일괄 재확인한 시점이고, 개별 스탬프는 그 항목만 최신 버전으로 재실측한
+  시점이다). 2.1.233 런타임 관측 항목의 재검증 명령은
+  `echo "ok" | claude -p --model haiku --output-format json`이며, 각 항목이 요구하는 추가
+  플래그는 해당 항목에 함께 적는다.
 
 print 모드는 workspace trust dialog를 생략하고 invalid settings를 조용히 무시할 수 있다
 (2.1.206 help). 자동화 전에는 settings를 별도 검증한다.
@@ -45,8 +50,8 @@ claude -p 실행이 필요한가?
 │  └─ NO → 기본 실행 (권한 플래그 불필요)
 │
 ├─ 출력을 프로그래밍적으로 파싱할 필요가 있나?
-│  ├─ YES → --output-format json (top-level 이벤트 배열, 2.1.206 성공 경로 실측)
-│  │         배열/객체를 정규화한 뒤 type=result 탐색
+│  ├─ YES → --output-format json (가변 길이 이벤트 스트림 — 이벤트 수는 런마다 다름, 2.1.233 실측)
+│  │         배열/객체를 정규화한 뒤 type=result 탐색 (후행 비-JSON 라인 내성 필수)
 │  │         또는 --output-format stream-json (JSONL; wire shape 재검증 미수행)
 │  └─ NO → 기본 text 출력
 │
@@ -103,6 +108,29 @@ claude -p 실행이 필요한가?
   `claude_rc=$pipestatus[2]`로 보존한다.
 - `| head`, `| tail`, 뒤이은 `; echo $?`는 원래 exit를 가릴 수 있으므로 판정 경로에서 제외한다.
 
+## 호출 상한 (Bash tool 경유)
+
+Claude Code 하네스의 Bash tool로 `claude -p`를 발사할 때는 하네스 상한이 실질 상한이다.
+수치·계약의 SoT는 [using-codex-exec SKILL.md "foreground/background 상한 불일치"](../using-codex-exec/SKILL.md#foregroundbackground-상한-불일치-호출-방식-계약) 절이다
+(그 절이 명시하듯 `claude -p` headless에 공통 적용). 이 절은 수치를 복제하지 않는다 — 규칙만 적는다.
+
+- foreground 호출은 하네스 timeout이 wrapper·SSH 등 안쪽 예산보다 먼저 발화한다
+  (`Exit code 143 / Command timed out ...` 실측). timeout 파라미터의 상한 초과값은 거부되지
+  않지만(2.1.233 라이브 재현), 실효 상한은 하네스 최대치로 가정한다.
+- 수 분 이상 걸릴 수 있는 호출은 Bash tool `run_in_background: true`로 발사한다. 완료 알림의
+  exit code는 claude가 아니라 래핑 셸의 최종 rc다 — `rc 캡처 → .rc 파일 영속화 → exit $rc`로
+  끝낸다 (using-codex-exec SKILL.md "background 발사의 rc 계약"과 동일 규약; 꼬리 echo/cat을 두면
+  전건 실패도 completed로 통지된다).
+- foreground `sleep`은 하네스가 차단한다 (`Blocked: sleep ...` 실측) — 대기는 Monitor
+  until-loop 또는 run_in_background 완료 알림으로 한다.
+- Bash tool 호출 사이에 셸 변수·함수·`trap EXIT`는 소멸한다 — 경로·상태는 파일로 영속화한다.
+- 하네스 timeout으로 잘린 호출은 명령 말미의 in-band 계약 검사(`_EC=$?; ...` 후속 라인)까지
+  함께 사라진다 — 판정은 별도 호출(out-of-band)로 재확인한다.
+- 용어 구분 3종: CLI 플래그 `--background`/`--bg`(background agent 시작) ≠ Bash tool
+  `run_in_background` 파라미터 ≠ 하네스의 foreground→background 자동 전환(foreground 의도
+  호출이 background로 전환되어 알림으로 통지된 실측). 자동 전환되면 stdout 직수신 전제가
+  깨지므로 결과는 항상 파일로 받는다.
+
 ## 성공 계약
 
 `claude -p --output-format json` 완료는 다음 조건을 모두 만족해야 한다.
@@ -112,10 +140,15 @@ claude -p 실행이 필요한가?
 3. 파일 생성을 요구한 작업은 `test -s "$RESULT"`를 통과하고 기대 완료 표식이 있다.
 4. 반복 pass는 직전 결과 대비 새 finding·수정·판정 같은 진척 delta가 있다.
 
-2.1.206 성공 경로는 4-event 배열과 `result/success`, `is_error:false`, exit 0을 냈다. 반대로
-auth 실패 경로는 `subtype:success`, `is_error:true`, exit 1도 가능했다. 산출물 0개인데 success인
-실전 사례가 있으므로 진척 없는 pass가 연속되면 circuit breaker로 중단한다. child에게 같은
-collector/fan-out을 다시 생성시키지 않는다.
+성공 경로의 이벤트 스트림은 가변 길이다 (2.1.233 실측: 같은 버전·같은 플래그·같은 모델에서도
+`thinking_tokens` 이벤트 수에 따라 런마다 다름 — 특정 이벤트 개수를 기대하는 파서 금지).
+help는 `json (single result)`, 공식 문서는 result 필드를 가진 단일 객체를 예시하지만 실측
+런타임은 top-level 배열이다 — 어느 쪽도 가정하지 말고 배열/객체를 정규화한 뒤 `type=result`를
+찾는 파서가 유일 경로다. stdout 말미에 비-JSON 경고 라인이 간헐 혼입되므로(MCP 구성 의존,
+2.1.233 실측) 파서는 첫 JSON 문서만 취하되, 그래도 파싱이 실패하면 raw를 조용히 흘리지 말고
+non-zero로 죽어야 한다. 반대로 auth 실패 경로는 `subtype:success`, `is_error:true`, exit 1도
+가능했다. 산출물 0개인데 success인 실전 사례가 있으므로 진척 없는 pass가 연속되면 circuit
+breaker로 중단한다. child에게 같은 collector/fan-out을 다시 생성시키지 않는다.
 
 ## SSH 크로스머신 요약
 
@@ -158,7 +191,7 @@ ssh minipc 'zsh -li -c "c -p \"...\""'  # → unmatched quote
 |-----------|----------|------------|
 | `--allowed-tools "Bash" "prompt"` | 프롬프트가 도구 이름으로 파싱 | stdin pipe 사용 |
 | `--dangerously-skip-permissions` + `--allowed-tools` | allowlist 구조적 무효 | 제한 필요: allowed-tools + stdin / 제한 불필요: skip 단독 |
-| `--max-turns 1` + 도구 실행 기대 | Reached max turns | `--max-turns 2` 이상 (v2.1.202 실측) |
+| `--max-turns 1` + 도구 실행 기대 | exit 1 + `subtype=error_max_turns` + `is_error:true` (2.1.233 실측 — 메시지는 stderr가 아니라 stdout/`result.errors[]`) | `--max-turns 2` 이상 |
 | exit 또는 `subtype=success` 하나로 성공 판정 | 무산출물·auth 실패 오판 | 성공 계약 네 조건 확인 |
 | JSON parser 앞 `2>&1` | stderr 혼입으로 파싱 실패 | stdout/stderr/산출물 분리 |
 | 판정 pipeline 끝의 `head`/`tail`/`; echo $?` | 원 exit 은폐 | `pipefail`과 즉시 exit 보존 |

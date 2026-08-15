@@ -156,6 +156,20 @@ run_case "test_require_nonempty_empty_value_rejected (빈 값 fail-closed)" \
 run_case "test_require_nonempty_relative_path_rejected (상대경로 fail-closed)" \
   "CODEX_EXEC_REQUIRE_NONEMPTY=result.md" 127 "절대경로만 허용"
 
+# ── --check 계약 노출 케이스 ──
+# --check 성공 출력이 정본 env 5개와 exit code 규약 전체를 노출하는지 검증한다 —
+# 변수명 오타로 timeout 조절이 침묵 무시된 사고(2026-08-06)의 재발 방지 표면.
+# 부분 검사만 두면 목록에서 한 항목이 빠져도 통과하므로 항목별로 단언한다.
+for _canon_var in CODEX_EXEC_TIMEOUT_SECONDS CODEX_EXEC_KILL_AFTER_SECONDS \
+                  CODEX_EXEC_TIMEOUT_BIN CODEX_EXEC_SETSID_BIN CODEX_EXEC_REQUIRE_NONEMPTY; do
+  run_case "test_check_exposes_env_$_canon_var (--check가 $_canon_var 노출)" \
+    "unset" 0 "$_canon_var"
+done
+for _exit_token in "0=정상" "124=timeout" "137=SIGKILL" "127=precheck" "3=REQUIRE_NONEMPTY" "기타=codex rc"; do
+  run_case "test_check_exposes_exit_${_exit_token%%=*} (--check가 exit $_exit_token 노출)" \
+    "unset" 0 "$_exit_token"
+done
+
 # ─── pass-through stub 체인 (실행 wiring 검증용) ───
 # --check 케이스의 exit-0 stub과 달리, 실행 경로(wrapper 최상위 exec) 검증은 setsid→timeout→
 # (shim)→codex 체인이 실제로 돌아야 한다. 각 stub은 받은 argv를 NUL-delimited로 기록한 뒤
