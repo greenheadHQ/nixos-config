@@ -75,7 +75,9 @@ PASS=true
 [ "$MCP_ERRS" -gt 0 ] && echo "FAIL: mcp_server_errors non-empty ($MCP_ERRS)" && PASS=false
 # MCP 서버 0개는 정상이다 (이 저장소는 관리 MCP 서버를 두지 않는다) — MCP 개수 단언 없음
 
-$PASS && echo "T1: PASS" || echo "T1: FAIL"
+# 판정을 종료 코드로 내보낸다 — echo만 두면 새 에러 배열 게이트가 걸려도 exit 0이라
+# 자동화 호출자가 깨진 plugin/MCP 구성을 성공으로 읽는다.
+if $PASS; then echo "T1: PASS"; else echo "T1: FAIL"; exit 1; fi
 ```
 
 판정 로직: Skills >= 10, Tools >= 10, `plugin_errors`·`mcp_server_errors` 빈 배열이면 PASS (MCP 개수는 판정에서 제외 — 0개 정상). 정확한 기대값은 nrs 직후 한 번 측정하여 기준선으로 사용.

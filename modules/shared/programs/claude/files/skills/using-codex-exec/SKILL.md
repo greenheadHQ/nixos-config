@@ -138,7 +138,7 @@ review에는 image 플래그가 없다.
 | `--dangerously-bypass-hook-trust` | 영속 hook trust 없이 활성 hook 실행 허용 (신규, 0.142.5 — 자동화 전용, 위험) |
 | `--skip-git-repo-check` | Git 저장소 체크 건너뜀 |
 | `--ephemeral` | 세션 파일 미저장 |
-| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지). config에 의존하던 암묵 기본값이 함께 사라진다 — `model_reasoning_effort`가 CLI 기본값으로 드리프트하는 것을 A/B 실측 (2026-08-15, 0.147.0: config `low` → 배너 `none`; model은 런타임 기본이 config 값과 우연히 같아 무증상이나 메커니즘 동일). 값을 고정해야 하는 호출은 `-c model_reasoning_effort=` 등으로 명시하고, 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다 |
+| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지). 차단되는 것은 사용자 override이고 값이 미설정이 되는 것은 아니다 — 모델 카탈로그·CLI의 fallback 기본값으로 되돌아간다. 그 폴백이 config 값과 다르면 조용히 드리프트한다 (A/B 실측 2026-08-15, 0.147.0: config `low` → 배너 `none`; model 축은 폴백이 config 값과 우연히 같아 무증상이나 메커니즘 동일). 값을 고정해야 하는 호출은 `-c model_reasoning_effort=` 등으로 명시하고, 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다 |
 | `--ignore-rules` | user/project execpolicy `.rules` 파일 로드 차단 |
 | `--json` | JSONL 이벤트 출력 |
 | `-o, --output-last-message <FILE>` | 마지막 메시지 파일 저장. review에서 `-o`·stdout 모두 정상 (0.144.1 실측); upstream #12502의 open 상태와 로컬 동작은 분리 — known-issues.md §2 참조 |

@@ -334,7 +334,7 @@ test -s /tmp/result.md
 
 ### 주의사항
 
-- 대용량 stdin도 정상 동작 확인. 극단적 상한은 미확인 ([gotcha #40](gotchas.md) 참조)
+- piped stdin 상한은 10MB (공식 계약). 발사 전 `wc -c` 게이트로 자르고 초과분은 파일 경로 참조로 전환한다 ([gotcha #40](gotchas.md) 참조)
 - `--dangerously-skip-permissions`는 `--allowed-tools` 제한을 무시함 ([gotcha #3](gotchas.md) 참조)
 - 커스텀 환경변수는 `VAR=val claude -p` 형태로 전달 ([gotcha #39](gotchas.md) 참조)
 - MCP 도구 사용 시 해당 MCP 서버가 세션에서 활성화되어야 함 ([gotcha #5](gotchas.md) 참조)
