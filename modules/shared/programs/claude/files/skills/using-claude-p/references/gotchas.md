@@ -212,6 +212,17 @@ echo "hello" | claude -p --debug-file /tmp/debug.log
 cat /tmp/debug.log  # 상세 로그 출력
 ```
 
+### #48. `--output-format json`은 완료 시 일괄 기록 — 실행 중 0바이트는 실패 신호가 아님
+
+json 출력을 파일로 리다이렉트하면 그 파일은 프로세스 종료까지 0바이트다 (미검증 — 세션 실측
+5건: 이를 모르고 3분 만에 "미완료"로 포기해 인수인계까지 간 사례 실재). 판정 규칙:
+
+- `test -s`는 종료 후 판정에만 쓴다 — 실행 중 0바이트로 사망을 추론하지 않는다.
+- 성공 경로의 stderr는 비어 있는 것이 정상이다 (#22) — stderr 무출력도 실패 신호가 아니다.
+- 진행 관측이 필요하면 `--output-format stream-json`(JSONL, 이벤트별 즉시 방출)으로 전환하거나,
+  자식 세션의 프로젝트 JSONL(`~/.claude/projects/...`)을 tail하거나, 마커 기반 생존 확인을 쓴다.
+- 폴링하게 되는 예외 상황에서는 간격을 최소 3~5분으로 잡는다 (실측 소요 3~6분).
+
 ---
 
 ## 제어/플래그 (Control)
@@ -589,6 +600,22 @@ wait
 ### #31. `CLAUDE_CODE_MAX_RETRIES` 환경변수로 API 재시도 횟수 제어
 
 기본 재시도 횟수를 환경변수로 오버라이드할 수 있다.
+
+### #49. Bash tool zsh 셸 함정 카탈로그 (스크립트 예제 복사 시)
+
+Bash tool은 zsh에서 실행된다 — bash 전용 문법 금지의 SoT는 repo 루트 CLAUDE.md "Bash tool 환경"
+절이며, 아래는 이 스킬의 예제 복사에서 반복 실측된 함정만 보충한다 (미검증 — 세션 실측 7건):
+
+- `${PIPESTATUS[n]}`는 zsh에서 빈 값이다. `${PIPESTATUS[1]:-$?}` 같은 `:-$?` 폴백과 결합하면
+  판정이 조용히 fail-open된다 — 이 문서의 zsh 펜스는 `$pipestatus`(1-base)를 쓰고, bash 펜스를
+  복사할 때는 변환한다. 빈 값이면 즉시 FAIL하는 방어(`[ -n "$rc" ]`)를 판정에 포함한다.
+- Bash tool 셸은 bare glob qualifier·extended glob이 꺼진 상태로 시작한다 — `*(N)` 같은
+  qualifier는 무효이고 매칭 실패가 명령행 전체를 abort시킬 수 있다. 파일 순회는
+  `find ... -maxdepth 1 -exec` 또는 리터럴 경로로 대체한다.
+- 셸 옵션 의존 문법의 실측은 `zsh -fc`가 아니라 Bash tool 자체 1회 호출로 한다 —
+  `zsh -f`는 옵션 상태가 달라 잘못된 확신을 준다.
+- 바이너리 실경로 확인은 `type -a <bin>` 또는 `zsh -fc 'whence -a <bin>'`로 한다 —
+  셸 함수/alias가 가로채는 경우를 함께 노출한다.
 
 ---
 

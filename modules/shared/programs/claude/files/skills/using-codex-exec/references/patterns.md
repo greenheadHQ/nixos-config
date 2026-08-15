@@ -24,6 +24,9 @@ PROMPT
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다 ([known-issues.md §11](known-issues.md) 하위 항목).
 
 ```zsh
+# 발사 guard 2줄 — 조립 실패(빈/부재 프롬프트)가 빈 stdin + exit 0으로 무증상 통과하는 것을 차단
+# (known-issues §21; 같은 턴 병렬 호출에서는 "별도 호출로 분리" ≠ "앞 호출 성공"이므로 발사가 재검증)
+[ -s /tmp/codex-prompt.md ] || { echo "missing/empty prompt" >&2; exit 1; }
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
 set -o pipefail
 cat /tmp/codex-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
@@ -416,6 +419,37 @@ rc="${pipe_rcs[2]}"
 - "result 부재 + stderr 존재"가 항상 진행 중을 뜻하지도 않는다 — detach 실패·stream 오류
   전멸에서도 같은 외형이 난다. 최종 판정은 완료 알림 또는 `.rc` 마커로만 한다.
 - `2>` stderr 분리를 항상 유지하는 이유: timeout으로 죽으면 stderr가 유일한 포렌식 산출물이다.
+## 패턴 11: 장기 fan-out의 usage limit 회수
+
+한도 도달 시 codex는 즉시 에러 대신 내부 재시도로 hang할 수 있어, 종료 코드만 기다리면
+사이클당 수십 분이 샌다 (세션 실측: hang 10분 + 고정 900초 대기 → 스트림 감지 도입 후 약 90초).
+독립 3세션이 같은 처방을 재발명했다 (미검증 — 세션 실측 기반).
+
+절차:
+
+1. 감지 — 자식 stderr 스트림에서 `/usage limit/i`를 실시간 매치한다. stderr tail 바이트
+   슬라이스는 진행 로그가 밀어내 매치를 놓친다 (실측 오분류 사례). `--json` stdout으로는 대체
+   불가 — `turn.completed`에는 `usage` 토큰만 있고 rate limit 정보가 없다 (0.147.0 실측).
+2. 정리 — 감지 즉시 활성 자식을 정리한다. 한도 이전에 수락되어 진행 중인 세션은 완주할 수
+   있지만, 한도 이후 내부 재시도에 들어간 세션은 hang 후 exit null로 끝난다 — 관측만으로 둘을
+   가르기 어려우면 fan-out에서는 후자로 간주해 정리한다.
+3. 대기 — 리셋 시각까지 기다린다. 1순위는 rollout의 `rate_limits.primary.resets_at`(epoch).
+   stderr 문자열 파싱은 시각 단독(`1:38 PM`)과 날짜 포함(`Aug 20, 2026 12:29 PM`) 두 포맷을
+   모두 수용해야 한다 — 주간 창에서는 리셋이 며칠 뒤라 시각 단독 파서는 과소 대기 → 즉시
+   재실패 루프를 만든다 (0.147.0 포맷 문자열 실측).
+4. 재개 후 판정 — 진전 카운터 delta로 "한도 대기"와 "진전 없는 실패"를 구분한다.
+5. 실행 불가 시 보고 — (미수행 사유 + 리셋 시각 + 대체 근거 + 이연 항목) 4요소로 보고한다.
+
+잔량 확인 (모델 호출 없는 경로는 rollout뿐 — `codex doctor --json`에는 관련 필드 0건):
+
+- rollout의 `rate_limits`는 마지막 실제 모델 호출 시점의 스냅샷이다 — 이후 소비분 미반영.
+- `--ephemeral` 실행은 rollout을 남기지 않아 이 경로가 채워지지 않는다.
+- 스키마는 버전·플랜에 따라 변한다 (`secondary`가 null인 단일 창 실측) — 고정 인덱스 파싱 금지.
+- 최근 rollout 다수가 `token_count` 이벤트 0건일 수 있다 — 뒤로 스캔한다.
+- 프로브 호출은 "저비용"이지 무과금이 아니다 — 격리 플래그를 다 붙인 2단어 프롬프트도 입력
+  1.8만 토큰을 소모했다 (한도 소진 시에만 사실상 무료).
+
+(패턴 번호 9·10은 병행 PR의 격리 실행·in-progress 판정 절이 사용한다.)
 
 ## exec vs review 비교표
 
