@@ -550,13 +550,18 @@ echo "ok" | claude -p --output-format json \
 
 ## 종결 게이트 — 스킬 문서 수정의 라이브 반영 확인
 
-스킬 파일은 선언적 심링크로 배포되므로 소스를 고쳐도 activation(`nrs`) 전에는 라이브 세션에
-반영되지 않는다 — 이를 확인하지 않고 "수정·검증 완료"로 보고한 착각 경로가 있다. 스킬 문서
-수정 작업을 종결하기 전에:
+스킬은 디렉토리 단위 out-of-store 심링크로 배포된다 (`~/.claude/skills/<skill>` → nix store →
+저장소 소스 디렉토리). 따라서 링크가 이미 있으면 소스 파일 편집은 activation 없이 즉시 반영되고,
+`nrs`가 필요한 경우는 링크 신규 생성·경로 변경뿐이다. 대신 실제 함정은 링크가 가리키는 대상이
+메인 checkout이라는 점이다 — 워크트리에서 편집한 내용은 그 브랜치를 메인에 머지하기 전까지
+라이브 세션에 반영되지 않는다. 이를 확인하지 않고 "수정·검증 완료"로 보고한 착각 경로가 있다.
+스킬 문서 수정 작업을 종결하기 전에:
 
-1. 배포본 실측: `readlink ~/.claude/skills/<skill>/SKILL.md`가 기대 소스를 가리키는지 확인하고,
-   이번 수정에서 추가한 고유 문자열이 배포본에 존재하는지 grep한다
-   (`rg -c '<신규 문자열>' ~/.claude/skills/<skill>/SKILL.md`).
+1. 배포본 실측: 심링크는 디렉토리에 걸려 있으므로 `readlink ~/.claude/skills/<skill>`(또는
+   `readlink -f ~/.claude/skills/<skill>/SKILL.md`)로 확인한다 — 파일에 직접 `readlink`를 걸면
+   정상 배포 상태에서도 rc 1이다. 이어서 이번 수정의 고유 문자열이 배포본에 보이는지 grep한다
+   (`rg -c '<신규 문자열>' ~/.claude/skills/<skill>/SKILL.md`). 워크트리 작업이면 이 grep은
+   머지 전까지 0건이 정상이며, 라이브 검증은 머지 후에 수행한다.
 2. frontmatter 회귀: `claude plugin validate <스킬 디렉토리>`가 비용 0의 정적 게이트다
    (`--strict`로 warning도 실패 처리 가능 — 확인: 2026-08-15, v2.1.233 help).
 3. settings 검증: 자동화 도입 전 `claude doctor`로 설치·설정 상태를 확인한다.
