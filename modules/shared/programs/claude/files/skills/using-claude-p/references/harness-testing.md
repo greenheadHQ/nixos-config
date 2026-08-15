@@ -530,3 +530,35 @@ echo "ok" | claude -p --output-format json \
   > /tmp/harness-init.json 2> /tmp/harness-init.stderr
 # T1, T2a(그리고 mcp.json이 있으면 T4)에서 /tmp/harness-init.json을 읽어서 판정
 ```
+
+## 검증 규율 (프로브·재검증 공통)
+
+세션 전수조사에서 가장 잦았던 단일 검증 오류는 "대리 명령으로 능력을 판정"이었다
+(마이닝된 검증 오류 32건 중 12건 — 실행 가능한 작업을 실행하지 않고 사용자에게 위임한 결과).
+프로브·gotcha 재검증·스탬프 갱신에 공통 적용한다:
+
+1. 능력 사전 게이트의 프로브 명령 = 실제 실행할 명령이다. `true`·`echo`·`--version`으로
+   대리 측정하지 않는다 — 권한·sandbox·플래그 게이트는 명령별로 다르다 (`--version` 프로브가
+   모든 플래그를 "존재함"으로 오판한 실측 반례).
+2. 기록된 gotcha의 재검증은 그 gotcha가 명시한 호출 형태를 문자 그대로 재현한다 — 다른 형태로
+   재어 "버그 없음"을 결론낸 거짓 음성이 실측 2회 있다. gotcha에 재현 커맨드가 병기돼 있으면
+   그 형태를 바꾸지 않는다.
+3. rc 기반 능력 판정 금지 — 결정론적 인자 오류·권한 거부·업무 실패가 같은 rc로 나타난다.
+4. help 부재 ≠ 제거 — hidden flag의 제거 판정은 실행 smoke로만 한다 (문서 공통 원칙 재확인).
+5. 단일 실행 결과를 그대로 스탬프하지 않는다 — 간헐 현상(stdout 오염 등)은 2회 이상 확인.
+6. 무출력만으로 hang을 판정하지 않는다 (SKILL.md SSH 절과 동일 원칙).
+
+## 종결 게이트 — 스킬 문서 수정의 라이브 반영 확인
+
+스킬 파일은 선언적 심링크로 배포되므로 소스를 고쳐도 activation(`nrs`) 전에는 라이브 세션에
+반영되지 않는다 — 이를 확인하지 않고 "수정·검증 완료"로 보고한 착각 경로가 있다. 스킬 문서
+수정 작업을 종결하기 전에:
+
+1. 배포본 실측: `readlink ~/.claude/skills/<skill>/SKILL.md`가 기대 소스를 가리키는지 확인하고,
+   이번 수정에서 추가한 고유 문자열이 배포본에 존재하는지 grep한다
+   (`rg -c '<신규 문자열>' ~/.claude/skills/<skill>/SKILL.md`).
+2. frontmatter 회귀: `claude plugin validate <스킬 디렉토리>`가 비용 0의 정적 게이트다
+   (`--strict`로 warning도 실패 처리 가능 — 확인: 2026-08-15, v2.1.233 help).
+3. settings 검증: 자동화 도입 전 `claude doctor`로 설치·설정 상태를 확인한다.
+4. 트리거(description)를 변경했다면 발동 회귀 대조(positive/negative 프롬프트 각 1회 —
+   대상 스킬의 Skill tool_use 존재/부재 판정)를 통과한 뒤 확정한다.
