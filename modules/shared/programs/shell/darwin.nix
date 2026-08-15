@@ -73,13 +73,23 @@ let
       ;
   };
   # Keep the non-interactive/remote signal set identical between .zshenv and
-  # the interactive ssh() compatibility path. The launcher marker decides
-  # whether .zshenv may change PATH; the signal set decides whether a shell is
-  # headless enough to require bounded MiniPC authentication.
-  headlessContextPredicate = ''
+  # the interactive ssh() compatibility path. Claude background sessions run
+  # tools inside a PTY and do not inherit the launcher marker, so TTY checks
+  # alone misclassify them as interactive. Their explicit session kind is the
+  # runtime-owned signal that no local 1Password approval flow is available.
+  headlessContextPredicate = lib.removeSuffix "\n" ''
     { [ ! -t 0 ] || [ ! -t 2 ] || [ -n "''${SSH_CONNECTION:-}" ] \
       || [ -n "''${CI:-}" ] || [ -n "''${CLAUDECODE:-}" ] \
-      || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ]; }
+      || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ] \
+      || [ "''${CLAUDE_CODE_SESSION_KIND:-}" = "bg" ]; }
+  '';
+  # PATH mutation remains opt-in: a managed launcher marker or Claude's
+  # background-session signal must own the child before the context predicate
+  # can expose the private dispatcher. This keeps ordinary interactive shells
+  # on raw OpenSSH while covering external wrappers such as `timeout ssh`.
+  headlessPathOwnerPredicate = lib.removeSuffix "\n" ''
+    { [ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" = "1" ] \
+      || [ "''${CLAUDE_CODE_SESSION_KIND:-}" = "bg" ]; }
   '';
 in
 {
@@ -137,12 +147,12 @@ in
     ghAuth
   ];
 
-  # Codex/Claude launcher child가 명시 marker를 전달한 비대화형 컨텍스트에서만
+  # Codex/Claude launcher child 또는 Claude background session으로 식별된 컨텍스트에서만
   # private dispatcher를 PATH 앞에 둔다. global sessionPath/home.packages는 건드리지
   # 않으므로 interactive Ghostty와 일반 SSH는 /usr/bin/ssh 의미를 유지한다.
   programs.zsh.envExtra = lib.mkAfter (
     lib.optionalString headlessDispatcher.enabled ''
-      if [[ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" == "1" ]] \
+      if ${headlessPathOwnerPredicate} \
         && ${headlessContextPredicate}; then
         case ":$PATH:" in
           *":${headlessDispatcher.stableBinPath}:"*) ;;

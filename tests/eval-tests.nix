@@ -750,10 +750,12 @@ let
             );
         }
         {
-          # launcher-scoped D 계약(#1094): stable private PATH는 personal Darwin의
-          # marked non-TTY child와 Claude launchd에만 배선한다. 전역 sessionPath에
-          # 넣지 않아 interactive Ghostty/일반 SSH의 binary 의미를 보존한다.
-          name = "Test D19 ${hostName}: headless SSH dispatcher는 personal launcher child에만 배선되어야 함";
+          # launcher/background-scoped D 계약(#1094): stable private PATH는 personal
+          # Darwin의 marked child와 Claude background session에만 배선한다. Claude
+          # background tool은 PTY를 쓰고 launcher marker를 상속하지 않으므로 명시적인
+          # CLAUDE_CODE_SESSION_KIND=bg 신호가 없으면 `timeout ssh`가 raw SSH로 샌다.
+          # 전역 sessionPath에는 넣지 않아 interactive Ghostty/일반 SSH를 보존한다.
+          name = "Test D19 ${hostName}: headless SSH dispatcher는 personal agent child에만 배선되어야 함";
           cond =
             hasHost
             && (
@@ -767,6 +769,8 @@ let
               if isPersonalHost then
                 hasDispatcher
                 && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv
+                && nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshEnv
+                && nixpkgsLib.hasInfix "= \"bg\"" zshEnv
                 && nixpkgsLib.hasInfix stableBin zshEnv
                 && !(builtins.elem stableBin hm.home.sessionPath)
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == "1"
@@ -774,6 +778,7 @@ let
               else
                 !hasDispatcher
                 && !nixpkgsLib.hasInfix stableBin zshEnv
+                && !nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshEnv
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == ""
                 && !nixpkgsLib.hasInfix stableBin agentEnv.PATH
             );
@@ -802,6 +807,7 @@ let
                 && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH = \"1\"" codexDarwinConfig
                 && nixpkgsLib.hasInfix "${stableBin}/ssh" zshInit
                 && nixpkgsLib.hasInfix "SSH_CONNECTION" zshInit
+                && nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshInit
                 && !nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\" ssh" zshInit
                 && !nixpkgsLib.hasInfix "timeout \"$_hdl_deadline\" ssh" zshInit
               else
