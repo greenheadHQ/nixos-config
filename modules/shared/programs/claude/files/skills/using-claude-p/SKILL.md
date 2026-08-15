@@ -1,15 +1,17 @@
 ---
 name: using-claude-p
 description: >-
-  Run Claude Code non-interactively with claude -p for headless automation, JSON parsing, SSH
-  execution, or CLI flag troubleshooting. Use when requests mention `claude -p` or
-  `비대화형/headless claude`. Use using-codex-exec for Codex subprocesses.
+  Run Claude Code non-interactively with claude -p for headless automation, JSON parsing, or SSH
+  execution. Use when requests mention `claude -p`/`비대화형 claude`, or before you launch, probe,
+  or verify a headless claude subprocess yourself. Use using-codex-exec for Codex subprocesses.
 ---
 
 # Claude Code 비대화형 모드 (`claude -p`) 사용
 
 상세 flag·gotcha의 SSOT는 [flag-matrix.md](references/flag-matrix.md)와
 [gotchas.md](references/gotchas.md)이며, 본문은 선택 기준과 성공 계약만 요약한다.
+설정 키워드 검색으로 시작하지 말고 의사결정 트리와 성공 계약부터 읽는다 — 이미 문서화된
+사실을 시행착오로 재발견한 세션이 다수였다.
 
 ## 작성 기준
 
@@ -21,6 +23,9 @@ description: >-
   시점이다). 2.1.233 런타임 관측 항목의 재검증 명령은
   `echo "ok" | claude -p --model haiku --output-format json`이며, 각 항목이 요구하는 추가
   플래그는 해당 항목에 함께 적는다.
+- 버전 warn 시 최소 재검증 세트: 위 help diff + 실행 smoke 3종 (① json 성공 경로 wire shape
+  ② 성공 계약 판정식 ③ help diff에서 변경이 의심되는 개별 항목 — 각 항목이 명시한 호출 형태
+  그대로). 전면 재확인 없이 헤더만 올리지 않는다.
 
 print 모드는 workspace trust dialog를 생략하고 invalid settings를 조용히 무시할 수 있다
 (2.1.206 help). 자동화 전에는 settings를 별도 검증한다.

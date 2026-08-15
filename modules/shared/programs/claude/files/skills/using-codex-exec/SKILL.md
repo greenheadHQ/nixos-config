@@ -1,9 +1,10 @@
 ---
 name: using-codex-exec
 description: >-
-  Run Codex CLI subprocesses for explicit codex exec requests, Claude Code or headless automation,
-  and non-interactive code review. Use when requests mention `codex exec` or `비대화형 codex`.
-  Use using-claude-p for Claude headless execution.
+  Run Codex CLI subprocesses for explicit codex exec requests, headless automation, and
+  non-interactive code review. Use when requests mention `codex exec`/`비대화형 codex`, or before
+  you launch, probe, or verify a codex exec subprocess yourself. Use using-claude-p for Claude
+  headless execution.
 ---
 
 # Codex Exec 사용
@@ -11,6 +12,8 @@ description: >-
 이 문서는 `codex exec` / `codex exec review` subprocess의 라우팅과 성공 계약을 다룬다.
 상세 명령·제약의 SSOT는 [patterns.md](references/patterns.md)와
 [known-issues.md](references/known-issues.md)이며, 본문은 선택 기준과 필수 절차만 요약한다.
+설정 키워드 검색으로 시작하지 말고 실행 경로 게이트부터 읽는다 — wrapper 계약이 통째로
+우회된 세션이 다수였다.
 
 ## 실행 경로 게이트
 
@@ -28,6 +31,11 @@ subprocess fallback이 필요하면 해당 스킬이 요구하는 별도 사용�
 - 확인 날짜: 2026-07-10
 - 확인 버전: codex-cli 0.144.1
 - 재검증: `command codex --version && command codex exec --help && command codex exec review --help && command codex exec resume --help`
+- 버전 warn 시 최소 재검증 세트: 위 help diff + smoke 3종 (① 패턴 8 스모크 ② 성공 계약 판정식
+  ③ help diff에서 변경이 의심되는 개별 항목 — 각 항목이 명시한 호출 형태 그대로). 개별 항목
+  스탬프가 헤더 스탬프보다 우선하며, 전면 재확인 없이 헤더만 올리지 않는다.
+- 스탬프 축 주의: 하네스 속성 항목(Bash tool 동작 등)은 codex가 아니라 Claude Code 버전으로
+  스탬프한다 — codex 버전에 스탬프하면 재검증 트리거가 영원히 걸리지 않는다.
 
 CLI 버전이 바뀌면 플래그/동작이 달라질 수 있으므로, 실행 전 도움말로 확인한다.
 
@@ -451,7 +459,7 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 3. CODEX_API_KEY는 exec 전용: interactive TUI와 VS Code extension에서는 무시됨. OPENAI_API_KEY는 auth 체인에 미참여 (TUI prefill 전용). 우선순위: CODEX_API_KEY > ephemeral tokens > auth.json. 재검증 미수행 (0.142.5 기준 서술 유지; 상세: [known-issues.md §17](references/known-issues.md#17-exec-auth-chain-우선순위와-login-status-한계))
 4. 무저장 cwd의 `resume --last`는 두 실패 축이 있다 — (a) exit 0 silent fallback: 오류 대신 새 session id로 조용히 시작 (0.144.1 관측; fallback 로직은 0.147.0에도 잔존 — 도달 불가 provider 실행에서 새 세션 발급 관측). (b) 무출력 hang: 배너 이전 단계에서 무기한 정지, stderr 0바이트 (0.147.0 실측 5/5 — 대형 세션 코퍼스 환경 시그니처, wrapper timeout rc 124가 유일 구제. stderr가 완전히 비므로 stderr 기반 판정은 이 실패를 놓친다). 어느 축이든 처방 동일: `--last` 대신 세션 id 명시, supervised 경로 필수, session id·응답 context로 판정 — session id 대조는 ANSI 제거 후 값을 추출해 문자열 비교한다 (본문 "세션 재개" 예제 참조; 평문 `grep -F`는 강제 컬러 환경에서 항상 실패하고, `grep -E`에 값을 직접 넣으면 접두사·메타문자 오탐이 난다).
 5. `codex review` (top-level) vs `codex exec review`: 전자는 `-m`, `--json`, `-o`, `--output-schema`, `--ephemeral`, `-s/--sandbox` 등 미지원 (재확인: 2026-07-10, 0.144.1 help). 비대화형 자동화에는 반드시 `codex exec review` 사용
-6. Bash tool sandbox에서 `&` + `$!` 미작동: Claude Code의 Bash tool에서 background process PID 캡처(`$!`)가 리터럴 문자열로 반환됨. shell-level 병렬 대신 여러 병렬 Bash tool 호출 + supervised stdin pipe를 사용한다. 이 제약은 Codex 세션의 native subagent 경로에는 적용되지 않는다. 재검증 미수행 (0.142.5 기준 서술 유지; 상세: [known-issues.md](references/known-issues.md) §11)
+6. Bash tool sandbox에서 `&` + `$!` 미작동: Claude Code의 Bash tool에서 background process PID 캡처(`$!`)가 리터럴 문자열로 반환됨. shell-level 병렬 대신 여러 병렬 Bash tool 호출 + supervised stdin pipe를 사용한다. 이 제약은 Codex 세션의 native subagent 경로에는 적용되지 않는다. 하네스 속성 — Claude Code 축 스탬프: v2.1.202 관측 서술 유지, 재검증 미수행 (codex 버전과 무관하므로 Claude Code 업그레이드 시 재확인; 상세: [known-issues.md](references/known-issues.md) §11)
 7. stdin pipe로 stdin hang 방지: `cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -`로 EOF를 보장한다. `Reading additional input...` banner 하나만으로 hang이라 단정하지 말고, banner + 무진척 + 결과 미생성을 함께 확인한다. 상세: [known-issues.md](references/known-issues.md) §14
 8. `-c hooks.*` inline override는 stdin과 독립적으로 hang을 유발한 실측 축이다. programmatic 호출에서 제거하고 [known-issues.md §15](references/known-issues.md#15-codex-exec-supervised-wrapper로-14-위에-timeout-budget-한계-보강-issue-593)의 supervisor·timeout 계약을 적용한다.
 9. codex exec `--json`은 multi-agent spawn/child 이벤트를 노출하지 않는다 (관측성 한계, 0.144.1). `collaboration.spawn_agent`는 실제로 작동해 child를 생성·실행하지만, 공개 `--json`에는 `tool:"wait"` 이벤트만 보이고 그 `receiver_thread_ids`가 `[]`다 — 이를 spawn 실패로 오판하지 마라 (child가 이미 실행됐을 수 있어 재시도 시 중복 실행). 실제 spawn 여부는 `~/.codex/sessions`의 persisted rollout(`spawn_agent`/`sub_agent_activity`/`inter_agent_communication_metadata`)으로 확인한다. 상세·재검증 probe(버전 변화 시 재확인): [known-issues.md §19](references/known-issues.md#19-codex-exec---json이-multi-agent-spawnchild-이벤트를-노출하지-않음-관측성-한계)
