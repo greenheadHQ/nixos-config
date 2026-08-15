@@ -116,7 +116,8 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
 
 ### corpus size cap
 
-- `CORPUS_FILE_SIZE_CAP_MB = 50`. 원격 `find`는 바이트 suffix로 상한을 건다 — 수집은
+- `CORPUS_FILE_SIZE_CAP_MIB = 50` (50 MiB = 52,428,800 바이트). 원격 `find`는 base마다 두 번
+  실행된다: 수집 목록용과 초과 건수 카운트용. 바이트 suffix로 상한을 걸어 수집은
   `-size -<cap+1>c`, 초과 카운트는 `-size +<cap>c`로 상보 분할한다 (`REMOTE_FIND_SIZE_INCLUDE`
   /`REMOTE_FIND_SIZE_EXCLUDE`). 로컬 수집(`collect_local_files`)도 같은 바이트 경계를 쓴다 —
   corpus 정의가 실행 위치에 따라 달라지지 않게 하기 위함이다.
@@ -130,7 +131,7 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
   판별자가 아니며(초과분에도 verdict가 존재한다), 수집 가용성을 위해 일부 실제 verdict를
   버리는 trade-off다. 도입 배경은 2026-08 mac `~/.codex/sessions` 폭증으로 인한 budget 초과
   (mac 수집 4주 연속 0건).
-- 제외 건수는 `warnings`가 아니라 sidecar의 `corpus_exclusions[]`(host/base/reason/cap_mb/
+- 제외 건수는 `warnings`가 아니라 sidecar의 `corpus_exclusions[]`(host/base/reason/cap_mib/
   excluded_files)에 기록하고, weekly coverage는 이를 `host_collection[host].excluded_files`로
   노출한다. 제외는 실패가 아니므로 host `status`·리포트 `partial` 판정에 영향을 주지 않는다.
 - 제외 건수를 측정하지 못한 경우(카운트용 find의 timeout·nonzero·budget 소진)는 다르다 —

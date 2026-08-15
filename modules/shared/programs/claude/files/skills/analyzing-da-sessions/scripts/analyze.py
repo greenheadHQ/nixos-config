@@ -167,8 +167,8 @@ SSH_TAR_TIMEOUT_SECONDS = 480  # 단일 tar batch 호출 상한 (실제 budget �
 # 일부 실제 verdict를 버리는 trade-off이며, 버린 규모는 corpus_exclusions에 파일 수로
 # 기록한다 (제외 세션의 verdict 수는 남지 않으므로 지표 분모 자체를 재구성하지는 못한다).
 # 신호 기준 선별(원격 marker grep prefilter)은 별도 범위다.
-CORPUS_FILE_SIZE_CAP_MB = 50
-CORPUS_FILE_SIZE_CAP_BYTES = CORPUS_FILE_SIZE_CAP_MB * 1024 * 1024
+CORPUS_FILE_SIZE_CAP_MIB = 50
+CORPUS_FILE_SIZE_CAP_BYTES = CORPUS_FILE_SIZE_CAP_MIB * 1024 * 1024
 # find -size의 `M` suffix는 구현마다 의미가 다르다 — GNU는 크기를 MB 단위로 올림해 비교하고
 # (그래서 `-50M`과 `+50M` 사이에 1MiB 폭의 구간이 어디에도 안 잡힌다), BSD는 바이트 정확
 # 비교라 갭이 cap 값 한 점이다. 어느 쪽이든 수집 목록과 초과 카운트 양쪽에서 빠지는 구간이
@@ -1770,7 +1770,7 @@ def collect_local_files(
     """현재 머신의 jsonl 파일 glob.
 
     corpus 정의는 실행 위치에 따라 달라지면 안 되므로, 원격 수집과 동일한
-    `CORPUS_FILE_SIZE_CAP_MB` 상한을 적용하고 제외 건수를 같은 형식으로 기록한다.
+    `CORPUS_FILE_SIZE_CAP_MIB` 상한을 적용하고 제외 건수를 같은 형식으로 기록한다.
     """
     _validate_host(host)
     paths = HOST_PATH_MAP[host]
@@ -2030,7 +2030,7 @@ def _corpus_exclusion_entry(host: str, base: str, excluded_files: int) -> dict:
         "host": host,
         "base": base,
         "reason": "size_cap",
-        "cap_mb": CORPUS_FILE_SIZE_CAP_MB,
+        "cap_mib": CORPUS_FILE_SIZE_CAP_MIB,
         "excluded_files": excluded_files,
     }
 
@@ -2056,12 +2056,13 @@ def _remote_find_argv(host: str, base: str, size_expr: str) -> list[str]:
     ]
 
 
-def _collectible_remote_lines(host: str, stdout: str) -> list[str]:
-    """원격 find stdout에서 수집 대상 정의를 만족하는 path만 남긴다.
+def _validated_remote_jsonl_lines(host: str, stdout: str) -> list[str]:
+    """원격 find stdout에서 대상 정의를 만족하는 path만 남긴다.
 
-    수집 경로와 제외 카운트 경로가 같은 정의를 써야 "제외된 N건"이 실제 수집
-    대상 기준이 된다. `/subagents/` 하위는 wrapper output이라 대상이 아니고,
-    비신뢰 path line은 `_allowed_remote_path`로 검증한다.
+    크기 판정은 하지 않는다 — size 조건은 호출한 find 쿼리가 적용하고, 이 함수는
+    경로 검증만 담당한다. 수집 목록과 초과 건수 카운트가 같은 검증을 써야
+    "제외된 N건"이 실제 대상 기준이 된다. `/subagents/` 하위는 wrapper output이라
+    대상이 아니고, 비신뢰 path line은 `_allowed_remote_path`로 검증한다.
     """
     return [
         line
@@ -2098,7 +2099,7 @@ def _count_remote_oversized_files(
         return None
     if proc.returncode != 0:
         return None
-    return len(_collectible_remote_lines(host, proc.stdout))
+    return len(_validated_remote_jsonl_lines(host, proc.stdout))
 
 
 def collect_remote_files(
@@ -2148,7 +2149,7 @@ def collect_remote_files(
                     budget.warn_exceeded(warnings)
                     break
                 continue
-            all_files.extend(_collectible_remote_lines(host, proc.stdout))
+            all_files.extend(_validated_remote_jsonl_lines(host, proc.stdout))
             oversized = _count_remote_oversized_files(host, base, budget)
             if oversized is None:
                 # 측정 실패는 partial 신호로 올린다 — 제외 건수를 모른 채 "0건"으로

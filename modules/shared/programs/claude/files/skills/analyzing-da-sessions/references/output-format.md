@@ -219,7 +219,7 @@ JSON sidecar: /tmp/analyze-da-sessions-<ISO>.json (또는 --json out= 명시 경
   },
   "warnings": [],
   "corpus_exclusions": [
-    {"host": "mac", "base": "~/.codex/sessions", "reason": "size_cap", "cap_mb": 50, "excluded_files": 158}
+    {"host": "mac", "base": "~/.codex/sessions", "reason": "size_cap", "cap_mib": 50, "excluded_files": 158}
   ]
 }
 ```
