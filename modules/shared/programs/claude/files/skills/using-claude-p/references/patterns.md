@@ -217,6 +217,18 @@ Task 위임만 막힐 뿐 프로세스 증식 자체는 못 막고, 부모의 `-
   요청. 에이전트 completed ≠ 자식 프로세스 종료 — TaskStop이
   `Task ... is not running (status: completed)`를 반환해도 자식은 살아 있을 수 있다 (실측).
 
+### 다수 병렬의 배리어·수집 계약 (미검증 — 세션 실측 8건 기반)
+
+Bash tool `run_in_background`의 완료 알림은 best-effort다 (세션 집계: 42건 중 약 21%가 알림
+없이 종료). 단일 실행은 알림으로 충분하지만 다수 병렬은:
+
+- 발사 스크립트가 종료 시 rc를 `$OUT.rc` 마커 파일로 남긴다 (배리어·감사의 정본).
+- 배리어는 Monitor until-loop + `test -f "$OUT.rc"` 전건 확인으로 만든다.
+- 알림 1건을 받을 때마다 결과 디렉토리 전체를 일괄 재집계해 미알림 유닛까지 회수한다.
+- 장시간 fan-out은 (task ID + 결과 경로 + 완료 시 행동)을 담은 fallback 재개 메모를 남긴다.
+- mktemp 경로는 추측·wildcard glob이 아니라 출력 첫 줄/sentinel 파일에서 파싱하고, 프로세스
+  수를 완료 신호로 쓰지 않는다.
+
 ## 패턴 8: JSON 결과 파싱
 
 `--output-format json` 출력에서 필요한 정보를 추출하는 패턴.

@@ -470,7 +470,17 @@ Background 대안 — 다수 병렬 실행 시 LLM 블로킹 방지:
     exit "$rc"                                 # 완료 알림에 codex rc가 실리게 한다
     ```
     - LLM이 즉시 반환받아 사용자와 대화 가능
-    - 각 완료 시 자동 알림 수신 (sleep/poll 금지)
+    - 각 완료 시 자동 알림 수신 (sleep/poll 금지) — 단 알림은 best-effort다 (미검증 — 세션
+      집계에서 background 발사 42건 중 9건, 약 21%가 알림 없이 종료). 단일 실행은 알림으로
+      충분하지만, 다수 병렬 fan-out은 알림만으로 배리어를 만들 수 없다:
+      (a) 발사 스크립트가 종료 시 rc를 `$OUT.rc` 마커 파일로 남기고
+      (b) 배리어는 `until test -f "$OUT.rc"` + 마커 값 판정으로 만들고 (Bash tool에서는
+      Monitor until-loop 사용)
+      (c) 알림 1건을 받을 때마다 결과 디렉토리 전체를 일괄 재집계해 미알림 유닛까지 회수하고
+      (d) 장시간 fan-out은 (task ID + 결과 경로 + 완료 시 행동)을 담은 fallback 재개 메모를
+      남긴다.
+      mktemp 경로는 추측·wildcard glob이 아니라 출력 첫 줄 또는 sentinel 파일에서 파싱한다.
+      프로세스 수를 완료 신호로 쓰지 않는다 (`pgrep` 패턴은 ERE라는 함정 포함).
     - 완료 알림의 exit code는 래핑 셸의 최종 rc다 — 위처럼 `exit $rc`로 끝내지 않고 꼬리
       echo/cat을 두면 전건 실패도 `completed (exit code 0)`으로 통지된다
       (SKILL.md "background 발사의 rc 계약"; 2.1.233 하네스 A/B 실측)
@@ -857,6 +867,28 @@ Direct Codex가 라우팅·승인·쓰기 경계를 우회하는 raw 또는 임�
 환경 단서: 무출력 hang은 rollout 코퍼스·state DB 규모에 의존할 수 있어 보편 회귀로 단정하지
 않는다 — 처방(세션 id 명시 + supervised timeout)은 환경과 무관하게 유효하다.
 
+## 21. 프롬프트 조립·발사 계약 (미검증 — 세션 실측 8건 기반)
+
+증상: 프롬프트 파일이 없거나 손상된 채 발사되어 빈 stdin으로 codex가 exit 0으로 끝난다.
+조립 단계의 실패(파일 쓰기 훅 차단, `cat` 실패, sed 치환 실패, heredoc 백틱 명령치환)가
+발사 명령의 exit를 오염시키지 않아 무증상으로 통과한다.
+
+규칙:
+
+1. 발사 스니펫의 첫 두 줄을 복붙 단위로 고정한다:
+   ```bash
+   [ -d "$DIR" ] || { echo "missing DIR=$DIR" >&2; exit 1; }
+   [ -s "$PROMPT" ] || { echo "missing/empty PROMPT=$PROMPT" >&2; exit 1; }
+   ```
+2. 조립 성공 판정은 "파일이 생겼다·줄 수가 몇이다"가 아니라 결과물 sentinel grep(역할 헤더·
+   출력 형식 문구 등 조립 산출물에만 있는 토큰)으로 한다.
+3. heredoc은 보간이 필요 없으면 반드시 `<<'EOF'`(인용 delimiter)로 쓴다. untrusted 텍스트가
+   섞이는 조립은 heredoc 대신 파일 쓰기 도구를 쓴다 — delimiter injection과 백틱 명령치환이
+   실측된 축이다.
+4. 프롬프트 안의 파일 참조는 절대경로로 고정하고, 필수 변수가 미해결(빈 문자열·리터럴
+   `undefined`)이면 발사 전에 fail-fast한다.
+5. "작성과 발사를 별도 호출로 분리했다 ≠ 앞 호출이 성공했다" — 같은 턴의 병렬 호출이면 순서가
+   보장되지 않는다. 발사 호출이 스스로 1의 guard로 재검증한다.
 ## 버전별 변천 (재인용 함정)
 
 과거 세션 로그·문서 예시를 복사할 때 버전 경계를 확인한다. 본문은 현재 계약만 서술하고,

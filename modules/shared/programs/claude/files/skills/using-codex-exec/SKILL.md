@@ -84,8 +84,14 @@ codex exec 실행이 필요한가?
 | `codex review` | top-level alias (⚠️ `codex exec review`와 다름 — 아래 gotcha §5 참조) |
 | `--yolo` | `--dangerously-bypass-approvals-and-sandbox`의 숨은 alias |
 
-대화형 zsh의 `codex` alias가 bypass 플래그를 자동 부착할 수 있다. 예제는 alias를 거치지 않는
-`command codex` 또는 `env CODEX_PROGRAMMATIC=1 codex` 형태만 사용한다.
+사용자 셸의 `codex`는 alias가 아니라 셸 함수이며 bypass 플래그를 자동 부착할 수 있다 —
+Claude Code가 shell-snapshot으로 이 함수를 비대화형 Bash tool에도 주입하므로, 에이전트
+컨텍스트가 정확히 위험 구간이다 (미검증 — 세션 실측 4건: 주입된 전역 bypass 플래그는
+서브커맨드와 결합해도 파싱 에러 없이 통과해 `codex exec -s read-only` 의도를 조용히
+무력화했다). 확인은 `type -a codex` — 결과가 함수/alias면 raw 호출을 중단한다. 예제는
+함수를 거치지 않는 `command codex` 또는 `env CODEX_PROGRAMMATIC=1 codex` 형태만 사용하고,
+`zsh -ic`로 감싸는 형태는 함수 주입을 재활성화하므로 금지한다. supervised wrapper는
+스크립트 직접 실행이라 함수 면역이다.
 
 ## 호환성 매트릭스
 
@@ -250,6 +256,21 @@ non-empty regular file이 아닐 때 wrapper가 rc 3 + stderr 식별자
   이번 실행이 아무것도 안 써도 통과한다 (위 예시의 `rm -f /tmp/result.md`가 그 역할).
 - timeout rc(124/137)와 codex 오류 rc는 덮어쓰지 않는다 — 검사는 codex rc 0일 때만 수행된다.
 - 값은 절대경로만 허용 (빈 값·상대경로는 invalid env 규약대로 exit 127).
+
+wrapper 계약 요약 — wrapper에는 자체 `--help`가 없고(`--help`는 codex exec로 passthrough)
+배포 경로는 nix shim이므로, 정본은 저장소 스크립트(`modules/shared/scripts/codex-exec-supervised.sh`)
+헤더와 아래 요약이다. 런타임 확인 경로로는 `codex-exec-supervised --check`가 성공 시 같은
+목록(정본 env 5개·exit code 규약)을 stderr로 출력한다 — 이 출력은 PR #1248에서 추가되므로,
+그 변경이 배포되기 전에는 `precheck OK ...` 한 줄만 나온다:
+
+| 축 | 계약 |
+|----|------|
+| 정본 env 5개 | `CODEX_EXEC_TIMEOUT_SECONDS`(기본 1800, 상한 7200) / `CODEX_EXEC_KILL_AFTER_SECONDS`(기본 5) / `CODEX_EXEC_TIMEOUT_BIN` / `CODEX_EXEC_SETSID_BIN` / `CODEX_EXEC_REQUIRE_NONEMPTY`. 계열 이름의 오타는 exit 127로 fail-fast |
+| exit code | 0=정상 / 124·137=timeout(SIGTERM/SIGKILL) / 127=사전 검증 실패(BLOCKED) / 3+stderr 식별자=REQUIRE_NONEMPTY 실패 / 기타=codex rc |
+| env 부착 위치 | `CODEX_EXEC_*`는 파이프 오른쪽 wrapper 호출 앞에만 (`cat f \| CODEX_EXEC_TIMEOUT_SECONDS=600 codex-exec-supervised ...`) — 왼쪽 명령 앞은 무효 |
+| `--check` | 단독 첫 인수로만. env+deps만 검증한다 — cwd trust·샌드박스·모델 가용성은 미포함 |
+| 인수 전개 | wrapper 인수는 `codex exec` 뒤에 그대로 전개된다 (순수 passthrough — 인자 해석·변형 없음) |
+| 수정 시 | 정본 스크립트 수정 후 재배포(activation) 전에는 배포본 live 검증 금지 (shim이 구 버전을 가리킴) |
 
 상세 계약은 [known-issues.md §15](references/known-issues.md#15-codex-exec-supervised-wrapper로-14-위에-timeout-budget-한계-보강-issue-593)를 참조한다.
 
@@ -445,6 +466,43 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
   1. `-m`을 생략하고 기본 모델을 사용한다.
   2. `model is not supported` 오류 시 `-m`을 제거하고 재시도한다.
   3. 모델명을 매번 다르게 혼용하지 않는다.
+
+### `-c model_reasoning_effort` / `-c service_tier` (재확인: 2026-08-15, 0.147.0)
+
+실사용 programmatic 호출이 가장 자주 쓰는 두 config 키인데 값·검증 계약이 문서 밖에 있었다.
+
+- 수용값 집합은 모델별로 다르다 — 정적 목록을 외우지 말고 `codex debug models`(모델 호출 없음,
+  카탈로그 JSON 덤프)를 SSOT로 조회한다. effort는 모델에 따라 `low`~`xhigh`까지만인 것부터
+  `max`·`ultra`까지 있는 것까지 다양하고, speed tier가 아예 없는 모델(`[]`)도 있다.
+- `service_tier` 미지원/오타 값은 에러가 아니라 경고 후 silent omit이다 — stderr에
+  `warning: Configured service tier ... is not advertised as supported ... and will be omitted from requests`
+  한 줄을 내고 rc 0으로 계속한다 (실측). 오타·모델 교체 시 tier 지정이 조용히 사라지므로
+  경고 부재를 확인한다.
+- 검증 방법 분리: effort는 시작 배너의 `reasoning effort:` 줄로 확인한다. tier는 배너에 줄이
+  없다 — 위 경고가 없는지로만 판정한다.
+- effort는 tier와 달리 클라이언트 검증이 없어 미지원 값이 API까지 전달될 수 있다 (config 로드
+  단계 거부 없음 실측; 라이브 재확인 미수행).
+- 기본값을 상수로 기억하지 않는다 — 사용자 override의 정본은 `~/.codex/config.toml` 조회이고,
+  `--ignore-user-config`는 그 override만 차단한다. 값이 미설정이 되는 것이 아니라 모델
+  카탈로그·CLI의 fallback 기본값(`codex debug models`의 모델별 필드)으로 되돌아가며, 그 폴백이
+  config 값과 다르면 조용히 드리프트한다 (공통 플래그 표 참조).
+- tier 권고: 기본은 표준 tier. `fast`는 카탈로그 표기상 "1.5x speed, increased usage"로 단발
+  저지연이 중요한 호출에 한정한다 — 대량 fan-out에서는 사용량 한도 창당 처리량이 표준 tier가
+  유리했던 세션 실측이 있다 (배수 수치는 근거 불충분으로 미인용).
+
+## 비신뢰 입력 격리 체크리스트 (미검증 — 세션 실측 6건 기반)
+
+`-s read-only`는 trust boundary의 완결이 아니다 — 차단되는 것은 write뿐이고 read는 그대로
+허용되므로, 비신뢰 텍스트를 프롬프트에 넣는 서브프로세스가 홈 설정·SSH 키·복호화된 시크릿
+경로를 읽어 자유 문자열로 출력할 수 있다. 비신뢰 입력을 다룰 때:
+
+- env는 allowlist로 최소화해 전달한다 (시크릿 리터럴을 명령 인자로 넘기지 않는다 — 프로세스
+  목록·로그 노출).
+- 임시 non-git cwd + `--skip-git-repo-check`로 저장소 밖에서 실행한다.
+- `--ignore-user-config`와 `--ignore-rules`는 항상 쌍으로 쓴다. 단 이 조합이 차단하지 못하는
+  표면이 있다 — cwd 기반 project config의 MCP 정의·skills 투영은 별도 축이다 (차단 범위
+  skills/MCP/hooks 축별 실측은 미수행 항목).
+- 출력은 untrusted로 취급하고, 프롬프트에 홈/전역 재귀 검색을 지시하지 않는다.
 
 ## 운영 체크리스트
 

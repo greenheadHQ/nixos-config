@@ -143,7 +143,9 @@ Claude Code 하네스의 Bash tool로 `claude -p`를 발사할 때는 하네스 
    같은 result 이벤트에서 무료로 얻는다): `terminal_reason`이 `completed`가 아니면 비정상 종료,
    `permission_denials`가 비어 있지 않으면 exit 0이어도 도구가 차단된 것이다 (gotchas #3의
    프로그래밍적 탐지 — "도구 거부는 exit로 못 잡는다" 갭을 이 필드가 메운다).
-3. 파일 생성을 요구한 작업은 `test -s "$RESULT"`를 통과하고 기대 완료 표식이 있다.
+3. 파일 생성을 요구한 작업은 `test -s "$RESULT"`를 통과하고 기대 완료 표식이 있다 —
+   단 이 판정은 종료 후에만 한다. json 출력은 완료 시 일괄 기록이라 실행 중 0바이트는
+   실패 신호가 아니다 (gotchas #48).
 4. 반복 pass는 직전 결과 대비 새 finding·수정·판정 같은 진척 delta가 있다.
 
 성공 경로의 이벤트 스트림은 가변 길이다 (2.1.233 실측: 같은 버전·같은 플래그·같은 모델에서도
@@ -180,7 +182,8 @@ ssh minipc 'zsh -li -c "c -p \"...\""'  # → unmatched quote
 | 테스트 | 목적 | 비용 |
 |--------|------|------|
 | T1 | init 인벤토리 (skills/tools/MCP/plugins 수) | ~$0.07 |
-| T2 | 스킬 트리거 spot check | ~$0 (T1 재사용) |
+| T2a | 스킬 등록 spot check | ~$0 (T1 재사용) |
+| T2b | 스킬 발동 회귀 (positive/negative 대조) | 호출 2회 (haiku) |
 | T3 | hooks 파일 존재/실행 가능 여부 | $0 |
 | T4 | MCP 서버 init 등록 확인 | ~$0 (T1 재사용) |
 | T5 | 권한 모델 (차단/허용) | ~$0.14 |
