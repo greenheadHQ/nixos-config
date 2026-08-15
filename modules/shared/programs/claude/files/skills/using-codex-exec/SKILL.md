@@ -455,7 +455,18 @@ exit $rc                       # 하네스 완료 알림에 codex rc가 실리�
 
 ### foreground/background 상한 불일치 (호출 방식 계약)
 
-wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 budget이지만, Claude Code 하네스의 Bash tool을 경유하는 foreground 호출에서는 이 budget에 도달하지 못한다 — 상한은 세션 유형이 아니라 하네스 속성이라 대화형 세션과 `claude -p` headless에 공통 적용되며, Bash tool의 foreground 대기 상한이 기본 120초, `timeout` 파라미터 명시 시 최대 600초(10분)라 하네스가 먼저 프로세스를 끊는다 (`Exit code 143 / Command timed out` — 2026-07-10 실사례: Arbiter foreground 실행이 10분에 잘리고 background 재실행으로 8분 34초 만에 성공). 수 분 이상 걸릴 수 있는 programmatic 호출은 background로 실행하고, foreground가 꼭 필요하면 Bash tool `timeout` 파라미터를 반드시 명시하되 wrapper budget이 아니라 하네스 상한이 실질 상한임을 전제한다. run-da의 role별·하네스별 발사 방식은 run-da 스킬 `references/arbiter-scaling.md`의 실행 계약이 소유하며, 본 절은 그 계약이 참조하는 하네스 상한 사실의 정본이다.
+wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 budget이지만, Claude Code 하네스의 Bash tool을 경유하는 foreground 호출에서는 안쪽 예산이 하네스 상한보다 길 때 이 budget에 도달하지 못한다 — 상한은 세션 유형이 아니라 하네스 속성이라 대화형 세션과 `claude -p` headless에 공통 적용되며, Bash tool의 foreground 대기 상한은 기본 120초, `timeout` 파라미터 명시 시 최대 600초(10분)다. 초과값을 줘도 거부되지 않고 600초로 클램프된다 (재확인: 2026-08-15, Claude Code 2.1.233 — 660초 작업에 `timeout: 900000` 지정 → 600초에 발화). 안쪽 timeout(wrapper·SSH)이 하네스 상한보다 짧으면 당연히 그쪽이 먼저 발화한다.
+
+상한 도달 시 처리는 하네스 버전에 따라 다르므로 결과 회수 계약도 갈린다:
+
+| 하네스 동작 | 관측 | 결과 회수 |
+|---|---|---|
+| background 자동 전환 | 2.1.233 실측 — `Command did not complete within its 600s timeout and was moved to the background`. 프로세스는 살아 660초를 완주하고 exit 0 | 작업이 계속되므로 완료 알림의 output 경로 또는 `-o` 결과 파일에서 회수 |
+| 프로세스 종료 | 2.1.220 관측 — `Exit code 143 / Command timed out` (2026-07-10 실사례: Arbiter foreground 실행이 10분에 잘리고 background 재실행으로 8분 34초 만에 성공) | 완료 알림이 오지 않는다. 종료 시점까지 이미 파일로 영속화된 산출물만 회수 가능하므로 중간 결과를 파일에 흘려두지 않았다면 유실 |
+
+재현: 하네스 상한을 넘는 작업(예: `python3 -c "import time; time.sleep(660)"`)을 foreground로, Bash tool `timeout` 파라미터에 상한 초과값(예: 900000)을 지정해 발사하고 어느 쪽 동작이 나오는지 관측한다 (모델 호출 0).
+
+수 분 이상 걸릴 수 있는 programmatic 호출은 처음부터 background로 실행하고, foreground가 꼭 필요하면 Bash tool `timeout` 파라미터를 반드시 명시하되 wrapper budget이 아니라 하네스 상한이 실질 상한임을 전제한다. 어느 경우든 결과는 stdout이 아니라 파일로 받는다 — 두 동작 모두 foreground 응답은 그 시점에 끊긴다. run-da의 role별·하네스별 발사 방식은 run-da 스킬 `references/arbiter-scaling.md`의 실행 계약이 소유하며, 본 절은 그 계약이 참조하는 하네스 상한 사실의 정본이다.
 
 ## Gotchas
 
@@ -470,7 +481,7 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 9. codex exec `--json`은 multi-agent spawn/child 이벤트를 노출하지 않는다 (관측성 한계, 0.144.1). `collaboration.spawn_agent`는 실제로 작동해 child를 생성·실행하지만, 공개 `--json`에는 `tool:"wait"` 이벤트만 보이고 그 `receiver_thread_ids`가 `[]`다 — 이를 spawn 실패로 오판하지 마라 (child가 이미 실행됐을 수 있어 재시도 시 중복 실행). 실제 spawn 여부는 `~/.codex/sessions`의 persisted rollout(`spawn_agent`/`sub_agent_activity`/`inter_agent_communication_metadata`)으로 확인한다. 상세·재검증 probe(버전 변화 시 재확인): [known-issues.md §19](references/known-issues.md#19-codex-exec---json이-multi-agent-spawnchild-이벤트를-노출하지-않음-관측성-한계)
 10. `Not inside a trusted directory and --skip-git-repo-check was not specified.` — git worktree 밖에서 실행하면 rc 1 + 이 문구로 모델 호출 전 즉사한다 (토큰 0, ~1초; 2026-08-15, 0.147.0 실측). fan-out 전멸의 최다 단일 원인 중 하나 (독립 6세션 재현). 트리거 축 4개: ① 비-git cwd ② `-C <비-git scratch>` (판정 대상은 셸 cwd가 아니라 `-C` 값) ③ `resume` (게이트가 세션 조회보다 먼저 발화, 초기 exec의 플래그 비승계) ④ `review --uncommitted` 등 scope 지정 시 (단 review에는 `-C`가 없다). 에러 문구와 달리 판정 기준은 config `trust_level`이 아니라 git worktree 내부 여부 단일 조건이다 — `trust_level="trusted"` 등재로는 통과하지 못하고, 신뢰 목록에 없는 생 `git init` 디렉토리는 통과한다 (실측). `--ephemeral`·`--ignore-user-config`로 우회 불가, `--skip-git-repo-check`가 유일 해제. 프리플라이트: `git -C "$dir" rev-parse --is-inside-work-tree` (플래그 과부착은 무해). 상세: [known-issues.md §8](references/known-issues.md#8-git-저장소-체크-실패), 격리 실행 블록: [references/patterns.md](references/patterns.md)
 11. `codex exec review`의 `--output-schema`는 인자를 받되 무시하는 silent no-op이다 (재확인: 2026-08-15, 0.147.0 실측: 스키마 required 키를 지정해도 rc 0에 결과는 자연어 리뷰 텍스트, `jq -e`로 필수 키 검사 실패, stderr에 스키마 관련 경고 0건). 즉 review 경로에서는 `--output-schema`도 AGENTS.md 형식 지시도 출력 형식을 강제하지 못한다 — 구조화 출력이 필요하면 exec 우회(방법 B)를 쓰고, CI 게이트가 review의 스키마 강제를 신뢰하지 않게 한다.
-12. sandbox denial은 rc 0으로 끝난다 (재확인: 2026-08-15, 0.147.0 실측: `-s read-only`에서 쓰기 지시 → 파일 미변경, rc 0, `-o`에는 모델의 자연어 보고). stderr에는 `ERROR codex_core::tools::router: error=patch rejected: writing is blocked by read-only sandbox ...`가 남지만 리터럴 `ERROR:`는 0건이라 구 판정식으로는 미탐이고, rc·결과 파일 검사로도 잡히지 않는다 — 완료 표식 grep과 결과 본문의 자기신고 문구가 유일한 탐지 경로다 (성공 계약 조건 2).
+12. sandbox denial은 rc 0으로 끝난다 (재확인: 2026-08-15, 0.147.0 실측: `-s read-only`에서 쓰기 지시 → 파일 미변경, rc 0, `-o`에는 모델의 자연어 보고). stderr에는 `ERROR codex_core::tools::router: error=patch rejected: writing is blocked by read-only sandbox ...`가 남지만 리터럴 `ERROR:`는 0건이라 구 판정식으로는 미탐이고, rc·결과 파일 검사로도 잡히지 않는다. 완료 표식이나 모델의 자기신고에 의존하지 마라 — 도구 호출이 거부돼도 모델은 표식을 출력할 수 있다. 쓰기를 요구한 작업의 판정은 실행 밖에서 확인하는 결정적 postcondition이어야 한다: 기대 파일의 존재·내용·해시·`git diff --quiet` 중 작업에 맞는 것을 호출자가 직접 검사한다. 보조로 stderr를 볼 때는 ANSI 제거 후 위 tracing 문자열(`error=patch rejected`)을 찾는다.
 
 ## 모델 사용 원칙
 

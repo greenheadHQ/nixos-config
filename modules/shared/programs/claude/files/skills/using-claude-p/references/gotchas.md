@@ -32,7 +32,8 @@
 | #20 | 재확인: 2026-07-10, v2.1.206 help에 `--cwd` 없음 |
 | #21 | 재확인: 2026-07-10, v2.1.206 help에 `--output-file`/`-o` 없음 |
 | #3 | skip-permissions + allowed-tools 제한 무효 재확인: 2026-07-10. 도구 거부 시 is_error:false + exit 0 재확인: 2026-08-15, v2.1.233 라이브 |
-| #43~#46 | 신설: 2026-08-15 — carve-out 5갈래·검사 강화 목록·경로 매칭 semantics는 CHANGELOG 원문 + 설치본(2.1.233) 문자열 대조. #46은 2026-08-15 라이브 재실측으로 갱신 (따옴표 민감성 미재현, 실제 원인은 작업 디렉토리 경계 — `permission_denials` 기반 판정) |
+| #43~#45 | 신설: 2026-08-15 — carve-out 5갈래·검사 강화 목록·경로 매칭 semantics는 CHANGELOG 원문 + 설치본(2.1.233) 문자열 대조 (정적 근거, 라이브 실행 아님) |
+| #46 | 재확인: 2026-08-15, v2.1.233 라이브 — 따옴표 민감성 미재현, 실제 원인은 작업 디렉토리 경계. 재검증 명령은 항목 본문의 `permission_denials` 파싱 스니펫 (allowlist·경로 조합을 직접 검사한다 — 공통 init probe로는 이 축을 검증할 수 없다) |
 | #47 | 신설: 2026-08-15 — SIGTERM 143은 공식 headless 문서 + v2.1.212 CHANGELOG. timeout 래핑 시 124로 가려짐은 로컬 실측 |
 | #7 | `--permission-mode bypassPermissions` help 선택지 확인 |
 | #12/#25/#26/#27 | `--disable-hooks`가 v2.1.206 help에 없음을 확인. hooks 결정 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
@@ -311,7 +312,7 @@ claude_rc=$pipestatus[2]
 제한이 불필요하면 skip-permissions를 단독 사용한다. 재확인: 2026-07-10, v2.1.206 실사용 6회.
 스킬·도구 실행이 필요한 자동화에서는 세 번째 선택지가 흔히 최선이다 —
 `--permission-mode dontAsk` + deny 규칙 (프롬프트는 건너뛰되 hooks·deny 결정은 존중, #27).
-allowlist는 패턴 공백 민감성(#36)과 작업 디렉토리 경계(#46) 때문에 스킬 내부 호출 형태와 어긋나 fail-closed로
+allowlist는 작업 디렉토리 경계(#46, 현행 실측 원인) 때문에, 그리고 과거 관측인 패턴 공백 민감성(#36)까지 겹치면 스킬 내부 호출 형태와 어긋나 fail-closed로
 전멸한 실전 사례가 있다.
 
 ### #43. `--dangerously-skip-permissions`는 전면 우회가 아님 (carve-out)
@@ -369,8 +370,22 @@ allowlist를 걸었는데 도구 호출이 전부 거부되면, 먼저 의심할
   `--add-dir`로 확장한다.
 - 따옴표 유무는 같은 패턴에서 동일하게 통과했다 — 과거 구 빌드(2026-08-01 세션)에서 관측된
   따옴표 민감성은 2.1.233에서 재현되지 않았고, "무따옴표/작은따옴표/이스케이프 3변형 등록"
-  처방도 이 버전에서는 근거가 없다. #36의 공백 민감성(`Bash(git diff *)` vs `Bash(git diff*)`)은
-  별개 축으로 유지된다.
+  처방도 이 버전에서는 근거가 없다. #36의 공백 민감성은 v2.1.202 이전 관측이며 현행 재검증
+  미수행이다 — 현재 버전에서 allowlist 전멸의 직접 원인으로 확인된 것은 이 항목의 작업
+  디렉토리 경계뿐이다.
+
+재현 (모델 호출 2회, haiku):
+
+```bash
+# 판정은 응답 문구가 아니라 result의 permission_denials로 한다 (교란 없는 기계 판정)
+printf '도구로 정확히 이 명령만 실행하라: cat ./probe.txt\n' \
+  | claude -p --model haiku --output-format json --no-session-persistence \
+      --allowed-tools 'Bash(cat ./probe.txt*)' \
+  | python3 -c "import sys,json;d,_=json.JSONDecoder().raw_decode(sys.stdin.read().lstrip());
+i=d if isinstance(d,list) else [d];r=[x for x in i if x.get('type')=='result'][-1];
+print('denials=',len(r.get('permission_denials') or []))"
+# cwd 안 경로 → denials=0, 같은 명령을 /tmp 등 cwd 밖 경로로 바꾸면 denials=1
+```
 
 ### #7. `--permission-mode bypassPermissions` = `--dangerously-skip-permissions`
 
