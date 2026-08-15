@@ -750,10 +750,12 @@ let
             );
         }
         {
-          # launcher-scoped D 계약(#1094): stable private PATH는 personal Darwin의
-          # marked non-TTY child와 Claude launchd에만 배선한다. 전역 sessionPath에
-          # 넣지 않아 interactive Ghostty/일반 SSH의 binary 의미를 보존한다.
-          name = "Test D19 ${hostName}: headless SSH dispatcher는 personal launcher child에만 배선되어야 함";
+          # launcher/snapshot/background-scoped D 계약(#1094): stable private PATH는
+          # personal Darwin의 marked child, Claude snapshot 생성 셸, background session에만
+          # 배선한다. snapshot은 .zshenv 뒤 PATH를 다시 export하므로 CLAUDECODE owner가
+          # snapshot 자체에 dispatcher를 캡처해야 `timeout ssh`가 raw SSH로 새지 않는다.
+          # 전역 sessionPath에는 넣지 않아 interactive Ghostty/일반 SSH를 보존한다.
+          name = "Test D19 ${hostName}: headless SSH dispatcher는 personal agent child에만 배선되어야 함";
           cond =
             hasHost
             && (
@@ -761,19 +763,32 @@ let
                 stableRoot = "${hm.home.homeDirectory}/${constants.paths.headlessSshDispatcherRelPath}";
                 stableBin = "${stableRoot}/bin";
                 zshEnv = hm.programs.zsh.envExtra;
+                zshInit = hm.programs.zsh.initContent;
+                snapshotRefresh = hm.home.activation.refreshClaudeShellSnapshotPaths.data or "";
                 agentEnv = (claudeRcAgent cfg).config.EnvironmentVariables;
                 hasDispatcher = builtins.hasAttr constants.paths.headlessSshDispatcherRelPath hm.home.file;
               in
               if isPersonalHost then
                 hasDispatcher
                 && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH" zshEnv
+                && nixpkgsLib.hasInfix "CLAUDECODE" zshEnv
+                && nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshEnv
+                && nixpkgsLib.hasInfix "= \"bg\"" zshEnv
                 && nixpkgsLib.hasInfix stableBin zshEnv
+                && nixpkgsLib.hasInfix "BEGIN nixos-config headless SSH snapshot PATH finalizer" zshInit
+                && nixpkgsLib.hasInfix stableBin zshInit
+                && nixpkgsLib.hasInfix "refresh-claude-snapshot-paths.sh" snapshotRefresh
+                && nixpkgsLib.hasInfix stableBin snapshotRefresh
                 && !(builtins.elem stableBin hm.home.sessionPath)
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == "1"
                 && nixpkgsLib.hasPrefix "${stableBin}:" agentEnv.PATH
               else
                 !hasDispatcher
                 && !nixpkgsLib.hasInfix stableBin zshEnv
+                && !nixpkgsLib.hasInfix stableBin zshInit
+                && !nixpkgsLib.hasInfix "CLAUDECODE" zshEnv
+                && !nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshEnv
+                && snapshotRefresh == ""
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == ""
                 && !nixpkgsLib.hasInfix stableBin agentEnv.PATH
             );
@@ -802,6 +817,7 @@ let
                 && nixpkgsLib.hasInfix "NIXOS_CONFIG_HEADLESS_SSH = \"1\"" codexDarwinConfig
                 && nixpkgsLib.hasInfix "${stableBin}/ssh" zshInit
                 && nixpkgsLib.hasInfix "SSH_CONNECTION" zshInit
+                && nixpkgsLib.hasInfix "CLAUDE_CODE_SESSION_KIND" zshInit
                 && !nixpkgsLib.hasInfix "timeout \"$_ssh_deadline\" ssh" zshInit
                 && !nixpkgsLib.hasInfix "timeout \"$_hdl_deadline\" ssh" zshInit
               else

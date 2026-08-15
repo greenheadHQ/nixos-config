@@ -325,6 +325,8 @@ run_test "headless SSH dispatcher suite class coverage" test_headless_ssh_dispat
 run_test "headless SSH dispatcher scope parser" test_headless_ssh_dispatcher_scope_parser
 run_test "headless SSH dispatcher supervisor" test_headless_ssh_dispatcher_supervisor
 run_test "headless SSH dispatcher identity compatibility" test_headless_ssh_dispatcher_identity_compat
+run_test "Claude shell snapshot preserves headless SSH PATH" test_claude_snapshot_preserves_headless_ssh_path
+run_test "Claude stale shell snapshot recovers headless SSH PATH" test_claude_stale_snapshot_path_recovery
 
 # interaction-limits-renewal suite (tests/suites/interaction-limits-renewal.sh)
 run_test "interaction-limits-renewal quiet path skips PUT/notify" test_ilr_no_renewal_when_far_from_expiry
