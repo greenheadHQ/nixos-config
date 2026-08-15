@@ -259,7 +259,9 @@ non-empty regular file이 아닐 때 wrapper가 rc 3 + stderr 식별자
 
 wrapper 계약 요약 — wrapper에는 자체 `--help`가 없고(`--help`는 codex exec로 passthrough)
 배포 경로는 nix shim이므로, 정본은 저장소 스크립트(`modules/shared/scripts/codex-exec-supervised.sh`)
-헤더와 아래 요약이다 (`--check` 출력도 이 목록을 노출한다):
+헤더와 아래 요약이다. 런타임 확인 경로로는 `codex-exec-supervised --check`가 성공 시 같은
+목록(정본 env 5개·exit code 규약)을 stderr로 출력한다 — 이 출력은 PR #1248에서 추가되므로,
+그 변경이 배포되기 전에는 `precheck OK ...` 한 줄만 나온다:
 
 | 축 | 계약 |
 |----|------|
@@ -480,8 +482,10 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
   없다 — 위 경고가 없는지로만 판정한다.
 - effort는 tier와 달리 클라이언트 검증이 없어 미지원 값이 API까지 전달될 수 있다 (config 로드
   단계 거부 없음 실측; 라이브 재확인 미수행).
-- 기본값을 상수로 기억하지 않는다 — `~/.codex/config.toml` 조회가 정본이고,
-  `--ignore-user-config` 사용 시 이 기본값들이 사라진다 (공통 플래그 표 참조).
+- 기본값을 상수로 기억하지 않는다 — 사용자 override의 정본은 `~/.codex/config.toml` 조회이고,
+  `--ignore-user-config`는 그 override만 차단한다. 값이 미설정이 되는 것이 아니라 모델
+  카탈로그·CLI의 fallback 기본값(`codex debug models`의 모델별 필드)으로 되돌아가며, 그 폴백이
+  config 값과 다르면 조용히 드리프트한다 (공통 플래그 표 참조).
 - tier 권고: 기본은 표준 tier. `fast`는 카탈로그 표기상 "1.5x speed, increased usage"로 단발
   저지연이 중요한 호출에 한정한다 — 대량 fan-out에서는 사용량 한도 창당 처리량이 표준 tier가
   유리했던 세션 실측이 있다 (배수 수치는 근거 불충분으로 미인용).

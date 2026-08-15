@@ -193,7 +193,6 @@ wait
 재검증 미수행 (v2.1.202 기준 서술 유지): 같은 directory 동시 실행 안정성과
 `--no-session-persistence`의 충돌 방지 효과.
 
-<<<<<<< HEAD
 ### fan-out 상한 — 위협모형 2개를 구분한다 (2026-08-15, 2.1.233)
 
 [A] in-process Task/subagent 축 (세션 안에서 Task 도구로 위임하는 subagent):
@@ -229,7 +228,6 @@ Bash tool `run_in_background`의 완료 알림은 best-effort다 (세션 집계:
 - 장시간 fan-out은 (task ID + 결과 경로 + 완료 시 행동)을 담은 fallback 재개 메모를 남긴다.
 - mktemp 경로는 추측·wildcard glob이 아니라 출력 첫 줄/sentinel 파일에서 파싱하고, 프로세스
   수를 완료 신호로 쓰지 않는다.
->>>>>>> 2642af82 (docs(skills): 실전 팁·패턴 반영 — 한도 회수·발동 회귀·조립 계약·격리 체크리스트)
 
 ## 패턴 8: JSON 결과 파싱
 
