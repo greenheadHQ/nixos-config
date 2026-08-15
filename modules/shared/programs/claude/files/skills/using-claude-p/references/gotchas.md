@@ -5,7 +5,7 @@
 > 항목 번호(#1, #23 등)는 최초 발견 순서를 유지하며, 카테고리별로 그룹화되어 있다.
 > 번호 순서대로가 아닌 카테고리순으로 정렬되어 있으므로, 특정 번호를 찾으려면 페이지 검색을 사용한다.
 
-## 2026-07-10 재검증 상태 (Claude Code v2.1.206)
+## 재검증 상태 — 기준선 2026-07-10 / v2.1.206 (일부 항목은 v2.1.233 재실측)
 
 - 재검증 명령: `claude --version && claude --help && claude -p --help`
 - 런타임 관측 항목(2.1.233 스탬프)의 재검증 명령: `echo "ok" | claude -p --model haiku --output-format json`
@@ -22,7 +22,7 @@
 | #23 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #24 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #39 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
-| #40 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #40 | 공식 문서 계약(10MB cap)으로 갱신: 2026-08-15. 조기 fail-fast는 로컬 미관측 — `wc -c` 사전 게이트 권장 (#40 본문) |
 | #36/#35 | `--allowed-tools` help 표기 확인. 패턴 매칭 의미는 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #6 | 재확인: 2026-08-15, v2.1.233 — 성공 경로 top-level 배열, 이벤트 수는 런마다 가변 (구 4-event 서술 폐기). stream-json wire shape는 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #17 | 재확인: 2026-08-15, v2.1.233 — init에 skills/tools/MCP/plugins key 존재; count는 환경 snapshot. 인벤토리 추출은 `subtype=='init'` 가드 필수 (system 이벤트 다중 매치) |
@@ -31,7 +31,9 @@
 | #4 | `--max-budget-usd` help 표기 확인. exit/subtype 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #20 | 재확인: 2026-07-10, v2.1.206 help에 `--cwd` 없음 |
 | #21 | 재확인: 2026-07-10, v2.1.206 help에 `--output-file`/`-o` 없음 |
-| #3 | skip-permissions + allowed-tools 제한 무효 재확인: 2026-07-10. 도구 거부/exit 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #3 | skip-permissions + allowed-tools 제한 무효 재확인: 2026-07-10. 도구 거부 시 is_error:false + exit 0 재확인: 2026-08-15, v2.1.233 라이브 |
+| #43~#46 | 신설: 2026-08-15 — carve-out 5갈래·검사 강화 목록·경로 매칭 semantics는 CHANGELOG 원문 + 설치본(2.1.233) 문자열 대조. #46 따옴표 민감성만 구 빌드 실측 (2.1.233 재확인 미수행) |
+| #47 | 신설: 2026-08-15 — SIGTERM 143은 공식 headless 문서 + v2.1.212 CHANGELOG. timeout 래핑 시 124로 가려짐은 로컬 실측 |
 | #7 | `--permission-mode bypassPermissions` help 선택지 확인 |
 | #12/#25/#26/#27 | `--disable-hooks`가 v2.1.206 help에 없음을 확인. hooks 결정 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #33 | `--permission-prompt-tool`이 v2.1.206 help에 없음. hidden 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
@@ -120,16 +122,21 @@ echo "먼저 .env 파일에서 MY_TOKEN을 읽은 뒤 사용하라" | claude -p 
 
 v2.1.81 실측 (v2.1.202 실제 `claude -p` 재검증 미수행, 서술 유지). `CLAUDE_CODE_MAX_RETRIES`, `ANTHROPIC_API_KEY` 등 Claude Code 내장 환경변수는 정상 인식됨.
 
-### #40. stdin 파이프 대용량 입력 정상 동작 확인
+### #40. stdin 파이프 상한 — 공식 계약 10MB
 
-SKILL.md + 에이전트 지시서 + 참조 파일 다수를 합산한 대용량 stdin을 파이프로 전달해도 정상 실행됨을 확인했다. 실제 입력 분량은 `wc -l`로 측정하라.
+piped stdin의 공식 상한은 10MB다 — 초과 시 명확한 에러 + non-zero exit로 종료하고, 더 큰
+입력은 파일에 쓰고 경로를 프롬프트에서 참조하라는 것이 공식 headless 문서의 계약이다
+(확인: 2026-08-15). 그 이하의 대용량 stdin은 정상 동작을 실측했다.
 
 ```bash
-# 대용량 프롬프트 정상 동작 (실측 기준: SKILL.md + 에이전트 + 참조 파일 합산)
-cat skill.md agent.md references.md | claude -p --output-format text > result.md
+# 발사 전 사전 게이트 — 실질 방어선 (공식 계약이지만 조기 fail-fast는 로컬 미관측: 11MB 입력이
+# 인증·세션 실패 단계까지 cap 전용 에러 없이 진행된 프로브가 있다. cap에 기대지 말고 미리 자른다)
+[ "$(wc -c < "$PROMPT")" -le 10000000 ] || { echo "stdin over 10MB — 파일 경로 참조로 전환"; exit 1; }
+cat "$PROMPT" | claude -p --output-format text > result.md
 ```
 
-⚠️ 극단적 상한은 미확인. CLI → Node.js 런타임 → API context window로 이어지는 다층 파이프라인 중 어느 레이어에서 상한이 걸리는지 미검증. 프로덕션 파이프라인에서는 적절한 청킹 전략을 병행하라. v2.1.81 실측 (v2.1.202 실제 `claude -p` 재검증 미수행, 서술 유지).
+주의: claude는 stdin EOF를 다 읽은 뒤에야 인증·세션 단계로 진행한다 (느린 producer를 물리면
+EOF까지 대기 — 실측). 10MB 근처 입력은 청킹 또는 파일 참조로 전환한다.
 
 ### #36. `allowed-tools` 패턴에서 공백이 중요
 
@@ -286,11 +293,58 @@ claude_rc=$pipestatus[2]
 
 도구를 못 썼는데도 에러가 아닌 정상 종료. 실패를 감지하려면 출력 내용을 파싱해야 한다.
 
-권한 거부/exit 조합은 재검증 미수행 (v2.1.202 기준 서술 유지).
+재확인: 2026-08-15, v2.1.233 라이브 — 도구가 차단됐는데도 `result.is_error=false`, process exit 0.
 
 ⚠️ `--dangerously-skip-permissions` + `--allowed-tools` 상호작용: skip-permissions는 allowlist를
 구조적으로 무효화한다. 도구를 제한하려면 skip-permissions 없이 allowed-tools와 stdin을 사용하고,
 제한이 불필요하면 skip-permissions를 단독 사용한다. 재확인: 2026-07-10, v2.1.206 실사용 6회.
+스킬·도구 실행이 필요한 자동화에서는 세 번째 선택지가 흔히 최선이다 —
+`--permission-mode dontAsk` + deny 규칙 (프롬프트는 건너뛰되 hooks·deny 결정은 존중, #27).
+allowlist는 따옴표·패턴 민감성(#36, #46) 때문에 스킬 내부 호출 형태와 어긋나 fail-closed로
+전멸한 실전 사례가 있다.
+
+### #43. `--dangerously-skip-permissions`는 전면 우회가 아님 (carve-out)
+
+catastrophic removal 계열은 skip-permissions·auto 모드에서도 프롬프트를 요구하며, permission
+rule로 auto-allow할 수 없다. 설치본(2.1.233) 기준 carve-out 갈래는 최소 5종:
+
+1. critical system directory 제거
+2. 워크스페이스 디렉토리(작업 디렉토리·추가 작업 디렉토리)와 그 상위 제거 — 에이전트
+   자동화가 실제로 밟기 쉬운 갈래
+3. 제거 타깃이 정적으로 해석 불가 (명령 치환·미추적 변수 출력)
+4. 제거 전 `cd`로 상대 glob 타깃이 해석 불가
+5. 명령 치환 과다 (분석 불가 개수)
+
+기원: 최소 2.1.126부터 존재 ("catastrophic removal commands still prompt as a safety net"),
+2.1.208에서 `$(...)`/백틱/`<(...)` 난독화 형태까지 확대. TTY 없는 headless에서는 이 프롬프트가
+곧 차단이다 — 해당 명령은 사전에 분해하거나 정적 경로로 재구성한다.
+
+### #44. headless에서 프롬프트로 떨어지는 Bash 검사 강화 목록 (릴리스 간 진동 주의)
+
+아래 형태는 자동 승인되지 않고 프롬프트(=headless 차단)로 떨어진다. 각 항목은 도입 버전
+스탬프를 유지한다 — 이 표면은 릴리스 간 진동한다 (예: 2.1.232의 `< file` 입력 리다이렉트
+검사는 2.1.233에서 revert, "a narrower version will return"):
+
+- 10,000자 초과 명령 (2.1.214)
+- fd 리다이렉트 형태 중 permission analyzer와 bash 파싱이 갈리는 것 — fail-closed (2.1.214)
+- `&&` 리스트·부정 안의 리다이렉트 복합문 (2.1.216)
+- zsh `[[ ]]` 안의 변수 subscript/modifier (2.1.214) 및 regex 조건식 (2.1.221)
+- docker/Podman daemon-redirect 플래그 `--url`/`--connection`/`--identity` (2.1.214)
+
+### #45. 권한 규칙 경로 매칭 semantics
+
+- allow 규칙의 단일 세그먼트 `dir/`는 `<cwd>/dir`만 매칭** (2.1.214에서 any-depth 매칭
+  버그 수정). any-depth가 필요하면 `/dir/`로 쓴다.
+- deny·ask 규칙은 any-depth 매칭을 유지한다 — allow와 비대칭.
+- 경로 인자를 받는 규칙 도구는 `Edit(path)`·`Read(path)`뿐이다. `Write(path)`·
+  `NotebookEdit(path)`·`Glob(path)` 규칙은 무효 (2.1.210부터 startup 경고).
+
+### #46. `--allowed-tools` Bash 패턴은 따옴표 형태에 민감
+
+`Bash(curl -s https://…*)` 무따옴표 패턴은 스킬·에이전트가 URL을 큰따옴표로 감싸 실행하면
+매칭에 실패해 전부 승인 거부(fail-closed)된다. 실사용 처방: 무따옴표 / 작은따옴표 /
+이스케이프된 큰따옴표 3변형을 함께 등록한다. 구 빌드(2026-08-01 세션) 실측 — 2.1.233
+재확인 미수행 (라이브 2회 모두 교란 요인으로 판정 불가). #36의 공백 민감성과는 별개 축.
 
 ### #7. `--permission-mode bypassPermissions` = `--dangerously-skip-permissions`
 
@@ -417,6 +471,20 @@ MCP cleanup이 Stop hooks와 SessionEnd hooks 사이에 끼어있다. Stop hook�
 
 Ctrl+C를 보내면 현재 작업을 정리하고 exit code 0으로 종료한다.
 
+### #47. `SIGTERM` 수신 시 exit 143 (SIGINT와 다름)
+
+supervisor·`kill`이 SIGTERM을 보내면 진행 중 turn을 중단하고, 실행 중 Bash 명령의 프로세스
+트리를 종료하고, SessionEnd hooks를 실행한 뒤 exit 143으로 종료한다 (공식 headless 문서;
+프로세스 트리 정리는 v2.1.212 CHANGELOG). 판독 주의 — 두 exit code의 채널이 다르다:
+
+- `timeout N claude -p ...` 래핑에서는 자식의 143이 가려지고 timeout이 124를 반환한다
+  (`--preserve-status`를 줘야 143이 보인다).
+- 143이 직접 보이는 경로: supervisor/`kill`의 직접 SIGTERM, `timeout --preserve-status`,
+  셸의 128+15 보고.
+
+즉 "124 = outer timeout 발동 / 143 = 직접 SIGTERM 피종료"로 읽되, timeout 래핑 유무를 먼저
+확인한다. #30(SIGINT → exit 0)과 혼동하지 않는다.
+
 ---
 
 ## 세션/컨텍스트 (Session)
@@ -524,9 +592,22 @@ wait
 
 ---
 
+## 버전별 변천 (재인용 함정)
+
+과거 세션 로그·문서를 복사할 때 버전 경계를 확인한다. 본문 항목은 현재 계약만 서술하고,
+이력은 이 표가 정본이다 (출처: 공식 CHANGELOG 원문 라인 대조, 2026-08-15):
+
+| 표면 | 변천 | 현재 (2.1.233) |
+|---|---|---|
+| skip-permissions carve-out | ≥2.1.126 존재 (safety net) → 2.1.208 `$(...)`/백틱/`<(...)` 난독화 형태까지 확대 | 5갈래 (#43) |
+| `< file` 입력 리다이렉트 검사 | 2.1.232 도입 → 2.1.233 revert ("a narrower version will return") | 미검사 — 진동 표면 (#44) |
+| allow 규칙 `dir/**` 매칭 | any-depth (버그) → 2.1.214 `<cwd>/dir` 한정 (deny·ask는 any-depth 유지) | cwd 한정 (#45) |
+| subagent 세션 캡 | 2.1.212 도입 (기본 200, env 오버라이드) → 2.1.224 제거 — `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION`은 설정해도 무효 (문자열만 잔존) | 없음 (동시성·depth 캡만, patterns.md 오케스트레이션 절) |
+| subagent 중첩 depth | 2.1.217 중첩 금지(=1) → 2.1.219 기본 3 (원격 flag 폴백값) | 폴백 3 — 고정 상수 아님 |
+
 ## 참고
 
-- 확인 날짜: 2026-07-10
-- 확인 버전: Claude Code v2.1.206
+- 문서 기준선(일괄 확인): 2026-07-10 / Claude Code v2.1.206
+- 부분 재실측: 2026-08-15 / v2.1.233 — 개별 항목의 `재확인:` 스탬프가 이 기준선보다 우선한다. 기준선을 통째로 올리려면 전 항목 재확인이 필요하므로, 재실측한 항목만 개별 스탬프로 갱신한다.
 - 확인 범위: 문서 메타데이터/핵심 항목 기준이며, 각 항목의 재검증 상태는 본문 주석(예: "재검증 미수행")을 따른다.
-- 재검증: `claude --version && claude --help && claude -p --help` 출력과 비교 후, 변경된 항목이 있으면 갱신한다
+- 재검증: `claude --version && claude --help && claude -p --help` 출력과 비교 후, 변경된 항목이 있으면 갱신한다. 런타임 관측 항목은 `echo "ok" | claude -p --model haiku --output-format json`으로 확인한다.

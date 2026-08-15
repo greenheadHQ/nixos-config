@@ -224,14 +224,16 @@ test "$rc" -eq 0 && test -s /tmp/review-result.md && test -s /tmp/review.stdout
 
 ### 5. `unexpected argument '--approval-mode' found`
 
-원인: `codex exec`는 `--approval-mode` 플래그를 받지 않는다. exec/review/resume의 공개
-surface에 승인 관련 CLI 플래그가 없다. approval `never` 고정 동작은 재검증 미수행
-(0.142.5 기준 서술 유지).
+원인: `codex exec`는 `--approval-mode` 플래그를 받지 않는다. review/resume의 공개 surface에는
+승인 관련 CLI 플래그가 없고, exec에는 0.147.0부터 `--approve-for-me`가 있다 (workspace-write
+sandbox의 자동 리뷰로 승인 라우팅 — SKILL.md exec 전용 표 참조). 플래그 없는 기본 실행의
+approval은 `never`이며 시작 배너의 `approval:` 값으로 재확인한다 (재확인: 2026-08-15, 0.147.0).
 
 해결: 세밀한 샌드박스 조정이 필요하면 exec에서 `-s, --sandbox <MODE>`를 사용한다 (review/resume은 `-s` 미지원 — config.toml의 `sandbox_mode`를 따른다). 그 외 조정은 `-c key=value`로 처리한다.
 
-과거 승인 자동화 + workspace-write 단축 플래그 `--full-auto`는 0.144.1 help에 없지만 hidden parser가
-수용하며 deprecation warning을 낸다. 새 문서/스크립트는 `-s workspace-write`를 사용한다.
+과거 승인 자동화 + workspace-write 단축 플래그 `--full-auto`는 0.147.0에서 완전 제거되어
+전 서브커맨드에서 rc 2 `unexpected argument`로 즉시 실패한다 (아래 "버전별 변천" 참조).
+새 문서/스크립트는 `-s workspace-write`를 사용한다.
 
 ### 6. 결과 파일이 비어 있음 (`-o` 사용 시)
 
@@ -274,14 +276,34 @@ surface에 승인 관련 CLI 플래그가 없다. approval `never` 고정 동작
 
 ### 8. Git 저장소 체크 실패
 
-원인: `codex exec` 기본 동작은 git 저장소 컨텍스트를 기대한다.
+증상: rc 1 + `Not inside a trusted directory and --skip-git-repo-check was not specified.`
+모델 호출 이전 단계에서 즉사한다 (토큰 0, ~1초 — 2026-08-15, 0.147.0 실측).
+
+원인: `codex exec` 기본 동작은 git 저장소 컨텍스트를 기대한다. 판정 기준은 에러 문구의
+"trusted directory"가 아니라 git worktree 내부 여부 단일 조건이다 (0.147.0 4조합 실측):
+`config.toml`의 `[projects."..."] trust_level = "trusted"` 등재만으로는 통과하지 못하고,
+신뢰 목록에 없는 생 `git init` 디렉토리는 통과한다. `trust_level`은 별개 축(project-local
+config·hooks·execpolicy 로드 조건)이며 에러 문구가 두 축을 혼동시킨다. 트리거 축 4개:
+비-git cwd / `-C <비-git scratch>` (판정 대상은 `-C` 값) / resume (게이트가 세션 조회보다
+선행, 초기 exec의 플래그 비승계) / `review --uncommitted` 등 scope 지정 시 (review에는 `-C`가
+없다). `--ephemeral`·`--ignore-user-config`로는 우회되지 않는다.
 
 해결:
 1. 저장소 루트로 이동하여 실행한다 (권장):
    ```bash
    cd "$(git rev-parse --show-toplevel)"
    ```
-2. 저장소 외 실행이 꼭 필요하면 `--skip-git-repo-check`를 사용한다.
+2. 저장소 외 실행이 꼭 필요하면 `--skip-git-repo-check`를 사용한다. 프리플라이트는 rc가 아니라
+   출력이 정확히 `true`인지로 판정한다 — `.git` 디렉토리 안에서는 `false`를 출력하면서 rc 0을
+   반환하므로(실측) rc만 보면 worktree 밖을 놓친다:
+   ```bash
+   [ "$(git -C "$dir" rev-parse --is-inside-work-tree 2>/dev/null)" = "true" ] \
+     || SKIP_FLAG=--skip-git-repo-check
+   ```
+   이미 git repo인 곳에 플래그를 과부착해도 무해하다 (게이트만 꺼짐).
+
+부수: 게이트를 통과해 실행이 성사되면 codex가 그 경로를 `config.toml`에 `trust_level =
+"trusted"`로 자동 등재한다 (temp dir 포함) — 신뢰 목록이 실행마다 증식하는 표면이다.
 
 ### 9. `model is not supported` 오류
 
@@ -455,7 +477,11 @@ Background 대안 — 다수 병렬 실행 시 LLM 블로킹 방지:
     - `.rc` 파일 부재 자체를 실패로 취급한다 (guard 조기 exit 은폐 방지)
     - 모든 완료 알림 수신 후 결과 파일 일괄 수집
 
-3b. foreground와 동일하게 결과 파일로 수집. `-o` 결과 파일은 프로세스 종료 시 생성됨.
+3b. foreground와 동일하게 결과 파일로 수집. `-o` 결과 파일은 프로세스 종료 시 생성됨 —
+    실행 중에는 0바이트 생성·append가 아니라 아예 존재하지 않다가 exit 직전 한 번에 쓰인다
+    (1초 폴링 실측, 2026-08-15, 0.147.0). 따라서 실행 중 `-o` 부재는 실패 신호가 아니다.
+    오류 분류표의 "exit 0 + `-o` 미생성 = 실패"는 종료 후 조건이며 실행 중 상태에 적용하지
+    않는다. 진행 중 판정 지표는 [patterns.md의 "in-progress 판정"](patterns.md) 절 참조.
 
 금지 패턴:
 - `&` + `wait` + `$!` (shell-level background)
@@ -721,6 +747,7 @@ nix shell nixpkgs#bubblewrap --command env CODEX_PROGRAMMATIC=1 codex exec -s wo
 
 현재 CLI에서 실측 가능한 경계:
 - `codex exec --help` (codex-cli 0.142.5, 2026-07-07)는 `--ignore-user-config`를 "`$CODEX_HOME/config.toml`은 로드하지 않지만 auth는 `CODEX_HOME`을 계속 사용"하는 플래그로 설명한다. 따라서 이 플래그는 MCP/config 표면 차단용이지 auth 차단용이 아니다.
+- 이 플래그가 차단하는 것은 사용자 override이며, 값이 미설정 상태가 되는 것은 아니다 — 모델 카탈로그·CLI의 fallback 기본값으로 되돌아간다 (카탈로그 기본값은 `codex debug models`의 모델별 필드에서 확인). 그 폴백이 config 값과 다르면 조용히 드리프트한다: A/B 실측 2026-08-15, 0.147.0에서 config `low` → 배너 `none` (model 축은 폴백이 config 값과 같아 현재 무증상이나 메커니즘 동일). 이 문서의 격리 fan-out 템플릿들이 `-c model_reasoning_effort=`를 항상 명시하는 이유다. 값 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다.
 - 빈 scratch `CODEX_HOME`에서 `codex login status`는 `Not logged in`을 반환했고, 같은 조건에 더미 `OPENAI_API_KEY`를 추가해도 결과는 바뀌지 않았다. host `CODEX_HOME`에서는 `Logged in using ChatGPT`가 반환되어, `auth.json`/저장된 ChatGPT token 계열은 `CODEX_HOME`에 묶여 있음을 확인했다.
 - `CODEX_API_KEY`는 exec 전용 경로이므로 `codex login status`만으로 우선순위 전체를 검증하지 않는다. scratch `CODEX_HOME`을 쓰는 automation은 `CODEX_API_KEY`를 명시적으로 전달하거나, 필요한 경우 기존 `auth.json`을 scratch `CODEX_HOME`으로 복사한 뒤 `codex login status`로 저장 auth 존재만 확인한다.
 
@@ -813,3 +840,31 @@ done
 rollout을 파싱한다. 또는 세션 내 오케스트레이션 대신, [`run-da`의 fallback 계약](../../run-da/references/hardening-contract.md)에 따라
 사용자 승인 후 `codex-exec-supervised --sandbox read-only`로 별도 `codex exec` 프로세스를 독립 실행해 관측 가능한 병렬화를 쓴다.
 Direct Codex가 라우팅·승인·쓰기 경계를 우회하는 raw 또는 임의 병렬 `codex exec` 실행을 해서는 안 된다.
+
+## 20. resume 실패 시그니처
+
+`codex exec resume`의 실패는 시그니처가 서로 다르다 (2026-08-15, 0.147.0 실측). 진단 시 대조한다:
+
+| 시그니처 | 조건 | 판정 |
+|---|---|---|
+| rc 1, ~2초, stderr `Error: thread/resume: ... no rollout found for thread id <uuid> (code -32600)` | 존재하지 않는 세션 id 지정 | 정상 fail-fast — id 오타/유실 확인 |
+| rc 124 (supervised) / 무기한 (raw), stdout·stderr 0바이트, 배너 미출력, `-o` 미생성 | 무저장 cwd의 `--last` (대형 세션 코퍼스·state DB 환경에서 관측 — 배너 이전 단계 정지) | `--last` 금지, 세션 id 명시. raw resume은 timeout 구제가 없어 금지. stderr가 완전히 비므로 stderr 기반 판정은 이 실패를 못 잡는다 — rc·산출물이 정본 |
+| rc 0인데 배너 session id ≠ 요청 세션 (세션 id 명시 경로) | silent fallback (새 세션 발급 — fallback 로직은 0.147.0에도 잔존) | 재개 실패로 처리. ANSI 제거 후 값을 추출해 입력 id와 문자열 비교 |
+| rc 0이지만 재개 여부를 확인할 기준이 없음 (`--last` 경로) | `--last`에는 요청 id가 없어 배너 id를 비교할 대상이 없다 — 새 세션 발급과 정상 재개가 같은 외형이다 | 자동화에서는 `--last`를 쓰지 않는다 (세션 id 명시가 정석). 부득이 쓴다면 호출 전에 기대하는 마지막 세션 id를 별도로 저장해 두고 그 값과 비교한다 |
+| rc 1 + `Not inside a trusted directory ...` | 비-git cwd에서 resume (게이트가 세션 조회보다 선행) | §8 분기 |
+
+`[SESSION_ID]` 인자는 UUID 또는 thread name을 수용하며 UUID가 파싱되면 우선한다 (0.147.0 help).
+환경 단서: 무출력 hang은 rollout 코퍼스·state DB 규모에 의존할 수 있어 보편 회귀로 단정하지
+않는다 — 처방(세션 id 명시 + supervised timeout)은 환경과 무관하게 유효하다.
+
+## 버전별 변천 (재인용 함정)
+
+과거 세션 로그·문서 예시를 복사할 때 버전 경계를 확인한다. 본문은 현재 계약만 서술하고,
+이력은 이 표가 정본이다:
+
+| 표면 | 변천 | 현재 (0.147.0) |
+|---|---|---|
+| `--full-auto` | ~0.128 정상 수용 → 0.144.1~0.146.1 help 숨김 + hidden parser 수용 + deprecation warning → 0.147.0 완전 제거 (upstream "Remove legacy --full-auto handling", merged 2026-07-30) | 전 서브커맨드 rc 2 `unexpected argument`. wrapper 경유 동일 |
+| `--approve-for-me` | 0.147.0 신설 (upstream #36373, merged 2026-07-31; 0.146.1 미포함) | exec 전용. `-s`·`--dangerously-bypass-*`와 clap 상호 배타 |
+| 무저장 cwd `resume --last` | 0.144.1 exit 0 silent fallback (새 세션) → 0.147.0 무출력 hang 관측 (fallback 로직 자체는 잔존 — state DB 우선 조회 upstream #36809가 0.147.0에 유입) | 두 축 모두 가능 전제로 §20 처방 적용 |
+| `--output-schema` | 0.142.5부터 review/resume에도 인자 수용 | (SKILL.md 공통 표 참조) |

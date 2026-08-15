@@ -113,7 +113,9 @@ test -n "$SESSION_ID" && \
 - 스테이트풀한 검증 시나리오
 
 `--resume` help surface는 2.1.206에서 확인했지만 context chaining runtime은 재검증 미수행
-(v2.1.202 기준 서술 유지).
+(v2.1.202 기준 서술 유지). v2.1.223부터 두 호출을 서로 다른 디렉토리에서 실행해도 된다 —
+세션 id는 머신 전역에서 조회된다 (그 이전엔 같은 프로젝트 디렉토리·git worktree에서만 조회;
+공식 headless 문서, 2026-08-15 확인). worktree를 오가는 자동화에서 유용하다.
 
 ## 패턴 5: SSH 경유 크로스머신
 
@@ -150,7 +152,10 @@ test -s /tmp/remote-result.txt
 - outer timeout은 위 "파일 기반 프롬프트" 예제처럼 호출자가 직접 적용한다 — "기본 패턴"의 최소 예제에는 포함되어 있지 않다.
 - 무출력 약 10분 뒤 완료된 실측이 있다. 무출력만으로 중단하지 않는다 — 단 Bash tool foreground로
   발사하면 하네스 상한이 그보다 먼저 발화하므로, 10분 대기가 필요한 호출은 background로 발사한다
-  (SKILL.md "호출 상한 (Bash tool 경유)").
+  (SKILL.md "호출 상한 (Bash tool 경유)"). 메커니즘 후보: background subagent 대기 상한이 기본
+  10분이다 (v2.1.182+, `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`로 조정, `0`이면 무제한 — 공식
+  headless 문서. 해당 관측이 이 경로였는지는 미확인이라 인과 단정 금지). 파생 규칙: outer
+  timeout은 이 상한 + 여유보다 크게 잡는다 (현행 900초 = 600초 + 300초).
 - 프로세스 생존만으로 정상이라 판정하지 않고 완료 후 `test -s`로 기대 산출물을 확인한다.
 - 자세한 gotchas: [gotchas.md](gotchas.md) #15, #16, #32
 
@@ -169,7 +174,7 @@ echo "3+7의 결과만 숫자로" | claude -p | xargs -I{} sh -c 'echo "{}에 5�
 - pipe chain runtime은 재검증 미수행 (v2.1.202 기준 서술 유지).
 - 위 직결 예제는 빠른 실험 전용이다. 업무 성공 판정이 필요하면 이 패턴 대신 각 호출의 출력을 파일로 분리하고 exit·기대 marker를 검증한다 (SKILL.md 셸 transport 계약 참조).
 
-## 패턴 7: 동시 실행
+## 패턴 7: 동시 실행과 fan-out 오케스트레이션
 
 같은 디렉토리에서 여러 `claude -p` 프로세스를 동시 실행할 수 있다. 세션 파일 충돌을 방지하기 위해 `--no-session-persistence` 사용.
 
@@ -187,6 +192,30 @@ wait
 
 재검증 미수행 (v2.1.202 기준 서술 유지): 같은 directory 동시 실행 안정성과
 `--no-session-persistence`의 충돌 방지 효과.
+
+### fan-out 상한 — 위협모형 2개를 구분한다 (2026-08-15, 2.1.233)
+
+[A] in-process Task/subagent 축 (세션 안에서 Task 도구로 위임하는 subagent):
+- 동시 실행 캡: 폴백 기본 20 (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` 오버라이드; 초과 시
+  `Concurrent subagent limit reached ... Do not retry.`).
+- 중첩 depth 캡: 폴백 기본 3 (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` 오버라이드).
+- 위 폴백값은 원격 feature flag가 우선하고 캡 체크 자체가 조건부 게이트 아래 있다 — 고정
+  상수로 믿지 말고 설치 번들 grep 또는 실측으로 재확인한다. `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION`은
+  2.1.224에서 제거되어 설정해도 무효다 (gotchas.md "버전별 변천").
+- `--max-budget-usd` 도달 시 새 spawn 거부 + 실행 중 background agent 중단 (2.1.217+).
+
+[B] 프로세스 fan-out 축 (Bash로 발사하는 `claude -p`/`nohup` 자식): 위 캡 어느 것에도
+계상되지 않는다 — depth·동시성은 프로세스 안에서만 센다. depth=1을 export해도 자식 프로세스의
+Task 위임만 막힐 뿐 프로세스 증식 자체는 못 막고, 부모의 `--max-budget-usd`도 Bash 자식의
+지출을 캡하지 않는다. "depth 캡을 걸었으니 안전"은 거짓 안심이다. 방어는 규약으로 한다:
+
+- 위임 프롬프트에 금지 절을 복붙한다: "headless 자식 프로세스(`claude -p`·`codex exec`)·
+  `nohup`·백그라운드 런처 스크립트 생성 금지. 오케스트레이션은 부모 1계층에서만."
+- 발사하는 자식에는 고유 마커(작업 디렉토리 경로 등)를 심고, 정리는 그 마커로만 `pkill`한다.
+  `pkill -f "claude -p"`는 Bash tool 자신의 래퍼 셸(snapshot eval 라인)까지 매치한다 (실측).
+- 종료 사다리: TaskStop → 마커 기반 pkill → 런처 스크립트 개명(재발사 차단) → 세션 간 shutdown
+  요청. 에이전트 completed ≠ 자식 프로세스 종료 — TaskStop이
+  `Task ... is not running (status: completed)`를 반환해도 자식은 살아 있을 수 있다 (실측).
 
 ## 패턴 8: JSON 결과 파싱
 
@@ -243,6 +272,8 @@ done
 ```
 
 stream-json wire shape는 재검증 미수행 (v2.1.202 기준 서술 유지). parser는 stderr를 섞지 않는다.
+소비 루프가 느리면 claude는 종료 전 큐에 남은 출력의 drain을 기다린다 — 대기는 잔량에 비례하며
+최대 30초 (v2.1.214+; 그 이전엔 약 2초라 대형 응답 말미가 잘릴 수 있었다 — 공식 headless 문서).
 
 ## 패턴 9: 미설치 플러그인 스킬을 stdin 주입으로 우회
 
@@ -295,15 +326,19 @@ case "{name}" in
     ;;
 esac
 
-cat "${CAT_FILES[@]}" \
-  | MY_TOKEN="xxx" claude -p --output-format text --dangerously-skip-permissions \
-  > /tmp/result.md 2>/tmp/stderr.txt
+# stdin 상한(10MB) 사전 게이트 — 합쳐서 재는 것이 정본이다 (개별 파일은 작아도 합산이 넘칠 수 있다)
+cat "${CAT_FILES[@]}" > /tmp/injected-prompt.md
+[ "$(wc -c < /tmp/injected-prompt.md)" -le 10000000 ] || {
+  echo "stdin over 10MB — 파일 경로 참조 방식으로 전환한다 (gotchas #40)" >&2; exit 1; }
+
+MY_TOKEN="xxx" claude -p --output-format text --dangerously-skip-permissions \
+  < /tmp/injected-prompt.md > /tmp/result.md 2>/tmp/stderr.txt
 test -s /tmp/result.md
 ```
 
 ### 주의사항
 
-- 대용량 stdin도 정상 동작 확인. 극단적 상한은 미확인 ([gotcha #40](gotchas.md) 참조)
+- piped stdin 상한은 10MB (공식 계약). 발사 전 `wc -c` 게이트로 자르고 초과분은 파일 경로 참조로 전환한다 ([gotcha #40](gotchas.md) 참조)
 - `--dangerously-skip-permissions`는 `--allowed-tools` 제한을 무시함 ([gotcha #3](gotchas.md) 참조)
 - 커스텀 환경변수는 `VAR=val claude -p` 형태로 전달 ([gotcha #39](gotchas.md) 참조)
 - MCP 도구 사용 시 해당 MCP 서버가 세션에서 활성화되어야 함 ([gotcha #5](gotchas.md) 참조)
@@ -331,12 +366,28 @@ import sys, json
 data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 results = [d for d in items if isinstance(d, dict) and d.get('type')=='result']
-assert results and results[-1].get('subtype')=='success' and not results[-1].get('is_error', False), 'result is not successful'
+# assert는 python3 -O / PYTHONOPTIMIZE=1에서 통째로 제거되므로 판정에 쓰지 않는다.
+if not results:
+    raise SystemExit('no result event')
+r = results[-1]
+if r.get('subtype') != 'success' or r.get('is_error', False):
+    raise SystemExit('result is not successful')
+if r.get('terminal_reason') not in (None, 'completed'):
+    raise SystemExit(f\"abnormal termination: {r.get('terminal_reason')}\")
+if r.get('permission_denials'):
+    raise SystemExit('tool permission denied (exit 0이어도 실패)')
+# --json-schema를 넘긴 호출에 한해: 검증된 구조화 출력은 result의 structured_output 키에 담긴다
+# (2.1.233 실측 — 미지정 호출에는 키 자체가 없으므로 무조건 존재 단언 금지).
+so = r.get('structured_output')
+if not isinstance(so, dict) or 'summary' not in so:
+    raise SystemExit('structured_output missing or schema keys absent')
 print('structured output OK')" < /tmp/structured.json
 ```
 
 `--json-schema`는 2.1.206 help에 있고, 무효 schema가 모델 호출 전에 즉시 실패하는 동작은
-v2.1.205에서 실측했다. 성공 payload의 세부 필드는 고정하지 말고 패턴 8처럼 `type=result`를 찾는다.
+v2.1.205에서 실측했다. subtype/is_error만 보면 스키마 미충족을 통과시키는 거짓 양성 경로가
+있으므로, 스키마를 넘긴 호출은 `structured_output` 존재·필수 키까지 검사한다. 그 외 성공
+payload의 세부 필드는 고정하지 말고 패턴 8처럼 `type=result`를 찾는다.
 
 ## 패턴 11: `--bare` 격리 실행
 
