@@ -60,7 +60,7 @@ claude_rc=$pipestatus[2]
 # 검증 실패가 후속 파싱을 막도록 && 게이트로 연결한다 (실패해도 다음 줄이 실행되는 단독 test 금지)
 [ "$claude_rc" -eq 0 ] && test -s /tmp/claude-init.json && python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 # subtype 가드 필수 — system 이벤트는 다중 매치다 (thinking_tokens 가변 삽입, stream-json은
 # hook 이벤트가 init보다 선행; gotchas.md #17)
@@ -78,7 +78,7 @@ print(f'Plugins: {len(init.get(\"plugins\", []))}')" < /tmp/claude-init.json
 ```bash
 python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 init = next(d for d in items if isinstance(d, dict)
             and d.get('type')=='system' and d.get('subtype')=='init')
@@ -97,7 +97,7 @@ for s in sorted(init.get('skills', [])):
 echo "나의 비밀 코드는 XRAY42야" | claude -p --output-format json \
   > /tmp/claude-session.json 2> /tmp/claude-session.stderr
 SESSION_ID=$(python3 -c "
-import sys, json; data=json.loads(sys.stdin.read()); items=data if isinstance(data,list) else [data]
+import sys, json; data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip()); items=data if isinstance(data,list) else [data]
 for item in items:
     if isinstance(item, dict) and item.get('type')=='system':
         print(item['session_id']); break" < /tmp/claude-session.json)
@@ -200,7 +200,7 @@ echo "2+3" | claude -p --output-format json > /tmp/claude-result.json 2> /tmp/cl
 claude_rc=$pipestatus[2]
 python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 result = [d for d in items if isinstance(d, dict) and d.get('type')=='result'][0]
 if result.get('subtype') != 'success' or result.get('is_error', False):
@@ -215,14 +215,16 @@ test "$claude_rc" -eq 0
 ```bash
 python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 result = [d for d in items if isinstance(d, dict) and d.get('type')=='result'][0]
 print(f'subtype: {result.get(\"subtype\")}')
 print(f'is_error: {result.get(\"is_error\", False)}')" < /tmp/claude-result.json
 ```
 
-정상 성공 경로는 top-level 배열(이벤트 수는 런마다 가변 — 2.1.233 실측, 특정 개수 기대 금지),
+정상 성공 경로는 top-level 배열 또는 객체일 수 있으므로 위 예제처럼 정규화한 뒤 판정한다
+(실측 런타임은 배열이고 help·공식 문서는 단일 객체를 표기한다 — 어느 쪽도 가정하지 않는다.
+이벤트 수는 런마다 가변 — 2.1.233 실측, 특정 개수 기대 금지),
 `subtype=success`, `is_error=false`, exit 0이다. auth 실패 경로는 `subtype=success`,
 `is_error=true`, exit 1도 가능하다. subtype 목록과 exit mapping을 exhaustive 계약으로 사용하지
 않는다. [gotchas.md](gotchas.md) #6, #29 참조.
@@ -326,7 +328,7 @@ echo "현재 변경을 한 문장으로 요약해" | claude -p \
 claude_rc=${PIPESTATUS[1]}
 [ "$claude_rc" -eq 0 ] && test -s /tmp/structured.json && python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 results = [d for d in items if isinstance(d, dict) and d.get('type')=='result']
 assert results and results[-1].get('subtype')=='success' and not results[-1].get('is_error', False), 'result is not successful'

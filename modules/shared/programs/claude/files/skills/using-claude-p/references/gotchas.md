@@ -8,6 +8,9 @@
 ## 2026-07-10 재검증 상태 (Claude Code v2.1.206)
 
 - 재검증 명령: `claude --version && claude --help && claude -p --help`
+- 런타임 관측 항목(2.1.233 스탬프)의 재검증 명령: `echo "ok" | claude -p --model haiku --output-format json`
+  (항목별 추가 플래그는 각 항목 본문에 병기). 개별 항목의 `재확인:` 스탬프는 이 표의 일괄
+  스탬프보다 우선한다.
 - 실제 실행이 확인된 항목은 `재확인: 2026-07-10, v2.1.206`, 나머지는
   `재검증 미수행 (v2.1.202 기준 서술 유지)`로 구분한다.
 - `실전 재발 사례`는 실제 업무 사고, `통제 smoke`는 최소 probe에서만 본 현상이다. 별도 라벨이
@@ -171,7 +174,7 @@ event 수와 중간 event 존재는 고정하지 않는다. parser는 배열/객
 ```bash
 echo "ok" | claude -p --output-format json | python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 init = next(d for d in items if isinstance(d, dict)
             and d.get('type')=='system' and d.get('subtype')=='init')
@@ -431,7 +434,7 @@ echo "이 프로젝트는 어떤 프로젝트야?" | claude -p
 
 ```bash
 SESSION_ID=$(echo "나의 비밀 코드는 XRAY42야" | claude -p --output-format json | python3 -c "
-import sys, json; data=json.loads(sys.stdin.read()); items=data if isinstance(data,list) else [data]
+import sys, json; data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip()); items=data if isinstance(data,list) else [data]
 for item in items:
     if isinstance(item, dict) and item.get('type')=='system':
         print(item['session_id']); break")

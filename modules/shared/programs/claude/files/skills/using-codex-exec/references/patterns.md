@@ -294,12 +294,17 @@ PROMPT
 ⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. diff가 클 수 있으므로 stdin pipe를 사용한다.
 
 ```bash
+rm -f /tmp/review-structured.json   # 이전 실행의 유효 JSON 잔존이 성공 오판을 만든다
+set -o pipefail
 cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write --output-schema /tmp/review-schema.json \
   -o /tmp/review-structured.json - > /tmp/schema.stdout 2> /tmp/schema.stderr
-test -s /tmp/review-structured.json \
+pipe_rcs=("${pipestatus[@]}")   # zsh 1-base. bash는 ("${PIPESTATUS[@]}") + 0-base
+[ "${pipe_rcs[1]}" -eq 0 ] && [ "${pipe_rcs[2]}" -eq 0 ] \
+  && test -s /tmp/review-structured.json \
   && jq -e '.findings and .summary' /tmp/review-structured.json > /dev/null
-# non-empty만으로는 부족하다 — 코드 펜스 혼입·스키마 정의($schema)가 인스턴스 대신 반환된 실측이
-# 있으므로 파싱 + 필수 키 존재까지 확인한다 (SKILL.md 성공 계약 조건 2).
+# rc가 정본이고 내용 검사는 그다음이다 — non-empty만으로는 부족하다(코드 펜스 혼입·스키마
+# 정의($schema)가 인스턴스 대신 반환된 실측). 실행 전 결과 파일 초기화까지 해야 이전 실행의
+# 산출물로 이번 실패가 성공으로 뒤집히지 않는다 (SKILL.md 성공 계약 조건 1·2).
 ```
 
 주의: `--output-schema`는 exec/review/resume help에 모두 있다 (재확인: 2026-07-10,

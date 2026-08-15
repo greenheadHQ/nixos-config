@@ -5,7 +5,7 @@
 - 확인 날짜: 2026-07-10
 - 확인 버전: Claude Code v2.1.206
 - 재검증: `claude --version && claude --help && claude -p --help`
-- 확인 범위: 인증된 JSON 성공 probe에서 init key를 재확인 (2026-08-15, v2.1.233 — 이벤트 수는 런마다 가변이며 고정 계약이 아님, gotchas.md #6). T1~T8 전체는 재검증 미수행 (v2.1.202 기준 서술 유지)
+- 확인 범위: 인증된 JSON 성공 probe에서 init key를 재확인 (2026-08-15, v2.1.233 — 이벤트 수는 런마다 가변이며 고정 계약이 아님, gotchas.md #6. 재검증: `echo "ok" | claude -p --model haiku --output-format json`). 이 probe가 커버하는 범위는 init key 존재와 이벤트 shape뿐이며, T1~T8 스크립트 전체의 동작은 재검증 미수행이다 (v2.1.202 기준 서술 유지)
 - 비용: 각 테스트 ~$0.07 (v2.1.202 기준 서술 유지; 현재 비용 재검증 미수행)
 
 공통 성공 계약: Claude exit 0, `result/success` + `is_error=false`, 기대 산출물 `test -s`, 기대
@@ -30,7 +30,7 @@ test "$CLAUDE_RC" -eq 0 && test -s /tmp/harness-init.json || exit 1
 # || 가드가 즉시 FAIL 처리하므로, 빈 변수로 후속 판정이 오염되지 않는다.
 INV=$(python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 # subtype 가드 필수 — system 이벤트는 다중 매치 (thinking_tokens 가변 삽입; gotchas.md #17).
 # 가드 없이 [0]을 집으면 인벤토리 0으로 'Skills too few' FAIL이 나며 원인을 harness 설정으로 오도한다.
@@ -73,7 +73,7 @@ RESULT=$(< /tmp/harness-init.json)
 
 SKILL_LIST=$(echo "$RESULT" | python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 init = next(d for d in items if isinstance(d, dict)
             and d.get('type')=='system' and d.get('subtype')=='init')
@@ -180,7 +180,7 @@ RESULT=$(< /tmp/harness-init.json)
 
 MCP_SERVERS=$(echo "$RESULT" | python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 init = next(d for d in items if isinstance(d, dict)
             and d.get('type')=='system' and d.get('subtype')=='init')
@@ -228,7 +228,7 @@ echo "ls /tmp | head -1을 실행하고 결과만 출력해" | claude -p --outpu
 T5A_RC=${PIPESTATUS[1]}
 HAS_TOOL_USE=$(python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 for d in items:
     if isinstance(d, dict) and d.get('type')=='assistant':
@@ -250,7 +250,7 @@ echo "echo T5_CHECK를 Bash로 실행하고 결과만 출력해" | claude -p --d
 T5B_RC=${PIPESTATUS[1]}
 HAS_RESULT=$(python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())  # 후행 비-JSON 라인 내성
 items = data if isinstance(data, list) else [data]
 result = [d for d in items if isinstance(d, dict) and d.get('type')=='result'][0]
 ok = result.get('subtype') == 'success' and not result.get('is_error', False)
@@ -298,13 +298,25 @@ RESULT=$(< /tmp/t6-remote.txt)
 if [ "$SSH_RC" -eq 0 ] && test -s /tmp/t6-remote.txt && grep -qi "$EXPECTED_HOST" /tmp/t6-remote.txt; then
   echo "  ✓ Remote hostname: $RESULT"
   echo "T6: PASS"
+  rc=0
 else
   echo "  ✗ Expected '$EXPECTED_HOST', got: $RESULT"
   echo "T6: FAIL"
+  rc=1
 fi
+# 판정 결과를 종료 코드로 내보낸다 — echo만 두면 실패도 exit 0이라 호출자·완료 알림이
+# 성공으로 읽는다. background 발사는 여기에 `.rc` 영속화를 더한다 (아래 실행 방법).
+printf '%s' "$rc" > /tmp/t6.rc
+exit "$rc"
 ```
 
-판정 로직: 원격 hostname이 기대값과 일치하면 PASS.
+판정 로직: 원격 hostname이 기대값과 일치하면 PASS(exit 0), 아니면 exit 1.
+
+실행 방법 (Bash tool 경유): 이 스크립트는 기본 900초 예산을 쓰므로 하네스 foreground
+상한보다 길다 — `run_in_background: true`로 발사하고, 완료 알림 수신 후 `/tmp/t6.rc`와
+`/tmp/t6-remote.txt`를 함께 확인한다. 알림의 exit code는 래핑 셸의 최종 rc이므로 위처럼
+`exit "$rc"`로 끝내야 실패가 실패로 통지된다 (`.rc` 부재 자체도 실패로 취급 —
+[using-codex-exec SKILL.md "background 발사의 rc 계약"](../../using-codex-exec/SKILL.md)과 동일 규약).
 
 > 이 테스트는 SSH 연결이 가능한 환경에서만 실행한다. SSH 연결 실패 시 별도 진단.
 > 무출력 약 10분 뒤 완료된 사례가 있으므로 outer timeout을 두되 무출력만으로 중단하지 않는다 —
@@ -330,7 +342,7 @@ T7_FIRST_RC=${PIPESTATUS[1]}
 # 성공 계약: exit 0 + session_id만으로 부족하다. result/success까지 검증해야
 # 실패한 첫 세션을 resume 대상으로 쓰는 오판을 막는다 (assert 실패 → non-zero → SESSION_ID 빈 값).
 SESSION_ID=$(python3 -c "
-import sys, json; data=json.loads(sys.stdin.read()); items=data if isinstance(data,list) else [data]
+import sys, json; data, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip()); items=data if isinstance(data,list) else [data]
 results=[d for d in items if isinstance(d,dict) and d.get('type')=='result']
 assert results and results[-1].get('subtype')=='success' and not results[-1].get('is_error', False), 'first call result is not successful'
 for item in items:

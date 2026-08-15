@@ -321,8 +321,12 @@ resume_rc=$?
 # ESC[1msession id:ESC[0m <uuid> 형태라 평문 grep -F가 항상 실패). resume에는 --color 플래그가
 # 없으므로(exec 전용) ANSI 제거 후 매치가 유일한 일반해다.
 sed $'s/\x1b\\[[0-9;]*m//g' /tmp/resume-stderr.log > /tmp/resume-stderr.plain
+# 배너에서 값을 추출해 문자열 그대로 비교한다 — `grep -E "...$SESSION"`은 (a) 값이 ERE로
+# 해석되고(thread name 수용 이후 메타문자 위험) (b) 뒤 경계가 없어 접두사 일치도 통과시킨다.
+banner_session=$(sed -n 's/.*session id:[[:space:]]*\([^[:space:]]*\).*/\1/p' \
+  /tmp/resume-stderr.plain | head -1)
 [ "$resume_rc" -eq 0 ] \
-  && grep -Eq "session id:[[:space:]]*$SESSION" /tmp/resume-stderr.plain \
+  && [ "$banner_session" = "$SESSION" ] \
   && test -s /tmp/resume-result.md
 # 위 판정 실패, 또는 응답(/tmp/resume-result.md)이 원 세션의 context를 잇지 않으면 재개 실패로 처리한다.
 # --json 사용 시 stderr 배너 자체가 사라진다 — stdout의 thread.started 이벤트 `thread_id`를 비교한다.
@@ -368,7 +372,8 @@ fan-out은 패턴 8 스모크를 한 번 통과한 뒤 시작한다.
 |------|------|------|
 | wrapper 사전 검증 실패 / PATH 미해석 | `command -v codex` 실패 또는 exit 127 | wrapper 127은 PATH 외에 invalid env 값·정본 `CODEX_EXEC_*` 변수명 near-miss도 포함하므로 stderr를 먼저 읽는다. 이후 `command -v codex` → `codex-exec-supervised --check` → 확인된 절대경로 순으로 진단. 설치 부재로 단정하지 않는다. |
 | 부모 sandbox denial | session/config 파일 쓰기 거부, nested 실행 | 소유권 변경 없이 [known-issues.md §18](references/known-issues.md#18-중첩-codex-session-파일-쓰기-거부와-sudo-chown-오진)로 분기 |
-| timeout | wrapper exit 124/137 | rc 124는 실패가 아니라 budget 부족 신호다 — 동일 budget 재시도는 금지하고, budget 상향 후 fresh retry 1회만 허용. stderr·프로세스 정리를 먼저 확인 |
+| timeout | rc 124 (SIGTERM 단계) — timeout 확정 신호 | rc 124는 실패가 아니라 budget 부족 신호다 — 동일 budget 재시도는 금지하고, budget 상향 후 fresh retry 1회만 허용. stderr·프로세스 정리를 먼저 확인 |
+| rc 137 (SIGKILL) — 원인 다중 | wrapper `--kill-after` 승급 / codex 자신의 137 passthrough / 외부 SIGKILL이 모두 같은 값을 낸다 | 137 단독으로 timeout이라 단정하지 않는다. (code, signal) + wrapper budget 도달 여부(경과 시간)와 stderr를 함께 본다. usage limit hang이 외부 SIGKILL로 끝난 경우도 137이므로 아래 usage limit 행과 교차 확인 |
 | usage limit | (a) 즉시형: stderr `hit your usage limit ... try again at <시각>` (b) hang형: 내부 재시도로 무진척, 외부 SIGKILL 시 exit null/137로 위장 | 신규 세션 재시도는 무익하므로 fail-fast. 이미 진행 중인 세션은 계속될 수 있음. 판정은 exit code 단독이 아니라 (code, signal) + stderr 패턴 매치로 — stderr tail 바이트로 진단하면 프롬프트 에코가 찍혀 원인 불명이 된다 (실측) |
 | unsupported model | metadata warning 또는 unsupported error | `-m`을 제거하고 config 기본 모델로 제한된 fresh retry |
 | stream 실패 | stderr `stream disconnected before completion` | 일시 오류 — retryable. 수만 토큰 소모 후 `-o` 미생성으로 끝날 수 있으며, 동일 파라미터 재실행이 성공한 실측(4/4)이 있다 (2026-08-15, 0.147.0) |
@@ -391,13 +396,20 @@ Bash tool `run_in_background` 완료 알림의 exit code는 codex가 아니라 �
 ```zsh
 cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o "$OUT" - > "$OUT.stdout" 2> "$OUT.stderr"
-rc=$pipestatus[2]              # 파이프가 없는 발사는 rc=$? — bash 펜스는 ${PIPESTATUS[1]} (0-base)
+pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 — 다음 명령이 리셋한다
+rc="${pipe_rcs[2]}"            # codex의 rc (zsh 1-base). 파이프 없는 발사는 rc=$?
+[ -n "$rc" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
+[ "${pipe_rcs[1]}" -eq 0 ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 rc에 반영
 printf '%s' "$rc" > "$OUT.rc"  # rc 영속화 — 알림 유실 대비·다수 병렬 배리어의 정본
 exit $rc                       # 하네스 완료 알림에 codex rc가 실리게 한다
 ```
 
+- Bash tool 셸은 zsh다. bash에서 재사용하려면 `pipestatus` → `PIPESTATUS`, 인덱스 1-base →
+  0-base로 함께 바꾼다 — 한쪽만 바꾸면 rc가 빈 값이 되어 `.rc`가 비고 계약이 무력화된다
+  (위 `[ -n "$rc" ]` 가드가 그 상태를 fail-closed로 잡는다).
 - `.rc` 파일 부재 자체를 실패로 취급한다 — guard 조기 exit 경로가 은폐되지 않는다.
-- 좌측 `cat` 실패까지 판정에 넣으려면 셸 transport 계약의 배열 스냅샷 규칙을 동일 적용한다.
+- 좌측 `cat` 실패(프롬프트 파일 부재·손상)는 codex가 빈 stdin으로 exit 0을 낼 수 있어 위
+  스냅샷 없이는 성공으로 오판된다 — 셸 transport 계약의 배열 스냅샷 규칙과 동일 축이다.
 
 ### foreground/background 상한 불일치 (호출 방식 계약)
 

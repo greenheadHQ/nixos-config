@@ -35,7 +35,8 @@ git rev-parse --show-toplevel
 |----------|-------------|----------|
 | wrapper 사전 검증 실패(invalid env·near-miss 포함)/PATH exit 127 | stderr로 사유 확인 → 경로·wrapper `--check` 후에만 재실행 | 실전 재발 사례 7건 + wrapper smoke |
 | 부모 sandbox denial | 소유권 변경 금지, §18 분기 | 실전 재발 사례 6건 |
-| timeout exit 124/137 | rc 124는 budget 부족 신호 — 동일 budget 재시도 금지, 자식 정리 확인 후 budget 상향 fresh retry 최대 1회 | 실전 재발 사례 |
+| timeout exit 124 (SIGTERM 단계) | budget 부족 신호 — 동일 budget 재시도 금지, 자식 정리 확인 후 budget 상향 fresh retry 최대 1회 | 실전 재발 사례 |
+| exit 137 (SIGKILL, 원인 다중) | wrapper `--kill-after` 승급 / codex 자신의 137 passthrough / 외부 SIGKILL이 모두 137이다 — 단독으로 timeout 판정 금지. 경과 시간(budget 도달 여부)·stderr·usage limit 행과 교차 확인 후 분기 | 실전 재발 사례 + wrapper passthrough 규약 |
 | usage limit | fail-fast. 신규 세션 재시도 금지. 즉시형(`hit your usage limit`) 외에 내부 재시도 hang형이 있고 외부 SIGKILL 시 exit null/137로 위장 — (code, signal) + stderr 패턴으로 판정, stderr tail 바이트 진단 금지(프롬프트 에코가 찍힘) | 실전 재발 사례; 2026-08-15 재확인 |
 | unsupported model | `-m` 제거 후 fresh retry 최대 1회 | 통제 smoke에서 관측 |
 | stream 실패 (`stream disconnected before completion`) | 일시 오류 — retryable. 수만 토큰 소모 후 `-o` 미생성으로 끝날 수 있고 동일 파라미터 재실행 성공 실측(4/4) | 실전 재발 사례 6건+; 0.147.0 strings 잔존 확인 (2026-08-15) |
@@ -424,19 +425,25 @@ Codex 세션의 native subagent 경로와 일반 터미널에는 이 제약을 �
 Background 대안 — 다수 병렬 실행 시 LLM 블로킹 방지:
 
 2b. 각 codex exec를 Bash tool `run_in_background: true`로 실행 — programmatic 호출은 §15 supervised wrapper(Layer 1) 사용 (foreground 예시와 동일 명령):
-    ```bash
+    ```zsh
     # 직전 stdout이 정확히 `DA_DIR=/tmp/da-a1b2c3`였을 때만 이 값을 사용.
     DA_DIR=/tmp/da-a1b2c3
     [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
     [ -f "$DA_DIR/domain.md" ] || { echo "missing prompt=$DA_DIR/domain.md"; exit 1; }
     # Bash tool 호출 시 run_in_background: true 파라미터 사용
+    # Bash tool 셸은 zsh이므로 아래는 zsh 형태다 (bash에서 재사용하려면 pipestatus →
+    # PIPESTATUS, 인덱스 1-base → 0-base로 바꾼다). 잘못된 배열을 쓰면 rc가 빈 값이 되어
+    # `.rc`가 비고 exit 값이 무의미해진다 — 계약 자체가 무력화된다.
     cat "$DA_DIR/domain.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
       --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
       -c model_reasoning_effort="medium" \
       -o "$DA_DIR/domain-result.md" \
       - \
       2>"$DA_DIR/domain-stderr.log"
-    rc="${PIPESTATUS[1]}"                      # zsh는 $pipestatus[2] (1-base)
+    pipe_rcs=("${pipestatus[@]}")              # 배열 먼저 스냅샷 (다음 명령이 리셋한다)
+    rc="${pipe_rcs[2]}"                        # codex의 rc
+    [ -n "$rc" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
+    [ "${pipe_rcs[1]}" -eq 0 ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 판정에 반영
     printf '%s' "$rc" > "$DA_DIR/domain.rc"    # rc 영속화 — 알림 유실 대비·병렬 배리어의 정본
     exit "$rc"                                 # 완료 알림에 codex rc가 실리게 한다
     ```

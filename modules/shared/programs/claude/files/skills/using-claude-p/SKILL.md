@@ -16,6 +16,11 @@ description: >-
 - 확인 날짜: 2026-07-10
 - 확인 버전: Claude Code v2.1.206
 - 재검증: `claude --version && claude --help && claude -p --help`
+- 개별 항목에 `재확인: <날짜>, <버전>` 스탬프가 붙어 있으면 그 스탬프가 위 헤더보다 우선한다
+  (헤더는 문서 전체를 일괄 재확인한 시점이고, 개별 스탬프는 그 항목만 최신 버전으로 재실측한
+  시점이다). 2.1.233 런타임 관측 항목의 재검증 명령은
+  `echo "ok" | claude -p --model haiku --output-format json`이며, 각 항목이 요구하는 추가
+  플래그는 해당 항목에 함께 적는다.
 
 print 모드는 workspace trust dialog를 생략하고 invalid settings를 조용히 무시할 수 있다
 (2.1.206 help). 자동화 전에는 settings를 별도 검증한다.
