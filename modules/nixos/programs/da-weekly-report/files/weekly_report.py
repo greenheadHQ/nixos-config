@@ -1142,6 +1142,8 @@ def _warning_category(warning: str, *, health: bool = False) -> str:
     lowered = warning.lower()
     if "tar member" in lowered or "validation" in lowered or "newline" in lowered:
         return "validation"
+    # "budget"은 ssh 토큰이 없던 구 문구("fetch budget 초과 (절전/무응답 가능성)")를 담은
+    # 과거 주차 sidecar를 재처리할 때만 쓰인다 — 현행 문구는 ssh 토큰으로 이미 분류된다.
     if any(token in lowered for token in ("ssh", "remote", "tar ", "find ", "budget")):
         return "remote_collection"
     if any(token in lowered for token in ("parse", "diagnostic", "verdict")):
@@ -1481,10 +1483,15 @@ def _render_github_markdown_source(source: dict) -> str:
     for group in ("diagnostic_rates", "marker_missing_rates"):
         for key, value in coverage.get(group, {}).items():
             out.append(f"| {esc(key)} | {num(value)} |")
-    out.extend(["", "| host | status | analyzed sessions | warning count |", "|------|--------|-------------------|---------------|"])
+    out.extend([
+        "",
+        "| host | status | analyzed sessions | warning count | excluded (size cap) |",
+        "|------|--------|-------------------|---------------|---------------------|",
+    ])
     for host, info in summary.get("hosts", {}).items():
         out.append(
-            f"| {esc(host)} | {esc(info.get('status'))} | {num(info.get('analyzed_sessions'))} | {num(info.get('warning_count'))} |"
+            f"| {esc(host)} | {esc(info.get('status'))} | {num(info.get('analyzed_sessions'))} "
+            f"| {num(info.get('warning_count'))} | {num(info.get('excluded_files'))} |"
         )
     out.append("")
 

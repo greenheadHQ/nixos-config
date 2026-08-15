@@ -7,7 +7,7 @@
 | Mac (`/Users/greenhead`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 | MiniPC (`/home/greenhead`) | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
 
-원격 호스트는 `subprocess.run(["ssh", alias, "find", "~/.claude/projects", "-name", "'*.jsonl'", "-size", "-50M", ...])` 고정 argv로 path 목록만 수집한 뒤 (`-size` cap의 계약과 제외 건수 기록은 [host-handling.md](host-handling.md)의 "corpus size cap" 참조), 검증된 목록을 우선 단일 tar batch stream으로 가져온다. tar command는 `ssh <alias> tar -C / -cf - -T -`이고 file list는 stdin으로만 전달한다. tar batch가 timeout/nonzero/empty stream/tar 해석 실패 등으로 실패하면 검증을 통과한 path에 한해 기존 per-file `ssh <alias> cat <path>` worker pool로 fallback한다. 세부 실패 조건과 budget 처리는 [host-handling.md](host-handling.md)의 "fetch 전략: tar batch 우선 + per-file cat fallback"을 따른다.
+원격 호스트는 `subprocess.run(["ssh", alias, "find", "~/.claude/projects", "-name", "'*.jsonl'", "-size", "-52428801c", ...])` 고정 argv로 path 목록만 수집한 뒤 (`-size` 바이트 cap의 계약과 제외 건수 기록은 [host-handling.md](host-handling.md)의 "corpus size cap" 참조), 검증된 목록을 우선 단일 tar batch stream으로 가져온다. tar command는 `ssh <alias> tar -C / -cf - -T -`이고 file list는 stdin으로만 전달한다. tar batch가 timeout/nonzero/empty stream/tar 해석 실패 등으로 실패하면 검증을 통과한 path에 한해 기존 per-file `ssh <alias> cat <path>` worker pool로 fallback한다. 세부 실패 조건과 budget 처리는 [host-handling.md](host-handling.md)의 "fetch 전략: tar batch 우선 + per-file cat fallback"을 따른다.
 
 호스트당 fallback SSH cat 호출은 ControlMaster 다중화 + `concurrent.futures.ThreadPoolExecutor(max_workers=SSH_FETCH_WORKERS)`로 병렬 처리한다 (host 순차 진행, host당 K=8 fetch 병렬). ControlMaster가 비활성인 호스트는 K=1 직렬 fallback이 host budget(`SSH_HOST_FETCH_BUDGET_SECONDS`) 안에 끝나지 않으므로 fetch 자체를 skip하고 명시적 warning을 누적한다 (사용자가 ControlMaster 활성화 누락을 즉시 인지).
 

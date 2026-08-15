@@ -787,7 +787,7 @@ def test_host_fetch_budget_clamps_find_and_stops_after_budget_timeout(
                 "-name",
                 "'*.jsonl'",
                 "-size",
-                f"-{analyze_module.REMOTE_FILE_SIZE_CAP_MB}M",
+                analyze_module.REMOTE_FIND_SIZE_INCLUDE,
             ],
             5.0,
         )
@@ -829,20 +829,14 @@ def test_collect_remote_files_records_exclusions_outside_warnings(
     monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
 
     files = analyze_module.collect_remote_files(
-        "mac", warnings, budget=None, exclusions=exclusions
+        "mac", warnings, budget=None, corpus_exclusions=exclusions
     )
     assert files == ["/Users/greenhead/.claude/projects/p/s.jsonl"]
     # base 2곳 × (목록 find + oversized find) = 4회
     assert len(calls) == 4
     assert warnings == []
     assert exclusions == [
-        {
-            "host": "mac",
-            "base": "~/.claude/projects",
-            "reason": "size_cap",
-            "cap_mb": analyze_module.REMOTE_FILE_SIZE_CAP_MB,
-            "excluded_files": 2,
-        }
+        analyze_module._corpus_exclusion_entry("mac", "~/.claude/projects", 2)
     ]
 
 
@@ -855,7 +849,10 @@ def test_collect_local_files_applies_same_size_cap(analyze_module, tmp_path, mon
     small = claude_dir / "small.jsonl"
     small.write_text("{}\n")
     big = claude_dir / "big.jsonl"
-    big.write_bytes(b"x" * (analyze_module.REMOTE_FILE_SIZE_CAP_MB * 1024 * 1024 + 1))
+    big.write_bytes(b"x" * (analyze_module.REMOTE_FILE_SIZE_CAP_BYTES + 1))
+    # cap 경계값 자체는 수집 대상이다 (원격 find `c` suffix 분할과 같은 경계).
+    edge = claude_dir / "edge.jsonl"
+    edge.write_bytes(b"x" * analyze_module.REMOTE_FILE_SIZE_CAP_BYTES)
 
     monkeypatch.setitem(
         analyze_module.HOST_PATH_MAP,
@@ -865,15 +862,9 @@ def test_collect_local_files_applies_same_size_cap(analyze_module, tmp_path, mon
     exclusions: list[dict] = []
     files = analyze_module.collect_local_files("mac", exclusions)
 
-    assert files == [str(small)]
+    assert sorted(files) == sorted([str(small), str(edge)])
     assert exclusions == [
-        {
-            "host": "mac",
-            "base": str(claude_dir),
-            "reason": "size_cap",
-            "cap_mb": analyze_module.REMOTE_FILE_SIZE_CAP_MB,
-            "excluded_files": 1,
-        }
+        analyze_module._corpus_exclusion_entry("mac", str(claude_dir), 1)
     ]
 
 

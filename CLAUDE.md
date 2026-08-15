@@ -53,6 +53,7 @@ Bash tool의 inline 스크립트는 zsh에서 실행된다. 아래 bash 전용 �
 현재 확인된 사례:
 - (GNU 우선 환경에서 BSD 문법이 필요한 경우) 파일 mtime epoch — GNU `stat -c %Y file` vs macOS BSD `/usr/bin/stat -f %m file`. 시스템 도구를 절대경로로 호출한다.
 - (BSD 우선 환경에서 GNU 문법이 필요한 경우) 테스트 fixture의 GNU 전용 옵션 `touch -d '40 days ago'`·`find -printf` — devShell 밖(direnv 비활성) 훅/CI 셸에서는 BSD 도구가 잡혀 실패하므로, `prePushRuntime` profile에서 `coreutils`/`findutils`를 명시 제공한다 (#1009; `scripts/ai/test-runtime-profile.sh` + `tomlkit-bootstrap.sh` fallback).
+- (문법은 같은데 의미가 다른 경우) `find -size`의 단위 suffix — `-size -50M`은 GNU에서 MB 올림 비교, BSD에서 바이트 정확 비교라 같은 명령이 호스트마다 다른 파일 집합을 낸다. 원격 실행처럼 상대 구현을 고를 수 없으면 `c`(바이트) suffix를 써서 두 구현의 경계를 일치시킨다 (`analyzing-da-sessions`의 corpus size cap 사례).
 
 같은 종류의 GNU/BSD 옵션 충돌이 새로 발견되면 같은 단락에 케이스를 추가한다.
 

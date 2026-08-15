@@ -50,7 +50,7 @@ coverage object를 읽으며, sidecar diagnostics를 직접 재해석하지 않�
 | `marker_missing_rates` | `(total_sessions - marker_sessions) / total_sessions`. Arbiter/Intensity marker 각각 계산한다. |
 | `m2_source_distribution` | sidecar `metrics.M-2.source_distribution` pass-through. |
 | `m5_source_distribution` | sidecar `metrics.M-5.source` 값을 단일 key distribution으로 승격 (`{"round_summary_fallback": 1}` 등). |
-| `host_collection` | sidecar `traceability.coverage.host_distribution`과 warnings prefix(`host <name>:`)를 결합한 host별 상태. warning이 있으면 `partial`, 분석 세션 0이고 warning도 없으면 `unknown`, 그 외 `ok`. |
+| `host_collection` | sidecar `traceability.coverage.host_distribution`과 warnings prefix(`host <name>:`)를 결합한 host별 상태. warning이 있으면 `partial`, 분석 세션 0이고 warning도 없으면 `unknown`, 그 외 `ok`. `excluded_files`는 sidecar `corpus_exclusions[]` 중 해당 host 엔트리의 `excluded_files` 합이며 status 판정에 참여하지 않는다 (corpus 정책 제외는 실패가 아니다). |
 | `warnings` / `health_warnings` | 분석 단계 warnings와 git 기반 health 수집 warnings를 분리 보존한다. |
 
 ## Session source traceability (S2-9)
