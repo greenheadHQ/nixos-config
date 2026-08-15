@@ -5,7 +5,7 @@
 - 확인 날짜: 2026-07-10
 - 확인 버전: Claude Code v2.1.206
 - 재검증: `claude --version && claude --help && claude -p --help`
-- 확인 범위: 인증된 JSON 성공 probe에서 4-event 배열과 init key를 재확인. T1~T8 전체는 재검증 미수행 (v2.1.202 기준 서술 유지)
+- 확인 범위: 인증된 JSON 성공 probe에서 init key를 재확인 (2026-08-15, v2.1.233 — 이벤트 수는 런마다 가변이며 고정 계약이 아님, gotchas.md #6). T1~T8 전체는 재검증 미수행 (v2.1.202 기준 서술 유지)
 - 비용: 각 테스트 ~$0.07 (v2.1.202 기준 서술 유지; 현재 비용 재검증 미수행)
 
 공통 성공 계약: Claude exit 0, `result/success` + `is_error=false`, 기대 산출물 `test -s`, 기대
@@ -32,7 +32,10 @@ INV=$(python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
+# subtype 가드 필수 — system 이벤트는 다중 매치 (thinking_tokens 가변 삽입; gotchas.md #17).
+# 가드 없이 [0]을 집으면 인벤토리 0으로 'Skills too few' FAIL이 나며 원인을 harness 설정으로 오도한다.
+init = next(d for d in items if isinstance(d, dict)
+            and d.get('type')=='system' and d.get('subtype')=='init')
 results = [d for d in items if isinstance(d, dict) and d.get('type')=='result']
 ok = bool(results) and results[-1].get('subtype') == 'success' and not results[-1].get('is_error', False)
 print(len(init.get('skills', [])))
@@ -72,7 +75,8 @@ SKILL_LIST=$(echo "$RESULT" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
+init = next(d for d in items if isinstance(d, dict)
+            and d.get('type')=='system' and d.get('subtype')=='init')
 for s in init.get('skills', []):
     print(s)")
 
@@ -178,7 +182,8 @@ MCP_SERVERS=$(echo "$RESULT" | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
+init = next(d for d in items if isinstance(d, dict)
+            and d.get('type')=='system' and d.get('subtype')=='init')
 for s in init.get('mcp_servers', []):
     print(s)")
 
@@ -283,6 +288,8 @@ fi
 
 set -o pipefail
 # outer timeout: 원격 hang 시 무기한 대기 방지 (SSH_RC 124 = timeout 발동; macOS는 coreutils timeout 필요)
+# ⚠️ Bash tool 경유 시 기본 900초 예산은 하네스 foreground 상한보다 크다 — background 발사 또는
+# timeout 파라미터 명시가 필수다 (SKILL.md "호출 상한 (Bash tool 경유)" 참조).
 echo "hostname을 실행하고 결과만 출력해" | timeout "${SSH_TIMEOUT:-900}" ssh "$REMOTE" 'claude -p --dangerously-skip-permissions' \
   > /tmp/t6-remote.txt 2> /tmp/t6-remote.stderr
 SSH_RC=${PIPESTATUS[1]}
@@ -300,7 +307,8 @@ fi
 판정 로직: 원격 hostname이 기대값과 일치하면 PASS.
 
 > 이 테스트는 SSH 연결이 가능한 환경에서만 실행한다. SSH 연결 실패 시 별도 진단.
-> 무출력 약 10분 뒤 완료된 사례가 있으므로 outer timeout을 두되 무출력만으로 중단하지 않는다.
+> 무출력 약 10분 뒤 완료된 사례가 있으므로 outer timeout을 두되 무출력만으로 중단하지 않는다 —
+> 단 Bash tool foreground 발사에서는 하네스 상한이 그보다 먼저 발화하므로 background로 발사한다.
 > 종료 뒤 기대 결과 파일/marker를 검증한다.
 
 ## T7: 세션 체이닝

@@ -35,14 +35,52 @@ git rev-parse --show-toplevel
 |----------|-------------|----------|
 | wrapper 사전 검증 실패(invalid env·near-miss 포함)/PATH exit 127 | stderr로 사유 확인 → 경로·wrapper `--check` 후에만 재실행 | 실전 재발 사례 7건 + wrapper smoke |
 | 부모 sandbox denial | 소유권 변경 금지, §18 분기 | 실전 재발 사례 6건 |
-| timeout exit 124/137 | 자식 정리 확인 후 fresh retry 최대 1회 | 실전 재발 사례 |
-| usage limit | fail-fast. 신규 세션 재시도 금지 | 실전 재발 사례; 2026-07-10 재확인 |
+| timeout exit 124/137 | rc 124는 budget 부족 신호 — 동일 budget 재시도 금지, 자식 정리 확인 후 budget 상향 fresh retry 최대 1회 | 실전 재발 사례 |
+| usage limit | fail-fast. 신규 세션 재시도 금지. 즉시형(`hit your usage limit`) 외에 내부 재시도 hang형이 있고 외부 SIGKILL 시 exit null/137로 위장 — (code, signal) + stderr 패턴으로 판정, stderr tail 바이트 진단 금지(프롬프트 에코가 찍힘) | 실전 재발 사례; 2026-08-15 재확인 |
 | unsupported model | `-m` 제거 후 fresh retry 최대 1회 | 통제 smoke에서 관측 |
-| exit 0 + `-o` 미생성 | 실패 처리, stderr·라우팅·session id 조사 | 실전 재발 사례 5건 |
+| stream 실패 (`stream disconnected before completion`) | 일시 오류 — retryable. 수만 토큰 소모 후 `-o` 미생성으로 끝날 수 있고 동일 파라미터 재실행 성공 실측(4/4) | 실전 재발 사례 6건+; 0.147.0 strings 잔존 확인 (2026-08-15) |
+| model at capacity (`Selected model is at capacity`) | 시간차 재시도 또는 다른 모델. usage limit과 별개 축(소스 레벨 별도 variant) | 실전 사례; 0.147.0 strings 잔존 확인 |
+| TLS trust store (`no native root CA certificates found` + `UnknownIssuer` + `Reconnecting... N/5`) | exit 0 + 산출물 없음으로 발현 — cert 환경 수정 전 재시도 무익. `Reconnecting` 로그는 자격증명 부재 401 반복(upstream #30514, ~20초 후 종료)과 육안 구분 불가 → stderr 본문으로 가른다 | 실전 사례 2건 |
+| exit 0 + `-o` 미생성 | 실패 처리, stderr·라우팅·session id 조사. TLS trust store 실패가 이 형태로 나타난다 | 실전 재발 사례 5건 |
+
+non-retryable: `Not inside a trusted directory ...`, `unexpected argument`, clap 상호 배타
+인자 오류 — 결정론적 인자/환경 오류인데 rc 1이라 일반 실패와 구분되지 않는다. stderr 문자열로
+식별해 즉시 교정하고, 같은 명령을 재시도 루프에 넣지 않는다.
 
 SSH/원격 장기 실행은 약 10분 무출력 뒤 완료된 실측이 있으므로 무출력만으로 중단이라 단정하지
 않는다. 반대로 프로세스 생존만으로 정상이라 단정하지도 않는다. outer timeout을 두고 종료 후
 `test -s "$RESULT"`로 산출물을 검증한다.
+
+### 0-1. stderr 원인 분류 절차
+
+stderr는 실패 판정 입력이 아니라 원인 분류 입력이다 (SKILL.md 성공 계약 조건 3;
+재확인: 2026-08-15, 0.147.0). rc 또는 결과 파일 판정이 실패했을 때만 아래 절차로 분류한다.
+
+`grep -q "ERROR:"`가 실패 판정에 부적합한 실측 근거:
+
+- 오탐 (정상 실행 매치): stderr에는 프롬프트 전문 에코와 최종 메시지 사본이 정상 실행에도
+  남는다 — 프롬프트나 응답 본문에 `ERROR:`가 있으면 성공 실행이 실패로 뒤집힌다. 무해한 MCP
+  transport tracing `ERROR` 라인이 상시 찍히는 환경도 있다.
+- 미탐 (진짜 실패 불매치): timeout은 wrapper rc 124/137로만 식별된다(wrapper stderr에
+  `ERROR:` 0건). config·인자 오류는 소문자 `Error:`/`Error loading ...` 형태이고, pre-flight
+  오류(`Not inside a trusted directory ...`, output-schema 파일 부재)는 `Error` 토큰조차 없는
+  평문이다. tracing 런타임 오류는 `ERROR <module>:` 레이아웃(레벨과 콜론 사이에 ANSI reset +
+  모듈명)이라 리터럴 `ERROR:`에 걸리지 않는다.
+- 리터럴 `ERROR:`가 생존하는 표면은 턴/스트림 오류(미지원 모델 등, `ESC[1mESC[31mERROR:` 렌더러)
+  1개 축뿐이며, 그마저 줄머리에 ANSI가 선행해 `^ERROR:` 앵커는 0건 매치다.
+
+분류 절차:
+
+```bash
+# 1) ANSI 제거 — 비TTY 파일 리다이렉트에도 escape가 유지된다 (FORCE_COLOR 주입 환경 실측)
+sed $'s/\x1b\\[[0-9;]*m//g' stderr.log > stderr.plain
+# 2) 광범위 패턴으로 후보 라인 추출 — 분류 전용. 실패 판정으로 승격 금지 (정상 실행에도 매치된다)
+grep -nEi 'error|denied|timed? ?out|usage limit|not supported|disconnected|at capacity|certificate|trusted directory' stderr.plain
+# 3) 매치 라인을 위 오류 분류표와 대조해 처리 방침을 정한다
+```
+
+exec 한정으로는 `--color never`를 붙여 1)을 생략할 수 있다 — `--color`는 exec 전용 플래그라
+review/resume에는 ANSI 제거가 유일한 일반해다.
 
 ---
 
@@ -398,9 +436,16 @@ Background 대안 — 다수 병렬 실행 시 LLM 블로킹 방지:
       -o "$DA_DIR/domain-result.md" \
       - \
       2>"$DA_DIR/domain-stderr.log"
+    rc="${PIPESTATUS[1]}"                      # zsh는 $pipestatus[2] (1-base)
+    printf '%s' "$rc" > "$DA_DIR/domain.rc"    # rc 영속화 — 알림 유실 대비·병렬 배리어의 정본
+    exit "$rc"                                 # 완료 알림에 codex rc가 실리게 한다
     ```
     - LLM이 즉시 반환받아 사용자와 대화 가능
     - 각 완료 시 자동 알림 수신 (sleep/poll 금지)
+    - 완료 알림의 exit code는 래핑 셸의 최종 rc다 — 위처럼 `exit $rc`로 끝내지 않고 꼬리
+      echo/cat을 두면 전건 실패도 `completed (exit code 0)`으로 통지된다
+      (SKILL.md "background 발사의 rc 계약"; 2.1.233 하네스 A/B 실측)
+    - `.rc` 파일 부재 자체를 실패로 취급한다 (guard 조기 exit 은폐 방지)
     - 모든 완료 알림 수신 후 결과 파일 일괄 수집
 
 3b. foreground와 동일하게 결과 파일로 수집. `-o` 결과 파일은 프로세스 종료 시 생성됨.

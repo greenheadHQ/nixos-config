@@ -13,7 +13,7 @@ print 모드는 workspace trust dialog를 생략하고 invalid settings를 조�
 
 | 플래그 | v2.1.206 `--help` 표기 | 비고 |
 |--------|------------------------|------|
-| `--output-format <format>` | 출력 형식: `text`(기본), `json`(single result), `stream-json`(realtime streaming) | runtime `json`은 top-level 이벤트 배열. 성공 경로 4 events 재확인: 2026-07-10, v2.1.206 |
+| `--output-format <format>` | 출력 형식: `text`(기본), `json`(single result), `stream-json`(realtime streaming) | runtime `json`은 top-level 이벤트 배열(실측)이나 help·공식 문서는 single result 객체 표기 — 어느 쪽도 가정하지 말고 정규화 파서 사용. 이벤트 수는 같은 버전에서도 런마다 가변 (재확인: 2026-08-15, v2.1.233) |
 | `--no-session-persistence` | 세션 파일 미저장, resume 불가 (`only works with --print`) | 동시 충돌 방지 효과는 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | `--max-budget-usd <amount>` | 최대 비용 제한 (`only works with --print`) | 초과 시 exit code/subtype 동작은 [gotcha #4](gotchas.md) 참조 |
 | `--fallback-model <model>` | primary 과부하/불가 시 fallback (`only works with --print`) | 쉼표 목록을 순서대로 시도하고 각 user turn 시작에 primary 재시도 |

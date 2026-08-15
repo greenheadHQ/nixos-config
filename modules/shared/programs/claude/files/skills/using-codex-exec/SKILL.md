@@ -232,8 +232,9 @@ cat /tmp/prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   > /tmp/stdout.log 2> /tmp/stderr.log
 # PIPESTATUS는 다음 명령에서 리셋되므로 배열을 먼저 스냅샷한다. cat 실패(프롬프트 파일 부재)도 판정에 포함.
 pipe_rcs=("${PIPESTATUS[@]}")   # zsh는 ("${pipestatus[@]}") — 인덱스가 1부터
-[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ] && test -s /tmp/result.md \
-  && ! grep -q "ERROR:" /tmp/stderr.log   # 성공 계약 조건 2 (CLI 오류의 ERROR: prefix 검사)
+[ "${pipe_rcs[0]}" -eq 0 ] && [ "${pipe_rcs[1]}" -eq 0 ] && test -s /tmp/result.md
+# 판정은 rc + 결과 파일이 정본이다. 위가 실패했을 때만 /tmp/stderr.log를 원인 분류에 사용한다
+# (성공 계약 조건 3; ANSI·프롬프트 에코 함정과 분류 절차는 known-issues.md §0-1).
 ```
 
 위의 `test -s` 빈 결과 검증은 wrapper에 위임할 수도 있다 (opt-in, issue #1228):
@@ -271,13 +272,13 @@ env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base main \
 # env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --commit <sha> ... (동일 형태)
 
 review_rc=$?
-[ "$review_rc" -eq 0 ] && test -s /tmp/review.md \
-  && ! grep -q "ERROR:" /tmp/review-stderr.log
+[ "$review_rc" -eq 0 ] && test -s /tmp/review.md
+# 실패 시에만 /tmp/review-stderr.log로 원인을 분류한다 (성공 계약 조건 3, known-issues.md §0-1).
 ```
 
-stderr 검사는 성공 계약 조건 2의 구현이다 — usage limit·sandbox panic 등 CLI 오류는
-`ERROR:` prefix로 출력된다 (진행 로그·배너에는 이 prefix가 없다). stderr에는 최종 메시지
-사본도 남으므로, 본문에 우연히 `ERROR:`가 포함되면 보수적으로 실패 처리하고 직접 확인한다.
+stderr는 실패 판정 입력이 아니라 원인 분류 입력이다 (성공 계약 조건 3). stderr에는
+프롬프트 전문 에코와 최종 메시지 사본이 정상 실행에도 남으므로, `ERROR:` grep을 판정에
+쓰면 성공 실행이 실패로 뒤집힌다 (2026-08-15, 0.147.0 실측).
 
 review 결과 저장에는 `-o`(`--output-last-message`)와 stdout이 모두 동작한다
 (재확인: 2026-07-10, 0.144.1). upstream #12502는 open이지만 로컬에서는 stderr 회귀가
@@ -316,11 +317,15 @@ env CODEX_PROGRAMMATIC=1 codex-exec-supervised resume "$SESSION" \
 resume_rc=$?
 
 # silent fallback 검증: 반환된 session id가 요청한 세션과 일치해야 하며, 최종 판정에 연결한다.
+# 배너의 "session id:"에는 ANSI escape가 낄 수 있다(하네스가 FORCE_COLOR를 주입하는 환경 실측 —
+# ESC[1msession id:ESC[0m <uuid> 형태라 평문 grep -F가 항상 실패). resume에는 --color 플래그가
+# 없으므로(exec 전용) ANSI 제거 후 매치가 유일한 일반해다.
+sed $'s/\x1b\\[[0-9;]*m//g' /tmp/resume-stderr.log > /tmp/resume-stderr.plain
 [ "$resume_rc" -eq 0 ] \
-  && grep -Fq "session id: $SESSION" /tmp/resume-stderr.log \
-  && ! grep -q "ERROR:" /tmp/resume-stderr.log \
+  && grep -Eq "session id:[[:space:]]*$SESSION" /tmp/resume-stderr.plain \
   && test -s /tmp/resume-result.md
 # 위 판정 실패, 또는 응답(/tmp/resume-result.md)이 원 세션의 context를 잇지 않으면 재개 실패로 처리한다.
+# --json 사용 시 stderr 배너 자체가 사라진다 — stdout의 thread.started 이벤트 `thread_id`를 비교한다.
 ```
 
 변형: `resume --last` (같은 cwd의 마지막 세션), `resume --last --all` (cwd 필터 해제).
@@ -332,25 +337,67 @@ session id·응답 context 확인을 포함하는 이유다. 불일치하거나 
 
 ## 성공 계약
 
-프로세스 exit만으로 업무 성공을 판정하지 않는다. 아래 네 조건을 모두 확인한다.
+프로세스 exit만으로 업무 성공을 판정하지 않는다. 실패 판정의 정본은 ① rc → ② 결과 파일
+순서이며, stderr는 실패 판정 입력이 아니라 원인 분류 입력이다 (조건 3; 재확인: 2026-08-15, 0.147.0).
 
 1. wrapper/CLI exit가 0이다.
-2. stderr에 timeout, usage limit, sandbox denial, unsupported model 오류가 없다
-   (구현: `! grep -q "ERROR:" <stderr>` — CLI 오류는 `ERROR:` prefix로 출력되고 진행 로그·배너에는 없다).
-3. 기대 산출물이 존재하고 비어 있지 않다: `test -s "$RESULT"`.
+2. 기대 산출물이 존재하고 비어 있지 않으며(`test -s "$RESULT"`) 내용이 형식 계약을 만족한다:
+   - 완료 표식을 요구한 작업은 결과 본문에 그 표식이 있다 (프롬프트에서 마지막 줄 단일 판정 토큰을
+     강제하면 판정이 단순해진다).
+   - 첫 줄이 `VIOLATION` 등 자기신고 실패 선언이면 실패다 — read-only 리뷰어가 sandbox 거부를
+     본문으로 보고해 exit 0 + non-empty를 통과한 실측 사례가 있다.
+   - JSON을 요구한 작업은 코드 펜스 제거 후 `jq -e` 파싱과 필수 키 존재까지 확인한다. `-o` 파일에
+     ` ```json ` 펜스·대화체 서문이 혼입되거나, 스키마 정의(`$schema` 키)가 인스턴스 대신 반환된
+     실측 사례가 있다. "펜스 없이"라는 프롬프트 지시는 비결정적이라 판정식의 대체재가 아니다.
+   - 결과 회수 경로는 `-o` 파일 또는 rollout의 `task_complete.last_agent_message`로 한정한다.
+     stdout의 첫 유효 JSON을 취하는 파싱은 금지 — 도구 호출 전 조기 `{"issues":[]}` 선방출 실측이 있다.
+   - 결과 파일 바이트 수 하한 휴리스틱은 금지한다 — 정상 판정 응답이 13~19바이트일 수 있다.
+3. stderr는 rc 또는 조건 2가 실패했을 때 원인 분류에만 쓴다. `! grep -q "ERROR:"`를 1차 실패
+   판정으로 쓰지 마라 (0.147.0 실측): stderr에는 프롬프트 전문 에코·최종 메시지 사본·무해
+   tracing `ERROR` 라인이 정상 실행에도 남아 상시 오탐이고, 반대로 timeout(wrapper rc 124/137로만
+   식별됨 — wrapper stderr에 `ERROR:` 0건)·소문자 `Error:` 계열(config/인자 오류)·`Error` 토큰조차
+   없는 평문 pre-flight 오류(trusted directory 등)는 원리적으로 걸리지 않는다. 리터럴 `ERROR:`가
+   생존하는 표면은 턴/스트림 오류(미지원 모델 등) 1개 축뿐이다. 분류 절차는
+   [known-issues.md §0-1](references/known-issues.md#0-1-stderr-원인-분류-절차)를 따른다.
 4. 반복 라운드라면 직전 결과 대비 새 finding·수정·판정 같은 진척 delta가 있다.
 
-완료 표식을 요구한 작업은 결과 본문에도 그 표식이 있어야 한다. 진척 없는 pass가 연속되면 circuit
-breaker로 중단하고 같은 호출을 증식시키지 않는다. fan-out은 패턴 8 스모크를 한 번 통과한 뒤 시작한다.
+진척 없는 pass가 연속되면 circuit breaker로 중단하고 같은 호출을 증식시키지 않는다.
+fan-out은 패턴 8 스모크를 한 번 통과한 뒤 시작한다.
 
 | 분류 | 신호 | 처리 |
 |------|------|------|
 | wrapper 사전 검증 실패 / PATH 미해석 | `command -v codex` 실패 또는 exit 127 | wrapper 127은 PATH 외에 invalid env 값·정본 `CODEX_EXEC_*` 변수명 near-miss도 포함하므로 stderr를 먼저 읽는다. 이후 `command -v codex` → `codex-exec-supervised --check` → 확인된 절대경로 순으로 진단. 설치 부재로 단정하지 않는다. |
 | 부모 sandbox denial | session/config 파일 쓰기 거부, nested 실행 | 소유권 변경 없이 [known-issues.md §18](references/known-issues.md#18-중첩-codex-session-파일-쓰기-거부와-sudo-chown-오진)로 분기 |
-| timeout | wrapper exit 124/137 | stderr·프로세스 정리를 확인한 뒤 fresh retry 1회만 허용 |
-| usage limit | usage/rate limit 명시 | 신규 세션 재시도는 무익하므로 fail-fast. 이미 진행 중인 세션은 계속될 수 있음 |
+| timeout | wrapper exit 124/137 | rc 124는 실패가 아니라 budget 부족 신호다 — 동일 budget 재시도는 금지하고, budget 상향 후 fresh retry 1회만 허용. stderr·프로세스 정리를 먼저 확인 |
+| usage limit | (a) 즉시형: stderr `hit your usage limit ... try again at <시각>` (b) hang형: 내부 재시도로 무진척, 외부 SIGKILL 시 exit null/137로 위장 | 신규 세션 재시도는 무익하므로 fail-fast. 이미 진행 중인 세션은 계속될 수 있음. 판정은 exit code 단독이 아니라 (code, signal) + stderr 패턴 매치로 — stderr tail 바이트로 진단하면 프롬프트 에코가 찍혀 원인 불명이 된다 (실측) |
 | unsupported model | metadata warning 또는 unsupported error | `-m`을 제거하고 config 기본 모델로 제한된 fresh retry |
-| exit 0 + 산출물 없음 | `test -s` 실패 | 실패로 처리하고 stderr·라우팅·resume session id를 조사 |
+| stream 실패 | stderr `stream disconnected before completion` | 일시 오류 — retryable. 수만 토큰 소모 후 `-o` 미생성으로 끝날 수 있으며, 동일 파라미터 재실행이 성공한 실측(4/4)이 있다 (2026-08-15, 0.147.0) |
+| model at capacity | stderr `Selected model is at capacity` | 모델측 혼잡 — 시간차 재시도 또는 다른 모델. usage limit과 다른 축이므로 fail-fast로 뭉개지 않는다 |
+| TLS trust store | stderr `no native root CA certificates found` + `invalid peer certificate: UnknownIssuer` + `Reconnecting... N/5` | exit 0으로 끝난다 — 아래 "exit 0 + 산출물 없음"의 하위 원인. 환경(cert store) 수정 전 재시도 무익. `Reconnecting` 로그는 자격증명 부재 401 반복(upstream #30514, ~20초 후 종료)과 육안 구분이 안 되니 stderr 본문으로 가른다 |
+| exit 0 + 산출물 없음 | `test -s` 실패 | 실패로 처리하고 stderr·라우팅·resume session id를 조사. TLS trust store 실패가 이 형태로 나타난다 (위 행) |
+
+non-retryable (재시도 루프 진입 금지): `Not inside a trusted directory ...`, `unexpected argument`,
+clap 상호 배타 인자 오류 — 결정론적 인자/환경 오류인데 rc 1이라 일반 실패와 구분되지 않으므로
+stderr 문자열로 식별해 즉시 교정한다. 같은 명령 재시도는 같은 오류만 반복한다.
+
+### background 발사의 rc 계약
+
+Bash tool `run_in_background` 완료 알림의 exit code는 codex가 아니라 래핑 셸의 최종 rc다
+(2026-08-15, Claude Code 2.1.233 하네스 A/B 실측). 발사 명령 말미에 echo·cat 같은 꼬리 명령을
+두면 전건 실패도 `completed (exit code 0)`으로 통지된다 — 독립 10세션의 background 발사 317건 중
+86%가 이 형태였고, codex 전건 실패(결과 파일 0건)를 성공 알림으로 받은 사고가 실재한다.
+꼬리 `echo "EXIT=$?"`는 관측성조차 제공하지 못한다(알림에서 값이 회수된 사례 0건). 표준 발사 형태:
+
+```zsh
+cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
+  -s workspace-write -o "$OUT" - > "$OUT.stdout" 2> "$OUT.stderr"
+rc=$pipestatus[2]              # 파이프가 없는 발사는 rc=$? — bash 펜스는 ${PIPESTATUS[1]} (0-base)
+printf '%s' "$rc" > "$OUT.rc"  # rc 영속화 — 알림 유실 대비·다수 병렬 배리어의 정본
+exit $rc                       # 하네스 완료 알림에 codex rc가 실리게 한다
+```
+
+- `.rc` 파일 부재 자체를 실패로 취급한다 — guard 조기 exit 경로가 은폐되지 않는다.
+- 좌측 `cat` 실패까지 판정에 넣으려면 셸 transport 계약의 배열 스냅샷 규칙을 동일 적용한다.
 
 ### foreground/background 상한 불일치 (호출 방식 계약)
 
@@ -361,7 +408,7 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 1. `--search`는 exec에서 미동작: `error: unexpected argument '--search' found`. 대안 config key `-c web_search=live`는 strict config 검증을 통과했으나 실제 tool 제공은 재검증 미수행 (2026-07-10, 0.144.1).
 2. `--full-auto`는 0.144.1 help에서 숨겨졌지만 parser가 수용하고 deprecation warning을 낸다. 새 호출은 `-s workspace-write`를 사용한다. 명시한 `-s` 값이 `config.toml`의 `sandbox_mode`를 override한다 (2026-07-03, 0.142.5 실측: `-s read-only` 지정 시 config가 `danger-full-access`여도 read-only로 실행됨; 0.144.1 재검증 미수행).
 3. CODEX_API_KEY는 exec 전용: interactive TUI와 VS Code extension에서는 무시됨. OPENAI_API_KEY는 auth 체인에 미참여 (TUI prefill 전용). 우선순위: CODEX_API_KEY > ephemeral tokens > auth.json. 재검증 미수행 (0.142.5 기준 서술 유지; 상세: [known-issues.md §17](references/known-issues.md#17-exec-auth-chain-우선순위와-login-status-한계))
-4. ephemeral resume silent fallback: `--ephemeral` 원본은 저장되지 않으며, 저장 세션이 없는 cwd의 `resume --last`는 0.144.1에서 오류 대신 새 세션을 시작하고 exit 0을 반환했다. session id와 응답 context로 판정한다.
+4. ephemeral resume silent fallback: `--ephemeral` 원본은 저장되지 않으며, 저장 세션이 없는 cwd의 `resume --last`는 0.144.1에서 오류 대신 새 세션을 시작하고 exit 0을 반환했다. session id와 응답 context로 판정한다 — session id 매치는 ANSI 제거 후 수행한다 (본문 "세션 재개" 예제 참조; 평문 `grep -F`는 강제 컬러 환경에서 항상 실패).
 5. `codex review` (top-level) vs `codex exec review`: 전자는 `-m`, `--json`, `-o`, `--output-schema`, `--ephemeral`, `-s/--sandbox` 등 미지원 (재확인: 2026-07-10, 0.144.1 help). 비대화형 자동화에는 반드시 `codex exec review` 사용
 6. Bash tool sandbox에서 `&` + `$!` 미작동: Claude Code의 Bash tool에서 background process PID 캡처(`$!`)가 리터럴 문자열로 반환됨. shell-level 병렬 대신 여러 병렬 Bash tool 호출 + supervised stdin pipe를 사용한다. 이 제약은 Codex 세션의 native subagent 경로에는 적용되지 않는다. 재검증 미수행 (0.142.5 기준 서술 유지; 상세: [known-issues.md](references/known-issues.md) §11)
 7. stdin pipe로 stdin hang 방지: `cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -`로 EOF를 보장한다. `Reading additional input...` banner 하나만으로 hang이라 단정하지 말고, banner + 무진척 + 결과 미생성을 함께 확인한다. 상세: [known-issues.md](references/known-issues.md) §14
@@ -389,9 +436,8 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 
 실행 후:
 - CLI/wrapper exit 보존 및 확인
-- stderr에 `ERROR:` prefix가 없는지 확인 (성공 계약 조건 2)
-- 결과 파일이 비어 있지 않은지 확인 (`test -s "$RESULT"`)
-- 빈 결과 시 stderr 로그부터 확인
+- 결과 파일이 비어 있지 않은지 + 형식 계약(완료 표식·JSON 파싱)을 만족하는지 확인 (성공 계약 조건 2)
+- rc 또는 결과 파일 판정이 실패했을 때만 stderr를 원인 분류에 사용 (known-issues.md §0-1 — `ERROR:` grep을 판정에 쓰지 않는다)
 - 반복 작업이면 직전 결과 대비 진척 delta 확인
 
 ## 하지 말아야 할 패턴
@@ -405,6 +451,8 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 | programmatic 호출에 raw `codex exec` 사용 | hang/자식 프로세스 잔존 | 실행 경로 게이트의 supervised wrapper 사용 |
 | `-c hooks.*` inline override | stdin과 무관한 silent hang 가능 | override 제거 + §15 supervisor 적용 |
 | JSON parser 앞 `2>&1` | stderr 혼입으로 JSON 파싱 실패 | stdout/stderr/result 분리 |
+| stderr `ERROR:` grep을 1차 실패 판정에 사용 | 프롬프트 에코·tracing으로 정상 실행 상시 오탐 + timeout·pre-flight 미탐 | rc + 결과 파일이 정본, stderr는 known-issues §0-1 분류 전용 |
+| background 발사 말미의 꼬리 echo/cat | 완료 알림이 래핑 셸 rc(0)를 보고 — 전건 실패가 completed | rc 캡처 → `.rc` 영속화 → `exit $rc` (성공 계약 "background 발사의 rc 계약") |
 | 판정 pipeline 끝에 `head`/`tail`/`; echo $?` | 원 exit 은폐 | `pipefail`과 즉시 exit 보존 |
 | `-m o3` / `-m o4-mini` 등 비Codex 모델 지정 | "Model metadata not found" + "model is not supported" | `-m` 생략, config.toml 기본 모델 사용 |
 | `-m` 플래그로 매번 다른 모델 지정 | 불일치/에러 위험 | config.toml 기본값 사용 원칙 |

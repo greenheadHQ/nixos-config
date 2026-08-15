@@ -62,7 +62,10 @@ claude_rc=$pipestatus[2]
 import sys, json
 data = json.loads(sys.stdin.read())
 items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
+# subtype 가드 필수 — system 이벤트는 다중 매치다 (thinking_tokens 가변 삽입, stream-json은
+# hook 이벤트가 init보다 선행; gotchas.md #17)
+init = next(d for d in items if isinstance(d, dict)
+            and d.get('type')=='system' and d.get('subtype')=='init')
 print(f'Session: {init[\"session_id\"]}')
 print(f'Skills: {len(init.get(\"skills\", []))}')
 print(f'Tools: {len(init.get(\"tools\", []))}')
@@ -77,7 +80,8 @@ python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
+init = next(d for d in items if isinstance(d, dict)
+            and d.get('type')=='system' and d.get('subtype')=='init')
 for s in sorted(init.get('skills', [])):
     print(f'  {s}')" < /tmp/claude-init.json
 ```
@@ -131,6 +135,8 @@ hostname과 uptime을 실행하고 결과를 보고한다.
 PROMPT
 
 # outer timeout으로 원격 hang 시 무기한 대기를 방지한다 (exit 124 = timeout; macOS는 coreutils timeout 필요)
+# ⚠️ Bash tool 경유 시 이 900초 예산은 하네스 foreground 상한보다 크다 — background 발사 또는
+# timeout 파라미터 명시가 필수다 (SKILL.md "호출 상한 (Bash tool 경유)" 참조).
 cat /tmp/remote-prompt.md | timeout 900 ssh minipc 'claude -p --dangerously-skip-permissions' \
   > /tmp/remote-result.txt 2> /tmp/remote-result.stderr
 test -s /tmp/remote-result.txt
@@ -142,7 +148,9 @@ test -s /tmp/remote-result.txt
 - 3중 중첩 quote를 시도하지 말 것 → 반드시 stdin pipe 패턴 사용
 - MiniPC sshd 180초 무응답 시 연결 해제 → `ssh -o ServerAliveInterval=30` 추가
 - outer timeout은 위 "파일 기반 프롬프트" 예제처럼 호출자가 직접 적용한다 — "기본 패턴"의 최소 예제에는 포함되어 있지 않다.
-- 무출력 약 10분 뒤 완료된 실측이 있다. 무출력만으로 중단하지 않는다.
+- 무출력 약 10분 뒤 완료된 실측이 있다. 무출력만으로 중단하지 않는다 — 단 Bash tool foreground로
+  발사하면 하네스 상한이 그보다 먼저 발화하므로, 10분 대기가 필요한 호출은 background로 발사한다
+  (SKILL.md "호출 상한 (Bash tool 경유)").
 - 프로세스 생존만으로 정상이라 판정하지 않고 완료 후 `test -s`로 기대 산출물을 확인한다.
 - 자세한 gotchas: [gotchas.md](gotchas.md) #15, #16, #32
 
@@ -214,9 +222,10 @@ print(f'subtype: {result.get(\"subtype\")}')
 print(f'is_error: {result.get(\"is_error\", False)}')" < /tmp/claude-result.json
 ```
 
-정상 성공 경로는 2.1.206에서 top-level 4-event 배열, `subtype=success`, `is_error=false`,
-exit 0이었다. auth 실패 경로는 `subtype=success`, `is_error=true`, exit 1도 가능하다. subtype
-목록과 exit mapping을 exhaustive 계약으로 사용하지 않는다. [gotchas.md](gotchas.md) #29 참조.
+정상 성공 경로는 top-level 배열(이벤트 수는 런마다 가변 — 2.1.233 실측, 특정 개수 기대 금지),
+`subtype=success`, `is_error=false`, exit 0이다. auth 실패 경로는 `subtype=success`,
+`is_error=true`, exit 1도 가능하다. subtype 목록과 exit mapping을 exhaustive 계약으로 사용하지
+않는다. [gotchas.md](gotchas.md) #6, #29 참조.
 
 ### stream-json (JSONL) 파싱
 

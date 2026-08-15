@@ -296,7 +296,10 @@ PROMPT
 ```bash
 cat /tmp/review-prompt.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write --output-schema /tmp/review-schema.json \
   -o /tmp/review-structured.json - > /tmp/schema.stdout 2> /tmp/schema.stderr
-test -s /tmp/review-structured.json
+test -s /tmp/review-structured.json \
+  && jq -e '.findings and .summary' /tmp/review-structured.json > /dev/null
+# non-empty만으로는 부족하다 — 코드 펜스 혼입·스키마 정의($schema)가 인스턴스 대신 반환된 실측이
+# 있으므로 파싱 + 필수 키 존재까지 확인한다 (SKILL.md 성공 계약 조건 2).
 ```
 
 주의: `--output-schema`는 exec/review/resume help에 모두 있다 (재확인: 2026-07-10,
@@ -352,9 +355,10 @@ rg -q '^SMOKE_COMPLETE$' /tmp/smoke-result.md
 
 성공 기준:
 - wrapper/CLI exit가 0이다.
-- stderr에 timeout, usage limit, sandbox denial, unsupported model 오류가 없다.
 - 결과 파일이 생성되고 비어 있지 않다 (`test -s`).
-- 요청한 완료 표식이 결과에 있다.
+- 요청한 완료 표식이 결과에 있다 (`rg -q '^SMOKE_COMPLETE$'`).
+- 위 판정이 실패했을 때만 stderr를 원인 분류에 사용한다
+  ([known-issues.md §0-1](known-issues.md#0-1-stderr-원인-분류-절차) — `ERROR:` grep은 판정이 아니다).
 
 fan-out 전에 이 패턴을 1회 필수 실행한다. 통과하면 기존 복잡한 프롬프트로 단계적으로 복귀한다.
 

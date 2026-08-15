@@ -21,10 +21,10 @@
 | #39 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #40 | 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #36/#35 | `--allowed-tools` help 표기 확인. 패턴 매칭 의미는 재검증 미수행 (v2.1.202 기준 서술 유지) |
-| #6 | 재확인: 2026-07-10, v2.1.206 — 성공 경로 top-level 4-event JSON 배열. stream-json wire shape는 재검증 미수행 (v2.1.202 기준 서술 유지) |
-| #17 | 재확인: 2026-07-10, v2.1.206 — init에 skills/tools/MCP/plugins key 존재; count는 환경 snapshot |
+| #6 | 재확인: 2026-08-15, v2.1.233 — 성공 경로 top-level 배열, 이벤트 수는 런마다 가변 (구 4-event 서술 폐기). stream-json wire shape는 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #17 | 재확인: 2026-08-15, v2.1.233 — init에 skills/tools/MCP/plugins key 존재; count는 환경 snapshot. 인벤토리 추출은 `subtype=='init'` 가드 필수 (system 이벤트 다중 매치) |
 | #22 | `--debug`, `--verbose`, `--debug-file` help 표기 확인. stderr 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
-| #2/#18/#19 | #18 hidden parser 수용 재확인: 2026-07-10, v2.1.206. #2/#19 semantics는 재검증 미수행 (v2.1.202 기준 서술 유지) |
+| #2/#18/#19 | #18 hidden parser 수용 재확인: 2026-08-15, v2.1.233. #19 exit 1 + is_error:true 재확인: 2026-08-15, v2.1.233 (구 "exit 0/is_error:false" 서술 역전). #2 turn semantics는 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #4 | `--max-budget-usd` help 표기 확인. exit/subtype 동작은 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | #20 | 재확인: 2026-07-10, v2.1.206 help에 `--cwd` 없음 |
 | #21 | 재확인: 2026-07-10, v2.1.206 help에 `--output-file`/`-o` 없음 |
@@ -142,29 +142,29 @@ cat skill.md agent.md references.md | claude -p --output-format text > result.md
 ### #6. JSON vs JSONL 출력 형식
 
 ```bash
-# --output-format json → JSON 배열 (전체가 하나의 배열)
+# --output-format json → 이벤트 스트림. 실측 런타임은 top-level 배열, help(`json (single result)`)와
+# 공식 문서는 단일 객체 표기 — 어느 쪽도 가정하지 말고 정규화 파서를 쓴다.
 echo "2+3" | claude -p --output-format json | python3 -c "
 import sys, json
-data = json.loads(sys.stdin.read())
+raw = sys.stdin.read()
+data, _ = json.JSONDecoder().raw_decode(raw.lstrip())  # 후행 비-JSON 라인 내성 (stdout 오염 간헐 실측)
 items = data if isinstance(data, list) else [data]
-print(f'Type: {type(data).__name__}, Length: {len(items)}')
-for item in items:
-    print(f'  {item.get(\"type\")}/{item.get(\"subtype\", \"-\")}')"
-# Type: list, Length: 4
-#   system/init
-#   assistant/-
-#   rate_limit_event/-
-#   result/success
+result = next(i for i in items if isinstance(i, dict) and i.get('type') == 'result')
+print(f'{result[\"subtype\"]} is_error={result[\"is_error\"]}')"
+# 이벤트 수는 같은 버전·같은 플래그·같은 모델에서도 런마다 다르다 (2.1.233 실측: 9~12+ —
+# system/thinking_tokens가 가변 개수로 삽입됨). 특정 개수를 기대하는 파서 금지.
 
 # --output-format stream-json → JSONL (재검증 미수행)
 echo "hello" | claude -p --output-format stream-json | wc -l
 # event 수는 고정 계약이 아님
 ```
 
-재확인: 2026-07-10, v2.1.206 성공 경로에서 `json`은 system/init, assistant,
-rate_limit_event, result/success의 4-event 배열이었다. event 수와 중간 event 존재는 고정하지 않는다.
-parser는 배열/객체를 정규화한 뒤 `type=result`를 탐색한다. `stream-json` wire shape는 재검증 미수행
-(v2.1.202 기준 서술 유지).
+재확인: 2026-08-15, v2.1.233 — 성공 경로는 system/init + system/thinking_tokens(가변) +
+assistant + rate_limit_event + result/success로 구성되며 총 이벤트 수는 런마다 가변이다.
+event 수와 중간 event 존재는 고정하지 않는다. parser는 배열/객체를 정규화한 뒤 `type=result`를
+탐색하고, stdout 말미의 비-JSON 경고 라인(MCP 구성 의존)을 견디도록 첫 JSON 문서만 취하되,
+그래도 파싱이 실패하면 raw를 조용히 흘리지 말고 non-zero로 죽는다 — 무음 raw 통과가 "E2E 통과"로
+오판된 실전 사고가 있다. `stream-json` wire shape는 재검증 미수행 (v2.1.202 기준 서술 유지).
 
 ### #17. init 이벤트에 전체 harness 인벤토리 포함
 
@@ -173,13 +173,20 @@ echo "ok" | claude -p --output-format json | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read())
 items = data if isinstance(data, list) else [data]
-init = [d for d in items if isinstance(d, dict) and d.get('type')=='system'][0]
+init = next(d for d in items if isinstance(d, dict)
+            and d.get('type')=='system' and d.get('subtype')=='init')
 print(f'Skills: {len(init.get(\"skills\", []))}')
 print(f'Tools: {len(init.get(\"tools\", []))}')
 print(f'MCP: {len(init.get(\"mcp_servers\", []))}')
 print(f'Plugins: {len(init.get(\"plugins\", []))}')"
-# 2026-07-10 auth-failure snapshot: Skills 76, Tools 28, MCP 2, Plugins 2
 ```
+
+인벤토리 추출 필터는 반드시 `type=='system' and subtype=='init'`으로 좁힌다 (재확인:
+2026-08-15, v2.1.233). `type=='system'`만 보면 다중 매치다 — json 모드에서 `system/thinking_tokens`
+이벤트가 가변 개수(실측 4~9건)로 섞이고, stream-json에서는 SessionStart hook 구성 시
+`system/hook_started`·`system/hook_response`가 init보다 선행한다. hook 이벤트 객체에는
+`skills`/`tools` 키가 없어 `[0]`을 집으면 인벤토리가 조용히 0이 된다. 반면 `session_id`는 한
+호출의 모든 이벤트에서 동일 값이므로 session_id 추출(#9, patterns 패턴 4)에는 이 가드가 불필요하다.
 
 네 key 존재는 재확인했지만 count는 설치·설정에 따른 환경 snapshot이다. 고정 기대값으로 쓰지 않는다.
 [harness-testing.md](harness-testing.md) T1 참조.
@@ -205,7 +212,7 @@ cat /tmp/debug.log  # 상세 로그 출력
 
 ```bash
 echo "ls /tmp | head -3" | claude -p --dangerously-skip-permissions --max-turns 1
-# Error: Reached max turns (1)
+# stdout: Error: Reached max turns (1) — process exit 1, stderr 무출력 (2.1.233 실측; #19 참조)
 ```
 
 도구 실행이 필요하면 `--max-turns 2` 이상을 지정한다.
@@ -223,13 +230,20 @@ claude_rc=$pipestatus[2]
 
 ### #18. `--max-turns`는 `--help`에 표시되지 않는 숨겨진 플래그
 
-`claude --help`/`claude -p --help` v2.1.206 출력에도 `--max-turns`가 없지만 실행 smoke에서
-parser 수용과 exit 0을 확인했다 (재확인: 2026-07-10). turn 제한 semantics와
-`CLAUDE_CODE_MAX_TURNS` 부재/유일 제어 수단 서술은 재검증 미수행 (v2.1.202 기준 서술 유지).
+`claude --help`/`claude -p --help` v2.1.233 출력에도 `--max-turns`가 없지만 실행 smoke에서
+parser 수용을 확인했다 (재확인: 2026-08-15; 한도 미도달 실행은 exit 0, 한도 도달 시 exit는
+#19 참조 — 1이다). turn 제한 semantics와 `CLAUDE_CODE_MAX_TURNS` 부재/유일 제어 수단 서술은
+재검증 미수행 (v2.1.202 기준 서술 유지).
 
-### #19. `--max-turns` 도달 시 `is_error: false`
+### #19. `--max-turns` 도달 시 exit 1 + `is_error: true`
 
-result subtype은 `error_max_turns`이지만 `is_error: false` — 에러가 아닌 정상 종료 취급. exit code도 0.
+한도 도달 시 result는 `subtype=error_max_turns`, `is_error=true`,
+`errors=["Reached maximum number of turns (N)"]`, `terminal_reason=max_turns`이고 process exit는
+1이다. 텍스트 모드도 exit 1이며 `Error: Reached max turns (N)`이 stdout에 찍힌다 —
+어느 모드든 stderr는 무출력이므로 stderr를 grep 대상으로 잡으면 오탐한다. 공식 CLI reference도
+"Exits with an error when the limit is reached"로 일치한다 (재확인: 2026-08-15, v2.1.233 —
+과거 v2.1.202 관측 "is_error:false / exit 0"은 역전됨). `num_turns`는 한도보다 클 수 있으므로
+(`--max-turns 1`에서 `num_turns: 2` 실측) 한도 도달 추론에 `num_turns` 비교를 쓰지 않는다.
 
 ### #20. `--cwd` 플래그 존재하지 않음
 
@@ -367,8 +381,9 @@ cat skill-content.md agent-instructions.md | claude -p --output-format text > re
 |----------|---------|:--------:|:------------:|--------|
 | 인증된 정상 완료 | `success` | false | 0 | 2026-07-10, v2.1.206 |
 | pre-auth 실패 (`Not logged in`) | `success` | true | 1 | 2026-07-10, v2.1.206 |
+| max-turns 도달 | `error_max_turns` | true | 1 | 2026-08-15, v2.1.233 ([#19](#19---max-turns-도달-시-exit-1--is_error-true)) |
 
-기존 `error_max_turns`, `error_max_budget_usd`, `error_max_structured_output_retries`,
+기존 `error_max_budget_usd`, `error_max_structured_output_retries`,
 `error_during_execution`, `error_utilization_penalty` mapping은 재검증 미수행
 (v2.1.202 기준 서술 유지). 성공 판정에는 exit, subtype, is_error, 기대 산출물을 함께 사용한다.
 
