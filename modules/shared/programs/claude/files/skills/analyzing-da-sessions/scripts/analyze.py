@@ -167,15 +167,15 @@ SSH_TAR_TIMEOUT_SECONDS = 480  # 단일 tar batch 호출 상한 (실제 budget �
 # 일부 실제 verdict를 버리는 trade-off이며, 버린 규모는 corpus_exclusions에 파일 수로
 # 기록한다 (제외 세션의 verdict 수는 남지 않으므로 지표 분모 자체를 재구성하지는 못한다).
 # 신호 기준 선별(원격 marker grep prefilter)은 별도 범위다.
-REMOTE_FILE_SIZE_CAP_MB = 50
-REMOTE_FILE_SIZE_CAP_BYTES = REMOTE_FILE_SIZE_CAP_MB * 1024 * 1024
+CORPUS_FILE_SIZE_CAP_MB = 50
+CORPUS_FILE_SIZE_CAP_BYTES = CORPUS_FILE_SIZE_CAP_MB * 1024 * 1024
 # find -size의 `M` suffix는 구현마다 의미가 다르다 — GNU는 크기를 MB 단위로 올림해 비교하고
 # (그래서 `-50M`과 `+50M` 사이에 1MiB 폭의 구간이 어디에도 안 잡힌다), BSD는 바이트 정확
 # 비교라 갭이 cap 값 한 점이다. 어느 쪽이든 수집 목록과 초과 카운트 양쪽에서 빠지는 구간이
 # 생긴다(침묵 절단). `c`(바이트) suffix는 양 구현 모두 정확 비교라 로컬 `getsize` 판정과
 # 경계가 일치한다. 수집은 cap 이하(`-{cap+1}c`), 초과 카운트는 cap 초과(`+{cap}c`)로 상보 분할.
-REMOTE_FIND_SIZE_INCLUDE = f"-{REMOTE_FILE_SIZE_CAP_BYTES + 1}c"
-REMOTE_FIND_SIZE_EXCLUDE = f"+{REMOTE_FILE_SIZE_CAP_BYTES}c"
+REMOTE_FIND_SIZE_INCLUDE = f"-{CORPUS_FILE_SIZE_CAP_BYTES + 1}c"
+REMOTE_FIND_SIZE_EXCLUDE = f"+{CORPUS_FILE_SIZE_CAP_BYTES}c"
 FLEISS_KAPPA_TIMEOUT_SECONDS = 60  # fleiss-kappa.py helper 호출 timeout (현재 v1에서는 미사용)
 SSH_FETCH_WORKERS = 8  # 원격 호스트당 동시 SSH cat worker 수 (host 순차 처리, host당 K=8 병렬)
 SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10  # ssh preflight / ControlMaster check timeout
@@ -1770,7 +1770,7 @@ def collect_local_files(
     """현재 머신의 jsonl 파일 glob.
 
     corpus 정의는 실행 위치에 따라 달라지면 안 되므로, 원격 수집과 동일한
-    `REMOTE_FILE_SIZE_CAP_MB` 상한을 적용하고 제외 건수를 같은 형식으로 기록한다.
+    `CORPUS_FILE_SIZE_CAP_MB` 상한을 적용하고 제외 건수를 같은 형식으로 기록한다.
     """
     _validate_host(host)
     paths = HOST_PATH_MAP[host]
@@ -1787,7 +1787,7 @@ def collect_local_files(
             if "/subagents/" in f:
                 continue
             try:
-                if os.path.getsize(f) > REMOTE_FILE_SIZE_CAP_BYTES:
+                if os.path.getsize(f) > CORPUS_FILE_SIZE_CAP_BYTES:
                     oversized += 1
                     continue
             except OSError:
@@ -2030,7 +2030,7 @@ def _corpus_exclusion_entry(host: str, base: str, excluded_files: int) -> dict:
         "host": host,
         "base": base,
         "reason": "size_cap",
-        "cap_mb": REMOTE_FILE_SIZE_CAP_MB,
+        "cap_mb": CORPUS_FILE_SIZE_CAP_MB,
         "excluded_files": excluded_files,
     }
 
@@ -2074,17 +2074,18 @@ def _count_remote_oversized_files(
     host: str,
     base: str,
     budget: HostFetchBudget | None,
-) -> int:
+) -> int | None:
     """size cap으로 제외된 원격 jsonl 수를 센다 (침묵 절단 방지용 보조 카운트).
 
-    수집을 막지 않는 보조 정보이므로 실패·budget 소진 시 0을 반환하고 조용히
-    넘어간다 — 실패 시 별도 warning을 내면 본 수집 warning과 중복 노이즈가 된다.
+    측정 실패(budget 소진·timeout·ssh 부재·nonzero)는 `None`을 반환해 "제외 0건"과
+    구분한다 — 실패를 0으로 축약하면 실제로 파일을 버리면서 리포트에는 제외 없음으로
+    보이고, 이 카운트가 막으려던 침묵 절단이 카운트 자신에서 재발한다.
     """
     timeout: float = SSH_FIND_TIMEOUT_SECONDS
     if budget is not None:
         timeout_value, _ = budget.timeout_for(SSH_FIND_TIMEOUT_SECONDS)
         if timeout_value is None:
-            return 0
+            return None
         timeout = timeout_value
     try:
         proc = subprocess.run(
@@ -2094,9 +2095,9 @@ def _count_remote_oversized_files(
             timeout=timeout,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        return 0
+        return None
     if proc.returncode != 0:
-        return 0
+        return None
     return len(_collectible_remote_lines(host, proc.stdout))
 
 
@@ -2149,7 +2150,14 @@ def collect_remote_files(
                 continue
             all_files.extend(_collectible_remote_lines(host, proc.stdout))
             oversized = _count_remote_oversized_files(host, base, budget)
-            if oversized and corpus_exclusions is not None:
+            if oversized is None:
+                # 측정 실패는 partial 신호로 올린다 — 제외 건수를 모른 채 "0건"으로
+                # 보고하면 corpus 편향이 리포트에서 사라진다.
+                warnings.append(
+                    f"host {host}: ssh size cap 제외 건수 측정 실패 for {base}"
+                    " — 제외 규모 미상, partial result"
+                )
+            elif oversized and corpus_exclusions is not None:
                 corpus_exclusions.append(_corpus_exclusion_entry(host, base, oversized))
             if budget is not None and budget.expired():
                 budget.warn_exceeded(warnings)

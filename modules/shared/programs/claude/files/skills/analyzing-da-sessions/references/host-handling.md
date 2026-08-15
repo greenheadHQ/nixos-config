@@ -116,7 +116,7 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
 
 ### corpus size cap
 
-- `REMOTE_FILE_SIZE_CAP_MB = 50`. 원격 `find`는 바이트 suffix로 상한을 건다 — 수집은
+- `CORPUS_FILE_SIZE_CAP_MB = 50`. 원격 `find`는 바이트 suffix로 상한을 건다 — 수집은
   `-size -<cap+1>c`, 초과 카운트는 `-size +<cap>c`로 상보 분할한다 (`REMOTE_FIND_SIZE_INCLUDE`
   /`REMOTE_FIND_SIZE_EXCLUDE`). 로컬 수집(`collect_local_files`)도 같은 바이트 경계를 쓴다 —
   corpus 정의가 실행 위치에 따라 달라지지 않게 하기 위함이다.
@@ -133,6 +133,9 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
 - 제외 건수는 `warnings`가 아니라 sidecar의 `corpus_exclusions[]`(host/base/reason/cap_mb/
   excluded_files)에 기록하고, weekly coverage는 이를 `host_collection[host].excluded_files`로
   노출한다. 제외는 실패가 아니므로 host `status`·리포트 `partial` 판정에 영향을 주지 않는다.
+- 제외 건수를 측정하지 못한 경우(카운트용 find의 timeout·nonzero·budget 소진)는 다르다 —
+  0건과 구분해 `host <name>:` prefix warning으로 올려 partial로 만든다. 실패를 0으로 축약하면
+  파일을 실제로 버리면서 리포트에는 제외 없음으로 보여 corpus 편향이 사라진다.
 
 ## fetch 전략: tar batch 우선 + per-file cat fallback
 

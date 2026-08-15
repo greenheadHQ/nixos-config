@@ -840,6 +840,43 @@ def test_collect_remote_files_records_exclusions_outside_warnings(
     ]
 
 
+def test_oversized_count_failure_becomes_partial_warning(analyze_module, monkeypatch):
+    """제외 건수 측정 실패는 "0건"이 아니라 partial warning으로 드러나야 한다.
+
+    실패를 0으로 축약하면 파일을 실제로 버리면서 리포트에는 제외 없음으로 보여,
+    이 카운트가 막으려던 침묵 절단이 카운트 자신에서 재발한다.
+    """
+    monkeypatch.setattr(analyze_module.time, "monotonic", lambda: 0.0)
+    warnings: list[str] = []
+    exclusions: list[dict] = []
+
+    def fake_run(argv, **kwargs):
+        size_arg = argv[argv.index("-size") + 1]
+        if size_arg.startswith("+"):
+            # 제외 카운트용 find만 실패한다 (수집 find는 성공).
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="boom")
+        base = argv[argv.index("find") + 1]
+        stdout = (
+            "/Users/greenhead/.claude/projects/p/s.jsonl\n"
+            if base == "~/.claude/projects"
+            else ""
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(analyze_module.subprocess, "run", fake_run)
+
+    files = analyze_module.collect_remote_files(
+        "mac", warnings, budget=None, corpus_exclusions=exclusions
+    )
+
+    assert files == ["/Users/greenhead/.claude/projects/p/s.jsonl"]
+    assert exclusions == []
+    measure_warnings = [w for w in warnings if "제외 건수 측정 실패" in w]
+    assert len(measure_warnings) == 2  # base 2곳
+    # host prefix가 있어야 weekly coverage가 partial로 인지한다.
+    assert all(w.startswith("host mac:") for w in measure_warnings)
+
+
 def test_collect_local_files_applies_same_size_cap(analyze_module, tmp_path, monkeypatch):
     """corpus 정의는 실행 위치에 따라 달라지지 않는다 — 로컬 경로도 같은 cap을 쓴다."""
     claude_dir = tmp_path / "claude"
@@ -849,10 +886,10 @@ def test_collect_local_files_applies_same_size_cap(analyze_module, tmp_path, mon
     small = claude_dir / "small.jsonl"
     small.write_text("{}\n")
     big = claude_dir / "big.jsonl"
-    big.write_bytes(b"x" * (analyze_module.REMOTE_FILE_SIZE_CAP_BYTES + 1))
+    big.write_bytes(b"x" * (analyze_module.CORPUS_FILE_SIZE_CAP_BYTES + 1))
     # cap 경계값 자체는 수집 대상이다 (원격 find `c` suffix 분할과 같은 경계).
     edge = claude_dir / "edge.jsonl"
-    edge.write_bytes(b"x" * analyze_module.REMOTE_FILE_SIZE_CAP_BYTES)
+    edge.write_bytes(b"x" * analyze_module.CORPUS_FILE_SIZE_CAP_BYTES)
 
     monkeypatch.setitem(
         analyze_module.HOST_PATH_MAP,
