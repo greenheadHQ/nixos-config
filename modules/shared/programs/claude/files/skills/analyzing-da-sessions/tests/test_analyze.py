@@ -863,8 +863,9 @@ def test_collect_local_files_applies_same_size_cap(analyze_module, tmp_path, mon
     files = analyze_module.collect_local_files("mac", exclusions)
 
     assert sorted(files) == sorted([str(small), str(edge)])
+    # base는 실행 위치와 무관하게 논리 tilde 표기로 기록된다 (원격 수집과 동일 문자열).
     assert exclusions == [
-        analyze_module._corpus_exclusion_entry("mac", str(claude_dir), 1)
+        analyze_module._corpus_exclusion_entry("mac", "~/.claude/projects", 1)
     ]
 
 

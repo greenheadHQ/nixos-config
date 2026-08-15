@@ -120,11 +120,12 @@ remote `find` stdout의 path line은 비신뢰 입력으로 간주. 각 line을 
   `-size -<cap+1>c`, 초과 카운트는 `-size +<cap>c`로 상보 분할한다 (`REMOTE_FIND_SIZE_INCLUDE`
   /`REMOTE_FIND_SIZE_EXCLUDE`). 로컬 수집(`collect_local_files`)도 같은 바이트 경계를 쓴다 —
   corpus 정의가 실행 위치에 따라 달라지지 않게 하기 위함이다.
-- `M` suffix를 쓰지 않는 이유: `find -size`는 단위 suffix에서 올림 비교를 하고 그 규칙이
-  GNU와 BSD 간에 다르다. `-50M`/`+50M` 조합은 두 경계 사이에 수집에도 초과 카운트에도
-  잡히지 않는 파일 구간을 만든다 (침묵 절단). `c` suffix는 양 구현 모두 바이트 정확 비교라
-  로컬 `os.path.getsize` 판정과 경계가 일치한다. 재검증: 경계 전후 크기의 fixture를 만들어
-  `find -size -<cap+1>c`와 `-size +<cap>c`의 합이 전체와 같은지 두 구현에서 확인한다.
+- `M` suffix를 쓰지 않는 이유: `find -size`의 `M` 의미가 구현마다 다르다. GNU는 크기를 MB
+  단위로 올림해 비교하므로 `-50M`/`+50M` 사이에 1MiB 폭의 구간이 수집에도 초과 카운트에도
+  잡히지 않고, BSD는 바이트 정확 비교라 갭이 cap 값 한 점이다. 어느 쪽이든 침묵 절단이
+  생긴다. `c` suffix는 양 구현 모두 바이트 정확 비교라 로컬 `os.path.getsize` 판정과 경계가
+  일치한다. 재검증: 경계 전후 크기의 fixture를 만들어 `find -size -<cap+1>c`와
+  `-size +<cap>c`의 합이 전체와 같은지 두 구현에서 확인한다.
 - 이 cap은 "신호 없는 파일 제외"가 아니라 의도적 corpus 편향이다. 크기는 verdict 신호의
   판별자가 아니며(초과분에도 verdict가 존재한다), 수집 가용성을 위해 일부 실제 verdict를
   버리는 trade-off다. 도입 배경은 2026-08 mac `~/.codex/sessions` 폭증으로 인한 budget 초과

@@ -164,14 +164,16 @@ SSH_TAR_TIMEOUT_SECONDS = 480  # 단일 tar batch 호출 상한 (실제 budget �
 # 이 cap은 "신호 없는 파일 제외"가 아니라 의도적 corpus 편향이다 — 크기는 verdict 신호의
 # 판별자가 아니다. 실측(2026-08-15 mac): 초과분 대부분은 verdict 0건의 대용량 tool output
 # 이지만, 470MB rollout 1건에서 verdict 160건이 정상 추출된다. 즉 cap은 수집 가용성을 위해
-# 일부 실제 verdict를 버리는 trade-off이며, 버린 규모는 corpus_exclusions로 기록해 분모
-# 변화를 복원할 수 있게 한다. 신호 기준 선별(원격 marker grep prefilter)은 별도 범위다.
+# 일부 실제 verdict를 버리는 trade-off이며, 버린 규모는 corpus_exclusions에 파일 수로
+# 기록한다 (제외 세션의 verdict 수는 남지 않으므로 지표 분모 자체를 재구성하지는 못한다).
+# 신호 기준 선별(원격 marker grep prefilter)은 별도 범위다.
 REMOTE_FILE_SIZE_CAP_MB = 50
 REMOTE_FILE_SIZE_CAP_BYTES = REMOTE_FILE_SIZE_CAP_MB * 1024 * 1024
-# find -size는 `M` suffix에서 단위 올림 비교를 하고 그 규칙이 GNU/BSD 간에 다르다 — 두
-# 경계가 어긋나면 수집 목록과 초과 카운트 어디에도 잡히지 않는 파일 구간이 생긴다(침묵 절단).
-# `c`(바이트) suffix는 양 구현 모두 정확 비교라 로컬 `getsize` 판정과 경계가 일치한다.
-# 수집은 cap 이하(`-{cap+1}c`), 초과 카운트는 cap 초과(`+{cap}c`)로 상보 분할한다.
+# find -size의 `M` suffix는 구현마다 의미가 다르다 — GNU는 크기를 MB 단위로 올림해 비교하고
+# (그래서 `-50M`과 `+50M` 사이에 1MiB 폭의 구간이 어디에도 안 잡힌다), BSD는 바이트 정확
+# 비교라 갭이 cap 값 한 점이다. 어느 쪽이든 수집 목록과 초과 카운트 양쪽에서 빠지는 구간이
+# 생긴다(침묵 절단). `c`(바이트) suffix는 양 구현 모두 정확 비교라 로컬 `getsize` 판정과
+# 경계가 일치한다. 수집은 cap 이하(`-{cap+1}c`), 초과 카운트는 cap 초과(`+{cap}c`)로 상보 분할.
 REMOTE_FIND_SIZE_INCLUDE = f"-{REMOTE_FILE_SIZE_CAP_BYTES + 1}c"
 REMOTE_FIND_SIZE_EXCLUDE = f"+{REMOTE_FILE_SIZE_CAP_BYTES}c"
 FLEISS_KAPPA_TIMEOUT_SECONDS = 60  # fleiss-kappa.py helper 호출 timeout (현재 v1에서는 미사용)
@@ -1608,7 +1610,7 @@ def build_aggregate(
         },
         "warnings": warnings,
         # corpus 정책 제외 (실패 아님 — host partial 판정 입력인 warnings와 분리).
-        # 소비자는 이 값으로 분모 변화를 복원한다.
+        # 소비자는 이 값으로 제외 규모(파일 수)를 읽는다.
         "corpus_exclusions": corpus_exclusions or [],
     }
 
@@ -1773,9 +1775,11 @@ def collect_local_files(
     _validate_host(host)
     paths = HOST_PATH_MAP[host]
     files = []
-    for base, pattern in [
-        (paths["claude"], "**/*.jsonl"),
-        (paths["codex"], "**/rollout-*.jsonl"),
+    # logical_base는 corpus_exclusions 기록용 논리 이름이다 — 원격 수집은 SSH argv의 tilde
+    # 표현을 쓰므로, 같은 corpus가 실행 위치에 따라 다른 문자열로 기록되지 않게 맞춘다.
+    for base, pattern, logical_base in [
+        (paths["claude"], "**/*.jsonl", "~/.claude/projects"),
+        (paths["codex"], "**/rollout-*.jsonl", "~/.codex/sessions"),
     ]:
         glob_path = os.path.join(base, pattern)
         oversized = 0
@@ -1792,7 +1796,9 @@ def collect_local_files(
                 continue
             files.append(f)
         if oversized and corpus_exclusions is not None:
-            corpus_exclusions.append(_corpus_exclusion_entry(host, base, oversized))
+            corpus_exclusions.append(
+                _corpus_exclusion_entry(host, logical_base, oversized)
+            )
     return files
 
 
