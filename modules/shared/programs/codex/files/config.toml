@@ -1,7 +1,5 @@
 personality = "pragmatic"
 model = "gpt-5.6-sol"
-model_auto_compact_token_limit = 900000
-model_context_window = 1000000
 model_reasoning_effort = "ultra"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
