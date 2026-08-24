@@ -140,6 +140,8 @@ test_claude_owner_shell_finalizes_dispatcher_path() {
 # 생성 시점에 dispatcher가 없다 — "stale"만이 아니라 신규 snapshot 전부가 이 모양이다.
 # 이 멱등 append recovery가 snapshot 계층 PATH 방어의 단일 실효 경로이며, activation
 # (nrs 시점)과 launchd WatchPaths agent(상시) 두 곳에 배선된다 (darwin.nix).
+# 함수명의 "stale"은 이력 연속성을 위해 유지한다 — 개명한 형제 테스트와 달리
+# 이름이 거짓(검증하지 않는 동작 서술)이 아니라 과소포괄일 뿐이다.
 test_claude_stale_snapshot_path_recovery() {
   local sandbox snapshot_dir stale_snapshot dispatcher_bin raw_bin tools_bin initial_path zsh_bin actual
   local recovery="$REPO_ROOT/modules/shared/programs/shell/files/refresh-claude-snapshot-paths.sh"

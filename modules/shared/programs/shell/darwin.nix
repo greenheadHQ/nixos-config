@@ -103,11 +103,12 @@ let
     { [ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" = "1" ] \
       || ${claudeAutomationPredicate}; }
   '';
-  # Move, rather than merely add, the private directory to the front. Claude
-  # sources .zshrc before recording its snapshot, and Homebrew/mise can prepend
-  # their own directories after .zshenv has run. The zsh lifecycle fixture
-  # consumes the literal first path= entry below; update both together if this
-  # serialization changes.
+  # Move, rather than merely add, the private directory to the front. rc를
+  # 로딩하는 owner 셸에서 Homebrew/mise가 .zshenv 이후 자기 디렉토리를 앞에
+  # 끼워 넣으므로, owner 셸 자신과 그 자식들에 대해 dispatcher를 다시 최우선으로
+  # 정규화한다 (snapshot 캡처를 근거로 삼던 서술은 폐기 — 위 주석 참조). The zsh
+  # lifecycle fixture consumes the literal first path= entry below; update both
+  # together if this serialization changes.
   headlessPathSetup = ''
     path=("${headlessDispatcher.stableBinPath}" "''${(@)path:#${headlessDispatcher.stableBinPath}}")
     export PATH
@@ -168,7 +169,7 @@ in
     ghAuth
   ];
 
-  # Codex/Claude launcher child, Claude snapshot 생성 셸, Claude background session으로
+  # Codex/Claude launcher child, Claude tool 셸, Claude background session으로
   # 식별된 컨텍스트에서만 private dispatcher를 PATH 앞에 둔다. global
   # sessionPath/home.packages는 건드리지 않으므로 interactive Ghostty와 일반 SSH는
   # /usr/bin/ssh 의미를 유지한다.
@@ -384,7 +385,8 @@ in
         # dispatcher를 다시 최우선으로 정규화한다. 주의: Claude snapshot 생성기는
         # zsh 평가 PATH를 기록하지 않으므로(.zshenv 주석 참조) 이 finalizer가
         # snapshot의 `export PATH=`에 캡처되지는 않는다 — snapshot 쪽 PATH 복구는
-        # launchd repair agent + activation append가 담당한다.
+        # launchd repair agent + activation append가 담당한다. 마커의 "snapshot"은
+        # 역사적 명칭이다 (개명은 fixture 소비처 3곳 연쇄라 유지).
         if ${headlessPathOwnerPredicate} \
           && ${headlessContextPredicate}; then
           ${headlessPathSetup}

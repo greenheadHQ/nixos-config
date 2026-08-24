@@ -25,13 +25,15 @@ macOS MiniPC 경로는 interactive와 automation child가 다름
 - personal Claude Remote Control/Codex launcher child와 Claude background child는 private
   dispatcher와 dedicated `minipc-headless` key(`IdentityAgent none`)를 사용한다. Claude
   background tool은 PTY 안에서 실행되고 launcher marker가 없을 수 있으므로, TTY 여부만으로
-  interactive라고 판정하지 않는다. Claude login-shell snapshot은 `CLAUDECODE=1` 생성 시
-  dispatcher PATH를 캡처해야 이후 snapshot의 PATH 복원 뒤 `timeout ssh`도 같은 경로를 쓴다.
+  interactive라고 판정하지 않는다. Claude shell snapshot의 `export PATH=`는 zsh 평가
+  결과가 아니라 claude 프로세스가 상속한 env PATH의 리터럴 기록이라(2026-08-24 실측 —
+  셸에 PATH를 묻는 분기는 Windows 전용) 생성 시점에는 항상 dispatcher가 없다.
   이 automation 경로는 1Password GUI를 기다리지 않는다.
-- 설정 적용 전에 만들어져 장수 background spare가 재사용하는 Claude snapshot은 activation이
-  dispatcher PATH recovery를 끝에 추가한다. 새 snapshot은 `.zshrc` 최종 단계에서 dispatcher를
-  최우선으로 기록한다. 배포 뒤 actual child의 `command -v ssh`가 여전히 raw SSH면 snapshot
-  recovery marker와 파일 metadata를 확인하되, 실행 중 앱/bridge를 임의로 재시작하지 않는다.
+- snapshot 계층 PATH 방어는 멱등 append 수리 2층이다: home.activation(nrs 시점 일괄)과
+  launchd WatchPaths agent(신규 snapshot 상시, `org.nix-community.home.claude-snapshot-path-repair`).
+  배포 뒤 actual child의 `command -v ssh`가 여전히 raw SSH면 snapshot recovery marker,
+  파일 metadata, 그리고 `launchctl print gui/$(id -u)/org.nix-community.home.claude-snapshot-path-repair`
+  출력으로 repair agent 로드 여부를 확인하되, 실행 중 앱/bridge를 임의로 재시작하지 않는다.
 - automation 경로는 인증 성립까지만 15초 deadline을 적용하고, 인증 뒤 장시간 command는 자르지 않는다.
 - `HEADLESS_SSH_AUTH_TIMEOUT`이면 actual child의 `command -v ssh` → agenix
   `minipc-headless` materialization metadata → MiniPC authorized_keys entry → Tailscale 순서로 점검한다.
