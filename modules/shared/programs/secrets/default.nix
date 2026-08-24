@@ -55,9 +55,21 @@
   # rm 실패는 non-fatal로 남긴다 — bootout 직렬화로 경합은 구조적으로 제거되므로
   # 이제 실패는 예상 밖 이상 신호이지만, 그것이 activation 전체를 중단시킬 이유는
   # 없다 (경고 후 다음 activation에서 재시도).
+  # macOS: 복호화 시크릿을 $TMPDIR 밖 영속 위치에 둔다. upstream 기본값
+  # $(getconf DARWIN_USER_TEMP_DIR)/agenix{,.d}는 com.apple.bsd.dirhelper가
+  # 새벽 03:35에 수행하는 "3일 미접근 파일 청소"의 대상이라, 재부팅 없이도
+  # 시크릿이 통째로 사라진다 (2026-08-24 실측: minipc-headless·SA token 등 4건
+  # dangling — 재생성 경로는 LaunchAgent RunAtLoad 1회뿐이라 다음 로그인까지
+  # 복구 불능, #1094 무인 SSH 우회 사망). 영속 위치는 디스크 잔존 시간이 늘지만
+  # TMPDIR도 재부팅 전까지는 같은 디스크에 남았고(FileVault 전제 동일), 파일
+  # 0400·디렉토리 0751 권한은 upstream 스크립트가 그대로 적용한다.
+  # linux(MiniPC)는 XDG_RUNTIME_DIR(systemd tmpfs) — dirhelper 문제가 없어 기본값 유지.
+  age.secretsDir = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
+  age.secretsMountPoint = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}.d";
+
   home.activation.cleanupAgenixStaleGenerations = lib.mkIf pkgs.stdenv.isDarwin (
     lib.hm.dag.entryBefore [ "setupLaunchAgents" ] ''
-      _agenix_mount="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)/agenix.d"
+      _agenix_mount="${config.age.secretsMountPoint}"
       if [ -d "$_agenix_mount" ]; then
         _stale_gens=()
         for _gen_dir in "$_agenix_mount"/*/; do

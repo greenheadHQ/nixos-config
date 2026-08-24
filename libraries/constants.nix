@@ -47,6 +47,11 @@
     # Launcher 전용 headless SSH dispatcher의 Home 상대 설치 경로.
     # Home Manager target과 launcher PATH가 이 값을 함께 사용해 배선 drift를 막는다.
     headlessSshDispatcherRelPath = ".local/share/nixos-config/headless-ssh";
+    # macOS HM agenix 복호화 시크릿의 영속 배치 루트 (Home 상대; secretsDir는 이 값,
+    # secretsMountPoint는 이 값 + ".d"). upstream 기본값 $TMPDIR/agenix{,.d}는
+    # com.apple.bsd.dirhelper의 3일 미접근 청소 대상이라 재부팅 없이 시크릿이
+    # 소실된다 (2026-08-24 실측). 소비자·cleanup이 함께 사용해 drift를 막는다.
+    agenixDarwinSecretsRelPath = ".local/state/agenix";
     # agenix 복호화 identity (host private key) + opnix SA 만료 record source
     # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
     # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.
