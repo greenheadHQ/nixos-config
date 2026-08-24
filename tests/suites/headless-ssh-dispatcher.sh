@@ -53,7 +53,8 @@ test_claude_owner_shell_finalizes_dispatcher_path() {
   zsh_bin="$(command -v zsh)"
   mkdir -p "$raw_bin" "$dispatcher_bin" "$competitor_bin" "$tools_bin" "$sandbox/home"
 
-  # Claude tool 셸은 CLAUDECODE=1 login shell로 rc를 평가한다. Home Manager 산출물
+  # snapshot 생성기 셸이 CLAUDECODE=1 login shell로 rc를 명시 source한다 (Claude
+  # tool 셸 자신은 비대화형이라 rc 미평가 — 2026-08-24 실측). Home Manager 산출물
   # 두 벌을 평가해 production 순서 그대로 production 셸 파서에서 재생한다.
   # 주의(2026-08-24 실측): vendor snapshot의 `export PATH=`는 zsh 평가 결과가 아니라
   # claude process.env.PATH의 리터럴 기록이다. 여기서 검증하는 rc 평가 PATH가
@@ -137,9 +138,10 @@ test_claude_owner_shell_finalizes_dispatcher_path() {
 }
 
 # vendor snapshot은 zsh 평가 PATH가 아니라 claude process.env.PATH를 리터럴 기록하므로
-# 생성 시점에 dispatcher가 없다 — "stale"만이 아니라 신규 snapshot 전부가 이 모양이다.
-# 이 멱등 append recovery가 snapshot 계층 PATH 방어의 단일 실효 경로이며, activation
-# (nrs 시점)과 launchd WatchPaths agent(상시) 두 곳에 배선된다 (darwin.nix).
+# 터미널 기원 snapshot은 생성 시점에 dispatcher가 없다 — "stale"만이 아니라 신규
+# 생성분도 같다 (claude-rc 계열 기원만 launcher env 상속으로 예외). 이 멱등 append
+# recovery가 그 층 PATH 방어의 실효 경로이며, activation(nrs 시점)과 launchd
+# WatchPaths agent(상시) 두 곳에 배선된다 (darwin.nix).
 # 함수명의 "stale"은 이력 연속성을 위해 유지한다 — 개명한 형제 테스트와 달리
 # 이름이 거짓(검증하지 않는 동작 서술)이 아니라 과소포괄일 뿐이다.
 test_claude_stale_snapshot_path_recovery() {
@@ -178,5 +180,5 @@ test_claude_stale_snapshot_path_recovery() {
       "$zsh_bin" -d -c 'source "$SNAPSHOT_FILE"; "$TIMEOUT_BIN" ssh'
   )"
   [[ "$actual" == "headless" ]] \
-    || fail "pre-deployment stale snapshot still resolved raw SSH: $actual"
+    || fail "unrepaired snapshot still resolved raw SSH: $actual"
 }

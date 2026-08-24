@@ -103,12 +103,14 @@ let
     { [ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" = "1" ] \
       || ${claudeAutomationPredicate}; }
   '';
-  # Move, rather than merely add, the private directory to the front. rc를
-  # 로딩하는 owner 셸에서 Homebrew/mise가 .zshenv 이후 자기 디렉토리를 앞에
-  # 끼워 넣으므로, owner 셸 자신과 그 자식들에 대해 dispatcher를 다시 최우선으로
-  # 정규화한다 (snapshot 캡처를 근거로 삼던 서술은 폐기 — 위 주석 참조). The zsh
-  # lifecycle fixture consumes the literal first path= entry below; update both
-  # together if this serialization changes.
+  # Move, rather than merely add, the private directory to the front —
+  # Homebrew/mise가 .zshenv 이후 자기 디렉토리를 앞에 끼워 넣기 때문이다. 단
+  # 이 정규화를 실제로 평가하는 production 셸은 현재 snapshot 생성기(-c -l +
+  # rc 명시 source)뿐이고 그 PATH 결과는 snapshot에 기록되지 않는다 — Claude
+  # tool 셸은 비대화형이라 .zshrc를 읽지 않고 .zshenv만으로 dispatcher를 얻는다
+  # (2026-08-24 실측). 층의 존치/제거는 후속 결정. The zsh lifecycle fixture
+  # consumes the literal first path= entry below; update both together if this
+  # serialization changes.
   headlessPathSetup = ''
     path=("${headlessDispatcher.stableBinPath}" "''${(@)path:#${headlessDispatcher.stableBinPath}}")
     export PATH
@@ -182,8 +184,10 @@ in
     ''
   );
 
-  # Claude snapshot은 생성 시점에 항상 dispatcher가 없다(위 .zshenv 주석 — vendor가
-  # process.env.PATH를 리터럴 기록). 멱등 append 스크립트를 두 층으로 배선한다:
+  # 터미널 기원 claude의 snapshot은 생성 시점에 dispatcher가 없다(위 .zshenv 주석 —
+  # vendor가 process.env.PATH를 리터럴 기록; claude-rc 계열 기원은 launcher가 주입한
+  # env PATH를 상속해 vendor 라인에 dispatcher가 이미 있을 수 있고, 수리 스크립트의
+  # 판정이 그런 파일을 skip한다). 멱등 append 스크립트를 두 층으로 배선한다:
   # (1) activation append — nrs 시점에 존재하는 snapshot을 배포 경로에서 확정 수리.
   # (2) launchd WatchPaths agent(아래) — nrs 사이에 새로 생성되는 snapshot을 수 초 내
   #     수리. 2026-08-24 재발의 직접 원인이 이 층의 부재였다: 마지막 nrs(08-15) 이후
@@ -381,12 +385,12 @@ in
         # BEGIN nixos-config headless SSH snapshot PATH finalizer
         # The BEGIN/END markers are a stable extraction contract for the zsh
         # lifecycle regression fixture; update the fixture with either marker.
-        # rc를 로딩하는 owner 셸에서 Homebrew/mise 등 앞선 초기화가 PATH를 바꾼 뒤
-        # dispatcher를 다시 최우선으로 정규화한다. 주의: Claude snapshot 생성기는
-        # zsh 평가 PATH를 기록하지 않으므로(.zshenv 주석 참조) 이 finalizer가
-        # snapshot의 `export PATH=`에 캡처되지는 않는다 — snapshot 쪽 PATH 복구는
-        # launchd repair agent + activation append가 담당한다. 마커의 "snapshot"은
-        # 역사적 명칭이다 (개명은 fixture 소비처 3곳 연쇄라 유지).
+        # 이 블록을 실제로 평가하는 production 셸은 현재 snapshot 생성기뿐이고
+        # (Claude tool 셸은 비대화형이라 .zshrc 미평가 — 2026-08-24 실측), 그 PATH
+        # 결과는 snapshot의 `export PATH=`에 기록되지 않는다(.zshenv 주석 참조).
+        # snapshot 쪽 PATH 복구는 launchd repair agent + activation append가
+        # 담당하며, 이 층의 존치/제거는 후속 결정이다. 마커의 "snapshot"은 역사적
+        # 명칭이다 (개명은 fixture 소비처 3곳 연쇄라 유지).
         if ${headlessPathOwnerPredicate} \
           && ${headlessContextPredicate}; then
           ${headlessPathSetup}

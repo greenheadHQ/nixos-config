@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Claude shell snapshot은 생성 시점에 dispatcher PATH가 없다 — vendor는 snapshot의
-# `export PATH=`에 zsh 평가 결과가 아니라 자기 process.env.PATH를 리터럴 기록한다
-# (2026-08-24 실측, darwin.nix .zshenv 주석 참조). 따라서 이 멱등 append가 snapshot
-# 계층 PATH 방어의 단일 실효 경로이며, 두 호출자가 배선한다: home.activation(nrs
-# 시점 일괄)과 launchd WatchPaths agent(신규 snapshot 상시).
+# vendor는 snapshot의 `export PATH=`에 zsh 평가 결과가 아니라 claude 프로세스의
+# env PATH를 리터럴 기록한다 (2026-08-24 실측, darwin.nix .zshenv 주석 참조).
+# 터미널 기원 claude의 snapshot에는 dispatcher가 없어 이 멱등 append가 그 층의
+# 방어이고, claude-rc 계열 기원은 launcher가 주입한 env PATH 상속으로 vendor
+# 라인에 이미 dispatcher가 있을 수 있다(아래 둘째 grep이 skip). 두 호출자가
+# 배선한다: home.activation(nrs 시점 일괄)과 launchd WatchPaths agent(상시).
 #
-# 호출자 계약 (WatchPaths 자기 재발화 방지): 이 스크립트는 기존 파일에 대한
+# 구현 계약 (WatchPaths 자기 재발화 방지): 이 스크립트는 기존 파일에 대한
 # append만 수행해야 한다. 파일 생성/rename/삭제는 감시 디렉토리의 vnode를 바꿔
 # WatchPaths agent를 다시 발화시키는 자기 루프를 만든다 (darwin.nix agent 주석).
 set -u
