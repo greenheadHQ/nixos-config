@@ -91,13 +91,14 @@ let
       || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ] \
       || ${claudeAutomationPredicate}; }
   '';
-  # PATH mutation remains opt-in. CLAUDECODE is included because Claude creates
-  # its reusable login-shell snapshot with CLAUDECODE=1, then sources the
-  # snapshot after each tool shell starts. Capturing the private PATH there is
-  # what keeps external wrappers such as `timeout ssh` on the dispatcher after
-  # the snapshot's `export PATH=...` overwrites the new shell's .zshenv PATH.
-  # The launcher marker and bg signal cover non-snapshot child paths. Ordinary
-  # interactive shells have none of these owners and stay on raw OpenSSH.
+  # PATH mutation remains opt-in. CLAUDECODE/bg는 Claude tool 셸과 그 자식 zsh가
+  # .zshenv로 dispatcher를 얻게 한다. 주의(2026-08-24 실측, #1094 재발): Claude
+  # snapshot 생성기는 zsh 평가 결과가 아니라 자기 process.env.PATH를 snapshot의
+  # `export PATH=`에 리터럴 기록한다(셸에 PATH를 묻는 분기는 Windows 전용 —
+  # 2.1.233·2.1.241 바이너리 실측). 따라서 여기서 올린 PATH는 snapshot에 캡처되지
+  # 않으며, snapshot이 덮어쓴 PATH에서 `timeout ssh` 같은 외부 wrapper를 dispatcher에
+  # 묶는 것은 아래 snapshot repair 층(launchd agent + activation append)이다.
+  # Ordinary interactive shells have none of these owners and stay on raw OpenSSH.
   headlessPathOwnerPredicate = inlineZshPredicate ''
     { [ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" = "1" ] \
       || ${claudeAutomationPredicate}; }
@@ -180,10 +181,13 @@ in
     ''
   );
 
-  # Claude background spares can outlive both nrs and a newly opened foreground
-  # session while retaining an old snapshot path. Repair existing snapshots in
-  # place without restarting the daemon; newly generated snapshots are covered
-  # by the .zshenv + final .zshrc ordering above.
+  # Claude snapshot은 생성 시점에 항상 dispatcher가 없다(위 .zshenv 주석 — vendor가
+  # process.env.PATH를 리터럴 기록). 멱등 append 스크립트를 두 층으로 배선한다:
+  # (1) activation append — nrs 시점에 존재하는 snapshot을 배포 경로에서 확정 수리.
+  # (2) launchd WatchPaths agent(아래) — nrs 사이에 새로 생성되는 snapshot을 수 초 내
+  #     수리. 2026-08-24 재발의 직접 원인이 이 층의 부재였다: 마지막 nrs(08-15) 이후
+  #     생성된 snapshot들이 무방비로 남아 `timeout ssh`가 raw OpenSSH + 1Password
+  #     agent로 흘렀다 (#1094).
   home.activation.refreshClaudeShellSnapshotPaths = lib.mkIf headlessDispatcher.enabled (
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD ${pkgs.bash}/bin/bash \
@@ -192,6 +196,27 @@ in
         "${headlessDispatcher.stableBinPath}"
     ''
   );
+
+  # (2) 신규 snapshot 상시 수리 agent. WatchPaths는 디렉토리 엔트리 변경(snapshot
+  # 생성/삭제/rename)에 발화하고, 수리 스크립트의 파일 내용 append는 디렉토리
+  # vnode를 바꾸지 않으므로 자기 재발화 루프가 없다. RunAtLoad는 로그인·에이전트
+  # 재로드 직후(=마지막 nrs 이후 생성분) 1회 수리를 보장한다. 스크립트가 멱등이라
+  # activation 층과의 중복 실행은 무해하다.
+  launchd.agents.claude-snapshot-path-repair = lib.mkIf headlessDispatcher.enabled {
+    enable = true;
+    config = {
+      ProgramArguments = [
+        "${pkgs.bash}/bin/bash"
+        "${./files/refresh-claude-snapshot-paths.sh}"
+        "${config.home.homeDirectory}/.claude/shell-snapshots"
+        headlessDispatcher.stableBinPath
+      ];
+      WatchPaths = [ "${config.home.homeDirectory}/.claude/shell-snapshots" ];
+      RunAtLoad = true;
+      StandardOutPath = "${config.home.homeDirectory}/Library/Logs/claude-snapshot-path-repair.log";
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/claude-snapshot-path-repair.log";
+    };
+  };
 
   # macOS 전용 Zsh 초기화
   programs.zsh.initContent = lib.mkMerge [
@@ -355,8 +380,11 @@ in
         # BEGIN nixos-config headless SSH snapshot PATH finalizer
         # The BEGIN/END markers are a stable extraction contract for the zsh
         # lifecycle regression fixture; update the fixture with either marker.
-        # Claude snapshot 생성기가 .zshrc 전체를 source한 뒤 환경을 기록하므로, Homebrew/mise 등
-        # 앞선 초기화가 PATH를 바꾼 뒤 dispatcher를 다시 최우선으로 정규화한다.
+        # rc를 로딩하는 owner 셸에서 Homebrew/mise 등 앞선 초기화가 PATH를 바꾼 뒤
+        # dispatcher를 다시 최우선으로 정규화한다. 주의: Claude snapshot 생성기는
+        # zsh 평가 PATH를 기록하지 않으므로(.zshenv 주석 참조) 이 finalizer가
+        # snapshot의 `export PATH=`에 캡처되지는 않는다 — snapshot 쪽 PATH 복구는
+        # launchd repair agent + activation append가 담당한다.
         if ${headlessPathOwnerPredicate} \
           && ${headlessContextPredicate}; then
           ${headlessPathSetup}

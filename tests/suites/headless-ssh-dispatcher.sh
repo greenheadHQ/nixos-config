@@ -41,10 +41,10 @@ test_headless_ssh_dispatcher_identity_compat() {
   _run_headless_ssh_dispatcher_group DependencyTests
 }
 
-test_claude_snapshot_preserves_headless_ssh_path() {
+test_claude_owner_shell_finalizes_dispatcher_path() {
   local sandbox personal_env personal_init work_env finalizer
   local stable_bin fixture_env fixture_finalizer zsh_bin
-  local raw_bin dispatcher_bin competitor_bin tools_bin initial_path snapshot_path actual
+  local raw_bin dispatcher_bin competitor_bin tools_bin initial_path owner_shell_path actual
   sandbox="$(new_sandbox)"
   raw_bin="$sandbox/raw/bin"
   dispatcher_bin="$sandbox/dispatcher/bin"
@@ -53,9 +53,12 @@ test_claude_snapshot_preserves_headless_ssh_path() {
   zsh_bin="$(command -v zsh)"
   mkdir -p "$raw_bin" "$dispatcher_bin" "$competitor_bin" "$tools_bin" "$sandbox/home"
 
-  # Claude creates the login-shell snapshot with CLAUDECODE=1 and explicitly
-  # sources .zshrc before recording it. Evaluate both Home Manager outputs and
-  # replay the full production order in the production shell parser.
+  # Claude tool 셸은 CLAUDECODE=1 login shell로 rc를 평가한다. Home Manager 산출물
+  # 두 벌을 평가해 production 순서 그대로 production 셸 파서에서 재생한다.
+  # 주의(2026-08-24 실측): vendor snapshot의 `export PATH=`는 zsh 평가 결과가 아니라
+  # claude process.env.PATH의 리터럴 기록이다. 여기서 검증하는 rc 평가 PATH가
+  # snapshot에 캡처된다고 가정하지 않는다 — snapshot 계층의 PATH 방어는
+  # test_claude_stale_snapshot_path_recovery(멱등 append)가 검증한다.
   personal_env="$(
     nix eval --raw \
       "$REPO_ROOT#darwinConfigurations.\"greenhead-MacBookPro\".config.home-manager.users.greenhead.programs.zsh.envExtra"
@@ -96,33 +99,22 @@ test_claude_snapshot_preserves_headless_ssh_path() {
     "$raw_bin/ssh" "$dispatcher_bin/ssh" "$competitor_bin/ssh" \
     "$tools_bin/timeout"
 
-  mkdir -p "$sandbox/snapshot-zdot" "$sandbox/tool-zdot" "$sandbox/work-zdot"
-  printf 'export PATH="%s"\n%s\n' "$initial_path" "$fixture_env" > "$sandbox/snapshot-zdot/.zshenv"
+  mkdir -p "$sandbox/owner-zdot" "$sandbox/tool-zdot" "$sandbox/work-zdot"
+  printf 'export PATH="%s"\n%s\n' "$initial_path" "$fixture_env" > "$sandbox/owner-zdot/.zshenv"
   printf 'export PATH="%s:$PATH"\n%s\n' \
-    "$competitor_bin" "$fixture_finalizer" > "$sandbox/snapshot-zdot/.zshrc"
+    "$competitor_bin" "$fixture_finalizer" > "$sandbox/owner-zdot/.zshrc"
   printf 'export PATH="%s"\n%s\n' "$initial_path" "$fixture_env" > "$sandbox/tool-zdot/.zshenv"
   printf 'export PATH="%s"\n%s\n' "$initial_path" "$work_env" > "$sandbox/work-zdot/.zshenv"
 
-  snapshot_path="$(
-    env -i HOME="$sandbox/home" ZDOTDIR="$sandbox/snapshot-zdot" \
+  owner_shell_path="$(
+    env -i HOME="$sandbox/home" ZDOTDIR="$sandbox/owner-zdot" \
       PATH="$initial_path" CLAUDECODE=1 \
       "$zsh_bin" -d -c -l 'source "$ZDOTDIR/.zshrc" < /dev/null; print -r -- "$PATH"'
   )"
-  [[ "$snapshot_path" == "$dispatcher_bin:"* ]] \
-    || fail "Claude zsh snapshot did not finalize dispatcher PATH: $snapshot_path"
-  [[ "$snapshot_path" == *":$competitor_bin:"* ]] \
-    || fail "snapshot fixture did not retain the competing PATH entry"
-
-  printf 'export PATH="%s"\n' "$snapshot_path" > "$sandbox/fresh-snapshot.sh"
-
-  actual="$(
-    env -i HOME="$sandbox/home" ZDOTDIR="$sandbox/tool-zdot" PATH="$initial_path" \
-      CLAUDE_CODE_SESSION_KIND=bg SNAPSHOT_FILE="$sandbox/fresh-snapshot.sh" \
-      TIMEOUT_BIN="$tools_bin/timeout" \
-      "$zsh_bin" -d -c 'source "$SNAPSHOT_FILE"; "$TIMEOUT_BIN" ssh'
-  )"
-  [[ "$actual" == "headless" ]] \
-    || fail "snapshot-restored external timeout ssh bypassed dispatcher: $actual"
+  [[ "$owner_shell_path" == "$dispatcher_bin:"* ]] \
+    || fail "owner shell rc did not finalize dispatcher PATH: $owner_shell_path"
+  [[ "$owner_shell_path" == *":$competitor_bin:"* ]] \
+    || fail "owner shell fixture did not retain the competing PATH entry"
 
   actual="$(
     env -i HOME="$sandbox/home" ZDOTDIR="$sandbox/tool-zdot" PATH="$initial_path" \
@@ -144,6 +136,10 @@ test_claude_snapshot_preserves_headless_ssh_path() {
   [[ "$actual" == "raw" ]] || fail "work-host Claude shell no longer resolves raw SSH: $actual"
 }
 
+# vendor snapshot은 zsh 평가 PATH가 아니라 claude process.env.PATH를 리터럴 기록하므로
+# 생성 시점에 dispatcher가 없다 — "stale"만이 아니라 신규 snapshot 전부가 이 모양이다.
+# 이 멱등 append recovery가 snapshot 계층 PATH 방어의 단일 실효 경로이며, activation
+# (nrs 시점)과 launchd WatchPaths agent(상시) 두 곳에 배선된다 (darwin.nix).
 test_claude_stale_snapshot_path_recovery() {
   local sandbox snapshot_dir stale_snapshot dispatcher_bin raw_bin tools_bin initial_path zsh_bin actual
   local recovery="$REPO_ROOT/modules/shared/programs/shell/files/refresh-claude-snapshot-paths.sh"
