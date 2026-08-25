@@ -42,6 +42,7 @@ let
       curl
       coreutils
       findutils
+      systemd # failed 유닛 검출(systemctl --failed)
     ];
     text = ''
       # shellcheck source=/dev/null
@@ -131,6 +132,20 @@ let
           check "Karakeep backup exists" 1
         fi
       ''}
+
+      # ─── 3. 실패한 systemd 유닛 검출 ───
+      # 알림 경로가 죽으면 유닛 실패가 아무 데도 통보되지 않는다 — 2026-08-16~25
+      # interaction-limits-renewal이 매일 실패했으나 그 실패를 알릴 curl이 없어 10일간
+      # 묻혔다. 매일 도는 이 smoke-test가 failed 유닛을 훑어 그 침묵을 덮는다.
+      # 유닛마다 OnFailure=를 다는 대신 여기 한 곳에 둔 이유: OnFailure가 호출할 알림
+      # 유닛도 같은 종류의 의존(curl)을 필요로 해 같은 결함을 재생산하고, 새 유닛이
+      # 생길 때마다 배선이 필요하다. 이 검사 하나는 신규 유닛까지 자동으로 덮는다.
+      # 범위: 시스템 유닛 한정 — 이 서비스는 root로 실행되므로 user 유닛은 보이지 않는다.
+      # --plain은 목록 앞의 트리 마커를 제거해 첫 필드가 유닛명이 되게 한다.
+      FAILED_UNITS=$(systemctl --failed --no-legend --plain 2>/dev/null | cut -d' ' -f1 | tr '\n' ' ' || true)
+      RESULT=0
+      [ -z "$FAILED_UNITS" ] || RESULT=1
+      check "No failed systemd units (''${FAILED_UNITS:-none})" "$RESULT"
 
       # ─── 결과 요약 + Pushover ───
       echo "=== Smoke test: ''${PASSED}/''${CHECKS} passed ==="
