@@ -336,7 +336,7 @@ predicate 위반 회귀 예시 (이 predicate를 변경하는 PR은 각 행에 �
 | `CONVERGED` | 수렴 종료 (ALL CLEAR 특수형 포함) | 수렴 predicate 2층 모두 충족 |
 | `DEFERRED_EXIT` | 배출 후 종료 | predicate 충족 + `deferred_issues`가 비어 있지 않음 (수렴이지만 루프 밖으로 넘긴 작업이 있음을 구분) |
 | `ROUND_LIMIT` | 상한 도달 | 5 outer round 상한에서 predicate 미충족 상태로 종료 |
-| `USER_STOP` | 사용자 중단 | 한계효용 확인·사용자 지시 등으로 predicate 미충족 상태에서 종료 (headless 자동 종료 포함 — 원인을 라운드 요약에 병기) |
+| `USER_STOP` | 중단 종료 (사용자 또는 정책) | 한계효용 확인·사용자 지시, 또는 질문 도구 미지원 런타임의 정책 자동 종료로 predicate 미충족 상태에서 종료 — 라벨 이름과 달리 행위자를 사용자로 한정하지 않으므로, 중단 주체(사용자/정책)와 원인을 라운드 요약에 필수 병기한다 |
 
 과거의 `EARLY_STOP (unconverged)` 표기는 `ROUND_LIMIT` 또는 `USER_STOP`으로 세분된다 — 어떤 세션에서 상한 도달 종료가 보고 표에서 자연 수렴과 구분되지 않았던 실측(#1258)이 이 라벨의 도입 근거다.
 
@@ -380,6 +380,6 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 - `CONVERGED after N rounds` — 수렴 종료. finding 0건 특수형은 `CONVERGED (all clear) after N rounds`. LOW-only 반영 후 수렴은 `CONVERGED after N rounds (low_without_reviewer_rerun_count: k, walkthrough: clean)` — `low_without_reviewer_rerun_count`는 최종 라운드 `round_write_set`에서 반영된 LOW 항목 수, `walkthrough: clean`은 독립 reviewer 재검증만 생략했고 자가 walkthrough는 통과했음을 명시한다. finding은 있었지만 전건 기각되어 write phase가 없는 무수정 수렴은 `(low_without_reviewer_rerun_count: 0, walkthrough: not_required)`로 표기한다.
 - `DEFERRED_EXIT after N rounds (deferred: #a, #b)` — 배출 후 종료. 배출 증거 이슈 번호를 병기한다.
 - `ROUND_LIMIT after N rounds (unresolved: k)` — 상한 도달 종료. 미해결 수를 병기한다.
-- `USER_STOP after N rounds (reason: <한 줄>)` — 사용자 중단·한계효용 확인 종료.
+- `USER_STOP after N rounds (stopped_by: <user|policy>, reason: <한 줄>)` — 중단 종료 (사용자 지시·한계효용 확인·정책 자동 종료).
 
 LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN: <bundle 목록>)`을 덧붙인다 — `CONVERGED (all clear) after N rounds (NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.

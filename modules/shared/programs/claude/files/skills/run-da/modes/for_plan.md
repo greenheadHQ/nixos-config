@@ -33,8 +33,8 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 
 - changeset 동결: Step 2 진입 전에 이번 라운드의 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`와 현재 workspace 상태가 frozen changeset이다. 세션 내 기각 이력도 이 frozen changeset과 일치하는 범위에서만 valid하다.
 - review phase: Step 2 reviewer fan-out부터 Step 5 상태 전이와 사용자 전건 보고까지다. 이 구간에는 메인 에이전트와 delegated reviewer/Arbiter 모두 active changeset을 바꾸지 않는다. patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. formatter/generator는 check/diff-only 모드처럼 파일 변경이 없을 때만 허용한다.
-- write phase: 한 라운드의 Arbiter 판정과 필요한 사용자 판단이 끝난 뒤에만 시작한다. CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO 항목을 queue에 모아 메인 에이전트가 batch로 반영한다.
-- CRITICAL 기본값: CRITICAL도 review phase 중 즉시 patch하지 않는다. 해당 라운드의 Arbiter 판정이 닫힌 뒤 write phase 첫 항목으로 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다.
+- write phase: 한 라운드의 Arbiter 판정과 필요한 사용자 판단이 끝난 뒤에만 시작한다. `remediation_scope: FIX_NOW`로 확정된 항목(CONFIRMED_ISSUE·사용자 수용 NEEDS_MORE_INFO)만 queue에 모아 메인 에이전트가 batch로 반영한다 (scope별 전이는 protocol.md "remediation scope" 전이표가 단독 소유).
+- CRITICAL 기본값: `FIX_NOW` + CRITICAL도 review phase 중 즉시 patch하지 않는다. 해당 라운드의 Arbiter 판정이 닫힌 뒤 write phase 첫 항목으로 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다 (`REPLAN_REQUIRED`는 CRITICAL이어도 write phase 대상이 아니다 — Step 5c).
 - 새 changeset 선언: write phase가 끝나면 다음 라운드는 "새 changeset" 리뷰로 명시하고, round summary에 batch 변경 범위(수정한 계획/파일, generated output 유무, diffstat)를 기록한다.
 
 ## Step 2: reviewer bundle 병렬 실행
