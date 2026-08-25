@@ -203,7 +203,7 @@ LITE 실행 라운드는 첫 줄에 `(LITE: 선택 M개/전체 4개 reviewer bun
 
 write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에 넣거나 write phase에서 반영하는 것은 계약 위반이다 — round summary의 write set 목록에 이 scope의 finding이 있으면 그 라운드는 수렴으로 기록할 수 없다.
 
-마스킹 게이트 (배출 전 필수 — 이 저장소는 공개다): 배출 이슈 본문을 게시하기 전에 공개 노출 점검을 수행한다 — 공인 IP·시크릿·개인 정보·회사 관련 표현·로컬 절대경로·세션 로그 원문을 제거하고, finding의 기술 요지와 재현 근거(repo-relative 경로·안정 식별자)만 남긴다. 마스킹으로 표현할 수 없는 세부는 이슈에는 요지만 적고, 세부는 저장소 밖 비공개 경로에만 남긴다 (`umask 077`을 적용한 `mktemp -d` 산출 디렉토리 등 — worktree 안의 파일은 이름과 무관하게 금지다. for_pr write phase가 clean workspace 이후의 모든 변경을 일괄 stage·commit·push하므로, worktree 내 기록은 민감 세부가 공개 remote로 나가는 경로가 된다). 마스킹이 불가능해 게시할 수 없으면 배출 실패로 처리한다(위 표).
+마스킹 게이트 (배출 전 필수 — 이 저장소는 공개다): 배출 이슈 본문을 게시하기 전에 공개 노출 점검을 수행한다 — 공인 IP·시크릿·개인 정보·회사 관련 표현·로컬 절대경로·세션 로그 원문을 제거하고, finding의 기술 요지와 재현 근거(repo-relative 경로·안정 식별자)만 남긴다. SECURITY 세부 관점 finding 또는 exploit 경로를 담은 finding은 미수정 취약점 메커니즘 자체가 보호 자산이다 — 취약점 메커니즘·재현 경로 없이 위치·범주만 남긴 disclosure-safe 문구로 표현할 수 없으면 공개 이슈로 배출하지 않고 배출 실패(미해결)로 처리한다. 마스킹으로 표현할 수 없는 세부는 이슈에는 요지만 적고, 세부는 저장소 밖 비공개 경로에만 남긴다 (`umask 077`을 적용한 `mktemp -d` 산출 디렉토리 등 — worktree 안의 파일은 이름과 무관하게 금지다. for_pr write phase가 clean workspace 이후의 모든 변경을 일괄 stage·commit·push하므로, worktree 내 기록은 민감 세부가 공개 remote로 나가는 경로가 된다). 마스킹이 불가능해 게시할 수 없으면 배출 실패로 처리한다(위 표).
 
 과거 설계와의 관계: 이 분기는 #1100(shadow 관찰)→#1105(활성화)의 2단계 설계를 관찰 단계 없이 바로 활성화한 것이다 — 관찰 게이트로 삼았던 주간 리포트 채널이 죽어 있어 통과가 불가능했고(#1235), 사람이 손으로 같은 분류를 해 배출한 사례가 실제로 작동했다(#1255). 분류 오류 대비 안전장치가 위 표의 UNCLEAR 사용자 판단과 배출 실패의 미해결 계산이다.
 
@@ -231,7 +231,7 @@ write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에
 허용 값 목록·정합 행렬 같은 기계 규칙의 정본은 `validate_verdict_entry`의 상수와 분기이며, 본 문서는 각 규칙이 왜 있는지(정책)만 소유한다 — 값을 여기 재서술하면 세 번째 사본이 되어 드리프트가 생긴다 (실제로 반복 발생했다. 문서 골격과 검증기의 정합은 `tests/skill-doc-sync.py`의 verdict json examples 검사가 기계적으로 강제한다):
 
 - schema 버전 고정: 실시간 결과는 현재 계약 버전과 정확히 일치해야 한다. 구버전 자칭으로 검증을 우회하거나 미지 버전이 현 계약 검사만 받고 통과하는 경로를 막는다.
-- 필수 필드와 enum: verdict·신뢰도·심각도·판정 축 값이 모두 존재하고 정의된 값이어야 한다. 확정/기각 verdict에 신뢰도 `N/A`를 허용하지 않는 이유는 신뢰도 없는 확정이 LOW-confidence fail-closed 승격을 우회하기 때문이다. `accepted_severity`는 write set에 들어가는 verdict에만 요구한다 — 기각 항목은 수렴 심각도 집계에 쓰이지 않는다.
+- 필수 필드와 enum: verdict·신뢰도·심각도·판정 축 값이 모두 존재하고 정의된 값이어야 한다. 확정/기각 verdict에 신뢰도 `N/A`를 허용하지 않는 이유는 신뢰도 없는 확정이 LOW-confidence fail-closed 승격을 우회하기 때문이다. `accepted_severity`는 scope 라우팅 대상 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에만 요구한다 — REPLAN_REQUIRED·UNCLEAR도 write set에는 들어가지 않지만 이 값이 필수다. 기각 항목은 수렴 심각도 집계에 쓰이지 않는다.
 - verdict 정합 행렬: verdict와 Plausibility 평가가 서로 모순되지 않아야 한다 (예: Plausibility FAIL로 기각해 놓고 CONFIRMED로 쓰는 조합). 판정 우선순위가 JSON만으로 재구성되게 만드는 장치다.
 - 기각 근거 정합: 기각에는 어느 축에서 떨어졌는지가 필수이며, 그 값이 Plausibility 평가와 일관돼야 한다. `plausibility=N/A`의 적법성을 JSON 자기완결로 판정하기 위함이다.
 - 기각 근거 수명주기: Plausibility 기각에는 근거가 frozen surface에 의존하는지 환경·워크로드에 의존하는지가 필수다 (세션 내 기각 이력의 suppress eligibility 기계 판정 근거 — [`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" SSOT). 다른 기각 근거에는 이 필드를 두지 않는다.
@@ -252,7 +252,7 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 - `round_max_accepted_severity`: round_write_set의 accepted severity 최댓값 (빈 set이면 NONE).
 - `unresolved_count`: 미결 NEEDS_MORE_INFO + 배출 실패한 REPLAN_REQUIRED + 미판단 UNCLEAR 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다). BLOCKED·VIOLATION은 여기 넣지 않는다 — `blocked_count`가 배타적으로 소유한다.
 - `deferred_issues`: 이번 라운드에 REPLAN_REQUIRED 배출로 DEFERRED 처리한 finding의 배출 증거 이슈 번호 목록 (배출 증거 없는 DEFERRED는 존재하지 않는다).
-- `blocked_count`: BLOCKED(malformed — caller 검증 재실행 후에도 위반) finding 수 + `VIOLATION` 상태로 남은 review unit 수 (finding·unit 축을 합산한 차단 총계 — 어느 축이든 0이 아니면 종료 불가라는 뜻만 가진다).
+- `blocked_count`: BLOCKED(malformed — caller 검증 재실행 후에도 위반) finding 수 + `VIOLATION` 상태로 남은 review unit 수 + 미해소 `BLOCKED` review unit 수(실행 반복 실패·binary 부재 등 원인 무관 — 다른 unit의 finding으로 라운드가 진행돼도 차단 상태가 소실되지 않는다). finding·unit 축을 합산한 차단 총계이며, 어느 축이든 0이 아니면 종료 불가라는 뜻만 가진다.
 
 write phase가 끝나면 그 결과로 다음 값이 확정된다 (스냅샷이 아니라 write phase 산출값이다):
 
@@ -306,7 +306,7 @@ hard precondition 층 — 아래 필드가 모두 조건을 만족해야 종료�
 
 | 필드 | 조건 | 판정 근거 |
 |------|------|-----------|
-| `blocked_count` | = 0 | BLOCKED(malformed — caller 검증 재실행 후에도 위반)·`VIOLATION` 상태 unit/finding 수. 심각도가 산출되지 않은 위험이 수치 층을 우회하는 fail-open 차단 |
+| `blocked_count` | = 0 | BLOCKED(malformed)·`VIOLATION`·미해소 `BLOCKED` unit(실행 실패 등 원인 무관)을 합산한 차단 총계 (round outcome 스냅샷 정의). 심각도가 산출되지 않은 위험이 수치 층을 우회하는 fail-open 차단 |
 | `unresolved_count` | = 0 | 미결 NEEDS_MORE_INFO + 배출 실패 REPLAN_REQUIRED + 미판단 UNCLEAR (round outcome 스냅샷 정의) |
 | `write_reverted_count` | = 0 | 반영을 시도했다가 취소되어 미해결로 남은 항목 (write phase 산출값) |
 | `verifier_ok` | = true | 이번 라운드의 caller 검증기 호출이 성공했거나, 사용자가 명시 승인한 검증 생략이 라운드 요약에 기록됨 (검증기 호출 계약 참조 — 승인 없는 생략은 false). 검증 대상 VERDICT_JSON이 존재하지 않는 경로(finding 0건 ALL CLEAR — Arbiter 미실행)는 vacuous true다 |
@@ -329,7 +329,7 @@ predicate 위반 회귀 예시 (이 predicate를 변경하는 PR은 각 행에 �
 
 ### termination_type (종료 유형 라벨 — 필수)
 
-루프가 끝나는 모든 경로는 `termination_type`을 라운드 요약(마지막 라운드의 전용 `termination_type=` 줄)과 PR 코멘트 Result 행 양쪽에 기록한다. 값은 다음 enum뿐이며, 라벨 없는 종료는 계약 위반이다:
+루프가 끝나는 모든 경로는 `termination_type`을 라운드 요약(마지막 라운드의 전용 `termination_type=` 줄)과 PR 코멘트 Result 행 양쪽에 기록한다. 적용 범위는 DA 루프의 종료(reviewer fan-out이 시작된 이후의 모든 종료 경로)다 — SKIP처럼 fan-out 전에 끝나는 루프 진입 전 종료는 라벨 적용 대상이 아니다. 값은 다음 enum뿐이며, 라벨 없는 루프 종료는 계약 위반이다:
 
 | termination_type | 의미 | 진입 조건 |
 |---|---|---|

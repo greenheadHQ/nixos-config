@@ -151,7 +151,7 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         "basis-on-confirmed.md": (
             {**confirmed, "rejection_basis": "FACTUAL_FAIL"}, "rejection_basis 출력 금지"
         ),
-        # remediation_scope — write set 진입 verdict 필수 / NOT_AN_ISSUE 금지 / enum 밖 거부
+        # remediation_scope — scope 라우팅 대상 verdict 필수 / NOT_AN_ISSUE 금지 / enum 밖 거부
         "no-remediation.md": (
             {k: v for k, v in confirmed.items() if k != "remediation_scope"},
             "remediation_scope",
