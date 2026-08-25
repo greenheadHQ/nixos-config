@@ -2,7 +2,7 @@
 
 PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형태로 영속화한다. 분모 정정 + 4-tier fallback + source/confidence 라벨링이 v1 기본 계약이다.
 
-## Metric Catalog (M-1 ~ M-6)
+## Metric Catalog (M-1~M-4·M-6)
 
 | ID | metric 이름 | 산식 | source (analyze.py) |
 |----|------------|------|---------------------|
@@ -117,8 +117,9 @@ keyword 분모 금지: 본문에 `arbiter` 단어가 있다고 분모에 포함�
 | `perspective` | finding ID 또는 finding block의 관점 |
 | `location_identity` | finding block의 위치 식별자 (`path:line` 등) |
 | `finding_fingerprint` | finding 요약 정규화 텍스트 SHA-256 |
-| `stability_status` | schema 1.1 개별 VERDICT_JSON에는 이 필드가 없다 (aggregate 전용). analyzer가 누락 시 호환값 `N/A`를 합성해 채운다 |
 | `canonical_verdict_hash` | canonical verdict object hash. verdict 단위 dedupe key 입력 |
+
+(`stability_status`는 폐기된 과거 계약(selective consistency)의 필드다 — #1257. 과거 로그의 VERDICT_JSON에 있어도 현행 `VerdictRecord`는 이 필드를 담거나 합성하지 않는다.)
 
 aggregate 결과의 `metrics["M-2"]["source_distribution"]` 필드에 source별 추출률을 출력해 low-confidence fallback 비율을 가시화한다.
 
@@ -226,7 +227,7 @@ PR #670 정정 코멘트에서 식별된 v2 알고리즘 회수 실패 MiniPC �
 
 ## derived statistics
 
-M-1~M-6 외에 출력에 포함되는 보조 statistic:
+M-1~M-4·M-6 외에 출력에 포함되는 보조 statistic:
 
 - `intensity_full_finding_zero_rate`: M-1 결과가 FULL인 세션 중 finding 0건 (CLEAR) 세션 비율. 이슈 #671 본문 PHASE-EXTENDED 6번째 항목에 대응. M-1과 M-2 결과 cross-join으로 계산.
 - `metrics["M-2"]["source_distribution"]`: 4-tier fallback 각 source의 추출률 (high vs medium vs low confidence 비율).

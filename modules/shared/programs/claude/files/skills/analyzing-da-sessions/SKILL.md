@@ -15,7 +15,7 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 
 | 항목 | 위치 |
 |------|------|
-| Metric Catalog (M-1 ~ M-6, coverage, health 산식) | [`references/algorithm.md`](references/algorithm.md) |
+| Metric Catalog (M-1~M-4·M-6, coverage, health 산식) | [`references/algorithm.md`](references/algorithm.md) |
 | jsonl 데이터 소스 + manifest.json 스키마 | [`references/data-sources.md`](references/data-sources.md) |
 | 출력 형식 (markdown + JSON spec, GitHub Mermaid 안전 subset) | [`references/output-format.md`](references/output-format.md) |
 | `--hosts` 인자 + SSH whitelist + partial result 처리 | [`references/host-handling.md`](references/host-handling.md) |
