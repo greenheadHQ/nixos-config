@@ -76,8 +76,11 @@
         # 경로는 복호화 도중 kill — upstream은 신 generation을 스크립트 서두에
         # 만들고 심링크 전환은 맨 끝이라, 그 사이 전 구간에서 죽으면 링크되지
         # 않은 generation이 남는다 (.tmp 없는 변형 포함: 마지막 secret mv 이후
-        # 또는 secret 사이 kill은 이 분기만이 잡는다). 이전 activation의 bootout
-        # 실패는 발생 원인이 아니라 잔재가 유지되는 사유다. 롤백 왕복(신→구→신)
+        # 또는 secret 사이 kill은 이 분기만이 잡는다). 심링크 전환(ln -sfT) 직후
+        # 직전 generation rm -rf가 끝나기 전에 죽으면 남는 구 generation도 같다 —
+        # 링크된 적 있고 .tmp도 없지만 심링크가 이미 신 generation을 가리키므로 이
+        # 분기가 회수한다. 이전 activation의 bootout 실패는 발생 원인이 아니라
+        # 잔재가 유지되는 사유다. 롤백 왕복(신→구→신)
         # 잔재는 심링크가 계속 가리키므로 여기 안 걸리고, 신 구성 재적용 시
         # upstream의 직전 generation 삭제가 회수한다. 소비자는 generation 번호가
         # 아니라 안정 심링크(secretsDir)를 경유하므로 심링크가 가리키는
