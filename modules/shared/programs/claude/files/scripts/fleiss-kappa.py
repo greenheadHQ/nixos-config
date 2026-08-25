@@ -286,6 +286,13 @@ def load_validated_verdict_entries(markdown_path: Path):
 
 
 def main():
+    # preflight capability 조회 — 배포 helper의 live 계약 버전을 기계 조회한다
+    # (protocol.md 검증기 호출 계약). argparse 이전 선처리인 이유: 파일 인자 없이
+    # 호출되는 조회 플래그이고, 구버전 helper의 unrecognized-argument 비0 종료
+    # 자체가 "계약보다 오래된 배포본" fail-closed 신호로 쓰인다.
+    if "--print-live-schema" in sys.argv[1:]:
+        print(LIVE_SCHEMA_VERSION)
+        return 0
     parser = argparse.ArgumentParser(
         description=(
             "Run-DA VERDICT_JSON validator. "

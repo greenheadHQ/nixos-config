@@ -105,7 +105,7 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → `terminat
 
 결과를 수집하여 사용자에게 전건 보고한다. 아래 심각도는 `accepted_severity`(Arbiter 조정 후 값 — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT) 기준이다. 전이 판정 순서는 ①caller 검증 위반(semantic malformed) 처리 → ②임의 verdict의 LOW confidence fail-closed 승격 → ③`remediation_scope` 분기(심각도보다 먼저)이며, 아래 verdict·scope 행은 ①②를 통과한 항목에만 적용한다 (전이표 정본: protocol.md "remediation scope"):
 
-- CONFIRMED_ISSUE + `remediation_scope: REPLAN_REQUIRED` (LOW confidence 아님): write queue 진입 금지 — 마스킹 게이트 통과 후 이슈로 배출하고 이슈 번호를 배출 증거로 기록한다(DEFERRED). 배출 실패는 미해결로 계산한다. CRITICAL이어도 write phase 반영 대상이 아니다 — 배출 완료 전에는 다음 outer round로 진행하지 않는다.
+- CONFIRMED_ISSUE + `remediation_scope: REPLAN_REQUIRED` (LOW confidence 아님): write queue 진입 금지 — protocol.md 전이표의 배출 절차(마스킹 게이트→이슈 생성→배출 증거 기록)를 따라 DEFERRED 처리한다 (절차·실패 전이는 정본이 단독 소유). CRITICAL이어도 write phase 반영 대상이 아니다 — 배출 완료 전에는 다음 outer round로 진행하지 않는다.
 - CONFIRMED_ISSUE + `remediation_scope: UNCLEAR` (LOW confidence 아님): 질문 도구로 사용자 판단(FIX_NOW/REPLAN_REQUIRED/제외). 미지원 런타임은 미해결로 계산한다.
 - CONFIRMED_ISSUE + `remediation_scope: FIX_NOW` + CRITICAL (LOW confidence 아님): 진행 차단. review phase 중 patch 금지 원칙을 유지하고, Arbiter 판정이 닫힌 뒤 write phase의 첫 batch 항목으로 계획에 반영한다. 해결 전에는 다음 outer round로 진행하지 않는다.
 - CONFIRMED_ISSUE + `remediation_scope: FIX_NOW` + HIGH/MEDIUM/LOW (LOW confidence 아님): pending write queue에 추가하고, Step 6 write phase에서 계획에 일괄 수정한다.

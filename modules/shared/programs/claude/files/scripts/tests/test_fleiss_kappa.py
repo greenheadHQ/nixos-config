@@ -58,6 +58,14 @@ def _run_harness(*argv):
     )
 
 
+def test_print_live_schema_reports_live_contract():
+    # preflight capability 대조용 조회 플래그 — 구버전 helper의 비0 종료가
+    # fail-closed 신호이므로, 현행 helper는 0 종료 + 정확한 버전 문자열이어야 한다.
+    result = _run_harness("--print-live-schema")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "1.2"
+
+
 def test_harness_exists():
     assert os.path.isfile(_harness_path()), _harness_path()
 

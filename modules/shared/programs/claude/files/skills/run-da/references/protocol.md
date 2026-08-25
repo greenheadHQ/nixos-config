@@ -7,8 +7,8 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | DA 결과 | Arbiter 판정 | 메인 에이전트 행동 | 사용자 보고 |
 |---------|-------------|-------------------|-----------|
 | finding 있음 | CONFIRMED_ISSUE (`remediation_scope: FIX_NOW`) | pending write queue에 추가. write phase에서 일괄 수정 (CRITICAL은 다음 round 진행 차단) | 수정 필요 테이블 |
-| finding 있음 | CONFIRMED_ISSUE (`remediation_scope: REPLAN_REQUIRED`) | 루프 밖 배출 — 마스킹 게이트 통과 후 이슈 생성, 이슈 번호를 배출 증거로 기록하면 DEFERRED. 배출 실패는 미해결로 계산 (아래 "remediation scope" SSOT) | 배출 테이블 (이슈 번호 포함) |
-| finding 있음 | CONFIRMED_ISSUE (`remediation_scope: UNCLEAR`) | 자동 배출·자동 수정 금지 — 질문 도구로 사용자 판단. 미지원 런타임은 미해결로 계산해 종료 차단 | 질문 도구 |
+| finding 있음 | CONFIRMED_ISSUE (`remediation_scope: REPLAN_REQUIRED`) | 루프 밖 배출 후 DEFERRED — 배출 절차·실패 전이는 아래 "remediation scope" 절이 단독 소유 | 배출 테이블 (이슈 번호 포함) |
+| finding 있음 | CONFIRMED_ISSUE (`remediation_scope: UNCLEAR`) | 질문 도구로 사용자 판단 — 자동 전이 금지·미지원 런타임 전이는 "remediation scope" 절이 단독 소유 | 질문 도구 |
 | finding 있음 | NOT_AN_ISSUE | 반영 불필요. 세션 내 기각 이력에 기록 ([`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 정본) | 무해 테이블 |
 | finding 있음 | NEEDS_MORE_INFO | 사용자 판단 대기 | 질문 도구 |
 | finding 있음 | 임의 verdict + LOW confidence | fail-closed 승격 (질문 도구 호출) | 질문 도구 + LOW confidence 이력 |
@@ -35,8 +35,8 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 3. Arbiter 에이전트가 각 finding을 판정 기준([arbiter-prompt.md](arbiter-prompt.md)의 "판정 기준" 섹션이 기준 목록의 단독 소유자)으로 독립 검증한다. Portability는 verdict 결정권 없는 guardrail이다.
 4. 메인 에이전트는 결과 수집 지점에서 VERDICT_JSON caller 검증(아래 "수렴 판정"의 caller 검증)을 수행한다.
 5. 메인 에이전트는 사용자에게 전건 보고한다.
-6. CONFIRMED_ISSUE 항목을 `remediation_scope`에 따라 라우팅한다 — `FIX_NOW`만 pending write queue에 추가하고, `REPLAN_REQUIRED`는 배출, `UNCLEAR`는 사용자 판단이다 (상태 흐름 표·"remediation scope" 절). CRITICAL은 진행 차단 항목으로 표시하되 review phase 중 즉시 patch하지 않는다.
-7. NEEDS_MORE_INFO 항목은 사용자 판단을 요청한다. 사용자가 수용한 항목도 CONFIRMED와 동일하게 `remediation_scope` 전이표를 따른다 — `FIX_NOW`만 pending write queue에 추가한다.
+6. CONFIRMED_ISSUE 항목을 `remediation_scope`에 따라 라우팅한다 ("remediation scope" 절의 전이표가 단독 소유 — 여기 재서술하지 않는다). CRITICAL은 진행 차단 항목으로 표시하되 review phase 중 즉시 patch하지 않는다.
+7. NEEDS_MORE_INFO 항목은 사용자 판단을 요청한다. 사용자가 수용한 항목도 CONFIRMED와 동일하게 "remediation scope" 전이표를 따른다.
 8. caller 검증 위반이 재실행 후에도 남은 finding은 BLOCKED(malformed) 상태로 기록하고 자동 수정하지 않는다.
 9. NOT_AN_ISSUE 또는 사용자가 명시적으로 제외한 항목은 세션 내 기각 이력에 기록한다 ([`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 정본). 이 기록은 메인 에이전트 컨텍스트의 review metadata이며 active changeset 수정이나 pending write queue가 아니다.
 10. Arbiter 상태 전이와 필요한 사용자 판단이 끝난 뒤 write phase로 넘어가 pending write queue를 batch로 반영한다.
@@ -203,7 +203,7 @@ LITE 실행 라운드는 첫 줄에 `(LITE: 선택 M개/전체 4개 reviewer bun
 
 write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에 넣거나 write phase에서 반영하는 것은 계약 위반이다 — round summary의 write set 목록에 이 scope의 finding이 있으면 그 라운드는 수렴으로 기록할 수 없다.
 
-마스킹 게이트 (배출 전 필수 — 이 저장소는 공개다): 배출 이슈 본문을 게시하기 전에 공개 노출 점검을 수행한다 — 공인 IP·시크릿·개인 정보·회사 관련 표현·로컬 절대경로·세션 로그 원문을 제거하고, finding의 기술 요지와 재현 근거(repo-relative 경로·안정 식별자)만 남긴다. 마스킹으로 표현할 수 없는 세부는 이슈에는 요지만 적고 로컬 비공개 계획 파일에 남긴다. 마스킹이 불가능해 게시할 수 없으면 배출 실패로 처리한다(위 표).
+마스킹 게이트 (배출 전 필수 — 이 저장소는 공개다): 배출 이슈 본문을 게시하기 전에 공개 노출 점검을 수행한다 — 공인 IP·시크릿·개인 정보·회사 관련 표현·로컬 절대경로·세션 로그 원문을 제거하고, finding의 기술 요지와 재현 근거(repo-relative 경로·안정 식별자)만 남긴다. 마스킹으로 표현할 수 없는 세부는 이슈에는 요지만 적고, 세부는 저장소 밖 비공개 경로에만 남긴다 (`umask 077`을 적용한 `mktemp -d` 산출 디렉토리 등 — worktree 안의 파일은 이름과 무관하게 금지다. for_pr write phase가 clean workspace 이후의 모든 변경을 일괄 stage·commit·push하므로, worktree 내 기록은 민감 세부가 공개 remote로 나가는 경로가 된다). 마스킹이 불가능해 게시할 수 없으면 배출 실패로 처리한다(위 표).
 
 과거 설계와의 관계: 이 분기는 #1100(shadow 관찰)→#1105(활성화)의 2단계 설계를 관찰 단계 없이 바로 활성화한 것이다 — 관찰 게이트로 삼았던 주간 리포트 채널이 죽어 있어 통과가 불가능했고(#1235), 사람이 손으로 같은 분류를 해 배출한 사례가 실제로 작동했다(#1255). 분류 오류 대비 안전장치가 위 표의 UNCLEAR 사용자 판단과 배출 실패의 미해결 계산이다.
 
@@ -215,7 +215,7 @@ write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에
 
 검증기 호출 계약 (호출 전 필수): 세션 scope의 helper 절대경로를 `HELPER_PATH`로 결정하고 (Claude: `~/.claude/scripts/fleiss-kappa.py`, Codex: `~/.codex/scripts/fleiss-kappa.py` — PATH에 `fleiss-kappa.py`라는 명령은 없다), capability 확인과 검증을 모두 같은 `"$HELPER_PATH"`로 호출한다.
 
-첫 호출 전에 필요한 옵션(`--validate-only`·`--expect-findings`) 지원 여부를 확인한다. helper는 checkout의 파일을 가리키는 out-of-store symlink이므로, run-da 문서가 요구하는 CLI·schema 계약이 배포된 helper보다 새로우면 미지원 상황이 실제로 발생한다 — run-da 자체를 개선하는 PR이 대표적이다 (실측: 이 계약 도입 시점의 helper는 `--validate-only`를 `unrecognized arguments`로 거부했다).
+첫 호출 전에 capability를 확인한다: `"$HELPER_PATH" --print-live-schema` 출력이 이 문서가 요구하는 live 계약 버전(1.2)과 정확히 일치해야 한다. 플래그 미지원(비0 종료 — 구버전 helper)과 버전 불일치는 둘 다 미지원 상황이다. 옵션(`--validate-only`·`--expect-findings`) 존재 확인만으로는 부족하다 — 배포 helper가 두 옵션을 지원하면서 live 계약 버전이 다르면, preflight를 통과한 뒤 모든 정상 Arbiter 결과가 malformed로 오판되어 BLOCKED로 끝난다. helper는 배포 시점의 파일이므로 run-da 문서가 요구하는 CLI·schema 계약이 배포본보다 새로운 상황이 실제로 발생한다 — run-da 자체를 개선하는 PR이 대표적이다 (실측 2건: 이 계약 도입 시점의 helper는 `--validate-only`를 거부했고, schema 전환 시점의 helper는 옵션은 지원하되 구버전 계약으로 신규 결과를 전부 거부했다).
 
 미지원일 때 조용히 진행하는 것이 가장 나쁜 결과이므로 자동 진행은 금지한다. 대신 그 사실과 원인(배포된 helper가 이 계약보다 오래됨)을 사용자에게 보고하고 질문 도구로 선택을 받는다:
 
