@@ -112,7 +112,7 @@ keyword 분모 금지: 본문에 `arbiter` 단어가 있다고 분모에 포함�
 | `payload_traversal_path` | string payload까지의 JSON traversal path (`$.message...`, `$.payload...`) |
 | `payload_hash` | payload string 원문 SHA-256 |
 | `block_index` | 같은 세션 안 result block index, 0부터 시작 |
-| `block_kind` | `first_pass` / `selective` / `summary` |
+| `block_kind` | `first_pass` / `selective` / `summary` — legacy provenance 분류. `selective`는 폐기된 selective consistency(#1257) 블록 전용이고, 현행 로그의 단일 판정은 전부 `first_pass`로 기록된다 (후속 pass가 살아 있다는 뜻이 아니다) |
 | `severity` | finding block 인접 `**심각도**` 라벨 |
 | `perspective` | finding ID 또는 finding block의 관점 |
 | `location_identity` | finding block의 위치 식별자 (`path:line` 등) |

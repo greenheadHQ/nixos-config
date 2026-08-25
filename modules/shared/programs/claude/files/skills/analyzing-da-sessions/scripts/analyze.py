@@ -59,6 +59,10 @@ VALID_HOSTS = {"mac", "minipc"}
 VERDICT_CATEGORIES = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
 INTENSITY_VERDICTS = ("FULL", "LITE", "SKIP")
 VERDICT_SOURCES = ("verdict_json", "md_header", "json_unmarked", "kv")
+# legacy provenance 분류다 — "selective"는 폐기된 selective consistency(#1257) 블록을,
+# "first_pass"는 그 시절 first/N=3 구분의 흔적을 가리킨다. 현행 run-da는 단일 Arbiter
+# 판정만 생성하므로 새 로그는 전부 "first_pass"로 직렬화된다 (후속 pass가 있다는 뜻이
+# 아니다). 과거 로그의 블록 유형을 보존하기 위한 provenance 필드로만 유지한다.
 BLOCK_KINDS = ("first_pass", "selective", "summary")
 
 # 4-tier fallback patterns
