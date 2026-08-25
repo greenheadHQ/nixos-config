@@ -122,7 +122,9 @@ for_plan 핵심 원칙:
 
 메인 에이전트 행동의 입력은 `accepted_severity`(Arbiter 조정 후 값)다. Arbiter는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)의 VERDICT_JSON에 `accepted_severity`를 출력한다 — 심각도 조정 시 조정값, 아니면 reviewer 원값 (NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다). 조정한 경우 사람용 블록에 조정 근거를 명시하고 JSON 값과 일치시킨다.
 
-| accepted_severity | Arbiter CONFIRMED_ISSUE 시 메인 에이전트 행동 |
+아래 표의 메인 에이전트 행동은 `remediation_scope: FIX_NOW`인 CONFIRMED_ISSUE에만 적용된다 — `REPLAN_REQUIRED`·`UNCLEAR`는 심각도와 무관하게 write queue에 진입하지 않으며 [`protocol.md`](protocol.md) "remediation scope" 전이표만 따른다.
+
+| accepted_severity | CONFIRMED_ISSUE + `FIX_NOW` 시 메인 에이전트 행동 |
 |----------|----------------------------------------------|
 | CRITICAL | 진행 차단 — review phase 중 즉시 patch하지 않고 write phase 첫 batch 항목으로 수정. 해결될 때까지 다음 라운드 불가 |
 | HIGH | 수정 필수 — pending write queue에 추가하고 write phase에서 batch 수정 |

@@ -105,10 +105,7 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → `terminat
 
 결과를 수집하여 사용자에게 전건 보고한다. 아래 심각도는 `accepted_severity`(Arbiter 조정 후 값 — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT) 기준이다. 전이 판정 순서는 ①caller 검증 위반(semantic malformed) 처리 → ②임의 verdict의 LOW confidence fail-closed 승격 → ③`remediation_scope` 분기(심각도보다 먼저)이며, 아래 verdict·scope 행은 ①②를 통과한 항목에만 적용한다 (전이표 정본: protocol.md "remediation scope"):
 
-- CONFIRMED_ISSUE + `remediation_scope: REPLAN_REQUIRED` (LOW confidence 아님): write queue 진입 금지 — protocol.md 전이표의 배출 절차(마스킹 게이트→이슈 생성→배출 증거 기록)를 따라 DEFERRED 처리한다 (절차·실패 전이는 정본이 단독 소유). CRITICAL이어도 write phase 반영 대상이 아니다 — 배출 완료 전에는 다음 outer round로 진행하지 않는다.
-- CONFIRMED_ISSUE + `remediation_scope: UNCLEAR` (LOW confidence 아님): 질문 도구로 사용자 판단(FIX_NOW/REPLAN_REQUIRED/제외). 미지원 런타임은 미해결로 계산한다.
-- CONFIRMED_ISSUE + `remediation_scope: FIX_NOW` + CRITICAL (LOW confidence 아님): 진행 차단. review phase 중 patch 금지 원칙을 유지하고, Arbiter 판정이 닫힌 뒤 write phase의 첫 batch 항목으로 계획에 반영한다. 해결 전에는 다음 outer round로 진행하지 않는다.
-- CONFIRMED_ISSUE + `remediation_scope: FIX_NOW` + HIGH/MEDIUM/LOW (LOW confidence 아님): pending write queue에 추가하고, Step 6 write phase에서 계획에 일괄 수정한다.
+- CONFIRMED_ISSUE (LOW confidence 아님): scope별 전이(write set 진입·배출·사용자 판단, 실패 시 미해결 계산)는 protocol.md "remediation scope" 전이표가 단독 소유한다 — 여기 재서술하지 않는다. mode 고유 타이밍만 명시한다: `FIX_NOW` + CRITICAL은 진행 차단 — review phase 중 patch 금지 원칙을 유지하고 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 계획에 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다. 나머지 `FIX_NOW`는 Step 6 write phase에서 일괄 수정한다. `REPLAN_REQUIRED`는 배출 완료 전에는 다음 outer round로 진행하지 않는다.
 - NOT_AN_ISSUE (LOW confidence 아님): 보고만 (반영 불필요). 사용자 전건 보고 후 세션 내 기각 이력에 기록한다 ([`../SKILL.md`](../SKILL.md) 정본).
 - NEEDS_MORE_INFO: 질문 도구로 사용자 판단을 요청한다. 사용자가 수용한 항목도 CONFIRMED와 동일하게 `remediation_scope` 전이표를 따른다 — `FIX_NOW`만 pending write queue에 추가하고, `REPLAN_REQUIRED`는 배출, `UNCLEAR`는 사용자에게 scope 판단을 함께 요청한다.
 - 임의 verdict + LOW confidence: fail-closed 승격 — 질문 도구로 사용자 판단 요청 (기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약 유지). 위 판정 순서 ②이므로 verdict·scope 행보다 먼저 적용한다 — LOW confidence REPLAN_REQUIRED도 사용자 판단 전에는 배출하지 않는다. 사용자가 finding을 유효로 수용하면 그 자리에서 `remediation_scope`(FIX_NOW/REPLAN_REQUIRED) 또는 제외를 함께 확정한다 — NOT_AN_ISSUE 판정에는 scope 값이 없어 수용만으로는 라우팅할 수 없다. scope 확정 전에는 write queue·DEFERRED 어느 쪽으로도 전이하지 않는다.

@@ -16,15 +16,15 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | finding 없음 | — | — | ALL CLEAR (수렴 종료의 특수형 — `walkthrough_status=NOT_REQUIRED`) |
 | 이번 라운드 반영 항목 전부 LOW (accepted severity 기준) | CONFIRMED_ISSUE | write phase 반영 후 수렴 predicate 평가 (아래 "수렴 판정"이 SSOT — walkthrough 후속 수정·post-write surface 게이트에 따라 재검증이 강제될 수 있다) | predicate 충족 시 CONVERGED 보고 |
 
-### 기존 용어 매핑
+### 용어 매핑
 
-| 기존 | 신규 대응 |
+| 용어 | 대응 |
 |------|----------|
 | 발견(Discovered) | DA findings 개수 |
 | 해결(Resolved) | CONFIRMED_ISSUE → 수정 완료 |
 | 기각(Rejected) | NOT_AN_ISSUE (Arbiter 판정) |
 | 보류(사용자 결정 대기) | NEEDS_MORE_INFO → 사용자 결정 |
-| DEFERRED (배출 완료) | `remediation_scope: REPLAN_REQUIRED` finding이 배출 증거(이슈 번호)와 함께 루프 밖으로 이관된 상태 — 사용자 결정 대기와 다른 상태다 |
+| DEFERRED (배출 완료 — #1258 신규 도입) | `remediation_scope: REPLAN_REQUIRED` finding이 배출 증거(이슈 번호)와 함께 루프 밖으로 이관된 상태 — 사용자 결정 대기와 다른 상태다 |
 
 ## Arbiter 판정 프로토콜
 
@@ -50,7 +50,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 - review phase 중 patch 금지: 이 구간에는 active changeset을 바꾸는 patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. check-only formatter나 diff-only generator처럼 파일 변경이 없으면 허용한다. delegated reviewer/Arbiter의 read-only/no-write 경계는 [`hardening-contract.md`](hardening-contract.md)가 정본이다.
 - 일괄 수정: `remediation_scope: FIX_NOW`인 CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO 항목은 pending write queue에 모아 write phase에서 메인 에이전트가 batch로 반영한다. 정상 confirmed finding 반영을 막는 규칙이 아니라 반영 시점을 라운드 밖으로 옮기는 규칙이다. `REPLAN_REQUIRED`·`UNCLEAR` 항목은 write phase 대상이 아니다 ("remediation scope" 절).
 - write phase는 통합 반영 루프다: write phase는 "개별 finding 패치의 나열"이 아니라 `통합 설계 → batch 반영 → walkthrough → 후속 수정 처리 → finalize` 순서의 단일 루프로 수행한다. 각 finding을 국소 패치로 덧대면 수용 자체가 만드는 사이드이펙트를 놓친다 — 반영 전 대상 전체를 통독해 finding 간 상호작용과 기존 구조와의 모순을 점검하고, 하나의 통합 변경 설계를 세운 뒤 반영한다. 반영 후에는 수정된 대상을 처음 읽는 사람처럼 순서대로 따라 실행하는 walkthrough 자가 검증을 수행한다. 단계별 상세 절차는 [`../modes/for_plan.md`](../modes/for_plan.md)의 write phase가 정본이다.
-- CRITICAL 기본값: CRITICAL finding만 즉시 중단/수정하는 예외는 기본 절차에 두지 않는다. CRITICAL은 다음 outer round 진입을 차단하고, 현재 round의 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 반영한다.
+- CRITICAL 기본값: CRITICAL finding만 즉시 중단/수정하는 예외는 기본 절차에 두지 않는다. `FIX_NOW` + CRITICAL은 다음 outer round 진입을 차단하고, 현재 round의 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 반영한다 (`REPLAN_REQUIRED`는 CRITICAL이어도 write phase 대상이 아니다 — "remediation scope" 절).
 - 새 changeset: write phase 후 다음 outer round를 시작하면 "새 changeset" 리뷰로 명시한다. 이전 round의 frozen changeset과 write phase batch delta를 round summary에 기록해 한계효용 판정의 신규 finding 계산 기준을 분리한다.
 - audit 모드와의 용어 정합: for_plan/for_pr는 read/write phase를 가진 반복 개선 루프이고, audit 모드는 같은 changeset을 일회성 read-only로 검증하는 감사다. 감사는 "`SAFE`까지" 자동 반복 재발사하지 않는다.
 
