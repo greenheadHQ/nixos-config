@@ -115,7 +115,9 @@ def validate_verdict_entry(entry):
             violations.append(
                 f"remediation_scope 누락 또는 enum 밖 값: {rscope!r}"
             )
-    elif rscope is not None:
+    elif "remediation_scope" in entry:
+        # 키 존재 자체를 검사한다 — 명시적 null도 "필드 자체 금지" 위반이다
+        # (get() 비교는 키 부재와 null을 구분하지 못해 null 출력이 통과한다).
         violations.append(
             f"NOT_AN_ISSUE에 remediation_scope 출력 금지 (got {rscope!r})"
         )

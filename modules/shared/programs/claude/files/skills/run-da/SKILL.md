@@ -71,7 +71,7 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 | 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증(구체 규칙과 실행 주체는 arbiter-scaling.md의 role command guard)만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 값 거부는 재실행으로 해소되지 않으므로 자동 재시도하지 않는다. 조용한 대체/하향 금지 |
 | Arbiter 하한 | 전체 지정이 reviewer 강도를 낮춰도 Arbiter는 강도 하한(strong profile) 아래로 내려가지 않는다 — 하한·고지·예외(사용자가 Arbiter 축을 콕 집어 지정)는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한"이 SSOT |
 | 경로 지정 | codex exec 경로 지정 시 사전점검이 실패하면 다른 경로로 자동 대체하지 않고, 실패 원인과 대안(Claude 경로 진행 또는 중단)을 사용자에게 고지한 뒤 확인을 받는다. Claude 서브에이전트 경로 지정 시 현재 런타임에서 사용할 수 없으면 동일하게 고지한다. 모델은 Claude 경로에서는 세션 모델을 상속하며 특정 모델명을 고정하지 않는다 |
-| 경로 제약 | model/effort/tier 주입은 codex exec 경로 전용이다. Claude 경로와 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다 |
+| 경로 제약 | model/effort/tier 주입은 codex exec 경로 전용이다. Claude 경로와 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다. native 경로의 effort는 세션 표면에 광고된 spawn 단위 설정 수단이 있을 때만 반영 가능하다 — 판별과 Arbiter 하한 보장 절차는 [`references/runtime-mapping.md`](references/runtime-mapping.md)가 정본이다 |
 
 모델명 박제 금지 원칙과의 관계: 이 채널의 값은 사용자 입력에서만 온다. 스킬 문서·기본값·예시에 특정 모델명을 두지 않는 원칙(sync 테스트의 모델 literal 잔존 게이트)은 그대로 유지된다.
 
@@ -195,7 +195,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
 - Codex 세션 경로에서는 다음 round/retry 전에 capability profile의 slot·batch 규칙을 적용한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
-- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. 사용자가 자연어로 경로/effort를 지정하면 해당 호출에서는 그 값이 reviewer/auditor와 Arbiter 전체에 우선한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑). model/effort/tier 주입은 codex exec 경로 전용이므로 native subagent 경로에는 적용되지 않으며, 경로 제약 규칙(위 실행 경로·파라미터 지정 섹션)에 따라 codex exec 경로로 전환된 호출에서만 우선 적용된다.
+- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. 사용자가 자연어로 경로/effort를 지정하면 해당 호출에서는 그 값이 role별 기본값보다 우선한다 — Arbiter에는 강도 하한 적용 후의 값이 쓰인다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑, 하한은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) 정본). model/effort/tier 주입은 codex exec 경로 전용이므로 native subagent 경로에는 적용되지 않으며, 경로 제약 규칙(위 실행 경로·파라미터 지정 섹션)에 따라 codex exec 경로로 전환된 호출에서만 우선 적용된다.
 - codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행한다. 코드/계획 write의 실제 차단 수행자는 codex 자체의 read-only sandbox(macOS seatbelt / Linux bwrap)이고, wrapper는 인자를 그대로 전달하는 passthrough라 플래그를 강제하지 않는다 (#1086) — 플래그 부착은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 role별 명령 literal(SSOT)이 담보하는 문서 규약이다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명·service_tier는 스킬이 고정하지 않는다 — 사용자가 명시 지정한 값만 `-c` config override로 주입하고(위 실행 경로·파라미터 지정 섹션), 미지정 시 reasoning effort만 기본 role profile 또는 자연어 지정에서 결정한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.

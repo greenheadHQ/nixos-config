@@ -49,11 +49,11 @@ review profile 매핑 (fan-out 대상 역할별, 사용자 지정 없을 때 기
 | `strong` | Arbiter | 세션/런타임 기본 모델 상속 | `high` |
 | `standard` | reviewer / auditor | 세션/런타임 기본 모델 상속 | `medium` |
 
-사용자가 자연어로 실행 경로·effort를 지정하면 위 기본 profile보다 우선한다. 적용 범위는 해당 호출의 reviewer/auditor와 Arbiter 전체다.
+사용자가 자연어로 실행 경로·effort를 지정하면 위 기본 profile보다 우선한다. 적용 범위는 해당 호출의 reviewer/auditor와 Arbiter 전체다 (effort는 Arbiter 강도 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 하한 정본).
 
 | 자연어 지정 (예) | 실행 경로 | effort / 모델 처리 |
 |----------|-----------|--------------------|
-| "codex로 (xhigh/high/medium 등 effort와 함께)" | codex exec | 지정된 reasoning effort를 reviewer/auditor와 Arbiter 전체에 적용. 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
+| "codex로 (xhigh/high/medium 등 effort와 함께)" | codex exec | 지정된 reasoning effort를 reviewer/auditor와 Arbiter 전체에 적용 (Arbiter는 강도 하한 적용 후). 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
 | "Claude 서브에이전트로" | Claude Code `Agent` tool | Claude Code 세션 모델을 상속한다. 특정 모델명을 지정하지 않는다 |
 
 미지 값·불명확한 지정은 추론으로 채우지 않고 질문 도구로 확인한다 (`run-da/SKILL.md` "실행 경로·파라미터 지정" 해석 규칙).

@@ -91,7 +91,7 @@ role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 
 | `standard` | `medium` |
 | `strong` | `high` |
 
-사용자가 자연어로 effort를 지정하면 (예: "전부 xhigh로") 위 기본값 대신 그 값을 reviewer/auditor와 Arbiter 전체에 사용한다 (위 "사용자 지정 실행 파라미터" 섹션의 guard 경유).
+사용자가 자연어로 effort를 지정하면 (예: "전부 xhigh로") 위 기본값 대신 그 값을 사용한다 — reviewer/auditor에는 그대로, Arbiter에는 강도 하한을 최종 적용한 resolved 값이다 (하한·명시 축 예외는 위 "Arbiter 추론 강도 하한" 절이 정본, 주입은 "사용자 지정 실행 파라미터" 섹션의 guard 경유).
 
 reviewer / Auditor (standard profile):
 

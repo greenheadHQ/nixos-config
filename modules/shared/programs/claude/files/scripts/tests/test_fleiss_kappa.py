@@ -156,6 +156,10 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         "remediation-on-rejected.md": (
             {**rejected, "remediation_scope": "FIX_NOW"}, "remediation_scope 출력 금지"
         ),
+        # 명시적 null도 필드 존재 위반 (키 존재 검사 — get() 비교 우회 차단)
+        "remediation-null-on-rejected.md": (
+            {**rejected, "remediation_scope": None}, "remediation_scope 출력 금지"
+        ),
         # evidence_scope
         "no-scope.md": (
             {k: v for k, v in rejected.items() if k != "evidence_scope"}, "evidence_scope"

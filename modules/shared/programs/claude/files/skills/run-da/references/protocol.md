@@ -154,7 +154,7 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 
 위 판정은 5회 상한 전의 한계효용 장치다. 5회 상한은 그대로 유지되며, 5회 이후 수렴 종료에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
 
-(과거에 있던 "신규 confirmed 2회 연속 비감소" 추세 조기중단식은 제거됐다 — 실측된 톱니 궤적에서 한 번도 발동하지 않았고(#1258), 상한 도달은 아래 종료 유형 라벨이 수렴과 기계적으로 구분한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 끊이지 않으면, 라운드 중 표면을 계속 다듬기보다 changeset 동결 유지·batch 범위 축소·REPLAN 배출을 우선 검토한다.)
+(과거에 있던 "신규 confirmed 2회 연속 비감소" 추세 조기중단식은 제거됐다 — 실측된 톱니 궤적에서 한 번도 발동하지 않았고(#1258), 상한 도달은 아래 종료 유형 라벨이 수렴과 기계적으로 구분한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 끊이지 않으면, 라운드 중 표면을 계속 다듬기보다 changeset 동결 유지·batch 범위 축소·REPLAN_REQUIRED 배출을 우선 검토한다.)
 
 ## 라운드 요약 기록
 
@@ -184,7 +184,7 @@ LITE 실행 라운드는 첫 줄에 `(LITE: 선택 M개/전체 4개 reviewer bun
 - 사용자가 수용한 NEEDS_MORE_INFO 항목도 같은 규칙의 값을 가진다.
 - `VerdictRecord`·M-4 등 세션 분석 지표는 변경하지 않는다 — M-4는 종전대로 reviewer 보고 심각도 기반 지표다.
 
-### remediation scope (FIX_NOW / REPLAN_REQUIRED — 재설계 지적의 루프 밖 배출)
+### remediation scope (재설계 지적의 루프 밖 배출)
 
 반영 단계의 수정이 다음 라운드 지적의 최대 공급원이 되는 근본 원인 중 하나는 재설계가 필요한 지적을 그 자리에서 패치하는 것이다 (#1258 실측). Arbiter는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)의 VERDICT_JSON에 `remediation_scope`를 필수 출력한다 ([`arbiter-prompt.md`](arbiter-prompt.md) 필드 정의):
 
@@ -192,14 +192,14 @@ LITE 실행 라운드는 첫 줄에 `(LITE: 선택 M개/전체 4개 reviewer bun
 - `REPLAN_REQUIRED`: 해소에 구조 재설계·데이터 모델 변경·범위 재협상이 필요 — 이번 루프의 write phase로 패치하면 덧대기가 된다.
 - `UNCLEAR`: 판단 불가.
 
-상태 전이표 (write set 확정 시점에 적용):
+상태 전이표 (write set 확정 시점에 적용 — caller 검증의 semantic malformed 처리와 LOW confidence fail-closed 승격이 먼저다. scope 분기는 이 두 게이트를 통과한 항목에만 적용된다):
 
 | remediation_scope | 전이 |
 |---|---|
 | `FIX_NOW` | `round_write_set` 진입 (기존 경로) |
 | `REPLAN_REQUIRED` | 배출: ①마스킹 게이트(아래) 통과 → ②이슈 생성 → ③이슈 번호를 배출 증거로 라운드 요약에 기록 → 해당 finding은 `DEFERRED` (활성 finding에서 제외, write set 진입 금지) |
 | `REPLAN_REQUIRED`인데 배출 실패 (이슈 생성 실패·마스킹 불가로 게시 불능) | 미해결(`unresolved_count`)로 계산 — 종료를 차단한다. 배출 증거(이슈 번호) 없는 DEFERRED는 없다 |
-| `UNCLEAR` | 질문 도구로 사용자 판단 (FIX_NOW/REPLAN/제외 중 선택). 질문 도구 미지원 런타임은 자동 FIX_NOW로 간주하지 않고 미해결로 계산한다 — 재설계 필요를 그 자리 패치하는 원 문제를 자동 전이로 재현하지 않기 위함 |
+| `UNCLEAR` | 질문 도구로 사용자 판단 (FIX_NOW/REPLAN_REQUIRED/제외 중 선택 — 선택지 표기는 기계 enum 그대로 사용한다). 질문 도구 미지원 런타임은 자동 FIX_NOW로 간주하지 않고 미해결로 계산한다 — 재설계 필요를 그 자리 패치하는 원 문제를 자동 전이로 재현하지 않기 위함 |
 
 write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에 넣거나 write phase에서 반영하는 것은 계약 위반이다 — round summary의 write set 목록에 이 scope의 finding이 있으면 그 라운드는 수렴으로 기록할 수 없다.
 
@@ -209,7 +209,7 @@ write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에
 
 ### VERDICT_JSON 기계값의 caller 검증 (메인 에이전트 의무)
 
-`axes.plausibility`·`accepted_severity`·`reviewer_severity`·`rejection_basis`·`evidence_scope`는 verdict·수렴·기각 판단을 결정하는 값의 기록이므로 누락·오염·의미 불일치가 기각/무재검증 방향으로 샐 수 있다. 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점에서 다음을 검증한다.
+`axes.plausibility`·`accepted_severity`·`reviewer_severity`·`rejection_basis`·`evidence_scope`·`remediation_scope`는 verdict·수렴·기각·배출 라우팅 판단을 결정하는 값의 기록이므로 누락·오염·의미 불일치가 기각/무재검증 방향으로 샐 수 있다. 메인 에이전트는 VERDICT_JSON을 수집하는 모든 지점에서 다음을 검증한다.
 
 실시간 수집 경로에서는 `schema_version`이 정확히 현재 출력 계약 버전(1.2)이어야 한다 — 결과는 매번 fresh Arbiter가 이 계약으로 생성하므로, 1.1 이하·버전 누락·미래 버전은 전부 출력 계약 위반이며 아래 fail-closed 전이를 따른다 (구버전 자칭으로 검증을 우회하거나 미지 버전이 현 계약 검사만 받고 통과하는 경로 차단). 하위호환은 지원하지 않으며, 새 계약 버전 도입 시 검증기·문서를 함께 갱신한다.
 
@@ -307,7 +307,7 @@ hard precondition 층 — 아래 필드가 모두 조건을 만족해야 종료�
 | 필드 | 조건 | 판정 근거 |
 |------|------|-----------|
 | `blocked_count` | = 0 | BLOCKED(malformed — caller 검증 재실행 후에도 위반)·`VIOLATION` 상태 unit/finding 수. 심각도가 산출되지 않은 위험이 수치 층을 우회하는 fail-open 차단 |
-| `unresolved_count` | = 0 | 미결 NEEDS_MORE_INFO + 배출 실패 REPLAN + 미판단 UNCLEAR (round outcome 스냅샷 정의) |
+| `unresolved_count` | = 0 | 미결 NEEDS_MORE_INFO + 배출 실패 REPLAN_REQUIRED + 미판단 UNCLEAR (round outcome 스냅샷 정의) |
 | `write_reverted_count` | = 0 | 반영을 시도했다가 취소되어 미해결로 남은 항목 (write phase 산출값) |
 | `verifier_ok` | = true | 이번 라운드의 caller 검증기 호출이 성공했거나, 사용자가 명시 승인한 검증 생략이 라운드 요약에 기록됨 (검증기 호출 계약 참조 — 승인 없는 생략은 false). 검증 대상 VERDICT_JSON이 존재하지 않는 경로(finding 0건 ALL CLEAR — Arbiter 미실행)는 vacuous true다 |
 | `dismissal_rationale_complete` | = true | NOT_AN_ISSUE·사용자 제외 항목 전건에 근거가 있음 |
@@ -321,7 +321,7 @@ predicate 위반 회귀 예시 (이 predicate를 변경하는 PR은 각 행에 �
 | 상태 | 기대 결과 |
 |------|-----------|
 | 보안 finding의 Arbiter 결과가 재실행 후에도 malformed (accepted severity 산출 불가) | `blocked_count` ≥ 1 → 종료 불가 (수치 층 "MEDIUM+ 0건"은 참이어도) |
-| REPLAN 배출 시도가 이슈 생성 실패로 끝남 | `unresolved_count` ≥ 1 → 종료 불가 |
+| REPLAN_REQUIRED 배출 시도가 이슈 생성 실패로 끝남 | `unresolved_count` ≥ 1 → 종료 불가 |
 | walkthrough가 batch 수정을 전부 되돌려 최종 delta가 사라짐 | `write_reverted_count` ≥ 1 → 종료 불가 |
 | 검증기 미지원 상황에서 사용자 승인 없이 검증을 건너뜀 | `verifier_ok` = false → 종료 불가 |
 | reviewer MEDIUM finding이 LOW로 하향되고 그 라운드에 재검증이 없었음 | `severity-downgrade-gate` → `revalidation_required` = true → 종료 불가 |
