@@ -144,10 +144,19 @@ let
       # (스코프를 정하는 것은 실행 사용자가 아니라 --system/--user 플래그이고 전자가 기본값).
       # --plain은 행 앞의 상태 마커(실패 유닛에 붙는 ●) 열을 제거해 첫 필드가 유닛명이
       # 되게 한다 — 빼면 cut -f1이 유닛명 대신 ●를 뽑아 보고에 유닛명이 사라진다.
-      FAILED_UNITS=$(systemctl --failed --no-legend --plain 2>/dev/null | cut -d' ' -f1 | tr '\n' ' ' || true)
-      RESULT=0
-      [ -z "$FAILED_UNITS" ] || RESULT=1
-      check "No failed systemd units (''${FAILED_UNITS:-none})" "$RESULT"
+      # 조회 성공 여부를 먼저 보존한다: systemctl이 매니저와 통신하지 못하면 빈 출력으로
+      # 끝나는데, 그것을 "실패 유닛 없음"으로 읽으면 이 검사가 덮으려는 침묵을 그대로
+      # 재현한다("확인 못 함"과 "이상 없음"은 다르다). stderr도 버리지 않는다 — 이번
+      # 사고의 근본 원인 메시지가 2>/dev/null에 삼켜져 진단이 늦어졌다.
+      if FAILED_RAW=$(systemctl --failed --no-legend --plain); then
+        FAILED_UNITS=$(printf '%s' "$FAILED_RAW" | cut -d' ' -f1 | tr '\n' ' ')
+        RESULT=0
+        [ -z "$FAILED_UNITS" ] || RESULT=1
+        check "No failed systemd units (''${FAILED_UNITS:-none})" "$RESULT"
+      else
+        QUERY_RC=$?
+        check "systemd failed-unit query (systemctl rc=''${QUERY_RC})" 1
+      fi
 
       # ─── 결과 요약 + Pushover ───
       echo "=== Smoke test: ''${PASSED}/''${CHECKS} passed ==="
