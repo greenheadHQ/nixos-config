@@ -16,7 +16,7 @@ Arbiter 추론 강도 하한 (판별력 보장 — 본 절이 정본): Arbiter�
 
 - Arbiter effort는 매 실행마다 명시 주입이 필수다 — 어떤 경로에서도 부모·세션·이전 호출에서 상속된 암묵 값에 의존하지 않는다 (codex exec 경로는 `-c model_reasoning_effort=` 필수 인자, native 경로는 spawn 시 명시 — 상속 금지 상세는 [`runtime-mapping.md`](runtime-mapping.md)의 fork 상속 금지).
 - 하한은 strong profile 값이다. 사용자의 저비용·고속 지정이 reviewer effort를 낮추더라도 Arbiter는 하한 아래로 내려가지 않는다 — 지정 값이 하한보다 낮으면 Arbiter에는 하한을 적용하고 그 사실을 사용자에게 고지한다 (reviewer 강도와 Arbiter 강도는 독립 축이다 — 저비용 override가 판정자의 판별력까지 낮추면 기각률 붕괴가 재발한다). 사용자가 Arbiter 강도 축을 콕 집어 하한 미만으로 지정하는 경우에만 고지 후 그 값을 따른다 (명시 축 존중).
-- native 경로에서 하한을 보장할 수 없는 경우의 전이 (본 절이 정본): 세션 표면에 spawn 단위 effort 설정 수단이 광고되지 않은 native 경로는 Arbiter 하한을 보장할 수 없다 (프롬프트에 강도를 지시하는 것은 주입이 아니다). 이때 codex exec로 자동 전환하지 않는다 — skill 호출 자체는 subprocess fallback 권한이 아니므로 ([`hardening-contract.md`](hardening-contract.md) Delegation fallback 정본), 사유(native effort 설정 수단 부재)를 고지하고 질문 도구로 Arbiter-only codex exec 전환 승인을 받은 뒤에만 전환하며, 승인 사실과 사유를 라운드 요약에 기록한다. 질문 도구 미지원 런타임은 전환하지 않고 중단 보고한다.
+- 하한을 보장할 수 없는 delegation 경로의 전이 (본 절이 정본): 세션 표면에 spawn 단위 effort 설정 수단이 광고되지 않은 delegation 경로 — Codex native spawn뿐 아니라 Claude Code `Agent` 경로도 포함한다 — 는 Arbiter 하한을 보장할 수 없다 (프롬프트에 강도를 지시하는 것은 주입이 아니다). 이때 codex exec로 자동 전환하지 않는다 — skill 호출 자체는 subprocess fallback 권한이 아니므로 ([`hardening-contract.md`](hardening-contract.md) Delegation fallback 정본), 사유(native effort 설정 수단 부재)를 고지하고 질문 도구로 Arbiter-only codex exec 전환 승인을 받은 뒤에만 전환하며, 승인 사실과 사유를 라운드 요약에 기록한다. 질문 도구 미지원 런타임은 전환하지 않고 중단 보고한다.
 - 상향은 항상 허용된다. 역할별 프로파일 축의 전체 분리는 #1260이 소유하며, 본 절은 Arbiter 하한만 소유한다.
 
 | Findings 개수 | Arbiter 수 |

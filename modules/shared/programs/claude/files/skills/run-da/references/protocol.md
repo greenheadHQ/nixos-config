@@ -166,7 +166,7 @@ bundle별: Correctness 2건(SECURITY 1, HALLUCINATION 1), Regression CLEAR, ...
 changeset: frozen=<계획 원문/commit range/diff 기준>, write_phase=<수정 파일/계획 항목/diffstat/generated output 유무>, next=<R(N+1) 새 changeset 여부>
 convergence: round_max_accepted_severity=<NONE|LOW|MEDIUM|HIGH|CRITICAL>, revalidation_required=<true|false>, walkthrough=<CLEAN|NOT_REQUIRED>, walkthrough_followups=<후속 수정/범위 밖 발견 건수>
 replan: deferred_issues=<배출 이슈 번호 목록 또는 없음>, unclear=<미판단 수>
-marginal_utility: new_findings=<X'건>, low_new_streak=<연속 횟수>, decision=<continue|stop_proposed|asked_user|unconverged>
+marginal_utility: new_findings=<X'건>, low_new_streak=<연속 횟수>, decision=<continue|stop_proposed|asked_user>
 dismissals: recorded=<NOT_AN_ISSUE/사용자 제외 기록 수>, suppressed=<fresh exact match로 새 finding에서 제외한 수>
 (마지막 라운드에만 추가) termination_type=<CONVERGED|DEFERRED_EXIT|ROUND_LIMIT|USER_STOP>
 ```
@@ -329,7 +329,7 @@ predicate 위반 회귀 예시 (이 predicate를 변경하는 PR은 각 행에 �
 
 ### termination_type (종료 유형 라벨 — 필수)
 
-루프가 끝나는 모든 경로는 `termination_type`을 라운드 요약(마지막 라운드의 전용 `termination_type=` 줄)과 PR 코멘트 Result 행 양쪽에 기록한다. 적용 범위는 DA 루프의 종료(reviewer fan-out이 시작된 이후의 모든 종료 경로)다 — SKIP처럼 fan-out 전에 끝나는 루프 진입 전 종료는 라벨 적용 대상이 아니다. 값은 다음 enum뿐이며, 라벨 없는 루프 종료는 계약 위반이다:
+루프가 끝나는 모든 경로는 `termination_type`을 마지막 라운드 요약의 전용 `termination_type=` 줄에 기록한다 — 이것이 모든 모드 공통 의무다. PR 코멘트 Result 행 기록은 PR이 존재하는 모드(for_pr)의 추가 의무다 (for_plan은 대화·계획·이슈를 대상으로 하는 PR 없는 정상 경로를 가지므로 공통 의무에 넣지 않는다). 적용 범위는 DA 루프의 종료(reviewer fan-out이 시작된 이후의 모든 종료 경로)다 — SKIP처럼 fan-out 전에 끝나는 루프 진입 전 종료는 라벨 적용 대상이 아니다. 값은 다음 enum뿐이며, 라벨 없는 루프 종료는 계약 위반이다:
 
 | termination_type | 의미 | 진입 조건 |
 |---|---|---|

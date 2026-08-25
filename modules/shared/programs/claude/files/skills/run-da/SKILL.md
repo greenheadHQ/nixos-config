@@ -61,7 +61,7 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 
 ### 실행 경로·파라미터 지정 (자연어 채널)
 
-사용자는 실행 경로(codex exec / Claude Code 서브에이전트)와 codex exec 경로의 model, reasoning effort, service_tier를 호출 단위로 자연어로 지정할 수 있다 (예: "전부 codex xhigh로", "reviewer를 이 모델로, fast tier로 돌려줘", "Claude 서브에이전트로 돌려"). 메인 LLM이 사용자가 명시한 값을 경로/model/effort/tier 축으로 해석한다.
+사용자는 실행 경로(codex exec / Claude Code 서브에이전트)와 실행 파라미터 — model·service_tier(codex exec 경로 전용), reasoning effort(codex exec와, 설정 수단이 광고된 native spawn에서 지원) — 를 호출 단위로 자연어로 지정할 수 있다 (예: "전부 codex xhigh로", "reviewer를 이 모델로, fast tier로 돌려줘", "Claude 서브에이전트로 돌려"). 메인 LLM이 사용자가 명시한 값을 경로/model/effort/tier 축으로 해석한다.
 
 | 규칙 | 내용 |
 |------|------|
@@ -71,7 +71,7 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 | 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증(구체 규칙과 실행 주체는 arbiter-scaling.md의 role command guard)만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 값 거부는 재실행으로 해소되지 않으므로 자동 재시도하지 않는다. 조용한 대체/하향 금지 |
 | Arbiter 하한 | 전체 지정이 reviewer 강도를 낮춰도 Arbiter는 강도 하한(strong profile) 아래로 내려가지 않는다 — 하한·고지·예외(사용자가 Arbiter 축을 콕 집어 지정)는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한"이 SSOT |
 | 경로 지정 | codex exec 경로 지정 시 사전점검이 실패하면 다른 경로로 자동 대체하지 않고, 실패 원인과 대안(Claude 경로 진행 또는 중단)을 사용자에게 고지한 뒤 확인을 받는다. Claude 서브에이전트 경로 지정 시 현재 런타임에서 사용할 수 없으면 동일하게 고지한다. 모델은 Claude 경로에서는 세션 모델을 상속하며 특정 모델명을 고정하지 않는다 |
-| 경로 제약 | model/effort/tier 주입은 codex exec 경로 전용이다. Claude 경로와 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다. native 경로의 effort는 세션 표면에 광고된 spawn 단위 설정 수단이 있을 때만 반영 가능하다 — 설정 수단 부재 시의 전이는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 정본이다 |
+| 경로 제약 | model/tier 주입은 codex exec 경로 전용이고, effort는 codex exec와 설정 수단이 광고된 native spawn에서 지원된다. Claude 경로와 model/tier를 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다. native 경로의 effort는 세션 표면에 광고된 spawn 단위 설정 수단이 있을 때만 반영 가능하다 — 설정 수단 부재 시의 전이는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 정본이다 |
 
 모델명 박제 금지 원칙과의 관계: 이 채널의 값은 사용자 입력에서만 온다. 스킬 문서·기본값·예시에 특정 모델명을 두지 않는 원칙(sync 테스트의 모델 literal 잔존 게이트)은 그대로 유지된다.
 
