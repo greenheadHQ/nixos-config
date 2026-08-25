@@ -110,7 +110,7 @@ test_claude_owner_shell_finalizes_dispatcher_path() {
   owner_shell_path="$(
     env -i HOME="$sandbox/home" ZDOTDIR="$sandbox/owner-zdot" \
       PATH="$initial_path" CLAUDECODE=1 \
-      "$zsh_bin" -d -c -l 'source "$ZDOTDIR/.zshrc" < /dev/null; print -r -- "$PATH"'
+      "$zsh_bin" -d -l -c 'source "$ZDOTDIR/.zshrc" < /dev/null; print -r -- "$PATH"'
   )"
   [[ "$owner_shell_path" == "$dispatcher_bin:"* ]] \
     || fail "owner shell rc did not finalize dispatcher PATH: $owner_shell_path"
