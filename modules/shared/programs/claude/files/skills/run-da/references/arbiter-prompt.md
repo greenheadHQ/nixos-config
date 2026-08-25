@@ -120,7 +120,7 @@ for_plan 핵심 원칙:
 
 ### 심각도별 하드 threshold
 
-메인 에이전트 행동의 입력은 `accepted_severity`(Arbiter 조정 후 값)다. Arbiter는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)의 VERDICT_JSON에 `accepted_severity`를 출력한다 — 심각도 조정 시 조정값, 아니면 reviewer 원값 (NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다). 조정한 경우 사람용 블록에 조정 근거를 명시하고 JSON 값과 일치시킨다.
+메인 에이전트 행동의 입력은 `accepted_severity`(Arbiter 조정 후 값)다. Arbiter는 scope 라우팅 대상 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)의 VERDICT_JSON에 `accepted_severity`를 출력한다 — 심각도 조정 시 조정값, 아니면 reviewer 원값 (NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다). 조정한 경우 사람용 블록에 조정 근거를 명시하고 JSON 값과 일치시킨다.
 
 아래 표의 메인 에이전트 행동은 `remediation_scope: FIX_NOW`인 CONFIRMED_ISSUE에만 적용된다 — `REPLAN_REQUIRED`·`UNCLEAR`는 심각도와 무관하게 write queue에 진입하지 않으며 [`protocol.md`](protocol.md) "remediation scope" 전이표만 따른다.
 
@@ -205,7 +205,7 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS
   - 현실적 발생 가능성 (Plausibility): 판단 불가(UNKNOWN) — 확장 의도에 따라 실존 마찰일 수도, 없어도 무방한 구조일 수도 있음.
   - Portability / Cross-Environment Drift: N/A — 설계 추상화 이슈, cross-env 차원과 무관.
-- **심각도 판정**: MEDIUM — reviewer 원값 유지 (NEEDS_MORE_INFO는 write set 진입 가능 verdict이므로 출력)
+- **심각도 판정**: MEDIUM — reviewer 원값 유지 (NEEDS_MORE_INFO는 scope 라우팅 대상 verdict이므로 출력)
 - **해소 방식**: FIX_NOW — 사용자가 확장 의도 없음을 확인하면 추상화 제거는 changeset 안에서 완결.
 - **근거**: 추상화가 현재 단일 구현만 가지지만, 사용자의 확장 의도를 알 수 없어 YAGNI 여부 판단 불가.
 - **필요 정보**: 이 추상화의 향후 사용 계획이 있는지 사용자 확인 필요.
@@ -463,8 +463,8 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 - `verdict`: core verdict enum. guardrail 축 Portability로 verdict를 뒤집지 않는다.
 - `confidence`: NOT_AN_ISSUE/CONFIRMED_ISSUE 시 Arbiter의 판정 신뢰도. LOW confidence는 caller의 fail-closed 승격(NEEDS_MORE_INFO 경로) 트리거다.
 - `reviewer_severity`: DA reviewer가 보고한 원심각도. 항상 출력한다 — `accepted_severity`와 함께 있으면 심각도 조정 여부가 JSON만으로 드러난다.
-- `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다. 소비 규칙(누락은 fallback이 아니라 semantic malformed다)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
-- `remediation_scope`: 확정된 문제의 해소 방식 분류 — `FIX_NOW`(이번 changeset 범위의 국소 수정으로 해소 가능) / `REPLAN_REQUIRED`(구조 재설계·데이터 모델 변경·범위 재협상 필요 — 이번 루프에서 패치하면 덧대기) / `UNCLEAR`(판단 불가). write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수이고, NOT_AN_ISSUE에는 필드 자체를 넣지 않는다. 판단 기준: 권장 수정이 finding의 위치 근방에서 완결되면 FIX_NOW, 권장 수정이 changeset 밖 구조·계약·범위를 바꿔야 성립하면 REPLAN_REQUIRED. 상태 전이(배출·이슈 증거·미해결 계산)는 [`protocol.md`](protocol.md)의 "remediation scope"가 SSOT다.
+- `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. scope 라우팅 대상 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다. 소비 규칙(누락은 fallback이 아니라 semantic malformed다)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
+- `remediation_scope`: 확정된 문제의 해소 방식 분류 — `FIX_NOW`(이번 changeset 범위의 국소 수정으로 해소 가능) / `REPLAN_REQUIRED`(구조 재설계·데이터 모델 변경·범위 재협상 필요 — 이번 루프에서 패치하면 덧대기) / `UNCLEAR`(판단 불가). scope 라우팅 대상 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수이고, NOT_AN_ISSUE에는 필드 자체를 넣지 않는다. 판단 기준: 권장 수정이 finding의 위치 근방에서 완결되면 FIX_NOW, 권장 수정이 changeset 밖 구조·계약·범위를 바꿔야 성립하면 REPLAN_REQUIRED. 상태 전이(배출·이슈 증거·미해결 계산)는 [`protocol.md`](protocol.md)의 "remediation scope"가 SSOT다.
 - `rejection_basis`: NOT_AN_ISSUE 판정의 기각 근거 축 — `FACTUAL_FAIL`(사실 정확성) / `RELEVANCE_FAIL`(변경 연관성) / `PLAUSIBILITY_FAIL`(현실적 발생 가능성). NOT_AN_ISSUE에서만 출력하며(다른 verdict에는 필드 자체를 넣지 않는다), `plausibility=N/A`의 적법성 검증을 JSON 자기완결로 만든다 ([`protocol.md`](protocol.md) caller 검증).
 - `evidence_scope`: `rejection_basis=PLAUSIBILITY_FAIL`일 때만 출력하는 기각 근거의 수명주기 분류 — `FROZEN_SURFACE`(frozen changeset의 불변 계약에만 의존) / `ENVIRONMENT_WORKLOAD`(환경·워크로드 가정에 의존). 메인 에이전트는 이 값만으로 세션 내 기각 이력의 suppress eligibility를 판정한다 (사람용 rationale 재해석 불필요 — [`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" SSOT). 다른 기각 근거·verdict에 이 필드가 있으면 caller 검증 위반이다.
 - `stability_status`: 출력하지 않는다 (있으면 caller 검증 위반). 폐기된 과거 계약(selective consistency aggregate)의 필드이며, 현행 계약에는 적법한 산출 주체가 없다 ([`protocol.md`](protocol.md) caller 검증 참조).

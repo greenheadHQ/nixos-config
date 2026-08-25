@@ -100,13 +100,13 @@ def validate_verdict_entry(entry):
         violations.append(
             f"reviewer_severity 누락 또는 enum 밖 값: {entry.get('reviewer_severity')!r}"
         )
-    # accepted_severity는 write set 진입 가능 verdict(CONFIRMED/NEEDS_MORE_INFO)에만
+    # accepted_severity는 scope 라우팅 대상 verdict(CONFIRMED/NEEDS_MORE_INFO)에만
     # 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다 (있어도 무방).
     if verdict != "NOT_AN_ISSUE" and entry.get("accepted_severity") not in SEVERITY_VALUES:
         violations.append(
             f"accepted_severity 누락 또는 enum 밖 값: {entry.get('accepted_severity')!r}"
         )
-    # remediation_scope도 write set 진입 가능 verdict에만 필수 — 재설계 지적의 루프 밖
+    # remediation_scope도 scope 라우팅 대상 verdict에만 필수 — 재설계 지적의 루프 밖
     # 배출 라우팅(FIX_NOW/REPLAN_REQUIRED/UNCLEAR)이 이 값 하나로 기계 결정된다.
     # NOT_AN_ISSUE에는 필드 자체를 금지한다 (기각에는 해소 방식이 없다).
     rscope = entry.get("remediation_scope")

@@ -138,7 +138,7 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 2. 사용자에게 질문 도구로 3가지 선택지를 제시한다:
    - 수용: 지적대로 수정한다.
    - 제외 + 근거 기록: 기술적 근거를 CIR로 남기고 현재 루프에서 제외한다.
-   - 보류: 별도 이슈로 등록하고 현재 루프에서 제외한다.
+   - 배출(DEFERRED): "remediation scope" 전이표의 배출 절차로 별도 이슈로 이관하고 현재 루프에서 제외한다 (용어 매핑 표의 "보류(사용자 결정 대기)"와 다른 상태다).
 3. 사용자가 "제외 + 근거 기록"을 선택하면 세션 내 기각 이력에 사용자 제외로 기록한다. `NEEDS_MORE_INFO`를 자동 기각으로 취급하지 말고, 사용자의 명시 결정과 기술적 근거가 있을 때만 기록한다.
 
 ### 최대 라운드 수
@@ -180,13 +180,13 @@ LITE 실행 라운드는 첫 줄에 `(LITE: 선택 M개/전체 4개 reviewer bun
 ### accepted severity
 
 - accepted severity는 Arbiter 판정을 거친 항목에만 존재한다. 값은 VERDICT_JSON의 `accepted_severity` 필드다 (산출 주체는 Arbiter — 심각도 조정 시 조정값, 아니면 reviewer 원값. [`arbiter-prompt.md`](arbiter-prompt.md) 출력 요건 참조). 메인 에이전트는 집계(최댓값 계산)만 수행한다 — Arbiter 판정 대체가 아니다.
-- 실시간 경로에서 write set 진입 가능 verdict의 `accepted_severity` 누락·비정상은 caller 검증의 semantic malformed 전이(1회 재실행 → BLOCKED)가 유일한 처리다 — 검증을 통과한 항목에는 값이 반드시 있으므로 집계 단계의 누락 fallback은 존재하지 않는다. 예외적으로 사용자 수용 경로 등 Arbiter 판정 값 없이 write set에 들어오는 항목은 reviewer 원심각도를, 그것도 불명이면 CRITICAL을 사용한다 (MEDIUM 고정 대체는 CRITICAL의 진행 차단·최우선 처리를 소실시키므로 fail-closed가 아니다).
+- 실시간 경로에서 scope 라우팅 대상 verdict의 `accepted_severity` 누락·비정상은 caller 검증의 semantic malformed 전이(1회 재실행 → BLOCKED)가 유일한 처리다 — 검증을 통과한 항목에는 값이 반드시 있으므로 집계 단계의 누락 fallback은 존재하지 않는다. 예외적으로 사용자 수용 경로 등 Arbiter 판정 값 없이 write set에 들어오는 항목은 reviewer 원심각도를, 그것도 불명이면 CRITICAL을 사용한다 (MEDIUM 고정 대체는 CRITICAL의 진행 차단·최우선 처리를 소실시키므로 fail-closed가 아니다).
 - 사용자가 수용한 NEEDS_MORE_INFO 항목도 같은 규칙의 값을 가진다.
 - `VerdictRecord`·M-4 등 세션 분석 지표는 변경하지 않는다 — M-4는 종전대로 reviewer 보고 심각도 기반 지표다.
 
 ### remediation scope (재설계 지적의 루프 밖 배출)
 
-반영 단계의 수정이 다음 라운드 지적의 최대 공급원이 되는 근본 원인 중 하나는 재설계가 필요한 지적을 그 자리에서 패치하는 것이다 (#1258 실측). Arbiter는 write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)의 VERDICT_JSON에 `remediation_scope`를 필수 출력한다 ([`arbiter-prompt.md`](arbiter-prompt.md) 필드 정의):
+반영 단계의 수정이 다음 라운드 지적의 최대 공급원이 되는 근본 원인 중 하나는 재설계가 필요한 지적을 그 자리에서 패치하는 것이다 (#1258 실측). Arbiter는 scope 라우팅 대상 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)의 VERDICT_JSON에 `remediation_scope`를 필수 출력한다 ([`arbiter-prompt.md`](arbiter-prompt.md) 필드 정의):
 
 - `FIX_NOW`: 이번 changeset 범위 안에서 국소 수정으로 해소 가능.
 - `REPLAN_REQUIRED`: 해소에 구조 재설계·데이터 모델 변경·범위 재협상이 필요 — 이번 루프의 write phase로 패치하면 덧대기가 된다.
@@ -299,7 +299,7 @@ walkthrough의 범위 밖 발견이 미선택 bundle 관점이면 그 bundle이 
 
 수치 층 — 활성 finding 중 accepted severity가 MEDIUM 이상인 것이 0건.
 
-- 활성 finding의 정의: 이번 라운드 round outcome 스냅샷의 write set 진입 가능 항목 중 아직 해소되지 않은 것 — 반영 완료(write phase에서 수정 확인)된 항목과 배출 증거가 기록된 DEFERRED 항목은 활성이 아니다. 기각(NOT_AN_ISSUE)은 처음부터 활성이 아니다.
+- 활성 finding의 정의: 이번 라운드 round outcome 스냅샷의 scope 라우팅 대상 항목 중 아직 해소되지 않은 것 — 반영 완료(write phase에서 수정 확인)된 항목과 배출 증거가 기록된 DEFERRED 항목은 활성이 아니다. 기각(NOT_AN_ISSUE)은 처음부터 활성이 아니다.
 - 평가 시점: write phase 종료·walkthrough 확정 후 (round outcome 스냅샷과 write phase 산출값이 모두 확정된 시점).
 
 hard precondition 층 — 아래 필드가 모두 조건을 만족해야 종료할 수 있다. 수치 층과 독립이며, 어느 하나라도 어긋나면 수치 층 통과와 무관하게 종료 불가다:

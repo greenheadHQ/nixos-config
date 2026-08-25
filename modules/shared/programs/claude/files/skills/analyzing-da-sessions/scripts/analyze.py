@@ -708,6 +708,7 @@ def extract_finding_summary(block: str) -> str | None:
         "**stability_status**",
         "**evidence_scope**",
         "**심각도 판정**",
+        "**해소 방식**",
         "**근거**",
         "**증거**",
     )
