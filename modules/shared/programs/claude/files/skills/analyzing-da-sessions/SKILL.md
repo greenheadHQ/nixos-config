@@ -45,7 +45,7 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 
 | ID | 이름 | 의미 |
 |----|------|------|
-| M-1 | 검토 강도 verdict 분포 | Intensity marker 출현 세션(과거 외부 호출 경로 전용)에서 강도 표기(FULL / LITE / SKIP)를 카운트. 현행 세션은 marker를 만들지 않아 분모에 진입하지 않는다 — 분모 재정의는 #1236 소관 (아래 한계 참조) |
+| M-1 | 검토 강도 verdict 분포 | Intensity marker 출현 세션(과거 외부 호출 경로 전용)에서 강도 표기(FULL / LITE / SKIP)를 카운트. 현행 세션은 marker를 만들지 않아 분모에 진입하지 않는다 — 분모 재정의는 #1236 소관 (한계 상세: [`references/algorithm.md`](references/algorithm.md) "한계") |
 | M-2 | 판정자 verdict 분포 | Arbiter VERDICT_JSON `verdict` 카운트 (CONFIRMED_ISSUE / NOT_AN_ISSUE / NEEDS_MORE_INFO) |
 | M-3 | reviewer 묶음별 confirmed-rate | 4 reviewer 묶음(correctness / design / regression / maintainability) 각각의 CONFIRMED_ISSUE 비율 |
 | M-4 | 동일 세션 max severity 전이 | 같은 세션 내 round N → N+1 confirmed finding 집합의 max severity 전이 매트릭스 |
