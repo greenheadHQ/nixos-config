@@ -353,6 +353,32 @@ def check_verdict_json_examples() -> None:
         raise CheckFailure("\n".join(f"  {ARBITER_PROMPT}: {d}" for d in details))
 
 
+def check_arbiter_assembly_includes_output_format() -> None:
+    """Arbiter 조립 템플릿이 출력 형식 섹션을 포함하는지 텍스트 검사한다 (#1258).
+
+    과거 조립 지시는 "공통 프롬프트 섹션"만 넣으라고 해서 VERDICT_JSON 스키마·delimiter가
+    조립 범위 밖에 있었다 — Arbiter가 기계 파싱 계약을 모른 채 출력하는 조립 결함.
+    for_pr/for_plan 두 조립 템플릿 모두 출력 형식 포함 지시와 manifest 완전성 지시를
+    유지해야 한다.
+    """
+    text = read_text(ARBITER_PROMPT)
+    assembly = re.search(r"## 프롬프트 조립.*", text, re.DOTALL)
+    if not assembly:
+        raise CheckFailure(f"{ARBITER_PROMPT}: '프롬프트 조립' 섹션 누락")
+    body = assembly.group(0)
+    details = []
+    if body.count('"출력 형식" 섹션 전체') < 2:
+        details.append(
+            f"{ARBITER_PROMPT}: 조립 템플릿(for_pr·for_plan)에 '출력 형식' 섹션 포함 지시가 2곳 미만"
+        )
+    if body.count("누락도 추가도 금지") < 2:
+        details.append(
+            f"{ARBITER_PROMPT}: 조립 템플릿에 finding manifest 완전성 지시가 2곳 미만"
+        )
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
 def check_capability_profile() -> None:
     """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
 
@@ -403,6 +429,7 @@ def main() -> int:
         ("reviewer bundle subdomains", check_bundle_subdomains),
         ("threat path types", check_threat_path_types),
         ("verdict json examples", check_verdict_json_examples),
+        ("arbiter assembly output format", check_arbiter_assembly_includes_output_format),
         ("capability profile", check_capability_profile),
     )
 

@@ -24,12 +24,13 @@ def _verdict_payload(**overrides):
     None 값을 전달하면 해당 키를 제거한다 (필수 필드 누락 케이스 조립용).
     """
     payload = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "finding_id": "X-1",
         "verdict": "CONFIRMED_ISSUE",
         "confidence": "HIGH",
         "reviewer_severity": "MEDIUM",
         "accepted_severity": "MEDIUM",
+        "remediation_scope": "FIX_NOW",
         "axes": {"portability": "N/A", "plausibility": "PASS"},
     }
     for key, value in overrides.items():
@@ -81,6 +82,7 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
     rejected = _verdict_payload(
         verdict="NOT_AN_ISSUE",
         accepted_severity=None,
+        remediation_scope=None,
         rejection_basis="PLAUSIBILITY_FAIL",
         evidence_scope="FROZEN_SURFACE",
         axes={"portability": "N/A", "plausibility": "FAIL"},
@@ -88,6 +90,7 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
     factual = _verdict_payload(
         verdict="NOT_AN_ISSUE",
         accepted_severity=None,
+        remediation_scope=None,
         rejection_basis="FACTUAL_FAIL",
         axes={"portability": "N/A", "plausibility": "N/A"},
     )
@@ -103,7 +106,7 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         "valid-confirmed.md": (confirmed, None),
         "valid-env-scope.md": ({**rejected, "evidence_scope": "ENVIRONMENT_WORKLOAD"}, None),
         # schema 버전: 정확히 live 버전만
-        "downgrade.md": ({**rejected, "schema_version": "1.0"}, "schema_version"),
+        "downgrade.md": ({**rejected, "schema_version": "1.1"}, "schema_version"),
         "future.md": ({**rejected, "schema_version": "2.0"}, "schema_version"),
         "garbage.md": ({**rejected, "schema_version": "garbage"}, "schema_version"),
         # verdict 정합 행렬 — CONFIRMED에 plausibility FAIL (다른 필드는 CONFIRMED 계약 충족)
@@ -139,6 +142,19 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         ),
         "basis-on-confirmed.md": (
             {**confirmed, "rejection_basis": "FACTUAL_FAIL"}, "rejection_basis 출력 금지"
+        ),
+        # remediation_scope — write set 진입 verdict 필수 / NOT_AN_ISSUE 금지 / enum 밖 거부
+        "no-remediation.md": (
+            {k: v for k, v in confirmed.items() if k != "remediation_scope"},
+            "remediation_scope",
+        ),
+        "bad-remediation.md": (
+            {**confirmed, "remediation_scope": "LATER"}, "remediation_scope"
+        ),
+        "replan-confirmed.md": ({**confirmed, "remediation_scope": "REPLAN_REQUIRED"}, None),
+        "unclear-confirmed.md": ({**confirmed, "remediation_scope": "UNCLEAR"}, None),
+        "remediation-on-rejected.md": (
+            {**rejected, "remediation_scope": "FIX_NOW"}, "remediation_scope 출력 금지"
         ),
         # evidence_scope
         "no-scope.md": (

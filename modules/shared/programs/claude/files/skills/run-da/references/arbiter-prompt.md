@@ -9,7 +9,7 @@ Codex 세션에서는 native subagent, Claude Code 세션과 headless 세션에�
 | 허용 | 금지 |
 |------|------|
 | finding 원문 (ID, 위치, 문제, 근거, 심각도) | 코드 작성자 정보 |
-| 인용된 파일과 인접 코드 (직접 Read) | 메인 에이전트의 이전 판정/입장 |
+| 인용된 파일과 인접 코드 (직접 Read) | 메인 에이전트의 이전 판정/입장, 판정 컨텍스트 선주입(사전 요약·예상 verdict·기각/수용 유도 문구 — 메인이 판정 방향을 암시하는 어떤 형태의 주입도 오염 채널이다) |
 | finding이 참조한 관련 파일 | 기각 논거, 반박 논거 |
 | git diff — for_pr (변경 범위 확인용) | 이전 Arbiter 판정 |
 | 계획 원문 — for_plan (변경 의도 확인용) | "이미 해결됨" 같은 프레이밍 |
@@ -132,6 +132,7 @@ for_plan 핵심 원칙:
 ### Few-shot 교정 예시
 
 아래는 Arbiter 판정 형식의 가상 예시이다. 실제 판정 시 파일:줄은 직접 읽어 확인한 실제 값을 사용한다.
+실제 출력에서는 모든 finding에 사람용 블록과 VERDICT_JSON 블록을 둘 다 출력해야 한다 — 아래 예시들은 지면상 예시 1에만 완전형(두 블록)을 보이고 나머지는 사람용 블록만 보인다. verdict별 유효 JSON payload는 "출력 형식" 섹션이 정본이다.
 
 #### 예시 1: CONFIRMED_ISSUE (사실 정확 + 변경 연관)
 
@@ -147,8 +148,29 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): PASS — 노출/유출 threat path 성립 (보호 자산인 토큰 → repo라는 관찰 가능한 노출 지점).
   - Portability / Cross-Environment Drift: N/A — single-file local issue, cross-env 차원과 무관.
 - **심각도 판정**: HIGH — reviewer 원값 유지
+- **해소 방식**: FIX_NOW — 해당 줄을 agenix 시크릿 참조로 교체하면 changeset 안에서 완결.
 - **근거**: 지적된 파일에 basicauth_password가 평문으로 존재. 이번 diff에서 신규 추가된 줄.
 ```
+
+````text
+<!-- verdict-json:start -->
+```json
+{
+  "schema_version": "1.2",
+  "finding_id": "SECURITY-2",
+  "verdict": "CONFIRMED_ISSUE",
+  "confidence": "HIGH",
+  "reviewer_severity": "HIGH",
+  "accepted_severity": "HIGH",
+  "remediation_scope": "FIX_NOW",
+  "axes": {
+    "portability": "N/A",
+    "plausibility": "PASS"
+  }
+}
+```
+<!-- verdict-json:end -->
+````
 
 #### 예시 2: NOT_AN_ISSUE (사실은 맞지만 변경 무관)
 
@@ -324,7 +346,8 @@ for_plan 핵심 원칙:
   - 실행 가능성: PASS / FAIL / N/A
   - 현실적 발생 가능성 (Plausibility): PASS / FAIL / 판단 불가(UNKNOWN) / N/A
   - Portability / Cross-Environment Drift: PASS / FAIL / N/A
-- **심각도 판정**: {accepted_severity} — 심각도 타당성 PASS면 reviewer 원값 그대로, FAIL이면 "원값 X → 조정 Y"와 조정 근거를 명시 (조정 여부의 기계 판정은 VERDICT_JSON의 `reviewer_severity`/`accepted_severity` 비교로 자기완결된다 — 이 줄은 조정 근거를 사람에게 설명하는 보고용 서술이다)
+- **심각도 판정**: {accepted_severity} — 심각도 타당성 PASS면 reviewer 원값 그대로, FAIL이면 "원값 X → 조정 Y"와 조정 근거를 명시 (조정 여부의 기계 판정은 VERDICT_JSON의 `reviewer_severity`/`accepted_severity` 비교로 자기완결된다 — 이 줄은 조정 근거를 사람에게 설명하는 보고용 서술이다). 심각도를 하향하는 경우 기각(NOT_AN_ISSUE)과 동일한 증거 기준을 적용한다 — 해당 위치를 직접 읽은 확인과 하향을 정당화하는 기술 근거 없이 하향하지 않는다 (하향은 기각 대비 저비용이라 기각을 대체하는 경로로 실측됐다)
+- **해소 방식**: (CONFIRMED_ISSUE·NEEDS_MORE_INFO에만) FIX_NOW / REPLAN_REQUIRED / UNCLEAR + 그 판단의 한 줄 근거
 - **evidence_scope**: (Plausibility FAIL 기각에만) FROZEN_SURFACE / ENVIRONMENT_WORKLOAD + 그 근거가 무엇에 의존하는지 한 줄
 - **근거**: 직접 확인 결과 + 기술적 판단 (for_pr: 파일:줄 / for_plan: 관련 파일 또는 계획 원문)
 - **증거**: (NOT_AN_ISSUE의 경우 필수) for_pr: 반증 코드 스니펫 / for_plan: 반증 근거 (관련 파일 내용 또는 계획 원문 인용)
@@ -342,12 +365,13 @@ CONFIRMED_ISSUE (심각도 조정이 있으면 `accepted_severity`만 다른 값
 <!-- verdict-json:start -->
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "finding_id": "Correctness-1",
   "verdict": "CONFIRMED_ISSUE",
   "confidence": "HIGH",
   "reviewer_severity": "MEDIUM",
   "accepted_severity": "MEDIUM",
+  "remediation_scope": "FIX_NOW",
   "axes": {
     "portability": "N/A",
     "plausibility": "PASS"
@@ -363,12 +387,13 @@ NEEDS_MORE_INFO (`plausibility`는 `PASS` 또는 판단 불가인 `UNKNOWN`):
 <!-- verdict-json:start -->
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "finding_id": "Design-2",
   "verdict": "NEEDS_MORE_INFO",
   "confidence": "N/A",
   "reviewer_severity": "HIGH",
   "accepted_severity": "HIGH",
+  "remediation_scope": "FIX_NOW",
   "axes": {
     "portability": "N/A",
     "plausibility": "UNKNOWN"
@@ -384,7 +409,7 @@ NOT_AN_ISSUE — 사실 정확성·변경 연관성 기각 (`rejection_basis`는
 <!-- verdict-json:start -->
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "finding_id": "Regression-3",
   "verdict": "NOT_AN_ISSUE",
   "confidence": "HIGH",
@@ -405,7 +430,7 @@ NOT_AN_ISSUE — Plausibility 기각. 이 경우에만 `evidence_scope`를 넣�
 <!-- verdict-json:start -->
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "finding_id": "Maintainability-4",
   "verdict": "NOT_AN_ISSUE",
   "confidence": "HIGH",
@@ -428,12 +453,13 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 형식 fixture가 둘 다 통과해야 한다.
 
 필드 의미:
-- `schema_version`: VERDICT_JSON 스키마 버전. 현재 실시간 계약은 정확히 `1.1`이며 검증기는 이 값만 허용한다 — `1.0`을 포함한 다른 버전은 실시간 경로에서 semantic malformed다 (하위호환 미지원, [`protocol.md`](protocol.md) caller 검증 SSOT). 새 계약 버전 도입 시 이 값·검증기·문서를 함께 갱신한다.
+- `schema_version`: VERDICT_JSON 스키마 버전. 현재 실시간 계약은 정확히 `1.2`이며 검증기는 이 값만 허용한다 — `1.1` 이하를 포함한 다른 버전은 실시간 경로에서 semantic malformed다 (하위호환 미지원, [`protocol.md`](protocol.md) caller 검증 SSOT). 새 계약 버전 도입 시 이 값·검증기·문서를 함께 갱신한다.
 - `finding_id`: DA reviewer finding의 원본 ID (예: `Correctness-1`, `SECURITY-2`).
 - `verdict`: core verdict enum. guardrail 축 Portability로 verdict를 뒤집지 않는다.
 - `confidence`: NOT_AN_ISSUE/CONFIRMED_ISSUE 시 Arbiter의 판정 신뢰도. LOW confidence는 caller의 fail-closed 승격(NEEDS_MORE_INFO 경로) 트리거다.
 - `reviewer_severity`: DA reviewer가 보고한 원심각도. 항상 출력한다 — `accepted_severity`와 함께 있으면 심각도 조정 여부가 JSON만으로 드러난다.
 - `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다. 소비 규칙(누락은 fallback이 아니라 semantic malformed다)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
+- `remediation_scope`: 확정된 문제의 해소 방식 분류 — `FIX_NOW`(이번 changeset 범위의 국소 수정으로 해소 가능) / `REPLAN_REQUIRED`(구조 재설계·데이터 모델 변경·범위 재협상 필요 — 이번 루프에서 패치하면 덧대기) / `UNCLEAR`(판단 불가). write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수이고, NOT_AN_ISSUE에는 필드 자체를 넣지 않는다. 판단 기준: 권장 수정이 finding의 위치 근방에서 완결되면 FIX_NOW, 권장 수정이 changeset 밖 구조·계약·범위를 바꿔야 성립하면 REPLAN_REQUIRED. 상태 전이(배출·이슈 증거·미해결 계산)는 [`protocol.md`](protocol.md)의 "remediation scope"가 SSOT다.
 - `rejection_basis`: NOT_AN_ISSUE 판정의 기각 근거 축 — `FACTUAL_FAIL`(사실 정확성) / `RELEVANCE_FAIL`(변경 연관성) / `PLAUSIBILITY_FAIL`(현실적 발생 가능성). NOT_AN_ISSUE에서만 출력하며(다른 verdict에는 필드 자체를 넣지 않는다), `plausibility=N/A`의 적법성 검증을 JSON 자기완결로 만든다 ([`protocol.md`](protocol.md) caller 검증).
 - `evidence_scope`: `rejection_basis=PLAUSIBILITY_FAIL`일 때만 출력하는 기각 근거의 수명주기 분류 — `FROZEN_SURFACE`(frozen changeset의 불변 계약에만 의존) / `ENVIRONMENT_WORKLOAD`(환경·워크로드 가정에 의존). 메인 에이전트는 이 값만으로 세션 내 기각 이력의 suppress eligibility를 판정한다 (사람용 rationale 재해석 불필요 — [`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" SSOT). 다른 기각 근거·verdict에 이 필드가 있으면 caller 검증 위반이다.
 - `stability_status`: 출력하지 않는다 (있으면 caller 검증 위반). 폐기된 과거 계약(selective consistency aggregate)의 필드이며, 현행 계약에는 적법한 산출 주체가 없다 ([`protocol.md`](protocol.md) caller 검증 참조).
@@ -448,9 +474,15 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 ```text
 {Arbiter 공통 프롬프트 (이 파일의 "공통 프롬프트" 섹션 전체)}
 
+{이 파일의 "출력 형식" 섹션 전체 — 사람용 블록 형식 + verdict별 VERDICT_JSON 유효 payload + 필드 의미.
+이 섹션을 빼고 조립하면 Arbiter가 기계 파싱 계약을 모른 채 출력하게 된다 (조립 필수)}
+
 ## 검증 대상 findings
 
 {DA 결과 파일 전체 — finding ID 포함}
+
+전달된 모든 finding ID 각각에 대해 판정을 하나씩 출력하라 — 누락도 추가도 금지다
+(검증기가 전달 목록과 출력 ID 집합을 exact-set 대조한다).
 
 ## 변경 컨텍스트
 Working directory: {cwd}
@@ -465,6 +497,8 @@ Working directory: {cwd}
 ```text
 {Arbiter 공통 프롬프트 (이 파일의 "공통 프롬프트" 섹션 전체)}
 
+{이 파일의 "출력 형식" 섹션 전체 — for_pr 조립과 동일하게 필수}
+
 ## 리뷰 모드: for_plan (계획 단계)
 
 이것은 아직 구현되지 않은 "계획"에 대한 리뷰이다.
@@ -477,6 +511,9 @@ Working directory: {cwd}
 ## 검증 대상 findings
 
 {DA 결과 파일 전체 — finding ID 포함}
+
+전달된 모든 finding ID 각각에 대해 판정을 하나씩 출력하라 — 누락도 추가도 금지다
+(검증기가 전달 목록과 출력 ID 집합을 exact-set 대조한다).
 
 ## 계획 원문
 

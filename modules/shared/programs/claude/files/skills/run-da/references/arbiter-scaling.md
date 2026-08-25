@@ -12,6 +12,12 @@ reviewer는 "없다"를 잘 찾지만, "없는 게 맞다"는 판단은 독립 �
 
 사용자가 자연어로 경로/effort를 지정하면 해당 호출의 reviewer/auditor와 Arbiter 전체에 그 값이 우선한다. 사용자 지정 실행 파라미터(model/effort/tier — 정의는 `run-da/SKILL.md`)가 지정되면 그 값이 다시 경로 지정의 role별 기본값보다 우선한다. 지정이 없을 때만 role별 기본값을 사용한다: reviewer/auditor는 standard profile effort, Arbiter는 strong profile effort를 따른다. 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑이 정본이다.
 
+Arbiter 추론 강도 하한 (판별력 보장 — 본 절이 정본): Arbiter의 판별력은 실행 조건에 종속한다 — 같은 판정 계약·같은 프롬프트에서 실행 강도에 따라 기각률이 0%와 75%로 갈린 실측이 있다 (#1258). 따라서:
+
+- Arbiter effort는 매 실행마다 명시 주입이 필수다 — 어떤 경로에서도 부모·세션·이전 호출에서 상속된 암묵 값에 의존하지 않는다 (codex exec 경로는 `-c model_reasoning_effort=` 필수 인자, native 경로는 spawn 시 명시 — 상속 금지 상세는 [`runtime-mapping.md`](runtime-mapping.md)의 fork 상속 금지).
+- 하한은 strong profile 값이다. 사용자의 저비용·고속 지정이 reviewer effort를 낮추더라도 Arbiter는 하한 아래로 내려가지 않는다 — 지정 값이 하한보다 낮으면 Arbiter에는 하한을 적용하고 그 사실을 사용자에게 고지한다 (reviewer 강도와 Arbiter 강도는 독립 축이다 — 저비용 override가 판정자의 판별력까지 낮추면 기각률 붕괴가 재발한다). 사용자가 Arbiter 강도 축을 콕 집어 하한 미만으로 지정하는 경우에만 고지 후 그 값을 따른다 (명시 축 존중).
+- 상향은 항상 허용된다. 역할별 프로파일 축의 전체 분리는 #1260이 소유하며, 본 절은 Arbiter 하한만 소유한다.
+
 | Findings 개수 | Arbiter 수 |
 |---|---|
 | 0건 | 0 (SKIP) |

@@ -38,6 +38,10 @@ SEVERITY_VALUES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
 PLAUSIBILITY_VALUES = ("PASS", "FAIL", "UNKNOWN", "N/A")
 PORTABILITY_VALUES = ("PASS", "FAIL", "N/A")
 REJECTION_BASES = ("FACTUAL_FAIL", "RELEVANCE_FAIL", "PLAUSIBILITY_FAIL")
+# 확정된 문제의 해소 방식 분류 (protocol.md "remediation scope" SSOT):
+# FIX_NOW = changeset 범위 국소 수정 → write queue. REPLAN_REQUIRED = 구조 재설계 필요 →
+# 루프 밖 배출(이슈 증거 필수). UNCLEAR = 판단 불가 → 사용자 판단 (headless는 미해결 처리).
+REMEDIATION_SCOPES = ("FIX_NOW", "REPLAN_REQUIRED", "UNCLEAR")
 # PLAUSIBILITY_FAIL 기각 근거의 수명주기 분류 (run-da/SKILL.md "세션 내 기각 이력" SSOT):
 # FROZEN_SURFACE = frozen changeset의 불변 계약 근거 → 동일 changeset 내 suppress eligible
 # ENVIRONMENT_WORKLOAD = 환경·워크로드 가정 근거 → suppress 비대상. 그 라운드의 판정으로
@@ -49,7 +53,7 @@ PLAUSIBILITY_MATRIX = {
     "NOT_AN_ISSUE": {"FAIL", "N/A"},
     "NEEDS_MORE_INFO": {"PASS", "UNKNOWN"},
 }
-LIVE_SCHEMA_VERSION = "1.1"  # 실시간 결과는 정확히 이 버전 (새 계약 도입 시 검증기와 함께 갱신)
+LIVE_SCHEMA_VERSION = "1.2"  # 실시간 결과는 정확히 이 버전 (새 계약 도입 시 검증기와 함께 갱신)
 
 
 def validate_verdict_entry(entry):
@@ -101,6 +105,19 @@ def validate_verdict_entry(entry):
     if verdict != "NOT_AN_ISSUE" and entry.get("accepted_severity") not in SEVERITY_VALUES:
         violations.append(
             f"accepted_severity 누락 또는 enum 밖 값: {entry.get('accepted_severity')!r}"
+        )
+    # remediation_scope도 write set 진입 가능 verdict에만 필수 — 재설계 지적의 루프 밖
+    # 배출 라우팅(FIX_NOW/REPLAN_REQUIRED/UNCLEAR)이 이 값 하나로 기계 결정된다.
+    # NOT_AN_ISSUE에는 필드 자체를 금지한다 (기각에는 해소 방식이 없다).
+    rscope = entry.get("remediation_scope")
+    if verdict != "NOT_AN_ISSUE":
+        if rscope not in REMEDIATION_SCOPES:
+            violations.append(
+                f"remediation_scope 누락 또는 enum 밖 값: {rscope!r}"
+            )
+    elif rscope is not None:
+        violations.append(
+            f"NOT_AN_ISSUE에 remediation_scope 출력 금지 (got {rscope!r})"
         )
     # stability_status는 폐기된 과거 계약(selective consistency aggregate)의 필드다 —
     # 현행 계약에 적법한 산출 주체가 없으므로 값과 무관하게 위반이다 (aggregate 상태
