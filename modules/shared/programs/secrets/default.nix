@@ -121,7 +121,17 @@
             esac
           fi
           if [ "$_bootout_ok" -eq 1 ]; then
+            # 목록은 bootout 이전 스냅샷이라 낡을 수 있다 — 스캔 이후 bootout까지의
+            # 사이에 agent가 새 generation을 완성하고 심링크를 전환했다면 그 활성
+            # generation이 목록에 남아 있다. 삭제 직전에 심링크를 다시 읽어 활성은
+            # 무조건 보존한다 (활성 generation의 .tmp는 crash loop 원인이 아니다 —
+            # 그 원인은 아직 링크되지 않은 다음 generation의 잔재다).
+            _active_gen="$(readlink "${config.age.secretsDir}" 2>/dev/null || true)"
             for _gen_dir in "''${_stale_gens[@]}"; do
+              if [ "''${_gen_dir%/}" = "$_active_gen" ]; then
+                echo "[agenix] Keeping generation that became active during cleanup: $_gen_dir"
+                continue
+              fi
               echo "[agenix] Removing stale/orphan generation: $_gen_dir"
               rm -rf "$_gen_dir" || echo "[agenix] WARNING: could not fully remove $_gen_dir; leaving for next activation"
             done
