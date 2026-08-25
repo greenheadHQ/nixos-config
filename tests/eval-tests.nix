@@ -951,6 +951,27 @@ let
           cond =
             hasHost && cfg.system.defaults.CustomUserPreferences."com.apple.inputmethod.Korean".DeleteBy == 2;
         }
+        {
+          # agenix 영속 배치 계약 (2026-08-24 dirhelper 소실 재발 방지): darwin HM
+          # 시크릿은 $TMPDIR(dirhelper 3일 미접근 청소 대상)가 아닌 영속 위치
+          # (constants.paths.agenixDarwinSecretsRelPath)에 복호화되고, stale cleanup도
+          # 같은 값(secretsMountPoint 단일 소스)을 봐야 한다.
+          # darwin per-host 리스트의 번호는 NixOS 전역 리스트와 네임스페이스가 분리다
+          # (D20이 양쪽에 독립 존재). 이 리스트의 기존 최댓값 D33(한국어 입력기) 다음.
+          name = "Test D34 ${hostName}: agenix secretsDir는 dirhelper 청소권 밖 영속 경로여야 함";
+          cond =
+            hasHost
+            && (
+              let
+                persistentRoot = "${hm.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
+                cleanupData = hm.home.activation.cleanupAgenixStaleGenerations.data or "";
+              in
+              hm.age.secretsDir == persistentRoot
+              && hm.age.secretsMountPoint == "${persistentRoot}.d"
+              && nixpkgsLib.hasInfix "${persistentRoot}.d" cleanupData
+              && !nixpkgsLib.hasInfix "DARWIN_USER_TEMP_DIR" cleanupData
+            );
+        }
       ]
     ) expectedDarwinHosts
   );
@@ -1409,6 +1430,16 @@ let
       cond =
         nixosCfg.homeserver.claudeRemoteControl.enable
         && nixosCfg.systemd.services.claude-rc-ensure.environment.CLAUDE_RC_DRIFT_POLICY == "automatic";
+    }
+    {
+      # linux(MiniPC)는 XDG_RUNTIME_DIR(systemd tmpfs, dirhelper 없음) — darwin 전용
+      # 영속 배치 override(darwin 리스트의 D34)가 linux로 새지 않고 upstream 기본값을
+      # 유지해야 한다. HM 사용자는 기존 let 바인딩 claudexNixosHm(constants.username
+      # 고정)을 재사용한다.
+      name = "Test D33: NixOS HM agenix secretsDir는 XDG_RUNTIME_DIR 기본값을 유지해야 함";
+      cond =
+        nixpkgsLib.hasInfix "XDG_RUNTIME_DIR" claudexNixosHm.age.secretsDir
+        && nixpkgsLib.hasInfix "XDG_RUNTIME_DIR" claudexNixosHm.age.secretsMountPoint;
     }
   ]
   ++ darwinIntentTests;

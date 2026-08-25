@@ -26,12 +26,14 @@
     }
   );
 
-  # agenix crash loop 방지: stale .tmp 파일 정리
+  # agenix generation 위생: stale .tmp 정리 + 심링크 밖 orphan 회수
+  # (+ mount point 선생성·Time Machine 제외 provisioning — 본문 서두)
   #
   # nrs.sh의 launchd cleanup이 복호화 중인 agenix agent를 kill하면
   # 0400 권한의 .tmp 파일이 다음 generation 디렉토리에 남는다.
   # 이후 agent 재시작 시 해당 .tmp를 덮어쓸 수 없어 crash loop 발생.
-  # setupLaunchAgents 전에 깨진 generation을 정리한다.
+  # setupLaunchAgents 전에 .tmp 잔재 generation과, secretsDir 심링크가
+  # 가리키지 않는 orphan generation을 정리한다.
   #
   # 삭제 전 bootout으로 writer와 직렬화한다: .tmp는 "쓰다 만 잔재"만이 아니라
   # "agent가 지금 쓰는 중"의 표시일 수도 있다. 쓰는 중인 generation을 rm -rf하면
@@ -49,19 +51,47 @@
   # cleanup)과 같은 원칙이다. bootout 성공 후에는 job이 도메인에서 제거되어
   # 재스폰이 불가능하고, setupLaunchAgents는 plist가 unchanged라도 not-loaded
   # job을 다시 bootstrap하므로 ("up-to-date but not loaded" 경로) RunAtLoad 1회
-  # 실행이 완전한 fresh generation을 재생성한다. .tmp 잔재가 없으면 bootout도
-  # 하지 않아 정상 경로에는 아무 개입이 없다.
+  # 실행이 완전한 fresh generation을 재생성한다. 정리 대상(.tmp 잔재 또는 심링크
+  # 밖 orphan)이 없으면 bootout도 하지 않아 정상 경로에는 아무 개입이 없다 —
+  # upstream이 매 실행 직전 generation을 지우므로 정상 상태의 mount에는 활성
+  # generation 하나만 남아 두 판정 모두 비어 있다.
   #
   # rm 실패는 non-fatal로 남긴다 — bootout 직렬화로 경합은 구조적으로 제거되므로
   # 이제 실패는 예상 밖 이상 신호이지만, 그것이 activation 전체를 중단시킬 이유는
   # 없다 (경고 후 다음 activation에서 재시도).
   home.activation.cleanupAgenixStaleGenerations = lib.mkIf pkgs.stdenv.isDarwin (
     lib.hm.dag.entryBefore [ "setupLaunchAgents" ] ''
-      _agenix_mount="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)/agenix.d"
+      _agenix_mount="${config.age.secretsMountPoint}"
+      # 디렉토리 선생성 + Time Machine sticky 제외 — 구 TMPDIR 위치는 macOS 표준
+      # 백업 제외 영역이었지만 홈 아래 영속 위치는 기본 포함이라(tmutil isexcluded
+      # 실측), 백업 목적지를 나중에 구성해도 평문 시크릿이 소급 편입되지 않게
+      # 구 경로가 무료로 제공하던 제외 계약을 복원한다 (멱등).
+      /bin/mkdir -p "$_agenix_mount"
+      /usr/bin/tmutil addexclusion "$_agenix_mount" 2>/dev/null || true
+      # 가드는 mkdir -p 직후라 항상 참이다 (set -eu에서 mkdir 실패는 여기 도달 전
+      # 중단). mkdir 제거·이동 시의 안전망으로 유지한다.
       if [ -d "$_agenix_mount" ]; then
+        # 정리 대상 두 종류: (a) .tmp 잔재 generation (쓰다 만/중단), (b) 현재
+        # secretsDir 심링크가 가리키지 않는 orphan generation. orphan의 주 발생
+        # 경로는 복호화 도중 kill — upstream은 신 generation을 스크립트 서두에
+        # 만들고 심링크 전환은 맨 끝이라, 그 사이 전 구간에서 죽으면 링크되지
+        # 않은 generation이 남는다 (.tmp 없는 변형 포함: 마지막 secret mv 이후
+        # 또는 secret 사이 kill은 이 분기만이 잡는다). 심링크 전환(ln -sfT) 직후
+        # 직전 generation rm -rf가 끝나기 전에 죽으면 남는 구 generation도 같다 —
+        # 링크된 적 있고 .tmp도 없지만 심링크가 이미 신 generation을 가리키므로 이
+        # 분기가 회수한다. 이전 activation의 bootout 실패는 발생 원인이 아니라
+        # 잔재가 유지되는 사유다. 롤백 왕복(신→구→신)
+        # 잔재는 심링크가 계속 가리키므로 여기 안 걸리고, 신 구성 재적용 시
+        # upstream의 직전 generation 삭제가 회수한다. 소비자는 generation 번호가
+        # 아니라 안정 심링크(secretsDir)를 경유하므로 심링크가 가리키는
+        # generation만 남기면 안전하다. 삭제는 아래 bootout 직렬화 뒤에만 수행한다.
+        _active_gen="$(readlink "${config.age.secretsDir}" 2>/dev/null || true)"
         _stale_gens=()
         for _gen_dir in "$_agenix_mount"/*/; do
+          [ -d "$_gen_dir" ] || continue
           if /usr/bin/find "$_gen_dir" -name '*.tmp' -maxdepth 1 2>/dev/null | /usr/bin/grep -q .; then
+            _stale_gens+=("$_gen_dir")
+          elif [ "''${_gen_dir%/}" != "$_active_gen" ]; then
             _stale_gens+=("$_gen_dir")
           fi
         done
@@ -91,8 +121,18 @@
             esac
           fi
           if [ "$_bootout_ok" -eq 1 ]; then
+            # 목록은 bootout 이전 스냅샷이라 낡을 수 있다 — 스캔 이후 bootout까지의
+            # 사이에 agent가 새 generation을 완성하고 심링크를 전환했다면 그 활성
+            # generation이 목록에 남아 있다. 삭제 직전에 심링크를 다시 읽어 활성은
+            # 무조건 보존한다 (활성 generation의 .tmp는 crash loop 원인이 아니다 —
+            # 그 원인은 아직 링크되지 않은 다음 generation의 잔재다).
+            _active_gen="$(readlink "${config.age.secretsDir}" 2>/dev/null || true)"
             for _gen_dir in "''${_stale_gens[@]}"; do
-              echo "[agenix] Removing stale generation with .tmp files: $_gen_dir"
+              if [ "''${_gen_dir%/}" = "$_active_gen" ]; then
+                echo "[agenix] Keeping generation that became active during cleanup: $_gen_dir"
+                continue
+              fi
+              echo "[agenix] Removing stale/orphan generation: $_gen_dir"
               rm -rf "$_gen_dir" || echo "[agenix] WARNING: could not fully remove $_gen_dir; leaving for next activation"
             done
           else
@@ -104,6 +144,23 @@
   );
 
   age = {
+    # macOS: 복호화 시크릿을 $TMPDIR 밖 영속 위치에 둔다. upstream 기본값
+    # $(getconf DARWIN_USER_TEMP_DIR)/agenix{,.d}는 com.apple.bsd.dirhelper가
+    # 새벽 03:35에 수행하는 "3일 미접근 파일 청소"의 대상이라, 재부팅 없이도
+    # 시크릿이 통째로 사라진다 (2026-08-24 실측: minipc-headless·SA token 등 4건
+    # dangling — 재생성 경로는 LaunchAgent RunAtLoad 1회뿐이라 다음 로그인까지
+    # 복구 불능, #1094 무인 SSH 우회 사망). 영속 위치의 트레이드오프와 대응:
+    # 디스크 잔존 시간 증가는 FileVault 전제 동일(TMPDIR도 재부팅 전까지 디스크
+    # 잔존), 파일 0400·디렉토리 0751 권한은 upstream 그대로, Time Machine 기본
+    # 포함으로의 반전은 위 cleanup activation의 tmutil addexclusion이 복원한다.
+    # 롤백(구 구성 복귀) 시 신 경로에 남는 평문 generation은 구 구성이 이 경로를
+    # 모르므로 회수 주체가 없고, 신 구성을 재적용할 때 upstream의 직전 generation
+    # 삭제(와 심링크 밖 orphan에 한해 위 cleanup)가 회수한다 — 롤백 상태에 머무는
+    # 동안의 수동 회수 절차는 managing-secrets references/troubleshooting.md 참조.
+    # linux(MiniPC)는 XDG_RUNTIME_DIR(systemd tmpfs) — dirhelper 문제가 없어 기본값 유지.
+    secretsDir = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
+    secretsMountPoint = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}.d";
+
     # SSH 키로 복호화
     identityPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
 

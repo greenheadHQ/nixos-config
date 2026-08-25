@@ -127,19 +127,22 @@ ls -la secrets/*.age
 증상: `nrs` 후 일부 시크릿이 복호화되지 않음. `~/Library/Logs/agenix/stderr`에 아래 에러 반복:
 
 ```
-age: error: open /var/folders/.../agenix.d/<N>/<secret>.tmp: permission denied
+age: error: open /Users/<user>/.local/state/agenix.d/<N>/<secret>.tmp: permission denied
 ```
+
+(2026-08 이전 사고 당시 경로는 `$TMPDIR/agenix.d`였다 — 현재 darwin 배치는
+`~/.local/state/agenix.d`이며 정본은 `constants.paths.agenixDarwinSecretsRelPath`.)
 
 원인: `nrs`의 launchd cleanup이 복호화 중인 agenix agent를 kill → 0400 권한의 `.tmp` 파일이 다음 generation 디렉토리에 남음 → agent 재시작 시 해당 `.tmp`를 덮어쓸 수 없어 crash loop.
 
 진단:
 
 ```bash
-# agenix generation 디렉토리 확인
-ls -la "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/"
+# agenix generation 디렉토리 확인 (경로 정본: constants.paths.agenixDarwinSecretsRelPath)
+ls -la ~/.local/state/agenix.d/
 
 # 깨진 generation에 .tmp 파일 확인
-find "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/" -name '*.tmp'
+find ~/.local/state/agenix.d/ -name '*.tmp'
 
 # agenix 에러 로그 확인
 tail -20 ~/Library/Logs/agenix/stderr
@@ -158,7 +161,9 @@ nrs --force
 
 수동으로 개별 명령을 실행해야 하는 예외 상황(예: nrs 자체가 불가)이라면, 위 예방 코드(`modules/shared/programs/secrets/default.nix`)의 순서와 조건을 그대로 따른다 — bootout이 성공하거나 명시적 미로드("No such process")일 때만 삭제하고, macOS 26 미만에서는 `--wait` 없이 bootout 후 1초 대기한다.
 
-예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation 디렉토리를 자동 삭제한다. `.tmp`는 "agent가 지금 쓰는 중"의 표시일 수도 있으므로, 삭제 전에 `launchctl bootout`으로 agent를 내려 writer와 rm을 직렬화한다 — 쓰는 중인 generation을 그냥 rm -rf하면 ENOTEMPTY로 실패해 activation이 중단되거나(2026-08-12 사례), 완성된 secret 일부만 지워진 불완전 generation이 조용히 배포될 수 있다. bootout 계약은 home-manager launchd 모듈의 `bootoutAgent`와 동일하다: macOS 26+는 `--wait`로 종료 완료를 보장, 이전 버전은 성공 후 1초 대기, "No such process"류만 미로드(harmless)로 통과하고 그 외 실패 시에는 활성 writer가 남았을 수 있으므로 그 회차의 삭제를 건너뛴다. bootout된 agent는 `setupLaunchAgents`가 다시 bootstrap하고(home-manager는 plist unchanged라도 not-loaded job을 재로드) RunAtLoad 1회 실행이 완전한 fresh generation을 재생성한다. `.tmp` 잔재가 없으면 bootout 없이 통과하므로 정상 경로에는 개입이 없다. rm 실패는 non-fatal (경고 후 다음 activation에서 재시도).
+예방 코드: `modules/shared/programs/secrets/default.nix`에 `cleanupAgenixStaleGenerations` activation이 추가됨. `setupLaunchAgents` 전에 `.tmp` 파일이 있는 stale generation과, `secretsDir` 심링크가 가리키지 않는 orphan generation을 자동 삭제한다 — 주 발생 경로는 복호화 도중 kill(아직 링크되지 않은 신 generation, `.tmp` 없는 변형 포함)이고, 심링크 전환 직후 직전 generation `rm -rf`가 끝나기 전 kill로 남는 구 generation도 같은 분기가 잡는다 (이전 bootout 실패는 발생 원인이 아니라 잔재 유지 사유다). `.tmp`는 "agent가 지금 쓰는 중"의 표시일 수도 있으므로, 삭제 전에 `launchctl bootout`으로 agent를 내려 writer와 rm을 직렬화한다 — 쓰는 중인 generation을 그냥 rm -rf하면 ENOTEMPTY로 실패해 activation이 중단되거나(2026-08-12 사례), 완성된 secret 일부만 지워진 불완전 generation이 조용히 배포될 수 있다. bootout 계약은 home-manager launchd 모듈의 `bootoutAgent`와 동일하다: macOS 26+는 `--wait`로 종료 완료를 보장, 이전 버전은 성공 후 1초 대기, "No such process"류만 미로드(harmless)로 통과하고 그 외 실패 시에는 활성 writer가 남았을 수 있으므로 그 회차의 삭제를 건너뛴다. bootout된 agent는 `setupLaunchAgents`가 다시 bootstrap하고(home-manager는 plist unchanged라도 not-loaded job을 재로드) RunAtLoad 1회 실행이 완전한 fresh generation을 재생성한다. 정리 대상(`.tmp` 잔재 또는 심링크 밖 orphan)이 없으면 bootout 없이 통과하므로 정상 경로에는 개입이 없다 — upstream이 매 실행 직전 generation을 지우므로 정상 상태의 mount에는 활성 generation 하나만 남는다. rm 실패는 non-fatal (경고 후 다음 activation에서 재시도).
+
+영속 경로 롤백 잔재: darwin 시크릿을 영속 경로(`~/.local/state/agenix{,.d}`)로 배치한 구성에서 구 구성(TMPDIR 배치)으로 롤백해 머무는 경우, 구 구성은 신 경로를 모르므로 평문 generation을 회수할 주체가 없다 (dirhelper도 홈 아래는 청소하지 않는다). 신 구성을 다시 적용하면 upstream의 직전 generation 삭제가 회수하지만, 재적용 계획 없이 롤백 상태를 유지한다면 수동으로 회수한다 — 먼저 `readlink ~/.config/pushover/share`(공통 attrset 배포라 personal·work 양쪽 darwin 호스트에 존재)가 `/var/folders/...`(구 경로)를 가리키는지 확인해 구 구성 활성을 확정한 뒤 `rm -rf ~/.local/state/agenix ~/.local/state/agenix.d`.
 
 ---
 
