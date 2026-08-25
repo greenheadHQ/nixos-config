@@ -180,5 +180,5 @@ test_claude_stale_snapshot_path_recovery() {
       "$zsh_bin" -d -c 'source "$SNAPSHOT_FILE"; "$TIMEOUT_BIN" ssh'
   )"
   [[ "$actual" == "headless" ]] \
-    || fail "unrepaired snapshot still resolved raw SSH: $actual"
+    || fail "repaired snapshot still resolved raw SSH: $actual"
 }

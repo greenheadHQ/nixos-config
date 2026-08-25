@@ -62,7 +62,7 @@ shell의 `ssh()` preflight 래퍼(`modules/shared/programs/shell/darwin.nix`)가
 personal Claude/Codex launcher 또는 Claude background child는 private dispatcher와 dedicated
 `minipc-headless` key를 사용하므로 1Password 잠금 해제를 시도하지 않는다. automation에서
 팝업이나 `HEADLESS_SSH_AUTH_TIMEOUT`이 발생하면 상위 `SKILL.md`의 정본 절차로 돌아가 actual
-child의 `command -v ssh`, stale snapshot recovery marker, agenix materialization metadata,
+child의 `command -v ssh`, snapshot recovery marker, agenix materialization metadata,
 server entry, Tailscale 순서로 진단한다. key 본체는 출력하지 않는다.
 
 해결:
