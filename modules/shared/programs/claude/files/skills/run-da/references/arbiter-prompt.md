@@ -39,7 +39,7 @@ Portability 축은 `N/A`도 허용한다. finding 자체가 cross-environment �
 
 판정 우선순위 (core invariant):
 1. 사실 정확성 또는 변경 연관성이 FAIL → NOT_AN_ISSUE.
-2. Plausibility FAIL → NOT_AN_ISSUE. 이때 기각 근거가 어디에 의존하는지를 `evidence_scope`로 함께 기록한다 — frozen changeset의 불변 계약(코드 구조, 문서·설정 계약)에만 의존하면 `FROZEN_SURFACE`, 환경·워크로드 가정(입력 규모, 배포 환경, 사용 경로)에 의존하면 `ENVIRONMENT_WORKLOAD`. 이 값이 ledger 영속 여부를 결정한다 ([`dismissal-ledger.md`](dismissal-ledger.md) 참조).
+2. Plausibility FAIL → NOT_AN_ISSUE. 이때 기각 근거가 어디에 의존하는지를 `evidence_scope`로 함께 기록한다 — frozen changeset의 불변 계약(코드 구조, 문서·설정 계약)에만 의존하면 `FROZEN_SURFACE`, 환경·워크로드 가정(입력 규모, 배포 환경, 사용 경로)에 의존하면 `ENVIRONMENT_WORKLOAD`. 이 값이 세션 내 기각 이력의 suppress eligibility를 결정한다 ([`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 참조).
 3. 사실 정확성·변경 연관성·Plausibility 중 판단 불가가 있으면 → NEEDS_MORE_INFO.
 4. 셋 모두 PASS → CONFIRMED_ISSUE (심각도/실행 가능성 FAIL은 조정·보완 사유이지 기각 사유가 아님).
 
@@ -255,7 +255,7 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): FAIL — "입력이 수 GB면 OOM"은 이론상 시나리오. 이 함수의 입력은 로컬 설정 파일(수 KB 규모)이며, 그 크기의 입력이 생길 현실적 발생 경로가 제시되지 않았다. SECURITY 관점도 아니므로 공격자 유발 경로 검토 대상이 아니다.
   - Portability / Cross-Environment Drift: N/A
 - **심각도 판정**: MEDIUM — reviewer 원값 유지 (Plausibility FAIL 기각)
-- **evidence_scope**: ENVIRONMENT_WORKLOAD — 기각 근거가 "입력이 로컬 설정 파일 규모"라는 워크로드 가정에 의존한다. 운영 조건이 바뀌면 재평가가 필요하므로 ledger 비영속.
+- **evidence_scope**: ENVIRONMENT_WORKLOAD — 기각 근거가 "입력이 로컬 설정 파일 규모"라는 워크로드 가정에 의존한다. 운영 조건이 바뀌면 재평가가 필요하므로 라운드 간 suppress 대상이 아니다.
 - **근거**: 해당 함수의 실제 호출부를 읽어 입력원이 로컬 설정 파일뿐임을 확인.
 - **증거**: 호출부 코드 스니펫 — 입력이 고정 경로 설정 파일로 한정됨.
 ```
@@ -274,7 +274,7 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): FAIL — "이름을 더 서술적으로 바꾸면 좋을 듯"은 실존 마찰이 아니라 취향 제안. 현재 이름이 동작과 불일치하거나 독자가 실제로 오독한 증거가 없고, 주변 코드의 네이밍 관례와도 일치한다.
   - Portability / Cross-Environment Drift: N/A
 - **심각도 판정**: LOW — reviewer 원값 유지 (Plausibility FAIL 기각)
-- **evidence_scope**: FROZEN_SURFACE — 기각 근거가 frozen changeset의 코드 구조·네이밍 관례에만 의존한다. 그 표면이 그대로인 한 결론이 유지되므로 ledger 영속 eligible.
+- **evidence_scope**: FROZEN_SURFACE — 기각 근거가 frozen changeset의 코드 구조·네이밍 관례에만 의존한다. 그 표면이 그대로인 한 결론이 유지되므로 동일 changeset 내 suppress eligible.
 - **근거**: 함수 정의와 전체 호출부를 확인 — 이름이 실제 동작을 정확히 기술하고 주변 관례와 일치함.
 - **증거**: 같은 모듈의 기존 helper 네이밍 목록 — 제안된 이름이 오히려 관례 이탈.
 ```
@@ -307,7 +307,7 @@ for_plan 핵심 원칙:
 
 ## 출력 형식
 
-각 finding당 사람 읽기용 markdown 블록과 기계 파싱용 VERDICT_JSON 블록을 둘 다 출력한다. 기계 파싱용 블록은 selective consistency harness(`fleiss-kappa.py`)가 사용한다.
+각 finding당 사람 읽기용 markdown 블록과 기계 파싱용 VERDICT_JSON 블록을 둘 다 출력한다. 기계 파싱용 블록은 공통 검증기(`fleiss-kappa.py --validate-only`)가 사용한다.
 
 ### 사람 읽기용 블록
 
@@ -332,7 +332,7 @@ for_plan 핵심 원칙:
 
 ### 기계 파싱용 VERDICT_JSON 블록
 
-사람 읽기용 블록 바로 아래에 fenced JSON을 추가한다. 기계 소비자(selective consistency harness와 메인 에이전트의 caller 검증·집계)는 이 블록만 참조하므로 사람용 wording 변경에 영향받지 않는다 — 사람용 블록은 근거 서술과 보고용 표시 계층이다. `<!-- verdict-json:start -->`와 `<!-- verdict-json:end -->` delimiter로 감싼다.
+사람 읽기용 블록 바로 아래에 fenced JSON을 추가한다. 기계 소비자(공통 검증기와 메인 에이전트의 caller 검증·집계)는 이 블록만 참조하므로 사람용 wording 변경에 영향받지 않는다 — 사람용 블록은 근거 서술과 보고용 표시 계층이다. `<!-- verdict-json:start -->`와 `<!-- verdict-json:end -->` delimiter로 감싼다.
 
 아래는 verdict별 실제 유효 payload다 — 선택지 나열이 아니라 그대로 검증기를 통과하는 완성 예시이므로, 자기 판정에 해당하는 것을 골라 값만 바꿔 쓴다 (필드별 허용값과 조건은 아래 "필드 의미" 참조). 값 조합에는 verdict마다 다른 제약이 있어서(예: CONFIRMED_ISSUE는 `plausibility`가 반드시 `PASS`, `confidence`에 `N/A` 금지) 한 골격에 선택지를 나열하면 통과하지 못하는 조합이 만들어진다. 예시 블록은 outer fence 4 backticks로 감싸고 inner JSON fence는 3 backticks로 내부에 둔다 (CommonMark/GitHub fenced-code 중첩 호환). 실제 출력 시에는 inner JSON 블록 하나만 3-backtick fence로 내보낸다.
 
@@ -431,12 +431,12 @@ inner `json` fence, `verdict` enum, 또는 Arbiter result dir marker 형식을 �
 - `schema_version`: VERDICT_JSON 스키마 버전. 현재 실시간 계약은 정확히 `1.1`이며 검증기는 이 값만 허용한다 — `1.0`을 포함한 다른 버전은 실시간 경로에서 semantic malformed다 (하위호환 미지원, [`protocol.md`](protocol.md) caller 검증 SSOT). 새 계약 버전 도입 시 이 값·검증기·문서를 함께 갱신한다.
 - `finding_id`: DA reviewer finding의 원본 ID (예: `Correctness-1`, `SECURITY-2`).
 - `verdict`: core verdict enum. guardrail 축 Portability로 verdict를 뒤집지 않는다.
-- `confidence`: NOT_AN_ISSUE/CONFIRMED_ISSUE 시 Arbiter의 판정 신뢰도. `fleiss-kappa.py`는 이 필드를 selective consistency 결과에 보존하여 low-confidence unanimous verdict의 fail-closed 승격을 유지한다.
+- `confidence`: NOT_AN_ISSUE/CONFIRMED_ISSUE 시 Arbiter의 판정 신뢰도. LOW confidence는 caller의 fail-closed 승격(NEEDS_MORE_INFO 경로) 트리거다.
 - `reviewer_severity`: DA reviewer가 보고한 원심각도. 항상 출력한다 — `accepted_severity`와 함께 있으면 심각도 조정 여부가 JSON만으로 드러난다.
-- `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다. 소비 규칙(N=3 지지 entry 최댓값 집계 — 실시간 entry의 누락은 fallback이 아니라 semantic malformed다)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
+- `accepted_severity`: 수렴 판정용 canonical 심각도 — 심각도 조정 시 조정값, 아니면 `reviewer_severity`와 동일. write set 진입 가능 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에서 필수다 — NOT_AN_ISSUE는 write set에 들어가지 않으므로 요구하지 않는다. 소비 규칙(누락은 fallback이 아니라 semantic malformed다)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 세션 분석 지표(M-4 등)는 이 필드가 아니라 reviewer 보고 심각도를 계속 사용한다.
 - `rejection_basis`: NOT_AN_ISSUE 판정의 기각 근거 축 — `FACTUAL_FAIL`(사실 정확성) / `RELEVANCE_FAIL`(변경 연관성) / `PLAUSIBILITY_FAIL`(현실적 발생 가능성). NOT_AN_ISSUE에서만 출력하며(다른 verdict에는 필드 자체를 넣지 않는다), `plausibility=N/A`의 적법성 검증을 JSON 자기완결로 만든다 ([`protocol.md`](protocol.md) caller 검증).
-- `evidence_scope`: `rejection_basis=PLAUSIBILITY_FAIL`일 때만 출력하는 기각 근거의 수명주기 분류 — `FROZEN_SURFACE`(frozen changeset의 불변 계약에만 의존) / `ENVIRONMENT_WORKLOAD`(환경·워크로드 가정에 의존). ledger 기록자는 이 값만으로 영속 eligibility를 판정한다 (사람용 rationale 재해석 불필요 — [`dismissal-ledger.md`](dismissal-ledger.md) SSOT). 다른 기각 근거·verdict에 이 필드가 있으면 caller 검증 위반이다.
-- `stability_status`: 개별 VERDICT_JSON에는 출력하지 않는다 (있으면 caller 검증 위반). first-pass/단일 판정은 agreement 정보 없이 독립 판단이므로 Arbiter가 이 값을 산출할 수 없다 — 실제 상태는 selective consistency N=3 이후 `fleiss-kappa.py`가 3개 entry를 집계해 aggregate envelope의 `stability_status`(`stable`/`split`/`fragmented`)로만 산출하며, 그 필드의 소유자도 aggregate 하나뿐이다. 자세한 상태 전이는 [references/stability-measurement.md](stability-measurement.md)와 [references/protocol.md](protocol.md) 참조.
+- `evidence_scope`: `rejection_basis=PLAUSIBILITY_FAIL`일 때만 출력하는 기각 근거의 수명주기 분류 — `FROZEN_SURFACE`(frozen changeset의 불변 계약에만 의존) / `ENVIRONMENT_WORKLOAD`(환경·워크로드 가정에 의존). 메인 에이전트는 이 값만으로 세션 내 기각 이력의 suppress eligibility를 판정한다 (사람용 rationale 재해석 불필요 — [`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" SSOT). 다른 기각 근거·verdict에 이 필드가 있으면 caller 검증 위반이다.
+- `stability_status`: 출력하지 않는다 (있으면 caller 검증 위반). 폐기된 과거 계약(selective consistency aggregate)의 필드이며, 현행 계약에는 적법한 산출 주체가 없다 ([`protocol.md`](protocol.md) caller 검증 참조).
 - `axes`: 판정 보조·관측 축의 평가 결과를 담는 맵 — verdict에 대한 결정권은 각 축의 정의를 따른다 (`portability`: 결정권 없는 guardrail / `plausibility`: 판정 우선순위에 참여하는 core criterion의 기록). 값은 사람용 블록의 "기준 평가" 줄과 일치해야 하며, `plausibility`의 caller 검증(정합 행렬·fail-closed 전이)은 [`protocol.md`](protocol.md)의 "수렴 판정"이 SSOT다. 축 추가 시 이 맵에 새 키가 더해진다.
 
 ## 프롬프트 조립
@@ -491,11 +491,6 @@ Working directory: {cwd}
 for_plan 조립 필수 규칙:
 - 계획 원문이 없으면 Arbiter를 실행하지 않는다 (조립 실패).
 - 비신뢰 텍스트(계획 원문, DA 결과)를 포함할 때 quoted heredoc(`<<'PROMPT'`) 사용을 의무화한다.
-
-Selective consistency N=3 재판정 시 조립 규칙 (for_pr·for_plan 공통):
-- `## 검증 대상 findings` 섹션에 trigger된 finding subset만 포함한다 (전체 first-pass batch 재사용 금지). first-pass 프롬프트 전체를 N=3번 재실행하면 high reasoning 비용이 batch 크기에 비례해 3배 증가한다.
-- 계획 원문(for_plan) 또는 diff 컨텍스트(for_pr)는 그대로 유지한다. 축소 대상은 finding 목록뿐이다.
-- 결과 VERDICT_JSON 블록도 trigger된 finding에 대해서만 출력된다.
 
 ### 공통 금지 사항 (양쪽 모드 동일)
 

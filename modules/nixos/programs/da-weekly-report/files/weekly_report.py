@@ -500,11 +500,6 @@ def normalize_analysis(sidecar: dict) -> dict:
             "baseline_note": metrics.get("M-4", {}).get("baseline_note"),
             "transition_matrix": metrics.get("M-4", {}).get("transition_matrix", {}),
         },
-        "M-5": {
-            "source": metrics.get("M-5", {}).get("source", "unavailable"),
-            "n": metrics.get("M-5", {}).get("n", 0),
-            "distribution": metrics.get("M-5", {}).get("distribution", {}),
-        },
         "M-6": {
             "name": metrics.get("M-6", {}).get("name", "persistence_key non-convergence"),
             "persistence_key": metrics.get("M-6", {}).get("persistence_key"),
@@ -570,7 +565,6 @@ def build_coverage(sidecar: dict, health: dict, analyze_exit_code: int) -> dict:
 
     arbiter_sessions = session_counts.get("arbiter_marker_sessions", 0) or 0
     intensity_sessions = session_counts.get("intensity_marker_sessions", 0) or 0
-    m5_source = sidecar.get("metrics", {}).get("M-5", {}).get("source", "unavailable")
     return {
         "partial": bool(warnings or health.get("warnings") or analyze_exit_code != 0),
         "analyze_exit_code": analyze_exit_code,
@@ -602,7 +596,6 @@ def build_coverage(sidecar: dict, health: dict, analyze_exit_code: int) -> dict:
         "m2_source_distribution": sidecar.get("metrics", {}).get("M-2", {}).get(
             "source_distribution", {}
         ),
-        "m5_source_distribution": {m5_source: 1},
         "host_collection": host_collection,
         "warnings": warnings,
         "health_warnings": health.get("warnings", []),
@@ -1189,7 +1182,6 @@ def _metric_projection(metrics: dict) -> dict:
     m2 = metrics.get("M-2", {})
     m3 = metrics.get("M-3", {})
     m4 = metrics.get("M-4", {})
-    m5 = metrics.get("M-5", {})
     m6 = metrics.get("M-6", {})
     severities = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE")
     transition_keys = tuple(
@@ -1237,13 +1229,6 @@ def _metric_projection(metrics: dict) -> dict:
             "baseline_note": _safe_string(m4.get("baseline_note"), "unavailable"),
             "transition_matrix": _numeric_subset(
                 m4.get("transition_matrix"), transition_keys
-            ),
-        },
-        "M-5": {
-            "source": _safe_string(m5.get("source"), "unavailable"),
-            "n": _safe_number(m5.get("n")),
-            "distribution": _numeric_subset(
-                m5.get("distribution"), ("stable", "split", "fragmented")
             ),
         },
         "M-6": {
@@ -1495,7 +1480,7 @@ def _render_github_markdown_source(source: dict) -> str:
         )
     out.append("")
 
-    for metric_name in ("M-1", "M-2", "M-3", "M-4", "M-5", "M-6"):
+    for metric_name in ("M-1", "M-2", "M-3", "M-4", "M-6"):
         _append_metric_section(out, metric_name, summary["metrics"][metric_name])
 
     out.extend(["## Health 요약", "", "| 항목 | 값 |", "|------|-----|"])
@@ -1585,14 +1570,12 @@ def render_markdown(report: dict) -> str:
     out.append("")
     m1 = metrics["M-1"]
     m2 = metrics["M-2"]
-    m5 = metrics["M-5"]
     m6 = metrics["M-6"]
     out.append("| 지표 | 값 |")
     out.append("|------|-----|")
     out.append(f"| 분석 세션 | {analysis.get('session_counts', {}).get('total', 0)} |")
     out.append(f"| M-1 FULL | {m1.get('distribution', {}).get('FULL', 0)} ({m1.get('percentages', {}).get('FULL', 0.0):.1f}%) |")
     out.append(f"| M-2 CONFIRMED_ISSUE | {m2.get('distribution', {}).get('CONFIRMED_ISSUE', 0)} ({m2.get('percentages', {}).get('CONFIRMED_ISSUE', 0.0):.1f}%) |")
-    out.append(f"| M-5 source | {m5.get('source')} / n={m5.get('n', 0)} |")
     out.append(f"| M-6 missing persistence | {m6.get('coverage', {}).get('missing_persistence_components', 0)} |")
     out.append(f"| run-da docs | {health.get('document_size', {}).get('markdown_file_count', 0)} files / {health.get('document_size', {}).get('total_line_count', 0)} lines |")
     out.append(f"| run-da rules | {health.get('rule_counts', {}).get('total', 0)} |")
@@ -1660,18 +1643,6 @@ def render_markdown(report: dict) -> str:
         out.append(f"| {esc(transition)} | {count} |")
     if not m4.get("transition_matrix"):
         out.append("| 없음 | 0 |")
-    out.append("")
-
-    out.append("## M-5: selective consistency stability_status 분포")
-    out.append("")
-    out.append(f"source: `{esc(m5.get('source'))}`")
-    out.append("")
-    out.append("| stability_status | count |")
-    out.append("|------------------|-------|")
-    for status, count in sorted(m5.get("distribution", {}).items()):
-        out.append(f"| {esc(status)} | {count} |")
-    if not m5.get("distribution"):
-        out.append("| unavailable | 0 |")
     out.append("")
 
     out.append("## M-6: persistence_key 비수렴")

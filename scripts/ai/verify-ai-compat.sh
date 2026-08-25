@@ -509,7 +509,9 @@ echo "=== Codex CLI-default native capability probe ==="
 # slot은 root 포함이 명시된 전체 문형("There are N ... including you")에서 두 숫자가
 # 일치할 때만 인정한다. anchor 미식별(0개/복수)이면 추측하지 않고 unknown으로 fail.
 # 판별 축: lifecycle(explicit close 유무)과 batch-limit(slot 광고)을 분리 평가해
-# public 3-profile(current/legacy/unknown)로 도출한다 (#1098 target shape).
+# public 2-profile(current/unknown)로 도출한다 (#1098 target shape; legacy는 실사용
+# 0건으로 제거 — #1257. explicit close가 광고되는 과거 lifecycle 표면은 지원 종료
+# 표면이므로 unknown(fail-safe)으로 강등한다).
 # cancellation(중단 도구)은 profile 판별과 독립인 별도 capability로 보고만 한다
 # (runtime-mapping.md: 중단은 광고된 도구가 있을 때만, 없으면 conservative wait).
 # 이 판정은 surface_scope=cli-default 전용이며, active Desktop/다른 세션 표면의
@@ -565,11 +567,12 @@ if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
       case ",$_cap_tools," in
         *,interrupt_agent,*) _cap_interrupt="yes" ;;
       esac
-      # 도출: lifecycle 미확정 또는 slot 미확정이면 unknown.
-      if [ "$_cap_lifecycle" = "unavailable" ] || [ "$_cap_slot_state" = "unknown" ]; then
+      # 도출: lifecycle 미확정·slot 미확정이면 unknown. explicit close가 광고되는
+      # 표면은 지원 종료된 과거 lifecycle이므로 current로 오인하지 않고 unknown으로
+      # 강등한다 (legacy profile 제거 — #1257).
+      if [ "$_cap_lifecycle" = "unavailable" ] || [ "$_cap_slot_state" = "unknown" ] \
+        || [ "$_cap_lifecycle" = "explicit-close" ]; then
         _cap_profile="unknown"
-      elif [ "$_cap_lifecycle" = "explicit-close" ]; then
-        _cap_profile="legacy"
       else
         _cap_profile="current"
       fi
@@ -579,6 +582,8 @@ if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
         if [ "$_cap_lifecycle" = "unavailable" ]; then
           # spawn/wait 자체가 없으면 native 실행이 아예 불가하다 — serial조차 안내하지 않는다.
           fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=unavailable interrupt=$_cap_interrupt tools=[${_cap_tools:-none}] — native 도구 부재로 native fan-out 자체 불가, codex exec fallback만 가능"
+        elif [ "$_cap_lifecycle" = "explicit-close" ]; then
+          fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=explicit-close interrupt=$_cap_interrupt tools=[$_cap_tools] — explicit close_agent가 광고되는 지원 종료 lifecycle 표면 (#1257에서 legacy profile 제거), run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
         else
           fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt tools=[$_cap_tools] slots=unknown — slot 미확정, run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
         fi

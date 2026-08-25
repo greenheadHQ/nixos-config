@@ -4,10 +4,9 @@
 
 이 모드는 changeset 감사 전용이다 — 특정 변경과 무관한 일반 전수조사·코드베이스 조사 요청은 이 모드의 대상이 아니며 스킬 없이 직접 수행한다.
 
-## Step 0: Review Intensity 우회
+## Step 0: 검토 강도 무관 항상 실행
 
-audit 모드는 preflight 체크리스트를 건너뛴다 — 감사 자체가 명시적 전체 조사 요청이다.
-[`../references/intensity-procedure.md`](../references/intensity-procedure.md)는 읽지 않는다.
+audit 모드는 검토 강도 하향 채널의 적용 대상이 아니다 — 감사 자체가 명시적 전체 조사 요청이다.
 
 ## modifier 해석
 
@@ -17,7 +16,7 @@ audit 모드는 preflight 체크리스트를 건너뛴다 — 감사 자체가 �
 | open thread cap | capability profile의 batch 상한 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT — 광고 slot 기반, unknown이면 serial(동시 1)) |
 | `MAX` modifier | 기본 6 bundle을 10개 세부 관점으로 확장 (exhaustive override) |
 | `fresh` modifier | audit 모드 부적용 — 라운드 반복이 없으므로 해석하지 않는다 |
-| `agent=` 실행 프로파일 / 사용자 지정 실행 파라미터 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: `run-da audit agent=codex-high` |
+| 자연어 실행 지정 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: "run-da audit, codex high로" |
 | trailing 자유 텍스트 | `audit` (및 `MAX`) 토큰 뒤 나머지 인자 전체를 메인 에이전트의 우선순위 판단 컨텍스트로 보존 (Step 1 `git diff` 결과와 결합) |
 | 정수 에이전트 수 인자 | 폐지 — fan-out 크기는 기본 6 bundle / `MAX` 10 관점으로만 결정한다 |
 | 에이전트 권한 | 읽기 전용. codex exec 경로(Claude Code/headless)는 Layer 1 명령 literal(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral`)로 실행 — 실제 차단 수행자는 codex의 read-only sandbox이고 플래그 부착은 명령 literal SSOT가 담보하는 문서 규약이다 (wrapper는 passthrough, #1086). Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영 (Non-goals 참조) |
@@ -183,7 +182,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 
 ### Step 3c: Claude Code fallback (사용자 확인 후)
 
-- 위 표 사전점검(`command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check`) 실패 또는 codex exec 실행 실패의 원인을 사용자에게 고지하고, 사용자가 Claude 경로 진행을 확인했거나 `agent=claude`를 명시한 경우에만 진입한다.
+- 위 표 사전점검(`command -v codex` + `command -v codex-exec-supervised` + `codex-exec-supervised --check`) 실패 또는 codex exec 실행 실패의 원인을 사용자에게 고지하고, 사용자가 Claude 경로 진행을 확인했거나 자연어로 Claude 경로를 명시한 경우에만 진입한다.
 - bundle별 병렬 실행을 수행한다. 실행 binding 상세(Claude Code 고유 fallback lifecycle, 완료 알림 수신, thread 관리)는 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "Claude Code 세션 fallback 세부 정보" 섹션을 참조한다.
 - 프롬프트에 read-only/no-write 범위를 명시한다.
 - 완료 알림 수신 후 결과를 집계하고, `RECOVERABLE VIOLATION`/`STATEFUL VIOLATION` 분류 규칙은 Step 4와 동일하게 적용한다.
@@ -195,10 +194,35 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 1. 각 발견 사항의 유효성을 검증한다 (파일:줄이 실제로 존재하는지, 근거가 타당한지).
 2. 중복 발견을 제거한다 (여러 bundle에서 같은 문제를 지적한 경우).
 3. 심각도 순으로 정렬한다.
-4. Codex 세션 경로에서는 결과 집계 후 capability profile의 slot 회수 규칙을 적용해 다음 batch/retry 슬롯을 확보한다 (legacy만 `close_agent` — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
+4. Codex 세션 경로에서는 결과 집계 후 capability profile의 slot·batch 규칙에 맞춰 다음 batch/retry 발사를 계획한다 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 5. 사후 변조 감지: 아래 "사후 변조 감지" 섹션의 술어를 적용한다 — Codex 세션 경로는 비교를 수행하고, codex exec 경로는 실제 발사되는 Layer 1 literal에 `--sandbox read-only`가 있을 때만 생략한다 (플래그가 없으면 비교를 복원. 생략 근거·복원 조건은 그 섹션이 정본).
 6. `RECOVERABLE VIOLATION`은 `SAFE`에서 제외하고 fresh auditor로 재디스패치한다. 이는 auditor가 새 상태 코드를 정의하는 것이 아니라, 메인 에이전트가 출력 형식 위반이나 scope 침범 같은 contract breach를 감지했을 때 부여하는 조율 분류다. 단 Codex 세션 경로에서 status delta가 동시에 존재하면 `STATEFUL VIOLATION` 분류가 우선한다.
 7. `STATEFUL VIOLATION`만 `BLOCKED (VIOLATION)`로 남긴다. 이 경우 사용자에게 불완전한 run이 보고되기 전에는 fresh auditor로 재디스패치하지 않는다.
+
+#### 검증 에이전트 편향 방지 (Step 4 소유 — 검증용 추가 에이전트 투입 시)
+
+Step 4의 발견 사항 유효성 검증을 위해 추가 검증 에이전트를 투입할 때, 다음 규칙을 따른다.
+
+금지되는 검증 프롬프트 패턴:
+
+1. 결론 유도형 선택지: "REGISTER 또는 SKIP (YAGNI/false positive)" 같이 기각 방향을 선택지에 명시하는 것
+2. 유도 질문: "현실적으로 발생하는가?", "단일 사용자 환경에서 의미가 있는가?" 같이 기각을 유도하는 질문
+3. 맥락 편향: 검증 대상 finding만 제시하지 않고, 기각 근거나 반박 논거를 함께 제공하는 것
+
+올바른 검증 프롬프트 패턴:
+
+```
+다음 감사 에이전트의 finding을 독립적으로 검증하라:
+
+[finding 원문 — 수정 없이 그대로]
+
+해당 파일:줄을 직접 확인하고, 다음 중 하나로 판정하라:
+- CONFIRMED_ISSUE: finding이 사실이며 조치가 필요하다 (근거 필수)
+- NOT_AN_ISSUE: finding이 사실이 아니거나 조치가 불필요하다 (근거 필수)
+- NEEDS_MORE_INFO: 판단을 위해 추가 정보가 필요하다 (필요한 정보 명시)
+```
+
+(근거: 과거 검증 에이전트 5개에 YAGNI 프레이밍을 주입하여 5/5 만장일치 SKIP을 유도한 사례 — 프롬프트 조향 회귀 방지 목적)
 
 ### Step 5: 종합 리포트 생성
 
@@ -299,31 +323,6 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
 - 검증 없이 에이전트 결과를 그대로 수용하는 것을 금지한다.
 - 사용자에게 판단을 요청할 때는 [사용자 질문 시 맥락 설명 의무](../references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)를 따른다 (WTF Moment 방지).
 
-## 검증 에이전트 편향 방지
-
-감사 결과를 검증하기 위해 추가 에이전트를 투입할 때, 다음 규칙을 따른다.
-
-### 금지되는 검증 프롬프트 패턴
-
-1. 결론 유도형 선택지: "REGISTER 또는 SKIP (YAGNI/false positive)" 같이 기각 방향을 선택지에 명시하는 것
-2. 유도 질문: "현실적으로 발생하는가?", "단일 사용자 환경에서 의미가 있는가?" 같이 기각을 유도하는 질문
-3. 맥락 편향: 검증 대상 finding만 제시하지 않고, 기각 근거나 반박 논거를 함께 제공하는 것
-
-### 올바른 검증 프롬프트 패턴
-
-```
-다음 감사 에이전트의 finding을 독립적으로 검증하라:
-
-[finding 원문 — 수정 없이 그대로]
-
-해당 파일:줄을 직접 확인하고, 다음 중 하나로 판정하라:
-- CONFIRMED_ISSUE: finding이 사실이며 조치가 필요하다 (근거 필수)
-- NOT_AN_ISSUE: finding이 사실이 아니거나 조치가 불필요하다 (근거 필수)
-- NEEDS_MORE_INFO: 판단을 위해 추가 정보가 필요하다 (필요한 정보 명시)
-```
-
-(근거: 과거 검증 에이전트 5개에 YAGNI 프레이밍을 주입하여 5/5 만장일치 SKIP을 유도한 사례 — 프롬프트 조향 회귀 방지 목적)
-
 ## Non-goals
 
 이 모드가 구조적으로 보장하지 않는 auditor-specific 경계. 공통 한계(zsh 전제, `/tmp` 쓰기 sandbox 정책, project-scoped MCP 차단 한계, `spawn_agent` per-child read-only sandbox 부재)는 [run-da Non-goals](../SKILL.md#non-goals)를 단일 진실 원천으로 참조한다 (중복 방지).
@@ -343,7 +342,7 @@ BUG/REGRESSION/EDGECASE가 있으면 요약 테이블 아래에 상세를 추가
 - 감사 결과를 사용자에게 먼저 제시하고, 수정은 사용자 승인 후 진행한다.
 - 변경 범위가 극소한 경우 에이전트 수를 줄여 효율을 높인다.
 - 기본 fan-out은 6 bundle이며, `MAX` modifier만 exhaustive override(10개 세부 관점)다. 10은 기본값이 아니고, trailing 컨텍스트는 우선순위 판단용으로 보존한다.
-- Codex 세션 경로에서는 다음 batch/retry 전에 capability profile의 slot 회수 규칙을 적용한다 (legacy만 `close_agent` — [`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
+- Codex 세션 경로에서는 다음 batch/retry 전에 capability profile의 slot·batch 규칙을 적용한다 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 - `SAFE`는 유효한 auditor 결과가 모두 확보된 뒤에만 반환한다. `RECOVERABLE VIOLATION` 재디스패치 중이거나 `BLOCKED (VIOLATION)` unit이 남아 있으면 완료로 간주하지 않는다.
 - for_plan/for_pr 루프와 목적이 다르다: 루프는 품질을 반복 개선하고, audit는 안전성을 일회 검증한다.
 - 일회성 강제: "`SAFE`가 나올 때까지" 같은 지시에도 같은 changeset에 자동으로 반복 재발사하지 않는다. 1회 감사 후 결과를 보고하고, fix 후 재검증이 필요하면 사용자 확인을 거쳐 새 단발 감사로 실행한다. 매 재감사가 새 리뷰 표면을 만드는 비수렴이 의심되면(감사는 일회성이라 자동 라운드 카운팅이 없다) 자동 재발사 대신 사용자에게 보고하고 판단을 구한다.

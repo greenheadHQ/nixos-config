@@ -10,8 +10,9 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 | M-2 | 판정자 verdict 분포 | Arbiter marker 출현 세션 분모 위에서 4-tier fallback으로 회수된 verdict의 CONFIRMED_ISSUE/NOT_AN_ISSUE/NEEDS_MORE_INFO 카운트 | `extract_strict_verdicts` + `extract_unmarked_json_verdicts` + `extract_kv_verdicts` + `extract_nl_summary` (아래 4-tier 섹션) |
 | M-3 | reviewer 묶음별 confirmed-rate | M-2 결과를 finding_id의 reviewer 묶음 prefix(correctness/design/regression/maintainability)로 그룹핑 → 각 묶음의 CONFIRMED_ISSUE 비율 | `get_bundle` + `BUNDLE_MAP` (아래 bundle normalize 섹션) |
 | M-4 | 동일 세션 max severity 전이 | 같은 세션 내 result block N → N+1 confirmed finding 집합의 max severity 전이 매트릭스 | `VerdictRecord.block_index` + `find_severity_for_finding` + `severity_rank` + `compute_severity_transitions` (아래 severity 섹션) |
-| M-5 | selective consistency stability_status 분포 | round summary `selective:` 라인 카운트 (stable/split/fragmented). 부재 시 unavailable. | `resolve_stability_status_from_round_summary` (아래 StabilitySource 섹션) |
 | M-6 | persistence_key 비수렴 지표 | 동일 `(perspective, location_identity, finding_fingerprint)`가 서로 다른 result block에 반복되는 횟수 분포 + 세션별 top offenders | `compute_persistence_metrics` |
+
+(M-5 selective consistency stability_status 분포는 selective consistency 체계 제거와 함께 폐기됐다 — run-da #1257. 과거 로그의 `selective:` 라인·selective 블록은 파서가 계속 인식하되 지표로 집계하지 않는다.)
 
 참고: `analyze.py`의 함수/상수 이름이 본 문서의 source SoT다. 임시 스크립트(`/tmp/extraction-v2.py` 등)는 historical reference이며 정식 SoT가 아니다.
 
@@ -49,7 +50,6 @@ coverage object를 읽으며, sidecar diagnostics를 직접 재해석하지 않�
 | `diagnostic_rates.*_per_session` | 해당 diagnostic count / `session_counts.total`. total 0이면 0.0. |
 | `marker_missing_rates` | `(total_sessions - marker_sessions) / total_sessions`. Arbiter/Intensity marker 각각 계산한다. |
 | `m2_source_distribution` | sidecar `metrics.M-2.source_distribution` pass-through. |
-| `m5_source_distribution` | sidecar `metrics.M-5.source` 값을 단일 key distribution으로 승격 (`{"round_summary_fallback": 1}` 등). |
 | `host_collection` | sidecar `traceability.coverage.host_distribution`과 warnings prefix(`host <name>:`)를 결합한 host별 상태. warning이 있으면 `partial`, 분석 세션 0이고 warning도 없으면 `unknown`, 그 외 `ok`. `excluded_files`는 sidecar `corpus_exclusions[]` 중 해당 host 엔트리의 `excluded_files` 합이며 status 판정에 참여하지 않는다 (corpus 정책 제외는 실패가 아니다). |
 | `warnings` / `health_warnings` | 분석 단계 warnings와 git 기반 health 수집 warnings를 분리 보존한다. |
 
@@ -77,7 +77,6 @@ coverage object를 읽으며, sidecar diagnostics를 직접 재해석하지 않�
 | M-2 | `arbiter_marker_sessions` (Arbiter dir marker 출현 세션) |
 | M-3 | M-2 결과의 finding 단위 합계, reviewer 묶음별 분리 |
 | M-4 | round 쌍 (N, N+1)의 confirmed finding 합집합 |
-| M-5 | selective consistency 발동 라운드의 finding 단위 합계 |
 
 keyword 분모 금지: 본문에 `arbiter` 단어가 있다고 분모에 포함하지 않는다 (skill 문서 LLM context 로드 시 false positive 다수). marker 정규식은 [`data-sources.md`](data-sources.md) SSOT.
 
@@ -191,17 +190,18 @@ result block 기반 새 baseline이며, 이전 휴리스틱 기반 M-4 수치와
 ## persistence_key 비수렴 지표 (M-6)
 
 `persistence_key = (perspective, location_identity, finding_fingerprint)`다. 이는
-`run-da/references/dismissal-ledger.md`의 dismissal key에서 세션 경계를 넘는 정량 분석에
-부적합한 필드를 뺀 lossful grouping key다.
+과거 dismissal ledger(#1257에서 제거)의 dismissal key에서 세션 경계를 넘는 정량 분석에
+부적합한 필드를 뺀 lossful grouping key다 — ledger 제거 후에도 세 축의 동일성 개념은
+run-da/SKILL.md "세션 내 기각 이력"의 동일성 키와 같다.
 
-| dismissal ledger 필드 | persistence_key 포함 | 사유 |
+| 과거 dismissal key 필드 | persistence_key 포함 | 사유 |
 |-----------------------|----------------------|------|
 | `changeset_key` | 제외 | 세션 간 시계열 비교에서는 changeset 경계가 달라질 수 있어 지속성 분석을 끊는다 |
 | `review_unit` | 제외 | reviewer bundle 개편 시 시계열이 단절된다 |
 | `perspective` | 포함 | 같은 위치라도 관점이 다르면 다른 failure mode |
 | `location_identity` | 포함 | 지속 여부의 위치 축 |
 | `finding_fingerprint` | 포함 | 같은 관점+위치라도 요약 fingerprint가 다르면 다른 finding |
-| `scope` | 제외 | ledger suppression 범위용 필드라 corpus 시계열 grouping에 부적합 |
+| `scope` | 제외 | suppression 범위용 필드라 corpus 시계열 grouping에 부적합 |
 
 키 원천은 Arbiter VERDICT_JSON schema가 아니라 DA reviewer finding block 텍스트다. schema 확장은
 v1 범위 밖이다. 세 component가 모두 non-null인 record만 M-6이 소비한다. 하나라도 null이면
@@ -212,19 +212,6 @@ metric에서 제외하고 `ExtractionDiagnostic(match_kind=missing_persistence_c
 
 - `key_block_count_distribution`: 동일 persistence_key가 걸친 서로 다른 result block 수의 분포
 - `top_offenders_by_session`: 세션별 반복 key 상위 5개
-
-## StabilitySource resolver (M-5, v1)
-
-selective consistency stability_status 측정은 verdict extraction pipeline과 분리한다.
-
-| v1 source | 비고 |
-|-----------|------|
-| round summary `selective:` 라인 | `selective: trigger P건 → stable Q건, split R건, fragmented S건, partial_failure T건` 패턴 매치 시 stable/split/fragmented 카운트 누적. SoT는 `analyze.py`의 `SELECTIVE_LINE` 정규식 + `resolve_stability_status_from_round_summary`. |
-| unavailable | round summary 라인 부재 시. 추정 금지. |
-
-금지: 개별 Arbiter VERDICT_JSON에는 `stability_status` 필드가 없으므로(schema 1.1에서 aggregate 전용으로 고정) 절대 source로 사용하지 않는다 — 추출 시 보이는 값은 analyzer가 누락에 합성한 호환값 `N/A`일 뿐이다 (`run-da/references/arbiter-prompt.md` SSOT).
-
-v1에서 미사용 source — `fleiss-kappa.py` aggregate envelope: 본 문서 초기 draft에는 1차 source로 `fleiss-kappa.py` aggregate envelope의 `per_finding[].stability_status`가 명시됐으나, 호출하려면 selective consistency arbiter result 디렉토리(예: `/tmp/da-*-arbiter-selective-*/arbiter-{1,2,3}-result.md`)를 session-level에서 직접 추적해야 하는데, 본 Skill의 corpus 전체 스캔 모델에서는 그 경계가 자연스럽게 결합되지 않는다. 따라서 v1은 round summary fallback만 사용하고, 1차 source 통합은 follow-up 범위로 둔다.
 
 ## Phase 1c MiniPC 진짜 추출 실패 2건 inspection 결과
 
@@ -245,6 +232,5 @@ M-1~M-6 외에 출력에 포함되는 보조 statistic:
 
 ## 한계
 
-- `INTENSITY_DIR_MARKER`는 Review Intensity 외부 호출 경로에서만 출현. PR #670 이후 인라인 체크리스트 도입으로 marker 출현 감소 → M-1 분모 줄어들 수 있음. 인라인 체크리스트 출력의 보조 grep을 algorithm 보강 대상으로 두되 v1은 marker 우선.
-- selective consistency 발동 라운드는 N=3 재판정만 있는 finding만 over-represented. M-5 분포는 전체 finding이 아니라 selective consistency 발동 finding 한정.
+- `INTENSITY_DIR_MARKER`는 Review Intensity 외부 호출 경로에서만 출현. PR #670 이후 인라인 체크리스트 도입으로 marker 출현 감소 → M-1 분모 줄어들 수 있음. 강도 표기 출력("Review Intensity: X" / "검토 강도: X")의 보조 grep을 algorithm 보강 대상으로 두되 v1은 marker 우선.
 - live 전체 home log 모드는 시간이 지남에 따라 분모가 커진다. PR #670 ±5% 회귀 게이트는 `--corpus` pinned manifest 모드에서만 사용한다.

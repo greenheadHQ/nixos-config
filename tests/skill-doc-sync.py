@@ -11,12 +11,6 @@ from pathlib import Path
 
 
 SKILL = Path("modules/shared/programs/claude/files/skills/run-da/SKILL.md")
-INTENSITY_RULES = Path(
-    "modules/shared/programs/claude/files/skills/run-da/references/intensity-rules.md"
-)
-STABILITY = Path(
-    "modules/shared/programs/claude/files/skills/run-da/references/stability-measurement.md"
-)
 FLEISS_KAPPA = Path("modules/shared/programs/claude/files/scripts/fleiss-kappa.py")
 RUNTIME_MAPPING = Path(
     "modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md"
@@ -28,19 +22,8 @@ DA_DOMAINS = Path(
     "modules/shared/programs/claude/files/skills/run-da/references/da-domains.md"
 )
 
-EXPECTED_RULE_IDS = {
-    "RULE-MAX-MODIFIER",
-    "RULE-SECURITY",
-    "RULE-MODULE-SERVICE",
-    "RULE-CONFIG-DEPENDENCY",
-    "RULE-SMALL-FUNCTION",
-    "RULE-PURE-DOC",
-    "RULE-MIXED",
-    "RULE-UNCLEAR",
-}
-EXPECTED_CONSTANTS = {"STABLE_MIN", "ESCALATE_MIN"}
 EXPECTED_PROFILES = {"strong", "standard"}
-EXPECTED_CAPABILITY_PROFILES = {"current", "legacy", "unknown"}
+EXPECTED_CAPABILITY_PROFILES = {"current", "unknown"}
 _RUN_DA_DIR = Path("modules/shared/programs/claude/files/skills/run-da")
 # capability profile 계약 (#1098) 대상 문서: unqualified close_agent / fixed
 # `agents.max_threads` 6 literal 재도입을 차단하는 스캔 범위.
@@ -60,7 +43,6 @@ CAPABILITY_CONTRACT_DOCS = (
 )
 EXPECTED_BUNDLES = ("Correctness", "Design", "Regression", "Maintainability")
 ARBITER_PROMPT = _RUN_DA_DIR / "references/arbiter-prompt.md"
-EXPECTED_AGENT_ARGS = {"agent=codex-xhigh", "agent=codex-high", "agent=codex-medium", "agent=claude"}
 FORBIDDEN_MODEL_LITERALS = ("gpt-5", "opus", "sonnet")
 
 
@@ -73,78 +55,6 @@ def read_text(path: Path) -> str:
         return path.read_text()
     except FileNotFoundError as exc:
         raise CheckFailure(f"missing file: {path}") from exc
-
-
-def extract_intensity_rules(path: Path) -> dict[str, tuple[str, str]]:
-    out = {}
-    for line in read_text(path).splitlines():
-        match = re.match(r"\|\s*`(RULE-[A-Z-]+)`\s*\|(.+)\|(.+)\|", line)
-        if match:
-            out[match.group(1)] = (match.group(2).strip(), match.group(3).strip())
-    return out
-
-
-def format_rule(rule_id: str, value: tuple[str, str] | None) -> str:
-    if value is None:
-        return "<missing>"
-    condition, stage = value
-    return f"condition={condition!r}, stage={stage!r}"
-
-
-def check_intensity_rules() -> None:
-    skill_rules = extract_intensity_rules(SKILL)
-    reference_rules = extract_intensity_rules(INTENSITY_RULES)
-
-    details = []
-    for label, rules in ((str(SKILL), skill_rules), (str(INTENSITY_RULES), reference_rules)):
-        rule_ids = set(rules)
-        if rule_ids != EXPECTED_RULE_IDS:
-            details.append(
-                f"{label}: expected rule IDs {sorted(EXPECTED_RULE_IDS)}, got {sorted(rule_ids)}"
-            )
-
-    for rule_id in sorted(EXPECTED_RULE_IDS):
-        skill_value = skill_rules.get(rule_id)
-        reference_value = reference_rules.get(rule_id)
-        if skill_value != reference_value:
-            details.append(
-                "\n".join(
-                    [
-                        f"{rule_id} mismatch:",
-                        f"  {SKILL}: {format_rule(rule_id, skill_value)}",
-                        f"  {INTENSITY_RULES}: {format_rule(rule_id, reference_value)}",
-                    ]
-                )
-            )
-
-    if details:
-        raise CheckFailure("\n".join(details))
-
-
-def extract_constant_values(path: Path, pattern: str, flags: int = 0) -> dict[str, str]:
-    values = {}
-    for name, value in re.findall(pattern, read_text(path), flags):
-        values[name] = value
-    found = set(values)
-    if found != EXPECTED_CONSTANTS:
-        raise CheckFailure(
-            f"{path}: expected constants {sorted(EXPECTED_CONSTANTS)}, got {sorted(found)}"
-        )
-    return values
-
-
-def check_kappa_constants() -> None:
-    doc_values = extract_constant_values(
-        STABILITY, r"`(STABLE_MIN|ESCALATE_MIN)\s*=\s*([0-9.]+)`"
-    )
-    script_values = extract_constant_values(
-        FLEISS_KAPPA, r"^(STABLE_MIN|ESCALATE_MIN)\s*=\s*([0-9.]+)", re.M
-    )
-    if doc_values != script_values:
-        details = ["kappa threshold mismatch:"]
-        for name in sorted(EXPECTED_CONSTANTS):
-            details.append(f"  {name}: {STABILITY}={doc_values[name]!r}, {FLEISS_KAPPA}={script_values[name]!r}")
-        raise CheckFailure("\n".join(details))
 
 
 def extract_runtime_profiles() -> dict[str, dict[str, str]]:
@@ -286,24 +196,12 @@ def check_user_exec_params() -> None:
             details.append(f"{ARBITER_SCALING}: missing user exec env {var}")
     if "## 사용자 지정 실행 파라미터" not in arbiter_text:
         details.append(f"{ARBITER_SCALING}: missing user exec params section")
-    if "### 사용자 지정 실행 파라미터" not in read_text(SKILL):
+    if "### 실행 경로·파라미터 지정" not in read_text(SKILL):
         details.append(f"{SKILL}: missing user exec params section")
     if "_DA_MODEL_TIER_OVERRIDES" not in read_text(RUNTIME_MAPPING):
         details.append(f"{RUNTIME_MAPPING}: missing _DA_MODEL_TIER_OVERRIDES in canonical command")
     if details:
         raise CheckFailure("\n".join(details))
-
-
-def extract_agent_args(path: Path) -> set[str]:
-    values = set(re.findall(r"`(agent=(?:codex-xhigh|codex-high|codex-medium|claude))`", read_text(path)))
-    if values != EXPECTED_AGENT_ARGS:
-        raise CheckFailure(f"{path}: expected agent args {sorted(EXPECTED_AGENT_ARGS)}, got {sorted(values)}")
-    return values
-
-
-def check_agent_args() -> None:
-    extract_agent_args(SKILL)
-    extract_agent_args(RUNTIME_MAPPING)
 
 
 def check_no_hardcoded_model_literals() -> None:
@@ -458,7 +356,8 @@ def check_verdict_json_examples() -> None:
 def check_capability_profile() -> None:
     """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
 
-    1. runtime-mapping.md의 SSOT 절에 current/legacy/unknown 3-profile 표가 존재한다.
+    1. runtime-mapping.md의 SSOT 절에 current/unknown 2-profile 표가 존재한다
+       (legacy profile은 실사용 0건으로 제거 — #1257; 과거 lifecycle 표면은 unknown으로 분류).
     2. fixed-literal 재도입 금지: `agents.max_threads`와 고정 6이 한 줄에 결합된
        리터럴을 대상 문서 전체에서 차단한다 (#1098 verify 계약).
     3. close_agent를 언급하는 문서는 SSOT 앵커 포인터를 유지한다.
@@ -496,13 +395,10 @@ def check_capability_profile() -> None:
 
 def main() -> int:
     checks = (
-        ("intensity rules", check_intensity_rules),
-        ("kappa constants", check_kappa_constants),
         ("review profile efforts", check_profile_efforts),
         ("codex command contract", check_codex_command_contract),
         ("user exec params", check_user_exec_params),
         ("exec override copies", check_exec_override_copies),
-        ("agent args", check_agent_args),
         ("no hardcoded model literals", check_no_hardcoded_model_literals),
         ("reviewer bundle subdomains", check_bundle_subdomains),
         ("threat path types", check_threat_path_types),

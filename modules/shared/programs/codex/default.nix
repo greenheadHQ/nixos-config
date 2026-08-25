@@ -81,9 +81,9 @@ in
     # 글로벌 AGENTS.md - Claude의 CLAUDE.md와 동일 소스 공유
     ".codex/AGENTS.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
 
-    # run-da Arbiter selective consistency harness. run-da 스킬이 Codex에도 노출되므로
+    # run-da VERDICT_JSON 검증기. run-da 스킬이 Codex에도 노출되므로
     # Claude와 동일 source를 Codex scope에도 미러링하여 `~/.codex/scripts/fleiss-kappa.py`를
-    # 런타임에서 사용 가능하게 한다.
+    # 런타임에서 사용 가능하게 한다 (파일명 유래·집계 제거는 스크립트 docstring 참조).
     ".codex/scripts/fleiss-kappa.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
 

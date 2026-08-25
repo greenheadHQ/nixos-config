@@ -11,7 +11,6 @@ Internal boundary:
   - verdict parser pipeline  — extract_strict_verdicts, extract_unmarked_json_verdicts,
                                 extract_kv_verdicts, extract_nl_summary, extract_intensity_verdicts
   - severity transition      — find_severity_for_finding, severity_rank, compute_severity_transitions
-  - stability source         — resolve_stability_status_from_round_summary (round summary 전용)
   - aggregate builder        — analyze_session, build_aggregate
   - markdown renderer        — render_markdown
   - json renderer            — render_json
@@ -113,12 +112,6 @@ BUNDLE_MAP = {
     "readability": "Maintainability",
     "clean_code": "Maintainability",
 }
-
-# Round summary `selective:` line (M-5 fallback source)
-SELECTIVE_LINE = re.compile(
-    r"selective\s*:\s*trigger\s+(\d+)건.*?stable\s+(\d+)건.*?split\s+(\d+)건.*?fragmented\s+(\d+)건",
-    re.I,
-)
 
 # Session source traceability (S2-9)
 ROLLOUT_FILENAME = re.compile(r"^rollout-(?P<body>.+)\.jsonl$")
@@ -1256,29 +1249,7 @@ def compute_persistence_metrics(sessions: list[dict]) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. stability source resolver (M-5, plan D-10)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def resolve_stability_status_from_round_summary(text: str) -> Counter:
-    """M-5 v1 source: round summary `selective:` 라인 파싱.
-
-    개별 Arbiter VERDICT_JSON에는 `stability_status`가 없으므로(schema 1.1에서 aggregate
-    전용 필드로 고정) source 대상 아님 — 추출 시 누락 기본값 `N/A`를 합성할 뿐이다.
-    `fleiss-kappa.py` aggregate envelope 호출은 selective consistency arbiter result 디렉터리를
-    session-level에서 직접 추적해야 하는데, 본 Skill의 전체 corpus 스캔 모델에서는 그 경계가
-    자연스럽지 않다 — v1은 round summary 패턴만 사용하고, 둘 다 부재 시 unavailable로 보고한다.
-    """
-    counter: Counter = Counter()
-    for m in SELECTIVE_LINE.finditer(text):
-        # trigger, stable, split, fragmented 카운트 누적
-        counter["stable"] += int(m.group(2))
-        counter["split"] += int(m.group(3))
-        counter["fragmented"] += int(m.group(4))
-    return counter
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. aggregate builder
+# 6. aggregate builder
 # ─────────────────────────────────────────────────────────────────────────────
 
 def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
@@ -1395,7 +1366,6 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
         "verdicts": all_verdicts,
         "nl_signal_only": nl_signal_only,
         "nl_estimated_count": nl_estimated,
-        "round_summary_stability": resolve_stability_status_from_round_summary(text_blob),
         "parse_failures": parse_failures,
         "diagnostics": [d.to_dict() for d in diagnostics],
         "session_meta": session_traceability,
@@ -1522,15 +1492,6 @@ def build_aggregate(
         if len(rounds) >= 2:
             transitions += compute_severity_transitions(rounds)
 
-    # M-5: stability_status 분포
-    m5_source = "round_summary_fallback"
-    m5_counter: Counter = Counter()
-    for s in arbiter_marker_sessions:
-        m5_counter += s["round_summary_stability"]
-    if not m5_counter:
-        m5_source = "unavailable"
-    m5_n = sum(m5_counter.values())
-
     # derived: intensity_full_finding_zero_rate
     full_sessions = [s for s in intensity_marker_sessions if "FULL" in s["intensity_verdicts"]]
     full_zero = [s for s in full_sessions if not any(
@@ -1576,11 +1537,6 @@ def build_aggregate(
                 "round_key": "(session_path, block_index)",
                 "baseline_note": "v1부터 result block 기반 새 baseline이며 이전 finding_id 재등장 휴리스틱 수치와 단절된다.",
                 "transition_matrix": {f"{a}->{b}": c for (a, b), c in transitions.items()},
-            },
-            "M-5": {
-                "source": m5_source,
-                "n": m5_n,
-                "distribution": dict(m5_counter),
             },
             "M-6": {
                 "name": "persistence_key non-convergence",
@@ -1695,19 +1651,6 @@ def render_markdown(agg: dict) -> str:
             out.append(f"| {k} | {v} |")
     else:
         out.append("(전이 데이터 없음)")
-    out.append("")
-
-    # M-5
-    m5 = agg["metrics"]["M-5"]
-    out.append(f"## M-5: selective consistency stability_status 분포 (source: {m5['source']}, n={m5['n']})")
-    out.append("")
-    if m5["distribution"]:
-        out.append("| stability_status | 카운트 |")
-        out.append("|------------------|--------|")
-        for k, v in m5["distribution"].items():
-            out.append(f"| {k} | {v} |")
-    else:
-        out.append("(M-5 source unavailable)")
     out.append("")
 
     # M-6

@@ -83,24 +83,6 @@ source 분포:
 | CRITICAL | 0 | 0 | 0 | 0 | 0 |
 ```
 
-### M-5: selective consistency stability_status 분포
-
-```markdown
-## M-5: selective consistency stability_status 분포 (source: round_summary_fallback, n=<selective trigger findings>)
-
-| stability_status | 카운트 |
-|------------------|--------|
-| stable | 42 |
-| split | 7 |
-| fragmented | 2 |
-```
-
-`source` 필드는 `analyze.py:build_aggregate`가 emit하는 두 값 중 하나만 출력된다:
-- `"round_summary_fallback"`: round summary `selective:` 라인이 매치된 경우.
-- `"unavailable"`: `selective:` 라인 부재 시. 추정 금지 — 출력 시 분포는 빈 dict.
-
-`fleiss-kappa.py` aggregate envelope 통합은 v1 미구현 (algorithm.md StabilitySource 섹션 참조). 따라서 `"source": "fleiss-kappa.py"`는 emit되지 않는다.
-
 ### derived statistics
 
 ```markdown
@@ -162,11 +144,6 @@ JSON sidecar: /tmp/analyze-da-sessions-<ISO>.json (또는 --json out= 명시 경
         "MEDIUM->NONE": 2, "MEDIUM->LOW": 4, "MEDIUM->MEDIUM": 28, "MEDIUM->HIGH": 11,
         "HIGH->NONE": 1, "HIGH->LOW": 2, "HIGH->MEDIUM": 9, "HIGH->HIGH": 14, "HIGH->CRITICAL": 1
       }
-    },
-    "M-5": {
-      "source": "round_summary_fallback",
-      "n": 51,
-      "distribution": {"stable": 42, "split": 7, "fragmented": 2}
     },
     "M-6": {
       "name": "persistence_key non-convergence",
@@ -251,7 +228,6 @@ emit하지 않는다.
       "M-2": {"denominator": "arbiter_marker_sessions_findings_high_medium", "n": 7, "distribution": {"CONFIRMED_ISSUE": 5}, "percentages": {"CONFIRMED_ISSUE": 71.4}, "source_distribution": {"verdict_json": {"count": 7, "confidence": "high"}}},
       "M-3": {"by_bundle": {"Correctness": {"total": 2, "confirmed": 1, "confirmed_rate": 0.5}}},
       "M-4": {"round_key": "(session_path, block_index)", "baseline_note": "v1부터 result block 기반 새 baseline", "transition_matrix": {"HIGH->LOW": 1}},
-      "M-5": {"source": "round_summary_fallback", "n": 2, "distribution": {"stable": 2}},
       "M-6": {"name": "persistence_key non-convergence", "persistence_key": "(perspective, location_identity, finding_fingerprint)", "key_block_count_distribution": {"2": 1}, "coverage": {"eligible_records": 5, "missing_persistence_components": 1}}
     },
     "derived": {"intensity_full_finding_zero_rate": 0.25},
@@ -341,7 +317,7 @@ raw warning 문자열, raw diagnostics, session path/traceability, provenance, p
 summary에서 제외한다. warning count의 SSOT는 `coverage.warnings +
 coverage.health_warnings`이며 `analysis.warnings`나 host별 warning 복제본을 다시 합산하지 않는다.
 raw warning은 공개 표본 없이 category/host count와 `omitted_count`로만 표현한다. M-1/M-2
-verdict, M-3 bundle, M-4 severity transition, M-5 status, host, source 이름은 고정 key
+verdict, M-3 bundle, M-4 severity transition, host, source 이름은 고정 key
 allowlist로 재구성한다.
 
 `render_commentary_input(report)`는 고정 prompt, 빈 줄, deterministic compact JSON, final
