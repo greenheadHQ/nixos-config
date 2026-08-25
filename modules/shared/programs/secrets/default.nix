@@ -55,25 +55,30 @@
   # rm 실패는 non-fatal로 남긴다 — bootout 직렬화로 경합은 구조적으로 제거되므로
   # 이제 실패는 예상 밖 이상 신호이지만, 그것이 activation 전체를 중단시킬 이유는
   # 없다 (경고 후 다음 activation에서 재시도).
-  # macOS: 복호화 시크릿을 $TMPDIR 밖 영속 위치에 둔다. upstream 기본값
-  # $(getconf DARWIN_USER_TEMP_DIR)/agenix{,.d}는 com.apple.bsd.dirhelper가
-  # 새벽 03:35에 수행하는 "3일 미접근 파일 청소"의 대상이라, 재부팅 없이도
-  # 시크릿이 통째로 사라진다 (2026-08-24 실측: minipc-headless·SA token 등 4건
-  # dangling — 재생성 경로는 LaunchAgent RunAtLoad 1회뿐이라 다음 로그인까지
-  # 복구 불능, #1094 무인 SSH 우회 사망). 영속 위치는 디스크 잔존 시간이 늘지만
-  # TMPDIR도 재부팅 전까지는 같은 디스크에 남았고(FileVault 전제 동일), 파일
-  # 0400·디렉토리 0751 권한은 upstream 스크립트가 그대로 적용한다.
-  # linux(MiniPC)는 XDG_RUNTIME_DIR(systemd tmpfs) — dirhelper 문제가 없어 기본값 유지.
-  age.secretsDir = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
-  age.secretsMountPoint = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}.d";
-
   home.activation.cleanupAgenixStaleGenerations = lib.mkIf pkgs.stdenv.isDarwin (
     lib.hm.dag.entryBefore [ "setupLaunchAgents" ] ''
       _agenix_mount="${config.age.secretsMountPoint}"
+      # 디렉토리 선생성 + Time Machine sticky 제외 — 구 TMPDIR 위치는 macOS 표준
+      # 백업 제외 영역이었지만 홈 아래 영속 위치는 기본 포함이라(tmutil isexcluded
+      # 실측), 백업 목적지를 나중에 구성해도 평문 시크릿이 소급 편입되지 않게
+      # 구 경로가 무료로 제공하던 제외 계약을 복원한다 (멱등).
+      /bin/mkdir -p "$_agenix_mount"
+      /usr/bin/tmutil addexclusion "$_agenix_mount" 2>/dev/null || true
       if [ -d "$_agenix_mount" ]; then
+        # 정리 대상 두 종류: (a) .tmp 잔재 generation (쓰다 만/중단), (b) 현재
+        # secretsDir 심링크가 가리키지 않는 orphan generation — 경로 이동·롤백
+        # 왕복(워크트리 nrs ↔ main nrs)이 남기는 잔재로, dirhelper가 닿지 않는
+        # 영속 위치에서는 이 activation이 유일한 회수 주체다 (upstream 스크립트는
+        # 직전 generation 하나만 rm -rf). 소비자는 generation 번호가 아니라 안정
+        # 심링크(secretsDir)를 경유하므로 심링크가 가리키는 generation만 남기면
+        # 안전하다. 삭제는 아래 bootout 직렬화 뒤에만 수행한다.
+        _active_gen="$(readlink "${config.age.secretsDir}" 2>/dev/null || true)"
         _stale_gens=()
         for _gen_dir in "$_agenix_mount"/*/; do
+          [ -d "$_gen_dir" ] || continue
           if /usr/bin/find "$_gen_dir" -name '*.tmp' -maxdepth 1 2>/dev/null | /usr/bin/grep -q .; then
+            _stale_gens+=("$_gen_dir")
+          elif [ "''${_gen_dir%/}" != "$_active_gen" ]; then
             _stale_gens+=("$_gen_dir")
           fi
         done
@@ -104,7 +109,7 @@
           fi
           if [ "$_bootout_ok" -eq 1 ]; then
             for _gen_dir in "''${_stale_gens[@]}"; do
-              echo "[agenix] Removing stale generation with .tmp files: $_gen_dir"
+              echo "[agenix] Removing stale/orphan generation: $_gen_dir"
               rm -rf "$_gen_dir" || echo "[agenix] WARNING: could not fully remove $_gen_dir; leaving for next activation"
             done
           else
@@ -116,6 +121,20 @@
   );
 
   age = {
+    # macOS: 복호화 시크릿을 $TMPDIR 밖 영속 위치에 둔다. upstream 기본값
+    # $(getconf DARWIN_USER_TEMP_DIR)/agenix{,.d}는 com.apple.bsd.dirhelper가
+    # 새벽 03:35에 수행하는 "3일 미접근 파일 청소"의 대상이라, 재부팅 없이도
+    # 시크릿이 통째로 사라진다 (2026-08-24 실측: minipc-headless·SA token 등 4건
+    # dangling — 재생성 경로는 LaunchAgent RunAtLoad 1회뿐이라 다음 로그인까지
+    # 복구 불능, #1094 무인 SSH 우회 사망). 영속 위치의 트레이드오프와 대응:
+    # 디스크 잔존 시간 증가는 FileVault 전제 동일(TMPDIR도 재부팅 전까지 디스크
+    # 잔존), 파일 0400·디렉토리 0751 권한은 upstream 그대로, Time Machine 기본
+    # 포함으로의 반전은 위 cleanup activation의 tmutil addexclusion이 복원,
+    # 롤백(구 구성 복귀) 시 남는 orphan generation은 같은 activation이 회수한다.
+    # linux(MiniPC)는 XDG_RUNTIME_DIR(systemd tmpfs) — dirhelper 문제가 없어 기본값 유지.
+    secretsDir = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
+    secretsMountPoint = lib.mkIf pkgs.stdenv.isDarwin "${config.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}.d";
+
     # SSH 키로 복호화
     identityPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
 

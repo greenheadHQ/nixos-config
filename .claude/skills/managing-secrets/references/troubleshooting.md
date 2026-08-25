@@ -127,19 +127,22 @@ ls -la secrets/*.age
 증상: `nrs` 후 일부 시크릿이 복호화되지 않음. `~/Library/Logs/agenix/stderr`에 아래 에러 반복:
 
 ```
-age: error: open /var/folders/.../agenix.d/<N>/<secret>.tmp: permission denied
+age: error: open /Users/<user>/.local/state/agenix.d/<N>/<secret>.tmp: permission denied
 ```
+
+(2026-08 이전 사고 당시 경로는 `$TMPDIR/agenix.d`였다 — 현재 darwin 배치는
+`~/.local/state/agenix.d`이며 정본은 `constants.paths.agenixDarwinSecretsRelPath`.)
 
 원인: `nrs`의 launchd cleanup이 복호화 중인 agenix agent를 kill → 0400 권한의 `.tmp` 파일이 다음 generation 디렉토리에 남음 → agent 재시작 시 해당 `.tmp`를 덮어쓸 수 없어 crash loop.
 
 진단:
 
 ```bash
-# agenix generation 디렉토리 확인
-ls -la "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/"
+# agenix generation 디렉토리 확인 (경로 정본: constants.paths.agenixDarwinSecretsRelPath)
+ls -la ~/.local/state/agenix.d/
 
 # 깨진 generation에 .tmp 파일 확인
-find "$(getconf DARWIN_USER_TEMP_DIR)/agenix.d/" -name '*.tmp'
+find ~/.local/state/agenix.d/ -name '*.tmp'
 
 # agenix 에러 로그 확인
 tail -20 ~/Library/Logs/agenix/stderr
