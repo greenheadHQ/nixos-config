@@ -807,27 +807,6 @@ let
             );
         }
         {
-          # agenix 영속 배치 계약 (2026-08-24 dirhelper 소실 재발 방지): darwin HM
-          # 시크릿은 $TMPDIR(dirhelper 3일 미접근 청소 대상)가 아닌 영속 위치
-          # (constants.paths.agenixDarwinSecretsRelPath)에 복호화되고, stale cleanup도
-          # 같은 값(secretsMountPoint 단일 소스)을 봐야 한다.
-          # darwin per-host 리스트의 번호는 NixOS 전역 리스트와 네임스페이스가 분리다
-          # (D20이 양쪽에 독립 존재). 이 리스트의 기존 최댓값 D33(한국어 입력기) 다음.
-          name = "Test D34 ${hostName}: agenix secretsDir는 dirhelper 청소권 밖 영속 경로여야 함";
-          cond =
-            hasHost
-            && (
-              let
-                persistentRoot = "${hm.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
-                cleanupData = hm.home.activation.cleanupAgenixStaleGenerations.data or "";
-              in
-              hm.age.secretsDir == persistentRoot
-              && hm.age.secretsMountPoint == "${persistentRoot}.d"
-              && nixpkgsLib.hasInfix "${persistentRoot}.d" cleanupData
-              && !nixpkgsLib.hasInfix "DARWIN_USER_TEMP_DIR" cleanupData
-            );
-        }
-        {
           # C + D 계약: headless alias는 1Password agent를 사용하지 않고, Codex
           # child marker와 personal dispatcher가 함께 존재한다. 기존의 전체 remote
           # command timeout 구현은 다시 들어오면 안 된다(장시간 명령 DX 보존).
@@ -971,6 +950,27 @@ let
           name = "Test D33 ${hostName}: 한국어 입력기 삭제 방식이 글자 단위(DeleteBy=2)로 선언되어야 함";
           cond =
             hasHost && cfg.system.defaults.CustomUserPreferences."com.apple.inputmethod.Korean".DeleteBy == 2;
+        }
+        {
+          # agenix 영속 배치 계약 (2026-08-24 dirhelper 소실 재발 방지): darwin HM
+          # 시크릿은 $TMPDIR(dirhelper 3일 미접근 청소 대상)가 아닌 영속 위치
+          # (constants.paths.agenixDarwinSecretsRelPath)에 복호화되고, stale cleanup도
+          # 같은 값(secretsMountPoint 단일 소스)을 봐야 한다.
+          # darwin per-host 리스트의 번호는 NixOS 전역 리스트와 네임스페이스가 분리다
+          # (D20이 양쪽에 독립 존재). 이 리스트의 기존 최댓값 D33(한국어 입력기) 다음.
+          name = "Test D34 ${hostName}: agenix secretsDir는 dirhelper 청소권 밖 영속 경로여야 함";
+          cond =
+            hasHost
+            && (
+              let
+                persistentRoot = "${hm.home.homeDirectory}/${constants.paths.agenixDarwinSecretsRelPath}";
+                cleanupData = hm.home.activation.cleanupAgenixStaleGenerations.data or "";
+              in
+              hm.age.secretsDir == persistentRoot
+              && hm.age.secretsMountPoint == "${persistentRoot}.d"
+              && nixpkgsLib.hasInfix "${persistentRoot}.d" cleanupData
+              && !nixpkgsLib.hasInfix "DARWIN_USER_TEMP_DIR" cleanupData
+            );
         }
       ]
     ) expectedDarwinHosts

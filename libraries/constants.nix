@@ -50,7 +50,9 @@
     # macOS HM agenix 복호화 시크릿의 영속 배치 루트 (Home 상대; secretsDir는 이 값,
     # secretsMountPoint는 이 값 + ".d"). upstream 기본값 $TMPDIR/agenix{,.d}는
     # com.apple.bsd.dirhelper의 3일 미접근 청소 대상이라 재부팅 없이 시크릿이
-    # 소실된다 (2026-08-24 실측). 소비자·cleanup이 함께 사용해 drift를 막는다.
+    # 소실된다 (2026-08-24 실측). age.secretsDir/secretsMountPoint 선언
+    # (modules/shared/programs/secrets)의 단일 소스이며, cleanup·소비자는 그
+    # 옵션(config.age.*)을 경유해 같은 값을 본다.
     agenixDarwinSecretsRelPath = ".local/state/agenix";
     # agenix 복호화 identity (host private key) + opnix SA 만료 record source
     # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
