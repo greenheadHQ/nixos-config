@@ -72,14 +72,16 @@
       # 중단). mkdir 제거·이동 시의 안전망으로 유지한다.
       if [ -d "$_agenix_mount" ]; then
         # 정리 대상 두 종류: (a) .tmp 잔재 generation (쓰다 만/중단), (b) 현재
-        # secretsDir 심링크가 가리키지 않는 orphan generation — upstream의 심링크
-        # 전환(ln -sfT)과 직전 generation rm -rf 사이에서 agent가 죽거나, 이전
-        # activation의 bootout 실패로 정리가 스킵되면 남는 잔재다. 롤백 왕복
-        # (신→구→신) 잔재는 심링크가 계속 가리키므로 여기 안 걸리고, 신 구성
-        # 재적용 시 upstream의 직전 generation 삭제가 회수한다. 소비자는
-        # generation 번호가 아니라 안정 심링크(secretsDir)를 경유하므로 심링크가
-        # 가리키는 generation만 남기면 안전하다. 삭제는 아래 bootout 직렬화
-        # 뒤에만 수행한다.
+        # secretsDir 심링크가 가리키지 않는 orphan generation. orphan의 주 발생
+        # 경로는 복호화 도중 kill — upstream은 신 generation을 스크립트 서두에
+        # 만들고 심링크 전환은 맨 끝이라, 그 사이 전 구간에서 죽으면 링크되지
+        # 않은 generation이 남는다 (.tmp 없는 변형 포함: 마지막 secret mv 이후
+        # 또는 secret 사이 kill은 이 분기만이 잡는다). 이전 activation의 bootout
+        # 실패는 발생 원인이 아니라 잔재가 유지되는 사유다. 롤백 왕복(신→구→신)
+        # 잔재는 심링크가 계속 가리키므로 여기 안 걸리고, 신 구성 재적용 시
+        # upstream의 직전 generation 삭제가 회수한다. 소비자는 generation 번호가
+        # 아니라 안정 심링크(secretsDir)를 경유하므로 심링크가 가리키는
+        # generation만 남기면 안전하다. 삭제는 아래 bootout 직렬화 뒤에만 수행한다.
         _active_gen="$(readlink "${config.age.secretsDir}" 2>/dev/null || true)"
         _stale_gens=()
         for _gen_dir in "$_agenix_mount"/*/; do
