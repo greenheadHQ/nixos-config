@@ -19,7 +19,7 @@ def _harness_path():
 
 
 def _verdict_payload(**overrides):
-    """schema 1.1 계약을 만족하는 기본 CONFIRMED_ISSUE payload (단일 조립 지점).
+    """schema 1.2 계약을 만족하는 기본 CONFIRMED_ISSUE payload (단일 조립 지점).
 
     None 값을 전달하면 해당 키를 제거한다 (필수 필드 누락 케이스 조립용).
     """
@@ -77,7 +77,7 @@ def test_aggregate_mode_is_removed(tmp_path):
 
 
 def test_validate_only_flags_semantic_malformed(tmp_path):
-    """--validate-only 모드가 schema 1.1 semantic 계약 위반(정합 행렬·rejection_basis·
+    """--validate-only 모드가 schema 1.2 semantic 계약 위반(정합 행렬·rejection_basis·
     구버전 자칭)을 검출하고 정상 결과는 통과시키는지 검증한다."""
     rejected = _verdict_payload(
         verdict="NOT_AN_ISSUE",

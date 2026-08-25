@@ -17,10 +17,10 @@
 | Step 3 | 동일 | 동일 ([`./for_plan.md`](./for_plan.md#step-3-reviewer-결과-수신--종합-리포트)) |
 | Step 4 | 동일 (ALL CLEAR) | 동일 |
 | Step 5 (Arbiter) | for_plan 조립 (계획 원문 포함) | for_pr 조립 (diff 컨텍스트 포함) — [`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 "프롬프트 조립 > for_pr 모드" 참조. for_pr에서는 계획 원문 대신 diff 또는 변경 컨텍스트를 포함 |
-| Step 5 상태 전이 | CONFIRMED_ISSUE를 pending write queue에 추가, NOT_AN_ISSUE/사용자 제외는 세션 내 기각 이력에 기록 ([`../SKILL.md`](../SKILL.md) 정본) | 동일. review phase 중 patch 금지, formatter write 금지, generated output 변경 금지. 코드 수정/commit은 Step 6 write phase 전까지 금지 |
+| Step 5 상태 전이 | `remediation_scope`로 먼저 분기 — FIX_NOW만 pending write queue, REPLAN_REQUIRED는 이슈 배출(DEFERRED), UNCLEAR는 사용자 판단 (protocol.md "remediation scope" 전이표). NOT_AN_ISSUE/사용자 제외는 세션 내 기각 이력에 기록 ([`../SKILL.md`](../SKILL.md) 정본) | 동일. review phase 중 patch 금지, formatter write 금지, generated output 변경 금지. 코드 수정/commit은 Step 6 write phase 전까지 금지 |
 | Step 6 write phase | 통합 반영 루프(통합 설계→batch 반영→walkthrough→후속 수정 처리→finalize) 후 계획 확정·새 changeset 선언 | 동일 루프를 코드에 적용하되 finalize에서 commit한다 — 아래 "Step 6 상세: for_pr write phase" 절 참조 |
-| Step 7 | 수렴 predicate 충족까지 반복 (protocol.md "수렴 판정" SSOT + "최대 라운드 수" 적용: 상한 + 한계효용 + 비수렴 조기중단 + read/write 분리) | 동일 |
-| Step 8 | (없음) | push — 수렴 종료 후 최종 승인을 받아 push한다. push 전 walkthrough delta가 마지막 commit에 포함됐는지 확인한다 (네트워크/auth 정책 의존 — [`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조) |
+| Step 7 | 수렴 predicate 충족까지 반복 (protocol.md "수렴 판정" SSOT + "최대 라운드 수" 적용: 상한 + 한계효용 + read/write 분리) | 동일 |
+| Step 8 | (없음) | push — predicate 충족 종료(`termination_type=CONVERGED` 또는 `DEFERRED_EXIT`) 후 최종 승인을 받아 push한다. `ROUND_LIMIT`·`USER_STOP` 종료는 자동 push하지 않고 미해결 상태와 함께 사용자에게 위임한다. push 전 walkthrough delta가 마지막 commit에 포함됐는지 확인한다 (네트워크/auth 정책 의존 — [`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조) |
 
 ## Step 1 상세: diff preflight
 
@@ -52,4 +52,4 @@ for_plan의 통합 반영 루프에 다음 for_pr 전용 체크포인트를 더�
 
 ## Step 8 상세: push
 
-수렴 종료(ALL CLEAR 또는 CONVERGED — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT)에 도달하면 최종 승인 후 push한다. push 전 walkthrough delta가 마지막 commit에 포함됐는지 확인한다. 네트워크 가능 환경 + GitHub auth 전제이며, `sandbox_mode=danger-full-access` 또는 GitHub 커넥터 경로에서만 자동 실행한다. 다른 샌드박스 모드에서는 명시적 사용자 승인 후 수행하거나, 메인 에이전트가 사용자에게 위임한다 ([`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조).
+predicate 충족 종료(`termination_type=CONVERGED` — all clear 특수형 포함 — 또는 `DEFERRED_EXIT`)에 도달하면 최종 승인 후 push한다. `ROUND_LIMIT`·`USER_STOP` 종료는 자동 push 대상이 아니다 — 미해결 상태를 보고하고 사용자에게 위임한다. push 전 walkthrough delta가 마지막 commit에 포함됐는지 확인한다. 네트워크 가능 환경 + GitHub auth 전제이며, `sandbox_mode=danger-full-access` 또는 GitHub 커넥터 경로에서만 자동 실행한다. 다른 샌드박스 모드에서는 명시적 사용자 승인 후 수행하거나, 메인 에이전트가 사용자에게 위임한다 ([`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조).

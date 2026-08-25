@@ -23,7 +23,8 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | 발견(Discovered) | DA findings 개수 |
 | 해결(Resolved) | CONFIRMED_ISSUE → 수정 완료 |
 | 기각(Rejected) | NOT_AN_ISSUE (Arbiter 판정) |
-| 보류(Deferred) | NEEDS_MORE_INFO → 사용자 결정 |
+| 보류(사용자 결정 대기) | NEEDS_MORE_INFO → 사용자 결정 |
+| DEFERRED (배출 완료) | `remediation_scope: REPLAN_REQUIRED` finding이 배출 증거(이슈 번호)와 함께 루프 밖으로 이관된 상태 — 사용자 결정 대기와 다른 상태다 |
 
 ## Arbiter 판정 프로토콜
 
@@ -35,7 +36,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 4. 메인 에이전트는 결과 수집 지점에서 VERDICT_JSON caller 검증(아래 "수렴 판정"의 caller 검증)을 수행한다.
 5. 메인 에이전트는 사용자에게 전건 보고한다.
 6. CONFIRMED_ISSUE 항목을 `remediation_scope`에 따라 라우팅한다 — `FIX_NOW`만 pending write queue에 추가하고, `REPLAN_REQUIRED`는 배출, `UNCLEAR`는 사용자 판단이다 (상태 흐름 표·"remediation scope" 절). CRITICAL은 진행 차단 항목으로 표시하되 review phase 중 즉시 patch하지 않는다.
-7. NEEDS_MORE_INFO 항목은 사용자 판단을 요청한다. 사용자가 수용한 항목만 pending write queue에 추가한다.
+7. NEEDS_MORE_INFO 항목은 사용자 판단을 요청한다. 사용자가 수용한 항목도 CONFIRMED와 동일하게 `remediation_scope` 전이표를 따른다 — `FIX_NOW`만 pending write queue에 추가한다.
 8. caller 검증 위반이 재실행 후에도 남은 finding은 BLOCKED(malformed) 상태로 기록하고 자동 수정하지 않는다.
 9. NOT_AN_ISSUE 또는 사용자가 명시적으로 제외한 항목은 세션 내 기각 이력에 기록한다 ([`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 정본). 이 기록은 메인 에이전트 컨텍스트의 review metadata이며 active changeset 수정이나 pending write queue가 아니다.
 10. Arbiter 상태 전이와 필요한 사용자 판단이 끝난 뒤 write phase로 넘어가 pending write queue를 batch로 반영한다.
@@ -149,7 +150,7 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 
 - 신규 finding 0건: 새 정보가 없다는 한계효용 신호이므로 루프 종료를 제안한다. 이 경로의 종료는 수렴 predicate 통과가 아니면 `termination_type=USER_STOP`으로 기록한다. 반복되는 동일 지적이 남아 있으면 3회 반복 규칙 또는 기존 사용자 판단 경로로 닫는다.
 - 신규 finding 1~2건: 낮은 신규 정보량으로 기록한다. 이 상태가 2 outer round 연속이면, 다음 round를 시작하기 전에 사용자에게 현재 비용 대비 추가 기대효과를 보고하고 계속/종료를 질문 도구로 확인한다.
-- 신규 finding 3건 이상: 한계효용 저하로 보지 않는다. 단 아래 비수렴 추세 또는 5회 상한 조건은 별도로 적용한다.
+- 신규 finding 3건 이상: 한계효용 저하로 보지 않는다. 단 5회 상한 조건은 별도로 적용한다.
 
 위 판정은 5회 상한 전의 한계효용 장치다. 5회 상한은 그대로 유지되며, 5회 이후 수렴 종료에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
 
@@ -197,7 +198,7 @@ LITE 실행 라운드는 첫 줄에 `(LITE: 선택 M개/전체 4개 reviewer bun
 |---|---|
 | `FIX_NOW` | `round_write_set` 진입 (기존 경로) |
 | `REPLAN_REQUIRED` | 배출: ①마스킹 게이트(아래) 통과 → ②이슈 생성 → ③이슈 번호를 배출 증거로 라운드 요약에 기록 → 해당 finding은 `DEFERRED` (활성 finding에서 제외, write set 진입 금지) |
-| `REPLAN_REQUIRED`인데 배출 실패 (이슈 생성 실패·마스킹 불가로 게시 불능) | 미해결(unresolved)로 계산 — 종료를 차단한다. 배출 증거(이슈 번호) 없는 DEFERRED는 없다 |
+| `REPLAN_REQUIRED`인데 배출 실패 (이슈 생성 실패·마스킹 불가로 게시 불능) | 미해결(`unresolved_count`)로 계산 — 종료를 차단한다. 배출 증거(이슈 번호) 없는 DEFERRED는 없다 |
 | `UNCLEAR` | 질문 도구로 사용자 판단 (FIX_NOW/REPLAN/제외 중 선택). 질문 도구 미지원 런타임은 자동 FIX_NOW로 간주하지 않고 미해결로 계산한다 — 재설계 필요를 그 자리 패치하는 원 문제를 자동 전이로 재현하지 않기 위함 |
 
 write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에 넣거나 write phase에서 반영하는 것은 계약 위반이다 — round summary의 write set 목록에 이 scope의 finding이 있으면 그 라운드는 수렴으로 기록할 수 없다.
@@ -249,8 +250,9 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 - `round_write_set`: 이번 라운드에 반영할 항목 (`remediation_scope: FIX_NOW`인 CONFIRMED_ISSUE + 사용자 수용 항목). `REPLAN_REQUIRED`·`UNCLEAR` scope는 진입 금지 (위 "remediation scope" 전이표).
 - `round_max_accepted_severity`: round_write_set의 accepted severity 최댓값 (빈 set이면 NONE).
-- `unresolved_count`: 미처리 NEEDS_MORE_INFO/BLOCKED + 배출 실패한 REPLAN + 미판단 UNCLEAR 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다).
-- `deferred_issues`: 이번 라운드에 REPLAN 배출로 DEFERRED 처리한 finding의 배출 증거 이슈 번호 목록 (배출 증거 없는 DEFERRED는 존재하지 않는다).
+- `unresolved_count`: 미결 NEEDS_MORE_INFO + 배출 실패한 REPLAN_REQUIRED + 미판단 UNCLEAR 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다). BLOCKED·VIOLATION은 여기 넣지 않는다 — `blocked_count`가 배타적으로 소유한다.
+- `deferred_issues`: 이번 라운드에 REPLAN_REQUIRED 배출로 DEFERRED 처리한 finding의 배출 증거 이슈 번호 목록 (배출 증거 없는 DEFERRED는 존재하지 않는다).
+- `blocked_count`: BLOCKED(malformed — caller 검증 재실행 후에도 위반) finding 수 + `VIOLATION` 상태로 남은 review unit 수 (finding·unit 축을 합산한 차단 총계 — 어느 축이든 0이 아니면 종료 불가라는 뜻만 가진다).
 
 write phase가 끝나면 그 결과로 다음 값이 확정된다 (스냅샷이 아니라 write phase 산출값이다):
 
@@ -307,7 +309,7 @@ hard precondition 층 — 아래 필드가 모두 조건을 만족해야 종료�
 | `blocked_count` | = 0 | BLOCKED(malformed — caller 검증 재실행 후에도 위반)·`VIOLATION` 상태 unit/finding 수. 심각도가 산출되지 않은 위험이 수치 층을 우회하는 fail-open 차단 |
 | `unresolved_count` | = 0 | 미결 NEEDS_MORE_INFO + 배출 실패 REPLAN + 미판단 UNCLEAR (round outcome 스냅샷 정의) |
 | `write_reverted_count` | = 0 | 반영을 시도했다가 취소되어 미해결로 남은 항목 (write phase 산출값) |
-| `verifier_ok` | = true | 이번 라운드의 caller 검증기 호출이 성공했거나, 사용자가 명시 승인한 검증 생략이 라운드 요약에 기록됨 (검증기 호출 계약 참조 — 승인 없는 생략은 false) |
+| `verifier_ok` | = true | 이번 라운드의 caller 검증기 호출이 성공했거나, 사용자가 명시 승인한 검증 생략이 라운드 요약에 기록됨 (검증기 호출 계약 참조 — 승인 없는 생략은 false). 검증 대상 VERDICT_JSON이 존재하지 않는 경로(finding 0건 ALL CLEAR — Arbiter 미실행)는 vacuous true다 |
 | `dismissal_rationale_complete` | = true | NOT_AN_ISSUE·사용자 제외 항목 전건에 근거가 있음 |
 | `walkthrough_status` | ∈ {CLEAN, NOT_REQUIRED} | walkthrough 정의 참조 |
 | `revalidation_required` | = false | 위 단일 파생값 (severity/walkthrough/surface/downgrade 4개 게이트) |
@@ -327,7 +329,7 @@ predicate 위반 회귀 예시 (이 predicate를 변경하는 PR은 각 행에 �
 
 ### termination_type (종료 유형 라벨 — 필수)
 
-루프가 끝나는 모든 경로는 `termination_type`을 라운드 요약(마지막 라운드의 convergence 줄)과 PR 코멘트 Result 행 양쪽에 기록한다. 값은 다음 enum뿐이며, 라벨 없는 종료는 계약 위반이다:
+루프가 끝나는 모든 경로는 `termination_type`을 라운드 요약(마지막 라운드의 전용 `termination_type=` 줄)과 PR 코멘트 Result 행 양쪽에 기록한다. 값은 다음 enum뿐이며, 라벨 없는 종료는 계약 위반이다:
 
 | termination_type | 의미 | 진입 조건 |
 |---|---|---|
@@ -352,7 +354,7 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 | R3    | 0        | —         | —         | —          | —       | 1     |
 
 **Review Intensity**: FULL (or LITE — see below).
-**Result**: ALL CLEAR after 3 rounds
+**Result**: CONVERGED (all clear) after 3 rounds
 
 <details>
 <summary>Round details</summary>
@@ -380,4 +382,4 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 - `ROUND_LIMIT after N rounds (unresolved: k)` — 상한 도달 종료. 미해결 수를 병기한다.
 - `USER_STOP after N rounds (reason: <한 줄>)` — 사용자 중단·한계효용 확인 종료.
 
-LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN: <bundle 목록>)`을 덧붙인다 — `ALL CLEAR after N rounds (NOT_RUN: Design, ...)` / `CONVERGED after N rounds (..., NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.
+LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN: <bundle 목록>)`을 덧붙인다 — `CONVERGED (all clear) after N rounds (NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.

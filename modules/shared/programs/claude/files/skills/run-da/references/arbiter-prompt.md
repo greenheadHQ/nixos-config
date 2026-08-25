@@ -204,6 +204,7 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): 판단 불가(UNKNOWN) — 확장 의도에 따라 실존 마찰일 수도, 없어도 무방한 구조일 수도 있음.
   - Portability / Cross-Environment Drift: N/A — 설계 추상화 이슈, cross-env 차원과 무관.
 - **심각도 판정**: MEDIUM — reviewer 원값 유지 (NEEDS_MORE_INFO는 write set 진입 가능 verdict이므로 출력)
+- **해소 방식**: FIX_NOW — 사용자가 확장 의도 없음을 확인하면 추상화 제거는 changeset 안에서 완결.
 - **근거**: 추상화가 현재 단일 구현만 가지지만, 사용자의 확장 의도를 알 수 없어 YAGNI 여부 판단 불가.
 - **필요 정보**: 이 추상화의 향후 사용 계획이 있는지 사용자 확인 필요.
 ```
@@ -222,6 +223,7 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): PASS — 계획 실행 즉시 일상 셸 환경에서 발생하는 실존 결함.
   - Portability / Cross-Environment Drift: N/A — 단일 host(Home Manager) 내 PATH resolution 이슈, cross-env 차원과 무관.
 - **심각도 판정**: MEDIUM — reviewer 원값 유지
+- **해소 방식**: FIX_NOW — sessionPath 대신 profileExtra append로 바꾸는 계획 수정으로 완결.
 - **근거**: hm-session-vars.sh에서 실제로 PATH 앞에 prepend되는 것을 확인. 계획대로 실행하면 SDK의 sqlite3이 /usr/bin/sqlite3를 shadow.
 ```
 
@@ -259,6 +261,7 @@ for_plan 핵심 원칙:
   - 현실적 발생 가능성 (Plausibility): PASS — Codex-only 환경·다른 clone은 실제 운영되는 조건이며, 그 조건에서 경로 drift가 실제로 발생.
   - Portability / Cross-Environment Drift: PASS — `modules/shared/programs/codex/default.nix`의 `exposedCodexSkills` / `intentionallyNotExposed` 리스트가 Codex Global skill 노출 정책의 source of truth인데 템플릿은 `~/.claude/`만 가리킴. set-icons는 `intentionallyNotExposed` list 멤버라 `~/.codex/skills/`에 투영되지 않으므로 Codex-only 환경 또는 다른 repo clone에선 `~/.claude/skills/set-icons` 부재 시 경로 drift 발생.
 - **심각도 판정**: LOW — reviewer 원값 유지
+- **해소 방식**: FIX_NOW — 템플릿 경로 파라미터화는 해당 파일 수정으로 완결.
 - **근거**: verdict criteria(사실 정확성 + 변경 연관성 + Plausibility PASS)로 CONFIRMED. Portability PASS는 cross-env 해석 근거 + 심각도 최소 LOW 확보로 작용.
 - **증거 (실재)**: `modules/shared/programs/codex/default.nix`의 `exposedCodexSkills` / `intentionallyNotExposed` 리스트 — 실제 Codex global skill 노출 정책의 source of truth이며 가상 시나리오의 cross-env drift 판정 근거가 된다. 가상 PR diff 자체는 이 example 내부에 가정된 픽션이다.
 ```

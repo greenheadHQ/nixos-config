@@ -103,12 +103,14 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR
 - 5b. caller 검증: 결과의 VERDICT_JSON 블록을 읽는 이 지점에서 공통 검증기(`"$HELPER_PATH" --validate-only --expect-findings <Arbiter에 전달한 finding ID 쉼표 목록> <result.md>`)로 schema 1.2 caller 검증과 finding manifest 대조를 수행하고, 메인이 보유한 reviewer 원본 finding의 심각도와 `reviewer_severity`를 대조한다 — 검증 규칙과 fail-closed 전이(1회 재실행 → BLOCKED)는 [`../references/protocol.md`](../references/protocol.md) "수렴 판정"이 SSOT.
 - 5c. 상태 전이 적용 — 상세 전이표는 [`../references/protocol.md`](../references/protocol.md)의 "DA → Arbiter → Main Agent 상태 흐름" 참조.
 
-결과를 수집하여 사용자에게 전건 보고한다. 아래 심각도는 `accepted_severity`(Arbiter 조정 후 값 — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT) 기준이다:
+결과를 수집하여 사용자에게 전건 보고한다. 아래 심각도는 `accepted_severity`(Arbiter 조정 후 값 — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT) 기준이며, 상태 전이는 심각도보다 먼저 `remediation_scope`로 분기한다 (전이표 정본: protocol.md "remediation scope"):
 
-- CONFIRMED_ISSUE + CRITICAL (LOW confidence 아님): 진행 차단. review phase 중 patch 금지 원칙을 유지하고, Arbiter 판정이 닫힌 뒤 write phase의 첫 batch 항목으로 계획에 반영한다. 해결 전에는 다음 outer round로 진행하지 않는다.
-- CONFIRMED_ISSUE + HIGH/MEDIUM/LOW (LOW confidence 아님): pending write queue에 추가하고, Step 6 write phase에서 계획에 일괄 수정한다.
+- CONFIRMED_ISSUE + `remediation_scope: REPLAN_REQUIRED`: write queue 진입 금지 — 마스킹 게이트 통과 후 이슈로 배출하고 이슈 번호를 배출 증거로 기록한다(DEFERRED). 배출 실패는 미해결로 계산한다. CRITICAL이어도 write phase 반영 대상이 아니다 — 배출 완료 전에는 다음 outer round로 진행하지 않는다.
+- CONFIRMED_ISSUE + `remediation_scope: UNCLEAR`: 질문 도구로 사용자 판단(FIX_NOW/REPLAN/제외). 미지원 런타임은 미해결로 계산한다.
+- CONFIRMED_ISSUE + `remediation_scope: FIX_NOW` + CRITICAL (LOW confidence 아님): 진행 차단. review phase 중 patch 금지 원칙을 유지하고, Arbiter 판정이 닫힌 뒤 write phase의 첫 batch 항목으로 계획에 반영한다. 해결 전에는 다음 outer round로 진행하지 않는다.
+- CONFIRMED_ISSUE + `remediation_scope: FIX_NOW` + HIGH/MEDIUM/LOW (LOW confidence 아님): pending write queue에 추가하고, Step 6 write phase에서 계획에 일괄 수정한다.
 - NOT_AN_ISSUE (LOW confidence 아님): 보고만 (반영 불필요). 사용자 전건 보고 후 세션 내 기각 이력에 기록한다 ([`../SKILL.md`](../SKILL.md) 정본).
-- NEEDS_MORE_INFO: 질문 도구로 사용자 판단을 요청한다. 사용자가 수용한 항목만 pending write queue에 추가한다.
+- NEEDS_MORE_INFO: 질문 도구로 사용자 판단을 요청한다. 사용자가 수용한 항목도 CONFIRMED와 동일하게 `remediation_scope` 전이표를 따른다 — `FIX_NOW`만 pending write queue에 추가하고, `REPLAN_REQUIRED`는 배출, `UNCLEAR`는 사용자에게 scope 판단을 함께 요청한다.
 - 임의 verdict + LOW confidence: fail-closed 승격 — 질문 도구로 사용자 판단 요청 (기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약 유지).
 - caller 검증 위반이 재실행 후에도 남음: BLOCKED(malformed) — 질문 도구 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).
 
