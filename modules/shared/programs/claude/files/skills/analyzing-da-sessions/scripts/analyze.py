@@ -2,7 +2,7 @@
 """DA 세션 정량 분석 — analyzing-da-sessions Skill의 algorithm SSOT.
 
 PR #670 정정 코멘트의 알고리즘 (분모 정정 + 4-tier fallback + source/confidence 라벨링)
-+ severity 전이 + StabilitySource resolver를 통합한 단일 진입점.
++ severity 전이를 통합한 단일 진입점.
 
 Internal boundary:
   - constants/enums          — VERDICT_CATEGORIES, INTENSITY_VERDICTS, BUNDLE_MAP, regex 등
@@ -169,7 +169,6 @@ CORPUS_FILE_SIZE_CAP_BYTES = CORPUS_FILE_SIZE_CAP_MIB * 1024 * 1024
 # 경계가 일치한다. 수집은 cap 이하(`-{cap+1}c`), 초과 카운트는 cap 초과(`+{cap}c`)로 상보 분할.
 REMOTE_FIND_SIZE_INCLUDE = f"-{CORPUS_FILE_SIZE_CAP_BYTES + 1}c"
 REMOTE_FIND_SIZE_EXCLUDE = f"+{CORPUS_FILE_SIZE_CAP_BYTES}c"
-FLEISS_KAPPA_TIMEOUT_SECONDS = 60  # fleiss-kappa.py helper 호출 timeout (현재 v1에서는 미사용)
 SSH_FETCH_WORKERS = 8  # 원격 호스트당 동시 SSH cat worker 수 (host 순차 처리, host당 K=8 병렬)
 SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10  # ssh preflight / ControlMaster check timeout
 
@@ -267,7 +266,6 @@ class VerdictRecord:
     perspective: str | None
     location_identity: str | None
     finding_fingerprint: str | None
-    stability_status: str
     canonical_verdict_hash: str
 
     def to_dict(self) -> dict:
@@ -629,7 +627,7 @@ def get_bundle(finding_id: str | None) -> str | None:
 
 
 def get_perspective(finding_id: str | None, text: str = "") -> str | None:
-    """ledger key의 perspective 후보를 finding_id 또는 finding block에서 추출."""
+    """persistence_key(M-6)의 perspective 후보를 finding_id 또는 finding block에서 추출."""
     if finding_id:
         m = FINDING_ID_LEGACY.search(finding_id)
         if m:
@@ -812,13 +810,11 @@ def make_verdict_record(
 
     block_kind = ctx.block_kind if ctx.block_kind in BLOCK_KINDS else "first_pass"
     confidence = item.get("confidence", "N/A")
-    stability_status = item.get("stability_status", "N/A")
     canonical_source = {
         "schema_version": item.get("schema_version", "1.0"),
         "finding_id": finding_id,
         "verdict": verdict,
         "confidence": confidence,
-        "stability_status": stability_status,
         "axes": item.get("axes", {}),
     }
     record = VerdictRecord(
@@ -839,7 +835,6 @@ def make_verdict_record(
         perspective=persistence.get("perspective"),
         location_identity=persistence.get("location_identity"),
         finding_fingerprint=persistence.get("finding_fingerprint"),
-        stability_status=str(stability_status),
         canonical_verdict_hash=canonical_json_hash(canonical_source),
     )
     return record.to_dict()
@@ -940,7 +935,6 @@ def extract_strict_verdicts(
             "finding_id": finding_id,
             "verdict": m.group(2),
             "confidence": "N/A",
-            "stability_status": "N/A",
         }, text, "md_header", "high", match_ctx, diagnostics)
         if record is None:
             continue
@@ -1079,7 +1073,6 @@ def extract_kv_verdicts(
                         "finding_id": "",
                         "verdict": vm.group(1),
                         "confidence": "N/A",
-                        "stability_status": "N/A",
                     },
                     text,
                     "kv",
@@ -1572,7 +1565,7 @@ def build_aggregate(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. markdown renderer
+# 7. markdown renderer
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_markdown(agg: dict) -> str:
@@ -1690,7 +1683,7 @@ def render_markdown(agg: dict) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. json renderer
+# 8. json renderer
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_json(agg: dict) -> str:

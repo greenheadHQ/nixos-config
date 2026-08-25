@@ -255,7 +255,6 @@ emit하지 않는다.
     "diagnostic_rates": {"parse_failures_per_session": 0.0, "exclusions_per_session": 0.0},
     "marker_missing_rates": {"arbiter_marker_missing_rate": 0.6, "intensity_marker_missing_rate": 0.7},
     "m2_source_distribution": {"verdict_json": {"count": 7, "confidence": "high"}},
-    "m5_source_distribution": {"round_summary_fallback": 1},
     "host_collection": {"mac": {"status": "ok", "analyzed_sessions": 5, "warnings": [], "excluded_files": 0}, "minipc": {"status": "ok", "analyzed_sessions": 5, "warnings": [], "excluded_files": 0}},
     "warnings": [],
     "health_warnings": []
@@ -286,7 +285,7 @@ embed하지 않고 `provenance.analysis_sidecar_path`로만 참조한다. `cover
 유일한 coverage SSOT이며, renderer/delta는 sidecar diagnostics를 직접 읽지 않는다.
 
 Weekly markdown 구성은 다음 순서다: header table, 핵심 수치 요약, 커버리지/신뢰도,
-M-1~M-6, 건강 지표 추이, 전주 delta, 소스 추적 링크, LLM 해설, warnings. Mermaid는
+M-1~M-4·M-6, 건강 지표 추이, 전주 delta, 소스 추적 링크, LLM 해설, warnings. Mermaid는
 M-1/M-2 `pie`만 사용한다.
 
 렌더링용 `traceability.sessions` stable subset은 기본 50개로 제한한다. 이는 GitHub comment
@@ -309,8 +308,8 @@ warning/diagnostics/traceability를 삭제하거나 historical report를 다시 
 |----------|--------|-----------|-----------|
 | `weekly-<week>.json` | analyzer sidecar + health + delta + finalized commentary | schema v1 canonical, raw warning, coverage SSOT, traceability, provenance 보존 | 없음 |
 | `weekly-<week>.md` | final canonical JSON과 동일 report | full local archival/rendered view. canonical JSON에서 재생성 가능 | 없음 |
-| commentary input | finalize 전 draft canonical JSON | week, session counts, M-1~M-6, derived, health summary, coverage counts/rates, mac/minipc status, warning category/host counts와 omitted count, delta | 262144 bytes |
-| GitHub Markdown | final canonical JSON | 핵심 요약, coverage/host, M-1~M-6, health, delta, warning counts/omitted count, sanitized commentary | 60000 bytes |
+| commentary input | finalize 전 draft canonical JSON | week, session counts, M-1~M-4·M-6, derived, health summary, coverage counts/rates, mac/minipc status, warning category/host counts와 omitted count, delta | 262144 bytes |
+| GitHub Markdown | final canonical JSON | 핵심 요약, coverage/host, M-1~M-4·M-6, health, delta, warning counts/omitted count, sanitized commentary | 60000 bytes |
 
 `build_consumer_summary(report)`가 두 bounded projection의 공통 allowlist seam이다. commentary,
 raw warning 문자열, raw diagnostics, session path/traceability, provenance, previous report path는

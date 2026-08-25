@@ -129,7 +129,7 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 
 ### 3회 반복 규칙
 
-동일한 지적(세부 관점 + 위치(파일:줄 또는 계획 항목 번호) 기준)이 3회 연속 outer round에서 반복되면:
+동일성은 recurrence key(세부 관점 + 위치(파일:줄 또는 계획 항목 번호)) 기준이다. 이 키는 세션 내 기각 이력의 suppression key(관점+위치+요약)보다 의도적으로 넓다 — 반복 감지는 같은 위치의 재공격을 묶어 잡고, suppression은 다른 failure mode까지 억제하지 않도록 좁게 잡는다 ([`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 참조). 동일한 지적이 3회 연속 outer round에서 반복되면 다음을 수행한다:
 
 1. 해당 지적과 이전 라운드의 Arbiter 판정 이력을 요약한다.
 2. 사용자에게 질문 도구로 3가지 선택지를 제시한다:
@@ -143,7 +143,7 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 명시적 상한은 5 outer round다. 5회 이후에도 수렴 종료에 도달하지 못하면
 사용자에게 현황을 보고하고 계속 진행 여부를 확인한다(자동 무한 진행 금지). 이때 종료하면 `EARLY_STOP (unconverged)`로 기록한다.
 
-라운드 한계효용 판정: 각 outer round 종료 시 직전 outer round 대비 신규 finding 수를 집계한다. 동일성은 3회 반복 규칙과 같은 "세부 관점 + 위치(파일:줄 또는 계획 항목 번호)" 기준을 사용하고, 세션 내 기각 이력 exact match로 suppress된 항목은 새 finding 계산에서 제외한다. 첫 outer round는 비교 대상이 없으므로 전체 finding 수를 신규 finding 수로 기록하되, 연속 저효용 판정은 다음 outer round부터 평가한다.
+라운드 한계효용 판정: 각 outer round 종료 시 직전 outer round 대비 신규 finding 수를 집계한다. 동일성은 3회 반복 규칙과 같은 recurrence key(세부 관점 + 위치) 기준을 사용하고, 세션 내 기각 이력 exact match(suppression key)로 suppress된 항목은 새 finding 계산에서 제외한다. 첫 outer round는 비교 대상이 없으므로 전체 finding 수를 신규 finding 수로 기록하되, 연속 저효용 판정은 다음 outer round부터 평가한다.
 
 - 신규 finding 0건: 새 정보가 없다는 한계효용 신호이므로 루프 종료를 제안한다. 이 경로의 종료는 수렴 predicate 통과가 아니면 `EARLY_STOP (unconverged)`로 기록한다. 반복되는 동일 지적이 남아 있으면 3회 반복 규칙 또는 기존 사용자 판단 경로로 닫는다.
 - 신규 finding 1~2건: 낮은 신규 정보량으로 기록한다. 이 상태가 2 outer round 연속이면, 다음 round를 시작하기 전에 사용자에게 현재 비용 대비 추가 기대효과를 보고하고 계속/종료를 질문 도구로 확인한다.

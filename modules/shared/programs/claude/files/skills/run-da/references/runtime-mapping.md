@@ -20,8 +20,8 @@ Direct Codex 세션의 native fan-out lifecycle과 동시 발사 상한은 현�
 
 | profile | 판별 조건 (model-visible tool 집합) | slot 규칙 | 동시 발사(batch) 상한 |
 |---------|-------------------------------------|-----------|----------------------|
-| `current` | `spawn_agent`·`wait_agent`가 있음 | explicit close 도구를 전제하지 않는다 — 결과 수신 후 slot 회수를 자체 확인할 수 없으므로, 광고 slot을 초과하는 발사를 계획하지 않는다 | developer 광고 total slot N(root 포함, N ≥ 2 필요)에서 child batch = N − 1. N < 2이면 child slot이 없으므로 native fan-out 불가 — codex exec fallback(serial subprocess)을 쓴다 (native serial 아님 — root 외 native 실행 slot이 없다) |
-| `unknown` | tool 집합 또는 slot 상한을 세션 표면에서 확인할 수 없음 (지원 종료된 과거 lifecycle 표면 — 예: explicit `close_agent`가 광고되는 표면 — 도 여기로 분류한다) | — | fail-safe 분기: `spawn_agent`·`wait_agent`는 확인됐고 slot만 미확정이면 native serial(동시 1). tool 집합 자체가 미확인·부재면 native 실행 불가 — codex exec fallback만 사용한다. 자동 verifier 결과로 unknown을 덮지 않는다 |
+| `current` | `spawn_agent`·`wait_agent`가 있고 explicit close 도구(`close_agent`)가 광고되지 않음 | explicit close 도구를 전제하지 않는다 — 결과 수신 후 slot 회수를 자체 확인할 수 없으므로, 광고 slot을 초과하는 발사를 계획하지 않는다 | developer 광고 total slot N(root 포함, N ≥ 2 필요)에서 child batch = N − 1. N < 2이면 child slot이 없으므로 native fan-out 불가 — codex exec fallback(serial subprocess)을 쓴다 (native serial 아님 — root 외 native 실행 slot이 없다) |
+| `unknown` | tool 집합 또는 slot 상한을 세션 표면에서 확인할 수 없음, 또는 지원 종료된 과거 lifecycle 표면(explicit `close_agent`가 광고되는 표면 — #1257에서 legacy profile 제거) | — | fail-safe 분기: ①`spawn_agent`·`wait_agent`는 확인됐고 explicit close 도구도 없는데 slot만 미확정이면 native serial(동시 1). ②explicit `close_agent`가 광고되는 표면은 slot 확인 여부와 무관하게 native 실행 금지 — 그 표면의 slot 회수는 close 계약에 묶여 있는데 현행 실행 계약에는 close 절차가 없어 thread가 누적 소진되므로, codex exec fallback만 사용한다. ③tool 집합 자체가 미확인·부재면 native 실행 불가 — codex exec fallback만 사용한다. 자동 verifier 결과로 unknown을 덮지 않는다 |
 
 - slot source: 세션 developer 메시지의 collaboration 안내 문장(예: "There are N available concurrency slots, meaning that up to N agents can be active at once, including you")이 1차 근거다. 이 광고가 없으면 slot은 unknown이다.
 - 실행 중 unit의 강제 중단 (cancellation capability — lifecycle profile과 독립 축): 중단은 세션 표면에 광고된 중단 도구(예: `interrupt_agent`)가 있을 때만 수행하고, 없으면 conservative wait을 유지한다.

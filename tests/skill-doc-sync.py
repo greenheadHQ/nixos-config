@@ -368,9 +368,9 @@ def check_capability_profile() -> None:
     """
     mapping_text = read_text(RUNTIME_MAPPING)
     section = section_after_heading(mapping_text, "## Codex native lifecycle capability profile")
-    profile_pattern = re.compile(
-        r"^\|\s*`(" + "|".join(sorted(EXPECTED_CAPABILITY_PROFILES)) + r")`\s*\|", re.M
-    )
+    # 표 첫 열의 모든 profile 토큰을 수집해 exact-set 비교한다 — 기대 이름만 캡처하면
+    # 제거된 profile 행(legacy 등)이 재도입돼도 검출하지 못한다.
+    profile_pattern = re.compile(r"^\|\s*`([a-z][a-z-]*)`\s*\|", re.M)
     found_profiles = set(profile_pattern.findall(section))
     if found_profiles != EXPECTED_CAPABILITY_PROFILES:
         raise CheckFailure(

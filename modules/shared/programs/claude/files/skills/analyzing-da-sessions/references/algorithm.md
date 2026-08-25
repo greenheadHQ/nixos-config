@@ -6,7 +6,7 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 
 | ID | metric 이름 | 산식 | source (analyze.py) |
 |----|------------|------|---------------------|
-| M-1 | 검토 강도 verdict 분포 | Intensity marker 출현 세션 분모 위에서 인라인 체크리스트 출력의 SKIP/LITE/FULL 카운트 | `extract_intensity_verdicts` |
+| M-1 | 검토 강도 verdict 분포 | Intensity marker 출현 세션 분모 위에서 강도 표기 출력의 SKIP/LITE/FULL 카운트. marker는 과거 외부 호출 경로 전용이라 현행 세션은 분모에 진입하지 않는다 (분모 재정의는 #1236 소관) | `extract_intensity_verdicts` |
 | M-2 | 판정자 verdict 분포 | Arbiter marker 출현 세션 분모 위에서 4-tier fallback으로 회수된 verdict의 CONFIRMED_ISSUE/NOT_AN_ISSUE/NEEDS_MORE_INFO 카운트 | `extract_strict_verdicts` + `extract_unmarked_json_verdicts` + `extract_kv_verdicts` + `extract_nl_summary` (아래 4-tier 섹션) |
 | M-3 | reviewer 묶음별 confirmed-rate | M-2 결과를 finding_id의 reviewer 묶음 prefix(correctness/design/regression/maintainability)로 그룹핑 → 각 묶음의 CONFIRMED_ISSUE 비율 | `get_bundle` + `BUNDLE_MAP` (아래 bundle normalize 섹션) |
 | M-4 | 동일 세션 max severity 전이 | 같은 세션 내 result block N → N+1 confirmed finding 집합의 max severity 전이 매트릭스 | `VerdictRecord.block_index` + `find_severity_for_finding` + `severity_rank` + `compute_severity_transitions` (아래 severity 섹션) |
@@ -191,8 +191,9 @@ result block 기반 새 baseline이며, 이전 휴리스틱 기반 M-4 수치와
 
 `persistence_key = (perspective, location_identity, finding_fingerprint)`다. 이는
 과거 dismissal ledger(#1257에서 제거)의 dismissal key에서 세션 경계를 넘는 정량 분석에
-부적합한 필드를 뺀 lossful grouping key다 — ledger 제거 후에도 세 축의 동일성 개념은
-run-da/SKILL.md "세션 내 기각 이력"의 동일성 키와 같다.
+부적합한 필드를 뺀 lossful grouping key다 — ledger 제거 후 이 세 축은
+run-da/SKILL.md "세션 내 기각 이력"의 suppression key(관점+위치+요약)와 같은 구성이다
+(run-da의 recurrence key(관점+위치)와는 다르다 — 키 구분은 그 문서 참조).
 
 | 과거 dismissal key 필드 | persistence_key 포함 | 사유 |
 |-----------------------|----------------------|------|
