@@ -96,7 +96,7 @@ ARBITER_DIR_MARKER = re.compile(
 
 ## intensity marker
 
-검토 강도 verdict 분포(M-1)의 분모는 Intensity dir marker 출현 세션이다 (Review Intensity 인라인 체크리스트 도입 이후로는 marker가 없을 수 있어, 인라인 체크리스트 출력 grep도 보조 source로 사용):
+검토 강도 verdict 분포(M-1)의 분모는 Intensity dir marker 출현 세션이다 — marker는 폐기된 과거 외부 호출 경로 전용이라(#1257) 현행 세션은 분모에 진입하지 않으며, marker-qualified 과거 로그 안에서 강도 표기 출력 grep을 보조 source로 사용한다 (분모 재정의는 #1236 소관):
 
 ```python
 INTENSITY_DIR_MARKER = re.compile(

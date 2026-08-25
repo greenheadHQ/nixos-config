@@ -82,7 +82,8 @@ VERDICT_KV = re.compile(
 NL_SUMMARY = re.compile(r"(CONFIRMED(?:_ISSUE)?|NOT_AN_ISSUE|NEEDS_MORE_INFO)\s*(\d+)\s*건")
 ARBITER_RESULT_HEADER_COUNT = re.compile(r"Arbiter\s+검증\s+결과\s*[:：]?\s*(\d+)\s*건")
 
-# Intensity verdict (인라인 체크리스트 출력의 첫 토큰 — Step 0 결과 라벨)
+# Intensity verdict (marker-qualified 과거 로그의 강도 표기 라벨 — 현행 세션은
+# marker가 없어 M-1 분모에 진입하지 않는다. #1257 폐기 / 분모 재정의 #1236)
 INTENSITY_VERDICT_LINE = re.compile(
     r"(?:^|\n)\s*\**\s*(?:Review\s+Intensity|검토\s+강도|판정)\s*\**\s*[:：]?\s*\*?\*?(SKIP|LITE|FULL)\*?\*?",
     re.I,
@@ -1102,7 +1103,7 @@ def extract_nl_summary(text: str) -> tuple[bool, int]:
 
 
 def extract_intensity_verdicts(text: str) -> list[str]:
-    """M-1: 인라인 체크리스트 출력에서 SKIP/LITE/FULL 첫 토큰 추출."""
+    """M-1: marker-qualified 과거 로그의 강도 표기에서 SKIP/LITE/FULL 추출."""
     return [m.group(1).upper() for m in INTENSITY_VERDICT_LINE.finditer(text)]
 
 
