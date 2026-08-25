@@ -2,7 +2,7 @@
 
 Codex CLI의 알려진 제한사항, 미해결 이슈, 실행 실패 대응 절차를 통합 관리한다.
 이 문서는 `codex exec` / `codex exec review` subprocess 경로만 다룬다.
-Codex 세션에서 `spawn_agent` / `wait_agent`(capability profile에 따라 legacy 한정 `close_agent` — [`run-da/references/runtime-mapping.md`](../../run-da/references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)로 오케스트레이션하는 native subagent 경로에는
+Codex 세션에서 `spawn_agent` / `wait_agent`(explicit `close_agent`가 광고되는 표면은 지원 종료 lifecycle로 `unknown` 분류 — [`run-da/references/runtime-mapping.md`](../../run-da/references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)로 오케스트레이션하는 native subagent 경로에는
 여기의 stdin 경쟁, heredoc hang, 결과 파일 회수 제약을 기본 가정으로 적용하지 않는다.
 
 ## 0. 공통 진단

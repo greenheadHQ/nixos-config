@@ -83,24 +83,6 @@ source 분포:
 | CRITICAL | 0 | 0 | 0 | 0 | 0 |
 ```
 
-### M-5: selective consistency stability_status 분포
-
-```markdown
-## M-5: selective consistency stability_status 분포 (source: round_summary_fallback, n=<selective trigger findings>)
-
-| stability_status | 카운트 |
-|------------------|--------|
-| stable | 42 |
-| split | 7 |
-| fragmented | 2 |
-```
-
-`source` 필드는 `analyze.py:build_aggregate`가 emit하는 두 값 중 하나만 출력된다:
-- `"round_summary_fallback"`: round summary `selective:` 라인이 매치된 경우.
-- `"unavailable"`: `selective:` 라인 부재 시. 추정 금지 — 출력 시 분포는 빈 dict.
-
-`fleiss-kappa.py` aggregate envelope 통합은 v1 미구현 (algorithm.md StabilitySource 섹션 참조). 따라서 `"source": "fleiss-kappa.py"`는 emit되지 않는다.
-
 ### derived statistics
 
 ```markdown
@@ -162,11 +144,6 @@ JSON sidecar: /tmp/analyze-da-sessions-<ISO>.json (또는 --json out= 명시 경
         "MEDIUM->NONE": 2, "MEDIUM->LOW": 4, "MEDIUM->MEDIUM": 28, "MEDIUM->HIGH": 11,
         "HIGH->NONE": 1, "HIGH->LOW": 2, "HIGH->MEDIUM": 9, "HIGH->HIGH": 14, "HIGH->CRITICAL": 1
       }
-    },
-    "M-5": {
-      "source": "round_summary_fallback",
-      "n": 51,
-      "distribution": {"stable": 42, "split": 7, "fragmented": 2}
     },
     "M-6": {
       "name": "persistence_key non-convergence",
@@ -251,7 +228,6 @@ emit하지 않는다.
       "M-2": {"denominator": "arbiter_marker_sessions_findings_high_medium", "n": 7, "distribution": {"CONFIRMED_ISSUE": 5}, "percentages": {"CONFIRMED_ISSUE": 71.4}, "source_distribution": {"verdict_json": {"count": 7, "confidence": "high"}}},
       "M-3": {"by_bundle": {"Correctness": {"total": 2, "confirmed": 1, "confirmed_rate": 0.5}}},
       "M-4": {"round_key": "(session_path, block_index)", "baseline_note": "v1부터 result block 기반 새 baseline", "transition_matrix": {"HIGH->LOW": 1}},
-      "M-5": {"source": "round_summary_fallback", "n": 2, "distribution": {"stable": 2}},
       "M-6": {"name": "persistence_key non-convergence", "persistence_key": "(perspective, location_identity, finding_fingerprint)", "key_block_count_distribution": {"2": 1}, "coverage": {"eligible_records": 5, "missing_persistence_components": 1}}
     },
     "derived": {"intensity_full_finding_zero_rate": 0.25},
@@ -279,7 +255,6 @@ emit하지 않는다.
     "diagnostic_rates": {"parse_failures_per_session": 0.0, "exclusions_per_session": 0.0},
     "marker_missing_rates": {"arbiter_marker_missing_rate": 0.6, "intensity_marker_missing_rate": 0.7},
     "m2_source_distribution": {"verdict_json": {"count": 7, "confidence": "high"}},
-    "m5_source_distribution": {"round_summary_fallback": 1},
     "host_collection": {"mac": {"status": "ok", "analyzed_sessions": 5, "warnings": [], "excluded_files": 0}, "minipc": {"status": "ok", "analyzed_sessions": 5, "warnings": [], "excluded_files": 0}},
     "warnings": [],
     "health_warnings": []
@@ -310,7 +285,7 @@ embed하지 않고 `provenance.analysis_sidecar_path`로만 참조한다. `cover
 유일한 coverage SSOT이며, renderer/delta는 sidecar diagnostics를 직접 읽지 않는다.
 
 Weekly markdown 구성은 다음 순서다: header table, 핵심 수치 요약, 커버리지/신뢰도,
-M-1~M-6, 건강 지표 추이, 전주 delta, 소스 추적 링크, LLM 해설, warnings. Mermaid는
+M-1~M-4·M-6, 건강 지표 추이, 전주 delta, 소스 추적 링크, LLM 해설, warnings. Mermaid는
 M-1/M-2 `pie`만 사용한다.
 
 렌더링용 `traceability.sessions` stable subset은 기본 50개로 제한한다. 이는 GitHub comment
@@ -333,15 +308,15 @@ warning/diagnostics/traceability를 삭제하거나 historical report를 다시 
 |----------|--------|-----------|-----------|
 | `weekly-<week>.json` | analyzer sidecar + health + delta + finalized commentary | schema v1 canonical, raw warning, coverage SSOT, traceability, provenance 보존 | 없음 |
 | `weekly-<week>.md` | final canonical JSON과 동일 report | full local archival/rendered view. canonical JSON에서 재생성 가능 | 없음 |
-| commentary input | finalize 전 draft canonical JSON | week, session counts, M-1~M-6, derived, health summary, coverage counts/rates, mac/minipc status, warning category/host counts와 omitted count, delta | 262144 bytes |
-| GitHub Markdown | final canonical JSON | 핵심 요약, coverage/host, M-1~M-6, health, delta, warning counts/omitted count, sanitized commentary | 60000 bytes |
+| commentary input | finalize 전 draft canonical JSON | week, session counts, M-1~M-4·M-6, derived, health summary, coverage counts/rates, mac/minipc status, warning category/host counts와 omitted count, delta | 262144 bytes |
+| GitHub Markdown | final canonical JSON | 핵심 요약, coverage/host, M-1~M-4·M-6, health, delta, warning counts/omitted count, sanitized commentary | 60000 bytes |
 
 `build_consumer_summary(report)`가 두 bounded projection의 공통 allowlist seam이다. commentary,
 raw warning 문자열, raw diagnostics, session path/traceability, provenance, previous report path는
 summary에서 제외한다. warning count의 SSOT는 `coverage.warnings +
 coverage.health_warnings`이며 `analysis.warnings`나 host별 warning 복제본을 다시 합산하지 않는다.
 raw warning은 공개 표본 없이 category/host count와 `omitted_count`로만 표현한다. M-1/M-2
-verdict, M-3 bundle, M-4 severity transition, M-5 status, host, source 이름은 고정 key
+verdict, M-3 bundle, M-4 severity transition, host, source 이름은 고정 key
 allowlist로 재구성한다.
 
 `render_commentary_input(report)`는 고정 prompt, 빈 줄, deterministic compact JSON, final

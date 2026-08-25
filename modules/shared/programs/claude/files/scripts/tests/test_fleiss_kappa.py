@@ -1,8 +1,7 @@
-"""fleiss-kappa.py harness 계약 테스트 (run-da 소유).
+"""fleiss-kappa.py 검증기 계약 테스트 (run-da 소유).
 
-검증 대상은 run-da 런타임의 공통 검증기/집계기 계약이다 — analyzing-da-sessions
-analyzer는 이 aggregate 경로를 소비하지 않으므로 (SKILL.md v1 미연결 선언),
-harness 자체 계약 테스트는 analyzer 테스트 모듈이 아니라 이 파일이 소유한다.
+검증 대상은 run-da 런타임의 공통 VERDICT_JSON 검증기 계약이다. selective consistency
+집계 경로는 #1257에서 제거됐다 — 집계 모드 호출이 명시적으로 거부되는지도 여기서 잡는다.
 analyzer 소유 검증(canonical hash 등)은 종전대로 analyzing-da-sessions/tests에 있다.
 
 드라이버: tests/run-fleiss-kappa-tests.sh (lefthook pre-push · run-all-tests 공용).
@@ -50,16 +49,6 @@ def _verdict_block(payload):
     )
 
 
-def _write_arbiter_results(tmp_path, payload, n=3):
-    """동일 payload 블록을 담은 N개 Arbiter 결과 파일을 만들고 경로 목록을 반환한다."""
-    paths = []
-    for i in range(n):
-        p = tmp_path / f"arbiter-{i + 1}-result.md"
-        p.write_text(_verdict_block(payload))
-        paths.append(str(p))
-    return paths
-
-
 def _run_harness(*argv):
     return subprocess.run(
         [sys.executable, _harness_path(), *argv],
@@ -72,23 +61,18 @@ def test_harness_exists():
     assert os.path.isfile(_harness_path()), _harness_path()
 
 
-def test_aggregate_preserves_additive_verdict_fields(tmp_path):
-    """N=3 aggregate가 entries에 accepted_severity와 axes.plausibility를 그대로
-    보존하는지 검증한다 (protocol.md accepted severity 집계의 관측 지점)."""
-    paths = _write_arbiter_results(tmp_path, _verdict_payload())
+def test_aggregate_mode_is_removed(tmp_path):
+    """--validate-only 없는 호출(과거 N=3 집계 CLI)은 조용한 오동작 대신 명시 거부된다.
 
-    proc = _run_harness("--expect-findings", "X-1", *paths)
-    assert proc.returncode == 0, proc.stderr
-    aggregate = json.loads(proc.stdout)
-    assert not aggregate.get("partial_failure")
-    per_finding = aggregate["per_finding"]
-    assert len(per_finding) == 1
-    entries = per_finding[0]["entries"]
-    assert len(entries) == 3
-    for entry in entries:
-        assert entry["accepted_severity"] == "MEDIUM"
-        assert entry["reviewer_severity"] == "MEDIUM"
-        assert entry["axes"]["plausibility"] == "PASS"
+    구버전 문서·스크립트가 집계 모드로 호출하는 경로가 남아 있을 수 있으므로,
+    거부 메시지에 제거 근거(#1257)와 대체 호출(--validate-only)을 남긴다."""
+    valid_path = tmp_path / "valid.md"
+    valid_path.write_text(_verdict_block(_verdict_payload()))
+
+    proc = _run_harness("--expect-findings", "X-1", str(valid_path))
+    assert proc.returncode == 1
+    assert "--validate-only" in proc.stderr
+    assert "#1257" in proc.stderr
 
 
 def test_validate_only_flags_semantic_malformed(tmp_path):
@@ -146,9 +130,9 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
             {k: v for k, v in confirmed.items() if k != "accepted_severity"},
             "accepted_severity",
         ),
-        # stability_status는 aggregate 전용 — 값과 무관하게 존재 자체가 위반
-        "agg-status.md": ({**rejected, "stability_status": "stable"}, "aggregate 전용"),
-        "na-status.md": ({**rejected, "stability_status": "N/A"}, "aggregate 전용"),
+        # stability_status는 폐기된 과거 계약 필드 — 값과 무관하게 존재 자체가 위반
+        "agg-status.md": ({**rejected, "stability_status": "stable"}, "폐기된 필드"),
+        "na-status.md": ({**rejected, "stability_status": "N/A"}, "폐기된 필드"),
         # rejection_basis (FACTUAL 기반이라 evidence_scope가 없어 단일 위반이다)
         "no-basis.md": (
             {k: v for k, v in factual.items() if k != "rejection_basis"}, "rejection_basis"
@@ -194,11 +178,6 @@ def test_manifest_argument_rejects_duplicate_and_empty(tmp_path):
         assert proc.returncode == 1, manifest
         assert needle in proc.stderr, (manifest, proc.stderr)
 
-    # 집계 경로도 같은 인자 검증을 거친다 (빈 문자열이 무검증 집계로 새지 않는다)
-    proc = _run_harness("--expect-findings", "", str(valid_path))
-    assert proc.returncode == 1
-    assert "빈 항목" in proc.stderr
-
 
 def test_manifest_is_required(tmp_path):
     """--expect-findings 생략은 "검증 없음"이 아니라 인자 오류다.
@@ -207,14 +186,9 @@ def test_manifest_is_required(tmp_path):
     valid_path = tmp_path / "valid.md"
     valid_path.write_text(_verdict_block(_verdict_payload()))
 
-    # 두 모드 모두 manifest 없는 호출을 거부한다
-    for argv in (
-        ("--validate-only", str(valid_path)),
-        (str(valid_path),),
-    ):
-        proc = _run_harness(*argv)
-        assert proc.returncode == 1, argv
-        assert "--expect-findings" in proc.stderr, (argv, proc.stderr)
+    proc = _run_harness("--validate-only", str(valid_path))
+    assert proc.returncode == 1
+    assert "--expect-findings" in proc.stderr
 
 
 def test_validate_only_manifest_catches_missing_and_unknown(tmp_path):
@@ -227,28 +201,3 @@ def test_validate_only_manifest_catches_missing_and_unknown(tmp_path):
             "--validate-only", "--expect-findings", manifest, str(valid_path)
         )
         assert json.loads(proc.stdout)["ok"] is expected_ok, manifest
-
-
-def test_aggregate_manifest_catches_uniform_omission(tmp_path):
-    """세 Arbiter가 모두 같은 finding을 누락해도 manifest가 잡는지 검증한다.
-
-    집계 경로에서 누락은 finding 단위 `missing`으로만 전달되고 파일 단위
-    `manifest_violations`에는 오르지 않는다 — 그래야 finding 하나가 빠졌을 때
-    나머지 정상 finding까지 수집 단위 전체 폐기로 끌려가지 않는다."""
-    # X-2는 세 파일 모두에서 누락
-    paths = _write_arbiter_results(tmp_path, _verdict_payload())
-
-    proc = _run_harness("--expect-findings", "X-1,X-2", *paths)
-    aggregate = json.loads(proc.stdout)
-    assert aggregate.get("partial_failure") is True
-    assert "X-2" in aggregate.get("missing", {})
-    assert not aggregate.get("manifest_violations")
-    # 누락되지 않은 finding은 정상 분류되어 남는다 (finding 단위 차단)
-    assert [f["finding_id"] for f in aggregate["per_finding"]] == ["X-1"]
-
-    # manifest 밖 finding(미지 ID)은 파일 단위 위반이다
-    proc = _run_harness("--expect-findings", "Y-9", *paths)
-    aggregate = json.loads(proc.stdout)
-    assert aggregate.get("partial_failure") is True
-    assert aggregate.get("manifest_violations")
-    assert "X-1" in json.dumps(aggregate["manifest_violations"])

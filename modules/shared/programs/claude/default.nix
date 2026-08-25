@@ -238,8 +238,9 @@ in
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
 
-    # run-da Arbiter selective consistency harness. stability-measurement.md 정책을 따라
-    # N개 Arbiter VERDICT_JSON 블록으로부터 vote-shape와 (옵션) offline Fleiss kappa를 계산.
+    # run-da VERDICT_JSON 검증기 (protocol.md caller 검증의 기계 검증 SSOT 구현체).
+    # 파일명은 과거 Fleiss kappa 집계 용도에서 유래 — 집계는 #1257에서 제거됐고
+    # 경로 계약(HELPER_PATH) 유지를 위해 이름을 존치한다.
     ".claude/scripts/fleiss-kappa.py".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
 

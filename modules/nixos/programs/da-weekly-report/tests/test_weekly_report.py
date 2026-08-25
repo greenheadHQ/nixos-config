@@ -528,7 +528,7 @@ def test_commentary_projection_is_bounded_without_raw_warnings(weekly_report_mod
     assert len(rendered.encode("utf-8")) <= 262_144
     assert payload["week"]["id"] == "2026-W28"
     assert payload["session_counts"]["total"] == 4
-    assert set(payload["metrics"]) == {f"M-{index}" for index in range(1, 7)}
+    assert set(payload["metrics"]) == {"M-1", "M-2", "M-3", "M-4", "M-6"}
     assert payload["warnings"]["total_count"] == 10_001
     assert payload["warnings"]["omitted_count"] == 10_001
     assert "commentary" not in payload
@@ -551,7 +551,6 @@ def test_github_projection_is_bounded_and_structurally_complete(weekly_report_mo
         "## M-2",
         "## M-3",
         "## M-4",
-        "## M-5",
         "## M-6",
         "## 전주 delta",
         "## Warning 요약",
@@ -581,7 +580,7 @@ def test_github_projection_is_bounded_and_structurally_complete(weekly_report_mo
     assert metrics["M-2"]["distribution"]["CONFIRMED_ISSUE"] == 2
     assert metrics["M-3"]["by_bundle"]["Correctness"]["total"] == 2
     assert metrics["M-4"]["transition_matrix"]["HIGH->LOW"] == 1
-    assert metrics["M-5"]["source"] == "unavailable"
+    assert "M-5" not in metrics
     assert metrics["M-6"]["coverage"]["eligible_records"] == 3
     assert "| remote_collection | 10000 |" in rendered
     assert "| health | 1 |" in rendered

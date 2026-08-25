@@ -172,8 +172,9 @@ pre-push:
         - "modules/shared/programs/claude/files/scripts/fleiss-kappa.py"
         - "modules/shared/programs/claude/files/scripts/tests/test_fleiss_kappa.py"
         - "tests/run-fleiss-kappa-tests.sh"
-      # run-da 공통 검증기/집계기(fleiss-kappa.py) harness 계약을 profile의 pytest로 검증한다.
-      # glob을 harness 자체로 좁힌다 — 계약 변경은 반드시 이 파일들의 변경을 동반한다.
+      # run-da VERDICT_JSON 검증기(fleiss-kappa.py) 계약을 profile의 pytest로 검증한다
+      # (집계 모드는 #1257에서 제거 — 거부 경로도 여기서 검증).
+      # glob을 검증기 자체로 좁힌다 — 계약 변경은 반드시 이 파일들의 변경을 동반한다.
       run: bash ./tests/run-fleiss-kappa-tests.sh
     skill-doc-sync:
       glob:

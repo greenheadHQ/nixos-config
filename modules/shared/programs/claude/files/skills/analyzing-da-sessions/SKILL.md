@@ -9,13 +9,13 @@ argument-hint: "[--hosts mac,minipc] [--corpus <manifest.json>] [--json out=<pat
 
 # DA 세션 정량 분석
 
-PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. `run-da` 워크플로 산출물(verdict, severity, stability_status)을 Mac+MiniPC 세션 로그 전체에서 추출하여 markdown 표 + JSON sidecar로 출력한다.
+PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. `run-da` 워크플로 산출물(verdict, severity, intensity)을 Mac+MiniPC 세션 로그 전체에서 추출하여 markdown 표 + JSON sidecar로 출력한다.
 
 ## 빠른 참조
 
 | 항목 | 위치 |
 |------|------|
-| Metric Catalog (M-1 ~ M-6, coverage, health 산식) | [`references/algorithm.md`](references/algorithm.md) |
+| Metric Catalog (M-1~M-4·M-6, coverage, health 산식) | [`references/algorithm.md`](references/algorithm.md) |
 | jsonl 데이터 소스 + manifest.json 스키마 | [`references/data-sources.md`](references/data-sources.md) |
 | 출력 형식 (markdown + JSON spec, GitHub Mermaid 안전 subset) | [`references/output-format.md`](references/output-format.md) |
 | `--hosts` 인자 + SSH whitelist + partial result 처리 | [`references/host-handling.md`](references/host-handling.md) |
@@ -45,11 +45,10 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
 
 | ID | 이름 | 의미 |
 |----|------|------|
-| M-1 | 검토 강도 verdict 분포 | Review Intensity 인라인 체크리스트 결과 (FULL / LITE / SKIP) 카운트 |
+| M-1 | 검토 강도 verdict 분포 | Intensity marker 출현 세션(과거 외부 호출 경로 전용)에서 강도 표기(FULL / LITE / SKIP)를 카운트. 현행 세션은 marker를 만들지 않아 분모에 진입하지 않는다 — 분모 재정의는 #1236 소관 (한계 상세: [`references/algorithm.md`](references/algorithm.md) "한계") |
 | M-2 | 판정자 verdict 분포 | Arbiter VERDICT_JSON `verdict` 카운트 (CONFIRMED_ISSUE / NOT_AN_ISSUE / NEEDS_MORE_INFO) |
 | M-3 | reviewer 묶음별 confirmed-rate | 4 reviewer 묶음(correctness / design / regression / maintainability) 각각의 CONFIRMED_ISSUE 비율 |
 | M-4 | 동일 세션 max severity 전이 | 같은 세션 내 round N → N+1 confirmed finding 집합의 max severity 전이 매트릭스 |
-| M-5 | selective consistency stability_status 분포 | round summary `selective:` 라인의 stable / split / fragmented 카운트 |
 | M-6 | persistence_key 비수렴 지표 | 같은 관점+위치+finding fingerprint가 여러 result block에 반복되는지 측정 |
 | diagnostics | 추출 진단 | parse failure / template exclusion / invalid verdict / missing persistence component를 verdict와 분리 보존 |
 | traceability | 소스 추적성 | host/format/cwd/git_branch/session_id/source refs coverage |
@@ -69,7 +68,7 @@ PR #670에서 사용한 session log 정량 측정 워크플로의 정식 Skill. 
    - 현재 머신: 직접 glob.
    - 원격 머신: `subprocess.run(["ssh", alias, ...])` 고정 argv. SSH 실패 시 partial result 표시.
 3. `analyze.py` 알고리즘 적용 (4-tier fallback + source/confidence 라벨링).
-4. M-1 ~ M-6 aggregate + diagnostics/traceability sidecar 생성.
+4. M-1~M-4·M-6 aggregate + diagnostics/traceability sidecar 생성 (M-5는 selective consistency 제거와 함께 폐기 — #1257).
 5. markdown 표 (stdout) + JSON sidecar (auto: `/tmp/analyze-da-sessions-<ISO>.json`, override: `--json out=`) 동시 출력.
 
 JSON sidecar 핵심 예시:
@@ -87,7 +86,6 @@ JSON sidecar 핵심 예시:
 - 사용자 명시 호출 전용. Claude Code는 frontmatter `disable-model-invocation: true`로 자동 trigger 차단. Codex 세션은 동등 메커니즘이 없으므로 자동 trigger 차단 보장이 best-effort이다 — 자연어 trigger 키워드를 description에서 빼는 방식으로 자동 매칭 surface를 줄이지만 구조적 차단은 아니다 (이슈 #671 D-2 YAGNI 결정).
 - 주간 cron/systemd 경로는 이 Skill 호출이 아니다. NixOS timer는 `modules/nixos/programs/da-weekly-report/files/da-weekly-report.sh`가 `analyze.py`를 직접 실행하고 weekly JSON/markdown을 조립한다. 따라서 D-2의 "명시 호출 전용 Skill" 경계와 자동 리포트 경로는 분리된다.
 - live 전체 home log 분석은 시간이 지남에 따라 분모가 변하므로 PR #670 ±5% 회귀 게이트는 `--corpus pr-670-baseline.json` pinned manifest 모드에서만 사용한다. 단 v1은 manifest 생성 절차(별도 producer 모드)를 포함하지 않는다 — PR #670 baseline manifest는 별도 follow-up에서 capture한다.
-- `stability_status` (M-5)는 v1에서 round summary `selective:` 라인 source만 사용한다. `fleiss-kappa.py` aggregate envelope 호출은 selective consistency arbiter result 디렉터리를 session-level에서 직접 추적해야 하므로 corpus 전체 스캔 모델과 자연스럽게 결합되지 않아 v1에서 미연결 — round summary 부재 시 `unavailable` 표기.
 - bundle 간 unique finding 비율, verdict 모순률은 산식 부재로 v1에 포함하지 않는다 (이슈 #671 follow-up).
 
 ## 회귀 검증

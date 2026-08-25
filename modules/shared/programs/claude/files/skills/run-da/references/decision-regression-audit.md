@@ -2,7 +2,7 @@
 
 이 문서가 "새 세션이 과거 의사결정을 모르고 회귀를 재도입"하는 것을 막기 위한 컨텍스트 조사 절차의 단일 진실 원천(SSOT)이다. `run-da`의 reviewer/Arbiter(for_plan/for_pr)와 auditor(audit 모드)가 모두 이 문서를 참조한다.
 
-SSOT 경계 (중복 방지): 본 문서는 절차·소스 계층·세션 로그 방법론의 정본이다. 단 (a) 발동 조건(어떤 변경에 조사를 강제할지)은 [`intensity-rules.md`](intensity-rules.md)의 `GATE-REMOVAL-SIMPLIFY`가, (b) 판정 기준 기반 verdict 매핑은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정"이 각각 정본이다. 본 문서는 이들 정본을 복제(verbatim 또는 규범적 재서술)하지 않으며, 탐색을 돕는 1줄 요지와 링크만 둔다. 또한 reviewer/auditor에게 주입되는 프롬프트 본문([`da-domains.md`](da-domains.md) 공통 프롬프트 등)은 self-containment를 위해 핵심 지시를 의도적으로 재서술할 수 있다(중복 허용 예외).
+SSOT 경계 (중복 방지): 본 문서는 발동 조건(`GATE-REMOVAL-SIMPLIFY`)·절차·소스 계층·세션 로그 방법론의 정본이다. 단 판정 기준 기반 verdict 매핑은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정"이 정본이다. 본 문서는 그 정본을 복제(verbatim 또는 규범적 재서술)하지 않으며, 탐색을 돕는 1줄 요지와 링크만 둔다. 또한 reviewer/auditor에게 주입되는 프롬프트 본문([`da-domains.md`](da-domains.md) 공통 프롬프트 등)은 self-containment를 위해 핵심 지시를 의도적으로 재서술할 수 있다(중복 허용 예외).
 
 Owner: `run-da` — for_plan/for_pr(reviewer/Arbiter)와 audit 모드(auditor)가 함께 사용한다. (validation-path catalog와 동일한 owner+링크 모델)
 
@@ -23,9 +23,20 @@ Owner: `run-da` — for_plan/for_pr(reviewer/Arbiter)와 audit 모드(auditor)�
 
 범위 1·3은 보통 같은 변경에서 함께 나타난다(제거 방향 변경이 도입 근거를 모르면 decision regression). 범위 2는 세션 로그/이슈 기반 진단의 정확도 게이트다. 범위 4는 git 히스토리 없이 diff만으로 탐지되는 보조 차원으로, audit 모드 bundle 5와 auditor 프롬프트의 속성 보존 점검이 주로 담당하되 for_plan/for_pr의 SIDE_EFFECT 관점도 점검한다.
 
-## 발동 조건
+## 발동 조건 (`GATE-REMOVAL-SIMPLIFY` — 본 문서가 정본)
 
-발동 조건(어떤 변경에 이 조사를 강제할지)의 정본은 [`intensity-rules.md`](intensity-rules.md)의 `GATE-REMOVAL-SIMPLIFY`다. 요지(1줄): 제거·단순화·되돌림·리팩터 또는 왕복 핫스팟이면 Review Intensity와 무관하게 fail-closed 전체 조사, 그 외는 Review Intensity 연동. 여기서 전체 조사는 Step A의 시계열 전수 절차를 뜻한다. 트리거 정의·"왕복 핫스팟" 기준·불확실 시 fail-closed 규칙의 정본은 모두 위 문서다.
+Decision-regression 조사의 발동은 검토 강도(SKIP/LITE/FULL — [`../SKILL.md`](../SKILL.md) "검토 강도" 절)와 독립 축이다. 검토 강도는 "DA를 얼마나 강하게 돌릴지"를 정하고, 이 게이트는 "과거 의사결정 회귀 조사를 강제할지"를 정한다. 강도 판정에 참여하지 않는 독립 게이트임을 나타내기 위해 `RULE-` 대신 `GATE-` prefix를 쓴다 (도입: PR #927 — 제거·단순화 방향 변경의 독립 fail-closed 축).
+
+| ID | 조건 | 조사 강도 |
+|----|------|----------|
+| `GATE-REMOVAL-SIMPLIFY` | 변경이 제거·단순화·되돌림·리팩터 방향이거나, 변경 파일이 git상 왕복 핫스팟 | 전체 조사 강제 (fail-closed; 검토 강도가 SKIP/LITE여도 조사는 수행) |
+| (그 외) | 신규 추가 등 | 검토 강도 연동 — FULL=전체 조사, LITE=경량(`git log`/`blame`만), SKIP=생략 |
+
+여기서 전체 조사는 Step A의 시계열 전수 절차를 뜻한다.
+
+왕복 핫스팟 판정: 변경 파일의 `git log --oneline --follow -- <path>` 이력이 동종 파일(같은 디렉토리 또는 같은 확장자) 대비 두드러지게 길거나, 그 이력에 revert/되돌림 커밋이 존재하는 파일. 수치 임계는 하드코딩하지 않으며(프로젝트마다 다름), 판정이 불확실하면 fail-closed로 전체 조사한다.
+
+예: 단일 함수 제거처럼 사용자가 경량 검토를 지시할 만한 변경이어도, `GATE-REMOVAL-SIMPLIFY`가 매치되면 decision-regression 조사는 전체로 발동한다(제거 방향이 가장 위험하기 때문). SKIP/LITE로 reviewer fan-out이 없으면 메인이 직접(degraded) 조사를 수행한다(아래 "degraded 수행").
 
 ## 조사 소스 계층 (graceful degradation)
 

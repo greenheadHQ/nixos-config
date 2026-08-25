@@ -45,11 +45,6 @@ def sample_sidecar() -> dict[str, Any]:
                 "baseline_note": "baseline",
                 "transition_matrix": {"HIGH->LOW": 1},
             },
-            "M-5": {
-                "source": "unavailable",
-                "n": 0,
-                "distribution": {},
-            },
             "M-6": {
                 "name": "persistence_key non-convergence",
                 "persistence_key": "(perspective, location_identity, finding_fingerprint)",

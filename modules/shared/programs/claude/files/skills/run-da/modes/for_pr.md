@@ -4,20 +4,20 @@
 
 `for_pr`은 `for_plan`과 step 구조가 동일하다. 입력(diff vs 계획), 임시 디렉토리 prefix, write phase의 코드 수정+커밋 방식, Step 8 push만 다르다. 동일 절차는 [`./for_plan.md`](./for_plan.md)를 참조하고, 본 파일은 차이점만 step 번호별로 명시한다.
 
-호출 단위 실행 프로파일과 사용자 지정 실행 파라미터(model/effort/tier)는 [`../SKILL.md`](../SKILL.md)의 정의가 정본이다. 예: `run-da for_pr agent=codex-xhigh`.
+호출 단위 실행 경로·파라미터 지정(자연어 채널)은 [`../SKILL.md`](../SKILL.md)의 정의가 정본이다. 예: "run-da for_pr, 전부 codex xhigh로".
 
 ## Step 번호별 delta (vs for_plan)
 
 | Step | for_plan | for_pr (delta) |
 |------|----------|----------------|
-| Step 0 | 동일 | Review Intensity 입력은 `git diff --stat main...HEAD` (계획 요약 대신) |
+| Step 0 | 동일 (검토 강도 확정 — 기본 FULL, 하향은 사용자 명시 지시만) | 동일 |
 | Step 1 | 계획 내용 수집 | diff preflight (clean workspace 요구) + diff 수집 — 체크포인트별 절차는 아래 "Step 1 상세: diff preflight" 절 참조 |
 | Step 2 | reviewer prompt에 계획 원문 포함 | reviewer prompt에 diff를 `<git-diff>` 태그로 감싸서 포함 + "diff 외부의 관련 파일도 직접 읽어 탐색하라" 지시 |
 | Step 2 (codex exec) | `DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-plan-XXXXXX)` | `DA_DIR=$(mktemp -d /tmp/da-${_DA_SID}-pr-XXXXXX)` (`-pr-` prefix). 후속 prompt/exec 호출은 for_plan Step 2와 동일하게 stdout `DA_DIR` 리터럴 재설정 + `[ -d "$DA_DIR" ]` / `[ -f "$DA_DIR/$UNIT.md" ]` guard를 적용 |
 | Step 3 | 동일 | 동일 ([`./for_plan.md`](./for_plan.md#step-3-reviewer-결과-수신--종합-리포트)) |
 | Step 4 | 동일 (ALL CLEAR) | 동일 |
 | Step 5 (Arbiter) | for_plan 조립 (계획 원문 포함) | for_pr 조립 (diff 컨텍스트 포함) — [`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 "프롬프트 조립 > for_pr 모드" 참조. for_pr에서는 계획 원문 대신 diff 또는 변경 컨텍스트를 포함 |
-| Step 5 상태 전이 | CONFIRMED_ISSUE를 pending write queue에 추가, eligible NOT_AN_ISSUE/사용자 제외는 dismissal ledger에 기록 | 동일. review phase 중 patch 금지, formatter write 금지, generated output 변경 금지. 코드 수정/commit은 Step 6 write phase 전까지 금지. dismissal ledger 기록은 tracked diff가 아닌 local ignored review metadata로만 허용 |
+| Step 5 상태 전이 | CONFIRMED_ISSUE를 pending write queue에 추가, NOT_AN_ISSUE/사용자 제외는 세션 내 기각 이력에 기록 ([`../SKILL.md`](../SKILL.md) 정본) | 동일. review phase 중 patch 금지, formatter write 금지, generated output 변경 금지. 코드 수정/commit은 Step 6 write phase 전까지 금지 |
 | Step 6 write phase | 통합 반영 루프(통합 설계→batch 반영→walkthrough→후속 수정 처리→finalize) 후 계획 확정·새 changeset 선언 | 동일 루프를 코드에 적용하되 finalize에서 commit한다 — 아래 "Step 6 상세: for_pr write phase" 절 참조 |
 | Step 7 | 수렴 predicate 충족까지 반복 (protocol.md "수렴 판정" SSOT + "최대 라운드 수" 적용: 상한 + 한계효용 + 비수렴 조기중단 + read/write 분리) | 동일 |
 | Step 8 | (없음) | push — 수렴 종료 후 최종 승인을 받아 push한다. push 전 walkthrough delta가 마지막 commit에 포함됐는지 확인한다 (네트워크/auth 정책 의존 — [`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조) |
@@ -36,14 +36,13 @@
 
 for_pr에서 입력만 달라지는 공통 단계는 다음 둘뿐이다 (절차 자체는 for_plan과 같다):
 
-- Step 1의 의사결정 컨텍스트 팩 수집: [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A의 입력이 계획 원문 대신 `git diff main...HEAD`다. `fresh` 반복 세션의 dismissal ledger load도 frozen `git diff main...HEAD`와 exact match할 때만 유효하다.
-- Step 0의 Review Intensity 입력: delta 표 참조.
+- Step 1의 의사결정 컨텍스트 팩 수집: [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md) Step A의 입력이 계획 원문 대신 `git diff main...HEAD`다. `fresh` 반복 라운드의 세션 내 기각 이력도 frozen `git diff main...HEAD` 기준 changeset과 일치할 때만 유효하다.
 
 ## Step 6 상세: for_pr write phase
 
 for_plan의 통합 반영 루프에 다음 for_pr 전용 체크포인트를 더한다. Step 1이 clean workspace를 보장하므로 write phase가 만든 변경 = workspace의 모든 변경이며, 별도의 경로 승인·baseline 대조 장치를 두지 않는다.
 
-- pre-write 기록: write phase 시작 시 `git rev-parse HEAD`를 `pre_write_sha`로 기록한다 (protocol.md revalidation `batch-delta-intensity` 조건의 batch delta 입력 기준).
+- pre-write 기록: write phase 시작 시 `git rev-parse HEAD`를 `pre_write_sha`로 기록한다 (protocol.md revalidation `post-write-surface-gate` 조건의 batch delta 입력 기준).
 - finalize (walkthrough CLEAN 후):
   1. `git status --porcelain=v1 --untracked-files=all`로 write phase delta를 확인한다.
   2. 비어 있으면 commit하지 않는다. walkthrough가 batch 수정을 전부 되돌렸다는 뜻이므로 round_write_set이 해결됐다고 보지 않는다 — 되돌린 이유를 walkthrough 후속 발견으로 기록하고, 해당 finding 수를 [`../references/protocol.md`](../references/protocol.md)의 `write_reverted_count`로 확정한다 (그 값이 0이 아니면 수렴 predicate가 막힌다). 새 changeset 선언도 하지 않는다.

@@ -2,7 +2,7 @@
 """DA 세션 정량 분석 — analyzing-da-sessions Skill의 algorithm SSOT.
 
 PR #670 정정 코멘트의 알고리즘 (분모 정정 + 4-tier fallback + source/confidence 라벨링)
-+ severity 전이 + StabilitySource resolver를 통합한 단일 진입점.
++ severity 전이를 통합한 단일 진입점.
 
 Internal boundary:
   - constants/enums          — VERDICT_CATEGORIES, INTENSITY_VERDICTS, BUNDLE_MAP, regex 등
@@ -11,7 +11,6 @@ Internal boundary:
   - verdict parser pipeline  — extract_strict_verdicts, extract_unmarked_json_verdicts,
                                 extract_kv_verdicts, extract_nl_summary, extract_intensity_verdicts
   - severity transition      — find_severity_for_finding, severity_rank, compute_severity_transitions
-  - stability source         — resolve_stability_status_from_round_summary (round summary 전용)
   - aggregate builder        — analyze_session, build_aggregate
   - markdown renderer        — render_markdown
   - json renderer            — render_json
@@ -60,7 +59,6 @@ VALID_HOSTS = {"mac", "minipc"}
 VERDICT_CATEGORIES = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
 INTENSITY_VERDICTS = ("FULL", "LITE", "SKIP")
 VERDICT_SOURCES = ("verdict_json", "md_header", "json_unmarked", "kv")
-BLOCK_KINDS = ("first_pass", "selective", "summary")
 
 # 4-tier fallback patterns
 ARBITER_DIR_MARKER = re.compile(r"/tmp/da-[a-fA-F0-9]+-arbiter-(?!XXXXXX\b)[A-Za-z0-9]+")
@@ -79,7 +77,8 @@ VERDICT_KV = re.compile(
 NL_SUMMARY = re.compile(r"(CONFIRMED(?:_ISSUE)?|NOT_AN_ISSUE|NEEDS_MORE_INFO)\s*(\d+)\s*건")
 ARBITER_RESULT_HEADER_COUNT = re.compile(r"Arbiter\s+검증\s+결과\s*[:：]?\s*(\d+)\s*건")
 
-# Intensity verdict (인라인 체크리스트 출력의 첫 토큰 — Step 0 결과 라벨)
+# Intensity verdict (marker-qualified 과거 로그의 강도 표기 라벨 — 현행 세션은
+# marker가 없어 M-1 분모에 진입하지 않는다. #1257 폐기 / 분모 재정의 #1236)
 INTENSITY_VERDICT_LINE = re.compile(
     r"(?:^|\n)\s*\**\s*(?:Review\s+Intensity|검토\s+강도|판정)\s*\**\s*[:：]?\s*\*?\*?(SKIP|LITE|FULL)\*?\*?",
     re.I,
@@ -113,12 +112,6 @@ BUNDLE_MAP = {
     "readability": "Maintainability",
     "clean_code": "Maintainability",
 }
-
-# Round summary `selective:` line (M-5 fallback source)
-SELECTIVE_LINE = re.compile(
-    r"selective\s*:\s*trigger\s+(\d+)건.*?stable\s+(\d+)건.*?split\s+(\d+)건.*?fragmented\s+(\d+)건",
-    re.I,
-)
 
 # Session source traceability (S2-9)
 ROLLOUT_FILENAME = re.compile(r"^rollout-(?P<body>.+)\.jsonl$")
@@ -176,7 +169,6 @@ CORPUS_FILE_SIZE_CAP_BYTES = CORPUS_FILE_SIZE_CAP_MIB * 1024 * 1024
 # 경계가 일치한다. 수집은 cap 이하(`-{cap+1}c`), 초과 카운트는 cap 초과(`+{cap}c`)로 상보 분할.
 REMOTE_FIND_SIZE_INCLUDE = f"-{CORPUS_FILE_SIZE_CAP_BYTES + 1}c"
 REMOTE_FIND_SIZE_EXCLUDE = f"+{CORPUS_FILE_SIZE_CAP_BYTES}c"
-FLEISS_KAPPA_TIMEOUT_SECONDS = 60  # fleiss-kappa.py helper 호출 timeout (현재 v1에서는 미사용)
 SSH_FETCH_WORKERS = 8  # 원격 호스트당 동시 SSH cat worker 수 (host 순차 처리, host당 K=8 병렬)
 SSH_CONTROLMASTER_CHECK_TIMEOUT_SECONDS = 10  # ssh preflight / ControlMaster check timeout
 
@@ -203,7 +195,6 @@ class PayloadContext:
     payload_traversal_path: str | None = None
     payload_hash: str | None = None
     block_index: int | None = None
-    block_kind: str = "first_pass"
     match_offset: int | None = None
 
 
@@ -262,7 +253,6 @@ class VerdictRecord:
     payload_traversal_path: str | None
     payload_hash: str | None
     block_index: int | None
-    block_kind: str
     match_offset: int | None
     finding_id: str
     verdict: str
@@ -274,7 +264,6 @@ class VerdictRecord:
     perspective: str | None
     location_identity: str | None
     finding_fingerprint: str | None
-    stability_status: str
     canonical_verdict_hash: str
 
     def to_dict(self) -> dict:
@@ -609,15 +598,6 @@ def classify_template_exclusion(
     return None
 
 
-def infer_block_kind(text: str) -> str:
-    lowered = text.lower()
-    if "selective:" in lowered or "selective consistency" in lowered or "fleiss-kappa" in lowered:
-        return "selective"
-    if "round summary" in lowered or "라운드 요약" in text:
-        return "summary"
-    return "first_pass"
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. finding_id normalizer
 # ─────────────────────────────────────────────────────────────────────────────
@@ -636,7 +616,7 @@ def get_bundle(finding_id: str | None) -> str | None:
 
 
 def get_perspective(finding_id: str | None, text: str = "") -> str | None:
-    """ledger key의 perspective 후보를 finding_id 또는 finding block에서 추출."""
+    """persistence_key(M-6)의 perspective 후보를 finding_id 또는 finding block에서 추출."""
     if finding_id:
         m = FINDING_ID_LEGACY.search(finding_id)
         if m:
@@ -817,15 +797,12 @@ def make_verdict_record(
             snippet=text_snippet(finding_context_window(text, finding_id, ctx.match_offset)),
         )
 
-    block_kind = ctx.block_kind if ctx.block_kind in BLOCK_KINDS else "first_pass"
     confidence = item.get("confidence", "N/A")
-    stability_status = item.get("stability_status", "N/A")
     canonical_source = {
         "schema_version": item.get("schema_version", "1.0"),
         "finding_id": finding_id,
         "verdict": verdict,
         "confidence": confidence,
-        "stability_status": stability_status,
         "axes": item.get("axes", {}),
     }
     record = VerdictRecord(
@@ -834,7 +811,6 @@ def make_verdict_record(
         payload_traversal_path=ctx.payload_traversal_path,
         payload_hash=ctx.payload_hash,
         block_index=ctx.block_index,
-        block_kind=block_kind,
         match_offset=ctx.match_offset,
         finding_id=finding_id,
         verdict=verdict,
@@ -846,7 +822,6 @@ def make_verdict_record(
         perspective=persistence.get("perspective"),
         location_identity=persistence.get("location_identity"),
         finding_fingerprint=persistence.get("finding_fingerprint"),
-        stability_status=str(stability_status),
         canonical_verdict_hash=canonical_json_hash(canonical_source),
     )
     return record.to_dict()
@@ -947,7 +922,6 @@ def extract_strict_verdicts(
             "finding_id": finding_id,
             "verdict": m.group(2),
             "confidence": "N/A",
-            "stability_status": "N/A",
         }, text, "md_header", "high", match_ctx, diagnostics)
         if record is None:
             continue
@@ -1086,7 +1060,6 @@ def extract_kv_verdicts(
                         "finding_id": "",
                         "verdict": vm.group(1),
                         "confidence": "N/A",
-                        "stability_status": "N/A",
                     },
                     text,
                     "kv",
@@ -1112,7 +1085,7 @@ def extract_nl_summary(text: str) -> tuple[bool, int]:
 
 
 def extract_intensity_verdicts(text: str) -> list[str]:
-    """M-1: 인라인 체크리스트 출력에서 SKIP/LITE/FULL 첫 토큰 추출."""
+    """M-1: marker-qualified 과거 로그의 강도 표기에서 SKIP/LITE/FULL 추출."""
     return [m.group(1).upper() for m in INTENSITY_VERDICT_LINE.finditer(text)]
 
 
@@ -1256,29 +1229,7 @@ def compute_persistence_metrics(sessions: list[dict]) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. stability source resolver (M-5, plan D-10)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def resolve_stability_status_from_round_summary(text: str) -> Counter:
-    """M-5 v1 source: round summary `selective:` 라인 파싱.
-
-    개별 Arbiter VERDICT_JSON에는 `stability_status`가 없으므로(schema 1.1에서 aggregate
-    전용 필드로 고정) source 대상 아님 — 추출 시 누락 기본값 `N/A`를 합성할 뿐이다.
-    `fleiss-kappa.py` aggregate envelope 호출은 selective consistency arbiter result 디렉터리를
-    session-level에서 직접 추적해야 하는데, 본 Skill의 전체 corpus 스캔 모델에서는 그 경계가
-    자연스럽지 않다 — v1은 round summary 패턴만 사용하고, 둘 다 부재 시 unavailable로 보고한다.
-    """
-    counter: Counter = Counter()
-    for m in SELECTIVE_LINE.finditer(text):
-        # trigger, stable, split, fragmented 카운트 누적
-        counter["stable"] += int(m.group(2))
-        counter["split"] += int(m.group(3))
-        counter["fragmented"] += int(m.group(4))
-    return counter
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. aggregate builder
+# 6. aggregate builder
 # ─────────────────────────────────────────────────────────────────────────────
 
 def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
@@ -1356,7 +1307,6 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
                         payload_traversal_path=payload_path,
                         payload_hash=payload_hash,
                         block_index=predicted_block_index(line_no),
-                        block_kind=infer_block_kind(text),
                     )
 
                     sv = extract_strict_verdicts(text, parse_failures, diagnostics, ctx)
@@ -1395,7 +1345,6 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
         "verdicts": all_verdicts,
         "nl_signal_only": nl_signal_only,
         "nl_estimated_count": nl_estimated,
-        "round_summary_stability": resolve_stability_status_from_round_summary(text_blob),
         "parse_failures": parse_failures,
         "diagnostics": [d.to_dict() for d in diagnostics],
         "session_meta": session_traceability,
@@ -1522,15 +1471,6 @@ def build_aggregate(
         if len(rounds) >= 2:
             transitions += compute_severity_transitions(rounds)
 
-    # M-5: stability_status 분포
-    m5_source = "round_summary_fallback"
-    m5_counter: Counter = Counter()
-    for s in arbiter_marker_sessions:
-        m5_counter += s["round_summary_stability"]
-    if not m5_counter:
-        m5_source = "unavailable"
-    m5_n = sum(m5_counter.values())
-
     # derived: intensity_full_finding_zero_rate
     full_sessions = [s for s in intensity_marker_sessions if "FULL" in s["intensity_verdicts"]]
     full_zero = [s for s in full_sessions if not any(
@@ -1577,11 +1517,6 @@ def build_aggregate(
                 "baseline_note": "v1부터 result block 기반 새 baseline이며 이전 finding_id 재등장 휴리스틱 수치와 단절된다.",
                 "transition_matrix": {f"{a}->{b}": c for (a, b), c in transitions.items()},
             },
-            "M-5": {
-                "source": m5_source,
-                "n": m5_n,
-                "distribution": dict(m5_counter),
-            },
             "M-6": {
                 "name": "persistence_key non-convergence",
                 "persistence_key": "(perspective, location_identity, finding_fingerprint)",
@@ -1616,7 +1551,7 @@ def build_aggregate(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. markdown renderer
+# 7. markdown renderer
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_markdown(agg: dict) -> str:
@@ -1697,19 +1632,6 @@ def render_markdown(agg: dict) -> str:
         out.append("(전이 데이터 없음)")
     out.append("")
 
-    # M-5
-    m5 = agg["metrics"]["M-5"]
-    out.append(f"## M-5: selective consistency stability_status 분포 (source: {m5['source']}, n={m5['n']})")
-    out.append("")
-    if m5["distribution"]:
-        out.append("| stability_status | 카운트 |")
-        out.append("|------------------|--------|")
-        for k, v in m5["distribution"].items():
-            out.append(f"| {k} | {v} |")
-    else:
-        out.append("(M-5 source unavailable)")
-    out.append("")
-
     # M-6
     m6 = agg["metrics"]["M-6"]
     out.append("## M-6: persistence_key 비수렴 지표")
@@ -1747,7 +1669,7 @@ def render_markdown(agg: dict) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. json renderer
+# 8. json renderer
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_json(agg: dict) -> str:
