@@ -59,11 +59,6 @@ VALID_HOSTS = {"mac", "minipc"}
 VERDICT_CATEGORIES = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
 INTENSITY_VERDICTS = ("FULL", "LITE", "SKIP")
 VERDICT_SOURCES = ("verdict_json", "md_header", "json_unmarked", "kv")
-# legacy provenance 분류다 — "selective"는 폐기된 selective consistency(#1257) 블록을,
-# "first_pass"는 그 시절 first/N=3 구분의 흔적을 가리킨다. 현행 run-da는 단일 Arbiter
-# 판정만 생성하므로 새 로그는 전부 "first_pass"로 직렬화된다 (후속 pass가 있다는 뜻이
-# 아니다). 과거 로그의 블록 유형을 보존하기 위한 provenance 필드로만 유지한다.
-BLOCK_KINDS = ("first_pass", "selective", "summary")
 
 # 4-tier fallback patterns
 ARBITER_DIR_MARKER = re.compile(r"/tmp/da-[a-fA-F0-9]+-arbiter-(?!XXXXXX\b)[A-Za-z0-9]+")
@@ -200,7 +195,6 @@ class PayloadContext:
     payload_traversal_path: str | None = None
     payload_hash: str | None = None
     block_index: int | None = None
-    block_kind: str = "first_pass"
     match_offset: int | None = None
 
 
@@ -259,7 +253,6 @@ class VerdictRecord:
     payload_traversal_path: str | None
     payload_hash: str | None
     block_index: int | None
-    block_kind: str
     match_offset: int | None
     finding_id: str
     verdict: str
@@ -605,15 +598,6 @@ def classify_template_exclusion(
     return None
 
 
-def infer_block_kind(text: str) -> str:
-    lowered = text.lower()
-    if "selective:" in lowered or "selective consistency" in lowered or "fleiss-kappa" in lowered:
-        return "selective"
-    if "round summary" in lowered or "라운드 요약" in text:
-        return "summary"
-    return "first_pass"
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. finding_id normalizer
 # ─────────────────────────────────────────────────────────────────────────────
@@ -813,7 +797,6 @@ def make_verdict_record(
             snippet=text_snippet(finding_context_window(text, finding_id, ctx.match_offset)),
         )
 
-    block_kind = ctx.block_kind if ctx.block_kind in BLOCK_KINDS else "first_pass"
     confidence = item.get("confidence", "N/A")
     canonical_source = {
         "schema_version": item.get("schema_version", "1.0"),
@@ -828,7 +811,6 @@ def make_verdict_record(
         payload_traversal_path=ctx.payload_traversal_path,
         payload_hash=ctx.payload_hash,
         block_index=ctx.block_index,
-        block_kind=block_kind,
         match_offset=ctx.match_offset,
         finding_id=finding_id,
         verdict=verdict,
@@ -1325,7 +1307,6 @@ def analyze_session(path: str, logical_path: str | None = None) -> dict | None:
                         payload_traversal_path=payload_path,
                         payload_hash=payload_hash,
                         block_index=predicted_block_index(line_no),
-                        block_kind=infer_block_kind(text),
                     )
 
                     sv = extract_strict_verdicts(text, parse_failures, diagnostics, ctx)

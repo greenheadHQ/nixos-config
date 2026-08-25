@@ -259,7 +259,6 @@ def test_extraction_diagnostics(fixtures_dir, analyze_module, fixture_name):
             payload_traversal_path="$.text",
             payload_hash=analyze_module.sha256_text(text),
             block_index=0,
-            block_kind="first_pass",
         ),
     )
 

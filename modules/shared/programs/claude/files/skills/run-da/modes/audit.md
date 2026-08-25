@@ -13,7 +13,7 @@ audit 모드는 검토 강도 하향 채널의 적용 대상이 아니다 — �
 | 항목 | 값 |
 |------|-----|
 | 기본 fan-out | 6개 auditor bundle (에이전트 6개) |
-| open thread cap | capability profile의 batch 상한 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT — 광고 slot 기반, unknown이면 serial(동시 1)) |
+| open thread cap | capability profile의 batch 상한 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT — 광고 slot 기반. `unknown`은 같은 SSOT의 fail-safe 세부 분기를 따른다 — serial(동시 1)이 허용되는 경우와 codex exec fallback만 가능한 경우가 나뉜다) |
 | `MAX` modifier | 기본 6 bundle을 10개 세부 관점으로 확장 (exhaustive override) |
 | `fresh` modifier | audit 모드 부적용 — 라운드 반복이 없으므로 해석하지 않는다 |
 | 자연어 실행 지정 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: "run-da audit, codex high로" |

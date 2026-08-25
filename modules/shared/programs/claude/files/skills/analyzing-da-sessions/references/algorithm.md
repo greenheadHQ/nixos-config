@@ -12,7 +12,7 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 | M-4 | 동일 세션 max severity 전이 | 같은 세션 내 result block N → N+1 confirmed finding 집합의 max severity 전이 매트릭스 | `VerdictRecord.block_index` + `find_severity_for_finding` + `severity_rank` + `compute_severity_transitions` (아래 severity 섹션) |
 | M-6 | persistence_key 비수렴 지표 | 동일 `(perspective, location_identity, finding_fingerprint)`가 서로 다른 result block에 반복되는 횟수 분포 + 세션별 top offenders | `compute_persistence_metrics` |
 
-(M-5 selective consistency stability_status 분포는 selective consistency 체계 제거와 함께 폐기됐다 — run-da #1257. 과거 로그의 `selective:` 라인·selective 블록은 파서가 계속 인식하되 지표로 집계하지 않는다.)
+(M-5 selective consistency stability_status 분포는 selective consistency 체계 제거와 함께 폐기됐다 — run-da #1257. 과거 로그의 `selective:` 라인·selective 블록 텍스트는 다른 지표의 verdict 추출을 방해하지 않는 일반 텍스트로 취급되며, 별도 인식·집계하지 않는다.)
 
 참고: `analyze.py`의 함수/상수 이름이 본 문서의 source SoT다. 임시 스크립트(`/tmp/extraction-v2.py` 등)는 historical reference이며 정식 SoT가 아니다.
 
@@ -112,7 +112,6 @@ keyword 분모 금지: 본문에 `arbiter` 단어가 있다고 분모에 포함�
 | `payload_traversal_path` | string payload까지의 JSON traversal path (`$.message...`, `$.payload...`) |
 | `payload_hash` | payload string 원문 SHA-256 |
 | `block_index` | 같은 세션 안 result block index, 0부터 시작 |
-| `block_kind` | `first_pass` / `selective` / `summary` — legacy provenance 분류. `selective`는 폐기된 selective consistency(#1257) 블록 전용이고, 현행 로그의 단일 판정은 전부 `first_pass`로 기록된다 (후속 pass가 살아 있다는 뜻이 아니다) |
 | `severity` | finding block 인접 `**심각도**` 라벨 |
 | `perspective` | finding ID 또는 finding block의 관점 |
 | `location_identity` | finding block의 위치 식별자 (`path:line` 등) |
@@ -131,7 +130,6 @@ aggregate 결과의 `metrics["M-2"]["source_distribution"]` 필드에 source별 
 | `jsonl_line_no` | 파일 첫 줄을 1로 하는 물리 line 번호 |
 | `payload_traversal_path` | JSON root `$`에서 dict key는 `.key`, list index는 `[n]`로 표기. Claude Code는 보통 `$.message.content[...]`, Codex rollout은 `$.payload.*` 경로가 된다 |
 | `block_index` | 같은 line 또는 직전 result line의 다음 line에 있는 verdict group은 같은 block. 중간에 non-result line이 끼면 새 block |
-| `block_kind` | payload text에 `selective:`/`selective consistency`/`fleiss-kappa`가 있으면 `selective`, round summary marker가 있으면 `summary`, 그 외 `first_pass` |
 | verdict dedupe key | `(session_path, jsonl_line_no, payload_traversal_path, finding_id, source, match_offset, canonical_verdict_hash)` |
 | `payload_hash` 역할 | `jsonl_line_no`, `payload_traversal_path`와 함께 동일 payload 재방문 방지용 pre-parse key. 같은 hash라도 서로 다른 JSONL line 또는 traversal path면 별도 provenance로 보존한다. 한 payload가 여러 finding의 VERDICT_JSON을 담는 것은 정상이라 record dedupe key로 단독 사용 금지 |
 | excluded match 보관 | `VerdictRecord`가 아니라 `ExtractionDiagnostic` sidecar (`diagnostics.sessions[].exclusions`) |

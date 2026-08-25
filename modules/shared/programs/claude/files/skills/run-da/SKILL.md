@@ -187,7 +187,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 7. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
 8. Fresh perspective 보장 — 매 라운드마다 새 reviewer/Arbiter 실행 단위 (Codex: 새 native subagent thread, codex exec: 새 `codex exec` 프로세스).
 9. 의사결정·회귀 컨텍스트 조사 — 제거/단순화/되돌림/리팩터 변경이거나 git상 왕복 핫스팟 파일이면 검토 강도와 무관하게 fail-closed로 과거 의사결정(commit/PR/issue + 있으면 CIR/ADR·로컬 세션 로그)을 조사해 회귀 재도입을 점검한다. 메인이 "의사결정 컨텍스트 팩"을 수집·주입하고 reviewer/Arbiter가 read-only 보강한다. git으로 버전관리되는 모든 저장소에서 동작하며 기록 관습에 의존하지 않는다 ([`references/decision-regression-audit.md`](references/decision-regression-audit.md)).
-10. 세션 내 기각 이력은 exact match만 suppress — `fresh` anti-anchoring을 위해 이전 finding 본문/이전 transcript는 주입하지 않는다. Arbiter `NOT_AN_ISSUE` 또는 사용자 명시 제외 항목만 동일성 키 기준으로 세션 내에서 제외하고, `NEEDS_MORE_INFO`는 자동 기각으로 취급하지 않는다 (위 "세션 내 기각 이력" 절이 정본).
+10. 세션 내 기각 이력은 exact match만 suppress — `fresh` anti-anchoring을 위해 이전 finding 본문/이전 transcript는 주입하지 않는다. Arbiter `NOT_AN_ISSUE` 또는 사용자 명시 제외 항목만 suppression key(관점+위치+요약) 기준으로 세션 내에서 제외하고, `NEEDS_MORE_INFO`는 자동 기각으로 취급하지 않는다 (위 "세션 내 기각 이력" 절이 정본).
 11. 수렴 종료는 수렴 predicate로 판정한다 — ALL CLEAR(finding 0)는 수렴의 특수형이며, predicate를 충족하면 LOW 반영 후 재검증 라운드 없이 CONVERGED로 종료할 수 있다. predicate의 조건 정의·accepted severity·caller 검증은 [`references/protocol.md`](references/protocol.md)의 "수렴 판정"이 SSOT이며 여기 재서술하지 않는다 — 종료 판단 시 반드시 해당 섹션을 평가한다.
 
 ## 주의사항

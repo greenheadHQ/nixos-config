@@ -5,7 +5,6 @@
       "jsonl_line_no": 1,
       "payload_traversal_path": "$.payload.content[0].text",
       "block_index": 0,
-      "block_kind": "first_pass",
       "finding_id": "Design-2",
       "verdict": "NOT_AN_ISSUE",
       "confidence": "HIGH",

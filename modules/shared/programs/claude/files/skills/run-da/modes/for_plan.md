@@ -89,7 +89,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 - 수집한 각 finding의 ID가 [`../references/da-domains.md`](../references/da-domains.md)가 정의한 shell-safe 문법과 일치하고 결과 내에서 유일한지 검사한다 (문법과 prefix namespace는 그 문서가 정본이며 여기서 정규식을 복사하지 않는다). 목적은 reviewer 산출 ID가 비신뢰 입력인데 이후 `--expect-findings` 셸 인자로 전달되므로 안전한 문자 집합만 통과시키는 것이다. 위반 finding이 있으면 해당 unit을 recoverable violation으로 폐기하고 fresh 실행 단위로 1회 재실행하며, 검증 통과 ID만 manifest에 조립한다.
 - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
 - 재실행 전 실패 분류 (사용자 지정 실행 파라미터가 있는 호출): 실패한 unit의 실행 호출 출력과 `$DA_DIR/$UNIT-stderr.log`를 함께 읽어 값 거부(unsupported/invalid model·effort·tier, config override 거부)나 usage/quota 거부인지 확인한다. 두 채널을 모두 봐야 한다 — shell-safe guard 거부(`invalid ...` 메시지)는 codex 실행 전 로컬 검증이라 stderr 로그가 아닌 실행 호출의 stdout에 나타나므로, stderr 로그가 비어 있다는 이유로 일시 실패로 오인하지 않는다. 이런 결정적 거부는 재실행으로 해소되지 않으므로 재실행하지 않고, 거부 원문을 사용자에게 그대로 보고한 뒤 중단한다 (`run-da/SKILL.md` 값 유효성 계약 — 조용한 대체/하향 금지). 일시적 실행 실패만 재실행 대상이다.
-- `fresh` 반복 라운드에서 세션 내 기각 이력이 있으면, reviewer finding별 동일성 키를 계산해 exact match 항목만 `dismissed_suppressed`로 분류한다. suppress된 항목은 Arbiter 입력, 신규 finding 계산, pending write queue에 포함하지 않는다. match하지 않는 항목은 평소처럼 Step 5 Arbiter로 보낸다.
+- `fresh` 반복 라운드에서 세션 내 기각 이력이 있으면, reviewer finding별 suppression key(관점+위치+요약 — [`../SKILL.md`](../SKILL.md) 정본)를 계산해 exact match 항목만 `dismissed_suppressed`로 분류한다. suppress된 항목은 Arbiter 입력, 신규 finding 계산, pending write queue에 포함하지 않는다. match하지 않는 항목은 평소처럼 Step 5 Arbiter로 보낸다.
 
 ## Step 4: ALL CLEAR 또는 Arbiter 진입
 
