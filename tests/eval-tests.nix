@@ -751,9 +751,11 @@ let
         }
         {
           # launcher/snapshot/background-scoped D 계약(#1094): stable private PATH는
-          # personal Darwin의 marked child, Claude snapshot 생성 셸, background session에만
-          # 배선한다. snapshot은 .zshenv 뒤 PATH를 다시 export하므로 CLAUDECODE owner가
-          # snapshot 자체에 dispatcher를 캡처해야 `timeout ssh`가 raw SSH로 새지 않는다.
+          # personal Darwin의 marked child, Claude tool 셸, background session에만
+          # 배선한다. vendor snapshot은 zsh 평가 PATH가 아니라 claude process.env.PATH를
+          # 리터럴 기록하므로(2026-08-24 실측) rc 캡처에 의존하지 않고, snapshot 계층은
+          # 멱등 append 수리를 activation(nrs 시점) + launchd WatchPaths agent(상시)
+          # 두 곳에 배선해야 `timeout ssh`가 raw SSH로 새지 않는다.
           # 전역 sessionPath에는 넣지 않아 interactive Ghostty/일반 SSH를 보존한다.
           name = "Test D19 ${hostName}: headless SSH dispatcher는 personal agent child에만 배선되어야 함";
           cond =
@@ -767,6 +769,9 @@ let
                 snapshotRefresh = hm.home.activation.refreshClaudeShellSnapshotPaths.data or "";
                 agentEnv = (claudeRcAgent cfg).config.EnvironmentVariables;
                 hasDispatcher = builtins.hasAttr constants.paths.headlessSshDispatcherRelPath hm.home.file;
+                snapshotDir = "${hm.home.homeDirectory}/.claude/shell-snapshots";
+                repairAgent = hm.launchd.agents.claude-snapshot-path-repair or null;
+                repairAgentArgs = if repairAgent == null then [ ] else repairAgent.config.ProgramArguments or [ ];
               in
               if isPersonalHost then
                 hasDispatcher
@@ -782,6 +787,13 @@ let
                 && !(builtins.elem stableBin hm.home.sessionPath)
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == "1"
                 && nixpkgsLib.hasPrefix "${stableBin}:" agentEnv.PATH
+                && (repairAgent != null)
+                && (repairAgent.enable or false)
+                && nixpkgsLib.any (nixpkgsLib.hasInfix "refresh-claude-snapshot-paths.sh") repairAgentArgs
+                && builtins.elem snapshotDir repairAgentArgs
+                && builtins.elem stableBin repairAgentArgs
+                && builtins.elem snapshotDir (repairAgent.config.WatchPaths or [ ])
+                && (repairAgent.config.RunAtLoad or false)
               else
                 !hasDispatcher
                 && !nixpkgsLib.hasInfix stableBin zshEnv
@@ -791,6 +803,7 @@ let
                 && snapshotRefresh == ""
                 && (agentEnv.NIXOS_CONFIG_HEADLESS_SSH or "") == ""
                 && !nixpkgsLib.hasInfix stableBin agentEnv.PATH
+                && (repairAgent == null)
             );
         }
         {

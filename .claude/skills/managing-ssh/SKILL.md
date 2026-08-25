@@ -25,13 +25,17 @@ macOS MiniPC 경로는 interactive와 automation child가 다름
 - personal Claude Remote Control/Codex launcher child와 Claude background child는 private
   dispatcher와 dedicated `minipc-headless` key(`IdentityAgent none`)를 사용한다. Claude
   background tool은 PTY 안에서 실행되고 launcher marker가 없을 수 있으므로, TTY 여부만으로
-  interactive라고 판정하지 않는다. Claude login-shell snapshot은 `CLAUDECODE=1` 생성 시
-  dispatcher PATH를 캡처해야 이후 snapshot의 PATH 복원 뒤 `timeout ssh`도 같은 경로를 쓴다.
+  interactive라고 판정하지 않는다. Claude shell snapshot의 `export PATH=`는 zsh 평가
+  결과가 아니라 claude 프로세스가 상속한 env PATH의 리터럴 기록이다(2026-08-24 실측 —
+  셸에 PATH를 묻는 분기는 Windows 전용). 터미널 기원 claude의 snapshot에는 생성
+  시점에 dispatcher가 없고, claude-rc 계열 기원은 launcher가 주입한 env PATH 상속으로
+  vendor 라인에 이미 포함될 수 있다.
   이 automation 경로는 1Password GUI를 기다리지 않는다.
-- 설정 적용 전에 만들어져 장수 background spare가 재사용하는 Claude snapshot은 activation이
-  dispatcher PATH recovery를 끝에 추가한다. 새 snapshot은 `.zshrc` 최종 단계에서 dispatcher를
-  최우선으로 기록한다. 배포 뒤 actual child의 `command -v ssh`가 여전히 raw SSH면 snapshot
-  recovery marker와 파일 metadata를 확인하되, 실행 중 앱/bridge를 임의로 재시작하지 않는다.
+- snapshot 계층 PATH 방어는 멱등 append 수리 2층이다: home.activation(nrs 시점 일괄)과
+  launchd WatchPaths agent(신규 snapshot 상시, `org.nix-community.home.claude-snapshot-path-repair`).
+  배포 뒤 actual child의 `command -v ssh`가 여전히 raw SSH면 snapshot recovery marker,
+  파일 metadata, 그리고 `launchctl print gui/$(id -u)/org.nix-community.home.claude-snapshot-path-repair`
+  출력으로 repair agent 로드 여부를 확인하되, 실행 중 앱/bridge를 임의로 재시작하지 않는다.
 - automation 경로는 인증 성립까지만 15초 deadline을 적용하고, 인증 뒤 장시간 command는 자르지 않는다.
 - `HEADLESS_SSH_AUTH_TIMEOUT`이면 actual child의 `command -v ssh` → agenix
   `minipc-headless` materialization metadata → MiniPC authorized_keys entry → Tailscale 순서로 점검한다.
@@ -121,8 +125,8 @@ Git에 추가하지 않는다.
 
 ## 핵심 절차
 
-1. 먼저 runtime binding을 구분한다. interactive Ghostty는 1Password preflight, personal Claude/Codex launcher child와 PTY 기반 Claude background child는 private dispatcher 경로다. launcher는 `NIXOS_CONFIG_HEADLESS_SSH=1`, Claude snapshot/background는 `CLAUDECODE=1` 생성 snapshot 또는 `CLAUDE_CODE_SESSION_KIND=bg` 신호로 소유권을 판정한다.
-2. automation 경로의 `HEADLESS_SSH_AUTH_TIMEOUT`은 1Password 잠금 문제가 아니다. actual child의 `command -v ssh`, stale snapshot recovery marker, agenix materialization의 존재/권한 metadata, 선언된 server entry, Tailscale 순으로 확인한다. key 본체는 읽거나 로그로 남기지 않는다.
+1. 먼저 runtime binding을 구분한다. interactive Ghostty는 1Password preflight, personal Claude/Codex launcher child와 PTY 기반 Claude background child는 private dispatcher 경로다. launcher는 `NIXOS_CONFIG_HEADLESS_SSH=1`, Claude tool 셸/background는 `CLAUDECODE` 또는 `CLAUDE_CODE_SESSION_KIND=bg` 환경 신호로 소유권을 판정한다 (snapshot은 판정에 관여하지 않으며, snapshot 계층은 별도 append 수리 2층이 담당한다 — 위 절 참조).
+2. automation 경로의 `HEADLESS_SSH_AUTH_TIMEOUT`은 1Password 잠금 문제가 아니다. actual child의 `command -v ssh`, snapshot recovery marker, agenix materialization의 존재/권한 metadata, 선언된 server entry, Tailscale 순으로 확인한다. key 본체는 읽거나 로그로 남기지 않는다.
 3. `Load key ... invalid format`이면 키 파일 형식 문제로 분류한다. 파일 끝 개행, CRLF, 복사 손상을 확인한다.
 4. 인증이 아니라 timeout/no route 계열이면 Tailscale 상태(`tailscale status`, `tailscale up`)를 확인한다.
 5. NixOS 로컬 키 문제는 `home.nix`의 `services.ssh-agent`와 `programs.keychain`, `ssh-add -l`을 점검한다.

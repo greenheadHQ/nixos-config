@@ -90,7 +90,7 @@ $ ssh minipc 'cd /home/greenhead/Workspace/my-project && pnpm --version'
 
 참고: darwin(Mac)과 NixOS 모두 동일한 설정을 사용하므로, 이 변경은 양쪽에 영향을 줍니다. 중복 활성화 방지는 shims 경로의 PATH 실재 여부 가드로 한다 — 과거 `MISE_SHELL` 기반 가드는 부모 대화형 셸의 `MISE_SHELL`이 자식 비대화형 셸로 상속되어 shims 활성화를 조기 스킵하는 회귀를 만들어 폐기됐다.
 
-추가 회귀 경로 — Claude Code Bash tool 비대화형 (#857): Claude Code는 세션 시작 시 interactive 셸 PATH를 `~/.claude/shell-snapshots/snapshot-zsh-*.sh`에 박제하고 Bash tool 호출마다 그 snapshot.sh를 source해 PATH를 복원한다. `mise activate zsh`(hook 모드)는 호출 끝에 `_mise_hook`을 즉시 발동시켜 install-bins를 PATH에 prepend하지만, hook 모드 정책상 shims는 prepend 안 한다 — snapshot에 install-bins는 들어가도 shim 의존 mise 도구(pnpm 등)는 비대화형에서 미노출된다. `.zshrc`에서 `mise activate zsh` 직후 shims를 명시적으로 PATH에 prepend하면 snapshot에 shims가 포함되어 비대화형 호출이 동작한다. (과거 이 회귀의 대표 사례였던 codex는 #890에서 nix overlay로 이관돼 mise shim 무관.) 회귀 메커니즘과 fallback 후보의 SoT는 `managing-mise/SKILL.md`의 "셸 활성화 구조" 섹션이다.
+추가 회귀 경로 — Claude Code Bash tool 비대화형 (#857): Claude Code는 세션 시작 시 interactive 셸 PATH를 `~/.claude/shell-snapshots/snapshot-zsh-*.sh`에 박제하고 Bash tool 호출마다 그 snapshot.sh를 source해 PATH를 복원한다. `mise activate zsh`(hook 모드)는 호출 끝에 `_mise_hook`을 즉시 발동시켜 install-bins를 PATH에 prepend하지만, hook 모드 정책상 shims는 prepend 안 한다. 이 hook 발동은 claude를 띄운 부모 대화형 셸에서 일어나고 claude가 그 env PATH를 상속해 snapshot에 리터럴 기록하므로, snapshot에 install-bins는 들어가도(부모 셸 env 경유) shim 의존 mise 도구(pnpm 등)는 비대화형에서 미노출된다. `.zshrc`에서 `mise activate zsh` 직후 shims를 명시적으로 PATH에 prepend하면 claude를 띄운 부모 대화형 셸의 env PATH에 shims가 들어가고, snapshot의 `export PATH=`는 그 프로세스 env의 리터럴 기록이라(2026-08-24 실측 — snapshot 생성 셸의 rc 평가 결과가 아님) 비대화형 호출에도 shims가 노출된다. (과거 이 회귀의 대표 사례였던 codex는 #890에서 nix overlay로 이관돼 mise shim 무관.) 회귀 메커니즘과 fallback 후보의 SoT는 `managing-mise/SKILL.md`의 "셸 활성화 구조" 섹션이다.
 
 ---
 

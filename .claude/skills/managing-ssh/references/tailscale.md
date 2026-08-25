@@ -75,7 +75,7 @@ ssh minipc
 ssh minipc-emergency
 ```
 
-interactive Ghostty의 `ssh minipc`에서 1Password agent가 `mac-ssh` 키를 제공하지 못하면 shell의 `ssh()` preflight가 1Password 기동과 잠금 해제를 안내한다. 상세 진단은 `references/troubleshooting.md`의 "Mac에서 `ssh minipc`가 1Password preflight로 차단됨" 섹션을 따른다. automation child는 상위 `SKILL.md`의 runtime binding 절차에서 `command -v ssh`와 stale snapshot recovery marker부터 확인한다.
+interactive Ghostty의 `ssh minipc`에서 1Password agent가 `mac-ssh` 키를 제공하지 못하면 shell의 `ssh()` preflight가 1Password 기동과 잠금 해제를 안내한다. 상세 진단은 `references/troubleshooting.md`의 "Mac에서 `ssh minipc`가 1Password preflight로 차단됨" 섹션을 따른다. automation child는 상위 `SKILL.md`의 runtime binding 절차에서 `command -v ssh`와 snapshot recovery marker부터 확인한다.
 
 이력: 과거 `com.green.ssh-add-keys` launchd agent가 `ssh-add ~/.ssh/id_ed25519`를 실행하던 구성은 1Password SSH agent 전환 후 제거/archived 되었다.
 
