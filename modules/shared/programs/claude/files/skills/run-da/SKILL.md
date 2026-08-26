@@ -79,7 +79,9 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 
 ### 장기 선호 설정 파일 (#1260 — 본 절이 정본)
 
-매 호출 자연어 지정을 반복하지 않도록, 장기 선호는 스킬 밖 설정 파일 `~/.config/run-da/preferences.toml`에 둔다 (Nix 선언 관리 밖 가변 파일 — 선호는 시간에 따라 역전된 실측이 있어 스킬 기본값으로 고정하지 않는다). 메인 에이전트는 호출 진입 시 이 파일을 읽는다 — 파일·키 부재는 기본값 적용이며 오류가 아니다. 기계 파서는 두지 않는다 (문서 계약).
+매 호출 자연어 지정을 반복하지 않도록, 장기 선호는 스킬 밖 설정 파일 `~/.config/run-da/preferences.toml`에 둔다 (Nix 선언 관리 밖 가변 파일 — 선호는 시간에 따라 역전된 실측이 있어 스킬 기본값으로 고정하지 않는다). 메인 에이전트는 호출 진입 시 이 파일을 읽는다 — 파일·키 부재는 기본값 적용이며 오류가 아니다. 부재 시 기본값의 소유: `[profile]` 축은 runtime-mapping.md 실행 프로파일 표의 기본값이고, `[delegation]` 축은 본 절이 소유한다 — `autonomous` 부재 = `false`(위임 없음), `max_round_extensions` 부재 = `2`. 기계 파서는 두지 않는다 (문서 계약).
+
+아래 블록은 사용자 설정 예시다 (기본값 명세가 아니다 — 예시 값은 부재 시 기본값과 다를 수 있다):
 
 ```toml
 [profile]
@@ -92,7 +94,7 @@ service_tier = ""             # 빈 값 = 미지정. 잘못된 값은 오류가 
 
 [delegation]
 autonomous = false            # true = 자율주행 사전 위임 (아래 "자율주행 위임 계약")
-max_round_extensions = 2      # 위임 시 상한 자동 연장 허용 횟수. 연장 1회 = outer round 1개 추가 (최종 상한 = protocol.md의 기본 라운드 상한 + 이 값)
+max_round_extensions = 2      # 위임 시 상한 자동 연장 허용 횟수. 연장 한 번 = outer round 한 개 추가 (유효 상한 정의는 protocol.md "최대 라운드 수" 정본)
 ```
 
 우선순위는 resolution 순서(runtime-mapping.md 정본)를 따른다 — 현재 발화의 자연어 지정이 파일보다 우선하고, 파일 값은 role 기본값보다 우선한다. 파일 값의 provenance는 "사용자 명시"로 취급한다 (`RUN_DA_USER_EFFORT_OVERRIDE` 등 명시 표식 규칙 동일 적용) — 단 Arbiter 하한의 "명시 축 예외"는 현재 발화의 축 지정에만 적용되고 파일 값에는 적용되지 않는다 (파일은 장기 기본값이지 이번 호출의 의도적 하향이 아니다).
@@ -117,7 +119,7 @@ gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 
 | SKIP 제안 승인 | 질문 도구 | 자동 LITE 승격 (SKIP 확정은 사용자 전용 — headless 규칙과 동일) |
 | 3회 반복 판정 | 질문 도구 (수용/제외/배출) | 자동 수용 (지적대로 수정) |
 | 라운드 한계효용 저하 | 질문 도구 | 현재 상태 보고 후 종료 (headless 규칙과 동일 — 자동 수정 계속 금지) |
-| outer round 상한 도달 | 질문 도구 (계속/종료) | `max_round_extensions`까지 자동 연장 후, 소진 시 비수렴 종료 라벨로 종료 |
+| outer round 기본 상한 도달 (유효 상한 정의는 protocol.md "최대 라운드 수") | 질문 도구 (계속/종료) | `max_round_extensions`까지 자동 연장 후, 소진(유효 상한) 시 비수렴 종료 라벨로 종료 |
 | fresh 반복 감지 | 질문 도구 | 자동 fresh 재실행 1회, 재발 시 종료 보고 |
 | `remediation_scope` UNCLEAR | 질문 도구 (수정/배출/제외) | 미해결로 계산 (자동 수정 간주 금지 — headless 규칙과 동일) |
 | NEEDS_MORE_INFO | 질문 도구 | CONFIRMED 자동 승격 (headless 규칙과 동일 — scope 전이표 적용) |

@@ -39,7 +39,7 @@ selective propagation으로 추린 escalated findings를 단일 Arbiter에 전�
 
 - effort guard: 기본 profile 값(`medium|high|xhigh`)은 즉시 통과한다. 그 외 소문자 영문 값은 `RUN_DA_USER_EFFORT_OVERRIDE=1`(effort 축 전용 관문 — model/tier 지정 여부와 무관)일 때만 통과한다 — 스킬은 값 집합을 예단하지 않고 codex에 위임하며, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다 (조용한 대체/하향 금지).
 - model/tier 주입: 각 role 명령 안의 `_DA_MODEL_TIER_OVERRIDES` 조립 루프가 unset이 아닌 값만 shell-safe 문자 검증(영숫자 `._-`) 후 `-c model=...` / `-c service_tier=...` config override 인자로 추가한다. effort는 모든 호출의 필수 인자이므로 이 배열이 아니라 고정 `-c model_reasoning_effort=`로 별도 주입한다. 미지정 시 빈 배열이라 기존 기본 계약과 동일하게 동작한다.
-- tier 무시 감지 (성공 경로 검사): model·effort의 잘못된 값은 codex가 거부해 rc로 드러나지만, `service_tier`는 미지원·오타 값이어도 stderr 경고만 남기고 요청에서 생략한 채 rc 0으로 성공한다 (using-codex-exec 실측 — rc 검사로는 감지 불가). 따라서 tier가 주입된 실행은 성공(rc 0) 후에도 해당 unit의 stderr 로그에서 tier 경고(unsupported/omit 계열)를 확인한다. 경고가 있으면 결과 자체는 유효하되 tier 미적용 사실을 조용히 넘기지 않고 사용자에게 보고한다 — 출처가 설정 파일 값이면 파일 수정을 함께 안내한다 (조용한 대체/하향 금지 계약의 tier 축 바인딩).
+- tier 무시 감지 (성공 경로 검사): model·effort의 잘못된 값은 codex가 거부해 rc로 드러나지만, `service_tier`는 미지원·오타 값이어도 stderr 경고만 남기고 요청에서 생략한 채 rc 0으로 성공한다 (using-codex-exec 실측 — rc 검사로는 감지 불가). 따라서 tier가 주입된 실행은 성공(rc 0) 후에도 해당 unit의 stderr 로그에서 tier 경고(unsupported/omit 계열)를 확인한다. 검사 시점 바인딩: reviewer/auditor는 결과 수집 단계(각 mode의 Step 3 — 실패 분류와 별개로 성공 unit에도 적용), Arbiter는 결과 수집 시(성공 분기 포함)다. 경고가 있으면 결과 자체는 유효하되 tier 미적용 사실을 조용히 넘기지 않고 사용자에게 보고한다 — 출처가 설정 파일 값이면 파일 수정을 함께 안내한다 (조용한 대체/하향 금지 계약의 tier 축 바인딩).
 - ambient 유입 차단: 위 env들은 role 명령과 같은 단일 셸 호출 안에서 caller가 그 호출을 위해 설정한다 (셸 호출 간 env 비공유 — [`runtime-mapping.md`](runtime-mapping.md) 공통 주의). 이전 호출·세션에서 상속된 ambient 값을 재사용하지 않으며, 명시되지 않은 축의 env는 설정하지 않는다.
 - 조립 루프 복제 이유: 세 role command block(reviewer/Auditor 템플릿, Arbiter 템플릿, Arbiter 실행 절차)은 각각 단일 셸 호출로 self-contained해야 하므로 같은 effort guard·조립 루프를 블록마다 복제한다. 세 사본의 동일성은 sync 테스트(`tests/skill-doc-sync.py`의 exec override copies 검사)가 정규화 비교로 강제한다.
 - `--ignore-user-config`와의 관계: user config 차단(MCP surface 차단 목적)은 유지된다. 이 채널은 config 파일이 아니라 사용자 명시 입력값만 `-c`로 재주입한다.
@@ -315,5 +315,5 @@ Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아�
 - CONFIRMED_ISSUE 중 `remediation_scope: FIX_NOW`는 동일하게 자동 수정한다. `REPLAN_REQUIRED`는 마스킹 게이트를 거쳐 이슈로 배출하고(배출 실패는 미해결), `UNCLEAR`는 질문 불가이므로 자동 FIX_NOW 간주 없이 미해결로 계산한다 ([`protocol.md`](protocol.md) "remediation scope" SSOT).
 - 에이전트가 SKIP을 제안하려는 상황에서 질문 도구 불가 → 자동 LITE 승격 (SKIP 확정은 사용자 승인 없이는 불가하므로).
 - 3회 반복 규칙 도달 시 질문 도구 불가 → 자동 수용 (지적대로 수정).
-- 5회 라운드 초과 시 질문 도구 불가 → 자동 종료(현재 상태 보고).
+- 유효 상한([`protocol.md`](protocol.md) "최대 라운드 수" — 위임 연장 반영) 초과 시 질문 도구 불가 → 자동 종료(현재 상태 보고).
 - 라운드 한계효용 확인([`protocol.md`](protocol.md)의 "최대 라운드 수" 정의) 도달 시 질문 도구 불가 → 현재 상태를 보고하고 `termination_type=USER_STOP`으로 종료한다. 한계효용 저하는 추가 자동 수정을 시도할 근거가 아니므로([`protocol.md`](protocol.md)의 changeset 동결/범위 축소 권고를 따른다), 현재 미해결 상태를 보고한 뒤 종료한다 — CLEAR로 간주하지 않는다.

@@ -143,16 +143,15 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 
 ### 최대 라운드 수
 
-명시적 상한은 5 outer round다. 5회 이후에도 수렴 종료에 도달하지 못하면
-사용자에게 현황을 보고하고 계속 진행 여부를 확인한다(자동 무한 진행 금지). 이때 종료하면 `termination_type=ROUND_LIMIT`으로 기록한다 (아래 "termination_type" 참조).
+기본 상한은 5 outer round다. 유효 상한은 기본 상한에 자율주행 위임의 연장 허용 횟수(`max_round_extensions` — 연장 한 번 = outer round 한 개 추가, 위임·연장 계약은 `run-da/SKILL.md` "자율주행 위임 계약" 정본)를 더한 값이며, 위임이 없는 호출의 유효 상한은 기본 상한 그대로다. 기본 상한 도달 시: 위임이 없으면 사용자에게 현황을 보고하고 계속 진행 여부를 확인하며(자동 무한 진행 금지), 위임이 있으면 연장 허용 횟수까지 자동 연장한다 (전이는 SKILL.md 전이표). 유효 상한 이후에도 수렴 종료에 도달하지 못한 채 종료하면 `termination_type=ROUND_LIMIT`으로 기록한다 (아래 "termination_type" 참조).
 
 라운드 한계효용 판정: 각 outer round 종료 시 직전 outer round 대비 신규 finding 수를 집계한다. 동일성은 3회 반복 규칙과 같은 recurrence key(세부 관점 + 위치) 기준을 사용하고, 세션 내 기각 이력 exact match(suppression key)로 suppress된 항목은 새 finding 계산에서 제외한다. 첫 outer round는 비교 대상이 없으므로 전체 finding 수를 신규 finding 수로 기록하되, 연속 저효용 판정은 다음 outer round부터 평가한다.
 
 - 신규 finding 0건: 새 정보가 없다는 한계효용 신호이므로 루프 종료를 제안한다. 이 경로의 종료는 수렴 predicate 통과가 아니면 `termination_type=USER_STOP`으로 기록한다. 반복되는 동일 지적이 남아 있으면 3회 반복 규칙 또는 기존 사용자 판단 경로로 닫는다.
 - 신규 finding 1~2건: 낮은 신규 정보량으로 기록한다. 이 상태가 2 outer round 연속이면, 다음 round를 시작하기 전에 사용자에게 현재 비용 대비 추가 기대효과를 보고하고 계속/종료를 질문 도구로 확인한다.
-- 신규 finding 3건 이상: 한계효용 저하로 보지 않는다. 단 5회 상한 조건은 별도로 적용한다.
+- 신규 finding 3건 이상: 한계효용 저하로 보지 않는다. 단 위 상한 조건(기본/유효 상한)은 별도로 적용한다.
 
-위 판정은 5회 상한 전의 한계효용 장치다. 5회 상한은 그대로 유지되며, 5회 이후 수렴 종료에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
+위 판정은 상한 도달 전의 한계효용 장치다. 유효 상한은 그대로 유지되며, 유효 상한 이후 수렴 종료에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
 
 (과거에 있던 "신규 confirmed 2회 연속 비감소" 추세 조기중단식은 제거됐다 — 실측된 톱니 궤적에서 한 번도 발동하지 않았고(#1258), 상한 도달은 아래 종료 유형 라벨이 수렴과 기계적으로 구분한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 끊이지 않으면, 라운드 중 표면을 계속 다듬기보다 changeset 동결 유지·batch 범위 축소·REPLAN_REQUIRED 배출을 우선 검토한다.)
 
@@ -339,7 +338,7 @@ predicate 위반 회귀 예시 (이 predicate를 변경하는 PR은 각 행에 �
 |---|---|---|
 | `CONVERGED` | 수렴 종료 (ALL CLEAR 특수형 포함) | 수렴 predicate 2층 모두 충족 |
 | `DEFERRED_EXIT` | 배출 후 종료 | predicate 충족 + `deferred_issues`가 비어 있지 않음 (수렴이지만 루프 밖으로 넘긴 작업이 있음을 구분) |
-| `ROUND_LIMIT` | 상한 도달 | 5 outer round 상한에서 predicate 미충족 상태로 종료 |
+| `ROUND_LIMIT` | 상한 도달 | 유효 상한(기본 상한 + 위임 연장 — 위 "최대 라운드 수")에서 predicate 미충족 상태로 종료 |
 | `USER_STOP` | 중단 종료 (사용자 또는 정책) | 한계효용 확인·사용자 지시, 또는 질문 도구 미지원 런타임의 정책 자동 종료로 predicate 미충족 상태에서 종료 — 라벨 이름과 달리 행위자를 사용자로 한정하지 않으므로, 중단 주체(사용자/정책)와 원인을 라운드 요약에 필수 병기한다 |
 
 과거의 `EARLY_STOP (unconverged)` 표기는 `ROUND_LIMIT` 또는 `USER_STOP`으로 세분된다 — 어떤 세션에서 상한 도달 종료가 보고 표에서 자연 수렴과 구분되지 않았던 실측(#1258)이 이 라벨의 도입 근거다.
