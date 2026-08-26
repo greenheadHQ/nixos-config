@@ -35,7 +35,7 @@ Direct Codex 세션에서 사용자가 `$run-da`, `$run-da audit`처럼 fan-out 
 
 이 권한은 delegated reviewer/auditor/Arbiter의 read-only/no-write 경계를 약화하지 않는다. tracked workspace write, branch mutation, commit/push, GitHub write, `wt`, `nrs`, rebuild 계열 명령은 별도 explicit delegation 없이는 계속 메인 에이전트 전용이다.
 
-이 권한은 native subagent 경로에만 적용된다. Skill invocation itself does not authorize `codex-exec-supervised` fallback. 단, 사용자가 자연어로 codex exec 경로를 명시 지정한 경우는 fallback이 아니라 해당 호출의 codex exec 경로 선택이다. codex exec 전용 사용자 지정 실행 파라미터(model/tier — `run-da/SKILL.md` 정의. effort는 설정 수단이 세션 표면에 광고된 native 경로에서도 설정 가능하므로 codex exec 전용이 아니며, 수단 부재 시의 전이는 `arbiter-scaling.md` 하한 절 정본을 따른다)만 지정된 경우는 경로 이름을 직접 지정한 것이 아니므로, Direct Codex 세션에서는 `run-da/SKILL.md`의 경로 제약 규칙대로 codex exec 경로 전환 여부를 사용자에게 확인한 뒤에만 경로 선택으로 간주한다. `codex-exec-supervised` fallback은 아래 Delegation fallback 절차에 따라 native delegation 거부/미지원 사유 기록과 별도 사용자 승인을 받은 뒤에만 사용한다.
+이 권한은 native subagent 경로에만 적용된다. Skill invocation itself does not authorize `codex-exec-supervised` fallback. 단, 사용자가 자연어로 codex exec 경로를 명시 지정한 경우는 fallback이 아니라 해당 호출의 codex exec 경로 선택이다. 장기 선호 설정 파일의 `backend` 값(`run-da/SKILL.md` 설정 파일 절)은 이 "현재 발화의 명시 지정"에 해당하지 않는다 — 설정은 희망 경로만 선택하며 subprocess 실행 승인을 대체하지 않으므로, Direct Codex 세션에서 설정 파일만으로 resolve된 codex exec 경로는 기존 절차대로 사용자 확인을 거친다. codex exec 전용 사용자 지정 실행 파라미터(model/tier — `run-da/SKILL.md` 정의. effort는 설정 수단이 세션 표면에 광고된 native 경로에서도 설정 가능하므로 codex exec 전용이 아니며, 수단 부재 시의 전이는 `arbiter-scaling.md` 하한 절 정본을 따른다)만 지정된 경우는 경로 이름을 직접 지정한 것이 아니므로, Direct Codex 세션에서는 `run-da/SKILL.md`의 경로 제약 규칙대로 codex exec 경로 전환 여부를 사용자에게 확인한 뒤에만 경로 선택으로 간주한다. `codex-exec-supervised` fallback은 아래 Delegation fallback 절차에 따라 native delegation 거부/미지원 사유 기록과 별도 사용자 승인을 받은 뒤에만 사용한다.
 
 ## `VIOLATION` 공통 처리
 

@@ -87,17 +87,17 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 [profile]
 # 각 키는 실행 프로파일의 한 축에 대응한다 (runtime-mapping.md "실행 프로파일" 정본).
 # 값 집합은 스킬이 예단하지 않는다 — shell-safe 검증만 통과하면 그대로 주입.
-backend = "codex-exec"        # 실행 backend 선호 (codex-exec | native | claude)
-reviewer_effort = "high"      # reviewer/auditor effort
-arbiter_effort = "xhigh"      # Arbiter effort (하한 미만 값은 하한이 이긴다 — 아래 참조)
-service_tier = ""             # 빈 값 = 미지정. 잘못된 값은 오류가 아니라 조용한 생략이 된다 — 위 "값 유효성"의 tier 분기 참조
+backend = "codex-exec"        # 실행 backend 선호 — 지원 경로 중 선택하는 제어값 (codex-exec | native | claude). 미지·불명확 값은 주입하지 않고 질문
+reviewer_effort = "high"      # reviewer/auditor effort — shell-safe 검증 후 그대로 주입 (값 집합은 codex/모델 소유)
+arbiter_effort = "xhigh"      # Arbiter effort — 주입 규칙은 effort와 동일, 하한 미만 값은 하한이 이긴다 (아래 참조)
+service_tier = ""             # 빈 값 = 미지정. 잘못된 값은 오류가 아니라 조용한 생략이 되므로 runner가 stderr 경고를 검사해 보고한다 — 위 "값 유효성"의 tier 분기 참조
 
 [delegation]
 autonomous = false            # true = 자율주행 사전 위임 (아래 "자율주행 위임 계약")
 max_round_extensions = 2      # 위임 시 상한 자동 연장 허용 횟수. 연장 한 번 = outer round 한 개 추가 (유효 상한 정의는 protocol.md "최대 라운드 수" 정본)
 ```
 
-우선순위는 resolution 순서(runtime-mapping.md 정본)를 따른다 — 현재 발화의 자연어 지정이 파일보다 우선하고, 파일 값은 role 기본값보다 우선한다. 파일 값의 provenance는 "사용자 명시"로 취급한다 (`RUN_DA_USER_EFFORT_OVERRIDE` 등 명시 표식 규칙 동일 적용) — 단 Arbiter 하한의 "명시 축 예외"는 현재 발화의 축 지정에만 적용되고 파일 값에는 적용되지 않는다 (파일은 장기 기본값이지 이번 호출의 의도적 하향이 아니다).
+우선순위는 resolution 순서(runtime-mapping.md 정본)를 따른다 — 현재 발화의 자연어 지정이 파일보다 우선하고, 파일 값은 role 기본값보다 우선한다. 파일 값의 provenance는 "사용자 명시"로 취급한다 (`RUN_DA_USER_EFFORT_OVERRIDE` 등 명시 표식 규칙 동일 적용) — 단 Arbiter 하한의 "명시 축 예외"는 현재 발화의 축 지정에만 적용되고 파일 값에는 적용되지 않는다 (파일은 장기 기본값이지 이번 호출의 의도적 하향이 아니다). 같은 원리로 `backend` 설정 값은 희망 경로의 선택일 뿐 실행 권한 승인을 대체하지 않는다 — Direct Codex 세션의 subprocess 경로 승인 경계([`references/hardening-contract.md`](references/hardening-contract.md))는 설정 파일과 무관하게 유지된다.
 
 ### 호출 시점 보고 규약 (종료 조건·예상 비용 — 본 절이 단독 소유)
 
@@ -255,7 +255,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
 - Codex 세션 경로에서는 다음 round/retry 전에 capability profile의 slot·batch 규칙을 적용한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
 - Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. 사용자가 자연어로 경로/effort를 지정하면 해당 호출에서는 그 값이 설정 파일·role별 기본값보다 우선한다 — Arbiter에는 강도 하한 적용 후의 값이 쓰인다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) 실행 프로파일 절, 하한은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) 정본). model/tier 주입은 codex exec 경로 전용이므로 native subagent 경로에는 적용되지 않으며, 경로 제약 규칙(위 실행 경로·파라미터 지정 섹션)에 따라 codex exec 경로로 전환된 호출에서만 우선 적용된다. effort는 native 경로에서도 spawn 단위 명시가 요구된다 (Arbiter 하한·설정 수단 부재 시 전이는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) 정본).
-- codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행한다. 코드/계획 write의 실제 차단 수행자는 codex 자체의 read-only sandbox(macOS seatbelt / Linux bwrap)이고, wrapper는 인자를 그대로 전달하는 passthrough라 플래그를 강제하지 않는다 (#1086) — 플래그 부착은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 role별 명령 literal(SSOT)이 담보하는 문서 규약이다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명·service_tier는 스킬이 고정하지 않는다 — 사용자가 명시 지정한 값만 `-c` config override로 주입하고(위 실행 경로·파라미터 지정 섹션), 미지정 시 reasoning effort만 기본 role profile 또는 자연어 지정에서 결정한다. 프롬프트에서도 수정 금지를 명시한다.
+- codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행한다. 코드/계획 write의 실제 차단 수행자는 codex 자체의 read-only sandbox(macOS seatbelt / Linux bwrap)이고, wrapper는 인자를 그대로 전달하는 passthrough라 플래그를 강제하지 않는다 (#1086) — 플래그 부착은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 role별 명령 literal(SSOT)이 담보하는 문서 규약이다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명·service_tier는 스킬이 고정하지 않는다 — 사용자가 명시 지정한 값만 `-c` config override로 주입하고(위 실행 경로·파라미터 지정 섹션), reasoning effort는 실행 프로파일 resolution 결과(현재 발화 > 설정 파일 > role 기본값 — [`references/runtime-mapping.md`](references/runtime-mapping.md) 정본)로 결정한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
 - 피드백 루프 결과는 PR 코멘트로 게시하여 이력을 보존한다 ([`references/protocol.md`](references/protocol.md) 참조).

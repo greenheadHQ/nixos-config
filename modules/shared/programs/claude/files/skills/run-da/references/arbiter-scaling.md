@@ -66,7 +66,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
 - `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
-- 모델명·service_tier는 스킬이 pin하지 않는다. `RUN_DA_CODEX_EFFORT`를 role별 기본 profile 또는 사용자 명시 지정에서 결정한 뒤 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`를 명시하고, 사용자 명시 model/tier가 있으면 `_DA_MODEL_TIER_OVERRIDES`로 추가 주입한다 (위 "사용자 지정 실행 파라미터" 섹션).
+- 모델명·service_tier는 스킬이 pin하지 않는다. `RUN_DA_CODEX_EFFORT`를 실행 프로파일 resolution 결과(effective effort 우선순위 — 본 문서 상단 정의)로 결정한 뒤 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`를 명시하고, 사용자 명시 model/tier가 있으면 `_DA_MODEL_TIER_OVERRIDES`로 추가 주입한다 (위 "사용자 지정 실행 파라미터" 섹션).
 - Arbiter는 지정이 없으면 strong review profile effort를 사용한다.
 - 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라" 명시
 - `--ephemeral`로 세션 히스토리 오염 방지
@@ -212,7 +212,7 @@ PROMPT
 
 # 3. codex exec 실행 (발사 방식은 위 "codex exec 경로" 실행 계약이 정본 — 분기 서술을
 #    여기 복제하지 않는다)
-# RUN_DA_CODEX_EFFORT는 role별 기본 profile 또는 사용자 명시 지정에서 결정한다.
+# RUN_DA_CODEX_EFFORT는 실행 프로파일 resolution 결과(effective effort 우선순위)로 결정한다.
 RUN_DA_CODEX_EFFORT="${RUN_DA_CODEX_EFFORT:-high}"
 case "$RUN_DA_CODEX_EFFORT" in
   medium|high|xhigh) ;;
@@ -253,6 +253,12 @@ if [ "$rc" -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then
   cat "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null
   [ "$rc" -ne 0 ] && exit "$rc" || exit 1  # 원 rc 보존 (rc=0인데 빈 파일이면 1)
 else
+  # tier 무시 감지 성공 분기 바인딩 — tier 주입 시 rc 0이어도 생략 경고를 같은 호출에서 확인
+  # (ARBITER_DIR이 다음 호출에서 유실되므로 여기가 마지막 검사 기회다. 계약: "사용자 지정 실행 파라미터" 절)
+  if [ -n "${RUN_DA_CODEX_TIER:-}" ] && grep -qi 'service[ _]tier' "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null; then
+    echo "TIER_WARNING: service tier omitted? stderr에 tier 경고 존재 — 아래 결과는 유효하나 tier 미적용 가능성을 사용자에게 보고할 것"
+    grep -i 'service[ _]tier' "$ARBITER_DIR/arbiter-stderr.log"
+  fi
   cat "$ARBITER_DIR/arbiter-result.md"
 fi
 ```
