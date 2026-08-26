@@ -10,7 +10,7 @@ reviewer는 "없다"를 잘 찾지만, "없는 게 맞다"는 판단은 독립 �
 `run-da`의 reviewer fan-out을 4 bundle로 줄이더라도, Arbiter는 늘리지 않는다.
 비용을 늘려 여러 Arbiter를 붙이기보다, 한 명의 강한 Arbiter가 selective escalation set을 판정하는 구조를 유지한다.
 
-effective effort 우선순위: ①현재 발화의 사용자 명시 effort > ②장기 선호 설정 파일(`run-da/SKILL.md` "장기 선호 설정 파일" 정본) > ③경로 지정의 role별 값 > ④role별 기본값(reviewer/auditor standard, Arbiter strong). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 명시 축 예외는 ①에만 적용된다 (설정 파일 값은 이번 호출의 의도적 하향이 아니므로 하한이 이긴다). 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 절이 정본이다.
+effective effort 우선순위: ①현재 발화의 사용자 명시 effort > ②장기 선호 설정 파일(`run-da/SKILL.md` "장기 선호 설정 파일" 정본) > ③role별 기본값(reviewer/auditor standard, Arbiter strong — 경로만 지정된 호출도 effort는 이 기본값을 따른다). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 명시 축 예외는 ①에만 적용된다 (설정 파일 값은 이번 호출의 의도적 하향이 아니므로 하한이 이긴다). 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 절이 정본이다.
 
 Arbiter 추론 강도 하한 (판별력 보장 — 본 절이 정본): Arbiter의 판별력은 실행 조건에 종속한다 — 같은 판정 계약·같은 프롬프트에서 실행 강도에 따라 기각률이 0%와 75%로 갈린 실측이 있다 (#1258). 따라서:
 
@@ -32,13 +32,14 @@ selective propagation으로 추린 escalated findings를 단일 Arbiter에 전�
 
 | env | 의미 | 값 출처 (축별 provenance) |
 |-----|------|---------------------------|
-| `RUN_DA_CODEX_EFFORT` | resolved reasoning effort | 기본 role profile, 사용자 명시 경로/effort 지정 |
-| `RUN_DA_CODEX_MODEL` | 사용자 명시 model. 미지정 시 unset — 스킬은 모델을 pin하지 않는다 | 사용자 명시 지정만. 이 env를 설정하는 행위 자체가 "사용자가 model을 명시했다"는 선언이다 — 명시 없이 설정하면 계약 위반 |
-| `RUN_DA_CODEX_TIER` | 사용자 명시 service_tier. 미지정 시 unset | 사용자 명시 지정만. 설정 행위 = 명시 선언 (model과 동일) |
-| `RUN_DA_USER_EFFORT_OVERRIDE` | 사용자가 effort 값을 명시 지정했음을 표시 (`1`). 기본 profile 밖 effort 값의 통과 관문 | 사용자가 effort를 명시 지정했을 때만 메인 에이전트가 설정. model/tier만 지정된 호출에서 설정하면 계약 위반 — 축별 provenance를 하나의 표식으로 뭉개지 않는다 |
+| `RUN_DA_CODEX_EFFORT` | resolved reasoning effort | 기본 role profile, 설정 파일(`reviewer_effort`/`arbiter_effort`), 현재 발화의 사용자 명시 effort — resolution 순서는 위 우선순위 |
+| `RUN_DA_CODEX_MODEL` | 사용자 명시 model. 미지정 시 unset — 스킬은 모델을 pin하지 않는다 | 현재 발화의 명시 지정만 (설정 파일에 model 키는 없다). 이 env를 설정하는 행위 자체가 "사용자가 model을 명시했다"는 선언이다 — 명시 없이 설정하면 계약 위반 |
+| `RUN_DA_CODEX_TIER` | 사용자 명시 service_tier. 미지정 시 unset | 현재 발화의 명시 지정 또는 설정 파일 `service_tier` (둘 다 사용자 명시 provenance — `run-da/SKILL.md` 설정 파일 절). 설정 행위 = 명시 선언 |
+| `RUN_DA_USER_EFFORT_OVERRIDE` | 사용자가 effort 값을 명시 지정했음을 표시 (`1`). 기본 profile 밖 effort 값의 통과 관문 | 현재 발화 또는 설정 파일이 effort를 명시했을 때만 메인 에이전트가 설정 (설정 파일 값도 사용자 명시 provenance). model/tier만 지정된 호출에서 설정하면 계약 위반 — 축별 provenance를 하나의 표식으로 뭉개지 않는다 |
 
 - effort guard: 기본 profile 값(`medium|high|xhigh`)은 즉시 통과한다. 그 외 소문자 영문 값은 `RUN_DA_USER_EFFORT_OVERRIDE=1`(effort 축 전용 관문 — model/tier 지정 여부와 무관)일 때만 통과한다 — 스킬은 값 집합을 예단하지 않고 codex에 위임하며, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다 (조용한 대체/하향 금지).
 - model/tier 주입: 각 role 명령 안의 `_DA_MODEL_TIER_OVERRIDES` 조립 루프가 unset이 아닌 값만 shell-safe 문자 검증(영숫자 `._-`) 후 `-c model=...` / `-c service_tier=...` config override 인자로 추가한다. effort는 모든 호출의 필수 인자이므로 이 배열이 아니라 고정 `-c model_reasoning_effort=`로 별도 주입한다. 미지정 시 빈 배열이라 기존 기본 계약과 동일하게 동작한다.
+- tier 무시 감지 (성공 경로 검사): model·effort의 잘못된 값은 codex가 거부해 rc로 드러나지만, `service_tier`는 미지원·오타 값이어도 stderr 경고만 남기고 요청에서 생략한 채 rc 0으로 성공한다 (using-codex-exec 실측 — rc 검사로는 감지 불가). 따라서 tier가 주입된 실행은 성공(rc 0) 후에도 해당 unit의 stderr 로그에서 tier 경고(unsupported/omit 계열)를 확인한다. 경고가 있으면 결과 자체는 유효하되 tier 미적용 사실을 조용히 넘기지 않고 사용자에게 보고한다 — 출처가 설정 파일 값이면 파일 수정을 함께 안내한다 (조용한 대체/하향 금지 계약의 tier 축 바인딩).
 - ambient 유입 차단: 위 env들은 role 명령과 같은 단일 셸 호출 안에서 caller가 그 호출을 위해 설정한다 (셸 호출 간 env 비공유 — [`runtime-mapping.md`](runtime-mapping.md) 공통 주의). 이전 호출·세션에서 상속된 ambient 값을 재사용하지 않으며, 명시되지 않은 축의 env는 설정하지 않는다.
 - 조립 루프 복제 이유: 세 role command block(reviewer/Auditor 템플릿, Arbiter 템플릿, Arbiter 실행 절차)은 각각 단일 셸 호출로 self-contained해야 하므로 같은 effort guard·조립 루프를 블록마다 복제한다. 세 사본의 동일성은 sync 테스트(`tests/skill-doc-sync.py`의 exec override copies 검사)가 정규화 비교로 강제한다.
 - `--ignore-user-config`와의 관계: user config 차단(MCP surface 차단 목적)은 유지된다. 이 채널은 config 파일이 아니라 사용자 명시 입력값만 `-c`로 재주입한다.

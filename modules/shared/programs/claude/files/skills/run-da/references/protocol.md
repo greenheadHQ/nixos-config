@@ -390,10 +390,10 @@ LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN:
 
 ## canonical 이력 표기 (기록·서술 축 — 본 절이 정본, #1260)
 
-커밋 메시지·이슈 코멘트처럼 저장소 훅이 검사하는 이력 매체에서 특정 라운드·finding을 지칭해야 할 때는 소문자 축약 표기를 쓴다 (위 PR 코멘트 게시 형식의 `R{N}`·finding ID 실명 표기는 DA 요약 코멘트 전용 — 그 밖의 이력 매체에 실명 ID·라운드 번호를 쓰면 프로세스 메타데이터 박제로 차단된다):
+커밋 메시지·이슈 코멘트처럼 저장소 훅이 검사하는 이력 매체에서 특정 라운드·finding을 지칭해야 할 때는 소문자 축약 표기를 쓴다 (위 PR 코멘트 게시 형식의 `R{N}`·finding ID 실명 표기는 DA 요약 코멘트 전용 — 그 밖의 이력 매체의 실명 ID·라운드 번호는 프로세스 메타데이터 박제로 검사 대상이다. 강제 강도는 표면별로 다르다: 에이전트 Edit/Write는 PreToolUse 훅이 차단하고, commit-msg 훅은 경고만 남긴다 — 경고여도 박제 자체가 계약 위반이므로 표기를 고쳐 커밋한다):
 
 - 라운드: `r{N}` (예: r3).
 - finding: bundle 첫 글자 소문자 `{c|d|g|m}{n}` — Correctness/Design/Regression/Maintainability 순서의 축약이며 Regression은 `g`를 쓴다 (`r`은 라운드와 충돌). MAX 세부 관점을 지칭할 때는 소문자 풀네임을 그대로 쓴다 (예: security-2가 아니라 자연어 서술).
 - 결합형: `r{N}.{축약}{n}` (예: r3.c1 — 셋째 라운드의 Correctness 첫 finding).
 
-이 표기는 서술 축이다 — 기계 소비자는 없고, live 검증 경로(reviewer 원본·Arbiter 입력·manifest)의 ID 문법은 [`da-domains.md`](da-domains.md)가 정본이며 이 축약을 허용하지 않는다. 훅 통과는 표기 도입 시 실측으로 확인됐고, 훅 패턴 변경 시 재검증 명령: 대상 문장을 담은 파일로 `git commit --dry-run` 대신 실제 커밋을 시도해 lefthook commit-msg 검사 통과를 확인한다.
+이 표기는 서술 축이다 — 기계 소비자는 없고, live 검증 경로(reviewer 원본·Arbiter 입력·manifest)의 ID 문법은 [`da-domains.md`](da-domains.md)가 정본이며 이 축약을 허용하지 않는다. 훅 통과(경고 미발생)는 표기 도입 시 실측으로 확인됐고, 훅 패턴 변경 시 재검증 방법: 축약 표기 문장을 pinning 패턴 라이브러리(`lib/pinning-patterns.sh`)의 `pinning_findings_records`에 직접 넣어 레코드 0건을 확인한다 — commit-msg 훅은 경고 전용이라 커밋 성공 여부로는 통과를 판정할 수 없다.

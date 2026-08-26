@@ -66,9 +66,9 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 | 규칙 | 내용 |
 |------|------|
 | 해석 (환각 금지) | 사용자가 명시한 축만 채운다. 명시가 없는 축을 추론으로 채우지 않는다 — 그 축은 기본 정책을 따른다. 지정 표현이 어느 축·어느 값인지 불명확하면 질문 도구로 확인한다 |
-| 적용 범위 | 해당 호출의 reviewer/auditor와 Arbiter 전체. 해당 호출에만 적용 (설정 파일 없음) |
+| 적용 범위 | 해당 호출의 reviewer/auditor와 Arbiter 전체. 자연어 지정은 해당 호출에만 적용된다 — 호출을 넘는 장기 선호는 아래 "장기 선호 설정 파일" 절이 소유한다 |
 | effort 지정 | 경로만 함께 지정된 경우의 role별 기본값보다 사용자 명시 effort가 우선한다 (더 구체적인 지정 우선) |
-| 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증(구체 규칙과 실행 주체는 arbiter-scaling.md의 role command guard)만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 값 거부는 재실행으로 해소되지 않으므로 자동 재시도하지 않는다. 조용한 대체/하향 금지 |
+| 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증(구체 규칙과 실행 주체는 arbiter-scaling.md의 role command guard)만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 값 거부는 재실행으로 해소되지 않으므로 자동 재시도하지 않는다. 조용한 대체/하향 금지. 단 `service_tier`는 Codex가 거부하지 않고 경고 후 생략한 채 rc 0으로 성공하는 축이므로(using-codex-exec 실측), rc 검사만으로는 무시를 감지할 수 없다 — tier가 주입된 실행의 성공 후 stderr 경고 검사는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) "사용자 지정 실행 파라미터"가 소유한다 |
 | Arbiter 하한 | 전체 지정이 reviewer 강도를 낮춰도 Arbiter는 강도 하한(strong profile) 아래로 내려가지 않는다 — 하한·고지·예외(사용자가 Arbiter 축을 콕 집어 지정)는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한"이 SSOT |
 | 경로 지정 | codex exec 경로 지정 시 사전점검이 실패하면 다른 경로로 자동 대체하지 않고, 실패 원인과 대안(Claude 경로 진행 또는 중단)을 사용자에게 고지한 뒤 확인을 받는다. Claude 서브에이전트 경로 지정 시 현재 런타임에서 사용할 수 없으면 동일하게 고지한다. 모델은 Claude 경로에서는 세션 모델을 상속하며 특정 모델명을 고정하지 않는다 |
 | 경로 제약 | model/tier 주입은 codex exec 경로 전용이고, effort는 codex exec와 설정 수단이 광고된 native spawn에서 지원된다. Claude 경로와 model/tier를 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다. native 경로의 effort는 세션 표면에 광고된 spawn 단위 설정 수단이 있을 때만 반영 가능하다 — 설정 수단 부재 시의 전이는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 정본이다 |
@@ -88,11 +88,11 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 backend = "codex-exec"        # 실행 backend 선호 (codex-exec | native | claude)
 reviewer_effort = "high"      # reviewer/auditor effort
 arbiter_effort = "xhigh"      # Arbiter effort (하한 미만 값은 하한이 이긴다 — 아래 참조)
-service_tier = ""             # 빈 값 = 미지정
+service_tier = ""             # 빈 값 = 미지정. 잘못된 값은 오류가 아니라 조용한 생략이 된다 — 위 "값 유효성"의 tier 분기 참조
 
 [delegation]
 autonomous = false            # true = 자율주행 사전 위임 (아래 "자율주행 위임 계약")
-max_round_extensions = 2      # 위임 시 라운드 상한 자동 연장 허용 횟수
+max_round_extensions = 2      # 위임 시 상한 자동 연장 허용 횟수. 연장 1회 = outer round 1개 추가 (최종 상한 = protocol.md의 기본 라운드 상한 + 이 값)
 ```
 
 우선순위는 resolution 순서(runtime-mapping.md 정본)를 따른다 — 현재 발화의 자연어 지정이 파일보다 우선하고, 파일 값은 role 기본값보다 우선한다. 파일 값의 provenance는 "사용자 명시"로 취급한다 (`RUN_DA_USER_EFFORT_OVERRIDE` 등 명시 표식 규칙 동일 적용) — 단 Arbiter 하한의 "명시 축 예외"는 현재 발화의 축 지정에만 적용되고 파일 값에는 적용되지 않는다 (파일은 장기 기본값이지 이번 호출의 의도적 하향이 아니다).
@@ -110,7 +110,7 @@ reviewer fan-out 발사 전에 다음을 한 문단으로 사용자에게 보고
 
 장시간 판정과 1회 질문: FULL fan-out 기준 2 outer round 이상이 예상되는 호출인데 위임 선언이 없으면, 발사 전에 질문 도구로 위임 여부를 1회 묻는다 (이후 반복 질문 금지 — 응답이 이 호출의 위임 상태를 확정한다).
 
-gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 위임 유무 축만 소유한다. 미정의 셀은 없다):
+gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 위임 유무 축만 소유한다). 이 표에 등록되지 않은 질문 gate의 위임 시 기본 동작은 자동 진행 금지 — 해당 지점에서 중단하고 상태를 보고한다 (새 gate가 정본에 생겨도 위임 전이가 미정 상태로 자동 진행되지 않게 하는 fail-closed 기본값):
 
 | gate | 위임 없음 | 위임 있음 |
 |------|-----------|-----------|
@@ -121,7 +121,9 @@ gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 
 | fresh 반복 감지 | 질문 도구 | 자동 fresh 재실행 1회, 재발 시 종료 보고 |
 | `remediation_scope` UNCLEAR | 질문 도구 (수정/배출/제외) | 미해결로 계산 (자동 수정 간주 금지 — headless 규칙과 동일) |
 | NEEDS_MORE_INFO | 질문 도구 | CONFIRMED 자동 승격 (headless 규칙과 동일 — scope 전이표 적용) |
-| LOW confidence 승격 | 질문 도구 | 보수 전이: 확정 계열은 미해결로, 기각 계열은 판정 유지·기각 이력 기록 없이 보고만 |
+| LOW confidence 승격 | 질문 도구 | 확정·기각 계열 모두 미해결로 계산 (수렴 차단 — protocol의 fail-closed 승격 순서 유지)·기각 이력에 기록하지 않음. 종료 후 일괄 보고에 사용자 판단 대기 항목으로 명시 |
+| 검증기 capability 불일치 (배포 시차) | 질문 도구 (배포 후 재시도/검증 생략 승인) | 위임으로 대체 불가 — 검증 생략 없이 중단 보고 (검증 없는 진행은 사전 위임 범위 밖) |
+| 수렴 종료 후 push 최종 승인 | 질문 도구·승인 게이트 (for_pr Step 8 정본) | 자동 push (CONVERGED·DEFERRED_EXIT에 한함 — 비수렴 종료 push 금지는 아래 행) |
 | codex exec 사전점검 실패 fallback | 원인 고지 + 질문 | 진행 불가 보고 후 해당 경로 종료 (자동 대체 금지 유지) |
 | native effort 설정 수단 부재 | 질문 도구 (Arbiter-only 전환 승인) | 위임으로 대체 불가 — 전환하지 않고 중단 보고 (hardening 경계) |
 | delegation-denied subprocess fallback | 질문 도구 (승인) | 위임으로 대체 불가 — 중단 보고 (hardening 경계) |
