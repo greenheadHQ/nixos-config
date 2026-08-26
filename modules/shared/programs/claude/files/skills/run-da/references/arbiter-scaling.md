@@ -212,8 +212,10 @@ PROMPT
 
 # 3. codex exec 실행 (발사 방식은 위 "codex exec 경로" 실행 계약이 정본 — 분기 서술을
 #    여기 복제하지 않는다)
-# RUN_DA_CODEX_EFFORT는 실행 프로파일 resolution 결과(effective effort 우선순위)로 결정한다.
-RUN_DA_CODEX_EFFORT="${RUN_DA_CODEX_EFFORT:-high}"
+# RUN_DA_CODEX_EFFORT는 caller가 실행 프로파일 resolution 결과(effective effort 우선순위)로
+# 설정한다 — silent fallback 금지: 셸 호출 간 변수 유실 시 기본값 대체는 사용자 지정 effort의
+# 조용한 하향이 되므로, 누락이면 실행을 중단한다 (reviewer/Arbiter 발사 블록과 동일 guard 계약).
+: "${RUN_DA_CODEX_EFFORT:?ARBITER_FAILED: missing RUN_DA_CODEX_EFFORT}"
 case "$RUN_DA_CODEX_EFFORT" in
   medium|high|xhigh) ;;
   *[!abcdefghijklmnopqrstuvwxyz]*)
