@@ -27,10 +27,11 @@ Direct Codex 세션의 native fan-out lifecycle과 동시 발사 상한은 현�
 - 실행 중 unit의 강제 중단 (cancellation capability — lifecycle profile과 독립 축): 중단은 세션 표면에 광고된 중단 도구(예: `interrupt_agent`)가 있을 때만 수행하고, 없으면 conservative wait을 유지한다.
 - active-session gate: 각 세션은 자기 표면의 tool 목록·slot 광고로 판별한다. CLI-default probe 결과를 다른 세션(예: Desktop fresh task)의 증거로 재사용하지 않는다. CLI와 Desktop의 표면이 다르면 하나로 강제하지 말고 별도 profile로 보고한다.
 - CLI-default 실측 (codex-cli 0.146.0, 2026-08-02, `codex debug prompt-input` — surface_scope=cli-default): model-visible tools = `spawn_agent`, `followup_task`, `send_message`, `wait_agent`, `interrupt_agent`, `list_agents` (interrupt_agent 있음), 광고 slot = 17 (root 포함) → `current` profile, child batch 16. 같은 실측에서 full-history fork(`fork_turns` 생략/`"all"`)는 부모 model/effort를 상속하며 override를 받지 않는다고 광고됐다.
+- fork 상속 금지 (DA 실행 단위 공통): full-history fork는 부모의 대화 이력과 model/effort를 상속하므로 DA reviewer/Arbiter spawn에 사용하지 않는다 — fresh 계약(빈 컨텍스트 시작)과 Arbiter 강도 하한([`arbiter-scaling.md`](arbiter-scaling.md) 정본)을 동시에 깨뜨린다. 실측에서 native 경로의 Arbiter가 fork 상속으로 reviewer보다 낮은 강도로 도는 역전이 다수 관측됐다(#1258). DA 실행 단위는 fresh spawn + effort 명시 설정만 사용한다.
 - slot 수의 출처: 광고 slot은 codex 고정값이 아니라 `~/.codex/config.toml`의 `[agents].max_concurrent_threads_per_session`(root 제외 값)에서 온다. 본 repo template이 16으로 선언하므로 total 17이며, 키가 없는 순정 설정에서는 total 4(child 3)다. 위 실측치를 다른 머신·순정 설정의 근거로 재사용하지 않고, 세션마다 자기 표면의 광고 문장을 1차 근거로 삼는다 (active-session gate와 동일 원칙).
 - 재검증: `./scripts/ai/verify-ai-compat.sh`의 "Codex CLI-default native capability probe" 검사가 sanitized tool-name set과 slot source만 파싱해 profile을 판정한다 (raw prompt 저장/출력 금지, `surface_scope=cli-default` 명시, unknown이면 fail). Codex pin 갱신 시 CLI-default 결과와 active-session 결과를 구분해 기록한다.
 
-plain-text 재개 ≠ 질문 도구 — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 제안 승인, 3회 반복 판정, 라운드 한계효용 저하, 5회 라운드 초과, 추세 기반 조기 중단, fresh 모드 반복 감지)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 자동 상태 전이 경로(arbiter-scaling.md)로 처리한다.
+plain-text 재개 ≠ 질문 도구 — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 제안 승인, 3회 반복 판정, 라운드 한계효용 저하, 5회 라운드 초과, fresh 모드 반복 감지, remediation_scope UNCLEAR 판단)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 자동 상태 전이 경로(arbiter-scaling.md)로 처리한다.
 
 ## fan-out 진행 보고 규약
 
@@ -48,16 +49,16 @@ review profile 매핑 (fan-out 대상 역할별, 사용자 지정 없을 때 기
 | `strong` | Arbiter | 세션/런타임 기본 모델 상속 | `high` |
 | `standard` | reviewer / auditor | 세션/런타임 기본 모델 상속 | `medium` |
 
-사용자가 자연어로 실행 경로·effort를 지정하면 위 기본 profile보다 우선한다. 적용 범위는 해당 호출의 reviewer/auditor와 Arbiter 전체다.
+사용자가 자연어로 실행 경로·effort를 지정하면 위 기본 profile보다 우선한다. 적용 범위는 해당 호출의 reviewer/auditor와 Arbiter 전체다 (effort는 Arbiter 강도 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 하한 정본).
 
 | 자연어 지정 (예) | 실행 경로 | effort / 모델 처리 |
 |----------|-----------|--------------------|
-| "codex로 (xhigh/high/medium 등 effort와 함께)" | codex exec | 지정된 reasoning effort를 reviewer/auditor와 Arbiter 전체에 적용. 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
+| "codex로 (xhigh/high/medium 등 effort와 함께)" | codex exec | 지정된 reasoning effort를 reviewer/auditor와 Arbiter 전체에 적용 (Arbiter는 강도 하한 적용 후). 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
 | "Claude 서브에이전트로" | Claude Code `Agent` tool | Claude Code 세션 모델을 상속한다. 특정 모델명을 지정하지 않는다 |
 
 미지 값·불명확한 지정은 추론으로 채우지 않고 질문 도구로 확인한다 (`run-da/SKILL.md` "실행 경로·파라미터 지정" 해석 규칙).
 
-사용자 지정 실행 파라미터 (model/effort/tier): 사용자가 자연어로 명시한 값은 codex exec 경로의 모든 실행 단위(reviewer/auditor/Arbiter)에 `-c` config override로 주입되며, 경로 지정의 role별 기본 effort보다 우선한다. 주입 경로는 축별로 다르다 — model/tier는 `_DA_MODEL_TIER_OVERRIDES` 배열로, effort는 고정 `-c model_reasoning_effort=` 인자로 별도 주입된다. 개념 정의는 `run-da/SKILL.md`, 실행 계약(env·shell-safe 검증·조립)은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. Claude 경로와 Codex 세션 native subagent 경로에는 주입 수단이 없다 (경로 전환 확인 규칙은 `run-da/SKILL.md` 경로 제약).
+사용자 지정 실행 파라미터 (model/effort/tier): 사용자가 자연어로 명시한 값은 codex exec 경로의 모든 실행 단위(reviewer/auditor/Arbiter)에 `-c` config override로 주입되며, 경로 지정의 role별 기본 effort보다 우선한다 (Arbiter는 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 정본). 주입 경로는 축별로 다르다 — model/tier는 `_DA_MODEL_TIER_OVERRIDES` 배열로, effort는 고정 `-c model_reasoning_effort=` 인자로 별도 주입된다. 개념 정의는 `run-da/SKILL.md`, 실행 계약(env·shell-safe 검증·조립)은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. Claude 경로와 Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없다 (경로 전환 확인 규칙은 `run-da/SKILL.md` 경로 제약). effort는 native 경로에서도 Arbiter 하한을 만족해야 한다 — 세션 표면에 spawn 단위 effort 설정 수단이 광고되어 있으면 그것으로 명시 설정한다. 광고된 수단이 없을 때의 전이(자동 전환 금지·승인 게이트·미지원 중단)는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 단독 소유한다.
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다 (Codex 세션에서도 같은 값이 보일 수 있음). 현재 세션 호스트를 기준으로 경로를 고른다.
 

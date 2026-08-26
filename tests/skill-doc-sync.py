@@ -353,6 +353,42 @@ def check_verdict_json_examples() -> None:
         raise CheckFailure("\n".join(f"  {ARBITER_PROMPT}: {d}" for d in details))
 
 
+def check_arbiter_assembly_includes_output_format() -> None:
+    """Arbiter 조립 템플릿이 출력 형식 섹션을 포함하는지 텍스트 검사한다 (#1258).
+
+    과거 조립 지시는 "공통 프롬프트 섹션"만 넣으라고 해서 VERDICT_JSON 스키마·delimiter가
+    조립 범위 밖에 있었다 — Arbiter가 기계 파싱 계약을 모른 채 출력하는 조립 결함.
+    for_pr/for_plan 두 조립 템플릿 모두 출력 형식 포함 지시와 manifest 완전성 지시를
+    유지해야 한다.
+    """
+    text = read_text(ARBITER_PROMPT)
+    assembly = re.search(r"## 프롬프트 조립.*", text, re.DOTALL)
+    if not assembly:
+        raise CheckFailure(f"{ARBITER_PROMPT}: '프롬프트 조립' 섹션 누락")
+    body = assembly.group(0)
+    details = []
+    # 전역 카운트는 한 템플릿에 지시가 2회 있고 다른 템플릿에 0회여도 통과한다 —
+    # 모드 섹션별로 분리해 각각 검사한다 (PR #1271 리뷰).
+    sections = {}
+    for mode in ("for_pr", "for_plan"):
+        m = re.search(rf"### {mode} 모드.*?(?=\n### |\Z)", body, re.DOTALL)
+        if not m:
+            details.append(f"{ARBITER_PROMPT}: 조립 템플릿에 '### {mode} 모드' 섹션 누락")
+        else:
+            sections[mode] = m.group(0)
+    for mode, sec in sections.items():
+        if '"출력 형식" 섹션 전체' not in sec:
+            details.append(
+                f"{ARBITER_PROMPT}: {mode} 조립 템플릿에 '출력 형식' 섹션 포함 지시 누락"
+            )
+        if "누락도 추가도 금지" not in sec:
+            details.append(
+                f"{ARBITER_PROMPT}: {mode} 조립 템플릿에 finding manifest 완전성 지시 누락"
+            )
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
 def check_capability_profile() -> None:
     """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
 
@@ -403,6 +439,7 @@ def main() -> int:
         ("reviewer bundle subdomains", check_bundle_subdomains),
         ("threat path types", check_threat_path_types),
         ("verdict json examples", check_verdict_json_examples),
+        ("arbiter assembly output format", check_arbiter_assembly_includes_output_format),
         ("capability profile", check_capability_profile),
     )
 

@@ -33,8 +33,8 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 
 - changeset 동결: Step 2 진입 전에 이번 라운드의 검토 표면을 고정한다. for_plan은 계획 원문과 관련 파일/맥락, for_pr은 `git diff main...HEAD`와 현재 workspace 상태가 frozen changeset이다. 세션 내 기각 이력도 이 frozen changeset과 일치하는 범위에서만 valid하다.
 - review phase: Step 2 reviewer fan-out부터 Step 5 상태 전이와 사용자 전건 보고까지다. 이 구간에는 메인 에이전트와 delegated reviewer/Arbiter 모두 active changeset을 바꾸지 않는다. patch/edit/apply_patch, write-mode formatter, codegen/regeneration으로 생기는 generated output 변경, lockfile 재생성, commit/push를 금지한다. formatter/generator는 check/diff-only 모드처럼 파일 변경이 없을 때만 허용한다.
-- write phase: 한 라운드의 Arbiter 판정과 필요한 사용자 판단이 끝난 뒤에만 시작한다. CONFIRMED_ISSUE와 사용자가 수용한 NEEDS_MORE_INFO 항목을 queue에 모아 메인 에이전트가 batch로 반영한다.
-- CRITICAL 기본값: CRITICAL도 review phase 중 즉시 patch하지 않는다. 해당 라운드의 Arbiter 판정이 닫힌 뒤 write phase 첫 항목으로 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다.
+- write phase: 한 라운드의 Arbiter 판정과 필요한 사용자 판단이 끝난 뒤에만 시작한다. `remediation_scope: FIX_NOW`로 확정된 항목(CONFIRMED_ISSUE·사용자 수용 NEEDS_MORE_INFO)만 queue에 모아 메인 에이전트가 batch로 반영한다 (scope별 전이는 protocol.md "remediation scope" 전이표가 단독 소유).
+- CRITICAL 기본값: `FIX_NOW` + CRITICAL도 review phase 중 즉시 patch하지 않는다. 해당 라운드의 Arbiter 판정이 닫힌 뒤 write phase 첫 항목으로 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다 (`REPLAN_REQUIRED`는 CRITICAL이어도 write phase 대상이 아니다 — Step 5c).
 - 새 changeset 선언: write phase가 끝나면 다음 라운드는 "새 changeset" 리뷰로 명시하고, round summary에 batch 변경 범위(수정한 계획/파일, generated output 유무, diffstat)를 기록한다.
 
 ## Step 2: reviewer bundle 병렬 실행
@@ -93,30 +93,29 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 
 ## Step 4: ALL CLEAR 또는 Arbiter 진입
 
-findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → ALL CLEAR, 종료 (`walkthrough_status=NOT_REQUIRED` — write phase가 없는 수렴 종료 특수형, [`../references/protocol.md`](../references/protocol.md) 수렴 판정 참조).
+findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → `termination_type=CONVERGED`로 기록하고 종료한다. ALL CLEAR는 finding 0건 상태를 설명하는 표시 문구일 뿐 종료 라벨이 아니다 (`walkthrough_status=NOT_REQUIRED` — write phase가 없는 수렴 종료 특수형, [`../references/protocol.md`](../references/protocol.md) 수렴 판정 참조).
 
 ## Step 5: Arbiter 실행 (findings ≥ 1건 시)
 
 - 5a. Arbiter 실행: Arbiter 프롬프트를 조립한다 ([`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 for_plan 조립 규칙 참조). for_plan에서는 반드시 계획 원문을 포함해야 하며, 상세 조립 형식은 arbiter-prompt.md의 "프롬프트 조립 > for_plan 모드" 참조.
   - Codex 세션 경로: fresh Arbiter subagent 1개를 실행하고 결과를 수집해([`../references/runtime-mapping.md`](../references/runtime-mapping.md#result-collection) binding) `/tmp/da-${_DA_SID}-arbiter-*` 네임스페이스의 scratch 파일(예: `arbiter-result.md`)로 저장해 공통 검증기 호출에 사용한다 (검증기는 파일 입력 전용).
   - codex exec 경로: 단일 exec — 발사 방식은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) 실행 계약(하네스 기준 분기)을 따른다.
-- 5b. caller 검증: 결과의 VERDICT_JSON 블록을 읽는 이 지점에서 공통 검증기(`"$HELPER_PATH" --validate-only --expect-findings <Arbiter에 전달한 finding ID 쉼표 목록> <result.md>`)로 schema 1.1 caller 검증과 finding manifest 대조를 수행하고, 메인이 보유한 reviewer 원본 finding의 심각도와 `reviewer_severity`를 대조한다 — 검증 규칙과 fail-closed 전이(1회 재실행 → BLOCKED)는 [`../references/protocol.md`](../references/protocol.md) "수렴 판정"이 SSOT.
+- 5b. caller 검증: 결과의 VERDICT_JSON 블록을 읽는 이 지점에서 공통 검증기(`"$HELPER_PATH" --validate-only --expect-findings <Arbiter에 전달한 finding ID 쉼표 목록> <result.md>`)로 schema 1.2 caller 검증과 finding manifest 대조를 수행하고, 메인이 보유한 reviewer 원본 finding의 심각도와 `reviewer_severity`를 대조한다 — 검증 규칙과 fail-closed 전이(1회 재실행 → BLOCKED)는 [`../references/protocol.md`](../references/protocol.md) "수렴 판정"이 SSOT.
 - 5c. 상태 전이 적용 — 상세 전이표는 [`../references/protocol.md`](../references/protocol.md)의 "DA → Arbiter → Main Agent 상태 흐름" 참조.
 
-결과를 수집하여 사용자에게 전건 보고한다. 아래 심각도는 `accepted_severity`(Arbiter 조정 후 값 — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT) 기준이다:
+결과를 수집하여 사용자에게 전건 보고한다. 아래 심각도는 `accepted_severity`(Arbiter 조정 후 값 — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT) 기준이다. 전이 판정 순서는 ①caller 검증 위반(semantic malformed) 처리 → ②임의 verdict의 LOW confidence fail-closed 승격 → ③`remediation_scope` 분기(심각도보다 먼저)이며, 아래 verdict·scope 행은 ①②를 통과한 항목에만 적용한다 (전이표 정본: protocol.md "remediation scope"):
 
-- CONFIRMED_ISSUE + CRITICAL (LOW confidence 아님): 진행 차단. review phase 중 patch 금지 원칙을 유지하고, Arbiter 판정이 닫힌 뒤 write phase의 첫 batch 항목으로 계획에 반영한다. 해결 전에는 다음 outer round로 진행하지 않는다.
-- CONFIRMED_ISSUE + HIGH/MEDIUM/LOW (LOW confidence 아님): pending write queue에 추가하고, Step 6 write phase에서 계획에 일괄 수정한다.
+- CONFIRMED_ISSUE (LOW confidence 아님): scope별 전이(write set 진입·배출·사용자 판단, 실패 시 미해결 계산)는 protocol.md "remediation scope" 전이표가 단독 소유한다 — 여기 재서술하지 않는다. mode 고유 타이밍만 명시한다: `FIX_NOW` + CRITICAL은 진행 차단 — review phase 중 patch 금지 원칙을 유지하고 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 계획에 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다. 나머지 `FIX_NOW`는 Step 6 write phase에서 일괄 수정한다. `REPLAN_REQUIRED`는 배출 완료 전에는 다음 outer round로 진행하지 않는다.
 - NOT_AN_ISSUE (LOW confidence 아님): 보고만 (반영 불필요). 사용자 전건 보고 후 세션 내 기각 이력에 기록한다 ([`../SKILL.md`](../SKILL.md) 정본).
-- NEEDS_MORE_INFO: 질문 도구로 사용자 판단을 요청한다. 사용자가 수용한 항목만 pending write queue에 추가한다.
-- 임의 verdict + LOW confidence: fail-closed 승격 — 질문 도구로 사용자 판단 요청 (기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약 유지).
+- NEEDS_MORE_INFO: 질문 도구로 사용자 판단을 요청한다. 사용자가 수용한 항목도 CONFIRMED와 동일하게 `remediation_scope` 전이표를 따른다 — `FIX_NOW`만 pending write queue에 추가하고, `REPLAN_REQUIRED`는 배출, `UNCLEAR`는 사용자에게 scope 판단을 함께 요청한다.
+- 임의 verdict + LOW confidence: fail-closed 승격 — 질문 도구로 사용자 판단 요청 (기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약 유지). 위 판정 순서 ②이므로 verdict·scope 행보다 먼저 적용한다 — LOW confidence REPLAN_REQUIRED도 사용자 판단 전에는 배출하지 않는다. 사용자가 finding을 유효로 수용하면 그 자리에서 `remediation_scope`(FIX_NOW/REPLAN_REQUIRED) 또는 제외를 함께 확정한다 — NOT_AN_ISSUE 판정에는 scope 값이 없어 수용만으로는 라우팅할 수 없다. scope 확정 전에는 write queue·DEFERRED 어느 쪽으로도 전이하지 않는다.
 - caller 검증 위반이 재실행 후에도 남음: BLOCKED(malformed) — 질문 도구 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).
 
 ## Step 6: write phase — 통합 반영 루프 후 새 changeset 선언
 
-Step 5 상태 전이와 사용자 판단이 끝나면, 먼저 round outcome 스냅샷(`round_write_set`, `round_max_accepted_severity`, `unresolved_count` — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT)을 고정한다. pending write queue가 있으면 메인 에이전트가 single-writer로 아래 루프를 수행한다. 내부 단계는 번호가 아니라 이름으로 참조한다:
+Step 5 상태 전이와 사용자 판단이 끝나면, 먼저 round outcome 스냅샷을 전체 필드로 고정한다 — 필드 집합은 [`../references/protocol.md`](../references/protocol.md)의 "round outcome 스냅샷" 절이 정본이며 여기 부분 열거하지 않는다 (부분 열거가 필드 누락 drift의 원인이 된다). pending write queue가 있으면 메인 에이전트가 single-writer로 아래 루프를 수행한다. 내부 단계는 번호가 아니라 이름으로 참조한다:
 
-- 통합 설계: round_write_set 전체를 놓고 수정 대상(계획/관련 파일) 전체를 통독한다 → finding 간 상호작용과 기존 구조와의 모순을 점검한다 (A 지적의 수정이 B 지적이나 기존 계약을 깨는지) → 하나의 통합 변경 설계를 세운다. 여러 finding이 같은 구조적 원인을 공유하면 개별 패치 대신 구조 수정 1건으로 통합한다.
+- 통합 설계: round_write_set 전체를 놓고 수정 대상(계획/관련 파일) 전체를 통독한다 → finding 간 상호작용과 기존 구조와의 모순을 점검한다 (A 지적의 수정이 B 지적이나 기존 계약을 깨는지) → 하나의 통합 변경 설계를 세운다. 여러 finding이 같은 구조적 원인을 공유하면 개별 패치 대신 구조 수정 1건으로 통합한다. 반영 원칙 — 검증 없는 서술을 추가하지 않고, 늘리기보다 줄인다: 설명을 덧붙이는 수정은 검증되지 않은 주장이 섞여 다음 라운드 지적의 공급원이 되는 것이 실측된 패턴이다(#1258). finding 해소에 필수인 최소 변경을 택하고, 새로 쓰는 서술은 실측·인용 근거가 있는 것만 남긴다.
 - batch 반영: 설계에 따라 일괄 수정한다. 수정 전 해당 위치(for_plan: 관련 파일 또는 계획 항목)를 직접 확인하고, CRITICAL은 batch 첫 순서로 처리하되 review phase 중 즉시 patch하는 예외는 두지 않는다. 수정 diff를 명시하고 각 finding이 해결됐는지 확인한다. formatter/generator가 필요하면 이 단계에서만 실행하고 generated output 변경 범위를 summary에 기록한다.
 - walkthrough: 수정된 대상을 처음 읽는 사람처럼 순서대로 따라 실행한다 — 절차 문서·스킬 문서는 단계를 실제로 밟는 시뮬레이션("이 값을 어디서 가져오지?"가 걸리는지), 코드는 주요 실행 경로 추적, 계획은 실행 시뮬레이션(Step N을 끝내야 Step N+1이 가능한지). 정적 통독으로는 안 보이던 결함이 따라 실행에서 드러난다.
 - 후속 수정 처리: walkthrough가 발견한 결함 중 즉시 수정할 수 있는 범위는 이번 batch가 도입한 회귀 또는 round_write_set 반영에 필수인 변경뿐이다 (confirmed-only write 계약 유지 — Arbiter 판정·사용자 수용 없는 무관 결함·기존 결함을 tracked change로 만들지 않는다). 범위 안 결함은 수정 사실과 범위를 기록하고(심각도 분류 없음 — Arbiter를 거치지 않은 수정에 심각도 산출 주체가 없다) 수정한 뒤 walkthrough를 재시작한다. 범위 밖 발견은 수정하지 않고 새 finding 후보로 기록해 다음 라운드 리뷰 대상으로 넘긴다. 후속 수정 또는 범위 밖 발견이 하나라도 있으면 protocol.md의 `walkthrough-forced` 조건이 성립해 `revalidation_required=true`가 된다. 건수를 round summary에 표기한다.
@@ -129,4 +128,4 @@ Step 5 상태 전이와 사용자 판단이 끝나면, 먼저 round outcome 스�
 
 ## Step 7: 수렴 predicate 충족까지 반복
 
-각 라운드의 write phase가 끝나면 [`../references/protocol.md`](../references/protocol.md)의 "수렴 판정" 섹션(SSOT — 조건을 여기 재서술하지 않는다)의 수렴 predicate를 평가한다. 충족하면 CONVERGED(또는 ALL CLEAR 특수형)로 종료하고, 아니면 Step 2-6을 반복한다. 반복 규칙은 protocol.md의 "최대 라운드 수"(상한 + 한계효용 + 비수렴 조기중단)와 read/write 분리를 함께 적용한다. 각 반복에서 Step 2-5는 frozen changeset에 대한 read-only review phase이고, Step 6만 write phase다. 수렴 전에 상한, 한계효용 저하, 비수렴 조기중단 조건이 충족되면 사용자에게 보고하고 종료/계속을 결정하며, 이 경로의 종료는 `EARLY_STOP (unconverged)`로 기록한다(질문 도구 미지원 런타임은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 자동 전이를 따른다).
+각 라운드의 write phase가 끝나면 [`../references/protocol.md`](../references/protocol.md)의 "수렴 판정" 섹션(SSOT — 조건을 여기 재서술하지 않는다)의 2층 수렴 predicate를 평가한다. 충족하면 `termination_type=CONVERGED`(배출 이슈가 있으면 `DEFERRED_EXIT`)로 종료하고, 아니면 Step 2-6을 반복한다. 반복 규칙은 protocol.md의 "최대 라운드 수"(상한 + 한계효용)와 read/write 분리를 함께 적용한다. 각 반복에서 Step 2-5는 frozen changeset에 대한 read-only review phase이고, Step 6만 write phase다. 수렴 전에 상한 또는 한계효용 저하 조건이 충족되면 사용자에게 보고하고 종료/계속을 결정하며, 이 경로의 종료는 `termination_type=ROUND_LIMIT` 또는 `USER_STOP`으로 기록한다(질문 도구 미지원 런타임은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 자동 전이를 따른다). 어떤 종료 경로든 termination_type 라벨 없는 종료는 계약 위반이다.

@@ -10,7 +10,14 @@ reviewer는 "없다"를 잘 찾지만, "없는 게 맞다"는 판단은 독립 �
 `run-da`의 reviewer fan-out을 4 bundle로 줄이더라도, Arbiter는 늘리지 않는다.
 비용을 늘려 여러 Arbiter를 붙이기보다, 한 명의 강한 Arbiter가 selective escalation set을 판정하는 구조를 유지한다.
 
-사용자가 자연어로 경로/effort를 지정하면 해당 호출의 reviewer/auditor와 Arbiter 전체에 그 값이 우선한다. 사용자 지정 실행 파라미터(model/effort/tier — 정의는 `run-da/SKILL.md`)가 지정되면 그 값이 다시 경로 지정의 role별 기본값보다 우선한다. 지정이 없을 때만 role별 기본값을 사용한다: reviewer/auditor는 standard profile effort, Arbiter는 strong profile effort를 따른다. 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑이 정본이다.
+effective effort 우선순위: ①사용자 명시 effort > ②경로 지정의 role별 값 > ③role별 기본값(reviewer/auditor standard, Arbiter strong). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑이 정본이다.
+
+Arbiter 추론 강도 하한 (판별력 보장 — 본 절이 정본): Arbiter의 판별력은 실행 조건에 종속한다 — 같은 판정 계약·같은 프롬프트에서 실행 강도에 따라 기각률이 0%와 75%로 갈린 실측이 있다 (#1258). 따라서:
+
+- Arbiter effort는 매 실행마다 명시 주입이 필수다 — 어떤 경로에서도 부모·세션·이전 호출에서 상속된 암묵 값에 의존하지 않는다 (codex exec 경로는 `-c model_reasoning_effort=` 필수 인자, native 경로는 spawn 시 명시 — 상속 금지 상세는 [`runtime-mapping.md`](runtime-mapping.md)의 fork 상속 금지).
+- 하한은 strong profile 값이다. 사용자의 저비용·고속 지정이 reviewer effort를 낮추더라도 Arbiter는 하한 아래로 내려가지 않는다 — 지정 값이 하한보다 낮으면 Arbiter에는 하한을 적용하고 그 사실을 사용자에게 고지한다 (reviewer 강도와 Arbiter 강도는 독립 축이다 — 저비용 override가 판정자의 판별력까지 낮추면 기각률 붕괴가 재발한다). 사용자가 Arbiter 강도 축을 콕 집어 하한 미만으로 지정하는 경우에만 고지 후 그 값을 따른다 (명시 축 존중).
+- 하한을 보장할 수 없는 delegation 경로의 전이 (본 절이 정본): 세션 표면에 spawn 단위 effort 설정 수단이 광고되지 않은 delegation 경로 — Codex native spawn뿐 아니라 Claude Code `Agent` 경로도 포함한다 — 는 Arbiter 하한을 보장할 수 없다 (프롬프트에 강도를 지시하는 것은 주입이 아니다). 이때 codex exec로 자동 전환하지 않는다 — skill 호출 자체는 subprocess fallback 권한이 아니므로 ([`hardening-contract.md`](hardening-contract.md) Delegation fallback 정본), 사유(native effort 설정 수단 부재)를 고지하고 질문 도구로 Arbiter-only codex exec 전환 승인을 받은 뒤에만 전환하며, 승인 사실과 사유를 라운드 요약에 기록한다. 질문 도구 미지원 런타임은 전환하지 않고 중단 보고한다.
+- 상향은 항상 허용된다. 역할별 프로파일 축의 전체 분리는 #1260이 소유하며, 본 절은 Arbiter 하한만 소유한다.
 
 | Findings 개수 | Arbiter 수 |
 |---|---|
@@ -85,7 +92,7 @@ role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 
 | `standard` | `medium` |
 | `strong` | `high` |
 
-사용자가 자연어로 effort를 지정하면 (예: "전부 xhigh로") 위 기본값 대신 그 값을 reviewer/auditor와 Arbiter 전체에 사용한다 (위 "사용자 지정 실행 파라미터" 섹션의 guard 경유).
+사용자가 자연어로 effort를 지정하면 (예: "전부 xhigh로") 위 기본값 대신 그 값을 사용한다 — reviewer/auditor에는 그대로, Arbiter에는 강도 하한을 최종 적용한 resolved 값이다 (하한·명시 축 예외는 위 "Arbiter 추론 강도 하한" 절이 정본, 주입은 "사용자 지정 실행 파라미터" 섹션의 guard 경유).
 
 reviewer / Auditor (standard profile):
 
@@ -283,9 +290,9 @@ Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아�
 
 `request_user_input`은 codex 0.106+에서 default mode 활성화 가능 (`default_mode_request_user_input=true`). 본 nixos-config는 이를 충족하므로 Codex 세션은 지원 런타임으로 간주한다 — Codex 세션 자체는 본 섹션 자동 전이 적용 대상이 아니다.
 
-- NEEDS_MORE_INFO 항목은 CONFIRMED_ISSUE로 자동 승격한다 (텍스트 보고만으로는 상태 전이가 불가능하므로). 단 semantic malformed는 이 자동 승격 대상이 아니다 — 위 "Semantic malformed" 분류를 따른다 (전이는 [`protocol.md`](protocol.md) caller 검증이 정본).
-- CONFIRMED_ISSUE는 동일하게 자동 수정한다.
+- NEEDS_MORE_INFO 항목은 CONFIRMED_ISSUE로 자동 승격한다 (텍스트 보고만으로는 상태 전이가 불가능하므로). 이 승격은 메인 에이전트의 라우팅 상태 전이이며 VERDICT_JSON을 재작성하거나 재검증하지 않는다 — caller 검증은 Arbiter 원출력(NEEDS_MORE_INFO 조합)에 이미 통과했고, 승격 후 상태에 확정 verdict의 조합 규칙을 소급 적용하지 않는다. 단 semantic malformed는 이 자동 승격 대상이 아니다 — 위 "Semantic malformed" 분류를 따른다 (전이는 [`protocol.md`](protocol.md) caller 검증이 정본). 승격 후에도 `remediation_scope` 전이표를 그대로 적용한다.
+- CONFIRMED_ISSUE 중 `remediation_scope: FIX_NOW`는 동일하게 자동 수정한다. `REPLAN_REQUIRED`는 마스킹 게이트를 거쳐 이슈로 배출하고(배출 실패는 미해결), `UNCLEAR`는 질문 불가이므로 자동 FIX_NOW 간주 없이 미해결로 계산한다 ([`protocol.md`](protocol.md) "remediation scope" SSOT).
 - 에이전트가 SKIP을 제안하려는 상황에서 질문 도구 불가 → 자동 LITE 승격 (SKIP 확정은 사용자 승인 없이는 불가하므로).
 - 3회 반복 규칙 도달 시 질문 도구 불가 → 자동 수용 (지적대로 수정).
 - 5회 라운드 초과 시 질문 도구 불가 → 자동 종료(현재 상태 보고).
-- 라운드 한계효용 확인 또는 추세 기반 조기 중단([`protocol.md`](protocol.md)의 "최대 라운드 수" 정의) 도달 시 질문 도구 불가 → 현재 상태를 보고하고 종료한다. 한계효용 저하나 추세 비수렴은 추가 자동 수정을 시도할 근거가 아니므로([`protocol.md`](protocol.md)의 changeset 동결/범위 축소 권고를 따른다), 현재 미해결 상태를 보고한 뒤 종료한다 — CLEAR로 간주하지 않는다.
+- 라운드 한계효용 확인([`protocol.md`](protocol.md)의 "최대 라운드 수" 정의) 도달 시 질문 도구 불가 → 현재 상태를 보고하고 `termination_type=USER_STOP`으로 종료한다. 한계효용 저하는 추가 자동 수정을 시도할 근거가 아니므로([`protocol.md`](protocol.md)의 changeset 동결/범위 축소 권고를 따른다), 현재 미해결 상태를 보고한 뒤 종료한다 — CLEAR로 간주하지 않는다.

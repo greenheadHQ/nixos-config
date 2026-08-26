@@ -384,6 +384,24 @@ def test_arbiter_marker_filter(analyze_module):
     assert analyze_module.ARBITER_DIR_MARKER.search(real_text) is not None
 
 
+def test_remediation_label_not_taken_as_finding_summary(analyze_module):
+    """schema 1.2의 `**해소 방식**` 라벨은 finding 요약이 아니다.
+
+    명시적 문제 요약이 없는 Arbiter 블록에서 이 라벨이 첫 비제외 bullet로
+    채택되면 finding_fingerprint가 scope rationale의 해시가 되어, 같은
+    finding이라도 라운드별 rationale 변화로 M-6 persistence가 조용히
+    분리된다 (#1258). 제외 목록 계약의 회귀 게이트.
+    """
+    arbiter_only_block = (
+        "### X-1 — CONFIRMED_ISSUE\n"
+        "- **판정**: CONFIRMED_ISSUE\n"
+        "- **신뢰도**: HIGH\n"
+        "- **해소 방식**: FIX_NOW — 국소 수정으로 완결된다.\n"
+        "- **근거**: rationale placeholder.\n"
+    )
+    assert analyze_module.extract_finding_summary(arbiter_only_block) is None
+
+
 def test_bundle_normalization(analyze_module):
     """finding_id의 reviewer 묶음 매핑 검증."""
     cases = [

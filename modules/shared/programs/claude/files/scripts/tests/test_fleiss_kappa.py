@@ -19,17 +19,18 @@ def _harness_path():
 
 
 def _verdict_payload(**overrides):
-    """schema 1.1 계약을 만족하는 기본 CONFIRMED_ISSUE payload (단일 조립 지점).
+    """schema 1.2 계약을 만족하는 기본 CONFIRMED_ISSUE payload (단일 조립 지점).
 
     None 값을 전달하면 해당 키를 제거한다 (필수 필드 누락 케이스 조립용).
     """
     payload = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "finding_id": "X-1",
         "verdict": "CONFIRMED_ISSUE",
         "confidence": "HIGH",
         "reviewer_severity": "MEDIUM",
         "accepted_severity": "MEDIUM",
+        "remediation_scope": "FIX_NOW",
         "axes": {"portability": "N/A", "plausibility": "PASS"},
     }
     for key, value in overrides.items():
@@ -57,6 +58,14 @@ def _run_harness(*argv):
     )
 
 
+def test_print_live_schema_reports_live_contract():
+    # preflight capability 대조용 조회 플래그 — 구버전 helper의 비0 종료가
+    # fail-closed 신호이므로, 현행 helper는 0 종료 + 정확한 버전 문자열이어야 한다.
+    result = _run_harness("--print-live-schema")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "1.2"
+
+
 def test_harness_exists():
     assert os.path.isfile(_harness_path()), _harness_path()
 
@@ -76,11 +85,12 @@ def test_aggregate_mode_is_removed(tmp_path):
 
 
 def test_validate_only_flags_semantic_malformed(tmp_path):
-    """--validate-only 모드가 schema 1.1 semantic 계약 위반(정합 행렬·rejection_basis·
+    """--validate-only 모드가 schema 1.2 semantic 계약 위반(정합 행렬·rejection_basis·
     구버전 자칭)을 검출하고 정상 결과는 통과시키는지 검증한다."""
     rejected = _verdict_payload(
         verdict="NOT_AN_ISSUE",
         accepted_severity=None,
+        remediation_scope=None,
         rejection_basis="PLAUSIBILITY_FAIL",
         evidence_scope="FROZEN_SURFACE",
         axes={"portability": "N/A", "plausibility": "FAIL"},
@@ -88,6 +98,7 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
     factual = _verdict_payload(
         verdict="NOT_AN_ISSUE",
         accepted_severity=None,
+        remediation_scope=None,
         rejection_basis="FACTUAL_FAIL",
         axes={"portability": "N/A", "plausibility": "N/A"},
     )
@@ -103,7 +114,7 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         "valid-confirmed.md": (confirmed, None),
         "valid-env-scope.md": ({**rejected, "evidence_scope": "ENVIRONMENT_WORKLOAD"}, None),
         # schema 버전: 정확히 live 버전만
-        "downgrade.md": ({**rejected, "schema_version": "1.0"}, "schema_version"),
+        "downgrade.md": ({**rejected, "schema_version": "1.1"}, "schema_version"),
         "future.md": ({**rejected, "schema_version": "2.0"}, "schema_version"),
         "garbage.md": ({**rejected, "schema_version": "garbage"}, "schema_version"),
         # verdict 정합 행렬 — CONFIRMED에 plausibility FAIL (다른 필드는 CONFIRMED 계약 충족)
@@ -139,6 +150,23 @@ def test_validate_only_flags_semantic_malformed(tmp_path):
         ),
         "basis-on-confirmed.md": (
             {**confirmed, "rejection_basis": "FACTUAL_FAIL"}, "rejection_basis 출력 금지"
+        ),
+        # remediation_scope — scope 라우팅 대상 verdict 필수 / NOT_AN_ISSUE 금지 / enum 밖 거부
+        "no-remediation.md": (
+            {k: v for k, v in confirmed.items() if k != "remediation_scope"},
+            "remediation_scope",
+        ),
+        "bad-remediation.md": (
+            {**confirmed, "remediation_scope": "LATER"}, "remediation_scope"
+        ),
+        "replan-confirmed.md": ({**confirmed, "remediation_scope": "REPLAN_REQUIRED"}, None),
+        "unclear-confirmed.md": ({**confirmed, "remediation_scope": "UNCLEAR"}, None),
+        "remediation-on-rejected.md": (
+            {**rejected, "remediation_scope": "FIX_NOW"}, "remediation_scope 출력 금지"
+        ),
+        # 명시적 null도 필드 존재 위반 (키 존재 검사 — get() 비교 우회 차단)
+        "remediation-null-on-rejected.md": (
+            {**rejected, "remediation_scope": None}, "remediation_scope 출력 금지"
         ),
         # evidence_scope
         "no-scope.md": (
