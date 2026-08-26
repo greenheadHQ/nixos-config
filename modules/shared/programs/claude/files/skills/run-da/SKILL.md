@@ -123,7 +123,7 @@ gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 
 | fresh 반복 감지 | 질문 도구 | 자동 fresh 재실행 1회, 재발 시 종료 보고 |
 | `remediation_scope` UNCLEAR | 질문 도구 (수정/배출/제외) | 미해결로 계산 (자동 수정 간주 금지 — headless 규칙과 동일) |
 | NEEDS_MORE_INFO | 질문 도구 | CONFIRMED 자동 승격 (headless 규칙과 동일 — scope 전이표 적용) |
-| LOW confidence 승격 | 질문 도구 | 확정·기각 계열 모두 미해결로 계산 (수렴 차단 — protocol의 fail-closed 승격 순서 유지)·기각 이력에 기록하지 않음. 종료 후 일괄 보고에 사용자 판단 대기 항목으로 명시 |
+| LOW confidence 승격 | 질문 도구 | 확정·기각 계열 모두 미해결로 계산 — protocol `unresolved_count`에 "위임 상태의 미판단 LOW confidence verdict"로 편입되어 수렴을 차단한다 (fail-closed 승격 순서 유지)·기각 이력에 기록하지 않음. 종료 후 일괄 보고에 사용자 판단 대기 항목으로 명시 |
 | 검증기 capability 불일치 (배포 시차) | 질문 도구 (배포 후 재시도/검증 생략 승인) | 위임으로 대체 불가 — 검증 생략 없이 중단 보고 (검증 없는 진행은 사전 위임 범위 밖) |
 | 수렴 종료 후 push 최종 승인 | 질문 도구·승인 게이트 (for_pr Step 8 정본) | 자동 push (CONVERGED·DEFERRED_EXIT에 한함 — 비수렴 종료 push 금지는 아래 행) |
 | codex exec 사전점검 실패 fallback | 원인 고지 + 질문 | 진행 불가 보고 후 해당 경로 종료 (자동 대체 금지 유지) |

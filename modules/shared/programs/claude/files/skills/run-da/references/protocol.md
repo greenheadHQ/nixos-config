@@ -253,7 +253,7 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 - `round_write_set`: 이번 라운드에 반영할 항목 (`remediation_scope: FIX_NOW`인 CONFIRMED_ISSUE + 사용자 수용 항목). `REPLAN_REQUIRED`·`UNCLEAR` scope는 진입 금지 (위 "remediation scope" 전이표).
 - `round_max_accepted_severity`: round_write_set의 accepted severity 최댓값 (빈 set이면 NONE).
-- `unresolved_count`: 미결 NEEDS_MORE_INFO + 배출 실패한 REPLAN_REQUIRED + 미판단 UNCLEAR 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다). BLOCKED·VIOLATION은 여기 넣지 않는다 — `blocked_count`가 배타적으로 소유한다.
+- `unresolved_count`: 미결 NEEDS_MORE_INFO + 배출 실패한 REPLAN_REQUIRED + 미판단 UNCLEAR + 자율주행 위임 상태에서 사용자 판단 없이 보류된 LOW confidence verdict(확정·기각 계열 모두 — `run-da/SKILL.md` 위임 전이표의 "미해결로 계산"이 가리키는 편입 지점이 바로 이 카운터다) 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다). BLOCKED·VIOLATION은 여기 넣지 않는다 — `blocked_count`가 배타적으로 소유한다.
 - `deferred_issues`: 이번 라운드에 REPLAN_REQUIRED 배출로 DEFERRED 처리한 finding의 배출 증거 이슈 번호 목록 (배출 증거 없는 DEFERRED는 존재하지 않는다).
 - `blocked_count`: BLOCKED(malformed — caller 검증 재실행 후에도 위반) finding 수 + `VIOLATION` 상태로 남은 review unit 수 + 미해소 `BLOCKED` review unit 수(실행 반복 실패·binary 부재 등 원인 무관 — 다른 unit의 finding으로 라운드가 진행돼도 차단 상태가 소실되지 않는다). finding·unit 축을 합산한 차단 총계이며, 어느 축이든 0이 아니면 종료 불가라는 뜻만 가진다.
 
@@ -310,7 +310,7 @@ hard precondition 층 — 아래 필드가 모두 조건을 만족해야 종료�
 | 필드 | 조건 | 판정 근거 |
 |------|------|-----------|
 | `blocked_count` | = 0 | BLOCKED(malformed)·`VIOLATION`·미해소 `BLOCKED` unit(실행 실패 등 원인 무관)을 합산한 차단 총계 (round outcome 스냅샷 정의). 심각도가 산출되지 않은 위험이 수치 층을 우회하는 fail-open 차단 |
-| `unresolved_count` | = 0 | 미결 NEEDS_MORE_INFO + 배출 실패 REPLAN_REQUIRED + 미판단 UNCLEAR (round outcome 스냅샷 정의) |
+| `unresolved_count` | = 0 | 미결 NEEDS_MORE_INFO + 배출 실패 REPLAN_REQUIRED + 미판단 UNCLEAR + 위임 상태의 미판단 LOW confidence verdict (round outcome 스냅샷 정의) |
 | `write_reverted_count` | = 0 | 반영을 시도했다가 취소되어 미해결로 남은 항목 (write phase 산출값) |
 | `verifier_ok` | = true | 이번 라운드의 caller 검증기 호출이 성공했거나, 사용자가 명시 승인한 검증 생략이 라운드 요약에 기록됨 (검증기 호출 계약 참조 — 승인 없는 생략은 false). 검증 대상 VERDICT_JSON이 존재하지 않는 경로(finding 0건 ALL CLEAR — Arbiter 미실행)는 vacuous true다 |
 | `dismissal_rationale_complete` | = true | NOT_AN_ISSUE·사용자 제외 항목 전건에 근거가 있음 |
@@ -389,7 +389,7 @@ LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN:
 
 ## canonical 이력 표기 (기록·서술 축 — 본 절이 정본, #1260)
 
-커밋 메시지·이슈 코멘트처럼 저장소 훅이 검사하는 이력 매체에서 특정 라운드·finding을 지칭해야 할 때는 소문자 축약 표기를 쓴다 (위 PR 코멘트 게시 형식의 `R{N}`·finding ID 실명 표기는 DA 요약 코멘트 전용 — 그 밖의 이력 매체의 실명 ID·라운드 번호는 프로세스 메타데이터 박제로 검사 대상이다. 강제 강도는 표면별로 다르다: 에이전트 Edit/Write는 PreToolUse 훅이 차단하고, commit-msg 훅은 경고만 남긴다 — 경고여도 박제 자체가 계약 위반이므로 표기를 고쳐 커밋한다):
+커밋 메시지·이슈 코멘트·PR 코멘트처럼 저장소 훅이 검사하는 이력 매체에서 특정 라운드·finding을 지칭해야 할 때는 소문자 축약 표기를 쓴다. 실명 finding ID(`Bundle-N` 형태)는 DA 요약 코멘트를 포함한 모든 게시 경로에서 쓰지 않는다 — PreToolUse guard가 코멘트 명령의 본문·body-file까지 차단하며(#650·#684에서 의도 도입된 방어), 위 PR 코멘트 게시 형식이 실명 ID 없이 관점 라벨·건수·`R{N}` 표기(차단 패턴 비매치 실측)로 구성된 이유다. 강제 강도는 표면별로 다르다: 에이전트 Edit/Write·게시 명령은 PreToolUse 훅이 차단하고, commit-msg 훅은 경고만 남긴다 — 경고여도 박제 자체가 계약 위반이므로 표기를 고쳐 커밋한다:
 
 - 라운드: `r{N}` (예: r3).
 - finding: bundle 첫 글자 소문자 `{c|d|g|m}{n}` — Correctness/Design/Regression/Maintainability 순서의 축약이며 Regression은 `g`를 쓴다 (`r`은 라운드와 충돌). MAX 세부 관점을 지칭할 때는 소문자 풀네임을 그대로 쓴다 (예: security-2가 아니라 자연어 서술).

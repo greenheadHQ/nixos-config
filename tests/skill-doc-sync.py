@@ -474,9 +474,35 @@ def check_capability_profile() -> None:
         raise CheckFailure("\n".join(details))
 
 
+TIER_WARNING_SIGNATURE = "'service tier .*(not advertised|omitted)'"
+
+
+def check_tier_warning_contract() -> None:
+    # tier 무시 감지(#1260)는 정책 정본(arbiter-scaling)과 수집 바인딩(for_plan·audit)에
+    # 분산된 문서 계약이다 — 시그니처 정규식 사본과 바인딩 참조가 함께 유지되는지 고정한다.
+    details = []
+    arbiter_text = read_text(ARBITER_SCALING)
+    sig_count = arbiter_text.count(TIER_WARNING_SIGNATURE)
+    if sig_count != 2:
+        details.append(
+            f"{ARBITER_SCALING}: tier omit signature grep copies expected 2 "
+            f"(detect + print), got {sig_count}"
+        )
+    if "tier 무시 감지" not in arbiter_text:
+        details.append(f"{ARBITER_SCALING}: missing 'tier 무시 감지' policy section")
+    for path in (_RUN_DA_DIR / "modes/for_plan.md", _RUN_DA_DIR / "modes/audit.md"):
+        if "tier 무시 감지" not in read_text(path):
+            details.append(
+                f"{path}: missing collection binding reference to 'tier 무시 감지'"
+            )
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
 def main() -> int:
     checks = (
         ("review profile efforts", check_profile_efforts),
+        ("tier warning contract", check_tier_warning_contract),
         ("codex command contract", check_codex_command_contract),
         ("user exec params", check_user_exec_params),
         ("exec override copies", check_exec_override_copies),
