@@ -140,7 +140,7 @@ exit "$rc"
 
 위 reviewer/Auditor 블록은 rc 캡처·영속화까지 포함한 완전한 발사 블록이다 — 결과 수집·검증 호출 지점은 [`../modes/for_plan.md`](../modes/for_plan.md) Step 3이 소유한다.
 
-rc 계약 (#1259): 캡처 순서·guard·성공 계약의 정본은 `using-codex-exec`의 "background 발사의 rc 계약"이다 — 여기는 run-da 로컬 바인딩만 소유한다: rc 영속화 경로는 `$DA_DIR/$UNIT.rc`(reviewer)·`$ARBITER_DIR/arbiter.rc`(Arbiter)이고, `.rc` 부재는 실패다 (발사 블록이 영속화 전에 죽었다는 뜻 — background 완료 알림의 exit code는 래핑 셸 rc이므로 판정에 쓰지 않는다).
+rc 계약 (#1259): 캡처 순서·guard·성공 계약의 정본은 `using-codex-exec`의 "background 발사의 rc 계약"이다 — 여기는 run-da 로컬 바인딩만 소유한다: rc 영속화 경로는 `$DA_DIR/$UNIT.rc`(reviewer)·`$ARBITER_DIR/arbiter.rc`(Arbiter)이고, `.rc` 부재는 실패다 (발사 블록이 영속화 전에 죽었다는 뜻 — background 완료 알림의 exit code는 래핑 셸 rc이므로 판정에 쓰지 않는다). 캡처·guard 로직은 reviewer tail과 Arbiter 수집 블록 두 사본이 문자 수준으로 동일해야 한다 — 각 블록이 단일 셸 호출로 self-contained해야 해서 참조로 대체할 수 없다 (조립 루프 복제와 같은 이유).
 
 Arbiter (strong profile):
 
@@ -238,17 +238,17 @@ cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-super
   2>"$ARBITER_DIR/arbiter-stderr.log"
 
 # 4. 결과 수집 — rc + 빈 파일 모두 확인 (ARBITER_DIR이 다음 호출에서 유실되므로 같은 호출에서 처리)
-pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 (rc 계약 — 위 reviewer 블록과 동일 바인딩)
-_EC="${pipe_rcs[2]}"
-[ -n "$_EC" ] && [ -n "${pipe_rcs[1]}" ] || { echo "ARBITER_FAILED: rc capture failed dir=$ARBITER_DIR"; exit 1; }
-[ "${pipe_rcs[1]}" = "0" ] || _EC="${pipe_rcs[1]}"
-printf '%s' "$_EC" > "$ARBITER_DIR/arbiter.rc"
-if [ $_EC -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then
+pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 — 다음 명령이 리셋한다
+rc="${pipe_rcs[2]}"            # codex의 rc (zsh 1-base)
+[ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "ARBITER_FAILED: rc capture failed dir=$ARBITER_DIR"; exit 1; }
+[ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"
+printf '%s' "$rc" > "$ARBITER_DIR/arbiter.rc"
+if [ "$rc" -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then
   _RS=$([ ! -f "$ARBITER_DIR/arbiter-result.md" ] && echo 'missing' || ([ ! -s "$ARBITER_DIR/arbiter-result.md" ] && echo 'empty' || echo 'present-but-exit-failed'))
-  echo "ARBITER_FAILED: exit=$_EC result=$_RS dir=$ARBITER_DIR"
+  echo "ARBITER_FAILED: exit=$rc result=$_RS dir=$ARBITER_DIR"
   echo "--- stderr ---"
   cat "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null
-  [ "$_EC" -ne 0 ] && exit "$_EC" || exit 1  # 원 rc 보존 (rc=0인데 빈 파일이면 1)
+  [ "$rc" -ne 0 ] && exit "$rc" || exit 1  # 원 rc 보존 (rc=0인데 빈 파일이면 1)
 else
   cat "$ARBITER_DIR/arbiter-result.md"
 fi

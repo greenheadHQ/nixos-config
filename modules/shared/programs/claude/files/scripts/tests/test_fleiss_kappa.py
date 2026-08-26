@@ -12,6 +12,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 
 def _harness_path():
     tests_dir = os.path.dirname(os.path.abspath(__file__))
@@ -97,8 +99,8 @@ def _reviewer_finding_block(idx=1, **overrides):
     return "\n".join(lines)
 
 
-def test_validate_reviewer_contract(tmp_path):
-    """reviewer 출력 검증기 (#1259) — 빈/절단/placeholder 산출이 성공 집계되는 경로 차단."""
+def _reviewer_cases():
+    """reviewer 출력 검증기 케이스 (#1259) — (이름, 내용, 기대 status, 기대 오류 부분 문자열|None)."""
     cases = {
         # (내용, 기대 status, 기대 위반 부분 문자열 또는 None)
         "clear.md": ("[Correctness]: CLEAR", "clear", None),
@@ -220,24 +222,40 @@ def test_validate_reviewer_contract(tmp_path):
             "enum 밖 값",
         ),
     }
-    paths = []
-    for name, (content, _, _) in cases.items():
-        p = tmp_path / name
-        p.write_text(content, encoding="utf-8")
-        paths.append(str(p))
-    result = _run_harness("--validate-reviewer", *paths)
+    return [(name, *spec) for name, spec in cases.items()]
+
+
+@pytest.mark.parametrize(
+    "name,content,want_status,want_error",
+    _reviewer_cases(),
+    ids=[c[0] for c in _reviewer_cases()],
+)
+def test_validate_reviewer_contract(tmp_path, name, content, want_status, want_error):
+    """reviewer 출력 검증기 (#1259) — 케이스별 독립 노드 (한 실패가 나머지를 가리지 않는다)."""
+    p = tmp_path / name
+    p.write_text(content, encoding="utf-8")
+    result = _run_harness("--validate-reviewer", str(p))
     report = json.loads(result.stdout)
-    by_name = {f["path"].rsplit("/", 1)[-1]: f for f in report["files"]}
-    for name, (_, want_status, want_error) in cases.items():
-        entry = by_name[name]
-        assert entry["status"] == want_status, (name, entry)
-        if want_error is None:
-            assert entry["ok"], (name, entry)
-        else:
-            assert not entry["ok"] and any(
-                want_error in v for v in entry["format_errors"]
-            ), (name, entry)
-    assert result.returncode == 1  # 위반 파일이 있으므로 전체 비0
+    entry = report["files"][0]
+    assert entry["status"] == want_status, (name, entry)
+    if want_error is None:
+        assert entry["ok"] and result.returncode == 0, (name, entry)
+    else:
+        assert not entry["ok"] and result.returncode == 1 and any(
+            want_error in v for v in entry["format_errors"]
+        ), (name, entry)
+
+
+def test_validate_reviewer_aggregates_multiple_files(tmp_path):
+    """여러 파일 집계 — 하나라도 위반이면 전체 비0 (집계 동작 전용 검증)."""
+    ok_file = tmp_path / "ok.md"
+    ok_file.write_text("[Correctness]: CLEAR", encoding="utf-8")
+    bad_file = tmp_path / "bad.md"
+    bad_file.write_text("", encoding="utf-8")
+    result = _run_harness("--validate-reviewer", str(ok_file), str(bad_file))
+    report = json.loads(result.stdout)
+    assert len(report["files"]) == 2
+    assert not report["ok"] and result.returncode == 1
 
 
 def test_validate_reviewer_unit_binding(tmp_path):

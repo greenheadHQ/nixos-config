@@ -431,6 +431,10 @@ def load_validated_verdict_entries(markdown_path: Path):
     # blockquote 인용 줄은 구조 파싱에서 제외한다 — 인용된 완전한 verdict 형식이
     # 실제 산출로 소비되는 injection 경로 차단 (#1259).
     text = re.sub(r"^[ \t]*>.*$", "", text, flags=re.M)
+    # 사람용 섹션·근거 탐색은 fence를 마스킹한 별도 view에서 수행한다 — fenced
+    # PoC·재인용 속 헤더·라벨이 실제 근거 블록을 대신하는 경로 차단. VERDICT_JSON
+    # 블록 자체는 ```json fence이므로 원문 text에서 계속 파싱한다.
+    rationale_view = re.sub(r"```.*?```", "```masked```", text, flags=re.S)
     entries = {}
     duplicated_ids = set()
     malformed = 0
@@ -440,14 +444,15 @@ def load_validated_verdict_entries(markdown_path: Path):
     # 본문에 인라인 인용된 marker(계약 자체를 리뷰하는 정상 산출)를 오차단하고,
     # orphan start/end가 상쇄되는 손상은 놓친다. end 단독 인용은 판정하지 않는다.
     match_spans = [m.span() for m in VERDICT_JSON_PATTERN.finditer(text)]
-    for marker in ("start", "end"):
-        for sm in re.finditer(rf"^<!-- verdict-json:{marker} -->", text, re.M):
-            if not any(s <= sm.start() < e for s, e in match_spans):
-                print(
-                    f"warning: orphan verdict-json {marker} marker (truncated/corrupted block?) in {markdown_path}",
-                    file=sys.stderr,
-                )
-                malformed += 1
+    # orphan 판정은 start marker만 — 절단은 언제나 짝 없는 start를 남기고, end 단독은
+    # delimiter 계약을 인용·예시하는 정상 산출에서 line-start로도 나타난다 (#1259).
+    for sm in re.finditer(r"^<!-- verdict-json:start -->", text, re.M):
+        if not any(s <= sm.start() < e for s, e in match_spans):
+            print(
+                f"warning: orphan verdict-json start marker (truncated block?) in {markdown_path}",
+                file=sys.stderr,
+            )
+            malformed += 1
     for match in VERDICT_JSON_PATTERN.finditer(text):
         raw = match.group("body")
         try:
@@ -492,7 +497,7 @@ def load_validated_verdict_entries(markdown_path: Path):
             duplicated_ids.add(finding_id)
             malformed += 1
             continue
-        rationale_violation = arbiter_rationale_violation(text, finding_id, entry["verdict"])
+        rationale_violation = arbiter_rationale_violation(rationale_view, finding_id, entry["verdict"])
         if rationale_violation:
             print(
                 f"warning: semantic malformed VERDICT_JSON ({finding_id}) in "
