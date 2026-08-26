@@ -9,9 +9,10 @@ vote-shape·stability_status·kappa 집계)는 실사용 0건으로 제거됐고
 검증기 책임만 남았다 — 세션 scope에 단일 파일로 프로비저닝되는 계약이라 경로·이름은
 유지한다 (개명하면 배포 체인과 HELPER_PATH 계약이 함께 움직여야 한다).
 
-Each file must contain VERDICT_JSON blocks whose schema_version matches
-LIVE_SCHEMA_VERSION exactly, with per-finding verdicts as defined in
-arbiter-prompt.md "출력 형식" section.
+두 검증 모드가 있다 — 산출 주체별 분리 (#1259):
+  --validate-only     Arbiter 결과 (VERDICT_JSON blocks, schema_version은
+                      LIVE_SCHEMA_VERSION과 정확히 일치. arbiter-prompt.md "출력 형식")
+  --validate-reviewer reviewer 결과 (da-domains.md "출력 형식" — CLEAR/VIOLATION/발견)
 
 Usage:
     # Arbiter caller 검증 (파일별 schema/manifest 검사 결과 JSON,
@@ -22,8 +23,9 @@ Usage:
     # 건수 대조, 필수 라벨·ID 문법·placeholder·절단 판정)
     fleiss-kappa.py --validate-reviewer <unit-result.md>...
 
-`--expect-findings`는 필수 인자다 — 생략은 검증 없음이 아니라 인자 오류다.
-manifest 없는 수집이 성공으로 처리되면 finding 누락이 그대로 소비되어 조기 수렴으로 샌다.
+`--expect-findings`는 --validate-only에서 필수 인자다 — 생략은 검증 없음이 아니라 인자
+오류다. manifest 없는 수집이 성공으로 처리되면 finding 누락이 그대로 소비되어 조기 수렴으로
+샌다. --validate-reviewer는 manifest 없이 파일별 독립 검증한다.
 
 Output: JSON on stdout. See main() for schema.
 """
@@ -171,9 +173,6 @@ REVIEWER_VIOLATION_HEADER = re.compile(r"위반 상태\s*[:：]\s*VIOLATION")
 REVIEWER_REQUIRED_LABELS = ("ID", "세부 관점", "위치", "문제", "근거", "심각도", "권장 수정")
 # VIOLATION 보고의 필수 라벨 (da-domains.md 정본 형식과 동기화)
 REVIEWER_VIOLATION_LABELS = ("유형", "이유", "필요 작업", "정리 대상", "로컬 정리 필요")
-# producer(reviewer) 기본형 — 라운드 suffix 불허. suffix 부여 주체는 메인이므로
-# (da-domains.md 정본) reviewer 원본에 suffix가 있으면 fresh 위반 신호다.
-REVIEWER_BASE_ID_PATTERN = re.compile(r"[A-Za-z_]+-[0-9]+")
 
 
 def _label_value(block, label):
@@ -203,12 +202,16 @@ def validate_reviewer_file(path):
     stripped = text.strip()
     if not stripped:
         return "malformed", 0, ["빈 결과 파일"]
+    # fenced code block은 구조 탐색에서 제외한다 — 본문 PoC·인용 안의 라벨·헤더
+    # 형태가 파서를 조작하는 입력 기반 injection 경로 차단 (#1259).
+    text = re.sub(r"```.*?```", "```(fence 제외)```", text, flags=re.S)
+    # 형식 판정은 파일의 첫 비공백 줄(최상위 결과 헤더)에서만 한다 — 본문에 인용된
+    # CLEAR·위반 헤더·건수 문구가 상태를 덮어쓰거나(injection) 정상 결과를 신호
+    # 공존으로 오차단하는 경로를 모두 차단한다 (#1259).
+    first_line = next(line for line in text.splitlines() if line.strip())
     is_clear = bool(REVIEWER_CLEAR_PATTERN.fullmatch(stripped))
-    has_violation = bool(REVIEWER_VIOLATION_HEADER.search(text))
-    count_match = REVIEWER_COUNT_PATTERN.search(text)
-    signals = sum((is_clear, has_violation, bool(count_match)))
-    if signals > 1:
-        return "malformed", 0, ["형식 신호 공존 (CLEAR/VIOLATION/발견 헤더 중 2개 이상) — 판별 불가"]
+    has_violation = bool(REVIEWER_VIOLATION_HEADER.search(first_line))
+    count_match = REVIEWER_COUNT_PATTERN.search(first_line)
     if is_clear:
         return "clear", 0, []
     if has_violation:
@@ -257,7 +260,7 @@ def validate_reviewer_file(path):
                 # 결과 내 중복 ID — Arbiter의 ID별 일대일 판정과 manifest 대조를 깨뜨린다
                 violations.append(f"블록 {i}: 결과 내 중복 finding ID: {raw_id!r}")
             seen_ids.add(raw_id)
-        if raw_id and not REVIEWER_BASE_ID_PATTERN.fullmatch(raw_id):
+        if raw_id and not SAFE_FINDING_ID_PATTERN.fullmatch(raw_id):
             violations.append(
                 f"블록 {i}: finding ID 문법 위반 (reviewer 기본형 {{PREFIX}}-{{순번}} 한정 — "
                 f"라운드 suffix는 메인 부여): {raw_id!r}"
@@ -336,19 +339,18 @@ def resolve_expected_ids(args):
     return set(raw_ids), None
 
 
-# finding ID의 shell-safe 문법 — `{prefix}-{순번}` + 선택적 라운드 suffix `-r{라운드}`.
-# prefix가 bundle인지 subdomain인지는 여기서 강제하지 않는다 (reviewer bundle은
-# `Correctness-1`, exhaustive 경로는 `SECURITY-2` 같은 subdomain prefix를 쓴다).
-# 라운드 suffix는 다중 라운드 문맥에서 메인 에이전트가 부여하는 구분 축이다 —
-# 과거에 라운드 구분을 위한 자연 표기가 문법 위반이 되어 ID 개명으로 검증을
-# 우회한 사례(#1259)가 도입 근거다. 이 검사의 목적은 namespace 검증이 아니라,
-# reviewer 산출 ID가 --expect-findings 셸 인자로 전달되기 전에 안전한 문자 집합만
-# 통과시키는 것이다 (da-domains.md의 ID 형식 규약은 문서 계약으로 별도 유지).
-SAFE_FINDING_ID_PATTERN = re.compile(r"[A-Za-z_]+-[0-9]+(?:-r[0-9]+)?")
+# finding ID의 shell-safe 문법 — `{prefix}-{순번}` (기본형). reviewer 원본과
+# Arbiter 입력·manifest는 기본형만 적법하다 — 라운드 suffix(`-r{라운드}`)는 메인이
+# 라운드 경계를 넘는 기록·서술에만 부여하는 축이라 live 검증 경로에는 나타나지
+# 않는다 (da-domains.md 정본. 확장형의 기계 소비자는 세션 분석기뿐이다).
+# prefix가 bundle인지 subdomain인지는 여기서 강제하지 않는다. 이 검사의 목적은
+# namespace 검증이 아니라, reviewer 산출 ID가 --expect-findings 셸 인자로 전달되기
+# 전에 안전한 문자 집합만 통과시키는 것이다.
+SAFE_FINDING_ID_PATTERN = re.compile(r"[A-Za-z_]+-[0-9]+")
 
-# 사람용 블록의 근거 라벨 값에 대한 placeholder 판정 (#1259 — Workflow 경로 실측에서
-# 필수 필드가 리터럴 "test"인 산출이 성공 집계된 사고). 값 전체가 토큰 하나로
-# 구성되거나 최소 길이 미달이면 미완 산출로 거부한다.
+# 사람용 블록의 근거 라벨 값에 대한 placeholder 판정 (#1259 — 실측에서 필수 필드가
+# 리터럴 "test"인 산출이 성공 집계된 사고). 값의 유일 토큰 집합이 sentinel뿐이거나
+# sentinel로 시작하는 미완 표기를 거부한다 (길이 기준 없음 — 짧은 레퍼런스는 유효).
 PLACEHOLDER_TOKENS = frozenset({"test", "todo", "placeholder", "tbd", "..."})
 
 
@@ -401,13 +403,14 @@ def load_validated_verdict_entries(markdown_path: Path):
     # 본문에 인라인 인용된 marker(계약 자체를 리뷰하는 정상 산출)를 오차단하고,
     # orphan start/end가 상쇄되는 손상은 놓친다. end 단독 인용은 판정하지 않는다.
     match_spans = [m.span() for m in VERDICT_JSON_PATTERN.finditer(text)]
-    for sm in re.finditer(r"^<!-- verdict-json:start -->", text, re.M):
-        if not any(s <= sm.start() < e for s, e in match_spans):
-            print(
-                f"warning: orphan verdict-json start marker (truncated block?) in {markdown_path}",
-                file=sys.stderr,
-            )
-            malformed += 1
+    for marker in ("start", "end"):
+        for sm in re.finditer(rf"^<!-- verdict-json:{marker} -->", text, re.M):
+            if not any(s <= sm.start() < e for s, e in match_spans):
+                print(
+                    f"warning: orphan verdict-json {marker} marker (truncated/corrupted block?) in {markdown_path}",
+                    file=sys.stderr,
+                )
+                malformed += 1
     for match in VERDICT_JSON_PATTERN.finditer(text):
         raw = match.group("body")
         try:
@@ -452,7 +455,7 @@ def load_validated_verdict_entries(markdown_path: Path):
             duplicated_ids.add(finding_id)
             malformed += 1
             continue
-        rationale_violation = arbiter_rationale_violation(text, finding_id)
+        rationale_violation = arbiter_rationale_violation(text, finding_id, entry["verdict"])
         if rationale_violation:
             print(
                 f"warning: semantic malformed VERDICT_JSON ({finding_id}) in "
@@ -467,23 +470,28 @@ def load_validated_verdict_entries(markdown_path: Path):
     return entries, malformed
 
 
-def arbiter_rationale_violation(text, finding_id):
+def arbiter_rationale_violation(text, finding_id, verdict):
     """finding의 사람용 블록 근거 라벨을 검사한다 (None = 통과, str = 위반 사유).
 
     VERDICT_JSON enum 필드의 placeholder는 기존 enum 검증이 차단하지만, 사람용
     블록의 근거가 비어 있거나 리터럴 placeholder인 미완 산출은 JSON만으로는
     걸러지지 않는다 (#1259 실측 — 자유 서술 필드가 전부 "test"인데 성공 집계).
+    섹션은 entry의 verdict와 일치하는 헤더에 일대일 결속한다 — 입력 재인용
+    섹션이나 예시 인용이 실제 verdict 블록의 근거 누락을 대신하는 우회 차단.
     """
-    section = re.search(
-        rf"^###\s+{re.escape(finding_id)}\b.*?(?=^###\s|\Z)", text, re.M | re.S
-    )
-    if not section:
-        return "사람용 블록(### finding 섹션) 누락"
-    m = re.search(r"\*\*근거\*\*\s*[:：]\s*(.+)", section.group(0))
-    if not m:
-        return "사람용 블록에 근거 라벨 누락"
-    if is_placeholder_value(m.group(1)):
-        return f"근거 값이 placeholder/미완: {m.group(1).strip()[:40]!r}"
+    sections = list(re.finditer(
+        rf"^###\s+{re.escape(finding_id)}\s*[—\-]\s*{re.escape(verdict)}\s*$.*?(?=^###\s|\Z)",
+        text, re.M | re.S,
+    ))
+    if not sections:
+        return "사람용 블록(### finding — verdict 섹션) 누락"
+    if len(sections) > 1:
+        return "동일 finding의 사람용 섹션 중복 — 결속 판정 불가"
+    value = _label_value(sections[0].group(0), "근거")
+    if value is None:
+        return "사람용 블록에 근거 라벨 누락/빈 값"
+    if is_placeholder_value(value):
+        return f"근거 값이 placeholder/미완: {value.strip()[:40]!r}"
     return None
 
 
@@ -512,10 +520,10 @@ def main():
         ),
     )
     parser.add_argument(
-        "arbiter_files",
+        "result_files",
         nargs="+",
         type=Path,
-        help="Arbiter result markdown files containing VERDICT_JSON blocks",
+        help="검증 대상 결과 파일 — --validate-only는 Arbiter 결과, --validate-reviewer는 reviewer 결과",
     )
     parser.add_argument(
         "--validate-only",
@@ -551,7 +559,7 @@ def main():
         if args.expect_findings:
             print("error: --expect-findings는 --validate-only 전용이다", file=sys.stderr)
             return 1
-        return run_reviewer_validation(args.arbiter_files)
+        return run_reviewer_validation(args.result_files)
 
     if not args.validate_only:
         # 과거 N=3 vote-shape 집계 CLI와의 호출 혼동을 명시적으로 거부한다 —
@@ -568,7 +576,7 @@ def main():
         print(f"error: {arg_error}", file=sys.stderr)
         return 1
 
-    parsed = parse_and_check_manifest(args.arbiter_files, expected_ids)
+    parsed = parse_and_check_manifest(args.result_files, expected_ids)
 
     report = {"files": [], "ok": True}
     for item in parsed:

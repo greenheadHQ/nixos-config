@@ -130,11 +130,15 @@ cat "$DA_DIR/$UNIT.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbo
   -o "$DA_DIR/$UNIT-result.md" - 2>"$DA_DIR/$UNIT-stderr.log"
 pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 — 다음 명령이 리셋한다
 rc="${pipe_rcs[2]}"            # codex의 rc (zsh 1-base)
-[ -n "$rc" ] || rc=1           # rc 캡처 실패는 실패로 (SSOT guard)
+# 캡처 실패(빈 값)는 .rc 생성 전 즉시 실패 — 셸/배열 불일치로 빈 .rc가 계약을
+# 무력화한 실측이 guard의 도입 근거다 (using-codex-exec 정본과 동일 순서)
+[ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "UNIT_FAILED: rc capture failed unit=$UNIT"; exit 1; }
 [ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"  # 좌측 cat 실패 반영 — prompt 유실 시 codex가 빈 stdin으로 0을 반환할 수 있다
 printf '%s' "$rc" > "$DA_DIR/$UNIT.rc"
 exit "$rc"
 ```
+
+위 Arbiter 블록은 guard·발사 조각이다 — rc 캡처·결과 수집까지 포함한 완전한 발사 블록은 "실행 절차" 절이 정본이며, 이 조각만 단독 복사해 발사하지 않는다.
 
 rc 계약 (#1259): 캡처 순서·guard·성공 계약의 정본은 `using-codex-exec`의 "background 발사의 rc 계약"이다 — 여기는 run-da 로컬 바인딩만 소유한다: rc 영속화 경로는 `$DA_DIR/$UNIT.rc`(reviewer)·`$ARBITER_DIR/arbiter.rc`(Arbiter)이고, `.rc` 부재는 실패다 (발사 블록이 영속화 전에 죽었다는 뜻 — background 완료 알림의 exit code는 래핑 셸 rc이므로 판정에 쓰지 않는다).
 
@@ -234,7 +238,7 @@ cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-super
 # 4. 결과 수집 — rc + 빈 파일 모두 확인 (ARBITER_DIR이 다음 호출에서 유실되므로 같은 호출에서 처리)
 pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 (rc 계약 — 위 reviewer 블록과 동일 바인딩)
 _EC="${pipe_rcs[2]}"
-[ -n "$_EC" ] || _EC=1
+[ -n "$_EC" ] && [ -n "${pipe_rcs[1]}" ] || { echo "ARBITER_FAILED: rc capture failed dir=$ARBITER_DIR"; exit 1; }
 [ "${pipe_rcs[1]}" = "0" ] || _EC="${pipe_rcs[1]}"
 printf '%s' "$_EC" > "$ARBITER_DIR/arbiter.rc"
 if [ $_EC -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then

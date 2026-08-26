@@ -279,15 +279,17 @@ def test_arbiter_missing_rationale_is_malformed(tmp_path):
     assert result.returncode == 1
 
 
-def test_arbiter_round_suffix_finding_id_is_valid(tmp_path):
-    # 메인이 부여한 suffix ID는 Arbiter·셸 소비자 검증에서 적법 (확장형 패턴).
+def test_arbiter_round_suffix_finding_id_is_rejected(tmp_path):
+    # live 검증 경로(Arbiter 입력·manifest)는 기본형 ID만 적법하다 — 라운드 suffix는
+    # 메인이 라운드 경계를 넘는 기록·서술에만 부여하는 축이고, 기계 소비자는 세션
+    # 분석기뿐이다 (da-domains.md 정본).
     payload = _verdict_payload(finding_id="Correctness-1-r2")
     p = tmp_path / "arb.md"
     p.write_text(_verdict_block(payload), encoding="utf-8")
     result = _run_harness("--validate-only", "--expect-findings", "Correctness-1-r2", str(p))
     report = json.loads(result.stdout)
-    assert report["files"][0]["ok"], report
-    assert result.returncode == 0
+    assert report["files"][0]["malformed_count"] >= 1, report
+    assert result.returncode == 1
 
 
 def test_harness_exists():
