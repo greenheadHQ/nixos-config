@@ -57,8 +57,9 @@ def read_text(path: Path) -> str:
         raise CheckFailure(f"missing file: {path}") from exc
 
 
-def extract_runtime_profiles() -> dict[str, dict[str, str]]:
-    # 실행 프로파일 4축 표의 effort 축 행에서 기본값 셀 "`<effort>` (<profile>)"을 추출한다.
+def extract_runtime_profile_efforts() -> dict[str, dict[str, str]]:
+    # 실행 프로파일 4축 표의 effort 축 행에서 기본값 셀 "`<effort>` (<profile>)"만 추출한다
+    # (backend·tier 축은 이 검사의 대상이 아니다 — 이름이 말하는 책임은 effort 기본값 동기화다).
     profiles = {}
     pattern = re.compile(
         r"^\|\s*(?:reviewer/auditor|Arbiter) effort\s*\|[^|]*\|\s*"
@@ -99,15 +100,15 @@ def extract_arbiter_profile_efforts() -> dict[str, dict[str, str]]:
 
 
 def check_profile_efforts() -> None:
-    runtime_profiles = extract_runtime_profiles()
-    arbiter_profiles = extract_arbiter_profile_efforts()
+    runtime_profile_efforts = extract_runtime_profile_efforts()
+    arbiter_profile_efforts = extract_arbiter_profile_efforts()
 
-    if runtime_profiles != arbiter_profiles:
+    if runtime_profile_efforts != arbiter_profile_efforts:
         details = ["review profile effort mismatch:"]
         for profile in sorted(EXPECTED_PROFILES):
             details.append(
-                f"  {profile}: {RUNTIME_MAPPING}={runtime_profiles[profile]}, "
-                f"{ARBITER_SCALING}={arbiter_profiles[profile]}"
+                f"  {profile}: {RUNTIME_MAPPING}={runtime_profile_efforts[profile]}, "
+                f"{ARBITER_SCALING}={arbiter_profile_efforts[profile]}"
             )
         raise CheckFailure("\n".join(details))
 
