@@ -206,7 +206,10 @@ def _header_unit_name(line):
 
 
 def validate_reviewer_file(path, expected_unit=None):
-    """reviewer 결과 파일 하나를 검증한다 — (status, findings_count, violations).
+    """reviewer 결과 파일 하나를 검증한다 — (status, findings_count, violations, validated_ids).
+
+    validated_ids는 문법 검증을 통과한 finding ID 목록이다 — caller는 원본 재파싱
+    없이 이 기계 출력만으로 --expect-findings manifest를 조립한다.
 
     status: "clear" | "violation" | "findings" | "malformed".
     Arbiter 검증(--validate-only)과 산출 주체가 달라 분리된 검증기다 (#1259) —
@@ -232,6 +235,10 @@ def validate_reviewer_file(path, expected_unit=None):
     is_clear = bool(REVIEWER_CLEAR_PATTERN.fullmatch(stripped))
     has_violation = bool(REVIEWER_VIOLATION_HEADER.search(first_line))
     count_match = REVIEWER_COUNT_PATTERN.search(first_line)
+    if has_violation and count_match:
+        # 첫 줄에 두 형식 신호가 공존 — docstring의 상호 배타 계약 (혼합 헤더가
+        # 라벨만 갖춰 적법 VIOLATION으로 통과하는 경로 차단)
+        return "malformed", 0, ["형식 신호 공존 (첫 줄에 VIOLATION 헤더와 발견 건수) — 판별 불가"], []
     # unit 결속 (#1259) — 배정 unit과 결과 헤더의 이름 대조. 다른 unit의 CLEAR가
     # 이 unit의 성공으로 집계되면 요청한 관점이 실행되지 않았는데 수렴에 포함된다.
     if expected_unit:
@@ -406,6 +413,10 @@ def is_placeholder_value(value):
     stripped = value.strip().strip("`\"'.,;:-— ").lower()
     if not stripped:
         return True
+    if stripped in {"n/a", "na", "없음"}:
+        # 자유 서술 필드(문제·근거·이유)에 복사된 템플릿 토큰 — VIOLATION의
+        # 필요 작업·정리 대상처럼 N/A가 적법한 필드는 이 함수를 거치지 않는다.
+        return True
     words = set(re.findall(r"[a-z가-힣]+", stripped))
     if words and words <= PLACEHOLDER_TOKENS:
         return True
@@ -460,7 +471,12 @@ def load_validated_verdict_entries(markdown_path: Path):
     match_spans = [m.span() for m in VERDICT_JSON_PATTERN.finditer(text)]
     # orphan 판정은 start marker만 — 절단은 언제나 짝 없는 start를 남기고, end 단독은
     # delimiter 계약을 인용·예시하는 정상 산출에서 line-start로도 나타난다 (#1259).
+    # 완전한 fence 안의 인용 marker는 제외한다 — 절단된 블록은 fence가 닫히지 않아
+    # fence span에 잡히지 않으므로 orphan 감지가 유지된다.
+    fence_spans = [m.span() for m in re.finditer(r"```.*?```", text, re.S)]
     for sm in re.finditer(r"^<!-- verdict-json:start -->", text, re.M):
+        if any(fs <= sm.start() < fe for fs, fe in fence_spans):
+            continue
         if not any(s <= sm.start() < e for s, e in match_spans):
             print(
                 f"warning: orphan verdict-json start marker (truncated block?) in {markdown_path}",

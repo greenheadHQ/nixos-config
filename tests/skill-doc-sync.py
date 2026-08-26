@@ -399,6 +399,8 @@ def check_rc_tail_contract() -> None:
     """
     targets = {
         Path("modules/shared/programs/claude/files/skills/using-codex-exec/SKILL.md"): 1,
+        Path("modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md"): 1,
+        Path("modules/shared/programs/claude/files/skills/using-codex-exec/references/patterns.md"): 1,
         ARBITER_SCALING: 2,
     }
     required = [

@@ -282,7 +282,10 @@ def test_validate_reviewer_unit_binding(tmp_path):
     )
     result2 = _run_harness("--validate-reviewer", "--expect-unit", "SECURITY", str(subdomain))
     assert json.loads(result2.stdout)["files"][0]["ok"]
-    # 치환된 정본 세 형식(발견·CLEAR·VIOLATION) 모두 unit 결속을 통과해야 한다
+
+
+def test_validate_reviewer_unit_binding_violation_form(tmp_path):
+    # 치환된 정본 VIOLATION 형식도 unit 결속을 통과해야 한다
     vio = tmp_path / "vio.md"
     vio.write_text(
         "## [Correctness] 위반 상태: VIOLATION\n\n"
@@ -290,14 +293,21 @@ def test_validate_reviewer_unit_binding(tmp_path):
         "- **필요 작업**: N/A\n- **정리 대상**: N/A\n- **로컬 정리 필요**: NO",
         encoding="utf-8",
     )
-    result3 = _run_harness("--validate-reviewer", "--expect-unit", "Correctness", str(vio))
-    entry3 = json.loads(result3.stdout)["files"][0]
-    assert entry3["status"] == "violation" and entry3["ok"], entry3
-    # 검증 통과 ID의 기계 출력 — caller manifest 조립의 유일 입력
-    entry_f = json.loads(
-        _run_harness("--validate-reviewer", "--expect-unit", "Correctness", str(right_findings)).stdout
+    result = _run_harness("--validate-reviewer", "--expect-unit", "Correctness", str(vio))
+    entry = json.loads(result.stdout)["files"][0]
+    assert entry["status"] == "violation" and entry["ok"], entry
+
+
+def test_validate_reviewer_reports_machine_finding_ids(tmp_path):
+    # 검증 통과 ID의 기계 출력 — caller manifest 조립의 유일 입력 (원본 재파싱 금지)
+    p = tmp_path / "r.md"
+    p.write_text(
+        "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(), encoding="utf-8"
+    )
+    entry = json.loads(
+        _run_harness("--validate-reviewer", "--expect-unit", "Correctness", str(p)).stdout
     )["files"][0]
-    assert entry_f["finding_ids"] == ["Correctness-1"], entry_f
+    assert entry["finding_ids"] == ["Correctness-1"], entry
 
 
 def test_validate_reviewer_rejects_expect_findings_flag(tmp_path):
