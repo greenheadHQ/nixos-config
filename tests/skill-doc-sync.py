@@ -367,14 +367,24 @@ def check_arbiter_assembly_includes_output_format() -> None:
         raise CheckFailure(f"{ARBITER_PROMPT}: '프롬프트 조립' 섹션 누락")
     body = assembly.group(0)
     details = []
-    if body.count('"출력 형식" 섹션 전체') < 2:
-        details.append(
-            f"{ARBITER_PROMPT}: 조립 템플릿(for_pr·for_plan)에 '출력 형식' 섹션 포함 지시가 2곳 미만"
-        )
-    if body.count("누락도 추가도 금지") < 2:
-        details.append(
-            f"{ARBITER_PROMPT}: 조립 템플릿에 finding manifest 완전성 지시가 2곳 미만"
-        )
+    # 전역 카운트는 한 템플릿에 지시가 2회 있고 다른 템플릿에 0회여도 통과한다 —
+    # 모드 섹션별로 분리해 각각 검사한다 (PR #1271 리뷰).
+    sections = {}
+    for mode in ("for_pr", "for_plan"):
+        m = re.search(rf"### {mode} 모드.*?(?=\n### |\Z)", body, re.DOTALL)
+        if not m:
+            details.append(f"{ARBITER_PROMPT}: 조립 템플릿에 '### {mode} 모드' 섹션 누락")
+        else:
+            sections[mode] = m.group(0)
+    for mode, sec in sections.items():
+        if '"출력 형식" 섹션 전체' not in sec:
+            details.append(
+                f"{ARBITER_PROMPT}: {mode} 조립 템플릿에 '출력 형식' 섹션 포함 지시 누락"
+            )
+        if "누락도 추가도 금지" not in sec:
+            details.append(
+                f"{ARBITER_PROMPT}: {mode} 조립 템플릿에 finding manifest 완전성 지시 누락"
+            )
     if details:
         raise CheckFailure("\n".join(details))
 

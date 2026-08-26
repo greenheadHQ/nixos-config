@@ -290,7 +290,7 @@ Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아�
 
 `request_user_input`은 codex 0.106+에서 default mode 활성화 가능 (`default_mode_request_user_input=true`). 본 nixos-config는 이를 충족하므로 Codex 세션은 지원 런타임으로 간주한다 — Codex 세션 자체는 본 섹션 자동 전이 적용 대상이 아니다.
 
-- NEEDS_MORE_INFO 항목은 CONFIRMED_ISSUE로 자동 승격한다 (텍스트 보고만으로는 상태 전이가 불가능하므로). 단 semantic malformed는 이 자동 승격 대상이 아니다 — 위 "Semantic malformed" 분류를 따른다 (전이는 [`protocol.md`](protocol.md) caller 검증이 정본). 승격 후에도 `remediation_scope` 전이표를 그대로 적용한다.
+- NEEDS_MORE_INFO 항목은 CONFIRMED_ISSUE로 자동 승격한다 (텍스트 보고만으로는 상태 전이가 불가능하므로). 이 승격은 메인 에이전트의 라우팅 상태 전이이며 VERDICT_JSON을 재작성하거나 재검증하지 않는다 — caller 검증은 Arbiter 원출력(NEEDS_MORE_INFO 조합)에 이미 통과했고, 승격 후 상태에 확정 verdict의 조합 규칙을 소급 적용하지 않는다. 단 semantic malformed는 이 자동 승격 대상이 아니다 — 위 "Semantic malformed" 분류를 따른다 (전이는 [`protocol.md`](protocol.md) caller 검증이 정본). 승격 후에도 `remediation_scope` 전이표를 그대로 적용한다.
 - CONFIRMED_ISSUE 중 `remediation_scope: FIX_NOW`는 동일하게 자동 수정한다. `REPLAN_REQUIRED`는 마스킹 게이트를 거쳐 이슈로 배출하고(배출 실패는 미해결), `UNCLEAR`는 질문 불가이므로 자동 FIX_NOW 간주 없이 미해결로 계산한다 ([`protocol.md`](protocol.md) "remediation scope" SSOT).
 - 에이전트가 SKIP을 제안하려는 상황에서 질문 도구 불가 → 자동 LITE 승격 (SKIP 확정은 사용자 승인 없이는 불가하므로).
 - 3회 반복 규칙 도달 시 질문 도구 불가 → 자동 수용 (지적대로 수정).
