@@ -33,7 +33,7 @@ Direct Codex 세션의 native fan-out lifecycle과 동시 발사 상한은 현�
 - slot 수의 출처: 광고 slot은 codex 고정값이 아니라 `~/.codex/config.toml`의 `[agents].max_concurrent_threads_per_session`(root 제외 값)에서 온다. 본 repo template이 16으로 선언하므로 total 17이며, 키가 없는 순정 설정에서는 total 4(child 3)다. 위 실측치를 다른 머신·순정 설정의 근거로 재사용하지 않고, 세션마다 자기 표면의 광고 문장을 1차 근거로 삼는다 (active-session gate와 동일 원칙).
 - 재검증: `./scripts/ai/verify-ai-compat.sh`의 "Codex CLI-default native capability probe" 검사가 sanitized tool-name set과 slot source만 파싱해 profile을 판정한다 (raw prompt 저장/출력 금지, `surface_scope=cli-default` 명시, unknown이면 fail). Codex pin 갱신 시 CLI-default 결과와 active-session 결과를 구분해 기록한다.
 
-plain-text 재개 ≠ 질문 도구 — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 제안 승인, 3회 반복 판정, 라운드 한계효용 저하, 5회 라운드 초과, fresh 모드 반복 감지, remediation_scope UNCLEAR 판단)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 자동 상태 전이 경로(arbiter-scaling.md)로 처리한다.
+plain-text 재개 ≠ 질문 도구 — 일반 채팅 "질문 후 다음 턴 재개"는 blocking tool call이 아니므로 질문 도구로 간주하지 않는다. 질문 도구가 필수인 지점(SKIP 제안 승인, 3회 반복 판정, 라운드 한계효용 저하, outer round 상한 도달 — 질문 시점은 protocol.md "최대 라운드 수"의 기본/유효 상한과 위임 상태가 결정한다, fresh 모드 반복 감지, remediation_scope UNCLEAR 판단)에서 Codex 세션은 `request_user_input`을 호출하고, headless 세션은 stdin 입력 불가로 자동 상태 전이 경로(arbiter-scaling.md)로 처리한다.
 
 ## fan-out 진행 보고 규약
 
@@ -44,23 +44,32 @@ fan-out 진행 가시성의 정본은 이 절이다. 메인 에이전트는 완�
 - 이 보고는 sleep/poll 루프를 도입하는 근거가 아니다. 결과 수집은 위 런타임 매핑 표의 완료 이벤트, foreground 종료, 결과 파일 읽기 경로만 따른다.
 - headless serial foreground 경로는 백그라운드 완료 알림이 없으므로 각 subprocess 종료 직후 같은 카운트 형식으로 보고한다.
 
-review profile 매핑 (fan-out 대상 역할별, 사용자 지정 없을 때 기본값):
+## 실행 프로파일 (역할별 축 — 본 절이 정본, #1260)
 
-| profile | 대상 | 모델 선택 | codex exec effort |
-|---------|------|-----------|-------------------|
-| `strong` | Arbiter | 세션/런타임 기본 모델 상속 | `high` |
-| `standard` | reviewer / auditor | 세션/런타임 기본 모델 상속 | `medium` |
+실행 프로파일은 하나의 값이 아니라 네 축이다. 축별로 소유 역할·기본값·런타임별 주입 가능 여부가 다르다:
 
-사용자가 자연어로 실행 경로·effort를 지정하면 위 기본 profile보다 우선한다. 적용 범위는 해당 호출의 reviewer/auditor와 Arbiter 전체다 (effort는 Arbiter 강도 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 하한 정본).
+| 축 | 의미 | 기본값 | codex exec 주입 | Codex native 주입 | Claude 경로 주입 |
+|----|------|--------|------------------|-------------------|------------------|
+| 실행 backend | fan-out 오케스트레이터 (경로 선택) | 세션 유형별 기본 경로 (위 매핑 표) | — (경로 자체) | — | — |
+| reviewer/auditor effort | 검토 강도 | `medium` (standard) | `-c model_reasoning_effort=` | spawn 단위 설정 수단이 광고된 경우만 | 수단 없음 (세션 상속) |
+| Arbiter effort | 판정 강도 — 하한 `high`(strong)는 [`arbiter-scaling.md`](arbiter-scaling.md)가 정본, 본 표는 다른 축과의 관계만 소유 | `high` (strong) | 동일 | 동일 (부재 시 전이는 하한 절) | 수단 없음 (하한 절의 전이) |
+| service tier | API tier | 미지정 (런타임 기본) | `_DA_MODEL_TIER_OVERRIDES` | 수단 없음 | 수단 없음 |
 
-| 자연어 지정 (예) | 실행 경로 | effort / 모델 처리 |
-|----------|-----------|--------------------|
-| "codex로 (xhigh/high/medium 등 effort와 함께)" | codex exec | 지정된 reasoning effort를 reviewer/auditor와 Arbiter 전체에 적용 (Arbiter는 강도 하한 적용 후). 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
-| "Claude 서브에이전트로" | Claude Code `Agent` tool | Claude Code 세션 모델을 상속한다. 특정 모델명을 지정하지 않는다 |
+resolution 순서 (축별 독립 적용): ①현재 사용자 발화의 자연어 일회성 지정 > ②장기 선호 설정 파일([`../SKILL.md`](../SKILL.md) "장기 선호 설정 파일" 정본) > ③위 기본값. Arbiter 강도 하한은 이 순서 적용 후 최종 적용된다 (명시 축 예외 포함 — 하한 절 정본). 자연어 지정은 명시된 축만 바꾼다 — 명시 없는 축을 추론으로 채우지 않는다.
+
+resolution 케이스 기록 (계약 검증용 — 각 행을 수동 replay해 의도한 축만 바뀌는지 확인한다):
+
+| 지정 예 | 바뀌는 축 | 결과 |
+|---------|-----------|------|
+| "전부 xhigh로" (강도만) | reviewer·Arbiter effort | reviewer `xhigh`, Arbiter `xhigh` (하한 `high` 이상이므로 그대로). backend·tier 불변 |
+| "codex exec로" (backend만) | 실행 backend | 경로만 codex exec로. effort는 설정 파일 또는 role 기본값 유지 |
+| "codex로 전부 medium" (둘 다) | backend + 두 effort | 경로 codex exec, reviewer `medium`, Arbiter는 하한 적용으로 `high` + 사용자 고지 |
+
+비오케스트레이팅 강도 원칙: 자식 실행 유닛(reviewer/auditor/Arbiter)에는 지원되는 최고 강도라도 자동 task delegation을 포함하는 강도/모드를 선택하지 않는다 — 자식이 다시 fan-out하면 최상위 오케스트레이션과 소유자가 둘이 된다. fan-out 소유는 최상위 runner 하나로 고정한다 (child의 재-fan-out 금지는 기존 계약과 동일 축). 판정 기준은 해당 backend의 광고 문서다 — 스킬은 모델명·강도 이름을 박제하지 않는다.
 
 미지 값·불명확한 지정은 추론으로 채우지 않고 질문 도구로 확인한다 (`run-da/SKILL.md` "실행 경로·파라미터 지정" 해석 규칙).
 
-사용자 지정 실행 파라미터 (model/effort/tier): 사용자가 자연어로 명시한 값은 codex exec 경로의 모든 실행 단위(reviewer/auditor/Arbiter)에 `-c` config override로 주입되며, 경로 지정의 role별 기본 effort보다 우선한다 (Arbiter는 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 정본). 주입 경로는 축별로 다르다 — model/tier는 `_DA_MODEL_TIER_OVERRIDES` 배열로, effort는 고정 `-c model_reasoning_effort=` 인자로 별도 주입된다. 개념 정의는 `run-da/SKILL.md`, 실행 계약(env·shell-safe 검증·조립)은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. Claude 경로와 Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없다 (경로 전환 확인 규칙은 `run-da/SKILL.md` 경로 제약). effort는 native 경로에서도 Arbiter 하한을 만족해야 한다 — 세션 표면에 spawn 단위 effort 설정 수단이 광고되어 있으면 그것으로 명시 설정한다. 광고된 수단이 없을 때의 전이(자동 전환 금지·승인 게이트·미지원 중단)는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 단독 소유한다.
+사용자 지정 실행 파라미터 (model/effort/tier): 사용자가 명시한 값 — 현재 발화의 자연어 지정과 장기 선호 설정 파일 값(`run-da/SKILL.md` 설정 파일 절 — model 키는 없다) 모두 — 은 codex exec 경로의 모든 실행 단위(reviewer/auditor/Arbiter)에 `-c` config override로 주입되며, role별 기본 effort보다 우선한다 (resolution 순서는 위 실행 프로파일 절, Arbiter는 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 정본). 주입 경로는 축별로 다르다 — model/tier는 `_DA_MODEL_TIER_OVERRIDES` 배열로, effort는 고정 `-c model_reasoning_effort=` 인자로 별도 주입된다. 개념 정의는 `run-da/SKILL.md`, 실행 계약(env·shell-safe 검증·조립)은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. Claude 경로와 Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없다 (경로 전환 확인 규칙은 `run-da/SKILL.md` 경로 제약). effort는 native 경로에서도 Arbiter 하한을 만족해야 한다 — 세션 표면에 spawn 단위 effort 설정 수단이 광고되어 있으면 그것으로 명시 설정한다. 광고된 수단이 없을 때의 전이(자동 전환 금지·승인 게이트·미지원 중단)는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 단독 소유한다.
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다 (Codex 세션에서도 같은 값이 보일 수 있음). 현재 세션 호스트를 기준으로 경로를 고른다.
 
@@ -88,7 +97,7 @@ review profile 매핑 (fan-out 대상 역할별, 사용자 지정 없을 때 기
   zsh `(N)` qualifier로 매칭 파일 없을 때 오류를 방지한다. legacy glob(NS 없음)은 전환기 고아 디렉토리 정리용이다.
 - 결과 파일 참조: `$DA_DIR`, `$ARBITER_DIR` 변수로 정확히 참조한다. `/tmp/da-*` 와일드카드 glob 금지 — 이전 실행의 결과가 섞인다.
 - 셸 호출 간 변수 유지 (모든 런타임 공통): 위 공통 주의 참조. 런타임 종류와 무관하게 셸 호출마다 별도 shell이 생성되므로 `mktemp -d` 결과를 stdout으로 출력해 메인 에이전트가 다음 호출에서 리터럴로 재사용하거나 단일 shell에 체이닝한다. 상세 패턴은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "셸 호출 변수 유실 방지" 참조.
-- stdin pipe로 프롬프트 전달 (Layer 1 supervised wrapper): 모든 programmatic codex exec 호출은 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" -o "$DIR/result.md" -` 형태의 Layer 1 supervised wrapper 호출을 사용한다 (raw `codex exec` 직접 호출은 user-interactive 전용이며 SKILL 내 programmatic 경로에서는 사용하지 않는다). 모델명·service_tier는 스킬이 고정하지 않는다 — `$RUN_DA_CODEX_EFFORT`는 기본 role profile 또는 사용자 명시 지정에서 결정하고, `_DA_MODEL_TIER_OVERRIDES`는 사용자 명시 model/tier가 있을 때만 채워진다 ([`arbiter-scaling.md`](arbiter-scaling.md) "사용자 지정 실행 파라미터" 섹션의 조립 루프를 같은 셸 호출 안에서 먼저 실행). `--ignore-rules`는 user/project execpolicy `.rules` 파일을 차단해 read-only sandbox로 막을 수 없는 network/system mutation 명령(예: `git push`, `aws ec2 describe`)이 reviewer/auditor에서 실행되지 않게 한다. pipe EOF가 stdin을 자동으로 닫아 background 전환 시 stdin hang을 구조적으로 방지한다. `< /dev/null`은 pipe가 대체하므로 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. `CODEX_PROGRAMMATIC=1` env assignment는 pipeline 우측 codex 프로세스에 적용되어야 한다 (issue #585). wrapper 상세는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 참조.
+- stdin pipe로 프롬프트 전달 (Layer 1 supervised wrapper): 모든 programmatic codex exec 호출은 `cat "$DIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" -o "$DIR/result.md" -` 형태의 Layer 1 supervised wrapper 호출을 사용한다 (raw `codex exec` 직접 호출은 user-interactive 전용이며 SKILL 내 programmatic 경로에서는 사용하지 않는다). 모델명·service_tier는 스킬이 고정하지 않는다 — `$RUN_DA_CODEX_EFFORT`는 실행 프로파일 resolution 결과(현재 발화 > 설정 파일 > role 기본값 — 위 실행 프로파일 절)에서 결정하고, `_DA_MODEL_TIER_OVERRIDES`는 사용자 명시 model/tier가 있을 때만 채워진다 ([`arbiter-scaling.md`](arbiter-scaling.md) "사용자 지정 실행 파라미터" 섹션의 조립 루프를 같은 셸 호출 안에서 먼저 실행). `--ignore-rules`는 user/project execpolicy `.rules` 파일을 차단해 read-only sandbox로 막을 수 없는 network/system mutation 명령(예: `git push`, `aws ec2 describe`)이 reviewer/auditor에서 실행되지 않게 한다. pipe EOF가 stdin을 자동으로 닫아 background 전환 시 stdin hang을 구조적으로 방지한다. `< /dev/null`은 pipe가 대체하므로 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. `CODEX_PROGRAMMATIC=1` env assignment는 pipeline 우측 codex 프로세스에 적용되어야 한다 (issue #585). wrapper 상세는 [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 참조.
 - Arbiter는 단일 exec (병렬 fan-out 없음): reviewer만 병렬 실행한다 (런타임별 병렬 실행 매커니즘은 위 표 참조). 발사 방식은 하네스 기준으로 갈린다 — Bash tool 경유 호출(대화형 세션·`claude -p` 공통)은 하네스 foreground 상한의 적용을 받는다. 세부 규칙의 정본은 [`arbiter-scaling.md`](arbiter-scaling.md) codex exec 경로 실행 계약이다.
 
 ### literal 재사용 시 random suffix 환각 금지 (issue #632)

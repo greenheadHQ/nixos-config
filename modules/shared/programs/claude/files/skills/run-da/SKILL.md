@@ -66,16 +66,76 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 | 규칙 | 내용 |
 |------|------|
 | 해석 (환각 금지) | 사용자가 명시한 축만 채운다. 명시가 없는 축을 추론으로 채우지 않는다 — 그 축은 기본 정책을 따른다. 지정 표현이 어느 축·어느 값인지 불명확하면 질문 도구로 확인한다 |
-| 적용 범위 | 해당 호출의 reviewer/auditor와 Arbiter 전체. 해당 호출에만 적용 (설정 파일 없음) |
+| 적용 범위 | 해당 호출의 reviewer/auditor와 Arbiter 전체. 자연어 지정은 해당 호출에만 적용된다 — 호출을 넘는 장기 선호는 아래 "장기 선호 설정 파일" 절이 소유한다 |
 | effort 지정 | 경로만 함께 지정된 경우의 role별 기본값보다 사용자 명시 effort가 우선한다 (더 구체적인 지정 우선) |
-| 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증(구체 규칙과 실행 주체는 arbiter-scaling.md의 role command guard)만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 값 거부는 재실행으로 해소되지 않으므로 자동 재시도하지 않는다. 조용한 대체/하향 금지 |
+| 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증(구체 규칙과 실행 주체는 arbiter-scaling.md의 role command guard)만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 값 거부는 재실행으로 해소되지 않으므로 자동 재시도하지 않는다. 조용한 대체/하향 금지. 단 `service_tier`는 Codex가 거부하지 않고 경고 후 생략한 채 rc 0으로 성공하는 축이므로(using-codex-exec 실측), rc 검사만으로는 무시를 감지할 수 없다 — tier가 주입된 실행의 성공 후 stderr 경고 검사는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) "사용자 지정 실행 파라미터"가 소유한다 |
 | Arbiter 하한 | 전체 지정이 reviewer 강도를 낮춰도 Arbiter는 강도 하한(strong profile) 아래로 내려가지 않는다 — 하한·고지·예외(사용자가 Arbiter 축을 콕 집어 지정)는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한"이 SSOT |
 | 경로 지정 | codex exec 경로 지정 시 사전점검이 실패하면 다른 경로로 자동 대체하지 않고, 실패 원인과 대안(Claude 경로 진행 또는 중단)을 사용자에게 고지한 뒤 확인을 받는다. Claude 서브에이전트 경로 지정 시 현재 런타임에서 사용할 수 없으면 동일하게 고지한다. 모델은 Claude 경로에서는 세션 모델을 상속하며 특정 모델명을 고정하지 않는다 |
 | 경로 제약 | model/tier 주입은 codex exec 경로 전용이고, effort는 codex exec와 설정 수단이 광고된 native spawn에서 지원된다. Claude 경로와 model/tier를 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다. native 경로의 effort는 세션 표면에 광고된 spawn 단위 설정 수단이 있을 때만 반영 가능하다 — 설정 수단 부재 시의 전이는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 정본이다 |
 
 모델명 박제 금지 원칙과의 관계: 이 채널의 값은 사용자 입력에서만 온다. 스킬 문서·기본값·예시에 특정 모델명을 두지 않는 원칙(sync 테스트의 모델 literal 잔존 게이트)은 그대로 유지된다.
 
-실행 계약(env 변수, shell-safe 검증, 주입 위치)은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. 미지정 시 role별 기본 effort와 런타임 경로의 관계는 [`references/runtime-mapping.md`](references/runtime-mapping.md)의 review profile 매핑이 SSOT다.
+실행 계약(env 변수, shell-safe 검증, 주입 위치)은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. 미지정 시 역할별 기본값·축 구조·resolution 순서는 [`references/runtime-mapping.md`](references/runtime-mapping.md)의 "실행 프로파일" 절이 SSOT다.
+
+### 장기 선호 설정 파일 (#1260 — 본 절이 정본)
+
+매 호출 자연어 지정을 반복하지 않도록, 장기 선호는 스킬 밖 설정 파일 `~/.config/run-da/preferences.toml`에 둔다 (Nix 선언 관리 밖 가변 파일 — 선호는 시간에 따라 역전된 실측이 있어 스킬 기본값으로 고정하지 않는다). 메인 에이전트는 호출 진입 시 이 파일을 읽는다 — 파일·키 부재는 기본값 적용이며 오류가 아니다. 부재 시 기본값의 소유: `[profile]` 축은 runtime-mapping.md 실행 프로파일 표의 기본값이고, `[delegation]` 축은 본 절이 소유한다 — `autonomous` 부재 = `false`(위임 없음), `max_round_extensions` 부재 = `2`. 값 검증: `autonomous`는 TOML boolean `true`만 위임 선언으로 인정한다 — 그 외 값·타입은 부재와 동일하게 위임 없음으로 처리하고(fail-closed — 잘못된 값이 무인 진행을 활성화하지 않는다) 사용자에게 보고한다. `max_round_extensions`는 0 이상의 정수만 유효하며, 그 외 값은 부재 기본값을 적용하고 보고한다 — 유효하지 않은 값을 유효 상한 계산에 쓰지 않는다. 기계 파서는 두지 않는다 (문서 계약).
+
+아래 블록은 사용자 설정 예시다 (기본값 명세가 아니다 — 예시 값은 부재 시 기본값과 다를 수 있다):
+
+```toml
+[profile]
+# 각 키는 실행 프로파일의 한 축에 대응한다 (runtime-mapping.md "실행 프로파일" 정본).
+# 값 집합은 스킬이 예단하지 않는다 — shell-safe 검증만 통과하면 그대로 주입.
+backend = "codex-exec"        # 실행 backend 선호 — 지원 경로 중 선택하는 제어값 (codex-exec | native | claude). 미지·불명확 값은 주입하지 않고 질문
+reviewer_effort = "high"      # reviewer/auditor effort — shell-safe 검증 후 그대로 주입 (값 집합은 codex/모델 소유)
+arbiter_effort = "xhigh"      # Arbiter effort — 주입 규칙은 effort와 동일, 하한 미만 값은 하한이 이긴다 (아래 참조)
+service_tier = ""             # 빈 값 = 미지정. 잘못된 값은 오류가 아니라 조용한 생략이 되므로 runner가 stderr 경고를 검사해 보고한다 — 위 "값 유효성"의 tier 분기 참조
+
+[delegation]
+autonomous = false            # true = 자율주행 사전 위임 (아래 "자율주행 위임 계약")
+max_round_extensions = 2      # 위임 시 상한 자동 연장 허용 횟수. 연장 한 번 = outer round 한 개 추가 (유효 상한 정의는 protocol.md "최대 라운드 수" 정본)
+```
+
+우선순위는 resolution 순서(runtime-mapping.md 정본)를 따른다 — 현재 발화의 자연어 지정이 파일보다 우선하고, 파일 값은 role 기본값보다 우선한다. 파일 값의 provenance는 "사용자 명시"로 취급한다 (`RUN_DA_USER_EFFORT_OVERRIDE` 등 명시 표식 규칙 동일 적용) — 단 Arbiter 하한의 "명시 축 예외"는 현재 발화의 축 지정에만 적용되고 파일 값에는 적용되지 않는다 (파일은 장기 기본값이지 이번 호출의 의도적 하향이 아니다). 같은 원리로 `backend` 설정 값은 희망 경로의 선택일 뿐 실행 권한 승인을 대체하지 않는다 — Direct Codex 세션의 subprocess 경로 승인 경계([`references/hardening-contract.md`](references/hardening-contract.md))는 설정 파일과 무관하게 유지된다.
+
+### 호출 시점 보고 규약 (종료 조건·예상 비용 — 본 절이 단독 소유)
+
+reviewer fan-out 발사 전에 다음을 한 문단으로 사용자에게 보고한다 (질문이 아니라 보고 — 진행을 막지 않는다):
+
+- 종료 조건 요약: 수렴 predicate 2층([`references/protocol.md`](references/protocol.md) SSOT)의 한 줄 요약 + outer round 상한(값은 protocol.md 정본)과 이번 호출의 위임 연장 한도.
+- 예상 비용: 이번 라운드의 실행 단위 수 × 역할별 effort (예: reviewer 4 × high + Arbiter 1 × xhigh), 반영 발생 시 재검증 라운드가 추가될 수 있다는 사실.
+
+### 자율주행 위임 계약 (#1260 — 본 절이 단독 소유)
+
+사용자가 무인 진행을 사전 위임하는 계약이다. 선언 채널은 두 가지 — 현재 발화의 자연어 선언(예: "자러 간다, 알아서 완주해") 또는 설정 파일 `[delegation] autonomous = true`. 채널 간 우선순위는 프로파일 resolution과 동일하게 현재 발화가 파일을 이긴다: 현재 발화의 명시적 위임 거부(예: "이번엔 위임 없이 물어보면서 진행해")는 파일의 `autonomous = true`보다 우선해 이 호출을 위임 없음으로 확정하고, 현재 발화에 위임 관련 선언이 없으면 파일 값(부재 시 기본값 `false`)을 따른다. 위임이 없으면 모든 gate는 각 정본의 질문 절차를 따른다.
+
+장시간 판정과 1회 질문: FULL fan-out 기준 2 outer round 이상이 예상되는 호출인데 위임 선언이 없으면, 발사 전에 질문 도구로 위임 여부를 1회 묻는다 (이후 반복 질문 금지 — 응답이 이 호출의 위임 상태를 확정한다).
+
+gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 위임 유무 축만 소유한다). 이 표에 등록되지 않은 질문 gate의 위임 시 기본 동작은 자동 진행 금지 — 해당 지점에서 중단하고 상태를 보고한다 (새 gate가 정본에 생겨도 위임 전이가 미정 상태로 자동 진행되지 않게 하는 fail-closed 기본값):
+
+| gate | 위임 없음 | 위임 있음 |
+|------|-----------|-----------|
+| SKIP 제안 승인 | 질문 도구 | 자동 LITE 승격 (SKIP 확정은 사용자 전용 — headless 규칙과 동일) |
+| 3회 반복 판정 | 질문 도구 (수용/제외/배출) | 자동 수용 (지적대로 수정) — 단 보류 판정에는 적용 금지 (아래 gate 우선순위) |
+| 라운드 한계효용 저하 | 질문 도구 | 현재 상태 보고 후 종료 (headless 규칙과 동일 — 자동 수정 계속 금지) |
+| outer round 기본 상한 도달 (유효 상한 정의는 protocol.md "최대 라운드 수") | 질문 도구 (계속/종료) | `max_round_extensions`까지 자동 연장 후, 소진(유효 상한) 시 비수렴 종료 라벨로 종료 |
+| fresh 반복 감지 | 질문 도구 | 자동 fresh 재실행 1회, 재발 시 종료 보고 |
+| `remediation_scope` UNCLEAR | 질문 도구 (수정/배출/제외) | 미해결로 계산 (자동 수정 간주 금지 — headless 규칙과 동일) |
+| NEEDS_MORE_INFO | 질문 도구 | CONFIRMED 자동 승격 (headless 규칙과 동일 — scope 전이표 적용) |
+| LOW confidence 승격 | 질문 도구 | 확정·기각 계열 모두 미해결로 계산 — protocol `unresolved_count`에 "위임 상태의 미판단 LOW confidence verdict"로 편입되어 수렴을 차단한다 (fail-closed 승격 순서 유지)·기각 이력에 기록하지 않음. 종료 후 일괄 보고에 사용자 판단 대기 항목으로 명시 |
+| 검증기 capability 불일치 (배포 시차) | 질문 도구 (배포 후 재시도/검증 생략 승인) | 위임으로 대체 불가 — 검증 생략 없이 중단 보고 (검증 없는 진행은 사전 위임 범위 밖) |
+| 수렴 종료 후 push 최종 승인 | 질문 도구·승인 게이트 (for_pr Step 8 정본) | 자동 push (CONVERGED·DEFERRED_EXIT에 한함 — 비수렴 종료 push 금지는 아래 행) |
+| codex exec 사전점검 실패 fallback | 원인 고지 + 질문 | 진행 불가 보고 후 해당 경로 종료 (자동 대체 금지 유지) |
+| native effort 설정 수단 부재 | 질문 도구 (Arbiter-only 전환 승인) | 위임으로 대체 불가 — 전환하지 않고 중단 보고 (hardening 경계) |
+| delegation-denied subprocess fallback | 질문 도구 (승인) | 위임으로 대체 불가 — 중단 보고 (hardening 경계) |
+| 비수렴 종료(상한·중단) 후 push | 사용자 위임 보고 | push하지 않고 미해결 상태 보고 (기존 계약 유지) |
+
+gate 우선순위 (한 finding에 여러 gate가 동시에 성립할 때): ①semantic malformed 처리 → ②LOW confidence·UNCLEAR 보류 (미해결 계산 — 이 상태의 finding은 3회 반복 자동 수용 대상이 아니다) → ③3회 반복 자동 수용. 보류 판정을 반복 횟수로 자동 수정하면 fail-closed 승격 계약이 우회된다 — recurrence key(세부 관점+위치)는 요약을 포함하지 않는 넓은 키라 서로 다른 실패 양상이 한 반복으로 묶일 수 있어, 보류 상태에서는 반복 자동화보다 사용자 판단 대기가 우선한다.
+
+위임 제외 범위 (위임이 있어도 자동화하지 않는다): ①BLOCKED(malformed 재실행 후 잔존 — 자동 승격 금지 유지), ②hardening 계약의 subprocess fallback 승인(구조적 write 경계는 사전 위임으로 대체할 수 없다), ③마스킹 게이트를 통과하지 못하는 공개 배출(SECURITY disclosure-safe 불가 포함 — 위임과 무관하게 미해결), ④상한 연장의 무제한 반복(`max_round_extensions` 소진 후에는 종료).
+
+종료 후 일괄 보고 필드: 위임 실행이 끝나면 라운드별 발견→확정→반영 수, 배출 이슈 번호, 자동 전이가 발동한 gate 목록(각 항목에 한 줄 사유), 종료 라벨, 미해결 항목을 한 번에 보고한다.
 
 ### `MAX` modifier
 
@@ -196,8 +256,8 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 
 - 매 라운드 새 reviewer/Arbiter 실행 단위를 사용한다.
 - Codex 세션 경로에서는 다음 round/retry 전에 capability profile의 slot·batch 규칙을 적용한다 ([`references/runtime-mapping.md`](references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
-- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. 사용자가 자연어로 경로/effort를 지정하면 해당 호출에서는 그 값이 role별 기본값보다 우선한다 — Arbiter에는 강도 하한 적용 후의 값이 쓰인다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) review profile 매핑, 하한은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) 정본). model/tier 주입은 codex exec 경로 전용이므로 native subagent 경로에는 적용되지 않으며, 경로 제약 규칙(위 실행 경로·파라미터 지정 섹션)에 따라 codex exec 경로로 전환된 호출에서만 우선 적용된다. effort는 native 경로에서도 spawn 단위 명시가 요구된다 (Arbiter 하한·설정 수단 부재 시 전이는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) 정본).
-- codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행한다. 코드/계획 write의 실제 차단 수행자는 codex 자체의 read-only sandbox(macOS seatbelt / Linux bwrap)이고, wrapper는 인자를 그대로 전달하는 passthrough라 플래그를 강제하지 않는다 (#1086) — 플래그 부착은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 role별 명령 literal(SSOT)이 담보하는 문서 규약이다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명·service_tier는 스킬이 고정하지 않는다 — 사용자가 명시 지정한 값만 `-c` config override로 주입하고(위 실행 경로·파라미터 지정 섹션), 미지정 시 reasoning effort만 기본 role profile 또는 자연어 지정에서 결정한다. 프롬프트에서도 수정 금지를 명시한다.
+- Codex 세션 경로의 reviewer/auditor는 standard review profile, Arbiter는 strong review profile을 사용한다. 사용자가 자연어로 경로/effort를 지정하면 해당 호출에서는 그 값이 설정 파일·role별 기본값보다 우선한다 — Arbiter에는 강도 하한 적용 후의 값이 쓰인다 ([`references/runtime-mapping.md`](references/runtime-mapping.md) 실행 프로파일 절, 하한은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) 정본). model/tier 주입은 codex exec 경로 전용이므로 native subagent 경로에는 적용되지 않으며, 경로 제약 규칙(위 실행 경로·파라미터 지정 섹션)에 따라 codex exec 경로로 전환된 호출에서만 우선 적용된다. effort는 native 경로에서도 spawn 단위 명시가 요구된다 (Arbiter 하한·설정 수단 부재 시 전이는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) 정본).
+- codex exec 경로의 DA `codex exec` 프로세스는 `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (Layer 1)로 실행한다. 코드/계획 write의 실제 차단 수행자는 codex 자체의 read-only sandbox(macOS seatbelt / Linux bwrap)이고, wrapper는 인자를 그대로 전달하는 passthrough라 플래그를 강제하지 않는다 (#1086) — 플래그 부착은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 role별 명령 literal(SSOT)이 담보하는 문서 규약이다. `--ignore-rules`는 user/project execpolicy `.rules`의 network/system mutation allow rule(예: `git push`)도 차단한다. 모델명·service_tier는 스킬이 고정하지 않는다 — 사용자가 명시 지정한 값만 `-c` config override로 주입하고(위 실행 경로·파라미터 지정 섹션), reasoning effort는 실행 프로파일 resolution 결과(현재 발화 > 설정 파일 > role 기본값 — [`references/runtime-mapping.md`](references/runtime-mapping.md) 정본)로 결정한다. 프롬프트에서도 수정 금지를 명시한다.
 - "사용자 지시"만으로 DA 지적을 기각하지 않는다. 기술적 근거가 필수이다.
 - DA 결과에서 다른 bundle 범위를 침범한 지적은 해당 bundle의 DA 결과로 이관하거나 무시한다.
 - 피드백 루프 결과는 PR 코멘트로 게시하여 이력을 보존한다 ([`references/protocol.md`](references/protocol.md) 참조).

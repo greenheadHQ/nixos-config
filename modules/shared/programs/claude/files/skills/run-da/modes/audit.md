@@ -194,10 +194,11 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
 1. 각 발견 사항의 유효성을 검증한다 (파일:줄이 실제로 존재하는지, 근거가 타당한지).
 2. 중복 발견을 제거한다 (여러 bundle에서 같은 문제를 지적한 경우).
 3. 심각도 순으로 정렬한다.
-4. Codex 세션 경로에서는 결과 집계 후 capability profile의 slot·batch 규칙에 맞춰 다음 batch/retry 발사를 계획한다 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
-5. 사후 변조 감지: 아래 "사후 변조 감지" 섹션의 술어를 적용한다 — Codex 세션 경로는 비교를 수행하고, codex exec 경로는 실제 발사되는 Layer 1 literal에 `--sandbox read-only`가 있을 때만 생략한다 (플래그가 없으면 비교를 복원. 생략 근거·복원 조건은 그 섹션이 정본).
-6. `RECOVERABLE VIOLATION`은 `SAFE`에서 제외하고 fresh auditor로 재디스패치한다. 이는 auditor가 새 상태 코드를 정의하는 것이 아니라, 메인 에이전트가 출력 형식 위반이나 scope 침범 같은 contract breach를 감지했을 때 부여하는 조율 분류다. 단 Codex 세션 경로에서 status delta가 동시에 존재하면 `STATEFUL VIOLATION` 분류가 우선한다.
-7. `STATEFUL VIOLATION`만 `BLOCKED (VIOLATION)`로 남긴다. 이 경우 사용자에게 불완전한 run이 보고되기 전에는 fresh auditor로 재디스패치하지 않는다.
+4. `service_tier`가 주입된 codex exec 실행은 성공(rc 0) unit에 대해서도 stderr 로그의 tier 경고를 확인한다 — tier는 잘못된 값이 rc로 드러나지 않는 축이다 (검사 계약·경고 시그니처는 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) "사용자 지정 실행 파라미터"의 tier 무시 감지가 정본).
+5. Codex 세션 경로에서는 결과 집계 후 capability profile의 slot·batch 규칙에 맞춰 다음 batch/retry 발사를 계획한다 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
+6. 사후 변조 감지: 아래 "사후 변조 감지" 섹션의 술어를 적용한다 — Codex 세션 경로는 비교를 수행하고, codex exec 경로는 실제 발사되는 Layer 1 literal에 `--sandbox read-only`가 있을 때만 생략한다 (플래그가 없으면 비교를 복원. 생략 근거·복원 조건은 그 섹션이 정본).
+7. `RECOVERABLE VIOLATION`은 `SAFE`에서 제외하고 fresh auditor로 재디스패치한다. 이는 auditor가 새 상태 코드를 정의하는 것이 아니라, 메인 에이전트가 출력 형식 위반이나 scope 침범 같은 contract breach를 감지했을 때 부여하는 조율 분류다. 단 Codex 세션 경로에서 status delta가 동시에 존재하면 `STATEFUL VIOLATION` 분류가 우선한다.
+8. `STATEFUL VIOLATION`만 `BLOCKED (VIOLATION)`로 남긴다. 이 경우 사용자에게 불완전한 run이 보고되기 전에는 fresh auditor로 재디스패치하지 않는다.
 
 #### 검증 에이전트 편향 방지 (Step 4 소유 — 검증용 추가 에이전트 투입 시)
 

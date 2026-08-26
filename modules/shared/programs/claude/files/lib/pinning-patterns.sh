@@ -173,7 +173,14 @@ pinning_should_check_path() {
     */hooks/pinning-guard.sh) return 1 ;;
     */lib/pinning-patterns.sh) return 1 ;;
     scripts/ai/commit-msg-pinning.sh | */scripts/ai/commit-msg-pinning.sh) return 1 ;;
-    */skills/run-da/*) return 1 ;;
+    # run-da 면제는 계약 정체성상 실명 finding ID 예시·실행 키워드 표현이 필요한
+    # 4파일로 한정한다 (#1260 — 전 디렉토리 면제는 새 문서로의 위반 유입을 놓친다).
+    # 나머지 run-da 문서는 검사 대상이며, 라운드·finding 지칭은 protocol.md의
+    # canonical 이력 표기(소문자 축약)를 쓴다.
+    */skills/run-da/references/arbiter-prompt.md) return 1 ;;
+    */skills/run-da/references/da-domains.md) return 1 ;;
+    */skills/run-da/references/protocol.md) return 1 ;;
+    */skills/run-da/modes/for_plan.md) return 1 ;;
     tests/fixtures/* | */tests/fixtures/*) return 1 ;;
     eval-workspace/* | */eval-workspace/*) return 1 ;;
     # DA scratch dynamic TMPDIR shapes — host trust model. extend with caution:

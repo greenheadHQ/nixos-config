@@ -143,16 +143,15 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 
 ### 최대 라운드 수
 
-명시적 상한은 5 outer round다. 5회 이후에도 수렴 종료에 도달하지 못하면
-사용자에게 현황을 보고하고 계속 진행 여부를 확인한다(자동 무한 진행 금지). 이때 종료하면 `termination_type=ROUND_LIMIT`으로 기록한다 (아래 "termination_type" 참조).
+기본 상한은 5 outer round다. 유효 상한은 기본 상한에 자율주행 위임의 연장 허용 횟수(`max_round_extensions` — 연장 한 번 = outer round 한 개 추가, 위임·연장 계약은 `run-da/SKILL.md` "자율주행 위임 계약" 정본)를 더한 값이며, 위임이 없는 호출의 유효 상한은 기본 상한 그대로다. 기본 상한 도달 시: 위임이 없으면 사용자에게 현황을 보고하고 계속 진행 여부를 확인하며(자동 무한 진행 금지), 위임이 있으면 연장 허용 횟수까지 자동 연장한다 (전이는 SKILL.md 전이표). 유효 상한 이후에도 수렴 종료에 도달하지 못한 채 종료하면 `termination_type=ROUND_LIMIT`으로 기록한다 (아래 "termination_type" 참조).
 
 라운드 한계효용 판정: 각 outer round 종료 시 직전 outer round 대비 신규 finding 수를 집계한다. 동일성은 3회 반복 규칙과 같은 recurrence key(세부 관점 + 위치) 기준을 사용하고, 세션 내 기각 이력 exact match(suppression key)로 suppress된 항목은 새 finding 계산에서 제외한다. 첫 outer round는 비교 대상이 없으므로 전체 finding 수를 신규 finding 수로 기록하되, 연속 저효용 판정은 다음 outer round부터 평가한다.
 
 - 신규 finding 0건: 새 정보가 없다는 한계효용 신호이므로 루프 종료를 제안한다. 이 경로의 종료는 수렴 predicate 통과가 아니면 `termination_type=USER_STOP`으로 기록한다. 반복되는 동일 지적이 남아 있으면 3회 반복 규칙 또는 기존 사용자 판단 경로로 닫는다.
 - 신규 finding 1~2건: 낮은 신규 정보량으로 기록한다. 이 상태가 2 outer round 연속이면, 다음 round를 시작하기 전에 사용자에게 현재 비용 대비 추가 기대효과를 보고하고 계속/종료를 질문 도구로 확인한다.
-- 신규 finding 3건 이상: 한계효용 저하로 보지 않는다. 단 5회 상한 조건은 별도로 적용한다.
+- 신규 finding 3건 이상: 한계효용 저하로 보지 않는다. 단 위 상한 조건(기본/유효 상한)은 별도로 적용한다.
 
-위 판정은 5회 상한 전의 한계효용 장치다. 5회 상한은 그대로 유지되며, 5회 이후 수렴 종료에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
+위 판정은 상한 도달 전의 한계효용 장치다. 유효 상한은 그대로 유지되며, 유효 상한 이후 수렴 종료에 도달하지 못하면 신규 finding 추세와 무관하게 사용자 확인이 필요하다. 질문 도구 미지원 런타임은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "질문 도구 미지원 대응" 자동 종료 규칙을 따른다.
 
 (과거에 있던 "신규 confirmed 2회 연속 비감소" 추세 조기중단식은 제거됐다 — 실측된 톱니 궤적에서 한 번도 발동하지 않았고(#1258), 상한 도달은 아래 종료 유형 라벨이 수렴과 기계적으로 구분한다. 매 라운드의 write phase batch가 새 리뷰 표면을 만들어 finding이 끊이지 않으면, 라운드 중 표면을 계속 다듬기보다 changeset 동결 유지·batch 범위 축소·REPLAN_REQUIRED 배출을 우선 검토한다.)
 
@@ -254,7 +253,7 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 - `round_write_set`: 이번 라운드에 반영할 항목 (`remediation_scope: FIX_NOW`인 CONFIRMED_ISSUE + 사용자 수용 항목). `REPLAN_REQUIRED`·`UNCLEAR` scope는 진입 금지 (위 "remediation scope" 전이표).
 - `round_max_accepted_severity`: round_write_set의 accepted severity 최댓값 (빈 set이면 NONE).
-- `unresolved_count`: 미결 NEEDS_MORE_INFO + 배출 실패한 REPLAN_REQUIRED + 미판단 UNCLEAR 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다). BLOCKED·VIOLATION은 여기 넣지 않는다 — `blocked_count`가 배타적으로 소유한다.
+- `unresolved_count`: 미결 NEEDS_MORE_INFO + 배출 실패한 REPLAN_REQUIRED + 미판단 UNCLEAR + 자율주행 위임 상태에서 사용자 판단 없이 보류된 LOW confidence verdict(확정·기각 계열 모두 — `run-da/SKILL.md` 위임 전이표의 "미해결로 계산"이 가리키는 편입 지점이 바로 이 카운터다) 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다). BLOCKED·VIOLATION은 여기 넣지 않는다 — `blocked_count`가 배타적으로 소유한다.
 - `deferred_issues`: 이번 라운드에 REPLAN_REQUIRED 배출로 DEFERRED 처리한 finding의 배출 증거 이슈 번호 목록 (배출 증거 없는 DEFERRED는 존재하지 않는다).
 - `blocked_count`: BLOCKED(malformed — caller 검증 재실행 후에도 위반) finding 수 + `VIOLATION` 상태로 남은 review unit 수 + 미해소 `BLOCKED` review unit 수(실행 반복 실패·binary 부재 등 원인 무관 — 다른 unit의 finding으로 라운드가 진행돼도 차단 상태가 소실되지 않는다). finding·unit 축을 합산한 차단 총계이며, 어느 축이든 0이 아니면 종료 불가라는 뜻만 가진다.
 
@@ -311,7 +310,7 @@ hard precondition 층 — 아래 필드가 모두 조건을 만족해야 종료�
 | 필드 | 조건 | 판정 근거 |
 |------|------|-----------|
 | `blocked_count` | = 0 | BLOCKED(malformed)·`VIOLATION`·미해소 `BLOCKED` unit(실행 실패 등 원인 무관)을 합산한 차단 총계 (round outcome 스냅샷 정의). 심각도가 산출되지 않은 위험이 수치 층을 우회하는 fail-open 차단 |
-| `unresolved_count` | = 0 | 미결 NEEDS_MORE_INFO + 배출 실패 REPLAN_REQUIRED + 미판단 UNCLEAR (round outcome 스냅샷 정의) |
+| `unresolved_count` | = 0 | 미결 NEEDS_MORE_INFO + 배출 실패 REPLAN_REQUIRED + 미판단 UNCLEAR + 위임 상태의 미판단 LOW confidence verdict (round outcome 스냅샷 정의) |
 | `write_reverted_count` | = 0 | 반영을 시도했다가 취소되어 미해결로 남은 항목 (write phase 산출값) |
 | `verifier_ok` | = true | 이번 라운드의 caller 검증기 호출이 성공했거나, 사용자가 명시 승인한 검증 생략이 라운드 요약에 기록됨 (검증기 호출 계약 참조 — 승인 없는 생략은 false). 검증 대상 VERDICT_JSON이 존재하지 않는 경로(finding 0건 ALL CLEAR — Arbiter 미실행)는 vacuous true다 |
 | `dismissal_rationale_complete` | = true | NOT_AN_ISSUE·사용자 제외 항목 전건에 근거가 있음 |
@@ -339,7 +338,7 @@ predicate 위반 회귀 예시 (이 predicate를 변경하는 PR은 각 행에 �
 |---|---|---|
 | `CONVERGED` | 수렴 종료 (ALL CLEAR 특수형 포함) | 수렴 predicate 2층 모두 충족 |
 | `DEFERRED_EXIT` | 배출 후 종료 | predicate 충족 + `deferred_issues`가 비어 있지 않음 (수렴이지만 루프 밖으로 넘긴 작업이 있음을 구분) |
-| `ROUND_LIMIT` | 상한 도달 | 5 outer round 상한에서 predicate 미충족 상태로 종료 |
+| `ROUND_LIMIT` | 상한 도달 | 유효 상한(기본 상한 + 위임 연장 — 위 "최대 라운드 수")에서 predicate 미충족 상태로 종료 |
 | `USER_STOP` | 중단 종료 (사용자 또는 정책) | 한계효용 확인·사용자 지시, 또는 질문 도구 미지원 런타임의 정책 자동 종료로 predicate 미충족 상태에서 종료 — 라벨 이름과 달리 행위자를 사용자로 한정하지 않으므로, 중단 주체(사용자/정책)와 원인을 라운드 요약에 필수 병기한다 |
 
 과거의 `EARLY_STOP (unconverged)` 표기는 `ROUND_LIMIT` 또는 `USER_STOP`으로 세분된다 — 어떤 세션에서 상한 도달 종료가 보고 표에서 자연 수렴과 구분되지 않았던 실측(#1258)이 이 라벨의 도입 근거다.
@@ -387,3 +386,13 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 - `USER_STOP after N rounds (stopped_by: <user|policy>, reason: <한 줄>)` — 중단 종료 (사용자 지시·한계효용 확인·정책 자동 종료).
 
 LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN: <bundle 목록>)`을 덧붙인다 — `CONVERGED (all clear) after N rounds (NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.
+
+## canonical 이력 표기 (기록·서술 축 — 본 절이 정본, #1260)
+
+커밋 메시지·이슈 코멘트·PR 일반 코멘트처럼 저장소 훅이 검사하는 이력 매체에서 특정 라운드·finding을 지칭해야 할 때는 소문자 축약 표기를 쓴다. 명시 예외 하나: DA 요약 코멘트의 라운드 표기는 위 "PR 코멘트 게시 형식" 정본의 `R{N}`을 그대로 쓴다 (차단 패턴 비매치 실측 — 본 절의 소문자 규칙은 그 형식 밖의 이력 매체를 소유한다). 실명 finding ID(`Bundle-N` 형태)는 예외 없이 DA 요약 코멘트를 포함한 모든 게시 경로에서 쓰지 않는다 — PreToolUse guard가 코멘트 명령의 본문·body-file까지 차단하며(#650·#684에서 의도 도입된 방어), 게시 형식이 실명 ID 없이 관점 라벨·건수로 구성된 이유다. 강제 강도는 표면별로 다르다: 에이전트 Edit/Write·게시 명령은 PreToolUse 훅이 차단하고, commit-msg 훅은 경고만 남긴다 — 경고여도 박제 자체가 계약 위반이므로 표기를 고쳐 커밋한다:
+
+- 라운드: `r{N}` (예: r3).
+- finding: bundle 첫 글자 소문자 `{c|d|g|m}{n}` — Correctness/Design/Regression/Maintainability 순서의 축약이며 Regression은 `g`를 쓴다 (`r`은 라운드와 충돌). MAX 세부 관점을 지칭할 때는 소문자 풀네임을 그대로 쓴다 (예: security-2가 아니라 자연어 서술).
+- 결합형: `r{N}.{축약}{n}` (예: r3.c1 — 셋째 라운드의 Correctness 첫 finding).
+
+이 표기는 서술 축이다 — 기계 소비자는 없고, live 검증 경로(reviewer 원본·Arbiter 입력·manifest)의 ID 문법은 [`da-domains.md`](da-domains.md)가 정본이며 이 축약을 허용하지 않는다. 훅 통과(경고 미발생)는 표기 도입 시 실측으로 확인됐고, 훅 패턴 변경 시 재검증 방법: 축약 표기 문장을 pinning 패턴 라이브러리(`lib/pinning-patterns.sh`)의 `pinning_findings_records`에 직접 넣어 레코드 0건을 확인한다 — commit-msg 훅은 경고 전용이라 커밋 성공 여부로는 통과를 판정할 수 없다.

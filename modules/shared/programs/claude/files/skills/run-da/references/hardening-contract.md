@@ -10,8 +10,8 @@ codex exec 경로(Claude Code 세션 · headless 세션)는 [`arbiter-scaling.md
 
 | 용어 | 뜻 | 우선순위 |
 |------|-----|---------|
-| strong review profile | Arbiter spawn의 강한 리뷰 설정 (role별 effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 표가 단일 소스) | Arbiter spawn 기본값 |
-| standard review profile | reviewer/auditor spawn의 기본 리뷰 설정 ([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑 표가 단일 소스) | DA spawn 기본값 |
+| strong review profile | Arbiter spawn의 강한 리뷰 설정 (role별 effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 표가 단일 소스) | Arbiter spawn 기본값 |
+| standard review profile | reviewer/auditor spawn의 기본 리뷰 설정 ([`runtime-mapping.md`](runtime-mapping.md) 실행 프로파일 표가 단일 소스) | DA spawn 기본값 |
 | conservative wait | `wait_agent` timeout이나 단순 지연은 실패 신호가 아니다. 명시적 agent failure, documented violation, 최종 응답 파싱 실패 전에는 kill/self-auditing 대체를 금지한다. | 조급한 조기 종료보다 우선 |
 | single-writer | tracked workspace write, 최종 파일 수정, branch mutation, commit/push, GitHub comment/issue/PR write는 메인 에이전트 소유다. explicit delegation만 예외다 | generic PoC 허용보다 우선 |
 | main-agent-only commands | `wt`, `nrs`, rebuild 계열과 host/repo 상태를 바꾸는 동급 명령은 direct fan-out subagent가 실행하지 않는다 | lock-sensitive convenience보다 우선 |
@@ -35,7 +35,16 @@ Direct Codex 세션에서 사용자가 `$run-da`, `$run-da audit`처럼 fan-out 
 
 이 권한은 delegated reviewer/auditor/Arbiter의 read-only/no-write 경계를 약화하지 않는다. tracked workspace write, branch mutation, commit/push, GitHub write, `wt`, `nrs`, rebuild 계열 명령은 별도 explicit delegation 없이는 계속 메인 에이전트 전용이다.
 
-이 권한은 native subagent 경로에만 적용된다. Skill invocation itself does not authorize `codex-exec-supervised` fallback. 단, 사용자가 자연어로 codex exec 경로를 명시 지정한 경우는 fallback이 아니라 해당 호출의 codex exec 경로 선택이다. codex exec 전용 사용자 지정 실행 파라미터(model/tier — `run-da/SKILL.md` 정의. effort는 설정 수단이 세션 표면에 광고된 native 경로에서도 설정 가능하므로 codex exec 전용이 아니며, 수단 부재 시의 전이는 `arbiter-scaling.md` 하한 절 정본을 따른다)만 지정된 경우는 경로 이름을 직접 지정한 것이 아니므로, Direct Codex 세션에서는 `run-da/SKILL.md`의 경로 제약 규칙대로 codex exec 경로 전환 여부를 사용자에게 확인한 뒤에만 경로 선택으로 간주한다. `codex-exec-supervised` fallback은 아래 Delegation fallback 절차에 따라 native delegation 거부/미지원 사유 기록과 별도 사용자 승인을 받은 뒤에만 사용한다.
+이 권한은 native subagent 경로에만 적용된다. Skill invocation itself does not authorize `codex-exec-supervised` fallback. Direct Codex 세션에서 codex exec subprocess 경로가 승인되는지는 입력 출처별로 다음 결정표를 따른다 (subprocess 권한 경계이므로 행 단위로 판독한다):
+
+| 입력 출처 | resolved 경로 | subprocess 승인 | 다음 동작 |
+|-----------|---------------|-----------------|-----------|
+| 현재 발화의 자연어 codex exec 경로 지정 | codex exec | 승인 (fallback이 아니라 해당 호출의 경로 선택) | 그대로 진행 |
+| 설정 파일 `backend` 값만 (`run-da/SKILL.md` 설정 파일 절) | codex exec (희망) | 미승인 — 설정은 희망 경로만 선택하며 실행 승인을 대체하지 않는다 | 기존 절차대로 사용자 확인 후 진행 |
+| model/tier 파라미터만 지정 (경로 이름 미지정 — model/tier는 codex exec 전용 축, `run-da/SKILL.md` 정의) | 미확정 | 미승인 | `run-da/SKILL.md` 경로 제약 규칙대로 전환 여부를 사용자에게 확인한 뒤에만 경로 선택으로 간주 |
+| native delegation 거부/미지원으로 인한 fallback | codex exec (fallback) | 미승인 | 아래 Delegation fallback 절차 — 사유 기록 + 별도 사용자 승인 후에만 사용 |
+
+effort 축은 이 표의 대상이 아니다 — 설정 수단이 세션 표면에 광고된 native 경로에서도 설정 가능하므로 codex exec 전용이 아니며, 수단 부재 시의 전이는 `arbiter-scaling.md` 하한 절 정본을 따른다.
 
 ## `VIOLATION` 공통 처리
 

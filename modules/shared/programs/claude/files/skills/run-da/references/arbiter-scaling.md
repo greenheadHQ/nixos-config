@@ -10,7 +10,7 @@ reviewer는 "없다"를 잘 찾지만, "없는 게 맞다"는 판단은 독립 �
 `run-da`의 reviewer fan-out을 4 bundle로 줄이더라도, Arbiter는 늘리지 않는다.
 비용을 늘려 여러 Arbiter를 붙이기보다, 한 명의 강한 Arbiter가 selective escalation set을 판정하는 구조를 유지한다.
 
-effective effort 우선순위: ①사용자 명시 effort > ②경로 지정의 role별 값 > ③role별 기본값(reviewer/auditor standard, Arbiter strong). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑이 정본이다.
+effective effort 우선순위: ①현재 발화의 사용자 명시 effort > ②장기 선호 설정 파일(`run-da/SKILL.md` "장기 선호 설정 파일" 정본) > ③role별 기본값(reviewer/auditor standard, Arbiter strong — 경로만 지정된 호출도 effort는 이 기본값을 따른다). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 명시 축 예외는 ①에만 적용된다 (설정 파일 값은 이번 호출의 의도적 하향이 아니므로 하한이 이긴다). 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 절이 정본이다.
 
 Arbiter 추론 강도 하한 (판별력 보장 — 본 절이 정본): Arbiter의 판별력은 실행 조건에 종속한다 — 같은 판정 계약·같은 프롬프트에서 실행 강도에 따라 기각률이 0%와 75%로 갈린 실측이 있다 (#1258). 따라서:
 
@@ -32,13 +32,14 @@ selective propagation으로 추린 escalated findings를 단일 Arbiter에 전�
 
 | env | 의미 | 값 출처 (축별 provenance) |
 |-----|------|---------------------------|
-| `RUN_DA_CODEX_EFFORT` | resolved reasoning effort | 기본 role profile, 사용자 명시 경로/effort 지정 |
-| `RUN_DA_CODEX_MODEL` | 사용자 명시 model. 미지정 시 unset — 스킬은 모델을 pin하지 않는다 | 사용자 명시 지정만. 이 env를 설정하는 행위 자체가 "사용자가 model을 명시했다"는 선언이다 — 명시 없이 설정하면 계약 위반 |
-| `RUN_DA_CODEX_TIER` | 사용자 명시 service_tier. 미지정 시 unset | 사용자 명시 지정만. 설정 행위 = 명시 선언 (model과 동일) |
-| `RUN_DA_USER_EFFORT_OVERRIDE` | 사용자가 effort 값을 명시 지정했음을 표시 (`1`). 기본 profile 밖 effort 값의 통과 관문 | 사용자가 effort를 명시 지정했을 때만 메인 에이전트가 설정. model/tier만 지정된 호출에서 설정하면 계약 위반 — 축별 provenance를 하나의 표식으로 뭉개지 않는다 |
+| `RUN_DA_CODEX_EFFORT` | resolved reasoning effort | 기본 role profile, 설정 파일(`reviewer_effort`/`arbiter_effort`), 현재 발화의 사용자 명시 effort — resolution 순서는 위 우선순위 |
+| `RUN_DA_CODEX_MODEL` | 사용자 명시 model. 미지정 시 unset — 스킬은 모델을 pin하지 않는다 | 현재 발화의 명시 지정만 (설정 파일에 model 키는 없다). 이 env를 설정하는 행위 자체가 "사용자가 model을 명시했다"는 선언이다 — 명시 없이 설정하면 계약 위반 |
+| `RUN_DA_CODEX_TIER` | 사용자 명시 service_tier. 미지정 시 unset | 현재 발화의 명시 지정 또는 설정 파일 `service_tier` (둘 다 사용자 명시 provenance — `run-da/SKILL.md` 설정 파일 절). 설정 행위 = 명시 선언 |
+| `RUN_DA_USER_EFFORT_OVERRIDE` | 사용자가 effort 값을 명시 지정했음을 표시 (`1`). 기본 profile 밖 effort 값의 통과 관문 | 현재 발화 또는 설정 파일이 effort를 명시했을 때만 메인 에이전트가 설정 (설정 파일 값도 사용자 명시 provenance). model/tier만 지정된 호출에서 설정하면 계약 위반 — 축별 provenance를 하나의 표식으로 뭉개지 않는다 |
 
 - effort guard: 기본 profile 값(`medium|high|xhigh`)은 즉시 통과한다. 그 외 소문자 영문 값은 `RUN_DA_USER_EFFORT_OVERRIDE=1`(effort 축 전용 관문 — model/tier 지정 여부와 무관)일 때만 통과한다 — 스킬은 값 집합을 예단하지 않고 codex에 위임하며, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다 (조용한 대체/하향 금지).
 - model/tier 주입: 각 role 명령 안의 `_DA_MODEL_TIER_OVERRIDES` 조립 루프가 unset이 아닌 값만 shell-safe 문자 검증(영숫자 `._-`) 후 `-c model=...` / `-c service_tier=...` config override 인자로 추가한다. effort는 모든 호출의 필수 인자이므로 이 배열이 아니라 고정 `-c model_reasoning_effort=`로 별도 주입한다. 미지정 시 빈 배열이라 기존 기본 계약과 동일하게 동작한다.
+- tier 무시 감지 (성공 경로 검사): model·effort의 잘못된 값은 codex가 거부해 rc로 드러나지만, `service_tier`는 미지원·오타 값이어도 stderr 경고만 남기고 요청에서 생략한 채 rc 0으로 성공한다 (using-codex-exec 실측 — rc 검사로는 감지 불가). 따라서 tier가 주입된 실행은 성공(rc 0) 후에도 해당 unit의 stderr 로그에서 tier 경고(unsupported/omit 계열)를 확인한다. 검사 시점 바인딩: reviewer/auditor는 결과 수집 단계(각 mode의 Step 3 — 실패 분류와 별개로 성공 unit에도 적용), Arbiter는 결과 수집 시(성공 분기 포함)다. 경고가 있으면 결과 자체는 유효하되 tier 미적용 사실을 조용히 넘기지 않고 사용자에게 보고한다 — 출처가 설정 파일 값이면 파일 수정을 함께 안내한다 (조용한 대체/하향 금지 계약의 tier 축 바인딩).
 - ambient 유입 차단: 위 env들은 role 명령과 같은 단일 셸 호출 안에서 caller가 그 호출을 위해 설정한다 (셸 호출 간 env 비공유 — [`runtime-mapping.md`](runtime-mapping.md) 공통 주의). 이전 호출·세션에서 상속된 ambient 값을 재사용하지 않으며, 명시되지 않은 축의 env는 설정하지 않는다.
 - 조립 루프 복제 이유: 세 role command block(reviewer/Auditor 템플릿, Arbiter 템플릿, Arbiter 실행 절차)은 각각 단일 셸 호출로 self-contained해야 하므로 같은 effort guard·조립 루프를 블록마다 복제한다. 세 사본의 동일성은 sync 테스트(`tests/skill-doc-sync.py`의 exec override copies 검사)가 정규화 비교로 강제한다.
 - `--ignore-user-config`와의 관계: user config 차단(MCP surface 차단 목적)은 유지된다. 이 채널은 config 파일이 아니라 사용자 명시 입력값만 `-c`로 재주입한다.
@@ -50,7 +51,7 @@ selective propagation으로 추린 escalated findings를 단일 Arbiter에 전�
 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`; lifecycle은 [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) capability profile로 판별)을 사용할 수 있으면
 Arbiter도 이를 기본 경로로 사용한다.
 
-- 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로 사용한다.
+- 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) 실행 프로파일 절)로 사용한다.
 - 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt 파일을 요구하지 않는다.
 - Arbiter는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다.
 - 결과 수집: [`runtime-mapping.md`](runtime-mapping.md#result-collection)의 결과 수집 binding을 따른다 (무엇이 결과 본문이고 `wait_agent` 반환값이 무엇인지는 그 anchor가 정의한다). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 수집한 본문은 `/tmp/da-${_DA_SID}-arbiter-*` 네임스페이스의 scratch 파일로 저장한다 — 공통 검증기가 파일 입력 전용이므로 native 경로도 이 저장 단계를 거쳐야 검증을 수행할 수 있다 (메인 에이전트가 쓰는 결과 파일이며, Arbiter의 no-write role과 무관하다). 결과 파싱 후의 slot·batch 규칙은 capability profile을 따른다 ([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
@@ -65,7 +66,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
 - `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
-- 모델명·service_tier는 스킬이 pin하지 않는다. `RUN_DA_CODEX_EFFORT`를 role별 기본 profile 또는 사용자 명시 지정에서 결정한 뒤 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`를 명시하고, 사용자 명시 model/tier가 있으면 `_DA_MODEL_TIER_OVERRIDES`로 추가 주입한다 (위 "사용자 지정 실행 파라미터" 섹션).
+- 모델명·service_tier는 스킬이 pin하지 않는다. `RUN_DA_CODEX_EFFORT`를 실행 프로파일 resolution 결과(effective effort 우선순위 — 본 문서 상단 정의)로 결정한 뒤 `-c model_reasoning_effort="$RUN_DA_CODEX_EFFORT"`를 명시하고, 사용자 명시 model/tier가 있으면 `_DA_MODEL_TIER_OVERRIDES`로 추가 주입한다 (위 "사용자 지정 실행 파라미터" 섹션).
 - Arbiter는 지정이 없으면 strong review profile effort를 사용한다.
 - 프롬프트에서 "리뷰만 수행하고 파일을 수정하지 마라" 명시
 - `--ephemeral`로 세션 히스토리 오염 방지
@@ -85,7 +86,7 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 - 각 review unit은 독립 subprocess (fresh 판정 경계는 프로세스 경계로 보존).
 - 사용자 승인 후에만 실행 ([`hardening-contract.md`](hardening-contract.md) "Delegation fallback" 섹션 참조).
 
-role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 주의: 아래 block들의 wrapper 호출 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정하고, `RUN_DA_CODEX_EFFORT`를 profile resolution 결과로 설정한 뒤(사용자가 model/tier를 명시했으면 `RUN_DA_CODEX_MODEL`/`RUN_DA_CODEX_TIER`를, effort를 명시했으면 `RUN_DA_USER_EFFORT_OVERRIDE=1`을 — 각 축은 명시된 경우에만) guard와 함께 실행한다. 모델명은 literal로 고정하지 않는다. 기본 role effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 표가 SSOT다.
+role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 주의: 아래 block들의 wrapper 호출 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정하고, `RUN_DA_CODEX_EFFORT`를 profile resolution 결과로 설정한 뒤(사용자가 model/tier를 명시했으면 `RUN_DA_CODEX_MODEL`/`RUN_DA_CODEX_TIER`를, effort를 명시했으면 `RUN_DA_USER_EFFORT_OVERRIDE=1`을 — 각 축은 명시된 경우에만) guard와 함께 실행한다. 모델명은 literal로 고정하지 않는다. 기본 role effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 표가 SSOT다.
 
 | profile | 기본 `RUN_DA_CODEX_EFFORT` |
 |---------|----------------------------|
@@ -211,8 +212,10 @@ PROMPT
 
 # 3. codex exec 실행 (발사 방식은 위 "codex exec 경로" 실행 계약이 정본 — 분기 서술을
 #    여기 복제하지 않는다)
-# RUN_DA_CODEX_EFFORT는 role별 기본 profile 또는 사용자 명시 지정에서 결정한다.
-RUN_DA_CODEX_EFFORT="${RUN_DA_CODEX_EFFORT:-high}"
+# RUN_DA_CODEX_EFFORT는 caller가 실행 프로파일 resolution 결과(effective effort 우선순위)로
+# 설정한다 — silent fallback 금지: 셸 호출 간 변수 유실 시 기본값 대체는 사용자 지정 effort의
+# 조용한 하향이 되므로, 누락이면 실행을 중단한다 (reviewer/Arbiter 발사 블록과 동일 guard 계약).
+: "${RUN_DA_CODEX_EFFORT:?ARBITER_FAILED: missing RUN_DA_CODEX_EFFORT}"
 case "$RUN_DA_CODEX_EFFORT" in
   medium|high|xhigh) ;;
   *[!abcdefghijklmnopqrstuvwxyz]*)
@@ -252,6 +255,15 @@ if [ "$rc" -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then
   cat "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null
   [ "$rc" -ne 0 ] && exit "$rc" || exit 1  # 원 rc 보존 (rc=0인데 빈 파일이면 1)
 else
+  # tier 무시 감지 성공 분기 바인딩 — tier 주입 시 rc 0이어도 생략 경고를 같은 호출에서 확인
+  # (ARBITER_DIR이 다음 호출에서 유실되므로 여기가 마지막 검사 기회다. 계약: "사용자 지정 실행 파라미터" 절)
+  # 패턴은 CLI 진단의 줄 시작 `warning:` prefix까지 앵커링한다 — stderr에는 프롬프트 전문 에코가
+  # 남으므로 느슨한 매치는 입력 문서가 같은 진단 문구를 인용하는 정상 실행(예: 이 문서 자신을
+  # 리뷰하는 diff)을 오탐한다. 시그니처 실측 정본: using-codex-exec "service_tier 미지원/오타" 절.
+  if [ -n "${RUN_DA_CODEX_TIER:-}" ] && grep -qiE '^warning: Configured service tier .*(not advertised|omitted)' "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null; then
+    echo "TIER_WARNING: stderr에 tier omit 진단 존재 — 아래 결과는 유효하나 tier 미적용 사실을 사용자에게 보고할 것"
+    grep -iE '^warning: Configured service tier .*(not advertised|omitted)' "$ARBITER_DIR/arbiter-stderr.log"
+  fi
   cat "$ARBITER_DIR/arbiter-result.md"
 fi
 ```
@@ -314,5 +326,5 @@ Codex 세션 경로에서는 Arbiter가 새 verdict를 반환하는 것이 아�
 - CONFIRMED_ISSUE 중 `remediation_scope: FIX_NOW`는 동일하게 자동 수정한다. `REPLAN_REQUIRED`는 마스킹 게이트를 거쳐 이슈로 배출하고(배출 실패는 미해결), `UNCLEAR`는 질문 불가이므로 자동 FIX_NOW 간주 없이 미해결로 계산한다 ([`protocol.md`](protocol.md) "remediation scope" SSOT).
 - 에이전트가 SKIP을 제안하려는 상황에서 질문 도구 불가 → 자동 LITE 승격 (SKIP 확정은 사용자 승인 없이는 불가하므로).
 - 3회 반복 규칙 도달 시 질문 도구 불가 → 자동 수용 (지적대로 수정).
-- 5회 라운드 초과 시 질문 도구 불가 → 자동 종료(현재 상태 보고).
+- 유효 상한([`protocol.md`](protocol.md) "최대 라운드 수" — 위임 연장 반영) 초과 시 질문 도구 불가 → 자동 종료(현재 상태 보고).
 - 라운드 한계효용 확인([`protocol.md`](protocol.md)의 "최대 라운드 수" 정의) 도달 시 질문 도구 불가 → 현재 상태를 보고하고 `termination_type=USER_STOP`으로 종료한다. 한계효용 저하는 추가 자동 수정을 시도할 근거가 아니므로([`protocol.md`](protocol.md)의 changeset 동결/범위 축소 권고를 따른다), 현재 미해결 상태를 보고한 뒤 종료한다 — CLEAR로 간주하지 않는다.

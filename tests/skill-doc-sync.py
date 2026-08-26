@@ -57,13 +57,16 @@ def read_text(path: Path) -> str:
         raise CheckFailure(f"missing file: {path}") from exc
 
 
-def extract_runtime_profiles() -> dict[str, dict[str, str]]:
+def extract_runtime_profile_efforts() -> dict[str, dict[str, str]]:
+    # 실행 프로파일 4축 표의 effort 축 행에서 기본값 셀 "`<effort>` (<profile>)"만 추출한다
+    # (backend·tier 축은 이 검사의 대상이 아니다 — 이름이 말하는 책임은 effort 기본값 동기화다).
     profiles = {}
     pattern = re.compile(
-        r"^\|\s*`(strong|standard)`\s*\|[^|]+\|[^|]+\|\s*`(medium|high|xhigh)`\s*\|",
+        r"^\|\s*(?:reviewer/auditor|Arbiter) effort\s*\|[^|]*\|\s*"
+        r"`(medium|high|xhigh)`\s*\((standard|strong)\)",
         re.M,
     )
-    for profile, effort in pattern.findall(read_text(RUNTIME_MAPPING)):
+    for effort, profile in pattern.findall(read_text(RUNTIME_MAPPING)):
         profiles[profile] = {"effort": effort}
 
     found = set(profiles)
@@ -97,15 +100,15 @@ def extract_arbiter_profile_efforts() -> dict[str, dict[str, str]]:
 
 
 def check_profile_efforts() -> None:
-    runtime_profiles = extract_runtime_profiles()
-    arbiter_profiles = extract_arbiter_profile_efforts()
+    runtime_profile_efforts = extract_runtime_profile_efforts()
+    arbiter_profile_efforts = extract_arbiter_profile_efforts()
 
-    if runtime_profiles != arbiter_profiles:
+    if runtime_profile_efforts != arbiter_profile_efforts:
         details = ["review profile effort mismatch:"]
         for profile in sorted(EXPECTED_PROFILES):
             details.append(
-                f"  {profile}: {RUNTIME_MAPPING}={runtime_profiles[profile]}, "
-                f"{ARBITER_SCALING}={arbiter_profiles[profile]}"
+                f"  {profile}: {RUNTIME_MAPPING}={runtime_profile_efforts[profile]}, "
+                f"{ARBITER_SCALING}={arbiter_profile_efforts[profile]}"
             )
         raise CheckFailure("\n".join(details))
 
@@ -471,9 +474,35 @@ def check_capability_profile() -> None:
         raise CheckFailure("\n".join(details))
 
 
+TIER_WARNING_SIGNATURE = "'^warning: Configured service tier .*(not advertised|omitted)'"
+
+
+def check_tier_warning_contract() -> None:
+    # tier 무시 감지(#1260)는 정책 정본(arbiter-scaling)과 수집 바인딩(for_plan·audit)에
+    # 분산된 문서 계약이다 — 시그니처 정규식 사본과 바인딩 참조가 함께 유지되는지 고정한다.
+    details = []
+    arbiter_text = read_text(ARBITER_SCALING)
+    sig_count = arbiter_text.count(TIER_WARNING_SIGNATURE)
+    if sig_count != 2:
+        details.append(
+            f"{ARBITER_SCALING}: tier omit signature grep copies expected 2 "
+            f"(detect + print), got {sig_count}"
+        )
+    if "tier 무시 감지" not in arbiter_text:
+        details.append(f"{ARBITER_SCALING}: missing 'tier 무시 감지' policy section")
+    for path in (_RUN_DA_DIR / "modes/for_plan.md", _RUN_DA_DIR / "modes/audit.md"):
+        if "tier 무시 감지" not in read_text(path):
+            details.append(
+                f"{path}: missing collection binding reference to 'tier 무시 감지'"
+            )
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
 def main() -> int:
     checks = (
         ("review profile efforts", check_profile_efforts),
+        ("tier warning contract", check_tier_warning_contract),
         ("codex command contract", check_codex_command_contract),
         ("user exec params", check_user_exec_params),
         ("exec override copies", check_exec_override_copies),
