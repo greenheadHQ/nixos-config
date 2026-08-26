@@ -465,8 +465,8 @@ Background 대안 — 다수 병렬 실행 시 LLM 블로킹 방지:
       2>"$DA_DIR/domain-stderr.log"
     pipe_rcs=("${pipestatus[@]}")              # 배열 먼저 스냅샷 (다음 명령이 리셋한다)
     rc="${pipe_rcs[2]}"                        # codex의 rc
-    [ -n "$rc" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
-    [ "${pipe_rcs[1]}" -eq 0 ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 판정에 반영
+    [ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
+    [ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 판정에 반영
     printf '%s' "$rc" > "$DA_DIR/domain.rc"    # rc 영속화 — 알림 유실 대비·병렬 배리어의 정본
     exit "$rc"                                 # 완료 알림에 codex rc가 실리게 한다
     ```

@@ -395,8 +395,8 @@ cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -C "$DIR" -c model_reasoning_effort="medium" -o "$OUT" -
 pipe_rcs=("${pipestatus[@]}")   # zsh 1-base. bash는 ("${PIPESTATUS[@]}") + 0-base
 rc="${pipe_rcs[2]}"
-[ -n "$rc" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
-[ "${pipe_rcs[1]}" -eq 0 ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 판정에 반영
+[ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
+[ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 판정에 반영
 [ "$rc" -eq 0 ] && test -s "$OUT"
 ```
 

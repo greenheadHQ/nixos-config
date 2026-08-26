@@ -384,6 +384,20 @@ def test_arbiter_marker_filter(analyze_module):
     assert analyze_module.ARBITER_DIR_MARKER.search(real_text) is not None
 
 
+def test_human_header_fallback_parses_round_suffix(analyze_module):
+    """라운드 suffix ID의 사람용 헤더 fallback 회귀 게이트 (#1259).
+
+    VERDICT_JSON이 없는 로그에서 Tier-2 fallback이 suffixed 헤더를 놓치면
+    해당 verdict가 통계에서 조용히 빠진다.
+    """
+    m = analyze_module.HUMAN_VERDICT_HEADER.search(
+        "### Correctness-1-r2 — CONFIRMED_ISSUE"
+    )
+    assert m is not None
+    assert m.group(1) == "Correctness-1-r2"
+    assert m.group(2) == "CONFIRMED_ISSUE"
+
+
 def test_remediation_label_not_taken_as_finding_summary(analyze_module):
     """schema 1.2의 `**해소 방식**` 라벨은 finding 요약이 아니다.
 
@@ -406,6 +420,8 @@ def test_bundle_normalization(analyze_module):
     """finding_id의 reviewer 묶음 매핑 검증."""
     cases = [
         ("Correctness-1", "Correctness"),
+        # 라운드 suffix (#1259 — 메인이 다중 라운드 구분용으로 부여): prefix 정규화 유지
+        ("Correctness-1-r2", "Correctness"),
         ("Design-2", "Design"),
         ("Regression-3", "Regression"),
         ("Maintainability-4", "Maintainability"),

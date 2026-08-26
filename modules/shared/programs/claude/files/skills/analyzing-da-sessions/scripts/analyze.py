@@ -68,7 +68,7 @@ VERDICT_JSON_BLOCK = re.compile(
     re.S,
 )
 HUMAN_VERDICT_HEADER = re.compile(
-    r"###\s+([A-Za-z][A-Za-z_ ]*?(?:[-]\d+|\s+Finding\s+\d+))\s*[—\-]\s*(CONFIRMED_ISSUE|NOT_AN_ISSUE|NEEDS_MORE_INFO)"
+    r"###\s+([A-Za-z][A-Za-z_ ]*?(?:[-]\d+(?:-r\d+)?|\s+Finding\s+\d+))\s*[—\-]\s*(CONFIRMED_ISSUE|NOT_AN_ISSUE|NEEDS_MORE_INFO)"
 )
 FENCED_JSON_BLOCK = re.compile(r"```json\s*(\[?\s*\{.*?\}\s*\]?)\s*```", re.S)
 VERDICT_KV = re.compile(

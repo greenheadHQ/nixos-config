@@ -124,11 +124,24 @@ for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"
 done
 [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
 [ -f "$DA_DIR/$UNIT.md" ] || { echo "missing prompt=$DA_DIR/$UNIT.md"; exit 1; }
+rm -f "$DA_DIR/$UNIT.rc" "$DA_DIR/$UNIT-result.md"  # 재실행 시 stale 산출물 제거 — 조기 exit·-o 미재작성 시 구 rc/결과가 이번 실행으로 오인되는 경로 차단
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
 cat "$DA_DIR/$UNIT.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
   -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$DA_DIR/$UNIT-result.md" - 2>"$DA_DIR/$UNIT-stderr.log"
+pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 — 다음 명령이 리셋한다
+rc="${pipe_rcs[2]}"            # codex의 rc (zsh 1-base)
+# 캡처 실패(빈 값)는 .rc 생성 전 즉시 실패 — 셸/배열 불일치로 빈 .rc가 계약을
+# 무력화한 실측이 guard의 도입 근거다 (using-codex-exec 정본과 동일 순서)
+[ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "UNIT_FAILED: rc capture failed unit=$UNIT"; exit 1; }
+[ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"  # 좌측 cat 실패 반영 — prompt 유실 시 codex가 빈 stdin으로 0을 반환할 수 있다
+printf '%s' "$rc" > "$DA_DIR/$UNIT.rc"
+exit "$rc"
 ```
+
+위 reviewer/Auditor 블록은 rc 캡처·영속화까지 포함한 완전한 발사 블록이다 — 결과 수집·검증 호출 지점은 [`../modes/for_plan.md`](../modes/for_plan.md) Step 3이 소유한다.
+
+rc 계약 (#1259): 캡처 순서·guard·성공 계약의 정본은 `using-codex-exec`의 "background 발사의 rc 계약"이다 — 여기는 run-da 로컬 바인딩만 소유한다: rc 영속화 경로는 `$DA_DIR/$UNIT.rc`(reviewer)·`$ARBITER_DIR/arbiter.rc`(Arbiter)이고, `.rc` 부재는 실패다 (발사 블록이 영속화 전에 죽었다는 뜻 — background 완료 알림의 exit code는 래핑 셸 rc이므로 판정에 쓰지 않는다). 캡처·guard 로직은 reviewer tail과 Arbiter 수집 블록 두 사본이 문자 수준으로 동일해야 한다 — 각 블록이 단일 셸 호출로 self-contained해야 해서 참조로 대체할 수 없다 (조립 루프 복제와 같은 이유).
 
 Arbiter (strong profile):
 
@@ -159,6 +172,8 @@ cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-super
   -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$ARBITER_DIR/arbiter-result.md" - 2>"$ARBITER_DIR/arbiter-stderr.log"
 ```
+
+위 Arbiter 블록은 guard·발사 조각이다 — rc 캡처(`arbiter.rc`)·결과 수집까지 포함한 완전한 발사 블록은 아래 "실행 절차" 절이 정본이며, 이 조각만 단독 복사해 발사하지 않는다.
 
 `-o` 플래그(`--output-last-message <FILE>`)가 마지막 메시지를 결과 파일로 저장한다 (이것이 없으면 파일 수집 계약이 깨진다). stderr도 별도 로그 파일로 분리해 실패 진단을 보존한다.
 
@@ -217,20 +232,25 @@ for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"
   esac
 done
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
+rm -f "$ARBITER_DIR/arbiter.rc" "$ARBITER_DIR/arbiter-result.md"  # 재실행 시 stale 산출물 제거 (reviewer 블록과 동일 근거)
 cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
   -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$ARBITER_DIR/arbiter-result.md" \
   - \
   2>"$ARBITER_DIR/arbiter-stderr.log"
 
-# 4. 결과 수집 — exit code + 빈 파일 모두 확인 (ARBITER_DIR이 다음 호출에서 유실되므로 같은 호출에서 처리)
-_EC=$?
-if [ $_EC -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then
+# 4. 결과 수집 — rc + 빈 파일 모두 확인 (ARBITER_DIR이 다음 호출에서 유실되므로 같은 호출에서 처리)
+pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 — 다음 명령이 리셋한다
+rc="${pipe_rcs[2]}"            # codex의 rc (zsh 1-base)
+[ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "ARBITER_FAILED: rc capture failed dir=$ARBITER_DIR"; exit 1; }
+[ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"
+printf '%s' "$rc" > "$ARBITER_DIR/arbiter.rc"
+if [ "$rc" -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then
   _RS=$([ ! -f "$ARBITER_DIR/arbiter-result.md" ] && echo 'missing' || ([ ! -s "$ARBITER_DIR/arbiter-result.md" ] && echo 'empty' || echo 'present-but-exit-failed'))
-  echo "ARBITER_FAILED: exit=$_EC result=$_RS dir=$ARBITER_DIR"
+  echo "ARBITER_FAILED: exit=$rc result=$_RS dir=$ARBITER_DIR"
   echo "--- stderr ---"
   cat "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null
-  exit 1
+  [ "$rc" -ne 0 ] && exit "$rc" || exit 1  # 원 rc 보존 (rc=0인데 빈 파일이면 1)
 else
   cat "$ARBITER_DIR/arbiter-result.md"
 fi

@@ -12,7 +12,7 @@
 문제 발견 시:
 
 ```text
-## [reviewer bundle] 문제 발견: [count]건
+## [{BUNDLE}] 문제 발견: [count]건
 
 ### 1. [문제 제목]
 - **ID**: {PREFIX}-{순번} (아래 "finding ID 문법" 참조. 치환 규칙은 "공통 프롬프트 구조" 섹션 경고 블록 참조)
@@ -27,13 +27,13 @@
 문제 미발견 시:
 
 ```text
-[reviewer bundle]: CLEAR
+[{BUNDLE}]: CLEAR
 ```
 
 계약 위반 또는 금지된 작업 필요 시:
 
 ```text
-## [reviewer bundle] 위반 상태: VIOLATION
+## [{BUNDLE}] 위반 상태: VIOLATION
 
 - **유형**: RECOVERABLE / STATEFUL
 - **이유**: 어떤 규칙을 왜 위반했는지
@@ -62,6 +62,7 @@
 > ⚠️ 이 플레이스홀더는 셸 변수가 아니다. 조립 절차는 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md)를 참조한다.
 > `{BUNDLE}` / `{SUBDOMAINS}` / `{FOCUS_QUESTION}` 등의 UPPERCASE 표기는 LLM 텍스트 치환 플레이스홀더 관용이며, 치환 값은 아래 bundle 정의 표의 원문을 대소문자 변환 없이 그대로 사용한다 (bundle 이름은 Title Case, 세부 관점은 UPPERCASE). Bash tool(zsh) 의 case modification 제약은 repo 루트 `CLAUDE.md` "Bash tool 환경" 섹션 참조.
 > `{OTHER_BUNDLES}`는 현재 bundle을 제외한 reviewer bundle 이름의 쉼표 구분 목록이다.
+> 출력 형식 절의 `[{BUNDLE}]`도 같은 치환 대상이다 — 리터럴로 남기면 결과 헤더의 unit 이름이 배정 unit과 불일치해 unit 결속 검증(--expect-unit)에서 폐기된다.
 
 ```text
 당신은 {BUNDLE} reviewer bundle이다. 세부 관점은 {SUBDOMAINS}다.
@@ -94,12 +95,12 @@ tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-
 
 ## finding ID 문법
 
-finding ID 문법의 정본이다 — 소비 문서와 검증기는 여기를 참조하고 정규식 사본을 두지 않는다.
+finding ID 문법의 정본이다 — 문법 선언은 이 절이 소유하고, 배포 경계상 각 소비자(검증기·세션 분석기)가 구현 정규식을 소유한다. 선언을 바꾸면 소비자 구현을 함께 갱신한다 (아래 manual sync contract — 소비 문서는 정규식을 재서술하지 않고 이 절을 참조한다).
 
-- 형식: `{PREFIX}-{순번}` (순번은 각 reviewer 결과 안에서 1부터, 중복 없이).
+- 형식: `{PREFIX}-{순번}` (순번은 각 reviewer 결과 안에서 1부터, 중복 없이). 다중 라운드 문맥에서 라운드 구분이 필요한 소비자(라운드 요약·세션 내 기각 이력·분석)는 선택적 라운드 suffix를 붙인 `{PREFIX}-{순번}-r{라운드}` 형태를 쓸 수 있다 — suffix 부여 주체는 메인 에이전트다. 부여 시점·범위: 메인이 라운드 요약·세션 내 기각 이력 등 라운드 경계를 넘는 기록에 finding을 지칭할 때 원본 ID에 그 finding이 나온 라운드 번호를 붙인다. Arbiter 입력·`--expect-findings` manifest·검증기 대조는 원본 ID를 그대로 사용한다 (exact-set 대조 유지 — suffix는 기록·서술 축이지 검증 축이 아니다). reviewer는 spawn 격리 실행이라 자기 라운드 번호를 모르므로 suffix 없는 기본형만 산출한다 (라운드 축이 문법에 없어 자연 표기가 위반이 되고, 이를 피하려는 ID 개명이 검증 우회로 이어진 실측이 도입 근거 — #1259).
 - `{PREFIX}` namespace는 실행 경로에 따라 다르며 둘 다 적법하다: 기본 bundle fan-out은 bundle 이름(`Correctness-1`, `Design-2`), exhaustive override(`MAX`)는 세부 관점 이름(`SECURITY-2`, `CLEAN_CODE-1`).
-- 허용 문자: prefix는 영문자와 `_`, 순번은 숫자 (정규식 `[A-Za-z_]+-[0-9]+`). 이 제약의 목적은 namespace 검증이 아니라 shell-safe 보장이다 — reviewer가 만든 ID는 비신뢰 입력인데 이후 `--expect-findings` 셸 인자로 전달된다.
-- 검증기 구현은 `fleiss-kappa.py`의 `SAFE_FINDING_ID_PATTERN` 상수다. 문법을 바꾸면 이 절과 그 상수를 함께 갱신한다 (manual sync contract).
+- 허용 문자: prefix는 영문자와 `_`, 순번은 숫자 (기본형 정규식 `[A-Za-z_]+-[0-9]+`). live 검증 경로 전체 — reviewer 원본·Arbiter 입력·`--expect-findings` manifest — 는 기본형만 적법하다 (reviewer 원본에 suffix가 있으면 spawn 격리 위반 신호 — reviewer는 라운드를 모른다). 라운드 suffix 확장형(`[A-Za-z_]+-[0-9]+(-r[0-9]+)?`)의 기계 소비자는 세션 분석기뿐이다. 이 제약의 목적은 namespace 검증이 아니라 shell-safe 보장이다 — reviewer가 만든 ID는 비신뢰 입력인데 이후 `--expect-findings` 셸 인자로 전달된다.
+- 검증기 구현은 `fleiss-kappa.py`의 `SAFE_FINDING_ID_PATTERN`(기본형 — reviewer·Arbiter·manifest 공통)이고, 세션 분석기(`analyzing-da-sessions`의 `analyze.py`)의 `HUMAN_VERDICT_HEADER`가 확장형 문법을 별도 정규식으로 소비한다. 문법을 바꾸면 이 절과 두 소비자를 함께 갱신한다 (manual sync contract — 정규식의 기계 판정 구현은 각 소비자가, 문법 선언은 본 절이 소유한다. 배포 경계가 달라 공유 상수로 중앙화할 수 없다).
 
 ## 기본 reviewer bundle 정의
 
