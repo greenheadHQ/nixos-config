@@ -178,14 +178,34 @@ REVIEWER_VIOLATION_LABELS = ("유형", "이유", "필요 작업", "정리 대상
 def _label_value(block, label):
     """블록에서 라벨의 비어 있지 않은 값을 반환한다 (없으면 None — 누락·빈 값 동일 취급).
 
-    값 매칭 공백은 줄 내([ \\t])로 한정한다 — \\s*는 개행을 넘어 다음 줄
-    내용을 빈 라벨의 값으로 오인한다.
+    라벨은 line-start bullet에 고정한다 — 본문·fence 인용 라벨이 실제 누락을
+    대신하는 경로 차단 (#1259). 값은 같은 줄 또는 다음 줄부터의 continuation
+    (다음 bullet 라벨·heading 전까지)을 인정한다 — 라벨 다음 줄에 본문을 두는
+    정상 Markdown 형식이 실존 세션에서 관측됐다. 같은 줄 공백은 [ \\t]로
+    한정한다 — \\s*는 개행을 넘어 다음 줄을 빈 라벨의 값으로 오인한다.
     """
-    m = re.search(rf"\*\*{label}\*\*[ \t]*[:：][ \t]*(\S.*)", block)
-    return m.group(1) if m else None
+    m = re.search(rf"^-[ \t]*\*\*{label}\*\*[ \t]*[:：][ \t]*(.*)$", block, re.M)
+    if not m:
+        return None
+    inline = m.group(1).strip()
+    if inline:
+        return inline
+    cont_lines = []
+    for line in block[m.end():].splitlines():
+        if re.match(r"^-[ \t]*\*\*", line) or line.startswith("#"):
+            break
+        cont_lines.append(line)
+    cont = "\n".join(cont_lines).strip()
+    return cont if cont else None
 
 
-def validate_reviewer_file(path):
+def _header_unit_name(line):
+    """결과 헤더에서 unit 이름을 추출한다 (형식 무관 — 첫 영문 단어)."""
+    m = re.search(r"[A-Za-z_]+", line)
+    return m.group(0) if m else None
+
+
+def validate_reviewer_file(path, expected_unit=None):
     """reviewer 결과 파일 하나를 검증한다 — (status, findings_count, violations).
 
     status: "clear" | "violation" | "findings" | "malformed".
@@ -212,6 +232,14 @@ def validate_reviewer_file(path):
     is_clear = bool(REVIEWER_CLEAR_PATTERN.fullmatch(stripped))
     has_violation = bool(REVIEWER_VIOLATION_HEADER.search(first_line))
     count_match = REVIEWER_COUNT_PATTERN.search(first_line)
+    # unit 결속 (#1259) — 배정 unit과 결과 헤더의 이름 대조. 다른 unit의 CLEAR가
+    # 이 unit의 성공으로 집계되면 요청한 관점이 실행되지 않았는데 수렴에 포함된다.
+    if expected_unit:
+        header_name = _header_unit_name(stripped.splitlines()[0] if is_clear else first_line)
+        if header_name is None or header_name.lower() != expected_unit.lower():
+            return "malformed", 0, [
+                f"unit 결속 위반 — 기대 unit {expected_unit!r}, 결과 헤더 {header_name!r}"
+            ]
     if is_clear:
         return "clear", 0, []
     if has_violation:
@@ -276,11 +304,11 @@ def validate_reviewer_file(path):
     return ("findings" if not violations else "malformed"), len(finding_blocks), violations
 
 
-def run_reviewer_validation(paths):
+def run_reviewer_validation(paths, expected_unit=None):
     """--validate-reviewer 진입점 — 파일별 검증 후 JSON 리포트를 출력한다."""
     report = {"files": [], "ok": True}
     for path in paths:
-        status, count, violations = validate_reviewer_file(path)
+        status, count, violations = validate_reviewer_file(path, expected_unit)
         file_ok = not violations
         report["files"].append(
             {
@@ -369,7 +397,13 @@ def is_placeholder_value(value):
     words = set(re.findall(r"[a-z가-힣]+", stripped))
     if words and words <= PLACEHOLDER_TOKENS:
         return True
-    return bool(re.match(r"(todo|tbd|placeholder|fixme)\b", stripped))
+    # sentinel 접두어는 뒤에 실질 서술이 없을 때만 미완이다 — "TODO 주석이 남아
+    # 있다"처럼 sentinel 자체를 다루는 완성된 근거를 오차단하지 않는다.
+    m = re.match(r"(todo|tbd|placeholder|fixme)\b", stripped)
+    if m:
+        rest_words = set(re.findall(r"[a-z가-힣]+", stripped[m.end():]))
+        return not rest_words or rest_words <= PLACEHOLDER_TOKENS
+    return False
 
 # arbiter-prompt.md "출력 형식 > 기계 파싱용 VERDICT_JSON 블록" 스키마와 일치
 VERDICT_JSON_PATTERN = re.compile(
@@ -394,6 +428,9 @@ def load_validated_verdict_entries(markdown_path: Path):
         (silent overwrite 방지; caller는 BLOCKED 취급).
     """
     text = markdown_path.read_text(encoding="utf-8")
+    # blockquote 인용 줄은 구조 파싱에서 제외한다 — 인용된 완전한 verdict 형식이
+    # 실제 산출로 소비되는 injection 경로 차단 (#1259).
+    text = re.sub(r"^[ \t]*>.*$", "", text, flags=re.M)
     entries = {}
     duplicated_ids = set()
     malformed = 0
@@ -542,6 +579,13 @@ def main():
         ),
     )
     parser.add_argument(
+        "--expect-unit",
+        help=(
+            "--validate-reviewer 전용: 배정 reviewer unit 이름 (bundle 또는 MAX 세부 관점). "
+            "결과 헤더의 이름과 대조해 다른 unit의 산출이 이 unit의 성공으로 집계되는 것을 차단한다"
+        ),
+    )
+    parser.add_argument(
         "--validate-reviewer",
         action="store_true",
         help=(
@@ -559,7 +603,10 @@ def main():
         if args.expect_findings:
             print("error: --expect-findings는 --validate-only 전용이다", file=sys.stderr)
             return 1
-        return run_reviewer_validation(args.result_files)
+        return run_reviewer_validation(args.result_files, args.expect_unit)
+    if args.expect_unit:
+        print("error: --expect-unit은 --validate-reviewer 전용이다", file=sys.stderr)
+        return 1
 
     if not args.validate_only:
         # 과거 N=3 vote-shape 집계 CLI와의 호출 혼동을 명시적으로 거부한다 —

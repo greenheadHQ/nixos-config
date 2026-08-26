@@ -171,11 +171,18 @@ def test_validate_reviewer_contract(tmp_path):
             "malformed",
             "placeholder",
         ),
-        "placeholder-todo.md": (
-            "## Correctness 문제 발견: 1건\n\n"
-            + _reviewer_finding_block(근거="TODO: replace with actual evidence"),
+        # sentinel 접두어는 뒤에 실질 서술이 없을 때만 미완 — "TODO 주석이 남아 있다"
+        # 같은 sentinel 자체를 다루는 완성된 근거는 오차단하지 않는다.
+        "placeholder-todo-bare.md": (
+            "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(근거="TODO: ..."),
             "malformed",
             "placeholder",
+        ),
+        "sentinel-in-prose.md": (
+            "## Correctness 문제 발견: 1건\n\n"
+            + _reviewer_finding_block(근거="TODO 주석이 modules/foo.nix:12에 방치되어 있다."),
+            "findings",
+            None,
         ),
         # 0건 선언은 CLEAR 방어 우회 — 발견 형식은 1건 이상만
         "zero-count.md": ("## Correctness 문제 발견: 0건", "malformed", "0건은 CLEAR"),
@@ -191,6 +198,16 @@ def test_validate_reviewer_contract(tmp_path):
         # 짧은 파일:줄 레퍼런스는 유효한 근거 (길이 기준 오차단 회귀 게이트)
         "short-reference.md": (
             "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(근거="flake.nix:1"),
+            "findings",
+            None,
+        ),
+        # 라벨 다음 줄에 본문을 두는 줄바꿈형 — 실존 세션 관측 형식, 오차단 회귀 게이트
+        "continuation-value.md": (
+            "## Correctness 문제 발견: 1건\n\n"
+            + _reviewer_finding_block(근거="").replace(
+                "- **근거**: \n",
+                "- **근거**:\n  파일을 직접 읽어 확인한 줄바꿈형 근거 서술이다.\n",
+            ),
             "findings",
             None,
         ),
@@ -221,6 +238,32 @@ def test_validate_reviewer_contract(tmp_path):
                 want_error in v for v in entry["format_errors"]
             ), (name, entry)
     assert result.returncode == 1  # 위반 파일이 있으므로 전체 비0
+
+
+def test_validate_reviewer_unit_binding(tmp_path):
+    """unit 결속 (#1259) — 다른 unit의 산출이 이 unit의 성공으로 집계되는 경로 차단."""
+    wrong_clear = tmp_path / "wrong-clear.md"
+    wrong_clear.write_text("[Design]: CLEAR", encoding="utf-8")
+    right_findings = tmp_path / "right-findings.md"
+    right_findings.write_text(
+        "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(), encoding="utf-8"
+    )
+    result = _run_harness(
+        "--validate-reviewer", "--expect-unit", "Correctness", str(wrong_clear), str(right_findings)
+    )
+    report = json.loads(result.stdout)
+    by_name = {f["path"].rsplit("/", 1)[-1]: f for f in report["files"]}
+    assert by_name["wrong-clear.md"]["status"] == "malformed"
+    assert any("unit 결속" in v for v in by_name["wrong-clear.md"]["format_errors"])
+    assert by_name["right-findings.md"]["ok"], by_name["right-findings.md"]
+    # MAX 세부 관점 경로도 같은 결속으로 동작
+    subdomain = tmp_path / "subdomain.md"
+    subdomain.write_text(
+        "## SECURITY 문제 발견: 1건\n\n" + _reviewer_finding_block(ID="SECURITY-1"),
+        encoding="utf-8",
+    )
+    result2 = _run_harness("--validate-reviewer", "--expect-unit", "SECURITY", str(subdomain))
+    assert json.loads(result2.stdout)["files"][0]["ok"]
 
 
 def test_validate_reviewer_rejects_expect_findings_flag(tmp_path):

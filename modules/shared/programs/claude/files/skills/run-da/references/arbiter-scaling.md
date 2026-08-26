@@ -138,7 +138,7 @@ printf '%s' "$rc" > "$DA_DIR/$UNIT.rc"
 exit "$rc"
 ```
 
-위 Arbiter 블록은 guard·발사 조각이다 — rc 캡처·결과 수집까지 포함한 완전한 발사 블록은 "실행 절차" 절이 정본이며, 이 조각만 단독 복사해 발사하지 않는다.
+위 reviewer/Auditor 블록은 rc 캡처·영속화까지 포함한 완전한 발사 블록이다 — 결과 수집·검증 호출 지점은 [`../modes/for_plan.md`](../modes/for_plan.md) Step 3이 소유한다.
 
 rc 계약 (#1259): 캡처 순서·guard·성공 계약의 정본은 `using-codex-exec`의 "background 발사의 rc 계약"이다 — 여기는 run-da 로컬 바인딩만 소유한다: rc 영속화 경로는 `$DA_DIR/$UNIT.rc`(reviewer)·`$ARBITER_DIR/arbiter.rc`(Arbiter)이고, `.rc` 부재는 실패다 (발사 블록이 영속화 전에 죽었다는 뜻 — background 완료 알림의 exit code는 래핑 셸 rc이므로 판정에 쓰지 않는다).
 
@@ -171,6 +171,8 @@ cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-super
   -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$ARBITER_DIR/arbiter-result.md" - 2>"$ARBITER_DIR/arbiter-stderr.log"
 ```
+
+위 Arbiter 블록은 guard·발사 조각이다 — rc 캡처(`arbiter.rc`)·결과 수집까지 포함한 완전한 발사 블록은 아래 "실행 절차" 절이 정본이며, 이 조각만 단독 복사해 발사하지 않는다.
 
 `-o` 플래그(`--output-last-message <FILE>`)가 마지막 메시지를 결과 파일로 저장한다 (이것이 없으면 파일 수집 계약이 깨진다). stderr도 별도 로그 파일로 분리해 실패 진단을 보존한다.
 
