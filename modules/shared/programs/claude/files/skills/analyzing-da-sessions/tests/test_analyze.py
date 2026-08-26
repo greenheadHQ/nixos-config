@@ -406,6 +406,8 @@ def test_bundle_normalization(analyze_module):
     """finding_id의 reviewer 묶음 매핑 검증."""
     cases = [
         ("Correctness-1", "Correctness"),
+        # 라운드 suffix (#1259 — 메인이 다중 라운드 구분용으로 부여): prefix 정규화 유지
+        ("Correctness-1-r2", "Correctness"),
         ("Design-2", "Design"),
         ("Regression-3", "Regression"),
         ("Maintainability-4", "Maintainability"),

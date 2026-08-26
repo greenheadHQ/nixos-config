@@ -4,6 +4,8 @@
 
 "나는 어떤 세션에서 실행되고 있는가?" 로 경로를 선택한다. 아래 표는 본문에서 쓰는 중립 용어를 세션별 실제 도구명으로 binding하는 glossary다. 표 자체는 용어 정책의 예외로, literal 도구명을 그대로 명시한다.
 
+금지 경로 (#1259 판단 기록은 그 이슈 코멘트 참조): DA 실행 단위를 다중 에이전트 오케스트레이션 표면(Workflow 스크립트의 agent 호출 등)이나 peer 세션으로 위임하지 않는다 — 이 표면들은 spawn 단위 도구 allowlist·read-only sandbox를 광고하지 않아 tracked write·commit·외부 write를 구조적으로 막을 수 없고, 실측에서 필수 필드가 리터럴 placeholder인 산출이 성공 집계된 사고가 있다. 정식 실행 경로는 아래 표의 3개(codex exec / Codex 세션 native subagent / Claude 서브에이전트)뿐이다. 재평가 조건: 하네스가 spawn 단위 도구 allowlist 또는 read-only sandbox를 광고하는 시점에 편입을 재판단한다.
+
 | 행동 | Codex 세션 | Claude Code 세션 | headless 세션 |
 |------|-----------|------------------|---------------|
 | 사용자에게 질문 (blocking tool call) | `request_user_input` | `AskUserQuestion` 도구 | 미지원 (자동 전이 적용) |
@@ -27,7 +29,7 @@ Direct Codex 세션의 native fan-out lifecycle과 동시 발사 상한은 현�
 - 실행 중 unit의 강제 중단 (cancellation capability — lifecycle profile과 독립 축): 중단은 세션 표면에 광고된 중단 도구(예: `interrupt_agent`)가 있을 때만 수행하고, 없으면 conservative wait을 유지한다.
 - active-session gate: 각 세션은 자기 표면의 tool 목록·slot 광고로 판별한다. CLI-default probe 결과를 다른 세션(예: Desktop fresh task)의 증거로 재사용하지 않는다. CLI와 Desktop의 표면이 다르면 하나로 강제하지 말고 별도 profile로 보고한다.
 - CLI-default 실측 (codex-cli 0.146.0, 2026-08-02, `codex debug prompt-input` — surface_scope=cli-default): model-visible tools = `spawn_agent`, `followup_task`, `send_message`, `wait_agent`, `interrupt_agent`, `list_agents` (interrupt_agent 있음), 광고 slot = 17 (root 포함) → `current` profile, child batch 16. 같은 실측에서 full-history fork(`fork_turns` 생략/`"all"`)는 부모 model/effort를 상속하며 override를 받지 않는다고 광고됐다.
-- fork 상속 금지 (DA 실행 단위 공통): full-history fork는 부모의 대화 이력과 model/effort를 상속하므로 DA reviewer/Arbiter spawn에 사용하지 않는다 — fresh 계약(빈 컨텍스트 시작)과 Arbiter 강도 하한([`arbiter-scaling.md`](arbiter-scaling.md) 정본)을 동시에 깨뜨린다. 실측에서 native 경로의 Arbiter가 fork 상속으로 reviewer보다 낮은 강도로 도는 역전이 다수 관측됐다(#1258). DA 실행 단위는 fresh spawn + effort 명시 설정만 사용한다.
+- fork 상속 금지 (DA 실행 단위 공통): full-history fork는 부모의 대화 이력과 model/effort를 상속하므로 DA reviewer/Arbiter spawn에 사용하지 않는다 — fresh 계약(빈 컨텍스트 시작)과 Arbiter 강도 하한([`arbiter-scaling.md`](arbiter-scaling.md) 정본)을 동시에 깨뜨린다. 실측에서 native 경로의 Arbiter가 fork 상속으로 reviewer보다 낮은 강도로 도는 역전이 다수 관측됐고(#1258), 부모의 이전 라운드 reviewer 원문·판정·수정 diff를 통째로 상속한 사례가 관측의 절반이었다(#1259). DA 실행 단위는 어떤 경로에서든 빈 컨텍스트 시작이 spawn 계약이다 — Codex native는 fresh spawn + effort 명시 설정만, Claude 경로는 컨텍스트를 상속하는 fork형 subagent를 쓰지 않는다. 하네스가 spawn 설정을 노출하지 않아 실행 전 확인이 불가능한 경로에서는 산출물 신호(요청하지 않은 이전 라운드 finding ID·판정·수정 내용 참조)를 보조 감지로 사용한다 — 감지 시 해당 unit은 fresh 계약 위반으로 폐기하고 재실행한다.
 - slot 수의 출처: 광고 slot은 codex 고정값이 아니라 `~/.codex/config.toml`의 `[agents].max_concurrent_threads_per_session`(root 제외 값)에서 온다. 본 repo template이 16으로 선언하므로 total 17이며, 키가 없는 순정 설정에서는 total 4(child 3)다. 위 실측치를 다른 머신·순정 설정의 근거로 재사용하지 않고, 세션마다 자기 표면의 광고 문장을 1차 근거로 삼는다 (active-session gate와 동일 원칙).
 - 재검증: `./scripts/ai/verify-ai-compat.sh`의 "Codex CLI-default native capability probe" 검사가 sanitized tool-name set과 slot source만 파싱해 profile을 판정한다 (raw prompt 저장/출력 금지, `surface_scope=cli-default` 명시, unknown이면 fail). Codex pin 갱신 시 CLI-default 결과와 active-session 결과를 구분해 기록한다.
 

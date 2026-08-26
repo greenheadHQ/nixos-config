@@ -42,8 +42,10 @@ def _verdict_payload(**overrides):
 
 
 def _verdict_block(payload):
+    # 사람용 블록의 근거 라벨은 계약 필수다 — 누락·placeholder는 semantic malformed (#1259).
     return (
-        f"### {payload.get('finding_id', 'X-?')} — {payload.get('verdict', 'verdict')}\n\n"
+        f"### {payload.get('finding_id', 'X-?')} — {payload.get('verdict', 'verdict')}\n"
+        "- **근거**: 해당 위치를 직접 확인한 판정 근거 서술이다.\n\n"
         "<!-- verdict-json:start -->\n```json\n"
         + json.dumps(payload, ensure_ascii=False)
         + "\n```\n<!-- verdict-json:end -->\n"
@@ -64,6 +66,135 @@ def test_print_live_schema_reports_live_contract():
     result = _run_harness("--print-live-schema")
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "1.2"
+
+
+def _reviewer_finding_block(idx=1, **overrides):
+    fields = {
+        "ID": f"Correctness-{idx}",
+        "세부 관점": "HALLUCINATION",
+        "위치": "modules/foo.nix:12",
+        "문제": "실재하지 않는 옵션을 참조한다 — 상세 서술.",
+        "근거": "파일을 직접 읽어 확인한 근거 서술이다.",
+        "심각도": "MEDIUM",
+    }
+    fields.update(overrides)
+    lines = [f"### {idx}. 문제 제목"]
+    for label, value in fields.items():
+        if value is not None:
+            lines.append(f"- **{label}**: {value}")
+    return "\n".join(lines)
+
+
+def test_validate_reviewer_contract(tmp_path):
+    """reviewer 출력 검증기 (#1259) — 빈/절단/placeholder 산출이 성공 집계되는 경로 차단."""
+    cases = {
+        # (내용, 기대 status, 기대 위반 부분 문자열 또는 None)
+        "clear.md": ("[Correctness]: CLEAR", "clear", None),
+        "violation.md": ("VIOLATION: RECOVERABLE — sandbox가 /tmp 쓰기를 차단", "violation", None),
+        "good.md": (
+            "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(),
+            "findings",
+            None,
+        ),
+        "empty.md": ("", "malformed", "빈 결과"),
+        "truncated-header.md": ("## Correctness 문제 발", "malformed", "형식 불명"),
+        "count-mismatch.md": (
+            "## Correctness 문제 발견: 2건\n\n" + _reviewer_finding_block(),
+            "malformed",
+            "불일치",
+        ),
+        "label-missing.md": (
+            "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(근거=None),
+            "malformed",
+            "'근거' 누락" if False else "누락",
+        ),
+        "placeholder.md": (
+            "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(문제="test"),
+            "malformed",
+            "placeholder",
+        ),
+        "bad-id.md": (
+            "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(ID="Corr;rm -rf-1"),
+            "malformed",
+            "ID 문법",
+        ),
+        "round-suffix-id.md": (
+            "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(ID="Correctness-1-r2"),
+            "findings",
+            None,
+        ),
+    }
+    paths = []
+    for name, (content, _, _) in cases.items():
+        p = tmp_path / name
+        p.write_text(content, encoding="utf-8")
+        paths.append(str(p))
+    result = _run_harness("--validate-reviewer", *paths)
+    report = json.loads(result.stdout)
+    by_name = {f["path"].rsplit("/", 1)[-1]: f for f in report["files"]}
+    for name, (_, want_status, want_violation) in cases.items():
+        entry = by_name[name]
+        assert entry["status"] == want_status, (name, entry)
+        if want_violation is None:
+            assert entry["ok"], (name, entry)
+        else:
+            assert not entry["ok"] and any(
+                want_violation in v for v in entry["violations"]
+            ), (name, entry)
+    assert result.returncode == 1  # 위반 파일이 있으므로 전체 비0
+
+
+def test_validate_reviewer_rejects_expect_findings_flag(tmp_path):
+    p = tmp_path / "r.md"
+    p.write_text("[Design]: CLEAR", encoding="utf-8")
+    result = _run_harness("--validate-reviewer", "--expect-findings", "X-1", str(p))
+    assert result.returncode == 1
+    assert "--validate-only 전용" in result.stderr
+
+
+def test_arbiter_delimiter_mismatch_is_malformed(tmp_path):
+    # 절단으로 end marker가 잘린 파일 — 남은 블록이 유효해도 malformed로 계산돼야 한다.
+    payload = _verdict_payload()
+    block = _verdict_block(payload)
+    truncated = block + "\n<!-- verdict-json:start -->\n```json\n"
+    p = tmp_path / "arb.md"
+    p.write_text(
+        f"### {payload['finding_id']} — CONFIRMED_ISSUE\n- **근거**: 직접 확인한 반증 근거 서술.\n\n"
+        + truncated,
+        encoding="utf-8",
+    )
+    result = _run_harness("--validate-only", "--expect-findings", payload["finding_id"], str(p))
+    report = json.loads(result.stdout)
+    assert report["files"][0]["malformed_count"] >= 1
+    assert result.returncode == 1
+
+
+def test_arbiter_rationale_placeholder_is_malformed(tmp_path):
+    payload = _verdict_payload()
+    p = tmp_path / "arb.md"
+    p.write_text(
+        f"### {payload['finding_id']} — CONFIRMED_ISSUE\n- **근거**: test\n\n"
+        + _verdict_block(payload),
+        encoding="utf-8",
+    )
+    result = _run_harness("--validate-only", "--expect-findings", payload["finding_id"], str(p))
+    report = json.loads(result.stdout)
+    assert report["files"][0]["malformed_count"] >= 1
+    assert result.returncode == 1
+
+
+def test_arbiter_round_suffix_finding_id_is_valid(tmp_path):
+    payload = _verdict_payload(finding_id="Correctness-1-r2")
+    p = tmp_path / "arb.md"
+    p.write_text(
+        "### Correctness-1-r2 — CONFIRMED_ISSUE\n- **근거**: 직접 확인한 근거 서술이다.\n\n"
+        + _verdict_block(payload),
+        encoding="utf-8",
+    )
+    result = _run_harness("--validate-only", "--expect-findings", "Correctness-1-r2", str(p))
+    report = json.loads(result.stdout)
+    assert report["files"][0]["ok"], report
+    assert result.returncode == 0
 
 
 def test_harness_exists():

@@ -29,6 +29,7 @@
 - clean workspace 요구: `git status --porcelain=v1 --untracked-files=all`이 비어 있어야 한다. staged·unstaged·untracked 변경이 하나라도 있으면 진행하지 않고, 사용자에게 커밋·stash·정리를 요청한 뒤 중단한다. 리뷰 대상 구현이 미커밋이면 리뷰 diff와 push에서 조용히 빠지고, 무관한 사용자 변경이 남아 있으면 write phase의 agent 변경과 구분할 방법이 없다 — 두 경우 모두 clean 요구 하나로 막는다.
 - DA 실행 중 workspace 불변: DA가 도는 동안 사용자·백그라운드 프로세스가 workspace를 수정하지 않는 것이 전제다. write phase가 만든 변경과 외부 변경을 구분하는 장치를 두지 않으므로, 외부 수정이 있으면 그것도 agent commit에 포함된다 ([`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조).
 - diff 수집: `git diff main...HEAD`로 수집해 프롬프트에 직접 포함한다 (exec 우회 패턴). diff가 과도하게 크면 (`git diff main...HEAD | wc -l`로 확인) 기계적 변경(flake.lock, hash 변경 등)을 필터링한 축약 diff를 사용한다 (`git diff main...HEAD -- ':!flake.lock'`로 lock 파일 제외 가능).
+- 리뷰 대상 무결성 manifest (#1259): diff를 파일로 저장하는 실행 형태(reviewer가 diff 파일을 직접 읽는 codex exec 경로)에서는 저장 직후 `shasum -a 256 < <diff파일>`과 `wc -l < <diff파일>`을 계산해 reviewer 프롬프트에 명시하고, reviewer에게 같은 두 명령으로 전달받은 파일을 재계산해 대조하도록 지시한다 — 불일치는 리뷰를 진행하지 않고 `VIOLATION (manifest mismatch)`으로 보고한다. 해시 입력은 diff 파일 바이트 그대로다(개행 변환·경로 재작성 없음 — 두 계산이 같은 파일·같은 명령이므로 정규화 규칙은 "가공 금지" 하나다). 메인이 경로를 축약·재작성해 reviewer가 다른 표면을 읽는 사고와 stale 커밋 리뷰가 실측된 도입 근거다. 프롬프트에 diff를 인라인 포함하는 형태는 전달과 대상이 동일 채널이라 manifest를 생략한다.
 
 ## 공통 절차 (for_plan SSOT)
 
