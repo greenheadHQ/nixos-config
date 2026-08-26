@@ -58,12 +58,14 @@ def read_text(path: Path) -> str:
 
 
 def extract_runtime_profiles() -> dict[str, dict[str, str]]:
+    # 실행 프로파일 4축 표의 effort 축 행에서 기본값 셀 "`<effort>` (<profile>)"을 추출한다.
     profiles = {}
     pattern = re.compile(
-        r"^\|\s*`(strong|standard)`\s*\|[^|]+\|[^|]+\|\s*`(medium|high|xhigh)`\s*\|",
+        r"^\|\s*(?:reviewer/auditor|Arbiter) effort\s*\|[^|]*\|\s*"
+        r"`(medium|high|xhigh)`\s*\((standard|strong)\)",
         re.M,
     )
-    for profile, effort in pattern.findall(read_text(RUNTIME_MAPPING)):
+    for effort, profile in pattern.findall(read_text(RUNTIME_MAPPING)):
         profiles[profile] = {"effort": effort}
 
     found = set(profiles)

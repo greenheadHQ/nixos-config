@@ -44,19 +44,28 @@ fan-out 진행 가시성의 정본은 이 절이다. 메인 에이전트는 완�
 - 이 보고는 sleep/poll 루프를 도입하는 근거가 아니다. 결과 수집은 위 런타임 매핑 표의 완료 이벤트, foreground 종료, 결과 파일 읽기 경로만 따른다.
 - headless serial foreground 경로는 백그라운드 완료 알림이 없으므로 각 subprocess 종료 직후 같은 카운트 형식으로 보고한다.
 
-review profile 매핑 (fan-out 대상 역할별, 사용자 지정 없을 때 기본값):
+## 실행 프로파일 (역할별 축 — 본 절이 정본, #1260)
 
-| profile | 대상 | 모델 선택 | codex exec effort |
-|---------|------|-----------|-------------------|
-| `strong` | Arbiter | 세션/런타임 기본 모델 상속 | `high` |
-| `standard` | reviewer / auditor | 세션/런타임 기본 모델 상속 | `medium` |
+실행 프로파일은 하나의 값이 아니라 네 축이다. 축별로 소유 역할·기본값·런타임별 주입 가능 여부가 다르다:
 
-사용자가 자연어로 실행 경로·effort를 지정하면 위 기본 profile보다 우선한다. 적용 범위는 해당 호출의 reviewer/auditor와 Arbiter 전체다 (effort는 Arbiter 강도 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 하한 정본).
+| 축 | 의미 | 기본값 | codex exec 주입 | Codex native 주입 | Claude 경로 주입 |
+|----|------|--------|------------------|-------------------|------------------|
+| 실행 backend | fan-out 오케스트레이터 (경로 선택) | 세션 유형별 기본 경로 (위 매핑 표) | — (경로 자체) | — | — |
+| reviewer/auditor effort | 검토 강도 | `medium` (standard) | `-c model_reasoning_effort=` | spawn 단위 설정 수단이 광고된 경우만 | 수단 없음 (세션 상속) |
+| Arbiter effort | 판정 강도 — 하한 `high`(strong)는 [`arbiter-scaling.md`](arbiter-scaling.md)가 정본, 본 표는 다른 축과의 관계만 소유 | `high` (strong) | 동일 | 동일 (부재 시 전이는 하한 절) | 수단 없음 (하한 절의 전이) |
+| service tier | API tier | 미지정 (런타임 기본) | `_DA_MODEL_TIER_OVERRIDES` | 수단 없음 | 수단 없음 |
 
-| 자연어 지정 (예) | 실행 경로 | effort / 모델 처리 |
-|----------|-----------|--------------------|
-| "codex로 (xhigh/high/medium 등 effort와 함께)" | codex exec | 지정된 reasoning effort를 reviewer/auditor와 Arbiter 전체에 적용 (Arbiter는 강도 하한 적용 후). 모델명은 고정하지 않고 런타임 기본값을 사용한다 |
-| "Claude 서브에이전트로" | Claude Code `Agent` tool | Claude Code 세션 모델을 상속한다. 특정 모델명을 지정하지 않는다 |
+resolution 순서 (축별 독립 적용): ①현재 사용자 발화의 자연어 일회성 지정 > ②장기 선호 설정 파일([`../SKILL.md`](../SKILL.md) "장기 선호 설정 파일" 정본) > ③위 기본값. Arbiter 강도 하한은 이 순서 적용 후 최종 적용된다 (명시 축 예외 포함 — 하한 절 정본). 자연어 지정은 명시된 축만 바꾼다 — 명시 없는 축을 추론으로 채우지 않는다.
+
+resolution 케이스 기록 (계약 검증용 — 각 행을 수동 replay해 의도한 축만 바뀌는지 확인한다):
+
+| 지정 예 | 바뀌는 축 | 결과 |
+|---------|-----------|------|
+| "전부 xhigh로" (강도만) | reviewer·Arbiter effort | reviewer `xhigh`, Arbiter `xhigh` (하한 `high` 이상이므로 그대로). backend·tier 불변 |
+| "codex exec로" (backend만) | 실행 backend | 경로만 codex exec로. effort는 설정 파일 또는 role 기본값 유지 |
+| "codex로 전부 medium" (둘 다) | backend + 두 effort | 경로 codex exec, reviewer `medium`, Arbiter는 하한 적용으로 `high` + 사용자 고지 |
+
+비오케스트레이팅 강도 원칙: 자식 실행 유닛(reviewer/auditor/Arbiter)에는 지원되는 최고 강도라도 자동 task delegation을 포함하는 강도/모드를 선택하지 않는다 — 자식이 다시 fan-out하면 최상위 오케스트레이션과 소유자가 둘이 된다. fan-out 소유는 최상위 runner 하나로 고정한다 (child의 재-fan-out 금지는 기존 계약과 동일 축). 판정 기준은 해당 backend의 광고 문서다 — 스킬은 모델명·강도 이름을 박제하지 않는다.
 
 미지 값·불명확한 지정은 추론으로 채우지 않고 질문 도구로 확인한다 (`run-da/SKILL.md` "실행 경로·파라미터 지정" 해석 규칙).
 

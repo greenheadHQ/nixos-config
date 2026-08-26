@@ -387,3 +387,13 @@ DA 피드백 루프가 완료되면 결과를 PR 코멘트로 게시한다 (PR �
 - `USER_STOP after N rounds (stopped_by: <user|policy>, reason: <한 줄>)` — 중단 종료 (사용자 지시·한계효용 확인·정책 자동 종료).
 
 LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN: <bundle 목록>)`을 덧붙인다 — `CONVERGED (all clear) after N rounds (NOT_RUN: Design, ...)` — 미실행 bundle이 CLEAR로 오인되지 않게 하는 공개 계약이다. Round details에도 각 reviewer bundle의 `NOT_RUN` 상태를 명시한다.
+
+## canonical 이력 표기 (기록·서술 축 — 본 절이 정본, #1260)
+
+커밋 메시지·이슈 코멘트처럼 저장소 훅이 검사하는 이력 매체에서 특정 라운드·finding을 지칭해야 할 때는 소문자 축약 표기를 쓴다 (위 PR 코멘트 게시 형식의 `R{N}`·finding ID 실명 표기는 DA 요약 코멘트 전용 — 그 밖의 이력 매체에 실명 ID·라운드 번호를 쓰면 프로세스 메타데이터 박제로 차단된다):
+
+- 라운드: `r{N}` (예: r3).
+- finding: bundle 첫 글자 소문자 `{c|d|g|m}{n}` — Correctness/Design/Regression/Maintainability 순서의 축약이며 Regression은 `g`를 쓴다 (`r`은 라운드와 충돌). MAX 세부 관점을 지칭할 때는 소문자 풀네임을 그대로 쓴다 (예: security-2가 아니라 자연어 서술).
+- 결합형: `r{N}.{축약}{n}` (예: r3.c1 — 셋째 라운드의 Correctness 첫 finding).
+
+이 표기는 서술 축이다 — 기계 소비자는 없고, live 검증 경로(reviewer 원본·Arbiter 입력·manifest)의 ID 문법은 [`da-domains.md`](da-domains.md)가 정본이며 이 축약을 허용하지 않는다. 훅 통과는 표기 도입 시 실측으로 확인됐고, 훅 패턴 변경 시 재검증 명령: 대상 문장을 담은 파일로 `git commit --dry-run` 대신 실제 커밋을 시도해 lefthook commit-msg 검사 통과를 확인한다.

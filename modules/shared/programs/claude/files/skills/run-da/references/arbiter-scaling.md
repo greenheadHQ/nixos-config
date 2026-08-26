@@ -10,7 +10,7 @@ reviewer는 "없다"를 잘 찾지만, "없는 게 맞다"는 판단은 독립 �
 `run-da`의 reviewer fan-out을 4 bundle로 줄이더라도, Arbiter는 늘리지 않는다.
 비용을 늘려 여러 Arbiter를 붙이기보다, 한 명의 강한 Arbiter가 selective escalation set을 판정하는 구조를 유지한다.
 
-effective effort 우선순위: ①사용자 명시 effort > ②경로 지정의 role별 값 > ③role별 기본값(reviewer/auditor standard, Arbiter strong). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑이 정본이다.
+effective effort 우선순위: ①현재 발화의 사용자 명시 effort > ②장기 선호 설정 파일(`run-da/SKILL.md` "장기 선호 설정 파일" 정본) > ③경로 지정의 role별 값 > ④role별 기본값(reviewer/auditor standard, Arbiter strong). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 명시 축 예외는 ①에만 적용된다 (설정 파일 값은 이번 호출의 의도적 하향이 아니므로 하한이 이긴다). 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 절이 정본이다.
 
 Arbiter 추론 강도 하한 (판별력 보장 — 본 절이 정본): Arbiter의 판별력은 실행 조건에 종속한다 — 같은 판정 계약·같은 프롬프트에서 실행 강도에 따라 기각률이 0%와 75%로 갈린 실측이 있다 (#1258). 따라서:
 
@@ -50,7 +50,7 @@ selective propagation으로 추린 escalated findings를 단일 Arbiter에 전�
 현재 세션이 native subagent 오케스트레이션(`spawn_agent`, `wait_agent`; lifecycle은 [`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) capability profile로 판별)을 사용할 수 있으면
 Arbiter도 이를 기본 경로로 사용한다.
 
-- 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) review profile 매핑)로 사용한다.
+- 매 실행마다 fresh Arbiter subagent는 [run-da canonical contract](hardening-contract.md)의 strong review profile([`runtime-mapping.md`](runtime-mapping.md) 실행 프로파일 절)로 사용한다.
 - 프롬프트는 `spawn_agent` 입력에 직접 포함한다. tmp prompt 파일을 요구하지 않는다.
 - Arbiter는 review-only/no-write role이다. 파일 수정, scratch PoC, branch mutation, GitHub write, `wt`/`nrs`/rebuild 계열 실행을 하지 않는다.
 - 결과 수집: [`runtime-mapping.md`](runtime-mapping.md#result-collection)의 결과 수집 binding을 따른다 (무엇이 결과 본문이고 `wait_agent` 반환값이 무엇인지는 그 anchor가 정의한다). timeout만으로 실패 처리하거나 중간 kill/self-auditing으로 대체하지 않는다. 수집한 본문은 `/tmp/da-${_DA_SID}-arbiter-*` 네임스페이스의 scratch 파일로 저장한다 — 공통 검증기가 파일 입력 전용이므로 native 경로도 이 저장 단계를 거쳐야 검증을 수행할 수 있다 (메인 에이전트가 쓰는 결과 파일이며, Arbiter의 no-write role과 무관하다). 결과 파싱 후의 slot·batch 규칙은 capability profile을 따른다 ([`runtime-mapping.md`](runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT).
@@ -85,7 +85,7 @@ Codex 세션에서 `spawn_agent`가 정책상 거부될 때(예: `multi_agent=fa
 - 각 review unit은 독립 subprocess (fresh 판정 경계는 프로세스 경계로 보존).
 - 사용자 승인 후에만 실행 ([`hardening-contract.md`](hardening-contract.md) "Delegation fallback" 섹션 참조).
 
-role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 주의: 아래 block들의 wrapper 호출 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정하고, `RUN_DA_CODEX_EFFORT`를 profile resolution 결과로 설정한 뒤(사용자가 model/tier를 명시했으면 `RUN_DA_CODEX_MODEL`/`RUN_DA_CODEX_TIER`를, effort를 명시했으면 `RUN_DA_USER_EFFORT_OVERRIDE=1`을 — 각 축은 명시된 경우에만) guard와 함께 실행한다. 모델명은 literal로 고정하지 않는다. 기본 role effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 review profile 매핑 표가 SSOT다.
+role별 명령 (각 역할이 사용하는 임시 디렉토리와 파일 이름 규약은 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md) 본문 절차를 따른다). 주의: 아래 block들의 wrapper 호출 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본). 아래 fenced code block은 caller가 `DA_DIR`/`UNIT`을 현재 flow의 stdout 리터럴 값으로 설정하고, `RUN_DA_CODEX_EFFORT`를 profile resolution 결과로 설정한 뒤(사용자가 model/tier를 명시했으면 `RUN_DA_CODEX_MODEL`/`RUN_DA_CODEX_TIER`를, effort를 명시했으면 `RUN_DA_USER_EFFORT_OVERRIDE=1`을 — 각 축은 명시된 경우에만) guard와 함께 실행한다. 모델명은 literal로 고정하지 않는다. 기본 role effort 매핑은 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 표가 SSOT다.
 
 | profile | 기본 `RUN_DA_CODEX_EFFORT` |
 |---------|----------------------------|
