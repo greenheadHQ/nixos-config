@@ -255,11 +255,12 @@ if [ "$rc" -ne 0 ] || [ ! -s "$ARBITER_DIR/arbiter-result.md" ]; then
 else
   # tier 무시 감지 성공 분기 바인딩 — tier 주입 시 rc 0이어도 생략 경고를 같은 호출에서 확인
   # (ARBITER_DIR이 다음 호출에서 유실되므로 여기가 마지막 검사 기회다. 계약: "사용자 지정 실행 파라미터" 절)
-  # 패턴은 CLI omit 진단 시그니처에 앵커링한다 — stderr에는 프롬프트 전문 에코가 남으므로
-  # 단순 service_tier 언급 매치는 입력 문서에 그 단어가 있는 정상 실행을 오탐한다.
-  if [ -n "${RUN_DA_CODEX_TIER:-}" ] && grep -qiE 'service tier .*(not advertised|omitted)' "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null; then
+  # 패턴은 CLI 진단의 줄 시작 `warning:` prefix까지 앵커링한다 — stderr에는 프롬프트 전문 에코가
+  # 남으므로 느슨한 매치는 입력 문서가 같은 진단 문구를 인용하는 정상 실행(예: 이 문서 자신을
+  # 리뷰하는 diff)을 오탐한다. 시그니처 실측 정본: using-codex-exec "service_tier 미지원/오타" 절.
+  if [ -n "${RUN_DA_CODEX_TIER:-}" ] && grep -qiE '^warning: Configured service tier .*(not advertised|omitted)' "$ARBITER_DIR/arbiter-stderr.log" 2>/dev/null; then
     echo "TIER_WARNING: stderr에 tier omit 진단 존재 — 아래 결과는 유효하나 tier 미적용 사실을 사용자에게 보고할 것"
-    grep -iE 'service tier .*(not advertised|omitted)' "$ARBITER_DIR/arbiter-stderr.log"
+    grep -iE '^warning: Configured service tier .*(not advertised|omitted)' "$ARBITER_DIR/arbiter-stderr.log"
   fi
   cat "$ARBITER_DIR/arbiter-result.md"
 fi

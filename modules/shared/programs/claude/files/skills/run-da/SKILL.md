@@ -117,7 +117,7 @@ gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 
 | gate | 위임 없음 | 위임 있음 |
 |------|-----------|-----------|
 | SKIP 제안 승인 | 질문 도구 | 자동 LITE 승격 (SKIP 확정은 사용자 전용 — headless 규칙과 동일) |
-| 3회 반복 판정 | 질문 도구 (수용/제외/배출) | 자동 수용 (지적대로 수정) |
+| 3회 반복 판정 | 질문 도구 (수용/제외/배출) | 자동 수용 (지적대로 수정) — 단 보류 판정에는 적용 금지 (아래 gate 우선순위) |
 | 라운드 한계효용 저하 | 질문 도구 | 현재 상태 보고 후 종료 (headless 규칙과 동일 — 자동 수정 계속 금지) |
 | outer round 기본 상한 도달 (유효 상한 정의는 protocol.md "최대 라운드 수") | 질문 도구 (계속/종료) | `max_round_extensions`까지 자동 연장 후, 소진(유효 상한) 시 비수렴 종료 라벨로 종료 |
 | fresh 반복 감지 | 질문 도구 | 자동 fresh 재실행 1회, 재발 시 종료 보고 |
@@ -130,6 +130,8 @@ gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 
 | native effort 설정 수단 부재 | 질문 도구 (Arbiter-only 전환 승인) | 위임으로 대체 불가 — 전환하지 않고 중단 보고 (hardening 경계) |
 | delegation-denied subprocess fallback | 질문 도구 (승인) | 위임으로 대체 불가 — 중단 보고 (hardening 경계) |
 | 비수렴 종료(상한·중단) 후 push | 사용자 위임 보고 | push하지 않고 미해결 상태 보고 (기존 계약 유지) |
+
+gate 우선순위 (한 finding에 여러 gate가 동시에 성립할 때): ①semantic malformed 처리 → ②LOW confidence·UNCLEAR 보류 (미해결 계산 — 이 상태의 finding은 3회 반복 자동 수용 대상이 아니다) → ③3회 반복 자동 수용. 보류 판정을 반복 횟수로 자동 수정하면 fail-closed 승격 계약이 우회된다 — recurrence key(세부 관점+위치)는 요약을 포함하지 않는 넓은 키라 서로 다른 실패 양상이 한 반복으로 묶일 수 있어, 보류 상태에서는 반복 자동화보다 사용자 판단 대기가 우선한다.
 
 위임 제외 범위 (위임이 있어도 자동화하지 않는다): ①BLOCKED(malformed 재실행 후 잔존 — 자동 승격 금지 유지), ②hardening 계약의 subprocess fallback 승인(구조적 write 경계는 사전 위임으로 대체할 수 없다), ③마스킹 게이트를 통과하지 못하는 공개 배출(SECURITY disclosure-safe 불가 포함 — 위임과 무관하게 미해결), ④상한 연장의 무제한 반복(`max_round_extensions` 소진 후에는 종료).
 

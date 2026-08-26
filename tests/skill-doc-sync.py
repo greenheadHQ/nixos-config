@@ -474,7 +474,7 @@ def check_capability_profile() -> None:
         raise CheckFailure("\n".join(details))
 
 
-TIER_WARNING_SIGNATURE = "'service tier .*(not advertised|omitted)'"
+TIER_WARNING_SIGNATURE = "'^warning: Configured service tier .*(not advertised|omitted)'"
 
 
 def check_tier_warning_contract() -> None:
