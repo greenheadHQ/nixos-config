@@ -400,23 +400,33 @@ def check_rc_tail_contract() -> None:
     targets = {
         Path("modules/shared/programs/claude/files/skills/using-codex-exec/SKILL.md"): 1,
         Path("modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md"): 1,
-        Path("modules/shared/programs/claude/files/skills/using-codex-exec/references/patterns.md"): 1,
+        # patterns.md의 rc 블록은 .rc 영속화 없는 foreground 판정식 예시라 대상이 아니다
         ARBITER_SCALING: 2,
     }
-    required = [
-        r'pipe_rcs=\("\$\{pipestatus\[@\]\}"\)',
-        r'\[ -n "\$rc" \] && \[ -n "\$\{pipe_rcs\[1\]\}" \]',
-        r'\[ "\$\{pipe_rcs\[1\]\}" = "0" \] \|\| rc="\$\{pipe_rcs\[1\]\}"',
-    ]
+    # 순서 고정 시퀀스 — 블록 단위로 검사한다 (문서 전체 카운트 합산은 한 블록의
+    # guard 삭제를 다른 블록·설명의 동일 문자열이 가리는 것을 허용한다).
+    sequence = (
+        r'pipe_rcs=\("\$\{pipestatus\[@\]\}"\)'
+        r'.*?\[ -n "\$(?:rc|_EC)" \] && \[ -n "\$\{pipe_rcs\[1\]\}" \]'
+        r'.*?\[ "\$\{pipe_rcs\[1\]\}" = "0" \] \|\|'
+    )
     details = []
     for path, min_count in targets.items():
         text = read_text(path)
-        for pattern in required:
-            found = len(re.findall(pattern, text))
-            if found < min_count:
-                details.append(
-                    f"{path}: rc tail 계약 요소 {pattern!r} {found}회 (최소 {min_count}회 필요)"
-                )
+        blocks = re.findall(r"^[ \t]*```[^\n]*\n(.*?)\n[ \t]*```[ \t]*$", text, re.S | re.M)
+        # 검사 대상은 `.rc` 영속화가 있는 background tail 사본뿐이다 — 영속화 없는
+        # foreground 판정식 예시(스냅샷+판정만)는 이 계약의 사본이 아니다.
+        rc_blocks = [b for b in blocks if "pipe_rcs=" in b and re.search(r"printf '%s' \"\$(?:rc|_EC)\" > \"[^\"]*\.rc\"", b)]
+        complete = [b for b in rc_blocks if re.search(sequence, b, re.S)]
+        if len(rc_blocks) < min_count:
+            details.append(
+                f"{path}: rc tail 실행 블록 {len(rc_blocks)}개 (최소 {min_count}개 필요)"
+            )
+        incomplete = len(rc_blocks) - len(complete)
+        if incomplete:
+            details.append(
+                f"{path}: guard 시퀀스(스냅샷→비어있음 검사→좌측 반영)가 불완전한 rc 블록 {incomplete}개"
+            )
     if details:
         raise CheckFailure("\n".join(details))
 

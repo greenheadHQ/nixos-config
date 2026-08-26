@@ -124,6 +124,7 @@ for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"
 done
 [ -d "$DA_DIR" ] || { echo "missing DA_DIR=$DA_DIR"; exit 1; }
 [ -f "$DA_DIR/$UNIT.md" ] || { echo "missing prompt=$DA_DIR/$UNIT.md"; exit 1; }
+rm -f "$DA_DIR/$UNIT.rc" "$DA_DIR/$UNIT-result.md"  # 재실행 시 stale 산출물 제거 — 조기 exit·-o 미재작성 시 구 rc/결과가 이번 실행으로 오인되는 경로 차단
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
 cat "$DA_DIR/$UNIT.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
   -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
@@ -231,6 +232,7 @@ for _kv in "model=${RUN_DA_CODEX_MODEL:-}" "service_tier=${RUN_DA_CODEX_TIER:-}"
   esac
 done
 # marker must apply to `codex`, not `cat` (issue #585): Codex 0.124+ user-level hooks의 early-exit 신호.
+rm -f "$ARBITER_DIR/arbiter.rc" "$ARBITER_DIR/arbiter-result.md"  # 재실행 시 stale 산출물 제거 (reviewer 블록과 동일 근거)
 cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral \
   -c model_reasoning_effort="$RUN_DA_CODEX_EFFORT" "${_DA_MODEL_TIER_OVERRIDES[@]}" \
   -o "$ARBITER_DIR/arbiter-result.md" \
