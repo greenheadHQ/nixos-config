@@ -96,10 +96,10 @@ tracked workspace write, branch mutation, commit/push, GitHub write, main-agent-
 
 finding ID 문법의 정본이다 — 소비 문서와 검증기는 여기를 참조하고 정규식 사본을 두지 않는다.
 
-- 형식: `{PREFIX}-{순번}` (순번은 각 reviewer 결과 안에서 1부터, 중복 없이). 다중 라운드 문맥에서 라운드 구분이 필요한 소비자(라운드 요약·세션 내 기각 이력·분석)는 선택적 라운드 suffix를 붙인 `{PREFIX}-{순번}-r{라운드}` 형태를 쓸 수 있다 — suffix 부여 주체는 메인 에이전트다. reviewer는 fresh 실행이라 자기 라운드 번호를 모르므로 suffix 없는 기본형만 산출한다 (라운드 축이 문법에 없어 자연 표기가 위반이 되고, 이를 피하려는 ID 개명이 검증 우회로 이어진 실측이 도입 근거 — #1259).
+- 형식: `{PREFIX}-{순번}` (순번은 각 reviewer 결과 안에서 1부터, 중복 없이). 다중 라운드 문맥에서 라운드 구분이 필요한 소비자(라운드 요약·세션 내 기각 이력·분석)는 선택적 라운드 suffix를 붙인 `{PREFIX}-{순번}-r{라운드}` 형태를 쓸 수 있다 — suffix 부여 주체는 메인 에이전트다. 부여 시점·범위: 메인이 라운드 요약·세션 내 기각 이력 등 라운드 경계를 넘는 기록에 finding을 지칭할 때 원본 ID에 그 finding이 나온 라운드 번호를 붙인다. Arbiter 입력·`--expect-findings` manifest·검증기 대조는 원본 ID를 그대로 사용한다 (exact-set 대조 유지 — suffix는 기록·서술 축이지 검증 축이 아니다). reviewer는 fresh 실행이라 자기 라운드 번호를 모르므로 suffix 없는 기본형만 산출한다 (라운드 축이 문법에 없어 자연 표기가 위반이 되고, 이를 피하려는 ID 개명이 검증 우회로 이어진 실측이 도입 근거 — #1259).
 - `{PREFIX}` namespace는 실행 경로에 따라 다르며 둘 다 적법하다: 기본 bundle fan-out은 bundle 이름(`Correctness-1`, `Design-2`), exhaustive override(`MAX`)는 세부 관점 이름(`SECURITY-2`, `CLEAN_CODE-1`).
 - 허용 문자: prefix는 영문자와 `_`, 순번은 숫자, 선택적 suffix는 `-r{숫자}`. 산출 주체별로 허용 범위가 다르다 — reviewer 원본 검증은 suffix 없는 기본형(`[A-Za-z_]+-[0-9]+`)만 허용하고(suffix가 있으면 fresh 위반 신호 — reviewer는 라운드를 모른다), 메인·Arbiter·셸 소비자는 suffix 포함 확장형(`[A-Za-z_]+-[0-9]+(-r[0-9]+)?`)을 허용한다. 이 제약의 목적은 namespace 검증이 아니라 shell-safe 보장이다 — reviewer가 만든 ID는 비신뢰 입력인데 이후 `--expect-findings` 셸 인자로 전달된다.
-- 검증기 구현은 `fleiss-kappa.py`의 `REVIEWER_BASE_ID_PATTERN`(reviewer 원본)·`SAFE_FINDING_ID_PATTERN`(확장형) 상수다. 문법을 바꾸면 이 절과 두 상수를 함께 갱신한다 (manual sync contract — 정규식의 기계 판정 구현은 검증기가, 문법 선언은 본 절이 소유한다).
+- 검증기 구현은 `fleiss-kappa.py`의 `REVIEWER_BASE_ID_PATTERN`(reviewer 원본)·`SAFE_FINDING_ID_PATTERN`(확장형) 상수이고, 세션 분석기(`analyzing-da-sessions`의 `analyze.py`)의 `HUMAN_VERDICT_HEADER`도 확장형 문법을 별도 정규식으로 소비한다. 문법을 바꾸면 이 절과 세 소비자를 함께 갱신한다 (manual sync contract — 정규식의 기계 판정 구현은 각 소비자가, 문법 선언은 본 절이 소유한다. 배포 경계가 달라 공유 상수로 중앙화할 수 없다).
 
 ## 기본 reviewer bundle 정의
 

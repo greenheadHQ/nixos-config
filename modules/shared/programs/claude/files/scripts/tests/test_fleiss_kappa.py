@@ -87,6 +87,7 @@ def _reviewer_finding_block(idx=1, **overrides):
         "문제": "실재하지 않는 옵션을 참조한다 — 상세 서술.",
         "근거": "파일을 직접 읽어 확인한 근거 서술이다.",
         "심각도": "MEDIUM",
+        "권장 수정": "해당 옵션 참조를 실재 옵션으로 교체한다.",
     }
     fields.update(overrides)
     lines = [f"### {idx}. 문제 제목"]
@@ -176,6 +177,31 @@ def test_validate_reviewer_contract(tmp_path):
             "malformed",
             "placeholder",
         ),
+        # 0건 선언은 CLEAR 방어 우회 — 발견 형식은 1건 이상만
+        "zero-count.md": ("## Correctness 문제 발견: 0건", "malformed", "0건은 CLEAR"),
+        # 결과 내 중복 ID — ID별 일대일 판정·manifest 대조 파괴
+        "duplicate-id.md": (
+            "## Correctness 문제 발견: 2건\n\n"
+            + _reviewer_finding_block(1)
+            + "\n\n"
+            + _reviewer_finding_block(2, ID="Correctness-1"),
+            "malformed",
+            "중복 finding ID",
+        ),
+        # 짧은 파일:줄 레퍼런스는 유효한 근거 (길이 기준 오차단 회귀 게이트)
+        "short-reference.md": (
+            "## Correctness 문제 발견: 1건\n\n" + _reviewer_finding_block(근거="flake.nix:1"),
+            "findings",
+            None,
+        ),
+        # 미치환 템플릿 VIOLATION — enum fullmatch로 거부
+        "violation-template.md": (
+            "## [Correctness] 위반 상태: VIOLATION\n\n"
+            "- **유형**: RECOVERABLE / STATEFUL\n- **이유**: test\n"
+            "- **필요 작업**: N/A\n- **정리 대상**: N/A\n- **로컬 정리 필요**: YES / NO",
+            "malformed",
+            "enum 밖 값",
+        ),
     }
     paths = []
     for name, (content, _, _) in cases.items():
@@ -185,14 +211,14 @@ def test_validate_reviewer_contract(tmp_path):
     result = _run_harness("--validate-reviewer", *paths)
     report = json.loads(result.stdout)
     by_name = {f["path"].rsplit("/", 1)[-1]: f for f in report["files"]}
-    for name, (_, want_status, want_violation) in cases.items():
+    for name, (_, want_status, want_error) in cases.items():
         entry = by_name[name]
         assert entry["status"] == want_status, (name, entry)
-        if want_violation is None:
+        if want_error is None:
             assert entry["ok"], (name, entry)
         else:
             assert not entry["ok"] and any(
-                want_violation in v for v in entry["violations"]
+                want_error in v for v in entry["format_errors"]
             ), (name, entry)
     assert result.returncode == 1  # 위반 파일이 있으므로 전체 비0
 

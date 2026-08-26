@@ -168,7 +168,7 @@ def validate_verdict_entry(entry):
 REVIEWER_CLEAR_PATTERN = re.compile(r"^\s*\[?[A-Za-z_ ]+\]?\s*[:：]\s*CLEAR\s*$")
 REVIEWER_COUNT_PATTERN = re.compile(r"문제 발견\s*[:：]\s*(\d+)\s*건")
 REVIEWER_VIOLATION_HEADER = re.compile(r"위반 상태\s*[:：]\s*VIOLATION")
-REVIEWER_REQUIRED_LABELS = ("ID", "세부 관점", "위치", "문제", "근거", "심각도")
+REVIEWER_REQUIRED_LABELS = ("ID", "세부 관점", "위치", "문제", "근거", "심각도", "권장 수정")
 # VIOLATION 보고의 필수 라벨 (da-domains.md 정본 형식과 동기화)
 REVIEWER_VIOLATION_LABELS = ("유형", "이유", "필요 작업", "정리 대상", "로컬 정리 필요")
 # producer(reviewer) 기본형 — 라운드 suffix 불허. suffix 부여 주체는 메인이므로
@@ -217,8 +217,15 @@ def validate_reviewer_file(path):
             if _label_value(text, label) is None:
                 violations.append(f"VIOLATION 필수 라벨 '{label}' 누락/빈 값 (정본: da-domains.md)")
         vtype = _label_value(text, "유형")
-        if vtype is not None and not re.match(r"(RECOVERABLE|STATEFUL)\b", vtype.strip()):
-            violations.append(f"VIOLATION 유형 enum 밖 값: {vtype.strip()[:30]!r}")
+        if vtype is not None and not re.fullmatch(r"RECOVERABLE|STATEFUL", vtype.strip()):
+            # fullmatch — 미치환 템플릿 "RECOVERABLE / STATEFUL"이 enum으로 통과하는 경로 차단
+            violations.append(f"VIOLATION 유형 enum 밖 값 (단일 값 필수): {vtype.strip()[:30]!r}")
+        cleanup = _label_value(text, "로컬 정리 필요")
+        if cleanup is not None and not re.fullmatch(r"YES|NO", cleanup.strip()):
+            violations.append(f"VIOLATION 로컬 정리 필요 enum 밖 값 (YES|NO): {cleanup.strip()[:30]!r}")
+        reason = _label_value(text, "이유")
+        if reason is not None and is_placeholder_value(reason):
+            violations.append(f"VIOLATION 이유 값이 placeholder/미완: {reason.strip()[:40]!r}")
         return ("violation" if not violations else "malformed"), 0, violations
     if not count_match:
         return "malformed", 0, [
@@ -226,12 +233,17 @@ def validate_reviewer_file(path):
         ]
     violations = []
     declared = int(count_match.group(1))
+    if declared < 1:
+        # 0건은 CLEAR 형식(파일 전체 fullmatch)으로만 표현한다 — "문제 발견: 0건"이
+        # finding 0개 파일을 findings 성공으로 만들어 CLEAR 방어를 우회하는 경로 차단.
+        return "malformed", 0, ["발견 형식의 선언 건수는 1 이상이어야 한다 — 0건은 CLEAR 형식 전용"]
     blocks = re.split(r"^###\s+", text, flags=re.M)[1:]
     finding_blocks = [b for b in blocks if re.search(r"\*\*ID\*\*", b)]
     if len(finding_blocks) != declared:
         violations.append(
             f"선언 건수({declared})와 finding 블록 수({len(finding_blocks)}) 불일치 (절단/미완 의심)"
         )
+    seen_ids = set()
     for i, block in enumerate(finding_blocks, 1):
         values = {}
         for label in REVIEWER_REQUIRED_LABELS:
@@ -240,6 +252,11 @@ def validate_reviewer_file(path):
                 violations.append(f"블록 {i}: 필수 라벨 '{label}' 누락/빈 값 (절단/미완 의심)")
             values[label] = value
         raw_id = (values.get("ID") or "").strip().strip("`")
+        if raw_id:
+            if raw_id in seen_ids:
+                # 결과 내 중복 ID — Arbiter의 ID별 일대일 판정과 manifest 대조를 깨뜨린다
+                violations.append(f"블록 {i}: 결과 내 중복 finding ID: {raw_id!r}")
+            seen_ids.add(raw_id)
         if raw_id and not REVIEWER_BASE_ID_PATTERN.fullmatch(raw_id):
             violations.append(
                 f"블록 {i}: finding ID 문법 위반 (reviewer 기본형 {{PREFIX}}-{{순번}} 한정 — "
@@ -267,7 +284,7 @@ def run_reviewer_validation(paths):
                 "path": str(path),
                 "status": status,
                 "findings_count": count,
-                "violations": violations,
+                "format_errors": violations,
                 "ok": file_ok,
             }
         )
@@ -333,16 +350,16 @@ SAFE_FINDING_ID_PATTERN = re.compile(r"[A-Za-z_]+-[0-9]+(?:-r[0-9]+)?")
 # 필수 필드가 리터럴 "test"인 산출이 성공 집계된 사고). 값 전체가 토큰 하나로
 # 구성되거나 최소 길이 미달이면 미완 산출로 거부한다.
 PLACEHOLDER_TOKENS = frozenset({"test", "todo", "placeholder", "tbd", "..."})
-MIN_RATIONALE_LENGTH = 15
 
 
 def is_placeholder_value(value):
     """근거·문제 서술 값이 placeholder/미완인지 판정한다 (True = 위반).
 
-    범위는 관측된 sentinel 계열로 한정한다 — 유일 토큰 반복("test test test"),
-    sentinel로 시작하는 미완 표기("TODO: ..."), 최소 길이 미달(절단 겸용).
-    길이·토큰을 채운 위장 placeholder는 기계 판정 범위 밖이며(의미 판정은
-    Arbiter·리뷰 몫), 이 함수는 성공 집계 차단용 하한이다.
+    범위는 관측된 sentinel 계열로 한정한다 — 빈 값, 유일 토큰 반복("test test
+    test"), sentinel로 시작하는 미완 표기("TODO: ..."). 길이 기준은 두지 않는다 —
+    짧은 파일:줄·계획 항목 레퍼런스는 계약상 유효한 근거다. 길이·토큰을 채운
+    위장 placeholder는 기계 판정 범위 밖이며(의미 판정은 Arbiter·리뷰 몫),
+    이 함수는 성공 집계 차단용 하한이다.
     """
     stripped = value.strip().strip("`\"'.,;:-— ").lower()
     if not stripped:
@@ -350,9 +367,7 @@ def is_placeholder_value(value):
     words = set(re.findall(r"[a-z가-힣]+", stripped))
     if words and words <= PLACEHOLDER_TOKENS:
         return True
-    if re.match(r"(todo|tbd|placeholder|fixme)\b", stripped):
-        return True
-    return len(value.strip()) < MIN_RATIONALE_LENGTH
+    return bool(re.match(r"(todo|tbd|placeholder|fixme)\b", stripped))
 
 # arbiter-prompt.md "출력 형식 > 기계 파싱용 VERDICT_JSON 블록" 스키마와 일치
 VERDICT_JSON_PATTERN = re.compile(
