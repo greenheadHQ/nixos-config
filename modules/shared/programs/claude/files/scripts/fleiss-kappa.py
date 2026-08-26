@@ -165,9 +165,25 @@ def validate_verdict_entry(entry):
 
 
 # reviewer 결과 형식 (da-domains.md "출력 형식" 정본과 동기화 — manual sync contract)
-REVIEWER_CLEAR_PATTERN = re.compile(r"^\s*\[?[A-Za-z_ ]+\]?\s*[:：]\s*CLEAR\s*$", re.M)
+REVIEWER_CLEAR_PATTERN = re.compile(r"^\s*\[?[A-Za-z_ ]+\]?\s*[:：]\s*CLEAR\s*$")
 REVIEWER_COUNT_PATTERN = re.compile(r"문제 발견\s*[:：]\s*(\d+)\s*건")
+REVIEWER_VIOLATION_HEADER = re.compile(r"위반 상태\s*[:：]\s*VIOLATION")
 REVIEWER_REQUIRED_LABELS = ("ID", "세부 관점", "위치", "문제", "근거", "심각도")
+# VIOLATION 보고의 필수 라벨 (da-domains.md 정본 형식과 동기화)
+REVIEWER_VIOLATION_LABELS = ("유형", "이유", "필요 작업", "정리 대상", "로컬 정리 필요")
+# producer(reviewer) 기본형 — 라운드 suffix 불허. suffix 부여 주체는 메인이므로
+# (da-domains.md 정본) reviewer 원본에 suffix가 있으면 fresh 위반 신호다.
+REVIEWER_BASE_ID_PATTERN = re.compile(r"[A-Za-z_]+-[0-9]+")
+
+
+def _label_value(block, label):
+    """블록에서 라벨의 비어 있지 않은 값을 반환한다 (없으면 None — 누락·빈 값 동일 취급).
+
+    값 매칭 공백은 줄 내([ \\t])로 한정한다 — \\s*는 개행을 넘어 다음 줄
+    내용을 빈 라벨의 값으로 오인한다.
+    """
+    m = re.search(rf"\*\*{label}\*\*[ \t]*[:：][ \t]*(\S.*)", block)
+    return m.group(1) if m else None
 
 
 def validate_reviewer_file(path):
@@ -176,24 +192,39 @@ def validate_reviewer_file(path):
     status: "clear" | "violation" | "findings" | "malformed".
     Arbiter 검증(--validate-only)과 산출 주체가 달라 분리된 검증기다 (#1259) —
     빈/절단 산출, 선언 건수 불일치, placeholder 값이 성공으로 집계되는 경로를 차단한다.
-    VIOLATION 보고는 reviewer의 적법 산출이므로 형식 위반이 아니라 별도 status로
+    VIOLATION 보고는 reviewer의 적법 산출이므로 정본 형식을 갖추면 별도 status로
     보고한다 (전이는 hardening-contract.md VIOLATION 공통 처리 소유).
+    형식 판별은 상호 배타다 — CLEAR·VIOLATION 헤더·발견 헤더가 공존하면 malformed
+    (finding 본문에 인용된 CLEAR 한 줄이 전체 결과를 0건으로 덮어쓰는 injection 차단).
     """
-    violations = []
     if not path.is_file():
         return "malformed", 0, [f"파일 없음: {path}"]
     text = path.read_text(encoding="utf-8")
-    if not text.strip():
+    stripped = text.strip()
+    if not stripped:
         return "malformed", 0, ["빈 결과 파일"]
-    if re.search(r"\bVIOLATION\b", text) and not REVIEWER_COUNT_PATTERN.search(text):
-        return "violation", 0, []
-    if REVIEWER_CLEAR_PATTERN.search(text):
-        return "clear", 0, []
+    is_clear = bool(REVIEWER_CLEAR_PATTERN.fullmatch(stripped))
+    has_violation = bool(REVIEWER_VIOLATION_HEADER.search(text))
     count_match = REVIEWER_COUNT_PATTERN.search(text)
+    signals = sum((is_clear, has_violation, bool(count_match)))
+    if signals > 1:
+        return "malformed", 0, ["형식 신호 공존 (CLEAR/VIOLATION/발견 헤더 중 2개 이상) — 판별 불가"]
+    if is_clear:
+        return "clear", 0, []
+    if has_violation:
+        violations = []
+        for label in REVIEWER_VIOLATION_LABELS:
+            if _label_value(text, label) is None:
+                violations.append(f"VIOLATION 필수 라벨 '{label}' 누락/빈 값 (정본: da-domains.md)")
+        vtype = _label_value(text, "유형")
+        if vtype is not None and not re.match(r"(RECOVERABLE|STATEFUL)\b", vtype.strip()):
+            violations.append(f"VIOLATION 유형 enum 밖 값: {vtype.strip()[:30]!r}")
+        return ("violation" if not violations else "malformed"), 0, violations
     if not count_match:
         return "malformed", 0, [
-            "형식 불명 — CLEAR도, VIOLATION도, '문제 발견: N건' 헤더도 없음 (절단/미완 의심)"
+            "형식 불명 — CLEAR도, VIOLATION 헤더도, '문제 발견: N건' 헤더도 없음 (절단/미완 의심)"
         ]
+    violations = []
     declared = int(count_match.group(1))
     blocks = re.split(r"^###\s+", text, flags=re.M)[1:]
     finding_blocks = [b for b in blocks if re.search(r"\*\*ID\*\*", b)]
@@ -202,20 +233,25 @@ def validate_reviewer_file(path):
             f"선언 건수({declared})와 finding 블록 수({len(finding_blocks)}) 불일치 (절단/미완 의심)"
         )
     for i, block in enumerate(finding_blocks, 1):
+        values = {}
         for label in REVIEWER_REQUIRED_LABELS:
-            if not re.search(rf"\*\*{label}\*\*\s*[:：]", block):
-                violations.append(f"블록 {i}: 필수 라벨 '{label}' 누락 (절단/미완 의심)")
-        id_match = re.search(r"\*\*ID\*\*\s*[:：]\s*`?([^\s`]+)`?", block)
-        if id_match and not SAFE_FINDING_ID_PATTERN.fullmatch(id_match.group(1)):
-            violations.append(f"블록 {i}: finding ID 문법 위반: {id_match.group(1)!r}")
-        sev_match = re.search(r"\*\*심각도\*\*\s*[:：]\s*([A-Z]+)", block)
-        if sev_match and sev_match.group(1) not in SEVERITY_VALUES:
-            violations.append(f"블록 {i}: 심각도 enum 밖 값: {sev_match.group(1)!r}")
+            value = _label_value(block, label)
+            if value is None:
+                violations.append(f"블록 {i}: 필수 라벨 '{label}' 누락/빈 값 (절단/미완 의심)")
+            values[label] = value
+        raw_id = (values.get("ID") or "").strip().strip("`")
+        if raw_id and not REVIEWER_BASE_ID_PATTERN.fullmatch(raw_id):
+            violations.append(
+                f"블록 {i}: finding ID 문법 위반 (reviewer 기본형 {{PREFIX}}-{{순번}} 한정 — "
+                f"라운드 suffix는 메인 부여): {raw_id!r}"
+            )
+        sev = (values.get("심각도") or "").strip()
+        if sev and sev not in SEVERITY_VALUES:
+            violations.append(f"블록 {i}: 심각도 enum 밖 값: {sev!r}")
         for label in ("문제", "근거"):
-            m = re.search(rf"\*\*{label}\*\*\s*[:：]\s*(.+)", block)
-            if m and is_placeholder_value(m.group(1)):
+            if values.get(label) is not None and is_placeholder_value(values[label]):
                 violations.append(
-                    f"블록 {i}: '{label}' 값이 placeholder/미완: {m.group(1).strip()[:40]!r}"
+                    f"블록 {i}: '{label}' 값이 placeholder/미완: {values[label].strip()[:40]!r}"
                 )
     return ("findings" if not violations else "malformed"), len(finding_blocks), violations
 
@@ -301,11 +337,20 @@ MIN_RATIONALE_LENGTH = 15
 
 
 def is_placeholder_value(value):
-    """근거·문제 서술 값이 placeholder/미완인지 판정한다 (True = 위반)."""
+    """근거·문제 서술 값이 placeholder/미완인지 판정한다 (True = 위반).
+
+    범위는 관측된 sentinel 계열로 한정한다 — 유일 토큰 반복("test test test"),
+    sentinel로 시작하는 미완 표기("TODO: ..."), 최소 길이 미달(절단 겸용).
+    길이·토큰을 채운 위장 placeholder는 기계 판정 범위 밖이며(의미 판정은
+    Arbiter·리뷰 몫), 이 함수는 성공 집계 차단용 하한이다.
+    """
     stripped = value.strip().strip("`\"'.,;:-— ").lower()
     if not stripped:
         return True
-    if stripped in PLACEHOLDER_TOKENS:
+    words = set(re.findall(r"[a-z가-힣]+", stripped))
+    if words and words <= PLACEHOLDER_TOKENS:
+        return True
+    if re.match(r"(todo|tbd|placeholder|fixme)\b", stripped):
         return True
     return len(value.strip()) < MIN_RATIONALE_LENGTH
 
@@ -335,17 +380,19 @@ def load_validated_verdict_entries(markdown_path: Path):
     entries = {}
     duplicated_ids = set()
     malformed = 0
-    # delimiter 쌍 무결성 — start/end marker 수 불일치는 절단 또는 손상 산출의
-    # 직접 신호다 (미완 파일이 마지막 블록만 잃고 통과하는 경로 차단, #1259).
-    starts = text.count("<!-- verdict-json:start -->")
-    ends = text.count("<!-- verdict-json:end -->")
-    if starts != ends:
-        print(
-            f"warning: verdict-json delimiter mismatch in {markdown_path}: "
-            f"start={starts} end={ends}",
-            file=sys.stderr,
-        )
-        malformed += 1
+    # delimiter 쌍 무결성 — 완전한 VERDICT_JSON match에 속하지 않는 raw start
+    # marker(라인 시작)는 절단·손상 산출의 직접 신호다 (미완 파일이 마지막 블록만
+    # 잃고 통과하는 경로 차단, #1259). 단순 개수 비교는 쓰지 않는다 — 사람용
+    # 본문에 인라인 인용된 marker(계약 자체를 리뷰하는 정상 산출)를 오차단하고,
+    # orphan start/end가 상쇄되는 손상은 놓친다. end 단독 인용은 판정하지 않는다.
+    match_spans = [m.span() for m in VERDICT_JSON_PATTERN.finditer(text)]
+    for sm in re.finditer(r"^<!-- verdict-json:start -->", text, re.M):
+        if not any(s <= sm.start() < e for s, e in match_spans):
+            print(
+                f"warning: orphan verdict-json start marker (truncated block?) in {markdown_path}",
+                file=sys.stderr,
+            )
+            malformed += 1
     for match in VERDICT_JSON_PATTERN.finditer(text):
         raw = match.group("body")
         try:
@@ -432,6 +479,14 @@ def main():
     # 자체가 "계약보다 오래된 배포본" fail-closed 신호로 쓰인다.
     if "--print-live-schema" in sys.argv[1:]:
         print(LIVE_SCHEMA_VERSION)
+        return 0
+    # helper CLI capability 조회 — Arbiter 출력 계약 버전(schema)과 별개 축이다.
+    # schema가 같아도 검증 능력(reviewer 모드 등)이 다른 배포본을 preflight가
+    # 구분해야 한다 (#1259) — 구버전의 비0 종료 자체가 미지원 신호다.
+    if "--print-capabilities" in sys.argv[1:]:
+        print("arbiter-validate")
+        print("reviewer-validate")
+        print("rationale-check")
         return 0
     parser = argparse.ArgumentParser(
         description=(

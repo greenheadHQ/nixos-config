@@ -217,7 +217,7 @@ write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에
 
 검증 대상 원본 고정: 검증기 입력은 Arbiter가 산출한 결과 파일의 원본 경로다. 결과 내용을 손으로 옮겨 적은 전사본이나 heredoc으로 재구성한 파일을 검증 대상으로 삼는 것은 검증 우회이며 금지다 — 실측에서 첫 라운드만 원본을 검증하고 이후 전 라운드가 손 전사본을 검증해 전사 오류가 반복 유입됐다(#1259). 원본 파일이 유실됐으면 검증 실패로 처리하고 해당 실행 단위를 재실행한다 (전사로 복구하지 않는다).
 
-첫 호출 전에 capability를 확인한다: `"$HELPER_PATH" --print-live-schema` 출력이 이 문서가 요구하는 live 계약 버전(1.2)과 정확히 일치해야 한다. 플래그 미지원(비0 종료 — 구버전 helper)과 버전 불일치는 둘 다 미지원 상황이다. 옵션(`--validate-only`·`--expect-findings`) 존재 확인만으로는 부족하다 — 배포 helper가 두 옵션을 지원하면서 live 계약 버전이 다르면, preflight를 통과한 뒤 모든 정상 Arbiter 결과가 malformed로 오판되어 BLOCKED로 끝난다. helper는 배포 시점의 파일이므로 run-da 문서가 요구하는 CLI·schema 계약이 배포본보다 새로운 상황이 실제로 발생한다 — run-da 자체를 개선하는 PR이 대표적이다 (실측 2건: 이 계약 도입 시점의 helper는 `--validate-only`를 거부했고, schema 전환 시점의 helper는 옵션은 지원하되 구버전 계약으로 신규 결과를 전부 거부했다).
+첫 호출 전에 capability를 확인한다: ① `"$HELPER_PATH" --print-live-schema` 출력이 이 문서가 요구하는 live 계약 버전(1.2)과 정확히 일치하고, ② `"$HELPER_PATH" --print-capabilities` 출력에 `reviewer-validate`가 포함돼야 한다 — schema는 Arbiter 출력 계약 버전이고 capability는 helper의 검증 능력 축이라 서로 대체하지 않는다 (schema가 같아도 reviewer 검증 모드가 없는 배포본이 존재한다). 플래그 미지원(비0 종료 — 구버전 helper)과 버전 불일치는 둘 다 미지원 상황이다. 옵션(`--validate-only`·`--expect-findings`) 존재 확인만으로는 부족하다 — 배포 helper가 두 옵션을 지원하면서 live 계약 버전이 다르면, preflight를 통과한 뒤 모든 정상 Arbiter 결과가 malformed로 오판되어 BLOCKED로 끝난다. helper는 배포 시점의 파일이므로 run-da 문서가 요구하는 CLI·schema 계약이 배포본보다 새로운 상황이 실제로 발생한다 — run-da 자체를 개선하는 PR이 대표적이다 (실측 2건: 이 계약 도입 시점의 helper는 `--validate-only`를 거부했고, schema 전환 시점의 helper는 옵션은 지원하되 구버전 계약으로 신규 결과를 전부 거부했다).
 
 미지원일 때 조용히 진행하는 것이 가장 나쁜 결과이므로 자동 진행은 금지한다. 대신 그 사실과 원인(배포된 helper가 이 계약보다 오래됨)을 사용자에게 보고하고 질문 도구로 선택을 받는다:
 
