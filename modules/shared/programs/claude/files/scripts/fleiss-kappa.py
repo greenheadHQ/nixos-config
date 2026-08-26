@@ -217,11 +217,11 @@ def validate_reviewer_file(path, expected_unit=None):
     (finding 본문에 인용된 CLEAR 한 줄이 전체 결과를 0건으로 덮어쓰는 injection 차단).
     """
     if not path.is_file():
-        return "malformed", 0, [f"파일 없음: {path}"]
+        return "malformed", 0, [f"파일 없음: {path}"], []
     text = path.read_text(encoding="utf-8")
     stripped = text.strip()
     if not stripped:
-        return "malformed", 0, ["빈 결과 파일"]
+        return "malformed", 0, ["빈 결과 파일"], []
     # fenced code block은 구조 탐색에서 제외한다 — 본문 PoC·인용 안의 라벨·헤더
     # 형태가 파서를 조작하는 입력 기반 injection 경로 차단 (#1259).
     text = re.sub(r"```.*?```", "```(fence 제외)```", text, flags=re.S)
@@ -239,9 +239,9 @@ def validate_reviewer_file(path, expected_unit=None):
         if header_name is None or header_name.lower() != expected_unit.lower():
             return "malformed", 0, [
                 f"unit 결속 위반 — 기대 unit {expected_unit!r}, 결과 헤더 {header_name!r}"
-            ]
+            ], []
     if is_clear:
-        return "clear", 0, []
+        return "clear", 0, [], []
     if has_violation:
         violations = []
         for label in REVIEWER_VIOLATION_LABELS:
@@ -257,17 +257,17 @@ def validate_reviewer_file(path, expected_unit=None):
         reason = _label_value(text, "이유")
         if reason is not None and is_placeholder_value(reason):
             violations.append(f"VIOLATION 이유 값이 placeholder/미완: {reason.strip()[:40]!r}")
-        return ("violation" if not violations else "malformed"), 0, violations
+        return ("violation" if not violations else "malformed"), 0, violations, []
     if not count_match:
         return "malformed", 0, [
             "형식 불명 — CLEAR도, VIOLATION 헤더도, '문제 발견: N건' 헤더도 없음 (절단/미완 의심)"
-        ]
+        ], []
     violations = []
     declared = int(count_match.group(1))
     if declared < 1:
         # 0건은 CLEAR 형식(파일 전체 fullmatch)으로만 표현한다 — "문제 발견: 0건"이
         # finding 0개 파일을 findings 성공으로 만들어 CLEAR 방어를 우회하는 경로 차단.
-        return "malformed", 0, ["발견 형식의 선언 건수는 1 이상이어야 한다 — 0건은 CLEAR 형식 전용"]
+        return "malformed", 0, ["발견 형식의 선언 건수는 1 이상이어야 한다 — 0건은 CLEAR 형식 전용"], []
     blocks = re.split(r"^###\s+", text, flags=re.M)[1:]
     finding_blocks = [b for b in blocks if re.search(r"\*\*ID\*\*", b)]
     if len(finding_blocks) != declared:
@@ -275,9 +275,15 @@ def validate_reviewer_file(path, expected_unit=None):
             f"선언 건수({declared})와 finding 블록 수({len(finding_blocks)}) 불일치 (절단/미완 의심)"
         )
     seen_ids = set()
+    validated_ids = []
     for i, block in enumerate(finding_blocks, 1):
         values = {}
         for label in REVIEWER_REQUIRED_LABELS:
+            occurrences = len(re.findall(rf"^-[ \t]*\*\*{label}\*\*[ \t]*[:：]", block, re.M))
+            if occurrences > 1:
+                # 중복 라벨 — 첫 값만 검사되는 파서 특성을 이용해 안전한 첫 ID 뒤에
+                # 비안전한 두 번째 값을 실어 셸 인자로 흘리는 injection 경로 차단 (#1259)
+                violations.append(f"블록 {i}: 라벨 '{label}' 중복 ({occurrences}회) — 값 위조 의심")
             value = _label_value(block, label)
             if value is None:
                 violations.append(f"블록 {i}: 필수 라벨 '{label}' 누락/빈 값 (절단/미완 의심)")
@@ -288,6 +294,8 @@ def validate_reviewer_file(path, expected_unit=None):
                 # 결과 내 중복 ID — Arbiter의 ID별 일대일 판정과 manifest 대조를 깨뜨린다
                 violations.append(f"블록 {i}: 결과 내 중복 finding ID: {raw_id!r}")
             seen_ids.add(raw_id)
+            if SAFE_FINDING_ID_PATTERN.fullmatch(raw_id):
+                validated_ids.append(raw_id)
         if raw_id and not SAFE_FINDING_ID_PATTERN.fullmatch(raw_id):
             violations.append(
                 f"블록 {i}: finding ID 문법 위반 (reviewer 기본형 {{PREFIX}}-{{순번}} 한정 — "
@@ -301,20 +309,24 @@ def validate_reviewer_file(path, expected_unit=None):
                 violations.append(
                     f"블록 {i}: '{label}' 값이 placeholder/미완: {values[label].strip()[:40]!r}"
                 )
-    return ("findings" if not violations else "malformed"), len(finding_blocks), violations
+    status = "findings" if not violations else "malformed"
+    return status, len(finding_blocks), violations, validated_ids
 
 
 def run_reviewer_validation(paths, expected_unit=None):
     """--validate-reviewer 진입점 — 파일별 검증 후 JSON 리포트를 출력한다."""
     report = {"files": [], "ok": True}
     for path in paths:
-        status, count, violations = validate_reviewer_file(path, expected_unit)
+        status, count, violations, validated_ids = validate_reviewer_file(path, expected_unit)
         file_ok = not violations
         report["files"].append(
             {
                 "path": str(path),
                 "status": status,
                 "findings_count": count,
+                # 검증 통과 ID의 기계 출력 — caller는 원본 재파싱 없이 이 값만으로
+                # --expect-findings 셸 인자를 조립한다 (원본 재독의 위조 값 전사 차단)
+                "finding_ids": validated_ids,
                 "format_errors": violations,
                 "ok": file_ok,
             }
@@ -379,7 +391,7 @@ SAFE_FINDING_ID_PATTERN = re.compile(r"[A-Za-z_]+-[0-9]+")
 # 사람용 블록의 근거 라벨 값에 대한 placeholder 판정 (#1259 — 실측에서 필수 필드가
 # 리터럴 "test"인 산출이 성공 집계된 사고). 값의 유일 토큰 집합이 sentinel뿐이거나
 # sentinel로 시작하는 미완 표기를 거부한다 (길이 기준 없음 — 짧은 레퍼런스는 유효).
-PLACEHOLDER_TOKENS = frozenset({"test", "todo", "placeholder", "tbd", "..."})
+PLACEHOLDER_TOKENS = frozenset({"test", "todo", "placeholder", "tbd", "fixme", "..."})
 
 
 def is_placeholder_value(value):
@@ -399,9 +411,11 @@ def is_placeholder_value(value):
         return True
     # sentinel 접두어는 뒤에 실질 서술이 없을 때만 미완이다 — "TODO 주석이 남아
     # 있다"처럼 sentinel 자체를 다루는 완성된 근거를 오차단하지 않는다.
-    m = re.match(r"(todo|tbd|placeholder|fixme)\b", stripped)
-    if m:
-        rest_words = set(re.findall(r"[a-z가-힣]+", stripped[m.end():]))
+    # 접두어 판정도 같은 canonical 집합에서 파생한다 — 집합이 갈라지면 동일
+    # sentinel의 반복 여부에 따라 판정이 뒤집힌다.
+    first_word = re.match(r"[a-z가-힣]+", stripped)
+    if first_word and first_word.group(0) in PLACEHOLDER_TOKENS:
+        rest_words = set(re.findall(r"[a-z가-힣]+", stripped[first_word.end():]))
         return not rest_words or rest_words <= PLACEHOLDER_TOKENS
     return False
 

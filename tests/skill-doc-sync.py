@@ -389,6 +389,36 @@ def check_arbiter_assembly_includes_output_format() -> None:
         raise CheckFailure("\n".join(details))
 
 
+def check_rc_tail_contract() -> None:
+    """rc 캡처·guard 계약의 사본 동등성 (#1259).
+
+    정본(using-codex-exec)과 run-da의 reviewer tail·Arbiter 수집 블록은 각각
+    self-contained 셸 조각이라 참조로 대체할 수 없다 — 대신 세 위치 모두에
+    핵심 guard 시퀀스(배열 스냅샷 → rc·좌측 비어있음 guard → 좌측 실패 반영)가
+    존재하는지 기계 검사해 침묵 drift를 차단한다.
+    """
+    targets = {
+        Path("modules/shared/programs/claude/files/skills/using-codex-exec/SKILL.md"): 1,
+        ARBITER_SCALING: 2,
+    }
+    required = [
+        r'pipe_rcs=\("\$\{pipestatus\[@\]\}"\)',
+        r'\[ -n "\$rc" \] && \[ -n "\$\{pipe_rcs\[1\]\}" \]',
+        r'\[ "\$\{pipe_rcs\[1\]\}" = "0" \] \|\| rc="\$\{pipe_rcs\[1\]\}"',
+    ]
+    details = []
+    for path, min_count in targets.items():
+        text = read_text(path)
+        for pattern in required:
+            found = len(re.findall(pattern, text))
+            if found < min_count:
+                details.append(
+                    f"{path}: rc tail 계약 요소 {pattern!r} {found}회 (최소 {min_count}회 필요)"
+                )
+    if details:
+        raise CheckFailure("\n".join(details))
+
+
 def check_capability_profile() -> None:
     """native lifecycle capability profile 계약 (#1098) — 구조 검사만 수행한다.
 
@@ -440,6 +470,7 @@ def main() -> int:
         ("threat path types", check_threat_path_types),
         ("verdict json examples", check_verdict_json_examples),
         ("arbiter assembly output format", check_arbiter_assembly_includes_output_format),
+        ("rc tail contract", check_rc_tail_contract),
         ("capability profile", check_capability_profile),
     )
 

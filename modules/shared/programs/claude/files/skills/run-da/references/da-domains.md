@@ -12,7 +12,7 @@
 문제 발견 시:
 
 ```text
-## [reviewer bundle] 문제 발견: [count]건
+## [{BUNDLE}] 문제 발견: [count]건
 
 ### 1. [문제 제목]
 - **ID**: {PREFIX}-{순번} (아래 "finding ID 문법" 참조. 치환 규칙은 "공통 프롬프트 구조" 섹션 경고 블록 참조)
@@ -27,13 +27,13 @@
 문제 미발견 시:
 
 ```text
-[reviewer bundle]: CLEAR
+[{BUNDLE}]: CLEAR
 ```
 
 계약 위반 또는 금지된 작업 필요 시:
 
 ```text
-## [reviewer bundle] 위반 상태: VIOLATION
+## [{BUNDLE}] 위반 상태: VIOLATION
 
 - **유형**: RECOVERABLE / STATEFUL
 - **이유**: 어떤 규칙을 왜 위반했는지
@@ -62,6 +62,7 @@
 > ⚠️ 이 플레이스홀더는 셸 변수가 아니다. 조립 절차는 [`../modes/for_plan.md`](../modes/for_plan.md) / [`../modes/for_pr.md`](../modes/for_pr.md)를 참조한다.
 > `{BUNDLE}` / `{SUBDOMAINS}` / `{FOCUS_QUESTION}` 등의 UPPERCASE 표기는 LLM 텍스트 치환 플레이스홀더 관용이며, 치환 값은 아래 bundle 정의 표의 원문을 대소문자 변환 없이 그대로 사용한다 (bundle 이름은 Title Case, 세부 관점은 UPPERCASE). Bash tool(zsh) 의 case modification 제약은 repo 루트 `CLAUDE.md` "Bash tool 환경" 섹션 참조.
 > `{OTHER_BUNDLES}`는 현재 bundle을 제외한 reviewer bundle 이름의 쉼표 구분 목록이다.
+> 출력 형식 절의 `[{BUNDLE}]`도 같은 치환 대상이다 — 리터럴로 남기면 결과 헤더의 unit 이름이 배정 unit과 불일치해 unit 결속 검증(--expect-unit)에서 폐기된다.
 
 ```text
 당신은 {BUNDLE} reviewer bundle이다. 세부 관점은 {SUBDOMAINS}다.

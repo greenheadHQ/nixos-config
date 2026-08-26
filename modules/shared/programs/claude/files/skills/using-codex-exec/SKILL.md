@@ -440,8 +440,8 @@ cat "$PROMPT" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
   -s workspace-write -o "$OUT" - > "$OUT.stdout" 2> "$OUT.stderr"
 pipe_rcs=("${pipestatus[@]}")  # 배열을 먼저 스냅샷한다 — 다음 명령이 리셋한다
 rc="${pipe_rcs[2]}"            # codex의 rc (zsh 1-base). 파이프 없는 발사는 rc=$?
-[ -n "$rc" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
-[ "${pipe_rcs[1]}" -eq 0 ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 rc에 반영
+[ -n "$rc" ] && [ -n "${pipe_rcs[1]}" ] || { echo "rc 캡처 실패 — 셸/배열 불일치" >&2; exit 1; }
+[ "${pipe_rcs[1]}" = "0" ] || rc="${pipe_rcs[1]}"   # 좌측 cat 실패도 rc에 반영 (= 문자열 비교 — 빈 값이면 위 guard가 먼저 잡는다)
 printf '%s' "$rc" > "$OUT.rc"  # rc 영속화 — 알림 유실 대비·다수 병렬 배리어의 정본
 exit $rc                       # 하네스 완료 알림에 codex rc가 실리게 한다
 ```
