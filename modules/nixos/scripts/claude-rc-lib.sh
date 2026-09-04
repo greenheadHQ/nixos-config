@@ -9,6 +9,10 @@ VERSIONS_DIR="${VERSIONS_DIR:-$HOME/.local/share/claude/versions}"
 INSTANCES_FILE="$STATE_DIR/instances.json"
 INSTANCES_LOCK="$STATE_DIR/instances.json.lock"
 LOG_MAX_BYTES=$((5 * 1024 * 1024))
+# find_server_pid_for_path가 후보를 탈락시킨 술어를 기록하는 곳. 후보 스캔은 process
+# substitution/command substitution 서브셸 안에서 돌아 변수로는 호출자에 못 넘기므로
+# 파일을 쓴다. 매 스캔이 truncate하므로 항상 마지막 스캔 1회분만 남고 누적되지 않는다.
+SERVER_SCAN_REJECT_FILE="$STATE_DIR/scan-rejects.last"
 # Candidate discovery must not assume the configured maint launcher basename.
 # Include both official subcommand spellings, then verify the CLI command
 # position, cwd, executable boundary, and flock lineage below.
@@ -396,19 +400,24 @@ is_claude_versions_exe_process() {
     return 1
 }
 
+_scan_reject() {
+    printf 'pid=%s:%s\n' "$1" "$2" >>"$SERVER_SCAN_REJECT_FILE" 2>/dev/null || true
+}
+
 find_bridge_pids_for_path() {
     local path="$1" pid
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
-        same_cwd_as_path "$pid" "$path" || continue
-        pid_is_bridge_candidate_process "$pid" || continue
+        same_cwd_as_path "$pid" "$path" || { _scan_reject "$pid" cwd; continue; }
+        pid_is_bridge_candidate_process "$pid" || { _scan_reject "$pid" bridge_argv; continue; }
         if is_flock_process "$pid"; then
+            _scan_reject "$pid" flock_exe
             continue
         fi
         # pgrep -f is only argv substring matching. A long-lived unrelated
         # script can contain "claude remote-control" in argv and share the cwd,
         # so require the actual executable to be the versioned Claude binary.
-        is_claude_versions_exe_process "$pid" || continue
+        is_claude_versions_exe_process "$pid" || { _scan_reject "$pid" versions_exe; continue; }
         echo "$pid"
     done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
 }
@@ -468,24 +477,28 @@ pid_is_instance_flock_launcher() {
 
 pid_is_managed_server_for_path() {
     local pid="$1" path="$2" parent_pid lock_path
-    same_cwd_as_path "$pid" "$path" || return 1
-    is_flock_process "$pid" && return 1
-    is_claude_versions_exe_process "$pid" || return 1
-    pid_is_managed_bridge_process "$pid" || return 1
-    parent_pid=$(pid_parent_pid "$pid") || return 1
+    same_cwd_as_path "$pid" "$path" || { _scan_reject "$pid" cwd; return 1; }
+    if is_flock_process "$pid"; then
+        _scan_reject "$pid" flock_exe
+        return 1
+    fi
+    is_claude_versions_exe_process "$pid" || { _scan_reject "$pid" versions_exe; return 1; }
+    pid_is_managed_bridge_process "$pid" || { _scan_reject "$pid" managed_argv; return 1; }
+    parent_pid=$(pid_parent_pid "$pid") || { _scan_reject "$pid" parent_pid; return 1; }
     case "$parent_pid" in
-        ''|*[!0-9]*) return 1 ;;
+        ''|*[!0-9]*) _scan_reject "$pid" parent_pid; return 1 ;;
     esac
     lock_path=$(lock_path_for_path "$path")
     # spawn_guarded_server_launch launches the Claude binary as flock's direct child.
     # Bind the server PID to that exact launcher and lock inode before any
     # lifecycle signal: a separate same-cwd/versioned Claude process must never
     # become the stop target merely because another process holds the lock.
-    is_flock_process "$parent_pid" || return 1
-    pid_is_instance_flock_launcher "$parent_pid" "$pid" "$lock_path" || return 1
-    pid_has_open_file "$parent_pid" "$lock_path" || return 1
-    pid_has_open_file "$pid" "$lock_path" || return 1
+    is_flock_process "$parent_pid" || { _scan_reject "$pid" parent_flock_exe; return 1; }
+    pid_is_instance_flock_launcher "$parent_pid" "$pid" "$lock_path" || { _scan_reject "$pid" launcher_argv; return 1; }
+    pid_has_open_file "$parent_pid" "$lock_path" || { _scan_reject "$pid" parent_holds_lock; return 1; }
+    pid_has_open_file "$pid" "$lock_path" || { _scan_reject "$pid" pid_holds_lock; return 1; }
     if lock_is_free "$lock_path"; then
+        _scan_reject "$pid" lock_free
         return 1
     fi
     return 0
@@ -493,6 +506,7 @@ pid_is_managed_server_for_path() {
 
 find_server_pid_for_path() {
     local path="$1" pid
+    : >"$SERVER_SCAN_REJECT_FILE" 2>/dev/null || true
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
         pid_is_managed_server_for_path "$pid" "$path" || continue
@@ -500,6 +514,48 @@ find_server_pid_for_path() {
         return 0
     done < <(find_bridge_pids_for_path "$path")
     return 1
+}
+
+_diag_flag() {
+    if "$@" >/dev/null 2>&1; then
+        echo ok
+    else
+        echo FAIL
+    fi
+}
+
+# no-server-process 재스캔 진단: find_server_pid_for_path와 같은 후보 집합에 같은 술어를
+# 같은 순서로 다시 평가해 raw 값(cwd/exe/Darwin txt 목록)을 낸다. 읽기 전용이며 signal하지
+# 않는다. transient 실패는 재스캔에서 회복돼 보일 수 있으므로 원 스캔의 탈락 기록
+# (SERVER_SCAN_REJECT_FILE)이 1차 증거이고 이 출력은 보조다.
+diagnose_server_pid_for_path() {
+    local path="$1" pid lock_path parent_pid candidates=0 line txt_list
+    lock_path=$(lock_path_for_path "$path")
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        candidates=$((candidates + 1))
+        line="pid=$pid"
+        line="$line cwd=$(_diag_flag same_cwd_as_path "$pid" "$path")"
+        line="$line cwd_raw=$(pid_cwd "$pid" 2>/dev/null || echo '?')"
+        line="$line bridge_argv=$(_diag_flag pid_is_bridge_candidate_process "$pid")"
+        line="$line flock_exe=$(_diag_flag is_flock_process "$pid")"
+        line="$line versions_exe=$(_diag_flag is_claude_versions_exe_process "$pid")"
+        line="$line exe_raw=$(pid_exe_path "$pid" 2>/dev/null || echo '?')"
+        if [ "$(uname -s)" = Darwin ]; then
+            txt_list=$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | awk '/^n/ {print substr($0, 2)}' | head -5 | paste -sd ';' - 2>/dev/null || true)
+            line="$line txt_list=${txt_list:-?}"
+        fi
+        line="$line managed_argv=$(_diag_flag pid_is_managed_bridge_process "$pid")"
+        parent_pid=$(pid_parent_pid "$pid" 2>/dev/null || echo '?')
+        line="$line parent=$parent_pid"
+        line="$line parent_flock_exe=$(_diag_flag is_flock_process "$parent_pid")"
+        line="$line launcher_argv=$(_diag_flag pid_is_instance_flock_launcher "$parent_pid" "$pid" "$lock_path")"
+        line="$line parent_holds_lock=$(_diag_flag pid_has_open_file "$parent_pid" "$lock_path")"
+        line="$line pid_holds_lock=$(_diag_flag pid_has_open_file "$pid" "$lock_path")"
+        echo "$line"
+    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
+    echo "candidates=$candidates lock_free=$(_diag_flag lock_is_free "$lock_path") lock=$lock_path"
+    return 0
 }
 
 has_unmanaged_server_for_path() {
