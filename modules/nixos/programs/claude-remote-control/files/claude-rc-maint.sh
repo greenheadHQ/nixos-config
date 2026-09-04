@@ -240,6 +240,17 @@ instance_action_metadata() {
     return 1
 }
 
+# 알림 본문용 인스턴스별 근거. RESULTS_FILE 옆 .detail에 path<TAB>텍스트로 남기고
+# cmd_ensure가 함께 지운다. status.json 스키마에는 넣지 않는다.
+record_instance_detail() {
+    printf '%s\t%s\n' "$1" "$2" >>"$RESULTS_FILE.detail" 2>/dev/null || true
+}
+
+instance_detail_for_path() {
+    [ -f "$RESULTS_FILE.detail" ] || return 0
+    awk -F'\t' -v p="$1" '$1 == p { print $2; exit }' "$RESULTS_FILE.detail"
+}
+
 record_instance_result() {
     local path="$1" running_version="$2" observed_version="$3"
     local desired_version="$4" action="$5" state_override="${6:-}"
@@ -644,7 +655,7 @@ drift_tuple_is_confirmed() {
 
 handle_running_instance() {
     local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4"
-    local pid running_version action diag_line
+    local pid running_version action diag_line scan_rejects
     if ! pid=$(find_server_pid_for_path "$path"); then
         action="no-server-process"
         record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
@@ -652,9 +663,12 @@ handle_running_instance() {
         # 원 스캔이 후보를 탈락시킨 술어가 1차 증거다 — transient 실패는 아래 재스캔에서
         # 이미 회복돼 전부 ok로 보일 수 있다. 재스캔은 raw 값(cwd/exe/txt 목록) 보조용.
         if [ -s "$SERVER_SCAN_REJECT_FILE" ]; then
-            log_error "  scan-rejects $(paste -sd ',' "$SERVER_SCAN_REJECT_FILE")"
+            scan_rejects=$(paste -sd ',' "$SERVER_SCAN_REJECT_FILE")
+            log_error "  scan-rejects $scan_rejects"
+            record_instance_detail "$path" "탈락 술어: $scan_rejects"
         else
             log_error "  scan-rejects (none recorded)"
+            record_instance_detail "$path" "탈락 술어: 기록 없음 (pgrep 후보 0개 가능)"
         fi
         while IFS= read -r diag_line; do
             log_error "  rescan $diag_line"
@@ -879,30 +893,148 @@ is_failure_action() {
     [ "$is_failure" = "true" ]
 }
 
-failed_instance_summary() {
-    if [ ! -s "$RESULTS_FILE" ]; then
-        printf 'action=%s' "$GLOBAL_ACTION"
-        return
+# Pushover 본문 상한(1024자) 안의 예산. 인스턴스가 많으면 앞 2건만 상세히 싣는다.
+ALERT_BODY_MAX_BYTES=1000
+ALERT_DETAIL_INSTANCES=2
+
+# 바이트 예산으로 자르되 꼬리의 잘린 UTF-8 시퀀스를 버린다. GNU cut -c는 바이트 단위라
+# 한글(3바이트)이 쪼개져 잘못된 UTF-8이 Pushover로 갈 수 있다. 로케일에 의존하지 않는다.
+truncate_utf8() {
+    local text="$1" max="$2" s n i byte need
+    s="$(printf '%s' "$text" | head -c "$max")"
+    local LC_ALL=C
+    n=${#s}
+    if [ "$n" -lt "$max" ]; then
+        printf '%s' "$s"
+        return 0
     fi
-    local summary line path action
-    summary=""
-    while IFS=$'\t' read -r path action; do
-        [ -n "$path" ] || continue
-        if is_failure_action "$action"; then
-            line="$path: $action"
-            if [ -n "$summary" ]; then
-                summary="${summary}; ${line}"
-            else
-                summary="$line"
-            fi
+    for ((i = 1; i <= 4 && i <= n; i++)); do
+        byte=$(printf '%d' "'${s:n-i:1}")
+        if ((byte < 0x80)); then
+            printf '%s' "$s"
+            return 0
         fi
-    done < <(jq -r '[.path, .action] | @tsv' "$RESULTS_FILE")
-    if [ -n "$summary" ]; then
-        printf '%s' "$summary"
-    else
-        printf 'action=%s' "$GLOBAL_ACTION"
-    fi
+        if ((byte >= 0xC0)); then
+            if ((byte >= 0xF0)); then need=4; elif ((byte >= 0xE0)); then need=3; else need=2; fi
+            if ((i < need)); then printf '%s' "${s:0:n-i}"; else printf '%s' "$s"; fi
+            return 0
+        fi
+    done
+    printf '%s' "$s"
 }
+
+# instance action / global action 코드 → 한국어 "원인<TAB>조치". managing-claude-rc 스킬의
+# 트러블슈팅 표를 알림 크기에 맞게 압축한 것이다. 알림만 보고도 왜 실패했고 무엇을
+# 해야 하는지 알 수 있어야 한다 (2026-09 no-server-process 13시간 알림 폭주 때
+# "exit=1, action=completed, failed=<path>: no-server-process"만으로는 원인을 몰랐다).
+action_explain() {
+    local action="${1:-unknown}"
+    case "$action" in
+        no-server-process)
+            printf '%s\t%s' \
+                "lock은 잡혀 있는데 관리 대상 bridge 프로세스를 식별하지 못함" \
+                "'claude-rc ls'로 실제 생존 확인. ensure 로그의 scan-rejects에서 어느 술어(cwd/exe/lineage/lock)가 떨어졌는지 본 뒤, 죽은 lock이면 다음 ensure가 재시작"
+            ;;
+        path-missing-lock-held)
+            printf '%s\t%s' \
+                "등록 경로는 사라졌는데 instance lock이 살아 있음 (고아 bridge 가능)" \
+                "lock 소유 PID를 읽기 전용으로 확인한 뒤 'claude-rc stop <path>'"
+            ;;
+        start-failed)
+            printf '%s\t%s' \
+                "bridge 시작 또는 guardian 핸드셰이크를 확인하지 못함" \
+                "server.log(~/.local/state/claude-rc/<slug>/)와 launcher(~/.local/bin/claude) 확인. 다음 ensure가 재시도"
+            ;;
+        unmanaged-server-present)
+            printf '%s\t%s' \
+                "같은 디렉토리에 래퍼 밖에서 띄운 remote-control 서버가 있음" \
+                "그 서버를 종료한 뒤 'claude-rc start' (같은 디렉토리에 서버 2개면 유령 환경이 생김)"
+            ;;
+        running-version-unresolvable)
+            printf '%s\t%s' \
+                "실행 중 bridge의 바이너리 경로를 조회하지 못함" \
+                "lsof(/proc) 접근 가능 여부 확인"
+            ;;
+        restart-failed | restart-version-unresolvable | restart-version-mismatch-cleanup-failed | start-version-unresolvable | start-version-mismatch-cleanup-failed)
+            printf '%s\t%s' \
+                "재시작/시작 중 기존 서버 정지 또는 새 서버 식별에 실패" \
+                "현재 PID와 instance lock 소유자를 확인. 신원 미확인 PID는 수동 kill 금지"
+            ;;
+        start-version-mismatch | restart-version-mismatch | start-version-unresolvable-cleaned | restart-version-unresolvable-cleaned)
+            printf '%s\t%s' \
+                "새로 뜬 서버 버전이 desired와 다르거나 식별 전 정리됨" \
+                "launcher(~/.local/bin/claude)가 가리키는 버전과 배포 generation 확인 후 nrs"
+            ;;
+        restart-approval-mismatch)
+            printf '%s\t%s' \
+                "confirmed 승인 JSON이 현재 runtime drift 집합과 다름" \
+                "defer 정책으로 새 snapshot을 뜬 뒤 승인부터 다시"
+            ;;
+        restart-gate-failed)
+            printf '%s\t%s' \
+                "worktree 활동 게이트(transcript/세션 프로세스 조회)를 평가하지 못함" \
+                "transcript 디렉토리(~/.claude/projects) 접근과 pgrep 동작 확인. live bridge는 유지됨"
+            ;;
+        invalid-spawn | invalid-capacity | invalid-permission-mode)
+            printf '%s\t%s' \
+                "registry(instances.json)의 옵션 값이 잘못됨" \
+                "instances.json과 Nix 선언(CLAUDE_RC_DECLARED_INSTANCES) 대조 후 수정"
+            ;;
+        flock-missing)
+            printf '%s\t%s' "lifecycle 직렬화 도구(flock)가 없음" "배포 package/PATH가 current generation과 일치하는지 확인 후 nrs"
+            ;;
+        lock-acquire-timeout | lock-setup-failed)
+            printf '%s\t%s' "ensure lifecycle lock을 얻지 못함" "다른 ensure/claude-rc start·stop 진행 중인지, ensure.lock fd 누수인지 확인"
+            ;;
+        declared-instances-invalid | invalid-drift-policy | invalid-drift-approval)
+            printf '%s\t%s' "선언 환경변수(instances/drift policy/approval JSON)가 잘못됨" "launchd/systemd 환경변수 선언을 Nix에서 확인"
+            ;;
+        desired-version-unresolvable)
+            printf '%s\t%s' "launcher(~/.local/bin/claude)가 없거나 versions 디렉토리 밖을 가리킴" "'readlink -f ~/.local/bin/claude'와 ~/.local/share/claude/versions 확인"
+            ;;
+        instances-read-failed)
+            printf '%s\t%s' "instances.json 읽기/파싱 실패" "파일 type·mode와 instances.json.lock 소유자 확인"
+            ;;
+        status-write-failed)
+            printf '%s\t%s' "status.json 게시 실패" "STATE_DIR mode·filesystem 상태 확인 (디스크 여유 포함)"
+            ;;
+        *)
+            printf '%s\t%s' "분류되지 않은 실패 ($action)" "managing-claude-rc 스킬의 트러블슈팅 표와 ensure 로그 확인"
+            ;;
+    esac
+}
+
+failure_alert_body() {
+    local exit_code="$1" body cause fix path action detail count=0 total=0
+    body="${CLAUDE_RC_ALERT_HOST}의 Claude 원격 제어 점검이 실패했습니다 (exit=${exit_code}, 전체: ${GLOBAL_ACTION}, desired=${DESIRED_VERSION:-unknown})"
+    if [ -s "$RESULTS_FILE" ]; then
+        while IFS=$'\t' read -r path action; do
+            [ -n "$path" ] || continue
+            is_failure_action "$action" || continue
+            total=$((total + 1))
+            [ "$count" -lt "$ALERT_DETAIL_INSTANCES" ] || continue
+            count=$((count + 1))
+            IFS=$'\t' read -r cause fix <<<"$(action_explain "$action")"
+            body="${body}
+• ${path}: ${action}
+  원인: ${cause}
+  조치: ${fix}"
+            detail=$(instance_detail_for_path "$path")
+            [ -z "$detail" ] || body="${body}
+  근거: ${detail}"
+        done < <(jq -r '[.path, .action] | @tsv' "$RESULTS_FILE")
+        [ "$total" -le "$count" ] || body="${body}
+… 외 $((total - count))건 (status.json 참조)"
+    fi
+    if [ "$total" -eq 0 ]; then
+        IFS=$'\t' read -r cause fix <<<"$(action_explain "$GLOBAL_ACTION")"
+        body="${body}
+원인: ${cause}
+조치: ${fix}"
+    fi
+    truncate_utf8 "$body" "$ALERT_BODY_MAX_BYTES"
+}
+
 
 send_alerts() {
     local exit_code="$1"
@@ -925,8 +1057,8 @@ send_alerts() {
 
     if [ "$exit_code" -eq 0 ]; then
         if [ "$previous" = "failed" ]; then
-            send_notification "Claude RC Recovered" \
-                "${CLAUDE_RC_ALERT_HOST} claude-rc ensure is healthy (desired=${DESIRED_VERSION:-unknown})." 0
+            send_notification "Claude 원격 제어 복구 · ${CLAUDE_RC_ALERT_HOST}" \
+                "${CLAUDE_RC_ALERT_HOST}의 Claude 원격 제어 점검이 정상으로 돌아왔습니다 (desired=${DESIRED_VERSION:-unknown})." 0
         fi
         echo "healthy" >"$state_file"
         return 0
@@ -937,9 +1069,8 @@ send_alerts() {
         last=$(cat "$last_failure_file" 2>/dev/null || echo 0)
     fi
     if [ $((now - last)) -ge "$ALERT_COOLDOWN_SECONDS" ]; then
-        summary=$(failed_instance_summary)
-        send_notification "Claude RC Ensure Failed" \
-            "exit=${exit_code}, action=${GLOBAL_ACTION}, failed=${summary}, desired=${DESIRED_VERSION:-unknown}" 0
+        summary=$(failure_alert_body "$exit_code")
+        send_notification "Claude 원격 제어 실패 · ${CLAUDE_RC_ALERT_HOST}" "$summary" 0
         echo "$now" >"$last_failure_file"
     fi
     echo "failed" >"$state_file"
@@ -968,7 +1099,7 @@ cmd_ensure() {
     # 마지막 명령이라 set -e 발동) finalizer가 send_alerts 전에 죽지 않게 guard.
     load_alerting || true
     send_alerts "$rc" || true
-    rm -f "$RESULTS_FILE"
+    rm -f "$RESULTS_FILE" "$RESULTS_FILE.detail"
     return "$rc"
 }
 

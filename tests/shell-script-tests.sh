@@ -95,6 +95,9 @@ run_test "claude remote-control maint reaps orphan sessions before start" test_c
 run_test "claude remote-control maint writes status schema" test_claude_remote_control_maint_status_schema
 run_test "claude remote-control maint logs no-server-process diagnostics" test_claude_remote_control_maint_logs_no_server_process_diagnostics
 run_test "claude remote-control maint rotates ensure log" test_claude_remote_control_maint_rotates_ensure_log
+run_test "claude remote-control maint alert body explains cause" test_claude_remote_control_maint_alert_body_explains_cause
+run_test "claude remote-control maint recovery alert is korean" test_claude_remote_control_maint_alert_recovery_is_korean
+run_test "claude remote-control maint alert truncation keeps valid utf8" test_claude_remote_control_maint_alert_truncation_keeps_valid_utf8
 if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
   run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json
@@ -122,6 +125,9 @@ if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control alert recovers after failure" test_codex_remote_control_alert_recovery_after_failure
   run_test "codex remote-control alert stays quiet on healthy success" test_codex_remote_control_alert_success_without_failure_is_quiet
   run_test "codex remote-control alert failure cooldown is stateful" test_codex_remote_control_alert_failure_sets_failed_and_cools_down
+run_test "codex remote-control alert body explains cause and evidence" test_codex_remote_control_alert_body_explains_cause_and_evidence
+run_test "codex remote-control alert evidence scoped to current failure" test_codex_remote_control_alert_evidence_scoped_to_current_failure
+run_test "codex remote-control alert truncation keeps valid utf8" test_codex_remote_control_alert_truncation_keeps_valid_utf8
   run_test "codex remote-control alert missing token does not mutate state" test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state
   run_test "codex remote-control sync links current standalone release" test_codex_remote_control_sync_standalone_package_success_links_current_release
   run_test "codex remote-control sync extract failure propagates status" test_codex_remote_control_sync_extract_failure_propagates_status

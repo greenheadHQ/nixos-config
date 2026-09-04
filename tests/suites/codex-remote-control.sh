@@ -559,8 +559,8 @@ test_codex_remote_control_alert_recovery_after_failure() {
 
   state="$(cat "$COD_RC_STATE/last-health-state")"
   [ "$state" = "healthy" ] || fail "recovery should update health state to healthy, got: $state"
-  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 1
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 복구" 1
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 0
 }
 
 test_codex_remote_control_alert_success_without_failure_is_quiet() {
@@ -576,8 +576,8 @@ test_codex_remote_control_alert_success_without_failure_is_quiet() {
 
   state="$(cat "$COD_RC_STATE/last-health-state")"
   [ "$state" = "healthy" ] || fail "healthy run should write healthy state, got: $state"
-  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 복구" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 0
 }
 
 test_codex_remote_control_alert_failure_sets_failed_and_cools_down() {
@@ -599,7 +599,7 @@ test_codex_remote_control_alert_failure_sets_failed_and_cools_down() {
   [ "$state" = "failed" ] || fail "failed run should write failed state, got: $state"
   [ -s "$COD_RC_STATE/last-failure-alert" ] || fail "failed run should record last failure alert timestamp"
   first_last="$(cat "$COD_RC_STATE/last-failure-alert")"
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 1
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 1
 
   if FAKE_DAEMON_MALFORMED=1 \
     ALERT_LOG="$COD_RC_ALERT_LOG" \
@@ -613,8 +613,8 @@ test_codex_remote_control_alert_failure_sets_failed_and_cools_down() {
   second_last="$(cat "$COD_RC_STATE/last-failure-alert")"
   [ "$state" = "failed" ] || fail "repeated failure should keep failed state, got: $state"
   [ "$second_last" = "$first_last" ] || fail "cooldown should not rewrite last failure alert timestamp"
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 1
-  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 1
+  _codex_rc_assert_alert_count "Codex 원격 제어 복구" 0
 }
 
 test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state() {
@@ -638,8 +638,8 @@ test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state() {
   state="$(cat "$COD_RC_STATE/last-health-state")"
   [ "$state" = "healthy" ] || fail "missing Pushover token should leave health state unchanged, got: $state"
   [ ! -e "$COD_RC_STATE/last-failure-alert" ] || fail "missing Pushover token should not write failure alert timestamp"
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
-  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 복구" 0
 }
 
 test_codex_remote_control_sync_standalone_package_success_links_current_release() {
@@ -701,4 +701,121 @@ test_codex_remote_control_sync_records_login_status_success_and_api_key_paths() 
   assert_file_contains "$bad_log" "login status"
   jq -e '.authMode == "api-key" and .loginStatus == "api-key" and .lastRepairReason == "auth-not-chatgpt" and .exitCode == 30' <<<"$bad_status" >/dev/null \
     || fail "API-key login status was not recorded as unhealthy: $bad_status"
+}
+
+# 알림만 보고도 원인과 조치를 알 수 있어야 한다: 한국어 제목·본문, reason 코드의 설명/조치,
+# app-server 데몬 로그의 마지막 ERROR 라인(ANSI 제거)을 근거로 포함한다.
+test_codex_remote_control_alert_body_explains_cause_and_evidence() {
+  local sandbox body
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  _codex_rc_make_alerting "$sandbox"
+  printf 'healthy\n' > "$COD_RC_STATE/last-health-state"
+  mkdir -p "$COD_RC_HOME/.codex/app-server-daemon"
+  printf '%s\n' \
+    'INFO app-server started' \
+    $'\e[2m2026-09-04T04:00:50Z\e[0m \e[31mERROR\e[0m codex_login::auth::manager: Failed to refresh token: 401 Unauthorized: refresh_token_invalidated' \
+    > "$COD_RC_HOME/.codex/app-server-daemon/app-server.stderr.log"
+
+  if FAKE_DAEMON_MALFORMED=1 \
+    ALERT_LOG="$COD_RC_ALERT_LOG" \
+    SERVICE_LIB="$COD_RC_SERVICE_LIB" \
+    PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running 2>/dev/null; then
+    fail "ensure-running should fail for malformed daemon JSON"
+  fi
+
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패 · greenhead-minipc" 1
+  body="$(cat "$COD_RC_ALERT_LOG")"
+  for needle in \
+    "greenhead-minipc의 Codex 원격 제어 점검이 실패했습니다 (exit=40, 코드: daemon-version-malformed-json" \
+    "원인: codex CLI 출력이 JSON이 아님" \
+    "조치: codex 업데이트로 출력 형식이 바뀌었는지 확인" \
+    "근거:" \
+    "app-server(이번 실행 이전 기록): 2026-09-04T04:00:50Z ERROR codex_login::auth::manager: Failed to refresh token: 401 Unauthorized: refresh_token_invalidated"; do
+    grep -Fq -- "$needle" "$COD_RC_ALERT_LOG" || fail "alert body missing '$needle': $body"
+  done
+  if grep -q $'\e\[' "$COD_RC_ALERT_LOG"; then
+    fail "alert body must not carry ANSI escapes: $body"
+  fi
+  grep -Fq -- "stderr:" "$COD_RC_ALERT_LOG" && fail "no start stderr captured, so no stderr line expected: $body"
+  return 0
+}
+
+# maint 함수 격리 호출: 마지막 줄의 main "$@"를 떼고 source한다. T_REASON/T_STDERR/T_OFFSET은
+# source 뒤에 대입한다 — 스크립트 상단이 이 변수들을 빈값으로 초기화하므로 env로는 못 넘긴다.
+_codex_rc_call_fn() {
+  CODEX_HOME="$COD_RC_HOME/.codex" STATE_DIR="$COD_RC_STATE" \
+    bash -c 'set -uo pipefail; source <(sed "\$d" "$1"); shift; LAST_REPAIR_REASON="${T_REASON:-}"; START_STDERR="${T_STDERR:-}"; DAEMON_LOG_OFFSET="${T_OFFSET:-0}"; "$@"' _ "$(_codex_rc_script)" "$@"
+}
+
+_assert_valid_utf8() {
+  printf '%s' "$1" | python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' 2>/dev/null \
+    || fail "$2: not valid UTF-8"
+}
+
+# 근거는 app-server를 실제로 건드린 실패에만, 그리고 이번 실행 중 새로 쓰인 ERROR를
+# 우선한다. lock·패키지·로그인 실패에 오래된 데몬 ERROR가 붙으면 무관한 토큰 수리로 오도한다.
+test_codex_remote_control_alert_evidence_scoped_to_current_failure() {
+  local sandbox log body
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  log="$COD_RC_HOME/.codex/app-server-daemon/app-server.stderr.log"
+  mkdir -p "$(dirname "$log")"
+  printf '%s\n' 'ERROR old: 401 token_revoked' > "$log"
+
+  # (1) app-server와 무관한 실패: 데몬 로그를 근거로 붙이지 않는다
+  body="$(T_REASON=lock-acquire-timeout _codex_rc_call_fn failure_alert_body 1)"
+  assert_contains "$body" "원인: maint 상태 디렉토리 또는 lock 획득 실패"
+  assert_not_contains "$body" "근거:"
+  assert_not_contains "$body" "token_revoked"
+
+  # (2) 관련 실패 + 이번 실행 중 새 ERROR 없음: 이전 기록임을 라벨로 명시
+  body="$(T_REASON=remote-control-start-not-connected T_OFFSET="$(wc -c <"$log" | tr -d ' ')" _codex_rc_call_fn failure_alert_body 50)"
+  assert_contains "$body" "app-server(이번 실행 이전 기록): ERROR old: 401 token_revoked"
+
+  # (3) 관련 실패 + offset 이후 새 ERROR: 그 라인을 라벨 없이 싣고, stderr 첫 줄도 함께
+  local offset
+  offset="$(wc -c <"$log" | tr -d ' ')"
+  printf '%s\n' 'INFO noise' 'ERROR new: refresh_token_invalidated' >> "$log"
+  body="$(T_REASON=remote-control-start-failed T_STDERR=$'first stderr line\nsecond' T_OFFSET="$offset" _codex_rc_call_fn failure_alert_body 52)"
+  assert_contains "$body" "stderr: first stderr line"
+  assert_not_contains "$body" "second"
+  assert_contains "$body" $'\napp-server: ERROR new: refresh_token_invalidated'
+  assert_not_contains "$body" "이전 기록"
+  assert_not_contains "$body" "ERROR old"
+
+  # (4) 데몬 재시작으로 로그가 비워져 offset > size: 처음부터 본다
+  printf '%s\n' 'ERROR after-restart' > "$log"
+  body="$(T_REASON=daemon-version-drift:0.1/0.2 T_OFFSET=999999 _codex_rc_call_fn failure_alert_body 54)"
+  assert_contains "$body" "app-server: ERROR after-restart"
+}
+
+# 한글 본문/근거를 바이트 예산으로 자를 때 3바이트 문자가 쪼개지면 안 된다.
+test_codex_remote_control_alert_truncation_keeps_valid_utf8() {
+  local sandbox out ga log body
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  ga="$(printf '가%.0s' $(seq 1 100))"   # 300 bytes
+
+  out="$(_codex_rc_call_fn truncate_utf8 "$ga" 100)"
+  [ "$(printf '%s' "$out" | wc -c | tr -d ' ')" = 99 ] || fail "lead byte at boundary must be dropped: $(printf '%s' "$out" | wc -c)"
+  _assert_valid_utf8 "$out" "max=100"
+  out="$(_codex_rc_call_fn truncate_utf8 "$ga" 101)"
+  [ "$(printf '%s' "$out" | wc -c | tr -d ' ')" = 99 ] || fail "lead+1 continuation must be dropped"
+  out="$(_codex_rc_call_fn truncate_utf8 "$ga" 102)"
+  [ "$(printf '%s' "$out" | wc -c | tr -d ' ')" = 102 ] || fail "complete 34 chars must be kept"
+  out="$(_codex_rc_call_fn truncate_utf8 "abc" 100)"
+  [ "$out" = "abc" ] || fail "short text must pass through: $out"
+  out="$(_codex_rc_call_fn truncate_utf8 "$(printf 'x%.0s' $(seq 1 150))" 100)"
+  [ "${#out}" = 100 ] || fail "ascii must cut at exactly max bytes"
+
+  # 실제 근거 라인 경계: "ERROR: " 7바이트 + 가×100 → 240바이트 컷이 78번째 가를 쪼갠다
+  log="$COD_RC_HOME/.codex/app-server-daemon/app-server.stderr.log"
+  mkdir -p "$(dirname "$log")"
+  printf 'ERROR: %s\n' "$ga" > "$log"
+  body="$(T_REASON=remote-control-start-failed _codex_rc_call_fn failure_alert_body 52)"
+  _assert_valid_utf8 "$body" "evidence line"
+  [ "$(printf '%s' "$body" | grep -a '^app-server' | wc -c | tr -d ' ')" = $((12 + 7 + 231 + 1)) ] \
+    || fail "evidence line must be 238 bytes of payload: $(printf '%s' "$body" | grep -a '^app-server' | wc -c)"
 }

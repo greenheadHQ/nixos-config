@@ -23,6 +23,10 @@ SERVICE_LIB="${SERVICE_LIB:-}"
 CODEX_REMOTE_CONTROL_PS_FILE="${CODEX_REMOTE_CONTROL_PS_FILE:-}"
 CODEX_REMOTE_CONTROL_EXE_FILE="${CODEX_REMOTE_CONTROL_EXE_FILE:-}"
 KILL_LOG="${KILL_LOG:-}"
+DAEMON_LOG_PATH="${DAEMON_LOG_PATH:-$CODEX_HOME/app-server-daemon/app-server.stderr.log}"
+# ensure 시작 시점의 데몬 로그 크기. 알림 근거는 이 offset 이후에 새로 쓰인 ERROR만
+# "이번 실행" 것으로 본다 (데몬 로그는 append-only이고 실행마다 지워지지 않는다).
+DAEMON_LOG_OFFSET=0
 
 readonly ACTION_NONE="none"
 readonly RC_NORMAL_CODEX_STANDALONE=20
@@ -770,6 +774,164 @@ load_alerting() {
   fi
 }
 
+ALERT_HOST="${ALERT_HOST:-greenhead-minipc}"
+# Pushover 본문 상한(1024자) 안에서 근거 라인까지 담기 위한 예산.
+ALERT_BODY_MAX_BYTES=1000
+ALERT_EVIDENCE_LINE_MAX_BYTES=240
+
+strip_ansi() {
+  # BSD sed는 \x1b를 모르므로 awk (gawk/BSD awk 모두 \033 지원)
+  awk '{ gsub(/\033\[[0-9;]*m/, ""); print }'
+}
+
+# 바이트 예산으로 자르되 꼬리의 잘린 UTF-8 시퀀스를 버린다. GNU cut -c는 바이트 단위라
+# 한글(3바이트)이 쪼개져 잘못된 UTF-8이 Pushover로 갈 수 있다. 로케일에 의존하지 않는다.
+truncate_utf8() {
+  local text="$1" max="$2" s n i byte need
+  s="$(printf '%s' "$text" | head -c "$max")"
+  local LC_ALL=C
+  n=${#s}
+  if [ "$n" -lt "$max" ]; then
+    printf '%s' "$s"
+    return 0
+  fi
+  for ((i = 1; i <= 4 && i <= n; i++)); do
+    byte=$(printf '%d' "'${s:n-i:1}")
+    if ((byte < 0x80)); then
+      printf '%s' "$s"
+      return 0
+    fi
+    if ((byte >= 0xC0)); then
+      if ((byte >= 0xF0)); then need=4; elif ((byte >= 0xE0)); then need=3; else need=2; fi
+      if ((i < need)); then printf '%s' "${s:0:n-i}"; else printf '%s' "$s"; fi
+      return 0
+    fi
+  done
+  printf '%s' "$s"
+}
+
+capture_daemon_log_offset() {
+  DAEMON_LOG_OFFSET=0
+  [ -f "$DAEMON_LOG_PATH" ] || return 0
+  DAEMON_LOG_OFFSET="$(wc -c <"$DAEMON_LOG_PATH" | tr -d '[:space:]')"
+}
+
+# app-server 로그가 원인을 말해 주는 실패만 근거 대상이다. lock·패키지 동기화·로그인
+# 상태처럼 app-server를 건드리기 전에 끝난 실패에 데몬 로그를 붙이면 무관한 토큰 수리로
+# 오도한다.
+evidence_relevant_for_reason() {
+  case "${1%%:*}" in
+    remote-control-* | daemon-version-* | unmanaged-error-without-stale-pid-proof | stale-pid-* | refusing-socket-cleanup-while-app-server-pid-exists) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# LAST_REPAIR_REASON 코드 → 한국어 "원인<TAB>조치". `:` 뒤 상세는 코드 표시에만 남긴다.
+# 알림만 보고도 왜 실패했고 무엇을 해야 하는지 알 수 있어야 한다 (2026-09-05 token_revoke
+# 장애 때 "exit=52, reason=remote-control-start-failed"만으로는 하루종일 원인을 몰랐다).
+repair_reason_explain() {
+  local reason="${1:-unknown}" head
+  head="${reason%%:*}"
+  case "$head" in
+    remote-control-start-not-connected)
+      printf '%s\t%s' \
+        "app-server가 백엔드에 연결되지 못한 채 timeout(connecting)" \
+        "ChatGPT 토큰 revoke가 흔한 원인 — 아래 app-server 로그에 401 token_revoked가 보이면 MiniPC에서 'codex login --device-auth'로 재로그인 (시작 전 ~/.codex/auth.json 백업)"
+      ;;
+    remote-control-start-failed)
+      printf '%s\t%s' \
+        "'codex remote-control start' 명령 자체가 실패" \
+        "아래 stderr/app-server 로그 확인. 401 token_revoked면 'codex login --device-auth' 재로그인, 그 외는 MiniPC에서 'codex remote-control start --json'을 직접 실행해 재현"
+      ;;
+    remote-control-start-malformed-json | daemon-version-malformed-json)
+      printf '%s\t%s' \
+        "codex CLI 출력이 JSON이 아님" \
+        "codex 업데이트로 출력 형식이 바뀌었는지 확인 (codex-pin.json 버전 vs 'codex --version')"
+      ;;
+    remote-control-start-version-drift | daemon-version-drift)
+      printf '%s\t%s' \
+        "실행 중 app-server 버전이 pin과 다름" \
+        "maint가 재시작을 시도함. 반복되면 'codex remote-control stop' 후 'systemctl start codex-remote-control-ensure'"
+      ;;
+    remote-control-start-unmanaged | remote-control-stop-unmanaged | unmanaged-error-without-stale-pid-proof | stale-pid-revalidation-failed | stale-pid-revalidation-failed-before-kill9 | refusing-socket-cleanup-while-app-server-pid-exists)
+      printf '%s\t%s' \
+        "관리 밖(수동 실행) app-server가 소켓/PID를 점유" \
+        "'pgrep -a -u greenhead codex'로 확인 후 수동 프로세스를 종료하고 'systemctl start codex-remote-control-ensure'"
+      ;;
+    remote-control-stop-failed)
+      printf '%s\t%s' \
+        "app-server 정지 실패" \
+        "'pgrep -a -u greenhead codex'로 남은 프로세스 확인 후 kill -TERM, 다음 ensure가 재시작"
+      ;;
+    auth-not-chatgpt | auth-status-not-chatgpt)
+      printf '%s\t%s' \
+        "ChatGPT 계정 로그인이 아님 (API key 모드 또는 미로그인)" \
+        "MiniPC에서 'codex login --device-auth'"
+      ;;
+    lock-acquire-timeout | lock-open-failed | state-dir-unavailable)
+      printf '%s\t%s' \
+        "maint 상태 디렉토리 또는 lock 획득 실패" \
+        "'pgrep -a codex-remote-control-maint'로 이전 실행 잔존 확인, /var/lib/codex-remote-control 권한 확인"
+      ;;
+    standalone-package-missing | standalone-package-missing-bin-codex | standalone-package-version-mismatch | standalone-sync-failed)
+      printf '%s\t%s' \
+        "standalone codex 패키지 동기화 실패" \
+        "nrs로 codex-pin.json과 배포 generation을 맞추고 ~/.codex/packages/standalone 권한·디스크 확인"
+      ;;
+    normal-codex-resolves-to-standalone | normal-codex-not-nix-managed | operator-codex-not-found)
+      printf '%s\t%s' \
+        "PATH의 codex가 Nix 관리 바이너리가 아님" \
+        "그림자 codex(~/.local/bin 등)를 제거하고 nrs"
+      ;;
+    *)
+      printf '%s\t%s' \
+        "분류되지 않은 실패 ($reason)" \
+        "'journalctl -u codex-remote-control-ensure'와 /var/lib/codex-remote-control/status.json 확인"
+      ;;
+  esac
+}
+
+# 실패 시점 근거: start 명령 stderr 첫 줄 + app-server 데몬 로그의 마지막 ERROR 라인.
+# token_revoked 같은 실제 원인은 status.json이 아니라 이 로그에만 남는다.
+alert_evidence() {
+  local reason="$1" out="" line label size offset
+  if [ -n "$START_STDERR" ]; then
+    line="$(truncate_utf8 "$(printf '%s\n' "$START_STDERR" | head -n 1)" "$ALERT_EVIDENCE_LINE_MAX_BYTES")"
+    [ -z "$line" ] || out="stderr: $line"
+  fi
+  if evidence_relevant_for_reason "$reason" && [ -f "$DAEMON_LOG_PATH" ]; then
+    size="$(wc -c <"$DAEMON_LOG_PATH" | tr -d '[:space:]')"
+    offset="$DAEMON_LOG_OFFSET"
+    # 데몬 재시작으로 로그가 비워졌으면 offset이 크기를 넘는다 → 처음부터 본다.
+    [ "$offset" -le "$size" ] || offset=0
+    line="$(tail -c +"$((offset + 1))" "$DAEMON_LOG_PATH" 2>/dev/null | grep -a 'ERROR' | tail -n 1 | strip_ansi)"
+    label="app-server"
+    if [ -z "$line" ]; then
+      line="$(grep -a 'ERROR' "$DAEMON_LOG_PATH" 2>/dev/null | tail -n 1 | strip_ansi)"
+      label="app-server(이번 실행 이전 기록)"
+    fi
+    if [ -n "$line" ]; then
+      line="$(truncate_utf8 "$line" "$ALERT_EVIDENCE_LINE_MAX_BYTES")"
+      out="${out:+$out
+}${label}: $line"
+    fi
+  fi
+  printf '%s' "$out"
+}
+
+failure_alert_body() {
+  local exit_code="$1" reason="${LAST_REPAIR_REASON:-unknown}" cause fix evidence body
+  IFS=$'\t' read -r cause fix <<<"$(repair_reason_explain "$reason")"
+  body="${ALERT_HOST}의 Codex 원격 제어 점검이 실패했습니다 (exit=${exit_code}, 코드: ${reason}, auth=${AUTH_MODE:-unknown})
+원인: ${cause}
+조치: ${fix}"
+  evidence="$(alert_evidence "$reason")"
+  [ -z "$evidence" ] || body="${body}
+근거:
+${evidence}"
+  truncate_utf8 "$body" "$ALERT_BODY_MAX_BYTES"
+}
+
 send_alerts() {
   local exit_code="$1"
   command -v send_notification >/dev/null 2>&1 || return 0
@@ -784,8 +946,8 @@ send_alerts() {
 
   if [ "$exit_code" -eq 0 ]; then
     if [ "$previous" = "failed" ]; then
-      send_notification "Codex Remote Control Recovered" \
-        "greenhead-minipc remote-control is healthy (${APP_SERVER_VERSION:-unknown})." 0
+      send_notification "Codex 원격 제어 복구 · ${ALERT_HOST}" \
+        "${ALERT_HOST}의 Codex 원격 제어가 정상으로 돌아왔습니다 (app-server ${APP_SERVER_VERSION:-unknown})." 0
     fi
     echo "healthy" >"$state_file"
     return 0
@@ -794,8 +956,7 @@ send_alerts() {
   local last=0
   [ -f "$last_failure_file" ] && last="$(cat "$last_failure_file" 2>/dev/null || echo 0)"
   if [ $((now - last)) -ge "$ALERT_COOLDOWN_SECONDS" ]; then
-    send_notification "Codex Remote Control Failed" \
-      "exit=${exit_code}, reason=${LAST_REPAIR_REASON:-unknown}, auth=${AUTH_MODE:-unknown}" 0
+    send_notification "Codex 원격 제어 실패 · ${ALERT_HOST}" "$(failure_alert_body "$exit_code")" 0
     echo "$now" >"$last_failure_file"
   fi
   echo "failed" >"$state_file"
@@ -841,6 +1002,7 @@ cmd_repair_unmanaged() {
 
 cmd_ensure_running() {
   local rc=0
+  capture_daemon_log_offset
   with_lock ensure_running_core || rc=$?
   if [ "$rc" -ne 0 ]; then
     collect_probe_preserving_reason
