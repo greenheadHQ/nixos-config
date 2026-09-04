@@ -649,10 +649,15 @@ handle_running_instance() {
         action="no-server-process"
         record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
         log_error "lock held but server process not found: $path"
-        # 어느 술어에서 후보가 탈락했는지 남긴다. 살아 있는 bridge를 못 찾는 간헐 실패는
-        # 재현이 안 되므로 실패 시점의 술어별 판정이 유일한 근거다.
+        # 원 스캔이 후보를 탈락시킨 술어가 1차 증거다 — transient 실패는 아래 재스캔에서
+        # 이미 회복돼 전부 ok로 보일 수 있다. 재스캔은 raw 값(cwd/exe/txt 목록) 보조용.
+        if [ -s "$SERVER_SCAN_REJECT_FILE" ]; then
+            log_error "  scan-rejects $(paste -sd ',' "$SERVER_SCAN_REJECT_FILE")"
+        else
+            log_error "  scan-rejects (none recorded)"
+        fi
         while IFS= read -r diag_line; do
-            log_error "  diag $diag_line"
+            log_error "  rescan $diag_line"
         done < <(diagnose_server_pid_for_path "$path")
         return 1
     fi
