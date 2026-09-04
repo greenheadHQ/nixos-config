@@ -1430,3 +1430,22 @@ test_claude_remote_control_maint_alert_recovery_is_korean() {
     || fail "recovery body missing: $(cat "$CLAUDE_RC_ALERT_LOG")"
   [ "$(cat "$CLAUDE_RC_STATE/last-health-state")" = healthy ] || fail "recovery must record healthy state"
 }
+
+# 한글 본문을 바이트 예산으로 자를 때 3바이트 문자가 쪼개지면 안 된다 (Pushover는 UTF-8 요구).
+test_claude_remote_control_maint_alert_truncation_keeps_valid_utf8() {
+  local sandbox ga out
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  ga="$(printf '가%.0s' $(seq 1 100))"
+  _claude_rc_truncate() {
+    STATE_DIR="$CLAUDE_RC_STATE" bash -c 'set -uo pipefail; source "$1"; shift; truncate_utf8 "$@"' _ "$(_claude_rc_maint_script)" "$@"
+  }
+  out="$(_claude_rc_truncate "$ga" 100)"
+  [ "$(printf '%s' "$out" | wc -c | tr -d ' ')" = 99 ] || fail "lead byte at boundary must be dropped"
+  printf '%s' "$out" | python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' 2>/dev/null \
+    || fail "truncated body must stay valid UTF-8"
+  out="$(_claude_rc_truncate "$ga" 102)"
+  [ "$(printf '%s' "$out" | wc -c | tr -d ' ')" = 102 ] || fail "complete chars must be kept"
+  out="$(_claude_rc_truncate "short" 100)"
+  [ "$out" = short ] || fail "short text must pass through"
+}

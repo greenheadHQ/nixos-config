@@ -23,6 +23,10 @@ SERVICE_LIB="${SERVICE_LIB:-}"
 CODEX_REMOTE_CONTROL_PS_FILE="${CODEX_REMOTE_CONTROL_PS_FILE:-}"
 CODEX_REMOTE_CONTROL_EXE_FILE="${CODEX_REMOTE_CONTROL_EXE_FILE:-}"
 KILL_LOG="${KILL_LOG:-}"
+DAEMON_LOG_PATH="${DAEMON_LOG_PATH:-$CODEX_HOME/app-server-daemon/app-server.stderr.log}"
+# ensure 시작 시점의 데몬 로그 크기. 알림 근거는 이 offset 이후에 새로 쓰인 ERROR만
+# "이번 실행" 것으로 본다 (데몬 로그는 append-only이고 실행마다 지워지지 않는다).
+DAEMON_LOG_OFFSET=0
 
 readonly ACTION_NONE="none"
 readonly RC_NORMAL_CODEX_STANDALONE=20
@@ -772,8 +776,55 @@ load_alerting() {
 
 ALERT_HOST="${ALERT_HOST:-greenhead-minipc}"
 # Pushover 본문 상한(1024자) 안에서 근거 라인까지 담기 위한 예산.
-ALERT_BODY_MAX_CHARS=1000
-ALERT_EVIDENCE_LINE_MAX_CHARS=240
+ALERT_BODY_MAX_BYTES=1000
+ALERT_EVIDENCE_LINE_MAX_BYTES=240
+
+strip_ansi() {
+  # BSD sed는 \x1b를 모르므로 awk (gawk/BSD awk 모두 \033 지원)
+  awk '{ gsub(/\033\[[0-9;]*m/, ""); print }'
+}
+
+# 바이트 예산으로 자르되 꼬리의 잘린 UTF-8 시퀀스를 버린다. GNU cut -c는 바이트 단위라
+# 한글(3바이트)이 쪼개져 잘못된 UTF-8이 Pushover로 갈 수 있다. 로케일에 의존하지 않는다.
+truncate_utf8() {
+  local text="$1" max="$2" s n i byte need
+  s="$(printf '%s' "$text" | head -c "$max")"
+  local LC_ALL=C
+  n=${#s}
+  if [ "$n" -lt "$max" ]; then
+    printf '%s' "$s"
+    return 0
+  fi
+  for ((i = 1; i <= 4 && i <= n; i++)); do
+    byte=$(printf '%d' "'${s:n-i:1}")
+    if ((byte < 0x80)); then
+      printf '%s' "$s"
+      return 0
+    fi
+    if ((byte >= 0xC0)); then
+      if ((byte >= 0xF0)); then need=4; elif ((byte >= 0xE0)); then need=3; else need=2; fi
+      if ((i < need)); then printf '%s' "${s:0:n-i}"; else printf '%s' "$s"; fi
+      return 0
+    fi
+  done
+  printf '%s' "$s"
+}
+
+capture_daemon_log_offset() {
+  DAEMON_LOG_OFFSET=0
+  [ -f "$DAEMON_LOG_PATH" ] || return 0
+  DAEMON_LOG_OFFSET="$(wc -c <"$DAEMON_LOG_PATH" | tr -d '[:space:]')"
+}
+
+# app-server 로그가 원인을 말해 주는 실패만 근거 대상이다. lock·패키지 동기화·로그인
+# 상태처럼 app-server를 건드리기 전에 끝난 실패에 데몬 로그를 붙이면 무관한 토큰 수리로
+# 오도한다.
+evidence_relevant_for_reason() {
+  case "${1%%:*}" in
+    remote-control-* | daemon-version-* | unmanaged-error-without-stale-pid-proof | stale-pid-* | refusing-socket-cleanup-while-app-server-pid-exists) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 # LAST_REPAIR_REASON 코드 → 한국어 "원인<TAB>조치". `:` 뒤 상세는 코드 표시에만 남긴다.
 # 알림만 보고도 왜 실패했고 무엇을 해야 하는지 알 수 있어야 한다 (2026-09-05 token_revoke
@@ -843,16 +894,27 @@ repair_reason_explain() {
 # 실패 시점 근거: start 명령 stderr 첫 줄 + app-server 데몬 로그의 마지막 ERROR 라인.
 # token_revoked 같은 실제 원인은 status.json이 아니라 이 로그에만 남는다.
 alert_evidence() {
-  local out="" line log
+  local reason="$1" out="" line label size offset
   if [ -n "$START_STDERR" ]; then
-    line="$(printf '%s\n' "$START_STDERR" | head -n 1 | cut -c1-"$ALERT_EVIDENCE_LINE_MAX_CHARS")"
+    line="$(truncate_utf8 "$(printf '%s\n' "$START_STDERR" | head -n 1)" "$ALERT_EVIDENCE_LINE_MAX_BYTES")"
     [ -z "$line" ] || out="stderr: $line"
   fi
-  log="$CODEX_HOME/app-server-daemon/app-server.stderr.log"
-  if [ -f "$log" ]; then
-    line="$(grep -a 'ERROR' "$log" 2>/dev/null | tail -n 1 | awk '{ gsub(/\033\[[0-9;]*m/, ""); print }' | cut -c1-"$ALERT_EVIDENCE_LINE_MAX_CHARS")"
-    [ -z "$line" ] || out="${out:+$out
-}app-server: $line"
+  if evidence_relevant_for_reason "$reason" && [ -f "$DAEMON_LOG_PATH" ]; then
+    size="$(wc -c <"$DAEMON_LOG_PATH" | tr -d '[:space:]')"
+    offset="$DAEMON_LOG_OFFSET"
+    # 데몬 재시작으로 로그가 비워졌으면 offset이 크기를 넘는다 → 처음부터 본다.
+    [ "$offset" -le "$size" ] || offset=0
+    line="$(tail -c +"$((offset + 1))" "$DAEMON_LOG_PATH" 2>/dev/null | grep -a 'ERROR' | tail -n 1 | strip_ansi)"
+    label="app-server"
+    if [ -z "$line" ]; then
+      line="$(grep -a 'ERROR' "$DAEMON_LOG_PATH" 2>/dev/null | tail -n 1 | strip_ansi)"
+      label="app-server(이번 실행 이전 기록)"
+    fi
+    if [ -n "$line" ]; then
+      line="$(truncate_utf8 "$line" "$ALERT_EVIDENCE_LINE_MAX_BYTES")"
+      out="${out:+$out
+}${label}: $line"
+    fi
   fi
   printf '%s' "$out"
 }
@@ -863,11 +925,11 @@ failure_alert_body() {
   body="${ALERT_HOST}의 Codex 원격 제어 점검이 실패했습니다 (exit=${exit_code}, 코드: ${reason}, auth=${AUTH_MODE:-unknown})
 원인: ${cause}
 조치: ${fix}"
-  evidence="$(alert_evidence)"
+  evidence="$(alert_evidence "$reason")"
   [ -z "$evidence" ] || body="${body}
 근거:
 ${evidence}"
-  printf '%s' "$body" | cut -c1-"$ALERT_BODY_MAX_CHARS"
+  truncate_utf8 "$body" "$ALERT_BODY_MAX_BYTES"
 }
 
 send_alerts() {
@@ -940,6 +1002,7 @@ cmd_repair_unmanaged() {
 
 cmd_ensure_running() {
   local rc=0
+  capture_daemon_log_offset
   with_lock ensure_running_core || rc=$?
   if [ "$rc" -ne 0 ]; then
     collect_probe_preserving_reason

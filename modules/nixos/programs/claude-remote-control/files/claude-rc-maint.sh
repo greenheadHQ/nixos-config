@@ -894,8 +894,34 @@ is_failure_action() {
 }
 
 # Pushover 본문 상한(1024자) 안의 예산. 인스턴스가 많으면 앞 2건만 상세히 싣는다.
-ALERT_BODY_MAX_CHARS=1000
+ALERT_BODY_MAX_BYTES=1000
 ALERT_DETAIL_INSTANCES=2
+
+# 바이트 예산으로 자르되 꼬리의 잘린 UTF-8 시퀀스를 버린다. GNU cut -c는 바이트 단위라
+# 한글(3바이트)이 쪼개져 잘못된 UTF-8이 Pushover로 갈 수 있다. 로케일에 의존하지 않는다.
+truncate_utf8() {
+    local text="$1" max="$2" s n i byte need
+    s="$(printf '%s' "$text" | head -c "$max")"
+    local LC_ALL=C
+    n=${#s}
+    if [ "$n" -lt "$max" ]; then
+        printf '%s' "$s"
+        return 0
+    fi
+    for ((i = 1; i <= 4 && i <= n; i++)); do
+        byte=$(printf '%d' "'${s:n-i:1}")
+        if ((byte < 0x80)); then
+            printf '%s' "$s"
+            return 0
+        fi
+        if ((byte >= 0xC0)); then
+            if ((byte >= 0xF0)); then need=4; elif ((byte >= 0xE0)); then need=3; else need=2; fi
+            if ((i < need)); then printf '%s' "${s:0:n-i}"; else printf '%s' "$s"; fi
+            return 0
+        fi
+    done
+    printf '%s' "$s"
+}
 
 # instance action / global action 코드 → 한국어 "원인<TAB>조치". managing-claude-rc 스킬의
 # 트러블슈팅 표를 알림 크기에 맞게 압축한 것이다. 알림만 보고도 왜 실패했고 무엇을
@@ -1006,7 +1032,7 @@ failure_alert_body() {
 원인: ${cause}
 조치: ${fix}"
     fi
-    printf '%s' "$body" | cut -c1-"$ALERT_BODY_MAX_CHARS"
+    truncate_utf8 "$body" "$ALERT_BODY_MAX_BYTES"
 }
 
 
