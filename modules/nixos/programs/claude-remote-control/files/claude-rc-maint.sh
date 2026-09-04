@@ -20,6 +20,8 @@ CLAUDE_RC_PERMISSION_MODE="${CLAUDE_RC_PERMISSION_MODE:-bypassPermissions}"
 CLAUDE_RC_DRIFT_POLICY="${CLAUDE_RC_DRIFT_POLICY:-defer}"
 CLAUDE_RC_DRIFT_APPROVAL_JSON="${CLAUDE_RC_DRIFT_APPROVAL_JSON:-[]}"
 CLAUDE_RC_ALERT_HOST="${CLAUDE_RC_ALERT_HOST:-$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo claude-rc)}"
+# launchd StandardOutPath처럼 append-only로 자라는 ensure 로그. 비어 있으면(NixOS journald) 로테이션을 건너뛴다.
+CLAUDE_RC_ENSURE_LOG="${CLAUDE_RC_ENSURE_LOG:-}"
 
 PROJECTS_DIR="$HOME/.claude/projects"
 
@@ -29,8 +31,10 @@ GLOBAL_ACTION="none"
 CONFIRMED_DRIFT_APPROVALS="[]"
 RESULTS_FILE=""
 
-log_info() { echo "[claude-rc-maint] $*"; }
-log_error() { echo "[claude-rc-maint] ERROR: $*" >&2; }
+# launchd 로그에는 타임스탬프가 없어 실패 구간을 라인 수로 역산해야 했다 (#no-server-process 조사).
+log_stamp() { date "+%Y-%m-%dT%H:%M:%S%z"; }
+log_info() { echo "[claude-rc-maint $(log_stamp)] $*"; }
+log_error() { echo "[claude-rc-maint $(log_stamp)] ERROR: $*" >&2; }
 
 global_status_action_keys() {
     cat <<'EOF'
@@ -640,11 +644,16 @@ drift_tuple_is_confirmed() {
 
 handle_running_instance() {
     local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4"
-    local pid running_version action
+    local pid running_version action diag_line
     if ! pid=$(find_server_pid_for_path "$path"); then
         action="no-server-process"
         record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
         log_error "lock held but server process not found: $path"
+        # 어느 술어에서 후보가 탈락했는지 남긴다. 살아 있는 bridge를 못 찾는 간헐 실패는
+        # 재현이 안 되므로 실패 시점의 술어별 판정이 유일한 근거다.
+        while IFS= read -r diag_line; do
+            log_error "  diag $diag_line"
+        done < <(diagnose_server_pid_for_path "$path")
         return 1
     fi
 
@@ -935,6 +944,10 @@ cmd_ensure() {
     local rc
     rc=0
     mkdir -p "$STATE_DIR"
+    if [ -n "$CLAUDE_RC_ENSURE_LOG" ]; then
+        # launchd가 매 실행마다 파일을 새로 열므로 mv 로테이션이 다음 실행부터 반영된다.
+        rotate_log_if_needed "$CLAUDE_RC_ENSURE_LOG" || true
+    fi
     RESULTS_FILE=$(mktemp "$STATE_DIR/results.XXXXXX") || return 1
     with_lock ensure_core || rc=$?
     # 단일 finalizer: 어떤 분기도 이 경로를 우회하지 않는다
@@ -965,6 +978,7 @@ env:
   IDLE_THRESHOLD_MINUTES (default 30), MAINT_LOCK_TIMEOUT_SECONDS (default 120),
   ALERT_COOLDOWN_SECONDS (default 1800), PUSHOVER_CRED_FILE, SERVICE_LIB,
   CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_ALERT_HOST,
+  CLAUDE_RC_ENSURE_LOG (optional append-only ensure log path; rotated to .1 past LOG_MAX_BYTES),
   CLAUDE_RC_DRIFT_POLICY (automatic, confirmed, or defer; default defer),
   CLAUDE_RC_DRIFT_APPROVAL_JSON (exact non-empty path/runningVersion/desiredVersion array for confirmed)
 

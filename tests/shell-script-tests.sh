@@ -93,6 +93,8 @@ run_test "claude remote-control maint rejects invalid declarations" test_claude_
 run_test "claude remote-control transcript gate scopes to worktrees" test_claude_remote_control_transcript_gate_scopes_to_worktree_dirs
 run_test "claude remote-control maint reaps orphan sessions before start" test_claude_remote_control_maint_reaps_orphan_sessions_before_start
 run_test "claude remote-control maint writes status schema" test_claude_remote_control_maint_status_schema
+run_test "claude remote-control maint logs no-server-process diagnostics" test_claude_remote_control_maint_logs_no_server_process_diagnostics
+run_test "claude remote-control maint rotates ensure log" test_claude_remote_control_maint_rotates_ensure_log
 if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
   run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json

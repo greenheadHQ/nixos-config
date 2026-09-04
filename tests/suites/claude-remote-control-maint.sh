@@ -1277,3 +1277,74 @@ EOF
       || fail "unknown action must remain fail-closed"
   )
 }
+
+# no-server-process는 살아 있는 bridge를 술어 하나가 놓쳐도 난다. 실패 시점에 어느
+# 술어가 떨어졌는지와 타임스탬프가 로그에 남아야 라인 수 역산 없이 조사할 수 있다.
+test_claude_remote_control_maint_logs_no_server_process_diagnostics() {
+  local sandbox repo slug lock_path lock_pid rc stderr_file
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_install_running_server_mocks
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  _claude_rc_write_instance "$repo" "same-dir" "null" "bypassPermissions" "manual"
+  slug="$(_claude_rc_slug "$repo")"
+  mkdir -p "$CLAUDE_RC_STATE/$slug"
+  lock_path="$CLAUDE_RC_STATE/$slug/lock"
+
+  _claude_rc_acquire_synthetic_lock "$lock_path" "diag"
+  lock_pid="$CLAUDE_RC_SYNTHETIC_LOCK_PID"
+  # joined token은 bridge_argv/managed_argv 술어에서 탈락하고 나머지는 통과하는 형태
+  _claude_rc_write_pid_argv_fixture 6262 \
+    claude 'remote-control --no-create-session-in-dir' \
+    --spawn same-dir --permission-mode bypassPermissions
+  _claude_rc_write_pid_argv_fixture 6261 \
+    flock -n "$lock_path" claude 'remote-control --no-create-session-in-dir' \
+    --spawn same-dir --permission-mode bypassPermissions
+
+  stderr_file="$sandbox/maint.stderr"
+  rc=0
+  FAKE_SERVER_CWD="$repo" \
+  FAKE_SERVER_EXE="$CLAUDE_RC_VERSIONS/claude-old" \
+  FAKE_SERVER_LOCK_PATH="$lock_path" \
+  FAKE_SERVER_FLOCK_EXE="$CLAUDE_RC_REAL_FLOCK" \
+    _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>"$stderr_file" || rc=$?
+  _claude_rc_release_synthetic_lock "$lock_pid"
+
+  [ "$rc" -ne 0 ] || fail "diag scenario must still fail with no-server-process"
+  grep -Eq '^\[claude-rc-maint [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}[+-][0-9]{4}\] ERROR: lock held but server process not found: ' "$stderr_file" \
+    || fail "timestamped no-server-process error missing: $(cat "$stderr_file")"
+  grep -Eq 'diag pid=6262 cwd=ok cwd_raw=.* bridge_argv=FAIL flock_exe=FAIL versions_exe=ok exe_raw=.*claude-old txt_list=.*claude-old managed_argv=FAIL parent=6261 ' "$stderr_file" \
+    || fail "per-candidate diag line mismatch: $(cat "$stderr_file")"
+  grep -Eq 'pid_holds_lock=ok$' "$stderr_file" \
+    || fail "diag must evaluate lock-holder predicates: $(cat "$stderr_file")"
+  grep -Eq 'diag candidates=1 lock_free=FAIL lock=' "$stderr_file" \
+    || fail "diag summary missing: $(cat "$stderr_file")"
+}
+
+# launchd StandardOutPath는 append-only라 maint가 자기 로그를 LOG_MAX_BYTES 기준으로 rotate한다.
+test_claude_remote_control_maint_rotates_ensure_log() {
+  local sandbox repo log_file
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  log_file="$sandbox/ensure.log"
+
+  head -c $((5 * 1024 * 1024 + 1)) /dev/zero >"$log_file"
+  CLAUDE_RC_ENSURE_LOG="$log_file" \
+    _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>&1 || true
+  [ -f "$log_file.1" ] || fail "oversized ensure log must rotate to .1"
+  [ ! -f "$log_file" ] || fail "rotated ensure log must not remain at the original path"
+
+  rm -f "$log_file.1"
+  printf 'small\n' >"$log_file"
+  CLAUDE_RC_ENSURE_LOG="$log_file" \
+    _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>&1 || true
+  [ ! -f "$log_file.1" ] || fail "ensure log under the limit must not rotate"
+  [ -f "$log_file" ] || fail "ensure log under the limit must remain"
+
+  rm -f "$log_file" "$log_file.1"
+  _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>&1 || true
+  [ ! -e "$log_file" ] && [ ! -e "$log_file.1" ] || fail "unset CLAUDE_RC_ENSURE_LOG must not touch any log"
+}

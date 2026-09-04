@@ -28,6 +28,8 @@ let
   username = config.home.username;
   stateDir = "${homeDir}/.local/state/claude-rc";
   pushoverCredPath = "${config.xdg.configHome}/pushover/share";
+  # launchd는 append-only로만 쓰므로 maint가 자기 로그를 LOG_MAX_BYTES 기준으로 rotate한다.
+  ensureLogPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";
   serviceLib = import ../../nixos/lib/service-lib.nix { inherit pkgs; };
   headlessDispatcher = import ./ssh/headless-dispatcher.nix {
     inherit
@@ -116,6 +118,7 @@ in
         PUSHOVER_CRED_FILE = pushoverCredPath;
         IDLE_THRESHOLD_MINUTES = toString idleThresholdMinutes;
         ALERT_COOLDOWN_SECONDS = toString alertCooldownSeconds;
+        CLAUDE_RC_ENSURE_LOG = ensureLogPath;
         # writeShellApplication runtimeInputs가 앞에 붙는다. Darwin runtimeInputs에는
         # procps가 없으므로 이 tail의 /usr/bin이 maint의 bare pgrep fallback을 제공한다.
         # Claude launcher는 CLAUDE_BIN의 기본 절대 경로(~/.local/bin/claude)로 실행되며,
@@ -126,8 +129,8 @@ in
       // lib.optionalAttrs headlessDispatcher.enabled {
         NIXOS_CONFIG_HEADLESS_SSH = "1";
       };
-      StandardOutPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";
-      StandardErrorPath = "${homeDir}/Library/Logs/claude-rc-ensure.log";
+      StandardOutPath = ensureLogPath;
+      StandardErrorPath = ensureLogPath;
     };
   };
 }

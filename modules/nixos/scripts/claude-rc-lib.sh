@@ -502,6 +502,47 @@ find_server_pid_for_path() {
     return 1
 }
 
+_diag_flag() {
+    if "$@" >/dev/null 2>&1; then
+        echo ok
+    else
+        echo FAIL
+    fi
+}
+
+# no-server-process 진단: find_server_pid_for_path와 같은 후보 집합에 같은 술어를
+# 같은 순서로 다시 평가해 어디서 탈락했는지 한 줄씩 낸다. 읽기 전용이며 signal하지
+# 않는다. lsof 첫 txt 항목만 exe로 삼는 Darwin 경로의 오판을 잡기 위해 raw 값도 남긴다.
+diagnose_server_pid_for_path() {
+    local path="$1" pid lock_path parent_pid candidates=0 line txt_list
+    lock_path=$(lock_path_for_path "$path")
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        candidates=$((candidates + 1))
+        line="pid=$pid"
+        line="$line cwd=$(_diag_flag same_cwd_as_path "$pid" "$path")"
+        line="$line cwd_raw=$(pid_cwd "$pid" 2>/dev/null || echo '?')"
+        line="$line bridge_argv=$(_diag_flag pid_is_bridge_candidate_process "$pid")"
+        line="$line flock_exe=$(_diag_flag is_flock_process "$pid")"
+        line="$line versions_exe=$(_diag_flag is_claude_versions_exe_process "$pid")"
+        line="$line exe_raw=$(pid_exe_path "$pid" 2>/dev/null || echo '?')"
+        if [ "$(uname -s)" = Darwin ]; then
+            txt_list=$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | awk '/^n/ {print substr($0, 2)}' | head -5 | paste -sd ';' - 2>/dev/null || true)
+            line="$line txt_list=${txt_list:-?}"
+        fi
+        line="$line managed_argv=$(_diag_flag pid_is_managed_bridge_process "$pid")"
+        parent_pid=$(pid_parent_pid "$pid" 2>/dev/null || echo '?')
+        line="$line parent=$parent_pid"
+        line="$line parent_flock_exe=$(_diag_flag is_flock_process "$parent_pid")"
+        line="$line launcher_argv=$(_diag_flag pid_is_instance_flock_launcher "$parent_pid" "$pid" "$lock_path")"
+        line="$line parent_holds_lock=$(_diag_flag pid_has_open_file "$parent_pid" "$lock_path")"
+        line="$line pid_holds_lock=$(_diag_flag pid_has_open_file "$pid" "$lock_path")"
+        echo "$line"
+    done < <(pgrep -u "$(id -u)" -f "$BRIDGE_PROCESS_PATTERN" 2>/dev/null || true)
+    echo "candidates=$candidates lock_free=$(_diag_flag lock_is_free "$lock_path") lock=$lock_path"
+    return 0
+}
+
 has_unmanaged_server_for_path() {
     # Callers use this only after proving the instance lock is free. At that
     # point every matching bridge is necessarily outside the managed launcher.
