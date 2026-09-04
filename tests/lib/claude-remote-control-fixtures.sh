@@ -827,3 +827,22 @@ _claude_rc_make_recent_worktree_transcript() {
   mkdir -p "$CLAUDE_RC_HOME/.claude/projects/${prefix}--claude-worktrees-bridge-cse-1"
   : > "$CLAUDE_RC_HOME/.claude/projects/${prefix}--claude-worktrees-bridge-cse-1/session.jsonl"
 }
+
+# Pushover 알림 mock: service-lib의 send_notification을 ALERT_LOG append로 바꾼다
+# (codex 스위트의 _codex_rc_make_alerting과 같은 계약). 변수는 스위트에서 참조한다.
+# shellcheck disable=SC2034
+_claude_rc_make_alerting() {
+  local sandbox="$1"
+  CLAUDE_RC_ALERT_LOG="$sandbox/alerts.log"
+  CLAUDE_RC_SERVICE_LIB="$sandbox/service-lib.sh"
+  CLAUDE_RC_PUSHOVER_CRED="$sandbox/pushover.env"
+  cat > "$CLAUDE_RC_SERVICE_LIB" <<'EOS'
+send_notification() {
+  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$ALERT_LOG"
+}
+EOS
+  printf '%s\n' \
+    'PUSHOVER_TOKEN=test-token' \
+    'PUSHOVER_USER=test-user' \
+    > "$CLAUDE_RC_PUSHOVER_CRED"
+}

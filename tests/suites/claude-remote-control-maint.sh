@@ -1352,3 +1352,81 @@ test_claude_remote_control_maint_rotates_ensure_log() {
   _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>&1 || true
   [ ! -e "$log_file" ] && [ ! -e "$log_file.1" ] || fail "unset CLAUDE_RC_ENSURE_LOG must not touch any log"
 }
+
+# 실패 알림만 보고도 어느 인스턴스가 왜 실패했고 무엇을 해야 하는지, 탈락 술어까지
+# 읽혀야 한다 (2026-09 no-server-process 알림 폭주 때 "failed=<path>: no-server-process"가 전부였다).
+test_claude_remote_control_maint_alert_body_explains_cause() {
+  local sandbox repo slug lock_path lock_pid rc needle
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_install_running_server_mocks
+  _claude_rc_make_alerting "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  _claude_rc_write_instance "$repo" "same-dir" "null" "bypassPermissions" "manual"
+  slug="$(_claude_rc_slug "$repo")"
+  mkdir -p "$CLAUDE_RC_STATE/$slug"
+  lock_path="$CLAUDE_RC_STATE/$slug/lock"
+  printf 'healthy\n' >"$CLAUDE_RC_STATE/last-health-state"
+
+  _claude_rc_acquire_synthetic_lock "$lock_path" "alert-body"
+  lock_pid="$CLAUDE_RC_SYNTHETIC_LOCK_PID"
+  _claude_rc_write_pid_argv_fixture 6262 \
+    claude 'remote-control --no-create-session-in-dir' \
+    --spawn same-dir --permission-mode bypassPermissions
+  _claude_rc_write_pid_argv_fixture 6261 \
+    flock -n "$lock_path" claude 'remote-control --no-create-session-in-dir' \
+    --spawn same-dir --permission-mode bypassPermissions
+
+  rc=0
+  FAKE_SERVER_CWD="$repo" \
+  FAKE_SERVER_EXE="$CLAUDE_RC_VERSIONS/claude-old" \
+  FAKE_SERVER_LOCK_PATH="$lock_path" \
+  FAKE_SERVER_FLOCK_EXE="$CLAUDE_RC_REAL_FLOCK" \
+  ALERT_LOG="$CLAUDE_RC_ALERT_LOG" \
+  SERVICE_LIB="$CLAUDE_RC_SERVICE_LIB" \
+  PUSHOVER_CRED_FILE="$CLAUDE_RC_PUSHOVER_CRED" \
+    _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>&1 || rc=$?
+  _claude_rc_release_synthetic_lock "$lock_pid"
+
+  [ "$rc" -ne 0 ] || fail "no-server-process scenario must fail"
+  [ -f "$CLAUDE_RC_ALERT_LOG" ] || fail "failure must send an alert"
+  for needle in \
+    "Claude 원격 제어 실패 · " \
+    "의 Claude 원격 제어 점검이 실패했습니다 (exit=1, 전체: failed" \
+    "• $repo: no-server-process" \
+    "원인: lock은 잡혀 있는데 관리 대상 bridge 프로세스를 식별하지 못함" \
+    "조치: 'claude-rc ls'로 실제 생존 확인" \
+    "근거: 탈락 술어: pid=6262:bridge_argv"; do
+    grep -Fq -- "$needle" "$CLAUDE_RC_ALERT_LOG" \
+      || fail "alert body missing '$needle': $(cat "$CLAUDE_RC_ALERT_LOG")"
+  done
+  grep -Fq -- "Claude RC Ensure Failed" "$CLAUDE_RC_ALERT_LOG" && fail "english title must be gone"
+  [ "$(cat "$CLAUDE_RC_STATE/last-health-state")" = failed ] || fail "failure must record failed state"
+  if compgen -G "$CLAUDE_RC_STATE/results.*.detail" >/dev/null; then
+    fail "detail scratch file must be cleaned up"
+  fi
+  return 0
+}
+
+test_claude_remote_control_maint_alert_recovery_is_korean() {
+  local sandbox repo rc
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  _claude_rc_make_alerting "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  printf 'failed\n' >"$CLAUDE_RC_STATE/last-health-state"
+
+  rc=0
+  ALERT_LOG="$CLAUDE_RC_ALERT_LOG" \
+  SERVICE_LIB="$CLAUDE_RC_SERVICE_LIB" \
+  PUSHOVER_CRED_FILE="$CLAUDE_RC_PUSHOVER_CRED" \
+    _claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "ensure with no registered instances must succeed (rc=$rc)"
+  grep -Fq -- "Claude 원격 제어 복구 · " "$CLAUDE_RC_ALERT_LOG" \
+    || fail "recovery title missing: $(cat "$CLAUDE_RC_ALERT_LOG" 2>/dev/null)"
+  grep -Fq -- "의 Claude 원격 제어 점검이 정상으로 돌아왔습니다 (desired=" "$CLAUDE_RC_ALERT_LOG" \
+    || fail "recovery body missing: $(cat "$CLAUDE_RC_ALERT_LOG")"
+  [ "$(cat "$CLAUDE_RC_STATE/last-health-state")" = healthy ] || fail "recovery must record healthy state"
+}

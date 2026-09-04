@@ -559,8 +559,8 @@ test_codex_remote_control_alert_recovery_after_failure() {
 
   state="$(cat "$COD_RC_STATE/last-health-state")"
   [ "$state" = "healthy" ] || fail "recovery should update health state to healthy, got: $state"
-  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 1
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 복구" 1
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 0
 }
 
 test_codex_remote_control_alert_success_without_failure_is_quiet() {
@@ -576,8 +576,8 @@ test_codex_remote_control_alert_success_without_failure_is_quiet() {
 
   state="$(cat "$COD_RC_STATE/last-health-state")"
   [ "$state" = "healthy" ] || fail "healthy run should write healthy state, got: $state"
-  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 복구" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 0
 }
 
 test_codex_remote_control_alert_failure_sets_failed_and_cools_down() {
@@ -599,7 +599,7 @@ test_codex_remote_control_alert_failure_sets_failed_and_cools_down() {
   [ "$state" = "failed" ] || fail "failed run should write failed state, got: $state"
   [ -s "$COD_RC_STATE/last-failure-alert" ] || fail "failed run should record last failure alert timestamp"
   first_last="$(cat "$COD_RC_STATE/last-failure-alert")"
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 1
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 1
 
   if FAKE_DAEMON_MALFORMED=1 \
     ALERT_LOG="$COD_RC_ALERT_LOG" \
@@ -613,8 +613,8 @@ test_codex_remote_control_alert_failure_sets_failed_and_cools_down() {
   second_last="$(cat "$COD_RC_STATE/last-failure-alert")"
   [ "$state" = "failed" ] || fail "repeated failure should keep failed state, got: $state"
   [ "$second_last" = "$first_last" ] || fail "cooldown should not rewrite last failure alert timestamp"
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 1
-  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 1
+  _codex_rc_assert_alert_count "Codex 원격 제어 복구" 0
 }
 
 test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state() {
@@ -638,8 +638,8 @@ test_codex_remote_control_alert_without_pushover_token_does_not_mutate_state() {
   state="$(cat "$COD_RC_STATE/last-health-state")"
   [ "$state" = "healthy" ] || fail "missing Pushover token should leave health state unchanged, got: $state"
   [ ! -e "$COD_RC_STATE/last-failure-alert" ] || fail "missing Pushover token should not write failure alert timestamp"
-  _codex_rc_assert_alert_count "Codex Remote Control Failed" 0
-  _codex_rc_assert_alert_count "Codex Remote Control Recovered" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패" 0
+  _codex_rc_assert_alert_count "Codex 원격 제어 복구" 0
 }
 
 test_codex_remote_control_sync_standalone_package_success_links_current_release() {
@@ -701,4 +701,43 @@ test_codex_remote_control_sync_records_login_status_success_and_api_key_paths() 
   assert_file_contains "$bad_log" "login status"
   jq -e '.authMode == "api-key" and .loginStatus == "api-key" and .lastRepairReason == "auth-not-chatgpt" and .exitCode == 30' <<<"$bad_status" >/dev/null \
     || fail "API-key login status was not recorded as unhealthy: $bad_status"
+}
+
+# 알림만 보고도 원인과 조치를 알 수 있어야 한다: 한국어 제목·본문, reason 코드의 설명/조치,
+# app-server 데몬 로그의 마지막 ERROR 라인(ANSI 제거)을 근거로 포함한다.
+test_codex_remote_control_alert_body_explains_cause_and_evidence() {
+  local sandbox body
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  _codex_rc_make_alerting "$sandbox"
+  printf 'healthy\n' > "$COD_RC_STATE/last-health-state"
+  mkdir -p "$COD_RC_HOME/.codex/app-server-daemon"
+  printf '%s\n' \
+    'INFO app-server started' \
+    $'\e[2m2026-09-04T04:00:50Z\e[0m \e[31mERROR\e[0m codex_login::auth::manager: Failed to refresh token: 401 Unauthorized: refresh_token_invalidated' \
+    > "$COD_RC_HOME/.codex/app-server-daemon/app-server.stderr.log"
+
+  if FAKE_DAEMON_MALFORMED=1 \
+    ALERT_LOG="$COD_RC_ALERT_LOG" \
+    SERVICE_LIB="$COD_RC_SERVICE_LIB" \
+    PUSHOVER_CRED_FILE="$COD_RC_PUSHOVER_CRED" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running 2>/dev/null; then
+    fail "ensure-running should fail for malformed daemon JSON"
+  fi
+
+  _codex_rc_assert_alert_count "Codex 원격 제어 실패 · greenhead-minipc" 1
+  body="$(cat "$COD_RC_ALERT_LOG")"
+  for needle in \
+    "greenhead-minipc의 Codex 원격 제어 점검이 실패했습니다 (exit=40, 코드: daemon-version-malformed-json" \
+    "원인: codex CLI 출력이 JSON이 아님" \
+    "조치: codex 업데이트로 출력 형식이 바뀌었는지 확인" \
+    "근거:" \
+    "app-server: 2026-09-04T04:00:50Z ERROR codex_login::auth::manager: Failed to refresh token: 401 Unauthorized: refresh_token_invalidated"; do
+    grep -Fq -- "$needle" "$COD_RC_ALERT_LOG" || fail "alert body missing '$needle': $body"
+  done
+  if grep -q $'\e\[' "$COD_RC_ALERT_LOG"; then
+    fail "alert body must not carry ANSI escapes: $body"
+  fi
+  grep -Fq -- "stderr:" "$COD_RC_ALERT_LOG" && fail "no start stderr captured, so no stderr line expected: $body"
+  return 0
 }
