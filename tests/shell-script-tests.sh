@@ -255,6 +255,11 @@ run_test "verify-ai-compat host-state positive fixture" test_verify_ai_compat_ho
 run_test "verify-ai-compat host-state detects non-executable hook" test_verify_ai_compat_host_state_detects_non_executable_hook
 run_test "verify-ai-compat host-state detects bad symlink targets" test_verify_ai_compat_host_state_detects_bad_symlink_targets
 run_test "verify-ai-compat host-state detects removed oracle reference" test_verify_ai_compat_host_state_detects_removed_oracle_reference
+run_test "verify-ai-compat retired ref scan covers modes/scripts/tests" test_verify_ai_compat_retired_ref_scan_covers_modes_scripts_and_tests
+run_test "verify-ai-compat retired ref scan honors line exclusions" test_verify_ai_compat_retired_ref_scan_honors_exclusions
+run_test "verify-ai-compat retired ref scan detects stale exclusion" test_verify_ai_compat_retired_ref_scan_detects_stale_exclusion
+run_test "verify-ai-compat retired ref scan reports partial grep failure" test_verify_ai_compat_retired_ref_scan_reports_partial_grep_failure
+run_test "verify-ai-compat retired ref scan passes when clean" test_verify_ai_compat_retired_ref_scan_passes_when_clean
 run_test "stale filter supports clean symlinked user hooks" test_user_hooks_stale_filter_supports_clean_symlink_target
 run_test "stale filter detects symlinked stale user hooks" test_user_hooks_stale_filter_detects_symlink_target_stale_entries
 run_test "stale filter ignores stale path mentions" test_user_hooks_stale_filter_ignores_stale_path_mentions
