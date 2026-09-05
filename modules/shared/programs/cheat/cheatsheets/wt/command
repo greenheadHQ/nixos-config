@@ -73,6 +73,7 @@ wt — Git worktree 관리 (fzf TUI)
     "$WT_PY" ~/.local/lib/wt/codex-trust.py gc-worktree-projects --config ~/.codex/config.toml --dry-run
   저장소 devShell(direnv 활성) 안에서는 그냥 python3로도 동작한다
   먼저 --dry-run으로 대상 확인 ("would remove N ..."), --dry-run을 빼면 .bak-gc-<UTC> 백업 후 제거
+  실패하면 "Codex trust GC 건너뜀" 경고만 남고 config는 무변경 (백업도 안 만듦) — 그대로 재시도 가능
 
 [.wt-last / wt cd -]
   마지막 worktree 경로를 .claude/worktrees/.wt-last에 기록

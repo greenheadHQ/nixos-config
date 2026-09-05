@@ -663,6 +663,227 @@ PY
     || fail "gc backup must be 0600, got $(_portable_file_mode "$backup")"
 }
 
+# 실제 Codex config는 [projects."<path>"] 테이블이 다른 최상위 테이블 사이에 흩어져 있어
+# tomlkit이 Table 대신 OutOfOrderTableProxy를 준다. 그 프록시의 테이블 위치 맵은 삭제 중
+# 조각이 비어 사라질 때 갱신되지 않아, 순차 삭제가 도중에 예외로 죽는다. 위의 in-order
+# 소수 fixture로는 재현되지 않으므로 흩어진 대량 fixture를 따로 둔다.
+test_codex_trust_gc_handles_out_of_order_projects_tables() {
+  local sandbox config_file dry_config live_worktree stale_prefix plain_prefix
+  local output rc backup listed
+  local stale_count=160 plain_count=40 expected_kept
+  if ! codex_config_tomlkit_available; then
+    echo "SKIP: codex trust GC out-of-order fixture requires tomlkit" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  config_file="$sandbox/config.toml"
+  dry_config="$sandbox/dry-run-config.toml"
+  live_worktree="$sandbox/repo/.claude/worktrees/feature_live"
+  mkdir -p "$live_worktree"
+  live_worktree="$(cd "$live_worktree" && pwd -P)"
+  # 존재하지 않는 합성 경로만 쓴다 (실제 홈/사용자 경로를 fixture에 넣지 않는다).
+  stale_prefix="/nonexistent-codex-gc/repo/.claude/worktrees"
+  plain_prefix="/nonexistent-codex-gc/plain"
+  expected_kept=$((plain_count + 1))
+
+  "${WT_PYTHON:-python3}" - \
+    "$config_file" "$live_worktree" "$stale_prefix" "$plain_prefix" \
+    "$stale_count" "$plain_count" <<'PY'
+import sys
+
+(
+    config_file,
+    live_worktree,
+    stale_prefix,
+    plain_prefix,
+    stale_count,
+    plain_count,
+) = sys.argv[1:7]
+stale_count = int(stale_count)
+plain_count = int(plain_count)
+
+# projects 조각별 (stale, 유지) 개수 — 실측한 실제 config(조각 3개, 가운데 조각만 통째로
+# stale)의 모양이다. 가운데 조각은 삭제 도중 통째로 비어 프록시의 테이블 리스트에서
+# 빠지고, 그러면 마지막 조각 키들이 기억하고 있던 위치가 리스트 밖을 가리키게 된다.
+layout = [(60, 20), (20, 0), (80, 20)]
+# 조각 사이에 끼우는 비-projects 테이블. 이게 있어야 out-of-order가 된다.
+separators = ['[filler_1]\nkeep = 1\n', '[notice]\nmessage = "keep me"\n']
+assert sum(s for s, _ in layout) == stale_count, layout
+assert sum(p for _, p in layout) == plain_count, layout
+assert len(separators) == len(layout) - 1, separators
+
+out = [
+    'model = "test-model"\n',
+    "# standalone comment must survive GC\n",
+    '[tui]\ntheme = "dark"\n',
+]
+stale_i = plain_i = 0
+for frag, (n_stale, n_plain) in enumerate(layout):
+    if frag:
+        out.append(separators[frag - 1])
+    total = n_stale + n_plain
+    placed = 0
+    for idx in range(total):
+        # 유지 항목을 조각 안에 고르게 흩어, 첫/마지막 조각은 삭제 후에도 비지 않게 한다.
+        want = round((idx + 1) * n_plain / total)
+        if want > placed:
+            key = f"{plain_prefix}/project_{plain_i:03d}"
+            plain_i += 1
+            placed += 1
+        else:
+            key = f"{stale_prefix}/feature_{stale_i:03d}"
+            stale_i += 1
+        out.append(f'[projects."{key}"]\ntrust_level = "trusted"\n')
+assert (stale_i, plain_i) == (stale_count, plain_count), (stale_i, plain_i)
+out.append(f'[projects."{live_worktree}"]\ntrust_level = "trusted"\n')
+
+with open(config_file, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(out))
+PY
+  cp "$config_file" "$dry_config"
+
+  # fixture가 실제로 out-of-order인지 먼저 확인한다 — in-order로 퇴화하면 이 테스트는
+  # 회귀를 더 이상 잡지 못하면서도 통과한다.
+  "${WT_PYTHON:-python3}" - "$config_file" <<'PY' || fail "fixture must produce an out-of-order projects table"
+import sys
+import tomlkit
+from tomlkit.container import OutOfOrderTableProxy
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    doc = tomlkit.parse(handle.read())
+projects = doc["projects"]
+assert isinstance(projects, OutOfOrderTableProxy), type(projects)
+PY
+
+  # dry-run은 파일을 건드리지 않고 같은 목록을 낸다.
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+      gc-worktree-projects --config "$dry_config" --dry-run 2>&1
+  )
+  assert_contains "$output" "would remove $stale_count (kept $expected_kept)"
+  assert_not_contains "$output" "$plain_prefix/project_000"
+  listed=$(printf '%s\n' "$output" | grep -c -- "^$stale_prefix/feature_" || true)
+  [[ "$listed" == "$stale_count" ]] \
+    || fail "gc --dry-run must list all $stale_count stale entries, listed=$listed"
+  cmp -s "$config_file" "$dry_config" \
+    || fail "gc --dry-run must not modify an out-of-order config"
+
+  set +e
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+      gc-worktree-projects --config "$config_file" 2>&1
+  )
+  rc=$?
+  set -e
+  [[ "$rc" == "0" ]] \
+    || fail "gc on an out-of-order projects config must succeed, got rc=$rc output=$output"
+  assert_contains "$output" "removed $stale_count (kept $expected_kept)"
+  assert_not_contains "$output" "Codex trust GC 건너뜀"
+  assert_not_contains "$output" "Traceback"
+
+  grep -q '^# standalone comment must survive GC$' "$config_file" \
+    || fail "gc must preserve standalone comments in an out-of-order config"
+
+  "${WT_PYTHON:-python3}" - \
+    "$config_file" "$live_worktree" "$stale_prefix" "$plain_prefix" \
+    "$stale_count" "$plain_count" <<'PY'
+import sys
+import tomllib
+
+(
+    config_file,
+    live_worktree,
+    stale_prefix,
+    plain_prefix,
+    stale_count,
+    plain_count,
+) = sys.argv[1:7]
+stale_count = int(stale_count)
+plain_count = int(plain_count)
+
+with open(config_file, "rb") as f:
+    data = tomllib.load(f)
+
+projects = data["projects"]
+assert len(projects) == plain_count + 1, len(projects)
+for i in range(stale_count):
+    assert f"{stale_prefix}/feature_{i:03d}" not in projects, i
+for i in range(plain_count):
+    key = f"{plain_prefix}/project_{i:03d}"
+    assert projects[key]["trust_level"] == "trusted", key
+assert projects[live_worktree]["trust_level"] == "trusted", projects
+
+# 유지 항목의 값뿐 아니라 projects 조각 사이에 끼어 있던 비-projects 테이블도 남아야 한다.
+assert data["model"] == "test-model", data
+assert data["tui"]["theme"] == "dark", data
+assert data["filler_1"]["keep"] == 1, data
+assert data["notice"]["message"] == "keep me", data
+PY
+
+  backup=$(find "$sandbox" -maxdepth 1 -name 'config.toml.bak-gc-*' -print -quit)
+  [[ -n "$backup" ]] || fail "expected gc to leave a timestamped backup"
+  [[ "$(_portable_file_mode "$backup")" == "600" ]] \
+    || fail "gc backup must be 0600, got $(_portable_file_mode "$backup")"
+  assert_contains "$(cat "$backup")" "$stale_prefix/feature_000"
+}
+
+# 삭제 중 tomlkit이 던지는 예외는 traceback으로 새지 않고 기존 GC 스킵 경로로 잡혀야 한다.
+# 삭제는 backup/write 이전 단계라 그때 config는 무변경이어야 한다.
+test_codex_trust_gc_delete_failure_leaves_config_unchanged() {
+  local sandbox config_file stale_project output before_hash after_hash
+  if ! codex_config_tomlkit_available; then
+    echo "SKIP: codex trust GC delete failure requires tomlkit" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  config_file="$sandbox/config.toml"
+  stale_project="$sandbox/repo/.claude/worktrees/feature_stale"
+
+  cat > "$config_file" <<EOF
+model = "test-model"
+
+[projects."$stale_project"]
+trust_level = "trusted"
+EOF
+  before_hash=$(cksum < "$config_file")
+
+  output=$(
+    "${WT_PYTHON:-python3}" - "$REPO_ROOT" "$config_file" <<'PY' 2>&1
+import importlib.util
+from pathlib import Path
+import sys
+
+repo_root, config_file = sys.argv[1:3]
+module_path = Path(repo_root) / "modules/shared/scripts/lib/wt/codex-trust.py"
+spec = importlib.util.spec_from_file_location("codex_trust", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+
+def boom(doc, projects, keys):
+    # 실제로 관측된 tomlkit 실패(OutOfOrderTableProxy의 낡은 테이블 위치 참조)를 흉내낸다.
+    raise IndexError("list index out of range")
+
+
+module.delete_project_entries = boom
+rc = module.gc_worktree_projects(Path(config_file), False)
+assert rc == 1, rc
+PY
+  )
+
+  after_hash=$(cksum < "$config_file")
+  assert_contains "$output" "Codex trust GC 건너뜀"
+  assert_contains "$output" "IndexError"
+  assert_not_contains "$output" "Traceback"
+  [[ "$before_hash" == "$after_hash" ]] \
+    || fail "gc must leave the config unchanged when deletion fails"
+  [[ -z "$(find "$sandbox" -maxdepth 1 -name 'config.toml.bak-gc-*' -print -quit)" ]] \
+    || fail "gc must not create a backup when deletion fails"
+}
+
 test_wt_cleanup_untrusts_codex_project() {
   local sandbox home_dir repo_root config_file target_worktree other_project output
   if ! codex_config_tomlkit_available; then
