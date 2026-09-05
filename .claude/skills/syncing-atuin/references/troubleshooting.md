@@ -8,6 +8,7 @@ Atuin 및 Zsh 관련 문제와 해결 방법을 정리합니다.
 - [한글 포함 히스토리 일괄 삭제](#한글-포함-히스토리-일괄-삭제)
 - [atuin status가 404 오류 반환](#atuin-status가-404-오류-반환)
 - [Encryption key 불일치로 동기화 실패](#encryption-key-불일치로-동기화-실패)
+- [새 호스트로 encryption key 이관](#새-호스트로-encryption-key-이관)
 - [Atuin daemon 불안정 (deprecated)](#atuin-daemon-불안정-deprecated)
 - [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)
 - [네트워크 문제로 sync 실패](#네트워크-문제로-sync-실패)
@@ -315,6 +316,31 @@ atuin register -u <username> -e <email>
 # key 백업
 cp ~/.local/share/atuin/key ~/.local/share/atuin/key.backup-$(date +%Y%m%d)
 ```
+
+---
+
+## 새 호스트로 encryption key 이관
+
+상황: MiniPC 재설치처럼 새 호스트에서 Atuin을 처음 설정할 때. 이관 없이 `atuin register`하면 새 key가 생성되어 서버에 쌓인 기존 히스토리를 복호화할 수 없다 (계정별 고유 key).
+
+기존 key를 가진 호스트에서 새 호스트로 복사한다.
+
+```bash
+ssh minipc "mkdir -p ~/.local/share/atuin"
+scp ~/.local/share/atuin/key minipc:~/.local/share/atuin/
+```
+
+새 호스트에서 로그인 후 동기화한다.
+
+```bash
+atuin login -u <username>
+atuin sync
+atuin doctor 2>&1 | grep -o '"last_sync": "[^"]*"'   # last_sync 갱신 확인
+```
+
+> 검증에 `atuin status`를 쓰지 않는다. 이 명령은 v1 `/sync/status`를 호출하는데 Atuin 클라우드가 v1을 껐기 때문에 404를 돌려주고, v1 `last_sync_time` 파일도 CLI sync가 갱신하지 않아 값 자체가 오해를 부른다. 근거는 같은 문서의 [atuin status가 404 오류 반환](#atuin-status가-404-오류-반환)과 [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)에 있다.
+
+> key 파일은 히스토리 복호화 권한 그 자체다. SSH 암호화 경로(scp) 외의 채널(채팅·공용 저장소·클립보드 공유)로 옮기지 않는다.
 
 ---
 
