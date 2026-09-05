@@ -171,8 +171,8 @@ selective consistency trigger 없음 (split/fragmented 없음). 14건 모두 본
 
 - nixos-config corpus jsonl 리스트: `/tmp/nixos-jsonl-list.txt` (67개)
 - nixos-config assistant text dump: `/tmp/nixos-assistant-text.dump` (10,896줄, 644KB)
-- 보조 corpus jsonl 리스트: `/tmp/zari-jsonl-list.txt` (1,832개)
-- 보조 corpus dump: `/tmp/zari-assistant-text.dump` (309,216줄, 17MB)
+- 보조 corpus jsonl 리스트: `/tmp/aux-jsonl-list.txt` (1,832개)
+- 보조 corpus dump: `/tmp/aux-assistant-text.dump` (309,216줄, 17MB)
 - 통합 corpus 리스트: `/tmp/all-jsonl-list.txt` (2,767 jsonl)
 - 부활 매트릭스 raw: `/tmp/jsonl-meta/sorted.tsv`, `id-counts-all.tsv`, `baked.txt`, `unbaked-ids.txt`
 - pain-points (영구): `~/.claude/pain-points{,.archive}.jsonl` (17건 짜증 시점)

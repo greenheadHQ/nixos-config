@@ -616,14 +616,14 @@ $ cat ~/.local/share/atuin/last_sync_time
 
 ```bash
 $ ls -la ~/.local/share/atuin/records.db
-.rw-------@ 94k glen 13 Jan 16:54  # mtime 고정
+.rw-------@ 94k <user> 13 Jan 16:54  # mtime 고정
 
 $ atuin sync
 0/0 up/down to record store
 Sync complete!
 
 $ ls -la ~/.local/share/atuin/records.db
-.rw-------@ 94k glen 13 Jan 16:54  # 변화 없음
+.rw-------@ 94k <user> 13 Jan 16:54  # 변화 없음
 ```
 
 **원인**: 데이터베이스 파일은 실제 데이터 변경이 있을 때만 수정됨.
@@ -735,7 +735,7 @@ $HOME/.nix-profile/bin
 ...
 
 -- atuin 실제 경로 (누락!)
-/etc/profiles/per-user/glen/bin/atuin
+/etc/profiles/per-user/<user>/bin/atuin
 ```
 
 **해결**: PATH에 per-user 경로 추가
@@ -773,7 +773,7 @@ export PATH="/etc/profiles/per-user/$USER/bin:..."
 
 ### 목표
 
-1. 기존 계정(glen)에서 새 계정(greenhead)으로 마이그레이션
+1. 기존 계정에서 새 계정(greenhead)으로 마이그레이션
 2. 62,000개 이상의 히스토리 보존
 3. 동기화 모니터링 시스템 구축
 
