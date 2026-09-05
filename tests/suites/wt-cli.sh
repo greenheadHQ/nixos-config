@@ -261,6 +261,10 @@ test_wt_create_conflict_noninteractive_requires_if_exists() {
   assert_not_contains "$output" "선택>"
 }
 
+# 경로는 반드시 stdout으로 나가야 한다. zsh 래퍼(`output=$(command wt "$@")`)와
+# `cd "$(wt <branch>)"`가 stdout만 캡처하므로, 경로가 stderr로 새면 래퍼는 이동하지
+# 않고 `cd ""`가 no-op으로 성공해 조용히 잘못된 디렉토리에 남는다. 그래서 이 테스트만은
+# stderr를 합치지 않고(2>/dev/null) 채널을 구분해 고정한다.
 test_wt_create_if_exists_reuse_returns_path() {
   local sandbox home_dir repo_root output expected_path
   sandbox=$(new_sandbox)
@@ -281,7 +285,7 @@ test_wt_create_if_exists_reuse_returns_path() {
         set -euo pipefail
         cd "'"$repo_root"'"
         "'"$home_dir/.local/bin/wt"'" --if-exists=reuse feature_one
-      ' 2>&1
+      ' 2>/dev/null
   )
 
   assert_contains "$output" "$expected_path"

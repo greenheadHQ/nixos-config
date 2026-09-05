@@ -1313,7 +1313,15 @@ case "${1:-}" in
     fi
     ;;
   display-message) printf '2\n' ;;   # 마지막 윈도우가 아니어야 kill-window까지 간다
-  has-session)     exit 0 ;;         # 세션 존재 = present
+  has-session)
+    # 기본은 "세션 있음". TMUX_STUB_SESSION_ABSENT=1이면 tmux가 부재를 알릴 때 쓰는
+    # 문구로 실패시켜 삼상태 probe가 absent로 분류하게 한다 (무확인 삭제 경로 재현용).
+    if [[ -n "${TMUX_STUB_SESSION_ABSENT:-}" ]]; then
+      printf "can't find session: %s\n" "${3:-}" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
   list-clients)    : ;;              # 연결된 클라이언트 없음 → 종료 허용
   kill-window)     note kill-window ;;
   kill-session)    note kill-session ;;
@@ -1384,10 +1392,12 @@ test_wt_remove_worktree_preserves_active_process_unit() {
 }
 
 test_wt_remove_worktree_closes_tmux_before_remove_unit() {
-  # 삭제 순서 계약: _wt_has_active_process → _wt_tmux_close → _wt_tmux_session_close
-  # → git worktree remove. 창·세션을 먼저 닫아야 worktree가 사라진 뒤 남은 pane이
-  # 없어진 cwd를 붙잡는 orphan 상태를 만들지 않는다. 순서가 뒤집히면 close 시점에
-  # 디렉토리가 이미 없다 — stub이 그 시점 상태를 기록해 순서를 고정한다.
+  # 강제(forced) 경로 한정의 삭제 순서 계약: _wt_has_active_process → _wt_tmux_close
+  # → _wt_tmux_session_close → git worktree remove. 창·세션을 먼저 닫아야 worktree가
+  # 사라진 뒤 남은 pane이 없어진 cwd를 붙잡는 orphan 상태를 만들지 않는다. 순서가
+  # 뒤집히면 close 시점에 디렉토리가 이미 없다 — stub이 그 시점 상태를 기록해 고정한다.
+  # 무확인 삭제(guarded)는 부분 정리를 피하려고 일부러 제거-후-close이며, 그 순서는
+  # 아래 test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit이 따로 고정한다.
   local sandbox repo wt_path stub_dir log
   sandbox=$(new_sandbox)
   repo="$sandbox/repo"
@@ -1431,4 +1441,60 @@ test_wt_remove_worktree_closes_tmux_before_remove_unit() {
     # 순서까지 고정한다 — 윈도우를 닫기 전에 세션을 죽이면 같은 세션의 다른 창까지 잃는다.
     [[ "$(printf '%s\n' "$calls" | head -1)" == "kill-window"* ]] || exit 25
   ) || fail "_remove_worktree가 worktree 제거 전에 tmux 창·세션을 닫는지 확인 실패 (exit $?)"
+}
+
+test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit() {
+  # 무확인 삭제(guarded, `wt cleanup --auto`의 MERGED 경로)는 순서가 반대다 — 되돌릴 수
+  # 없는 창·세션 종료를 먼저 하고 나서 제거가 거부되면 worktree는 남고 작업 문맥만
+  # 사라지므로, 제거 성공을 mutation 경계로 두고 그 뒤에 부수 정리로 닫는다.
+  # 고정하려는 것은 "그래도 닫기는 한다"이다: 이 호출이 빠지면 지워진 worktree를 cwd로
+  # 붙잡은 pane이 남는다. 두 close 호출 시점의 worktree 상태(absent)가 곧 순서 증거다.
+  local sandbox repo wt_path stub_dir log
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  mkdir -p "$repo"
+  repo="$(cd "$repo" && pwd -P)"
+  wt_path="$(cd "$sandbox" && pwd -P)/wt"
+  stub_dir="$sandbox/stubbin"
+  log="$sandbox/tmux-calls.log"
+  install_wt_tmux_guard_stub "$stub_dir"
+
+  (
+    set -euo pipefail
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feature
+    local recorded_oid
+    recorded_oid=$(git -C "$wt_path" rev-parse HEAD)
+
+    unset TMUX
+    export PATH="$stub_dir:$PATH"
+    export TMUX_STUB_LOG="$log"
+    export TMUX_STUB_PANE_PATH="$wt_path"
+    export TMUX_STUB_PANE_COMMANDS=zsh   # 모든 pane이 셸 = 삭제 가능
+    # guarded는 세션이 present이기만 해도 스킵한다. 여기서 관찰하려는 것은 그 스킵이
+    # 아니라 스킵을 통과한 뒤의 정리 호출이므로 세션을 absent로 둔다.
+    export TMUX_STUB_SESSION_ABSENT=1
+
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    _wt_require_state_helpers() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+    _wt_untrust_codex_project() { :; }
+
+    _remove_worktree "$wt_path" feature "$repo" guarded "$recorded_oid" >/dev/null 2>&1 || exit 31
+    [[ ! -d "$wt_path" ]] || exit 32
+
+    local calls
+    calls=$(cat "$log")
+    [[ "$calls" == *"kill-window worktree=absent"* ]] || exit 33
+    [[ "$calls" == *"kill-session worktree=absent"* ]] || exit 34
+    # 창 → 세션 순서는 두 전략이 같다: 세션을 먼저 죽이면 같은 세션의 다른 창까지 잃는다.
+    [[ "$(printf '%s\n' "$calls" | head -1)" == "kill-window"* ]] || exit 35
+  ) || fail "_remove_worktree(guarded)가 제거 뒤 tmux 창·세션을 닫는지 확인 실패 (exit $?)"
 }

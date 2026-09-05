@@ -238,6 +238,7 @@ run_test "wt remove refuses unknown lock state unit" test_wt_remove_worktree_ref
 run_test "wt remove failure notes registration state unit" test_wt_remove_worktree_failure_notes_registration_state_unit
 run_test "wt remove preserves active process worktree unit" test_wt_remove_worktree_preserves_active_process_unit
 run_test "wt remove closes tmux before worktree remove unit" test_wt_remove_worktree_closes_tmux_before_remove_unit
+run_test "wt remove guarded closes tmux after worktree remove unit" test_wt_remove_worktree_guarded_closes_tmux_after_remove_unit
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
