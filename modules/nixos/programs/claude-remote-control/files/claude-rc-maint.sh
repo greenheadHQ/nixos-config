@@ -938,7 +938,7 @@ action_explain() {
         path-missing-lock-held)
             printf '%s\t%s' \
                 "등록 경로는 사라졌는데 instance lock이 살아 있음 (고아 bridge 가능)" \
-                "lock 소유 PID를 읽기 전용으로 확인한 뒤 'claude-rc stop <path>'"
+                "lock 소유 PID와 bridge 신원을 읽기 전용으로 확인. 경로가 없으면 'claude-rc stop'은 서버 신원을 못 찾아 거부되므로, 디렉토리를 원래 경로에 복원한 뒤 stop하거나 확인된 bridge PID를 직접 TERM"
             ;;
         start-failed)
             printf '%s\t%s' \
@@ -1085,6 +1085,8 @@ cmd_ensure() {
         rotate_log_if_needed "$CLAUDE_RC_ENSURE_LOG" || true
     fi
     RESULTS_FILE=$(mktemp "$STATE_DIR/results.XXXXXX") || return 1
+    # 원 스캔의 탈락 기록은 이 실행 전용 스크래치에만 쓴다 (lib 기본값은 기록 안 함).
+    SERVER_SCAN_REJECT_FILE="$RESULTS_FILE.scan"
     with_lock ensure_core || rc=$?
     # 단일 finalizer: 어떤 분기도 이 경로를 우회하지 않는다
     # (recovered/failure 알림 상태 전이가 모든 실행에서 평가되도록).
@@ -1099,7 +1101,7 @@ cmd_ensure() {
     # 마지막 명령이라 set -e 발동) finalizer가 send_alerts 전에 죽지 않게 guard.
     load_alerting || true
     send_alerts "$rc" || true
-    rm -f "$RESULTS_FILE" "$RESULTS_FILE.detail"
+    rm -f "$RESULTS_FILE" "$RESULTS_FILE.detail" "$RESULTS_FILE.scan"
     return "$rc"
 }
 

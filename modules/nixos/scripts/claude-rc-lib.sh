@@ -11,8 +11,10 @@ INSTANCES_LOCK="$STATE_DIR/instances.json.lock"
 LOG_MAX_BYTES=$((5 * 1024 * 1024))
 # find_server_pid_for_path가 후보를 탈락시킨 술어를 기록하는 곳. 후보 스캔은 process
 # substitution/command substitution 서브셸 안에서 돌아 변수로는 호출자에 못 넘기므로
-# 파일을 쓴다. 매 스캔이 truncate하므로 항상 마지막 스캔 1회분만 남고 누적되지 않는다.
-SERVER_SCAN_REJECT_FILE="$STATE_DIR/scan-rejects.last"
+# 파일을 쓴다. 기본은 비어 있음(기록 안 함) — 경로를 지정한 호출자(maint의 실행별
+# 스크래치)만 기록한다. 고정 공유 경로를 쓰면 lifecycle lock 없이 도는 `claude-rc ls`가
+# 진행 중인 ensure의 기록을 truncate·오염시킨다.
+SERVER_SCAN_REJECT_FILE="${SERVER_SCAN_REJECT_FILE:-}"
 # Candidate discovery must not assume the configured maint launcher basename.
 # Include both official subcommand spellings, then verify the CLI command
 # position, cwd, executable boundary, and flock lineage below.
@@ -401,6 +403,7 @@ is_claude_versions_exe_process() {
 }
 
 _scan_reject() {
+    [ -n "$SERVER_SCAN_REJECT_FILE" ] || return 0
     printf 'pid=%s:%s\n' "$1" "$2" >>"$SERVER_SCAN_REJECT_FILE" 2>/dev/null || true
 }
 
@@ -423,12 +426,14 @@ find_bridge_pids_for_path() {
 }
 
 find_bridge_pid_for_path() {
-    local path="$1" pid
+    local path="$1" pid candidates
+    # find_server_pid_for_path와 같은 이유로 생산자를 먼저 끝낸다 (늦은 _scan_reject 차단).
+    candidates=$(find_bridge_pids_for_path "$path")
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
         echo "$pid"
         return 0
-    done < <(find_bridge_pids_for_path "$path")
+    done <<<"$candidates"
     return 1
 }
 
@@ -505,14 +510,20 @@ pid_is_managed_server_for_path() {
 }
 
 find_server_pid_for_path() {
-    local path="$1" pid
-    : >"$SERVER_SCAN_REJECT_FILE" 2>/dev/null || true
+    local path="$1" pid candidates
+    if [ -n "$SERVER_SCAN_REJECT_FILE" ]; then
+        : >"$SERVER_SCAN_REJECT_FILE" 2>/dev/null || true
+    fi
+    # 후보 수집을 먼저 끝낸다. process substitution으로 읽으면 첫 매치에서 return한 뒤에도
+    # 생산자가 남은 후보를 계속 검사하며 _scan_reject를 써서, 호출자가 이미 읽거나 지운
+    # 스크래치를 뒤늦게 다시 만든다.
+    candidates=$(find_bridge_pids_for_path "$path")
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
         pid_is_managed_server_for_path "$pid" "$path" || continue
         echo "$pid"
         return 0
-    done < <(find_bridge_pids_for_path "$path")
+    done <<<"$candidates"
     return 1
 }
 
