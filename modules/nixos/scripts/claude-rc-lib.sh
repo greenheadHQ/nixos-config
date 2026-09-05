@@ -426,12 +426,14 @@ find_bridge_pids_for_path() {
 }
 
 find_bridge_pid_for_path() {
-    local path="$1" pid
+    local path="$1" pid candidates
+    # find_server_pid_for_path와 같은 이유로 생산자를 먼저 끝낸다 (늦은 _scan_reject 차단).
+    candidates=$(find_bridge_pids_for_path "$path")
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
         echo "$pid"
         return 0
-    done < <(find_bridge_pids_for_path "$path")
+    done <<<"$candidates"
     return 1
 }
 
@@ -508,16 +510,20 @@ pid_is_managed_server_for_path() {
 }
 
 find_server_pid_for_path() {
-    local path="$1" pid
+    local path="$1" pid candidates
     if [ -n "$SERVER_SCAN_REJECT_FILE" ]; then
         : >"$SERVER_SCAN_REJECT_FILE" 2>/dev/null || true
     fi
+    # 후보 수집을 먼저 끝낸다. process substitution으로 읽으면 첫 매치에서 return한 뒤에도
+    # 생산자가 남은 후보를 계속 검사하며 _scan_reject를 써서, 호출자가 이미 읽거나 지운
+    # 스크래치를 뒤늦게 다시 만든다.
+    candidates=$(find_bridge_pids_for_path "$path")
     while IFS= read -r pid; do
         [ -n "$pid" ] || continue
         pid_is_managed_server_for_path "$pid" "$path" || continue
         echo "$pid"
         return 0
-    done < <(find_bridge_pids_for_path "$path")
+    done <<<"$candidates"
     return 1
 }
 
