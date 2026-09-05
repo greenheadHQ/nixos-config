@@ -9,8 +9,11 @@
 > STOP conditions 발생 시 중단·보고. 완료 시 `plans/README.md` 갱신.
 >
 > **Drift check (run first)**: repo 문서 대조는 하지 않는다 — 대상 파일이
-> 더 이상 존재하지 않는다. 대신 "Commands you will need"의 애드온 상태 확인과
-> minipc 심링크 확인을 먼저 실행해 Current state와 대조하고, 불일치 시 STOP.
+> 더 이상 존재하지 않는다. Part B는 "Commands you will need"의 애드온 상태
+> 확인을 먼저 실행해 Current state와 대조하고, 불일치 시 STOP.
+> Part C는 이미 STOP 상태다 — `/var/lib/private/anki-sync-server`가 빈 심링크가
+> 아니라 실데이터를 가진 경로로 확인되어 삭제를 보류 중이며(아래 "minipc 잔재"
+> 참조), 운영자의 처분 결정 전에는 Step 5를 실행하지 않는다.
 
 ## Status
 
@@ -66,10 +69,15 @@ Part A로 정정 완료, 2026-09-05 `anki-study/` 제거로 대상 파일 자체
   제거됨)" 표기는 이미 정확 — 유지.
 - 운영 전제(동기화/백업 상태)를 기술하는 문장이 anki-study 문서 전체에 0건.
 
-**minipc 잔재** (2026-07-05 ssh 실측):
+**minipc 잔재**:
 
-- `/var/lib/anki-sync-server -> private/anki-sync-server` 심링크 (target 0바이트).
+- (2026-07-05 ssh 실측 — **역사적 기준**)
+  `/var/lib/anki-sync-server -> private/anki-sync-server` 심링크 (target 0바이트).
   서비스 유닛/27701 포트/컨테이너는 없음 — 심링크만 남았다.
+- (이후 실측 — **현행**) target `/var/lib/private/anki-sync-server`에 203MB
+  실데이터가 확인되어 Step 5의 `EMPTY` 전제가 깨졌다. Part C는 삭제 보류
+  상태이며 처분은 운영자 결정 대기다. 이 판정의 기록 위치는
+  `plans/README.md`의 026 status 행이다 — 착수 전 그 행을 먼저 읽는다.
 
 **건드리지 않기로 확정된 것** (evidence 문서 "기각" 절):
 prefs21.db의 옛 경로(`/Users/green/*`)·`last_loaded_profile_name='test'`는 pickle
@@ -204,7 +212,8 @@ ssh minipc 'sudo rm /var/lib/anki-sync-server && sudo rmdir /var/lib/private/ank
 
 - [ ] Add Table·Quick Colour 비활성화 (+ 나머지 2종은 처분 결과 기록)
 - [ ] 리액트 덱 미suspend 카드 0장
-- [ ] minipc에 anki 관련 경로 잔존 0건
+- [ ] minipc에 anki 관련 경로 잔존 0건 (Part C — 203MB 실데이터 처분을 운영자가
+      결정한 뒤에만 판정 가능. 그 전에는 미충족이 정상)
 - [ ] `plans/README.md` 026 행 갱신
 
 ## STOP conditions
@@ -212,7 +221,8 @@ ssh minipc 'sudo rm /var/lib/anki-sync-server && sudo rmdir /var/lib/private/ank
 - 애드온 비활성화 후 Anki가 기동 실패하거나 에디터가 깨짐 — 즉시 해당 애드온
   재활성화 후 보고 (비활성화는 가역적이다 — 이것이 삭제 대신 비활성화를 택한 이유).
 - minipc의 `/var/lib/anki-sync-server`가 빈 심링크가 아니라 **데이터가 있는
-  디렉토리**로 실측됨 — 삭제 금지, 내용 보고 먼저.
+  디렉토리**로 실측됨 — 삭제 금지, 내용 보고 먼저. **이 조건은 이미 성립했다**
+  (203MB 실데이터): Part C는 운영자의 처분 결정 전까지 STOP 유지.
 - Enhanced Cloze/AnkiConnect를 건드려야 하는 상황으로 보임 — 범위 밖, 중단.
 
 ## Maintenance notes
