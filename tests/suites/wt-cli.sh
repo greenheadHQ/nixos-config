@@ -261,6 +261,10 @@ test_wt_create_conflict_noninteractive_requires_if_exists() {
   assert_not_contains "$output" "선택>"
 }
 
+# 경로는 반드시 stdout으로 나가야 한다. zsh 래퍼(`output=$(command wt "$@")`)와
+# `cd "$(wt <branch>)"`가 stdout만 캡처하므로, 경로가 stderr로 새면 래퍼는 이동하지
+# 않고 `cd ""`가 no-op으로 성공해 조용히 잘못된 디렉토리에 남는다. 그래서 이 테스트만은
+# stderr를 합치지 않고(2>/dev/null) 채널을 구분해 고정한다.
 test_wt_create_if_exists_reuse_returns_path() {
   local sandbox home_dir repo_root output expected_path
   sandbox=$(new_sandbox)
@@ -281,7 +285,7 @@ test_wt_create_if_exists_reuse_returns_path() {
         set -euo pipefail
         cd "'"$repo_root"'"
         "'"$home_dir/.local/bin/wt"'" --if-exists=reuse feature_one
-      ' 2>&1
+      ' 2>/dev/null
   )
 
   assert_contains "$output" "$expected_path"
@@ -339,10 +343,12 @@ test_wt_cd_noninteractive_requires_name() {
   assert_contains "$output" "이름을 인자로"
 }
 
-# 비대화형 + TMUX 환경: tmux 윈도우 전환 분기는 대화형 한정이어야 한다.
-# 가드 없으면 매칭 윈도우 존재 시 select-window 후 경로 출력 없이 return 0 —
-# `cd "$(wt cd <name>)"`가 빈 문자열을 받고(zsh `cd ""`는 no-op 성공) 사용자
-# tmux 화면이 임의 전환된다.
+# TMUX 안에서도 `wt cd`는 경로만 낸다. 예전에는 매칭 윈도우가 있으면 select-window 후
+# 경로 없이 return 0이라, 같은 명령이 문맥에 따라 아무것도 출력하지 않았다 —
+# `cd "$(wt cd <name>)"`가 빈 문자열을 받고(zsh `cd ""`는 no-op 성공) 사용자 tmux 화면도
+# 임의로 전환됐다. 윈도우 전환 코드는 제거했고, 여기서는 그 부수효과가 되살아나지
+# 않는지를 tmux 대역으로 지킨다 (테스트 하네스는 stdin이 tty가 아니라 언제나 비대화형이다 —
+# WT_NONINTERACTIVE는 의도를 명시할 뿐이다).
 test_wt_cd_noninteractive_in_tmux_prints_path() {
   local sandbox home_dir repo_root output expected_path stub_dir marker
   sandbox=$(new_sandbox)
@@ -390,9 +396,8 @@ STUB
   [[ ! -f "$marker" ]] || fail "noninteractive wt cd must not call tmux select-window"
 }
 
-# 비대화형 + TMUX 환경: create/reuse 경로(_open_worktree)도 동일 정책
-# (_wt_tmux_ui_allowed)을 따라야 한다 — tmux 윈도우 생성/전환 없이 경로를
-# stdout으로 출력한다.
+# create/reuse도 같은 계약이다 — TMUX 안이어도 윈도우를 만들거나 전환하지 않고
+# 경로만 stdout으로 낸다.
 test_wt_create_reuse_noninteractive_in_tmux_prints_path() {
   local sandbox home_dir repo_root output expected_path stub_dir marker
   sandbox=$(new_sandbox)
@@ -439,52 +444,54 @@ STUB
   [[ ! -f "$marker" ]] || fail "noninteractive wt create/reuse must not touch tmux windows"
 }
 
-# 비대화형 --stay: 대화형에서는 경로를 stderr 안내만 하지만(stdout에 내면 래퍼가
-# cd해버림), 비대화형에서는 stdout 경로 출력 계약을 지켜야 한다.
-test_wt_create_stay_noninteractive_prints_path_to_stdout() {
-  local sandbox home_dir repo_root stdout_only expected_path stub_dir marker
+# 퇴역한 presentation 플래그는 조용히 무시하지 않는다. 무시하면 `wt --claude fix`가
+# 성공한 것처럼 보이면서 Claude는 뜨지 않아, 호출자가 무엇이 사라졌는지 모른 채 진행한다.
+# 미지원은 unknown option으로 즉시 실패시켜 알린다.
+test_wt_retired_presentation_flags_fail() {
+  local sandbox home_dir repo_root flag output rc
   sandbox=$(new_sandbox)
   home_dir="$sandbox/home"
   repo_root="$sandbox/repo"
-  stub_dir="$sandbox/stubbin"
-  marker="$sandbox/tmux-ui-called"
-
   create_git_fixture_repo "$repo_root"
   repo_root="$(cd "$repo_root" && pwd -P)"
   install_deployed_layout "$sandbox" "$repo_root"
 
-  expected_path="$repo_root/.claude/worktrees/feature_one"
+  for flag in --stay --claude --tmux; do
+    rc=0
+    output=$(
+      env -u TMUX \
+        HOME="$home_dir" \
+        CODEX_HOME="$home_dir/.codex" \
+        PATH="$FIXTURE_DIR/bin:$PATH" \
+        WT_NONINTERACTIVE=1 \
+        bash -c '
+          set -euo pipefail
+          cd "'"$repo_root"'"
+          "'"$home_dir/.local/bin/wt"'" "$1" --if-exists=reuse feature_one
+        ' _ "$flag" 2>&1
+    ) || rc=$?
 
-  mkdir -p "$stub_dir"
-  cat > "$stub_dir/tmux" <<'STUB'
-#!/usr/bin/env bash
-case "${1:-}" in
-  list-sessions) exit 0 ;;
-  list-panes)    printf '@1 %s\n' "${TMUX_STUB_PANE_PATH:?}" ;;
-  select-window|new-window) touch "${TMUX_STUB_MARKER:?}" ;;
-  *)             exit 0 ;;
-esac
-STUB
-  chmod +x "$stub_dir/tmux"
+    [[ "$rc" -ne 0 ]] || fail "퇴역 플래그 $flag 는 실패해야 함: $output"
+    assert_contains "$output" "알 수 없는 옵션: $flag"
+  done
 
-  # stdout만 캡처 (stderr 제외) — 경로가 "stdout"으로 나오는지가 검증 대상
-  stdout_only=$(
-    TMUX="$sandbox/fake-tmux-socket,1234,0" \
-    TMUX_STUB_PANE_PATH="$expected_path" \
-    TMUX_STUB_MARKER="$marker" \
-    HOME="$home_dir" \
-    CODEX_HOME="$home_dir/.codex" \
-    PATH="$stub_dir:$FIXTURE_DIR/bin:$PATH" \
-    WT_NONINTERACTIVE=1 \
-    bash -c '
-      set -euo pipefail
-      cd "'"$repo_root"'"
-      "'"$home_dir/.local/bin/wt"'" --stay --if-exists=reuse feature_one
-    ' 2>/dev/null
-  )
+  # cd 쪽 --tmux도 같은 취급 (파싱이 서브커맨드별로 갈리므로 따로 태운다)
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" cd --tmux feature_one
+      ' 2>&1
+  ) || rc=$?
 
-  assert_contains "$stdout_only" "$expected_path"
-  [[ ! -f "$marker" ]] || fail "noninteractive --stay must not touch tmux windows"
+  [[ "$rc" -ne 0 ]] || fail "wt cd --tmux 는 실패해야 함: $output"
+  assert_contains "$output" "알 수 없는 옵션: --tmux"
 }
 
 # 수집은 등록(porcelain)과 디렉토리 스캔의 합집합인데, 스캔을 depth 1로 묶어두면 등록이

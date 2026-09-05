@@ -74,12 +74,10 @@ cmd_cd() {
   (( ${#worktrees[@]} == 0 )) && _die "활성 worktree가 없습니다"
 
   local target_path=""
-  local use_tmux_session=false
   local search=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --tmux) use_tmux_session=true ;;
       -)      search="-" ;;
       -*)     _die "알 수 없는 옵션: $1" ;;
       *)
@@ -100,18 +98,6 @@ cmd_cd() {
     fi
     # 현재 위치 저장 후 이동
     _wt_record_last_path "$git_root"
-
-    # --tmux: 세션 모드 (tmux 밖 + 대화형에서만; 비대화형은 exec tmux 불가)
-    if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
-      if _wt_interactive; then
-        # 세션 이름의 재료는 basename이 아니라 wt_base 상대 표시 이름이다 (아래 동일 이유).
-        local session_name
-        session_name=$(_wt_session_name "$(_wt_display_name "$git_root" "$last_path")")
-        _wt_tmux_session_open "$last_path" "$session_name" "false" "false"
-        return 0
-      fi
-      _warn "비대화형: --tmux 무시 (경로만 출력)"
-    fi
 
     echo "$last_path"
     return 0
@@ -232,35 +218,10 @@ cmd_cd() {
   # 이전 worktree 경로 저장 (wt cd - 용)
   _wt_record_last_path "$git_root"
 
-  # --tmux: 세션 attach/생성 (tmux 밖 + 대화형에서만; 비대화형은 exec tmux 불가)
-  if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
-    if _wt_interactive; then
-      # 세션 이름도 wt_base 상대 표시 이름으로 짓는다. basename으로 접으면 `feat/zz`와
-      # 최상위 `zz`가 같은 세션 이름이 되고, _wt_tmux_session_open은 기존 세션을 경로 대조
-      # 없이 재사용하므로 `wt cd feat/zz --tmux`가 `zz`의 세션에 붙는다. tmux 세션 이름은
-      # `/`를 허용한다 (실측: `has-session -t '=wt-repo-feat/zz'` 정확 매치 성립).
-      local session_name
-      session_name=$(_wt_session_name "$(_wt_display_name "$git_root" "$target_path")")
-      _wt_tmux_session_open "$target_path" "$session_name" "false" "false"
-      return 0
-    fi
-    _warn "비대화형: --tmux 무시 (경로만 출력)"
-  fi
-
-  # tmux 안이면 윈도우 전환 시도 (대화형 한정 — 정책은 _wt_tmux_ui_allowed가 소유).
-  # 비대화형 호출(LLM/스크립트)은 "경로를 stdout으로 출력" 계약을 지켜야 하고,
-  # 사용자 tmux 화면을 임의로 전환하는 부수효과도 내면 안 된다. 전환 성공 시 경로
-  # 출력 없이 return 0이라 `cd "$(wt cd <name>)"`가 빈 문자열을 받는다
-  # (zsh의 `cd ""`는 no-op 성공).
-  if _wt_tmux_ui_allowed; then
-    local window_id
-    if window_id=$(_wt_find_tmux_window "$target_path"); then
-      tmux select-window -t "$window_id"
-      return 0
-    fi
-  fi
-
-  # stdout으로 경로 출력 (래퍼 함수가 cd)
+  # stdout으로 경로 출력. tmux 안이든 밖이든, 대화형이든 아니든 같다 — 이동은 셸 래퍼나
+  # `cd "$(wt cd <name>)"`의 몫이다. 예전에는 여기서 tmux 윈도우를 전환하고 경로를 내지
+  # 않았는데, 그러면 같은 명령이 문맥에 따라 아무것도 출력하지 않아 호출자가 빈 문자열을
+  # 받았다 (zsh의 `cd ""`는 no-op 성공이라 조용히 엉뚱한 디렉토리에서 계속 실행됐다).
   echo "$target_path"
 }
 

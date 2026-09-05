@@ -15,6 +15,12 @@ test_wt_help_from_deployed_layout() {
 
   assert_contains "$output" "사용법: wt"
   assert_contains "$output" "wt cleanup [--auto]"
+  # 퇴역한 presentation 플래그는 help에 남으면 안 된다 — 문서에만 남은 플래그는
+  # 실행하면 unknown option으로 죽는다.
+  local flag
+  for flag in --stay --claude --tmux; do
+    assert_not_contains "$output" "$flag"
+  done
 }
 
 test_wt_wrapper_ignores_runtime_home_for_real_script() {

@@ -187,65 +187,14 @@ _wt_remove_claude_local_plugins_for_worktree() {
 }
 
 
-# ── worktree 열기 (tmux 또는 stdout) ─────────────────────────────────────────
+# ── worktree 경로 반환 ───────────────────────────────────────────────────────
 
-_open_worktree() {
-  local wt_path="$1" window_name="$2" stay="$3" run_claude="$4" use_tmux_session="${5:-false}"
-
-  # --tmux: tmux 밖 + 대화형에서만 세션 모드 (tmux 안이면 윈도우 모드 fallback — 의도적 정책)
-  # 비대화형(LLM/스크립트)은 exec tmux attach 불가 → 무시하고 경로 stdout으로 fallback
-  if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
-    if _wt_interactive; then
-      local session_name
-      session_name=$(_wt_session_name "$window_name")
-      _wt_tmux_session_open "$wt_path" "$session_name" "$stay" "$run_claude"
-      return
-    fi
-    _warn "비대화형: --tmux 무시 (경로 출력으로 fallback)"
-  fi
-
-  # tmux 윈도우 생성/전환은 대화형 한정 (정책: _wt_tmux_ui_allowed) — 비대화형
-  # create/reuse는 tmux 화면을 건드리지 않고 아래 else의 경로 stdout 출력을 따른다.
-  if _wt_tmux_ui_allowed; then
-    local window_id open_rc=0
-    window_id=$(_wt_tmux_open "$wt_path" "$window_name" "$stay") || open_rc=$?
-
-    # tmux 연결 실패 (stale TMUX 환경변수 등) → fallback: 경로 stdout 출력
-    if (( open_rc == 1 )); then
-      _info "경고: tmux 윈도우 생성 실패 — 경로로 fallback합니다"
-      [[ "$run_claude" == "true" ]] && _info "경고: --claude는 tmux 윈도우가 필요합니다"
-      echo "$wt_path"
-      return
-    fi
-
-    # --claude: 새 윈도우에서만 claude 실행 (open_rc == 0)
-    # 기존 윈도우(open_rc == 2)에는 send-keys 하지 않음 — 실행 중인 프로세스에 주입 방지
-    # send-keys로 큐잉 — 셸 초기화 완료 후 버퍼에서 읽어 실행 (레이스 안전)
-    if [[ "$run_claude" == "true" ]] && [[ -n "${window_id:-}" ]]; then
-      if (( open_rc == 0 )); then
-        tmux send-keys -t "$window_id" \
-          "claude --dangerously-skip-permissions" Enter
-      else
-        _info "기존 윈도우 — --claude 스킵 (실행 중인 프로세스 보호)"
-      fi
-    fi
-  else
-    # tmux 밖 또는 비대화형: 경로 stdout 출력 (래퍼가 cd)
-    if [[ "$run_claude" == "true" ]]; then
-      if [[ -n "${TMUX:-}" ]]; then
-        _info "경고: --claude는 비대화형에서 정책상 무시됩니다 (tmux UI 비활성)"
-      else
-        _info "경고: --claude는 tmux 세션 안에서만 동작합니다"
-      fi
-    fi
-    if [[ "$stay" == "true" ]] && _wt_interactive; then
-      # --stay (대화형): 현재 디렉토리 유지, 경로만 안내 — stdout에 내면 래퍼가 cd해버린다
-      _info "worktree 경로: $wt_path"
-    else
-      # 비대화형은 --stay여도 stdout 경로 출력 계약을 지킨다 (래퍼는 self-gate로 우회됨)
-      echo "$wt_path"
-    fi
-  fi
+# create/reuse/recreate의 종착점. 대화형·비대화형 구분 없이 경로 한 줄을 stdout에 낸다.
+# 예전에는 여기서 tmux 윈도우/세션을 만들고 Claude까지 띄웠지만, 그 UI 상태가 CLI 플래그와
+# 핸들러 시그니처를 관통해 worktree 관리와 무관한 결합을 만들었다. 이동은 셸 래퍼(또는
+# `cd "$(wt ...)"`)의 몫으로 남기고, 여기는 계약 한 줄만 지킨다.
+_wt_emit_worktree_path() {
+  printf '%s\n' "$1"
 }
 
 # ── worktree 제거 (tmux 윈도우 포함) ─────────────────────────────────────────

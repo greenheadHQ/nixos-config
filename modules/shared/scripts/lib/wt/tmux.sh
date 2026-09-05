@@ -1,12 +1,14 @@
 # shellcheck shell=bash
-# tmux UI 부수효과(윈도우 생성/전환) 허용 여부 — 단일 정책 경계.
-# 비대화형(LLM/스크립트) 호출은 사용자 tmux 화면을 임의로 바꾸지 않고
-# "경로를 stdout으로 출력" 계약을 지켜야 한다 (CLAUDE.md Worktree 섹션).
-# cd/create/reuse 등 tmux 윈도우 전환·생성이 가능한 모든 경로는 이 함수로
-# 게이트한다 — 호출자별 가드 복제로 정책 누락이 생기는 것을 막는다.
-_wt_tmux_ui_allowed() {
-  [[ -n "${TMUX:-}" ]] && _wt_interactive
-}
+# wt의 tmux 관여는 "정리"뿐이다. 윈도우/세션을 만들거나 전환하는 presentation은
+# 제거했고(경로 출력 계약으로 통일), 여기 남은 것은 worktree를 지우기 전후에 필요한
+# 판정과 뒷정리다: 대상 worktree의 pane 찾기, 그 pane에 살아 있는 프로세스 판정,
+# 그리고 창·세션 닫기.
+#
+# 두 close의 대상 범위가 다르다. 창(_wt_tmux_close)은 이름을 보지 않는다 — cwd가 그
+# worktree 경로 아래인 창이면 누가 만들었든 닫는다(현재 창·마지막 창은 예외). wt가
+# 창을 만들지 않게 된 지금 그 대상은 사실상 사용자가 직접 만든 창이므로, 지우려는
+# worktree의 창만 골라 닫는다는 뜻으로 읽어야 한다. 세션(_wt_tmux_session_close)만
+# `wt-<repo>-<dir>` 이름 매칭이라 과거 presentation이 만든 세션에 한정된다.
 
 # worktree 디렉토리에 해당하는 tmux 윈도우 찾기
 # tmux 안/밖 모두 동작 — 서버 실행 여부만 확인
@@ -27,41 +29,6 @@ _wt_find_tmux_window() {
 
   [[ -n "$window_id" ]] && echo "$window_id" && return 0
   return 1
-}
-
-# tmux 윈도우 생성/전환
-_wt_tmux_open() {
-  local wt_path="$1"
-  local window_name="$2"
-  local stay="${3:-false}"
-
-  [[ -z "${TMUX:-}" ]] && return 1
-
-  # 이미 존재하는 윈도우 확인
-  # return 2 = 기존 윈도우 재사용 (caller가 --claude send-keys 스킵 판단에 사용)
-  local existing_window
-  if existing_window=$(_wt_find_tmux_window "$wt_path"); then
-    if [[ "$stay" == "true" ]]; then
-      _info "기존 tmux 윈도우 유지 (background): $window_name"
-    else
-      tmux select-window -t "$existing_window" || return 1
-      _info "기존 tmux 윈도우로 전환: $window_name"
-    fi
-    echo "$existing_window"
-    return 2
-  fi
-
-  # 새 윈도우 생성
-  local new_window
-  if [[ "$stay" == "true" ]]; then
-    new_window=$(tmux new-window -d -n "$window_name" -c "$wt_path" -P -F '#{window_id}') || return 1
-    _info "tmux 윈도우 생성 (background): $window_name"
-  else
-    new_window=$(tmux new-window -n "$window_name" -c "$wt_path" -P -F '#{window_id}') || return 1
-    _info "tmux 윈도우 생성: $window_name"
-  fi
-
-  echo "$new_window"
 }
 
 # tmux 윈도우에 셸 이외의 포그라운드 프로세스가 있는지 확인 (전체 pane 검사)
@@ -88,11 +55,13 @@ _wt_has_active_process() {
   return 1
 }
 
-# 세션 이름 생성: wt-<repo>-<dir> (repo별 네임스페이스로 충돌 방지)
+# 정리 대상 세션 이름 재구성: wt-<repo>-<dir>. 이 이름의 세션을 만들던 코드는 사라졌고,
+# 남은 용도는 그때 만들어진 세션을 찾아 닫는 것뿐이다. 그래서 규칙을 바꿀 수 없다 —
+# 바꾸면 이미 떠 있는 세션을 못 찾고 orphan으로 남긴다.
 # === Change Intent Record ===
 # v1 (45aa39e): wt-<dir> — repo 구분 없이 dir_name만 사용.
 #    멀티 repo에서 동명 브랜치 시 잘못된 세션 attach/kill (DA 피드백으로 발견)
-# v2 (이번 변경, f862deb): wt-<repo>-<dir> — basename 네임스페이스 추가
+# v2 (f862deb): wt-<repo>-<dir> — basename 네임스페이스 추가
 #    거부한 대안 1: 이중 하이픈 구분자 (wt-repo--dir) — 하이픈 조합 충돌은 해결하나
 #                  같은 basename의 다른 경로 repo 충돌은 미해결 (부분 수정)
 #    거부한 대안 2: 경로 해시 접두사 (wt-a1b2c3-repo-dir) — 모든 충돌 해결하나
@@ -100,6 +69,9 @@ _wt_has_active_process() {
 #    trade-off: 같은 basename repo 충돌은 미해결이지만,
 #              ~/Workspace 내 프로젝트명이 고유하므로 실질적 충돌 없음.
 #              가독성(tmux ls에서 한눈에 파악)이 완전한 유일성보다 가치 있음.
+# v3 (이번 변경): 세션을 만드는 쪽이 사라져 close 전용으로 존속. 이름 규칙은 이제
+#    선택이 아니라 과거와의 호환 제약이다 — v2 규칙에서 벗어나면 이미 떠 있는 세션을
+#    찾지 못한다. 위 두 대안은 그 이유로 재검토 대상이 아니다.
 _wt_session_name() {
   local dir_name="$1"
   local repo_name
@@ -107,48 +79,6 @@ _wt_session_name() {
   # tmux target 구분자(. :)를 언더스코어로 치환
   repo_name="${repo_name//[.:]/_}"
   echo "wt-${repo_name}-${dir_name}"
-}
-
-# 세션 존재 확인 (= prefix: exact match — tmux default prefix matching 방지)
-_wt_tmux_session_exists() {
-  tmux has-session -t "=$1" 2>/dev/null
-}
-
-# 세션 생성/attach
-_wt_tmux_session_open() {
-  local wt_path="$1" session_name="$2" stay="$3" run_claude="$4"
-
-  # 기존 세션 확인
-  if _wt_tmux_session_exists "$session_name"; then
-    if [[ "$stay" == "true" ]]; then
-      _info "기존 tmux 세션 유지: $session_name"
-      return 0
-    fi
-    _info "기존 tmux 세션으로 전환: $session_name"
-    exec tmux attach-session -t "=$session_name"
-  fi
-
-  # 새 세션 생성
-  if [[ "$run_claude" == "true" ]]; then
-    tmux new-session -d -s "$session_name" -c "$wt_path"
-    tmux send-keys -t "=$session_name" \
-      "claude --dangerously-skip-permissions" Enter
-    if [[ "$stay" == "true" ]]; then
-      _info "tmux 세션 생성 (detached): $session_name"
-      _info "접속: tmux attach -t $session_name"
-      return 0
-    fi
-    exec tmux attach-session -t "=$session_name"
-  fi
-
-  if [[ "$stay" == "true" ]]; then
-    tmux new-session -d -s "$session_name" -c "$wt_path"
-    _info "tmux 세션 생성 (detached): $session_name"
-    _info "접속: tmux attach -t $session_name"
-    return 0
-  fi
-
-  exec tmux new-session -s "$session_name" -c "$wt_path"
 }
 
 # 세션 상태를 삼상태로 조회한다 (stdout: absent | present | unknown).
@@ -216,7 +146,10 @@ _wt_tmux_session_close() {
   tmux kill-session -t "=$session_name" 2>/dev/null || true
 }
 
-# tmux 윈도우 안전하게 닫기
+# worktree 경로에 걸린 tmux 윈도우 닫기 (worktree를 지우면 orphan cwd가 되므로).
+# 대상 선정은 _wt_find_tmux_window와 같다 — 창 이름이나 생성 주체가 아니라 pane의 cwd가
+# 그 worktree 경로 아래인지만 본다. 사용자가 직접 만든 창도 포함된다.
+# 현재 윈도우와 세션의 마지막 윈도우는 닫지 않는다.
 # tmux 안/밖 모두 동작 — 서버 실행 중이면 윈도우 정리 가능
 _wt_tmux_close() {
   local wt_path="$1"

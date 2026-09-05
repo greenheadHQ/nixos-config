@@ -18,9 +18,9 @@
 ## Helper Boundaries
 
 - `lib/wt/ui.sh`: prompt, formatting, repo/path helpers
-- `lib/wt/tmux.sh`: tmux window/session orchestration
+- `lib/wt/tmux.sh`: worktree 제거용 pane lookup, 활성 프로세스 판정, 창/세션 close
 - `lib/wt/git-state.sh`: git/worktree state collection, PR status lookup
-- `lib/wt/bootstrap.sh`: worktree bootstrap, open, remove orchestration
+- `lib/wt/bootstrap.sh`: worktree bootstrap, path emit, remove orchestration
 - `lib/wt/create.sh`: create/recreate flows and existing-branch handling
 - `lib/wt/navigate.sh`: `wt cd` / `wt ls`
 - `lib/wt/cleanup.sh`: `wt cleanup`

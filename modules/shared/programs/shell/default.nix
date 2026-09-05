@@ -319,26 +319,13 @@ in
             return $?
           fi
 
-          # --tmux: exec tmux를 위해 subshell 캡처 우회
-          local _wt_has_tmux=false
-          local _wt_arg
-          for _wt_arg in "$@"; do
-            [[ "$_wt_arg" == "--tmux" ]] && _wt_has_tmux=true
-          done
-
-          # tmux 밖에서만 bypass (tmux 안이면 exec tmux 불가 → 기존 cd 로직 필요)
-          if [[ "$_wt_has_tmux" == "true" ]] && [[ -z "''${TMUX:-}" ]]; then
-            command wt "$@"
-            return $?
-          fi
-
           if [[ "''${1:-}" == "cd" ]]; then
             shift
             local target
             target=$(command wt cd "$@") || return $?
             [[ -n "$target" ]] && cd "$target"
           else
-            # stdout 캡처: tmux 밖에서 create/cd 시 경로가 출력되면 cd
+            # stdout 캡처: create가 낸 경로로 이동한다 (경로 출력은 wt의 유일한 계약)
             local output
             output=$(command wt "$@")
             local rc=$?

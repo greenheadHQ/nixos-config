@@ -2,18 +2,12 @@
 # ── 서브커맨드: create ───────────────────────────────────────────────────────
 
 cmd_create() {
-  local stay=false
-  local run_claude=false
-  local use_tmux_session=false
   local branch_name=""
   local if_exists=""
 
   # 옵션 파싱
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --stay)   stay=true ;;
-      --claude) run_claude=true ;;
-      --tmux)   use_tmux_session=true ;;
       --yes|-y) export WT_ASSUME_YES=1 ;;  # ui.sh _confirm이 소비 (cross-file)
       --if-exists=*) if_exists="${1#--if-exists=}" ;;
       -h|--help) show_help; return 0 ;;
@@ -31,7 +25,7 @@ cmd_create() {
     *) _die "--if-exists 값은 reuse|recreate|fail 중 하나여야 합니다 (받음: $if_exists)" ;;
   esac
 
-  [[ -z "$branch_name" ]] && _die "브랜치명을 지정하세요. 사용법: wt [--stay] [--claude] [--tmux] [--yes] [--if-exists=reuse|recreate|fail] <branch>"
+  [[ -z "$branch_name" ]] && _die "브랜치명을 지정하세요. 사용법: wt [--yes] [--if-exists=reuse|recreate|fail] <branch>"
 
   local git_root
   git_root=$(_get_repo_root) || _die "Git 저장소가 아닙니다"
@@ -57,7 +51,7 @@ cmd_create() {
   # 기존 디렉토리 처리
   if [[ -d "$worktree_dir" ]]; then
     if [[ -f "$worktree_dir/.git" ]]; then
-      _handle_existing_worktree "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude" "$use_tmux_session" "$if_exists"
+      _handle_existing_worktree "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$if_exists"
       return $?
     fi
     _die "유효하지 않은 기존 디렉토리가 있습니다: $worktree_dir"
@@ -65,7 +59,7 @@ cmd_create() {
 
   # 기존 브랜치 존재 확인
   if git show-ref --verify --quiet "refs/heads/$branch_name" 2>/dev/null; then
-    _handle_existing_branch "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$stay" "$run_claude" "$use_tmux_session" "$if_exists"
+    _handle_existing_branch "$worktree_dir" "$branch_name" "$git_root" "$parent_branch" "$if_exists"
     return $?
   fi
 
@@ -79,12 +73,12 @@ cmd_create() {
   _info "worktree 생성: $branch_name (from $parent_branch)"
 
   _wt_record_last_path "$git_root"
-  _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
+  _wt_emit_worktree_path "$worktree_dir"
 }
 
 # 기존 worktree 처리
 _handle_existing_worktree() {
-  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6" use_tmux_session="${7:-false}" if_exists="${8:-}"
+  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" if_exists="${5:-}"
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
@@ -104,7 +98,7 @@ _handle_existing_worktree() {
   case "$choice" in
     "기존 열기")
       _wt_record_last_path "$git_root"
-      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
+      _wt_emit_worktree_path "$worktree_dir"
       ;;
     "재생성")
       _wt_require_state_helpers
@@ -192,7 +186,7 @@ _handle_existing_worktree() {
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 재생성: $branch_name (from $parent_branch)"
       _wt_record_last_path "$git_root"
-      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
+      _wt_emit_worktree_path "$worktree_dir"
       ;;
     *)
       _info "취소됨"
@@ -203,7 +197,7 @@ _handle_existing_worktree() {
 
 # 기존 브랜치 처리 (worktree 없음)
 _handle_existing_branch() {
-  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" stay="$5" run_claude="$6" use_tmux_session="${7:-false}" if_exists="${8:-}"
+  local worktree_dir="$1" branch_name="$2" git_root="$3" parent_branch="$4" if_exists="${5:-}"
   local dir_name
   dir_name=$(basename "$worktree_dir")
 
@@ -242,7 +236,7 @@ _handle_existing_branch() {
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 생성 (기존 브랜치): $branch_name"
       _wt_record_last_path "$git_root"
-      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
+      _wt_emit_worktree_path "$worktree_dir"
       ;;
     "새로 생성")
       _wt_require_state_helpers
@@ -260,7 +254,7 @@ _handle_existing_branch() {
       _bootstrap_worktree "$worktree_dir" "$git_root"
       _info "worktree 생성 (브랜치 재생성): $branch_name (from $parent_branch)"
       _wt_record_last_path "$git_root"
-      _open_worktree "$worktree_dir" "$dir_name" "$stay" "$run_claude" "$use_tmux_session"
+      _wt_emit_worktree_path "$worktree_dir"
       ;;
     *)
       _info "취소됨"
