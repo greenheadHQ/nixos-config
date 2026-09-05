@@ -95,8 +95,8 @@ def sample_sidecar() -> dict[str, Any]:
 
 def sample_health() -> dict[str, Any]:
     return {
-        "health_formula_version": 1,
-        "formula_break": None,
+        "health_formula_version": 2,
+        "formula_break": "v2 (#1237): drift_repair_commits 측정 창을 발행 주차 직전 7일로 재정의",
         "run_da_path": "modules/shared/programs/claude/files/skills/run-da/",
         "document_size": {"markdown_file_count": 10, "total_line_count": 1000, "files": []},
         "drift_repair_commits": {"count": 1, "commit_hashes": ["abc"], "commits": []},

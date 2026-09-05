@@ -24,14 +24,14 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 `analyze.py` sidecar와 별도로 git 기반 건강 지표를 수집한다. 산식 변경 시
 `health_formula_version`을 증가시키고, 주간 리포트에 baseline 단절을 명시한다.
 
-| 지표 | 산식 (v1) |
+| 지표 | 산식 (v2 — v1과의 차이는 drift 수리 커밋 창뿐, #1237) |
 |------|-----------|
 | 문서 크기 | `git -C "$REPO_ROOT" ls-tree -r HEAD --name-only -- modules/shared/programs/claude/files/skills/run-da/` 결과 중 `*.md` 파일을 세고, `/evals/` path segment가 있는 파일은 제외한다. 라인 수는 `git show HEAD:<path>` 내용 기준 총 line count 합계다. |
-| drift 수리 커밋 빈도 | `git -C "$REPO_ROOT" log --since=<KST 주 시작> --until=<KST 주 끝> --first-parent main --format='%H%x00%s%x00%B%x1e' -- modules/shared/programs/claude/files/skills/run-da/`를 record 단위로 파싱한다. subject가 `/fix\|refactor\|chore/i`에 매치하고, subject+body가 `/drift\|참조\|사본\|dangling\|동기화\|SSOT/i`에 매치하는 commit 수다. `--oneline` 금지 — body 매칭을 위해 `%B`를 포함한다. |
+| drift 수리 커밋 빈도 | `git -C "$REPO_ROOT" log --since=<측정 창 시작> --until=<측정 창 끝> --first-parent main --format='%H%x00%s%x00%B%x1e' -- modules/shared/programs/claude/files/skills/run-da/`를 record 단위로 파싱한다. subject가 `/fix\|refactor\|chore/i`에 매치하고, subject+body가 `/drift\|참조\|사본\|dangling\|동기화\|SSOT/i`에 매치하는 commit 수다. `--oneline` 금지 — body 매칭을 위해 `%B`를 포함한다. |
 | 규칙 수 | run-da `SKILL.md`의 `## 핵심 invariants` 번호 항목 수 + `## 주의사항` bullet 수 + `## Non-goals` 번호 항목 수. 개별 카운트와 total을 병기한다. |
 
-week boundary는 KST 월요일 00:00부터 다음 월요일 00:00까지다. merge commit은
-`--first-parent main` 흐름에서 대표한다.
+발행 주차 경계는 KST 월요일 00:00부터 다음 월요일 00:00까지이고(`week.start`/`week.end`), drift 수리 커밋의 측정 창은 그 발행 주차 직전 7일(`week.measurement_start`/`week.measurement_end` = 지난 주 월 00:00 ~ 이번 주 월 00:00)이다 — 리포트가 발행 주차 월요일에 실행되므로 발행 주차 창은 실행 시점에 미래라 v1에서는 구조적으로 0이었다(#1237). 문서 크기·규칙 수는 HEAD 스냅샷이라 어느 창과도 무관하다. merge commit은
+`--first-parent main` 흐름에서 대표한다. v1→v2 전환 주의 리포트는 `health.formula_break`로 단절을 명시한다.
 
 ## Weekly coverage 지표
 

@@ -28,7 +28,24 @@ from typing import Any, NamedTuple
 
 
 SCHEMA_VERSION = 1
-HEALTH_FORMULA_VERSION = 1
+HEALTH_FORMULA_VERSION = 2
+# v2 (#1237): drift_repair_commits 측정 창을 발행 주차 [월 00:00, +7d)에서 발행 주차 직전
+# 7일로 재정의. v1 값은 실행 시점에 창이 미래라 구조적 0이었으므로 v1 리포트와의 delta는
+# 활동 변화가 아니다 — algorithm.md "run-da 건강 지표" 계약대로 버전을 올리고 단절을 명시한다.
+HEALTH_FORMULA_BREAK = (
+    "v2 (#1237): drift_repair_commits 측정 창을 발행 주차 직전 7일로 재정의 — "
+    "v1 값은 구조적 0이었으므로 v1 리포트와의 delta는 활동 변화가 아니다"
+)
+MEASUREMENT_WINDOW_DAYS = 7
+# 렌더러 2종(전문·GitHub)·해설 프롬프트·테스트가 공유하는 라벨 — 문구 변경 지점을 한 곳으로.
+METRIC_SCOPE_LABEL = "M-1~M-4·M-6"  # M-5는 #1257에서 폐기 — 저장소 정본 표기
+WEEK_ROW_LABEL = "발행 주차"
+MEASUREMENT_WINDOW_ROW_LABEL = "측정 창 (drift repair 커밋)"
+MEASUREMENT_WINDOW_SUFFIX = f"발행 주차 직전 {MEASUREMENT_WINDOW_DAYS}일"
+METRIC_SCOPE_ROW = (
+    f"| 지표 범위 | {METRIC_SCOPE_LABEL}·세션 수는 전체 코퍼스 누적값 "
+    "(주간 값 아님 — 주간 변화는 전주 delta 표) |"
+)
 KST = dt.timezone(dt.timedelta(hours=9), "KST")
 KST_NAME = "Asia/Seoul"
 RUN_DA_PATH = "modules/shared/programs/claude/files/skills/run-da/"
@@ -44,9 +61,9 @@ GITHUB_MARKDOWN_MAX_BYTES = 60_000
 COMMENTARY_PROMPT = "\n".join([
     "아래 DA weekly report projection을 읽고 특이점, 공통점/차이점, 다음 주에 볼 신호를 한국어 한두 문단으로 해설하라.",
     "숫자를 새로 만들지 말고 입력 JSON의 값만 근거로 사용하라.",
-    "지표 정의 (오독 방지 — #1237): metrics의 M-1~M-6과 session_counts는 분석 시점 전체 코퍼스의 누적값이다 — 그 주의 활동량이 아니다. "
-    "주간 변화는 deltas의 comparisons만 근거로 삼고, session_counts.total의 delta가 그 주에 새로 쌓인 세션 수의 근사치다. "
-    "health.drift_repair_commit_count만 week.measurement_start~measurement_end(발행 주차 직전 7일) 창의 값이다. "
+    f"지표 정의 (오독 방지 — #1237): metrics의 {METRIC_SCOPE_LABEL}과 session_counts는 분석 시점 전체 코퍼스의 누적값이다 — 그 주의 활동량이 아니다. "
+    "주간 변화는 deltas.items[].comparisons만 근거로 삼는다 — comparisons는 존재하는 최근 리포트 각각과의 비교이므로, week_id가 발행 주차 바로 전 주인 comparison의 session_counts.total delta만 그 주에 새로 쌓인 세션 수의 근사치이고, 주 간격이 벌어진 comparison은 그 기간의 누적 증가분이다. "
+    f"health.drift_repair_commit_count만 week.measurement_start~measurement_end({MEASUREMENT_WINDOW_SUFFIX}) 창의 값이며, health.formula_break가 있으면 그 이전 버전 리포트와의 health delta는 산식 변경분이지 활동 변화가 아니다. "
     "hosts의 analyzed_sessions가 0이거나 status가 partial이면 그 호스트의 수집 실패이지 활동 감소가 아니므로 품질 회귀로 해석하지 마라.",
 ])
 M1_KEYS = ("FULL", "LITE", "SKIP")
@@ -148,7 +165,7 @@ def measurement_window(week_start: dt.datetime) -> tuple[dt.datetime, dt.datetim
     구조적 0을 "정비 활동 부재"라는 품질 신호로 오독한 실측). 발행 주차 id·경계는 그대로
     두고, 측정 창만 직전 7일(지난 주 월 00:00 ~ 이번 주 월 00:00)로 옮긴다.
     """
-    return week_start - dt.timedelta(days=7), week_start
+    return week_start - dt.timedelta(days=MEASUREMENT_WINDOW_DAYS), week_start
 
 
 def week_id_for(start: dt.datetime) -> str:
@@ -474,7 +491,7 @@ def collect_health_metrics(repo_root: str, week_start: dt.datetime, week_end: dt
     warnings: list[str] = []
     return {
         "health_formula_version": HEALTH_FORMULA_VERSION,
-        "formula_break": None,
+        "formula_break": HEALTH_FORMULA_BREAK,
         "run_da_path": RUN_DA_PATH,
         "document_size": collect_document_size(repo_root, warnings),
         "drift_repair_commits": collect_drift_repair_commits(
@@ -1066,12 +1083,11 @@ def build_weekly_report(
     commentary_failure: str | None,
     provenance: dict,
     analyze_exit_code: int = 0,
-    measurement_start: dt.datetime | None = None,
-    measurement_end: dt.datetime | None = None,
 ) -> dict:
     week_id = week_id_for(week_start)
-    if measurement_start is None or measurement_end is None:
-        measurement_start, measurement_end = measurement_window(week_start)
+    # 측정 창은 week_start에서 유도한다 — 정의의 SSOT는 measurement_window 하나이며,
+    # command_build가 health 수집에 쓴 창과 여기 표기 값이 같은 함수에서 나온다.
+    measurement_start, measurement_end = measurement_window(week_start)
     report = {
         "schema_version": SCHEMA_VERSION,
         "week": {
@@ -1079,7 +1095,7 @@ def build_weekly_report(
             "start": week_start.isoformat(),
             "end": week_end.isoformat(),
             "tz": KST_NAME,
-            # health 측정 창 (drift repair 커밋). M-1~M-6·세션 수는 이 창과 무관한
+            # health 측정 창 (drift repair 커밋). M-1~M-4·M-6·세션 수는 이 창과 무관한
             # 전체 코퍼스 누적값이다 — 렌더러와 해설 프롬프트가 그 사실을 명시한다 (#1237).
             "measurement_start": measurement_start.isoformat(),
             "measurement_end": measurement_end.isoformat(),
@@ -1352,6 +1368,7 @@ def build_consumer_summary(report: dict) -> dict:
         },
         "health": {
             "health_formula_version": _safe_number(health.get("health_formula_version")),
+            "formula_break": _safe_string(health.get("formula_break") or "", ""),
             "document_size": {
                 "markdown_file_count": _safe_number(
                     health.get("document_size", {}).get("markdown_file_count")
@@ -1478,9 +1495,9 @@ def _render_github_markdown_source(source: dict) -> str:
         "",
         "| 항목 | 값 |",
         "|------|-----|",
-        f"| 발행 주차 | {esc(week.get('start'))} ~ {esc(week.get('end'))} ({esc(week.get('tz'))}) |",
-        f"| 측정 창 (drift repair 커밋) | {esc(week.get('measurement_start'))} ~ {esc(week.get('measurement_end'))} — 발행 주차 직전 7일 |",
-        "| 지표 범위 | M-1~M-6·세션 수는 전체 코퍼스 누적값 (주간 값 아님 — 주간 변화는 전주 delta 표) |",
+        f"| {WEEK_ROW_LABEL} | {esc(week.get('start'))} ~ {esc(week.get('end'))} ({esc(week.get('tz'))}) |",
+        f"| {MEASUREMENT_WINDOW_ROW_LABEL} | {esc(week.get('measurement_start'))} ~ {esc(week.get('measurement_end'))} — {MEASUREMENT_WINDOW_SUFFIX} |",
+        METRIC_SCOPE_ROW,
         f"| 전체 세션 | {counts.get('total', 0)} |",
         f"| Arbiter marker 세션 | {counts.get('arbiter_marker_sessions', 0)} |",
         f"| Intensity marker 세션 | {counts.get('intensity_marker_sessions', 0)} |",
@@ -1588,9 +1605,9 @@ def render_markdown(report: dict) -> str:
     out.append("")
     out.append("| 항목 | 값 |")
     out.append("|------|-----|")
-    out.append(f"| 발행 주차 | {report['week']['start']} ~ {report['week']['end']} ({report['week']['tz']}) |")
-    out.append(f"| 측정 창 (drift repair 커밋) | {report['week'].get('measurement_start')} ~ {report['week'].get('measurement_end')} — 발행 주차 직전 7일 |")
-    out.append("| 지표 범위 | M-1~M-6·세션 수는 전체 코퍼스 누적값 (주간 값 아님 — 주간 변화는 전주 delta 표) |")
+    out.append(f"| {WEEK_ROW_LABEL} | {report['week']['start']} ~ {report['week']['end']} ({report['week']['tz']}) |")
+    out.append(f"| {MEASUREMENT_WINDOW_ROW_LABEL} | {report['week'].get('measurement_start')} ~ {report['week'].get('measurement_end')} — {MEASUREMENT_WINDOW_SUFFIX} |")
+    out.append(METRIC_SCOPE_ROW)
     out.append(f"| 호스트 | {', '.join(analysis.get('hosts', []))} |")
     out.append(f"| corpus | {analysis.get('corpus')} |")
     out.append(f"| partial | {coverage.get('partial')} |")
@@ -1698,6 +1715,8 @@ def render_markdown(report: dict) -> str:
     out.append("| 지표 | 값 |")
     out.append("|------|-----|")
     out.append(f"| health_formula_version | {health.get('health_formula_version')} |")
+    if health.get("formula_break"):
+        out.append(f"| formula_break | {health.get('formula_break')} |")
     out.append(f"| markdown_file_count | {health.get('document_size', {}).get('markdown_file_count', 0)} |")
     out.append(f"| total_line_count | {health.get('document_size', {}).get('total_line_count', 0)} |")
     out.append(f"| drift_repair_commits | {health.get('drift_repair_commits', {}).get('count', 0)} |")
@@ -1888,8 +1907,6 @@ def command_build(args: argparse.Namespace) -> int:
         commentary_failure=args.commentary_error,
         provenance=provenance,
         analyze_exit_code=args.analyze_exit_code,
-        measurement_start=measurement_start,
-        measurement_end=measurement_end,
     )
     if args.output_md:
         atomic_write_report_pair(args.output_json, report, args.output_md)

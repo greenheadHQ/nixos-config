@@ -885,6 +885,11 @@ def test_renderers_label_cumulative_scope_and_measurement_window(weekly_report_m
         assert "전체 코퍼스 누적값" in rendered
         # 옛 "기간" 라벨은 발행 주차와 측정 창을 구분하지 못해 오독을 낳았다 — 재도입 게이트
         assert "| 기간 |" not in rendered
+        # M-5는 폐기 지표 — 범위 표기에 재유입되면 해설 LLM이 결측으로 오독한다
+        assert "M-1~M-4·M-6" in rendered
+        assert "M-1~M-6" not in rendered
+        # 산식 v2 단절 표기가 리포트에 남는다 (algorithm.md 건강 지표 계약)
+        assert "formula_break" in rendered
 
 
 def test_commentary_prompt_defines_cumulative_scope_and_measurement_window(
@@ -895,6 +900,10 @@ def test_commentary_prompt_defines_cumulative_scope_and_measurement_window(
     assert "누적값" in prompt
     assert "measurement_start" in prompt
     assert "수집 실패" in prompt
+    assert "M-1~M-4·M-6" in prompt and "M-1~M-6" not in prompt
+    # delta 해석은 comparison 단위 — 존재하는 최근 리포트 2개와 각각 비교되므로 단수 정의는 틀린다
+    assert "comparison" in prompt and "누적 증가분" in prompt
+    assert "formula_break" in prompt
 
     report = build_report(weekly_report_module)
     rendered = weekly_report_module.render_commentary_input(report)
