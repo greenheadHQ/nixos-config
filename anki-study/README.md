@@ -66,7 +66,6 @@ anki-study/
 - 백업: Anki 로컬 자동 .colpkg (같은 디스크). AnkiWeb 서버본은 024 완료·검증
   후에만 존재. 독립 오프사이트 백업은 시점 무관 **없음**.
 - 복습 운영 규칙은 `plans/025-anki-restart-protocol.md` Step 2가 SSOT.
-- 세션 아카이브: 2026-05-10 1건, 이후 없음 — plan 025의 2주 게이트 통과 전까지 재개 보류.
 
 ## 관련 자료
 

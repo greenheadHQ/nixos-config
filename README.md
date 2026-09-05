@@ -56,7 +56,6 @@ tests/            # 러너(run-all-tests.sh 등) + suites/ + lib/ + fixtures/
 plans/            # improve 스킬 실행 plan + 상태표
 docs/             # 시행착오 기록, archive/
 .claude/          # 로컬(프로젝트 스코프) 스킬 + plan buffer
-anki-study/       # Anki dogfooding 산출물
 ```
 
 ### 홈서버 서비스
