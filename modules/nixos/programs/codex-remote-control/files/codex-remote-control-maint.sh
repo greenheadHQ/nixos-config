@@ -871,7 +871,7 @@ repair_reason_explain() {
     lock-acquire-timeout | lock-open-failed | state-dir-unavailable)
       printf '%s\t%s' \
         "maint 상태 디렉토리 또는 lock 획득 실패" \
-        "'pgrep -a codex-remote-control-maint'로 이전 실행 잔존 확인, /var/lib/codex-remote-control 권한 확인"
+        "'pgrep -af codex-remote-control-maint'로 이전 실행 잔존 확인 (이름이 15자를 넘어 -f 없이는 못 찾음), /var/lib/codex-remote-control 권한 확인"
       ;;
     standalone-package-missing | standalone-package-missing-bin-codex | standalone-package-version-mismatch | standalone-sync-failed)
       printf '%s\t%s' \

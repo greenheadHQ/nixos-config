@@ -1324,6 +1324,12 @@ test_claude_remote_control_maint_logs_no_server_process_diagnostics() {
     || fail "diag must evaluate lock-holder predicates: $(cat "$stderr_file")"
   grep -Eq 'rescan candidates=1 lock_free=FAIL lock=' "$stderr_file" \
     || fail "rescan summary missing: $(cat "$stderr_file")"
+  # 탈락 기록은 실행별 스크래치에만 쓰고 끝나면 지운다 — 공유 고정 경로가 있으면
+  # lock 없는 claude-rc ls가 진행 중인 ensure의 기록을 덮어쓴다.
+  [ ! -e "$CLAUDE_RC_STATE/scan-rejects.last" ] || fail "shared scan-rejects file must not exist"
+  if compgen -G "$CLAUDE_RC_STATE/results.*.scan" >/dev/null; then
+    fail "per-run scan scratch file must be cleaned up"
+  fi
 }
 
 # launchd StandardOutPath는 append-only라 maint가 자기 로그를 LOG_MAX_BYTES 기준으로 rotate한다.
