@@ -43,8 +43,10 @@ test_suite_function_registration_parity() {
   # `name() (` 서브셸 정의형(tests/suites/test-runtime-profile.sh)도 함께 매치된다.
   defined="$(grep -hoE '^[[:space:]]*test_[A-Za-z0-9_]+\(\)' "$REPO_ROOT"/tests/suites/*.sh |
     sed -E 's/^[[:space:]]*//; s/\(\)$//' | sort -u)"
-  # 조건부 블록 안의 들여쓴 run_test 도 포함해야 하므로 행 선두 앵커를 쓰지 않는다.
-  registered="$(grep -oE 'run_test "[^"]*" [A-Za-z0-9_]+' "$REPO_ROOT/tests/shell-script-tests.sh" |
+  # 앵커는 '행 선두 + 선택적 공백'까지만 둔다. 조건부 블록 안의 들여쓴 run_test 는 포함하되,
+  # 주석으로 비활성화된 등록(`# run_test "x" test_x`)은 제외해야 한다 — 그걸 등록으로 세면
+  # 실행되지 않는 테스트가 parity 를 통과해 이 가드가 막으려던 무증상 누락이 그대로 남는다.
+  registered="$(grep -oE '^[[:space:]]*run_test "[^"]*" [A-Za-z0-9_]+' "$REPO_ROOT/tests/shell-script-tests.sh" |
     awk '{ print $NF }' | sort -u)"
 
   [[ -n "$defined" ]] || fail "expected suite definitions to be discovered"

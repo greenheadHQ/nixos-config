@@ -441,6 +441,35 @@ _claude_rc_wait_lock_free() {
   return 1
 }
 
+# 프로세스가 "종료됨"(사라졌거나 아직 안 거둬진 좀비)인지 판정한다.
+# kill -0 과 ps 는 서로 다른 시점의 독립 관찰이라 이 판정은 원자적이지 않다. 그룹 kill 직후
+# 고아가 된 좀비를 init 이 두 관찰 사이에 거둬가면 ps 가 아무것도 못 찾아 "살아 있다"로
+# 뒤집힌다 — 프로세스는 이미 죽었는데 테스트만 실패한다. 그래서 ps 가 상태를 못 본 경우
+# kill -0 을 한 번 더 확인해 그 창을 닫는다.
+# production 의 pid_is_zombie_process 를 쓰지 않는 이유: 종료 관찰은 검증 대상 코드가 아니라
+# 테스트의 관측 수단이어야 하고, wrapper 를 source 하지 않는 스위트에서도 써야 한다.
+_claude_rc_pid_terminated() {
+  local pid="$1" state
+  kill -0 "$pid" 2>/dev/null || return 0
+  state="$(ps -o state= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+  case "$state" in
+    Z*) return 0 ;;
+  esac
+  # 상태를 못 읽었거나(관찰 사이에 사라짐) 아직 살아 있는 경우의 최종 확인.
+  ! kill -0 "$pid" 2>/dev/null
+}
+
+# 종료를 유한 시간 안에 기다린다. 죽는 중(exit ~ reap)인 프로세스가 관찰 순간에 걸리는
+# 잔여 창까지 흡수한다.
+_claude_rc_wait_pid_terminated() {
+  local pid="$1" _i
+  for _i in {1..200}; do
+    _claude_rc_pid_terminated "$pid" && return 0
+    sleep 0.01
+  done
+  return 1
+}
+
 _claude_rc_acquire_synthetic_lock() {
   local lock_path="$1" context="$2" attempt
 
