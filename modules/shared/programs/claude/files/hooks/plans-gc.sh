@@ -26,6 +26,9 @@
 # 사용자 문서(예: nix-building-cache.md)를 SSOT 마커 없이 두면 GC 대상이 된다. 이
 # 디렉토리는 untracked라 git으로 되돌릴 수 없으므로, 삭제 대신 .trash/<YYYY-MM-DD>/로
 # 옮겨 TRASH_KEEP_DAYS 동안 복구 가능하게 두고 그 뒤 만료시킨다.
+# 복구는 mv만으로 끝나지 않는다 — mv는 mtime을 보존하므로 되돌린 파일은 다음 SessionEnd에
+# 같은 조건으로 다시 회수된다. 되돌릴 때 SSOT 마커(## Document Status)를 붙이거나 touch로
+# mtime을 갱신해야 한다 (정본 절차는 .claude/plans/README.md "GC 정책").
 #
 # 동작 위치: SessionEnd input의 .cwd가 속한 git repo의 .claude/plans/.
 # 정리 대상이 없으면 no-op. bash 3.2 호환 (mapfile 미사용).

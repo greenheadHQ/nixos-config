@@ -29,7 +29,11 @@ hex 형태의 판정 기준은 prefix가 아니라 **꼬리 형태**다 — hex 
 
 `modules/shared/programs/claude/files/hooks/plans-gc.sh` (SessionEnd hook, #756 P1) 가 정리 주체다. 회수 조건은 **untracked + (8hex 형태 또는 `-ing` 3단어 slug 형태) + SSOT 마커 없음 + mtime 7일 초과** 의 논리곱이며, tracked 파일 (README.md) 과 최근 buffer는 보존한다. 임계값·정규식의 정본은 스크립트 상단 상수(`GC_AGE_DAYS`, `TRASH_KEEP_DAYS`, `HEX_RE`, `SLUG_RE`, `SSOT_MARKER_RE`)다.
 
-회수는 `rm` 이 아니라 `.claude/plans/.trash/<YYYY-MM-DD>/` 로의 이동이다. 이 디렉토리는 untracked라 git으로 되돌릴 수 없으므로, 이름 휴리스틱의 오판을 사람이 알아채고 되살릴 시간을 남긴다. trash의 날짜 디렉토리는 `TRASH_KEEP_DAYS` (30일) 를 넘기면 다음 SessionEnd에서 만료된다. 잘못 회수된 문서는 그 안에서 원래 이름 그대로 찾아 되돌린다.
+회수는 `rm` 이 아니라 `.claude/plans/.trash/<YYYY-MM-DD>/` 로의 이동이다. 이 디렉토리는 untracked라 git으로 되돌릴 수 없으므로, 이름 휴리스틱의 오판을 사람이 알아채고 되살릴 시간을 남긴다. trash의 날짜 디렉토리는 `TRASH_KEEP_DAYS` (30일) 를 넘기면 다음 SessionEnd에서 만료된다. 잘못 회수된 문서는 그 안에서 원래 이름 그대로 찾아 되돌린다. 단 `mv`는 mtime을 보존하므로 그냥 옮겨 놓기만 하면 다음 SessionEnd에서 같은 조건(untracked + slug 형태 + 마커 없음 + 7일 초과)으로 조용히 다시 회수된다. 되돌릴 때는 본문에 `## Document Status` 줄을 추가하거나(권장 — 영구 보존), 최소한 mtime을 갱신한다:
+
+```bash
+mv .claude/plans/.trash/<날짜>/<name> .claude/plans/ && touch .claude/plans/<name>
+```
 
 hook은 `~/.claude/hooks/plans-gc.sh` → nix store → 이 저장소 작업 트리 파일로 이어지는 out-of-store symlink다. 즉 **소스 파일이 바뀌는 순간(예: main pull) 부터 다음 SessionEnd에 새 규칙이 적용된다** — `nrs` 재빌드는 필요하지 않다.
 
