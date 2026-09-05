@@ -24,7 +24,7 @@ home-manager activation 충돌 정책: macOS에서 mkOutOfStoreSymlink target이
 
 ## Worktree (wt)
 
-`wt`로 git worktree를 생성/이동/정리한다 (`.claude/worktrees/<dir>`, 현재 HEAD 기준 분기). 비대화형 셸(LLM Bash tool 등)에서는 자동으로 비대화형 모드가 된다 (fzf/번호 선택/tmux attach/tmux 윈도우 전환 비활성; `WT_NONINTERACTIVE=1`로 강제 가능). LLM 하네스가 대화형 셸 snapshot을 주입해 zsh 래퍼 함수가 비대화형 셸에 존재할 수 있으나, 래퍼는 비대화형(WT_NONINTERACTIVE 또는 stdin 비TTY)을 감지하면 `~/.local/bin/wt` 바이너리로 passthrough하므로 아래 규칙은 동일하게 성립한다. 비대화형 사용 규칙:
+`wt`로 git worktree를 생성/이동/정리한다 (`.claude/worktrees/<dir>`, 현재 HEAD 기준 분기). `wt`는 worktree 관리만 하고 창을 열거나 도구를 띄우지 않는다 — 생성/이동은 언제나 경로 한 줄을 stdout으로 내고, 실제 이동은 zsh 래퍼(또는 `cd "$(wt ...)"`)의 몫이다. 비대화형 셸(LLM Bash tool 등)에서는 자동으로 비대화형 모드가 된다 (fzf/번호 선택 비활성; `WT_NONINTERACTIVE=1`로 강제 가능). LLM 하네스가 대화형 셸 snapshot을 주입해 zsh 래퍼 함수가 비대화형 셸에 존재할 수 있으나, 래퍼는 비대화형(WT_NONINTERACTIVE 또는 stdin 비TTY)을 감지하면 `~/.local/bin/wt` 바이너리로 passthrough하므로 아래 규칙은 동일하게 성립한다. 비대화형 사용 규칙:
 
 - 생성: `wt <branch>`. 기존 worktree/브랜치와 충돌하면 비대화형은 **안전하게 실패**하므로 의도를 `--if-exists=reuse|recreate|fail`로 명시한다.
 - 이동: 비대화형은 cd 불가 — 경로를 stdout으로 출력하므로 `cd "$(wt cd <name>)"`로 쓴다. 인자 없는 `wt cd`는 실패하니 이름을 지정한다. 이름 매칭은 정확 일치가 우선이며(`wt ls`가 보여주는 상대 경로 이름 → 브랜치명 순), 정확 일치 없이 여러 worktree에 부분 일치하면 아무것도 고르지 않고 후보를 안내하며 실패한다. 손상(BROKEN) 항목에 매칭되면 경로를 출력하지 않고 복구 명령을 안내하며 실패하고, 대화형 선택 목록에서도 제외된다.
