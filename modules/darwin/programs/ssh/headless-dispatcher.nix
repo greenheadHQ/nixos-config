@@ -15,7 +15,7 @@ let
   enabled = hostType == "personal";
   homeDir = config.home.homeDirectory;
   core = ./files/headless-ssh-dispatcher.py;
-  manifest = ./files/darwin-openssh-10.3p1-26A5388g.json;
+  manifest = ./files/darwin-openssh-10.3p1.json;
   targetHost = constants.network.minipcTailscaleIP;
   targetUser = "greenhead";
   targetPort = 22;

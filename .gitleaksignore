@@ -1,4 +1,5 @@
-# gitleaks 작동 방식 설명 문서 내 예시 키
-.claude/skills/understanding-nix/references/features.md:aws-access-token:126
-.claude/skills/understanding-nix/references/features.md:aws-access-token:149
-.claude/skills/understanding-nix/references/features.md:aws-access-token:150
+# gitleaks 오탐 억제 목록 — 의도적으로 비어 있다(파일 자체는 유지: 훅과
+# understanding-nix 스킬이 이 경로를 policy로 참조한다).
+# features.md의 AWS 예시 키는 gitleaks가 애초에 탐지하지 않으므로(내장 allowlist
+# `.+EXAMPLE$` / 규칙 정규식 미충족) 억제 항목이 필요 없다 — 다시 추가하지 말 것.
+# 실제 오탐이 생기면 gitleaks가 출력한 fingerprint를 그대로 아래에 붙인다.
