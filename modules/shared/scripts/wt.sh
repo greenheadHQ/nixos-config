@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# wt: Git worktree 관리 도구 (fzf TUI, tmux 통합)
-# 사용법: wt [--stay|--claude|--tmux|--yes|--if-exists=MODE] <branch> | wt cd [--tmux] [-|name] | wt ls [--json] | wt cleanup [--auto|--yes] [name...]
+# wt: Git worktree 관리 도구 (fzf TUI)
+# 사용법: wt [--yes|--if-exists=MODE] <branch> | wt cd [-|name] | wt ls [--json] | wt cleanup [--auto|--yes] [name...]
 
 # === Change Intent Record ===
 # v1 (2025년 초~): 커스텀 wt/wt-cleanup 셸 함수 838줄 (zsh, fzf 기반)
@@ -41,6 +41,19 @@
 #    수정: 래퍼 self-gate(WT_NONINTERACTIVE/stdin 비TTY/stdout 비TTY → 바이너리 passthrough),
 #          tmux UI 부수효과(윈도우 생성/전환)는 _wt_tmux_ui_allowed 단일 정책으로 대화형 한정,
 #          --stay도 비대화형에서는 stdout 경로 출력.
+# v9 (이번 변경): tmux·Claude presentation 제거 — wt는 worktree 관리만 한다
+#    배경: v6~v8이 쌓은 UI 정책(대화형이면 윈도우/세션, 아니면 경로)은 같은 명령이 문맥에
+#          따라 다른 일을 하게 만들었고, 그 분기가 CLI 플래그·핸들러 시그니처·셸 래퍼·
+#          문서·테스트를 모두 관통했다. 조사 결과 세 플래그(--stay/--claude/--tmux)와
+#          자동 window/session/Claude launch의 실사용 근거는 0이었다.
+#    제거: 세 플래그와 전달 경로, window/session open·attach·select, Claude send-keys,
+#          래퍼의 --tmux bypass. create/cd는 언제나 경로 한 줄을 stdout으로 낸다
+#          (이동은 셸 래퍼나 cd "$(wt ...)"의 몫).
+#    보존: 삭제 안전성 가드 — pane lookup, 활성 프로세스 판정, worktree 제거 전
+#          `wt-*` 창·세션 닫기. 이 순서 계약은 tests/suites/wt-cleanup.sh가 고정한다.
+#    소멸: v8의 _wt_tmux_ui_allowed 단일 정책, 그리고 직전 변경(#1285)이 `wt cd --tmux`에서
+#          고친 세션명 충돌(basename → 표시 이름)이 그 호출부와 함께 사라졌다. 남은
+#          _wt_session_name은 이미 떠 있는 legacy 세션을 찾아 닫는 용도뿐이라 규칙 고정이다.
 
 set -euo pipefail
 
@@ -100,7 +113,7 @@ show_help() {
   cat << 'EOF'
 사용법: wt [옵션] <command|branch>
 
-Git worktree 관리 도구 (fzf TUI, tmux 통합; 비대화형/LLM 셸 호환)
+Git worktree 관리 도구 (fzf TUI; 비대화형/LLM 셸 호환)
 
 서브커맨드:
   wt <branch>             현재 HEAD 기준 worktree 생성
@@ -109,14 +122,8 @@ Git worktree 관리 도구 (fzf TUI, tmux 통합; 비대화형/LLM 셸 호환)
   wt cleanup [--auto]     worktree 정리 (인터랙티브/자동/이름 지정)
 
 옵션 (create):
-  --stay                  tmux 윈도우를 백그라운드로 생성
-  --claude                worktree 생성 후 Claude Code 자동 실행
-  --tmux                  독립 tmux 세션 생성+attach (tmux 밖, 대화형)
   --if-exists=MODE        충돌 시 동작: reuse|recreate|fail (비대화형 충돌 시 필수)
   --yes, -y               확인 프롬프트 자동 승인
-
-옵션 (cd):
-  --tmux                  worktree를 tmux 세션으로 열기 (tmux 밖, 대화형)
 
 옵션 (ls):
   --json                  JSON 배열로 출력 (name/branch/path/pr/dirty/unpushed/...)
@@ -130,10 +137,10 @@ Git worktree 관리 도구 (fzf TUI, tmux 통합; 비대화형/LLM 셸 호환)
                           근거 기록 부재 포함)는 우회하지 않는다
   [name...]               정리할 worktree 이름 직접 지정
 
-비대화형 (LLM/스크립트):
-  stdin이 tty가 아니거나 WT_NONINTERACTIVE=1이면 비대화형 모드.
-  fzf/번호선택/tmux attach/tmux 윈도우 생성·전환 대신 명시 플래그·인자가 필요하다.
-  생성/이동 경로는 stdout으로 출력되므로 cd "\$(wt cd <name>)" 형태로 사용 (--stay 포함).
+경로 출력:
+  생성/이동은 언제나 경로 한 줄을 stdout으로 낸다 — 실제 이동은 셸 래퍼나
+  cd "\$(wt cd <name>)"가 한다. 비대화형(stdin 비tty 또는 WT_NONINTERACTIVE=1)에서는
+  fzf/번호선택 대신 명시 플래그·인자가 필요하다.
 
 Claude/Codex:
   worktree 생성/재생성 bootstrap은 .claude/settings.local.json과 .codex/를 복사하고,
@@ -145,8 +152,6 @@ Claude/Codex:
 예시:
   wt feature-login              feature-login 브랜치 + worktree 생성
   wt --if-exists=reuse feat-x   있으면 재사용, 없으면 생성 (비대화형 안전)
-  wt --claude fix-bug           worktree 생성 + claude 실행
-  wt --tmux feature-x           worktree 생성 + tmux 세션 attach
   cd "\$(wt cd login)"           "login" worktree 경로로 이동 (비대화형)
   wt cd -                       이전 worktree로 이동
   wt ls --json                  worktree 상태 JSON 출력

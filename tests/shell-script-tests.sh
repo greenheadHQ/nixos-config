@@ -60,7 +60,7 @@ run_test "wt create if-exists=reuse returns path" test_wt_create_if_exists_reuse
 run_test "wt cd requires name when noninteractive" test_wt_cd_noninteractive_requires_name
 run_test "wt cd prints path in tmux when noninteractive" test_wt_cd_noninteractive_in_tmux_prints_path
 run_test "wt create/reuse prints path in tmux when noninteractive" test_wt_create_reuse_noninteractive_in_tmux_prints_path
-run_test "wt --stay prints path to stdout when noninteractive" test_wt_create_stay_noninteractive_prints_path_to_stdout
+run_test "wt retired presentation flags fail" test_wt_retired_presentation_flags_fail
 run_test "shadow paths do not override managed helpers" test_shadow_paths_do_not_override_managed_helpers
 run_test "wt symlink alias does not load adjacent helpers" test_wt_symlink_alias_does_not_load_adjacent_helpers
 run_test "rebuild-common symlink alias does not load adjacent helpers" test_rebuild_common_symlink_alias_does_not_load_adjacent_helpers
