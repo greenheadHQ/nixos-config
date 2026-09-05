@@ -1,7 +1,8 @@
 # tests/suites/verify-ai-compat.sh — verify-ai-compat host-state lib fixture tests
 # shellcheck shell=bash
 # SC2154: 공통 변수는 aggregator/test-common이 정의. SC1091: repo-local lib source.
-# shellcheck disable=SC2154,SC1091
+# SC2034: 이 suite가 세팅하는 전역(MAIN_REPO_ROOT/RETIRED_*)은 source한 lib이 소비한다.
+# shellcheck disable=SC2154,SC1091,SC2034
 
 source "$REPO_ROOT/scripts/ai/lib/host-state-checks.sh"
 
@@ -70,6 +71,7 @@ _verify_ai_compat_with_stubbed_gate() (
   REPO_ROOT_REAL="$(cd "$repo_root" && pwd -P)"
   MAIN_REPO_ROOT="$REPO_ROOT_REAL"
   errors=0
+  warnings=0
   pass_count=0
 
   pass() {
@@ -82,8 +84,14 @@ _verify_ai_compat_with_stubbed_gate() (
     printf 'FAIL\t%s\n' "$1"
   }
 
+  warn() {
+    warnings=$((warnings + 1))
+    printf 'WARN\t%s\n' "$1"
+  }
+
   "$@"
   printf 'ERRORS\t%s\n' "$errors"
+  printf 'WARNINGS\t%s\n' "$warnings"
   printf 'PASSES\t%s\n' "$pass_count"
 )
 
@@ -92,6 +100,14 @@ _verify_ai_compat_assert_error_count() {
   local expected="$2"
   local marker
   marker="$(printf 'ERRORS\t%s' "$expected")"
+  assert_contains "$output" "$marker"
+}
+
+_verify_ai_compat_assert_warning_count() {
+  local output="$1"
+  local expected="$2"
+  local marker
+  marker="$(printf 'WARNINGS\t%s' "$expected")"
   assert_contains "$output" "$marker"
 }
 
@@ -193,4 +209,144 @@ test_verify_ai_compat_host_state_detects_removed_oracle_reference() {
   _verify_ai_compat_assert_error_count "$output" 1
   assert_contains "$output" "USED-BY oracle: demo-lib.sh"
   assert_contains "$output" "실제 source 패턴 미발견"
+}
+
+# ─── retired 스킬 잔존 참조 스캔 범위 ───
+# fixture는 실제 retired 스킬명을 쓰지 않는다 (이 파일 자체가 스캔 범위 안이라 자기 매치를 피한다).
+_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME="retired-demo-skill"
+
+_verify_ai_compat_make_retired_ref_fixture() {
+  local repo_root="$1"
+  local name="$_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME"
+  local shared="$repo_root/modules/shared/programs/claude/files/skills"
+
+  mkdir -p \
+    "$shared/demo/modes" \
+    "$shared/demo/references" \
+    "$repo_root/.claude/skills/other" \
+    "$repo_root/scripts/ai" \
+    "$repo_root/tests/suites"
+
+  # 구 스캔 범위(SKILL.md·references/*.md·evals/queries.json)가 놓치던 위치들.
+  printf 'audit mode still routes to %s\n' "$name" > "$shared/demo/modes/audit.md"
+  printf '# helper referencing %s\n' "$name" > "$repo_root/scripts/ai/legacy-helper.sh"
+  printf '# suite referencing %s\n' "$name" > "$repo_root/tests/suites/legacy.sh"
+  # 의도적 이력 서술 (제외 목록 대상) — 같은 파일에 진짜 잔존 참조도 한 줄 둔다.
+  {
+    printf 'Owner note: %s removed in the past.\n' "$name"
+    printf 'audit still routes to %s today.\n' "$name"
+  } > "$shared/demo/references/history.md"
+  printf 'clean doc\n' > "$repo_root/.claude/skills/other/SKILL.md"
+}
+
+_verify_ai_compat_retired_ref_check() {
+  RETIRED_SHARED_SKILLS=("$_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME")
+  RETIRED_REF_SCAN_ROOTS=(
+    "$REPO_ROOT/.claude/skills"
+    "$REPO_ROOT/modules/shared/programs/claude/files/skills"
+    "$REPO_ROOT/scripts/ai"
+    "$REPO_ROOT/tests"
+  )
+  RETIRED_REF_SCAN_EXCLUDE=()
+  if [ -n "${1:-}" ]; then
+    RETIRED_REF_SCAN_EXCLUDE=("$1")
+  fi
+  verify_retired_shared_skill_references
+}
+
+# 제외 항목 문자열(<스킬명>|<상대 경로>|<라인 부분문자열>) 조립 helper.
+_verify_ai_compat_retired_ref_exclude_entry() {
+  printf '%s|%s|%s' \
+    "$_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME" \
+    "modules/shared/programs/claude/files/skills/demo/references/history.md" \
+    "$1"
+}
+
+test_verify_ai_compat_retired_ref_scan_covers_modes_scripts_and_tests() {
+  local sandbox home_dir repo_root output
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  _verify_ai_compat_make_retired_ref_fixture "$repo_root"
+
+  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" \
+    _verify_ai_compat_retired_ref_check "" 2>&1)"
+  _verify_ai_compat_assert_error_count "$output" 0
+  _verify_ai_compat_assert_warning_count "$output" 1
+  assert_contains "$output" "retired shared 스킬 참조 잔존: $_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME (5건)"
+  assert_contains "$output" "modules/shared/programs/claude/files/skills/demo/modes/audit.md:1:"
+  assert_contains "$output" "scripts/ai/legacy-helper.sh:1:"
+  assert_contains "$output" "tests/suites/legacy.sh:1:"
+}
+
+# 제외는 파일이 아니라 라인 단위다: 같은 파일의 이력 서술만 면제되고,
+# 그 아래 진짜 잔존 참조는 그대로 잡혀야 한다.
+test_verify_ai_compat_retired_ref_scan_honors_exclusions() {
+  local sandbox home_dir repo_root entry output
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  _verify_ai_compat_make_retired_ref_fixture "$repo_root"
+  entry="$(_verify_ai_compat_retired_ref_exclude_entry "removed in the past")"
+
+  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" \
+    _verify_ai_compat_retired_ref_check "$entry" 2>&1)"
+  _verify_ai_compat_assert_error_count "$output" 0
+  assert_contains "$output" "retired shared 스킬 참조 잔존: $_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME (4건)"
+  assert_not_contains "$output" "demo/references/history.md:1:"
+  assert_contains "$output" "demo/references/history.md:2:"
+}
+
+# 아무 라인에도 걸리지 않는 제외 항목은 죽은 규칙이므로 fail로 드러나야 한다.
+test_verify_ai_compat_retired_ref_scan_detects_stale_exclusion() {
+  local sandbox home_dir repo_root entry output
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  _verify_ai_compat_make_retired_ref_fixture "$repo_root"
+  entry="$(_verify_ai_compat_retired_ref_exclude_entry "이미 사라진 서술")"
+
+  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" \
+    _verify_ai_compat_retired_ref_check "$entry" 2>&1)"
+  _verify_ai_compat_assert_error_count "$output" 1
+  assert_contains "$output" "제외 항목이 아무 라인에도 걸리지 않음(stale)"
+  assert_contains "$output" "retired shared 스킬 참조 잔존: $_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME (5건)"
+}
+
+# 읽지 못한 파일이 있어도(grep rc>1) 같은 실행에서 찾은 매치는 계속 보고해야 한다.
+test_verify_ai_compat_retired_ref_scan_reports_partial_grep_failure() {
+  local sandbox home_dir repo_root unreadable output
+  if [ "$(id -u)" = 0 ]; then
+    echo "    (skip: root는 읽기 권한 제한을 우회한다)" >&2
+    return 0
+  fi
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  _verify_ai_compat_make_retired_ref_fixture "$repo_root"
+  unreadable="$repo_root/scripts/ai/legacy-helper.sh"
+  chmod 000 "$unreadable"
+
+  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" \
+    _verify_ai_compat_retired_ref_check "" 2>&1)"
+  chmod 644 "$unreadable"  # sandbox cleanup이 rm -rf 할 수 있도록 권한 복구.
+  _verify_ai_compat_assert_error_count "$output" 1
+  assert_contains "$output" "grep 부분 실패: $_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME"
+  assert_contains "$output" "retired shared 스킬 참조 잔존: $_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME (4건)"
+  assert_contains "$output" "modules/shared/programs/claude/files/skills/demo/modes/audit.md:1:"
+}
+
+test_verify_ai_compat_retired_ref_scan_passes_when_clean() {
+  local sandbox home_dir repo_root output
+  sandbox="$(new_sandbox)"
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  mkdir -p "$repo_root/.claude/skills/other" "$repo_root/scripts/ai" "$repo_root/tests/suites"
+  printf 'clean doc\n' > "$repo_root/.claude/skills/other/SKILL.md"
+
+  output="$(_verify_ai_compat_with_stubbed_gate "$home_dir" "$repo_root" \
+    _verify_ai_compat_retired_ref_check "" 2>&1)"
+  _verify_ai_compat_assert_error_count "$output" 0
+  _verify_ai_compat_assert_warning_count "$output" 0
+  assert_contains "$output" "retired shared 스킬 참조 없음: $_VERIFY_AI_COMPAT_RETIRED_FIXTURE_NAME"
 }

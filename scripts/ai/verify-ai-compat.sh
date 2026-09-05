@@ -11,7 +11,8 @@
 # - 이 스크립트의 EXPECTED_* 목록에서 제거. 완전 퇴역(이 이름으로 재설치하지 않음)이면
 #   RETIRED_SHARED_SKILLS에 등록해 홈 잔재를 감시한다. 단 user-scope 재설치(예: `npx skills add -g`)를
 #   허용하는 스킬은 홈 잔재 검사(존재=FAIL)와 충돌하므로 등록하지 않고, 미등록 예외 근거를 남긴다
-# - 전 스킬 코퍼스에서 스킬명 cross-reference grep (NOT-for, 산문 참조)
+# - 전 스킬 코퍼스 + scripts/ai/ + tests/ 에서 스킬명 cross-reference grep (NOT-for, 산문 참조,
+#   modes/·scripts/ 잔존 포함). 이 스캔은 RETIRED_REF_SCAN_ROOTS가 자동 수행한다
 # - 전 스킬 evals/queries.json에서 혼동쌍 잔존 grep
 # - nrs로 홈 디렉터리 심링크 정리 반영
 set -euo pipefail
@@ -58,6 +59,25 @@ SHARED_EXPOSURE_EXCLUDE=(
 # zero-match while this verifier still checks deployed residue.
 RETIRED_SHARED_SKILLS=(
   "codex-fan""-out"
+  "plan-with""-questions"
+)
+# 잔존 참조 스캔 범위. 스킬 디렉토리 전체 + AI 스크립트/테스트 트리를 본다.
+# SKILL.md·references만 보던 시절에는 modes/·scripts/·tests/에 남은 참조를 놓쳤다.
+# shellcheck disable=SC2034  # sourced lib(scripts/ai/lib/host-state-checks.sh)가 소비하는 전역
+RETIRED_REF_SCAN_ROOTS=(
+  "$SOURCE_SKILLS_DIR"
+  "$SHARED_SKILLS_DIR"
+  "$REPO_ROOT/scripts/ai"
+  "$REPO_ROOT/tests"
+)
+# 스캔 범위 안이지만 정리 대상이 아닌 "라인" (형식: <스킬명>|<REPO_ROOT 상대 경로>|<라인 부분문자열>).
+# 제거 이력을 남기는 것이 의도인 서술만 등록한다. 같은 파일의 다른 라인은 면제되지 않으며,
+# 아무 라인에도 걸리지 않는 항목은 stale로 보고된다. docs/archive/**, plans/**, .claude/plans/**는
+# 스캔 루트 밖이라 구조적으로 제외되므로 여기 등록하지 않는다.
+# 스킬명은 RETIRED_SHARED_SKILLS와 같은 이유로 분할해 둔다 (이 파일도 스캔 범위 안이다).
+# shellcheck disable=SC2034  # sourced lib(scripts/ai/lib/host-state-checks.sh)가 소비하는 전역
+RETIRED_REF_SCAN_EXCLUDE=(
+  "plan-with""-questions|modules/shared/programs/claude/files/skills/run-da/references/validation-paths.md|#810에서"
 )
 RETIRED_EXECUTABLES=(
   ".local/bin/codex""-sync"
@@ -106,56 +126,9 @@ in_list() {
   return 1
 }
 
-# 현존 스킬 문서/evals만 검사한다. verify-ai-compat.sh 자기 자신과 이 검사 코드의
-# RETIRED_SHARED_SKILLS 리터럴은 의도적으로 스캔 범위 밖이다.
-list_skill_reference_files() {
-  local root="$1"
-  [ -d "$root" ] || return 0
-
-  find "$root" \
-    \( -path '*/SKILL.md' -o -path '*/references/*.md' -o -path '*/evals/queries.json' \) \
-    -type f -print
-}
-
-verify_retired_shared_skill_references() {
-  local candidate_list match_file skill_name candidate match_count match grep_rc
-
-  candidate_list="$(mktemp "${TMPDIR:-/tmp}/verify-ai-retired-skill-ref-files.XXXXXX")"
-  match_file="$(mktemp "${TMPDIR:-/tmp}/verify-ai-retired-skill-refs.XXXXXX")"
-  list_skill_reference_files "$SOURCE_SKILLS_DIR" >"$candidate_list"
-  list_skill_reference_files "$SHARED_SKILLS_DIR" >>"$candidate_list"
-  sort -u -o "$candidate_list" "$candidate_list"
-
-  for skill_name in "${RETIRED_SHARED_SKILLS[@]}"; do
-    : >"$match_file"
-    while IFS= read -r candidate; do
-      [ -n "$candidate" ] || continue
-      if grep -nFH -- "$skill_name" "$candidate" >>"$match_file"; then
-        :
-      else
-        grep_rc=$?
-        if [ "$grep_rc" -gt 1 ]; then
-          fail "retired shared 스킬 참조 검사 grep 실패: ${candidate#"$REPO_ROOT"/} (rc=$grep_rc)"
-        fi
-      fi
-    done <"$candidate_list"
-
-    if [ -s "$match_file" ]; then
-      match_count="$(wc -l <"$match_file" | tr -d '[:space:]')"
-      # 문서에는 "과거 X 스킬은 제거" 같은 이력 서술도 남을 수 있어,
-      # retired 배포 잔재와 달리 우선 warn-only로 두고 사람이 의도를 판정한다.
-      warn "retired shared 스킬 문서/evals 참조 잔존: $skill_name (${match_count}건)"
-      while IFS= read -r match; do
-        match="${match#"$REPO_ROOT"/}"
-        echo "    $match" >&2
-      done <"$match_file"
-    else
-      pass "retired shared 스킬 문서/evals 참조 없음: $skill_name"
-    fi
-  done
-
-  rm -f "$candidate_list" "$match_file"
-}
+# 잔존 참조 스캔 구현은 scripts/ai/lib/host-state-checks.sh에 있다 (테스트 가능한 seam).
+# verify-ai-compat.sh 자기 자신은 RETIRED_SHARED_SKILLS 리터럴을 문자열 분할로 보관하므로
+# 스캔 범위 안에 있어도 자기 자신을 매치하지 않는다.
 
 # shellcheck disable=SC1091  # source file은 repo 내부 고정 경로
 . "$REPO_ROOT/scripts/ai/lib/host-state-checks.sh"
@@ -679,6 +652,8 @@ echo "=== 글로벌 설정 확인 ==="
 # activation의 syncCodexConfig가 repo-managed 키와 사용자 소유 섹션을 merge한 regular file로
 # 유지한다. PASS 기준: (a) regular file, (b) mode 0600, (c) TOML 파싱 성공,
 #                     (d) template-managed key 존재 (approval_policy/sandbox_mode).
+# (d)는 이 블록에 전용 검사를 두지 않는다 — 아래 template ↔ live drift 검증이 template leaf를
+# 순회하며 키 부재를 missing_leaf로 보고하므로 이미 충족된다 (하드코딩 키 목록보다 범위도 넓다).
 # mode 불일치는 fail로 승격, legacy symlink 감지 시 nrs --force 안내.
 _codex_cfg="$HOME/.codex/config.toml"
 if [ ! -e "$_codex_cfg" ]; then
@@ -836,7 +811,7 @@ for retired_executable in "${RETIRED_EXECUTABLES[@]}"; do
 done
 
 echo ""
-echo "=== Retired 스킬 문서/evals 잔존 참조 확인 ==="
+echo "=== Retired 스킬 잔존 참조 확인 ==="
 
 verify_retired_shared_skill_references
 
