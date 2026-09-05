@@ -70,7 +70,7 @@ let
   # (curl: GitHub API·Pushover 알림, jq: 릴리즈 노트 파싱, coreutils: cat/head).
   # podman 은 service-lib.sh 의 get_image_digest 전용이라 이 스크립트 경로에서는
   # 호출되지 않지만, 기존 유닛 환경을 그대로 보존하려고 목록에서 빼지 않는다.
-  actualVersionCheckScript = pkgs.writeShellApplication {
+  versionCheckScript = pkgs.writeShellApplication {
     name = "${serviceName}-version-check";
     runtimeInputs = with pkgs; [
       curl
@@ -152,7 +152,7 @@ in
 
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${actualVersionCheckScript}/bin/${serviceName}-version-check";
+        ExecStart = "${versionCheckScript}/bin/${serviceName}-version-check";
 
         ProtectSystem = "strict";
         ProtectHome = true;

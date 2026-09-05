@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # darwin-rebuild wrapper script
-# 문제 예방: setupLaunchAgents 멈춤 / 후처리: Hammerspoon 재시작
+# 문제 예방: setupLaunchAgents 멈춤
+# 후처리: Hammerspoon 재시작 — sudo rebuild 중 IPC reload로 HOME이 /var/root로 오염되는 것을 되돌린다
 #
 # 사용법:
 #   nrs           # 일반 rebuild
@@ -225,6 +226,11 @@ run_darwin_rebuild() {
 
 #───────────────────────────────────────────────────────────────────────────────
 # Hammerspoon 재시작
+#
+# 왜: sudo darwin-rebuild 중 Hammerspoon이 IPC로 reload되면 os.getenv("HOME")이
+# /var/root로 오염되어 모듈이 오류 상태로 남는다 (2026-01-14 관측, 스킬 문서
+# managing-macos/references/troubleshooting.md "Hammerspoon HOME이 /var/root로 인식").
+# 이 스크립트는 HOME을 직접 조작하지 않고, 완전 재시작으로 오염된 환경만 걷어낸다.
 #───────────────────────────────────────────────────────────────────────────────
 restart_hammerspoon() {
     log_info "🔄 Restarting Hammerspoon..."
