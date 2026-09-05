@@ -535,15 +535,30 @@ EOS
     cat <<'EOS'
 set -euo pipefail
 args=" $* "
+# fd 종류는 argv 의 `-d` 옵션 값으로 판별한다(경로에 우연히 섞인 "cwd"/"txt" 부분 문자열
+# 오매칭 방지, 그리고 두 리터럴이 공백 하나를 겹쳐 요구하는 case 패턴 회피 — 이유는
+# _claude_rc_install_running_server_mocks 의 lsof mock 주석 참조).
+d_opt=""
+prev=""
+for arg in "$@"; do
+  case "$prev" in -d) d_opt="$arg" ;; esac
+  prev="$arg"
+done
 case "$args" in
-  *" -p 4242 "*"cwd"*)
-    printf 'p4242\nn%s\n' "$FAKE_UNMANAGED_CWD"
+  *" -p 4242 "*)
+    case "$d_opt" in
+      cwd)
+        printf 'p4242\nn%s\n' "$FAKE_UNMANAGED_CWD"
+        exit 0
+        ;;
+      txt)
+        printf 'p4242\nn%s\n' "$FAKE_UNMANAGED_EXE"
+        exit 0
+        ;;
+    esac
     ;;
-  *" -p 4242 "*"txt"*)
-    printf 'p4242\nn%s\n' "$FAKE_UNMANAGED_EXE"
-    ;;
-  *) exec "$BASE_LSOF" "$@" ;;
 esac
+exec "$BASE_LSOF" "$@"
 EOS
   } > "$CLAUDE_RC_FAKE_BIN/lsof"
   _claude_rc_write_pid_argv_fixture 4242 claude remote-control --spawn worktree
@@ -565,8 +580,10 @@ EOS
 #!/usr/bin/env bash
 set -euo pipefail
 args=" $* "
+# `-d` 옵션 값으로 정확히 분기한다(경로에 우연히 섞인 "cwd" 부분 문자열 오매칭 방지 —
+# 이유는 _claude_rc_install_running_server_mocks 의 lsof mock 주석 참조).
 case "$args" in
-  *"cwd"*)
+  *" -d cwd "*)
     printf 'p5252\nn%s\n' "$FAKE_CHILD_CWD"
     ;;
   *)
@@ -605,18 +622,31 @@ EOS
     cat <<'EOS'
 set -euo pipefail
 args=" $* "
+# fd 종류는 argv 의 `-d` 옵션 값으로 판별한다(경로에 우연히 섞인 "cwd"/"txt" 부분 문자열
+# 오매칭 방지, 그리고 두 리터럴이 공백 하나를 겹쳐 요구하는 case 패턴 회피 — 이유는
+# _claude_rc_install_running_server_mocks 의 lsof mock 주석 참조).
+d_opt=""
+prev=""
+for arg in "$@"; do
+  case "$prev" in -d) d_opt="$arg" ;; esac
+  prev="$arg"
+done
 case "$args" in
-  *" -p ${FAKE_ORPHAN_PID:-__none__} "*"txt"*)
-    [ -n "${FAKE_ORPHAN_EXE:-}" ] || exit 1
-    printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_EXE"
-    ;;
-  *" -p ${FAKE_ORPHAN_PID:-__none__} "*"cwd"*)
-    printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_CWD"
-    ;;
-  *)
-    exec "$BASE_LSOF" "$@"
+  *" -p ${FAKE_ORPHAN_PID:-__none__} "*)
+    case "$d_opt" in
+      txt)
+        [ -n "${FAKE_ORPHAN_EXE:-}" ] || exit 1
+        printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_EXE"
+        exit 0
+        ;;
+      cwd)
+        printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_CWD"
+        exit 0
+        ;;
+    esac
     ;;
 esac
+exec "$BASE_LSOF" "$@"
 EOS
   } > "$CLAUDE_RC_FAKE_BIN/lsof"
   {
@@ -787,17 +817,45 @@ set -euo pipefail
 args=" $* "
 server_pid="${FAKE_SERVER_PID:-6262}"
 parent_pid="${FAKE_SERVER_PARENT_PID:-6261}"
+# fd 종류 분기는 argv 에서 뽑은 `-d` 옵션 값으로 판별한다. args 전체에서 "cwd"/"txt" 부분
+# 문자열만 보면, 열린 파일 질의(`lsof -a -p PID -Fn -- LOCK`)의 경로가 그 문자열을 포함할 때
+# 아래 lock 분기보다 앞선 -d 분기로 새어 pid_holds_lock 이 오탐한다. sandbox 이름은
+# mktemp 무작위 6글자(`shell-script-tests.XXXXXX`)라 "…cwdwmi" 같은 이름이 뽑히는 순간에만
+# 터지는 저확률 flake이므로, 재현을 기다리지 말고 분기 조건 자체를 정확하게 둔다.
+# 두 조건을 한 case 패턴에 잇지 않는(`*" -p $pid "*" -d cwd "*`) 이유: 두 리터럴이 pid 와 -d
+# 사이의 공백 하나를 각각 요구하므로 실제 argv(" -a -p PID -d cwd -Fn ")에 절대 매치되지 않는다.
+d_opt=""
+prev=""
+for arg in "$@"; do
+  case "$prev" in -d) d_opt="$arg" ;; esac
+  prev="$arg"
+done
 case "$args" in
-  *" -p $server_pid "*"cwd"*)
-    printf 'p%s\nn%s\n' "$server_pid" "$FAKE_SERVER_CWD"
+  *" -p $server_pid "*)
+    case "$d_opt" in
+      cwd)
+        printf 'p%s\nn%s\n' "$server_pid" "$FAKE_SERVER_CWD"
+        exit 0
+        ;;
+      txt)
+        printf 'p%s\nn%s\n' "$server_pid" "$FAKE_SERVER_EXE"
+        exit 0
+        ;;
+    esac
     ;;
-  *" -p $server_pid "*"txt"*)
-    printf 'p%s\nn%s\n' "$server_pid" "$FAKE_SERVER_EXE"
+esac
+case "$args" in
+  *" -p $parent_pid "*)
+    case "$d_opt" in
+      txt)
+        [ -n "${FAKE_SERVER_FLOCK_EXE:-}" ] || exit 1
+        printf 'p%s\nn%s\n' "$parent_pid" "$FAKE_SERVER_FLOCK_EXE"
+        exit 0
+        ;;
+    esac
     ;;
-  *" -p $parent_pid "*"txt"*)
-    [ -n "${FAKE_SERVER_FLOCK_EXE:-}" ] || exit 1
-    printf 'p%s\nn%s\n' "$parent_pid" "$FAKE_SERVER_FLOCK_EXE"
-    ;;
+esac
+case "$args" in
   *" -p $server_pid "*" ${FAKE_SERVER_LOCK_PATH:-__none__} "*)
     printf 'p%s\nf3\nn%s\n' "$server_pid" "$FAKE_SERVER_LOCK_PATH"
     ;;

@@ -27,6 +27,10 @@ while IFS= read -r -d '' _suite; do
   . "$_suite"
 done < <(find "$SCRIPT_DIR/suites" -maxdepth 1 -type f -name '*.sh' -print0 | sort -z)
 
+# 등록 계약: 위 디스커버리는 suite 파일을 source 해 '함수를 정의'할 뿐이고, 실제 실행은 아래
+# run_test 나열이 유일한 경로다. 그래서 suite 에 테스트를 추가하고 여기 등록을 빠뜨리면 아무도
+# 실패하지 않은 채 그 테스트만 죽는다(PR #1179 에서 claude-rc 52개가 그렇게 죽었다). 이 정의/등록
+# parity 는 tests/suites/test-infra.sh 의 test_suite_function_registration_parity 가 강제한다.
 run_test "wt help uses deployed helper layout" test_wt_help_from_deployed_layout
 run_test "wt wrapper ignores runtime HOME for real script" test_wt_wrapper_ignores_runtime_home_for_real_script
 run_test "managed plugin skill helper rejects duplicate matches" test_managed_plugin_skill_link_requires_single_match
@@ -109,6 +113,63 @@ run_test "claude remote-control maint rotates ensure log" test_claude_remote_con
 run_test "claude remote-control maint alert body explains cause" test_claude_remote_control_maint_alert_body_explains_cause
 run_test "claude remote-control maint recovery alert is korean" test_claude_remote_control_maint_alert_recovery_is_korean
 run_test "claude remote-control maint alert truncation keeps valid utf8" test_claude_remote_control_maint_alert_truncation_keeps_valid_utf8
+# claude remote-control guardian suite — launch-guard/process-group 계약. PR #1179의 3-suite 분리
+# 당시 aggregator 등록이 누락돼 정의만 남아 있던 케이스를 복구한 것이다(등록 parity는 아래
+# test-infra의 registration parity 테스트가 강제한다).
+run_test "claude remote-control maint reaps delayed failed launcher" test_claude_remote_control_maint_reaps_delayed_failed_launcher
+run_test "claude remote-control launch guard survives early launcher exit" test_claude_remote_control_launch_guard_survives_early_launcher_exit
+run_test "claude remote-control launch guard reaps early-exit descendant" test_claude_remote_control_launch_guard_reaps_early_exit_descendant
+run_test "claude remote-control launch group rejects unsafe pid files" test_claude_remote_control_launch_group_rejects_unsafe_pid_files
+run_test "claude remote-control launch guard cancel is bounded" test_claude_remote_control_launch_guard_cancel_is_bounded
+run_test "claude remote-control repeated signal cannot strand stopped group" test_claude_remote_control_repeated_signal_cannot_strand_stopped_group
+run_test "claude remote-control stopped group resumes after probe failure" test_claude_remote_control_stopped_group_resumes_after_probe_failure
+run_test "claude remote-control group escape never claims cleaned" test_claude_remote_control_group_escape_never_claims_cleaned
+run_test "claude remote-control launch guard handles SIGHUP" test_claude_remote_control_launch_guard_handles_hup
+run_test "claude remote-control launch guard handles parent exit" test_claude_remote_control_launch_guard_handles_parent_exit
+run_test "claude remote-control launch guard supports system bash" test_claude_remote_control_launch_guard_supports_system_bash
+run_test "claude remote-control maint does not hand off competing lock" test_claude_remote_control_maint_does_not_handoff_competing_lock
+# claude remote-control maint suite — drift 정책·lock·status/result 쓰기 실패 전파 계약(동일 누락 복구).
+run_test "claude remote-control maint rejects joined managed argv decoy" test_claude_remote_control_maint_rejects_joined_managed_argv_decoy
+run_test "claude remote-control maint reports missing path with live lock" test_claude_remote_control_maint_reports_missing_path_with_live_lock
+run_test "claude remote-control maint propagates result write failure" test_claude_remote_control_maint_propagates_result_write_failure
+run_test "claude remote-control maint propagates status write failure" test_claude_remote_control_maint_propagates_status_write_failure
+run_test "claude remote-control start failure preserves unknown state" test_claude_remote_control_start_failure_preserves_unknown_state
+run_test "claude remote-control maint accepts previous generation flock" test_claude_remote_control_maint_accepts_previous_generation_flock
+run_test "claude remote-control maint rejects bridge with separate lock holder" test_claude_remote_control_maint_rejects_bridge_with_separate_lock_holder
+run_test "claude remote-control session matcher honors option terminator" test_claude_remote_control_session_matcher_honors_option_terminator
+run_test "claude remote-control maint executes canonical nonstandard launcher target" test_claude_remote_control_maint_executes_canonical_nonstandard_launcher_target
+run_test "claude remote-control maint rejects launcher outside versions before exec" test_claude_remote_control_maint_rejects_launcher_outside_versions_before_exec
+run_test "claude remote-control maint rejects unverifiable started server" test_claude_remote_control_maint_rejects_unverifiable_started_server
+run_test "claude remote-control unverifiable cleanup does not claim competitor stopped" test_claude_remote_control_unverifiable_cleanup_does_not_claim_competitor_stopped
+run_test "claude remote-control maint rejects mismatched started version" test_claude_remote_control_maint_rejects_mismatched_started_version
+run_test "claude remote-control maint restart records verified version" test_claude_remote_control_maint_restart_records_verified_version
+run_test "claude remote-control maint default policy preserves live drift" test_claude_remote_control_maint_default_policy_preserves_live_drift
+run_test "claude remote-control maint confirmed drift binds exact snapshot" test_claude_remote_control_maint_confirmed_drift_binds_exact_snapshot
+run_test "claude remote-control maint reports lock setup failure" test_claude_remote_control_maint_reports_lock_setup_failure
+run_test "claude remote-control maint waits for parent lock release" test_claude_remote_control_maint_waits_for_parent_lock_release
+run_test "claude remote-control maint restart rejects mismatched version" test_claude_remote_control_maint_restart_rejects_mismatched_version
+run_test "claude remote-control maint restart rejects unverifiable version" test_claude_remote_control_maint_restart_rejects_unverifiable_version
+run_test "claude remote-control maint action taxonomy" test_claude_remote_control_maint_action_taxonomy
+# claude remote-control wrapper suite — managed identity 검증·decoy argv 거부·interactive lock 계약(동일 누락 복구).
+run_test "claude remote-control nix packages include pinned runtime helpers" test_claude_remote_control_nix_packages_include_pinned_runtime_helpers
+run_test "claude remote-control readlink fixture preserves canonicalization" test_claude_remote_control_readlink_fixture_preserves_canonicalization
+run_test "claude remote-control fixture uses trusted flock" test_claude_remote_control_fixture_uses_trusted_flock
+run_test "claude remote-control start accepts late guard handoff" test_claude_remote_control_start_accepts_late_guard_handoff
+run_test "claude remote-control start tolerates bounded scheduler delay" test_claude_remote_control_start_tolerates_bounded_scheduler_delay
+run_test "claude remote-control interactive lifecycle actions share maint lock" test_claude_remote_control_interactive_lifecycle_actions_share_maint_lock
+run_test "claude remote-control interactive lifecycle propagates callback failures" test_claude_remote_control_interactive_lifecycle_propagates_callback_failures
+run_test "claude remote-control interactive registry lock failure prevents callback" test_claude_remote_control_interactive_registry_lock_failure_prevents_callback
+run_test "claude remote-control interactive start requires verified managed identity" test_claude_remote_control_interactive_start_requires_verified_managed_identity
+run_test "claude remote-control interactive start ignores ambient claude bin" test_claude_remote_control_interactive_start_ignores_ambient_claude_bin
+run_test "claude remote-control rejects unmanaged rc alias" test_claude_remote_control_rejects_unmanaged_rc_alias
+run_test "claude remote-control rejects unmanaged global option prefix" test_claude_remote_control_rejects_unmanaged_global_option_prefix
+run_test "claude remote-control rejects unmanaged valued global option prefix" test_claude_remote_control_rejects_unmanaged_valued_global_option_prefix
+run_test "claude remote-control rejects unmanaged debug filter prefixes" test_claude_remote_control_rejects_unmanaged_debug_filter_prefixes
+run_test "claude remote-control blocks ambiguous candidates and ignores explicit session modes" test_claude_remote_control_blocks_ambiguous_candidates_and_ignores_explicit_session_modes
+run_test "claude remote-control ignores remote-control substring decoy" test_claude_remote_control_ignores_remote_control_substring_decoy
+run_test "claude remote-control ignores prompt token decoy" test_claude_remote_control_ignores_prompt_token_decoy
+run_test "claude remote-control interactive stop waits for parent lock release" test_claude_remote_control_interactive_stop_waits_for_parent_lock_release
+run_test "claude remote-control interactive stop preserves registration on lock release timeout" test_claude_remote_control_interactive_stop_preserves_registration_when_parent_lock_release_times_out
 if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control probe parses daemon JSON" test_codex_remote_control_probe_parses_daemon_json
   run_test "codex remote-control probe marks malformed daemon JSON" test_codex_remote_control_probe_marks_malformed_daemon_json
@@ -180,6 +241,7 @@ run_test "missing wt Python helpers fail state changes" test_missing_wt_python_h
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
 run_test "codex trust write failure returns warning" test_codex_trust_write_failure_returns_warning
 run_test "fixture git setup ignores host global hooks" test_fixture_git_is_hermetic_against_global_hooks
+run_test "suite definitions match aggregator registrations" test_suite_function_registration_parity
 run_test "nixos nrs offline force smoke" test_nixos_nrs_offline_force_smoke
 run_test "nixos nrs no-change activates when Codex artifact missing" test_nixos_nrs_no_changes_activates_when_codex_artifact_missing
 run_test "extract_oos_entries filesystem input" test_extract_oos_entries_filesystem_input
