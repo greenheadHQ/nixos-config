@@ -1,8 +1,14 @@
 # shellcheck shell=bash
 # wt의 tmux 관여는 "정리"뿐이다. 윈도우/세션을 만들거나 전환하는 presentation은
-# 제거했고(경로 출력 계약으로 통일), 여기 남은 것은 worktree를 지우기 전에 필요한
+# 제거했고(경로 출력 계약으로 통일), 여기 남은 것은 worktree를 지우기 전후에 필요한
 # 판정과 뒷정리다: 대상 worktree의 pane 찾기, 그 pane에 살아 있는 프로세스 판정,
-# 그리고 예전 presentation이 남긴 `wt-*` 윈도우·세션 닫기.
+# 그리고 창·세션 닫기.
+#
+# 두 close의 대상 범위가 다르다. 창(_wt_tmux_close)은 이름을 보지 않는다 — cwd가 그
+# worktree 경로 아래인 창이면 누가 만들었든 닫는다(현재 창·마지막 창은 예외). wt가
+# 창을 만들지 않게 된 지금 그 대상은 사실상 사용자가 직접 만든 창이므로, 지우려는
+# worktree의 창만 골라 닫는다는 뜻으로 읽어야 한다. 세션(_wt_tmux_session_close)만
+# `wt-<repo>-<dir>` 이름 매칭이라 과거 presentation이 만든 세션에 한정된다.
 
 # worktree 디렉토리에 해당하는 tmux 윈도우 찾기
 # tmux 안/밖 모두 동작 — 서버 실행 여부만 확인
@@ -50,10 +56,22 @@ _wt_has_active_process() {
 }
 
 # 정리 대상 세션 이름 재구성: wt-<repo>-<dir>. 이 이름의 세션을 만들던 코드는 사라졌고,
-# 남은 용도는 그때 만들어진 세션을 worktree 제거 전에 찾아 닫는 것뿐이다. 그래서 규칙을
-# 바꿀 수 없다 — 바꾸면 이미 떠 있는 세션을 못 찾고 orphan으로 남긴다.
-# repo basename을 네임스페이스로 두는 이유도 그때와 같다: 멀티 repo에서 동명 브랜치의
-# 세션을 잘못 죽이지 않기 위해서다.
+# 남은 용도는 그때 만들어진 세션을 찾아 닫는 것뿐이다. 그래서 규칙을 바꿀 수 없다 —
+# 바꾸면 이미 떠 있는 세션을 못 찾고 orphan으로 남긴다.
+# === Change Intent Record ===
+# v1 (45aa39e): wt-<dir> — repo 구분 없이 dir_name만 사용.
+#    멀티 repo에서 동명 브랜치 시 잘못된 세션 attach/kill (DA 피드백으로 발견)
+# v2 (f862deb): wt-<repo>-<dir> — basename 네임스페이스 추가
+#    거부한 대안 1: 이중 하이픈 구분자 (wt-repo--dir) — 하이픈 조합 충돌은 해결하나
+#                  같은 basename의 다른 경로 repo 충돌은 미해결 (부분 수정)
+#    거부한 대안 2: 경로 해시 접두사 (wt-a1b2c3-repo-dir) — 모든 충돌 해결하나
+#                  세션 이름의 의미 없는 해시가 가독성을 해침
+#    trade-off: 같은 basename repo 충돌은 미해결이지만,
+#              ~/Workspace 내 프로젝트명이 고유하므로 실질적 충돌 없음.
+#              가독성(tmux ls에서 한눈에 파악)이 완전한 유일성보다 가치 있음.
+# v3 (이번 변경): 세션을 만드는 쪽이 사라져 close 전용으로 존속. 이름 규칙은 이제
+#    선택이 아니라 과거와의 호환 제약이다 — v2 규칙에서 벗어나면 이미 떠 있는 세션을
+#    찾지 못한다. 위 두 대안은 그 이유로 재검토 대상이 아니다.
 _wt_session_name() {
   local dir_name="$1"
   local repo_name
@@ -128,7 +146,10 @@ _wt_tmux_session_close() {
   tmux kill-session -t "=$session_name" 2>/dev/null || true
 }
 
-# tmux 윈도우 안전하게 닫기
+# worktree 경로에 걸린 tmux 윈도우 닫기 (worktree를 지우면 orphan cwd가 되므로).
+# 대상 선정은 _wt_find_tmux_window와 같다 — 창 이름이나 생성 주체가 아니라 pane의 cwd가
+# 그 worktree 경로 아래인지만 본다. 사용자가 직접 만든 창도 포함된다.
+# 현재 윈도우와 세션의 마지막 윈도우는 닫지 않는다.
 # tmux 안/밖 모두 동작 — 서버 실행 중이면 윈도우 정리 가능
 _wt_tmux_close() {
   local wt_path="$1"

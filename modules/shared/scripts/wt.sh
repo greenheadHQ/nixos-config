@@ -49,8 +49,12 @@
 #    제거: 세 플래그와 전달 경로, window/session open·attach·select, Claude send-keys,
 #          래퍼의 --tmux bypass. create/cd는 언제나 경로 한 줄을 stdout으로 낸다
 #          (이동은 셸 래퍼나 cd "$(wt ...)"의 몫).
-#    보존: 삭제 안전성 가드 — pane lookup, 활성 프로세스 판정, worktree 제거 전
-#          `wt-*` 창·세션 닫기. 이 순서 계약은 tests/suites/wt-cleanup.sh가 고정한다.
+#    보존: 삭제 안전성 가드 — pane lookup, 활성 프로세스 판정, 창·세션 닫기.
+#          범위는 창과 세션이 다르다 — 창은 이름이 아니라 pane cwd가 그 worktree 아래인지로
+#          고르므로 사용자가 만든 창도 포함되고, 세션만 `wt-*` 이름 매칭이라 과거
+#          presentation이 만든 것에 한정된다. 닫는 시점도 전략별로 다르다: 강제 경로는
+#          제거 전, 보호 경로는 부분 정리를 피하려고 제거에 성공한 뒤 부수 정리로 닫는다.
+#          강제 경로의 순서 계약은 tests/suites/wt-cleanup.sh가 고정한다.
 #    소멸: v8의 _wt_tmux_ui_allowed 단일 정책, 그리고 직전 변경(#1285)이 `wt cd --tmux`에서
 #          고친 세션명 충돌(basename → 표시 이름)이 그 호출부와 함께 사라졌다. 남은
 #          _wt_session_name은 이미 떠 있는 legacy 세션을 찾아 닫는 용도뿐이라 규칙 고정이다.
