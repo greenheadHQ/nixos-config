@@ -1,8 +1,11 @@
-# Scenario G: 템플릿에서 삭제된 leaf가 기존 배포본에 남아 있을 때의 동작 (2026-09-05 model pin 제거,
-# darwin features.voice_transcription 제거). merge_template_into는 template이 선언하지 않는 leaf를
-# 건드리지 않으므로 아래 model / model_reasoning_effort / features.voice_transcription은 옛 값 그대로
-# 남는다 — config 템플릿 주석이 안내하는 "호스트별 1회 수동 삭제" 절차의 근거이자, 템플릿이 다시
-# model을 pin하면 즉시 깨지도록 하는 회귀 차단이다. 동시에 template-owned leaf는 계속 강제된다.
+# Scenario G: 템플릿에서 삭제된 leaf가 기존 배포본에 남아 있을 때의 동작 (2026-09-05 model pin 제거).
+# merge_template_into는 template이 선언하지 않는 leaf를 건드리지 않으므로 아래 model /
+# model_reasoning_effort는 옛 값 그대로 남는다 — 이 두 키는 앱 UI가 persist하는 앱 소유 키라 영구
+# 회수 목록(retired-config-keys.txt)에 넣을 수 없고, config 템플릿 주석이 안내하는 "호스트별 1회
+# 수동 삭제" 절차의 근거다. 동시에 템플릿이 다시 model을 pin하면 즉시 깨지도록 하는 회귀 차단이며,
+# template-owned leaf는 계속 강제된다.
+# 회수 목록에 등록된 퇴역 키의 동작(배포 경로가 `--unset`으로 능동 제거)은 이 fixture의 범위가
+# 아니다 — tests/suites/codex-config.sh의 unset fixture가 소유한다.
 
 model = "gpt-5.6-sol"
 model_reasoning_effort = "ultra"
@@ -10,7 +13,6 @@ approval_policy = "on-request"
 sandbox_mode = "danger-full-access"
 
 [features]
-voice_transcription = true
 goals = false
 
 [[hooks.UserPromptSubmit]]

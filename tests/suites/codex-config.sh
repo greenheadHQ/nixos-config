@@ -9,6 +9,22 @@
 # wrap하므로 항상 가용하다.
 CODEX_CONFIG_SCRIPT="$REPO_ROOT/modules/shared/programs/codex/files/sync-codex-config.py"
 CODEX_CONFIG_FIXTURE_DIR="$FIXTURE_DIR/codex-config"
+
+# fixture 디렉터리의 선택적 `unset_keys` 파일(한 줄 = TOML dotted key)을 `--unset <key>`
+# 인자 배열 CODEX_CONFIG_UNSET_ARGS 로 변환한다. 파일이 없으면 빈 배열이라 기존 시나리오는
+# 호출 형태가 그대로다. 주석 제거/공백 제거 규칙은 배포 경로의 로더
+# (modules/shared/scripts/lib/rebuild/codex-retired-keys.sh)와 같다.
+codex_config_unset_args() {
+  local dir="$1" line
+  CODEX_CONFIG_UNSET_ARGS=()
+  [[ -f "$dir/unset_keys" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="${line//[[:space:]]/}"
+    [[ -n "$line" ]] || continue
+    CODEX_CONFIG_UNSET_ARGS+=(--unset "$line")
+  done <"$dir/unset_keys"
+}
 json_semantic_equal() {
   # $1 = actual JSON string, $2 = expected JSON path, $3 = expected template path, $4 = expected target path.
   python3 - "$1" "$2" "$3" "$4" <<'PY'
@@ -125,7 +141,9 @@ test_codex_config_sync_fixtures() {
   local scenario sandbox template existing expected actual rc
   for scenario in sync_basic_merge sync_malformed_root sync_malformed_toml_quarantine \
                   sync_quoted_dotted_key sync_out_of_order_hooks_duplicate \
-                  sync_target_absent sync_hooks_scalar_template_event; do
+                  sync_target_absent sync_hooks_scalar_template_event \
+                  sync_unset_removes_key sync_unset_absent_noop \
+                  sync_unset_aot_path_preserved sync_unset_table_path_preserved; do
     local dir="$CODEX_CONFIG_FIXTURE_DIR/$scenario"
     [[ -d "$dir" ]] || fail "sync fixture missing: $dir"
     sandbox=$(new_sandbox)
@@ -135,9 +153,11 @@ test_codex_config_sync_fixtures() {
     actual="$sandbox/target.toml"
 
     [[ -f "$existing" ]] && cp "$existing" "$actual"
+    codex_config_unset_args "$dir"
 
     # sync subcommand 호출
-    if ! python3 "$CODEX_CONFIG_SCRIPT" sync "$template" "$actual" 2>/dev/null; then
+    if ! python3 "$CODEX_CONFIG_SCRIPT" sync "$template" "$actual" \
+      ${CODEX_CONFIG_UNSET_ARGS[@]+"${CODEX_CONFIG_UNSET_ARGS[@]}"} 2>/dev/null; then
       fail "sync($scenario) exited non-zero"
     fi
     [[ -f "$actual" ]] || fail "sync($scenario) did not produce target"
@@ -282,7 +302,9 @@ test_codex_config_check_fixtures() {
                   check_target_missing check_template_missing check_template_parse_error \
                   check_quoted_dotted_key_match check_quoted_dotted_key_value_mismatch \
                   check_empty_template check_out_of_order_hooks_duplicate \
-                  check_target_malformed_toml; do
+                  check_target_malformed_toml check_unset_present_drift \
+                  check_unset_template_conflict check_unset_container_not_leaf \
+                  check_unset_projects_rejected; do
     dir="$CODEX_CONFIG_FIXTURE_DIR/$scenario"
     [[ -d "$dir" ]] || fail "check fixture missing: $dir"
     sandbox=$(new_sandbox)
@@ -300,9 +322,11 @@ test_codex_config_check_fixtures() {
     else
       target_path="$sandbox/nonexistent-target.toml"
     fi
+    codex_config_unset_args "$dir"
 
     rc=0
     python3 "$CODEX_CONFIG_SCRIPT" check "$template" "$target_path" \
+      ${CODEX_CONFIG_UNSET_ARGS[@]+"${CODEX_CONFIG_UNSET_ARGS[@]}"} \
       >"$actual_stdout" 2>"$actual_stderr" || rc=$?
 
     expected_exit="$(cat "$dir/expected_exit" | tr -d '[:space:]')"
@@ -324,6 +348,111 @@ test_codex_config_check_fixtures() {
       assert_contains "$(cat "$actual_stderr")" "$needle"
       [[ ! -s "$actual_stdout" ]] || fail "check($scenario): expected empty stdout on EXIT_ERROR, got: $(cat "$actual_stdout")"
     fi
+  done
+}
+
+test_codex_config_retired_keys_loader() {
+  # 퇴역 키 목록 파일은 Nix(default.nix)와 셸(codex-retired-keys.sh) 두 파서가 같이 읽는다.
+  # 파일 형식 계약(주석 제거 → 공백 제거 → 빈 줄 무시)이 셸 쪽에서 깨지면 activation 과
+  # nrs/verify 의 회수 목록이 갈라지므로, 형식 계약과 저장소 실제 목록을 함께 박제한다.
+  local sandbox repo_dir
+  sandbox=$(new_sandbox)
+  repo_dir="$sandbox/repo"
+  mkdir -p "$repo_dir/modules/shared/programs/codex/files"
+
+  # shellcheck source=../../modules/shared/scripts/lib/rebuild/codex-retired-keys.sh
+  source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-retired-keys.sh"
+
+  # (1) 목록 파일이 없으면 실패를 알리고 배열은 빈 상태여야 한다.
+  CODEX_RETIRED_CONFIG_UNSET_ARGS=(sentinel)
+  if codex_retired_config_unset_args "$repo_dir"; then
+    fail "retired keys loader: expected non-zero return for missing list file"
+  fi
+  [[ "${#CODEX_RETIRED_CONFIG_UNSET_ARGS[@]}" -eq 0 ]] \
+    || fail "retired keys loader: expected empty args on missing file, got: ${CODEX_RETIRED_CONFIG_UNSET_ARGS[*]}"
+
+  # (2) 주석/빈 줄/공백/개행 없는 마지막 줄 처리.
+  {
+    printf '# comment line\n'
+    printf '\n'
+    printf '  features.dead_flag   # trailing comment\n'
+    printf 'plugins."x@y".enabled'
+  } >"$repo_dir/$CODEX_RETIRED_KEYS_REL_PATH"
+  codex_retired_config_unset_args "$repo_dir" \
+    || fail "retired keys loader: expected success on readable list file"
+  local expected='--unset features.dead_flag --unset plugins."x@y".enabled'
+  [[ "${CODEX_RETIRED_CONFIG_UNSET_ARGS[*]}" == "$expected" ]] \
+    || fail "retired keys loader: args=[${CODEX_RETIRED_CONFIG_UNSET_ARGS[*]}] expected=[$expected]"
+
+  # (3) 저장소 실제 목록: 모든 항목이 공백 없는 dotted key 형태여야 한다.
+  #     목록이 비는 것은 정당한 최종 상태(모든 호스트에서 회수 완료)라 개수는 단언하지 않는다.
+  codex_retired_config_unset_args "$REPO_ROOT" \
+    || fail "retired keys loader: repo list file missing at $REPO_ROOT/$CODEX_RETIRED_KEYS_REL_PATH"
+  local i=0 token
+  for token in "${CODEX_RETIRED_CONFIG_UNSET_ARGS[@]}"; do
+    if (( i % 2 == 0 )); then
+      [[ "$token" == "--unset" ]] || fail "retired keys loader: expected --unset flag, got: $token"
+    else
+      [[ "$token" == *.* && "$token" != *' '* ]] \
+        || fail "retired keys loader: repo entry is not a whitespace-free dotted key: $token"
+    fi
+    i=$((i + 1))
+  done
+}
+
+test_codex_config_sync_rejects_bad_unset_before_touching_target() {
+  # 인자 오류(`--unset` 이 template 선언과 충돌)는 target 을 건드리기 전에 실패해야 한다.
+  # sync 는 malformed target 을 `.bad-<ts>` 로 rename(quarantine)한 뒤 template 으로 재생성하므로,
+  # 가드가 그 뒤에 돌면 quarantine 만 일어나고 재생성 전에 die 해서 config 파일이 아예 사라진다.
+  local sandbox template target rc stderr_file
+  sandbox=$(new_sandbox)
+  template="$sandbox/template.toml"
+  target="$sandbox/config.toml"
+  stderr_file="$sandbox/stderr"
+  printf '[features]\nmulti_agent = true\n' >"$template"
+  printf 'this is not = = valid toml\n' >"$target"
+
+  rc=0
+  python3 "$CODEX_CONFIG_SCRIPT" sync "$template" "$target" --unset features.multi_agent \
+    >/dev/null 2>"$stderr_file" || rc=$?
+  [[ "$rc" == "2" ]] || fail "sync bad --unset: expected exit 2, got $rc"
+  assert_contains "$(cat "$stderr_file")" "template still declares this path"
+  [[ -f "$target" ]] || fail "sync bad --unset: target was removed before the argument error"
+  assert_contains "$(cat "$target")" "this is not"
+  local quarantined
+  quarantined=$(find "$sandbox" -maxdepth 1 -name 'config.toml.bad-*' | wc -l | tr -d '[:space:]')
+  [[ "$quarantined" == "0" ]] \
+    || fail "sync bad --unset: target was quarantined before the argument error"
+}
+
+test_codex_config_retired_keys_match_both_templates() {
+  # 회수 목록은 두 플랫폼 template 공용 SoT다. 한쪽 template 만 보고 등록하면 그 호스트에서는
+  # 테스트·verify·CI 가 모두 통과하고 반대편 호스트의 home-manager activation 만 EXIT_ERROR 로
+  # 죽는다 (activation script 는 `set -eu`). 두 template 모두에 대해 check 를 돌려 인자 오류
+  # (EXIT_ERROR)가 없음을 커밋 전에 확인한다.
+  local sandbox target stderr_file tmpl rc template_dir
+  template_dir="$REPO_ROOT/modules/shared/programs/codex/files"
+
+  # shellcheck source=../../modules/shared/scripts/lib/rebuild/codex-retired-keys.sh
+  source "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-retired-keys.sh"
+  codex_retired_config_unset_args "$REPO_ROOT" \
+    || fail "retired keys cross-template: repo list file missing"
+  # 목록이 비면 교차 검증할 대상이 없다 (정당한 최종 상태).
+  [[ "${#CODEX_RETIRED_CONFIG_UNSET_ARGS[@]}" -gt 0 ]] || return 0
+
+  sandbox=$(new_sandbox)
+  target="$sandbox/config.toml"
+  stderr_file="$sandbox/stderr"
+  : >"$target"
+
+  for tmpl in config.toml config.darwin.toml; do
+    [[ -f "$template_dir/$tmpl" ]] || fail "retired keys cross-template: template missing: $tmpl"
+    rc=0
+    python3 "$CODEX_CONFIG_SCRIPT" check "$template_dir/$tmpl" "$target" \
+      "${CODEX_RETIRED_CONFIG_UNSET_ARGS[@]}" >/dev/null 2>"$stderr_file" || rc=$?
+    # rc 1(drift)은 빈 target 이라 정상. rc 2 만이 잘못된 등록 신호다.
+    [[ "$rc" != "2" ]] \
+      || fail "retired keys cross-template: $tmpl 이 회수 대상 키를 아직 선언한다: $(cat "$stderr_file")"
   done
 }
 

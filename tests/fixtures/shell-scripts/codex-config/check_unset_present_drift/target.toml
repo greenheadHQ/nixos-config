@@ -1,0 +1,5 @@
+model = "gpt-5.5"
+
+[features]
+multi_agent = true
+voice_transcription = true

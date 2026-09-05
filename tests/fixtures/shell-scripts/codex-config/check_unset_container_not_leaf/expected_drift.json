@@ -1,0 +1,1 @@
+{"target_state": "present", "drift": [{"path": "mcp_servers.deadserver", "reason": "retired_key_not_a_leaf", "expected": null, "actual": "table"}, {"path": "hooks.Stop", "reason": "retired_key_not_a_leaf", "expected": null, "actual": "array-of-tables"}]}

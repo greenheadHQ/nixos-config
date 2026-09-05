@@ -28,6 +28,28 @@ let
   # activation에서 repo-managed 키와 사용자 소유 섹션을 merge하는 Python 스크립트.
   # 동일하게 store path로 copy되므로 현 flake 기준으로 동작한다.
   codexSyncScript = ./files/sync-codex-config.py;
+
+  # ─── 퇴역 config 키 (배포본에서 능동 회수) ───
+  # ownership 정책상 template이 선언하지 않는 키는 user-owned라 보존된다. 그래서 template에서
+  # 키를 지워도 이미 배포된 ~/.codex/config.toml에는 남는다. 아래 목록의 키만 sync가 제거하고
+  # check가 잔존을 drift로 보고한다 (계약: sync-codex-config.py의 "RETIRED KEYS" docstring).
+  #
+  # 목록의 단일 소스는 ./files/retired-config-keys.txt 파일 하나다. 세 배선처
+  # (이 activation / modules/shared/scripts/lib/rebuild/codex.sh의 NO_CHANGES 복구 /
+  # scripts/ai/verify-ai-compat.sh의 check 감사)가 모두 같은 파일을 읽으므로 목록이 갈라질 수
+  # 없다 — Nix 리스트로 두면 셸 배선처가 복사본을 들고 drift한다. 셸 쪽 파서는
+  # modules/shared/scripts/lib/rebuild/codex-retired-keys.sh이며 아래와 같은 규칙
+  # (`#` 이후 주석 제거 → 공백 전부 제거 → 빈 줄 무시)을 쓴다.
+  retiredConfigKeys =
+    let
+      stripComment = line: builtins.head (lib.splitString "#" line);
+      stripSpace = lib.replaceStrings [ " " "\t" "\r" ] [ "" "" "" ];
+      rawLines = lib.splitString "\n" (builtins.readFile ./files/retired-config-keys.txt);
+    in
+    lib.filter (key: key != "") (map (line: stripSpace (stripComment line)) rawLines);
+  retiredConfigKeyArgs = lib.concatMapStringsSep " " (
+    key: "--unset ${lib.escapeShellArg key}"
+  ) retiredConfigKeys;
   # tomlkit 포함 python3. 정의는 `libraries/python-runtimes.nix` 단일 소스 (flake.nix의
   # `packages.${system}.pythonWithTomlkit` output도 같은 파일을 import하여 store path를 공유).
   pythonWithTomlkit =
@@ -126,13 +148,15 @@ in
   # repo 원본에 write-through되지 않아 git working tree가 오염되지 않는다.
   # 동일 ownership policy는 `sync-codex-config.py check` 모드가 drift 검증에 재사용한다
   # (writer와 checker가 _walk_template_leaves를 공유하여 정책 drift를 차단).
+  # preserve의 예외는 위 retiredConfigKeys뿐이다 — 그 키만 `--unset`으로 능동 회수된다.
   home.activation.syncCodexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     config_dir="$HOME/.codex"
     $DRY_RUN_CMD mkdir -p "$config_dir"
     $DRY_RUN_CMD ${pythonWithTomlkit}/bin/python3 \
       ${codexSyncScript} \
+      sync \
       "${codexConfigSeedPath}" \
-      "$config_dir/config.toml"
+      "$config_dir/config.toml" ${retiredConfigKeyArgs}
   '';
 
   # ─── Codex CLI 설치/정리 (declarative nix overlay — macOS + NixOS 공통) ───

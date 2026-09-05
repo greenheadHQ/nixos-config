@@ -10,6 +10,8 @@ USAGE
 - `sync-codex-config.py sync <template> <target>`          -> merge mode (explicit)
 - `sync-codex-config.py check <template> <target>`         -> read-only drift check
 
+`sync`/`check` 모두 `--unset <dotted.key>`를 반복해서 받는다 (RETIRED KEYS 참고).
+
 OWNERSHIP POLICY (recursive, leaf-level)
 ----------------------------------------
 * Template-owned leaves: every leaf key the template defines, including leaves
@@ -24,6 +26,36 @@ OWNERSHIP POLICY (recursive, leaf-level)
 
 On a same-path conflict the template ALWAYS wins. Checker and writer share the
 `_walk_template_leaves` iterator so their ownership judgement cannot drift.
+
+RETIRED KEYS (`--unset <dotted.key>`, repeatable)
+-------------------------------------------------
+Ownership policy 의 필연적 귀결로, 템플릿에서 키를 지워도 배포본에 이미 쓰인 값은
+user-owned 로 남아 영원히 살아남는다. `--unset` 은 그 잔존분을 정책적으로 회수하는
+유일한 경로다.
+
+* sync : target 에 그 leaf 가 있으면 제거하고 `retired key removed` 를 로그한다.
+         없으면 no-op (로그 없음).
+* check: target 에 그 leaf 가 남아 있으면 `retired_key_present` drift 로 보고하고
+         EXIT_DRIFT 를 낸다.
+
+계약 세부:
+* leaf 전용이다. 경로가 컨테이너(table / inline table / array-of-tables)를 가리키면
+  sync 는 제거하지 않고 경고만 남기며, check 는 `retired_key_not_a_leaf` drift 로 보고한다
+  (컨테이너 통째 삭제는 user-owned sibling · AoT entry 를 같이 날리므로 정책 밖).
+  조용한 no-op 이 되면 잘못 등록한 키가 영원히 회수되지 않은 채 감사도 초록불이 되므로,
+  check 쪽을 drift 로 승격해 verify-ai-compat.sh 가 반드시 잡게 한다.
+* `[projects.*]` 는 runtime-owned(사용자 승인이 만든 trust 엔트리)라 회수 대상이 될 수 없다 —
+  `--unset projects...` 는 인자 파싱 단계에서 EXIT_ERROR 로 거부한다.
+* 키를 지운 뒤 빈 table 이 남아도 그 table 은 제거하지 않는다 (다음 sync 가 template
+  leaf 를 다시 채울 수 있는 자리이고, 빈 table 은 codex 동작에 영향이 없다).
+* template 이 같은 경로를 (leaf 로든 table 로든) 선언하고 있으면 EXIT_ERROR 로 죽는다.
+  선언과 회수가 동시에 걸리면 sync 는 매번 썼다 지우고 check 는 영원히 drift 를
+  내므로, 수렴하지 않는 설정을 조용히 굴리는 대신 즉시 실패시킨다.
+
+목록의 단일 소스는 `modules/shared/programs/codex/files/retired-config-keys.txt` 이며,
+activation(default.nix) · nrs NO_CHANGES 복구(lib/rebuild/codex.sh) ·
+verify-ai-compat.sh 가 그 파일을 읽어 같은 `--unset` 인자를 만든다. 템플릿 TOML 자체는
+순수하게 유지한다 (메타 테이블을 넣지 않는다).
 
 JSON OUTPUT SCHEMA (check mode)
 -------------------------------
@@ -41,17 +73,23 @@ JSON OUTPUT SCHEMA (check mode)
 Hard errors (template missing/parse error, target parse error) produce no JSON
 and exit with EXIT_ERROR.
 
-REASON ENUM (leaf-only, 3 values)
+REASON ENUM (leaf-only, 5 values)
 ---------------------------------
-  missing_leaf    target lacks the template leaf path (actual == null)
-  value_mismatch  both sides have the leaf, values differ
-  type_mismatch   both sides have the leaf, types differ
+  missing_leaf            target lacks the template leaf path (actual == null)
+  value_mismatch          both sides have the leaf, values differ
+  type_mismatch           both sides have the leaf, types differ
+  retired_key_present     `--unset` 대상 leaf 가 target 에 아직 남아 있다
+                          (expected == null, actual == 잔존 값)
+  retired_key_not_a_leaf  `--unset` 경로가 target 에서 컨테이너를 가리킨다 — 회수 불가한
+                          잘못된 등록 (expected == null, actual == "table" |
+                          "array-of-tables")
 
 EXIT CODES
 ----------
   EXIT_OK    = 0  target_state="present" AND drift=[]
   EXIT_DRIFT = 1  target_state="present" AND drift!=[]  OR  target_state="missing"
-  EXIT_ERROR = 2  template missing/parse failure, target parse failure
+  EXIT_ERROR = 2  template missing/parse failure, target parse failure, invalid
+                  `--unset` argument (template still declares it, or `projects.*`)
                   (JSON not emitted; stderr carries a human-readable reason)
 
 ATOMIC WRITE (sync mode)
@@ -498,6 +536,175 @@ def _render_dotted_path(path_segments: tuple[str, ...]) -> str:
     return ".".join(parts)
 
 
+def _parse_dotted_path(spec: str) -> tuple[str, ...]:
+    """`--unset` 인자의 TOML dotted-key를 segments로 파싱 (_render_dotted_path의 역함수).
+
+    bare key(`[A-Za-z0-9_-]+`)와 basic string(`"..."`, `\\`/`\"` escape만)을 지원한다.
+    문자열 경로로 평탄화하지 않고 tuple을 돌려주는 이유는 `_walk_template_leaves`
+    docstring과 같다 — TOML key는 literal `.`를 포함할 수 있다.
+    """
+    segments: list[str] = []
+    i = 0
+    n = len(spec)
+    while True:
+        if i >= n:
+            die(f"--unset: empty key segment in {spec!r}")
+        if spec[i] == '"':
+            i += 1
+            buf: list[str] = []
+            while True:
+                if i >= n:
+                    die(f"--unset: unterminated quoted key in {spec!r}")
+                ch = spec[i]
+                if ch == "\\":
+                    if i + 1 >= n:
+                        die(f"--unset: dangling escape in {spec!r}")
+                    nxt = spec[i + 1]
+                    if nxt not in ('"', "\\"):
+                        die(f"--unset: unsupported escape in {spec!r} (only \\\" and \\\\)")
+                    buf.append(nxt)
+                    i += 2
+                    continue
+                if ch == '"':
+                    i += 1
+                    break
+                buf.append(ch)
+                i += 1
+            segments.append("".join(buf))
+        else:
+            j = i
+            while j < n and spec[j] != ".":
+                j += 1
+            seg = spec[i:j]
+            if not _BARE_KEY_RE.match(seg):
+                die(f"--unset: invalid bare key segment {seg!r} in {spec!r}")
+            segments.append(seg)
+            i = j
+        if i >= n:
+            return tuple(segments)
+        if spec[i] != ".":
+            die(f"--unset: expected '.' after quoted key in {spec!r}")
+        i += 1
+
+
+def parse_unset_paths(specs: Optional[list[str]]) -> list[tuple[str, ...]]:
+    """`--unset` 인자 목록을 path segments 목록으로 정규화한다. 중복은 1회로 접는다.
+
+    `projects.*`는 거부한다 — trust 엔트리는 사용자 승인이 만드는 runtime-owned 상태라
+    template 도 선언하지 않고(선언 시 무시 + 경고) 회수 대상도 될 수 없다. 회수 가드는
+    projects 를 떼어낸 template 사본으로 돌기 때문에 이 경로만은 template 선언 충돌로도
+    걸리지 않는다 — 그래서 파싱 단계에서 막는다.
+    """
+    parsed: list[tuple[str, ...]] = []
+    for spec in specs or []:
+        segments = _parse_dotted_path(spec)
+        if segments and segments[0] == "projects":
+            die(
+                f"--unset {_render_dotted_path(segments)}: [projects.*] is runtime-owned "
+                f"(user-approved trust entries) and cannot be retired"
+            )
+        if segments not in parsed:
+            parsed.append(segments)
+    return parsed
+
+
+def assert_unset_not_template_declared(tmpl, unset_paths: list[tuple[str, ...]]) -> None:
+    """template이 선언한 경로를 동시에 회수 대상으로 두면 EXIT_ERROR.
+
+    선언(template wins)과 회수(--unset)가 겹치면 sync는 매 실행마다 썼다 지우고
+    check는 영원히 drift를 내 수렴하지 않는다. 조용히 굴리지 않고 즉시 실패시킨다.
+    """
+    for segments in unset_paths:
+        present, _value = _get_at_path(tmpl, segments)
+        if present:
+            die(
+                f"--unset {_render_dotted_path(segments)}: template still declares this "
+                f"path — remove it from the template or from the retired-key list"
+            )
+
+
+def _retired_container_kind(value) -> Optional[str]:
+    """retired 대상이 leaf가 아니면 컨테이너 종류를, leaf면 None을 돌려준다.
+
+    table/inline table뿐 아니라 array-of-tables(`[[x.y]]`)와 inline table을 담은 array도
+    컨테이너다 — `del parent[key]`로 지우면 그 안의 user-owned 엔트리가 통째로 날아간다.
+    scalar array(`[1, 2]`)는 leaf로 본다 (통째 삭제해도 잃는 것이 그 값 하나뿐).
+    """
+    if _is_table(value):
+        return "table"
+    if isinstance(value, list) and any(_is_table(item) for item in value):
+        return "array-of-tables"
+    return None
+
+
+def _retired_key_hits(doc, unset_paths: list[tuple[str, ...]]):
+    """target에 남아 있는 retired 경로를 (segments, value, container_kind)로 내보낸다.
+
+    sync(writer)와 check(checker)가 이 iterator 하나를 공유해 "무엇을 회수 대상으로
+    보는가"가 갈라지지 않게 한다 (_walk_template_leaves가 ownership에 대해 하는 역할과
+    같은 이유). container_kind가 None이 아니면 leaf-only 계약상 회수 불가 경로이며,
+    두 소비자가 각자의 방식(sync=경고 후 보존, check=drift)으로 신호를 낸다.
+    """
+    for segments in unset_paths:
+        present, value = _get_at_path(doc, segments)
+        if not present:
+            continue
+        yield segments, value, _retired_container_kind(value)
+
+
+def remove_retired_keys(dest, unset_paths: list[tuple[str, ...]]) -> int:
+    """dest에서 retired leaf를 제거한다. 반환: 실제 제거된 leaf 개수.
+
+    컨테이너 경로는 제거하지 않고 경고만 남긴다 — 잘못된 등록으로 사용자 데이터를 날리는
+    대신 배포는 계속 굴리고(activation은 `set -eu`라 die하면 nrs 전체가 죽는다),
+    `check` 쪽이 같은 상황을 `retired_key_not_a_leaf` drift로 시끄럽게 보고한다.
+    """
+    removed = 0
+    for segments, _value, container_kind in list(_retired_key_hits(dest, unset_paths)):
+        if container_kind is not None:
+            log(
+                f"{_render_dotted_path(segments)}: retired key path is a {container_kind}; "
+                f"kept (leaf-only contract) — fix the retired-key list"
+            )
+            continue
+        parent = dest
+        for part in segments[:-1]:
+            parent = parent[part]
+        del parent[segments[-1]]
+        log(f"{_render_dotted_path(segments)}: retired key removed (no longer template-declared)")
+        removed += 1
+    return removed
+
+
+def collect_retired_key_drift(target, unset_paths: list[tuple[str, ...]]) -> list[dict]:
+    """target에 남아 있는 retired 경로를 drift 항목으로 보고한다.
+
+    leaf면 `retired_key_present`(회수되면 사라진다), 컨테이너면
+    `retired_key_not_a_leaf`(등록 자체가 잘못됐다 — nrs를 아무리 돌려도 사라지지 않는다).
+    """
+    drift: list[dict] = []
+    for segments, value, container_kind in _retired_key_hits(target, unset_paths):
+        if container_kind is not None:
+            drift.append(
+                {
+                    "path": _render_dotted_path(segments),
+                    "reason": "retired_key_not_a_leaf",
+                    "expected": None,
+                    "actual": container_kind,
+                }
+            )
+            continue
+        drift.append(
+            {
+                "path": _render_dotted_path(segments),
+                "reason": "retired_key_present",
+                "expected": None,
+                "actual": _jsonify(value),
+            }
+        )
+    return drift
+
+
 def merge_template_into(dest, tmpl) -> int:
     """Template leaf를 dest에 덮어쓴다. template이 선언하지 않은 키는 건드리지 않는다.
 
@@ -728,16 +935,29 @@ def write_atomic(target_path: Path, serialized: str) -> None:
         die(f"atomic write failed ({target_path}): {e}")
 
 
-def cmd_sync(template_path: Path, target_path: Path) -> int:
+def _template_without_projects(template):
+    """`[projects.*]`는 runtime-owned라 template 사본에서 항상 떼고 쓴다 (writer/checker 공통)."""
+    clone = copy.deepcopy(template)
+    if "projects" in clone:
+        del clone["projects"]
+    return clone
+
+
+def cmd_sync(template_path: Path, target_path: Path, unset_paths: list[tuple[str, ...]]) -> int:
     _require_tomlkit()
     # advisory lock 으로 activation + NO_CHANGES repair 호출 간 race 차단.
     # 외부 writer (codex CLI append, direct MCP config edits) 와의 race 는 별개 follow-up.
     with _sync_lock(target_path):
-        return _cmd_sync_locked(template_path, target_path)
+        return _cmd_sync_locked(template_path, target_path, unset_paths)
 
 
-def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
+def _cmd_sync_locked(template_path: Path, target_path: Path, unset_paths: list[tuple[str, ...]]) -> int:
     template = load_required_toml(template_path)
+    # 인자 오류는 target을 건드리기 전에 실패해야 한다 — 아래 load는 malformed target을
+    # `.bad-<ts>`로 quarantine(rename)하므로, 그 뒤에 die하면 config 파일이 아예 없는
+    # 상태가 남는다. cmd_check와 같은 순서.
+    assert_unset_not_template_declared(_template_without_projects(template), unset_paths)
+
     existing, semantic_text = load_optional_toml_with_semantic(target_path, quarantine=True)
 
     if template.get("projects") is not None:
@@ -753,10 +973,9 @@ def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
         log_message="repaired out-of-order hooks table before template merge",
     )
 
-    template_clone = copy.deepcopy(template)
-    if "projects" in template_clone:
-        del template_clone["projects"]
+    template_clone = _template_without_projects(template)
     merge_template_into(result, template_clone)
+    remove_retired_keys(result, unset_paths)
 
     new_text = tomlkit.dumps(result)
     new_bytes = new_text.encode("utf-8")
@@ -785,9 +1004,10 @@ def _cmd_sync_locked(template_path: Path, target_path: Path) -> int:
     return EXIT_OK
 
 
-def cmd_check(template_path: Path, target_path: Path) -> int:
+def cmd_check(template_path: Path, target_path: Path, unset_paths: list[tuple[str, ...]]) -> int:
     _require_tomlkit()
     template = load_required_toml(template_path)
+    assert_unset_not_template_declared(_template_without_projects(template), unset_paths)
     target, semantic_text = load_target_for_check_with_semantic(target_path)
 
     if target is None:
@@ -801,9 +1021,7 @@ def cmd_check(template_path: Path, target_path: Path) -> int:
         sys.stdout.write("\n")
         return EXIT_DRIFT
 
-    template_clone = copy.deepcopy(template)
-    if "projects" in template_clone:
-        del template_clone["projects"]
+    template_clone = _template_without_projects(template)
 
     repair_out_of_order_hooks_root(
         target,
@@ -812,6 +1030,7 @@ def cmd_check(template_path: Path, target_path: Path) -> int:
     )
 
     drift = collect_drift(template_clone, target)
+    drift.extend(collect_retired_key_drift(target, unset_paths))
     output = {
         "template": str(template_path),
         "target": str(target_path),
@@ -837,23 +1056,31 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     sub = parser.add_subparsers(dest="subcommand", required=True)
 
+    unset_help = (
+        "retired key (TOML dotted path) to remove from the target (sync) or report as "
+        "drift (check); repeatable"
+    )
+
     p_sync = sub.add_parser("sync", help="merge template into target (atomic write)")
     p_sync.add_argument("template", type=Path)
     p_sync.add_argument("target", type=Path)
+    p_sync.add_argument("--unset", action="append", metavar="KEY", default=None, help=unset_help)
 
     p_check = sub.add_parser("check", help="read-only drift check; emits JSON to stdout")
     p_check.add_argument("template", type=Path)
     p_check.add_argument("target", type=Path)
+    p_check.add_argument("--unset", action="append", metavar="KEY", default=None, help=unset_help)
 
     return parser.parse_args(argv)
 
 
 def main() -> int:
     args = _parse_args(sys.argv[1:])
+    unset_paths = parse_unset_paths(args.unset)
     if args.subcommand == "sync":
-        return cmd_sync(args.template, args.target)
+        return cmd_sync(args.template, args.target, unset_paths)
     if args.subcommand == "check":
-        return cmd_check(args.template, args.target)
+        return cmd_check(args.template, args.target, unset_paths)
     die(f"unknown subcommand: {args.subcommand}")
     return EXIT_ERROR  # unreachable
 

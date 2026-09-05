@@ -1,9 +1,15 @@
-# 템플릿에서 키를 지워도 배포본 ~/.codex/config.toml에는 user-owned로 남는다 (sync-codex-config.py
-# ownership 정책; tests/test-codex-hook-fixtures.sh의 sync-preservation scenario-G가 이 동작을
-# 고정한다) — 2026-09-05에 지운 model·model_reasoning_effort는 옛 값 그대로 배포본에 남으므로, 호스트마다
-# codex 세션 종료 후 그 줄을 1회 수동 삭제하고 `nrs --force` → `./scripts/ai/verify-ai-compat.sh`로
-# 확인한다. 그 1회 정리 뒤 다시 나타나는 model·model_reasoning_effort는 앱 UI가 persist한 사용자
-# 선택이므로 그대로 둔다.
+# 이 파일이 선언한 leaf는 template-owned다 — 매 activation마다 배포본(~/.codex/config.toml)에
+# 덮어써진다. 선언하지 않은 키는 user-owned로 보존되므로, 여기서 키를 지우는 것만으로는 이미
+# 배포된 값이 사라지지 않는다 (tests/test-codex-hook-fixtures.sh의 sync-preservation scenario-G가
+# 이 동작을 고정한다).
+# 배포본에서까지 영구 회수해야 하는 정책 키는 files/retired-config-keys.txt에 등록한다 — 그러면
+# nrs가 (activation / NO_CHANGES 복구 양쪽에서) 제거하고 verify-ai-compat.sh가 잔존을 drift로
+# 잡는다. 앱 UI가 persist하는 앱 소유 키(model·model_reasoning_effort·service_tier)는 그 목록에
+# 넣지 않는다 — 영구 회수는 사용자의 UI 선택까지 매 nrs마다 지우기 때문이다.
+# 2026-09-05에 템플릿에서 뗀 옛 pin 값(model·model_reasoning_effort)은 "1회만 지우고 그 뒤로는
+# 보존"이라 이 메커니즘으로 표현할 수 없다 — 호스트마다 codex 세션 종료 후 그 줄을 1회 수동
+# 삭제하고 `nrs --force` → `./scripts/ai/verify-ai-compat.sh`로 확인한다. 그 뒤 다시 나타나는
+# 값은 앱 UI가 persist한 사용자 선택이므로 그대로 둔다.
 personality = "pragmatic"
 # model·model_reasoning_effort는 템플릿에 두지 않는다 — Codex Desktop/TUI가 UI에서 고른 값을
 # ~/.codex/config.toml 최상위 키에 persist하므로, template-owned로 두면 nrs마다 되돌아가 UI 선택이

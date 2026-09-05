@@ -71,6 +71,7 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 - `modules/shared/programs/codex/default.nix` — 설정, shared skill 노출 정책 SoT, project 스킬 투영
 - `modules/shared/programs/codex/files/config.toml` — 실행 정책/모델 설정 (NixOS)
 - `modules/shared/programs/codex/files/config.darwin.toml` — macOS 전용 설정 (user-scope MCP 포함)
+- `modules/shared/programs/codex/files/retired-config-keys.txt` — 배포본에서 회수할 퇴역 키 목록 SoT (activation·nrs 복구·verify가 공유)
 - `scripts/ai/verify-ai-compat.sh` — 노출 정책 및 directory projection 독립 감사 oracle
 - `modules/shared/programs/claude/files/CLAUDE.md` — 글로벌 라우팅/지침
 - `.claude/skills/*` (원본)
@@ -173,8 +174,17 @@ trust를 하드코딩하지 않고 runtime-owned `config.toml`의 `[projects.*]`
 | 앱(UI persist) | `model`, `model_reasoning_effort`, `service_tier` | Desktop/TUI 선택이 최상위 키로 기록됨. 템플릿에서 제거 |
 | 앱(런타임 상태) | `[projects.*]`, `tui`, `desktop`, `memories`, `plugins`, `skills`, `marketplaces`, `notify`, `mcp_servers` | 앱이 생성·갱신. 템플릿은 선언하지 않는다 |
 
-템플릿에서 키를 지우면 배포본에는 user-owned로 남으므로, 정책 키를 제거할 때만 호스트별 1회 수동
-삭제가 필요하다(앱 소유 키는 남는 값이 곧 사용자 선택이라 그대로 둔다).
+템플릿에서 키를 지워도 배포본에는 user-owned로 남는다. 배포본에서까지 영구 회수해야 하는 정책 키는
+[`retired-config-keys.txt`](../../../modules/shared/programs/codex/files/retired-config-keys.txt)에
+등록한다 — 그러면 `nrs`가 activation과 NO_CHANGES 복구 양쪽에서 제거하고, `verify-ai-compat.sh`가
+잔존을 `retired_key_present` drift로 잡는다. 등록한 키를 템플릿이 다시 선언하면 스크립트가
+EXIT_ERROR로 막는다(선언과 회수가 겹치면 sync가 매번 썼다 지우고 check가 영원히 drift를 내
+수렴하지 않으므로). 목록은 두 플랫폼 템플릿 공용이라 양쪽 모두 선언하지 않는 키만 넣는다.
+
+앱 소유 키(`model`, `model_reasoning_effort`, `service_tier`)는 이 목록에 넣지 않는다 — 영구 회수는
+매 `nrs`마다 사용자의 UI 선택까지 지운다. 이 키들의 옛 템플릿 pin 잔재는 "1회만 지우고 그 뒤로는
+보존"이라 회수 메커니즘으로 표현할 수 없으므로 호스트별 1회 수동 삭제로 처리한다(절차는 config
+템플릿 헤더 주석).
 
 ## 트러블슈팅 / FAQ
 

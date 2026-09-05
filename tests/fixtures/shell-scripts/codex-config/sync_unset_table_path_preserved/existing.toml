@@ -1,0 +1,5 @@
+approval_policy = "on-request"
+
+[mcp_servers.deadserver]
+command = "x"
+args = ["--serve"]

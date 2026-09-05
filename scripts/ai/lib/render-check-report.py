@@ -67,6 +67,21 @@ def main() -> int:
         reason = item.get("reason", "?")
         expected = item.get("expected")
         actual = item.get("actual")
+        if reason == "retired_key_present":
+            # 회수 대상 키는 "기대값 없음"이 정상이라 expected=None 을 그대로 보여주면
+            # 원인이 읽히지 않는다. 조치(nrs)까지 한 줄로 붙인다.
+            print(
+                f"FAIL_LINE drift: {path}: retired_key_present — 퇴역 키가 배포본에 남아 있음 "
+                f"(actual={actual!r}); nrs 실행 시 제거된다"
+            )
+            continue
+        if reason == "retired_key_not_a_leaf":
+            # 이쪽은 nrs 로 수렴하지 않는다 — 목록에 잘못 등록된 항목이라 저장소를 고쳐야 한다.
+            print(
+                f"FAIL_LINE drift: {path}: retired_key_not_a_leaf — 퇴역 키 경로가 leaf 가 아님 "
+                f"({actual}); nrs 로는 회수되지 않으므로 retired-config-keys.txt 를 수정한다"
+            )
+            continue
         print(f"FAIL_LINE drift: {path}: {reason} expected={expected!r} actual={actual!r}")
     return 0
 

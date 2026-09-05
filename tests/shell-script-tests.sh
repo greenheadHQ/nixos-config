@@ -440,6 +440,9 @@ run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing
 # korean-particle-expansion suite (tests/suites/korean-particle-expansion.sh)
 run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
 
+# 퇴역 키 로더는 tomlkit 없이도 도는 순수 셸 계약이라 아래 게이트 밖에 둔다.
+run_test "codex-config retired keys loader" test_codex_config_retired_keys_loader
+
 # codex-config fixture는 tomlkit이 필요하다. required CI의 run-all-tests는 prePushRuntime
 # profile로 항상 tomlkit을 제공하지만, 사용자가 직접 실행할 때는 미가용일 수 있다. 미가용이면
 # codex-config 섹션만 skip + profile runner 안내 (기본 shell suite 진입은 유지).
@@ -449,7 +452,9 @@ if codex_config_tomlkit_available; then
   run_test "codex-config sync rewrites on bad mode" test_codex_config_sync_rejects_bad_mode
   run_test "codex-config sync rewrites on symlink" test_codex_config_sync_rejects_symlink
   run_test "codex-config bare 2-arg compat" test_codex_config_bare_sync_compat
+  run_test "codex-config sync rejects bad --unset before touching target" test_codex_config_sync_rejects_bad_unset_before_touching_target
   run_test "codex-config check fixtures" test_codex_config_check_fixtures
+  run_test "codex-config retired keys match both templates" test_codex_config_retired_keys_match_both_templates
   run_test "codex-config check rejects invalid UTF-8 target" test_codex_config_check_rejects_invalid_utf8_target
   run_test "codex-config check rejects non-regular target" test_codex_config_check_rejects_nonregular_target
   run_test "codex-config merge_template_into unit" test_codex_config_merge_template_into_unit

@@ -1,0 +1,1 @@
+{"target_state": "present", "drift": [{"path": "features.voice_transcription", "reason": "retired_key_present", "expected": null, "actual": true}]}
