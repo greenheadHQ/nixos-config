@@ -236,6 +236,8 @@ run_test "wt forced remove refuses locked worktree unit" test_wt_remove_worktree
 run_test "wt forced remove keeps path when remove fails unit" test_wt_remove_worktree_forced_keeps_path_when_remove_fails_unit
 run_test "wt remove refuses unknown lock state unit" test_wt_remove_worktree_refuses_unknown_lock_state_unit
 run_test "wt remove failure notes registration state unit" test_wt_remove_worktree_failure_notes_registration_state_unit
+run_test "wt remove preserves active process worktree unit" test_wt_remove_worktree_preserves_active_process_unit
+run_test "wt remove closes tmux before worktree remove unit" test_wt_remove_worktree_closes_tmux_before_remove_unit
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes
