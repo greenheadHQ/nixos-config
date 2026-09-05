@@ -395,4 +395,4 @@ LITE 실행 시 기본형 문자열을 바꾸지 않고 공통 suffix `(NOT_RUN:
 - finding: bundle 첫 글자 소문자 `{c|d|g|m}{n}` — Correctness/Design/Regression/Maintainability 순서의 축약이며 Regression은 `g`를 쓴다 (`r`은 라운드와 충돌). MAX 세부 관점을 지칭할 때는 소문자 풀네임을 그대로 쓴다 (예: security-2가 아니라 자연어 서술).
 - 결합형: `r{N}.{축약}{n}` (예: r3.c1 — 셋째 라운드의 Correctness 첫 finding).
 
-이 표기는 서술 축이다 — 기계 소비자는 없고, live 검증 경로(reviewer 원본·Arbiter 입력·manifest)의 ID 문법은 [`da-domains.md`](da-domains.md)가 정본이며 이 축약을 허용하지 않는다. 훅 통과(경고 미발생)는 표기 도입 시 실측으로 확인됐고, 훅 패턴 변경 시 재검증 방법: 축약 표기 문장을 pinning 패턴 라이브러리(`lib/pinning-patterns.sh`)의 `pinning_findings_records`에 직접 넣어 레코드 0건을 확인한다 — commit-msg 훅은 경고 전용이라 커밋 성공 여부로는 통과를 판정할 수 없다.
+이 표기는 서술 축이다 — 기계 소비자는 없고, live 검증 경로(reviewer 원본·Arbiter 입력·manifest)의 ID 문법은 [`da-domains.md`](da-domains.md)가 정본이며 이 축약을 허용하지 않는다. 훅 통과(경고 미발생)는 표기 도입 시 실측으로 확인됐고, 훅 패턴 변경 시 재검증 방법: 축약 표기 문장을 pinning 패턴 라이브러리(`modules/shared/programs/claude/files/lib/pinning-patterns.sh`)의 `pinning_findings_records`에 직접 넣어 레코드 0건을 확인한다 — commit-msg 훅은 경고 전용이라 커밋 성공 여부로는 통과를 판정할 수 없다.

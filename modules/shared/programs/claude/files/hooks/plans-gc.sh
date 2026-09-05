@@ -2,12 +2,13 @@
 # Claude Code SessionEnd hook: .claude/plans/ transient plan buffer GC (#756)
 #
 # plan-mode runtime이 .claude/plans/에 떨어뜨리는 transient plan buffer
-# (<prefix>-<8hex>.md)는 SSOT plan으로 승격되지 않고 무한 누적되는 경향이 있다.
-# 스킬 문서는 "비승격"만 규정하고 정리 주체를 두지 않으므로, 세션 종료 시
-# mtime 임계를 넘긴 오래된 transient buffer만 정리하는 GC 주체를 둔다.
+# (<prefix>-<8hex>.md)는 아무도 지우지 않아 무한 누적되는 경향이 있다. 정리 주체를
+# 두는 문서가 없었으므로, 세션 종료 시 mtime 임계를 넘긴 오래된 transient buffer만
+# 정리하는 GC 주체를 여기 둔다. 정책 서술은 .claude/plans/README.md.
 #
 # 보존 대상:
-#   - canonical SSOT plan (<prefix>.md, 8hex suffix 없음 → 패턴 미매칭)
+#   - 8hex suffix가 없는 파일 (패턴 미매칭). 이름 형태가 harness 세대마다 달라
+#     현재 누적분 대부분이 여기 해당한다 — 확대는 별도 판단 사항이다.
 #   - git-tracked 파일 (README.md 등 force-add → ls-files 확인으로 제외)
 #   - mtime 임계(GC_AGE_DAYS) 내 최근 buffer (활성/최근 세션 보호)
 #   - 끝 8자(hex) 직전에 리터럴 '-'가 오지 않는 buffer. 정규식이 '-<8hex>.md$'를
@@ -21,8 +22,8 @@
 # 7일: 멀티데이 작업 중인 최근 buffer의 조기 삭제를 막는 보수적 여유. 정책적
 # 선택값이며, 줄이면 최근 buffer 보호 폭이 함께 좁아진다.
 GC_AGE_DAYS=7
-# 8자리 hex suffix transient buffer 식별 정규식 (.claude/plans/README.md #756 P0이
-# 정의한 SSOT 기준). unquoted 변수로 bash regex 매칭 (quote 시 literal 매칭됨).
+# 8자리 hex suffix transient buffer 식별 정규식 (.claude/plans/README.md "Transient
+# buffer 식별 기준"이 정본). unquoted 변수로 bash regex 매칭 (quote 시 literal 매칭됨).
 HEX_RE='-[0-9a-f]{8}\.md$'
 
 HOOK_RUNTIME_LIB="${HOOK_RUNTIME_LIB:-$HOME/.claude/lib/hook-runtime.sh}"

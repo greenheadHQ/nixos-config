@@ -85,6 +85,8 @@
   이동 대상이 되지만, 이 plan에서는 **정정까지만** 하고 이동 여부는 최종 보고에
   운영자 판단 사항으로 남긴다 (직전까지 In Progress였던 문서라 참조가 살아있을
   수 있음).
+  - **후속 이행**: 이후 이 관례에 맞춰 `docs/archive/prds/prd-1password-migration{.md,/}`로
+    `git mv`했다. 아래 Step 1의 Verify 명령 경로도 그만큼 옮겨졌다.
 - `docs/archive/`의 기존 파일 2건.
 
 ## Git workflow

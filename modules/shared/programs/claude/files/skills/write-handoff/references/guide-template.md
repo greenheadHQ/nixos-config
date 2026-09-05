@@ -34,7 +34,7 @@ blockquote 형태로 작업의 메타 정보를 한눈에 제공한다.
 ### 예시
 
 ```markdown
-> **대상**: `modules/shared/programs/claude/files/skills/syncing-atuin/`
+> **대상**: `.claude/skills/syncing-atuin/`
 > **목표**: Atuin sync 스킬을 생성하여 shell history 동기화 절차를 자동화한다
 > **예상 소요**: ~10분 (단일 세션)
 > **난이도**: 단순

@@ -1,7 +1,10 @@
 # `claude -p` 플래그 호환성 매트릭스
 
-- 확인 날짜: 2026-07-10
-- 확인 버전: Claude Code v2.1.206
+- 버전 스탬프 정본: [`../SKILL.md`](../SKILL.md) "작성 기준" — reference에 스탬프를 박으면
+  bump 때 stale해지고 `warn-skill-version-stamps.sh`의 대상 밖이라 경보도 나지 않는다
+  (`.claude/skills/configuring-codex/references/runbook-codex-compat.md` 정책).
+- 아래 표는 v2.1.206 `--help` 기준으로 작성됐고, 이후 개별 재실측한 항목에는 행별
+  `재확인: <날짜>, <버전>` 스탬프가 붙어 있다 (그 스탬프가 이 baseline보다 우선).
 - 재검증: `claude --version && claude --help && claude -p --help` 출력과 비교
 
 `--help`는 공개 surface의 SSOT다. help에 없는 hidden flag의 제거 판정은 실행 smoke로만 한다.
@@ -11,8 +14,8 @@ print 모드는 workspace trust dialog를 생략하고 invalid settings를 조�
 
 `-p`/`--print` 모드에서만 사용 가능하거나, `stream-json`/SDK print 경로와 강하게 묶인 플래그. `--help`의 `only works with --print` 및 관련 표기를 우선한다.
 
-| 플래그 | v2.1.206 `--help` 표기 | 비고 |
-|--------|------------------------|------|
+| 플래그 | `--help` 표기 | 비고 |
+|--------|-------------|------|
 | `--output-format <format>` | 출력 형식: `text`(기본), `json`(single result), `stream-json`(realtime streaming) | runtime `json`은 top-level 이벤트 배열(실측)이나 help·공식 문서는 single result 객체 표기 — 어느 쪽도 가정하지 말고 정규화 파서 사용. 이벤트 수는 같은 버전에서도 런마다 가변 (재확인: 2026-08-15, v2.1.233 — 재검증: `echo "ok" \| claude -p --model haiku --output-format json`) |
 | `--no-session-persistence` | 세션 파일 미저장, resume 불가 (`only works with --print`) | 동시 충돌 방지 효과는 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | `--max-budget-usd <amount>` | 최대 비용 제한 (`only works with --print`) | 초과 시 exit code/subtype 동작은 [gotcha #4](gotchas.md) 참조 |
@@ -28,8 +31,8 @@ print 모드는 workspace trust dialog를 생략하고 invalid settings를 조�
 
 ## 범용 플래그 (대화형/비대화형 공통)
 
-| 플래그 | v2.1.206 `--help` 표기 | `-p` 모드에서의 동작/주의 |
-|--------|------------------------|---------------------------|
+| 플래그 | `--help` 표기 | `-p` 모드에서의 동작/주의 |
+|--------|-------------|---------------------------|
 | `--model <model>` | 모델 선택. alias(`fable`, `opus`, `sonnet`) 또는 full name 허용 | help surface 확인 |
 | `--system-prompt <prompt>` | session system prompt 설정 | replacement semantics 재검증 미수행 (v2.1.202 기준 서술 유지) |
 | `--append-system-prompt <prompt>` | 기본 시스템 프롬프트에 추가 | 기존 지시와의 override 관계 재검증 미수행 (v2.1.202 기준 서술 유지) |

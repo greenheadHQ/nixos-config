@@ -16,7 +16,7 @@ export CLAUDE_STATUSLINE_COLUMNS=200
 위 변수가 설정되면 다른 어떤 감지 경로보다도 우선 적용된다. 값은 **raw 터미널 cols**
 이며, statusline.sh 가 내부적으로 `EFF_COLS = COLS - 40` 보정을 자동 처리한다.
 
-### 폭 감지 우선순위 (5단계 chain)
+### 폭 감지 우선순위 (6슬롯 chain)
 
 statusline.sh 는 아래 순서로 폭을 결정한다. 한 단계가 양수 값을 반환하면 즉시 그
 값을 사용한다.
@@ -24,8 +24,9 @@ statusline.sh 는 아래 순서로 폭을 결정한다. 한 단계가 양수 값
 | 단계 | 출처 | 비고 |
 |------|------|------|
 | 1 | `CLAUDE_STATUSLINE_COLUMNS` env | 사용자 명시 override, 항상 우선 |
-| 2 | stdin `terminal.columns` | upstream 폭 전달 요청 이슈가 채택되면 자동 활용 |
-| 3 | `COLUMNS` env | interactive parent shell 이 export 한 경우 hit |
+| 1.5 | `STATUSLINE_COLS` env | v0.2.x deprecated alias — silent regression 방지용이라 제거 금지 |
+| 2 | stdin `terminal.columns` | Claude Code v2.1.141+ 가 stdin JSON으로 전달 (채택 완료) |
+| 3 | `COLUMNS` env | v2.1.153+ Claude Code가 export (그 이전에는 interactive parent shell이 export한 경우만 hit) |
 | 4 | `stty size </dev/tty` | pre-2.1.139 compatibility branch. v2.1.139+ 에서는 항상 실패 |
 | 5 | 정적 기본값 `140` | 모든 동적 감지 실패 시 fallback. EFF_COLS=100 → detail=4 |
 
@@ -79,5 +80,5 @@ leading-zero 차단 사유: bash 산술 (`$((COLS - 40))`) 이 `0NNN` 형식을 
 ## 레퍼런스
 
 - nixos-config issue #734 — v2.1.139 폭 측정 회귀 분석 및 fix.
-- [anthropics/claude-code#22115](https://github.com/anthropics/claude-code/issues/22115) — statusLine columns 요청 OPEN.
-- [Claude Code statusLine docs](https://code.claude.com/docs/en/statusline) — Available data 표 (현재 columns 부재).
+- [anthropics/claude-code#22115](https://github.com/anthropics/claude-code/issues/22115) — statusLine columns 전달 요청. v2.1.141+ 에서 채택되어 위 표의 슬롯 2로 소비 중.
+- [Claude Code statusLine docs](https://code.claude.com/docs/en/statusline) — Available data 표 (`terminal.columns` 포함).

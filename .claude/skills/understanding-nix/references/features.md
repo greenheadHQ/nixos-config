@@ -122,7 +122,8 @@ gitleaks 허용 목록 (.gitleaks.toml):
 | 경로 | 사유 |
 |------|------|
 | `flake.lock` | 해시값이 시크릿으로 오탐지됨 |
-| `*.local.md` | 로컬 전용 문서 (커밋 안 함) |
+
+`.gitignore`의 `*.local.md`는 추적 금지일 뿐 gitleaks 예외가 아니다 — allowlist는 `flake.lock` 하나뿐이다.
 
 문서용 마스킹 탐지 예시:
 

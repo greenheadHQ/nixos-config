@@ -1,6 +1,8 @@
 # Plan 026: 호환 미보장 애드온·문서 drift·인프라 잔재를 일괄 정리한다
 
 > **Executor instructions**: Part A(repo 문서)는 에이전트가 직접 수행한다.
+> **Part A는 PR #1157로 완료됐다** — Step 1·2는 이미 반영돼 있고, 아래 "Current state"
+> 발췌의 줄 번호는 그 반영 이후 기준으로 갱신했다. 남은 것은 Part B/C다.
 > Part B(Anki 앱 내 조작)는 운영자 GUI 절차이며 에이전트는 검증만 한다.
 > Part C(minipc 잔재)는 에이전트가 ssh로 수행하되 삭제 전 실측을 반복한다.
 > STOP conditions 발생 시 중단·보고. 완료 시 `plans/README.md` 갱신.
@@ -53,12 +55,12 @@ notetype과 연관된 핵심 의존이다 — 절대 제거 금지.**
   `server.py`가 repo에 없고 issue #839가 NOT_PLANNED로 close됨 (close 코멘트:
   "재개 시 서버 실행 경로와 /submit·/rate 계약 복구 또는 static-only 강등을
   첫 작업으로 선행").
-- `anki-study/GUIDE.md:174-186` §6 및 `anki-study/README.md:67-74` Future Ideas —
+- `anki-study/GUIDE.md:179-193` §6 및 `anki-study/README.md:77-86` Future Ideas —
   "AnkiConnect 양방향 sync", "`homeserver.ankiStudy.*` 모듈"을 기존 인프라
   연장선처럼 기술. 실제로는 PR #863(`3508e203`, 2026-05-30)로 anki-sync-server /
   anki-connect / awesome-anki 모듈·스킬·시크릿이 전량 철거되어 재구축 비용이
   0에서 시작한다.
-- `anki-study/README.md:62-65` "관련 자료"에 "hosting-anki 스킬 (셀프호스팅
+- `anki-study/README.md:71-75` "관련 자료"에 "hosting-anki 스킬 (셀프호스팅
   제거됨)" 표기는 이미 정확 — 유지.
 - 운영 전제(동기화/백업 상태)를 기술하는 문장이 anki-study 문서 전체에 0건.
 

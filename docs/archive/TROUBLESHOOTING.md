@@ -2,6 +2,8 @@
 
 이 문서는 nixos-config 프로젝트에서 발생한 문제와 해결 방법을 기록합니다.
 
+> ⚠️ **Archived**: 이 문서는 과거 기록입니다. 현행 절차는 각 `SKILL.md`를 따르세요.
+
 > pre-commit `ai-skills-consistency` 훅은 스킬/Codex 관련 staged 변경에서 `.claude/skills` ↔ `.agents/skills` 정합성이 깨지면 커밋을 차단합니다.
 > 먼저 `nrs` 실행 후 `./scripts/ai/verify-ai-compat.sh`를 통과시키세요.
 > 긴급 우회: `SKIP_AI_SKILL_CHECK=1 git commit ...`

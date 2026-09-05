@@ -2,8 +2,11 @@
 
 `claude -p --output-format json`의 init 이벤트를 활용하여 harness 구성요소를 자동 검증한다.
 
-- 확인 날짜: 2026-07-10
-- 확인 버전: Claude Code v2.1.206
+- 버전 스탬프 정본: [`../SKILL.md`](../SKILL.md) "작성 기준" — reference에 스탬프를 박으면
+  bump 때 stale해지고 `warn-skill-version-stamps.sh`의 대상 밖이라 경보도 나지 않는다
+  (`.claude/skills/configuring-codex/references/runbook-codex-compat.md` 정책).
+- 아래 내용은 v2.1.206 기준으로 작성됐고, 이후 개별 재실측한 항목에는 `재확인: <날짜>, <버전>`
+  스탬프가 붙어 있다 (그 스탬프가 이 baseline보다 우선).
 - 재검증: `claude --version && claude --help && claude -p --help`
 - 확인 범위: 인증된 JSON 성공 probe에서 init key를 재확인 (2026-08-15, v2.1.233 — 이벤트 수는 런마다 가변이며 고정 계약이 아님, gotchas.md #6. 재검증: `echo "ok" | claude -p --model haiku --output-format json`). 이 probe가 커버하는 범위는 init key 존재와 이벤트 shape뿐이며, T1~T8 스크립트 전체의 동작은 재검증 미수행이다 (v2.1.202 기준 서술 유지)
 - 비용: 각 테스트의 "비용:" 표기는 v2.1.202 기준 추정치다. 실비는 모델·캐시에 따라 수 배

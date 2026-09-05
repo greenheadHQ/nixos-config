@@ -14,8 +14,8 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 
 ## 작성 기준
 
-- 확인 날짜: 2026-08-10
-- 확인 버전: codex-cli 0.147.0 (codex-pin.json/runtime 일치; nix overlay — OpenAI 공식 릴리스 직핀; #890에서 mise npm backend → nix 이관)
+- 확인 날짜: 2026-09-05
+- 확인 버전: codex-cli 0.153.4 (codex-pin.json/runtime 일치 — 값의 SoT는 codex-pin.json; nix overlay — OpenAI 공식 릴리스 직핀; #890에서 mise npm backend → nix 이관)
 - 재검증: `jq -r .version modules/shared/programs/codex/codex-pin.json && codex --version && codex --help`
 
 ## 목적과 범위
@@ -149,7 +149,8 @@ Codex CLI는 디렉토리 심링크를 따라가지만 파일 심링크는 무�
 
 ## 실행 정책 / Trust 메모
 
-`codex-cli 0.144.1` 기준으로 `codex --help`에 `codex trust` 독립 서브커맨드는 확인되지 않았다.
+`codex-cli 0.153.4` 기준으로 `codex --help`에 `codex trust` 독립 서브커맨드는 확인되지 않았다
+(재검증: `command codex --help | grep -cE '^\s+trust'` → 0).
 권한 프롬프트 동작은 전역 실행 정책으로 제어한다.
 
 ```toml

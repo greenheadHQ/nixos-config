@@ -1,24 +1,33 @@
 # `.claude/plans/` 디렉토리 정책
 
-본 디렉토리는 `plan-with-questions` 스킬의 `for_action` 모드가 만드는 **SSOT plan 파일** (`.claude/plans/<slug>.md`) 의 위치다. 동시에 Claude Code harness의 plan-mode runtime이 떨어뜨리는 **transient plan buffer** (`<slug>-<8hex>.md`) 도 같은 디렉토리에 누적된다. 두 종류를 구분해 다루는 것이 본 정책의 목표다.
+본 디렉토리에는 Claude Code harness의 plan-mode runtime이 떨어뜨리는 **transient plan buffer** 가 누적된다. 이 디렉토리에서 tracked 인 파일은 본 README 하나뿐이고 (`.gitignore` 의 `!.claude/plans/README.md` 예외), 나머지 `.md` 는 이름 형태와 무관하게 전부 untracked runtime buffer다.
 
-연관 이슈: #756 (P0 — 본 README), #756 P1 (transient buffer GC 정책/훅, 별도 사이클).
+과거에는 `plan-with-questions` 스킬이 이 디렉토리에 SSOT plan 파일을 만들었으나 그 스킬은 #810·#812 로 완전 제거됐다 (커밋 `34733592`). **현재 이 디렉토리에 SSOT plan을 만드는 주체는 없다** — 지속 참조가 필요한 계획은 tracked 인 `plans/` 나 이슈 본문에 둔다. 여기 남은 buffer를 SSOT plan으로 승격하지 않는다.
 
-## Plan 파일 bind 원칙
-
-새 plan을 만들기 전에 `plan-with-questions/modes/for_action.md:120-122` 규약에 따라 같은 source(이슈 ref) + non-terminal Status를 가진 기존 SSOT plan이 있는지 먼저 검색한다. 있으면 새 파일을 만들지 않고 그 파일에 bind 한 뒤 `Resume From` / `Last Completed Step` / `DA State` 로 재개한다. 새 파일이 필요한 collision (terminal Status 또는 unrelated source) 일 때만 `-2`, `-3` 같은 숫자 suffix로 collision을 해소한다. 무작위 hex suffix (`<slug>-<8hex>.md`) 는 SSOT plan을 위한 합법 파일명이 아니다.
+연관 이슈: #756 (P0 — 본 README), #756 P1 (transient buffer GC 정책/훅).
 
 ## Transient buffer 식별 기준
 
-파일명이 `<prefix>-<8hex>.md` 형식 (8자리 hex suffix) 이면 plan-mode runtime이 자동 생성한 transient plan buffer다. plan-with-questions 스킬 문서는 이 buffer를 새 SSOT plan으로 **승격하지 말라**고만 규정하고 (`modes/for_action.md:136`, `references/runtime-boundaries.md:76-78`), 정리(GC)는 `modules/shared/programs/claude/files/hooks/plans-gc.sh` (#756 P1) 가 SessionEnd 시 담당한다 — mtime 7일 초과 + untracked 8hex buffer만 삭제하고, canonical·tracked·최근 buffer는 보존한다. 기존 누적분은 P1 착수 시 일회성으로 정리했다.
+untracked `.md` 는 모두 runtime buffer로 간주한다. 파일명 형태는 harness 세대에 따라 다르며, 아래 표의 8hex 형태만 GC 대상이다 (`plans-gc.sh` 가 이 절을 정본으로 인용한다).
 
-본 README 작성 시점 실측: hex 변종 누적이 가장 많은 prefix는 동일 topic의 SSOT plan canonical과 공존한다. canonical 식별은 아래 snippet 출력의 prefix 중 `<prefix>.md` (suffix 없음) 가 디렉토리에 존재하면 그것이 canonical SSOT plan이다.
+| 파일명 형태 | 예 | GC 대상 |
+|---|---|---|
+| `<prefix>-<8hex>.md` | `foo-1a2b3c4d.md` | O — `plans-gc.sh` 의 `-[0-9a-f]{8}\.md$` 에 매칭 |
+| 3단어 랜덤 slug | `calm-pondering-llama.md` | X — 정규식 미매칭이라 잔존 |
+| 날짜·토픽 수동 파일 | `2026-08-15-run-da-overhaul.md` | X |
+| `-agent-<가변길이 hex>.md` | `...-agent-a6bbadcd76d351e67.md` | X — 끝 8자 앞이 `-` 가 아니라 미매칭 (과거 sub-agent 산출물) |
 
-`-agent-<NHex>` 같은 다른 패턴 (suffix hex 길이 가변, 예: `...-agent-a6bbadcd76d351e67.md`) 도 일부 존재하나 2026-02-28 이후 추가 생성되지 않는 historical artifacts다 (과거 Claude Code sub-agent 산출물). 끝 8자 앞이 `-`가 아니라 hook의 8hex 정규식에 매칭되지 않으므로 지속 GC 대상이 아니며, 본 README의 식별 기준에도 포함하지 않는다. P1 착수 시 일회성으로 정리했다.
+판정 기준은 prefix가 아니라 **꼬리 형태**다 — hex 길이가 우연히 8이면 `-agent-` 계열도 매칭된다 (`foo-agent-1a2b3c4d.md`).
+
+실측 (2026-09-05, main checkout): 8hex buffer 0건, hex 없는 `.md` 54건. 재확인은 아래 snippet(8hex 집계)과 `find .claude/plans -maxdepth 1 -type f -name '*.md' ! -name README.md | wc -l` (buffer 전체) 를 함께 본다. 즉 **현재 누적분은 GC 대상이 아니다.** 8hex 기준은 #756 P1 도입 시점 harness의 이름 형태를 반영한 것이고, 이후 harness가 3단어 slug로 바뀌면서 기준과 실제 누적분이 어긋났다. GC 규칙 확대는 `plans-gc.sh` 동작 변경이므로 문서가 아니라 별도 이슈에서 다룬다.
+
+## GC 정책
+
+`modules/shared/programs/claude/files/hooks/plans-gc.sh` (SessionEnd hook, #756 P1) 가 정리 주체다. 삭제 조건은 **untracked + 8hex 형태 + mtime 7일 초과** 세 개의 논리곱이며, tracked 파일 (README.md) 과 최근 buffer는 보존한다. 임계값·정규식의 정본은 스크립트 상단 상수(`GC_AGE_DAYS`, `HEX_RE`)다.
 
 ## Prefix별 hex 변종 집계 snippet
 
-다음 one-liner를 main checkout의 repo root에서 실행하면 prefix별 hex 변종 누적 수를 내림차순으로 본다.
+다음 one-liner를 repo root에서 실행하면 GC 대상 형태(8hex) 의 prefix별 누적 수를 내림차순으로 본다. GC가 도는 환경에서는 출력이 비는 것이 정상이며, 출력이 있으면 아직 mtime 7일 임계를 넘지 않았거나 SessionEnd hook이 돌지 않은 buffer가 남아 있다는 뜻이다.
 
 ```bash
 find "${1:-.claude/plans}" -maxdepth 1 -type f \
@@ -27,16 +36,4 @@ find "${1:-.claude/plans}" -maxdepth 1 -type f \
   | sort | uniq -c | sort -rn
 ```
 
-이 snippet은 실측 plan 누적 디렉토리 점검용이다. 다른 머신 또는 다른 디렉토리에서 실행하려면 첫 인자로 경로를 넘긴다 (`bash <(...) /other/path` 또는 stdin 파이프). hex suffix 파일만 입력으로 삼으므로 canonical `<prefix>.md` 는 집계에 포함되지 않는다 (의도). GNU/BSD find 공통 형태로 macOS 와 NixOS 양쪽에서 동작한다.
-
-## DoD 실행 컨텍스트
-
-이슈 `#756` P0의 DoD 두 번째 검증 명령 (코드블록 marker는 일부러 `` ```text `` — README의 첫 `` ```bash `` 블록은 위 snippet 단 하나여야 DoD awk 추출 + bash 실행이 self-reference 없이 통과한다):
-
-```text
-test -f .claude/plans/README.md && \
-  awk '/^```bash/{f=1;next} /^```/{f=0;next} f' .claude/plans/README.md \
-  | bash | grep -qE 'anki-study-mvp|noble-tumbling-dolphin'
-```
-
-이 검증은 hex 변종이 누적된 host의 main checkout (`<repo>/.claude/plans/`) 에서 수동 실행 가정이다. worktree 또는 fresh clone의 `.claude/plans/` 는 plan 누적이 없으므로 매칭 실패한다. PR/CI 자동 검증 대상이 아니다 — PR reviewer는 main checkout에서 한 번 수동 실행해 통과를 확인한다.
+다른 머신 또는 다른 디렉토리를 보려면 첫 인자로 경로를 넘긴다. hex suffix 파일만 입력으로 삼으므로 hex 없는 buffer는 집계에 포함되지 않는다 (의도 — 그쪽은 GC 대상이 아니다). GNU/BSD find 공통 형태로 macOS 와 NixOS 양쪽에서 동작한다.

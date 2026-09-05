@@ -12,5 +12,5 @@
   {"query": "codex 버전이 nrs 해도 안 올라가", "should_trigger": true, "why": "저항적: codex가 nix overlay라 버전이 codex-pin.json에 핀된다 — nrs만으로 안 오르면 update-codex로 최신화 (#890)"},
   {"query": "codex를 최신 버전으로 업데이트하려면", "should_trigger": true, "why": "명시적: codex 업데이트는 트리거 키워드, 정식 경로는 update-codex (nix overlay 핀 bump + nrs)"},
   {"query": "npm install -g @openai/codex 했더니 codex가 꼬였어", "should_trigger": true, "why": "경계선: 수동 npm 글로벌이 PATH상 codex(nix profile)를 가리는 충돌 — cleanupManualNodeCodex가 다루는 영역"},
-  {"query": "whence -p codex 결과가 mise shim이 아니야", "should_trigger": true, "why": "저항적: PATH 진단으로 수동 글로벌 잔재 식별 — codex 설치 소유권 범위"}
+  {"query": "whence -p codex가 nix store 경로가 아니야", "should_trigger": true, "why": "저항적: PATH 진단으로 수동 npm 글로벌 잔재 식별 — nix profile/store가 정상, cleanupManualNodeCodex 범위 (#890)"}
 ]

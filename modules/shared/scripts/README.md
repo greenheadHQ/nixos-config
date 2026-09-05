@@ -31,6 +31,13 @@
 - `lib/rebuild/relink.sh`: worktree symlink cleanup/relink/restore helpers
 - `lib/rebuild/preview.sh`: build preview and artifact cleanup
 - `lib/rebuild/codex.sh`: NO_CHANGES 경로 `~/.codex/config.toml` drift 자동 복구 helper
+- `lib/rebuild/codex-legacy-hooks.sh`: legacy Codex hook 잔재 탐지·정리 (`lib/rebuild/common.sh`와 두 `nrs.sh`, `scripts/ai/verify-ai-compat.sh` 공용)
+- `lib/pushover.sh`: 플랫폼 공용 Pushover 전송 helper (`~/.local/lib/pushover.sh`로 배포)
+
+source 대상이 아닌 실행 helper (`WT_HELPERS`는 위 `lib/wt/*.sh` 7개만 source한다):
+
+- `lib/wt/codex-trust.py`: worktree 생성 시 Codex trust 등록 (`lib/wt/bootstrap.sh`가 실행)
+- `lib/wt/plugin-manifest.py`: worktree plugin manifest 관리 (`lib/wt/bootstrap.sh`가 실행)
 
 ## Rebuild Contract
 
