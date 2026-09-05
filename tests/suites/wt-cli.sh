@@ -486,3 +486,128 @@ STUB
   assert_contains "$stdout_only" "$expected_path"
   [[ ! -f "$marker" ]] || fail "noninteractive --stay must not touch tmux windows"
 }
+
+# 수집은 등록(porcelain)과 디렉토리 스캔의 합집합인데, 스캔을 depth 1로 묶어두면 등록이
+# 이미 prune된 depth 2 이상의 잔재(.claude/worktrees/feat/x)는 어느 출처에도 없다 —
+# `wt ls`에도 `wt cleanup`에도 안 보이는 채로 디스크에 남는다.
+test_wt_ls_lists_nested_unregistered_worktree() {
+  local sandbox home_dir repo_root nested_path admin_dir output json
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  nested_path="$repo_root/.claude/worktrees/feat/orphan"
+  add_fixture_worktree "$repo_root" "$nested_path" "feat-orphan"
+  # 등록 admin 디렉토리만 지워 "prune된 잔재"를 만든다 (디렉토리는 그대로 남는다).
+  admin_dir=$(sed -n 's/^gitdir: //p' "$nested_path/.git")
+  [[ -n "$admin_dir" ]] || fail "expected nested worktree .git to carry a gitdir line"
+  rm -rf "$admin_dir"
+
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" ls
+      ' 2>&1
+  )
+
+  assert_contains "$output" "Worktrees (2)"
+  assert_contains "$output" "feat/orphan"
+
+  json=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" ls --json
+      ' 2>/dev/null
+  )
+  echo "$json" | jq -e 'any(.[]; .name == "feat/orphan" and .broken == true)' >/dev/null \
+    || fail "wt ls --json must surface the nested unregistered residue: $json"
+}
+
+# 수집 결과는 경로 정렬이라 `feat/x`가 `x`보다 먼저 온다. substring 첫 매치로 끊으면
+# `wt cd x`가 사용자가 지목하지 않은 `feat/x`를 내놓고, 그 경로가 그대로 cd된다.
+# 정확 일치를 먼저 보고, 정확 일치가 없는 다중 매치는 고르지 않고 실패해야 한다.
+test_wt_cd_prefers_exact_name_and_fails_on_ambiguity() {
+  local sandbox home_dir repo_root stdout_only rc output
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  add_fixture_worktree "$repo_root" "$repo_root/.claude/worktrees/x" "top-x"
+  add_fixture_worktree "$repo_root" "$repo_root/.claude/worktrees/feat/x" "feat-x"
+  add_fixture_worktree "$repo_root" "$repo_root/.claude/worktrees/feature_two" "feature-two"
+
+  stdout_only=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" cd x
+      ' 2>/dev/null
+  )
+
+  [[ "$stdout_only" == "$repo_root/.claude/worktrees/x" ]] \
+    || fail "wt cd x must resolve the exact name, got: $stdout_only"
+
+  # 정확 일치가 없는 다중 substring 매치는 임의 선택 대신 후보를 보이고 실패한다.
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" cd feature
+      ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" != "0" ]] || fail "모호한 검색어는 임의 선택 없이 실패해야 함: $output"
+  assert_contains "$output" "모호한 검색어: feature"
+  assert_contains "$output" "feature_one"
+  assert_contains "$output" "feature_two"
+}
+
+# 캐시 키는 표시 이름 하나에 파일 하나를 보장해야 한다 — `/`만 이스케이프하면 이름
+# `feat/x`와 이름 `feat%2Fx`가 같은 키로 접혀, 두 worktree의 병렬 PR 조회가 같은
+# `.pr`/`.head`를 놓고 경합한다 (`wt ls`가 남의 PR 상태를 보고하고 cleanup 판정이 갈린다).
+test_wt_pr_cache_key_is_collision_free_unit() {
+  (
+    set -euo pipefail
+    # shellcheck source=/dev/null
+    source "$REPO_ROOT/modules/shared/scripts/lib/wt/git-state.sh"
+
+    local slashed literal plain
+    slashed=$(_wt_pr_cache_key 'feat/x')
+    literal=$(_wt_pr_cache_key 'feat%2Fx')
+    plain=$(_wt_pr_cache_key 'plain')
+
+    [[ "$slashed" != "$literal" ]] || exit 41
+    # 키는 하위 디렉토리 경로가 되면 안 된다 (없는 디렉토리로 쓰기가 실패한다).
+    [[ "$slashed" != */* && "$literal" != */* ]] || exit 42
+    [[ "$plain" == "plain" ]] || exit 43
+  ) || fail "_wt_pr_cache_key가 서로 다른 이름을 같은 키로 접지 않는지 확인 실패 (exit $?)"
+}

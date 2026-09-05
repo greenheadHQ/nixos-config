@@ -626,6 +626,8 @@ trust_level = "trusted"
 [projects."$stale_plain"]
 trust_level = "trusted"
 EOF
+  # 원본을 일부러 0600보다 넓게 둔다 — 백업 권한 회귀가 umask에 가려지지 않게 한다.
+  chmod 0644 "$config_file"
 
   output=$(
     "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
@@ -654,6 +656,11 @@ PY
   backup=$(find "$sandbox" -maxdepth 1 -name 'config.toml.bak-gc-*' -print -quit)
   [[ -n "$backup" ]] || fail "expected gc to leave a timestamped backup"
   assert_contains "$(cat "$backup")" "$stale_worktree"
+  # 백업은 config 전체 사본이다. copy2가 원본 mode를 그대로 옮기므로, 원본이 0600보다
+  # 넓으면 백업도 넓어진다 (여기서는 위 heredoc이 umask 기본 권한으로 만든다). 새 config는
+  # write_atomic이 0600으로 좁히니 백업만 남아 노출되지 않도록 같은 폭을 고정한다.
+  [[ "$(_portable_file_mode "$backup")" == "600" ]] \
+    || fail "gc backup must be 0600, got $(_portable_file_mode "$backup")"
 }
 
 test_wt_cleanup_untrusts_codex_project() {

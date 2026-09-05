@@ -104,8 +104,9 @@ cmd_cd() {
     # --tmux: 세션 모드 (tmux 밖 + 대화형에서만; 비대화형은 exec tmux 불가)
     if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
       if _wt_interactive; then
+        # 세션 이름의 재료는 basename이 아니라 wt_base 상대 표시 이름이다 (아래 동일 이유).
         local session_name
-        session_name=$(_wt_session_name "$(basename "$last_path")")
+        session_name=$(_wt_session_name "$(_wt_display_name "$git_root" "$last_path")")
         _wt_tmux_session_open "$last_path" "$session_name" "false" "false"
         return 0
       fi
@@ -117,12 +118,22 @@ cmd_cd() {
   fi
 
   if [[ -n "$search" ]]; then
-    # substring 매치: 디렉토리명 + 브랜치명 + sanitized 검색어 모두 시도
+    # 매칭은 디렉토리명(= wt_base 상대 표시 이름) + 브랜치명 + sanitized 검색어를 모두 본다.
+    #
+    # 다만 substring 첫 매치로 끊으면 안 된다. 수집 결과는 경로 정렬이라 `feat/x`가 `x`보다
+    # 먼저 오고, 두 이름 모두 검색어 `x`에 substring으로 맞는다 — `wt cd x`가 사용자가 지목한
+    # `x` 대신 `feat/x`를 내놓는다. 그래서 우선순위를 둔다:
+    #   1) 표시 이름 정확 일치 (사용자가 `wt ls`에서 본 그 이름) → 2) 브랜치명 정확 일치
+    #   3) 정확 일치가 없으면 substring 후보를 모두 모아 유일할 때만 선택
+    # 후보가 여럿이면 아무거나 고르지 않고 후보를 보인 뒤 실패한다 (fail-closed). 잘못 고른
+    # 경로는 그대로 `cd`되고, 이어지는 파괴적 명령이 다른 worktree에 적용될 수 있다.
     local sanitized_search
     sanitized_search=$(_sanitize_name "$search")
     # 손상 항목이 검색어에 맞았다는 사실은 기억해 둔다 — 매칭이 하나도 없는 것과 원인이
     # 다르고, 사용자가 들어야 할 명령(prune/unlock)도 다르다.
     local broken_match=""
+    local exact_name_path="" exact_branch_path=""
+    local candidates=() candidate_names=()
     for wt in "${worktrees[@]}"; do
       local name branch
       name=$(_wt_display_name "$git_root" "$wt")
@@ -136,10 +147,28 @@ cmd_cd() {
           [[ -z "$broken_match" ]] && broken_match="$name ($(_wt_broken_hint "$git_root" "$wt"))"
           continue
         fi
-        target_path="$wt"
-        break
+        if [[ -z "$exact_name_path" ]] \
+          && { [[ "$name" == "$search" ]] || [[ "$name" == "$sanitized_search" ]]; }; then
+          exact_name_path="$wt"
+        elif [[ -z "$exact_branch_path" ]] && [[ "$branch" == "$search" ]]; then
+          exact_branch_path="$wt"
+        fi
+        candidates+=("$wt")
+        candidate_names+=("$name")
       fi
     done
+    if [[ -n "$exact_name_path" ]]; then
+      target_path="$exact_name_path"
+    elif [[ -n "$exact_branch_path" ]]; then
+      target_path="$exact_branch_path"
+    elif (( ${#candidates[@]} == 1 )); then
+      target_path="${candidates[0]}"
+    elif (( ${#candidates[@]} > 1 )); then
+      _info "여러 worktree가 매치됩니다 — 정확한 이름을 지정하세요:"
+      local _cand
+      for _cand in "${candidate_names[@]}"; do _info "  $_cand"; done
+      _die "모호한 검색어: $search"
+    fi
     if [[ -z "$target_path" ]]; then
       [[ -n "$broken_match" ]] && _die "손상된 worktree라 이동할 수 없습니다: $broken_match"
       _die "매치하는 worktree 없음: $search"
@@ -156,10 +185,24 @@ cmd_cd() {
     # 인터랙티브 선택 (fzf + preview)
     # 선택 후 "$wt_base/$selected"로 경로를 되짚으므로 목록도 wt_base 상대 경로여야 한다.
     # basename만 보여주면 depth 2 이상 항목을 골랐을 때 존재하지 않는 경로가 나온다.
+    #
+    # 손상 항목(등록만 남음)은 애초에 고를 수 없어야 한다. 목록에 넣으면 이름으로 지정하는
+    # 경로가 받는 거부 가드를 건너뛰고 존재하지 않는 경로를 그대로 출력하게 된다 — 같은
+    # worktree를 두고 대화형과 비대화형의 진단이 갈린다. 제외 사실과 복구 명령은 알린다.
     local names=()
+    local broken_names=()
     for wt in "${worktrees[@]}"; do
+      if _wt_is_broken "$wt"; then
+        broken_names+=("$(_wt_display_name "$git_root" "$wt") ($(_wt_broken_hint "$git_root" "$wt"))")
+        continue
+      fi
       names+=("$(_wt_display_name "$git_root" "$wt")")
     done
+    local _broken
+    for _broken in ${broken_names[@]+"${broken_names[@]}"}; do
+      _warn "손상된 worktree라 선택 목록에서 제외: $_broken"
+    done
+    (( ${#names[@]} == 0 )) && _die "이동할 수 있는 worktree가 없습니다 (수집된 항목이 모두 손상)"
 
     local selected
     if _has_fzf; then
@@ -192,8 +235,12 @@ cmd_cd() {
   # --tmux: 세션 attach/생성 (tmux 밖 + 대화형에서만; 비대화형은 exec tmux 불가)
   if [[ "$use_tmux_session" == "true" ]] && [[ -z "${TMUX:-}" ]]; then
     if _wt_interactive; then
+      # 세션 이름도 wt_base 상대 표시 이름으로 짓는다. basename으로 접으면 `feat/zz`와
+      # 최상위 `zz`가 같은 세션 이름이 되고, _wt_tmux_session_open은 기존 세션을 경로 대조
+      # 없이 재사용하므로 `wt cd feat/zz --tmux`가 `zz`의 세션에 붙는다. tmux 세션 이름은
+      # `/`를 허용한다 (실측: `has-session -t '=wt-repo-feat/zz'` 정확 매치 성립).
       local session_name
-      session_name=$(_wt_session_name "$(basename "$target_path")")
+      session_name=$(_wt_session_name "$(_wt_display_name "$git_root" "$target_path")")
       _wt_tmux_session_open "$target_path" "$session_name" "false" "false"
       return 0
     fi

@@ -43,9 +43,12 @@ run_test "worktree relink opt-in allows non-TTY" test_worktree_relink_opt_in_all
 run_test "main relink restore ignores non-TTY guard" test_main_relink_restore_ignores_non_tty_guard
 run_test "wt cd returns target path by name" test_wt_cd_by_name_returns_target_path
 run_test "wt cd refuses broken worktree" test_wt_cd_refuses_broken_worktree
+run_test "wt cd prefers exact name and fails on ambiguity" test_wt_cd_prefers_exact_name_and_fails_on_ambiguity
 run_test "collect worktrees dedupes symlinked base unit" test_wt_collect_worktrees_dedupes_symlinked_base_unit
+run_test "pr cache key is collision free unit" test_wt_pr_cache_key_is_collision_free_unit
 run_test "wt ls lists deployed worktrees" test_wt_ls_from_deployed_layout_lists_worktrees
 run_test "wt ls lists registered missing and nested worktrees" test_wt_ls_lists_registered_missing_and_nested_worktrees
+run_test "wt ls lists nested unregistered worktree" test_wt_ls_lists_nested_unregistered_worktree
 run_test "wt ls marks locked worktree" test_wt_ls_marks_locked_worktree
 run_test "wt ls --json outputs parseable array" test_wt_ls_json_outputs_parseable_array
 run_test "wt create conflict requires if-exists when noninteractive" test_wt_create_conflict_noninteractive_requires_if_exists

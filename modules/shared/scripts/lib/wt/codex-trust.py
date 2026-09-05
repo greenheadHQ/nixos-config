@@ -346,11 +346,15 @@ def gc_worktree_projects(config_path: Path, dry_run: bool) -> int:
                     del projects[key]
                 rendered = render_doc(doc)
                 load_toml_doc(rendered, "rendered config")
-                # 되돌릴 수 없는 일괄 삭제라 원본을 먼저 남긴다. copy2는 mode까지 옮기므로
-                # 백업도 원본과 같은 0600을 유지한다.
+                # 되돌릴 수 없는 일괄 삭제라 원본을 먼저 남긴다. copy2는 mode까지 옮기는데,
+                # 원본이 0600보다 넓으면(Codex가 직접 만든 config 등) 지운 항목까지 담긴
+                # 전체 사본이 그 넓은 권한으로 남는다 — 새 config는 write_atomic이 0600으로
+                # 쓰므로 백업만 뒤처진다. 백업도 0600으로 좁히고, 좁히지 못하면 config를
+                # 교체하지 않는다 (남기지 못할 백업으로 되돌릴 수 없는 삭제를 하지 않는다).
                 backup = backup_path_for_gc(config_path)
                 try:
                     shutil.copy2(config_path, backup)
+                    os.chmod(backup, 0o600)
                 except OSError as exc:
                     raise RuntimeError(f"cannot write backup {backup}: {exc}") from exc
                 try:

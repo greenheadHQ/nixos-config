@@ -163,13 +163,17 @@ _collect_worktrees() {
   done < <(git -C "$git_root" worktree list --porcelain 2>/dev/null || true)
 
   if [[ -d "$wt_base" ]]; then
+    # 스캔은 depth를 고정하지 않는다 — depth 1만 보면 등록이 이미 prune된 depth 2 이상의
+    # 잔재(.claude/worktrees/feat/x)가 porcelain에도 스캔에도 없어 wt의 시야에서 통째로
+    # 사라진다 (실측: 등록 admin 제거 후 `_collect_worktrees`가 depth 1 잔재만 냈다).
+    # 대신 worktree 루트(.git 파일이 있는 디렉토리)를 만나면 그 아래로는 내려가지 않는다
+    # (-prune) — 체크아웃 내용물 전체를 걷는 비용을 막고, 중첩 경로만 추가로 훑는다.
     local dir physical_dir
     while IFS= read -r -d '' dir; do
-      # .git 파일이 있는 디렉토리만 (git이 모르는 잔재도 여기서 잡힌다)
-      [[ -f "$dir/.git" ]] || continue
       physical_dir="$(cd "$dir" && pwd -P)" || physical_dir="$dir"
       results+=("$physical_dir")
-    done < <(find "$wt_base" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+    done < <(find "$wt_base" -mindepth 1 -type d \
+      -exec test -f '{}/.git' ';' -print0 -prune 2>/dev/null)
   fi
 
   (( ${#results[@]} > 0 )) || return 0
@@ -195,8 +199,14 @@ _wt_display_name() {
 # PR 상태 캐시 파일 이름. 표시 이름은 `/`를 포함할 수 있어 그대로 파일명에 쓰면 없는
 # 하위 디렉토리 경로가 되고, basename으로 접으면 두 worktree가 같은 캐시 파일에 병렬로
 # 써서 PR 표시가 뒤섞인다. 되돌릴 수 있는 이스케이프로 이름 하나에 파일 하나를 보장한다.
+#
+# `/`만 이스케이프하면 이스케이프가 단사가 아니다 — 이름 `feat/x`와 이름 `feat%2Fx`가
+# 같은 키로 접혀, 두 worktree의 병렬 PR 조회가 같은 `.pr`/`.head` 파일을 놓고 경합한다
+# (`wt ls`가 다른 worktree의 PR 상태를 보고하고, 그 값을 근거로 cleanup 후보가 갈린다).
+# 이스케이프 문자 자신을 먼저 escape해야 원본 이름 하나에 키 하나가 보장된다.
 _wt_pr_cache_key() {
-  printf '%s\n' "${1//\//%2F}"
+  local escaped="${1//%/%25}"
+  printf '%s\n' "${escaped//\//%2F}"
 }
 
 # worktree gitdir 유효성 — 손상(stale/orphaned)이면 0(true).

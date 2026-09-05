@@ -130,7 +130,7 @@ _wt_untrust_codex_project() {
   "$python_bin" "$helper" untrust-project \
     --config "$(_wt_codex_config)" \
     "$canonical_wt_path" \
-    || _warn "Codex project trust 해제 실패 — ~/.codex/config.toml에 stale 항목이 남습니다 (일괄 정리 절차: cheat wt의 'Codex trust 정리')"
+    || _warn "Codex project trust 해제 실패 — $(_wt_codex_config)에 stale 항목이 남습니다 (일괄 정리 절차: cheat wt의 'Codex trust 정리')"
 }
 
 _wt_plugin_manifest_helper() {
