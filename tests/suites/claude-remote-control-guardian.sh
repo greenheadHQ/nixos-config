@@ -120,8 +120,7 @@ test_claude_remote_control_launch_guard_reaps_early_exit_descendant() (
 
   cancel_launch_guard "$probe_guard_pid" "$probe_group_pid" \
     || fail "guardian did not acknowledge early-exit descendant cancellation"
-  ! kill -0 "$orphan_pid" 2>/dev/null \
-    || pid_is_zombie_process "$orphan_pid" \
+  _claude_rc_wait_pid_terminated "$orphan_pid" \
     || fail "guardian cancellation left the reparented descendant alive"
   "$CLAUDE_RC_REAL_FLOCK" -n "$lock_path" true \
     || fail "guardian cancellation left the reparented descendant lock held"
@@ -180,14 +179,7 @@ test_claude_remote_control_launch_group_rejects_unsafe_pid_files() (
   kill -TERM "$supervisor_pid"
   wait "$supervisor_pid" 2>/dev/null || true
   supervisor_pid=""
-  for _ in {1..100}; do
-    if ! kill -0 "$child_pid" 2>/dev/null || pid_is_zombie_process "$child_pid"; then
-      break
-    fi
-    sleep 0.01
-  done
-  ! kill -0 "$child_pid" 2>/dev/null \
-    || pid_is_zombie_process "$child_pid" \
+  _claude_rc_wait_pid_terminated "$child_pid" \
     || fail "failed exec child survived launch-group cancellation"
   trap - EXIT
 )
@@ -267,8 +259,7 @@ EOS
 
   [ "$elapsed" -lt 4 ] || fail "guardian cancellation exceeded its bounded deadline"
   for pid in "$probe_guard_pid" "$probe_group_pid" "$probe_launcher_pid" "$server_pid" "$leaf_pid"; do
-    ! kill -0 "$pid" 2>/dev/null \
-      || pid_is_zombie_process "$pid" \
+    _claude_rc_wait_pid_terminated "$pid" \
       || fail "bounded fallback left descendant PID $pid alive"
   done
   "$CLAUDE_RC_REAL_FLOCK" -n "$lock_path" true \
@@ -361,8 +352,7 @@ EOS
     || fail "repeated-signal cleanup was not acknowledged: $cancel_status"
   _claude_rc_wait_lock_free "$lock_path" \
     || fail "repeated signal stranded the stopped process group lock"
-  ! kill -0 "$group_pid" 2>/dev/null \
-    || pid_is_zombie_process "$group_pid" \
+  _claude_rc_wait_pid_terminated "$group_pid" \
     || fail "repeated signal left the process-group leader alive"
   guard_pid=""
   group_pid=""
@@ -532,8 +522,7 @@ test_claude_remote_control_launch_guard_handles_hup() (
   [ "$wait_status" -eq "$LAUNCH_GUARD_CLEANED_STATUS" ] \
     || fail "guardian HUP cleanup returned $wait_status"
   _claude_rc_wait_lock_free "$lock_path" || fail "guardian HUP cleanup left the instance lock held"
-  ! kill -0 "$launcher_pid" 2>/dev/null \
-    || pid_is_zombie_process "$launcher_pid" \
+  _claude_rc_wait_pid_terminated "$launcher_pid" \
     || fail "guardian HUP cleanup left its launcher alive"
   if find "$(dirname "$lock_path")" -maxdepth 1 \
       \( -name 'launch-guard.*' -o -name 'launch-pid.*' -o -name 'launch-group.*' \) -print -quit | grep -q .; then
@@ -595,18 +584,9 @@ test_claude_remote_control_launch_guard_handles_parent_exit() (
   lock_path="$CLAUDE_RC_STATE/$(_claude_rc_slug "$repo")/lock"
   _claude_rc_wait_lock_free "$lock_path" \
     || fail "guardian parent-exit cleanup left the instance lock held"
-  for _ in {1..100}; do
-    if { ! kill -0 "$guard_pid" 2>/dev/null || pid_is_zombie_process "$guard_pid"; } \
-      && { ! kill -0 "$launcher_pid" 2>/dev/null || pid_is_zombie_process "$launcher_pid"; }; then
-      break
-    fi
-    sleep 0.02
-  done
-  ! kill -0 "$guard_pid" 2>/dev/null \
-    || pid_is_zombie_process "$guard_pid" \
+  _claude_rc_wait_pid_terminated "$guard_pid" \
     || fail "guardian survived its original parent"
-  ! kill -0 "$launcher_pid" 2>/dev/null \
-    || pid_is_zombie_process "$launcher_pid" \
+  _claude_rc_wait_pid_terminated "$launcher_pid" \
     || fail "launcher survived guardian parent-exit cleanup"
   if find "$(dirname "$lock_path")" -maxdepth 1 \
       \( -name 'launch-guard.*' -o -name 'launch-pid.*' -o -name 'launch-group.*' \) -print -quit | grep -q .; then

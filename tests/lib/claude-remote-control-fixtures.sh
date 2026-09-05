@@ -441,6 +441,35 @@ _claude_rc_wait_lock_free() {
   return 1
 }
 
+# 프로세스가 "종료됨"(사라졌거나 아직 안 거둬진 좀비)인지 판정한다.
+# kill -0 과 ps 는 서로 다른 시점의 독립 관찰이라 이 판정은 원자적이지 않다. 그룹 kill 직후
+# 고아가 된 좀비를 init 이 두 관찰 사이에 거둬가면 ps 가 아무것도 못 찾아 "살아 있다"로
+# 뒤집힌다 — 프로세스는 이미 죽었는데 테스트만 실패한다. 그래서 ps 가 상태를 못 본 경우
+# kill -0 을 한 번 더 확인해 그 창을 닫는다.
+# production 의 pid_is_zombie_process 를 쓰지 않는 이유: 종료 관찰은 검증 대상 코드가 아니라
+# 테스트의 관측 수단이어야 하고, wrapper 를 source 하지 않는 스위트에서도 써야 한다.
+_claude_rc_pid_terminated() {
+  local pid="$1" state
+  kill -0 "$pid" 2>/dev/null || return 0
+  state="$(ps -o state= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+  case "$state" in
+    Z*) return 0 ;;
+  esac
+  # 상태를 못 읽었거나(관찰 사이에 사라짐) 아직 살아 있는 경우의 최종 확인.
+  ! kill -0 "$pid" 2>/dev/null
+}
+
+# 종료를 유한 시간 안에 기다린다. 죽는 중(exit ~ reap)인 프로세스가 관찰 순간에 걸리는
+# 잔여 창까지 흡수한다.
+_claude_rc_wait_pid_terminated() {
+  local pid="$1" _i
+  for _i in {1..200}; do
+    _claude_rc_pid_terminated "$pid" && return 0
+    sleep 0.01
+  done
+  return 1
+}
+
 _claude_rc_acquire_synthetic_lock() {
   local lock_path="$1" context="$2" attempt
 
@@ -535,15 +564,30 @@ EOS
     cat <<'EOS'
 set -euo pipefail
 args=" $* "
+# fd 종류는 argv 의 `-d` 옵션 값으로 판별한다(경로에 우연히 섞인 "cwd"/"txt" 부분 문자열
+# 오매칭 방지, 그리고 두 리터럴이 공백 하나를 겹쳐 요구하는 case 패턴 회피 — 이유는
+# _claude_rc_install_running_server_mocks 의 lsof mock 주석 참조).
+d_opt=""
+prev=""
+for arg in "$@"; do
+  case "$prev" in -d) d_opt="$arg" ;; esac
+  prev="$arg"
+done
 case "$args" in
-  *" -p 4242 "*"cwd"*)
-    printf 'p4242\nn%s\n' "$FAKE_UNMANAGED_CWD"
+  *" -p 4242 "*)
+    case "$d_opt" in
+      cwd)
+        printf 'p4242\nn%s\n' "$FAKE_UNMANAGED_CWD"
+        exit 0
+        ;;
+      txt)
+        printf 'p4242\nn%s\n' "$FAKE_UNMANAGED_EXE"
+        exit 0
+        ;;
+    esac
     ;;
-  *" -p 4242 "*"txt"*)
-    printf 'p4242\nn%s\n' "$FAKE_UNMANAGED_EXE"
-    ;;
-  *) exec "$BASE_LSOF" "$@" ;;
 esac
+exec "$BASE_LSOF" "$@"
 EOS
   } > "$CLAUDE_RC_FAKE_BIN/lsof"
   _claude_rc_write_pid_argv_fixture 4242 claude remote-control --spawn worktree
@@ -565,8 +609,10 @@ EOS
 #!/usr/bin/env bash
 set -euo pipefail
 args=" $* "
+# `-d` 옵션 값으로 정확히 분기한다(경로에 우연히 섞인 "cwd" 부분 문자열 오매칭 방지 —
+# 이유는 _claude_rc_install_running_server_mocks 의 lsof mock 주석 참조).
 case "$args" in
-  *"cwd"*)
+  *" -d cwd "*)
     printf 'p5252\nn%s\n' "$FAKE_CHILD_CWD"
     ;;
   *)
@@ -605,18 +651,31 @@ EOS
     cat <<'EOS'
 set -euo pipefail
 args=" $* "
+# fd 종류는 argv 의 `-d` 옵션 값으로 판별한다(경로에 우연히 섞인 "cwd"/"txt" 부분 문자열
+# 오매칭 방지, 그리고 두 리터럴이 공백 하나를 겹쳐 요구하는 case 패턴 회피 — 이유는
+# _claude_rc_install_running_server_mocks 의 lsof mock 주석 참조).
+d_opt=""
+prev=""
+for arg in "$@"; do
+  case "$prev" in -d) d_opt="$arg" ;; esac
+  prev="$arg"
+done
 case "$args" in
-  *" -p ${FAKE_ORPHAN_PID:-__none__} "*"txt"*)
-    [ -n "${FAKE_ORPHAN_EXE:-}" ] || exit 1
-    printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_EXE"
-    ;;
-  *" -p ${FAKE_ORPHAN_PID:-__none__} "*"cwd"*)
-    printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_CWD"
-    ;;
-  *)
-    exec "$BASE_LSOF" "$@"
+  *" -p ${FAKE_ORPHAN_PID:-__none__} "*)
+    case "$d_opt" in
+      txt)
+        [ -n "${FAKE_ORPHAN_EXE:-}" ] || exit 1
+        printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_EXE"
+        exit 0
+        ;;
+      cwd)
+        printf 'p%s\nn%s\n' "$FAKE_ORPHAN_PID" "$FAKE_ORPHAN_CWD"
+        exit 0
+        ;;
+    esac
     ;;
 esac
+exec "$BASE_LSOF" "$@"
 EOS
   } > "$CLAUDE_RC_FAKE_BIN/lsof"
   {
@@ -787,17 +846,45 @@ set -euo pipefail
 args=" $* "
 server_pid="${FAKE_SERVER_PID:-6262}"
 parent_pid="${FAKE_SERVER_PARENT_PID:-6261}"
+# fd 종류 분기는 argv 에서 뽑은 `-d` 옵션 값으로 판별한다. args 전체에서 "cwd"/"txt" 부분
+# 문자열만 보면, 열린 파일 질의(`lsof -a -p PID -Fn -- LOCK`)의 경로가 그 문자열을 포함할 때
+# 아래 lock 분기보다 앞선 -d 분기로 새어 pid_holds_lock 이 오탐한다. sandbox 이름은
+# mktemp 무작위 6글자(`shell-script-tests.XXXXXX`)라 "…cwdwmi" 같은 이름이 뽑히는 순간에만
+# 터지는 저확률 flake이므로, 재현을 기다리지 말고 분기 조건 자체를 정확하게 둔다.
+# 두 조건을 한 case 패턴에 잇지 않는(`*" -p $pid "*" -d cwd "*`) 이유: 두 리터럴이 pid 와 -d
+# 사이의 공백 하나를 각각 요구하므로 실제 argv(" -a -p PID -d cwd -Fn ")에 절대 매치되지 않는다.
+d_opt=""
+prev=""
+for arg in "$@"; do
+  case "$prev" in -d) d_opt="$arg" ;; esac
+  prev="$arg"
+done
 case "$args" in
-  *" -p $server_pid "*"cwd"*)
-    printf 'p%s\nn%s\n' "$server_pid" "$FAKE_SERVER_CWD"
+  *" -p $server_pid "*)
+    case "$d_opt" in
+      cwd)
+        printf 'p%s\nn%s\n' "$server_pid" "$FAKE_SERVER_CWD"
+        exit 0
+        ;;
+      txt)
+        printf 'p%s\nn%s\n' "$server_pid" "$FAKE_SERVER_EXE"
+        exit 0
+        ;;
+    esac
     ;;
-  *" -p $server_pid "*"txt"*)
-    printf 'p%s\nn%s\n' "$server_pid" "$FAKE_SERVER_EXE"
+esac
+case "$args" in
+  *" -p $parent_pid "*)
+    case "$d_opt" in
+      txt)
+        [ -n "${FAKE_SERVER_FLOCK_EXE:-}" ] || exit 1
+        printf 'p%s\nn%s\n' "$parent_pid" "$FAKE_SERVER_FLOCK_EXE"
+        exit 0
+        ;;
+    esac
     ;;
-  *" -p $parent_pid "*"txt"*)
-    [ -n "${FAKE_SERVER_FLOCK_EXE:-}" ] || exit 1
-    printf 'p%s\nn%s\n' "$parent_pid" "$FAKE_SERVER_FLOCK_EXE"
-    ;;
+esac
+case "$args" in
   *" -p $server_pid "*" ${FAKE_SERVER_LOCK_PATH:-__none__} "*)
     printf 'p%s\nf3\nn%s\n' "$server_pid" "$FAKE_SERVER_LOCK_PATH"
     ;;

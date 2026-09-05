@@ -9,7 +9,9 @@
 #   pre-push의 5개 조건부 게이트(analyzing-da-sessions-tests · fleiss-kappa-tests ·
 #   skill-doc-sync · flake-check · statusline-bats),
 #   da-weekly-report-tests + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
-#   드라이버(codex-exec-supervised · precommit-staged-snapshot)를 포함한다. 벤치마크
+#   드라이버(codex-exec-supervised · precommit-staged-snapshot)를 포함한다. 여기에 더해 훅에
+#   없는 저비용 hermetic 게이트(karakeep-bridge-tests · issuing-codex-pairing-code-tests ·
+#   guardrail-lint-fixtures)도 이 러너에서만 돈다. 벤치마크
 #   tests/bench-shell-startup.sh는 회귀 게이트가 아니라 측정 도구이므로(자체 헤더에 명시) 제외한다.
 #   pre-commit의 staged 스냅샷 정책(gitleaks · nixfmt · shellcheck · skill-noise)은 staged index
 #   기준이라 working-tree 통합 러너의 범위가 아니며, 커밋 시점 게이트로 별도 적용된다.
@@ -90,6 +92,20 @@ run_driver "fleiss-kappa-tests" bash tests/run-fleiss-kappa-tests.sh
 
 # 7) da-weekly-report-tests — weekly JSON schema/delta/render 순수 함수 계약을 검증한다.
 run_driver "da-weekly-report-tests" bash tests/run-da-weekly-report-tests.sh
+
+# 7b) karakeep-bridge-tests — singlefile-bridge.py 의 multipart/파일명 파싱 순수 함수 계약.
+#     PR #989 에서 shell suite 만 등록되고 pytest 쪽 배선이 빠져 실행 경로가 0이었다.
+run_driver "karakeep-bridge-tests" bash tests/run-karakeep-bridge-tests.sh
+
+# 7c) issuing-codex-pairing-code-tests — 스킬 스크립트 issue_pairing_code.py 의 unittest 계약.
+#     PR #929 도입 이후 어떤 러너·훅·CI 에도 연결되지 않아 실행 경로가 0이었다.
+run_driver "issuing-codex-pairing-code-tests" bash tests/run-issuing-codex-pairing-code-tests.sh
+
+# 7d) guardrail-lint-fixtures — skill-neutral-lint 엔진의 fixture self-test(17개). hermetic 하고
+#     python3 만 요구하므로(codex/nix/jq 불필요) 통합 러너에 저비용으로 붙는다. 이 게이트가 지키는
+#     것은 lint 엔진의 fixture self-test 까지이고, verify-ai-compat.sh 본체(codex 설정·hook·
+#     capability probe 검사)는 여전히 어떤 자동 게이트에도 없다 — 커버리지를 과대평가하지 말 것.
+run_driver "guardrail-lint-fixtures" bash scripts/ai/verify-ai-compat.sh --run-fixture-tests
 
 # 8) flake-check — 전 시스템 flake 평가 게이트(repo 전역). eval-tests의 선택적 평가가 강제하지
 #    않는 darwin/nixos configuration toplevel 평가 오류까지 검출하므로 커버리지가 고유하다.
