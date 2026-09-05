@@ -8,7 +8,9 @@
 #
 # repair_codex_config_drift_no_changes 부수효과:
 #   - `nix shell "$FLAKE_PATH#pythonWithTomlkit" --command` 1회 평가 (~150ms 실측)
-#   - `python3 sync-codex-config.py sync <template> $HOME/.codex/config.toml` 실행
+#   - `python3 sync-codex-config.py sync <template> $HOME/.codex/config.toml [--unset KEY]...`
+#     실행. `--unset` 목록은 codex-retired-keys.sh 가 SoT 파일에서 읽어 만든다 —
+#     activation 과 같은 목록이어야 두 경로의 수렴 상태가 같다.
 #   - 실제 drift가 있을 때만 ~/.codex/config.toml 재작성.
 #     no-op 계약(3조건)의 authoritative 서술은 sync-codex-config.py 의 docstring 참고.
 #   - 실패는 log_warn 으로 다운그레이드 (non-fatal) — NO_CHANGES 흐름을 막지 않는다.
@@ -84,6 +86,7 @@ repair_codex_config_drift_no_changes() {
         template="$FLAKE_PATH/modules/shared/programs/codex/files/config.toml"
     fi
     local script="$FLAKE_PATH/modules/shared/programs/codex/files/sync-codex-config.py"
+    local retired_keys_lib="$FLAKE_PATH/modules/shared/scripts/lib/rebuild/codex-retired-keys.sh"
 
     if ! command -v nix >/dev/null 2>&1; then
         log_warn "⚠️  nix 명령 미가용 — codex config drift 복구 스킵"
@@ -94,10 +97,23 @@ repair_codex_config_drift_no_changes() {
         return 0
     fi
 
+    # 퇴역 키 회수 인자. 목록을 못 읽으면 회수 없이 진행한다 (non-fatal 계약) —
+    # 잔존 키는 verify-ai-compat.sh 의 check 가 drift 로 계속 보고한다.
+    CODEX_RETIRED_CONFIG_UNSET_ARGS=()
+    if [[ -f "$retired_keys_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$retired_keys_lib"
+        codex_retired_config_unset_args "$FLAKE_PATH" \
+            || log_warn "⚠️  퇴역 Codex config 키 목록 부재 — 회수 없이 drift 복구만 수행"
+    else
+        log_warn "⚠️  codex-retired-keys.sh 부재 — 회수 없이 drift 복구만 수행"
+    fi
+
     # $OFFLINE_FLAG 는 rebuild-common.sh 가 set 하며 "" 또는 "--offline". unquoted expansion 으로
     # 빈 문자열이면 자동 생략. --offline 이면 nix shell 도 substituter 접근을 시도하지 않는다.
     # shellcheck disable=SC2086
     nix shell ${OFFLINE_FLAG:-} "$FLAKE_PATH#pythonWithTomlkit" --command \
         python3 "$script" sync "$template" "$HOME/.codex/config.toml" \
+        ${CODEX_RETIRED_CONFIG_UNSET_ARGS[@]+"${CODEX_RETIRED_CONFIG_UNSET_ARGS[@]}"} \
         || log_warn "⚠️  codex config drift 복구 실패 (non-fatal) — 'verify-ai-compat.sh'로 진단"
 }

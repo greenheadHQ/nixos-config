@@ -1,0 +1,38 @@
+# 퇴역 Codex config 키 — 배포본(~/.codex/config.toml)에서 회수할 TOML dotted key 목록.
+#
+# 왜 이 파일이 필요한가:
+#   sync-codex-config.py 의 ownership 정책상 template 이 선언하지 않는 키는 user-owned 라
+#   보존된다. 그래서 template 에서 키를 지워도 이미 배포된 값은 영원히 남는다. 여기에
+#   등록한 키만 `--unset` 으로 능동 회수된다 (sync=제거, check=retired_key_present drift).
+#
+# 형식:
+#   한 줄에 dotted key 하나. `#` 이후는 주석, 빈 줄 무시, 공백은 모두 제거된다
+#   (따라서 키 안에 공백을 쓸 수 없다). 계약 세부는 sync-codex-config.py 의
+#   "RETIRED KEYS" docstring 이 정본이다. 목록이 비어도 된다 — 모든 호스트에서 회수가
+#   끝나 항목을 지우는 것이 정상적인 최종 상태다.
+#
+# 등록 기준:
+#   1. 두 template(config.toml · config.darwin.toml) 모두가 더 이상 선언하지 않는 키만
+#      넣는다. 선언과 회수가 겹치면 sync 가 매번 썼다 지우고 check 가 영원히 drift 를
+#      내므로 스크립트가 EXIT_ERROR 로 막는다. 이 목록은 두 플랫폼 공용 SoT 라 한쪽
+#      template 만 보고 등록하면 반대편 호스트의 activation 만 죽는다 —
+#      tests/suites/codex-config.sh 의 계약 테스트가 커밋 전에 양쪽을 교차 검증한다.
+#   2. 앱 UI 가 최상위 키로 persist 하는 앱 소유 키(model, model_reasoning_effort,
+#      service_tier)는 넣지 않는다. 영구 회수는 매 nrs 마다 사용자의 UI 선택까지 지운다
+#      (소유 경계표: .claude/skills/configuring-codex/SKILL.md). 옛 template pin 잔재를
+#      "1회만 지우고 그 뒤로는 보존" 하는 요구는 이 메커니즘이 표현하지 못하는 별개
+#      문제이며, config 템플릿 헤더 주석이 그 1회 수동 절차를 안내한다.
+#   3. leaf 만 대상이다. table / array-of-tables 경로를 넣으면 회수되지 않고 check 가
+#      retired_key_not_a_leaf drift 로 보고한다. `[projects.*]` 는 runtime-owned 라
+#      인자 파싱 단계에서 거부된다.
+#
+# 소비자(모두 이 파일 하나를 읽는다):
+#   modules/shared/programs/codex/default.nix            (activation)
+#   modules/shared/scripts/lib/rebuild/codex.sh          (nrs NO_CHANGES drift 복구)
+#   scripts/ai/verify-ai-compat.sh                       (check 모드 감사)
+
+# codex 0.153.4 바이너리에 문자열조차 없는 죽은 feature flag (같은 [features] 형제 키
+# multi_agent/goals 등은 다수 매치되는데 이 키만 0건). 2026-09-05 에 darwin template 에서
+# 제거됐고, Mac 배포본에 user-owned 로 남은 잔존분을 회수한다.
+# 재검증: LC_ALL=C grep -c -a -o voice_transcription "$(readlink -f "$(whence -p codex)")"
+features.voice_transcription

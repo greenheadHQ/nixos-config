@@ -1,0 +1,13 @@
+approval_policy = "on-request"
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "user-owned-entry-1"
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "user-owned-entry-2"

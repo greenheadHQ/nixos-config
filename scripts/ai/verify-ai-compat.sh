@@ -34,6 +34,10 @@ fi
 
 # shellcheck source=/dev/null
 . "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-legacy-hooks.sh"
+# 퇴역 Codex config 키 로더. drift 검증이 activation/nrs 와 같은 `--unset` 목록을 쓰도록
+# 같은 SoT 파일(modules/shared/programs/codex/files/retired-config-keys.txt)에서 읽는다.
+# shellcheck source=/dev/null
+. "$REPO_ROOT/modules/shared/scripts/lib/rebuild/codex-retired-keys.sh"
 
 # Nix SoT(default.nix)와 독립된 감사 오라클.
 # 두 리스트는 서로 교집합이 없어야 하며, shared 디렉토리의 모든 스킬이 둘 중 하나에 속해야 한다.
@@ -699,6 +703,13 @@ else
 fi
 _CHECK_SCRIPT="$REPO_ROOT/modules/shared/programs/codex/files/sync-codex-config.py"
 
+# 퇴역 키 목록은 배포 경로(activation / nrs NO_CHANGES 복구)와 동일해야 감사 결과가
+# "nrs 한 번이면 수렴하는가"를 그대로 반영한다. 목록 파일 부재는 저장소 무결성 문제이므로 fail.
+CODEX_RETIRED_CONFIG_UNSET_ARGS=()
+if ! codex_retired_config_unset_args "$REPO_ROOT"; then
+  fail "퇴역 Codex config 키 목록 없음: $REPO_ROOT/$CODEX_RETIRED_KEYS_REL_PATH"
+fi
+
 if [ ! -f "$_TEMPLATE" ]; then
   fail "template 파일 없음: $_TEMPLATE"
 elif [ ! -f "$_CHECK_SCRIPT" ]; then
@@ -710,7 +721,9 @@ else
   _check_stderr=""
   _check_rc=0
   _check_err_file="$(mktemp "${TMPDIR:-/tmp}/verify-ai-compat-check-err.XXXXXX")"
-  if _check_stdout="$(python3 "$_CHECK_SCRIPT" check "$_TEMPLATE" "$CODEX_CONFIG" 2>"$_check_err_file")"; then
+  if _check_stdout="$(python3 "$_CHECK_SCRIPT" check "$_TEMPLATE" "$CODEX_CONFIG" \
+    ${CODEX_RETIRED_CONFIG_UNSET_ARGS[@]+"${CODEX_RETIRED_CONFIG_UNSET_ARGS[@]}"} \
+    2>"$_check_err_file")"; then
     _check_rc=0
   else
     _check_rc=$?
