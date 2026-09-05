@@ -356,6 +356,7 @@ run_test "log-skill empty malformed and subagent noop" test_log_skill_hook_empty
 run_test "nrs-session-cleanup empty malformed and nonrepo noop" test_nrs_session_cleanup_hook_empty_malformed_and_nonrepo_input_noop
 run_test "plans-gc removes old transient buffer" test_plans_gc_hook_removes_old_transient_buffer
 run_test "plans-gc empty and malformed input noop" test_plans_gc_hook_empty_and_malformed_input_noop
+run_test "plans-gc retires slug buffers and preserves docs" test_plans_gc_hook_removes_slug_buffers_and_preserves_docs
 run_test "record-last-session normal input writes marker" test_record_last_session_hook_normal_input_writes_marker
 run_test "record-last-session empty malformed and subagent noop" test_record_last_session_hook_empty_malformed_and_subagent_noop
 run_test "session-init-icons startup creates state and context" test_session_init_icons_hook_startup_creates_state_and_context
