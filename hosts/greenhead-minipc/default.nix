@@ -1,9 +1,5 @@
 # greenhead-minipc 호스트 설정
 {
-  config,
-  lib,
-  pkgs,
-  inputs,
   username,
   constants,
   ...
@@ -11,11 +7,11 @@
 
 {
   imports = [
-    ./hardware-configuration.nix # placeholder → 설치 후 실제 내용으로 교체
+    ./hardware-configuration.nix # nixos-generate-config 산출물 (fileSystems/swap은 disko.nix 소유)
     ./disko.nix
   ];
 
-  # SSH 공개키 — 3개 (PRD #780 Phase 2a)
+  # SSH 공개키 — 4개 (PRD #780 Phase 2a + #1094 headless)
   # mac-ssh(1Password SSH agent) + mobile(iPhone·iPad 공유, Termius) + emergency(1Password 장애 fallback).
   # 기존 macbook(id_ed25519)은 mac-ssh로 대체 — id_ed25519는 FR-8에서 처분.
   # iphone/ipad 분리 키는 Termius 계정 동기화로 격리 불가 → mobile 단일 공유 키로 통합 (#866).

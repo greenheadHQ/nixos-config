@@ -1,4 +1,4 @@
-# tests/suites/interaction-limits-renewal.sh - interaction limits 갱신 스크립트 fixture tests (sourced)
+# tests/suites/interaction-limits-renewal.sh — interaction limits 갱신 스크립트 fixture tests (sourced)
 # shellcheck shell=bash
 # shellcheck disable=SC2154
 

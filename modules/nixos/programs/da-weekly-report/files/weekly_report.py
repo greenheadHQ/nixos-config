@@ -218,13 +218,6 @@ def parse_attempt_state(text: str) -> dict[str, str]:
     return state
 
 
-def load_attempt_state(path: str | os.PathLike[str]) -> dict[str, str]:
-    try:
-        return parse_attempt_state(Path(path).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-
-
 def claim_attempt_state_key(
     path: str | os.PathLike[str],
     key: str = REMOTE_PREFLIGHT_ALERT_KEY,
@@ -1792,14 +1785,6 @@ def latest_publish_records(path: str | os.PathLike[str]) -> dict[str, dict[str, 
     return records
 
 
-def latest_publish_statuses(path: str | os.PathLike[str]) -> dict[str, str]:
-    """Return the last valid status for each publish target in an append-only JSONL log."""
-    return {
-        target: str(record["status"])
-        for target, record in latest_publish_records(path).items()
-    }
-
-
 def publish_target_records(
     path: str | os.PathLike[str],
     targets: list[str] | tuple[str, ...],
@@ -1812,17 +1797,6 @@ def publish_target_records(
         pending = status is None or status in RETRYABLE_PUBLISH_STATUSES
         records.append({**latest_record, "target": target, "pending": pending})
     return records
-
-
-def pending_publish_targets(
-    path: str | os.PathLike[str],
-    targets: list[str] | tuple[str, ...],
-) -> list[str]:
-    return [
-        str(record["target"])
-        for record in publish_target_records(path, targets)
-        if record["pending"]
-    ]
 
 
 def notification_body(report: dict) -> str:

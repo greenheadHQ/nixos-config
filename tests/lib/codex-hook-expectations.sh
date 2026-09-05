@@ -1,6 +1,5 @@
-#!/usr/bin/env bash
-# tests/lib/codex-hook-expectations.sh
-# Codex 0.124+ stable hook expectation oracle.
+# tests/lib/codex-hook-expectations.sh — Codex 0.124+ stable hook expectation oracle (sourced)
+# shellcheck shell=bash
 # 본 파일을 source하는 곳:
 #   - tests/test-codex-hook-fixtures.sh (fixture runner)
 #   - scripts/ai/verify-ai-compat.sh (host-state 검증)

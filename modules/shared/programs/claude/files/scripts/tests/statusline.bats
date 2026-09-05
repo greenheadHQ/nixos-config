@@ -724,3 +724,38 @@ EOF
   echo "$plain" | grep -qF 'feat-legacy' \
     || { echo "expected branch from .worktree.branch schema fallback; got: $plain" >&2; false; }
 }
+
+# known_ide_list 의 bundle id 집합과 ide_url_template_for_bundle_id 의 case 집합이
+# 갈라지면, 자동 감지가 매핑하는 IDE와 목록이 광고하는 IDE가 어긋난다. statusline.sh
+# 는 source 시 상태줄을 렌더하므로 전체 source 대신 두 함수 정의 블록만 잘라내
+# 비교한다. bundle id 표기는 양쪽 대소문자 관례가 달라 lowercase 로 정규화한다.
+extract_shell_fn() {
+  awk -v fn="$1" '
+    index($0, fn "() {") == 1 { inside = 1 }
+    inside { print }
+    inside && $0 == "}" { exit }
+  ' "$STATUSLINE"
+}
+
+@test "known_ide_list bundle ids match ide_url_template_for_bundle_id cases (drift)" {
+  local fn_list fn_case listed cases
+  fn_list=$(extract_shell_fn known_ide_list)
+  fn_case=$(extract_shell_fn ide_url_template_for_bundle_id)
+  [ -n "$fn_list" ] || { echo "known_ide_list 정의를 찾지 못했다 (함수명 변경?)" >&2; false; }
+  [ -n "$fn_case" ] || { echo "ide_url_template_for_bundle_id 정의를 찾지 못했다" >&2; false; }
+
+  # known_ide_list 출력의 "표시이름|bundle_id" 에서 bundle id 만 뽑아 lowercase 정렬.
+  listed=$(eval "$fn_list"; known_ide_list \
+    | awk -F'|' 'NF == 2 { print tolower($2) }' | LC_ALL=C sort)
+  # case 라벨(`*)` 제외)을 lowercase 정렬. case 문은 이미 lowercase 로 비교한다.
+  cases=$(printf '%s\n' "$fn_case" \
+    | sed -nE 's/^[[:space:]]+([a-z0-9._-]+)\).*/\1/p' | LC_ALL=C sort)
+
+  [ -n "$listed" ] || { echo "known_ide_list 파싱 결과가 비었다" >&2; false; }
+  [ -n "$cases" ] || { echo "case 라벨 파싱 결과가 비었다" >&2; false; }
+  [ "$listed" = "$cases" ] \
+    || { echo "known_ide_list 와 case 집합이 어긋남:" >&2
+         echo "  known_ide_list: $(echo "$listed" | tr '\n' ' ')" >&2
+         echo "  case labels   : $(echo "$cases" | tr '\n' ' ')" >&2
+         false; }
+}

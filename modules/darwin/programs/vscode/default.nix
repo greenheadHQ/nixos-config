@@ -17,7 +17,7 @@
 # === Change Intent Record (Zed → VSCode 롤백) ===
 # Zed 1달 사용 후 VSCode 복귀 (이전 마이그레이션 #329/#330의 reverse).
 #
-# 6) 롤백 동기: Zed 1달 사용 중 누적된 7개 pain point — Cold Start이 VSCode보다 느림,
+# 6) 롤백 동기: Zed 1달 사용 중 누적된 7개 pain point — Cold Start가 VSCode보다 느림,
 #    `zed`/`zed .` hang 버그(좀비 프로세스 강제 종료 필요), Claude Code의 외부 터미널↔에디터
 #    라인 참조 path 미지원, 체감 속도 개선 부족, 단축키 부적응, 내장 Git 미흡(외부 클라이언트
 #    의존), Markdown viewer 미감.

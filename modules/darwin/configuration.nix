@@ -1,6 +1,5 @@
 # macOS 시스템 설정 (nix-darwin)
 {
-  config,
   pkgs,
   lib,
   username,

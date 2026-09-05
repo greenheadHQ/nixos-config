@@ -26,18 +26,8 @@
   pushoverSecretFile, # 예: ../../../../secrets/pushover-copyparty.age
 
   # 스크립트
-  versionCheckScript ? null, # null이면 generic-version-check.sh 사용
   updateScriptFile, # ./files/update-script.sh 경로
 
-  # version-check runtimeInputs (기본: curl, jq, coreutils, podman)
-  versionCheckInputs ? (
-    pkgs: with pkgs; [
-      curl
-      jq
-      coreutils
-      podman
-    ]
-  ),
   # update-script runtimeInputs
   updateScriptInputs ? (
     pkgs: with pkgs; [
@@ -51,9 +41,6 @@
 
   # 업데이트 스크립트 래퍼에 전달할 추가 환경변수
   extraUpdateEnv ? (_config: _constants: { }),
-
-  # version-check 서비스에 전달할 추가 환경변수
-  extraCheckEnv ? (_config: _constants: { }),
 
   # 추가 tmpfiles.rules (백업 디렉토리 등)
   extraTmpfilesRules ? [ ],
@@ -79,14 +66,19 @@ let
   containerImage = config.virtualisation.oci-containers.containers.${serviceName}.image;
   stateDir = "/var/lib/${serviceName}-update";
 
+  # generic-version-check.sh + 그것이 source 하는 service-lib.sh 가 쓰는 도구
+  # (curl: GitHub API·Pushover 알림, jq: 릴리즈 노트 파싱, coreutils: cat/head).
+  # podman 은 service-lib.sh 의 get_image_digest 전용이라 이 스크립트 경로에서는
+  # 호출되지 않지만, 기존 유닛 환경을 그대로 보존하려고 목록에서 빼지 않는다.
   actualVersionCheckScript = pkgs.writeShellApplication {
     name = "${serviceName}-version-check";
-    runtimeInputs = versionCheckInputs pkgs;
-    text =
-      if versionCheckScript != null then
-        builtins.readFile versionCheckScript
-      else
-        builtins.readFile ./generic-version-check.sh;
+    runtimeInputs = with pkgs; [
+      curl
+      jq
+      coreutils
+      podman
+    ];
+    text = builtins.readFile ./generic-version-check.sh;
   };
 
   updateScriptInner = pkgs.writeShellApplication {
@@ -116,7 +108,7 @@ let
     )
   );
 
-  baseCheckEnv = {
+  checkEnv = {
     PUSHOVER_CRED_FILE = pushoverCredPath;
     SERVICE_LIB = "${serviceLib}";
     STATE_DIR = stateDir;
@@ -126,8 +118,6 @@ let
     SERVICE_DISPLAY_NAME = serviceDisplayName;
   }
   // lib.optionalAttrs detectMajorMismatch { DETECT_MAJOR_MISMATCH = "true"; };
-
-  mergedCheckEnv = baseCheckEnv // (extraCheckEnv config constants);
 in
 {
   config = lib.mkIf (updateCfg.enable && parentCfg.enable) {
@@ -173,7 +163,7 @@ in
         ReadWritePaths = [ stateDir ];
       };
 
-      environment = mergedCheckEnv;
+      environment = checkEnv;
     };
 
     # ═══════════════════════════════════════════════════════════════

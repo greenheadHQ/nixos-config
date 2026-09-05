@@ -1,10 +1,5 @@
 # broot 설정 (Modern Linux Tree)
-{
-  config,
-  pkgs,
-  lib,
-  ...
-}:
+{ ... }:
 
 {
   programs.broot = {

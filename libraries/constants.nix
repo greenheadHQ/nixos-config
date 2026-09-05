@@ -17,7 +17,6 @@
       uptimeKuma = 3002;
       copyparty = 3923;
       karakeep = 3000;
-      caddy = 443;
     };
 
     # Podman 브릿지 네트워크 기본 서브넷
@@ -156,7 +155,6 @@
   ids = {
     postgres = 999; # PostgreSQL 컨테이너 기본 UID
     user = 1000; # greenhead 사용자 UID
-    users = 100; # users 그룹 GID
     render = 303; # NixOS render 그룹 GID (하드웨어 가속, /dev/dri)
   };
 
@@ -187,7 +185,6 @@
     # MiniPC는 OP_SERVICE_ACCOUNT_TOKEN이 account를 결정하므로 본 값은 Mac biometric 경로 전용.
     account = "my.1password.com";
     vaults = {
-      personal = "Personal"; # 1Password 기본 Personal vault (GUI 표시명)
       automation = "Automation"; # LLM·자동화·시스템 토큰 (SSH 키는 ssh vault로 분리)
       ssh = "SSH"; # 디바이스 SSH key(mac-ssh/emergency-ssh) 전용 — SA token blast radius에서 격리
     };

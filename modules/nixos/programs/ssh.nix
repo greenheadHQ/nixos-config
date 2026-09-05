@@ -1,5 +1,5 @@
 # SSH 서버 설정
-{ config, constants, ... }:
+{ constants, ... }:
 
 let
   inherit (constants.ssh) clientAliveInterval clientAliveCountMax;

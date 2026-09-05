@@ -66,9 +66,12 @@ test_runtime_profile_validate() {
   local profile="$1"
   local command_name
   [ -L "$profile" ] && [ -d "$profile/bin" ] || return 1
-  for command_name in "${_TEST_RUNTIME_PROFILE_REQUIRED_COMMANDS[@]}"; do
+  # 배열은 접근자 경유로만 읽는다 (test_runtime_profile_fingerprint 와 동일 패턴) —
+  # 직접 참조와 접근자가 공존하면 접근자에 필터링이 생겨도 이 검증이 못 받는다.
+  while IFS= read -r command_name; do
     [ -x "$profile/bin/$command_name" ] || return 1
-  done
+  done < <(test_runtime_profile_required_commands)
+  # tomlkit 은 배열 밖 계약이라 접근자로 흡수하지 않는다.
   "$profile/bin/python3" -c 'import tomlkit' >/dev/null 2>&1
 }
 

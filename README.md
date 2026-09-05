@@ -75,7 +75,7 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 | `paths` | Docker 데이터(SSD), 미디어 데이터(HDD), Immich 업로드 캐시 |
 | `sshKeys` | MacBook/MiniPC SSH 공개키 (`secrets/secrets.nix`에서도 import) |
 | `containers` | 서비스별 리소스 제한 (메모리, CPU) |
-| `ids` | UID/GID (postgres, user, users, render) |
+| `ids` | UID/GID (postgres, user, render) |
 | `macos` | Dock, 키보드, Shottr 경로 |
 | `ssh` | 타임아웃 설정 (Darwin sshd + NixOS openssh 공통) |
 | `tempMonitor` | CPU/NVMe 온도 경고/긴급 임계값, 쿨다운 |

@@ -1,7 +1,6 @@
 # modules/nixos/programs/docker/runtime.nix
 # Podman 런타임 공통 설정 (서비스 모듈은 homeserver.nix에서 import)
 {
-  config,
   pkgs,
   lib,
   username,

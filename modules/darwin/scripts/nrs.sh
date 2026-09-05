@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # darwin-rebuild wrapper script
-# 문제 예방: setupLaunchAgents 멈춤, Hammerspoon HOME 오염
+# 문제 예방: setupLaunchAgents 멈춤 / 후처리: Hammerspoon 재시작
 #
 # 사용법:
 #   nrs           # 일반 rebuild
@@ -192,8 +192,8 @@ run_darwin_rebuild() {
 
     local rc=0
     # 비TTY(에이전트·자동화)에서는 sudo 인증 프롬프트에 응답할 수 없다. -n으로 호출해
-    # NOPASSWD 규칙(modules/darwin/configuration.nix의 security.sudo.extraConfig,
-    # darwin-rebuild 한정) 미매칭 시 무한 대기 대신 즉시 실패시킨다.
+    # NOPASSWD 규칙(modules/darwin/configuration.nix의 security.sudo.extraConfig —
+    # 현행은 전면 개방) 미매칭 시 무한 대기 대신 즉시 실패시킨다.
     local -a sudo_flags=()
     [[ -t 0 ]] || sudo_flags=(-n)
     # shellcheck disable=SC2086
@@ -206,7 +206,7 @@ run_darwin_rebuild() {
         # admin (ALL) ALL 규칙 때문에 인증이 필요한 명령에도 rc 0이라 성립하지 않는다.
         if [[ ${#sudo_flags[@]} -gt 0 ]] \
            && ! sudo -n -ll "$REBUILD_CMD" switch 2>/dev/null | grep -q '!authenticate'; then
-            log_warn "⚠️  원인: 비대화형 sudo 인증 실패 — NOPASSWD 규칙이 darwin-rebuild에 매칭되지 않았습니다."
+            log_warn "⚠️  원인: 비대화형 sudo 인증 실패 — NOPASSWD 규칙이 이 sudo 호출에 매칭되지 않았습니다."
             log_warn "   확인: sudo -n -ll $REBUILD_CMD switch 출력에 'Options: !authenticate'가 있어야 정상"
             log_warn "   규칙: modules/darwin/configuration.nix의 security.sudo.extraConfig"
         fi

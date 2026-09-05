@@ -1,4 +1,4 @@
-# tests/suites/skill-usage-report.sh - skill usage report fixtures
+# tests/suites/skill-usage-report.sh — skill usage report fixtures
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164
 

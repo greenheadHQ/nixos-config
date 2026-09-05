@@ -1083,10 +1083,6 @@ let
     # ── 1Password vault 이름 hard pin ────────────────
     # constants.nix 변경 시 GUI vault 이름과의 정합성 회귀 감지
     {
-      name = "Test 5b: constants.onePassword.vaults.personal이 \"Personal\"이어야 함";
-      cond = constants.onePassword.vaults.personal == "Personal";
-    }
-    {
       name = "Test 5b-2: constants.onePassword.vaults.automation이 \"Automation\"이어야 함";
       cond = constants.onePassword.vaults.automation == "Automation";
     }

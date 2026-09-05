@@ -1,5 +1,5 @@
 # Claude Code 설정 (공통)
-# Homebrew로 앱 설치, Nix로 설정 관리
+# 공식 install.sh로 바이너리 설치(자체 auto-updater), Nix로 설정 관리
 {
   config,
   pkgs,

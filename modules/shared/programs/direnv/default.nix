@@ -8,8 +8,6 @@
 # nix-direnv는 devShell 평가 결과를 캐싱하여 재로드 시 빠름
 {
   config,
-  pkgs,
-  lib,
   ...
 }:
 

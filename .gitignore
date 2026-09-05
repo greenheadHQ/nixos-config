@@ -43,3 +43,6 @@ oauth-state.json
 
 # 로컬 전용 메모 (시크릿 포함 가능 — 추적 금지. gitleaks 스캔 예외는 두지 않는다)
 *.local.md
+
+# Python 바이트코드 캐시 (스크립트/테스트 실행 부산물)
+__pycache__/

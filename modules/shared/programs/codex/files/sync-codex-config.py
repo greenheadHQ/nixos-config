@@ -4,6 +4,9 @@
 USAGE
 -----
 - `sync-codex-config.py <template> <target>`               -> merge mode (backward compat)
+  배포된 구버전 rebuild helper(~/.local/lib/rebuild/codex.sh) 호환용. 모든 호스트가
+  `sync` 서브커맨드 호출로 갱신되면 제거한다 (저장소 안 유일한 소비자는
+  tests/suites/codex-config.sh 의 bare_sync_compat fixture).
 - `sync-codex-config.py sync <template> <target>`          -> merge mode (explicit)
 - `sync-codex-config.py check <template> <target>`         -> read-only drift check
 
@@ -342,11 +345,6 @@ def load_target_for_check_with_semantic(path: Path):
         return tomlkit.parse(text), text
     except TOMLKitError as e:
         die(f"target parse failed ({path}): {e}")
-
-
-def load_target_for_check(path: Path):
-    target, _semantic_text = load_target_for_check_with_semantic(path)
-    return target
 
 
 def as_table_or_warn(value, *, where: str) -> Optional[dict]:
