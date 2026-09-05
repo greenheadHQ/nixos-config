@@ -192,6 +192,9 @@ Vaultwarden self-host는 Mac/iOS 자동채움 UX·passkey·SSH agent·shell plug
 
 `.claude/skills/plan-with-questions/references/prd/multi-pass-review.md` 체크리스트를 수행한다. 10-pass 항목 + review-impl overlay (6-classification + overbuilt 우선 분류). auto-fix 미적용.
 
+> 위 경로는 당시 `plan-with-questions` 스킬 기준이며, 그 스킬은 #810·#812로 제거돼 체크리스트도 함께 폐기됐다.
+> 현재 동등 절차는 `run-da`(audit 모드)다. (아카이브 문서라 원문은 보존하고 각주만 덧붙인다.)
+
 ## Open Questions
 
 - Phase 2c (git commit signing 통합) 도입 시점과 범위는 별도 epic으로 분리할지 본 PRD에서 다룰지. 현재는 Out of Scope.

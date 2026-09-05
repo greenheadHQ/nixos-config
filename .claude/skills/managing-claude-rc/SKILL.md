@@ -92,6 +92,10 @@ Claude 모바일 앱/claude.ai에서 이 flake가 관리하는 머신의 Claude 
 - `ensure.lock`: maint `ensure`와 interactive `start`/`stop`의 PID 판정, signal,
   launch 검증, registry 변경 전체를 직렬화한다. `ls`/`cleanup`은 비대상이다.
 - `server.log`: 서버 stdout/stderr. 5MB 초과 시 1세대 rotate
+- ensure 로그: ensure 실행별 진단 로그. `no-server-process` 판정의 탈락 술어(`scan-rejects`)가
+  여기에만 남는다 (#1275). macOS는 파일 로그(`~/Library/Logs/claude-rc-ensure.log`,
+  `CLAUDE_RC_ENSURE_LOG`)이며 `server.log`와 같은 5MB 임계로 `.1` 1세대 rotate된다.
+  NixOS는 이 변수를 주지 않으므로 journald가 보관한다 (`journalctl -u claude-rc-ensure`)
 - `status.json`: 마지막 ensure 실행 결과. top-level timestamp/exitCode/action과
   인스턴스별 `{path,processState,runningVersion,observedVersion,desiredVersion,action}`
   배열을 기록한다. `runningVersion`은 verified live process 전용이고,
@@ -296,6 +300,8 @@ macOS:
 launchctl list | grep claude-rc
 launchctl print "gui/$(id -u)/org.nix-community.home.claude-rc-ensure"
 tail -50 ~/Library/Logs/claude-rc-ensure.log
+# no-server-process 판정 시 탈락 술어(cwd/exe/lineage/lock) 확인
+grep -n 'scan-rejects' ~/Library/Logs/claude-rc-ensure.log | tail -20
 ```
 
 아래 명령은 현재 상태를 즉시 ensure한다. 죽은 bridge는 시작하지만 live version drift는
@@ -391,7 +397,7 @@ mode·node type·filesystem 상태를 확인하고 command exit와 log를 status
 | `start-version-mismatch-cleanup-failed` | start mismatch process의 action-time 재검증·TERM·lock cleanup 중 하나가 실패함. unknown PID를 수동 kill하지 말고 identity와 lock owner 확인 |
 | `restart-version-mismatch-cleanup-failed` | restart mismatch process의 action-time 재검증·TERM·lock cleanup 중 하나가 실패함. unknown PID를 수동 kill하지 말고 identity와 lock owner 확인 |
 | `unmanaged-server-present` | 같은 cwd의 unmanaged 서버 감지. legacy tmux bridge 잔존 포함. 기존 서버 종료 후 `claude-rc start` 또는 다음 ensure |
-| `no-server-process` | lock은 잡혔지만 cwd가 같은 서버 PID를 못 찾음. stale lock 또는 프로세스 shape 확인 |
+| `no-server-process` | lock은 잡혔지만 cwd가 같은 서버 PID를 못 찾음. ensure 로그의 `scan-rejects` 라인에서 탈락 술어(cwd/exe/lineage/lock)를 먼저 확인한다 — 죽은 lock이면 다음 ensure가 재시작한다 |
 | `running-version-unresolvable` | 실행 바이너리 경로 조회 실패. `lsof`/`/proc` 접근 확인 |
 
 증상별 조치:
@@ -424,5 +430,5 @@ mode·node type·filesystem 상태를 확인하고 command exit와 log를 status
 - NixOS Home Manager 래퍼 링크: `modules/shared/programs/shell/nixos.nix`
 - 공통 테스트 fixture: `tests/lib/claude-remote-control-fixtures.sh`
 - 래퍼 테스트: `tests/suites/claude-remote-control-wrapper.sh`
-- guardian 테스트: `tests/suites/claude-remote-control-guardian.sh`
+- guardian 테스트: `tests/suites/claude-remote-control-guardian.sh` — 현재 `tests/shell-script-tests.sh` aggregator에 미등록이라 `tests/run-all-tests.sh`에서 실행되지 않는다 (12개 `test_*` 함수 전부 미등록)
 - maint/status 테스트: `tests/suites/claude-remote-control-maint.sh`

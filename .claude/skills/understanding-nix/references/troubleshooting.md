@@ -268,8 +268,8 @@ nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --show-t
 };
 
 # O 해결: 개별 파일로 지정
-".claude/hooks/stop-notification.sh" = {
-  source = "${claudeDir}/hooks/stop-notification.sh";
+".claude/hooks/session-init-icons.sh" = {
+  source = "${claudeDir}/hooks/session-init-icons.sh";
   executable = true;
 };
 ```

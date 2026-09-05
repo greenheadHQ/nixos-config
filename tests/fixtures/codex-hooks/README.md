@@ -36,6 +36,7 @@ Issue #686 path-aware PATTERN_A fixtures add PRD/plan-path coverage:
 - `pinning-claude-write-prds-pattern-b-positive.*`, `pinning-claude-write-plans-pattern-c-positive.*`, `pinning-codex-applypatch-prds-pattern-b-positive.*`, and `pinning-codex-applypatch-plans-pattern-c-positive.*` prove non-A categories still warn inside PRD/plan paths.
 - `pinning-codex-applypatch-{moveto,multifile,update}-prds-pattern-a-clean.*` and `pinning-codex-applypatch-mixed-prds-outside-pattern-a-positive.*` protect Codex `apply_patch` effective-path attribution for the narrow exception.
 - `pinning-claude-write-prds-traversal-pattern-a-positive.*` and `pinning-codex-applypatch-prds-tab-traversal-pattern-a-positive.*` prove traversal-looking PRD paths do not receive the PATTERN_A exception.
+- `pinning-claude-write-nested-prds-pattern-a-positive.*` (경로가 `.../docs/examples/.claude/prds/`처럼 중첩되어도 PATTERN_A 예외를 받지 않음) and `pinning-claude-write-prds-txt-pattern-b-positive.*` (`.claude/prds/` 안이라도 `.txt`는 예외 대상 확장자가 아님) — #686 예외의 경계 조건.
 
 ### stdin/ 카테고리 7b fixture (PreToolUse pinning-guard hard-fail, #587)
 
@@ -71,6 +72,21 @@ Claude/Codex missing shared-library fail-closed 분기를 검증한다.
 | `pretooluse-pinning-guard-codex-bash-gh-api-comment.json` | Codex PreToolUse | `gh api` issue comment body | deny reason |
 | `pretooluse-pinning-guard-codex-bash-out-of-scope.json` | Codex PreToolUse | non-durable Bash command | 빈 파일 |
 
+Issue #684 `--body-file` / `-F body=@file` 내용 스캔 fixture (plan 021):
+
+`gh`가 파일 경로로 body를 넘기는 형태는 command 문자열만 봐서는 박제 텍스트가 보이지 않는다.
+guard는 이 인자를 파싱해 **파일 내용까지 읽어** 스캔한다 (`pinning-patterns.sh`의 file-forwarding
+path 추출). 파일이 없으면 fail-open(clean)이다 — guard가 존재하지 않는 파일 때문에 정상 명령을
+막지 않게 하기 위함. `_fixture_existing_content` 키가 있는 fixture는 runner가 sandbox에 body 파일을
+만들어 `__SANDBOX_BODY_FILE__` 자리에 그 경로를 넣는다.
+
+| 파일 (`{claude,codex}` 두 prefix 공통) | 입력 의도 | expected |
+|------|----------|----------|
+| `pretooluse-pinning-guard-{claude,codex}-bash-bodyfile-clean.*` | `gh pr create --body-file <file>`, 파일 내용 clean | 빈 파일 |
+| `pretooluse-pinning-guard-{claude,codex}-bash-bodyfile-deny.*` | 같은 형태, 파일 내용에 volatile metadata | deny reason |
+| `pretooluse-pinning-guard-{claude,codex}-bash-bodyfile-missing-clean.*` | `--body-file`이 존재하지 않는 경로를 가리킴 | 빈 파일 (fail-open) |
+| `pretooluse-pinning-guard-{claude,codex}-bash-gh-api-atfile-deny.*` | `gh api ... -F body=@<file>` (`@file` 경유 입력) | deny reason |
+
 Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
 
 | 시나리오 | fixture |
@@ -81,6 +97,8 @@ Issue #686 path-aware PATTERN_A guard fixtures add the explicit matrix:
 | Equal-count replacement outside PRD/plan keeps existing count-gate behavior | `pretooluse-pinning-guard-codex-edit-outside-equal-count-clean.*` |
 | Codex `apply_patch` effective path remains correct | `pretooluse-pinning-guard-codex-applypatch-{moveto,multifile,update}-prds-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-applypatch-mixed-prds-outside-pattern-a-deny.*` |
 | Traversal-looking PRD paths fail closed | `pretooluse-pinning-guard-claude-write-prds-traversal-pattern-a-deny.*`, `pretooluse-pinning-guard-codex-applypatch-prds-tab-traversal-pattern-a-deny.*` |
+| 중첩 경로(`.../docs/examples/.claude/prds/`)는 PATTERN_A 예외를 받지 않음 | `pretooluse-pinning-guard-claude-write-nested-prds-pattern-a-deny.*` |
+| `.claude/prds/` 안이어도 `.txt`는 예외 대상 확장자가 아님 | `pretooluse-pinning-guard-claude-write-prds-txt-pattern-b-deny.*` |
 | Edit/Notebook future-compatible PATTERN_A clean paths | `pretooluse-pinning-guard-claude-edit-prds-pattern-a-clean.*`, `pretooluse-pinning-guard-claude-notebook-plans-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-edit-plans-pattern-a-clean.*`, `pretooluse-pinning-guard-codex-notebook-prds-pattern-a-clean.*` |
 
 Issue #767 PATTERN_C workflow/volatile split fixtures (workflow sub-pattern allowed in policy categories + alias, volatile sub-pattern still denied):
@@ -92,6 +110,13 @@ Issue #767 PATTERN_C workflow/volatile split fixtures (workflow sub-pattern allo
 | PATTERN_C **workflow** sub-pattern allowed in body temp draft path (`/tmp/*-body*`) | `pretooluse-pinning-guard-claude-write-body-temp-pattern-c-workflow-clean.*` |
 | Traversal raw path stays denied even with workflow tokens (workflow allow predicate fail-closes on traversal segment) | `pretooluse-pinning-guard-claude-write-body-temp-traversal-pattern-c-deny.*` |
 | Traversal raw path under body-temp shape denies equal-count `category B → category C workflow` token replacement (D-1 token-delta) | `pretooluse-pinning-guard-claude-edit-body-temp-traversal-pattern-b-to-c-workflow-equal-count-deny.*` |
+
+DA 작업공간 경로 예외 fixture (`pinning_should_check_path`의 `/tmp/da-*/` 계열 whitelist):
+
+| 시나리오 | fixture |
+|----------|---------|
+| DA scratch 경로(`/tmp/da-*/`)의 산출물은 스캔 제외 | `pretooluse-pinning-guard-claude-write-da-workspace-clean.*` |
+| `..` 세그먼트로 whitelist를 통과해 repo 경로에 쓰려는 시도는 fail closed | `pretooluse-pinning-guard-claude-write-da-traversal-deny.*` |
 
 PostToolUse `pinning-alert.sh` and commit-msg-pinning.sh keep emitting both sub-patterns under category code "C" (warn-only diagnostic preserved). The PreToolUse hard-fail records API (`pinning_guard_findings_records_for_path`, `pinning_guard_findings_records_for_scan_path`) suppresses only the workflow sub-pattern on the allowed paths above.
 
