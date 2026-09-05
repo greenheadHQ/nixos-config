@@ -152,7 +152,7 @@ review에는 image 플래그가 없다.
 | `--dangerously-bypass-hook-trust` | 영속 hook trust 없이 활성 hook 실행 허용 (신규, 0.142.5 — 자동화 전용, 위험) |
 | `--skip-git-repo-check` | Git 저장소 체크 건너뜀 |
 | `--ephemeral` | 세션 파일 미저장 |
-| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지). 차단되는 것은 사용자 override이고 값이 미설정이 되는 것은 아니다 — 모델 카탈로그·CLI의 fallback 기본값으로 되돌아간다. 그 폴백이 config 값과 다르면 조용히 드리프트한다 (A/B 실측 2026-08-15, 0.147.0: config `low` → 배너 `none`). model 축은 config 템플릿이 pin하지 않으므로(2026-09-05 제거) 드리프트 대상이 아니다 — 재검증: `grep -c '^model = ' ~/.codex/config.toml` 이 `0`이면 성립하고, `0`이 아니면 배포본에 남은 잔재이므로 그 줄을 지운다. 값을 고정해야 하는 호출은 `-c model_reasoning_effort=` 등으로 명시하고, 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다 |
+| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지). 차단되는 것은 사용자 override이고 값이 미설정이 되는 것은 아니다 — 모델 카탈로그·CLI의 fallback 기본값으로 되돌아간다. 그 폴백이 config 값과 다르면 조용히 드리프트한다 (A/B 실측 2026-08-15, 0.147.0: config `low` → 배너 `none`). model 축은 config 템플릿이 pin하지 않으므로(2026-09-05 제거) 템플릿 기인 드리프트는 없다 — 재검증: `grep -Ec '^[[:space:]]*model[[:space:]]*=' ~/.codex/config.toml`(TOML은 `model="..."`·`model   = "..."`도 유효하므로 등호 주변 공백을 허용한다)가 `0`이면 성립한다. `0`이 아니면 배포본에 값이 남아 있다는 뜻이라 그 축도 드리프트 대상이다 — 옛 템플릿 pin 잔재면 그 줄을 지우고, 앱 UI가 persist한 사용자 선택이면 그대로 두되 격리 호출에서 `-c model=`로 명시한다. 값을 고정해야 하는 호출은 `-c model_reasoning_effort=` 등으로 명시하고, 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다 |
 | `--ignore-rules` | user/project execpolicy `.rules` 파일 로드 차단 |
 | `--json` | JSONL 이벤트 출력 |
 | `-o, --output-last-message <FILE>` | 마지막 메시지 파일 저장. review에서 `-o`·stdout 모두 정상 (0.144.1 실측); upstream #12502의 open 상태와 로컬 동작은 분리 — known-issues.md §2 참조 |
@@ -485,7 +485,7 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 
 ## 모델 사용 원칙
 
-- 기본 모델: `~/.codex/config.toml`에 `model`이 있으면 그 값을, 없으면 codex 카탈로그의 priority 1 모델을 따른다 — 본 repo 템플릿은 2026-09-05부터 `model`을 pin하지 않는다 (재검증: `grep -c '^model = ' ~/.codex/config.toml`).
+- 기본 모델: `~/.codex/config.toml`에 `model`이 있으면 그 값을, 없으면 codex 카탈로그의 priority 1 모델을 따른다 — 본 repo 템플릿은 2026-09-05부터 `model`을 pin하지 않는다 (재검증: `grep -Ec '^[[:space:]]*model[[:space:]]*=' ~/.codex/config.toml` — TOML의 등호 주변 공백 변형까지 센다).
 - 리뷰 전용 모델: `review_model` 설정으로 분리 가능하다.
 - 모델/review_model runtime과 unsupported-model exact response는 재검증 미수행 (0.142.5 기준 서술 유지).
 - 실무 원칙:

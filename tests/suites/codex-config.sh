@@ -50,7 +50,7 @@ PY
 
 test_codex_config_merge_template_into_unit() {
   # sync-codex-config.py merge_template_into 함수 단위 characterization (이슈 #915).
-  # 기존 sync-preservation(시나리오 A-F)은 sync 명령 subprocess 통합 검증이고, 본
+  # 기존 sync-preservation(시나리오 A-G)은 sync 명령 subprocess 통합 검증이고, 본
   # 테스트는 함수를 직접 호출해 "template leaf override + template 미선언 키 보존 +
   # 변경 leaf 카운트 + 동일 값 no-op(0)" 계약을 단위로 박제한다. tomlkit 필요(등록부 게이팅).
   local output
