@@ -161,6 +161,21 @@ sandbox_mode = "danger-full-access"
 프로젝트 trust의 SoT는 사용자 승인에 의한 디렉토리별 runtime mutation이다. Nix template은
 trust를 하드코딩하지 않고 runtime-owned `config.toml`의 `[projects.*]` 엔트리를 보존한다.
 
+### 선언 소유 vs 앱 소유 (config.toml)
+
+`~/.codex/config.toml`은 nix 템플릿과 Codex 앱이 함께 쓰는 파일이다. sync는 템플릿이 선언한 leaf만
+덮어쓰고(template-owned) 나머지는 보존한다(user-owned). 앱 UI가 쓰는 키를 템플릿에 두면 nrs마다
+되돌아가 UI 선택이 무효가 되므로, 경계는 다음과 같이 둔다 (2026-09-05 결정).
+
+| 소유 | 키 | 근거 |
+|------|----|------|
+| 템플릿(선언) | `approval_policy`, `sandbox_mode`, `[features]`, `[agents]`, `[[hooks.*]]`, `[notice]` | 정책·안전 경계. 사용자가 UI로 바꾸는 값이 아니다 |
+| 앱(UI persist) | `model`, `model_reasoning_effort`, `service_tier` | Desktop/TUI 선택이 최상위 키로 기록됨. 템플릿에서 제거 |
+| 앱(런타임 상태) | `[projects.*]`, `tui`, `desktop`, `memories`, `plugins`, `skills`, `marketplaces`, `notify`, `mcp_servers` | 앱이 생성·갱신. 템플릿은 선언하지 않는다 |
+
+템플릿에서 키를 지우면 배포본에는 user-owned로 남으므로, 정책 키를 제거할 때만 호스트별 1회 수동
+삭제가 필요하다(앱 소유 키는 남는 값이 곧 사용자 선택이라 그대로 둔다).
+
 ## 트러블슈팅 / FAQ
 
 - 스킬이 안 보임: `.agents/skills/*`가 파일 심링크인지 확인하고 디렉토리 심링크로 교정한다.

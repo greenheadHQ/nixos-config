@@ -1,6 +1,16 @@
+# 템플릿에서 키를 지워도 배포본 ~/.codex/config.toml에는 user-owned로 남는다 (sync-codex-config.py
+# ownership 정책; tests/test-codex-hook-fixtures.sh의 sync-preservation scenario-G가 이 동작을
+# 고정한다) — 2026-09-05에 지운 model·model_reasoning_effort·features.voice_transcription는 옛 값 그대로 배포본에 남으므로, 호스트마다
+# codex 세션 종료 후 그 줄을 1회 수동 삭제하고 `nrs --force` → `./scripts/ai/verify-ai-compat.sh`로
+# 확인한다. 그 1회 정리 뒤 다시 나타나는 model·model_reasoning_effort는 앱 UI가 persist한 사용자
+# 선택이므로 그대로 둔다.
 personality = "pragmatic"
-model = "gpt-5.6-sol"
-model_reasoning_effort = "ultra"
+# model·model_reasoning_effort는 템플릿에 두지 않는다 — Codex Desktop/TUI가 UI에서 고른 값을
+# ~/.codex/config.toml 최상위 키에 persist하므로, template-owned로 두면 nrs마다 되돌아가 UI 선택이
+# 무효가 된다(2026-09-05 Desktop 슬라이더 실측). 세션 취향(모델·effort)은 앱 UI가 단일 소스이고,
+# 이 템플릿은 정책·안전 경계(approval_policy, sandbox_mode, features, agents, hooks)만 선언한다.
+# 미지정 시 codex는 카탈로그 priority 1(frontier)과 그 모델의 기본 effort를 쓴다. 어떤 모델이
+# 어떤 effort를 지원하는지는 `codex debug models`의 supported_reasoning_levels로 확인한다.
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 suppress_unstable_features_warning = true
@@ -13,15 +23,20 @@ NIXOS_CONFIG_HEADLESS_SSH = "1"
 [notice]
 hide_full_access_warning = true
 
+# 아래 값은 "upstream 기본이 뒤집혀도 이 값을 강제한다"는 의도의 명시 핀이다 — 현행 기본과
+# 같은 값이어도 유지한다. 재검증(현행 기본값): CODEX_HOME=$(mktemp -d) codex features list
 [features]
+# multi_agent: run-da fan-out의 전제 (using-codex-exec/references/known-issues.md의 spawn probe 절).
+# 0.153.4 기준 upstream 기본도 true지만, 기본이 뒤집히면 fan-out이 조용히 4슬롯으로 퇴화하므로 명시 고정.
 multi_agent = true
+# apps: 0.153.4 기준 upstream 기본도 true — darwin에서는 커넥터 표면을 항상 켜두려고 명시 고정.
 apps = true
 prevent_idle_sleep = true
-voice_transcription = true
+# goals: 0.153.4 기준 upstream 기본도 true — 기본 회귀 시에도 켜두려고 명시 고정.
 goals = true
 default_mode_request_user_input = true
 
-# Multi-agent 동시 실행 상한 (codex 0.146.0 기준).
+# Multi-agent 동시 실행 상한 (codex 0.153.4·2026-09-05 실측 시점 기준).
 # `[agents].max_concurrent_threads_per_session`은 primary thread를 제외하고 동시에 열어둘 수
 # 있는 spawned-agent thread 수 상한이다. 16이면 세션 developer 메시지가 광고하는 total slot이
 # 17(root 포함)이 되고, run-da는 그 광고 slot 안에서만 fan-out한다
@@ -33,7 +48,7 @@ default_mode_request_user_input = true
 # 반드시 `[agents]` 테이블 아래에 둔다.
 # `agents.max_threads`는 같은 필드의 legacy alias다. 병기하면 codex가 startup warning
 # "Ignoring malformed agent role definition: duplicate field ..."를 내므로 병기 금지.
-# `[features].multi_agent_v2`를 켜도 이 값은 그대로 반영된다 (0.146.0 CLI 실측: v2 ON + 이 키
+# `[features].multi_agent_v2`를 켜도 이 값은 그대로 반영된다 (0.146.0·2026-08-02 시점 실측: v2 ON + 이 키
 # 16 → 17 slot). 단 features.multi_agent_v2.max_concurrent_threads_per_session은 root를 포함한
 # total 기준이라 같은 16이 17이 아닌 16 slot이 되므로, 기준이 다른 두 키를 병기하지 않는다.
 # 재검증: codex debug prompt-input 'probe' \

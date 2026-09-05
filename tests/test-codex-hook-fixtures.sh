@@ -79,6 +79,12 @@ LIVE_PASS_FILE="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-live-pass.XXXXXX")
 # 필수 live 시나리오 ID의 단일 선언 — 각 시나리오의 _live_mark_passed 호출 리터럴과 함께
 # 갱신한다 (집계 루프는 이 배열만 소비).
 REQUIRED_LIVE_SCENARIOS=(invocation_matrix marker_residual env_inheritance)
+# live 시나리오가 실제 codex exec에 넘기는 모델 — 왕복은 `Reply PONG` 수준이라 저가 모델을
+# 명시 고정한다. 미지정 시 CLI 폴백이 카탈로그 priority 1(frontier)이라 비용이 붙고, 4곳 모두
+# 사용자 config가 적용되지 않는 경로(`--ignore-user-config` 또는 sandbox `CODEX_HOME`)라
+# ~/.codex/config.toml로는 통제되지 않는다.
+# 카탈로그 유효성 재검증: codex debug models | jq -r '.models[].slug'
+LIVE_FIXTURE_MODEL="gpt-5.5"
 # live가 기동한 장수명 프로세스(wrapper·marker helper)의 등록 파일 — Ctrl-C/CI 취소 등
 # 중단 경로에서도 EXIT trap이 임시 디렉터리 삭제 전에 이 목록을 identity 확인 후 정리한다
 # (디렉터리를 먼저 지우면 marker 경로 기반 재탐색이 불가능해진다). 라인 형식은
@@ -647,6 +653,37 @@ assert cmd == expected_pre_cmd, f"command={cmd!r} expected={expected_pre_cmd!r}"
 all_commands = [h.get("command", "") for entry in pre for h in entry.get("hooks", [])]
 assert all("USER-PRETOOLUSE-LOST" not in c for c in all_commands), \
     f"user marker still present: {all_commands}"
+PY
+
+  # ── G: 템플릿에서 삭제된 leaf의 배포본 잔재 (2026-09-05 model pin 제거) ──
+  # 템플릿이 더는 선언하지 않는 leaf(model / model_reasoning_effort /
+  # features.voice_transcription)는 user-owned가 되어 기존 배포본에 그대로 남는다. config 템플릿
+  # 주석이 안내하는 "호스트별 1회 수동 삭제" 절차가 필요한 이유이자, 템플릿이 그 키를 다시
+  # pin하면 즉시 실패하도록 하는 회귀 차단이다. 같은 fixture로 template-owned leaf 강제도 확인한다.
+  target=$(_sync_preservation_run_one \
+    "$FIXTURE_DIR/sync-preservation/scenario-G-removed-template-leaf-residue.toml" "scenario-G")
+  python3 - "$target" "$TEMPLATE_REPO_FILE" <<'PY' \
+    || fail "scenario-G: 템플릿 미선언 leaf 보존 또는 template-owned leaf 강제 실패"
+import sys, tomllib
+with open(sys.argv[1], "rb") as f:
+    d = tomllib.load(f)
+with open(sys.argv[2], "rb") as f:
+    t = tomllib.load(f)
+# fixture 전제: 이 세 leaf는 템플릿이 선언하지 않는다 (선언으로 되돌아가면 여기서 실패한다).
+assert "model" not in t, "template이 model을 다시 pin함 — 관련 문서/주석과 함께 갱신 필요"
+assert "model_reasoning_effort" not in t, "template이 model_reasoning_effort를 다시 pin함"
+assert "voice_transcription" not in t.get("features", {}), "template이 voice_transcription을 다시 선언함"
+# 잔재 leaf 보존
+assert d.get("model") == "gpt-5.6-sol", f"model={d.get('model')!r} (보존 실패)"
+assert d.get("model_reasoning_effort") == "ultra", \
+    f"model_reasoning_effort={d.get('model_reasoning_effort')!r} (보존 실패)"
+assert d.get("features", {}).get("voice_transcription") is True, \
+    f"features.voice_transcription={d.get('features', {}).get('voice_transcription')!r} (보존 실패)"
+# template-owned leaf는 계속 강제
+assert d.get("approval_policy") == t["approval_policy"], \
+    f"approval_policy={d.get('approval_policy')!r} expected={t['approval_policy']!r}"
+assert d.get("features", {}).get("goals") == t["features"]["goals"], \
+    f"features.goals={d.get('features', {}).get('goals')!r} expected={t['features']['goals']!r}"
 PY
 }
 
@@ -1473,7 +1510,7 @@ EOF
        "$SUPERVISED_BIN" \
          --ephemeral --skip-git-repo-check --sandbox read-only --ignore-rules \
          --dangerously-bypass-hook-trust \
-         -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+         -c model="$LIVE_FIXTURE_MODEL" -c model_reasoning_effort="medium" \
          - >/dev/null 2>"$codex_stderr" ) \
     || codex_rc=$?
 
@@ -1551,7 +1588,7 @@ test_codex_exec_invocation_live_matrix() {
     ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
     "$SUPERVISED_BIN" \
       --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
-      -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+      -c model="$LIVE_FIXTURE_MODEL" -c model_reasoning_effort="medium" \
       -o "$result1" \
       - >/dev/null 2>"$stderr1" || rc1=$?
 
@@ -1614,7 +1651,7 @@ EOF
     "$SUPERVISED_BIN" \
       --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
       --dangerously-bypass-hook-trust \
-      -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+      -c model="$LIVE_FIXTURE_MODEL" -c model_reasoning_effort="medium" \
       -c "hooks.UserPromptSubmit=$override" \
       -c "hooks.Stop=$override" \
       -o "$result2" \
@@ -1712,7 +1749,7 @@ test_codex_exec_marker_residual_live() {
       ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
       "$SUPERVISED_BIN" \
         --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
-        -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+        -c model="$LIVE_FIXTURE_MODEL" -c model_reasoning_effort="medium" \
         -o "$result" \
         - >/dev/null 2>"$stderr_log" ) &
   wrapper_pid=$!
@@ -1937,7 +1974,7 @@ run_test "dispatcher recovers from sub-script failures" \
   test_dispatcher_recovers_from_subscript_failures
 run_test "noise-guard env variants (cleanup unguarded)" \
   test_noise_guard_env_variants_with_cleanup_unguarded
-run_test "sync-codex-config preservation scenarios A/B/C/D/E/F" \
+run_test "sync-codex-config preservation scenarios A/B/C/D/E/F/G" \
   test_sync_preservation_scenarios
 run_test "template hook commands match inline shim builder" \
   test_template_hook_commands_match_builder

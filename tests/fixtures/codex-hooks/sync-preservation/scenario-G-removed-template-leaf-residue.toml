@@ -1,0 +1,24 @@
+# Scenario G: 템플릿에서 삭제된 leaf가 기존 배포본에 남아 있을 때의 동작 (2026-09-05 model pin 제거,
+# darwin features.voice_transcription 제거). merge_template_into는 template이 선언하지 않는 leaf를
+# 건드리지 않으므로 아래 model / model_reasoning_effort / features.voice_transcription은 옛 값 그대로
+# 남는다 — config 템플릿 주석이 안내하는 "호스트별 1회 수동 삭제" 절차의 근거이자, 템플릿이 다시
+# model을 pin하면 즉시 깨지도록 하는 회귀 차단이다. 동시에 template-owned leaf는 계속 강제된다.
+
+model = "gpt-5.6-sol"
+model_reasoning_effort = "ultra"
+approval_policy = "on-request"
+sandbox_mode = "danger-full-access"
+
+[features]
+voice_transcription = true
+goals = false
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/record-prompt-submit.sh"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "$HOME/.codex/hooks/_stop-dispatcher.sh"

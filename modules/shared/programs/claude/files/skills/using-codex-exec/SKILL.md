@@ -146,13 +146,13 @@ review에는 image 플래그가 없다.
 | `--enable <FEATURE>` | 피처 활성화 |
 | `--disable <FEATURE>` | 피처 비활성화 |
 | `--strict-config` | 전달한 `-c`뿐 아니라 로드된 config 전체의 미인식 필드를 오류로 처리. capability probe는 `--ignore-user-config --strict-config`로 user config drift를 격리 |
-| `-m, --model <MODEL>` | 모델 선택 (생략 권장 — config.toml 기본값 사용. 단 `--ignore-user-config` 동반 시 이 원칙의 예외 — 해당 행 참조) |
+| `-m, --model <MODEL>` | 모델 선택 (생략 권장 — 기본 모델 사용, "모델 사용 원칙" 절 참조. 단 `--ignore-user-config` 동반 시 이 원칙의 예외 — 해당 행 참조) |
 | `--output-schema <FILE>` | JSON Schema 출력 형식 — exec에서 동작. review는 인자를 받되 무시하는 silent no-op이다 (gotcha 11, 2026-08-15 실측); resume은 미검증 |
 | `--dangerously-bypass-approvals-and-sandbox` | 샌드박스 우회 (`--yolo` 숨은 alias) |
 | `--dangerously-bypass-hook-trust` | 영속 hook trust 없이 활성 hook 실행 허용 (신규, 0.142.5 — 자동화 전용, 위험) |
 | `--skip-git-repo-check` | Git 저장소 체크 건너뜀 |
 | `--ephemeral` | 세션 파일 미저장 |
-| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지). 차단되는 것은 사용자 override이고 값이 미설정이 되는 것은 아니다 — 모델 카탈로그·CLI의 fallback 기본값으로 되돌아간다. 그 폴백이 config 값과 다르면 조용히 드리프트한다 (A/B 실측 2026-08-15, 0.147.0: config `low` → 배너 `none`; model 축은 폴백이 config 값과 우연히 같아 무증상이나 메커니즘 동일). 값을 고정해야 하는 호출은 `-c model_reasoning_effort=` 등으로 명시하고, 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다 |
+| `--ignore-user-config` | `$CODEX_HOME/config.toml` 로드 차단 (auth만 유지). 차단되는 것은 사용자 override이고 값이 미설정이 되는 것은 아니다 — 모델 카탈로그·CLI의 fallback 기본값으로 되돌아간다. 그 폴백이 config 값과 다르면 조용히 드리프트한다 (A/B 실측 2026-08-15, 0.147.0: config `low` → 배너 `none`). model 축은 config 템플릿이 pin하지 않으므로(2026-09-05 제거) 템플릿 기인 드리프트는 없다 — 재검증: `grep -Ec '^[[:space:]]*model[[:space:]]*=' ~/.codex/config.toml`(TOML은 `model="..."`·`model   = "..."`도 유효하므로 등호 주변 공백을 허용한다)가 `0`이면 성립한다. `0`이 아니면 배포본에 값이 남아 있다는 뜻이라 그 축도 드리프트 대상이다 — 옛 템플릿 pin 잔재면 그 줄을 지우고, 앱 UI가 persist한 사용자 선택이면 그대로 두되 격리 호출에서 `-c model=`로 명시한다. 값을 고정해야 하는 호출은 `-c model_reasoning_effort=` 등으로 명시하고, 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다 |
 | `--ignore-rules` | user/project execpolicy `.rules` 파일 로드 차단 |
 | `--json` | JSONL 이벤트 출력 |
 | `-o, --output-last-message <FILE>` | 마지막 메시지 파일 저장. review에서 `-o`·stdout 모두 정상 (0.144.1 실측); upstream #12502의 open 상태와 로컬 동작은 분리 — known-issues.md §2 참조 |
@@ -485,7 +485,7 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 
 ## 모델 사용 원칙
 
-- 기본 모델: `~/.codex/config.toml`의 `model` 값을 따른다.
+- 기본 모델: `~/.codex/config.toml`에 `model`이 있으면 그 값을, 없으면 codex 카탈로그의 priority 1 모델을 따른다 — 본 repo 템플릿은 2026-09-05부터 `model`을 pin하지 않는다 (재검증: `grep -Ec '^[[:space:]]*model[[:space:]]*=' ~/.codex/config.toml` — TOML의 등호 주변 공백 변형까지 센다).
 - 리뷰 전용 모델: `review_model` 설정으로 분리 가능하다.
 - 모델/review_model runtime과 unsupported-model exact response는 재검증 미수행 (0.142.5 기준 서술 유지).
 - 실무 원칙:
@@ -565,8 +565,8 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 | stderr `ERROR:` grep을 1차 실패 판정에 사용 | 프롬프트 에코·tracing으로 정상 실행 상시 오탐 + timeout·pre-flight 미탐 | rc + 결과 파일이 정본, stderr는 known-issues §0-1 분류 전용 |
 | background 발사 말미의 꼬리 echo/cat | 완료 알림이 래핑 셸 rc(0)를 보고 — 전건 실패가 completed | rc 캡처 → `.rc` 영속화 → `exit $rc` (성공 계약 "background 발사의 rc 계약") |
 | 판정 pipeline 끝에 `head`/`tail`/`; echo $?` | 원 exit 은폐 | `pipefail`과 즉시 exit 보존 |
-| `-m o3` / `-m o4-mini` 등 비Codex 모델 지정 | "Model metadata not found" + "model is not supported" | `-m` 생략, config.toml 기본 모델 사용 |
-| `-m` 플래그로 매번 다른 모델 지정 | 불일치/에러 위험 | config.toml 기본값 사용 원칙 |
+| `-m o3` / `-m o4-mini` 등 비Codex 모델 지정 | "Model metadata not found" + "model is not supported" | `-m` 생략, 기본 모델 사용 |
+| `-m` 플래그로 매번 다른 모델 지정 | 불일치/에러 위험 | 기본 모델 사용 원칙 |
 | 실패 원인 미확인 후 반복 재시도 | 동일 에러 반복 | known-issues.md 진단 절차 |
 | 긴 루프에서 결과 파일 저장 생략 | 결과 유실 | `-o` 또는 리다이렉트 필수 사용 |
 | child가 같은 collector/fan-out을 다시 생성 | 무한 자기증식 | 오케스트레이션은 부모 1계층에서만 수행 |
