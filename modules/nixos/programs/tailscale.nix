@@ -55,7 +55,10 @@ let
           if command -v ss >/dev/null 2>&1; then
             _laddr=$(ss -H -ltn "sport = :$port" 2>/dev/null | awk '{print $4}' || true)
             if printf '%s\n' "$_laddr" | grep -qE '^(0\.0\.0\.0|\*|\[::\]|100\.)'; then
-              echo "경고: 포트 $port가 0.0.0.0/tailnet IP에 바인딩됨 — tailnet 직접 노출. dev 서버를 127.0.0.1에 바인딩하라." >&2
+              # 조사 앞 확장은 중괄호로 경계를 준다. UTF-8 로케일의 bash는 한글을 식별자
+              # 문자로 취급해 조사까지 변수명으로 파싱한다 → set -u에 걸려 경고 대신
+              # unbound variable로 죽어 ts-serve 전체가 중단된다.
+              echo "경고: 포트 ''${port}가 0.0.0.0/tailnet IP에 바인딩됨 — tailnet 직접 노출. dev 서버를 127.0.0.1에 바인딩하라." >&2
             fi
           fi
           # serve config는 노드 전역 상태다. <port> 노출은 기존 serve를 갱신/덮어쓸 수

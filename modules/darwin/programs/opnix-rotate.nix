@@ -64,11 +64,16 @@ let
       fi
 
       steps="1Password 콘솔에서 nixos-automation-mac 재발급 → secrets/opnix-service-account-token-mac.age 재암호화(개인 Mac 키) → secrets/opnix-service-account-expiry-mac.txt 갱신 → nrs."
+      # 변수 확장 바로 뒤에 한글 조사가 붙는 자리는 반드시 중괄호로 경계를 준다.
+      # UTF-8 로케일의 bash는 한글을 식별자 문자로 취급해 조사까지 변수명으로 파싱하고,
+      # writeShellApplication의 set -u에 걸려 알림 대신 unbound variable로 죽는다.
+      # launchd agent는 UTF-8 로케일을 물려받아 실제로 이 경로에서 만료 알림이
+      # 통째로 유실됐다 (systemd 유닛은 C 로케일이라 MiniPC만 무증상이었다).
       if [ "$days_left" -lt 0 ]; then
-        msg="Mac SA token이 $expiry_date에 만료됨 ($(( -days_left ))일 경과). $steps"
+        msg="Mac SA token이 ''${expiry_date}에 만료됨 ($(( -days_left ))일 경과). $steps"
         prio=1
       else
-        msg="Mac SA token이 $expiry_date에 만료 예정 ($days_left일 남음). $steps"
+        msg="Mac SA token이 ''${expiry_date}에 만료 예정 (''${days_left}일 남음). $steps"
         prio=0
       fi
 

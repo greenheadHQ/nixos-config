@@ -70,11 +70,15 @@ let
 
       title="1Password SA token rotation needed"
       rotate_steps="1Password GUI에서 Service Account 토큰 재발급 → secrets/opnix-service-account-token.age re-encrypt → nrs minipc → opnix-secrets.service 재시작 검증."
+      # 변수 확장 바로 뒤에 한글 조사가 붙는 자리는 반드시 중괄호로 경계를 준다.
+      # UTF-8 로케일의 bash는 한글을 식별자 문자로 취급해 조사까지 변수명으로 파싱하고,
+      # set -u에 걸려 알림 대신 unbound variable로 죽는다. 이 유닛은 C 로케일이라
+      # 지금은 무증상이지만, 로케일 전제가 바뀌면 조용히 알림이 끊긴다 (Mac 사례).
       if [ "$days_left" -lt 0 ]; then
-        message="SA token이 $expiry_date에 만료됨 ($(( -days_left ))일 경과). $rotate_steps"
+        message="SA token이 ''${expiry_date}에 만료됨 ($(( -days_left ))일 경과). $rotate_steps"
         priority=1
       else
-        message="SA token이 $expiry_date에 만료 예정 ($days_left일 남음). $rotate_steps"
+        message="SA token이 ''${expiry_date}에 만료 예정 (''${days_left}일 남음). $rotate_steps"
         priority=0
       fi
 
