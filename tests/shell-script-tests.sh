@@ -425,6 +425,7 @@ run_test "headless SSH dispatcher suite class coverage" test_headless_ssh_dispat
 run_test "headless SSH dispatcher scope parser" test_headless_ssh_dispatcher_scope_parser
 run_test "headless SSH dispatcher supervisor" test_headless_ssh_dispatcher_supervisor
 run_test "headless SSH dispatcher identity compatibility" test_headless_ssh_dispatcher_identity_compat
+run_test "headless SSH dispatcher manifest drift" test_headless_ssh_dispatcher_manifest_drift
 run_test "Claude owner shell finalizes dispatcher PATH" test_claude_owner_shell_finalizes_dispatcher_path
 run_test "Claude stale shell snapshot recovers headless SSH PATH" test_claude_stale_snapshot_path_recovery
 

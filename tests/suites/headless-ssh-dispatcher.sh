@@ -13,13 +13,26 @@ import pathlib
 import sys
 
 tree = ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+
+
+def is_group_base(base):
+    # ManifestDriftTests처럼 fixture 없이 TestCase를 직접 상속하는 그룹도 센다.
+    # `unittest.TestCase`(Attribute)와 `from unittest import TestCase`(Name) 양쪽을 본다.
+    if isinstance(base, ast.Name):
+        return base.id in {"DispatcherFixture", "TestCase"}
+    return isinstance(base, ast.Attribute) and base.attr == "TestCase"
+
+
 actual = sorted(
     node.name
     for node in tree.body
     if isinstance(node, ast.ClassDef)
-    and any(isinstance(base, ast.Name) and base.id == "DispatcherFixture" for base in node.bases)
+    and node.name != "DispatcherFixture"  # 그룹이 아니라 공용 fixture base다.
+    and any(is_group_base(base) for base in node.bases)
 )
-expected = sorted("CoreContractTests ScopeTests LifecycleTests DependencyTests".split())
+expected = sorted(
+    "CoreContractTests ScopeTests LifecycleTests DependencyTests ManifestDriftTests".split()
+)
 if actual != expected:
     raise SystemExit(f"dispatcher suite class coverage drift: actual={actual} expected={expected}")
 PY
@@ -39,6 +52,18 @@ test_headless_ssh_dispatcher_supervisor() {
 
 test_headless_ssh_dispatcher_identity_compat() {
   _run_headless_ssh_dispatcher_group DependencyTests
+}
+
+# 매니페스트 vs 실제 /usr/bin/ssh usage 드리프트. 실측은 darwin에서만 가능하므로 다른
+# 러너(required CI는 ubuntu)에서는 파서·배선 단위 테스트만 돌고 실측은 빠진다. 그 미실행이
+# 초록으로 묻히지 않도록 canonical `N/A:` 마커를 남긴다 — 드라이버 전체를 미실행으로 돌리는
+# `SKIP:`과 달리 상위 요약에 그대로 전파되면서 CI의 SKIP 금지 규칙에는 걸리지 않는다.
+test_headless_ssh_dispatcher_manifest_drift() {
+  if [ "$(uname -s)" != "Darwin" ]; then
+    printf 'N/A: 매니페스트 vs /usr/bin/ssh usage 실측은 Darwin에서만 가능하다 (runner=%s) — 파서·배선 테스트만 실행한다\n' \
+      "$(uname -s)"
+  fi
+  _run_headless_ssh_dispatcher_group ManifestDriftTests
 }
 
 test_claude_owner_shell_finalizes_dispatcher_path() {

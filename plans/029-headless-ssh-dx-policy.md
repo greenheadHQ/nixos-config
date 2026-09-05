@@ -77,6 +77,11 @@ private package는 `bin/ssh`만 제공하며 global `home.packages`나 `home.ses
   `verifiedOn`(macos/ssh/date)은 arity 표를 어느 환경에서 확인했는지만 남기는 근거 표기라
   런타임·`runtimeGeneration` 해시에 들어가지 않는다. macOS의 `/usr/bin/ssh`가 갱신되면
   `ssh -h`/manpage의 short-option argument 유무와 함께 arity와 `verifiedOn`을 갱신한다.
+  갱신을 놓친 드리프트는 `tests/headless-ssh-dispatcher-tests.py`의 `ManifestDriftTests`가
+  실제 usage와 대조해 잡지만 이 대조는 자동 게이트가 아니다 — required CI는 ubuntu 러너라
+  실측 없이 `N/A:` 한 줄만 남기고, pre-push에도 shell suite가 없다. 실측은 macOS에서
+  `tests/run-shell-script-tests.sh`(또는 `tests/run-all-tests.sh`)를 직접 돌릴 때만 일어나므로,
+  이 매니페스트를 건드리는 변경은 그 실행을 Human Test Plan에 넣는다.
 - Ghostty: marker가 없으므로 `/usr/bin/ssh`와 기존 interactive 1Password preflight를 유지한다.
 
 ### 2. Target scope
