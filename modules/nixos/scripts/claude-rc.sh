@@ -31,6 +31,7 @@ Usage:
   claude-rc stop [path] [--force]
   claude-rc ls
   claude-rc cleanup
+  claude-rc --stop | --cleanup   (legacy alias of the stop/cleanup subcommands)
   claude-rc --help
 
 Options:

@@ -1,6 +1,5 @@
 # Shell 설정 - Linux/NixOS 전용
 {
-  config,
   pkgs,
   lib,
   username,

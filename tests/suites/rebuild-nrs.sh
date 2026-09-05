@@ -822,7 +822,7 @@ EOF
     bash -c '
       set -euo pipefail
       cd "'"$worktree_root"'"
-      "'"$home_dir/.local/bin/nrs"'" 
+      "'"$home_dir/.local/bin/nrs"'"
     ' 2>&1
   )
 

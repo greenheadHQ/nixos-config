@@ -1,8 +1,5 @@
 # Hammerspoon 설정 (macOS 키보드/자동화)
-{
-  config,
-  ...
-}:
+{ ... }:
 
 let
   hammerspoonDir = ./files;

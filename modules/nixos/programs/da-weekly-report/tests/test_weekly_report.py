@@ -192,7 +192,7 @@ def test_claim_attempt_alert_only_claims_once(weekly_report_module, tmp_path):
         str(state_file),
     ]) == 1
 
-    state = weekly_report_module.load_attempt_state(state_file)
+    state = weekly_report_module.parse_attempt_state(state_file.read_text(encoding="utf-8"))
     assert set(state) == {weekly_report_module.REMOTE_PREFLIGHT_ALERT_KEY}
 
 
@@ -260,6 +260,15 @@ def test_publish_record_is_append_only_json_lines(weekly_report_module, tmp_path
     assert [json.loads(line)["target"] for line in lines] == ["github", "pushover"]
 
 
+def pending_targets(weekly_report_module, path, targets):
+    """publish_target_records(프로덕션 CLI가 실제로 타는 경로)에서 pending target만 추린다."""
+    return [
+        record["target"]
+        for record in weekly_report_module.publish_target_records(path, targets)
+        if record["pending"]
+    ]
+
+
 def test_pending_publish_targets_uses_latest_status_per_target(weekly_report_module, tmp_path):
     path = tmp_path / "weekly-2026-W28-publish.json"
 
@@ -286,19 +295,15 @@ def test_pending_publish_targets_uses_latest_status_per_target(weekly_report_mod
             "url": "https://example.invalid/comment",
         },
     }
-    assert weekly_report_module.latest_publish_statuses(path) == {
-        "github": "failed",
-        "matrix": "skipped",
-        "pushover": "success",
-    }
-    assert weekly_report_module.pending_publish_targets(
+    assert pending_targets(
+        weekly_report_module,
         path,
         ["github", "pushover", "matrix", "missing"],
     ) == ["github", "missing"]
 
     weekly_report_module.append_publish_record(path, {"target": "github", "status": "success"})
 
-    assert weekly_report_module.pending_publish_targets(path, ["github", "pushover"]) == []
+    assert pending_targets(weekly_report_module, path, ["github", "pushover"]) == []
 
 
 def test_pending_publish_targets_command_can_emit_latest_records_for_retry_url(
@@ -344,7 +349,8 @@ def test_pending_publish_targets_retries_blocked_but_skipped_is_terminal(
     weekly_report_module.append_publish_record(path, {"target": "matrix", "status": "skipped"})
     weekly_report_module.append_publish_record(path, {"target": "pushover", "status": "success"})
 
-    assert weekly_report_module.pending_publish_targets(
+    assert pending_targets(
+        weekly_report_module,
         path,
         ["github", "matrix", "pushover", "missing"],
     ) == ["github", "missing"]
@@ -388,7 +394,7 @@ def test_publish_record_command_accepts_blocked_status(weekly_report_module, tmp
     ])
 
     assert rc == 0
-    assert weekly_report_module.latest_publish_statuses(path) == {"github": "blocked"}
+    assert weekly_report_module.latest_publish_records(path)["github"]["status"] == "blocked"
 
 
 def test_build_command_allows_omitting_output_markdown(

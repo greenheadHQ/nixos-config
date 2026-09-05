@@ -34,7 +34,7 @@ Mac SSH 인증을 1Password SSH agent로 이관하되, 단일 의존 실패 모�
 - `iphone_ed25519`, `ipad_ed25519` key 생성: 각각 디바이스에서 직접 ssh-keygen으로 생성 후 1Password Automation vault에 `iphone-ssh`, `ipad-ssh` item으로 backup copy 저장 (Termius는 디바이스 local file 보유)
 - `emergency_ed25519` key 생성: `ssh-keygen -t ed25519 -C "emergency-fallback" -f ~/.ssh/emergency_ed25519` (passphrase 강). 1Password Automation vault `emergency-ssh` item에 backup
 - 4개 public key를 `libraries/constants.nix`의 `constants.sshDeviceKeys`에 선언하고 `hosts/greenhead-minipc/default.nix`의 MiniPC authorizedKeys 목록에서 소비
-- Mac `~/.ssh/config`: 
+- Mac `~/.ssh/config`:
   - 전역 `IdentityAgent`는 1Password group container socket(`~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`) 사용
   - `Host minipc-emergency` 분기 → `Hostname <minipc>` + `IdentityFile ~/.ssh/emergency_ed25519` + `IdentityAgent none`
 - ControlPersist 정책 결정 + 적용: 현재 600초 → 영구(`yes`) 또는 launchd으로 master daemon 띄우는 패턴 중 1개 선택 (사용자 워크플로 모니터링 후 결정)

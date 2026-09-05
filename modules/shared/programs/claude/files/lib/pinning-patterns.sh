@@ -552,23 +552,9 @@ pinning_findings_text() {
   pinning_findings_records "$scan_file" | _pinning_render_records
 }
 
-_pinning_findings_text_for_prd_or_plan_state() {
-  local scan_file="$1"
-  local is_prd_or_plan="${2:-}"
-  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$is_prd_or_plan" \
-    | _pinning_render_records
-}
-
 pinning_match_count() {
   local scan_file="$1"
   pinning_findings_records "$scan_file" | wc -l | tr -d ' '
-}
-
-_pinning_match_count_for_prd_or_plan_state() {
-  local scan_file="$1"
-  local is_prd_or_plan="${2:-}"
-  _pinning_findings_records_for_prd_or_plan_state "$scan_file" "$is_prd_or_plan" \
-    | wc -l | tr -d ' '
 }
 
 pinning_findings_text_for_path() {

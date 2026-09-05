@@ -2,7 +2,6 @@
 # upload-immich는 Tailscale/Immich 의존이므로 personal 전용 (work Mac은 Tailnet 미소속)
 {
   config,
-  pkgs,
   lib,
   constants,
   hostType,

@@ -184,12 +184,16 @@ ide_url_template_for_bundle_id() {
   esac
 }
 
-# IDE allowlist SSOT — 자동 감지(detect) 분기가 사용한다.
-# 위 ide_url_template_for_bundle_id 의 case 와 같은 bundle id 집합을 유지한다.
+# IDE allowlist 표시용 목록 — 이 저장소 안에는 런타임 소비자가 없다.
+# detect 분기(detect_macos_ide_template)는 ide_url_template_for_bundle_id 만 호출하고,
+# 이 목록을 source 해 쓰는 installer 도 이 저장소에는 없다. 그럼에도 남기는 이유는
+# 같은 코드가 배포된 다른 사본(설치 helper)과 매핑을 대조할 때의 기준점이기 때문이다.
+# 위 ide_url_template_for_bundle_id 의 case 와 같은 bundle id 집합을 유지해야 하며,
+# 그 계약은 tests/statusline.bats 의 "known_ide_list ... drift" 케이스가 지킨다.
 # 여기 bundle id 는 mdfind / defaults read 의 case-sensitive 매칭용이라 실제 앱의
 # CFBundleIdentifier 원본 대소문자를 그대로 쓴다 (case 문은 lowercase 정규화 후
-# 비교하므로 표현이 다르다 — drift 테스트는 lowercase 기준으로 두 집합을 대조한다).
-# 출력 형식: "표시이름|bundle_id" 한 줄씩. installer 가 helper 만 source 해 재사용한다.
+# 비교하므로 표현이 다르다 — 위 drift 테스트가 lowercase 기준으로 두 집합을 대조한다).
+# 출력 형식: "표시이름|bundle_id" 한 줄씩.
 known_ide_list() {
   printf '%s\n' \
     "VSCode|com.microsoft.VSCode" \
@@ -299,7 +303,6 @@ build_cwd_url() {
 # --- resolve_raw_terminal_cols: 5단계 폭 측정 fallback chain ---
 # 우선순위:
 #   (1) CLAUDE_STATUSLINE_COLUMNS  (사용자 명시 override)
-#   (1.5) STATUSLINE_COLS          (v0.2.x deprecated alias — silent regression 방지)
 #   (2) STDIN_COLS                 (stdin JSON의 .terminal.columns, v2.1.141+)
 #   (3) COLUMNS env                (v2.1.153+ Claude Code가 export)
 #   (4) stty size </dev/tty        (실제 TTY 측정)
@@ -316,7 +319,6 @@ resolve_raw_terminal_cols() {
   local DEFAULT_RAW_COLS=140 v
 
   v=${CLAUDE_STATUSLINE_COLUMNS:-}; _is_decimal "$v" && { printf '%s' "$v"; return; }
-  v=${STATUSLINE_COLS:-};           _is_decimal "$v" && { printf '%s' "$v"; return; }
   v=${STDIN_COLS:-};                _is_decimal "$v" && { printf '%s' "$v"; return; }
   v=${COLUMNS:-};                   _is_decimal "$v" && { printf '%s' "$v"; return; }
   v=$({ stty size </dev/tty | awk '{print $2}'; } 2>/dev/null)

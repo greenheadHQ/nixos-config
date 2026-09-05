@@ -1,5 +1,5 @@
 # mosh 설정
-{ config, ... }:
+{ ... }:
 
 {
   programs.mosh = {

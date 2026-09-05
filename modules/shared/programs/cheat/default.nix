@@ -1,7 +1,6 @@
 # cheat CLI 설정 — 터미널 cheatsheet 즉시 조회
 # 사용법: cheat nvim/surround, cheat -l -t neovim, cheat -s ciw
 {
-  config,
   pkgs,
   nixosConfigPath,
   ...

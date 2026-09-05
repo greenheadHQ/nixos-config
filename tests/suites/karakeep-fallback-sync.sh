@@ -1,4 +1,4 @@
-# tests/suites/karakeep-fallback-sync.sh - Karakeep fallback sync fixture tests (sourced)
+# tests/suites/karakeep-fallback-sync.sh — Karakeep fallback sync fixture tests (sourced)
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2164
 

@@ -4,9 +4,6 @@
 # ListenAddress 설정이 적용되지 않습니다.
 # LAN 접근 제한이 필요한 경우 pf 방화벽을 사용해야 합니다.
 {
-  config,
-  lib,
-  pkgs,
   constants,
   ...
 }:
