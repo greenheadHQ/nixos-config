@@ -73,8 +73,10 @@ private package는 `bin/ssh`만 제공하며 global `home.packages`나 `home.ses
   신호가 없어 raw SSH를 유지한다.
 - stable home symlink는 activation 때 현재 immutable package로 relink된다. 따라서 SSH 때문에
   Claude environment generation/attestation이나 shared lifecycle schema를 추가하지 않는다.
-- versioned manifest는 실제 parser가 소비하는 OpenSSH short-option arity만 가진다. macOS의
-  `/usr/bin/ssh`가 갱신되면 `ssh -h`/manpage의 short-option argument 유무와 함께 갱신한다.
+- versioned manifest에서 parser가 소비하는 값은 OpenSSH short-option arity뿐이고, 그 옆의
+  `verifiedOn`(macos/ssh/date)은 arity 표를 어느 환경에서 확인했는지만 남기는 근거 표기라
+  런타임·`runtimeGeneration` 해시에 들어가지 않는다. macOS의 `/usr/bin/ssh`가 갱신되면
+  `ssh -h`/manpage의 short-option argument 유무와 함께 arity와 `verifiedOn`을 갱신한다.
 - Ghostty: marker가 없으므로 `/usr/bin/ssh`와 기존 interactive 1Password preflight를 유지한다.
 
 ### 2. Target scope

@@ -1,5 +1,10 @@
 {
   "schemaVersion": 1,
+  "verifiedOn": {
+    "macos": "26A5421a",
+    "ssh": "OpenSSH_10.3p1",
+    "date": "2026-09-05"
+  },
   "shortOptionArity": {
     "1": 0, "2": 0, "4": 0, "6": 0, "A": 0, "a": 0, "C": 0,
     "f": 0, "G": 0,

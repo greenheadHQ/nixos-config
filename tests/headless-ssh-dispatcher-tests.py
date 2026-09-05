@@ -22,7 +22,7 @@ CORE = REPO / "modules/darwin/programs/ssh/files/headless-ssh-dispatcher.py"
 FAKE = REPO / "tests/fixtures/headless-ssh/fake-ssh.py"
 MANIFEST = REPO / "tests/fixtures/headless-ssh/compatible-manifest.json"
 PRODUCTION_MANIFEST = (
-    REPO / "modules/darwin/programs/ssh/files/darwin-openssh-10.3p1-26A5388g.json"
+    REPO / "modules/darwin/programs/ssh/files/darwin-openssh-10.3p1.json"
 )
 
 

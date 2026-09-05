@@ -4,22 +4,20 @@
 # direnv cache (nix-direnv가 devShell 평가 결과 캐싱)
 .direnv/
 
-# 업데이트 스크립트 백업 파일 (중단 시 잔류 가능)
+# 임시/백업 파일 범용 안전망 (도입 근거였던 update-codex의 .bak 백업은
+# .codex-pin.* 임시파일로 교체됨 — 현재 저장소 내 고정 생성 주체 없음)
 *.bak
 
 # Codex CLI
-# 글로벌 gitignore(~/.config/git/ignore)에서 .agents/, AGENTS.md, AGENTS.override.md 등을
-# 무시하므로, 이 프로젝트에서 필요한 항목을 negation으로 재허용
-!AGENTS.md
-!AGENTS.override.md
-!.agents/
 .agents/skills/wt-plugin--*
 .codex/
 
 # update-codex 원자적 핀 교체용 임시 파일 (EXIT trap 정리; SIGKILL 시 잔류 방어, #890)
 modules/shared/programs/codex/.codex-pin.*
 
-# Codex sync 부산물 (.agents/ 심링크 경유로 .claude/에 생성되는 파일)
+# 퇴역한 codex-sync 시절 부산물 방어 (#41 도입, 현재 산출 주체 없음 — 현행 투영은
+# .agents/skills/<name> → .claude/skills/<name> 심링크라 .claude/skills/ 안에 아무것도
+# 쓰지 않는다. 다른 도구가 같은 잔재를 만들 경우의 커밋 차단용으로만 잔존)
 .claude/skills/*/agents/
 .claude/skills/*/references/references
 
@@ -30,16 +28,11 @@ modules/shared/programs/codex/.codex-pin.*
 .claude/plans/*
 !.claude/plans/README.md
 
-# 브라우저 자동화 인증 상태 파일 (평문 세션 토큰 포함)
-auth-state.json
-oauth-state.json
-2fa-state.json
+# 브라우저 자동화 storage state (평문 세션 토큰 포함 — playwright-cli state-save 산출물)
+storage-state-*.json
 
 # playwright-cli 런타임 산출물 (스냅샷, 세션 데이터)
 .playwright-cli/
-
-# anchoring-bias baseline measurements (스크립트로 동적 산출, repo에 수치 저장 안 함)
-.claude/metrics/
 
 # 로컬 전용 메모 (시크릿 포함 가능 — 추적 금지. gitleaks 스캔 예외는 두지 않는다)
 *.local.md
