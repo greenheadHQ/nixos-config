@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -24,6 +25,14 @@ MANIFEST = REPO / "tests/fixtures/headless-ssh/compatible-manifest.json"
 PRODUCTION_MANIFEST = (
     REPO / "modules/darwin/programs/ssh/files/darwin-openssh-10.3p1.json"
 )
+DISPATCHER_NIX = REPO / "modules/darwin/programs/ssh/headless-dispatcher.nix"
+SYSTEM_SSH = Path("/usr/bin/ssh")
+# usage에서 사라졌어도 매니페스트에 남는 것을 허용하는 레거시 항목 (protocol version 선택).
+# 이 집합 밖의 "매니페스트에만 있음"은 실제 옵션 삭제이므로 드리프트로 실패시킨다.
+LEGACY_MANIFEST_ONLY = frozenset({"1", "2"})
+
+_USAGE_FLAG_CLUSTER = re.compile(r"-([A-Za-z0-9]+)\Z")
+_USAGE_FLAG_WITH_VALUE = re.compile(r"-([A-Za-z0-9])\s+\S", re.DOTALL)
 
 
 def load_dispatcher_module():
@@ -492,6 +501,206 @@ class DependencyTests(DispatcherFixture):
         self.assertEqual(result.returncode, 125, result.stderr)
         self.assertIn("HEADLESS_SSH_KEY_INVALID", result.stderr)
         self.assertNotIn("auth", self.events())
+
+
+class SshUsageFormatError(RuntimeError):
+    """`/usr/bin/ssh` usage가 이 테스트가 파싱할 수 있는 형태를 벗어났다."""
+
+
+def _top_level_usage_groups(usage: str) -> list[str]:
+    """usage 문자열에서 최상위 대괄호 묶음의 내용만 순서대로 돌려준다."""
+    groups: list[str] = []
+    depth = 0
+    start = 0
+    for index, char in enumerate(usage):
+        if char == "[":
+            if depth == 0:
+                start = index + 1
+            depth += 1
+        elif char == "]":
+            if depth == 0:
+                raise SshUsageFormatError(f"ssh usage에 짝 없는 ']'가 있다 (offset {index})")
+            depth -= 1
+            if depth == 0:
+                groups.append(usage[start:index])
+    if depth != 0:
+        raise SshUsageFormatError("ssh usage에 닫히지 않은 '['가 있다")
+    return groups
+
+
+def _record_usage_arity(arity: dict[str, int], option: str, value: int, group: str) -> None:
+    previous = arity.get(option)
+    if previous is not None and previous != value:
+        raise SshUsageFormatError(
+            f"ssh usage가 -{option}에 상충하는 arity를 준다: {previous} vs {value} ([{group}])"
+        )
+    arity[option] = value
+
+
+def parse_ssh_usage_arity(usage: str) -> dict[str, int]:
+    """`ssh` usage(stderr)에서 short option arity를 뽑는다.
+
+    형식이 바뀌면 조용히 통과하지 않고 SshUsageFormatError로 죽는다.
+    """
+    if "usage: ssh" not in usage:
+        raise SshUsageFormatError("ssh usage에 'usage: ssh' 머리말이 없다")
+    groups = _top_level_usage_groups(usage)
+    if not groups:
+        raise SshUsageFormatError("ssh usage에 대괄호 option 묶음이 하나도 없다")
+
+    arity: dict[str, int] = {}
+    saw_cluster = False
+    saw_valued = False
+    for group in groups:
+        stripped = group.strip()
+        if not stripped.startswith("-"):
+            # 위치 인자 꼬리 (`destination [command [argument ...]]`)
+            continue
+        cluster = _USAGE_FLAG_CLUSTER.fullmatch(stripped)
+        if cluster is not None:
+            saw_cluster = True
+            for option in cluster.group(1):
+                _record_usage_arity(arity, option, 0, stripped)
+            continue
+        valued = _USAGE_FLAG_WITH_VALUE.match(stripped)
+        if valued is not None:
+            saw_valued = True
+            _record_usage_arity(arity, valued.group(1), 1, stripped)
+            continue
+        raise SshUsageFormatError(f"ssh usage의 option 묶음을 해석할 수 없다: [{group}]")
+
+    # 두 arity 계열 중 하나라도 통째로 사라지면 형식이 바뀐 것으로 본다. 한쪽만 검사하면
+    # 반대쪽 소멸이 "관측 0개 → 불일치 0개"로 조용히 통과한다.
+    if not saw_cluster:
+        raise SshUsageFormatError("ssh usage에 0-arity short option 묶음이 더는 없다")
+    if not saw_valued:
+        raise SshUsageFormatError("ssh usage에 1-arity short option 묶음이 더는 없다")
+    return arity
+
+
+class ManifestDriftTests(unittest.TestCase):
+    """배포 매니페스트와 실제 `/usr/bin/ssh` usage의 드리프트를 잡는다.
+
+    hermetic fixture는 매니페스트를 사실로 가정하므로, 매니페스트 자체가 macOS 갱신으로
+    낡아지는 축은 여기서만 관측된다. darwin 호스트에서만 실행하고 그 외에서는 skip한다.
+    """
+
+    def require_system_ssh(self) -> None:
+        if sys.platform != "darwin":
+            self.skipTest("매니페스트 드리프트는 macOS /usr/bin/ssh에 대해서만 관측된다")
+        if not SYSTEM_SSH.exists():
+            self.skipTest(f"{SYSTEM_SSH}가 없다")
+
+    def system_ssh_usage(self) -> str:
+        result = subprocess.run(
+            [str(SYSTEM_SSH)],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        return result.stderr
+
+    def system_ssh_version(self) -> str:
+        result = subprocess.run(
+            [str(SYSTEM_SSH), "-V"],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        return (result.stderr or result.stdout).strip()
+
+    def test_usage_parser_extracts_both_arities(self) -> None:
+        sample = (
+            "usage: ssh [-46AaCf] [-B bind_interface]\n"
+            "           [-D [bind_address:]port] [-w local_tun[:remote_tun]]\n"
+            "           destination [command [argument ...]]\n"
+            "       ssh [-Q query_option]\n"
+        )
+        self.assertEqual(
+            parse_ssh_usage_arity(sample),
+            {
+                "4": 0, "6": 0, "A": 0, "a": 0, "C": 0, "f": 0,
+                "B": 1, "D": 1, "w": 1, "Q": 1,
+            },
+        )
+
+    def test_usage_parser_dies_loudly_on_format_change(self) -> None:
+        unparsable = {
+            "머리말 없음": "ssh [-46A] destination\n",
+            "묶음 없음": "usage: ssh destination command\n",
+            "0-arity 묶음 없음": "usage: ssh [-o option] destination\n",
+            "1-arity 묶음 없음": "usage: ssh [-46AaCf] destination\n",
+            "해석 불가 묶음": "usage: ssh [-46A] [--long-option=value] destination\n",
+            "닫히지 않은 괄호": "usage: ssh [-46A] [-B bind_interface destination\n",
+            "상충 arity": "usage: ssh [-46A] [-A value] destination\n",
+        }
+        for label, usage in unparsable.items():
+            with self.subTest(label=label):
+                with self.assertRaises(SshUsageFormatError):
+                    parse_ssh_usage_arity(usage)
+
+    def test_checked_manifest_is_the_deployed_one(self) -> None:
+        """이 테스트가 대조하는 파일이 nix가 실제로 배포하는 매니페스트인지 못 박는다.
+
+        경로가 두 곳(여기와 headless-dispatcher.nix)에 있어, 매니페스트를 개명하면
+        테스트가 배포되지 않는 파일을 검증하며 조용히 통과할 수 있다.
+        """
+        nix_source = DISPATCHER_NIX.read_text(encoding="utf-8")
+        # assertIn은 실패 시 nix 파일 전문을 덤프하므로 진위만 단언한다.
+        self.assertTrue(
+            f"./files/{PRODUCTION_MANIFEST.name}" in nix_source,
+            f"{DISPATCHER_NIX.relative_to(REPO)}가 배포하는 매니페스트와 "
+            f"PRODUCTION_MANIFEST({PRODUCTION_MANIFEST.name})가 어긋난다",
+        )
+
+    def test_manifest_arity_matches_system_ssh_usage(self) -> None:
+        self.require_system_ssh()
+        usage = self.system_ssh_usage()
+        observed = parse_ssh_usage_arity(usage)
+        manifest = json.loads(PRODUCTION_MANIFEST.read_text(encoding="utf-8"))
+        declared = manifest["shortOptionArity"]
+
+        missing = sorted(option for option in observed if option not in declared)
+        mismatched = sorted(
+            f"-{option}: usage={observed[option]} manifest={declared[option]}"
+            for option in observed
+            if option in declared and declared[option] != observed[option]
+        )
+        manifest_only = [option for option in declared if option not in observed]
+        legacy_only = sorted(
+            f"-{option}({declared[option]})"
+            for option in manifest_only
+            if option in LEGACY_MANIFEST_ONLY
+        )
+        dropped = sorted(
+            f"-{option}({declared[option]})"
+            for option in manifest_only
+            if option not in LEGACY_MANIFEST_ONLY
+        )
+        if legacy_only:
+            # 허용된 레거시 항목만 실패가 아니다 (protocol version 등).
+            print(f"manifest-only short options: {', '.join(legacy_only)}")
+
+        if not missing and not mismatched and not dropped:
+            return
+
+        self.fail(
+            "HEADLESS_SSH_MANIFEST_DRIFT: 배포 매니페스트가 실제 /usr/bin/ssh usage와 어긋난다.\n"
+            f"  manifest: {PRODUCTION_MANIFEST.relative_to(REPO)}\n"
+            f"  manifest verifiedOn: {manifest.get('verifiedOn', '(없음)')}\n"
+            f"  system ssh: {self.system_ssh_version()}\n"
+            f"  usage에 있으나 매니페스트에 없음: {', '.join('-' + o for o in missing) or '없음'}\n"
+            f"  arity 불일치: {'; '.join(mismatched) or '없음'}\n"
+            f"  매니페스트에만 남음(레거시 허용 밖): {', '.join(dropped) or '없음'}\n"
+            "갱신 절차:\n"
+            "  1. 매니페스트 shortOptionArity를 위 usage 기준으로 갱신한다 (삭제된 옵션은 "
+            "제거하거나, 계속 받아야 하면 이 테스트의 LEGACY_MANIFEST_ONLY에 근거와 함께 넣는다).\n"
+            "  2. 같은 매니페스트의 verifiedOn을 현재 `sw_vers -buildVersion`과 "
+            "`/usr/bin/ssh -V` 값으로 갱신한다.\n"
+            "  3. plans/029-headless-ssh-dx-policy.md의 매니페스트 갱신 트리거 문단을 확인한다.\n"
+        )
 
 
 if __name__ == "__main__":
