@@ -47,7 +47,11 @@ assert_line_count() {
 }
 new_sandbox() {
   local dir
-  dir=$(mktemp -d "${TMPDIR:-/tmp}/shell-script-tests.XXXXXX")
+  # macOS의 TMPDIR은 "/"로 끝나 그대로 이으면 "T//…"가 된다. 검증 대상 코드는 경로를
+  # 정규화해 돌려주므로 sandbox 경로도 "//" 없이 만들어야 문자열 비교가 성립한다.
+  local base="${TMPDIR:-/tmp}"
+  base="${base%/}"
+  dir=$(mktemp -d "${base}/shell-script-tests.XXXXXX")
   printf '%s\n' "$dir" >> "$TEST_TMP_FILE"
   printf '%s\n' "$dir"
 }
