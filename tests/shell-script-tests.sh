@@ -346,6 +346,9 @@ run_test "interaction-limits-renewal GET failure exits nonzero" test_ilr_get_fai
 run_test "interaction-limits-renewal PUT failure exits nonzero" test_ilr_put_failure_notifies_and_exits_nonzero
 run_test "interaction-limits-renewal missing PAT exits nonzero" test_ilr_missing_pat_notifies_and_exits_nonzero
 
+# korean-particle-expansion suite (tests/suites/korean-particle-expansion.sh)
+run_test "korean particle expansions stay brace-bounded" test_korean_particle_expansion_is_brace_bounded
+
 # codex-config fixture는 tomlkit이 필요하다. required CI의 run-all-tests는 prePushRuntime
 # profile로 항상 tomlkit을 제공하지만, 사용자가 직접 실행할 때는 미가용일 수 있다. 미가용이면
 # codex-config 섹션만 skip + profile runner 안내 (기본 shell suite 진입은 유지).
