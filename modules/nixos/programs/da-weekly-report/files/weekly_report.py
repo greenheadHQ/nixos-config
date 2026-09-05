@@ -44,6 +44,10 @@ GITHUB_MARKDOWN_MAX_BYTES = 60_000
 COMMENTARY_PROMPT = "\n".join([
     "아래 DA weekly report projection을 읽고 특이점, 공통점/차이점, 다음 주에 볼 신호를 한국어 한두 문단으로 해설하라.",
     "숫자를 새로 만들지 말고 입력 JSON의 값만 근거로 사용하라.",
+    "지표 정의 (오독 방지 — #1237): metrics의 M-1~M-6과 session_counts는 분석 시점 전체 코퍼스의 누적값이다 — 그 주의 활동량이 아니다. "
+    "주간 변화는 deltas의 comparisons만 근거로 삼고, session_counts.total의 delta가 그 주에 새로 쌓인 세션 수의 근사치다. "
+    "health.drift_repair_commit_count만 week.measurement_start~measurement_end(발행 주차 직전 7일) 창의 값이다. "
+    "hosts의 analyzed_sessions가 0이거나 status가 partial이면 그 호스트의 수집 실패이지 활동 감소가 아니므로 품질 회귀로 해석하지 마라.",
 ])
 M1_KEYS = ("FULL", "LITE", "SKIP")
 M2_KEYS = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
@@ -133,6 +137,18 @@ def default_week_bounds(now: dt.datetime | None = None) -> tuple[dt.datetime, dt
     start_date = base.date() - dt.timedelta(days=base.weekday())
     start = dt.datetime.combine(start_date, dt.time.min, tzinfo=KST)
     return start, start + dt.timedelta(days=7)
+
+
+def measurement_window(week_start: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
+    """발행 주차 시작(월 00:00 KST) 직전 7일 — health 측정 창(drift repair 커밋).
+
+    리포트는 발행 주차 월요일 09~14시 재시도 창에서 생성되므로 [week_start, week_end)는
+    실행 시점에 대부분 미래다. 그 창으로 `git log --since/--until`을 세면
+    drift_repair_commits가 구조적으로 항상 0이 된다 (#1237 — 2026-W33 LLM 해설이 이
+    구조적 0을 "정비 활동 부재"라는 품질 신호로 오독한 실측). 발행 주차 id·경계는 그대로
+    두고, 측정 창만 직전 7일(지난 주 월 00:00 ~ 이번 주 월 00:00)로 옮긴다.
+    """
+    return week_start - dt.timedelta(days=7), week_start
 
 
 def week_id_for(start: dt.datetime) -> str:
@@ -654,6 +670,9 @@ def get_path(obj: dict, dotted_path: str) -> Any:
 
 
 DELTA_SPECS = [
+    # 누적 코퍼스 세션 수의 전주 대비 증가분 = 그 주에 새로 쌓인 세션 수의 근사치
+    # (수집 실패로 분모가 줄면 음수가 나올 수 있다 — 그 자체가 수집 이상 신호다, #1237).
+    ("analysis.session_counts.total", "count", "count"),
     ("analysis.metrics.M-1.percentages.FULL", "%p", "pct100"),
     ("analysis.metrics.M-1.percentages.LITE", "%p", "pct100"),
     ("analysis.metrics.M-1.percentages.SKIP", "%p", "pct100"),
@@ -1047,8 +1066,12 @@ def build_weekly_report(
     commentary_failure: str | None,
     provenance: dict,
     analyze_exit_code: int = 0,
+    measurement_start: dt.datetime | None = None,
+    measurement_end: dt.datetime | None = None,
 ) -> dict:
     week_id = week_id_for(week_start)
+    if measurement_start is None or measurement_end is None:
+        measurement_start, measurement_end = measurement_window(week_start)
     report = {
         "schema_version": SCHEMA_VERSION,
         "week": {
@@ -1056,6 +1079,10 @@ def build_weekly_report(
             "start": week_start.isoformat(),
             "end": week_end.isoformat(),
             "tz": KST_NAME,
+            # health 측정 창 (drift repair 커밋). M-1~M-6·세션 수는 이 창과 무관한
+            # 전체 코퍼스 누적값이다 — 렌더러와 해설 프롬프트가 그 사실을 명시한다 (#1237).
+            "measurement_start": measurement_start.isoformat(),
+            "measurement_end": measurement_end.isoformat(),
         },
         "analysis": normalize_analysis(sidecar),
         "health": health,
@@ -1301,6 +1328,12 @@ def build_consumer_summary(report: dict) -> dict:
             "start": _safe_string(report.get("week", {}).get("start"), "unknown"),
             "end": _safe_string(report.get("week", {}).get("end"), "unknown"),
             "tz": _safe_string(report.get("week", {}).get("tz"), "unknown"),
+            "measurement_start": _safe_string(
+                report.get("week", {}).get("measurement_start"), "unknown"
+            ),
+            "measurement_end": _safe_string(
+                report.get("week", {}).get("measurement_end"), "unknown"
+            ),
         },
         "session_counts": {
             "total": _safe_number(session_counts.get("total")),
@@ -1445,7 +1478,9 @@ def _render_github_markdown_source(source: dict) -> str:
         "",
         "| 항목 | 값 |",
         "|------|-----|",
-        f"| 기간 | {esc(week.get('start'))} ~ {esc(week.get('end'))} ({esc(week.get('tz'))}) |",
+        f"| 발행 주차 | {esc(week.get('start'))} ~ {esc(week.get('end'))} ({esc(week.get('tz'))}) |",
+        f"| 측정 창 (drift repair 커밋) | {esc(week.get('measurement_start'))} ~ {esc(week.get('measurement_end'))} — 발행 주차 직전 7일 |",
+        "| 지표 범위 | M-1~M-6·세션 수는 전체 코퍼스 누적값 (주간 값 아님 — 주간 변화는 전주 delta 표) |",
         f"| 전체 세션 | {counts.get('total', 0)} |",
         f"| Arbiter marker 세션 | {counts.get('arbiter_marker_sessions', 0)} |",
         f"| Intensity marker 세션 | {counts.get('intensity_marker_sessions', 0)} |",
@@ -1553,7 +1588,9 @@ def render_markdown(report: dict) -> str:
     out.append("")
     out.append("| 항목 | 값 |")
     out.append("|------|-----|")
-    out.append(f"| 기간 | {report['week']['start']} ~ {report['week']['end']} ({report['week']['tz']}) |")
+    out.append(f"| 발행 주차 | {report['week']['start']} ~ {report['week']['end']} ({report['week']['tz']}) |")
+    out.append(f"| 측정 창 (drift repair 커밋) | {report['week'].get('measurement_start')} ~ {report['week'].get('measurement_end')} — 발행 주차 직전 7일 |")
+    out.append("| 지표 범위 | M-1~M-6·세션 수는 전체 코퍼스 누적값 (주간 값 아님 — 주간 변화는 전주 delta 표) |")
     out.append(f"| 호스트 | {', '.join(analysis.get('hosts', []))} |")
     out.append(f"| corpus | {analysis.get('corpus')} |")
     out.append(f"| partial | {coverage.get('partial')} |")
@@ -1825,7 +1862,10 @@ def command_build(args: argparse.Namespace) -> int:
     else:
         week_start, week_end = default_week_bounds()
     week_id = week_id_for(week_start)
-    health = collect_health_metrics(args.repo_root, week_start, week_end)
+    # health(drift repair 커밋)는 발행 주차가 아니라 직전 7일을 센다 — 발행 주차 창은
+    # 실행 시점에 미래라 구조적으로 0이 된다 (measurement_window docstring, #1237).
+    measurement_start, measurement_end = measurement_window(week_start)
+    health = collect_health_metrics(args.repo_root, measurement_start, measurement_end)
     previous_paths = previous_report_paths(args.state_dir, current_week_id=week_id)
     previous_reports = load_previous_reports(previous_paths)
     # build는 draft-only다. commentary 주입은 sanitize 게이트를 소유한 finalize가
@@ -1848,6 +1888,8 @@ def command_build(args: argparse.Namespace) -> int:
         commentary_failure=args.commentary_error,
         provenance=provenance,
         analyze_exit_code=args.analyze_exit_code,
+        measurement_start=measurement_start,
+        measurement_end=measurement_end,
     )
     if args.output_md:
         atomic_write_report_pair(args.output_json, report, args.output_md)

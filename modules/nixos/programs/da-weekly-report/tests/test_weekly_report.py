@@ -842,3 +842,78 @@ def test_atomic_report_pair_uses_json_as_commit_marker_and_recovers_markdown(
     assert report_md.read_text(encoding="utf-8") == (
         weekly_report_module.render_markdown(old_report) + "\n"
     )
+
+
+def test_measurement_window_is_seven_days_before_week_start(weekly_report_module):
+    """health 측정 창은 발행 주차 직전 7일이다 (#1237).
+
+    발행 주차 [월 00:00, +7d)는 월요일 재시도 창 실행 시점에 대부분 미래라
+    drift_repair_commits가 구조적으로 0이 되던 회귀 게이트.
+    """
+    week_start = dt.datetime(2026, 8, 10, tzinfo=weekly_report_module.KST)
+
+    start, end = weekly_report_module.measurement_window(week_start)
+
+    assert start == dt.datetime(2026, 8, 3, tzinfo=weekly_report_module.KST)
+    assert end == week_start
+    assert week_start - start == dt.timedelta(days=7)
+
+
+def test_build_weekly_report_records_measurement_window_separately_from_week(
+    weekly_report_module,
+):
+    report = build_report(weekly_report_module)
+
+    week = report["week"]
+    assert week["id"] == "2026-W28"
+    assert week["start"] == "2026-07-06T00:00:00+09:00"
+    assert week["end"] == "2026-07-13T00:00:00+09:00"
+    # 발행 주차 경계는 그대로, 측정 창만 직전 7일
+    assert week["measurement_start"] == "2026-06-29T00:00:00+09:00"
+    assert week["measurement_end"] == "2026-07-06T00:00:00+09:00"
+
+
+def test_renderers_label_cumulative_scope_and_measurement_window(weekly_report_module):
+    report = build_report(weekly_report_module)
+
+    full_markdown = weekly_report_module.render_markdown(report)
+    github_markdown = weekly_report_module.render_github_markdown(report)
+
+    for rendered in (full_markdown, github_markdown):
+        assert "| 발행 주차 |" in rendered
+        assert "| 측정 창 (drift repair 커밋) | 2026-06-29T00:00:00+09:00 ~ 2026-07-06T00:00:00+09:00" in rendered
+        assert "전체 코퍼스 누적값" in rendered
+        # 옛 "기간" 라벨은 발행 주차와 측정 창을 구분하지 못해 오독을 낳았다 — 재도입 게이트
+        assert "| 기간 |" not in rendered
+
+
+def test_commentary_prompt_defines_cumulative_scope_and_measurement_window(
+    weekly_report_module,
+):
+    prompt = weekly_report_module.COMMENTARY_PROMPT
+
+    assert "누적값" in prompt
+    assert "measurement_start" in prompt
+    assert "수집 실패" in prompt
+
+    report = build_report(weekly_report_module)
+    rendered = weekly_report_module.render_commentary_input(report)
+    assert prompt in rendered
+    assert '"measurement_start":"2026-06-29T00:00:00+09:00"' in rendered
+
+
+def test_session_total_delta_is_reported_as_weekly_activity_proxy(weekly_report_module):
+    previous = build_report(weekly_report_module)
+    previous["week"]["id"] = "2026-W27"
+    previous["analysis"]["session_counts"]["total"] = 7
+    previous["provenance"]["report_json_path"] = "/state/weekly-2026-W27.json"
+
+    report = build_report(weekly_report_module, previous_reports=[previous])
+
+    delta_by_metric = {item["metric"]: item for item in report["deltas"]["items"]}
+    total_delta = delta_by_metric["analysis.session_counts.total"]
+    assert total_delta["unit"] == "count"
+    assert total_delta["comparisons"][0]["week_id"] == "2026-W27"
+    assert total_delta["comparisons"][0]["delta"] == float(
+        report["analysis"]["session_counts"]["total"] - 7
+    )
