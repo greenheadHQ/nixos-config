@@ -545,6 +545,67 @@ test_codex_remote_control_socket_cleanup_when_no_pid_after_drift() {
     || fail "drift restart status not recorded: $status"
 }
 
+# 드리프트 재시작에서 `remote-control stop`이 남긴 구 release의 pid-update-loop는 stale proof로
+# 종료하고 소켓을 정리한 뒤 start까지 간다 (#1279 — 종전에는 exit 60에 고착).
+test_codex_remote_control_drift_restart_reaps_stale_pid_update_loop() {
+  local sandbox ps_file exe_file kill_log socket_file status user standalone_root old_release
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  user="$(id -un)"
+  ps_file="$sandbox/ps.txt"
+  exe_file="$sandbox/exe.txt"
+  kill_log="$sandbox/kill.log"
+  socket_file="$COD_RC_HOME/.codex/app-server-control/app-server-control.sock"
+  standalone_root="$COD_RC_HOME/.codex/packages/standalone"
+  old_release="$standalone_root/releases/0.142.3-x86_64-unknown-linux-musl"
+  mkdir -p "$(dirname "$socket_file")"
+  : > "$socket_file"
+  printf '4000300 %s %s/current/codex app-server daemon pid-update-loop\n' "$user" "$standalone_root" > "$ps_file"
+  printf '4000300 %s/bin/codex\n' "$old_release" > "$exe_file"
+
+  FAKE_DAEMON_JSON='{"status":"running","managedCodexVersion":"0.133.0","appServerVersion":"0.133.0"}' \
+    CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" CODEX_REMOTE_CONTROL_EXE_FILE="$exe_file" KILL_LOG="$kill_log" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running \
+    || fail "drift restart must recover from a stale pid-update-loop leftover"
+  assert_file_contains "$kill_log" "4000300"
+  [ ! -e "$socket_file" ] || fail "socket should be removed after reaping the stale loop"
+  grep -Fqx 'remote-control stop --json' "$COD_RC_LOG" || fail "drift path must stop the daemon first"
+  grep -Fqx 'remote-control start --json' "$COD_RC_LOG" || fail "drift path must start the daemon after cleanup"
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.lastAction == "restarted-version-drift" and .exitCode == 0' <<<"$status" >/dev/null \
+    || fail "drift restart status not recorded: $status"
+}
+
+# proof가 없는 잔존 프로세스(현재 release 실행 파일)는 드리프트 경로에서도 죽이지 않는다.
+test_codex_remote_control_drift_restart_keeps_failing_closed_without_stale_proof() {
+  local sandbox ps_file exe_file kill_log socket_file status user standalone_root release_dir
+  sandbox="$(new_sandbox)"
+  _codex_rc_setup "$sandbox"
+  user="$(id -un)"
+  ps_file="$sandbox/ps.txt"
+  exe_file="$sandbox/exe.txt"
+  kill_log="$sandbox/kill.log"
+  socket_file="$COD_RC_HOME/.codex/app-server-control/app-server-control.sock"
+  standalone_root="$COD_RC_HOME/.codex/packages/standalone"
+  release_dir="$standalone_root/releases/0.142.4-x86_64-unknown-linux-musl"
+  mkdir -p "$(dirname "$socket_file")"
+  : > "$socket_file"
+  printf '4000301 %s %s/current/codex app-server daemon pid-update-loop\n' "$user" "$standalone_root" > "$ps_file"
+  printf '4000301 %s/bin/codex\n' "$release_dir" > "$exe_file"
+
+  if FAKE_DAEMON_JSON='{"status":"running","managedCodexVersion":"0.133.0","appServerVersion":"0.133.0"}' \
+    CODEX_REMOTE_CONTROL_PS_FILE="$ps_file" CODEX_REMOTE_CONTROL_EXE_FILE="$exe_file" KILL_LOG="$kill_log" \
+    _codex_rc_env bash "$(_codex_rc_script)" ensure-running 2>/dev/null; then
+    fail "drift restart must not succeed while an unproven app-server PID remains"
+  fi
+  [ ! -e "$kill_log" ] || fail "a process without stale proof must not be killed"
+  [ -e "$socket_file" ] || fail "socket must be preserved while an unproven app-server PID remains"
+  assert_not_contains "$(cat "$COD_RC_LOG")" 'remote-control start --json'
+  status="$(cat "$COD_RC_STATE/status.json")"
+  jq -e '.exitCode != 0 and (.lastRepairReason | test("stale-pid-proof|refusing-socket-cleanup"))' <<<"$status" >/dev/null \
+    || fail "fail-closed status not recorded: $status"
+}
+
 test_codex_remote_control_alert_recovery_after_failure() {
   local sandbox state
   sandbox="$(new_sandbox)"
