@@ -2,14 +2,12 @@
 # ownership 정책) — model pin 제거(2026-09-05)처럼 키를 삭제하면 호스트마다 codex 세션 종료 후
 # 배포본의 해당 줄을 1회 수동 삭제하고 `nrs --force` → `./scripts/ai/verify-ai-compat.sh`로 확인한다.
 personality = "pragmatic"
-# model은 pin하지 않는다 — 미지정 시 codex가 카탈로그 priority 1(frontier)을 고른다.
-# effort는 모델 기본값이 medium/low로 갈리므로 계속 명시한다. 다만 ultra를 지원하지 않는
-# 모델도 카탈로그에 있어(0.153.4 실측), model을 pin하지 않는 이상 frontier 교체 때마다
-# 이 값이 여전히 유효한지 재검증한다:
-#   codex debug models \
-#     | jq -r '.models[]|[(.priority|tostring),.slug,((.supported_reasoning_levels|map(.effort))|join("/"))]|@tsv' \
-#     | sort -n | head -1
-model_reasoning_effort = "ultra"
+# model·model_reasoning_effort는 템플릿에 두지 않는다 — Codex Desktop/TUI가 UI에서 고른 값을
+# ~/.codex/config.toml 최상위 키에 persist하므로, template-owned로 두면 nrs마다 되돌아가 UI 선택이
+# 무효가 된다(2026-09-05 Desktop 슬라이더 실측). 세션 취향(모델·effort)은 앱 UI가 단일 소스이고,
+# 이 템플릿은 정책·안전 경계(approval_policy, sandbox_mode, features, agents, hooks)만 선언한다.
+# 미지정 시 codex는 카탈로그 priority 1(frontier)과 그 모델의 기본 effort를 쓴다. 어떤 모델이
+# 어떤 effort를 지원하는지는 `codex debug models`의 supported_reasoning_levels로 확인한다.
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 suppress_unstable_features_warning = true
