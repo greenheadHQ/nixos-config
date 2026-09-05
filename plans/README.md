@@ -72,8 +72,8 @@ reconcile 당시 PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)
 | 023 | worktree-path-guard sibling worktree 오탐 제거 | P2 | S | — | #935 | DONE (PR #968) |
 | 024 | Anki를 AnkiWeb 동기화로 실제 전환 (5/30 결정 이행) | P1 | S | — | #974 | DONE (2026-07-12 이행 — 외부 사본 minipc·해시 일치, 서버는 2025-12-24 스냅샷임을 temp 프로필 실측 확증 후 Upload, prefs syncKey=SET 검증. 감사 "미사용" 결론 정정은 evidence 문서 서두 참조) |
 | 025 | 601장 백로그 재시작 프로토콜 (상한·정렬·2주 게이트) | P1 | S-M | 024 (soft) | #975 | TODO |
-| 026 | Anki 애드온·문서 drift·인프라 잔재 일괄 정리 | P2 | S | 024 (soft) | #976 | TODO (Part A 문서 정정 완료 2026-07-21. 잔여: Part B 운영자 GUI, Part C는 STOP — `/var/lib/private/anki-sync-server`에 203MB 실데이터 실측되어 삭제 보류, 처분은 운영자 결정 대기) |
-| 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | TODO |
+| 026 | Anki 애드온·문서 drift·인프라 잔재 일괄 정리 | P2 | S | 024 (soft) | #976 | TODO (Part A 문서 정정 완료 2026-07-21 — 그 산출물(anki-study 문서)은 2026-09-05 디렉토리 제거로 소멸. 잔여: Part B 운영자 GUI, Part C는 STOP — `/var/lib/private/anki-sync-server`에 203MB 실데이터 실측되어 삭제 보류, 처분은 운영자 결정 대기) |
+| 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | REJECTED (2026-09-05 운영자 결정으로 `anki-study/` 제거 — 산출물 `anki-study/CARD_MAINTENANCE.md`의 대상 디렉토리 소멸) |
 | 028 | 원격 AI 세션 macOS TCC 권한 정책을 DX 우선으로 확정·적용 | P1 | M | — | #1093 | DONE (PR #1177·#1178·#1179 머지 2026-07-23, 이슈 #1093 CLOSED — C Workspace-only + Ghostty FDA 적용) |
 | 029 | 원격 AI 세션 1Password SSH 승인 hang을 DX 우선으로 제거 | P1 | M-L | — | #1094 | DONE |
 
@@ -114,8 +114,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 025의 "2주 게이트"(14일 중 10일 학습)가 통과하기 전에는 anki-study v2 재개와
   `🚧 일시중단` 덱 해제를 **논의하지 않는다** — 2026-07-05 운영자 결정
   ("보류 — 복습 습관 먼저").
-- 024~027은 001–023과 파일이 겹치지 않는다 (026·027이 `anki-study/` 문서를
-  만지는 것이 유일한 repo 접점).
+- 024~027은 001–023과 파일이 겹치지 않는다 (026·027의 유일한 repo 접점이던
+  `anki-study/`는 2026-09-05 운영자 결정으로 제거됐다 — 이 4건은 이제 repo 밖
+  Anki 프로필 운영 절차만 남는다).
 - Anki 오프사이트 독립 백업(.colpkg→restic→R2)은 plan으로 승격하지 않았다 —
   AnkiWeb 이행(024) 후 필요성이 남으면 020 스택 재사용으로 별도 승격.
 

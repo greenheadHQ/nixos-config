@@ -1,15 +1,19 @@
 # Plan 026: 호환 미보장 애드온·문서 drift·인프라 잔재를 일괄 정리한다
 
-> **Executor instructions**: Part A(repo 문서)는 에이전트가 직접 수행한다.
-> **Part A는 PR #1157로 완료됐다** — Step 1·2는 이미 반영돼 있고, 아래 "Current state"
-> 발췌의 줄 번호는 그 반영 이후 기준으로 갱신했다. 남은 것은 Part B/C다.
-> Part B(Anki 앱 내 조작)는 운영자 GUI 절차이며 에이전트는 검증만 한다.
-> Part C(minipc 잔재)는 에이전트가 ssh로 수행하되 삭제 전 실측을 반복한다.
+> **Executor instructions**: Part A(repo 문서)는 **SUPERSEDED** — 2026-07-21에
+> PR #1157로 이행됐고, 그 산출물인 `anki-study/` 문서는 2026-09-05 운영자 결정으로
+> 디렉토리째 제거됐다. Part A의 Step 1~2와 해당 done criteria는 실행하지 않는다.
+> 잔여 작업은 Part B(운영자 GUI)와 Part C(minipc 잔재)뿐이다.
+> Part B는 운영자 GUI 절차이며 에이전트는 검증만 한다.
+> Part C는 에이전트가 ssh로 수행하되 삭제 전 실측을 반복한다.
 > STOP conditions 발생 시 중단·보고. 완료 시 `plans/README.md` 갱신.
 >
-> **Drift check (run first)**:
-> `git diff --stat a19daba3..HEAD -- anki-study/README.md anki-study/GUIDE.md`
-> 변경이 있으면 "Current state" 발췌와 대조하고, 불일치 시 STOP.
+> **Drift check (run first)**: repo 문서 대조는 하지 않는다 — 대상 파일이
+> 더 이상 존재하지 않는다. Part B는 "Commands you will need"의 애드온 상태
+> 확인을 먼저 실행해 Current state와 대조하고, 불일치 시 STOP.
+> Part C는 이미 STOP 상태다 — `/var/lib/private/anki-sync-server`가 빈 심링크가
+> 아니라 실데이터를 가진 경로로 확인되어 삭제를 보류 중이며(아래 "minipc 잔재"
+> 참조), 운영자의 처분 결정 전에는 Step 5를 실행하지 않는다.
 
 ## Status
 
@@ -47,7 +51,8 @@ Set Added Date, AnkiWebView Inspector)은 **건드리지 않는다** — 최신�
 특히 **Enhanced Cloze(1990296174)는 749개 노트가 쓰는 KaTeX and Markdown Cloze
 notetype과 연관된 핵심 의존이다 — 절대 제거 금지.**
 
-**문서 drift** (`anki-study/`, HEAD `a19daba3` 기준):
+**문서 drift** (`anki-study/`, HEAD `a19daba3` 기준 — **이력 기록**: 2026-07-21
+Part A로 정정 완료, 2026-09-05 `anki-study/` 제거로 대상 파일 자체가 소멸):
 
 - `anki-study/GUIDE.md:167` — `## 5. 호스팅 & 채점 흐름 (현재 운영 방식, Future Ideas는 별도)`
   이하가 "LLM이 `/tmp/<workspace>/<card>.html` 작성 → Python http.server로 minipc
@@ -64,10 +69,15 @@ notetype과 연관된 핵심 의존이다 — 절대 제거 금지.**
   제거됨)" 표기는 이미 정확 — 유지.
 - 운영 전제(동기화/백업 상태)를 기술하는 문장이 anki-study 문서 전체에 0건.
 
-**minipc 잔재** (2026-07-05 ssh 실측):
+**minipc 잔재**:
 
-- `/var/lib/anki-sync-server -> private/anki-sync-server` 심링크 (target 0바이트).
+- (2026-07-05 ssh 실측 — **역사적 기준**)
+  `/var/lib/anki-sync-server -> private/anki-sync-server` 심링크 (target 0바이트).
   서비스 유닛/27701 포트/컨테이너는 없음 — 심링크만 남았다.
+- (이후 실측 — **현행**) target `/var/lib/private/anki-sync-server`에 203MB
+  실데이터가 확인되어 Step 5의 `EMPTY` 전제가 깨졌다. Part C는 삭제 보류
+  상태이며 처분은 운영자 결정 대기다. 이 판정의 기록 위치는
+  `plans/README.md`의 026 status 행이다 — 착수 전 그 행을 먼저 읽는다.
 
 **건드리지 않기로 확정된 것** (evidence 문서 "기각" 절):
 prefs21.db의 옛 경로(`/Users/green/*`)·`last_loaded_profile_name='test'`는 pickle
@@ -80,20 +90,19 @@ prefs21.db의 옛 경로(`/Users/green/*`)·`last_loaded_profile_name='test'`는
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
 | 애드온 상태 확인 | `python3 -c "import json,glob,os; [print(os.path.basename(os.path.dirname(p)), json.load(open(p)).get('disabled', False)) for p in glob.glob(os.path.expanduser('~/Library/Application Support/Anki2/addons21/*/meta.json'))]"` | ID별 disabled 상태 목록 |
-| repo 문서 lint | `bash tests/run-all-tests.sh` | FAILED 0 |
 | minipc 심링크 확인 | `ssh minipc 'ls -la /var/lib/ \| grep -i anki'` | Step 전: 심링크 1줄 / Step 후: 출력 없음 |
 
 ## Scope
 
 **In scope**:
 
-- `anki-study/GUIDE.md` §5·§6, `anki-study/README.md` Future Ideas·운영 전제 단락 (repo 커밋)
 - 애드온 4종의 업데이트 확인/비활성화 (운영자 GUI)
 - minipc `/var/lib/anki-sync-server` 심링크 제거
 - suspend 일관화: `🚧 일시중단::[책] 모던 리액트 Deep Dive` 덱의 미suspend 카드 16장 (운영자 GUI 일괄 suspend)
 
 **Out of scope** (건드리지 말 것):
 
+- Part A(`anki-study/` 문서 정정) — 이행 후 대상 파일이 제거되어 실행 불가
 - 애드온 **삭제** — 이번 회차는 비활성화까지만 (한 달 뒤 문제없으면 삭제는 운영자 재량)
 - Enhanced Cloze·AnkiConnect 등 나머지 6종 애드온
 - prefs21.db·collection config·notetype 정리 — 위 "건드리지 않기로 확정" 참조
@@ -102,13 +111,15 @@ prefs21.db의 옛 경로(`/Users/green/*`)·`last_loaded_profile_name='test'`는
 
 ## Git workflow
 
-- Branch: `docs/anki-study-drift-cleanup` (repo 변경분인 Part A만 해당)
-- Conventional commits (예: `docs(anki-study): GUIDE §5 시제 강등 + 철거된 인프라 전제 정정`)
+- 잔여 Part B/C는 repo 변경분이 없다 (Part A용 브랜치·커밋 규약은 이행 완료로 소멸).
 - push/PR 생성은 운영자 지시 없이는 하지 않는다.
 
 ## Steps
 
-### Step 1 (에이전트, Part A): GUIDE.md §5 시제 강등
+### Step 1 (Part A, SUPERSEDED — 실행하지 않는다): GUIDE.md §5 시제 강등
+
+> **SUPERSEDED (2026-09-05)**: 2026-07-21에 이행됐고 대상 파일은 이후 제거됐다.
+> 아래 지시는 이력 기록으로만 남긴다.
 
 `anki-study/GUIDE.md:167`의 섹션 제목과 도입부를 수정한다:
 
@@ -122,7 +133,10 @@ prefs21.db의 옛 경로(`/Users/green/*`)·`last_loaded_profile_name='test'`는
 
 **Verify**: `grep -n "중단됨" anki-study/GUIDE.md` → §5 제목 라인 히트.
 
-### Step 2 (에이전트, Part A): Future Ideas에 인프라 철거 각주 + README 운영 전제 단락
+### Step 2 (Part A, SUPERSEDED — 실행하지 않는다): Future Ideas에 인프라 철거 각주 + README 운영 전제 단락
+
+> **SUPERSEDED (2026-09-05)**: 2026-07-21에 이행됐고 대상 파일은 이후 제거됐다.
+> 아래 지시는 이력 기록으로만 남긴다.
 
 1. `anki-study/GUIDE.md` §6 목록 위와 `anki-study/README.md` Future Ideas 목록
    위에 한 줄 각주 추가:
@@ -192,26 +206,23 @@ ssh minipc 'sudo rm /var/lib/anki-sync-server && sudo rmdir /var/lib/private/ank
 
 ## Test plan
 
-- Part A는 문서 변경 — repo 게이트 `bash tests/run-all-tests.sh` FAILED 0이 테스트.
 - Part B/C는 위 Verify의 실측 명령이 테스트를 대신한다.
 
 ## Done criteria
 
-- [ ] `anki-study/GUIDE.md` §5 제목에 중단 표기 + §6/README Future Ideas에 철거 각주
-- [ ] `anki-study/README.md`에 "운영 전제" 섹션 존재
-- [ ] `bash tests/run-all-tests.sh` FAILED 0, anki-study/ 외 파일 무변경
 - [ ] Add Table·Quick Colour 비활성화 (+ 나머지 2종은 처분 결과 기록)
 - [ ] 리액트 덱 미suspend 카드 0장
-- [ ] minipc에 anki 관련 경로 잔존 0건
+- [ ] minipc에 anki 관련 경로 잔존 0건 (Part C — 203MB 실데이터 처분을 운영자가
+      결정한 뒤에만 판정 가능. 그 전에는 미충족이 정상)
 - [ ] `plans/README.md` 026 행 갱신
 
 ## STOP conditions
 
-- GUIDE.md/README.md의 인용 위치·문구가 Current state와 불일치 (drift).
 - 애드온 비활성화 후 Anki가 기동 실패하거나 에디터가 깨짐 — 즉시 해당 애드온
   재활성화 후 보고 (비활성화는 가역적이다 — 이것이 삭제 대신 비활성화를 택한 이유).
 - minipc의 `/var/lib/anki-sync-server`가 빈 심링크가 아니라 **데이터가 있는
-  디렉토리**로 실측됨 — 삭제 금지, 내용 보고 먼저.
+  디렉토리**로 실측됨 — 삭제 금지, 내용 보고 먼저. **이 조건은 이미 성립했다**
+  (203MB 실데이터): Part C는 운영자의 처분 결정 전까지 STOP 유지.
 - Enhanced Cloze/AnkiConnect를 건드려야 하는 상황으로 보임 — 범위 밖, 중단.
 
 ## Maintenance notes
@@ -219,5 +230,5 @@ ssh minipc 'sudo rm /var/lib/anki-sync-server && sudo rmdir /var/lib/private/ank
 - 비활성화한 애드온은 1개월 뒤 불편이 없으면 삭제해도 된다 (운영자 재량, plan 불요).
 - 이후 새 애드온 설치 시 기준: `max_point_version`이 현 Anki 버전대를 커버하고
   최근 1년 내 갱신된 것만.
-- GUIDE.md는 "다음 세션 LLM 입력" 문서다 — anki-study 관련 상태가 바뀌면
-  (재개, 서버 복구 등) §5 주석과 README "운영 전제"를 같은 커밋에서 갱신할 것.
+- GUIDE.md 기반의 "다음 세션 LLM 입력" 유지보수 규칙은 `anki-study/` 제거로
+  대상이 사라졌다. 학습을 재개하면 그 문서를 어디에 둘지부터 다시 정한다.
