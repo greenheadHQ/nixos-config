@@ -312,6 +312,34 @@ def remove_project_trust(config_path: Path, project_root: str) -> int:
     return 0
 
 
+def delete_project_entries(doc, projects, keys: list) -> None:
+    """Delete the given [projects."<path>"] keys, refetching the table each time.
+
+    `[projects."<p>"]` 테이블이 다른 최상위 테이블 사이에 흩어져 있으면 (실제 Codex
+    config가 그렇다) tomlkit 0.14.0의 `doc["projects"]`는 Table이 아니라
+    OutOfOrderTableProxy를 준다. 이 프록시는 __init__에서 "키 → self._tables 리스트의
+    위치" 맵(_tables_map)을 한 번 만들어 두는데, __delitem__이 비어버린 조각 테이블을
+    _remove_table로 리스트에서 빼면서 (tomlkit/container.py의 `self._tables.remove(table)`)
+    그 뒤 조각들의 위치가 한 칸씩 당겨진다. _tables_map은 그때 갱신되지 않으므로 이후
+    삭제는 엉뚱한 조각을 보거나 리스트 밖을 읽어 `table = self._tables[i]`에서
+    IndexError로 죽는다. 실측(projects 286개가 조각 3개 138/12/136으로 흩어진 config)에서
+    가운데 12개짜리 조각이 다 비는 128번째 삭제에 그대로 재현됐다.
+
+    Container.item()은 접근할 때마다 현재 _map으로 프록시를 새로 만들고 캐시하지 않으므로,
+    삭제 한 건마다 테이블을 다시 얻으면 낡은 위치 맵이 남지 않는다. 삭제할 때마다
+    문서 전체를 render→reparse해도 결과는 같지만(실측 바이트 동일) tomlkit 파싱이 40KB에
+    ~1초라 160건이면 ~96초가 되어 쓰지 않는다 — 재조회는 같은 입력에서 0.05초다.
+
+    tomlkit이 이 동작을 바꾸면 tests/suites/wt-create-codex.sh의
+    test_codex_trust_gc_handles_out_of_order_projects_tables가 알려준다.
+    """
+    for key in keys:
+        del projects[key]
+        projects = projects_table(doc)
+        if projects is None:
+            raise RuntimeError("projects table이 삭제 도중 사라졌습니다")
+
+
 def backup_path_for_gc(config_path: Path) -> Path:
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return config_path.with_name(f"{config_path.name}.bak-gc-{stamp}")
@@ -342,8 +370,16 @@ def gc_worktree_projects(config_path: Path, dry_run: bool) -> int:
                 print(str(key), file=sys.stderr)
 
             if stale and not dry_run:
-                for key in stale:
-                    del projects[key]
+                # tomlkit이 삭제 도중 터지면 traceback 대신 아래 GC 스킵 경로로 보낸다.
+                # 삭제는 backup/write_atomic 이전 단계라, 여기서 중단되면 config는 무변경이다.
+                try:
+                    delete_project_entries(doc, projects, stale)
+                except RuntimeError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - tomlkit raises broad errors.
+                    raise RuntimeError(
+                        f"projects 항목 삭제 실패 ({type(exc).__name__}: {exc})"
+                    ) from exc
                 rendered = render_doc(doc)
                 load_toml_doc(rendered, "rendered config")
                 # 되돌릴 수 없는 일괄 삭제라 원본을 먼저 남긴다. copy2는 mode까지 옮기는데,

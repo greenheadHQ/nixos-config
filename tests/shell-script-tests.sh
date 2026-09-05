@@ -79,6 +79,8 @@ run_test "wt create preserves unmergeable Codex config" test_wt_create_preserves
 run_test "codex trust untrust removes only target project" test_codex_trust_untrust_project_removes_only_target
 run_test "codex trust GC dry-run leaves config unchanged" test_codex_trust_gc_dry_run_leaves_config_unchanged
 run_test "codex trust GC removes stale worktree projects only" test_codex_trust_gc_removes_stale_worktree_projects_only
+run_test "codex trust GC handles out-of-order projects tables" test_codex_trust_gc_handles_out_of_order_projects_tables
+run_test "codex trust GC delete failure leaves config unchanged" test_codex_trust_gc_delete_failure_leaves_config_unchanged
 run_test "wt cleanup untrusts Codex project" test_wt_cleanup_untrusts_codex_project
 run_test "wt create inherits Claude local plugin manifest" test_wt_create_inherits_claude_local_plugin_manifest
 run_test "wt create ignores branch-tracked plugin settings" test_wt_create_ignores_branch_tracked_plugin_settings
