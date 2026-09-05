@@ -90,7 +90,7 @@ SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.s
 
 에러 메시지:
 ```
-warning: $HOME ('/Users/glen') is not owned by you, falling back to the one defined in the 'passwd' file ('/var/root')
+warning: $HOME ('/Users/<user>') is not owned by you, falling back to the one defined in the 'passwd' file ('/var/root')
 git@github.com: Permission denied (publickey).
 ```
 

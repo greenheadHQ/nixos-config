@@ -50,13 +50,13 @@ EXPECTED_EXPOSED=(
 )
 SHARED_EXPOSURE_EXCLUDE=(
   set-icons
+  syncing-codex-harness
   using-claude-p
   using-codex-exec
 )
 # Split retired names so the public stale-reference scan scope can stay
 # zero-match while this verifier still checks deployed residue.
 RETIRED_SHARED_SKILLS=(
-  "syncing-codex""-harness"
   "codex-fan""-out"
 )
 RETIRED_EXECUTABLES=(

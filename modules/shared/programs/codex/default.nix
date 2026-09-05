@@ -66,6 +66,8 @@ let
     "using-claude-p"
     # using-codex-exec: Codex 자기 참조 방지 (PR #212)
     "using-codex-exec"
+    # syncing-codex-harness: 퇴역 리다이렉트 스텁 — 투영 대상 아님
+    "syncing-codex-harness"
   ];
 
   mkCodexSkillEntry = name: {

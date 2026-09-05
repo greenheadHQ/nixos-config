@@ -203,6 +203,10 @@ in
     ".claude/skills/set-icons".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/set-icons";
 
+    # syncing-codex-harness 퇴역 리다이렉트 스텁 (user-scope, 명시 호출 전용 — disable-model-invocation: true)
+    ".claude/skills/syncing-codex-harness".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";
+
     # run-da 스킬 (user-scope)
     ".claude/skills/run-da".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/run-da";
