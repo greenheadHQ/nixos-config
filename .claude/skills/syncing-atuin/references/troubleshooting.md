@@ -335,8 +335,10 @@ scp ~/.local/share/atuin/key minipc:~/.local/share/atuin/
 ```bash
 atuin login -u <username>
 atuin sync
-atuin status   # last_sync 갱신 확인
+atuin doctor 2>&1 | grep -o '"last_sync": "[^"]*"'   # last_sync 갱신 확인
 ```
+
+> 검증에 `atuin status`를 쓰지 않는다. 이 명령은 v1 `/sync/status`를 호출하는데 Atuin 클라우드가 v1을 껐기 때문에 404를 돌려주고, v1 `last_sync_time` 파일도 CLI sync가 갱신하지 않아 값 자체가 오해를 부른다. 근거는 같은 문서의 [atuin status가 404 오류 반환](#atuin-status가-404-오류-반환)과 [CLI sync (v2)가 last_sync_time 파일 미업데이트](#cli-sync-v2가-last_sync_time-파일-미업데이트)에 있다.
 
 > key 파일은 히스토리 복호화 권한 그 자체다. SSH 암호화 경로(scp) 외의 채널(채팅·공용 저장소·클립보드 공유)로 옮기지 않는다.
 
