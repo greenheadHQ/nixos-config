@@ -91,13 +91,28 @@ let
       || [ -n "''${CODEX_CI:-}" ] || [ -n "''${CODEX_PROGRAMMATIC:-}" ] \
       || ${claudeAutomationPredicate}; }
   '';
-  # PATH mutation remains opt-in. CLAUDECODE is included because Claude creates
-  # its reusable login-shell snapshot with CLAUDECODE=1, then sources the
-  # snapshot after each tool shell starts. Capturing the private PATH there is
-  # what keeps external wrappers such as `timeout ssh` on the dispatcher after
-  # the snapshot's `export PATH=...` overwrites the new shell's .zshenv PATH.
-  # The launcher marker and bg signal cover non-snapshot child paths. Ordinary
-  # interactive shells have none of these owners and stay on raw OpenSSH.
+  # PATH mutation remains opt-in. This owner set decides which shells get the
+  # dispatcher prepended to PATH. That prepend is the only thing covering
+  # external wrappers such as `timeout ssh`, which exec the binary directly and
+  # therefore never see the ssh() shell function.
+  #
+  # 2026-08-17 measurement invalidated the premise this set was built on. The
+  # old rationale was that Claude records its reusable login-shell snapshot with
+  # CLAUDECODE=1, so the prepend would be captured there. It is not: the live
+  # snapshot's `export PATH=...` carries no dispatcher entry, while running
+  # `CLAUDECODE=1 zsh -l` by hand does prepend it. The predicate is sound; the
+  # snapshot-recording shell simply carries none of these owner signals, so the
+  # prepend never happens and every `timeout ssh` falls through to /usr/bin/ssh
+  # and raises a 1Password GUI prompt.
+  #
+  # The same judgement is also split across two places. headlessContextPredicate
+  # accepts SSH_CONNECTION as an automation signal — a remote session has no
+  # local 1Password approval flow it could answer, since the prompt renders on
+  # this Mac's screen — and the ssh() function relies on that. This owner set
+  # does not accept it, so a remote interactive shell is treated as an owner by
+  # one path and not by the other.
+  #
+  # TODO(human): decide what belongs in this owner set.
   headlessPathOwnerPredicate = inlineZshPredicate ''
     { [ "''${NIXOS_CONFIG_HEADLESS_SSH:-0}" = "1" ] \
       || ${claudeAutomationPredicate}; }
