@@ -28,10 +28,37 @@ _chra_git_init() {
     git -C "$repo" -c init.templateDir= init -b main >/dev/null 2>&1
 }
 
+# 환경에 전역 ignore가 있을 수 있으므로(git은 core.excludesFile 미설정 시
+# $XDG_CONFIG_HOME/git/ignore를 보며 GIT_CONFIG_GLOBAL로는 무력화되지 않는다) HOME·
+# XDG_CONFIG_HOME을 sandbox로 돌리고 -f로 무조건 track한다. 실제 repo의 README.md도
+# 같은 이유로 force-add된 상태라 fixture가 현실과 일치한다.
+_chra_git_add_forced() {
+  local repo="$1"
+  shift
+  HOME="$repo" \
+    XDG_CONFIG_HOME="$repo/.xdg-void" \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo" add -f -- "$@" >/dev/null
+}
+
 _chra_make_old_file() {
   local path="$1"
   printf '%s\n' "old transient buffer" > "$path"
   touch -d '10 days ago' "$path" 2>/dev/null || touch -t 200001010000 "$path"
+}
+
+# GNU 전용 상대시간 표기가 없는 환경(BSD touch)에서는 고정 과거 시각으로 대체한다.
+_chra_backdate() {
+  local path="$1" days="$2"
+  touch -d "$days days ago" "$path" 2>/dev/null || touch -t 200001010000 "$path"
+}
+
+# 회수된 buffer는 삭제가 아니라 .trash/<YYYY-MM-DD>/ 아래로 옮겨져 복구 가능해야 한다.
+_chra_trash_has() {
+  local plans="$1" name="$2"
+  find "$plans/.trash" -mindepth 2 -maxdepth 2 -type f -name "$name" 2>/dev/null \
+    | grep -q .
 }
 
 _chra_marker_path() {
@@ -210,7 +237,9 @@ test_plans_gc_hook_removes_old_transient_buffer() {
   input=$(jq -n --arg cwd "$repo" '{cwd:$cwd}')
   out=$(_chra_run_hook "plans-gc.sh" "$input" HOME="$home")
   [[ -z "$out" ]] || fail "expected plans-gc normal input to produce no stdout, got: $out"
-  [ ! -e "$old" ] || fail "expected plans-gc to remove old transient buffer"
+  [ ! -e "$old" ] || fail "expected plans-gc to retire old transient buffer"
+  _chra_trash_has "$repo/.claude/plans" "demo-1a2b3c4d.md" || \
+    fail "expected retired buffer to be recoverable under .trash/<date>/"
 }
 
 test_plans_gc_hook_empty_and_malformed_input_noop() {
@@ -230,6 +259,57 @@ test_plans_gc_hook_empty_and_malformed_input_noop() {
   out=$(_chra_run_hook "plans-gc.sh" '{"cwd":' HOME="$home")
   [[ -z "$out" ]] || fail "expected plans-gc malformed JSON to noop, got: $out"
   [ -f "$keep" ] || fail "expected plans-gc malformed JSON not to remove files"
+}
+
+test_plans_gc_hook_removes_slug_buffers_and_preserves_docs() {
+  local sandbox home repo plans input out
+  sandbox=$(new_sandbox)
+  home="$sandbox/home"
+  repo="$sandbox/repo"
+  plans="$repo/.claude/plans"
+  mkdir -p "$home" "$plans"
+  _chra_git_init "$repo"
+
+  # GC 대상: mtime 임계 초과 + untracked인 3단어 -ing slug buffer
+  _chra_make_old_file "$plans/calm-pondering-llama.md"
+  # 보존: 3단어이지만 가운데가 -ing가 아닌 사용자 SSOT 문서
+  _chra_make_old_file "$plans/codex-pushover-credentials.md"
+  # 보존: 날짜 prefix 문서. 이름 뒷부분이 slug 형태라 정규식 앵커(^)가 실제 방어선이다
+  _chra_make_old_file "$plans/2026-05-01-calm-pondering-llama.md"
+  # 보존: slug 파일명이지만 본문에 SSOT 마커가 있는 사람 문서
+  printf '%s\n\n%s\n' "# Plan: 사람이 쓴 문서" "## Document Status" \
+    > "$plans/wise-kindling-eich.md"
+  _chra_backdate "$plans/wise-kindling-eich.md" 10
+  # 보존: mtime 임계 내 최근 slug buffer
+  printf '%s\n' "recent slug buffer" > "$plans/eager-riding-bubble.md"
+  # 보존: slug 파일명이지만 git-tracked
+  _chra_make_old_file "$plans/kind-soaring-honey.md"
+  _chra_git_add_forced "$repo" "$plans/kind-soaring-honey.md" || \
+    fail "fixture setup: expected forced git add to track slug-named file"
+  # 만료 대상: 유예를 넘긴 trash 날짜 디렉토리
+  mkdir -p "$plans/.trash/2026-01-01"
+  printf '%s\n' "expired" > "$plans/.trash/2026-01-01/old-1a2b3c4d.md"
+  _chra_backdate "$plans/.trash/2026-01-01" 40
+
+  input=$(jq -n --arg cwd "$repo" '{cwd:$cwd}')
+  out=$(_chra_run_hook "plans-gc.sh" "$input" HOME="$home")
+  [[ -z "$out" ]] || fail "expected plans-gc slug run to produce no stdout, got: $out"
+  [ ! -e "$plans/calm-pondering-llama.md" ] || \
+    fail "expected plans-gc to retire old three-word -ing slug buffer"
+  _chra_trash_has "$plans" "calm-pondering-llama.md" || \
+    fail "expected retired slug buffer to be recoverable under .trash/<date>/"
+  [ -f "$plans/codex-pushover-credentials.md" ] || \
+    fail "expected plans-gc to preserve non-ing three-word user doc"
+  [ -f "$plans/2026-05-01-calm-pondering-llama.md" ] || \
+    fail "expected plans-gc to preserve date-prefixed doc"
+  [ -f "$plans/wise-kindling-eich.md" ] || \
+    fail "expected plans-gc to preserve slug-named doc carrying the SSOT marker"
+  [ -f "$plans/eager-riding-bubble.md" ] || \
+    fail "expected plans-gc to preserve recent slug buffer"
+  [ -f "$plans/kind-soaring-honey.md" ] || \
+    fail "expected plans-gc to preserve git-tracked slug-named file"
+  [ ! -d "$plans/.trash/2026-01-01" ] || \
+    fail "expected plans-gc to expire trash date dir past TRASH_KEEP_DAYS"
 }
 
 test_record_last_session_hook_normal_input_writes_marker() {
