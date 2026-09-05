@@ -22,6 +22,11 @@ import (
 	"time"
 )
 
+// fakeCatalogPayload is what the fake upstream answers on /v1/models. The gate never parses
+// the catalog — it only uses that path as a health endpoint — so the model id here is an
+// arbitrary placeholder and needs no update when the production model pins move.
+const fakeCatalogPayload = `{"data":[{"id":"gpt-5.6-sol"}]}`
+
 func buildGate(t *testing.T) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "claudex-gate")
@@ -1414,7 +1419,7 @@ func TestGateBackendHelper(t *testing.T) {
 		}
 		if request.URL.Path == "/v1/models" {
 			writer.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(writer, `{"data":[{"id":"gpt-5.6-sol"}]}`)
+			_, _ = io.WriteString(writer, fakeCatalogPayload)
 			return
 		}
 		if request.URL.Path == "/stream" {

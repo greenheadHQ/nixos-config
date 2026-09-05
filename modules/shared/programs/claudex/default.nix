@@ -47,6 +47,21 @@ let
   #     tracked in issue #1130 and redeploying. Mid-session /model switching to another
   #     catalog model remains available (user-measured 2026-07-17) — the pin fixes the
   #     session's starting model, not a session-long invariant.
+  # CIR: mixedMainModel then moved claude-opus-4-8 → claude-opus-5 (2026-09, issue #1130).
+  #     The Fable 5 expiry rationale above is unchanged; what went stale is the implicit
+  #     assumption that opus-4-8 is the current generation. claude-opus-5 is present in the
+  #     pinned proxy's embedded catalog, but a catalog hit is not a subscription entitlement
+  #     (the wrapper says so in its own error text), so the promotion is only confirmed by a
+  #     post-deploy self-report run: claudex --mixed -p "Reply with exactly your model name".
+  #     If that fails, roll back to claude-opus-4-8 and record the observation on #1130.
+  # CIR: the Codex-side pins (defaultMainModel/subagentModel) are bounded by the pinned
+  #     CLIProxyAPI (cli-proxy-api-pin.json) embedded catalog, not by the newest Codex model.
+  #     7.2.111 carries no gpt-6 family, so following the Codex frontier needs a proxy pin
+  #     bump first — the wrapper's catalog check is fail-closed and would exit 1 on a model
+  #     the proxy does not serve. Reverify (static, works with the proxy down):
+  #       strings -a <pinned proxy>/bin/cli-proxy-api | grep -oE 'gpt-[0-9][0-9a-z.-]*' | sort -u
+  #     The static scan is strong evidence, not proof; the decisive check is the running
+  #     proxy's catalog: curl -s http://127.0.0.1:8317/v1/models | jq -r '.data[].id'
   # mixedMainModel/subagentModel are deliberately NOT exposed in the descriptor: no
   # consumer exists today, and schema surface grows only with a consumer + schema bump.
   runtimeContract = {
@@ -54,7 +69,7 @@ let
     port = 8317;
     defaultMainModel = "gpt-5.6-sol";
     subagentModel = "gpt-5.6-sol";
-    mixedMainModel = "claude-opus-4-8";
+    mixedMainModel = "claude-opus-5";
     label = "org.nix-community.home.claudex-proxy";
   };
   inherit (runtimeContract)
@@ -190,21 +205,29 @@ let
       env.CLAUDE_CODE_EXTRA_BODY = builtins.toJSON { service_tier = "priority"; };
     }
   );
-  # CIR: the pinned CLI does not recognize the pinned model and assumes a 200k context
+  # CIR: the wrapper-launched CLI does not recognize the pinned model and assumes a 200k context
   # window, and the pinned proxy hard-codes usage 0/0 into SSE message_start (upstream
   # declined to change this), which pushes the CLI's context tracking onto a character-based
   # local estimate. Both errors combine to saturate the statusline at "100% context used"
   # far too early. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the CLI's official override that only
-  # applies to non-claude model names. The official Codex catalog defines both context_window
-  # and max_context_window as 272000 for gpt-5.6-sol. Codex separately applies its 95%
-  # effective-window policy and therefore reports 258400 as usable input; that policy value
-  # is not the raw Codex catalog window. Claude Code applies its own output and compaction headroom
+  # applies to non-claude model names. The value tracked here is the official Codex catalog's
+  # raw context_window (272000 for gpt-5.6-sol). The catalog's max_context_window is a
+  # different, larger field (872000 as of 2026-09 for the gpt-5.6/gpt-6 tier) and is
+  # deliberately not followed: what it grants this loopback path has never been measured, and
+  # over-declaring the window costs more than under-declaring it (the CLI would stop reserving
+  # compaction headroom in time), so the conservative field wins until #1113 measures the
+  # ceiling that actually applies here. Codex separately applies its 95% effective-window
+  # policy and therefore reports 258400 as usable input; that policy value is not the raw
+  # Codex catalog window either. Claude Code applies its own output and compaction headroom
   # below the declared window, so feeding the Codex effective value here would reserve
   # headroom twice. Keep both wrapper channels anchored to the raw catalog value and re-tune
   # them together when the official model metadata changes. The numerator stays a local
-  # estimate, so the displayed percentage remains an approximation. Reverify with:
-  #   codex debug models | jq '.models[] | select(.slug == "gpt-5.6-sol") |
-  #     {context_window,max_context_window,effective_context_window_percent}'
+  # estimate, so the displayed percentage remains an approximation. Reverify with the
+  # model-agnostic form below — a `select(.slug == "<pinned model>")` filter fails silently
+  # (empty output, exit 0) once the pin moves or the slug leaves the catalog, which reads as
+  # "nothing to see" instead of "the command is stale":
+  #   codex debug models | jq '.models[] | select(.visibility == "list") |
+  #     {slug,context_window,max_context_window,effective_context_window_percent}'
   maxContextTokens = 272000;
 
   runtimeLibrary = pkgs.replaceVars ./files/claudex-runtime.sh {
