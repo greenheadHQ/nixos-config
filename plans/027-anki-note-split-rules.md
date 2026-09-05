@@ -1,5 +1,10 @@
 # Plan 027: 비대 노트를 "복습에서 걸린 것부터" 점진 분할하는 운영 절차를 수립한다
 
+> **REJECTED (2026-09-05)**: 산출물 `anki-study/CARD_MAINTENANCE.md`의 대상
+> 디렉토리가 운영자 결정으로 제거됐다. 이 runbook은 실행하지 않는다 (아래는
+> 이력 기록). plan 025 규칙 3이 만드는 깃발 큐의 처리 절차는 미정 상태로
+> 남는다 — `plans/025-anki-restart-protocol.md`의 규칙 3·Maintenance notes 참조.
+>
 > **Executor instructions**: 이 plan의 산출물은 (1) 운영 절차 문서
 > `anki-study/CARD_MAINTENANCE.md` 신설(에이전트, repo 커밋)과 (2) 첫 1회
 > 분할 배치의 시범 실행(운영자 승인 게이트 포함)이다. **에이전트는 승인 없이
