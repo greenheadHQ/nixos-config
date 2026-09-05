@@ -38,7 +38,7 @@
 source 대상이 아닌 실행 helper (`WT_HELPERS`는 위 `lib/wt/*.sh` 7개만 source한다):
 
 - `lib/wt/codex-trust.py`: worktree 생성 시 Codex trust 등록 (`lib/wt/bootstrap.sh`가 실행)
-- `lib/wt/plugin-manifest.py`: worktree plugin manifest 관리 (`lib/wt/bootstrap.sh`가 실행)
+- `lib/wt/plugin-manifest.py`: worktree plugin manifest 관리와 경로가 사라진 worktree 등록 일괄 정리 (`lib/wt/bootstrap.sh`가 실행)
 
 ## Rebuild Contract
 

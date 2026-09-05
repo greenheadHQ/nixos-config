@@ -814,3 +814,253 @@ PY
   assert_contains "$output" "installed_plugins.json is not a regular file"
   [[ -p "$manifest" ]] || fail "unsafe plugin manifest FIFO must not be replaced"
 }
+
+test_wt_plugin_manifest_gc_removes_unmarked_orphan_worktree_entries() {
+  local sandbox manifest manifest_dir wt_base target output backup
+  sandbox=$(new_sandbox)
+  mkdir -p "$sandbox/home/.claude/plugins" "$sandbox/repo/.claude/worktrees" "$sandbox/project-alpha"
+  sandbox="$(cd "$sandbox" && pwd -P)"
+  manifest_dir="$sandbox/home/.claude/plugins"
+  manifest="$manifest_dir/installed_plugins.json"
+  wt_base="$sandbox/repo/.claude/worktrees"
+  target="$wt_base/target"
+  mkdir -p "$wt_base/live-manual"
+  # 깨진 symlink는 "무언가 남아 있는" 경로라 orphan으로 보지 않는다 (판정이 lstat 기준임을 고정).
+  ln -s "$wt_base/never-existed" "$wt_base/broken-link"
+
+  python3 - "$sandbox" <<'PY'
+import json
+import os
+import sys
+
+sandbox = sys.argv[1]
+wt_base = os.path.join(sandbox, "repo", ".claude", "worktrees")
+manifest = os.path.join(sandbox, "home", ".claude", "plugins", "installed_plugins.json")
+
+
+def local(project_path, install_path, managed=False):
+    entry = {"scope": "local", "projectPath": project_path, "installPath": install_path}
+    if managed:
+        entry["metadata"] = {"wtManaged": {"version": 1}}
+    return entry
+
+
+payload = {
+    "plugins": {
+        "example-plugin@demo-marketplace": [
+            local(os.path.join(wt_base, "target"), "/tmp/target", managed=True),
+            local(os.path.join(wt_base, "target"), "/tmp/manual"),
+            local(os.path.join(wt_base, "orphan-legacy"), "/tmp/legacy"),
+            local(os.path.join(wt_base, "feat", "gone-deep"), "/tmp/deep"),
+            local(os.path.join(wt_base, "live-manual"), "/tmp/live"),
+            local(os.path.join(wt_base, "broken-link"), "/tmp/broken"),
+            local(os.path.join(sandbox, "project-alpha"), "/tmp/other"),
+            local(os.path.join(sandbox, "gone-project"), "/tmp/gone"),
+            {
+                "scope": "user",
+                "projectPath": os.path.join(wt_base, "orphan-user"),
+                "installPath": "/tmp/user",
+            },
+        ],
+        "legacy-only@demo-marketplace": [
+            local(os.path.join(wt_base, "orphan-legacy-two"), "/tmp/legacy-two")
+        ],
+    }
+}
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2)
+    f.write("\n")
+PY
+
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" remove-local \
+      --manifest "$manifest" \
+      --target-root "$target" \
+      --target-root-before-removal "$target" 2>&1
+  )
+  assert_contains "$output" "removed 3 orphan worktree entries"
+  assert_contains "$output" "plugin manifest orphan: $wt_base/orphan-legacy"
+  assert_contains "$output" "plugin manifest orphan: $wt_base/feat/gone-deep"
+  assert_contains "$output" "plugin manifest orphan: $wt_base/orphan-legacy-two"
+
+  # pipefail 셸에서 매치 0건이 조용한 abort가 되지 않도록, 판정은 아래 -n 검사로 몰아준다.
+  backup=$(command ls "$manifest_dir" | grep '^installed_plugins\.json\.bak-gc-' | head -1 || true)
+  [[ -n "$backup" ]] || fail "orphan GC must leave a manifest backup before deleting entries"
+
+  python3 - "$manifest" "$manifest_dir/$backup" "$sandbox" <<'PY'
+import json
+import os
+import stat
+import sys
+
+manifest, backup, sandbox = sys.argv[1:4]
+wt_base = os.path.join(sandbox, "repo", ".claude", "worktrees")
+target = os.path.join(wt_base, "target")
+
+with open(backup, encoding="utf-8") as f:
+    backup_paths = [
+        entry.get("projectPath")
+        for entry in json.load(f)["plugins"]["example-plugin@demo-marketplace"]
+    ]
+assert os.path.join(wt_base, "orphan-legacy") in backup_paths, backup_paths
+backup_mode = stat.S_IMODE(os.stat(backup).st_mode)
+assert backup_mode == 0o600, oct(backup_mode)
+
+with open(manifest, encoding="utf-8") as f:
+    plugins = json.load(f)["plugins"]
+entries = plugins["example-plugin@demo-marketplace"]
+kept = [(e.get("scope"), e.get("projectPath"), e.get("installPath")) for e in entries]
+
+# 대상 자신: 표식 있는 등록만 제거되고, 사용자가 직접 만든 등록은 GC에서 빠진다.
+assert ("local", target, "/tmp/target") not in kept, kept
+assert ("local", target, "/tmp/manual") in kept, kept
+# 표식 없는 orphan은 깊이와 무관하게 회수된다.
+assert ("local", os.path.join(wt_base, "orphan-legacy"), "/tmp/legacy") not in kept, kept
+assert ("local", os.path.join(wt_base, "feat", "gone-deep"), "/tmp/deep") not in kept, kept
+assert "legacy-only@demo-marketplace" not in plugins, plugins
+# 살아 있는 경로·base 밖 경로·user scope는 그대로 둔다.
+assert ("local", os.path.join(wt_base, "live-manual"), "/tmp/live") in kept, kept
+assert ("local", os.path.join(wt_base, "broken-link"), "/tmp/broken") in kept, kept
+assert ("local", os.path.join(sandbox, "project-alpha"), "/tmp/other") in kept, kept
+assert ("local", os.path.join(sandbox, "gone-project"), "/tmp/gone") in kept, kept
+assert ("user", os.path.join(wt_base, "orphan-user"), "/tmp/user") in kept, kept
+PY
+}
+
+test_wt_plugin_manifest_gc_skips_targets_outside_worktree_base() {
+  local sandbox manifest target orphan_sibling output
+  sandbox=$(new_sandbox)
+  manifest="$sandbox/home/.claude/plugins/installed_plugins.json"
+
+  mkdir -p "$(dirname "$manifest")" "$sandbox/projects/target"
+  target="$(cd "$sandbox/projects/target" && pwd -P)"
+  orphan_sibling="$(dirname "$target")/gone"
+
+  python3 - "$manifest" "$target" "$orphan_sibling" <<'PY'
+import json
+import sys
+
+manifest, target, orphan_sibling = sys.argv[1:4]
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "plugins": {
+                "example-plugin@demo-marketplace": [
+                    {
+                        "scope": "local",
+                        "projectPath": target,
+                        "installPath": "/tmp/target",
+                        "metadata": {"wtManaged": {"version": 1}},
+                    },
+                    {"scope": "local", "projectPath": orphan_sibling, "installPath": "/tmp/sibling"},
+                ]
+            }
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
+PY
+
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" remove-local \
+      --manifest "$manifest" \
+      --target-root "$target" \
+      --target-root-before-removal "$target" 2>&1
+  )
+  assert_not_contains "$output" "orphan worktree entries"
+
+  python3 - "$manifest" "$target" "$orphan_sibling" <<'PY'
+import json
+import sys
+
+manifest, target, orphan_sibling = sys.argv[1:4]
+with open(manifest, encoding="utf-8") as f:
+    entries = json.load(f)["plugins"]["example-plugin@demo-marketplace"]
+paths = [e.get("projectPath") for e in entries]
+assert target not in paths, paths
+assert orphan_sibling in paths, paths
+PY
+}
+
+# 경로 존재 여부를 확인하지 못하면(EACCES 등) 지우지 않는다 — root는 권한 검사를 우회하므로 skip.
+test_wt_plugin_manifest_gc_keeps_entries_when_path_check_fails() {
+  local sandbox manifest wt_base target output
+  if [ "$(id -u)" = 0 ]; then
+    echo "    (skip: root bypasses directory permission checks)" >&2
+    return 0
+  fi
+  sandbox=$(new_sandbox)
+  mkdir -p "$sandbox/home/.claude/plugins" "$sandbox/repo/.claude/worktrees"
+  sandbox="$(cd "$sandbox" && pwd -P)"
+  manifest="$sandbox/home/.claude/plugins/installed_plugins.json"
+  wt_base="$sandbox/repo/.claude/worktrees"
+  target="$wt_base/target"
+  mkdir -p "$wt_base/live-unmarked"
+
+  python3 - "$sandbox" <<'PY'
+import json
+import os
+import sys
+
+sandbox = sys.argv[1]
+wt_base = os.path.join(sandbox, "repo", ".claude", "worktrees")
+manifest = os.path.join(sandbox, "home", ".claude", "plugins", "installed_plugins.json")
+payload = {
+    "plugins": {
+        "example-plugin@demo-marketplace": [
+            {
+                "scope": "local",
+                "projectPath": os.path.join(wt_base, "target"),
+                "installPath": "/tmp/target",
+                "metadata": {"wtManaged": {"version": 1}},
+            },
+            {
+                "scope": "local",
+                "projectPath": os.path.join(wt_base, "live-unmarked"),
+                "installPath": "/tmp/live",
+            },
+            {
+                "scope": "local",
+                "projectPath": os.path.join(wt_base, "gone-sibling"),
+                "installPath": "/tmp/gone",
+            },
+        ]
+    }
+}
+with open(manifest, "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2)
+    f.write("\n")
+PY
+
+  chmod 000 "$wt_base"
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/plugin-manifest.py" remove-local \
+      --manifest "$manifest" \
+      --target-root "$target" \
+      --target-root-before-removal "$target" 2>&1
+  ) || {
+    chmod 755 "$wt_base"
+    fail "remove-local must not fail when worktree paths cannot be checked"
+  }
+  chmod 755 "$wt_base"  # sandbox 자동 cleanup이 rm -rf 할 수 있도록 권한 복구.
+
+  assert_not_contains "$output" "orphan worktree entries"
+  assert_contains "$output" "cannot check worktree path"
+
+  python3 - "$manifest" "$sandbox" <<'PY'
+import json
+import os
+import sys
+
+manifest, sandbox = sys.argv[1:3]
+wt_base = os.path.join(sandbox, "repo", ".claude", "worktrees")
+with open(manifest, encoding="utf-8") as f:
+    entries = json.load(f)["plugins"]["example-plugin@demo-marketplace"]
+paths = [entry.get("projectPath") for entry in entries]
+# 표식 있는 대상은 문자열 대조로 제거되지만, 확인하지 못한 형제 등록은 남는다.
+assert os.path.join(wt_base, "target") not in paths, paths
+assert os.path.join(wt_base, "live-unmarked") in paths, paths
+assert os.path.join(wt_base, "gone-sibling") in paths, paths
+PY
+}

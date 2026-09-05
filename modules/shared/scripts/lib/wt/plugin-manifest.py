@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import copy
+import datetime
 import errno
 import fcntl
 import hashlib
@@ -21,10 +22,22 @@ from typing import Iterator
 WT_MANAGED_METADATA_KEY = "wtManaged"
 WT_MANAGED_METADATA_VERSION = 1
 WT_MANAGED_SKILL_LINK_PREFIX = "wt-plugin--"
+# wt가 worktree를 만드는 자리(`<repo>/.claude/worktrees/<name>`)의 마지막 두 조각.
+# orphan GC 범위를 이 자리 아래로만 한정하는 데 쓴다.
+WT_WORKTREE_BASE_PARTS = (".claude", "worktrees")
+# 경로 존재 판정 결과. "없다"와 "확인하지 못했다"를 구분해, 되돌릴 수 없는 삭제를
+# 확인된 부재에만 허용한다.
+PRESENCE_MISSING = "missing"
+PRESENCE_PRESENT = "present"
+PRESENCE_UNKNOWN = "unknown"
 
 
 def warn(message: str) -> None:
     print(f"warning: {message}", file=sys.stderr)
+
+
+def info(message: str) -> None:
+    print(message, file=sys.stderr)
 
 
 def resolve_path(value: str, *, strict: bool = False) -> str | None:
@@ -304,6 +317,125 @@ def remove_target_entries(
     return changed
 
 
+def orphan_gc_base(target_root: str) -> str | None:
+    """제거 대상 worktree가 놓인 wt worktree base를 돌려준다 (아니면 None).
+
+    GC 범위를 CLI 인자로 따로 받지 않고 대상 경로에서 유도한다. 호출부(bootstrap.sh)는
+    이미 `<repo>/.claude/worktrees/<name>`만 넘기므로 추가 인자 없이 같은 저장소의
+    worktree base로 범위가 좁혀지고, 그 밖의 경로로 helper를 직접 부르면 (마지막 두
+    조각이 다르므로) GC 자체가 꺼진다. wt가 만드는 대상은 항상 base 바로 아래이므로
+    부모 한 단계만 본다 — GC가 훑는 범위는 이렇게 얻은 base 아래 전체다.
+    """
+    parent = Path(target_root).expanduser().parent
+    if parent.parts[-2:] != WT_WORKTREE_BASE_PARTS:
+        return None
+    return resolve_path(str(parent), strict=False)
+
+
+def path_presence(path: Path) -> tuple[str, str]:
+    """경로 존재 여부를 확인된 만큼만 돌려준다 (missing / present / unknown).
+
+    `os.path.lexists`는 "없다"와 "stat 자체를 못 했다"(EACCES·EIO 등)를 모두 False로
+    뭉갠다. 그 신호로 지우면 base를 읽지 못하는 동안 살아 있는 worktree의 등록까지
+    되돌릴 수 없이 사라진다. 확인하지 못한 상태는 unknown으로 남겨 보존한다
+    (fail-closed — wt의 재생성 잠금 가드와 같은 원칙).
+    """
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return PRESENCE_MISSING, ""
+    except OSError as exc:
+        return PRESENCE_UNKNOWN, str(exc)
+    return PRESENCE_PRESENT, ""
+
+
+def collect_orphan_worktree_entries(
+    plugins: dict[str, object],
+    worktree_base: str,
+    skip_paths: set[str],
+) -> tuple[list[tuple[str, int, str]], list[str]]:
+    """worktree base 아래를 가리키지만 그 경로가 사라진 local entry를 모은다.
+
+    wtManaged 표식을 요구하지 않는다. 표식은 wt가 심어준 entry에만 있어서, 표식 도입
+    전에 생겼거나 사용자가 직접 등록한 entry는 디렉토리가 사라져도 어떤 제거 조건에도
+    걸리지 않고 manifest에 영구히 남았다. 경로 소멸 자체가 "이 등록은 더 이상 가리킬
+    대상이 없다"는 충분한 근거이므로 표식 없이도 지운다.
+
+    base 바로 아래(1단계)만이 아니라 그 아래 전체를 본다 — 브랜치명 때문에
+    `.claude/worktrees/feat/x` 같은 깊은 경로도 실제로 생기고, 같은 개념의 형제 GC
+    (codex-trust.py)도 경로에 base가 들어가는지로 판정한다.
+
+    돌려주는 값은 (제거 후보 (plugin key, index, projectPath) 목록, 판정 실패 목록).
+    """
+    victims: list[tuple[str, int, str]] = []
+    undetermined: list[str] = []
+    for key in list(plugins.keys()):
+        entries = plugins.get(key, [])
+        if not isinstance(entries, list):
+            continue
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict) or entry.get("scope") != "local":
+                continue
+            project_path = entry.get("projectPath")
+            if not isinstance(project_path, str) or not project_path:
+                continue
+            expanded = Path(project_path).expanduser()
+            literal = str(expanded).rstrip("/")
+            # resolve(strict=False)는 사라진 경로도 조상 symlink(macOS `/tmp` →
+            # `/private/tmp` 등)까지 펴주므로 base와 같은 표현으로 비교된다.
+            canonical = resolve_path(project_path, strict=False) or literal
+            if literal in skip_paths or canonical in skip_paths:
+                continue
+            if not canonical.startswith(worktree_base + os.sep):
+                continue
+            state, detail = path_presence(expanded)
+            if state == PRESENCE_UNKNOWN:
+                undetermined.append(f"{project_path}: {detail}")
+                continue
+            if state == PRESENCE_MISSING:
+                victims.append((key, index, project_path))
+    return victims, undetermined
+
+
+def apply_orphan_removals(
+    plugins: dict[str, object], victims: list[tuple[str, int, str]]
+) -> None:
+    """collect가 고른 entry를 인덱스로 제거한다 (판정을 다시 하지 않는다)."""
+    by_key: dict[str, set[int]] = {}
+    for key, index, _ in victims:
+        by_key.setdefault(key, set()).add(index)
+    for key, indexes in by_key.items():
+        entries = plugins.get(key)
+        if not isinstance(entries, list):
+            continue
+        retained = [entry for index, entry in enumerate(entries) if index not in indexes]
+        if retained:
+            plugins[key] = retained
+        else:
+            del plugins[key]
+
+
+def backup_path_for_gc(manifest_path: Path) -> Path:
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return manifest_path.with_name(f"{manifest_path.name}.bak-gc-{stamp}")
+
+
+def write_gc_backup(manifest_path: Path) -> Path | None:
+    """GC 직전 manifest 사본을 남긴다 (실패하면 None — 호출부가 GC를 건너뛴다).
+
+    copy2는 원본 mode를 그대로 옮기는데, 지운 항목까지 담긴 전체 사본이 manifest보다
+    넓은 권한으로 남지 않도록 0600으로 좁힌다 (형제 helper codex-trust.py와 같은 계약).
+    """
+    backup = backup_path_for_gc(manifest_path)
+    try:
+        shutil.copy2(manifest_path, backup)
+        os.chmod(backup, 0o600)
+    except OSError as exc:
+        warn(f"cannot write plugin manifest backup; keeping orphan entries: {backup}: {exc}")
+        return None
+    return backup
+
+
 def load_manifest(manifest_path: Path) -> dict[str, object] | None:
     payload = load_json(manifest_path, "installed_plugins.json", "leaving it unchanged")
     if payload is None:
@@ -526,6 +658,38 @@ def remove_local_plugins(args: argparse.Namespace) -> int:
         assert isinstance(plugins, dict)
 
         changed = remove_target_entries(plugins, target_root, is_target_entry)
+
+        # 제거 대상과 무관한 orphan도 같은 락·같은 쓰기 안에서 전수 정리한다. manifest
+        # 쓰기는 락 안에서 한 번뿐이라 여기 얹는 비용이 사실상 0이고, wt cleanup은 대상
+        # 하나만 지우므로 "그 worktree만" 정리하면 이미 사라진 형제 entry는 그것을 지웠던
+        # 실행이 다시 오지 않는 한 영원히 남는다 (실제로 12건이 그렇게 쌓였다).
+        worktree_base = orphan_gc_base(target_root)
+        if worktree_base is not None:
+            # 이번 대상 자신은 GC에서 뺀다. 보호 경로(`wt cleanup --auto`)는 디렉토리를
+            # 지운 뒤 이 helper를 부르므로, 빼지 않으면 대상의 표식 없는(사용자 수동)
+            # 등록까지 함께 사라져 강제 경로(`--yes`, 제거 전 호출)와 계약이 갈린다.
+            # 대상에는 위의 exact-match 제거만 적용하고, 강제 경로가 남긴 잔재는 다음
+            # 실행의 전수 GC가 회수한다.
+            skip_paths = {target_root, resolve_path(target_root, strict=False) or target_root}
+            victims, undetermined = collect_orphan_worktree_entries(
+                plugins, worktree_base, skip_paths
+            )
+            for detail in undetermined:
+                warn(f"cannot check worktree path; keeping its plugin entry: {detail}")
+            if victims:
+                # 되돌릴 수 없는 일괄 삭제라, 무엇을 지웠는지 경로까지 남기고 원본 사본을
+                # 먼저 뜬다. 사본을 남기지 못하면 GC 자체를 건너뛴다 (대상 entry 제거는
+                # 그대로 진행 — wt cleanup의 본 계약이다).
+                backup = write_gc_backup(manifest_path)
+                if backup is not None:
+                    apply_orphan_removals(plugins, victims)
+                    changed = True
+                    for _, _, project_path in victims:
+                        info(f"plugin manifest orphan: {project_path}")
+                    info(
+                        f"plugin manifest: removed {len(victims)} orphan worktree entries "
+                        f"under {worktree_base} (backup: {backup})"
+                    )
 
         if changed:
             atomic_write_json(manifest_path, manifest)

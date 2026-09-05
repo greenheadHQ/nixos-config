@@ -48,6 +48,13 @@ wt — Git worktree 관리 (fzf TUI)
       브랜치 복구 명령을 안내함
       그 뒤 CAS가 거부되면(새 커밋 발생) worktree는 이미 제거된 상태로 브랜치만 남김
       --yes는 이 보호를 해제하고 강제 경로로 보냄 (--auto의 후보 선정은 그대로)
+    Claude plugin 등록 정리 시 .claude/worktrees/ 아래에서 경로가 사라진 등록은
+      wt 표식이 없어도 함께 지움 (남아 쌓이던 orphan entry 전수 GC, 깊은 경로 포함)
+      정리 대상 worktree 자신은 wt 표식이 있는 등록만 지움 (수동 등록은 그대로 둠)
+      경로 존재를 확인하지 못하면(권한 등) 지우지 않고 warning만 남김
+      지우기 전 installed_plugins.json.bak-gc-<UTC> 백업 + 지운 경로를 한 줄씩 출력
+        (백업은 ~/.claude/plugins/에 쌓이므로 복구가 필요 없으면 지워도 됨)
+      wt <branch> --if-exists=recreate의 기존 worktree 제거도 같은 GC를 탐
   안전 가드: pane에 셸 이외의 프로세스(nvim, claude 등)가 있으면 삭제하지 않음
              창 닫기 대상은 pane의 cwd가 그 worktree 아래인 창 — 창 이름이나 만든 주체는
                보지 않으므로 직접 만든 창도 닫힘 (orphan cwd 방지)

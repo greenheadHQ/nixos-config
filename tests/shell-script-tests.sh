@@ -85,6 +85,9 @@ run_test "wt create ignores branch-tracked plugin settings" test_wt_create_ignor
 run_test "wt plugin manifest ignores noncanonical adjacent lock directory" test_wt_plugin_manifest_ignores_noncanonical_adjacent_lock_directory
 run_test "wt plugin manifest skill projection skips OS errors" test_wt_plugin_manifest_skill_projection_skips_os_errors
 run_test "wt plugin manifest cleanup uses stable canonical target" test_wt_plugin_manifest_cleanup_uses_stable_canonical_target
+run_test "wt plugin manifest GC removes unmarked orphan worktree entries" test_wt_plugin_manifest_gc_removes_unmarked_orphan_worktree_entries
+run_test "wt plugin manifest GC skips targets outside worktree base" test_wt_plugin_manifest_gc_skips_targets_outside_worktree_base
+run_test "wt plugin manifest GC keeps entries when path check fails" test_wt_plugin_manifest_gc_keeps_entries_when_path_check_fails
 run_test "wt cleanup removes exact Claude local plugin manifest entries" test_wt_cleanup_removes_exact_claude_local_plugin_manifest_entries
 run_test "wt cleanup stops when plugin manifest cleanup fails" test_wt_cleanup_stops_when_plugin_manifest_cleanup_fails
 run_test "wt plugin manifest missing and invalid inputs are safe" test_wt_plugin_manifest_missing_and_invalid_are_safe
