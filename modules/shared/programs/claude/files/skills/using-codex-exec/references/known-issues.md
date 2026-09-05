@@ -758,7 +758,7 @@ nix shell nixpkgs#bubblewrap --command env CODEX_PROGRAMMATIC=1 codex exec -s wo
 
 현재 CLI에서 실측 가능한 경계:
 - `codex exec --help` (codex-cli 0.142.5, 2026-07-07)는 `--ignore-user-config`를 "`$CODEX_HOME/config.toml`은 로드하지 않지만 auth는 `CODEX_HOME`을 계속 사용"하는 플래그로 설명한다. 따라서 이 플래그는 MCP/config 표면 차단용이지 auth 차단용이 아니다.
-- 이 플래그가 차단하는 것은 사용자 override이며, 값이 미설정 상태가 되는 것은 아니다 — 모델 카탈로그·CLI의 fallback 기본값으로 되돌아간다 (카탈로그 기본값은 `codex debug models`의 모델별 필드에서 확인). 그 폴백이 config 값과 다르면 조용히 드리프트한다: A/B 실측 2026-08-15, 0.147.0에서 config `low` → 배너 `none` (model 축은 폴백이 config 값과 같아 현재 무증상이나 메커니즘 동일). 이 문서의 격리 fan-out 템플릿들이 `-c model_reasoning_effort=`를 항상 명시하는 이유다. 값 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다.
+- 이 플래그가 차단하는 것은 사용자 override이며, 값이 미설정 상태가 되는 것은 아니다 — 모델 카탈로그·CLI의 fallback 기본값으로 되돌아간다 (카탈로그 기본값은 `codex debug models`의 모델별 필드에서 확인). 그 폴백이 config 값과 다르면 조용히 드리프트한다: A/B 실측 2026-08-15, 0.147.0에서 config `low` → 배너 `none`. model 축은 config 템플릿이 pin하지 않으므로(2026-09-05 제거) 드리프트 대상이 아니다 — 재검증: `grep -c '^model = ' ~/.codex/config.toml` 이 `0`이면 성립하고, `0`이 아니면 배포본에 남은 잔재이므로 그 줄을 지운다. 이 문서의 격리 fan-out 템플릿들이 `-c model_reasoning_effort=`를 항상 명시하는 이유다. 값 적용 여부는 시작 배너의 `reasoning effort:` 줄로 확인한다.
 - 빈 scratch `CODEX_HOME`에서 `codex login status`는 `Not logged in`을 반환했고, 같은 조건에 더미 `OPENAI_API_KEY`를 추가해도 결과는 바뀌지 않았다. host `CODEX_HOME`에서는 `Logged in using ChatGPT`가 반환되어, `auth.json`/저장된 ChatGPT token 계열은 `CODEX_HOME`에 묶여 있음을 확인했다.
 - `CODEX_API_KEY`는 exec 전용 경로이므로 `codex login status`만으로 우선순위 전체를 검증하지 않는다. scratch `CODEX_HOME`을 쓰는 automation은 `CODEX_API_KEY`를 명시적으로 전달하거나, 필요한 경우 기존 `auth.json`을 scratch `CODEX_HOME`으로 복사한 뒤 `codex login status`로 저장 auth 존재만 확인한다.
 

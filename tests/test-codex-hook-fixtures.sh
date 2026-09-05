@@ -79,6 +79,12 @@ LIVE_PASS_FILE="$(mktemp "${TMPDIR:-/tmp}/codex-hook-fixtures-live-pass.XXXXXX")
 # 필수 live 시나리오 ID의 단일 선언 — 각 시나리오의 _live_mark_passed 호출 리터럴과 함께
 # 갱신한다 (집계 루프는 이 배열만 소비).
 REQUIRED_LIVE_SCENARIOS=(invocation_matrix marker_residual env_inheritance)
+# live 시나리오가 실제 codex exec에 넘기는 모델 — 왕복은 `Reply PONG` 수준이라 저가 모델을
+# 명시 고정한다. 미지정 시 CLI 폴백이 카탈로그 priority 1(frontier)이라 비용이 붙고, 4곳 모두
+# 사용자 config가 적용되지 않는 경로(`--ignore-user-config` 또는 sandbox `CODEX_HOME`)라
+# ~/.codex/config.toml로는 통제되지 않는다.
+# 카탈로그 유효성 재검증: codex debug models | jq -r '.models[].slug'
+LIVE_FIXTURE_MODEL="gpt-5.5"
 # live가 기동한 장수명 프로세스(wrapper·marker helper)의 등록 파일 — Ctrl-C/CI 취소 등
 # 중단 경로에서도 EXIT trap이 임시 디렉터리 삭제 전에 이 목록을 identity 확인 후 정리한다
 # (디렉터리를 먼저 지우면 marker 경로 기반 재탐색이 불가능해진다). 라인 형식은
@@ -1473,7 +1479,7 @@ EOF
        "$SUPERVISED_BIN" \
          --ephemeral --skip-git-repo-check --sandbox read-only --ignore-rules \
          --dangerously-bypass-hook-trust \
-         -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+         -c model="$LIVE_FIXTURE_MODEL" -c model_reasoning_effort="medium" \
          - >/dev/null 2>"$codex_stderr" ) \
     || codex_rc=$?
 
@@ -1551,7 +1557,7 @@ test_codex_exec_invocation_live_matrix() {
     ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
     "$SUPERVISED_BIN" \
       --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
-      -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+      -c model="$LIVE_FIXTURE_MODEL" -c model_reasoning_effort="medium" \
       -o "$result1" \
       - >/dev/null 2>"$stderr1" || rc1=$?
 
@@ -1614,7 +1620,7 @@ EOF
     "$SUPERVISED_BIN" \
       --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
       --dangerously-bypass-hook-trust \
-      -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+      -c model="$LIVE_FIXTURE_MODEL" -c model_reasoning_effort="medium" \
       -c "hooks.UserPromptSubmit=$override" \
       -c "hooks.Stop=$override" \
       -o "$result2" \
@@ -1712,7 +1718,7 @@ test_codex_exec_marker_residual_live() {
       ${SUPERVISED_ENV[@]+"${SUPERVISED_ENV[@]}"} \
       "$SUPERVISED_BIN" \
         --ephemeral --skip-git-repo-check --sandbox read-only --ignore-user-config --ignore-rules \
-        -c model="gpt-5.5" -c model_reasoning_effort="medium" \
+        -c model="$LIVE_FIXTURE_MODEL" -c model_reasoning_effort="medium" \
         -o "$result" \
         - >/dev/null 2>"$stderr_log" ) &
   wrapper_pid=$!

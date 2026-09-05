@@ -678,7 +678,7 @@ echo "=== 글로벌 설정 확인 ==="
 # ~/.codex/config.toml 관리 상태
 # activation의 syncCodexConfig가 repo-managed 키와 사용자 소유 섹션을 merge한 regular file로
 # 유지한다. PASS 기준: (a) regular file, (b) mode 0600, (c) TOML 파싱 성공,
-#                     (d) template-managed key 존재 (model/approval_policy/sandbox_mode).
+#                     (d) template-managed key 존재 (approval_policy/sandbox_mode).
 # mode 불일치는 fail로 승격, legacy symlink 감지 시 nrs --force 안내.
 _codex_cfg="$HOME/.codex/config.toml"
 if [ ! -e "$_codex_cfg" ]; then

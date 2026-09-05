@@ -13,7 +13,7 @@ USAGE
 OWNERSHIP POLICY (recursive, leaf-level)
 ----------------------------------------
 * Template-owned leaves: every leaf key the template defines, including leaves
-  nested inside template-declared tables (e.g. `[features].voice_transcription`,
+  nested inside template-declared tables (e.g. `[features].prevent_idle_sleep`,
   `[plugins."github@openai-curated"].enabled`). These are (re-)applied from the
   template on each activation, and compared by `check` mode.
 * User-owned: everything the template does NOT declare at the same path —
@@ -383,7 +383,7 @@ def _walk_template_leaves(tmpl, *, path: tuple[str, ...] = ()) -> Iterator[tuple
     Leaf 판정은 `_is_table()`로 한다 — 일반 table과 inline table(`{ key = value }`)
     모두 `_is_table` True로 취급되어 재귀 대상이 된다. 따라서 yield되는 값은
     scalar(str/int/float/bool/datetime), array(`[...]`), 그리고 기타 non-mapping TOML
-    값이다. 예: `[features] voice_transcription = true`의 `voice_transcription`은
+    값이다. 예: `[features] prevent_idle_sleep = true`의 `prevent_idle_sleep`은
     yield되고, `[plugins.\"github@openai-curated\"] enabled = true`는 `plugins`/`github@...`
     테이블을 재귀한 뒤 `enabled`가 yield된다.
 
