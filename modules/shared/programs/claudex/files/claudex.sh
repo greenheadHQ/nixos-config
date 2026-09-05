@@ -14,6 +14,15 @@ CLAUDEX_LOGIN_HANDLER="@loginHandler@"
 CLAUDEX_STATUS_HANDLER="@statusHandler@"
 CLAUDEX_PROXY_HANDLER="@proxyHandler@"
 
+# CIR: "the wrapper-launched CLI" below means the user's own Claude Code install at
+# $CLAUDEX_HOME/.local/bin/claude (resolved into claude_bin further down). claudex does NOT
+# pin it — that install auto-updates on its own channel, so every CLI-behavior claim in the
+# CIR comments below is an observation on the version noted there (2.1.210), not a contract
+# frozen by this repo. Reverify a claim against the CLI actually in use with:
+#   "$HOME/.local/bin/claude" --version
+#   strings -a "$(readlink -f "$HOME/.local/bin/claude")" | grep -F <env var name>
+# (the second only proves the env channel still exists, not that its behavior is unchanged).
+
 claudex_usage() {
   cat <<'EOF'
 사용법:
@@ -129,8 +138,8 @@ case "$effort_level" in
     exit 2
     ;;
 esac
-# The pinned CLI validates --effort argv values (low..max) and warns-then-ignores unknown
-# ones, while CLAUDE_CODE_EFFORT_LEVEL is forwarded unvalidated for the backend to
+# The wrapper-launched CLI validates --effort argv values (low..max) and warns-then-ignores
+# unknown ones, while CLAUDE_CODE_EFFORT_LEVEL is forwarded unvalidated for the backend to
 # interpret. ultra is a backend-recognized level for the pinned model, so it travels via
 # the wrapper-owned environment value only — passing it as argv would be warn-then-ignored.
 effort_argv=(--effort "$effort_level")
@@ -138,9 +147,9 @@ if [ "$effort_level" = ultra ]; then
   effort_argv=()
 fi
 
-# CIR: the Codex fast tier is wrapper-owned request-body state. The pinned Claude CLI has
-# no argv for it (Claude's own fastMode is a separate Anthropic-direct-only feature that
-# never activates on this loopback provider), so the only channel is the wrapper-owned
+# CIR: the Codex fast tier is wrapper-owned request-body state. The wrapper-launched Claude
+# CLI has no argv for it (Claude's own fastMode is a separate Anthropic-direct-only feature
+# that never activates on this loopback provider), so the only channel is the wrapper-owned
 # settings file feeding CLAUDE_CODE_EXTRA_BODY. `--fast` selects between two pinned Nix
 # store settings variants; the inherited CLAUDE_CODE_EXTRA_BODY environment stays scrubbed
 # either way, so hostile request-body overrides remain neutralized. The backend applies the
@@ -254,8 +263,8 @@ export ANTHROPIC_BASE_URL="$CLAUDEX_BASE_URL"
 export ANTHROPIC_AUTH_TOKEN="$api_key"
 export HOME="$CLAUDEX_HOME"
 export CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1
-# CIR: SUBPROCESS_ENV_SCRUB is explicitly opted out (0). When set to 1, the pinned CLI's
-# allowed_non_write_users hardening forces the permission mode back to default, which
+# CIR: SUBPROCESS_ENV_SCRUB is explicitly opted out (0). When set to 1, the wrapper-launched
+# CLI's allowed_non_write_users hardening forces the permission mode back to default, which
 # silently defeats --dangerously-skip-permissions (measured on 2.1.210). The user chose
 # always-bypass sessions over subprocess env scrubbing; the residual exposure is the
 # wrapper-owned loopback API key becoming visible to in-session subprocesses, which is a
@@ -264,21 +273,22 @@ export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0
 export CLAUDE_CODE_SUBAGENT_MODEL="$CLAUDEX_SUBAGENT_MODEL"
 export CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1
 export CLAUDE_CODE_EFFORT_LEVEL="$effort_level"
-# CIR: the pinned CLI assumes a 200k context window for unrecognized model names, and the
-# pinned proxy hard-codes usage 0/0 into SSE message_start (upstream declined to fix), which
-# forces the CLI's context tracking onto an overestimating character-based fallback — the
-# statusline then saturates at "100% context used" early. This official non-claude-model
-# override corrects the denominator to the official Codex catalog's raw context window.
+# CIR: the wrapper-launched CLI assumes a 200k context window for unrecognized model names,
+# and the pinned proxy hard-codes usage 0/0 into SSE message_start (upstream declined to
+# fix), which forces the CLI's context tracking onto an overestimating character-based
+# fallback — the statusline then saturates at "100% context used" early. This official
+# non-claude-model override corrects the denominator to the official Codex catalog's raw
+# context window.
 # Codex reports a smaller effective window after applying its own 95% headroom, but Claude
 # Code applies separate output and compaction reserves below this declared window; reusing
 # the Codex effective value here would count headroom twice. The numerator stays a local
 # estimate, so the displayed percentage is an approximation (handoff limits section).
 export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$CLAUDEX_MAX_CONTEXT_TOKENS"
 # CIR: MAX_CONTEXT_TOKENS fixes the non-claude model's local window, usage denominator, and
-# pre-query gates, but it does not change the compact window's *source*. The pinned CLI keeps
-# auto-compact disabled whenever that source resolves to "auto" (local sessions guard),
-# which is always the case for unrecognized model names without an explicit window channel
-# — so claudex sessions never auto-compacted (measured on 2.1.210; the "N% context used"
+# pre-query gates, but it does not change the compact window's *source*. The wrapper-launched
+# CLI keeps auto-compact disabled whenever that source resolves to "auto" (local sessions
+# guard), which is always the case for unrecognized model names without an explicit window
+# channel — so claudex sessions never auto-compacted (measured on 2.1.210; the "N% context used"
 # statusline label, instead of "N% until auto-compact", is the visible symptom).
 # CLAUDE_CODE_AUTO_COMPACT_WINDOW is the CLI's official env channel that flips the source to
 # "env" and re-enables the compact threshold check. It shares the same wrapper-owned Codex
@@ -299,8 +309,8 @@ export NO_PROXY="$CLAUDEX_NO_PROXY"
 export no_proxy="$CLAUDEX_NO_PROXY"
 
 # An explicitly empty CLI fallback list has higher precedence than fallbackModel loaded from
-# ordinary settings and resolves to no fallback in the pinned Claude Code CLI.
-# CIR: --dangerously-skip-permissions is deliberate. The pinned CLI can only enter
+# ordinary settings and resolves to no fallback in the wrapper-launched Claude Code CLI.
+# CIR: --dangerously-skip-permissions is deliberate. The wrapper-launched CLI can only enter
 # bypassPermissions when it is enabled at startup (no mid-session switch without the flag),
 # and the user decided claudex sessions always start in bypass mode. Removing the flag
 # restores normal permission prompts but also removes the mid-session bypass option.

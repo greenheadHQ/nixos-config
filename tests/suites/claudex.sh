@@ -10,10 +10,21 @@ _CLAUDEX_EXPECTED_MAX_CONTEXT_TOKENS=272000
 # Role-split model expectations (production source of truth: runtimeContract in
 # modules/shared/programs/claudex/default.nix). The default main and subagent models are
 # currently the same id; keeping separate constants makes the role of each assertion
-# explicit and future re-tunes atomic.
+# explicit and future re-tunes atomic *within this suite*. Literal sites live outside it and
+# must be re-tuned in the same commit: tests/eval-tests.nix (the @model@ replace-fail locks
+# and the descriptor `.model` assert) and docs/claudex-poc-handoff.md. Issue #1130 owns that
+# checklist.
 _CLAUDEX_EXPECTED_DEFAULT_MAIN_MODEL=gpt-5.6-sol
 _CLAUDEX_EXPECTED_SUBAGENT_MODEL=gpt-5.6-sol
-_CLAUDEX_EXPECTED_MIXED_MAIN_MODEL=claude-opus-4-8
+_CLAUDEX_EXPECTED_MIXED_MAIN_MODEL=claude-opus-5
+
+# The fake proxies below answer /v1/models with this payload. The id is load-bearing, not
+# decorative: claudex.sh runs a fail-closed catalog check and refuses to start unless the
+# session's main model (and, when it differs, the subagent model) is served, so this payload
+# must carry the default main model. The mixed-mode test relies on the same payload *omitting*
+# the mixed main model to prove that fail-closed path, and builds its own two-entry catalog for
+# the happy path. (The Go gate's fake payload is a separate case: it never parses the body.)
+_CLAUDEX_FAKE_CATALOG_PAYLOAD="{\"data\":[{\"id\":\"$_CLAUDEX_EXPECTED_DEFAULT_MAIN_MODEL\"}]}"
 
 # claudex-login과 claudex-proxy-launcher는 프록시를 `env -i ... PATH=/usr/bin:/bin:/usr/sbin:/sbin`
 # 으로 실행해 상속 환경을 격리한다. NixOS에는 그 PATH에 bash가 없어 `#!/usr/bin/env bash` shebang이
@@ -244,10 +255,10 @@ _claudex_production_fixture() {
   _claudex_write_wrapper_settings "$wrapper_settings"
   _claudex_write_wrapper_settings_fast "$wrapper_settings_fast"
 
-  cat > "$curl_bin" <<'EOF'
+  cat > "$curl_bin" <<EOF
 #!/usr/bin/env bash
 IFS= read -r _header || true
-printf '%s' '{"data":[{"id":"gpt-5.6-sol"}]}'
+printf '%s' '$_CLAUDEX_FAKE_CATALOG_PAYLOAD'
 EOF
   cat > "$launchctl_bin" <<'EOF'
 #!/usr/bin/env bash
@@ -324,7 +335,7 @@ _claudex_make_ready_curl() {
 #!/usr/bin/env bash
 IFS= read -r _header || true
 printf '%s\n' "\$@" >> "$sandbox/curl.argv"
-printf '%s' '{"data":[{"id":"gpt-5.6-sol"}]}'
+printf '%s' '$_CLAUDEX_FAKE_CATALOG_PAYLOAD'
 EOF
   chmod +x "$sandbox/fake-curl"
 }
@@ -590,7 +601,7 @@ EOF
     CLAUDEX_CURL="$sandbox/fake-curl" \
     CLAUDEX_CONFIG_TEMPLATE="$sandbox/hostile-template.json" \
     bash -c 'source "$1"; curl_loopback /v1/models' _ "$runtime")"
-  [[ "$output" == '{"data":[{"id":"gpt-5.6-sol"}]}' ]] || fail "loopback curl payload mismatch"
+  [[ "$output" == "$_CLAUDEX_FAKE_CATALOG_PAYLOAD" ]] || fail "loopback curl payload mismatch"
   grep -Fqx -- "-q" "$sandbox/curl.argv" || fail "curl must disable curlrc with -q"
   grep -Fqx -- "--noproxy" "$sandbox/curl.argv" || fail "curl must set --noproxy"
   assert_file_contains "$sandbox/curl.argv" "*"
@@ -691,7 +702,7 @@ EOF
   assert_file_contains "$sandbox/claude.log" "http_proxy=unset"
   assert_file_contains "$sandbox/claude.log" "managed=1"
   assert_file_contains "$sandbox/claude.log" "scrub=0"
-  assert_file_contains "$sandbox/claude.log" "subagent=gpt-5.6-sol"
+  assert_file_contains "$sandbox/claude.log" "subagent=$_CLAUDEX_EXPECTED_SUBAGENT_MODEL"
   assert_file_contains "$sandbox/claude.log" "effort_enabled=1"
   assert_file_contains "$sandbox/claude.log" "concurrency=3"
   assert_file_contains "$sandbox/claude.log" "tool_search=false"
@@ -719,7 +730,7 @@ EOF
   jq -e '.env.CLAUDE_CODE_EXTRA_BODY == "{}" and (.env | keys == ["CLAUDE_CODE_EXTRA_BODY"])' \
     "$settings_arg" >/dev/null || fail "wrapper-owned settings did not neutralize extra body"
   assert_file_contains "$sandbox/claude.log" "arg=--model"
-  assert_file_contains "$sandbox/claude.log" "arg=gpt-5.6-sol"
+  assert_file_contains "$sandbox/claude.log" "arg=$_CLAUDEX_EXPECTED_DEFAULT_MAIN_MODEL"
   assert_file_contains "$sandbox/claude.log" "arg=--fallback-model"
   [[ "$(awk '/^arg=--fallback-model$/ { getline; print; exit }' "$sandbox/claude.log")" == "arg=" ]] \
     || fail "claudex did not mask settings fallbackModel with an empty CLI fallback list"
@@ -770,8 +781,8 @@ EOF
   [[ "$rc" == "23" ]] || fail "claudex --effort=medium did not reach Claude"
   assert_file_contains "$sandbox/claude.log" "effort_level=medium"
 
-  # ultra is argv-invalid on the pinned CLI (warn-then-ignore), so the wrapper must ship it
-  # via the environment value only and omit the --effort argv pair entirely.
+  # ultra is argv-invalid on the wrapper-launched CLI (warn-then-ignore), so the wrapper must
+  # ship it via the environment value only and omit the --effort argv pair entirely.
   rm -f "$sandbox/claude.log"
   set +e
   HOME="$sandbox/home" \
@@ -784,7 +795,7 @@ EOF
   [[ "$rc" == "23" ]] || fail "claudex --effort ultra did not reach Claude"
   assert_file_contains "$sandbox/claude.log" "effort_level=ultra"
   if grep -q '^arg=--effort$' "$sandbox/claude.log"; then
-    fail "claudex passed argv --effort for ultra despite the pinned CLI rejecting it"
+    fail "claudex passed argv --effort for ultra despite the wrapper-launched CLI rejecting it"
   fi
 
   for bad_effort in "--effort" "--effort=hostile"; do
@@ -1468,11 +1479,13 @@ case "$1" in
 esac
 exit 0
 EOF
-  cat > "$sandbox/stale-curl" <<'EOF'
+  # unquoted heredoc so the catalog payload constant expands here; CLAUDEX_FAKE_MANAGER_MARKER
+  # must stay escaped because it is read at fake-curl run time, not at write time.
+  cat > "$sandbox/stale-curl" <<EOF
 #!/usr/bin/env bash
-[ -e "$CLAUDEX_FAKE_MANAGER_MARKER" ] || exit 7
+[ -e "\$CLAUDEX_FAKE_MANAGER_MARKER" ] || exit 7
 IFS= read -r _header || true
-printf '%s' '{"data":[{"id":"gpt-5.6-sol"}]}'
+printf '%s' '$_CLAUDEX_FAKE_CATALOG_PAYLOAD'
 EOF
   chmod +x "$sandbox/stale-gate" "$sandbox/stale-launchctl" "$sandbox/stale-curl"
   snapshot="$(
