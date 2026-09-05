@@ -24,6 +24,7 @@
 - `lib/wt/create.sh`: create/recreate flows and existing-branch handling
 - `lib/wt/navigate.sh`: `wt cd` / `wt ls`
 - `lib/wt/cleanup.sh`: `wt cleanup`
+- `lib/wt/codex-trust.py`: `~/.codex/config.toml` project trust 등록/해제 (`trust-project`/`untrust-project`)와 사라진 worktree 항목 일괄 정리 (`gc-worktree-projects`), 복사된 worktree config sanitize
 - `lib/rebuild/common.sh`: logging, worktree detection, argument parsing
 - `lib/rebuild/worktree.sh`: `mkOutOfStoreSymlink` drift guard
 - `lib/rebuild/locks.sh`: cooperative nrs/rebuild locking

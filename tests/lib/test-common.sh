@@ -215,6 +215,33 @@ create_git_fixture_repo() {
     fixture_git worktree add ".claude/worktrees/feature_one" -b feature-one >/dev/null 2>&1
   )
 }
+# fixture repo에 worktree를 하나 더 만든다. create_git_fixture_repo와 같은 격리 정책을
+# 쓰는 이유는 같다 — 호스트 전역 git 설정/훅이 잡히면 테스트 결과가 실행 환경에 좌우된다.
+add_fixture_worktree() {
+  local repo_root="$1" wt_path="$2" branch="$3"
+  local home_dir
+  home_dir="$(dirname "$repo_root")/home"
+  HOME="$home_dir" \
+    XDG_CONFIG_HOME="$home_dir/.config" \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo_root" \
+    -c core.hooksPath=/dev/null \
+    -c commit.gpgSign=false \
+    worktree add "$wt_path" -b "$branch" >/dev/null 2>&1
+}
+
+# fixture worktree를 잠근다 (`git worktree lock`). 사유는 선택 — porcelain에서
+# "locked" 뒤에 붙어 나오므로 안내 문구 검증에 쓴다.
+lock_fixture_worktree() {
+  local repo_root="$1" wt_path="$2" reason="${3:-}"
+  local args=(worktree lock)
+  [[ -n "$reason" ]] && args+=(--reason "$reason")
+  args+=("$wt_path")
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo_root" "${args[@]}" >/dev/null 2>&1
+}
+
 run_test() {
   local name="$1"
   shift

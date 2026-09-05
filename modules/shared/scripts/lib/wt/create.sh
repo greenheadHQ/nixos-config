@@ -137,6 +137,27 @@ _handle_existing_worktree() {
         return 1
       fi
 
+      # 잠금 가드 (bootstrap.sh의 제거 경로와 같은 계약). git lock은 "다른 주체가 이
+      # worktree를 붙잡고 있다"는 신호를 tmux pane과 독립적으로 낸다. 재생성은 제거를
+      # 포함하므로 여기서도 잠금을 먼저 본다 — 뚫고 지우면 잠근 주체가 쓰던 디렉토리를
+      # 파괴하고, 등록만 남은 유령이 되어 이후 prune은 잠긴 등록을 건너뛰고 add는
+      # "missing but locked worktree"로 실패한다(실측). 확인하지 못한 상태(unknown)도
+      # 되돌릴 수 없는 작업이라 진행하지 않는다(fail-closed).
+      local _recreate_lock_state _recreate_lock_path
+      read -r _recreate_lock_state _recreate_lock_path \
+        <<< "$(_wt_effective_lock_state "$git_root" "$worktree_dir")"
+      case "$_recreate_lock_state" in
+        unlocked) ;;
+        locked)
+          _wt_warn_locked "재생성 불가: $dir_name" "$git_root" "$_recreate_lock_path"
+          return 1
+          ;;
+        *)
+          _warn "재생성 불가: $dir_name (잠금 상태를 확인하지 못했습니다)"
+          return 1
+          ;;
+      esac
+
       _wt_tmux_close "$worktree_dir" || true
       # tmux 세션 정리 (연결된 클라이언트 있으면 재생성 중단)
       local _recreate_session
@@ -150,7 +171,20 @@ _handle_existing_worktree() {
       canonical_worktree_dir="$(cd "$worktree_dir" && pwd -P)" || canonical_worktree_dir="$worktree_dir"
       _wt_remove_claude_local_plugins_for_worktree "$worktree_dir" "$canonical_worktree_dir" \
         || _die "Claude local plugin manifest cleanup 실패 — 재생성 중단"
-      git worktree remove --force "$worktree_dir" 2>/dev/null || rm -rf "$worktree_dir"
+      # Codex trust는 해제하지 않는다 — 바로 아래 _bootstrap_worktree가 같은 경로를
+      # 다시 trust하므로 지웠다 쓰는 왕복만 늘어난다. 등록이 남아 stale이 되는 경로는
+      # 재생성이 아니라 제거(cleanup)이고, 그쪽은 bootstrap.sh가 해제한다.
+      # `rm -rf` fallback은 두지 않는다 — git이 `--force`로도 거부하는 대상을 디렉토리만
+      # 지워 흉내내면 등록은 남고 실체만 사라진 유령 worktree가 된다 (bootstrap.sh의
+      # 제거 경로와 같은 이유). 실패 안내도 그 경로와 같은 등록 상태 분류를 쓴다.
+      local _recreate_remove_err _recreate_remove_rc=0
+      _recreate_remove_err=$(git -C "$git_root" worktree remove --force "$worktree_dir" 2>&1 >/dev/null) \
+        || _recreate_remove_rc=$?
+      if (( _recreate_remove_rc != 0 )); then
+        _wt_warn_remove_failure "$dir_name" "$branch_name" "$git_root" "$worktree_dir" \
+          "$canonical_worktree_dir" "$_recreate_remove_err"
+        _die "worktree 재생성 실패: 기존 worktree를 제거하지 못했습니다"
+      fi
       git worktree prune 2>/dev/null || true
       git branch -D "$branch_name" >&2 2>/dev/null || true
 
