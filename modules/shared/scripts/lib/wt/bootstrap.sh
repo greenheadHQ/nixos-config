@@ -106,6 +106,33 @@ _wt_trust_codex_project() {
     || _warn "Codex project trust 등록 실패 — Codex에서 worktree 신뢰를 다시 물을 수 있습니다"
 }
 
+# worktree 제거 성공 직후의 Codex trust 해제. wt는 생성 시 worktree 경로를
+# `~/.codex/config.toml`의 `[projects."<경로>"]`에 등록하는데, 제거 때 지우지 않으면
+# 사라진 경로의 trust 항목이 계속 쌓인다.
+#
+# 넘기는 경로는 반드시 제거 전에 확보한 canonical 경로다 — 등록 키가 trust 시점의
+# resolve 결과이고, 디렉토리가 사라진 뒤에는 그 값을 다시 만들 수 없다.
+#
+# 실패해도 중단하지 않는다: 호출 시점에 worktree는 이미 사라졌고, 남는 부작용은
+# config의 stale 항목 하나뿐이라 되돌릴 것이 없다.
+_wt_untrust_codex_project() {
+  local canonical_wt_path="$1"
+  local helper
+
+  # 존재 보장은 제거 전 _wt_require_state_helpers가 이미 했다. 그래도 여기서 _die하지
+  # 않는 이유는 위와 같다 (제거 뒤라 중단이 아무것도 되돌리지 못한다).
+  helper=$(_wt_codex_trust_helper) || {
+    _warn "Codex trust helper를 찾지 못해 project trust 해제를 건너뜁니다"
+    return 0
+  }
+
+  local python_bin="${WT_PYTHON:-python3}"
+  "$python_bin" "$helper" untrust-project \
+    --config "$(_wt_codex_config)" \
+    "$canonical_wt_path" \
+    || _warn "Codex project trust 해제 실패 — ~/.codex/config.toml에 stale 항목이 남습니다 (일괄 정리 절차: cheat wt의 'Codex trust 정리')"
+}
+
 _wt_plugin_manifest_helper() {
   local helper="${WT_LIB_DIR:-}/plugin-manifest.py"
   [[ -f "$helper" ]] || return 1
@@ -239,6 +266,58 @@ _wt_worktree_registration_state() {
   fi
 }
 
+# 잠금 때문에 파괴적 작업을 중단했을 때의 안내. 제거(bootstrap)와 재생성(create)이 같은
+# 문구·같은 해제 명령을 쓰도록 한곳에 둔다. label에는 호출 문맥("스킵: x", "재생성 불가: x")을
+# 넘긴다 — 잠금 사유와 unlock 명령은 여기서 붙인다.
+_wt_warn_locked() {
+  local label="$1" git_root="$2" probe_path="$3"
+  local reason
+  reason=$(_wt_lock_reason "$git_root" "$probe_path")
+  if [[ -n "$reason" ]]; then
+    _warn "$label (잠긴 worktree — 사유: $reason)"
+  else
+    _warn "$label (잠긴 worktree)"
+  fi
+  _warn "  잠근 주체를 확인하고 해제한 뒤 다시 실행하세요: git worktree unlock $(printf '%q' "$probe_path")"
+}
+
+# `git worktree remove` 실패 뒤의 안내. guarded(비강제)와 forced(강제)가 같은 분류·같은
+# 문구를 쓰도록 한곳에 둔다 — 경로별로 복제하면 등록 상태별 안내가 갈라진다.
+# retry_hint만 호출자가 넘긴다: guarded는 "--yes로 강제"를 안내할 수 있지만, forced는
+# 이미 `--force`로 시도한 뒤라 그 안내가 성립하지 않는다 (빈 문자열이면 생략).
+_wt_warn_remove_failure() {
+  local name="$1" branch="$2" git_root="$3" wt_path="$4" canonical_wt_path="$5"
+  local remove_err="$6" retry_hint="${7:-}"
+  local _safe_wt_path _safe_wt_branch
+  printf -v _safe_wt_path '%q' "$wt_path"
+  printf -v _safe_wt_branch '%q' "$branch"
+
+  # 실패를 무변경으로 단정하지 않는다 (위 _wt_worktree_registration_state 주석 참조).
+  case "$(_wt_worktree_registration_state "$git_root" "$wt_path" "$canonical_wt_path")" in
+    registered)
+      _warn "스킵: $name (worktree를 제거할 수 없습니다 — 정리되지 않은 변경, 잠금, submodule 등)"
+      [[ -n "$retry_hint" ]] && _warn "  $retry_hint"
+      ;;
+    absent)
+      _warn "부분 제거: $name (등록은 해제됐지만 경로 삭제가 끝나지 않았습니다)"
+      _warn "  남은 경로를 직접 확인하고 지우세요: ${_safe_wt_path}"
+      _warn "  브랜치 $branch 는 지우지 않았습니다 — 복구: git worktree add ${_safe_wt_path} ${_safe_wt_branch}"
+      ;;
+    *)
+      _warn "스킵: $name (worktree 제거가 실패했고 등록 상태도 확인하지 못했습니다)"
+      _warn "  경로와 등록을 함께 확인하세요: git worktree list --porcelain"
+      _warn "  브랜치 $branch 는 지우지 않았습니다"
+      ;;
+  esac
+
+  # git이 남긴 사유는 분류만으로는 알 수 없다(잠금인지 submodule인지 권한인지). 여러 줄로
+  # 오면 한 줄로 접어 안내 블록의 모양을 유지한다.
+  if [[ -n "$remove_err" ]]; then
+    _warn "  git 메시지: $(printf '%s' "$remove_err" | tr '\n' ' ')"
+  fi
+  return 0
+}
+
 # 이 브랜치를 체크아웃하고 있는 worktree가 남아 있는가.
 # guarded의 ref 삭제는 plumbing(`update-ref -d`)이라 porcelain `git branch -D`가 하던
 # "다른 worktree가 사용 중이면 거부" 검사를 받지 못한다 — 이 환경 git 2.54 실측으로
@@ -261,9 +340,13 @@ _wt_branch_checkout_state() {
 #
 # mode는 제거 전략을 고른다. "승인 여부"를 직접 뜻하지 않는다 — 어떤 전략을 쓸지는
 # 호출자가 정책으로 판단하며, 이 함수는 그 결정을 실행만 한다:
-#   forced   — 강제 제거(`--force`, 실패 시 `rm -rf`)와 `branch -D`. 되돌릴 수 없다.
+#   forced   — 강제 제거(`--force`)와 `branch -D`. 되돌릴 수 없다.
 #              호출자가 쓰는 경우: 확인 프롬프트 통과, `--yes`, 그리고 clean한
 #              비-MERGED를 이름으로 지정한 기존 경로.
+#              `--force`가 거부되면 그대로 실패한다. 과거엔 `rm -rf` fallback이 있었으나,
+#              git이 거부한 대상(대표적으로 잠긴 worktree)을 디렉토리만 지워 흉내내면
+#              등록만 남은 유령 worktree가 된다 — 강제는 "사전 검사를 뚫는다"는 뜻이
+#              아니라 "정리되지 않은 변경을 감수한다"는 뜻이다.
 #   guarded  — 비강제 제거 + ref CAS. expected_oid가 필수다.
 #              호출자가 쓰는 경우: 위험을 알릴 기회가 없던 MERGED 무확인 삭제.
 #              거부 시점별 상태가 다르다 — 비강제 remove가 사전 검사에서 거부되면
@@ -307,6 +390,30 @@ _remove_worktree() {
     return 1
   fi
 
+  # 잠금 가드 (mode와 무관): git lock은 "다른 주체가 이 worktree를 붙잡고 있다"는 신호를
+  # tmux pane과 독립적으로 낸다. 활성 판정을 pane 유무(_wt_has_active_process)에만 맡기면
+  # pane 없이 살아 있는 주체(예: worktree를 잠근 브리지 프로세스)를 활성으로 보지 못한다.
+  # 그래서 잠금을 독립 신호로 승격해 삭제 전략(forced/guarded)보다 먼저 본다 — 해제는
+  # 잠근 주체가 `git worktree unlock`으로 해야 하며, `--yes`는 그 권한을 대신하지 않는다.
+  # 확인하지 못한 상태(unknown)도 지우지 않는다: 되돌릴 수 없는 작업에서 "잠기지 않았다"를
+  # 확인 없이 가정하지 않는다(fail-closed, tmux 세션 probe와 같은 정책).
+  #
+  # 심링크가 낀 경로 대응은 조회 헬퍼(_wt_effective_lock_state)가 소유한다 — create.sh의
+  # 재생성 경로도 같은 헬퍼를 써야 두 파괴적 경로의 잠금 판정이 갈라지지 않는다.
+  local lock_state lock_probe_path
+  read -r lock_state lock_probe_path <<< "$(_wt_effective_lock_state "$git_root" "$wt_path")"
+  case "$lock_state" in
+    unlocked) ;;
+    locked)
+      _wt_warn_locked "스킵: $name" "$git_root" "$lock_probe_path"
+      return 1
+      ;;
+    *)
+      _warn "스킵: $name (잠금 상태를 확인하지 못해 삭제를 중단합니다)"
+      return 1
+      ;;
+  esac
+
   _wt_require_state_helpers
 
   # canonical path는 제거 전에 확보한다 — 제거 후에는 디렉토리가 없어 구할 수 없다.
@@ -314,8 +421,8 @@ _remove_worktree() {
   canonical_wt_path="$(cd "$wt_path" && pwd -P)" || canonical_wt_path="$wt_path"
   session_name=$(_wt_session_name "$name")
 
-  # 복구 안내에 쓰는 shell-quoted 사본. 안내는 제거 실패와 ref 유지 두 곳에서 나오므로
-  # 한 번만 만들어 쓴다 — 따로 만들면 인용 규칙이 갈라진다.
+  # ref 유지 안내에 쓰는 shell-quoted 사본. 제거 실패 쪽 안내는 _wt_warn_remove_failure가
+  # 같은 규칙으로 따로 만든다 (두 경로가 그 함수를 공유하므로 인용 규칙은 한 벌로 유지된다).
   local _safe_wt_path _safe_wt_branch
   printf -v _safe_wt_path '%q' "$wt_path"
   printf -v _safe_wt_branch '%q' "$branch"
@@ -363,24 +470,13 @@ _remove_worktree() {
       return 1
     fi
 
-    if ! git -C "$git_root" worktree remove "$wt_path" 2>/dev/null; then
-      # 실패를 무변경으로 단정하지 않는다 (위 _wt_worktree_registration_state 주석 참조).
-      case "$(_wt_worktree_registration_state "$git_root" "$wt_path" "$canonical_wt_path")" in
-        registered)
-          _warn "스킵: $name (worktree를 제거할 수 없습니다 — 정리되지 않은 변경, 잠금, submodule 등)"
-          _warn "  확인하고 강제로 지우려면: wt cleanup $(printf '%q' "$name") --yes"
-          ;;
-        absent)
-          _warn "부분 제거: $name (등록은 해제됐지만 경로 삭제가 끝나지 않았습니다)"
-          _warn "  남은 경로를 직접 확인하고 지우세요: ${_safe_wt_path}"
-          _warn "  브랜치 $branch 는 지우지 않았습니다 — 복구: git worktree add ${_safe_wt_path} ${_safe_wt_branch}"
-          ;;
-        *)
-          _warn "스킵: $name (worktree 제거가 실패했고 등록 상태도 확인하지 못했습니다)"
-          _warn "  경로와 등록을 함께 확인하세요: git worktree list --porcelain"
-          _warn "  브랜치 $branch 는 지우지 않았습니다"
-          ;;
-      esac
+    # stderr를 버리지 않고 캡처한다 — 등록 상태 분류만으로는 거부 사유(잠금·submodule·
+    # 권한)를 알 수 없어 안내에 함께 싣는다.
+    local remove_err remove_rc=0
+    remove_err=$(git -C "$git_root" worktree remove "$wt_path" 2>&1 >/dev/null) || remove_rc=$?
+    if (( remove_rc != 0 )); then
+      _wt_warn_remove_failure "$name" "$branch" "$git_root" "$wt_path" "$canonical_wt_path" \
+        "$remove_err" "확인하고 강제로 지우려면: wt cleanup $(printf '%q' "$name") --yes"
       return 1
     fi
 
@@ -390,6 +486,7 @@ _remove_worktree() {
     _wt_tmux_session_close "$session_name" || _info "참고: $name — tmux 세션이 남아 있습니다 (연결된 클라이언트 또는 상태 확인 실패)"
     _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" \
       || _warn "참고: $name — Claude local plugin 등록을 정리하지 못했습니다"
+    _wt_untrust_codex_project "$canonical_wt_path"
   else
     # forced는 main과 같은 순서를 유지한다 (호출자가 승인을 받은 경우와 clean 비-MERGED
     # 기존 경로가 여기로 온다). 아래 세션 종료가 실패하면 worktree 제거 전에 중단하므로
@@ -401,7 +498,17 @@ _remove_worktree() {
       return 1
     }
     _wt_remove_claude_local_plugins_for_worktree "$wt_path" "$canonical_wt_path" || return 1
-    git -C "$git_root" worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path"
+    # `rm -rf` fallback은 제거했다. git이 `--force`로도 거부하는 대상(잠금 등)을 디렉토리만
+    # 지워 흉내내면 등록은 남고 실체만 사라진 유령 worktree가 생긴다 — 실제로 잠긴 브리지
+    # worktree에서 그렇게 만들어졌다. 실패는 guarded와 같은 등록 상태 분류로 안내하고 여기서
+    # 멈춘다 (브랜치 삭제로 넘어가지 않는다).
+    local remove_err remove_rc=0
+    remove_err=$(git -C "$git_root" worktree remove --force "$wt_path" 2>&1 >/dev/null) || remove_rc=$?
+    if (( remove_rc != 0 )); then
+      _wt_warn_remove_failure "$name" "$branch" "$git_root" "$wt_path" "$canonical_wt_path" "$remove_err"
+      return 1
+    fi
+    _wt_untrust_codex_project "$canonical_wt_path"
   fi
 
   # 브랜치 삭제 (detached가 아닌 경우)

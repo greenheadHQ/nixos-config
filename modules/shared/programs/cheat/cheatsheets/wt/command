@@ -64,6 +64,15 @@ wt — Git worktree 관리 (fzf TUI, tmux 통합)
   안전 가드: 현재 윈도우 / 마지막 윈도우는 닫지 않음
              현재 위치한 worktree는 제외 (저장소 루트에서 재실행)
 
+[Codex trust 정리]
+  worktree 삭제 시 ~/.codex/config.toml의 [projects."<경로>"] 항목도 함께 해제됨
+  과거에 쌓인 잔재 일괄 정리 — tomlkit이 있는 인터프리터가 필요하다 (시스템 python3에는 없음).
+  wt 래퍼가 쓰는 인터프리터를 그대로 꺼내 쓴다:
+    WT_PY=$(grep -o 'WT_PYTHON="[^"]*"' ~/.local/bin/wt | cut -d'"' -f2)
+    "$WT_PY" ~/.local/lib/wt/codex-trust.py gc-worktree-projects --config ~/.codex/config.toml --dry-run
+  저장소 devShell(direnv 활성) 안에서는 그냥 python3로도 동작한다
+  먼저 --dry-run으로 대상 확인 ("would remove N ..."), --dry-run을 빼면 .bak-gc-<UTC> 백업 후 제거
+
 [tmux 밖에서]
   wt <branch>               worktree 생성 후 해당 경로로 cd
   wt --tmux <branch>        worktree 생성 후 tmux 세션 attach

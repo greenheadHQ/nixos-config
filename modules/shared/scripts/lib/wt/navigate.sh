@@ -2,39 +2,58 @@
 # ── 서브커맨드: cd / ls ─────────────────────────────────────────────────────
 
 # wt ls --json: worktree 상태를 JSON 배열로 출력 (LLM/스크립트 파싱용; stdout)
-# 필드: name, branch, path, pr, committedAt(epoch), age, dirty, unpushed, current
+# 필드: name, branch, path, pr, committedAt(epoch), age, dirty, unpushed, current,
+#       locked, broken
 _wt_ls_json() {
-  local tmp="$1" current_wt="$2"
-  shift 2
+  local git_root="$1" tmp="$2" current_wt="$3"
+  shift 3
   local worktrees=("$@")
   command -v jq &>/dev/null || _die "--json은 jq가 필요합니다"
 
   local objs=()
   local wt
   for wt in "${worktrees[@]}"; do
-    local name branch ts age pr_status dirty loss_risk is_current
-    name=$(basename "$wt")
-    branch=$(_wt_branch "$wt")
-    ts=$(_wt_last_commit_ts "$wt")
-    age=$(_relative_age "$ts")
-    pr_status="NONE"
-    [[ -f "$tmp/$name.pr" ]] && pr_status=$(cat "$tmp/$name.pr")
-    dirty=false; _wt_is_dirty "$wt" && dirty=true
-    # JSON 키 unpushed는 "정리하면 잃을 커밋이 있는가"를 뜻한다 — squash merge 후 upstream이
-    # 사라진 MERGED worktree를 미push로 오판하지 않도록 PR 상태로 보정한다 (git-state.sh).
-    # 내부 변수는 그 의미대로 loss_risk로 두고, 기존 JSON 키는 아래 경계에서 매핑한다.
-    #
-    # 단 PR 상태는 조회 시점 스냅샷이라, 그 뒤 커밋이 생기면 MERGED 근거가 stale해진다.
-    # 출력 직전에 근거 OID와 현재 HEAD를 대조해, 어긋나면 raw 판정으로 되돌린다 —
-    # 그러지 않으면 잃을 커밋이 있는데도 unpushed:false를 보고하게 된다.
-    loss_risk=false; _wt_has_unpushed_risk "$wt" "$pr_status" "$tmp/$name.head" && loss_risk=true
+    local name cache_key branch ts age pr_status dirty loss_risk is_current locked broken
+    # 이름은 WORKTREE_DIR 상대 경로다 — depth 2 이상 항목이 depth 1 항목과 같은 name으로
+    # 보이면 소비자가 두 worktree를 구분하지 못한다. 캐시 파일명은 이스케이프한 값을 쓴다.
+    name=$(_wt_display_name "$git_root" "$wt")
+    cache_key=$(_wt_pr_cache_key "$name")
+    locked=false; _wt_is_locked "$git_root" "$wt" && locked=true
+    # broken은 "등록은 있는데 git -C가 통하지 않는다"는 뜻이다 (디렉토리 소실, gitdir 무효).
+    # 이 항목의 branch/committedAt/dirty는 worktree에서 읽을 수 없으므로, 소비자가 빈 값을
+    # 실제 상태로 오해하지 않도록 플래그를 함께 낸다.
+    broken=false; _wt_is_broken "$wt" && broken=true
+    if [[ "$broken" == "true" ]]; then
+      branch=$(_wt_registered_branch "$git_root" "$wt")
+      ts=0
+      age="-"
+      pr_status="NONE"
+      dirty=false
+      loss_risk=false
+    else
+      branch=$(_wt_branch "$wt")
+      ts=$(_wt_last_commit_ts "$wt")
+      age=$(_relative_age "$ts")
+      pr_status="NONE"
+      [[ -f "$tmp/$cache_key.pr" ]] && pr_status=$(cat "$tmp/$cache_key.pr")
+      dirty=false; _wt_is_dirty "$wt" && dirty=true
+      # JSON 키 unpushed는 "정리하면 잃을 커밋이 있는가"를 뜻한다 — squash merge 후 upstream이
+      # 사라진 MERGED worktree를 미push로 오판하지 않도록 PR 상태로 보정한다 (git-state.sh).
+      # 내부 변수는 그 의미대로 loss_risk로 두고, 기존 JSON 키는 아래 경계에서 매핑한다.
+      #
+      # 단 PR 상태는 조회 시점 스냅샷이라, 그 뒤 커밋이 생기면 MERGED 근거가 stale해진다.
+      # 출력 직전에 근거 OID와 현재 HEAD를 대조해, 어긋나면 raw 판정으로 되돌린다 —
+      # 그러지 않으면 잃을 커밋이 있는데도 unpushed:false를 보고하게 된다.
+      loss_risk=false; _wt_has_unpushed_risk "$wt" "$pr_status" "$tmp/$cache_key.head" && loss_risk=true
+    fi
     is_current=false; [[ "$wt" == "$current_wt" ]] && is_current=true
     objs+=("$(jq -n \
       --arg name "$name" --arg branch "$branch" --arg path "$wt" \
       --arg pr "$pr_status" --arg age "$age" --argjson ts "${ts:-0}" \
       --argjson dirty "$dirty" --argjson unpushed "$loss_risk" \
       --argjson current "$is_current" \
-      '{name:$name, branch:$branch, path:$path, pr:$pr, committedAt:$ts, age:$age, dirty:$dirty, unpushed:$unpushed, current:$current}')")
+      --argjson locked "$locked" --argjson broken "$broken" \
+      '{name:$name, branch:$branch, path:$path, pr:$pr, committedAt:$ts, age:$age, dirty:$dirty, unpushed:$unpushed, current:$current, locked:$locked, broken:$broken}')")
   done
   printf '%s\n' "${objs[@]}" | jq -s 'sort_by(-.committedAt)'
 }
@@ -101,17 +120,30 @@ cmd_cd() {
     # substring 매치: 디렉토리명 + 브랜치명 + sanitized 검색어 모두 시도
     local sanitized_search
     sanitized_search=$(_sanitize_name "$search")
+    # 손상 항목이 검색어에 맞았다는 사실은 기억해 둔다 — 매칭이 하나도 없는 것과 원인이
+    # 다르고, 사용자가 들어야 할 명령(prune/unlock)도 다르다.
+    local broken_match=""
     for wt in "${worktrees[@]}"; do
       local name branch
-      name=$(basename "$wt")
+      name=$(_wt_display_name "$git_root" "$wt")
       branch=$(_wt_branch "$wt")
       if [[ "$name" == *"$search"* ]] || [[ "$name" == *"$sanitized_search"* ]] \
         || [[ "$branch" == *"$search"* ]]; then
+        # 등록만 남고 디렉토리가 없는(또는 gitdir이 무효한) 항목은 cd할 대상이 아니다.
+        # 경로를 그대로 출력하면 `cd "$(wt cd <name>)"`가 이유 없이 실패하고, 같은 항목을
+        # ⚠️ BROKEN으로 표시하는 `wt ls`와 진단이 갈라진다.
+        if _wt_is_broken "$wt"; then
+          [[ -z "$broken_match" ]] && broken_match="$name ($(_wt_broken_hint "$git_root" "$wt"))"
+          continue
+        fi
         target_path="$wt"
         break
       fi
     done
-    [[ -z "$target_path" ]] && _die "매치하는 worktree 없음: $search"
+    if [[ -z "$target_path" ]]; then
+      [[ -n "$broken_match" ]] && _die "손상된 worktree라 이동할 수 없습니다: $broken_match"
+      _die "매치하는 worktree 없음: $search"
+    fi
   else
     # 인자 없이 호출 = 대화형 선택. 비대화형은 이름을 인자로 요구(안전 실패).
     if ! _wt_interactive; then
@@ -122,9 +154,11 @@ cmd_cd() {
     fi
 
     # 인터랙티브 선택 (fzf + preview)
+    # 선택 후 "$wt_base/$selected"로 경로를 되짚으므로 목록도 wt_base 상대 경로여야 한다.
+    # basename만 보여주면 depth 2 이상 항목을 골랐을 때 존재하지 않는 경로가 나온다.
     local names=()
     for wt in "${worktrees[@]}"; do
-      names+=("$(basename "$wt")")
+      names+=("$(_wt_display_name "$git_root" "$wt")")
     done
 
     local selected
@@ -229,38 +263,55 @@ cmd_ls() {
 
   # --json: 구조화 출력 (LLM/스크립트 파싱용; stdout, 로그는 stderr)
   if [[ "$as_json" == "true" ]]; then
-    _wt_ls_json "$_wt_ls_tmp" "$current_wt" "${worktrees[@]}"
+    _wt_ls_json "$git_root" "$_wt_ls_tmp" "$current_wt" "${worktrees[@]}"
     return 0
   fi
 
   # 데이터 수집 + 정렬 (age 기준, 최신 우선)
   local entries=()
+  # 손상 항목은 표에 한 줄로 보이기만 해서는 무엇을 해야 할지 모른다. 표 아래에
+  # 상황별 복구 명령을 따로 낸다 (cleanup과 같은 헬퍼를 써서 문구가 갈라지지 않게).
+  local broken_notes=()
   for wt in "${worktrees[@]}"; do
-    local name branch ts age pr_status dirty_mark current_mark
-    name=$(basename "$wt")
-    branch=$(_wt_branch "$wt")
-    ts=$(_wt_last_commit_ts "$wt")
-    age=$(_relative_age "$ts")
-
-    pr_status="NONE"
-    [[ -f "$_wt_ls_tmp/$name.pr" ]] && pr_status=$(cat "$_wt_ls_tmp/$name.pr")
-
-    dirty_mark=""
-    _wt_is_dirty "$wt" && dirty_mark="●"
+    local name cache_key branch ts age pr_status dirty_mark current_mark pr_display
+    name=$(_wt_display_name "$git_root" "$wt")
+    cache_key=$(_wt_pr_cache_key "$name")
 
     current_mark=""
     [[ "$wt" == "$current_wt" ]] && current_mark="*"
 
-    local pr_display
-    case "$pr_status" in
-      MERGED) pr_display="✅ MERGED" ;;
-      OPEN)   pr_display="🔵 OPEN" ;;
-      CLOSED) pr_display="🔴 CLOSED" ;;
-      *)      pr_display="⚪ NONE" ;;
-    esac
+    if _wt_is_broken "$wt"; then
+      # 등록은 있는데 git -C가 통하지 않는 항목(디렉토리 소실·gitdir 무효). worktree에서
+      # 읽어야 하는 값은 전부 무의미하므로 등록 정보만 쓰고 상태를 BROKEN으로 표시한다.
+      branch=$(_wt_registered_branch "$git_root" "$wt")
+      ts=0
+      age="-"
+      dirty_mark=""
+      pr_display="⚠️ BROKEN"
+      broken_notes+=("$name ($(_wt_broken_hint "$git_root" "$wt"))")
+    else
+      branch=$(_wt_branch "$wt")
+      ts=$(_wt_last_commit_ts "$wt")
+      age=$(_relative_age "$ts")
 
+      pr_status="NONE"
+      [[ -f "$_wt_ls_tmp/$cache_key.pr" ]] && pr_status=$(cat "$_wt_ls_tmp/$cache_key.pr")
+
+      dirty_mark=""
+      _wt_is_dirty "$wt" && dirty_mark="●"
+
+      case "$pr_status" in
+        MERGED) pr_display="✅ MERGED" ;;
+        OPEN)   pr_display="🔵 OPEN" ;;
+        CLOSED) pr_display="🔴 CLOSED" ;;
+        *)      pr_display="⚪ NONE" ;;
+      esac
+    fi
+
+    # 잠금은 "정리에서 제외된다"는 뜻이라 목록에서 바로 보여야 한다 (cleanup은 후보에서 뺀다).
     local display_name="$name"
-    [[ -n "$current_mark" ]] && display_name="$name (*)"
+    _wt_is_locked "$git_root" "$wt" && display_name="$display_name 🔒"
+    [[ -n "$current_mark" ]] && display_name="$display_name (*)"
 
     entries+=("$ts|$display_name|$branch|$age|$pr_display|$dirty_mark")
   done
@@ -274,5 +325,10 @@ cmd_ls() {
     IFS='|' read -r _ name branch age pr dirty <<< "$entry"
     (( ${#branch} > 25 )) && branch="${branch:0:22}..."
     printf "  %-30s %-25s %-5s %-12s %s\n" "$name" "$branch" "$age" "$pr" "$dirty" >&2
+  done
+
+  local note
+  for note in ${broken_notes[@]+"${broken_notes[@]}"}; do
+    _warn "손상된 worktree: $note"
   done
 }

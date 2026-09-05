@@ -31,6 +31,20 @@ _wt_guarded_delete_oid() {
   printf '%s' "$oid"
 }
 
+# 요약 줄 끝에 붙는 " (손상 N개, 잠김 M개 건너뜀)" 접미사 (제외가 없으면 빈 문자열).
+# 항목별 경고를 흘려보내고 요약만 로그로 수집하는 소비자(LLM 포함)에게 "제외된 것이 없다"로
+# 읽히지 않도록, 세 요약 지점이 같은 문구를 쓰게 한곳에서 만든다.
+_wt_cleanup_skip_suffix() {
+  local broken_count="$1" locked_count="$2"
+  local parts=()
+  (( broken_count > 0 )) && parts+=("손상 ${broken_count}개")
+  (( locked_count > 0 )) && parts+=("잠김 ${locked_count}개")
+  (( ${#parts[@]} == 0 )) && return 0
+  local joined="${parts[0]}"
+  (( ${#parts[@]} > 1 )) && joined+=", ${parts[1]}"
+  printf ' (%s 건너뜀)' "$joined"
+}
+
 cmd_cleanup() {
   local auto=false
   local names_filter=()
@@ -81,12 +95,17 @@ cmd_cleanup() {
 
   local items=()
   local item_paths=()
+  local item_names=()
+  local item_cache_keys=()
   local item_branches=()
   local item_pr=()
   local item_dirty=()
   local item_loss_risk=()
   local merged_indices=()
   local broken_count=0
+  # 잠금으로 후보에서 뺀 이름들. 이름을 직접 지정한 호출이 "왜 안 지워졌는지"를
+  # 알려면 미매칭 분기가 이 사실을 알아야 한다 (존재하지 않음/손상과 원인이 다르다).
+  local locked_names=()
 
   local idx=0
   for wt in "${worktrees[@]}"; do
@@ -97,29 +116,50 @@ cmd_cleanup() {
     # set -e/pipefail로 폭사한다. 정리 후보에서 제외하고 경고만 남긴다 (사용자 정책:
     # 경고 + 정리 제외 — 자동 삭제 시 미커밋 작업물 손실 위험이라 보수적으로 건너뜀).
     if _wt_is_broken "$wt"; then
-      # 경로에 작은따옴표/공백이 있어도 사용자가 그대로 복붙할 수 있도록 %q로 인용.
-      local _safe_wt
-      printf -v _safe_wt '%q' "$wt"
-      _warn "손상된 worktree 건너뜀: $(basename "$wt") (gitdir 무효 — 수동 정리: rm -rf ${_safe_wt} 후 git worktree prune)"
+      # 안내는 상황(디렉토리 없음 / gitdir 무효 / 잠김)마다 듣는 명령이 달라 헬퍼가 만든다.
+      # 경로에 작은따옴표/공백이 있어도 그대로 복붙할 수 있도록 헬퍼가 %q로 인용한다.
+      _warn "손상된 worktree 건너뜀: $(_wt_display_name "$git_root" "$wt") ($(_wt_broken_hint "$git_root" "$wt"))"
       broken_count=$((broken_count + 1))
       continue
     fi
 
-    local name branch ts age pr_status dirty_flag loss_risk_flag last_msg
-    name=$(basename "$wt")
+    # 잠긴(locked) worktree는 어떤 경로로도 정리하지 않는다 (--auto·이름 지정·--yes 공통).
+    # git lock은 "다른 주체가 이 worktree를 붙잡고 있다"는 독립 신호이며, tmux pane 유무로
+    # 보는 활성 판정(_wt_has_active_process)에는 잡히지 않는다 — 예: Claude 브리지가 잠근
+    # worktree는 pane이 없어도 살아 있어야 한다. 잠금 해제는 잠근 주체의 몫이므로
+    # --yes(위험 인지 선언)로도 우회시키지 않고 후보 수집 단계에서 뺀다.
+    if _wt_is_locked "$git_root" "$wt"; then
+      local _locked_name _locked_reason _safe_locked
+      _locked_name=$(_wt_display_name "$git_root" "$wt")
+      _locked_reason=$(_wt_lock_reason "$git_root" "$wt")
+      printf -v _safe_locked '%q' "$wt"
+      locked_names+=("$_locked_name")
+      if [[ -n "$_locked_reason" ]]; then
+        _warn "잠긴 worktree 건너뜀: $_locked_name (사유: $_locked_reason — 잠근 주체 확인 후 git worktree unlock ${_safe_locked})"
+      else
+        _warn "잠긴 worktree 건너뜀: $_locked_name (잠근 주체 확인 후 git worktree unlock ${_safe_locked})"
+      fi
+      continue
+    fi
+
+    local name cache_key branch ts age pr_status dirty_flag loss_risk_flag last_msg
+    # 이름은 WORKTREE_DIR 상대 경로다 (depth 2 이상 항목이 depth 1 항목과 같은 이름이
+    # 되지 않게). 캐시 파일명은 그 이름을 이스케이프한 값을 쓴다 (git-state.sh).
+    name=$(_wt_display_name "$git_root" "$wt")
+    cache_key=$(_wt_pr_cache_key "$name")
     branch=$(_wt_branch "$wt")
     ts=$(_wt_last_commit_ts "$wt")
     age=$(_relative_age "$ts")
 
     pr_status="NONE"
-    [[ -f "$_wt_cleanup_tmp/$name.pr" ]] && pr_status=$(cat "$_wt_cleanup_tmp/$name.pr")
+    [[ -f "$_wt_cleanup_tmp/$cache_key.pr" ]] && pr_status=$(cat "$_wt_cleanup_tmp/$cache_key.pr")
 
     dirty_flag=false
     _wt_is_dirty "$wt" && dirty_flag=true
 
     # 근거 파일을 함께 넘기면 근거가 없거나 낡은 MERGED는 보정 대상에서 빠진다 (git-state.sh).
     loss_risk_flag=false
-    _wt_has_unpushed_risk "$wt" "$pr_status" "$_wt_cleanup_tmp/$name.head" && loss_risk_flag=true
+    _wt_has_unpushed_risk "$wt" "$pr_status" "$_wt_cleanup_tmp/$cache_key.head" && loss_risk_flag=true
 
     last_msg=$(_wt_last_commit_msg "$wt")
 
@@ -140,6 +180,8 @@ cmd_cleanup() {
 
     items+=("$label")
     item_paths+=("$wt")
+    item_names+=("$name")
+    item_cache_keys+=("$cache_key")
     item_branches+=("$branch")
     item_pr+=("$pr_status")
     item_dirty+=("$dirty_flag")
@@ -161,9 +203,10 @@ cmd_cleanup() {
   # 단 --auto는 이름을 함께 받아도 아래 분기에 도달하기 전에 반환하므로 여기서 알린다.
   if [[ -n "$current_wt" ]] && { [[ "$auto" == "true" ]] || (( ${#names_filter[@]} == 0 )); }; then
     local cur_name cur_pr
-    cur_name=$(basename "$current_wt")
+    cur_name=$(_wt_display_name "$git_root" "$current_wt")
     cur_pr="NONE"
-    [[ -f "$_wt_cleanup_tmp/$cur_name.pr" ]] && cur_pr=$(cat "$_wt_cleanup_tmp/$cur_name.pr")
+    [[ -f "$_wt_cleanup_tmp/$(_wt_pr_cache_key "$cur_name").pr" ]] \
+      && cur_pr=$(cat "$_wt_cleanup_tmp/$(_wt_pr_cache_key "$cur_name").pr")
     if [[ "$cur_pr" == "MERGED" ]]; then
       _wt_warn_cleanup_from_root "$git_root" "$cur_name" \
         "현재 worktree라 여기서는 삭제할 수 없어 제외했습니다: $cur_name (PR MERGED)"
@@ -174,12 +217,9 @@ cmd_cleanup() {
 
   if [[ "$auto" == "true" ]]; then
     if (( ${#merged_indices[@]} == 0 )); then
-      # 손상 카운트를 late-auto(아래)·name-filter 요약과 일관되게 노출 (#883 broken-only 경로).
-      if (( broken_count > 0 )); then
-        _info "자동 정리 대상 (MERGED)이 없습니다 (손상 ${broken_count}개 건너뜀)"
-      else
-        _info "자동 정리 대상 (MERGED)이 없습니다"
-      fi
+      # 손상·잠금 카운트를 late-auto(아래)·name-filter 요약과 일관되게 노출
+      # (#883 broken-only 경로 + 잠긴 worktree만 있는 경로).
+      _info "자동 정리 대상 (MERGED)이 없습니다$(_wt_cleanup_skip_suffix "$broken_count" "${#locked_names[@]}")"
       return 0
     fi
 
@@ -187,8 +227,8 @@ cmd_cleanup() {
     for i in "${merged_indices[@]}"; do
       local wt_path="${item_paths[$i]}"
       local branch="${item_branches[$i]}"
-      local name
-      name=$(basename "$wt_path")
+      local name="${item_names[$i]}"
+      local cache_key="${item_cache_keys[$i]}"
 
       if [[ "${item_dirty[$i]}" == "true" ]]; then
         _info "스킵: $name (dirty 있음)"
@@ -216,7 +256,7 @@ cmd_cleanup() {
           _info "스킵: $name (dirty 있음)"
           continue
         fi
-        if ! _wt_head_unchanged "$wt_path" "$_wt_cleanup_tmp/$name.head"; then
+        if ! _wt_head_unchanged "$wt_path" "$_wt_cleanup_tmp/$cache_key.head"; then
           _warn "스킵: $name (PR 상태 확인 이후 HEAD가 바뀌었습니다 — 다시 실행해 확인하세요)"
           continue
         fi
@@ -226,17 +266,13 @@ cmd_cleanup() {
       fi
 
       local verified_oid
-      verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name") || continue
+      verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$cache_key.head" "$name") || continue
       _remove_worktree "$wt_path" "$branch" "$git_root" "guarded" "$verified_oid" \
         || _info "경고: $name 삭제 실패"
     done
 
     git worktree prune 2>/dev/null || true
-    if (( broken_count > 0 )); then
-      _info "자동 정리 완료 (손상 ${broken_count}개 건너뜀)"
-    else
-      _info "자동 정리 완료"
-    fi
+    _info "자동 정리 완료$(_wt_cleanup_skip_suffix "$broken_count" "${#locked_names[@]}")"
     return 0
   fi
 
@@ -264,7 +300,7 @@ cmd_cleanup() {
       --preview-window right,75% --preview-label "worktree 상태") || { _info "취소됨"; return 0; }
 
     while IFS=$'\t' read -r label path; do
-      [[ -n "$path" ]] && selected_names+=("$(basename "$path")")
+      [[ -n "$path" ]] && selected_names+=("$(_wt_display_name "$git_root" "$path")")
     done <<< "$chosen"
   else
     echo "정리할 worktree 선택 (쉼표로 구분, 빈 입력=취소):" >&2
@@ -283,7 +319,7 @@ cmd_cleanup() {
       num=$(echo "$num" | tr -d ' ')
       local idx=$((num - 1))
       if (( idx >= 0 && idx < ${#items[@]} )); then
-        selected_names+=("$(basename "${item_paths[$idx]}")")
+        selected_names+=("${item_names[$idx]}")
       fi
     done
   fi
@@ -296,20 +332,45 @@ cmd_cleanup() {
   local removed=0
   for sel_name in "${selected_names[@]}"; do
     local found_idx=-1
-    for ((i=0; i<${#item_paths[@]}; i++)); do
-      if [[ "$(basename "${item_paths[$i]}")" == "$sel_name" ]]; then
+    # 1순위: 표시 이름(WORKTREE_DIR 상대 경로) 정확 일치.
+    for ((i=0; i<${#item_names[@]}; i++)); do
+      if [[ "${item_names[$i]}" == "$sel_name" ]]; then
         found_idx=$i
         break
       fi
     done
+    # 2순위: 마지막 경로 요소 일치 — depth 2 이상 worktree를 짧은 이름으로 부르던 호출을
+    # 그대로 받는다. 단 후보가 둘 이상이면 고르지 않는다(fail-closed): 목록 선착순으로
+    # 아무거나 지우면 사용자가 지목하지 않은 worktree가 사라진다 (`x`와 `feat/x`가 함께
+    # 있으면 정렬상 먼저 오는 nested 쪽이 지워지는 것을 실측). 상대 경로로 다시 지정하게 한다.
     if (( found_idx < 0 )); then
-      # items에 없음: 존재하지 않거나, 손상되어 제외됐거나(위 경고), 현재 worktree.
+      local _base_matches=() _bi
+      for ((i=0; i<${#item_names[@]}; i++)); do
+        [[ "$(basename "${item_names[$i]}")" == "$sel_name" ]] && _base_matches+=("$i")
+      done
+      if (( ${#_base_matches[@]} > 1 )); then
+        _warn "정리 대상 모호: $sel_name (같은 이름의 worktree가 여러 개라 지우지 않았습니다)"
+        for _bi in "${_base_matches[@]}"; do
+          _warn "  후보: ${item_names[$_bi]} — 정확히 지정하세요: wt cleanup $(printf '%q' "${item_names[$_bi]}")"
+        done
+        continue
+      fi
+      (( ${#_base_matches[@]} == 1 )) && found_idx="${_base_matches[0]}"
+    fi
+    if (( found_idx < 0 )); then
+      # items에 없음: 존재하지 않거나, 손상·잠금으로 제외됐거나(위 경고), 현재 worktree.
       # 과거엔 silent continue라 "정리 완료: 0개"만 떠 진단이 어려웠다 (#883).
-      # 세 원인을 한 문장에 뭉뚱그리면 사용자가 어느 쪽인지 모른 채 막힌다 (#1186).
-      # 현재 worktree는 원인이 특정되고 해결책도 명확하므로 분리해 안내한다.
-      if [[ -n "$current_wt" && "$sel_name" == "$(basename "$current_wt")" ]]; then
+      # 원인을 한 문장에 뭉뚱그리면 사용자가 어느 쪽인지 모른 채 막힌다 (#1186).
+      # 현재 worktree·잠금은 원인이 특정되고 해결책도 명확하므로 분리해 안내한다.
+      local _sel_locked=false _ln
+      for _ln in ${locked_names[@]+"${locked_names[@]}"}; do
+        [[ "$_ln" == "$sel_name" ]] && { _sel_locked=true; break; }
+      done
+      if [[ -n "$current_wt" && "$sel_name" == "$(_wt_display_name "$git_root" "$current_wt")" ]]; then
         _wt_warn_cleanup_from_root "$git_root" "$sel_name" \
           "현재 위치한 worktree라 여기서는 삭제할 수 없습니다: $sel_name"
+      elif [[ "$_sel_locked" == "true" ]]; then
+        _warn "정리 대상 아님: $sel_name (잠긴 worktree — 잠근 주체 확인 후 git worktree unlock 하고 다시 실행하세요)"
       else
         _warn "정리 대상 아님: $sel_name (존재하지 않거나, 손상되어 제외됨)"
       fi
@@ -318,8 +379,8 @@ cmd_cleanup() {
 
     local wt_path="${item_paths[$found_idx]}"
     local branch="${item_branches[$found_idx]}"
-    local name
-    name=$(basename "$wt_path")
+    local name="${item_names[$found_idx]}"
+    local cache_key="${item_cache_keys[$found_idx]}"
 
     # MERGED 대상의 제거 전략은 "사용자가 이 삭제의 위험을 인지했는가"로 갈린다.
     # 인지한 경우(확인 프롬프트 통과 또는 --yes)는 기존대로 강제 삭제하고, 위험을
@@ -345,7 +406,7 @@ cmd_cleanup() {
     local mode="forced" verified_oid=""
     if [[ "$risk_acknowledged" == "false" && "${item_pr[$found_idx]}" == "MERGED" ]]; then
       mode="guarded"
-      verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$name.head" "$name") || continue
+      verified_oid=$(_wt_guarded_delete_oid "$wt_path" "$_wt_cleanup_tmp/$cache_key.head" "$name") || continue
     fi
     if _remove_worktree "$wt_path" "$branch" "$git_root" "$mode" "$verified_oid"; then
       removed=$((removed + 1))
@@ -353,9 +414,5 @@ cmd_cleanup() {
   done
 
   git worktree prune 2>/dev/null || true
-  if (( broken_count > 0 )); then
-    _info "정리 완료: ${removed}개 삭제 (손상 ${broken_count}개 건너뜀)"
-  else
-    _info "정리 완료: ${removed}개 삭제"
-  fi
+  _info "정리 완료: ${removed}개 삭제$(_wt_cleanup_skip_suffix "$broken_count" "${#locked_names[@]}")"
 }

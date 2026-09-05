@@ -42,7 +42,11 @@ run_test "worktree relink skips non-TTY without opt-in" test_worktree_relink_ski
 run_test "worktree relink opt-in allows non-TTY" test_worktree_relink_opt_in_allows_non_tty
 run_test "main relink restore ignores non-TTY guard" test_main_relink_restore_ignores_non_tty_guard
 run_test "wt cd returns target path by name" test_wt_cd_by_name_returns_target_path
+run_test "wt cd refuses broken worktree" test_wt_cd_refuses_broken_worktree
+run_test "collect worktrees dedupes symlinked base unit" test_wt_collect_worktrees_dedupes_symlinked_base_unit
 run_test "wt ls lists deployed worktrees" test_wt_ls_from_deployed_layout_lists_worktrees
+run_test "wt ls lists registered missing and nested worktrees" test_wt_ls_lists_registered_missing_and_nested_worktrees
+run_test "wt ls marks locked worktree" test_wt_ls_marks_locked_worktree
 run_test "wt ls --json outputs parseable array" test_wt_ls_json_outputs_parseable_array
 run_test "wt create conflict requires if-exists when noninteractive" test_wt_create_conflict_noninteractive_requires_if_exists
 run_test "wt create if-exists=reuse returns path" test_wt_create_if_exists_reuse_returns_path
@@ -65,6 +69,10 @@ run_test "wt create trusts Codex project config" test_wt_create_trusts_codex_pro
 run_test "wt create skips unsafe Codex config path" test_wt_create_skips_unsafe_codex_config
 run_test "wt create supports valid Codex projects shapes" test_wt_create_supports_valid_projects_shapes
 run_test "wt create preserves unmergeable Codex config" test_wt_create_preserves_unmergeable_codex_config
+run_test "codex trust untrust removes only target project" test_codex_trust_untrust_project_removes_only_target
+run_test "codex trust GC dry-run leaves config unchanged" test_codex_trust_gc_dry_run_leaves_config_unchanged
+run_test "codex trust GC removes stale worktree projects only" test_codex_trust_gc_removes_stale_worktree_projects_only
+run_test "wt cleanup untrusts Codex project" test_wt_cleanup_untrusts_codex_project
 run_test "wt create inherits Claude local plugin manifest" test_wt_create_inherits_claude_local_plugin_manifest
 run_test "wt create ignores branch-tracked plugin settings" test_wt_create_ignores_branch_tracked_plugin_settings
 run_test "wt plugin manifest ignores noncanonical adjacent lock directory" test_wt_plugin_manifest_ignores_noncanonical_adjacent_lock_directory
@@ -145,6 +153,11 @@ run_test "wt cleanup auto skips merged branch reuse" test_wt_cleanup_auto_skips_
 run_test "wt cleanup auto survives stale worktree" test_wt_cleanup_auto_survives_stale_worktree
 run_test "wt cleanup name-filter survives stale worktree" test_wt_cleanup_name_filter_survives_stale_worktree
 run_test "wt cleanup auto broken-only reports skip count" test_wt_cleanup_auto_broken_only_reports_skip_count
+run_test "wt cleanup reports missing worktree prune hint" test_wt_cleanup_reports_missing_worktree_prune_hint
+run_test "wt cleanup skips locked worktree" test_wt_cleanup_skips_locked_worktree
+run_test "wt cleanup name prefers exact relative name" test_wt_cleanup_name_prefers_exact_relative_name
+run_test "wt cleanup refuses ambiguous name" test_wt_cleanup_refuses_ambiguous_name
+run_test "wt recreate refuses locked worktree" test_wt_recreate_refuses_locked_worktree
 run_test "wt cleanup name-filter merged without upstream needs no confirm" test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm
 run_test "wt cleanup name-filter confirmed dirty merged removes" test_wt_cleanup_name_filter_confirmed_dirty_merged_removes
 run_test "wt cleanup name-filter current worktree reports root command" test_wt_cleanup_name_filter_current_worktree_reports_root_command
@@ -155,6 +168,10 @@ run_test "wt pr-status returns verified oid unit" test_wt_pr_status_returns_veri
 run_test "wt guarded remove rechecks branch unit" test_wt_remove_worktree_guarded_rechecks_branch_unit
 run_test "wt guarded remove keeps reused branch unit" test_wt_remove_worktree_guarded_keeps_reused_branch_unit
 run_test "wt guarded remove clears branch config unit" test_wt_remove_worktree_guarded_clears_branch_config_unit
+run_test "wt forced remove refuses locked worktree unit" test_wt_remove_worktree_forced_refuses_locked_unit
+run_test "wt forced remove keeps path when remove fails unit" test_wt_remove_worktree_forced_keeps_path_when_remove_fails_unit
+run_test "wt remove refuses unknown lock state unit" test_wt_remove_worktree_refuses_unknown_lock_state_unit
+run_test "wt remove failure notes registration state unit" test_wt_remove_worktree_failure_notes_registration_state_unit
 run_test "missing managed helpers fail closed" test_missing_managed_helpers_fail_closed
 run_test "missing wt Python helpers fail state changes" test_missing_wt_python_helpers_fail_state_changes
 run_test "missing wt Python helpers fail cleanup state changes" test_missing_wt_python_helpers_fail_cleanup_state_changes

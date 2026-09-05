@@ -39,7 +39,7 @@ EOF
   chmod +x "$fallback_dir/$legacy_name"
 
   output=$(
-    env -u TMUX \
+    env -u TMUX -u CODEX_HOME \
       HOME="$home_dir" \
       PATH="$fallback_dir:$FIXTURE_DIR/bin:$PATH" \
       LEGACY_SYNC_MARKER="$marker_file" \
@@ -73,7 +73,7 @@ test_wt_create_skips_symlinked_codex_source() {
   ln -s "$codex_target" "$repo_root/.codex"
 
   output=$(
-    env -u TMUX \
+    env -u TMUX -u CODEX_HOME \
       HOME="$home_dir" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       bash -c '
@@ -119,7 +119,7 @@ command = "keep"
 EOF
 
   output=$(
-    env -u TMUX \
+    env -u TMUX -u CODEX_HOME \
       HOME="$home_dir" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
@@ -160,7 +160,7 @@ command = "retired"
 EOF
 
   output=$(
-    env -u TMUX \
+    env -u TMUX -u CODEX_HOME \
       HOME="$home_dir" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
@@ -193,7 +193,7 @@ test_wt_create_removes_directory_copied_codex_config() {
   printf 'nested\n' > "$repo_root/.codex/config.toml/nested.txt"
 
   output=$(
-    env -u TMUX \
+    env -u TMUX -u CODEX_HOME \
       HOME="$home_dir" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
@@ -320,7 +320,7 @@ EOF
   chmod 0644 "$config_file"
 
   output=$(
-    env -u TMUX \
+    env -u TMUX -u CODEX_HOME \
       HOME="$home_dir" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
@@ -374,7 +374,7 @@ test_wt_create_skips_unsafe_codex_config() {
   ln -s "$config_target" "$config_file"
 
   output=$(
-    env -u TMUX \
+    env -u TMUX -u CODEX_HOME \
       HOME="$home_dir" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
@@ -394,7 +394,7 @@ test_wt_create_skips_unsafe_codex_config() {
   rm -f "$config_file"
   mkfifo "$config_file"
   output=$(
-    env -u TMUX \
+    env -u TMUX -u CODEX_HOME \
       HOME="$home_dir" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
@@ -436,7 +436,7 @@ test_wt_create_supports_valid_projects_shapes() {
     esac
     printf '%s\n' "$content" > "$config_file"
     output=$(
-      env -u TMUX \
+      env -u TMUX -u CODEX_HOME \
         HOME="$home_dir" \
         PATH="$FIXTURE_DIR/bin:$PATH" \
         WT_NONINTERACTIVE=1 \
@@ -484,7 +484,7 @@ test_wt_create_preserves_unmergeable_codex_config() {
     cp "$config_file" "$expected_file"
 
     output=$(
-      env -u TMUX \
+      env -u TMUX -u CODEX_HOME \
         HOME="$home_dir" \
         PATH="$FIXTURE_DIR/bin:$PATH" \
         WT_NONINTERACTIVE=1 \
@@ -501,4 +501,218 @@ test_wt_create_preserves_unmergeable_codex_config() {
     cmp -s "$config_file" "$expected_file" \
       || fail "unmergeable Codex config must remain unchanged (scenario $idx): $(cat "$config_file")"
   done
+}
+
+test_codex_trust_untrust_project_removes_only_target() {
+  local sandbox config_file target_project other_project output rc before_hash after_hash
+  if ! codex_config_tomlkit_available; then
+    echo "SKIP: codex trust untrust roundtrip requires tomlkit" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  config_file="$sandbox/config.toml"
+  target_project="$sandbox/repo/.claude/worktrees/feature_gone"
+  other_project="$sandbox/other-project"
+  mkdir -p "$target_project" "$other_project"
+  target_project="$(cd "$target_project" && pwd -P)"
+  other_project="$(cd "$other_project" && pwd -P)"
+
+  printf 'model = "test-model"\n' > "$config_file"
+  "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+    trust-project --config "$config_file" "$target_project" >/dev/null 2>&1 \
+    || fail "expected trust-project to register target"
+  "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+    trust-project --config "$config_file" "$other_project" >/dev/null 2>&1 \
+    || fail "expected trust-project to register other project"
+
+  # 등록 키는 trust 시점의 canonical 경로다. 해제는 디렉토리가 사라진 뒤에 불리므로
+  # 여기서도 먼저 지워, resolve 없이 키 문자열만으로 지워지는지 확인한다.
+  rm -rf "$target_project"
+
+  "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+    untrust-project --config "$config_file" "$target_project" \
+    || fail "expected untrust-project to succeed"
+
+  "${WT_PYTHON:-python3}" - "$config_file" "$target_project" "$other_project" <<'PY'
+import sys
+import tomllib
+
+config_file, target_project, other_project = sys.argv[1:4]
+with open(config_file, "rb") as f:
+    data = tomllib.load(f)
+
+projects = data.get("projects", {})
+assert target_project not in projects, projects
+assert projects[other_project]["trust_level"] == "trusted", projects
+assert data["model"] == "test-model", data
+PY
+
+  # 없는 키 해제는 no-op이어야 한다 (exit 0 + 파일 무변경).
+  before_hash=$(cksum < "$config_file")
+  set +e
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+      untrust-project --config "$config_file" "$target_project" 2>&1
+  )
+  rc=$?
+  set -e
+  after_hash=$(cksum < "$config_file")
+  [[ "$rc" == "0" ]] || fail "expected untrust of absent key to exit 0, got rc=$rc output=$output"
+  [[ "$before_hash" == "$after_hash" ]] \
+    || fail "untrust of absent key must not rewrite the config"
+}
+
+test_codex_trust_gc_dry_run_leaves_config_unchanged() {
+  local sandbox config_file stale_project output before_hash after_hash
+  if ! codex_config_tomlkit_available; then
+    echo "SKIP: codex trust GC dry-run requires tomlkit" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  config_file="$sandbox/config.toml"
+  stale_project="$sandbox/repo/.claude/worktrees/feature_stale"
+
+  cat > "$config_file" <<EOF
+model = "test-model"
+
+[projects."$stale_project"]
+trust_level = "trusted"
+EOF
+  before_hash=$(cksum < "$config_file")
+
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+      gc-worktree-projects --config "$config_file" --dry-run 2>&1
+  )
+
+  after_hash=$(cksum < "$config_file")
+  assert_contains "$output" "$stale_project"
+  # dry-run 요약은 실제 실행과 구분돼야 한다 — 같은 "removed N"이면 로그만 보고 이미
+  # 지웠다고 오해한다.
+  assert_contains "$output" "would remove 1 (kept 0)"
+  assert_not_contains "$output" "removed 1 (kept 0)"
+  [[ "$before_hash" == "$after_hash" ]] || fail "gc --dry-run must not modify the config"
+  [[ -z "$(find "$sandbox" -maxdepth 1 -name 'config.toml.bak-gc-*' -print -quit)" ]] \
+    || fail "gc --dry-run must not create a backup"
+}
+
+test_codex_trust_gc_removes_stale_worktree_projects_only() {
+  local sandbox config_file live_worktree stale_worktree stale_plain output backup
+  if ! codex_config_tomlkit_available; then
+    echo "SKIP: codex trust GC requires tomlkit" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  config_file="$sandbox/config.toml"
+  live_worktree="$sandbox/repo/.claude/worktrees/feature_live"
+  stale_worktree="$sandbox/repo/.claude/worktrees/feature_stale"
+  # worktree 경로가 아닌 항목은 디렉토리가 없어도 GC 대상이 아니다 (다른 호스트 경로·
+  # 마이그레이션 잔재는 사용자 결정 영역).
+  stale_plain="$sandbox/not-a-worktree/project"
+  mkdir -p "$live_worktree"
+
+  cat > "$config_file" <<EOF
+model = "test-model"
+
+[projects."$live_worktree"]
+trust_level = "trusted"
+
+[projects."$stale_worktree"]
+trust_level = "trusted"
+
+[projects."$stale_plain"]
+trust_level = "trusted"
+EOF
+
+  output=$(
+    "${WT_PYTHON:-python3}" "$REPO_ROOT/modules/shared/scripts/lib/wt/codex-trust.py" \
+      gc-worktree-projects --config "$config_file" 2>&1
+  )
+
+  assert_contains "$output" "$stale_worktree"
+  assert_not_contains "$output" "$stale_plain"
+  assert_contains "$output" "removed 1 (kept 2)"
+
+  "${WT_PYTHON:-python3}" - "$config_file" "$live_worktree" "$stale_worktree" "$stale_plain" <<'PY'
+import sys
+import tomllib
+
+config_file, live_worktree, stale_worktree, stale_plain = sys.argv[1:5]
+with open(config_file, "rb") as f:
+    data = tomllib.load(f)
+
+projects = data["projects"]
+assert stale_worktree not in projects, projects
+assert projects[live_worktree]["trust_level"] == "trusted", projects
+assert projects[stale_plain]["trust_level"] == "trusted", projects
+assert data["model"] == "test-model", data
+PY
+
+  backup=$(find "$sandbox" -maxdepth 1 -name 'config.toml.bak-gc-*' -print -quit)
+  [[ -n "$backup" ]] || fail "expected gc to leave a timestamped backup"
+  assert_contains "$(cat "$backup")" "$stale_worktree"
+}
+
+test_wt_cleanup_untrusts_codex_project() {
+  local sandbox home_dir repo_root config_file target_worktree other_project output
+  if ! codex_config_tomlkit_available; then
+    echo "SKIP: wt cleanup untrusts Codex project requires tomlkit" >&2
+    return 0
+  fi
+
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  config_file="$home_dir/.codex/config.toml"
+  other_project="$sandbox/other-project"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  mkdir -p "$(dirname "$config_file")" "$other_project"
+  other_project="$(cd "$other_project" && pwd -P)"
+  target_worktree="$repo_root/.claude/worktrees/feature_one"
+
+  cat > "$config_file" <<EOF
+model = "test-model"
+
+[projects."$other_project"]
+trust_level = "trusted"
+
+[projects."$target_worktree"]
+trust_level = "trusted"
+EOF
+  chmod 0600 "$config_file"
+
+  output=$(
+    env -u TMUX -u CODEX_HOME \
+      HOME="$home_dir" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" cleanup feature_one --yes
+      ' 2>&1
+  )
+
+  assert_contains "$output" "정리 완료: 1개 삭제"
+  [[ ! -d "$target_worktree" ]] || fail "expected worktree to be removed: $target_worktree"
+
+  python3 - "$config_file" "$target_worktree" "$other_project" <<'PY'
+import sys
+import tomllib
+
+config_file, target_worktree, other_project = sys.argv[1:4]
+with open(config_file, "rb") as f:
+    data = tomllib.load(f)
+
+projects = data.get("projects", {})
+assert target_worktree not in projects, projects
+assert projects[other_project]["trust_level"] == "trusted", projects
+assert data["model"] == "test-model", data
+PY
 }

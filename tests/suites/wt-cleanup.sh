@@ -17,6 +17,27 @@ EOF
   chmod +x "$gh_dir/gh"
 }
 
+# 지정한 브랜치에만 MERGED를 보고하는 gh mock. "MERGED 후보가 실제로 있는데도 지우지
+# 않는다"를 검증하려면 대상 worktree만 MERGED여야 한다 — 아무것도 MERGED가 아니면 후보가
+# 0이라 가드를 지워도 통과하는 비판별 테스트가 되고, 전부 MERGED면 다른 worktree 삭제가
+# 섞여 어서션이 흐려진다.
+install_merged_pr_mock_for_branch() {
+  local gh_dir="$1" branch="$2" head_oid="$3"
+  mkdir -p "$gh_dir"
+  cat > "$gh_dir/gh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+for arg in "\$@"; do
+  if [[ "\$arg" == "$branch" ]]; then
+    printf 'MERGED %s\n' "$head_oid"
+    exit 0
+  fi
+done
+exit 1
+EOF
+  chmod +x "$gh_dir/gh"
+}
+
 add_stale_worktree() {
   # 손상(stale) worktree fixture: .git이 존재하지 않는 gitdir을 가리킨다 (사용자명
   # 마이그레이션 잔재 모사 — #883의 실제 트리거). 'aaa_broken'은 정렬상 feature_one보다
@@ -48,6 +69,7 @@ test_wt_recreate_guard_uses_physical_paths() {
   output=$(
     env -u TMUX \
       HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
       bash -c '
@@ -59,6 +81,48 @@ test_wt_recreate_guard_uses_physical_paths() {
 
   assert_contains "$output" "재생성 불가: 현재 작업 디렉토리가 이 worktree 안에 있습니다"
   [[ -d "$repo_root/.claude/worktrees/feature_one" ]] || fail "expected original worktree to survive recreate guard"
+}
+
+test_wt_recreate_refuses_locked_worktree() {
+  # `--if-exists=recreate`는 제거를 포함하므로 삭제 경로와 같은 잠금 계약을 지켜야 한다.
+  # 과거 구현은 `git worktree remove --force || rm -rf`라, 잠긴 worktree를 recreate하면
+  # git이 거부한 뒤 rm -rf가 미커밋 파일까지 지웠고(잠근 주체가 쓰던 디렉토리 파괴),
+  # 이어지는 prune은 잠긴 등록을 건너뛰어 유령 등록이 남았다 (실측).
+  local sandbox home_dir repo_root locked_path output rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  locked_path="$repo_root/.claude/worktrees/feature_one"
+  echo "precious" > "$locked_path/precious.txt"
+  lock_fixture_worktree "$repo_root" "$locked_path" "bridge holds it"
+
+  rc=0
+  output=$(
+    env -u TMUX \
+      HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
+      PATH="$FIXTURE_DIR/bin:$PATH" \
+      WT_NONINTERACTIVE=1 \
+      WT_ASSUME_YES=1 \
+      bash -c '
+        set -euo pipefail
+        cd "'"$repo_root"'"
+        "'"$home_dir/.local/bin/wt"'" --if-exists=recreate feature/one
+      ' 2>&1
+  ) || rc=$?
+
+  # WT_ASSUME_YES=1: dirty 확인 프롬프트를 통과시켜 잠금 가드까지 실제로 도달하게 한다
+  # (여기서 멈추면 "확인 때문에 안 지워진 것"과 구분되지 않아 비판별 테스트가 된다).
+  [[ "$rc" != "0" ]] || fail "잠긴 worktree 재생성은 실패해야 함: $output"
+  assert_contains "$output" "재생성 불가: feature_one (잠긴 worktree — 사유: bridge holds it"
+  [[ -f "$locked_path/precious.txt" ]] || fail "잠긴 worktree의 미커밋 파일이 파괴됨: $output"
+  git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $locked_path" \
+    || fail "잠긴 worktree 등록이 사라짐: $locked_path"
 }
 
 test_wt_cleanup_auto_removes_merged_worktree() {
@@ -80,6 +144,7 @@ test_wt_cleanup_auto_removes_merged_worktree() {
 
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
     bash -c '
       set -euo pipefail
@@ -112,6 +177,7 @@ test_wt_cleanup_auto_skips_dirty_merged_worktree() {
 
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
     bash -c '
       set -euo pipefail
@@ -149,6 +215,7 @@ test_wt_cleanup_auto_skips_unpushed_with_upstream() {
 
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
     bash -c '
       set -euo pipefail
@@ -178,6 +245,7 @@ test_wt_cleanup_auto_skips_merged_branch_reuse() {
 
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
     bash -c '
       set -euo pipefail
@@ -214,6 +282,7 @@ test_wt_cleanup_auto_survives_stale_worktree() {
   rc=0
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
     bash -c '
       set -euo pipefail
@@ -255,6 +324,7 @@ test_wt_cleanup_name_filter_survives_stale_worktree() {
   rc=0
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
     bash -c '
       set -euo pipefail
@@ -293,6 +363,7 @@ test_wt_cleanup_auto_broken_only_reports_skip_count() {
   rc=0
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$FIXTURE_DIR/bin:$PATH" \
     bash -c '
       set -euo pipefail
@@ -335,6 +406,7 @@ test_wt_cleanup_name_filter_merged_without_upstream_needs_no_confirm() {
 
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
     WT_NONINTERACTIVE=1 \
     bash -c '
@@ -372,6 +444,7 @@ test_wt_cleanup_name_filter_confirmed_dirty_merged_removes() {
 
   output=$(
     HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
     PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
     WT_NONINTERACTIVE=1 \
     bash -c '
@@ -402,6 +475,7 @@ test_wt_cleanup_name_filter_current_worktree_reports_root_command() {
   output=$(
     env -u TMUX \
       HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
       PATH="$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
       bash -c '
@@ -420,6 +494,228 @@ test_wt_cleanup_name_filter_current_worktree_reports_root_command() {
   local guide_count
   guide_count=$(printf '%s\n' "$output" | grep -c "저장소 루트에서 실행하세요" || true)
   [[ "$guide_count" == "1" ]] || fail "재실행 안내가 1회여야 하는데 ${guide_count}회 출력됨: $output"
+}
+
+test_wt_cleanup_reports_missing_worktree_prune_hint() {
+  # 등록만 남고 디렉토리가 사라진 worktree(잠긴 브리지 worktree 등이 prune을 못 받은 잔재).
+  # 과거엔 디렉토리 스캔 기준이라 아예 보이지 않았다. 손상 경로로 흘려 건너뛰되, 이
+  # 상황에서 실제로 듣는 명령(prune)을 안내해야 한다 — rm -rf 안내는 지울 경로가 없다.
+  local sandbox home_dir repo_root output gone_path locked_gone_path target_path rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  target_path="$repo_root/.claude/worktrees/feature_one"
+  gone_path="$repo_root/.claude/worktrees/zz_gone"
+  add_fixture_worktree "$repo_root" "$gone_path" "zz-gone"
+  rm -rf "$gone_path"
+
+  # 실제 문제 사례(잠긴 Claude 브리지 worktree)는 "잠김 + 디렉토리 없음" 조합이다.
+  # 이 조합에 prune만 안내하면 prune이 잠긴 등록을 건너뛰어(실측) 아무 일도 일어나지 않는다.
+  locked_gone_path="$repo_root/.claude/worktrees/zz_locked_gone"
+  add_fixture_worktree "$repo_root" "$locked_gone_path" "zz-locked-gone"
+  lock_fixture_worktree "$repo_root" "$locked_gone_path" "bridge holds it"
+  rm -rf "$locked_gone_path"
+
+  rc=0
+  output=$(
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup --auto
+    ' 2>&1
+  ) || rc=$?
+
+  [[ "$rc" == "0" ]] || fail "cleanup --auto 비정상 종료 rc=$rc: $output"
+  assert_contains "$output" "손상된 worktree 건너뜀: zz_gone (디렉토리 없음 — 수동 정리: git worktree prune)"
+  assert_contains "$output" "손상된 worktree 건너뜀: zz_locked_gone (디렉토리 없음(잠김) — 수동 정리: git worktree unlock"
+  assert_contains "$output" "후 git worktree prune"
+  assert_contains "$output" "자동 정리 대상 (MERGED)이 없습니다 (손상 2개 건너뜀)"
+  [[ -d "$target_path" ]] || fail "정상 worktree는 보존돼야 함: $target_path"
+}
+
+test_wt_cleanup_skips_locked_worktree() {
+  # git lock은 "다른 주체가 이 worktree를 붙잡고 있다"는 신호이고, tmux pane 기반 활성
+  # 판정에는 잡히지 않는다. --auto도, 이름 지정 --yes도 정리해서는 안 되며(--yes는 제거
+  # 전략만 바꾸지 잠금을 해제하지 않는다) 디렉토리와 git 등록이 모두 그대로 남아야 한다.
+  #
+  # 대상 worktree를 MERGED로 만들어 두는 것이 이 테스트의 판별력이다: PR이 없으면 --auto의
+  # 후보가 애초에 0이라, 후보 수집의 잠금 가드를 지우고 경고만 남겨도 통과한다.
+  # 마지막에 unlock 후 같은 --auto가 실제로 지우는지까지 봐서 과잉 차단 회귀도 덮는다.
+  local sandbox home_dir repo_root gh_dir auto_out named_out unlocked_out locked_path head_oid rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+  gh_dir="$sandbox/gh-bin"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+  git -C "$repo_root" remote add origin https://example.invalid/nixos-config.git
+
+  locked_path="$repo_root/.claude/worktrees/zz_locked"
+  add_fixture_worktree "$repo_root" "$locked_path" "zz-locked"
+  head_oid="$(git -C "$locked_path" rev-parse HEAD)"
+  install_merged_pr_mock_for_branch "$gh_dir" "zz-locked" "$head_oid"
+  lock_fixture_worktree "$repo_root" "$locked_path" "bridge holds it"
+
+  rc=0
+  auto_out=$(
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup --auto
+    ' 2>&1
+  ) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup --auto 비정상 종료 rc=$rc: $auto_out"
+  assert_contains "$auto_out" "잠긴 worktree 건너뜀: zz_locked (사유: bridge holds it"
+  # MERGED인데도 후보 수집에서 빠졌음을 요약으로 고정한다 (경고만 내고 후보에 남는 회귀 차단).
+  assert_contains "$auto_out" "자동 정리 대상 (MERGED)이 없습니다 (잠김 1개 건너뜀)"
+  assert_not_contains "$auto_out" "삭제: zz_locked"
+
+  rc=0
+  named_out=$(
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup zz_locked --yes
+    ' 2>&1
+  ) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup <name> --yes 비정상 종료 rc=$rc: $named_out"
+  assert_contains "$named_out" "정리 대상 아님: zz_locked (잠긴 worktree"
+  assert_contains "$named_out" "정리 완료: 0개 삭제"
+
+  [[ -d "$locked_path" ]] || fail "잠긴 worktree 디렉토리가 삭제됨: $locked_path"
+  git -C "$repo_root" worktree list --porcelain | grep -qxF "worktree $locked_path" \
+    || fail "잠긴 worktree 등록이 사라짐: $locked_path"
+
+  # 잠금을 풀면 같은 MERGED 후보가 실제로 정리돼야 한다 — 가드가 잠금이 아닌 다른 이유로
+  # 항상 막고 있었다면 여기서 드러난다.
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+    git -C "$repo_root" worktree unlock "$locked_path" >/dev/null 2>&1 \
+    || fail "fixture unlock 실패: $locked_path"
+
+  rc=0
+  unlocked_out=$(
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup --auto
+    ' 2>&1
+  ) || rc=$?
+  [[ "$rc" == "0" ]] || fail "unlock 후 cleanup --auto 비정상 종료 rc=$rc: $unlocked_out"
+  assert_contains "$unlocked_out" "자동 정리 완료"
+  [[ ! -d "$locked_path" ]] || fail "unlock 후에는 MERGED worktree가 정리돼야 함: $unlocked_out"
+}
+
+test_wt_cleanup_name_prefers_exact_relative_name() {
+  # depth 2 이상 경로를 수집하게 되면서 마지막 경로 요소가 겹칠 수 있다. 이름 매칭이
+  # basename 선착순이면 목록 정렬상 먼저 오는 nested 쪽이 선택되어, 사용자가 지목한
+  # top-level 대신 다른 worktree가 지워진다 (`zz` vs `feat/zz`로 실측). 이름은 wt_base
+  # 상대 경로이므로 정확 일치가 우선이어야 한다.
+  local sandbox home_dir repo_root top_path nested_path output rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  top_path="$repo_root/.claude/worktrees/zz"
+  nested_path="$repo_root/.claude/worktrees/feat/zz"
+  add_fixture_worktree "$repo_root" "$top_path" "zz-top"
+  add_fixture_worktree "$repo_root" "$nested_path" "zz-nested"
+
+  rc=0
+  output=$(
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup zz --yes
+    ' 2>&1
+  ) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup zz --yes 비정상 종료 rc=$rc: $output"
+  assert_contains "$output" "정리 완료: 1개 삭제"
+  [[ ! -d "$top_path" ]] || fail "이름이 정확히 일치하는 top-level worktree가 지워져야 함: $output"
+  [[ -d "$nested_path" ]] || fail "지목하지 않은 nested worktree가 지워짐: $nested_path"
+}
+
+test_wt_cleanup_refuses_ambiguous_name() {
+  # 정확 일치가 없고 마지막 경로 요소만 여러 개 맞으면 아무것도 지우지 않는다(fail-closed).
+  # 선착순으로 하나를 고르면 사용자가 지목하지 않은 worktree가 조용히 사라진다.
+  # 상대 경로로 정확히 지정하면 그 항목만 지워져야 한다.
+  local sandbox home_dir repo_root feat_path bug_path amb_out exact_out rc
+  sandbox=$(new_sandbox)
+  home_dir="$sandbox/home"
+  repo_root="$sandbox/repo"
+
+  create_git_fixture_repo "$repo_root"
+  repo_root="$(cd "$repo_root" && pwd -P)"
+  install_deployed_layout "$sandbox" "$repo_root"
+
+  feat_path="$repo_root/.claude/worktrees/feat/zz"
+  bug_path="$repo_root/.claude/worktrees/bug/zz"
+  add_fixture_worktree "$repo_root" "$feat_path" "zz-feat"
+  add_fixture_worktree "$repo_root" "$bug_path" "zz-bug"
+
+  rc=0
+  amb_out=$(
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup zz --yes
+    ' 2>&1
+  ) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup zz --yes 비정상 종료 rc=$rc: $amb_out"
+  assert_contains "$amb_out" "정리 대상 모호: zz"
+  assert_contains "$amb_out" "후보: bug/zz"
+  assert_contains "$amb_out" "후보: feat/zz"
+  assert_contains "$amb_out" "정리 완료: 0개 삭제"
+  [[ -d "$feat_path" ]] || fail "모호한 이름으로 feat/zz가 지워짐"
+  [[ -d "$bug_path" ]] || fail "모호한 이름으로 bug/zz가 지워짐"
+
+  rc=0
+  exact_out=$(
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    PATH="$FIXTURE_DIR/bin:$PATH" \
+    WT_NONINTERACTIVE=1 \
+    bash -c '
+      set -euo pipefail
+      cd "'"$repo_root"'"
+      "'"$home_dir/.local/bin/wt"'" cleanup feat/zz --yes
+    ' 2>&1
+  ) || rc=$?
+  [[ "$rc" == "0" ]] || fail "cleanup feat/zz --yes 비정상 종료 rc=$rc: $exact_out"
+  assert_contains "$exact_out" "정리 완료: 1개 삭제"
+  [[ ! -d "$feat_path" ]] || fail "상대 경로로 지정한 worktree가 지워지지 않음: $exact_out"
+  [[ -d "$bug_path" ]] || fail "지정하지 않은 bug/zz가 지워짐"
 }
 
 test_wt_pr_status_returns_verified_oid_unit() {
@@ -641,6 +937,265 @@ test_wt_remove_worktree_guarded_clears_branch_config_unit() {
   [[ -z "$leftover" ]] || fail "guarded 삭제 후 branch.feature 설정이 남음: $leftover"
 }
 
+test_wt_remove_worktree_forced_refuses_locked_unit() {
+  # forced는 `--force` 실패 시 `rm -rf`로 물러나던 경로다. git은 잠긴 worktree의 제거를
+  # `--force`로도 거부하므로, 그 fallback은 디렉토리만 지우고 등록은 남겨 "등록만 남은
+  # 유령"을 만들었다. 잠금은 tmux pane 기반 활성 판정에 잡히지 않는 독립 신호이므로 삭제
+  # 전략보다 먼저 보고 거부해야 하며, 해제된 뒤에는 같은 호출이 정상 동작해야 한다.
+  local sandbox repo wt_path
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  mkdir -p "$repo"
+  # porcelain 경로는 물리 경로다. macOS TMPDIR(/var→/private/var)에서 비정규 경로로
+  # 조회하면 등록 블록이 매칭되지 않아 잠금 자체를 못 본다.
+  repo="$(cd "$repo" && pwd -P)"
+  wt_path="$(cd "$sandbox" && pwd -P)/wt"
+
+  (
+    set -euo pipefail
+    # git 격리 환경은 이 subshell 안으로 한정한다 (위 단위 테스트들과 같은 이유).
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feature
+
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    # 관찰 대상은 잠금 가드뿐이다. 나머지 부수 효과는 stub으로 걷어낸다.
+    _wt_require_state_helpers() { :; }
+    _wt_has_active_process() { return 1; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+
+    git -C "$repo" worktree lock --reason "bridge holds it" "$wt_path"
+
+    local output
+    output=$(_remove_worktree "$wt_path" feature "$repo" forced 2>&1) && exit 51
+    [[ "$output" == *"잠긴 worktree"* ]] || exit 52
+    [[ "$output" == *"bridge holds it"* ]] || exit 53
+    [[ "$output" == *"git worktree unlock"* ]] || exit 54
+    # rm -rf 미발생: 디렉토리·등록·브랜치가 모두 그대로여야 한다
+    [[ -d "$wt_path" ]] || exit 55
+    git -C "$repo" worktree list --porcelain | grep -qxF "worktree $wt_path" || exit 56
+    git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 57
+
+    # 심링크가 낀 경로로 불려도 잠금을 봐야 한다. 등록 조회는 경로 문자열 일치라
+    # (macOS /var→/private/var) 물리 경로로 한 번 더 확인하지 않으면 가드가 조용히 뚫린다.
+    ln -s "$(dirname "$wt_path")" "$(dirname "$wt_path")/link"
+    output=$(_remove_worktree "$(dirname "$wt_path")/link/wt" feature "$repo" forced 2>&1) && exit 61
+    [[ "$output" == *"잠긴 worktree"* ]] || exit 62
+    [[ -d "$wt_path" ]] || exit 63
+
+    # 해제되면 같은 호출이 성공한다 (가드가 과잉 차단이 아님)
+    git -C "$repo" worktree unlock "$wt_path"
+    _remove_worktree "$wt_path" feature "$repo" forced >/dev/null 2>&1 || exit 58
+    [[ ! -d "$wt_path" ]] || exit 59
+    ! git -C "$repo" worktree list --porcelain | grep -qxF "worktree $wt_path" || exit 60
+  ) || fail "_remove_worktree forced가 잠긴 worktree를 기대와 다르게 처리 (exit $?)"
+}
+
+test_wt_remove_worktree_forced_keeps_path_when_remove_fails_unit() {
+  # `git worktree remove --force` 거부는 잠금 외에도 생긴다(submodule·권한·I/O). 어떤
+  # 사유든 디렉토리 삭제로 흉내내면 등록만 남은 유령이 되므로, 거부는 안내와 함께 그대로
+  # 실패로 끝나야 한다 — 브랜치 삭제로도 넘어가면 안 된다. 거부 자체는 git 호출을 가로채
+  # 재현한다 (사유와 무관하게 fallback이 없는지를 보는 것이 목적).
+  local sandbox repo wt_path
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  mkdir -p "$repo"
+  repo="$(cd "$repo" && pwd -P)"
+  wt_path="$(cd "$sandbox" && pwd -P)/wt"
+
+  (
+    set -euo pipefail
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feature
+
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    _wt_require_state_helpers() { :; }
+    _wt_has_active_process() { return 1; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+
+    # 강제 제거만 거부하고 나머지 git 호출(등록 조회 등)은 그대로 통과시킨다.
+    git() {
+      if [[ "$*" == *"worktree remove --force"* ]]; then
+        printf 'fatal: mock refusal\n' >&2
+        return 128
+      fi
+      command git "$@"
+    }
+
+    local output
+    output=$(_remove_worktree "$wt_path" feature "$repo" forced 2>&1) && exit 71
+    [[ "$output" == *"worktree를 제거할 수 없습니다"* ]] || exit 72
+    [[ "$output" == *"git 메시지: fatal: mock refusal"* ]] || exit 73
+    [[ -d "$wt_path" ]] || exit 74
+    command git -C "$repo" worktree list --porcelain | grep -qxF "worktree $wt_path" || exit 75
+    command git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 76
+  ) || fail "_remove_worktree forced가 제거 실패를 rm -rf로 대신하지 않는지 확인 실패 (exit $?)"
+}
+
+test_wt_remove_worktree_refuses_unknown_lock_state_unit() {
+  # 잠금 조회 자체가 실패하면(등록 목록을 못 읽음) 삭제를 중단한다(fail-closed).
+  # 이 분기가 fail-open으로 되돌아가면 잠긴 worktree를 지울 수 있고, 반대로 과잉 차단으로
+  # 회귀하면 모든 cleanup이 막힌다 — 어느 쪽도 다른 테스트가 잡지 못한다.
+  local sandbox repo wt_path
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  mkdir -p "$repo"
+  repo="$(cd "$repo" && pwd -P)"
+  wt_path="$(cd "$sandbox" && pwd -P)/wt"
+
+  (
+    set -euo pipefail
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feature
+
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    _wt_require_state_helpers() { :; }
+    _wt_has_active_process() { return 1; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+
+    # 등록 목록 조회만 실패시킨다 — 잠금 상태를 "확인하지 못한" 상태 그 자체.
+    git() {
+      if [[ "$*" == *"worktree list --porcelain"* ]]; then
+        printf 'fatal: mock list failure\n' >&2
+        return 128
+      fi
+      command git "$@"
+    }
+
+    local output
+    output=$(_remove_worktree "$wt_path" feature "$repo" forced 2>&1) && exit 61
+    [[ "$output" == *"잠금 상태를 확인하지 못해 삭제를 중단합니다"* ]] || exit 62
+    [[ -d "$wt_path" ]] || exit 63
+    command git -C "$repo" worktree list --porcelain | grep -qxF "worktree $wt_path" || exit 64
+    command git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 65
+  ) || fail "_remove_worktree가 잠금 상태 unknown을 fail-closed로 다루는지 확인 실패 (exit $?)"
+}
+
+test_wt_remove_worktree_failure_notes_registration_state_unit() {
+  # 제거 실패 안내는 등록 상태로 갈린다. registered 분기는 기존 테스트가 덮으므로 여기서는
+  # 나머지 둘을 태운다 — absent(부분 제거)는 "브랜치는 남겼다 + git worktree add로 복구"라는
+  # 복구 절차가 문구 자체로 계약이고, 확인 실패 분기는 상태를 단정하지 않는 것이 계약이다.
+  local sandbox repo wt_path marker
+  sandbox=$(new_sandbox)
+  repo="$sandbox/repo"
+  mkdir -p "$repo"
+  repo="$(cd "$repo" && pwd -P)"
+  wt_path="$(cd "$sandbox" && pwd -P)/wt"
+  marker="$(cd "$sandbox" && pwd -P)/remove-attempted"
+
+  (
+    set -euo pipefail
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    git -C "$repo" init -q
+    git -C "$repo" config user.email t@example.invalid
+    git -C "$repo" config user.name t
+    git -C "$repo" commit -q --allow-empty -m first
+    git -C "$repo" worktree add -q "$wt_path" -b feature
+
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    _wt_require_state_helpers() { :; }
+    _wt_has_active_process() { return 1; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+
+    # 제거는 거부하되, 제거를 시도한 뒤의 등록 조회에서는 이 경로가 사라진 것처럼 보이게
+    # 한다 = "등록은 풀렸는데 경로 삭제가 끝나지 않은" 부분 제거 상태. 잠금 가드가 보는
+    # 제거 이전 조회는 그대로 통과해야 하므로 marker로 시점을 가른다.
+    git() {
+      if [[ "$*" == *"worktree remove"* ]]; then
+        : > "$marker"
+        printf 'fatal: mock refusal\n' >&2
+        return 128
+      fi
+      if [[ "$*" == *"worktree list --porcelain"* && -f "$marker" ]]; then
+        command git "$@" | grep -vF "worktree $wt_path" || true
+        return 0
+      fi
+      command git "$@"
+    }
+
+    local output
+    output=$(_remove_worktree "$wt_path" feature "$repo" forced 2>&1) && exit 71
+    [[ "$output" == *"부분 제거: wt (등록은 해제됐지만 경로 삭제가 끝나지 않았습니다)"* ]] || exit 72
+    [[ "$output" == *"git worktree add"* ]] || exit 73
+    [[ -d "$wt_path" ]] || exit 74
+    command git -C "$repo" show-ref --verify --quiet refs/heads/feature || exit 75
+  ) || fail "_remove_worktree 실패 안내의 absent 분기 확인 실패 (exit $?)"
+
+  rm -f "$marker"
+
+  (
+    set -euo pipefail
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+
+    for helper in ui git-state tmux bootstrap; do
+      # shellcheck source=/dev/null
+      source "$REPO_ROOT/modules/shared/scripts/lib/wt/$helper.sh"
+    done
+    _wt_require_state_helpers() { :; }
+    _wt_has_active_process() { return 1; }
+    _wt_tmux_session_state() { printf 'absent\n'; }
+    _wt_tmux_close() { :; }
+    _wt_tmux_session_close() { :; }
+    _wt_remove_claude_local_plugins_for_worktree() { :; }
+
+    # 같은 시점 구분으로, 이번에는 제거 이후 등록 조회 자체가 실패하게 한다 =
+    # "제거도 실패했고 등록 상태도 확인하지 못한" 분기.
+    git() {
+      if [[ "$*" == *"worktree remove"* ]]; then
+        : > "$marker"
+        printf 'fatal: mock refusal\n' >&2
+        return 128
+      fi
+      if [[ "$*" == *"worktree list --porcelain"* && -f "$marker" ]]; then
+        printf 'fatal: mock list failure\n' >&2
+        return 128
+      fi
+      command git "$@"
+    }
+
+    local output
+    output=$(_remove_worktree "$wt_path" feature "$repo" forced 2>&1) && exit 81
+    [[ "$output" == *"등록 상태도 확인하지 못했습니다"* ]] || exit 82
+    [[ "$output" == *"git worktree list --porcelain"* ]] || exit 83
+    [[ -d "$wt_path" ]] || exit 84
+  ) || fail "_remove_worktree 실패 안내의 등록 상태 확인 실패 분기 확인 실패 (exit $?)"
+}
+
 test_wt_head_unchanged_guard_unit() {
   # MERGED 판정은 조회 시점 HEAD를 근거로 하므로, 조회와 삭제 사이에 새 커밋이 생기면
   # 그 판정이 stale해진다. _wt_head_unchanged는 그 창을 닫는 가드이며, 확인 불가한
@@ -716,6 +1271,7 @@ test_wt_cleanup_auto_reports_current_merged_exclusion() {
   output=$(
     env -u TMUX \
       HOME="$home_dir" \
+      CODEX_HOME="$home_dir/.codex" \
       PATH="$gh_dir:$FIXTURE_DIR/bin:$PATH" \
       WT_NONINTERACTIVE=1 \
       bash -c '
