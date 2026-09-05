@@ -653,7 +653,15 @@ ensure_running_core() {
           return "$stop_rc"
         fi
       fi
-      cleanup_socket_files "$SOCKET_CLEANUP_NO_PID_REQUIRED" || return $?
+      cleanup_socket_files "$SOCKET_CLEANUP_NO_PID_REQUIRED" || {
+        local cleanup_rc=$?
+        [ "$cleanup_rc" -eq "$RC_SOCKET_CLEANUP_REFUSED" ] || return "$cleanup_rc"
+        # `codex remote-control stop`은 app-server만 내리고 `app-server daemon pid-update-loop`
+        # 보조 프로세스를 남긴다 (0.153.x 실측 2건, #1279). 방금 sync가 `current`를 새 release로
+        # 옮겼으므로 잔존 loop의 실행 파일은 구 release다 — 기존 per-process stale proof로만
+        # 종료하고 소켓을 정리한다. proof가 없는 프로세스는 지금처럼 fail-closed로 남긴다.
+        repair_unmanaged_core || return $?
+      }
       remote_start || {
         local rc=$?
         if [ "$rc" -eq "$RC_UNMANAGED" ]; then

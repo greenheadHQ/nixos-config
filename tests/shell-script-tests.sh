@@ -122,6 +122,8 @@ if [ "$(uname -s)" = "Linux" ]; then
   run_test "codex remote-control repair reaps stale deleted managed app-server" test_codex_remote_control_repair_kills_stale_deleted_managed_app_server
   run_test "codex remote-control repair reaps superseded managed app-server" test_codex_remote_control_repair_kills_stale_superseded_managed_app_server
   run_test "codex remote-control cleans sockets only when no PID after drift" test_codex_remote_control_socket_cleanup_when_no_pid_after_drift
+run_test "codex remote-control drift restart reaps stale pid-update-loop" test_codex_remote_control_drift_restart_reaps_stale_pid_update_loop
+run_test "codex remote-control drift restart fails closed without stale proof" test_codex_remote_control_drift_restart_keeps_failing_closed_without_stale_proof
   run_test "codex remote-control alert recovers after failure" test_codex_remote_control_alert_recovery_after_failure
   run_test "codex remote-control alert stays quiet on healthy success" test_codex_remote_control_alert_success_without_failure_is_quiet
   run_test "codex remote-control alert failure cooldown is stateful" test_codex_remote_control_alert_failure_sets_failed_and_cools_down
