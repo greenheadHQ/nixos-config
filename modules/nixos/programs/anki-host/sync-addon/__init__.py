@@ -51,7 +51,17 @@ _state: dict[str, Any] = {"login": {"status": "not-attempted"}, "last_sync": Non
 
 
 def _log(msg: str) -> None:
-    print(f"[anki_host_sync] {msg}", file=sys.stderr, flush=True)
+    # aqt.errors.ErrorHandler가 sys.stderr를 오류 다이얼로그 버퍼로 교체하므로(offscreen에서는 아무도 못 본다)
+    # 원본 파일 디스크립터(sys.__stderr__)로 써야 journald에 남는다.
+    stream = sys.__stderr__ or sys.stdout
+    print(f"[anki_host_sync] {msg}", file=stream, flush=True)
+
+
+def _log_exc(context: str) -> None:
+    stream = sys.__stderr__ or sys.stdout
+    print(f"[anki_host_sync] {context} failed:", file=stream, flush=True)
+    traceback.print_exc(file=stream)
+    stream.flush()
 
 
 def _now() -> str:
@@ -95,6 +105,7 @@ def _read_credentials() -> tuple[str, str] | None:
 
 def _ensure_login() -> dict[str, Any]:
     """syncKey가 없을 때만 AnkiWeb에 로그인해 프로필에 저장한다. 비밀번호는 메모리에만 머문다."""
+    _require_col()
     pm = aqt.mw.pm
     if pm.sync_auth() is not None:
         return {"status": "already-logged-in", "username": pm.profile.get("syncUser")}
@@ -118,6 +129,7 @@ def _ensure_login() -> dict[str, Any]:
 
 
 def _snapshot() -> dict[str, Any]:
+    _require_col()
     col = aqt.mw.col
     cutoff_ms = (col.sched.day_cutoff - 86400) * 1000
     by_deck: dict[str, int] = {}
@@ -139,6 +151,7 @@ def _snapshot() -> dict[str, Any]:
 
 
 def _media_status() -> dict[str, Any]:
+    _require_col()
     try:
         status = aqt.mw.col.media_sync_status()
     except Exception as err:  # noqa: BLE001 — 마지막 미디어 sync 오류를 여기서 드러낸다
@@ -183,6 +196,7 @@ def _sync(mode: str) -> dict[str, Any]:
     allow-download-if-empty: 로컬이 비어 있을 때(노트 0·복습 기록 0)만 서버본을 내려받는다 (첫 부트스트랩).
     download / upload: 호출자가 방향을 책임진다. upload는 로컬이 비어 있으면 거부한다.
     """
+    _require_col()
     mw = aqt.mw
     pm = mw.pm
     auth = pm.sync_auth()
@@ -244,6 +258,7 @@ def _checked_path(path: str) -> str:
 
 
 def _export(path: str, include_media: bool, legacy: bool) -> dict[str, Any]:
+    _require_col()
     mw = aqt.mw
     real = _checked_path(path)
     os.makedirs(os.path.dirname(real), exist_ok=True)
@@ -258,6 +273,7 @@ def _export(path: str, include_media: bool, legacy: bool) -> dict[str, Any]:
 
 def _import_colpkg(path: str) -> dict[str, Any]:
     """전체 컬렉션 패키지로 이 프로필을 **교체**한다. 격리 fixture 준비 전용."""
+    _require_col()
     mw = aqt.mw
     pm = mw.pm
     real = _checked_path(path)
@@ -280,11 +296,19 @@ def _import_colpkg(path: str) -> dict[str, Any]:
     return {"imported": real, "counts": _snapshot()}
 
 
+def _require_col() -> None:
+    if aqt.mw is None or aqt.mw.col is None:
+        raise RuntimeError("collection-not-open")
+
+
 def _status() -> dict[str, Any]:
-    pm = aqt.mw.pm
     from anki.buildinfo import version as anki_version
 
+    if aqt.mw is None or aqt.mw.col is None:
+        return {"addon_version": ADDON_VERSION, "anki_version": anki_version, "collection_open": False, "login": _state["login"]}
+    pm = aqt.mw.pm
     return {
+        "collection_open": True,
         "addon_version": ADDON_VERSION,
         "anki_version": anki_version,
         "profile": pm.name,
@@ -362,8 +386,7 @@ class _Handler(BaseHTTPRequestHandler):
                     return
             self._reply(200, {"ok": True, "result": result})
         except Exception as err:  # noqa: BLE001
-            _log(f"{self.command} {path} failed: {err.__class__.__name__}: {err}")
-            traceback.print_exc(file=sys.stderr)
+            _log_exc(f"{self.command} {path}")
             self._reply(500, {"ok": False, "error": str(err) or err.__class__.__name__, "type": err.__class__.__name__})
 
 
@@ -379,17 +402,19 @@ def _start_server() -> None:
 
 
 def _on_profile_open() -> None:
-    _state["login"] = _ensure_login()
-    _log(f"login: {_state['login'].get('status')}")
-    _start_server()
-
-
-def _on_profile_close() -> None:
-    server = _state.get("server")
-    if server is not None:
-        server.shutdown()
-        _state["server"] = None
+    try:
+        _state["login"] = _ensure_login()
+        _log(f"profile '{aqt.mw.pm.name}' open, login: {_state['login'].get('status')}")
+    except Exception:  # noqa: BLE001 — 훅 예외는 Anki가 삼키고 훅을 제거하므로 여기서 남긴다
+        _log_exc("profile_did_open")
+        _state["login"] = {"status": "hook-error", "at": _now()}
 
 
 gui_hooks.profile_did_open.append(_on_profile_open)
-gui_hooks.profile_will_close.append(_on_profile_close)
+
+# 서버는 애드온 import 시점에 연다. 프로필이 아직 열리지 않았으면 /status가 collection_open=false를
+# 돌려주고 나머지 엔드포인트는 collection-not-open 오류를 낸다.
+try:
+    _start_server()
+except Exception:  # noqa: BLE001
+    _log_exc("start_server")
