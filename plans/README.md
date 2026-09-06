@@ -27,6 +27,11 @@ direction 3건을 plan으로 승격했다(006–018). 각 plan은 epic
 "DX 1순위" 결정에 따라 광범위 권한/모든 앱 승인/전용 무인 key를 자동 기각하지
 않고 실제 선택지로 비교하되, launcher별 실측과 명시적 결정 게이트를 요구한다.
 
+030은 2026-09-06 (commit `74a9d158`) 운영자의 grilling 인터뷰(anki-study #3 착수)에서
+생성됐다. #863 철거 결정 중 headless AnkiConnect 부분만 되돌리고(자체 sync server 제외),
+그 위에 OAuth 2.1 원격 MCP 서버를 Tailscale Funnel로 공개한다. 결정 정본은 이슈 #1306, 실행
+계약은 plan 파일의 STOP conditions와 재개 절차다. epic #973의 sub-issue로 등록되어 있다.
+
 **Reconcile 2026-07-06 (commit `a6bbf637`)**: DONE 전 건 spot-check 통과 —
 002(비특권 유저·sandbox 실배포 유지), 003(same-fs mktemp), 006(gitleaks
 `.local.md` 예외 부재 + gitignore 대체), 007(flock 타임아웃), 019(미러 타이머
@@ -76,6 +81,7 @@ reconcile 당시 PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)
 | 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | REJECTED (2026-09-05 운영자 결정으로 `anki-study/` 제거 — 산출물 `anki-study/CARD_MAINTENANCE.md`의 대상 디렉토리 소멸) |
 | 028 | 원격 AI 세션 macOS TCC 권한 정책을 DX 우선으로 확정·적용 | P1 | M | — | #1093 | DONE (PR #1177·#1178·#1179 머지 2026-07-23, 이슈 #1093 CLOSED — C Workspace-only + Ghostty FDA 적용) |
 | 029 | 원격 AI 세션 1Password SSH 승인 hang을 DX 우선으로 제거 | P1 | M-L | — | #1094 | DONE |
+| 030 | headless Anki 복원 + AnkiWeb 동기화·알림 + 원격 MCP 서버 (Funnel·OAuth) | P1 | L | 024 (soft) | #1306 | IN PROGRESS (2026-09-06 착수 — 운영자 grilling 인터뷰로 결정 14건 확정, PR 1 구현 중) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
