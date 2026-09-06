@@ -156,4 +156,20 @@
     enable = true; # 선언 인스턴스(nixos-config) 상시 유지 + version-drift 감시 (30분 timer)
     capacity = 10; # 현행 운영값 — 자동 재시작 시 이 값으로 유지된다
   };
+  homeserver.ankiHost = {
+    enable = true; # headless Anki + loopback AnkiConnect (#1306, plan 030)
+    instances = {
+      lab = {
+        # 격리 검증 프로필 — AnkiWeb 로그인 없음, 실제 이력 .colpkg fixture로 도구·복구점 검증
+        port = constants.network.ports.ankiConnectLab;
+        helperPort = constants.network.ports.ankiHelperLab;
+      };
+      main = {
+        # 운영 프로필 — anki-ankiweb 시크릿으로 로그인, 15분 타이머 sync + Pushover 알림
+        port = constants.network.ports.ankiConnectMain;
+        helperPort = constants.network.ports.ankiHelperMain;
+        sync.enable = true;
+      };
+    };
+  };
 }

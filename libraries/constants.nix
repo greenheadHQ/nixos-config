@@ -17,6 +17,11 @@
       uptimeKuma = 3002;
       copyparty = 3923;
       karakeep = 3000;
+      # headless Anki 인스턴스 (loopback 전용 — 인터넷·tailnet에 바인딩하지 않는다)
+      ankiConnectLab = 18765; # 격리 검증 프로필의 AnkiConnect
+      ankiHelperLab = 18766; # 격리 검증 프로필의 sync/스냅샷 헬퍼 애드온
+      ankiConnectMain = 8765; # 운영 프로필의 AnkiConnect
+      ankiHelperMain = 8766; # 운영 프로필의 sync/스냅샷 헬퍼 애드온
     };
 
     # Podman 브릿지 네트워크 기본 서브넷
