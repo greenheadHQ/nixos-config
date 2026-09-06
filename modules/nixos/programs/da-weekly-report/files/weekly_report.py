@@ -69,7 +69,7 @@ COMMENTARY_PROMPT = "\n".join([
     "숫자를 새로 만들지 말고 입력 JSON의 값만 근거로 사용하라.",
     f"지표 정의 (오독 방지 — #1237): metrics의 {METRIC_SCOPE_LABEL}과 session_counts는 분석 시점 전체 코퍼스의 누적값이다 — 그 주의 활동량이 아니다. "
     "주간 변화는 deltas.items[].comparisons만 근거로 삼는다 — comparisons는 존재하는 최근 리포트 각각과의 비교이므로, week_id가 발행 주차 바로 전 주인 comparison의 session_counts.total delta만 그 주에 새로 쌓인 세션 수의 근사치이고(sidecar의 total 정의가 주차 간 같다는 전제 — 이 리포트는 그 정의 변경을 감지하지 않는다), 주 간격이 벌어진 comparison은 그 기간의 누적 증가분이다. "
-    f"health.drift_repair_commit_count만 week.measurement_start~measurement_end({MEASUREMENT_WINDOW_SUFFIX}) 창의 값이며, health.formula_break가 있으면 deltas.previous_reports 중 health_formula_version이 현재 health.health_formula_version보다 낮은 주와의 health delta는 산식 변경분이지 활동 변화가 아니다. "
+    f"health.drift_repair_commit_count만 week.measurement_start~measurement_end({MEASUREMENT_WINDOW_SUFFIX}) 창의 값이며, health.formula_break가 있으면 deltas.previous_reports 중 health_formula_version이 현재 health.health_formula_version보다 낮은 주와의 health.drift_repair_commits.count delta만 산식 변경분이지 활동 변화가 아니다 — health.document_size.*·health.rule_counts.* delta는 산식과 무관하다. "
     "hosts의 analyzed_sessions가 0이거나 status가 partial이면 그 호스트의 수집 실패이지 활동 감소가 아니므로 품질 회귀로 해석하지 마라.",
 ])
 M1_KEYS = ("FULL", "LITE", "SKIP")
