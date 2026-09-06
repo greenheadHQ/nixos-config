@@ -1,5 +1,9 @@
 # Claudex PoC 인수인계
 
+> **2026-09-06 퇴역 (archive)** — ChatGPT Desktop·iOS 앱을 직접 쓰는 쪽이 사용성이 좋아
+> claudex 런타임을 저장소에서 제거했다. 모듈·테스트·훅 glob은 모두 삭제됐으므로 아래 절차와
+> 경로는 더 이상 재현되지 않는다. 설계 근거와 실측 기록을 남기기 위한 이력 문서다.
+
 ## TL;DR
 
 - **상황**: 기존 foreground PoC를 사용자용 단일 명령과 on-demand lifecycle로 확장했다. 세션을 여는 `claudex`가 필요할 때 proxy를 자동 시작하고, `claudex login|status|proxy`가 나머지 작업을 담당한다.
