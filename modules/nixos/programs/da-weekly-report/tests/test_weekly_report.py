@@ -888,8 +888,44 @@ def test_renderers_label_cumulative_scope_and_measurement_window(weekly_report_m
         # M-5는 폐기 지표 — 범위 표기에 재유입되면 해설 LLM이 결측으로 오독한다
         assert "M-1~M-4·M-6" in rendered
         assert "M-1~M-6" not in rendered
-        # 산식 v2 단절 표기가 리포트에 남는다 (algorithm.md 건강 지표 계약)
+
+
+def test_formula_break_is_recorded_only_on_transition_week(weekly_report_module):
+    """산식 단절은 상태가 아니라 관계다 — 비교 대상 리포트 중 더 낮은 산식 버전이 있는
+    전환 주에만 문자열을 싣고, 같은 버전끼리의 비교 주와 첫 회에는 None이어야 해설
+    프롬프트의 formula_break 규칙이 영구히 켜지지 않는다."""
+    def previous_with_version(version):
+        previous = build_report(weekly_report_module)
+        previous["week"]["id"] = "2026-W27"
+        previous["provenance"]["report_json_path"] = "/state/weekly-2026-W27.json"
+        if version is None:
+            previous["health"].pop("health_formula_version", None)
+        else:
+            previous["health"]["health_formula_version"] = version
+        return previous
+
+    first = build_report(weekly_report_module)
+    assert first["health"]["formula_break"] is None
+
+    transition = build_report(weekly_report_module, previous_reports=[previous_with_version(1)])
+    assert transition["health"]["formula_break"] == weekly_report_module.HEALTH_FORMULA_BREAK
+    assert transition["deltas"]["previous_reports"][0]["health_formula_version"] == 1
+    for rendered in (
+        weekly_report_module.render_markdown(transition),
+        weekly_report_module.render_github_markdown(transition),
+    ):
         assert "formula_break" in rendered
+    source = weekly_report_module.build_github_projection_source(transition)
+    assert source["summary"]["deltas"]["previous_reports"][0]["health_formula_version"] == 1
+    assert source["summary"]["health"]["formula_break"] == weekly_report_module.HEALTH_FORMULA_BREAK
+
+    # 산식 버전 필드가 없는 옛 리포트도 다른 산식이므로 전환 주다
+    legacy = build_report(weekly_report_module, previous_reports=[previous_with_version(None)])
+    assert legacy["health"]["formula_break"] == weekly_report_module.HEALTH_FORMULA_BREAK
+
+    steady = build_report(weekly_report_module, previous_reports=[previous_with_version(2)])
+    assert steady["health"]["formula_break"] is None
+    assert "| formula_break |" not in weekly_report_module.render_markdown(steady)
 
 
 def test_commentary_prompt_defines_cumulative_scope_and_measurement_window(

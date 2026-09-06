@@ -96,10 +96,19 @@ def sample_sidecar() -> dict[str, Any]:
 def sample_health() -> dict[str, Any]:
     return {
         "health_formula_version": 2,
-        "formula_break": "v2 (#1237): drift_repair_commits 측정 창을 발행 주차 직전 7일로 재정의",
+        # formula_break는 collect_health_metrics 산출이 아니다 — build_weekly_report가 비교 대상
+        # 리포트의 산식 버전으로 결정한다 (전환 주에만 문자열, 그 외 None).
         "run_da_path": "modules/shared/programs/claude/files/skills/run-da/",
         "document_size": {"markdown_file_count": 10, "total_line_count": 1000, "files": []},
-        "drift_repair_commits": {"count": 1, "commit_hashes": ["abc"], "commits": []},
+        # since/until은 measurement_window(2026-07-06 월요일) = 직전 7일 — 리포트의
+        # week.measurement_start/end는 이 값을 그대로 읽는다.
+        "drift_repair_commits": {
+            "count": 1,
+            "commit_hashes": ["abc"],
+            "commits": [],
+            "since": "2026-06-29T00:00:00+09:00",
+            "until": "2026-07-06T00:00:00+09:00",
+        },
         "rule_counts": {
             "core_invariants_numbered": 3,
             "cautions_bullets": 2,

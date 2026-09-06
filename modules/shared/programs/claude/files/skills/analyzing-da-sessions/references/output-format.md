@@ -235,7 +235,7 @@ emit하지 않는다.
   },
   "health": {
     "health_formula_version": 2,
-    "formula_break": "v2 (#1237): drift_repair_commits 측정 창을 발행 주차 직전 7일로 재정의",
+    "formula_break": null,
     "run_da_path": "modules/shared/programs/claude/files/skills/run-da/",
     "document_size": {"markdown_file_count": 12, "total_line_count": 3456, "files": []},
     "drift_repair_commits": {"count": 1, "commit_hashes": ["abc123"], "commits": [], "since": "2026-06-29T00:00:00+09:00", "until": "2026-07-06T00:00:00+09:00", "branch": "main", "first_parent": true},
