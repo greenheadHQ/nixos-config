@@ -322,6 +322,67 @@
         description = "Transcript inactivity window before a session counts as idle (restart gate)";
       };
     };
+    ankiHost = {
+      enable = lib.mkEnableOption "headless Anki instances with loopback AnkiConnect and AnkiWeb sync helper";
+      user = lib.mkOption {
+        type = lib.types.str;
+        default = "anki-host";
+        description = "System user that owns every headless Anki instance";
+      };
+      instances = lib.mkOption {
+        description = "Headless Anki instances keyed by short name (state lives in /var/lib/anki-host/<name>)";
+        default = { };
+        type = lib.types.attrsOf (
+          lib.types.submodule (
+            { name, ... }:
+            {
+              options = {
+                enable = lib.mkOption {
+                  type = lib.types.bool;
+                  default = true;
+                  description = "Run this instance";
+                };
+                profile = lib.mkOption {
+                  type = lib.types.str;
+                  default = name;
+                  description = "Anki profile name inside the instance base directory";
+                };
+                port = lib.mkOption {
+                  type = lib.types.port;
+                  description = "AnkiConnect port (always bound to 127.0.0.1)";
+                };
+                helperPort = lib.mkOption {
+                  type = lib.types.port;
+                  description = "anki_host_sync helper port (always bound to 127.0.0.1)";
+                };
+                sync = {
+                  enable = lib.mkOption {
+                    type = lib.types.bool;
+                    default = false;
+                    description = "Log in to AnkiWeb with the anki-ankiweb secret and run the periodic sync timer";
+                  };
+                  interval = lib.mkOption {
+                    type = lib.types.str;
+                    default = "15min";
+                    description = "OnUnitActiveSec interval for the periodic sync";
+                  };
+                };
+              };
+            }
+          )
+        );
+      };
+      backupTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 04:15:00";
+        description = "OnCalendar time for the daily .colpkg backup of every instance to HDD";
+      };
+      retentionDays = lib.mkOption {
+        type = lib.types.int;
+        default = 14;
+        description = "Number of days to retain HDD backups";
+      };
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -353,5 +414,6 @@
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지
     ../programs/claude-remote-control.nix # Claude Code RC bridge version-drift 감시
     ../programs/private-job-runner # generic private job runner (작업 정의는 기기 로컬)
+    ../programs/anki-host # headless Anki 인스턴스 + AnkiWeb 동기화·알림·백업 (#1306)
   ];
 }
