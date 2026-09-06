@@ -4,7 +4,7 @@
 #
 # 자격(token/user)은 curl argv에 싣지 않는다 — 프로세스 명령행은 같은 호스트의
 # 다른 프로세스가 /proc/<pid>/cmdline으로 읽을 수 있다. `--config -`로 stdin을
-# 통해 전달한다 (claudex-runtime의 기존 선례와 동일 패턴).
+# 통해 전달한다.
 
 pushover_send() {
   local cred_file="$1"

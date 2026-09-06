@@ -250,11 +250,6 @@
               gitleaks
               shellcheck
               bats
-              # claudex 테스트 fixture는 도구를 $(command -v openssl)로 해석한다. macOS는 시스템
-              # /usr/bin/openssl이 항상 잡혀 이 누락이 가려졌지만 NixOS에는 그 경로가 없어,
-              # claudex가 Linux 배포 대상이 되면서 8개 스위트가 "rand: command not found"로 죽었다.
-              # 양 플랫폼에 동일한 openssl을 제공해 테스트가 호스트 OS에 의존하지 않게 한다.
-              openssl
               claudeRcFlock
               pythonRuntimes.pythonWithTomlkit
               inputs.agenix.packages.${system}.default
