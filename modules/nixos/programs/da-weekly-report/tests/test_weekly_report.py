@@ -881,7 +881,7 @@ def test_renderers_label_cumulative_scope_and_measurement_window(weekly_report_m
 
     for rendered in (full_markdown, github_markdown):
         assert "| 발행 주차 |" in rendered
-        assert "| 측정 창 (drift repair 커밋) | 2026-06-29T00:00:00+09:00 ~ 2026-07-06T00:00:00+09:00" in rendered
+        assert "| 측정 창 (drift repair 커밋) | 2026-06-29T00:00:00+09:00 ~ 2026-07-06T00:00:00+09:00 — 발행 주차 직전 7일 |" in rendered
         assert "전체 코퍼스 누적값" in rendered
         # 옛 "기간" 라벨은 발행 주차와 측정 창을 구분하지 못해 오독을 낳았다 — 재도입 게이트
         assert "| 기간 |" not in rendered

@@ -30,19 +30,21 @@ from typing import Any, NamedTuple
 SCHEMA_VERSION = 1
 HEALTH_FORMULA_VERSION = 2
 # v2 (#1237): drift_repair_commits 측정 창을 발행 주차 [월 00:00, +7d)에서 발행 주차 직전
-# 7일로 재정의. v1 값은 실행 시점에 창이 미래라 구조적 0이었으므로 v1 리포트와의 delta는
-# 활동 변화가 아니다 — algorithm.md "run-da 건강 지표" 계약대로 버전을 올리고 단절을 명시한다.
+# 7일로 재정의. v1 창은 실행 시점에 대부분 미래라 실행 시각까지의 몇 시간치만 관측됐으므로 v1
+# 리포트와의 delta는 주간 활동 변화가 아니다 — algorithm.md "run-da 건강 지표" 계약대로 버전을 올리고 단절을 명시한다.
 # 단절은 상태가 아니라 관계다: build_weekly_report가 비교 대상 리포트 중 더 낮은 산식 버전이
 # 있는 주(전환 주)에만 이 문자열을 health.formula_break에 싣고, 그 외 주는 None이다.
 HEALTH_FORMULA_BREAK = (
     "v2 (#1237): drift_repair_commits 측정 창을 발행 주차 직전 7일로 재정의 — "
-    "v1 값은 구조적 0이었으므로 v1 리포트와의 delta는 활동 변화가 아니다"
+    "v1 창은 실행 시각까지의 몇 시간치만 관측돼 v1 리포트와의 delta는 주간 활동 변화가 아니다"
 )
 MEASUREMENT_WINDOW_DAYS = 7
 # 렌더러 2종(전문·GitHub)과 해설 프롬프트가 공유하는 라벨 — 문구 변경 지점을 한 곳으로.
 # 테스트는 의도적으로 문구 리터럴을 고정한다(상수를 참조하면 문구 회귀를 잡지 못한다) —
 # 문구를 바꾸면 테스트도 함께 갱신한다.
 METRIC_SCOPE_LABEL = "M-1~M-4·M-6"  # M-5는 #1257에서 폐기 — 저장소 정본 표기
+# 아래 지표 범위 행·해설 프롬프트의 "누적값" 정의는 analyzing-da-sessions algorithm.md "Metric Catalog"
+# 절의 재서술이다 — 계약의 소유자는 sidecar 수집 범위(analyze.py live 전수)이지 이 파일이 아니다.
 WEEK_ROW_LABEL = "발행 주차"
 MEASUREMENT_WINDOW_ROW_LABEL = "측정 창 (drift repair 커밋)"
 MEASUREMENT_WINDOW_SUFFIX = f"발행 주차 직전 {MEASUREMENT_WINDOW_DAYS}일"
@@ -165,8 +167,8 @@ def measurement_window(week_start: dt.datetime) -> tuple[dt.datetime, dt.datetim
 
     리포트는 발행 주차 월요일 09~14시 재시도 창에서 생성되므로 [week_start, week_end)는
     실행 시점에 대부분 미래다. 그 창으로 `git log --since/--until`을 세면
-    drift_repair_commits가 구조적으로 항상 0이 된다 (#1237 — 2026-W33 LLM 해설이 이
-    구조적 0을 "정비 활동 부재"라는 품질 신호로 오독한 실측). 발행 주차 id·경계는 그대로
+    drift_repair_commits는 실행 시각까지의 몇 시간치만 잡혀 주간 값이 아니다 (#1237 — 2026-W33
+    LLM 해설이 그 0을 "정비 활동 부재"라는 품질 신호로 오독한 실측). 발행 주차 id·경계는 그대로
     두고, 측정 창만 직전 7일(지난 주 월 00:00 ~ 이번 주 월 00:00)로 옮긴다.
     """
     return week_start - dt.timedelta(days=MEASUREMENT_WINDOW_DAYS), week_start
@@ -1165,7 +1167,15 @@ def esc(value: Any) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
-def _safe_number(value: Any, default: int | float = 0) -> int | float:
+def _measurement_window_rows(start: Any, end: Any) -> list[str]:
+    """측정 창 행 — v1 리포트(measurement_* 부재)를 v2 렌더러로 재발행할 때 쓰지도 않은 창을
+    단정하지 않도록, 값이 없으면(None 또는 projection 기본값) 행을 만들지 않는다."""
+    if start in (None, "unknown") or end in (None, "unknown"):
+        return []
+    return [f"| {MEASUREMENT_WINDOW_ROW_LABEL} | {esc(start)} ~ {esc(end)} — {MEASUREMENT_WINDOW_SUFFIX} |"]
+
+
+def _safe_number(value: Any, default: int | float | None = 0) -> int | float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return value
     return default
@@ -1320,7 +1330,8 @@ def _delta_projection(deltas: dict) -> dict:
     previous_reports = [
         {
             "week_id": _safe_string(item.get("week_id"), "unknown"),
-            "health_formula_version": _safe_number(item.get("health_formula_version")),
+            # 부재(버전 필드 없는 옛 리포트)는 canonical과 같은 None — 0으로 뭉개면 해설이 "v0"으로 읽는다
+            "health_formula_version": _safe_number(item.get("health_formula_version"), None),
         }
         for item in deltas.get("previous_reports", [])
         if isinstance(item, dict)
@@ -1532,7 +1543,7 @@ def _render_github_markdown_source(source: dict) -> str:
         "| 항목 | 값 |",
         "|------|-----|",
         f"| {WEEK_ROW_LABEL} | {esc(week.get('start'))} ~ {esc(week.get('end'))} ({esc(week.get('tz'))}) |",
-        f"| {MEASUREMENT_WINDOW_ROW_LABEL} | {esc(week.get('measurement_start'))} ~ {esc(week.get('measurement_end'))} — {MEASUREMENT_WINDOW_SUFFIX} |",
+        *_measurement_window_rows(week.get('measurement_start'), week.get('measurement_end')),
         METRIC_SCOPE_ROW,
         f"| 전체 세션 | {counts.get('total', 0)} |",
         f"| Arbiter marker 세션 | {counts.get('arbiter_marker_sessions', 0)} |",
@@ -1645,7 +1656,7 @@ def render_markdown(report: dict) -> str:
     out.append("| 항목 | 값 |")
     out.append("|------|-----|")
     out.append(f"| {WEEK_ROW_LABEL} | {report['week']['start']} ~ {report['week']['end']} ({report['week']['tz']}) |")
-    out.append(f"| {MEASUREMENT_WINDOW_ROW_LABEL} | {report['week'].get('measurement_start')} ~ {report['week'].get('measurement_end')} — {MEASUREMENT_WINDOW_SUFFIX} |")
+    out.extend(_measurement_window_rows(report['week'].get('measurement_start'), report['week'].get('measurement_end')))
     out.append(METRIC_SCOPE_ROW)
     out.append(f"| 호스트 | {', '.join(analysis.get('hosts', []))} |")
     out.append(f"| corpus | {analysis.get('corpus')} |")
