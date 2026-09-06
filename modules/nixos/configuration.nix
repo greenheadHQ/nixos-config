@@ -160,9 +160,11 @@
     enable = true; # headless Anki + loopback AnkiConnect (#1306, plan 030)
     instances = {
       lab = {
-        # 격리 검증 프로필 — AnkiWeb 로그인 없음, 실제 이력 .colpkg fixture로 도구·복구점 검증
+        # 격리 검증 프로필 — AnkiWeb 로그인 없음, 실제 이력 .colpkg fixture로 도구·복구점 검증.
+        # 수명: plan 030 PR 2 도구 검증까지. 끝나면 enable = false로 내린다 (Step 24).
         port = constants.network.ports.ankiConnectLab;
         helperPort = constants.network.ports.ankiHelperLab;
+        backup.enable = false; # 검증용 사본이라 HDD 백업 제외 (원본은 anki-study 백업)
       };
       main = {
         # 운영 프로필 — anki-ankiweb 시크릿으로 로그인, 15분 타이머 sync + Pushover 알림

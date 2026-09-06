@@ -22,13 +22,14 @@
   config,
   pkgs,
   lib,
+  constants,
   ...
 }:
 
 let
   cfg = config.homeserver.ankiHost;
   user = cfg.user;
-  stateRoot = "/var/lib/anki-host";
+  stateRoot = constants.paths.ankiHostState;
   enabledInstances = lib.filterAttrs (_: inst: inst.enable) cfg.instances;
   ankiwebCredPath = config.age.secrets.anki-ankiweb.path;
 
@@ -112,7 +113,8 @@ let
         # 같은 유저의 두 인스턴스가 서로에게 명령을 넘기고 종료하지 않도록 single-instance 키를 분리한다
         ANKI_SINGLE_INSTANCE_KEY = "anki-host-${name}";
         ANKI_HOST_HELPER_PORT = toString inst.helperPort;
-        ANKI_HOST_EXPORT_DIR = "${stateDir}/backups";
+        # 헬퍼의 /export·/import-colpkg는 이 아래 backups/(일일 백업 스테이징)·restore-points/(복구점)만 허용한다
+        ANKI_HOST_STATE_DIR = stateDir;
       }
       // lib.optionalAttrs inst.sync.enable {
         ANKI_HOST_SYNC_CREDENTIALS = ankiwebCredPath;
@@ -187,7 +189,14 @@ in
       mode = "0400";
     };
 
-    systemd.tmpfiles.rules = [ "d ${stateRoot} 0750 ${user} ${user} -" ];
+    systemd.tmpfiles.rules = [
+      "d ${stateRoot} 0750 ${user} ${user} -"
+    ]
+    ++ lib.concatMap (name: [
+      "d ${stateRoot}/${name} 0700 ${user} ${user} -"
+      "d ${stateRoot}/${name}/backups 0700 ${user} ${user} -"
+      "d ${stateRoot}/${name}/restore-points 0700 ${user} ${user} -"
+    ]) (builtins.attrNames enabledInstances);
 
     systemd.services = lib.mapAttrs' mkInstance enabledInstances;
   };
