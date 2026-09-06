@@ -30,7 +30,7 @@ stdenvNoCC.mkDerivation {
   };
 
   dontUnpack = true;
-  # prebuilt Mach-O 선례(codex/claudex package.nix)와 동일하게 Nix fixup이 서명·심볼을 건드리지 않게 차단한다.
+  # prebuilt Mach-O 선례(codex package.nix)와 동일하게 Nix fixup이 서명·심볼을 건드리지 않게 차단한다.
   dontStrip = true;
   dontPatchELF = true;
 

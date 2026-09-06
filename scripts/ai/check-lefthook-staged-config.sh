@@ -137,8 +137,6 @@ pre-commit:
       glob:
         - "*.nix"
         - "flake.lock"
-        - "modules/shared/programs/claudex/*.json"
-        - "modules/shared/programs/claudex/**/*.json"
         - "tests/run-eval-tests.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/run-eval-tests.sh
     codex-hook-fixtures:
@@ -204,8 +202,6 @@ pre-push:
       glob:
         - "*.nix"
         - "flake.lock"
-        - "modules/shared/programs/claudex/*.json"
-        - "modules/shared/programs/claudex/**/*.json"
       run: nix flake check --no-build --all-systems
     statusline-bats:
       glob:

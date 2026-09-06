@@ -67,13 +67,11 @@ pre-commit:
       glob: "*.sh"
       run: shellcheck -S warning {staged_files}
     eval-tests:
-      # glob: *.nix/flake.lock/claudex JSON은 평가 입력, tests/run-eval-tests.sh 는 runner 래퍼(로직 변경이 검증 동작을 바꿈).
+      # glob: *.nix/flake.lock은 평가 입력, tests/run-eval-tests.sh 는 runner 래퍼(로직 변경이 검증 동작을 바꿈).
       # glob 변경 시 scripts/ai/check-lefthook-staged-config.sh 의 expected 블록도 함께 갱신한다 (미동기화 시 staged-config guard fail).
       glob:
         - "*.nix"
         - "flake.lock"
-        - "modules/shared/programs/claudex/*.json"
-        - "modules/shared/programs/claudex/**/*.json"
         - "tests/run-eval-tests.sh"
       run: bash ./scripts/ai/run-staged-snapshot.sh -- bash ./tests/run-eval-tests.sh
     codex-hook-fixtures:
@@ -189,8 +187,6 @@ pre-push:
       glob:
         - "*.nix"
         - "flake.lock"
-        - "modules/shared/programs/claudex/*.json"
-        - "modules/shared/programs/claudex/**/*.json"
       run: nix flake check --no-build --all-systems
     statusline-bats:
       glob:
