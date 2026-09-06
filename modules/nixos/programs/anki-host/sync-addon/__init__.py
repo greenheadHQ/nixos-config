@@ -282,7 +282,10 @@ def _import_colpkg(path: str) -> dict[str, Any]:
     if pm.sync_auth() is not None:
         raise RuntimeError("refusing-import-into-logged-in-profile")
     folder = pm.profileFolder()
-    mw.col.close_for_full_sync()
+    # backend의 import_collection_package는 컬렉션이 백엔드에서 완전히 닫혀 있어야 한다
+    # (close_for_full_sync는 pylib 쪽만 닫아 CollectionAlreadyOpen이 난다 — 실측).
+    # aqt의 ColpkgImporter가 unloadCollection/loadCollection으로 하는 것과 같은 순서다.
+    mw.col.close(downgrade=False)
     try:
         mw.backend.import_collection_package(
             col_path=pm.collectionPath(),
@@ -291,7 +294,7 @@ def _import_colpkg(path: str) -> dict[str, Any]:
             media_db=os.path.join(folder, "collection.media.db2"),
         )
     finally:
-        mw.col.reopen(after_full_sync=True)
+        mw.col.reopen(after_full_sync=False)
     mw.reset()
     return {"imported": real, "counts": _snapshot()}
 
