@@ -1402,7 +1402,9 @@ def build_consumer_summary(report: dict) -> dict:
         },
         "health": {
             "health_formula_version": _safe_number(health.get("health_formula_version")),
-            "formula_break": _safe_string(health.get("formula_break") or "", ""),
+            # 전환 주가 아니면 canonical과 같은 None — 빈 문자열로 뭉개면 GitHub 표에 상시 행이 생기고
+            # 해설 프롬프트의 "있으면" 조건이 항상 참이 된다.
+            "formula_break": _safe_string(health.get("formula_break")),
             "document_size": {
                 "markdown_file_count": _safe_number(
                     health.get("document_size", {}).get("markdown_file_count")
@@ -1564,6 +1566,9 @@ def _render_github_markdown_source(source: dict) -> str:
 
     out.extend(["## Health 요약", "", "| 항목 | 값 |", "|------|-----|"])
     for key, value in health.items():
+        if value is None:
+            # 전환 주가 아닌 리포트의 formula_break(null) 등 부재 값은 행을 만들지 않는다 — 전문 렌더와 같은 규칙
+            continue
         out.append(f"| {esc(key)} | {_json_cell(value)} |")
     out.extend(["", "## 전주 delta", ""])
     delta_items = summary.get("deltas", {}).get("items", [])

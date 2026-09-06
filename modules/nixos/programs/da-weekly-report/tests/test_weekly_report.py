@@ -914,7 +914,9 @@ def test_formula_break_is_recorded_only_on_transition_week(weekly_report_module)
         weekly_report_module.render_markdown(transition),
         weekly_report_module.render_github_markdown(transition),
     ):
-        assert "formula_break" in rendered
+        # 키 이름이 아니라 사유 문자열 자체가 두 렌더에 실려야 한다 — GitHub Health 표는 키를 전부 찍으므로
+        # substring "formula_break"만 보면 전환 주 여부와 무관하게 통과한다
+        assert weekly_report_module.HEALTH_FORMULA_BREAK in rendered
     source = weekly_report_module.build_github_projection_source(transition)
     assert source["summary"]["deltas"]["previous_reports"][0]["health_formula_version"] == 1
     assert source["summary"]["health"]["formula_break"] == weekly_report_module.HEALTH_FORMULA_BREAK
@@ -926,6 +928,10 @@ def test_formula_break_is_recorded_only_on_transition_week(weekly_report_module)
     steady = build_report(weekly_report_module, previous_reports=[previous_with_version(2)])
     assert steady["health"]["formula_break"] is None
     assert "| formula_break |" not in weekly_report_module.render_markdown(steady)
+    # GitHub 경로도 같은 규칙 — projection은 None을 유지하고 Health 표는 그 행을 만들지 않는다
+    steady_source = weekly_report_module.build_github_projection_source(steady)
+    assert steady_source["summary"]["health"]["formula_break"] is None
+    assert "formula_break" not in weekly_report_module.render_github_markdown(steady)
 
 
 def test_commentary_prompt_defines_cumulative_scope_and_measurement_window(

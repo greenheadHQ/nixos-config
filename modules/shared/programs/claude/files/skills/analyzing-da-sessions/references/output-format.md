@@ -265,7 +265,7 @@ emit하지 않는다.
     "omitted_session_count": 0
   },
   "deltas": {
-    "previous_reports": [{"path": "/state/weekly-2026-W27.json", "week_id": "2026-W27"}],
+    "previous_reports": [{"path": "/state/weekly-2026-W27.json", "week_id": "2026-W27", "health_formula_version": 2}],
     "items": [{"metric": "analysis.metrics.M-2.percentages.CONFIRMED_ISSUE", "unit": "%p", "current": 71.4, "comparisons": [{"week_id": "2026-W27", "previous": 70.0, "delta": 1.4}]}]
   },
   "commentary": {"text": null, "failure_reason": "codex-exec-supervised not found"},
