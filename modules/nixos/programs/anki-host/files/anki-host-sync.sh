@@ -91,9 +91,17 @@ notify() {
   mv "${STATE_FILE}.partial" "$STATE_FILE"
 }
 
+# 헬퍼 준비 대기 — 타이머(Persistent)는 활성화 직후에도 한 번 돌아 Anki가 뜨기 전에 올 수 있다
+status_json=""
+for _ in $(seq 1 24); do
+  status_json="$(curl -sS --max-time 30 "${HELPER}/status" 2>/dev/null || true)"
+  if [ "$(printf '%s' "$status_json" | jq -r '.ok and .result.collection_open' 2>/dev/null)" = "true" ]; then
+    break
+  fi
+  sleep 5
+done
 # 헬퍼가 없거나 자격이 없으면 조용히 끝낸다 (운영자 게이트 전에는 알림 소음을 만들지 않는다)
-status_json="$(curl -sS --max-time 120 "${HELPER}/status" 2>/dev/null || true)"
-if [ -z "$status_json" ] || [ "$(printf '%s' "$status_json" | jq -r '.ok' 2>/dev/null)" != "true" ]; then
+if [ "$(printf '%s' "$status_json" | jq -r '.ok and .result.collection_open' 2>/dev/null)" != "true" ]; then
   echo "anki-host-sync[${INSTANCE}]: helper unreachable"
   write_state "helper-unreachable" "helper unreachable on ${HELPER}" ""
   notify "helper-unreachable" 1 "Anki 동기화 실패" "miniPC의 Anki(${INSTANCE})가 응답하지 않습니다. 서비스 상태를 확인하세요. 최근 카드 변경은 miniPC에만 있을 수 있습니다."
