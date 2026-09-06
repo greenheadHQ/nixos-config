@@ -1,12 +1,14 @@
 # shellcheck shell=bash
 # anki-host-sync — 헬퍼 애드온(/sync)을 호출해 AnkiWeb과 동기화하고 결과를 상태 파일·Pushover로 남긴다.
-# env: HELPER_PORT STATE_DIR INSTANCE PUSHOVER_HELPER [CREDENTIALS_DIRECTORY] [ANKI_HOST_SYNC_MODE]
-# 인자: [--mode normal|allow-download-if-empty|download|upload]
+# env: HELPER_PORT STATE_DIR INSTANCE PUSHOVER_HELPER [CREDENTIALS_DIRECTORY]
+# 인자: [--mode normal|allow-download-if-empty|download|upload]  (기본 normal — 타이머 유닛)
 #
-# 방향 정책(plan 030 결정 3): normal은 병합만, allow-download-if-empty는 빈 로컬의 첫 부트스트랩,
-# download/upload는 운영자가 명시할 때만. full sync가 요구됐는데 처리하지 않으면 알림만 보낸다.
+# 방향 정책(plan 030 결정 3): normal은 병합만, allow-download-if-empty는 빈 로컬의 첫 부트스트랩
+# (전용 oneshot 유닛 anki-host-sync-<name>-bootstrap이 이 인자로 호출한다), download/upload는 운영자가
+# 명시할 때만. full sync가 요구됐는데 처리하지 않으면: 로컬이 비어 있으면 "부트스트랩 대기"로 조용히
+# 기록하고(운영자 게이트 전의 정상 상태), 비어 있지 않으면 알림(c)을 보낸다.
 
-MODE="${ANKI_HOST_SYNC_MODE:-normal}"
+MODE="normal"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --mode)
@@ -26,6 +28,7 @@ LOCK_FILE="${STATE_DIR}/.sync.lock"
 CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
 MAX_RETRIES=3
 BACKOFF=5
+BUSY_RETRY_SECS=60
 ALERT_DEDUPE_SECS=86400
 
 # shellcheck source=/dev/null
@@ -64,8 +67,18 @@ write_state() {
   mv "${STATE_FILE}.partial" "$STATE_FILE"
 }
 
-# notify <key> <priority> <title> <message>  — 같은 key의 알림은 24시간에 한 번만 보낸다
-notify() {
+send_pushover() {
+  local title="$1" message="$2" priority="$3"
+  if [ ! -r "$CRED_FILE" ]; then
+    echo "anki-host-sync[${INSTANCE}]: pushover credential missing, '${title}' not sent" >&2
+    return 1
+  fi
+  pushover_send "$CRED_FILE" "$title" "$message" "$priority"
+}
+
+# notify_alert <key> <priority> <title> <message>
+# 실패·중단 알림(c): 같은 key는 24시간에 한 번만 보낸다. 실패 루프에서 매 회차 알림이 반복되지 않게 한다.
+notify_alert() {
   local key="$1" priority="$2" title="$3" message="$4"
   local prev_key prev_at prev_epoch
   prev_key="$(state_get '.lastAlert.key')"
@@ -77,9 +90,7 @@ notify() {
       return 0
     fi
   fi
-  if [ ! -r "$CRED_FILE" ]; then
-    echo "anki-host-sync[${INSTANCE}]: pushover credential missing, alert '${key}' not sent" >&2
-  elif pushover_send "$CRED_FILE" "$title" "$message" "$priority"; then
+  if send_pushover "$title" "$message" "$priority"; then
     echo "anki-host-sync[${INSTANCE}]: alert '${key}' sent"
   else
     echo "anki-host-sync[${INSTANCE}]: alert '${key}' send failed" >&2
@@ -91,7 +102,18 @@ notify() {
   mv "${STATE_FILE}.partial" "$STATE_FILE"
 }
 
-# 헬퍼 준비 대기 — 타이머(Persistent)는 활성화 직후에도 한 번 돌아 Anki가 뜨기 전에 올 수 있다
+# notify_event <title> <message>
+# 성공 알림(b): 매 회차가 별개의 사건(그날의 학습 반영)이라 중복 억제 대상이 아니다. 우선순위 0.
+notify_event() {
+  if send_pushover "$1" "$2" 0; then
+    echo "anki-host-sync[${INSTANCE}]: event sent"
+  else
+    echo "anki-host-sync[${INSTANCE}]: event send failed" >&2
+  fi
+}
+
+# 헬퍼 준비 대기 — 타이머는 부팅 3분 후에도 한 번 돌아 Anki가 아직 뜨는 중일 수 있다.
+# 헬퍼가 다른 작업(export 등) 중이면 busy 표시가 붙은 부분 응답을 주므로 collection_open으로 준비를 판정한다.
 status_json=""
 for _ in $(seq 1 24); do
   status_json="$(curl -sS --max-time 30 "${HELPER}/status" 2>/dev/null || true)"
@@ -100,33 +122,52 @@ for _ in $(seq 1 24); do
   fi
   sleep 5
 done
-# 헬퍼가 없거나 자격이 없으면 조용히 끝낸다 (운영자 게이트 전에는 알림 소음을 만들지 않는다)
 if [ "$(printf '%s' "$status_json" | jq -r '.ok and .result.collection_open' 2>/dev/null)" != "true" ]; then
   echo "anki-host-sync[${INSTANCE}]: helper unreachable"
   write_state "helper-unreachable" "helper unreachable on ${HELPER}" ""
-  notify "helper-unreachable" 1 "Anki 동기화 실패" "miniPC의 Anki(${INSTANCE})가 응답하지 않습니다. 서비스 상태를 확인하세요. 최근 카드 변경은 miniPC에만 있을 수 있습니다."
+  notify_alert "helper-unreachable" 1 "Anki 동기화 실패" "miniPC의 Anki(${INSTANCE})가 응답하지 않습니다. 서비스 상태를 확인하세요. 최근 카드 변경은 miniPC에만 있을 수 있습니다."
   exit 1
 fi
-login_status="$(printf '%s' "$status_json" | jq -r '.result.login.status // empty')"
-logged_in="$(printf '%s' "$status_json" | jq -r '.result.logged_in')"
-if [ "$logged_in" != "true" ]; then
-  if [ "$login_status" = "no-credentials" ] || [ "$login_status" = "not-attempted" ]; then
+# 로그인 판정은 애드온의 login.status 하나로 한다 — busy 부분 응답에도 이 필드는 들어 있다
+login_status="$(printf '%s' "$status_json" | jq -r '.result.login.status // "not-attempted"')"
+case "$login_status" in
+  logged-in|already-logged-in) ;;
+  no-credentials|not-attempted)
+    # 운영자 게이트(시크릿 값 투입) 전의 정상 상태 — 알림 소음을 만들지 않는다
     echo "anki-host-sync[${INSTANCE}]: no AnkiWeb credentials yet, skipping"
     write_state "no-credentials" "" ""
     exit 0
-  fi
-  # 자격은 있는데 로그인 실패 → 재시도 없이 알림 (계정 잠금 방지, STOP 4)
-  write_state "login-failed" "login status: ${login_status}" ""
-  notify "login-failed" 1 "Anki 로그인 실패" "miniPC의 Anki(${INSTANCE})가 AnkiWeb에 로그인하지 못했습니다. 자격 정보를 확인하세요. 동기화는 중단된 상태입니다."
-  exit 1
-fi
+    ;;
+  *)
+    # 자격은 있는데 로그인 실패(login-failed/hook-error) → 재시도 없이 알림 (계정 잠금 방지, STOP 4)
+    write_state "login-failed" "login status: ${login_status}" ""
+    notify_alert "login-failed" 1 "Anki 로그인 실패" "miniPC의 Anki(${INSTANCE})가 AnkiWeb에 로그인하지 못했습니다. 자격 정보를 확인하세요. 동기화는 중단된 상태입니다."
+    exit 1
+    ;;
+esac
 
 attempt=1
 delay="$BACKOFF"
+busy_attempts=0
 last_error=""
 while [ "$attempt" -le "$MAX_RETRIES" ]; do
   payload="$(jq -n --arg mode "$MODE" '{mode: $mode, wait_media_secs: 60}')"
-  response="$(curl -sS --max-time 1900 -H 'Content-Type: application/json' -d "$payload" "${HELPER}/sync" 2>&1)" && rc=0 || rc=$?
+  # --max-time 1900: 애드온 메인 스레드 타임아웃(1800s)보다 길게 — 사다리 근거는 애드온 MAIN_TIMEOUT_SECS 주석
+  http_code=0
+  response="$(curl -sS --max-time 1900 -o /dev/stdout -w '\n%{http_code}' -H 'Content-Type: application/json' -d "$payload" "${HELPER}/sync" 2>&1)" && rc=0 || rc=$?
+  http_code="$(printf '%s' "$response" | tail -n1)"
+  response="$(printf '%s' "$response" | sed '$d')"
+  if [ "$rc" -eq 0 ] && [ "$http_code" = "409" ]; then
+    # 다른 변경 작업(export/import) 진행 중 — 실패가 아니라 순서 대기. 짧게 재시도 후 다음 타이머에 맡긴다
+    busy_attempts=$((busy_attempts + 1))
+    if [ "$busy_attempts" -ge "$MAX_RETRIES" ]; then
+      echo "anki-host-sync[${INSTANCE}]: helper busy ($(printf '%s' "$response" | jq -r '.busy // "?"')), deferring to next run"
+      write_state "busy-deferred" "helper busy: $(printf '%s' "$response" | jq -r '.busy // "?"')" ""
+      exit 0
+    fi
+    sleep "$BUSY_RETRY_SECS"
+    continue
+  fi
   if [ "$rc" -eq 0 ] && [ "$(printf '%s' "$response" | jq -r '.ok' 2>/dev/null)" = "true" ]; then
     result_json="$(printf '%s' "$response" | jq -c '.result')"
     action="$(printf '%s' "$result_json" | jq -r '.action')"
@@ -155,14 +196,20 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
         if [ -n "$summary" ]; then
           title="Anki 동기화"
           [ "$action" = "normal" ] && title="오늘의 공부가 반영됐습니다"
-          notify "sync-${action}-$(date +%Y%m%d%H%M%S)" 0 "$title" "$summary"
+          notify_event "$title" "$summary"
         fi
         echo "anki-host-sync[${INSTANCE}]: ${action} (required=${required})"
         exit 0
         ;;
       full-sync-required)
+        if [ "$(printf '%s' "$result_json" | jq -r '.empty_before')" = "true" ]; then
+          # 빈 컬렉션의 첫 sync는 부트스트랩 유닛(--mode allow-download-if-empty)이 담당한다 — 알림 없이 대기
+          echo "anki-host-sync[${INSTANCE}]: empty collection awaiting bootstrap (required=${required})"
+          write_state "bootstrap-pending" "run anki-host-sync-${INSTANCE}-bootstrap" "$result_json"
+          exit 0
+        fi
         write_state "full-sync-required" "required=${required}" "$result_json"
-        notify "full-sync-required" 1 "Anki 전체 동기화 필요" "AnkiWeb이 전체 동기화(한쪽이 다른 쪽을 덮어쓰기)를 요구했지만 miniPC는 자동으로 방향을 정하지 않았습니다. 원인을 확인하기 전에는 어느 기기에서도 업로드/다운로드를 선택하지 마세요. (요구: ${required})"
+        notify_alert "full-sync-required" 1 "Anki 전체 동기화 필요" "AnkiWeb이 전체 동기화(한쪽이 다른 쪽을 덮어쓰기)를 요구했지만 miniPC는 자동으로 방향을 정하지 않았습니다. 원인을 확인하기 전에는 어느 기기에서도 업로드/다운로드를 선택하지 마세요. (요구: ${required})"
         exit 0
         ;;
       *)
@@ -171,7 +218,7 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
     esac
   else
     last_error="$(printf '%s' "$response" | jq -r '.error // empty' 2>/dev/null || true)"
-    [ -n "$last_error" ] || last_error="curl exit ${rc}: $(printf '%s' "$response" | head -c 200)"
+    [ -n "$last_error" ] || last_error="curl exit ${rc} http ${http_code}: $(printf '%s' "$response" | head -c 200)"
     if [ "$last_error" = "not-logged-in" ]; then
       break
     fi
@@ -185,5 +232,5 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
 done
 
 write_state "error" "$last_error" ""
-notify "sync-failed" 1 "Anki 동기화 실패" "miniPC의 Anki(${INSTANCE})가 AnkiWeb과 동기화하지 못했습니다: $(printf '%s' "$last_error" | head -c 120). 카드 변경은 miniPC에만 있을 수 있습니다."
+notify_alert "sync-failed" 1 "Anki 동기화 실패" "miniPC의 Anki(${INSTANCE})가 AnkiWeb과 동기화하지 못했습니다: $(printf '%s' "$last_error" | head -c 120). 카드 변경은 miniPC에만 있을 수 있습니다."
 exit 1

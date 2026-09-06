@@ -62,6 +62,8 @@
     # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
     # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.
     agenixHostIdentityKey = "/etc/ssh/ssh_host_ed25519_key";
+    # headless Anki 인스턴스 상태 루트 (StateDirectory·sync·backup·eval 테스트가 공유하는 단일 소스)
+    ankiHostState = "/var/lib/anki-host";
     opnixServiceAccountExpirySource = ../secrets/opnix-service-account-expiry.txt;
     # opnix SA token agenix secret — opnix/default.nix가 tokenFile 등록에 사용
     opnixServiceAccountTokenAge = ../secrets/opnix-service-account-token.age;

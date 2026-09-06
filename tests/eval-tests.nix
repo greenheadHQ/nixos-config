@@ -774,9 +774,8 @@ let
   ];
   ankiHostPortsUnique =
     builtins.length ankiHostPorts == builtins.length (nixpkgsLib.unique ankiHostPorts);
-  ankiHostPortsDisjointFromHomeserver = builtins.all (
-    p: !(builtins.elem p (map (s: s.port) homeserverPorts))
-  ) ankiHostPorts;
+  ankiHostSyncMainBootstrap = nixosCfg.systemd.services."anki-host-sync-main-bootstrap";
+  ankiHostPortsDisjointFromHomeserver = builtins.all (p: !(builtins.elem p allPorts)) ankiHostPorts;
   ankiHostHardeningOk =
     svc:
     svc.serviceConfig.NoNewPrivileges == true
@@ -785,17 +784,16 @@ let
     && svc.serviceConfig.ProtectHome == true
     && svc.serviceConfig.User == ankiHostCfg.user
     && svc.serviceConfig.MemoryMax == "1G";
-  ankiHostExecStartBindsLoopback =
-    svc:
-    # AnkiConnect 바인딩 주소는 애드온 config로 store에 bake되므로 여기서는 헬퍼 애드온이
-    # 127.0.0.1 고정임을 코드 상수로, AnkiConnect는 모듈 소스 문자열로 고정한다.
+  # AnkiConnect 바인딩 주소는 애드온 config로 store에 bake되므로 헬퍼 애드온은 코드 상수로,
+  # AnkiConnect는 모듈 소스 문자열로 loopback 고정을 검사한다 (평가 결과 속성이 아니라 소스 핀).
+  ankiHostLoopbackSourcePinned =
     nixpkgsLib.hasInfix "webBindAddress = \"127.0.0.1\"" (
       builtins.readFile ../modules/nixos/programs/anki-host/default.nix
     )
     && nixpkgsLib.hasInfix "BIND = \"127.0.0.1\"" (
       builtins.readFile ../modules/nixos/programs/anki-host/sync-addon/__init__.py
-    )
-    && svc.environment.QT_QPA_PLATFORM == "offscreen";
+    );
+  ankiHostRunsOffscreen = svc: svc.environment.QT_QPA_PLATFORM == "offscreen";
   # ═══════════════════════════════════════════════════════════════
   # 테스트 실행
   # ═══════════════════════════════════════════════════════════════
@@ -1149,8 +1147,9 @@ let
     {
       name = "Test AH3: AnkiConnect·헬퍼가 127.0.0.1에만 바인딩되고 인스턴스가 offscreen Qt로 뜨며, single-instance 키가 인스턴스별로 달라야 함 (같은 유저의 두 anki가 서로 명령을 넘기는 사고 방지)";
       cond =
-        ankiHostExecStartBindsLoopback ankiHostLab
-        && ankiHostExecStartBindsLoopback ankiHostMain
+        ankiHostLoopbackSourcePinned
+        && ankiHostRunsOffscreen ankiHostLab
+        && ankiHostRunsOffscreen ankiHostMain
         &&
           ankiHostLab.environment.ANKI_SINGLE_INSTANCE_KEY
           != ankiHostMain.environment.ANKI_SINGLE_INSTANCE_KEY
@@ -1175,13 +1174,13 @@ let
         && nixosCfg.age.secrets.pushover-anki.mode == "0400";
     }
     {
-      name = "Test AH6: sync 타이머는 main만 존재하고(lab은 sync 비활성) 부팅 3분 + ${ankiHostCfg.instances.main.sync.interval} 간격이며, 서비스는 Pushover를 LoadCredential로만 받고 시크릿 부재 시 ConditionPathExists로 건너뛰어야 함";
+      name = "Test AH6: sync 타이머는 main만 존재하고(lab은 sync 비활성) 부팅 3분 + ${ankiHostCfg.instances.main.sync.interval} 간격(monotonic — Persistent 없음)이며, 서비스는 Pushover를 LoadCredential로만 받고 시크릿 부재 시 ConditionPathExists로 건너뛰어야 함";
       cond =
         !(nixosCfg.systemd.timers ? "anki-host-sync-lab")
         && ankiHostSyncMainTimer.wantedBy == [ "timers.target" ]
         && ankiHostSyncMainTimer.timerConfig.OnBootSec == "3min"
         && ankiHostSyncMainTimer.timerConfig.OnUnitActiveSec == ankiHostCfg.instances.main.sync.interval
-        && ankiHostSyncMainTimer.timerConfig.Persistent == true
+        && !(ankiHostSyncMainTimer.timerConfig ? Persistent)
         && builtins.any (
           c: nixpkgsLib.hasPrefix "pushover:" c
         ) ankiHostSyncMain.serviceConfig.LoadCredential
@@ -1189,14 +1188,26 @@ let
         && ankiHostSyncMain.unitConfig.ConditionPathExists == nixosCfg.age.secrets.pushover-anki.path;
     }
     {
-      name = "Test AH7: 백업 타이머가 timers.target에 걸리고 OnCalendar가 옵션(${ankiHostCfg.backupTime})과 같으며, 백업 서비스는 strict + HDD/상태 디렉터리만 쓰기 가능해야 함";
+      name = "Test AH6-2: 부트스트랩 유닛(anki-host-sync-main-bootstrap)은 존재하되 어떤 target에도 걸리지 않고(수동 1회 실행), allow-download-if-empty 모드로만 호출해야 함 (빈 컬렉션 첫 다운로드 — 자동 방향 결정 금지)";
+      cond =
+        ankiHostSyncMainBootstrap.wantedBy == [ ]
+        && !(nixosCfg.systemd.timers ? "anki-host-sync-main-bootstrap")
+        && nixpkgsLib.hasSuffix " --mode allow-download-if-empty" ankiHostSyncMainBootstrap.serviceConfig.ExecStart
+        && !(nixpkgsLib.hasInfix "--mode" ankiHostSyncMain.serviceConfig.ExecStart)
+        && ankiHostSyncMainBootstrap.serviceConfig.User == ankiHostCfg.user;
+    }
+    {
+      name = "Test AH7: 백업 타이머가 timers.target에 걸리고 OnCalendar가 옵션(${ankiHostCfg.backupTime})과 같으며, 백업 서비스는 strict + HDD/상태 디렉터리만 쓰기 가능하고, 검증용 lab은 백업 대상에서 빠져야 함 (INSTANCES: ${ankiHostBackup.environment.INSTANCES})";
       cond =
         ankiHostBackupTimer.wantedBy == [ "timers.target" ]
         && ankiHostBackupTimer.timerConfig.OnCalendar == ankiHostCfg.backupTime
         && ankiHostBackupTimer.timerConfig.Persistent == true
         && ankiHostBackup.serviceConfig.ProtectSystem == "strict"
         && builtins.elem "${constants.paths.mediaData}/backups/anki-host" ankiHostBackup.serviceConfig.ReadWritePaths
-        && builtins.elem "/var/lib/anki-host" ankiHostBackup.serviceConfig.ReadWritePaths;
+        && ankiHostBackup.unitConfig.ConditionPathExists == nixosCfg.age.secrets.pushover-anki.path
+        && builtins.elem constants.paths.ankiHostState ankiHostBackup.serviceConfig.ReadWritePaths
+        && !ankiHostCfg.instances.lab.backup.enable
+        && ankiHostBackup.environment.INSTANCES == "main:${toString ankiHostCfg.instances.main.helperPort}";
     }
   ]
   ++ darwinIntentTests;

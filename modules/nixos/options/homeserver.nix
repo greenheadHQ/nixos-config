@@ -330,7 +330,7 @@
         description = "System user that owns every headless Anki instance";
       };
       instances = lib.mkOption {
-        description = "Headless Anki instances keyed by short name (state lives in /var/lib/anki-host/<name>)";
+        description = "Headless Anki instances keyed by short name (state lives under constants.paths.ankiHostState, one subdirectory per instance)";
         default = { };
         type = lib.types.attrsOf (
           lib.types.submodule (
@@ -354,6 +354,13 @@
                 helperPort = lib.mkOption {
                   type = lib.types.port;
                   description = "anki_host_sync helper port (always bound to 127.0.0.1)";
+                };
+                backup = {
+                  enable = lib.mkOption {
+                    type = lib.types.bool;
+                    default = true;
+                    description = "Include this instance in the daily .colpkg HDD backup";
+                  };
                 };
                 sync = {
                   enable = lib.mkOption {
