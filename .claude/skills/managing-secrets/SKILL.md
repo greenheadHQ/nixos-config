@@ -67,7 +67,7 @@ agenix(.age 정적)와 1Password(동적 github-pat / SSH device key / SA token)�
 
 ### 통합 Secret Inventory
 
-agenix `.age` 18개(디스크 실측) + 1Password 항목(github-pat, SSH device key) + 1Password Service Account(token material은 agenix `.age` 보관)를 단일 표로 통합. 이 표는 빠른 참조용 스냅샷이며 SSOT가 아니다 — 값이 충돌하면 코드(`secrets/secrets.nix` recipient, `libraries/constants.nix` vault/sshDeviceKeys, HM home 경로는 `modules/shared/programs/secrets/default.nix` · NixOS `/run/agenix` 서비스 시크릿은 `modules/nixos/programs/` 하위 service module)을 우선한다. secret 추가/변경 시 코드를 먼저 갱신한 뒤 이 표를 동기화한다. recipient(복호화 가능 호스트)와 실제 배포 호스트는 다를 수 있다.
+agenix `.age` 21개(디스크 실측 — 재검증: `ls secrets/*.age | wc -l`) + 1Password 항목(github-pat, SSH device key) + 1Password Service Account(token material은 agenix `.age` 보관)를 단일 표로 통합. 이 표는 빠른 참조용 스냅샷이며 SSOT가 아니다 — 값이 충돌하면 코드(`secrets/secrets.nix` recipient, `libraries/constants.nix` vault/sshDeviceKeys, HM home 경로는 `modules/shared/programs/secrets/default.nix` · NixOS `/run/agenix` 서비스 시크릿은 `modules/nixos/programs/` 하위 service module)을 우선한다. secret 추가/변경 시 코드를 먼저 갱신한 뒤 이 표를 동기화한다. recipient(복호화 가능 호스트)와 실제 배포 호스트는 다를 수 있다.
 
 | Name | Storage | Vault | 배포경로·위치 | 소비처 | recipient |
 |------|---------|-------|---------------|--------|-----------|
@@ -87,6 +87,8 @@ agenix `.age` 18개(디스크 실측) + 1Password 항목(github-pat, SSH device 
 | `karakeep-openai-key.age` | agenix | — | `/run/agenix/karakeep-openai-key` (MiniPC) | karakeep.nix openaiKeyPath → AI 태깅 OpenAI 키 | allHosts |
 | `pushover-karakeep.age` | agenix | — | `/run/agenix/pushover-karakeep` (MiniPC) | karakeep-update·notify·singlefile-bridge·backup·fallback-sync·log-monitor (다중 모듈 merge) | allHosts |
 | `pushover-system-monitor.age` | agenix | — | `/run/agenix/pushover-system-monitor` (MiniPC) | smartd·temp-monitor·smoke-test·opnix-rotate(MiniPC) 하드웨어/SMART/온도/SA rotation 알림 (다중 모듈 merge) | minipcOnly |
+| `anki-ankiweb.age` | agenix | — | `/run/agenix/anki-ankiweb` (`anki-host:anki-host`, 0400, MiniPC) | `anki-host/default.nix`가 sync를 켠 인스턴스 유닛에 `ANKI_HOST_SYNC_CREDENTIALS`로 주입 → 헬퍼 애드온이 AnkiWeb 로그인 1회 (`ANKIWEB_USERNAME=`/`ANKIWEB_PASSWORD=`) | minipcOnly |
+| `pushover-anki.age` | agenix | — | `/run/agenix/pushover-anki` (root, 0400, MiniPC) → 유닛에는 `LoadCredential` 파일로만 전달 | `anki-host/sync.nix`·`backup.nix` 동기화·백업 알림 (다중 모듈 merge, `ConditionPathExists`) | minipcOnly |
 | `opnix-service-account-token.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `/run/agenix/opnix-service-account-token` (`root:onepassword-secrets`, 0640, MiniPC) | opnix tokenFile → 부팅 oneshot이 `op://Automation/github-pat/token`을 `/run/opnix/<user>/github-pat` tmpfs로 materialize → nixos.nix gh wrapper가 GH_TOKEN 소비 | minipcHostOnly (host key 복호화) |
 | `opnix-service-account-token-mac.age` | agenix → 1Password SA | Automation (SA 접근 vault) | `~/.config/op/sa-token-mac` (agenix home-manager, 0400, `isDarwin && hostType==personal`) | darwin.nix gh-pat-mac이 `OP_SERVICE_ACCOUNT_TOKEN`으로 `op read op://Automation/github-pat/token` → temp 캐시 → gh-auth/c/codex 런처가 GH_TOKEN 주입. MiniPC host-key SA와 별개 격리 SA | macbook (Mac user 로그인 키 단독, work role 미배포) |
 | `github-pat` (1Password 항목) | 1Password | Automation | `op://Automation/github-pat/token` | Mac: gh-pat-mac이 SA token으로 `op read` → temp 캐시. MiniPC: opnix가 tmpfs로 materialize. SA token이 읽는 실제 PAT 항목 | — |

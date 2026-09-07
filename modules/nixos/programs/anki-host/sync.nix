@@ -7,6 +7,7 @@
 # 부트스트랩 유닛을 운영자가 명시 실행할 때까지 조용히 대기하고, 비어 있지 않으면 알림(c)만 보낸다.
 # sync의 운영 계층(상태 파일·알림·결과 분류)은 anki-host-sync 스크립트가 단일 소유한다 — PR 2의
 # "지금 동기화"도 헬퍼를 직접 부르지 않고 이 서비스를 트리거한다 (plan 030 결정 13).
+# 헬퍼 env·Pushover 시크릿·스크립트 결합은 backup.nix와 helper-script.nix를 공유한다.
 {
   config,
   pkgs,
@@ -18,10 +19,9 @@
 let
   cfg = config.homeserver.ankiHost;
   inherit (constants.ankiHost) user;
-  stateRoot = constants.paths.ankiHostState;
-  pushoverCredPath = config.age.secrets.pushover-anki.path;
+  h = import ./helper-script.nix { inherit config pkgs constants; };
+  inherit (h) a stateRoot;
   syncInstances = lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances;
-  a = constants.ankiHost;
   pow2 = k: lib.foldl' (x: _: x * 2) 1 (lib.range 1 k);
   # 지수 백오프 합 — 스크립트는 attempt 1..maxRetries−1 뒤에 backoff×2^(attempt−1)만큼 대기한다: backoff × (2^(maxRetries−1) − 1)
   backoffTotalSecs = a.backoffSecs * (pow2 (a.maxRetries - 1) - 1);
@@ -32,40 +32,14 @@ let
   # + busy 사이 대기 (busyRetries−1)×busySecs
   # + sync 시도 maxRetries×curl + 백오프 합 + 여유
   unitTimeoutSecs =
-    a.readyWaitTries * (a.readyProbeTimeoutSecs + a.readyWaitSecs)
+    h.readyWorstSecs
     + a.busyRetries * a.helperBusyWaitSecs
     + (a.busyRetries - 1) * a.busyRetrySecs
     + a.maxRetries * a.helperCurlMaxTimeSecs
     + backoffTotalSecs
     + 60;
-  # 스크립트가 받는 준비 대기·재시도 상수 — 위 계산과 같은 값 (스크립트는 env가 없으면 기본값 없이 실패한다)
-  scriptEnv = {
-    HELPER_CURL_MAX_TIME = toString a.helperCurlMaxTimeSecs;
-    MAX_RETRIES = toString a.maxRetries;
-    BACKOFF_SECS = toString a.backoffSecs;
-    READY_WAIT_TRIES = toString a.readyWaitTries;
-    READY_WAIT_SECS = toString a.readyWaitSecs;
-    READY_PROBE_TIMEOUT = toString a.readyProbeTimeoutSecs;
-    BUSY_RETRIES = toString a.busyRetries;
-    BUSY_RETRY_SECS = toString a.busyRetrySecs;
-  };
 
-  # pushover 헬퍼 + 헬퍼 호출 공용 함수 + 본문을 텍스트로 결합한다 (source 경로 주입 대신 store에 고정)
-  syncScript = pkgs.writeShellApplication {
-    name = "anki-host-sync";
-    runtimeInputs = with pkgs; [
-      curl
-      jq
-      coreutils
-      util-linux # flock
-    ];
-    text =
-      builtins.readFile ../../../shared/scripts/lib/pushover.sh
-      + "\n"
-      + builtins.readFile ./files/lib/helper-call.sh
-      + "\n"
-      + builtins.readFile ./files/anki-host-sync.sh;
-  };
+  syncScript = h.mkHelperScript "anki-host-sync" [ pkgs.util-linux ] ./files/anki-host-sync.sh; # util-linux: flock
 
   # 타이머 유닛과 부트스트랩 유닛이 공유하는 서비스 정의. extraArgs(리스트)만 다르다.
   mkSyncUnit = name: inst: extraArgs: description: {
@@ -80,12 +54,12 @@ let
     ];
     partOf = [ "anki-host-${name}.service" ];
 
-    # LoadCredential은 원본 파일이 없으면 유닛이 EXIT_CREDENTIALS(243)로 실패한다. 시크릿 파일은
-    # placeholder라도 배포와 함께 항상 존재하므로(secrets.nix 선언) 이 조건은 실질적으로 항상 참이고,
-    # 파일 안의 값이 비어 있는 경우는 스크립트가 알림 없이 처리한다. backup.nix와 같은 정책.
-    unitConfig.ConditionPathExists = pushoverCredPath;
+    unitConfig.ConditionPathExists = h.pushoverCondition;
 
-    environment = scriptEnv // {
+    # 공용 헬퍼 env(helper-script.nix) + 이 스크립트만 요구하는 값
+    environment = h.helperEnv // {
+      MAX_RETRIES = toString a.maxRetries;
+      BACKOFF_SECS = toString a.backoffSecs;
       HELPER_PORT = toString inst.helperPort;
       STATE_DIR = "${stateRoot}/${name}";
       INSTANCE = name;
@@ -95,8 +69,7 @@ let
       Type = "oneshot";
       User = user;
       Group = user;
-      # root 소유 0400 시크릿을 서비스 유저에게 파일 하나로만 넘긴다 (karakeep-notify 패턴)
-      LoadCredential = [ "pushover:${pushoverCredPath}" ];
+      LoadCredential = h.pushoverLoadCredential;
       ExecStart = lib.concatStringsSep " " (
         [ "${syncScript}/bin/anki-host-sync" ] ++ map lib.escapeShellArg extraArgs
       );
@@ -149,12 +122,7 @@ let
 in
 {
   config = lib.mkIf (cfg.enable && syncInstances != { }) {
-    # Anki 전용 Pushover 앱 토큰 (PUSHOVER_TOKEN=/PUSHOVER_USER=). backup.nix와 동일 선언 — 모듈 시스템이 merge
-    age.secrets.pushover-anki = {
-      file = ../../../../secrets/pushover-anki.age;
-      owner = "root";
-      mode = "0400";
-    };
+    age.secrets.pushover-anki = h.pushoverSecret;
 
     systemd.services =
       lib.mapAttrs' mkSyncService syncInstances // lib.mapAttrs' mkBootstrapService syncInstances;

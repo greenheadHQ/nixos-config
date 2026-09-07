@@ -816,6 +816,37 @@ let
       (constants.ankiHost.busyRetries - 1)
       * (constants.ankiHost.helperBusyWaitSecs + constants.ankiHost.busyRetrySecs)
     + constants.ankiHost.helperCurlMaxTimeSecs;
+  # 스크립트 소스가 `${VAR:?}`로 요구하는 env 이름 집합 — nix 배선(helper-script.nix·sync.nix·backup.nix)이 빠뜨리면
+  # 실행 시점에만 죽으므로 여기서 소스와 유닛 environment를 직접 대조한다
+  ankiHostRequiredEnv =
+    src:
+    nixpkgsLib.unique (
+      map builtins.head (builtins.filter builtins.isList (builtins.split "\\$\\{([A-Z_]+):\\?\\}" src))
+    );
+  ankiHostHelperCallRequired = ankiHostRequiredEnv (
+    builtins.readFile ../modules/nixos/programs/anki-host/files/lib/helper-call.sh
+  );
+  ankiHostSyncScriptRequired = ankiHostRequiredEnv (
+    builtins.readFile ../modules/nixos/programs/anki-host/files/anki-host-sync.sh
+  );
+  ankiHostBackupScriptRequired = ankiHostRequiredEnv (
+    builtins.readFile ../modules/nixos/programs/anki-host/files/anki-host-backup.sh
+  );
+  ankiHostEnvCovers = unit: names: builtins.all (v: unit.environment ? ${v}) names;
+  # 공용 헬퍼 env를 constants에서 독립 재계산 — 두 유닛이 같은 값을 주입해야 한다
+  ankiHostHelperEnv = {
+    HELPER_CURL_MAX_TIME = toString constants.ankiHost.helperCurlMaxTimeSecs;
+    READY_WAIT_TRIES = toString constants.ankiHost.readyWaitTries;
+    READY_WAIT_SECS = toString constants.ankiHost.readyWaitSecs;
+    READY_PROBE_TIMEOUT = toString constants.ankiHost.readyProbeTimeoutSecs;
+    BUSY_RETRIES = toString constants.ankiHost.busyRetries;
+    BUSY_RETRY_SECS = toString constants.ankiHost.busyRetrySecs;
+  };
+  ankiHostEnvMatches =
+    unit:
+    builtins.all (k: unit.environment.${k} == ankiHostHelperEnv.${k}) (
+      builtins.attrNames ankiHostHelperEnv
+    );
   ankiHostLadderOk =
     # 안쪽 < 바깥쪽: 애드온 락 대기 + 메인 스레드 < 스크립트 curl < 유닛
     constants.ankiHost.helperMainTimeoutSecs + constants.ankiHost.helperBusyWaitSecs
@@ -828,24 +859,17 @@ let
     &&
       ankiHostMain.environment.ANKI_HOST_QUERY_TIMEOUT_SECS
       == toString constants.ankiHost.helperQueryTimeoutSecs
-    &&
-      ankiHostSyncMain.environment.HELPER_CURL_MAX_TIME
-      == toString constants.ankiHost.helperCurlMaxTimeSecs
-    &&
-      ankiHostBackup.environment.HELPER_CURL_MAX_TIME == toString constants.ankiHost.helperCurlMaxTimeSecs
     # 유닛 예산 ≥ 스크립트 최악 실행 시간 — 같은 상수에서 독립 재계산
     && ankiHostSecs ankiHostSyncMain.serviceConfig.TimeoutStartSec >= ankiHostSyncWorstSecs
     && ankiHostSecs ankiHostBackup.serviceConfig.TimeoutStartSec >= ankiHostBackupWorstSecs
-    # 스크립트가 받는 준비·재시도 env가 constants와 일치
-    && ankiHostSyncMain.environment.READY_WAIT_TRIES == toString constants.ankiHost.readyWaitTries
-    &&
-      ankiHostSyncMain.environment.READY_PROBE_TIMEOUT
-      == toString constants.ankiHost.readyProbeTimeoutSecs
+    # 공용 헬퍼 env가 두 유닛에 같은 값으로 주입되고, 세 스크립트 소스의 `${VAR:?}` 요구 집합을 유닛 environment가 전부 덮는다
+    && ankiHostEnvMatches ankiHostSyncMain
+    && ankiHostEnvMatches ankiHostBackup
+    && builtins.all (v: ankiHostHelperEnv ? ${v}) ankiHostHelperCallRequired
+    && ankiHostEnvCovers ankiHostSyncMain (ankiHostHelperCallRequired ++ ankiHostSyncScriptRequired)
+    && ankiHostEnvCovers ankiHostBackup (ankiHostHelperCallRequired ++ ankiHostBackupScriptRequired)
     && ankiHostSyncMain.environment.MAX_RETRIES == toString constants.ankiHost.maxRetries
-    && ankiHostSyncMain.environment.BACKOFF_SECS == toString constants.ankiHost.backoffSecs
-    && ankiHostSyncMain.environment.BUSY_RETRIES == toString constants.ankiHost.busyRetries
-    && ankiHostBackup.environment.READY_WAIT_TRIES == toString constants.ankiHost.readyWaitTries
-    && ankiHostBackup.environment.BUSY_RETRIES == toString constants.ankiHost.busyRetries;
+    && ankiHostSyncMain.environment.BACKOFF_SECS == toString constants.ankiHost.backoffSecs;
   ankiHostImportExclusionAssertion = builtins.any (
     x: nixpkgsLib.hasInfix "allowImport and sync.enable are mutually exclusive" x.message
   ) nixosCfg.assertions;
@@ -1273,7 +1297,7 @@ let
         && ankiHostBackup.environment.INSTANCES == "main:${toString ankiHostCfg.instances.main.helperPort}";
     }
     {
-      name = "Test AH8: 타임아웃 사다리(애드온 락 ${toString constants.ankiHost.helperBusyWaitSecs}s + 메인 ${toString constants.ankiHost.helperMainTimeoutSecs}s < curl ${toString constants.ankiHost.helperCurlMaxTimeSecs}s < 유닛 sync ${ankiHostSyncMain.serviceConfig.TimeoutStartSec} ≥ 최악 ${toString ankiHostSyncWorstSecs}s / backup ${ankiHostBackup.serviceConfig.TimeoutStartSec} ≥ 최악 ${toString ankiHostBackupWorstSecs}s)가 constants 단일 소스에서 파생되고 스크립트·애드온 env와 일치하며, sync를 켠 인스턴스는 최대 1개라는 assertion이 선언돼야 함";
+      name = "Test AH8: 타임아웃 사다리(애드온 락 ${toString constants.ankiHost.helperBusyWaitSecs}s + 메인 ${toString constants.ankiHost.helperMainTimeoutSecs}s < curl ${toString constants.ankiHost.helperCurlMaxTimeSecs}s < 유닛 sync ${ankiHostSyncMain.serviceConfig.TimeoutStartSec} ≥ 최악 ${toString ankiHostSyncWorstSecs}s / backup ${ankiHostBackup.serviceConfig.TimeoutStartSec} ≥ 최악 ${toString ankiHostBackupWorstSecs}s)가 constants 단일 소스에서 파생되고, 스크립트 소스의 `\${VAR:?}` 요구 집합(helper-call ${toString (builtins.length ankiHostHelperCallRequired)}·sync ${toString (builtins.length ankiHostSyncScriptRequired)}·backup ${toString (builtins.length ankiHostBackupScriptRequired)}개)을 유닛 env가 전부 덮으며, sync를 켠 인스턴스는 최대 1개라는 assertion이 선언돼야 함";
       cond = ankiHostLadderOk && ankiHostSingleAccountAssertion;
     }
   ]

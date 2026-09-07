@@ -274,8 +274,9 @@ def _sync(mode: str) -> dict[str, Any]:
         pm.set_current_sync_url(out.new_endpoint)
         pm.save()
         auth = pm.sync_auth()
-        required = ChangesRequired.Name(out.required)
-    action: str  # 호출자(anki-host-sync.sh)와의 계약 값 — normal | full-download | full-sync-required | unexpected:*
+    # 호출자(anki-host-sync.sh)와의 계약 값 둘 — required(서버 판정)·action(이 함수의 결정). 둘 다 이 층위에서 항상 바인딩된다
+    required = ChangesRequired.Name(out.required)
+    action: str  # normal | full-download | full-sync-required | unexpected:*
     empty = before["notes"] == 0 and before["revlog"] == 0
     if out.required == NO_CHANGES:
         action = "normal"

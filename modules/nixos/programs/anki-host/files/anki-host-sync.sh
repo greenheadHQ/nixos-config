@@ -11,9 +11,11 @@
 # 서버를 덮어쓰는 방향은 헬퍼에 없다.
 #
 # 상태 파일 sync-status.json의 `result` 어휘 (이 스크립트가 유일한 생산자 — 재개 절차·MCP가 이 표를 읽는다):
-#   running             이 회차가 락을 잡고 실행 중 (lastAttemptAt = 시작 시각). 유닛이 죽으면 이 값이 남는다 → journalctl
+#   running             이 회차가 락을 잡고 실행 중. 유닛이 죽으면 이 값이 남는다 → journalctl -u anki-host-sync-<name>
 #   no-credentials      AnkiWeb 자격 값이 아직 없다 — 운영자 게이트(plan Step 14) 전의 정상 상태. 알림 없음
-#   bootstrap-pending   로그인은 됐으나 로컬이 비어 있어 full sync가 요구됨 — 부트스트랩 유닛(Step 15) 대기. 알림 없음
+#   bootstrap-pending   로그인은 됐으나 로컬이 비어 있고 성공 이력이 없어 full sync가 요구됨 — 부트스트랩 유닛(Step 15) 대기. 알림 없음
+#   collection-empty    성공 이력(lastSuccessAt)이 있는데 로컬이 비어 있다 — 프로필 소실·좀비 잠금 의심(plan STOP 9). 알림(c),
+#                       원인 확인 전 부트스트랩 재실행 금지
 #   success             normal 병합 또는 부트스트랩 다운로드 완료. `sync` 필드에 전후 스냅샷
 #   busy-deferred       헬퍼가 다른 변경 작업(export 등) 중이라 이번 회차를 건너뜀 — 다음 타이머에 재시도. 알림 없음
 #   helper-unreachable  준비 대기 예산 안에 헬퍼가 collection_open을 주지 않음 — 알림(c) 24h 1회
@@ -21,9 +23,12 @@
 #   full-sync-required  로컬이 비어 있지 않은데 full sync 요구 — 방향 자동 결정 금지, 알림(c)
 #   error               헬퍼 오류·재시도 소진 — 알림(c)
 # 위 값 중 no-credentials → bootstrap-pending → success 세 값이 진행 단계를 가리키고, 나머지는 운영 중 일시 상태다.
-# 요청–결과 대응(plan 결정 13): 호출자(MCP "지금 동기화")는 유닛을 트리거한 시각을 기억하고, lastAttemptAt이 그 시각
-# 이후이며 result가 running이 아닐 때만 그 회차의 결과로 인정한다. 락 경합으로 건너뛴 회차(아래 flock)는 파일을 건드리지
-# 않으므로 호출자는 실행 중인 회차의 running을 보게 된다.
+# 회차 식별: 모든 기록에 runId(systemd INVOCATION_ID)·runStartedAt이 실린다 — 한 회차 안에서는 같은 값이고,
+# lastAttemptAt은 마지막 기록 시각이라 회차 식별에 쓰지 않는다.
+# 요청–결과 대응(plan 결정 13): 호출자(MCP "지금 동기화")는 트리거 전에 상태 파일을 읽어 result가 running이면 새 회차가
+# 생기지 않는다(systemd가 진행 중인 job에 합류시킨다)는 사실을 그대로 안내한다. 아니면 트리거 전 runId를 기억하고,
+# runId가 바뀌고 result가 running이 아닐 때만 그 회차의 결과로 인정한다. 락 경합으로 건너뛴 회차(아래 flock)는 파일을
+# 건드리지 않는다.
 # (앞에 pushover.sh와 files/lib/helper-call.sh가 텍스트 결합되어 pushover_send·anki_helper_* 가 정의돼 있다.)
 
 MODE="normal"
@@ -57,6 +62,10 @@ fi
 
 now() { date -Iseconds; }
 
+# 회차 식별자 — 락을 잡은 직후 한 번 정하고 이 회차의 모든 기록에 같은 값으로 실린다
+RUN_ID="${INVOCATION_ID:-manual-$(date +%s%N)}"
+RUN_STARTED_AT="$(now)"
+
 state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null || true; }
 
 # write_state <result> <error> <sync-json-or-empty>
@@ -73,9 +82,11 @@ write_state() {
   fi
   jq -n \
     --arg now "$(now)" --arg result "$result" --arg error "$error" --arg mode "$MODE" \
+    --arg run_id "$RUN_ID" --arg run_started "$RUN_STARTED_AT" \
     --arg last_success "$last_success" --arg alert_key "$alert_key" --arg alert_at "$alert_at" \
     --argjson sync "${sync_json:-null}" \
-    '{lastAttemptAt: $now, lastSuccessAt: (if $last_success == "" then null else $last_success end),
+    '{runId: $run_id, runStartedAt: $run_started, lastAttemptAt: $now,
+      lastSuccessAt: (if $last_success == "" then null else $last_success end),
       result: $result, mode: $mode, error: (if $error == "" then null else $error end),
       lastAlert: (if $alert_key == "" then null else {key: $alert_key, at: $alert_at} end),
       sync: $sync}' > "${STATE_FILE}.partial"
@@ -206,6 +217,13 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
         ;;
       full-sync-required)
         if [ "$(printf '%s' "$result_json" | jq -r '.empty_before')" = "true" ]; then
+          if [ -n "$(state_get '.lastSuccessAt')" ]; then
+            # 이미 성공한 적이 있는 인스턴스의 컬렉션이 비었다 — 부트스트랩 전 대기가 아니라 프로필 소실·좀비 잠금 사고다.
+            # 침묵하면 동기화가 무기한 멈춘 채 드러나지 않는다 (plan STOP 9)
+            write_state "collection-empty" "empty collection after prior success (required=${required})" "$result_json"
+            notify_alert "collection-empty" 1 "Anki 컬렉션이 비어 있습니다" "miniPC의 Anki(${INSTANCE})가 동기화 성공 이력이 있는데 컬렉션이 비어 있습니다. 프로필 소실이 의심되니 원인을 확인하기 전에는 부트스트랩을 다시 실행하지 마세요. 동기화는 중단된 상태입니다."
+            exit 1
+          fi
           # 빈 컬렉션의 첫 sync는 부트스트랩 유닛(--mode allow-download-if-empty)이 담당한다 — 알림 없이 대기
           echo "anki-host-sync[${INSTANCE}]: empty collection awaiting bootstrap (required=${required})"
           write_state "bootstrap-pending" "run anki-host-sync-${INSTANCE}-bootstrap" "$result_json"
