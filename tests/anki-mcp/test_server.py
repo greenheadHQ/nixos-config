@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import secrets
+import time
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
@@ -27,7 +28,7 @@ def _settings(tmp_path) -> Settings:
         anki_connect_url="http://127.0.0.1:1", helper_url="http://127.0.0.1:1",
         state_dir=str(tmp_path), sync_status_file=str(tmp_path / "main.json"), sync_unit="u.service",
         passphrase_file=str(tmp_path / "approval"),
-        access_ttl=60, refresh_ttl=600, code_ttl=30, sync_wait=5, lockout_failures=3, lockout_secs=60,
+        access_ttl=60, refresh_ttl=600, refresh_max_rotations=4096, code_ttl=30, sync_wait=5, lockout_failures=3, lockout_secs=60,
         field_chars=400, page_max=100,
         reg_max_clients=3, reg_max_client_bytes=4096, reg_unused_ttl=86400, reg_burst=5, reg_window=60,
         max_body_bytes=2048, body_read_timeout=30, max_concurrency=64,
@@ -119,6 +120,7 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             credentials = {"client_id": client_id}
             if auth_method != "none":
                 credentials["client_secret"] = reg.json()["client_secret"]
+                assert reg.json()["client_secret_expires_at"] == 0  # RFC 7591: 무기한도 필드를 명시한다
             assert client_id in json.dumps(json.load(open(tmp_path / "oauth-state.json", encoding="utf-8")))
 
             # 2. 토큰 없이 /mcp → 401 + PRM 안내
@@ -132,7 +134,8 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             # 3. /authorize는 승인 앱에만 — PKCE 검증 뒤 승인 폼으로 리다이렉트
             verifier, challenge = _pkce()
             q = urlencode({"response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
-                           "code_challenge": challenge, "code_challenge_method": "S256", "state": "xyz", "scope": "anki"})
+                           "code_challenge": challenge, "code_challenge_method": "S256", "state": "xyz", "scope": "anki",
+                           "resource": f"https://{PUBLIC_HOST}/mcp"})
             r = await ah.get(f"/authorize?{q}", headers={"host": APPROVAL_HOST}, follow_redirects=False)
             assert r.status_code in (302, 307), r.text
             loc = r.headers["location"]
@@ -161,7 +164,7 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
                 assert bad_secret.status_code == 401
             tok = await fh.post("/token", headers=mcp_headers, data={
                 "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
-                **credentials, "redirect_uri": redirect_uri})
+                **credentials, "redirect_uri": redirect_uri, "resource": f"https://{PUBLIC_HOST}/mcp"})
             assert tok.status_code == 200, tok.text
             access = tok.json()["access_token"]
             assert tok.json()["token_type"].lower() == "bearer" and tok.json().get("refresh_token")
@@ -187,9 +190,7 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             rotated = await fh.post("/token", headers=mcp_headers, data={
                 "grant_type": "refresh_token", "refresh_token": tok.json()["refresh_token"], **credentials})
             assert rotated.status_code == 200
-            old_refresh = await fh.post("/token", headers=mcp_headers, data={
-                "grant_type": "refresh_token", "refresh_token": tok.json()["refresh_token"], **credentials})
-            assert old_refresh.status_code == 400
+            # 옛 refresh 재사용은 새 토큰까지 철회하므로 아래 명시적 revoke 검증과 분리한다.
 
             # 8. 공개 클라이언트가 RFC 7009대로 client_secret 없이 철회 → 200이고, access·refresh(같은 grant)가 함께 죽는다
             if auth_method != "none":
@@ -219,3 +220,196 @@ async def test_unsupported_client_auth_does_not_change_registration_state(tmp_pa
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_client_metadata"
         assert state.read_bytes() == before
+
+
+async def _http_grant(funnel_http, approval_http):
+    redirect = "https://client.example/cb"
+    response = await funnel_http.post("/register", json={"redirect_uris": [redirect], "token_endpoint_auth_method": "none"})
+    assert response.status_code == 201
+    client_id = response.json()["client_id"]
+    verifier, challenge = _pkce()
+    auth = await approval_http.get("/authorize", params={
+        "response_type": "code", "client_id": client_id, "redirect_uri": redirect,
+        "code_challenge": challenge, "code_challenge_method": "S256", "scope": "anki",
+        "resource": f"https://{PUBLIC_HOST}/mcp"})
+    assert auth.status_code == 302
+    txn = parse_qs(urlparse(auth.headers["location"]).query)["txn"][0]
+    approved = await approval_http.post("/approve", data={"txn": txn, "passphrase": "open-sesame", "decision": "approve"})
+    code = parse_qs(urlparse(approved.headers["location"]).query)["code"][0]
+    token = await funnel_http.post("/token", data={"grant_type": "authorization_code", "client_id": client_id,
+        "code": code, "code_verifier": verifier, "redirect_uri": redirect, "resource": f"https://{PUBLIC_HOST}/mcp"})
+    assert token.status_code == 200
+    return client_id, token.json()
+
+
+@pytest.mark.anyio
+async def test_http_refresh_replay_revokes_its_grant_only(tmp_path):
+    funnel, approval = build(_settings(tmp_path))
+    async with funnel.router.lifespan_context(funnel):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh, \
+                httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+            client_id, first = await _http_grant(fh, ah)
+            other_id, other = await _http_grant(fh, ah)
+
+            async def refresh(cid, token, resource=f"https://{PUBLIC_HOST}/mcp"):
+                return await fh.post("/token", data={"grant_type": "refresh_token", "client_id": cid,
+                    "refresh_token": token, "resource": resource})
+
+            bad_target = await refresh(client_id, first["refresh_token"], "https://other.example/mcp")
+            assert bad_target.status_code == 400 and bad_target.json()["error"] == "invalid_target"
+            assert (await refresh(other_id, first["refresh_token"])).status_code == 400
+            rotated = await refresh(client_id, first["refresh_token"])
+            assert rotated.status_code == 200
+            assert (await refresh(client_id, first["refresh_token"])).status_code == 400
+            assert (await refresh(client_id, rotated.json()["refresh_token"])).status_code == 400
+            rpc = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+            for token in (first["access_token"], rotated.json()["access_token"]):
+                response = await fh.post("/mcp", json=rpc,
+                    headers={"authorization": f"Bearer {token}", "accept": "application/json, text/event-stream"})
+                assert response.status_code == 401
+            assert (await refresh(other_id, other["refresh_token"])).status_code == 200
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("resource", [None, "https://other.example/mcp"])
+async def test_old_unbound_or_foreign_resource_tokens_cannot_access_or_refresh(tmp_path, resource):
+    cfg = _settings(tmp_path)
+    record = {"client_id": "legacy", "scopes": ["anki"], "expires_at": int(time.time()) + 1000,
+              "resource": resource, "grant": "old-grant"}
+    (tmp_path / "oauth-state.json").write_text(json.dumps({
+        "clients": {"legacy": {"client_id": "legacy", "redirect_uris": ["https://client.example/cb"],
+                               "token_endpoint_auth_method": "none", "scope": "anki"}},
+        "access": {hashlib.sha256(b"old-access").hexdigest(): record},
+        "refresh": {hashlib.sha256(b"old-refresh").hexdigest(): record}}))
+    funnel, _ = build(cfg)
+    async with funnel.router.lifespan_context(funnel):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh:
+            response = await fh.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                headers={"authorization": "Bearer old-access", "accept": "application/json, text/event-stream"})
+            assert response.status_code == 401
+            response = await fh.post("/token", data={"grant_type": "refresh_token", "client_id": "legacy",
+                "refresh_token": "old-refresh", "resource": f"https://{PUBLIC_HOST}/mcp"})
+            assert response.status_code == 400 and response.json()["error"] == "invalid_grant"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize("multiple_resources", [False, True])
+async def test_authorize_returns_resource_error_only_to_valid_callback(tmp_path, method, multiple_resources):
+    funnel, approval = build(_settings(tmp_path))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh, \
+            httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+        redirect = "https://client.example/cb?keep=yes"
+        reg = await fh.post("/register", json={"redirect_uris": [redirect], "token_endpoint_auth_method": "none"})
+        _, challenge = _pkce()
+        resources = ["https://other.example/mcp"]
+        if multiple_resources:
+            resources.append(f"https://{PUBLIC_HOST}/mcp")  # 마지막 값이 정상이더라도 앞의 잘못된 값을 놓치지 않는다
+        values = {"response_type": "code", "client_id": reg.json()["client_id"], "redirect_uri": redirect,
+                  "code_challenge": challenge, "code_challenge_method": "S256", "state": "original-state",
+                  "resource": resources}
+
+        async def authorize(params):
+            encoded = urlencode(params, doseq=True)
+            if method == "GET":
+                return await ah.get(f"/authorize?{encoded}")
+            return await ah.post("/authorize", content=encoded,
+                                 headers={"content-type": "application/x-www-form-urlencoded"})
+
+        response = await authorize(values)
+        assert response.status_code == 302
+        callback = urlparse(response.headers["location"])
+        assert (callback.scheme, callback.netloc, callback.path) == ("https", "client.example", "/cb")
+        assert parse_qs(callback.query) == {"keep": ["yes"], "error": ["invalid_target"],
+            "error_description": ["unsupported resource"], "state": ["original-state"]}
+        assert "no-store" in response.headers["cache-control"]
+        for invalid in ({"client_id": "unknown"}, {"redirect_uri": "https://unregistered.example/cb"},
+                        {"redirect_uri": "not-a-url"}):
+            response = await authorize({**values, **invalid})
+            assert response.status_code == 400 and "location" not in response.headers
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("redirect", [
+    "http://external.example/cb", "ftp://client.example/cb", "https://client.example/cb#fragment",
+    "https://client.example/cb#", "http://127.0.0.1.evil.example/cb", "http://localhost.evil.example/cb",
+])
+async def test_dcr_rejects_unsafe_callbacks_without_saving_a_client(tmp_path, redirect):
+    funnel, _ = build(_settings(tmp_path))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh:
+        response = await fh.post("/register", json={"redirect_uris": [redirect], "token_endpoint_auth_method": "none"})
+        assert response.status_code == 400 and response.json()["error"] == "invalid_redirect_uri"
+        assert not (tmp_path / "oauth-state.json").exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("redirect", ["https://client.example/cb", "http://localhost:1234/cb",
+                                     "http://127.0.0.1:1234/cb", "http://[::1]:1234/cb"])
+async def test_dcr_accepts_https_and_loopback_callbacks(tmp_path, redirect):
+    funnel, _ = build(_settings(tmp_path))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh:
+        response = await fh.post("/register", json={"redirect_uris": [redirect], "token_endpoint_auth_method": "none"})
+        assert response.status_code == 201
+
+
+@pytest.mark.anyio
+async def test_legacy_unsafe_callback_is_not_used_even_for_authorization_errors(tmp_path):
+    cfg = _settings(tmp_path)
+    (tmp_path / "oauth-state.json").write_text(json.dumps({"clients": {"legacy": {
+        "client_id": "legacy", "redirect_uris": ["http://external.example/cb"], "token_endpoint_auth_method": "none"}}}))
+    _, approval = build(cfg)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+        response = await ah.get("/authorize", params={"client_id": "legacy", "redirect_uri": "http://external.example/cb"})
+        assert response.status_code == 400 and "location" not in response.headers
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("host", ["127.0.0.1", "[::1]"])
+async def test_loopback_port_can_change_at_authorization_but_not_at_token_exchange(tmp_path, host):
+    funnel, approval = build(_settings(tmp_path))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh, \
+            httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+        registered = f"http://{host}:1234/cb?app=anki"
+        requested = f"http://{host}:5678/cb?app=anki"
+        reg = await fh.post("/register", json={"redirect_uris": [registered], "token_endpoint_auth_method": "none"})
+        client_id = reg.json()["client_id"]
+        verifier, challenge = _pkce()
+        params = {"response_type": "code", "client_id": client_id, "code_challenge": challenge,
+                  "code_challenge_method": "S256", "state": "native-state"}  # 단일 resource 생략도 HTTP 경로로 검증한다
+        for bad_uri in (f"http://{host}:5678/other?app=anki", f"http://{host}:5678/cb?app=other",
+                        "http://localhost:5678/cb?app=anki", "http://127.0.0.2:5678/cb?app=anki",
+                        requested + "#fragment", requested.replace("http:", "https:")):
+            denied = await ah.get("/authorize", params={**params, "redirect_uri": bad_uri})
+            assert denied.status_code == 400 and "location" not in denied.headers
+        auth = await ah.get("/authorize", params={**params, "redirect_uri": requested})
+        assert auth.status_code == 302
+        txn = parse_qs(urlparse(auth.headers["location"]).query)["txn"][0]
+        approved = await ah.post("/approve", data={"txn": txn, "passphrase": "open-sesame", "decision": "approve"})
+        callback = urlparse(approved.headers["location"])
+        assert callback.netloc == f"{host}:5678"
+        assert parse_qs(callback.query)["state"] == ["native-state"]
+        payload = {"grant_type": "authorization_code", "client_id": client_id, "code_verifier": verifier,
+                   "code": parse_qs(callback.query)["code"][0]}
+        wrong_port = await fh.post("/token", data={**payload, "redirect_uri": registered})
+        assert wrong_port.status_code == 400
+        token = await fh.post("/token", data={**payload, "redirect_uri": requested})
+        assert token.status_code == 200
+        state = json.loads((tmp_path / "oauth-state.json").read_text())
+        assert all(rec["resource"] == f"https://{PUBLIC_HOST}/mcp" for rec in state["access"].values())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("registered,requested", [
+    ("http://localhost:1234/cb", "http://localhost:5678/cb"),
+    ("https://127.0.0.1:1234/cb", "https://127.0.0.1:5678/cb"),
+    ("https://client.example:1234/cb", "https://client.example:5678/cb"),
+])
+async def test_port_exception_is_limited_to_ip_loopback_http(tmp_path, registered, requested):
+    funnel, approval = build(_settings(tmp_path))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh, \
+            httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+        reg = await fh.post("/register", json={"redirect_uris": [registered], "token_endpoint_auth_method": "none"})
+        _, challenge = _pkce()
+        response = await ah.get("/authorize", params={"response_type": "code", "client_id": reg.json()["client_id"],
+            "redirect_uri": requested, "code_challenge": challenge, "code_challenge_method": "S256"})
+        assert response.status_code == 400 and "location" not in response.headers

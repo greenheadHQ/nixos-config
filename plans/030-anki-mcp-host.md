@@ -25,7 +25,7 @@
 - **Depends on**: 024 (soft — AnkiWeb 계정·서버 컬렉션이 존재해야 Download 가능)
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
-- **Execution**: IN PROGRESS — PR 1 머지(#1307), 시크릿 투입(#1308), 운영 부트스트랩·정상 sync 완료(#1309). PR 2a #1310은 구현·배포 검증 뒤 Funnel 443이 기존 Caddy의 4개 서비스를 끊는 회귀로 보류했다. MiniPC는 main으로 복구했고 2026-09-07 Mac에서 기존 4개 서비스 정상·Funnel 없음·Anki sync/백업 타이머 정상을 재확인했다. 운영자가 **공개 8443 / 승인 9443 / 미리보기 10000** 재배치를 선택했다. 재설계 구현·검증 진행 중이며 실제 ChatGPT·Claude·Codex 연결 검증은 아직 남아 있다.
+- **Execution**: IN PROGRESS — PR 1 머지(#1307), 시크릿 투입(#1308), 운영 부트스트랩·정상 sync 완료(#1309). PR 2a #1310의 Funnel 443 회귀 뒤 운영자가 **공개 8443 / 승인 9443 / 미리보기 10000** 재배치를 선택했다. `0f4cb01a` 배포 후 공개 메타데이터·무토큰 401·내부 승인 포트·다른 Mac에서 기존 4개 서비스·MiniPC smoke-test 10/10을 확인했다. ChatGPT의 OAuth 자동 설정 조회는 실패했고, 수동 endpoint 입력 시 DCR 선택이 활성화됐다. 2026-09-08 명세 감사에서 필수 요건 미충족 4건을 확인했고, 독립 검토에서 확인한 콜백 처리 2건까지 코드와 회귀 테스트에 반영했다. OAuth 보완의 정확성·회귀 검토와 격리 테스트 63개, 일반·no-IFD eval이 통과했다. 실제 ChatGPT·Claude·Codex 연결 검증은 아직 남아 있다.
 - **Plan DA**: R1 COMPLETE (finding 21건 전부 CONFIRMED·반영, 롤아웃 계약 2건은 운영자 결정 "계획을 구현에 맞춰 갱신"), R2 COMPLETE (finding 19건 전부 CONFIRMED·반영 — 방향 모드 제거, 복원 절차 계약, sync 계층 단일화, 타임아웃 단일 소스, lab 폐기 절차), R3 COMPLETE (16건: 15 CONFIRMED·1 NOT_AN_ISSUE — 14건 반영: 준비·재시도 상수 단일 소스와 유닛 예산 재계산, /status 즉시 응답 분리, import 구성 시점 게이트, export 덮어쓰기 거부, 복구점 미러·정리 코드 PR 2b로 이관, 인스턴스 enable 옵션 제거, result 어휘 표; 1건 REPLAN_REQUIRED(MCP 유저·상태 파일 접근)는 #1306에 배출), R4 COMPLETE (19건 전부 CONFIRMED·반영 — lab 수명을 PR 2b까지로, 준비됨=로그인 판정 확정, /status 투영 축소, running 상태·요청–결과 대응, busy 예산 스크립트 전체 1회·백오프 합 파생, 애드온 타임아웃 전부 env, allowImport 옵션+배타 assertion, user·profile 옵션 제거, 미디어 대기 제거, 문서 정합), R5 COMPLETE (13건: 12 CONFIRMED·1 NOT_AN_ISSUE — R4 편집이 애드온 `required` 바인딩을 조건 블록 안으로 밀어 넣은 CRITICAL 결함 복원, 상태 파일 runId 회차 식별, collection-empty 알림, 헬퍼 배선 공용 파일 + eval의 `${VAR:?}` 요구 집합 대조, 시크릿 인벤토리·문서 정합). R6 COMPLETE (15건 전부 CONFIRMED·반영 — loopback 무인증 AnkiConnect 잔여 위험을 CIR·결정 1에 기록하고 normal sync에 급감 게이트, 복원 절차의 상태 파일 초기화 단계와 STOP 9 예외, 결정 13 호출자 규칙을 systemctl 실측 대조로, full-sync-required exit 1, smoke-test 백업 신선도 등록, backup 유닛 쓰기 경로 축소, AH8 분할, 문서 정합). 루프 종료 `termination_type=USER_STOP`(운영자 지시 2026-09-07: "점점 YAGNI성 꼬투리 리뷰만 나온다" — R6 반영분은 독립 재검증 없이 walkthrough·배포 실측으로만 확인). 미해결: R6 write phase delta의 독립 리뷰 부재
 - **PR DA**: PR 1은 운영자 결정으로 생략. PR 2a는 운영자 결정 LITE(Correctness+Regression), Codex 검토로 진행했으나 Funnel 443 회귀로 미수렴. 재설계 반영 후 재검토해야 하며 PR #1310은 아직 머지하지 않는다.
 
@@ -213,6 +213,21 @@
     토큰 만료/갱신/철회·매 요청 검증. TokenVerifier 경계. 클라이언트 인증은 `none`·`client_secret_post`만 광고·등록 허용한다.
     핀된 SDK의 Basic 인증은 body client_id를 먼저 요구하므로 표준 Basic-only 요청을 처리하지 못한다. Basic·JWT 등록은
     저장 전에 거부하며, 기존 공개 클라이언트의 secret 없는 철회는 유지한다.
+    **2026-09-08 명세 감사 보완** ([MCP 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)):
+    - 승인·토큰 요청의 `resource`는 이 MCP 주소만 허용한다. 새 승인에서 생략하면 단일 Anki 주소를 기본값으로 확정한다.
+      실제 Bearer 및 refresh 검증도 같은 대상을 요구한다. 기존 대상 누락·불일치 토큰은 재연결이 필요하며 소급 보정하지 않는다.
+    - 공개 클라이언트의 refresh 회전은 옛 해시와 grant 관계를 보존한다. 같은 client의 재사용은 해당 grant의 access·refresh를
+      함께 철회한다. 살아 있는 grant에서는 옛 토큰의 개별 만료 시각이 지나도 이력을 유지한다. 저장량 제한은
+      `constants.ankiMcp.refreshMaxRotations`(4096회): 상한을 넘는 회전은 grant 전체를 철회하고 새 승인을 요구한다.
+      이미 구버전에서 삭제된 옛 해시는 복구할 수 없으며, 이력 보존은 보완 버전에서 회전한 토큰부터 적용된다.
+    - callback은 HTTPS 또는 HTTP `localhost`·`127.0.0.1`·`[::1]`만 허용하고 fragment·userinfo를 거부한다.
+      구버전의 위험한 등록도 인가 시 거부하여 오류 응답이 그 주소로 리다이렉트되지 않게 한다.
+      HTTP IP loopback은 등록 주소와 인가 요청의 포트 차이만 허용한다. 토큰 교환에서는 인가 때 실제 쓴 주소와 같아야 한다.
+      잘못된 resource도 SDK가 client·callback·PKCE·scope를 검증한 뒤 `invalid_target`과 원래 `state`를 callback으로 돌려준다.
+    - DCR에서 secret을 발급하면 `client_secret_expires_at`을 명시한다. 무기한은 `0`이며 SDK의 expiry interval `0`과 다르다.
+    CIMD는 SHOULD인 권고 기능으로 이번 DCR 구현에는 포함하지 않는다. Basic은 이 명세가 참조하는
+    [OAuth 2.1 draft-13 §2.4.1](https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-2.4.1)에서 MAY이며
+    본문 secret 방식이 MUST다. 위 결함들은 등록·인가 이후 경로에 해당하므로 ChatGPT의 초기 discovery 오류 원인으로 단정하지 않는다.
 19. `homeserver.nix`에 `ankiMcp` 옵션. `anki-mcp/default.nix`: systemd 서비스 `anki-mcp`(loopback 두 포트, 유저 `anki-mcp`),
     polkit 규칙(sync 유닛 start만), `anki-mcp-tailscale` oneshot이 Funnel 8443→MCP·serve 9443→승인을 배선하고 승인 포트의 Funnel은
     차단한다(STOP 6). Caddy 443은 건드리지 않고, 시작·일일 smoke-test가 443 가로채기 부재와 실제 proxy 대상을 검사한다. 결정 15(A안)대로 sync 스크립트가 `/run/anki-host-status/<instance>.json` 사본을 내놓는다.
@@ -244,6 +259,10 @@
   연결되지 않아야 한다. tailnet 9443에서는 승인 화면이 열려야 한다. 노드 자체 smoke-test만으로 외부 경로를 통과 처리하지 않는다.
 - 클라이언트: ChatGPT(iPhone) 실제 호출·readback, Codex·Claude 연결·조회. 8443 URL 등록만으로 성공 판정하지 않는다.
 - 실패 경로: 위 Step 23.
+- OAuth 명세 회귀: 다른 대상·대상 없는 기존 토큰의 Bearer/refresh 거부, 인가·토큰 요청의 잘못된 resource 거부,
+  재시작·옛 refresh 만료 이후에도 재사용 탐지와 grant 철회, 다른 client·grant 보존, 회전 상한과 이력 정리,
+  외부 HTTP/fragment callback 등록 거부 및 구버전 등록의 오류 redirect 차단, secret 만료 필드 검증,
+  유효 callback의 resource 오류/state 전달과 미등록 callback 차단, IP loopback 포트 예외 및 토큰 교환 주소 일치.
 
 ## Done criteria
 

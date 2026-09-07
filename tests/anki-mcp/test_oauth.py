@@ -14,6 +14,12 @@ from anki_mcp.approval import Lockout, build_approval_app
 from anki_mcp.oauth import FileOAuthProvider
 
 APPROVAL = "https://minipc.example.ts.net:9443"
+RESOURCE = "https://minipc.example.ts.net:8443/mcp"
+
+
+def _provider(path, *, access_ttl=60, refresh_ttl=600, code_ttl=30, max_refresh_rotations=4096, **kwargs):
+    return FileOAuthProvider(path, APPROVAL, access_ttl, refresh_ttl, code_ttl,
+                             RESOURCE, max_refresh_rotations, **kwargs)
 
 
 def _client(client_id="c1", auth="none", issued_at=None):
@@ -40,11 +46,18 @@ def _params(challenge, state="st"):
     )
 
 
+async def _grant_tokens(provider, client):
+    _, challenge = _pkce()
+    txn = parse_qs(urlparse(await provider.authorize(client, _params(challenge))).query)["txn"][0]
+    code = parse_qs(urlparse(provider.complete_approval(txn)).query)["code"][0]
+    return await provider.exchange_authorization_code(client, await provider.load_authorization_code(client, code))
+
+
 @pytest.mark.anyio
 async def test_provider_full_lifecycle_and_persistence(tmp_path):
     path = str(tmp_path / "oauth-state.json")
     clock = {"t": 1000.0}
-    prov = FileOAuthProvider(path, APPROVAL, access_ttl=60, refresh_ttl=600, code_ttl=30, now=lambda: clock["t"])
+    prov = _provider(path, now=lambda: clock["t"])
     client = _client()
     await prov.register_client(client)
     assert (await prov.get_client("c1")).client_name == "Test Client"
@@ -68,13 +81,14 @@ async def test_provider_full_lifecycle_and_persistence(tmp_path):
     assert await prov.load_authorization_code(client, code) is None  # 1회용
     access = await prov.load_access_token(tokens.access_token)
     assert access and access.client_id == "c1" and access.scopes == ["anki"]
+    assert access.resource == RESOURCE  # 새 승인에서 resource 생략은 단일 Anki 대상으로 확정한다
 
     # 파일에는 해시만 — 평문 토큰이 없다
     raw = json.loads(open(path, encoding="utf-8").read())
     assert tokens.access_token not in json.dumps(raw) and tokens.refresh_token not in json.dumps(raw)
 
     # 재시작 후에도 클라이언트·토큰이 살아 있다
-    prov2 = FileOAuthProvider(path, APPROVAL, access_ttl=60, refresh_ttl=600, code_ttl=30, now=lambda: clock["t"])
+    prov2 = _provider(path, now=lambda: clock["t"])
     assert (await prov2.get_client("c1")) is not None
     assert (await prov2.load_access_token(tokens.access_token)) is not None
 
@@ -84,7 +98,7 @@ async def test_provider_full_lifecycle_and_persistence(tmp_path):
     rt = await prov2.load_refresh_token(client, tokens.refresh_token)
     assert rt is not None
     new_tokens = await prov2.exchange_refresh_token(client, rt, ["anki"])
-    assert await prov2.load_refresh_token(client, tokens.refresh_token) is None  # 옛 refresh 무효
+    # 옛 refresh를 실제로 다시 제출하면 grant가 철회된다. 재사용 경로는 별도 테스트에서 검증한다.
     assert await prov2.load_access_token(new_tokens.access_token) is not None
 
     # scope 확장은 거부되고, 거부된 요청이 refresh를 소비하지 않는다
@@ -101,7 +115,7 @@ async def test_provider_full_lifecycle_and_persistence(tmp_path):
 
 @pytest.mark.anyio
 async def test_revoking_either_token_kills_the_whole_grant(tmp_path):
-    prov = FileOAuthProvider(str(tmp_path / "s.json"), APPROVAL, 60, 600, 30)
+    prov = _provider(str(tmp_path / "s.json"))
     client = _client()
     await prov.register_client(client)
 
@@ -132,7 +146,7 @@ async def test_revoking_either_token_kills_the_whole_grant(tmp_path):
 @pytest.mark.anyio
 async def test_registration_is_capped_and_unused_clients_are_pruned(tmp_path):
     clock = {"t": 10_000.0}
-    prov = FileOAuthProvider(str(tmp_path / "s.json"), APPROVAL, 60, 600, 30, now=lambda: clock["t"],
+    prov = _provider(str(tmp_path / "s.json"), now=lambda: clock["t"],
                              max_clients=2, max_client_bytes=600, unused_client_ttl=100)
     await prov.register_client(_client("c1", issued_at=int(clock["t"])))
     await prov.register_client(_client("c2", issued_at=int(clock["t"])))
@@ -166,7 +180,7 @@ async def test_registration_is_capped_and_unused_clients_are_pruned(tmp_path):
 
 @pytest.mark.anyio
 async def test_approval_form_requires_passphrase_and_locks_out(tmp_path):
-    prov = FileOAuthProvider(str(tmp_path / "s.json"), APPROVAL, 60, 600, 30)
+    prov = _provider(str(tmp_path / "s.json"))
     client = _client()
     await prov.register_client(client)
     _, challenge = _pkce()
@@ -213,7 +227,7 @@ async def test_approval_form_requires_passphrase_and_locks_out(tmp_path):
 
 @pytest.mark.anyio
 async def test_deny_redirects_with_access_denied(tmp_path):
-    prov = FileOAuthProvider(str(tmp_path / "s.json"), APPROVAL, 60, 600, 30)
+    prov = _provider(str(tmp_path / "s.json"))
     client = _client()
     await prov.register_client(client)
     _, challenge = _pkce()
@@ -226,3 +240,75 @@ async def test_deny_redirects_with_access_denied(tmp_path):
         assert r.status_code == 302
         q = parse_qs(urlparse(r.headers["location"]).query)
         assert q["error"] == ["access_denied"] and q["state"] == ["zz"]
+
+
+@pytest.mark.anyio
+async def test_refresh_replay_survives_restart_and_the_old_token_expiry(tmp_path):
+    path = str(tmp_path / "s.json")
+    clock = {"t": 1000.0}
+    prov = _provider(path, now=lambda: clock["t"])
+    client = _client()
+    other = _client("other")
+    await prov.register_client(client)
+    await prov.register_client(other)
+    first = await _grant_tokens(prov, client)
+    clock["t"] = 1100
+    second = await prov.exchange_refresh_token(client, await prov.load_refresh_token(client, first.refresh_token), ["anki"])
+    clock["t"] = 1599
+    third = await prov.exchange_refresh_token(client, await prov.load_refresh_token(client, second.refresh_token), ["anki"])
+
+    # R1 자체는 만료됐어도 R3와 같은 승인이 살아 있으므로 R1 재사용을 탐지해야 한다.
+    clock["t"] = 1601
+    prov = _provider(path, now=lambda: clock["t"])
+    unrelated = await _grant_tokens(prov, client)
+    assert await prov.load_refresh_token(other, first.refresh_token) is None
+    assert await prov.load_refresh_token(client, "unknown-token") is None
+    assert await prov.load_access_token(third.access_token) is not None
+    assert await prov.load_refresh_token(client, first.refresh_token) is None
+    assert await prov.load_access_token(third.access_token) is None
+    assert await prov.load_refresh_token(client, third.refresh_token) is None
+    assert await prov.load_access_token(unrelated.access_token) is not None
+    assert await prov.load_refresh_token(client, unrelated.refresh_token) is not None
+
+    restarted = _provider(path, now=lambda: clock["t"])
+    assert await restarted.load_access_token(third.access_token) is None
+    assert await restarted.load_refresh_token(client, third.refresh_token) is None
+
+
+@pytest.mark.anyio
+async def test_refresh_history_limit_requires_new_approval_without_losing_replay_history(tmp_path):
+    path = str(tmp_path / "s.json")
+    prov = _provider(path, max_refresh_rotations=2)
+    client = _client()
+    await prov.register_client(client)
+    tokens = await _grant_tokens(prov, client)
+    for _ in range(2):
+        tokens = await prov.exchange_refresh_token(client, await prov.load_refresh_token(client, tokens.refresh_token), ["anki"])
+    current = await prov.load_refresh_token(client, tokens.refresh_token)
+    with pytest.raises(TokenError, match="scopes"):
+        await prov.exchange_refresh_token(client, current, ["admin"])
+    with pytest.raises(TokenError):
+        await prov.exchange_refresh_token(_client("other"), current, ["anki"])
+    assert await prov.load_access_token(tokens.access_token) is not None
+    with pytest.raises(TokenError, match="authorization is required"):
+        await prov.exchange_refresh_token(client, current, ["anki"])
+    assert await prov.load_access_token(tokens.access_token) is None
+    assert await prov.load_refresh_token(client, tokens.refresh_token) is None
+    saved = json.loads(open(path, encoding="utf-8").read())
+    assert not saved["access"] and not saved["refresh"]
+    # 새 grant에는 다시 사용자 승인이 필요하며, 정상 승인 뒤에는 연결할 수 있다.
+    fresh = await _grant_tokens(prov, client)
+    assert await prov.load_access_token(fresh.access_token) is not None
+
+
+@pytest.mark.anyio
+async def test_inactive_refresh_history_is_pruned_before_reusing_registration_capacity(tmp_path):
+    clock = {"t": 1000.0}
+    prov = _provider(str(tmp_path / "s.json"), max_clients=1, unused_client_ttl=100, now=lambda: clock["t"])
+    client = _client(issued_at=1000)
+    await prov.register_client(client)
+    first = await _grant_tokens(prov, client)
+    await prov.exchange_refresh_token(client, await prov.load_refresh_token(client, first.refresh_token), ["anki"])
+    clock["t"] = 1700
+    await prov.register_client(_client("next", issued_at=1700))
+    assert {c["client_id"] for c in prov.clients()} == {"next"}

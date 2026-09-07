@@ -18,11 +18,15 @@ from urllib.parse import parse_qsl, urlsplit
 import httpx
 import uvicorn
 from mcp.server.auth.handlers.metadata import MetadataHandler
+from mcp.server.auth.handlers.token import TokenHandler
+from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.routes import build_metadata, cors_middleware
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from .ankiconnect import AnkiConnect
@@ -91,6 +95,8 @@ def build(cfg: Settings):
         access_ttl=cfg.access_ttl,
         refresh_ttl=cfg.refresh_ttl,
         code_ttl=cfg.code_ttl,
+        resource_url=f"{cfg.public_url}/mcp",
+        max_refresh_rotations=cfg.refresh_max_rotations,
         max_clients=cfg.reg_max_clients,
         max_client_bytes=cfg.reg_max_client_bytes,
         unused_client_ttl=cfg.reg_unused_ttl,
@@ -153,6 +159,21 @@ def build(cfg: Settings):
     )
     funnel_app.router.routes = [
         metadata_route if (isinstance(r, Route) and r.path == "/.well-known/oauth-authorization-server") else r
+        for r in funnel_app.router.routes
+    ]
+    # SDK 1.27.1은 /token의 resource를 파싱만 한다. 단일 Anki 대상인지 먼저 확인한 뒤 같은 Request를 넘긴다.
+    token_handler = TokenHandler(provider, ClientAuthenticator(provider))
+
+    async def token_endpoint(request: Request):
+        form = await request.form()
+        if any(not provider.accepts_resource(str(value)) for value in form.getlist("resource")):
+            return JSONResponse({"error": "invalid_target", "error_description": "unsupported resource"},
+                                status_code=400, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+        return await token_handler.handle(request)
+
+    funnel_app.router.routes = [
+        Route("/token", endpoint=cors_middleware(token_endpoint, ["POST", "OPTIONS"]), methods=["POST", "OPTIONS"])
+        if (isinstance(r, Route) and r.path == "/token") else r
         for r in funnel_app.router.routes
     ]
     # /revoke: 공개 클라이언트의 secret 생략을 받아준다 (SDK 라우트의 ASGI 앱을 감싼 새 Route로 교체)

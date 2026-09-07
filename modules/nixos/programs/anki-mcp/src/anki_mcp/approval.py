@@ -14,6 +14,8 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from mcp.server.auth.handlers.authorize import AuthorizationHandler
+from mcp.server.auth.provider import AuthorizationParams, construct_redirect_uri
+from mcp.shared.auth import OAuthClientInformationFull
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -21,6 +23,20 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 
 from .oauth import FileOAuthProvider
+
+
+class _InvalidTargetProvider:
+    """SDK가 client·callback·PKCE·scope를 검증한 뒤 오류 URL만 만든다. 승인 상태는 생성하지 않는다."""
+
+    def __init__(self, provider: FileOAuthProvider) -> None:
+        self._provider = provider
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        return await self._provider.get_client(client_id)
+
+    async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
+        return construct_redirect_uri(str(params.redirect_uri), error="invalid_target",
+                                      error_description="unsupported resource", state=params.state)
 
 
 class Lockout:
@@ -105,6 +121,10 @@ def build_approval_app(
     async def authorize_route(request: Request) -> Response:
         if not host_ok(request):
             return PlainTextResponse("wrong host", status_code=421)
+        params = request.query_params if request.method == "GET" else await request.form()
+        if any(not provider.accepts_resource(str(value)) for value in params.getlist("resource")):
+            # SDK의 오류 enum에는 invalid_target이 없다. 검증된 callback을 쓰는 요청별 adapter로 보완한다.
+            return await AuthorizationHandler(_InvalidTargetProvider(provider)).handle(request)
         return await authorize.handle(request)
 
     def render(txn: str, info: dict, error: str = "") -> HTMLResponse:

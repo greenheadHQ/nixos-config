@@ -214,6 +214,7 @@ in
         ANKI_SYNC_UNIT = syncUnit;
         ANKI_MCP_ACCESS_TTL_SECS = toString constants.ankiMcp.accessTokenTtlSecs;
         ANKI_MCP_REFRESH_TTL_SECS = toString constants.ankiMcp.refreshTokenTtlSecs;
+        ANKI_MCP_REFRESH_MAX_ROTATIONS = toString constants.ankiMcp.refreshMaxRotations;
         ANKI_MCP_CODE_TTL_SECS = toString constants.ankiMcp.authCodeTtlSecs;
         ANKI_MCP_SYNC_WAIT_SECS = toString constants.ankiMcp.syncWaitSecs;
         ANKI_MCP_LOCKOUT_FAILURES = toString constants.ankiMcp.approvalLockoutFailures;

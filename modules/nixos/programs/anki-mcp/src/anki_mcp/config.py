@@ -41,6 +41,7 @@ class Settings:
     passphrase_file: str  # LoadCredential 경로 — ANKI_MCP_APPROVAL_PASSPHRASE=... 한 줄
     access_ttl: int
     refresh_ttl: int
+    refresh_max_rotations: int
     code_ttl: int
     sync_wait: int
     lockout_failures: int
@@ -72,6 +73,7 @@ class Settings:
             passphrase_file=os.path.join(cred_dir, "approval") if cred_dir else "",
             access_ttl=_int("ANKI_MCP_ACCESS_TTL_SECS"),
             refresh_ttl=_int("ANKI_MCP_REFRESH_TTL_SECS"),
+            refresh_max_rotations=_int("ANKI_MCP_REFRESH_MAX_ROTATIONS"),
             code_ttl=_int("ANKI_MCP_CODE_TTL_SECS"),
             sync_wait=_int("ANKI_MCP_SYNC_WAIT_SECS"),
             lockout_failures=_int("ANKI_MCP_LOCKOUT_FAILURES"),

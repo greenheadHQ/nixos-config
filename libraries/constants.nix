@@ -81,6 +81,7 @@
     user = "anki-mcp"; # anki-host와 다른 유저 — 컬렉션 디렉터리(0700)에 닿지 않는다 (결정 15)
     accessTokenTtlSecs = 3600;
     refreshTokenTtlSecs = 2592000; # 30일 — 클라이언트가 조용히 갱신하는 기간
+    refreshMaxRotations = 4096; # grant별 재사용 탐지 기록 상한. 초과 시 grant를 철회하고 재승인한다
     authCodeTtlSecs = 300; # 승인 화면에서 문구를 입력할 시간
     syncWaitSecs = 180; # "지금 동기화"가 회차 결과를 기다리는 상한 (normal sync는 수 초)
     approvalLockoutFailures = 5;
