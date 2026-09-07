@@ -882,6 +882,14 @@ let
   ankiHostSingleAccountAssertion = builtins.any (
     a: nixpkgsLib.hasInfix "single AnkiWeb credential" a.message
   ) nixosCfg.assertions;
+  # 원격 MCP 서버 (plan 030 PR 2a)
+  ankiMcpCfg = nixosCfg.homeserver.ankiMcp;
+  ankiMcpSvc = nixosCfg.systemd.services."anki-mcp";
+  ankiMcpWire = nixosCfg.systemd.services."anki-mcp-tailscale";
+  ankiMcpModuleSrc = builtins.readFile ../modules/nixos/programs/anki-mcp/default.nix;
+  ankiMcpServerSrc = builtins.readFile ../modules/nixos/programs/anki-mcp/src/anki_mcp/server.py;
+  ankiMcpFqdn = constants.network.minipcTailnetFqdn;
+  ankiMcpApprovalPublic = toString constants.network.ports.ankiMcpApprovalPublic;
   # ═══════════════════════════════════════════════════════════════
   # 테스트 실행
   # ═══════════════════════════════════════════════════════════════
@@ -1317,6 +1325,64 @@ let
     {
       name = "Test AH8c: 공용 헬퍼 env가 sync·backup 유닛에 같은 값으로 주입되고, 스크립트 소스의 `\${VAR:?}` 요구 집합(helper-call ${toString (builtins.length ankiHostHelperCallRequired)}·sync ${toString (builtins.length ankiHostSyncScriptRequired)}·backup ${toString (builtins.length ankiHostBackupScriptRequired)}개)을 유닛 env가 전부 덮어야 함";
       cond = ankiHostEnvSetsOk;
+    }
+    {
+      name = "Test AM1: MCP 서비스는 anki-host와 다른 전용 유저(${constants.ankiMcp.user})로 돌고 anki-host 그룹에만 속하며(상태 사본 읽기), strict 하드닝 + 0700 상태 디렉터리여야 함";
+      cond =
+        ankiMcpCfg.enable
+        && ankiMcpSvc.serviceConfig.User == constants.ankiMcp.user
+        && constants.ankiMcp.user != constants.ankiHost.user
+        && nixosCfg.users.users.${constants.ankiMcp.user}.extraGroups == [ constants.ankiHost.user ]
+        && ankiMcpSvc.serviceConfig.ProtectSystem == "strict"
+        && ankiMcpSvc.serviceConfig.NoNewPrivileges == true
+        && ankiMcpSvc.serviceConfig.StateDirectoryMode == "0700";
+    }
+    {
+      name = "Test AM2: MCP·승인 앱은 loopback 포트(${toString constants.network.ports.ankiMcp}/${toString constants.network.ports.ankiMcpApproval})에만 바인딩(소스 핀)하고, issuer·승인 URL·AnkiConnect·헬퍼·sync 유닛·상태 사본 경로가 constants에서 파생돼야 함";
+      cond =
+        ankiMcpSvc.environment.ANKI_MCP_PORT == toString constants.network.ports.ankiMcp
+        && ankiMcpSvc.environment.ANKI_MCP_APPROVAL_PORT == toString constants.network.ports.ankiMcpApproval
+        && ankiMcpSvc.environment.ANKI_MCP_PUBLIC_URL == "https://${ankiMcpFqdn}"
+        && ankiMcpSvc.environment.ANKI_MCP_APPROVAL_URL == "https://${ankiMcpFqdn}:${ankiMcpApprovalPublic}"
+        &&
+          ankiMcpSvc.environment.ANKI_CONNECT_URL
+          == "http://127.0.0.1:${toString ankiHostCfg.instances.main.port}"
+        &&
+          ankiMcpSvc.environment.ANKI_HELPER_URL
+          == "http://127.0.0.1:${toString ankiHostCfg.instances.main.helperPort}"
+        && ankiMcpSvc.environment.ANKI_SYNC_UNIT == "anki-host-sync-main.service"
+        && ankiMcpSvc.environment.ANKI_SYNC_STATUS_FILE == "${constants.paths.ankiHostStatusRun}/main.json"
+        && nixpkgsLib.hasInfix "host=\"127.0.0.1\"" ankiMcpServerSrc
+        && nixpkgsLib.hasInfix "allowed_hosts=[public_host" ankiMcpServerSrc;
+    }
+    {
+      name = "Test AM3: Tailscale 배선은 443 Funnel → MCP, ${ankiMcpApprovalPublic} tailnet 전용 serve → 승인이며, 승인 포트에 Funnel을 켜는 코드가 없고 켜져 있으면 끄는 fail-closed 분기가 있어야 함 (STOP 6)";
+      cond =
+        nixpkgsLib.hasInfix "tailscale funnel --bg --https=443" ankiMcpModuleSrc
+        && nixpkgsLib.hasInfix "tailscale serve --bg --https=\${toString approvalPublicPort}" ankiMcpModuleSrc
+        && !(nixpkgsLib.hasInfix "tailscale funnel --bg --https=\${toString approvalPublicPort}" ankiMcpModuleSrc)
+        && nixpkgsLib.hasInfix "tailscale funnel --https=\${toString approvalPublicPort} off" ankiMcpModuleSrc
+        && ankiMcpWire.wantedBy == [ "multi-user.target" ]
+        && ankiMcpWire.serviceConfig.Type == "oneshot";
+    }
+    {
+      name = "Test AM4: sync 트리거는 polkit 규칙으로 anki-mcp 유저에게 anki-host-sync-main.service의 start만 허용하고, 승인 문구 시크릿은 root 0400 + LoadCredential로만 전달돼야 함";
+      cond =
+        nixosCfg.security.polkit.enable
+        && nixpkgsLib.hasInfix "anki-host-sync-main.service" nixosCfg.security.polkit.extraConfig
+        && nixpkgsLib.hasInfix "action.lookup(\"verb\") == \"start\"" nixosCfg.security.polkit.extraConfig
+        && nixpkgsLib.hasInfix "subject.user == \"${constants.ankiMcp.user}\"" nixosCfg.security.polkit.extraConfig
+        && nixosCfg.age.secrets.anki-mcp-oauth.owner == "root"
+        && nixosCfg.age.secrets.anki-mcp-oauth.mode == "0400"
+        && builtins.any (c: nixpkgsLib.hasPrefix "approval:" c) ankiMcpSvc.serviceConfig.LoadCredential;
+    }
+    {
+      name = "Test AM5: 결정 15 — sync 유닛은 상태 사본 게시판(${constants.paths.ankiHostStatusRun})을 env로 받고 쓰기 가능하며, 게시판은 anki-host 0750 tmpfiles로 만들어지고 MCP의 상태 파일 경로가 그 아래여야 함";
+      cond =
+        ankiHostSyncMain.environment.STATUS_RUN_DIR == constants.paths.ankiHostStatusRun
+        && builtins.elem constants.paths.ankiHostStatusRun ankiHostSyncMain.serviceConfig.ReadWritePaths
+        && builtins.elem "d ${constants.paths.ankiHostStatusRun} 0750 ${constants.ankiHost.user} ${constants.ankiHost.user} -" nixosCfg.systemd.tmpfiles.rules
+        && nixpkgsLib.hasPrefix "${constants.paths.ankiHostStatusRun}/" ankiMcpSvc.environment.ANKI_SYNC_STATUS_FILE;
     }
   ]
   ++ darwinIntentTests;

@@ -40,6 +40,10 @@ let
     ]
     ++ lib.optionals config.homeserver.karakeep.enable [
       "${subdomains.karakeep}.${base}:307:/"
+    ]
+    # 원격 MCP 입구(Tailscale Funnel) — OAuth 메타데이터는 인증 없이 200이어야 클라이언트가 등록을 시작할 수 있다
+    ++ lib.optionals config.homeserver.ankiMcp.enable [
+      "${constants.network.minipcTailnetFqdn}:200:/.well-known/oauth-authorization-server"
     ];
 
   smokeScript = pkgs.writeShellApplication {

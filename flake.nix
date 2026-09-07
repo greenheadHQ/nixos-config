@@ -286,6 +286,15 @@
         {
           inherit (pythonRuntimes) pythonWithTomlkit;
           inherit claudeRcFlock prePushRuntime;
+          # anki-mcp 오프라인 단위 테스트 런타임 (tests/run-anki-mcp-tests.sh) — 서비스와 같은 핀된 mcp SDK
+          ankiMcpTestEnv = pkgs.python3.withPackages (
+            ps: with ps; [
+              mcp
+              httpx
+              pytest
+              anyio
+            ]
+          );
         }
       );
     };

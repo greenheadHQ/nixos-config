@@ -101,6 +101,10 @@ run_driver "karakeep-bridge-tests" bash tests/run-karakeep-bridge-tests.sh
 #     PR #929 도입 이후 어떤 러너·훅·CI 에도 연결되지 않아 실행 경로가 0이었다.
 run_driver "issuing-codex-pairing-code-tests" bash tests/run-issuing-codex-pairing-code-tests.sh
 
+# 7e) anki-mcp-tests — 원격 MCP 서버(anki_mcp)의 순수 함수·OAuth provider·승인 폼·sync 트리거 규칙을 hermetic
+#     pytest로 검증한다 (AnkiConnect·systemctl은 fake). 런타임은 flake 패키지 ankiMcpTestEnv(핀된 mcp SDK).
+run_driver "anki-mcp-tests" bash tests/run-anki-mcp-tests.sh
+
 # 7d) guardrail-lint-fixtures — skill-neutral-lint 엔진의 fixture self-test(17개). hermetic 하고
 #     python3 만 요구하므로(codex/nix/jq 불필요) 통합 러너에 저비용으로 붙는다. 이 게이트가 지키는
 #     것은 lint 엔진의 fixture self-test 까지이고, verify-ai-compat.sh 본체(codex 설정·hook·

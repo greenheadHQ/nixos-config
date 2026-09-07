@@ -25,7 +25,7 @@
 - **Depends on**: 024 (soft — AnkiWeb 계정·서버 컬렉션이 존재해야 Download 가능)
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
-- **Execution**: IN PROGRESS — PR 1 머지(#1307) → Step 14 시크릿 투입(#1308) → Step 15 부트스트랩 완료(2026-09-07: `full-download`, 노트 856·카드 1025·revlog 9352 = anki-study 최신 백업과 일치, 이후 normal sync `NO_CHANGES` 성공). **main 인스턴스 운영 중** — 15분 타이머 sync + 04:15 백업. 다음: Step 16 Tailscale ACL(funnel) → PR 2a(착수 전 결정 15)
+- **Execution**: IN PROGRESS — PR 1 머지(#1307) → Step 14 시크릿 투입(#1308) → Step 15 부트스트랩 완료(2026-09-07: `full-download`, 노트 856·카드 1025·revlog 9352 = anki-study 최신 백업과 일치, 이후 normal sync `NO_CHANGES` 성공). **main 인스턴스 운영 중** — 15분 타이머 sync + 04:15 백업. Step 16 완료(Funnel capability 실측). **PR 2a 구현 중**(브랜치 `feat/anki-mcp-server`): Step 17 2a·18·19·20·21 코드 완료, Step 22 배포·검증 대기. 결정 15는 A안으로 확정.
 - **Plan DA**: R1 COMPLETE (finding 21건 전부 CONFIRMED·반영, 롤아웃 계약 2건은 운영자 결정 "계획을 구현에 맞춰 갱신"), R2 COMPLETE (finding 19건 전부 CONFIRMED·반영 — 방향 모드 제거, 복원 절차 계약, sync 계층 단일화, 타임아웃 단일 소스, lab 폐기 절차), R3 COMPLETE (16건: 15 CONFIRMED·1 NOT_AN_ISSUE — 14건 반영: 준비·재시도 상수 단일 소스와 유닛 예산 재계산, /status 즉시 응답 분리, import 구성 시점 게이트, export 덮어쓰기 거부, 복구점 미러·정리 코드 PR 2b로 이관, 인스턴스 enable 옵션 제거, result 어휘 표; 1건 REPLAN_REQUIRED(MCP 유저·상태 파일 접근)는 #1306에 배출), R4 COMPLETE (19건 전부 CONFIRMED·반영 — lab 수명을 PR 2b까지로, 준비됨=로그인 판정 확정, /status 투영 축소, running 상태·요청–결과 대응, busy 예산 스크립트 전체 1회·백오프 합 파생, 애드온 타임아웃 전부 env, allowImport 옵션+배타 assertion, user·profile 옵션 제거, 미디어 대기 제거, 문서 정합), R5 COMPLETE (13건: 12 CONFIRMED·1 NOT_AN_ISSUE — R4 편집이 애드온 `required` 바인딩을 조건 블록 안으로 밀어 넣은 CRITICAL 결함 복원, 상태 파일 runId 회차 식별, collection-empty 알림, 헬퍼 배선 공용 파일 + eval의 `${VAR:?}` 요구 집합 대조, 시크릿 인벤토리·문서 정합). R6 COMPLETE (15건 전부 CONFIRMED·반영 — loopback 무인증 AnkiConnect 잔여 위험을 CIR·결정 1에 기록하고 normal sync에 급감 게이트, 복원 절차의 상태 파일 초기화 단계와 STOP 9 예외, 결정 13 호출자 규칙을 systemctl 실측 대조로, full-sync-required exit 1, smoke-test 백업 신선도 등록, backup 유닛 쓰기 경로 축소, AH8 분할, 문서 정합). 루프 종료 `termination_type=USER_STOP`(운영자 지시 2026-09-07: "점점 YAGNI성 꼬투리 리뷰만 나온다" — R6 반영분은 독립 재검증 없이 walkthrough·배포 실측으로만 확인). 미해결: R6 write phase delta의 독립 리뷰 부재
 - **PR DA**: PR 1은 SKIP — 운영자 결정 2026-09-07(Plan DA 6라운드가 같은 diff를 검토했고 후반 라운드가 YAGNI성 지적으로 흘렀다). PR 2는 FULL(Opus 5 전용 — Codex quota 없음) 유지
 
@@ -114,8 +114,11 @@
     `constants.ankiHost`가 단일 소스다. 모듈이 env로 스크립트에 주입하고 같은 값으로 유닛 TimeoutStartSec을
     계산하며, 스크립트는 env가 없으면 기본값 없이 실패한다. 애드온 버전도 `default.nix`의 한 바인딩이 nix 파생
     version과 /status를 함께 결정한다.
-15. PR 2a 착수 전 결정 항목(#1306 배출 댓글): MCP 서비스 유저와 sync 상태 파일 접근 경로 — 상태 디렉터리는
-    0700이므로 `/run` 사본(그룹 읽기) 또는 헬퍼 `/status` 확장 중 하나를 PR 2a Plan DA에서 정한다.
+15. MCP 서비스 유저와 sync 상태 파일 접근 경로 — **A안 확정**(운영자 2026-09-07): MCP는 별도 유저 `anki-mcp`
+    (`anki-host` 그룹 소속)로 돌고, sync 스크립트가 기록마다 상태 사본을 `constants.paths.ankiHostStatusRun`
+    (`/run/anki-host-status/<instance>.json`, 디렉터리 0750·파일 0640)에 내놓으며 MCP는 그 사본만 읽는다. 컬렉션
+    디렉터리(0700)는 그대로 닫혀 있다. 기능 제약 없음 — MCP는 원래 파일이 아니라 AnkiConnect·헬퍼 HTTP로만 컬렉션을 다룬다.
+    PR 2a의 검토 강도는 운영자 결정으로 Plan DA 생략·PR DA LITE(Correctness+Regression).
 
 ## Commands you will need
 
@@ -185,7 +188,7 @@
 
 ### PR 2 — MCP 서버 + OAuth + Funnel
 
-16. 🔒 운영자: Tailscale 관리 콘솔 ACL에 MiniPC 노드 `funnel` 속성 허용.
+16. 🔒 운영자: Tailscale 관리 콘솔 ACL에 MiniPC 노드 `funnel` 속성 허용. (2026-09-07 완료 — `nodeAttrs`에 IP 타겟, capability 실측 443/8443/10000)
 17. PR 2는 두 단계로 나눈다. 용어: **도구 3계층** = 조회(readOnlyHint) / 변경(추가·수정·태그·덱 이동·정지·일정·잊기,
     일정·잊기는 destructiveHint) / 파괴(노트·덱 삭제 — destructiveHint + 확인 인자 + 자동 복구점). **프리셋 공유 경고** =
     덱 옵션 프리셋이 여러 덱에 공유될 때 응답에 그 덱 목록을 붙이는 것(Anki 구조 사실이며 개인 학습 규칙이 아니므로 결정 5와 무관).
@@ -200,8 +203,9 @@
       (결정 3의 Upload 게이트 설계가 선행 조건).
 18. 내장 OAuth 2.1 AS(mcp SDK provider): PRM·AS metadata·DCR·PKCE S256·승인 화면(비밀 문구)·
     토큰 만료/갱신/철회·매 요청 검증. TokenVerifier 경계.
-19. `homeserver.nix`에 `ankiMcp` 옵션. `anki-mcp/default.nix`: systemd 서비스(loopback), `tailscale.nix`에 Funnel 443→MCP, serve 8443→승인.
-    착수 전 결정(결정 15): MCP 서비스 유저(`anki-mcp`, `anki-host` 그룹?)와 sync 상태 파일 접근 경로.
+19. `homeserver.nix`에 `ankiMcp` 옵션. `anki-mcp/default.nix`: systemd 서비스 `anki-mcp`(loopback 두 포트, 유저 `anki-mcp`),
+    polkit 규칙(sync 유닛 start만), `anki-mcp-tailscale` oneshot이 Funnel 443→MCP·serve 8443→승인을 배선하고 8443 Funnel은
+    끈다(STOP 6). 결정 15(A안)대로 sync 스크립트가 `/run/anki-host-status/<instance>.json` 사본을 내놓는다.
 20. `secrets/secrets.nix`: `anki-mcp-oauth.age`. 🔒 값 생성.
 21. eval 테스트(Funnel 대상 고정, 승인 포트 funnel 미허용, loopback) + 오프라인 단위 테스트.
 22. 배포 → 메타데이터·승인·토큰 흐름을 curl로 검증 → ChatGPT 개발자 모드 플러그인 등록(기존 시험 등록 제거)

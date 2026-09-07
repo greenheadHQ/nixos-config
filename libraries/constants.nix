@@ -9,6 +9,8 @@
     # Tailscale IP (tailscale ip -4 로 확인)
     minipcTailscaleIP = "100.79.80.95";
     macbookTailscaleIP = "100.65.50.98";
+    # MiniPC의 MagicDNS FQDN — Tailscale Funnel/serve의 HTTPS 이름이자 MCP OAuth issuer (tailscale status --self --json .Self.DNSName)
+    minipcTailnetFqdn = "greenhead-minipc.tail420ece.ts.net";
 
     # 서비스 포트
     ports = {
@@ -22,6 +24,10 @@
       ankiHelperLab = 18766; # 격리 검증 프로필의 sync/스냅샷 헬퍼 애드온
       ankiConnectMain = 8765; # 운영 프로필의 AnkiConnect
       ankiHelperMain = 8766; # 운영 프로필의 sync/스냅샷 헬퍼 애드온
+      # 원격 MCP 서버 (loopback 전용 — Tailscale이 프록시한다): 443 Funnel → ankiMcp, 8443 tailnet serve → ankiMcpApproval
+      ankiMcp = 8790;
+      ankiMcpApproval = 8791;
+      ankiMcpApprovalPublic = 8443; # tailnet 전용 승인 화면 포트 (Funnel 허용 포트 443/8443/10000 중 하나, Funnel은 켜지 않는다)
     };
 
     # Podman 브릿지 네트워크 기본 서브넷
@@ -66,12 +72,29 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
+  # 원격 MCP 서버 (plan 030 PR 2a) — 토큰 수명·승인 잠금·응답 축소 기본값
+  # ═══════════════════════════════════════════════════════════════
+  ankiMcp = {
+    user = "anki-mcp"; # anki-host와 다른 유저 — 컬렉션 디렉터리(0700)에 닿지 않는다 (결정 15)
+    accessTokenTtlSecs = 3600;
+    refreshTokenTtlSecs = 2592000; # 30일 — 클라이언트가 조용히 갱신하는 기간
+    authCodeTtlSecs = 300; # 승인 화면에서 문구를 입력할 시간
+    syncWaitSecs = 180; # "지금 동기화"가 회차 결과를 기다리는 상한 (normal sync는 수 초)
+    approvalLockoutFailures = 5;
+    approvalLockoutSecs = 300;
+    fieldCharsDefault = 400; # 노트 필드·카드 본문 절단 기본값 (0이면 전체)
+    pageLimitMax = 100;
+  };
+
+  # ═══════════════════════════════════════════════════════════════
   # 경로
   # ═══════════════════════════════════════════════════════════════
   paths = {
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
-    ankiHostBackupsRelPath = "backups/anki-host"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
+    ankiHostBackupsRelPath = "backups/anki-host";
+    # sync 스크립트가 남기는 상태 사본의 게시판(결정 15) — 0750 anki-host, 사본 0640. MCP 서비스가 그룹으로 읽는다
+    ankiHostStatusRun = "/run/anki-host-status"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
     # Launcher 전용 headless SSH dispatcher의 Home 상대 설치 경로.
     # Home Manager target과 launcher PATH가 이 값을 함께 사용해 배선 drift를 막는다.

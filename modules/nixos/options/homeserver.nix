@@ -382,6 +382,23 @@
         description = "Number of days to retain HDD .colpkg backups (14, not the 30 of other backups — ~200MB/day and the originals live in AnkiWeb and the anki-study backups)";
       };
     };
+
+    ankiMcp = {
+      enable = lib.mkEnableOption "remote MCP server over headless Anki (built-in OAuth 2.1, Tailscale Funnel entry)";
+      instance = lib.mkOption {
+        type = lib.types.str;
+        default = "main";
+        description = "homeserver.ankiHost instance the MCP server operates on (must have sync.enable)";
+      };
+      port = lib.mkOption {
+        type = lib.types.port;
+        description = "Loopback port of the MCP/OAuth app (Tailscale Funnel 443 proxies to it)";
+      };
+      approvalPort = lib.mkOption {
+        type = lib.types.port;
+        description = "Loopback port of the OAuth approval app (Tailscale serve 8443, tailnet only, proxies to it)";
+      };
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -414,5 +431,6 @@
     ../programs/claude-remote-control.nix # Claude Code RC bridge version-drift 감시
     ../programs/private-job-runner # generic private job runner (작업 정의는 기기 로컬)
     ../programs/anki-host # headless Anki 인스턴스 + AnkiWeb 동기화·알림·백업 (#1306)
+    ../programs/anki-mcp # 원격 MCP 서버 + OAuth + Funnel (#1306, plan 030 PR 2a)
   ];
 }

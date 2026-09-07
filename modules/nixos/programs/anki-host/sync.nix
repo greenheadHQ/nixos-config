@@ -63,6 +63,7 @@ let
       HELPER_PORT = toString inst.helperPort;
       STATE_DIR = "${stateRoot}/${name}";
       INSTANCE = name;
+      STATUS_RUN_DIR = constants.paths.ankiHostStatusRun; # 상태 사본 게시판 (결정 15)
     };
 
     serviceConfig = {
@@ -77,7 +78,10 @@ let
       NoNewPrivileges = true;
       PrivateTmp = true;
       ProtectSystem = "strict";
-      ReadWritePaths = [ "${stateRoot}/${name}" ];
+      ReadWritePaths = [
+        "${stateRoot}/${name}"
+        constants.paths.ankiHostStatusRun
+      ];
       ProtectHome = true;
       ProtectKernelTunables = true;
       ProtectControlGroups = true;
