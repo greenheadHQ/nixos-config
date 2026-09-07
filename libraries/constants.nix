@@ -48,7 +48,15 @@
   # ═══════════════════════════════════════════════════════════════
   ankiHost = {
     helperMainTimeoutSecs = 1800; # 첫 전체 다운로드(컬렉션 수십 MB)도 이 안에 끝난다. 미디어는 별도 백그라운드
-    helperCurlMaxTimeSecs = 1900; # = main + 락 대기 5s + 여유. 스크립트는 이 값을 env로 받는다
+    helperCurlMaxTimeSecs = 1900; # = main + 락 대기(애드온 BUSY_WAIT_SECS) + 여유. 스크립트는 이 값을 env로 받는다
+    # 스크립트 준비 대기·재시도 — 스크립트에 env로 주입되고 같은 값으로 유닛 TimeoutStartSec을 계산한다
+    readyWaitTries = 24; # 준비 대기 최악 = tries × (probe + wait) = 24 × 15s = 6min (재배포·재부팅 직후 Anki 기동)
+    readyWaitSecs = 5;
+    readyProbeTimeoutSecs = 10; # /status는 메인 스레드를 타지 않으므로 짧아도 된다
+    maxRetries = 3; # sync 호출 재시도 (지수 백오프 backoffSecs, 2×, 4×)
+    backoffSecs = 5;
+    busyRetries = 3; # 409(다른 변경 작업 진행 중) 재시도 — 마지막 회차 뒤 대기 없음
+    busyRetrySecs = 60;
   };
 
   # ═══════════════════════════════════════════════════════════════

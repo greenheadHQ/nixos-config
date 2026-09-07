@@ -20,11 +20,27 @@ let
   user = cfg.user;
   stateRoot = constants.paths.ankiHostState;
   pushoverCredPath = config.age.secrets.pushover-anki.path;
-  syncInstances = lib.filterAttrs (_: inst: inst.enable && inst.sync.enable) cfg.instances;
-  inherit (constants.ankiHost) helperCurlMaxTimeSecs;
-  # 타임아웃 사다리 바깥 계층: 스크립트가 쓸 수 있는 최대 시간(준비 대기 2min + sync 재시도 3×(curl+backoff)
-  # + busy 재시도 3×60s)보다 크게. 값의 근거는 constants.ankiHost와 스크립트 상단 상수 블록.
-  unitTimeoutSecs = 120 + 3 * (helperCurlMaxTimeSecs + 20) + 3 * 60 + 60;
+  syncInstances = lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances;
+  a = constants.ankiHost;
+  # 타임아웃 사다리 바깥 계층 — 스크립트 최악 실행 시간을 constants.ankiHost 값에서 그대로 계산한다:
+  # 준비 대기 tries×(probe+wait) + sync 재시도 maxRetries×curl + 백오프 합(5+10) + busy 재시도 (busyRetries−1)×busySecs + 여유
+  unitTimeoutSecs =
+    a.readyWaitTries * (a.readyProbeTimeoutSecs + a.readyWaitSecs)
+    + a.maxRetries * a.helperCurlMaxTimeSecs
+    + a.backoffSecs * 3
+    + (a.busyRetries - 1) * a.busyRetrySecs
+    + 60;
+  # 스크립트가 받는 준비 대기·재시도 상수 — 위 계산과 같은 값 (스크립트는 env가 없으면 기본값 없이 실패한다)
+  scriptEnv = {
+    HELPER_CURL_MAX_TIME = toString a.helperCurlMaxTimeSecs;
+    MAX_RETRIES = toString a.maxRetries;
+    BACKOFF_SECS = toString a.backoffSecs;
+    READY_WAIT_TRIES = toString a.readyWaitTries;
+    READY_WAIT_SECS = toString a.readyWaitSecs;
+    READY_PROBE_TIMEOUT = toString a.readyProbeTimeoutSecs;
+    BUSY_RETRIES = toString a.busyRetries;
+    BUSY_RETRY_SECS = toString a.busyRetrySecs;
+  };
 
   # pushover 헬퍼 + 헬퍼 호출 공용 함수 + 본문을 텍스트로 결합한다 (source 경로 주입 대신 store에 고정)
   syncScript = pkgs.writeShellApplication {
@@ -43,7 +59,7 @@ let
       + builtins.readFile ./files/anki-host-sync.sh;
   };
 
-  # 타이머 유닛과 부트스트랩 유닛이 공유하는 서비스 정의. mode 인자만 다르다.
+  # 타이머 유닛과 부트스트랩 유닛이 공유하는 서비스 정의. extraArgs(리스트)만 다르다.
   mkSyncUnit = name: inst: extraArgs: description: {
     inherit description;
     after = [
@@ -61,11 +77,10 @@ let
     # 파일 안의 값이 비어 있는 경우는 스크립트가 알림 없이 처리한다. backup.nix와 같은 정책.
     unitConfig.ConditionPathExists = pushoverCredPath;
 
-    environment = {
+    environment = scriptEnv // {
       HELPER_PORT = toString inst.helperPort;
       STATE_DIR = "${stateRoot}/${name}";
       INSTANCE = name;
-      HELPER_CURL_MAX_TIME = toString helperCurlMaxTimeSecs;
     };
 
     serviceConfig = {
@@ -74,7 +89,9 @@ let
       Group = user;
       # root 소유 0400 시크릿을 서비스 유저에게 파일 하나로만 넘긴다 (karakeep-notify 패턴)
       LoadCredential = [ "pushover:${pushoverCredPath}" ];
-      ExecStart = "${syncScript}/bin/anki-host-sync${extraArgs}";
+      ExecStart = lib.concatStringsSep " " (
+        [ "${syncScript}/bin/anki-host-sync" ] ++ map lib.escapeShellArg extraArgs
+      );
       TimeoutStartSec = "${toString unitTimeoutSecs}s";
       NoNewPrivileges = true;
       PrivateTmp = true;
@@ -94,7 +111,7 @@ let
   mkSyncService =
     name: inst:
     lib.nameValuePair "anki-host-sync-${name}" (
-      mkSyncUnit name inst "" "AnkiWeb periodic sync for headless Anki instance '${name}'"
+      mkSyncUnit name inst [ ] "AnkiWeb periodic sync for headless Anki instance '${name}'"
     );
 
   # 첫 부트스트랩 — 로컬이 비어 있을 때만 AnkiWeb 컬렉션을 내려받는다. 타이머에 걸지 않으며
@@ -102,8 +119,10 @@ let
   mkBootstrapService =
     name: inst:
     lib.nameValuePair "anki-host-sync-${name}-bootstrap" (
-      mkSyncUnit name inst " --mode allow-download-if-empty"
-        "One-shot AnkiWeb bootstrap download for empty headless Anki instance '${name}' (manual)"
+      mkSyncUnit name inst [
+        "--mode"
+        "allow-download-if-empty"
+      ] "One-shot AnkiWeb bootstrap download for empty headless Anki instance '${name}' (manual)"
     );
 
   mkSyncTimer =

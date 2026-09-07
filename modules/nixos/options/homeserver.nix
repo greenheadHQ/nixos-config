@@ -337,11 +337,6 @@
             { name, ... }:
             {
               options = {
-                enable = lib.mkOption {
-                  type = lib.types.bool;
-                  default = true;
-                  description = "Run this instance";
-                };
                 profile = lib.mkOption {
                   type = lib.types.str;
                   default = name;

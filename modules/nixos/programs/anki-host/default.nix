@@ -21,7 +21,8 @@
 #   - v1과 값이 다른 항목과 이유: MemoryMax 512M→1G (v1 운영에서 OOMKill 실측 이력이 troubleshooting에
 #     남아 있고, 이번엔 실제 이력 컬렉션의 .colpkg export가 205MB peak를 쓴 실측 + 인스턴스 2개 동시 기동);
 #     numBackups 50→30 (Anki 자체 자동 백업은 프로필 아래 쌓이는 SSD 비용이고, 일일 HDD 백업이 따로 있다);
-#     autoSync True→False (Anki의 열고/닫을 때 GUI sync 경로를 끄고 헬퍼 애드온만 sync한다);
+#     autoSync True→False (Anki의 열고/닫을 때 GUI sync 경로를 끄고 헬퍼 애드온만 sync한다).
+#     — numBackups·autoSync는 프로필 **최초 생성 시** prefs21.db에 쓰는 값이다(prefsBootstrap 가드 참조);
 #     tailscale-wait 미복원 (v1은 tailnet IP 바인딩 때문에 필요했고 loopback 전용인 지금은 근거가 없다).
 {
   config,
@@ -36,9 +37,9 @@ let
   user = cfg.user;
   stateRoot = constants.paths.ankiHostState;
   # 애드온 버전의 단일 소스 — nix 파생 version과 /status의 addon_version이 같은 값을 갖는다
-  addonVersion = "1.2.0";
+  addonVersion = "1.3.0";
   inherit (constants.ankiHost) helperMainTimeoutSecs;
-  enabledInstances = lib.filterAttrs (_: inst: inst.enable) cfg.instances;
+  instances = cfg.instances;
   ankiwebCredPath = config.age.secrets.anki-ankiweb.path;
 
   # AnkiWeb 로그인·sync·스냅샷·복구점 헬퍼 — 인스턴스 공용(설정은 env로 받는다)
@@ -74,7 +75,8 @@ let
     pkgs.writeShellScript "anki-host-prefs-${inst.profile}" ''
       set -eu
       base="$1"
-      mkdir -p "$base/${inst.profile}"
+      mkdir -p "$base/${inst.profile}"      # 이 값들은 프로필 최초 생성 시에만 적용된다 — 기존 인스턴스에 반영하려면 prefs21.db를 지우거나(프로필 재생성)
+      # Anki 쪽에서 바꿔야 한다. 파일을 바꾸고 nrs만 해서는 아무 효과가 없다.
       if [ -f "$base/prefs21.db" ]; then
         exit 0
       fi
@@ -129,6 +131,10 @@ let
       }
       // lib.optionalAttrs inst.sync.enable {
         ANKI_HOST_SYNC_CREDENTIALS = ankiwebCredPath;
+      }
+      // lib.optionalAttrs (!inst.sync.enable) {
+        # 컬렉션 교체(/import-colpkg)는 AnkiWeb에 붙지 않는 격리 인스턴스에만 연다 — 구성 시점 결정
+        ANKI_HOST_ALLOW_IMPORT = "1";
       };
 
       serviceConfig = {
@@ -177,7 +183,7 @@ in
             ports = lib.concatMap (inst: [
               inst.port
               inst.helperPort
-            ]) (builtins.attrValues enabledInstances);
+            ]) (builtins.attrValues instances);
           in
           lib.length ports == lib.length (lib.unique ports);
         message = "homeserver.ankiHost: AnkiConnect/helper ports must be unique across instances.";
@@ -186,8 +192,7 @@ in
         # AnkiWeb 자격은 단일 시크릿(anki-ankiweb)뿐이다. 두 인스턴스가 같은 계정에 붙으면 서로 다른
         # 컬렉션이 15분마다 양방향 병합을 시도해 실제 학습 데이터가 오염된다.
         assertion =
-          lib.length (lib.filter (inst: inst.enable && inst.sync.enable) (builtins.attrValues cfg.instances))
-          <= 1;
+          lib.length (lib.filter (inst: inst.sync.enable) (builtins.attrValues cfg.instances)) <= 1;
         message = "homeserver.ankiHost: at most one instance may enable sync — there is a single AnkiWeb credential.";
       }
     ];
@@ -215,8 +220,8 @@ in
       "d ${stateRoot}/${name} 0700 ${user} ${user} -"
       "d ${stateRoot}/${name}/backups 0700 ${user} ${user} -"
       "d ${stateRoot}/${name}/restore-points 0700 ${user} ${user} -"
-    ]) (builtins.attrNames enabledInstances);
+    ]) (builtins.attrNames instances);
 
-    systemd.services = lib.mapAttrs' mkInstance enabledInstances;
+    systemd.services = lib.mapAttrs' mkInstance instances;
   };
 }
