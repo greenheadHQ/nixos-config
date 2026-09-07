@@ -33,6 +33,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 DEFAULT_SCOPES = ["anki"]
+CLIENT_AUTH_METHODS = ("none", "client_secret_post")
 
 
 def _hash(token: str) -> str:
@@ -118,6 +119,8 @@ class FileOAuthProvider:
                 del self._state["clients"][cid]
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        if client_info.token_endpoint_auth_method not in CLIENT_AUTH_METHODS:
+            raise RegistrationError("invalid_client_metadata", "supported client authentication methods: none, client_secret_post")
         record = client_info.model_dump(mode="json", exclude_none=True)
         if len(json.dumps(record)) > self._max_client_bytes:
             raise RegistrationError("invalid_client_metadata", "client metadata too large")

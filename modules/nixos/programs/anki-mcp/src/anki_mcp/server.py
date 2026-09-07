@@ -2,7 +2,7 @@
 
 Funnel 앱(port)      : /mcp(Streamable HTTP, Bearer), /.well-known/oauth-authorization-server(authorization_endpoint는
                        승인 URL을 가리킨다), /.well-known/oauth-protected-resource/mcp, /register, /token, /revoke
-승인 앱(approval_port): /authorize, /approve — Tailscale serve 8443(tailnet 전용)만 여기로 프록시한다
+승인 앱(approval_port): /authorize, /approve — Tailscale serve 9443(tailnet 전용)만 여기로 프록시한다
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import os
 import signal
 import sys
 from typing import Any
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, urlsplit
 
 import httpx
 import uvicorn
@@ -30,7 +30,7 @@ from .approval import Lockout, build_approval_app
 from .config import Settings, read_passphrase
 from .guard import FunnelGuard
 from .helper import Helper
-from .oauth import DEFAULT_SCOPES, FileOAuthProvider
+from .oauth import CLIENT_AUTH_METHODS, DEFAULT_SCOPES, FileOAuthProvider
 from .syncstatus import SyncNow
 from .tools import Deps, register_tools
 
@@ -95,12 +95,13 @@ def build(cfg: Settings):
         max_client_bytes=cfg.reg_max_client_bytes,
         unused_client_ttl=cfg.reg_unused_ttl,
     )
-    public_host = AnyHttpUrl(cfg.public_url).host or ""
+    # Host에는 명시 포트도 포함된다. hostname만 허용하면 :8443 MCP 요청이 421로 거절된다.
+    public_host = urlsplit(cfg.public_url).netloc
     approval_host = AnyHttpUrl(cfg.approval_url)
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
-        allowed_hosts=[public_host, f"{public_host}:443", "127.0.0.1:*", "localhost:*"],
-        allowed_origins=[cfg.public_url, f"https://{public_host}:443", "http://127.0.0.1:*", "http://localhost:*"],
+        allowed_hosts=[public_host, "127.0.0.1:*", "localhost:*"],
+        allowed_origins=[cfg.public_url, "http://127.0.0.1:*", "http://localhost:*"],
     )
     registration = ClientRegistrationOptions(enabled=True, valid_scopes=DEFAULT_SCOPES, default_scopes=DEFAULT_SCOPES)
     revocation = RevocationOptions(enabled=True)
@@ -141,6 +142,10 @@ def build(cfg: Settings):
     # 메타데이터의 authorization_endpoint를 승인 URL로 바꾼다 (SDK는 issuer 기준으로만 만든다)
     metadata = build_metadata(AnyHttpUrl(cfg.public_url), None, registration, revocation)
     metadata.authorization_endpoint = AnyHttpUrl(f"{cfg.approval_url}/authorize")
+    # SDK 1.27.1은 Basic을 광고하지만 헤더 해석 전에 본문 client_id를 요구한다.
+    # 실제 지원·등록 허용 방식만 광고한다. 공개 PKCE 클라이언트의 none도 명시한다.
+    metadata.token_endpoint_auth_methods_supported = list(CLIENT_AUTH_METHODS)
+    metadata.revocation_endpoint_auth_methods_supported = list(CLIENT_AUTH_METHODS)
     metadata_route = Route(
         "/.well-known/oauth-authorization-server",
         endpoint=cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"]),

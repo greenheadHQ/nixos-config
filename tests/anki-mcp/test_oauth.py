@@ -13,7 +13,7 @@ from pydantic import AnyUrl
 from anki_mcp.approval import Lockout, build_approval_app
 from anki_mcp.oauth import FileOAuthProvider
 
-APPROVAL = "https://minipc.example.ts.net:8443"
+APPROVAL = "https://minipc.example.ts.net:9443"
 
 
 def _client(client_id="c1", auth="none", issued_at=None):
@@ -175,7 +175,7 @@ async def test_approval_form_requires_passphrase_and_locks_out(tmp_path):
     secret = {"value": "correct horse"}
     lockout = Lockout(max_failures=2, lock_secs=300)
     app = build_approval_app(prov, APPROVAL, passphrase=lambda: secret["value"], lockout=lockout)
-    host = "minipc.example.ts.net:8443"
+    host = "minipc.example.ts.net:9443"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         # 잘못된 Host는 거부 (Funnel을 통해 들어온 요청 방어)
         r = await http.get(f"/approve?txn={txn}", headers={"host": "minipc.example.ts.net"})
@@ -221,7 +221,7 @@ async def test_deny_redirects_with_access_denied(tmp_path):
     txn = parse_qs(urlparse(url).query)["txn"][0]
     app = build_approval_app(prov, APPROVAL, passphrase=lambda: "x", lockout=Lockout(5, 60))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        r = await http.post("/approve", data={"txn": txn, "decision": "deny"}, headers={"host": "minipc.example.ts.net:8443"},
+        r = await http.post("/approve", data={"txn": txn, "decision": "deny"}, headers={"host": "minipc.example.ts.net:9443"},
                             follow_redirects=False)
         assert r.status_code == 302
         q = parse_qs(urlparse(r.headers["location"]).query)

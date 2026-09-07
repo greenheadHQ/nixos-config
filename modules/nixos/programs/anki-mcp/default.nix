@@ -3,14 +3,16 @@
 #
 # === Change Intent Record ===
 # 근거(plan 030 결정): E1 입구는 Tailscale Funnel(자체 도메인·Cloudflare Tunnel은 공개 확장 시), U1 내장 인가 서버이며
-#   승인 화면만 tailnet 전용 8443, K3 표준 OAuth 2.1(PKCE·PRM·DCR)로 ChatGPT·Codex·Claude가 같은 입구를 쓴다.
+#   승인 화면만 tailnet 전용 9443, K3 표준 OAuth 2.1(PKCE·PRM·DCR)로 ChatGPT·Codex·Claude가 같은 입구를 쓴다.
+# 포트 재설계: Funnel 443은 tailscaled가 peer의 TCP 443을 가로채 Caddy의 기존 4개 vhost를 끊었다.
+#   공개 입구는 8443, 승인은 9443으로 분리한다. Serve에는 Funnel의 443/8443/10000 제한이 없다.
 # 신뢰 경계: 이 서비스는 이 저장소 최초의 인터넷 공개 입구다. 그래서
 #   - 별도 시스템 유저(anki-mcp)로 돌고 Anki 데이터는 파일로 만지지 않는다(AnkiConnect·헬퍼 HTTP만). 컬렉션 디렉터리
 #     (anki-host 0700)에 닿을 수 없다 — 취약점이 생겨도 DB 파일을 직접 고치지 못한다.
 #   - "지금 동기화" 결과는 결정 15대로 sync 스크립트가 /run 게시판에 남긴 사본(0640, anki-host 그룹)만 읽는다.
 #   - sync 유닛 트리거는 polkit 규칙으로 이 유저에게 그 유닛의 start만 허용한다(결정 13). 헬퍼 /sync 직접 호출 없음.
-#   - /authorize·승인 폼은 승인 포트에만 있고 Funnel 앱에는 없다. Tailscale serve 8443이 tailnet 안에서만 그 포트로
-#     프록시한다. anki-mcp-tailscale 유닛은 8443에 Funnel이 켜져 있으면 즉시 끈다(STOP 6, fail-closed).
+#   - /authorize·승인 폼은 승인 포트에만 있고 Funnel 앱에는 없다. Tailscale serve 9443이 tailnet 안에서만 그 포트로
+#     프록시한다. 승인 포트에 Funnel이 켜져 있으면 해당 serve 경로를 제거한다(STOP 6, fail-closed).
 #   - 토큰은 불투명 랜덤값이며 상태 파일에는 해시만 남는다. 승인 문구는 agenix 시크릿(LoadCredential)이고 비어 있으면
 #     어떤 승인도 통과하지 않는다.
 # 대안 기각: MCP를 anki-host 유저로 실행(DB 직접 접근 가능 — 결정 15 A안으로 기각), 서비스별 API 키(결정 1의 store bake
@@ -30,8 +32,9 @@ let
   hostUser = constants.ankiHost.user;
   inst = hostCfg.instances.${cfg.instance};
   fqdn = constants.network.minipcTailnetFqdn;
+  publicPort = constants.network.ports.ankiMcpPublic;
   approvalPublicPort = constants.network.ports.ankiMcpApprovalPublic;
-  publicUrl = "https://${fqdn}";
+  publicUrl = "https://${fqdn}:${toString publicPort}";
   approvalUrl = "https://${fqdn}:${toString approvalPublicPort}";
   syncUnit = "anki-host-sync-${cfg.instance}.service";
   statusFile = "${constants.paths.ankiHostStatusRun}/${cfg.instance}.json";
@@ -49,16 +52,15 @@ let
   );
   srcDir = ./src;
 
-  # Tailscale serve/funnel 배선 — serve config는 노드 전역 상태다. 이 유닛이 443·8443을 소유하고, tailscale.nix의
+  # Tailscale serve/funnel 배선 — serve config는 노드 전역 상태다. 이 유닛이 공개·승인 포트를 소유하고, tailscale.nix의
   # ts-serve 헬퍼(dev 미리보기용)는 constants.network.ports.tailscaleDevPreviewHttps만 만지므로 서로의 config를 덮지 않는다.
-  # 443 Funnel(인터넷) → MCP 포트, 8443 serve(tailnet 전용) → 승인 포트. 8443에 Funnel이 켜져 있으면 끈다.
+  # 8443 Funnel(인터넷) → MCP 포트, 9443 serve(tailnet 전용) → 승인 포트. 443은 Caddy 전용이다.
   onlineWaitSecs = constants.ankiMcp.tailscaleOnlineWaitSecs;
   cmdTimeoutSecs = constants.ankiMcp.tailscaleCmdTimeoutSecs;
   tsWire = pkgs.writeShellApplication {
     name = "anki-mcp-tailscale-wire";
     runtimeInputs = [
       pkgs.tailscale
-      pkgs.gnugrep
       pkgs.coreutils
       pkgs.jq
     ];
@@ -71,27 +73,39 @@ let
         if jq -e '.Self.Online == true' >/dev/null 2>&1 <<<"$status_json"; then break; fi
         sleep 2
       done
+      # Caddy의 tailnet 443은 그대로 둔다. 다른 설정이 이미 가로채고 있으면 노출을 추가하지 않고 보고한다.
+      serve_json="$(tailscale serve status --json)"
+      if ! jq -e '.TCP["443"] == null' >/dev/null <<<"$serve_json"; then
+        echo "anki-mcp-tailscale: TCP 443 is already intercepted by Tailscale; restore Caddy access before starting MCP" >&2
+        exit 1
+      fi
       # CIR: serve/funnel 기능이 tailnet에서 꺼져 있으면 tailscale CLI가 활성화 링크를 찍고 켜질 때까지 무한 대기한다
       #   (oneshot 유닛이 activating에 멈추고 switch가 블록된다) — timeout으로 끊고 fail-closed로 안내한다.
       if ! timeout ${toString cmdTimeoutSecs} tailscale serve --bg --https=${toString approvalPublicPort} "http://127.0.0.1:${toString cfg.approvalPort}"; then
         echo "anki-mcp-tailscale: 'tailscale serve' did not finish — if it printed an enable link, turn on HTTPS/serve for this node in the Tailscale admin console, then 'systemctl restart anki-mcp-tailscale'" >&2
         exit 1
       fi
-      if ! timeout ${toString cmdTimeoutSecs} tailscale funnel --bg --https=443 "http://127.0.0.1:${toString cfg.port}"; then
+      if ! timeout ${toString cmdTimeoutSecs} tailscale funnel --bg --https=${toString publicPort} "http://127.0.0.1:${toString cfg.port}"; then
         echo "anki-mcp-tailscale: 'tailscale funnel' did not finish — check the tailnet ACL nodeAttrs funnel for this node (plan 030 Step 16)" >&2
         exit 1
       fi
-      status="$(tailscale funnel status 2>/dev/null || true)"
-      if printf '%s\n' "$status" | grep -qE "^https://[^ ]+:${toString approvalPublicPort} .*Funnel on"; then
-        echo "anki-mcp-tailscale: approval port ${toString approvalPublicPort} is exposed to the internet — turning Funnel off (STOP 6)" >&2
-        tailscale funnel --https=${toString approvalPublicPort} off
+      serve_json="$(tailscale serve status --json)"
+      if jq -e --arg approval "${fqdn}:${toString approvalPublicPort}" '.AllowFunnel[$approval] == true' >/dev/null <<<"$serve_json"; then
+        echo "anki-mcp-tailscale: approval port ${toString approvalPublicPort} is exposed to the internet — removing its route (STOP 6)" >&2
+        timeout ${toString cmdTimeoutSecs} tailscale serve --https=${toString approvalPublicPort} off
         exit 1
       fi
-      if ! printf '%s\n' "$status" | grep -qE "^https://${fqdn} \(Funnel on\)"; then
-        echo "anki-mcp-tailscale: Funnel on 443 is not active — check the tailnet ACL nodeAttrs funnel (plan 030 Step 16)" >&2
+      if ! jq -e --arg public "${fqdn}:${toString publicPort}" --arg approval "${fqdn}:${toString approvalPublicPort}" '
+        .TCP["443"] == null and
+        .TCP["${toString publicPort}"].HTTPS == true and .TCP["${toString approvalPublicPort}"].HTTPS == true and
+        .AllowFunnel[$public] == true and
+        .Web[$public].Handlers["/"].Proxy == "http://127.0.0.1:${toString cfg.port}" and
+        .Web[$approval].Handlers["/"].Proxy == "http://127.0.0.1:${toString cfg.approvalPort}"
+      ' >/dev/null <<<"$serve_json"; then
+        echo "anki-mcp-tailscale: Funnel/approval wiring does not match the configured ports and loopback targets" >&2
         exit 1
       fi
-      echo "anki-mcp-tailscale: 443 funnel -> 127.0.0.1:${toString cfg.port}, ${toString approvalPublicPort} tailnet-only -> 127.0.0.1:${toString cfg.approvalPort}"
+      echo "anki-mcp-tailscale: ${toString publicPort} funnel -> 127.0.0.1:${toString cfg.port}, ${toString approvalPublicPort} tailnet-only -> 127.0.0.1:${toString cfg.approvalPort}"
     '';
   };
   # 유닛 정지 시 이 유닛이 켠 두 경로만 끈다 (ts-serve의 미리보기 포트 등 다른 serve 설정은 건드리지 않는다).
@@ -103,8 +117,8 @@ let
       pkgs.coreutils
     ];
     text = ''
-      timeout ${toString cmdTimeoutSecs} tailscale funnel --https=443 off || true
-      timeout ${toString cmdTimeoutSecs} tailscale serve --https=443 off || true
+      # serve off는 해당 포트의 handler와 AllowFunnel도 함께 제거한다.
+      timeout ${toString cmdTimeoutSecs} tailscale serve --https=${toString publicPort} off || true
       timeout ${toString cmdTimeoutSecs} tailscale serve --https=${toString approvalPublicPort} off || true
     '';
   };
@@ -112,6 +126,22 @@ in
 {
   config = lib.mkIf cfg.enable {
     assertions = [
+      {
+        assertion =
+          builtins.elem publicPort [
+            8443
+            10000
+          ]
+          && !(builtins.elem approvalPublicPort [
+            443
+            8443
+            10000
+          ])
+          && constants.network.ports.tailscaleDevPreviewHttps != 443
+          && constants.network.ports.tailscaleDevPreviewHttps != publicPort
+          && constants.network.ports.tailscaleDevPreviewHttps != approvalPublicPort;
+        message = "homeserver.ankiMcp: reserve 443 for Caddy, use a separate allowed Funnel port, and keep approval outside Funnel's allowed ports and separate from dev preview.";
+      }
       {
         assertion = hostCfg.enable && (hostCfg.instances ? ${cfg.instance}) && inst.sync.enable;
         message = "homeserver.ankiMcp: instance '${cfg.instance}' must exist in homeserver.ankiHost.instances with sync.enable (the MCP host is the AnkiWeb-synced instance).";
@@ -230,7 +260,7 @@ in
     };
 
     systemd.services.anki-mcp-tailscale = {
-      description = "Tailscale Funnel/serve wiring for anki-mcp (443 funnel -> MCP, 8443 tailnet-only -> approval)";
+      description = "Tailscale Funnel/serve wiring for anki-mcp (${toString publicPort} funnel -> MCP, ${toString approvalPublicPort} tailnet-only -> approval)";
       after = [
         "tailscaled.service"
         "anki-mcp.service"

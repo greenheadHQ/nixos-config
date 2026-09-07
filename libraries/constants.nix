@@ -24,12 +24,12 @@
       ankiHelperLab = 18766; # 격리 검증 프로필의 sync/스냅샷 헬퍼 애드온
       ankiConnectMain = 8765; # 운영 프로필의 AnkiConnect
       ankiHelperMain = 8766; # 운영 프로필의 sync/스냅샷 헬퍼 애드온
-      # 원격 MCP 서버 (loopback 전용 — Tailscale이 프록시한다): 443 Funnel → ankiMcp, 8443 tailnet serve → ankiMcpApproval
+      # 원격 MCP 서버 (loopback 전용 — Tailscale이 프록시한다): 8443 Funnel → ankiMcp, 9443 tailnet serve → ankiMcpApproval
       ankiMcp = 8790;
       ankiMcpApproval = 8791;
-      ankiMcpApprovalPublic = 8443; # tailnet 전용 승인 화면 포트 (Funnel 허용 포트 443/8443/10000 중 하나, Funnel은 켜지 않는다)
-      # ts-serve(dev 미리보기) 전용 tailnet HTTPS 포트 — serve가 허용하는 443/8443/10000 중 anki-mcp가 쓰지 않는 하나.
-      # 443·8443은 anki-mcp-tailscale 유닛이 소유하므로 ts-serve는 이 포트만 만진다 (서로의 serve config를 덮지 않는다)
+      ankiMcpPublic = 8443; # Funnel 허용 포트는 443/8443/10000. 443은 기존 Caddy의 tailnet 인그레스 전용이다.
+      ankiMcpApprovalPublic = 9443; # Serve는 임의 HTTPS 포트를 지원한다. Funnel 허용 목록 밖의 tailnet 전용 승인 포트.
+      # ts-serve(dev 미리보기) 전용 tailnet HTTPS 포트 — MCP·승인·Caddy와 별개로 소유한다.
       tailscaleDevPreviewHttps = 10000;
     };
 

@@ -12,7 +12,7 @@ let
   # HTTPS라 secure-context 충족 → Clipboard/cookie/Service Worker 등 정상 동작.
   # 특정 프로젝트에 비종속 — dev 포트만 인자로 받는다 (가변 포트).
   #
-  # 범위 주의: tailscale serve config는 "노드 전역" 상태다. 443·8443은 anki-mcp-tailscale 유닛이
+  # 범위 주의: tailscale serve config는 "노드 전역" 상태다. 8443·9443은 anki-mcp-tailscale 유닛이
   # 소유하므로(원격 MCP Funnel·승인 화면), 이 helper는 전용 HTTPS 포트(previewPort) 한 칸만 만진다 —
   # <port> 노출은 그 칸을 갱신하고 `off`는 그 칸만 끈다. 노드의 모든 serve config를 지우는
   # `tailscale serve reset`은 MCP 배선까지 지우므로 helper에 두지 않는다.
@@ -36,7 +36,7 @@ let
           sudo "$ts" serve status
           ;;
         off)
-          # 이 helper의 HTTPS 칸(:$https_port)만 끈다 — 443/8443의 MCP 배선은 건드리지 않는다.
+          # 이 helper의 HTTPS 칸(:$https_port)만 끈다 — 8443/9443의 MCP 배선은 건드리지 않는다.
           sudo "$ts" serve --https="$https_port" off
           echo "Tailscale serve :$https_port 미리보기 해제됨 (다른 serve 설정은 유지)"
           ;;

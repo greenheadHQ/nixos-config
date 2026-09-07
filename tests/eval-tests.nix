@@ -891,6 +891,7 @@ let
   ankiMcpModuleSrc = builtins.readFile ../modules/nixos/programs/anki-mcp/default.nix;
   ankiMcpServerSrc = builtins.readFile ../modules/nixos/programs/anki-mcp/src/anki_mcp/server.py;
   ankiMcpFqdn = constants.network.minipcTailnetFqdn;
+  ankiMcpPublic = toString constants.network.ports.ankiMcpPublic;
   ankiMcpApprovalPublic = toString constants.network.ports.ankiMcpApprovalPublic;
   # ═══════════════════════════════════════════════════════════════
   # 테스트 실행
@@ -1344,7 +1345,7 @@ let
       cond =
         ankiMcpSvc.environment.ANKI_MCP_PORT == toString constants.network.ports.ankiMcp
         && ankiMcpSvc.environment.ANKI_MCP_APPROVAL_PORT == toString constants.network.ports.ankiMcpApproval
-        && ankiMcpSvc.environment.ANKI_MCP_PUBLIC_URL == "https://${ankiMcpFqdn}"
+        && ankiMcpSvc.environment.ANKI_MCP_PUBLIC_URL == "https://${ankiMcpFqdn}:${ankiMcpPublic}"
         && ankiMcpSvc.environment.ANKI_MCP_APPROVAL_URL == "https://${ankiMcpFqdn}:${ankiMcpApprovalPublic}"
         &&
           ankiMcpSvc.environment.ANKI_CONNECT_URL
@@ -1361,9 +1362,20 @@ let
         && nixpkgsLib.hasInfix "allowed_hosts=[public_host" ankiMcpServerSrc;
     }
     {
-      name = "Test AM3: Tailscale 배선은 443 Funnel → MCP, ${ankiMcpApprovalPublic} tailnet 전용 serve → 승인이며, 승인 포트에 Funnel을 켜는 코드가 없고 켜져 있으면 끄는 fail-closed 분기가 있어야 함 (STOP 6)";
+      name = "Test AM3: Tailscale 배선은 ${ankiMcpPublic} Funnel → MCP, ${ankiMcpApprovalPublic} tailnet 전용 serve → 승인이며, Caddy 443을 보존하고 승인 포트의 Funnel을 차단해야 함 (STOP 6)";
       cond =
-        nixpkgsLib.hasInfix "tailscale funnel --bg --https=443" ankiMcpModuleSrc
+        builtins.elem constants.network.ports.ankiMcpPublic [
+          8443
+          10000
+        ]
+        && !(builtins.elem constants.network.ports.ankiMcpApprovalPublic [
+          443
+          8443
+          10000
+        ])
+        && !(nixpkgsLib.hasInfix "--https=443" ankiMcpModuleSrc)
+        && nixpkgsLib.hasInfix ".TCP[\"443\"] == null" ankiMcpModuleSrc
+        && nixpkgsLib.hasInfix "tailscale funnel --bg --https=\${toString publicPort}" ankiMcpModuleSrc
         && nixpkgsLib.hasInfix "tailscale serve --bg --https=\${toString approvalPublicPort}" ankiMcpModuleSrc
         # 승인 포트에 funnel을 켜는 줄은 인자 순서와 무관하게 없어야 함 — 'off' 줄만 허용
         &&
@@ -1374,10 +1386,11 @@ let
             && nixpkgsLib.hasInfix "approvalPublicPort" l
             && !(nixpkgsLib.hasInfix " off" l)
           ) (nixpkgsLib.splitString "\n" ankiMcpModuleSrc) == [ ]
-        && nixpkgsLib.hasInfix "tailscale funnel --https=\${toString approvalPublicPort} off" ankiMcpModuleSrc
+        && nixpkgsLib.hasInfix ".AllowFunnel[$approval] == true" ankiMcpModuleSrc
+        && nixpkgsLib.hasInfix "tailscale serve --https=\${toString approvalPublicPort} off" ankiMcpModuleSrc
         # 유닛이 멈추면(모듈 제거·비활성) 이 유닛이 켠 두 경로를 끈다 — 남은 경로가 나중에 포트를 재사용하는 프로세스를 노출하지 않게
         && builtins.isString ankiMcpWire.serviceConfig.ExecStop
-        && nixpkgsLib.hasInfix "tailscale funnel --https=443 off" ankiMcpModuleSrc
+        && nixpkgsLib.hasInfix "tailscale serve --https=\${toString publicPort} off" ankiMcpModuleSrc
         && nixpkgsLib.hasInfix "tailscale serve --https=\${toString approvalPublicPort} off" ankiMcpModuleSrc
         && ankiMcpWire.wantedBy == [ "multi-user.target" ]
         && ankiMcpWire.serviceConfig.Type == "oneshot"
@@ -1390,12 +1403,18 @@ let
         && nixpkgsLib.hasInfix "http://127.0.0.1:${toString ankiMcpCfg.port}/.well-known/oauth-authorization-server" smokeSvc.environment.LOOPBACK_ENDPOINT_LIST
         && !(nixpkgsLib.hasInfix ankiMcpFqdn smokeSvc.environment.ENDPOINT_LIST)
         && smokeSvc.environment.FUNNEL_FQDN == ankiMcpFqdn
-        && smokeSvc.environment.FUNNEL_PRIVATE_PORT == ankiMcpApprovalPublic;
+        && smokeSvc.environment.FUNNEL_PUBLIC_PORT == ankiMcpPublic
+        && smokeSvc.environment.FUNNEL_PRIVATE_PORT == ankiMcpApprovalPublic
+        && smokeSvc.environment.FUNNEL_PUBLIC_TARGET == "http://127.0.0.1:${toString ankiMcpCfg.port}"
+        &&
+          smokeSvc.environment.FUNNEL_PRIVATE_TARGET
+          == "http://127.0.0.1:${toString ankiMcpCfg.approvalPort}";
     }
     {
-      name = "Test AM6: ts-serve(dev 미리보기)는 전용 HTTPS 포트(${toString constants.network.ports.tailscaleDevPreviewHttps})만 만져야 함 — 443/8443은 anki-mcp 배선이 소유하고, 노드 전체 serve config를 지우는 reset은 helper에 없어야 함";
+      name = "Test AM6: ts-serve(dev 미리보기)는 Caddy·MCP·승인과 별개의 HTTPS 포트(${toString constants.network.ports.tailscaleDevPreviewHttps})만 만지고, 노드 전체 serve config를 지우는 reset은 helper에 없어야 함";
       cond =
         constants.network.ports.tailscaleDevPreviewHttps != 443
+        && constants.network.ports.tailscaleDevPreviewHttps != constants.network.ports.ankiMcpPublic
         && constants.network.ports.tailscaleDevPreviewHttps != constants.network.ports.ankiMcpApprovalPublic
         && nixpkgsLib.hasInfix "https_port=\${previewPort}" tsServeSrc
         && nixpkgsLib.hasInfix "serve --bg --https=\"$https_port\"" tsServeSrc

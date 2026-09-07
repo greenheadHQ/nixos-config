@@ -29,10 +29,10 @@ def _int(name: str) -> int:
 
 @dataclass(frozen=True)
 class Settings:
-    port: int  # Funnel 443 → 이 loopback 포트 (/mcp, 메타데이터, /register, /token, /revoke)
-    approval_port: int  # tailnet serve 8443 → 이 loopback 포트 (/authorize, /approve)
-    public_url: str  # OAuth issuer = Funnel URL (https://<fqdn>)
-    approval_url: str  # 승인 화면 base (https://<fqdn>:8443) — authorization_endpoint가 여기를 가리킨다
+    port: int  # Funnel → 이 loopback 포트 (/mcp, 메타데이터, /register, /token, /revoke)
+    approval_port: int  # tailnet serve → 이 loopback 포트 (/authorize, /approve)
+    public_url: str  # OAuth issuer = 포트까지 포함한 Funnel URL
+    approval_url: str  # 승인 화면 base URL — authorization_endpoint가 여기를 가리킨다
     anki_connect_url: str
     helper_url: str
     state_dir: str  # OAuth 영속 상태 (StateDirectory, 0700)

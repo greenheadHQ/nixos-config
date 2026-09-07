@@ -4,7 +4,7 @@ from anki_mcp.config import Settings
 
 BASE = {
     "ANKI_MCP_PORT": "8790", "ANKI_MCP_APPROVAL_PORT": "8791",
-    "ANKI_MCP_PUBLIC_URL": "https://minipc.example.ts.net/", "ANKI_MCP_APPROVAL_URL": "https://minipc.example.ts.net:8443",
+    "ANKI_MCP_PUBLIC_URL": "https://minipc.example.ts.net:8443/", "ANKI_MCP_APPROVAL_URL": "https://minipc.example.ts.net:9443",
     "ANKI_CONNECT_URL": "http://127.0.0.1:8765", "ANKI_HELPER_URL": "http://127.0.0.1:8766",
     "STATE_DIRECTORY": "/tmp/s", "ANKI_SYNC_STATUS_FILE": "/run/anki-host-status/main.json", "ANKI_SYNC_UNIT": "u.service",
     "ANKI_MCP_ACCESS_TTL_SECS": "3600", "ANKI_MCP_REFRESH_TTL_SECS": "2592000", "ANKI_MCP_CODE_TTL_SECS": "300",
@@ -24,7 +24,7 @@ def _env(monkeypatch, **override):
 def test_from_env_reads_every_value_and_strips_trailing_slash(monkeypatch):
     _env(monkeypatch)
     s = Settings.from_env()
-    assert s.public_url == "https://minipc.example.ts.net" and s.reg_max_clients == 32 and s.max_body_bytes == 262144
+    assert s.public_url == "https://minipc.example.ts.net:8443" and s.reg_max_clients == 32 and s.max_body_bytes == 262144
     assert s.body_read_timeout == 30 and s.max_concurrency == 64
 
 
@@ -33,7 +33,7 @@ def test_from_env_rejects_plain_http_issuer_and_approval_urls(monkeypatch):
     _env(monkeypatch, ANKI_MCP_PUBLIC_URL="http://minipc.example.ts.net")
     with pytest.raises(SystemExit):
         Settings.from_env()
-    _env(monkeypatch, ANKI_MCP_APPROVAL_URL="http://minipc.example.ts.net:8443")
+    _env(monkeypatch, ANKI_MCP_APPROVAL_URL="http://minipc.example.ts.net:9443")
     with pytest.raises(SystemExit):
         Settings.from_env()
 

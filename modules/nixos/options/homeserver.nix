@@ -392,11 +392,11 @@
       };
       port = lib.mkOption {
         type = lib.types.port;
-        description = "Loopback port of the MCP/OAuth app (Tailscale Funnel 443 proxies to it)";
+        description = "Loopback port of the MCP/OAuth app (Tailscale Funnel proxies to it)";
       };
       approvalPort = lib.mkOption {
         type = lib.types.port;
-        description = "Loopback port of the OAuth approval app (Tailscale serve 8443, tailnet only, proxies to it)";
+        description = "Loopback port of the OAuth approval app (Tailscale serve, tailnet only, proxies to it)";
       };
     };
   };

@@ -17,17 +17,17 @@
 
 - **Issue**: https://github.com/greenheadHQ/nixos-config/issues/1306 (epic #973 sub-issue)
 - **사용자 관점 정본**: https://github.com/greenheadHQ/anki-study/issues/3 (비공개)
-- **Branch**: `feat/anki-mcp-host` (worktree `.claude/worktrees/feat_anki-mcp-host`)
-- **Base snapshot**: `origin/main@74a9d158663c04def57d003cff059e51ecf0c688`
+- **Branch**: `feat/anki-mcp-server` (worktree `.claude/worktrees/feat_anki-mcp-server`)
+- **Base snapshot**: `origin/main@42c07934ef4de30070e23396e4dd6b0c40c35e52` (PR 1·운영 부트스트랩 완료 뒤 PR 2a의 기준)
 - **Priority**: P1
 - **Effort**: L (PR 2개)
 - **Risk**: HIGH — 실제 학습 컬렉션을 MiniPC로 내려받고, 이 저장소 최초의 인터넷 공개 입구와 인증 코드를 추가한다
 - **Depends on**: 024 (soft — AnkiWeb 계정·서버 컬렉션이 존재해야 Download 가능)
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
-- **Execution**: IN PROGRESS — PR 1 머지(#1307) → Step 14 시크릿 투입(#1308) → Step 15 부트스트랩 완료(2026-09-07: `full-download`, 노트 856·카드 1025·revlog 9352 = anki-study 최신 백업과 일치, 이후 normal sync `NO_CHANGES` 성공). **main 인스턴스 운영 중** — 15분 타이머 sync + 04:15 백업. Step 16 완료(Funnel capability 실측). **PR 2a 구현 중**(브랜치 `feat/anki-mcp-server`): Step 17 2a·18·19·20·21 코드 완료, Step 22 배포·검증 대기. 결정 15는 A안으로 확정.
+- **Execution**: IN PROGRESS — PR 1 머지(#1307), 시크릿 투입(#1308), 운영 부트스트랩·정상 sync 완료(#1309). PR 2a #1310은 구현·배포 검증 뒤 Funnel 443이 기존 Caddy의 4개 서비스를 끊는 회귀로 보류했다. MiniPC는 main으로 복구했고 2026-09-07 Mac에서 기존 4개 서비스 정상·Funnel 없음·Anki sync/백업 타이머 정상을 재확인했다. 운영자가 **공개 8443 / 승인 9443 / 미리보기 10000** 재배치를 선택했다. 재설계 구현·검증 진행 중이며 실제 ChatGPT·Claude·Codex 연결 검증은 아직 남아 있다.
 - **Plan DA**: R1 COMPLETE (finding 21건 전부 CONFIRMED·반영, 롤아웃 계약 2건은 운영자 결정 "계획을 구현에 맞춰 갱신"), R2 COMPLETE (finding 19건 전부 CONFIRMED·반영 — 방향 모드 제거, 복원 절차 계약, sync 계층 단일화, 타임아웃 단일 소스, lab 폐기 절차), R3 COMPLETE (16건: 15 CONFIRMED·1 NOT_AN_ISSUE — 14건 반영: 준비·재시도 상수 단일 소스와 유닛 예산 재계산, /status 즉시 응답 분리, import 구성 시점 게이트, export 덮어쓰기 거부, 복구점 미러·정리 코드 PR 2b로 이관, 인스턴스 enable 옵션 제거, result 어휘 표; 1건 REPLAN_REQUIRED(MCP 유저·상태 파일 접근)는 #1306에 배출), R4 COMPLETE (19건 전부 CONFIRMED·반영 — lab 수명을 PR 2b까지로, 준비됨=로그인 판정 확정, /status 투영 축소, running 상태·요청–결과 대응, busy 예산 스크립트 전체 1회·백오프 합 파생, 애드온 타임아웃 전부 env, allowImport 옵션+배타 assertion, user·profile 옵션 제거, 미디어 대기 제거, 문서 정합), R5 COMPLETE (13건: 12 CONFIRMED·1 NOT_AN_ISSUE — R4 편집이 애드온 `required` 바인딩을 조건 블록 안으로 밀어 넣은 CRITICAL 결함 복원, 상태 파일 runId 회차 식별, collection-empty 알림, 헬퍼 배선 공용 파일 + eval의 `${VAR:?}` 요구 집합 대조, 시크릿 인벤토리·문서 정합). R6 COMPLETE (15건 전부 CONFIRMED·반영 — loopback 무인증 AnkiConnect 잔여 위험을 CIR·결정 1에 기록하고 normal sync에 급감 게이트, 복원 절차의 상태 파일 초기화 단계와 STOP 9 예외, 결정 13 호출자 규칙을 systemctl 실측 대조로, full-sync-required exit 1, smoke-test 백업 신선도 등록, backup 유닛 쓰기 경로 축소, AH8 분할, 문서 정합). 루프 종료 `termination_type=USER_STOP`(운영자 지시 2026-09-07: "점점 YAGNI성 꼬투리 리뷰만 나온다" — R6 반영분은 독립 재검증 없이 walkthrough·배포 실측으로만 확인). 미해결: R6 write phase delta의 독립 리뷰 부재
-- **PR DA**: PR 1은 SKIP — 운영자 결정 2026-09-07(Plan DA 6라운드가 같은 diff를 검토했고 후반 라운드가 YAGNI성 지적으로 흘렀다). PR 2는 FULL(Opus 5 전용 — Codex quota 없음) 유지
+- **PR DA**: PR 1은 운영자 결정으로 생략. PR 2a는 운영자 결정 LITE(Correctness+Regression), Codex 검토로 진행했으나 Funnel 443 회귀로 미수렴. 재설계 반영 후 재검토해야 하며 PR #1310은 아직 머지하지 않는다.
 
 ## Why this matters
 
@@ -81,7 +81,15 @@
    파괴 도구·대량 변경은 이 게이트를 전제로 설계한다(임계값을 넘는 정당한 삭제는 복구점 + 해제 절차를 함께 안내).
 4. 알림 본문에 카드 내용·자격·토큰을 넣지 않는다. 한국어.
 5. 서버 코드에 개인 학습 규칙(덱 이름·태그·배치 규칙)을 넣지 않는다. 범용 도구.
-6. Funnel은 MCP 포트(443)만. 승인 화면은 8443 serve(tailnet 전용). 인바운드 방화벽 포트는 열지 않는다.
+6. Funnel은 MCP 공개 포트 **8443**만, 승인 화면은 **9443 Serve(tailnet 전용)**, 개발 미리보기는 **10000 Serve**다.
+   **443은 Caddy 전용**이며 MCP 배선의 시작·정지 모두 443을 만지지 않는다. 인바운드 방화벽 포트는 열지 않는다.
+   2026-09-07 재설계 근거: Funnel 443을 켜면 tailscaled가 다른 기기에서 오는 tailnet TCP 443을 가로채 기존
+   Immich·Copyparty·Karakeep·Uptime-Kuma의 TLS를 깨뜨렸다. MiniPC 자체의 curl 성공은 기기간 접근 성공을 뜻하지 않았다.
+   [Funnel의 허용 포트](https://tailscale.com/docs/features/tailscale-funnel#requirements-and-limitations)는 443/8443/10000이지만,
+   [Serve는 다른 HTTPS 포트도 지원](https://tailscale.com/docs/reference/tailscale-cli/serve#use-https-and-http-servers)하므로
+   승인 화면을 9443에 두고 미리보기와 공유하지 않는다. 기존 경로를 종료할 때도 담당 포트만 제거한다.
+   ChatGPT·Claude의 비기본 공개 포트 수용 여부는 공식 문서로 확정되지 않았으므로 실제 연결로 검증한다.
+   실패하면 Cloudflare Tunnel + 자체 도메인을 별도 결정한다. 포트 변경으로 issuer도 달라져 클라이언트 재등록이 필요하다.
 7. overlay 없이 캐시된 nixpkgs 패키지만 사용한다.
 8. 이 저장소 스킬·문서는 anki-study의 학습 규칙을 모르고, anki-study의 rules/skills는 이 도구를 모른다.
 9. 롤아웃 게이트는 "시크릿 값 투입"이다. `lab`·`main` 두 인스턴스를 함께 배포하되 `main`은
@@ -132,8 +140,8 @@
 | 헬퍼 상태 | `ssh minipc 'curl -s 127.0.0.1:<helperPort>/status'` (즉시) / `.../status/full` (counts·media) | `collection_open: true`, `login.status` |
 | sync 상태 | `ssh minipc 'sudo cat /var/lib/anki-host/main/sync-status.json'` | `result`: `no-credentials` → `bootstrap-pending` → `success` (진행 단계). 나머지 값의 의미는 `anki-host-sync.sh` 상단 어휘 표 |
 | 첫 부트스트랩 (🔒 Step 15) | `ssh minipc 'sudo systemctl start anki-host-sync-main-bootstrap && sudo journalctl -u anki-host-sync-main-bootstrap -n 5'` | `full-download` 1회, 알림(b) "처음 내려받았습니다" |
-| Funnel 상태 | `ssh minipc 'tailscale funnel status; tailscale serve status'` | 443 funnel → MCP, 8443 serve → 승인 |
-| MCP 메타데이터 | `curl -s https://<minipc-ts-name>/.well-known/oauth-protected-resource` | JSON |
+| Funnel 상태 | `ssh minipc 'tailscale funnel status; tailscale serve status'` | 8443 funnel → MCP, 9443 serve → 승인 |
+| MCP 메타데이터 | `curl -s https://<minipc-ts-name>:8443/.well-known/oauth-protected-resource/mcp` | JSON |
 
 유닛 이름 규칙: 인스턴스 `<name>`의 유닛은 `anki-host-<name>`, sync 타이머·서비스는 `anki-host-sync-<name>`,
 부트스트랩 oneshot은 `anki-host-sync-<name>-bootstrap`(어떤 target에도 걸리지 않음), 백업은 인스턴스 공통 `anki-host-backup`.
@@ -202,10 +210,12 @@
       `include_media: false`), base64 미디어(크기 상한), 감사 로그(카드 본문 최소화), 프리셋 공유 경고, full sync 유발 도구
       (결정 3의 Upload 게이트 설계가 선행 조건).
 18. 내장 OAuth 2.1 AS(mcp SDK provider): PRM·AS metadata·DCR·PKCE S256·승인 화면(비밀 문구)·
-    토큰 만료/갱신/철회·매 요청 검증. TokenVerifier 경계.
+    토큰 만료/갱신/철회·매 요청 검증. TokenVerifier 경계. 클라이언트 인증은 `none`·`client_secret_post`만 광고·등록 허용한다.
+    핀된 SDK의 Basic 인증은 body client_id를 먼저 요구하므로 표준 Basic-only 요청을 처리하지 못한다. Basic·JWT 등록은
+    저장 전에 거부하며, 기존 공개 클라이언트의 secret 없는 철회는 유지한다.
 19. `homeserver.nix`에 `ankiMcp` 옵션. `anki-mcp/default.nix`: systemd 서비스 `anki-mcp`(loopback 두 포트, 유저 `anki-mcp`),
-    polkit 규칙(sync 유닛 start만), `anki-mcp-tailscale` oneshot이 Funnel 443→MCP·serve 8443→승인을 배선하고 8443 Funnel은
-    끈다(STOP 6). 결정 15(A안)대로 sync 스크립트가 `/run/anki-host-status/<instance>.json` 사본을 내놓는다.
+    polkit 규칙(sync 유닛 start만), `anki-mcp-tailscale` oneshot이 Funnel 8443→MCP·serve 9443→승인을 배선하고 승인 포트의 Funnel은
+    차단한다(STOP 6). Caddy 443은 건드리지 않고, 시작·일일 smoke-test가 443 가로채기 부재와 실제 proxy 대상을 검사한다. 결정 15(A안)대로 sync 스크립트가 `/run/anki-host-status/<instance>.json` 사본을 내놓는다.
 20. `secrets/secrets.nix`: `anki-mcp-oauth.age`. 🔒 값 생성.
 21. eval 테스트(Funnel 대상 고정, 승인 포트 funnel 미허용, loopback) + 오프라인 단위 테스트.
 22. 배포 → 메타데이터·승인·토큰 흐름을 curl로 검증 → ChatGPT 개발자 모드 플러그인 등록(기존 시험 등록 제거)
@@ -229,7 +239,10 @@
   그 기대 결과(`action: full-download`, HTTP 200)가 실질적 검증 게이트다. R5에서 편집 사고가 이 경로에만 있는 결함을 만든 전례가 있다.
 - 격리 프로필(실제 이력 fixture): 수정 후 카드 ID·일정·revlog 보존, 복구점 생성, 대량 변경 미리보기, 태그 부착.
 - 운영 프로필: 부트스트랩 후 카운트 대조, 타이머 sync 후 알림 (b) 수신, 쓰기 후 알림 (a) 수신, Mac에서 카드 확인.
-- 클라이언트: ChatGPT(iPhone) 실제 호출·readback, Codex·Claude 연결·조회.
+- 네트워크 회귀: Mac 등 **다른 tailnet 기기**에서 기존 4개 도메인의 응답과 MCP 공개 8443을 함께 확인한다.
+  공개 DNS의 Funnel IP로 직접 연결해 메타데이터·무토큰 401·공개 승인 경로 404를 확인하고, 같은 공개 경로의 9443은
+  연결되지 않아야 한다. tailnet 9443에서는 승인 화면이 열려야 한다. 노드 자체 smoke-test만으로 외부 경로를 통과 처리하지 않는다.
+- 클라이언트: ChatGPT(iPhone) 실제 호출·readback, Codex·Claude 연결·조회. 8443 URL 등록만으로 성공 판정하지 않는다.
 - 실패 경로: 위 Step 23.
 
 ## Done criteria
@@ -246,7 +259,7 @@
 3. Mac에서 재동기화 시 "업로드/다운로드 선택" 다이얼로그가 뜬다 — 운영자 보고, 자동 선택 금지.
 4. AnkiWeb 로그인 실패 3회 — 자격 재확인, 계정 잠금 방지.
 5. eval 게이트(loopback·`allowedTCPPorts`·Funnel 대상)를 통과시키려고 테스트를 완화해야 한다 — 설계 재검토.
-6. 승인 화면이 tailnet 밖에서 열린다(Funnel로 8443이 노출) — 즉시 Funnel 해제.
+6. 승인 화면이 tailnet 밖에서 열린다(승인 포트에 Funnel 노출) — 즉시 그 승인 포트의 Serve 경로를 제거한다.
 7. 시크릿 값이 로그·이슈·PR·stdout에 나타났다 — 즉시 rotate.
 8. 운영자가 시크릿 값 투입·Mac 동기화·ACL 변경을 아직 하지 않았다 — 해당 Step 대기. 특히 자격 투입 전에
    부트스트랩 유닛을 실행하지 않는다. 헬퍼 `/sync`는 `anki-host-sync` 스크립트 외의 호출자를 두지 않는다(결정 13).
@@ -261,14 +274,14 @@
 ## 재개 절차 (다른 기기·새 세션)
 
 1. `gh issue view 1306 --repo greenheadHQ/nixos-config --comments`로 최신 진행 댓글을 읽는다.
-2. `git fetch origin feat/anki-mcp-host` 후 `cd "$(wt feat/anki-mcp-host --if-exists=reuse)"`로 워크트리 진입 — 비대화형 셸에서
-   `wt`는 경로만 출력하고 cd하지 않는다(CLAUDE.md Worktree 절). 워크트리 디렉터리 이름은 `feat_anki-mcp-host`다.
+2. `git fetch origin feat/anki-mcp-server` 후 `cd "$(wt feat/anki-mcp-server --if-exists=reuse)"`로 워크트리 진입 — 비대화형 셸에서
+   `wt`는 경로만 출력하고 cd하지 않는다(CLAUDE.md Worktree 절). 워크트리 디렉터리 이름은 `feat_anki-mcp-server`다.
 3. 이 plan의 Drift check와 Status를 확인한다. Status의 Execution·DA 행이 최신 진행 상태다.
 4. MiniPC 실측: "Commands you will need"의 인스턴스 상태·헬퍼 상태·sync 상태 세 명령으로 어느 Step까지 적용됐는지 판정한다
    (`no-credentials` = Step 14 전, `bootstrap-pending` = Step 15 전, `success` = 운영 중). 이 세 값 외의 `result`는 여기서
    열거하지 않는다 — 의미와 후속 조치는 `anki-host-sync.sh` 상단 어휘 표(단일 소스)를 따른다. `running`은 실행 중이거나
    유닛이 죽은 흔적이니 `systemctl status anki-host-sync-main`·journal을 본 뒤 다음 타이머 실행 후 재판정하고,
-   `collection-empty`는 STOP 9다. 배포되지 않은 코드는 `git log origin/main..feat/anki-mcp-host`로 본다.
+   `collection-empty`는 STOP 9다. 배포되지 않은 코드는 `git log origin/main..feat/anki-mcp-server`로 본다.
 5. 🔒 운영자 게이트가 완료됐는지는 실측으로만 판단한다(`/status`의 `login.status`, Funnel capability `tailscale funnel status`).
 6. 진행 상태를 바꾸는 작업을 끝낼 때마다 이슈 #1306에 한 줄 댓글(완료 Step 번호·커밋 SHA·다음 Step)을 남기고 push한다.
 

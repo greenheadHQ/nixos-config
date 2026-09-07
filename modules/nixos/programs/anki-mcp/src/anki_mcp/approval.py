@@ -1,6 +1,6 @@
 """승인 화면 — tailnet 전용 포트(결정 U1). /authorize(SDK 핸들러) + /approve(비밀 문구 폼).
 
-Funnel 앱에는 /authorize가 없다(server.py가 제거). 이 앱은 loopback 승인 포트에만 바인딩되고 Tailscale serve(8443)만
+Funnel 앱에는 /authorize가 없다(server.py가 제거). 이 앱은 loopback 승인 포트에만 바인딩되고 Tailscale serve(9443)만
 그 포트로 프록시하므로, 인터넷에서는 승인 화면에 닿을 수 없다. 추가로 Host 헤더를 승인 URL의 호스트로 고정한다.
 비밀 문구는 상수 시간 비교, 실패 N회면 잠금(무차별 대입 완화). 문구가 비어 있으면 어떤 승인도 통과하지 않는다.
 """
