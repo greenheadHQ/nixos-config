@@ -758,6 +758,130 @@ let
     ) expectedDarwinHosts
   );
 
+  # ── headless Anki (#1306, plan 030): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
+  ankiHostCfg = nixosCfg.homeserver.ankiHost;
+  ankiHostLab = nixosCfg.systemd.services."anki-host-lab";
+  ankiHostMain = nixosCfg.systemd.services."anki-host-main";
+  ankiHostSyncMain = nixosCfg.systemd.services."anki-host-sync-main";
+  ankiHostSyncMainTimer = nixosCfg.systemd.timers."anki-host-sync-main";
+  ankiHostBackup = nixosCfg.systemd.services."anki-host-backup";
+  ankiHostBackupTimer = nixosCfg.systemd.timers."anki-host-backup";
+  ankiHostPorts = [
+    ankiHostCfg.instances.lab.port
+    ankiHostCfg.instances.lab.helperPort
+    ankiHostCfg.instances.main.port
+    ankiHostCfg.instances.main.helperPort
+  ];
+  ankiHostPortsUnique =
+    builtins.length ankiHostPorts == builtins.length (nixpkgsLib.unique ankiHostPorts);
+  ankiHostSyncMainBootstrap = nixosCfg.systemd.services."anki-host-sync-main-bootstrap";
+  ankiHostPortsDisjointFromHomeserver = builtins.all (p: !(builtins.elem p allPorts)) ankiHostPorts;
+  ankiHostHardeningOk =
+    svc:
+    svc.serviceConfig.NoNewPrivileges == true
+    && svc.serviceConfig.PrivateTmp == true
+    && svc.serviceConfig.ProtectSystem == "strict"
+    && svc.serviceConfig.ProtectHome == true
+    && svc.serviceConfig.User == constants.ankiHost.user
+    && svc.serviceConfig.MemoryMax == "1G";
+  # AnkiConnect 바인딩 주소는 애드온 config로 store에 bake되므로 헬퍼 애드온은 코드 상수로,
+  # AnkiConnect는 모듈 소스 문자열로 loopback 고정을 검사한다 (평가 결과 속성이 아니라 소스 핀).
+  ankiHostLoopbackSourcePinned =
+    nixpkgsLib.hasInfix "webBindAddress = \"127.0.0.1\"" (
+      builtins.readFile ../modules/nixos/programs/anki-host/default.nix
+    )
+    && nixpkgsLib.hasInfix "BIND = \"127.0.0.1\"" (
+      builtins.readFile ../modules/nixos/programs/anki-host/sync-addon/__init__.py
+    );
+  ankiHostRunsOffscreen = svc: svc.environment.QT_QPA_PLATFORM == "offscreen";
+  # 타임아웃 사다리 (constants.ankiHost 단일 소스): 애드온 < 스크립트 curl < 유닛
+  ankiHostSecs = s: nixpkgsLib.toInt (nixpkgsLib.removeSuffix "s" s);
+  ankiHostPow2 = k: nixpkgsLib.foldl' (x: _: x * 2) 1 (nixpkgsLib.range 1 k);
+  ankiHostBackoffTotalSecs =
+    constants.ankiHost.backoffSecs * (ankiHostPow2 (constants.ankiHost.maxRetries - 1) - 1);
+  ankiHostReadyWorstSecs =
+    constants.ankiHost.readyWaitTries
+    * (constants.ankiHost.readyProbeTimeoutSecs + constants.ankiHost.readyWaitSecs);
+  # sync 스크립트 최악: 준비 대기 + busy 응답·대기(스크립트 전체 예산) + sync 시도 maxRetries×curl + 백오프 합
+  ankiHostSyncWorstSecs =
+    ankiHostReadyWorstSecs
+    + constants.ankiHost.busyRetries * constants.ankiHost.helperBusyWaitSecs
+    + (constants.ankiHost.busyRetries - 1) * constants.ankiHost.busyRetrySecs
+    + constants.ankiHost.maxRetries * constants.ankiHost.helperCurlMaxTimeSecs
+    + ankiHostBackoffTotalSecs;
+  # backup 스크립트 최악(인스턴스당): 준비 대기 + busy 재시도 + export 1회
+  ankiHostBackupWorstSecs =
+    ankiHostReadyWorstSecs
+    +
+      (constants.ankiHost.busyRetries - 1)
+      * (constants.ankiHost.helperBusyWaitSecs + constants.ankiHost.busyRetrySecs)
+    + constants.ankiHost.helperCurlMaxTimeSecs;
+  # 스크립트 소스가 `${VAR:?}`로 요구하는 env 이름 집합 — nix 배선(helper-script.nix·sync.nix·backup.nix)이 빠뜨리면
+  # 실행 시점에만 죽으므로 여기서 소스와 유닛 environment를 직접 대조한다.
+  # 정규식은 POSIX ERE 이식성 때문에 괄호식으로 쓴다 — `\{`·`\?` 이스케이프는 Linux(libstdc++)에서 invalid regular expression (CI 실측)
+  ankiHostRequiredEnv =
+    src:
+    nixpkgsLib.unique (
+      map builtins.head (builtins.filter builtins.isList (builtins.split "[$][{]([A-Z_]+):[?][}]" src))
+    );
+  ankiHostHelperCallRequired = ankiHostRequiredEnv (
+    builtins.readFile ../modules/nixos/programs/anki-host/files/lib/helper-call.sh
+  );
+  ankiHostSyncScriptRequired = ankiHostRequiredEnv (
+    builtins.readFile ../modules/nixos/programs/anki-host/files/anki-host-sync.sh
+  );
+  ankiHostBackupScriptRequired = ankiHostRequiredEnv (
+    builtins.readFile ../modules/nixos/programs/anki-host/files/anki-host-backup.sh
+  );
+  ankiHostEnvCovers = unit: names: builtins.all (v: unit.environment ? ${v}) names;
+  # 공용 헬퍼 env를 constants에서 독립 재계산 — 두 유닛이 같은 값을 주입해야 한다
+  ankiHostHelperEnv = {
+    HELPER_CURL_MAX_TIME = toString constants.ankiHost.helperCurlMaxTimeSecs;
+    READY_WAIT_TRIES = toString constants.ankiHost.readyWaitTries;
+    READY_WAIT_SECS = toString constants.ankiHost.readyWaitSecs;
+    READY_PROBE_TIMEOUT = toString constants.ankiHost.readyProbeTimeoutSecs;
+    BUSY_RETRIES = toString constants.ankiHost.busyRetries;
+    BUSY_RETRY_SECS = toString constants.ankiHost.busyRetrySecs;
+  };
+  ankiHostEnvMatches =
+    unit:
+    builtins.all (k: unit.environment.${k} == ankiHostHelperEnv.${k}) (
+      builtins.attrNames ankiHostHelperEnv
+    );
+  # 사다리 부등식 + 애드온·스크립트 상수 env가 constants 값과 일치
+  ankiHostLadderOk =
+    constants.ankiHost.helperMainTimeoutSecs + constants.ankiHost.helperBusyWaitSecs
+    < constants.ankiHost.helperCurlMaxTimeSecs
+    &&
+      ankiHostMain.environment.ANKI_HOST_MAIN_TIMEOUT_SECS
+      == toString constants.ankiHost.helperMainTimeoutSecs
+    &&
+      ankiHostMain.environment.ANKI_HOST_BUSY_WAIT_SECS == toString constants.ankiHost.helperBusyWaitSecs
+    &&
+      ankiHostMain.environment.ANKI_HOST_QUERY_TIMEOUT_SECS
+      == toString constants.ankiHost.helperQueryTimeoutSecs
+    && ankiHostSyncMain.environment.MAX_RETRIES == toString constants.ankiHost.maxRetries
+    && ankiHostSyncMain.environment.BACKOFF_SECS == toString constants.ankiHost.backoffSecs
+    &&
+      ankiHostMain.environment.ANKI_HOST_GUARD_MIN_RETAIN_PCT
+      == toString constants.ankiHost.syncGuardMinRetainPct;
+  # 유닛 예산 ≥ 스크립트 최악 실행 시간 — 같은 상수에서 독립 재계산
+  ankiHostBudgetOk =
+    ankiHostSecs ankiHostSyncMain.serviceConfig.TimeoutStartSec >= ankiHostSyncWorstSecs
+    && ankiHostSecs ankiHostBackup.serviceConfig.TimeoutStartSec >= ankiHostBackupWorstSecs;
+  # 공용 헬퍼 env가 두 유닛에 같은 값으로 주입되고, 세 스크립트 소스의 `${VAR:?}` 요구 집합을 유닛 environment가 전부 덮는다
+  ankiHostEnvSetsOk =
+    ankiHostEnvMatches ankiHostSyncMain
+    && ankiHostEnvMatches ankiHostBackup
+    && builtins.all (v: ankiHostHelperEnv ? ${v}) ankiHostHelperCallRequired
+    && ankiHostEnvCovers ankiHostSyncMain (ankiHostHelperCallRequired ++ ankiHostSyncScriptRequired)
+    && ankiHostEnvCovers ankiHostBackup (ankiHostHelperCallRequired ++ ankiHostBackupScriptRequired);
+  ankiHostImportExclusionAssertion = builtins.any (
+    x: nixpkgsLib.hasInfix "allowImport and sync.enable are mutually exclusive" x.message
+  ) nixosCfg.assertions;
+  ankiHostSingleAccountAssertion = builtins.any (
+    a: nixpkgsLib.hasInfix "single AnkiWeb credential" a.message
+  ) nixosCfg.assertions;
   # ═══════════════════════════════════════════════════════════════
   # 테스트 실행
   # ═══════════════════════════════════════════════════════════════
@@ -1089,6 +1213,110 @@ let
       cond =
         nixpkgsLib.hasInfix "XDG_RUNTIME_DIR" nixosHm.age.secretsDir
         && nixpkgsLib.hasInfix "XDG_RUNTIME_DIR" nixosHm.age.secretsMountPoint;
+    }
+    # ── headless Anki (#1306, plan 030) ──
+    {
+      name = "Test AH1: homeserver.ankiHost가 lab·main 두 인스턴스를 켜고, 4개 포트가 서로 다르며 다른 homeserver 포트와 겹치지 않아야 함";
+      cond =
+        ankiHostCfg.enable
+        && (ankiHostCfg.instances ? lab)
+        && (ankiHostCfg.instances ? main)
+        && ankiHostPortsUnique
+        && ankiHostPortsDisjointFromHomeserver;
+    }
+    {
+      name = "Test AH2: 인스턴스 포트가 constants 단일 소스와 일치해야 함 (lab ${toString constants.network.ports.ankiConnectLab}/${toString constants.network.ports.ankiHelperLab}, main ${toString constants.network.ports.ankiConnectMain}/${toString constants.network.ports.ankiHelperMain})";
+      cond =
+        ankiHostCfg.instances.lab.port == constants.network.ports.ankiConnectLab
+        && ankiHostCfg.instances.lab.helperPort == constants.network.ports.ankiHelperLab
+        && ankiHostCfg.instances.main.port == constants.network.ports.ankiConnectMain
+        && ankiHostCfg.instances.main.helperPort == constants.network.ports.ankiHelperMain;
+    }
+    {
+      name = "Test AH3: AnkiConnect·헬퍼가 127.0.0.1에만 바인딩되고 인스턴스가 offscreen Qt로 뜨며, single-instance 키가 인스턴스별로 달라야 함 (같은 유저의 두 anki가 서로 명령을 넘기는 사고 방지)";
+      cond =
+        ankiHostLoopbackSourcePinned
+        && ankiHostRunsOffscreen ankiHostLab
+        && ankiHostRunsOffscreen ankiHostMain
+        &&
+          ankiHostLab.environment.ANKI_SINGLE_INSTANCE_KEY
+          != ankiHostMain.environment.ANKI_SINGLE_INSTANCE_KEY
+        && ankiHostLab.environment.ANKI_HOST_HELPER_PORT != ankiHostMain.environment.ANKI_HOST_HELPER_PORT;
+    }
+    {
+      name = "Test AH4: 인스턴스 유닛 하드닝 (NoNewPrivileges/PrivateTmp/ProtectSystem=strict/ProtectHome/전용 유저/MemoryMax=1G) + multi-user.target 배선";
+      cond =
+        ankiHostHardeningOk ankiHostLab
+        && ankiHostHardeningOk ankiHostMain
+        && ankiHostLab.wantedBy == [ "multi-user.target" ]
+        && ankiHostMain.wantedBy == [ "multi-user.target" ];
+    }
+    {
+      name = "Test AH5: AnkiWeb 자격은 main 인스턴스에만 주입되고(lab은 로그인 없음) 시크릿은 서비스 유저 소유 0400이어야 하며, 컬렉션 교체(/import-colpkg)는 allowImport 옵션으로 lab에만 열리고, sync ≤ 1 인스턴스·allowImport↔sync.enable 배타 두 assertion이 선언돼야 함";
+      cond =
+        (ankiHostMain.environment ? ANKI_HOST_SYNC_CREDENTIALS)
+        && !(ankiHostLab.environment ? ANKI_HOST_SYNC_CREDENTIALS)
+        && ankiHostCfg.instances.lab.allowImport
+        && !ankiHostCfg.instances.main.allowImport
+        && ankiHostLab.environment.ANKI_HOST_ALLOW_IMPORT == "1"
+        && !(ankiHostMain.environment ? ANKI_HOST_ALLOW_IMPORT)
+        && ankiHostImportExclusionAssertion
+        && ankiHostSingleAccountAssertion
+        && nixosCfg.age.secrets.anki-ankiweb.owner == constants.ankiHost.user
+        && nixosCfg.age.secrets.anki-ankiweb.mode == "0400"
+        && nixosCfg.age.secrets.pushover-anki.owner == "root"
+        && nixosCfg.age.secrets.pushover-anki.mode == "0400";
+    }
+    {
+      name = "Test AH6: sync 타이머는 main만 존재하고(lab은 sync 비활성) 부팅 3분 + ${ankiHostCfg.instances.main.sync.interval} 간격(monotonic — Persistent 없음)이며, 서비스는 Pushover를 LoadCredential로만 받고 시크릿 부재 시 ConditionPathExists로 건너뛰어야 함";
+      cond =
+        !(nixosCfg.systemd.timers ? "anki-host-sync-lab")
+        && ankiHostSyncMainTimer.wantedBy == [ "timers.target" ]
+        && ankiHostSyncMainTimer.timerConfig.OnBootSec == "3min"
+        && ankiHostSyncMainTimer.timerConfig.OnUnitActiveSec == ankiHostCfg.instances.main.sync.interval
+        && !(ankiHostSyncMainTimer.timerConfig ? Persistent)
+        && builtins.any (
+          c: nixpkgsLib.hasPrefix "pushover:" c
+        ) ankiHostSyncMain.serviceConfig.LoadCredential
+        && ankiHostSyncMain.serviceConfig.User == constants.ankiHost.user
+        && ankiHostSyncMain.unitConfig.ConditionPathExists == nixosCfg.age.secrets.pushover-anki.path;
+    }
+    {
+      name = "Test AH6-2: 부트스트랩 유닛(anki-host-sync-main-bootstrap)은 존재하되 어떤 target에도 걸리지 않고(수동 1회 실행), allow-download-if-empty 모드로만 호출해야 함 (빈 컬렉션 첫 다운로드 — 자동 방향 결정 금지)";
+      cond =
+        ankiHostSyncMainBootstrap.wantedBy == [ ]
+        && !(nixosCfg.systemd.timers ? "anki-host-sync-main-bootstrap")
+        && nixpkgsLib.hasSuffix " --mode allow-download-if-empty" ankiHostSyncMainBootstrap.serviceConfig.ExecStart
+        && !(nixpkgsLib.hasInfix "--mode" ankiHostSyncMain.serviceConfig.ExecStart)
+        && ankiHostSyncMainBootstrap.serviceConfig.User == constants.ankiHost.user;
+    }
+    {
+      name = "Test AH7: 백업 타이머가 timers.target에 걸리고 OnCalendar가 옵션(${ankiHostCfg.backupTime})과 같으며, 백업 서비스는 strict + HDD/상태 디렉터리만 쓰기 가능하고, 검증용 lab은 백업 대상에서 빠져야 함 (INSTANCES: ${ankiHostBackup.environment.INSTANCES})";
+      cond =
+        ankiHostBackupTimer.wantedBy == [ "timers.target" ]
+        && ankiHostBackupTimer.timerConfig.OnCalendar == ankiHostCfg.backupTime
+        && ankiHostBackupTimer.timerConfig.Persistent == true
+        && ankiHostBackup.serviceConfig.ProtectSystem == "strict"
+        && builtins.elem "${constants.paths.mediaData}/${constants.paths.ankiHostBackupsRelPath}" ankiHostBackup.serviceConfig.ReadWritePaths
+        && ankiHostBackup.unitConfig.ConditionPathExists == nixosCfg.age.secrets.pushover-anki.path
+        # 쓰기 경로는 HDD 백업 디렉터리 + 백업 대상 인스턴스의 backups/뿐 — 살아 있는 프로필·상태 루트 전체는 열지 않는다
+        && builtins.elem "${constants.paths.ankiHostState}/main/backups" ankiHostBackup.serviceConfig.ReadWritePaths
+        && !(builtins.elem constants.paths.ankiHostState ankiHostBackup.serviceConfig.ReadWritePaths)
+        && !(builtins.elem "${constants.paths.ankiHostState}/lab/backups" ankiHostBackup.serviceConfig.ReadWritePaths)
+        && !ankiHostCfg.instances.lab.backup.enable
+        && ankiHostBackup.environment.INSTANCES == "main:${toString ankiHostCfg.instances.main.helperPort}";
+    }
+    {
+      name = "Test AH8a: 타임아웃 사다리(애드온 락 ${toString constants.ankiHost.helperBusyWaitSecs}s + 메인 ${toString constants.ankiHost.helperMainTimeoutSecs}s < curl ${toString constants.ankiHost.helperCurlMaxTimeSecs}s)가 성립하고 애드온·sync 스크립트 상수 env가 constants와 일치해야 함";
+      cond = ankiHostLadderOk;
+    }
+    {
+      name = "Test AH8b: 유닛 예산이 스크립트 최악 실행 시간 이상이어야 함 (sync ${ankiHostSyncMain.serviceConfig.TimeoutStartSec} ≥ ${toString ankiHostSyncWorstSecs}s, backup ${ankiHostBackup.serviceConfig.TimeoutStartSec} ≥ ${toString ankiHostBackupWorstSecs}s)";
+      cond = ankiHostBudgetOk;
+    }
+    {
+      name = "Test AH8c: 공용 헬퍼 env가 sync·backup 유닛에 같은 값으로 주입되고, 스크립트 소스의 `\${VAR:?}` 요구 집합(helper-call ${toString (builtins.length ankiHostHelperCallRequired)}·sync ${toString (builtins.length ankiHostSyncScriptRequired)}·backup ${toString (builtins.length ankiHostBackupScriptRequired)}개)을 유닛 env가 전부 덮어야 함";
+      cond = ankiHostEnvSetsOk;
     }
   ]
   ++ darwinIntentTests;

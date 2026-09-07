@@ -322,6 +322,66 @@
         description = "Transcript inactivity window before a session counts as idle (restart gate)";
       };
     };
+    ankiHost = {
+      enable = lib.mkEnableOption "headless Anki instances with loopback AnkiConnect and AnkiWeb sync helper";
+      instances = lib.mkOption {
+        description = "Headless Anki instances keyed by short name (state lives under constants.paths.ankiHostState, one subdirectory per instance)";
+        default = { };
+        type = lib.types.attrsOf (
+          lib.types.submodule (
+            { name, ... }:
+            {
+              options = {
+                port = lib.mkOption {
+                  type = lib.types.port;
+                  description = "AnkiConnect port (always bound to 127.0.0.1)";
+                };
+                helperPort = lib.mkOption {
+                  type = lib.types.port;
+                  description = "anki_host_sync helper port (always bound to 127.0.0.1)";
+                };
+                backup = {
+                  enable = lib.mkOption {
+                    type = lib.types.bool;
+                    default = true;
+                    description = "Include this instance in the daily .colpkg HDD backup";
+                  };
+                };
+                allowImport = lib.mkOption {
+                  type = lib.types.bool;
+                  default = false;
+                  description = "Expose the helper's /import-colpkg (whole-collection replacement from a .colpkg under the instance state) — isolated fixture instances only; mutually exclusive with sync.enable";
+                };
+                sync = {
+                  enable = lib.mkOption {
+                    type = lib.types.bool;
+                    default = false;
+                    description = "Log in to AnkiWeb with the anki-ankiweb secret and run the periodic sync timer";
+                  };
+                  interval = lib.mkOption {
+                    type = lib.types.str;
+                    default = "15min";
+                    description = "OnUnitActiveSec interval for the periodic sync";
+                  };
+                };
+              };
+            }
+          )
+        );
+      };
+      backupTime = lib.mkOption {
+        type = lib.types.str;
+        default = "*-*-* 04:15:00";
+        description = "OnCalendar time for the daily .colpkg HDD backup of the instances with backup.enable";
+      };
+      retentionDays = lib.mkOption {
+        type = lib.types.ints.positive; # 0이면 find -mtime +0이 아무것도 안 지우고, 음수면 새 백업까지 지운다
+        default = 14;
+        # 다른 백업(immich·karakeep)의 30일보다 짧은 근거: 미디어 포함 .colpkg가 ≈200MB/일이라 30일이면 6GB이고,
+        # 원본은 AnkiWeb과 anki-study 백업에 별도로 있어 이 사본은 "최근 2주 복원점"이면 충분하다.
+        description = "Number of days to retain HDD .colpkg backups (14, not the 30 of other backups — ~200MB/day and the originals live in AnkiWeb and the anki-study backups)";
+      };
+    };
   };
 
   # 모든 서비스 모듈을 정적으로 import (Nix 모듈 시스템은 조건부 import 불가)
@@ -353,5 +413,6 @@
     ../programs/codex-remote-control.nix # Codex mobile remote-control app-server 회귀 방지
     ../programs/claude-remote-control.nix # Claude Code RC bridge version-drift 감시
     ../programs/private-job-runner # generic private job runner (작업 정의는 기기 로컬)
+    ../programs/anki-host # headless Anki 인스턴스 + AnkiWeb 동기화·알림·백업 (#1306)
   ];
 }

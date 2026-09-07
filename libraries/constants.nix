@@ -17,6 +17,11 @@
       uptimeKuma = 3002;
       copyparty = 3923;
       karakeep = 3000;
+      # headless Anki 인스턴스 (loopback 전용 — 인터넷·tailnet에 바인딩하지 않는다)
+      ankiConnectLab = 18765; # 격리 검증 프로필의 AnkiConnect
+      ankiHelperLab = 18766; # 격리 검증 프로필의 sync/스냅샷 헬퍼 애드온
+      ankiConnectMain = 8765; # 운영 프로필의 AnkiConnect
+      ankiHelperMain = 8766; # 운영 프로필의 sync/스냅샷 헬퍼 애드온
     };
 
     # Podman 브릿지 네트워크 기본 서브넷
@@ -37,11 +42,36 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
+  # headless Anki 인스턴스 — 타임아웃 사다리 단일 소스 (안쪽 < 바깥쪽이어야 원인 구분이 가능하다)
+  #   애드온 메인 스레드 작업(helperMainTimeoutSecs) < 스크립트 curl(helperCurlMaxTimeSecs)
+  #   < systemd TimeoutStartSec(sync.nix·backup.nix가 재시도 횟수·대기 예산을 곱해 계산)
+  # ═══════════════════════════════════════════════════════════════
+  ankiHost = {
+    user = "anki-host"; # 모든 headless 인스턴스·sync·백업 유닛의 서비스 유저 (배포 후 바꿀 수 없다 — 상태 디렉터리 소유권)
+    # 애드온 안쪽 값 (default.nix가 env로 주입)
+    helperBusyWaitSecs = 5; # 변경 작업 락 대기 — 넘기면 409. 409 응답 시간의 상한이기도 하다 (sync.nix 예산 계산)
+    helperQueryTimeoutSecs = 120; # /status/full의 메인 스레드 대기 (counts·media 조회)
+    helperMainTimeoutSecs = 1800; # 변경 작업의 메인 스레드 상한 — 첫 전체 다운로드(컬렉션 수십 MB)도 이 안에 끝난다
+    helperCurlMaxTimeSecs = 1900; # ≥ helperMainTimeoutSecs + helperBusyWaitSecs + 여유 (eval AH8이 검사). 스크립트가 env로 받는다
+    # 스크립트 준비 대기·재시도 — 스크립트에 env로 주입되고 같은 값으로 유닛 TimeoutStartSec을 계산한다
+    readyWaitTries = 24; # 준비 대기 최악 = tries × (probe + wait) = 24 × 15s = 6min (재배포·재부팅 직후 Anki 기동)
+    readyWaitSecs = 5;
+    readyProbeTimeoutSecs = 10; # /status는 메인 스레드를 타지 않으므로 짧아도 된다
+    maxRetries = 3; # sync 호출 시도 횟수 — 시도 사이 대기는 (maxRetries−1)회, backoffSecs부터 2배씩 (합 = backoffSecs × (2^(maxRetries−1) − 1))
+    backoffSecs = 5;
+    busyRetries = 3; # 409(다른 변경 작업 진행 중) 재시도 — 마지막 회차 뒤 대기 없음
+    busyRetrySecs = 60;
+    # 급감 게이트 — 직전 성공 스냅샷 대비 로컬 노트·revlog가 이 비율 미만이면 sync 스크립트가 서버 병합을 막는다 (결정 1·3)
+    syncGuardMinRetainPct = 80;
+  };
+
+  # ═══════════════════════════════════════════════════════════════
   # 경로
   # ═══════════════════════════════════════════════════════════════
   paths = {
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
+    ankiHostBackupsRelPath = "backups/anki-host"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
     # Launcher 전용 headless SSH dispatcher의 Home 상대 설치 경로.
     # Home Manager target과 launcher PATH가 이 값을 함께 사용해 배선 drift를 막는다.
@@ -57,6 +87,8 @@
     # host key는 부팅 의존 시크릿(SA token) 복호화 전용. user key(/home/<user>/.ssh/id_ed25519)는
     # username 보간이 필요해 정적 constants에 담을 수 없으므로 configuration.nix에서 inline 유지한다.
     agenixHostIdentityKey = "/etc/ssh/ssh_host_ed25519_key";
+    # headless Anki 인스턴스 상태 루트 (StateDirectory·sync·backup·eval 테스트가 공유하는 단일 소스)
+    ankiHostState = "/var/lib/anki-host";
     opnixServiceAccountExpirySource = ../secrets/opnix-service-account-expiry.txt;
     # opnix SA token agenix secret — opnix/default.nix가 tokenFile 등록에 사용
     opnixServiceAccountTokenAge = ../secrets/opnix-service-account-token.age;

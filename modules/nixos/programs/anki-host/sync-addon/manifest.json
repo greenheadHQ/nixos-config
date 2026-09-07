@@ -1,0 +1,5 @@
+{
+  "package": "anki_host_sync",
+  "name": "Anki Host Sync (nixos-config headless helper)",
+  "mod": 0
+}
