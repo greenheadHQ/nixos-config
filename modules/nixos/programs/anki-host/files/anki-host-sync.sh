@@ -2,13 +2,25 @@
 # anki-host-sync — 헬퍼 애드온(/sync)을 호출해 AnkiWeb과 동기화하고 결과를 상태 파일·Pushover로 남긴다.
 # 이 스크립트가 sync의 운영 계층(상태 파일·알림·결과 분류)의 단일 소유자다 — 타이머 유닛, 부트스트랩
 # 유닛, PR 2의 MCP "지금 동기화"(유닛 트리거)가 모두 이 경로를 지난다. 헬퍼 /sync를 직접 부르는 호출자를 두지 않는다.
-# env: HELPER_PORT STATE_DIR INSTANCE HELPER_CURL_MAX_TIME [CREDENTIALS_DIRECTORY]
+# env: HELPER_PORT STATE_DIR INSTANCE HELPER_CURL_MAX_TIME MAX_RETRIES BACKOFF_SECS
+#      READY_WAIT_TRIES READY_WAIT_SECS READY_PROBE_TIMEOUT BUSY_RETRIES BUSY_RETRY_SECS [CREDENTIALS_DIRECTORY]
+#      (모두 nixos 모듈이 constants.ankiHost에서 주입 — 같은 값으로 유닛 TimeoutStartSec을 계산한다)
 # 인자: [--mode normal|allow-download-if-empty]  (기본 normal — 타이머 유닛; 부트스트랩 유닛이 allow-download-if-empty)
 #
 # 방향 정책(plan 030 결정 3): normal은 병합만, allow-download-if-empty는 빈 로컬의 첫 부트스트랩.
-# 서버를 덮어쓰는 방향은 헬퍼에 없다. full sync가 요구됐는데 처리하지 않으면: 로컬이 비어 있으면
-# "부트스트랩 대기"로 조용히 기록하고(운영자 게이트 전의 정상 상태), 비어 있지 않으면 알림(c)을 보낸다.
-# (앞에 files/lib/helper-call.sh가 텍스트 결합되어 anki_helper_call·helper_ok·helper_busy·helper_error가 정의돼 있다.)
+# 서버를 덮어쓰는 방향은 헬퍼에 없다.
+#
+# 상태 파일 sync-status.json의 `result` 어휘 (이 스크립트가 유일한 생산자 — 재개 절차·MCP가 이 표를 읽는다):
+#   no-credentials      AnkiWeb 자격 값이 아직 없다 — 운영자 게이트(plan Step 14) 전의 정상 상태. 알림 없음
+#   bootstrap-pending   로그인은 됐으나 로컬이 비어 있어 full sync가 요구됨 — 부트스트랩 유닛(Step 15) 대기. 알림 없음
+#   success             normal 병합 또는 부트스트랩 다운로드 완료. `sync` 필드에 전후 스냅샷
+#   busy-deferred       헬퍼가 다른 변경 작업(export 등) 중이라 이번 회차를 건너뜀 — 다음 타이머에 재시도. 알림 없음
+#   helper-unreachable  준비 대기 예산 안에 헬퍼가 collection_open을 주지 않음 — 알림(c) 24h 1회
+#   login-failed        자격은 있는데 로그인 실패(login-failed/hook-error) — 재시도 없이 알림(c)
+#   full-sync-required  로컬이 비어 있지 않은데 full sync 요구 — 방향 자동 결정 금지, 알림(c)
+#   error               헬퍼 오류·재시도 소진 — 알림(c)
+# 위 값 중 no-credentials → bootstrap-pending → success 세 값이 진행 단계를 가리키고, 나머지는 운영 중 일시 상태다.
+# (앞에 pushover.sh와 files/lib/helper-call.sh가 텍스트 결합되어 pushover_send·anki_helper_* 가 정의돼 있다.)
 
 MODE="normal"
 while [ "$#" -gt 0 ]; do
@@ -24,21 +36,12 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-HELPER="http://127.0.0.1:${HELPER_PORT}"
-STATE_FILE="${STATE_DIR}/sync-status.json"
+HELPER="http://127.0.0.1:${HELPER_PORT:?}"
+STATE_FILE="${STATE_DIR:?}/sync-status.json"
 LOCK_FILE="${STATE_DIR}/.sync.lock"
 CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
-# 조정 가능한 값은 여기 모은다. 시간 예산: 준비 대기 READY_WAIT_TRIES×READY_WAIT_SECS ≈ 2분(부팅 3분 후
-# 타이머가 도는 동안의 Anki 기동을 덮는다) + sync 재시도 MAX_RETRIES×HELPER_CURL_MAX_TIME + busy 재시도
-# BUSY_RETRIES×BUSY_RETRY_SECS. systemd TimeoutStartSec은 이 합 이상으로 sync.nix가 계산한다.
-MAX_RETRIES=3
-BACKOFF=5
-BUSY_RETRIES=3
-BUSY_RETRY_SECS=60
-READY_WAIT_TRIES=24
-READY_WAIT_SECS=5
-READY_PROBE_TIMEOUT=30
 ALERT_DEDUPE_SECS=86400
+: "${MAX_RETRIES:?}" "${BACKOFF_SECS:?}" "${HELPER_CURL_MAX_TIME:?}" "${INSTANCE:?}"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -118,22 +121,13 @@ notify_event() {
   fi
 }
 
-# 헬퍼 준비 대기 — 타이머는 부팅 3분 후에도 한 번 돌아 Anki가 아직 뜨는 중일 수 있다.
-# 헬퍼가 다른 작업(export 등) 중이면 partial 응답을 주므로 collection_open으로 준비를 판정한다.
-for _ in $(seq 1 "$READY_WAIT_TRIES"); do
-  anki_helper_call "${HELPER}/status" "" "$READY_PROBE_TIMEOUT"
-  if helper_ok && [ "$(printf '%s' "$HELPER_BODY" | jq -r '.result.collection_open')" = "true" ]; then
-    break
-  fi
-  sleep "$READY_WAIT_SECS"
-done
-if ! helper_ok || [ "$(printf '%s' "$HELPER_BODY" | jq -r '.result.collection_open')" != "true" ]; then
+if ! anki_helper_wait_ready "$HELPER"; then
   echo "anki-host-sync[${INSTANCE}]: helper unreachable ($(helper_error))"
   write_state "helper-unreachable" "helper unreachable on ${HELPER}" ""
   notify_alert "helper-unreachable" 1 "Anki 동기화 실패" "miniPC의 Anki(${INSTANCE})가 응답하지 않습니다. 서비스 상태를 확인하세요. 최근 카드 변경은 miniPC에만 있을 수 있습니다."
   exit 1
 fi
-# 로그인 판정은 애드온의 login.status 하나로 한다 — partial 응답에도 이 필드는 들어 있다
+# 로그인 판정은 애드온의 login.status 하나로 한다 — 준비 응답(/status)에 들어 있다
 login_status="$(printf '%s' "$HELPER_BODY" | jq -r '.result.login.status // "not-attempted"')"
 case "$login_status" in
   logged-in|already-logged-in) ;;
@@ -152,22 +146,16 @@ case "$login_status" in
 esac
 
 attempt=1
-delay="$BACKOFF"
-busy_attempts=0
+delay="$BACKOFF_SECS"
 last_error=""
 payload="$(jq -n --arg mode "$MODE" '{mode: $mode, wait_media_secs: 60}')"
 while [ "$attempt" -le "$MAX_RETRIES" ]; do
-  anki_helper_call "${HELPER}/sync" "$payload" "$HELPER_CURL_MAX_TIME"
+  anki_helper_call_retry_busy "${HELPER}/sync" "$payload" "$HELPER_CURL_MAX_TIME"
   if helper_busy; then
-    # 다른 변경 작업(export/import) 진행 중 — 실패가 아니라 순서 대기. 짧게 재시도 후 다음 타이머에 맡긴다
-    busy_attempts=$((busy_attempts + 1))
-    if [ "$busy_attempts" -ge "$BUSY_RETRIES" ]; then
-      echo "anki-host-sync[${INSTANCE}]: helper busy ($(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"')), deferring to next run"
-      write_state "busy-deferred" "helper busy: $(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"')" ""
-      exit 0
-    fi
-    sleep "$BUSY_RETRY_SECS"
-    continue
+    # 다른 변경 작업(export/import)이 재시도 예산 안에 끝나지 않음 — 실패가 아니라 순서 대기. 다음 타이머에 맡긴다
+    echo "anki-host-sync[${INSTANCE}]: helper busy ($(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"')), deferring to next run"
+    write_state "busy-deferred" "helper busy: $(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"')" ""
+    exit 0
   fi
   if helper_ok; then
     result_json="$(printf '%s' "$HELPER_BODY" | jq -c '.result')"

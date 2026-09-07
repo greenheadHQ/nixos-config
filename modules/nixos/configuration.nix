@@ -161,7 +161,8 @@
     instances = {
       lab = {
         # 격리 검증 프로필 — AnkiWeb 로그인 없음, 실제 이력 .colpkg fixture로 도구·복구점 검증.
-        # 수명: plan 030 PR 2 도구 검증까지. 끝나면 enable = false로 내린다 (Step 24).
+        # 수명: plan 030 PR 2a 도구 검증까지. 끝나면 plan 030 Step 24의 lab 폐기 체크리스트를 수행한다
+        # (이 블록·constants 포트·eval 참조 제거 + 상태 루트 전체 삭제). enable 플래그로 끄지 않는다.
         port = constants.network.ports.ankiConnectLab;
         helperPort = constants.network.ports.ankiHelperLab;
         backup.enable = false; # 검증용 사본이라 HDD 백업 제외 (원본은 anki-study 백업)

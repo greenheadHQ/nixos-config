@@ -806,12 +806,26 @@ let
       == toString constants.ankiHost.helperCurlMaxTimeSecs
     &&
       ankiHostBackup.environment.HELPER_CURL_MAX_TIME == toString constants.ankiHost.helperCurlMaxTimeSecs
+    # 유닛 예산 ≥ 스크립트 최악 실행 시간(준비 대기 + 재시도) — 같은 상수에서 독립 재계산
     &&
-      ankiHostSecs ankiHostSyncMain.serviceConfig.TimeoutStartSec
-      > 3 * constants.ankiHost.helperCurlMaxTimeSecs
+      ankiHostSecs ankiHostSyncMain.serviceConfig.TimeoutStartSec >= ankiHostReadyWorstSecs
+      + constants.ankiHost.maxRetries * constants.ankiHost.helperCurlMaxTimeSecs
+      + (constants.ankiHost.busyRetries - 1) * constants.ankiHost.busyRetrySecs
     &&
-      ankiHostSecs ankiHostBackup.serviceConfig.TimeoutStartSec
-      > 3 * constants.ankiHost.helperCurlMaxTimeSecs;
+      ankiHostSecs ankiHostBackup.serviceConfig.TimeoutStartSec >= ankiHostReadyWorstSecs
+      + constants.ankiHost.busyRetries * constants.ankiHost.helperCurlMaxTimeSecs
+      + (constants.ankiHost.busyRetries - 1) * constants.ankiHost.busyRetrySecs
+    # 스크립트가 받는 준비·재시도 env가 constants와 일치
+    && ankiHostSyncMain.environment.READY_WAIT_TRIES == toString constants.ankiHost.readyWaitTries
+    &&
+      ankiHostSyncMain.environment.READY_PROBE_TIMEOUT
+      == toString constants.ankiHost.readyProbeTimeoutSecs
+    && ankiHostSyncMain.environment.MAX_RETRIES == toString constants.ankiHost.maxRetries
+    && ankiHostBackup.environment.READY_WAIT_TRIES == toString constants.ankiHost.readyWaitTries
+    && ankiHostBackup.environment.BUSY_RETRIES == toString constants.ankiHost.busyRetries;
+  ankiHostReadyWorstSecs =
+    constants.ankiHost.readyWaitTries
+    * (constants.ankiHost.readyProbeTimeoutSecs + constants.ankiHost.readyWaitSecs);
   ankiHostSingleAccountAssertion = builtins.any (
     a: nixpkgsLib.hasInfix "single AnkiWeb credential" a.message
   ) nixosCfg.assertions;
@@ -1152,8 +1166,8 @@ let
       name = "Test AH1: homeserver.ankiHost가 lab·main 두 인스턴스를 켜고, 4개 포트가 서로 다르며 다른 homeserver 포트와 겹치지 않아야 함";
       cond =
         ankiHostCfg.enable
-        && ankiHostCfg.instances.lab.enable
-        && ankiHostCfg.instances.main.enable
+        && (ankiHostCfg.instances ? lab)
+        && (ankiHostCfg.instances ? main)
         && ankiHostPortsUnique
         && ankiHostPortsDisjointFromHomeserver;
     }
@@ -1185,10 +1199,12 @@ let
         && ankiHostMain.wantedBy == [ "multi-user.target" ];
     }
     {
-      name = "Test AH5: AnkiWeb 자격은 main 인스턴스에만 주입되고(lab은 로그인 없음) 시크릿은 서비스 유저 소유 0400이어야 함";
+      name = "Test AH5: AnkiWeb 자격은 main 인스턴스에만 주입되고(lab은 로그인 없음) 시크릿은 서비스 유저 소유 0400이어야 하며, 컬렉션 교체(/import-colpkg) 게이트는 sync를 켜지 않은 lab에만 열려야 함";
       cond =
         (ankiHostMain.environment ? ANKI_HOST_SYNC_CREDENTIALS)
         && !(ankiHostLab.environment ? ANKI_HOST_SYNC_CREDENTIALS)
+        && ankiHostLab.environment.ANKI_HOST_ALLOW_IMPORT == "1"
+        && !(ankiHostMain.environment ? ANKI_HOST_ALLOW_IMPORT)
         && nixosCfg.age.secrets.anki-ankiweb.owner == ankiHostCfg.user
         && nixosCfg.age.secrets.anki-ankiweb.mode == "0400"
         && nixosCfg.age.secrets.pushover-anki.owner == "root"
@@ -1231,7 +1247,7 @@ let
         && ankiHostBackup.environment.INSTANCES == "main:${toString ankiHostCfg.instances.main.helperPort}";
     }
     {
-      name = "Test AH8: 타임아웃 사다리(애드온 ${toString constants.ankiHost.helperMainTimeoutSecs}s < curl ${toString constants.ankiHost.helperCurlMaxTimeSecs}s < 유닛 sync ${ankiHostSyncMain.serviceConfig.TimeoutStartSec}/backup ${ankiHostBackup.serviceConfig.TimeoutStartSec})가 constants 단일 소스에서 파생되고, sync를 켠 인스턴스는 최대 1개라는 assertion이 선언돼야 함";
+      name = "Test AH8: 타임아웃 사다리(애드온 ${toString constants.ankiHost.helperMainTimeoutSecs}s < curl ${toString constants.ankiHost.helperCurlMaxTimeSecs}s < 유닛 sync ${ankiHostSyncMain.serviceConfig.TimeoutStartSec}/backup ${ankiHostBackup.serviceConfig.TimeoutStartSec} ≥ 준비 대기 최악 ${toString ankiHostReadyWorstSecs}s + 재시도)가 constants 단일 소스에서 파생되고 스크립트 env와 일치하며, sync를 켠 인스턴스는 최대 1개라는 assertion이 선언돼야 함";
       cond = ankiHostLadderOk && ankiHostSingleAccountAssertion;
     }
   ]

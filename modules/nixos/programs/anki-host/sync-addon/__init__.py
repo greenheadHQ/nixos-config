@@ -15,20 +15,23 @@ GUI 없이 도는 Anki 프로세스 안에서 loopback HTTP(JSON)만 연다. 인
 
 동시성 계약: 컬렉션을 바꾸는 작업(/sync, /export, /import-colpkg)은 서로 배제한다.
 대기가 BUSY_WAIT_SECS를 넘으면 무한 대기 대신 HTTP 409와 진행 중인 작업 이름을 돌려주어,
-호출자가 "응답 없음"과 "다른 작업 진행 중"을 구분하게 한다. 조회(/status)는 진행 중인
-작업이 있으면 메인 스레드를 기다리지 않고 `partial: true`가 붙은 부분 응답(collection_open·login·
-last_sync만, counts·media 없음)을 즉시 준다 — 장시간 export 중에도 준비 상태를 확인할 수 있어야
-sync 서비스가 오탐 알림을 내지 않는다.
+호출자가 "응답 없음"과 "다른 작업 진행 중"을 구분하게 한다.
+조회는 둘이다. `/status`는 메인 스레드를 타지 않고 애드온 메모리(`_state`)만 읽어 즉시 답한다
+(collection_open·login·last_sync·busy) — 준비 대기 프로브와 로그인 판정은 이것으로 충분하고,
+기동 중 메인 스레드가 로그인 네트워크 호출에 잠겨 있어도 작업이 큐에 쌓이지 않는다.
+`/status/full`은 메인 스레드에서 counts·media까지 채운다(운영자 조회·PR 2 도구용). busy 중에는 409.
 
 환경 변수 (모두 nixos 모듈이 단일 소스에서 파생해 넣는다):
   ANKI_HOST_HELPER_PORT       loopback 포트. 없거나 0이면 서버를 열지 않는다.
   ANKI_HOST_SYNC_CREDENTIALS  ANKIWEB_USERNAME=/ANKIWEB_PASSWORD= 두 줄 파일. 없으면 로그인하지 않는다.
   ANKI_HOST_STATE_DIR         인스턴스 상태 디렉터리. /export·/import-colpkg는 그 아래
                               `backups/`(일일 백업 스테이징, 정리 대상)와 `restore-points/`
-                              (복구점, SSD 개수 상한·HDD 미러)만 허용한다.
+                              (복구점 — 생산자·보존 규칙은 PR 2b)만 허용한다.
   ANKI_HOST_ADDON_VERSION     패키지 버전(nix 파생 version과 같은 값) — /status에 노출.
-  ANKI_HOST_MAIN_TIMEOUT_SECS 메인 스레드 작업 타임아웃. 타임아웃 사다리의 가장 안쪽 값이며
-                              스크립트 curl·systemd 유닛 값은 이 값에서 파생된다(default.nix).
+  ANKI_HOST_MAIN_TIMEOUT_SECS 메인 스레드 작업 타임아웃(필수 — 기본값 없음). 타임아웃 사다리의 가장
+                              안쪽 값이며 스크립트 curl·systemd 유닛 값은 이 값에서 파생된다(default.nix).
+  ANKI_HOST_ALLOW_IMPORT      "1"이면 /import-colpkg를 연다. 모듈이 AnkiWeb sync를 켜지 않은 인스턴스
+                              (격리 fixture용)에만 넣는다 — 운영 인스턴스에는 라우팅 자체가 없다.
 """
 
 from __future__ import annotations
@@ -54,7 +57,8 @@ PORT = int(os.environ.get("ANKI_HOST_HELPER_PORT", "0") or "0")
 CRED_FILE = os.environ.get("ANKI_HOST_SYNC_CREDENTIALS") or None
 STATE_DIR = os.environ.get("ANKI_HOST_STATE_DIR") or None
 ALLOWED_SUBDIRS = ("backups", "restore-points")
-MAIN_TIMEOUT_SECS = int(os.environ.get("ANKI_HOST_MAIN_TIMEOUT_SECS", "1800") or "1800")
+MAIN_TIMEOUT_SECS = int(os.environ["ANKI_HOST_MAIN_TIMEOUT_SECS"])  # 단일 소스(constants.ankiHost) — 기본값 없음
+ALLOW_IMPORT = os.environ.get("ANKI_HOST_ALLOW_IMPORT") == "1"
 QUERY_TIMEOUT_SECS = 120
 BUSY_WAIT_SECS = 5
 SYNC_MODES = ("normal", "allow-download-if-empty")
@@ -310,6 +314,9 @@ def _export(path: str, include_media: bool, legacy: bool) -> dict[str, Any]:
     _require_col()
     mw = aqt.mw
     real = _checked_path(path)
+    if os.path.exists(real):
+        # 새 파일만 만든다 — 아직 HDD로 미러되지 않은 복구점을 같은 이름으로 덮어쓰는 것은 되돌릴 수 없다
+        raise RuntimeError("target-exists")
     os.makedirs(os.path.dirname(real), exist_ok=True)
     snap = _snapshot()
     # export_collection_package는 내부에서 close_for_full_sync 후 backend가 컬렉션을 가져가 내보낸다.
@@ -350,13 +357,13 @@ def _import_colpkg(path: str) -> dict[str, Any]:
     return {"imported": real, "counts": _snapshot()}
 
 
-def _status() -> dict[str, Any]:
+def _status_full() -> dict[str, Any]:
+    """메인 스레드에서 채우는 전체 상태 — counts·media 포함. 준비 판정에는 쓰지 않는다(/status가 담당)."""
     from anki.buildinfo import version as anki_version
 
     if aqt.mw is None or aqt.mw.col is None:
         return {"addon_version": ADDON_VERSION, "anki_version": anki_version, "collection_open": False, "login": _state["login"]}
     pm = aqt.mw.pm
-    _state["collection_open"] = True
     return {
         "collection_open": True,
         "addon_version": ADDON_VERSION,
@@ -372,11 +379,10 @@ def _status() -> dict[str, Any]:
     }
 
 
-def _busy_view() -> dict[str, Any]:
-    """진행 중인 변경 작업이 있을 때 메인 스레드를 기다리지 않고 돌려주는 /status의 부분 응답."""
+def _status_quick() -> dict[str, Any]:
+    """메인 스레드를 타지 않는 즉시 응답 — 준비 대기·로그인 판정·busy 확인용."""
     return {
         "busy": _busy,
-        "partial": True,
         "addon_version": ADDON_VERSION,
         "collection_open": _state["collection_open"],
         "login": _state["login"],
@@ -419,7 +425,11 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             if path == "/status" and self.command == "GET":
-                result = _busy_view() if _busy is not None else _on_main(_status, timeout=QUERY_TIMEOUT_SECS)
+                result = _status_quick()
+            elif path == "/status/full" and self.command == "GET":
+                if _busy is not None:
+                    raise BusyError(_busy)
+                result = _on_main(_status_full, timeout=QUERY_TIMEOUT_SECS)
             elif path == "/sync" and self.command == "POST":
                 mode = str(body.get("mode", "normal"))
                 if mode not in SYNC_MODES:
@@ -434,7 +444,7 @@ class _Handler(BaseHTTPRequestHandler):
                     bool(body.get("include_media", True)),
                     bool(body.get("legacy", True)),
                 )
-            elif path == "/import-colpkg" and self.command == "POST":
+            elif path == "/import-colpkg" and self.command == "POST" and ALLOW_IMPORT:
                 result = _mutating("import-colpkg", _import_colpkg, str(body["path"]))
             else:
                 self._reply(404, {"ok": False, "error": "not-found"})
