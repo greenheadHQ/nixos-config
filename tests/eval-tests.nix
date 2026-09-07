@@ -886,6 +886,8 @@ let
   ankiMcpCfg = nixosCfg.homeserver.ankiMcp;
   ankiMcpSvc = nixosCfg.systemd.services."anki-mcp";
   ankiMcpWire = nixosCfg.systemd.services."anki-mcp-tailscale";
+  smokeSvc = nixosCfg.systemd.services.homeserver-smoke-test;
+  tsServeSrc = builtins.readFile ../modules/nixos/programs/tailscale.nix;
   ankiMcpModuleSrc = builtins.readFile ../modules/nixos/programs/anki-mcp/default.nix;
   ankiMcpServerSrc = builtins.readFile ../modules/nixos/programs/anki-mcp/src/anki_mcp/server.py;
   ankiMcpFqdn = constants.network.minipcTailnetFqdn;
@@ -1368,7 +1370,28 @@ let
         && nixpkgsLib.hasInfix "timeout \${toString cmdTimeoutSecs} tailscale serve --bg" ankiMcpModuleSrc
         && nixpkgsLib.hasInfix "timeout \${toString cmdTimeoutSecs} tailscale funnel --bg" ankiMcpModuleSrc
         && builtins.isInt ankiMcpWire.serviceConfig.TimeoutStartSec
-        && ankiMcpWire.serviceConfig.TimeoutStartSec > constants.ankiMcp.tailscaleCmdTimeoutSecs * 2;
+        && ankiMcpWire.serviceConfig.TimeoutStartSec > constants.ankiMcp.tailscaleCmdTimeoutSecs * 2
+        # smoke-test는 Funnel 뒤 앱을 loopback으로, 입구는 funnel status로 본다 (노드 자신은 serve 주소 접속 불가)
+        && nixpkgsLib.hasInfix "http://127.0.0.1:${toString ankiMcpCfg.port}/.well-known/oauth-authorization-server" smokeSvc.environment.LOOPBACK_ENDPOINT_LIST
+        && !(nixpkgsLib.hasInfix ankiMcpFqdn smokeSvc.environment.ENDPOINT_LIST)
+        && smokeSvc.environment.FUNNEL_FQDN == ankiMcpFqdn
+        && smokeSvc.environment.FUNNEL_PRIVATE_PORT == ankiMcpApprovalPublic;
+    }
+    {
+      name = "Test AM6: ts-serve(dev 미리보기)는 전용 HTTPS 포트(${toString constants.network.ports.tailscaleDevPreviewHttps})만 만져야 함 — 443/8443은 anki-mcp 배선이 소유하고, 노드 전체 serve config를 지우는 reset은 helper에 없어야 함";
+      cond =
+        constants.network.ports.tailscaleDevPreviewHttps != 443
+        && constants.network.ports.tailscaleDevPreviewHttps != constants.network.ports.ankiMcpApprovalPublic
+        && nixpkgsLib.hasInfix "https_port=\${previewPort}" tsServeSrc
+        && nixpkgsLib.hasInfix "serve --bg --https=\"$https_port\"" tsServeSrc
+        && nixpkgsLib.hasInfix "serve --https=\"$https_port\" off" tsServeSrc
+        && !(nixpkgsLib.hasInfix "\"$ts\" serve reset" tsServeSrc)
+        && !(nixpkgsLib.hasInfix "serve --bg \"$port\"" tsServeSrc)
+        # MCP 서비스는 등록 상한·본문 상한을 constants에서 받아야 함 (인증 없는 /register 방어)
+        &&
+          ankiMcpSvc.environment.ANKI_MCP_REG_MAX_CLIENTS == toString constants.ankiMcp.registrationMaxClients
+        && ankiMcpSvc.environment.ANKI_MCP_MAX_BODY_BYTES == toString constants.ankiMcp.maxRequestBodyBytes
+        && ankiMcpSvc.environment.ANKI_MCP_REG_BURST == toString constants.ankiMcp.registrationBurst;
     }
     {
       name = "Test AM4: sync 트리거는 polkit 규칙으로 anki-mcp 유저에게 anki-host-sync-main.service의 start만 허용하고, 승인 문구 시크릿은 root 0400 + LoadCredential로만 전달돼야 함";

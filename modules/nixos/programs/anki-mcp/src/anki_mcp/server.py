@@ -26,6 +26,7 @@ from starlette.routing import Route
 from .ankiconnect import AnkiConnect
 from .approval import Lockout, build_approval_app
 from .config import Settings, read_passphrase
+from .guard import FunnelGuard
 from .helper import Helper
 from .oauth import DEFAULT_SCOPES, FileOAuthProvider
 from .syncstatus import SyncNow
@@ -48,6 +49,9 @@ def build(cfg: Settings):
         access_ttl=cfg.access_ttl,
         refresh_ttl=cfg.refresh_ttl,
         code_ttl=cfg.code_ttl,
+        max_clients=cfg.reg_max_clients,
+        max_client_bytes=cfg.reg_max_client_bytes,
+        unused_client_ttl=cfg.reg_unused_ttl,
     )
     public_host = AnyHttpUrl(cfg.public_url).host or ""
     approval_host = AnyHttpUrl(cfg.approval_url)
@@ -104,6 +108,10 @@ def build(cfg: Settings):
         metadata_route if (isinstance(r, Route) and r.path == "/.well-known/oauth-authorization-server") else r
         for r in funnel_app.router.routes
     ]
+    # 인터넷에 열린 앱의 바깥 껍질: 본문 상한(413) + 인증 없는 /register의 rate limit(429)
+    funnel_app.add_middleware(
+        FunnelGuard, max_body_bytes=cfg.max_body_bytes, register_burst=cfg.reg_burst, register_window=cfg.reg_window
+    )
 
     lockout = Lockout(cfg.lockout_failures, cfg.lockout_secs)
     approval_app = build_approval_app(

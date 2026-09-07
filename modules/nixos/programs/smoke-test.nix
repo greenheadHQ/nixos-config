@@ -40,11 +40,17 @@ let
     ]
     ++ lib.optionals config.homeserver.karakeep.enable [
       "${subdomains.karakeep}.${base}:307:/"
-    ]
-    # 원격 MCP 입구(Tailscale Funnel) — OAuth 메타데이터는 인증 없이 200이어야 클라이언트가 등록을 시작할 수 있다
-    ++ lib.optionals config.homeserver.ankiMcp.enable [
-      "${constants.network.minipcTailnetFqdn}:200:/.well-known/oauth-authorization-server"
     ];
+
+  # Funnel 뒤 앱(anki-mcp)은 위 목록에 넣을 수 없다 — 노드 자신이 자기 tailnet IP:443(`tailscale serve`)에 접속하면
+  # tailscaled가 로컬 접속의 TLS를 거부한다(2026-09-07 실측: curl 35). 앱은 loopback으로, 인터넷 입구 자체는 아래
+  # funnel 배선 검사로 본다. 형식: "EXPECTED_CODE|URL" (URL에 콜론이 있어 구분자는 |)
+  loopbackEndpoints = lib.optionals config.homeserver.ankiMcp.enable [
+    # OAuth 메타데이터는 인증 없이 200이어야 클라이언트가 등록을 시작할 수 있다 (Host 검사 없는 라우트)
+    "200|http://127.0.0.1:${toString config.homeserver.ankiMcp.port}/.well-known/oauth-authorization-server"
+  ];
+  # 비어 있으면 funnel 배선 검사를 건너뛴다
+  funnelFqdn = lib.optionalString config.homeserver.ankiMcp.enable constants.network.minipcTailnetFqdn;
 
   smokeScript = pkgs.writeShellApplication {
     name = "homeserver-smoke-test";
@@ -52,7 +58,9 @@ let
       curl
       coreutils
       findutils
+      gnugrep
       systemd # failed 유닛 검출(systemctl --failed)
+      tailscale # funnel 배선 검사(tailscale funnel status)
     ];
     text = ''
       # shellcheck source=/dev/null
@@ -110,6 +118,27 @@ let
         [ "$HTTP_CODE" = "$EXPECTED_CODE" ] || RESULT=1
         check "HTTP ''${DOMAIN}''${PATH_SUFFIX} = ''${EXPECTED_CODE} (got ''${HTTP_CODE})" "$RESULT"
       done
+
+      # ─── 1b. loopback 앱 헬스체크 (Funnel 뒤 앱 — 노드 자신은 serve 주소로 접속할 수 없다) ───
+      for endpoint in $LOOPBACK_ENDPOINT_LIST; do
+        EXPECTED_CODE="''${endpoint%%|*}"
+        URL="''${endpoint#*|}"
+        HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" 2>/dev/null) || HTTP_CODE="000"
+        RESULT=0
+        [ "$HTTP_CODE" = "$EXPECTED_CODE" ] || RESULT=1
+        check "HTTP ''${URL} = ''${EXPECTED_CODE} (got ''${HTTP_CODE})" "$RESULT"
+      done
+
+      # ─── 1c. Tailscale Funnel 배선 — 인터넷 입구는 443뿐, 승인 포트는 tailnet 전용 (plan 030 STOP 6의 일일 안전망) ───
+      # 배선 유닛(anki-mcp-tailscale)이 시작 시점에 같은 판정을 하지만, 그 뒤 수동 `tailscale funnel` 조작으로
+      # 승인 포트가 열리면 아무도 모른다 — 매일 도는 여기서 같은 패턴으로 다시 본다.
+      if [ -n "$FUNNEL_FQDN" ]; then
+        FUNNEL_STATUS=$(tailscale funnel status 2>/dev/null || true)
+        RESULT=0
+        grep -qE "^https://''${FUNNEL_FQDN} \(Funnel on\)" <<<"$FUNNEL_STATUS" || RESULT=1
+        if grep -qE "^https://[^ ]+:''${FUNNEL_PRIVATE_PORT} .*Funnel on" <<<"$FUNNEL_STATUS"; then RESULT=1; fi
+        check "Tailscale funnel wiring (443 Funnel on, ''${FUNNEL_PRIVATE_PORT} tailnet-only)" "$RESULT"
+      fi
 
       # ─── 2. 백업 신선도 검증 (활성 백업만, 비활성 서비스 false positive 방지) ───
       BACKUP_DIR="${mediaData}/backups"
@@ -229,6 +258,9 @@ in
         TAILSCALE_IP = minipcTailscaleIP;
         BACKUP_MAX_AGE = toString cfg.backupMaxAgeHours;
         ENDPOINT_LIST = builtins.concatStringsSep " " endpoints;
+        LOOPBACK_ENDPOINT_LIST = builtins.concatStringsSep " " loopbackEndpoints;
+        FUNNEL_FQDN = funnelFqdn;
+        FUNNEL_PRIVATE_PORT = toString constants.network.ports.ankiMcpApprovalPublic;
       };
     };
 

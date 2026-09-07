@@ -40,6 +40,12 @@ class Settings:
     lockout_secs: int
     field_chars: int
     page_max: int
+    reg_max_clients: int  # DCR 등록 상한 — 인증 없는 /register가 상태 파일을 무한히 키우지 못하게
+    reg_max_client_bytes: int  # 클라이언트 레코드 한 건의 JSON 상한
+    reg_unused_ttl: int  # 토큰 없는 등록을 정리하기까지의 시간
+    reg_burst: int  # 등록 rate limit: 창(reg_window) 안 허용 횟수
+    reg_window: int
+    max_body_bytes: int  # Funnel 앱 요청 본문 상한 (413)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -63,6 +69,12 @@ class Settings:
             lockout_secs=_int("ANKI_MCP_LOCKOUT_SECS"),
             field_chars=_int("ANKI_MCP_FIELD_CHARS"),
             page_max=_int("ANKI_MCP_PAGE_MAX"),
+            reg_max_clients=_int("ANKI_MCP_REG_MAX_CLIENTS"),
+            reg_max_client_bytes=_int("ANKI_MCP_REG_MAX_CLIENT_BYTES"),
+            reg_unused_ttl=_int("ANKI_MCP_REG_UNUSED_TTL_SECS"),
+            reg_burst=_int("ANKI_MCP_REG_BURST"),
+            reg_window=_int("ANKI_MCP_REG_WINDOW_SECS"),
+            max_body_bytes=_int("ANKI_MCP_MAX_BODY_BYTES"),
         )
 
 

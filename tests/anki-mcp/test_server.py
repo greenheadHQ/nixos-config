@@ -28,6 +28,8 @@ def _settings(tmp_path) -> Settings:
         passphrase_file=str(tmp_path / "approval"),
         access_ttl=60, refresh_ttl=600, code_ttl=30, sync_wait=5, lockout_failures=3, lockout_secs=60,
         field_chars=400, page_max=100,
+        reg_max_clients=3, reg_max_client_bytes=4096, reg_unused_ttl=86400, reg_burst=5, reg_window=60,
+        max_body_bytes=2048,
     )
 
 
@@ -39,6 +41,34 @@ def _pkce():
     verifier = secrets.token_urlsafe(40)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     return verifier, challenge
+
+
+@pytest.mark.anyio
+async def test_funnel_guard_caps_registrations_and_body_size(tmp_path):
+    funnel, _ = build(_settings(tmp_path))
+    hdrs = {"host": FQDN}
+    dcr = {"client_name": "t", "redirect_uris": ["https://client.example/cb"], "token_endpoint_auth_method": "none",
+           "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"]}
+    async with funnel.router.lifespan_context(funnel):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{FQDN}") as fh:
+            for _ in range(3):
+                assert (await fh.post("/register", headers=hdrs, json=dcr)).status_code == 201
+            full = await fh.post("/register", headers=hdrs, json=dcr)  # 등록 상한(3) — SDK가 400으로 돌려준다
+            assert full.status_code == 400 and "full" in full.json()["error_description"]
+            # 본문 상한 — Content-Length가 있는 요청은 읽기 전에, 없는(chunked) 요청은 핸들러가 읽는 도중 끊는다
+            big = await fh.post("/token", headers=hdrs, content=b"x" * 4096)
+            assert big.status_code == 413
+
+            async def chunks():
+                yield b"{" + b" " * 1500
+                yield b" " * 1500 + b"}"
+
+            chunked = await fh.post("/register", headers={**hdrs, "content-type": "application/json"}, content=chunks())
+            assert chunked.status_code == 413
+            burst = await fh.post("/register", headers=hdrs, json=dcr)  # 창 안 6번째 시도 → rate limit
+            assert burst.status_code == 429
+            ok = await fh.post("/token", headers=hdrs, content=b"grant_type=x")
+            assert ok.status_code in (400, 401)  # 가드를 통과해 SDK 핸들러까지 닿는다 (핸들러의 거부 응답)
 
 
 @pytest.mark.anyio

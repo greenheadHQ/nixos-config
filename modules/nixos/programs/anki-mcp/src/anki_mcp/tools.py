@@ -129,10 +129,12 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
 
     @mcp.tool(name="anki_card_reviews", annotations=READ_ONLY)
     async def anki_card_reviews(card_ids: list[int]) -> dict[str, Any]:
-        """Review history (revlog) per card: [reviewTime, cardID, usn, buttonPressed, newInterval, previousInterval,
-        newFactor, reviewDuration, reviewType] rows."""
+        """Review history (revlog) keyed by card id. Each entry: {id: review time (epoch ms), usn, ease: button 1-4,
+        ivl: new interval (days; negative = seconds), lastIvl, factor: ease factor (permille), time: ms spent,
+        type: 0 learn / 1 review / 2 relearn / 3 filtered / 4 manual}."""
         chunk, meta = page(card_ids, deps.page_max, 0, deps.page_max)
-        reviews = await anki.invoke("getReviewsOfCards", cards=[str(c) for c in chunk]) if chunk else {}
+        # AnkiConnect는 revlog.cid를 정수로 비교한다 — 문자열 id를 보내면 빈 결과가 온다
+        reviews = await anki.invoke("getReviewsOfCards", cards=chunk) if chunk else {}
         return {"page": meta, "reviews": reviews}
 
     @mcp.tool(name="anki_tags", annotations=READ_ONLY)

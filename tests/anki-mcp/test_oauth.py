@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
-from mcp.server.auth.provider import AuthorizationParams
+from mcp.server.auth.provider import AuthorizationParams, RegistrationError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
@@ -16,9 +16,10 @@ from anki_mcp.oauth import FileOAuthProvider
 APPROVAL = "https://minipc.example.ts.net:8443"
 
 
-def _client(client_id="c1", auth="none"):
+def _client(client_id="c1", auth="none", issued_at=None):
     return OAuthClientInformationFull(
         client_id=client_id,
+        client_id_issued_at=issued_at,
         client_name="Test Client",
         redirect_uris=[AnyUrl("https://client.example/cb")],
         token_endpoint_auth_method=auth,
@@ -86,13 +87,80 @@ async def test_provider_full_lifecycle_and_persistence(tmp_path):
     assert await prov2.load_refresh_token(client, tokens.refresh_token) is None  # 옛 refresh 무효
     assert await prov2.load_access_token(new_tokens.access_token) is not None
 
-    # 철회
-    await prov2.revoke_token(await prov2.load_access_token(new_tokens.access_token))
-    assert await prov2.load_access_token(new_tokens.access_token) is None
-
+    # scope 확장은 거부
     with pytest.raises(ValueError):
         rt2 = await prov2.load_refresh_token(client, new_tokens.refresh_token)
         await prov2.exchange_refresh_token(client, rt2, ["anki", "admin"])
+
+    # 철회 — access를 철회하면 같은 승인의 refresh도 함께 죽는다
+    await prov2.revoke_token(await prov2.load_access_token(new_tokens.access_token))
+    assert await prov2.load_access_token(new_tokens.access_token) is None
+    assert await prov2.load_refresh_token(client, new_tokens.refresh_token) is None
+
+
+@pytest.mark.anyio
+async def test_revoking_either_token_kills_the_whole_grant(tmp_path):
+    prov = FileOAuthProvider(str(tmp_path / "s.json"), APPROVAL, 60, 600, 30)
+    client = _client()
+    await prov.register_client(client)
+
+    async def grant():
+        _, challenge = _pkce()
+        txn = parse_qs(urlparse(await prov.authorize(client, _params(challenge))).query)["txn"][0]
+        code = parse_qs(urlparse(prov.complete_approval(txn)).query)["code"][0]
+        return await prov.exchange_authorization_code(client, await prov.load_authorization_code(client, code))
+
+    # refresh를 철회하면 (회전을 거친) access도 죽는다 — grant 하나가 통째로 사라진다
+    t1 = await grant()
+    rt = await prov.load_refresh_token(client, t1.refresh_token)
+    t1b = await prov.exchange_refresh_token(client, rt, ["anki"])
+    assert await prov.load_access_token(t1b.access_token) is not None
+    await prov.revoke_token(await prov.load_refresh_token(client, t1b.refresh_token))
+    assert await prov.load_access_token(t1b.access_token) is None
+    assert await prov.load_refresh_token(client, t1b.refresh_token) is None
+
+    # 다른 승인(grant)은 건드리지 않는다; access 철회도 같은 grant의 refresh를 죽인다
+    t2 = await grant()
+    t3 = await grant()
+    await prov.revoke_token(await prov.load_access_token(t2.access_token))
+    assert await prov.load_refresh_token(client, t2.refresh_token) is None
+    assert await prov.load_access_token(t3.access_token) is not None
+    assert await prov.load_refresh_token(client, t3.refresh_token) is not None
+
+
+@pytest.mark.anyio
+async def test_registration_is_capped_and_unused_clients_are_pruned(tmp_path):
+    clock = {"t": 10_000.0}
+    prov = FileOAuthProvider(str(tmp_path / "s.json"), APPROVAL, 60, 600, 30, now=lambda: clock["t"],
+                             max_clients=2, max_client_bytes=600, unused_client_ttl=100)
+    await prov.register_client(_client("c1", issued_at=int(clock["t"])))
+    await prov.register_client(_client("c2", issued_at=int(clock["t"])))
+    with pytest.raises(RegistrationError):  # 가득 찼고 둘 다 아직 정리 대상 나이가 아니다
+        await prov.register_client(_client("c3", issued_at=int(clock["t"])))
+    assert {c["client_id"] for c in prov.clients()} == {"c1", "c2"}
+
+    # 토큰 없는 등록은 TTL이 지나면 새 등록이 들어올 때 정리된다
+    clock["t"] += 101
+    await prov.register_client(_client("c3", issued_at=int(clock["t"])))
+    assert {c["client_id"] for c in prov.clients()} == {"c3"}
+
+    # 토큰이 살아 있는 클라이언트는 나이와 무관하게 남는다
+    c3 = await prov.get_client("c3")
+    _, challenge = _pkce()
+    txn = parse_qs(urlparse(await prov.authorize(c3, _params(challenge))).query)["txn"][0]
+    code = parse_qs(urlparse(prov.complete_approval(txn)).query)["code"][0]
+    await prov.exchange_authorization_code(c3, await prov.load_authorization_code(c3, code))
+    clock["t"] += 101
+    await prov.register_client(_client("c4", issued_at=int(clock["t"])))
+    with pytest.raises(RegistrationError):
+        await prov.register_client(_client("c5", issued_at=int(clock["t"])))
+    assert {c["client_id"] for c in prov.clients()} == {"c3", "c4"}
+
+    # 레코드 크기 상한
+    fat = _client("c6", issued_at=int(clock["t"]))
+    fat.client_name = "x" * 1000
+    with pytest.raises(RegistrationError):
+        await prov.register_client(fat)
 
 
 @pytest.mark.anyio

@@ -6,6 +6,10 @@
   complete_approval()이 코드를 발급해 클라이언트 redirect_uri로 돌려보낸다.
 - 토큰: 불투명 랜덤 토큰. 파일에는 sha256 해시만 저장한다(파일이 새도 토큰을 복원할 수 없다).
   access 만료 후 refresh로 갱신(회전), /revoke로 철회. 매 요청 검증은 SDK 미들웨어가 load_access_token으로 한다.
+  한 승인에서 나온 access·refresh(회전 뒤 것까지)는 같은 grant id를 갖고, 어느 하나를 철회하면 grant 전체가 죽는다
+  (refresh만 철회했는데 access가 살아 있는 구멍 방지).
+- 등록 상한: /register는 인증 없이 인터넷에 열려 있다. 클라이언트 수·레코드 크기에 상한을 두고, 토큰이 하나도
+  없는 오래된 등록은 새 등록이 들어올 때 정리한다(정상 클라이언트는 토큰이 살아 있는 한 정리되지 않는다).
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from mcp.server.auth.provider import (
     AuthorizationCode,
     AuthorizationParams,
     RefreshToken,
+    RegistrationError,
     construct_redirect_uri,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -42,6 +47,9 @@ class FileOAuthProvider:
         refresh_ttl: int,
         code_ttl: int,
         now: Callable[[], float] = time.time,
+        max_clients: int = 32,
+        max_client_bytes: int = 4096,
+        unused_client_ttl: int = 86400,
     ) -> None:
         self._path = state_path
         self._approval_url = approval_url.rstrip("/")
@@ -49,6 +57,9 @@ class FileOAuthProvider:
         self._refresh_ttl = refresh_ttl
         self._code_ttl = code_ttl
         self._now = now
+        self._max_clients = max_clients
+        self._max_client_bytes = max_client_bytes
+        self._unused_client_ttl = unused_client_ttl
         self._state: dict[str, dict[str, Any]] = {"clients": {}, "access": {}, "refresh": {}}
         self._codes: dict[str, AuthorizationCode] = {}
         self._pending: dict[str, dict[str, Any]] = {}
@@ -89,8 +100,30 @@ class FileOAuthProvider:
         raw = self._state["clients"].get(client_id)
         return OAuthClientInformationFull.model_validate(raw) if raw else None
 
+    def _active_client_ids(self) -> set[str]:
+        """토큰·코드·대기 트랜잭션 중 하나라도 있는 클라이언트 — 정리 대상에서 제외한다."""
+        ids = {rec["client_id"] for bucket in ("access", "refresh") for rec in self._state[bucket].values()}
+        ids.update(code.client_id for code in self._codes.values())
+        ids.update(rec["client_id"] for rec in self._pending.values())
+        return ids
+
+    def _prune_unused_clients(self) -> None:
+        self._prune()
+        now = self._now()
+        active = self._active_client_ids()
+        for cid, rec in list(self._state["clients"].items()):
+            issued = rec.get("client_id_issued_at") or 0
+            if cid not in active and issued + self._unused_client_ttl < now:
+                del self._state["clients"][cid]
+
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        self._state["clients"][str(client_info.client_id)] = client_info.model_dump(mode="json", exclude_none=True)
+        record = client_info.model_dump(mode="json", exclude_none=True)
+        if len(json.dumps(record)) > self._max_client_bytes:
+            raise RegistrationError("invalid_client_metadata", "client metadata too large")
+        self._prune_unused_clients()
+        if len(self._state["clients"]) >= self._max_clients:
+            raise RegistrationError("invalid_client_metadata", "client registry is full; try again later")
+        self._state["clients"][str(client_info.client_id)] = record
         self._save()
 
     def clients(self) -> list[dict[str, Any]]:
@@ -152,8 +185,9 @@ class FileOAuthProvider:
         return code
 
     # ── 토큰 ──────────────────────────────────────────────────────────────
-    def _issue(self, client_id: str, scopes: list[str], resource: str | None) -> OAuthToken:
+    def _issue(self, client_id: str, scopes: list[str], resource: str | None, grant: str | None = None) -> OAuthToken:
         now = int(self._now())
+        grant = grant or secrets.token_urlsafe(16)  # 승인 1건 = grant 1개, refresh 회전을 거쳐도 유지
         access = secrets.token_urlsafe(32)
         refresh = secrets.token_urlsafe(32)
         self._state["access"][_hash(access)] = {
@@ -161,12 +195,14 @@ class FileOAuthProvider:
             "scopes": scopes,
             "expires_at": now + self._access_ttl,
             "resource": resource,
+            "grant": grant,
         }
         self._state["refresh"][_hash(refresh)] = {
             "client_id": client_id,
             "scopes": scopes,
             "expires_at": now + self._refresh_ttl,
             "resource": resource,
+            "grant": grant,
         }
         self._save()
         return OAuthToken(
@@ -193,12 +229,11 @@ class FileOAuthProvider:
     async def exchange_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
     ) -> OAuthToken:
-        rec = self._state["refresh"].pop(_hash(refresh_token.token), None)  # 회전: 옛 refresh는 즉시 무효
-        resource = rec.get("resource") if rec else None
+        rec = self._state["refresh"].pop(_hash(refresh_token.token), None) or {}  # 회전: 옛 refresh는 즉시 무효
         granted = scopes or refresh_token.scopes
         if any(s not in refresh_token.scopes for s in granted):
             raise ValueError("requested scopes exceed the original grant")
-        return self._issue(str(client.client_id), granted, resource)
+        return self._issue(str(client.client_id), granted, rec.get("resource"), rec.get("grant"))
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         self._prune()
@@ -210,7 +245,14 @@ class FileOAuthProvider:
         )
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        """access든 refresh든 하나를 철회하면 같은 grant의 토큰을 전부 지운다 (RFC 7009 §2.1 권고)."""
         h = _hash(token.token)
         removed = self._state["access"].pop(h, None) or self._state["refresh"].pop(h, None)
-        if removed is not None:
-            self._save()
+        if removed is None:
+            return
+        grant = removed.get("grant")
+        if grant:
+            for bucket in ("access", "refresh"):
+                for key in [k for k, rec in self._state[bucket].items() if rec.get("grant") == grant]:
+                    del self._state[bucket][key]
+        self._save()

@@ -47,6 +47,13 @@ class FakeAnki:
                                                               "review_count": 5, "total_in_deck": 9}}, "error": None})
         if action == "addTags":
             return httpx.Response(200, json={"result": None, "error": None})
+        if action == "getReviewsOfCards":
+            # 실제 애드온은 revlog.cid(정수)와 비교한다 — 문자열 id는 빈 결과를 낸다
+            if not all(isinstance(c, int) for c in params["cards"]):
+                return httpx.Response(200, json={"result": {c: [] for c in params["cards"]}, "error": None})
+            return httpx.Response(200, json={"result": {str(c): [{"id": 1700000000000, "usn": -1, "ease": 3, "ivl": 1,
+                                                                   "lastIvl": 0, "factor": 2500, "time": 5000, "type": 0}]
+                                                        for c in params["cards"]}, "error": None})
         return httpx.Response(200, json={"result": None, "error": f"unsupported: {action}"})
 
 
@@ -97,6 +104,16 @@ async def test_find_notes_paginates_and_truncates(tmp_path):
     assert structured["page"]["total"] == 3 and structured["page"]["next_offset"] == 2
     assert structured["notes"][0]["fields"]["Front"].startswith("FFFFFFFFFF…")
     assert [c for c in fake.calls if c[0] == "notesInfo"][0][1]["notes"] == [1, 1]
+
+
+@pytest.mark.anyio
+async def test_card_reviews_sends_integer_ids_and_returns_revlog_objects(tmp_path):
+    fake = FakeAnki()
+    mcp = make_mcp(fake, tmp_path)
+    result = await mcp.call_tool("anki_card_reviews", {"card_ids": [10, 11]})
+    structured = result[1] if isinstance(result, tuple) else result
+    assert [c for c in fake.calls if c[0] == "getReviewsOfCards"][0][1]["cards"] == [10, 11]
+    assert structured["reviews"]["10"][0]["ease"] == 3 and structured["reviews"]["11"][0]["type"] == 0
 
 
 @pytest.mark.anyio

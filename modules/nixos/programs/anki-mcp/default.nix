@@ -49,7 +49,8 @@ let
   );
   srcDir = ./src;
 
-  # Tailscale serve/funnel 배선 — 노드 전역 상태라 tailscale.nix의 ts-serve 헬퍼(dev 미리보기용)와 별개 유닛으로 둔다.
+  # Tailscale serve/funnel 배선 — serve config는 노드 전역 상태다. 이 유닛이 443·8443을 소유하고, tailscale.nix의
+  # ts-serve 헬퍼(dev 미리보기용)는 constants.network.ports.tailscaleDevPreviewHttps만 만지므로 서로의 config를 덮지 않는다.
   # 443 Funnel(인터넷) → MCP 포트, 8443 serve(tailnet 전용) → 승인 포트. 8443에 Funnel이 켜져 있으면 끈다.
   onlineWaitSecs = constants.ankiMcp.tailscaleOnlineWaitSecs;
   cmdTimeoutSecs = constants.ankiMcp.tailscaleCmdTimeoutSecs;
@@ -171,6 +172,12 @@ in
         ANKI_MCP_LOCKOUT_SECS = toString constants.ankiMcp.approvalLockoutSecs;
         ANKI_MCP_FIELD_CHARS = toString constants.ankiMcp.fieldCharsDefault;
         ANKI_MCP_PAGE_MAX = toString constants.ankiMcp.pageLimitMax;
+        ANKI_MCP_REG_MAX_CLIENTS = toString constants.ankiMcp.registrationMaxClients;
+        ANKI_MCP_REG_MAX_CLIENT_BYTES = toString constants.ankiMcp.registrationMaxClientBytes;
+        ANKI_MCP_REG_UNUSED_TTL_SECS = toString constants.ankiMcp.registrationUnusedTtlSecs;
+        ANKI_MCP_REG_BURST = toString constants.ankiMcp.registrationBurst;
+        ANKI_MCP_REG_WINDOW_SECS = toString constants.ankiMcp.registrationWindowSecs;
+        ANKI_MCP_MAX_BODY_BYTES = toString constants.ankiMcp.maxRequestBodyBytes;
       };
 
       serviceConfig = {

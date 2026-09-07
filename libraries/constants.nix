@@ -28,6 +28,9 @@
       ankiMcp = 8790;
       ankiMcpApproval = 8791;
       ankiMcpApprovalPublic = 8443; # tailnet 전용 승인 화면 포트 (Funnel 허용 포트 443/8443/10000 중 하나, Funnel은 켜지 않는다)
+      # ts-serve(dev 미리보기) 전용 tailnet HTTPS 포트 — serve가 허용하는 443/8443/10000 중 anki-mcp가 쓰지 않는 하나.
+      # 443·8443은 anki-mcp-tailscale 유닛이 소유하므로 ts-serve는 이 포트만 만진다 (서로의 serve config를 덮지 않는다)
+      tailscaleDevPreviewHttps = 10000;
     };
 
     # Podman 브릿지 네트워크 기본 서브넷
@@ -86,6 +89,13 @@
     pageLimitMax = 100;
     tailscaleOnlineWaitSecs = 60; # 배선 유닛이 부팅 직후 tailscaled 온라인을 기다리는 상한
     tailscaleCmdTimeoutSecs = 60; # serve/funnel 한 명령의 상한 — 기능이 tailnet에서 꺼져 있으면 CLI가 활성화 링크를 찍고 무한 대기한다
+    # DCR(/register)은 인증 없이 인터넷에서 열려 있다 — 등록 폭주로 상태 파일이 자라거나 재작성이 반복되지 않게 상한을 둔다
+    registrationMaxClients = 32; # 등록 클라이언트 상한 (정상 사용은 ChatGPT·Codex·Claude 등 한 자릿수)
+    registrationMaxClientBytes = 4096; # 클라이언트 레코드 한 건의 JSON 상한 (실제 DCR 요청은 수백 바이트)
+    registrationUnusedTtlSecs = 86400; # 토큰이 하나도 없는 등록을 이 시간 뒤 정리한다 (승인 흐름을 끝낼 시간은 남긴다)
+    registrationBurst = 10; # 아래 창 안에서 허용하는 등록 횟수 — 넘으면 429
+    registrationWindowSecs = 600;
+    maxRequestBodyBytes = 262144; # Funnel 앱 요청 본문 상한(413) — 노트 대량 추가 본문은 수십 KB 수준
   };
 
   # ═══════════════════════════════════════════════════════════════
