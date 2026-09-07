@@ -48,9 +48,12 @@ class SecurityHeaders:
     """승인 화면은 프레임에 넣을 수 없고(clickjacking — 공격자가 만든 DCR·PKCE 트랜잭션의 승인 화면을 tailnet 사용자 페이지에
     숨겨 문구 입력을 유도하는 경로 차단), 캐시·리퍼러도 남기지 않는다."""
 
+    # form-action은 넣지 않는다 — 승인 폼의 정상 흐름은 /approve POST 뒤 클라이언트 redirect_uri(외부 origin)로 302하는
+    # 것이고, Chromium은 form-action을 그 리다이렉트 목적지에도 적용해 OAuth 콜백을 차단한다. clickjacking 방어는
+    # frame-ancestors·X-Frame-Options가 담당한다.
     HEADERS = [
         (b"x-frame-options", b"DENY"),
-        (b"content-security-policy", b"frame-ancestors 'none'; default-src 'self'; style-src 'unsafe-inline'; form-action 'self'"),
+        (b"content-security-policy", b"frame-ancestors 'none'; default-src 'self'; style-src 'unsafe-inline'"),
         (b"referrer-policy", b"no-referrer"),
         (b"cache-control", b"no-store"),
     ]

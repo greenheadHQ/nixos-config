@@ -29,7 +29,7 @@ def _settings(tmp_path) -> Settings:
         access_ttl=60, refresh_ttl=600, code_ttl=30, sync_wait=5, lockout_failures=3, lockout_secs=60,
         field_chars=400, page_max=100,
         reg_max_clients=3, reg_max_client_bytes=4096, reg_unused_ttl=86400, reg_burst=5, reg_window=60,
-        max_body_bytes=2048,
+        max_body_bytes=2048, body_read_timeout=30, max_concurrency=64,
     )
 
 

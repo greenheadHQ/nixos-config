@@ -1406,6 +1406,11 @@ let
         &&
           ankiMcpSvc.environment.ANKI_MCP_REG_MAX_CLIENTS == toString constants.ankiMcp.registrationMaxClients
         && ankiMcpSvc.environment.ANKI_MCP_MAX_BODY_BYTES == toString constants.ankiMcp.maxRequestBodyBytes
+        &&
+          ankiMcpSvc.environment.ANKI_MCP_BODY_READ_TIMEOUT_SECS
+          == toString constants.ankiMcp.bodyReadTimeoutSecs
+        &&
+          ankiMcpSvc.environment.ANKI_MCP_MAX_CONCURRENCY == toString constants.ankiMcp.maxConcurrentRequests
         && ankiMcpSvc.environment.ANKI_MCP_REG_BURST == toString constants.ankiMcp.registrationBurst;
     }
     {

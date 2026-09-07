@@ -53,6 +53,8 @@ class Settings:
     reg_burst: int  # 등록 rate limit: 창(reg_window) 안 허용 횟수
     reg_window: int
     max_body_bytes: int  # Funnel 앱 요청 본문 상한 (413)
+    body_read_timeout: int  # 인증 전 본문 선읽기 기한(초) — 미완결 본문(slowloris) 방어 (408)
+    max_concurrency: int  # Funnel 앱 동시 처리 상한 — 인증 전 버퍼의 합산 메모리를 묶는다
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -82,6 +84,8 @@ class Settings:
             reg_burst=_int("ANKI_MCP_REG_BURST"),
             reg_window=_int("ANKI_MCP_REG_WINDOW_SECS"),
             max_body_bytes=_int("ANKI_MCP_MAX_BODY_BYTES"),
+            body_read_timeout=_int("ANKI_MCP_BODY_READ_TIMEOUT_SECS"),
+            max_concurrency=_int("ANKI_MCP_MAX_CONCURRENCY"),
         )
 
 

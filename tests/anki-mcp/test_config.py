@@ -12,6 +12,7 @@ BASE = {
     "ANKI_MCP_FIELD_CHARS": "400", "ANKI_MCP_PAGE_MAX": "100",
     "ANKI_MCP_REG_MAX_CLIENTS": "32", "ANKI_MCP_REG_MAX_CLIENT_BYTES": "4096", "ANKI_MCP_REG_UNUSED_TTL_SECS": "86400",
     "ANKI_MCP_REG_BURST": "10", "ANKI_MCP_REG_WINDOW_SECS": "600", "ANKI_MCP_MAX_BODY_BYTES": "262144",
+    "ANKI_MCP_BODY_READ_TIMEOUT_SECS": "30", "ANKI_MCP_MAX_CONCURRENCY": "64",
 }
 
 
@@ -24,6 +25,7 @@ def test_from_env_reads_every_value_and_strips_trailing_slash(monkeypatch):
     _env(monkeypatch)
     s = Settings.from_env()
     assert s.public_url == "https://minipc.example.ts.net" and s.reg_max_clients == 32 and s.max_body_bytes == 262144
+    assert s.body_read_timeout == 30 and s.max_concurrency == 64
 
 
 def test_from_env_rejects_plain_http_issuer_and_approval_urls(monkeypatch):

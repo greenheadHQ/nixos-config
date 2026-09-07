@@ -159,7 +159,8 @@ def build(cfg: Settings):
     ]
     # 인터넷에 열린 앱의 바깥 껍질: 본문 상한(413) + 인증 없는 /register의 rate limit(429)
     funnel_app.add_middleware(
-        FunnelGuard, max_body_bytes=cfg.max_body_bytes, register_burst=cfg.reg_burst, register_window=cfg.reg_window
+        FunnelGuard, max_body_bytes=cfg.max_body_bytes, register_burst=cfg.reg_burst, register_window=cfg.reg_window,
+        read_timeout=cfg.body_read_timeout,
     )
 
     lockout = Lockout(cfg.lockout_failures, cfg.lockout_secs)
@@ -183,7 +184,8 @@ async def serve(cfg: Settings) -> None:
     funnel_app, approval_app = build(cfg)
     servers = [
         uvicorn.Server(uvicorn.Config(funnel_app, host="127.0.0.1", port=cfg.port, log_level="info",
-                                      proxy_headers=True, forwarded_allow_ips="127.0.0.1", lifespan="on")),
+                                      proxy_headers=True, forwarded_allow_ips="127.0.0.1", lifespan="on",
+                                      limit_concurrency=cfg.max_concurrency)),
         uvicorn.Server(uvicorn.Config(approval_app, host="127.0.0.1", port=cfg.approval_port, log_level="info",
                                       proxy_headers=True, forwarded_allow_ips="127.0.0.1")),
     ]

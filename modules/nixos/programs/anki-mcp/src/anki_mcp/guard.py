@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections import deque
@@ -35,12 +36,14 @@ class FunnelGuard:
         max_body_bytes: int,
         register_burst: int,
         register_window: int,
+        read_timeout: float = 30.0,
         now: Callable[[], float] = time.time,
     ) -> None:
         self._app = app
         self._max_body = max_body_bytes
         self._burst = register_burst
         self._window = register_window
+        self._read_timeout = read_timeout  # 인증 전 본문 수신 기한 — slowloris 방어 (초과 시 408)
         self._now = now
         self._registrations: deque[float] = deque()
 
@@ -67,22 +70,9 @@ class FunnelGuard:
             if not message.get("more_body", False):
                 return
 
-    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
-        if scope["type"] != "http":
-            await self._app(scope, receive, send)
-            return
-        headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-        length = headers.get("content-length")
-        if length and length.isdigit() and int(length) > self._max_body:
-            await self._drain(receive, 0, int(length))
-            for message in _json_response(413, "request body too large"):
-                await send(message)
-            return
-        if scope.get("path") == "/register" and scope.get("method") == "POST" and not self._register_allowed():
-            for message in _json_response(429, "too many client registrations; try again later"):
-                await send(message)
-            return
-
+    async def _consume(self, receive: Any, send: Any) -> "tuple[bytes, list[dict[str, Any]]] | None":
+        """본문을 상한까지 읽어 판정한다. 통과면 (body, trailing)을, 상한 초과로 413을 보냈으면 None을 반환한다.
+        호출측이 이 전체를 read_timeout으로 감싸므로 미완결 본문은 여기서 대기하다 취소된다(slowloris 방어)."""
         body = b""
         trailing: list[dict[str, Any]] = []  # 본문 뒤에 온 다른 메시지(disconnect 등)는 앱에 그대로 전달
         while True:
@@ -96,9 +86,40 @@ class FunnelGuard:
                     await self._drain(receive, len(body), None)
                 for reply in _json_response(413, "request body too large"):
                     await send(reply)
-                return
+                return None
             if not message.get("more_body", False):
                 break
+        return body, trailing
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+        length = headers.get("content-length")
+        if length and length.isdigit() and int(length) > self._max_body:
+            try:  # 남은 본문은 기한 안에서만 배출한다 — 배출이 늘어질수록 공격자에게 유리하다
+                await asyncio.wait_for(self._drain(receive, 0, int(length)), self._read_timeout)
+            except asyncio.TimeoutError:
+                pass
+            for message in _json_response(413, "request body too large"):
+                await send(message)
+            return
+        if scope.get("path") == "/register" and scope.get("method") == "POST" and not self._register_allowed():
+            for message in _json_response(429, "too many client registrations; try again later"):
+                await send(message)
+            return
+
+        # 본문 선읽기는 인증(SDK bearer 미들웨어)보다 앞에서 일어난다 — 기한을 둬 미완결 본문이 버퍼를 무한히 붙잡지 못하게 한다
+        try:
+            outcome = await asyncio.wait_for(self._consume(receive, send), self._read_timeout)
+        except asyncio.TimeoutError:
+            for reply in _json_response(408, "request body read timed out"):
+                await send(reply)
+            return
+        if outcome is None:
+            return  # _consume이 이미 413을 보냈다
+        body, trailing = outcome
         replay = [{"type": "http.request", "body": body, "more_body": False}, *trailing]
 
         async def replay_receive() -> dict[str, Any]:

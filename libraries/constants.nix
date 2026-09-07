@@ -96,6 +96,9 @@
     registrationBurst = 10; # 아래 창 안에서 허용하는 등록 횟수 — 넘으면 429
     registrationWindowSecs = 600;
     maxRequestBodyBytes = 262144; # Funnel 앱 요청 본문 상한(413) — 노트 대량 추가 본문은 수십 KB 수준
+    # 인증 전 본문 선읽기 방어 — 미완결 본문(slowloris)이 버퍼를 무한히 붙잡지 못하게 기한·동시성에 상한을 둔다
+    bodyReadTimeoutSecs = 30; # Funnel 앱이 인증 전 요청 본문을 다 받기까지의 기한 — 넘으면 408로 끊는다
+    maxConcurrentRequests = 64; # Funnel 앱(uvicorn) 동시 처리 상한 — 동시 버퍼(≈ 이 값 × maxRequestBodyBytes ≈ 16MB)를 MemoryMax(256M) 아래로 묶는다
   };
 
   # ═══════════════════════════════════════════════════════════════

@@ -196,6 +196,8 @@ in
         ANKI_MCP_REG_BURST = toString constants.ankiMcp.registrationBurst;
         ANKI_MCP_REG_WINDOW_SECS = toString constants.ankiMcp.registrationWindowSecs;
         ANKI_MCP_MAX_BODY_BYTES = toString constants.ankiMcp.maxRequestBodyBytes;
+        ANKI_MCP_BODY_READ_TIMEOUT_SECS = toString constants.ankiMcp.bodyReadTimeoutSecs;
+        ANKI_MCP_MAX_CONCURRENCY = toString constants.ankiMcp.maxConcurrentRequests;
       };
 
       serviceConfig = {

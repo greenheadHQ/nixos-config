@@ -183,8 +183,11 @@ async def test_approval_form_requires_passphrase_and_locks_out(tmp_path):
         r = await http.get(f"/approve?txn={txn}", headers={"host": host})
         assert r.status_code == 200 and "Test Client" in r.text
         # 프레임 금지 + 캐시 금지 (clickjacking·뒤로가기 캐시)
-        assert r.headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in r.headers["content-security-policy"]
+        csp = r.headers["content-security-policy"]
+        assert r.headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in csp
         assert r.headers["cache-control"] == "no-store"
+        # form-action은 넣지 않는다 — OAuth 콜백(외부 origin 302)을 Chromium이 막는다
+        assert "form-action" not in csp
         # 틀린 문구 → 폼 재표시, 2회면 잠금
         r = await http.post("/approve", data={"txn": txn, "passphrase": "nope", "decision": "approve"}, headers={"host": host})
         assert r.status_code == 200 and "맞지 않습니다" in r.text

@@ -71,3 +71,11 @@ async def test_declared_oversize_is_refused_before_reading_and_registration_is_r
     assert sent[0]["status"] == 413
     assert (await _run(guard, _scope(path="/register"), [{"type": "http.request", "body": b"{}", "more_body": False}]))[0]["status"] == 200
     assert (await _run(guard, _scope(path="/register"), []))[0]["status"] == 429
+
+
+@pytest.mark.anyio
+async def test_incomplete_body_times_out_with_408_instead_of_buffering_forever():
+    # 본문 선읽기는 인증 전에 일어난다 — 본문을 끝맺지 않는 연결(slowloris)은 read_timeout에 408로 끊어야 한다
+    guard = FunnelGuard(_echo, max_body_bytes=1000, register_burst=5, register_window=60, read_timeout=0.05)
+    sent = await _run(guard, _scope(), [{"type": "http.request", "body": b"partial", "more_body": True}])
+    assert sent[0]["status"] == 408
