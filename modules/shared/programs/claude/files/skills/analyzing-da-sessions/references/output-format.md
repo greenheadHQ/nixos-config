@@ -216,7 +216,7 @@ emit하지 않는다.
 ```json
 {
   "schema_version": 1,
-  "week": {"id": "2026-W28", "start": "2026-07-06T00:00:00+09:00", "end": "2026-07-13T00:00:00+09:00", "tz": "Asia/Seoul"},
+  "week": {"id": "2026-W28", "start": "2026-07-06T00:00:00+09:00", "end": "2026-07-13T00:00:00+09:00", "tz": "Asia/Seoul", "measurement_start": "2026-06-29T00:00:00+09:00", "measurement_end": "2026-07-06T00:00:00+09:00"},
   "analysis": {
     "sidecar_schema_version": "1.0",
     "captured_at": "2026-07-09T03:00:00+00:00",
@@ -234,11 +234,11 @@ emit하지 않는다.
     "warnings": []
   },
   "health": {
-    "health_formula_version": 1,
+    "health_formula_version": 2,
     "formula_break": null,
     "run_da_path": "modules/shared/programs/claude/files/skills/run-da/",
     "document_size": {"markdown_file_count": 12, "total_line_count": 3456, "files": []},
-    "drift_repair_commits": {"count": 1, "commit_hashes": ["abc123"], "commits": [], "since": "...", "until": "...", "branch": "main", "first_parent": true},
+    "drift_repair_commits": {"count": 1, "commit_hashes": ["abc123"], "commits": [], "since": "2026-06-29T00:00:00+09:00", "until": "2026-07-06T00:00:00+09:00", "branch": "main", "first_parent": true},
     "rule_counts": {"core_invariants_numbered": 8, "cautions_bullets": 5, "non_goals_numbered": 3, "total": 16},
     "warnings": []
   },
@@ -265,7 +265,7 @@ emit하지 않는다.
     "omitted_session_count": 0
   },
   "deltas": {
-    "previous_reports": [{"path": "/state/weekly-2026-W27.json", "week_id": "2026-W27"}],
+    "previous_reports": [{"path": "/state/weekly-2026-W27.json", "week_id": "2026-W27", "health_formula_version": 2}],
     "items": [{"metric": "analysis.metrics.M-2.percentages.CONFIRMED_ISSUE", "unit": "%p", "current": 71.4, "comparisons": [{"week_id": "2026-W27", "previous": 70.0, "delta": 1.4}]}]
   },
   "commentary": {"text": null, "failure_reason": "codex-exec-supervised not found"},

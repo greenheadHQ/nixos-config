@@ -4,6 +4,8 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 
 ## Metric Catalog (M-1~M-4·M-6)
 
+이 절의 지표와 `session_counts`는 분석 시점 전체 코퍼스(live home log 전수)의 누적값이다 — 주간 값이 아니며, 주간 변화는 주간 리포트의 전주 delta(`deltas.items[].comparisons`)만이 근거다(#1237). 주간 리포트의 "지표 범위" 헤더 행과 해설 프롬프트의 정의 문구는 이 문단의 재서술이다.
+
 | ID | metric 이름 | 산식 | source (analyze.py) |
 |----|------------|------|---------------------|
 | M-1 | 검토 강도 verdict 분포 | Intensity marker 출현 세션 분모 위에서 강도 표기 출력의 SKIP/LITE/FULL 카운트. marker는 과거 외부 호출 경로 전용이라 현행 세션은 분모에 진입하지 않는다 (분모 재정의는 #1236 소관) | `extract_intensity_verdicts` |
@@ -18,20 +20,20 @@ PR #670 정정 코멘트에서 안정화된 알고리즘 v2를 정식 Skill 형�
 
 이슈 #671 본문 PHASE-EXTENDED 6번째 metric "FULL 후 finding 0건 분석"은 v1 measure list에 포함하지 않는다. 본 문서의 derived statistic 섹션에서 비율로 보고한다.
 
-## run-da 건강 지표 (health_formula_version: 1)
+## run-da 건강 지표
 
 주간 리포트 파이프라인(`modules/nixos/programs/da-weekly-report/files/weekly_report.py`)은
 `analyze.py` sidecar와 별도로 git 기반 건강 지표를 수집한다. 산식 변경 시
-`health_formula_version`을 증가시키고, 주간 리포트에 baseline 단절을 명시한다.
+`health_formula_version`을 증가시키고, 주간 리포트에 baseline 단절을 명시한다 (현재 버전은 아래 표 헤더 한 곳에만 적는다 — 코드 정본은 `weekly_report.py`의 `HEALTH_FORMULA_VERSION`).
 
-| 지표 | 산식 (v1) |
+| 지표 | 산식 (v2 — v1과의 차이는 drift 수리 커밋 창뿐, #1237) |
 |------|-----------|
 | 문서 크기 | `git -C "$REPO_ROOT" ls-tree -r HEAD --name-only -- modules/shared/programs/claude/files/skills/run-da/` 결과 중 `*.md` 파일을 세고, `/evals/` path segment가 있는 파일은 제외한다. 라인 수는 `git show HEAD:<path>` 내용 기준 총 line count 합계다. |
-| drift 수리 커밋 빈도 | `git -C "$REPO_ROOT" log --since=<KST 주 시작> --until=<KST 주 끝> --first-parent main --format='%H%x00%s%x00%B%x1e' -- modules/shared/programs/claude/files/skills/run-da/`를 record 단위로 파싱한다. subject가 `/fix\|refactor\|chore/i`에 매치하고, subject+body가 `/drift\|참조\|사본\|dangling\|동기화\|SSOT/i`에 매치하는 commit 수다. `--oneline` 금지 — body 매칭을 위해 `%B`를 포함한다. |
+| drift 수리 커밋 빈도 | `git -C "$REPO_ROOT" log --since=<측정 창 시작> --until=<측정 창 끝> --first-parent main --format='%H%x00%s%x00%B%x1e' -- modules/shared/programs/claude/files/skills/run-da/`를 record 단위로 파싱한다. subject가 `/fix\|refactor\|chore/i`에 매치하고, subject+body가 `/drift\|참조\|사본\|dangling\|동기화\|SSOT/i`에 매치하는 commit 수다. `--oneline` 금지 — body 매칭을 위해 `%B`를 포함한다. |
 | 규칙 수 | run-da `SKILL.md`의 `## 핵심 invariants` 번호 항목 수 + `## 주의사항` bullet 수 + `## Non-goals` 번호 항목 수. 개별 카운트와 total을 병기한다. |
 
-week boundary는 KST 월요일 00:00부터 다음 월요일 00:00까지다. merge commit은
-`--first-parent main` 흐름에서 대표한다.
+발행 주차 경계는 KST 월요일 00:00부터 다음 월요일 00:00까지이고(`week.start`/`week.end`), drift 수리 커밋의 측정 창은 그 발행 주차 직전 7일(`week.measurement_start`/`week.measurement_end` = 지난 주 월 00:00 ~ 이번 주 월 00:00)이다 — 리포트가 발행 주차 월요일에 실행되므로 발행 주차 창은 실행 시점에 대부분 미래라 v1에서는 실행 시각까지의 몇 시간치만 관측돼 주간 값이 아니었다(#1237). 문서 크기·규칙 수는 HEAD 스냅샷이라 어느 창과도 무관하다. merge commit은
+`--first-parent main` 흐름에서 대표한다. 산식 전환 주 — 비교 대상 리포트(`deltas.previous_reports`) 중 더 낮은 `health_formula_version`(필드가 없는 옛 리포트 포함)이 있는 주 — 의 리포트만 `health.formula_break`에 단절 사유 문자열(정본은 `weekly_report.py`의 `HEALTH_FORMULA_BREAK`)을 싣고, 그 외 주는 `null`이다. 해설 프롬프트는 이 값과 `previous_reports[].health_formula_version`으로 어느 comparison이 산식 변경분인지 판정한다.
 
 ## Weekly coverage 지표
 

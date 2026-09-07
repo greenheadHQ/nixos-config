@@ -842,3 +842,129 @@ def test_atomic_report_pair_uses_json_as_commit_marker_and_recovers_markdown(
     assert report_md.read_text(encoding="utf-8") == (
         weekly_report_module.render_markdown(old_report) + "\n"
     )
+
+
+def test_measurement_window_is_seven_days_before_week_start(weekly_report_module):
+    """health 측정 창은 발행 주차 직전 7일이다 (#1237).
+
+    발행 주차 [월 00:00, +7d)는 월요일 재시도 창 실행 시점에 대부분 미래라
+    drift_repair_commits가 구조적으로 0이 되던 회귀 게이트.
+    """
+    week_start = dt.datetime(2026, 8, 10, tzinfo=weekly_report_module.KST)
+
+    start, end = weekly_report_module.measurement_window(week_start)
+
+    assert start == dt.datetime(2026, 8, 3, tzinfo=weekly_report_module.KST)
+    assert end == week_start
+    assert week_start - start == dt.timedelta(days=7)
+
+
+def test_build_weekly_report_records_measurement_window_separately_from_week(
+    weekly_report_module,
+):
+    report = build_report(weekly_report_module)
+
+    week = report["week"]
+    assert week["id"] == "2026-W28"
+    assert week["start"] == "2026-07-06T00:00:00+09:00"
+    assert week["end"] == "2026-07-13T00:00:00+09:00"
+    # 발행 주차 경계는 그대로, 측정 창만 직전 7일
+    assert week["measurement_start"] == "2026-06-29T00:00:00+09:00"
+    assert week["measurement_end"] == "2026-07-06T00:00:00+09:00"
+
+
+def test_renderers_label_cumulative_scope_and_measurement_window(weekly_report_module):
+    report = build_report(weekly_report_module)
+
+    full_markdown = weekly_report_module.render_markdown(report)
+    github_markdown = weekly_report_module.render_github_markdown(report)
+
+    for rendered in (full_markdown, github_markdown):
+        assert "| 발행 주차 |" in rendered
+        assert "| 측정 창 (drift repair 커밋) | 2026-06-29T00:00:00+09:00 ~ 2026-07-06T00:00:00+09:00 — 발행 주차 직전 7일 |" in rendered
+        assert "전체 코퍼스 누적값" in rendered
+        # 옛 "기간" 라벨은 발행 주차와 측정 창을 구분하지 못해 오독을 낳았다 — 재도입 게이트
+        assert "| 기간 |" not in rendered
+        # M-5는 폐기 지표 — 범위 표기에 재유입되면 해설 LLM이 결측으로 오독한다
+        assert "M-1~M-4·M-6" in rendered
+        assert "M-1~M-6" not in rendered
+
+
+def test_formula_break_is_recorded_only_on_transition_week(weekly_report_module):
+    """산식 단절은 상태가 아니라 관계다 — 비교 대상 리포트 중 더 낮은 산식 버전이 있는
+    전환 주에만 문자열을 싣고, 같은 버전끼리의 비교 주와 첫 회에는 None이어야 해설
+    프롬프트의 formula_break 규칙이 영구히 켜지지 않는다."""
+    def previous_with_version(version):
+        previous = build_report(weekly_report_module)
+        previous["week"]["id"] = "2026-W27"
+        previous["provenance"]["report_json_path"] = "/state/weekly-2026-W27.json"
+        if version is None:
+            previous["health"].pop("health_formula_version", None)
+        else:
+            previous["health"]["health_formula_version"] = version
+        return previous
+
+    first = build_report(weekly_report_module)
+    assert first["health"]["formula_break"] is None
+
+    transition = build_report(weekly_report_module, previous_reports=[previous_with_version(1)])
+    assert transition["health"]["formula_break"] == weekly_report_module.HEALTH_FORMULA_BREAK
+    assert transition["deltas"]["previous_reports"][0]["health_formula_version"] == 1
+    for rendered in (
+        weekly_report_module.render_markdown(transition),
+        weekly_report_module.render_github_markdown(transition),
+    ):
+        # 키 이름이 아니라 사유 문자열 자체가 두 렌더에 실려야 한다 — GitHub Health 표는 키를 전부 찍으므로
+        # substring "formula_break"만 보면 전환 주 여부와 무관하게 통과한다
+        assert weekly_report_module.HEALTH_FORMULA_BREAK in rendered
+    source = weekly_report_module.build_github_projection_source(transition)
+    assert source["summary"]["deltas"]["previous_reports"][0]["health_formula_version"] == 1
+    assert source["summary"]["health"]["formula_break"] == weekly_report_module.HEALTH_FORMULA_BREAK
+
+    # 산식 버전 필드가 없는 옛 리포트도 다른 산식이므로 전환 주다
+    legacy = build_report(weekly_report_module, previous_reports=[previous_with_version(None)])
+    assert legacy["health"]["formula_break"] == weekly_report_module.HEALTH_FORMULA_BREAK
+
+    steady = build_report(weekly_report_module, previous_reports=[previous_with_version(2)])
+    assert steady["health"]["formula_break"] is None
+    assert "| formula_break |" not in weekly_report_module.render_markdown(steady)
+    # GitHub 경로도 같은 규칙 — projection은 None을 유지하고 Health 표는 그 행을 만들지 않는다
+    steady_source = weekly_report_module.build_github_projection_source(steady)
+    assert steady_source["summary"]["health"]["formula_break"] is None
+    assert "formula_break" not in weekly_report_module.render_github_markdown(steady)
+
+
+def test_commentary_prompt_defines_cumulative_scope_and_measurement_window(
+    weekly_report_module,
+):
+    prompt = weekly_report_module.COMMENTARY_PROMPT
+
+    assert "누적값" in prompt
+    assert "measurement_start" in prompt
+    assert "수집 실패" in prompt
+    assert "M-1~M-4·M-6" in prompt and "M-1~M-6" not in prompt
+    # delta 해석은 comparison 단위 — 존재하는 최근 리포트 2개와 각각 비교되므로 단수 정의는 틀린다
+    assert "comparison" in prompt and "누적 증가분" in prompt
+    assert "formula_break" in prompt
+
+    report = build_report(weekly_report_module)
+    rendered = weekly_report_module.render_commentary_input(report)
+    assert prompt in rendered
+    assert '"measurement_start":"2026-06-29T00:00:00+09:00"' in rendered
+
+
+def test_session_total_delta_is_reported_as_weekly_activity_proxy(weekly_report_module):
+    previous = build_report(weekly_report_module)
+    previous["week"]["id"] = "2026-W27"
+    previous["analysis"]["session_counts"]["total"] = 7
+    previous["provenance"]["report_json_path"] = "/state/weekly-2026-W27.json"
+
+    report = build_report(weekly_report_module, previous_reports=[previous])
+
+    delta_by_metric = {item["metric"]: item for item in report["deltas"]["items"]}
+    total_delta = delta_by_metric["analysis.session_counts.total"]
+    assert total_delta["unit"] == "count"
+    assert total_delta["comparisons"][0]["week_id"] == "2026-W27"
+    assert total_delta["comparisons"][0]["delta"] == float(
+        report["analysis"]["session_counts"]["total"] - 7
+    )

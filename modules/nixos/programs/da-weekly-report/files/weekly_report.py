@@ -28,7 +28,30 @@ from typing import Any, NamedTuple
 
 
 SCHEMA_VERSION = 1
-HEALTH_FORMULA_VERSION = 1
+HEALTH_FORMULA_VERSION = 2
+# v2 (#1237): drift_repair_commits 측정 창을 발행 주차 [월 00:00, +7d)에서 발행 주차 직전
+# 7일로 재정의. v1 창은 실행 시점에 대부분 미래라 실행 시각까지의 몇 시간치만 관측됐으므로 v1
+# 리포트와의 delta는 주간 활동 변화가 아니다 — algorithm.md "run-da 건강 지표" 계약대로 버전을 올리고 단절을 명시한다.
+# 단절은 상태가 아니라 관계다: build_weekly_report가 비교 대상 리포트 중 더 낮은 산식 버전이
+# 있는 주(전환 주)에만 이 문자열을 health.formula_break에 싣고, 그 외 주는 None이다.
+HEALTH_FORMULA_BREAK = (
+    "v2 (#1237): drift_repair_commits 측정 창을 발행 주차 직전 7일로 재정의 — "
+    "v1 창은 실행 시각까지의 몇 시간치만 관측돼 v1 리포트와의 delta는 주간 활동 변화가 아니다"
+)
+MEASUREMENT_WINDOW_DAYS = 7
+# 렌더러 2종(전문·GitHub)과 해설 프롬프트가 공유하는 라벨 — 문구 변경 지점을 한 곳으로.
+# 테스트는 의도적으로 문구 리터럴을 고정한다(상수를 참조하면 문구 회귀를 잡지 못한다) —
+# 문구를 바꾸면 테스트도 함께 갱신한다.
+METRIC_SCOPE_LABEL = "M-1~M-4·M-6"  # M-5는 #1257에서 폐기 — 저장소 정본 표기
+# 아래 지표 범위 행·해설 프롬프트의 "누적값" 정의는 analyzing-da-sessions algorithm.md "Metric Catalog"
+# 절의 재서술이다 — 계약의 소유자는 sidecar 수집 범위(analyze.py live 전수)이지 이 파일이 아니다.
+WEEK_ROW_LABEL = "발행 주차"
+MEASUREMENT_WINDOW_ROW_LABEL = "측정 창 (drift repair 커밋)"
+MEASUREMENT_WINDOW_SUFFIX = f"발행 주차 직전 {MEASUREMENT_WINDOW_DAYS}일"
+METRIC_SCOPE_ROW = (
+    f"| 지표 범위 | {METRIC_SCOPE_LABEL}·세션 수는 전체 코퍼스 누적값 "
+    "(주간 값 아님 — 주간 변화는 전주 delta 표) |"
+)
 KST = dt.timezone(dt.timedelta(hours=9), "KST")
 KST_NAME = "Asia/Seoul"
 RUN_DA_PATH = "modules/shared/programs/claude/files/skills/run-da/"
@@ -44,6 +67,10 @@ GITHUB_MARKDOWN_MAX_BYTES = 60_000
 COMMENTARY_PROMPT = "\n".join([
     "아래 DA weekly report projection을 읽고 특이점, 공통점/차이점, 다음 주에 볼 신호를 한국어 한두 문단으로 해설하라.",
     "숫자를 새로 만들지 말고 입력 JSON의 값만 근거로 사용하라.",
+    f"지표 정의 (오독 방지 — #1237): metrics의 {METRIC_SCOPE_LABEL}과 session_counts는 분석 시점 전체 코퍼스의 누적값이다 — 그 주의 활동량이 아니다. "
+    "주간 변화는 deltas.items[].comparisons만 근거로 삼는다 — comparisons는 존재하는 최근 리포트 각각과의 비교이므로, week_id가 발행 주차 바로 전 주인 comparison의 session_counts.total delta만 그 주에 새로 쌓인 세션 수의 근사치이고(sidecar의 total 정의가 주차 간 같다는 전제 — 이 리포트는 그 정의 변경을 감지하지 않는다), 주 간격이 벌어진 comparison은 그 기간의 누적 증가분이다. "
+    f"health.drift_repair_commit_count만 week.measurement_start~measurement_end({MEASUREMENT_WINDOW_SUFFIX}) 창의 값이며, health.formula_break가 있으면 deltas.previous_reports 중 health_formula_version이 현재 health.health_formula_version보다 낮은 주와의 health.drift_repair_commits.count delta만 산식 변경분이지 활동 변화가 아니다 — health.document_size.*·health.rule_counts.* delta는 산식과 무관하다. "
+    "hosts의 analyzed_sessions가 0이거나 status가 partial이면 그 호스트의 수집 실패이지 활동 감소가 아니므로 품질 회귀로 해석하지 마라.",
 ])
 M1_KEYS = ("FULL", "LITE", "SKIP")
 M2_KEYS = ("CONFIRMED_ISSUE", "NOT_AN_ISSUE", "NEEDS_MORE_INFO")
@@ -133,6 +160,18 @@ def default_week_bounds(now: dt.datetime | None = None) -> tuple[dt.datetime, dt
     start_date = base.date() - dt.timedelta(days=base.weekday())
     start = dt.datetime.combine(start_date, dt.time.min, tzinfo=KST)
     return start, start + dt.timedelta(days=7)
+
+
+def measurement_window(week_start: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
+    """발행 주차 시작(월 00:00 KST) 직전 7일 — health 측정 창(drift repair 커밋).
+
+    리포트는 발행 주차 월요일 09~14시 재시도 창에서 생성되므로 [week_start, week_end)는
+    실행 시점에 대부분 미래다. 그 창으로 `git log --since/--until`을 세면
+    drift_repair_commits는 실행 시각까지의 몇 시간치만 잡혀 주간 값이 아니다 (#1237 — 2026-W33
+    LLM 해설이 그 0을 "정비 활동 부재"라는 품질 신호로 오독한 실측). 발행 주차 id·경계는 그대로
+    두고, 측정 창만 직전 7일(지난 주 월 00:00 ~ 이번 주 월 00:00)로 옮긴다.
+    """
+    return week_start - dt.timedelta(days=MEASUREMENT_WINDOW_DAYS), week_start
 
 
 def week_id_for(start: dt.datetime) -> str:
@@ -380,15 +419,17 @@ def parse_drift_log(output: str) -> list[dict]:
 
 def collect_drift_repair_commits(
     repo_root: str,
-    week_start: dt.datetime,
-    week_end: dt.datetime,
+    window_start: dt.datetime,
+    window_end: dt.datetime,
     warnings: list[str],
 ) -> dict:
+    """측정 창 [window_start, window_end)의 drift 수리 커밋 — 발행 주차가 아니라
+    measurement_window()가 낸 직전 7일을 받는다 (#1237)."""
     git_format = "%H%x00%s%x00%B%x1e"
     proc = run_git(repo_root, [
         "log",
-        f"--since={week_start.isoformat()}",
-        f"--until={week_end.isoformat()}",
+        f"--since={window_start.isoformat()}",
+        f"--until={window_end.isoformat()}",
         "--first-parent",
         "main",
         f"--format={git_format}",
@@ -404,8 +445,8 @@ def collect_drift_repair_commits(
         "count": len(commits),
         "commit_hashes": [item["hash"] for item in commits],
         "commits": commits,
-        "since": week_start.isoformat(),
-        "until": week_end.isoformat(),
+        "since": window_start.isoformat(),
+        "until": window_end.isoformat(),
         "subject_regex": DRIFT_SUBJECT_RE.pattern,
         "body_regex": DRIFT_BODY_RE.pattern,
         "branch": "main",
@@ -454,15 +495,21 @@ def collect_rule_counts(repo_root: str, warnings: list[str]) -> dict:
     return count_rules_from_text(text)
 
 
-def collect_health_metrics(repo_root: str, week_start: dt.datetime, week_end: dt.datetime) -> dict:
+def collect_health_metrics(repo_root: str, week_start: dt.datetime) -> dict:
+    """발행 주차 시작(week_start)에서 측정 창을 유도해 health를 수집한다.
+
+    창의 소유자는 여기서 부르는 measurement_window 하나다 — 리포트의
+    week.measurement_start/end는 이 결과의 drift_repair_commits.since/until을 그대로 읽는다.
+    formula_break는 이 함수가 아니라 build_weekly_report가 비교 대상 리포트를 보고 결정한다.
+    """
     warnings: list[str] = []
+    window_start, window_end = measurement_window(week_start)
     return {
         "health_formula_version": HEALTH_FORMULA_VERSION,
-        "formula_break": None,
         "run_da_path": RUN_DA_PATH,
         "document_size": collect_document_size(repo_root, warnings),
         "drift_repair_commits": collect_drift_repair_commits(
-            repo_root, week_start, week_end, warnings
+            repo_root, window_start, window_end, warnings
         ),
         "rule_counts": collect_rule_counts(repo_root, warnings),
         "warnings": warnings,
@@ -654,6 +701,9 @@ def get_path(obj: dict, dotted_path: str) -> Any:
 
 
 DELTA_SPECS = [
+    # 누적 코퍼스 세션 수의 전주 대비 증가분 = 그 주에 새로 쌓인 세션 수의 근사치
+    # (수집 실패로 분모가 줄면 음수가 나올 수 있다 — 그 자체가 수집 이상 신호다, #1237).
+    ("analysis.session_counts.total", "count", "count"),
     ("analysis.metrics.M-1.percentages.FULL", "%p", "pct100"),
     ("analysis.metrics.M-1.percentages.LITE", "%p", "pct100"),
     ("analysis.metrics.M-1.percentages.SKIP", "%p", "pct100"),
@@ -692,6 +742,8 @@ def compute_deltas(current_report: dict, previous_reports: list[dict]) -> dict:
         previous_meta.append({
             "path": report.get("provenance", {}).get("report_json_path"),
             "week_id": report.get("week", {}).get("id"),
+            # 해설 LLM이 formula_break 규칙을 comparison 단위로 판정할 수 있게 비교 대상의 산식 버전을 싣는다
+            "health_formula_version": get_path(report, "health.health_formula_version"),
         })
 
     items = []
@@ -1037,6 +1089,15 @@ def read_sanitized_commentary(
     return commentary_text, effective_error
 
 
+def has_older_formula_version(previous_reports: list[dict]) -> bool:
+    """비교 대상 리포트 중 현재보다 낮은 health 산식 버전이 있는가 — 전환 주 판정."""
+    for report in previous_reports:
+        version = numeric(get_path(report, "health.health_formula_version"))
+        if (version or 0) < HEALTH_FORMULA_VERSION:
+            return True
+    return False
+
+
 def build_weekly_report(
     sidecar: dict,
     health: dict,
@@ -1049,6 +1110,17 @@ def build_weekly_report(
     analyze_exit_code: int = 0,
 ) -> dict:
     week_id = week_id_for(week_start)
+    # 측정 창 표기는 health 수집이 실제로 쓴 창(drift_repair_commits.since/until)을 그대로 읽는다 —
+    # 창의 소유자는 collect_health_metrics 안의 measurement_window 하나이고 여기서 재유도하지 않는다.
+    drift_window = health.get("drift_repair_commits", {})
+    health = {
+        **health,
+        # 산식 단절은 관계다 — 비교 대상 리포트 중 더 낮은 산식 버전(버전 필드가 없는 옛 리포트 포함)이
+        # 있는 전환 주에만 사유 문자열을 싣고, 그 외 주는 None (algorithm.md 건강 지표 계약).
+        "formula_break": (
+            HEALTH_FORMULA_BREAK if has_older_formula_version(previous_reports) else None
+        ),
+    }
     report = {
         "schema_version": SCHEMA_VERSION,
         "week": {
@@ -1056,6 +1128,10 @@ def build_weekly_report(
             "start": week_start.isoformat(),
             "end": week_end.isoformat(),
             "tz": KST_NAME,
+            # health 측정 창 (drift repair 커밋). M-1~M-4·M-6·세션 수는 이 창과 무관한
+            # 전체 코퍼스 누적값이다 — 렌더러와 해설 프롬프트가 그 사실을 명시한다 (#1237).
+            "measurement_start": drift_window.get("since"),
+            "measurement_end": drift_window.get("until"),
         },
         "analysis": normalize_analysis(sidecar),
         "health": health,
@@ -1091,7 +1167,15 @@ def esc(value: Any) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
-def _safe_number(value: Any, default: int | float = 0) -> int | float:
+def _measurement_window_rows(start: Any, end: Any) -> list[str]:
+    """측정 창 행 — v1 리포트(measurement_* 부재)를 v2 렌더러로 재발행할 때 쓰지도 않은 창을
+    단정하지 않도록, 값이 없으면(None 또는 projection 기본값) 행을 만들지 않는다."""
+    if start in (None, "unknown") or end in (None, "unknown"):
+        return []
+    return [f"| {MEASUREMENT_WINDOW_ROW_LABEL} | {esc(start)} ~ {esc(end)} — {MEASUREMENT_WINDOW_SUFFIX} |"]
+
+
+def _safe_number(value: Any, default: int | float | None = 0) -> int | float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return value
     return default
@@ -1244,7 +1328,11 @@ def _metric_projection(metrics: dict) -> dict:
 
 def _delta_projection(deltas: dict) -> dict:
     previous_reports = [
-        {"week_id": _safe_string(item.get("week_id"), "unknown")}
+        {
+            "week_id": _safe_string(item.get("week_id"), "unknown"),
+            # 부재(버전 필드 없는 옛 리포트)는 canonical과 같은 None — 0으로 뭉개면 해설이 "v0"으로 읽는다
+            "health_formula_version": _safe_number(item.get("health_formula_version"), None),
+        }
         for item in deltas.get("previous_reports", [])
         if isinstance(item, dict)
     ]
@@ -1301,6 +1389,12 @@ def build_consumer_summary(report: dict) -> dict:
             "start": _safe_string(report.get("week", {}).get("start"), "unknown"),
             "end": _safe_string(report.get("week", {}).get("end"), "unknown"),
             "tz": _safe_string(report.get("week", {}).get("tz"), "unknown"),
+            "measurement_start": _safe_string(
+                report.get("week", {}).get("measurement_start"), "unknown"
+            ),
+            "measurement_end": _safe_string(
+                report.get("week", {}).get("measurement_end"), "unknown"
+            ),
         },
         "session_counts": {
             "total": _safe_number(session_counts.get("total")),
@@ -1319,6 +1413,9 @@ def build_consumer_summary(report: dict) -> dict:
         },
         "health": {
             "health_formula_version": _safe_number(health.get("health_formula_version")),
+            # 전환 주가 아니면 canonical과 같은 None — 빈 문자열로 뭉개면 GitHub 표에 상시 행이 생기고
+            # 해설 프롬프트의 "있으면" 조건이 항상 참이 된다.
+            "formula_break": _safe_string(health.get("formula_break")),
             "document_size": {
                 "markdown_file_count": _safe_number(
                     health.get("document_size", {}).get("markdown_file_count")
@@ -1445,7 +1542,9 @@ def _render_github_markdown_source(source: dict) -> str:
         "",
         "| 항목 | 값 |",
         "|------|-----|",
-        f"| 기간 | {esc(week.get('start'))} ~ {esc(week.get('end'))} ({esc(week.get('tz'))}) |",
+        f"| {WEEK_ROW_LABEL} | {esc(week.get('start'))} ~ {esc(week.get('end'))} ({esc(week.get('tz'))}) |",
+        *_measurement_window_rows(week.get('measurement_start'), week.get('measurement_end')),
+        METRIC_SCOPE_ROW,
         f"| 전체 세션 | {counts.get('total', 0)} |",
         f"| Arbiter marker 세션 | {counts.get('arbiter_marker_sessions', 0)} |",
         f"| Intensity marker 세션 | {counts.get('intensity_marker_sessions', 0)} |",
@@ -1478,6 +1577,9 @@ def _render_github_markdown_source(source: dict) -> str:
 
     out.extend(["## Health 요약", "", "| 항목 | 값 |", "|------|-----|"])
     for key, value in health.items():
+        if value is None:
+            # 전환 주가 아닌 리포트의 formula_break(null) 등 부재 값은 행을 만들지 않는다 — 전문 렌더와 같은 규칙
+            continue
         out.append(f"| {esc(key)} | {_json_cell(value)} |")
     out.extend(["", "## 전주 delta", ""])
     delta_items = summary.get("deltas", {}).get("items", [])
@@ -1553,7 +1655,9 @@ def render_markdown(report: dict) -> str:
     out.append("")
     out.append("| 항목 | 값 |")
     out.append("|------|-----|")
-    out.append(f"| 기간 | {report['week']['start']} ~ {report['week']['end']} ({report['week']['tz']}) |")
+    out.append(f"| {WEEK_ROW_LABEL} | {report['week']['start']} ~ {report['week']['end']} ({report['week']['tz']}) |")
+    out.extend(_measurement_window_rows(report['week'].get('measurement_start'), report['week'].get('measurement_end')))
+    out.append(METRIC_SCOPE_ROW)
     out.append(f"| 호스트 | {', '.join(analysis.get('hosts', []))} |")
     out.append(f"| corpus | {analysis.get('corpus')} |")
     out.append(f"| partial | {coverage.get('partial')} |")
@@ -1661,6 +1765,8 @@ def render_markdown(report: dict) -> str:
     out.append("| 지표 | 값 |")
     out.append("|------|-----|")
     out.append(f"| health_formula_version | {health.get('health_formula_version')} |")
+    if health.get("formula_break"):
+        out.append(f"| formula_break | {health.get('formula_break')} |")
     out.append(f"| markdown_file_count | {health.get('document_size', {}).get('markdown_file_count', 0)} |")
     out.append(f"| total_line_count | {health.get('document_size', {}).get('total_line_count', 0)} |")
     out.append(f"| drift_repair_commits | {health.get('drift_repair_commits', {}).get('count', 0)} |")
@@ -1825,7 +1931,9 @@ def command_build(args: argparse.Namespace) -> int:
     else:
         week_start, week_end = default_week_bounds()
     week_id = week_id_for(week_start)
-    health = collect_health_metrics(args.repo_root, week_start, week_end)
+    # health(drift repair 커밋)는 발행 주차가 아니라 직전 7일을 센다 — 창은 collect_health_metrics가
+    # week_start에서 유도한다 (measurement_window docstring, #1237).
+    health = collect_health_metrics(args.repo_root, week_start)
     previous_paths = previous_report_paths(args.state_dir, current_week_id=week_id)
     previous_reports = load_previous_reports(previous_paths)
     # build는 draft-only다. commentary 주입은 sanitize 게이트를 소유한 finalize가
