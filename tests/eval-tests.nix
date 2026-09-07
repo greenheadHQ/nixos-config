@@ -817,11 +817,12 @@ let
       * (constants.ankiHost.helperBusyWaitSecs + constants.ankiHost.busyRetrySecs)
     + constants.ankiHost.helperCurlMaxTimeSecs;
   # 스크립트 소스가 `${VAR:?}`로 요구하는 env 이름 집합 — nix 배선(helper-script.nix·sync.nix·backup.nix)이 빠뜨리면
-  # 실행 시점에만 죽으므로 여기서 소스와 유닛 environment를 직접 대조한다
+  # 실행 시점에만 죽으므로 여기서 소스와 유닛 environment를 직접 대조한다.
+  # 정규식은 POSIX ERE 이식성 때문에 괄호식으로 쓴다 — `\{`·`\?` 이스케이프는 Linux(libstdc++)에서 invalid regular expression (CI 실측)
   ankiHostRequiredEnv =
     src:
     nixpkgsLib.unique (
-      map builtins.head (builtins.filter builtins.isList (builtins.split "\\$\\{([A-Z_]+):\\?\\}" src))
+      map builtins.head (builtins.filter builtins.isList (builtins.split "[$][{]([A-Z_]+):[?][}]" src))
     );
   ankiHostHelperCallRequired = ankiHostRequiredEnv (
     builtins.readFile ../modules/nixos/programs/anki-host/files/lib/helper-call.sh
