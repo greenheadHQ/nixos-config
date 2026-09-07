@@ -92,7 +92,8 @@ class FunnelGuard:
                 break
             body += message.get("body", b"")
             if len(body) > self._max_body:
-                await self._drain(receive, len(body), None)
+                if message.get("more_body", False):  # 이 메시지가 마지막이면 더 읽을 것이 없다 — 기다리면 영원히 멈춘다
+                    await self._drain(receive, len(body), None)
                 for reply in _json_response(413, "request body too large"):
                     await send(reply)
                 return
