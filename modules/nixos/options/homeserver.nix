@@ -377,7 +377,9 @@
       retentionDays = lib.mkOption {
         type = lib.types.int;
         default = 14;
-        description = "Number of days to retain HDD backups";
+        # 다른 백업(immich·karakeep)의 30일보다 짧은 근거: 미디어 포함 .colpkg가 ≈200MB/일이라 30일이면 6GB이고,
+        # 원본은 AnkiWeb과 anki-study 백업에 별도로 있어 이 사본은 "최근 2주 복원점"이면 충분하다.
+        description = "Number of days to retain HDD .colpkg backups (14, not the 30 of other backups — ~200MB/day and the originals live in AnkiWeb and the anki-study backups)";
       };
     };
   };

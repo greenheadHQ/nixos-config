@@ -37,7 +37,7 @@ let
   inherit (constants.ankiHost) user;
   stateRoot = constants.paths.ankiHostState;
   # 애드온 버전의 단일 소스 — nix 파생 version과 /status의 addon_version이 같은 값을 갖는다
-  addonVersion = "1.4.0";
+  addonVersion = "1.4.1";
   inherit (constants.ankiHost)
     helperMainTimeoutSecs
     helperBusyWaitSecs
