@@ -19,8 +19,8 @@ let
   cfg = config.homeserver.ankiHost;
   h = import ./helper-script.nix { inherit config pkgs constants; };
   inherit (h) ankiHost stateRoot;
-  inherit (constants.paths) mediaData;
-  backupDir = "${mediaData}/backups/anki-host";
+  inherit (constants.paths) mediaData ankiHostBackupsRelPath;
+  backupDir = "${mediaData}/${ankiHostBackupsRelPath}";
   backupInstances = lib.filterAttrs (_: inst: inst.backup.enable) cfg.instances;
   instanceList = lib.concatStringsSep " " (
     lib.mapAttrsToList (name: inst: "${name}:${toString inst.helperPort}") backupInstances

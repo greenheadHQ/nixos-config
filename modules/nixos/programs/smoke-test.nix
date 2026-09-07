@@ -15,7 +15,7 @@ let
   cfg = config.homeserver.smokeTest;
   inherit (constants.network) minipcTailscaleIP;
   inherit (constants.domain) base subdomains;
-  inherit (constants.paths) mediaData;
+  inherit (constants.paths) mediaData ankiHostBackupsRelPath;
 
   pushoverCredPath = config.age.secrets.pushover-system-monitor.path;
   serviceLib = import ../lib/service-lib.nix { inherit pkgs; };
@@ -141,7 +141,7 @@ let
 
       ${lib.concatMapStringsSep "\n" (name: ''
         # anki-host ${name}: 인스턴스 디렉터리에 anki-host-${name}-*.colpkg (일일, 04:15)
-        LATEST_ANKI=$(find "$BACKUP_DIR/anki-host/${name}" -maxdepth 1 -name "anki-host-${name}-*.colpkg" \
+        LATEST_ANKI=$(find "${mediaData}/${ankiHostBackupsRelPath}/${name}" -maxdepth 1 -name "anki-host-${name}-*.colpkg" \
           -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
         if [ -n "$LATEST_ANKI" ]; then
           AGE_HOURS=$(( ($(date +%s) - $(stat -c %Y "$LATEST_ANKI")) / 3600 ))

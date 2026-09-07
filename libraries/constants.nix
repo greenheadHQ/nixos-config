@@ -71,6 +71,7 @@
   paths = {
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
+    ankiHostBackupsRelPath = "backups/anki-host"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
     # Launcher 전용 headless SSH dispatcher의 Home 상대 설치 경로.
     # Home Manager target과 launcher PATH가 이 값을 함께 사용해 배선 drift를 막는다.

@@ -72,9 +72,11 @@
    full sync를 유발하는 도구(노트 타입 구조 변경 등, 운영자 결정 "고지·동의 후 실행")는 PR 2b에서 노출하며, 그 전에
    Upload 경로를 root 소유 1회용 승인 파일 게이트 + 사전 검사(직전 성공 sync 스냅샷 대비 노트·revlog 감소 없음,
    복구점 생성 성공)와 함께 별도 설계한다. MCP "지금 동기화"는 mode를 클라이언트 인자로 받지 않는다(normal 고정).
-   **급감 게이트**(normal 경로에도 적용): sync 스크립트가 직전 성공 뒤의 로컬 노트·revlog(`lastSuccessCounts`)의
-   `constants.ankiHost.syncGuardMinRetainPct`%를 하한으로 헬퍼에 넘기고, 헬퍼는 로컬이 비어 있지 않은데 하한 아래면
-   `sync_collection`을 부르지 않고 `guard-tripped`를 돌려준다 → `local-loss-suspected` + 알림(c) + exit 1 (STOP 10). 정당한 대량
+   **급감 게이트**(normal 경로에도 적용): 헬퍼가 상태 파일(`sync-status.json`, 스크립트가 유일한 생산자)의 `lastSuccessAt`·
+   `lastSuccessCounts`를 직접 읽어 `constants.ankiHost.syncGuardMinRetainPct`%(성공 이력이 있으면 최소 1)를 하한으로 삼고,
+   로컬이 그 아래면(빈 컬렉션 포함 — 전부 삭제도 증분 sync로 전파된다) `sync_collection`을 부르지 않고 `guard-tripped`를
+   돌려준다 → 비었으면 `collection-empty`(STOP 9), 아니면 `local-loss-suspected`(STOP 10) + 알림(c) + exit 1. 하한은 HTTP
+   입력으로 받지 않는다(같은 loopback의 호출자가 0을 넘겨 우회하지 못하게). 정당한 대량
    삭제였다면 원인 확인 후 `sync-status.json`을 지워 해제한다(성공 이력 초기화 — 다음 성공부터 게이트가 다시 선다). PR 2b의
    파괴 도구·대량 변경은 이 게이트를 전제로 설계한다(임계값을 넘는 정당한 삭제는 복구점 + 해제 절차를 함께 안내).
 4. 알림 본문에 카드 내용·자격·토큰을 넣지 않는다. 한국어.

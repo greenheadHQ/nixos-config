@@ -43,11 +43,12 @@ let
   inherit (constants.ankiHost) user;
   stateRoot = constants.paths.ankiHostState;
   # 애드온 버전의 단일 소스 — nix 파생 version과 /status의 addon_version이 같은 값을 갖는다
-  addonVersion = "1.5.1";
+  addonVersion = "1.5.2";
   inherit (constants.ankiHost)
     helperMainTimeoutSecs
     helperBusyWaitSecs
     helperQueryTimeoutSecs
+    syncGuardMinRetainPct
     ;
   instances = cfg.instances;
   ankiwebCredPath = config.age.secrets.anki-ankiweb.path;
@@ -140,6 +141,8 @@ let
         ANKI_HOST_MAIN_TIMEOUT_SECS = toString helperMainTimeoutSecs;
         ANKI_HOST_BUSY_WAIT_SECS = toString helperBusyWaitSecs;
         ANKI_HOST_QUERY_TIMEOUT_SECS = toString helperQueryTimeoutSecs;
+        # 급감 게이트 비율 — 애드온이 상태 파일의 직전 성공 스냅샷에서 하한을 계산한다 (HTTP 입력으로 받지 않는다)
+        ANKI_HOST_GUARD_MIN_RETAIN_PCT = toString syncGuardMinRetainPct;
         # 헬퍼의 /export·/import-colpkg는 이 아래 backups/(일일 백업 스테이징)·restore-points/(복구점)만 허용한다
         ANKI_HOST_STATE_DIR = stateDir;
       }

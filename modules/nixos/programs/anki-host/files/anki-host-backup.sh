@@ -32,6 +32,12 @@ anki_helper_call_retry_busy() {
 failures=""
 stamp="$(date +%Y%m%dT%H%M%S)"
 
+# SSD 스테이징 정리(anki-host-<name>-*.colpkg만): 최신 LOCAL_KEEP개 — 실패한 회차의 산출물도 다음 회차에서 여기로 정리된다
+prune_local() {
+  find "$1" -maxdepth 1 -type f -name "anki-host-$2-*.colpkg" -printf '%T@ %p\n' \
+    | sort -rn | awk -v keep="$LOCAL_KEEP" 'NR > keep {print $2}' | xargs -r rm -f
+}
+
 for entry in $INSTANCES; do
   name="${entry%%:*}"
   port="${entry##*:}"
@@ -40,10 +46,20 @@ for entry in $INSTANCES; do
   dest_dir="${BACKUP_DIR}/${name}"
   file="anki-host-${name}-${stamp}.colpkg"
   mkdir -p "$dest_dir"
+  # 이전 회차가 복사·검사에 실패해 남긴 파일부터 정리한다 — 실패가 며칠 이어져도 SSD가 LOCAL_KEEP개 이상 쌓이지 않는다
+  prune_local "$local_dir" "$name"
 
   if ! anki_helper_wait_ready "$helper"; then
     echo "anki-host-backup[${name}]: helper not ready: $(helper_error)" >&2
     failures="${failures} ${name}(not-ready)"
+    continue
+  fi
+
+  # 미디어 동기화(부트스트랩 뒤 백그라운드 다운로드)가 진행 중이면 미디어 포함 export가 불완전해진다 — 오늘은 건너뛰고 실패로 알린다
+  anki_helper_call "${helper}/status/full" "" "$HELPER_CURL_MAX_TIME"
+  if helper_ok && [ "$(printf '%s' "$HELPER_BODY" | jq -r '.result.media.active')" = "true" ]; then
+    echo "anki-host-backup[${name}]: media sync in progress — skipping today's export" >&2
+    failures="${failures} ${name}(media-syncing)"
     continue
   fi
 
@@ -76,10 +92,9 @@ for entry in $INSTANCES; do
   fi
   chmod 0600 "${dest_dir}/${file}"
 
-  # 일일 백업본 정리(anki-host-<name>-*.colpkg만): HDD는 보존 기간 초과분, SSD는 최신 LOCAL_KEEP개
+  # 일일 백업본 정리: HDD는 보존 기간 초과분, SSD는 최신 LOCAL_KEEP개
   find "$dest_dir" -maxdepth 1 -type f -name "anki-host-${name}-*.colpkg" -mtime "+${RETENTION_DAYS}" -delete
-  find "$local_dir" -maxdepth 1 -type f -name "anki-host-${name}-*.colpkg" -printf '%T@ %p\n' \
-    | sort -rn | awk -v keep="$LOCAL_KEEP" 'NR > keep {print $2}' | xargs -r rm -f
+  prune_local "$local_dir" "$name"
 
   echo "anki-host-backup[${name}]: ${file} ($(stat -c %s "${dest_dir}/${file}") bytes) -> ${dest_dir}"
 done

@@ -863,7 +863,7 @@ let
     && ankiHostSyncMain.environment.MAX_RETRIES == toString constants.ankiHost.maxRetries
     && ankiHostSyncMain.environment.BACKOFF_SECS == toString constants.ankiHost.backoffSecs
     &&
-      ankiHostSyncMain.environment.GUARD_MIN_RETAIN_PCT
+      ankiHostMain.environment.ANKI_HOST_GUARD_MIN_RETAIN_PCT
       == toString constants.ankiHost.syncGuardMinRetainPct;
   # 유닛 예산 ≥ 스크립트 최악 실행 시간 — 같은 상수에서 독립 재계산
   ankiHostBudgetOk =
@@ -1297,7 +1297,7 @@ let
         && ankiHostBackupTimer.timerConfig.OnCalendar == ankiHostCfg.backupTime
         && ankiHostBackupTimer.timerConfig.Persistent == true
         && ankiHostBackup.serviceConfig.ProtectSystem == "strict"
-        && builtins.elem "${constants.paths.mediaData}/backups/anki-host" ankiHostBackup.serviceConfig.ReadWritePaths
+        && builtins.elem "${constants.paths.mediaData}/${constants.paths.ankiHostBackupsRelPath}" ankiHostBackup.serviceConfig.ReadWritePaths
         && ankiHostBackup.unitConfig.ConditionPathExists == nixosCfg.age.secrets.pushover-anki.path
         # 쓰기 경로는 HDD 백업 디렉터리 + 백업 대상 인스턴스의 backups/뿐 — 살아 있는 프로필·상태 루트 전체는 열지 않는다
         && builtins.elem "${constants.paths.ankiHostState}/main/backups" ankiHostBackup.serviceConfig.ReadWritePaths

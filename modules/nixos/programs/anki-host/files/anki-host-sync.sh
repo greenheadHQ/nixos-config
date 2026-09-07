@@ -2,7 +2,7 @@
 # anki-host-sync — 헬퍼 애드온(/sync)을 호출해 AnkiWeb과 동기화하고 결과를 상태 파일·Pushover로 남긴다.
 # 이 스크립트가 sync의 운영 계층(상태 파일·알림·결과 분류)의 단일 소유자다 — 타이머 유닛, 부트스트랩
 # 유닛, PR 2의 MCP "지금 동기화"(유닛 트리거)가 모두 이 경로를 지난다. 헬퍼 /sync를 직접 부르는 호출자를 두지 않는다.
-# env: HELPER_PORT STATE_DIR INSTANCE HELPER_CURL_MAX_TIME MAX_RETRIES BACKOFF_SECS GUARD_MIN_RETAIN_PCT
+# env: HELPER_PORT STATE_DIR INSTANCE HELPER_CURL_MAX_TIME MAX_RETRIES BACKOFF_SECS
 #      READY_WAIT_TRIES READY_WAIT_SECS READY_PROBE_TIMEOUT BUSY_RETRIES BUSY_RETRY_SECS [CREDENTIALS_DIRECTORY]
 #      (모두 nixos 모듈이 constants.ankiHost에서 주입 — 같은 값으로 유닛 TimeoutStartSec을 계산한다)
 # 인자: [--mode normal|allow-download-if-empty]  (기본 normal — 타이머 유닛; 부트스트랩 유닛이 allow-download-if-empty)
@@ -22,8 +22,10 @@
 #   helper-unreachable  준비 대기 예산 안에 헬퍼가 collection_open을 주지 않음 — 알림(c) 24h 1회
 #   login-failed        자격은 있는데 로그인 실패(login-failed/hook-error) — 재시도 없이 알림(c)
 #   full-sync-required  로컬이 비어 있지 않은데 full sync 요구 — 방향 자동 결정 금지(plan STOP 1), 알림(c)
-#   local-loss-suspected 직전 성공 스냅샷 대비 로컬 노트·revlog가 GUARD_MIN_RETAIN_PCT% 미만 — 서버 병합을 막았다(급감 게이트,
-#                       plan 결정 1·3, STOP 10). 알림(c). 정당한 대량 삭제였다면 원인 확인 후 sync-status.json을 지워 해제
+#   local-loss-suspected 직전 성공 스냅샷 대비 로컬 노트·revlog가 ANKI_HOST_GUARD_MIN_RETAIN_PCT% 미만 — 헬퍼가 서버 병합을
+#                       막았다(급감 게이트, plan 결정 1·3, STOP 10). 알림(c). 정당한 대량 삭제였다면 원인 확인 후 sync-status.json을
+#                       지워 해제. 하한은 헬퍼가 이 상태 파일의 lastSuccessAt·lastSuccessCounts를 직접 읽어 계산한다(이 스크립트가
+#                       유일한 생산자, 헬퍼는 두 필드의 독자) — HTTP 입력으로 하한을 넘기지 않는다
 #   error               헬퍼 오류·재시도 소진 — 알림(c)
 # 종료 코드: 진행 단계 값·busy-deferred는 0, 운영자 개입이 필요한 중단 상태(helper-unreachable·login-failed·full-sync-required·
 # collection-empty·local-loss-suspected·error)는 1 — smoke-test의 실패 유닛 스윕에 잡히게 한다.
@@ -57,7 +59,7 @@ STATE_FILE="${STATE_DIR:?}/sync-status.json"
 LOCK_FILE="${STATE_DIR}/.sync.lock"
 CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
 ALERT_DEDUPE_SECS=86400
-: "${MAX_RETRIES:?}" "${BACKOFF_SECS:?}" "${HELPER_CURL_MAX_TIME:?}" "${INSTANCE:?}" "${GUARD_MIN_RETAIN_PCT:?}"
+: "${MAX_RETRIES:?}" "${BACKOFF_SECS:?}" "${HELPER_CURL_MAX_TIME:?}" "${INSTANCE:?}"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -181,21 +183,9 @@ attempt=1
 delay="$BACKOFF_SECS"
 busy_left="${BUSY_RETRIES:?}" # busy 예산은 스크립트 전체에서 BUSY_RETRIES회 — sync 재시도 회차와 무관 (유닛 예산 계산의 전제)
 last_error=""
-# 급감 게이트(plan 결정 1·3): 직전 성공 뒤의 로컬 노트·revlog 대비 GUARD_MIN_RETAIN_PCT% 미만이면 헬퍼가 서버 병합을 하지 않는다.
-# loopback의 무인증 AnkiConnect로 가한 대량 삭제·컬렉션 교체가 15분 안에 AnkiWeb 정본으로 확정되는 경로를 끊는다.
-# 성공 이력이 없으면(첫 부트스트랩 전, 복원 절차로 상태 파일을 지운 뒤) 하한이 0이라 게이트가 없다. 성공 이력이 있으면
-# 하한은 최소 1 — 전부 지워진(빈) 컬렉션도 게이트에 걸려야 삭제가 증분 sync로 AnkiWeb에 전파되지 않는다.
-guard_notes=0
-guard_revlog=0
-if [ -n "$(state_get '.lastSuccessAt')" ]; then
-  last_notes="$(state_get '.lastSuccessCounts.notes // 0')"
-  last_revlog="$(state_get '.lastSuccessCounts.revlog // 0')"
-  guard_notes=$(( last_notes * GUARD_MIN_RETAIN_PCT / 100 ))
-  guard_revlog=$(( last_revlog * GUARD_MIN_RETAIN_PCT / 100 ))
-  [ "$last_notes" -gt 0 ] && [ "$guard_notes" -lt 1 ] && guard_notes=1
-  [ "$last_revlog" -gt 0 ] && [ "$guard_revlog" -lt 1 ] && guard_revlog=1
-fi
-payload="$(jq -n --arg mode "$MODE" --argjson mn "$guard_notes" --argjson mr "$guard_revlog" '{mode: $mode, min_notes: $mn, min_revlog: $mr}')"
+# 급감 게이트(plan 결정 1·3)는 헬퍼가 상태 파일의 lastSuccessAt·lastSuccessCounts로 직접 판정한다 — 하한을 여기서 계산해
+# 넘기면 같은 loopback의 다른 호출자도 0을 넘겨 우회할 수 있다. 이 스크립트는 결과(action=guard-tripped)만 분류한다.
+payload="$(jq -n --arg mode "$MODE" '{mode: $mode}')"
 while [ "$attempt" -le "$MAX_RETRIES" ]; do
   anki_helper_call "${HELPER}/sync" "$payload" "$HELPER_CURL_MAX_TIME"
   if helper_busy; then
@@ -247,7 +237,7 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
           notify_alert "collection-empty" 1 "Anki 컬렉션이 비어 있습니다" "miniPC의 Anki(${INSTANCE})가 동기화 성공 이력이 있는데 컬렉션이 비어 있어 AnkiWeb으로의 반영을 막았습니다. 프로필 소실이나 전부 삭제가 의심되니 원인을 확인하기 전에는 부트스트랩을 다시 실행하지 마세요. 동기화는 중단된 상태입니다."
           exit 1
         fi
-        write_state "local-loss-suspected" "local counts below guard (notes>=${guard_notes}, revlog>=${guard_revlog})" "$result_json"
+        write_state "local-loss-suspected" "local counts below guard ($(printf '%s' "$result_json" | jq -c '.guard'))" "$result_json"
         notify_alert "local-loss-suspected" 1 "Anki 동기화를 막았습니다" "miniPC의 Anki(${INSTANCE}) 컬렉션이 직전 동기화 때보다 크게 줄어 AnkiWeb으로의 반영을 막았습니다(노트 $(printf '%s' "$result_json" | jq -r '.before.notes')개, 복습 기록 $(printf '%s' "$result_json" | jq -r '.before.revlog')건). 의도한 삭제가 아니면 miniPC에서 무엇이 바꿨는지 확인하세요. 동기화는 중단된 상태입니다."
         exit 1
         ;;

@@ -60,7 +60,6 @@ let
     environment = h.helperEnv // {
       MAX_RETRIES = toString ankiHost.maxRetries;
       BACKOFF_SECS = toString ankiHost.backoffSecs;
-      GUARD_MIN_RETAIN_PCT = toString ankiHost.syncGuardMinRetainPct;
       HELPER_PORT = toString inst.helperPort;
       STATE_DIR = "${stateRoot}/${name}";
       INSTANCE = name;

@@ -375,7 +375,7 @@
         description = "OnCalendar time for the daily .colpkg HDD backup of the instances with backup.enable";
       };
       retentionDays = lib.mkOption {
-        type = lib.types.int;
+        type = lib.types.ints.positive; # 0이면 find -mtime +0이 아무것도 안 지우고, 음수면 새 백업까지 지운다
         default = 14;
         # 다른 백업(immich·karakeep)의 30일보다 짧은 근거: 미디어 포함 .colpkg가 ≈200MB/일이라 30일이면 6GB이고,
         # 원본은 AnkiWeb과 anki-study 백업에 별도로 있어 이 사본은 "최근 2주 복원점"이면 충분하다.

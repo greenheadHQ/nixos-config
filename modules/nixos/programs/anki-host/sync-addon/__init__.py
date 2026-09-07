@@ -9,8 +9,10 @@ GUI 없이 도는 Anki 프로세스 안에서 loopback HTTP(JSON)만 연다. 인
 서버를 덮어쓰는 Upload 모드는 존재하지 않는다. 컬렉션 교체(/import-colpkg)는 AnkiWeb에
 로그인된 프로필에서 거부되므로 운영 인스턴스에는 영향이 없다(격리 fixture 전용).
 같은 프로세스의 AnkiConnect는 같은 loopback에 무인증으로 열려 있어(plan 030 결정 1의 잔여 위험) 이 봉인을
-우회하는 파괴 표면이 된다 — 그래서 /sync는 호출자가 준 하한(min_notes·min_revlog, 직전 성공 스냅샷 기준)
-아래로 로컬이 줄어 있으면 서버에 병합하지 않고 `guard-tripped`를 돌려준다(급감 게이트, 결정 3).
+우회하는 파괴 표면이 된다 — 그래서 /sync는 직전 성공 스냅샷(sync 스크립트가 남기는 상태 파일의
+lastSuccessCounts) 대비 로컬이 ANKI_HOST_GUARD_MIN_RETAIN_PCT% 아래로 줄어 있으면 서버에 병합하지 않고
+`guard-tripped`를 돌려준다(급감 게이트, 결정 3). 하한은 HTTP 입력으로 받지 않는다 — 같은 loopback의 호출자가
+0을 넘겨 게이트를 우회할 수 없어야 한다. 상태 파일은 0700 디렉터리 안이라 loopback 호출자가 고칠 수 없다.
 
 왜 AnkiConnect의 `sync` 액션을 쓰지 않는가: 그 액션은 `mw.onSync()`를 불러 GUI 다이얼로그
 경로를 타므로 full sync가 요구되면 offscreen에서 영원히 멈춘다. 여기서는
@@ -40,6 +42,7 @@ counts·media까지 채운다(운영자 조회·PR 2 도구용). busy 중에는 
   ANKI_HOST_BUSY_WAIT_SECS    변경 작업 락 대기(필수). 넘기면 409 — 이 값이 409 응답 시간의 상한이라 유닛
                               예산 계산(sync.nix)에 들어간다.
   ANKI_HOST_QUERY_TIMEOUT_SECS /status/full의 메인 스레드 대기(필수).
+  ANKI_HOST_GUARD_MIN_RETAIN_PCT 급감 게이트 비율(필수) — 상태 파일 lastSuccessCounts × 이 값/100이 /sync의 하한.
   ANKI_HOST_ALLOW_IMPORT      "1"이면 /import-colpkg를 연다. 모듈이 AnkiWeb sync를 켜지 않은 인스턴스
                               (격리 fixture용)에만 넣는다 — 운영 인스턴스에는 라우팅 자체가 없다.
 """
@@ -71,6 +74,7 @@ ALLOWED_SUBDIRS = ("backups", "restore-points")
 MAIN_TIMEOUT_SECS = int(os.environ["ANKI_HOST_MAIN_TIMEOUT_SECS"])
 BUSY_WAIT_SECS = int(os.environ["ANKI_HOST_BUSY_WAIT_SECS"])
 QUERY_TIMEOUT_SECS = int(os.environ["ANKI_HOST_QUERY_TIMEOUT_SECS"])
+GUARD_MIN_RETAIN_PCT = int(os.environ["ANKI_HOST_GUARD_MIN_RETAIN_PCT"])
 ALLOW_IMPORT = os.environ.get("ANKI_HOST_ALLOW_IMPORT") == "1"
 SYNC_MODES = ("normal", "allow-download-if-empty")
 
@@ -283,16 +287,38 @@ def _full_download(auth: Any, out: Any) -> None:
         mw.col.sync_media(mw.pm.sync_auth())
 
 
-def _sync(mode: str, min_notes: int, min_revlog: int) -> dict[str, Any]:
-    """mode: normal | allow-download-if-empty. min_notes·min_revlog: 급감 게이트 하한(0이면 게이트 없음).
+def _guard_thresholds() -> tuple[int, int]:
+    """급감 게이트 하한 — sync 스크립트가 남기는 상태 파일(STATE_DIR/sync-status.json)의 lastSuccessAt·lastSuccessCounts에서
+    계산한다. 스크립트가 유일한 생산자이고 이 함수는 두 필드만 읽는다. 성공 이력이 없거나 파일이 없으면 (0, 0) = 게이트 없음.
+    성공 이력이 있으면 하한은 최소 1 — 전부 지워진 컬렉션도 게이트에 걸려야 한다."""
+    if not STATE_DIR:
+        return (0, 0)
+    try:
+        with open(os.path.join(STATE_DIR, "sync-status.json"), encoding="utf-8") as stream:
+            state = json.load(stream)
+    except (OSError, ValueError):
+        return (0, 0)
+    if not state.get("lastSuccessAt"):
+        return (0, 0)
+    counts = state.get("lastSuccessCounts") or {}
+
+    def floor_pct(value: Any) -> int:
+        n = int(value or 0)
+        return max(1, n * GUARD_MIN_RETAIN_PCT // 100) if n > 0 else 0
+
+    return (floor_pct(counts.get("notes")), floor_pct(counts.get("revlog")))
+
+
+def _sync(mode: str) -> dict[str, Any]:
+    """mode: normal | allow-download-if-empty.
 
     normal: 병합 가능한 변경만 동기화하고 full sync가 요구되면 아무것도 하지 않는다 (타이머·MCP 기본).
     allow-download-if-empty: 로컬이 비어 있을 때(노트 0·복습 기록 0)만 서버본을 내려받는다 (첫 부트스트랩 유닛).
     서버를 덮어쓰는 방향은 이 애드온에 없다 — 복구점 복원은 Mac GUI 경로다(plan 030 Maintenance notes).
-    급감 게이트: 호출자가 준 하한이 하나라도 0보다 크면(= 성공 이력이 있다) 로컬이 그 아래일 때 sync_collection을 부르지
-    않는다 — 호출 전 판정이라 서버에 아무것도 올라가지 않는다. 빈 컬렉션도 예외가 아니다: AnkiConnect로 전부 지운 컬렉션은
-    full sync 요구 없이 증분 sync로 삭제가 AnkiWeb에 전파되므로 비었다는 이유로 게이트를 건너뛰면 안 된다. 하한이 둘 다
-    0이면(첫 부트스트랩 전, 복원 절차로 상태 파일을 지운 뒤) 게이트가 없다.
+    급감 게이트: 상태 파일의 직전 성공 스냅샷에서 계산한 하한(_guard_thresholds)이 하나라도 0보다 크면 로컬이 그 아래일 때
+    sync_collection을 부르지 않는다 — 호출 전 판정이라 서버에 아무것도 올라가지 않는다. 빈 컬렉션도 예외가 아니다: AnkiConnect로
+    전부 지운 컬렉션은 full sync 요구 없이 증분 sync로 삭제가 AnkiWeb에 전파되므로 비었다는 이유로 게이트를 건너뛰면 안 된다.
+    하한이 둘 다 0이면(첫 부트스트랩 전, 복원 절차로 상태 파일을 지운 뒤) 게이트가 없다.
     """
     _require_col()
     mw = aqt.mw
@@ -302,6 +328,7 @@ def _sync(mode: str, min_notes: int, min_revlog: int) -> dict[str, Any]:
         raise RuntimeError("not-logged-in")
     before = _snapshot()
     empty = before["notes"] == 0 and before["revlog"] == 0
+    min_notes, min_revlog = _guard_thresholds()
     if (min_notes > 0 or min_revlog > 0) and (before["notes"] < min_notes or before["revlog"] < min_revlog):
         result = {
             "at": _now(),
@@ -496,9 +523,7 @@ class _Handler(BaseHTTPRequestHandler):
                 mode = str(body.get("mode", "normal"))
                 if mode not in SYNC_MODES:
                     raise ValueError("unknown-mode")
-                result = _mutating(
-                    "sync", _sync, mode, int(body.get("min_notes", 0)), int(body.get("min_revlog", 0))
-                )
+                result = _mutating("sync", _sync, mode)
             elif path == "/export" and self.command == "POST":
                 result = _mutating(
                     "export",
