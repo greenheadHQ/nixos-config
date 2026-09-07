@@ -43,6 +43,9 @@ prevent_idle_sleep = true
 # goals: 0.153.4 기준 upstream 기본도 true — 기본 회귀 시에도 켜두려고 명시 고정.
 goals = true
 default_mode_request_user_input = true
+# 긴 대화의 세부 정보를 노트와 검색 가능한 기록으로 보존하는 개발 중 기능.
+# 재검증: codex features list 에서 context_management가 true인지 확인.
+context_management = true
 
 # Multi-agent 동시 실행 상한 (codex 0.153.4·2026-09-05 실측 시점 기준).
 # `[agents].max_concurrent_threads_per_session`은 primary thread를 제외하고 동시에 열어둘 수
