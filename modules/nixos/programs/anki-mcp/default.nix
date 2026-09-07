@@ -51,21 +51,35 @@ let
 
   # Tailscale serve/funnel 배선 — 노드 전역 상태라 tailscale.nix의 ts-serve 헬퍼(dev 미리보기용)와 별개 유닛으로 둔다.
   # 443 Funnel(인터넷) → MCP 포트, 8443 serve(tailnet 전용) → 승인 포트. 8443에 Funnel이 켜져 있으면 끈다.
+  onlineWaitSecs = constants.ankiMcp.tailscaleOnlineWaitSecs;
+  cmdTimeoutSecs = constants.ankiMcp.tailscaleCmdTimeoutSecs;
   tsWire = pkgs.writeShellApplication {
     name = "anki-mcp-tailscale-wire";
     runtimeInputs = [
       pkgs.tailscale
       pkgs.gnugrep
       pkgs.coreutils
+      pkgs.jq
     ];
     text = ''
-      # tailscaled가 로그인·온라인 상태가 될 때까지 기다린다 (부팅 직후)
-      for _ in $(seq 1 30); do
-        if tailscale status --json 2>/dev/null | grep -q '"Online": *true'; then break; fi
+      # tailscaled가 로그인·온라인 상태가 될 때까지 기다린다 (부팅 직후).
+      # CIR: `tailscale status --json | grep -q`는 첫 매치 뒤 grep이 파이프를 닫아 tailscale이 SIGPIPE로 죽고
+      #   pipefail이 그걸 실패로 봐서 대기 상한을 매번 꽉 채웠다 — 출력을 변수에 담고 jq로 Self.Online만 본다.
+      for _ in $(seq 1 ${toString (onlineWaitSecs / 2)}); do
+        status_json="$(tailscale status --json 2>/dev/null || true)"
+        if jq -e '.Self.Online == true' >/dev/null 2>&1 <<<"$status_json"; then break; fi
         sleep 2
       done
-      tailscale serve --bg --https=${toString approvalPublicPort} "http://127.0.0.1:${toString cfg.approvalPort}"
-      tailscale funnel --bg --https=443 "http://127.0.0.1:${toString cfg.port}"
+      # CIR: serve/funnel 기능이 tailnet에서 꺼져 있으면 tailscale CLI가 활성화 링크를 찍고 켜질 때까지 무한 대기한다
+      #   (oneshot 유닛이 activating에 멈추고 switch가 블록된다) — timeout으로 끊고 fail-closed로 안내한다.
+      if ! timeout ${toString cmdTimeoutSecs} tailscale serve --bg --https=${toString approvalPublicPort} "http://127.0.0.1:${toString cfg.approvalPort}"; then
+        echo "anki-mcp-tailscale: 'tailscale serve' did not finish — if it printed an enable link, turn on HTTPS/serve for this node in the Tailscale admin console, then 'systemctl restart anki-mcp-tailscale'" >&2
+        exit 1
+      fi
+      if ! timeout ${toString cmdTimeoutSecs} tailscale funnel --bg --https=443 "http://127.0.0.1:${toString cfg.port}"; then
+        echo "anki-mcp-tailscale: 'tailscale funnel' did not finish — check the tailnet ACL nodeAttrs funnel for this node (plan 030 Step 16)" >&2
+        exit 1
+      fi
       status="$(tailscale funnel status 2>/dev/null || true)"
       if printf '%s\n' "$status" | grep -qE "^https://[^ ]+:${toString approvalPublicPort} .*Funnel on"; then
         echo "anki-mcp-tailscale: approval port ${toString approvalPublicPort} is exposed to the internet — turning Funnel off (STOP 6)" >&2
@@ -200,6 +214,8 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${tsWire}/bin/anki-mcp-tailscale-wire";
+        # 온라인 대기 + serve/funnel 두 명령의 상한 + 여유. 스크립트의 timeout이 먼저 끊지만, 이중 안전장치.
+        TimeoutStartSec = onlineWaitSecs + 2 * cmdTimeoutSecs + 30;
       };
     };
   };

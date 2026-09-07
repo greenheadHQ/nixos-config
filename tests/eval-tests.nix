@@ -1363,7 +1363,12 @@ let
         && !(nixpkgsLib.hasInfix "tailscale funnel --bg --https=\${toString approvalPublicPort}" ankiMcpModuleSrc)
         && nixpkgsLib.hasInfix "tailscale funnel --https=\${toString approvalPublicPort} off" ankiMcpModuleSrc
         && ankiMcpWire.wantedBy == [ "multi-user.target" ]
-        && ankiMcpWire.serviceConfig.Type == "oneshot";
+        && ankiMcpWire.serviceConfig.Type == "oneshot"
+        # serve/funnel CLI는 기능이 꺼져 있으면 무한 대기한다 — 두 호출 모두 timeout으로 감싸고 유닛에도 시작 상한이 있어야 함
+        && nixpkgsLib.hasInfix "timeout \${toString cmdTimeoutSecs} tailscale serve --bg" ankiMcpModuleSrc
+        && nixpkgsLib.hasInfix "timeout \${toString cmdTimeoutSecs} tailscale funnel --bg" ankiMcpModuleSrc
+        && builtins.isInt ankiMcpWire.serviceConfig.TimeoutStartSec
+        && ankiMcpWire.serviceConfig.TimeoutStartSec > constants.ankiMcp.tailscaleCmdTimeoutSecs * 2;
     }
     {
       name = "Test AM4: sync 트리거는 polkit 규칙으로 anki-mcp 유저에게 anki-host-sync-main.service의 start만 허용하고, 승인 문구 시크릿은 root 0400 + LoadCredential로만 전달돼야 함";

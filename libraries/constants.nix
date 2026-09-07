@@ -84,6 +84,8 @@
     approvalLockoutSecs = 300;
     fieldCharsDefault = 400; # 노트 필드·카드 본문 절단 기본값 (0이면 전체)
     pageLimitMax = 100;
+    tailscaleOnlineWaitSecs = 60; # 배선 유닛이 부팅 직후 tailscaled 온라인을 기다리는 상한
+    tailscaleCmdTimeoutSecs = 60; # serve/funnel 한 명령의 상한 — 기능이 tailnet에서 꺼져 있으면 CLI가 활성화 링크를 찍고 무한 대기한다
   };
 
   # ═══════════════════════════════════════════════════════════════
