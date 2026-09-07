@@ -9,7 +9,7 @@
     # Tailscale IP (tailscale ip -4 로 확인)
     minipcTailscaleIP = "100.79.80.95";
     macbookTailscaleIP = "100.65.50.98";
-    # MiniPC의 MagicDNS FQDN — Tailscale Funnel/serve의 HTTPS 이름이자 MCP OAuth issuer (tailscale status --self --json .Self.DNSName)
+    # MiniPC의 MagicDNS FQDN — tailnet 전용 MCP 승인 화면의 HTTPS 이름
     minipcTailnetFqdn = "greenhead-minipc.tail420ece.ts.net";
 
     # 서비스 포트
@@ -24,10 +24,10 @@
       ankiHelperLab = 18766; # 격리 검증 프로필의 sync/스냅샷 헬퍼 애드온
       ankiConnectMain = 8765; # 운영 프로필의 AnkiConnect
       ankiHelperMain = 8766; # 운영 프로필의 sync/스냅샷 헬퍼 애드온
-      # 원격 MCP 서버 (loopback 전용 — Tailscale이 프록시한다): 8443 Funnel → ankiMcp, 9443 tailnet serve → ankiMcpApproval
+      # 원격 MCP 서버 (loopback 전용): Cloudflare Tunnel → ankiMcp, 9443 tailnet Serve → ankiMcpApproval
       ankiMcp = 8790;
       ankiMcpApproval = 8791;
-      ankiMcpPublic = 8443; # Funnel 허용 포트는 443/8443/10000. 443은 기존 Caddy의 tailnet 인그레스 전용이다.
+      ankiMcpLegacyFunnel = 8443; # 이전 공개 경로 제거 전용. 443은 기존 Caddy의 tailnet 인그레스 전용이다.
       ankiMcpApprovalPublic = 9443; # Serve는 임의 HTTPS 포트를 지원한다. Funnel 허용 목록 밖의 tailnet 전용 승인 포트.
       # ts-serve(dev 미리보기) 전용 tailnet HTTPS 포트 — MCP·승인·Caddy와 별개로 소유한다.
       tailscaleDevPreviewHttps = 10000;
@@ -79,6 +79,8 @@
   # ═══════════════════════════════════════════════════════════════
   ankiMcp = {
     user = "anki-mcp"; # anki-host와 다른 유저 — 컬렉션 디렉터리(0700)에 닿지 않는다 (결정 15)
+    publicHostname = "anki-mcp.greenhead.dev";
+    tunnelId = "3647ce03-2db1-4510-9c88-c84deb42b0bd";
     accessTokenTtlSecs = 3600;
     refreshTokenTtlSecs = 2592000; # 30일 — 클라이언트가 조용히 갱신하는 기간
     refreshMaxRotations = 4096; # grant별 재사용 탐지 기록 상한. 초과 시 grant를 철회하고 재승인한다

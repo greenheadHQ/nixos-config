@@ -42,15 +42,16 @@ let
       "${subdomains.karakeep}.${base}:307:/"
     ];
 
-  # Funnel 뒤 앱(anki-mcp)은 위 목록에 넣을 수 없다 — 노드 자신이 자기 tailnet IP의 Serve 포트에 접속하면
-  # tailscaled가 로컬 접속의 TLS를 거부한다(2026-09-07 실측: curl 35). 앱은 loopback으로, 인터넷 입구 자체는 아래
-  # funnel 배선 검사로 본다. 형식: "EXPECTED_CODE|URL" (URL에 콜론이 있어 구분자는 |)
+  # 로컬 앱과 인터넷 입구를 각각 검사한다. 공개 Cloudflare 주소에는 tailnet --resolve를 적용하지 않는다.
   loopbackEndpoints = lib.optionals config.homeserver.ankiMcp.enable [
-    # OAuth 메타데이터는 인증 없이 200이어야 클라이언트가 등록을 시작할 수 있다 (Host 검사 없는 라우트)
     "200|http://127.0.0.1:${toString config.homeserver.ankiMcp.port}/.well-known/oauth-authorization-server"
   ];
-  # 비어 있으면 funnel 배선 검사를 건너뛴다
-  funnelFqdn = lib.optionalString config.homeserver.ankiMcp.enable constants.network.minipcTailnetFqdn;
+  publicEndpoints = lib.optionals config.homeserver.ankiMcp.enable [
+    "200|https://${constants.ankiMcp.publicHostname}/.well-known/oauth-authorization-server"
+    "401|https://${constants.ankiMcp.publicHostname}/mcp"
+    "404|https://${constants.ankiMcp.publicHostname}/authorize"
+  ];
+  approvalFqdn = lib.optionalString config.homeserver.ankiMcp.enable constants.network.minipcTailnetFqdn;
 
   smokeScript = pkgs.writeShellApplication {
     name = "homeserver-smoke-test";
@@ -60,7 +61,7 @@ let
       findutils
       jq
       systemd # failed 유닛 검출(systemctl --failed)
-      tailscale # funnel 배선 검사(tailscale funnel status)
+      tailscale # 승인 배선과 잔여 Funnel 검사
     ];
     text = ''
       # shellcheck source=/dev/null
@@ -119,8 +120,8 @@ let
         check "HTTP ''${DOMAIN}''${PATH_SUFFIX} = ''${EXPECTED_CODE} (got ''${HTTP_CODE})" "$RESULT"
       done
 
-      # ─── 1b. loopback 앱 헬스체크 (Funnel 뒤 앱 — 노드 자신은 serve 주소로 접속할 수 없다) ───
-      for endpoint in $LOOPBACK_ENDPOINT_LIST; do
+      # ─── 1b. loopback 앱과 공개 Cloudflare 입구 헬스체크 ───
+      for endpoint in $LOOPBACK_ENDPOINT_LIST $PUBLIC_ENDPOINT_LIST; do
         EXPECTED_CODE="''${endpoint%%|*}"
         URL="''${endpoint#*|}"
         HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" 2>/dev/null) || HTTP_CODE="000"
@@ -129,21 +130,20 @@ let
         check "HTTP ''${URL} = ''${EXPECTED_CODE} (got ''${HTTP_CODE})" "$RESULT"
       done
 
-      # ─── 1c. Tailscale Funnel 배선 — Caddy 443 보존, 승인 포트 tailnet 전용 (plan 030 STOP 6의 일일 안전망) ───
-      # 배선 유닛(anki-mcp-tailscale)이 시작 시점에 같은 판정을 하지만, 그 뒤 수동 `tailscale funnel` 조작으로
-      # 다른 포트가 공개되거나 443을 가로채면 매일 도는 여기서도 검출한다.
-      if [ -n "$FUNNEL_FQDN" ]; then
-        FUNNEL_STATUS=$(tailscale serve status --json 2>/dev/null || true)
+      # ─── 1c. 승인 배선 — Caddy 443 보존, 이전 8443 제거, 모든 Funnel 비활성 (STOP 6) ───
+      # 시작 뒤 수동 조작으로 다른 포트가 공개되거나 443을 가로채는 이탈도 매일 검출한다.
+      if [ -n "$APPROVAL_FQDN" ]; then
+        SERVE_STATUS=$(tailscale serve status --json 2>/dev/null || true)
         RESULT=0
-        jq -e --arg public "$FUNNEL_FQDN:$FUNNEL_PUBLIC_PORT" --arg approval "$FUNNEL_FQDN:$FUNNEL_PRIVATE_PORT" \
-          --arg public_port "$FUNNEL_PUBLIC_PORT" --arg approval_port "$FUNNEL_PRIVATE_PORT" \
-          --arg public_target "$FUNNEL_PUBLIC_TARGET" --arg approval_target "$FUNNEL_PRIVATE_TARGET" '
-            .TCP["443"] == null and .AllowFunnel[$public] == true and .AllowFunnel[$approval] != true and
-            all(.AllowFunnel | to_entries[]; .value != true or .key == $public) and
-            .TCP[$public_port].HTTPS == true and .TCP[$approval_port].HTTPS == true and
-            .Web[$public].Handlers["/"].Proxy == $public_target and .Web[$approval].Handlers["/"].Proxy == $approval_target
-          ' >/dev/null <<<"$FUNNEL_STATUS" || RESULT=1
-        check "Tailscale funnel wiring (443 reserved for Caddy, only ''${FUNNEL_PUBLIC_PORT} Funnel on, ''${FUNNEL_PRIVATE_PORT} tailnet-only)" "$RESULT"
+        jq -e --arg approval "$APPROVAL_FQDN:$APPROVAL_PORT" \
+          --arg legacy_port "$LEGACY_FUNNEL_PORT" --arg approval_port "$APPROVAL_PORT" \
+          --arg approval_target "$APPROVAL_TARGET" '
+            .TCP["443"] == null and .TCP[$legacy_port] == null and
+            all((.AllowFunnel // {}) | to_entries[]; .value != true) and
+            .TCP[$approval_port].HTTPS == true and
+            .Web[$approval].Handlers["/"].Proxy == $approval_target
+          ' >/dev/null <<<"$SERVE_STATUS" || RESULT=1
+        check "Tailscale approval wiring (443 reserved for Caddy, no Funnel, ''${APPROVAL_PORT} tailnet-only)" "$RESULT"
       fi
 
       # ─── 2. 백업 신선도 검증 (활성 백업만, 비활성 서비스 false positive 방지) ───
@@ -265,11 +265,11 @@ in
         BACKUP_MAX_AGE = toString cfg.backupMaxAgeHours;
         ENDPOINT_LIST = builtins.concatStringsSep " " endpoints;
         LOOPBACK_ENDPOINT_LIST = builtins.concatStringsSep " " loopbackEndpoints;
-        FUNNEL_FQDN = funnelFqdn;
-        FUNNEL_PUBLIC_PORT = toString constants.network.ports.ankiMcpPublic;
-        FUNNEL_PRIVATE_PORT = toString constants.network.ports.ankiMcpApprovalPublic;
-        FUNNEL_PUBLIC_TARGET = lib.optionalString config.homeserver.ankiMcp.enable "http://127.0.0.1:${toString config.homeserver.ankiMcp.port}";
-        FUNNEL_PRIVATE_TARGET = lib.optionalString config.homeserver.ankiMcp.enable "http://127.0.0.1:${toString config.homeserver.ankiMcp.approvalPort}";
+        PUBLIC_ENDPOINT_LIST = builtins.concatStringsSep " " publicEndpoints;
+        APPROVAL_FQDN = approvalFqdn;
+        LEGACY_FUNNEL_PORT = toString constants.network.ports.ankiMcpLegacyFunnel;
+        APPROVAL_PORT = toString constants.network.ports.ankiMcpApprovalPublic;
+        APPROVAL_TARGET = lib.optionalString config.homeserver.ankiMcp.enable "http://127.0.0.1:${toString config.homeserver.ankiMcp.approvalPort}";
       };
     };
 

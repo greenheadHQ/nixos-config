@@ -13,7 +13,7 @@ let
   # 특정 프로젝트에 비종속 — dev 포트만 인자로 받는다 (가변 포트).
   #
   # 범위 주의: tailscale serve config는 "노드 전역" 상태다. 8443·9443은 anki-mcp-tailscale 유닛이
-  # 소유하므로(원격 MCP Funnel·승인 화면), 이 helper는 전용 HTTPS 포트(previewPort) 한 칸만 만진다 —
+  # 소유하므로(이전 Funnel 제거·승인 화면), 이 helper는 전용 HTTPS 포트(previewPort) 한 칸만 만진다 —
   # <port> 노출은 그 칸을 갱신하고 `off`는 그 칸만 끈다. 노드의 모든 serve config를 지우는
   # `tailscale serve reset`은 MCP 배선까지 지우므로 helper에 두지 않는다.
   #
