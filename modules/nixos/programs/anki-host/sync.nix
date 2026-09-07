@@ -20,11 +20,11 @@ let
   cfg = config.homeserver.ankiHost;
   inherit (constants.ankiHost) user;
   h = import ./helper-script.nix { inherit config pkgs constants; };
-  inherit (h) a stateRoot;
+  inherit (h) ankiHost stateRoot;
   syncInstances = lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances;
   pow2 = k: lib.foldl' (x: _: x * 2) 1 (lib.range 1 k);
   # 지수 백오프 합 — 스크립트는 attempt 1..maxRetries−1 뒤에 backoff×2^(attempt−1)만큼 대기한다: backoff × (2^(maxRetries−1) − 1)
-  backoffTotalSecs = a.backoffSecs * (pow2 (a.maxRetries - 1) - 1);
+  backoffTotalSecs = ankiHost.backoffSecs * (pow2 (ankiHost.maxRetries - 1) - 1);
   # 타임아웃 사다리 바깥 계층 — 스크립트 최악 실행 시간을 constants.ankiHost 값에서 그대로 계산한다 (eval AH8이 독립 재계산):
   #   준비 대기 tries×(probe+wait)
   # + busy 응답 busyRetries×busyWait — 409는 애드온이 락 대기 busyWait 뒤 즉시 돌려준다. busy 예산은 스크립트 전체에서
@@ -33,9 +33,9 @@ let
   # + sync 시도 maxRetries×curl + 백오프 합 + 여유
   unitTimeoutSecs =
     h.readyWorstSecs
-    + a.busyRetries * a.helperBusyWaitSecs
-    + (a.busyRetries - 1) * a.busyRetrySecs
-    + a.maxRetries * a.helperCurlMaxTimeSecs
+    + ankiHost.busyRetries * ankiHost.helperBusyWaitSecs
+    + (ankiHost.busyRetries - 1) * ankiHost.busyRetrySecs
+    + ankiHost.maxRetries * ankiHost.helperCurlMaxTimeSecs
     + backoffTotalSecs
     + 60;
 
@@ -58,8 +58,9 @@ let
 
     # 공용 헬퍼 env(helper-script.nix) + 이 스크립트만 요구하는 값
     environment = h.helperEnv // {
-      MAX_RETRIES = toString a.maxRetries;
-      BACKOFF_SECS = toString a.backoffSecs;
+      MAX_RETRIES = toString ankiHost.maxRetries;
+      BACKOFF_SECS = toString ankiHost.backoffSecs;
+      GUARD_MIN_RETAIN_PCT = toString ankiHost.syncGuardMinRetainPct;
       HELPER_PORT = toString inst.helperPort;
       STATE_DIR = "${stateRoot}/${name}";
       INSTANCE = name;

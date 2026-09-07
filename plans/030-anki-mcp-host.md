@@ -25,8 +25,8 @@
 - **Depends on**: 024 (soft — AnkiWeb 계정·서버 컬렉션이 존재해야 Download 가능)
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
-- **Execution**: IN PROGRESS — PR 1 구현·MiniPC 배포·격리 검증(Step 1~13 중 DA 반영까지) 완료, Step 14 운영자 게이트 대기
-- **Plan DA**: R1 COMPLETE (finding 21건 전부 CONFIRMED·반영, 롤아웃 계약 2건은 운영자 결정 "계획을 구현에 맞춰 갱신"), R2 COMPLETE (finding 19건 전부 CONFIRMED·반영 — 방향 모드 제거, 복원 절차 계약, sync 계층 단일화, 타임아웃 단일 소스, lab 폐기 절차), R3 COMPLETE (16건: 15 CONFIRMED·1 NOT_AN_ISSUE — 14건 반영: 준비·재시도 상수 단일 소스와 유닛 예산 재계산, /status 즉시 응답 분리, import 구성 시점 게이트, export 덮어쓰기 거부, 복구점 미러·정리 코드 PR 2b로 이관, 인스턴스 enable 옵션 제거, result 어휘 표; 1건 REPLAN_REQUIRED(MCP 유저·상태 파일 접근)는 #1306에 배출), R4 COMPLETE (19건 전부 CONFIRMED·반영 — lab 수명을 PR 2b까지로, 준비됨=로그인 판정 확정, /status 투영 축소, running 상태·요청–결과 대응, busy 예산 스크립트 전체 1회·백오프 합 파생, 애드온 타임아웃 전부 env, allowImport 옵션+배타 assertion, user·profile 옵션 제거, 미디어 대기 제거, 문서 정합), R5 COMPLETE (13건: 12 CONFIRMED·1 NOT_AN_ISSUE — R4 편집이 애드온 `required` 바인딩을 조건 블록 안으로 밀어 넣은 CRITICAL 결함 복원, 상태 파일 runId 회차 식별, collection-empty 알림, 헬퍼 배선 공용 파일 + eval의 `${VAR:?}` 요구 집합 대조, 시크릿 인벤토리·문서 정합). 재검증 라운드(R6, 위임 연장 1회차) 대기
+- **Execution**: IN PROGRESS — Step 13 진행 중(Plan DA 루프 종료). 다음: PR 1 생성 → PR DA(강도는 운영자 결정) → 머지 → 그 뒤 Step 14 운영자 게이트(시크릿 값 투입은 머지 뒤에 한다)
+- **Plan DA**: R1 COMPLETE (finding 21건 전부 CONFIRMED·반영, 롤아웃 계약 2건은 운영자 결정 "계획을 구현에 맞춰 갱신"), R2 COMPLETE (finding 19건 전부 CONFIRMED·반영 — 방향 모드 제거, 복원 절차 계약, sync 계층 단일화, 타임아웃 단일 소스, lab 폐기 절차), R3 COMPLETE (16건: 15 CONFIRMED·1 NOT_AN_ISSUE — 14건 반영: 준비·재시도 상수 단일 소스와 유닛 예산 재계산, /status 즉시 응답 분리, import 구성 시점 게이트, export 덮어쓰기 거부, 복구점 미러·정리 코드 PR 2b로 이관, 인스턴스 enable 옵션 제거, result 어휘 표; 1건 REPLAN_REQUIRED(MCP 유저·상태 파일 접근)는 #1306에 배출), R4 COMPLETE (19건 전부 CONFIRMED·반영 — lab 수명을 PR 2b까지로, 준비됨=로그인 판정 확정, /status 투영 축소, running 상태·요청–결과 대응, busy 예산 스크립트 전체 1회·백오프 합 파생, 애드온 타임아웃 전부 env, allowImport 옵션+배타 assertion, user·profile 옵션 제거, 미디어 대기 제거, 문서 정합), R5 COMPLETE (13건: 12 CONFIRMED·1 NOT_AN_ISSUE — R4 편집이 애드온 `required` 바인딩을 조건 블록 안으로 밀어 넣은 CRITICAL 결함 복원, 상태 파일 runId 회차 식별, collection-empty 알림, 헬퍼 배선 공용 파일 + eval의 `${VAR:?}` 요구 집합 대조, 시크릿 인벤토리·문서 정합). R6 COMPLETE (15건 전부 CONFIRMED·반영 — loopback 무인증 AnkiConnect 잔여 위험을 CIR·결정 1에 기록하고 normal sync에 급감 게이트, 복원 절차의 상태 파일 초기화 단계와 STOP 9 예외, 결정 13 호출자 규칙을 systemctl 실측 대조로, full-sync-required exit 1, smoke-test 백업 신선도 등록, backup 유닛 쓰기 경로 축소, AH8 분할, 문서 정합). 루프 종료 `termination_type=USER_STOP`(운영자 지시 2026-09-07: "점점 YAGNI성 꼬투리 리뷰만 나온다" — R6 반영분은 독립 재검증 없이 walkthrough·배포 실측으로만 확인). 미해결: R6 write phase delta의 독립 리뷰 부재
 - **PR DA**: PENDING (PR 1·PR 2 각각 FULL, Opus 5 전용 — 운영자 지시: Codex quota 없음)
 
 ## Why this matters
@@ -59,7 +59,11 @@
 
 결정 14건의 정본은 이슈 #1306 "결정" 표다. 구현에 직접 걸리는 불변식만 여기에 둔다.
 
-1. AnkiConnect는 loopback 전용, API 키 없음(Nix store bake 시 평문 노출). MCP 서버만 접근.
+1. AnkiConnect는 loopback 전용, API 키 없음(Nix store bake 시 평문 노출). MCP 서버만 접근한다는 것은 배선으로 강제되는
+   속성이 아니라 전제다 — **잔여 위험**: loopback은 이 호스트에서 격리가 아니므로(`--network=host` 컨테이너·모든 로컬 계정)
+   무인증 AnkiConnect의 파괴 액션에 닿는 주체는 "MiniPC에서 코드를 실행할 수 있는 모든 것"이고, 손상은 15분 타이머로
+   AnkiWeb 정본에 확정된다. 완화는 결정 3의 급감 게이트 + 일일 백업. `PrivateNetwork`는 AnkiWeb egress 때문에 불가.
+   API 키를 파일에서 읽는 애드온 패치·전용 네임스페이스는 PR 2에서 MCP 서비스 유저·그룹(결정 15)과 함께 재검토한다.
 2. sync는 애드온이 `col.sync_collection`을 직접 호출한다. AnkiConnect `sync` 액션(GUI 다이얼로그)은 쓰지 않는다.
 3. full sync 방향 결정은 헬퍼에 하나뿐이다: 로컬이 비어 있고 서버가 있을 때의 Download — **운영자가 부트스트랩
    유닛을 명시 실행할 때만** (타이머는 빈 컬렉션의 full sync 요구를 알림 없이 `bootstrap-pending`으로 기록).
@@ -68,6 +72,11 @@
    full sync를 유발하는 도구(노트 타입 구조 변경 등, 운영자 결정 "고지·동의 후 실행")는 PR 2b에서 노출하며, 그 전에
    Upload 경로를 root 소유 1회용 승인 파일 게이트 + 사전 검사(직전 성공 sync 스냅샷 대비 노트·revlog 감소 없음,
    복구점 생성 성공)와 함께 별도 설계한다. MCP "지금 동기화"는 mode를 클라이언트 인자로 받지 않는다(normal 고정).
+   **급감 게이트**(normal 경로에도 적용): sync 스크립트가 직전 성공 뒤의 로컬 노트·revlog(`lastSuccessCounts`)의
+   `constants.ankiHost.syncGuardMinRetainPct`%를 하한으로 헬퍼에 넘기고, 헬퍼는 로컬이 비어 있지 않은데 하한 아래면
+   `sync_collection`을 부르지 않고 `guard-tripped`를 돌려준다 → `local-loss-suspected` + 알림(c) + exit 1 (STOP 10). 정당한 대량
+   삭제였다면 원인 확인 후 `sync-status.json`을 지워 해제한다(성공 이력 초기화 — 다음 성공부터 게이트가 다시 선다). PR 2b의
+   파괴 도구·대량 변경은 이 게이트를 전제로 설계한다(임계값을 넘는 정당한 삭제는 복구점 + 해제 절차를 함께 안내).
 4. 알림 본문에 카드 내용·자격·토큰을 넣지 않는다. 한국어.
 5. 서버 코드에 개인 학습 규칙(덱 이름·태그·배치 규칙)을 넣지 않는다. 범용 도구.
 6. Funnel은 MCP 포트(443)만. 승인 화면은 8443 serve(tailnet 전용). 인바운드 방화벽 포트는 열지 않는다.
@@ -92,10 +101,13 @@
 13. sync의 운영 계층(상태 파일·알림·결과 분류)은 `anki-host-sync` 스크립트가 단일 소유한다. 헬퍼 `/sync`의
     호출자는 이 스크립트뿐이며, PR 2의 "지금 동기화"는 헬퍼를 직접 부르지 않고 `anki-host-sync-main.service`를
     트리거한다(polkit 규칙으로 MCP 서비스 유저에게 그 유닛의 start만 허용). 요청–결과 대응: 스크립트는 락을 잡은 직후
-    `result: running`을 기록하고 모든 기록에 회차 식별자 `runId`(systemd INVOCATION_ID)·`runStartedAt`을 싣는다. 호출자는
-    트리거 **전에** 상태 파일을 읽어 `result == running`이면 새 회차가 생기지 않는다(systemd가 진행 중인 job에 합류)는 사실을
-    그대로 안내하고, 아니면 트리거 전 `runId`를 기억해 `runId`가 바뀌고 `result ≠ running`일 때만 그 회차의 결과로 인정한다
-    (폴링). `lastAttemptAt`은 마지막 기록 시각이라 회차 식별에 쓰지 않는다. 스키마와 어휘는 `anki-host-sync.sh` 상단 표.
+    `result: running`을 기록하고 모든 기록에 회차 식별자 `runId`(systemd INVOCATION_ID)·`runStartedAt`을 싣는다. 상태 파일만으로는
+    "실행 중"과 "죽은 흔적"(SIGKILL·전원 손실 뒤 남은 `running`)을 구분할 수 없으므로 호출자는 유닛을 실측해 대조한다 —
+    `systemctl show -p ActiveState,InvocationID anki-host-sync-main.service`: 유닛이 active이고 InvocationID == `runId`면 진행 중
+    (새 회차가 생기지 않는다는 사실을 그대로 안내), 유닛이 inactive인데 `result == running`이면 죽은 흔적(트리거 가능). 트리거 뒤에는
+    트리거 전 `runId`를 기억해 `runId`가 바뀌고 `result ≠ running`일 때 그 회차의 결과로 인정하고(폴링), 유닛이 inactive로 돌아왔는데
+    `runId`가 그대로면 건너뛴 회차(락 경합·ConditionPathExists 스킵)이므로 무한 폴링 대신 그 사실을 알린다. `lastAttemptAt`은
+    마지막 기록 시각이라 회차 식별에 쓰지 않는다. 스키마와 어휘는 `anki-host-sync.sh` 상단 표.
 14. 타임아웃 사다리(애드온 락 대기·조회·메인 스레드 < 스크립트 curl < systemd 유닛)와 스크립트의 준비 대기·재시도 상수는
     `constants.ankiHost`가 단일 소스다. 모듈이 env로 스크립트에 주입하고 같은 값으로 유닛 TimeoutStartSec을
     계산하며, 스크립트는 env가 없으면 기본값 없이 실패한다. 애드온 버전도 `default.nix`의 한 바인딩이 nix 파생
@@ -233,12 +245,17 @@
 8. 운영자가 시크릿 값 투입·Mac 동기화·ACL 변경을 아직 하지 않았다 — 해당 Step 대기. 특히 자격 투입 전에
    부트스트랩 유닛을 실행하지 않는다. 헬퍼 `/sync`는 `anki-host-sync` 스크립트 외의 호출자를 두지 않는다(결정 13).
 9. 상태 파일 `result`가 `collection-empty`다(성공 이력이 있는 인스턴스의 컬렉션이 비었다 — 프로필 소실·좀비 잠금 의심).
-   원인을 확인하기 전에 부트스트랩을 재실행하지 않는다(재실행은 서버본을 내려받아 사고 흔적을 덮는다).
+   원인을 확인하기 전에 부트스트랩을 재실행하지 않는다(재실행은 서버본을 내려받아 사고 흔적을 덮는다). **예외**: 복구점
+   복원 절차(Maintenance notes)를 수행 중이라면 프로필을 의도적으로 비운 것이므로 STOP이 아니다 — 절차 (4)대로 상태 파일을
+   함께 지웠다면 이 값은 나오지 않는다.
+10. 상태 파일 `result`가 `local-loss-suspected`다(급감 게이트, 결정 3) — miniPC 로컬에서 노트·revlog가 크게 줄었다. 무엇이
+    바꿨는지(AnkiConnect 호출 주체, journal) 확인하기 전에 게이트를 해제(`sync-status.json` 삭제)하지 않는다.
 
 ## 재개 절차 (다른 기기·새 세션)
 
 1. `gh issue view 1306 --repo greenheadHQ/nixos-config --comments`로 최신 진행 댓글을 읽는다.
-2. `git fetch origin feat/anki-mcp-host` 후 `wt feat/anki-mcp-host --if-exists=reuse`로 워크트리 진입.
+2. `git fetch origin feat/anki-mcp-host` 후 `cd "$(wt feat/anki-mcp-host --if-exists=reuse)"`로 워크트리 진입 — 비대화형 셸에서
+   `wt`는 경로만 출력하고 cd하지 않는다(CLAUDE.md Worktree 절). 워크트리 디렉터리 이름은 `feat_anki-mcp-host`다.
 3. 이 plan의 Drift check와 Status를 확인한다. Status의 Execution·DA 행이 최신 진행 상태다.
 4. MiniPC 실측: "Commands you will need"의 인스턴스 상태·헬퍼 상태·sync 상태 세 명령으로 어느 Step까지 적용됐는지 판정한다
    (`no-credentials` = Step 14 전, `bootstrap-pending` = Step 15 전, `success` = 운영 중). 이 세 값 외의 `result`는 여기서
@@ -260,9 +277,11 @@
 - **복구점 복원 절차** (운영 인스턴스 `main`): 헬퍼에는 서버를 덮어쓰는 모드가 없으므로 복원은 GUI 경로로 한다 —
   (1) `systemctl stop anki-host-main` (2) Mac Anki에서 격리 프로필을 만들어 복구점 `.colpkg`를 가져와 내용을 확인
   (anki-study `docs/recovery.md`의 복원 원칙과 같다) (3) 확인 후 실제 프로필에 가져오기(전체 컬렉션 교체) → AnkiWeb에
-  **Upload** 선택 (4) MiniPC `main`의 프로필 디렉터리(`/var/lib/anki-host/main/Anki2/main/` — 프로필 이름은 인스턴스 이름과 같다)를
-  지우고 서비스 시작 →
-  `anki-host-sync-main-bootstrap` 재실행(Download). 미디어는 불변이라 일일 백업본의 미디어로 보완한다.
+  **Upload** 선택 (4) `systemctl stop anki-host-main` 상태에서 MiniPC `main`의 프로필 디렉터리(`/var/lib/anki-host/main/Anki2/main/`
+  — 프로필 이름은 인스턴스 이름과 같다)**와 상태 파일** `/var/lib/anki-host/main/sync-status.json`을 함께 지운다 — 상태 파일은
+  프로필 밖에 있어 `lastSuccessAt`이 살아남으면 서비스 시작 뒤 첫 타이머 회차가 `collection-empty`(STOP 9)를 내고 부트스트랩을
+  막는다. 지우면 다음 회차는 `bootstrap-pending`으로 조용히 대기한다 (5) 서비스 시작 → `anki-host-sync-main-bootstrap` 재실행
+  (Download). 미디어는 불변이라 일일 백업본의 미디어로 보완한다.
 - `homeserver.ankiHost`를 통째로 끄는 날의 처분 계약: 상태 루트 `/var/lib/anki-host` 전체와 HDD `backups/anki-host`의 보존
   여부를 결정해 기록하고, `anki-host` 시스템 계정(`userdel`)까지 정리한다. NixOS는 선언이 사라져도 기존 데이터·계정을
   지우지 않는다 — #863의 미완 정리를 반복하지 않는다.

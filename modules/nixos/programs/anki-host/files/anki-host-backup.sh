@@ -17,7 +17,7 @@ CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
 
 # anki_helper_call_retry_busy <url> <json-payload> <max-time-secs>
 #   변경 작업 1회 호출 + busy 재시도. 409(busy)면 BUSY_RETRY_SECS 뒤 다시 시도하고, BUSY_RETRIES회째 busy면 그대로
-#   돌려준다(마지막 회차 뒤에는 대기하지 않는다). 호출자는 helper_busy로 "여전히 busy"를 판정한다.
+#   돌려준다(마지막 회차 뒤에는 대기하지 않는다). 항상 0을 돌려주므로 호출자는 helper_busy(예산 소진)·helper_ok로 결과를 본다.
 #   인스턴스당 한 번만 부른다 — 유닛 예산(backup.nix perInstanceSecs)이 그 전제로 계산된다.
 anki_helper_call_retry_busy() {
   local url="$1" payload="$2" max_time="$3" i
@@ -49,6 +49,12 @@ for entry in $INSTANCES; do
 
   payload="$(jq -n --arg path "${local_dir}/${file}" '{path: $path, include_media: true, legacy: true}')"
   anki_helper_call_retry_busy "${helper}/export" "$payload" "$HELPER_CURL_MAX_TIME"
+  if helper_busy; then
+    # busy 예산 소진 — 순서 대기지만 오늘 백업이 빠지는 것이므로 실패로 알린다 (sync와 달리 다음 회차가 내일이다)
+    echo "anki-host-backup[${name}]: helper still busy after retries ($(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"'))" >&2
+    failures="${failures} ${name}(busy)"
+    continue
+  fi
   if ! helper_ok; then
     echo "anki-host-backup[${name}]: export failed: $(helper_error)" >&2
     failures="${failures} ${name}(export)"

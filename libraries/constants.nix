@@ -57,10 +57,12 @@
     readyWaitTries = 24; # 준비 대기 최악 = tries × (probe + wait) = 24 × 15s = 6min (재배포·재부팅 직후 Anki 기동)
     readyWaitSecs = 5;
     readyProbeTimeoutSecs = 10; # /status는 메인 스레드를 타지 않으므로 짧아도 된다
-    maxRetries = 3; # sync 호출 재시도 (지수 백오프 backoffSecs, 2×, 4×)
+    maxRetries = 3; # sync 호출 시도 횟수 — 시도 사이 대기는 (maxRetries−1)회, backoffSecs부터 2배씩 (합 = backoffSecs × (2^(maxRetries−1) − 1))
     backoffSecs = 5;
     busyRetries = 3; # 409(다른 변경 작업 진행 중) 재시도 — 마지막 회차 뒤 대기 없음
     busyRetrySecs = 60;
+    # 급감 게이트 — 직전 성공 스냅샷 대비 로컬 노트·revlog가 이 비율 미만이면 sync 스크립트가 서버 병합을 막는다 (결정 1·3)
+    syncGuardMinRetainPct = 80;
   };
 
   # ═══════════════════════════════════════════════════════════════

@@ -8,23 +8,24 @@
   constants,
 }:
 let
-  a = constants.ankiHost;
+  inherit (constants) ankiHost;
   pushoverCredPath = config.age.secrets.pushover-anki.path;
 in
 {
-  inherit a pushoverCredPath;
+  inherit ankiHost pushoverCredPath;
   stateRoot = constants.paths.ankiHostState;
   # 준비 대기 최악 = tries × (probe + wait) — 두 유닛 예산의 공통 항
-  readyWorstSecs = a.readyWaitTries * (a.readyProbeTimeoutSecs + a.readyWaitSecs);
+  readyWorstSecs =
+    ankiHost.readyWaitTries * (ankiHost.readyProbeTimeoutSecs + ankiHost.readyWaitSecs);
 
   # helper-call.sh(준비 대기)와 두 스크립트가 공통으로 요구하는 값 — 스크립트는 env가 없으면 기본값 없이 실패한다
   helperEnv = {
-    HELPER_CURL_MAX_TIME = toString a.helperCurlMaxTimeSecs;
-    READY_WAIT_TRIES = toString a.readyWaitTries;
-    READY_WAIT_SECS = toString a.readyWaitSecs;
-    READY_PROBE_TIMEOUT = toString a.readyProbeTimeoutSecs;
-    BUSY_RETRIES = toString a.busyRetries;
-    BUSY_RETRY_SECS = toString a.busyRetrySecs;
+    HELPER_CURL_MAX_TIME = toString ankiHost.helperCurlMaxTimeSecs;
+    READY_WAIT_TRIES = toString ankiHost.readyWaitTries;
+    READY_WAIT_SECS = toString ankiHost.readyWaitSecs;
+    READY_PROBE_TIMEOUT = toString ankiHost.readyProbeTimeoutSecs;
+    BUSY_RETRIES = toString ankiHost.busyRetries;
+    BUSY_RETRY_SECS = toString ankiHost.busyRetrySecs;
   };
 
   # Anki 전용 Pushover 앱 토큰 (PUSHOVER_TOKEN=/PUSHOVER_USER=). 두 모듈이 같은 선언을 내고 모듈 시스템이 merge한다

@@ -19,6 +19,12 @@ let
 
   pushoverCredPath = config.age.secrets.pushover-system-monitor.path;
   serviceLib = import ../lib/service-lib.nix { inherit pkgs; };
+  # headless Anki 백업 대상 인스턴스 — anki-host/backup.nix와 같은 필터(backup.enable). 활성일 때만 신선도 검사
+  ankiBackupInstances = lib.optionals config.homeserver.ankiHost.enable (
+    builtins.attrNames (
+      lib.filterAttrs (_: inst: inst.backup.enable) config.homeserver.ankiHost.instances
+    )
+  );
 
   # 활성 서비스만 헬스체크 (비활성 서비스 false positive 방지)
   # 형식: "DOMAIN:EXPECTED_CODE:PATH"
@@ -132,6 +138,20 @@ let
           check "Karakeep backup exists" 1
         fi
       ''}
+
+      ${lib.concatMapStringsSep "\n" (name: ''
+        # anki-host ${name}: 인스턴스 디렉터리에 anki-host-${name}-*.colpkg (일일, 04:15)
+        LATEST_ANKI=$(find "$BACKUP_DIR/anki-host/${name}" -maxdepth 1 -name "anki-host-${name}-*.colpkg" \
+          -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
+        if [ -n "$LATEST_ANKI" ]; then
+          AGE_HOURS=$(( ($(date +%s) - $(stat -c %Y "$LATEST_ANKI")) / 3600 ))
+          RESULT=0
+          [ "$AGE_HOURS" -le "$BACKUP_MAX_AGE" ] || RESULT=1
+          check "Anki ${name} backup freshness (''${AGE_HOURS}h <= ''${BACKUP_MAX_AGE}h)" "$RESULT"
+        else
+          check "Anki ${name} backup exists" 1
+        fi
+      '') ankiBackupInstances}
 
       # ─── 3. 실패한 systemd 유닛 검출 ───
       # 알림 경로가 죽으면 유닛 실패가 아무 데도 통보되지 않는다 — 2026-08-16~25
