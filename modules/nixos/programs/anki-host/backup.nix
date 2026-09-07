@@ -1,8 +1,11 @@
 # modules/nixos/programs/anki-host/backup.nix
 # 인스턴스별 .colpkg 일일 백업 (헬퍼 /export → SSD backups/ → HDD). 복구점(restore-points/)의 미러·보존은
 # 생산자(MCP 도구)와 함께 PR 2b에서 도입한다 (plan 030 결정 11) — 이 모듈은 backups/만 다룬다.
-# 관례: oneshot + daily timer, ProtectSystem=strict + ReadWrite/ReadOnly 분리, 04:30/05:00/05:30과 겹치지 않는
-# 시각 — 타이머 배치의 정본은 `.claude/skills/running-containers/SKILL.md`의 "백업 타이머" 표이고 이 모듈도 거기 등록돼 있다.
+# 관례: oneshot + daily timer, ProtectSystem=strict, 04:30/05:00/05:30과 겹치지 않는 시각 — 타이머 배치의 정본은
+# `.claude/skills/running-containers/SKILL.md`의 "백업 타이머" 표이고 이 모듈도 거기 등록돼 있다.
+# 쓰기 경로는 HDD 백업 디렉터리와 각 인스턴스의 backups/(SSD 정리)뿐이다 — 원본은 파일이 아니라 헬퍼 /export라
+# 읽기 전용 소스 경로가 없고, 살아 있는 프로필·restore-points/는 이 유닛(root)에 열지 않는다.
+# 백업 신선도는 smoke-test.nix가 인스턴스별 최신 .colpkg mtime으로 검사한다.
 # 헬퍼 env·Pushover 시크릿·스크립트 결합은 sync.nix와 helper-script.nix를 공유한다.
 {
   config,
@@ -15,7 +18,7 @@
 let
   cfg = config.homeserver.ankiHost;
   h = import ./helper-script.nix { inherit config pkgs constants; };
-  inherit (h) a stateRoot;
+  inherit (h) ankiHost stateRoot;
   inherit (constants.paths) mediaData;
   backupDir = "${mediaData}/backups/anki-host";
   backupInstances = lib.filterAttrs (_: inst: inst.backup.enable) cfg.instances;
@@ -26,8 +29,8 @@ let
   # (409는 락 대기 busyWait 뒤 즉시 온다) + export 1회 curl + 복사·검사 여유 5min. constants.ankiHost 값에서 그대로 계산한다 (eval AH8).
   perInstanceSecs =
     h.readyWorstSecs
-    + (a.busyRetries - 1) * (a.helperBusyWaitSecs + a.busyRetrySecs)
-    + a.helperCurlMaxTimeSecs
+    + (ankiHost.busyRetries - 1) * (ankiHost.helperBusyWaitSecs + ankiHost.busyRetrySecs)
+    + ankiHost.helperCurlMaxTimeSecs
     + 300;
   unitTimeoutSecs = (builtins.length (builtins.attrNames backupInstances)) * perInstanceSecs + 60;
 
@@ -65,8 +68,8 @@ in
         ProtectSystem = "strict";
         ReadWritePaths = [
           backupDir
-          stateRoot
-        ];
+        ]
+        ++ map (name: "${stateRoot}/${name}/backups") (builtins.attrNames backupInstances);
         PrivateTmp = true;
         NoNewPrivileges = true;
       };

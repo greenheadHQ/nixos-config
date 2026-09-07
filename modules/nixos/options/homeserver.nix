@@ -372,7 +372,7 @@
       backupTime = lib.mkOption {
         type = lib.types.str;
         default = "*-*-* 04:15:00";
-        description = "OnCalendar time for the daily .colpkg backup of every instance to HDD";
+        description = "OnCalendar time for the daily .colpkg HDD backup of the instances with backup.enable";
       };
       retentionDays = lib.mkOption {
         type = lib.types.int;

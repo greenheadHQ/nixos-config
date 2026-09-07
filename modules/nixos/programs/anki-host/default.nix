@@ -24,6 +24,12 @@
 #     autoSync True→False (Anki의 열고/닫을 때 GUI sync 경로를 끄고 헬퍼 애드온만 sync한다).
 #     — numBackups·autoSync는 프로필 **최초 생성 시** prefs21.db에 쓰는 값이다(prefsBootstrap 가드 참조);
 #     tailscale-wait 미복원 (v1은 tailnet IP 바인딩 때문에 필요했고 loopback 전용인 지금은 근거가 없다).
+#   - 잔여 위험(plan 030 결정 1·3, DA 확인): loopback은 이 호스트에서 격리가 아니다 — --network=host 컨테이너(uptime-kuma)와
+#     모든 로컬 계정이 같은 127.0.0.1에 닿으므로 무인증 AnkiConnect의 파괴 액션(deleteNotes 등)의 접근 주체는 "MiniPC에서
+#     코드를 실행할 수 있는 모든 것"이고, 손상은 15분 타이머로 AnkiWeb 정본에 확정된다. 완화: sync 스크립트의 급감 게이트
+#     (직전 성공 대비 노트·revlog가 syncGuardMinRetainPct 미만이면 병합 중단·알림) + 일일 .colpkg 백업. PrivateNetwork는
+#     AnkiWeb egress가 필요해 불가. API 키를 파일에서 읽는 애드온 패치·전용 네임스페이스는 PR 2(MCP 서비스 유저·그룹,
+#     결정 15)와 함께 재검토한다.
 {
   config,
   pkgs,
@@ -37,7 +43,7 @@ let
   inherit (constants.ankiHost) user;
   stateRoot = constants.paths.ankiHostState;
   # 애드온 버전의 단일 소스 — nix 파생 version과 /status의 addon_version이 같은 값을 갖는다
-  addonVersion = "1.4.1";
+  addonVersion = "1.5.0";
   inherit (constants.ankiHost)
     helperMainTimeoutSecs
     helperBusyWaitSecs
