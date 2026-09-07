@@ -16,6 +16,9 @@ from collections import deque
 from typing import Any, Callable
 
 
+DRAIN_FACTOR = 4  # 413 전에 읽어 버리는 본문의 상한 배수 — 이보다 크면 응답만 보내고 끊는다
+
+
 def _json_response(status: int, error: str) -> tuple[dict[str, Any], dict[str, Any]]:
     body = json.dumps({"error": error}).encode()
     headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
@@ -50,6 +53,20 @@ class FunnelGuard:
         self._registrations.append(now)
         return True
 
+    async def _drain(self, receive: Any, already: int, announced: int | None) -> None:
+        """413을 보내기 전에 남은 본문을 읽어 버린다 — 읽지 않은 요청 데이터가 남은 소켓을 서버가 닫으면 RST가 나가
+        클라이언트가 응답을 받기 전에 연결이 끊긴다(실측). 상한의 몇 배를 넘는 본문은 읽지 않고 그냥 끊는다."""
+        budget = self._max_body * DRAIN_FACTOR - already
+        if announced is not None and announced > self._max_body * DRAIN_FACTOR:
+            return
+        while budget > 0:
+            message = await receive()
+            if message["type"] != "http.request":
+                return
+            budget -= len(message.get("body", b""))
+            if not message.get("more_body", False):
+                return
+
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
@@ -57,6 +74,7 @@ class FunnelGuard:
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
         length = headers.get("content-length")
         if length and length.isdigit() and int(length) > self._max_body:
+            await self._drain(receive, 0, int(length))
             for message in _json_response(413, "request body too large"):
                 await send(message)
             return
@@ -74,6 +92,7 @@ class FunnelGuard:
                 break
             body += message.get("body", b"")
             if len(body) > self._max_body:
+                await self._drain(receive, len(body), None)
                 for reply in _json_response(413, "request body too large"):
                     await send(reply)
                 return
