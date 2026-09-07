@@ -80,7 +80,10 @@ let
         exit 1
       fi
       # 이전 릴리스의 인터넷 입구를 먼저 닫는다. 다른 포트와 개발 미리보기는 건드리지 않는다.
-      timeout ${toString cmdTimeoutSecs} tailscale serve --https=${toString legacyFunnelPort} off
+      # ExecStop이 이미 지웠거나 새 노드면 off가 "handler does not exist"로 실패하므로 존재할 때만 제거한다.
+      if jq -e --arg legacy "${fqdn}:${toString legacyFunnelPort}" '.Web[$legacy].Handlers["/"] != null' >/dev/null <<<"$serve_json"; then
+        timeout ${toString cmdTimeoutSecs} tailscale serve --https=${toString legacyFunnelPort} off
+      fi
       # CIR: serve/funnel 기능이 tailnet에서 꺼져 있으면 tailscale CLI가 활성화 링크를 찍고 켜질 때까지 무한 대기한다
       #   (oneshot 유닛이 activating에 멈추고 switch가 블록된다) — timeout으로 끊고 fail-closed로 안내한다.
       if ! timeout ${toString cmdTimeoutSecs} tailscale serve --bg --https=${toString approvalPublicPort} "http://127.0.0.1:${toString cfg.approvalPort}"; then
