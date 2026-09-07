@@ -34,11 +34,15 @@
 
 let
   cfg = config.homeserver.ankiHost;
-  user = cfg.user;
+  inherit (constants.ankiHost) user;
   stateRoot = constants.paths.ankiHostState;
   # 애드온 버전의 단일 소스 — nix 파생 version과 /status의 addon_version이 같은 값을 갖는다
-  addonVersion = "1.3.0";
-  inherit (constants.ankiHost) helperMainTimeoutSecs;
+  addonVersion = "1.4.0";
+  inherit (constants.ankiHost)
+    helperMainTimeoutSecs
+    helperBusyWaitSecs
+    helperQueryTimeoutSecs
+    ;
   instances = cfg.instances;
   ankiwebCredPath = config.age.secrets.anki-ankiweb.path;
 
@@ -70,17 +74,19 @@ let
   # 첫 실행의 언어 선택 다이얼로그는 offscreen에서 닫을 수 없어 영원히 멈춘다 (과거 실측).
   # prefs21.db에 _global(firstRun=False)과 프로필 항목을 미리 써서 우회한다.
   # autoSync=False: Anki 자체의 열고/닫을 때 sync(GUI 경로)를 끄고 헬퍼 애드온만 sync한다.
+  # 프로필 이름은 인스턴스 이름과 같다 (상태 디렉터리·유닛·single-instance 키도 모두 인스턴스 이름 기준)
   prefsBootstrap =
-    inst:
-    pkgs.writeShellScript "anki-host-prefs-${inst.profile}" ''
+    name:
+    pkgs.writeShellScript "anki-host-prefs-${name}" ''
       set -eu
       base="$1"
-      mkdir -p "$base/${inst.profile}"      # 이 값들은 프로필 최초 생성 시에만 적용된다 — 기존 인스턴스에 반영하려면 prefs21.db를 지우거나(프로필 재생성)
-      # Anki 쪽에서 바꿔야 한다. 파일을 바꾸고 nrs만 해서는 아무 효과가 없다.
+      mkdir -p "$base/${name}"
+      # 아래 prefs 값(numBackups·autoSync 등)은 프로필 최초 생성 시에만 적용된다 — 기존 인스턴스에 반영하려면
+      # prefs21.db를 지우거나(프로필 재생성) Anki 쪽에서 바꿔야 한다. 파일을 바꾸고 nrs만 해서는 아무 효과가 없다.
       if [ -f "$base/prefs21.db" ]; then
         exit 0
       fi
-      ${pkgs.python3}/bin/python3 - "$base/prefs21.db" ${lib.escapeShellArg inst.profile} <<'PY'
+      ${pkgs.python3}/bin/python3 - "$base/prefs21.db" ${lib.escapeShellArg name} <<'PY'
       import pickle, random, sqlite3, sys, time
       db_path, profile = sys.argv[1], sys.argv[2]
       db = sqlite3.connect(db_path)
@@ -124,16 +130,18 @@ let
         ANKI_SINGLE_INSTANCE_KEY = "anki-host-${name}";
         ANKI_HOST_HELPER_PORT = toString inst.helperPort;
         ANKI_HOST_ADDON_VERSION = addonVersion;
-        # 타임아웃 사다리의 가장 안쪽 값 (constants.ankiHost) — 스크립트 curl·유닛 값은 이보다 크다
+        # 타임아웃 사다리의 안쪽 값들 (constants.ankiHost) — 스크립트 curl·유닛 값은 이보다 크다
         ANKI_HOST_MAIN_TIMEOUT_SECS = toString helperMainTimeoutSecs;
+        ANKI_HOST_BUSY_WAIT_SECS = toString helperBusyWaitSecs;
+        ANKI_HOST_QUERY_TIMEOUT_SECS = toString helperQueryTimeoutSecs;
         # 헬퍼의 /export·/import-colpkg는 이 아래 backups/(일일 백업 스테이징)·restore-points/(복구점)만 허용한다
         ANKI_HOST_STATE_DIR = stateDir;
       }
       // lib.optionalAttrs inst.sync.enable {
         ANKI_HOST_SYNC_CREDENTIALS = ankiwebCredPath;
       }
-      // lib.optionalAttrs (!inst.sync.enable) {
-        # 컬렉션 교체(/import-colpkg)는 AnkiWeb에 붙지 않는 격리 인스턴스에만 연다 — 구성 시점 결정
+      // lib.optionalAttrs inst.allowImport {
+        # 컬렉션 교체(/import-colpkg) 라우팅 — 구성 시점 결정. sync.enable과의 배타는 아래 assertion
         ANKI_HOST_ALLOW_IMPORT = "1";
       };
 
@@ -145,8 +153,8 @@ let
         StateDirectoryMode = "0700";
         RuntimeDirectory = "anki-host/${name}";
         RuntimeDirectoryMode = "0700";
-        ExecStartPre = "${prefsBootstrap inst} ${baseDir}";
-        ExecStart = "${ankiFor inst}/bin/anki -b ${baseDir} -p ${lib.escapeShellArg inst.profile}";
+        ExecStartPre = "${prefsBootstrap name} ${baseDir}";
+        ExecStart = "${ankiFor inst}/bin/anki -b ${baseDir} -p ${lib.escapeShellArg name}";
         Restart = "on-failure";
         RestartSec = 10;
         TimeoutStopSec = 60;
@@ -194,6 +202,12 @@ in
         assertion =
           lib.length (lib.filter (inst: inst.sync.enable) (builtins.attrValues cfg.instances)) <= 1;
         message = "homeserver.ankiHost: at most one instance may enable sync — there is a single AnkiWeb credential.";
+      }
+      {
+        # 컬렉션 교체 엔드포인트는 AnkiWeb에 붙는 인스턴스에 열지 않는다 — 운영 컬렉션이 loopback 무인증 호출로
+        # 통째로 교체되는 경로를 구성 시점에 차단한다 (loopback은 --network=host 컨테이너와 공유된다)
+        assertion = lib.all (inst: !(inst.allowImport && inst.sync.enable)) (builtins.attrValues instances);
+        message = "homeserver.ankiHost: allowImport and sync.enable are mutually exclusive — import is for isolated fixture instances only.";
       }
     ];
 

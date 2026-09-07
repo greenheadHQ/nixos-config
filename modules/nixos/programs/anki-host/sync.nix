@@ -17,18 +17,26 @@
 
 let
   cfg = config.homeserver.ankiHost;
-  user = cfg.user;
+  inherit (constants.ankiHost) user;
   stateRoot = constants.paths.ankiHostState;
   pushoverCredPath = config.age.secrets.pushover-anki.path;
   syncInstances = lib.filterAttrs (_: inst: inst.sync.enable) cfg.instances;
   a = constants.ankiHost;
-  # 타임아웃 사다리 바깥 계층 — 스크립트 최악 실행 시간을 constants.ankiHost 값에서 그대로 계산한다:
-  # 준비 대기 tries×(probe+wait) + sync 재시도 maxRetries×curl + 백오프 합(5+10) + busy 재시도 (busyRetries−1)×busySecs + 여유
+  pow2 = k: lib.foldl' (x: _: x * 2) 1 (lib.range 1 k);
+  # 지수 백오프 합 — 스크립트는 attempt 1..maxRetries−1 뒤에 backoff×2^(attempt−1)만큼 대기한다: backoff × (2^(maxRetries−1) − 1)
+  backoffTotalSecs = a.backoffSecs * (pow2 (a.maxRetries - 1) - 1);
+  # 타임아웃 사다리 바깥 계층 — 스크립트 최악 실행 시간을 constants.ankiHost 값에서 그대로 계산한다 (eval AH8이 독립 재계산):
+  #   준비 대기 tries×(probe+wait)
+  # + busy 응답 busyRetries×busyWait — 409는 애드온이 락 대기 busyWait 뒤 즉시 돌려준다. busy 예산은 스크립트 전체에서
+  #   busyRetries회이고 sync 재시도 회차와 무관하다 (anki-host-sync.sh의 busy_left)
+  # + busy 사이 대기 (busyRetries−1)×busySecs
+  # + sync 시도 maxRetries×curl + 백오프 합 + 여유
   unitTimeoutSecs =
     a.readyWaitTries * (a.readyProbeTimeoutSecs + a.readyWaitSecs)
-    + a.maxRetries * a.helperCurlMaxTimeSecs
-    + a.backoffSecs * 3
+    + a.busyRetries * a.helperBusyWaitSecs
     + (a.busyRetries - 1) * a.busyRetrySecs
+    + a.maxRetries * a.helperCurlMaxTimeSecs
+    + backoffTotalSecs
     + 60;
   # 스크립트가 받는 준비 대기·재시도 상수 — 위 계산과 같은 값 (스크립트는 env가 없으면 기본값 없이 실패한다)
   scriptEnv = {

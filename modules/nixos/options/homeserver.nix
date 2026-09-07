@@ -324,11 +324,6 @@
     };
     ankiHost = {
       enable = lib.mkEnableOption "headless Anki instances with loopback AnkiConnect and AnkiWeb sync helper";
-      user = lib.mkOption {
-        type = lib.types.str;
-        default = "anki-host";
-        description = "System user that owns every headless Anki instance";
-      };
       instances = lib.mkOption {
         description = "Headless Anki instances keyed by short name (state lives under constants.paths.ankiHostState, one subdirectory per instance)";
         default = { };
@@ -337,11 +332,6 @@
             { name, ... }:
             {
               options = {
-                profile = lib.mkOption {
-                  type = lib.types.str;
-                  default = name;
-                  description = "Anki profile name inside the instance base directory";
-                };
                 port = lib.mkOption {
                   type = lib.types.port;
                   description = "AnkiConnect port (always bound to 127.0.0.1)";
@@ -356,6 +346,11 @@
                     default = true;
                     description = "Include this instance in the daily .colpkg HDD backup";
                   };
+                };
+                allowImport = lib.mkOption {
+                  type = lib.types.bool;
+                  default = false;
+                  description = "Expose the helper's /import-colpkg (whole-collection replacement from a .colpkg under the instance state) — isolated fixture instances only; mutually exclusive with sync.enable";
                 };
                 sync = {
                   enable = lib.mkOption {

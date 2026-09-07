@@ -47,8 +47,12 @@
   #   < systemd TimeoutStartSec(sync.nix·backup.nix가 재시도 횟수·대기 예산을 곱해 계산)
   # ═══════════════════════════════════════════════════════════════
   ankiHost = {
-    helperMainTimeoutSecs = 1800; # 첫 전체 다운로드(컬렉션 수십 MB)도 이 안에 끝난다. 미디어는 별도 백그라운드
-    helperCurlMaxTimeSecs = 1900; # = main + 락 대기(애드온 BUSY_WAIT_SECS) + 여유. 스크립트는 이 값을 env로 받는다
+    user = "anki-host"; # 모든 headless 인스턴스·sync·백업 유닛의 서비스 유저 (배포 후 바꿀 수 없다 — 상태 디렉터리 소유권)
+    # 애드온 안쪽 값 (default.nix가 env로 주입)
+    helperBusyWaitSecs = 5; # 변경 작업 락 대기 — 넘기면 409. 409 응답 시간의 상한이기도 하다 (sync.nix 예산 계산)
+    helperQueryTimeoutSecs = 120; # /status/full의 메인 스레드 대기 (counts·media 조회)
+    helperMainTimeoutSecs = 1800; # 변경 작업의 메인 스레드 상한 — 첫 전체 다운로드(컬렉션 수십 MB)도 이 안에 끝난다
+    helperCurlMaxTimeSecs = 1900; # ≥ helperMainTimeoutSecs + helperBusyWaitSecs + 여유 (eval AH8이 검사). 스크립트가 env로 받는다
     # 스크립트 준비 대기·재시도 — 스크립트에 env로 주입되고 같은 값으로 유닛 TimeoutStartSec을 계산한다
     readyWaitTries = 24; # 준비 대기 최악 = tries × (probe + wait) = 24 × 15s = 6min (재배포·재부팅 직후 Anki 기동)
     readyWaitSecs = 5;

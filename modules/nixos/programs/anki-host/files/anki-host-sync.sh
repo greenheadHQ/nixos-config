@@ -11,6 +11,7 @@
 # 서버를 덮어쓰는 방향은 헬퍼에 없다.
 #
 # 상태 파일 sync-status.json의 `result` 어휘 (이 스크립트가 유일한 생산자 — 재개 절차·MCP가 이 표를 읽는다):
+#   running             이 회차가 락을 잡고 실행 중 (lastAttemptAt = 시작 시각). 유닛이 죽으면 이 값이 남는다 → journalctl
 #   no-credentials      AnkiWeb 자격 값이 아직 없다 — 운영자 게이트(plan Step 14) 전의 정상 상태. 알림 없음
 #   bootstrap-pending   로그인은 됐으나 로컬이 비어 있어 full sync가 요구됨 — 부트스트랩 유닛(Step 15) 대기. 알림 없음
 #   success             normal 병합 또는 부트스트랩 다운로드 완료. `sync` 필드에 전후 스냅샷
@@ -20,6 +21,9 @@
 #   full-sync-required  로컬이 비어 있지 않은데 full sync 요구 — 방향 자동 결정 금지, 알림(c)
 #   error               헬퍼 오류·재시도 소진 — 알림(c)
 # 위 값 중 no-credentials → bootstrap-pending → success 세 값이 진행 단계를 가리키고, 나머지는 운영 중 일시 상태다.
+# 요청–결과 대응(plan 결정 13): 호출자(MCP "지금 동기화")는 유닛을 트리거한 시각을 기억하고, lastAttemptAt이 그 시각
+# 이후이며 result가 running이 아닐 때만 그 회차의 결과로 인정한다. 락 경합으로 건너뛴 회차(아래 flock)는 파일을 건드리지
+# 않으므로 호출자는 실행 중인 회차의 running을 보게 된다.
 # (앞에 pushover.sh와 files/lib/helper-call.sh가 텍스트 결합되어 pushover_send·anki_helper_* 가 정의돼 있다.)
 
 MODE="normal"
@@ -45,6 +49,8 @@ ALERT_DEDUPE_SECS=86400
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
+  # 타이머 유닛과 부트스트랩 유닛은 별개라 systemd가 병합하지 않는다 — 여기서만 배제한다. 상태 파일은 실행 중인
+  # 회차가 소유하므로 건드리지 않는다 (running이 이미 기록돼 있다)
   echo "anki-host-sync[${INSTANCE}]: another run is active, skipping"
   exit 0
 fi
@@ -121,17 +127,21 @@ notify_event() {
   fi
 }
 
+# 락을 잡은 직후 "실행 중"을 먼저 기록한다 — 호출자가 직전 회차의 낡은 결과를 이번 회차의 결과로 읽지 않게 한다
+write_state "running" "" ""
+
 if ! anki_helper_wait_ready "$HELPER"; then
   echo "anki-host-sync[${INSTANCE}]: helper unreachable ($(helper_error))"
   write_state "helper-unreachable" "helper unreachable on ${HELPER}" ""
   notify_alert "helper-unreachable" 1 "Anki 동기화 실패" "miniPC의 Anki(${INSTANCE})가 응답하지 않습니다. 서비스 상태를 확인하세요. 최근 카드 변경은 miniPC에만 있을 수 있습니다."
   exit 1
 fi
-# 로그인 판정은 애드온의 login.status 하나로 한다 — 준비 응답(/status)에 들어 있다
+# 로그인 판정은 애드온의 login.status 하나로 한다 — 준비 응답(/status)에 들어 있고, 준비 대기가 not-attempted를
+# 걸러 주므로 여기서는 확정값만 온다
 login_status="$(printf '%s' "$HELPER_BODY" | jq -r '.result.login.status // "not-attempted"')"
 case "$login_status" in
   logged-in|already-logged-in) ;;
-  no-credentials|not-attempted)
+  no-credentials)
     # 운영자 게이트(시크릿 값 투입) 전의 정상 상태 — 알림 소음을 만들지 않는다
     echo "anki-host-sync[${INSTANCE}]: no AnkiWeb credentials yet, skipping"
     write_state "no-credentials" "" ""
@@ -147,15 +157,21 @@ esac
 
 attempt=1
 delay="$BACKOFF_SECS"
+busy_left="${BUSY_RETRIES:?}" # busy 예산은 스크립트 전체에서 BUSY_RETRIES회 — sync 재시도 회차와 무관 (유닛 예산 계산의 전제)
 last_error=""
-payload="$(jq -n --arg mode "$MODE" '{mode: $mode, wait_media_secs: 60}')"
+payload="$(jq -n --arg mode "$MODE" '{mode: $mode}')"
 while [ "$attempt" -le "$MAX_RETRIES" ]; do
-  anki_helper_call_retry_busy "${HELPER}/sync" "$payload" "$HELPER_CURL_MAX_TIME"
+  anki_helper_call "${HELPER}/sync" "$payload" "$HELPER_CURL_MAX_TIME"
   if helper_busy; then
-    # 다른 변경 작업(export/import)이 재시도 예산 안에 끝나지 않음 — 실패가 아니라 순서 대기. 다음 타이머에 맡긴다
-    echo "anki-host-sync[${INSTANCE}]: helper busy ($(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"')), deferring to next run"
-    write_state "busy-deferred" "helper busy: $(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"')" ""
-    exit 0
+    # 다른 변경 작업(export/import) 진행 중 — 실패가 아니라 순서 대기. 예산을 다 쓰면 다음 타이머에 맡긴다
+    busy_left=$((busy_left - 1))
+    if [ "$busy_left" -le 0 ]; then
+      echo "anki-host-sync[${INSTANCE}]: helper busy ($(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"')), deferring to next run"
+      write_state "busy-deferred" "helper busy: $(printf '%s' "$HELPER_BODY" | jq -r '.busy // "?"')" ""
+      exit 0
+    fi
+    sleep "${BUSY_RETRY_SECS:?}"
+    continue
   fi
   if helper_ok; then
     result_json="$(printf '%s' "$HELPER_BODY" | jq -c '.result')"

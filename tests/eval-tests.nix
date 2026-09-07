@@ -782,7 +782,7 @@ let
     && svc.serviceConfig.PrivateTmp == true
     && svc.serviceConfig.ProtectSystem == "strict"
     && svc.serviceConfig.ProtectHome == true
-    && svc.serviceConfig.User == ankiHostCfg.user
+    && svc.serviceConfig.User == constants.ankiHost.user
     && svc.serviceConfig.MemoryMax == "1G";
   # AnkiConnect 바인딩 주소는 애드온 config로 store에 bake되므로 헬퍼 애드온은 코드 상수로,
   # AnkiConnect는 모듈 소스 문자열로 loopback 고정을 검사한다 (평가 결과 속성이 아니라 소스 핀).
@@ -796,36 +796,59 @@ let
   ankiHostRunsOffscreen = svc: svc.environment.QT_QPA_PLATFORM == "offscreen";
   # 타임아웃 사다리 (constants.ankiHost 단일 소스): 애드온 < 스크립트 curl < 유닛
   ankiHostSecs = s: nixpkgsLib.toInt (nixpkgsLib.removeSuffix "s" s);
+  ankiHostPow2 = k: nixpkgsLib.foldl' (x: _: x * 2) 1 (nixpkgsLib.range 1 k);
+  ankiHostBackoffTotalSecs =
+    constants.ankiHost.backoffSecs * (ankiHostPow2 (constants.ankiHost.maxRetries - 1) - 1);
+  ankiHostReadyWorstSecs =
+    constants.ankiHost.readyWaitTries
+    * (constants.ankiHost.readyProbeTimeoutSecs + constants.ankiHost.readyWaitSecs);
+  # sync 스크립트 최악: 준비 대기 + busy 응답·대기(스크립트 전체 예산) + sync 시도 maxRetries×curl + 백오프 합
+  ankiHostSyncWorstSecs =
+    ankiHostReadyWorstSecs
+    + constants.ankiHost.busyRetries * constants.ankiHost.helperBusyWaitSecs
+    + (constants.ankiHost.busyRetries - 1) * constants.ankiHost.busyRetrySecs
+    + constants.ankiHost.maxRetries * constants.ankiHost.helperCurlMaxTimeSecs
+    + ankiHostBackoffTotalSecs;
+  # backup 스크립트 최악(인스턴스당): 준비 대기 + busy 재시도 + export 1회
+  ankiHostBackupWorstSecs =
+    ankiHostReadyWorstSecs
+    +
+      (constants.ankiHost.busyRetries - 1)
+      * (constants.ankiHost.helperBusyWaitSecs + constants.ankiHost.busyRetrySecs)
+    + constants.ankiHost.helperCurlMaxTimeSecs;
   ankiHostLadderOk =
-    constants.ankiHost.helperMainTimeoutSecs < constants.ankiHost.helperCurlMaxTimeSecs
+    # 안쪽 < 바깥쪽: 애드온 락 대기 + 메인 스레드 < 스크립트 curl < 유닛
+    constants.ankiHost.helperMainTimeoutSecs + constants.ankiHost.helperBusyWaitSecs
+    < constants.ankiHost.helperCurlMaxTimeSecs
     &&
       ankiHostMain.environment.ANKI_HOST_MAIN_TIMEOUT_SECS
       == toString constants.ankiHost.helperMainTimeoutSecs
+    &&
+      ankiHostMain.environment.ANKI_HOST_BUSY_WAIT_SECS == toString constants.ankiHost.helperBusyWaitSecs
+    &&
+      ankiHostMain.environment.ANKI_HOST_QUERY_TIMEOUT_SECS
+      == toString constants.ankiHost.helperQueryTimeoutSecs
     &&
       ankiHostSyncMain.environment.HELPER_CURL_MAX_TIME
       == toString constants.ankiHost.helperCurlMaxTimeSecs
     &&
       ankiHostBackup.environment.HELPER_CURL_MAX_TIME == toString constants.ankiHost.helperCurlMaxTimeSecs
-    # 유닛 예산 ≥ 스크립트 최악 실행 시간(준비 대기 + 재시도) — 같은 상수에서 독립 재계산
-    &&
-      ankiHostSecs ankiHostSyncMain.serviceConfig.TimeoutStartSec >= ankiHostReadyWorstSecs
-      + constants.ankiHost.maxRetries * constants.ankiHost.helperCurlMaxTimeSecs
-      + (constants.ankiHost.busyRetries - 1) * constants.ankiHost.busyRetrySecs
-    &&
-      ankiHostSecs ankiHostBackup.serviceConfig.TimeoutStartSec >= ankiHostReadyWorstSecs
-      + constants.ankiHost.busyRetries * constants.ankiHost.helperCurlMaxTimeSecs
-      + (constants.ankiHost.busyRetries - 1) * constants.ankiHost.busyRetrySecs
+    # 유닛 예산 ≥ 스크립트 최악 실행 시간 — 같은 상수에서 독립 재계산
+    && ankiHostSecs ankiHostSyncMain.serviceConfig.TimeoutStartSec >= ankiHostSyncWorstSecs
+    && ankiHostSecs ankiHostBackup.serviceConfig.TimeoutStartSec >= ankiHostBackupWorstSecs
     # 스크립트가 받는 준비·재시도 env가 constants와 일치
     && ankiHostSyncMain.environment.READY_WAIT_TRIES == toString constants.ankiHost.readyWaitTries
     &&
       ankiHostSyncMain.environment.READY_PROBE_TIMEOUT
       == toString constants.ankiHost.readyProbeTimeoutSecs
     && ankiHostSyncMain.environment.MAX_RETRIES == toString constants.ankiHost.maxRetries
+    && ankiHostSyncMain.environment.BACKOFF_SECS == toString constants.ankiHost.backoffSecs
+    && ankiHostSyncMain.environment.BUSY_RETRIES == toString constants.ankiHost.busyRetries
     && ankiHostBackup.environment.READY_WAIT_TRIES == toString constants.ankiHost.readyWaitTries
     && ankiHostBackup.environment.BUSY_RETRIES == toString constants.ankiHost.busyRetries;
-  ankiHostReadyWorstSecs =
-    constants.ankiHost.readyWaitTries
-    * (constants.ankiHost.readyProbeTimeoutSecs + constants.ankiHost.readyWaitSecs);
+  ankiHostImportExclusionAssertion = builtins.any (
+    x: nixpkgsLib.hasInfix "allowImport and sync.enable are mutually exclusive" x.message
+  ) nixosCfg.assertions;
   ankiHostSingleAccountAssertion = builtins.any (
     a: nixpkgsLib.hasInfix "single AnkiWeb credential" a.message
   ) nixosCfg.assertions;
@@ -1199,13 +1222,16 @@ let
         && ankiHostMain.wantedBy == [ "multi-user.target" ];
     }
     {
-      name = "Test AH5: AnkiWeb 자격은 main 인스턴스에만 주입되고(lab은 로그인 없음) 시크릿은 서비스 유저 소유 0400이어야 하며, 컬렉션 교체(/import-colpkg) 게이트는 sync를 켜지 않은 lab에만 열려야 함";
+      name = "Test AH5: AnkiWeb 자격은 main 인스턴스에만 주입되고(lab은 로그인 없음) 시크릿은 서비스 유저 소유 0400이어야 하며, 컬렉션 교체(/import-colpkg)는 allowImport 옵션으로 lab에만 열리고 sync.enable과 배타라는 assertion이 선언돼야 함";
       cond =
         (ankiHostMain.environment ? ANKI_HOST_SYNC_CREDENTIALS)
         && !(ankiHostLab.environment ? ANKI_HOST_SYNC_CREDENTIALS)
+        && ankiHostCfg.instances.lab.allowImport
+        && !ankiHostCfg.instances.main.allowImport
         && ankiHostLab.environment.ANKI_HOST_ALLOW_IMPORT == "1"
         && !(ankiHostMain.environment ? ANKI_HOST_ALLOW_IMPORT)
-        && nixosCfg.age.secrets.anki-ankiweb.owner == ankiHostCfg.user
+        && ankiHostImportExclusionAssertion
+        && nixosCfg.age.secrets.anki-ankiweb.owner == constants.ankiHost.user
         && nixosCfg.age.secrets.anki-ankiweb.mode == "0400"
         && nixosCfg.age.secrets.pushover-anki.owner == "root"
         && nixosCfg.age.secrets.pushover-anki.mode == "0400";
@@ -1221,7 +1247,7 @@ let
         && builtins.any (
           c: nixpkgsLib.hasPrefix "pushover:" c
         ) ankiHostSyncMain.serviceConfig.LoadCredential
-        && ankiHostSyncMain.serviceConfig.User == ankiHostCfg.user
+        && ankiHostSyncMain.serviceConfig.User == constants.ankiHost.user
         && ankiHostSyncMain.unitConfig.ConditionPathExists == nixosCfg.age.secrets.pushover-anki.path;
     }
     {
@@ -1231,7 +1257,7 @@ let
         && !(nixosCfg.systemd.timers ? "anki-host-sync-main-bootstrap")
         && nixpkgsLib.hasSuffix " --mode allow-download-if-empty" ankiHostSyncMainBootstrap.serviceConfig.ExecStart
         && !(nixpkgsLib.hasInfix "--mode" ankiHostSyncMain.serviceConfig.ExecStart)
-        && ankiHostSyncMainBootstrap.serviceConfig.User == ankiHostCfg.user;
+        && ankiHostSyncMainBootstrap.serviceConfig.User == constants.ankiHost.user;
     }
     {
       name = "Test AH7: 백업 타이머가 timers.target에 걸리고 OnCalendar가 옵션(${ankiHostCfg.backupTime})과 같으며, 백업 서비스는 strict + HDD/상태 디렉터리만 쓰기 가능하고, 검증용 lab은 백업 대상에서 빠져야 함 (INSTANCES: ${ankiHostBackup.environment.INSTANCES})";
@@ -1247,7 +1273,7 @@ let
         && ankiHostBackup.environment.INSTANCES == "main:${toString ankiHostCfg.instances.main.helperPort}";
     }
     {
-      name = "Test AH8: 타임아웃 사다리(애드온 ${toString constants.ankiHost.helperMainTimeoutSecs}s < curl ${toString constants.ankiHost.helperCurlMaxTimeSecs}s < 유닛 sync ${ankiHostSyncMain.serviceConfig.TimeoutStartSec}/backup ${ankiHostBackup.serviceConfig.TimeoutStartSec} ≥ 준비 대기 최악 ${toString ankiHostReadyWorstSecs}s + 재시도)가 constants 단일 소스에서 파생되고 스크립트 env와 일치하며, sync를 켠 인스턴스는 최대 1개라는 assertion이 선언돼야 함";
+      name = "Test AH8: 타임아웃 사다리(애드온 락 ${toString constants.ankiHost.helperBusyWaitSecs}s + 메인 ${toString constants.ankiHost.helperMainTimeoutSecs}s < curl ${toString constants.ankiHost.helperCurlMaxTimeSecs}s < 유닛 sync ${ankiHostSyncMain.serviceConfig.TimeoutStartSec} ≥ 최악 ${toString ankiHostSyncWorstSecs}s / backup ${ankiHostBackup.serviceConfig.TimeoutStartSec} ≥ 최악 ${toString ankiHostBackupWorstSecs}s)가 constants 단일 소스에서 파생되고 스크립트·애드온 env와 일치하며, sync를 켠 인스턴스는 최대 1개라는 assertion이 선언돼야 함";
       cond = ankiHostLadderOk && ankiHostSingleAccountAssertion;
     }
   ]

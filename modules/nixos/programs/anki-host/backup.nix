@@ -22,12 +22,12 @@ let
     lib.mapAttrsToList (name: inst: "${name}:${toString inst.helperPort}") backupInstances
   );
   a = constants.ankiHost;
-  # 타임아웃 사다리 바깥 계층 — 인스턴스마다: 준비 대기 tries×(probe+wait) + export busy 재시도 busyRetries×curl
-  # + (busyRetries−1)×busySecs + 복사·검사 여유 5min. constants.ankiHost 값에서 그대로 계산한다.
+  # 타임아웃 사다리 바깥 계층 — 인스턴스마다: 준비 대기 tries×(probe+wait) + export busy 재시도 (busyRetries−1)×(busyWait+busySecs)
+  # (409는 락 대기 busyWait 뒤 즉시 온다) + export 1회 curl + 복사·검사 여유 5min. constants.ankiHost 값에서 그대로 계산한다 (eval AH8).
   perInstanceSecs =
     a.readyWaitTries * (a.readyProbeTimeoutSecs + a.readyWaitSecs)
-    + a.busyRetries * a.helperCurlMaxTimeSecs
-    + (a.busyRetries - 1) * a.busyRetrySecs
+    + (a.busyRetries - 1) * (a.helperBusyWaitSecs + a.busyRetrySecs)
+    + a.helperCurlMaxTimeSecs
     + 300;
   unitTimeoutSecs = (builtins.length (builtins.attrNames backupInstances)) * perInstanceSecs + 60;
 
