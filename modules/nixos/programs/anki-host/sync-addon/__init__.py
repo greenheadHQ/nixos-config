@@ -1,26 +1,34 @@
 """anki_host_sync — headless Anki용 AnkiWeb 로그인·동기화·스냅샷 헬퍼 애드온.
 
 nixos-config `modules/nixos/programs/anki-host`가 `pkgs.anki.withAddons`로 bake한다.
-GUI 없이 도는 Anki 프로세스 안에서 loopback HTTP(JSON)만 연다. 인증은 없다 —
-같은 호스트의 서비스 계정만 닿는다는 전제이고, 원격 노출은 이 애드온의 책임이 아니다.
+GUI 없이 도는 Anki 프로세스 안에서 loopback HTTP(JSON)만 연다. 인증은 없다.
+
+신뢰 경계: loopback은 이 호스트에서 격리를 보장하지 않는다 — `--network=host` 컨테이너
+(uptime-kuma)가 같은 loopback namespace를 공유한다. 그래서 이 애드온은 되돌릴 수 없는 동작을
+노출하지 않는다: full sync 방향은 "로컬이 비어 있을 때의 Download"(부트스트랩)만 허용하고,
+서버를 덮어쓰는 Upload 모드는 존재하지 않는다. 컬렉션 교체(/import-colpkg)는 AnkiWeb에
+로그인된 프로필에서 거부되므로 운영 인스턴스에는 영향이 없다(격리 fixture 전용).
 
 왜 AnkiConnect의 `sync` 액션을 쓰지 않는가: 그 액션은 `mw.onSync()`를 불러 GUI 다이얼로그
 경로를 타므로 full sync가 요구되면 offscreen에서 영원히 멈춘다. 여기서는
-`col.sync_collection`을 직접 호출해 결과 코드(`required`)를 받고, 방향 결정은 호출자
-(systemd sync 서비스 / MCP 서버)가 명시한 mode로만 허용한다.
+`col.sync_collection`을 직접 호출해 결과 코드(`required`)를 받는다.
 
 동시성 계약: 컬렉션을 바꾸는 작업(/sync, /export, /import-colpkg)은 서로 배제한다.
 대기가 BUSY_WAIT_SECS를 넘으면 무한 대기 대신 HTTP 409와 진행 중인 작업 이름을 돌려주어,
-호출자가 "응답 없음"과 "다른 작업 진행 중"을 구분하게 한다. 조회(/status, /counts)는
-진행 중인 작업이 있으면 메인 스레드를 기다리지 않고 busy 표시가 붙은 부분 응답을 즉시 준다
-(장시간 export 중에도 준비 상태를 확인할 수 있어야 sync 서비스가 오탐 알림을 내지 않는다).
+호출자가 "응답 없음"과 "다른 작업 진행 중"을 구분하게 한다. 조회(/status)는 진행 중인
+작업이 있으면 메인 스레드를 기다리지 않고 `partial: true`가 붙은 부분 응답(collection_open·login·
+last_sync만, counts·media 없음)을 즉시 준다 — 장시간 export 중에도 준비 상태를 확인할 수 있어야
+sync 서비스가 오탐 알림을 내지 않는다.
 
-환경 변수:
-  ANKI_HOST_HELPER_PORT      loopback 포트. 없거나 0이면 서버를 열지 않는다.
-  ANKI_HOST_SYNC_CREDENTIALS ANKIWEB_USERNAME=/ANKIWEB_PASSWORD= 두 줄 파일. 없으면 로그인하지 않는다.
-  ANKI_HOST_STATE_DIR        인스턴스 상태 디렉터리. /export·/import-colpkg는 그 아래
-                             `backups/`(일일 백업 스테이징, 정리 대상)와 `restore-points/`
-                             (복구점, 정리 제외·HDD 미러)만 허용한다.
+환경 변수 (모두 nixos 모듈이 단일 소스에서 파생해 넣는다):
+  ANKI_HOST_HELPER_PORT       loopback 포트. 없거나 0이면 서버를 열지 않는다.
+  ANKI_HOST_SYNC_CREDENTIALS  ANKIWEB_USERNAME=/ANKIWEB_PASSWORD= 두 줄 파일. 없으면 로그인하지 않는다.
+  ANKI_HOST_STATE_DIR         인스턴스 상태 디렉터리. /export·/import-colpkg는 그 아래
+                              `backups/`(일일 백업 스테이징, 정리 대상)와 `restore-points/`
+                              (복구점, SSD 개수 상한·HDD 미러)만 허용한다.
+  ANKI_HOST_ADDON_VERSION     패키지 버전(nix 파생 version과 같은 값) — /status에 노출.
+  ANKI_HOST_MAIN_TIMEOUT_SECS 메인 스레드 작업 타임아웃. 타임아웃 사다리의 가장 안쪽 값이며
+                              스크립트 curl·systemd 유닛 값은 이 값에서 파생된다(default.nix).
 """
 
 from __future__ import annotations
@@ -40,18 +48,16 @@ import aqt
 from anki import sync_pb2
 from aqt import gui_hooks
 
-ADDON_VERSION = "1.1.0"
+ADDON_VERSION = os.environ.get("ANKI_HOST_ADDON_VERSION") or "unknown"
 BIND = "127.0.0.1"
 PORT = int(os.environ.get("ANKI_HOST_HELPER_PORT", "0") or "0")
 CRED_FILE = os.environ.get("ANKI_HOST_SYNC_CREDENTIALS") or None
 STATE_DIR = os.environ.get("ANKI_HOST_STATE_DIR") or None
 ALLOWED_SUBDIRS = ("backups", "restore-points")
-# 타임아웃 사다리 (작은 값이 안쪽): 애드온 메인 스레드 작업 1800s < sync 스크립트 curl 1900s
-# < systemd TimeoutStartSec 40min. 안쪽이 먼저 끝나야 바깥 계층이 원인을 구분해 보고할 수 있다.
-# 첫 전체 다운로드(컬렉션 수십 MB, 미디어는 별도 백그라운드)도 이 안에 끝난다.
-MAIN_TIMEOUT_SECS = 1800
+MAIN_TIMEOUT_SECS = int(os.environ.get("ANKI_HOST_MAIN_TIMEOUT_SECS", "1800") or "1800")
 QUERY_TIMEOUT_SECS = 120
 BUSY_WAIT_SECS = 5
+SYNC_MODES = ("normal", "allow-download-if-empty")
 
 ChangesRequired = sync_pb2.SyncCollectionResponse.ChangesRequired
 NO_CHANGES = ChangesRequired.NO_CHANGES
@@ -151,7 +157,7 @@ def _read_credentials() -> tuple[str, str] | None:
 def _ensure_login() -> dict[str, Any]:
     """syncKey가 없을 때만 AnkiWeb에 로그인해 프로필에 저장한다. 비밀번호는 메모리에만 머문다.
 
-    자격 파일을 나중에 채웠다면 서비스 재시작으로 이 훅을 다시 태운다 (계획 Step 15).
+    자격 파일을 나중에 채웠다면 서비스 재시작으로 이 훅을 다시 태운다 (계획 Step 14).
     """
     _require_col()
     pm = aqt.mw.pm
@@ -225,11 +231,11 @@ def _wait_media(seconds: float) -> dict[str, Any]:
 # ── 동기화 ────────────────────────────────────────────────────────────────
 
 
-def _full(auth: Any, out: Any, upload: bool) -> None:
+def _full_download(auth: Any, out: Any) -> None:
     mw = aqt.mw
     mw.col.close_for_full_sync()
     try:
-        mw.col.full_upload_or_download(auth=auth, server_usn=out.server_media_usn, upload=upload)
+        mw.col.full_upload_or_download(auth=auth, server_usn=out.server_media_usn, upload=False)
     finally:
         mw.col.reopen(after_full_sync=True)
     mw.reset()
@@ -238,11 +244,11 @@ def _full(auth: Any, out: Any, upload: bool) -> None:
 
 
 def _sync(mode: str) -> dict[str, Any]:
-    """mode: normal | allow-download-if-empty | download | upload.
+    """mode: normal | allow-download-if-empty.
 
-    normal: 병합 가능한 변경만 동기화하고 full sync가 요구되면 아무것도 하지 않는다 (타이머 기본).
+    normal: 병합 가능한 변경만 동기화하고 full sync가 요구되면 아무것도 하지 않는다 (타이머·MCP 기본).
     allow-download-if-empty: 로컬이 비어 있을 때(노트 0·복습 기록 0)만 서버본을 내려받는다 (첫 부트스트랩 유닛).
-    download / upload: 호출자가 방향을 책임진다. upload는 로컬이 비어 있으면 거부한다.
+    서버를 덮어쓰는 방향은 이 애드온에 없다 — 복구점 복원은 Mac GUI 경로다(plan 030 Maintenance notes).
     """
     _require_col()
     mw = aqt.mw
@@ -263,16 +269,8 @@ def _sync(mode: str) -> dict[str, Any]:
         action = "normal"
     elif out.required in (FULL_SYNC, FULL_DOWNLOAD, FULL_UPLOAD):
         if mode == "allow-download-if-empty" and empty and out.required != FULL_UPLOAD:
-            _full(auth, out, upload=False)
+            _full_download(auth, out)
             action = "full-download"
-        elif mode == "download":
-            _full(auth, out, upload=False)
-            action = "full-download"
-        elif mode == "upload":
-            if empty:
-                raise RuntimeError("refusing-upload-of-empty-collection")
-            _full(auth, out, upload=True)
-            action = "full-upload"
         else:
             action = "full-sync-required"
     else:
@@ -375,10 +373,11 @@ def _status() -> dict[str, Any]:
 
 
 def _busy_view() -> dict[str, Any]:
-    """진행 중인 변경 작업이 있을 때 메인 스레드를 기다리지 않고 돌려주는 부분 상태."""
+    """진행 중인 변경 작업이 있을 때 메인 스레드를 기다리지 않고 돌려주는 /status의 부분 응답."""
     return {
         "busy": _busy,
         "partial": True,
+        "addon_version": ADDON_VERSION,
         "collection_open": _state["collection_open"],
         "login": _state["login"],
         "last_sync": _state["last_sync"],
@@ -419,14 +418,11 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         try:
             body = self._body()
-            if path in ("/status", "/counts") and self.command == "GET":
-                if _busy is not None:
-                    result = _busy_view()
-                else:
-                    result = _on_main(_status if path == "/status" else _snapshot, timeout=QUERY_TIMEOUT_SECS)
+            if path == "/status" and self.command == "GET":
+                result = _busy_view() if _busy is not None else _on_main(_status, timeout=QUERY_TIMEOUT_SECS)
             elif path == "/sync" and self.command == "POST":
                 mode = str(body.get("mode", "normal"))
-                if mode not in ("normal", "allow-download-if-empty", "download", "upload"):
+                if mode not in SYNC_MODES:
                     raise ValueError("unknown-mode")
                 result = _mutating("sync", _sync, mode)
                 result["media"] = _wait_media(float(body.get("wait_media_secs", 0)))
@@ -459,7 +455,7 @@ def _start_server() -> None:
     thread = threading.Thread(target=server.serve_forever, name="anki_host_sync-http", daemon=True)
     thread.start()
     _state["server"] = server
-    _log(f"helper listening on {BIND}:{PORT}")
+    _log(f"helper {ADDON_VERSION} listening on {BIND}:{PORT}")
 
 
 def _on_profile_open() -> None:

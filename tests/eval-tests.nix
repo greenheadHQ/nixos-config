@@ -794,6 +794,27 @@ let
       builtins.readFile ../modules/nixos/programs/anki-host/sync-addon/__init__.py
     );
   ankiHostRunsOffscreen = svc: svc.environment.QT_QPA_PLATFORM == "offscreen";
+  # 타임아웃 사다리 (constants.ankiHost 단일 소스): 애드온 < 스크립트 curl < 유닛
+  ankiHostSecs = s: nixpkgsLib.toInt (nixpkgsLib.removeSuffix "s" s);
+  ankiHostLadderOk =
+    constants.ankiHost.helperMainTimeoutSecs < constants.ankiHost.helperCurlMaxTimeSecs
+    &&
+      ankiHostMain.environment.ANKI_HOST_MAIN_TIMEOUT_SECS
+      == toString constants.ankiHost.helperMainTimeoutSecs
+    &&
+      ankiHostSyncMain.environment.HELPER_CURL_MAX_TIME
+      == toString constants.ankiHost.helperCurlMaxTimeSecs
+    &&
+      ankiHostBackup.environment.HELPER_CURL_MAX_TIME == toString constants.ankiHost.helperCurlMaxTimeSecs
+    &&
+      ankiHostSecs ankiHostSyncMain.serviceConfig.TimeoutStartSec
+      > 3 * constants.ankiHost.helperCurlMaxTimeSecs
+    &&
+      ankiHostSecs ankiHostBackup.serviceConfig.TimeoutStartSec
+      > 3 * constants.ankiHost.helperCurlMaxTimeSecs;
+  ankiHostSingleAccountAssertion = builtins.any (
+    a: nixpkgsLib.hasInfix "single AnkiWeb credential" a.message
+  ) nixosCfg.assertions;
   # ═══════════════════════════════════════════════════════════════
   # 테스트 실행
   # ═══════════════════════════════════════════════════════════════
@@ -1208,6 +1229,10 @@ let
         && builtins.elem constants.paths.ankiHostState ankiHostBackup.serviceConfig.ReadWritePaths
         && !ankiHostCfg.instances.lab.backup.enable
         && ankiHostBackup.environment.INSTANCES == "main:${toString ankiHostCfg.instances.main.helperPort}";
+    }
+    {
+      name = "Test AH8: 타임아웃 사다리(애드온 ${toString constants.ankiHost.helperMainTimeoutSecs}s < curl ${toString constants.ankiHost.helperCurlMaxTimeSecs}s < 유닛 sync ${ankiHostSyncMain.serviceConfig.TimeoutStartSec}/backup ${ankiHostBackup.serviceConfig.TimeoutStartSec})가 constants 단일 소스에서 파생되고, sync를 켠 인스턴스는 최대 1개라는 assertion이 선언돼야 함";
+      cond = ankiHostLadderOk && ankiHostSingleAccountAssertion;
     }
   ]
   ++ darwinIntentTests;

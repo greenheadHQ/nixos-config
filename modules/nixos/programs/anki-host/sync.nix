@@ -5,6 +5,8 @@
 # 헬퍼 애드온이 API를 직접 호출해 결과 코드를 돌려주고, 전후 스냅샷 차이로 "다른 기기의 학습이
 # 내려왔는지"를 판정해 알림(b)을 보낸다. full sync 요구는 자동 결정하지 않는다 — 빈 컬렉션이면
 # 부트스트랩 유닛을 운영자가 명시 실행할 때까지 조용히 대기하고, 비어 있지 않으면 알림(c)만 보낸다.
+# sync의 운영 계층(상태 파일·알림·결과 분류)은 anki-host-sync 스크립트가 단일 소유한다 — PR 2의
+# "지금 동기화"도 헬퍼를 직접 부르지 않고 이 서비스를 트리거한다 (plan 030 결정 13).
 {
   config,
   pkgs,
@@ -18,9 +20,13 @@ let
   user = cfg.user;
   stateRoot = constants.paths.ankiHostState;
   pushoverCredPath = config.age.secrets.pushover-anki.path;
-  pushoverHelper = ../../../shared/scripts/lib/pushover.sh;
   syncInstances = lib.filterAttrs (_: inst: inst.enable && inst.sync.enable) cfg.instances;
+  inherit (constants.ankiHost) helperCurlMaxTimeSecs;
+  # 타임아웃 사다리 바깥 계층: 스크립트가 쓸 수 있는 최대 시간(준비 대기 2min + sync 재시도 3×(curl+backoff)
+  # + busy 재시도 3×60s)보다 크게. 값의 근거는 constants.ankiHost와 스크립트 상단 상수 블록.
+  unitTimeoutSecs = 120 + 3 * (helperCurlMaxTimeSecs + 20) + 3 * 60 + 60;
 
+  # pushover 헬퍼 + 헬퍼 호출 공용 함수 + 본문을 텍스트로 결합한다 (source 경로 주입 대신 store에 고정)
   syncScript = pkgs.writeShellApplication {
     name = "anki-host-sync";
     runtimeInputs = with pkgs; [
@@ -29,7 +35,12 @@ let
       coreutils
       util-linux # flock
     ];
-    text = builtins.readFile ./files/anki-host-sync.sh;
+    text =
+      builtins.readFile ../../../shared/scripts/lib/pushover.sh
+      + "\n"
+      + builtins.readFile ./files/lib/helper-call.sh
+      + "\n"
+      + builtins.readFile ./files/anki-host-sync.sh;
   };
 
   # 타이머 유닛과 부트스트랩 유닛이 공유하는 서비스 정의. mode 인자만 다르다.
@@ -54,7 +65,7 @@ let
       HELPER_PORT = toString inst.helperPort;
       STATE_DIR = "${stateRoot}/${name}";
       INSTANCE = name;
-      PUSHOVER_HELPER = "${pushoverHelper}";
+      HELPER_CURL_MAX_TIME = toString helperCurlMaxTimeSecs;
     };
 
     serviceConfig = {
@@ -64,8 +75,7 @@ let
       # root 소유 0400 시크릿을 서비스 유저에게 파일 하나로만 넘긴다 (karakeep-notify 패턴)
       LoadCredential = [ "pushover:${pushoverCredPath}" ];
       ExecStart = "${syncScript}/bin/anki-host-sync${extraArgs}";
-      # 타임아웃 사다리의 바깥 계층 — 애드온 1800s < 스크립트 curl 1900s < 여기 40min (애드온 MAIN_TIMEOUT_SECS 주석)
-      TimeoutStartSec = "40min";
+      TimeoutStartSec = "${toString unitTimeoutSecs}s";
       NoNewPrivileges = true;
       PrivateTmp = true;
       ProtectSystem = "strict";

@@ -26,7 +26,7 @@
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
 - **Execution**: IN PROGRESS — PR 1 구현·MiniPC 배포·격리 검증(Step 1~13 중 DA 반영까지) 완료, Step 14 운영자 게이트 대기
-- **Plan DA**: R1 COMPLETE (FULL, Opus 5 — reviewer 4 + Arbiter 1). finding 21건 전부 CONFIRMED, 19건 FIX_NOW + 2건(롤아웃 계약 UNCLEAR)은 운영자 결정 "계획을 구현에 맞춰 갱신"으로 FIX_NOW 편입. 재검증 라운드 대기
+- **Plan DA**: R1 COMPLETE (finding 21건 전부 CONFIRMED·반영, 롤아웃 계약 2건은 운영자 결정 "계획을 구현에 맞춰 갱신"), R2 COMPLETE (finding 19건 전부 CONFIRMED·반영 — 방향 모드 제거, 복원 절차 계약, sync 계층 단일화, 타임아웃 단일 소스, lab 폐기 절차). 재검증 라운드(R3) 대기
 - **PR DA**: PENDING (PR 1·PR 2 각각 FULL, Opus 5 전용 — 운영자 지시: Codex quota 없음)
 
 ## Why this matters
@@ -61,9 +61,13 @@
 
 1. AnkiConnect는 loopback 전용, API 키 없음(Nix store bake 시 평문 노출). MCP 서버만 접근.
 2. sync는 애드온이 `col.sync_collection`을 직접 호출한다. AnkiConnect `sync` 액션(GUI 다이얼로그)은 쓰지 않는다.
-3. full sync 방향 자동 결정은 두 경우만: (i) 로컬 비어 있음 + 서버 존재 → Download — **운영자가 부트스트랩
-   유닛을 명시 실행할 때만** (타이머는 빈 컬렉션의 full sync 요구를 알림 없이 `bootstrap-pending`으로 기록),
-   (ii) 운영자가 동의한 도구 실행 직후 + 사전 검사 통과 → Upload. 그 외는 중단·알림.
+3. full sync 방향 결정은 헬퍼에 하나뿐이다: 로컬이 비어 있고 서버가 있을 때의 Download — **운영자가 부트스트랩
+   유닛을 명시 실행할 때만** (타이머는 빈 컬렉션의 full sync 요구를 알림 없이 `bootstrap-pending`으로 기록).
+   서버를 덮어쓰는 Upload 모드는 헬퍼에 존재하지 않는다 — loopback은 이 호스트에서 격리를 보장하지 않고
+   (`--network=host` 컨테이너 공유) 되돌릴 수 없는 동작을 무인증 엔드포인트에 두지 않는다. 그 외 full sync 요구는 중단·알림.
+   full sync를 유발하는 도구(노트 타입 구조 변경 등, 운영자 결정 "고지·동의 후 실행")는 PR 2b에서 노출하며, 그 전에
+   Upload 경로를 root 소유 1회용 승인 파일 게이트 + 사전 검사(직전 성공 sync 스냅샷 대비 노트·revlog 감소 없음,
+   복구점 생성 성공)와 함께 별도 설계한다. MCP "지금 동기화"는 mode를 클라이언트 인자로 받지 않는다(normal 고정).
 4. 알림 본문에 카드 내용·자격·토큰을 넣지 않는다. 한국어.
 5. 서버 코드에 개인 학습 규칙(덱 이름·태그·배치 규칙)을 넣지 않는다. 범용 도구.
 6. Funnel은 MCP 포트(443)만. 승인 화면은 8443 serve(tailnet 전용). 인바운드 방화벽 포트는 열지 않는다.
@@ -72,9 +76,20 @@
 9. 롤아웃 게이트는 "시크릿 값 투입"이다. `lab`·`main` 두 인스턴스를 함께 배포하되 `main`은
    AnkiWeb 자격 값이 빈 동안 로그인·sync를 하지 않고 조용히 대기한다 (DA R1 운영자 결정).
 10. 헬퍼 애드온의 변경 작업(/sync, /export, /import-colpkg)은 상호 배제하고 대기 초과 시 409로 알린다.
-    조회(/status, /counts)는 진행 중 작업이 있어도 busy 표시가 붙은 부분 응답을 즉시 준다.
-11. 인스턴스 상태 디렉터리의 `backups/`는 일일 백업 스테이징(정리 대상), `restore-points/`는
-    복구점(정리 제외, HDD 미러). 헬퍼는 이 두 곳에만 쓴다.
+    조회는 /status 하나이며, 진행 중 작업이 있으면 `partial: true`가 붙은 부분 응답(collection_open·login·
+    last_sync만, counts·media 없음)을 즉시 준다.
+11. 인스턴스 상태 디렉터리의 `backups/`는 일일 백업 스테이징(SSD 최신 2개·HDD 보존 기간), `restore-points/`는
+    복구점(HDD로 미러하고 SSD에는 미러가 끝난 것 중 최신 10개만 유지, HDD는 무기한). 복구점은 기본적으로
+    미디어 없이(`include_media: false`, ≈1.5MB) 만든다 — 미디어는 불변이라 일일 백업본의 것으로 복원한다.
+    헬퍼는 이 두 곳에만 쓴다. 복원 절차는 Maintenance notes.
+12. AnkiWeb 자격은 단일 시크릿이므로 sync를 켠 인스턴스는 최대 1개다(모듈 assertion). sync 계열 도구·
+    "지금 동기화"는 `lab`에서 검증하지 않는다(`lab`은 AnkiWeb 미로그인).
+13. sync의 운영 계층(상태 파일·알림·결과 분류)은 `anki-host-sync` 스크립트가 단일 소유한다. 헬퍼 `/sync`의
+    호출자는 이 스크립트뿐이며, PR 2의 "지금 동기화"는 헬퍼를 직접 부르지 않고 `anki-host-sync-main.service`를
+    트리거한다(polkit 규칙으로 MCP 서비스 유저에게 그 유닛의 start만 허용).
+14. 타임아웃 사다리(애드온 메인 스레드 < 스크립트 curl < systemd 유닛)의 값은 `constants.ankiHost`가 단일
+    소스이고 모듈이 파생해 env·유닛에 넣는다. 애드온 버전도 `default.nix`의 한 바인딩이 nix 파생 version과
+    /status를 함께 결정한다.
 
 ## Commands you will need
 
@@ -86,7 +101,7 @@
 | Anki 인스턴스 상태 | `ssh minipc 'systemctl status anki-host-lab anki-host-main'` | active |
 | AnkiConnect 응답 | `ssh minipc "curl -s -XPOST 127.0.0.1:<port> -d '{\"action\":\"getActiveProfile\",\"version\":6}'"` | 프로필 이름 |
 | 헬퍼 상태 | `ssh minipc 'curl -s 127.0.0.1:<helperPort>/status'` | `collection_open: true`, `login.status` |
-| sync 상태 | `ssh minipc 'sudo cat /var/lib/anki-host/main/sync-status.json'` | `result`: `no-credentials` → `bootstrap-pending` → `success` |
+| sync 상태 | `ssh minipc 'sudo cat /var/lib/anki-host/main/sync-status.json'` | `result`: `no-credentials` → `bootstrap-pending` → `success` (모든 호출자가 이 파일을 남긴다 — 결정 13) |
 | 첫 부트스트랩 (🔒 Step 15) | `ssh minipc 'sudo systemctl start anki-host-sync-main-bootstrap && sudo journalctl -u anki-host-sync-main-bootstrap -n 5'` | `full-download` 1회, 알림(b) "처음 내려받았습니다" |
 | Funnel 상태 | `ssh minipc 'tailscale funnel status; tailscale serve status'` | 443 funnel → MCP, 8443 serve → 승인 |
 | MCP 메타데이터 | `curl -s https://<minipc-ts-name>/.well-known/oauth-protected-resource` | JSON |
@@ -108,17 +123,20 @@
 1. `libraries/constants.nix`에 AnkiConnect·헬퍼 포트(lab/main)와 상태 루트 `paths.ankiHostState` 추가. (MCP·승인 화면 포트는 PR 2 Step 17)
 2. `modules/nixos/options/homeserver.nix`에 `ankiHost` 옵션 블록(인스턴스 서브모듈: port·helperPort·sync·backup) + imports. (`ankiMcp` 옵션은 PR 2 Step 19)
 3. `modules/nixos/programs/anki-host/default.nix`: 인스턴스별 정적 유닛 `anki-host-<name>`. 과거 default.nix의
-   offscreen·`--disable-gpu`·prefs21.db 사전 생성·전용 유저·MemoryMax를 복원하고, AnkiConnect `webBindAddress = "127.0.0.1"`,
-   프로필별 포트, single-instance 키 분리. CIR 블록 포함. `tailscale-wait`는 **복원하지 않는다** — 과거에는 tailnet IP 바인딩
-   때문에 필요했고, loopback 전용인 지금은 근거가 없다.
+   offscreen·`--disable-gpu`·prefs21.db 사전 생성·전용 유저·MemoryMax를 복원하되 값은 조정한다(1G·numBackups 30 —
+   근거는 CIR 블록). AnkiConnect `webBindAddress = "127.0.0.1"`, 프로필별 포트, single-instance 키 분리, sync 인스턴스 ≤ 1 assertion.
+   `tailscale-wait`는 **복원하지 않는다** — 과거에는 tailnet IP 바인딩 때문에 필요했고, loopback 전용인 지금은 근거가 없다.
 4. `anki-host/sync-addon/`: `profile_did_open` 로그인(syncKey 없을 때만, agenix 자격), loopback HTTP
-   엔드포인트(`/status`, `/counts`, `/sync`, `/export`, `/import-colpkg`)로 sync 실행·결과 코드·전후 카운트·복구점 생성 제공.
-   변경 작업 상호 배제 + 409, 조회는 busy 부분 응답. 쓰기 경로는 `backups/`·`restore-points/`만 허용.
+   엔드포인트 `/status`(조회), `/sync`(mode `normal`·`allow-download-if-empty`만), `/export`(복구점·백업),
+   `/import-colpkg`(격리 fixture 전용, 로그인된 프로필 거부). 변경 작업 상호 배제 + 409, /status는 busy 부분 응답.
+   쓰기 경로는 `backups/`·`restore-points/`만 허용. 호출자: `/sync`·`/status`는 `anki-host-sync` 스크립트, `/export`·`/status`는
+   백업 스크립트와 PR 2b 복구점 도구, `/import-colpkg`는 Step 12 운영자.
 5. `anki-host/sync.nix`: `anki-host-sync-<name>` 서비스 + 15분 타이머(normal), 별도 oneshot `anki-host-sync-<name>-bootstrap`
-   (`--mode allow-download-if-empty`, 수동), flock, 상태 파일, 결정 3의 방향 정책, Pushover (b)/(c) 알림
-   (`modules/shared/scripts/lib/pushover.sh`), 실패 알림 24h 중복 억제, 빈 컬렉션의 full sync 요구는 `bootstrap-pending`으로 조용히 기록.
-6. `anki-host/backup.nix`: `backup.enable` 인스턴스만 daily HDD 백업(관례: oneshot+timer, 04:15). `backups/`의 일일 백업본만
-   정리하고 `restore-points/`는 HDD로 미러만 한다.
+   (`--mode allow-download-if-empty`, 수동 — 호출자는 Step 15의 운영자뿐), flock, 상태 파일, 결정 3의 방향 정책, Pushover (b)/(c) 알림,
+   실패 알림 24h 중복 억제, 빈 컬렉션의 full sync 요구는 `bootstrap-pending`으로 조용히 기록. 스크립트 본문은 pushover 헬퍼와
+   헬퍼 호출 공용 함수(`files/lib/helper-call.sh`)를 텍스트 결합해 store에 고정한다.
+6. `anki-host/backup.nix`: `backup.enable` 인스턴스만 daily HDD 백업(관례: oneshot+timer, 04:15 — `running-containers` 스킬의
+   백업 타이머 표에 등록). `backups/`의 일일 백업본만 정리하고 `restore-points/`는 HDD로 미러한 뒤 SSD 최신 10개만 남긴다.
 7. `secrets/secrets.nix`: `anki-ankiweb.age`, `pushover-anki.age` 선언(minipcOnly). 저장소에는 빈 값 placeholder를 두고
    🔒 실제 값은 운영자가 재암호화한다.
 8. `tests/eval-tests.nix`: loopback 소스 핀, 인스턴스 배선, 타이머 계약, 부트스트랩 유닛 비자동, 백업 대상, `ConditionPathExists`.
@@ -139,20 +157,32 @@
 ### PR 2 — MCP 서버 + OAuth + Funnel
 
 16. 🔒 운영자: Tailscale 관리 콘솔 ACL에 MiniPC 노드 `funnel` 속성 허용.
-17. `libraries/constants.nix`에 MCP·승인 화면 포트 추가. `modules/nixos/programs/anki-mcp/src/`: Python 패키지(`python3.withPackages`,
-    nixpkgs `mcp`). 도구 3계층·annotations·Anki 검색 문법·페이지네이션·필드 절단·`mcp::added`·full sync 고지/확인 인자·
-    대량 변경 미리보기/임계값·프리셋 공유 경고·base64 미디어·복구점(헬퍼 `/export` → `restore-points/`)·감사 로그·"지금 동기화"
-    (헬퍼 `/sync` 호출, 409는 "다른 작업 진행 중"으로 사용자에게 전달).
+17. PR 2는 두 단계로 나눈다. 용어: **도구 3계층** = 조회(readOnlyHint) / 변경(추가·수정·태그·덱 이동·정지·일정·잊기,
+    일정·잊기는 destructiveHint) / 파괴(노트·덱 삭제 — destructiveHint + 확인 인자 + 자동 복구점). **프리셋 공유 경고** =
+    덱 옵션 프리셋이 여러 덱에 공유될 때 응답에 그 덱 목록을 붙이는 것(Anki 구조 사실이며 개인 학습 규칙이 아니므로 결정 5와 무관).
+    - **PR 2a (최소)**: `libraries/constants.nix`에 MCP·승인 화면 포트. `modules/nixos/programs/anki-mcp/src/` Python 패키지
+      (`python3.withPackages`, nixpkgs `mcp`). 조회 계층 + 변경 계층 중 추가·수정·태그, annotations, Anki 검색 문법 통과,
+      페이지네이션·필드 절단, `mcp::added` 태그, "지금 동기화"(결정 13 — `anki-host-sync-main.service` 트리거, mode 인자 없음,
+      결과는 `sync-status.json`을 읽어 전달). Step 18~22와 함께 배포·검증한다.
+    - **PR 2b (관측 후)**: 착수 조건은 2a를 실제로 며칠 쓴 뒤의 관측(어떤 도구를 실제로 썼는지, 어떤 마찰이 있었는지).
+      파괴 계층, 변경 계층의 정지·일정·잊기, 대량 변경 미리보기/임계값(20건)·자동 복구점(헬퍼 `/export` → `restore-points/`,
+      `include_media: false`), base64 미디어(크기 상한), 감사 로그(카드 본문 최소화), 프리셋 공유 경고, full sync 유발 도구
+      (결정 3의 Upload 게이트 설계가 선행 조건).
 18. 내장 OAuth 2.1 AS(mcp SDK provider): PRM·AS metadata·DCR·PKCE S256·승인 화면(비밀 문구)·
     토큰 만료/갱신/철회·매 요청 검증. TokenVerifier 경계.
 19. `homeserver.nix`에 `ankiMcp` 옵션. `anki-mcp/default.nix`: systemd 서비스(loopback), `tailscale.nix`에 Funnel 443→MCP, serve 8443→승인.
 20. `secrets/secrets.nix`: `anki-mcp-oauth.age`. 🔒 값 생성.
 21. eval 테스트(Funnel 대상 고정, 승인 포트 funnel 미허용, loopback) + 오프라인 단위 테스트.
 22. 배포 → 메타데이터·승인·토큰 흐름을 curl로 검증 → ChatGPT 개발자 모드 플러그인 등록(기존 시험 등록 제거)
-    → 🔒 iPhone ChatGPT Chat에서 연결·조회·카드 추가·readback → Codex·Claude 연결·조회 1회.
+    → 🔒 iPhone ChatGPT Chat에서 연결·조회·카드 추가·readback → Codex·Claude 연결·조회 1회. 도구 검증은 `lab`(조회·추가·
+    수정·복구점)과 `main`(sync 계열 — 결정 12)으로 나눈다.
 23. 실패 경로 검증(인증 실패·만료·철회, AnkiWeb 접속 실패, full sync 요구 중단·알림).
-24. `.claude/skills/hosting-anki/` 신규. `lab` 인스턴스는 PR 2 도구 검증까지 유지한 뒤 `enable = false`로 내린다
-    (검증 사본은 `restore-points/`·anki-study 백업으로 재현 가능). Plan DA → PR 2 → PR DA → 머지.
+24. `.claude/skills/hosting-anki/` 신규(백업 타이머 표로의 교차 참조 포함). **`lab` 폐기 체크리스트** — PR 2a 도구 검증이 끝나면:
+    (a) `configuration.nix`의 `lab` 블록 제거, `constants.nix`의 `ankiConnectLab`·`ankiHelperLab` 제거, eval 테스트의 lab 참조
+    정리 → 커밋·배포 (b) `systemctl status anki-host-lab`이 유닛 부재를 보이는지 확인 (c) `/var/lib/anki-host/lab` 상태 루트
+    **전체**(Anki2 프로필·`backups/`의 fixture·`restore-points/`·Anki 자체 자동 백업)를 삭제하고 `du`로 실측 확인. 남기지 않는다 —
+    실제 학습 이력 사본이며 원본은 anki-study 백업에 있다. #863이 남긴 `/var/lib/private/anki-sync-server` 잔재를 반복하지 않는다.
+    Plan DA → PR 2 → PR DA → 머지.
 25. `plans/README.md` 030 DONE, anki-study #3 완료 검증 체크리스트 갱신.
 
 ## Test plan
@@ -180,7 +210,7 @@
 6. 승인 화면이 tailnet 밖에서 열린다(Funnel로 8443이 노출) — 즉시 Funnel 해제.
 7. 시크릿 값이 로그·이슈·PR·stdout에 나타났다 — 즉시 rotate.
 8. 운영자가 시크릿 값 투입·Mac 동기화·ACL 변경을 아직 하지 않았다 — 해당 Step 대기. 특히 자격 투입 전에
-   부트스트랩 유닛을 실행하거나 헬퍼 `/sync`에 `download`/`upload` 모드를 직접 보내지 않는다.
+   부트스트랩 유닛을 실행하지 않는다. 헬퍼 `/sync`는 `anki-host-sync` 스크립트 외의 호출자를 두지 않는다(결정 13).
 
 ## 재개 절차 (다른 기기·새 세션)
 
@@ -201,5 +231,13 @@
   이번 실측 추가: aqt가 `sys.stderr`를 오류 다이얼로그 버퍼로 바꾸므로 애드온 로그는 `sys.__stderr__`로 써야 journald에 남는다;
   backend `import_collection_package`는 `col.close()` 후에만 동작한다(`close_for_full_sync`로는 CollectionAlreadyOpen).
 - 복구점(.colpkg)은 `<state>/restore-points/`에 두며 백업 서비스가 HDD `backups/anki-host/<name>/restore-points/`로
-  미러만 하고 어느 쪽에서도 자동 삭제하지 않는다. 일일 백업본(`backups/`)은 SSD 최신 2개·HDD 보존 기간으로 정리한다.
+  미러한 뒤 SSD에는 최신 10개만 남긴다(HDD는 무기한). 일일 백업본(`backups/`)은 SSD 최신 2개·HDD 보존 기간으로 정리한다.
+- **복구점 복원 절차** (운영 인스턴스 `main`): 헬퍼에는 서버를 덮어쓰는 모드가 없으므로 복원은 GUI 경로로 한다 —
+  (1) `systemctl stop anki-host-main` (2) Mac Anki에서 격리 프로필을 만들어 복구점 `.colpkg`를 가져와 내용을 확인
+  (anki-study `docs/recovery.md`의 복원 원칙과 같다) (3) 확인 후 실제 프로필에 가져오기(전체 컬렉션 교체) → AnkiWeb에
+  **Upload** 선택 (4) MiniPC `main`의 프로필 디렉터리(`/var/lib/anki-host/main/Anki2/main/`)를 지우고 서비스 시작 →
+  `anki-host-sync-main-bootstrap` 재실행(Download). 미디어는 불변이라 일일 백업본의 미디어로 보완한다.
+- `homeserver.ankiHost`를 통째로 끄는 날의 처분 계약: 상태 루트 `/var/lib/anki-host` 전체와 HDD `backups/anki-host`의 보존
+  여부를 결정해 기록하고, `anki-host` 시스템 계정(`userdel`)까지 정리한다. NixOS는 선언이 사라져도 기존 데이터·계정을
+  지우지 않는다 — #863의 미완 정리를 반복하지 않는다.
 - 공개 확장 결정 시 입구를 Cloudflare Tunnel + 자체 도메인으로 바꾸면 issuer URL이 바뀌어 클라이언트 재연결 1회가 필요하다.
