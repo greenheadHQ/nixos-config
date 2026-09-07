@@ -81,7 +81,7 @@ reconcile 당시 PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)
 | 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | REJECTED (2026-09-05 운영자 결정으로 `anki-study/` 제거 — 산출물 `anki-study/CARD_MAINTENANCE.md`의 대상 디렉토리 소멸) |
 | 028 | 원격 AI 세션 macOS TCC 권한 정책을 DX 우선으로 확정·적용 | P1 | M | — | #1093 | DONE (PR #1177·#1178·#1179 머지 2026-07-23, 이슈 #1093 CLOSED — C Workspace-only + Ghostty FDA 적용) |
 | 029 | 원격 AI 세션 1Password SSH 승인 hang을 DX 우선으로 제거 | P1 | M-L | — | #1094 | DONE |
-| 030 | headless Anki 복원 + AnkiWeb 동기화·알림 + 원격 MCP 서버 (Funnel·OAuth) | P1 | L | 024 (soft) | #1306 | IN PROGRESS (2026-09-06 착수 — 운영자 grilling 인터뷰로 결정 14건 확정, PR 1 구현 중) |
+| 030 | headless Anki 복원 + AnkiWeb 동기화·알림 + 원격 MCP 서버 (Funnel·OAuth) | P1 | L | 024 (soft) | #1306 | IN PROGRESS (2026-09-06 착수. PR 1 #1307 머지·시크릿 투입 #1308·부트스트랩 완료 2026-09-07 — MiniPC `main` 운영 중. PR 2 MCP 서버·OAuth·Funnel 대기) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
