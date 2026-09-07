@@ -29,9 +29,9 @@ def _int(name: str) -> int:
 
 @dataclass(frozen=True)
 class Settings:
-    port: int  # Funnel → 이 loopback 포트 (/mcp, 메타데이터, /register, /token, /revoke)
+    port: int  # Cloudflare Tunnel → 이 loopback 포트 (/mcp, 메타데이터, /register, /token, /revoke)
     approval_port: int  # tailnet serve → 이 loopback 포트 (/authorize, /approve)
-    public_url: str  # OAuth issuer = 포트까지 포함한 Funnel URL
+    public_url: str  # OAuth issuer = 공개 HTTPS URL
     approval_url: str  # 승인 화면 base URL — authorization_endpoint가 여기를 가리킨다
     anki_connect_url: str
     helper_url: str
@@ -53,9 +53,9 @@ class Settings:
     reg_unused_ttl: int  # 토큰 없는 등록을 정리하기까지의 시간
     reg_burst: int  # 등록 rate limit: 창(reg_window) 안 허용 횟수
     reg_window: int
-    max_body_bytes: int  # Funnel 앱 요청 본문 상한 (413)
+    max_body_bytes: int  # 공개·승인 앱 요청 본문 상한 (413)
     body_read_timeout: int  # 인증 전 본문 선읽기 기한(초) — 미완결 본문(slowloris) 방어 (408)
-    max_concurrency: int  # Funnel 앱 동시 처리 상한 — 인증 전 버퍼의 합산 메모리를 묶는다
+    max_concurrency: int  # 공개·승인 앱 각각의 동시 처리 상한 — 인증 전 버퍼의 합산 메모리를 묶는다
 
     @classmethod
     def from_env(cls) -> "Settings":

@@ -9,9 +9,9 @@
   tools.py       MCP 도구 정의(조회 계층 + 변경 계층의 추가·수정·태그, annotations)
   oauth.py       내장 OAuth 2.1 AS provider — 파일 영속(클라이언트·토큰 해시), PKCE·DCR·갱신·철회
   approval.py    승인 화면(tailnet 전용 포트) — 비밀 문구 + 잠금
-  server.py      Funnel 앱(/mcp·메타데이터·토큰)과 승인 앱(/authorize·/approve)을 서로 다른 loopback 포트에 띄운다
+  server.py      공개 앱(/mcp·메타데이터·토큰)과 승인 앱(/authorize·/approve)을 서로 다른 loopback 포트에 띄운다
 
-신뢰 경계: 이 프로세스는 Tailscale Funnel로 인터넷에 노출된다. Anki 데이터는 파일로 만지지 않고
+신뢰 경계: 이 프로세스는 Cloudflare Tunnel로 인터넷에 노출된다. Anki 데이터는 파일로 만지지 않고
 AnkiConnect·헬퍼 HTTP로만 다루며, 별도 시스템 유저(anki-mcp)로 돌아 컬렉션 디렉터리(0700)에 닿지 않는다.
 """
 

@@ -1,6 +1,6 @@
 """두 앱, 두 loopback 포트.
 
-Funnel 앱(port)      : /mcp(Streamable HTTP, Bearer), /.well-known/oauth-authorization-server(authorization_endpoint는
+공개 앱(port)      : /mcp(Streamable HTTP, Bearer), /.well-known/oauth-authorization-server(authorization_endpoint는
                        승인 URL을 가리킨다), /.well-known/oauth-protected-resource/mcp, /register, /token, /revoke
 승인 앱(approval_port): /authorize, /approve — Tailscale serve 9443(tailnet 전용)만 여기로 프록시한다
 """
@@ -141,7 +141,7 @@ def build(cfg: Settings):
     register_tools(mcp, deps)
 
     funnel_app = mcp.streamable_http_app()
-    # /authorize는 승인 포트에만 둔다 — Funnel 앱에서 제거
+    # /authorize는 승인 포트에만 둔다 — 공개 앱에서 제거
     funnel_app.router.routes = [
         r for r in funnel_app.router.routes if not (isinstance(r, Route) and r.path == "/authorize")
     ]

@@ -291,7 +291,7 @@ in
         # 멈출 때(모듈 제거·비활성·재시작) 이 유닛이 켠 두 경로만 끈다 — 남은 경로가 나중에 같은 포트를 쓰는 프로세스를 노출하지 않게.
         # 실패해도(tailscaled가 먼저 내려간 종료 중 등) 유닛 정지는 막지 않는다.
         ExecStop = "-${tsUnwire}/bin/anki-mcp-tailscale-unwire";
-        # 온라인 대기 + serve/funnel 두 명령의 상한 + 여유. 스크립트의 timeout이 먼저 끊지만, 이중 안전장치.
+        # 온라인 대기 + 이전 경로 제거·승인 Serve 설정 두 명령의 상한 + 여유. 스크립트의 timeout이 먼저 끊지만, 이중 안전장치.
         TimeoutStartSec = onlineWaitSecs + 2 * cmdTimeoutSecs + 30;
         TimeoutStopSec = 2 * cmdTimeoutSecs + 10;
       };

@@ -178,7 +178,7 @@
     };
   };
   homeserver.ankiMcp = {
-    enable = true; # 원격 MCP 서버 — Funnel 8443 → MCP, tailnet 9443 → 승인 화면 (plan 030 PR 2a)
+    enable = true; # 원격 MCP 서버 — Cloudflare 443 → MCP, tailnet 9443 → 승인 화면 (plan 030 PR 2a)
     port = constants.network.ports.ankiMcp;
     approvalPort = constants.network.ports.ankiMcpApproval;
   };
