@@ -17,9 +17,13 @@ GUI 없이 도는 Anki 프로세스 안에서 loopback HTTP(JSON)만 연다. 인
 대기가 BUSY_WAIT_SECS를 넘으면 무한 대기 대신 HTTP 409와 진행 중인 작업 이름을 돌려주어,
 호출자가 "응답 없음"과 "다른 작업 진행 중"을 구분하게 한다.
 조회는 둘이다. `/status`는 메인 스레드를 타지 않고 애드온 메모리(`_state`)만 읽어 즉시 답한다
-(collection_open·login·last_sync·busy) — 준비 대기 프로브와 로그인 판정은 이것으로 충분하고,
-기동 중 메인 스레드가 로그인 네트워크 호출에 잠겨 있어도 작업이 큐에 쌓이지 않는다.
-`/status/full`은 메인 스레드에서 counts·media까지 채운다(운영자 조회·PR 2 도구용). busy 중에는 409.
+(busy·collection_open·login.status·last_sync 요약) — 준비 대기 프로브와 로그인 판정은 이것으로 충분하고,
+기동 중 메인 스레드가 로그인 네트워크 호출에 잠겨 있어도 작업이 큐에 쌓이지 않는다. `collection_open`은
+로그인 판정이 끝난 뒤에야 True가 되므로 "준비됨"이면 `login.status`는 항상 확정값이다. 무인증 응답이라
+계정 식별자(username)·덱 이름·카운트는 싣지 않는다. `/status/full`은 메인 스레드에서 profile·username·
+counts·media까지 채운다(운영자 조회·PR 2 도구용). busy 중에는 409.
+이 락은 헬퍼 엔드포인트만 덮는다 — 같은 프로세스의 AnkiConnect 경유 변경은 락 밖이므로 MCP 변경 도구는
+호출 전 `/status`의 `busy`를 확인한다(plan 030 결정 10).
 
 환경 변수 (모두 nixos 모듈이 단일 소스에서 파생해 넣는다):
   ANKI_HOST_HELPER_PORT       loopback 포트. 없거나 0이면 서버를 열지 않는다.
@@ -28,8 +32,11 @@ GUI 없이 도는 Anki 프로세스 안에서 loopback HTTP(JSON)만 연다. 인
                               `backups/`(일일 백업 스테이징, 정리 대상)와 `restore-points/`
                               (복구점 — 생산자·보존 규칙은 PR 2b)만 허용한다.
   ANKI_HOST_ADDON_VERSION     패키지 버전(nix 파생 version과 같은 값) — /status에 노출.
-  ANKI_HOST_MAIN_TIMEOUT_SECS 메인 스레드 작업 타임아웃(필수 — 기본값 없음). 타임아웃 사다리의 가장
-                              안쪽 값이며 스크립트 curl·systemd 유닛 값은 이 값에서 파생된다(default.nix).
+  ANKI_HOST_MAIN_TIMEOUT_SECS 변경 작업의 메인 스레드 타임아웃(필수 — 기본값 없음). 타임아웃 사다리의 가장
+                              안쪽 값이며 스크립트 curl·systemd 유닛 값은 이 값에서 파생된다(constants.ankiHost).
+  ANKI_HOST_BUSY_WAIT_SECS    변경 작업 락 대기(필수). 넘기면 409 — 이 값이 409 응답 시간의 상한이라 유닛
+                              예산 계산(sync.nix)에 들어간다.
+  ANKI_HOST_QUERY_TIMEOUT_SECS /status/full의 메인 스레드 대기(필수).
   ANKI_HOST_ALLOW_IMPORT      "1"이면 /import-colpkg를 연다. 모듈이 AnkiWeb sync를 켜지 않은 인스턴스
                               (격리 fixture용)에만 넣는다 — 운영 인스턴스에는 라우팅 자체가 없다.
 """
@@ -40,7 +47,6 @@ import json
 import os
 import sys
 import threading
-import time
 import traceback
 from concurrent.futures import Future
 from datetime import datetime, timezone
@@ -57,10 +63,11 @@ PORT = int(os.environ.get("ANKI_HOST_HELPER_PORT", "0") or "0")
 CRED_FILE = os.environ.get("ANKI_HOST_SYNC_CREDENTIALS") or None
 STATE_DIR = os.environ.get("ANKI_HOST_STATE_DIR") or None
 ALLOWED_SUBDIRS = ("backups", "restore-points")
-MAIN_TIMEOUT_SECS = int(os.environ["ANKI_HOST_MAIN_TIMEOUT_SECS"])  # 단일 소스(constants.ankiHost) — 기본값 없음
+# 타임아웃 값은 전부 단일 소스(constants.ankiHost)에서 env로 온다 — 기본값 없음
+MAIN_TIMEOUT_SECS = int(os.environ["ANKI_HOST_MAIN_TIMEOUT_SECS"])
+BUSY_WAIT_SECS = int(os.environ["ANKI_HOST_BUSY_WAIT_SECS"])
+QUERY_TIMEOUT_SECS = int(os.environ["ANKI_HOST_QUERY_TIMEOUT_SECS"])
 ALLOW_IMPORT = os.environ.get("ANKI_HOST_ALLOW_IMPORT") == "1"
-QUERY_TIMEOUT_SECS = 120
-BUSY_WAIT_SECS = 5
 SYNC_MODES = ("normal", "allow-download-if-empty")
 
 ChangesRequired = sync_pb2.SyncCollectionResponse.ChangesRequired
@@ -223,19 +230,20 @@ def _media_status() -> dict[str, Any]:
     }
 
 
-def _wait_media(seconds: float) -> dict[str, Any]:
-    deadline = time.monotonic() + max(0.0, seconds)
-    while True:
-        status = _on_main(_media_status, timeout=60)
-        if not status.get("active") or time.monotonic() >= deadline:
-            return status
-        time.sleep(1)
+
 
 
 # ── 동기화 ────────────────────────────────────────────────────────────────
 
 
 def _full_download(auth: Any, out: Any) -> None:
+    """빈 로컬에 서버 컬렉션을 통째로 내려받는다 (부트스트랩 전용 — 서버를 덮어쓰는 방향은 없다).
+
+    순서는 aqt.sync.full_download와 같다: close_for_full_sync로 pylib 쪽만 닫아 backend가 DB 파일을 교체하게 하고,
+    reopen(after_full_sync=True)로 backend가 새로 연 컬렉션을 다시 붙인다 (export/import의 after_full_sync=False와
+    다른 이유). finally인 이유: 다운로드가 실패해도 컬렉션을 다시 열어야 다음 호출이 collection-not-open으로 죽지 않는다.
+    미디어는 크기 때문에 백그라운드(sync_media)로 넘기고 완료를 기다리지 않는다 — 진행은 /status/full의 media로 본다.
+    """
     mw = aqt.mw
     mw.col.close_for_full_sync()
     try:
@@ -266,8 +274,8 @@ def _sync(mode: str) -> dict[str, Any]:
         pm.set_current_sync_url(out.new_endpoint)
         pm.save()
         auth = pm.sync_auth()
-    required = ChangesRequired.Name(out.required)
-    action = "none"
+        required = ChangesRequired.Name(out.required)
+    action: str  # 호출자(anki-host-sync.sh)와의 계약 값 — normal | full-download | full-sync-required | unexpected:*
     empty = before["notes"] == 0 and before["revlog"] == 0
     if out.required == NO_CHANGES:
         action = "normal"
@@ -380,13 +388,19 @@ def _status_full() -> dict[str, Any]:
 
 
 def _status_quick() -> dict[str, Any]:
-    """메인 스레드를 타지 않는 즉시 응답 — 준비 대기·로그인 판정·busy 확인용."""
+    """메인 스레드를 타지 않는 즉시 응답 — 준비 대기·로그인 판정·busy 확인용.
+
+    무인증 loopback 응답이므로 투영을 좁힌다: login은 status·at·error만(username 제외), last_sync는 시각·모드·결과만
+    (덱 이름·카운트 제외). 상세는 /status/full.
+    """
+    login = _state["login"]
+    last = _state["last_sync"]
     return {
         "busy": _busy,
         "addon_version": ADDON_VERSION,
         "collection_open": _state["collection_open"],
-        "login": _state["login"],
-        "last_sync": _state["last_sync"],
+        "login": {k: login[k] for k in ("status", "at", "error") if k in login},
+        "last_sync": None if last is None else {k: last.get(k) for k in ("at", "mode", "action", "required")},
     }
 
 
@@ -435,7 +449,6 @@ class _Handler(BaseHTTPRequestHandler):
                 if mode not in SYNC_MODES:
                     raise ValueError("unknown-mode")
                 result = _mutating("sync", _sync, mode)
-                result["media"] = _wait_media(float(body.get("wait_media_secs", 0)))
             elif path == "/export" and self.command == "POST":
                 result = _mutating(
                     "export",
@@ -469,13 +482,16 @@ def _start_server() -> None:
 
 
 def _on_profile_open() -> None:
-    _state["collection_open"] = True
+    # collection_open은 로그인 판정이 끝난 뒤에 세운다 — /status 즉시 응답에서 "준비됨"이 곧 "login.status 확정"이어야
+    # 준비 대기(anki_helper_wait_ready)와 로그인 판정이 같은 응답을 안전하게 공유한다 (로그인 진행 중 창 제거).
     try:
         _state["login"] = _ensure_login()
         _log(f"profile '{aqt.mw.pm.name}' open, login: {_state['login'].get('status')}")
     except Exception:  # noqa: BLE001 — 훅 예외는 Anki가 삼키고 훅을 제거하므로 여기서 남긴다
         _log_exc("profile_did_open")
         _state["login"] = {"status": "hook-error", "at": _now()}
+    finally:
+        _state["collection_open"] = True
 
 
 def _on_profile_close() -> None:

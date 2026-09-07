@@ -59,14 +59,17 @@ helper_error() {
 }
 
 # anki_helper_wait_ready <base-url>
-#   헬퍼의 즉시 응답(/status — 메인 스레드를 타지 않는다)으로 collection_open을 기다린다.
+#   헬퍼의 즉시 응답(/status — 메인 스레드를 타지 않는다)으로 "준비됨"을 기다린다: collection_open이고 login.status가
+#   확정값(not-attempted가 아님)일 때. 애드온은 로그인 판정 뒤에 collection_open을 세우므로 둘째 조건은 이중 방어다.
 #   재배포·재부팅 직후 타이머가 돌면 Anki가 아직 뜨는 중일 수 있다. 준비되면 0, 예산을 다 쓰면 1.
-#   마지막 응답은 HELPER_* 전역에 남는다 (login.status 판정 등에 재사용).
+#   마지막 응답은 HELPER_* 전역에 남는다 (login.status 판정에 재사용 — 같은 응답이라 사이에 상태가 바뀌지 않는다).
 anki_helper_wait_ready() {
   local base="$1" i
   for i in $(seq 1 "${READY_WAIT_TRIES:?}"); do
     anki_helper_call "${base}/status" "" "${READY_PROBE_TIMEOUT:?}"
-    if helper_ok && [ "$(printf '%s' "$HELPER_BODY" | jq -r '.result.collection_open')" = "true" ]; then
+    if helper_ok \
+      && [ "$(printf '%s' "$HELPER_BODY" | jq -r '.result.collection_open')" = "true" ] \
+      && [ "$(printf '%s' "$HELPER_BODY" | jq -r '.result.login.status // "not-attempted"')" != "not-attempted" ]; then
       return 0
     fi
     [ "$i" -lt "$READY_WAIT_TRIES" ] && sleep "${READY_WAIT_SECS:?}"
@@ -75,8 +78,10 @@ anki_helper_wait_ready() {
 }
 
 # anki_helper_call_retry_busy <url> <json-payload> <max-time-secs>
-#   변경 작업 호출. 409(busy)면 BUSY_RETRY_SECS 뒤 다시 시도하고, BUSY_RETRIES회째 busy면 그대로 돌려준다
-#   (마지막 회차 뒤에는 대기하지 않는다). 호출자는 helper_busy로 "여전히 busy"를 판정한다.
+#   변경 작업 1회 호출 + busy 재시도. 409(busy)면 BUSY_RETRY_SECS 뒤 다시 시도하고, BUSY_RETRIES회째 busy면 그대로
+#   돌려준다(마지막 회차 뒤에는 대기하지 않는다). 호출자는 helper_busy로 "여전히 busy"를 판정한다.
+#   호출자는 스크립트 실행당 한 번만 불러야 유닛 예산 계산(busy 예산 = 스크립트 전체 BUSY_RETRIES회)이 맞는다 —
+#   backup이 그렇게 쓴다. sync 스크립트는 자체 재시도 루프가 있어 이 함수 대신 busy_left 카운터를 쓴다.
 anki_helper_call_retry_busy() {
   local url="$1" payload="$2" max_time="$3" i
   for i in $(seq 1 "${BUSY_RETRIES:?}"); do
