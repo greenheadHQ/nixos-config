@@ -2,9 +2,8 @@
 name: finish-pr
 argument-hint: "[pr-number|pr-url|branch]"
 description: |
-  PR 머지 후 종결 절차를 수행한다. 대상 PR 확인, CI 상태 확인, 퀴즈 게이트(finding-unknowns 방법론 적용 작업), squash merge, main pull 후 로컬 실측 검증, PR 후속 코멘트, 관련 이슈 동기화, 산출물 위생 점검, worktree cleanup까지 다룬다.
-  Trigger: '머지해줘', 'squash merge', '머지 후 정리', 'PR 마무리', 'PR 종결', 'finish-pr'.
-  NOT for PR 생성 (use create-pr). NOT for PR 코멘트 처리 (use review-pr-feedback).
+  PR을 머지하고 프로젝트 관례에 따라 로컬 반영, 관련 이슈 동기화와 worktree 정리를 완료한다.
+  머지·PR 종결 요청에 사용한다. PR 생성은 create-pr, 리뷰 피드백 처리는 review-pr-feedback을 사용한다.
 ---
 
 # PR 종결

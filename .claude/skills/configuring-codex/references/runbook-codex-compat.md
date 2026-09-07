@@ -142,10 +142,12 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex'
 
 ## 회귀 방지 체크리스트
 
-1. 새 스킬 추가/수정 후 `nrs`(또는 동등 activation) 실행
+아래 전체 점검은 스킬 추가·제거·노출/설치 경로·정책 변경에 적용한다. 일반 문구나 reference 편집은 영향받는 문서·링크와 관련 검사만 실행한다. runtime 표면이 달라졌거나 구조 검사로 설명되지 않는 문제가 있을 때만 모델 호출 probe를 추가한다.
+
+1. 노출·정책 변경 후 `nrs` 실행
 2. `.agents/skills/*`이 디렉토리 심링크인지 확인 (`ls -la .agents/skills/`)
 3. `./scripts/ai/verify-ai-compat.sh` 통과 확인
-4. `codex exec`로 project-scope 스킬 1개 이상 런타임 확인
+4. 실제 스킬 선택/로드 문제가 남으면 해당 project-scope 스킬 1개로 런타임 확인 (호출 전 실행 계약 적용)
 5. `configuring-codex` 스킬 문서와 실제 구현(`default.nix`, verify script) 간 불일치 여부 점검
 6. pre-commit `ai-skills-consistency` 훅 확인 (관련 staged 변경 시 fail, 긴급 우회: `SKIP_AI_SKILL_CHECK=1`)
 7. `command -v codex`가 nix profile/store 경로로 resolve되는지 확인 — mise shims 경로면 잔존 shim이 codex(nix profile)를 shadow하는 회귀(#890)이며, `verify-ai-compat.sh`의 codex PATH resolve 가드가 자동 검사한다

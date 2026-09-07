@@ -10,7 +10,7 @@ reviewer는 "없다"를 잘 찾지만, "없는 게 맞다"는 판단은 독립 �
 `run-da`의 reviewer fan-out을 4 bundle로 줄이더라도, Arbiter는 늘리지 않는다.
 비용을 늘려 여러 Arbiter를 붙이기보다, 한 명의 강한 Arbiter가 selective escalation set을 판정하는 구조를 유지한다.
 
-effective effort 우선순위: ①현재 발화의 사용자 명시 effort > ②장기 선호 설정 파일(`run-da/SKILL.md` "장기 선호 설정 파일" 정본) > ③role별 기본값(reviewer/auditor standard, Arbiter strong — 경로만 지정된 호출도 effort는 이 기본값을 따른다). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 명시 축 예외는 ①에만 적용된다 (설정 파일 값은 이번 호출의 의도적 하향이 아니므로 하한이 이긴다). 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 절이 정본이다.
+effective effort 우선순위: ①현재 발화의 사용자 명시 effort > ②장기 선호 설정 파일([execution-options.md](execution-options.md) "장기 선호 설정 파일" 정본) > ③role별 기본값(reviewer/auditor standard, Arbiter strong — 경로만 지정된 호출도 effort는 이 기본값을 따른다). 단 Arbiter에는 아래 강도 하한이 이 우선순위 적용 후에 최종 적용된다 — 다른 문서의 "전체 우선 적용" 서술은 전부 이 하한 적용 전 단계를 말한다. 명시 축 예외는 ①에만 적용된다 (설정 파일 값은 이번 호출의 의도적 하향이 아니므로 하한이 이긴다). 값 정의와 경로 의미는 [`runtime-mapping.md`](runtime-mapping.md)의 실행 프로파일 절이 정본이다.
 
 Arbiter 추론 강도 하한 (판별력 보장 — 본 절이 정본): Arbiter의 판별력은 실행 조건에 종속한다 — 같은 판정 계약·같은 프롬프트에서 실행 강도에 따라 기각률이 0%와 75%로 갈린 실측이 있다 (#1258). 따라서:
 
@@ -28,13 +28,13 @@ selective propagation으로 추린 escalated findings를 단일 Arbiter에 전�
 
 ## 사용자 지정 실행 파라미터 (model / effort / service_tier)
 
-사용자가 명시 지정한 model/effort/service_tier를 codex exec 실행 단위에 주입하는 실행 계약의 SSOT다. 개념 정의(자연어 채널, 해석 규칙, 우선순위, 경로 제약)는 `run-da/SKILL.md`의 "실행 경로·파라미터 지정" 섹션을 따른다.
+사용자가 명시 지정한 model/effort/service_tier를 codex exec 실행 단위에 주입하는 실행 계약의 SSOT다. 개념 정의(자연어 채널, 해석 규칙, 우선순위, 경로 제약)는 [execution-options.md](execution-options.md)의 "실행 경로·파라미터 지정" 섹션을 따른다.
 
 | env | 의미 | 값 출처 (축별 provenance) |
 |-----|------|---------------------------|
 | `RUN_DA_CODEX_EFFORT` | resolved reasoning effort | 기본 role profile, 설정 파일(`reviewer_effort`/`arbiter_effort`), 현재 발화의 사용자 명시 effort — resolution 순서는 위 우선순위 |
 | `RUN_DA_CODEX_MODEL` | 사용자 명시 model. 미지정 시 unset — 스킬은 모델을 pin하지 않는다 | 현재 발화의 명시 지정만 (설정 파일에 model 키는 없다). 이 env를 설정하는 행위 자체가 "사용자가 model을 명시했다"는 선언이다 — 명시 없이 설정하면 계약 위반 |
-| `RUN_DA_CODEX_TIER` | 사용자 명시 service_tier. 미지정 시 unset | 현재 발화의 명시 지정 또는 설정 파일 `service_tier` (둘 다 사용자 명시 provenance — `run-da/SKILL.md` 설정 파일 절). 설정 행위 = 명시 선언 |
+| `RUN_DA_CODEX_TIER` | 사용자 명시 service_tier. 미지정 시 unset | 현재 발화의 명시 지정 또는 설정 파일 `service_tier` (둘 다 사용자 명시 provenance — [execution-options.md](execution-options.md) 설정 파일 절). 설정 행위 = 명시 선언 |
 | `RUN_DA_USER_EFFORT_OVERRIDE` | 사용자가 effort 값을 명시 지정했음을 표시 (`1`). 기본 profile 밖 effort 값의 통과 관문 | 현재 발화 또는 설정 파일이 effort를 명시했을 때만 메인 에이전트가 설정 (설정 파일 값도 사용자 명시 provenance). model/tier만 지정된 호출에서 설정하면 계약 위반 — 축별 provenance를 하나의 표식으로 뭉개지 않는다 |
 
 - effort guard: 기본 profile 값(`medium|high|xhigh`)은 즉시 통과한다. 그 외 소문자 영문 값은 `RUN_DA_USER_EFFORT_OVERRIDE=1`(effort 축 전용 관문 — model/tier 지정 여부와 무관)일 때만 통과한다 — 스킬은 값 집합을 예단하지 않고 codex에 위임하며, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다 (조용한 대체/하향 금지).
@@ -62,7 +62,7 @@ Claude Code에서 Codex CLI를 subprocess로 호출할 때, 비대화형 automat
 또는 사용자가 `codex exec`를 명시적으로 요구할 때는 기존 `codex exec` 계약을 따른다.
 
 - `codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral` (issue #593 Layer 1: timeout capability-probe wrapper, [`../../using-codex-exec/references/known-issues.md`](../../using-codex-exec/references/known-issues.md) §15 SSOT). 주의: 이 literal에서 `--sandbox read-only`를 제거하면 audit/for_plan의 사후 변조 감지 생략 전제가 무너진다 ([`../modes/audit.md`](../modes/audit.md) "사후 변조 감지" 절이 복원 조건의 정본)
-- 단일 exec (병렬 fan-out 없음). 발사 방식은 하네스 기준으로 갈린다 — 하네스 foreground 상한은 세션 라벨이 아니라 Bash tool 속성이다 (상한 수치·근거 사실의 정본은 [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md) "foreground/background 상한 불일치" 절이며, 발사 방식 계약 자체는 본 절이 소유한다). 대화형 Claude Code 세션은 그 상한이 wrapper budget보다 먼저 걸리므로 `run_in_background: true`로 발사하고 완료 알림으로 결과를 수집한다. headless 중 `claude -p`도 같은 Bash tool 상한이 적용되므로 상한 면제가 아니다 — serial foreground로 실행할 때는 `timeout` 파라미터를 반드시 최대치로 명시하고, 그 상한을 초과할 것으로 예상되는 실행은 계획하지 않는다. CI·`codex exec` subprocess 셸은 serial foreground (완료 알림 없음). 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조
+- 단일 exec (병렬 fan-out 없음). 발사 방식은 하네스 기준으로 갈린다 — 하네스 foreground 상한은 세션 라벨이 아니라 Bash tool 속성이다 (상한 수치·근거 사실의 정본은 [`../../using-codex-exec/references/execution-contracts.md`](../../using-codex-exec/references/execution-contracts.md) "foreground/background 상한 불일치" 절이며, 발사 방식 계약 자체는 본 절이 소유한다). 대화형 Claude Code 세션은 그 상한이 wrapper budget보다 먼저 걸리므로 `run_in_background: true`로 발사하고 완료 알림으로 결과를 수집한다. headless 중 `claude -p`도 같은 Bash tool 상한이 적용되므로 상한 면제가 아니다 — serial foreground로 실행할 때는 `timeout` 파라미터를 반드시 최대치로 명시하고, 그 상한을 초과할 것으로 예상되는 실행은 계획하지 않는다. CI·`codex exec` subprocess 셸은 serial foreground (완료 알림 없음). 런타임별 매커니즘은 [`runtime-mapping.md`](runtime-mapping.md) "런타임 도구 매핑" 표 참조
 - `-o "$ARBITER_DIR/arbiter-result.md"` 결과 파일
 - `cat "$ARBITER_DIR/arbiter-prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised ... -` stdin pipe로 프롬프트 전달 (pipe EOF가 stdin hang 방지; marker는 codex 프로세스에 적용 — issue #585)
 - `2>"$ARBITER_DIR/arbiter-stderr.log"` stderr 분리
@@ -293,11 +293,11 @@ VERDICT_JSON caller 검증 위반은 아래 generic 실패 처리·recoverable v
 
 ### Arbiter 실패
 
-codex exec 실패 시 (exit code != 0, 빈 결과 파일):
+codex exec가 비정상 종료하거나 결과가 비었으면 stdout/stderr로 원인을 분류한다. Semantic malformed와 Codex violation은 각각의 정본 전이가 우선하며 아래 재시도로 우회하지 않는다.
 
-1. 해당 Arbiter 실행의 모든 findings를 NEEDS_MORE_INFO로 일괄 승격한다 (fail-closed).
-2. 사용자에게 질문 도구로 보고한다 (맥락 설명 의무 적용).
-3. 재시도하지 않는다 (사용자가 판단).
+- 연결 중단·일시 서버 오류가 확인되고 이전 실행이 종료되었을 때만 fresh 실행을 1회 재시도할 수 있다. 승인된 경로/model/effort/tier/sandbox/권한, 남은 예산 안에서 동일한 frozen changeset·finding manifest를 사용하고 실패 산출물과 재시도 결과를 구분한다.
+- 단순 지연·wait timeout은 실패 신호가 아니다. 파라미터 거부, guard, quota, 인증/권한, 도구 부재 등 조건 변경이 필요한 오류와 원인·예산을 확인할 수 없는 경우에는 자동 재시도하지 않는다. 경로·권한·예산 확대나 reset credit 사용을 포함하지 않는다.
+- 성공하면 정상 수집·검증 계약을 적용한다. 재시도 불가 또는 재시도 실패이면 해당 Arbiter 실행의 모든 findings를 NEEDS_MORE_INFO로 승격하고 사용자에게 보고한다 (fail-closed, 맥락 설명 의무 적용). 같은 실패를 반복하지 않는다.
 
 ## Codex 세션 violation 처리
 

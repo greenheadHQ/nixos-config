@@ -25,7 +25,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 
 계획이 제거·단순화·되돌림·리팩터 방향이거나 변경 대상이 git상 왕복 핫스팟이면, [`../references/decision-regression-audit.md`](../references/decision-regression-audit.md)의 발동 조건에 따라 "의사결정 컨텍스트 팩"(해당 문서 Step A)을 수집한다 — 메인이 commit/PR/issue(+있으면 CIR/ADR·로컬 세션 로그)에서 과거 결정·되돌림 이력을 추려, Step 2의 reviewer 프롬프트와 Step 5의 Arbiter 프롬프트에 selective propagation으로 주입한다. 그 외 변경은 검토 강도에 연동한다(FULL=전체 조사, LITE=경량, SKIP=생략).
 
-`fresh` 반복 라운드에서는 [`../SKILL.md`](../SKILL.md)의 "세션 내 기각 이력" 계약을 적용한다 — 이력은 Step 2 reviewer prompt에 넣지 않고, Step 3 결과 수집 후 Arbiter 진입 전 exact match suppression에만 사용한다.
+`fresh` 반복 라운드에서는 [../references/fresh-review.md](../references/fresh-review.md)의 "세션 내 기각 이력" 계약을 적용한다 — 이력은 Step 2 reviewer prompt에 넣지 않고, Step 3 결과 수집 후 Arbiter 진입 전 exact match suppression에만 사용한다.
 
 ## Outer round phase model: changeset 동결 + read/write 분리
 
@@ -40,7 +40,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 ## Step 2: reviewer bundle 병렬 실행
 
 선택된 reviewer bundle 또는 explicit exhaustive override의 세부 도메인별 DA 에이전트를 병렬 실행한다. 런타임별 도구 매핑은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md) 참조.
-호출 단위 실행 경로·파라미터 지정(자연어 채널)은 [`../SKILL.md`](../SKILL.md)의 정의가 정본이다. 예: "run-da for_plan, reviewer는 codex high로".
+호출 단위 실행 경로·파라미터 지정(자연어 채널)은 [../references/execution-options.md](../references/execution-options.md)의 정의가 정본이다. 예: "run-da for_plan, reviewer는 codex high로".
 
 ### Codex 세션 경로
 
@@ -52,7 +52,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 
 ### codex exec 경로 (Claude Code 세션 · headless 세션)
 
-- 실행 전 [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md)의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
+- 실행 전 [`../../using-codex-exec/references/patterns.md`](../../using-codex-exec/references/patterns.md)의 패턴 4 (exec 우회)와 패턴 5 (DA 피드백 루프)를 참조한다.
 - 세션별 임시 디렉토리를 생성하고 stdout으로 출력한다. 모든 런타임은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 공통 주의(셸 호출 간 변수 유실)를 따른다.
   ```zsh
   _DA_SID=c4a35fc4
@@ -78,7 +78,7 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
   `--ignore-user-config`/`--ignore-rules`/effort resolution 등 command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령이 SSOT다. Claude Code 세션의 기본 병렬 경로와 fallback 경로(codex exec 사전점검 실패 원인 고지 후 사용자 확인 시)는 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "런타임 도구 매핑" 표 binding을 따른다. headless 세션은 serial foreground (완료 알림·`&+wait` 없음; `claude -p`는 Bash tool 상한 적용 — [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md) 실행 계약 참조).
 - Claude Code 세션: 병렬 실행 완료 알림을 수신하면 sleep/poll 없이 바로 결과를 수집한다. headless 세션: 각 subprocess 종료를 직렬로 확인한다.
 - 모든 런타임 공통: `& + wait` shell-level 병렬 금지, `cat file | env CODEX_PROGRAMMATIC=1 codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral ... -` stdin pipe (Layer 1)로 프롬프트 전달. pipe EOF가 stdin을 닫으므로 `< /dev/null`은 불필요. 인라인 인자 `"$(cat file)"`는 사용하지 않는다. `CODEX_PROGRAMMATIC=1` env assignment는 codex 프로세스에 적용되어야 한다 (회피: `CODEX_PROGRAMMATIC=1 cat ...`은 cat에만 적용 — issue #585).
-- [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md) 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙은 본 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
+- [`../../using-codex-exec/references/patterns.md`](../../using-codex-exec/references/patterns.md) 패턴 5의 실행 흐름(`-o` 사용법, 결과 파일 검증, 명령 실행 순서)만 참고한다. 프롬프트 내용 규칙은 본 스킬의 `fresh`/프롬프트 조향 금지 규칙이 우선한다.
 
 ## Step 3: reviewer 결과 수신 + 종합 리포트
 
@@ -89,8 +89,8 @@ for_plan 대상은 구현 계획, 계획 파일, 대화 컨텍스트뿐 아니�
 - reviewer 출력 기계 검증 (#1259): 수집한 각 결과 파일에 공통 검증기의 reviewer 모드(`"$HELPER_PATH" --validate-reviewer --expect-unit "$UNIT" <result.md>`)를 unit별로 실행한다 — `--expect-unit`이 결과 헤더의 unit 이름을 배정 unit과 대조해 다른 unit의 산출이 이 unit의 성공으로 집계되는 것을 차단한다 — 검사 규칙은 검증기 구현이 SSOT다 (여기 재서술하지 않는다). `ok: false`인 unit은 미완 산출이므로 성공으로 집계하지 않고 recoverable violation으로 폐기 후 fresh 재실행한다. `status: violation`은 형식 위반이 아니라 reviewer의 VIOLATION 보고이며 hardening-contract의 공통 처리를 따른다. Codex native 경로처럼 결과가 응답 본문으로 오는 실행 형태는 본문을 변형 없이 scratch 파일로 저장한 뒤 같은 검증기에 전달한다 — 이 저장은 원본 영속화이지 손 전사가 아니다 (내용을 편집·재구성하면 protocol의 "검증 대상 원본 고정" 위반이다).
 - finding ID의 문법·placeholder 검사는 위 reviewer 출력 기계 검증이 수행한다 — caller 고유 책임은 unit 간 ID 유일성 확인(서로 다른 unit이 같은 ID를 내면 두 unit 모두 recoverable violation으로 재실행)과 manifest 조립뿐이다. `--expect-findings` manifest는 검증기 리포트의 `finding_ids` 기계 출력만으로 조립한다 — 결과 파일을 재파싱해 ID를 뽑지 않는다 (중복 라벨로 위조된 두 번째 값이 셸 인자로 전사되는 경로 차단).
 - 실패한 review unit만 재실행한다. codex exec 경로는 라운드마다 새 `DA_DIR`을 생성하여 이전 라운드 산출물과 분리한다.
-- 재실행 전 실패 분류 (사용자 지정 실행 파라미터가 있는 호출): 실패한 unit의 실행 호출 출력과 `$DA_DIR/$UNIT-stderr.log`를 함께 읽어 값 거부(unsupported/invalid model·effort·tier, config override 거부)나 usage/quota 거부인지 확인한다. 두 채널을 모두 봐야 한다 — shell-safe guard 거부(`invalid ...` 메시지)는 codex 실행 전 로컬 검증이라 stderr 로그가 아닌 실행 호출의 stdout에 나타나므로, stderr 로그가 비어 있다는 이유로 일시 실패로 오인하지 않는다. 이런 결정적 거부는 재실행으로 해소되지 않으므로 재실행하지 않고, 거부 원문을 사용자에게 그대로 보고한 뒤 중단한다 (`run-da/SKILL.md` 값 유효성 계약 — 조용한 대체/하향 금지). 일시적 실행 실패만 재실행 대상이다.
-- `fresh` 반복 라운드에서 세션 내 기각 이력이 있으면, reviewer finding별 suppression key(관점+위치+요약 — [`../SKILL.md`](../SKILL.md) 정본)를 계산해 exact match 항목만 `dismissed_suppressed`로 분류한다. suppress된 항목은 Arbiter 입력, 신규 finding 계산, pending write queue에 포함하지 않는다. match하지 않는 항목은 평소처럼 Step 5 Arbiter로 보낸다.
+- 재실행 전 실패 분류 (사용자 지정 실행 파라미터가 있는 호출): 실패한 unit의 실행 호출 출력과 `$DA_DIR/$UNIT-stderr.log`를 함께 읽어 값 거부(unsupported/invalid model·effort·tier, config override 거부)나 usage/quota 거부인지 확인한다. 두 채널을 모두 봐야 한다 — shell-safe guard 거부(`invalid ...` 메시지)는 codex 실행 전 로컬 검증이라 stderr 로그가 아닌 실행 호출의 stdout에 나타나므로, stderr 로그가 비어 있다는 이유로 일시 실패로 오인하지 않는다. 이런 결정적 거부는 재실행으로 해소되지 않으므로 재실행하지 않고, 거부 원문을 사용자에게 그대로 보고한 뒤 중단한다 ([../references/execution-options.md](../references/execution-options.md) 값 유효성 계약 — 조용한 대체/하향 금지). 일시적 실행 실패만 재실행 대상이다.
+- `fresh` 반복 라운드에서 세션 내 기각 이력이 있으면, reviewer finding별 suppression key(관점+위치+요약 — [../references/fresh-review.md](../references/fresh-review.md) 정본)를 계산해 exact match 항목만 `dismissed_suppressed`로 분류한다. suppress된 항목은 Arbiter 입력, 신규 finding 계산, pending write queue에 포함하지 않는다. match하지 않는 항목은 평소처럼 Step 5 Arbiter로 보낸다.
 
 ## Step 4: ALL CLEAR 또는 Arbiter 진입
 
@@ -107,7 +107,7 @@ findings 0건이고 `VIOLATION`/`BLOCKED` review unit이 없으면 → `terminat
 결과를 수집하여 사용자에게 전건 보고한다. 아래 심각도는 `accepted_severity`(Arbiter 조정 후 값 — [`../references/protocol.md`](../references/protocol.md) 수렴 판정 SSOT) 기준이다. 전이 판정 순서는 ①caller 검증 위반(semantic malformed) 처리 → ②임의 verdict의 LOW confidence fail-closed 승격 → ③`remediation_scope` 분기(심각도보다 먼저)이며, 아래 verdict·scope 행은 ①②를 통과한 항목에만 적용한다 (전이표 정본: protocol.md "remediation scope"):
 
 - CONFIRMED_ISSUE (LOW confidence 아님): scope별 전이(write set 진입·배출·사용자 판단, 실패 시 미해결 계산)는 protocol.md "remediation scope" 전이표가 단독 소유한다 — 여기 재서술하지 않는다. mode 고유 타이밍만 명시한다: `FIX_NOW` + CRITICAL은 진행 차단 — review phase 중 patch 금지 원칙을 유지하고 Arbiter 판정이 닫힌 뒤 write phase 첫 batch 항목으로 계획에 반영하며, 해결 전에는 다음 outer round로 진행하지 않는다. 나머지 `FIX_NOW`는 Step 6 write phase에서 일괄 수정한다. `REPLAN_REQUIRED`는 배출 완료 전에는 다음 outer round로 진행하지 않는다.
-- NOT_AN_ISSUE (LOW confidence 아님): 보고만 (반영 불필요). 사용자 전건 보고 후 세션 내 기각 이력에 기록한다 ([`../SKILL.md`](../SKILL.md) 정본).
+- NOT_AN_ISSUE (LOW confidence 아님): 보고만 (반영 불필요). 사용자 전건 보고 후 세션 내 기각 이력에 기록한다 ([../references/fresh-review.md](../references/fresh-review.md) 정본).
 - NEEDS_MORE_INFO: 질문 도구로 사용자 판단을 요청한다. 사용자가 수용한 항목도 CONFIRMED와 동일하게 `remediation_scope` 전이표를 따른다 — `FIX_NOW`만 pending write queue에 추가하고, `REPLAN_REQUIRED`는 배출, `UNCLEAR`는 사용자에게 scope 판단을 함께 요청한다.
 - 임의 verdict + LOW confidence: fail-closed 승격 — 질문 도구로 사용자 판단 요청 (기존 LOW-confidence NOT_AN_ISSUE 자동 NEEDS_MORE_INFO 계약 유지). 위 판정 순서 ②이므로 verdict·scope 행보다 먼저 적용한다 — LOW confidence REPLAN_REQUIRED도 사용자 판단 전에는 배출하지 않는다. 사용자가 finding을 유효로 수용하면 그 자리에서 `remediation_scope`(FIX_NOW/REPLAN_REQUIRED) 또는 제외를 함께 확정한다 — NOT_AN_ISSUE 판정에는 scope 값이 없어 수용만으로는 라우팅할 수 없다. scope 확정 전에는 write queue·DEFERRED 어느 쪽으로도 전이하지 않는다.
 - caller 검증 위반이 재실행 후에도 남음: BLOCKED(malformed) — 질문 도구 지원 런타임에서는 판단 요청, 미지원 런타임에서는 자동 승격 금지(중단 보고).

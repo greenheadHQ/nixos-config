@@ -48,7 +48,7 @@ REJECTION_BASES = ("FACTUAL_FAIL", "RELEVANCE_FAIL", "PLAUSIBILITY_FAIL")
 # FIX_NOW = changeset 범위 국소 수정 → write queue. REPLAN_REQUIRED = 구조 재설계 필요 →
 # 루프 밖 배출(이슈 증거 필수). UNCLEAR = 판단 불가 → 사용자 판단 (headless는 미해결 처리).
 REMEDIATION_SCOPES = ("FIX_NOW", "REPLAN_REQUIRED", "UNCLEAR")
-# PLAUSIBILITY_FAIL 기각 근거의 수명주기 분류 (run-da/SKILL.md "세션 내 기각 이력" SSOT):
+# PLAUSIBILITY_FAIL 기각 근거의 수명주기 분류 (run-da/references/fresh-review.md "세션 내 기각 이력" SSOT):
 # FROZEN_SURFACE = frozen changeset의 불변 계약 근거 → 동일 changeset 내 suppress eligible
 # ENVIRONMENT_WORKLOAD = 환경·워크로드 가정 근거 → suppress 비대상. 그 라운드의 판정으로
 #   끝나고 다음 라운드에 같은 finding이 올라오면 다시 판정한다.

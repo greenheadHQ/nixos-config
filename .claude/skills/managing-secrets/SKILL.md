@@ -1,12 +1,9 @@
 ---
 name: managing-secrets
 description: |
-  Manage encrypted secrets with agenix (.age) and 1Password (op CLI, Service Account token, SSH/Automation vault).
-  Covers .age re-encryption, decryption failures, github-pat 무인 gh 인증, SA token 90일 rotation, SSH device key.
-  Trigger: '시크릿', '암호화', '복호화', 'agenix', 'secrets.nix', 'age key', '.age', '토큰 추가',
-  're-encrypt', '/run/agenix', '1Password', '1password', 'op CLI', 'op_get', 'opnix', 'service account token', 'SA token',
-  'Automation vault', 'SSH vault', 'github-pat', 'gh 무인 인증', '90일 rotation', 'op read', 'biometric unlock',
-  'SSH device key', 'mobile-ssh', 'Termius'.
+  Manage this repository's agenix secrets and 1Password service-account, GitHub PAT, and SSH credentials.
+  Use for encryption, decryption, unattended authentication, or credential rotation.
+  Excludes general 1Password app, autofill, and password-management help.
 ---
 
 # Secret 관리 (agenix)

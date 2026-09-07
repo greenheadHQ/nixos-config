@@ -2,6 +2,8 @@
 
 ## TL;DR 블록 (최상단)
 
+이 문서는 공개 이슈 이행 가이드용 예시다. 로컬 모드는 [local-workflow.md](local-workflow.md)의 맥락·저장 규칙을 우선한다. 단계 구성은 의존 관계에 맞게 선택하며 예시의 개수·시간을 고정하지 않는다.
+
 가이드 최상단(헤더 블록보다 앞)에 4슬롯 TL;DR을 배치한다. 새 세션 LLM이 첫 화면에서 전체 맥락을 파악하도록 한다. 체크리스트 D1 참조.
 
 ````markdown
@@ -26,7 +28,6 @@ blockquote 형태로 작업의 메타 정보를 한눈에 제공한다.
 ```markdown
 > **대상**: <변경 대상 모듈/파일/서비스>
 > **목표**: <이 가이드가 달성하는 최종 상태를 1문장으로>
-> **예상 소요**: ~<N>분 (단일 세션 / 다중 세션)
 > **난이도**: 단순 / 중간 / 복잡
 > **관련 이슈**: #<N>
 ```
@@ -36,7 +37,6 @@ blockquote 형태로 작업의 메타 정보를 한눈에 제공한다.
 ```markdown
 > **대상**: `.claude/skills/syncing-atuin/`
 > **목표**: Atuin sync 스킬을 생성하여 shell history 동기화 절차를 자동화한다
-> **예상 소요**: ~10분 (단일 세션)
 > **난이도**: 단순
 > **관련 이슈**: #252
 ```
@@ -90,7 +90,7 @@ grep "toolPath" libraries/constants.nix
 
 ### Phase 2-N: 실행
 
-BEFORE/AFTER 형식으로 변경 내용을 명시한다.
+구체적인 치환이 확정된 경우 BEFORE/AFTER로 변경 내용을 명시할 수 있다.
 
 ````markdown
 ## Phase 2: 실행
@@ -127,82 +127,28 @@ enableFeature = true;
 ````
 
 작성 규칙:
-- BEFORE/AFTER 쌍을 반드시 제공한다. "version을 업데이트한다"같은 모호한 지시는 금지.
+- 확정된 치환은 BEFORE/AFTER로 표현하고, 미결정 구현은 목표·제약·수용 기준을 구체적으로 적는다.
 - 각 변경에 대상 파일 경로를 명시한다.
 - 변경이 여러 파일에 걸치면 파일별로 소항목을 분리한다.
 
-### 검증 + 커밋 Phase
+### 검증과 승인된 후속 행동
 
-변경 결과를 검증하고 커밋하는 최종 Phase이다.
+변경이 영향을 주는 동작과 필수 저장소 검사를 제시한다. 배포가 작업 범위이고 Nix 구성을 적용해야 할 때는 `nrs`를 사용한다. 문구 수정마다 배포나 무관한 전체 기능 검증을 요구하지 않는다.
 
-````markdown
-## Phase N: 검증 + 커밋
+커밋·push·PR이 승인된 범위이면 검증 결과와 함께 다음 행동으로 적는다. 검증 성공만으로 승인 범위를 확대하지 않는다. 구현 후 리뷰가 범위에 포함되면 확립된 `/run-da for_pr` 또는 사용자 지정 리뷰 체인을 유지하며, 광범위 회귀 감사는 필요할 때 `/run-da audit`를 적용한다.
 
-### 정적 검증
+## 커밋 메시지 작성 기준
 
-```bash
-# 새 값 존재 확인 (병렬 가능)
-grep -q 'version = "1.3.0"' modules/shared/programs/tool/default.nix
-grep -q 'enableFeature = true' modules/shared/programs/tool/config.nix
+메시지는 최종 diff를 근거로 작성한다. 완성 메시지를 사전에 고정하지 않는다.
 
-# old 값 부재 확인 (병렬 가능)
-! grep -q 'version = "1.2.3"' modules/shared/programs/tool/default.nix
-! grep -q 'enableFeature = false' modules/shared/programs/tool/config.nix
-```
-
-### 빌드 검증
-
-```bash
-nrs
-```
-
-빌드가 성공하면 커밋한다.
-
-### 커밋
-
-```bash
-git add modules/shared/programs/tool/default.nix modules/shared/programs/tool/config.nix
-git commit -m "$(cat <<'EOF'
-feat(tool): enable feature and bump to v1.3.0
-
-- version: 1.2.3 → 1.3.0
-- enableFeature: false → true
-
-Closes #252
-EOF
-)"
-```
-
-### DA 피드백 (권장)
-
-구현 완료 후, `/run-da for_pr` 스킬을 실행하여 코드 품질을 검증하고,
-필요하면 `/run-da audit`로 사이드이펙트/회귀 감사를 수행한 뒤 `/create-pr` 스킬로 PR을 생성한다.
-````
-
-## 커밋 메시지 템플릿
-
-가이드에 포함하는 커밋 메시지는 완전한 형태로 사전 작성한다.
-
-```text
-git commit -m "$(cat <<'EOF'
-<type>(<scope>): <요약>
-
-<변경 내용 bullet points>
-
-Closes #<이슈번호>
-EOF
-)"
-```
-
-- type: feat/fix/refactor/docs/chore 등 conventional commit 형식
-- scope: 변경 대상 모듈명
+- type/scope: feat/fix/refactor/docs/chore 등 conventional commit과 변경 대상 모듈
 - 요약: 50자 이내, 명령형 현재시제
-- 변경 내용: BEFORE → AFTER 형태의 bullet points
-- Closes: 관련 이슈 번호
+- 본문: 최종 변경과 필요한 의사결정 근거
+- `Closes #N`: 실제로 해결하는 명시적 이슈에만 사용
 
 ## QA 감사 체크리스트 (스킬 관련 이슈용)
 
-스킬 파일 변경 이슈의 경우, 가이드 마지막에 QA 체인을 포함한다.
+스킬 구현·리뷰가 승인된 작업 범위이면 가이드에 다음 QA 체인을 포함한다. handoff 작성만으로 새 리뷰·PR 작업을 승인하지 않는다.
 
 ```markdown
 ## QA 체크리스트
@@ -238,10 +184,9 @@ Issue #252의 LLM 이행 가이드에서 관찰된 효과적인 패턴:
 
 독립적인 명령들을 병렬 실행할 수 있음을 명시하여 LLM의 실행 효율을 높인다.
 
-### "완전한 커밋 템플릿" 패턴
+### "최종 변경에 맞춘 커밋" 패턴
 
-커밋 메시지를 LLM에게 자유작성시키지 않고, 가이드에 완성된 템플릿을 포함한다.
-커밋 메시지의 type, scope, 본문 구조가 프로젝트 컨벤션과 일치하도록 보장한다.
+Issue #252의 사전 커밋 템플릿은 메시지 형식을 맞추려는 장치였다. 형식 기준은 유지하되 구현 중 결정이 달라질 수 있으므로 최종 diff를 근거로 작성한다.
 
 ### "조건부 분기" 패턴
 

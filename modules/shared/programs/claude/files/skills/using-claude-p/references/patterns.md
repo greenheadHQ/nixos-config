@@ -300,27 +300,11 @@ cat > /tmp/e2e-prompt.md <<'PROMPT'
 {사용자 입력 또는 URL}
 PROMPT
 
-# 2. 스킬 지시서 + 에이전트 지시서 + 참조 파일을 합성하여 주입
-#    - e2e-prompt.md: 에이전트에게 주는 지시 (what to do)
-#    - SKILL.md: 스킬 원문 (how to do, 컨텍스트)
-#    - agent.md + skill-local refs: 추가 컨텍스트
-#    - shared refs: 대상 skill이 의존하는 sibling skill의 references
-#    순서: 지시 → 컨텍스트 (LLM이 지시를 먼저 인지하도록)
-CAT_FILES=(/tmp/e2e-prompt.md "skills/{name}/SKILL.md" "agents/{name}.md")
-
-# skill-local references — find 기반 (bash/zsh 공통)
-# zsh 기본 `nomatch` 옵션은 `shopt -s nullglob` 로 꺼지지 않으므로(zsh builtin이 아님),
-# `_refs=(.../*.md)` 에서 매칭 실패 시 스크립트 전체가 abort된다.
-# find + IFS=$'\n' 배열 split 으로 shell glob 의존을 제거한다.
-# (일부 skill 은 references/ 디렉토리가 비어 있거나 존재하지 않음)
-_refs_dir="skills/{name}/references"
-if [ -d "$_refs_dir" ]; then
-  _old_ifs="$IFS"
-  IFS=$'\n'
-  _refs=( $(find "$_refs_dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null) )
-  IFS="$_old_ifs"
-  [ "${#_refs[@]}" -gt 0 ] && CAT_FILES+=("${_refs[@]}")
-fi
+# 2. 지시 + router + 에이전트 지시 합성. 필요한 workflow 참조만 나중에 읽는다.
+_SKILL_FILE="$(pwd)/skills/{name}/SKILL.md"
+printf '스킬 원본: %s\nSKILL.md의 상대 링크는 스킬 디렉터리, supporting 문서의 상대 링크는 그 문서가 있는 디렉터리를 기준으로 해석한다. 현재 작업 분기에 필요한 참조만 읽고, 아래 주입된 필수 공유 계약은 항상 적용한다. 필수 참조를 읽을 수 없으면 그 참조가 필요한 작업을 진행하지 않는다.\n' \
+  "$_SKILL_FILE" > /tmp/skill-reference-context.md || exit 1
+CAT_FILES=(/tmp/e2e-prompt.md /tmp/skill-reference-context.md "$_SKILL_FILE" "agents/{name}.md")
 
 # shared refs 의존 목록 (sibling skill references that {name} relies on):
 # - create-issue  →  skills/write-handoff/references/llm-friendly-checklist.md
@@ -339,7 +323,7 @@ case "{name}" in
 esac
 
 # stdin 상한(10MB) 사전 게이트 — 합쳐서 재는 것이 정본이다 (개별 파일은 작아도 합산이 넘칠 수 있다)
-cat "${CAT_FILES[@]}" > /tmp/injected-prompt.md
+cat "${CAT_FILES[@]}" > /tmp/injected-prompt.md || { echo "required prompt/reference read failed" >&2; exit 1; }
 [ "$(wc -c < /tmp/injected-prompt.md)" -le 10000000 ] || {
   echo "stdin over 10MB — 파일 경로 참조 방식으로 전환한다 (gotchas #40)" >&2; exit 1; }
 

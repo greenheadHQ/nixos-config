@@ -36,6 +36,8 @@ CAPABILITY_CONTRACT_DOCS = (
     _RUN_DA_DIR / "modes/for_plan.md",
     _RUN_DA_DIR / "modes/for_pr.md",
     _RUN_DA_DIR / "references/hardening-contract.md",
+    _RUN_DA_DIR / "references/execution-options.md",
+    _RUN_DA_DIR / "references/autonomous-delegation.md",
     _RUN_DA_DIR / "references/main-agent-obligations.md",
     Path(
         "modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md"
@@ -401,7 +403,7 @@ def check_rc_tail_contract() -> None:
     존재하는지 기계 검사해 침묵 drift를 차단한다.
     """
     targets = {
-        Path("modules/shared/programs/claude/files/skills/using-codex-exec/SKILL.md"): 1,
+        Path("modules/shared/programs/claude/files/skills/using-codex-exec/references/execution-contracts.md"): 1,
         Path("modules/shared/programs/claude/files/skills/using-codex-exec/references/known-issues.md"): 1,
         # patterns.md의 rc 블록은 .rc 영속화 없는 foreground 판정식 예시라 대상이 아니다
         ARBITER_SCALING: 2,

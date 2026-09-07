@@ -3,7 +3,7 @@
 > `create-issue`/`write-handoff` 스킬이 공유하는 public-safe sanitization 단일 진실 원천.
 > 규칙 변경 시 이 파일을 먼저 수정하고, 소비자 문서(두 SKILL.md, `issue-template.md`, `guide-template.md`)의 요약 문구/포인터도 함께 점검한다.
 
-적용 범위: GitHub에 게시되는 산출물 — `create-issue`의 이슈 본문, `write-handoff` 기본 모드의 이슈 코멘트. `write-handoff` 로컬 모드(`HANDOFF-*.local.md`)는 공개 게시물이 아니므로 S1 중 시크릿/토큰/키/복호화 값 금지만 적용한다 (SKILL.md 로컬 킥오프 프롬프트 구조 참조).
+적용 범위: GitHub에 게시되는 산출물 — `create-issue`의 이슈 본문, `write-handoff` 기본 모드의 이슈 코멘트. `write-handoff` 로컬 모드(`HANDOFF-*.local.md`)는 공개 게시물이 아니므로 S1 중 시크릿/토큰/키/복호화 값 금지만 적용한다 ([local-workflow.md](local-workflow.md)의 로컬 킥오프 구조 참조).
 
 배경: 이 repo는 PUBLIC이다. 기존 규칙은 "시크릿 금지" 수준에 머물러 절대경로·개인/회사 식별자를 놓치거나, 반대로 유용한 repo-relative 맥락까지 과하게 지우는 즉석 판단이 반복됐다. 상세 배경과 실전 사례는 #405 참조.
 
@@ -41,7 +41,7 @@ S1과 겹치면 S1이 우선한다 — 아래 보존 범주에 속해도 문자�
 
 ## S3. Post-render scan 절차
 
-초안 완성 후 게시 직전에 수행한다. E2 Self-verification 패스와 같은 시점에 실행해도 된다.
+초안 완성 후 게시 직전에 수행한다. E2 근거 확인과 별도로 게시 직전에 실행해도 된다.
 
 1. 초안 파일에 대해 기계 검출 가능한 금지 패턴을 검색한다:
 

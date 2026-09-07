@@ -40,8 +40,8 @@ Direct Codex 세션에서 사용자가 `$run-da`, `$run-da audit`처럼 fan-out 
 | 입력 출처 | resolved 경로 | subprocess 승인 | 다음 동작 |
 |-----------|---------------|-----------------|-----------|
 | 현재 발화의 자연어 codex exec 경로 지정 | codex exec | 승인 (fallback이 아니라 해당 호출의 경로 선택) | 그대로 진행 |
-| 설정 파일 `backend` 값만 (`run-da/SKILL.md` 설정 파일 절) | codex exec (희망) | 미승인 — 설정은 희망 경로만 선택하며 실행 승인을 대체하지 않는다 | 기존 절차대로 사용자 확인 후 진행 |
-| model/tier 파라미터만 지정 (경로 이름 미지정 — model/tier는 codex exec 전용 축, `run-da/SKILL.md` 정의) | 미확정 | 미승인 | `run-da/SKILL.md` 경로 제약 규칙대로 전환 여부를 사용자에게 확인한 뒤에만 경로 선택으로 간주 |
+| 설정 파일 `backend` 값만 ([execution-options.md](execution-options.md) 설정 파일 절) | codex exec (희망) | 미승인 — 설정은 희망 경로만 선택하며 실행 승인을 대체하지 않는다 | 기존 절차대로 사용자 확인 후 진행 |
+| model/tier 파라미터만 지정 (경로 이름 미지정 — model/tier는 codex exec 전용 축, [execution-options.md](execution-options.md) 정의) | 미확정 | 미승인 | [execution-options.md](execution-options.md) 경로 제약 규칙대로 전환 여부를 사용자에게 확인한 뒤에만 경로 선택으로 간주 |
 | native delegation 거부/미지원으로 인한 fallback | codex exec (fallback) | 미승인 | 아래 Delegation fallback 절차 — 사유 기록 + 별도 사용자 승인 후에만 사용 |
 
 effort 축은 이 표의 대상이 아니다 — 설정 수단이 세션 표면에 광고된 native 경로에서도 설정 가능하므로 codex exec 전용이 아니며, 수단 부재 시의 전이는 `arbiter-scaling.md` 하한 절 정본을 따른다.

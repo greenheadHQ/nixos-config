@@ -9,7 +9,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 | finding 있음 | CONFIRMED_ISSUE (`remediation_scope: FIX_NOW`) | pending write queue에 추가. write phase에서 일괄 수정 (CRITICAL은 다음 round 진행 차단) | 수정 필요 테이블 |
 | finding 있음 | CONFIRMED_ISSUE (`remediation_scope: REPLAN_REQUIRED`) | 루프 밖 배출 후 DEFERRED — 배출 절차·실패 전이는 아래 "remediation scope" 절이 단독 소유 | 배출 테이블 (이슈 번호 포함) |
 | finding 있음 | CONFIRMED_ISSUE (`remediation_scope: UNCLEAR`) | 질문 도구로 사용자 판단 — 자동 전이 금지·미지원 런타임 전이는 "remediation scope" 절이 단독 소유 | 질문 도구 |
-| finding 있음 | NOT_AN_ISSUE | 반영 불필요. 세션 내 기각 이력에 기록 ([`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 정본) | 무해 테이블 |
+| finding 있음 | NOT_AN_ISSUE | 반영 불필요. 세션 내 기각 이력에 기록 ([fresh-review.md](fresh-review.md) "세션 내 기각 이력" 정본) | 무해 테이블 |
 | finding 있음 | NEEDS_MORE_INFO | 사용자 판단 대기 | 질문 도구 |
 | finding 있음 | 임의 verdict + LOW confidence | fail-closed 승격 (질문 도구 호출) | 질문 도구 + LOW confidence 이력 |
 | finding 있음 | — (malformed — caller 검증 재실행 후에도 위반) | BLOCKED — 자동 수정 금지 | 질문 도구 또는 중단 보고 |
@@ -38,7 +38,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 6. CONFIRMED_ISSUE 항목을 `remediation_scope`에 따라 라우팅한다 ("remediation scope" 절의 전이표가 단독 소유 — 여기 재서술하지 않는다). CRITICAL은 진행 차단 항목으로 표시하되 review phase 중 즉시 patch하지 않는다.
 7. NEEDS_MORE_INFO 항목은 사용자 판단을 요청한다. 사용자가 수용한 항목도 CONFIRMED와 동일하게 "remediation scope" 전이표를 따른다.
 8. caller 검증 위반이 재실행 후에도 남은 finding은 BLOCKED(malformed) 상태로 기록하고 자동 수정하지 않는다.
-9. NOT_AN_ISSUE 또는 사용자가 명시적으로 제외한 항목은 세션 내 기각 이력에 기록한다 ([`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 정본). 이 기록은 메인 에이전트 컨텍스트의 review metadata이며 active changeset 수정이나 pending write queue가 아니다.
+9. NOT_AN_ISSUE 또는 사용자가 명시적으로 제외한 항목은 세션 내 기각 이력에 기록한다 ([fresh-review.md](fresh-review.md) "세션 내 기각 이력" 정본). 이 기록은 메인 에이전트 컨텍스트의 review metadata이며 active changeset 수정이나 pending write queue가 아니다.
 10. Arbiter 상태 전이와 필요한 사용자 판단이 끝난 뒤 write phase로 넘어가 pending write queue를 batch로 반영한다.
 
 ### 라운드 read/write 분리
@@ -83,7 +83,7 @@ DA → Arbiter → Main Agent 상태 흐름, Arbiter 판정 프로토콜, 무한
 - Arbiter 입력: reviewer 원문 전체가 아니라, 위 규칙으로 추린 escalated finding set만 전달한다.
 - 후속 reviewer 입력: 다음 라운드에서도 raw transcript 전체를 브로드캐스트하지 않는다.
   열려 있는 finding 중 해당 bundle에 실질적으로 관련된 항목만 전달한다.
-- `fresh` modifier: selective propagation조차 끊는다. 이전 라운드 맥락을 전달하지 않는다. 세션 내 기각 이력의 exact match suppression은 메인 에이전트가 reviewer 결과 수집 후 Arbiter 입력 전에 수행하며, reviewer prompt에는 이전 finding 본문/이전 reasoning/transcript를 전달하지 않는다 ([`../SKILL.md`](../SKILL.md) 정본).
+- `fresh` modifier: selective propagation조차 끊는다. 이전 라운드 맥락을 전달하지 않는다. 세션 내 기각 이력의 exact match suppression은 메인 에이전트가 reviewer 결과 수집 후 Arbiter 입력 전에 수행하며, reviewer prompt에는 이전 finding 본문/이전 reasoning/transcript를 전달하지 않는다 ([fresh-review.md](fresh-review.md) 정본).
 - `MAX` modifier: reviewer fan-out만 exhaustive로 확장할 뿐, propagation 기본값은 여전히 selective다.
 
 ## 합리화 방지 (Rationalization Prevention)
@@ -132,7 +132,7 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 
 ### 3회 반복 규칙
 
-동일성은 recurrence key(세부 관점 + 위치(파일:줄 또는 계획 항목 번호)) 기준이다. 이 키는 세션 내 기각 이력의 suppression key(관점+위치+요약)보다 의도적으로 넓다 — 반복 감지는 같은 위치의 재공격을 묶어 잡고, suppression은 다른 failure mode까지 억제하지 않도록 좁게 잡는다 ([`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 참조). 동일한 지적이 3회 연속 outer round에서 반복되면 다음을 수행한다:
+동일성은 recurrence key(세부 관점 + 위치(파일:줄 또는 계획 항목 번호)) 기준이다. 이 키는 세션 내 기각 이력의 suppression key(관점+위치+요약)보다 의도적으로 넓다 — 반복 감지는 같은 위치의 재공격을 묶어 잡고, suppression은 다른 failure mode까지 억제하지 않도록 좁게 잡는다 ([fresh-review.md](fresh-review.md) "세션 내 기각 이력" 참조). 동일한 지적이 3회 연속 outer round에서 반복되면 다음을 수행한다:
 
 1. 해당 지적과 이전 라운드의 Arbiter 판정 이력을 요약한다.
 2. 사용자에게 질문 도구로 3가지 선택지를 제시한다:
@@ -143,7 +143,7 @@ write phase에서 Arbiter가 CONFIRMED_ISSUE로 판정한 항목을 수정할 �
 
 ### 최대 라운드 수
 
-기본 상한은 5 outer round다. 유효 상한은 기본 상한에 자율주행 위임의 연장 허용 횟수(`max_round_extensions` — 연장 한 번 = outer round 한 개 추가, 위임·연장 계약은 `run-da/SKILL.md` "자율주행 위임 계약" 정본)를 더한 값이며, 위임이 없는 호출의 유효 상한은 기본 상한 그대로다. 기본 상한 도달 시: 위임이 없으면 사용자에게 현황을 보고하고 계속 진행 여부를 확인하며(자동 무한 진행 금지), 위임이 있으면 연장 허용 횟수까지 자동 연장한다 (전이는 SKILL.md 전이표). 유효 상한 이후에도 수렴 종료에 도달하지 못한 채 종료하면 `termination_type=ROUND_LIMIT`으로 기록한다 (아래 "termination_type" 참조).
+기본 상한은 5 outer round다. 유효 상한은 기본 상한에 자율주행 위임의 연장 허용 횟수(`max_round_extensions` — 연장 한 번 = outer round 한 개 추가, 위임·연장 계약은 [autonomous-delegation.md](autonomous-delegation.md) "자율주행 위임 계약" 정본)를 더한 값이며, 위임이 없는 호출의 유효 상한은 기본 상한 그대로다. 기본 상한 도달 시: 위임이 없으면 사용자에게 현황을 보고하고 계속 진행 여부를 확인하며(자동 무한 진행 금지), 위임이 있으면 연장 허용 횟수까지 자동 연장한다 (전이는 [autonomous-delegation.md](autonomous-delegation.md) 전이표). 유효 상한 이후에도 수렴 종료에 도달하지 못한 채 종료하면 `termination_type=ROUND_LIMIT`으로 기록한다 (아래 "termination_type" 참조).
 
 라운드 한계효용 판정: 각 outer round 종료 시 직전 outer round 대비 신규 finding 수를 집계한다. 동일성은 3회 반복 규칙과 같은 recurrence key(세부 관점 + 위치) 기준을 사용하고, 세션 내 기각 이력 exact match(suppression key)로 suppress된 항목은 새 finding 계산에서 제외한다. 첫 outer round는 비교 대상이 없으므로 전체 finding 수를 신규 finding 수로 기록하되, 연속 저효용 판정은 다음 outer round부터 평가한다.
 
@@ -237,7 +237,7 @@ write phase 경계: `REPLAN_REQUIRED`·`UNCLEAR` finding을 `round_write_set`에
 - 필수 필드와 enum: verdict·신뢰도·심각도·판정 축 값이 모두 존재하고 정의된 값이어야 한다. 확정/기각 verdict에 신뢰도 `N/A`를 허용하지 않는 이유는 신뢰도 없는 확정이 LOW-confidence fail-closed 승격을 우회하기 때문이다. `accepted_severity`는 scope 라우팅 대상 verdict(CONFIRMED_ISSUE·NEEDS_MORE_INFO)에만 요구한다 — REPLAN_REQUIRED·UNCLEAR도 write set에는 들어가지 않지만 이 값이 필수다. 기각 항목은 수렴 심각도 집계에 쓰이지 않는다.
 - verdict 정합 행렬: verdict와 Plausibility 평가가 서로 모순되지 않아야 한다 (예: Plausibility FAIL로 기각해 놓고 CONFIRMED로 쓰는 조합). 판정 우선순위가 JSON만으로 재구성되게 만드는 장치다.
 - 기각 근거 정합: 기각에는 어느 축에서 떨어졌는지가 필수이며, 그 값이 Plausibility 평가와 일관돼야 한다. `plausibility=N/A`의 적법성을 JSON 자기완결로 판정하기 위함이다.
-- 기각 근거 수명주기: Plausibility 기각에는 근거가 frozen surface에 의존하는지 환경·워크로드에 의존하는지가 필수다 (세션 내 기각 이력의 suppress eligibility 기계 판정 근거 — [`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" SSOT). 다른 기각 근거에는 이 필드를 두지 않는다.
+- 기각 근거 수명주기: Plausibility 기각에는 근거가 frozen surface에 의존하는지 환경·워크로드에 의존하는지가 필수다 (세션 내 기각 이력의 suppress eligibility 기계 판정 근거 — [fresh-review.md](fresh-review.md) "세션 내 기각 이력" SSOT). 다른 기각 근거에는 이 필드를 두지 않는다.
 - 개별 entry 전용 값 경계: `stability_status`는 폐기된 과거 계약(selective consistency aggregate)의 필드다. entry에 이 필드가 있으면 값과 무관하게 위반이다 — 현행 계약에 이 필드의 적법한 산출 주체가 없다.
 - finding manifest 대조: 파일의 유효 finding ID 집합이 `--expect-findings` 목록과 정확히 일치해야 한다 — 누락(전달한 finding에 판정이 없음)·미지 ID 모두 위반이다 (Arbiter 출력에서 finding이 조용히 사라지는 것을 차단).
 
@@ -253,7 +253,7 @@ write phase 진입 직전(Arbiter 상태 전이와 사용자 판단 종료 시�
 
 - `round_write_set`: 이번 라운드에 반영할 항목 (`remediation_scope: FIX_NOW`인 CONFIRMED_ISSUE + 사용자 수용 항목). `REPLAN_REQUIRED`·`UNCLEAR` scope는 진입 금지 (위 "remediation scope" 전이표).
 - `round_max_accepted_severity`: round_write_set의 accepted severity 최댓값 (빈 set이면 NONE).
-- `unresolved_count`: 미결 NEEDS_MORE_INFO + 배출 실패한 REPLAN_REQUIRED + 미판단 UNCLEAR + 자율주행 위임 상태에서 사용자 판단 없이 보류된 LOW confidence verdict(확정·기각 계열 모두 — `run-da/SKILL.md` 위임 전이표의 "미해결로 계산"이 가리키는 편입 지점이 바로 이 카운터다) 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다). BLOCKED·VIOLATION은 여기 넣지 않는다 — `blocked_count`가 배타적으로 소유한다.
+- `unresolved_count`: 미결 NEEDS_MORE_INFO + 배출 실패한 REPLAN_REQUIRED + 미판단 UNCLEAR + 자율주행 위임 상태에서 사용자 판단 없이 보류된 LOW confidence verdict(확정·기각 계열 모두 — [autonomous-delegation.md](autonomous-delegation.md) 위임 전이표의 "미해결로 계산"이 가리키는 편입 지점이 바로 이 카운터다) 수 (스냅샷 시점 값 — write phase가 만든 미해결은 아래 `write_reverted_count`가 따로 센다). BLOCKED·VIOLATION은 여기 넣지 않는다 — `blocked_count`가 배타적으로 소유한다.
 - `deferred_issues`: 이번 라운드에 REPLAN_REQUIRED 배출로 DEFERRED 처리한 finding의 배출 증거 이슈 번호 목록 (배출 증거 없는 DEFERRED는 존재하지 않는다).
 - `blocked_count`: BLOCKED(malformed — caller 검증 재실행 후에도 위반) finding 수 + `VIOLATION` 상태로 남은 review unit 수 + 미해소 `BLOCKED` review unit 수(실행 반복 실패·binary 부재 등 원인 무관 — 다른 unit의 finding으로 라운드가 진행돼도 차단 상태가 소실되지 않는다). finding·unit 축을 합산한 차단 총계이며, 어느 축이든 0이 아니면 종료 불가라는 뜻만 가진다.
 

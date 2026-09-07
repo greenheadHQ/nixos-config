@@ -26,7 +26,7 @@
 ### C. PoC / 재현 (Reproducibility-first)
 
 - [ ] C1. 재현이 중요한 주장에는 최소 재현 절차 6필드를 포함한다: `환경 / 입력 / 절차 / 기대 결과 / 실제 결과 / 성공 기준`. 출처: [OpenAI Evals: Structured Outputs Evaluation (2025)](https://cookbook.openai.com/examples/evaluation/use-cases/structured-outputs-evaluation), [PROMPTEVALS (NAACL 2025)](https://aclanthology.org/2025.naacl-long.213/).
-- [ ] C3. BEFORE/AFTER 쌍을 제공한다 (`write-handoff` 전용. 기존 `references/guide-template.md` 패턴 유지).
+- [ ] C3. 구체적 치환이 확정된 `write-handoff`에는 BEFORE/AFTER를 사용한다. 구현이 미결정이면 목표·제약·수용 기준을 제시한다.
 
 ### D. 구조 (Structuring)
 
@@ -39,11 +39,11 @@
   ❌ BAD: `"이 옵션은 Claude Code 2.0+에서 동작한다."` _(why: 버전별 동작은 공식 docs 또는 로컬 재현 없이 단정 불가 — hallucination 위험)_
 
   ✅ GOOD: `"Claude Code 2.1.104에서 동작 확인. [UNVERIFIED] 이전 버전 호환성은 미확인."`
-- [ ] E2. 초안 후 Self-verification 패스 (CoVe 경량)를 수행한다: 주요 claim을 검증 질문으로 바꾸고 독립적으로 답한 뒤 불일치 시 수정. `create-issue`/`write-handoff` 모두 적용한다. 출처: [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495), [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/).
+- [ ] E2. 이번 작업에서 확보한 직접 근거를 재사용한다. 출처가 없거나 서로 충돌하거나 이후 상태가 달라질 수 있는 주장만 추가 확인한다. 확인할 수 없으면 불확실성을 표시하거나 삭제한다. 두 스킬 모두 적용하며, 공개 sanitization 검사는 별도로 유지한다.
 
-  ❌ BAD: `"1차 초안 작성 후 즉시 gh issue create 실행."` _(why: CoVe 검증 단계 생략 → 오류가 게시된 이슈로 그대로 확산)_
+  ❌ BAD: `"확인하지 않은 API 동작을 단정하여 게시."`
 
-  ✅ GOOD: `"1차 초안의 비자명 주장을 Read/Grep/gh로 재검증 후 [UNVERIFIED] 라벨 추가 또는 삭제, 그 다음 게시(create-issue: gh issue create / write-handoff: gh issue comment --body-file)."`
+  ✅ GOOD: `"직접 확인한 코드 근거는 재사용하고, 이후 바뀐 원격 상태만 조회해 본문을 갱신한 뒤 최종 sanitization 후 게시."`
 
 ---
 
@@ -85,16 +85,11 @@ DEPRECATED: `<!-- 미검증: ... -->` HTML 주석은 더 이상 권장되지 않
 
 ---
 
-## Self-verification 절차 (CoVe 경량판, E2)
+## 근거 확인 기준 (E2)
 
-`create-issue`/`write-handoff` 초안 완료 후 다음 패스를 1회 수행:
+초안의 비자명 주장에 이번 작업에서 확보한 출처를 연결한다. 근거가 충분하고 현재 상태와 맞으면 그대로 사용한다. 출처 부재·상충·관측 이후 상태 변경 가능성이 있는 부분만 파일/검색/원격 조회로 보완하고, 불일치는 수정하며 확인 불가는 라벨 또는 삭제로 처리한다. 같은 근거를 형식적인 독립 질문으로 바꿔 재조회하지 않는다.
 
-1. Claim 추출: 본문에서 비자명한 주장을 추출. 단순/자명 사실 제외.
-2. 검증 질문 재작성: 각 claim을 질문 형태로 전환. 예: `"Step 1에 Glob/Grep이 없다"` → `"실제 Step 1 본문에 Glob/Grep이 포함되어 있는가?"`
-3. 독립 답변: 초안을 보지 않은 상태로 `Read`/`Grep`/`gh` 재실행으로 질문에 답.
-4. 비교 및 수정: 답변과 초안이 불일치하면 초안 수정. 증거 없으면 `[UNVERIFIED]` 라벨 또는 삭제.
-
-출처: [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495), [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/).
+과거 E2는 [Chain-of-Verification](https://arxiv.org/abs/2309.11495)과 [Self-Alignment for Factuality](https://aclanthology.org/2024.acl-long.107/)를 배경으로 모든 주장을 독립 질문으로 재검증했다. 현재 E2는 근거 보존과 불확실성 처리를 유지하면서 추가 확인이 필요한 주장에만 조회를 적용한다. 이 변경은 게시 직전 최종 본문의 민감정보 검사를 생략하는 근거가 아니다.
 
 ---
 
@@ -113,10 +108,10 @@ DEPRECATED: `<!-- 미검증: ... -->` HTML 주석은 더 이상 권장되지 않
 
 학술 (2023-2025):
 
-- [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495) — 초안 → 검증 질문 → 독립 답변 → 재작성 (E2).
+- [Chain-of-Verification (arXiv 2309.11495)](https://arxiv.org/abs/2309.11495) — 과거 E2의 독립 재검증 절차 배경.
 - [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — primacy bias (D1).
 - [Learning Fine-Grained Grounded Citations (ACL Findings 2024)](https://aclanthology.org/2024.findings-acl.838/) — fine-grained quote grounding (B1).
-- [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/) — self-evaluation 기반 factuality alignment (E2).
+- [Self-Alignment for Factuality (ACL 2024)](https://aclanthology.org/2024.acl-long.107/) — 과거 E2의 factuality 검증 배경.
 - [Document Structure in Long Document Transformers (EACL 2024)](https://aclanthology.org/2024.eacl-long.64/) — heading depth / section 경계 (D3).
 - [Table Meets LLM (Microsoft 2024)](https://www.microsoft.com/en-us/research/publication/table-meets-llm-can-large-language-models-understand-structured-table-data-a-benchmark-and-empirical-study/) — structured table 이해 (D4).
 - [MetaFaith (EMNLP 2025)](https://aclanthology.org/2025.emnlp-main.1505/) — faithful uncertainty expression (E1).

@@ -2,12 +2,9 @@
 name: run-da
 argument-hint: "[for_plan|for_pr|audit] [MAX] [fresh] [자연어 실행 지정: 경로/model/effort/tier, 강도 하향]"
 description: |
-  Run Devil's Advocate review on plans or code. Args: for_plan, for_pr, audit. Modifier: MAX, fresh, 사용자 지정 실행 경로/model/effort/tier·강도 하향 (자연어 지정).
-  Trigger: 'DA', '피드백 루프', 'YAGNI 리뷰', '코드 리뷰 루프', 'run-da',
-  'HALLUCINATION 관점에서 코드 검증', '설계 검토', '코드 품질 리뷰', '간단한 변경 DA 필요 여부', 'DA 필요', 'DA 생략',
-  '사이드이펙트 조사', '회귀 조사', '회귀 감사', '병렬 감사'.
-  Also trigger when the user asks whether a simple change can skip DA; this skill owns the SKIP/LITE/FULL decision path.
-  NOT for PR/AI review-comment HALLUCINATION classification (use review-pr-feedback). NOT for PR 코멘트 (use review-pr-feedback). NOT for 일반 전수조사/코드베이스 조사 (스킬 없이 직접 수행). NOT for DA session log/statistics/verdict 분포 정량 분석 (use analyzing-da-sessions, 사용자 명시 호출 전용).
+  Run independent Devil's Advocate review of plans or code, a review loop, or a parallel regression audit.
+  Use for DA requests and decisions about whether DA can be skipped.
+  Excludes general codebase exploration, PR comment handling (review-pr-feedback), and session statistics (analyzing-da-sessions).
 ---
 
 # Devil's Advocate 피드백 루프
@@ -61,81 +58,9 @@ SKIP이어도 이 gate가 매치되면 reviewer fan-out 없이 메인이 degrade
 
 ### 실행 경로·파라미터 지정 (자연어 채널)
 
-사용자는 실행 경로(codex exec / Claude Code 서브에이전트)와 실행 파라미터 — model·service_tier(codex exec 경로 전용), reasoning effort(codex exec와, 설정 수단이 광고된 native spawn에서 지원) — 를 호출 단위로 자연어로 지정할 수 있다 (예: "전부 codex xhigh로", "reviewer를 이 모델로, fast tier로 돌려줘", "Claude 서브에이전트로 돌려"). 메인 LLM이 사용자가 명시한 값을 경로/model/effort/tier 축으로 해석한다.
+사용자가 명시한 축만 해석하며, 미지정 축은 역할별 기본 정책을 따른다. 호출 진입 시 `~/.config/run-da/preferences.toml`의 존재와 값을 조회한다. 파일·키 부재는 오류가 아니다. 자연어 실행 지정이나 설정 값이 있으면 해석 전에 [execution-options.md](references/execution-options.md)를 읽는다. 현재 발화 → 설정 파일 → 역할 기본값 순이며, 설정 파일은 실행 권한 승인을 대신하지 않는다.
 
-| 규칙 | 내용 |
-|------|------|
-| 해석 (환각 금지) | 사용자가 명시한 축만 채운다. 명시가 없는 축을 추론으로 채우지 않는다 — 그 축은 기본 정책을 따른다. 지정 표현이 어느 축·어느 값인지 불명확하면 질문 도구로 확인한다 |
-| 적용 범위 | 해당 호출의 reviewer/auditor와 Arbiter 전체. 자연어 지정은 해당 호출에만 적용된다 — 호출을 넘는 장기 선호는 아래 "장기 선호 설정 파일" 절이 소유한다 |
-| effort 지정 | 경로만 함께 지정된 경우의 role별 기본값보다 사용자 명시 effort가 우선한다 (더 구체적인 지정 우선) |
-| 값 유효성 | 스킬은 값 집합을 예단하지 않는다 — 값 집합은 codex/모델이 소유한다. shell-safe 검증(구체 규칙과 실행 주체는 arbiter-scaling.md의 role command guard)만 통과하면 그대로 주입하고, codex/API가 거부하면 그 에러를 사용자에게 그대로 보고한다. 값 거부는 재실행으로 해소되지 않으므로 자동 재시도하지 않는다. 조용한 대체/하향 금지. 단 `service_tier`는 Codex가 거부하지 않고 경고 후 생략한 채 rc 0으로 성공하는 축이므로(using-codex-exec 실측), rc 검사만으로는 무시를 감지할 수 없다 — tier가 주입된 실행의 성공 후 stderr 경고 검사는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md) "사용자 지정 실행 파라미터"가 소유한다 |
-| Arbiter 하한 | 전체 지정이 reviewer 강도를 낮춰도 Arbiter는 강도 하한(strong profile) 아래로 내려가지 않는다 — 하한·고지·예외(사용자가 Arbiter 축을 콕 집어 지정)는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한"이 SSOT |
-| 경로 지정 | codex exec 경로 지정 시 사전점검이 실패하면 다른 경로로 자동 대체하지 않고, 실패 원인과 대안(Claude 경로 진행 또는 중단)을 사용자에게 고지한 뒤 확인을 받는다. Claude 서브에이전트 경로 지정 시 현재 런타임에서 사용할 수 없으면 동일하게 고지한다. 모델은 Claude 경로에서는 세션 모델을 상속하며 특정 모델명을 고정하지 않는다 |
-| 경로 제약 | model/tier 주입은 codex exec 경로 전용이고, effort는 codex exec와 설정 수단이 광고된 native spawn에서 지원된다. Claude 경로와 model/tier를 함께 지정하면 모순이므로 질문 도구로 확인한다. Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없으므로, 지정 시 codex exec 경로로의 전환 여부를 사용자에게 확인한다. native 경로의 effort는 세션 표면에 광고된 spawn 단위 설정 수단이 있을 때만 반영 가능하다 — 설정 수단 부재 시의 전이는 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 정본이다 |
-
-모델명 박제 금지 원칙과의 관계: 이 채널의 값은 사용자 입력에서만 온다. 스킬 문서·기본값·예시에 특정 모델명을 두지 않는 원칙(sync 테스트의 모델 literal 잔존 게이트)은 그대로 유지된다.
-
-실행 계약(env 변수, shell-safe 검증, 주입 위치)은 [`references/arbiter-scaling.md`](references/arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. 미지정 시 역할별 기본값·축 구조·resolution 순서는 [`references/runtime-mapping.md`](references/runtime-mapping.md)의 "실행 프로파일" 절이 SSOT다.
-
-### 장기 선호 설정 파일 (#1260 — 본 절이 정본)
-
-매 호출 자연어 지정을 반복하지 않도록, 장기 선호는 스킬 밖 설정 파일 `~/.config/run-da/preferences.toml`에 둔다 (Nix 선언 관리 밖 가변 파일 — 선호는 시간에 따라 역전된 실측이 있어 스킬 기본값으로 고정하지 않는다). 메인 에이전트는 호출 진입 시 이 파일을 읽는다 — 파일·키 부재는 기본값 적용이며 오류가 아니다. 부재 시 기본값의 소유: `[profile]` 축은 runtime-mapping.md 실행 프로파일 표의 기본값이고, `[delegation]` 축은 본 절이 소유한다 — `autonomous` 부재 = `false`(위임 없음), `max_round_extensions` 부재 = `2`. 값 검증: `autonomous`는 TOML boolean `true`만 위임 선언으로 인정한다 — 그 외 값·타입은 부재와 동일하게 위임 없음으로 처리하고(fail-closed — 잘못된 값이 무인 진행을 활성화하지 않는다) 사용자에게 보고한다. `max_round_extensions`는 0 이상의 정수만 유효하며, 그 외 값은 부재 기본값을 적용하고 보고한다 — 유효하지 않은 값을 유효 상한 계산에 쓰지 않는다. 기계 파서는 두지 않는다 (문서 계약).
-
-아래 블록은 사용자 설정 예시다 (기본값 명세가 아니다 — 예시 값은 부재 시 기본값과 다를 수 있다):
-
-```toml
-[profile]
-# 각 키는 실행 프로파일의 한 축에 대응한다 (runtime-mapping.md "실행 프로파일" 정본).
-# 값 집합은 스킬이 예단하지 않는다 — shell-safe 검증만 통과하면 그대로 주입.
-backend = "codex-exec"        # 실행 backend 선호 — 지원 경로 중 선택하는 제어값 (codex-exec | native | claude). 미지·불명확 값은 주입하지 않고 질문
-reviewer_effort = "high"      # reviewer/auditor effort — shell-safe 검증 후 그대로 주입 (값 집합은 codex/모델 소유)
-arbiter_effort = "xhigh"      # Arbiter effort — 주입 규칙은 effort와 동일, 하한 미만 값은 하한이 이긴다 (아래 참조)
-service_tier = ""             # 빈 값 = 미지정. 잘못된 값은 오류가 아니라 조용한 생략이 되므로 runner가 stderr 경고를 검사해 보고한다 — 위 "값 유효성"의 tier 분기 참조
-
-[delegation]
-autonomous = false            # true = 자율주행 사전 위임 (아래 "자율주행 위임 계약")
-max_round_extensions = 2      # 위임 시 상한 자동 연장 허용 횟수. 연장 한 번 = outer round 한 개 추가 (유효 상한 정의는 protocol.md "최대 라운드 수" 정본)
-```
-
-우선순위는 resolution 순서(runtime-mapping.md 정본)를 따른다 — 현재 발화의 자연어 지정이 파일보다 우선하고, 파일 값은 role 기본값보다 우선한다. 파일 값의 provenance는 "사용자 명시"로 취급한다 (`RUN_DA_USER_EFFORT_OVERRIDE` 등 명시 표식 규칙 동일 적용) — 단 Arbiter 하한의 "명시 축 예외"는 현재 발화의 축 지정에만 적용되고 파일 값에는 적용되지 않는다 (파일은 장기 기본값이지 이번 호출의 의도적 하향이 아니다). 같은 원리로 `backend` 설정 값은 희망 경로의 선택일 뿐 실행 권한 승인을 대체하지 않는다 — Direct Codex 세션의 subprocess 경로 승인 경계([`references/hardening-contract.md`](references/hardening-contract.md))는 설정 파일과 무관하게 유지된다.
-
-### 호출 시점 보고 규약 (종료 조건·예상 비용 — 본 절이 단독 소유)
-
-reviewer fan-out 발사 전에 다음을 한 문단으로 사용자에게 보고한다 (질문이 아니라 보고 — 진행을 막지 않는다):
-
-- 종료 조건 요약: 수렴 predicate 2층([`references/protocol.md`](references/protocol.md) SSOT)의 한 줄 요약 + outer round 상한(값은 protocol.md 정본)과 이번 호출의 위임 연장 한도.
-- 예상 비용: 이번 라운드의 실행 단위 수 × 역할별 effort (예: reviewer 4 × high + Arbiter 1 × xhigh), 반영 발생 시 재검증 라운드가 추가될 수 있다는 사실.
-
-### 자율주행 위임 계약 (#1260 — 본 절이 단독 소유)
-
-사용자가 무인 진행을 사전 위임하는 계약이다. 선언 채널은 두 가지 — 현재 발화의 자연어 선언(예: "자러 간다, 알아서 완주해") 또는 설정 파일 `[delegation] autonomous = true`. 채널 간 우선순위는 프로파일 resolution과 동일하게 현재 발화가 파일을 이긴다: 현재 발화의 명시적 위임 거부(예: "이번엔 위임 없이 물어보면서 진행해")는 파일의 `autonomous = true`보다 우선해 이 호출을 위임 없음으로 확정하고, 현재 발화에 위임 관련 선언이 없으면 파일 값(부재 시 기본값 `false`)을 따른다. 위임이 없으면 모든 gate는 각 정본의 질문 절차를 따른다.
-
-장시간 판정과 1회 질문: FULL fan-out 기준 2 outer round 이상이 예상되는 호출인데 위임 선언이 없으면, 발사 전에 질문 도구로 위임 여부를 1회 묻는다 (이후 반복 질문 금지 — 응답이 이 호출의 위임 상태를 확정한다).
-
-gate별 전이표 (gate의 상세 절차는 각 정본이 소유 — 본 표는 위임 유무 축만 소유한다). 이 표에 등록되지 않은 질문 gate의 위임 시 기본 동작은 자동 진행 금지 — 해당 지점에서 중단하고 상태를 보고한다 (새 gate가 정본에 생겨도 위임 전이가 미정 상태로 자동 진행되지 않게 하는 fail-closed 기본값):
-
-| gate | 위임 없음 | 위임 있음 |
-|------|-----------|-----------|
-| SKIP 제안 승인 | 질문 도구 | 자동 LITE 승격 (SKIP 확정은 사용자 전용 — headless 규칙과 동일) |
-| 3회 반복 판정 | 질문 도구 (수용/제외/배출) | 자동 수용 (지적대로 수정) — 단 보류 판정에는 적용 금지 (아래 gate 우선순위) |
-| 라운드 한계효용 저하 | 질문 도구 | 현재 상태 보고 후 종료 (headless 규칙과 동일 — 자동 수정 계속 금지) |
-| outer round 기본 상한 도달 (유효 상한 정의는 protocol.md "최대 라운드 수") | 질문 도구 (계속/종료) | `max_round_extensions`까지 자동 연장 후, 소진(유효 상한) 시 비수렴 종료 라벨로 종료 |
-| fresh 반복 감지 | 질문 도구 | 자동 fresh 재실행 1회, 재발 시 종료 보고 |
-| `remediation_scope` UNCLEAR | 질문 도구 (수정/배출/제외) | 미해결로 계산 (자동 수정 간주 금지 — headless 규칙과 동일) |
-| NEEDS_MORE_INFO | 질문 도구 | CONFIRMED 자동 승격 (headless 규칙과 동일 — scope 전이표 적용) |
-| LOW confidence 승격 | 질문 도구 | 확정·기각 계열 모두 미해결로 계산 — protocol `unresolved_count`에 "위임 상태의 미판단 LOW confidence verdict"로 편입되어 수렴을 차단한다 (fail-closed 승격 순서 유지)·기각 이력에 기록하지 않음. 종료 후 일괄 보고에 사용자 판단 대기 항목으로 명시 |
-| 검증기 capability 불일치 (배포 시차) | 질문 도구 (배포 후 재시도/검증 생략 승인) | 위임으로 대체 불가 — 검증 생략 없이 중단 보고 (검증 없는 진행은 사전 위임 범위 밖) |
-| 수렴 종료 후 push 최종 승인 | 질문 도구·승인 게이트 (for_pr Step 8 정본) | 자동 push (CONVERGED·DEFERRED_EXIT에 한함 — 비수렴 종료 push 금지는 아래 행) |
-| codex exec 사전점검 실패 fallback | 원인 고지 + 질문 | 진행 불가 보고 후 해당 경로 종료 (자동 대체 금지 유지) |
-| native effort 설정 수단 부재 | 질문 도구 (Arbiter-only 전환 승인) | 위임으로 대체 불가 — 전환하지 않고 중단 보고 (hardening 경계) |
-| delegation-denied subprocess fallback | 질문 도구 (승인) | 위임으로 대체 불가 — 중단 보고 (hardening 경계) |
-| 비수렴 종료(상한·중단) 후 push | 사용자 위임 보고 | push하지 않고 미해결 상태 보고 (기존 계약 유지) |
-
-gate 우선순위 (한 finding에 여러 gate가 동시에 성립할 때): ①semantic malformed 처리 → ②LOW confidence·UNCLEAR 보류 (미해결 계산 — 이 상태의 finding은 3회 반복 자동 수용 대상이 아니다) → ③3회 반복 자동 수용. 보류 판정을 반복 횟수로 자동 수정하면 fail-closed 승격 계약이 우회된다 — recurrence key(세부 관점+위치)는 요약을 포함하지 않는 넓은 키라 서로 다른 실패 양상이 한 반복으로 묶일 수 있어, 보류 상태에서는 반복 자동화보다 사용자 판단 대기가 우선한다.
-
-위임 제외 범위 (위임이 있어도 자동화하지 않는다): ①BLOCKED(malformed 재실행 후 잔존 — 자동 승격 금지 유지), ②hardening 계약의 subprocess fallback 승인(구조적 write 경계는 사전 위임으로 대체할 수 없다), ③마스킹 게이트를 통과하지 못하는 공개 배출(SECURITY disclosure-safe 불가 포함 — 위임과 무관하게 미해결), ④상한 연장의 무제한 반복(`max_round_extensions` 소진 후에는 종료).
-
-종료 후 일괄 보고 필드: 위임 실행이 끝나면 라운드별 발견→확정→반영 수, 배출 이슈 번호, 자동 전이가 발동한 gate 목록(각 항목에 한 줄 사유), 종료 라벨, 미해결 항목을 한 번에 보고한다.
+`for_plan`/`for_pr`에서 검토 강도 하향·사용자 판단 gate를 처리하거나 fan-out을 시작하기 전에 [autonomous-delegation.md](references/autonomous-delegation.md)를 읽는다. 위임 선언이 없어도 적용하며, fan-out 전에는 종료 조건·예상 비용을 보고한다.
 
 ### `MAX` modifier
 
@@ -155,29 +80,7 @@ FULL도 여전히 강한 기본 검토다. 차이는 fan-out뿐이다:
 
 ### `fresh` modifier
 
-모드 뒤에 `fresh`를 추가하면 (예: `for_pr fresh`) DA 에이전트에게 이전 라운드의 맥락을 전달하지 않는다.
-
-| 구분 | 기본 동작 | `fresh` 동작 |
-|------|----------|-------------|
-| DA 프롬프트 | 이전 라운드 결과 요약 포함 가능 | 코드/계획 + 프로젝트 컨텍스트만 전달. 이전 라운드 언급 금지 |
-| 편향 | 이전 발견에 anchoring 가능 | 매 라운드 완전 독립 리뷰 |
-| 무한 루프 위험 | 낮음 (이전 맥락으로 중복 감소) | 높음 (동일 지적 반복 가능 → 메인 에이전트의 세션 내 반복 감지로 대응) |
-
-`fresh` 사용 시 메인 에이전트는 DA 에이전트 프롬프트에 다음을 포함하지 않는다:
-- 이전 라운드의 발견 사항
-- 이전 라운드에서 수용/기각된 지적 내역
-- "이번에는 다른 관점에서 봐주세요" 등 이전 라운드를 암시하는 표현
-
-세션 내 기각 이력 (본 절이 정본): 메인 에이전트는 현재 세션·현재 changeset 범위에서 Arbiter `NOT_AN_ISSUE` 판정과 사용자 명시 제외 항목의 기각 이력을 자기 컨텍스트에 유지한다.
-
-- 공통 필수 필드: 세부 관점, 위치(파일:줄 또는 계획 항목 번호), finding 요약. 기각 근거는 출처별 variant로 기록한다:
-  - Arbiter 기각: `verdict: NOT_AN_ISSUE` + `rejection_basis` + (Plausibility 기각이면) `evidence_scope` + 기술적 반증 근거.
-  - 사용자 제외: `dismissal: USER_EXCLUDED` + 사용자가 승인한 기술적 근거. verdict·rejection_basis는 요구하지 않는다 — Arbiter를 거치지 않은 제외에 판정 필드를 합성하지 않는다. 별도 범위 필드는 없다 — 이 이력의 적용 경계는 항상 현재 세션·현재 changeset이다 (위 공통 경계).
-- suppression key: 세부 관점 + 위치 + 요약이 모두 일치할 때만 동일 지적으로 suppress한다. 관점·위치가 같아도 다른 failure mode면 새 finding으로 Arbiter에 보낸다. 주의 — 3회 반복·한계효용·신규 finding 계산이 쓰는 recurrence key(세부 관점 + 위치, [`references/protocol.md`](references/protocol.md))와 의도적으로 다르다: suppression은 다른 failure mode까지 억제하지 않도록 좁게, 반복 감지는 같은 위치의 재공격을 묶어 잡도록 넓게 잡는다.
-- 무효화: changeset이 바뀌면(계획 수정, write phase 커밋 등) 이전 기각 이력은 새 changeset의 suppress 근거가 되지 않는다. Plausibility 기각 중 `evidence_scope: ENVIRONMENT_WORKLOAD`(환경·워크로드 가정 의존)는 같은 changeset이라도 라운드 간 suppress하지 않고 다시 판정한다 — `FROZEN_SURFACE`만 동일 changeset 내 suppress eligible이다.
-- 적용 주체·시점: `fresh` 반복 라운드에서 메인 에이전트가 reviewer 결과 수집 후 Arbiter 입력 전에 suppression key exact match 항목만 제외한다 (main-agent-only).
-- reviewer 비주입: 이 이력은 reviewer 프롬프트에 주입하지 않는다. anti-anchoring이 목적이므로 이전 finding 본문·Arbiter reasoning·transcript는 어떤 형태로도 전달하지 않는다.
-- 세션을 넘는 영속 저장소는 두지 않는다 (실측상 세션 간 재제기는 관측되지 않았고, 관측된 재제기는 전부 동일 세션 내 라운드 간이다).
+`fresh`는 reviewer에게 이전 라운드의 맥락을 전달하지 않는다. 기각 이력은 메인 에이전트만 현재 세션·changeset 범위에 보관한다. 이력 기록 또는 fresh prompt·suppression 조립 전에 [fresh-review.md](references/fresh-review.md)를 읽는다.
 
 ## 빠른 참조와 lazy loading
 
@@ -185,9 +88,9 @@ FULL도 여전히 강한 기본 검토다. 차이는 fan-out뿐이다:
 
 | 시점 | 필수 문서 | 목적 |
 |------|-----------|------|
-| `/run-da` 진입 preflight | 이 `SKILL.md`만 | mode 선택, `MAX`/`fresh` modifier와 자연어 실행 지정 해석, 검토 강도 확정, reviewer bundle/Arbiter invariant 확인 |
+| `/run-da` 진입 preflight | 이 `SKILL.md` | mode 선택, `MAX`/`fresh` modifier와 자연어 실행 지정 해석, 검토 강도 확정, reviewer bundle/Arbiter invariant 확인 |
 
-Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어 있으면 이 파일의 모드 표만 보고 질문 도구로 mode를 선택한다.
+Preflight에서는 선택 조건에 해당하는 reference만 연다. mode가 비어 있으면 이 파일의 모드 표만 보고 질문 도구로 mode를 선택한다.
 
 ### 상황별 lazy load
 
@@ -196,9 +99,9 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 | `for_plan` | [`modes/for_plan.md`](modes/for_plan.md) | mode 확정 후 Step 1 실행 시 |
 | `for_pr` | [`modes/for_pr.md`](modes/for_pr.md), [`modes/for_plan.md`](modes/for_plan.md) | mode 확정 후 Step 1 실행 시. `for_pr`은 delta 문서이므로 `for_plan` 공통 절차도 함께 읽는다 |
 | `audit` | [`modes/audit.md`](modes/audit.md) | mode 확정 후 즉시 |
-| `fresh` modifier | 이 `SKILL.md`; 후속 라운드 propagation 조립 시 [`references/protocol.md`](references/protocol.md) | preflight에서는 추가 reference 없음. 이전 라운드 맥락과 selective propagation을 모두 끊어야 하는 시점에만 protocol을 확인한다 |
+| `fresh` modifier 또는 기각 이력 기록 | [`references/fresh-review.md`](references/fresh-review.md); 후속 라운드 propagation 조립 시 [`references/protocol.md`](references/protocol.md) | 이력 기록·fresh prompt·suppression 조립 전에 fresh-review를 읽고, 후속 라운드 propagation 조립 시 protocol을 확인한다 |
 | `MAX` modifier | 선택 mode 문서, [`references/da-domains.md`](references/da-domains.md) | exhaustive 6-domain fan-out 조립 직전 |
-| 자연어 실행 지정 (경로/model/effort/tier) | 이 `SKILL.md`; 실제 경로/effort/override 조립 시 [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | preflight에서는 값 해석만 한다. shell-safe 검증은 fan-out 실행 단위 조립 시 role command block의 guard가 수행한다 (검증 규칙 SSOT: arbiter-scaling.md). 조립 직전에 런타임 매핑과 role별 command 계약을 확인한다 |
+| 자연어 실행 지정 또는 선호 설정 값 | [`references/execution-options.md`](references/execution-options.md); 실제 경로/effort/override 조립 시 [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | 값 해석 전에 execution-options를 읽는다. shell-safe 검증은 fan-out 실행 단위 조립 시 role command block의 guard가 수행한다 (검증 규칙 SSOT: arbiter-scaling.md). 조립 직전에 런타임 매핑과 role별 command 계약을 확인한다 |
 | LITE/FULL reviewer fan-out | [`references/da-domains.md`](references/da-domains.md), [`references/runtime-mapping.md`](references/runtime-mapping.md), [`references/hardening-contract.md`](references/hardening-contract.md) | Step 2에서 실제 reviewer prompt/런타임을 조립할 때 |
 | reviewer 결과 수집·기계 검증 | [`references/protocol.md`](references/protocol.md)의 "검증기 호출 계약"·"검증 대상 원본 고정" 절 | Step 3에서 결과 파일을 수집해 공통 검증기(reviewer 모드)를 호출할 때 — 두 절은 산출 주체 중립(reviewer·Arbiter 공통)이다 |
 | codex exec fallback 또는 literal 재사용 위험 | [`../using-codex-exec/references/known-issues.md`](../using-codex-exec/references/known-issues.md#literal-재사용-시-random-suffix-환각-금지-issue-632), [`references/arbiter-scaling.md`](references/arbiter-scaling.md) | native delegation이 거부되거나 codex exec 경로를 실제로 사용할 때 |
@@ -249,7 +152,7 @@ Preflight에서 아래 lazy reference를 미리 열지 않는다. mode가 비어
 7. 사용자 전건 보고 + 질문 도구 의무 — 모든 Arbiter 판정 결과를 사용자에게 보고. NEEDS_MORE_INFO 항목은 [`references/main-agent-obligations.md`](references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)의 5요소 맥락(현재 상황 / 문제 / 비유법 / 선택지 장단점 / 질문)으로 질문 도구 호출.
 8. Fresh perspective 보장 — 매 라운드마다 새 reviewer/Arbiter 실행 단위 (Codex: 새 native subagent thread, codex exec: 새 `codex exec` 프로세스).
 9. 의사결정·회귀 컨텍스트 조사 — 제거/단순화/되돌림/리팩터 변경이거나 git상 왕복 핫스팟 파일이면 검토 강도와 무관하게 fail-closed로 과거 의사결정(commit/PR/issue + 있으면 CIR/ADR·로컬 세션 로그)을 조사해 회귀 재도입을 점검한다. 메인이 "의사결정 컨텍스트 팩"을 수집·주입하고 reviewer/Arbiter가 read-only 보강한다. git으로 버전관리되는 모든 저장소에서 동작하며 기록 관습에 의존하지 않는다 ([`references/decision-regression-audit.md`](references/decision-regression-audit.md)).
-10. 세션 내 기각 이력은 exact match만 suppress — `fresh` anti-anchoring을 위해 이전 finding 본문/이전 transcript는 주입하지 않는다. Arbiter `NOT_AN_ISSUE` 또는 사용자 명시 제외 항목만 suppression key(관점+위치+요약) 기준으로 세션 내에서 제외하고, `NEEDS_MORE_INFO`는 자동 기각으로 취급하지 않는다 (위 "세션 내 기각 이력" 절이 정본).
+10. 세션 내 기각 이력은 exact match만 suppress — `fresh` anti-anchoring을 위해 이전 finding 본문/이전 transcript는 주입하지 않는다. Arbiter `NOT_AN_ISSUE` 또는 사용자 명시 제외 항목만 suppression key(관점+위치+요약) 기준으로 세션 내에서 제외하고, `NEEDS_MORE_INFO`는 자동 기각으로 취급하지 않는다 ([fresh-review.md](references/fresh-review.md)의 "세션 내 기각 이력"이 정본).
 11. 수렴 종료는 2층 수렴 predicate(수치 층 + hard precondition 층)로 판정하고, 모든 종료에 `termination_type` 라벨(CONVERGED/DEFERRED_EXIT/ROUND_LIMIT/USER_STOP)을 기록한다 — ALL CLEAR(finding 0)는 수렴의 특수형이다. predicate의 조건 정의·accepted severity·caller 검증·종료 라벨은 [`references/protocol.md`](references/protocol.md)의 "수렴 판정"이 SSOT이며 여기 재서술하지 않는다 — 종료 판단 시 반드시 해당 섹션을 평가한다.
 
 ## 주의사항
