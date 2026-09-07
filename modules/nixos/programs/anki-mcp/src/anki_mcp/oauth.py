@@ -11,7 +11,8 @@
   (refresh만 철회했는데 access가 살아 있는 구멍 방지).
   사용한 refresh 해시는 grant가 살아 있는 동안 보존하고 재사용 시 grant 전체를 철회한다. 회전 상한 초과도 재승인을 요구한다.
 - 등록 상한: /register는 인증 없이 인터넷에 열려 있다. 클라이언트 수·레코드 크기에 상한을 두고, 토큰이 하나도
-  없는 오래된 등록은 새 등록이 들어올 때 정리한다(정상 클라이언트는 토큰이 살아 있는 한 정리되지 않는다).
+  없는 오래된 등록은 새 등록이 들어올 때 정리한다. 포화 시 비활성 등록 중 가장 오래된 것을 교체하며,
+  토큰·인가 코드·승인 대기 중 하나라도 있는 클라이언트는 보존한다.
 """
 
 from __future__ import annotations
@@ -193,7 +194,14 @@ class FileOAuthProvider:
             raise RegistrationError("invalid_client_metadata", "client metadata too large")
         self._prune_unused_clients()
         if len(self._state["clients"]) >= self._max_clients:
-            raise RegistrationError("invalid_client_metadata", "client registry is full; try again later")
+            # CIR: 미승인 DCR이 TTL 동안 모든 슬롯을 선점해 정상 연결을 막지 않도록 한다.
+            # 활성 토큰뿐 아니라 진행 중인 승인·코드 교환도 보호한다. 총 저장량 상한은 유지한다.
+            active = self._active_client_ids()
+            inactive = [cid for cid in self._state["clients"] if cid not in active]
+            if not inactive:
+                raise RegistrationError("invalid_client_metadata", "client registry is full; try again later")
+            oldest = min(inactive, key=lambda cid: self._state["clients"][cid].get("client_id_issued_at") or 0)
+            del self._state["clients"][oldest]
         self._state["clients"][str(client_info.client_id)] = record
         self._save()
 

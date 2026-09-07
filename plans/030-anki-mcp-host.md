@@ -25,9 +25,9 @@
 - **Depends on**: 024 (soft — AnkiWeb 계정·서버 컬렉션이 존재해야 Download 가능)
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
-- **Execution**: IN PROGRESS — PR 1 머지(#1307), 시크릿 투입(#1308), 운영 부트스트랩·정상 sync 완료(#1309). PR 2a #1310의 Funnel 443 회귀 뒤 운영자가 **공개 8443 / 승인 9443 / 미리보기 10000** 재배치를 선택했다. `0f4cb01a` 배포 후 공개 메타데이터·무토큰 401·내부 승인 포트·다른 Mac에서 기존 4개 서비스·MiniPC smoke-test 10/10을 확인했다. ChatGPT의 OAuth 자동 설정 조회는 실패했고, 수동 endpoint 입력 시 DCR 선택이 활성화됐다. 2026-09-08 명세 감사에서 필수 요건 미충족 4건을 확인했고, 독립 검토에서 확인한 콜백 처리 2건까지 코드와 회귀 테스트에 반영했다. OAuth 보완의 정확성·회귀 검토와 격리 테스트 63개, 일반·no-IFD eval이 통과했다. 실제 ChatGPT·Claude·Codex 연결 검증은 아직 남아 있다.
+- **Execution**: IN PROGRESS — PR 1 머지(#1307), 시크릿 투입(#1308), 운영 부트스트랩·정상 sync 완료(#1309). PR 2a #1310의 Funnel 443 회귀 뒤 운영자가 **공개 8443 / 승인 9443 / 미리보기 10000** 재배치를 선택했다. `0f4cb01a` 배포 후 공개 메타데이터·무토큰 401·내부 승인 포트·다른 Mac에서 기존 4개 서비스·MiniPC smoke-test 10/10을 확인했다. ChatGPT의 OAuth 자동 설정 조회는 실패했고, 수동 endpoint 입력 시 DCR 선택이 활성화됐다. 2026-09-08 명세 감사에서 필수 요건 미충족 4건을 확인했고, 독립 검토에서 확인한 콜백 처리 2건까지 코드와 회귀 테스트에 반영했다. OAuth 보완의 정확성·회귀 검토와 일반·no-IFD eval이 통과했고 MiniPC에 배포했다. 전체 PR 검토에서 공개 DCR의 비활성 등록 선점 문제를 확인해 포화 시 교체 정책을 보완했다. 격리 테스트 64개가 통과했고 수정 후 독립 재검토를 진행한다. 실제 ChatGPT·Claude·Codex 연결 검증은 아직 남아 있다.
 - **Plan DA**: R1 COMPLETE (finding 21건 전부 CONFIRMED·반영, 롤아웃 계약 2건은 운영자 결정 "계획을 구현에 맞춰 갱신"), R2 COMPLETE (finding 19건 전부 CONFIRMED·반영 — 방향 모드 제거, 복원 절차 계약, sync 계층 단일화, 타임아웃 단일 소스, lab 폐기 절차), R3 COMPLETE (16건: 15 CONFIRMED·1 NOT_AN_ISSUE — 14건 반영: 준비·재시도 상수 단일 소스와 유닛 예산 재계산, /status 즉시 응답 분리, import 구성 시점 게이트, export 덮어쓰기 거부, 복구점 미러·정리 코드 PR 2b로 이관, 인스턴스 enable 옵션 제거, result 어휘 표; 1건 REPLAN_REQUIRED(MCP 유저·상태 파일 접근)는 #1306에 배출), R4 COMPLETE (19건 전부 CONFIRMED·반영 — lab 수명을 PR 2b까지로, 준비됨=로그인 판정 확정, /status 투영 축소, running 상태·요청–결과 대응, busy 예산 스크립트 전체 1회·백오프 합 파생, 애드온 타임아웃 전부 env, allowImport 옵션+배타 assertion, user·profile 옵션 제거, 미디어 대기 제거, 문서 정합), R5 COMPLETE (13건: 12 CONFIRMED·1 NOT_AN_ISSUE — R4 편집이 애드온 `required` 바인딩을 조건 블록 안으로 밀어 넣은 CRITICAL 결함 복원, 상태 파일 runId 회차 식별, collection-empty 알림, 헬퍼 배선 공용 파일 + eval의 `${VAR:?}` 요구 집합 대조, 시크릿 인벤토리·문서 정합). R6 COMPLETE (15건 전부 CONFIRMED·반영 — loopback 무인증 AnkiConnect 잔여 위험을 CIR·결정 1에 기록하고 normal sync에 급감 게이트, 복원 절차의 상태 파일 초기화 단계와 STOP 9 예외, 결정 13 호출자 규칙을 systemctl 실측 대조로, full-sync-required exit 1, smoke-test 백업 신선도 등록, backup 유닛 쓰기 경로 축소, AH8 분할, 문서 정합). 루프 종료 `termination_type=USER_STOP`(운영자 지시 2026-09-07: "점점 YAGNI성 꼬투리 리뷰만 나온다" — R6 반영분은 독립 재검증 없이 walkthrough·배포 실측으로만 확인). 미해결: R6 write phase delta의 독립 리뷰 부재
-- **PR DA**: PR 1은 운영자 결정으로 생략. PR 2a는 운영자 결정 LITE(Correctness+Regression), Codex 검토로 진행했으나 Funnel 443 회귀로 미수렴. 재설계 반영 후 재검토해야 하며 PR #1310은 아직 머지하지 않는다.
+- **PR DA**: PR 1은 운영자 결정으로 생략. PR 2a는 운영자 결정 LITE(Correctness+Regression)로 재검토했다. 공개 DCR의 등록 선점 문제를 보완했고, 인증 상태 변경에 대한 재검증 규칙에 따라 네 관점으로 재검토한다. PR #1310은 검토 수렴과 실제 클라이언트 확인 전 머지하지 않는다.
 
 ## Why this matters
 
@@ -225,6 +225,8 @@
       HTTP IP loopback은 등록 주소와 인가 요청의 포트 차이만 허용한다. 토큰 교환에서는 인가 때 실제 쓴 주소와 같아야 한다.
       잘못된 resource도 SDK가 client·callback·PKCE·scope를 검증한 뒤 `invalid_target`과 원래 `state`를 callback으로 돌려준다.
     - DCR에서 secret을 발급하면 `client_secret_expires_at`을 명시한다. 무기한은 `0`이며 SDK의 expiry interval `0`과 다르다.
+    - DCR 총 등록 상한은 유지하되 포화 시 가장 오래된 비활성 등록을 교체한다. 토큰·인가 코드·승인 대기가 있는
+      클라이언트는 보호하여 외부의 미승인 등록이 정상 신규 연결을 하루 동안 봉쇄하지 못하게 한다.
     CIMD는 SHOULD인 권고 기능으로 이번 DCR 구현에는 포함하지 않는다. Basic은 이 명세가 참조하는
     [OAuth 2.1 draft-13 §2.4.1](https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-2.4.1)에서 MAY이며
     본문 secret 방식이 MUST다. 위 결함들은 등록·인가 이후 경로에 해당하므로 ChatGPT의 초기 discovery 오류 원인으로 단정하지 않는다.

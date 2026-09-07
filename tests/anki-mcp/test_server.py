@@ -55,8 +55,10 @@ async def test_funnel_guard_caps_registrations_and_body_size(tmp_path):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=funnel), base_url=f"https://{PUBLIC_HOST}") as fh:
             for _ in range(3):
                 assert (await fh.post("/register", headers=hdrs, json=dcr)).status_code == 201
-            full = await fh.post("/register", headers=hdrs, json=dcr)  # 등록 상한(3) — SDK가 400으로 돌려준다
-            assert full.status_code == 400 and "full" in full.json()["error_description"]
+            fresh = await fh.post("/register", headers=hdrs, json=dcr)  # 미승인 등록은 상한에서 교체한다
+            assert fresh.status_code == 201
+            state = json.loads((tmp_path / "oauth-state.json").read_text())
+            assert len(state["clients"]) == 3 and fresh.json()["client_id"] in state["clients"]
             # 본문 상한 — Content-Length가 있는 요청은 읽기 전에, 없는(chunked) 요청은 핸들러가 읽는 도중 끊는다
             big = await fh.post("/token", headers=hdrs, content=b"x" * 4096)
             assert big.status_code == 413

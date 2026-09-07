@@ -150,9 +150,9 @@ async def test_registration_is_capped_and_unused_clients_are_pruned(tmp_path):
                              max_clients=2, max_client_bytes=600, unused_client_ttl=100)
     await prov.register_client(_client("c1", issued_at=int(clock["t"])))
     await prov.register_client(_client("c2", issued_at=int(clock["t"])))
-    with pytest.raises(RegistrationError):  # 가득 찼고 둘 다 아직 정리 대상 나이가 아니다
-        await prov.register_client(_client("c3", issued_at=int(clock["t"])))
-    assert {c["client_id"] for c in prov.clients()} == {"c1", "c2"}
+    # 미승인 등록이 상한을 채워도 TTL을 기다리지 않고 새 연결을 시작할 수 있다.
+    await prov.register_client(_client("fresh", issued_at=int(clock["t"])))
+    assert {c["client_id"] for c in prov.clients()} == {"c2", "fresh"}
 
     # 토큰 없는 등록은 TTL이 지나면 새 등록이 들어올 때 정리된다
     clock["t"] += 101
@@ -167,15 +167,47 @@ async def test_registration_is_capped_and_unused_clients_are_pruned(tmp_path):
     await prov.exchange_authorization_code(c3, await prov.load_authorization_code(c3, code))
     clock["t"] += 101
     await prov.register_client(_client("c4", issued_at=int(clock["t"])))
-    with pytest.raises(RegistrationError):
-        await prov.register_client(_client("c5", issued_at=int(clock["t"])))
-    assert {c["client_id"] for c in prov.clients()} == {"c3", "c4"}
+    await prov.register_client(_client("c5", issued_at=int(clock["t"])))
+    assert {c["client_id"] for c in prov.clients()} == {"c3", "c5"}
 
     # 레코드 크기 상한
     fat = _client("c6", issued_at=int(clock["t"]))
     fat.client_name = "x" * 1000
     with pytest.raises(RegistrationError):
         await prov.register_client(fat)
+
+
+@pytest.mark.anyio
+async def test_saturated_registration_preserves_pending_codes_and_tokens(tmp_path):
+    path = str(tmp_path / "s.json")
+    clock = {"t": 10_000.0}
+    prov = _provider(path, now=lambda: clock["t"], max_clients=2)
+    for cid in ("old", "newer"):
+        await prov.register_client(_client(cid, issued_at=int(clock["t"])))
+        clock["t"] += 1
+    # 재시작으로 복원된 미승인 등록도 새 승인을 막지 않는다.
+    prov = _provider(path, now=lambda: clock["t"], max_clients=2)
+    client = _client("legitimate", issued_at=int(clock["t"]))
+    await prov.register_client(client)
+    assert await prov.get_client("old") is None
+    _, challenge = _pkce()
+    txn = parse_qs(urlparse(await prov.authorize(client, _params(challenge))).query)["txn"][0]
+    for i in range(3):
+        await prov.register_client(_client(f"public-{i}", issued_at=int(clock["t"])))
+    assert prov.pending(txn) and await prov.get_client(client.client_id)
+    code = parse_qs(urlparse(prov.complete_approval(txn)).query)["code"][0]
+    await prov.register_client(_client("another", issued_at=int(clock["t"])))
+    tokens = await prov.exchange_authorization_code(client, await prov.load_authorization_code(client, code))
+    assert await prov.load_access_token(tokens.access_token)
+    # 모든 슬롯이 활성 상태면 기존 연결을 지우지 않고 새 등록만 거부한다.
+    another = await prov.get_client("another")
+    await _grant_tokens(prov, another)
+    before = open(path, encoding="utf-8").read()
+    with pytest.raises(RegistrationError, match="full"):
+        await prov.register_client(_client("blocked", issued_at=int(clock["t"])))
+    assert open(path, encoding="utf-8").read() == before
+    assert await prov.load_access_token(tokens.access_token)
+    assert await prov.load_refresh_token(client, tokens.refresh_token)
 
 
 @pytest.mark.anyio

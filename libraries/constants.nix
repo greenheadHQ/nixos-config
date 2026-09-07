@@ -93,7 +93,7 @@
     # DCR(/register)은 인증 없이 인터넷에서 열려 있다 — 등록 폭주로 상태 파일이 자라거나 재작성이 반복되지 않게 상한을 둔다
     registrationMaxClients = 32; # 등록 클라이언트 상한 (정상 사용은 ChatGPT·Codex·Claude 등 한 자릿수)
     registrationMaxClientBytes = 4096; # 클라이언트 레코드 한 건의 JSON 상한 (실제 DCR 요청은 수백 바이트)
-    registrationUnusedTtlSecs = 86400; # 토큰이 하나도 없는 등록을 이 시간 뒤 정리한다 (승인 흐름을 끝낼 시간은 남긴다)
+    registrationUnusedTtlSecs = 86400; # 비활성 등록의 평상시 정리 기한. 포화 시에는 가장 오래된 비활성 등록부터 교체한다
     registrationBurst = 10; # 아래 창 안에서 허용하는 등록 횟수 — 넘으면 429
     registrationWindowSecs = 600;
     maxRequestBodyBytes = 262144; # Funnel 앱 요청 본문 상한(413) — 노트 대량 추가 본문은 수십 KB 수준
