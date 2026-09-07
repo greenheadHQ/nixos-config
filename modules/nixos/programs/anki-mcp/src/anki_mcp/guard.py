@@ -1,6 +1,6 @@
-"""Funnel 앱의 바깥 껍질 (순수 ASGI 미들웨어).
+"""공개 MCP와 tailnet 승인 앱의 요청 제한 (순수 ASGI 미들웨어).
 
-인터넷에 그대로 열리는 앱이므로 SDK 핸들러가 본문을 읽기 전에 두 가지를 자른다.
+SDK 핸들러가 본문을 파싱하기 전에 수신 크기·시간을 제한하고, 공개 등록 요청의 빈도를 제한한다.
 - 요청 본문 상한: Content-Length가 크면 바로 413. 아니면 본문을 상한까지 여기서 미리 읽고 넘으면 413, 안 넘으면 읽은
   본문을 앱에 되돌려준다 — SDK 핸들러 안에서 예외로 끊으면 SDK의 광역 except가 500으로 바꾸므로(streamable_http.py),
   판정은 앱에 들어가기 전에 끝내야 한다. MCP 요청은 JSON 한 덩어리라 버퍼링 비용은 상한(수백 KB)으로 묶인다.
@@ -29,7 +29,7 @@ def _json_response(status: int, error: str) -> tuple[dict[str, Any], dict[str, A
     )
 
 
-class FunnelGuard:
+class RequestGuard:
     def __init__(
         self,
         app: Any,

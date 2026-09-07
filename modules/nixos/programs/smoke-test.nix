@@ -131,7 +131,7 @@ let
 
       # ─── 1c. Tailscale Funnel 배선 — Caddy 443 보존, 승인 포트 tailnet 전용 (plan 030 STOP 6의 일일 안전망) ───
       # 배선 유닛(anki-mcp-tailscale)이 시작 시점에 같은 판정을 하지만, 그 뒤 수동 `tailscale funnel` 조작으로
-      # 승인 포트가 열리거나 443을 가로채면 매일 도는 여기서도 검출한다.
+      # 다른 포트가 공개되거나 443을 가로채면 매일 도는 여기서도 검출한다.
       if [ -n "$FUNNEL_FQDN" ]; then
         FUNNEL_STATUS=$(tailscale serve status --json 2>/dev/null || true)
         RESULT=0
@@ -139,10 +139,11 @@ let
           --arg public_port "$FUNNEL_PUBLIC_PORT" --arg approval_port "$FUNNEL_PRIVATE_PORT" \
           --arg public_target "$FUNNEL_PUBLIC_TARGET" --arg approval_target "$FUNNEL_PRIVATE_TARGET" '
             .TCP["443"] == null and .AllowFunnel[$public] == true and .AllowFunnel[$approval] != true and
+            all(.AllowFunnel | to_entries[]; .value != true or .key == $public) and
             .TCP[$public_port].HTTPS == true and .TCP[$approval_port].HTTPS == true and
             .Web[$public].Handlers["/"].Proxy == $public_target and .Web[$approval].Handlers["/"].Proxy == $approval_target
           ' >/dev/null <<<"$FUNNEL_STATUS" || RESULT=1
-        check "Tailscale funnel wiring (443 reserved for Caddy, ''${FUNNEL_PUBLIC_PORT} Funnel on, ''${FUNNEL_PRIVATE_PORT} tailnet-only)" "$RESULT"
+        check "Tailscale funnel wiring (443 reserved for Caddy, only ''${FUNNEL_PUBLIC_PORT} Funnel on, ''${FUNNEL_PRIVATE_PORT} tailnet-only)" "$RESULT"
       fi
 
       # ─── 2. 백업 신선도 검증 (활성 백업만, 비활성 서비스 false positive 방지) ───

@@ -32,7 +32,7 @@ from starlette.routing import Route
 from .ankiconnect import AnkiConnect
 from .approval import Lockout, build_approval_app
 from .config import Settings, read_passphrase
-from .guard import FunnelGuard
+from .guard import RequestGuard
 from .helper import Helper
 from .oauth import CLIENT_AUTH_METHODS, DEFAULT_SCOPES, FileOAuthProvider
 from .syncstatus import SyncNow
@@ -183,12 +183,6 @@ def build(cfg: Settings):
         else r
         for r in funnel_app.router.routes
     ]
-    # 인터넷에 열린 앱의 바깥 껍질: 본문 상한(413) + 인증 없는 /register의 rate limit(429)
-    funnel_app.add_middleware(
-        FunnelGuard, max_body_bytes=cfg.max_body_bytes, register_burst=cfg.reg_burst, register_window=cfg.reg_window,
-        read_timeout=cfg.body_read_timeout,
-    )
-
     lockout = Lockout(cfg.lockout_failures, cfg.lockout_secs)
     approval_app = build_approval_app(
         provider,
@@ -196,6 +190,13 @@ def build(cfg: Settings):
         passphrase=lambda: read_passphrase(cfg.passphrase_file),
         lockout=lockout,
     )
+    # 승인 앱도 클라이언트·문구 검증 전에 form을 읽는다. 파서에 넘기기 전 두 앱의 자원 소비를 제한한다.
+    # Starlette 1.1.0의 URL-encoded 필드 제한 미적용은 앱의 본문/시간 상한으로 완화한다.
+    for app in (funnel_app, approval_app):
+        app.add_middleware(
+            RequestGuard, max_body_bytes=cfg.max_body_bytes, register_burst=cfg.reg_burst,
+            register_window=cfg.reg_window, read_timeout=cfg.body_read_timeout,
+        )
     log.info(
         "anki_mcp ready: issuer=%s authorize=%s approval_host=%s clients=%d",
         cfg.public_url,
@@ -213,7 +214,8 @@ async def serve(cfg: Settings) -> None:
                                       proxy_headers=True, forwarded_allow_ips="127.0.0.1", lifespan="on",
                                       limit_concurrency=cfg.max_concurrency)),
         uvicorn.Server(uvicorn.Config(approval_app, host="127.0.0.1", port=cfg.approval_port, log_level="info",
-                                      proxy_headers=True, forwarded_allow_ips="127.0.0.1")),
+                                      proxy_headers=True, forwarded_allow_ips="127.0.0.1",
+                                      limit_concurrency=cfg.max_concurrency)),
     ]
     tasks = [asyncio.create_task(s.serve()) for s in servers]
     await asyncio.sleep(0.5)  # uvicorn이 자체 signal 핸들러를 건 뒤에 우리 것으로 덮는다 — 두 서버를 함께 내린다

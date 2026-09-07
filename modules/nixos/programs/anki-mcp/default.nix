@@ -99,6 +99,7 @@ let
         .TCP["443"] == null and
         .TCP["${toString publicPort}"].HTTPS == true and .TCP["${toString approvalPublicPort}"].HTTPS == true and
         .AllowFunnel[$public] == true and
+        all(.AllowFunnel | to_entries[]; .value != true or .key == $public) and
         .Web[$public].Handlers["/"].Proxy == "http://127.0.0.1:${toString cfg.port}" and
         .Web[$approval].Handlers["/"].Proxy == "http://127.0.0.1:${toString cfg.approvalPort}"
       ' >/dev/null <<<"$serve_json"; then

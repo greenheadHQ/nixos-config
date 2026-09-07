@@ -1,11 +1,13 @@
 """server.build()가 두 앱을 올바르게 나누는지와, 실제 OAuth 2.1 흐름(DCR → PKCE authorize → 승인 폼 → 토큰 → Bearer로
 /mcp tools/list)이 ASGI 안에서 끝까지 도는지 검증한다. Funnel 앱에는 /authorize가 없고 메타데이터는 승인 URL을 가리킨다."""
 
+import asyncio
 import base64
 import hashlib
 import json
 import secrets
 import time
+from dataclasses import replace
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
@@ -415,3 +417,29 @@ async def test_port_exception_is_limited_to_ip_loopback_http(tmp_path, registere
         response = await ah.get("/authorize", params={"response_type": "code", "client_id": reg.json()["client_id"],
             "redirect_uri": requested, "code_challenge": challenge, "code_challenge_method": "S256"})
         assert response.status_code == 400 and "location" not in response.headers
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("endpoint", ["/authorize", "/approve"])
+async def test_approval_limits_body_size_and_read_time_before_form_parsing(tmp_path, endpoint):
+    cfg = replace(_settings(tmp_path), body_read_timeout=0.01)
+    _, approval = build(cfg)
+    headers = {"host": APPROVAL_HOST, "content-type": "application/x-www-form-urlencoded"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=approval), base_url=f"https://{APPROVAL_HOST}") as ah:
+        large = await ah.post(endpoint, headers=headers, content=b"value=" + b"x" * 4096)
+        assert large.status_code == 413
+
+        async def chunks():
+            yield b"value=" + b"x" * 1500
+            yield b"x" * 1500
+
+        chunked = await ah.post(endpoint, headers=headers, content=chunks())
+        assert chunked.status_code == 413
+
+        async def unfinished():
+            yield b"txn="
+            await asyncio.sleep(1)
+
+        slow = await ah.post(endpoint, headers=headers, content=unfinished())
+        assert slow.status_code == 408
+        assert (await ah.get("/healthz")).status_code == 200

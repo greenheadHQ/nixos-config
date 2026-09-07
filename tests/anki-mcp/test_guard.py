@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from anki_mcp.guard import FunnelGuard
+from anki_mcp.guard import RequestGuard
 
 
 def _scope(path="/mcp", method="POST", headers=()):
@@ -40,14 +40,14 @@ async def _echo(scope, receive, send):
 @pytest.mark.anyio
 async def test_oversize_in_final_message_replies_413_without_waiting_for_more():
     # uvicorn은 chunked 본문 전체를 한 메시지(more_body=False)로 넘길 수 있다 — 더 읽으려 하면 영원히 멈춘다(실측)
-    guard = FunnelGuard(_echo, max_body_bytes=100, register_burst=5, register_window=60)
+    guard = RequestGuard(_echo, max_body_bytes=100, register_burst=5, register_window=60)
     sent = await _run(guard, _scope(), [{"type": "http.request", "body": b"x" * 300, "more_body": False}])
     assert sent[0]["status"] == 413
 
 
 @pytest.mark.anyio
 async def test_oversize_mid_stream_drains_the_rest_then_replies_413():
-    guard = FunnelGuard(_echo, max_body_bytes=100, register_burst=5, register_window=60)
+    guard = RequestGuard(_echo, max_body_bytes=100, register_burst=5, register_window=60)
     msgs = [{"type": "http.request", "body": b"x" * 150, "more_body": True},
             {"type": "http.request", "body": b"y" * 50, "more_body": True},
             {"type": "http.request", "body": b"", "more_body": False}]
@@ -57,7 +57,7 @@ async def test_oversize_mid_stream_drains_the_rest_then_replies_413():
 
 @pytest.mark.anyio
 async def test_within_limit_body_is_replayed_to_the_app_intact():
-    guard = FunnelGuard(_echo, max_body_bytes=100, register_burst=5, register_window=60)
+    guard = RequestGuard(_echo, max_body_bytes=100, register_burst=5, register_window=60)
     msgs = [{"type": "http.request", "body": b"a" * 40, "more_body": True},
             {"type": "http.request", "body": b"b" * 40, "more_body": False}]
     sent = await _run(guard, _scope(), msgs)
@@ -66,7 +66,7 @@ async def test_within_limit_body_is_replayed_to_the_app_intact():
 
 @pytest.mark.anyio
 async def test_declared_oversize_is_refused_before_reading_and_registration_is_rate_limited():
-    guard = FunnelGuard(_echo, max_body_bytes=100, register_burst=1, register_window=60, now=lambda: 0.0)
+    guard = RequestGuard(_echo, max_body_bytes=100, register_burst=1, register_window=60, now=lambda: 0.0)
     sent = await _run(guard, _scope(headers=[("content-length", "5000")]), [])
     assert sent[0]["status"] == 413
     assert (await _run(guard, _scope(path="/register"), [{"type": "http.request", "body": b"{}", "more_body": False}]))[0]["status"] == 200
@@ -76,6 +76,6 @@ async def test_declared_oversize_is_refused_before_reading_and_registration_is_r
 @pytest.mark.anyio
 async def test_incomplete_body_times_out_with_408_instead_of_buffering_forever():
     # 본문 선읽기는 인증 전에 일어난다 — 본문을 끝맺지 않는 연결(slowloris)은 read_timeout에 408로 끊어야 한다
-    guard = FunnelGuard(_echo, max_body_bytes=1000, register_burst=5, register_window=60, read_timeout=0.05)
+    guard = RequestGuard(_echo, max_body_bytes=1000, register_burst=5, register_window=60, read_timeout=0.05)
     sent = await _run(guard, _scope(), [{"type": "http.request", "body": b"partial", "more_body": True}])
     assert sent[0]["status"] == 408

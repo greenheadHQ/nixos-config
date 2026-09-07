@@ -96,10 +96,10 @@
     registrationUnusedTtlSecs = 86400; # 비활성 등록의 평상시 정리 기한. 포화 시에는 가장 오래된 비활성 등록부터 교체한다
     registrationBurst = 10; # 아래 창 안에서 허용하는 등록 횟수 — 넘으면 429
     registrationWindowSecs = 600;
-    maxRequestBodyBytes = 262144; # Funnel 앱 요청 본문 상한(413) — 노트 대량 추가 본문은 수십 KB 수준
+    maxRequestBodyBytes = 262144; # 공개·승인 앱 요청 본문 상한(413) — 노트 대량 추가 본문은 수십 KB 수준
     # 인증 전 본문 선읽기 방어 — 미완결 본문(slowloris)이 버퍼를 무한히 붙잡지 못하게 기한·동시성에 상한을 둔다
-    bodyReadTimeoutSecs = 30; # Funnel 앱이 인증 전 요청 본문을 다 받기까지의 기한 — 넘으면 408로 끊는다
-    maxConcurrentRequests = 64; # Funnel 앱(uvicorn) 동시 처리 상한 — 동시 버퍼(≈ 이 값 × maxRequestBodyBytes ≈ 16MB)를 MemoryMax(256M) 아래로 묶는다
+    bodyReadTimeoutSecs = 30; # 두 앱이 인증 전 요청 본문을 다 받기까지의 기한 — 넘으면 408로 끊는다
+    maxConcurrentRequests = 64; # 앱별(uvicorn) 동시 처리 상한 — 두 앱의 동시 본문 버퍼(≈ 2 × 이 값 × maxRequestBodyBytes ≈ 32MB)를 MemoryMax(256M) 아래로 묶는다
   };
 
   # ═══════════════════════════════════════════════════════════════
@@ -108,9 +108,9 @@
   paths = {
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
-    ankiHostBackupsRelPath = "backups/anki-host";
+    ankiHostBackupsRelPath = "backups/anki-host"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
     # sync 스크립트가 남기는 상태 사본의 게시판(결정 15) — 0750 anki-host, 사본 0640. MCP 서비스가 그룹으로 읽는다
-    ankiHostStatusRun = "/run/anki-host-status"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
+    ankiHostStatusRun = "/run/anki-host-status";
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
     # Launcher 전용 headless SSH dispatcher의 Home 상대 설치 경로.
     # Home Manager target과 launcher PATH가 이 값을 함께 사용해 배선 drift를 막는다.
