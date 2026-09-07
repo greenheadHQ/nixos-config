@@ -106,7 +106,7 @@ degraded 수행 (fan-out 없는 경우): Review Intensity가 SKIP/LITE여서 rev
 
 ### Step D — 회귀 판정 및 처리
 
-회귀가 의심되면 Arbiter가 과거 결정의 근거를 출처(commit SHA / PR# / issue#)와 함께 제시하고, 현재 변경 의도(commit/PR/대화)와 대조한다. 판정 기준 기반 verdict 매핑(과거 근거를 알고 한 의도적 변경 → 통과, 근거를 모르는 되돌림 → 회귀, 불명확 → 사용자 질문)의 정본은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정" 섹션이다. 사용자 질문 시 [`main-agent-obligations.md`](main-agent-obligations.md)의 5요소 맥락 의무를, 상태 전이는 [`protocol.md`](protocol.md)를 따른다.
+회귀가 의심되면 Arbiter가 과거 결정의 근거를 출처(commit SHA / PR# / issue#)와 함께 제시하고, 현재 변경 의도(commit/PR/대화)와 대조한다. 판정 기준 기반 verdict 매핑(과거 근거를 알고 한 의도적 변경 → 통과, 근거를 모르는 되돌림 → 회귀, 불명확 → 사용자 질문)의 정본은 [`arbiter-prompt.md`](arbiter-prompt.md)의 "Decision regression 판정" 섹션이다. 사용자 질문 시 [`main-agent-obligations.md`](main-agent-obligations.md)의 맥락 설명 기준을, 상태 전이는 [`protocol.md`](protocol.md)를 따른다.
 
 이는 [`da-domains.md`](da-domains.md)의 "의도된 제거·축소는 위반이 아니다"의 반대편을 보완한다: 의도된 변경은 통과시키되, 근거를 모르는 되돌림만 잡는다.
 

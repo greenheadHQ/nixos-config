@@ -405,7 +405,7 @@ exit "$rc"
 상한보다 길다 — `run_in_background: true`로 발사하고, 완료 알림 수신 후 `/tmp/t6.rc`와
 `/tmp/t6-remote.txt`를 함께 확인한다. 알림의 exit code는 래핑 셸의 최종 rc이므로 위처럼
 `exit "$rc"`로 끝내야 실패가 실패로 통지된다 (`.rc` 부재 자체도 실패로 취급 —
-[using-codex-exec SKILL.md "background 발사의 rc 계약"](../../using-codex-exec/references/execution-contracts.md)과 동일 규약).
+[using-codex-exec execution-contracts.md "background 발사의 rc 계약"](../../using-codex-exec/references/execution-contracts.md)과 동일 규약).
 
 > 이 테스트는 SSH 연결이 가능한 환경에서만 실행한다. SSH 연결 실패 시 별도 진단.
 > 무출력 약 10분 뒤 완료된 사례가 있으므로 outer timeout을 두되 무출력만으로 중단하지 않는다 —

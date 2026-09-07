@@ -119,7 +119,7 @@ claude -p 실행이 필요한가?
 ## 호출 상한 (Bash tool 경유)
 
 Claude Code 하네스의 Bash tool로 `claude -p`를 발사할 때는 하네스 상한이 실질 상한이다.
-수치·계약의 SoT는 [using-codex-exec SKILL.md "foreground/background 상한 불일치"](../using-codex-exec/references/execution-contracts.md#foregroundbackground-상한-불일치-호출-방식-계약) 절이다
+수치·계약의 SoT는 [using-codex-exec execution-contracts.md "foreground/background 상한 불일치"](../using-codex-exec/references/execution-contracts.md#foregroundbackground-상한-불일치-호출-방식-계약) 절이다
 (그 절이 명시하듯 `claude -p` headless에 공통 적용). 이 절은 수치를 복제하지 않는다 — 규칙만 적는다.
 
 - 안쪽 예산(wrapper·SSH `timeout` 등)이 하네스 상한보다 길면 하네스 timeout이 먼저 발화한다
@@ -128,7 +128,7 @@ Claude Code 하네스의 Bash tool로 `claude -p`를 발사할 때는 하네스 
 - 상한 도달의 처리와 그때의 결과 회수 계약은 하네스 버전에 따라 갈린다 — background 자동
   전환이면 작업이 완주하고 완료 알림이 오지만, 프로세스 종료면 알림이 없고 이미 파일로
   영속화된 산출물만 남는다. 두 동작의 관측·회수 계약 표와 재현 절차는
-  [using-codex-exec SKILL.md의 같은 절](../using-codex-exec/references/execution-contracts.md#foregroundbackground-상한-불일치-호출-방식-계약)이 정본이다.
+  [using-codex-exec execution-contracts.md의 같은 절](../using-codex-exec/references/execution-contracts.md#foregroundbackground-상한-불일치-호출-방식-계약)이 정본이다.
   어느 쪽이든 foreground 응답은 그 시점에 끊기므로 결과는 stdout이 아니라 파일로 받는다.
 - 동일 응답에서 여러 foreground Bash 호출을 발사해도 병렬이 아니라 직렬 실행된다
   (재확인: 2026-08-15, v2.1.233 — 3초 작업 4개가 0.0→3.0, 3.1→6.1, 6.2→9.2, 9.3→12.3초로
@@ -137,7 +137,7 @@ Claude Code 하네스의 Bash tool로 `claude -p`를 발사할 때는 하네스 
   `run_in_background: true`뿐이다.
 - 수 분 이상 걸릴 수 있는 호출은 Bash tool `run_in_background: true`로 발사한다. 완료 알림의
   exit code는 claude가 아니라 래핑 셸의 최종 rc다 — `rc 캡처 → .rc 파일 영속화 → exit $rc`로
-  끝낸다 (using-codex-exec SKILL.md "background 발사의 rc 계약"과 동일 규약; 꼬리 echo/cat을 두면
+  끝낸다 (using-codex-exec execution-contracts.md "background 발사의 rc 계약"과 동일 규약; 꼬리 echo/cat을 두면
   전건 실패도 completed로 통지된다).
 - foreground `sleep`은 하네스가 차단한다 (`Blocked: sleep ...` 실측) — 대기는 Monitor
   until-loop 또는 run_in_background 완료 알림으로 한다.
