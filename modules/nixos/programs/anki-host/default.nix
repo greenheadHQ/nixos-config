@@ -18,6 +18,11 @@
 #   - trade-off: 인스턴스마다 anki 프로세스(메모리 상한 1G)와 프로필 사본이 생긴다.
 #     overlay 없이 캐시된 nixpkgs 패키지만 쓴다 (과거 doInstallCheck overlay가 Hydra 캐시를
 #     죽여 MiniPC가 매 배포마다 소스 빌드로 과열된 이력, PR #183).
+#   - v1과 값이 다른 항목과 이유: MemoryMax 512M→1G (v1 운영에서 OOMKill 실측 이력이 troubleshooting에
+#     남아 있고, 이번엔 실제 이력 컬렉션의 .colpkg export가 205MB peak를 쓴 실측 + 인스턴스 2개 동시 기동);
+#     numBackups 50→30 (Anki 자체 자동 백업은 프로필 아래 쌓이는 SSD 비용이고, 일일 HDD 백업이 따로 있다);
+#     autoSync True→False (Anki의 열고/닫을 때 GUI sync 경로를 끄고 헬퍼 애드온만 sync한다);
+#     tailscale-wait 미복원 (v1은 tailnet IP 바인딩 때문에 필요했고 loopback 전용인 지금은 근거가 없다).
 {
   config,
   pkgs,
@@ -30,13 +35,16 @@ let
   cfg = config.homeserver.ankiHost;
   user = cfg.user;
   stateRoot = constants.paths.ankiHostState;
+  # 애드온 버전의 단일 소스 — nix 파생 version과 /status의 addon_version이 같은 값을 갖는다
+  addonVersion = "1.2.0";
+  inherit (constants.ankiHost) helperMainTimeoutSecs;
   enabledInstances = lib.filterAttrs (_: inst: inst.enable) cfg.instances;
   ankiwebCredPath = config.age.secrets.anki-ankiweb.path;
 
   # AnkiWeb 로그인·sync·스냅샷·복구점 헬퍼 — 인스턴스 공용(설정은 env로 받는다)
   syncAddon = pkgs.anki-utils.buildAnkiAddon {
     pname = "anki_host_sync";
-    version = "1.0.0";
+    version = addonVersion;
     src = ./sync-addon;
   };
 
@@ -113,6 +121,9 @@ let
         # 같은 유저의 두 인스턴스가 서로에게 명령을 넘기고 종료하지 않도록 single-instance 키를 분리한다
         ANKI_SINGLE_INSTANCE_KEY = "anki-host-${name}";
         ANKI_HOST_HELPER_PORT = toString inst.helperPort;
+        ANKI_HOST_ADDON_VERSION = addonVersion;
+        # 타임아웃 사다리의 가장 안쪽 값 (constants.ankiHost) — 스크립트 curl·유닛 값은 이보다 크다
+        ANKI_HOST_MAIN_TIMEOUT_SECS = toString helperMainTimeoutSecs;
         # 헬퍼의 /export·/import-colpkg는 이 아래 backups/(일일 백업 스테이징)·restore-points/(복구점)만 허용한다
         ANKI_HOST_STATE_DIR = stateDir;
       }
@@ -170,6 +181,14 @@ in
           in
           lib.length ports == lib.length (lib.unique ports);
         message = "homeserver.ankiHost: AnkiConnect/helper ports must be unique across instances.";
+      }
+      {
+        # AnkiWeb 자격은 단일 시크릿(anki-ankiweb)뿐이다. 두 인스턴스가 같은 계정에 붙으면 서로 다른
+        # 컬렉션이 15분마다 양방향 병합을 시도해 실제 학습 데이터가 오염된다.
+        assertion =
+          lib.length (lib.filter (inst: inst.enable && inst.sync.enable) (builtins.attrValues cfg.instances))
+          <= 1;
+        message = "homeserver.ankiHost: at most one instance may enable sync — there is a single AnkiWeb credential.";
       }
     ];
 
