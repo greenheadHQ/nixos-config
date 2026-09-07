@@ -192,6 +192,14 @@ pre-push:
         - "modules/shared/programs/claude/files/scripts/tests/test_fleiss_kappa.py"
         - "tests/run-fleiss-kappa-tests.sh"
       run: bash ./tests/run-fleiss-kappa-tests.sh
+    anki-mcp-tests:
+      glob:
+        - "modules/nixos/programs/anki-mcp/**"
+        - "tests/anki-mcp/**"
+        - "tests/run-anki-mcp-tests.sh"
+        - "flake.nix"
+        - "flake.lock"
+      run: bash ./tests/run-anki-mcp-tests.sh
     skill-doc-sync:
       glob:
         - "modules/shared/programs/claude/files/skills/run-da/**"

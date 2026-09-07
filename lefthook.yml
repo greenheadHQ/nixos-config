@@ -174,6 +174,16 @@ pre-push:
       # (집계 모드는 #1257에서 제거 — 거부 경로도 여기서 검증).
       # glob을 검증기 자체로 좁힌다 — 계약 변경은 반드시 이 파일들의 변경을 동반한다.
       run: bash ./tests/run-fleiss-kappa-tests.sh
+    anki-mcp-tests:
+      glob:
+        - "modules/nixos/programs/anki-mcp/**"
+        - "tests/anki-mcp/**"
+        - "tests/run-anki-mcp-tests.sh"
+        - "flake.nix"
+        - "flake.lock"
+      # 원격 MCP 서버(anki_mcp)의 순수 함수·OAuth provider·승인 폼·sync 트리거 규칙을 hermetic pytest로 검증한다.
+      # 런타임은 flake 패키지 ankiMcpTestEnv(서비스와 같은 핀된 mcp SDK) — AnkiConnect·systemctl은 fake.
+      run: bash ./tests/run-anki-mcp-tests.sh
     skill-doc-sync:
       glob:
         - "modules/shared/programs/claude/files/skills/run-da/**"

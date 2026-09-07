@@ -42,13 +42,26 @@ let
       "${subdomains.karakeep}.${base}:307:/"
     ];
 
+  # 로컬 앱과 인터넷 입구를 각각 검사한다. 공개 Cloudflare 주소에는 tailnet --resolve를 적용하지 않는다.
+  loopbackEndpoints = lib.optionals config.homeserver.ankiMcp.enable [
+    "200|http://127.0.0.1:${toString config.homeserver.ankiMcp.port}/.well-known/oauth-authorization-server"
+  ];
+  publicEndpoints = lib.optionals config.homeserver.ankiMcp.enable [
+    "200|https://${constants.ankiMcp.publicHostname}/.well-known/oauth-authorization-server"
+    "401|https://${constants.ankiMcp.publicHostname}/mcp"
+    "404|https://${constants.ankiMcp.publicHostname}/authorize"
+  ];
+  approvalFqdn = lib.optionalString config.homeserver.ankiMcp.enable constants.network.minipcTailnetFqdn;
+
   smokeScript = pkgs.writeShellApplication {
     name = "homeserver-smoke-test";
     runtimeInputs = with pkgs; [
       curl
       coreutils
       findutils
+      jq
       systemd # failed 유닛 검출(systemctl --failed)
+      tailscale # 승인 배선과 잔여 Funnel 검사
     ];
     text = ''
       # shellcheck source=/dev/null
@@ -106,6 +119,32 @@ let
         [ "$HTTP_CODE" = "$EXPECTED_CODE" ] || RESULT=1
         check "HTTP ''${DOMAIN}''${PATH_SUFFIX} = ''${EXPECTED_CODE} (got ''${HTTP_CODE})" "$RESULT"
       done
+
+      # ─── 1b. loopback 앱과 공개 Cloudflare 입구 헬스체크 ───
+      for endpoint in $LOOPBACK_ENDPOINT_LIST $PUBLIC_ENDPOINT_LIST; do
+        EXPECTED_CODE="''${endpoint%%|*}"
+        URL="''${endpoint#*|}"
+        HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" 2>/dev/null) || HTTP_CODE="000"
+        RESULT=0
+        [ "$HTTP_CODE" = "$EXPECTED_CODE" ] || RESULT=1
+        check "HTTP ''${URL} = ''${EXPECTED_CODE} (got ''${HTTP_CODE})" "$RESULT"
+      done
+
+      # ─── 1c. 승인 배선 — Caddy 443 보존, 이전 8443 제거, 모든 Funnel 비활성 (STOP 6) ───
+      # 시작 뒤 수동 조작으로 다른 포트가 공개되거나 443을 가로채는 이탈도 매일 검출한다.
+      if [ -n "$APPROVAL_FQDN" ]; then
+        SERVE_STATUS=$(tailscale serve status --json 2>/dev/null || true)
+        RESULT=0
+        jq -e --arg approval "$APPROVAL_FQDN:$APPROVAL_PORT" \
+          --arg legacy_port "$LEGACY_FUNNEL_PORT" --arg approval_port "$APPROVAL_PORT" \
+          --arg approval_target "$APPROVAL_TARGET" '
+            .TCP["443"] == null and .TCP[$legacy_port] == null and
+            all((.AllowFunnel // {}) | to_entries[]; .value != true) and
+            .TCP[$approval_port].HTTPS == true and
+            .Web[$approval].Handlers["/"].Proxy == $approval_target
+          ' >/dev/null <<<"$SERVE_STATUS" || RESULT=1
+        check "Tailscale approval wiring (443 reserved for Caddy, no Funnel, ''${APPROVAL_PORT} tailnet-only)" "$RESULT"
+      fi
 
       # ─── 2. 백업 신선도 검증 (활성 백업만, 비활성 서비스 false positive 방지) ───
       BACKUP_DIR="${mediaData}/backups"
@@ -225,6 +264,12 @@ in
         TAILSCALE_IP = minipcTailscaleIP;
         BACKUP_MAX_AGE = toString cfg.backupMaxAgeHours;
         ENDPOINT_LIST = builtins.concatStringsSep " " endpoints;
+        LOOPBACK_ENDPOINT_LIST = builtins.concatStringsSep " " loopbackEndpoints;
+        PUBLIC_ENDPOINT_LIST = builtins.concatStringsSep " " publicEndpoints;
+        APPROVAL_FQDN = approvalFqdn;
+        LEGACY_FUNNEL_PORT = toString constants.network.ports.ankiMcpLegacyFunnel;
+        APPROVAL_PORT = toString constants.network.ports.ankiMcpApprovalPublic;
+        APPROVAL_TARGET = lib.optionalString config.homeserver.ankiMcp.enable "http://127.0.0.1:${toString config.homeserver.ankiMcp.approvalPort}";
       };
     };
 
