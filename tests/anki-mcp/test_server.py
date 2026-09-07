@@ -65,6 +65,14 @@ async def test_funnel_guard_caps_registrations_and_body_size(tmp_path):
 
             chunked = await fh.post("/register", headers={**hdrs, "content-type": "application/json"}, content=chunks())
             assert chunked.status_code == 413
+            # /mcp도 SDK의 광역 except(500)가 아니라 가드의 413이어야 한다
+
+            async def chunks2():
+                yield b"{" + b" " * 1500
+                yield b" " * 1500 + b"}"
+
+            chunked_mcp = await fh.post("/mcp", headers={**hdrs, "content-type": "application/json"}, content=chunks2())
+            assert chunked_mcp.status_code == 413
             burst = await fh.post("/register", headers=hdrs, json=dcr)  # 창 안 6번째 시도 → rate limit
             assert burst.status_code == 429
             ok = await fh.post("/token", headers=hdrs, content=b"grant_type=x")
@@ -152,9 +160,11 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path):
             r = await fh.post("/mcp", headers={**hdrs, "host": "evil.example"}, json=rpc)
             assert r.status_code == 421
 
-            # 8. 철회 뒤에는 401
-            # SDK의 RevocationRequest는 client_secret 필드를 요구한다(public client는 빈 값) — 클라이언트 라이브러리도 그렇게 보낸다
-            rv = await fh.post("/revoke", headers=mcp_headers, data={"token": access, "client_id": client_id, "client_secret": ""})
-            assert rv.status_code == 200
+            # 8. 공개 클라이언트가 RFC 7009대로 client_secret 없이 철회 → 200이고, access·refresh(같은 grant)가 함께 죽는다
+            rv = await fh.post("/revoke", headers=mcp_headers, data={"token": access, "client_id": client_id})
+            assert rv.status_code == 200, rv.text
             r = await fh.post("/mcp", headers=hdrs, json=rpc)
             assert r.status_code == 401
+            dead = await fh.post("/token", headers=mcp_headers, data={
+                "grant_type": "refresh_token", "refresh_token": tok.json()["refresh_token"], "client_id": client_id})
+            assert dead.status_code == 400

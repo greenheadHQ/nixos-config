@@ -12,6 +12,8 @@ import logging
 import os
 import signal
 import sys
+from typing import Any
+from urllib.parse import parse_qsl
 
 import httpx
 import uvicorn
@@ -40,6 +42,46 @@ INSTRUCTIONS = (
     "Mutations fail with 'helper busy' while a sync/backup is in progress — wait a moment and retry. "
     "Nothing here deletes notes or forces a full sync."
 )
+
+
+class PublicClientRevocation:
+    """SDK의 RevocationRequest는 `client_secret` 필드가 아예 없으면(공개 클라이언트가 RFC 7009대로 생략하면) 400을 낸다 —
+    form 본문에 빈 client_secret을 채워 SDK 핸들러로 넘긴다. 클라이언트 인증·토큰 소유자 검증은 SDK가 그대로 한다."""
+
+    def __init__(self, app: Any) -> None:
+        self._app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or scope.get("method") != "POST":
+            await self._app(scope, receive, send)
+            return
+        body = b""
+        trailing: list[dict[str, Any]] = []
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                trailing.append(message)
+                break
+            body += message.get("body", b"")
+            if not message.get("more_body", False):
+                break
+        headers = list(scope.get("headers", []))
+        ctype = next((v for k, v in headers if k == b"content-type"), b"").decode().lower()
+        if ctype.startswith("application/x-www-form-urlencoded"):
+            fields = dict(parse_qsl(body.decode(errors="replace"), keep_blank_values=True))
+            if "client_secret" not in fields:
+                body += (b"&" if body else b"") + b"client_secret="
+                headers = [(k, v) for k, v in headers if k != b"content-length"]
+                headers.append((b"content-length", str(len(body)).encode()))
+                scope = {**scope, "headers": headers}
+        replay = [{"type": "http.request", "body": body, "more_body": False}, *trailing]
+
+        async def replay_receive() -> dict[str, Any]:
+            if replay:
+                return replay.pop(0)
+            return await receive()
+
+        await self._app(scope, replay_receive, send)
 
 
 def build(cfg: Settings):
@@ -106,6 +148,13 @@ def build(cfg: Settings):
     )
     funnel_app.router.routes = [
         metadata_route if (isinstance(r, Route) and r.path == "/.well-known/oauth-authorization-server") else r
+        for r in funnel_app.router.routes
+    ]
+    # /revoke: 공개 클라이언트의 secret 생략을 받아준다 (SDK 라우트의 ASGI 앱을 감싼 새 Route로 교체)
+    funnel_app.router.routes = [
+        Route("/revoke", endpoint=PublicClientRevocation(r.app), methods=["POST", "OPTIONS"])
+        if (isinstance(r, Route) and r.path == "/revoke")
+        else r
         for r in funnel_app.router.routes
     ]
     # 인터넷에 열린 앱의 바깥 껍질: 본문 상한(413) + 인증 없는 /register의 rate limit(429)

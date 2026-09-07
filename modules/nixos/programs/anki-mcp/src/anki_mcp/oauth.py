@@ -27,6 +27,7 @@ from mcp.server.auth.provider import (
     AuthorizationParams,
     RefreshToken,
     RegistrationError,
+    TokenError,
     construct_redirect_uri,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -229,10 +230,15 @@ class FileOAuthProvider:
     async def exchange_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
     ) -> OAuthToken:
-        rec = self._state["refresh"].pop(_hash(refresh_token.token), None) or {}  # 회전: 옛 refresh는 즉시 무효
+        # 검증을 먼저 — 거부되는 요청(scope 확장·모르는 토큰)이 유효한 refresh를 소비하면 안 된다
         granted = scopes or refresh_token.scopes
         if any(s not in refresh_token.scopes for s in granted):
-            raise ValueError("requested scopes exceed the original grant")
+            raise TokenError("invalid_scope", "requested scopes exceed the original grant")
+        h = _hash(refresh_token.token)
+        rec = self._state["refresh"].get(h)
+        if not rec or rec["client_id"] != str(client.client_id):
+            raise TokenError("invalid_grant", "refresh token is not valid")
+        del self._state["refresh"][h]  # 회전: 옛 refresh는 즉시 무효 (_issue가 저장한다)
         return self._issue(str(client.client_id), granted, rec.get("resource"), rec.get("grant"))
 
     async def load_access_token(self, token: str) -> AccessToken | None:

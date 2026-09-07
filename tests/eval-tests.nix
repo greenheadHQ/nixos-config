@@ -1355,6 +1355,9 @@ let
         && ankiMcpSvc.environment.ANKI_SYNC_UNIT == "anki-host-sync-main.service"
         && ankiMcpSvc.environment.ANKI_SYNC_STATUS_FILE == "${constants.paths.ankiHostStatusRun}/main.json"
         && nixpkgsLib.hasInfix "host=\"127.0.0.1\"" ankiMcpServerSrc
+        # 두 uvicorn 서버가 각각 loopback에 바인딩 — 한쪽 문자열만으로 통과하지 않게 둘 다 본다
+        && nixpkgsLib.hasInfix "uvicorn.Config(funnel_app, host=\"127.0.0.1\"" ankiMcpServerSrc
+        && nixpkgsLib.hasInfix "uvicorn.Config(approval_app, host=\"127.0.0.1\"" ankiMcpServerSrc
         && nixpkgsLib.hasInfix "allowed_hosts=[public_host" ankiMcpServerSrc;
     }
     {
@@ -1362,8 +1365,20 @@ let
       cond =
         nixpkgsLib.hasInfix "tailscale funnel --bg --https=443" ankiMcpModuleSrc
         && nixpkgsLib.hasInfix "tailscale serve --bg --https=\${toString approvalPublicPort}" ankiMcpModuleSrc
-        && !(nixpkgsLib.hasInfix "tailscale funnel --bg --https=\${toString approvalPublicPort}" ankiMcpModuleSrc)
+        # 승인 포트에 funnel을 켜는 줄은 인자 순서와 무관하게 없어야 함 — 'off' 줄만 허용
+        &&
+          builtins.filter (
+            l:
+            builtins.isString l
+            && nixpkgsLib.hasInfix "tailscale funnel" l
+            && nixpkgsLib.hasInfix "approvalPublicPort" l
+            && !(nixpkgsLib.hasInfix " off" l)
+          ) (nixpkgsLib.splitString "\n" ankiMcpModuleSrc) == [ ]
         && nixpkgsLib.hasInfix "tailscale funnel --https=\${toString approvalPublicPort} off" ankiMcpModuleSrc
+        # 유닛이 멈추면(모듈 제거·비활성) 이 유닛이 켠 두 경로를 끈다 — 남은 경로가 나중에 포트를 재사용하는 프로세스를 노출하지 않게
+        && builtins.isString ankiMcpWire.serviceConfig.ExecStop
+        && nixpkgsLib.hasInfix "tailscale funnel --https=443 off" ankiMcpModuleSrc
+        && nixpkgsLib.hasInfix "tailscale serve --https=\${toString approvalPublicPort} off" ankiMcpModuleSrc
         && ankiMcpWire.wantedBy == [ "multi-user.target" ]
         && ankiMcpWire.serviceConfig.Type == "oneshot"
         # serve/funnel CLI는 기능이 꺼져 있으면 무한 대기한다 — 두 호출 모두 timeout으로 감싸고 유닛에도 시작 상한이 있어야 함
@@ -1400,9 +1415,20 @@ let
         && nixpkgsLib.hasInfix "anki-host-sync-main.service" nixosCfg.security.polkit.extraConfig
         && nixpkgsLib.hasInfix "action.lookup(\"verb\") == \"start\"" nixosCfg.security.polkit.extraConfig
         && nixpkgsLib.hasInfix "subject.user == \"${constants.ankiMcp.user}\"" nixosCfg.security.polkit.extraConfig
+        # 규칙 단위: 한 addRule 안에서 unit·verb=start·user가 AND로 묶여 있고 다른 verb는 없어야 함
+        && nixpkgsLib.hasInfix ''
+          action.lookup("unit") == "''${syncUnit}" &&
+                      action.lookup("verb") == "start" &&
+                      subject.user == "''${user}") {
+                    return polkit.Result.YES;'' ankiMcpModuleSrc
+        && !(nixpkgsLib.hasInfix "\"stop\"" nixosCfg.security.polkit.extraConfig)
+        && !(nixpkgsLib.hasInfix "\"restart\"" nixosCfg.security.polkit.extraConfig)
         && nixosCfg.age.secrets.anki-mcp-oauth.owner == "root"
         && nixosCfg.age.secrets.anki-mcp-oauth.mode == "0400"
-        && builtins.any (c: nixpkgsLib.hasPrefix "approval:" c) ankiMcpSvc.serviceConfig.LoadCredential;
+        &&
+          ankiMcpSvc.serviceConfig.LoadCredential == [
+            "approval:${nixosCfg.age.secrets.anki-mcp-oauth.path}"
+          ];
     }
     {
       name = "Test AM5: 결정 15 — sync 유닛은 상태 사본 게시판(${constants.paths.ankiHostStatusRun})을 env로 받고 쓰기 가능하며, 게시판은 anki-host 0750 tmpfiles로 만들어지고 MCP의 상태 파일 경로가 그 아래여야 함";

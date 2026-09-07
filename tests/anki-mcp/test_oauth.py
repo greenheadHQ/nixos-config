@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
-from mcp.server.auth.provider import AuthorizationParams, RegistrationError
+from mcp.server.auth.provider import AuthorizationParams, RegistrationError, TokenError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
@@ -87,10 +87,11 @@ async def test_provider_full_lifecycle_and_persistence(tmp_path):
     assert await prov2.load_refresh_token(client, tokens.refresh_token) is None  # 옛 refresh 무효
     assert await prov2.load_access_token(new_tokens.access_token) is not None
 
-    # scope 확장은 거부
-    with pytest.raises(ValueError):
-        rt2 = await prov2.load_refresh_token(client, new_tokens.refresh_token)
+    # scope 확장은 거부되고, 거부된 요청이 refresh를 소비하지 않는다
+    rt2 = await prov2.load_refresh_token(client, new_tokens.refresh_token)
+    with pytest.raises(TokenError):
         await prov2.exchange_refresh_token(client, rt2, ["anki", "admin"])
+    assert await prov2.load_refresh_token(client, new_tokens.refresh_token) is not None
 
     # 철회 — access를 철회하면 같은 승인의 refresh도 함께 죽는다
     await prov2.revoke_token(await prov2.load_access_token(new_tokens.access_token))
@@ -181,6 +182,9 @@ async def test_approval_form_requires_passphrase_and_locks_out(tmp_path):
         assert r.status_code == 421
         r = await http.get(f"/approve?txn={txn}", headers={"host": host})
         assert r.status_code == 200 and "Test Client" in r.text
+        # 프레임 금지 + 캐시 금지 (clickjacking·뒤로가기 캐시)
+        assert r.headers["x-frame-options"] == "DENY" and "frame-ancestors 'none'" in r.headers["content-security-policy"]
+        assert r.headers["cache-control"] == "no-store"
         # 틀린 문구 → 폼 재표시, 2회면 잠금
         r = await http.post("/approve", data={"txn": txn, "passphrase": "nope", "decision": "approve"}, headers={"host": host})
         assert r.status_code == 200 and "맞지 않습니다" in r.text

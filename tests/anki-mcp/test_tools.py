@@ -117,6 +117,37 @@ async def test_card_reviews_sends_integer_ids_and_returns_revlog_objects(tmp_pat
 
 
 @pytest.mark.anyio
+async def test_tags_with_whitespace_or_empty_are_rejected_before_any_request(tmp_path):
+    fake = FakeAnki()
+    mcp = make_mcp(fake, tmp_path)
+    for bad in (["foo bar"], [""], ["ok", "a\tb"]):
+        with pytest.raises(ToolError, match="whitespace"):
+            await mcp.call_tool("anki_add_tags", {"note_ids": [1], "tags": bad})
+        with pytest.raises(ToolError, match="whitespace"):
+            await mcp.call_tool("anki_remove_tags", {"note_ids": [1], "tags": bad})
+    with pytest.raises(ToolError, match="whitespace"):
+        await mcp.call_tool("anki_add_notes", {"notes": [
+            {"deck_name": "A", "model_name": "Basic", "fields": {"Front": "1"}, "tags": ["two words"]}]})
+    assert not [c for c in fake.calls if c[0] in ("addTags", "removeTags", "addNotes", "canAddNotesWithErrorDetail")]
+
+
+@pytest.mark.anyio
+async def test_helper_status_rejects_unexpected_response_shapes():
+    from anki_mcp.helper import Helper, HelperUnavailable
+
+    async def check(body, status=200):
+        client = httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(status, content=body)))
+        with pytest.raises(HelperUnavailable):
+            await Helper("http://helper", client=client).status()
+
+    await check(b"null")
+    await check(b"[1, 2]")
+    await check(b'{"ok": true}')  # result 없음
+    await check(b'{"ok": true, "result": {"busy": null}}', status=503)
+    await check(b"not json")
+
+
+@pytest.mark.anyio
 async def test_tool_annotations_mark_read_and_write(tmp_path):
     mcp = make_mcp(FakeAnki(), tmp_path)
     tools = {t.name: t for t in await mcp.list_tools()}

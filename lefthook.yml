@@ -179,6 +179,8 @@ pre-push:
         - "modules/nixos/programs/anki-mcp/**"
         - "tests/anki-mcp/**"
         - "tests/run-anki-mcp-tests.sh"
+        - "flake.nix"
+        - "flake.lock"
       # 원격 MCP 서버(anki_mcp)의 순수 함수·OAuth provider·승인 폼·sync 트리거 규칙을 hermetic pytest로 검증한다.
       # 런타임은 flake 패키지 ankiMcpTestEnv(서비스와 같은 핀된 mcp SDK) — AnkiConnect·systemctl은 fake.
       run: bash ./tests/run-anki-mcp-tests.sh

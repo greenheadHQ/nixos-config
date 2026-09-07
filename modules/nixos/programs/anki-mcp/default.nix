@@ -94,6 +94,20 @@ let
       echo "anki-mcp-tailscale: 443 funnel -> 127.0.0.1:${toString cfg.port}, ${toString approvalPublicPort} tailnet-only -> 127.0.0.1:${toString cfg.approvalPort}"
     '';
   };
+  # 유닛 정지 시 이 유닛이 켠 두 경로만 끈다 (ts-serve의 미리보기 포트 등 다른 serve 설정은 건드리지 않는다).
+  # 종료 중 tailscaled가 먼저 내려가 있을 수 있으므로 각 명령 실패는 무시한다 — 남은 경로는 다음 부팅의 ExecStart가 다시 맞춘다.
+  tsUnwire = pkgs.writeShellApplication {
+    name = "anki-mcp-tailscale-unwire";
+    runtimeInputs = [
+      pkgs.tailscale
+      pkgs.coreutils
+    ];
+    text = ''
+      timeout ${toString cmdTimeoutSecs} tailscale funnel --https=443 off || true
+      timeout ${toString cmdTimeoutSecs} tailscale serve --https=443 off || true
+      timeout ${toString cmdTimeoutSecs} tailscale serve --https=${toString approvalPublicPort} off || true
+    '';
+  };
 in
 {
   config = lib.mkIf cfg.enable {
@@ -106,6 +120,10 @@ in
         assertion =
           cfg.port != cfg.approvalPort
           && !(builtins.elem cfg.port [
+            inst.port
+            inst.helperPort
+          ])
+          && !(builtins.elem cfg.approvalPort [
             inst.port
             inst.helperPort
           ]);
@@ -221,8 +239,12 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${tsWire}/bin/anki-mcp-tailscale-wire";
+        # 멈출 때(모듈 제거·비활성·재시작) 이 유닛이 켠 두 경로만 끈다 — 남은 경로가 나중에 같은 포트를 쓰는 프로세스를 노출하지 않게.
+        # 실패해도(tailscaled가 먼저 내려간 종료 중 등) 유닛 정지는 막지 않는다.
+        ExecStop = "-${tsUnwire}/bin/anki-mcp-tailscale-unwire";
         # 온라인 대기 + serve/funnel 두 명령의 상한 + 여유. 스크립트의 timeout이 먼저 끊지만, 이중 안전장치.
         TimeoutStartSec = onlineWaitSecs + 2 * cmdTimeoutSecs + 30;
+        TimeoutStopSec = 2 * cmdTimeoutSecs + 10;
       };
     };
   };

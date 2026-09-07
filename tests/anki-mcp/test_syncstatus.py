@@ -77,6 +77,19 @@ async def test_sync_now_joins_running_job_without_triggering(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_sync_now_reports_failed_when_new_run_dies(tmp_path):
+    status = tmp_path / "main.json"
+    _write(status, result="success", runId="old", sync={"action": "normal"})
+    fake = FakeSystemd(status, on_start=lambda: _write(status, result="running", runId="new", sync={}))
+
+    async def no_sleep(_):
+        fake.active = "inactive"  # 새 회차를 기록한 뒤 결과를 남기지 못하고 죽었다
+
+    out = await SyncNow(str(status), "u.service", wait_secs=100, runner=fake, sleep=no_sleep).run()
+    assert out["outcome"] == "failed" and out["status"]["runId"] == "new"
+
+
+@pytest.mark.anyio
 async def test_sync_now_reports_skipped_run(tmp_path):
     status = tmp_path / "main.json"
     _write(status, result="success", runId="old")

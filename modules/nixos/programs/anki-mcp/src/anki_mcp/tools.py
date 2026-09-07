@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
@@ -20,6 +21,14 @@ from .shaping import card_view, note_view, page, truncate
 from .syncstatus import SyncNow, read_status, summarize
 
 ADDED_TAG = "mcp::added"
+
+
+def check_tags(tags: list[str]) -> list[str]:
+    """Anki는 태그를 공백으로 구분한다 — 'foo bar'는 태그 두 개가 되고 빈 태그는 무시된다. 요청 전에 거부한다."""
+    bad = [t for t in tags if not t or any(ch.isspace() for ch in t)]
+    if bad:
+        raise ToolError(f"tags must be non-empty and contain no whitespace: {bad!r}")
+    return tags
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 ADDITIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
@@ -150,7 +159,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         await guard_mutation()
         payload = []
         for n in notes:
-            tags = list(dict.fromkeys([*n.tags, ADDED_TAG]))
+            tags = list(dict.fromkeys([*check_tags(n.tags), ADDED_TAG]))
             payload.append({
                 "deckName": n.deck_name,
                 "modelName": n.model_name,
@@ -182,13 +191,15 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_add_tags", annotations=UPDATE)
     async def anki_add_tags(note_ids: list[int], tags: list[str]) -> dict[str, Any]:
         """Add tags to notes (space-separated internally; each tag must not contain spaces)."""
+        check_tags(tags)
         await guard_mutation()
         await anki.invoke("addTags", notes=note_ids, tags=" ".join(tags))
         return {"notes": len(note_ids), "tags": tags}
 
     @mcp.tool(name="anki_remove_tags", annotations=UPDATE)
     async def anki_remove_tags(note_ids: list[int], tags: list[str]) -> dict[str, Any]:
-        """Remove tags from notes."""
+        """Remove tags from notes (each tag must not contain spaces)."""
+        check_tags(tags)
         await guard_mutation()
         await anki.invoke("removeTags", notes=note_ids, tags=" ".join(tags))
         return {"notes": len(note_ids), "tags": tags}

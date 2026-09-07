@@ -13,6 +13,13 @@ def _req(name: str) -> str:
     return value
 
 
+def _https(name: str) -> str:
+    value = _req(name).rstrip("/")
+    if not value.startswith("https://"):
+        raise SystemExit(f"anki_mcp: {name} must be an https:// URL (OAuth issuer/approval URLs carry codes and tokens)")
+    return value
+
+
 def _int(name: str) -> int:
     try:
         return int(_req(name))
@@ -53,8 +60,8 @@ class Settings:
         return cls(
             port=_int("ANKI_MCP_PORT"),
             approval_port=_int("ANKI_MCP_APPROVAL_PORT"),
-            public_url=_req("ANKI_MCP_PUBLIC_URL").rstrip("/"),
-            approval_url=_req("ANKI_MCP_APPROVAL_URL").rstrip("/"),
+            public_url=_https("ANKI_MCP_PUBLIC_URL"),
+            approval_url=_https("ANKI_MCP_APPROVAL_URL"),
             anki_connect_url=_req("ANKI_CONNECT_URL").rstrip("/"),
             helper_url=_req("ANKI_HELPER_URL").rstrip("/"),
             state_dir=_req("STATE_DIRECTORY"),

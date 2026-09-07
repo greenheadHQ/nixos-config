@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from mcp.server.auth.handlers.authorize import AuthorizationHandler
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
@@ -41,6 +42,33 @@ class Lockout:
 
     def ok(self) -> None:
         self.failures = 0
+
+
+class SecurityHeaders:
+    """승인 화면은 프레임에 넣을 수 없고(clickjacking — 공격자가 만든 DCR·PKCE 트랜잭션의 승인 화면을 tailnet 사용자 페이지에
+    숨겨 문구 입력을 유도하는 경로 차단), 캐시·리퍼러도 남기지 않는다."""
+
+    HEADERS = [
+        (b"x-frame-options", b"DENY"),
+        (b"content-security-policy", b"frame-ancestors 'none'; default-src 'self'; style-src 'unsafe-inline'; form-action 'self'"),
+        (b"referrer-policy", b"no-referrer"),
+        (b"cache-control", b"no-store"),
+    ]
+
+    def __init__(self, app) -> None:
+        self._app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        async def send_with_headers(message) -> None:
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [*message.get("headers", []), *self.HEADERS]}
+            await send(message)
+
+        await self._app(scope, receive, send_with_headers)
 
 
 _PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -125,5 +153,6 @@ def build_approval_app(
             Route("/approve", approve_get, methods=["GET"]),
             Route("/approve", approve_post, methods=["POST"]),
             Route("/healthz", health, methods=["GET"]),
-        ]
+        ],
+        middleware=[Middleware(SecurityHeaders)],
     )

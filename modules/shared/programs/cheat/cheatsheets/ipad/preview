@@ -9,9 +9,9 @@ iPad에서 dev 서버 미리보기 (Tailscale Serve)
 
 사용
 
-  ts-serve 4200      # http://127.0.0.1:4200 을 tailnet HTTPS로 노출
-  ts-serve status    # 현재 노출 상태 + URL 확인
-  ts-serve reset-all # 이 노드의 모든 serve config 초기화 (전역 — preview 한정 아님)
+  ts-serve 4200      # http://127.0.0.1:4200 을 tailnet HTTPS(:10000)로 노출
+  ts-serve status    # 현재 노출 상태 + URL 확인 (MCP 배선 443/8443도 함께 보인다)
+  ts-serve off       # 미리보기 칸(:10000)만 해제 — 443/8443의 원격 MCP 배선은 건드리지 않는다
 
 보안 (dev 서버 바인딩)
 
@@ -21,8 +21,9 @@ iPad에서 dev 서버 미리보기 (Tailscale Serve)
 
 접근 URL
 
-  https://<machine>.<tailnet>.ts.net
-  (정확한 도메인은 `ts-serve status` 또는 `tailscale status` 로 확인)
+  https://<machine>.<tailnet>.ts.net:10000
+  (정확한 도메인은 `ts-serve status` 또는 `tailscale status` 로 확인.
+   포트 없는 443은 원격 Anki MCP(Funnel)가 쓰므로 미리보기는 :10000 전용)
 
 사전조건 (최초 1회 — Tailscale admin 콘솔)
 

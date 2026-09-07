@@ -144,11 +144,22 @@ class SyncNow:
             if now and run_id != before_run_id and now.get("result") != "running":
                 return {"outcome": "completed", "status": summarize(now)}
             unit = await unit_state(self._unit, self._run)
-            if not unit.running and run_id == before_run_id:
+            if not unit.running:
+                if run_id == before_run_id:
+                    return {
+                        "outcome": "skipped",
+                        "detail": "the unit finished without writing a new run — another run held the lock "
+                        "(bootstrap/timer overlap) or the unit's start condition was not met; try again shortly",
+                        "status": summarize(now),
+                    }
+                # 새 회차가 기록됐는데 유닛이 이미 멈췄다 — 마지막 기록이 방금 도착했을 수 있으니 한 번 더 읽는다
+                now = read_status(self._status_file)
+                if now and now.get("result") != "running":
+                    return {"outcome": "completed", "status": summarize(now)}
                 return {
-                    "outcome": "skipped",
-                    "detail": "the unit finished without writing a new run — another run held the lock "
-                    "(bootstrap/timer overlap) or the unit's start condition was not met; try again shortly",
+                    "outcome": "failed",
+                    "detail": "the unit exited before recording a result (crashed or was killed); "
+                    "check `journalctl -u " + self._unit + "`",
                     "status": summarize(now),
                 }
         return {"outcome": "timeout", "detail": f"no result within {self._wait}s; the run may still be in progress",

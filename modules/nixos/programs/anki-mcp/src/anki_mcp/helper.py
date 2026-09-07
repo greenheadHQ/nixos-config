@@ -32,8 +32,10 @@ class Helper:
             data = resp.json()
         except (httpx.HTTPError, ValueError) as err:
             raise HelperUnavailable(f"helper unreachable: {err.__class__.__name__}") from err
-        if not data.get("ok"):
-            raise HelperUnavailable(f"helper error: {data.get('error')}")
+        if not resp.is_success or not isinstance(data, dict):
+            raise HelperUnavailable(f"helper error: HTTP {resp.status_code}, unexpected response shape")
+        if not data.get("ok") or not isinstance(data.get("result"), dict):
+            raise HelperUnavailable(f"helper error: {data.get('error') or 'missing result'}")
         return data["result"]
 
     async def ensure_not_busy(self) -> dict[str, Any]:

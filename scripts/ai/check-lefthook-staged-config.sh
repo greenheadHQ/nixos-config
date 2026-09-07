@@ -197,6 +197,8 @@ pre-push:
         - "modules/nixos/programs/anki-mcp/**"
         - "tests/anki-mcp/**"
         - "tests/run-anki-mcp-tests.sh"
+        - "flake.nix"
+        - "flake.lock"
       run: bash ./tests/run-anki-mcp-tests.sh
     skill-doc-sync:
       glob:
