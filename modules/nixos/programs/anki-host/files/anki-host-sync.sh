@@ -14,8 +14,9 @@
 #   running             이 회차가 락을 잡고 실행 중. 유닛이 죽으면 이 값이 남는다 → journalctl -u anki-host-sync-<name>
 #   no-credentials      AnkiWeb 자격 값이 아직 없다 — 운영자 게이트(plan Step 14) 전의 정상 상태. 알림 없음
 #   bootstrap-pending   로그인은 됐으나 로컬이 비어 있고 성공 이력이 없어 full sync가 요구됨 — 부트스트랩 유닛(Step 15) 대기. 알림 없음
-#   collection-empty    성공 이력(lastSuccessAt)이 있는데 로컬이 비어 있다 — 프로필 소실·좀비 잠금 의심(plan STOP 9). 알림(c),
-#                       원인 확인 전 부트스트랩 재실행 금지
+#   collection-empty    성공 이력(lastSuccessAt)이 있는데 로컬이 비어 있다 — 프로필 소실·좀비 잠금·전부 삭제 의심(plan STOP 9).
+#                       급감 게이트가 sync 호출 전에 잡는다(전부 지운 컬렉션의 삭제가 증분 sync로 AnkiWeb에 전파되지 않게).
+#                       알림(c), 원인 확인 전 부트스트랩 재실행 금지
 #   success             normal 병합 또는 부트스트랩 다운로드 완료. `sync` 필드에 전후 스냅샷
 #   busy-deferred       헬퍼가 다른 변경 작업(export 등) 중이라 이번 회차를 건너뜀 — 다음 타이머에 재시도. 알림 없음
 #   helper-unreachable  준비 대기 예산 안에 헬퍼가 collection_open을 주지 않음 — 알림(c) 24h 1회
@@ -182,12 +183,17 @@ busy_left="${BUSY_RETRIES:?}" # busy 예산은 스크립트 전체에서 BUSY_RE
 last_error=""
 # 급감 게이트(plan 결정 1·3): 직전 성공 뒤의 로컬 노트·revlog 대비 GUARD_MIN_RETAIN_PCT% 미만이면 헬퍼가 서버 병합을 하지 않는다.
 # loopback의 무인증 AnkiConnect로 가한 대량 삭제·컬렉션 교체가 15분 안에 AnkiWeb 정본으로 확정되는 경로를 끊는다.
-# 성공 이력이 없으면(첫 부트스트랩 전) 하한이 0이라 게이트가 없다. 빈 컬렉션은 게이트 대신 collection-empty/bootstrap 분기가 본다.
+# 성공 이력이 없으면(첫 부트스트랩 전, 복원 절차로 상태 파일을 지운 뒤) 하한이 0이라 게이트가 없다. 성공 이력이 있으면
+# 하한은 최소 1 — 전부 지워진(빈) 컬렉션도 게이트에 걸려야 삭제가 증분 sync로 AnkiWeb에 전파되지 않는다.
 guard_notes=0
 guard_revlog=0
 if [ -n "$(state_get '.lastSuccessAt')" ]; then
-  guard_notes=$(( $(state_get '.lastSuccessCounts.notes // 0') * GUARD_MIN_RETAIN_PCT / 100 ))
-  guard_revlog=$(( $(state_get '.lastSuccessCounts.revlog // 0') * GUARD_MIN_RETAIN_PCT / 100 ))
+  last_notes="$(state_get '.lastSuccessCounts.notes // 0')"
+  last_revlog="$(state_get '.lastSuccessCounts.revlog // 0')"
+  guard_notes=$(( last_notes * GUARD_MIN_RETAIN_PCT / 100 ))
+  guard_revlog=$(( last_revlog * GUARD_MIN_RETAIN_PCT / 100 ))
+  [ "$last_notes" -gt 0 ] && [ "$guard_notes" -lt 1 ] && guard_notes=1
+  [ "$last_revlog" -gt 0 ] && [ "$guard_revlog" -lt 1 ] && guard_revlog=1
 fi
 payload="$(jq -n --arg mode "$MODE" --argjson mn "$guard_notes" --argjson mr "$guard_revlog" '{mode: $mode, min_notes: $mn, min_revlog: $mr}')"
 while [ "$attempt" -le "$MAX_RETRIES" ]; do
@@ -235,6 +241,12 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
         exit 0
         ;;
       guard-tripped)
+        if [ "$(printf '%s' "$result_json" | jq -r '.empty_before')" = "true" ]; then
+          # 성공 이력이 있는데 컬렉션이 비었다 — 프로필 소실·좀비 잠금·전부 삭제. 게이트가 sync 호출 전에 잡았으므로 서버는 그대로다
+          write_state "collection-empty" "empty collection after prior success (guard)" "$result_json"
+          notify_alert "collection-empty" 1 "Anki 컬렉션이 비어 있습니다" "miniPC의 Anki(${INSTANCE})가 동기화 성공 이력이 있는데 컬렉션이 비어 있어 AnkiWeb으로의 반영을 막았습니다. 프로필 소실이나 전부 삭제가 의심되니 원인을 확인하기 전에는 부트스트랩을 다시 실행하지 마세요. 동기화는 중단된 상태입니다."
+          exit 1
+        fi
         write_state "local-loss-suspected" "local counts below guard (notes>=${guard_notes}, revlog>=${guard_revlog})" "$result_json"
         notify_alert "local-loss-suspected" 1 "Anki 동기화를 막았습니다" "miniPC의 Anki(${INSTANCE}) 컬렉션이 직전 동기화 때보다 크게 줄어 AnkiWeb으로의 반영을 막았습니다(노트 $(printf '%s' "$result_json" | jq -r '.before.notes')개, 복습 기록 $(printf '%s' "$result_json" | jq -r '.before.revlog')건). 의도한 삭제가 아니면 miniPC에서 무엇이 바꿨는지 확인하세요. 동기화는 중단된 상태입니다."
         exit 1

@@ -52,6 +52,7 @@ import sys
 import threading
 import traceback
 from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
@@ -115,8 +116,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
-def _on_main(fn: Callable[..., Any], *args: Any, timeout: float = MAIN_TIMEOUT_SECS) -> Any:
-    """Anki 컬렉션은 메인 스레드에서만 만진다. 결과를 Future로 받아 HTTP 스레드에 돌려준다."""
+def _submit(fn: Callable[..., Any], *args: Any) -> Future:
+    """Anki 컬렉션은 메인 스레드에서만 만진다. 작업을 메인 스레드 큐에 넣고 Future를 돌려준다."""
     fut: Future = Future()
 
     def run() -> None:
@@ -126,7 +127,11 @@ def _on_main(fn: Callable[..., Any], *args: Any, timeout: float = MAIN_TIMEOUT_S
             fut.set_exception(err)
 
     aqt.mw.taskman.run_on_main(run)
-    return fut.result(timeout=timeout)
+    return fut
+
+
+def _on_main(fn: Callable[..., Any], *args: Any, timeout: float = MAIN_TIMEOUT_SECS) -> Any:
+    return _submit(fn, *args).result(timeout=timeout)
 
 
 def _require_col() -> None:
@@ -134,17 +139,36 @@ def _require_col() -> None:
         raise RuntimeError("collection-not-open")
 
 
+def _release_mutation() -> None:
+    global _busy
+    _busy = None
+    _lock.release()
+
+
 def _mutating(name: str, fn: Callable[..., Any], *args: Any) -> Any:
-    """변경 작업 상호 배제. 다른 작업이 BUSY_WAIT_SECS 안에 끝나지 않으면 BusyError(→ 409)."""
+    """변경 작업 상호 배제. 다른 작업이 BUSY_WAIT_SECS 안에 끝나지 않으면 BusyError(→ 409).
+
+    메인 스레드에 넘긴 작업은 취소할 수 없으므로, 타임아웃으로 호출자에게는 실패를 돌려주더라도 락과 busy는
+    그 작업이 실제로 끝날 때까지 유지한다 — 재시도·다른 변경 작업이 아직 도는 작업과 겹쳐 컬렉션·AnkiWeb을
+    두 번 만지는 일을 막는다. 그동안 다른 호출은 409(busy = "<name>:timed-out")를 받는다.
+    """
     global _busy
     if not _lock.acquire(timeout=BUSY_WAIT_SECS):
         raise BusyError(_busy)
+    _busy = name
+    fut = _submit(fn, *args)
     try:
-        _busy = name
-        return _on_main(fn, *args)
-    finally:
-        _busy = None
-        _lock.release()
+        result = fut.result(timeout=MAIN_TIMEOUT_SECS)
+    except FutureTimeoutError:
+        _busy = f"{name}:timed-out"
+        fut.add_done_callback(lambda _f: _release_mutation())
+        _log(f"{name} exceeded {MAIN_TIMEOUT_SECS}s on the main thread — lock held until it finishes")
+        raise RuntimeError("main-thread-timeout") from None
+    except BaseException:
+        _release_mutation()
+        raise
+    _release_mutation()
+    return result
 
 
 # ── 자격·로그인 ────────────────────────────────────────────────────────────
@@ -174,9 +198,10 @@ def _ensure_login() -> dict[str, Any]:
     자격 파일을 나중에 채웠다면 서비스 재시작으로 이 훅을 다시 태운다 (계획 Step 14).
     """
     _require_col()
+    # 계정 식별자(username)는 _state에 두지 않는다 — /status·/status/full은 무인증 응답이다 (plan 030 결정 10)
     pm = aqt.mw.pm
     if pm.sync_auth() is not None:
-        return {"status": "already-logged-in", "username": pm.profile.get("syncUser")}
+        return {"status": "already-logged-in"}
     creds = _read_credentials()
     if creds is None:
         return {"status": "no-credentials"}
@@ -190,7 +215,7 @@ def _ensure_login() -> dict[str, Any]:
     pm.set_sync_username(username)
     pm.save()
     _log("sync auth initialized")
-    return {"status": "logged-in", "username": username, "at": _now()}
+    return {"status": "logged-in", "at": _now()}
 
 
 # ── 스냅샷 ────────────────────────────────────────────────────────────────
@@ -264,8 +289,10 @@ def _sync(mode: str, min_notes: int, min_revlog: int) -> dict[str, Any]:
     normal: 병합 가능한 변경만 동기화하고 full sync가 요구되면 아무것도 하지 않는다 (타이머·MCP 기본).
     allow-download-if-empty: 로컬이 비어 있을 때(노트 0·복습 기록 0)만 서버본을 내려받는다 (첫 부트스트랩 유닛).
     서버를 덮어쓰는 방향은 이 애드온에 없다 — 복구점 복원은 Mac GUI 경로다(plan 030 Maintenance notes).
-    급감 게이트: 로컬이 비어 있지 않은데 하한 아래면 sync_collection을 부르지 않는다 — 호출 전 판정이라 서버에 아무것도
-    올라가지 않는다. 빈 컬렉션은 게이트 대상이 아니다(부트스트랩·collection-empty 분기가 다룬다).
+    급감 게이트: 호출자가 준 하한이 하나라도 0보다 크면(= 성공 이력이 있다) 로컬이 그 아래일 때 sync_collection을 부르지
+    않는다 — 호출 전 판정이라 서버에 아무것도 올라가지 않는다. 빈 컬렉션도 예외가 아니다: AnkiConnect로 전부 지운 컬렉션은
+    full sync 요구 없이 증분 sync로 삭제가 AnkiWeb에 전파되므로 비었다는 이유로 게이트를 건너뛰면 안 된다. 하한이 둘 다
+    0이면(첫 부트스트랩 전, 복원 절차로 상태 파일을 지운 뒤) 게이트가 없다.
     """
     _require_col()
     mw = aqt.mw
@@ -275,13 +302,13 @@ def _sync(mode: str, min_notes: int, min_revlog: int) -> dict[str, Any]:
         raise RuntimeError("not-logged-in")
     before = _snapshot()
     empty = before["notes"] == 0 and before["revlog"] == 0
-    if not empty and (before["notes"] < min_notes or before["revlog"] < min_revlog):
+    if (min_notes > 0 or min_revlog > 0) and (before["notes"] < min_notes or before["revlog"] < min_revlog):
         result = {
             "at": _now(),
             "mode": mode,
             "required": None,
             "action": "guard-tripped",
-            "empty_before": False,
+            "empty_before": empty,
             "server_message": "",
             "before": before,
             "after": before,
