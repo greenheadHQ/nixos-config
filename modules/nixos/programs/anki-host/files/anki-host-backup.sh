@@ -15,6 +15,20 @@
 CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
 : "${INSTANCES:?}" "${STATE_ROOT:?}" "${BACKUP_DIR:?}" "${RETENTION_DAYS:?}" "${LOCAL_KEEP:?}" "${HELPER_CURL_MAX_TIME:?}"
 
+# anki_helper_call_retry_busy <url> <json-payload> <max-time-secs>
+#   변경 작업 1회 호출 + busy 재시도. 409(busy)면 BUSY_RETRY_SECS 뒤 다시 시도하고, BUSY_RETRIES회째 busy면 그대로
+#   돌려준다(마지막 회차 뒤에는 대기하지 않는다). 호출자는 helper_busy로 "여전히 busy"를 판정한다.
+#   인스턴스당 한 번만 부른다 — 유닛 예산(backup.nix perInstanceSecs)이 그 전제로 계산된다.
+anki_helper_call_retry_busy() {
+  local url="$1" payload="$2" max_time="$3" i
+  for i in $(seq 1 "${BUSY_RETRIES:?}"); do
+    anki_helper_call "$url" "$payload" "$max_time"
+    helper_busy || return 0
+    [ "$i" -lt "$BUSY_RETRIES" ] && sleep "${BUSY_RETRY_SECS:?}"
+  done
+  return 0
+}
+
 failures=""
 stamp="$(date +%Y%m%dT%H%M%S)"
 

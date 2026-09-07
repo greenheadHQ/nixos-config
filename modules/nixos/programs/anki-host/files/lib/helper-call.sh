@@ -5,7 +5,8 @@
 # 조정 가능한 값은 모두 env로 받는다 — nixos 모듈이 constants.ankiHost(단일 소스)에서 주입하고, 같은 값으로
 # 유닛 TimeoutStartSec을 계산한다. 값이 빠지면 조용히 기본값을 쓰지 않고 즉시 실패한다.
 #   READY_WAIT_TRIES / READY_WAIT_SECS / READY_PROBE_TIMEOUT   헬퍼 준비 대기 (최악 = tries × (probe + wait))
-#   BUSY_RETRIES / BUSY_RETRY_SECS                            409(다른 변경 작업 진행 중) 재시도 (마지막 회차 뒤에는 대기하지 않는다)
+# busy(409) 재시도는 스크립트마다 루프 구조가 달라 여기 두지 않는다 — sync는 busy_left 카운터, backup은 자체 함수.
+# (writeShellApplication의 shellcheck가 호출되지 않는 함수를 거부하므로 공용 파일에는 모든 호출자가 쓰는 것만 둔다.)
 #
 # anki_helper_call <url> <json-payload|""> <max-time-secs>
 #   결과는 전역 변수로 돌려준다:
@@ -75,19 +76,4 @@ anki_helper_wait_ready() {
     [ "$i" -lt "$READY_WAIT_TRIES" ] && sleep "${READY_WAIT_SECS:?}"
   done
   return 1
-}
-
-# anki_helper_call_retry_busy <url> <json-payload> <max-time-secs>
-#   변경 작업 1회 호출 + busy 재시도. 409(busy)면 BUSY_RETRY_SECS 뒤 다시 시도하고, BUSY_RETRIES회째 busy면 그대로
-#   돌려준다(마지막 회차 뒤에는 대기하지 않는다). 호출자는 helper_busy로 "여전히 busy"를 판정한다.
-#   호출자는 스크립트 실행당 한 번만 불러야 유닛 예산 계산(busy 예산 = 스크립트 전체 BUSY_RETRIES회)이 맞는다 —
-#   backup이 그렇게 쓴다. sync 스크립트는 자체 재시도 루프가 있어 이 함수 대신 busy_left 카운터를 쓴다.
-anki_helper_call_retry_busy() {
-  local url="$1" payload="$2" max_time="$3" i
-  for i in $(seq 1 "${BUSY_RETRIES:?}"); do
-    anki_helper_call "$url" "$payload" "$max_time"
-    helper_busy || return 0
-    [ "$i" -lt "$BUSY_RETRIES" ] && sleep "${BUSY_RETRY_SECS:?}"
-  done
-  return 0
 }
