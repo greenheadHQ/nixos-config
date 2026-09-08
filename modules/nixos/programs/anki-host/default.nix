@@ -5,7 +5,7 @@
 # v1 (PR #62 → 철거 PR #863, commit 61dadbe1): headless Anki + AnkiConnect를 Tailscale IP에
 #   바인딩해 awesome-anki 컨테이너가 쓰게 했고, 자체 Anki Sync Server와 짝을 이뤘다.
 #   2026-05-30 "AnkiWeb 동기화로 충분, 실제로 안 쓴다"는 근거로 세 서비스를 함께 철거했다.
-# v2 (이번, #1306 / plan 030): 철거 결정 중 **AnkiConnect 부분만** 되돌린다.
+# v2 (PR #1307, #1306 / plan 030 — 당시 결정 기록): 철거 결정 중 **AnkiConnect 부분만** 되돌린다.
 #   - 근거: 여러 기기의 AI 클라이언트(ChatGPT Chat은 클라우드 전용)가 카드를 다루려면
 #     Mac이 꺼져도 살아 있는 AnkiConnect 호스트가 필요하다. 동기화 자체는 공식 AnkiWeb으로
 #     충분하다는 v1의 판단은 유지하므로 자체 sync server는 복원하지 않는다.
@@ -22,7 +22,7 @@
 #     남아 있고, 이번엔 실제 이력 컬렉션의 .colpkg export가 205MB peak를 쓴 실측 + 인스턴스 2개 동시 기동);
 #     numBackups 50→30 (Anki 자체 자동 백업은 프로필 아래 쌓이는 SSD 비용이고, 일일 HDD 백업이 따로 있다);
 #     autoSync True→False (Anki의 열고/닫을 때 GUI sync 경로를 끄고 헬퍼 애드온만 sync한다).
-#     — numBackups·autoSync는 프로필 **최초 생성 시** prefs21.db에 쓰는 값이다(prefsBootstrap 가드 참조);
+#     — v2 당시 numBackups·autoSync는 프로필 최초 생성 시 prefs21.db에 쓰는 값이었다(prefsBootstrap 가드 참조);
 #     tailscale-wait 미복원 (v1은 tailnet IP 바인딩 때문에 필요했고 loopback 전용인 지금은 근거가 없다).
 #   - 잔여 위험(plan 030 결정 1·3, DA 확인): loopback은 이 호스트에서 격리가 아니다 — --network=host 컨테이너(uptime-kuma)와
 #     모든 로컬 계정이 같은 127.0.0.1에 닿으므로 무인증 AnkiConnect의 파괴 액션(deleteNotes 등)의 접근 주체는 "MiniPC에서
@@ -30,6 +30,11 @@
 #     (직전 성공 대비 노트·revlog가 syncGuardMinRetainPct 미만이면 병합 중단·알림) + 일일 .colpkg 백업. PrivateNetwork는
 #     AnkiWeb egress가 필요해 불가. API 키를 파일에서 읽는 애드온 패치·전용 네임스페이스는 PR 2(MCP 서비스 유저·그룹,
 #     결정 15)와 함께 재검토한다.
+# v3 (PR 2b): runtime-only LoadCredential 키로 v2의 무인증 잔여 위험을 해소한다.
+#   read/operation/maintenance/schema 역할을 분리하고 HTTP 원시 쓰기를 차단한다.
+#   변경은 helper lock·작업 원장·복구점을 거친다. 구조 변경/Upload는 root 일회 승인으로만
+#   수행하며 일반 sync의 급감 게이트를 유지한다. Anki 본체 derivation은 변경하지 않는다.
+#   GUI 자동/주기 미디어 sync는 기존 프로필에서도 끄고 helper가 미디어 종료 결과까지 단독 확인한다.
 {
   config,
   pkgs,
@@ -43,7 +48,8 @@ let
   inherit (constants.ankiHost) user;
   stateRoot = constants.paths.ankiHostState;
   # 애드온 버전의 단일 소스 — nix 파생 version과 /status의 addon_version이 같은 값을 갖는다
-  addonVersion = "1.5.2";
+  addons = import ./addons.nix { inherit pkgs; };
+  addonVersion = addons.version;
   inherit (constants.ankiHost)
     helperMainTimeoutSecs
     helperBusyWaitSecs
@@ -53,19 +59,12 @@ let
   instances = cfg.instances;
   ankiwebCredPath = config.age.secrets.anki-ankiweb.path;
 
-  # AnkiWeb 로그인·sync·스냅샷·복구점 헬퍼 — 인스턴스 공용(설정은 env로 받는다)
-  syncAddon = pkgs.anki-utils.buildAnkiAddon {
-    pname = "anki_host_sync";
-    version = addonVersion;
-    src = ./sync-addon;
-  };
-
   # 인스턴스별 AnkiConnect 포트만 다르므로 anki 패키지 자체는 캐시된 그대로이고
   # symlinkJoin + 작은 애드온 derivation만 인스턴스 수만큼 생긴다.
   ankiFor =
     inst:
     pkgs.anki.withAddons [
-      (pkgs.ankiAddons.anki-connect.withConfig {
+      (addons.connect.withConfig {
         config = {
           apiKey = null;
           apiLogPath = null;
@@ -75,7 +74,7 @@ let
           ignoreOriginList = [ ];
         };
       })
-      syncAddon
+      addons.helper
     ];
 
   # 첫 실행의 언어 선택 다이얼로그는 offscreen에서 닫을 수 없어 영원히 멈춘다 (과거 실측).
@@ -88,8 +87,8 @@ let
       set -eu
       base="$1"
       mkdir -p "$base/${name}"
-      # 아래 prefs 값(numBackups·autoSync 등)은 프로필 최초 생성 시에만 적용된다 — 기존 인스턴스에 반영하려면
-      # prefs21.db를 지우거나(프로필 재생성) Anki 쪽에서 바꿔야 한다. 파일을 바꾸고 nrs만 해서는 아무 효과가 없다.
+      # 아래 prefs 값은 최초 생성용이다. 예외로 autoSync/autoSyncMediaMinutes는 helper가
+      # 프로필을 열 때 기존 인스턴스에도 강제해 GUI와 helper가 미디어 완료 결과를 서로 소비하지 않게 한다.
       if [ -f "$base/prefs21.db" ]; then
         exit 0
       fi
@@ -102,7 +101,7 @@ let
               "lastMsg": -1, "suppressUpdate": True, "firstRun": False, "defaultLang": "en_US"}
       prof = {"mainWindowGeom": None, "mainWindowState": None, "numBackups": 30, "lastOptimize": int(time.time()),
               "searchHistory": [], "syncKey": None, "syncUser": None, "syncMedia": True, "autoSync": False,
-              "autoSyncMediaMinutes": 15, "allowHTML": False, "importMode": 1, "lastColour": "#00f",
+              "autoSyncMediaMinutes": 0, "allowHTML": False, "importMode": 1, "lastColour": "#00f",
               "stripHTML": True, "deleteMedia": False}
       db.execute("insert or replace into profiles values (?, ?)", ("_global", pickle.dumps(meta, protocol=4)))
       db.execute("insert or replace into profiles values (?, ?)", (profile, pickle.dumps(prof, protocol=4)))
@@ -120,7 +119,11 @@ let
     in
     lib.nameValuePair "anki-host-${name}" {
       description = "Headless Anki instance '${name}' (AnkiConnect 127.0.0.1:${toString inst.port})";
-      after = [ "network-online.target" ];
+      after = [
+        "network-online.target"
+        "anki-host-keys-${name}.service"
+      ];
+      requires = [ "anki-host-keys-${name}.service" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
@@ -145,6 +148,14 @@ let
         ANKI_HOST_GUARD_MIN_RETAIN_PCT = toString syncGuardMinRetainPct;
         # 헬퍼의 /export·/import-colpkg는 이 아래 backups/(일일 백업 스테이징)·restore-points/(복구점)만 허용한다
         ANKI_HOST_STATE_DIR = stateDir;
+        ANKI_HOST_INSTANCE = name;
+        ANKI_HOST_OPERATION_TTL_SECS = toString constants.ankiHost.operationTtlSecs;
+        ANKI_HOST_BULK_LIMIT = toString constants.ankiHost.bulkLimit;
+        ANKI_HOST_MEDIA_MAX_BYTES = toString constants.ankiHost.mediaMaxBytes;
+        ANKI_HOST_BODY_MAX_BYTES = toString constants.ankiHost.bodyMaxBytes;
+        ANKI_HOST_BODY_TIMEOUT_SECS = toString constants.ankiHost.bodyTimeoutSecs;
+        ANKI_HOST_MAX_REQUESTS = toString constants.ankiHost.maxRequests;
+        ANKI_HOST_MIRROR_TIMEOUT_SECS = toString constants.ankiHost.mirrorTimeoutSecs;
       }
       // lib.optionalAttrs inst.sync.enable {
         ANKI_HOST_SYNC_CREDENTIALS = ankiwebCredPath;
@@ -158,6 +169,12 @@ let
         Type = "simple";
         User = user;
         Group = user;
+        LoadCredential = map (role: "${role}:${constants.paths.ankiHostCredentials}/${name}/${role}") [
+          "read"
+          "operation"
+          "maintenance"
+          "schema"
+        ];
         StateDirectory = "anki-host/${name}";
         StateDirectoryMode = "0700";
         RuntimeDirectory = "anki-host/${name}";
@@ -184,12 +201,14 @@ let
         ];
         LockPersonality = true;
       };
+      path = [ pkgs.systemd ]; # 복구점 mirror 서비스만 시작할 수 있는 polkit 권한
     };
 in
 {
   imports = [
     ./sync.nix
     ./backup.nix
+    ./operations.nix
   ];
 
   config = lib.mkIf cfg.enable {
@@ -213,7 +232,7 @@ in
         message = "homeserver.ankiHost: at most one instance may enable sync — there is a single AnkiWeb credential.";
       }
       {
-        # 컬렉션 교체 엔드포인트는 AnkiWeb에 붙는 인스턴스에 열지 않는다 — 운영 컬렉션이 loopback 무인증 호출로
+        # 컬렉션 교체 엔드포인트는 AnkiWeb에 붙는 인스턴스에 열지 않는다 — 운영 컬렉션이 maintenance 호출로
         # 통째로 교체되는 경로를 구성 시점에 차단한다 (loopback은 --network=host 컨테이너와 공유된다)
         assertion = lib.all (inst: !(inst.allowImport && inst.sync.enable)) (builtins.attrValues instances);
         message = "homeserver.ankiHost: allowImport and sync.enable are mutually exclusive — import is for isolated fixture instances only.";
@@ -245,6 +264,7 @@ in
       "d ${stateRoot}/${name} 0700 ${user} ${user} -"
       "d ${stateRoot}/${name}/backups 0700 ${user} ${user} -"
       "d ${stateRoot}/${name}/restore-points 0700 ${user} ${user} -"
+      "d ${stateRoot}/${name}/approvals 0770 root ${user} -"
     ]) (builtins.attrNames instances);
 
     systemd.services = lib.mapAttrs' mkInstance instances;

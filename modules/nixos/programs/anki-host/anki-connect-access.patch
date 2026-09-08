@@ -1,0 +1,13 @@
+--- a/__init__.py
++++ b/__init__.py
+@@ -58,0 +59 @@
++from . import anki_host_access
+@@ -107 +107,0 @@
+-        self.logEvent('request', request)
+@@ -115,2 +115 @@
+-            if key != util.setting('apiKey') and name != 'requestPermission':
+-                raise Exception('valid api key must be provided')
++            anki_host_access.check_request(request, self)
+@@ -2193,0 +2193,2 @@
++    aqt.mw._anki_host_connect = ac
++    aqt.mw._anki_host_connect_version = 1

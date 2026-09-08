@@ -67,6 +67,8 @@ NixOS 홈서버 서비스는 `homeserver.*` 옵션으로 선언적으로 활성�
 
 **서비스 카테고리**: Immich(사진), Karakeep(웹 아카이버/북마크), Copyparty(파일 서버), Uptime Kuma(모니터링), Caddy(HTTPS 리버스 프록시). 전 서비스에 업데이트 체크/알림 서브시스템을, Immich·Karakeep에는 DB 백업 서브시스템을 포함합니다.
 
+Anki 호스트·MCP의 변경 확인, 동기화, 복구점, 승인 Upload는 [운영 계약](./modules/nixos/programs/anki-host/README.md)을 참고하세요.
+
 ### 상수 관리
 
 모든 공유 상수는 [`libraries/constants.nix`](./libraries/constants.nix)에서 단일 소스로 관리합니다:
@@ -203,6 +205,7 @@ Claude Code 세션에서 질문하면 관련 스킬이 자동으로 로드됩니
 | 컨테이너 서비스 | `running-containers` |
 | Karakeep | `hosting-karakeep` |
 | Copyparty | `hosting-copyparty` |
+| Anki 호스트·MCP | [`hosting-anki`](./.claude/skills/hosting-anki/SKILL.md) |
 
 추가 참고:
 - [`CLAUDE.md`](./CLAUDE.md) — LLM 행동 규칙 (실행 환경 판별, 빌드, Bash tool 환경, 상수 관리 등)

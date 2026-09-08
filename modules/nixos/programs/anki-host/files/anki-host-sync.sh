@@ -41,10 +41,15 @@
 # (앞에 pushover.sh와 files/lib/helper-call.sh가 텍스트 결합되어 pushover_send·anki_helper_* 가 정의돼 있다.)
 
 MODE="normal"
+OPERATION_ID=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --mode)
       MODE="$2"
+      shift 2
+      ;;
+    --operation-id)
+      OPERATION_ID="$2"
       shift 2
       ;;
     *)
@@ -53,6 +58,11 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+case "$MODE" in
+  normal|allow-download-if-empty) [ -z "$OPERATION_ID" ] || exit 2 ;;
+  approved-schema) [[ "$OPERATION_ID" =~ ^[0-9a-f]{32}$ ]] || exit 2 ;;
+  *) exit 2 ;;
+esac
 
 HELPER="http://127.0.0.1:${HELPER_PORT:?}"
 STATE_FILE="${STATE_DIR:?}/sync-status.json"
@@ -60,15 +70,26 @@ LOCK_FILE="${STATE_DIR}/.sync.lock"
 CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
 ALERT_DEDUPE_SECS=86400
 : "${MAX_RETRIES:?}" "${BACKOFF_SECS:?}" "${HELPER_CURL_MAX_TIME:?}" "${INSTANCE:?}" "${STATUS_RUN_DIR:?}"
+: "${STATE_OWNER:?}" "${STATE_GROUP:?}"
 # 결정 15: 상태 파일은 0700 디렉터리 안이라 MCP 서비스(별도 유저)가 못 읽는다 — 기록마다 사본을 게시판(0750, 그룹 읽기)에
 # 0640으로 내놓는다. 이 스크립트가 유일한 생산자이고 MCP는 사본의 독자다. 원본과 사본은 내용이 같다.
 STATUS_COPY="${STATUS_RUN_DIR}/${INSTANCE}.json"
 publish_state() {
   [ -d "$STATUS_RUN_DIR" ] || return 0
-  cp "$STATE_FILE" "${STATUS_COPY}.partial" && chmod 0640 "${STATUS_COPY}.partial" && mv "${STATUS_COPY}.partial" "$STATUS_COPY"
+  cp "$STATE_FILE" "${STATUS_PARTIAL}"
+  if [ "$(id -u)" -eq 0 ]; then chown "${STATE_OWNER}:${STATE_GROUP}" "${STATUS_PARTIAL}"; fi
+  chmod 0640 "${STATUS_PARTIAL}"
+  mv "${STATUS_PARTIAL}" "$STATUS_COPY"
+}
+commit_state() {
+  if [ "$(id -u)" -eq 0 ]; then chown "${STATE_OWNER}:${STATE_GROUP}" "${STATE_PARTIAL}"; fi
+  chmod 0600 "${STATE_PARTIAL}"
+  mv "${STATE_PARTIAL}" "$STATE_FILE"
+  publish_state
 }
 
 exec 9>"$LOCK_FILE"
+if [ "$(id -u)" -eq 0 ]; then chown "${STATE_OWNER}:${STATE_GROUP}" "$LOCK_FILE"; fi
 if ! flock -n 9; then
   # 타이머 유닛과 부트스트랩 유닛은 별개라 systemd가 병합하지 않는다 — 여기서만 배제한다. 상태 파일은 실행 중인
   # 회차가 소유하므로 건드리지 않는다 (running이 이미 기록돼 있다)
@@ -76,7 +97,12 @@ if ! flock -n 9; then
   exit 0
 fi
 
-now() { date -Iseconds; }
+# Unique temporary paths keep a killed root run from blocking the next user run.
+STATE_PARTIAL="$(mktemp "${STATE_FILE}.partial.XXXXXXXX")"
+STATUS_PARTIAL="$(mktemp "${STATUS_COPY}.partial.XXXXXXXX")"
+trap 'rm -f "$STATE_PARTIAL" "$STATUS_PARTIAL"' EXIT
+
+now() { date --iso-8601=ns; }
 
 # 회차 식별자 — 락을 잡은 직후 한 번 정하고 이 회차의 모든 기록에 같은 값으로 실린다
 RUN_ID="${INVOCATION_ID:-manual-$(date +%s%N)}"
@@ -109,9 +135,8 @@ write_state() {
       lastSuccessAt: (if $last_success == "" then null else $last_success end), lastSuccessCounts: $last_counts,
       result: $result, mode: $mode, error: (if $error == "" then null else $error end),
       lastAlert: (if $alert_key == "" then null else {key: $alert_key, at: $alert_at} end),
-      sync: $sync}' > "${STATE_FILE}.partial"
-  mv "${STATE_FILE}.partial" "$STATE_FILE"
-  publish_state
+      sync: $sync}' > "${STATE_PARTIAL}"
+  commit_state
 }
 
 send_pushover() {
@@ -145,9 +170,8 @@ notify_alert() {
   # 전송 성공 여부와 무관하게 기록해 실패 루프에서 알림이 반복되지 않게 한다
   local tmp
   tmp="$(jq --arg key "$key" --arg at "$(now)" '.lastAlert = {key: $key, at: $at}' "$STATE_FILE" 2>/dev/null || echo '{}')"
-  printf '%s\n' "$tmp" > "${STATE_FILE}.partial"
-  mv "${STATE_FILE}.partial" "$STATE_FILE"
-  publish_state
+  printf '%s\n' "$tmp" > "${STATE_PARTIAL}"
+  commit_state
 }
 
 # notify_event <title> <message>
@@ -195,8 +219,16 @@ last_error=""
 # 급감 게이트(plan 결정 1·3)는 헬퍼가 상태 파일의 lastSuccessAt·lastSuccessCounts로 직접 판정한다 — 하한을 여기서 계산해
 # 넘기면 같은 loopback의 다른 호출자도 0을 넘겨 우회할 수 있다. 이 스크립트는 결과(action=guard-tripped)만 분류한다.
 payload="$(jq -n --arg mode "$MODE" '{mode: $mode}')"
+endpoint="/sync"
+if [ "$MODE" = "approved-schema" ]; then
+  endpoint="/schema/apply"
+  payload="$(jq -n --arg operation_id "$OPERATION_ID" '{operation_id: $operation_id}')"
+  # One-shot approval may already have been consumed when a response is lost.
+  # Resume requires a fresh root approval; never automatically call apply twice.
+  MAX_RETRIES=1
+fi
 while [ "$attempt" -le "$MAX_RETRIES" ]; do
-  anki_helper_call "${HELPER}/sync" "$payload" "$HELPER_CURL_MAX_TIME"
+  anki_helper_call "${HELPER}${endpoint}" "$payload" "$HELPER_CURL_MAX_TIME"
   if helper_busy; then
     # 다른 변경 작업(export/import) 진행 중 — 실패가 아니라 순서 대기. 예산을 다 쓰면 다음 타이머에 맡긴다
     busy_left=$((busy_left - 1))
@@ -213,7 +245,7 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
     action="$(printf '%s' "$result_json" | jq -r '.action')"
     required="$(printf '%s' "$result_json" | jq -r '.required')"
     case "$action" in
-      normal|full-download)
+      normal|full-download|approved-full-upload)
         write_state "success" "" "$result_json"
         # (b) 다른 기기의 학습·카드 변경이 내려왔을 때만 알린다 (수치와 덱 이름만).
         # 발송 여부·제목·본문을 한 jq 프로그램이 함께 정한다 — 제목이 본문 조건과 어긋나지 않게.
@@ -224,7 +256,9 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
           (.after.revlog - .before.revlog) as $rev
           | (.after.notes - .before.notes) as $notes
           | (.after.cards - .before.cards) as $cards
-          | if .action == "full-download" then
+          | if .action == "approved-full-upload" then
+              {title: "Anki 승인 변경 완료", body: "관리자가 승인한 노트 타입 변경을 AnkiWeb에 업로드했습니다."}
+            elif .action == "full-download" then
               {title: "Anki 동기화", body: "AnkiWeb 컬렉션을 처음 내려받았습니다. 노트 \(.after.notes)개, 카드 \(.after.cards)장, 복습 기록 \(.after.revlog)건."}
             elif ($rev > 0 or $notes != 0 or $cards != 0) then
               {title: (if $rev > 0 then "오늘의 공부가 반영됐습니다" else "Anki 동기화" end),
@@ -238,6 +272,11 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
         fi
         echo "anki-host-sync[${INSTANCE}]: ${action} (required=${required})"
         exit 0
+        ;;
+      schema-*)
+        write_state "schema-blocked" "${action}; inspect operation ${OPERATION_ID} before a new root approval" "$result_json"
+        notify_alert "schema-blocked-${OPERATION_ID}" 1 "Anki 승인 변경 확인 필요" "노트 타입 작업 ${OPERATION_ID}의 로컬 적용 여부와 동기화 결과를 확인하세요. 자동 재실행하지 않았습니다."
+        exit 1
         ;;
       guard-tripped)
         if [ "$(printf '%s' "$result_json" | jq -r '.empty_before')" = "true" ]; then

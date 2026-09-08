@@ -41,6 +41,7 @@ prune_local() {
 for entry in $INSTANCES; do
   name="${entry%%:*}"
   port="${entry##*:}"
+  export HELPER_CREDENTIAL_FILE="${CREDENTIALS_DIRECTORY:?}/maintenance-${name}"
   helper="http://127.0.0.1:${port}"
   local_dir="${STATE_ROOT}/${name}/backups"
   dest_dir="${BACKUP_DIR}/${name}"

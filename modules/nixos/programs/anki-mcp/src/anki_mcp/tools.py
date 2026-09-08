@@ -1,14 +1,18 @@
-"""MCP 도구 — plan 030 결정 8(3계층)·9(범용, mcp::added 태그)·10(busy 확인)·13("지금 동기화").
+"""Authenticated reads and journaled mutations for a personal Anki host.
 
-PR 2a 범위: 조회 계층 전부 + 변경 계층 중 추가·수정·태그·덱 생성 + 지금 동기화.
-파괴 계층(삭제)·정지·일정·잊기·대량 미리보기·복구점·미디어는 PR 2b.
-annotations는 클라이언트(ChatGPT 등)가 위험도에 따라 확인 UX를 결정하는 힌트다.
+Mutations use OperationService for fresh pre/post sync and durable outcomes.
+Destructive, bulk, shared-preset and structural changes require previews; schema
+changes are prepared here and executed only through root's approval workflow.
+Client annotations supplement the server's own confirmation checks.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
+import base64
+import binascii
+import unicodedata
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -17,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from .ankiconnect import AnkiConnect
 from .helper import Helper
+from .operations import OperationService
 from .shaping import card_view, note_view, page, truncate
 from .syncstatus import SyncNow, read_status, summarize
 
@@ -33,6 +38,7 @@ def check_tags(tags: list[str]) -> list[str]:
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 ADDITIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 UPDATE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
 SYNC = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 
 
@@ -51,14 +57,14 @@ class Deps:
     sync_status_file: str
     field_chars: int
     page_max: int
+    operations: OperationService
+    media_max_bytes: int
 
 
 def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 정의 나열
     anki = deps.anki
 
-    async def guard_mutation() -> None:
-        # 결정 10: 헬퍼의 변경 작업(sync/export/import)과 겹치지 않게 호출 전에 busy를 본다
-        await deps.helper.ensure_not_busy()
+    operations = deps.operations
 
     @mcp.tool(name="anki_status", annotations=READ_ONLY)
     async def anki_status() -> dict[str, Any]:
@@ -152,64 +158,167 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         return {"tags": await anki.invoke("getTags")}
 
     @mcp.tool(name="anki_add_notes", annotations=ADDITIVE)
-    async def anki_add_notes(notes: list[NewNote], allow_duplicate: bool = False) -> dict[str, Any]:
+    async def anki_add_notes(notes: list[NewNote], allow_duplicate: bool = False,
+                             request_id: str | None = None, preview_token: str | None = None,
+                             confirm: bool = False) -> dict[str, Any]:
         """Add notes. Every note gets the 'mcp::added' tag so MCP-created cards stay identifiable.
         Duplicates (same first field in the deck) are rejected unless allow_duplicate. Returns ids per note
-        (null = failed, see errors). Sync happens automatically within 15 minutes, or call anki_sync_now."""
-        await guard_mutation()
-        payload = []
+        (null = unconfirmed/failed, see errors). Normal sync runs before and after writes. Reuse request_id
+        for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation."""
         for n in notes:
-            tags = list(dict.fromkeys([*check_tags(n.tags), ADDED_TAG]))
-            payload.append({
-                "deckName": n.deck_name,
-                "modelName": n.model_name,
-                "fields": n.fields,
-                "tags": tags,
-                "options": {"allowDuplicate": allow_duplicate, "duplicateScope": "deck"},
-            })
-        checks = await anki.invoke("canAddNotesWithErrorDetail", notes=payload)
-        addable = [p for p, c in zip(payload, checks) if c.get("canAdd")]
-        ids: list[int | None] = await anki.invoke("addNotes", notes=addable) if addable else []
-        it = iter(ids)
-        result = []
-        for c in checks:
-            if c.get("canAdd"):
-                result.append({"noteId": next(it, None), "error": None})
-            else:
-                result.append({"noteId": None, "error": c.get("error")})
-        return {"added": sum(1 for r in result if r["noteId"]), "results": result, "tag": ADDED_TAG}
+            check_tags(n.tags)
+        return await operations.run("add_notes", {"notes": [n.model_dump() for n in notes], "allow_duplicate": allow_duplicate},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_update_note_fields", annotations=UPDATE)
-    async def anki_update_note_fields(note_id: int, fields: dict[str, str]) -> dict[str, Any]:
+    async def anki_update_note_fields(note_id: int, fields: dict[str, str], request_id: str | None = None,
+                                     preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         """Replace the given fields of a note (other fields unchanged). Card ids, scheduling and review
-        history are preserved. Returns the note after the update."""
-        await guard_mutation()
-        await anki.invoke("updateNoteFields", note={"id": note_id, "fields": fields})
-        after = await anki.invoke("notesInfo", notes=[note_id])
-        return {"note": note_view(after[0], 0) if after else None}
+        history are preserved for existing cards. Changed templates/cloze fields may generate new cards.
+        Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries."""
+        return await operations.run("update_fields", {"note_id": note_id, "fields": fields},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_add_tags", annotations=UPDATE)
-    async def anki_add_tags(note_ids: list[int], tags: list[str]) -> dict[str, Any]:
+    async def anki_add_tags(note_ids: list[int], tags: list[str], request_id: str | None = None,
+                            preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         """Add tags to notes (space-separated internally; each tag must not contain spaces)."""
         check_tags(tags)
-        await guard_mutation()
-        await anki.invoke("addTags", notes=note_ids, tags=" ".join(tags))
-        return {"notes": len(note_ids), "tags": tags}
+        return await operations.run("add_tags", {"note_ids": note_ids, "tags": tags},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_remove_tags", annotations=UPDATE)
-    async def anki_remove_tags(note_ids: list[int], tags: list[str]) -> dict[str, Any]:
+    async def anki_remove_tags(note_ids: list[int], tags: list[str], request_id: str | None = None,
+                               preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         """Remove tags from notes (each tag must not contain spaces)."""
         check_tags(tags)
-        await guard_mutation()
-        await anki.invoke("removeTags", notes=note_ids, tags=" ".join(tags))
-        return {"notes": len(note_ids), "tags": tags}
+        return await operations.run("remove_tags", {"note_ids": note_ids, "tags": tags},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_create_deck", annotations=ADDITIVE)
-    async def anki_create_deck(name: str) -> dict[str, Any]:
+    async def anki_create_deck(name: str, request_id: str | None = None,
+                               preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         """Create a deck (use '::' for nesting). Existing decks are returned unchanged."""
-        await guard_mutation()
-        deck_id = await anki.invoke("createDeck", deck=name)
-        return {"name": name, "id": deck_id}
+        return await operations.run("create_deck", {"name": name},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_operation_status", annotations=READ_ONLY)
+    async def anki_operation_status(operation_id: str) -> dict[str, Any]:
+        """Read a durable operation receipt, including applied/partial/unknown and separate sync/notification states.
+        Unknown is not a retry instruction. Never resubmit the mutation with a new request_id after a lost response."""
+        return await operations.status(operation_id)
+
+    @mcp.tool(name="anki_recent_operations", annotations=READ_ONLY)
+    async def anki_recent_operations(limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        """List recent operation receipts (no note bodies). Use this to locate an operation after losing a
+        response or its server-generated ID. Inspect the receipt before considering any retry."""
+        return await deps.helper.post("/operations/history", {"limit": limit, "offset": offset})
+
+    @mcp.tool(name="anki_move_cards", annotations=UPDATE)
+    async def anki_move_cards(card_ids: list[int], deck_name: str, request_id: str | None = None,
+                              preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
+        """Move cards into an existing ordinary deck. Preserve their scheduling/history; cards in filtered
+        decks return to their original scheduling state first. More than 20 affected cards requires a preview."""
+        return await operations.run("move_cards", {"card_ids": card_ids, "deck_name": deck_name},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_delete_notes", annotations=DESTRUCTIVE)
+    async def anki_delete_notes(note_ids: list[int], request_id: str | None = None,
+                                preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
+        """Preview deletion of notes, ALL their cards and review history. Always show the preview and get user
+        confirmation, then repeat the same request_id/token with confirm=true. Requires a verified restore point."""
+        return await operations.run("delete_notes", {"note_ids": note_ids},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_delete_decks", annotations=DESTRUCTIVE)
+    async def anki_delete_decks(deck_names: list[str], request_id: str | None = None,
+                                preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
+        """Preview deleting decks including subdecks and their affected cards. Filtered/Default deck behavior
+        is explained in the preview. Always requires user confirmation and a verified restore point."""
+        return await operations.run("delete_decks", {"deck_names": deck_names},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_suspend_cards", annotations=UPDATE)
+    async def anki_suspend_cards(card_ids: list[int], suspended: bool = True, request_id: str | None = None,
+                                 preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
+        """Suspend or unsuspend cards. More than 20 affected notes/cards requires confirmation and a restore point."""
+        return await operations.run("suspend_cards", {"card_ids": card_ids, "suspended": suspended},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_set_due_date", annotations=DESTRUCTIVE)
+    async def anki_set_due_date(card_ids: list[int], days: str, request_id: str | None = None,
+                                preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
+        """Preview setting due dates: N or N-M days from today, optionally suffixed '!'. Ranges choose random
+        dates; this can unsuspend cards and create manual review-log rows. Always requires confirmation/backup."""
+        return await operations.run("set_due_date", {"card_ids": card_ids, "days": days},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_forget_cards", annotations=DESTRUCTIVE)
+    async def anki_forget_cards(card_ids: list[int], request_id: str | None = None,
+                                preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
+        """Preview resetting cards to new-card scheduling. Existing review history is retained; manual log
+        rows may be added. Always requires user confirmation and a verified restore point."""
+        return await operations.run("forget_cards", {"card_ids": card_ids},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_store_media", annotations=ADDITIVE)
+    async def anki_store_media(filename: str, data: str, request_id: str | None = None) -> dict[str, Any]:
+        """Add one new media file using a safe basename and base64 data (decoded limit 5 MiB). Same content is
+        a no-op; different existing content is refused. No file paths, URLs, overwriting or deletion."""
+        if (len(data) > 4 * ((deps.media_max_bytes + 2) // 3) or filename.startswith(".")
+                or any(c in filename for c in "/\\:") or filename != filename.strip()
+                or unicodedata.normalize("NFC", filename) != filename
+                or any(unicodedata.category(c).startswith("C") for c in filename)):
+            raise ToolError("invalid-media-filename-or-size")
+        try:
+            decoded = base64.b64decode(data, validate=True)
+        except (ValueError, binascii.Error) as err:
+            raise ToolError("invalid-base64") from err
+        if not decoded or len(decoded) > deps.media_max_bytes:
+            raise ToolError("media-empty-or-too-large")
+        return await operations.run("store_media", {"filename": filename, "data": data}, request_id=request_id)
+
+    @mcp.tool(name="anki_media", annotations=READ_ONLY)
+    async def anki_media(filename: str | None = None, contains: str = "", limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        """List media by plain substring with pagination, or retrieve one safe filename as base64 (max 5 MiB)."""
+        return await deps.helper.post("/media", {"filename": filename, "contains": contains, "limit": limit, "offset": offset})
+
+    @mcp.tool(name="anki_deck_options", annotations=READ_ONLY)
+    async def anki_deck_options(deck_name: str) -> dict[str, Any]:
+        """Read the current preset, editable options and every deck sharing that preset."""
+        return await deps.helper.post("/deck-options", {"deck_name": deck_name})
+
+    @mcp.tool(name="anki_update_deck_options", annotations=UPDATE)
+    async def anki_update_deck_options(deck_name: str, changes: dict[str, int | float], request_id: str | None = None,
+                                       preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
+        """Patch only supported option keys returned by anki_deck_options (e.g. new.perDay, rev.perDay).
+        Shared presets always require a preview, user confirmation and a verified restore point."""
+        return await operations.run("update_deck_options", {"deck_name": deck_name, "changes": changes},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_model_info", annotations=READ_ONLY)
+    async def anki_model_info(model_name: str) -> dict[str, Any]:
+        """Read a note type's ordered fields, complete templates and CSS."""
+        return await deps.helper.post("/model-info", {"model_name": model_name})
+
+    @mcp.tool(name="anki_prepare_model_change", annotations=DESTRUCTIVE)
+    async def anki_prepare_model_change(
+        action: Literal["model_field_add", "model_field_remove", "model_field_rename", "model_field_reposition",
+                        "model_template_add", "model_template_remove", "model_template_update"],
+        params: dict[str, Any], request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Prepare (never apply) a note-type change requiring root approval and possibly full Upload. params:
+        model_name plus field_name (add/remove), field_name+new_name (rename), field_name+index (reposition),
+        template_name+front+back (add/update), or template_name (remove). Field add accepts optional index.
+        Show the preview; the root anki-host-approve command verifies backup/counts and executes once."""
+        return await operations.run(action, params, request_id=request_id)
+
+    @mcp.tool(name="anki_update_model_css", annotations=UPDATE)
+    async def anki_update_model_css(model_name: str, css: str, request_id: str | None = None,
+                                    preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
+        """Replace note-type CSS (empty CSS is allowed). More than 20 affected cards requires confirmation/backup."""
+        return await operations.run("model_css_update", {"model_name": model_name, "css": css},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_sync_now", annotations=SYNC)
     async def anki_sync_now() -> dict[str, Any]:

@@ -21,13 +21,23 @@ HELPER_BODY=""
 
 anki_helper_call() {
   local url="$1" payload="$2" max_time="$3"
-  local raw
+  local raw key_file key
+  key_file="${HELPER_CREDENTIAL_FILE:-${CREDENTIALS_DIRECTORY:?}/maintenance}"
+  key="$(cat "$key_file")"
+  if [[ ! "$key" =~ ^[0-9a-f]{64}$ ]]; then
+    HELPER_RC=1
+    HELPER_HTTP="000"
+    HELPER_BODY='{"ok":false,"error":"invalid-helper-credential"}'
+    return 0
+  fi
   HELPER_RC=0
   if [ -n "$payload" ]; then
-    raw="$(curl -sS --max-time "$max_time" -o /dev/stdout -w '\n%{http_code}' \
+    raw="$(curl --noproxy '*' --config <(printf 'header = "Authorization: Bearer %s"\n' "$key") \
+      -sS --max-time "$max_time" -o /dev/stdout -w '\n%{http_code}' \
       -H 'Content-Type: application/json' -d "$payload" "$url" 2>&1)" || HELPER_RC=$?
   else
-    raw="$(curl -sS --max-time "$max_time" -o /dev/stdout -w '\n%{http_code}' "$url" 2>&1)" || HELPER_RC=$?
+    raw="$(curl --noproxy '*' --config <(printf 'header = "Authorization: Bearer %s"\n' "$key") \
+      -sS --max-time "$max_time" -o /dev/stdout -w '\n%{http_code}' "$url" 2>&1)" || HELPER_RC=$?
   fi
   HELPER_HTTP="$(printf '%s' "$raw" | tail -n1)"
   HELPER_BODY="$(printf '%s' "$raw" | sed '$d')"

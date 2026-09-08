@@ -1,68 +1,44 @@
-"""anki_host_sync — headless Anki용 AnkiWeb 로그인·동기화·스냅샷 헬퍼 애드온.
+"""Headless Anki sync and journaled MCP operations on one main-thread lock.
 
-nixos-config `modules/nixos/programs/anki-host`가 `pkgs.anki.withAddons`로 bake한다.
-GUI 없이 도는 Anki 프로세스 안에서 loopback HTTP(JSON)만 연다. 인증은 없다.
+Every HTTP route requires an instance-specific runtime credential. AnkiConnect
+HTTP exposes authenticated reads; mutations use this helper's operation allowlist.
+Maintenance credentials can sync/export; only root's schema credential plus an
+unexpired, consumed-once approval can authorize a structural change and Upload.
+Normal sync retains its count-loss guard and never chooses full sync direction.
 
-신뢰 경계: loopback은 이 호스트에서 격리를 보장하지 않는다 — `--network=host` 컨테이너
-(uptime-kuma)가 같은 loopback namespace를 공유한다. 그래서 이 애드온은 되돌릴 수 없는 동작을
-노출하지 않는다: full sync 방향은 "로컬이 비어 있을 때의 Download"(부트스트랩)만 허용하고,
-서버를 덮어쓰는 Upload 모드는 존재하지 않는다. 컬렉션 교체(/import-colpkg)는 AnkiWeb에
-로그인된 프로필에서 거부되므로 운영 인스턴스에는 영향이 없다(격리 fixture 전용).
-같은 프로세스의 AnkiConnect는 같은 loopback에 무인증으로 열려 있어(plan 030 결정 1의 잔여 위험) 이 봉인을
-우회하는 파괴 표면이 된다 — 그래서 /sync는 직전 성공 스냅샷(sync 스크립트가 남기는 상태 파일의
-lastSuccessCounts) 대비 로컬이 ANKI_HOST_GUARD_MIN_RETAIN_PCT% 아래로 줄어 있으면 서버에 병합하지 않고
-`guard-tripped`를 돌려준다(급감 게이트, 결정 3). 하한은 HTTP 입력으로 받지 않는다 — 같은 loopback의 호출자가
-0을 넘겨 게이트를 우회할 수 없어야 한다. 상태 파일은 0700 디렉터리 안이라 loopback 호출자가 고칠 수 없다.
-
-왜 AnkiConnect의 `sync` 액션을 쓰지 않는가: 그 액션은 `mw.onSync()`를 불러 GUI 다이얼로그
-경로를 타므로 full sync가 요구되면 offscreen에서 영원히 멈춘다. 여기서는
-`col.sync_collection`을 직접 호출해 결과 코드(`required`)를 받는다.
-
-동시성 계약: 컬렉션을 바꾸는 작업(/sync, /export, /import-colpkg)은 서로 배제한다.
-대기가 BUSY_WAIT_SECS를 넘으면 무한 대기 대신 HTTP 409와 진행 중인 작업 이름을 돌려주어,
-호출자가 "응답 없음"과 "다른 작업 진행 중"을 구분하게 한다.
-조회는 둘이다. `/status`는 메인 스레드를 타지 않고 애드온 메모리(`_state`)만 읽어 즉시 답한다
-(busy·collection_open·login.status·last_sync 요약) — 준비 대기 프로브와 로그인 판정은 이것으로 충분하고,
-기동 중 메인 스레드가 로그인 네트워크 호출에 잠겨 있어도 작업이 큐에 쌓이지 않는다. `collection_open`은
-로그인 판정이 끝난 뒤에야 True가 되므로 "준비됨"이면 `login.status`는 항상 확정값이다. 무인증 응답이라
-계정 식별자(username)·덱 이름·카운트는 싣지 않는다. `/status/full`은 메인 스레드에서 profile·username·
-counts·media까지 채운다(운영자 조회·PR 2 도구용). busy 중에는 409.
-이 락은 헬퍼 엔드포인트만 덮는다 — 같은 프로세스의 AnkiConnect 경유 변경은 락 밖이므로 MCP 변경 도구는
-호출 전 `/status`의 `busy`를 확인한다(plan 030 결정 10).
-
-환경 변수 (모두 nixos 모듈이 단일 소스에서 파생해 넣는다):
-  ANKI_HOST_HELPER_PORT       loopback 포트. 없거나 0이면 서버를 열지 않는다.
-  ANKI_HOST_SYNC_CREDENTIALS  ANKIWEB_USERNAME=/ANKIWEB_PASSWORD= 두 줄 파일. 없으면 로그인하지 않는다.
-  ANKI_HOST_STATE_DIR         인스턴스 상태 디렉터리. /export·/import-colpkg는 그 아래
-                              `backups/`(일일 백업 스테이징, 정리 대상)와 `restore-points/`
-                              (복구점 — 생산자·보존 규칙은 PR 2b)만 허용한다.
-  ANKI_HOST_ADDON_VERSION     패키지 버전(nix 파생 version과 같은 값) — /status에 노출.
-  ANKI_HOST_MAIN_TIMEOUT_SECS 변경 작업의 메인 스레드 타임아웃(필수 — 기본값 없음). 타임아웃 사다리의 가장
-                              안쪽 값이며 스크립트 curl·systemd 유닛 값은 이 값에서 파생된다(constants.ankiHost).
-  ANKI_HOST_BUSY_WAIT_SECS    변경 작업 락 대기(필수). 넘기면 409 — 이 값이 409 응답 시간의 상한이라 유닛
-                              예산 계산(sync.nix)에 들어간다.
-  ANKI_HOST_QUERY_TIMEOUT_SECS /status/full의 메인 스레드 대기(필수).
-  ANKI_HOST_GUARD_MIN_RETAIN_PCT 급감 게이트 비율(필수) — 상태 파일 lastSuccessCounts × 이 값/100이 /sync의 하한.
-  ANKI_HOST_ALLOW_IMPORT      "1"이면 /import-colpkg를 연다. 모듈이 AnkiWeb sync를 켜지 않은 인스턴스
-                              (격리 fixture용)에만 넣는다 — 운영 인스턴스에는 라우팅 자체가 없다.
+Quick status is an authenticated in-memory projection. Collection queries and
+mutations run on the Anki main thread; a timed-out mutation holds its lock until
+its callback actually finishes. Runtime limits come from constants.ankiHost via
+the Nix service environment. No secret values are packaged in the Nix store.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import base64
+import hashlib
+import stat
+import subprocess
 import sys
 import threading
+import time
 import traceback
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Callable
 
 import aqt
 from anki import sync_pb2
 from aqt import gui_hooks
+
+from .access import Access
+from .operation_adapter import AnkiAdapter
+from .operations import Operations, OperationError, digest, filename, identifier
+from .schema import SchemaOperations
 
 ADDON_VERSION = os.environ.get("ANKI_HOST_ADDON_VERSION") or "unknown"
 BIND = "127.0.0.1"
@@ -76,6 +52,15 @@ BUSY_WAIT_SECS = int(os.environ["ANKI_HOST_BUSY_WAIT_SECS"])
 QUERY_TIMEOUT_SECS = int(os.environ["ANKI_HOST_QUERY_TIMEOUT_SECS"])
 GUARD_MIN_RETAIN_PCT = int(os.environ["ANKI_HOST_GUARD_MIN_RETAIN_PCT"])
 ALLOW_IMPORT = os.environ.get("ANKI_HOST_ALLOW_IMPORT") == "1"
+OPERATION_TTL = int(os.environ["ANKI_HOST_OPERATION_TTL_SECS"])
+BULK_LIMIT = int(os.environ["ANKI_HOST_BULK_LIMIT"])
+MEDIA_LIMIT = int(os.environ["ANKI_HOST_MEDIA_MAX_BYTES"])
+BODY_LIMIT = int(os.environ["ANKI_HOST_BODY_MAX_BYTES"])
+BODY_TIMEOUT = int(os.environ["ANKI_HOST_BODY_TIMEOUT_SECS"])
+MAX_REQUESTS = int(os.environ["ANKI_HOST_MAX_REQUESTS"])
+INSTANCE = os.environ["ANKI_HOST_INSTANCE"]
+MIRROR_TIMEOUT = int(os.environ["ANKI_HOST_MIRROR_TIMEOUT_SECS"])
+ACCESS = Access(os.environ["CREDENTIALS_DIRECTORY"])
 SYNC_MODES = ("normal", "allow-download-if-empty")
 
 ChangesRequired = sync_pb2.SyncCollectionResponse.ChangesRequired
@@ -94,6 +79,7 @@ _state: dict[str, Any] = {
     "server": None,
     "collection_open": False,
 }
+_operations: Operations | None = None
 
 
 class BusyError(RuntimeError):
@@ -268,6 +254,36 @@ def _media_status() -> dict[str, Any]:
 # ── 동기화 ────────────────────────────────────────────────────────────────
 
 
+def _configure_headless_sync() -> None:
+    # The GUI media monitor consumes a backend error only once. Keep the host
+    # helper as the sole sync/monitor owner, including already-created profiles.
+    pm = aqt.mw.pm
+    if pm.auto_syncing_enabled() or pm.periodic_sync_media_minutes() != 0:
+        pm.profile["autoSync"] = False
+        pm.set_periodic_sync_media_minutes(0)
+        pm.save()
+
+
+def _wait_for_media(deadline: float, *, previous: bool = False) -> None:
+    # Runs inside the main-thread mutation callback. Do not process Qt events or
+    # start MediaSyncer: another consumer could take a completed backend error.
+    while True:
+        try:
+            status = aqt.mw.col.media_sync_status()
+        except Exception as err:
+            if not previous:
+                raise
+            # The old thread has ended; the new sync below retries its transfer.
+            _log(f"previous media sync failed: {type(err).__name__}; retrying")
+            return
+        if not status.active:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("media-sync-timeout")
+        time.sleep(min(0.25, remaining))
+
+
 def _full_download(auth: Any, out: Any) -> None:
     """빈 로컬에 서버 컬렉션을 통째로 내려받는다 (부트스트랩 전용 — 서버를 덮어쓰는 방향은 없다).
 
@@ -321,6 +337,9 @@ def _sync(mode: str) -> dict[str, Any]:
     하한이 둘 다 0이면(첫 부트스트랩 전, 복원 절차로 상태 파일을 지운 뒤) 게이트가 없다.
     """
     _require_col()
+    # CIR: Collection and both media waits share the existing mutation budget.
+    # A timeout leaves delivery unconfirmed; it must not become normal success.
+    deadline = time.monotonic() + MAIN_TIMEOUT_SECS
     mw = aqt.mw
     pm = mw.pm
     auth = pm.sync_auth()
@@ -344,7 +363,16 @@ def _sync(mode: str) -> dict[str, Any]:
         _state["last_sync"] = result
         _log(f"sync mode={mode} action=guard-tripped notes={before['notes']}<{min_notes} or revlog={before['revlog']}<{min_revlog}")
         return result
-    out = mw.col.sync_collection(auth, pm.media_syncing_enabled())
+    media_enabled = pm.media_syncing_enabled()
+    media_state = "disabled" if not media_enabled else "not-started"
+    if media_enabled:
+        if (pm.auto_syncing_enabled() or pm.periodic_sync_media_minutes() != 0
+                or mw.media_syncer.is_syncing()):
+            raise OperationError("media-sync-monitor-not-exclusive")
+        # sync_collection reuses an active media thread. Drain it first so the
+        # new transfer definitely includes files saved before this invocation.
+        _wait_for_media(deadline, previous=True)
+    out = mw.col.sync_collection(auth, media_enabled)
     if out.new_endpoint:
         pm.set_current_sync_url(out.new_endpoint)
         pm.save()
@@ -353,6 +381,9 @@ def _sync(mode: str) -> dict[str, Any]:
     required = ChangesRequired.Name(out.required)
     action: str  # normal | full-download | full-sync-required | unexpected:*  (guard-tripped는 위에서 먼저 반환)
     if out.required == NO_CHANGES:
+        if media_enabled:
+            _wait_for_media(deadline)
+            media_state = "synced"
         action = "normal"
     elif out.required in (FULL_SYNC, FULL_DOWNLOAD, FULL_UPLOAD):
         if mode == "allow-download-if-empty" and empty and out.required != FULL_UPLOAD:
@@ -370,6 +401,7 @@ def _sync(mode: str) -> dict[str, Any]:
         "action": action,
         "empty_before": empty,
         "server_message": out.server_message or "",
+        "media": {"state": media_state},
         "before": before,
         "after": after,
     }
@@ -450,10 +482,11 @@ def _status_full() -> dict[str, Any]:
     return {
         "collection_open": True,
         "addon_version": ADDON_VERSION,
+        "bridge_error": _state.get("bridge_error"),
         "anki_version": anki_version,
         "profile": pm.name,
         "logged_in": pm.sync_auth() is not None,
-        # 계정 식별자(syncUser)는 무인증 응답에 싣지 않는다 — /status와 같은 경계 판정 (plan 결정 10)
+        # 계정 식별자(syncUser)는 상태 응답에 싣지 않는다 — /status와 같은 경계 판정 (plan 결정 10)
         "media_syncing_enabled": pm.media_syncing_enabled(),
         "login": _state["login"],
         "last_sync": _state["last_sync"],
@@ -465,7 +498,7 @@ def _status_full() -> dict[str, Any]:
 def _status_quick() -> dict[str, Any]:
     """메인 스레드를 타지 않는 즉시 응답 — 준비 대기·로그인 판정·busy 확인용.
 
-    무인증 loopback 응답이므로 투영을 좁힌다: login은 status·at·error만(username 제외), last_sync는 시각·모드·결과만
+    빠른 상태 응답은 필요한 정보로 투영을 좁힌다: login은 status·at·error만(username 제외), last_sync는 시각·모드·결과만
     (덱 이름·카운트 제외). 상세는 /status/full.
     """
     login = _state["login"]
@@ -473,10 +506,150 @@ def _status_quick() -> dict[str, Any]:
     return {
         "busy": _busy,
         "addon_version": ADDON_VERSION,
+        "bridge_error": _state.get("bridge_error"),
         "collection_open": _state["collection_open"],
         "login": {k: login[k] for k in ("status", "at", "error") if k in login},
         "last_sync": None if last is None else {k: last.get(k) for k in ("at", "mode", "action", "required")},
     }
+
+
+# ── MCP operations ──────────────────────────────────────────────────────
+
+
+def _restore_point(operation_id: str) -> dict[str, Any]:
+    operation_id = identifier(operation_id)
+    path = Path(STATE_DIR) / "restore-points" / (operation_id + ".colpkg")
+    receipt_path = path.with_suffix(".receipt.json")
+    if not path.exists():
+        _export(str(path), include_media=False, legacy=False)
+    # The root mirror unit only copies files; it must never call the main-thread
+    # HTTP helper while this callback is waiting for the mirror to finish.
+    proc = subprocess.run(["systemctl", "start", f"anki-host-mirror-{INSTANCE}@{operation_id}.service"],
+                          capture_output=True, timeout=MIRROR_TIMEOUT)
+    if proc.returncode != 0:
+        raise OperationError("restore-point-mirror-failed")
+    st = receipt_path.lstat()
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or st.st_mode & 0o022:
+        raise OperationError("restore-point-receipt-invalid")
+    receipt = json.loads(receipt_path.read_text())
+    if (receipt.get("operation_id") != operation_id or receipt.get("instance") != INSTANCE
+            or receipt.get("mirrored") is not True or not receipt.get("sha256")):
+        raise OperationError("restore-point-receipt-mismatch")
+    return receipt
+
+
+def _ops() -> Operations:
+    global _operations
+    _require_col()
+    if _operations is None:
+        _operations = Operations(Path(STATE_DIR) / "operations", AnkiAdapter(aqt.mw, MEDIA_LIMIT), _restore_point,
+                                 ttl=OPERATION_TTL, bulk_limit=BULK_LIMIT, media_limit=MEDIA_LIMIT)
+    return _operations
+
+
+def _collection_identity() -> dict[str, Any]:
+    """Fingerprint all collection data, including modern binary config tables."""
+    _require_col()
+    col = aqt.mw.col
+    # Anki lazily persists localOffset/rollover on the first scheduler query.
+    # Export's count snapshot makes that query too; normalize before hashing so
+    # a pristine collection does not invalidate its own verified backup.
+    _ = col.sched.day_cutoff
+    tables = sorted(set(col.db.list("select name from sqlite_master where type='table'")) & {
+        "col", "notes", "cards", "revlog", "graves", "notetypes", "fields", "templates",
+        "decks", "deck_config", "config", "tags"})
+    hashes = {}
+    for table in tables:
+        rows = [[{"bytes": value.hex()} if isinstance(value, bytes) else value for value in row]
+                for row in col.db.all(f'select * from "{table}"')]
+        hashes[table] = digest(sorted(rows, key=lambda row: json.dumps(row, sort_keys=True)))
+    return {"digest": digest(hashes), "counts": {
+        "notes": col.note_count(), "cards": col.card_count(),
+        "revlog": col.db.scalar("select count() from revlog")}}
+
+
+def _last_success_counts() -> dict[str, Any]:
+    try:
+        state = json.loads((Path(STATE_DIR) / "sync-status.json").read_text())
+    except (OSError, ValueError):
+        raise OperationError("last-success-counts-unavailable") from None
+    if not state.get("lastSuccessAt"):
+        raise OperationError("last-success-counts-unavailable")
+    return state.get("lastSuccessCounts") or {}
+
+
+def _approved_schema_sync(before: dict[str, Any]) -> dict[str, Any]:
+    mw = aqt.mw
+    auth = mw.pm.sync_auth()
+    if auth is None:
+        raise OperationError("not-logged-in")
+    out = mw.col.sync_collection(auth, mw.pm.media_syncing_enabled())
+    if out.new_endpoint:
+        mw.pm.set_current_sync_url(out.new_endpoint)
+        mw.pm.save()
+        auth = mw.pm.sync_auth()
+    required = ChangesRequired.Name(out.required)
+    action = "schema-sync-blocked"
+    if out.required == NO_CHANGES:
+        action = "normal"
+    elif out.required in (FULL_SYNC, FULL_UPLOAD):
+        # The caller checked exact approval, backup and loss gates under the same
+        # helper lock immediately before reaching this code.
+        mw.col.close_for_full_sync()
+        try:
+            server_usn = out.server_media_usn if mw.pm.media_syncing_enabled() else None
+            mw.col.full_upload_or_download(auth=auth, server_usn=server_usn, upload=True)
+        finally:
+            mw.col.reopen(after_full_sync=True)
+        mw.reset()
+        action = "approved-full-upload"
+    # FULL_DOWNLOAD is deliberately left blocked, regardless of root approval.
+    result = {"at": _now(), "mode": "approved-schema", "required": required, "action": action,
+              "before": before, "after": _snapshot(), "empty_before": False, "server_message": ""}
+    _state["last_sync"] = result
+    return result
+
+
+def _schema() -> SchemaOperations:
+    return SchemaOperations(_ops(), INSTANCE, Path(STATE_DIR) / "approvals", _collection_identity,
+                            _last_success_counts, _approved_schema_sync)
+
+
+def _deck_options(name: str) -> dict[str, Any]:
+    result = AnkiAdapter(aqt.mw, MEDIA_LIMIT).deck_options(name)
+    result.pop("config")
+    return result
+
+
+def _media(body: dict[str, Any]) -> dict[str, Any]:
+    _require_col()
+    if body.get("filename") is None:
+        contains = body.get("contains", "")
+        limit, offset = body.get("limit", 20), body.get("offset", 0)
+        if (not isinstance(contains, str) or type(limit) is not int or not 1 <= limit <= 100
+                or type(offset) is not int or offset < 0):
+            raise OperationError("invalid-media-page")
+        names = sorted(n for n in AnkiAdapter(aqt.mw, MEDIA_LIMIT).ac.getMediaFilesNames(pattern="*") if contains in n)
+        return {"files": names[offset:offset + limit], "total": len(names),
+                "next_offset": offset + limit if offset + limit < len(names) else None}
+    name = filename(body["filename"])
+    path = Path(aqt.mw.col.media.dir()) / name
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError as err:
+        raise OperationError("media-not-found") from err
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > MEDIA_LIMIT:
+            raise OperationError("media-too-large-or-not-regular")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            data = stream.read(MEDIA_LIMIT + 1)
+        if len(data) > MEDIA_LIMIT:
+            raise OperationError("media-too-large")
+    finally:
+        os.close(fd)
+    return {"filename": name, "data": base64.b64encode(data).decode(), "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest()}
 
 
 # ── HTTP ──────────────────────────────────────────────────────────────────
@@ -498,10 +671,18 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)
+        if self.headers.get("Transfer-Encoding") or length < 0 or length > BODY_LIMIT:
+            raise OperationError("request-body-too-large-or-unsupported")
         if length <= 0:
             return {}
-        data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-        return data if isinstance(data, dict) else {}
+        self.connection.settimeout(BODY_TIMEOUT)
+        raw = self.rfile.read(length)
+        if len(raw) != length:
+            raise OperationError("incomplete-request-body")
+        data = json.loads(raw.decode("utf-8"))
+        if not isinstance(data, dict):
+            raise OperationError("request-body-must-be-an-object")
+        return data
 
     def do_GET(self) -> None:  # noqa: N802
         self._route()
@@ -512,6 +693,13 @@ class _Handler(BaseHTTPRequestHandler):
     def _route(self) -> None:
         path = self.path.split("?", 1)[0]
         try:
+            role = ACCESS.role(self.headers.get("Authorization"))
+            if role is None:
+                self._reply(401, {"ok": False, "error": "local-authentication-required"})
+                return
+            if not ACCESS.allowed(self.command, path, role):
+                self._reply(403, {"ok": False, "error": "role-not-allowed"})
+                return
             body = self._body()
             if path == "/status" and self.command == "GET":
                 result = _status_quick()
@@ -534,22 +722,77 @@ class _Handler(BaseHTTPRequestHandler):
                 )
             elif path == "/import-colpkg" and self.command == "POST" and ALLOW_IMPORT:
                 result = _mutating("import-colpkg", _import_colpkg, str(body["path"]))
+            elif path == "/operations/prepare" and self.command == "POST":
+                result = _mutating("prepare", lambda: _ops().prepare(body["action"], body["params"], body.get("request_id")))
+            elif path == "/operations/apply" and self.command == "POST":
+                result = _mutating("apply", lambda: _ops().apply(body["operation_id"], body["preview_token"], body.get("confirm", False)))
+            elif path == "/operations/status" and self.command == "POST":
+                # Atomic journal reads need no Anki call and still work during a
+                # timed-out operation. Initialization waits for collection ready.
+                if _operations is None:
+                    raise OperationError("collection-not-ready")
+                result = _operations.status(body["operation_id"])
+            elif path == "/operations/history" and self.command == "POST":
+                if _operations is None:
+                    raise OperationError("collection-not-ready")
+                result = _operations.history(body.get("limit", 20), body.get("offset", 0))
+            elif path == "/operations/delivery" and self.command == "POST":
+                result = _mutating("delivery", lambda: _ops().record_delivery(body["operation_id"], body["kind"], body["receipt"]))
+            elif path == "/schema/inspect" and self.command == "POST":
+                result = _mutating("schema-inspect", lambda: _schema().inspect(body["operation_id"]))
+            elif path == "/schema/backup" and self.command == "POST":
+                result = _mutating("schema-backup", lambda: _schema().backup(body["operation_id"]))
+            elif path == "/schema/apply" and self.command == "POST":
+                result = _mutating("schema-apply", lambda: _schema().apply(body["operation_id"]))
+            elif path == "/deck-options" and self.command == "POST":
+                result = _mutating("deck-options", _deck_options, str(body["deck_name"]))
+            elif path == "/model-info" and self.command == "POST":
+                result = _mutating("model-info", lambda: AnkiAdapter(aqt.mw, MEDIA_LIMIT).model_info(str(body["model_name"])))
+            elif path == "/media" and self.command == "POST":
+                result = _mutating("media", _media, body)
             else:
                 self._reply(404, {"ok": False, "error": "not-found"})
                 return
             self._reply(200, {"ok": True, "result": result})
         except BusyError as err:
             self._reply(409, {"ok": False, "error": "busy", "busy": err.current})
+        except OperationError as err:
+            self._reply(400, {"ok": False, "error": str(err)})
         except Exception as err:  # noqa: BLE001
-            _log_exc(f"{self.command} {path}")
-            self._reply(500, {"ok": False, "error": str(err) or err.__class__.__name__, "type": err.__class__.__name__})
+            # Upstream exceptions can include note contents or request values.
+            _log(f"{self.command} {path} failed: {err.__class__.__name__}")
+            self._reply(500, {"ok": False, "error": err.__class__.__name__})
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, *args: Any) -> None:
+        self.slots = threading.BoundedSemaphore(MAX_REQUESTS)
+        super().__init__(*args)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self.slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        request.settimeout(BODY_TIMEOUT)
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self.slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
 
 
 def _start_server() -> None:
     if _state["server"] is not None or PORT <= 0:
         return
-    server = ThreadingHTTPServer((BIND, PORT), _Handler)
-    server.daemon_threads = True
+    server = _Server((BIND, PORT), _Handler)
     thread = threading.Thread(target=server.serve_forever, name="anki_host_sync-http", daemon=True)
     thread.start()
     _state["server"] = server
@@ -560,16 +803,27 @@ def _on_profile_open() -> None:
     # collection_open은 로그인 판정이 끝난 뒤에 세운다 — /status 즉시 응답에서 "준비됨"이 곧 "login.status 확정"이어야
     # 준비 대기(anki_helper_wait_ready)와 로그인 판정이 같은 응답을 안전하게 공유한다 (로그인 진행 중 창 제거).
     try:
+        _configure_headless_sync()
         _state["login"] = _ensure_login()
         _log(f"profile '{aqt.mw.pm.name}' open, login: {_state['login'].get('status')}")
     except Exception:  # noqa: BLE001 — 훅 예외는 Anki가 삼키고 훅을 제거하므로 여기서 남긴다
         _log_exc("profile_did_open")
         _state["login"] = {"status": "hook-error", "at": _now()}
     finally:
-        _state["collection_open"] = True
+        try:
+            AnkiAdapter(aqt.mw, MEDIA_LIMIT).check_bridge()
+            _ops()
+            _state["collection_open"] = True
+            _state.pop("bridge_error", None)
+        except Exception:
+            _state["collection_open"] = False
+            _state["bridge_error"] = "anki-connect-bridge-unavailable"
+            _log("profile readiness blocked: AnkiConnect bridge unavailable or incompatible")
 
 
 def _on_profile_close() -> None:
+    global _operations
+    _operations = None
     _state["collection_open"] = False
 
 

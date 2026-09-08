@@ -17,7 +17,9 @@ import asyncio
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 CmdRunner = Callable[[list[str]], Awaitable[tuple[int, str, str]]]
@@ -64,6 +66,7 @@ def summarize(state: dict[str, Any] | None) -> dict[str, Any]:
         "lastSuccessAt": state.get("lastSuccessAt"),
         "lastSuccessCounts": state.get("lastSuccessCounts"),
         "action": sync.get("action"),
+        "media_state": (sync.get("media") or {}).get("state"),
         "required": sync.get("required"),
         "counts_after": {k: after.get(k) for k in ("notes", "cards", "revlog", "today_reviews")} if after else None,
         "delta": {k: delta(k) for k in ("notes", "cards", "revlog")} if before and after else None,
@@ -112,6 +115,8 @@ class SyncNow:
         runner: CmdRunner = run_cmd,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         poll_interval: float = 2.0,
+        monotonic: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self._status_file = status_file
         self._unit = unit
@@ -119,6 +124,52 @@ class SyncNow:
         self._run = runner
         self._sleep = sleep
         self._poll = poll_interval
+        self._monotonic, self._wall_clock = monotonic, wall_clock
+
+    async def run_fresh(self, *, after: float | None = None) -> dict[str, Any]:
+        """Wait for existing work, then require a new successful normal run."""
+        deadline = self._monotonic() + self._wait
+        earliest = max(after or 0, self._wall_clock())
+
+        async def bounded(awaitable):
+            return await asyncio.wait_for(awaitable, max(0.001, deadline - self._monotonic()))
+
+        async def pause():
+            await bounded(self._sleep(min(self._poll, max(0.001, deadline - self._monotonic()))))
+
+        try:
+            while (await bounded(unit_state(self._unit, self._run))).running:
+                if self._monotonic() >= deadline:
+                    raise TimeoutError
+                await pause()
+            before_run_id = (read_status(self._status_file) or {}).get("runId")
+            rc, _out, _err = await bounded(self._run(["systemctl", "start", "--no-block", self._unit]))
+            if rc != 0:
+                return {"outcome": "trigger-failed", "status": summarize(read_status(self._status_file))}
+            while self._monotonic() < deadline:
+                await pause()
+                state = read_status(self._status_file)
+                unit = await bounded(unit_state(self._unit, self._run))
+                if not unit.running:
+                    # The final record may land while the unit query awaits.
+                    # Evaluate it now, without another pause past the deadline.
+                    state = read_status(self._status_file)
+                if state and state.get("runId") and state["runId"] != before_run_id and state.get("result") != "running":
+                    status = summarize(state)
+                    try:
+                        started = datetime.fromisoformat(state["runStartedAt"]).timestamp()
+                    except (KeyError, TypeError, ValueError):
+                        started = 0
+                    ok = (state.get("result") == "success" and state.get("mode") == "normal"
+                          and status.get("action") == "normal" and started > earliest)
+                    return {"outcome": "synced" if ok else "blocked", "status": status}
+                if not unit.running:
+                    return {"outcome": "skipped", "status": summarize(state)}
+        except (TimeoutError, subprocess.TimeoutExpired):
+            pass
+        except (OSError, RuntimeError):
+            return {"outcome": "unavailable", "status": summarize(read_status(self._status_file))}
+        return {"outcome": "timeout", "status": summarize(read_status(self._status_file))}
 
     async def run(self) -> dict[str, Any]:
         before = read_status(self._status_file)

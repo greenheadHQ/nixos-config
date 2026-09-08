@@ -31,20 +31,26 @@ from starlette.routing import Route
 
 from .ankiconnect import AnkiConnect
 from .approval import Lockout, build_approval_app
-from .config import Settings, read_passphrase
+from .config import Settings, read_local_key, read_passphrase
 from .guard import RequestGuard
 from .helper import Helper
 from .oauth import CLIENT_AUTH_METHODS, DEFAULT_SCOPES, FileOAuthProvider
+from .operations import OperationService
+from .notifications import Notifications
 from .syncstatus import SyncNow
 from .tools import Deps, register_tools
 
 log = logging.getLogger("anki_mcp")
 
 INSTRUCTIONS = (
-    "Tools for the user's own Anki collection hosted on their home server (synced with AnkiWeb every 15 minutes). "
-    "Read tools are safe. Write tools add/modify notes, tags and decks; every added note is tagged 'mcp::added'. "
-    "Mutations fail with 'helper busy' while a sync/backup is in progress — wait a moment and retry. "
-    "Nothing here deletes notes or forces a full sync."
+    "Tools for the user's own Anki collection hosted on their home server. Normal sync runs before and after writes. "
+    "Every added note is tagged 'mcp::added'. Give each logical write a request_id and reuse it unchanged for retries. "
+    "Deletion, scheduling, forgetting, shared presets and changes affecting more than 20 notes/cards return a preview. "
+    "Show the complete impact and warnings, obtain user confirmation, then repeat the original request_id and preview_token with confirm=true. "
+    "Check the operation receipt: applied/partial/unknown and sync/notification are separate states. Never repeat an unknown write with a new ID. "
+    "If no request_id was supplied and the response is lost, inspect recent results before attempting the write again. "
+    "Read back affected notes/cards after changes. Note-type structural changes are prepared here and executed only by the root approval command. "
+    "The ordinary sync tool never chooses a full upload/download."
 )
 
 
@@ -129,14 +135,21 @@ def build(cfg: Settings):
         ),
         transport_security=security,
     )
-    http = httpx.AsyncClient(timeout=60.0)
+    http = httpx.AsyncClient(timeout=60.0, trust_env=False)
+    helper = Helper(cfg.helper_url, client=http, timeout=cfg.helper_timeout,
+                    key=read_local_key(cfg.local_credential_dir, "operation"))
+    syncer = SyncNow(cfg.sync_status_file, cfg.sync_unit, cfg.sync_wait)
+    operations = OperationService(helper, syncer, Notifications(os.path.join(cfg.local_credential_dir, "pushover"), http),
+                                  sync_enabled=cfg.sync_enabled)
     deps = Deps(
-        anki=AnkiConnect(cfg.anki_connect_url, client=http),
-        helper=Helper(cfg.helper_url, client=http),
-        syncer=SyncNow(cfg.sync_status_file, cfg.sync_unit, cfg.sync_wait),
+        anki=AnkiConnect(cfg.anki_connect_url, client=http, key=read_local_key(cfg.local_credential_dir, "read")),
+        helper=helper,
+        syncer=syncer,
         sync_status_file=cfg.sync_status_file,
         field_chars=cfg.field_chars,
         page_max=cfg.page_max,
+        operations=operations,
+        media_max_bytes=cfg.media_max_bytes,
     )
     register_tools(mcp, deps)
 

@@ -8,7 +8,9 @@ from mcp.server.fastmcp.exceptions import ToolError
 from anki_mcp.ankiconnect import AnkiConnect
 from anki_mcp.helper import Helper
 from anki_mcp.syncstatus import SyncNow
+from anki_mcp.operations import OperationService
 from anki_mcp.tools import ADDED_TAG, Deps, register_tools
+from anki_host_fixture.operations import Operations, OperationError
 
 
 class FakeAnki:
@@ -16,6 +18,7 @@ class FakeAnki:
 
     def __init__(self, busy=None):
         self.calls = []
+        self.operation_calls = []
         self.busy = busy
         self.notes = {
             1: {"noteId": 1, "modelName": "Basic", "tags": ["x"], "cards": [10],
@@ -23,10 +26,29 @@ class FakeAnki:
         }
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host == "helper":
+            assert request.headers["Authorization"] == "Bearer " + "2" * 64
         if request.url.path == "/status":
             return httpx.Response(200, json={"ok": True, "result": {"busy": self.busy, "collection_open": True,
                                                                      "login": {"status": "logged-in"}, "addon_version": "t"}})
         body = json.loads(request.content)
+        if request.url.path.startswith("/operations/"):
+            path = request.url.path.rsplit("/", 1)[1]
+            if self.busy and path != "status":
+                return httpx.Response(409, json={"ok": False, "error": "busy", "busy": self.busy})
+            try:
+                if path == "status":
+                    result = self.engine.status(body["operation_id"])
+                elif path == "prepare":
+                    result = self.engine.prepare(body["action"], body["params"], body.get("request_id"))
+                elif path == "apply":
+                    result = self.engine.apply(body["operation_id"], body["preview_token"], body.get("confirm", False))
+                else:
+                    result = self.engine.record_delivery(body["operation_id"], body["kind"], body["receipt"])
+                return httpx.Response(200, json={"ok": True, "result": result})
+            except OperationError as err:
+                return httpx.Response(400, json={"ok": False, "error": str(err)})
+        assert body["key"] == "1" * 64
         action, params = body["action"], body.get("params", {})
         self.calls.append((action, params))
         if action == "findNotes":
@@ -56,16 +78,33 @@ class FakeAnki:
                                                         for c in params["cards"]}, "error": None})
         return httpx.Response(200, json={"result": None, "error": f"unsupported: {action}"})
 
+    def inspect(self, spec):
+        return {"snapshot": {"fixture": True}, "summary": {"notes": 1, "cards": 1, "new_notes": 0}}
+
+    def apply(self, spec):
+        self.operation_calls.append(spec)
+        if spec["action"] == "add_notes":
+            return {"state": "partial", "added": 1,
+                    "results": [{"noteId": 100, "error": None}, {"noteId": None, "error": "duplicate"}]}
+        return {"state": "applied"}
+
 
 def make_mcp(fake: FakeAnki, tmp_path):
     client = httpx.AsyncClient(transport=httpx.MockTransport(fake.handler))
+    helper = Helper("http://helper", client=client, key="2" * 64)
+    fake.engine = Operations(tmp_path / "operations", fake, lambda _: {"mirrored": True},
+                             ttl=600, bulk_limit=20, media_limit=5 * 1024 * 1024)
+    async def no_host_commands(argv):
+        raise AssertionError("unit tests must never run systemctl")
+    syncer = SyncNow(str(tmp_path / "main.json"), "u.service", 1, runner=no_host_commands)
     deps = Deps(
-        anki=AnkiConnect("http://anki/", client=client),
-        helper=Helper("http://helper", client=client),
-        syncer=SyncNow(str(tmp_path / "main.json"), "u.service", 1),
+        anki=AnkiConnect("http://anki/", client=client, key="1" * 64),
+        helper=helper,
+        syncer=syncer,
         sync_status_file=str(tmp_path / "main.json"),
         field_chars=10,
         page_max=100,
+        operations=OperationService(helper, syncer, None, sync_enabled=False), media_max_bytes=5 * 1024 * 1024,
     )
     mcp = FastMCP("t")
     register_tools(mcp, deps)
@@ -81,9 +120,10 @@ async def test_add_notes_appends_tag_and_reports_duplicates(tmp_path):
         {"deck_name": "A", "model_name": "Basic", "fields": {"Front": "dup", "Back": "2"}},
     ]})
     structured = result[1] if isinstance(result, tuple) else result
-    sent = [c for c in fake.calls if c[0] == "addNotes"][0][1]["notes"]
-    assert len(sent) == 1 and ADDED_TAG in sent[0]["tags"] and "k" in sent[0]["tags"]
-    assert structured["added"] == 1 and structured["results"][1]["error"] == "duplicate"
+    sent = fake.operation_calls[0]["params"]["notes"]
+    assert len(sent) == 2 and ADDED_TAG in sent[0]["tags"] and "k" in sent[0]["tags"]
+    assert structured["result"]["added"] == 1 and structured["result"]["results"][1]["error"] == "duplicate"
+    assert not [c for c in fake.calls if c[0] == "addNotes"]
 
 
 @pytest.mark.anyio
@@ -138,7 +178,7 @@ async def test_helper_status_rejects_unexpected_response_shapes():
     async def check(body, status=200):
         client = httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(status, content=body)))
         with pytest.raises(HelperUnavailable):
-            await Helper("http://helper", client=client).status()
+            await Helper("http://helper", client=client, key="2" * 64).status()
 
     await check(b"null")
     await check(b"[1, 2]")
@@ -154,4 +194,6 @@ async def test_tool_annotations_mark_read_and_write(tmp_path):
     assert tools["anki_find_notes"].annotations.readOnlyHint is True
     assert tools["anki_add_notes"].annotations.readOnlyHint is False
     assert tools["anki_add_notes"].annotations.destructiveHint is False
-    assert "anki_delete_notes" not in tools  # 파괴 계층은 PR 2b
+    assert tools["anki_delete_notes"].annotations.destructiveHint is True
+    assert tools["anki_set_due_date"].annotations.idempotentHint is False
+    assert tools["anki_operation_status"].annotations.readOnlyHint is True

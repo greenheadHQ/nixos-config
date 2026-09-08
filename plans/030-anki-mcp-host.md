@@ -13,6 +13,28 @@
 > 대상 파일 변경을 확인하고 Current state와 대조한다. MiniPC 실측은 아래 "재개 절차"의
 > 상태 조회 명령으로 한다. 불일치 시 STOP.
 
+
+## PR 2b 현행 계약 (2026-09-09)
+
+사용자가 며칠 사용 대기를 해제하고 플러그인/MCP 개선의 즉시 착수를 요청했다.
+옛 Anki Plugin Lab 등록은 사용자가 제거했다. MiniPC lab 서비스·데이터 삭제를 뜻하지 않는다.
+현재 작업은 `feat/anki-mcp-operations`이며 구현과 격리 검증을 진행한다. 배포·실제 파괴 작업·강제 Upload는 미실행이다.
+
+[운영 계약·API 지원표](../modules/nixos/programs/anki-host/README.md)가 PR 2b의 상세 정본이다.
+아래 과거 결정 중 **1(무인증 loopback), 3(Upload 경로 없음), 10(busy 사전 조회만), 11(복구점 생산 미구현)**은
+다음과 같이 갱신한다. 기존 당시 판단·증거는 이력으로 남긴다.
+
+- runtime role 키 + LoadCredential. 원시 AnkiConnect HTTP 쓰기 차단, helper 모든 route 인증.
+- helper lock 안에서 snapshot 재검증·복구점/HDD 검증·변경. 타임아웃 뒤 실제 callback 종료까지 lock 유지.
+- 모든 MCP 변경 전후 새 normal sync 회차 확인, 원장 기반 중복 방지와 적용/sync/알림 상태 분리.
+- 삭제·일정·잊기·20건 초과·공유 프리셋은 preview·확인·복구점. 미디어는 신규 base64 파일만.
+- 구조 변경은 준비 후 root 일회 승인에 묶어 변경/Upload. 빈 컬렉션·노트/복습 기록 감소·FULL_DOWNLOAD 요구는 차단.
+- 새 핀: Anki26.08·AnkiConnect25.11.9.0·MCP1.29.0. Anki 본체 overlay는 추가하지 않는다.
+- 오프라인 계약 테스트, 실제 애드온 빌드, 합성 임시 Anki 컬렉션 API·export/reopen 검증을 추가한다.
+  Linux 서비스 권한과 AnkiWeb·iPhone 클라이언트 검증은 배포 후 따로 확인한다.
+
+아래 Status/Current state의 날짜별 실측은 해당 시점의 이력이다. 지금 운영 상태나 현재 배포 버전으로 인용하지 않는다.
+
 ## Status
 
 - **Issue**: https://github.com/greenheadHQ/nixos-config/issues/1306 (epic #973 sub-issue)
@@ -138,7 +160,7 @@
 | flake 검사 | `nix flake check` (pre-push가 수행) | 통과 |
 | MiniPC 배포 | `ssh minipc` 후 워크트리 체크아웃 → `nrs` | 성공, 실패 유닛 0 |
 | Anki 인스턴스 상태 | `ssh minipc 'systemctl status anki-host-lab anki-host-main'` | active |
-| AnkiConnect 응답 | `ssh minipc "curl -s -XPOST 127.0.0.1:<port> -d '{\"action\":\"getActiveProfile\",\"version\":6}'"` | 프로필 이름 |
+| AnkiConnect 응답 (PR 1 당시 예시, PR 2b에서는 키 필수) | `ssh minipc "curl -s -XPOST 127.0.0.1:<port> -d '{\"action\":\"getActiveProfile\",\"version\":6}'"` | 프로필 이름 |
 | 헬퍼 상태 | `ssh minipc 'curl -s 127.0.0.1:<helperPort>/status'` (즉시) / `.../status/full` (counts·media) | `collection_open: true`, `login.status` |
 | sync 상태 | `ssh minipc 'sudo cat /var/lib/anki-host/main/sync-status.json'` | `result`: `no-credentials` → `bootstrap-pending` → `success` (진행 단계). 나머지 값의 의미는 `anki-host-sync.sh` 상단 어휘 표 |
 | 첫 부트스트랩 (🔒 Step 15) | `ssh minipc 'sudo systemctl start anki-host-sync-main-bootstrap && sudo journalctl -u anki-host-sync-main-bootstrap -n 5'` | `full-download` 1회, 알림(b) "처음 내려받았습니다" |
@@ -207,7 +229,7 @@
       페이지네이션·필드 절단, `mcp::added` 태그, "지금 동기화"(결정 13 — `anki-host-sync-main.service` 트리거, mode 인자 없음,
       결과는 `sync-status.json`을 결정 13의 runId·running 규칙으로 읽어 전달). 변경 도구는 호출 전 헬퍼 `/status`의 `busy`를
       확인하고 busy면 진행 중 작업 이름과 함께 안내한다(결정 10 — 재시도는 사용자 몫). Step 18~22와 함께 배포·검증한다.
-    - **PR 2b (관측 후)**: 착수 조건은 2a를 실제로 며칠 쓴 뒤의 관측(어떤 도구를 실제로 썼는지, 어떤 마찰이 있었는지).
+    - **PR 2b (즉시 착수, 2026-09-09 사용자 결정)**: 며칠 사용 조건을 해제했다. 현행 구현 계약은 문서 상단 참조.
       파괴 계층, 변경 계층의 정지·일정·잊기, 대량 변경 미리보기/임계값(20건)·자동 복구점(헬퍼 `/export` → `restore-points/`,
       `include_media: false`), base64 미디어(크기 상한), 감사 로그(카드 본문 최소화), 프리셋 공유 경고, full sync 유발 도구
       (결정 3의 Upload 게이트 설계가 선행 조건).
@@ -298,7 +320,7 @@
 ## 재개 절차 (다른 기기·새 세션)
 
 1. `gh issue view 1306 --repo greenheadHQ/nixos-config --comments`로 최신 진행 댓글을 읽는다.
-2. `git fetch origin feat/anki-mcp-server` 후 `cd "$(wt feat/anki-mcp-server --if-exists=reuse)"`로 워크트리 진입 — 비대화형 셸에서
+2. 아래는 PR 2a 재개 절차다. PR 2b는 현행 branch/작업 원장을 확인한다. `git fetch origin feat/anki-mcp-server` 후 `cd "$(wt feat/anki-mcp-server --if-exists=reuse)"`로 워크트리 진입 — 비대화형 셸에서
    `wt`는 경로만 출력하고 cd하지 않는다(CLAUDE.md Worktree 절). 워크트리 디렉터리 이름은 `feat_anki-mcp-server`다.
 3. 이 plan의 Drift check와 Status를 확인한다. Status의 Execution·DA 행이 최신 진행 상태다.
 4. MiniPC 실측: "Commands you will need"의 인스턴스 상태·헬퍼 상태·sync 상태 세 명령으로 어느 Step까지 적용됐는지 판정한다

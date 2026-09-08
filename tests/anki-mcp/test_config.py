@@ -14,6 +14,8 @@ BASE = {
     "ANKI_MCP_REG_MAX_CLIENTS": "32", "ANKI_MCP_REG_MAX_CLIENT_BYTES": "4096", "ANKI_MCP_REG_UNUSED_TTL_SECS": "86400",
     "ANKI_MCP_REG_BURST": "10", "ANKI_MCP_REG_WINDOW_SECS": "600", "ANKI_MCP_MAX_BODY_BYTES": "262144",
     "ANKI_MCP_BODY_READ_TIMEOUT_SECS": "30", "ANKI_MCP_MAX_CONCURRENCY": "64",
+    "CREDENTIALS_DIRECTORY": "/tmp/credentials", "ANKI_MCP_HELPER_TIMEOUT_SECS": "1900",
+    "ANKI_MCP_SYNC_ENABLED": "true", "ANKI_MCP_MEDIA_MAX_BYTES": "5242880",
 }
 
 
@@ -45,5 +47,12 @@ def test_from_env_fails_closed_on_missing_or_non_integer_values(monkeypatch):
         Settings.from_env()
     _env(monkeypatch)
     monkeypatch.delenv("ANKI_MCP_MAX_BODY_BYTES")
+    with pytest.raises(SystemExit):
+        Settings.from_env()
+
+
+@pytest.mark.parametrize("value", ["1", "yes", "False", ""])
+def test_sync_mode_cannot_be_silently_disabled(monkeypatch, value):
+    _env(monkeypatch, ANKI_MCP_SYNC_ENABLED=value)
     with pytest.raises(SystemExit):
         Settings.from_env()

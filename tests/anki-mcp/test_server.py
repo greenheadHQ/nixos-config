@@ -24,6 +24,8 @@ APPROVAL_HOST = f"{FQDN}:9443"
 
 def _settings(tmp_path) -> Settings:
     (tmp_path / "approval").write_text("ANKI_MCP_APPROVAL_PASSPHRASE=open-sesame\n")
+    (tmp_path / "read").write_text("1" * 64)
+    (tmp_path / "operation").write_text("2" * 64)
     return Settings(
         port=8790, approval_port=8791,
         public_url=f"https://{PUBLIC_HOST}", approval_url=f"https://{APPROVAL_HOST}",
@@ -34,6 +36,7 @@ def _settings(tmp_path) -> Settings:
         field_chars=400, page_max=100,
         reg_max_clients=3, reg_max_client_bytes=4096, reg_unused_ttl=86400, reg_burst=5, reg_window=60,
         max_body_bytes=2048, body_read_timeout=30, max_concurrency=64,
+        local_credential_dir=str(tmp_path), helper_timeout=1, sync_enabled=True, media_max_bytes=5242880,
     )
 
 
@@ -180,7 +183,7 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             r = await fh.post("/mcp", headers=hdrs, json=rpc)
             assert r.status_code == 200, r.text
             names = {t["name"] for t in r.json()["result"]["tools"]}
-            assert {"anki_find_notes", "anki_add_notes", "anki_sync_now"} <= names and "anki_delete_notes" not in names
+            assert {"anki_find_notes", "anki_add_notes", "anki_sync_now", "anki_delete_notes", "anki_operation_status"} <= names
 
             # 7. Host·Origin의 포트도 일치해야 한다. 다른 포트나 포트 생략은 토큰이 있어도 거부한다.
             for wrong_host in ("evil.example", FQDN, f"{FQDN}:443", APPROVAL_HOST):
