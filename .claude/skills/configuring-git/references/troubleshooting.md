@@ -129,9 +129,11 @@ open .../lazygit/config.yml: permission denied
 git.paging = { colorArg = "always"; pager = "delta ..."; };
 git.pagers = [{ colorArg = "always"; pager = "delta ..."; }];
 
-# 현행 형식 (lazygit 0.64.0+, 마이그레이션 불필요)
+# 현행 형식 (lazygit 0.64.0에서 개명, 마이그레이션 불필요)
 git.diffRenderers = [{ colorArg = "always"; command = "delta ..."; }];
 ```
+
+재검증: lazygit 업그레이드 후 `lg`를 실행해 마이그레이션 경고가 없으면 이 형식이 여전히 현행이다. 경고가 뜨면 출력의 `Renamed <구 키> to <새 키>` 줄이 새 스키마를 알려주므로, 그 키로 `lazygit/default.nix`를 갱신한다.
 
 ---
 
