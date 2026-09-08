@@ -6,7 +6,7 @@
 `unmanaged-server-present`로 기동을 거부한다. 같은 디렉토리에 두 번째 서버를 띄우면
 삭제 불가능한 유령 환경이 생기므로, 이 거부가 정상 안전장치다.
 
-먼저 `tmux list-panes -a -F '#{session_id} #{window_id} #{pane_id} #{pane_pid} #{pane_current_path} #{pane_current_command}'`로 세션과 pane을 식별한다. 해당 pane PID의 전체 argv와 cwd를 확인해 같은 디렉토리의 구 bridge인지 대조하고, 그 세션의 모든 window/pane에 다른 작업이 없는지 확인한다. 이름이 `claude-rc`라는 이유만으로 세션을 종료하지 않는다.
+먼저 `tmux list-panes -a -F '#{session_id} #{window_id} #{pane_id} #{pane_pid} #{pane_tty} #{pane_current_path} #{pane_current_command}'`로 세션과 pane을 식별한다. `pane_pid`는 pane의 첫 프로세스이므로 bridge를 시작한 셸일 수 있다. 그 PID 자체와 자손을 프로세스 트리 및 pane TTY와 대조해 실제 `claude remote-control` 프로세스를 찾고, 그 PID의 전체 argv와 실제 cwd로 같은 디렉토리의 구 bridge인지 확인한다. TTY나 표시용 command/path만으로 bridge를 확정하지 않는다. 그 세션의 모든 window/pane에 다른 작업이 없는지 확인하고, 이름이 `claude-rc`라는 이유만으로 세션을 종료하지 않는다.
 
 확인한 실제 `session_id`를 `CLAUDE_RC_SESSION_ID`에 설정하고, 그 대상에 대한 작업 직전 승인을 받은 뒤 해당 Git 디렉토리에서 아래를 실행한다. 대상이나 실행 중 작업이 달라졌으면 먼저 다시 확인한다. 세션에 다른 작업이 있거나 bridge를 식별할 수 없으면 세션 전체를 종료하지 않는다.
 

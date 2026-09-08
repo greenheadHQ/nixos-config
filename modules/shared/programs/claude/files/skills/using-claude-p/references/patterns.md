@@ -294,6 +294,7 @@ stream-json wire shape는 재검증 미수행 (v2.1.202 기준 서술 유지). p
 ### 기본 패턴
 
 ```bash
+( # 파일 생성 mask와 예제 변수를 호출 셸에 남기지 않는다.
 # 1. 프롬프트 작성 (에이전트에게 줄 지시)
 umask 077
 SKILL_RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/skill-run.XXXXXX") || exit 1
@@ -333,9 +334,10 @@ cat "${CAT_FILES[@]}" > "$SKILL_RUN_DIR/injected-prompt.md" || { echo "required 
 MY_TOKEN="xxx" claude -p --output-format text --dangerously-skip-permissions \
   < "$SKILL_RUN_DIR/injected-prompt.md" > "$SKILL_RUN_DIR/result.md" 2>"$SKILL_RUN_DIR/stderr.txt"
 test -s "$SKILL_RUN_DIR/result.md"
+)
 ```
 
-프롬프트와 성공·실패 진단 파일은 실행별 private 디렉터리에 보존된다. 결과 확인 후 이번 실행에서 생성한 디렉터리만 정리한다.
+프롬프트와 성공·실패 진단 파일은 실행별 private 디렉터리에 보존된다. 서브셸이 종료되면 예제 변수도 사라지므로, 출력된 디렉터리 경로로 결과를 확인한 뒤 이번 실행에서 생성한 디렉터리만 정리한다.
 
 ### 주의사항
 
