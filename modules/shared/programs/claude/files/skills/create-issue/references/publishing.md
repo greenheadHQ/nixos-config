@@ -74,7 +74,8 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
      echo "본문 미리보기는 보안상 stdout 덤프하지 않음. 확인 명령: sed -n '1,20p' \"\$ISSUE_BODY\""
      echo "본문을 수정했다면 게시할 최종 파일에 SKILL.md Step 3의 sanitization checklist S3를 다시 적용한다."
      echo "재시도 명령 (새 셸에서는 위 ISSUE_BODY 할당문부터 복사):"
-     echo "  gh issue create --title '<제목>' --label '<라벨>' --body-file \"\$ISSUE_BODY\""
+     # 편집기가 파일을 재생성할 수 있으므로 재시도에서도 게시 경계 검사를 통과해야 한다.
+     echo "  [ -f \"\$ISSUE_BODY\" ] && [ ! -L \"\$ISSUE_BODY\" ] && chmod 600 \"\$ISSUE_BODY\" && gh issue create --title '<제목>' --label '<라벨>' --body-file \"\$ISSUE_BODY\""
      echo "재시도 성공 후 보존 본문 파일과 빈 ISSUE_BODY_DIR을 정리한다."
      echo "**parent 연결과 handoff는 이슈 등록 완료 전에는 진행하지 않는다.**"
      exit 1

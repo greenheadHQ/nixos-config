@@ -142,6 +142,8 @@ set -euo pipefail
 }
 
 body_file="$8"
+# 유효성 검사에서 거부돼도 호출 사실을 남겨 게시 전 차단을 검증한다.
+printf '%s\n' "$body_file" >> "$GH_TRACE"
 [[ -f "$body_file" && ! -L "$body_file" ]] || {
   echo "fake gh: body must be a regular non-symlink file" >&2
   exit 83
@@ -161,7 +163,6 @@ cmp -s "$EXPECTED_BODY_FILE" "$body_file" || {
   exit 85
 }
 
-printf '%s\n' "$body_file" >> "$GH_TRACE"
 if [[ "${GH_FAIL:-0}" == "1" ]]; then
   exit 42
 fi
@@ -246,9 +247,11 @@ test_create_issue_documented_body_lifecycle_is_safe() {
     'unset ISSUE_BODY ISSUE_BODY_PATH' > "$retry_file"
   printf '%s\n' "$output" | awk '
     /^ISSUE_BODY=/ { print; assignments++ }
-    /^  gh issue create / { sub(/^  /, ""); print; commands++ }
+    /^  \[ -f / { sub(/^  /, ""); print; commands++ }
     END { if (assignments != 1 || commands != 1) exit 42 }
   ' >> "$retry_file" || fail "failure output must contain one body assignment and one retry command"
+  # 에디터가 본문을 0644로 재생성한 경우에도 게시 시점에는 0600이어야 한다.
+  chmod 0644 "$body_path"
   retry_output="$(
     PATH="$fixture_path" \
       EXPECTED_BODY_FILE="$expected_body" \
@@ -258,6 +261,30 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   )" || fail "documented create-issue retry failed in a new shell: $retry_output"
   assert_contains "$retry_output" "https://github.com/example/repo/issues/999"
   assert_line_count "$gh_trace" "$body_path" 2
+
+  # 같은 재시도 안내가 symlink 본문은 chmod/gh 호출 전에 차단해야 한다.
+  symlink_target="$sandbox/symlink-target.md"
+  cp "$expected_body" "$symlink_target"
+  chmod 0644 "$symlink_target"
+  rm "$body_path"
+  ln -s "$symlink_target" "$body_path"
+  set +e
+  retry_output="$(
+    PATH="$fixture_path" \
+      EXPECTED_BODY_FILE="$expected_body" \
+      GH_TRACE="$gh_trace" \
+      GH_FAIL=0 \
+      "$BASH" "$retry_file" 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != "0" ]] || fail "documented create-issue retry accepted a symlink body"
+  assert_line_count "$gh_trace" "$body_path" 2
+  target_mode="$(_create_issue_file_mode "$symlink_target")"
+  [[ "$target_mode" == "644" ]] \
+    || fail "retry symlink rejection changed the external target mode"
+  cmp -s "$expected_body" "$symlink_target" \
+    || fail "retry symlink rejection changed the external target bytes"
 
   : > "$writer_trace"
   : > "$gh_trace"
