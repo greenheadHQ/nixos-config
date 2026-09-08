@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#include <stdatomic.h>
 
 // duti cannot register dynamic UTIs. Use an actual disposable file so macOS
 // resolves only this extension; never assign public.data or extensionless files.
@@ -27,21 +28,22 @@ int main(int argc, const char *argv[]) {
       if ([current isEqual:app]) {
         status = 0;
       } else if (current == nil && type.isDynamic) {
-        __block BOOL finished = NO;
-        __block BOOL succeeded = NO;
+        // The completion may run on another queue; publish one atomic result.
+        __block atomic_int result;
+        atomic_init(&result, 0);
         [workspace setDefaultApplicationAtURL:app toOpenContentTypeOfFileAtURL:file
                             completionHandler:^(NSError *error) {
           if (error) fprintf(stderr, "VSCode handler .%s: %s (%ld)\n", argv[2],
                              error.domain.UTF8String, (long)error.code);
-          succeeded = error == nil;
-          finished = YES;
+          atomic_store(&result, error == nil ? 1 : -1);
         }];
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:20];
-        while (!finished && deadline.timeIntervalSinceNow > 0)
+        while (atomic_load(&result) == 0 && deadline.timeIntervalSinceNow > 0)
           [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
-        if (!finished) fprintf(stderr, "VSCode handler .%s: macOS completion timed out\n", argv[2]);
+        int completed = atomic_load(&result);
+        if (completed == 0) fprintf(stderr, "VSCode handler .%s: macOS completion timed out\n", argv[2]);
         NSURL *actual = [[workspace URLForApplicationToOpenURL:file] URLByResolvingSymlinksInPath];
-        status = finished && succeeded && [actual isEqual:app] ? 0 : 1;
+        status = completed == 1 && [actual isEqual:app] ? 0 : 1;
       }
     }
     if (status != 0) fprintf(stderr, "VSCode handler .%s: default application unverified\n", argv[2]);
