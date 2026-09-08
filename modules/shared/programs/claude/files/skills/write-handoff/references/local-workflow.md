@@ -16,7 +16,7 @@
 대화에서 확립되지 않은 후속 연계나 외부 게시 절차는 새로 만들지 않는다.
 로컬 파일은 공개 게시물이 아니므로 필요한 로컬 작업 경로와 dirty-state 맥락을 적을 수 있다. 그래도 시크릿, 토큰, 복호화 값은 쓰지 않는다 ([references/sanitization-checklist.md](sanitization-checklist.md) 적용 범위 참조).
 
-#### 로컬 모드: cwd 파일 출력
+## 로컬 모드: cwd 파일 출력
 
 `LOCAL_MODE=true`이면 이슈 코멘트 게시를 수행하지 않는다. cwd에 `HANDOFF-<주제-슬러그>.local.md`를 만들고, 최종 응답에 파일 경로를 보고한다.
 

@@ -2,7 +2,7 @@
 
 이 문서는 fresh prompt·suppression 조립뿐 아니라 `NOT_AN_ISSUE` 또는 사용자 제외 이력을 기록하기 전에도 적용한다.
 
-### `fresh` modifier
+## `fresh` modifier
 
 모드 뒤에 `fresh`를 추가하면 (예: `for_pr fresh`) DA 에이전트에게 이전 라운드의 맥락을 전달하지 않는다.
 

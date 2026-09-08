@@ -2,7 +2,7 @@
 
 작성 기준과 Step 2~4는 [SKILL.md](../SKILL.md), parent 연결(Step 5-B)은 [parent-linking.md](parent-linking.md)가 소유한다. `OWNER`/`REPO`/ID 의미도 parent-linking의 변수 계약을 따른다.
 
-### Step 5 — 등록 및 확인
+## Step 5 — 등록 및 확인
 
 Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매트릭스 하나로 통합한다 — 각 세부 단계의 실패 처리는 이 표를 참조한다.
 
@@ -19,7 +19,7 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
 
 `SUBISSUE_STATUS`의 전달 경로는 `/create-issue`의 최종 응답(사용자에게 출력되는 마지막 메시지) 에 명시하는 것으로 scope을 닫는다. Step 6의 `/write-handoff` 호출은 `<ISSUE_URL>`만 전달하므로 `SUBISSUE_STATUS`는 handoff body에 전달되지 않는다 — 운영자는 `/create-issue` 최종 응답의 토큰을 보고 재시도 여부를 판단한다.
 
-#### Step 5-A — 이슈 등록
+### Step 5-A — 이슈 등록
 
 실패 시 진행 차단 정책은 위 진행 상태 매트릭스 참조.
 
@@ -45,12 +45,12 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
    # 게시 경계에서는 regular file만 허용하고, 편집 도구의 기본 mode와 무관하게 0600으로 고정한다.
    if [ ! -f "$ISSUE_BODY" ] || [ -L "$ISSUE_BODY" ]; then
      echo "ERROR: 본문이 regular non-symlink file이 아님"
-     echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 게시하지 않고 보존됨"
+     printf 'ISSUE_BODY=%q  # 게시하지 않고 보존됨\n' "$ISSUE_BODY"
      exit 1
    fi
    if ! chmod 600 "$ISSUE_BODY"; then
      echo "ERROR: 본문 파일 권한 설정 실패"
-     echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 게시하지 않고 보존됨"
+     printf 'ISSUE_BODY=%q  # 게시하지 않고 보존됨\n' "$ISSUE_BODY"
      exit 1
    fi
 
@@ -66,20 +66,24 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
    else
      rc=$?
      echo "ERROR: gh issue create 실패 (exit $rc)"
-     echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 본문 보존됨 (재시도 시 재사용)"
-     echo "ISSUE_BODY_DIR=$ISSUE_BODY_DIR  # 성공한 재시도 뒤 빈 디렉터리를 정리"
+     # 새 셸에서도 같은 파일을 재사용할 수 있는 shell-safe 할당문을 출력한다.
+     printf 'ISSUE_BODY=%q\n' "$ISSUE_BODY"
+     printf 'ISSUE_BODY_DIR=%q\n' "$ISSUE_BODY_DIR"
      # 본문은 stdout으로 덤프하지 않는다 — 사용자가 실수로 시크릿을 포함한 경우 세션/운영 로그에 남을 위험.
-     # 필요 시 로컬 shell에서 직접 확인: `sed -n '1,20p' "$ISSUE_BODY_PATH"` 또는 에디터로 열기.
-     echo "본문 미리보기는 보안상 stdout 덤프하지 않음. 확인 명령: sed -n '1,20p' \"\$ISSUE_BODY_PATH\""
-     echo "재시도 명령 (동일 shell 세션 또는 ISSUE_BODY_PATH 값을 직접 입력):"
-     echo "  gh issue create --title '<제목>' --label '<라벨>' --body-file \"\$ISSUE_BODY_PATH\""
+     # 필요 시 로컬 shell에서 직접 확인: `sed -n '1,20p' "$ISSUE_BODY"` 또는 에디터로 열기.
+     echo "본문 미리보기는 보안상 stdout 덤프하지 않음. 확인 명령: sed -n '1,20p' \"\$ISSUE_BODY\""
+     echo "본문을 수정했다면 게시할 최종 파일에 SKILL.md Step 3의 sanitization checklist S3를 다시 적용한다."
+     echo "재시도 명령 (새 셸에서는 위 ISSUE_BODY 할당문부터 복사):"
+     # 편집기가 파일을 재생성할 수 있으므로 재시도에서도 게시 경계 검사를 통과해야 한다.
+     echo "  [ -f \"\$ISSUE_BODY\" ] && [ ! -L \"\$ISSUE_BODY\" ] && chmod 600 \"\$ISSUE_BODY\" && gh issue create --title '<제목>' --label '<라벨>' --body-file \"\$ISSUE_BODY\""
+     echo "재시도 성공 후 보존 본문 파일과 빈 ISSUE_BODY_DIR을 정리한다."
      echo "**parent 연결과 handoff는 이슈 등록 완료 전에는 진행하지 않는다.**"
      exit 1
    fi
    ```
 4. 반환된 `ISSUE_URL`이 실제 GitHub URL(`https://github.com/.../issues/N`)인지 확인한다. 형식 불일치는 매트릭스의 "URL validation 실패" 행을 따른다.
 
-### Step 6 — LLM 이행 가이드 연계
+## Step 6 — LLM 이행 가이드 연계
 
 진입 가드: 위 Step 5 진행 상태 매트릭스의 "Step 6 진행" 열을 따른다. 요약하면 Step 5-A 실패(create 실패 또는 URL validation 실패)는 Step 6 차단, Step 5-B `SUBISSUE_STATUS` 부분 실패는 Step 6 진행 허용. 존재하지 않는 이슈 번호로 `/write-handoff`를 호출하면 handoff comment가 엉뚱한 곳에 게시되거나 오류로 중단되므로 전자의 차단이 필수다.
 

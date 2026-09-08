@@ -91,7 +91,7 @@ review에는 image 플래그가 없다.
 
 위반 시 에러:
 
-```
+```text
 error: the argument '[PROMPT]' cannot be used with '--base <BRANCH>'
 error: the argument '--base <BRANCH>' cannot be used with '--uncommitted'
 ```

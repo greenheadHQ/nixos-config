@@ -1,5 +1,7 @@
 # 상태 코드와 장애 진단
 
+## Action 코드
+
 ### Top-level `status.action`
 
 `none`과 `running`은 실행 중에만 쓰는 internal 값이며 final status vocabulary에 포함하지 않는다.
