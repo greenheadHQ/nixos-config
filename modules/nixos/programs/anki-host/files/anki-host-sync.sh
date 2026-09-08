@@ -2,7 +2,7 @@
 # anki-host-sync — 헬퍼 애드온(/sync)을 호출해 AnkiWeb과 동기화하고 결과를 상태 파일·Pushover로 남긴다.
 # 이 스크립트가 sync의 운영 계층(상태 파일·알림·결과 분류)의 단일 소유자다 — 타이머 유닛, 부트스트랩
 # 유닛, PR 2의 MCP "지금 동기화"(유닛 트리거)가 모두 이 경로를 지난다. 헬퍼 /sync를 직접 부르는 호출자를 두지 않는다.
-# env: HELPER_PORT STATE_DIR INSTANCE HELPER_CURL_MAX_TIME MAX_RETRIES BACKOFF_SECS
+# env: HELPER_PORT STATE_DIR INSTANCE STATUS_RUN_DIR HELPER_CURL_MAX_TIME MAX_RETRIES BACKOFF_SECS
 #      READY_WAIT_TRIES READY_WAIT_SECS READY_PROBE_TIMEOUT BUSY_RETRIES BUSY_RETRY_SECS [CREDENTIALS_DIRECTORY]
 #      (모두 nixos 모듈이 constants.ankiHost에서 주입 — 같은 값으로 유닛 TimeoutStartSec을 계산한다)
 # 인자: [--mode normal|allow-download-if-empty]  (기본 normal — 타이머 유닛; 부트스트랩 유닛이 allow-download-if-empty)
@@ -59,7 +59,14 @@ STATE_FILE="${STATE_DIR:?}/sync-status.json"
 LOCK_FILE="${STATE_DIR}/.sync.lock"
 CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
 ALERT_DEDUPE_SECS=86400
-: "${MAX_RETRIES:?}" "${BACKOFF_SECS:?}" "${HELPER_CURL_MAX_TIME:?}" "${INSTANCE:?}"
+: "${MAX_RETRIES:?}" "${BACKOFF_SECS:?}" "${HELPER_CURL_MAX_TIME:?}" "${INSTANCE:?}" "${STATUS_RUN_DIR:?}"
+# 결정 15: 상태 파일은 0700 디렉터리 안이라 MCP 서비스(별도 유저)가 못 읽는다 — 기록마다 사본을 게시판(0750, 그룹 읽기)에
+# 0640으로 내놓는다. 이 스크립트가 유일한 생산자이고 MCP는 사본의 독자다. 원본과 사본은 내용이 같다.
+STATUS_COPY="${STATUS_RUN_DIR}/${INSTANCE}.json"
+publish_state() {
+  [ -d "$STATUS_RUN_DIR" ] || return 0
+  cp "$STATE_FILE" "${STATUS_COPY}.partial" && chmod 0640 "${STATUS_COPY}.partial" && mv "${STATUS_COPY}.partial" "$STATUS_COPY"
+}
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -104,6 +111,7 @@ write_state() {
       lastAlert: (if $alert_key == "" then null else {key: $alert_key, at: $alert_at} end),
       sync: $sync}' > "${STATE_FILE}.partial"
   mv "${STATE_FILE}.partial" "$STATE_FILE"
+  publish_state
 }
 
 send_pushover() {
@@ -139,6 +147,7 @@ notify_alert() {
   tmp="$(jq --arg key "$key" --arg at "$(now)" '.lastAlert = {key: $key, at: $at}' "$STATE_FILE" 2>/dev/null || echo '{}')"
   printf '%s\n' "$tmp" > "${STATE_FILE}.partial"
   mv "${STATE_FILE}.partial" "$STATE_FILE"
+  publish_state
 }
 
 # notify_event <title> <message>

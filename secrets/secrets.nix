@@ -65,6 +65,10 @@ in
   # pushover-anki: PUSHOVER_TOKEN= / PUSHOVER_USER= (동기화·백업 알림 전용 앱)
   "anki-ankiweb.age".publicKeys = minipcOnly;
   "pushover-anki.age".publicKeys = minipcOnly;
+  # anki-mcp-oauth: 원격 MCP 승인 화면의 비밀 문구 한 줄(변수명은 anki-mcp 모듈 참조) — 비어 있으면 어떤 승인도 통과하지 않는다
+  "anki-mcp-oauth.age".publicKeys = minipcOnly;
+  # 단일 Anki MCP Cloudflare Tunnel의 실행 credential JSON — 계정 관리 cert는 배포하지 않는다
+  "anki-mcp-cloudflared.age".publicKeys = minipcOnly;
 
   # 1Password Service Account token (opnix가 systemd EnvironmentFile로 주입)
   # host key 전용(minipcHostOnly)으로 user 로그인 키 노출 표면과 격리 (host key 복호화 계약).

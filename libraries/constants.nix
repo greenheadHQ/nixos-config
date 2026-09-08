@@ -9,6 +9,8 @@
     # Tailscale IP (tailscale ip -4 로 확인)
     minipcTailscaleIP = "100.79.80.95";
     macbookTailscaleIP = "100.65.50.98";
+    # MiniPC의 MagicDNS FQDN — tailnet 전용 MCP 승인 화면의 HTTPS 이름
+    minipcTailnetFqdn = "greenhead-minipc.tail420ece.ts.net";
 
     # 서비스 포트
     ports = {
@@ -22,6 +24,13 @@
       ankiHelperLab = 18766; # 격리 검증 프로필의 sync/스냅샷 헬퍼 애드온
       ankiConnectMain = 8765; # 운영 프로필의 AnkiConnect
       ankiHelperMain = 8766; # 운영 프로필의 sync/스냅샷 헬퍼 애드온
+      # 원격 MCP 서버 (loopback 전용): Cloudflare Tunnel → ankiMcp, 9443 tailnet Serve → ankiMcpApproval
+      ankiMcp = 8790;
+      ankiMcpApproval = 8791;
+      ankiMcpLegacyFunnel = 8443; # 이전 공개 경로 제거 전용. 443은 기존 Caddy의 tailnet 인그레스 전용이다.
+      ankiMcpApprovalPublic = 9443; # Serve는 임의 HTTPS 포트를 지원한다. Funnel 허용 목록 밖의 tailnet 전용 승인 포트.
+      # ts-serve(dev 미리보기) 전용 tailnet HTTPS 포트 — MCP·승인·Caddy와 별개로 소유한다.
+      tailscaleDevPreviewHttps = 10000;
     };
 
     # Podman 브릿지 네트워크 기본 서브넷
@@ -66,12 +75,44 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
+  # 원격 MCP 서버 (plan 030 PR 2a) — 토큰 수명·승인 잠금·응답 축소 기본값
+  # ═══════════════════════════════════════════════════════════════
+  ankiMcp = {
+    user = "anki-mcp"; # anki-host와 다른 유저 — 컬렉션 디렉터리(0700)에 닿지 않는다 (결정 15)
+    publicHostname = "anki-mcp.greenhead.dev";
+    tunnelId = "3647ce03-2db1-4510-9c88-c84deb42b0bd";
+    accessTokenTtlSecs = 3600;
+    refreshTokenTtlSecs = 2592000; # 30일 — 클라이언트가 조용히 갱신하는 기간
+    refreshMaxRotations = 4096; # grant별 재사용 탐지 기록 상한. 초과 시 grant를 철회하고 재승인한다
+    authCodeTtlSecs = 300; # 승인 화면에서 문구를 입력할 시간
+    syncWaitSecs = 180; # "지금 동기화"가 회차 결과를 기다리는 상한 (normal sync는 수 초)
+    approvalLockoutFailures = 5;
+    approvalLockoutSecs = 300;
+    fieldCharsDefault = 400; # 노트 필드·카드 본문 절단 기본값 (0이면 전체)
+    pageLimitMax = 100;
+    tailscaleOnlineWaitSecs = 60; # 배선 유닛이 부팅 직후 tailscaled 온라인을 기다리는 상한
+    tailscaleCmdTimeoutSecs = 60; # serve/funnel 한 명령의 상한 — 기능이 tailnet에서 꺼져 있으면 CLI가 활성화 링크를 찍고 무한 대기한다
+    # DCR(/register)은 인증 없이 인터넷에서 열려 있다 — 등록 폭주로 상태 파일이 자라거나 재작성이 반복되지 않게 상한을 둔다
+    registrationMaxClients = 32; # 등록 클라이언트 상한 (정상 사용은 ChatGPT·Codex·Claude 등 한 자릿수)
+    registrationMaxClientBytes = 4096; # 클라이언트 레코드 한 건의 JSON 상한 (실제 DCR 요청은 수백 바이트)
+    registrationUnusedTtlSecs = 86400; # 비활성 등록의 평상시 정리 기한. 포화 시에는 가장 오래된 비활성 등록부터 교체한다
+    registrationBurst = 10; # 아래 창 안에서 허용하는 등록 횟수 — 넘으면 429
+    registrationWindowSecs = 600;
+    maxRequestBodyBytes = 262144; # 공개·승인 앱 요청 본문 상한(413) — 노트 대량 추가 본문은 수십 KB 수준
+    # 인증 전 본문 선읽기 방어 — 미완결 본문(slowloris)이 버퍼를 무한히 붙잡지 못하게 기한·동시성에 상한을 둔다
+    bodyReadTimeoutSecs = 30; # 두 앱이 인증 전 요청 본문을 다 받기까지의 기한 — 넘으면 408로 끊는다
+    maxConcurrentRequests = 64; # 앱별(uvicorn) 동시 처리 상한 — 두 앱의 동시 본문 버퍼(≈ 2 × 이 값 × maxRequestBodyBytes ≈ 32MB)를 MemoryMax(256M) 아래로 묶는다
+  };
+
+  # ═══════════════════════════════════════════════════════════════
   # 경로
   # ═══════════════════════════════════════════════════════════════
   paths = {
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
     ankiHostBackupsRelPath = "backups/anki-host"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
+    # sync 스크립트가 남기는 상태 사본의 게시판(결정 15) — 0750 anki-host, 사본 0640. MCP 서비스가 그룹으로 읽는다
+    ankiHostStatusRun = "/run/anki-host-status";
     immichUploadCache = "/var/lib/docker-data/immich/upload-cache"; # immich 업로드 캐시
     # Launcher 전용 headless SSH dispatcher의 Home 상대 설치 경로.
     # Home Manager target과 launcher PATH가 이 값을 함께 사용해 배선 drift를 막는다.

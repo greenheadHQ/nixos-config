@@ -238,6 +238,8 @@ in
 
     systemd.tmpfiles.rules = [
       "d ${stateRoot} 0750 ${user} ${user} -"
+      # 결정 15: sync 상태 사본 게시판 — 다른 유저(anki-mcp)가 그룹으로 읽는다. 컬렉션 디렉터리(0700)는 열지 않는다
+      "d ${constants.paths.ankiHostStatusRun} 0750 ${user} ${user} -"
     ]
     ++ lib.concatMap (name: [
       "d ${stateRoot}/${name} 0700 ${user} ${user} -"
