@@ -138,6 +138,16 @@ if [[ "$*" == "repo view --json nameWithOwner -q .nameWithOwner" ]]; then
   printf '%s\n' 'example/repo'
   exit 0
 fi
+if [[ "${1:-}" == "issue" && "${2:-}" == "view" ]]; then
+  [[ "$*" == "issue view https://github.com/example/repo/issues/999 -R example/repo --json url -q .url" ]] || exit 87
+  body_file="$(cat "$WRITER_TRACE")"
+  [[ -f "$body_file" && ! -L "$body_file" ]] || exit 88
+  cmp -s "$EXPECTED_BODY_FILE" "$body_file" || exit 89
+  printf '%s\n' "$body_file" >> "$GH_TRACE.view"
+  [[ "${GH_VIEW_FAIL:-0}" == "0" ]] || exit 43
+  printf '%s\n' "${GH_VIEW_URL:-https://github.com/example/repo/issues/999}"
+  exit 0
+fi
 expected_count=10
 [[ -z "${ATTACH_FILE:-}" ]] || expected_count=12
 [[ "$#" == "$expected_count" ]] || {
@@ -181,11 +191,8 @@ cmp -s "$EXPECTED_BODY_FILE" "$body_file" || {
 if [[ "${GH_FAIL:-0}" == "1" ]]; then
   exit 42
 fi
-if [[ "${GH_PARTIAL:-0}" == "1" ]]; then
-  printf '%s\n' 'https://github.com/example/repo/issues/999'
-  exit 1
-fi
-printf '%s\n' 'https://github.com/example/repo/issues/999'
+printf '%s\n' "${GH_OUTPUT_URL-https://github.com/example/repo/issues/999}"
+[[ "${GH_PARTIAL:-0}" == "0" ]] || exit 1
 EOF
   chmod +x "$gh_file"
 }
@@ -193,7 +200,7 @@ EOF
 test_create_issue_documented_body_lifecycle_is_safe() {
   local sandbox skill_file recipe_file runner_file stub_bin expected_body
   local fixture_path writer_trace gh_trace output rc body_path body_dir symlink_target target_mode
-  local retry_file retry_output retry_tmp_dir
+  local retry_file retry_output retry_tmp_dir partial output_url view_case
 
   sandbox="$(new_sandbox)"
   skill_file="$REPO_ROOT/modules/shared/programs/claude/files/skills/create-issue/references/publishing.md"
@@ -229,6 +236,7 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   [[ ! -e "$body_dir" ]] \
     || fail "successful issue creation left the private body directory behind"
   assert_file_contains "$gh_trace" "$body_path"
+  assert_file_contains "$gh_trace.view" "$body_path"
 
   : > "$writer_trace"
   : > "$gh_trace"
@@ -319,12 +327,64 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   )"
   rc=$?
   set -e
-  [[ "$rc" != "0" ]] || fail "partial attachment failure was reported as success"
+  [[ "$rc" == "0" ]] || fail "confirmed partial publication blocked follow-up steps: $output"
   assert_contains "$output" "ISSUE_URL=https://github.com/example/repo/issues/999"
+  assert_contains "$output" "WARN: 이슈는 등록됐지만 첨부 일부 실패 가능성이 있다."
   body_path="$(<"$writer_trace")"
-  [[ -f "$body_path" ]] || fail "partial failure lost the recovery body"
+  [[ -f "$body_path" && ! -L "$body_path" ]] \
+    || fail "partial failure lost the regular recovery body"
+  cmp -s "$expected_body" "$body_path" \
+    || fail "partial failure changed the preserved body bytes"
+  [[ "$(_create_issue_file_mode "$body_path")" == "600" ]] \
+    || fail "partial failure changed the body permissions"
+  assert_file_contains "$gh_trace.view" "$body_path"
   [[ "$(wc -l < "$gh_trace" | tr -d '[:space:]')" == "1" ]] \
     || fail "partial attachment failure retried issue creation"
+
+  # Malformed, missing or foreign URLs must preserve recovery material even on exit 0.
+  for partial in 0 1; do
+    for output_url in '' 'not-a-url' 'https://github.com/other/repo/issues/999'; do
+      : > "$gh_trace"
+      : > "$gh_trace.view"
+      set +e
+      output="$(
+        TMPDIR="$sandbox/tmp" PATH="$fixture_path" RECIPE_FILE="$recipe_file" \
+          EXPECTED_BODY_FILE="$expected_body" WRITER_TRACE="$writer_trace" \
+          GH_TRACE="$gh_trace" GH_PARTIAL="$partial" GH_OUTPUT_URL="$output_url" \
+          "$BASH" "$runner_file" 2>&1
+      )"
+      rc=$?
+      set -e
+      [[ "$rc" != 0 ]] || fail "invalid issue URL allowed follow-up steps: $output"
+      body_path="$(<"$writer_trace")"
+      [[ -f "$body_path" && ! -L "$body_path" ]] || fail "invalid URL lost the recovery body"
+      cmp -s "$expected_body" "$body_path" || fail "invalid URL changed recovery bytes"
+      [[ "$(_create_issue_file_mode "$body_path")" == "600" ]] || fail "invalid URL changed body permissions"
+      assert_line_count "$gh_trace" "$body_path" 1
+      [[ ! -s "$gh_trace.view" ]] || fail "invalid URL was sent to the remote lookup"
+    done
+  done
+
+  # A valid-looking URL still needs a successful matching remote lookup.
+  for view_case in failed mismatched; do
+    : > "$gh_trace"
+    set +e
+    output="$(
+      TMPDIR="$sandbox/tmp" PATH="$fixture_path" RECIPE_FILE="$recipe_file" \
+        EXPECTED_BODY_FILE="$expected_body" WRITER_TRACE="$writer_trace" \
+        GH_TRACE="$gh_trace" GH_PARTIAL=1 \
+        GH_VIEW_FAIL="$([[ "$view_case" == failed ]] && echo 1 || echo 0)" \
+        GH_VIEW_URL='https://github.com/example/repo/issues/998' \
+        "$BASH" "$runner_file" 2>&1
+    )"
+    rc=$?
+    set -e
+    [[ "$rc" != 0 ]] || fail "unconfirmed remote publication allowed follow-up steps: $output"
+    body_path="$(<"$writer_trace")"
+    [[ -f "$body_path" && ! -L "$body_path" ]] || fail "remote lookup failure lost the recovery body"
+    cmp -s "$expected_body" "$body_path" || fail "remote lookup failure changed recovery bytes"
+    assert_line_count "$gh_trace" "$body_path" 1
+  done
 
   : > "$gh_trace"
   set +e

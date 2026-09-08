@@ -47,6 +47,8 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
 
 ## 절차
 
+대상 저장소 `OWNER/REPO`를 먼저 확정한다. 사용자 지정값이 없으면 같은 gh 실행기로 `gh repo view --json nameWithOwner -q .nameWithOwner`를 조회하며, 실패하거나 비어 있으면 게시를 중단한다. 이후 PR 조회·생성·수정에 같은 `-R OWNER/REPO`를 사용한다.
+
 ### 새 PR 생성 (기본)
 
 수신한 인자가 비어있거나 `update`가 아닌 경우 새 PR을 생성한다.
@@ -62,17 +64,17 @@ PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
    - 수명: 흡수 완료를 보고하기 전까지 그 파일을 삭제·이동하지 않는다 (수명 규칙 SoT: finding-unknowns 스킬).
 4. ADR 테이블 구성: 검토한 대안들을 비교 테이블로 정리한다. 대안이 1개뿐이면 ADR 섹션을 간소화한다.
 5. [7섹션 템플릿](references/pr-template.md)에 따라 본문을 작성한다. 명시적 이미지·영상이 있으면 [공식 첨부 절차](../attaching-github-media/SKILL.md)에 따라 본문 참조와 `--attach` 인자를 준비한다.
-6. 본문을 임시 파일로 작성한 뒤 `gh pr create --title "<제목>" --body-file <파일>`로 PR을 생성한다. 첨부가 있으면 준비한 `--attach <파일>` 인자를 같은 명령에 추가한다. 제목은 70자 미만의 conventional commit 형식이다. 실패 시 [첨부 절차의 재시도 규칙](../attaching-github-media/SKILL.md#실패와-재시도)에 따라 게시 여부부터 확인한다.
+6. 본문을 임시 파일로 작성한 뒤 `gh pr create -R OWNER/REPO --title "<제목>" --body-file <파일>`로 PR을 생성한다. 첨부가 있으면 준비한 `--attach <파일>` 인자를 같은 명령에 추가한다. 제목은 70자 미만의 conventional commit 형식이다. 실패 시 [첨부 절차의 재시도 규칙](../attaching-github-media/SKILL.md#실패와-재시도)에 따라 게시 여부부터 확인한다.
 7. 구현 노트 정리: 3단계에서 `implementation-notes.md`를 흡수한 경우, 다음 세 조건을 모두 확인한 뒤에만 그 파일을 삭제한다 (남겨두면 finish-pr의 워크트리 정리가 dirty로 중단됨) — ① 1행 owner header 일치, ② `git ls-files --error-unmatch -- implementation-notes.md` 실패(untracked; tracked면 Git 밖 삭제 금지), ③ 생성된 PR 본문에 Decisions·Deviations·새로 발견된 미지 세 섹션 각각과 durable marker가 모두 반영되었는지 확인 (일부 섹션만 반영된 상태로 통과 금지). 하나라도 어긋나거나 PR 생성이 실패하면 파일을 보존하고 중단한다.
 
 ### 기존 PR 업데이트 (`update`)
 
 수신한 인자가 `update`인 경우 기존 PR 본문을 보강한다.
 
-1. 현재 PR 확인: `gh pr view --json body,title,number`로 현재 PR 본문을 가져온다.
+1. 현재 PR 확인: `gh pr view -R OWNER/REPO --json body,title,number`로 현재 PR 본문을 가져온다.
 2. 누락 섹션 탐지: 7섹션 중 빠진 섹션을 식별한다.
 3. 부실한 섹션을 커밋·변경 내용으로 보강한다. `implementation-notes.md`는 새 PR 생성 절차의 흡수 계약을 적용한다. 기존 첨부 URL은 보존하고, 새로 제공된 이미지·영상만 [공식 첨부 절차](../attaching-github-media/SKILL.md)에 따라 준비한다.
-4. `gh pr edit <number> --body-file <파일>`로 본문을 업데이트한다. 새 첨부가 있으면 `--attach <파일>`을 추가하고, 실패 시 원격 본문을 확인한 뒤 누락분만 처리한다.
+4. `gh pr edit <number> -R OWNER/REPO --body-file <파일>`로 본문을 업데이트한다. 새 첨부가 있으면 `--attach <파일>`을 추가하고, 실패 시 원격 본문을 확인한 뒤 누락분만 처리한다.
 5. 구현 노트 정리: `implementation-notes.md`를 흡수한 경우 새 PR 생성 절차의 구현 노트 정리 단계와 동일하게, 세 조건(owner header · untracked · 세 섹션 각각+marker 반영) 확인 후에만 삭제하고 실패 시 보존한다.
 
 ## 주의사항

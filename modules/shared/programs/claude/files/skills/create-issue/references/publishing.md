@@ -61,9 +61,18 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
    fi
 
    ATTACH_ARGS=() # 첨부가 있으면 (--attach "<파일>")로 채운다.
-   # 성공 시 URL 캡처. 실패해도 원격 게시가 끝났을 수 있으므로 결과를 보존한다.
-   if ISSUE_URL=$(gh issue create -R "$ISSUE_REPO" --title "<제목>" --label "<라벨>" --body-file "$ISSUE_BODY" "${ATTACH_ARGS[@]}"); then
-     echo "ISSUE_URL=$ISSUE_URL"
+   # 종료 코드와 무관하게 대상 저장소의 URL 및 원격 게시를 확인한다.
+   ISSUE_CREATE_RC=0
+   ISSUE_URL=$(gh issue create -R "$ISSUE_REPO" --title "<제목>" --label "<라벨>" --body-file "$ISSUE_BODY" "${ATTACH_ARGS[@]}") || ISSUE_CREATE_RC=$?
+   echo "ISSUE_URL=$ISSUE_URL"
+   ISSUE_CONFIRMED=false
+   ISSUE_NUMBER="${ISSUE_URL#"https://github.com/$ISSUE_REPO/issues/"}"
+   if [[ "$ISSUE_URL" == "https://github.com/$ISSUE_REPO/issues/$ISSUE_NUMBER" && "$ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]] &&
+      REMOTE_URL=$(gh issue view "$ISSUE_URL" -R "$ISSUE_REPO" --json url -q .url) &&
+      [[ "$REMOTE_URL" == "$ISSUE_URL" ]]; then
+     ISSUE_CONFIRMED=true
+   fi
+   if [[ "$ISSUE_CONFIRMED" == true && "$ISSUE_CREATE_RC" == 0 ]]; then
      # GitHub write 성공과 로컬 cleanup 성공을 혼동하지 않는다. 정확한 파일과 빈 디렉터리만 제거한다.
      if ! rm -f "$ISSUE_BODY"; then
        echo "WARN: 이슈는 등록됐지만 본문 파일 정리 실패: $ISSUE_BODY"
@@ -71,9 +80,7 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
        echo "WARN: 이슈는 등록됐지만 본문 임시 디렉터리 정리 실패: $ISSUE_BODY_DIR"
      fi
    else
-     rc=$?
-     echo "ERROR: gh issue create 실패 (exit $rc)"
-     echo "ISSUE_URL=$ISSUE_URL"
+     echo "본문 보존: gh issue create exit $ISSUE_CREATE_RC, 원격 확인 $ISSUE_CONFIRMED"
      # 새 셸에서도 같은 파일을 재사용할 수 있는 shell-safe 할당문을 출력한다.
      printf 'ISSUE_BODY=%q\n' "$ISSUE_BODY"
      printf 'ISSUE_BODY_DIR=%q\n' "$ISSUE_BODY_DIR"
@@ -85,13 +92,15 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
      echo "본문 재검사 (새 셸에서는 위 ISSUE_BODY 할당문부터 복사):"
      # 편집기가 파일을 재생성할 수 있으므로 재시도에서도 게시 경계 검사를 통과해야 한다.
      echo "  [ -f \"\$ISSUE_BODY\" ] && [ ! -L \"\$ISSUE_BODY\" ] && chmod 600 \"\$ISSUE_BODY\" || exit 1"
-     echo "재시도 성공 후 보존 본문 파일과 빈 ISSUE_BODY_DIR을 정리한다."
-     echo "**parent 연결과 handoff는 이슈 등록 완료 전에는 진행하지 않는다.**"
-     exit 1
+     if [[ "$ISSUE_CONFIRMED" != true ]]; then
+       echo "ERROR: 유효한 URL의 원격 게시가 미확인. parent 연결과 handoff를 진행하지 않는다."
+       exit 1
+     fi
+     echo "WARN: 이슈는 등록됐지만 첨부 일부 실패 가능성이 있다. 기존 URL로 후속 단계를 계속하고 누락 첨부만 처리한다."
+     echo "첨부 복구를 마친 뒤 보존 본문 파일과 빈 ISSUE_BODY_DIR을 정리한다."
    fi
    ```
-4. nonzero 종료라도 URL이 있으면 해당 이슈를 재조회한다. 게시가 확인되면 그 URL로 아래 검증과 후속 단계를 계속하고, 누락 첨부만 처리한다. 게시 여부가 불명확하면 중단한다.
-5. 반환된 `ISSUE_URL`이 실제 GitHub URL(`https://github.com/.../issues/N`)인지 확인한다. 형식 불일치는 매트릭스의 "URL validation 실패" 행을 따른다.
+4. 위 명령은 대상 저장소의 URL 형식과 원격 게시를 검증한다. nonzero 종료라도 게시가 확인되면 기존 URL로 후속 단계를 계속하고, [첨부 재시도 규칙](../../attaching-github-media/SKILL.md#실패와-재시도)에 따라 누락 첨부만 처리한다. 보존 본문은 복구 후 정리한다. 형식 불일치·원격 조회 실패는 본문을 보존하고 중단한다.
 
 ## Step 6 — LLM 이행 가이드 연계
 
