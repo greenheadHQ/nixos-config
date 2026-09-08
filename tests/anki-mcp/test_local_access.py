@@ -130,7 +130,7 @@ def test_profile_readiness_requires_compatible_bridge(runtime, monkeypatch, fail
     methods = runtime.AnkiAdapter.check_bridge.__globals__["REQUIRED_METHODS"]
     bridge = SimpleNamespace(**{name: lambda **_: None for name in methods})
     window = runtime.aqt.mw
-    window.pm = SimpleNamespace(name="test")
+    window.pm = SimpleNamespace(name="test", auto_syncing_enabled=lambda: False, periodic_sync_media_minutes=lambda: 0)
     window._anki_host_connect_version = 2 if failure == "version" else 1
     if failure != "missing":
         window._anki_host_connect = bridge
@@ -169,3 +169,81 @@ def test_schema_sync_direction_and_reopen_contract(runtime, monkeypatch, require
                              ('reopen', {'after_full_sync': True})]
     else:
         assert not any(e[0] in ('close', 'upload', 'reopen') for e in events)
+
+
+def setup_normal_media(runtime, monkeypatch, statuses, *, enabled=True, gui_monitor=False):
+    events = []
+    clock = [0.0]
+    pending = iter(statuses)
+    def status():
+        value = next(pending)
+        events.append(("media", value))
+        if isinstance(value, Exception):
+            raise value
+        return types.SimpleNamespace(active=value)
+    def sync(auth, media_enabled):
+        events.append(("collection", media_enabled))
+        return types.SimpleNamespace(required=runtime.NO_CHANGES, new_endpoint="", server_message="")
+    runtime.aqt.mw.col = types.SimpleNamespace(sync_collection=sync, media_sync_status=status)
+    runtime.aqt.mw.pm = types.SimpleNamespace(sync_auth=lambda: "fixture-auth", media_syncing_enabled=lambda: enabled,
+        auto_syncing_enabled=lambda: False, periodic_sync_media_minutes=lambda: 0)
+    runtime.aqt.mw.media_syncer = types.SimpleNamespace(is_syncing=lambda: gui_monitor)
+    monkeypatch.setattr(runtime, "_snapshot", lambda: {"notes": 2, "cards": 2, "revlog": 3})
+    monkeypatch.setattr(runtime, "time", types.SimpleNamespace(monotonic=lambda: clock[0],
+        sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds)))
+    return events, clock
+
+
+def test_normal_sync_waits_for_previous_and_new_media_transfers(runtime, monkeypatch):
+    events, clock = setup_normal_media(runtime, monkeypatch, [True, False, True, False])
+    result = runtime._mutating("sync", runtime._sync, "normal")
+    assert result["action"] == "normal" and result["media"] == {"state": "synced"}
+    assert events == [("media", True), ("media", False), ("collection", True), ("media", True), ("media", False)]
+    assert clock[0] == 0.5 and runtime._busy is None
+
+
+def test_previous_media_error_is_consumed_before_fresh_retry(runtime, monkeypatch):
+    old_error = RuntimeError("old transfer failed")
+    events, _ = setup_normal_media(runtime, monkeypatch, [old_error, True, False])
+    result = runtime._sync("normal")
+    assert result["media"]["state"] == "synced"
+    assert events == [("media", old_error), ("collection", True), ("media", True), ("media", False)]
+
+
+@pytest.mark.parametrize("failure", ["error", "deadline"])
+def test_current_media_failure_never_records_normal_success(runtime, monkeypatch, failure):
+    statuses = [False, True, RuntimeError("current transfer failed")] if failure == "error" else [True, True, False, True, True, True]
+    events, clock = setup_normal_media(runtime, monkeypatch, statuses)
+    with pytest.raises(RuntimeError, match="current transfer failed|media-sync-timeout"):
+        runtime._mutating("sync", runtime._sync, "normal")
+    assert runtime._state["last_sync"] is None and runtime._busy is None
+    assert events.count(("collection", True)) == 1
+    if failure == "deadline":
+        assert clock[0] == 1.0  # Both phases share the existing overall deadline.
+
+
+def test_gui_media_monitor_is_rejected_before_status_error_can_be_consumed(runtime, monkeypatch):
+    events, _ = setup_normal_media(runtime, monkeypatch, [], gui_monitor=True)
+    with pytest.raises(runtime.OperationError, match="monitor-not-exclusive"):
+        runtime._sync("normal")
+    assert events == []
+
+
+def test_disabled_media_is_not_reported_as_transferred(runtime, monkeypatch):
+    events, _ = setup_normal_media(runtime, monkeypatch, [], enabled=False)
+    result = runtime._sync("normal")
+    assert result["action"] == "normal" and result["media"] == {"state": "disabled"}
+    assert events == [("collection", False)]
+
+
+def test_existing_profile_switches_to_helper_owned_sync_without_enabling_media(runtime):
+    profile = {"autoSync": True, "autoSyncMediaMinutes": 15, "syncMedia": False, "other": "preserve"}
+    saves = []
+    runtime.aqt.mw.pm = types.SimpleNamespace(profile=profile,
+        auto_syncing_enabled=lambda: profile["autoSync"], periodic_sync_media_minutes=lambda: profile["autoSyncMediaMinutes"],
+        set_periodic_sync_media_minutes=lambda value: profile.__setitem__("autoSyncMediaMinutes", value),
+        save=lambda: saves.append(True))
+    runtime._configure_headless_sync()
+    runtime._configure_headless_sync()
+    assert profile == {"autoSync": False, "autoSyncMediaMinutes": 0, "syncMedia": False, "other": "preserve"}
+    assert saves == [True]

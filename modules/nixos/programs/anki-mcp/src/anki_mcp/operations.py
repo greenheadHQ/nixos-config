@@ -42,6 +42,11 @@ class OperationService:
                                "result": status.get("result"), "action": status.get("action")}
                     if sync["outcome"] == "blocked":
                         receipt["state"] = "blocked"
+                    if operation["action"] == "store_media":
+                        media_state = status.get("media_state") if sync["outcome"] == "synced" else None
+                        receipt["media_state"] = media_state if media_state in ("synced", "disabled", "not-started") else "unknown"
+                        if receipt["state"] == "synced" and media_state != "synced":
+                            receipt["state"] = "pending"
                 else:
                     receipt = {"state": "disabled"}
                 operation = await self._delivery(operation, "sync", receipt)

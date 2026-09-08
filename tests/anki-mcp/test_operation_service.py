@@ -38,13 +38,14 @@ class Syncer:
     def __init__(self, outcomes=()):
         self.outcomes = list(outcomes)
         self.calls = []
+        self.media_state = "synced"
 
     async def run_fresh(self, *, after=None):
         self.calls.append(after)
         outcome = self.outcomes.pop(0) if self.outcomes else "synced"
         return {"outcome": outcome, "status": {"runId": "run-" + str(len(self.calls)),
             "runStartedAt": "2026-09-09T01:00:00.000001+09:00", "result": "success" if outcome == "synced" else "error",
-            "action": "normal"}}
+            "action": "normal", "media_state": self.media_state}}
 
 
 class Notify:
@@ -152,3 +153,35 @@ async def test_schema_is_only_prepared_by_mcp(tmp_path):
     service, helper, syncer, adapter = setup(tmp_path)
     result = await service.run("model_field_add", {"model_name": "Basic", "field_name": "Extra"}, request_id="schema001")
     assert result["schema_required"] and result["state"] == "prepared" and not adapter.calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("media_state", [None, "disabled", "not-started"])
+async def test_media_requires_explicit_completion_and_retry_only_resyncs(tmp_path, media_state):
+    notification = Notify()
+    service, helper, syncer, adapter = setup(tmp_path, notify=notification)
+    syncer.media_state = media_state
+    params = {"filename": "fixture.txt", "data": "YQ=="}
+    result = await service.run("store_media", params, request_id="mediawait01")
+    assert result["state"] == "applied" and result["sync"]["state"] == "pending"
+    assert result["sync"]["media_state"] == (media_state or "unknown")
+    assert notification.calls[0]["sync"]["state"] == "pending"
+    syncer.media_state = "synced"
+    result = await service.run("store_media", params, request_id="mediawait01")
+    assert result["sync"]["state"] == result["sync"]["media_state"] == "synced"
+    assert len(adapter.calls) == helper.calls.count("/operations/apply") == 1
+    assert len(syncer.calls) == 3
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["blocked", "timeout"])
+async def test_media_sync_failure_does_not_claim_completion_or_store_twice(tmp_path, failure):
+    service, helper, syncer, adapter = setup(tmp_path, ["synced", failure, "synced"])
+    params = {"filename": "fixture.txt", "data": "YQ=="}
+    result = await service.run("store_media", params, request_id="mediaretry1")
+    assert result["state"] == "applied"
+    assert result["sync"]["state"] == ("blocked" if failure == "blocked" else "pending")
+    assert result["sync"]["media_state"] == "unknown"
+    result = await service.run("store_media", params, request_id="mediaretry1")
+    assert result["sync"]["state"] == result["sync"]["media_state"] == "synced"
+    assert len(adapter.calls) == helper.calls.count("/operations/apply") == 1

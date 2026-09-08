@@ -362,10 +362,12 @@ class Operations:
         if record["state"] not in ("applied", "partial"):
             raise OperationError("operation-has-no-confirmed-application")
         if kind == "sync":
-            if set(receipt) - {"state", "run_id", "run_started_at", "result", "action"}:
+            if set(receipt) - {"state", "run_id", "run_started_at", "result", "action", "media_state"}:
                 raise OperationError("invalid-sync-receipt")
             if receipt.get("state") not in ("synced", "pending", "blocked", "disabled"):
                 raise OperationError("invalid-sync-state")
+            if "media_state" in receipt and receipt["media_state"] not in ("synced", "disabled", "not-started", "unknown"):
+                raise OperationError("invalid-media-sync-state")
         else:
             if set(receipt) != {"state"} or receipt.get("state") not in ("sending", "sent", "failed", "unknown", "disabled"):
                 raise OperationError("invalid-notification-receipt")

@@ -22,6 +22,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 import traceback
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -253,6 +254,36 @@ def _media_status() -> dict[str, Any]:
 # ── 동기화 ────────────────────────────────────────────────────────────────
 
 
+def _configure_headless_sync() -> None:
+    # The GUI media monitor consumes a backend error only once. Keep the host
+    # helper as the sole sync/monitor owner, including already-created profiles.
+    pm = aqt.mw.pm
+    if pm.auto_syncing_enabled() or pm.periodic_sync_media_minutes() != 0:
+        pm.profile["autoSync"] = False
+        pm.set_periodic_sync_media_minutes(0)
+        pm.save()
+
+
+def _wait_for_media(deadline: float, *, previous: bool = False) -> None:
+    # Runs inside the main-thread mutation callback. Do not process Qt events or
+    # start MediaSyncer: another consumer could take a completed backend error.
+    while True:
+        try:
+            status = aqt.mw.col.media_sync_status()
+        except Exception as err:
+            if not previous:
+                raise
+            # The old thread has ended; the new sync below retries its transfer.
+            _log(f"previous media sync failed: {type(err).__name__}; retrying")
+            return
+        if not status.active:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("media-sync-timeout")
+        time.sleep(min(0.25, remaining))
+
+
 def _full_download(auth: Any, out: Any) -> None:
     """빈 로컬에 서버 컬렉션을 통째로 내려받는다 (부트스트랩 전용 — 서버를 덮어쓰는 방향은 없다).
 
@@ -306,6 +337,7 @@ def _sync(mode: str) -> dict[str, Any]:
     하한이 둘 다 0이면(첫 부트스트랩 전, 복원 절차로 상태 파일을 지운 뒤) 게이트가 없다.
     """
     _require_col()
+    deadline = time.monotonic() + MAIN_TIMEOUT_SECS
     mw = aqt.mw
     pm = mw.pm
     auth = pm.sync_auth()
@@ -329,7 +361,16 @@ def _sync(mode: str) -> dict[str, Any]:
         _state["last_sync"] = result
         _log(f"sync mode={mode} action=guard-tripped notes={before['notes']}<{min_notes} or revlog={before['revlog']}<{min_revlog}")
         return result
-    out = mw.col.sync_collection(auth, pm.media_syncing_enabled())
+    media_enabled = pm.media_syncing_enabled()
+    media_state = "disabled" if not media_enabled else "not-started"
+    if media_enabled:
+        if (pm.auto_syncing_enabled() or pm.periodic_sync_media_minutes() != 0
+                or mw.media_syncer.is_syncing()):
+            raise OperationError("media-sync-monitor-not-exclusive")
+        # sync_collection reuses an active media thread. Drain it first so the
+        # new transfer definitely includes files saved before this invocation.
+        _wait_for_media(deadline, previous=True)
+    out = mw.col.sync_collection(auth, media_enabled)
     if out.new_endpoint:
         pm.set_current_sync_url(out.new_endpoint)
         pm.save()
@@ -338,6 +379,9 @@ def _sync(mode: str) -> dict[str, Any]:
     required = ChangesRequired.Name(out.required)
     action: str  # normal | full-download | full-sync-required | unexpected:*  (guard-tripped는 위에서 먼저 반환)
     if out.required == NO_CHANGES:
+        if media_enabled:
+            _wait_for_media(deadline)
+            media_state = "synced"
         action = "normal"
     elif out.required in (FULL_SYNC, FULL_DOWNLOAD, FULL_UPLOAD):
         if mode == "allow-download-if-empty" and empty and out.required != FULL_UPLOAD:
@@ -355,6 +399,7 @@ def _sync(mode: str) -> dict[str, Any]:
         "action": action,
         "empty_before": empty,
         "server_message": out.server_message or "",
+        "media": {"state": media_state},
         "before": before,
         "after": after,
     }
@@ -756,6 +801,7 @@ def _on_profile_open() -> None:
     # collection_open은 로그인 판정이 끝난 뒤에 세운다 — /status 즉시 응답에서 "준비됨"이 곧 "login.status 확정"이어야
     # 준비 대기(anki_helper_wait_ready)와 로그인 판정이 같은 응답을 안전하게 공유한다 (로그인 진행 중 창 제거).
     try:
+        _configure_headless_sync()
         _state["login"] = _ensure_login()
         _log(f"profile '{aqt.mw.pm.name}' open, login: {_state['login'].get('status')}")
     except Exception:  # noqa: BLE001 — 훅 예외는 Anki가 삼키고 훅을 제거하므로 여기서 남긴다

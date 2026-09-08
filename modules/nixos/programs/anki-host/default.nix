@@ -22,7 +22,7 @@
 #     남아 있고, 이번엔 실제 이력 컬렉션의 .colpkg export가 205MB peak를 쓴 실측 + 인스턴스 2개 동시 기동);
 #     numBackups 50→30 (Anki 자체 자동 백업은 프로필 아래 쌓이는 SSD 비용이고, 일일 HDD 백업이 따로 있다);
 #     autoSync True→False (Anki의 열고/닫을 때 GUI sync 경로를 끄고 헬퍼 애드온만 sync한다).
-#     — numBackups·autoSync는 프로필 **최초 생성 시** prefs21.db에 쓰는 값이다(prefsBootstrap 가드 참조);
+#     — v2 당시 numBackups·autoSync는 프로필 최초 생성 시 prefs21.db에 쓰는 값이었다(prefsBootstrap 가드 참조);
 #     tailscale-wait 미복원 (v1은 tailnet IP 바인딩 때문에 필요했고 loopback 전용인 지금은 근거가 없다).
 #   - 잔여 위험(plan 030 결정 1·3, DA 확인): loopback은 이 호스트에서 격리가 아니다 — --network=host 컨테이너(uptime-kuma)와
 #     모든 로컬 계정이 같은 127.0.0.1에 닿으므로 무인증 AnkiConnect의 파괴 액션(deleteNotes 등)의 접근 주체는 "MiniPC에서
@@ -34,6 +34,7 @@
 #   read/operation/maintenance/schema 역할을 분리하고 HTTP 원시 쓰기를 차단한다.
 #   변경은 helper lock·작업 원장·복구점을 거친다. 구조 변경/Upload는 root 일회 승인으로만
 #   수행하며 일반 sync의 급감 게이트를 유지한다. Anki 본체 derivation은 변경하지 않는다.
+#   GUI 자동/주기 미디어 sync는 기존 프로필에서도 끄고 helper가 미디어 종료 결과까지 단독 확인한다.
 {
   config,
   pkgs,
@@ -86,8 +87,8 @@ let
       set -eu
       base="$1"
       mkdir -p "$base/${name}"
-      # 아래 prefs 값(numBackups·autoSync 등)은 프로필 최초 생성 시에만 적용된다 — 기존 인스턴스에 반영하려면
-      # prefs21.db를 지우거나(프로필 재생성) Anki 쪽에서 바꿔야 한다. 파일을 바꾸고 nrs만 해서는 아무 효과가 없다.
+      # 아래 prefs 값은 최초 생성용이다. 예외로 autoSync/autoSyncMediaMinutes는 helper가
+      # 프로필을 열 때 기존 인스턴스에도 강제해 GUI와 helper가 미디어 완료 결과를 서로 소비하지 않게 한다.
       if [ -f "$base/prefs21.db" ]; then
         exit 0
       fi
@@ -100,7 +101,7 @@ let
               "lastMsg": -1, "suppressUpdate": True, "firstRun": False, "defaultLang": "en_US"}
       prof = {"mainWindowGeom": None, "mainWindowState": None, "numBackups": 30, "lastOptimize": int(time.time()),
               "searchHistory": [], "syncKey": None, "syncUser": None, "syncMedia": True, "autoSync": False,
-              "autoSyncMediaMinutes": 15, "allowHTML": False, "importMode": 1, "lastColour": "#00f",
+              "autoSyncMediaMinutes": 0, "allowHTML": False, "importMode": 1, "lastColour": "#00f",
               "stripHTML": True, "deleteMedia": False}
       db.execute("insert or replace into profiles values (?, ?)", ("_global", pickle.dumps(meta, protocol=4)))
       db.execute("insert or replace into profiles values (?, ?)", (profile, pickle.dumps(prof, protocol=4)))

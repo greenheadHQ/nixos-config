@@ -66,6 +66,7 @@ def summarize(state: dict[str, Any] | None) -> dict[str, Any]:
         "lastSuccessAt": state.get("lastSuccessAt"),
         "lastSuccessCounts": state.get("lastSuccessCounts"),
         "action": sync.get("action"),
+        "media_state": (sync.get("media") or {}).get("state"),
         "required": sync.get("required"),
         "counts_after": {k: after.get(k) for k in ("notes", "cards", "revlog", "today_reviews")} if after else None,
         "delta": {k: delta(k) for k in ("notes", "cards", "revlog")} if before and after else None,

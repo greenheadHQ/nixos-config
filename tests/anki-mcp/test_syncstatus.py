@@ -19,9 +19,10 @@ def test_classify_distinguishes_running_and_stale():
 
 
 def test_summarize_reports_delta():
-    s = summarize({"result": "success", "runId": "r", "sync": {"action": "normal", "required": "NO_CHANGES",
+    s = summarize({"result": "success", "runId": "r", "sync": {"action": "normal", "required": "NO_CHANGES", "media": {"state": "synced"},
                    "before": {"notes": 10, "cards": 12, "revlog": 100}, "after": {"notes": 11, "cards": 13, "revlog": 103}}})
     assert s["delta"] == {"notes": 1, "cards": 1, "revlog": 3} and s["action"] == "normal"
+    assert s["media_state"] == "synced"
     assert summarize(None) == {"available": False}
 
 
