@@ -180,3 +180,27 @@ async def test_fresh_sync_deadline_includes_slow_systemctl(tmp_path):
     result = await SyncNow(str(path), "u.service", 5, runner=slow, sleep=clock.sleep,
                            monotonic=clock, wall_clock=clock).run_fresh()
     assert result["outcome"] == "timeout" and systemd.started == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("landed", ["success", "error", "stale", "absent"])
+async def test_fresh_sync_reads_result_written_during_unit_exit(tmp_path, landed):
+    path, clock = tmp_path / "main.json", Clock()
+    normal(path, "old", 900)
+    systemd = FakeSystemd(path)
+
+    async def runner(argv):
+        if argv[:2] == ["systemctl", "show"] and systemd.started:
+            # The first file read has already happened. Publish the final state
+            # immediately before the unit query reports inactive.
+            if landed != "absent":
+                normal(path, "new", 900 if landed == "stale" else 1000.6,
+                       result="error" if landed == "error" else "success")
+        return await systemd(argv)
+
+    out = await SyncNow(str(path), "u.service", 2, runner=runner, sleep=clock.sleep,
+                        monotonic=clock, wall_clock=clock).run_fresh(after=1000.5)
+    expected = "synced" if landed == "success" else "skipped" if landed == "absent" else "blocked"
+    assert out["outcome"] == expected
+    assert out["status"]["runId"] == ("old" if landed == "absent" else "new")
+    assert systemd.started == 1 and clock.now == 1002.5

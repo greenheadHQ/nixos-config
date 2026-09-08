@@ -281,12 +281,13 @@ class AnkiAdapter:
                 summary["cards_to_remove"] = self.col.db.scalar(
                     "select count() from cards c join notes n on n.id=c.nid where n.mid=? and c.ord=?", model["id"], ordinal)
         elif action == "store_media":
-            data_hash = hashlib.sha256(decode_media(p["data"], self.media_limit)).hexdigest()
+            data = decode_media(p["data"], self.media_limit)
+            data_hash = hashlib.sha256(data).hexdigest()
             existing_hash = self._media_hash(p["filename"])
             if existing_hash is not None and existing_hash != data_hash:
                 raise OperationError("media-exists-with-different-content")
             snapshot["media"] = {"filename": p["filename"], "hash": existing_hash}
-            summary.update(filename=p["filename"], bytes=len(decode_media(p["data"], self.media_limit)),
+            summary.update(filename=p["filename"], bytes=len(data),
                            unchanged=existing_hash == data_hash)
         if note_ids:
             notes = self._notes(note_ids)

@@ -68,6 +68,21 @@ PARAMS = {"note_ids": [1], "tags": ["t"]}
 
 
 @pytest.mark.anyio
+async def test_unready_status_stops_before_sync_or_mutation(tmp_path, monkeypatch):
+    service, helper, syncer, adapter = setup(tmp_path)
+
+    async def unready(path, payload):
+        helper.calls.append(path)
+        raise HelperRejected("collection-not-ready")
+
+    monkeypatch.setattr(helper, "post", unready)
+    with pytest.raises(HelperRejected, match="collection-not-ready"):
+        await service.run("add_tags", PARAMS, request_id="unready01")
+    assert helper.calls == ["/operations/status"]
+    assert not syncer.calls and not adapter.calls
+
+
+@pytest.mark.anyio
 async def test_presync_failure_does_not_prepare_or_apply(tmp_path):
     service, helper, syncer, adapter = setup(tmp_path, ["blocked"])
     result = await service.run("add_tags", PARAMS, request_id="presync01")

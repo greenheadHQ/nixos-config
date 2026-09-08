@@ -150,6 +150,10 @@ class SyncNow:
                 await pause()
                 state = read_status(self._status_file)
                 unit = await bounded(unit_state(self._unit, self._run))
+                if not unit.running:
+                    # The final record may land while the unit query awaits.
+                    # Evaluate it now, without another pause past the deadline.
+                    state = read_status(self._status_file)
                 if state and state.get("runId") and state["runId"] != before_run_id and state.get("result") != "running":
                     status = summarize(state)
                     try:

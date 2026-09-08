@@ -91,6 +91,37 @@ def test_http_denies_missing_and_wrong_roles_before_dispatch(runtime):
         thread.join(timeout=2)
 
 
+def test_operation_status_distinguishes_unready_missing_and_existing(runtime, monkeypatch):
+    server = runtime._Server(("127.0.0.1", 0), runtime._Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with httpx.Client(base_url=f"http://127.0.0.1:{server.server_port}", trust_env=False,
+                          headers={"Authorization": "Bearer " + "2" * 64}) as client:
+            payload = {"operation_id": "a" * 32}
+            response = client.post("/operations/status", json=payload)
+            assert response.status_code == 400
+            assert response.json()["error"] == "collection-not-ready"
+
+            def missing(_operation_id):
+                raise runtime.OperationError("operation-not-found")
+
+            ops = types.SimpleNamespace(status=missing)
+            monkeypatch.setattr(runtime, "_operations", ops)
+            response = client.post("/operations/status", json=payload)
+            assert response.status_code == 400
+            assert response.json()["error"] == "operation-not-found"
+
+            receipt = {**payload, "state": "applied"}
+            ops.status = lambda _operation_id: receipt
+            response = client.post("/operations/status", json=payload)
+            assert response.status_code == 200 and response.json()["result"] == receipt
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_timeout_keeps_mutation_lock_until_late_callback_finishes(runtime, monkeypatch):
     started, release, finished = threading.Event(), threading.Event(), threading.Event()
     workers = []

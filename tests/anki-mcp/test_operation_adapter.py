@@ -40,12 +40,14 @@ class Col:
         self.deck_list = [{"id": 1, "name": "A", "dyn": 0, "conf": 1}, {"id": 2, "name": "B", "dyn": 0, "conf": 1}]
         self.decks = SimpleNamespace(all=lambda: self.deck_list)
     def get_note(self, nid):
-        if not self.db.list("select id from notes where id=?", nid): raise ValueError("not found")
+        if not self.db.list("select id from notes where id=?", nid):
+            raise ValueError("not found")
         return Note(self, nid)
     def get_card(self, cid):
         rows = self.db.all("select id, nid, did, odid, ord from cards where id=?", cid)
-        if not rows: raise ValueError("not found")
-        return SimpleNamespace(**dict(zip(("id", "nid", "did", "odid", "ord"), rows[0])))
+        if not rows:
+            raise ValueError("not found")
+        return SimpleNamespace(**dict(zip(("id", "nid", "did", "odid", "ord"), rows[0], strict=True)))
 
 
 def adapter_fixture(tmp_path):
@@ -57,7 +59,7 @@ def adapter_fixture(tmp_path):
 
 
 def test_field_update_counts_new_cloze_cards_and_retained_old_cards(tmp_path):
-    ops, adapter, col = adapter_fixture(tmp_path)
+    ops, _adapter, col = adapter_fixture(tmp_path)
     # Old c1 card remains; c2 through c21 generate twenty additional cards.
     text = " ".join("{{c%d::new}}" % n for n in range(2, 22))
     preview = ops.prepare("update_fields", {"note_id": 1, "fields": {"Text": text}}, "cloze001")
@@ -66,7 +68,7 @@ def test_field_update_counts_new_cloze_cards_and_retained_old_cards(tmp_path):
 
 
 def test_deck_delete_snapshot_includes_siblings_without_deleting_them(tmp_path):
-    ops, adapter, col = adapter_fixture(tmp_path)
+    ops, _adapter, col = adapter_fixture(tmp_path)
     col.db.db.execute("insert into cards values(11, 1, 2, 0, 1)")
     preview = ops.prepare("delete_decks", {"deck_names": ["A"]}, "deckdel01")
     assert preview["summary"]["card_ids"] == [10]
@@ -79,7 +81,7 @@ def test_deck_delete_snapshot_includes_siblings_without_deleting_them(tmp_path):
 
 
 def test_new_child_deck_after_preview_is_stale(tmp_path):
-    ops, adapter, col = adapter_fixture(tmp_path)
+    ops, _adapter, col = adapter_fixture(tmp_path)
     p = ops.prepare("delete_decks", {"deck_names": ["A"]}, "children1")
     col.deck_list.append({"id": 3, "name": "A::child", "dyn": 0, "conf": 1})
     with pytest.raises(OperationError, match="stale-preview"):

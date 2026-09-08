@@ -337,6 +337,8 @@ def _sync(mode: str) -> dict[str, Any]:
     하한이 둘 다 0이면(첫 부트스트랩 전, 복원 절차로 상태 파일을 지운 뒤) 게이트가 없다.
     """
     _require_col()
+    # CIR: Collection and both media waits share the existing mutation budget.
+    # A timeout leaves delivery unconfirmed; it must not become normal success.
     deadline = time.monotonic() + MAIN_TIMEOUT_SECS
     mw = aqt.mw
     pm = mw.pm
@@ -728,7 +730,7 @@ class _Handler(BaseHTTPRequestHandler):
                 # Atomic journal reads need no Anki call and still work during a
                 # timed-out operation. Initialization waits for collection ready.
                 if _operations is None:
-                    raise OperationError("operation-not-found")
+                    raise OperationError("collection-not-ready")
                 result = _operations.status(body["operation_id"])
             elif path == "/operations/history" and self.command == "POST":
                 if _operations is None:
