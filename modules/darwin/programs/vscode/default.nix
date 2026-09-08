@@ -49,6 +49,7 @@
 #    하되 사용자 가시 메시지로 원인 식별 가능하도록 분기를 명시한다.
 {
   config,
+  constants,
   pkgs,
   lib,
   nixosConfigPath,
@@ -57,6 +58,23 @@
 
 let
   vscodeFilesPath = "${nixosConfigPath}/modules/darwin/programs/vscode/files";
+
+  # CIR: duti rejects dynamic UTIs; only unassigned extension types need the
+  # official NSWorkspace fallback. Existing handlers and generic UTIs stay intact.
+  dynamicFileHandler = pkgs.stdenv.mkDerivation {
+    pname = "vscode-dynamic-file-handler";
+    version = "1";
+    src = ./set-dynamic-file-handler.m;
+    dontUnpack = true;
+    strictDeps = true;
+    buildPhase = ''
+      $CC -fobjc-arc -O2 -Wall -Wextra -Werror "$src" \
+        -framework AppKit -framework UniformTypeIdentifiers -o set-dynamic-file-handler
+    '';
+    installPhase = ''
+      install -D -m 0755 set-dynamic-file-handler "$out/bin/set-dynamic-file-handler"
+    '';
+  };
 
   # VSCode bundle identifier (macOS 앱 식별자)
   vscodeBundleId = "com.microsoft.VSCode";
@@ -210,61 +228,67 @@ in
   # macOS LaunchServices에 정적 UTI가 없는 확장자(.mdx, .nix, .toml 등)는 동적 UTI(dyn.*)로
   # 매핑되어 duti가 -50을 반환한다. activate 스크립트는 set -eu로 실행되므로 첫 실패 시
   # darwin-rebuild가 exit 2로 종료되므로 helper로 감싸 실패를 카운터로 집계한다.
-  home.activation.setVSCodeAsDefaultEditor = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    echo "Setting VSCode as default editor for code files..."
+  home.activation.setVSCodeAsDefaultEditor =
+    lib.hm.dag.entryAfter [ "refreshVSCodeLaunchServices" ]
+      ''
+        echo "Setting VSCode as default editor for code files..."
 
-    skipped=0
-    total=0
-    first_failure=""
-    first_failure_err=""
-    public_uti_failed=0
-    set_handler() {
-      total=$((total + 1))
-      local err
-      if ! err=$(${pkgs.duti}/bin/duti -s ${vscodeBundleId} "$1" all 2>&1); then
-        skipped=$((skipped + 1))
-        if [ -z "$first_failure" ]; then
-          first_failure="$1"
-          first_failure_err="$err"
+        skipped=0
+        total=0
+        first_failure=""
+        first_failure_err=""
+        public_uti_failed=0
+        set_handler() {
+          total=$((total + 1))
+          local err
+          if ! err=$(${pkgs.duti}/bin/duti -s ${vscodeBundleId} "$1" all 2>&1); then
+            if ${dynamicFileHandler}/bin/set-dynamic-file-handler \
+              "$HOME/${constants.macos.paths.vscodeAppRelative}" "''${1#.}"; then
+              return
+            fi
+            skipped=$((skipped + 1))
+            if [ -z "$first_failure" ]; then
+              first_failure="$1"
+              first_failure_err="$err"
+            fi
+          fi
+        }
+
+        # public.plain-text / public.source-code는 정적 UTI라 정상 등록되어야 한다.
+        # 실패는 카운트로 흡수하지 않고 즉시 출력 + 별도 카운터 — 정적 UTI fallback이 깨지면
+        # codeExtensions 매핑에 없는 파일이 VSCode로 열리지 않을 수 있다.
+        register_public_uti() {
+          local err
+          if ! err=$(${pkgs.duti}/bin/duti -s ${vscodeBundleId} "$1" all 2>&1); then
+            public_uti_failed=$((public_uti_failed + 1))
+            echo "  ❌ Failed to register $1: $err — VSCode may not open code files via fallback UTI"
+          fi
+        }
+
+        ${lib.concatMapStringsSep "\n" (ext: ''set_handler ".${ext}"'') codeExtensions}
+
+        # NB: public.plain-text 등록은 확장자 없는 모든 설정 파일을 VSCode로 연다.
+        #   files.autoSave=afterDelay와 결합해 "앱이 기본 에디터로 설정 열기" 경로마다
+        #   오타 1글자가 자동 저장되는 사고를 만든다 (Ghostty 사례: #1232).
+        register_public_uti public.plain-text
+        register_public_uti public.source-code
+        # NB: public.folder default는 macOS가 Apple-protected (Finder 고정) — duti가 error -50
+        # 반환하여 등록 불가. 따라서 statusline.sh의 cwd Cmd+클릭은 Finder가 열리는 동작 수용.
+
+        if [ "$skipped" -gt 0 ]; then
+          echo "  ⚠️  Skipped $skipped of $total extensions without a verified handler (first: $first_failure → $first_failure_err)"
         fi
-      fi
-    }
-
-    # public.plain-text / public.source-code는 정적 UTI라 정상 등록되어야 한다.
-    # 실패는 카운트로 흡수하지 않고 즉시 출력 + 별도 카운터 — 정적 UTI fallback이 깨지면
-    # codeExtensions 매핑에 없는 파일이 VSCode로 열리지 않을 수 있다.
-    register_public_uti() {
-      local err
-      if ! err=$(${pkgs.duti}/bin/duti -s ${vscodeBundleId} "$1" all 2>&1); then
-        public_uti_failed=$((public_uti_failed + 1))
-        echo "  ❌ Failed to register $1: $err — VSCode may not open code files via fallback UTI"
-      fi
-    }
-
-    ${lib.concatMapStringsSep "\n" (ext: ''set_handler ".${ext}"'') codeExtensions}
-
-    # NB: public.plain-text 등록은 확장자 없는 모든 설정 파일을 VSCode로 연다.
-    #   files.autoSave=afterDelay와 결합해 "앱이 기본 에디터로 설정 열기" 경로마다
-    #   오타 1글자가 자동 저장되는 사고를 만든다 (Ghostty 사례: #1232).
-    register_public_uti public.plain-text
-    register_public_uti public.source-code
-    # NB: public.folder default는 macOS가 Apple-protected (Finder 고정) — duti가 error -50
-    # 반환하여 등록 불가. 따라서 statusline.sh의 cwd Cmd+클릭은 Finder가 열리는 동작 수용.
-
-    if [ "$skipped" -gt 0 ]; then
-      echo "  ⚠️  Skipped $skipped of $total extensions rejected by duti (first: $first_failure → $first_failure_err)"
-    fi
-    # Catastrophic case: 모든 codeExtensions 실패 + 모든 public.* 실패 — bundle id 오류,
-    # VSCode 미설치, duti 자체 고장 같은 설정 오류 신호. activation은 통과시키되 즉시 보임.
-    if [ "$total" -gt 0 ] && [ "$skipped" -eq "$total" ] && [ "$public_uti_failed" -eq 2 ]; then
-      echo "  🚨 Critical: all duti registrations failed — likely incorrect bundle id, VSCode not installed, or duti broken"
-    fi
-    if [ "$public_uti_failed" -gt 0 ]; then
-      echo "VSCode default settings applied with warnings ($public_uti_failed public UTI registration failed)."
-    else
-      echo "VSCode default settings applied."
-    fi
-  '';
+        # Catastrophic case: 모든 codeExtensions 실패 + 모든 public.* 실패 — bundle id 오류,
+        # VSCode 미설치, duti 자체 고장 같은 설정 오류 신호. activation은 통과시키되 즉시 보임.
+        if [ "$total" -gt 0 ] && [ "$skipped" -eq "$total" ] && [ "$public_uti_failed" -eq 2 ]; then
+          echo "  🚨 Critical: all duti registrations failed — likely incorrect bundle id, VSCode not installed, or duti broken"
+        fi
+        if [ "$public_uti_failed" -gt 0 ] || [ "$skipped" -gt 0 ]; then
+          echo "VSCode default settings applied with warnings ($skipped extensions, $public_uti_failed public UTIs unverified)."
+        else
+          echo "VSCode default settings applied."
+        fi
+      '';
 
   # CIR 9 — macOS LaunchServices DB 가 nix store 의 VSCode .app bundle URL scheme handler
   # 정보를 stale 처리하면서 vscode:// 클릭이 fallback (Finder / Shortcuts / PushRelay 등) 로
@@ -275,7 +299,7 @@ in
   home.activation.refreshVSCodeLaunchServices = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     echo "Refreshing VSCode LaunchServices registration..."
 
-    vscode_app="$HOME/Applications/Home Manager Apps/Visual Studio Code.app"
+    vscode_app="$HOME/${constants.macos.paths.vscodeAppRelative}"
     lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 
     if [ ! -e "$vscode_app" ]; then

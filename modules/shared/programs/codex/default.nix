@@ -72,8 +72,8 @@ let
     "issuing-codex-pairing-code"
     "review-pr-feedback"
     "run-da"
-    # using-gh-attach: create-issue/create-pr가 소비하는 증빙 첨부 정본 — 소비 스킬이 노출되므로 함께 노출
-    "using-gh-attach"
+    # attaching-github-media: create-issue/create-pr가 소비하는 증빙 첨부 정본 — 소비 스킬이 노출되므로 함께 노출
+    "attaching-github-media"
     "write-handoff"
   ];
 

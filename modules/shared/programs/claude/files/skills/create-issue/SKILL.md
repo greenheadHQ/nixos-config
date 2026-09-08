@@ -62,7 +62,7 @@ description: |
 - Affected Files: 변경 대상 파일이 여러 개인 경우 (테이블 형식)
 - Notes: 추가 참고사항(제약사항, 관련 이슈 번호, YAGNI 판단 근거 등)이 있는 경우
 
-공통 규칙 (섹션 선택과 독립): 명시적 시각 증빙 후보가 있으면 PoC 섹션 포함 여부와 무관하게 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬에 따라 `시각적 실제 결과` 슬롯을 준비한다. Step 2에서는 후보 식별과 슬롯 준비만 수행하고, 실제 업로드는 Step 5-A의 제목·라벨 확인 통과 직후 게시 전에 수행한다.
+명시적 이미지·영상이 있으면 PoC 섹션 포함 여부와 무관하게 `시각적 실제 결과` 슬롯을 준비한다. [공식 첨부 절차](../attaching-github-media/SKILL.md)에 따라 로컬 파일 참조와 `--attach` 인자를 준비하고, Step 5-A의 게시 명령에 함께 전달한다.
 
 작성 언어와 공개 안전성 (섹션 선택과 독립): 사용자가 본문 언어를 명시적으로 지정했으면 그 지정이 우선하고, 지정이 없으면 한국어로 요청했거나 대화가 한국어일 때 이슈 본문도 한국어로 유지한다 (sanitization checklist S4). 작성 중에도 [공개용 sanitization checklist](../write-handoff/references/sanitization-checklist.md)의 금지 항목(S1)을 넣지 않고 보존 항목(S2)을 지우지 않는다 — 최종 강제는 Step 3에서 수행.
 
@@ -88,7 +88,7 @@ description: |
 
 게시 전에 [publishing.md](references/publishing.md)를 읽는다. 제목·라벨 확인, 첨부 처리 후 최종 본문 sanitization, private 본문 파일 수명주기, URL 검증과 후속 handoff 동의 경계를 적용한다. 이슈 생성 또는 URL 검증 실패 시 parent 연결과 handoff를 진행하지 않는다.
 
-`--parent` 경로는 게시 성공 후 [parent-linking.md](references/parent-linking.md)의 연결 절차를 수행하고 `SUBISSUE_STATUS`를 최종 응답에 포함한다. parent 미지정 시 이 토큰을 만들지 않는다. 첨부가 있으면 별도의 `ATTACH_STATUS`도 보고한다.
+`--parent` 경로는 게시 성공 후 [parent-linking.md](references/parent-linking.md)의 연결 절차를 수행하고 `SUBISSUE_STATUS`를 최종 응답에 포함한다. parent 미지정 시 이 토큰을 만들지 않는다. 첨부 결과는 자연어로 짧게 보고한다.
 
 ## Title Conventions
 

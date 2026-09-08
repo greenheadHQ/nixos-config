@@ -103,10 +103,10 @@
   programs.zsh.promptInit = "";
 
   # 로그 용량 제한 (컨테이너 포함 전체 시스템 로그)
-  services.journald.extraConfig = ''
-    SystemMaxUse=2G
-    MaxRetentionSec=30day
-  '';
+  services.journald.settings.Journal = {
+    SystemMaxUse = "2G";
+    MaxRetentionSec = "30day";
+  };
 
   # wheel 그룹 sudo 비밀번호 생략 (SSH 키 인증 + Tailscale 보안)
   security.sudo.wheelNeedsPassword = false;
