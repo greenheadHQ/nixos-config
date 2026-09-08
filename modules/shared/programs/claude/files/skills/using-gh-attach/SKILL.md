@@ -1,12 +1,8 @@
 ---
 name: using-gh-attach
 description: >-
-  Attach explicitly provided file evidence (screenshots, demo videos, logs) to a GitHub issue or
-  PR with the gh-attach CLI — content-inspection masking gate, irreversible-upload staging,
-  fail-open ATTACH_STATUS reporting. Trigger: standalone attach requests on an existing issue/PR
-  ('이 스크린샷 이슈에 올려줘', 'gh attach로 첨부'), or another GitHub publishing skill reaching
-  for the evidence-attachment procedure. Format/size limits delegated to the GitHub server;
-  Discussions unsupported. NOT for issue/PR creation or body authoring (use create-issue/create-pr).
+  Attach explicitly provided file evidence to a GitHub issue or PR with gh-attach, including requests from another publishing skill.
+  Excludes Discussions, issue/PR creation, and body authoring.
 ---
 
 # gh-attach 파일 증빙 첨부

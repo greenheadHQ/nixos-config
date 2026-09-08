@@ -191,7 +191,7 @@ result block 기반 새 baseline이며, 이전 휴리스틱 기반 M-4 수치와
 `persistence_key = (perspective, location_identity, finding_fingerprint)`다. 이는
 과거 dismissal ledger(#1257에서 제거)의 dismissal key에서 세션 경계를 넘는 정량 분석에
 부적합한 필드를 뺀 lossful grouping key다 — ledger 제거 후 이 세 축은
-run-da/SKILL.md "세션 내 기각 이력"의 suppression key(관점+위치+요약)와 같은 구성이다
+[run-da fresh-review.md](../../run-da/references/fresh-review.md) "세션 내 기각 이력"의 suppression key(관점+위치+요약)와 같은 구성이다
 (run-da의 recurrence key(관점+위치)와는 다르다 — 키 구분은 그 문서 참조).
 
 | 과거 dismissal key 필드 | persistence_key 포함 | 사유 |

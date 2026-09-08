@@ -50,42 +50,7 @@ STATE_FILE="$HOME/.claude/status-icons/<session-id>.json"
 
 ### 대화형 설정
 
-사용자가 `/set-icons`를 호출하거나 링크 설정을 요청하면,
-AskUserQuestion으로 필요한 링크를 물어본다:
-
-```json
-{
-  "questions": [
-    {
-      "header": "Jira",
-      "question": "설정할 Jira 링크가 있나요?",
-      "multiSelect": false,
-      "options": [
-        { "label": "건너뛰기", "description": "설정하지 않음" },
-        { "label": "URL 입력", "description": "Other에 Jira URL을 입력해주세요" }
-      ]
-    },
-    {
-      "header": "Slack",
-      "question": "설정할 Slack 링크가 있나요?",
-      "multiSelect": false,
-      "options": [
-        { "label": "건너뛰기", "description": "설정하지 않음" },
-        { "label": "URL 입력", "description": "Other에 Slack URL을 입력해주세요" }
-      ]
-    },
-    {
-      "header": "Figma",
-      "question": "설정할 Figma 링크가 있나요?",
-      "multiSelect": false,
-      "options": [
-        { "label": "건너뛰기", "description": "설정하지 않음" },
-        { "label": "URL 입력", "description": "Other에 Figma URL을 입력해주세요" }
-      ]
-    }
-  ]
-}
-```
+사용자가 제공한 URL과 요청한 아이콘을 사용한다. 설정 대상이나 필요한 URL이 빠졌을 때만 질문 도구로 해당 정보를 묻는다. 이미 제공된 링크나 요청하지 않은 서비스의 링크를 다시 묻지 않는다.
 
 사용자가 URL을 입력하면 아래 jq 명령어로 상태 파일을 업데이트한다.
 Memo 아이콘도 스킬 호출 시 자동 등록한다 (메모 설정 섹션 참조).

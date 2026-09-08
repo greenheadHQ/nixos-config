@@ -175,7 +175,7 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   local fixture_path writer_trace gh_trace output rc body_path body_dir symlink_target target_mode
 
   sandbox="$(new_sandbox)"
-  skill_file="$REPO_ROOT/modules/shared/programs/claude/files/skills/create-issue/SKILL.md"
+  skill_file="$REPO_ROOT/modules/shared/programs/claude/files/skills/create-issue/references/publishing.md"
   recipe_file="$sandbox/step5a-recipe.sh"
   runner_file="$sandbox/run-recipe.sh"
   stub_bin="$sandbox/bin"

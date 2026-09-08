@@ -73,7 +73,7 @@ rm -rf .git/rr-cache
 1. Git 핵심 옵션(`core.pager`, `alias`, `rerere`)을 `git config --get`로 확인한다.
 2. lazygit/delta 연동이 깨진 경우 `modules/shared/programs/lazygit/default.nix`를 점검한다.
 3. 충돌 재현 시 rerere cache를 확인하고 필요하면 정리한다.
-4. 변경 후 `git diff`, `lazygit`, rebase 흐름을 순서대로 검증한다.
+4. 변경한 설정이 영향을 주는 동작을 확인한다. delta/lazygit/rebase 중 관련 경로만 선택하고, Git 상태를 바꾸는 재현은 격리된 fixture에서 수행한다.
 
 ## 자주 발생하는 문제
 

@@ -24,8 +24,8 @@
 - CONFIRMED_ISSUE 자동 반영 (통합 반영 루프): Arbiter가 CONFIRMED_ISSUE로 판정한 항목과 사용자가 수용한 NEEDS_MORE_INFO 항목 중 `remediation_scope: FIX_NOW`만 자동 반영한다 (다른 scope의 전이는 [`protocol.md`](protocol.md) "remediation scope" 전이표가 단독 소유 — 여기 재서술하지 않는다). review phase 중에는 patch/edit/apply_patch, write-mode formatter, generated output 변경을 금지한다. 항목은 pending write queue에 모아 write phase에서 `통합 설계 → batch 반영 → walkthrough → 후속 수정 처리 → finalize` 루프로 반영한다 (절차 정본: [`../modes/for_plan.md`](../modes/for_plan.md) Step 6). `FIX_NOW` + CRITICAL accepted severity는 다음 outer round 진행을 차단하고 write phase 첫 항목으로 수정한다 (`REPLAN_REQUIRED`는 CRITICAL이어도 write phase 대상이 아니다). 상태 전이별 행동의 정본은 [`protocol.md`](protocol.md)의 "DA → Arbiter → Main Agent 상태 흐름"이다.
 - Round outcome 스냅샷 기록과 accepted severity 집계: write phase 진입 직전 round outcome 스냅샷을 고정하고, VERDICT_JSON 수집 시 schema 1.2 caller 검증(`axes.plausibility` 정합 행렬 + `accepted_severity`/`reviewer_severity`/`rejection_basis`/`remediation_scope` 정합 + 실시간 경로 schema_version 정확히 1.2)을 수행하며, accepted severity의 집계(최댓값 계산)만 담당한다 — 값 산출은 Arbiter 소관이다. 규칙 정본은 [`protocol.md`](protocol.md)의 "수렴 판정". write phase 종료 시 post-write surface 게이트(protocol.md `post-write-surface-gate`)를 평가해 재검증 필요 여부를 판정한다.
 - Walkthrough 자가 검증: write phase의 batch 반영 후·다음 라운드 발사 전, 수정된 대상을 처음 읽는 사람처럼 따라 실행한다. 발견 결함의 즉시 수정 범위와 재검증 강제 규칙은 [`../modes/for_plan.md`](../modes/for_plan.md) Step 6의 "후속 수정 처리"가 정본이다.
-- 세션 내 기각 이력 관리: `NOT_AN_ISSUE` 또는 사용자가 명시 제외한 항목만 [`../SKILL.md`](../SKILL.md) "세션 내 기각 이력" 계약에 따라 자기 컨텍스트에 기록한다. `NEEDS_MORE_INFO`는 자동 기각으로 취급하지 않는다. `fresh` 반복 라운드에서는 exact match 항목만 새 finding에서 제외한다.
-- 사용자 전건 보고: 모든 Arbiter 판정 결과(CONFIRMED_ISSUE, NOT_AN_ISSUE, NEEDS_MORE_INFO)를 사용자에게 보고한다. NEEDS_MORE_INFO 항목은 아래 "사용자 질문 시 맥락 설명 의무"의 5요소를 갖춘 질문 도구 호출로 처리한다.
+- 세션 내 기각 이력 관리: `NOT_AN_ISSUE` 또는 사용자가 명시 제외한 항목만 [fresh-review.md](fresh-review.md) "세션 내 기각 이력" 계약에 따라 자기 컨텍스트에 기록한다. `NEEDS_MORE_INFO`는 자동 기각으로 취급하지 않는다. `fresh` 반복 라운드에서는 exact match 항목만 새 finding에서 제외한다.
+- 사용자 전건 보고: 모든 Arbiter 판정 결과(CONFIRMED_ISSUE, NOT_AN_ISSUE, NEEDS_MORE_INFO)를 사용자에게 보고한다. NEEDS_MORE_INFO 항목은 아래 "사용자 질문 시 맥락 설명 의무"를 따르는 질문 도구 호출로 처리한다.
 - Conservative wait: Codex 세션 경로에서 `wait_agent` timeout이나 단순 지연만으로 reviewer/Arbiter를 kill하지 않는다. explicit failure signal, documented violation, 최종 응답 파싱 실패가 없는 한 self-auditing으로 대체하지 않는다.
 - Fresh perspective 보장: 매 라운드마다 새 reviewer/Arbiter 실행 단위를 사용한다 (Codex 세션: 새 native subagent thread, codex exec 경로: 새 `codex exec` 프로세스). `fresh` modifier 사용 시 이전 라운드 맥락을 차단한다. 세션 내 기각 이력도 이전 finding 본문/이전 reasoning/transcript는 주입하지 않고, 메인 에이전트의 exact match suppression에만 사용한다.
 - Selective propagation 기본값: Arbiter/후속 reviewer에게는 unique findings, conflicting findings, high-severity findings, user decision required findings만 전달한다. raw transcript 전체, CLEAR 결과, 중복 low-signal finding의 all-to-all broadcast는 금지한다. `MAX` modifier는 propagation이 아니라 fan-out만 확장한다.
@@ -37,17 +37,12 @@
 
 - Single-writer / main-agent-only / 역할별 경계 / VIOLATION 처리 / Delegation fallback: [`hardening-contract.md`](hardening-contract.md) (`Codex 세션 하드닝 계약` SSOT).
 - PoC 의무화 / Arbiter 판정 프로토콜 / DA → Arbiter 상태 흐름 / read-write 분리 / 무한 루프 방지(3회 반복) / 수렴 판정(accepted severity·round outcome 스냅샷·수렴 predicate·caller 검증) / PR 코멘트 형식: [`protocol.md`](protocol.md) (protocol SSOT).
-- 검토 강도·강도 하향 계약·세션 내 기각 이력: [`../SKILL.md`](../SKILL.md) SSOT.
+- 검토 강도·강도 하향 계약: [`../SKILL.md`](../SKILL.md) SSOT.
+- 세션 내 기각 이력: [fresh-review.md](fresh-review.md) SSOT.
 
 ## 사용자 질문 시 맥락 설명 의무
 
-사용자에게 질문 도구로 판단을 요청할 때 (3회 반복 규칙, 라운드 한계효용 저하, outer round 상한 도달 — 질문 시점은 protocol.md "최대 라운드 수"의 기본/유효 상한과 위임 상태가 결정한다, fresh 모드 반복 감지, remediation_scope UNCLEAR 판단 등 모든 경우), 사용자가 딴짓을 하다가 돌아온 상황을 가정하고 다음을 모두 포함한다:
-
-1. 현재 상황 요약: 어떤 작업을 하고 있었는지 (예: "PR #<번호>의 for_pr 리뷰 피드백 루프 진행 중입니다")
-2. 문제 설명: 무엇이 충돌/반복되고 있는지 구체적으로
-3. 비유법 설명: 기술 용어를 모르는 사람도 이해할 수 있도록 쉬운 비유로 설명
-4. 선택지별 장단점: 각 선택이 가져올 결과를 명확히
-5. 질문: 질문 도구로 결정 요청
+사용자에게 판단을 요청할 때는 결정에 필요한 현재 상황, 막힌 이유, 선택별 결과와 추천 근거를 간결하게 설명한다. 이미 공유된 맥락은 반복하지 않는다. 비유는 기술 개념을 이해하는 데 도움이 될 때 사용하며, 질문의 복잡도에 맞춰 설명 길이를 조절한다. 질문 시점과 위임 전이는 [protocol.md](protocol.md)와 [autonomous-delegation.md](autonomous-delegation.md)를 따른다.
 
 나쁜 예 (맥락 부재):
 > "SECURITY DA가 3회 연속 동일 지적을 반복합니다. 수용/제외/배출 중 선택해주세요."

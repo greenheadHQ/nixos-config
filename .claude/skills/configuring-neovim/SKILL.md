@@ -1,12 +1,9 @@
 ---
 name: configuring-neovim
 description: |
-  Configure Neovim (LazyVim) via Nix: plugins, LSP, formatters, linters, themes, treesitter, im-select.
-  Default editor skill — generic '에디터', '편집기', '코드 편집기' queries route here unless the request is explicitly about VSCode (use managing-vscode) or another editor-specific path.
-  Trigger: 'neovim', 'LSP', 'lazy.nvim', 'treesitter', '한영 전환', 'im-select', '에디터', '코드 편집기',
-  '편집기 설정', 'colorscheme', 'catppuccin', 'formatter', 'linter', 'extraPackages', '자동완성',
-  'syntax highlighting', 'language server', '코드 편집'.
-  NOT for VSCode-explicit queries (use managing-vscode).
+  Configure Neovim/LazyVim plugins, LSP, formatting, themes, and input methods through Nix.
+  Use for Neovim problems and generic editor configuration requests; Neovim is this project's default editor.
+  Explicit VSCode requests use managing-vscode.
 ---
 
 # Neovim (LazyVim) 설정
@@ -69,7 +66,7 @@ Nix `extraPackages`로 관리하는 도구 카테고리:
 1. `modules/shared/programs/neovim/default.nix`에서 런타임 도구(`extraPackages`)를 선언한다.
 2. `files/nvim/lua/plugins/*.lua`에서 LazyVim 플러그인 동작을 조정한다.
 3. Mason 비활성화 원칙을 유지하고 LSP/formatter/linters는 Nix 패키지로 관리한다.
-4. 변경 후 Neovim을 재시작해 LSP attach, tree-sitter, im-select 동작을 확인한다.
+4. 변경한 기능을 확인한다. 설정 반영에 필요하면 Neovim을 재시작하고, LSP·tree-sitter·im-select 검사는 해당 기능이나 공통 런타임을 바꾼 경우에 수행한다.
 
 ## 제약사항
 

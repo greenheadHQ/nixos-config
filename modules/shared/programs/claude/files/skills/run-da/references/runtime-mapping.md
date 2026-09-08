@@ -55,7 +55,7 @@ fan-out 진행 가시성의 정본은 이 절이다. 메인 에이전트는 완�
 | Arbiter effort | 판정 강도 — 하한 `high`(strong)는 [`arbiter-scaling.md`](arbiter-scaling.md)가 정본, 본 표는 다른 축과의 관계만 소유 | `high` (strong) | 동일 | 동일 (부재 시 전이는 하한 절) | 수단 없음 (하한 절의 전이) |
 | service tier | API tier | 미지정 (런타임 기본) | `_DA_MODEL_TIER_OVERRIDES` | 수단 없음 | 수단 없음 |
 
-resolution 순서 (축별 독립 적용): ①현재 사용자 발화의 자연어 일회성 지정 > ②장기 선호 설정 파일([`../SKILL.md`](../SKILL.md) "장기 선호 설정 파일" 정본) > ③위 기본값. Arbiter 강도 하한은 이 순서 적용 후 최종 적용된다 (명시 축 예외 포함 — 하한 절 정본). 자연어 지정은 명시된 축만 바꾼다 — 명시 없는 축을 추론으로 채우지 않는다.
+resolution 순서 (축별 독립 적용): ①현재 사용자 발화의 자연어 일회성 지정 > ②장기 선호 설정 파일([execution-options.md](execution-options.md) "장기 선호 설정 파일" 정본) > ③위 기본값. Arbiter 강도 하한은 이 순서 적용 후 최종 적용된다 (명시 축 예외 포함 — 하한 절 정본). 자연어 지정은 명시된 축만 바꾼다 — 명시 없는 축을 추론으로 채우지 않는다.
 
 resolution 케이스 기록 (계약 검증용 — 각 행을 수동 replay해 의도한 축만 바뀌는지 확인한다):
 
@@ -67,9 +67,9 @@ resolution 케이스 기록 (계약 검증용 — 각 행을 수동 replay해 �
 
 비오케스트레이팅 강도 원칙: 자식 실행 유닛(reviewer/auditor/Arbiter)에는 지원되는 최고 강도라도 자동 task delegation을 포함하는 강도/모드를 선택하지 않는다 — 자식이 다시 fan-out하면 최상위 오케스트레이션과 소유자가 둘이 된다. fan-out 소유는 최상위 runner 하나로 고정한다 (child의 재-fan-out 금지는 기존 계약과 동일 축). 판정 기준은 해당 backend의 광고 문서다 — 스킬은 모델명·강도 이름을 박제하지 않는다.
 
-미지 값·불명확한 지정은 추론으로 채우지 않고 질문 도구로 확인한다 (`run-da/SKILL.md` "실행 경로·파라미터 지정" 해석 규칙).
+미지 값·불명확한 지정은 추론으로 채우지 않고 질문 도구로 확인한다 ([execution-options.md](execution-options.md) "실행 경로·파라미터 지정" 해석 규칙).
 
-사용자 지정 실행 파라미터 (model/effort/tier): 사용자가 명시한 값 — 현재 발화의 자연어 지정과 장기 선호 설정 파일 값(`run-da/SKILL.md` 설정 파일 절 — model 키는 없다) 모두 — 은 codex exec 경로의 모든 실행 단위(reviewer/auditor/Arbiter)에 `-c` config override로 주입되며, role별 기본 effort보다 우선한다 (resolution 순서는 위 실행 프로파일 절, Arbiter는 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 정본). 주입 경로는 축별로 다르다 — model/tier는 `_DA_MODEL_TIER_OVERRIDES` 배열로, effort는 고정 `-c model_reasoning_effort=` 인자로 별도 주입된다. 개념 정의는 `run-da/SKILL.md`, 실행 계약(env·shell-safe 검증·조립)은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. Claude 경로와 Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없다 (경로 전환 확인 규칙은 `run-da/SKILL.md` 경로 제약). effort는 native 경로에서도 Arbiter 하한을 만족해야 한다 — 세션 표면에 spawn 단위 effort 설정 수단이 광고되어 있으면 그것으로 명시 설정한다. 광고된 수단이 없을 때의 전이(자동 전환 금지·승인 게이트·미지원 중단)는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 단독 소유한다.
+사용자 지정 실행 파라미터 (model/effort/tier): 사용자가 명시한 값 — 현재 발화의 자연어 지정과 장기 선호 설정 파일 값([execution-options.md](execution-options.md) 설정 파일 절 — model 키는 없다) 모두 — 은 codex exec 경로의 모든 실행 단위(reviewer/auditor/Arbiter)에 `-c` config override로 주입되며, role별 기본 effort보다 우선한다 (resolution 순서는 위 실행 프로파일 절, Arbiter는 하한 적용 후 — [`arbiter-scaling.md`](arbiter-scaling.md) 정본). 주입 경로는 축별로 다르다 — model/tier는 `_DA_MODEL_TIER_OVERRIDES` 배열로, effort는 고정 `-c model_reasoning_effort=` 인자로 별도 주입된다. 개념 정의는 [execution-options.md](execution-options.md), 실행 계약(env·shell-safe 검증·조립)은 [`arbiter-scaling.md`](arbiter-scaling.md)의 "사용자 지정 실행 파라미터" 섹션이 SSOT다. Claude 경로와 Codex 세션 native subagent 경로에는 model/tier 주입 수단이 없다 (경로 전환 확인 규칙은 [execution-options.md](execution-options.md) 경로 제약). effort는 native 경로에서도 Arbiter 하한을 만족해야 한다 — 세션 표면에 spawn 단위 effort 설정 수단이 광고되어 있으면 그것으로 명시 설정한다. 광고된 수단이 없을 때의 전이(자동 전환 금지·승인 게이트·미지원 중단)는 [`arbiter-scaling.md`](arbiter-scaling.md)의 "Arbiter 추론 강도 하한" 절이 단독 소유한다.
 
 `CODEX_CI=1`만으로 세션 유형을 구분하지 않는다 (Codex 세션에서도 같은 값이 보일 수 있음). 현재 세션 호스트를 기준으로 경로를 고른다.
 

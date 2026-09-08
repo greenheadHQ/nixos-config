@@ -55,7 +55,7 @@ SSH/원격 장기 실행은 약 10분 무출력 뒤 완료된 실측이 있으�
 
 ### 0-1. stderr 원인 분류 절차
 
-stderr는 실패 판정 입력이 아니라 원인 분류 입력이다 (SKILL.md 성공 계약 조건 3;
+stderr는 실패 판정 입력이 아니라 원인 분류 입력이다 (execution-contracts.md 성공 계약 조건 3;
 재확인: 2026-08-15, 0.147.0). rc 또는 결과 파일 판정이 실패했을 때만 아래 절차로 분류한다.
 
 `grep -q "ERROR:"`가 실패 판정에 부적합한 실측 근거:
@@ -227,7 +227,7 @@ test "$rc" -eq 0 && test -s /tmp/review-result.md && test -s /tmp/review.stdout
 
 원인: `codex exec`는 `--approval-mode` 플래그를 받지 않는다. review/resume의 공개 surface에는
 승인 관련 CLI 플래그가 없고, exec에는 0.147.0부터 `--approve-for-me`가 있다 (workspace-write
-sandbox의 자동 리뷰로 승인 라우팅 — SKILL.md exec 전용 표 참조). 플래그 없는 기본 실행의
+sandbox의 자동 리뷰로 승인 라우팅 — cli-reference.md exec 전용 표 참조). 플래그 없는 기본 실행의
 approval은 `never`이며 시작 배너의 `approval:` 값으로 재확인한다 (재확인: 2026-08-15, 0.147.0).
 
 해결: 세밀한 샌드박스 조정이 필요하면 exec에서 `-s, --sandbox <MODE>`를 사용한다 (review/resume은 `-s` 미지원 — config.toml의 `sandbox_mode`를 따른다). 그 외 조정은 `-c key=value`로 처리한다.
@@ -484,7 +484,7 @@ Background 대안 — 다수 병렬 실행 시 LLM 블로킹 방지:
       프로세스 수를 완료 신호로 쓰지 않는다 (`pgrep` 패턴은 ERE라는 함정 포함).
     - 완료 알림의 exit code는 래핑 셸의 최종 rc다 — 위처럼 `exit $rc`로 끝내지 않고 꼬리
       echo/cat을 두면 전건 실패도 `completed (exit code 0)`으로 통지된다
-      (SKILL.md "background 발사의 rc 계약"; 2.1.233 하네스 A/B 실측)
+      (execution-contracts.md "background 발사의 rc 계약"; 2.1.233 하네스 A/B 실측)
     - `.rc` 파일 부재 자체를 실패로 취급한다 (guard 조기 exit 은폐 방지)
     - 모든 완료 알림 수신 후 결과 파일 일괄 수집
 
@@ -900,4 +900,4 @@ Direct Codex가 라우팅·승인·쓰기 경계를 우회하는 raw 또는 임�
 | `--full-auto` | ~0.128 정상 수용 → 0.144.1~0.146.1 help 숨김 + hidden parser 수용 + deprecation warning → 0.147.0 완전 제거 (upstream "Remove legacy --full-auto handling", merged 2026-07-30) | 전 서브커맨드 rc 2 `unexpected argument`. wrapper 경유 동일 |
 | `--approve-for-me` | 0.147.0 신설 (upstream #36373, merged 2026-07-31; 0.146.1 미포함) | exec 전용. `-s`·`--dangerously-bypass-*`와 clap 상호 배타 |
 | 무저장 cwd `resume --last` | 0.144.1 exit 0 silent fallback (새 세션) → 0.147.0 무출력 hang 관측 (fallback 로직 자체는 잔존 — state DB 우선 조회 upstream #36809가 0.147.0에 유입) | 두 축 모두 가능 전제로 §20 처방 적용 |
-| `--output-schema` | 0.142.5부터 review/resume에도 인자 수용 | (SKILL.md 공통 표 참조) |
+| `--output-schema` | 0.142.5부터 review/resume에도 인자 수용 | (cli-reference.md 공통 표 참조) |

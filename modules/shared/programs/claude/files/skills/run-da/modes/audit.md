@@ -16,7 +16,7 @@ audit 모드는 검토 강도 하향 채널의 적용 대상이 아니다 — �
 | open thread cap | capability profile의 batch 상한 ([`../references/runtime-mapping.md`](../references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT — 광고 slot 기반. `unknown`은 같은 SSOT의 fail-safe 세부 분기를 따른다 — serial(동시 1)이 허용되는 경우와 codex exec fallback만 가능한 경우가 나뉜다) |
 | `MAX` modifier | 기본 6 bundle을 10개 세부 관점으로 확장 (exhaustive override) |
 | `fresh` modifier | audit 모드 부적용 — 라운드 반복이 없으므로 해석하지 않는다 |
-| 자연어 실행 지정 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [`../SKILL.md`](../SKILL.md). 예: "run-da audit, codex high로" |
+| 자연어 실행 지정 | 호출 단위 실행 경로/effort override와 사용자 지정 model/effort/tier. 정본은 [../references/execution-options.md](../references/execution-options.md). 예: "run-da audit, codex high로" |
 | trailing 자유 텍스트 | `audit` (및 `MAX`) 토큰 뒤 나머지 인자 전체를 메인 에이전트의 우선순위 판단 컨텍스트로 보존 (Step 1 `git diff` 결과와 결합) |
 | 정수 에이전트 수 인자 | 폐지 — fan-out 크기는 기본 6 bundle / `MAX` 10 관점으로만 결정한다 |
 | 에이전트 권한 | 읽기 전용. codex exec 경로(Claude Code/headless)는 Layer 1 명령 literal(`codex-exec-supervised --sandbox read-only --ignore-user-config --ignore-rules --ephemeral`)로 실행 — 실제 차단 수행자는 codex의 read-only sandbox이고 플래그 부착은 명령 literal SSOT가 담보하는 문서 규약이다 (wrapper는 passthrough, #1086). Codex 세션(`spawn_agent`)은 정책 + 프롬프트 + self-report로 운영 (Non-goals 참조) |
@@ -35,7 +35,7 @@ auditor-specific delta: audit 모드의 fan-out 대상은 auditor다 (standard r
 
 ## 런타임 경로
 
-"나는 어떤 세션에서 실행되고 있는가?" 로 경로를 선택한다. 런타임별 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../references/runtime-mapping.md#런타임-도구-매핑)가 단일 소스다. 공통 subprocess 위생/제약(세션 네임스페이스, stdin pipe, 환경변수 유실)은 [`../../using-codex-exec/SKILL.md`](../../using-codex-exec/SKILL.md)와 run-da의 "codex exec 경로 위생 규칙"을 따른다. Step 3b는 audit 모드의 prompt/result flow와 guards를 정의하고, command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 `reviewer / Auditor` 템플릿을 참조한다.
+"나는 어떤 세션에서 실행되고 있는가?" 로 경로를 선택한다. 런타임별 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../references/runtime-mapping.md#런타임-도구-매핑)가 단일 소스다. 공통 subprocess 위생/제약(세션 네임스페이스, stdin pipe, 환경변수 유실)은 [`../../using-codex-exec/references/execution-contracts.md`](../../using-codex-exec/references/execution-contracts.md)와 run-da의 "codex exec 경로 위생 규칙"을 따른다. Step 3b는 audit 모드의 prompt/result flow와 guards를 정의하고, command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령 `reviewer / Auditor` 템플릿을 참조한다.
 
 | 경로 | 조건 |
 |------|------|
@@ -178,7 +178,7 @@ N개 에이전트를 한 턴에 병렬 실행한다 (런타임이 지원하는 �
   ```
   `--ignore-user-config`/`--ignore-rules`/effort resolution/`CODEX_PROGRAMMATIC=1` placement 등 command literal은 [`../references/arbiter-scaling.md`](../references/arbiter-scaling.md)의 role별 명령이 SSOT다.
 - 세션 네임스페이스(`$_DA_SID`)와 stdin pipe 패턴은 [`../references/runtime-mapping.md`](../references/runtime-mapping.md)의 "codex exec 경로 위생 규칙"을 따른다.
-- 임시 prompt/result 파일, stderr/result 검증, 백그라운드 실행 제어, stdin pipe 경쟁, heredoc hang 제약은 [/using-codex-exec 스킬](../../using-codex-exec/SKILL.md)과 [known-issues.md](../../using-codex-exec/references/known-issues.md)를 따른다.
+- 임시 prompt/result 파일, stderr/result 검증, 백그라운드 실행 제어, stdin pipe 경쟁, heredoc hang 제약은 [/using-codex-exec 스킬](../../using-codex-exec/references/execution-contracts.md)과 [known-issues.md](../../using-codex-exec/references/known-issues.md)를 따른다.
 
 ### Step 3c: Claude Code fallback (사용자 확인 후)
 

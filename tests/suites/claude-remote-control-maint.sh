@@ -1147,7 +1147,7 @@ test_claude_remote_control_maint_action_taxonomy() {
   local expected_diagnostic_snapshot expected_diagnostic_keys actual_diagnostic_keys
   local global_doc diagnostic_doc instance_doc
   script="$(_claude_rc_maint_script)"
-  operator_doc="$REPO_ROOT/.claude/skills/managing-claude-rc/SKILL.md"
+  operator_doc="$REPO_ROOT/.claude/skills/managing-claude-rc/references/troubleshooting.md"
 
   (
     # shellcheck source=/dev/null

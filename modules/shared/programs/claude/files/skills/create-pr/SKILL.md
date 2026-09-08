@@ -2,10 +2,8 @@
 name: create-pr
 argument-hint: "[update]"
 description: |
-  Create structured PR. Default: create new PR. Args: update (existing PR body).
-  Trigger: 'PR 만들어줘', 'PR 생성', 'PR 올려', 'create PR', 'PR 업데이트', 'Human Test'.
-  NOT for DA (use run-da). NOT for PR 코멘트 (use review-pr-feedback).
-  NOT for 머지 후 종결 절차 (use finish-pr).
+  Create or update a pull request using this project's PR format, including its human test plan.
+  Use for PR creation or body updates; review comments use review-pr-feedback, and merging uses finish-pr.
 ---
 
 # 상세 PR 작성

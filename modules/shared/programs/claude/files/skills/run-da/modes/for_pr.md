@@ -4,7 +4,7 @@
 
 `for_pr`은 `for_plan`과 step 구조가 동일하다. 입력(diff vs 계획), 임시 디렉토리 prefix, write phase의 코드 수정+커밋 방식, Step 8 push만 다르다. 동일 절차는 [`./for_plan.md`](./for_plan.md)를 참조하고, 본 파일은 차이점만 step 번호별로 명시한다.
 
-호출 단위 실행 경로·파라미터 지정(자연어 채널)은 [`../SKILL.md`](../SKILL.md)의 정의가 정본이다. 예: "run-da for_pr, 전부 codex xhigh로".
+호출 단위 실행 경로·파라미터 지정(자연어 채널)은 [../references/execution-options.md](../references/execution-options.md)의 정의가 정본이다. 예: "run-da for_pr, 전부 codex xhigh로".
 
 ## Step 번호별 delta (vs for_plan)
 
@@ -17,7 +17,7 @@
 | Step 3 | 동일 | 동일 ([`./for_plan.md`](./for_plan.md#step-3-reviewer-결과-수신--종합-리포트)) |
 | Step 4 | 동일 (finding 0건 → `termination_type=CONVERGED` 기록 후 종료 — all clear 특수형) | 동일 (종료 라벨 기록 후 Step 8 push로 이어진다) |
 | Step 5 (Arbiter) | for_plan 조립 (계획 원문 포함) | for_pr 조립 (diff 컨텍스트 포함) — [`../references/arbiter-prompt.md`](../references/arbiter-prompt.md)의 "프롬프트 조립 > for_pr 모드" 참조. for_pr에서는 계획 원문 대신 diff 또는 변경 컨텍스트를 포함 |
-| Step 5 상태 전이 | for_plan Step 5c의 전이 판정 순서(semantic malformed → LOW confidence 승격 → `remediation_scope` 분기) 적용 — FIX_NOW만 pending write queue, REPLAN_REQUIRED는 이슈 배출(DEFERRED), UNCLEAR는 사용자 판단 (protocol.md "remediation scope" 전이표). NOT_AN_ISSUE/사용자 제외는 세션 내 기각 이력에 기록 ([`../SKILL.md`](../SKILL.md) 정본) | 동일. review phase 중 patch 금지, formatter write 금지, generated output 변경 금지. 코드 수정/commit은 Step 6 write phase 전까지 금지 |
+| Step 5 상태 전이 | for_plan Step 5c의 전이 판정 순서(semantic malformed → LOW confidence 승격 → `remediation_scope` 분기) 적용 — FIX_NOW만 pending write queue, REPLAN_REQUIRED는 이슈 배출(DEFERRED), UNCLEAR는 사용자 판단 (protocol.md "remediation scope" 전이표). NOT_AN_ISSUE/사용자 제외는 세션 내 기각 이력에 기록 ([../references/fresh-review.md](../references/fresh-review.md) 정본) | 동일. review phase 중 patch 금지, formatter write 금지, generated output 변경 금지. 코드 수정/commit은 Step 6 write phase 전까지 금지 |
 | Step 6 write phase | 통합 반영 루프(통합 설계→batch 반영→walkthrough→후속 수정 처리→finalize) 후 계획 확정·새 changeset 선언 | 동일 루프를 코드에 적용하되 finalize에서 commit한다 — 아래 "Step 6 상세: for_pr write phase" 절 참조 |
 | Step 7 | 수렴 predicate 충족까지 반복 (protocol.md "수렴 판정" SSOT + "최대 라운드 수" 적용: 상한 + 한계효용 + read/write 분리) | 동일 |
 | Step 8 | (없음) | push — predicate 충족 종료(`termination_type=CONVERGED` 또는 `DEFERRED_EXIT`) 후 최종 승인을 받아 push한다. `ROUND_LIMIT`·`USER_STOP` 종료는 자동 push하지 않고 미해결 상태와 함께 사용자에게 위임한다. push 전 walkthrough delta가 마지막 commit에 포함됐는지 확인한다 (네트워크/auth 정책 의존 — [`../SKILL.md#non-goals`](../SKILL.md#non-goals) 참조) |

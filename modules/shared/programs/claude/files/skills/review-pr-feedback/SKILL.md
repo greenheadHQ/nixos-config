@@ -1,12 +1,8 @@
 ---
 name: review-pr-feedback
 description: |
-  Triage PR comments (CodeRabbit, AI, human) and apply valid feedback end-to-end.
-  수집(GraphQL reviewThreads) → 분류(7개 기각 taxonomy, stale review 포함) → 검증 →
-  반영 → 답글(review thread reply / PR 일반 코멘트) → resolve → isResolved 재확인까지.
-  Trigger: 'PR 코멘트', 'coderabbit', '코드리뷰 반영', '리뷰 피드백', 'PR 피드백 처리',
-  'stale review', 'review thread resolve', '리뷰 스레드 해결', 'multiline reply'.
-  NOT for DA (use run-da). NOT for PR 본문 (use create-pr).
+  Evaluate and address feedback on a pull request, including CodeRabbit reviews, replies, and thread resolution.
+  Use for PR feedback handling; PR body editing uses create-pr, and independent DA review uses run-da.
 ---
 
 # PR 리뷰 피드백 처리
@@ -53,35 +49,7 @@ gh pr view --json number -q .number
 - Review thread는 GraphQL `reviewThreads` 쿼리로 한 번에 수집한다.
   각 thread의 `id` / `isResolved` / `isOutdated` / `path` / `line` / 내부 comments를 받는다.
 - PR 일반 코멘트(대화 탭)는 REST `/issues/{pr}/comments`로 보조 수집한다.
-- Review 요약(`/pulls/{pr}/reviews`)은 `state`와 `body`를 함께 수집한다. body가 비어 있지 않으면 state별 분기 + approval-only 판정으로 answer pipeline에 올릴지 결정한다.
-  - `state == CHANGES_REQUESTED` 또는 `COMMENTED` + `body != empty`: actionable 후보. 길이와 무관하게 유지한다. `"Breaks CI."` / `"Revert this."` 같은 짧지만 명확한 reject/comment 사유가 length heuristic으로 버려지지 않도록 한다.
-  - `state == APPROVED` + `body != empty`: approval-only 판정을 적용해 drop 여부를 결정한다. `LGTM, but consider X` / `approved — nit: ...` 같은 mixed 승인 body는 actionable로 유지.
-  - `state == DISMISSED` 또는 `PENDING`: 답글 대상 아님.
-
-  approval-only 판정(APPROVED 전용 drop 규칙, exact-match only): `CHANGES_REQUESTED`/`COMMENTED`에는 적용하지 않는다. body를 다음 순서로 정규화한다.
-  1. `trim()` — 양끝 공백 제거.
-  2. 소문자 변환.
-  3. 양끝의 `.`, `!`, `?`, `~`, 공백을 반복 제거.
-
-  정규화 결과가 다음 승인 구절 목록과 정확히 일치하면 drop. 이 목록 밖의 body는 길이와 무관하게 actionable로 유지한다. 목록에는 `looks good`, `looks good to me`, `ship it`처럼 공백 포함 multi-word 구절도 들어 있으므로 정규화 단계에서 공백이나 multi-word를 걸러내지 않는다.
-
-  ```
-  lgtm
-  looks good
-  looks good to me
-  approved
-  approve
-  ok
-  okay
-  fine
-  ship it
-  👍
-  👌
-  ```
-
-  length-based heuristic은 사용하지 않는다. `"fix the typo"`, `"rename foo()"`, `"why is this here"` 같은 짧은 actionable body를 false-positive로 버리지 않도록 한다.
-  같은 지적이 review thread나 일반 코멘트로도 남아 있으면 그쪽 경로가 우선이며, summary-only인 경우에만 follow-up을 남긴다.
-  경계 케이스(`LGTM!`에 뒤이어 추가 문장이 있는 mixed body 등)는 정규화 시 승인 구절과 정확히 일치하지 않으므로 자동으로 actionable로 들어간다.
+- Review 요약(`/pulls/{pr}/reviews`)은 `state`와 `body`를 함께 수집한다. 상태별 분기와 APPROVED 전용 approval-only exact-match 규칙은 [comment-collection.md](references/comment-collection.md)를 따른다. 길이로 실제 피드백을 버리지 않으며 mixed 승인 body는 유지한다. 같은 지적은 thread/일반 코멘트 경로를 우선하고 summary-only에만 follow-up을 남긴다.
 - `isResolved == false`인 thread를 actionable로 간주한다. `isOutdated == true`는 수집하되 Step 2에서 `STALE_REVIEW` 후보로 분류한다.
 - `thread.id`는 Step 6 review thread mutation 입력에 반드시 필요하므로 보관한다.
   `comment.id`는 개별 코멘트 단위로 REST reply 엔드포인트를 쓰는 선택 경로에서만 쓴다.
@@ -205,7 +173,7 @@ PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
 ## 주의사항
 
 - 모든 피드백에 답글 필수: 반영하든 기각하든 사유를 명시한 답글을 남긴다. 무응답 금지.
-- resolve 재확인 필수: review thread는 Step 7 재조회까지 끝나야 완료다.
+- resolve 완료는 mutation 응답의 `thread.isResolved=true`로 확인한다. false 또는 필드 누락일 때만 Step 7 재조회·필요한 1회 retry를 적용한다.
 - AI 리뷰어 맹신 금지: CodeRabbit 등 AI 리뷰어 피드백도 동일한 검증 기준을 적용한다.
   stale diff 기반 지적을 `HALLUCINATION`으로 오분류하지 말고 `STALE_REVIEW`를 쓴다.
 - outside-diff 처리: PR 범위 밖 지적은 유효해도 이번 PR에서 처리하지 않는다.

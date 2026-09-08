@@ -1,15 +1,8 @@
 ---
 name: running-containers
 description: |
-  Use for any Podman container operation or NixOS homeserver service infrastructure work.
-  Covers: container commands (list, logs, restart, OOM debugging), homeserver.* mkOption system,
-  service-lib.sh shared library, Caddy reverse proxy (HTTPS, domains), service update timers,
-  DB backup services (immich-db-backup), port mapping, and container resource limits in constants.nix.
-  Trigger: 'podman', '컨테이너', 'container', 'OOM', 'homeserver 옵션', 'service-lib', '포트 매핑',
-  '서비스 업데이트', '업데이트 타이머', 'DB 백업', 'immich-db-backup', '리소스 제한', 'Caddy',
-  '리버스 프록시', 'HTTPS 인증서', '버전 체크', '서비스 상태', '서비스 포트'.
-  NOT for service-specific application workflows (use hosting-copyparty,
-  hosting-karakeep).
+  Manage Podman containers and shared NixOS homeserver infrastructure: Caddy, networking, updates, backups, and resource limits.
+  Service-specific application workflows use hosting-copyparty or hosting-karakeep.
 ---
 
 # 컨테이너 관리 (Podman/홈서버)

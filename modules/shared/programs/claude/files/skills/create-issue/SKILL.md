@@ -13,7 +13,7 @@ description: |
 텍스트가 제공되면 이슈 제목/설명으로 사용하고,
 비어있으면 대화 컨텍스트에서 이슈 내용을 추출한다.
 
-## 빠른 참조
+## 필요한 문서 선택
 
 | 항목 | 설명 |
 |------|------|
@@ -33,90 +33,9 @@ description: |
 
 본문에서 "질문 도구"는 위 표의 런타임별 실제 도구를 가리킨다.
 
-## 용어 / 변수 계약
+## 입력 분기
 
-Sub-Issues API는 GitHub visible issue number와 database id를 서로 다른 위치에서 요구한다. parent는 REST path의 `{issue_number}`(= visible number)만 사용하고, child의 database id만 POST body의 `sub_issue_id`로 전달한다. `_NUM`과 `_ID`를 바꿔 쓰면 Sub-Issues API 호출이 404 또는 422로 실패한다.
-
-| 변수 | 의미 | 예시 |
-|------|------|------|
-| `OWNER_REPO` | 현재 cwd의 GitHub repo canonical `nameWithOwner` (= `gh repo view --json nameWithOwner -q .nameWithOwner` 결과) | `greenheadHQ/nixos-config` |
-| `OWNER` | `OWNER_REPO`에서 분리한 owner (case-preserved canonical 값) | `greenheadHQ` |
-| `REPO` | `OWNER_REPO`에서 분리한 repo 이름 | `nixos-config` |
-| `PARENT_NUM` | parent의 GitHub visible issue number (integer). REST path의 `{issue_number}` | `539` |
-| `ISSUE_URL` | `gh issue create`가 반환하는 HTML URL | `https://github.com/OWNER/REPO/issues/540` |
-| `ISSUE_NUM` | `ISSUE_URL`에서 추출한 child의 visible number | `540` |
-| `ISSUE_ID` | 새로 생성된 child 이슈의 database id. Sub-Issues POST body의 `sub_issue_id` | `4313342653` |
-
-### 공통 repo 컨텍스트 초기화 스니펫
-
-Step 0(`--parent` pre-check)과 Step 5-B(sub-issue 연결) 양쪽에서 `OWNER_REPO`/`OWNER`/`REPO`를 필요로 한다. 두 위치 모두 아래 스니펫을 호출한다 — 기존 환경변수 오염을 막기 위해 항상 `gh repo view`로 재조회한다 (cwd 기준 canonical `nameWithOwner`). `gh repo view` 비용은 경미하고, ambient `OWNER_REPO`에 의존하면 다른 repo로 작업이 조용히 흘러갈 위험이 있다. resolution 규칙을 바꿀 경우 이 스니펫만 수정한다.
-
-```bash
-# ensure-repo-context — 항상 cwd 기준 재조회 (ambient env 오염 방지)
-OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-OWNER="${OWNER_REPO%%/*}"
-REPO="${OWNER_REPO##*/}"
-```
-
-## 절차
-
-### Step 0 — `--parent` 파싱 + pre-check (옵션 지정 시)
-
-수신한 인자를 shell-like tokenize한 뒤 첫 standalone `--` 이전에 `--parent`, `--parent=<값>`, `—parent`, 또는 `—parent=<값>` 토큰이 있으면 Step 1 본문에 진입하기 전에 이 단계를 수행한다. 이 범위에 네 형태가 모두 없으면 이 단계를 건너뛰고 기존 동작을 유지한다.
-
-파싱 규칙 (fail-closed):
-
-- 토큰 스캔 순서: 수신한 인자를 왼쪽부터 shell-like tokenize 후 스캔한다. 첫 standalone `--` 토큰을 만나면 그 이후 토큰은 모두 옵션 검색 대상에서 제외하고 제목/본문으로 취급한다 (escape). 이 규칙은 아래 `--parent` 옵션 검색보다 먼저 적용된다.
-- 옵션 검색 범위에서 U+2014 em dash `—`를 쓴 토큰이 정확히 `—parent`이거나 `—parent=<값>` 형식이면 `ERROR: —parent는 모바일 자동 치환 가능성이 있습니다. ASCII --parent를 사용하세요` 출력 후 `exit 1`. `foo—parent` 같은 부분 문자열, en dash `–parent`, 일반 산문은 감지하지 않는다.
-- `--parent=<값>` 또는 `--parent <값>` 형식만 옵션으로 인식한다. 위치는 자유(standalone `--` 앞이라면 어디든).
-- `--parent` 또는 `--parent=` 를 옵션 토큰으로 만난 뒤 값이 아래 값 패턴 중 어디에도 매칭되지 않거나 값이 없으면 `ERROR: --parent 값 누락 또는 유효하지 않음` 출력 후 `exit 1`. 사용자 오타로 인한 silent parent 연결 누락을 막기 위한 fail-closed 경계.
-- `--parent` 옵션은 최대 1회만 허용한다. 2회 이상 발견되면 `ERROR: --parent 중복 지정` 출력 후 `exit 1`. first-wins/last-wins 해석 모호성 제거.
-
-값 패턴 (둘 중 하나에만 매칭 허용):
-
-1. 숫자: `^[0-9]+$` — `PARENT_NUM`으로 직접 사용.
-2. anchored URL: `^https://github\.com/([^/]+)/([^/]+)/issues/([0-9]+)/?([?#].*)?$`
-   - suffix는 선택적 trailing slash(`/?`)와 query/fragment(`[?#].*`)만 허용한다. `/issues/539/evil` 같은 추가 path segment는 거부된다.
-   - owner/repo를 lowercase 정규화하여 `gh repo view --json nameWithOwner -q .nameWithOwner` 결과(lowercase 정규화)와 비교한다. 불일치 시 `"ERROR: cross-repo sub-issue는 미지원"` 출력 후 `exit 1`.
-   - GitHub owner/repo는 case-insensitive이므로 raw 비교 금지.
-   - `.git`, 추가 slash 경로, percent-encoding이 섞인 비정상 입력은 URL regex에 anchor가 있으므로 거부된다.
-   - 매칭된 숫자 그룹을 `PARENT_NUM`으로 추출한다.
-
-파싱 결과 표 (기준 알고리즘 재현용):
-
-| 입력 인자 | `PARENT_NUM` | Step 1로 전달될 자유 텍스트 | 비고 |
-|-------------------|--------------|-----------------------------|------|
-| `"버그 제목"` | (unset) | `"버그 제목"` | 기존 동작 (Step 0 skip) |
-| `"제목" --parent 539` | `539` | `"제목"` | 숫자 값 매칭 |
-| `--parent=539 "제목"` | `539` | `"제목"` | `--parent=` 형식 |
-| `"제목" --parent https://github.com/OWNER/REPO/issues/539` | `539` | `"제목"` | URL 값 매칭 (same-repo) |
-| `--parent 539abc "제목"` | — | — | exit 1 (값 패턴 불일치, 오타 방지) |
-| `"제목" --parent` | — | — | exit 1 (값 누락) |
-| `--parent 539 --parent 540 "제목"` | — | — | exit 1 (중복 지정) |
-| `—parent 539` | — | — | exit 1 (em dash 자동 치환 감지, ASCII `--parent` 안내) |
-| `—parent=539` | — | — | exit 1 (em dash 자동 치환 감지, ASCII `--parent` 안내) |
-| `-- "--parent 문서화 이슈"` | (unset) | `"--parent 문서화 이슈"` | escape로 literal 보존 |
-| `"제목" -- --parent 539` | (unset) | `"제목" --parent 539` | standalone `--` 이후는 옵션 검색 제외 |
-| `-- —parent 539` | (unset) | `—parent 539` | escape로 literal 보존, 옵션 검색 없음 |
-
-Pre-check (존재 확인 + object shape 검증, PR 배제):
-
-```bash
-# 공통 repo 컨텍스트 초기화 스니펫 실행 (위 "공통 repo 컨텍스트 초기화 스니펫" 섹션 참조).
-
-# GitHub REST GET /repos/{owner}/{repo}/issues/{n}은 PR도 issue object로 반환하며 pull_request 키로 식별된다.
-# PR 번호를 parent로 지정하면 Sub-Issues POST 단계에서야 실패하므로, 여기서 사전 차단한다.
-if ! PARENT_META=$(gh api "/repos/$OWNER/$REPO/issues/$PARENT_NUM" \
-     --jq 'select((.number|type=="number") and (.id|type=="number") and (has("pull_request")|not)) | {number,state}') \
-     || [ -z "$PARENT_META" ]; then
-  echo "ERROR: parent #$PARENT_NUM 조회 실패, 이슈가 아님, 또는 PR 번호"
-  exit 1
-fi
-```
-
-성공 시 `PARENT_NUM`을 Step 5-B에서 재사용한다. parent가 `closed` 상태여도 차단하지 않는다 (v1 YAGNI 범위).
-
-Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트가 Step 1 본문의 title/description 경로로 흐른다.
+첫 standalone `--` 앞에 `--parent`, `--parent=...`, `—parent`, `—parent=...` 형태가 있으면 [parent-linking.md](references/parent-linking.md)를 읽어 파싱·오타 거부·parent pre-check를 이슈 생성 전에 끝낸다. standalone `--` 뒤는 자유 텍스트로 보존한다. 단일 이슈 경로에서는 parent 문서를 로드할 필요가 없다.
 
 ### Step 1 — 코드베이스 탐색
 
@@ -129,7 +48,7 @@ Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트
 
 ### Step 2 — 템플릿 작성
 
-`references/issue-template.md`를 참조하여 이슈 본문을 작성한다.
+[references/issue-template.md](references/issue-template.md)를 참조하여 이슈 본문을 작성한다.
 
 필수 섹션 (항상 작성):
 - TL;DR — 쉬운 말로: 본문 최상단에 평이한 말로 풀어쓴 핵심 요약 (recommended 4 sub-section: 문제/해결/결과물/검증 — 변형/추가/생략 자유, 체크리스트 A1). 자세한 가이드와 sub-section 변형 예시는 [references/issue-template.md](references/issue-template.md) `## 템플릿` 블록의 TL;DR section + `## 작성 예시` 참조.
@@ -152,12 +71,12 @@ Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트
 작성된 이슈 본문에 체크리스트 E1/E2와 공개 sanitization scan을 적용한다 (E1/E2 규칙 상세 정의와 출처는 [`../write-handoff/references/llm-friendly-checklist.md`](../write-handoff/references/llm-friendly-checklist.md) Normative E1/E2 참조).
 
 - E1: 근거 없거나 확신 낮은 주장은 `[UNVERIFIED]` 라벨 또는 삭제 (라벨 체계 상세는 [체크리스트 라벨 체계](../write-handoff/references/llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조).
-- E2: 비자명 주장을 검증 질문으로 변환 → 파일 읽기·검색 도구 또는 `gh` CLI 재실행으로 독립 확인 → 불일치/근거 부재 시 라벨 또는 삭제.
+- E2: 이번 작업의 직접 근거를 재사용한다. 출처 부재·충돌·상태 변경 가능성이 있는 주장만 추가 확인하고, 확인 불가 시 라벨 또는 삭제한다.
 - S1-S3: 공개 sanitization post-render scan — [공개용 sanitization checklist](../write-handoff/references/sanitization-checklist.md)의 금지(S1)/보존(S2) 기준과 S3 scan 절차를 초안에 적용한다. blanket redaction 금지 — S2 항목(repo-relative path, 검증 명령/결과, 실패 증상)은 지우지 않는다.
 
 ### Step 4 — 라벨 자동 결정
 
-`references/label-taxonomy.md`를 참조하여 라벨을 결정한다.
+[references/label-taxonomy.md](references/label-taxonomy.md)를 참조하여 라벨을 결정한다.
 
 1. `gh label list`로 기존 area 라벨 목록을 조회한다.
 2. 이슈 내용에서 적합한 area를 자동 매칭한다 (기존 area에서만 선택).
@@ -165,134 +84,11 @@ Step 0 완료 후, `--parent`/값 토큰을 제거한 나머지 자유 텍스트
 4. priority는 이슈 내용의 긴급도/영향도를 기반으로 자동 판단한다 (high/medium/low).
 5. GitHub 기본 라벨(enhancement/bug/documentation 등)을 이슈 유형에 맞게 선택한다.
 
-### Step 5 — 등록 및 확인
+### 게시와 후속 처리
 
-Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매트릭스 하나로 통합한다 — 각 세부 단계의 실패 처리는 이 표를 참조한다.
+게시 전에 [publishing.md](references/publishing.md)를 읽는다. 제목·라벨 확인, 첨부 처리 후 최종 본문 sanitization, private 본문 파일 수명주기, URL 검증과 후속 handoff 동의 경계를 적용한다. 이슈 생성 또는 URL 검증 실패 시 parent 연결과 handoff를 진행하지 않는다.
 
-진행 상태 매트릭스
-
-| 상태 (Step 5 출력) | Step 5-B 진행 | Step 6 진행 | 사용자/운영자 보고 의무 |
-|--------------------|---------------|-------------|--------------------------|
-| Step 5-A `gh issue create` 실패 (`ERROR:` + `ISSUE_URL` 미반환) | 차단 | 차단 | 재시도 명령 출력 후 `exit 1` |
-| Step 5-A URL validation 실패 (반환값이 `https://github.com/.../issues/N` 형식 아님) | 차단 | 차단 | `ERROR:` + 재시도 유도 |
-| Step 5-A 성공 + `--parent` 미지정 | Skip (실행 안 됨) | 진행 | `ISSUE_URL`만 출력 (기존 경로, `SUBISSUE_STATUS` 토큰 없음) |
-| Step 5-B `SUBISSUE_STATUS=LINKED` | — | 진행 | 성공 로그 |
-| Step 5-B `SUBISSUE_STATUS=FAILED_ID_LOOKUP` | — | 진행 | `SUBISSUE_STATUS` 토큰을 최종 응답에 포함, 재시도 명령 명시 |
-| Step 5-B `SUBISSUE_STATUS=FAILED_POST` | — | 진행 | 동일 |
-
-`SUBISSUE_STATUS`의 전달 경로는 `/create-issue`의 최종 응답(사용자에게 출력되는 마지막 메시지) 에 명시하는 것으로 scope을 닫는다. Step 6의 `/write-handoff` 호출은 `<ISSUE_URL>`만 전달하므로 `SUBISSUE_STATUS`는 handoff body에 전달되지 않는다 — 운영자는 `/create-issue` 최종 응답의 토큰을 보고 재시도 여부를 판단한다.
-
-#### Step 5-A — 이슈 등록
-
-실패 시 진행 차단 정책은 위 진행 상태 매트릭스 참조.
-
-1. 등록 전 제목, 라벨 조합을 사용자에게 보여주고 확인을 받는다.
-2. 확인 통과 직후, Step 2에서 식별한 명시적 시각 증빙 후보가 있으면 [`using-gh-attach`](../using-gh-attach/SKILL.md) 스킬의 절차를 여기서 실행한다 — 각 후보의 처리 결과를 반영한 본문 사본을 아래 3단계의 `$ISSUE_BODY`로 사용한다. 성공한 후보의 첨부는 유지하고 실패·skip 후보만 제외한다 (부분 성공 시 성공한 `href`를 버리면 orphan asset이 된다). 업로드·삽입에 성공한 후보가 없을 때만 원래 본문을 사용하고, 정본이 정의한 `ATTACH_STATUS`를 최종 응답에 포함한다. 후보가 없으면 이 단계를 건너뛴다.
-   첨부를 삽입했다면 Step 3의 sanitization scan은 이 시점의 최종 본문 사본에 다시 적용한다 — 삽입되는 첨부 라벨의 파일명·설명도 S1 값(개인·회사 식별자 등)을 담을 수 있으므로, 검사한 본문과 게시하는 본문이 반드시 동일 파일이어야 한다 (sanitization checklist S3의 post-render 원칙).
-3. `gh issue create`를 `--body-file`로 실행한다. 본문은 임시 파일에 저장 후 전달.
-   ```bash
-   # BSD/macOS mktemp는 템플릿 끝(trailing)에 XXXXXX가 와야 랜덤 치환함.
-   # 전용 private 디렉터리만 만들고 본문 target은 첫 편집 전까지 존재하지 않게 둔다.
-   umask 077
-   ISSUE_BODY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/issue-body.XXXXXX") \
-     || { echo "ERROR: 본문 임시 디렉터리 생성 실패"; exit 1; }
-   chmod 700 "$ISSUE_BODY_DIR" \
-     || { echo "ERROR: 본문 임시 디렉터리 권한 설정 실패: $ISSUE_BODY_DIR"; exit 1; }
-   ISSUE_BODY="$ISSUE_BODY_DIR/body.md"
-   if [ -e "$ISSUE_BODY" ] || [ -L "$ISSUE_BODY" ]; then
-     echo "ERROR: 첫 편집 전 본문 target이 이미 존재함: $ISSUE_BODY"
-     exit 1
-   fi
-   # <작성된 본문>을 $ISSUE_BODY에 기록 (파일 편집 도구)
-
-   # 게시 경계에서는 regular file만 허용하고, 편집 도구의 기본 mode와 무관하게 0600으로 고정한다.
-   if [ ! -f "$ISSUE_BODY" ] || [ -L "$ISSUE_BODY" ]; then
-     echo "ERROR: 본문이 regular non-symlink file이 아님"
-     echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 게시하지 않고 보존됨"
-     exit 1
-   fi
-   if ! chmod 600 "$ISSUE_BODY"; then
-     echo "ERROR: 본문 파일 권한 설정 실패"
-     echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 게시하지 않고 보존됨"
-     exit 1
-   fi
-
-   # gh issue create — 성공 시 URL 캡처, 실패 시 본문 경로/미리보기 출력 후 exit 1
-   if ISSUE_URL=$(gh issue create --title "<제목>" --label "<라벨>" --body-file "$ISSUE_BODY"); then
-     echo "ISSUE_URL=$ISSUE_URL"
-     # GitHub write 성공과 로컬 cleanup 성공을 혼동하지 않는다. 정확한 파일과 빈 디렉터리만 제거한다.
-     if ! rm -f "$ISSUE_BODY"; then
-       echo "WARN: 이슈는 등록됐지만 본문 파일 정리 실패: $ISSUE_BODY"
-     elif ! rmdir "$ISSUE_BODY_DIR"; then
-       echo "WARN: 이슈는 등록됐지만 본문 임시 디렉터리 정리 실패: $ISSUE_BODY_DIR"
-     fi
-   else
-     rc=$?
-     echo "ERROR: gh issue create 실패 (exit $rc)"
-     echo "ISSUE_BODY_PATH=$ISSUE_BODY  # 본문 보존됨 (재시도 시 재사용)"
-     echo "ISSUE_BODY_DIR=$ISSUE_BODY_DIR  # 성공한 재시도 뒤 빈 디렉터리를 정리"
-     # 본문은 stdout으로 덤프하지 않는다 — 사용자가 실수로 시크릿을 포함한 경우 세션/운영 로그에 남을 위험.
-     # 필요 시 로컬 shell에서 직접 확인: `sed -n '1,20p' "$ISSUE_BODY_PATH"` 또는 에디터로 열기.
-     echo "본문 미리보기는 보안상 stdout 덤프하지 않음. 확인 명령: sed -n '1,20p' \"\$ISSUE_BODY_PATH\""
-     echo "재시도 명령 (동일 shell 세션 또는 ISSUE_BODY_PATH 값을 직접 입력):"
-     echo "  gh issue create --title '<제목>' --label '<라벨>' --body-file \"\$ISSUE_BODY_PATH\""
-     echo "**Step 5-B와 Step 6은 이슈 등록 완료 전에는 진행하지 않는다.**"
-     exit 1
-   fi
-   ```
-4. 반환된 `ISSUE_URL`이 실제 GitHub URL(`https://github.com/.../issues/N`)인지 확인한다. 형식 불일치는 매트릭스의 "URL validation 실패" 행을 따른다.
-
-#### Step 5-B — sub-issue 연결 (`--parent` 지정 시만)
-
-`--parent` 미지정 시 이 단계를 완전히 건너뛴다. 지정 시 child의 database id를 조회한 뒤 Sub-Issues API로 parent에 연결한다. 실패는 fail-open(이슈 본체는 이미 생성됨) — 상세 진행/보고 규칙은 위 매트릭스 참조. `SUBISSUE_STATUS` 토큰을 항상 출력해 운영자가 최종 응답에서 부분 실패를 인지할 수 있게 한다.
-
-```bash
-if [ -n "$PARENT_NUM" ]; then
-  # 공통 repo 컨텍스트 초기화 스니펫 실행 (Step 0에서 호출됐어도 idempotent).
-  ISSUE_NUM="${ISSUE_URL##*/}"
-
-  # Branch 1: child database id 조회
-  # Sub-Issues API는 visible issue number가 아니라 child의 database id(sub_issue_id)를 요구한다.
-  # -q '.id'는 필드 부재 시 "null" 문자열을 반환할 수 있으므로 numeric 형식도 검증한다.
-  ISSUE_ID=$(gh api "/repos/$OWNER/$REPO/issues/$ISSUE_NUM" -q '.id' 2>/dev/null || true)
-
-  if [ -z "$ISSUE_ID" ] || ! [[ "$ISSUE_ID" =~ ^[0-9]+$ ]]; then
-    # Branch 1 failure: child id 조회 실패 → POST 스킵
-    echo "WARN: ISSUE_ID 조회 실패 — sub-issue 연결 스킵, 수동 재시도 필요"
-    echo "SUBISSUE_STATUS=FAILED_ID_LOOKUP  # ISSUE_URL=$ISSUE_URL (이슈는 생성됨, parent 미연결)"
-    echo "재시도 (ISSUE_ID 재조회 포함):"
-    echo "  ISSUE_ID=\$(gh api /repos/$OWNER/$REPO/issues/$ISSUE_NUM -q .id)"
-    echo "  gh api -X POST /repos/$OWNER/$REPO/issues/$PARENT_NUM/sub_issues -F sub_issue_id=\$ISSUE_ID"
-  else
-    # ISSUE_ID 확보됨 → Branch 2 또는 Branch 3 선택
-    if gh api -X POST "/repos/$OWNER/$REPO/issues/$PARENT_NUM/sub_issues" \
-         -F "sub_issue_id=$ISSUE_ID" >/dev/null; then
-      # Branch 2: 연결 성공
-      echo "SUBISSUE_STATUS=LINKED"
-      echo "SUBISSUE_LINKED=#$ISSUE_NUM -> parent #$PARENT_NUM"
-    else
-      # Branch 3: Sub-Issues POST 실패
-      rc=$?
-      echo "WARN: sub-issue 연결 실패 (exit $rc)"
-      echo "SUBISSUE_STATUS=FAILED_POST  # ISSUE_URL=$ISSUE_URL (이슈는 생성됨, parent 미연결)"
-      echo "재시도: gh api -X POST /repos/$OWNER/$REPO/issues/$PARENT_NUM/sub_issues -F sub_issue_id=$ISSUE_ID"
-    fi
-  fi
-fi
-```
-
-SUBISSUE_STATUS 값 (`--parent` 지정 시에만 출력): `LINKED` / `FAILED_ID_LOOKUP` / `FAILED_POST` (세부 의미는 위 Step 5 매트릭스 참조). 이 토큰이 출력된 경우 `/create-issue` 최종 응답에 반드시 포함해 운영자가 재시도 여부를 판단할 수 있게 한다. `--parent` 미지정 경로에서는 Step 5-B 자체가 실행되지 않으므로 토큰이 출력되지 않고 최종 응답에도 포함하지 않는다 — 별도 `SKIPPED_NO_PARENT` 토큰은 도입하지 않는다(단일 이슈 등록 경로의 기존 출력 형태 유지, YAGNI).
-
-### Step 6 — LLM 이행 가이드 연계
-
-진입 가드: 위 Step 5 진행 상태 매트릭스의 "Step 6 진행" 열을 따른다. 요약하면 Step 5-A 실패(create 실패 또는 URL validation 실패)는 Step 6 차단, Step 5-B `SUBISSUE_STATUS` 부분 실패는 Step 6 진행 허용. 존재하지 않는 이슈 번호로 `/write-handoff`를 호출하면 handoff comment가 엉뚱한 곳에 게시되거나 오류로 중단되므로 전자의 차단이 필수다.
-
-이슈 생성이 완료되면, 질문 도구로 사용자에게 묻는다:
-
-"LLM 이행 가이드를 작성할까요?"
-
-- 사용자가 승인 → `/write-handoff <생성된 ISSUE_URL>` 스킬을 실행한다 (bare 번호 대신 Step 5의 `ISSUE_URL`을 전달해 cwd-dependent bare-number 모호성을 회피한다).
-- 사용자가 거부 → 이슈 URL 반환 후 종료한다.
+`--parent` 경로는 게시 성공 후 [parent-linking.md](references/parent-linking.md)의 연결 절차를 수행하고 `SUBISSUE_STATUS`를 최종 응답에 포함한다. parent 미지정 시 이 토큰을 만들지 않는다. 첨부가 있으면 별도의 `ATTACH_STATUS`도 보고한다.
 
 ## Title Conventions
 
@@ -305,13 +101,7 @@ SUBISSUE_STATUS 값 (`--parent` 지정 시에만 출력): `LINKED` / `FAILED_ID_
 | `docs:` | 문서 |
 | `chore:` | 기타 유지보수 |
 
-Epic/Umbrella 패턴 예시:
-- `refactor(skills): X 단순화 (epic)`
-- `feat(codex): Y 캠페인 (epic, Wave 1)`
-
-Epic 제목에 자식 이슈 번호(`#A/#B/#C`)를 박지 않는다 — 자식 이슈가 close/rename되면 제목이 즉시 stale. 자식 관계는 GitHub Sub-Issues API(`gh api graphql ... addSubIssue`) 또는 children 등록 시 `--parent <NUM|URL>` 옵션으로 표현한다.
-
-Umbrella를 사용할 때는 먼저 `/create-issue`로 umbrella를 등록한 뒤, 반환된 umbrella issue의 번호 또는 URL을 children 등록 시 `--parent <NUM|URL>`로 전달한다 (frontmatter argument-hint와 동일 표기). `/create-issue` 자체는 단일 등록만 수행한다 — 복수 이슈 순서 유도나 umbrella 선생성 판단은 이 스킬의 책임이 아니다.
+Epic/umbrella 관계가 필요하면 [parent-linking.md](references/parent-linking.md)를 참조한다. 이 스킬은 단일 이슈만 등록한다.
 
 ## 주의사항
 

@@ -108,13 +108,13 @@
 ### Related Commits (선택)
 - 포맷: `- \`머지된 SHA\` — 커밋 메시지 한줄 요약` (안정 식별자만; mid-flight partial hash 박제 금지 — squash 후 dangling 위험)
 - 이 이슈가 생성된 배경/맥락이 되는 기존 머지된 커밋만 기재 (단순 색인용 인용 금지)
-- 포함 기준은 SKILL.md Step 2 참조
+- 포함 기준은 [SKILL.md의 작성 기준](../SKILL.md#step-2--템플릿-작성) 참조
 
 ### Affected Files (선택)
 - 반드시 테이블 형식 사용 (LLM 파싱 용이)
 - 파일 경로는 프로젝트 루트 기준 상대 경로
 - 백틱(`` ` ``)으로 경로 감싸기
-- 포함 기준은 SKILL.md Step 2 참조
+- 포함 기준은 [SKILL.md의 작성 기준](../SKILL.md#step-2--템플릿-작성) 참조
 
 ### Proposed Changes (필수)
 - 반드시 체크박스 (`- [ ]`) 사용
@@ -129,7 +129,7 @@
 
 ## 공개 Sanitization (전 섹션 공통)
 
-이슈 본문은 PUBLIC repo에 게시된다. 금지/보존 기준과 post-render scan 절차는 [공개용 sanitization checklist](../../write-handoff/references/sanitization-checklist.md)가 단일 진실 원천이다 (SKILL.md Step 3에서 강제). 과잉 검열과 누락 검열 모두 결함이다.
+이슈 본문은 PUBLIC repo에 게시된다. 금지/보존 기준과 post-render scan 절차는 [공개용 sanitization checklist](../../write-handoff/references/sanitization-checklist.md)가 단일 진실 원천이다 ([SKILL.md의 게시 전 검증](../SKILL.md#step-3--게시-전-자체-검증-anti-hallucination--sanitization)에서 강제). 과잉 검열과 누락 검열 모두 결함이다.
 
 ❌ 과잉 검열 (false positive): Context/References의 `modules/.../file.nix:42` repo-relative 근거를 "로컬 경로"로 오인해 삭제 _(why: References 섹션의 citation 계약(B1/B4)이 무너짐 — S2에 따라 유지)_
 

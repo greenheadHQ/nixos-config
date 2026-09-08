@@ -7,7 +7,7 @@ review thread와 PR 일반 코멘트는 API 모델이 다르므로 플로우가 
 
 | 대상 | 답글 mutation | resolve | 재확인 |
 |------|---------------|--------|-------|
-| Review thread | `addPullRequestReviewThreadReply` | `resolveReviewThread` | `reviewThreads { isResolved }` |
+| Review thread | `addPullRequestReviewThreadReply` | `resolveReviewThread` | mutation 응답 우선, false/필드 누락 시 `reviewThreads { isResolved }` 조회 |
 | PR 일반 코멘트 (issues/{pr}/comments) | `addComment` 또는 REST `POST /issues/{pr}/comments` | 없음 (resolve 개념 없음) | 불필요 |
 
 `addPullRequestReviewThreadReply`와 `resolveReviewThread`는 review thread 전용이다.
@@ -212,5 +212,5 @@ SKILL.md·다른 reference·Step 7 설명은 모두 이 앵커를 링크로 참�
 - [ ] 답글 본문을 `mktemp` 기반 임시 파일에 작성했는가 (`/tmp/reply.md` 같은 고정 경로 미사용).
 - [ ] `addPullRequestReviewThreadReply` 응답의 `comment.id`를 기록했는가 (추적 용도).
 - [ ] `resolveReviewThread` 응답의 `thread.isResolved=true`를 1차 확인했는가.
-- [ ] Step 7 재조회에서 동일하게 `isResolved=true`를 확인했는가.
+- [ ] mutation 응답이 false이거나 필드가 없을 때만 Step 7에서 `isResolved`를 재조회했는가.
 - [ ] retry 1회 후에도 false이면 사용자 보고로 종료했는가.
