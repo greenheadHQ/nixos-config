@@ -51,7 +51,7 @@ programs.git.settings."delta \"interactive\"" = {
 
 ```nix
 # lazygit/default.nix — DELTA_FEATURES=""로 feature 리셋
-pager = "env DELTA_FEATURES= delta --paging=never";
+command = "env DELTA_FEATURES= delta --paging=never";
 ```
 
 `DELTA_FEATURES=` (빈 문자열)은 gitconfig의 `features = interactive` 설정을 오버라이드하여 빈 feature 리스트로 대체합니다.
@@ -120,17 +120,20 @@ While attempting to write back migrated user config to
 open .../lazygit/config.yml: permission denied
 ```
 
-원인: Home Manager가 config.yml을 Nix store 심링크로 관리하므로 읽기 전용. lazygit이 `git.paging`을 `git.pagers` 배열로 자동 마이그레이션하려 할 때 쓰기 실패.
+원인: Home Manager가 config.yml을 Nix store 심링크로 관리하므로 읽기 전용. lazygit이 구 스키마를 현행 스키마로 자동 마이그레이션한 결과를 되쓰려 할 때 쓰기 실패.
 
-해결: 처음부터 새 형식(`git.pagers` 배열)을 사용
+해결: 처음부터 현행 형식(`git.diffRenderers` 배열)을 사용
 
 ```nix
 # 구 형식 (마이그레이션 시도 발생)
 git.paging = { colorArg = "always"; pager = "delta ..."; };
-
-# 신 형식 (lazygit 0.56.0+, 마이그레이션 불필요)
 git.pagers = [{ colorArg = "always"; pager = "delta ..."; }];
+
+# 현행 형식 (lazygit 0.64.0에서 개명, 마이그레이션 불필요)
+git.diffRenderers = [{ colorArg = "always"; command = "delta ..."; }];
 ```
+
+재검증: lazygit 업그레이드 후 `lg`를 실행해 마이그레이션 경고가 없으면 이 형식이 여전히 현행이다. 경고가 뜨면 출력의 `Renamed <구 키> to <새 키>` 줄이 새 스키마를 알려주므로, 그 키로 `lazygit/default.nix`를 갱신한다.
 
 ---
 
