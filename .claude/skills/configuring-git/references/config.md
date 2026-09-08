@@ -85,14 +85,14 @@ delta 옵션은 기본 섹션과 feature로 분리하여 도구별 오버라이�
 
 `modules/shared/programs/lazygit/default.nix`에서 `programs.lazygit`으로 관리됩니다.
 
-pager 설정:
+diff renderer 설정:
 
 ```yaml
 # 생성되는 config.yml
 git:
-  pagers:
+  diffRenderers:
   - colorArg: always
-    pager: env DELTA_FEATURES= delta --paging=never
+    command: env DELTA_FEATURES= delta --paging=never
 ```
 
 | 설정 | 설명 |
