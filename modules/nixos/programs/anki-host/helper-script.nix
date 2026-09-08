@@ -14,6 +14,8 @@ in
 {
   inherit ankiHost pushoverCredPath;
   stateRoot = constants.paths.ankiHostState;
+  localLoadCredentials =
+    name: roles: map (role: "${role}:${constants.paths.ankiHostCredentials}/${name}/${role}") roles;
   # 준비 대기 최악 = tries × (probe + wait) — 두 유닛 예산의 공통 항
   readyWorstSecs =
     ankiHost.readyWaitTries * (ankiHost.readyProbeTimeoutSecs + ankiHost.readyWaitSecs);
@@ -26,6 +28,8 @@ in
     READY_PROBE_TIMEOUT = toString ankiHost.readyProbeTimeoutSecs;
     BUSY_RETRIES = toString ankiHost.busyRetries;
     BUSY_RETRY_SECS = toString ankiHost.busyRetrySecs;
+    STATE_OWNER = constants.ankiHost.user;
+    STATE_GROUP = constants.ankiHost.user;
   };
 
   # Anki 전용 Pushover 앱 토큰 (PUSHOVER_TOKEN=/PUSHOVER_USER=). 두 모듈이 같은 선언을 내고 모듈 시스템이 merge한다

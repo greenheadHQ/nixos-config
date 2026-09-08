@@ -12,12 +12,13 @@ class AnkiConnectError(RuntimeError):
 
 
 class AnkiConnect:
-    def __init__(self, url: str, client: httpx.AsyncClient | None = None, timeout: float = 60.0) -> None:
+    def __init__(self, url: str, client: httpx.AsyncClient | None = None, timeout: float = 60.0, *, key: str) -> None:
         self._url = url
+        self._key = key
         self._client = client or httpx.AsyncClient(timeout=timeout)
 
     async def invoke(self, action: str, **params: Any) -> Any:
-        body: dict[str, Any] = {"action": action, "version": 6}
+        body: dict[str, Any] = {"action": action, "version": 6, "key": self._key}
         if params:
             body["params"] = params
         try:

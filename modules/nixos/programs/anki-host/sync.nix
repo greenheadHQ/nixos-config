@@ -46,8 +46,10 @@ let
     inherit description;
     after = [
       "anki-host-${name}.service"
+      "anki-host-keys-${name}.service"
       "network-online.target"
     ];
+    requires = [ "anki-host-keys-${name}.service" ];
     wants = [
       "anki-host-${name}.service"
       "network-online.target"
@@ -70,7 +72,8 @@ let
       Type = "oneshot";
       User = user;
       Group = user;
-      LoadCredential = h.pushoverLoadCredential;
+      LoadCredential = h.pushoverLoadCredential ++ h.localLoadCredentials name [ "maintenance" ];
+      UMask = "0077";
       ExecStart = lib.concatStringsSep " " (
         [ "${syncScript}/bin/anki-host-sync" ] ++ map lib.escapeShellArg extraArgs
       );
@@ -123,13 +126,33 @@ let
         RandomizedDelaySec = "1min";
       };
     };
+
+  mkSchemaService =
+    name: inst:
+    lib.nameValuePair "anki-host-schema-${name}@" (
+      lib.recursiveUpdate
+        (mkSyncUnit name inst [
+          "--mode"
+          "approved-schema"
+          "--operation-id"
+          "%i"
+        ] "Root-approved note-type operation and upload for '${name}'")
+        {
+          serviceConfig.User = "root";
+          serviceConfig.Group = "root";
+          serviceConfig.LoadCredential = h.pushoverLoadCredential ++ h.localLoadCredentials name [ "schema" ];
+          environment.HELPER_CREDENTIAL_FILE = "%d/schema";
+        }
+    );
 in
 {
   config = lib.mkIf (cfg.enable && syncInstances != { }) {
     age.secrets.pushover-anki = h.pushoverSecret;
 
     systemd.services =
-      lib.mapAttrs' mkSyncService syncInstances // lib.mapAttrs' mkBootstrapService syncInstances;
+      lib.mapAttrs' mkSyncService syncInstances
+      // lib.mapAttrs' mkBootstrapService syncInstances
+      // lib.mapAttrs' mkSchemaService syncInstances;
     systemd.timers = lib.mapAttrs' mkSyncTimer syncInstances;
   };
 }

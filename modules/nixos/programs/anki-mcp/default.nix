@@ -212,8 +212,10 @@ in
       description = "Remote MCP server for headless Anki '${cfg.instance}' (loopback; exposed via Cloudflare Tunnel)";
       after = [
         "anki-host-${cfg.instance}.service"
+        "anki-host-keys-${cfg.instance}.service"
         "network-online.target"
       ];
+      requires = [ "anki-host-keys-${cfg.instance}.service" ];
       wants = [
         "anki-host-${cfg.instance}.service"
         "network-online.target"
@@ -248,6 +250,9 @@ in
         ANKI_MCP_MAX_BODY_BYTES = toString constants.ankiMcp.maxRequestBodyBytes;
         ANKI_MCP_BODY_READ_TIMEOUT_SECS = toString constants.ankiMcp.bodyReadTimeoutSecs;
         ANKI_MCP_MAX_CONCURRENCY = toString constants.ankiMcp.maxConcurrentRequests;
+        ANKI_MCP_HELPER_TIMEOUT_SECS = toString constants.ankiHost.helperCurlMaxTimeSecs;
+        ANKI_MCP_SYNC_ENABLED = lib.boolToString inst.sync.enable;
+        ANKI_MCP_MEDIA_MAX_BYTES = toString constants.ankiHost.mediaMaxBytes;
       };
 
       serviceConfig = {
@@ -256,12 +261,17 @@ in
         Group = user;
         StateDirectory = "anki-mcp";
         StateDirectoryMode = "0700";
-        LoadCredential = [ "approval:${oauthCredPath}" ];
+        LoadCredential = [
+          "approval:${oauthCredPath}"
+          "read:${constants.paths.ankiHostCredentials}/${cfg.instance}/read"
+          "operation:${constants.paths.ankiHostCredentials}/${cfg.instance}/operation"
+          "pushover:${config.age.secrets.pushover-anki.path}"
+        ];
         ExecStart = "${python}/bin/python -m anki_mcp";
         Restart = "on-failure";
         RestartSec = 10;
         TimeoutStopSec = 30;
-        MemoryMax = "256M";
+        MemoryMax = "512M";
 
         NoNewPrivileges = true;
         ProtectSystem = "strict";

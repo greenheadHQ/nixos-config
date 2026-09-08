@@ -822,7 +822,9 @@ let
   ankiHostRequiredEnv =
     src:
     nixpkgsLib.unique (
-      map builtins.head (builtins.filter builtins.isList (builtins.split "[$][{]([A-Z_]+):[?][}]" src))
+      builtins.filter (name: name != "CREDENTIALS_DIRECTORY") (
+        map builtins.head (builtins.filter builtins.isList (builtins.split "[$][{]([A-Z_]+):[?][}]" src))
+      )
     );
   ankiHostHelperCallRequired = ankiHostRequiredEnv (
     builtins.readFile ../modules/nixos/programs/anki-host/files/lib/helper-call.sh
@@ -842,6 +844,8 @@ let
     READY_PROBE_TIMEOUT = toString constants.ankiHost.readyProbeTimeoutSecs;
     BUSY_RETRIES = toString constants.ankiHost.busyRetries;
     BUSY_RETRY_SECS = toString constants.ankiHost.busyRetrySecs;
+    STATE_OWNER = constants.ankiHost.user;
+    STATE_GROUP = constants.ankiHost.user;
   };
   ankiHostEnvMatches =
     unit:
@@ -1453,7 +1457,70 @@ let
         &&
           ankiMcpSvc.serviceConfig.LoadCredential == [
             "approval:${nixosCfg.age.secrets.anki-mcp-oauth.path}"
+            "read:${constants.paths.ankiHostCredentials}/main/read"
+            "operation:${constants.paths.ankiHostCredentials}/main/operation"
+            "pushover:${nixosCfg.age.secrets.pushover-anki.path}"
           ];
+    }
+    {
+      name = "Test AH9: local role keys are runtime credentials; every consumer waits for key generation and MCP cannot obtain maintenance/schema keys";
+      cond =
+        builtins.all
+          (
+            name:
+            let
+              svc = nixosCfg.systemd.services."anki-host-${name}";
+            in
+            builtins.elem "anki-host-keys-${name}.service" svc.requires
+            &&
+              svc.serviceConfig.LoadCredential
+              == map (role: "${role}:${constants.paths.ankiHostCredentials}/${name}/${role}") [
+                "read"
+                "operation"
+                "maintenance"
+                "schema"
+              ]
+          )
+          [
+            "main"
+            "lab"
+          ]
+        && builtins.elem "maintenance:${constants.paths.ankiHostCredentials}/main/maintenance" ankiHostSyncMain.serviceConfig.LoadCredential
+        &&
+          ankiHostSyncMainBootstrap.serviceConfig.LoadCredential
+          == ankiHostSyncMain.serviceConfig.LoadCredential
+        && builtins.elem "maintenance-main:${constants.paths.ankiHostCredentials}/main/maintenance" ankiHostBackup.serviceConfig.LoadCredential
+        && builtins.elem "anki-host-keys-main.service" ankiHostSyncMain.requires
+        && builtins.elem "anki-host-keys-main.service" ankiHostBackup.requires
+        && builtins.elem "anki-host-keys-main.service" ankiMcpSvc.requires
+        && !(builtins.any (
+          value: nixpkgsLib.hasPrefix "schema:" value || nixpkgsLib.hasPrefix "maintenance:" value
+        ) ankiMcpSvc.serviceConfig.LoadCredential);
+    }
+    {
+      name = "Test AH10: schema execution is root-only, restore points have a narrow mirror unit, and status ownership stays anki-host";
+      cond =
+        let
+          schema = nixosCfg.systemd.services."anki-host-schema-main@";
+          mirror = nixosCfg.systemd.services."anki-host-mirror-main@";
+        in
+        schema.serviceConfig.User == "root"
+        && schema.wantedBy == [ ]
+        && schema.environment.HELPER_CREDENTIAL_FILE == "%d/schema"
+        &&
+          schema.serviceConfig.LoadCredential == [
+            "pushover:${nixosCfg.age.secrets.pushover-anki.path}"
+            "schema:${constants.paths.ankiHostCredentials}/main/schema"
+          ]
+        && schema.environment.STATE_OWNER == constants.ankiHost.user
+        && schema.environment.STATE_GROUP == constants.ankiHost.user
+        &&
+          mirror.serviceConfig.ReadWritePaths == [
+            "${constants.paths.ankiHostState}/main/restore-points"
+            "${constants.paths.mediaData}/${constants.paths.ankiHostRestorePointsRelPath}"
+          ]
+        && builtins.elem "d ${constants.paths.ankiHostCredentials} 0700 root root -" nixosCfg.systemd.tmpfiles.rules
+        && constants.ankiHost.mirrorTimeoutSecs < constants.ankiHost.helperMainTimeoutSecs;
     }
     {
       name = "Test AM5: 결정 15 — sync 유닛은 상태 사본 게시판(${constants.paths.ankiHostStatusRun})을 env로 받고 쓰기 가능하며, 게시판은 anki-host 0750 tmpfiles로 만들어지고 MCP의 상태 파일 경로가 그 아래여야 함";

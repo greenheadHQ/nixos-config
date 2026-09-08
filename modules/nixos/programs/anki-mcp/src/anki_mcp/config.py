@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 
 def _req(name: str) -> str:
@@ -56,6 +58,10 @@ class Settings:
     max_body_bytes: int  # 공개·승인 앱 요청 본문 상한 (413)
     body_read_timeout: int  # 인증 전 본문 선읽기 기한(초) — 미완결 본문(slowloris) 방어 (408)
     max_concurrency: int  # 공개·승인 앱 각각의 동시 처리 상한 — 인증 전 버퍼의 합산 메모리를 묶는다
+    local_credential_dir: str
+    helper_timeout: int
+    sync_enabled: bool
+    media_max_bytes: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -88,7 +94,25 @@ class Settings:
             max_body_bytes=_int("ANKI_MCP_MAX_BODY_BYTES"),
             body_read_timeout=_int("ANKI_MCP_BODY_READ_TIMEOUT_SECS"),
             max_concurrency=_int("ANKI_MCP_MAX_CONCURRENCY"),
+            local_credential_dir=_req("CREDENTIALS_DIRECTORY"),
+            helper_timeout=_int("ANKI_MCP_HELPER_TIMEOUT_SECS"),
+            sync_enabled=_bool("ANKI_MCP_SYNC_ENABLED"),
+            media_max_bytes=_int("ANKI_MCP_MEDIA_MAX_BYTES"),
         )
+
+
+def _bool(name: str) -> bool:
+    value = _req(name)
+    if value not in ("true", "false"):
+        raise SystemExit(f"anki_mcp: {name} must be true or false")
+    return value == "true"
+
+
+def read_local_key(directory: str, role: str) -> str:
+    value = (Path(directory) / role).read_text(encoding="ascii").strip()
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise SystemExit("anki_mcp: missing or invalid local credential")
+    return value
 
 
 def read_passphrase(path: str) -> str:

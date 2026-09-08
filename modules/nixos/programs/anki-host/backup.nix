@@ -46,7 +46,10 @@ in
 
     systemd.services.anki-host-backup = {
       description = "Daily .colpkg backup of headless Anki instances (SSD -> HDD)";
-      after = lib.mapAttrsToList (name: _: "anki-host-${name}.service") backupInstances;
+      after =
+        lib.mapAttrsToList (name: _: "anki-host-${name}.service") backupInstances
+        ++ lib.mapAttrsToList (name: _: "anki-host-keys-${name}.service") backupInstances;
+      requires = lib.mapAttrsToList (name: _: "anki-host-keys-${name}.service") backupInstances;
 
       unitConfig.ConditionPathExists = h.pushoverCondition;
 
@@ -62,7 +65,11 @@ in
 
       serviceConfig = {
         Type = "oneshot";
-        LoadCredential = h.pushoverLoadCredential;
+        LoadCredential =
+          h.pushoverLoadCredential
+          ++ lib.mapAttrsToList (
+            name: _: "maintenance-${name}:${constants.paths.ankiHostCredentials}/${name}/maintenance"
+          ) backupInstances;
         ExecStart = "${backupScript}/bin/anki-host-backup";
         TimeoutStartSec = "${toString unitTimeoutSecs}s";
         ProtectSystem = "strict";

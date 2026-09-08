@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -117,3 +118,64 @@ async def test_sync_now_triggers_over_stale_running(tmp_path):
 
     out = await SyncNow(str(status), "u.service", wait_secs=10, runner=fake, sleep=no_sleep).run()
     assert out["outcome"] == "completed" and fake.started == 1
+
+
+class Clock:
+    def __init__(self): self.now = 1000.5
+    def __call__(self): return self.now
+    async def sleep(self, seconds): self.now += seconds
+
+
+def normal(path, run_id, started, *, result="success", mode="normal", action="normal"):
+    _write(path, result=result, runId=run_id, mode=mode,
+           runStartedAt=datetime.fromtimestamp(started, timezone.utc).isoformat(timespec="microseconds"),
+           sync={"action": action, "required": "NO_CHANGES"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("fault", [None, "same-second", "missing-time", "failure", "full", "bootstrap"])
+async def test_fresh_sync_requires_new_normal_success_after_apply(tmp_path, fault):
+    path, clock = tmp_path / "main.json", Clock()
+    normal(path, "old", 900)
+    def land():
+        normal(path, "new", 1000 if fault == "same-second" else 1000.6,
+               result="error" if fault == "failure" else "success",
+               mode="allow-download-if-empty" if fault == "bootstrap" else "normal",
+               action="full-sync-required" if fault == "full" else "normal")
+        if fault == "missing-time":
+            data = json.loads(path.read_text())
+            data.pop("runStartedAt")
+            path.write_text(json.dumps(data))
+    systemd = FakeSystemd(path, on_start=land)
+    syncer = SyncNow(str(path), "u.service", 10, runner=systemd, sleep=clock.sleep,
+                     monotonic=clock, wall_clock=clock)
+    out = await syncer.run_fresh(after=1000.5)
+    assert out["outcome"] == ("synced" if fault is None else "blocked")
+    assert systemd.started == 1
+
+
+@pytest.mark.anyio
+async def test_fresh_sync_waits_for_active_even_when_status_looks_terminal(tmp_path):
+    path, clock = tmp_path / "main.json", Clock()
+    normal(path, "old", 900)
+    def land(): normal(path, "new", clock.now + 0.1)
+    systemd = FakeSystemd(path, active="active", invocation="current", on_start=land)
+    async def sleep(seconds):
+        assert systemd.started == (0 if systemd.active == "active" else 1)
+        await clock.sleep(seconds)
+        systemd.active = "inactive"
+    result = await SyncNow(str(path), "u.service", 10, runner=systemd, sleep=sleep,
+                           monotonic=clock, wall_clock=clock).run_fresh()
+    assert result["outcome"] == "synced" and systemd.started == 1
+
+
+@pytest.mark.anyio
+async def test_fresh_sync_deadline_includes_slow_systemctl(tmp_path):
+    path, clock = tmp_path / "main.json", Clock()
+    systemd = FakeSystemd(path, active="active")
+    async def slow(argv):
+        clock.now += 6
+        return await systemd(argv)
+    result = await SyncNow(str(path), "u.service", 5, runner=slow, sleep=clock.sleep,
+                           monotonic=clock, wall_clock=clock).run_fresh()
+    assert result["outcome"] == "timeout" and systemd.started == 0
