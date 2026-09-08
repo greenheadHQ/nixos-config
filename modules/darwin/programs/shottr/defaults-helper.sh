@@ -31,8 +31,8 @@ shottr_defaults_record_failure() {
         else
             echo "Skipping remaining Shottr defaults writes for this activation."
         fi
-    elif [ "$operation" = "write" ]; then
-        echo "Warning: defaults write $key failed (sandbox restriction?). Skipping."
+    else
+        echo "Warning: defaults $operation $key failed (exit $status)."
     fi
 }
 

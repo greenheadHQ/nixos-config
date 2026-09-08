@@ -50,7 +50,7 @@ EXPECTED_EXPOSED=(
   issuing-codex-pairing-code
   review-pr-feedback
   run-da
-  using-gh-attach
+  attaching-github-media
   write-handoff
 )
 SHARED_EXPOSURE_EXCLUDE=(
@@ -62,6 +62,7 @@ SHARED_EXPOSURE_EXCLUDE=(
 # Split retired names so the public stale-reference scan scope can stay
 # zero-match while this verifier still checks deployed residue.
 RETIRED_SHARED_SKILLS=(
+  "using-gh""-attach"
   "codex-fan""-out"
   "plan-with""-questions"
 )

@@ -47,6 +47,10 @@ _create_issue_write_recipe_fixture() {
       replacements++
       next
     }
+    /^ATTACH_ARGS=\(\)/ {
+      print "ATTACH_ARGS=(); if [[ -n \"${ATTACH_FILE:-}\" ]]; then ATTACH_ARGS=(--attach \"$ATTACH_FILE\"); fi"
+      next
+    }
     { print }
     END {
       if (replacements != 1) {
@@ -63,6 +67,8 @@ _create_issue_write_runner() {
   cat > "$runner_file" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+OWNER=example
+REPO=repo
 
 fixture_mode() {
   local mode
@@ -128,7 +134,9 @@ _create_issue_write_fake_gh() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-[[ "$#" == "8" ]] || {
+expected_count=10
+[[ -z "${ATTACH_FILE:-}" ]] || expected_count=12
+[[ "$#" == "$expected_count" ]] || {
   echo "fake gh: unexpected argument count: $#" >&2
   exit 80
 }
@@ -136,13 +144,16 @@ set -euo pipefail
   echo "fake gh: only issue create is allowed" >&2
   exit 81
 }
-[[ "$3" == "--title" && "$5" == "--label" && "$7" == "--body-file" ]] || {
+[[ "$3" == "-R" && "$4" == "example/repo" && "$5" == "--title" && "$7" == "--label" && "$9" == "--body-file" ]] || {
   echo "fake gh: unexpected arguments" >&2
   exit 82
 }
 
-body_file="$8"
-# 유효성 검사에서 거부돼도 호출 사실을 남겨 게시 전 차단을 검증한다.
+if [[ -n "${ATTACH_FILE:-}" ]]; then
+  [[ "${11}" == "--attach" && "${12}" == "$ATTACH_FILE" ]] || exit 86
+fi
+body_file="${10}"
+# 유효성 검사에서 거부돼도 호출 사실을 남긴다.
 printf '%s\n' "$body_file" >> "$GH_TRACE"
 [[ -f "$body_file" && ! -L "$body_file" ]] || {
   echo "fake gh: body must be a regular non-symlink file" >&2
@@ -165,6 +176,10 @@ cmp -s "$EXPECTED_BODY_FILE" "$body_file" || {
 
 if [[ "${GH_FAIL:-0}" == "1" ]]; then
   exit 42
+fi
+if [[ "${GH_PARTIAL:-0}" == "1" ]]; then
+  printf '%s\n' 'https://github.com/example/repo/issues/999'
+  exit 1
 fi
 printf '%s\n' 'https://github.com/example/repo/issues/999'
 EOF
@@ -240,7 +255,7 @@ test_create_issue_documented_body_lifecycle_is_safe() {
     || fail "failed issue creation changed the preserved body bytes"
   assert_file_contains "$gh_trace" "$body_path"
 
-  # 실패 안내만 새 셸로 복사해도 같은 파일/바이트를 게시해야 한다.
+  # 실패 안내만 새 셸로 복사해도 같은 파일을 복원하고 재검사하되 자동으로 다시 게시하지 않는다.
   # fixture가 경로를 재주입하지 않고 실제 출력의 할당문과 명령을 실행한다.
   retry_file="$sandbox/retry.sh"
   printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
@@ -249,7 +264,8 @@ test_create_issue_documented_body_lifecycle_is_safe() {
     /^ISSUE_BODY=/ { print; assignments++ }
     /^  \[ -f / { sub(/^  /, ""); print; commands++ }
     END { if (assignments != 1 || commands != 1) exit 42 }
-  ' >> "$retry_file" || fail "failure output must contain one body assignment and one retry command"
+  ' >> "$retry_file" || fail "failure output must contain one body assignment and one body validation command"
+  printf '%s\n' 'printf "%s\n" "$ISSUE_BODY"' >> "$retry_file"
   # 에디터가 본문을 0644로 재생성한 경우에도 게시 시점에는 0600이어야 한다.
   chmod 0644 "$body_path"
   retry_output="$(
@@ -259,8 +275,9 @@ test_create_issue_documented_body_lifecycle_is_safe() {
       GH_FAIL=0 \
       "$BASH" "$retry_file" 2>&1
   )" || fail "documented create-issue retry failed in a new shell: $retry_output"
-  assert_contains "$retry_output" "https://github.com/example/repo/issues/999"
-  assert_line_count "$gh_trace" "$body_path" 2
+  [[ "$retry_output" == "$body_path" ]] || fail "new shell did not restore the exact preserved path"
+  [[ "$(_create_issue_file_mode "$body_path")" == "600" ]] || fail "body recheck did not restore private permissions"
+  assert_line_count "$gh_trace" "$body_path" 1
 
   # 같은 재시도 안내가 symlink 본문은 chmod/gh 호출 전에 차단해야 한다.
   symlink_target="$sandbox/symlink-target.md"
@@ -279,12 +296,31 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   rc=$?
   set -e
   [[ "$rc" != "0" ]] || fail "documented create-issue retry accepted a symlink body"
-  assert_line_count "$gh_trace" "$body_path" 2
+  assert_line_count "$gh_trace" "$body_path" 1
   target_mode="$(_create_issue_file_mode "$symlink_target")"
   [[ "$target_mode" == "644" ]] \
     || fail "retry symlink rejection changed the external target mode"
   cmp -s "$expected_body" "$symlink_target" \
     || fail "retry symlink rejection changed the external target bytes"
+
+  # A partial attachment failure can still publish the issue. Preserve its URL,
+  # body and one creation attempt; a space-containing media path stays one arg.
+  : > "$gh_trace"
+  set +e
+  output="$(
+    TMPDIR="$sandbox/tmp" PATH="$fixture_path" RECIPE_FILE="$recipe_file" \
+      EXPECTED_BODY_FILE="$expected_body" WRITER_TRACE="$writer_trace" \
+      GH_TRACE="$gh_trace" GH_PARTIAL=1 ATTACH_FILE="$sandbox/capture one.png" \
+      "$BASH" "$runner_file" 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != "0" ]] || fail "partial attachment failure was reported as success"
+  assert_contains "$output" "ISSUE_URL=https://github.com/example/repo/issues/999"
+  body_path="$(<"$writer_trace")"
+  [[ -f "$body_path" ]] || fail "partial failure lost the recovery body"
+  [[ "$(wc -l < "$gh_trace" | tr -d '[:space:]')" == "1" ]] \
+    || fail "partial attachment failure retried issue creation"
 
   : > "$writer_trace"
   : > "$gh_trace"

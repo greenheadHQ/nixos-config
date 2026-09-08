@@ -195,9 +195,9 @@ in
     ".claude/skills/using-claude-p".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/using-claude-p";
 
-    # using-gh-attach 스킬 (user-scope)
-    ".claude/skills/using-gh-attach".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/using-gh-attach";
+    # attaching-github-media 스킬 (user-scope)
+    ".claude/skills/attaching-github-media".source =
+      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/attaching-github-media";
 
     # set-icons 스킬 (user-scope)
     ".claude/skills/set-icons".source =

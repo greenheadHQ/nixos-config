@@ -179,13 +179,12 @@ in
     # 디렉터리는 CLAUDE.md의 macOS 충돌 정책대로 timestamped backup으로 이동된다
     # — 모든 확장이 아래 선언에 있으므로 기능 손실 없음.
     # gh-stack은 전 플랫폼 공용(linux asset은 static Go 바이너리 실측).
-    # gh-attach·gh-difftool은 쿠키 전제(브라우저 + Keychain)가 macOS 데스크톱
-    # 전용이라 NixOS(MiniPC)는 제외한다.
+    # CIR: #1118의 비공식 쿠키 업로더는 공식 gh --attach로 대체한다.
+    # gh-difftool은 선언된 prebuilt asset이 Darwin 전용이므로 해당 플랫폼에만 설치한다.
     extensions = [
       (import ./gh-stack-package.nix { inherit pkgs; })
     ]
     ++ lib.optionals pkgs.stdenv.isDarwin [
-      (import ./gh-attach-package.nix { inherit pkgs; })
       (import ./gh-difftool-package.nix { inherit pkgs; })
     ];
     settings = {
