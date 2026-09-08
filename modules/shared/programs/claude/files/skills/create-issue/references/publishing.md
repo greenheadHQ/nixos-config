@@ -31,6 +31,11 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
    ```bash
    # BSD/macOS mktemp는 템플릿 끝(trailing)에 XXXXXX가 와야 랜덤 치환함.
    # 전용 private 디렉터리만 만들고 본문 target은 첫 편집 전까지 존재하지 않게 둔다.
+   # parent 유무와 무관하게 현재 게시 대상 조회. 기존 환경변수는 사용하지 않는다.
+   if ! ISSUE_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner) || [ -z "$ISSUE_REPO" ]; then
+     echo "ERROR: 게시 대상 저장소 조회 실패"
+     exit 1
+   fi
    umask 077
    ISSUE_BODY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/issue-body.XXXXXX") \
      || { echo "ERROR: 본문 임시 디렉터리 생성 실패"; exit 1; }
@@ -57,7 +62,7 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
 
    ATTACH_ARGS=() # 첨부가 있으면 (--attach "<파일>")로 채운다.
    # 성공 시 URL 캡처. 실패해도 원격 게시가 끝났을 수 있으므로 결과를 보존한다.
-   if ISSUE_URL=$(gh issue create -R "$OWNER/$REPO" --title "<제목>" --label "<라벨>" --body-file "$ISSUE_BODY" "${ATTACH_ARGS[@]}"); then
+   if ISSUE_URL=$(gh issue create -R "$ISSUE_REPO" --title "<제목>" --label "<라벨>" --body-file "$ISSUE_BODY" "${ATTACH_ARGS[@]}"); then
      echo "ISSUE_URL=$ISSUE_URL"
      # GitHub write 성공과 로컬 cleanup 성공을 혼동하지 않는다. 정확한 파일과 빈 디렉터리만 제거한다.
      if ! rm -f "$ISSUE_BODY"; then
@@ -79,7 +84,7 @@ Step 5는 두 하위 단계로 진행한다. 진행/차단 규칙은 아래 매�
      echo "원격 게시 확인 전 재시도하지 않는다. 이미 등록됐다면 기존 URL을 재사용한다."
      echo "본문 재검사 (새 셸에서는 위 ISSUE_BODY 할당문부터 복사):"
      # 편집기가 파일을 재생성할 수 있으므로 재시도에서도 게시 경계 검사를 통과해야 한다.
-     echo "  [ -f \"\$ISSUE_BODY\" ] && [ ! -L \"\$ISSUE_BODY\" ] && chmod 600 \"\$ISSUE_BODY\""
+     echo "  [ -f \"\$ISSUE_BODY\" ] && [ ! -L \"\$ISSUE_BODY\" ] && chmod 600 \"\$ISSUE_BODY\" || exit 1"
      echo "재시도 성공 후 보존 본문 파일과 빈 ISSUE_BODY_DIR을 정리한다."
      echo "**parent 연결과 handoff는 이슈 등록 완료 전에는 진행하지 않는다.**"
      exit 1

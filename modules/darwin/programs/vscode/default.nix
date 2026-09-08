@@ -49,6 +49,7 @@
 #    하되 사용자 가시 메시지로 원인 식별 가능하도록 분기를 명시한다.
 {
   config,
+  constants,
   pkgs,
   lib,
   nixosConfigPath,
@@ -242,7 +243,7 @@ in
           local err
           if ! err=$(${pkgs.duti}/bin/duti -s ${vscodeBundleId} "$1" all 2>&1); then
             if ${dynamicFileHandler}/bin/set-dynamic-file-handler \
-              "$HOME/Applications/Home Manager Apps/Visual Studio Code.app" "''${1#.}"; then
+              "$HOME/${constants.macos.paths.vscodeAppRelative}" "''${1#.}"; then
               return
             fi
             skipped=$((skipped + 1))
@@ -282,8 +283,8 @@ in
         if [ "$total" -gt 0 ] && [ "$skipped" -eq "$total" ] && [ "$public_uti_failed" -eq 2 ]; then
           echo "  🚨 Critical: all duti registrations failed — likely incorrect bundle id, VSCode not installed, or duti broken"
         fi
-        if [ "$public_uti_failed" -gt 0 ]; then
-          echo "VSCode default settings applied with warnings ($public_uti_failed public UTI registration failed)."
+        if [ "$public_uti_failed" -gt 0 ] || [ "$skipped" -gt 0 ]; then
+          echo "VSCode default settings applied with warnings ($skipped extensions, $public_uti_failed public UTIs unverified)."
         else
           echo "VSCode default settings applied."
         fi
@@ -298,7 +299,7 @@ in
   home.activation.refreshVSCodeLaunchServices = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     echo "Refreshing VSCode LaunchServices registration..."
 
-    vscode_app="$HOME/Applications/Home Manager Apps/Visual Studio Code.app"
+    vscode_app="$HOME/${constants.macos.paths.vscodeAppRelative}"
     lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 
     if [ ! -e "$vscode_app" ]; then

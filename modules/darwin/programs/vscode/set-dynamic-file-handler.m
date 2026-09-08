@@ -31,16 +31,20 @@ int main(int argc, const char *argv[]) {
         __block BOOL succeeded = NO;
         [workspace setDefaultApplicationAtURL:app toOpenContentTypeOfFileAtURL:file
                             completionHandler:^(NSError *error) {
+          if (error) fprintf(stderr, "VSCode handler .%s: %s (%ld)\n", argv[2],
+                             error.domain.UTF8String, (long)error.code);
           succeeded = error == nil;
           finished = YES;
         }];
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:20];
         while (!finished && deadline.timeIntervalSinceNow > 0)
           [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+        if (!finished) fprintf(stderr, "VSCode handler .%s: macOS completion timed out\n", argv[2]);
         NSURL *actual = [[workspace URLForApplicationToOpenURL:file] URLByResolvingSymlinksInPath];
         status = finished && succeeded && [actual isEqual:app] ? 0 : 1;
       }
     }
+    if (status != 0) fprintf(stderr, "VSCode handler .%s: default application unverified\n", argv[2]);
     [fm removeItemAtURL:dir error:nil];
     return status;
   }

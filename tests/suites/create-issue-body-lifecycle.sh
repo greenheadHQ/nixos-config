@@ -67,8 +67,7 @@ _create_issue_write_runner() {
   cat > "$runner_file" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-OWNER=example
-REPO=repo
+unset OWNER REPO ISSUE_REPO
 
 fixture_mode() {
   local mode
@@ -134,6 +133,11 @@ _create_issue_write_fake_gh() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "$*" == "repo view --json nameWithOwner -q .nameWithOwner" ]]; then
+  [[ "${GH_REPO_FAIL:-0}" == "0" ]] || exit 40
+  printf '%s\n' 'example/repo'
+  exit 0
+fi
 expected_count=10
 [[ -z "${ATTACH_FILE:-}" ]] || expected_count=12
 [[ "$#" == "$expected_count" ]] || {
@@ -321,6 +325,19 @@ test_create_issue_documented_body_lifecycle_is_safe() {
   [[ -f "$body_path" ]] || fail "partial failure lost the recovery body"
   [[ "$(wc -l < "$gh_trace" | tr -d '[:space:]')" == "1" ]] \
     || fail "partial attachment failure retried issue creation"
+
+  : > "$gh_trace"
+  set +e
+  output="$(
+    TMPDIR="$sandbox/tmp" PATH="$fixture_path" RECIPE_FILE="$recipe_file" \
+      EXPECTED_BODY_FILE="$expected_body" WRITER_TRACE="$writer_trace" \
+      GH_TRACE="$gh_trace" GH_REPO_FAIL=1 \
+      "$BASH" "$runner_file" 2>&1
+  )"
+  rc=$?
+  set -e
+  [[ "$rc" != "0" ]] || fail "repository lookup failure was ignored"
+  [[ ! -s "$gh_trace" ]] || fail "issue creation ran without a confirmed repository"
 
   : > "$writer_trace"
   : > "$gh_trace"
