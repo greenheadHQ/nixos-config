@@ -156,7 +156,7 @@ Skip 조건:
 ### Step 7: resolve 재확인
 
 `resolveReviewThread` mutation 응답의 `thread.isResolved`를 먼저 확인한다.
-`true`면 통과, `false`일 때만 동일 `thread.id`로 재조회하여 확정한다.
+`true`면 통과, `false`이거나 필드가 누락됐을 때만 동일 `thread.id`로 재조회하여 확정한다.
 쿼리 스니펫과 retry/실패 정책은 [references/reply-and-resolve.md](references/reply-and-resolve.md)의 "Retry policy"가 정본이다.
 `thread.id`가 null/empty인 thread는 이 단계를 건너뛰고 사용자 보고 대상으로 남긴다.
 PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.

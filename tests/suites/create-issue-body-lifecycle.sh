@@ -15,7 +15,7 @@ _create_issue_extract_step5a_recipe() {
   local skill_file="$1"
 
   awk '
-    /^#### Step 5-A — 이슈 등록$/ {
+    /^### Step 5-A — 이슈 등록$/ {
       in_step = 1
       next
     }
@@ -173,6 +173,7 @@ EOF
 test_create_issue_documented_body_lifecycle_is_safe() {
   local sandbox skill_file recipe_file runner_file stub_bin expected_body
   local fixture_path writer_trace gh_trace output rc body_path body_dir symlink_target target_mode
+  local retry_file retry_output retry_tmp_dir
 
   sandbox="$(new_sandbox)"
   skill_file="$REPO_ROOT/modules/shared/programs/claude/files/skills/create-issue/references/publishing.md"
@@ -211,9 +212,11 @@ test_create_issue_documented_body_lifecycle_is_safe() {
 
   : > "$writer_trace"
   : > "$gh_trace"
+  retry_tmp_dir="$sandbox/tmp with 'single' \"double\" "'$(printf unexpected-substitution)'
+  mkdir -p "$retry_tmp_dir"
   set +e
   output="$(
-    TMPDIR="$sandbox/tmp" \
+    TMPDIR="$retry_tmp_dir" \
       PATH="$fixture_path" \
       RECIPE_FILE="$recipe_file" \
       EXPECTED_BODY_FILE="$expected_body" \
@@ -234,8 +237,27 @@ test_create_issue_documented_body_lifecycle_is_safe() {
     || fail "failed issue creation did not preserve the private body directory"
   cmp -s "$expected_body" "$body_path" \
     || fail "failed issue creation changed the preserved body bytes"
-  assert_contains "$output" "ISSUE_BODY_PATH=$body_path"
   assert_file_contains "$gh_trace" "$body_path"
+
+  # 실패 안내만 새 셸로 복사해도 같은 파일/바이트를 게시해야 한다.
+  # fixture가 경로를 재주입하지 않고 실제 출력의 할당문과 명령을 실행한다.
+  retry_file="$sandbox/retry.sh"
+  printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+    'unset ISSUE_BODY ISSUE_BODY_PATH' > "$retry_file"
+  printf '%s\n' "$output" | awk '
+    /^ISSUE_BODY=/ { print; assignments++ }
+    /^  gh issue create / { sub(/^  /, ""); print; commands++ }
+    END { if (assignments != 1 || commands != 1) exit 42 }
+  ' >> "$retry_file" || fail "failure output must contain one body assignment and one retry command"
+  retry_output="$(
+    PATH="$fixture_path" \
+      EXPECTED_BODY_FILE="$expected_body" \
+      GH_TRACE="$gh_trace" \
+      GH_FAIL=0 \
+      "$BASH" "$retry_file" 2>&1
+  )" || fail "documented create-issue retry failed in a new shell: $retry_output"
+  assert_contains "$retry_output" "https://github.com/example/repo/issues/999"
+  assert_line_count "$gh_trace" "$body_path" 2
 
   : > "$writer_trace"
   : > "$gh_trace"

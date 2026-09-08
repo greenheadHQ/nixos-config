@@ -12,7 +12,7 @@ description: |
 기본 경로는 4개 reviewer bundle을 병렬 실행하여 계획/코드를 엄격 리뷰한다.
 명시적 exhaustive override가 필요할 때만 `run-da ... MAX`로 6개 세부 도메인까지 확장한다.
 
-`/run-da` 진입 preflight에서는 이 파일만 읽고 mode 선택과 검토 강도 확정을 끝낼 수 있어야 한다.
+`/run-da` 진입 preflight에서는 이 파일에서 mode를 선택한다. 아래 조건부 reference를 먼저 읽은 뒤 실행 지정·검토 강도·위임 전이를 확정한다.
 
 ## 검토 강도 (Review Intensity)
 
@@ -88,7 +88,7 @@ FULL도 여전히 강한 기본 검토다. 차이는 fan-out뿐이다:
 
 | 시점 | 필수 문서 | 목적 |
 |------|-----------|------|
-| `/run-da` 진입 preflight | 이 `SKILL.md` | mode 선택, `MAX`/`fresh` modifier와 자연어 실행 지정 해석, 검토 강도 확정, reviewer bundle/Arbiter invariant 확인 |
+| `/run-da` 진입 preflight | 이 `SKILL.md` | mode 선택, `MAX`/`fresh` modifier와 핵심 invariant 확인. 실행 지정·검토 강도·위임 전이 확정은 해당 조건부 reference를 읽은 뒤 수행 |
 
 Preflight에서는 선택 조건에 해당하는 reference만 연다. mode가 비어 있으면 이 파일의 모드 표만 보고 질문 도구로 mode를 선택한다.
 

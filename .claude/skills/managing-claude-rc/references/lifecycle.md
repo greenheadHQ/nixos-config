@@ -195,5 +195,5 @@ transcript 매칭은 `<정규화된 인스턴스 경로>--claude-worktrees-*`만
 - NixOS Home Manager 래퍼 링크: `modules/shared/programs/shell/nixos.nix`
 - 공통 테스트 fixture: `tests/lib/claude-remote-control-fixtures.sh`
 - 래퍼 테스트: `tests/suites/claude-remote-control-wrapper.sh`
-- guardian 테스트: `tests/suites/claude-remote-control-guardian.sh` — 현재 `tests/shell-script-tests.sh` aggregator에 미등록이라 `tests/run-all-tests.sh`에서 실행되지 않는다 (12개 `test_*` 함수 전부 미등록)
+- guardian 테스트: `tests/suites/claude-remote-control-guardian.sh` — 12개 `test_*` 함수가 `tests/shell-script-tests.sh`에 등록되어 `tests/run-all-tests.sh`에서 호출된다. 정의·등록 일치는 `test_suite_function_registration_parity`가 검사한다. 플랫폼 전용 검사는 해당 플랫폼에서만 수행한다.
 - maint/status 테스트: `tests/suites/claude-remote-control-maint.sh`
