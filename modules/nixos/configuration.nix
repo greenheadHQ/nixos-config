@@ -161,9 +161,9 @@
     instances = {
       lab = {
         # 격리 검증 프로필 — AnkiWeb 로그인 없음, 실제 이력 .colpkg fixture로 도구·복구점 검증.
-        # 수명: plan 030 PR 2b 검증(파괴 계층·대량 변경 미리보기·복구점)까지 — 파괴 도구의 첫 실행 대상이 운영
-        # 컬렉션이 되지 않게 한다. 끝나면 plan 030 Step 24의 lab 폐기 체크리스트를 수행한다
-        # (이 블록·constants 포트·eval 참조 제거 + 상태 루트 전체 삭제). enable 플래그로 끄지 않는다.
+        # CIR: 2026-09-11 운영자가 향후 시험용 유지로 결정(plan 030 Step 24의 일괄 폐기 계획 대체).
+        # 변경·복구 시험을 운영 컬렉션과 분리한다. 매 시험의 합성 데이터만 정리하고,
+        # 서비스·실제 이력 fixture 폐기는 별도로 결정한다. AnkiWeb 로그인·sync는 활성화하지 않는다.
         port = constants.network.ports.ankiConnectLab;
         helperPort = constants.network.ports.ankiHelperLab;
         backup.enable = false; # 검증용 사본이라 HDD 백업 제외 (원본은 anki-study 백업)

@@ -1,24 +1,20 @@
 # Plan 030: headless Anki 복원 + AnkiWeb 동기화·알림 + 원격 MCP 서버
 
-> **Executor instructions**: 이 plan은 **에이전트 구현 + 운영자 게이트 혼합 runbook**이다.
-> 시작 전에 이 파일과 이슈 #1306을 끝까지 읽는다. Step 순서를 지키고, 각 검증 명령의
-> 기대 결과를 확인한 뒤 다음으로 간다. **STOP conditions 발생 시 즉시 중단·보고 — 임의
-> 진행 금지.** 운영자 게이트(🔒 표시)는 운영자가 수행하며 에이전트는 결과만 검증한다.
-> 완료 시 `plans/README.md`의 030 상태 행을 갱신한다.
->
-> **Drift check (run first)**: `git log --oneline -1 origin/main` 이 아래 Base snapshot과
-> 다르면 `git diff --stat <snapshot>..origin/main -- modules/nixos/programs/anki-host
-> modules/nixos/programs/anki-mcp modules/nixos/programs/tailscale.nix
-> modules/nixos/options/homeserver.nix libraries/constants.nix tests/eval-tests.nix`로
-> 대상 파일 변경을 확인하고 Current state와 대조한다. MiniPC 실측은 아래 "재개 절차"의
-> 상태 조회 명령으로 한다. 불일치 시 STOP.
+> **현재 운영을 재개할 때**: 아래 최신 상태와 [운영 계약](../modules/nixos/programs/anki-host/README.md),
+> [실기기·장애 검증 기록](anki-mcp-evidence/2026-09-11-validation.md)을 먼저 읽는다.
+> 초기 설치 Step과 날짜가 붙은 이력은 재설치 지시가 아니다. 이미 운영 중인 `main`에 부트스트랩·import·전체 동기화를 다시 실행하지 않는다.
+> 실제 상태는 인증된 MCP 조회와 서비스의 배포 버전으로 확인한다. STOP conditions를 유지하며,
+> 실제 컬렉션 복원·구조 변경·Upload는 구체적인 대상과 방향을 승인받은 범위에서만 수행한다.
+> 소스 비교 기준은 아래 Base snapshot이며, 이후 변경은 대상 모듈의 diff와 실제 배포 버전을 대조한다.
 
-
-## PR 2b 현행 계약 (2026-09-09)
+## PR 2b 현행 계약 (2026-09-11)
 
 사용자가 며칠 사용 대기를 해제하고 플러그인/MCP 개선의 즉시 착수를 요청했다.
 옛 Anki Plugin Lab 등록은 사용자가 제거했다. MiniPC lab 서비스·데이터 삭제를 뜻하지 않는다.
-현재 작업은 `feat/anki-mcp-operations`이며 구현과 격리 검증을 진행한다. 배포·실제 파괴 작업·강제 Upload는 미실행이다.
+구현 #1315와 Caddy 빌드 차단 수정 #1316은 머지됐으며 MiniPC에 적용됐다.
+ChatGPT 웹·iPhone, Codex, Claude의 인증된 호출과 신규 이미지·음성 전달을 확인했다.
+운영 컬렉션의 변경은 승인된 합성 테스트 노트로 한정했다. 실제 학습 데이터의 파괴 변경·강제 Upload는 수행하지 않았다.
+2026-09-11 운영자는 향후 변경 시험을 위해 `lab` 유지로 결정했다. 아래 Step 24의 자동 폐기 계획을 대체한다.
 
 [운영 계약·API 지원표](../modules/nixos/programs/anki-host/README.md)가 PR 2b의 상세 정본이다.
 아래 과거 결정 중 **1(무인증 loopback), 3(Upload 경로 없음), 10(busy 사전 조회만), 11(복구점 생산 미구현)**은
@@ -30,26 +26,36 @@
 - 삭제·일정·잊기·20건 초과·공유 프리셋은 preview·확인·복구점. 미디어는 신규 base64 파일만.
 - 구조 변경은 준비 후 root 일회 승인에 묶어 변경/Upload. 빈 컬렉션·노트/복습 기록 감소·FULL_DOWNLOAD 요구는 차단.
 - 새 핀: Anki26.08·AnkiConnect25.11.9.0·MCP1.29.0. Anki 본체 overlay는 추가하지 않는다.
-- 오프라인 계약 테스트, 실제 애드온 빌드, 합성 임시 Anki 컬렉션 API·export/reopen 검증을 추가한다.
-  Linux 서비스 권한과 AnkiWeb·iPhone 클라이언트 검증은 배포 후 따로 확인한다.
+- 오프라인 계약 테스트 178개, 실제 임시 Anki 컬렉션 API·export/reopen 6개와 배포 후 격리 검증을 완료했다.
+- 실기기 변경·알림 수신, 새 미디어 전달, 실제 `lab` 응답 유실·전달 재개, root HDD 미러 실패와 격리 sync 실패를 구분해 검증했다.
+  실제 AnkiWeb 장애나 운영 HDD 분리, 강제 Upload를 주입한 시험은 아니다.
 
-아래 Status/Current state의 날짜별 실측은 해당 시점의 이력이다. 지금 운영 상태나 현재 배포 버전으로 인용하지 않는다.
+아래 Status는 최신 완료 상태다. 접힌 도입 이력과 날짜가 붙은 Current state는 당시 실측이며 현재 배포 버전으로 인용하지 않는다.
 
 ## Status
 
 - **Issue**: https://github.com/greenheadHQ/nixos-config/issues/1306 (epic #973 sub-issue)
 - **사용자 관점 정본**: https://github.com/greenheadHQ/anki-study/issues/3 (비공개)
-- **Branch**: `feat/anki-mcp-server` (worktree `.claude/worktrees/feat_anki-mcp-server`)
-- **Base snapshot**: `origin/main@42c07934ef4de30070e23396e4dd6b0c40c35e52` (PR 1·운영 부트스트랩 완료 뒤 PR 2a의 기준)
+- **구현 기준**: `main`에 #1307·#1310·#1315·#1316 머지 완료. 과거 작업 브랜치를 재사용하지 않는다.
+- **Base snapshot**: `5dcc5443e926f4c166d41315042986d5ca64fbb8` (#1316, PR 2b 배포 완료 기준)
 - **Priority**: P1
 - **Effort**: L (PR 2개)
 - **Risk**: HIGH — 실제 학습 컬렉션을 MiniPC로 내려받고, 이 저장소 최초의 인터넷 공개 입구와 인증 코드를 추가한다
 - **Depends on**: 024 (soft — AnkiWeb 계정·서버 컬렉션이 존재해야 Download 가능)
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
+- **Execution**: DONE (2026-09-11) — 개인용 서버 배포·클라이언트·신규 미디어·격리 장애·Mac 전원 종료 실기기 시험과 운영 합성 카드 정리 완료.
+- **검증 정본**: [2026-09-11 검증 기록](anki-mcp-evidence/2026-09-11-validation.md). 클라이언트 화면, 작업 영수증, 서버 전후 동기화와 실제 기기 수신을 별도 증거로 대조한다.
+- **잔여·보존 범위**: `lab`은 운영자 결정으로 유지한다. 개인 학습 규칙·AI 카드 관리 스킬·다중 사용자/공개 제품화는 별도 범위다.
+
+<details>
+<summary>도입 당시 실행·검토 이력 (2026-09-08까지, 현재 상태로 인용하지 않음)</summary>
+
 - **Execution**: IN PROGRESS — PR 1 머지(#1307), 시크릿 투입(#1308), 운영 부트스트랩·정상 sync 완료(#1309). PR 2a #1310의 Funnel 443 회귀 뒤 운영자가 **공개 8443 / 승인 9443 / 미리보기 10000** 재배치를 선택했다. `0f4cb01a` 배포 후 공개 메타데이터·무토큰 401·내부 승인 포트·다른 Mac에서 기존 4개 서비스·MiniPC smoke-test 10/10을 확인했다. ChatGPT의 OAuth 자동 설정 조회는 실패했고, 수동 endpoint 입력 시 DCR 선택이 활성화됐다. 2026-09-08 명세 감사에서 필수 요건 미충족 4건을 확인했고, 독립 검토에서 확인한 콜백 처리 2건까지 코드와 회귀 테스트에 반영했다. OAuth 보완의 정확성·회귀 검토와 일반·no-IFD eval이 통과했고 MiniPC에 배포했다. 전체 PR 검토에서 공개 DCR의 비활성 등록 선점 문제를 확인해 포화 시 교체 정책을 보완했다. 승인 앱에도 파싱 전 본문 크기·읽기 시간·동시 처리 제한을 적용하고, 시작·일일 점검에서 공개 8443 외 Funnel을 검출하도록 보완했다. 격리 테스트 66개가 통과했고 수정 후 독립 재검토를 진행한다. 2026-09-08 운영자가 Cloudflare Tunnel 전환과 별도 원인 조사를 승인했다. 격리된 동일 서버로 개인 도메인 443·명시적443에서 ChatGPT 자동 OAuth 탐색 200 및 S256 인식을 확인했고, 같은 hostname의8443에서는404·origin 요청 부재를 확인했다. Cloudflare 구성과 재배포 시 이미 제거된8443 경로 처리의 네 관점 독립 검토를 완료했다. MiniPC 운영 배포, smoke-test13/13, 공개443·내부 승인9443·기존 Caddy 네 서비스·활성 Funnel 없음까지 확인했다. ChatGPT 플러그인 생성·DCR·본인 승인·토큰 발급과14개 도구 발견이 성공했다. 실제 ChatGPT 채팅에서 anki_status·anki_decks 읽기 응답을 확인했다. 카드·노트 변경이나 수동 동기화는 실행하지 않았다. Claude·Codex 연결과 iPhone에서의 직접 사용 검증은 남아 있다.
 - **Plan DA**: R1 COMPLETE (finding 21건 전부 CONFIRMED·반영, 롤아웃 계약 2건은 운영자 결정 "계획을 구현에 맞춰 갱신"), R2 COMPLETE (finding 19건 전부 CONFIRMED·반영 — 방향 모드 제거, 복원 절차 계약, sync 계층 단일화, 타임아웃 단일 소스, lab 폐기 절차), R3 COMPLETE (16건: 15 CONFIRMED·1 NOT_AN_ISSUE — 14건 반영: 준비·재시도 상수 단일 소스와 유닛 예산 재계산, /status 즉시 응답 분리, import 구성 시점 게이트, export 덮어쓰기 거부, 복구점 미러·정리 코드 PR 2b로 이관, 인스턴스 enable 옵션 제거, result 어휘 표; 1건 REPLAN_REQUIRED(MCP 유저·상태 파일 접근)는 #1306에 배출), R4 COMPLETE (19건 전부 CONFIRMED·반영 — lab 수명을 PR 2b까지로, 준비됨=로그인 판정 확정, /status 투영 축소, running 상태·요청–결과 대응, busy 예산 스크립트 전체 1회·백오프 합 파생, 애드온 타임아웃 전부 env, allowImport 옵션+배타 assertion, user·profile 옵션 제거, 미디어 대기 제거, 문서 정합), R5 COMPLETE (13건: 12 CONFIRMED·1 NOT_AN_ISSUE — R4 편집이 애드온 `required` 바인딩을 조건 블록 안으로 밀어 넣은 CRITICAL 결함 복원, 상태 파일 runId 회차 식별, collection-empty 알림, 헬퍼 배선 공용 파일 + eval의 `${VAR:?}` 요구 집합 대조, 시크릿 인벤토리·문서 정합). R6 COMPLETE (15건 전부 CONFIRMED·반영 — loopback 무인증 AnkiConnect 잔여 위험을 CIR·결정 1에 기록하고 normal sync에 급감 게이트, 복원 절차의 상태 파일 초기화 단계와 STOP 9 예외, 결정 13 호출자 규칙을 systemctl 실측 대조로, full-sync-required exit 1, smoke-test 백업 신선도 등록, backup 유닛 쓰기 경로 축소, AH8 분할, 문서 정합). 루프 종료 `termination_type=USER_STOP`(운영자 지시 2026-09-07: "점점 YAGNI성 꼬투리 리뷰만 나온다" — R6 반영분은 독립 재검증 없이 walkthrough·배포 실측으로만 확인). 미해결: R6 write phase delta의 독립 리뷰 부재
 - **PR DA**: PR 1은 운영자 결정으로 생략. PR 2a의 초기 LITE 검토 뒤, 인증·공개 경로 변경에 대한 재검증 규칙에 따라 네 관점으로 확대했다. 공개 DCR·승인 요청 제한·Cloudflare 전환·재배포 시작 절차를 반영한 누적 diff가 Correctness·Design·Regression·Maintainability 모두 CLEAR로 수렴했다. PR #1310은 실제 클라이언트 확인과 운영자 승인 전 머지하지 않는다.
+
+</details>
 
 ## Why this matters
 
@@ -264,7 +270,11 @@
     → 🔒 iPhone ChatGPT Chat에서 연결·조회·카드 추가·readback → Codex·Claude 연결·조회 1회. 도구 검증은 `lab`(조회·추가·
     수정·복구점)과 `main`(sync 계열 — 결정 12)으로 나눈다.
 23. 실패 경로 검증(인증 실패·만료·철회, AnkiWeb 접속 실패, full sync 요구 중단·알림).
-24. `.claude/skills/hosting-anki/` 신규(백업 타이머 표로의 교차 참조 포함). **`lab` 폐기 체크리스트** — PR 2b 검증(파괴 계층·
+24. `.claude/skills/hosting-anki/` 신규(백업 타이머 표로의 교차 참조 포함).
+    **2026-09-11 결정: `lab` 유지.** 향후 변경·복구 시험을 운영 컬렉션과 분리하기 위해 서비스와 실제 이력 fixture를 보존한다.
+    AnkiWeb 미로그인·sync 비활성·일일 백업 제외·역할별 인증을 유지하고, 매 시험에서 만든 합성 데이터만 정확히 정리한다.
+    아래는 향후 폐기를 다시 결정했을 때 사용할 절차이며, 이번 완료 조건이나 자동 실행 지시가 아니다.
+    **`lab` 폐기 체크리스트(현재 미실행)** — PR 2b 검증(파괴 계층·
     대량 변경 미리보기·복구점 — Test plan의 격리 프로필 항목)이 끝나거나 PR 2b 착수를 포기하기로 결정한 뒤에 수행한다.
     PR 2a 직후에 지우면 파괴 도구의 첫 실행 대상이 운영 컬렉션이 된다:
     (a) `configuration.nix`의 `lab` 블록 제거, `constants.nix`의 `ankiConnectLab`·`ankiHelperLab` 제거, eval 테스트의 lab 참조
@@ -319,17 +329,12 @@
 
 ## 재개 절차 (다른 기기·새 세션)
 
-1. `gh issue view 1306 --repo greenheadHQ/nixos-config --comments`로 최신 진행 댓글을 읽는다.
-2. 아래는 PR 2a 재개 절차다. PR 2b는 현행 branch/작업 원장을 확인한다. `git fetch origin feat/anki-mcp-server` 후 `cd "$(wt feat/anki-mcp-server --if-exists=reuse)"`로 워크트리 진입 — 비대화형 셸에서
-   `wt`는 경로만 출력하고 cd하지 않는다(CLAUDE.md Worktree 절). 워크트리 디렉터리 이름은 `feat_anki-mcp-server`다.
-3. 이 plan의 Drift check와 Status를 확인한다. Status의 Execution·DA 행이 최신 진행 상태다.
-4. MiniPC 실측: "Commands you will need"의 인스턴스 상태·헬퍼 상태·sync 상태 세 명령으로 어느 Step까지 적용됐는지 판정한다
-   (`no-credentials` = Step 14 전, `bootstrap-pending` = Step 15 전, `success` = 운영 중). 이 세 값 외의 `result`는 여기서
-   열거하지 않는다 — 의미와 후속 조치는 `anki-host-sync.sh` 상단 어휘 표(단일 소스)를 따른다. `running`은 실행 중이거나
-   유닛이 죽은 흔적이니 `systemctl status anki-host-sync-main`·journal을 본 뒤 다음 타이머 실행 후 재판정하고,
-   `collection-empty`는 STOP 9다. 배포되지 않은 코드는 `git log origin/main..feat/anki-mcp-server`로 본다.
-5. 🔒 운영자 게이트가 완료됐는지는 실측으로만 판단한다(`/status`의 `login.status`, Cloudflare 터널 활성·공개 메타데이터 응답, `tailscale serve status`의 tailnet 승인 배선).
-6. 진행 상태를 바꾸는 작업을 끝낼 때마다 이슈 #1306에 한 줄 댓글(완료 Step 번호·커밋 SHA·다음 Step)을 남기고 push한다.
+1. 이슈 #1306과 [검증 기록](anki-mcp-evidence/2026-09-11-validation.md)의 최신 상태를 확인한다.
+2. `git fetch origin` 뒤 현재 checkout·변경 파일을 확인한다. 새 작업은 `wt`로 별도 브랜치를 만들고, 이미 머지된 과거 브랜치를 복구하지 않는다.
+3. `anki_status`로 준비·로그인·busy·최근 sync를 확인하고, 대상 변경의 `anki_operation_status`로 적용/sync/알림을 분리해 읽는다.
+4. `running`은 서비스 `ActiveState`·`InvocationID`와 대조한다. `collection-empty`·`local-loss-suspected`는 아래 STOP 조건에 따라 조사하며 기준 파일을 지워 통과시키지 않는다.
+5. `lab`에는 AnkiWeb 자격을 넣지 않는다. 운영 `main` 시험은 그때 승인된 합성 대상에 한정하고 전후 ID·본문·일정·복습 기록·미디어를 대조한다.
+6. 새 완료 결과만 문서와 이슈에 반영한다. 연결 UI나 `NO_CHANGES`만으로 기기 간 표시·알림 수신을 완료 처리하지 않는다.
 
 ## Maintenance notes
 
@@ -338,7 +343,7 @@
   좀비 잠금 → 빈 컬렉션 시작(`.lock`/`-wal`/`-shm` 정리), OOM(MemoryMax), overlay 캐시 미스.
   이번 실측 추가: aqt가 `sys.stderr`를 오류 다이얼로그 버퍼로 바꾸므로 애드온 로그는 `sys.__stderr__`로 써야 journald에 남는다;
   backend `import_collection_package`는 `col.close()` 후에만 동작한다(`close_for_full_sync`로는 CollectionAlreadyOpen).
-- 복구점(.colpkg)은 `<state>/restore-points/`에 둔다. 미러·보존은 PR 2b에서 생산자와 함께 도입한다(결정 11).
+- 복구점(.colpkg)은 `<state>/restore-points/`에 두며 root HDD 미러와 검증 영수증 뒤에 변경한다. 미디어 제외·SSD 최신 5개·HDD 무기한 계약은 운영 README를 따른다.
   일일 백업본(`backups/`)은 SSD 최신 2개·HDD 보존 기간으로 정리한다.
 - **복구점 복원 절차** (운영 인스턴스 `main`): 헬퍼에는 서버를 덮어쓰는 모드가 없으므로 복원은 GUI 경로로 한다 —
   (1) `systemctl stop anki-host-main` (2) Mac Anki에서 격리 프로필을 만들어 복구점 `.colpkg`를 가져와 내용을 확인
@@ -351,4 +356,4 @@
 - `homeserver.ankiHost`를 통째로 끄는 날의 처분 계약: 상태 루트 `/var/lib/anki-host` 전체와 HDD `backups/anki-host`의 보존
   여부를 결정해 기록하고, `anki-host` 시스템 계정(`userdel`)까지 정리한다. NixOS는 선언이 사라져도 기존 데이터·계정을
   지우지 않는다 — #863의 미완 정리를 반복하지 않는다.
-- 공개 확장 결정 시 입구를 Cloudflare Tunnel + 자체 도메인으로 바꾸면 issuer URL이 바뀌어 클라이언트 재연결 1회가 필요하다.
+- 공개 입구는 이미 Cloudflare Tunnel + 자체 도메인이다. 향후 issuer를 바꾸는 경우 기존 클라이언트의 재연결이 필요하다.
