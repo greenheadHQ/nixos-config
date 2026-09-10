@@ -305,7 +305,10 @@ ChatGPT 웹·iPhone, Codex, Claude의 인증된 호출과 신규 이미지·음�
 
 - PR 1·PR 2 머지, MiniPC `nrs` 적용, `anki-host-main`·`anki-mcp` active, 타이머 정상.
 - 운영 프로필 카운트가 Mac 최신 백업과 일치하고, Mac·iPhone 동기화가 정상(변경 없음 또는 정상 병합).
-- iPhone ChatGPT Chat에서 카드 추가 → Pushover (a) 알림 → 폰 AnkiMobile 동기화로 카드 확인.
+- ChatGPT 웹에서 합성 카드 추가와 iPhone ChatGPT Chat에서 해당 카드 수정을 각각 실제 호출하고, 각 변경의 Pushover (a) 알림·AnkiMobile 반영을 확인한다.
+  이슈 #1306의 iPhone 완료 조건은 실제 도구 호출 → Anki 변경 → 서버 readback 대조다.
+  2026-09-09~11 사용자와 진행한 실행 순서(웹 생성 → 폰 확인·직접 수정 → Mac 종료 수정)를 반영해 초기의 iPhone 추가 단일 경로를 이 분담으로 갱신한다.
+  iPhone에서 `anki_add_notes`를 직접 호출한 시험은 미실행이며, 수정 시험으로 추가 도구의 모바일 호출까지 검증했다고 주장하지 않는다.
 - 이슈 #1306 체크리스트 전부 체크, `plans/README.md` DONE, anki-study #3 완료 검증 갱신.
 
 ## STOP conditions

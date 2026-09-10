@@ -10,7 +10,8 @@ Mac 전원 종료 상태에서 iPhone 변경·AnkiMobile 표시·알림 수신�
 
 | 범위 | 실제 확인 | 한계 |
 |---|---|---|
-| iPhone ChatGPT | 합성 노트 Back 변경 1회, 작업 영수증·서버 조회 일치, 서로 다른 사전·사후 normal sync 성공 | Mac 전원 종료 여부는 사용자 실기기 확인에 근거 |
+| ChatGPT 웹 카드 추가 | 9월 9일 합성 덱·노트 각 1개 생성, `anki_add_notes` 적용·새 사전/사후 sync·알림 전송과 독립 조회 일치. 사용자가 AnkiMobile 카드 표시와 생성 알림 2개 수신 확인 | 카드 추가 호출의 발신 기기는 웹이며 iPhone이 아님 |
+| iPhone ChatGPT | 합성 노트 Back 변경 1회, 작업 영수증·서버 조회 일치, 서로 다른 사전·사후 normal sync 성공 | iPhone의 `anki_add_notes` 직접 호출은 미실행 |
 | AnkiMobile·Pushover | 9월 9일 변경된 Back 표시와 해당 알림 수신을 사용자 확인 | 서버 `sent`만으로 기기 수신을 대신하지 않음 |
 | Claude Desktop 채팅 | 사용자 OAuth 승인, 도구 29개 발견, 상태·합성 노트·기존 작업 기록 3개 실제 조회와 서버 응답 대조 | Claude 쓰기 실행은 이 완료 조건에 포함하지 않음 |
 | Codex | 도구 29개 발견, 상태·합성 노트·기존 작업 기록 실제 조회, 신규 PNG/WAV 저장과 Back 수정 성공 | 모든 쓰기 도구를 각 클라이언트에서 전수 실행한 것은 아님 |
