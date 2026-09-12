@@ -155,6 +155,9 @@ run_test "claude remote-control maint waits for parent lock release" test_claude
 run_test "claude remote-control maint restart rejects mismatched version" test_claude_remote_control_maint_restart_rejects_mismatched_version
 run_test "claude remote-control maint restart rejects unverifiable version" test_claude_remote_control_maint_restart_rejects_unverifiable_version
 run_test "claude remote-control maint action taxonomy" test_claude_remote_control_maint_action_taxonomy
+run_test "claude remote-control maint accepts hardlink aliased exe" test_claude_remote_control_maint_accepts_hardlink_aliased_exe
+run_test "claude remote-control exe identity rejects unrelated binary" test_claude_remote_control_exe_identity_rejects_unrelated_binary
+run_test "claude remote-control exe alias transition needs observation" test_claude_remote_control_exe_alias_transition_needs_observation
 # claude remote-control wrapper suite — managed identity 검증·decoy argv 거부·interactive lock 계약(동일 누락 복구).
 run_test "claude remote-control nix packages include pinned runtime helpers" test_claude_remote_control_nix_packages_include_pinned_runtime_helpers
 run_test "claude remote-control readlink fixture preserves canonicalization" test_claude_remote_control_readlink_fixture_preserves_canonicalization

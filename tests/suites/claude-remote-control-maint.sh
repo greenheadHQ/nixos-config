@@ -1455,3 +1455,122 @@ test_claude_remote_control_maint_alert_truncation_keeps_valid_utf8() {
   out="$(_claude_rc_truncate "short" 100)"
   [ "$out" = short ] || fail "short text must pass through"
 }
+
+# macOS lsof는 vnode에 캐시된 이름 하나만 주므로, 실행 바이너리에 VERSIONS_DIR 밖
+# 하드링크가 있으면(설치 프로그램이 만드는 ClaudeCode.app 번들) exe 경로가 그쪽으로
+# 보고된다. 프로세스는 그대로인데 경로 문자열만 경계를 벗어나 살아 있는 bridge가
+# no-server-process로 오판되던 회귀를 고정한다.
+test_claude_remote_control_maint_accepts_hardlink_aliased_exe() {
+  local sandbox repo status alias_dir alias_exe out
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  repo="$sandbox/repo"
+  _claude_rc_make_repo "$repo" "$CLAUDE_RC_HOME"
+  : > "$CLAUDE_RC_HOLD_FILE"
+
+  # VERSIONS_DIR 안의 실파일과 그 밖의 하드링크 별칭. 둘은 같은 dev:ino다.
+  alias_dir="$sandbox/ClaudeCode.app/Contents/MacOS"
+  mkdir -p "$alias_dir"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$CLAUDE_RC_VERSIONS/claude-aliased"
+  chmod +x "$CLAUDE_RC_VERSIONS/claude-aliased"
+  alias_exe="$alias_dir/claude"
+  ln "$CLAUDE_RC_VERSIONS/claude-aliased" "$alias_exe" \
+    || fail "hardlink alias fixture could not be created"
+
+  FAKE_CLAUDE_STARTED_EXE="$alias_exe" \
+    _claude_rc_run "$repo" bash "$(_claude_rc_wrapper_script)" start >/dev/null
+  _claude_rc_wait_fake_claude_log "remote-control --spawn worktree" \
+    || fail "fake server did not start before hardlink alias test"
+
+  out="$(_claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure 2>&1)" \
+    || fail "ensure must not fail when exe is reported through a hardlink alias: $out"
+  status="$(cat "$CLAUDE_RC_STATE/status.json")"
+  jq -e '
+    .exitCode == 0
+    and (.instances[0].action != "no-server-process")
+    and .instances[0].processState == "running"
+    and .instances[0].runningVersion == "claude-aliased"
+  ' <<<"$status" >/dev/null \
+    || fail "hardlink-aliased exe must resolve to its VERSIONS_DIR name: $status"
+  grep -Fq -- "하드링크 별칭" <<<"$out" \
+    || fail "alias observation must be logged once on transition: $out"
+  [ -s "$CLAUDE_RC_STATE/last-exe-alias" ] || fail "alias transition state must be recorded"
+
+  # 전이에서만 남기므로 같은 상태의 두 번째 실행은 조용해야 한다.
+  out="$(_claude_rc_run_maint "$repo" bash "$(_claude_rc_maint_script)" ensure 2>&1)" \
+    || fail "second ensure must also succeed: $out"
+  grep -Fq -- "하드링크 별칭" <<<"$out" \
+    && fail "unchanged alias state must not repeat the warning every run: $out"
+
+  _claude_rc_release_server "$repo"
+}
+
+# dev:ino 판정은 경계를 넓히는 게 아니라 더 강한 동일성 증명으로 바꾸는 것이다 —
+# VERSIONS_DIR 밖의 무관한 바이너리는 여전히 탈락해야 한다 (#1060 오탐 방지 유지).
+test_claude_remote_control_exe_identity_rejects_unrelated_binary() {
+  local sandbox out
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  printf 'versioned\n' > "$CLAUDE_RC_VERSIONS/claude-real"
+  printf 'unrelated\n' > "$sandbox/decoy"
+  ln "$CLAUDE_RC_VERSIONS/claude-real" "$sandbox/aliased"
+
+  _claude_rc_exe_identity() {
+    VERSIONS_DIR="$CLAUDE_RC_VERSIONS" \
+      bash -c 'set -uo pipefail; source "$1"; shift; "$@"' _ "$(_claude_rc_maint_script)" "$@"
+  }
+
+  _claude_rc_exe_identity exe_is_claude_versions_binary "$CLAUDE_RC_VERSIONS/claude-real" \
+    || fail "a path inside VERSIONS_DIR must pass"
+  _claude_rc_exe_identity exe_is_claude_versions_binary "$sandbox/aliased" \
+    || fail "a hardlink alias of a VERSIONS_DIR binary must pass"
+  if _claude_rc_exe_identity exe_is_claude_versions_binary "$sandbox/decoy"; then
+    fail "an unrelated binary outside VERSIONS_DIR must still be rejected"
+  fi
+  if _claude_rc_exe_identity exe_is_claude_versions_binary "$sandbox/missing"; then
+    fail "a nonexistent path must be rejected"
+  fi
+  out="$(_claude_rc_exe_identity claude_versions_entry_for_exe "$sandbox/aliased")"
+  [ "$out" = "claude-real" ] || fail "alias must map back to its VERSIONS_DIR name (got: $out)"
+  # 삭제된 바이너리는 비교할 inode가 없다 — 경로 기반 판정과 (deleted) 표식이 그대로 살아야 한다.
+  _claude_rc_exe_identity exe_is_claude_versions_binary "$CLAUDE_RC_VERSIONS/gone (deleted)" \
+    || fail "a deleted binary inside VERSIONS_DIR must still pass on its path"
+}
+
+# 별칭 경고는 상태 전이에서만 남긴다. "별칭이 없다"와 "이번 실행은 아무것도 관측하지
+# 못했다"를 구분하지 못하면, no-server-process나 no-instances 실행이 한 번 끼는 것만으로
+# 해소/재발 로그가 번갈아 나오는 플래핑이 된다.
+test_claude_remote_control_exe_alias_transition_needs_observation() {
+  local sandbox state_file results out
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  state_file="$CLAUDE_RC_STATE/last-exe-alias"
+  results="$sandbox/results"
+
+  # RESULTS_FILE 은 maint 본문 상단에서 "" 로 초기화되므로 source 뒤에 설정해야 한다.
+  _claude_rc_alias_transition() {
+    STATE_DIR="$CLAUDE_RC_STATE" \
+      bash -c 'set -uo pipefail; source "$1"; RESULTS_FILE="$2"; log_exe_alias_transition' \
+        _ "$(_claude_rc_maint_script)" "$results" 2>&1
+  }
+
+  printf '%s\t%s\n' "/repo" "/outside/claude" > "$results.alias"
+  out="$(_claude_rc_alias_transition)"
+  grep -Fq -- "하드링크 별칭으로 보고됨" <<<"$out" || fail "alias observation must warn once: $out"
+  grep -Fq -- "/outside/claude" "$state_file" || fail "alias state must be recorded"
+
+  rm -f "$results.alias"
+  out="$(_claude_rc_alias_transition)"
+  [ -z "$out" ] || fail "an ensure that observed nothing must stay silent: $out"
+  grep -Fq -- "/outside/claude" "$state_file" \
+    || fail "state must survive an ensure that observed nothing"
+
+  # 관측은 했고 별칭만 사라진 경우에만 해소로 기록한다.
+  printf '%s\t\n' "/repo" > "$results.alias"
+  out="$(_claude_rc_alias_transition)"
+  grep -Fq -- "별칭 관측이 해소됨" <<<"$out" || fail "cleared alias must be logged once: $out"
+  [ ! -s "$state_file" ] || fail "cleared alias must empty the state file"
+
+  out="$(_claude_rc_alias_transition)"
+  [ -z "$out" ] || fail "unchanged cleared state must stay silent: $out"
+}

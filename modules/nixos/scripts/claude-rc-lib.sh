@@ -258,12 +258,18 @@ pid_cwd() {
 }
 
 # 플랫폼별 실행 바이너리 경로 조회.
-# - Linux: /proc/PID/exe. 삭제된 바이너리는 " (deleted)" suffix가 붙는다.
+# - Linux: /proc/PID/exe. 커널이 exec된 실제 경로를 주고, 삭제된 바이너리는
+#   " (deleted)" suffix가 붙는다.
 # - Darwin: /proc이 없어 lsof의 첫 txt(code segment) 항목을 쓴다. 실행 파일이
 #   항상 첫 txt로 나열되고(-F 필드 출력은 경로 공백 안전; 실측), ps -o comm=은
 #   argv[0] 기반이라 symlink 경유 실행 시 실경로를 잃는다.
-#   삭제된 바이너리도 suffix 없이 원경로가 그대로 나오지만, 버전이 파일명이라
-#   desired와의 문자열 비교로 drift가 감지되므로 (deleted) 표식 없이도 충분하다.
+#   삭제된 바이너리도 suffix 없이 원경로가 그대로 나온다.
+#   주의: 이 값은 "exec된 경로"가 아니라 vnode에 캐시된 이름 하나다. 같은 inode를
+#   가리키는 하드링크가 둘 이상이면(설치 프로그램이 만드는
+#   ~/.local/share/claude/ClaudeCode.app/Contents/MacOS/claude 등) 마지막으로
+#   lookup된 쪽 이름이 나와, 프로세스는 그대로인데 경로만 VERSIONS_DIR 밖으로
+#   바뀐다. 경로 문자열로 실행 파일 동일성을 판정하면 안 되는 이유다
+#   (exe_is_claude_versions_binary 참조).
 pid_exe_path() {
     local pid="$1"
     case "$(uname -s)" in
@@ -272,16 +278,78 @@ pid_exe_path() {
     esac
 }
 
-# pid_exe_path 기준 실행 중 버전. 바이너리가 삭제된 구버전이면 "deleted"를 붙여
-# 호출측이 drift로 취급하게 한다 (Linux 전용 신호 — Darwin 주석은 pid_exe_path 참조).
-pid_exe_version() {
-    local pid="$1" exe
+# 주어진 실행 파일과 같은 파일(dev:ino 동일)인 VERSIONS_DIR 항목의 버전명.
+# 하드링크 별칭 경로를 정규 버전명으로 되돌리는 단일 지점이다.
+# `[ a -ef b ]`는 bash builtin이라 GNU/BSD `stat` 옵션 차이를 타지 않는다.
+claude_versions_entry_for_exe() {
+    local exe="$1" versions_dir entry
+    [ -n "$exe" ] || return 1
+    # 삭제된 바이너리는 비교할 inode가 없다 — 경로 기반 판정만 유효하다.
+    [ -f "$exe" ] || return 1
+    versions_dir="${VERSIONS_DIR%/}"
+    [ -n "$versions_dir" ] || return 1
+    for entry in "$versions_dir"/*; do
+        [ -f "$entry" ] || continue
+        [ "$entry" -ef "$exe" ] || continue
+        basename "$entry"
+        return 0
+    done
+    return 1
+}
+
+# 실행 파일이 VERSIONS_DIR의 Claude 바이너리인가. 경로가 그 안을 가리키면 그대로
+# 통과하고, 밖을 가리키면 dev:ino 동일성으로 한 번 더 판정한다. 이는 술어를 느슨하게
+# 푸는 것이 아니라 경로 문자열보다 강한 동일성 증명으로 대체하는 것이다 — 임의 위치의
+# 무관한 바이너리는 여전히 탈락한다.
+exe_is_claude_versions_binary() {
+    local exe="${1% (deleted)}" versions_dir
+    [ -n "$exe" ] || return 1
+    versions_dir="${VERSIONS_DIR%/}"
+    [ -n "$versions_dir" ] || return 1
+    case "$exe" in
+        "$versions_dir"/*) return 0 ;;
+    esac
+    claude_versions_entry_for_exe "$exe" >/dev/null
+}
+
+# pid_exe_path가 VERSIONS_DIR 밖 하드링크 별칭을 보고한 경우 그 경로를 출력한다.
+# 별칭이 아니면 non-zero. 판정 자체는 exe_is_claude_versions_binary가 이미 흡수하므로
+# 이 함수는 진단/관찰 전용이다.
+claude_exe_alias_path_for_pid() {
+    local pid="$1" exe stripped
     exe=$(pid_exe_path "$pid") || return 1
     [ -n "$exe" ] || return 1
-    case "$exe" in
-        *" (deleted)") echo "$(basename "${exe% (deleted)}") (deleted)" ;;
-        *) basename "$exe" ;;
+    stripped="${exe% (deleted)}"
+    case "$stripped" in
+        "${VERSIONS_DIR%/}"/*) return 1 ;;
     esac
+    claude_versions_entry_for_exe "$stripped" >/dev/null || return 1
+    printf '%s\n' "$stripped"
+}
+
+# pid_exe_path 기준 실행 중 버전. 바이너리가 삭제된 구버전이면 "deleted"를 붙여
+# 호출측이 drift로 취급하게 한다 (Linux 전용 신호 — Darwin 주석은 pid_exe_path 참조).
+# 별칭 경로에서는 basename이 버전이 아니므로(ClaudeCode.app이면 "claude") 같은 파일인
+# VERSIONS_DIR 항목의 이름으로 되돌린다. 되돌리지 못하면 기존대로 basename을 낸다.
+pid_exe_version() {
+    local pid="$1" exe stripped entry
+    exe=$(pid_exe_path "$pid") || return 1
+    [ -n "$exe" ] || return 1
+    stripped="${exe% (deleted)}"
+    if [ "$stripped" != "$exe" ]; then
+        echo "$(basename "$stripped") (deleted)"
+        return 0
+    fi
+    case "$stripped" in
+        "${VERSIONS_DIR%/}"/*) ;;
+        *)
+            if entry=$(claude_versions_entry_for_exe "$stripped"); then
+                echo "$entry"
+                return 0
+            fi
+            ;;
+    esac
+    basename "$stripped"
 }
 
 PID_ARGV=()
@@ -384,6 +452,11 @@ is_flock_process() {
     # Both platform packages are immutable Nix-store executables. Accept old
     # store generations as well as the current PATH target so an `nrs` update
     # can still identify and replace a bridge launched by the previous closure.
+    # pid_exe_path의 하드링크 별칭 문제(Darwin)는 여기서는 판정을 뒤집지 못한다:
+    # store optimise가 만드는 별칭도 /nix/store 안의 동일 내용 파일이고, 이 술어가
+    # 틀리는 방향은 언제나 "flock을 flock이 아니라고 본다"이며 그 경우 바로 다음
+    # 검사인 is_claude_versions_exe_process가 같은 후보를 탈락시킨다. 반대 방향은
+    # 별칭이 flock과 동일 내용이어야 성립하므로 실질적으로 불가능하다.
     case "${exe% (deleted)}" in
         /nix/store/*-flock-*/bin/flock | /nix/store/*-util-linux-*/bin/flock) return 0 ;;
     esac
@@ -391,15 +464,10 @@ is_flock_process() {
 }
 
 is_claude_versions_exe_process() {
-    local pid="$1" exe versions_dir
+    local pid="$1" exe
     exe=$(pid_exe_path "$pid") || return 1
     [ -n "$exe" ] || return 1
-    versions_dir="${VERSIONS_DIR%/}"
-    [ -n "$versions_dir" ] || return 1
-    case "${exe% (deleted)}" in
-        "$versions_dir"/*) return 0 ;;
-    esac
-    return 1
+    exe_is_claude_versions_binary "$exe"
 }
 
 _scan_reject() {
