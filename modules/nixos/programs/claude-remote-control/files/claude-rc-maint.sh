@@ -12,6 +12,9 @@ set -euo pipefail
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
 IDLE_THRESHOLD_MINUTES="${IDLE_THRESHOLD_MINUTES:-30}"
 MAINT_LOCK_TIMEOUT_SECONDS="${MAINT_LOCK_TIMEOUT_SECONDS:-120}"
+# 별칭 진단 전용 lock. ensure lock보다 훨씬 짧게 잡는다 — 여기서 오래 기다리면 알림
+# 전송이 그만큼 밀리고, 건너뛴 전이는 다음 실행이 그대로 다시 관측한다.
+ALIAS_LOCK_TIMEOUT_SECONDS="${ALIAS_LOCK_TIMEOUT_SECONDS:-5}"
 ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
 PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
@@ -273,14 +276,34 @@ record_exe_alias() {
 # 있던 instance가 목록에서 빠진 실행은 "해소됨"을 오기록한다 — macOS ensure는 1분
 # 주기라 그 오차가 그대로 누적된다. 이번 실행이 관측하지 못한 instance의 이전 값은
 # 건드리지 않고 보존하며, 값이 실제로 바뀐 instance만 한 줄씩 남긴다.
+# 이 finalizer는 ensure lock 밖에서 돈다 (cmd_ensure는 with_lock 반환 뒤에 호출한다).
+# 겹친 실행이 같은 이전 상태를 읽으면 같은 전이를 양쪽이 출력하고 나중 rename이 다른
+# 실행의 관측을 덮어쓰므로, 상태 읽기부터 rename까지를 전용 lock으로 직렬화한다.
+# lifecycle lock을 재획득하지 않는 이유는 그 lock이 스캔 전체를 감싸고 있어, 진단 한 줄
+# 때문에 알림 전송이 다른 실행의 스캔만큼 지연되기 때문이다.
 log_exe_alias_transition() {
+    # 관측 자체가 없었던 실행은 별칭 상태를 알 수 없다. 모르는 것을 기록하지 않는다.
+    # lock을 잡기 전에 걸러 관측 없는 실행이 경합을 만들지 않게 한다.
+    [ -f "$RESULTS_FILE.alias" ] || return 0
+    with_lifecycle_lock_fd9 \
+        "$ALIAS_LOCK_TIMEOUT_SECONDS" \
+        "$STATE_DIR/last-exe-alias.lock" \
+        alias_transition_lock_unavailable \
+        alias_transition_lock_unavailable \
+        alias_transition_lock_unavailable \
+        log_exe_alias_transition_locked
+}
+
+# 별칭 진단은 부수 기능이다 — lock을 못 잡으면 그 실행의 전이 기록만 건너뛰고, ensure의
+# 전역 action이나 종료 코드는 건드리지 않는다 (다음 실행이 같은 전이를 그대로 관측한다).
+alias_transition_lock_unavailable() { :; }
+
+log_exe_alias_transition_locked() {
     local state_file pending transitions kind path alias_path
     state_file="$STATE_DIR/last-exe-alias"
-    # 이 finalizer는 ensure lock 밖에서 돈다 (cmd_ensure). 겹친 실행끼리 같은 임시 파일을
-    # 쓰지 않도록 실행별 스크래치(mktemp로 만든 RESULTS_FILE)에 쓰고 rename으로 교체한다.
+    # 겹친 실행끼리 같은 임시 파일을 쓰지 않도록 실행별 스크래치(mktemp로 만든
+    # RESULTS_FILE)에 쓰고 rename으로 교체한다.
     pending="$RESULTS_FILE.alias.state"
-    # 관측 자체가 없었던 실행은 별칭 상태를 알 수 없다. 모르는 것을 기록하지 않는다.
-    [ -f "$RESULTS_FILE.alias" ] || return 0
     # 이전 상태는 awk 파일 인자가 아니라 getline으로 읽는다. 파일 인자를 둘 주면 상태
     # 파일이 비었을 때 NR == FNR이 관측 레코드까지 이전 상태로 분류한다.
     if ! transitions=$(awk -F'\t' -v state_out="$pending" -v prev_file="$state_file" '

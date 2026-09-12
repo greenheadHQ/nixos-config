@@ -159,6 +159,7 @@ run_test "claude remote-control maint accepts hardlink aliased exe" test_claude_
 run_test "claude remote-control exe identity rejects unrelated binary" test_claude_remote_control_exe_identity_rejects_unrelated_binary
 run_test "claude remote-control exe alias transition needs observation" test_claude_remote_control_exe_alias_transition_needs_observation
 run_test "claude remote-control exe alias transition is per instance" test_claude_remote_control_exe_alias_transition_is_per_instance
+run_test "claude remote-control exe alias transition serializes on lock" test_claude_remote_control_exe_alias_transition_serializes_on_lock
 run_test "claude remote-control flock identity accepts hardlink alias" test_claude_remote_control_flock_identity_accepts_hardlink_alias
 # claude remote-control wrapper suite — managed identity 검증·decoy argv 거부·interactive lock 계약(동일 누락 복구).
 run_test "claude remote-control nix packages include pinned runtime helpers" test_claude_remote_control_nix_packages_include_pinned_runtime_helpers

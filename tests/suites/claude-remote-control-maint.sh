@@ -1634,6 +1634,41 @@ test_claude_remote_control_exe_alias_transition_is_per_instance() {
   grep -Fq -- "/a" <<<"$out" || fail "the clear must name the recovered instance: $out"
 }
 
+# 전이 기록은 ensure lock 밖에서 돈다. 겹친 실행이 같은 이전 상태를 읽으면 같은 전이를
+# 양쪽이 출력하고 나중 rename이 다른 실행의 관측을 덮어쓰므로 전용 lock으로 직렬화한다.
+test_claude_remote_control_exe_alias_transition_serializes_on_lock() {
+  local sandbox state_file results lock out holder
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  state_file="$CLAUDE_RC_STATE/last-exe-alias"
+  lock="$CLAUDE_RC_STATE/last-exe-alias.lock"
+  results="$sandbox/results"
+
+  _claude_rc_alias_transition() {
+    ALIAS_LOCK_TIMEOUT_SECONDS="${1:-5}" STATE_DIR="$CLAUDE_RC_STATE" \
+      bash -c 'set -uo pipefail; source "$1"; RESULTS_FILE="$2"; log_exe_alias_transition' \
+        _ "$(_claude_rc_maint_script)" "$results" 2>&1
+  }
+
+  printf '%s\t%s\n' "/repo" "/outside/claude" > "$results.alias"
+
+  # 다른 실행이 전이를 기록하는 중인 상태를 흉내낸다.
+  flock "$lock" sleep 2 >/dev/null 2>&1 &
+  holder=$!
+  sleep 0.3
+  # lock 획득 실패는 non-zero다 — 프로덕션 호출부(cmd_ensure)도 같은 방식으로 흡수한다.
+  out="$(_claude_rc_alias_transition 1 || true)"
+  [ -z "$out" ] || fail "a contended transition must stay silent: $out"
+  [ ! -s "$state_file" ] || fail "a contended transition must not write state"
+  wait "$holder" 2>/dev/null || true
+
+  # 건너뛴 전이는 유실되지 않는다 — 다음 실행이 같은 관측을 그대로 기록한다.
+  out="$(_claude_rc_alias_transition)"
+  grep -Fq -- "하드링크 별칭으로 보고됨" <<<"$out" \
+    || fail "a skipped transition must be observed by the next run: $out"
+  grep -Fq -- "/outside/claude" "$state_file" || fail "alias state must be recorded"
+}
+
 # flock launcher 판정도 같은 하드링크 별칭에 노출된다 — nix.optimise가 동일 내용 store
 # 파일을 합치면 lsof가 `<store>/.links/<hash>` 이름을 보고한다. 이 술어는
 # pid_is_managed_server_for_path에서 parent 에 대한 accept 조건이라 false negative가 곧
