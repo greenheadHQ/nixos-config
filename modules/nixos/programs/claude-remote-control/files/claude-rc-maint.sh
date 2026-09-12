@@ -12,6 +12,9 @@ set -euo pipefail
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
 IDLE_THRESHOLD_MINUTES="${IDLE_THRESHOLD_MINUTES:-30}"
 MAINT_LOCK_TIMEOUT_SECONDS="${MAINT_LOCK_TIMEOUT_SECONDS:-120}"
+# 별칭 진단 전용 lock. ensure lock보다 훨씬 짧게 잡는다 — 여기서 오래 기다리면 알림
+# 전송이 그만큼 밀리고, 건너뛴 전이는 다음 실행이 그대로 다시 관측한다.
+ALIAS_LOCK_TIMEOUT_SECONDS="${ALIAS_LOCK_TIMEOUT_SECONDS:-5}"
 ALERT_COOLDOWN_SECONDS="${ALERT_COOLDOWN_SECONDS:-1800}"
 PUSHOVER_CRED_FILE="${PUSHOVER_CRED_FILE:-}"
 SERVICE_LIB="${SERVICE_LIB:-}"
@@ -34,6 +37,9 @@ RESULTS_FILE=""
 # launchd 로그에는 타임스탬프가 없어 실패 구간을 라인 수로 역산해야 했다 (#no-server-process 조사).
 log_stamp() { date "+%Y-%m-%dT%H:%M:%S%z"; }
 log_info() { echo "[claude-rc-maint $(log_stamp)] $*"; }
+# 실행은 성공했지만 관찰 가치가 있는 사실용. ensure 종료 코드에 영향을 주지 않으므로
+# ERROR와 구분한다.
+log_warn() { echo "[claude-rc-maint $(log_stamp)] WARN: $*" >&2; }
 log_error() { echo "[claude-rc-maint $(log_stamp)] ERROR: $*" >&2; }
 
 global_status_action_keys() {
@@ -249,6 +255,91 @@ record_instance_detail() {
 instance_detail_for_path() {
     [ -f "$RESULTS_FILE.detail" ] || return 0
     awk -F'\t' -v p="$1" '$1 == p { print $2; exit }' "$RESULTS_FILE.detail"
+}
+
+# exe 하드링크 별칭 관측 기록. dev:ino 판정(exe_is_claude_versions_binary)이 이미
+# 흡수하므로 실패가 아니지만, 별칭이 생겼다/사라졌다는 사실 자체는 관찰 가치가 있다 —
+# 이 판정이 없던 시절 Darwin에서 살아 있는 bridge를 no-server-process로 오판한 원인이
+# 정확히 이 별칭이었다. 매 실행(macOS 1분 주기) 로그를 채우지 않도록 상태 전이에서만
+# 남긴다.
+#
+# 서버를 찾은 instance마다 한 줄씩 남기고, 별칭이 아니면 두 번째 필드를 비운다. "별칭이
+# 없다"와 "이번 실행은 아무것도 관측하지 못했다"를 구분하기 위한 것이다 — 후자를 전자로
+# 기록하면 no-server-process나 no-instances 실행이 끼는 것만으로 해소/재발 로그가 번갈아
+# 나오는 플래핑이 된다.
+record_exe_alias() {
+    printf '%s\t%s\n' "$1" "$2" >>"$RESULTS_FILE.alias" 2>/dev/null || true
+}
+
+# 전이 판정은 instance 단위다. 관측 집합 전체를 상태 하나로 비교하면 instance 하나의
+# 생사 변동(no-server-process 등)만으로 나머지 instance의 WARN이 재출력되고, 별칭이
+# 있던 instance가 목록에서 빠진 실행은 "해소됨"을 오기록한다 — macOS ensure는 1분
+# 주기라 그 오차가 그대로 누적된다. 이번 실행이 관측하지 못한 instance의 이전 값은
+# 건드리지 않고 보존하며, 값이 실제로 바뀐 instance만 한 줄씩 남긴다.
+# 이 finalizer는 ensure lock 밖에서 돈다 (cmd_ensure는 with_lock 반환 뒤에 호출한다).
+# 겹친 실행이 같은 이전 상태를 읽으면 같은 전이를 양쪽이 출력하고 나중 rename이 다른
+# 실행의 관측을 덮어쓰므로, 상태 읽기부터 rename까지를 전용 lock으로 직렬화한다.
+# lifecycle lock을 재획득하지 않는 이유는 그 lock이 스캔 전체를 감싸고 있어, 진단 한 줄
+# 때문에 알림 전송이 다른 실행의 스캔만큼 지연되기 때문이다.
+log_exe_alias_transition() {
+    # 관측 자체가 없었던 실행은 별칭 상태를 알 수 없다. 모르는 것을 기록하지 않는다.
+    # lock을 잡기 전에 걸러 관측 없는 실행이 경합을 만들지 않게 한다.
+    [ -f "$RESULTS_FILE.alias" ] || return 0
+    with_lifecycle_lock_fd9 \
+        "$ALIAS_LOCK_TIMEOUT_SECONDS" \
+        "$STATE_DIR/last-exe-alias.lock" \
+        alias_transition_lock_unavailable \
+        alias_transition_lock_unavailable \
+        alias_transition_lock_unavailable \
+        log_exe_alias_transition_locked
+}
+
+# 별칭 진단은 부수 기능이다 — lock을 못 잡으면 그 실행의 전이 기록만 건너뛰고, ensure의
+# 전역 action이나 종료 코드는 건드리지 않는다 (다음 실행이 같은 전이를 그대로 관측한다).
+alias_transition_lock_unavailable() { :; }
+
+log_exe_alias_transition_locked() {
+    local state_file pending transitions kind path alias_path
+    state_file="$STATE_DIR/last-exe-alias"
+    # 겹친 실행끼리 같은 임시 파일을 쓰지 않도록 실행별 스크래치(mktemp로 만든
+    # RESULTS_FILE)에 쓰고 rename으로 교체한다.
+    pending="$RESULTS_FILE.alias.state"
+    # 이전 상태는 awk 파일 인자가 아니라 getline으로 읽는다. 파일 인자를 둘 주면 상태
+    # 파일이 비었을 때 NR == FNR이 관측 레코드까지 이전 상태로 분류한다.
+    if ! transitions=$(awk -F'\t' -v state_out="$pending" -v prev_file="$state_file" '
+        BEGIN {
+            while ((getline line < prev_file) > 0) {
+                nf = split(line, f, "\t")
+                if (nf >= 1 && f[1] != "") prev[f[1]] = (nf >= 2 ? f[2] : "")
+            }
+            close(prev_file)
+        }
+        $1 != "" { obs[$1] = $2 }
+        END {
+            for (p in obs) {
+                a = obs[p]
+                pa = (p in prev) ? prev[p] : ""
+                if (a != pa) print (a == "" ? "CLEAR" : "WARN") "\t" p "\t" a
+                prev[p] = a
+            }
+            for (p in prev) print p "\t" prev[p] > state_out
+        }
+    ' "$RESULTS_FILE.alias" 2>/dev/null); then
+        rm -f "$pending" 2>/dev/null || true
+        return 0
+    fi
+    while IFS=$'\t' read -r kind path alias_path; do
+        [ -n "$path" ] || continue
+        case "$kind" in
+            WARN)
+                log_warn "exe 경로가 VERSIONS_DIR 밖 하드링크 별칭으로 보고됨 (dev:ino 동일성으로 흡수, 실패 아님): $path exe=$alias_path"
+                ;;
+            CLEAR)
+                log_info "exe 하드링크 별칭 관측이 해소됨 (VERSIONS_DIR 경로로 보고): $path"
+                ;;
+        esac
+    done <<<"$transitions"
+    mv "$pending" "$state_file" 2>/dev/null || rm -f "$pending" 2>/dev/null || true
 }
 
 record_instance_result() {
@@ -655,7 +746,7 @@ drift_tuple_is_confirmed() {
 
 handle_running_instance() {
     local path="$1" desired_spawn="$2" capacity="$3" permission_mode="$4"
-    local pid running_version action diag_line scan_rejects
+    local pid running_version action diag_line scan_rejects alias_path
     if ! pid=$(find_server_pid_for_path "$path"); then
         action="no-server-process"
         record_instance_result "$path" "" "" "$DESIRED_VERSION" "$action"
@@ -674,6 +765,12 @@ handle_running_instance() {
             log_error "  rescan $diag_line"
         done < <(diagnose_server_pid_for_path "$path")
         return 1
+    fi
+
+    if alias_path=$(claude_exe_alias_path_for_pid "$pid"); then
+        record_exe_alias "$path" "$alias_path"
+    else
+        record_exe_alias "$path" ""
     fi
 
     if ! running_version=$(pid_exe_version "$pid"); then
@@ -1100,8 +1197,10 @@ cmd_ensure() {
     # source되는 credential/lib 파일이 malformed여도 (source가 && 리스트의
     # 마지막 명령이라 set -e 발동) finalizer가 send_alerts 전에 죽지 않게 guard.
     load_alerting || true
+    log_exe_alias_transition || true
     send_alerts "$rc" || true
-    rm -f "$RESULTS_FILE" "$RESULTS_FILE.detail" "$RESULTS_FILE.scan"
+    rm -f "$RESULTS_FILE" "$RESULTS_FILE.detail" "$RESULTS_FILE.scan" "$RESULTS_FILE.alias" \
+        "$RESULTS_FILE.alias.state"
     return "$rc"
 }
 
@@ -1112,7 +1211,8 @@ Usage: claude-rc-maint ensure
 env:
   CLAUDE_BIN (maint launcher; basename need not be claude),
   STATE_DIR, CLAUDE_RC_DECLARED_INSTANCES,
-  VERSIONS_DIR (default ~/.local/share/claude/versions; exe boundary for server/session PID detection),
+  VERSIONS_DIR (default ~/.local/share/claude/versions; exe boundary for server/session
+    PID detection, matched by dev:ino so hardlink aliases outside it still resolve),
   IDLE_THRESHOLD_MINUTES (default 30), MAINT_LOCK_TIMEOUT_SECONDS (default 120),
   ALERT_COOLDOWN_SECONDS (default 1800), PUSHOVER_CRED_FILE, SERVICE_LIB,
   CLAUDE_RC_PERMISSION_MODE, CLAUDE_RC_ALERT_HOST,
