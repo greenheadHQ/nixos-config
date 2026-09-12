@@ -1569,8 +1569,110 @@ test_claude_remote_control_exe_alias_transition_needs_observation() {
   printf '%s\t\n' "/repo" > "$results.alias"
   out="$(_claude_rc_alias_transition)"
   grep -Fq -- "별칭 관측이 해소됨" <<<"$out" || fail "cleared alias must be logged once: $out"
-  [ ! -s "$state_file" ] || fail "cleared alias must empty the state file"
+  if grep -Fq -- "/outside/claude" "$state_file"; then
+    fail "cleared alias must drop the alias path from the state file"
+  fi
 
   out="$(_claude_rc_alias_transition)"
   [ -z "$out" ] || fail "unchanged cleared state must stay silent: $out"
+}
+
+# 전이 판정은 instance 단위여야 한다. 관측 집합 전체를 하나의 상태로 비교하면 instance
+# 하나가 no-server-process로 빠지는 것만으로 나머지 instance의 WARN이 재출력되고, 별칭
+# instance가 빠진 실행은 "해소됨"까지 오기록한다.
+test_claude_remote_control_exe_alias_transition_is_per_instance() {
+  local sandbox state_file results out
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  state_file="$CLAUDE_RC_STATE/last-exe-alias"
+  results="$sandbox/results"
+
+  _claude_rc_alias_transition() {
+    STATE_DIR="$CLAUDE_RC_STATE" \
+      bash -c 'set -uo pipefail; source "$1"; RESULTS_FILE="$2"; log_exe_alias_transition' \
+        _ "$(_claude_rc_maint_script)" "$results" 2>&1
+  }
+
+  {
+    printf '%s\t%s\n' "/a" "/outside/claude"
+    printf '%s\t\n' "/b"
+    printf '%s\t\n' "/c"
+  } > "$results.alias"
+  out="$(_claude_rc_alias_transition)"
+  [ "$(grep -c -- "하드링크 별칭으로 보고됨" <<<"$out")" = "1" ] \
+    || fail "only the aliased instance must warn: $out"
+  grep -Fq -- "/a" <<<"$out" || fail "the warning must name the aliased instance: $out"
+
+  # /a 를 관측하지 못한 실행(no-server-process)이 끼어도 상태와 로그는 흔들리지 않는다.
+  {
+    printf '%s\t\n' "/b"
+    printf '%s\t\n' "/c"
+  } > "$results.alias"
+  out="$(_claude_rc_alias_transition)"
+  [ -z "$out" ] || fail "an instance dropping out must not log anything: $out"
+  grep -Fq -- "/outside/claude" "$state_file" \
+    || fail "an unobserved instance must keep its previous alias state"
+
+  # 다시 전부 관측해도 값이 그대로면 재출력하지 않는다.
+  {
+    printf '%s\t%s\n' "/a" "/outside/claude"
+    printf '%s\t\n' "/b"
+    printf '%s\t\n' "/c"
+  } > "$results.alias"
+  out="$(_claude_rc_alias_transition)"
+  [ -z "$out" ] || fail "an unchanged alias must not warn again: $out"
+
+  # 실제로 해소된 instance만 한 줄 남긴다.
+  {
+    printf '%s\t\n' "/a"
+    printf '%s\t\n' "/b"
+    printf '%s\t\n' "/c"
+  } > "$results.alias"
+  out="$(_claude_rc_alias_transition)"
+  [ "$(grep -c -- "별칭 관측이 해소됨" <<<"$out")" = "1" ] \
+    || fail "only the recovered instance must log a clear: $out"
+  grep -Fq -- "/a" <<<"$out" || fail "the clear must name the recovered instance: $out"
+}
+
+# flock launcher 판정도 같은 하드링크 별칭에 노출된다 — nix.optimise가 동일 내용 store
+# 파일을 합치면 lsof가 `<store>/.links/<hash>` 이름을 보고한다. 이 술어는
+# pid_is_managed_server_for_path에서 parent 에 대한 accept 조건이라 false negative가 곧
+# no-server-process다.
+test_claude_remote_control_flock_identity_accepts_hardlink_alias() {
+  local sandbox store
+  sandbox="$(_claude_rc_new_sandbox)"
+  _claude_rc_setup "$sandbox"
+  store="$sandbox/store"
+  mkdir -p "$store/aaaa-flock-0.4.0/bin" "$store/bbbb-util-linux-2.42.2-bin/bin" "$store/.links"
+  printf 'flock\n' > "$store/aaaa-flock-0.4.0/bin/flock"
+  printf 'util\n' > "$store/bbbb-util-linux-2.42.2-bin/bin/flock"
+  printf 'unrelated\n' > "$sandbox/decoy"
+  ln "$store/aaaa-flock-0.4.0/bin/flock" "$store/.links/deadbeef"
+  ln "$store/bbbb-util-linux-2.42.2-bin/bin/flock" "$store/.links/cafebabe"
+
+  _claude_rc_flock_identity() {
+    NIX_STORE_DIR="$store" \
+      bash -c 'set -uo pipefail; source "$1"; shift; "$@"' \
+        _ "$(_claude_rc_maint_script)" exe_is_flock_store_binary "$1"
+  }
+
+  _claude_rc_flock_identity "$store/aaaa-flock-0.4.0/bin/flock" \
+    || fail "a store flock path must pass"
+  _claude_rc_flock_identity "$store/.links/deadbeef" \
+    || fail "a hardlink alias of the store flock must pass"
+  _claude_rc_flock_identity "$store/.links/cafebabe" \
+    || fail "a hardlink alias of the util-linux flock must pass"
+  if _claude_rc_flock_identity "$sandbox/decoy"; then
+    fail "an unrelated binary outside the store must still be rejected"
+  fi
+  printf 'inside\n' > "$store/decoy"
+  if _claude_rc_flock_identity "$store/decoy"; then
+    fail "an unrelated binary inside the store must still be rejected"
+  fi
+  if _claude_rc_flock_identity "$store/missing"; then
+    fail "a nonexistent path must be rejected"
+  fi
+  # 삭제된 바이너리는 비교할 inode가 없다 — 경로 기반 판정이 그대로 살아야 한다.
+  _claude_rc_flock_identity "$store/cccc-flock-0.4.0/bin/flock" \
+    || fail "a deleted store flock must still pass on its path"
 }

@@ -268,31 +268,55 @@ record_exe_alias() {
     printf '%s\t%s\n' "$1" "$2" >>"$RESULTS_FILE.alias" 2>/dev/null || true
 }
 
-exe_alias_observations() {
-    [ -f "$RESULTS_FILE.alias" ] || return 0
-    awk -F'\t' 'NF >= 2 && $2 != "" { print $1 "\t" $2 }' "$RESULTS_FILE.alias" 2>/dev/null | sort
-}
-
+# 전이 판정은 instance 단위다. 관측 집합 전체를 상태 하나로 비교하면 instance 하나의
+# 생사 변동(no-server-process 등)만으로 나머지 instance의 WARN이 재출력되고, 별칭이
+# 있던 instance가 목록에서 빠진 실행은 "해소됨"을 오기록한다 — macOS ensure는 1분
+# 주기라 그 오차가 그대로 누적된다. 이번 실행이 관측하지 못한 instance의 이전 값은
+# 건드리지 않고 보존하며, 값이 실제로 바뀐 instance만 한 줄씩 남긴다.
 log_exe_alias_transition() {
-    local state_file observed previous path alias_path
+    local state_file pending transitions kind path alias_path
     state_file="$STATE_DIR/last-exe-alias"
+    # 이 finalizer는 ensure lock 밖에서 돈다 (cmd_ensure). 겹친 실행끼리 같은 임시 파일을
+    # 쓰지 않도록 실행별 스크래치(mktemp로 만든 RESULTS_FILE)에 쓰고 rename으로 교체한다.
+    pending="$RESULTS_FILE.alias.state"
     # 관측 자체가 없었던 실행은 별칭 상태를 알 수 없다. 모르는 것을 기록하지 않는다.
     [ -f "$RESULTS_FILE.alias" ] || return 0
-    observed=$(exe_alias_observations | tr '\n' ';')
-    previous=""
-    if [ -f "$state_file" ]; then
-        previous=$(cat "$state_file" 2>/dev/null || echo "")
+    # 이전 상태는 awk 파일 인자가 아니라 getline으로 읽는다. 파일 인자를 둘 주면 상태
+    # 파일이 비었을 때 NR == FNR이 관측 레코드까지 이전 상태로 분류한다.
+    if ! transitions=$(awk -F'\t' -v state_out="$pending" -v prev_file="$state_file" '
+        BEGIN {
+            while ((getline line < prev_file) > 0) {
+                nf = split(line, f, "\t")
+                if (nf >= 1 && f[1] != "") prev[f[1]] = (nf >= 2 ? f[2] : "")
+            }
+            close(prev_file)
+        }
+        $1 != "" { obs[$1] = $2 }
+        END {
+            for (p in obs) {
+                a = obs[p]
+                pa = (p in prev) ? prev[p] : ""
+                if (a != pa) print (a == "" ? "CLEAR" : "WARN") "\t" p "\t" a
+                prev[p] = a
+            }
+            for (p in prev) print p "\t" prev[p] > state_out
+        }
+    ' "$RESULTS_FILE.alias" 2>/dev/null); then
+        rm -f "$pending" 2>/dev/null || true
+        return 0
     fi
-    [ "$observed" != "$previous" ] || return 0
-    if [ -n "$observed" ]; then
-        while IFS=$'\t' read -r path alias_path; do
-            [ -n "$path" ] || continue
-            log_warn "exe 경로가 VERSIONS_DIR 밖 하드링크 별칭으로 보고됨 (dev:ino 동일성으로 흡수, 실패 아님): $path exe=$alias_path"
-        done < <(exe_alias_observations)
-    else
-        log_info "exe 하드링크 별칭 관측이 해소됨 (관측된 모든 instance가 VERSIONS_DIR 경로로 보고)"
-    fi
-    printf '%s' "$observed" >"$state_file" 2>/dev/null || true
+    while IFS=$'\t' read -r kind path alias_path; do
+        [ -n "$path" ] || continue
+        case "$kind" in
+            WARN)
+                log_warn "exe 경로가 VERSIONS_DIR 밖 하드링크 별칭으로 보고됨 (dev:ino 동일성으로 흡수, 실패 아님): $path exe=$alias_path"
+                ;;
+            CLEAR)
+                log_info "exe 하드링크 별칭 관측이 해소됨 (VERSIONS_DIR 경로로 보고): $path"
+                ;;
+        esac
+    done <<<"$transitions"
+    mv "$pending" "$state_file" 2>/dev/null || rm -f "$pending" 2>/dev/null || true
 }
 
 record_instance_result() {
@@ -1152,7 +1176,8 @@ cmd_ensure() {
     load_alerting || true
     log_exe_alias_transition || true
     send_alerts "$rc" || true
-    rm -f "$RESULTS_FILE" "$RESULTS_FILE.detail" "$RESULTS_FILE.scan" "$RESULTS_FILE.alias"
+    rm -f "$RESULTS_FILE" "$RESULTS_FILE.detail" "$RESULTS_FILE.scan" "$RESULTS_FILE.alias" \
+        "$RESULTS_FILE.alias.state"
     return "$rc"
 }
 

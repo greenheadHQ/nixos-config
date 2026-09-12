@@ -6,6 +6,7 @@
 
 STATE_DIR="${STATE_DIR:-$HOME/.local/state/claude-rc}"
 VERSIONS_DIR="${VERSIONS_DIR:-$HOME/.local/share/claude/versions}"
+NIX_STORE_DIR="${NIX_STORE_DIR:-/nix/store}"
 INSTANCES_FILE="$STATE_DIR/instances.json"
 INSTANCES_LOCK="$STATE_DIR/instances.json.lock"
 LOG_MAX_BYTES=$((5 * 1024 * 1024))
@@ -445,22 +446,45 @@ same_cwd_as_path() {
     [ "$cwd" = "$target" ]
 }
 
+# Both platform packages are immutable Nix-store executables. Accept old store
+# generations as well as the current PATH target so an `nrs` update can still
+# identify and replace a bridge launched by the previous closure.
+#
+# 경로 패턴만으로는 부족하다. exe 경로는 Darwin에서 vnode에 캐시된 이름 하나이고,
+# nix.optimise가 같은 내용의 store 파일을 하나로 합치면 `<store>/.links/<hash>`
+# 별칭 이름이 보고될 수 있다 (이 저장소는 optimise.automatic이 켜져 있고, store의
+# flock 바이너리는 실제로 링크 수가 2 이상이다). 그때 패턴은 전부 빗나간다.
+# pid_is_managed_server_for_path는 이 술어를 parent에 대한 accept 조건으로 쓰고 그
+# 뒤에 exe 경계 검사가 없으므로, 여기서의 false negative는 곧 no-server-process다 —
+# VERSIONS_DIR과 같은 이유로 dev:ino 동일성까지 확인한다.
+exe_is_flock_store_binary() {
+    local exe="$1" store entry
+    [ -n "$exe" ] || return 1
+    store="${NIX_STORE_DIR%/}"
+    [ -n "$store" ] || return 1
+    case "$exe" in
+        "$store"/*-flock-*/bin/flock | "$store"/*-util-linux-*/bin/flock) return 0 ;;
+        # 별칭은 같은 store 안의 다른 이름이다(`.links/<hash>`). store 밖 경로는
+        # flock일 수 없으므로 store 전체를 glob하기 전에 여기서 끊는다 — 후보 대부분은
+        # store 밖의 claude 바이너리이고, 그 경로에서 glob을 돌면 스캔마다 비용을 문다.
+        "$store"/*) ;;
+        *) return 1 ;;
+    esac
+    # 삭제된 바이너리는 비교할 inode가 없다 — 경로 기반 판정만 유효하다.
+    [ -f "$exe" ] || return 1
+    for entry in "$store"/*-flock-*/bin/flock "$store"/*-util-linux-*/bin/flock; do
+        [ -f "$entry" ] || continue
+        [ "$entry" -ef "$exe" ] || continue
+        return 0
+    done
+    return 1
+}
+
 is_flock_process() {
     local pid="$1" exe
     exe=$(pid_exe_path "$pid") || return 1
     [ -n "$exe" ] || return 1
-    # Both platform packages are immutable Nix-store executables. Accept old
-    # store generations as well as the current PATH target so an `nrs` update
-    # can still identify and replace a bridge launched by the previous closure.
-    # pid_exe_path의 하드링크 별칭 문제(Darwin)는 여기서는 판정을 뒤집지 못한다:
-    # store optimise가 만드는 별칭도 /nix/store 안의 동일 내용 파일이고, 이 술어가
-    # 틀리는 방향은 언제나 "flock을 flock이 아니라고 본다"이며 그 경우 바로 다음
-    # 검사인 is_claude_versions_exe_process가 같은 후보를 탈락시킨다. 반대 방향은
-    # 별칭이 flock과 동일 내용이어야 성립하므로 실질적으로 불가능하다.
-    case "${exe% (deleted)}" in
-        /nix/store/*-flock-*/bin/flock | /nix/store/*-util-linux-*/bin/flock) return 0 ;;
-    esac
-    return 1
+    exe_is_flock_store_binary "${exe% (deleted)}"
 }
 
 is_claude_versions_exe_process() {

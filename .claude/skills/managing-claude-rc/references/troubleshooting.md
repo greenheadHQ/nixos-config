@@ -55,7 +55,7 @@ mode·node type·filesystem 상태를 확인하고 command exit와 log를 status
 | `start-version-mismatch-cleanup-failed` | start mismatch process의 action-time 재검증·TERM·lock cleanup 중 하나가 실패함. unknown PID를 수동 kill하지 말고 identity와 lock owner 확인 |
 | `restart-version-mismatch-cleanup-failed` | restart mismatch process의 action-time 재검증·TERM·lock cleanup 중 하나가 실패함. unknown PID를 수동 kill하지 말고 identity와 lock owner 확인 |
 | `unmanaged-server-present` | 같은 cwd의 unmanaged 서버 감지. legacy tmux bridge 잔존 포함. 기존 서버 종료 후 `claude-rc start` 또는 다음 ensure |
-| `no-server-process` | lock은 잡혔지만 cwd가 같은 서버 PID를 못 찾음. ensure 로그의 `scan-rejects` 라인에서 탈락 술어(cwd/exe/lineage/lock)를 먼저 확인한다 — 죽은 lock이면 다음 ensure가 재시작한다. `versions_exe` 탈락은 실행 바이너리 경계 판정이며, Darwin 하드링크 별칭으로 인한 오탐은 dev:ino 동일성 판정으로 해소됐다(아래 별칭 항목) |
+| `no-server-process` | lock은 잡혔지만 cwd가 같은 서버 PID를 못 찾음. ensure 로그의 `scan-rejects` 라인에서 탈락 술어(cwd/exe/lineage/lock)를 먼저 확인한다 — 죽은 lock이면 다음 ensure가 재시작한다. `versions_exe`와 `parent_flock_exe` 탈락은 실행 바이너리 경계 판정이며, Darwin 하드링크 별칭으로 인한 오탐은 양쪽 모두 dev:ino 동일성 판정으로 해소됐다(아래 별칭 항목). flock 쪽 별칭은 `nix.optimise`가 동일 내용 store 파일을 합칠 때 생긴다 |
 | `running-version-unresolvable` | 실행 바이너리 경로 조회 실패. `lsof`/`/proc` 접근 확인 |
 
 증상별 조치:

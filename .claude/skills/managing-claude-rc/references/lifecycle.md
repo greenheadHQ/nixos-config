@@ -66,8 +66,9 @@
 ```
 
 maint의 `CLAUDE_BIN`은 launcher override이며 basename이 `claude`일 필요는 없다. 다만
-resolved target과 실제 bridge executable은 `VERSIONS_DIR`(기본
-`~/.local/share/claude/versions`) 아래여야 하고, `desiredVersion`은 resolved executable의
+resolved target은 `VERSIONS_DIR`(기본
+`~/.local/share/claude/versions`) 아래여야 하고, 실제 bridge executable은 그 아래이거나
+그 아래 항목과 같은 파일(dev:ino 동일)이어야 하며, `desiredVersion`은 resolved executable의
 basename이다. maint는 ensure 시작 전에 두 경로를 canonicalize하고 경계를 확인한 뒤 symlink가
 아닌 검증된 target을 실행한다. interactive `claude-rc start`는 자기 PATH의 literal `claude`를 사용하며 ambient
 `CLAUDE_BIN`은 의도적으로 무시한다.
@@ -126,8 +127,11 @@ transcript 매칭은 `<정규화된 인스턴스 경로>--claude-worktrees-*`만
   않는다. `-p`/`--print`/`--` 뒤 token은 prompt data로 제외하되, 그 밖의 모호한 같은-cwd
   versioned candidate는 signal하지 않고 새 서버 시작만 보수적으로 차단한다. 서버 판정은 cwd 외에
   실행 바이너리가 claude 배포 경로(`VERSIONS_DIR`, 기본
-  `~/.local/share/claude/versions`) 아래인지도 요구한다 — argv 문자열만 일치하는
-  무관 프로세스의 오탐 방지 (#1060). lifecycle signal 대상은 여기에 exact
+  `~/.local/share/claude/versions`) 아래이거나 그 아래 항목과 같은 파일(dev:ino
+  동일)일 것도 요구한다 — argv 문자열만 일치하는 무관 프로세스의 오탐 방지
+  (#1060). 경로 문자열이 아니라 동일성으로 판정하는 이유는 Darwin의 exe 경로가
+  vnode에 캐시된 이름 하나여서 하드링크 별칭이 있으면 흔들리기 때문이다. 같은
+  이유로 flock launcher 판정도 store 경로 패턴과 dev:ino 동일성을 함께 본다. lifecycle signal 대상은 여기에 exact
   `remote-control`/`--no-create-session-in-dir` argv token, immutable Nix-store의
   discoteq/util-linux `flock` direct parent, exact `flock -n <instance-lock> <Claude bridge>`
   argv, parent/child가 함께 연 busy instance lock까지 요구한다. 현재 PATH target만 pin하지
