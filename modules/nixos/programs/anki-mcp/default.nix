@@ -1,22 +1,21 @@
 # modules/nixos/programs/anki-mcp/default.nix
-# 원격 MCP 서버 — headless Anki(anki-host) 위의 도구 계층 + 내장 OAuth 2.1 + Cloudflare Tunnel 입구 (plan 030 PR 2a)
+# 원격 MCP 서버 — headless Anki(anki-host) 위의 도구 계층 + 내장 OAuth 2.1 + Cloudflare Tunnel 입구
 #
 # === Change Intent Record ===
-# 근거(plan 030 결정): E2 입구는 개인 도메인의 Cloudflare Tunnel, U1 내장 인가 서버이며
-#   승인 화면만 tailnet 전용 9443, K3 표준 OAuth 2.1(PKCE·PRM·DCR)로 ChatGPT·Codex·Claude가 같은 입구를 쓴다.
+# 근거(#1310): 입구는 개인 도메인의 Cloudflare Tunnel과 내장 인가 서버이며
+#   승인 화면만 tailnet 전용 9443, 표준 OAuth 2.1(PKCE·PRM·DCR)로 ChatGPT·Codex·Claude가 같은 입구를 쓴다.
 # 포트 재설계: Funnel 443은 tailscaled가 peer의 TCP 443을 가로채 Caddy의 기존 4개 vhost를 끊었다.
 #   8443은 ChatGPT 자동 OAuth 탐색이 실패했다. 외부 443은 Cloudflare가 받고 로컬 Caddy 443은 보존한다.
 # 신뢰 경계: 이 서비스는 이 저장소 최초의 인터넷 공개 입구다. 그래서
 #   - 별도 시스템 유저(anki-mcp)로 돌고 Anki 데이터는 파일로 만지지 않는다(AnkiConnect·헬퍼 HTTP만). 컬렉션 디렉터리
 #     (anki-host 0700)에 닿을 수 없다 — 취약점이 생겨도 DB 파일을 직접 고치지 못한다.
-#   - "지금 동기화" 결과는 결정 15대로 sync 스크립트가 /run 게시판에 남긴 사본(0640, anki-host 그룹)만 읽는다.
-#   - sync 유닛 트리거는 polkit 규칙으로 이 유저에게 그 유닛의 start만 허용한다(결정 13). 헬퍼 /sync 직접 호출 없음.
+#   - "지금 동기화" 결과는 sync 스크립트가 /run 게시판에 남긴 사본(0640, anki-host 그룹)만 읽는다.
+#   - sync 유닛 트리거는 polkit 규칙으로 이 유저에게 그 유닛의 start만 허용한다. 헬퍼 /sync 직접 호출 없음.
 #   - /authorize·승인 폼은 승인 포트에만 있고 공개 앱에는 없다. Tailscale serve 9443이 tailnet 안에서만 그 포트로
-#     프록시한다. 승인 포트에 Funnel이 켜져 있으면 해당 serve 경로를 제거한다(STOP 6, fail-closed).
+#     프록시한다. 승인 포트에 Funnel이 켜져 있으면 해당 serve 경로를 제거한다(fail-closed).
 #   - 토큰은 불투명 랜덤값이며 상태 파일에는 해시만 남는다. 승인 문구는 agenix 시크릿(LoadCredential)이고 비어 있으면
 #     어떤 승인도 통과하지 않는다.
-# 대안 기각: MCP를 anki-host 유저로 실행(DB 직접 접근 가능 — 결정 15 A안으로 기각), 서비스별 API 키(결정 1의 store bake
-#   문제 — PR 2에서 재검토 항목으로 남김). Cloudflare에는 단일 터널 실행 credential만 배포한다.
+# 대안 기각: MCP를 anki-host 유저로 실행(DB 직접 접근 가능), Nix store에 API 키 저장(키 노출 위험). Cloudflare에는 단일 터널 실행 credential만 배포한다.
 {
   config,
   pkgs,
@@ -92,7 +91,7 @@ let
       fi
       serve_json="$(tailscale serve status --json)"
       if jq -e --arg approval "${fqdn}:${toString approvalPublicPort}" '.AllowFunnel[$approval] == true' >/dev/null <<<"$serve_json"; then
-        echo "anki-mcp-tailscale: approval port ${toString approvalPublicPort} is exposed to the internet — removing its route (STOP 6)" >&2
+        echo "anki-mcp-tailscale: approval port ${toString approvalPublicPort} is exposed to the internet — removing its route" >&2
         timeout ${toString cmdTimeoutSecs} tailscale serve --https=${toString approvalPublicPort} off
         exit 1
       fi
@@ -161,7 +160,7 @@ in
     users.users.${user} = {
       isSystemUser = true;
       group = user;
-      # 결정 15: /run 게시판의 상태 사본(0640, anki-host 그룹)을 읽기 위한 그룹 — 컬렉션 디렉터리는 0700이라 여전히 닿지 않는다
+      # /run 게시판의 상태 사본(0640, anki-host 그룹)을 읽기 위한 그룹 — 컬렉션 디렉터리는 0700이라 여전히 닿지 않는다
       extraGroups = [ hostUser ];
     };
     users.groups.${user} = { };
@@ -195,7 +194,7 @@ in
       wants = [ "anki-mcp.service" ];
     };
 
-    # 결정 13: "지금 동기화"는 헬퍼가 아니라 sync 유닛을 트리거한다 — 이 유저에게 그 유닛의 start만 허용
+    # "지금 동기화"는 헬퍼가 아니라 sync 유닛을 트리거한다 — 이 유저에게 그 유닛의 start만 허용
     security.polkit.enable = true;
     security.polkit.extraConfig = ''
       polkit.addRule(function(action, subject) {

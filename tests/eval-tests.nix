@@ -758,7 +758,7 @@ let
     ) expectedDarwinHosts
   );
 
-  # ── headless Anki (#1306, plan 030): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
+  # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
   ankiHostLab = nixosCfg.systemd.services."anki-host-lab";
   ankiHostMain = nixosCfg.systemd.services."anki-host-main";
@@ -886,7 +886,7 @@ let
   ankiHostSingleAccountAssertion = builtins.any (
     a: nixpkgsLib.hasInfix "single AnkiWeb credential" a.message
   ) nixosCfg.assertions;
-  # 원격 MCP 서버 (plan 030 PR 2a)
+  # 원격 MCP 서버
   ankiMcpCfg = nixosCfg.homeserver.ankiMcp;
   ankiMcpSvc = nixosCfg.systemd.services."anki-mcp";
   ankiMcpWire = nixosCfg.systemd.services."anki-mcp-tailscale";
@@ -1231,7 +1231,7 @@ let
         nixpkgsLib.hasInfix "XDG_RUNTIME_DIR" nixosHm.age.secretsDir
         && nixpkgsLib.hasInfix "XDG_RUNTIME_DIR" nixosHm.age.secretsMountPoint;
     }
-    # ── headless Anki (#1306, plan 030) ──
+    # ── headless Anki (#1306) ──
     {
       name = "Test AH1: homeserver.ankiHost가 lab·main 두 인스턴스를 켜고, 4개 포트가 서로 다르며 다른 homeserver 포트와 겹치지 않아야 함";
       cond =
@@ -1368,7 +1368,7 @@ let
         && nixpkgsLib.hasInfix "allowed_hosts=[public_host" ankiMcpServerSrc;
     }
     {
-      name = "Test AM3: Cloudflare 단일 hostname은 MCP loopback만 공개하고, credential은 root0400·LoadCredential이어야 하며, 승인9443은 tailnet 전용이고 Caddy443·미리보기를 보존해야 함 (STOP 6)";
+      name = "Test AM3: Cloudflare 단일 hostname은 MCP loopback만 공개하고, credential은 root0400·LoadCredential이어야 하며, 승인9443은 tailnet 전용이고 Caddy443·미리보기를 보존해야 함";
       cond =
         nixosCfg.services.cloudflared.enable
         && builtins.attrNames ankiMcpTunnel.ingress == [ constants.ankiMcp.publicHostname ]
@@ -1523,7 +1523,7 @@ let
         && constants.ankiHost.mirrorTimeoutSecs < constants.ankiHost.helperMainTimeoutSecs;
     }
     {
-      name = "Test AM5: 결정 15 — sync 유닛은 상태 사본 게시판(${constants.paths.ankiHostStatusRun})을 env로 받고 쓰기 가능하며, 게시판은 anki-host 0750 tmpfiles로 만들어지고 MCP의 상태 파일 경로가 그 아래여야 함";
+      name = "Test AM5: sync 유닛은 상태 사본 게시판(${constants.paths.ankiHostStatusRun})을 env로 받고 쓰기 가능하며, 게시판은 anki-host 0750 tmpfiles로 만들어지고 MCP의 상태 파일 경로가 그 아래여야 함";
       cond =
         ankiHostSyncMain.environment.STATUS_RUN_DIR == constants.paths.ankiHostStatusRun
         && builtins.elem constants.paths.ankiHostStatusRun ankiHostSyncMain.serviceConfig.ReadWritePaths

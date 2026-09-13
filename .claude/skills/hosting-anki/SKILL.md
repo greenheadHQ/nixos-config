@@ -10,7 +10,7 @@ description: |
 
 운영 계약과 API 지원표의 정본은 [Anki 호스트 README](../../../modules/nixos/programs/anki-host/README.md)다.
 장애·미리보기·복구·노트 타입 변경을 다룰 때 해당 절을 읽고 소스와 실제 배포 버전을 대조한다.
-[Plan 030](../../../plans/030-anki-mcp-host.md)의 과거 무인증 호출 예시는 현재 인증 배선에 사용하지 않는다.
+과거 도입 기록의 무인증 호출 예시는 현재 인증 배선에 사용하지 않는다.
 
 ## 먼저 확인할 것
 

@@ -5,8 +5,8 @@
 #
 # 디렉터리 역할 (애드온 ALLOWED_SUBDIRS와 같은 계약):
 #   <state>/backups/         일일 백업 스테이징 — SSD 최신 LOCAL_KEEP개, HDD RETENTION_DAYS로 정리
-#   <state>/restore-points/  변경 전 복구점 — 이 스크립트는 건드리지 않는다. 생산자(MCP 도구)와 보존·미러
-#                            규칙은 PR 2b에서 함께 도입한다 (plan 030 결정 11).
+#   <state>/restore-points/  변경 전 복구점 — 이 스크립트는 건드리지 않는다. 보존·미러는 MCP와
+#                            복구점 서비스가 소유한다 (anki-host/README.md의 복구점 절).
 # env: INSTANCES ("name:helperPort ..."), STATE_ROOT, BACKUP_DIR, RETENTION_DAYS, LOCAL_KEEP, HELPER_CURL_MAX_TIME,
 #      READY_WAIT_TRIES READY_WAIT_SECS READY_PROBE_TIMEOUT BUSY_RETRIES BUSY_RETRY_SECS, [CREDENTIALS_DIRECTORY]
 #      (모두 nixos 모듈이 constants.ankiHost에서 주입 — 같은 값으로 유닛 TimeoutStartSec을 계산한다)

@@ -1,6 +1,6 @@
 # modules/nixos/programs/anki-host/backup.nix
 # 인스턴스별 .colpkg 일일 백업 (헬퍼 /export → SSD backups/ → HDD). 복구점(restore-points/)의 미러·보존은
-# 생산자(MCP 도구)와 함께 PR 2b에서 도입한다 (plan 030 결정 11) — 이 모듈은 backups/만 다룬다.
+# MCP와 복구점 서비스가 소유한다 (README.md의 복구점 절) — 이 모듈은 backups/만 다룬다.
 # 관례: oneshot + daily timer, ProtectSystem=strict, 04:30/05:00/05:30과 겹치지 않는 시각 — 타이머 배치의 정본은
 # `.claude/skills/running-containers/SKILL.md`의 "백업 타이머" 표이고 이 모듈도 거기 등록돼 있다.
 # 쓰기 경로는 HDD 백업 디렉터리와 각 인스턴스의 backups/(SSD 정리)뿐이다 — 원본은 파일이 아니라 헬퍼 /export라

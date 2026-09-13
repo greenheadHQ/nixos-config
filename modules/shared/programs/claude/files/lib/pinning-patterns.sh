@@ -702,7 +702,7 @@ pinning_guard_findings_text_for_path() {
     | _pinning_render_records
 }
 
-# ─── Bash --body-file / -F(--field) file-forwarding path extraction (plan 021 / issue #684) ───
+# ─── Bash --body-file / -F(--field) file-forwarding path extraction (issue #684) ───
 # The Bash branch of pinning-guard.sh only scans the command string itself, so
 # durable-text-producing commands that forward the body via a file
 # (`gh pr create --body-file /tmp/b.md`, `gh api ... -F body=@/tmp/b.md`) pass

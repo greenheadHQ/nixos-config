@@ -151,7 +151,6 @@
   //
   // 지원되는 변수: ${filename}, ${extname}, ${dirname}, ${dirname(N)}
   // 모노레포에서 앱별 동적 추출 불가 → 앱별 명시적 패턴 필요
-  // 상세: docs/TRIAL_AND_ERROR.md 참고
   // ============================================================================
   "workbench.editor.customLabels.patterns": {
     // App Router (Next.js 13+) - page.tsx, layout.tsx 등이 여러 개 열릴 때 폴더명으로 구분

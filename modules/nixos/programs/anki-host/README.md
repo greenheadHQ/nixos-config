@@ -1,9 +1,7 @@
 # Anki 호스트와 MCP 운영 계약
 
-이 문서는 PR 2b 소스의 계약이다. **구현·격리 검증과 운영 배포 여부는 별도 확인한다.**
-`plans/030-anki-mcp-host.md`에는 도입 이력과 최신 완료 상태를 보존한다.
-[실기기·장애 검증 기록](../../../../plans/anki-mcp-evidence/2026-09-11-validation.md)은 배포 후 실제 확인 범위와 한계를 구분한다.
-[iPhone 직접 추가 검증](../../../../plans/anki-mcp-evidence/2026-09-13-iphone-add.md)은 필수 모바일 추가 경로와 시험 데이터 정리 결과를 기록한다.
+이 문서는 Anki 호스트와 MCP 소스의 운영 계약이다. **구현·격리 검증과 운영 배포 여부는 별도 확인한다.**
+도입 이력은 [이슈 #1306](https://github.com/greenheadHQ/nixos-config/issues/1306), 실기기·장애 검증은 [PR #1317](https://github.com/greenheadHQ/nixos-config/pull/1317), iPhone 직접 추가 검증은 [PR #1320](https://github.com/greenheadHQ/nixos-config/pull/1320)에 남긴다.
 개인 학습 방식·카드 내용 규칙은 이 인프라에서 정하지 않는다.
 
 ## 변경 요청과 결과 확인

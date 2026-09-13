@@ -3,8 +3,8 @@
 #
 # plan-mode runtime이 .claude/plans/에 떨어뜨리는 transient plan buffer는 아무도 지우지
 # 않아 무한 누적되는 경향이 있다. 정리 주체를 두는 문서가 없었으므로, 세션 종료 시 mtime
-# 임계를 넘긴 오래된 transient buffer만 정리하는 GC 주체를 여기 둔다. 정책 서술은
-# .claude/plans/README.md "Transient buffer 식별 기준"이 정본이다.
+# 임계를 넘긴 오래된 transient buffer만 정리하는 GC 주체를 여기 둔다. 식별·보존·복구
+# 정책의 정본은 이 파일의 주석과 아래 상수다. 지속할 작업 기록은 GitHub 이슈·PR에 둔다.
 #
 # GC 대상 (둘 중 한 패턴 매칭 + mtime 임계 초과 + untracked + SSOT 마커 없음):
 #   - <prefix>-<8hex>.md — 초기 harness가 붙이던 8자리 hex suffix buffer
@@ -28,7 +28,8 @@
 # 옮겨 TRASH_KEEP_DAYS 동안 복구 가능하게 두고 그 뒤 만료시킨다.
 # 복구는 mv만으로 끝나지 않는다 — mv는 mtime을 보존하므로 되돌린 파일은 다음 SessionEnd에
 # 같은 조건으로 다시 회수된다. 되돌릴 때 SSOT 마커(## Document Status)를 붙이거나 touch로
-# mtime을 갱신해야 한다 (정본 절차는 .claude/plans/README.md "GC 정책").
+# mtime을 갱신해야 한다. 복구 예:
+#   mv .claude/plans/.trash/<날짜>/<name> .claude/plans/ && touch .claude/plans/<name>
 #
 # 동작 위치: SessionEnd input의 .cwd가 속한 git repo의 .claude/plans/.
 # 정리 대상이 없으면 no-op. bash 3.2 호환 (mapfile 미사용).

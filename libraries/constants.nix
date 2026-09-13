@@ -70,7 +70,7 @@
     backoffSecs = 5;
     busyRetries = 3; # 409(다른 변경 작업 진행 중) 재시도 — 마지막 회차 뒤 대기 없음
     busyRetrySecs = 60;
-    # 급감 게이트 — 직전 성공 스냅샷 대비 로컬 노트·revlog가 이 비율 미만이면 sync 스크립트가 서버 병합을 막는다 (결정 1·3)
+    # 급감 게이트 — 직전 성공 스냅샷 대비 로컬 노트·revlog가 이 비율 미만이면 sync 스크립트가 서버 병합을 막는다
     syncGuardMinRetainPct = 80;
     operationTtlSecs = 600;
     bulkLimit = 20;
@@ -83,10 +83,10 @@
   };
 
   # ═══════════════════════════════════════════════════════════════
-  # 원격 MCP 서버 (plan 030 PR 2a) — 토큰 수명·승인 잠금·응답 축소 기본값
+  # 원격 MCP 서버 — 토큰 수명·승인 잠금·응답 축소 기본값
   # ═══════════════════════════════════════════════════════════════
   ankiMcp = {
-    user = "anki-mcp"; # anki-host와 다른 유저 — 컬렉션 디렉터리(0700)에 닿지 않는다 (결정 15)
+    user = "anki-mcp"; # anki-host와 다른 유저 — 컬렉션 디렉터리(0700)에 닿지 않는다
     publicHostname = "anki-mcp.greenhead.dev";
     tunnelId = "3647ce03-2db1-4510-9c88-c84deb42b0bd";
     accessTokenTtlSecs = 3600;
@@ -119,7 +119,7 @@
     dockerData = "/var/lib/docker-data"; # SSD - 컨테이너 데이터
     mediaData = "/mnt/data"; # HDD - 미디어 파일
     ankiHostBackupsRelPath = "backups/anki-host"; # mediaData 아래 headless Anki .colpkg 백업 루트 — backup.nix·smoke-test.nix가 함께 쓴다
-    # sync 스크립트가 남기는 상태 사본의 게시판(결정 15) — 0750 anki-host, 사본 0640. MCP 서비스가 그룹으로 읽는다
+    # sync 스크립트가 남기는 상태 사본의 게시판 — 0750 anki-host, 사본 0640. MCP 서비스가 그룹으로 읽는다
     ankiHostStatusRun = "/run/anki-host-status";
     ankiHostCredentials = "/var/lib/anki-host-credentials"; # root 0700; 키 값은 store 밖에서 생성
     ankiHostRestorePointsRelPath = "backups/anki-host-restore-points";

@@ -29,11 +29,8 @@ _bootstrap_worktree() {
       }
   fi
 
-  # .claude/plans/: tracked README.md(디렉토리 정책 문서, #756/#773)는 보존하고,
-  # 새어든 untracked/ignored transient plan buffer만 정리한다. worktree는 git
-  # checkout이라 ignored buffer(.claude/plans/*)가 따라오지 않아 평소엔 no-op이지만,
-  # 과거 `rm -rf .claude/plans`는 유일하게 checkout되는 tracked README.md까지 지워
-  # worktree마다 deleted 부산물 + `git add -A` 시 정책 문서 소실 위험을 만들었다.
+  # 새 worktree에 새어든 ignored plan buffer만 정리한다. git checkout에는 보통
+  # 포함되지 않아 no-op이다. 기존 브랜치에 추적된 파일이 있어도 삭제하지 않는다.
   if [ -d "$wt_path/.claude/plans" ]; then
     git -C "$wt_path" clean -fdX -- .claude/plans >/dev/null 2>&1 || true
   fi

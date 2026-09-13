@@ -1,4 +1,4 @@
-"""내장 OAuth 2.1 인가 서버 provider — mcp SDK의 OAuthAuthorizationServerProvider 프로토콜 구현 (결정 6, U1).
+"""내장 OAuth 2.1 인가 서버 provider — mcp SDK의 OAuthAuthorizationServerProvider 프로토콜 구현.
 
 - 클라이언트: DCR(/register)로 등록되며 파일에 영속한다(ChatGPT·Codex·Claude가 각자 등록).
 - 인가: /authorize(승인 포트)에서 SDK 핸들러가 PKCE·redirect_uri를 검증한 뒤 authorize()를 부른다. 여기서는

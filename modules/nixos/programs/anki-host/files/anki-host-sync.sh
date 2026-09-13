@@ -7,23 +7,23 @@
 #      (모두 nixos 모듈이 constants.ankiHost에서 주입 — 같은 값으로 유닛 TimeoutStartSec을 계산한다)
 # 인자: [--mode normal|allow-download-if-empty]  (기본 normal — 타이머 유닛; 부트스트랩 유닛이 allow-download-if-empty)
 #
-# 방향 정책(plan 030 결정 3): normal은 병합만, allow-download-if-empty는 빈 로컬의 첫 부트스트랩.
+# 방향 정책: normal은 병합만, allow-download-if-empty는 빈 로컬의 첫 부트스트랩.
 # 서버를 덮어쓰는 방향은 헬퍼에 없다.
 #
 # 상태 파일 sync-status.json의 `result` 어휘 (이 스크립트가 유일한 생산자 — 재개 절차·MCP가 이 표를 읽는다):
 #   running             이 회차가 락을 잡고 실행 중. 유닛이 죽으면 이 값이 남는다 → journalctl -u anki-host-sync-<name>
-#   no-credentials      AnkiWeb 자격 값이 아직 없다 — 운영자 게이트(plan Step 14) 전의 정상 상태. 알림 없음
-#   bootstrap-pending   로그인은 됐으나 로컬이 비어 있고 성공 이력이 없어 full sync가 요구됨 — 부트스트랩 유닛(Step 15) 대기. 알림 없음
-#   collection-empty    성공 이력(lastSuccessAt)이 있는데 로컬이 비어 있다 — 프로필 소실·좀비 잠금·전부 삭제 의심(plan STOP 9).
+#   no-credentials      AnkiWeb 자격 값이 아직 없다 — 운영자 게이트 전의 정상 상태. 알림 없음
+#   bootstrap-pending   로그인은 됐으나 로컬이 비어 있고 성공 이력이 없어 full sync가 요구됨 — 부트스트랩 유닛 대기. 알림 없음
+#   collection-empty    성공 이력(lastSuccessAt)이 있는데 로컬이 비어 있다 — 프로필 소실·좀비 잠금·전부 삭제 의심.
 #                       급감 게이트가 sync 호출 전에 잡는다(전부 지운 컬렉션의 삭제가 증분 sync로 AnkiWeb에 전파되지 않게).
 #                       알림(c), 원인 확인 전 부트스트랩 재실행 금지
 #   success             normal 병합 또는 부트스트랩 다운로드 완료. `sync` 필드에 전후 스냅샷
 #   busy-deferred       헬퍼가 다른 변경 작업(export 등) 중이라 이번 회차를 건너뜀 — 다음 타이머에 재시도. 알림 없음
 #   helper-unreachable  준비 대기 예산 안에 헬퍼가 collection_open을 주지 않음 — 알림(c) 24h 1회
 #   login-failed        자격은 있는데 로그인 실패(login-failed/hook-error) — 재시도 없이 알림(c)
-#   full-sync-required  로컬이 비어 있지 않은데 full sync 요구 — 방향 자동 결정 금지(plan STOP 1), 알림(c)
+#   full-sync-required  로컬이 비어 있지 않은데 full sync 요구 — 방향 자동 결정 금지, 알림(c)
 #   local-loss-suspected 직전 성공 스냅샷 대비 로컬 노트·revlog가 ANKI_HOST_GUARD_MIN_RETAIN_PCT% 미만 — 헬퍼가 서버 병합을
-#                       막았다(급감 게이트, plan 결정 1·3, STOP 10). 알림(c). 정당한 대량 삭제였다면 원인 확인 후 sync-status.json을
+#                       막았다(급감 게이트). 알림(c). 정당한 대량 삭제였다면 원인 확인 후 sync-status.json을
 #                       지워 해제. 하한은 헬퍼가 이 상태 파일의 lastSuccessAt·lastSuccessCounts를 직접 읽어 계산한다(이 스크립트가
 #                       유일한 생산자, 헬퍼는 두 필드의 독자) — HTTP 입력으로 하한을 넘기지 않는다
 #   error               헬퍼 오류·재시도 소진 — 알림(c)
@@ -32,7 +32,7 @@
 # 위 값 중 no-credentials → bootstrap-pending → success 세 값이 진행 단계를 가리키고, 나머지는 운영 중 일시 상태다.
 # 회차 식별: 모든 기록에 runId(systemd INVOCATION_ID)·runStartedAt이 실린다 — 한 회차 안에서는 같은 값이고,
 # lastAttemptAt은 마지막 기록 시각이라 회차 식별에 쓰지 않는다.
-# 요청–결과 대응(plan 결정 13): 상태 파일만으로는 "실행 중"과 "죽은 흔적"을 구분할 수 없으므로 호출자(MCP "지금 동기화")는
+# 요청–결과 대응: 상태 파일만으로는 "실행 중"과 "죽은 흔적"을 구분할 수 없으므로 호출자(MCP "지금 동기화")는
 # systemctl show -p ActiveState,InvocationID로 유닛을 실측해 상태 파일과 대조한다 — 유닛이 active이고 InvocationID == runId면
 # 진행 중(새 회차가 생기지 않으니 그 사실을 안내), 유닛이 inactive인데 result가 running이면 죽은 흔적(트리거 가능).
 # 트리거 뒤에는 runId가 바뀌고 result가 running이 아닐 때 그 회차의 결과로 인정하고, 유닛이 inactive로 돌아왔는데 runId가
@@ -71,7 +71,7 @@ CRED_FILE="${CREDENTIALS_DIRECTORY:-}/pushover"
 ALERT_DEDUPE_SECS=86400
 : "${MAX_RETRIES:?}" "${BACKOFF_SECS:?}" "${HELPER_CURL_MAX_TIME:?}" "${INSTANCE:?}" "${STATUS_RUN_DIR:?}"
 : "${STATE_OWNER:?}" "${STATE_GROUP:?}"
-# 결정 15: 상태 파일은 0700 디렉터리 안이라 MCP 서비스(별도 유저)가 못 읽는다 — 기록마다 사본을 게시판(0750, 그룹 읽기)에
+# 상태 파일은 0700 디렉터리 안이라 MCP 서비스(별도 유저)가 못 읽는다 — 기록마다 사본을 게시판(0750, 그룹 읽기)에
 # 0640으로 내놓는다. 이 스크립트가 유일한 생산자이고 MCP는 사본의 독자다. 원본과 사본은 내용이 같다.
 STATUS_COPY="${STATUS_RUN_DIR}/${INSTANCE}.json"
 publish_state() {
@@ -205,7 +205,7 @@ case "$login_status" in
     exit 0
     ;;
   *)
-    # 자격은 있는데 로그인 실패(login-failed/hook-error) → 재시도 없이 알림 (계정 잠금 방지, STOP 4)
+    # 자격은 있는데 로그인 실패(login-failed/hook-error) → 재시도 없이 알림 (계정 잠금 방지)
     write_state "login-failed" "login status: ${login_status}" ""
     notify_alert "login-failed" 1 "Anki 로그인 실패" "miniPC의 Anki(${INSTANCE})가 AnkiWeb에 로그인하지 못했습니다. 자격 정보를 확인하세요. 동기화는 중단된 상태입니다."
     exit 1
@@ -216,7 +216,7 @@ attempt=1
 delay="$BACKOFF_SECS"
 busy_left="${BUSY_RETRIES:?}" # busy 예산은 스크립트 전체에서 BUSY_RETRIES회 — sync 재시도 회차와 무관 (유닛 예산 계산의 전제)
 last_error=""
-# 급감 게이트(plan 결정 1·3)는 헬퍼가 상태 파일의 lastSuccessAt·lastSuccessCounts로 직접 판정한다 — 하한을 여기서 계산해
+# 급감 게이트는 헬퍼가 상태 파일의 lastSuccessAt·lastSuccessCounts로 직접 판정한다 — 하한을 여기서 계산해
 # 넘기면 같은 loopback의 다른 호출자도 0을 넘겨 우회할 수 있다. 이 스크립트는 결과(action=guard-tripped)만 분류한다.
 payload="$(jq -n --arg mode "$MODE" '{mode: $mode}')"
 endpoint="/sync"
@@ -293,7 +293,7 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
         if [ "$(printf '%s' "$result_json" | jq -r '.empty_before')" = "true" ]; then
           if [ -n "$(state_get '.lastSuccessAt')" ]; then
             # 이미 성공한 적이 있는 인스턴스의 컬렉션이 비었다 — 부트스트랩 전 대기가 아니라 프로필 소실·좀비 잠금 사고다.
-            # 침묵하면 동기화가 무기한 멈춘 채 드러나지 않는다 (plan STOP 9)
+            # 침묵하면 동기화가 무기한 멈춘 채 드러나지 않는다
             write_state "collection-empty" "empty collection after prior success (required=${required})" "$result_json"
             notify_alert "collection-empty" 1 "Anki 컬렉션이 비어 있습니다" "miniPC의 Anki(${INSTANCE})가 동기화 성공 이력이 있는데 컬렉션이 비어 있습니다. 프로필 소실이 의심되니 원인을 확인하기 전에는 부트스트랩을 다시 실행하지 마세요. 동기화는 중단된 상태입니다."
             exit 1
@@ -303,7 +303,7 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
           write_state "bootstrap-pending" "run anki-host-sync-${INSTANCE}-bootstrap" "$result_json"
           exit 0
         fi
-        # 자체 해소되지 않는 중단(plan STOP 1) — 유닛 실패로 남겨 smoke-test의 실패 유닛 스윕에도 잡히게 한다
+        # 자체 해소되지 않는 중단 — 유닛 실패로 남겨 smoke-test의 실패 유닛 스윕에도 잡히게 한다
         write_state "full-sync-required" "required=${required}" "$result_json"
         notify_alert "full-sync-required" 1 "Anki 전체 동기화 필요" "AnkiWeb이 전체 동기화(한쪽이 다른 쪽을 덮어쓰기)를 요구했지만 miniPC는 자동으로 방향을 정하지 않았습니다. 원인을 확인하기 전에는 어느 기기에서도 업로드/다운로드를 선택하지 마세요. (요구: ${required})"
         exit 1

@@ -5,7 +5,7 @@
 
 # immich-originals-mirror.sh의 빈-소스 가드를 박제한다: SRC_DIR이 비어 있으면 rsync를
 # 절대 호출하지 않고 non-zero로 중단해야 한다. (빈 소스로 `rsync --delete` 미러 시 목적지
-# 전체가 삭제되므로 — 이 서비스의 핵심 데이터 보존 계약. plan 019 STEP 1 가드.)
+# 전체가 삭제되므로 — 이 서비스의 핵심 데이터 보존 계약.)
 test_immich_originals_mirror_empty_source_skips_rsync() {
   local script sandbox src dest bin marker rc
   script="$REPO_ROOT/modules/nixos/programs/docker/immich-originals-mirror/files/immich-originals-mirror.sh"

@@ -153,11 +153,11 @@
     capacity = 10; # 현행 운영값 — 자동 재시작 시 이 값으로 유지된다
   };
   homeserver.ankiHost = {
-    enable = true; # headless Anki + loopback AnkiConnect (#1306, plan 030)
+    enable = true; # headless Anki + loopback AnkiConnect (#1306)
     instances = {
       lab = {
         # 격리 검증 프로필 — AnkiWeb 로그인 없음, 실제 이력 .colpkg fixture로 도구·복구점 검증.
-        # CIR: 2026-09-11 운영자가 향후 시험용 유지로 결정(plan 030 Step 24의 일괄 폐기 계획 대체).
+        # CIR: 2026-09-11 운영자가 향후 시험용 유지로 결정(#1317).
         # 변경·복구 시험을 운영 컬렉션과 분리한다. 매 시험의 합성 데이터만 정리하고,
         # 서비스·실제 이력 fixture 폐기는 별도로 결정한다. AnkiWeb 로그인·sync는 활성화하지 않는다.
         port = constants.network.ports.ankiConnectLab;
@@ -174,7 +174,7 @@
     };
   };
   homeserver.ankiMcp = {
-    enable = true; # 원격 MCP 서버 — Cloudflare 443 → MCP, tailnet 9443 → 승인 화면 (plan 030 PR 2a)
+    enable = true; # 원격 MCP 서버 — Cloudflare 443 → MCP, tailnet 9443 → 승인 화면
     port = constants.network.ports.ankiMcp;
     approvalPort = constants.network.ports.ankiMcpApproval;
   };
