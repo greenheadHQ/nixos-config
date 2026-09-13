@@ -2,92 +2,27 @@
 name: create-pr
 argument-hint: "[update]"
 description: |
-  Create or update a pull request using this project's PR format, including its human test plan.
+  Create or update a pull request describing the final change and its validation.
   Use for PR creation or body updates; review comments use review-pr-feedback, and merging uses finish-pr.
 ---
 
-# 상세 PR 작성
+# PR 작성
 
-스킬 호출 인자로 `update`를 수신하면 기존 PR 본문을 업데이트하고, 인자가 비어있거나 다른 값이면 새 PR을 생성한다.
+`update` 인자는 기존 PR 본문을 갱신한다. 그 외에는 새 PR을 생성한다. 대상 저장소의 PR 템플릿·언어·제목 관례가 우선한다.
 
-## 빠른 참조
+## 본문 작성
 
-| 항목 | 위치 |
-|------|------|
-| 7섹션 PR 본문 템플릿 상세 | [references/pr-template.md](references/pr-template.md) |
+- 문제와 변경 후 동작을 먼저 설명한다. 실제로 실행한 검증과 남은 제약을 적는다. 작은 변경은 이 내용만으로 충분하다.
+- 중요한 선택은 CIR(변경 이유)·ADR(대안과 선택 근거)을 남긴다. 기존 동작이나 방어 로직을 제거·되돌린다면 도입 및 후속 결정의 근거를 확인하고 무엇을 왜 바꾸는지 설명한다.
+- 필요한 항목만 작성한다. 빈 섹션, N/A 채우기, 파일 목록과 diff의 반복 설명은 만들지 않는다. [본문 예시](references/pr-template.md)는 선택 가능한 예시다.
+- 최종 구현을 기준으로 제목과 본문을 갱신한다. 대화의 진행 순서, 검토 라운드·finding ID, 임시 절대경로와 squash 전 hash chain은 넣지 않는다. 관련 이슈·PR 번호나 머지된 SHA로 근거를 연결한다.
+- 관련 노트와 대화는 근거로 활용하되, 작성 자료를 자동으로 삭제하거나 별도 원장·marker를 요구하지 않는다.
 
-## 필수 7섹션 템플릿
+## 게시 절차
 
-PR 본문은 반드시 다음 7개 섹션을 포함한다.
-
-| # | 섹션 | 역할 |
-|---|------|------|
-| 1 | Summary | 핵심 변경 1-3 bullet + `Closes #N` |
-| 2 | 기존 문제/배경 | Pain point — 왜 이 변경이 필요한지 |
-| 3 | CIR (Change Intent Record) | 발견 경위 + 설계 의도 + 대안 검토 이력. 검토 라운드/finding ID/partial hash chain 포함 금지 (변경 의도는 자연어로) |
-| 4 | ADR (Architecture Decision Record) | 대안 비교 테이블 (대안/설명/장점/단점/결정) |
-| 5 | 구현 상세 | 변경 파일 테이블 + 핵심 코드 스니펫 |
-| 6 | 참고 레퍼런스 | 관련 PR/이슈/외부 링크 (안정 식별자: PR 번호, 이슈 번호, 또는 머지된 SHA — partial hash chain 금지) |
-| 7 | Human Test Plan | 단계별 기대동작 + 실패 시 진단 가이드 |
-
-각 섹션의 작성 규칙, 예시, 흔한 실수는 [references/pr-template.md](references/pr-template.md) 참조.
-
-## PR 전 결정
-
-PR을 생성하기 전에, 작업 결과의 처리 방향을 결정한다:
-
-| 선택지 | 조건 | 행동 |
-|---|---|---|
-| PR 생성 | 리뷰가 필요한 변경 | 이 스킬의 절차를 진행 |
-| 직접 merge | 사용자가 명시적으로 승인한 단순 변경 | main에 현재 브랜치를 `git merge` 후 종료 |
-| 보류 (keep) | 추가 작업이 필요하거나 다른 브랜치와 조율 필요 | 사용자에게 보고 후 종료 |
-| 폐기 (discard) | 접근 방식이 잘못되었거나 불필요해짐 | 사용자 확인 후 브랜치 삭제 |
-
-판단이 어려우면 PR 생성을 기본으로 선택한다.
-
-## 절차
-
-대상 저장소 `OWNER/REPO`를 먼저 확정한다. 사용자 지정값이 없으면 같은 gh 실행기로 `gh repo view --json nameWithOwner -q .nameWithOwner`를 조회하며, 실패하거나 비어 있으면 게시를 중단한다. 이후 PR 조회·생성·수정에 같은 `-R OWNER/REPO`를 사용한다.
-
-### 새 PR 생성 (기본)
-
-수신한 인자가 비어있거나 `update`가 아닌 경우 새 PR을 생성한다.
-
-1. 변경 분석: `git diff main...HEAD`와 커밋 히스토리(`git log main..HEAD --oneline`)를 분석하여 변경 범위를 파악한다.
-2. 연관 이슈 탐색: 커밋 메시지, 브랜치명, 변경 내용에서 이슈 번호를 추출한다. 관련 이슈가 있으면 Summary에 `Closes #N`을 포함한다.
-3. CIR 수집: 코드 인라인 주석(`# CIR:`, `# === Change Intent Record ===`)과 커밋 메시지에서 의사결정 이력을 추출한다. 현재 대화 컨텍스트에서도 방향 전환/대안 거부 이력을 수집한다. 워크트리에 `implementation-notes.md`가 있으면 아래 흡수 계약을 적용한다.
-
-   흡수 계약 (finding-unknowns 방법론 — 이 정의가 정본이며 update 경로도 동일 적용):
-   - provenance 확인: 파일 1행이 owner header `<!-- owner: finding-unknowns -->`이고, `git ls-files --error-unmatch -- implementation-notes.md`가 실패(=untracked)해야 흡수 대상이다. header가 없거나 tracked 파일이면 방법론 산출물로 단정하지 말고 흡수·삭제 없이 충돌로 보고한다.
-   - 흡수 범위: Decisions / Deviations / 새로 발견된 미지 세 섹션 전부를 CIR의 1차 소스로 반영한다.
-   - durable marker: 흡수한 PR 본문에는 hidden marker `<!-- methodology: finding-unknowns -->`를 포함한다 — finish-pr 퀴즈 게이트가 별도 세션에서도 방법론 적용 PR을 판별하는 1차 신호다.
-   - 수명: 흡수 완료를 보고하기 전까지 그 파일을 삭제·이동하지 않는다 (수명 규칙 SoT: finding-unknowns 스킬).
-4. ADR 테이블 구성: 검토한 대안들을 비교 테이블로 정리한다. 대안이 1개뿐이면 ADR 섹션을 간소화한다.
-5. [7섹션 템플릿](references/pr-template.md)에 따라 본문을 작성한다. 명시적 이미지·영상이 있으면 [공식 첨부 절차](../attaching-github-media/SKILL.md)에 따라 본문 참조와 `--attach` 인자를 준비한다.
-6. 본문을 임시 파일로 작성한 뒤 `gh pr create -R OWNER/REPO --title "<제목>" --body-file <파일>`로 PR을 생성한다. 첨부가 있으면 준비한 `--attach <파일>` 인자를 같은 명령에 추가한다. 제목은 70자 미만의 conventional commit 형식이다. 실패 시 [첨부 절차의 재시도 규칙](../attaching-github-media/SKILL.md#실패와-재시도)에 따라 게시 여부부터 확인한다.
-7. 구현 노트 정리: 3단계에서 `implementation-notes.md`를 흡수한 경우, 다음 세 조건을 모두 확인한 뒤에만 그 파일을 삭제한다 (남겨두면 finish-pr의 워크트리 정리가 dirty로 중단됨) — ① 1행 owner header 일치, ② `git ls-files --error-unmatch -- implementation-notes.md` 실패(untracked; tracked면 Git 밖 삭제 금지), ③ 생성된 PR 본문에 Decisions·Deviations·새로 발견된 미지 세 섹션 각각과 durable marker가 모두 반영되었는지 확인 (일부 섹션만 반영된 상태로 통과 금지). 하나라도 어긋나거나 PR 생성이 실패하면 파일을 보존하고 중단한다.
-
-### 기존 PR 업데이트 (`update`)
-
-수신한 인자가 `update`인 경우 기존 PR 본문을 보강한다.
-
-1. 현재 PR 확인: `gh pr view -R OWNER/REPO --json body,title,number`로 현재 PR 본문을 가져온다.
-2. 누락 섹션 탐지: 7섹션 중 빠진 섹션을 식별한다.
-3. 부실한 섹션을 커밋·변경 내용으로 보강한다. `implementation-notes.md`는 새 PR 생성 절차의 흡수 계약을 적용한다. 기존 첨부 URL은 보존하고, 새로 제공된 이미지·영상만 [공식 첨부 절차](../attaching-github-media/SKILL.md)에 따라 준비한다.
-4. `gh pr edit <number> -R OWNER/REPO --body-file <파일>`로 본문을 업데이트한다. 새 첨부가 있으면 `--attach <파일>`을 추가하고, 실패 시 원격 본문을 확인한 뒤 누락분만 처리한다.
-5. 구현 노트 정리: `implementation-notes.md`를 흡수한 경우 새 PR 생성 절차의 구현 노트 정리 단계와 동일하게, 세 조건(owner header · untracked · 세 섹션 각각+marker 반영) 확인 후에만 삭제하고 실패 시 보존한다.
-
-## 주의사항
-
-- ADR 테이블 표기: 채택한 대안은 ✅, 기각한 대안은 ❌로 표시한다.
-- 참고 레퍼런스 식별자: 관련 PR/이슈/외부 링크는 안정 식별자(PR 번호 `#N`, 이슈 번호 `#N`, 또는 머지된 commit SHA)를 사용한다. 본인 PR의 mid-flight commit hash 또는 squash 전 partial hash chain은 박제 금지 — squash 후 dangling 위험. "관련 PR 참조" 식의 모호한 레퍼런스도 금지.
-- DA 피드백 분리: DA 피드백 루프 결과는 PR 본문이 아닌 별도 코멘트로 분리한다. PR 본문에는 최종 결론만 반영한다.
-- CIR 없는 PR: 단순 변경(타이포 수정, 버전 업데이트 등)은 CIR/ADR 섹션을 "해당 없음 — 단순 변경"으로 간소화한다. 무리하게 의사결정 이력을 만들어내지 않는다.
-- 제거/되돌림 결정의 근거 보존: 변경이 기존 코드/정책을 제거·되돌리는 것이면, CIR에 "무엇을 왜 제거하며, 그것이 과거에 의도적으로 도입된 것이면 도입 근거·출처(PR#/commit/issue#)"를 명시한다. 비자명한 방어 로직·트레이드오프 선택은 코드 옆 인라인 `# CIR:` 주석으로 "왜 이렇게 했는지(제거 시 주의)"를 남긴다 — 미래 세션의 의사결정·회귀 조사가 읽을 신호 품질을 높인다 ([`../run-da/references/decision-regression-audit.md`](../run-da/references/decision-regression-audit.md)).
-- 도구-중립 기술 (Codex / Claude Code / headless 공통): 특정 AI 에이전트 전용 도구명을 본문에 하드코딩하지 않는다. "gh pr create를 실행한다"가 아니라 "PR을 생성한다"처럼 행동 의도로 기술한다. 단, 참조/예시에서의 CLI 명령(`gh pr create` 등)은 예외로 허용한다.
-- PR 본문 박제 금지 항목: 라운드 번호(`Round N`), DA finding ID(예: `Correctness-1`, `CORR-2`), partial commit hash chain, 워크트리 절대경로.
-  - 변경 의도(why)는 자연어 설명으로 표현한다. lefthook commit-msg hook은 라운드 번호/DA finding ID/DA 키워드만 warn-only로 감지한다. partial commit hash chain 감지 패턴의 실존 SSOT는 [`../../lib/pinning-patterns.sh`](../../lib/pinning-patterns.sh)이며, PR 본문 작성 시에는 본 가이드의 prose 규칙으로 직접 점검한다. 워크트리 절대경로는 본 가이드 자체에서 자연어 설명·repo-relative 경로로 대체하여 점검한다. PR 본문도 동일 정책을 따른다.
-
-## 참조 자료
-
-- [references/pr-template.md](references/pr-template.md) — 7섹션 PR 본문 마크다운 템플릿 + 섹션별 작성 규칙/예시/흔한 실수
+1. 대상 `OWNER/REPO`를 확정한다. 사용자 지정이 없으면 `gh repo view --json nameWithOwner -q .nameWithOwner`로 조회한다. 실패하거나 비어 있으면 게시하지 않는다. 이후 조회·생성·수정은 같은 `-R OWNER/REPO`를 사용한다.
+2. 실제 base와 head, 커밋·diff, 기존 PR 유무를 확인한다. 미커밋 변경은 게시할 PR diff와 구분한다. 연관 이슈는 실제로 해결하는 경우에만 `Closes #N`으로 연결한다.
+3. `update`이면 현재 제목·본문·첨부를 읽고 최종 변경을 반영한다. 유효한 근거와 기존 첨부 URL은 보존한다.
+4. 본문은 private 임시 디렉터리(0700)의 일반 파일(0600)에 작성한다. [공개 정보 처리 기준](../write-handoff/references/sanitization-checklist.md)을 최종 본문에 적용한다. 제공된 이미지·영상은 [첨부 절차](../attaching-github-media/SKILL.md)에 따라 본문 참조와 `--attach` 인자를 준비한다.
+5. 생성은 `gh pr create -R OWNER/REPO --title "<제목>" --body-file <파일>`, 갱신은 `gh pr edit <number> -R OWNER/REPO --body-file <파일>`을 사용한다. 첨부 인자는 같은 명령에 추가한다. 별도 관례가 없으면 제목은 70자 미만의 conventional commit 형식으로 쓴다.
+6. 반환된 PR URL과 원격 본문을 확인한다. 실패·부분 성공이면 파일을 보존하고 원격 게시 여부부터 확인하여 중복 생성을 피한다. 첨부 복구는 [재시도 규칙](../attaching-github-media/SKILL.md#실패와-재시도)을 따른다. 성공을 확인한 뒤에만 이 작업이 만든 임시 본문을 정리한다.

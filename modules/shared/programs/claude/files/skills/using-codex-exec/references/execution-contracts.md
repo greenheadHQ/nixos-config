@@ -103,7 +103,7 @@ wrapper 기본 timeout 1800초는 호출 방식과 무관한 wrapper의 운영 b
 
 재현: 하네스 상한을 넘는 작업(예: `python3 -c "import time; time.sleep(660)"`)을 foreground로, Bash tool `timeout` 파라미터에 상한 초과값(예: 900000)을 지정해 발사하고 어느 쪽 동작이 나오는지 관측한다 (모델 호출 0).
 
-수 분 이상 걸릴 수 있는 programmatic 호출은 처음부터 background로 실행하고, foreground가 꼭 필요하면 Bash tool `timeout` 파라미터를 반드시 명시하되 wrapper budget이 아니라 하네스 상한이 실질 상한임을 전제한다. 어느 경우든 결과는 stdout이 아니라 파일로 받는다 — 두 동작 모두 foreground 응답은 그 시점에 끊긴다. run-da의 role별·하네스별 발사 방식은 run-da 스킬 `references/arbiter-scaling.md`의 실행 계약이 소유하며, 본 절은 그 계약이 참조하는 하네스 상한 사실의 정본이다.
+수 분 이상 걸릴 수 있는 programmatic 호출은 처음부터 background로 실행하고, foreground가 꼭 필요하면 Bash tool `timeout` 파라미터를 반드시 명시하되 wrapper budget이 아니라 하네스 상한이 실질 상한임을 전제한다. 어느 경우든 결과는 stdout이 아니라 파일로 받는다 — 두 동작 모두 foreground 응답은 그 시점에 끊긴다.
 
 ## Gotchas
 

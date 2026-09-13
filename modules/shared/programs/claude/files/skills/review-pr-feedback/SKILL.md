@@ -2,7 +2,7 @@
 name: review-pr-feedback
 description: |
   Evaluate and address feedback on a pull request, including CodeRabbit reviews, replies, and thread resolution.
-  Use for PR feedback handling; PR body editing uses create-pr, and independent DA review uses run-da.
+  Use for PR feedback handling; PR body editing uses create-pr, and new reviews use the runtime’s built-in review.
 ---
 
 # PR 리뷰 피드백 처리
@@ -27,7 +27,7 @@ PR에 달린 모든 리뷰 코멘트를 수집하고, 각 피드백을 다각도
 
 ## 용어 정책
 
-이 스킬은 Claude Code 세션과 Codex 세션 양쪽에서 호출된다. 본문은 도구-중립 용어를 쓰며, 런타임별 실제 도구 binding은 [run-da의 "런타임 도구 매핑" 표](../run-da/references/runtime-mapping.md#런타임-도구-매핑)를 단일 진실 원천으로 참조한다 (중복 복제 금지).
+이 스킬은 Claude Code와 Codex에서 현재 세션의 질문·파일 읽기·검색 도구를 사용한다.
 
 | 용어 유형 | 처리 |
 |----------|------|
@@ -84,23 +84,13 @@ actionable summary-only 리뷰의 응답 경로는 Step 6의 PR top-level follow
 | nitpick | 스타일/취향 수준의 사소한 지적 | 합리적이면 반영, 아니면 기각 |
 
 분류가 애매한 코멘트는 actionable로 분류하여 Step 3에서 면밀히 검증한다.
-기각할 때의 세부 분류(7개)와 템플릿은 [references/rejection-taxonomy.md](references/rejection-taxonomy.md)를 따른다.
+기각 사유를 구분할 때는 [references/rejection-taxonomy.md](references/rejection-taxonomy.md)를 참고한다.
 
 ### Step 3: 다각도 검증
 
-actionable로 분류된 각 피드백을 다음 7개 기준으로 검증한다.
+현재 head의 관련 코드와 호출부를 읽어 실제 문제인지 확인한다. 재현·테스트·설정 조회 중 지적을 검증하는 데 필요한 방법을 사용한다. 제안한 수정이 기존 동작·유효한 설계 제약을 깨뜨리는지, 비용과 범위가 적절한지 판단한다.
 
-| 기준 | 질문 | 실패 시 분류 |
-|------|------|--------------|
-| 유효성 | 지적이 실제 문제인가? | `HALLUCINATION` / `WRONG_REFERENCE` |
-| 타당성 | 제안된 수정이 합리적인가? | 대안 제시 또는 `TECHNICAL_DISAGREEMENT` |
-| 복잡성 | 수정 비용 대비 효용이 있는가? | `DESIGN_TRADEOFF` 또는 `SCOPE_DEFERRAL` |
-| 실현가능성 | 현재 아키텍처에서 가능한가? | `TECHNICAL_DISAGREEMENT` |
-| YAGNI | 지금 필요한 변경인가? | `DESIGN_TRADEOFF` |
-| REGRESSION | 수정 시 회귀 위험이 없는가? | `DESIGN_TRADEOFF` |
-| 현재성 | 리뷰가 현재 diff에 기반하는가? | `STALE_REVIEW` / `VERIFIED_FALSE_POSITIVE` |
-
-각 분류 정의와 오분류 방지 가이드는 [references/rejection-taxonomy.md](references/rejection-taxonomy.md)가 정본이다.
+이전 diff에만 해당하는 지적과 현재 코드에서 검증한 오탐을 구분한다. [기각 분류](references/rejection-taxonomy.md)는 설명에 도움이 될 때 사용한다.
 
 ### Step 4: 유효 피드백 반영
 
@@ -109,6 +99,7 @@ actionable로 분류된 각 피드백을 다음 7개 기준으로 검증한다.
 - 각 피드백별로 필요한 코드 변경을 수행한다.
 - 변경 후 기존 기능에 회귀가 없는지 확인한다.
 - 관련된 피드백들은 가능하면 하나의 논리적 단위로 묶어 변경한다.
+- 최종 동작이나 중요한 결정이 달라졌으면 PR 본문도 현재 구현과 근거에 맞게 갱신한다.
 
 ### Step 5: 커밋 및 푸시
 
@@ -117,14 +108,6 @@ actionable로 분류된 각 피드백을 다음 7개 기준으로 검증한다.
 - 커밋 메시지에 어떤 피드백을 반영했는지 명시한다.
 - conventional commit 형식을 따른다 (예: `fix(module): address PR feedback`).
 - 반영할 피드백이 여러 영역에 걸쳐 있으면 논리적으로 분리하여 복수 커밋으로 나눈다.
-
-### Step 5.5: 방법론 PR의 CIR 동기화 (finding-unknowns)
-
-PR 본문에 durable marker `<!-- methodology: finding-unknowns -->`가 있고(기록 주체·정본: create-pr 흡수 계약) 이번 run이 새 CIR 기록을 만들었다면, Step 6의 답글·resolve 전에 PR 본문의 CIR/Deviations를 동기화한다 — create-pr의 `update` 절차를 수행하는 handoff이며, 본문 전면 재작성이 아니라 CIR/Deviations 증분 갱신이다. "새 CIR 기록"은 코드에 반영한 실버그·설계 반전만이 아니라, `DESIGN_TRADEOFF`/`TECHNICAL_DISAGREEMENT`/`SCOPE_DEFERRAL` 기각이 남긴 설계 결정과 이관된 미지(분리 이슈 #N)도 포함한다 — 코드 무변경이 skip 기준이 아니다. 이 동기화를 건너뛰면 이후 finish-pr 퀴즈가 stale한 본문을 기준으로 출제된다.
-
-Skip 조건:
-- marker가 없는 일반 PR이면 해당 없음.
-- 이번 run에서 새 CIR 기록(반영·기각·이관 어느 쪽에서도)이 전혀 발생하지 않은 경우에만 건너뛴다.
 
 ### Step 6: 답글 + resolve
 
@@ -150,7 +133,7 @@ Skip 조건:
 | 처리 결과 | 답글 내용 |
 |----------|----------|
 | 반영 | 어떻게 반영했는지 간략 설명 + 커밋 해시 참조 + 검증 내역 |
-| 기각 | [references/rejection-taxonomy.md](references/rejection-taxonomy.md)의 4필드 포맷 (기각 분류 / 검증 방법 / 기술적 근거 / 신뢰도) |
+| 기각 | 판단 이유와 확인한 기술적 근거. 불확실한 범위가 있으면 명시 |
 | 별도 이슈 분리 | 생성한 이슈 번호 링크 + `SCOPE_DEFERRAL` 분류 |
 
 ### Step 7: resolve 재확인
@@ -166,9 +149,7 @@ PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
 - 리뷰어 각 지적을 수용하기 전에 해당 파일:줄을 직접 파일 읽기 도구로 읽어 사실성을 확인한다.
 - 가능하면 로컬에서 재현을 시도한다 (빌드, 명령 실행, 설정 확인 등).
 - "리뷰어가 지적했으니 맞겠지"라는 가정으로 검증 없이 수용하지 않는다.
-- 특히 AI 리뷰어(CodeRabbit 등)는 HALLUCINATION/STALE_REVIEW 비율이 높다.
-  반드시 코드를 직접 읽어 확인한 뒤 수용/기각한다.
-- 사용자에게 판단을 요청할 때는 [사용자 질문 시 맥락 설명 의무](../run-da/references/main-agent-obligations.md#사용자-질문-시-맥락-설명-의무)를 따른다.
+- 사용자 판단이 필요한 경우 확인한 맥락과 추천을 설명하고 질문 도구로 한 번에 한 결정씩 묻는다.
 
 ## 주의사항
 
@@ -177,10 +158,10 @@ PR 일반 코멘트는 resolve가 없으므로 이 단계를 건너뛴다.
 - AI 리뷰어 맹신 금지: CodeRabbit 등 AI 리뷰어 피드백도 동일한 검증 기준을 적용한다.
   stale diff 기반 지적을 `HALLUCINATION`으로 오분류하지 말고 `STALE_REVIEW`를 쓴다.
 - outside-diff 처리: PR 범위 밖 지적은 유효해도 이번 PR에서 처리하지 않는다.
-  별도 이슈 등록 후 `SCOPE_DEFERRAL`로 답글.
+  남은 문제와 이관 이유를 답글로 남기고, 별도 이슈 게시가 승인된 경우에만 생성한다.
 - 반영 전 회귀 확인: 피드백 반영 시 변경이 다른 기능을 깨뜨리지 않는지 확인한다.
   특히 플랫폼 간(macOS/NixOS) 호환성에 주의.
 - 기각 사유는 구체적으로: "불필요합니다"가 아니라 왜 불필요한지 근거 제시.
-  [references/rejection-taxonomy.md](references/rejection-taxonomy.md)의 4필드 포맷을 지킨다.
+  고정 양식보다 판단을 뒷받침하는 코드·검증 근거를 제시한다.
 - multiline body는 파일/stdin 경유: 본문을 shell 확장으로 argv에 싣지 않는다 (같은 사용자 `ps`/로깅 노출 방지).
   [references/reply-and-resolve.md](references/reply-and-resolve.md)의 권장 패턴(`gh api graphql -F body=@"$BODY_FILE"`, 또는 `jq -Rs '{body:.}' < "$BODY_FILE" | gh api --input -`)을 사용한다.

@@ -461,7 +461,7 @@ in
       ''
 
       #─────────────────────────────────────────────────────────────────────────
-      # 1Password Shell Plugins(op plugin init gh)의 gh alias source는 제거됨 (#872 후속, run-da F2).
+      # 1Password Shell Plugins(op plugin init gh)의 gh alias source는 제거됨 (#872 후속).
       # op plugin alias("op plugin run -- gh")는 gh-auth wrapper를 덮어 non-interactive 셸에서
       # biometric 팝업을 유발했고(F2 회귀), plugins.sh 재생성 시 다시 회귀하므로 의존을 끊는다.
       # gh 무인 인증은 modules/shared/programs/shell/darwin.nix의 gh-auth wrapper가 담당한다.

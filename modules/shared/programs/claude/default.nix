@@ -179,10 +179,6 @@ in
       source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/assets/notification-icon.png";
     };
 
-    # analyzing-da-sessions 스킬 (user-scope, 사용자 명시 호출 전용 — disable-model-invocation: true)
-    ".claude/skills/analyzing-da-sessions".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/analyzing-da-sessions";
-
     # create-issue 스킬 (user-scope)
     ".claude/skills/create-issue".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/create-issue";
@@ -207,10 +203,6 @@ in
     ".claude/skills/syncing-codex-harness".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/syncing-codex-harness";
 
-    # run-da 스킬 (user-scope)
-    ".claude/skills/run-da".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/run-da";
-
     # review-pr-feedback 스킬 (user-scope)
     ".claude/skills/review-pr-feedback".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/review-pr-feedback";
@@ -231,22 +223,12 @@ in
     ".claude/skills/write-handoff".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/write-handoff";
 
-    # finding-unknowns 스킬 (user-scope)
-    ".claude/skills/finding-unknowns".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/skills/finding-unknowns";
-
     # Statusline script - 양방향 수정 가능
     # 인접 디렉토리 정책: `scripts/tests/` 는 repo 검증 전용이라
     # mkOutOfStoreSymlink로 home 에 노출하지 않는다. bats 단위 테스트는 devShell
     # (`flake.nix` buildInputs `bats`) 안에서만 실행한다.
     ".claude/scripts/statusline.sh".source =
       config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/statusline.sh";
-
-    # run-da VERDICT_JSON 검증기 (protocol.md caller 검증의 기계 검증 SSOT 구현체).
-    # 파일명은 과거 Fleiss kappa 집계 용도에서 유래 — 집계는 #1257에서 제거됐고
-    # 경로 계약(HELPER_PATH) 유지를 위해 이름을 존치한다.
-    ".claude/scripts/fleiss-kappa.py".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
 
   };
 }

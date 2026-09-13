@@ -2,7 +2,7 @@
 # GitHub interaction limits(외부인 PR/이슈/코멘트 차단) 자동 갱신 타이머.
 # 제한은 GitHub 정책상 최장 six_months 후 자동 해제되므로, 이 타이머가 만료 임박을
 # 감지해 재설정하고 Pushover로 감지/성공/실패를 알린다. 무인 gh 인증(opnix github-pat)과
-# Pushover 헬퍼는 da-weekly-report와 같은 인프라를 재사용한다 — 신규 시크릿 없음.
+# Pushover 헬퍼는 공용 fail-soft 인프라를 재사용한다 — 신규 시크릿 없음.
 {
   config,
   pkgs,
@@ -58,7 +58,7 @@ in
         UMask = "0077";
 
         # user-scope Pushover helper/credential(~/.config, ~/.local)을 읽어야 하므로
-        # ProtectHome은 끈다 (da-weekly-reminder와 동일 근거).
+        # ProtectHome은 끈다 (홈 내부 인증 경로 접근에 필요).
         ProtectSystem = "full";
         ProtectHome = false;
         PrivateTmp = true;

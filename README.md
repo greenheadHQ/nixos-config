@@ -87,11 +87,15 @@ Anki 호스트·MCP의 변경 확인, 동기화, 복구점, 승인 Upload는 [�
 
 ---
 
+## 에이전트 환경
+
+[CONTEXT.md](./CONTEXT.md)는 이 환경의 용어집이다. 스킬 정리의 조사 근거와 합의는 [하네스 감사 기록](./.claude/research/2026-09-13-agent-skills-harness-audit.md)에 남긴다.
+
 ## 검증 / 훅
 
 [`lefthook.yml`](./lefthook.yml)로 pre-commit/commit-msg/pre-push 훅 관리.
 
-**통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · skill-doc-sync · analyzing-da-sessions-tests · fleiss-kappa-tests · da-weekly-report-tests · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도 전체 테스트를 재검증한다. PR에서는 main branch protection의 required `check` job이 devShell 안에서 이 명령을 실행하며 canonical `SKIP:` marker도 실패로 처리한다. 단독 사용 저장소인 main의 merge gate는 최신 base 재검증(`strict`)이 적용된 required `check`이며 별도 리뷰 승인을 요구하지 않는다.
+**통합 검증 (push 전 / 온보딩 시 권장)**: [`bash tests/run-all-tests.sh`](./tests/run-all-tests.sh) — eval-tests · shell-script-tests · codex-hook-fixtures · codex-exec-supervised · flake-check · statusline-bats · precommit-staged-snapshot를 한 번에 순차 실행하고 통과/SKIP/실패를 구분 요약한다(하나라도 실패 시 non-zero). 로컬 훅을 우회(`git commit --no-verify` / `LEFTHOOK=0`)했거나 fresh clone에서 훅 설치 전이라도 전체 테스트를 재검증한다. PR에서는 main branch protection의 required `check` job이 devShell 안에서 이 명령을 실행하며 canonical `SKIP:` marker도 실패로 처리한다. 단독 사용 저장소인 main의 merge gate는 최신 base 재검증(`strict`)이 적용된 required `check`이며 별도 리뷰 승인을 요구하지 않는다.
 
 **pre-commit** (병렬):
 - `lefthook-guard-self-check` — 현재 worktree에서 Git이 해석한 hooks 경로(`git rev-parse --git-path hooks`)를 기준으로, (1) `pre-commit`의 staged-config guard marker, (2) 세 hook(`pre-commit`/`commit-msg`/`pre-push`)의 설치 여부와 lefthook 호출부의 `--no-auto-install` 플래그가 사라지면 commit fail-fast. lefthook의 암묵 auto-sync(`lefthook.yml` 변경 후 첫 실행)와 인접 worktree의 `lefthook install` 덮어쓰기, 두 회귀 경로를 함께 막는다
@@ -126,9 +130,6 @@ pre-commit 정책:
 
 **pre-push**:
 - devShell 진입 시 [`scripts/ai/test-runtime-profile.sh`](./scripts/ai/test-runtime-profile.sh)가 worktree별 `prePushRuntime` GC-root를 content stamp 기반으로 사전 빌드한다. hook은 이 PATH를 공유하고 profile 부재/stale 시 common-dir lock 아래에서 동일 flake package를 검증·준비한 뒤에만 실행한다.
-- `analyzing-da-sessions-tests` — analyzing-da-sessions/run-da 계약 변경에만 pytest fixture를 실행한다.
-- `fleiss-kappa-tests` — run-da VERDICT_JSON 검증기(`fleiss-kappa.py`) 변경에만 pytest fixture를 실행한다.
-- `skill-doc-sync` — run-da 문서군의 manual sync 계약(특히 arbiter-prompt.md의 VERDICT_JSON 골격)을 검증한다.
 - `flake-check` — `.nix`/`flake.lock` push에만 `nix flake check --no-build --all-systems`를 실행한다.
 - `statusline-bats` — statusline 소스/테스트 push에만 Bats fixture를 실행하고 비대화형 hook에 기본 `TERM`을 주입한다.
 - `ai-skill-version-stamps` — pre-commit의 staged glob 경보를 보완해 push 시점에는 glob 없이 항상 실행한다 (`--from-head`, warn-only).

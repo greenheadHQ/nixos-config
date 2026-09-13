@@ -200,7 +200,7 @@ test -s /tmp/review-result.md
 
 이 패턴에서는 `<<PROMPT` (따옴표 없음)를 사용하여 `$(git diff ...)` 명령 치환이 실행되도록 한다.
 리터럴 텍스트만 전달할 때는 `<<'PROMPT'` (따옴표 포함)를 사용한다.
-패턴 1, 5, 8은 명령 치환이 불필요하므로 `<<'PROMPT'`를 사용한다.
+패턴 1, 8은 명령 치환이 불필요하므로 `<<'PROMPT'`를 사용한다.
 
 코드 블록 분리: `run_in_background` 환경에서 heredoc과 codex exec를 같은 Bash 호출에 넣으면 stdin hang이 발생한다 ([known-issues.md §11](known-issues.md) 하위 항목 참조). 모든 패턴에서 heredoc(프롬프트 생성)과 codex exec(실행)를 별도 코드 블록으로 분리한다. 실행 블록에서는 supervised stdin pipe를 사용한다.
 
@@ -209,54 +209,9 @@ test -s /tmp/review-result.md
 - review 서브커맨드의 내장 diff 스코핑/프롬프트 템플릿을 사용하지 못한다.
 - diff가 큰 경우 프롬프트 크기 제한에 걸릴 수 있다.
 
-## 패턴 5: Devil's Advocate 피드백 루프
+## 패턴 5: 내장 리뷰 사용
 
-프롬프트 → 실행 → 결과 분석 → 수정 → 재실행을 반복하는 루프 패턴.
-
-### 1라운드
-
-```bash
-cat > /tmp/da-round1.md <<'PROMPT'
-You are a Devil's Advocate reviewer.
-Find only real risks in the current changes and rank by severity.
-Ignore style-only issues.
-PROMPT
-```
-
-⚠️ `run_in_background` 환경: 여기서 Bash tool 호출을 종료하고, 아래를 별도 호출로 실행한다. DA 루프에서는 supervised stdin pipe를 사용한다.
-
-```bash
-cat /tmp/da-round1.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write -o /tmp/da-round1-result.md \
-  - > /tmp/da-round1-stdout.log 2>/tmp/da-round1-stderr.log
-test -s /tmp/da-round1-result.md && cat /tmp/da-round1-result.md
-```
-
-### 후속 라운드
-
-1. 결과를 Arbiter 에이전트에 전달하여 독립 판정을 받는다 (run-da 스킬의 Arbiter 절차 참조).
-   이 패턴은 codex exec 실행 기계만 제공한다. 유효성 판정은 Arbiter의 책임이다.
-   기본 `run-da` 경로는 4 reviewer bundle을 쓰며, Arbiter/다음 라운드에는
-   unique findings, conflicting findings, high-severity findings, user decision required findings만 selective propagation한다.
-2. Arbiter가 CONFIRMED_ISSUE로 판정한 항목만 수정한다.
-3. 새 프롬프트 파일(`round2.md`)로 동일 구조를 반복한다:
-
-```bash
-cat > /tmp/da-round2.md <<'PROMPT'
-현재 변경사항을 독립적으로 리뷰한다.
-이전 라운드의 판정 결과를 참조하지 마라.
-PROMPT
-```
-
-```bash
-cat /tmp/da-round2.md | env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write -o /tmp/da-round2-result.md \
-  - > /tmp/da-round2-stdout.log 2>/tmp/da-round2-stderr.log
-test -s /tmp/da-round2-result.md
-```
-
-핵심: 매 라운드마다 `-o`로 결과를 파일 저장하여 이력을 보존한다.
-이전 라운드 결과를 후속 프롬프트에 포함하지 않는다 (프롬프트 조향 금지).
-각 라운드는 `test -s`와 직전 라운드 대비 진척 delta를 확인한다. 진척 없는 pass가 연속되면
-circuit breaker로 중단하며 child가 같은 collector를 다시 생성하게 하지 않는다.
+코드 변경 검토는 패턴 2의 내장 review 경로를 사용한다. 현재 diff를 검토하고, 지적을 실제 코드·검증 근거와 대조해 필요한 수정을 수행한다. 새 변경이나 미해결 문제로 필요할 때 추가 검토한다. 고정된 검토자 수나 반복 횟수를 요구하지 않는다.
 
 ## 패턴 6: 구조화 출력 — --output-schema
 
@@ -477,7 +432,7 @@ Codex 자식으로 환경을 전달하며 CLI 자체는 이 값을 자동 주입
 | 리뷰 (stdin PROMPT) | 2b | `cat prompt \| env CODEX_PROGRAMMATIC=1 codex-exec-supervised review -o result -` |
 | 리뷰 + 커스텀 지시 (영구) | 3 | AGENTS.md 작성 후 `env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base` |
 | 리뷰 + 커스텀 지시 (1회) | 4 | `cat diff+지시 \| env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write -o result -` |
-| 피드백 루프 | 5 | 라운드별 prompt → supervised `-o` → 진척 검증 → 반복 |
+| 내장 리뷰 사용 | 5 | 패턴 2로 검토하고 지적을 검증·수정; 새 변경이나 미해결 문제에 따라 추가 검토 |
 | 구조화 출력 | 6 | supervised `--output-schema schema.json -o result` |
 | JSONL 스트림 | 7 | supervised `--json` + stdout/stderr 분리 |
 | 환경 점검 | 8 | fan-out 전 supervised 최소 스모크 |

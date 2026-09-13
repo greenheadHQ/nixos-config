@@ -1,8 +1,0 @@
-{
-  "description": "KV recovery — Arbiter 결과 window 한정 + 같은 verdict 반복 카운트",
-  "strict_count": 0,
-  "unmarked_count": 0,
-  "kv_count": 3,
-  "nl_signal": false,
-  "finding_level_count": 3
-}

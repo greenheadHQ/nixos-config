@@ -120,7 +120,7 @@ test_log_skill_hook_repairs_loose_log_mode() {
   chmod 644 "$log"
 
   out=$(_chra_run_hook "log-skill.sh" \
-    '{"session_id":"sid-mode-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+    '{"session_id":"sid-mode-1","tool_input":{"skill":"review-pr-feedback"}}' HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "unexpected hook output: $out"
   [[ "$(wc -l < "$log")" -eq 2 ]] || fail "expected appended event after mode repair"
   [[ "$(_portable_file_mode "$log")" == "600" ]] || fail "expected loose log mode repaired to 600"
@@ -139,7 +139,7 @@ test_log_skill_hook_skips_symlinked_key() {
   ln -s "$target" "$key"
 
   out=$(_chra_run_hook "log-skill.sh" \
-    '{"session_id":"sid-sym-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+    '{"session_id":"sid-sym-1","tool_input":{"skill":"review-pr-feedback"}}' HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "unexpected hook output: $out"
   [ ! -e "$log" ] || fail "expected no event when key is a symlink"
 }
@@ -152,13 +152,13 @@ test_log_skill_hook_session_key_is_stable_pseudonym() {
   log="$home/.claude/skill-usage.log"
 
   out=$(_chra_run_hook "log-skill.sh" \
-    '{"session_id":"sid-stable-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+    '{"session_id":"sid-stable-1","tool_input":{"skill":"review-pr-feedback"}}' HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "unexpected hook output: $out"
   out=$(_chra_run_hook "log-skill.sh" \
-    '{"session_id":"sid-stable-1","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+    '{"session_id":"sid-stable-1","tool_input":{"skill":"review-pr-feedback"}}' HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "unexpected hook output: $out"
   out=$(_chra_run_hook "log-skill.sh" \
-    '{"session_id":"sid-stable-2","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+    '{"session_id":"sid-stable-2","tool_input":{"skill":"review-pr-feedback"}}' HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "unexpected hook output: $out"
 
   k1=$(sed -n 1p "$log" | jq -r .session_key)
@@ -179,7 +179,7 @@ test_log_skill_hook_invalid_key_skips_event_without_fallback() {
   printf 'not-64-lowercase-hex\n' > "$key"
 
   out=$(_chra_run_hook "log-skill.sh" \
-    '{"session_id":"sid-raw-2","tool_input":{"skill":"run-da"}}' HOME="$home" USER="tester")
+    '{"session_id":"sid-raw-2","tool_input":{"skill":"review-pr-feedback"}}' HOME="$home" USER="tester")
   [[ -z "$out" ]] || fail "expected invalid key to noop, got: $out"
   [ ! -e "$log" ] || fail "expected invalid key to skip event without raw-id fallback"
 }
