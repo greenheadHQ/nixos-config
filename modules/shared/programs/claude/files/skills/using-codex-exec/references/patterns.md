@@ -432,7 +432,7 @@ Codex 자식으로 환경을 전달하며 CLI 자체는 이 값을 자동 주입
 | 리뷰 (stdin PROMPT) | 2b | `cat prompt \| env CODEX_PROGRAMMATIC=1 codex-exec-supervised review -o result -` |
 | 리뷰 + 커스텀 지시 (영구) | 3 | AGENTS.md 작성 후 `env CODEX_PROGRAMMATIC=1 codex-exec-supervised review --base` |
 | 리뷰 + 커스텀 지시 (1회) | 4 | `cat diff+지시 \| env CODEX_PROGRAMMATIC=1 codex-exec-supervised -s workspace-write -o result -` |
-| 피드백 루프 | 5 | 라운드별 prompt → supervised `-o` → 진척 검증 → 반복 |
+| 내장 리뷰 사용 | 5 | 패턴 2로 검토하고 지적을 검증·수정; 새 변경이나 미해결 문제에 따라 추가 검토 |
 | 구조화 출력 | 6 | supervised `--output-schema schema.json -o result` |
 | JSONL 스트림 | 7 | supervised `--json` + stdout/stderr 분리 |
 | 환경 점검 | 8 | fan-out 전 supervised 최소 스모크 |
