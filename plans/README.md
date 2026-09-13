@@ -81,7 +81,7 @@ reconcile 당시 PR [#978](https://github.com/greenheadHQ/nixos-config/pull/978)
 | 027 | 비대 노트 "걸린 것부터" 점진 분할 절차 수립 | P2 | M | 025 (hard) | #977 | REJECTED (2026-09-05 운영자 결정으로 `anki-study/` 제거 — 산출물 `anki-study/CARD_MAINTENANCE.md`의 대상 디렉토리 소멸) |
 | 028 | 원격 AI 세션 macOS TCC 권한 정책을 DX 우선으로 확정·적용 | P1 | M | — | #1093 | DONE (PR #1177·#1178·#1179 머지 2026-07-23, 이슈 #1093 CLOSED — C Workspace-only + Ghostty FDA 적용) |
 | 029 | 원격 AI 세션 1Password SSH 승인 hang을 DX 우선으로 제거 | P1 | M-L | — | #1094 | DONE |
-| 030 | headless Anki + AnkiWeb 동기화·알림 + 원격 MCP (Cloudflare·OAuth·변경 도구) | P1 | L | 024 (soft) | #1306 | DONE (2026-09-11) — #1315·#1316 배포, iPhone·Codex·Claude·미디어·격리 장애·Mac 종료 실기기 검증과 합성 카드 정리 완료; lab 유지 |
+| 030 | headless Anki + AnkiWeb 동기화·알림 + 원격 MCP (Cloudflare·OAuth·변경 도구) | P1 | L | 024 (soft) | #1306 | DONE (2026-09-13) — #1315·#1316 배포와 기존 실기기·장애 검증에 [iPhone 직접 추가·기기 반영·정리](anki-mcp-evidence/2026-09-13-iphone-add.md) 확인; lab 유지 |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
