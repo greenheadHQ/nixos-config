@@ -1,18 +1,20 @@
 # Plan 030: headless Anki 복원 + AnkiWeb 동기화·알림 + 원격 MCP 서버
 
 > **현재 운영을 재개할 때**: 아래 최신 상태와 [운영 계약](../modules/nixos/programs/anki-host/README.md),
-> [실기기·장애 검증 기록](anki-mcp-evidence/2026-09-11-validation.md)을 먼저 읽는다.
+> [실기기·장애 검증 기록](anki-mcp-evidence/2026-09-11-validation.md)과 [iPhone 직접 추가 검증](anki-mcp-evidence/2026-09-13-iphone-add.md)을 먼저 읽는다.
 > 초기 설치 Step과 날짜가 붙은 이력은 재설치 지시가 아니다. 이미 운영 중인 `main`에 부트스트랩·import·전체 동기화를 다시 실행하지 않는다.
 > 실제 상태는 인증된 MCP 조회와 서비스의 배포 버전으로 확인한다. STOP conditions를 유지하며,
 > 실제 컬렉션 복원·구조 변경·Upload는 구체적인 대상과 방향을 승인받은 범위에서만 수행한다.
 > 소스 비교 기준은 아래 Base snapshot이며, 이후 변경은 대상 모듈의 diff와 실제 배포 버전을 대조한다.
 
-## PR 2b 현행 계약 (2026-09-11)
+## PR 2b 현행 계약 (2026-09-13)
 
 사용자가 며칠 사용 대기를 해제하고 플러그인/MCP 개선의 즉시 착수를 요청했다.
 옛 Anki Plugin Lab 등록은 사용자가 제거했다. MiniPC lab 서비스·데이터 삭제를 뜻하지 않는다.
 구현 #1315와 Caddy 빌드 차단 수정 #1316은 머지됐으며 MiniPC에 적용됐다.
 ChatGPT 웹·iPhone, Codex, Claude의 인증된 호출과 신규 이미지·음성 전달을 확인했다.
+2026-09-13 iPhone에서 직접 덱·카드를 추가하고 서버 조회·AnkiMobile 표시·알림 수신을 확인했다.
+웹 카드 추가는 이번 개인용 완료 조건에 포함하지 않는다.
 운영 컬렉션의 변경은 승인된 합성 테스트 노트로 한정했다. 실제 학습 데이터의 파괴 변경·강제 Upload는 수행하지 않았다.
 2026-09-11 운영자는 향후 변경 시험을 위해 `lab` 유지로 결정했다. 아래 Step 24의 자동 폐기 계획을 대체한다.
 
@@ -44,8 +46,8 @@ ChatGPT 웹·iPhone, Codex, Claude의 인증된 호출과 신규 이미지·음�
 - **Depends on**: 024 (soft — AnkiWeb 계정·서버 컬렉션이 존재해야 Download 가능)
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
-- **Execution**: DONE (2026-09-11) — 개인용 서버 배포·클라이언트·신규 미디어·격리 장애·Mac 전원 종료 실기기 시험과 운영 합성 카드 정리 완료.
-- **검증 정본**: [2026-09-11 검증 기록](anki-mcp-evidence/2026-09-11-validation.md). 클라이언트 화면, 작업 영수증, 서버 전후 동기화와 실제 기기 수신을 별도 증거로 대조한다.
+- **Execution**: DONE (2026-09-13) — 기존 배포·실기기·장애 검증에 iPhone 직접 카드 추가·조회·기기 반영과 시험 데이터 정리를 추가 확인.
+- **검증 정본**: [2026-09-11 검증 기록](anki-mcp-evidence/2026-09-11-validation.md), [2026-09-13 iPhone 추가 검증](anki-mcp-evidence/2026-09-13-iphone-add.md). 클라이언트 화면, 작업 영수증, 서버 전후 동기화와 실제 기기 수신을 별도 증거로 대조한다.
 - **잔여·보존 범위**: `lab`은 운영자 결정으로 유지한다. 개인 학습 규칙·AI 카드 관리 스킬·다중 사용자/공개 제품화는 별도 범위다.
 
 <details>
@@ -305,10 +307,9 @@ ChatGPT 웹·iPhone, Codex, Claude의 인증된 호출과 신규 이미지·음�
 
 - PR 1·PR 2 머지, MiniPC `nrs` 적용, `anki-host-main`·`anki-mcp` active, 타이머 정상.
 - 운영 프로필 카운트가 Mac 최신 백업과 일치하고, Mac·iPhone 동기화가 정상(변경 없음 또는 정상 병합).
-- ChatGPT 웹에서 합성 카드 추가와 iPhone ChatGPT Chat에서 해당 카드 수정을 각각 실제 호출하고, 각 변경의 Pushover (a) 알림·AnkiMobile 반영을 확인한다.
-  이슈 #1306의 iPhone 완료 조건은 실제 도구 호출 → Anki 변경 → 서버 readback 대조다.
-  2026-09-09~11 사용자와 진행한 실행 순서(웹 생성 → 폰 확인·직접 수정 → Mac 종료 수정)를 반영해 초기의 iPhone 추가 단일 경로를 이 분담으로 갱신한다.
-  iPhone에서 `anki_add_notes`를 직접 호출한 시험은 미실행이며, 수정 시험으로 추가 도구의 모바일 호출까지 검증했다고 주장하지 않는다.
+- iPhone ChatGPT Chat에서 합성 카드 추가(`anki_add_notes`)·조회를 직접 호출하고, 서버 영수증·독립 조회·사전/사후 normal sync와 Pushover (a) 수신·AnkiMobile 표시를 대조한다. iPhone 직접 수정의 검증 근거도 보존한다.
+  2026-09-13 사용자는 웹 카드 추가가 의도한 사용 경로가 아니며 iPhone 시험이 필수라고 명확히 했다. 웹 추가와 iPhone 수정의 조합으로 추가 검증을 대체했던 판단을 정정한다.
+  웹 카드 추가는 이번 완료 조건에 포함하지 않으며, [실제 iPhone 추가·정리 근거](anki-mcp-evidence/2026-09-13-iphone-add.md)로 완료를 판단한다.
 - 이슈 #1306 체크리스트 전부 체크, `plans/README.md` DONE, anki-study #3 완료 검증 갱신.
 
 ## STOP conditions
