@@ -72,7 +72,7 @@ Claude/Codex missing shared-library fail-closed 분기를 검증한다.
 | `pretooluse-pinning-guard-codex-bash-gh-api-comment.json` | Codex PreToolUse | `gh api` issue comment body | deny reason |
 | `pretooluse-pinning-guard-codex-bash-out-of-scope.json` | Codex PreToolUse | non-durable Bash command | 빈 파일 |
 
-Issue #684 `--body-file` / `-F body=@file` 내용 스캔 fixture (plan 021):
+Issue #684 `--body-file` / `-F body=@file` 내용 스캔 fixture:
 
 `gh`가 파일 경로로 body를 넘기는 형태는 command 문자열만 봐서는 박제 텍스트가 보이지 않는다.
 guard는 이 인자를 파싱해 **파일 내용까지 읽어** 스캔한다 (`pinning-patterns.sh`의 file-forwarding

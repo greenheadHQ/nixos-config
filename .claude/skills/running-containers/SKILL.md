@@ -107,7 +107,7 @@ systemctl status podman-<container-name>  # systemd 서비스 상태
 | Immich 원본 미러 | `immich-originals-mirror` | 04:30 | HDD (`/mnt/data/backups/immich-originals`, SSD upload-cache rsync 미러) |
 | Karakeep | `karakeep-backup` | 05:00 | HDD (`/mnt/data/backups/karakeep`) |
 | Immich DB | `immich-db-backup` | 05:30 | HDD (`/mnt/data/backups/immich`) |
-| Anki (headless) | `anki-host-backup` | 04:15 (`homeserver.ankiHost.backupTime`) | HDD (`/mnt/data/backups/anki-host/<instance>`, 인스턴스별 일일 `.colpkg`만; `backup.enable = false`인 검증용 `lab`은 제외. 복구점 `restore-points/`의 보존 계약은 plan 030 결정 11) |
+| Anki (headless) | `anki-host-backup` | 04:15 (`homeserver.ankiHost.backupTime`) | HDD (`/mnt/data/backups/anki-host/<instance>`, 인스턴스별 일일 `.colpkg`만; `backup.enable = false`인 검증용 `lab`은 제외. 복구점 `restore-points/`의 보존 계약은 [Anki 호스트 README](../../../modules/nixos/programs/anki-host/README.md)의 복구점 절) |
 
 공통 라이브러리 함수: `send_notification`, `fetch_github_release`, `get_image_digest`, `check_watchdog`, `check_initial_run`, `record_success`, `http_health_check`
 

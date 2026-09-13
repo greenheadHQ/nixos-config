@@ -5,7 +5,7 @@
 # v1 (PR #62 → 철거 PR #863, commit 61dadbe1): headless Anki + AnkiConnect를 Tailscale IP에
 #   바인딩해 awesome-anki 컨테이너가 쓰게 했고, 자체 Anki Sync Server와 짝을 이뤘다.
 #   2026-05-30 "AnkiWeb 동기화로 충분, 실제로 안 쓴다"는 근거로 세 서비스를 함께 철거했다.
-# v2 (PR #1307, #1306 / plan 030 — 당시 결정 기록): 철거 결정 중 **AnkiConnect 부분만** 되돌린다.
+# v2 (PR #1307, #1306 — 당시 결정 기록): 철거 결정 중 **AnkiConnect 부분만** 되돌린다.
 #   - 근거: 여러 기기의 AI 클라이언트(ChatGPT Chat은 클라우드 전용)가 카드를 다루려면
 #     Mac이 꺼져도 살아 있는 AnkiConnect 호스트가 필요하다. 동기화 자체는 공식 AnkiWeb으로
 #     충분하다는 v1의 판단은 유지하므로 자체 sync server는 복원하지 않는다.
@@ -24,13 +24,12 @@
 #     autoSync True→False (Anki의 열고/닫을 때 GUI sync 경로를 끄고 헬퍼 애드온만 sync한다).
 #     — v2 당시 numBackups·autoSync는 프로필 최초 생성 시 prefs21.db에 쓰는 값이었다(prefsBootstrap 가드 참조);
 #     tailscale-wait 미복원 (v1은 tailnet IP 바인딩 때문에 필요했고 loopback 전용인 지금은 근거가 없다).
-#   - 잔여 위험(plan 030 결정 1·3, DA 확인): loopback은 이 호스트에서 격리가 아니다 — --network=host 컨테이너(uptime-kuma)와
+#   - 당시 잔여 위험: loopback은 이 호스트에서 격리가 아니다 — --network=host 컨테이너(uptime-kuma)와
 #     모든 로컬 계정이 같은 127.0.0.1에 닿으므로 무인증 AnkiConnect의 파괴 액션(deleteNotes 등)의 접근 주체는 "MiniPC에서
 #     코드를 실행할 수 있는 모든 것"이고, 손상은 15분 타이머로 AnkiWeb 정본에 확정된다. 완화: sync 스크립트의 급감 게이트
 #     (직전 성공 대비 노트·revlog가 syncGuardMinRetainPct 미만이면 병합 중단·알림) + 일일 .colpkg 백업. PrivateNetwork는
-#     AnkiWeb egress가 필요해 불가. API 키를 파일에서 읽는 애드온 패치·전용 네임스페이스는 PR 2(MCP 서비스 유저·그룹,
-#     결정 15)와 함께 재검토한다.
-# v3 (PR 2b): runtime-only LoadCredential 키로 v2의 무인증 잔여 위험을 해소한다.
+#     AnkiWeb egress가 필요해 불가. 이후 인증과 서비스 유저 분리로 접근 경계를 보강했다(PR #1315).
+# v3 (PR #1315): runtime-only LoadCredential 키로 v2의 무인증 잔여 위험을 해소한다.
 #   read/operation/maintenance/schema 역할을 분리하고 HTTP 원시 쓰기를 차단한다.
 #   변경은 helper lock·작업 원장·복구점을 거친다. 구조 변경/Upload는 root 일회 승인으로만
 #   수행하며 일반 sync의 급감 게이트를 유지한다. Anki 본체 derivation은 변경하지 않는다.
@@ -257,7 +256,7 @@ in
 
     systemd.tmpfiles.rules = [
       "d ${stateRoot} 0750 ${user} ${user} -"
-      # 결정 15: sync 상태 사본 게시판 — 다른 유저(anki-mcp)가 그룹으로 읽는다. 컬렉션 디렉터리(0700)는 열지 않는다
+      # sync 상태 사본 게시판 — 다른 유저(anki-mcp)가 그룹으로 읽는다. 컬렉션 디렉터리(0700)는 열지 않는다
       "d ${constants.paths.ankiHostStatusRun} 0750 ${user} ${user} -"
     ]
     ++ lib.concatMap (name: [

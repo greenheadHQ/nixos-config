@@ -1,7 +1,7 @@
-"""\"지금 동기화\" — 결정 13·15.
+"""\"지금 동기화\" — sync 유닛 실행과 상태 사본 조회.
 
 헬퍼 /sync를 직접 부르지 않고 `anki-host-sync-<instance>.service`를 트리거한다(polkit이 이 유저에게 start만 허용).
-결과는 sync 스크립트가 /run 게시판에 남기는 상태 사본(결정 15)에서 읽는다. 상태 파일만으로는 "실행 중"과
+결과는 sync 스크립트가 /run 게시판에 남기는 상태 사본에서 읽는다. 상태 파일만으로는 "실행 중"과
 "죽은 흔적"을 구분할 수 없으므로 `systemctl show -p ActiveState,InvocationID`로 유닛을 실측해 대조한다:
 
   - 유닛 active + InvocationID == runId + result running → 이미 진행 중. 새 회차는 생기지 않는다(systemd가 진행

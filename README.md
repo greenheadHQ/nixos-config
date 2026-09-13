@@ -53,9 +53,7 @@ hosts/            # 호스트별 하드웨어 설정 (disko, WoL)
 secrets/          # agenix 암호화 시크릿 (.age)
 scripts/          # add-host.sh, fix-fod-hashes.sh, ai/ (훅·스킬 검증), secrets/ (age·1P 헬퍼)
 tests/            # 러너(run-all-tests.sh 등) + suites/ + lib/ + fixtures/
-plans/            # improve 스킬 실행 plan + 상태표
-docs/             # 시행착오 기록, archive/
-.claude/          # 로컬(프로젝트 스코프) 스킬 + plan buffer
+.claude/          # 로컬(프로젝트 스코프) 스킬; 임시 plan buffer는 Git 추적 제외
 ```
 
 ### 홈서버 서비스
@@ -89,7 +87,7 @@ Anki 호스트·MCP의 변경 확인, 동기화, 복구점, 승인 Upload는 [�
 
 ## 에이전트 환경
 
-[CONTEXT.md](./CONTEXT.md)는 이 환경의 용어집이다. 스킬 정리의 조사 근거와 합의는 [하네스 감사 기록](./.claude/research/2026-09-13-agent-skills-harness-audit.md)에 남긴다.
+[CONTEXT.md](./CONTEXT.md)는 이 환경의 용어집이다. 계획·조사·검증 결과와 결정 이력은 [GitHub 이슈](https://github.com/greenheadHQ/nixos-config/issues)와 [PR](https://github.com/greenheadHQ/nixos-config/pulls)에 남기고, 현재 운영에 필요한 설명은 README·운영 스킬·코드 주석에서 관리한다.
 
 ## 검증 / 훅
 

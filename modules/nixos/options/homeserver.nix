@@ -380,6 +380,6 @@
     ../programs/claude-remote-control.nix # Claude Code RC bridge version-drift 감시
     ../programs/private-job-runner # generic private job runner (작업 정의는 기기 로컬)
     ../programs/anki-host # headless Anki 인스턴스 + AnkiWeb 동기화·알림·백업 (#1306)
-    ../programs/anki-mcp # 원격 MCP 서버 + OAuth + Cloudflare Tunnel (#1306, plan 030 PR 2a)
+    ../programs/anki-mcp # 원격 MCP 서버 + OAuth + Cloudflare Tunnel (#1306)
   ];
 }

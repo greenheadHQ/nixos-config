@@ -130,7 +130,7 @@ let
         check "HTTP ''${URL} = ''${EXPECTED_CODE} (got ''${HTTP_CODE})" "$RESULT"
       done
 
-      # ─── 1c. 승인 배선 — Caddy 443 보존, 이전 8443 제거, 모든 Funnel 비활성 (STOP 6) ───
+      # ─── 1c. 승인 배선 — Caddy 443 보존, 이전 8443 제거, 모든 Funnel 비활성 ───
       # 시작 뒤 수동 조작으로 다른 포트가 공개되거나 443을 가로채는 이탈도 매일 검출한다.
       if [ -n "$APPROVAL_FQDN" ]; then
         SERVE_STATUS=$(tailscale serve status --json 2>/dev/null || true)

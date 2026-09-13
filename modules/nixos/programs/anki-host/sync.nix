@@ -5,8 +5,8 @@
 # 헬퍼 애드온이 API를 직접 호출해 결과 코드를 돌려주고, 전후 스냅샷 차이로 "다른 기기의 학습이
 # 내려왔는지"를 판정해 알림(b)을 보낸다. full sync 요구는 자동 결정하지 않는다 — 빈 컬렉션이면
 # 부트스트랩 유닛을 운영자가 명시 실행할 때까지 조용히 대기하고, 비어 있지 않으면 알림(c)만 보낸다.
-# sync의 운영 계층(상태 파일·알림·결과 분류)은 anki-host-sync 스크립트가 단일 소유한다 — PR 2의
-# "지금 동기화"도 헬퍼를 직접 부르지 않고 이 서비스를 트리거한다 (plan 030 결정 13).
+# sync의 운영 계층(상태 파일·알림·결과 분류)은 anki-host-sync 스크립트가 단일 소유한다 — MCP의
+# "지금 동기화"도 헬퍼를 직접 부르지 않고 이 서비스를 트리거한다.
 # 헬퍼 env·Pushover 시크릿·스크립트 결합은 backup.nix와 helper-script.nix를 공유한다.
 {
   config,
@@ -65,7 +65,7 @@ let
       HELPER_PORT = toString inst.helperPort;
       STATE_DIR = "${stateRoot}/${name}";
       INSTANCE = name;
-      STATUS_RUN_DIR = constants.paths.ankiHostStatusRun; # 상태 사본 게시판 (결정 15)
+      STATUS_RUN_DIR = constants.paths.ankiHostStatusRun; # 상태 사본 게시판
     };
 
     serviceConfig = {
@@ -103,7 +103,7 @@ let
     );
 
   # 첫 부트스트랩 — 로컬이 비어 있을 때만 AnkiWeb 컬렉션을 내려받는다. 타이머에 걸지 않으며
-  # 운영자가 자격 투입 후 `systemctl start anki-host-sync-<name>-bootstrap`으로 1회 실행한다 (plan 030 Step 15).
+  # 운영자가 자격 투입 후 `systemctl start anki-host-sync-<name>-bootstrap`으로 1회 실행한다.
   mkBootstrapService =
     name: inst:
     lib.nameValuePair "anki-host-sync-${name}-bootstrap" (

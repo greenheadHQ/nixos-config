@@ -583,6 +583,8 @@ class ManifestDriftTests(unittest.TestCase):
 
     hermetic fixture는 매니페스트를 사실로 가정하므로, 매니페스트 자체가 macOS 갱신으로
     낡아지는 축은 여기서만 관측된다. darwin 호스트에서만 실행하고 그 외에서는 skip한다.
+    macOS의 /usr/bin/ssh 또는 매니페스트를 갱신하면 이 그룹을 Mac에서 직접 실행한다.
+    Linux CI의 통과는 이 실측을 대신하지 않는다.
     """
 
     def require_system_ssh(self) -> None:
@@ -699,7 +701,8 @@ class ManifestDriftTests(unittest.TestCase):
             "제거하거나, 계속 받아야 하면 이 테스트의 LEGACY_MANIFEST_ONLY에 근거와 함께 넣는다).\n"
             "  2. 같은 매니페스트의 verifiedOn을 현재 `sw_vers -buildVersion`과 "
             "`/usr/bin/ssh -V` 값으로 갱신한다.\n"
-            "  3. plans/029-headless-ssh-dx-policy.md의 매니페스트 갱신 트리거 문단을 확인한다.\n"
+            "  3. Mac에서 `python3 tests/headless-ssh-dispatcher-tests.py ManifestDriftTests`로 "
+            "실제 /usr/bin/ssh와 다시 대조한다.\n"
         )
 
 

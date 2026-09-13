@@ -60,7 +60,7 @@ in
   # 시스템 하드웨어 모니터링용 Pushover credentials (smartd, 향후 온도 경고 등)
   "pushover-system-monitor.age".publicKeys = minipcOnly;
 
-  # headless Anki (#1306, plan 030) — 값은 운영자가 생성한다. 저장소의 초기 파일은 빈 값 placeholder이며
+  # headless Anki (#1306) — 값은 운영자가 생성한다. 저장소의 초기 파일은 빈 값 placeholder이며
   # anki-ankiweb: ANKIWEB_USERNAME= / ANKIWEB_PASSWORD= (헬퍼 애드온이 anki 프로세스 안에서 읽어 로그인)
   # pushover-anki: PUSHOVER_TOKEN= / PUSHOVER_USER= (동기화·백업 알림 전용 앱)
   "anki-ankiweb.age".publicKeys = minipcOnly;

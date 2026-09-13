@@ -185,10 +185,10 @@ def _read_credentials() -> tuple[str, str] | None:
 def _ensure_login() -> dict[str, Any]:
     """syncKey가 없을 때만 AnkiWeb에 로그인해 프로필에 저장한다. 비밀번호는 메모리에만 머문다.
 
-    자격 파일을 나중에 채웠다면 서비스 재시작으로 이 훅을 다시 태운다 (계획 Step 14).
+    자격 파일을 나중에 채웠다면 서비스 재시작으로 이 훅을 다시 태운다.
     """
     _require_col()
-    # 계정 식별자(username)는 _state에 두지 않는다 — /status·/status/full은 무인증 응답이다 (plan 030 결정 10)
+    # 계정 식별자(username)는 _state에 두지 않는다 — /status·/status/full은 무인증 응답이다
     pm = aqt.mw.pm
     if pm.sync_auth() is not None:
         return {"status": "already-logged-in"}
@@ -330,7 +330,7 @@ def _sync(mode: str) -> dict[str, Any]:
 
     normal: 병합 가능한 변경만 동기화하고 full sync가 요구되면 아무것도 하지 않는다 (타이머·MCP 기본).
     allow-download-if-empty: 로컬이 비어 있을 때(노트 0·복습 기록 0)만 서버본을 내려받는다 (첫 부트스트랩 유닛).
-    서버를 덮어쓰는 방향은 이 애드온에 없다 — 복구점 복원은 Mac GUI 경로다(plan 030 Maintenance notes).
+    서버를 덮어쓰는 방향은 이 애드온에 없다 — 복구점 복원은 Mac GUI 경로다.
     급감 게이트: 상태 파일의 직전 성공 스냅샷에서 계산한 하한(_guard_thresholds)이 하나라도 0보다 크면 로컬이 그 아래일 때
     sync_collection을 부르지 않는다 — 호출 전 판정이라 서버에 아무것도 올라가지 않는다. 빈 컬렉션도 예외가 아니다: AnkiConnect로
     전부 지운 컬렉션은 full sync 요구 없이 증분 sync로 삭제가 AnkiWeb에 전파되므로 비었다는 이유로 게이트를 건너뛰면 안 된다.
@@ -486,7 +486,7 @@ def _status_full() -> dict[str, Any]:
         "anki_version": anki_version,
         "profile": pm.name,
         "logged_in": pm.sync_auth() is not None,
-        # 계정 식별자(syncUser)는 상태 응답에 싣지 않는다 — /status와 같은 경계 판정 (plan 결정 10)
+        # 계정 식별자(syncUser)는 상태 응답에 싣지 않는다 — /status와 같은 경계 판정
         "media_syncing_enabled": pm.media_syncing_enabled(),
         "login": _state["login"],
         "last_sync": _state["last_sync"],

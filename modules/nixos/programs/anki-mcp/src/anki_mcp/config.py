@@ -38,7 +38,7 @@ class Settings:
     anki_connect_url: str
     helper_url: str
     state_dir: str  # OAuth 영속 상태 (StateDirectory, 0700)
-    sync_status_file: str  # sync 스크립트가 남기는 상태 사본 (결정 15 — /run 게시판)
+    sync_status_file: str  # sync 스크립트가 /run 게시판에 남기는 상태 사본
     sync_unit: str  # "지금 동기화"가 트리거하는 systemd 유닛 (polkit이 start만 허용)
     passphrase_file: str  # LoadCredential 경로 — ANKI_MCP_APPROVAL_PASSPHRASE=... 한 줄
     access_ttl: int

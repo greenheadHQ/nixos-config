@@ -77,8 +77,8 @@ RETIRED_REF_SCAN_ROOTS=(
 )
 # 스캔 범위 안이지만 정리 대상이 아닌 "라인" (형식: <스킬명>|<REPO_ROOT 상대 경로>|<라인 부분문자열>).
 # 제거 이력을 남기는 것이 의도인 서술만 등록한다. 같은 파일의 다른 라인은 면제되지 않으며,
-# 아무 라인에도 걸리지 않는 항목은 stale로 보고된다. docs/archive/**, plans/**, .claude/plans/**는
-# 스캔 루트 밖이라 구조적으로 제외되므로 여기 등록하지 않는다.
+# 아무 라인에도 걸리지 않는 항목은 stale로 보고된다. Git에서 제외한 로컬 작업 기록은
+# 이 스캔의 등록 대상이 아니다.
 # 스킬명은 RETIRED_SHARED_SKILLS와 같은 이유로 분할해 둔다 (이 파일도 스캔 범위 안이다).
 # shellcheck disable=SC2034  # sourced lib(scripts/ai/lib/host-state-checks.sh)가 소비하는 전역
 RETIRED_REF_SCAN_EXCLUDE=()
