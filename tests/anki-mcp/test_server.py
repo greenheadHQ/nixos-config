@@ -14,6 +14,7 @@ import httpx
 import pytest
 from starlette.routing import Route
 
+from anki_mcp.authoring import AUTHORING_GUIDANCE
 from anki_mcp.config import Settings
 from anki_mcp.server import build
 
@@ -176,14 +177,29 @@ async def test_split_apps_metadata_and_full_oauth_flow(tmp_path, auth_method):
             access = tok.json()["access_token"]
             assert tok.json()["token_type"].lower() == "bearer" and tok.json().get("refresh_token")
 
-            # 6. Bearer로 tools/list (stateless streamable HTTP) — 도구 목록에 조회·추가 도구가 있고 삭제는 없다
+            # 6. 초기화와 도구 설명 모두 작성 지침을 전달한다. 클라이언트가 initialize 지침을 생략해도
+            #    내용 쓰기 도구의 metadata에서 읽을 수 있으며, 별도 새 도구/필수 인자는 필요 없다.
             rpc = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
             hdrs = {**mcp_headers, "authorization": f"Bearer {access}",
                     "accept": "application/json, text/event-stream", "content-type": "application/json"}
+            initialized = await fh.post("/mcp", headers=hdrs, json={
+                "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
+                    "protocolVersion": "2025-11-25", "capabilities": {},
+                    "clientInfo": {"name": "authoring-client", "version": "1"},
+                },
+            })
+            assert initialized.status_code == 200, initialized.text
+            assert AUTHORING_GUIDANCE in initialized.json()["result"]["instructions"]
             r = await fh.post("/mcp", headers=hdrs, json=rpc)
             assert r.status_code == 200, r.text
-            names = {t["name"] for t in r.json()["result"]["tools"]}
+            listed = {t["name"]: t for t in r.json()["result"]["tools"]}
+            names = set(listed)
             assert {"anki_find_notes", "anki_add_notes", "anki_sync_now", "anki_delete_notes", "anki_operation_status"} <= names
+            for name in ("anki_add_notes", "anki_update_note_fields"):
+                assert AUTHORING_GUIDANCE in listed[name]["description"]
+            assert AUTHORING_GUIDANCE not in listed["anki_find_notes"]["description"]
+            assert listed["anki_add_notes"]["inputSchema"]["required"] == ["notes"]
+            assert listed["anki_update_note_fields"]["inputSchema"]["required"] == ["note_id", "fields"]
 
             # 7. Host·Origin의 포트도 일치해야 한다. 다른 포트나 포트 생략은 토큰이 있어도 거부한다.
             for wrong_host in ("evil.example", FQDN, f"{FQDN}:443", APPROVAL_HOST):
