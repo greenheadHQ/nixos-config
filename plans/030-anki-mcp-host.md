@@ -46,7 +46,7 @@ ChatGPT 웹·iPhone, Codex, Claude의 인증된 호출과 신규 이미지·음�
 - **Depends on**: 024 (soft — AnkiWeb 계정·서버 컬렉션이 존재해야 Download 가능)
 - **Category**: feature (철거 결정 #863의 AnkiConnect 부분 되돌림 — CIR 필수)
 - **Planned at**: commit `74a9d158`, 2026-09-06
-- **Execution**: DONE (2026-09-13) — 기존 배포·실기기·장애 검증에 iPhone 직접 카드 추가·조회·기기 반영과 시험 데이터 정리를 추가 확인.
+- **Execution**: DONE (2026-09-13) — 기존 배포·실기기·장애 검증에 iPhone 직접 카드 추가·독립 서버 조회·기기 반영과 시험 데이터 정리를 추가 확인.
 - **검증 정본**: [2026-09-11 검증 기록](anki-mcp-evidence/2026-09-11-validation.md), [2026-09-13 iPhone 추가 검증](anki-mcp-evidence/2026-09-13-iphone-add.md). 클라이언트 화면, 작업 영수증, 서버 전후 동기화와 실제 기기 수신을 별도 증거로 대조한다.
 - **잔여·보존 범위**: `lab`은 운영자 결정으로 유지한다. 개인 학습 규칙·AI 카드 관리 스킬·다중 사용자/공개 제품화는 별도 범위다.
 
@@ -307,7 +307,7 @@ ChatGPT 웹·iPhone, Codex, Claude의 인증된 호출과 신규 이미지·음�
 
 - PR 1·PR 2 머지, MiniPC `nrs` 적용, `anki-host-main`·`anki-mcp` active, 타이머 정상.
 - 운영 프로필 카운트가 Mac 최신 백업과 일치하고, Mac·iPhone 동기화가 정상(변경 없음 또는 정상 병합).
-- iPhone ChatGPT Chat에서 합성 카드 추가(`anki_add_notes`)·조회를 직접 호출하고, 서버 영수증·독립 조회·사전/사후 normal sync와 Pushover (a) 수신·AnkiMobile 표시를 대조한다. iPhone 직접 수정의 검증 근거도 보존한다.
+- iPhone ChatGPT Chat에서 `anki_create_deck`과 합성 카드 추가(`anki_add_notes`)를 직접 호출하고, 별도 서버 조회·작업 영수증·사전/사후 normal sync와 Pushover (a) 수신·AnkiMobile 표시를 대조한다. iPhone 직접 수정의 검증 근거도 보존한다.
   2026-09-13 사용자는 웹 카드 추가가 의도한 사용 경로가 아니며 iPhone 시험이 필수라고 명확히 했다. 웹 추가와 iPhone 수정의 조합으로 추가 검증을 대체했던 판단을 정정한다.
   웹 카드 추가는 이번 완료 조건에 포함하지 않으며, [실제 iPhone 추가·정리 근거](anki-mcp-evidence/2026-09-13-iphone-add.md)로 완료를 판단한다.
 - 이슈 #1306 체크리스트 전부 체크, `plans/README.md` DONE, anki-study #3 완료 검증 갱신.
