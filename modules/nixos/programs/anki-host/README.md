@@ -17,9 +17,11 @@
 AnkiMobile의 `anki://x-callback-url/search?query=...` 링크는 검색 화면을 여는 것이며,
 Desktop 호환이나 iPhone의 실제 탭·복습 복귀 동작은 별도로 확인한다.
 
-배포 후 인증된 `initialize`·`tools/list` 응답에서 지침 전달을 확인하고, 클라이언트가 새 설명을 받았는지 확인한다.
-이미 열린 세션의 metadata 갱신을 가정하지 않으며, 필요하면 새 대화에서 검증한다. 동작하는 연결을 먼저 삭제·재등록하지 않는다.
-전달 검사는 LLM 준수나 실기기 동작 검증을 대신하지 않는다.
+배포 후 인증된 `initialize`·`tools/list` 응답에서 지침을 확인한다. 서버 응답만으로 ChatGPT 적용 완료라고 판단하지 않는다.
+ChatGPT 개발자 모드 연결은 연결 설정에서 **새로 고침(Refresh)**을 실행하고 변경된 도구 설명을 확인한다.
+게시된 플러그인은 검토된 metadata 스냅샷을 사용하므로 서버 재스캔 → 새 버전 제출 → 승인된 버전 게시가 필요하다 ([공식 절차](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata)).
+갱신 후 새 대화에서 변경된 지침을 검증하고, iPhone의 실제 작성·링크 동작은 실기기에서 확인한다.
+동작하는 연결을 먼저 삭제·재등록하지 않는다. 지침 전달 확인은 LLM 준수나 실기기 동작 검증을 대신하지 않는다.
 
 ## 변경 요청과 결과 확인
 
