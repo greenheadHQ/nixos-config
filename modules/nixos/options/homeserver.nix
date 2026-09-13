@@ -195,56 +195,6 @@
       };
     };
 
-    daWeeklyReport = {
-      enable = lib.mkEnableOption "DA session weekly report timer";
-      retryWindow = lib.mkOption {
-        type = lib.types.submodule {
-          options = {
-            weekday = lib.mkOption {
-              type = lib.types.enum [
-                "Mon"
-                "Tue"
-                "Wed"
-                "Thu"
-                "Fri"
-                "Sat"
-                "Sun"
-              ];
-              default = "Mon";
-              description = "Weekday for weekly DA report generation attempts";
-            };
-            startHour = lib.mkOption {
-              type = lib.types.ints.between 0 23;
-              default = 9;
-              description = "First local hour included in the retry window";
-            };
-            deadlineHour = lib.mkOption {
-              type = lib.types.ints.between 0 23;
-              default = 14;
-              description = "Local hour at which the retry window finalizes partial publication";
-            };
-            timezone = lib.mkOption {
-              type = lib.types.str;
-              default = "Asia/Seoul";
-              description = "Timezone used by the weekly DA report retry window";
-            };
-          };
-        };
-        default = { };
-        description = "Structured retry window used to derive both OnCalendar and the WINDOW_* service environment";
-      };
-      reminderCalendar = lib.mkOption {
-        type = lib.types.str;
-        default = "Sun *-*-* 22:00:00 Asia/Seoul";
-        description = "OnCalendar time for the pre-report Pushover reminder";
-      };
-      trackingIssueNumber = lib.mkOption {
-        type = lib.types.nullOr lib.types.ints.positive;
-        default = null;
-        description = "GitHub issue number to comment on; null skips GitHub publishing";
-      };
-    };
-
     interactionLimitsRenewal = {
       enable = lib.mkEnableOption "GitHub interaction limits auto-renewal timer";
       repo = lib.mkOption {
@@ -274,7 +224,7 @@
         readOnly = true;
         description = ''
           opnix가 gh PAT를 materialize하는 경로 (SoT — 값은 opnix/default.nix가 할당).
-          소비자(da-weekly-report, interaction-limits-renewal 등)는 경로를 재정의하지 말고
+          소비자(interaction-limits-renewal, private-job-runner 등)는 경로를 재정의하지 말고
           config.homeserver.opnix.ghPatPath를 참조한다.
         '';
       };
@@ -423,7 +373,6 @@
     ../programs/karakeep-update # Karakeep 버전 체크 + 업데이트 알림
     ../programs/caddy.nix # HTTPS 리버스 프록시
     ../programs/smoke-test.nix # 런타임 스모크 테스트 (헬스체크 + 백업 신선도)
-    ../programs/da-weekly-report # DA 세션 주간 리포트 timer
     ../programs/interaction-limits-renewal # GitHub interaction limits 만료 전 자동 갱신
     ../programs/opnix # 1Password Service Account 시크릿 materialization
     ../programs/opnix-rotate.nix # SA token 90일 rotation 알림 (opnix.enable 게이팅)

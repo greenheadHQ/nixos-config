@@ -45,7 +45,7 @@ in
         IdentitiesOnly = "yes";
         ControlMaster = "auto";
         ControlPath = "~/.ssh/cm-%h-%p-%r";
-        # ControlPersist 600 유지 — #710 analyzing-da-sessions의 ControlMaster 다중화(K=8 worker pool)가 의존.
+        # ControlPersist 600 유지 — 반복 SSH 호출에서 인증과 연결을 재사용한다.
         # 영구(yes)는 무인 파이프 호출에서 master가 stdout을 점유해 hang을 유발하므로, 600으로 master 자동 종료를 보장한다.
         ControlPersist = "600";
       };

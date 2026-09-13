@@ -2,7 +2,7 @@
 
 Codex CLI의 알려진 제한사항, 미해결 이슈, 실행 실패 대응 절차를 통합 관리한다.
 이 문서는 `codex exec` / `codex exec review` subprocess 경로만 다룬다.
-Codex 세션에서 `spawn_agent` / `wait_agent`(explicit `close_agent`가 광고되는 표면은 지원 종료 lifecycle로 `unknown` 분류 — [`run-da/references/runtime-mapping.md`](../../run-da/references/runtime-mapping.md#codex-native-lifecycle-capability-profile) SSOT)로 오케스트레이션하는 native subagent 경로에는
+Codex 세션의 native subagent 경로에는
 여기의 stdin 경쟁, heredoc hang, 결과 파일 회수 제약을 기본 가정으로 적용하지 않는다.
 
 ## 0. 공통 진단
@@ -569,7 +569,7 @@ cat "$TDIR/prompt.md" | env CODEX_PROGRAMMATIC=1 codex-exec-supervised \
 
 근본 원인: cleanup glob이 세션을 구분하지 않아, 다른 워크트리/세션의 임시 파일까지 삭제.
 
-해결: run-da/references/runtime-mapping.md의 `codex exec 경로 위생 규칙` 세션 네임스페이스(`$_DA_SID`) 규칙에 따라 `$CODEX_COMPANION_SESSION_ID` 앞 8자 (또는 `$PWD` 해시 fallback)를 모든 임시 디렉토리 prefix에 포함한다.
+해결: 호출별 `mktemp -d`로 독립 임시 디렉터리를 만들고, 실제 경로를 프롬프트와 수집기에 전달한다.
 
 참고: Codex 공식 플러그인은 Session ID 기반 필터링(`state.jobs.filter(job => job.sessionId === sessionId)`)으로 동일 문제를 해결한다 (glob 대신 명시적 참조 추적).
 
@@ -673,7 +673,7 @@ wrapper postcondition (opt-in — issue #1228): `CODEX_EXEC_REQUIRE_NONEMPTY=<�
 
 Nix wiring ([`modules/shared/programs/shell/default.nix`](../../../../../shell/default.nix)): home.file로 `~/.local/bin/codex-exec-supervised`를 `pkgs.writeShellScript` wrapper에 link한다. wrapper가 `CODEX_EXEC_TIMEOUT_BIN`/`CODEX_EXEC_SETSID_BIN`에 `pkgs.coreutils`/`pkgs.util-linux`의 absolute store path를 export한 뒤 raw script(`modules/shared/scripts/codex-exec-supervised.sh`)를 exec한다. wrapper는 PATH를 변경하지 않으므로 사용자 PATH의 BSD coreutils가 보존된다 (mac `stat -f %m` 같은 BSD 호출 의미 보존).
 
-오케스트레이션 vs 자문 (Layer 2 — `-C scratch` 추가): consult 전용 호출(외부 LLM에 옵션을 자문하는 비-repo 작업)은 Layer 1 위에 `-C <non-repo-scratch-dir>` + `--skip-git-repo-check`를 추가한다. reviewer/auditor (run-da)는 repo cwd가 필요하므로 Layer 2를 적용하지 않는다.
+오케스트레이션 vs 자문 (Layer 2 — `-C scratch` 추가): consult 전용 호출(외부 LLM에 옵션을 자문하는 비-repo 작업)은 Layer 1 위에 `-C <non-repo-scratch-dir>` + `--skip-git-repo-check`를 추가한다. 코드 reviewer/auditor는 repo cwd가 필요하므로 Layer 2를 적용하지 않는다.
 
 variant legend (issue #593 PoC 8 variant + wrapper 적용 분류):
 
@@ -848,7 +848,7 @@ done
 아닌 별개 실패이므로 `$TMP/$eff.err`를 확인한다.
 
 대안: 비대화형에서 spawn 진행을 프로그램적으로 관측·판정해야 하면 공개 `--json`에 의존하지 말고 persisted
-rollout을 파싱한다. 또는 세션 내 오케스트레이션 대신, [`run-da`의 fallback 계약](../../run-da/references/hardening-contract.md)에 따라
+rollout을 파싱한다. 별도 프로세스 실행이 필요하면 현재 세션의 위임·권한 경계에 따라
 사용자 승인 후 `codex-exec-supervised --sandbox read-only`로 별도 `codex exec` 프로세스를 독립 실행해 관측 가능한 병렬화를 쓴다.
 Direct Codex가 라우팅·승인·쓰기 경계를 우회하는 raw 또는 임의 병렬 `codex exec` 실행을 해서는 안 된다.
 

@@ -12,7 +12,7 @@ let
   darwinScriptsDir = ../../../darwin/scripts;
   sharedScriptsDir = ../../../shared/scripts;
 
-  # #872 후속(run-da 반영): gh 무인 인증을 PATH 실행 파일로 제공한다.
+  # #872 후속: gh 무인 인증을 PATH 실행 파일로 제공한다.
   # gh wrapper가 interactive .zshrc(initContent) 함수로만 정의되면 non-interactive 셸
   # (Claude Code Bash tool의 shell snapshot 등)에 적용되지 않아 gh가 biometric/미인증으로 빠졌다.
   # gh-auth는 PATH 실행 파일이지만 `gh` 라우팅은 shellAliases gh="gh-auth"에 의존한다 — 이는

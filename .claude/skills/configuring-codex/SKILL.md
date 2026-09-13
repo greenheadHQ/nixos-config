@@ -42,10 +42,7 @@ Codex CLI 호환 레이어와 프로젝트 스킬 발견 문제를 다룹니다.
 | Claude Code | `codex exec` subprocess. `using-codex-exec`은 이 경로를 위한 adapter 문서다. |
 | headless | `codex exec` subprocess를 foreground serial로 실행한다. |
 
-세션별 binding은 [runtime mapping](../../../modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md)이 정본이다.
-Direct Codex에서 native delegation이 거부되었을 때의 별도 승인 fallback은
-[hardening contract](../../../modules/shared/programs/claude/files/skills/run-da/references/hardening-contract.md)를 참조하며,
-이 문서에서 fallback 설계를 복제하지 않는다.
+위임 권한과 실행 경계는 프로젝트의 [AGENTS.override.md](../../../AGENTS.override.md)를 따른다. 현재 세션이 제공하는 도구와 동시 실행 상한을 확인한다.
 
 Shared skill 노출 정책의 SoT는
 [`default.nix`](../../../modules/shared/programs/codex/default.nix)의 `exposedCodexSkills`와
@@ -63,7 +60,7 @@ codex 0.106+에서 default (code) collaboration mode에서도 `request_user_inpu
 
 검증:
 - codex 세션 default mode에서 `use request_user_input to ask me ...`로 invoke 시 tool call이 실제 발생하는지 (plain-text 응답이 아닌지) 관찰.
-- 0.106 release 댓글에 따르면 default mode 모델은 "make assumptions and only stop if blocked" 정책으로 자동 호출하지 않으므로, 인터뷰 기반 스킬 (`run-da`) 본문에 명시적 사용 지시가 있어야 한다.
+- 0.106 release 댓글에 따르면 default mode 모델은 "make assumptions and only stop if blocked" 정책으로 자동 호출하지 않으므로, 인터뷰 기반 스킬 본문에 명시적 사용 지시가 있어야 한다.
 - 옵션 개수/Recommended 라벨은 schema/server enforcement가 아니라 codex tool description의 LLM convention이다 (codex 0.128 main fact-check 기준 — `tools/src/request_user_input_tool.rs`의 JSON Schema description 문자열에 "2-3 choices", "recommended option first" 가이드 존재). PR openai/codex#12735는 mode 가용성만 확장하고 schema는 미변경. prompt template 차원에서는 mode별 차이 있음 (`plan.md`만 "2-4 options + recommended default" 명시).
 
 ## 핵심 파일
@@ -227,8 +224,7 @@ codex -a never exec "Answer YES or NO only: Is a skill named 'configuring-codex'
 
 ## 관련 계약
 
-- 세션별 실행 binding: [runtime mapping](../../../modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md)
-- Direct Codex 권한 및 fallback 경계: [hardening contract](../../../modules/shared/programs/claude/files/skills/run-da/references/hardening-contract.md)
+- Direct Codex 위임 권한과 실행 경계: [AGENTS.override.md](../../../AGENTS.override.md)
 
 ## 레퍼런스
 

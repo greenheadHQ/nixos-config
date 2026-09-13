@@ -14,8 +14,7 @@
 - Direct Codex의 기본 fan-out은 native subagent다. `using-codex-exec`은
   자기 참조 방지를 위해 Direct Codex에 의도적으로 노출하지 않으며 직접 호출 대상이 아니다.
 - Claude Code는 `codex exec` subprocess, headless는 foreground serial subprocess 경로를 사용한다.
-  세션별 binding의 정본은 [runtime mapping](../../../../modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md),
-  Direct Codex delegation fallback의 권한 계약은 [hardening contract](../../../../modules/shared/programs/claude/files/skills/run-da/references/hardening-contract.md)다.
+  현재 세션의 위임 권한과 실행 경계는 [AGENTS.override.md](../../../../AGENTS.override.md)를 따른다.
 - Shared skill 노출 정책의 SoT는 [`default.nix`](../../../../modules/shared/programs/codex/default.nix)의
   `exposedCodexSkills`와 `intentionallyNotExposed`다.
   [`verify-ai-compat.sh`](../../../../scripts/ai/verify-ai-compat.sh)는 이 정책과 project directory projection을

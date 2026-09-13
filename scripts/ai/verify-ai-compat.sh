@@ -42,14 +42,11 @@ fi
 # Nix SoT(default.nix)와 독립된 감사 오라클.
 # 두 리스트는 서로 교집합이 없어야 하며, shared 디렉토리의 모든 스킬이 둘 중 하나에 속해야 한다.
 EXPECTED_EXPOSED=(
-  analyzing-da-sessions
   create-issue
   create-pr
-  finding-unknowns
   finish-pr
   issuing-codex-pairing-code
   review-pr-feedback
-  run-da
   attaching-github-media
   write-handoff
 )
@@ -62,6 +59,9 @@ SHARED_EXPOSURE_EXCLUDE=(
 # Split retired names so the public stale-reference scan scope can stay
 # zero-match while this verifier still checks deployed residue.
 RETIRED_SHARED_SKILLS=(
+  "finding-""unknowns"
+  "run-""da"
+  "analyzing-da-""sessions"
   "using-gh""-attach"
   "codex-fan""-out"
   "plan-with""-questions"
@@ -81,10 +81,10 @@ RETIRED_REF_SCAN_ROOTS=(
 # 스캔 루트 밖이라 구조적으로 제외되므로 여기 등록하지 않는다.
 # 스킬명은 RETIRED_SHARED_SKILLS와 같은 이유로 분할해 둔다 (이 파일도 스캔 범위 안이다).
 # shellcheck disable=SC2034  # sourced lib(scripts/ai/lib/host-state-checks.sh)가 소비하는 전역
-RETIRED_REF_SCAN_EXCLUDE=(
-  "plan-with""-questions|modules/shared/programs/claude/files/skills/run-da/references/validation-paths.md|#810에서"
-)
+RETIRED_REF_SCAN_EXCLUDE=()
 RETIRED_EXECUTABLES=(
+  ".codex/scripts/fleiss-kappa.py"
+  ".claude/scripts/fleiss-kappa.py"
   ".local/bin/codex""-sync"
 )
 
@@ -103,24 +103,6 @@ warnings=0
 pass() { echo "  [OK] $1"; }
 fail() { echo "  [FAIL] $1" >&2; errors=$((errors + 1)); }
 warn() { echo "  [WARN] $1" >&2; warnings=$((warnings + 1)); }
-
-require_contract_text() {
-  local relpath="$1"
-  local needle="$2"
-  local desc="$3"
-  local path="$REPO_ROOT/$relpath"
-
-  if [ ! -f "$path" ]; then
-    fail "$desc 파일 없음: $relpath"
-    return
-  fi
-
-  if grep -Fq -- "$needle" "$path"; then
-    pass "$desc"
-  else
-    fail "$desc 누락: $relpath"
-  fi
-}
 
 in_list() {
   local needle="$1"; shift
@@ -401,182 +383,6 @@ else
 fi
 
 echo ""
-echo "=== Codex native fan-out routing contract ==="
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/run-da/references/hardening-contract.md" \
-  "## Skill-internal fan-out authorization" \
-  "hardening contract skill-internal fan-out authorization anchor"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/run-da/references/hardening-contract.md" \
-  'does not authorize `codex-exec-supervised` fallback' \
-  "hardening contract fallback non-authorization anchor"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/run-da/references/runtime-mapping.md" \
-  "hardening-contract.md#skill-internal-fan-out-authorization" \
-  "runtime mapping pointer to authorization contract"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/run-da/modes/audit.md" \
-  '$run-da audit' \
-  "run-da audit invocation anchor"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/run-da/modes/audit.md" \
-  "auditor bundle 범위" \
-  "run-da audit auditor bundle authorization scope"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/run-da/modes/audit.md" \
-  "explicit delegation" \
-  "run-da audit explicit delegation anchor"
-
-require_contract_text \
-  "modules/shared/programs/claude/files/skills/run-da/modes/audit.md" \
-  "hardening-contract.md#skill-internal-fan-out-authorization" \
-  "run-da audit hardening contract pointer"
-
-_run_da_protocol="$REPO_ROOT/modules/shared/programs/claude/files/skills/run-da/references/protocol.md"
-# require_contract_text는 -Fq 부분 일치라 "### R10"도 통과하므로 전체 줄 일치로 검증한다
-for _run_da_heading in '### R1' '### R2'; do
-  if grep -Fxq -- "$_run_da_heading" "$_run_da_protocol"; then
-    pass "run-da PR comment example ${_run_da_heading#\#\#\# } heading"
-  else
-    fail "run-da PR comment example ${_run_da_heading#\#\#\# } heading 누락: ${_run_da_protocol#"$REPO_ROOT"/}"
-  fi
-done
-if grep -Eiq '^### round [0-9]+' "$_run_da_protocol"; then
-  fail "run-da PR comment example pinning round counter 재도입: ${_run_da_protocol#"$REPO_ROOT"/}"
-else
-  pass "run-da PR comment example avoids pinning round counters"
-fi
-
-require_contract_text \
-  "AGENTS.override.md" \
-  '$run-da' \
-  "AGENTS.override mentions run-da"
-
-require_contract_text \
-  "AGENTS.override.md" \
-  "explicit delegation" \
-  "AGENTS.override explicit delegation anchor"
-
-require_contract_text \
-  "AGENTS.override.md" \
-  '`codex-exec-supervised` fallback' \
-  "AGENTS.override fallback anchor"
-
-require_contract_text \
-  "AGENTS.override.md" \
-  "별도 사용자 승인" \
-  "AGENTS.override separate approval anchor"
-
-echo ""
-echo "=== Codex CLI-default native capability probe ==="
-# #1098: run-da native fan-out 계약의 CLI-default surface를 실측 판정한다.
-# `codex debug prompt-input` stdout을 jq로 즉시 파이프해 developer 텍스트만 메모리
-# 변수로 유지한다 — raw prompt는 디스크에 저장하지 않고 stdout/로그에도 출력하지
-# 않으며, 최종 출력에는 정제된 tool 이름과 slot 숫자만 노출한다.
-# 오탐/스푸핑 방지: tool·slot anchor를 developer 메시지 전체 합본이 아니라 "단일
-# developer 메시지" 단위로 찾고, 두 anchor를 모두 포함하는 메시지가 정확히 하나일
-# 때만 그 메시지(collaboration block)를 채택한다 — project-local AGENTS 산문 등
-# 다른 메시지의 유사 문형이 tool/slot 판정에 섞이지 않게 한다. tool 존재 판정은
-# 그 block의 고정 열거 문형("Call `a`, `b`, ... only as direct tool calls")에서만,
-# slot은 root 포함이 명시된 전체 문형("There are N ... including you")에서 두 숫자가
-# 일치할 때만 인정한다. anchor 미식별(0개/복수)이면 추측하지 않고 unknown으로 fail.
-# 판별 축: lifecycle(explicit close 유무)과 batch-limit(slot 광고)을 분리 평가해
-# public 2-profile(current/unknown)로 도출한다 (#1098 target shape; legacy는 실사용
-# 0건으로 제거 — #1257. explicit close가 광고되는 과거 lifecycle 표면은 지원 종료
-# 표면이므로 unknown(fail-safe)으로 강등한다).
-# cancellation(중단 도구)은 profile 판별과 독립인 별도 capability로 보고만 한다
-# (runtime-mapping.md: 중단은 광고된 도구가 있을 때만, 없으면 conservative wait).
-# 이 판정은 surface_scope=cli-default 전용이며, active Desktop/다른 세션 표면의
-# 증명이 아니다 (각 세션은 자기 표면으로 재판별 — runtime-mapping.md capability profile).
-if command -v codex >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-  # pipefail 하에서 codex/jq 실패가 assignment exit로 보존된다 (`|| true` 금지 —
-  # 부분 출력이 성공으로 둔갑하는 것을 막는다). jq는 두 anchor를 모두 포함하는
-  # developer 메시지가 정확히 1개일 때만 그 텍스트를 반환하고, 아니면 빈 문자열.
-  if _cap_block="$(command codex debug prompt-input 'runtime capability probe' 2>/dev/null \
-    | jq -r '[.[] | select(.role == "developer") | ([.content[]?.text // empty] | join("\n")) | select(test("only as direct tool calls") and test("available concurrency slots"))] | if length == 1 then .[0] else "" end')"; then
-    if [ -z "$_cap_block" ]; then
-      fail "capability probe: collaboration block 식별 실패 (두 anchor를 모두 포함한 developer 메시지가 0개 또는 복수) — surface_scope=cli-default profile=unknown, native 표면을 확인할 수 없어 codex exec fallback 또는 serial(동시 1) fail-safe만 가능"
-    else
-      # tool 열거 anchor 문장에서만 backtick 토큰을 추출한다.
-      _cap_call_line="$(printf '%s' "$_cap_block" | grep -Eo 'Call [^.]*only as direct tool calls' | head -1 || true)"
-      _cap_tools=""
-      if [ -n "$_cap_call_line" ]; then
-        _cap_tools="$(printf '%s' "$_cap_call_line" | grep -Eo '`[a-z_]+`' | tr -d '`' | paste -sd, - || true)"
-      fi
-      # slot: 같은 block에서 root 포함 전체 문형만 인정, 두 숫자 일치를 요구한다.
-      # 상태 구분 — ok(N>=2) / no-child(N=1: 확인된 native fan-out 불가) / 빈 값(미확정).
-      _cap_slot_line="$(printf '%s' "$_cap_block" | grep -Eo 'There are [0-9]+ available concurrency slots, meaning that up to [0-9]+ agents can be active at once, including you' | head -1 || true)"
-      _cap_slots=""
-      _cap_slot_state="unknown"
-      if [ -n "$_cap_slot_line" ]; then
-        _cap_slot_total="$(printf '%s' "$_cap_slot_line" | grep -Eo '[0-9]+' | sed -n 1p || true)"
-        _cap_slot_active="$(printf '%s' "$_cap_slot_line" | grep -Eo '[0-9]+' | sed -n 2p || true)"
-        if [ -n "$_cap_slot_total" ] && [ "$_cap_slot_total" = "$_cap_slot_active" ]; then
-          if [ "$_cap_slot_total" -ge 2 ]; then
-            _cap_slots="$_cap_slot_total"
-            _cap_slot_state="ok"
-          else
-            _cap_slot_state="no-child"
-          fi
-        fi
-      fi
-      # lifecycle 축: spawn+wait 존재와 explicit close 유무만으로 판별한다.
-      _cap_lifecycle="unavailable"
-      case ",$_cap_tools," in
-        *,spawn_agent,*)
-          case ",$_cap_tools," in
-            *,wait_agent,*)
-              case ",$_cap_tools," in
-                *,close_agent,*) _cap_lifecycle="explicit-close" ;;
-                *) _cap_lifecycle="no-explicit-close" ;;
-              esac
-              ;;
-          esac
-          ;;
-      esac
-      # cancellation 축 (진단 보고 전용 — profile 판별에 미사용).
-      _cap_interrupt="no"
-      case ",$_cap_tools," in
-        *,interrupt_agent,*) _cap_interrupt="yes" ;;
-      esac
-      # 도출: lifecycle 미확정·slot 미확정이면 unknown. explicit close가 광고되는
-      # 표면은 지원 종료된 과거 lifecycle이므로 current로 오인하지 않고 unknown으로
-      # 강등한다 (legacy profile 제거 — #1257).
-      if [ "$_cap_lifecycle" = "unavailable" ] || [ "$_cap_slot_state" = "unknown" ] \
-        || [ "$_cap_lifecycle" = "explicit-close" ]; then
-        _cap_profile="unknown"
-      else
-        _cap_profile="current"
-      fi
-      if [ "$_cap_slot_state" = "no-child" ]; then
-        fail "capability probe: surface_scope=cli-default profile=$_cap_profile lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt slots=$_cap_slot_total — total slot이 root뿐(child 0)이라 native fan-out 불가, codex exec fallback을 사용"
-      elif [ "$_cap_profile" = "unknown" ]; then
-        if [ "$_cap_lifecycle" = "unavailable" ]; then
-          # spawn/wait 자체가 없으면 native 실행이 아예 불가하다 — serial조차 안내하지 않는다.
-          fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=unavailable interrupt=$_cap_interrupt tools=[${_cap_tools:-none}] — native 도구 부재로 native fan-out 자체 불가, codex exec fallback만 가능"
-        elif [ "$_cap_lifecycle" = "explicit-close" ]; then
-          fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=explicit-close interrupt=$_cap_interrupt tools=[$_cap_tools] — explicit close_agent가 광고되는 지원 종료 lifecycle 표면 (#1257에서 legacy profile 제거), native 실행 금지(close 계약 없이 thread가 누적 소진됨) — codex exec fallback만 사용"
-        else
-          fail "capability probe: surface_scope=cli-default profile=unknown lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt tools=[$_cap_tools] slots=unknown — slot 미확정, run-da native fan-out은 serial(동시 1) fail-safe로만 동작 가능"
-        fi
-      else
-        pass "capability probe: surface_scope=cli-default profile=$_cap_profile lifecycle=$_cap_lifecycle interrupt=$_cap_interrupt tools=[$_cap_tools] slots=$_cap_slots"
-      fi
-    fi
-  else
-    fail "capability probe: codex debug prompt-input 또는 jq 파이프라인 실패 (surface_scope=cli-default 판정 불가)"
-  fi
-else
-  fail "capability probe: codex 또는 jq 없음 (CLI-default surface 판정 불가)"
-fi
-
-echo ""
 echo "=== 프로젝트 스킬 투영 확인 (디렉토리 심링크) ==="
 
 if [ ! -d "$TARGET_SKILLS_DIR" ]; then
@@ -842,53 +648,6 @@ _run_skill_neutral_lint_checked \
   --root "$SOURCE_SKILLS_DIR" \
   --root "$SHARED_SKILLS_DIR" \
   "${_skill_lint_exclude_args[@]}"
-
-echo ""
-echo "=== Codex helper 스크립트 확인 ==="
-
-# Codex 프로비저닝된 helper가 shared source를 정확히 가리키는지 검증 (#486 F4/F8)
-verify_codex_helper() {
-  local helper="$1"
-  local helper_path="$HOME/.codex/scripts/$helper"
-  local helper_source="$REPO_ROOT/modules/shared/programs/claude/files/scripts/$helper"
-  if [ ! -L "$helper_path" ]; then
-    fail "$helper_path 심링크 없음"
-    return
-  fi
-  local resolved expected
-  resolved="$(readlink -f "$helper_path" 2>/dev/null || true)"
-  expected="$(readlink -f "$helper_source" 2>/dev/null || true)"
-  local expected_suffix="modules/shared/programs/claude/files/scripts/$helper"
-  if ! resolved_target_matches_repo_suffix "$resolved" "$expected" "$expected_suffix"; then
-    fail "$helper_path 대상 불일치: actual=$resolved expected=$expected expected_suffix=*/$expected_suffix"
-  else
-    pass "Codex helper 정상: $helper"
-  fi
-}
-
-verify_codex_helper "fleiss-kappa.py"
-
-# Claude helper도 양쪽 scope에 동일 source가 프로비저닝되는지 확인 (run-da VERDICT_JSON 검증기)
-verify_claude_helper() {
-  local helper="$1"
-  local helper_path="$HOME/.claude/scripts/$helper"
-  local helper_source="$REPO_ROOT/modules/shared/programs/claude/files/scripts/$helper"
-  if [ ! -L "$helper_path" ]; then
-    fail "$helper_path 심링크 없음"
-    return
-  fi
-  local resolved expected
-  resolved="$(readlink -f "$helper_path" 2>/dev/null || true)"
-  expected="$(readlink -f "$helper_source" 2>/dev/null || true)"
-  local expected_suffix="modules/shared/programs/claude/files/scripts/$helper"
-  if ! resolved_target_matches_repo_suffix "$resolved" "$expected" "$expected_suffix"; then
-    fail "$helper_path 대상 불일치: actual=$resolved expected=$expected expected_suffix=*/$expected_suffix"
-  else
-    pass "Claude helper 정상: $helper"
-  fi
-}
-
-verify_claude_helper "fleiss-kappa.py"
 
 echo ""
 echo "=== Hooks 산출물 확인 ==="

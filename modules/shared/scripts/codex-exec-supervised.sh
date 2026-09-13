@@ -183,7 +183,7 @@ fi
 # wrapper-level 사전 검증(precheck) — codex exec를 호출하지 않고 wrapper 자체 검증만 수행.
 # 이 지점 도달 = near-miss fail-fast + env validation + dependency resolution 전부 통과이므로
 # exit 0이 OK 신호다. `--check` 실패(127)의 사유 목록은 헤더 Exit code 절이 정본.
-# 사전점검 callsite (run-da(audit) preflight)는 `codex-exec-supervised --check`로 호출한다.
+# 사전점검 호출자는 `codex-exec-supervised --check`로 호출한다.
 if [[ "${1:-}" == "--check" ]]; then
   printf 'codex-exec-supervised: precheck OK (env+deps; timeout=%s setsid=%s codex=%s)\n' \
     "$TIMEOUT_BIN" "$SETSID_BIN" "$(command -v codex)" >&2

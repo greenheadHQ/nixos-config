@@ -55,7 +55,7 @@ test_skill_usage_report_skill_grammar_parity_with_writer() {
   bad129=$(printf 'a%.0s' {1..129})
 
   # writer: 유효 경계(128자)는 기록, 초과(129자)·제어문자는 거부
-  for skill in "run-da" "$ok128"; do
+  for skill in "review-pr-feedback" "$ok128"; do
     printf '%s' "$(jq -cn --arg s "$skill" '{session_id:"sid-parity",tool_input:{skill:$s}}')" | \
       env HOOK_RUNTIME_LIB="$REPO_ROOT/modules/shared/programs/claude/files/lib/hook-runtime.sh" \
       HOME="$home" bash "$REPO_ROOT/modules/shared/programs/claude/files/hooks/log-skill.sh"
@@ -73,7 +73,7 @@ test_skill_usage_report_skill_grammar_parity_with_writer() {
   printf '%s\n' "$(jq -cn --arg s "$bad129" \
     '{schema_version:2,event_type:"skill_invocation",ts:1742302800,runtime:"claude-main",skill:$s,session_key:("ab" * 32)}')" >> "$v2log"
   output=$(bash "$(_skill_usage_report_script)" --log "$v2log")
-  assert_contains "$output" "run-da"
+  assert_contains "$output" "review-pr-feedback"
   assert_contains "$output" "$ok128"
   assert_not_contains "$output" "$bad129"
 }

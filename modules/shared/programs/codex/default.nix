@@ -62,16 +62,11 @@ let
 
   # 노출 대상 — SoT: 아래 exposedCodexSkills 리스트
   exposedCodexSkills = [
-    "analyzing-da-sessions"
     "create-issue"
     "create-pr"
-    # finding-unknowns: 미지 방법론 오케스트레이터 — Codex도 동등 지휘자 (grilling/prototype은
-    # Codex user 스코프 ~/.agents/skills에서 발견됨을 실측 확인; 질문은 blocking 도구 행동 계약으로 중립화)
-    "finding-unknowns"
     "finish-pr"
     "issuing-codex-pairing-code"
     "review-pr-feedback"
-    "run-da"
     # attaching-github-media: create-issue/create-pr가 소비하는 증빙 첨부 정본 — 소비 스킬이 노출되므로 함께 노출
     "attaching-github-media"
     "write-handoff"
@@ -104,12 +99,6 @@ in
   home.file = {
     # 글로벌 AGENTS.md - Claude의 CLAUDE.md와 동일 소스 공유
     ".codex/AGENTS.md".source = config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/CLAUDE.md";
-
-    # run-da VERDICT_JSON 검증기. run-da 스킬이 Codex에도 노출되므로
-    # Claude와 동일 source를 Codex scope에도 미러링하여 `~/.codex/scripts/fleiss-kappa.py`를
-    # 런타임에서 사용 가능하게 한다 (파일명 유래·집계 제거는 스크립트 docstring 참조).
-    ".codex/scripts/fleiss-kappa.py".source =
-      config.lib.file.mkOutOfStoreSymlink "${claudeFilesPath}/scripts/fleiss-kappa.py";
 
     # Codex 0.124+ stable hooks (issue #585 / epic #584).
     # Claude `~/.claude/hooks/*` 무변경 보장이 필요하므로 Codex 전용 사본을 분리한다.

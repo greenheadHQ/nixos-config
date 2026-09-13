@@ -87,7 +87,7 @@ let
 
   # user unit hardening 공통값. RestrictNamespaces는 의도적으로 켜지 않는다 —
   # 일부 작업의 하위 도구(sandbox형 CLI)가 user namespace 생성을 요구하며, 이는
-  # da-weekly-report의 실측 선례와 같은 제약이다. 이 선택은 eval-tests가 고정한다.
+  # 홈 내부 인증 경로 접근에 필요한 제약이다. 이 선택은 eval-tests가 고정한다.
   hardening = {
     UMask = "0077";
     NoNewPrivileges = true;

@@ -1,231 +1,27 @@
-# LLM 이행 가이드 마크다운 템플릿
+# 다음 세션이 이어갈 수 있는 핸드오프
 
-## TL;DR 블록 (최상단)
+목표와 현재 상태, 바로 이어갈 행동을 먼저 설명한다. 나머지는 다음 세션이 다시 조사하거나 잘못 가정할 가능성이 있는 정보에 한해 남긴다. 섹션 수나 문장 수를 고정하지 않는다.
 
-이 문서는 공개 이슈 이행 가이드용 예시다. 로컬 모드는 [local-workflow.md](local-workflow.md)의 맥락·저장 규칙을 우선한다. 단계 구성은 의존 관계에 맞게 선택하며 예시의 개수·시간을 고정하지 않는다.
+필요한 정보:
 
-가이드 최상단(헤더 블록보다 앞)에 4슬롯 TL;DR을 배치한다. 새 세션 LLM이 첫 화면에서 전체 맥락을 파악하도록 한다. 체크리스트 D1 참조.
+- 완료한 변경과 아직 하지 않은 일. 실행한 검증과 결과, 미확인 범위.
+- 선택한 설계·기각한 대안·유효한 제약과 그 근거. 중요한 CIR·ADR·PR 링크.
+- 관련 파일과 재개 위치, 의존 작업과 blocker, 다음 행동의 완료 기준.
+- 사용자가 정한 실행·게시 범위와 보존해야 할 변경. handoff 작성 자체로 권한을 확대하지 않는다.
 
-````markdown
-## TL;DR
+공개 문서에는 repo-relative 경로를 사용한다. 로컬 파일에는 재개에 필요한 머신·cwd·dirty-state를 적을 수 있다. 두 모드 모두 시크릿은 금지한다. [공개 정보 처리 기준](sanitization-checklist.md)과 [근거 확인 기준](llm-friendly-checklist.md)을 적용한다.
 
-- **상황**: <배경 + 지금까지의 맥락>
-- **현재 상태**: <관련 파일 현황 (repo-relative), 남은 단계, 실패한 검증 결과 등 공개 안전 정보>
-- **다음 액션**: <Phase 1부터 시작할 첫 명령어>
-- **Blockers**: <있으면 명시, 없으면 "없음">
-````
-
-작성 규칙:
-- 가이드 상단 10줄 이내에 배치 (primacy bias 활용).
-- 4슬롯 모두 채운다. 해당 없으면 "없음" 명시.
-- 공개 노출 주의: 이 가이드는 `gh issue comment`로 GitHub에 게시된다. `현재 상태` 슬롯에 민감한 로컬 컨텍스트(`git status` 출력, 워크트리 dirty state, 개인 작업 경로)를 적지 않는다. 공개 안전 정보(repo-relative 파일 경로, 작업 단계, 검증 결과)만 기술. 금지/보존 전체 기준과 post-render scan 절차는 [sanitization-checklist.md](sanitization-checklist.md) 참조.
-- 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long) — 장문에서 모델은 시작/끝 정보에 강하고 중간 정보 활용이 약함.
-
-## 헤더 블록
-
-blockquote 형태로 작업의 메타 정보를 한눈에 제공한다.
+## 예시
 
 ```markdown
-> **대상**: <변경 대상 모듈/파일/서비스>
-> **목표**: <이 가이드가 달성하는 최종 상태를 1문장으로>
-> **난이도**: 단순 / 중간 / 복잡
-> **관련 이슈**: #<N>
+설정 파일이 없어도 기본값으로 시작하도록 수정 중입니다. 기본 동작은 구현했고,
+잘못된 파일 내용까지 기본값으로 덮는 회귀가 없는지 확인해야 합니다.
+
+현재 파서는 유지하기로 했습니다. 기존 오류 표시가 운영 진단에 사용되기 때문입니다(관련 결정 링크).
+다음 세션은 파서 호출부와 실패 테스트를 읽고, 파일 없음과 구문 오류를 구분하는 검증부터 이어가세요.
+
+로컬 단위 테스트는 통과했습니다. 실제 서비스 재시작은 아직 수행하지 않았습니다.
+배포·커밋·외부 게시 허용 범위는 현재 요청의 합의 내용을 따릅니다.
 ```
 
-### 예시
-
-```markdown
-> **대상**: `.claude/skills/syncing-atuin/`
-> **목표**: Atuin sync 스킬을 생성하여 shell history 동기화 절차를 자동화한다
-> **난이도**: 단순
-> **관련 이슈**: #252
-```
-
-## 핵심 원칙
-
-작업 전체에 적용되는 불변 규칙을 1-3개로 기술한다.
-LLM이 작업 중 판단이 필요할 때 참조하는 최상위 제약이다.
-
-```markdown
-## 핵심 원칙
-
-1. **진실 원천 우선**: 이 가이드의 값보다 CLI/파일시스템에서 확인한 실제 값이 우선한다.
-2. **기존 패턴 존중**: 코드베이스에 확립된 네이밍/구조 컨벤션을 따른다. 새 패턴을 도입하지 않는다.
-3. **최소 변경 원칙**: 이슈에 명시된 범위만 변경한다. 인접 코드의 리팩토링은 하지 않는다.
-```
-
-## Phase 구조
-
-### Phase 1: 사전 확인
-
-CLI/파일시스템에서 현재 상태를 확인한다. 변경 전 기준선을 수립하는 Phase이다.
-
-````markdown
-## Phase 1: 사전 확인
-
-다음 명령으로 현재 상태를 확인한다 (병렬 가능):
-
-```bash
-# 1. 현재 버전 확인
-grep "version" modules/shared/programs/tool/default.nix
-
-# 2. 관련 설정 확인
-cat modules/shared/programs/tool/config.nix | head -20
-
-# 3. 상수 참조 확인
-grep "toolPath" libraries/constants.nix
-```
-
-**기대 결과**:
-- `modules/shared/programs/tool/default.nix:15` 에 `version = "1.2.3"` (이슈 본문 line 42의 주장에 따라, 실제 값이 다르면 실제 값 기준으로 진행 — [이슈 #NNN](https://github.com/<owner>/<repo>/issues/NNN))
-- `modules/shared/programs/tool/config.nix:8` 에 `enableFeature = false;` 존재
-- `libraries/constants.nix:42` 에 `toolPath = "/old/path";` 존재
-- `[UNVERIFIED]` `toolPath`가 다른 모듈에서 import되는지 여부는 구현 시점에 `grep -rn toolPath modules/` 로 실측 필요
-````
-
-작성 규칙:
-- `(병렬 가능)` 힌트를 명시하여 LLM이 독립 명령을 동시 실행하도록 유도한다.
-- 이슈에 기재된 값과 실제 값이 다를 수 있음을 명시한다 ("진실 원천 우선" 패턴).
-- 기대 결과를 구체적으로 적어 LLM이 현재 상태와 비교할 수 있게 한다.
-
-### Phase 2-N: 실행
-
-구체적인 치환이 확정된 경우 BEFORE/AFTER로 변경 내용을 명시할 수 있다.
-
-````markdown
-## Phase 2: 실행
-
-### 2-1. 버전 업데이트
-
-**파일**: `modules/shared/programs/tool/default.nix:15` ([upstream v1.3.0 release notes](https://github.com/example/tool/releases/tag/v1.3.0) 근거)
-
-BEFORE:
-```nix
-version = "1.2.3";
-```
-
-AFTER:
-```nix
-version = "1.3.0";
-```
-
-> `[UNVERIFIED]` v1.3.0에서 breaking change가 있는지 릴리스 노트 재확인 권장.
-
-### 2-2. 설정 변경
-
-**파일**: `modules/shared/programs/tool/config.nix`
-
-BEFORE:
-```nix
-enableFeature = false;
-```
-
-AFTER:
-```nix
-enableFeature = true;
-```
-````
-
-작성 규칙:
-- 확정된 치환은 BEFORE/AFTER로 표현하고, 미결정 구현은 목표·제약·수용 기준을 구체적으로 적는다.
-- 각 변경에 대상 파일 경로를 명시한다.
-- 변경이 여러 파일에 걸치면 파일별로 소항목을 분리한다.
-
-### 검증과 승인된 후속 행동
-
-변경이 영향을 주는 동작과 필수 저장소 검사를 제시한다. 배포가 작업 범위이고 Nix 구성을 적용해야 할 때는 `nrs`를 사용한다. 문구 수정마다 배포나 무관한 전체 기능 검증을 요구하지 않는다.
-
-커밋·push·PR이 승인된 범위이면 검증 결과와 함께 다음 행동으로 적는다. 검증 성공만으로 승인 범위를 확대하지 않는다. 구현 후 리뷰가 범위에 포함되면 확립된 `/run-da for_pr` 또는 사용자 지정 리뷰 체인을 유지하며, 광범위 회귀 감사는 필요할 때 `/run-da audit`를 적용한다.
-
-## 커밋 메시지 작성 기준
-
-메시지는 최종 diff를 근거로 작성한다. 완성 메시지를 사전에 고정하지 않는다.
-
-- type/scope: feat/fix/refactor/docs/chore 등 conventional commit과 변경 대상 모듈
-- 요약: 50자 이내, 명령형 현재시제
-- 본문: 최종 변경과 필요한 의사결정 근거
-- `Closes #N`: 실제로 해결하는 명시적 이슈에만 사용
-
-## QA 감사 체크리스트 (스킬 관련 이슈용)
-
-스킬 구현·리뷰가 승인된 작업 범위이면 가이드에 다음 QA 체인을 포함한다. handoff 작성만으로 새 리뷰·PR 작업을 승인하지 않는다.
-
-```markdown
-## QA 체크리스트
-
-구현 완료 후 다음 순서로 검증한다:
-
-1. **`/run-da for_pr`** — 변경 diff에 대해 독립 DA 에이전트 리뷰. SKILL.md 품질 기준 준수 확인:
-   - frontmatter 유효성 (name, description, Triggers)
-   - 본문 구조 (Purpose → 빠른참조 → 핵심절차 → 참조)
-   - `references/` 링크 유효성
-2. (선택) **`/run-da audit`** — 다중 스킬 영향·광범위 사이드이펙트·고위험 변경일 때만 추가로 사이드이펙트/회귀 감사를 실행.
-```
-
-## 모범 패턴 (Issue #252 기반)
-
-Issue #252의 LLM 이행 가이드에서 관찰된 효과적인 패턴:
-
-### "진실 원천 우선" 패턴
-
-```markdown
-> 이슈에 "현재 버전 1.2.3"이라 기재되어 있으나, 실행 시점에서
-> `grep version <파일>`로 실제 값을 먼저 확인한다.
-> 실제 값이 다르면 실제 값을 BEFORE로 사용한다.
-```
-
-이슈 작성과 가이드 실행 사이의 시간차를 보상한다. 다른 PR이 먼저 머지되어 값이 변경되었을 수 있다.
-
-### "병렬 힌트" 패턴
-
-```markdown
-다음 명령으로 현재 상태를 확인한다 (병렬 가능):
-```
-
-독립적인 명령들을 병렬 실행할 수 있음을 명시하여 LLM의 실행 효율을 높인다.
-
-### "최종 변경에 맞춘 커밋" 패턴
-
-Issue #252의 사전 커밋 템플릿은 메시지 형식을 맞추려는 장치였다. 형식 기준은 유지하되 구현 중 결정이 달라질 수 있으므로 최종 diff를 근거로 작성한다.
-
-### "조건부 분기" 패턴
-
-```markdown
-### 환경별 분기
-
-- **macOS (Platform: darwin)**: 로컬에서 직접 실행
-- **NixOS (Platform: linux)**: `ssh minipc`로 실행하되, 파일 편집은 로컬에서 수행
-```
-
-실행 환경에 따라 달라지는 행동을 명시하여 LLM이 올바른 경로를 선택하도록 한다.
-
-### "TL;DR" 패턴
-
-장문 가이드에서 핵심 맥락을 상단 TL;DR에 배치하여 "Lost in the Middle" 현상의 첫 부분을 보강한다. 출처: [Lost in the Middle (TACL 2024)](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long), [Anthropic: Long context tips](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/long-context-tips).
-
-### "`[UNVERIFIED]` 라벨" 패턴
-
-근거 없는 주장을 가이드에 남길 때 인라인 라벨을 사용한다. 라벨 정의와 사용 예시 상세는 [체크리스트 라벨 체계](llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조 (출처 링크는 체크리스트 E1/Sources 섹션).
-
-예:
-```markdown
-`[UNVERIFIED]` 이 옵션은 NixOS 24.11에서 동작하지만 24.05에서는 미확인.
-`[INFERRED]` PoC 추가가 품질을 개선한다 — 정량 벤치마크 부재, PROMPTEVALS 등 인접 근거로 추론.
-`[CONFLICTING]` FRONT(2024)는 pipeline 분리 우세, Evaluating Design Choices(2025)는 direct generation 우세.
-```
-
-### "정밀 sanitization" 패턴
-
-공개 게시 전 [sanitization-checklist.md](sanitization-checklist.md)의 금지(S1)/보존(S2) 기준과 S3 scan 절차를 적용한다. blanket redaction 금지 — 과잉 검열과 누락 검열 모두 결함이다.
-
-❌ 과잉 검열 (false positive): `현재 상태` 슬롯에서 `tests/eval-tests.nix:15` 같은 repo-relative 경로까지 "로컬 경로"로 오인해 삭제 _(why: 후속 LLM이 대상 파일을 재탐색해야 함 — S2에 따라 유지)_
-
-❌ 누락 검열 (false negative): 실패한 검증 로그를 통째로 붙여넣어 홈 디렉토리 절대 경로(사용자명 포함)를 노출 _(why: 공개 게시물에 개인 식별자 신규 노출 — S1 위반)_
-
-✅ GOOD: `"tests/eval-tests.nix:15 평가 실패 (assertion 미충족). 로그의 홈 경로는 ~/ 표기로 치환"` — repo 근거는 보존, 개인 식별자만 제거.
-
-### "미검증 주석" 패턴 (DEPRECATED)
-
-> DEPRECATED: HTML 주석 `<!-- 미검증: ... -->` 패턴은 더 이상 권장되지 않는다. 신규 산출물은 위 [`[UNVERIFIED]` 라벨 패턴](#unverified-라벨-패턴)을 사용한다. 규칙 상세와 마이그레이션 정책은 [체크리스트 라벨 체계](llm-friendly-checklist.md#라벨-체계-anti-hallucination) 참조.
-
-HTML 주석은 실행 컨텍스트에서 눈에 덜 띄어 후속 LLM이 간과하기 쉽다. `[UNVERIFIED]` 라벨은 본문에 인라인으로 노출되어 더 안정적으로 인지된다.
+긴 작업은 의존 관계를 기준으로 나눈다. 확정된 치환은 BEFORE/AFTER로 보여줄 수 있지만, 미결정 구현은 목표·제약·수용 기준으로 설명한다. 리뷰가 범위에 있으면 내장 리뷰 또는 사용자가 지정한 경로와 대상 diff를 적는다. 파일 수만으로 세션 수나 검토 강도를 정하지 않는다.

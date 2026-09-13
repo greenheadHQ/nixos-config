@@ -5,14 +5,8 @@
 # 훅 우회 여부와 무관하게 재검증)과 신규 머신 온보딩 시 실행을 권장한다. required CI도 이
 # 단일 진입점을 재사용해 중복 정의를 피한다.
 #
-# 커버리지 경계: required CI의 전체 회귀(shell-script-tests · codex-hook-fixtures 포함)와
-#   pre-push의 5개 조건부 게이트(analyzing-da-sessions-tests · fleiss-kappa-tests ·
-#   skill-doc-sync · flake-check · statusline-bats),
-#   da-weekly-report-tests + eval-tests + 어느 훅에도 미연결된 tests/test-*.sh 단위
-#   드라이버(codex-exec-supervised · precommit-staged-snapshot)를 포함한다. 여기에 더해 훅에
-#   없는 저비용 hermetic 게이트(karakeep-bridge-tests · issuing-codex-pairing-code-tests ·
-#   guardrail-lint-fixtures)도 이 러너에서만 돈다. 벤치마크
-#   tests/bench-shell-startup.sh는 회귀 게이트가 아니라 측정 도구이므로(자체 헤더에 명시) 제외한다.
+# 커버리지 경계: required CI의 전체 회귀와 pre-push의 anki-mcp-tests · flake-check · statusline-bats,
+#   아래 수동 전용 드라이버를 포함한다. 벤치마크는 측정 도구이므로 제외한다.
 #   pre-commit의 staged 스냅샷 정책(gitleaks · nixfmt · shellcheck · skill-noise)은 staged index
 #   기준이라 working-tree 통합 러너의 범위가 아니며, 커밋 시점 게이트로 별도 적용된다.
 #
@@ -77,21 +71,6 @@ run_driver "codex-hook-fixtures" bash tests/test-codex-hook-fixtures.sh --no-liv
 #    감싼다 — devShell 밖(fresh clone·direnv 비활성)에서도 hermetic하게 통과해야 한다.
 run_driver "codex-exec-supervised" \
   bash scripts/ai/test-runtime-profile.sh run "$REPO_ROOT" -- bash tests/test-codex-exec-supervised.sh
-
-# 5) skill-doc-sync — run-da 문서군의 manual sync contract 4쌍을 검증한다.
-run_driver "skill-doc-sync" bash tests/test-skill-doc-sync.sh
-
-# 6) analyzing-da-sessions-tests — run-da VERDICT_JSON/dir marker와 analyze.py 추출 계약을
-#    hermetic pytest fixture로 검증한다. 호출 방식은 lefthook.yml pre-push 항목과 동일하게
-#    tests/run-analyzing-da-sessions-tests.sh driver를 거친다.
-run_driver "analyzing-da-sessions-tests" bash tests/run-analyzing-da-sessions-tests.sh
-
-# 6b) fleiss-kappa-tests — run-da VERDICT_JSON 검증기(fleiss-kappa.py)의 schema 1.2
-#     semantic 계약·manifest 대조·집계 모드 거부(#1257)를 hermetic pytest로 검증한다.
-run_driver "fleiss-kappa-tests" bash tests/run-fleiss-kappa-tests.sh
-
-# 7) da-weekly-report-tests — weekly JSON schema/delta/render 순수 함수 계약을 검증한다.
-run_driver "da-weekly-report-tests" bash tests/run-da-weekly-report-tests.sh
 
 # 7b) karakeep-bridge-tests — singlefile-bridge.py 의 multipart/파일명 파싱 순수 함수 계약.
 #     PR #989 에서 shell suite 만 등록되고 pytest 쪽 배선이 빠져 실행 경로가 0이었다.

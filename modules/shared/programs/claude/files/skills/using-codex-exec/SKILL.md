@@ -18,12 +18,11 @@ description: >-
 
 | 실행 문맥 | 선택 경로 | 적용 조건 |
 |----------|----------|----------|
-| Direct Codex 세션의 review/audit/planning fan-out | native subagent | 기본 경로. nested `codex exec`를 선택하지 않는다. |
+| Direct Codex 세션의 review/audit/planning fan-out | native subagent | 위임이 승인된 작업의 경로. nested `codex exec`로 위임 제한을 우회하지 않는다. |
 | Claude Code 세션·headless 자동화 | `codex-exec-supervised` (Layer 1) | stdin EOF 규약 + timeout budget 보장이 필요한 programmatic 호출. [known-issues.md §15](references/known-issues.md#15-codex-exec-supervised-wrapper로-14-위에-timeout-budget-한계-보강-issue-593) 참조. |
 | 사용자가 literal raw 실행을 요청했거나 1회성 수동 진단 | raw `codex exec` | alias를 피하도록 `command codex` 또는 `env ... codex`로 호출한다. |
 
-`run-da`는 스킬의 라우팅 계약이 우선한다. Direct Codex 세션에서
-subprocess fallback이 필요하면 해당 스킬이 요구하는 별도 사용자 승인을 먼저 받는다.
+Direct Codex에서 위임 거부를 subprocess로 우회하지 않는다. 별도 실행은 사용자 승인 범위와 현재 세션의 권한 경계를 따른다.
 
 ## 작성 기준
 
@@ -42,7 +41,7 @@ CLI 버전이 바뀌면 플래그/동작이 달라질 수 있으므로, 실행 �
 
 | 포함 | 제외 |
 |------|------|
-| `codex exec` 비대화형 실행 | Codex 세션의 기본 subagent fan-out (`run-da` — audit 모드 포함) |
+| `codex exec` 비대화형 실행 | Codex 세션의 기본 subagent fan-out |
 | `codex exec review` 코드 리뷰 | 대화형 TUI 사용법 |
 | `codex exec resume` 세션 재개 | Codex 설정 파일 전체 관리 |
 | stdin/파일 기반 프롬프트 전달 | Codex settings/skill projection (repo 정책/검증 스크립트 참조) |
