@@ -4,8 +4,9 @@
   lib,
   constants,
   hostType,
-  managedDestinations ? [
-    "minipc"
+  # dispatcher는 목적지를 글자 그대로 먼저 거르므로, ssh config의 minipc Host 패턴이
+  # 여기에 모두 있어야 한다 (eval Test D35).
+  managedDestinations ? constants.network.minipcSshHostAliases ++ [
     "minipc-headless"
     constants.network.minipcTailscaleIP
   ],
@@ -70,7 +71,11 @@ let
       -- "$@"
   '';
   package =
-    pkgs.runCommand "headless-ssh-dispatcher-${builtins.substring 0 12 runtimeGeneration}" { }
+    pkgs.runCommand "headless-ssh-dispatcher-${builtins.substring 0 12 runtimeGeneration}"
+      {
+        # eval 테스트가 배포 스크립트를 빌드하지 않고 관리 대상 목록을 대조하는 용도.
+        passthru = { inherit managedDestinations; };
+      }
       ''
         mkdir -p "$out/bin"
         ln -s ${dispatchWrapper} "$out/bin/ssh"

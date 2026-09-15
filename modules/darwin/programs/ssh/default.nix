@@ -37,6 +37,8 @@ in
     // lib.optionalAttrs (hostType == "personal") {
       # MiniPC는 Tailscale IP 전용 — work Mac(Tailnet 미소속)에서는 접속 불가
       "minipc" = {
+        # MagicDNS 이름도 같은 블록에 묶어 `Host *`(IdentitiesOnly 없음)로 새지 않게 한다.
+        header = "Host ${lib.concatStringsSep " " constants.network.minipcSshHostAliases}";
         HostName = constants.network.minipcTailscaleIP;
         User = "greenhead";
         # mac-ssh 공개키로 고정 + IdentitiesOnly — agent의 mac-ssh 키만 제시한다.
