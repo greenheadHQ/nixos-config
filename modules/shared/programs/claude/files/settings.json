@@ -161,7 +161,7 @@
   "showClearContextOnPlanAccept": true,
   "autoUpdatesChannel": "latest",
   "plansDirectory": "./.claude/plans",
-  "autoMemoryEnabled": true,
+  "autoMemoryEnabled": false,
   "showThinkingSummaries": true,
   "skipDangerousModePermissionPrompt": true,
   "verbose": true,
