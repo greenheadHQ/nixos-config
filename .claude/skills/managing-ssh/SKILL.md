@@ -31,6 +31,10 @@ macOS MiniPC 경로는 interactive와 automation child가 다름
   시점에 dispatcher가 없고, claude-rc 계열 기원은 launcher가 주입한 env PATH 상속으로
   vendor 라인에 이미 포함될 수 있다.
   이 automation 경로는 1Password GUI를 기다리지 않는다.
+- dispatcher는 목적지 이름을 글자 그대로 거른다. MiniPC 이름(`minipc`, MagicDNS 짧은 이름·FQDN)은
+  `constants.network.minipcSshHostAliases` 한 곳에서 ssh config의 minipc Host 블록과 dispatcher
+  관리 대상으로 함께 배포된다(eval Test D35). 목록 밖 이름으로 접속하면 `Host *`의 1Password agent로
+  새어 `signing failed ... communication with agent failed`로 실패한다.
 - snapshot 계층 PATH 방어는 멱등 append 수리 2층이다: home.activation(nrs 시점 일괄)과
   launchd WatchPaths agent(신규 snapshot 상시, `org.nix-community.home.claude-snapshot-path-repair`).
   배포 뒤 actual child의 `command -v ssh`가 여전히 raw SSH면 snapshot recovery marker,
