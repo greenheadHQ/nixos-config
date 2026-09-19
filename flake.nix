@@ -266,6 +266,14 @@
         }
       );
 
+      # Anki is hosted on Linux only. Exposing the same small check used by
+      # system.checks lets CI build it without rebuilding or overriding Anki.
+      checks.${systems.linux}.anki-host-runtime =
+        import ./modules/nixos/programs/anki-host/runtime-check.nix
+          {
+            pkgs = nixpkgs.legacyPackages.${systems.linux};
+          };
+
       # test/verifier 래핑용 tomlkit 포함 python3.
       # prePushRuntime과 verify-ai-compat fallback이 이 output을 공유한다. devShell에도 포함되어
       # 있어 install-lefthook-hooks.sh가 shellHook에서 같은
