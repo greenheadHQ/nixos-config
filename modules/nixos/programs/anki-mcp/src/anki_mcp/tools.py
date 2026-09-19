@@ -23,7 +23,7 @@ from .ankiconnect import AnkiConnect
 from .helper import Helper
 from .operations import OperationService
 from .shaping import card_view, note_view, page, truncate
-from .syncstatus import SyncNow, read_status, summarize
+from .syncstatus import SyncNow, read_freshness, read_status, summarize
 
 ADDED_TAG = "mcp::added"
 
@@ -81,6 +81,7 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_decks", annotations=READ_ONLY)
     async def anki_decks() -> dict[str, Any]:
         """List decks with ids and per-deck counts (new/learn/review due today, total cards)."""
+        freshness = read_freshness(deps.sync_status_file)
         names: dict[str, int] = await anki.invoke("deckNamesAndIds")
         stats: dict[str, dict[str, Any]] = await anki.invoke("getDeckStats", decks=list(names))
         by_id = {str(v.get("deck_id")): v for v in stats.values()}
@@ -95,16 +96,17 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
                 "review": s.get("review_count"),
                 "total": s.get("total_in_deck"),
             })
-        return {"decks": decks}
+        return {"decks": decks, "freshness": freshness}
 
     @mcp.tool(name="anki_models", annotations=READ_ONLY)
     async def anki_models(name: str | None = None) -> dict[str, Any]:
         """List note types. With `name`, return that type's field names (in order) and card template names."""
+        freshness = read_freshness(deps.sync_status_file)
         if name is None:
-            return {"models": await anki.invoke("modelNames")}
+            return {"models": await anki.invoke("modelNames"), "freshness": freshness}
         fields = await anki.invoke("modelFieldNames", modelName=name)
         templates = await anki.invoke("modelTemplates", modelName=name)
-        return {"model": name, "fields": fields, "templates": list(templates.keys())}
+        return {"model": name, "fields": fields, "templates": list(templates.keys()), "freshness": freshness}
 
     @mcp.tool(name="anki_find_notes", annotations=READ_ONLY)
     async def anki_find_notes(
@@ -115,20 +117,25 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     ) -> dict[str, Any]:
         """Search notes with Anki search syntax passed through verbatim (e.g. 'deck:"CS 재활" tag:mcp::added',
         'added:7', 'is:due', 'front:*css*'). Paginated; field values are truncated to max_field_chars
-        (0 = no truncation). Use anki_note_info for full fields of specific notes."""
+        (0 = no truncation). Use anki_note_info for full fields of specific notes. Check freshness for the host's
+        recorded sync boundary; phone edits may still be absent even after a successful host sync."""
+        freshness = read_freshness(deps.sync_status_file)
         ids: list[int] = await anki.invoke("findNotes", query=query)
         chunk, meta = page(ids, limit, offset, deps.page_max)
         notes = await anki.invoke("notesInfo", notes=chunk) if chunk else []
-        return {"query": query, "page": meta, "notes": [note_view(n, max_field_chars) for n in notes]}
+        return {"query": query, "page": meta, "notes": [note_view(n, max_field_chars) for n in notes], "freshness": freshness}
 
     @mcp.tool(name="anki_note_info", annotations=READ_ONLY)
     async def anki_note_info(note_ids: list[int], max_field_chars: int = 0) -> dict[str, Any]:
         """Full note details for the given note ids (fields untruncated by default).
         Before reviewing a note with a 검토 메모 field, read its complete memo here, including all paragraphs.
-        The memo is shared by sibling cards. Do not clear or rewrite it merely because a review mark is removed."""
+        The memo is shared by sibling cards. Do not clear or rewrite it merely because a review mark is removed.
+        Check freshness for the host's recorded sync boundary; phone edits may still be absent even after
+        a successful host sync."""
+        freshness = read_freshness(deps.sync_status_file)
         chunk, meta = page(note_ids, deps.page_max, 0, deps.page_max)
         notes = await anki.invoke("notesInfo", notes=chunk) if chunk else []
-        return {"page": meta, "notes": [note_view(n, max_field_chars) for n in notes]}
+        return {"page": meta, "notes": [note_view(n, max_field_chars) for n in notes], "freshness": freshness}
 
     @mcp.tool(name="anki_find_cards", annotations=READ_ONLY)
     async def anki_find_cards(
@@ -139,26 +146,31 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     ) -> dict[str, Any]:
         """Search cards (scheduling view: queue/type/due/interval/ease/reps/lapses) with Anki search syntax.
         Search flags with flag:1 through flag:7 (flag:0 means no flag). The response's flag is 0–7,
-        or null if unavailable. Rendered question/answer are truncated to max_chars."""
+        or null if unavailable. Rendered question/answer are truncated to max_chars.
+        Check freshness for the host's recorded sync boundary; phone edits may still be absent even after
+        a successful host sync."""
+        freshness = read_freshness(deps.sync_status_file)
         ids: list[int] = await anki.invoke("findCards", query=query)
         chunk, meta = page(ids, limit, offset, deps.page_max)
         cards = await anki.invoke("cardsInfo", cards=chunk) if chunk else []
-        return {"query": query, "page": meta, "cards": [card_view(c, max_chars) for c in cards]}
+        return {"query": query, "page": meta, "cards": [card_view(c, max_chars) for c in cards], "freshness": freshness}
 
     @mcp.tool(name="anki_card_reviews", annotations=READ_ONLY)
     async def anki_card_reviews(card_ids: list[int]) -> dict[str, Any]:
         """Review history (revlog) keyed by card id. Each entry: {id: review time (epoch ms), usn, ease: button 1-4,
         ivl: new interval (days; negative = seconds), lastIvl, factor: ease factor (permille), time: ms spent,
         type: 0 learn / 1 review / 2 relearn / 3 filtered / 4 manual}."""
+        freshness = read_freshness(deps.sync_status_file)
         chunk, meta = page(card_ids, deps.page_max, 0, deps.page_max)
         # AnkiConnect는 revlog.cid를 정수로 비교한다 — 문자열 id를 보내면 빈 결과가 온다
         reviews = await anki.invoke("getReviewsOfCards", cards=chunk) if chunk else {}
-        return {"page": meta, "reviews": reviews}
+        return {"page": meta, "reviews": reviews, "freshness": freshness}
 
     @mcp.tool(name="anki_tags", annotations=READ_ONLY)
     async def anki_tags() -> dict[str, Any]:
         """All tags in the collection."""
-        return {"tags": await anki.invoke("getTags")}
+        freshness = read_freshness(deps.sync_status_file)
+        return {"tags": await anki.invoke("getTags"), "freshness": freshness}
 
     @mcp.tool(name="anki_add_notes", annotations=ADDITIVE)
     async def anki_add_notes(notes: list[NewNote], allow_duplicate: bool = False,
@@ -301,12 +313,16 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_media", annotations=READ_ONLY)
     async def anki_media(filename: str | None = None, contains: str = "", limit: int = 20, offset: int = 0) -> dict[str, Any]:
         """List media by plain substring with pagination, or retrieve one safe filename as base64 (max 5 MiB)."""
-        return await deps.helper.post("/media", {"filename": filename, "contains": contains, "limit": limit, "offset": offset})
+        freshness = read_freshness(deps.sync_status_file)
+        result = await deps.helper.post("/media", {"filename": filename, "contains": contains, "limit": limit, "offset": offset})
+        return {**result, "freshness": freshness}
 
     @mcp.tool(name="anki_deck_options", annotations=READ_ONLY)
     async def anki_deck_options(deck_name: str) -> dict[str, Any]:
         """Read the current preset, editable options and every deck sharing that preset."""
-        return await deps.helper.post("/deck-options", {"deck_name": deck_name})
+        freshness = read_freshness(deps.sync_status_file)
+        result = await deps.helper.post("/deck-options", {"deck_name": deck_name})
+        return {**result, "freshness": freshness}
 
     @mcp.tool(name="anki_update_deck_options", annotations=UPDATE)
     async def anki_update_deck_options(deck_name: str, changes: dict[str, int | float], request_id: str | None = None,
@@ -319,7 +335,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
     @mcp.tool(name="anki_model_info", annotations=READ_ONLY)
     async def anki_model_info(model_name: str) -> dict[str, Any]:
         """Read a note type's ordered fields, complete templates and CSS."""
-        return await deps.helper.post("/model-info", {"model_name": model_name})
+        freshness = read_freshness(deps.sync_status_file)
+        result = await deps.helper.post("/model-info", {"model_name": model_name})
+        return {**result, "freshness": freshness}
 
     @mcp.tool(name="anki_prepare_model_change", annotations=DESTRUCTIVE)
     async def anki_prepare_model_change(
