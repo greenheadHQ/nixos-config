@@ -1,4 +1,5 @@
 from anki_mcp.shaping import card_view, note_view, page, truncate
+import pytest
 
 
 def test_truncate_marks_and_keeps_short_values():
@@ -35,3 +36,12 @@ def test_card_view_drops_css_and_keeps_schedule():
     card = {"cardId": 5, "note": 1, "deckName": "D", "css": ".x{}", "question": "q" * 9, "answer": "a", "interval": 3}
     view = card_view(card, 4)
     assert "css" not in view and view["interval"] == 3 and view["question"].startswith("qqqq…")
+
+
+@pytest.mark.parametrize("flag", range(8))
+def test_card_view_reports_user_flag_without_reserved_bits(flag):
+    assert card_view({"flags": 0b101000 | flag}, 10)["flag"] == flag
+
+
+def test_card_view_missing_flag_is_unknown_not_unflagged():
+    assert card_view({}, 10)["flag"] is None
