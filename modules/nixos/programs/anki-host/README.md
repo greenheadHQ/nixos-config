@@ -79,6 +79,17 @@ MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다.
 조회 자체는 동기화를 실행하지 않으며, 기존 상태 사본을 한 번 읽는 것 외에 HTTP·systemd 호출을 추가하지 않는다.
 노트 본문 절단·페이지네이션과 `anki_status`/`anki_sync_now`의 기존 응답·동작은 유지한다.
 
+## 여러 노트의 필드 일괄 수정
+
+`anki_update_notes_fields`는 `{note_id, fields}` 목록을 하나의 작업으로 처리한다. 기존 필드 전체를 먼저 읽고,
+바꿀 필드만 전달하며 중복 note ID는 거절한다. 전체 대상·필드·예상 생성 카드 수를 실행 전에 검증한다.
+사전/사후 동기화 한 쌍, 검증된 미디어 제외 복구점 하나, 결과 알림 하나를 사용한다.
+단일 노트의 `anki_update_note_fields`도 매번 같은 복구점 보호를 적용하지만, 20건 이하 변경에 새 확인 단계를 추가하지 않는다.
+
+입력별 결과는 `applied`, `unknown`, `not-attempted`로 구분한다. 저장 결과가 불명확하면 이후 항목을 중단하고
+전체를 `partial`로 반환한다. 자동으로 되돌리지 않으며 새 request ID로 전체를 반복하지 않는다.
+알림에는 요청 노트 수와 실제 확인된 수정 수를 따로 표시한다. 이전 필드의 회수는 아래 복구 절차를 따른다.
+
 ## 지원표
 
 소스 핀: Anki **26.08**, AnkiConnect **25.11.9.0**, helper **2.0.0**, MCP SDK **1.29.0**.
@@ -92,7 +103,7 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 
 | MCP 도구 | 실제 API / 주의점 |
 |---|---|
-| `anki_add_notes`, `anki_update_note_fields` | `canAddNotesWithErrorDetail`, `addNotes`, `updateNoteFields`; 추가는 `mcp::added`, 입력별 결과. 필드 변경은 새 카드 생성 가능. |
+| `anki_add_notes`, `anki_update_note_fields`, `anki_update_notes_fields` | `canAddNotesWithErrorDetail`, `addNotes`, `updateNoteFields`; 추가는 `mcp::added`, 입력별 결과. 필드 변경은 새 카드 생성 가능. |
 | `anki_add_tags`, `anki_remove_tags`, `anki_create_deck` | `addTags`, `removeTags`, `createDeck`; 공통 변경 원장 적용. |
 | `anki_move_cards` | `changeDeck`; 존재하는 일반 덱으로 이동. 대상 카드 수에 따라 확인. |
 | `anki_delete_notes` | `deleteNotes`; 해당 노트의 모든 카드에 영향, 항상 확인·복구점. |
@@ -201,6 +212,48 @@ MCP의 상태/최근 작업 응답을 우선 사용한다. 로그에 키·본문
 복구는 백업을 임시 프로필에 가져와 ID·카운트·내용을 확인한 다음 대상 교체와 동기화 방향을 별도로 승인한다.
 복구점 이름을 기존 운영 프로필에 바로 import하지 않는다. AnkiWeb에 연결된 main에는 helper import route가 없다.
 다른 기기에 아직 동기화하지 않은 학습은 이 호스트가 알 수 없으며 자동 rollback도 제공하지 않는다.
+
+### 이전 필드 값만 회수하기
+
+단일·일괄 필드 수정은 건수와 관계없이 변경 직전 미디어 제외 복구점을 만들고 HDD 사본까지 검증한다.
+20건 이하의 필드 수정에 복구점을 만든다는 이유만으로 추가 확인을 요구하지는 않는다.
+원장에는 변경 전후 본문을 남기지 않는다. 기존 복구점 보존 정책(SSD 최신 5개, HDD 무기한)을 유지하며,
+작업마다 컬렉션 크기에 비례하는 HDD 사본이 하나 늘어난다(현재 규모의 실측은 약 1.4MB/작업).
+
+`anki_operation_status`의 `backup`으로 해당 수정 **직전** 복구점을 선택한다. 이전 작업이나 플러그인 밖에서
+수정한 내용에는 아래 두 종류의 백업도 사용할 수 있지만, 그 백업 이후·다음 백업 이전의 중간 값은 보장하지 않는다.
+
+| 백업 | 위치·보존 |
+|---|---|
+| Anki 자체 자동 백업 | `<state>/<instance>/Anki2/<instance>/backups/`. Anki가 5분마다 생성 여부를 확인하고 컬렉션의 `get_preferences().backups` 간격·일/주/월 정책을 적용한다. `prefs21.db`의 구형 `numBackups` 값은 26.08에서 이 정책을 정하지 않는다. |
+| 일일 미디어 포함 백업 | `<state>/<instance>/backups/` 최신 2개, HDD `<mediaData>/backups/anki-host/<instance>/` 기본 14일. 기본 04:15에 최대 5분 지연을 더해 생성한다. |
+
+2026-09-19 운영 백업 사본에서 확인한 자체 백업 설정은 최소 10분, 일/주/월 각각 30개였다.
+이는 고정 10분 주기나 최근 30개라는 뜻이 아니다. 변경된 컬렉션만 백업하며 오늘·어제의 사본은 모두 유지하고,
+그보다 오래된 서로 다른 날짜·주·월의 대표 사본을 순차적으로 남긴다. 실제 설정은 이후 변경될 수 있다.
+상세 알고리즘은 [Anki 26.08 백업 구현](https://github.com/ankitects/anki/blob/26.08/rslib/src/collection/backup.rs)을 따른다.
+
+필드 회수 명령은 MiniPC의 root 전용 `anki-host-recover-fields`다. 입력은 해당 인스턴스의 위 백업 또는
+복구점 디렉터리 바로 아래 `.colpkg`만 허용하며, 라이브 DB·심볼릭 링크를 거부한다. 예시의 경로·ID는 실제 대상으로 바꾼다.
+
+```bash
+sudo install -d -m 0700 /root/anki-field-recovery
+sudo anki-host-recover-fields --instance main \
+  --backup /mnt/data/backups/anki-host-restore-points/main/OPERATION_ID.colpkg \
+  --note-id NOTE_ID --output /root/anki-field-recovery/selected-fields.json
+```
+
+여러 노트는 `--note-id`를 반복한다(중복 없이 최대 100개). 출력 디렉터리는 root 소유이고 다른 사용자에게
+권한이 없어야 하며, 기존 출력 파일은 덮어쓰지 않는다. 성공 stdout에는 건수와 백업 hash만 나오고,
+0600 JSON 파일에 선택한 노트의 ID·GUID·당시 노트 타입·필드 이름과 원문이 저장된다. 이 파일을 로그·이슈·PR에
+붙이지 않는다. 필요한 원문을 확인한 뒤 사용이 끝난 비공개 추출 파일은 운영자가 정리한다.
+
+명령은 네트워크가 분리된 프로세스에서 공식 Anki importer로 **0700 임시 사본만** 열고 자동 폐기한다.
+신규 패키지의 실제 DB는 `collection.anki21b`이고 `collection.anki2`는 더미일 수 있으므로 직접 골라 읽지 않는다.
+운영 컬렉션·AnkiWeb·원장에는 쓰지 않고 MCP 서비스의 파일 접근 권한도 늘리지 않는다.
+회수된 값은 **자동 적용하지 않는다**. 현재 노트의 GUID·타입·필드 이름과 비교해 사용자가 되돌릴 필드를 선택한 뒤
+기존 MCP 필드 수정 경로로 적용한다. 노트나 필드가 삭제·이름 변경된 경우에는 그 차이를 먼저 검토하며,
+예전 필드 순서로 현재 노트에 덮어쓰거나 운영 프로필 전체를 가져오지 않는다.
 
 ## 검증과 배포
 

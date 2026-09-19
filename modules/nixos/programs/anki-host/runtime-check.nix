@@ -11,6 +11,7 @@ pkgs.runCommand "anki-host-runtime-check"
   {
     ANKICONNECT_SOURCE = "${addons.connect}/share/anki/addons/anki-connect";
     ANKI_HOST_HELPER_SOURCE = "${addons.helper}/share/anki/addons/anki_host_sync";
+    ANKI_HOST_RECOVERY_SOURCE = "${./files/recover-fields.py}";
     ANKI_EXPECTED_VERSION = pkgs.anki.version;
     ANKI_TEST_MODE = "1";
     QT_QPA_PLATFORM = "offscreen";

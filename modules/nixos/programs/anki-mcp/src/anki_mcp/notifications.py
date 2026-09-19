@@ -15,6 +15,7 @@ import httpx
 _ACTIONS = {
     "add_notes": ("노트 추가", "노트 추가 요청을 처리했습니다.", "new_notes", "노트", "개"),
     "update_fields": ("카드 내용 수정", "카드 내용 수정 요청을 처리했습니다.", "notes", "노트", "개"),
+    "update_fields_bulk": ("카드 내용 일괄 수정", "카드 내용 일괄 수정 요청을 처리했습니다.", "notes", "노트", "개"),
     "add_tags": ("태그 추가", "태그 추가 요청을 처리했습니다.", "notes", "노트", "개"),
     "remove_tags": ("태그 해제", "태그 해제 요청을 처리했습니다.", "notes", "노트", "개"),
     "create_deck": ("덱 준비", "덱을 사용할 수 있도록 준비했습니다.", None, "", ""),
@@ -109,6 +110,10 @@ def _content(operation: dict[str, Any]) -> tuple[str, str]:
         added = operation.get("result", {}).get("added")
         if _count(added):
             lines.append(f"노트 {added}개 추가를 확인했습니다.")
+    if action == "update_fields_bulk":
+        updated = operation.get("result", {}).get("updated")
+        if _count(updated):
+            lines.append(f"노트 {updated}개 수정을 확인했습니다.")
     if state != "applied":
         lines.append("같은 변경을 다시 실행하기 전에 작업 번호로 결과를 확인해 주세요.")
 
