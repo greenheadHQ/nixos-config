@@ -20,6 +20,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from .ankiconnect import AnkiConnect
+from .authoring import AUTHORING_GUIDANCE
 from .helper import Helper
 from .operations import OperationService
 from .shaping import card_view, note_view, page, truncate
@@ -157,25 +158,30 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """All tags in the collection."""
         return {"tags": await anki.invoke("getTags")}
 
-    @mcp.tool(name="anki_add_notes", annotations=ADDITIVE)
+    @mcp.tool(name="anki_add_notes", annotations=ADDITIVE, description=(
+        "Add notes. Every note gets the 'mcp::added' tag so MCP-created cards stay identifiable. "
+        "Duplicates (same first field in the deck) are rejected unless allow_duplicate. Returns an operation receipt "
+        "with per-note outcomes in result.results (null noteId = unconfirmed/failed, see errors). "
+        "Normal sync runs before and after writes. Reuse request_id "
+        "for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation.\n\n"
+        + AUTHORING_GUIDANCE
+    ))
     async def anki_add_notes(notes: list[NewNote], allow_duplicate: bool = False,
                              request_id: str | None = None, preview_token: str | None = None,
                              confirm: bool = False) -> dict[str, Any]:
-        """Add notes. Every note gets the 'mcp::added' tag so MCP-created cards stay identifiable.
-        Duplicates (same first field in the deck) are rejected unless allow_duplicate. Returns ids per note
-        (null = unconfirmed/failed, see errors). Normal sync runs before and after writes. Reuse request_id
-        for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation."""
         for n in notes:
             check_tags(n.tags)
         return await operations.run("add_notes", {"notes": [n.model_dump() for n in notes], "allow_duplicate": allow_duplicate},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
-    @mcp.tool(name="anki_update_note_fields", annotations=UPDATE)
+    @mcp.tool(name="anki_update_note_fields", annotations=UPDATE, description=(
+        "Replace the given fields of a note (other fields unchanged). Card ids, scheduling and review "
+        "history are preserved for existing cards. Changed templates/cloze fields may generate new cards. "
+        "Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries.\n\n"
+        + AUTHORING_GUIDANCE
+    ))
     async def anki_update_note_fields(note_id: int, fields: dict[str, str], request_id: str | None = None,
                                      preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
-        """Replace the given fields of a note (other fields unchanged). Card ids, scheduling and review
-        history are preserved for existing cards. Changed templates/cloze fields may generate new cards.
-        Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries."""
         return await operations.run("update_fields", {"note_id": note_id, "fields": fields},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
