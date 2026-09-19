@@ -105,7 +105,6 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 같은 카드의 문제·정답 화면에서는 같은 값이고, 같은 노트에서 만든 형제 카드는 각각 다른 값이다.
 `anki_find_cards(query="cid:<ID>")` 응답의 `noteId`로 원본 노트와 검토 메모를 찾을 수 있다.
 번호를 별도 필드에 저장하거나 노트 ID로 오표기하지 않는다.
-[CIR/ADR: 카드 ID 직접 복사를 선택한 이유](https://github.com/greenheadHQ/nixos-config/issues/1328#issuecomment-5742567599).
 
 조각의 정본은 `sync-addon/card-id-button.html`, 순수 계획 생성기는 `sync-addon/card_id.py`의
 `build_plan(model)`이다. 현재 Anki native model의 `flds`, `tmpls`, `req`를 받아 원본과 변경안 쌍을 반환하며

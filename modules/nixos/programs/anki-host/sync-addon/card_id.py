@@ -4,6 +4,25 @@ This module is pure: it neither imports Anki nor reads a collection. Callers
 must obtain a current native Anki model and apply each returned change through
 the existing authorized model_template_update operation. Unsupported template
 boundaries are rejected instead of repairing the user's original HTML.
+
+Decision record (2026-09-19, issue 1328):
+The user needs an identifier to copy into an LLM conversation, including when
+asking to edit the parent note. Memorizing or permanently displaying it adds
+no value. We use the renderer's current {{CardID}} and copy "cid:<ID>";
+anki_find_cards already returns noteId, so callers can resolve the parent note.
+
+We rejected storing a note ID in an extra field: newly created notes would
+need that field populated, and imports can reassign IDs while retaining old
+field values. Host-side repair would introduce a sync round trip before the
+button could reliably identify newly created or imported notes. Direct CardID
+rendering avoids that dependency and does not create a second source of truth.
+
+The same card must copy the same ID on both sides; sibling cards must copy
+their own IDs. Preserve card-generation conditions and existing note/card IDs,
+fields, content, styling, schedules, and review history. Copying needs no host
+connection; looking up a newly created card on the host still requires sync.
+These reasons live with the implementation so the decision remains readable
+without the issue tracker or another documentation platform.
 """
 
 from html.parser import HTMLParser
