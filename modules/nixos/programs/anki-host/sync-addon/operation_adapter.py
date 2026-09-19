@@ -316,6 +316,8 @@ class AnkiAdapter:
         summary["note_ids"] = note_ids[:100]
         summary["card_ids"] = card_ids[:100]
         summary["ids_truncated"] = len(note_ids) > 100 or len(card_ids) > 100
+        if action == "set_card_flags":
+            summary["flag"] = p["flag"]
         if action in ("delete_notes", "delete_decks"):
             summary["affected_review_rows"] = len(snapshot.get("reviews", []))
             warnings.append("Deletion may remove cards and their review history; a verified restore point is required.")
@@ -402,6 +404,13 @@ class AnkiAdapter:
         elif action == "set_due_date":
             if ac.setDueDate(cards=p["card_ids"], days=p["days"]) is not True:
                 raise OperationError("schedule-update-failed")
+        elif action == "set_card_flags":
+            # The collection API changes only the user flag (low three bits),
+            # preserves other flag bits, and records the change for AnkiWeb.
+            self.col.set_user_flag_for_cards(p["flag"], list(p["card_ids"]))
+            if any(card.user_flag() != p["flag"] for card in self._cards(p["card_ids"])):
+                raise OperationError("flag-readback-mismatch")
+            result.update(card_ids=p["card_ids"], flag=p["flag"])
         elif action == "forget_cards":
             ac.forgetCards(cards=p["card_ids"])
         elif action == "store_media":
