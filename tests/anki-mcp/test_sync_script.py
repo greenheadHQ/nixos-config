@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from anki_mcp.syncstatus import read_freshness
+
 ROOT = Path(__file__).resolve().parents[2]
 HOST = ROOT / 'modules/nixos/programs/anki-host/files'
 
@@ -123,3 +125,21 @@ def test_failed_root_state_construction_does_not_block_next_run(script):
         assert orphan.exists()
     finally:
         orphan.chmod(0o600)
+
+
+@pytest.mark.parametrize('action,expected', [('full-sync-required', 'full-sync-required'),
+                                           ('schema-sync-blocked', 'schema-blocked'), ('unexpected-action', 'error')])
+def test_read_freshness_keeps_shell_produced_success_after_later_failure(script, action, expected):
+    run, _state, public, _root = script
+    proc = run(1001)
+    assert proc.returncode == 0, proc.stderr
+    path = str(public / 'fixture.json')
+    before = read_freshness(path)
+    assert before['last_successful_sync_at'] is not None
+    assert before['last_attempt_result'] == 'success'
+    proc = run(1001, action=action)
+    assert proc.returncode == 1, proc.stderr
+    after = read_freshness(path)
+    assert after['last_successful_sync_at'] == before['last_successful_sync_at']
+    assert after['last_attempt_at'] != before['last_attempt_at']
+    assert after['last_attempt_result'] == expected
