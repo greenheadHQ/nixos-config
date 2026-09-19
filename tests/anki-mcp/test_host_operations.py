@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from anki_host_fixture.operations import Operations, OperationError, atomic_json, decode_media, filename
+from anki_host_fixture.operations import Operations, OperationError, atomic_json, decode_media, filename, validate_spec
 
 
 class Adapter:
@@ -141,3 +141,9 @@ def test_media_decoded_boundary_and_strict_base64():
     for value in ("MTIzNDU2", "MTIzNDU=\n", "not base64", ""):
         with pytest.raises(OperationError):
             decode_media(value, 5)
+
+
+@pytest.mark.parametrize("flag", [-1, 8, True, False, "4", 1.5, None])
+def test_flag_validation_is_strict_at_helper_boundary(flag):
+    with pytest.raises(OperationError, match="flag-must-be"):
+        validate_spec("set_card_flags", {"card_ids": [10], "flag": flag}, 5)

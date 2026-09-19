@@ -71,6 +71,7 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 | `anki_delete_notes` | `deleteNotes`; 해당 노트의 모든 카드에 영향, 항상 확인·복구점. |
 | `anki_delete_decks` | `deleteDecks(cardsToo=True)`; 하위 덱 포함. 다른 덱의 형제 카드는 유지, 고아 노트는 삭제. filtered/default 덱 경고는 preview에서 확인. |
 | `anki_suspend_cards` | `suspend` + `areSuspended` readback; 정지와 해제 모두 지원. |
+| `anki_find_cards`, `anki_set_card_flags` | `flag:N` 검색과 응답 `flag`(0–7, 조회 불가 시 null). 설정은 Anki `set_user_flag_for_cards` + readback; 1–7 설정/변경, 0 해제. 지정 카드만 변경하며 노트·형제 카드·일정·복습 기록을 보존. 20건 초과 확인·복구점 적용. |
 | `anki_set_due_date` | `setDueDate`; `2`, `2-5`, `2!` 문법. 범위는 무작위, 수동 복습 기록 추가·정지 해제 가능. |
 | `anki_forget_cards` | `forgetCards`; 새 카드 학습 상태로 돌아가며 과거 복습 기록 전체를 지우지 않는다. |
 | `anki_store_media`, `anki_media` | base64 신규 저장·이름 목록/조회. decoded 5 MiB, 안전한 NFC 파일명. 같은 내용은 no-op, 다른 내용의 덮어쓰기·삭제·URL/path 입력은 없음. |
@@ -83,6 +84,37 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 `new.perDay`, `new.order`, `new.initialFactor`, `rev.perDay`, `rev.maxIvl`, `rev.ease4`,
 `rev.ivlFct`, `rev.hardFactor`, `lapse.mult`, `lapse.minInt`, `lapse.leechFails`, `lapse.leechAction`.
 현 버전에서 없는 키·범위 밖 값·프리셋 ID/name 교체는 거부한다. FSRS 설정 전체 편집은 지원하지 않는다.
+
+## 검토 표시와 메모
+
+검토 대기열 표시는 사용자와 정한다. 별표는 노트의 `marked` 태그이며
+`anki_find_notes(query="tag:marked")`와 `anki_remove_tags`를 사용한다.
+깃발은 카드 단위이며 `anki_find_cards(query="flag:N")`으로 모으고 `anki_set_card_flags(..., flag=0)`으로 해제한다.
+깃발 기능을 제공한다는 이유로 기존 별표나 특정 색을 임의로 검토 대기열로 해석하지 않는다.
+
+질문 이유·수정 방향은 선택적인 **`검토 메모` 필드**에 남긴다. 한 줄 제한 없이 여러 문단·질문·예시를 저장하며,
+기존 설명·Extra·Comments 필드와 섞지 않는다. 이 필드는 노트 단위로, 같은 노트의 역방향·여러 빈칸 카드가 공유한다.
+특정 카드만의 질문은 방향·빈칸을 메모에서 구분한다.
+
+- 준비: `anki_models`/`anki_model_info`로 필드 존재와 템플릿 참조를 확인한다. 없는 타입에만
+  `anki_prepare_model_change(action="model_field_add", params={"model_name": "...", "field_name": "검토 메모"})`로
+  끝에 필드를 추가하는 미리보기를 만든다. 기존 필드를 덮어쓰거나 형식을 바꾸지 않는다.
+  아래 구조 변경 승인·복구점 경로로 실행하며, 문제·정답 템플릿에는 메모 필드를 넣지 않는다.
+- 적용 범위: 준비된 타입의 기존 노트와 이후 생성 노트에 같은 입력칸이 생긴다.
+  새 타입·외부 덱에서 가져온 타입에는 자동 추가되지 않는다. 누락을 확인하고 같은 준비 절차를 거친다.
+  이미지 가리기·제3자 편집기/템플릿은 해당 클라이언트에서 별도 확인한다.
+- 입력: AnkiMobile 복습 중 편집 화면에서 메모를 쓰고 저장한다. 입력 동선과 단락 표시의 실제 동작은
+  기기·노트 타입별로 확인한다. 표시만 남기기는 빠르지만 메모 입력까지 한두 번 탭을 보장하지 않는다.
+  **메모에 Anki 빈칸 생성 구문(`{{c1::정답}}` 등)을 그대로 붙여넣지 않는다.**
+  `c1: 정답`처럼 풀어 적거나 일반 문장으로 설명한다. Cloze·이미지 가리기에서는 Anki가
+  템플릿에서 참조하지 않는 메모 필드까지 검사해 실제 카드를 추가한다. 필드를 숨겨도 막히지 않는다.
+  이는 입력 규칙이며 자동 차단 기능이 아니다. HTML entity 표현도 모바일 재편집까지의 보장을 대신하지 않는다.
+- 조회: 검색 응답은 필드당 기본 400자로 잘릴 수 있으므로, 검토 전에 `anki_note_info`의
+  기본 전체 조회로 **메모 전체**를 읽는다. HTML 문단/줄바꿈을 보존하고, 표시 해제만으로 메모를 지우거나 다시 쓰지 않는다.
+  모바일과 호스트의 AnkiWeb 동기화가 모두 끝나야 모바일 메모가 호스트 조회에 반영된다.
+- 검증: 필드 준비·메모 편집 전후 기존 필드, 카드 ID/수, 일정, 복습 기록, 템플릿/렌더링을 대조한다.
+  일반 장문·여러 문단의 보존과, 빈칸 생성 구문을 그대로 쓰면 카드가 추가되는 제한을 각각 실엔진에서 검증한다.
+  메모 수정 중 예상 카드 수가 늘면 구문을 확인하고, 확인·복구점 절차를 생략하지 않는다.
 
 ## 권한과 동시 실행
 
@@ -145,7 +177,7 @@ MCP의 상태/최근 작업 응답을 우선 사용한다. 로그에 키·본문
 
 - `nix develop --command bash tests/run-anki-mcp-tests.sh`: 원장·확인·역할 인증·sync/알림·root 미러/승인·셸 상태 기록의 격리 테스트.
 - `nix develop --command bash tests/run-eval-tests.sh`: 일반/no-IFD 모듈·권한·상수 배선 검사.
-- `tests/anki-runtime/test_real_collection.py`: Anki/aqt 26.8 환경에서 `ANKICONNECT_SOURCE`를 실제 빌드한 애드온 디렉터리로
+- `tests/anki-runtime/`: Anki/aqt 26.8 환경에서 `ANKICONNECT_SOURCE`를 실제 빌드한 애드온 디렉터리로
   지정해 pytest 실행. 합성 임시 컬렉션과 실제 AnkiConnect/Rust backend를 사용한다. GUI 콜백은 대체하고 포트·계정은 열지 않는다.
 - root→일반 sync 셸 fixture는 실제 JSON/파일/lock과 chown 호출을 검사하지만 실제 Linux UID 전환을 대신하지 않는다.
 - 배포 시 `nrs`를 사용한다. 새 로컬 키가 필요한 모든 consumer가 함께 전환돼야 한다.

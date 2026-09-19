@@ -53,6 +53,10 @@ class FakeAnki:
         self.calls.append((action, params))
         if action == "findNotes":
             return httpx.Response(200, json={"result": [1] * 3, "error": None})
+        if action == "findCards":
+            return httpx.Response(200, json={"result": [10], "error": None})
+        if action == "cardsInfo":
+            return httpx.Response(200, json={"result": [{"cardId": 10, "note": 1, "flags": 12}], "error": None})
         if action == "notesInfo":
             return httpx.Response(200, json={"result": [self.notes[i] for i in params["notes"]], "error": None})
         if action == "canAddNotesWithErrorDetail":
@@ -197,3 +201,54 @@ async def test_tool_annotations_mark_read_and_write(tmp_path):
     assert tools["anki_delete_notes"].annotations.destructiveHint is True
     assert tools["anki_set_due_date"].annotations.idempotentHint is False
     assert tools["anki_operation_status"].annotations.readOnlyHint is True
+    assert tools["anki_set_card_flags"].annotations.readOnlyHint is False
+    assert tools["anki_set_card_flags"].annotations.idempotentHint is True
+
+
+@pytest.mark.anyio
+async def test_flag_search_preserves_query_and_returns_current_user_flag(tmp_path):
+    fake = FakeAnki()
+    mcp = make_mcp(fake, tmp_path)
+    result = await mcp.call_tool("anki_find_cards", {"query": "flag:4"})
+    structured = result[1] if isinstance(result, tuple) else result
+    assert ("findCards", {"query": "flag:4"}) in fake.calls
+    assert structured["cards"][0]["flag"] == 4
+
+
+@pytest.mark.anyio
+async def test_flag_tool_uses_helper_and_repeated_request_does_not_reapply(tmp_path):
+    fake = FakeAnki()
+    mcp = make_mcp(fake, tmp_path)
+    params = {"card_ids": [10, 10], "flag": 0, "request_id": "clearflag01"}
+    for _ in range(2):
+        result = await mcp.call_tool("anki_set_card_flags", params)
+        structured = result[1] if isinstance(result, tuple) else result
+        assert structured["state"] == "applied"
+    assert fake.operation_calls == [{"action": "set_card_flags", "params": {"card_ids": [10], "flag": 0}}]
+    assert not fake.calls  # No AnkiConnect HTTP mutation.
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("invalid", [{"flag": v} for v in (-1, 8, True, "4", 1.5)]
+                         + [{"card_ids": [v]} for v in (True, 0, -1, "10")])
+async def test_flag_tool_rejects_invalid_input_before_request(tmp_path, invalid):
+    fake = FakeAnki()
+    mcp = make_mcp(fake, tmp_path)
+    with pytest.raises(ToolError):
+        await mcp.call_tool("anki_set_card_flags", {"card_ids": [10], "flag": 4, **invalid})
+    assert not fake.operation_calls and not fake.calls
+    assert not list((tmp_path / "operations").glob("*.json"))
+
+
+@pytest.mark.anyio
+async def test_review_memo_full_read_preserves_long_multiple_paragraphs(tmp_path):
+    fake = FakeAnki()
+    memo = "<p>첫 번째 질문: 왜 그런가요?</p>\n\n" + "긴 설명과 예시. " * 200 + "\n<p>두 번째 질문</p>"
+    fake.notes[1]["fields"]["검토 메모"] = {"value": memo, "order": 2}
+    mcp = make_mcp(fake, tmp_path)
+    search = await mcp.call_tool("anki_find_notes", {"query": "tag:marked"})
+    search = search[1] if isinstance(search, tuple) else search
+    assert "truncated" in search["notes"][0]["fields"]["검토 메모"]
+    full = await mcp.call_tool("anki_note_info", {"note_ids": [1]})
+    full = full[1] if isinstance(full, tuple) else full
+    assert full["notes"][0]["fields"]["검토 메모"] == memo
