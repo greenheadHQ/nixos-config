@@ -140,7 +140,7 @@ def test_note_fields_tags_and_scheduling(runtime):
     assert all(row in r.col.db.all('select * from revlog where cid=?', cid) for row in prior_reviews)
     assert r.col.db.all('select * from notes where id=?', untouched) == untouched_before
     assert r.col.get_note(nid)['Back'] == 'updated'
-    assert len(r.restored) == 2
+    assert len(r.restored) == 3  # Field edit, scheduling change, and forgetting.
 
 
 def test_cloze_bulk_card_count_and_export_reopen(runtime):

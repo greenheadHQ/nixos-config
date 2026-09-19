@@ -65,7 +65,8 @@ def setup(tmp_path, outcomes=(), notify=None):
 
 
 PARAMS = {"note_ids": [1], "tags": ["t"]}
-MUTATIONS = [("add_tags", PARAMS), ("set_card_flags", {"card_ids": [10], "flag": 4})]
+MUTATIONS = [("add_tags", PARAMS), ("set_card_flags", {"card_ids": [10], "flag": 4}),
+             ("update_fields_bulk", {"notes": [{"note_id": 1, "fields": {"Front": "bulk change"}}]})]
 
 
 @pytest.mark.anyio
