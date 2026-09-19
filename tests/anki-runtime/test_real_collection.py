@@ -1,7 +1,8 @@
 """Real Anki API checks, separate from the fast offline MCP suite.
 
-Run with Anki/aqt 26.8 and ANKICONNECT_SOURCE pointing to the built, patched
-addon directory. Uses generated collections only; no HTTP listeners or accounts.
+Run with the pinned Anki/aqt and ANKICONNECT_SOURCE pointing to the built, patched
+addon directory. ANKI_HOST_HELPER_SOURCE selects the installed helper addon.
+Uses generated collections only; no HTTP listeners or accounts.
 Qt window/progress callbacks are inert, while AnkiConnect and the Rust collection
 backend are real. This does not exercise a Linux systemd deployment or AnkiWeb.
 """
@@ -18,10 +19,11 @@ from pathlib import Path
 import anki
 import aqt
 import pytest
+from anki.buildinfo import version as anki_version
 from anki.collection import Collection
 
 ROOT = Path(__file__).resolve().parents[2]
-HOST = ROOT / 'modules/nixos/programs/anki-host/sync-addon'
+HOST = Path(os.environ.get('ANKI_HOST_HELPER_SOURCE', ROOT / 'modules/nixos/programs/anki-host/sync-addon'))
 
 
 def load(name, path):
@@ -34,7 +36,8 @@ def load(name, path):
 
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
-    assert anki.version == '26.08'
+    if expected_version := os.environ.get('ANKI_EXPECTED_VERSION'):
+        assert anki_version == expected_version
     anki.lang.set_lang('en')
     credentials = tmp_path / 'credentials'
     credentials.mkdir()
@@ -115,6 +118,27 @@ def test_packaged_bridge_registration_and_profile_readiness(runtime, monkeypatch
     assert calls == ['edit', 'listener']
     r.helper._on_profile_open()
     assert r.helper._status_quick()['collection_open'] is True
+
+
+def test_packaged_handler_enforces_authentication_before_dispatch(runtime, monkeypatch):
+    r = runtime
+    logged = []
+    monkeypatch.setattr(r.ac, 'logEvent', lambda name, data: logged.append((name, data)))
+    before = r.ac.deckNames()
+    read_key = '1' * 64
+    for request in (
+        {'action': 'deckNames', 'version': 6},
+        {'action': 'deckNames', 'version': 6, 'key': 'f' * 64},
+        {'action': 'deckNames', 'version': 5, 'key': read_key},
+        {'action': 'createDeck', 'version': 6, 'key': read_key, 'params': {'deck': 'Unauthorized'}},
+        {'action': 'getDeckStats', 'version': 6, 'key': read_key, 'params': {'decks': ['Unauthorized']}},
+    ):
+        reply = r.ac.handler(request)
+        assert reply['error'], request
+        assert r.ac.deckNames() == before
+    reply = r.ac.handler({'action': 'deckNames', 'version': 6, 'key': read_key})
+    assert reply == {'result': before, 'error': None}
+    assert logged and all(name == 'reply' for name, _ in logged)
 
 
 def test_note_fields_tags_and_scheduling(runtime):
