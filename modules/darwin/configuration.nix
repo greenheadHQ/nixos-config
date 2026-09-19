@@ -200,6 +200,14 @@ in
       ComputerUseAllowForbiddenTargets = true;
     };
 
+    # ChatGPT(Codex)의 새 창: Control + Command + N (^=Control, @=Command).
+    # 한국어/영어 메뉴를 함께 등록하며, 사용자 지정 메뉴 단축키 사전 전체를 Nix가 관리한다.
+    # 마지막 항목 제거 시 빈 사전 {}를 nrs로 한 번 적용한 뒤 선언을 삭제한다.
+    CustomUserPreferences."com.openai.codex".NSUserKeyEquivalents = {
+      "새 창" = "^@n";
+      "New Window" = "^@n";
+    };
+
     # 네트워크 볼륨에 .DS_Store 생성 방지
     CustomUserPreferences."com.apple.desktopservices" = {
       DSDontWriteNetworkStores = true;
