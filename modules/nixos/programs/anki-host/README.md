@@ -45,12 +45,37 @@ ID 없이 보낸 요청의 응답을 잃었으면 최근 작업부터 확인한�
 미완료 본문도 만료 정리 시 제거한다. 원장과 복구점에는 별도의 삭제 정책을 적용한다.
 원장 내부의 `applying`도 공개 조회에서는 `unknown`으로 반환되므로 실행 완료로 해석하지 않는다.
 
+MCP 변경 알림은 한국어 작업명과 처리 결과, AnkiWeb 동기화 상태를 먼저 보여 준다. 대상 수를 실제
+변경 수로 단정하지 않는다. 노트 추가에서 확인된 추가 수는 `result.added`로 따로 표시한다.
+덱 삭제는 사용자 선택에 따라 **덱 이름과 실제로 함께 삭제된 카드 수**를 표시한다.
+helper가 삭제 전후의 덱·카드 ID를 대조해 `result.deleted_decks`, `retained_decks`, `deleted_cards`,
+`retained_cards`를 기록한다. 하위 덱·필터 덱의 원래 소속을 포함하고, 유지되는 기본 덱이나 원래 덱으로
+돌아간 카드를 삭제했다고 말하지 않는다. 과거 영수증에 실제 삭제 수가 없으면 미확인으로 안내한다.
+알림 마지막의 **문제 문의용 작업 번호**는 전체 `operation_id`이며, 비슷한 작업이 여러 건이거나 시간이
+지난 뒤에도 `anki_operation_status`로 정확한 결과를 찾는 데 사용한다. 카드 ID와 다르다.
+덱 삭제 이름 외의 개인 본문·이름·오류 상세는 알림에 넣지 않는다. 이름의 제어 문자는 눈에 보이게
+이스케이프하며, 긴 이름·다수 이름은 Pushover 본문 1,024자 한도 안에서 일부를 보여 주고 생략을 표시한다.
+전체 이름은 작업 번호로 조회할 수 있고 작업 번호 자체는 생략하지 않는다.
+AnkiWeb 동기화 완료는 다른 기기의 수신 완료를
+보장하지 않는다. 구조 변경·일반 동기화·백업의 별도 운영 알림은 기존 경로를 유지한다.
+
 일반 동기화는 백그라운드 미디어 전송의 완료·오류도 확인한 뒤 성공으로 기록한다. 미디어 저장 작업은
 `sync.media_state=synced`까지 확인해야 전달 완료다. 미디어 설정이 꺼져 있거나 결과를 확인하지 못하면
 `sync.state=pending`을 유지한다. 같은 요청으로 다시 호출하면 파일을 재저장하지 않고 동기화만 재개한다.
 컬렉션과 전후 미디어 대기는 기존 변경 작업 예산 30분을 공유한다. 별도의 미디어 대기 시간을 더하지 않는다.
 시간 초과 시 성공 기준점을 갱신하지 않으며, 아직 실행 중인 callback의 lock은 완료될 때까지 유지한다.
 MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다. 이 경우 같은 요청 ID의 전달 상태를 다시 확인한다.
+
+## 여러 노트의 필드 일괄 수정
+
+`anki_update_notes_fields`는 `{note_id, fields}` 목록을 하나의 작업으로 처리한다. 기존 필드 전체를 먼저 읽고,
+바꿀 필드만 전달하며 중복 note ID는 거절한다. 전체 대상·필드·예상 생성 카드 수를 실행 전에 검증한다.
+사전/사후 동기화 한 쌍, 검증된 미디어 제외 복구점 하나, 결과 알림 하나를 사용한다.
+단일 노트의 `anki_update_note_fields`도 매번 같은 복구점 보호를 적용하지만, 20건 이하 변경에 새 확인 단계를 추가하지 않는다.
+
+입력별 결과는 `applied`, `unknown`, `not-attempted`로 구분한다. 저장 결과가 불명확하면 이후 항목을 중단하고
+전체를 `partial`로 반환한다. 자동으로 되돌리지 않으며 새 request ID로 전체를 반복하지 않는다.
+알림에는 요청 노트 수와 실제 확인된 수정 수를 따로 표시한다. 이전 필드의 회수는 아래 복구 절차를 따른다.
 
 ## 지원표
 
@@ -65,7 +90,7 @@ nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).input
 
 | MCP 도구 | 실제 API / 주의점 |
 |---|---|
-| `anki_add_notes`, `anki_update_note_fields` | `canAddNotesWithErrorDetail`, `addNotes`, `updateNoteFields`; 추가는 `mcp::added`, 입력별 결과. 필드 변경은 새 카드 생성 가능. |
+| `anki_add_notes`, `anki_update_note_fields`, `anki_update_notes_fields` | `canAddNotesWithErrorDetail`, `addNotes`, `updateNoteFields`; 추가는 `mcp::added`, 입력별 결과. 필드 변경은 새 카드 생성 가능. |
 | `anki_add_tags`, `anki_remove_tags`, `anki_create_deck` | `addTags`, `removeTags`, `createDeck`; 공통 변경 원장 적용. |
 | `anki_move_cards` | `changeDeck`; 존재하는 일반 덱으로 이동. 대상 카드 수에 따라 확인. |
 | `anki_delete_notes` | `deleteNotes`; 해당 노트의 모든 카드에 영향, 항상 확인·복구점. |
