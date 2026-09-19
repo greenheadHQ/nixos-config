@@ -211,6 +211,10 @@ in
   ];
 
   config = lib.mkIf cfg.enable {
+    # A failed addon/backend check must stop the system build before activation.
+    # system.checks does not retain the test runtime in the deployed closure.
+    system.checks = [ (import ./runtime-check.nix { inherit pkgs addons; }) ];
+
     assertions = [
       {
         assertion =
