@@ -36,3 +36,8 @@
 # 제거됐고, Mac 배포본에 user-owned 로 남은 잔존분을 회수한다.
 # 재검증: LC_ALL=C grep -c -a -o voice_transcription "$(readlink -f "$(whence -p codex)")"
 features.voice_transcription
+
+# suppress_unstable_features_warning는 최상위 키다. 잘못된 [notice] 아래의 잔존 값은
+# template 미선언 키 보존 정책 때문에 남아 unknown configuration field 경고를 낸다.
+# 이 경로만 회수하고 두 template이 선언한 정상 최상위 값은 유지한다.
+notice.suppress_unstable_features_warning
