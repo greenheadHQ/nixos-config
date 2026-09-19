@@ -1,3 +1,4 @@
+import unicodedata
 from urllib.parse import parse_qs
 
 import httpx
@@ -49,6 +50,7 @@ async def send_payload(credentials, receipt, *, http_status=200, body=None):
     assert payload["message"].endswith(f"문제 문의용 작업 번호: {OPERATION_ID}")
     assert payload["message"].count(OPERATION_ID) == 1
     assert OPERATION_ID not in payload["title"]
+    assert len(payload["message"]) <= 1024
     return outcome, payload
 
 
@@ -148,7 +150,7 @@ async def test_existing_deck_receipt_does_not_claim_a_new_deck_was_created(crede
 
 
 @pytest.mark.parametrize("deck_name", ["private-filtered-deck", "Default"])
-async def test_deck_delete_does_not_equate_affected_cards_with_deleted_cards(credentials, deck_name):
+async def test_legacy_deck_delete_names_request_without_inventing_deleted_card_count(credentials, deck_name):
     _, payload = await send_payload(credentials, operation(
         action="delete_decks",
         summary={"notes": 2, "cards": 5, "decks": [deck_name],
@@ -156,10 +158,159 @@ async def test_deck_delete_does_not_equate_affected_cards_with_deleted_cards(cre
     ))
     text = payload["title"] + "\n" + payload["message"]
     assert "덱" in payload["title"] and "삭제" in payload["title"]
-    assert "delete_decks" not in text and deck_name not in text
+    assert "delete_decks" not in text
+    assert f'삭제 요청 덱: "{deck_name}"' in payload["message"]
+    assert "삭제된 카드 수는 확인되지 않았습니다." in payload["message"]
+    assert "삭제한 덱:" not in payload["message"]
+    assert "함께 삭제된 카드:" not in payload["message"]
+    assert "대상: 카드" not in payload["message"]
     assert "덱 1개" not in text
     assert "카드 5장을 삭제" not in text and "카드 5장 삭제" not in text
     assert "노트 2개를 삭제" not in text and "노트 2개 삭제" not in text
+
+
+async def test_deck_delete_reports_named_deck_and_actual_deleted_cards(credentials):
+    _, payload = await send_payload(credentials, operation(
+        action="delete_decks",
+        summary={"notes": 42, "cards": 99, "decks": ["한국어::복습"]},
+        result={"state": "applied", "deleted_decks": ["한국어::복습"],
+                "retained_decks": [], "deleted_cards": 3, "retained_cards": 0},
+    ))
+    message = payload["message"]
+    assert '삭제한 덱: "한국어::복습"' in message
+    assert "함께 삭제된 카드: 3장." in message
+    assert "99" not in message and "42" not in message
+    assert "대상: 카드" not in message
+    assert "삭제 요청 덱:" not in message
+    assert message.index("삭제한 덱:") < message.index("함께 삭제된 카드:") < message.index(SYNCED)
+
+
+@pytest.mark.parametrize("deleted_cards", [0, 3])
+async def test_deck_delete_distinguishes_retained_default_and_surviving_cards(credentials, deleted_cards):
+    _, payload = await send_payload(credentials, operation(
+        action="delete_decks",
+        summary={"notes": 42, "cards": 99, "decks": ["필터 덱", "Default"]},
+        result={"state": "applied", "deleted_decks": ["필터 덱"],
+                "retained_decks": ["Default"], "deleted_cards": deleted_cards, "retained_cards": 5},
+    ))
+    message = payload["message"]
+    assert '삭제한 덱: "필터 덱"' in message
+    assert '유지된 덱: "Default"' in message
+    assert f"함께 삭제된 카드: {deleted_cards}장." in message
+    assert "삭제되지 않은 카드: 5장." in message
+    assert '삭제한 덱: "Default"' not in message
+    assert "99" not in message and "42" not in message
+
+
+async def test_default_only_delete_receipt_does_not_call_retained_deck_deleted(credentials):
+    _, payload = await send_payload(credentials, operation(
+        action="delete_decks", summary={"cards": 99, "decks": ["Default"]},
+        result={"state": "applied", "deleted_decks": [], "retained_decks": ["Default"],
+                "deleted_cards": 0, "retained_cards": 5},
+    ))
+    message = payload["message"]
+    assert '유지된 덱: "Default"' in message
+    assert "삭제한 덱:" not in message
+    assert "함께 삭제된 카드: 0장." in message
+    assert "삭제되지 않은 카드: 5장." in message
+    assert "99" not in message
+
+
+async def test_multiple_deleted_decks_keep_each_name_and_combined_measured_card_count(credentials):
+    names = ["한국어 복습", "Parent::Child", "빈 덱"]
+    _, payload = await send_payload(credentials, operation(
+        action="delete_decks", summary={"cards": 99, "decks": names},
+        result={"state": "applied", "deleted_decks": names, "retained_decks": [],
+                "deleted_cards": 7, "retained_cards": 0},
+    ))
+    message = payload["message"]
+    assert "삭제한 덱:" in message
+    for name in names:
+        assert f'"{name}"' in message
+    assert "함께 삭제된 카드: 7장." in message
+    assert "99" not in message
+
+
+async def test_partial_deck_delete_reports_only_readback_and_never_claims_whole_request_completed(credentials):
+    _, payload = await send_payload(credentials, operation(
+        action="delete_decks", state="partial",
+        summary={"cards": 99, "decks": ["삭제됨", "남아 있음"]},
+        result={"state": "partial", "deleted_decks": ["삭제됨"], "retained_decks": ["남아 있음"],
+                "deleted_cards": 2, "retained_cards": 4},
+    ))
+    message = payload["message"]
+    assert "확인 필요" in payload["title"] and "완료" not in payload["title"]
+    assert "요청을 처리했습니다" not in message
+    assert "다시 실행하기 전에" in message
+    assert '삭제한 덱: "삭제됨"' in message
+    assert '유지된 덱: "남아 있음"' in message
+    assert "함께 삭제된 카드: 2장." in message
+    assert "삭제되지 않은 카드: 4장." in message
+    assert "99" not in message
+
+
+@pytest.mark.parametrize("count", [None, True, False, "7", -1, 2.5])
+async def test_invalid_deleted_card_counts_never_become_confirmed_counts(credentials, count):
+    _, payload = await send_payload(credentials, operation(
+        action="delete_decks", summary={"cards": 99, "decks": ["시험 덱"]},
+        result={"state": "applied", "deleted_decks": ["시험 덱"], "retained_decks": [],
+                "deleted_cards": count, "retained_cards": count},
+    ))
+    message = payload["message"]
+    assert "삭제된 카드 수는 확인되지 않았습니다." in message
+    assert "함께 삭제된 카드:" not in message
+    assert "삭제되지 않은 카드:" not in message
+    assert "99" not in message
+
+
+async def test_deck_names_cannot_inject_notification_lines_or_invisible_controls(credentials):
+    name = "한국어\n가짜 줄\r\t\x00\x1b\x7f\x85\u202e::덱"
+    _, payload = await send_payload(credentials, operation(
+        action="delete_decks", summary={"decks": [name], "cards": 99},
+        result={"state": "applied", "deleted_decks": [name], "retained_decks": [],
+                "deleted_cards": 1, "retained_cards": 0},
+    ))
+    message = payload["message"]
+    named_line = next(line for line in message.splitlines() if line.startswith("삭제한 덱:"))
+    assert "한국어" in named_line and "가짜 줄" in named_line and "::덱" in named_line
+    assert not any(unicodedata.category(char) in ("Cc", "Cf") for char in message if char != "\n")
+    assert not any(line.startswith("가짜 줄") for line in message.splitlines())
+
+
+@pytest.mark.parametrize("many_names", [False, True])
+async def test_long_deck_names_are_shortened_without_losing_counts_sync_or_full_operation_id(credentials, many_names):
+    names = ([f"장문 덱 {index} " + "한글😀" * 300 for index in range(30)]
+             if many_names else ["장문 덱 " + "한글😀" * 1000])
+    _, payload = await send_payload(credentials, operation(
+        action="delete_decks", summary={"decks": names, "cards": 99},
+        result={"state": "applied", "deleted_decks": names, "retained_decks": ["Default"],
+                "deleted_cards": 3, "retained_cards": 5},
+        sync={"state": "blocked"},
+    ))
+    message = payload["message"]
+    assert "삭제한 덱:" in message and "장문 덱" in message
+    assert "…" in message or "..." in message
+    assert names[0] not in message
+    assert '유지된 덱: "Default"' in message
+    assert "함께 삭제된 카드: 3장." in message
+    assert "삭제되지 않은 카드: 5장." in message
+    assert "AnkiWeb 동기화가 중단되어 확인이 필요합니다." in message
+    assert "변경을 다시 실행하기 전에 작업 번호로 원인을 확인해 주세요." in message
+
+
+@pytest.mark.parametrize("action", [
+    "add_notes", "update_fields", "add_tags", "remove_tags", "create_deck", "move_cards",
+    "delete_notes", "suspend_cards", "set_due_date", "set_card_flags", "forget_cards",
+    "store_media", "update_deck_options", "model_css_update", "unknown-action",
+])
+async def test_other_actions_do_not_disclose_deck_names_from_any_receipt_field(credentials, action):
+    name = "private-unrelated-deck-name"
+    _, payload = await send_payload(credentials, operation(
+        action=action, summary={"notes": 2, "cards": 5, "decks": [name]},
+        params={"deck_name": name},
+        result={"state": "applied", "deleted_decks": [name], "retained_decks": [name]},
+    ))
+    assert name not in payload["title"] + "\n" + payload["message"]
 
 
 @pytest.mark.parametrize("count", [None, True, False, "7", -1, 2.5])
