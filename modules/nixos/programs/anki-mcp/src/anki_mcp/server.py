@@ -31,6 +31,7 @@ from starlette.routing import Route
 
 from .ankiconnect import AnkiConnect
 from .approval import Lockout, build_approval_app
+from .authoring import AUTHORING_GUIDANCE
 from .config import Settings, read_local_key, read_passphrase
 from .guard import RequestGuard
 from .helper import Helper
@@ -51,7 +52,7 @@ INSTRUCTIONS = (
     "If no request_id was supplied and the response is lost, inspect recent results before attempting the write again. "
     "Read back affected notes/cards after changes. Note-type structural changes are prepared here and executed only by the root approval command. "
     "The ordinary sync tool never chooses a full upload/download."
-)
+) + "\n\n" + AUTHORING_GUIDANCE
 
 
 class PublicClientRevocation:

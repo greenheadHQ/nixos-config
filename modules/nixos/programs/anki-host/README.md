@@ -2,7 +2,26 @@
 
 이 문서는 Anki 호스트와 MCP 소스의 운영 계약이다. **구현·격리 검증과 운영 배포 여부는 별도 확인한다.**
 도입 이력은 [이슈 #1306](https://github.com/greenheadHQ/nixos-config/issues/1306), 실기기·장애 검증은 [PR #1317](https://github.com/greenheadHQ/nixos-config/pull/1317), iPhone 직접 추가 검증은 [PR #1320](https://github.com/greenheadHQ/nixos-config/pull/1320)에 남긴다.
-개인 학습 방식·카드 내용 규칙은 이 인프라에서 정하지 않는다.
+플러그인의 공통 카드 작성 지침은 [authoring.py](../anki-mcp/src/anki_mcp/authoring.py)가 정본이다.
+특정 책·배치·개인 카드 자료와 학습량은 사용자 학습 프로젝트에서 관리한다.
+
+## 카드 작성 지침 전달
+
+공통 지침은 MCP `initialize.instructions`와 `anki_add_notes`·`anki_update_note_fields`의 도구 설명에 함께 전달한다.
+초기화 지침을 모델에 노출하지 않는 클라이언트도 내용 쓰기 도구 설명에서 같은 원칙을 읽을 수 있다.
+대화에서 이해한 내용의 선별, 필요한 경우의 짧은 이해 확인, 원문 대조, 기존 카드 검색·관계 링크·출처 보존을 안내한다.
+단순 조회·그대로 옮기기·오타 수정에는 학습 절차를 강요하지 않는다. 새 도구·필수 인자·노트 유형 변경은 없다.
+
+이는 클라이언트 LLM의 작성 지침이며 서버가 이해도·사실성을 판정하거나 링크를 자동 검증한다는 뜻은 아니다.
+원문 확보는 클라이언트의 자료 접근 범위에 달려 있다. 서버는 웹 검색·개인 책 PDF 조회 기능을 제공하지 않는다.
+AnkiMobile의 `anki://x-callback-url/search?query=...` 링크는 검색 화면을 여는 것이며,
+Desktop 호환이나 iPhone의 실제 탭·복습 복귀 동작은 별도로 확인한다.
+
+배포 후 인증된 `initialize`·`tools/list` 응답에서 지침을 확인한다. 서버 응답만으로 ChatGPT 적용 완료라고 판단하지 않는다.
+ChatGPT 개발자 모드 연결은 연결 설정에서 **새로 고침(Refresh)**을 실행하고 변경된 도구 설명을 확인한다.
+게시된 플러그인은 검토된 metadata 스냅샷을 사용하므로 서버 재스캔 → 새 버전 제출 → 승인된 버전 게시가 필요하다 ([공식 절차](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata)).
+갱신 후 새 대화에서 변경된 지침을 검증하고, iPhone의 실제 작성·링크 동작은 실기기에서 확인한다.
+동작하는 연결을 먼저 삭제·재등록하지 않는다. 지침 전달 확인은 LLM 준수나 실기기 동작 검증을 대신하지 않는다.
 
 ## 변경 요청과 결과 확인
 
