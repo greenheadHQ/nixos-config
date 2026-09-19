@@ -1,13 +1,16 @@
-"""Pushover write receipts: no note contents, request payloads or credentials."""
+"""Pushover write receipts: deletion deck names, never note contents or credentials."""
 
+import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 
-# Fixed copy keeps note contents, names and raw errors out of phone notifications.
+# Only deck deletion names are included by the user's explicit choice.
+# Fixed copy keeps note contents, other names and raw errors out of notifications.
 # Counts in summary describe the request's scope, not confirmed changed rows.
 _ACTIONS = {
     "add_notes": ("노트 추가", "노트 추가 요청을 처리했습니다.", "new_notes", "노트", "개"),
@@ -17,7 +20,7 @@ _ACTIONS = {
     "create_deck": ("덱 준비", "덱을 사용할 수 있도록 준비했습니다.", None, "", ""),
     "move_cards": ("카드 이동", "카드 이동 요청을 처리했습니다.", "cards", "카드", "장"),
     "delete_notes": ("노트 삭제", "노트 삭제 요청을 처리했습니다.", "notes", "노트", "개"),
-    "delete_decks": ("덱 삭제", "덱 삭제 요청을 처리했습니다.", "cards", "카드", "장"),
+    "delete_decks": ("덱 삭제", "덱 삭제 요청을 처리했습니다.", None, "", ""),
     "suspend_cards": ("학습 제외 설정", "카드의 학습 제외 설정을 적용했습니다.", "cards", "카드", "장"),
     "set_due_date": ("복습 날짜 설정", "카드의 복습 날짜 설정을 적용했습니다.", "cards", "카드", "장"),
     "set_card_flags": ("깃발 설정", "카드의 깃발 설정을 적용했습니다.", "cards", "카드", "장"),
@@ -32,6 +35,42 @@ def _count(value: Any) -> bool:
     return type(value) is int and value >= 0
 
 
+def _names(value: Any, budget: int = 500) -> str:
+    if not isinstance(value, list) or not all(isinstance(name, str) and name for name in value):
+        return ""
+    # JSON quoting makes control characters visible instead of injecting lines.
+    text = ", ".join(json.dumps(name, ensure_ascii=False) for name in value)
+    text = "".join(ascii(char)[1:-1] if unicodedata.category(char) in ("Cc", "Cf", "Zl", "Zp") else char
+                   for char in text)
+    if len(text) > budget:
+        tail = "… (이름 일부 생략; 전체는 작업 번호로 조회)"
+        return text[:budget - len(tail)] + tail
+    return text
+
+
+def _deck_deletion_lines(operation: dict[str, Any]) -> list[str]:
+    result = operation.get("result", {})
+    deleted = _names(result.get("deleted_decks"), 350)
+    retained = _names(result.get("retained_decks"), 150)
+    lines = []
+    if deleted:
+        lines.append(f"삭제한 덱: {deleted}")
+    if retained:
+        lines.append(f"유지된 덱: {retained}")
+    if not lines:
+        requested = _names(operation.get("summary", {}).get("decks"))
+        lines.append(f"삭제 요청 덱: {requested}" if requested else "삭제 요청 덱 이름을 확인하지 못했습니다.")
+    deleted_cards = result.get("deleted_cards")
+    if _count(deleted_cards):
+        lines.append(f"함께 삭제된 카드: {deleted_cards}장.")
+    else:
+        lines.append("삭제된 카드 수는 확인되지 않았습니다.")
+    retained_cards = result.get("retained_cards")
+    if _count(retained_cards) and retained_cards:
+        lines.append(f"삭제되지 않은 카드: {retained_cards}장.")
+    return lines
+
+
 def _content(operation: dict[str, Any]) -> tuple[str, str]:
     action = operation.get("action")
     summary = operation.get("summary", {})
@@ -39,6 +78,8 @@ def _content(operation: dict[str, Any]) -> tuple[str, str]:
         action, ("변경", "변경 요청을 처리했습니다.", None, "", ""))
     if action == "set_card_flags" and type(summary.get("flag")) is int and summary["flag"] == 0:
         label, completed = "깃발 해제", "카드의 깃발 해제 요청을 처리했습니다."
+    if action == "delete_decks" and operation.get("result", {}).get("retained_decks"):
+        label = "덱 정리"
     state = operation.get("state")
     sync = operation.get("sync", {})
     sync_state = sync.get("state")
@@ -53,6 +94,12 @@ def _content(operation: dict[str, Any]) -> tuple[str, str]:
     else:
         title = f"Anki {label} 완료"
         lines = [completed]
+
+    if action == "delete_decks":
+        details = _deck_deletion_lines(operation)
+        lines = details if state == "applied" else lines + details
+        if state == "applied" and sync_state in ("synced", "disabled") and not _count(operation.get("result", {}).get("deleted_cards")):
+            title = "Anki 덱 삭제 결과"
 
     count = summary.get(count_key) if count_key else None
     if _count(count):
