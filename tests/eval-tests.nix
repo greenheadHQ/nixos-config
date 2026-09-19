@@ -793,6 +793,7 @@ let
 
   # ── headless Anki (#1306): loopback 전용·인스턴스 격리·sync/backup 타이머 계약 고정
   ankiHostCfg = nixosCfg.homeserver.ankiHost;
+  ankiRuntimeCheck = flake.checks.x86_64-linux.anki-host-runtime;
   ankiHostLab = nixosCfg.systemd.services."anki-host-lab";
   ankiHostMain = nixosCfg.systemd.services."anki-host-main";
   ankiHostSyncMain = nixosCfg.systemd.services."anki-host-sync-main";
@@ -1281,6 +1282,15 @@ let
         && ankiHostCfg.instances.lab.helperPort == constants.network.ports.ankiHelperLab
         && ankiHostCfg.instances.main.port == constants.network.ports.ankiConnectMain
         && ankiHostCfg.instances.main.helperPort == constants.network.ports.ankiHelperMain;
+    }
+    {
+      name = "Test AH2a: Linux Anki 런타임 검사가 CI와 시스템 빌드에 동일하게 연결되고 Darwin 검사에는 노출되지 않아야 함";
+      cond =
+        builtins.elem ankiRuntimeCheck.drvPath (map (check: check.drvPath) nixosCfg.system.checks)
+        && builtins.elem ankiRuntimeCheck.outPath (
+          nixpkgsLib.splitString " " nixosCfg.system.build.toplevel.passedChecks
+        )
+        && !((flake.checks.aarch64-darwin or { }) ? anki-host-runtime);
     }
     {
       name = "Test AH3: AnkiConnect·헬퍼가 127.0.0.1에만 바인딩되고 인스턴스가 offscreen Qt로 뜨며, single-instance 키가 인스턴스별로 달라야 함 (같은 유저의 두 anki가 서로 명령을 넘기는 사고 방지)";
