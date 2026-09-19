@@ -9,7 +9,7 @@ Client annotations supplement the server's own confirmation checks.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 import base64
 import binascii
 import unicodedata
@@ -123,7 +123,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
 
     @mcp.tool(name="anki_note_info", annotations=READ_ONLY)
     async def anki_note_info(note_ids: list[int], max_field_chars: int = 0) -> dict[str, Any]:
-        """Full note details for the given note ids (fields untruncated by default)."""
+        """Full note details for the given note ids (fields untruncated by default).
+        Before reviewing a note with a 검토 메모 field, read its complete memo here, including all paragraphs.
+        The memo is shared by sibling cards. Do not clear or rewrite it merely because a review mark is removed."""
         chunk, meta = page(note_ids, deps.page_max, 0, deps.page_max)
         notes = await anki.invoke("notesInfo", notes=chunk) if chunk else []
         return {"page": meta, "notes": [note_view(n, max_field_chars) for n in notes]}
@@ -136,7 +138,8 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         max_chars: int = deps.field_chars,
     ) -> dict[str, Any]:
         """Search cards (scheduling view: queue/type/due/interval/ease/reps/lapses) with Anki search syntax.
-        Rendered question/answer are truncated to max_chars."""
+        Search flags with flag:1 through flag:7 (flag:0 means no flag). The response's flag is 0–7,
+        or null if unavailable. Rendered question/answer are truncated to max_chars."""
         ids: list[int] = await anki.invoke("findCards", query=query)
         chunk, meta = page(ids, limit, offset, deps.page_max)
         cards = await anki.invoke("cardsInfo", cards=chunk) if chunk else []
@@ -164,7 +167,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """Add notes. Every note gets the 'mcp::added' tag so MCP-created cards stay identifiable.
         Duplicates (same first field in the deck) are rejected unless allow_duplicate. Returns ids per note
         (null = unconfirmed/failed, see errors). Normal sync runs before and after writes. Reuse request_id
-        for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation."""
+        for every retry. More than 20 affected notes/cards returns a preview requiring user confirmation.
+        In 검토 메모, use plain-language cloze examples such as 'c1: answer', never literal cloze markup:
+        it can generate cards even in a hidden memo field."""
         for n in notes:
             check_tags(n.tags)
         return await operations.run("add_notes", {"notes": [n.model_dump() for n in notes], "allow_duplicate": allow_duplicate},
@@ -175,7 +180,9 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
                                      preview_token: str | None = None, confirm: bool = False) -> dict[str, Any]:
         """Replace the given fields of a note (other fields unchanged). Card ids, scheduling and review
         history are preserved for existing cards. Changed templates/cloze fields may generate new cards.
-        Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries."""
+        Returns an operation receipt; use anki_note_info for readback. Reuse request_id for retries.
+        검토 메모 can contain multiple paragraphs. Describe cloze examples as 'c1: answer', never literal
+        cloze markup: it can generate cards even in a hidden memo field. Do not silently rewrite an existing memo."""
         return await operations.run("update_fields", {"note_id": note_id, "fields": fields},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
@@ -228,6 +235,19 @@ def register_tools(mcp: FastMCP, deps: Deps) -> None:  # noqa: C901 — 도구 �
         """Preview deletion of notes, ALL their cards and review history. Always show the preview and get user
         confirmation, then repeat the same request_id/token with confirm=true. Requires a verified restore point."""
         return await operations.run("delete_notes", {"note_ids": note_ids},
+                                    request_id=request_id, preview_token=preview_token, confirm=confirm)
+
+    @mcp.tool(name="anki_set_card_flags", annotations=UPDATE)
+    async def anki_set_card_flags(
+        card_ids: list[Annotated[int, Field(strict=True, gt=0)]],
+        flag: Annotated[int, Field(strict=True, ge=0, le=7)],
+        request_id: str | None = None, preview_token: str | None = None, confirm: bool = False,
+    ) -> dict[str, Any]:
+        """Set/change a card's colored flag (1–7), or clear it (0). Only the listed cards change;
+        siblings, note fields, scheduling and review history are preserved. A card has one flag at a time.
+        More than 20 cards requires preview/confirmation and a restore point. Reuse request_id for retries;
+        inspect the operation receipt after a lost response. Read back with anki_find_cards using cid:<ID>."""
+        return await operations.run("set_card_flags", {"card_ids": card_ids, "flag": flag},
                                     request_id=request_id, preview_token=preview_token, confirm=confirm)
 
     @mcp.tool(name="anki_delete_decks", annotations=DESTRUCTIVE)
