@@ -43,6 +43,7 @@ def card_view(card: dict[str, Any], max_chars: int) -> dict[str, Any]:
         "deckName": card.get("deckName"),
         "modelName": card.get("modelName"),
         "ord": card.get("ord"),
+        "flag": (card["flags"] & 7) if type(card.get("flags")) is int else None,
         "queue": card.get("queue"),
         "type": card.get("type"),
         "due": card.get("due"),

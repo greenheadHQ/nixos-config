@@ -316,6 +316,8 @@ class AnkiAdapter:
         summary["note_ids"] = note_ids[:100]
         summary["card_ids"] = card_ids[:100]
         summary["ids_truncated"] = len(note_ids) > 100 or len(card_ids) > 100
+        if action == "set_card_flags":
+            summary["flag"] = p["flag"]
         if action in ("delete_notes", "delete_decks"):
             summary["affected_review_rows"] = len(snapshot.get("reviews", []))
             warnings.append("Deletion may remove cards and their review history; a verified restore point is required.")
@@ -373,7 +375,27 @@ class AnkiAdapter:
         elif action == "delete_decks":
             # Passing only topmost selected roots avoids removing a subdeck twice.
             roots = [n for n in p["deck_names"] if not any(n.startswith(parent + "::") for parent in p["deck_names"] if parent != n)]
+            affected = {int(d["id"]): d for name, d in self._decks().items()
+                        if any(name == root or name.startswith(root + "::") for root in roots)}
+            dids = sorted(affected)
+            # Use complete live membership, not the preview's capped ID lists.
+            before = {row[0] for row in self._rows("cards", "did", dids) + self._rows("cards", "odid", dids)}
+            ordinary = {did for did, deck in affected.items() if not deck.get("dyn")}
+            expected_deleted = {card.id for card in self._cards(sorted(before))
+                                if card.did in ordinary or card.odid in ordinary}
             ac.deleteDecks(decks=roots, cardsToo=True)
+            after_dids = {int(d["id"]) for d in self._decks().values()}
+            retained = set(affected) & after_dids
+            remaining = {row[0] for row in self._rows("cards", "id", sorted(before))}
+            result.update(
+                deleted_decks=sorted(deck["name"] for did, deck in affected.items() if did not in retained),
+                retained_decks=sorted(affected[did]["name"] for did in retained),
+                deleted_cards=len(before - remaining), retained_cards=len(remaining),
+            )
+            # Anki keeps the Default deck (ID 1). Other retained target decks
+            # mean the request was only partially fulfilled, even without an API error.
+            if retained - {1} or before - remaining != expected_deleted:
+                result["state"] = "partial"
         elif action == "suspend_cards":
             ac.suspend(cards=list(p["card_ids"]), suspend=p["suspended"])
             states = ac.areSuspended(cards=p["card_ids"])
@@ -382,6 +404,13 @@ class AnkiAdapter:
         elif action == "set_due_date":
             if ac.setDueDate(cards=p["card_ids"], days=p["days"]) is not True:
                 raise OperationError("schedule-update-failed")
+        elif action == "set_card_flags":
+            # The collection API changes only the user flag (low three bits),
+            # preserves other flag bits, and records the change for AnkiWeb.
+            self.col.set_user_flag_for_cards(p["flag"], list(p["card_ids"]))
+            if any(card.user_flag() != p["flag"] for card in self._cards(p["card_ids"])):
+                raise OperationError("flag-readback-mismatch")
+            result.update(card_ids=p["card_ids"], flag=p["flag"])
         elif action == "forget_cards":
             ac.forgetCards(cards=p["card_ids"])
         elif action == "store_media":
