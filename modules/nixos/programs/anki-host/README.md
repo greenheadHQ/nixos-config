@@ -56,7 +56,12 @@ MCP의 결과 대기는 별도 3분이므로 호출이 먼저 끝날 수 있다.
 
 소스 핀: Anki **26.08**, AnkiConnect **25.11.9.0**, helper **2.0.0**, MCP SDK **1.29.0**.
 Anki 본체를 별도 overlay로 다시 만들지 않고, AnkiConnect 애드온에만 인증·내부 호출 연결 패치를 적용한다.
-핀 변경 시 아래 실제 API 테스트를 다시 실행한다.
+핀 변경 시 아래 실제 API 테스트를 다시 실행한다. nixpkgs 쪽 세 값의 재검증(helper는 `addons.nix`의 `version`):
+
+```bash
+nix eval --raw --impure --expr 'let p = (builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux;
+  in "anki=${p.anki.version} anki-connect=${p.ankiAddons.anki-connect.version} mcp=${p.python3Packages.mcp.version}"'
+```
 
 | MCP 도구 | 실제 API / 주의점 |
 |---|---|
